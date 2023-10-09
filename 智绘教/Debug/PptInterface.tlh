@@ -1,0 +1,91 @@
+﻿// Created by Microsoft (R) C/C++ Compiler Version 14.38.33030.0 (4e41ac37).
+//
+// E:\BaiduSyncdisk\工程项目\XMG AI\智绘教\智绘教\智绘教\Debug\PptInterface.tlh
+//
+// C++ source equivalent of Win32 type library .\\PptInterface.tlb
+// compiler-generated file - DO NOT EDIT!
+
+#pragma once
+#pragma pack(push, 8)
+
+#include <comdef.h>
+
+namespace PptInterface {
+
+//
+// Forward references and typedefs
+//
+
+struct __declspec(uuid("315b6351-640c-4032-ad0d-127a9d23d6d0"))
+/* LIBID */ __PptInterface;
+struct __declspec(uuid("5c0bd9b7-b682-3d0e-a671-cf68f7ed0106"))
+/* dual interface */ IMyClass;
+struct /* coclass */ MyClass;
+struct __declspec(uuid("5e39d0dc-45b4-3700-845b-bb7ebd3907c7"))
+/* dual interface */ _MyClass;
+
+//
+// Smart pointer typedef declarations
+//
+
+_COM_SMARTPTR_TYPEDEF(IMyClass, __uuidof(IMyClass));
+_COM_SMARTPTR_TYPEDEF(_MyClass, __uuidof(_MyClass));
+
+//
+// Type library items
+//
+
+struct __declspec(uuid("5c0bd9b7-b682-3d0e-a671-cf68f7ed0106"))
+IMyClass : IDispatch
+{
+    //
+    // Wrapper methods for error-handling
+    //
+
+    HRESULT Initialize ( );
+    HRESULT Dispose ( );
+    _bstr_t LinkTest ( );
+    _bstr_t IsPptDependencyLoaded ( );
+    long currentSlideIndex ( );
+    long totalSlideIndex ( );
+    long GetPptHwnd ( );
+    HRESULT EndSlideShow ( );
+
+    //
+    // Raw methods provided by interface
+    //
+
+      virtual HRESULT __stdcall raw_Initialize ( ) = 0;
+      virtual HRESULT __stdcall raw_Dispose ( ) = 0;
+      virtual HRESULT __stdcall raw_LinkTest (
+        /*[out,retval]*/ BSTR * pRetVal ) = 0;
+      virtual HRESULT __stdcall raw_IsPptDependencyLoaded (
+        /*[out,retval]*/ BSTR * pRetVal ) = 0;
+      virtual HRESULT __stdcall raw_currentSlideIndex (
+        /*[out,retval]*/ long * pRetVal ) = 0;
+      virtual HRESULT __stdcall raw_totalSlideIndex (
+        /*[out,retval]*/ long * pRetVal ) = 0;
+      virtual HRESULT __stdcall raw_GetPptHwnd (
+        /*[out,retval]*/ long * pRetVal ) = 0;
+      virtual HRESULT __stdcall raw_EndSlideShow ( ) = 0;
+};
+
+struct __declspec(uuid("f261131a-5712-3a8f-a68a-16622b4f117f"))
+MyClass;
+    // [ default ] interface _MyClass
+    // interface _Object
+    // interface IMyClass
+
+struct __declspec(uuid("5e39d0dc-45b4-3700-845b-bb7ebd3907c7"))
+_MyClass : IDispatch
+{};
+
+//
+// Wrapper method implementations
+//
+
+#include "E:\BaiduSyncdisk\工程项目\XMG AI\智绘教\智绘教\智绘教\Debug\PptInterface.tli"
+
+} // namespace PptInterface
+
+#pragma pack(pop)
