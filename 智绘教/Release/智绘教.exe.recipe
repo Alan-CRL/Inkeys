@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <ProjectOutputs>
+    <ProjectOutput>
+      <FullPath>E:\BaiduSyncdisk\工程项目\XMG AI\智绘教\智绘教\Release\智绘教.exe</FullPath>
+    </ProjectOutput>
+  </ProjectOutputs>
+  <ContentFiles>
+    <ContentFile>
+      <FullPath>E:\BaiduSyncdisk\工程项目\XMG AI\智绘教\智绘教\智绘教\src\ttf\HarmonyOS_Sans_SC_Regular.ttf</FullPath>
+    </ContentFile>
+  </ContentFiles>
+  <SatelliteDlls />
+  <NonRecipeFileRefs />
+</Project>

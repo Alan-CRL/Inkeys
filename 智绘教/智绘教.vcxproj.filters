@@ -1,0 +1,445 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="头文件\HiEasyX">
+      <UniqueIdentifier>{2e03b9bb-420e-4299-9bab-cb6b8e174341}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\HiEasyX\HiGUI">
+      <UniqueIdentifier>{be31b9e3-af03-4091-8eef-748b8802b7be}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\HiEasyX\HiSysGUI">
+      <UniqueIdentifier>{594605a8-07f6-4f1f-99d6-9121281e72a3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Stb_Image">
+      <UniqueIdentifier>{61b69328-eb34-40b2-8718-b53e6a4a43b2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\json">
+      <UniqueIdentifier>{07bbf3c5-e35e-43a7-9257-11bf810d59c8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\hashlib2plus">
+      <UniqueIdentifier>{a244e36f-a9f3-45d7-a362-8546c599fd7a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\zip_utils">
+      <UniqueIdentifier>{6f1cc623-127b-4008-9ee6-ca06885aa322}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="HiEasyX.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="main.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiGUI\Button.h">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiGUI\ControlBase.h">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiGUI\HiGUI.h">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiGUI\Page.h">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiGUI\ProgressCtrl.h">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiGUI\ScrollBar.h">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiGUI\Static.h">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiSysGUI\HiSysGUI.h">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiSysGUI\SysButton.h">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiSysGUI\SysCheckBox.h">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiSysGUI\SysComboBox.h">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiSysGUI\SysControlBase.h">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiSysGUI\SysEdit.h">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiSysGUI\SysGroup.h">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiSysGUI\SysGroupBox.h">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiSysGUI\SysRadioButton.h">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiSysGUI\SysStatic.h">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiCanvas.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiContainer.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiDef.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiDrawingProperty.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiFPS.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiFunc.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiGdiplus.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiGif.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiIcon.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiMacro.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiMouseDrag.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiMusicMCI.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiStart.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiWindow.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="stb_image\stb-master\stb_image.h">
+      <Filter>头文件\Stb_Image</Filter>
+    </ClInclude>
+    <ClInclude Include="stb_image\stb-master\stb_image_resize.h">
+      <Filter>头文件\Stb_Image</Filter>
+    </ClInclude>
+    <ClInclude Include="stb_image\stb-master\stb_image_write.h">
+      <Filter>头文件\Stb_Image</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hashlibpp.h">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_exception.h">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_hashwrapper.h">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_md5.h">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_md5wrapper.h">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_sha1.h">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_sha1wrapper.h">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_sha2ext.h">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_sha2mac.h">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_sha256.h">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_sha256wrapper.h">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_sha384wrapper.h">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_sha512wrapper.h">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_types.h">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_wrapperfactory.h">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClInclude>
+    <ClInclude Include="zip_utils\unzip.h">
+      <Filter>头文件\zip_utils</Filter>
+    </ClInclude>
+    <ClInclude Include="zip_utils\zip.h">
+      <Filter>头文件\zip_utils</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="HiEasyX\HiGUI\Button.cpp">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiGUI\ControlBase.cpp">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiGUI\Page.cpp">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiGUI\ProgressCtrl.cpp">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiGUI\ScrollBar.cpp">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiGUI\Static.cpp">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiSysGUI\SysButton.cpp">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiSysGUI\SysCheckBox.cpp">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiSysGUI\SysComboBox.cpp">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiSysGUI\SysControlBase.cpp">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiSysGUI\SysEdit.cpp">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiSysGUI\SysGroup.cpp">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiSysGUI\SysGroupBox.cpp">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiSysGUI\SysRadioButton.cpp">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiSysGUI\SysStatic.cpp">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiCanvas.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiContainer.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiDrawingProperty.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiFPS.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiFunc.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiGdiplus.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiGif.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiIcon.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiMouseDrag.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiMusicMCI.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiStart.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiWindow.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="main.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="json\lib_json\json_reader.cpp">
+      <Filter>头文件\json</Filter>
+    </ClCompile>
+    <ClCompile Include="json\lib_json\json_value.cpp">
+      <Filter>头文件\json</Filter>
+    </ClCompile>
+    <ClCompile Include="json\lib_json\json_writer.cpp">
+      <Filter>头文件\json</Filter>
+    </ClCompile>
+    <ClCompile Include="hashlib2plus\hl_md5.cpp">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClCompile>
+    <ClCompile Include="hashlib2plus\hl_md5wrapper.cpp">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClCompile>
+    <ClCompile Include="hashlib2plus\hl_sha1.cpp">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClCompile>
+    <ClCompile Include="hashlib2plus\hl_sha1wrapper.cpp">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClCompile>
+    <ClCompile Include="hashlib2plus\hl_sha2ext.cpp">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClCompile>
+    <ClCompile Include="hashlib2plus\hl_sha256.cpp">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClCompile>
+    <ClCompile Include="hashlib2plus\hl_sha256wrapper.cpp">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClCompile>
+    <ClCompile Include="hashlib2plus\hl_sha384wrapper.cpp">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClCompile>
+    <ClCompile Include="hashlib2plus\hl_sha512wrapper.cpp">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClCompile>
+    <ClCompile Include="hashlib2plus\hl_wrapperfactory.cpp">
+      <Filter>头文件\hashlib2plus</Filter>
+    </ClCompile>
+    <ClCompile Include="zip_utils\unzip.cpp">
+      <Filter>头文件\zip_utils</Filter>
+    </ClCompile>
+    <ClCompile Include="zip_utils\zip.cpp">
+      <Filter>头文件\zip_utils</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="智绘教.rc">
+      <Filter>资源文件</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="src\endshow.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\left.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\right.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\write.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\sign.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\rubber.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\choose.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\undo.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\scale.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\more.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\perspective.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\choice.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\highlighter_brush.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\paint_brush.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\curve.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\line.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\rectangle.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\ms_ppt.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\icon.ico">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\weather\weather3.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\weather\png00001.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\tick.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\sign1.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\gwxq.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\option.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\bug.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\info.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\home.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\sign2.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\freeze-frame.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\sign3.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\seewo_camera.png">
+      <Filter>资源文件</Filter>
+    </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="exe\智绘教CrashedHandler.exe" />
+    <None Include="exe\智绘教CrashedHandlerClose.exe" />
+    <None Include="PptInterface.dll" />
+    <None Include="PptInterface.tlb" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,65 @@
+﻿// Created by Microsoft (R) C/C++ Compiler Version 14.38.33030.0 (185ee4c4).
+//
+// E:\BaiduSyncdisk\工程项目\XMG AI\智绘教\智绘教\智绘教\Release\PptInterface.tli
+//
+// Wrapper implementations for Win32 type library .\\PptInterface.tlb
+// compiler-generated file - DO NOT EDIT!
+
+#pragma once
+
+//
+// interface IMyClass wrapper method implementations
+//
+
+inline HRESULT IMyClass::Initialize ( ) {
+    HRESULT _hr = raw_Initialize();
+    if (FAILED(_hr)) _com_issue_errorex(_hr, this, __uuidof(this));
+    return _hr;
+}
+
+inline HRESULT IMyClass::Dispose ( ) {
+    HRESULT _hr = raw_Dispose();
+    if (FAILED(_hr)) _com_issue_errorex(_hr, this, __uuidof(this));
+    return _hr;
+}
+
+inline _bstr_t IMyClass::LinkTest ( ) {
+    BSTR _result = 0;
+    HRESULT _hr = raw_LinkTest(&_result);
+    if (FAILED(_hr)) _com_issue_errorex(_hr, this, __uuidof(this));
+    return _bstr_t(_result, false);
+}
+
+inline _bstr_t IMyClass::IsPptDependencyLoaded ( ) {
+    BSTR _result = 0;
+    HRESULT _hr = raw_IsPptDependencyLoaded(&_result);
+    if (FAILED(_hr)) _com_issue_errorex(_hr, this, __uuidof(this));
+    return _bstr_t(_result, false);
+}
+
+inline long IMyClass::currentSlideIndex ( ) {
+    long _result = 0;
+    HRESULT _hr = raw_currentSlideIndex(&_result);
+    if (FAILED(_hr)) _com_issue_errorex(_hr, this, __uuidof(this));
+    return _result;
+}
+
+inline long IMyClass::totalSlideIndex ( ) {
+    long _result = 0;
+    HRESULT _hr = raw_totalSlideIndex(&_result);
+    if (FAILED(_hr)) _com_issue_errorex(_hr, this, __uuidof(this));
+    return _result;
+}
+
+inline long IMyClass::GetPptHwnd ( ) {
+    long _result = 0;
+    HRESULT _hr = raw_GetPptHwnd(&_result);
+    if (FAILED(_hr)) _com_issue_errorex(_hr, this, __uuidof(this));
+    return _result;
+}
+
+inline HRESULT IMyClass::EndSlideShow ( ) {
+    HRESULT _hr = raw_EndSlideShow();
+    if (FAILED(_hr)) _com_issue_errorex(_hr, this, __uuidof(this));
+    return _hr;
+}
