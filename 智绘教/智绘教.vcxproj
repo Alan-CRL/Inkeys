@@ -1,0 +1,304 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{c74d4d04-f81c-42fe-8d90-7042ba3bb8a0}</ProjectGuid>
+    <RootNamespace>智绘教</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <IncludePath>$(IncludePath)</IncludePath>
+    <LibraryPath>$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>$(IntDir)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <Optimization>Disabled</Optimization>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalManifestDependencies>name='PptCOM' version='1.0.0.0' processorArchitecture='MSIL';%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
+      <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
+    </Link>
+    <Manifest>
+      <EnableDpiAwareness>true</EnableDpiAwareness>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <Optimization>Full</Optimization>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <AdditionalIncludeDirectories>$(IntDir)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <CompileAsManaged>
+      </CompileAsManaged>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalManifestDependencies>name='PptCOM' version='1.0.0.0' processorArchitecture='MSIL';%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
+      <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
+    </Link>
+    <Manifest>
+      <EnableDpiAwareness>true</EnableDpiAwareness>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="IdtConfiguration.h" />
+    <ClInclude Include="hashlib2plus\hashlibpp.h" />
+    <ClInclude Include="hashlib2plus\hl_exception.h" />
+    <ClInclude Include="hashlib2plus\hl_hashwrapper.h" />
+    <ClInclude Include="hashlib2plus\hl_md5.h" />
+    <ClInclude Include="hashlib2plus\hl_md5wrapper.h" />
+    <ClInclude Include="hashlib2plus\hl_sha1.h" />
+    <ClInclude Include="hashlib2plus\hl_sha1wrapper.h" />
+    <ClInclude Include="hashlib2plus\hl_sha256.h" />
+    <ClInclude Include="hashlib2plus\hl_sha256wrapper.h" />
+    <ClInclude Include="hashlib2plus\hl_sha2ext.h" />
+    <ClInclude Include="hashlib2plus\hl_sha2mac.h" />
+    <ClInclude Include="hashlib2plus\hl_sha384wrapper.h" />
+    <ClInclude Include="hashlib2plus\hl_sha512wrapper.h" />
+    <ClInclude Include="hashlib2plus\hl_types.h" />
+    <ClInclude Include="hashlib2plus\hl_wrapperfactory.h" />
+    <ClInclude Include="HiEasyX.h" />
+    <ClInclude Include="HiEasyX\HiCanvas.h" />
+    <ClInclude Include="HiEasyX\HiContainer.h" />
+    <ClInclude Include="HiEasyX\HiDef.h" />
+    <ClInclude Include="HiEasyX\HiDrawingProperty.h" />
+    <ClInclude Include="HiEasyX\HiFPS.h" />
+    <ClInclude Include="HiEasyX\HiFunc.h" />
+    <ClInclude Include="HiEasyX\HiGdiplus.h" />
+    <ClInclude Include="HiEasyX\HiGif.h" />
+    <ClInclude Include="HiEasyX\HiGUI\Button.h" />
+    <ClInclude Include="HiEasyX\HiGUI\ControlBase.h" />
+    <ClInclude Include="HiEasyX\HiGUI\HiGUI.h" />
+    <ClInclude Include="HiEasyX\HiGUI\Page.h" />
+    <ClInclude Include="HiEasyX\HiGUI\ProgressCtrl.h" />
+    <ClInclude Include="HiEasyX\HiGUI\ScrollBar.h" />
+    <ClInclude Include="HiEasyX\HiGUI\Static.h" />
+    <ClInclude Include="HiEasyX\HiIcon.h" />
+    <ClInclude Include="HiEasyX\HiMacro.h" />
+    <ClInclude Include="HiEasyX\HiMouseDrag.h" />
+    <ClInclude Include="HiEasyX\HiMusicMCI.h" />
+    <ClInclude Include="HiEasyX\HiStart.h" />
+    <ClInclude Include="HiEasyX\HiSysGUI\HiSysGUI.h" />
+    <ClInclude Include="HiEasyX\HiSysGUI\SysButton.h" />
+    <ClInclude Include="HiEasyX\HiSysGUI\SysCheckBox.h" />
+    <ClInclude Include="HiEasyX\HiSysGUI\SysComboBox.h" />
+    <ClInclude Include="HiEasyX\HiSysGUI\SysControlBase.h" />
+    <ClInclude Include="HiEasyX\HiSysGUI\SysEdit.h" />
+    <ClInclude Include="HiEasyX\HiSysGUI\SysGroup.h" />
+    <ClInclude Include="HiEasyX\HiSysGUI\SysGroupBox.h" />
+    <ClInclude Include="HiEasyX\HiSysGUI\SysRadioButton.h" />
+    <ClInclude Include="HiEasyX\HiSysGUI\SysStatic.h" />
+    <ClInclude Include="HiEasyX\HiWindow.h" />
+    <ClInclude Include="IdtDrawpad.h" />
+    <ClInclude Include="IdtFloating.h" />
+    <ClInclude Include="IdtImage.h" />
+    <ClInclude Include="IdtKey.h" />
+    <ClInclude Include="IdtMagnification.h" />
+    <ClInclude Include="IdtMain.h" />
+    <ClInclude Include="IdtOther.h" />
+    <ClInclude Include="IdtPlug-in.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="IdtRts.h" />
+    <ClInclude Include="stb_image\stb-master\stb_image.h" />
+    <ClInclude Include="stb_image\stb-master\stb_image_resize.h" />
+    <ClInclude Include="stb_image\stb-master\stb_image_write.h" />
+    <ClInclude Include="IdtText.h" />
+    <ClInclude Include="IdtTime.h" />
+    <ClInclude Include="IdtUpdate.h" />
+    <ClInclude Include="IdtWindow.h" />
+    <ClInclude Include="zip_utils\unzip.h" />
+    <ClInclude Include="zip_utils\zip.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="IdtDraw.cpp" />
+    <ClCompile Include="IdtDraw.h" />
+    <ClCompile Include="hashlib2plus\hl_md5.cpp" />
+    <ClCompile Include="hashlib2plus\hl_md5wrapper.cpp" />
+    <ClCompile Include="hashlib2plus\hl_sha1.cpp" />
+    <ClCompile Include="hashlib2plus\hl_sha1wrapper.cpp" />
+    <ClCompile Include="hashlib2plus\hl_sha256.cpp" />
+    <ClCompile Include="hashlib2plus\hl_sha256wrapper.cpp" />
+    <ClCompile Include="hashlib2plus\hl_sha2ext.cpp" />
+    <ClCompile Include="hashlib2plus\hl_sha384wrapper.cpp" />
+    <ClCompile Include="hashlib2plus\hl_sha512wrapper.cpp" />
+    <ClCompile Include="hashlib2plus\hl_wrapperfactory.cpp" />
+    <ClCompile Include="HiEasyX\HiCanvas.cpp" />
+    <ClCompile Include="HiEasyX\HiContainer.cpp" />
+    <ClCompile Include="HiEasyX\HiDrawingProperty.cpp" />
+    <ClCompile Include="HiEasyX\HiFPS.cpp" />
+    <ClCompile Include="HiEasyX\HiFunc.cpp" />
+    <ClCompile Include="HiEasyX\HiGdiplus.cpp" />
+    <ClCompile Include="HiEasyX\HiGif.cpp" />
+    <ClCompile Include="HiEasyX\HiGUI\Button.cpp" />
+    <ClCompile Include="HiEasyX\HiGUI\ControlBase.cpp" />
+    <ClCompile Include="HiEasyX\HiGUI\Page.cpp" />
+    <ClCompile Include="HiEasyX\HiGUI\ProgressCtrl.cpp" />
+    <ClCompile Include="HiEasyX\HiGUI\ScrollBar.cpp" />
+    <ClCompile Include="HiEasyX\HiGUI\Static.cpp" />
+    <ClCompile Include="HiEasyX\HiIcon.cpp" />
+    <ClCompile Include="HiEasyX\HiMouseDrag.cpp" />
+    <ClCompile Include="HiEasyX\HiMusicMCI.cpp" />
+    <ClCompile Include="HiEasyX\HiStart.cpp" />
+    <ClCompile Include="HiEasyX\HiSysGUI\SysButton.cpp" />
+    <ClCompile Include="HiEasyX\HiSysGUI\SysCheckBox.cpp" />
+    <ClCompile Include="HiEasyX\HiSysGUI\SysComboBox.cpp" />
+    <ClCompile Include="HiEasyX\HiSysGUI\SysControlBase.cpp" />
+    <ClCompile Include="HiEasyX\HiSysGUI\SysEdit.cpp" />
+    <ClCompile Include="HiEasyX\HiSysGUI\SysGroup.cpp" />
+    <ClCompile Include="HiEasyX\HiSysGUI\SysGroupBox.cpp" />
+    <ClCompile Include="HiEasyX\HiSysGUI\SysRadioButton.cpp" />
+    <ClCompile Include="HiEasyX\HiSysGUI\SysStatic.cpp" />
+    <ClCompile Include="HiEasyX\HiWindow.cpp" />
+    <ClCompile Include="IdtDrawpad.cpp" />
+    <ClCompile Include="IdtFloating.cpp" />
+    <ClCompile Include="IdtImage.cpp" />
+    <ClCompile Include="IdtKey.cpp" />
+    <ClCompile Include="IdtRts.cpp" />
+    <ClCompile Include="json\lib_json\json_reader.cpp" />
+    <ClCompile Include="json\lib_json\json_value.cpp" />
+    <ClCompile Include="json\lib_json\json_writer.cpp" />
+    <ClCompile Include="IdtMagnification.cpp" />
+    <ClCompile Include="IdtMain.cpp" />
+    <ClCompile Include="IdtOther.cpp" />
+    <ClCompile Include="IdtPlug-in.cpp" />
+    <ClCompile Include="IdtText.cpp" />
+    <ClCompile Include="IdtTime.cpp" />
+    <ClCompile Include="IdtUpdate.cpp" />
+    <ClCompile Include="IdtWindow.cpp" />
+    <ClCompile Include="zip_utils\unzip.cpp" />
+    <ClCompile Include="zip_utils\zip.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="智绘教.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="src\bug.png" />
+    <Image Include="src\choice.png" />
+    <Image Include="src\choose.png" />
+    <Image Include="src\curve.png" />
+    <Image Include="src\endshow.png" />
+    <Image Include="src\freeze-frame.png" />
+    <Image Include="src\gwxq.png" />
+    <Image Include="src\highlighter_brush.png" />
+    <Image Include="src\home.png" />
+    <Image Include="src\icon.ico" />
+    <Image Include="src\info.png" />
+    <Image Include="src\left.png" />
+    <Image Include="src\line.png" />
+    <Image Include="src\more.png" />
+    <Image Include="src\ms_ppt.png" />
+    <Image Include="src\option.png" />
+    <Image Include="src\paint_brush.png" />
+    <Image Include="src\perspective.png" />
+    <Image Include="src\rectangle.png" />
+    <Image Include="src\right.png" />
+    <Image Include="src\rubber.png" />
+    <Image Include="src\scale.png" />
+    <Image Include="src\seewo_camera.png" />
+    <Image Include="src\sign.png" />
+    <Image Include="src\sign1.png" />
+    <Image Include="src\sign2.png" />
+    <Image Include="src\sign3.png" />
+    <Image Include="src\tick.png" />
+    <Image Include="src\undo.png" />
+    <Image Include="src\weather\png00001.png" />
+    <Image Include="src\weather\weather3.png" />
+    <Image Include="src\write.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf">
+      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</DeploymentContent>
+    </Font>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="exe\智绘教CrashedHandler.exe" />
+    <None Include="exe\智绘教CrashedHandlerClose.exe" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PptCOM\PptCOM.csproj">
+      <Project>{66f84848-5c28-4398-80d7-78f6189fc442}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+  <ItemGroup>
+    <SrcFile Include="$(SolutionDir)PptCOM\bin\$(Configuration)\PptCOM.dll" />
+    <TlbFile Include="$(IntDir)PptCOM.tlb" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PptCOM\PptCOM.csproj">
+      <Project>{404f6e99-a0ca-45b2-8caa-a2d819da8eff}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <PropertyGroup Condition="'$(Platform)'=='Win32'">
+    <TlbPlatform>win32</TlbPlatform>
+  </PropertyGroup>
+  <!-- Copy .Net Framework assembly to C++ project output directory -->
+  <Target Name="CopyPptCOM" AfterTargets="Build;Rebuild">
+    <Copy SourceFiles="@(SrcFile)" DestinationFiles="@(SrcFile -> '$(TargetDir)%(FileName)%(Extension)')" />
+  </Target>
+  <!-- Create 32-bit or 64-bit type library from .Net Framework assembly for #import directive -->
+  <Target Name="CreatePptCOMTlb" BeforeTargets="ClCompile" Inputs="@(SrcFile)" Outputs="@(SrcFile -> '$(IntDir)%(FileName).tlb')">
+    <Exec Command="%22$(SDK40ToolsPath)TlbExp.exe%22 %22@(SrcFile)%22 /silence:131175 /$(TlbPlatform) /out:@(TlbFile)" />
+  </Target>
+  <!-- Delete .Net Framework assembly from C++ project output directory -->
+  <Target Name="CleanPptCOM" AfterTargets="Clean">
+    <Delete Files="$(TargetDir)PptCOM.dll" />
+  </Target>
+</Project>
