@@ -634,7 +634,7 @@ int test_main()
 						dwords_rect.left = 0;
 						dwords_rect.top = 305;
 						dwords_rect.right = 800;
-						dwords_rect.bottom = 700;
+						dwords_rect.bottom = 630;
 					}
 
 					wstring text = L"程序版本：" + string_to_wstring(edition_code);
@@ -659,63 +659,20 @@ int test_main()
 						if (!server_updata_error_reason.empty()) text += L"\n" + server_updata_error_reason;
 					}
 
-					/*
-					GetCursorPos(&pt);
-
-					text += L"\n\n鼠标左键按下：";
-					text += KEY_DOWN(VK_LBUTTON) ? L"是" : L"否";
-					text += L"\n光标坐标 " + to_wstring(pt.x) + L"," + to_wstring(pt.y);
-
-					text += L"\n\n此程序使用 RealTimeStylus 触控库（测试触控需进入画笔模式）";
-					text += L"\n其兼容 WinXP 及以上版本的系统，效率较高，支持多点触控";
-
-					if (uRealTimeStylus == 2) text += L"\n\nRealTimeStylus 消息：按下";
-					else if (uRealTimeStylus == 3) text += L"\n\nRealTimeStylus 消息：抬起";
-					else if (uRealTimeStylus == 4) text += L"\n\nRealTimeStylus 消息：移动";
-					else text += L"\n\nRealTimeStylus 消息：就绪";
-
-					text += L"\n触控按下：";
-					text += touchDown ? L"是" : L"否";
-					text += L"\n按下触控点数量：";
-					text += to_wstring(touchNum);
-
-					for (int i = 0; i < 20; i++)
-					{
-						if (touchNum > i)
-						{
-							pt = TouchPos[TouchList[i]].pt;
-							text += L"\n触控点" + to_wstring(i + 1) + L" pid" + to_wstring(TouchList[i]) + L" 坐标 " + to_wstring(pt.x) + L"," + to_wstring(pt.y);
-						}
-						else break;
-					}
-
-					text += L"\n\nTouchList ";
-					for (const auto& val : TouchList)
-					{
-						text += to_wstring(val) + L" ";
-					}
-					text += L"\nTouchTemp ";
-					for (size_t i = 0; i < TouchTemp.size(); ++i)
-					{
-						text += to_wstring(TouchTemp[i].pid) + L" ";
-					}
-
-					text += L"\n\n撤回库当前大小：" + to_wstring(max(0, int(RecallImage.size()) - 1));
-
-					text += L"\n\nCOM二进制接口 联动组件 状态：\n";
-					text += ppt_LinkTest;
-					text += L"\nPPT 联动组件状态：";
-					text += ppt_IsPptDependencyLoaded;
-
-					text += L"\n\nPPT 状态：";
-					text += ppt_info_stay.TotalPage != -1 ? L"正在播放" : L"未播放";
-					text += L"\nPPT 总页面数：";
-					text += to_wstring(ppt_info_stay.TotalPage);
-					text += L"\nPPT 当前页序号：";
-					text += to_wstring(ppt_info_stay.CurrentPage);
-					*/
-
 					graphics.DrawString(text.c_str(), -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
+
+					{
+						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 18, FontStyleRegular, UnitPixel);
+						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(6, 39, 182), false));
+						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
+						{
+							dwords_rect.left = 0;
+							dwords_rect.top = 630;
+							dwords_rect.right = 800;
+							dwords_rect.bottom = 700;
+						}
+						graphics.DrawString(L"软件作者联系方式\nQQ: 2685549821\ne-mail: alan-crl@foxmail.com", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
+					}
 				}
 
 				//侧栏
