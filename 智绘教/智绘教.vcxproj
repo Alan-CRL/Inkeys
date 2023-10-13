@@ -46,6 +46,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <IncludePath>$(IncludePath)</IncludePath>
     <LibraryPath>$(LibraryPath)</LibraryPath>
+    <GenerateManifest>false</GenerateManifest>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -60,7 +61,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalManifestDependencies>name='PptCOM' version='1.0.0.0' processorArchitecture='MSIL';%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
+      <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <Manifest>
@@ -88,7 +89,7 @@
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalManifestDependencies>name='PptCOM' version='1.0.0.0' processorArchitecture='MSIL';%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
+      <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <Manifest>
@@ -268,6 +269,7 @@
   <ItemGroup>
     <None Include="exe\智绘教CrashedHandler.exe" />
     <None Include="exe\智绘教CrashedHandlerClose.exe" />
+    <None Include="PptCOM.dll" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PptCOM\PptCOM.csproj">
@@ -286,8 +288,15 @@
       <Project>{404f6e99-a0ca-45b2-8caa-a2d819da8eff}</Project>
     </ProjectReference>
   </ItemGroup>
+  <ItemGroup>
+    <Manifest Include="..\PptCOM\PptCOM.manifest" />
+    <Manifest Include="PptCOM.manifest" />
+  </ItemGroup>
   <PropertyGroup Condition="'$(Platform)'=='Win32'">
     <TlbPlatform>win32</TlbPlatform>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <GenerateManifest>false</GenerateManifest>
   </PropertyGroup>
   <!-- Copy .Net Framework assembly to C++ project output directory -->
   <Target Name="CopyPptCOM" AfterTargets="Build;Rebuild">
@@ -296,6 +305,10 @@
   <!-- Create 32-bit or 64-bit type library from .Net Framework assembly for #import directive -->
   <Target Name="CreatePptCOMTlb" BeforeTargets="ClCompile" Inputs="@(SrcFile)" Outputs="@(SrcFile -> '$(IntDir)%(FileName).tlb')">
     <Exec Command="%22$(SDK40ToolsPath)TlbExp.exe%22 %22@(SrcFile)%22 /silence:131175 /$(TlbPlatform) /out:@(TlbFile)" />
+  </Target>
+  <!-- Copy .Net Framework assembly to C++ project directory -->
+  <Target Name="CopyPptCOM" AfterTargets="Build;Rebuild">
+    <Copy SourceFiles="@(SrcFile)" DestinationFiles="@(SrcFile -> '$(ProjectDir)%(FileName)%(Extension)')" />
   </Target>
   <!-- Delete .Net Framework assembly from C++ project output directory -->
   <Target Name="CleanPptCOM" AfterTargets="Clean">

@@ -5670,14 +5670,6 @@ int floating_main()
 				ExtractResource((string_to_wstring(global_path) + L"api\\ÖÇ»æ½ÌCrashedHandler.exe").c_str(), L"EXE", MAKEINTRESOURCE(201));
 				ExtractResource((string_to_wstring(global_path) + L"api\\ÖÇ»æ½ÌCrashedHandlerClose.exe").c_str(), L"EXE", MAKEINTRESOURCE(202));
 			}
-			//PptCOM DLL
-			{
-				//ExtractResource((string_to_wstring(global_path) + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(219));
-			}
-		}
-		if (_waccess((string_to_wstring(global_path) + L"PptCOM.dll").c_str(), 0) == -1)
-		{
-			//ExtractResource((string_to_wstring(global_path) + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(219));
 		}
 
 		/*

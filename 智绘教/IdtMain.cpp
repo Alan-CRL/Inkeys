@@ -263,6 +263,31 @@ int main()
 			MagnifierThread_thread.detach();
 		}
 	}
+
+	//PptCOM 组件加载
+	HANDLE hActCtx;
+	ULONG_PTR ulCookie;
+	{
+		ACTCTX actCtx = { 0 };
+		actCtx.cbSize = sizeof(actCtx);
+		actCtx.dwFlags = ACTCTX_FLAG_RESOURCE_NAME_VALID | ACTCTX_FLAG_HMODULE_VALID;
+		actCtx.lpResourceName = MAKEINTRESOURCE(221);
+		actCtx.hModule = GetModuleHandle(NULL);
+
+		hActCtx = CreateActCtx(&actCtx);
+		ActivateActCtx(hActCtx, &ulCookie);
+
+		HMODULE hModule = LoadLibrary((string_to_wstring(global_path) + L"PptCOM.dll").c_str());
+		if (!hModule)
+		{
+			//加载失败
+			ExtractResource((string_to_wstring(global_path) + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(222));
+
+			hModule = LoadLibrary((string_to_wstring(global_path) + L"PptCOM.dll").c_str());
+			if (!hModule) Test();
+		}
+	}
+
 	// 初始化 RealTimeStylus 触控库
 	{
 		// Create RTS object
@@ -334,6 +359,8 @@ int main()
 
 	// 反初始化 COM 环境
 	CoUninitialize();
+	DeactivateActCtx(0, ulCookie);
+	ReleaseActCtx(hActCtx);
 
 	return 0;
 }

@@ -520,5 +520,10 @@
   <ItemGroup>
     <None Include="exe\智绘教CrashedHandler.exe" />
     <None Include="exe\智绘教CrashedHandlerClose.exe" />
+    <None Include="PptCOM.dll" />
+  </ItemGroup>
+  <ItemGroup>
+    <Manifest Include="PptCOM.manifest" />
+    <Manifest Include="..\PptCOM\PptCOM.manifest" />
   </ItemGroup>
 </Project>
