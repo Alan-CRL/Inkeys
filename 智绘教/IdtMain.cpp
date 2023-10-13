@@ -282,9 +282,7 @@ int main()
 		{
 			//º”‘ÿ ß∞‹
 			ExtractResource((string_to_wstring(global_path) + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(222));
-
 			hModule = LoadLibrary((string_to_wstring(global_path) + L"PptCOM.dll").c_str());
-			if (!hModule) Test();
 		}
 	}
 
