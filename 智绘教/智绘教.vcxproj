@@ -93,7 +93,7 @@
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <Manifest>
-      <EnableDpiAwareness>true</EnableDpiAwareness>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
