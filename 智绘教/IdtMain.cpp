@@ -374,7 +374,7 @@ bool debug = false;
 bool already = false;
 
 wstring buildTime = __DATE__ L" " __TIME__; //构建时间
-string edition_date = "20231011a"; //程序发布日期
+string edition_date = "20231013a"; //程序发布日期
 string edition_code = "2310 - BUG Bash"; //程序版本
 
 wstring userid; //用户ID（主板序列号）
