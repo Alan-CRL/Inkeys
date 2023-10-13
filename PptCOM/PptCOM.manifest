@@ -9,7 +9,7 @@
 		progid="PptCOM.PptCOMServer"
 		threadingModel="Both"
 		name="PptCOM.PptCOMServer"
-		runtimeVersion="v2.0">
+		runtimeVersion="v4.0.30319">
 	</clrClass>
 	<file name="PptCOM.dll">
 	</file>

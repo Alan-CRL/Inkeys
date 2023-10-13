@@ -12,6 +12,8 @@
 */
 
 // 程序入口点位于 IdtMain.cpp，各个文件的解释将于稍后编写，目前其名称对应作用
+// 编译提示：.NET 版本默认为 .NET Framework 4.0 ，最低要求 .NET Framework 3.5（如需更改请查看 PptCOM）
+// 首次编译需要确认 .NET Framework 版本为 4.0，如果不一致请执行 位于 PptCOM 的 <切换 .NET Framework 指南>
 
 #pragma once
 

@@ -523,7 +523,6 @@
     <None Include="PptCOM.dll" />
   </ItemGroup>
   <ItemGroup>
-    <Manifest Include="PptCOM.manifest" />
     <Manifest Include="..\PptCOM\PptCOM.manifest" />
   </ItemGroup>
 </Project>

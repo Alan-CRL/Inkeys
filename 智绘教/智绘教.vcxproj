@@ -290,7 +290,6 @@
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="..\PptCOM\PptCOM.manifest" />
-    <Manifest Include="PptCOM.manifest" />
   </ItemGroup>
   <PropertyGroup Condition="'$(Platform)'=='Win32'">
     <TlbPlatform>win32</TlbPlatform>
@@ -298,16 +297,16 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <GenerateManifest>false</GenerateManifest>
   </PropertyGroup>
-  <!-- Copy .Net Framework assembly to C++ project output directory -->
-  <Target Name="CopyPptCOM" AfterTargets="Build;Rebuild">
-    <Copy SourceFiles="@(SrcFile)" DestinationFiles="@(SrcFile -> '$(TargetDir)%(FileName)%(Extension)')" />
-  </Target>
   <!-- Create 32-bit or 64-bit type library from .Net Framework assembly for #import directive -->
   <Target Name="CreatePptCOMTlb" BeforeTargets="ClCompile" Inputs="@(SrcFile)" Outputs="@(SrcFile -> '$(IntDir)%(FileName).tlb')">
     <Exec Command="%22$(SDK40ToolsPath)TlbExp.exe%22 %22@(SrcFile)%22 /silence:131175 /$(TlbPlatform) /out:@(TlbFile)" />
   </Target>
-  <!-- Copy .Net Framework assembly to C++ project directory -->
+  <!-- Copy .Net Framework assembly to C++ project output directory -->
   <Target Name="CopyPptCOM" AfterTargets="Build;Rebuild">
+    <Copy SourceFiles="@(SrcFile)" DestinationFiles="@(SrcFile -> '$(TargetDir)%(FileName)%(Extension)')" />
+  </Target>
+  <!-- Copy .Net Framework assembly to C++ project directory -->
+  <Target Name="CopyPptCOM" BeforeTargets="ResourceCompile">
     <Copy SourceFiles="@(SrcFile)" DestinationFiles="@(SrcFile -> '$(ProjectDir)%(FileName)%(Extension)')" />
   </Target>
   <!-- Delete .Net Framework assembly from C++ project output directory -->

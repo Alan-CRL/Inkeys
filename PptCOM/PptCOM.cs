@@ -1,4 +1,44 @@
-﻿using System;
+﻿/*
+ * @file		PptCOM.cs
+ * @brief		智绘教项目 PPT 联动插件
+ * @note		PPT 联动插件 相关模块
+ *
+ * @envir		VisualStudio 2022 | .NET Framework 3.5 | Windows 11
+ * @site		https://github.com/Alan-CRL/Intelligent-Drawing-Teaching
+ *
+ * @author		Alan-CRL
+ * @qq			2685549821
+ * @email		alan-crl@foxmail.com
+*/
+
+// 首次编译需要确认 .NET Framework 版本为 4.0，如果不一致请执行 <切换 .NET Framework 指南>
+/////////////////////////////////////////////////////////////////////////////
+// 切换 .NET Framework 指南
+// .NET 版本默认为 .NET Framework 4.0 ，最低要求 .NET Framework 3.5
+//
+// 修改属性页中的指定框架
+//
+// 确认 NuGet 包 Costura.Fody 版本为 5.2.0
+//
+// 删除 FodyWeavers.xsd
+// 修改 PptCOM 项目目录下的 FodyWeavers.xml，修改内容为
+/*
+
+<?xml version="1.0" encoding="utf-8" ?>
+<Weavers>
+  <Costura />
+</Weavers>
+
+*/
+//
+//
+// 确认 PptCOM.manifest 中的 runtimeVersion 是你设置的版本全称（C:\Windows\Microsoft.NET\Framework），如 4.0.30319, 3.5
+// 生成 -> 清理 PptCOM，然后点击重新生成解决方案
+//
+// 其余疑问请咨询作者 QQ2685549821
+/////////////////////////////////////////////////////////////////////////////
+
+using System;
 using System.Runtime.InteropServices;
 
 using Microsoft.Office.Core;
@@ -35,7 +75,7 @@ namespace PptCOM
 
         public string LinkTest()
         {
-            return "C# COM接口 连接成功，版本 20231012.01";
+            return "C# COM接口 连接成功，版本 20231013.01";
         }
 
         public string IsPptDependencyLoaded()
