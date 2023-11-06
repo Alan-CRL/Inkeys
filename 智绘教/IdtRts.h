@@ -3,9 +3,9 @@
 
 extern int uRealTimeStylus;
 
-extern bool touchDown;							// 表示触摸设备是否被按下
-extern int touchNum;							// 触摸点的点击个数
-extern unordered_map<LONG, pair<int, int>> PreviousPointPosition;	//用于速度计算
+extern bool touchDown;												// 表示触摸设备是否被按下
+extern int touchNum;												// 触摸点的点击个数
+extern unordered_map<LONG, pair<int, int>> PreviousPointPosition;	// 用于速度计算
 
 struct TouchMode
 {
