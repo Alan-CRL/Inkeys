@@ -97,7 +97,6 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="IdtConfiguration.h" />
     <ClInclude Include="hashlib2plus\hashlibpp.h" />
     <ClInclude Include="hashlib2plus\hl_exception.h" />
     <ClInclude Include="hashlib2plus\hl_hashwrapper.h" />

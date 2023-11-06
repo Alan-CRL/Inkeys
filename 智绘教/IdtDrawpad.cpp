@@ -1,6 +1,6 @@
 #include "IdtDrawpad.h"
 
-bool main_open, draw_content;
+bool main_open;
 int TestMainMode = 1;
 
 RECT DrawGradientLine(HDC hdc, int x1, int y1, int x2, int y2, float width, Color color)
@@ -102,6 +102,12 @@ void SaveScreenShot(IMAGE img)
 	ShowWindow(floating_window, SW_SHOW);
 	//if (hide_xkl) ShowWindow(xkl_windows, SW_SHOW);
 	*/
+
+	if (FreezeFrame.mode != 1)
+	{
+		RequestUpdateMagWindow = true;
+		while (RequestUpdateMagWindow) Sleep(100);
+	}
 
 	std::shared_lock<std::shared_mutex> lock1(MagnificationBackgroundSm);
 	IMAGE blending = MagnificationBackground;
@@ -305,6 +311,11 @@ void ControlTestMain()
 		}
 	}
 }
+
+std::chrono::milliseconds duration;
+std::chrono::milliseconds duration1;
+std::chrono::milliseconds duration2;
+std::chrono::milliseconds duration3;
 
 LRESULT CALLBACK TestWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
@@ -593,6 +604,14 @@ int test_main()
 					}
 
 					text += L"\n\n撤回库当前大小：" + to_wstring(max(0, int(RecallImage.size()) - 1));
+					text += L"\n最后一次绘图处理延迟：" + to_wstring(duration.count()) + L"ms";
+					if (duration.count() != 0)
+					{
+						text += L"\n- 笔迹刷新用时：" + to_wstring(duration1.count()) + L"ms";
+						text += L"\n- 智能绘图用时：" + to_wstring(duration2.count() - duration1.count()) + L"ms";
+						text += L"\n- 撤回记录用时：" + to_wstring(duration3.count() - duration2.count()) + L"ms";
+						text += L"\n- 刷新显示用时：" + to_wstring(duration.count() - duration3.count()) + L"ms";
+					}
 
 					text += L"\n\nCOM二进制接口 联动组件 状态：\n";
 					text += ppt_LinkTest;
@@ -638,7 +657,7 @@ int test_main()
 					}
 
 					wstring text = L"程序版本：" + string_to_wstring(edition_code);
-					text += L"\n程序发布版本：" + string_to_wstring(edition_date) + L" 测试分支（将于 10月20日 前切换到默认分支）";
+					text += L"\n程序发布版本：" + string_to_wstring(edition_date) + L" 默认分支";
 					text += L"\n程序构建时间：" + buildTime;
 					text += L"\n用户ID：" + userid;
 
@@ -882,6 +901,9 @@ void FreezeFrameWindow()
 			IMAGE MagnificationTmp;
 			if (!IsWindowVisible(freeze_window))
 			{
+				RequestUpdateMagWindow = true;
+				while (RequestUpdateMagWindow) Sleep(100);
+
 				std::shared_lock<std::shared_mutex> lock1(MagnificationBackgroundSm);
 				MagnificationTmp = MagnificationBackground;
 				lock1.unlock();
@@ -988,7 +1010,7 @@ void FreezeFrameWindow()
 
 				if (!IsWindowVisible(freeze_window)) ShowWindow(freeze_window, SW_SHOWNOACTIVATE);
 
-				hiex::DelayFPS(24);
+				hiex::DelayFPS(23);
 			}
 
 			FreezePPT = false;
@@ -1159,6 +1181,8 @@ int drawpad_main()
 	::SetWindowLong(drawpad_window, GWL_EXSTYLE, nRet);
 
 	magnificationWindowReady++;
+	//LOG(INFO) << "成功初始化画笔窗口绘制模块";
+
 	{
 		SetImageColor(drawpad, RGBA(0, 0, 0, 1), true);
 		SetImageColor(alpha_drawpad, RGBA(0, 0, 0, 0), true);
@@ -1183,16 +1207,17 @@ int drawpad_main()
 
 		//启动绘图库程序
 		hiex::Gdiplus_Try_Starup();
-		MagInitialize();
+
+		//LOG(INFO) << "成功初始化画笔窗口绘制模块配置内容，并进入主循环";
 		while (!off_signal)
 		{
 			if (choose.select == true)
 			{
-				if (draw_content) last_drawpad = drawpad;
+				if (!RecallImage.empty()) last_drawpad = drawpad;
 
 				SetWindowRgn(drawpad_window, CreateRectRgn(0, 0, 0, 0), true);
 
-				if (draw_content)
+				if (!RecallImage.empty())
 				{
 					thread SaveScreenShot_thread(SaveScreenShot, last_drawpad);
 					SaveScreenShot_thread.detach();
@@ -1224,7 +1249,6 @@ int drawpad_main()
 				}
 				empty_drawpad = true;
 
-				draw_content = false;
 				{
 					ulwi.hdcSrc = GetImageHDC(&drawpad);
 					UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
@@ -1242,6 +1266,45 @@ int drawpad_main()
 				while (1)
 				{
 					SetWindowPos(drawpad_window, floating_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+					if (ppt_info.currentSlides != ppt_info_stay.CurrentPage || ppt_info.totalSlides != ppt_info_stay.TotalPage)
+					{
+						if (ppt_info.currentSlides != ppt_info_stay.CurrentPage && ppt_info.totalSlides == ppt_info_stay.TotalPage)
+						{
+							if (!RecallImage.empty())
+							{
+								ppt_img.is_save = true;
+								ppt_img.is_saved[ppt_info.currentSlides] = true;
+								ppt_img.image[ppt_info.currentSlides] = drawpad;
+								//SaveScreenShot(drawpad);
+							}
+
+							if (ppt_img.is_saved[ppt_info_stay.CurrentPage] == true)
+							{
+								drawpad = ppt_img.image[ppt_info_stay.CurrentPage];
+							}
+							else
+							{
+								if (ppt_info_stay.TotalPage != -1) SetImageColor(drawpad, RGBA(0, 0, 0, 1), true);
+							}
+
+							while (!RecallImage.empty())
+							{
+								RecallImage.pop_back();
+								deque<RecallStruct>(RecallImage).swap(RecallImage); // 使用swap技巧来释放未使用的内存
+							}
+						}
+						ppt_info.currentSlides = ppt_info_stay.CurrentPage;
+						ppt_info.totalSlides = ppt_info_stay.TotalPage;
+
+						{
+							RECT rcDirty = { 0,0,GetSystemMetrics(SM_CXSCREEN),GetSystemMetrics(SM_CYSCREEN) };
+
+							ulwi.hdcSrc = GetImageHDC(&drawpad);
+							ulwi.prcDirty = &rcDirty;
+							UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
+						}
+					}
+
 					Sleep(50);
 
 					if (off_signal) goto drawpad_main_end;
@@ -1279,10 +1342,10 @@ int drawpad_main()
 				//hiex::PreSetWindowShowState(SW_HIDE);
 				//HWND draw_window = initgraph(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 
+				std::chrono::high_resolution_clock::time_point start;
+
 				if (rubber.select == true)
 				{
-					draw_content = true;
-
 					mouse.last_x = pt.x, mouse.last_y = pt.y;
 
 					double rubbersize = 15, trubbersize = -1;
@@ -1312,13 +1375,13 @@ int drawpad_main()
 
 						if (setlist.experimental_functions)
 						{
-							if (speed <= 0.1) trubbersize = 60;
-							else if (speed <= 30) trubbersize = max(25, speed * 2.33 + 2.33);
-							else trubbersize = min(200, speed + 30);
+							if (speed <= 0.2) trubbersize = 60;
+							else if (speed <= 20) trubbersize = max(25, speed * 2.33 + 13.33);
+							else trubbersize = min(200, 3 * speed);
 
 							if (trubbersize == -1) trubbersize = rubbersize;
-							if (rubbersize < trubbersize) rubbersize = rubbersize + max(0.001, (trubbersize - rubbersize) / 50);
-							else rubbersize = rubbersize + min(-0.001, (trubbersize - rubbersize) / 50);
+							if (rubbersize < trubbersize) rubbersize = rubbersize + max(0.1, (trubbersize - rubbersize) / 50);
+							else if (rubbersize > trubbersize) rubbersize = rubbersize + min(-0.1, (trubbersize - rubbersize) / 50);
 						}
 						else rubbersize = 60;
 
@@ -1387,6 +1450,10 @@ int drawpad_main()
 						}
 					}
 
+					start = std::chrono::high_resolution_clock::now();
+					duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start);
+					duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start);
+
 					{
 						// 定义要更新的矩形区域
 						RECT rcDirty = { 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
@@ -1401,9 +1468,9 @@ int drawpad_main()
 					mouse.last_x = pt.x, mouse.last_y = pt.y;
 					RECT rcDirty;
 					int draw_width = brush.width;
-					draw_content = true;
 
 					double writing_distance = 0;
+					int instant_writing_distance = 0;
 					vector<Point> points = { Point(mouse.last_x, mouse.last_y) };
 					RECT circumscribed_rectangle = { -1,-1,-1,-1 };
 
@@ -1558,7 +1625,12 @@ int drawpad_main()
 									if (mouse.x > circumscribed_rectangle.right || circumscribed_rectangle.right == -1) circumscribed_rectangle.right = mouse.x;
 									if (mouse.y > circumscribed_rectangle.bottom || circumscribed_rectangle.bottom == -1) circumscribed_rectangle.bottom = mouse.y;
 
-									points.push_back(Point(mouse.x, mouse.y));
+									instant_writing_distance += (int)EuclideanDistance({ mouse.last_x, mouse.last_y }, { pt.x, pt.y });
+									if (instant_writing_distance >= 5)
+									{
+										points.push_back(Point(mouse.x, mouse.y));
+										instant_writing_distance %= 6;
+									}
 								}
 
 								{
@@ -1593,6 +1665,8 @@ int drawpad_main()
 							mouse.last_x = mouse.x, mouse.last_y = mouse.y;
 						}
 					}
+					start = std::chrono::high_resolution_clock::now();
+
 					if (brush.mode == 3 || brush.mode == 4)
 					{
 						drawpad = putout;
@@ -1610,13 +1684,15 @@ int drawpad_main()
 						SetWorkingImage(hiex::GetWindowImage());
 					}
 
+					duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start);
+
 					//智能绘图模块
 					if (brush.mode == 1)
 					{
 						double redundance = max(GetSystemMetrics(SM_CXSCREEN) / 192, min((GetSystemMetrics(SM_CXSCREEN)) / 76.8, double(GetSystemMetrics(SM_CXSCREEN)) / double((-0.036) * writing_distance + 135)));
 
 						//直线绘制
-						if (writing_distance >= 120 && (abs(circumscribed_rectangle.left - circumscribed_rectangle.right) >= 120 || abs(circumscribed_rectangle.top - circumscribed_rectangle.bottom) >= 120) && isLine(points, int(redundance)))
+						if (writing_distance >= 120 && (abs(circumscribed_rectangle.left - circumscribed_rectangle.right) >= 120 || abs(circumscribed_rectangle.top - circumscribed_rectangle.bottom) >= 120) && isLine(points, int(redundance), std::chrono::high_resolution_clock::now()))
 						{
 							Point start(points[0]), end(points[points.size() - 1]);
 
@@ -1795,13 +1871,15 @@ int drawpad_main()
 							hiex::EasyX_Gdiplus_RoundRect((float)x, (float)y, (float)w, (float)h, 3, 3, brush.color, (float)draw_width, false, SmoothingModeHighQuality, &drawpad);
 						}
 					}
+
+					duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start);
 				}
 
 				std::unique_lock<std::shared_mutex> lock3(PointPosSm);
 				TouchPos.erase(pid);
 				lock3.unlock();
 
-				if (RecallImage.empty() || (!RecallImage.empty() && !CompareImagesWithBuffer(&drawpad, &RecallImage.back().img)))
+				if (RecallImage.empty() || (brush.select || !CompareImagesWithBuffer(&drawpad, &RecallImage.back().img)))
 				{
 					RecallImage.push_back({ drawpad, extreme_point });
 					if (RecallImage.size() > 16)
@@ -1810,9 +1888,11 @@ int drawpad_main()
 						{
 							RecallImage.pop_front();
 						}
-						deque<RecallStruct>(RecallImage).swap(RecallImage); // 使用swap技巧来释放未使用的内存
+						//deque<RecallStruct>(RecallImage).swap(RecallImage); // 使用swap技巧来释放未使用的内存
 					}
 				}
+
+				duration3 = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start);
 
 				{
 					// 定义要更新的矩形区域
@@ -1822,6 +1902,8 @@ int drawpad_main()
 					ulwi.prcDirty = &rcDirty;
 					UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
 				}
+
+				duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start);
 			}
 
 			Sleep(1);
@@ -1830,7 +1912,7 @@ int drawpad_main()
 			{
 				if (ppt_info.currentSlides != ppt_info_stay.CurrentPage && ppt_info.totalSlides == ppt_info_stay.TotalPage)
 				{
-					if (draw_content)
+					if (!RecallImage.empty())
 					{
 						ppt_img.is_save = true;
 						ppt_img.is_saved[ppt_info.currentSlides] = true;

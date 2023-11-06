@@ -14,7 +14,7 @@ extern IMAGE test_sign[5];
 struct RecallStruct
 {
 	IMAGE img;
-	map<pair<int, int>, bool> extreme_point;
+	std::map<std::pair<int, int>, bool> extreme_point;
 };
 extern deque<RecallStruct> RecallImage;//≥∑ªÿ’ª
 

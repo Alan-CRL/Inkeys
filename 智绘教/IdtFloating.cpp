@@ -895,10 +895,9 @@ void DrawScreen()
 	already = true;
 	magnificationWindowReady++;
 
+	//LOG(INFO) << "成功初始化悬浮窗窗口绘制模块";
 	for (int for_num = 1; !off_signal; for_num = 2)
 	{
-		SetImageColor(background, RGBA(0, 0, 0, 0), true);
-
 		//UI绘制部分
 		{
 			if ((int)state == 0)
@@ -3816,6 +3815,7 @@ void DrawScreen()
 			}
 		}
 
+		SetImageColor(background, RGBA(0, 0, 0, 0), true);
 		if ((int)state == target_status)
 		{
 			{
@@ -4574,7 +4574,7 @@ void DrawScreen()
 		}
 		else state = target_status;
 
-		if (for_num == 1) ShowWindow(floating_window, SW_SHOW);
+		if (for_num == 1) ShowWindow(floating_window, SW_SHOW); //LOG(INFO) << "成功绘制悬浮窗窗口第一帧";
 		hiex::DelayFPS(40);
 	}
 
@@ -4671,6 +4671,11 @@ void MouseInteraction()
 						{
 							if (!m.lbutton)
 							{
+								std::shared_lock<std::shared_mutex> lock1(PointTempSm);
+								bool start = !TouchTemp.empty();
+								lock1.unlock();
+								if (start) break;
+
 								RecallImage.pop_back();
 								deque<RecallStruct>(RecallImage).swap(RecallImage); // 使用swap技巧来释放未使用的内存
 
@@ -5480,6 +5485,11 @@ void MouseInteraction()
 							{
 								if (!m.lbutton)
 								{
+									std::shared_lock<std::shared_mutex> lock1(PointTempSm);
+									bool start = !TouchTemp.empty();
+									lock1.unlock();
+									if (start) break;
+
 									RecallImage.pop_back();
 									deque<RecallStruct>(RecallImage).swap(RecallImage); // 使用swap技巧来释放未使用的内存
 
@@ -5644,22 +5654,33 @@ int floating_main()
 	thread_status[L"floating_main"] = true;
 	GetLocalTime(&sys_time);
 
+	//LOG(INFO) << "尝试启动PPT状态获取线程";
 	thread ppt_state_thread(ppt_state);
 	ppt_state_thread.detach();
+	//LOG(INFO) << "成功启动PPT状态获取线程";
+	//LOG(INFO) << "尝试启动PPT窗口绘制线程";
 	thread DrawControlWindow_thread(DrawControlWindow);
 	DrawControlWindow_thread.detach();
+	//LOG(INFO) << "成功启动PPT窗口绘制线程";
+	//LOG(INFO) << "尝试启动PPT窗口交互线程";
 	thread ControlManipulation_thread(ControlManipulation);
 	ControlManipulation_thread.detach();
+	//LOG(INFO) << "成功启动PPT窗口交互线程";
 	//thread GetTime_thread(GetTime);
 	//GetTime_thread.detach();
+	//LOG(INFO) << "尝试启动悬浮窗窗口绘制线程";
 	thread DrawScreen_thread(DrawScreen);
 	DrawScreen_thread.detach();
+	//LOG(INFO) << "成功启动悬浮窗窗口绘制线程";
 
+	//LOG(INFO) << "尝试启动黑名单窗口拦截线程";
 	thread black_block_thread(black_block);
 	black_block_thread.detach();
+	//LOG(INFO) << "成功启动黑名单窗口拦截线程";
 
 	if (!debug)
 	{
+		//LOG(INFO) << "尝试检查并补齐本地文件";
 		if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1)
 		{
 			//创建路径
@@ -5671,6 +5692,7 @@ int floating_main()
 				ExtractResource((string_to_wstring(global_path) + L"api\\智绘教CrashedHandlerClose.exe").c_str(), L"EXE", MAKEINTRESOURCE(202));
 			}
 		}
+		//LOG(INFO) << "成功检查并补齐本地文件";
 
 		/*
 		//注册icu
@@ -5682,12 +5704,17 @@ int floating_main()
 		}
 		*/
 
+		//LOG(INFO) << "尝试启动程序崩溃反馈线程";
 		thread CrashedHandler_thread(CrashedHandler);
 		CrashedHandler_thread.detach();
+		//LOG(INFO) << "成功启动程序崩溃反馈线程";
+		//LOG(INFO) << "尝试启动程序自动更新线程";
 		thread AutomaticUpdate_thread(AutomaticUpdate);
 		AutomaticUpdate_thread.detach();
+		//LOG(INFO) << "成功启动程序自动更新线程";
 	}
 
+	//LOG(INFO) << "进入悬浮窗窗口交互线程";
 	MouseInteraction();
 
 	while (1)

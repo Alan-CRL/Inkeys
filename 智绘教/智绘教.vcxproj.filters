@@ -201,9 +201,6 @@
     <ClInclude Include="IdtMain.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="IdtConfiguration.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="IdtRts.h">
       <Filter>头文件</Filter>
     </ClInclude>

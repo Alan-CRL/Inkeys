@@ -58,6 +58,8 @@
 #include <versionhelpers.h>							// 提供版本辅助函数
 #include <mutex>									// 提供互斥量相关功能
 #include <shared_mutex>								// 提供共享互斥量功能
+#include <unordered_map>
+//#include <spdlog/spdlog.h>						//提供日志记录服务
 
 #include "IdtKey.h" // 服务器密钥（我们不开源服务器密钥，以防您纂改我们的服务器）
 

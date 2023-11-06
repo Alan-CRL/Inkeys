@@ -2,8 +2,9 @@
 
 int uRealTimeStylus;
 
-bool touchDown = false;   // 表示触摸设备是否被按下
-int touchNum = 0;         // 触摸点的点击个数
+bool touchDown = false;							// 表示触摸设备是否被按下
+int touchNum = 0;								// 触摸点的点击个数
+unordered_map<LONG, pair<int, int>> PreviousPointPosition;	//用于速度计算
 
 unordered_map<LONG, double> TouchSpeed;
 unordered_map<LONG, TouchMode> TouchPos;
@@ -89,8 +90,7 @@ bool EnableRealTimeStylus(IRealTimeStylus* pRealTimeStylus)
 void RTSSpeed()
 {
 	int x, y;
-	int lastx = -1, lasty = -1;
-
+	double speed;
 	while (!off_signal)
 	{
 		for (int i = 0; i < touchNum; i++)
@@ -100,14 +100,16 @@ void RTSSpeed()
 			y = TouchPos[TouchList[i]].pt.y;
 			lock1.unlock();
 
-			if (lastx == -1 && lasty == -1) lastx = x, lasty = y;
-
-			double speed = (TouchSpeed[TouchList[i]] + sqrt(pow(x - lastx, 2) + pow(y - lasty, 2))) / 2;
-			std::unique_lock<std::shared_mutex> lock2(TouchSpeedSm);
-			TouchSpeed[TouchList[i]] = speed;
+			std::shared_lock<std::shared_mutex> lock2(TouchSpeedSm);
+			if (PreviousPointPosition[TouchList[i]].first == -1 && PreviousPointPosition[TouchList[i]].second == -1) PreviousPointPosition[TouchList[i]].first = x, PreviousPointPosition[TouchList[i]].second = y, speed = 1;
+			else speed = (TouchSpeed[TouchList[i]] + sqrt(pow(x - PreviousPointPosition[TouchList[i]].first, 2) + pow(y - PreviousPointPosition[TouchList[i]].second, 2))) / 2;
 			lock2.unlock();
 
-			lastx = x, lasty = y;
+			std::unique_lock<std::shared_mutex> lock3(TouchSpeedSm);
+			TouchSpeed[TouchList[i]] = speed;
+			lock3.unlock();
+
+			PreviousPointPosition[TouchList[i]].first = x, PreviousPointPosition[TouchList[i]].second = y;
 		}
 
 		hiex::DelayFPS(20);

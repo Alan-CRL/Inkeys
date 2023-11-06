@@ -12,6 +12,8 @@ bool SeewoCamera; //希沃视频展台是否开启
 #import "PptCOM.tlb" // C# 类库 PptCOM 项目库
 using namespace PptCOM;
 
+std::chrono::high_resolution_clock::time_point PPTManipulated;
+
 wstring LinkTest()
 {
 	wstring ret = L"COM库(.dll) 不存在，且发生严重错误，返回值被忽略";
@@ -152,7 +154,7 @@ void DrawControlWindow()
 
 				hiex::EasyX_Gdiplus_FillRoundRect(55 + 5, (float)GetSystemMetrics(SM_CYSCREEN) - 60 + 5, 70, 50, 20, 20, SET_ALPHA(RGB(100, 100, 100), 255), SET_ALPHA(WHITE, 160), 1, true, SmoothingModeHighQuality, &ppt_background);
 				{
-					wstring text = to_wstring(currentSlides == -1 ? totalSlides : currentSlides);
+					wstring text = currentSlides == -1 ? L"-" : to_wstring(currentSlides);
 					text += L"/";
 					text += to_wstring(totalSlides);
 
@@ -198,7 +200,7 @@ void DrawControlWindow()
 
 				hiex::EasyX_Gdiplus_FillRoundRect((float)GetSystemMetrics(SM_CXSCREEN) - 130, (float)GetSystemMetrics(SM_CYSCREEN) - 60 + 5, 70, 50, 20, 20, SET_ALPHA(RGB(130, 130, 130), 255), SET_ALPHA(WHITE, 160), 1, true, SmoothingModeHighQuality, &ppt_background);
 				{
-					wstring text = to_wstring(currentSlides == -1 ? totalSlides : currentSlides);
+					wstring text = currentSlides == -1 ? L"-" : to_wstring(currentSlides);
 					text += L"/";
 					text += to_wstring(totalSlides);
 
@@ -277,6 +279,8 @@ void ControlManipulation()
 							{
 								if (!m.lbutton)
 								{
+									PPTManipulated = std::chrono::high_resolution_clock::now();
+
 									SetForegroundWindow(ppt_show);
 									keybd_event(VK_LEFT, 0, 0, 0);
 									keybd_event(VK_LEFT, 0, KEYEVENTF_KEYUP, 0);
@@ -308,6 +312,8 @@ void ControlManipulation()
 							{
 								if (!m.lbutton)
 								{
+									PPTManipulated = std::chrono::high_resolution_clock::now();
+
 									SetForegroundWindow(ppt_show);
 									keybd_event(VK_RIGHT, 0, 0, 0);
 									keybd_event(VK_RIGHT, 0, KEYEVENTF_KEYUP, 0);
@@ -372,6 +378,8 @@ void ControlManipulation()
 							{
 								if (!m.lbutton)
 								{
+									PPTManipulated = std::chrono::high_resolution_clock::now();
+
 									SetForegroundWindow(ppt_show);
 									keybd_event(VK_LEFT, 0, 0, 0);
 									keybd_event(VK_LEFT, 0, KEYEVENTF_KEYUP, 0);
@@ -403,6 +411,8 @@ void ControlManipulation()
 							{
 								if (!m.lbutton)
 								{
+									PPTManipulated = std::chrono::high_resolution_clock::now();
+
 									SetForegroundWindow(ppt_show);
 									keybd_event(VK_RIGHT, 0, 0, 0);
 									keybd_event(VK_RIGHT, 0, KEYEVENTF_KEYUP, 0);
@@ -467,8 +477,18 @@ void ppt_state()
 	{
 		ppt_info_stay.CurrentPage = GetCurrentPage();
 		ppt_info_stay.TotalPage = GetTotalPage();
+
+		//Sleep(3000);
 		if (ppt_info_stay.TotalPage == -1 && !off_signal) Sleep(3000);
-		else if (!off_signal) Sleep(10);
+		else if (!off_signal && std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - PPTManipulated).count() <= 5000) Sleep(10);
+		else if (!off_signal)
+		{
+			for (int i = 0; i <= 15; i++)
+			{
+				Sleep(10);
+				if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - PPTManipulated).count() <= 5000) break;
+			}
+		}
 	}
 	thread_status[L"ppt_state"] = false;
 }

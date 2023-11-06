@@ -13,7 +13,7 @@
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
 
-extern bool main_open, draw_content;
+extern bool main_open;
 extern int TestMainMode;
 
 RECT DrawGradientLine(HDC hdc, int x1, int y1, int x2, int y2, float width, Color color);

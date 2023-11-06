@@ -22,4 +22,6 @@ LRESULT CALLBACK MagnifierWindowWndProc(HWND hWnd, UINT message, WPARAM wParam, 
 ATOM RegisterHostWindowClass(HINSTANCE hInstance);
 BOOL SetupMagnifier(HINSTANCE hinst);
 
+extern bool RequestUpdateMagWindow;
+
 void MagnifierThread();

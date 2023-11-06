@@ -303,17 +303,20 @@ double pointToLineSegmentDistance(Point lineStart, Point lineEnd, Point p)
 		return min(sqrt(pow(x3 - x1, 2) + pow(y3 - y1, 2)), sqrt(pow(x3 - x2, 2) + pow(y3 - y2, 2)));
 	}
 }
-bool isLine(vector<Point> points, int tolerance)
+bool isLine(vector<Point> points, int tolerance, std::chrono::high_resolution_clock::time_point start)
 {
 	int n = points.size();
 	if (n < 2) return false;
+	if (n == 2) return true;
 
 	double last_distance = 0;
 	int trend = 0; //1Ф¶Ал 2їїЅь
 	int fluctuate = 0;
 
-	for (int i = 1; i < n - 1; i++)
+	for (int i = 1; i < n - 1; i += 2)
 	{
+		if (i % 10 == 0 && std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count() > 100) return false;
+
 		double distance = pointToLineSegmentDistance(points[0], points[n - 1], points[i]);
 		if (distance > tolerance) return false;
 

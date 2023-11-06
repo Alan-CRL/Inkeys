@@ -27,6 +27,23 @@ int drawpad_main();
 int test_main();
 void FreezeFrameWindow();
 
+bool debug = false;
+bool already = false;
+
+wstring buildTime = __DATE__ L" " __TIME__; //构建时间
+string edition_date = "20231106a"; //程序发布日期
+string edition_code = "2311 - BUG Bash"; //程序版本
+
+wstring userid; //用户ID（主板序列号）
+string global_path; //程序当前路径
+
+string server_feedback, server_code;
+double server_updata_error, procedure_updata_error;
+wstring server_updata_error_reason;
+
+bool off_signal = false; //关闭指令
+map <wstring, bool> thread_status; //线程状态管理
+
 // 程序入口点
 int main()
 {
@@ -34,7 +51,19 @@ int main()
 	{
 		global_path = wstring_to_string(GetCurrentExeDirectory() + L"\\");
 	}
+	//程序日志初始化
+	//{
+	//	std::string logFilePath = global_path + "IDT.log";
+	//
+	//	// Create a logger with a specified file name, and a maximum size of 3MB per file
+	//	auto logger = spdlog::basic_logger_st("logger", logFilePath, 1024 * 1024 * 3);
+	//	// Set the logger to only output to the file, not to the console
+	//	logger->set_level(spdlog::level::trace);
+	//	logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%L%$] [thread %t] %v");
+	//}
+	//logger->info("完成程序日志初始化");
 
+	//LOG(INFO) << "尝试初始化DPI";
 	//DPI 初始化
 	{
 		HINSTANCE hUser32 = LoadLibrary(L"User32.dll");
@@ -48,6 +77,8 @@ int main()
 			}
 			FreeLibrary(hUser32);
 		}
+		//else LOG(ERROR) << "失败加载User32.dll";
+
 		//图像DPI转化
 		{
 			drawpad.Resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
@@ -56,6 +87,9 @@ int main()
 			pptdrawpad.Resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 		}
 	}
+	//LOG(INFO) << "成功初始化DPI";
+
+	//LOG(INFO) << "尝试初始化字体";
 	//字体初始化部分
 	{
 		HMODULE hModule = GetModuleHandle(NULL);
@@ -88,7 +122,9 @@ int main()
 		stringFormat_left.SetAlignment(StringAlignmentNear);
 		stringFormat_left.SetLineAlignment(StringAlignmentNear);
 	}
+	//LOG(INFO) << "成功初始化字体";
 
+	//LOG(INFO) << "尝试检查程序更新";
 	//程序更新判断
 	{
 		//当前程序为新版本
@@ -193,23 +229,48 @@ int main()
 			}
 		}
 	}
+	//LOG(INFO) << "成功检查程序更新";
 
+	//LOG(INFO) << "尝试初始化COM";
 	CoInitialize(NULL);
+	//LOG(INFO) << "成功初始化COM";
 
+	//LOG(INFO) << "尝试获取用户ID";
 	userid = GetMainHardDiskSerialNumber();
-	if (!isValidString(userid) || (userid.find(L"[") != userid.npos || userid.find(L"]") != userid.npos || userid.find(L";") != userid.npos || userid.find(L",") != userid.npos)) userid = L"无法正确识别";
+	if (userid.empty() || !isValidString(userid) || (userid.find(L"[") != userid.npos || userid.find(L"]") != userid.npos || userid.find(L";") != userid.npos || userid.find(L",") != userid.npos)) userid = L"无法正确识别";
+	//LOG(INFO) << "成功获取用户ID";
 
+	//桌面快捷方式注册
+	SetShortcut();
+
+	// 创建窗口
+
+	//LOG(INFO) << "尝试创建悬浮窗窗口";
 	hiex::PreSetWindowShowState(SW_HIDE);
 	floating_window = initgraph(background.getwidth(), background.getheight());
+	//LOG(INFO) << "成功创建悬浮窗窗口";
+
+	//LOG(INFO) << "尝试创建画笔窗口";
 	hiex::PreSetWindowShowState(SW_HIDE);
 	drawpad_window = initgraph(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+	//LOG(INFO) << "成功创建画笔窗口";
+
+	//LOG(INFO) << "尝试创建PPT控件";
 	hiex::PreSetWindowShowState(SW_HIDE);
 	ppt_window = initgraph(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+	//LOG(INFO) << "成功创建PPT控件";
+
+	//LOG(INFO) << "尝试创建背景窗口";
 	hiex::PreSetWindowShowState(SW_HIDE);
 	freeze_window = initgraph(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+	//LOG(INFO) << "成功创建背景窗口";
+
+	//LOG(INFO) << "尝试创建选项窗口";
 	hiex::PreSetWindowShowState(SW_HIDE);
 	test_window = initgraph(1010, 750);
+	//LOG(INFO) << "成功创建选项窗口";
 
+	//LOG(INFO) << "尝试获取配置信息";
 	//初始化信息获取
 	{
 		if (_waccess((string_to_wstring(global_path) + L"opt\\deploy.json").c_str(), 4) == -1)
@@ -270,11 +331,15 @@ int main()
 			MagnifierThread_thread.detach();
 		}
 	}
+	//LOG(INFO) << "成功获取配置信息";
 
+	//LOG(INFO) << "尝试加载PptCOM类库";
 	//PptCOM 组件加载
 	HANDLE hActCtx;
 	ULONG_PTR ulCookie;
 	{
+		ExtractResource((string_to_wstring(global_path) + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(222));
+
 		ACTCTX actCtx = { 0 };
 		actCtx.cbSize = sizeof(actCtx);
 		actCtx.dwFlags = ACTCTX_FLAG_RESOURCE_NAME_VALID | ACTCTX_FLAG_HMODULE_VALID;
@@ -285,14 +350,10 @@ int main()
 		ActivateActCtx(hActCtx, &ulCookie);
 
 		HMODULE hModule = LoadLibrary((string_to_wstring(global_path) + L"PptCOM.dll").c_str());
-		if (!hModule)
-		{
-			//加载失败
-			ExtractResource((string_to_wstring(global_path) + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(222));
-			hModule = LoadLibrary((string_to_wstring(global_path) + L"PptCOM.dll").c_str());
-		}
 	}
+	//LOG(INFO) << "成功加载PptCOM类库";
 
+	//LOG(INFO) << "尝试初始化RTS触控库";
 	// 初始化 RealTimeStylus 触控库
 	{
 		// Create RTS object
@@ -346,43 +407,49 @@ int main()
 		thread RTSSpeed_thread(RTSSpeed);
 		RTSSpeed_thread.detach();
 	}
+	//LOG(INFO) << "成功初始化RTS触控库";
 
+	//LOG(INFO) << "尝试启动悬浮窗窗口线程";
 	thread floating_main_thread(floating_main);
 	floating_main_thread.detach();
+	//LOG(INFO) << "成功启动悬浮窗窗口线程";
+	//LOG(INFO) << "尝试启动画笔窗口线程";
 	thread drawpad_main_thread(drawpad_main);
 	drawpad_main_thread.detach();
+	//LOG(INFO) << "成功启动画笔窗口线程";
+
+	//LOG(INFO) << "尝试启动选项窗口线程";
 	thread test_main_thread(test_main);
 	test_main_thread.detach();
+	//LOG(INFO) << "成功启动选项窗口线程";
+	//LOG(INFO) << "尝试启动背景窗口线程";
 	thread FreezeFrameWindow_thread(FreezeFrameWindow);
 	FreezeFrameWindow_thread.detach();
+	//LOG(INFO) << "成功启动背景窗口线程";
 
+	//LOG(INFO) << "尝试启动程序网络注册线程";
 	thread NetUpdate_thread(NetUpdate);
 	NetUpdate_thread.detach();
+	//LOG(INFO) << "成功启动程序网络注册线程";
 
 	while (!off_signal) Sleep(500);
-	while (1) if (!thread_status[L"floating_main"] && !thread_status[L"drawpad_main"] && !thread_status[L"test_main"] && !thread_status[L"NetUpdate"]) break;
+
+	//LOG(INFO) << "尝试结束各线程，将关闭程序";
+
+	int i = 1;
+	for (; i <= 10; i++)
+	{
+		if (!thread_status[L"floating_main"] && !thread_status[L"drawpad_main"] && !thread_status[L"test_main"] && !thread_status[L"NetUpdate"]) break;
+		Sleep(500);
+	}
 
 	// 反初始化 COM 环境
 	CoUninitialize();
 	DeactivateActCtx(0, ulCookie);
 	ReleaseActCtx(hActCtx);
 
+	//if (i > 10) LOG(ERROR) << "失败结束各线程，程序将强制退出";
+	//else LOG(INFO) << "成功结束各线程，将关闭程序";
+
 	return 0;
 }
-
-bool debug = false;
-bool already = false;
-
-wstring buildTime = __DATE__ L" " __TIME__; //构建时间
-string edition_date = "20231013a"; //程序发布日期
-string edition_code = "2310 - BUG Bash"; //程序版本
-
-wstring userid; //用户ID（主板序列号）
-string global_path; //程序当前路径
-
-string server_feedback, server_code;
-double server_updata_error, procedure_updata_error;
-wstring server_updata_error_reason;
-
-bool off_signal = false; //关闭指令
-map <wstring, bool> thread_status; //线程状态管理

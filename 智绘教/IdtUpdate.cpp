@@ -69,7 +69,7 @@ wstring get_domain_name(wstring url) {
 wstring convertToHttp(const wstring& url)
 {
 	//¸üĞÂ±£ÏÕ
-	if (getCurrentDate() >= L"20231020") return url;
+	//if (getCurrentDate() >= L"20231020") return url;
 
 	wstring httpPrefix = L"http://";
 	if (url.length() >= 7 && url.compare(0, 7, httpPrefix) == 0) return url;
