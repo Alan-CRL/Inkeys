@@ -15,7 +15,7 @@
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{c74d4d04-f81c-42fe-8d90-7042ba3bb8a0}</ProjectGuid>
     <RootNamespace>智绘教</RootNamespace>
-    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.22000.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -97,7 +97,6 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="IdtConfiguration.h" />
     <ClInclude Include="hashlib2plus\hashlibpp.h" />
     <ClInclude Include="hashlib2plus\hl_exception.h" />
     <ClInclude Include="hashlib2plus\hl_hashwrapper.h" />
@@ -145,14 +144,18 @@
     <ClInclude Include="HiEasyX\HiSysGUI\SysRadioButton.h" />
     <ClInclude Include="HiEasyX\HiSysGUI\SysStatic.h" />
     <ClInclude Include="HiEasyX\HiWindow.h" />
+    <ClInclude Include="IdtDisplayManagement.h" />
     <ClInclude Include="IdtDrawpad.h" />
     <ClInclude Include="IdtFloating.h" />
+    <ClInclude Include="IdtFreezeFrame.h" />
+    <ClInclude Include="IdtHistoricalDrawpad.h" />
     <ClInclude Include="IdtImage.h" />
     <ClInclude Include="IdtKey.h" />
     <ClInclude Include="IdtMagnification.h" />
     <ClInclude Include="IdtMain.h" />
     <ClInclude Include="IdtOther.h" />
     <ClInclude Include="IdtPlug-in.h" />
+    <ClInclude Include="IdtSkin.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="IdtRts.h" />
     <ClInclude Include="stb_image\stb-master\stb_image.h" />
@@ -166,6 +169,7 @@
     <ClInclude Include="zip_utils\zip.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="IdtDisplayManagement.cpp" />
     <ClCompile Include="IdtDraw.cpp" />
     <ClCompile Include="IdtDraw.h" />
     <ClCompile Include="hashlib2plus\hl_md5.cpp" />
@@ -207,9 +211,12 @@
     <ClCompile Include="HiEasyX\HiWindow.cpp" />
     <ClCompile Include="IdtDrawpad.cpp" />
     <ClCompile Include="IdtFloating.cpp" />
+    <ClCompile Include="IdtFreezeFrame.cpp" />
+    <ClCompile Include="IdtHistoricalDrawpad.cpp" />
     <ClCompile Include="IdtImage.cpp" />
     <ClCompile Include="IdtKey.cpp" />
     <ClCompile Include="IdtRts.cpp" />
+    <ClCompile Include="IdtSkin.cpp" />
     <ClCompile Include="json\lib_json\json_reader.cpp" />
     <ClCompile Include="json\lib_json\json_value.cpp" />
     <ClCompile Include="json\lib_json\json_writer.cpp" />
@@ -255,6 +262,9 @@
     <Image Include="src\sign1.png" />
     <Image Include="src\sign2.png" />
     <Image Include="src\sign3.png" />
+    <Image Include="src\skin\dragon.png" />
+    <Image Include="src\skin\dragon_background.png" />
+    <Image Include="src\skin\dragon_sign.png" />
     <Image Include="src\tick.png" />
     <Image Include="src\undo.png" />
     <Image Include="src\weather\png00001.png" />

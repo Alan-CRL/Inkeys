@@ -4,11 +4,12 @@
 floating_windowsStruct floating_windows;
 
 IMAGE floating_icon[20], sign;
+IMAGE skin[5];
 
 double state;
 double target_status;
 
-bool RestoreSketchpad, empty_drawpad = true;
+bool reserve_drawpad = false;
 bool smallcard_refresh = true;
 
 //置顶程序窗口
@@ -112,17 +113,30 @@ IMAGE DrawHSVWheel(int r, int z, int angle)
 
 	return ret;
 }
+//时钟皮肤
+pair<double, double> GetPointOnCircle(double x, double y, double r, double angle)
+{
+	// 将角度转换为弧度
+	double radian = (angle * 3.14159265358979323846) / 180.0;
+
+	// 计算圆上点的坐标
+	double px = x + r * sin(radian);
+	double py = y - r * cos(radian);
+
+	return make_pair(px + 0.5, py + 0.5);
+}
 
 //绘制屏幕
 void DrawScreen()
 {
+	Bitmap* bskin3;
+
 	thread_status[L"DrawScreen"] = true;
 	//初始化
 	{
-		//画笔配置初始化
+		//模式配置初始化
 		{
 			choose.select = true;
-			brush.color = brush.primary_colour = RGBA(50, 110, 217, 255);
 		}
 		//媒体资源读取
 		{
@@ -146,11 +160,17 @@ void DrawScreen()
 			loadimage(&floating_icon[14], L"PNG", L"icon14", 20, 20, true);
 			loadimage(&floating_icon[15], L"PNG", L"icon15", 20, 20, true);
 
-			loadimage(&floating_icon[16], L"PNG", L"icon16");
-			loadimage(&floating_icon[18], L"PNG", L"icon18");
+			loadimage(&floating_icon[16], L"PNG", L"icon16", 25, 25, true);
+			loadimage(&floating_icon[18], L"PNG", L"icon18", 20, 20, true);
 			loadimage(&floating_icon[17], L"PNG", L"icon17", 20, 20, true);
 
 			loadimage(&sign, L"PNG", L"sign1", 30, 30, true);
+
+			loadimage(&skin[1], L"PNG", L"skin1");
+			loadimage(&skin[2], L"PNG", L"skin1-2");
+			loadimage(&skin[3], L"PNG", L"skin1-3");
+
+			bskin3 = IMAGEToBitmap(&skin[3]);
 		}
 
 		//窗口初始化
@@ -171,6 +191,12 @@ void DrawScreen()
 			SetWindowLong(floating_window, GWL_EXSTYLE, WS_EX_TOOLWINDOW);//隐藏任务栏
 
 			//SetWindowTransparent(true, floating_windows.translucent = 200);
+
+			// 禁用点击手势
+			//GESTURECONFIG gc = { 0 };
+			//gc.dwID = 1;
+			//gc.dwWant = 0;
+			//SetGestureConfig(floating_window, 0, 1, &gc, sizeof(GESTURECONFIG));
 		}
 		thread TopWindow_thread(TopWindow);
 		TopWindow_thread.detach();
@@ -892,21 +918,31 @@ void DrawScreen()
 	nRet |= WS_EX_LAYERED;
 	::SetWindowLong(floating_window, GWL_EXSTYLE, nRet);
 
+	graphics.SetSmoothingMode(SmoothingModeHighQuality);
+
 	already = true;
 	magnificationWindowReady++;
 
+	//LOG(INFO) << "成功初始化悬浮窗窗口绘制模块";
+	clock_t tRecord = clock();
 	for (int for_num = 1; !off_signal; for_num = 2)
 	{
-		SetImageColor(background, RGBA(0, 0, 0, 0), true);
-
-		//UI绘制部分
+		//UI计算部分
 		{
 			if ((int)state == 0)
 			{
 				//圆形
 				{
-					UIControlColorTarget[L"Ellipse/Ellipse1/fill"].v = RGBA(0, 0, 0, 150);
-					UIControlColorTarget[L"Ellipse/Ellipse1/frame"].v = !choose.select && !rubber.select ? brush.color : RGB(255, 255, 255);
+					if (skin_mode == 1 || skin_mode == 2) UIControlColorTarget[L"Ellipse/Ellipse1/fill"].v = RGBA(0, 0, 0, 150);
+					else if (skin_mode == 3) UIControlColorTarget[L"Ellipse/Ellipse1/fill"].v = RGBA(0, 0, 0, 180);//龙年迎新皮肤测试
+
+					if (!choose.select && !rubber.select) UIControlColorTarget[L"Ellipse/Ellipse1/frame"].v = brush.color;
+					else
+					{
+						if (skin_mode == 1 || skin_mode == 2) UIControlColorTarget[L"Ellipse/Ellipse1/frame"].v = RGBA(255, 255, 225, 255);
+						else if (skin_mode == 3) UIControlColorTarget[L"Ellipse/Ellipse1/frame"].v = RGBA(235, 151, 39, 255);//龙年迎新皮肤测试
+					}
+
 					UIControlTarget[L"Image/Sign1/frame_transparency"].v = float(255);
 				}
 				//圆角矩形
@@ -1469,8 +1505,10 @@ void DrawScreen()
 				//图像
 				{
 					{
-						if (UIControl[L"Image/Sign1/transparency"].v <= 150) UIControlTarget[L"Image/Sign1/transparency"].v = float(255);
-						else if (UIControl[L"Image/Sign1/transparency"].v >= 255) UIControlTarget[L"Image/Sign1/transparency"].v = float(150);
+						UIControlTarget[L"Image/Sign1/transparency"].v = float(255);
+
+						//if (UIControl[L"Image/Sign1/transparency"].v <= 150) UIControlTarget[L"Image/Sign1/transparency"].v = float(255);
+						//else if (UIControl[L"Image/Sign1/transparency"].v >= 255) UIControlTarget[L"Image/Sign1/transparency"].v = float(150);
 					}
 					//选择
 					{
@@ -1687,7 +1725,14 @@ void DrawScreen()
 				//圆形
 				{
 					UIControlColorTarget[L"Ellipse/Ellipse1/fill"].v = RGBA(0, 111, 225, 255);
-					UIControlColorTarget[L"Ellipse/Ellipse1/frame"].v = RGBA(0, 111, 225, 255);
+
+					if (skin_mode == 1 || skin_mode == 2) UIControlColorTarget[L"Ellipse/Ellipse1/frame"].v = RGBA(0, 111, 225, 255);
+					else if (skin_mode == 3)
+					{
+						if (!choose.select && !rubber.select) UIControlColorTarget[L"Ellipse/Ellipse1/frame"].v = brush.color;
+						else UIControlColorTarget[L"Ellipse/Ellipse1/frame"].v = RGBA(235, 151, 39, 255);
+					}
+
 					UIControlTarget[L"Image/Sign1/frame_transparency"].v = float(255);
 				}
 				//圆角矩形
@@ -2870,9 +2915,9 @@ void DrawScreen()
 											UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/x"].v = float(385 - UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/width"].v / 2);
 											UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/y"].v = float(floating_windows.height - 312 + 25 - UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/height"].v / 2);
 
-											UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/width"].v = float(40);
-											UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/height"].v = float(40);
-											if (UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v == UIControl[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v) UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v = float(40);
+											UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/width"].v = float(35);
+											UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/height"].v = float(35);
+											if (UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v == UIControl[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v) UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v = float(35);
 										}
 										else
 										{
@@ -2881,7 +2926,7 @@ void DrawScreen()
 
 											UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/width"].v = float(4);
 											UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/height"].v = float(4);
-											if (UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v == UIControl[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v) UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v = float(4);
+											if (UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v == UIControl[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v) UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v = float(3);
 										}
 
 										UIControlColorTarget[L"RoundRect/PaintThicknessSchedule4a/fill"].v = SET_ALPHA(brush.color, 255);
@@ -3385,7 +3430,7 @@ void DrawScreen()
 					}
 					//画笔
 					{
-						if (brush.width >= 100) UIControlTarget[L"Image/brush/x"].v = float(96 + 23);
+						if (brush.width >= 100 && brush.select == true) UIControlTarget[L"Image/brush/x"].v = float(96 + 23);
 						else UIControlTarget[L"Image/brush/x"].v = float(96 + 28);
 						UIControlTarget[L"Image/brush/y"].v = float(floating_windows.height - 140);
 
@@ -3531,7 +3576,7 @@ void DrawScreen()
 						UIControlTarget[L"Words/brush/top"].v = float(floating_windows.height - 155 + 48);
 						UIControlTarget[L"Words/brush/right"].v = float(96 + 7 + 83);
 						UIControlTarget[L"Words/brush/bottom"].v = float(floating_windows.height - 155 + 48 + 48);
-						if (brush.select) UIControlColorTarget[L"Words/brush/words_color"].v = SET_ALPHA(brush.color, 255), RestoreSketchpad = true;
+						if (brush.select) UIControlColorTarget[L"Words/brush/words_color"].v = SET_ALPHA(brush.color, 255);
 						else UIControlColorTarget[L"Words/brush/words_color"].v = RGBA(130, 130, 130, 255);
 
 						{
@@ -3816,12 +3861,56 @@ void DrawScreen()
 			}
 		}
 
+		SetImageColor(background, RGBA(0, 0, 0, 0), true);
 		if ((int)state == target_status)
 		{
 			{
 				{
 					//画笔粗细调整
-					hiex::EasyX_Gdiplus_FillRoundRect(UIControl[L"RoundRect/PaintThicknessAdjust/x"].v, UIControl[L"RoundRect/PaintThicknessAdjust/y"].v, UIControl[L"RoundRect/PaintThicknessAdjust/width"].v, UIControl[L"RoundRect/PaintThicknessAdjust/height"].v, UIControl[L"RoundRect/PaintThicknessAdjust/ellipsewidth"].v, UIControl[L"RoundRect/PaintThicknessAdjust/ellipseheight"].v, UIControlColor[L"RoundRect/PaintThicknessAdjust/frame"].v, UIControlColor[L"RoundRect/PaintThicknessAdjust/fill"].v, 2, true, SmoothingModeHighQuality, &background);
+					{
+						if (skin_mode == 1 || skin_mode == 2) hiex::EasyX_Gdiplus_FillRoundRect(UIControl[L"RoundRect/PaintThicknessAdjust/x"].v, UIControl[L"RoundRect/PaintThicknessAdjust/y"].v, UIControl[L"RoundRect/PaintThicknessAdjust/width"].v, UIControl[L"RoundRect/PaintThicknessAdjust/height"].v, UIControl[L"RoundRect/PaintThicknessAdjust/ellipsewidth"].v, UIControl[L"RoundRect/PaintThicknessAdjust/ellipseheight"].v, UIControlColor[L"RoundRect/PaintThicknessAdjust/frame"].v, UIControlColor[L"RoundRect/PaintThicknessAdjust/fill"].v, 2, true, SmoothingModeHighQuality, &background);
+						else if (skin_mode == 3)
+						{
+							Gdiplus::ImageAttributes imageAttributes;
+
+							float alpha = (float)((UIControlColor[L"RoundRect/PaintThicknessAdjust/fill"].v >> 24) & 0xFF) / 255.0f * 0.4f;
+							Gdiplus::ColorMatrix colorMatrix = {
+								1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+								0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+								0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+								0.0f, 0.0f, 0.0f, alpha, 0.0f,
+								0.0f, 0.0f, 0.0f, 0.0f, 1.0f
+							};
+							imageAttributes.SetColorMatrix(&colorMatrix, Gdiplus::ColorMatrixFlagsDefault, Gdiplus::ColorAdjustTypeBitmap);
+
+							float x = UIControl[L"RoundRect/PaintThicknessAdjust/x"].v;
+							float y = UIControl[L"RoundRect/PaintThicknessAdjust/y"].v;
+							float width = UIControl[L"RoundRect/PaintThicknessAdjust/width"].v;
+							float height = UIControl[L"RoundRect/PaintThicknessAdjust/height"].v;
+							float ellipsewidth = UIControl[L"RoundRect/PaintThicknessAdjust/ellipsewidth"].v;
+							float ellipseheight = UIControl[L"RoundRect/PaintThicknessAdjust/ellipseheight"].v;
+
+							hiex::EasyX_Gdiplus_SolidRoundRect(x, y, width, height, ellipsewidth, ellipseheight, UIControlColor[L"RoundRect/PaintThicknessAdjust/fill"].v, true, SmoothingModeHighQuality, &background);
+
+							Graphics graphics(GetImageHDC(&background));
+							GraphicsPath path;
+
+							path.AddArc(x, y, ellipsewidth, ellipseheight, 180, 90);
+							path.AddArc(x + width - ellipsewidth - 1, y, ellipsewidth, ellipseheight, 270, 90);
+							path.AddArc(x + width - ellipsewidth - 1, y + height - ellipseheight - 1, ellipsewidth, ellipseheight, 0, 90);
+							path.AddArc(x, y + height - ellipseheight - 1, ellipsewidth, ellipseheight, 90, 90);
+							path.CloseFigure();
+
+							Region region(&path);
+							graphics.SetClip(&region, CombineModeReplace);
+
+							graphics.DrawImage(bskin3, Gdiplus::Rect((int)x, (int)y, (int)width, (int)height), (int)x, (int)y, (int)width, (int)height, Gdiplus::UnitPixel, &imageAttributes);
+
+							graphics.ResetClip();
+
+							hiex::EasyX_Gdiplus_RoundRect(x, y, width, height, ellipsewidth, ellipseheight, UIControlColor[L"RoundRect/PaintThicknessAdjust/frame"].v, 2, true, SmoothingModeHighQuality, &background);
+						}
+					}
 
 					hiex::EasyX_Gdiplus_SolidRoundRect(UIControl[L"RoundRect/PaintThicknessSchedule1/x"].v, UIControl[L"RoundRect/PaintThicknessSchedule1/y"].v, UIControl[L"RoundRect/PaintThicknessSchedule1/width"].v, UIControl[L"RoundRect/PaintThicknessSchedule1/height"].v, UIControl[L"RoundRect/PaintThicknessSchedule1/ellipsewidth"].v, UIControl[L"RoundRect/PaintThicknessSchedule1/ellipseheight"].v, UIControlColor[L"RoundRect/PaintThicknessSchedule1/fill"].v, true, SmoothingModeHighQuality, &background);
 					hiex::EasyX_Gdiplus_SolidRoundRect(UIControl[L"RoundRect/PaintThicknessSchedule2/x"].v, UIControl[L"RoundRect/PaintThicknessSchedule2/y"].v, UIControl[L"RoundRect/PaintThicknessSchedule2/width"].v, UIControl[L"RoundRect/PaintThicknessSchedule2/height"].v, UIControl[L"RoundRect/PaintThicknessSchedule2/ellipsewidth"].v, UIControl[L"RoundRect/PaintThicknessSchedule2/ellipseheight"].v, UIControlColor[L"RoundRect/PaintThicknessSchedule2/fill"].v, true, SmoothingModeHighQuality, &background);
@@ -3832,7 +3921,50 @@ void DrawScreen()
 					hiex::EasyX_Gdiplus_SolidRoundRect(UIControl[L"RoundRect/PaintThicknessSchedule6a/x"].v, UIControl[L"RoundRect/PaintThicknessSchedule6a/y"].v, UIControl[L"RoundRect/PaintThicknessSchedule6a/width"].v, UIControl[L"RoundRect/PaintThicknessSchedule6a/height"].v, UIControl[L"RoundRect/PaintThicknessSchedule6a/ellipse"].v, UIControl[L"RoundRect/PaintThicknessSchedule6a/ellipse"].v, UIControlColor[L"RoundRect/PaintThicknessSchedule6a/fill"].v, true, SmoothingModeHighQuality, &background);
 
 					//画笔颜色选择
-					hiex::EasyX_Gdiplus_FillRoundRect(UIControl[L"RoundRect/BrushColorChoose/x"].v, UIControl[L"RoundRect/BrushColorChoose/y"].v, UIControl[L"RoundRect/BrushColorChoose/width"].v, UIControl[L"RoundRect/BrushColorChoose/height"].v, UIControl[L"RoundRect/BrushColorChoose/ellipsewidth"].v, UIControl[L"RoundRect/BrushColorChoose/ellipseheight"].v, UIControlColor[L"RoundRect/BrushColorChoose/frame"].v, UIControlColor[L"RoundRect/BrushColorChoose/fill"].v, 1, true, SmoothingModeHighQuality, &background);
+					{
+						if (skin_mode == 1 || skin_mode == 2)hiex::EasyX_Gdiplus_FillRoundRect(UIControl[L"RoundRect/BrushColorChoose/x"].v, UIControl[L"RoundRect/BrushColorChoose/y"].v, UIControl[L"RoundRect/BrushColorChoose/width"].v, UIControl[L"RoundRect/BrushColorChoose/height"].v, UIControl[L"RoundRect/BrushColorChoose/ellipsewidth"].v, UIControl[L"RoundRect/BrushColorChoose/ellipseheight"].v, UIControlColor[L"RoundRect/BrushColorChoose/frame"].v, UIControlColor[L"RoundRect/BrushColorChoose/fill"].v, 1, true, SmoothingModeHighQuality, &background);
+						else if (skin_mode == 3)
+						{
+							Gdiplus::ImageAttributes imageAttributes;
+
+							float alpha = (float)((UIControlColor[L"RoundRect/BrushColorChoose/fill"].v >> 24) & 0xFF) / 255.0f * 0.4f;
+							Gdiplus::ColorMatrix colorMatrix = {
+								1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+								0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+								0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+								0.0f, 0.0f, 0.0f, alpha, 0.0f,
+								0.0f, 0.0f, 0.0f, 0.0f, 1.0f
+							};
+							imageAttributes.SetColorMatrix(&colorMatrix, Gdiplus::ColorMatrixFlagsDefault, Gdiplus::ColorAdjustTypeBitmap);
+
+							float x = UIControl[L"RoundRect/BrushColorChoose/x"].v;
+							float y = UIControl[L"RoundRect/BrushColorChoose/y"].v;
+							float width = UIControl[L"RoundRect/BrushColorChoose/width"].v;
+							float height = UIControl[L"RoundRect/BrushColorChoose/height"].v;
+							float ellipsewidth = UIControl[L"RoundRect/BrushColorChoose/ellipsewidth"].v;
+							float ellipseheight = UIControl[L"RoundRect/BrushColorChoose/ellipseheight"].v;
+
+							hiex::EasyX_Gdiplus_SolidRoundRect(x, y, width, height, ellipsewidth, ellipseheight, UIControlColor[L"RoundRect/BrushColorChoose/fill"].v, true, SmoothingModeHighQuality, &background);
+
+							Graphics graphics(GetImageHDC(&background));
+							GraphicsPath path;
+
+							path.AddArc(x, y, ellipsewidth, ellipseheight, 180, 90);
+							path.AddArc(x + width - ellipsewidth - 1, y, ellipsewidth, ellipseheight, 270, 90);
+							path.AddArc(x + width - ellipsewidth - 1, y + height - ellipseheight - 1, ellipsewidth, ellipseheight, 0, 90);
+							path.AddArc(x, y + height - ellipseheight - 1, ellipsewidth, ellipseheight, 90, 90);
+							path.CloseFigure();
+
+							Region region(&path);
+							graphics.SetClip(&region, CombineModeReplace);
+
+							graphics.DrawImage(bskin3, Gdiplus::Rect((int)x, (int)y, (int)width, (int)height), (int)x, (int)y, (int)width, (int)height, Gdiplus::UnitPixel, &imageAttributes);
+
+							graphics.ResetClip();
+
+							hiex::EasyX_Gdiplus_RoundRect(x, y, width, height, ellipsewidth, ellipseheight, UIControlColor[L"RoundRect/BrushColorChoose/frame"].v, 2, true, SmoothingModeHighQuality, &background);
+						}
+					}
 					if (UIControl[L"RoundRect/BrushColorChooseWheel/transparency"].v != 0)
 					{
 						std::unique_lock<std::shared_mutex> lock(ColorPaletteSm);
@@ -3886,7 +4018,50 @@ void DrawScreen()
 					}
 				}
 
-				hiex::EasyX_Gdiplus_FillRoundRect(UIControl[L"RoundRect/BrushTop/x"].v, UIControl[L"RoundRect/BrushTop/y"].v, UIControl[L"RoundRect/BrushTop/width"].v, UIControl[L"RoundRect/BrushTop/height"].v, UIControl[L"RoundRect/BrushTop/ellipseheight"].v, UIControl[L"RoundRect/BrushTop/ellipsewidth"].v, UIControlColor[L"RoundRect/BrushTop/frame"].v, UIControlColor[L"RoundRect/BrushTop/fill"].v, 2, true, SmoothingModeHighQuality, &background);
+				{
+					if (skin_mode == 1 || skin_mode == 2) hiex::EasyX_Gdiplus_FillRoundRect(UIControl[L"RoundRect/BrushTop/x"].v, UIControl[L"RoundRect/BrushTop/y"].v, UIControl[L"RoundRect/BrushTop/width"].v, UIControl[L"RoundRect/BrushTop/height"].v, UIControl[L"RoundRect/BrushTop/ellipseheight"].v, UIControl[L"RoundRect/BrushTop/ellipsewidth"].v, UIControlColor[L"RoundRect/BrushTop/frame"].v, UIControlColor[L"RoundRect/BrushTop/fill"].v, 2, true, SmoothingModeHighQuality, &background);
+					else if (skin_mode == 3)
+					{
+						Gdiplus::ImageAttributes imageAttributes;
+
+						float alpha = (float)((UIControlColor[L"RoundRect/BrushTop/fill"].v >> 24) & 0xFF) / 255.0f * 0.4f;
+						Gdiplus::ColorMatrix colorMatrix = {
+							1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+							0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+							0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+							0.0f, 0.0f, 0.0f, alpha, 0.0f,
+							0.0f, 0.0f, 0.0f, 0.0f, 1.0f
+						};
+						imageAttributes.SetColorMatrix(&colorMatrix, Gdiplus::ColorMatrixFlagsDefault, Gdiplus::ColorAdjustTypeBitmap);
+
+						float x = UIControl[L"RoundRect/BrushTop/x"].v;
+						float y = UIControl[L"RoundRect/BrushTop/y"].v;
+						float width = UIControl[L"RoundRect/BrushTop/width"].v;
+						float height = UIControl[L"RoundRect/BrushTop/height"].v;
+						float ellipsewidth = UIControl[L"RoundRect/BrushTop/ellipsewidth"].v;
+						float ellipseheight = UIControl[L"RoundRect/BrushTop/ellipseheight"].v;
+
+						hiex::EasyX_Gdiplus_SolidRoundRect(x, y, width, height, ellipsewidth, ellipseheight, UIControlColor[L"RoundRect/BrushTop/fill"].v, true, SmoothingModeHighQuality, &background);
+
+						Graphics graphics(GetImageHDC(&background));
+						GraphicsPath path;
+
+						path.AddArc(x, y, ellipsewidth, ellipseheight, 180, 90);
+						path.AddArc(x + width - ellipsewidth - 1, y, ellipsewidth, ellipseheight, 270, 90);
+						path.AddArc(x + width - ellipsewidth - 1, y + height - ellipseheight - 1, ellipsewidth, ellipseheight, 0, 90);
+						path.AddArc(x, y + height - ellipseheight - 1, ellipsewidth, ellipseheight, 90, 90);
+						path.CloseFigure();
+
+						Region region(&path);
+						graphics.SetClip(&region, CombineModeReplace);
+
+						graphics.DrawImage(bskin3, Gdiplus::Rect((int)x, (int)y, (int)width, (int)height), (int)x, (int)y, (int)width, (int)height, Gdiplus::UnitPixel, &imageAttributes);
+
+						graphics.ResetClip();
+
+						hiex::EasyX_Gdiplus_RoundRect(x, y, width, height, ellipsewidth, ellipseheight, UIControlColor[L"RoundRect/BrushTop/frame"].v, 2, true, SmoothingModeHighQuality, &background);
+					}
+				}
 				{
 					{
 						hiex::EasyX_Gdiplus_SolidRoundRect(UIControl[L"RoundRect/BrushColor1/x"].v, UIControl[L"RoundRect/BrushColor1/y"].v, UIControl[L"RoundRect/BrushColor1/width"].v, UIControl[L"RoundRect/BrushColor1/height"].v, UIControl[L"RoundRect/BrushColor1/ellipseheight"].v, UIControl[L"RoundRect/BrushColor1/ellipsewidth"].v, SET_ALPHA(UIControlColor[L"RoundRect/BrushColor1/fill"].v, (int)UIControl[L"RoundRect/BrushColor1/transparency"].v), true, SmoothingModeHighQuality, &background);
@@ -3992,7 +4167,50 @@ void DrawScreen()
 					}
 				}
 
-				hiex::EasyX_Gdiplus_FillRoundRect(UIControl[L"RoundRect/BrushBottom/x"].v, UIControl[L"RoundRect/BrushBottom/y"].v, UIControl[L"RoundRect/BrushBottom/width"].v, UIControl[L"RoundRect/BrushBottom/height"].v, UIControl[L"RoundRect/BrushBottom/ellipseheight"].v, UIControl[L"RoundRect/BrushBottom/ellipsewidth"].v, UIControlColor[L"RoundRect/BrushBottom/frame"].v, UIControlColor[L"RoundRect/BrushBottom/fill"].v, 2, true, SmoothingModeHighQuality, &background);
+				{
+					if (skin_mode == 1 || skin_mode == 2) hiex::EasyX_Gdiplus_FillRoundRect(UIControl[L"RoundRect/BrushBottom/x"].v, UIControl[L"RoundRect/BrushBottom/y"].v, UIControl[L"RoundRect/BrushBottom/width"].v, UIControl[L"RoundRect/BrushBottom/height"].v, UIControl[L"RoundRect/BrushBottom/ellipseheight"].v, UIControl[L"RoundRect/BrushBottom/ellipsewidth"].v, UIControlColor[L"RoundRect/BrushBottom/frame"].v, UIControlColor[L"RoundRect/BrushBottom/fill"].v, 2, true, SmoothingModeHighQuality, &background);
+					else if (skin_mode == 3)
+					{
+						Gdiplus::ImageAttributes imageAttributes;
+
+						float alpha = (float)((UIControlColor[L"RoundRect/BrushBottom/fill"].v >> 24) & 0xFF) / 255.0f * 0.4f;
+						Gdiplus::ColorMatrix colorMatrix = {
+							1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+							0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+							0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+							0.0f, 0.0f, 0.0f, alpha, 0.0f,
+							0.0f, 0.0f, 0.0f, 0.0f, 1.0f
+						};
+						imageAttributes.SetColorMatrix(&colorMatrix, Gdiplus::ColorMatrixFlagsDefault, Gdiplus::ColorAdjustTypeBitmap);
+
+						float x = UIControl[L"RoundRect/BrushBottom/x"].v;
+						float y = UIControl[L"RoundRect/BrushBottom/y"].v;
+						float width = UIControl[L"RoundRect/BrushBottom/width"].v;
+						float height = UIControl[L"RoundRect/BrushBottom/height"].v;
+						float ellipsewidth = UIControl[L"RoundRect/BrushBottom/ellipsewidth"].v;
+						float ellipseheight = UIControl[L"RoundRect/BrushBottom/ellipseheight"].v;
+
+						hiex::EasyX_Gdiplus_SolidRoundRect(x, y, width, height, ellipsewidth, ellipseheight, UIControlColor[L"RoundRect/BrushBottom/fill"].v, true, SmoothingModeHighQuality, &background);
+
+						Graphics graphics(GetImageHDC(&background));
+						GraphicsPath path;
+
+						path.AddArc(x, y, ellipsewidth, ellipseheight, 180, 90);
+						path.AddArc(x + width - ellipsewidth - 1, y, ellipsewidth, ellipseheight, 270, 90);
+						path.AddArc(x + width - ellipsewidth - 1, y + height - ellipseheight - 1, ellipsewidth, ellipseheight, 0, 90);
+						path.AddArc(x, y + height - ellipseheight - 1, ellipsewidth, ellipseheight, 90, 90);
+						path.CloseFigure();
+
+						Region region(&path);
+						graphics.SetClip(&region, CombineModeReplace);
+
+						graphics.DrawImage(bskin3, Gdiplus::Rect((int)x, (int)y, (int)width, (int)height), (int)x, (int)y, (int)width, (int)height, Gdiplus::UnitPixel, &imageAttributes);
+
+						graphics.ResetClip();
+
+						hiex::EasyX_Gdiplus_RoundRect(x, y, width, height, ellipsewidth, ellipseheight, UIControlColor[L"RoundRect/BrushBottom/frame"].v, 2, true, SmoothingModeHighQuality, &background);
+					}
+				}
 				{
 					hiex::EasyX_Gdiplus_SolidRectangle(UIControl[L"RoundRect/BrushInterval/x"].v, UIControl[L"RoundRect/BrushInterval/y"].v, UIControl[L"RoundRect/BrushInterval/width"].v, UIControl[L"RoundRect/BrushInterval/height"].v, UIControlColor[L"RoundRect/BrushInterval/fill"].v, true, SmoothingModeHighQuality, &background);
 
@@ -4104,7 +4322,60 @@ void DrawScreen()
 				eraser.Clear(Color(0, 0, 0, 0));
 				eraser.ResetClip();
 			}
-			hiex::EasyX_Gdiplus_FillRoundRect(UIControl[L"RoundRect/RoundRect1/x"].v, UIControl[L"RoundRect/RoundRect1/y"].v, UIControl[L"RoundRect/RoundRect1/width"].v, UIControl[L"RoundRect/RoundRect1/height"].v, UIControl[L"RoundRect/RoundRect1/ellipsewidth"].v, UIControl[L"RoundRect/RoundRect1/ellipseheight"].v, UIControlColor[L"RoundRect/RoundRect1/frame"].v, UIControlColor[L"RoundRect/RoundRect1/fill"].v, 2, true, SmoothingModeHighQuality, &background);
+
+			//皮肤背景绘制
+			{
+				//默认皮肤
+				if (skin_mode == 1 || skin_mode == 2)
+				{
+					hiex::EasyX_Gdiplus_FillRoundRect(UIControl[L"RoundRect/RoundRect1/x"].v, UIControl[L"RoundRect/RoundRect1/y"].v, UIControl[L"RoundRect/RoundRect1/width"].v, UIControl[L"RoundRect/RoundRect1/height"].v, UIControl[L"RoundRect/RoundRect1/ellipsewidth"].v, UIControl[L"RoundRect/RoundRect1/ellipseheight"].v, UIControlColor[L"RoundRect/RoundRect1/frame"].v, UIControlColor[L"RoundRect/RoundRect1/fill"].v, 2, true, SmoothingModeHighQuality, &background);
+				}
+
+				//龙年迎新皮肤（测试中）
+				else if (skin_mode == 3)
+				{
+					Gdiplus::ImageAttributes imageAttributes;
+
+					float alpha = (float)((UIControlColor[L"RoundRect/RoundRect1/fill"].v >> 24) & 0xFF) / 255.0f * 0.4f;
+					Gdiplus::ColorMatrix colorMatrix = {
+						1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+						0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+						0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+						0.0f, 0.0f, 0.0f, alpha, 0.0f,
+						0.0f, 0.0f, 0.0f, 0.0f, 1.0f
+					};
+					imageAttributes.SetColorMatrix(&colorMatrix, Gdiplus::ColorMatrixFlagsDefault, Gdiplus::ColorAdjustTypeBitmap);
+
+					float x = UIControl[L"RoundRect/RoundRect1/x"].v;
+					float y = UIControl[L"RoundRect/RoundRect1/y"].v;
+					float width = UIControl[L"RoundRect/RoundRect1/width"].v;
+					float height = UIControl[L"RoundRect/RoundRect1/height"].v;
+					float ellipsewidth = UIControl[L"RoundRect/RoundRect1/ellipsewidth"].v;
+					float ellipseheight = UIControl[L"RoundRect/RoundRect1/ellipseheight"].v;
+
+					hiex::EasyX_Gdiplus_SolidRoundRect(x, y, width, height, ellipsewidth, ellipseheight, UIControlColor[L"RoundRect/RoundRect1/fill"].v, true, SmoothingModeHighQuality, &background);
+
+					Graphics graphics(GetImageHDC(&background));
+					graphics.SetCompositingMode(Gdiplus::CompositingModeSourceOver);
+
+					GraphicsPath path;
+
+					path.AddArc(x, y, ellipsewidth, ellipseheight, 180, 90);
+					path.AddArc(x + width - ellipsewidth - 1, y, ellipsewidth, ellipseheight, 270, 90);
+					path.AddArc(x + width - ellipsewidth - 1, y + height - ellipseheight - 1, ellipsewidth, ellipseheight, 0, 90);
+					path.AddArc(x, y + height - ellipseheight - 1, ellipsewidth, ellipseheight, 90, 90);
+					path.CloseFigure();
+
+					Region region(&path);
+					graphics.SetClip(&region, CombineModeReplace);
+
+					graphics.DrawImage(bskin3, Gdiplus::Rect((int)x, (int)y, (int)width, (int)height), (int)x, (int)y, (int)width, (int)height, Gdiplus::UnitPixel, &imageAttributes);
+
+					graphics.ResetClip();
+
+					hiex::EasyX_Gdiplus_RoundRect(x, y, width, height, ellipsewidth, ellipseheight, UIControlColor[L"RoundRect/RoundRect1/frame"].v, 2, true, SmoothingModeHighQuality, &background);
+				}
+			}
 
 			//选择
 			{
@@ -4403,24 +4674,324 @@ void DrawScreen()
 					eraser.Clear(Color(0, 0, 0, 255));
 					eraser.ResetClip();
 				}
-				hiex::EasyX_Gdiplus_FillEllipse(UIControl[L"Ellipse/Ellipse1/x"].v, UIControl[L"Ellipse/Ellipse1/y"].v, UIControl[L"Ellipse/Ellipse1/width"].v, UIControl[L"Ellipse/Ellipse1/height"].v, SET_ALPHA(UIControlColor[L"Ellipse/Ellipse1/frame"].v, (int)UIControl[L"Image/Sign1/frame_transparency"].v), UIControlColor[L"Ellipse/Ellipse1/fill"].v, 2, true, SmoothingModeHighQuality, &background);
-				hiex::TransparentImage(&background, int(UIControl[L"Image/Sign1/x"].v), int(UIControl[L"Image/Sign1/y"].v), &sign, int(UIControl[L"Image/Sign1/transparency"].v));
 
-				if (ppt_info_stay.TotalPage != -1) hiex::TransparentImage(&background, floating_windows.width - 45, floating_windows.height - 95, &floating_icon[16]);
-				else if (SeewoCamera == true) hiex::TransparentImage(&background, floating_windows.width - 45, floating_windows.height - 95, &floating_icon[18]);
+				//主按钮皮肤绘制
+				{
+					//默认皮肤
+					if (skin_mode == 1)
+					{
+						hiex::EasyX_Gdiplus_FillEllipse(UIControl[L"Ellipse/Ellipse1/x"].v, UIControl[L"Ellipse/Ellipse1/y"].v, UIControl[L"Ellipse/Ellipse1/width"].v, UIControl[L"Ellipse/Ellipse1/height"].v, SET_ALPHA(UIControlColor[L"Ellipse/Ellipse1/frame"].v, (int)UIControl[L"Image/Sign1/frame_transparency"].v), UIControlColor[L"Ellipse/Ellipse1/fill"].v, 2, true, SmoothingModeHighQuality, &background);
+
+						//模式图标
+						{
+							if (ppt_info_stay.TotalPage != -1) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 35), int(UIControl[L"Ellipse/Ellipse1/y"].v + 63), &floating_icon[16], 255);
+							else if (SeewoCamera == true) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 66), &floating_icon[18], 255);
+						}
+
+						hiex::TransparentImage(&background, int(UIControl[L"Image/Sign1/x"].v), int(UIControl[L"Image/Sign1/y"].v), &sign, int(UIControl[L"Image/Sign1/transparency"].v));
+					}
+
+					//时钟表盘（已经可用，后续启用）
+					if (skin_mode == 2)
+					{
+						hiex::EasyX_Gdiplus_FillEllipse(UIControl[L"Ellipse/Ellipse1/x"].v, UIControl[L"Ellipse/Ellipse1/y"].v, UIControl[L"Ellipse/Ellipse1/width"].v, UIControl[L"Ellipse/Ellipse1/height"].v, SET_ALPHA(UIControlColor[L"Ellipse/Ellipse1/frame"].v, (int)UIControl[L"Image/Sign1/frame_transparency"].v), UIControlColor[L"Ellipse/Ellipse1/fill"].v, 2, true, SmoothingModeHighQuality, &background);
+
+						//模式图标
+						{
+							if (ppt_info_stay.TotalPage != -1) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 35), int(UIControl[L"Ellipse/Ellipse1/y"].v + 60), &floating_icon[16], 200);
+							else if (SeewoCamera == true) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 63), &floating_icon[18], 200);
+						}
+
+						//时钟
+						{
+							//刻度
+							{
+								{
+									pair<double, double> direction1 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 42, 0);
+									pair<double, double> direction2 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 47, 0);
+
+									Gdiplus::Point startPoint((INT)direction1.first, (INT)direction1.second);
+									Gdiplus::Point endPoint((INT)direction2.first, (INT)direction2.second);
+
+									Gdiplus::Pen pen(hiex::ConvertToGdiplusColor(UIControlColor[L"Ellipse/Ellipse1/frame"].v, false), 2.0f);
+
+									graphics.DrawLine(&pen, (INT)direction1.first, (INT)direction1.second, (INT)direction2.first, (INT)direction2.second);
+								}
+								{
+									pair<double, double> direction1 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 42, 30);
+									pair<double, double> direction2 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 47, 30);
+
+									Gdiplus::Point startPoint((INT)direction1.first, (INT)direction1.second);
+									Gdiplus::Point endPoint((INT)direction2.first, (INT)direction2.second);
+
+									Gdiplus::Pen pen(hiex::ConvertToGdiplusColor(UIControlColor[L"Ellipse/Ellipse1/frame"].v, false), 2.0f);
+
+									graphics.DrawLine(&pen, (INT)direction1.first, (INT)direction1.second, (INT)direction2.first, (INT)direction2.second);
+								}
+								{
+									pair<double, double> direction1 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 42, 60);
+									pair<double, double> direction2 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 47, 60);
+
+									Gdiplus::Point startPoint((INT)direction1.first, (INT)direction1.second);
+									Gdiplus::Point endPoint((INT)direction2.first, (INT)direction2.second);
+
+									Gdiplus::Pen pen(hiex::ConvertToGdiplusColor(UIControlColor[L"Ellipse/Ellipse1/frame"].v, false), 2.0f);
+
+									graphics.DrawLine(&pen, (INT)direction1.first, (INT)direction1.second, (INT)direction2.first, (INT)direction2.second);
+								}
+								{
+									pair<double, double> direction1 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 40, 90);
+									pair<double, double> direction2 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 45, 90);
+
+									Gdiplus::Point startPoint((INT)direction1.first, (INT)direction1.second);
+									Gdiplus::Point endPoint((INT)direction2.first, (INT)direction2.second);
+
+									Gdiplus::Pen pen(hiex::ConvertToGdiplusColor(UIControlColor[L"Ellipse/Ellipse1/frame"].v, false), 2.0f);
+
+									graphics.DrawLine(&pen, (INT)direction1.first, (INT)direction1.second, (INT)direction2.first, (INT)direction2.second);
+								}
+								{
+									pair<double, double> direction1 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 41, 120);
+									pair<double, double> direction2 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 45, 120);
+
+									Gdiplus::Point startPoint((INT)direction1.first, (INT)direction1.second);
+									Gdiplus::Point endPoint((INT)direction2.first, (INT)direction2.second);
+
+									Gdiplus::Pen pen(hiex::ConvertToGdiplusColor(UIControlColor[L"Ellipse/Ellipse1/frame"].v, false), 2.0f);
+
+									graphics.DrawLine(&pen, (INT)direction1.first, (INT)direction1.second, (INT)direction2.first, (INT)direction2.second);
+								}
+								{
+									pair<double, double> direction1 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 41, 150);
+									pair<double, double> direction2 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 45, 150);
+
+									Gdiplus::Point startPoint((INT)direction1.first, (INT)direction1.second);
+									Gdiplus::Point endPoint((INT)direction2.first, (INT)direction2.second);
+
+									Gdiplus::Pen pen(hiex::ConvertToGdiplusColor(UIControlColor[L"Ellipse/Ellipse1/frame"].v, false), 2.0f);
+
+									graphics.DrawLine(&pen, (INT)direction1.first, (INT)direction1.second, (INT)direction2.first, (INT)direction2.second);
+								}
+								{
+									pair<double, double> direction1 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 40, 180);
+									pair<double, double> direction2 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 45, 180);
+
+									Gdiplus::Point startPoint((INT)direction1.first, (INT)direction1.second);
+									Gdiplus::Point endPoint((INT)direction2.first, (INT)direction2.second);
+
+									Gdiplus::Pen pen(hiex::ConvertToGdiplusColor(UIControlColor[L"Ellipse/Ellipse1/frame"].v, false), 2.0f);
+
+									graphics.DrawLine(&pen, (INT)direction1.first, (INT)direction1.second, (INT)direction2.first, (INT)direction2.second);
+								}
+								{
+									pair<double, double> direction1 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 42, 210);
+									pair<double, double> direction2 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 47, 210);
+
+									Gdiplus::Point startPoint((INT)direction1.first, (INT)direction1.second);
+									Gdiplus::Point endPoint((INT)direction2.first, (INT)direction2.second);
+
+									Gdiplus::Pen pen(hiex::ConvertToGdiplusColor(UIControlColor[L"Ellipse/Ellipse1/frame"].v, false), 2.0f);
+
+									graphics.DrawLine(&pen, (INT)direction1.first, (INT)direction1.second, (INT)direction2.first, (INT)direction2.second);
+								}
+								{
+									pair<double, double> direction1 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 42, 240);
+									pair<double, double> direction2 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 47, 240);
+
+									Gdiplus::Point startPoint((INT)direction1.first, (INT)direction1.second);
+									Gdiplus::Point endPoint((INT)direction2.first, (INT)direction2.second);
+
+									Gdiplus::Pen pen(hiex::ConvertToGdiplusColor(UIControlColor[L"Ellipse/Ellipse1/frame"].v, false), 2.0f);
+
+									graphics.DrawLine(&pen, (INT)direction1.first, (INT)direction1.second, (INT)direction2.first, (INT)direction2.second);
+								}
+								{
+									pair<double, double> direction1 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 42, 270);
+									pair<double, double> direction2 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 47, 270);
+
+									Gdiplus::Point startPoint((INT)direction1.first, (INT)direction1.second);
+									Gdiplus::Point endPoint((INT)direction2.first, (INT)direction2.second);
+
+									Gdiplus::Pen pen(hiex::ConvertToGdiplusColor(UIControlColor[L"Ellipse/Ellipse1/frame"].v, false), 2.0f);
+
+									graphics.DrawLine(&pen, (INT)direction1.first, (INT)direction1.second, (INT)direction2.first, (INT)direction2.second);
+								}
+								{
+									pair<double, double> direction1 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 42, 300);
+									pair<double, double> direction2 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 47, 300);
+
+									Gdiplus::Point startPoint((INT)direction1.first, (INT)direction1.second);
+									Gdiplus::Point endPoint((INT)direction2.first, (INT)direction2.second);
+
+									Gdiplus::Pen pen(hiex::ConvertToGdiplusColor(UIControlColor[L"Ellipse/Ellipse1/frame"].v, false), 2.0f);
+
+									graphics.DrawLine(&pen, (INT)direction1.first, (INT)direction1.second, (INT)direction2.first, (INT)direction2.second);
+								}
+								{
+									pair<double, double> direction1 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 42, 330);
+									pair<double, double> direction2 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 47.5, UIControl[L"Ellipse/Ellipse1/y"].v + 47.5, 47, 330);
+
+									Gdiplus::Point startPoint((INT)direction1.first, (INT)direction1.second);
+									Gdiplus::Point endPoint((INT)direction2.first, (INT)direction2.second);
+
+									Gdiplus::Pen pen(hiex::ConvertToGdiplusColor(UIControlColor[L"Ellipse/Ellipse1/frame"].v, false), 2.0f);
+
+									graphics.DrawLine(&pen, (INT)direction1.first, (INT)direction1.second, (INT)direction2.first, (INT)direction2.second);
+								}
+							}
+
+							tm time = GetCurrentLocalTime();
+							//时针
+							{
+								pair<double, double> direction1 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 48, UIControl[L"Ellipse/Ellipse1/y"].v + 48, 30, 30 * (time.tm_hour % 12) + 0.5 * time.tm_min);
+								pair<double, double> direction2 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 48, UIControl[L"Ellipse/Ellipse1/y"].v + 48, 0, 30 * (time.tm_hour % 12) + 0.5 * time.tm_min);
+
+								Gdiplus::Point startPoint((INT)direction1.first, (INT)direction1.second);
+								Gdiplus::Point endPoint((INT)direction2.first, (INT)direction2.second);
+
+								Gdiplus::Color color1(255, 255, 255, 255);
+								Gdiplus::Color color2(0, 255, 255, 255);
+								Gdiplus::Color color3(0, 255, 255, 255);
+								Gdiplus::Color colors[] = { color1, color2, color3 };
+								Gdiplus::REAL positions[] = { 0.0f, 0.8f, 1.0f };
+
+								Gdiplus::LinearGradientBrush brush(startPoint, endPoint, color1, color3);
+								brush.SetInterpolationColors(colors, positions, 3);
+								brush.SetWrapMode(WrapModeTileFlipX);
+
+								Gdiplus::Pen pen(&brush, 5.0f);
+								pen.SetStartCap(LineCapRound);
+								pen.SetEndCap(LineCapRound);
+
+								graphics.DrawLine(&pen, (INT)direction1.first, (INT)direction1.second, (INT)direction2.first, (INT)direction2.second);
+							}
+							//分针
+							{
+								pair<double, double> direction1 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 48, UIControl[L"Ellipse/Ellipse1/y"].v + 48, 38, 6 * time.tm_min + 0.1 * time.tm_sec);
+								pair<double, double> direction2 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 48, UIControl[L"Ellipse/Ellipse1/y"].v + 48, 0, 6 * time.tm_min + 0.1 * time.tm_sec);
+
+								Gdiplus::Point startPoint((INT)direction1.first, (INT)direction1.second);
+								Gdiplus::Point endPoint((INT)direction2.first, (INT)direction2.second);
+
+								Gdiplus::Color color1(255, 255, 255, 255);
+								Gdiplus::Color color2(0, 255, 255, 255);
+								Gdiplus::Color color3(0, 255, 255, 255);
+								Gdiplus::Color colors[] = { color1, color2, color3 };
+								Gdiplus::REAL positions[] = { 0.0f, 0.8f, 1.0f };
+
+								Gdiplus::LinearGradientBrush brush(startPoint, endPoint, color1, color3);
+								brush.SetInterpolationColors(colors, positions, 3);
+								brush.SetWrapMode(WrapModeTileFlipX);
+
+								Gdiplus::Pen pen(&brush, 3.0f);
+								pen.SetStartCap(LineCapRound);
+								pen.SetEndCap(LineCapRound);
+
+								graphics.DrawLine(&pen, (INT)direction1.first, (INT)direction1.second, (INT)direction2.first, (INT)direction2.second);
+							}
+							//秒针
+							{
+								pair<double, double> direction1 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 48, UIControl[L"Ellipse/Ellipse1/y"].v + 48, 42, 6 * time.tm_sec);
+								pair<double, double> direction2 = GetPointOnCircle(UIControl[L"Ellipse/Ellipse1/x"].v + 48, UIControl[L"Ellipse/Ellipse1/y"].v + 48, 0, 6 * time.tm_sec);
+
+								Gdiplus::Point startPoint((INT)direction1.first, (INT)direction1.second);
+								Gdiplus::Point endPoint((INT)direction2.first, (INT)direction2.second);
+
+								Gdiplus::Color color1(255, 255, 0, 0);
+								Gdiplus::Color color2(0, 255, 0, 0);
+								Gdiplus::Color color3(0, 255, 0, 0);
+								Gdiplus::Color colors[] = { color1, color2, color3 };
+								Gdiplus::REAL positions[] = { 0.0f, 0.7f, 1.0f };
+
+								Gdiplus::LinearGradientBrush brush(startPoint, endPoint, color1, color3);
+								brush.SetInterpolationColors(colors, positions, 3);
+								brush.SetWrapMode(WrapModeTileFlipX);
+
+								Gdiplus::Pen pen(&brush, 2.0f);
+								pen.SetStartCap(LineCapRound);
+								pen.SetEndCap(LineCapRound);
+
+								graphics.DrawLine(&pen, (INT)direction1.first, (INT)direction1.second, (INT)direction2.first, (INT)direction2.second);
+							}
+						}
+
+						hiex::TransparentImage(&background, int(UIControl[L"Image/Sign1/x"].v), int(UIControl[L"Image/Sign1/y"].v), &sign, int(UIControl[L"Image/Sign1/transparency"].v));
+					}
+
+					//龙年迎新（制作中，测试中）
+					else if (skin_mode == 3)
+					{
+						hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v), int(UIControl[L"Ellipse/Ellipse1/y"].v), &skin[1], (UIControlColor[L"Ellipse/Ellipse1/fill"].v >> 24) & 0xFF);
+						hiex::EasyX_Gdiplus_Ellipse(UIControl[L"Ellipse/Ellipse1/x"].v, UIControl[L"Ellipse/Ellipse1/y"].v, UIControl[L"Ellipse/Ellipse1/width"].v, UIControl[L"Ellipse/Ellipse1/height"].v, SET_ALPHA(UIControlColor[L"Ellipse/Ellipse1/frame"].v, (int)UIControl[L"Image/Sign1/frame_transparency"].v), 3, true, SmoothingModeHighQuality, &background);
+						hiex::EasyX_Gdiplus_Ellipse(UIControl[L"Ellipse/Ellipse1/x"].v + 1, UIControl[L"Ellipse/Ellipse1/y"].v + 1, UIControl[L"Ellipse/Ellipse1/width"].v - 2, UIControl[L"Ellipse/Ellipse1/height"].v - 2, SET_ALPHA(RGBA(235, 151, 39, 255), (int)((UIControlColor[L"Ellipse/Ellipse1/fill"].v >> 24) & 0xFF)), 2, true, SmoothingModeHighQuality, &background);
+
+						//模式图标
+						{
+							if (ppt_info_stay.TotalPage != -1) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 35), int(UIControl[L"Ellipse/Ellipse1/y"].v + 63), &floating_icon[16], 255);
+							else if (SeewoCamera == true) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 66), &floating_icon[18], 255);
+						}
+
+						hiex::TransparentImage(&background, int(UIControl[L"Image/Sign1/x"].v - 18), int(UIControl[L"Image/Sign1/y"].v - 18), &skin[2]);
+					}
+				}
 
 				if (choose.select != true && (int)state == 1)
 				{
-					hiex::EasyX_Gdiplus_FillRoundRect((float)floating_windows.width - 96, (float)floating_windows.height - 257, 96, 96, 25, 25, RGB(150, 150, 150), BackgroundColorMode == 0 ? RGB(255, 255, 255) : RGB(30, 33, 41), 2, false, SmoothingModeHighQuality, &background);
+					{
+						if (skin_mode == 1 || skin_mode == 2) hiex::EasyX_Gdiplus_FillRoundRect((float)floating_windows.width - 96, (float)floating_windows.height - 257, 96, 96, 25, 25, RGB(150, 150, 150), BackgroundColorMode == 0 ? RGB(255, 255, 255) : RGB(30, 33, 41), 2, false, SmoothingModeHighQuality, &background);
+						else if (skin_mode == 3)
+						{
+							Gdiplus::ImageAttributes imageAttributes;
+
+							float alpha = 0.4f;
+							Gdiplus::ColorMatrix colorMatrix = {
+								1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+								0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+								0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+								0.0f, 0.0f, 0.0f, alpha, 0.0f,
+								0.0f, 0.0f, 0.0f, 0.0f, 1.0f
+							};
+							imageAttributes.SetColorMatrix(&colorMatrix, Gdiplus::ColorMatrixFlagsDefault, Gdiplus::ColorAdjustTypeBitmap);
+
+							float x = (float)floating_windows.width - 96;
+							float y = (float)floating_windows.height - 257;
+							float width = 96;
+							float height = 96;
+							float ellipsewidth = 25;
+							float ellipseheight = 25;
+
+							hiex::EasyX_Gdiplus_SolidRoundRect(x, y, width, height, ellipsewidth, ellipseheight, BackgroundColorMode == 0 ? RGBA(255, 255, 255, 255) : RGBA(30, 33, 41, 255), true, SmoothingModeHighQuality, &background);
+
+							Graphics graphics(GetImageHDC(&background));
+							GraphicsPath path;
+
+							path.AddArc(x, y, ellipsewidth, ellipseheight, 180, 90);
+							path.AddArc(x + width - ellipsewidth - 1, y, ellipsewidth, ellipseheight, 270, 90);
+							path.AddArc(x + width - ellipsewidth - 1, y + height - ellipseheight - 1, ellipsewidth, ellipseheight, 0, 90);
+							path.AddArc(x, y + height - ellipseheight - 1, ellipsewidth, ellipseheight, 90, 90);
+							path.CloseFigure();
+
+							Region region(&path);
+							graphics.SetClip(&region, CombineModeReplace);
+
+							graphics.DrawImage(bskin3, Gdiplus::Rect((int)x, (int)y, (int)width, (int)height), (int)x, (int)y, (int)width, (int)height, Gdiplus::UnitPixel, &imageAttributes);
+
+							graphics.ResetClip();
+
+							hiex::EasyX_Gdiplus_RoundRect(x, y, width, height, ellipsewidth, ellipseheight, RGBA(150, 150, 150, 255), 2, true, SmoothingModeHighQuality, &background);
+						}
+					}
 
 					if (penetrate.select == true)
 					{
-						hiex::EasyX_Gdiplus_RoundRect((float)floating_windows.width - 96 + 4, (float)floating_windows.height - 256 + 8, 88, 40, 20, 20, RGB(98, 175, 82), 2.5, false, SmoothingModeHighQuality, &background);
-						ChangeColor(floating_icon[6], RGB(98, 175, 82));
+						hiex::EasyX_Gdiplus_RoundRect((float)floating_windows.width - 96 + 4, (float)floating_windows.height - 256 + 8, 88, 40, 20, 20, RGBA(98, 175, 82, 255), 2.5, false, SmoothingModeHighQuality, &background);
+
+						ChangeColor(floating_icon[6], RGBA(98, 175, 82, 255));
+
 						hiex::TransparentImage(&background, floating_windows.width - 96 + 10, floating_windows.height - 256 + 12, &floating_icon[6]);
 
 						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 20, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(98, 175, 82), false));
+						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(98, 175, 82, 255), false));
 						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
 						{
 							words_rect.left = floating_windows.width - 96 + 40;
@@ -4432,11 +5003,12 @@ void DrawScreen()
 					}
 					else
 					{
-						ChangeColor(floating_icon[6], RGB(130, 130, 130));
+						ChangeColor(floating_icon[6], RGBA(130, 130, 130, 255));
+
 						hiex::TransparentImage(&background, floating_windows.width - 96 + 10, floating_windows.height - 256 + 12, &floating_icon[6]);
 
 						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 20, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(130, 130, 130), false));
+						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(130, 130, 130, 255), false));
 						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
 						{
 							words_rect.left = floating_windows.width - 96 + 40;
@@ -4447,21 +5019,63 @@ void DrawScreen()
 						graphics.DrawString(L"穿透", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 					}
 				}
-
 				if ((int)state == 1)
 				{
 					if (ppt_show == NULL && choose.select == true)
 					{
-						hiex::EasyX_Gdiplus_FillRoundRect((float)floating_windows.width - 96, (float)floating_windows.height - 256 + 44, 96, 51, 25, 25, RGB(150, 150, 150), BackgroundColorMode == 0 ? RGB(255, 255, 255) : RGB(30, 33, 41), 2, false, SmoothingModeHighQuality, &background);
+						if (skin_mode == 1 || skin_mode == 2) hiex::EasyX_Gdiplus_FillRoundRect((float)floating_windows.width - 96, (float)floating_windows.height - 256 + 44, 96, 51, 25, 25, RGB(150, 150, 150), BackgroundColorMode == 0 ? RGB(255, 255, 255) : RGB(30, 33, 41), 2, false, SmoothingModeHighQuality, &background);
+						else if (skin_mode == 3)
+						{
+							Gdiplus::ImageAttributes imageAttributes;
+
+							float alpha = 0.4f;
+							Gdiplus::ColorMatrix colorMatrix = {
+								1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+								0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+								0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+								0.0f, 0.0f, 0.0f, alpha, 0.0f,
+								0.0f, 0.0f, 0.0f, 0.0f, 1.0f
+							};
+							imageAttributes.SetColorMatrix(&colorMatrix, Gdiplus::ColorMatrixFlagsDefault, Gdiplus::ColorAdjustTypeBitmap);
+
+							float x = (float)floating_windows.width - 96;
+							float y = (float)floating_windows.height - 256 + 44;
+							float width = 96;
+							float height = 51;
+							float ellipsewidth = 25;
+							float ellipseheight = 25;
+
+							hiex::EasyX_Gdiplus_SolidRoundRect(x, y, width, height, ellipsewidth, ellipseheight, BackgroundColorMode == 0 ? RGBA(255, 255, 255, 255) : RGBA(30, 33, 41, 255), true, SmoothingModeHighQuality, &background);
+
+							Graphics graphics(GetImageHDC(&background));
+							GraphicsPath path;
+
+							path.AddArc(x, y, ellipsewidth, ellipseheight, 180, 90);
+							path.AddArc(x + width - ellipsewidth - 1, y, ellipsewidth, ellipseheight, 270, 90);
+							path.AddArc(x + width - ellipsewidth - 1, y + height - ellipseheight - 1, ellipsewidth, ellipseheight, 0, 90);
+							path.AddArc(x, y + height - ellipseheight - 1, ellipsewidth, ellipseheight, 90, 90);
+							path.CloseFigure();
+
+							Region region(&path);
+							graphics.SetClip(&region, CombineModeReplace);
+
+							graphics.DrawImage(bskin3, Gdiplus::Rect((int)x, (int)y, (int)width, (int)height), (int)x, (int)y, (int)width, (int)height, Gdiplus::UnitPixel, &imageAttributes);
+
+							graphics.ResetClip();
+
+							hiex::EasyX_Gdiplus_RoundRect(x, y, width, height, ellipsewidth, ellipseheight, RGBA(150, 150, 150, 255), 2, true, SmoothingModeHighQuality, &background);
+						}
 
 						if (FreezeFrame.mode == 1)
 						{
-							hiex::EasyX_Gdiplus_RoundRect((float)floating_windows.width - 96 + 4, (float)floating_windows.height - 256 + 50, 88, 40, 20, 20, RGB(98, 175, 82), 2.5, false, SmoothingModeHighQuality, &background);
-							ChangeColor(floating_icon[8], RGB(98, 175, 82));
+							hiex::EasyX_Gdiplus_RoundRect((float)floating_windows.width - 96 + 4, (float)floating_windows.height - 256 + 50, 88, 40, 20, 20, RGBA(98, 175, 82, 255), 2.5, false, SmoothingModeHighQuality, &background);
+
+							ChangeColor(floating_icon[8], RGBA(98, 175, 82, 255));
+
 							hiex::TransparentImage(&background, floating_windows.width - 96 + 10, floating_windows.height - 256 + 54, &floating_icon[8]);
 
 							Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 20, FontStyleRegular, UnitPixel);
-							SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(98, 175, 82), false));
+							SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(98, 175, 82, 255), false));
 							graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
 							{
 								words_rect.left = floating_windows.width - 96 + 40;
@@ -4473,11 +5087,12 @@ void DrawScreen()
 						}
 						else
 						{
-							ChangeColor(floating_icon[8], RGB(130, 130, 130));
+							ChangeColor(floating_icon[8], RGBA(130, 130, 130, 255));
+
 							hiex::TransparentImage(&background, floating_windows.width - 96 + 10, floating_windows.height - 256 + 54, &floating_icon[8]);
 
 							Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 20, FontStyleRegular, UnitPixel);
-							SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(130, 130, 130), false));
+							SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(130, 130, 130, 255), false));
 							graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
 							{
 								words_rect.left = floating_windows.width - 96 + 40;
@@ -4492,12 +5107,14 @@ void DrawScreen()
 					{
 						if (FreezeFrame.mode == 1)
 						{
-							hiex::EasyX_Gdiplus_RoundRect((float)floating_windows.width - 96 + 4, (float)floating_windows.height - 256 + 50, 88, 40, 20, 20, RGB(98, 175, 82), 2.5, false, SmoothingModeHighQuality, &background);
-							ChangeColor(floating_icon[8], RGB(98, 175, 82));
+							hiex::EasyX_Gdiplus_RoundRect((float)floating_windows.width - 96 + 4, (float)floating_windows.height - 256 + 50, 88, 40, 20, 20, RGBA(98, 175, 82, 255), 2.5, false, SmoothingModeHighQuality, &background);
+
+							ChangeColor(floating_icon[8], RGBA(98, 175, 82, 255));
+
 							hiex::TransparentImage(&background, floating_windows.width - 96 + 10, floating_windows.height - 256 + 54, &floating_icon[8]);
 
 							Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 20, FontStyleRegular, UnitPixel);
-							SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(98, 175, 82), false));
+							SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(98, 175, 82, 255), false));
 							graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
 							{
 								words_rect.left = floating_windows.width - 96 + 40;
@@ -4509,11 +5126,12 @@ void DrawScreen()
 						}
 						else
 						{
-							ChangeColor(floating_icon[8], RGB(130, 130, 130));
+							ChangeColor(floating_icon[8], RGBA(130, 130, 130, 255));
+
 							hiex::TransparentImage(&background, floating_windows.width - 96 + 10, floating_windows.height - 256 + 54, &floating_icon[8]);
 
 							Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 20, FontStyleRegular, UnitPixel);
-							SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(130, 130, 130), false));
+							SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(130, 130, 130, 255), false));
 							graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
 							{
 								words_rect.left = floating_windows.width - 96 + 40;
@@ -4526,7 +5144,7 @@ void DrawScreen()
 					}
 				}
 
-				if (choose.select == false && RecallImage.size() > 1)
+				if ((!choose.select || (int)state == 1) && (!RecallImage.empty() || (!FirstDraw && RecallImage.empty())))
 				{
 					hiex::EasyX_Gdiplus_FillRoundRect((float)floating_windows.width - 96, (float)floating_windows.height - 55, 96, 40, 25, 25, (!choose.select && !rubber.select) ? brush.color : RGBA(255, 255, 255, 255), RGBA(0, 0, 0, 150), 2, true, SmoothingModeHighQuality, &background);
 					ChangeColor(floating_icon[3], RGB(255, 255, 255));
@@ -4543,22 +5161,20 @@ void DrawScreen()
 					}
 					graphics.DrawString(L"撤回", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 				}
-				else if (choose.select == true && (int)state == 1 && RestoreSketchpad)
+				else if ((!choose.select || (int)state == 1) && RecallImage.empty() && current_record_pointer <= total_record_pointer + 1 && practical_total_record_pointer)
 				{
 					hiex::EasyX_Gdiplus_FillRoundRect((float)floating_windows.width - 96, (float)floating_windows.height - 55, 96, 40, 25, 25, (!choose.select && !rubber.select) ? brush.color : RGBA(255, 255, 255, 255), RGBA(0, 0, 0, 150), 2, true, SmoothingModeHighQuality, &background);
-					ChangeColor(floating_icon[3], RGB(255, 255, 255));
-					hiex::TransparentImage(&background, floating_windows.width - 86, floating_windows.height - 50, &floating_icon[3]);
 
 					Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 20, FontStyleRegular, UnitPixel);
 					SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(255, 255, 255), false));
 					graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
 					{
-						words_rect.left = (floating_windows.width - 96 + 30);
+						words_rect.left = (floating_windows.width - 96);
 						words_rect.top = (floating_windows.height - 55);
 						words_rect.right = (floating_windows.width - 96 + 30) + 66;
 						words_rect.bottom = (floating_windows.height - 55) + 42;
 					}
-					graphics.DrawString(L"恢复", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+					graphics.DrawString(L"超级恢复", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 				}
 			}
 
@@ -4575,7 +5191,12 @@ void DrawScreen()
 		else state = target_status;
 
 		if (for_num == 1) ShowWindow(floating_window, SW_SHOW);
-		hiex::DelayFPS(40);
+		if (tRecord)
+		{
+			int delay = 1000 / 40 - (clock() - tRecord);
+			if (delay > 0) std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+		}
+		tRecord = clock();
 	}
 
 	ShowWindow(floating_window, SW_HIDE);
@@ -4620,874 +5241,101 @@ void MouseInteraction()
 	int brush_connect = -1;
 
 	ExMessage m;
+	int lx, ly;
+
+	std::chrono::high_resolution_clock::time_point MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
 	while (!off_signal)
 	{
 		hiex::getmessage_win32(&m, EM_MOUSE, floating_window);
 
-		if ((int)state == 0)
+		if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - MouseInteractionManipulated).count() >= 220)
 		{
-			if (IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 156, floating_windows.width - 96 + 96, floating_windows.height - 156 + 96 }))
+			if ((int)state == 0)
 			{
-				if (m.lbutton)
-				{
-					int lx = m.x, ly = m.y;
-					while (1)
-					{
-						ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-						if (abs(m.x - lx) <= 5 && abs(m.y - ly) <= 5)
-						{
-							if (!m.lbutton)
-							{
-								target_status = 1;
-
-								break;
-							}
-						}
-						else
-						{
-							SeekBar(m);
-
-							hiex::flushmessage_win32(EM_MOUSE, floating_window);
-
-							break;
-						}
-					}
-				}
-
-				if (m.rbutton)
-				{
-					off_signal = true;
-				}
-			}
-			if (choose.select == false && state == int(state) && RecallImage.size() > 1 && IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
-			{
-				if (m.lbutton)
-				{
-					int lx = m.x, ly = m.y;
-					while (1)
-					{
-						ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-						if (IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
-						{
-							if (!m.lbutton)
-							{
-								RecallImage.pop_back();
-								deque<RecallStruct>(RecallImage).swap(RecallImage); // 使用swap技巧来释放未使用的内存
-
-								if (!RecallImage.empty()) drawpad = RecallImage.back().img;
-								else SetImageColor(drawpad, RGBA(0, 0, 0, 1), true);
-
-								extreme_point = RecallImage.back().extreme_point;
-
-								{
-									// 设置BLENDFUNCTION结构体
-									BLENDFUNCTION blend;
-									blend.BlendOp = AC_SRC_OVER;
-									blend.BlendFlags = 0;
-									blend.SourceConstantAlpha = 255; // 设置透明度，0为全透明，255为不透明
-									blend.AlphaFormat = AC_SRC_ALPHA; // 使用源图像的alpha通道
-									HDC hdcScreen = GetDC(NULL);
-									// 调用UpdateLayeredWindow函数更新窗口
-									POINT ptSrc = { 0,0 };
-									SIZE sizeWnd = { drawpad.getwidth(),drawpad.getheight() };
-									POINT ptDst = { 0,0 }; // 设置窗口位置
-									UPDATELAYEREDWINDOWINFO ulwi = { 0 };
-									ulwi.cbSize = sizeof(ulwi);
-									ulwi.hdcDst = hdcScreen;
-									ulwi.pptDst = &ptDst;
-									ulwi.psize = &sizeWnd;
-									ulwi.pptSrc = &ptSrc;
-									ulwi.crKey = RGB(255, 255, 255);
-									ulwi.pblend = &blend;
-									ulwi.dwFlags = ULW_ALPHA;
-
-									// 定义要更新的矩形区域
-									RECT rcDirty = { 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
-
-									ulwi.hdcSrc = GetImageHDC(&drawpad);
-									ulwi.prcDirty = &rcDirty;
-									UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
-								}
-
-								break;
-							}
-						}
-						else
-						{
-							hiex::flushmessage_win32(EM_MOUSE, floating_window);
-
-							break;
-						}
-					}
-					hiex::flushmessage_win32(EM_MOUSE, floating_window);
-				}
-			}
-		}
-		if ((int)state == 1)
-		{
-			if (IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 156, floating_windows.width - 96 + 96, floating_windows.height - 156 + 96 }))
-			{
-				if (m.lbutton)
-				{
-					int lx = m.x, ly = m.y;
-					while (1)
-					{
-						ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-						if (m.x == lx && m.y == ly)
-						{
-							if (!m.lbutton)
-							{
-								state = 1;
-
-								target_status = 0;
-
-								break;
-							}
-						}
-						else
-						{
-							SeekBar(m);
-
-							hiex::flushmessage_win32(EM_MOUSE, floating_window);
-
-							break;
-						}
-					}
-				}
-			}
-
-			//窗口穿透
-			if (choose.select == false && IsInRect(m.x, m.y, { floating_windows.width - 96 + 4, floating_windows.height - 256 + 8, floating_windows.width - 96 + 4 + 88, floating_windows.height - 256 + 8 + 40 }))
-			{
-				if (m.lbutton)
-				{
-					int lx = m.x, ly = m.y;
-					while (1)
-					{
-						ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-						if (IsInRect(m.x, m.y, { floating_windows.width - 96 + 4, floating_windows.height - 256 + 8, floating_windows.width - 96 + 4 + 88, floating_windows.height - 256 + 8 + 40 }))
-						{
-							if (!m.lbutton)
-							{
-								if (penetrate.select)
-								{
-									penetrate.select = false;
-									if (FreezeFrame.mode == 2) FreezeFrame.mode = 1;
-								}
-								else
-								{
-									if (FreezeFrame.mode == 1) FreezeFrame.mode = 2;
-									penetrate.select = true;
-								}
-
-								break;
-							}
-						}
-						else
-						{
-							hiex::flushmessage_win32(EM_MOUSE, floating_window);
-
-							break;
-						}
-					}
-					hiex::flushmessage_win32(EM_MOUSE, floating_window);
-				}
-			}
-			//窗口定格
-			if (ppt_show == NULL && IsInRect(m.x, m.y, { floating_windows.width - 96 + 4, floating_windows.height - 256 + 50, floating_windows.width - 96 + 4 + 88, floating_windows.height - 256 + 50 + 40 }))
-			{
-				if (m.lbutton)
-				{
-					int lx = m.x, ly = m.y;
-					while (1)
-					{
-						ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-						if (IsInRect(m.x, m.y, { floating_windows.width - 96 + 4, floating_windows.height - 256 + 50, floating_windows.width - 96 + 4 + 88, floating_windows.height - 256 + 50 + 40 }))
-						{
-							if (!m.lbutton)
-							{
-								if (FreezeFrame.mode != 1)
-								{
-									penetrate.select = false;
-
-									if (choose.select == true) FreezeFrame.select = true;
-									FreezeFrame.mode = 1;
-								}
-								else FreezeFrame.mode = 0, FreezeFrame.select = false;
-
-								break;
-							}
-						}
-						else
-						{
-							hiex::flushmessage_win32(EM_MOUSE, floating_window);
-
-							break;
-						}
-					}
-					hiex::flushmessage_win32(EM_MOUSE, floating_window);
-				}
-			}
-
-			//选择
-			if (IsInRect(m.x, m.y, { 0 + 8, floating_windows.height - 156 + 8, 0 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
-			{
-				if (m.lbutton)
-				{
-					int lx = m.x, ly = m.y;
-					while (1)
-					{
-						ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-						if (IsInRect(m.x, m.y, { 0 + 8, floating_windows.height - 156 + 8, 0 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
-						{
-							if (!m.lbutton)
-							{
-								if (choose.select == false)
-								{
-									state = 1;
-									if (!FreezeFrame.select || penetrate.select) FreezeFrame.mode = 0, FreezeFrame.select = false;
-
-									brush.select = false;
-									rubber.select = false;
-									choose.select = true;
-									penetrate.select = false;
-								}
-								else if (choose.mode == true)
-								{
-									choose.mode = false;
-								}
-								else if (choose.mode == false)
-								{
-									choose.mode = true;
-								}
-
-								break;
-							}
-						}
-						else
-						{
-							hiex::flushmessage_win32(EM_MOUSE, floating_window);
-
-							break;
-						}
-					}
-					hiex::flushmessage_win32(EM_MOUSE, floating_window);
-				}
-			}
-			//画笔
-			if (IsInRect(m.x, m.y, { 96 + 8, floating_windows.height - 156 + 8, 96 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
-			{
-				if (m.lbutton)
-				{
-					int lx = m.x, ly = m.y;
-					brush_connect = false;
-
-					while (1)
-					{
-						ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-						if (IsInRect(m.x, m.y, { 96 + 8, floating_windows.height - 156 + 8, 96 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
-						{
-							if (abs(ly - m.y) >= 20 && state == 1)
-							{
-								brush.select = true;
-								rubber.select = false;
-								choose.select = false;
-								state = 1.1, brush_connect = true;
-
-								if (SeewoCamera) FreezeFrame.mode = 1;
-							}
-							else if (abs(ly - m.y) >= 20) brush_connect = true;
-							else
-							{
-								if (!m.lbutton)
-								{
-									if (brush.select == false)
-									{
-										state = 1;
-										brush.select = true;
-										rubber.select = false;
-										choose.select = false;
-
-										if (SeewoCamera) FreezeFrame.mode = 1;
-									}
-									else if (state == 1)
-									{
-										state = 1.1;
-									}
-									else if ((state == 1.1 || state == 1.11 || state == 1.12) && ly - m.y < 20)
-									{
-										state = 1;
-									}
-
-									break;
-								}
-							}
-						}
-						else
-						{
-							hiex::flushmessage_win32(EM_MOUSE, floating_window);
-
-							break;
-						}
-					}
-					hiex::flushmessage_win32(EM_MOUSE, floating_window);
-				}
-			}
-			//画笔选项1
-			else if (state == 1.1 || state == 1.11 || state == 1.12)
-			{
-				if ((state == 1.1 || state == 1.11 || state == 1.12) && IsInRect(m.x, m.y, { int(UIControl[L"RoundRect/PaintThickness/x"].v), int(UIControl[L"RoundRect/PaintThickness/y"].v), int(UIControl[L"RoundRect/PaintThickness/x"].v + UIControl[L"RoundRect/PaintThickness/width"].v), int(UIControl[L"RoundRect/PaintThickness/y"].v + UIControl[L"RoundRect/PaintThickness/height"].v) }))
+				if (IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 156, floating_windows.width - 96 + 96, floating_windows.height - 156 + 96 }))
 				{
 					if (m.lbutton)
 					{
-						int lx = m.x, ly = m.y;
+						lx = m.x, ly = m.y;
 						while (1)
 						{
-							ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-							if (IsInRect(m.x, m.y, { int(UIControl[L"RoundRect/PaintThickness/x"].v), int(UIControl[L"RoundRect/PaintThickness/y"].v), int(UIControl[L"RoundRect/PaintThickness/x"].v + UIControl[L"RoundRect/PaintThickness/width"].v), int(UIControl[L"RoundRect/PaintThickness/y"].v + UIControl[L"RoundRect/PaintThickness/height"].v) }))
+							m = hiex::getmessage_win32(EM_MOUSE, floating_window);
+							if (abs(m.x - lx) <= 5 && abs(m.y - ly) <= 5)
 							{
 								if (!m.lbutton)
 								{
-									if (state == 1.1 || state == 1.12) state = 1.11;
-									else state = 1.1;
+									target_status = 1;
 
 									break;
 								}
 							}
 							else
 							{
+								SeekBar(m);
+
 								hiex::flushmessage_win32(EM_MOUSE, floating_window);
 
 								break;
 							}
 						}
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+						MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
+					}
+
+					if (m.rbutton)
+					{
+						if (MessageBox(floating_window, L"是否关闭 智绘教 ？", L"智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) off_signal = true;
 					}
 				}
-				else if (state == 1.11 && IsInRect(m.x, m.y, { 15, floating_windows.height - 312 + 10, 355, floating_windows.height - 312 + 40 }))
+
+				if (!choose.select && (!RecallImage.empty() || (!FirstDraw && RecallImage.empty())) && IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
 				{
 					if (m.lbutton)
 					{
-						POINT pt;
-
+						lx = m.x, ly = m.y;
 						while (1)
 						{
-							UIControlTarget[L"RoundRect/PaintThicknessSchedule3/width"].v = UIControlTarget[L"RoundRect/PaintThicknessSchedule3/height"].v = 10;
-
-							GetCursorPos(&pt);
-
-							int idx = max(10, min(320, pt.x - floating_windows.x - 17));
-
-							if (idx <= 200) brush.width = 1 + int(double(idx - 10) / 190.0 * 49.0);
-							else if (idx <= 260) brush.width = 51 + int(double(idx - 200) / 60.0 * 49.0);
-							else brush.width = 101 + int(double(idx - 260) / 60.0 * 399.0);
-
-							if (!KEY_DOWN(VK_LBUTTON)) break;
-						}
-						UIControlTarget[L"RoundRect/PaintThicknessSchedule3/width"].v = UIControlTarget[L"RoundRect/PaintThicknessSchedule3/height"].v = 20;
-
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
-				}
-				else if (state == 1.11 && IsInRect(m.x, m.y, { 355, floating_windows.height - 312 + 5, 455, floating_windows.height - 312 + 45 }))
-				{
-					if (brush.mode != 2)
-					{
-						if (IsInRect(m.x, m.y, { 365, floating_windows.height - 312 + 5, 395, floating_windows.height - 312 + 45 }))
-						{
-							if (m.lbutton)
-							{
-								int lx = m.x, ly = m.y;
-								while (1)
-								{
-									ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-									if (IsInRect(m.x, m.y, { 365, floating_windows.height - 312 + 5, 395, floating_windows.height - 312 + 45 }))
-									{
-										if (!m.lbutton)
-										{
-											brush.width = 4;
-											UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v = 1;
-
-											break;
-										}
-									}
-									else
-									{
-										hiex::flushmessage_win32(EM_MOUSE, floating_window);
-
-										break;
-									}
-								}
-								hiex::flushmessage_win32(EM_MOUSE, floating_window);
-							}
-						}
-						if (IsInRect(m.x, m.y, { 395, floating_windows.height - 312 + 5, 425, floating_windows.height - 312 + 45 }))
-						{
-							if (m.lbutton)
-							{
-								int lx = m.x, ly = m.y;
-								while (1)
-								{
-									ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-									if (IsInRect(m.x, m.y, { 395, floating_windows.height - 312 + 5, 425, floating_windows.height - 312 + 45 }))
-									{
-										if (!m.lbutton)
-										{
-											brush.width = 10;
-											UIControlTarget[L"RoundRect/PaintThicknessSchedule5a/ellipse"].v = 2;
-
-											break;
-										}
-									}
-									else
-									{
-										hiex::flushmessage_win32(EM_MOUSE, floating_window);
-
-										break;
-									}
-								}
-								hiex::flushmessage_win32(EM_MOUSE, floating_window);
-							}
-						}
-						if (IsInRect(m.x, m.y, { 425, floating_windows.height - 312 + 5, 455, floating_windows.height - 312 + 45 }))
-						{
-							if (m.lbutton)
-							{
-								int lx = m.x, ly = m.y;
-								while (1)
-								{
-									ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-									if (IsInRect(m.x, m.y, { 425, floating_windows.height - 312 + 5, 455, floating_windows.height - 312 + 45 }))
-									{
-										if (!m.lbutton)
-										{
-											brush.width = 20;
-											UIControlTarget[L"RoundRect/PaintThicknessSchedule6a/ellipse"].v = 10;
-
-											break;
-										}
-									}
-									else
-									{
-										hiex::flushmessage_win32(EM_MOUSE, floating_window);
-
-										break;
-									}
-								}
-								hiex::flushmessage_win32(EM_MOUSE, floating_window);
-							}
-						}
-					}
-					else
-					{
-						if (IsInRect(m.x, m.y, { 355, floating_windows.height - 312 + 5, 405, floating_windows.height - 312 + 45 }))
-						{
-							if (m.lbutton)
-							{
-								int lx = m.x, ly = m.y;
-								while (1)
-								{
-									ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-									if (IsInRect(m.x, m.y, { 355, floating_windows.height - 312 + 5, 405, floating_windows.height - 312 + 45 }))
-									{
-										if (!m.lbutton)
-										{
-											brush.width = 40;
-											UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v = 20;
-
-											break;
-										}
-									}
-									else
-									{
-										hiex::flushmessage_win32(EM_MOUSE, floating_window);
-
-										break;
-									}
-								}
-								hiex::flushmessage_win32(EM_MOUSE, floating_window);
-							}
-						}
-						if (IsInRect(m.x, m.y, { 405, floating_windows.height - 312 + 5, 455, floating_windows.height - 312 + 45 }))
-						{
-							if (m.lbutton)
-							{
-								int lx = m.x, ly = m.y;
-								while (1)
-								{
-									ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-									if (IsInRect(m.x, m.y, { 405, floating_windows.height - 312 + 5, 455, floating_windows.height - 312 + 45 }))
-									{
-										if (!m.lbutton)
-										{
-											brush.width = 50;
-											UIControlTarget[L"RoundRect/PaintThicknessSchedule6a/ellipse"].v = 20;
-
-											break;
-										}
-									}
-									else
-									{
-										hiex::flushmessage_win32(EM_MOUSE, floating_window);
-
-										break;
-									}
-								}
-								hiex::flushmessage_win32(EM_MOUSE, floating_window);
-							}
-						}
-					}
-				}
-				else if (state == 1.12 && IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColorChoose/x"].v, (int)UIControlTarget[L"RoundRect/BrushColorChoose/y"].v, (int)UIControlTarget[L"RoundRect/BrushColorChoose/x"].v + (int)UIControlTarget[L"RoundRect/BrushColorChoose/width"].v, (int)UIControlTarget[L"RoundRect/BrushColorChoose/y"].v + (int)UIControlTarget[L"RoundRect/BrushColorChoose/height"].v }))
-				{
-					if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColorChooseWheel/x"].v, (int)UIControlTarget[L"RoundRect/BrushColorChooseWheel/y"].v, (int)UIControlTarget[L"RoundRect/BrushColorChooseWheel/x"].v + (int)UIControlTarget[L"RoundRect/BrushColorChooseWheel/width"].v, (int)UIControlTarget[L"RoundRect/BrushColorChooseWheel/y"].v + (int)UIControlTarget[L"RoundRect/BrushColorChooseWheel/height"].v }))
-					{
-						if (m.lbutton)
-						{
-							POINT center{ int(UIControlTarget[L"RoundRect/BrushColorChooseWheel/x"].v + UIControlTarget[L"RoundRect/BrushColorChooseWheel/width"].v / 2), int(UIControlTarget[L"RoundRect/BrushColorChooseWheel/y"].v + UIControlTarget[L"RoundRect/BrushColorChooseWheel/height"].v / 2) };
-							POINT pt;
-
-							BrushColorChoose.last_x = -1, BrushColorChoose.last_y = -1;
-							while (1)
-							{
-								GetCursorPos(&pt);
-
-								pt.x -= floating_windows.x;
-								pt.y -= floating_windows.y;
-
-								int len = min(int(UIControlTarget[L"RoundRect/BrushColorChooseWheel/width"].v / 2 - 2), int(sqrt(pow(center.x - pt.x, 2) + pow(center.y - pt.y, 2))));
-								double length = sqrt(pow(center.x - pt.x, 2) + pow(center.y - pt.y, 2));
-
-								POINT result;
-								result.x = LONG(center.x + len * (pt.x - center.x) / length - UIControl[L"RoundRect/BrushColorChooseWheel/x"].v);
-								result.y = LONG(center.y + len * (pt.y - center.y) / length - UIControl[L"RoundRect/BrushColorChooseWheel/y"].v);
-
-								std::shared_lock<std::shared_mutex> lock(ColorPaletteSm);
-
-								int width = ColorPaletteImg.getwidth();
-								DWORD* pBuffer = GetImageBuffer(&ColorPaletteImg);
-								DWORD colorValue = pBuffer[result.y * width + result.x];
-								int blue = (colorValue & 0xFF);
-								int green = (colorValue >> 8) & 0xFF;
-								int red = (colorValue >> 16) & 0xFF;
-
-								lock.unlock();
-
-								brush.color = brush.primary_colour = RGBA(red, green, blue, (brush.color >> 24) & 0xFF);
-								if (computeContrast(RGB(red, green, blue), RGB(255, 255, 255)) >= 3) BackgroundColorMode = 0;
-								else BackgroundColorMode = 1;
-
-								BrushColorChoose.x = result.x, BrushColorChoose.y = result.y;
-								UIControlTarget[L"RoundRect/BrushColorChooseMark/x"].v = UIControl[L"RoundRect/BrushColorChooseMark/x"].v = result.x + UIControl[L"RoundRect/BrushColorChooseWheel/x"].v - 7;
-								UIControlTarget[L"RoundRect/BrushColorChooseMark/y"].v = UIControl[L"RoundRect/BrushColorChooseMark/y"].v = result.y + UIControl[L"RoundRect/BrushColorChooseWheel/y"].v - 7;
-
-								if (!KEY_DOWN(VK_LBUTTON)) break;
-							}
-							BrushColorChoose.last_x = BrushColorChoose.x, BrushColorChoose.last_y = BrushColorChoose.y;
-
-							hiex::flushmessage_win32(EM_MOUSE, floating_window);
-						}
-					}
-				}
-
-				else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor1/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor1/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor1/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor1/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor1/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor1/height"].v }))
-				{
-					if (m.lbutton)
-					{
-						brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor1/fill"].v, 255);
-						BackgroundColorMode = 1;
-
-						BrushColorChoose.x = BrushColorChoose.y = 0;
-						if (state == 1.11 || state == 1.12) state = 1.1;
-
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
-				}
-				else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor2/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor2/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor2/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor2/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor2/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor2/height"].v }))
-				{
-					if (m.lbutton)
-					{
-						brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor2/fill"].v, 255);
-						BackgroundColorMode = 0;
-
-						BrushColorChoose.x = BrushColorChoose.y = 0;
-						if (state == 1.11 || state == 1.12) state = 1.1;
-
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
-				}
-				else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor3/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor3/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor3/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor3/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor3/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor3/height"].v }))
-				{
-					if (m.lbutton)
-					{
-						brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor3/fill"].v, 255);
-						BackgroundColorMode = 1;
-
-						BrushColorChoose.x = BrushColorChoose.y = 0;
-						if (state == 1.11 || state == 1.12) state = 1.1;
-
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
-				}
-				else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor4/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor4/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor4/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor4/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor4/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor4/height"].v }))
-				{
-					if (m.lbutton)
-					{
-						brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor4/fill"].v, 255);
-						BackgroundColorMode = 0;
-
-						BrushColorChoose.x = BrushColorChoose.y = 0;
-						if (state == 1.11 || state == 1.12) state = 1.1;
-
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
-				}
-				else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor5/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor5/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor5/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor5/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor5/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor5/height"].v }))
-				{
-					if (m.lbutton)
-					{
-						brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor5/fill"].v, 255);
-						BackgroundColorMode = 1;
-
-						BrushColorChoose.x = BrushColorChoose.y = 0;
-						if (state == 1.11 || state == 1.12) state = 1.1;
-
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
-				}
-				else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor6/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor6/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor6/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor6/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor6/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor6/height"].v }))
-				{
-					if (m.lbutton)
-					{
-						brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor6/fill"].v, 255);
-						BackgroundColorMode = 0;
-
-						BrushColorChoose.x = BrushColorChoose.y = 0;
-						if (state == 1.11 || state == 1.12) state = 1.1;
-
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
-				}
-				else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor7/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor7/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor7/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor7/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor7/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor7/height"].v }))
-				{
-					if (m.lbutton)
-					{
-						brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor7/fill"].v, 255);
-						BackgroundColorMode = 1;
-
-						BrushColorChoose.x = BrushColorChoose.y = 0;
-						if (state == 1.11 || state == 1.12) state = 1.1;
-
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
-				}
-				else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor8/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor8/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor8/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor8/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor8/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor8/height"].v }))
-				{
-					if (m.lbutton)
-					{
-						brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor8/fill"].v, 255);
-						BackgroundColorMode = 0;
-
-						BrushColorChoose.x = BrushColorChoose.y = 0;
-						if (state == 1.11 || state == 1.12) state = 1.1;
-
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
-				}
-				else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor9/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor9/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor9/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor9/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor9/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor9/height"].v }))
-				{
-					if (m.lbutton)
-					{
-						brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor9/fill"].v, 255);
-						BackgroundColorMode = 1;
-
-						BrushColorChoose.x = BrushColorChoose.y = 0;
-						if (state == 1.11 || state == 1.12) state = 1.1;
-
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
-				}
-				else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor10/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor10/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor10/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor10/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor10/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor10/height"].v }))
-				{
-					if (m.lbutton)
-					{
-						brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor10/fill"].v, 255);
-						BackgroundColorMode = 0;
-
-						BrushColorChoose.x = BrushColorChoose.y = 0;
-						if (state == 1.11 || state == 1.12) state = 1.1;
-
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
-				}
-				else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor11/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor11/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor11/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor11/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor11/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor11/height"].v }))
-				{
-					if (m.lbutton)
-					{
-						brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor11/fill"].v, 255);
-						BackgroundColorMode = 1;
-
-						BrushColorChoose.x = BrushColorChoose.y = 0;
-						if (state == 1.11 || state == 1.12) state = 1.1;
-
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
-				}
-				else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor12/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor12/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor12/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor12/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor12/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor12/height"].v }))
-				{
-					if (m.lbutton)
-					{
-						int lx = m.x, ly = m.y;
-						while (1)
-						{
-							ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-							if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor12/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor12/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor12/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor12/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor12/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor12/height"].v }))
-							{
-								if (!m.lbutton)
-								{
-									if (state == 1.12) state = 1.1;
-									else state = 1.12;
-
-									break;
-								}
-							}
-							else
-							{
-								hiex::flushmessage_win32(EM_MOUSE, floating_window);
-
-								break;
-							}
-						}
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
-				}
-
-				if (IsInRect(m.x, m.y, { 5, floating_windows.height - 55 + 5, 5 + 90, floating_windows.height - 55 + 5 + 30 }))
-				{
-					if (m.lbutton)
-					{
-						if (brush.mode == 2)
-						{
-							brush.HighlighterWidthHistory = brush.width;
-							brush.width = brush.PenWidthHistory;
-						}
-						brush.mode = 1;
-
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
-				}
-				else if (IsInRect(m.x, m.y, { 95, floating_windows.height - 55 + 5, 95 + 90, floating_windows.height - 55 + 5 + 30 }))
-				{
-					if (m.lbutton)
-					{
-						if (brush.mode != 2)
-						{
-							brush.PenWidthHistory = brush.width;
-							brush.width = brush.HighlighterWidthHistory;
-						}
-						brush.mode = 2;
-
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
-				}
-				else if (IsInRect(m.x, m.y, { 195, floating_windows.height - 55 + 5,195 + 90, floating_windows.height - 55 + 5 + 30 }))
-				{
-					if (m.lbutton)
-					{
-						if (brush.mode != 1 && brush.mode != 2)
-						{
-							brush.mode = 1;
-						}
-
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
-				}
-				else if (IsInRect(m.x, m.y, { 285, floating_windows.height - 55 + 5,285 + 90, floating_windows.height - 55 + 5 + 30 }))
-				{
-					if (m.lbutton)
-					{
-						if (brush.mode == 2)
-						{
-							brush.HighlighterWidthHistory = brush.width;
-							brush.width = brush.PenWidthHistory;
-						}
-						brush.mode = 3;
-
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
-				}
-				else if (IsInRect(m.x, m.y, { 375, floating_windows.height - 55 + 5,375 + 90, floating_windows.height - 55 + 5 + 30 }))
-				{
-					if (m.lbutton)
-					{
-						if (brush.mode == 2)
-						{
-							brush.HighlighterWidthHistory = brush.width;
-							brush.width = brush.PenWidthHistory;
-						}
-						brush.mode = 4;
-
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
-				}
-
-				if (!m.lbutton && (IsInRect(m.x, m.y, { 1, floating_windows.height - 256, 1 + floating_windows.width - 106, floating_windows.height - 256 + 90 }) || IsInRect(m.x, m.y, { 0, floating_windows.height - 50, 0 + floating_windows.width, floating_windows.height - 50 + 50 })) && brush_connect) state = 1;
-			}
-			//橡皮
-			if (rubber.select == false && IsInRect(m.x, m.y, { 192 + 8, floating_windows.height - 156 + 8, 192 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
-			{
-				if (m.lbutton)
-				{
-					int lx = m.x, ly = m.y;
-					while (1)
-					{
-						ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-						if (IsInRect(m.x, m.y, { 192 + 8, floating_windows.height - 156 + 8, 192 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
-						{
-							if (!m.lbutton)
-							{
-								state = 1;
-								rubber.select = true;
-								brush.select = false;
-								choose.select = false;
-
-								if (SeewoCamera) FreezeFrame.mode = 1;
-
-								break;
-							}
-						}
-						else
-						{
-							hiex::flushmessage_win32(EM_MOUSE, floating_window);
-
-							break;
-						}
-					}
-					hiex::flushmessage_win32(EM_MOUSE, floating_window);
-				}
-			}
-			//恢复画板
-			{
-				if (choose.select == false && RecallImage.size() > 1 && IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
-				{
-					if (m.lbutton)
-					{
-						int lx = m.x, ly = m.y;
-						while (1)
-						{
-							ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
+							hiex::getmessage_win32(&m, EM_MOUSE, floating_window);
 							if (IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
 							{
 								if (!m.lbutton)
 								{
-									RecallImage.pop_back();
-									deque<RecallStruct>(RecallImage).swap(RecallImage); // 使用swap技巧来释放未使用的内存
+									std::shared_lock<std::shared_mutex> lock1(PointTempSm);
+									bool start = !TouchTemp.empty();
+									lock1.unlock();
+									if (start) break;
 
-									if (!RecallImage.empty()) drawpad = RecallImage.back().img;
-									else SetImageColor(drawpad, RGBA(0, 0, 0, 1), true);
+									pair<int, int> tmp_recond = make_pair(0, 0);
+									int tmp_recall_image_type = 0;
+									if (!RecallImage.empty())
+									{
+										tmp_recond = RecallImage.back().recond;
+										tmp_recall_image_type = RecallImage.back().type;
 
-									extreme_point = RecallImage.back().extreme_point;
+										if (RecallImage.back().type == 2 && !choose.select && !CompareImagesWithBuffer(&drawpad, &RecallImage.back().img));
+										else RecallImage.pop_back();
+										deque<RecallStruct>(RecallImage).swap(RecallImage); // 使用swap技巧来释放未使用的内存
+									}
 
+									if (!RecallImage.empty())
+									{
+										drawpad = RecallImage.back().img;
+										extreme_point = RecallImage.back().extreme_point;
+										recall_image_recond = RecallImage.back().recond.first;
+									}
+									else if (tmp_recond.first > 10) goto SuperRecovery1;
+									else
+									{
+										if (tmp_recall_image_type == 2) goto SuperRecovery1;
+										SetImageColor(drawpad, RGBA(0, 0, 0, 0), true);
+										extreme_point.clear();
+										recall_image_recond = 0;
+										FirstDraw = true;
+									}
+									SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
+									hiex::TransparentImage(&window_background, 0, 0, &drawpad);
+
+									if (!choose.select)
 									{
 										// 设置BLENDFUNCTION结构体
 										BLENDFUNCTION blend;
@@ -5511,11 +5359,16 @@ void MouseInteraction()
 										ulwi.dwFlags = ULW_ALPHA;
 
 										// 定义要更新的矩形区域
-										RECT rcDirty = { 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
-
-										ulwi.hdcSrc = GetImageHDC(&drawpad);
-										ulwi.prcDirty = &rcDirty;
+										ulwi.hdcSrc = GetImageHDC(&window_background);
 										UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
+									}
+									else
+									{
+										reserve_drawpad = true;
+
+										brush.select = true;
+										rubber.select = false;
+										choose.select = false;
 									}
 
 									break;
@@ -5531,89 +5384,87 @@ void MouseInteraction()
 						hiex::flushmessage_win32(EM_MOUSE, floating_window);
 					}
 				}
-				if (choose.select == true && RestoreSketchpad && IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
+				else if (!choose.select && RecallImage.empty() && current_record_pointer <= total_record_pointer + 1 && practical_total_record_pointer && IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
 				{
 					if (m.lbutton)
 					{
-						int lx = m.x, ly = m.y;
+						lx = m.x, ly = m.y;
 						while (1)
 						{
-							ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
+							hiex::getmessage_win32(&m, EM_MOUSE, floating_window);
 							if (IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
 							{
 								if (!m.lbutton)
 								{
-									empty_drawpad = false;
-									brush.select = true;
-									rubber.select = false;
-									choose.select = false;
+								SuperRecovery1:
 
-									break;
-								}
-							}
-							else
-							{
-								hiex::flushmessage_win32(EM_MOUSE, floating_window);
-
-								break;
-							}
-						}
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
-				}
-			}
-			//选项
-			if (IsInRect(m.x, m.y, { 288 + 8, floating_windows.height - 156 + 8, 288 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
-			{
-				if (m.lbutton)
-				{
-					int lx = m.x, ly = m.y;
-					while (1)
-					{
-						ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-						if (IsInRect(m.x, m.y, { 288 + 8, floating_windows.height - 156 + 8, 288 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
-						{
-							if (!m.lbutton)
-							{
-								if (test.select) test.select = false;
-								else test.select = true;
-
-								break;
-							}
-						}
-						else
-						{
-							hiex::flushmessage_win32(EM_MOUSE, floating_window);
-
-							break;
-						}
-					}
-					hiex::flushmessage_win32(EM_MOUSE, floating_window);
-				}
-			}
-			//插件：随机点名
-			if (plug_in_RandomRollCall.select == 2)
-			{
-				if (IsInRect(m.x, m.y, { 2, floating_windows.height - 55, 2 + 100, floating_windows.height - 55 + 40 }))
-				{
-					if (m.lbutton)
-					{
-						int lx = m.x, ly = m.y;
-						while (1)
-						{
-							ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-							if (IsInRect(m.x, m.y, { 2, floating_windows.height - 55, 2 + 100, floating_windows.height - 55 + 40 }))
-							{
-								if (!m.lbutton)
-								{
-									if (_waccess((string_to_wstring(global_path) + L"plug-in\\随机点名\\随机点名.exe").c_str(), 0) == 0 && !isProcessRunning((string_to_wstring(global_path) + L"plug-in\\随机点名\\随机点名.exe").c_str()))
+									if (current_record_pointer == total_record_pointer + 1)
 									{
-										STARTUPINFOA si = { 0 };
-										si.cb = sizeof(si);
-										PROCESS_INFORMATION pi = { 0 };
-										CreateProcessA(NULL, (global_path + "plug-in\\随机点名\\随机点名.exe").data(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
-										CloseHandle(pi.hProcess);
-										CloseHandle(pi.hThread);
+										choose.select = true;
+										brush.select = false;
+										rubber.select = false;
+										break;
+									}
+									//Testw(string_to_wstring(convert_to_gbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString())).c_str());
+									if (_access(convert_to_gbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString()).c_str(), 4) == -1) break;
+
+									filesystem::path pathObj(convert_to_gbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString()));
+									wstring file_name1 = pathObj.parent_path().filename().wstring();
+									wstring file_name2 = pathObj.stem().wstring();
+
+									std::wistringstream temp_wiss(file_name1 + L" " + file_name2);
+									temp_wiss >> std::get_time(&RecallImageTm, L"%Y-%m-%d %H-%M-%S");
+
+									FreezeRecall = 500;
+
+									std::shared_lock<std::shared_mutex> lock1(PointTempSm);
+									bool start = !TouchTemp.empty();
+									lock1.unlock();
+									if (start) break;
+
+									IMAGE temp;
+									loadimage(&temp, string_to_wstring(convert_to_gbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString())).c_str());
+									drawpad = temp, extreme_point = map<pair<int, int>, bool>();
+
+									current_record_pointer++;
+
+									SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
+									hiex::TransparentImage(&window_background, 0, 0, &drawpad);
+
+									if (brush.select)
+									{
+										// 设置BLENDFUNCTION结构体
+										BLENDFUNCTION blend;
+										blend.BlendOp = AC_SRC_OVER;
+										blend.BlendFlags = 0;
+										blend.SourceConstantAlpha = 255; // 设置透明度，0为全透明，255为不透明
+										blend.AlphaFormat = AC_SRC_ALPHA; // 使用源图像的alpha通道
+										HDC hdcScreen = GetDC(NULL);
+										// 调用UpdateLayeredWindow函数更新窗口
+										POINT ptSrc = { 0,0 };
+										SIZE sizeWnd = { drawpad.getwidth(),drawpad.getheight() };
+										POINT ptDst = { 0,0 }; // 设置窗口位置
+										UPDATELAYEREDWINDOWINFO ulwi = { 0 };
+										ulwi.cbSize = sizeof(ulwi);
+										ulwi.hdcDst = hdcScreen;
+										ulwi.pptDst = &ptDst;
+										ulwi.psize = &sizeWnd;
+										ulwi.pptSrc = &ptSrc;
+										ulwi.crKey = RGB(255, 255, 255);
+										ulwi.pblend = &blend;
+										ulwi.dwFlags = ULW_ALPHA;
+
+										// 定义要更新的矩形区域
+										ulwi.hdcSrc = GetImageHDC(&window_background);
+										UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
+									}
+									else
+									{
+										reserve_drawpad = true;
+
+										brush.select = true;
+										rubber.select = false;
+										choose.select = false;
 									}
 
 									break;
@@ -5630,12 +5481,1051 @@ void MouseInteraction()
 					}
 				}
 			}
-
-			if (m.rbutton && IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 156, floating_windows.width, floating_windows.height }))
+			if ((int)state == 1)
 			{
-				off_signal = true;
+				if (IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 156, floating_windows.width - 96 + 96, floating_windows.height - 156 + 96 }))
+				{
+					if (m.lbutton)
+					{
+						lx = m.x, ly = m.y;
+						while (1)
+						{
+							m = hiex::getmessage_win32(EM_MOUSE, floating_window);
+							if (abs(m.x - lx) <= 5 && abs(m.y - ly) <= 5)
+							{
+								if (!m.lbutton)
+								{
+									state = 1;
+
+									target_status = 0;
+
+									break;
+								}
+							}
+							else
+							{
+								SeekBar(m);
+
+								hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+								break;
+							}
+						}
+
+						MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
+					}
+
+					if (m.rbutton)
+					{
+						if (MessageBox(floating_window, L"是否关闭 智绘教 ？", L"智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) off_signal = true;
+					}
+				}
+
+				//窗口穿透
+				if (choose.select == false && IsInRect(m.x, m.y, { floating_windows.width - 96 + 4, floating_windows.height - 256 + 8, floating_windows.width - 96 + 4 + 88, floating_windows.height - 256 + 8 + 40 }))
+				{
+					if (m.lbutton)
+					{
+						lx = m.x, ly = m.y;
+						while (1)
+						{
+							ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
+							if (IsInRect(m.x, m.y, { floating_windows.width - 96 + 4, floating_windows.height - 256 + 8, floating_windows.width - 96 + 4 + 88, floating_windows.height - 256 + 8 + 40 }))
+							{
+								if (!m.lbutton)
+								{
+									if (penetrate.select)
+									{
+										penetrate.select = false;
+										if (FreezeFrame.mode == 2) FreezeFrame.mode = 1;
+									}
+									else
+									{
+										if (FreezeFrame.mode == 1) FreezeFrame.mode = 2;
+										penetrate.select = true;
+									}
+
+									break;
+								}
+							}
+							else
+							{
+								hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+								break;
+							}
+						}
+						hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+						MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
+					}
+				}
+				//窗口定格
+				if (ppt_show == NULL && IsInRect(m.x, m.y, { floating_windows.width - 96 + 4, floating_windows.height - 256 + 50, floating_windows.width - 96 + 4 + 88, floating_windows.height - 256 + 50 + 40 }))
+				{
+					if (m.lbutton)
+					{
+						lx = m.x, ly = m.y;
+						while (1)
+						{
+							ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
+							if (IsInRect(m.x, m.y, { floating_windows.width - 96 + 4, floating_windows.height - 256 + 50, floating_windows.width - 96 + 4 + 88, floating_windows.height - 256 + 50 + 40 }))
+							{
+								if (!m.lbutton)
+								{
+									if (FreezeFrame.mode != 1)
+									{
+										penetrate.select = false;
+
+										if (choose.select == true) FreezeFrame.select = true;
+										FreezeFrame.mode = 1;
+									}
+									else FreezeFrame.mode = 0, FreezeFrame.select = false;
+
+									break;
+								}
+							}
+							else
+							{
+								hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+								break;
+							}
+						}
+						hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+						MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
+					}
+				}
+
+				//选择
+				if (IsInRect(m.x, m.y, { 0 + 8, floating_windows.height - 156 + 8, 0 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
+				{
+					if (m.lbutton)
+					{
+						lx = m.x, ly = m.y;
+						while (1)
+						{
+							ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
+							if (IsInRect(m.x, m.y, { 0 + 8, floating_windows.height - 156 + 8, 0 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
+							{
+								if (!m.lbutton)
+								{
+									if (choose.select == false)
+									{
+										state = 1;
+										if (!FreezeFrame.select || penetrate.select) FreezeFrame.mode = 0, FreezeFrame.select = false;
+
+										brush.select = false;
+										rubber.select = false;
+										choose.select = true;
+										penetrate.select = false;
+									}
+									else if (choose.mode == true)
+									{
+										choose.mode = false;
+									}
+									else if (choose.mode == false)
+									{
+										choose.mode = true;
+									}
+
+									break;
+								}
+							}
+							else
+							{
+								hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+								break;
+							}
+						}
+						hiex::flushmessage_win32(EM_MOUSE, floating_window);
+					}
+				}
+				//画笔
+				if (IsInRect(m.x, m.y, { 96 + 8, floating_windows.height - 156 + 8, 96 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
+				{
+					if (m.lbutton)
+					{
+						lx = m.x, ly = m.y;
+						brush_connect = false;
+
+						while (1)
+						{
+							ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
+							if (IsInRect(m.x, m.y, { 96 + 8, floating_windows.height - 156 + 8, 96 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
+							{
+								if (abs(ly - m.y) >= 20 && state == 1)
+								{
+									brush.select = true;
+									rubber.select = false;
+									choose.select = false;
+									state = 1.1, brush_connect = true;
+
+									if (SeewoCamera)
+									{
+										penetrate.select = false;
+										FreezeFrame.mode = 1;
+									}
+								}
+								else if (abs(ly - m.y) >= 20) brush_connect = true;
+								else
+								{
+									if (!m.lbutton)
+									{
+										if (brush.select == false)
+										{
+											state = 1;
+											brush.select = true;
+											rubber.select = false;
+											choose.select = false;
+
+											if (SeewoCamera)
+											{
+												penetrate.select = false;
+												FreezeFrame.mode = 1;
+											}
+										}
+										else if (state == 1)
+										{
+											state = 1.1;
+
+											MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
+										}
+										else if ((state == 1.1 || state == 1.11 || state == 1.12) && ly - m.y < 20)
+										{
+											state = 1;
+
+											MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
+										}
+
+										break;
+									}
+								}
+							}
+							else
+							{
+								hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+								break;
+							}
+						}
+						hiex::flushmessage_win32(EM_MOUSE, floating_window);
+					}
+				}
+				//画笔选项1
+				else if (state == 1.1 || state == 1.11 || state == 1.12)
+				{
+					if ((state == 1.1 || state == 1.11 || state == 1.12) && IsInRect(m.x, m.y, { int(UIControl[L"RoundRect/PaintThickness/x"].v), int(UIControl[L"RoundRect/PaintThickness/y"].v), int(UIControl[L"RoundRect/PaintThickness/x"].v + UIControl[L"RoundRect/PaintThickness/width"].v), int(UIControl[L"RoundRect/PaintThickness/y"].v + UIControl[L"RoundRect/PaintThickness/height"].v) }))
+					{
+						if (m.lbutton)
+						{
+							lx = m.x, ly = m.y;
+							while (1)
+							{
+								ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
+								if (IsInRect(m.x, m.y, { int(UIControl[L"RoundRect/PaintThickness/x"].v), int(UIControl[L"RoundRect/PaintThickness/y"].v), int(UIControl[L"RoundRect/PaintThickness/x"].v + UIControl[L"RoundRect/PaintThickness/width"].v), int(UIControl[L"RoundRect/PaintThickness/y"].v + UIControl[L"RoundRect/PaintThickness/height"].v) }))
+								{
+									if (!m.lbutton)
+									{
+										if (state == 1.1 || state == 1.12) state = 1.11;
+										else state = 1.1;
+
+										break;
+									}
+								}
+								else
+								{
+									hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+									break;
+								}
+							}
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+							MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
+						}
+					}
+					else if (state == 1.11 && IsInRect(m.x, m.y, { 15, floating_windows.height - 312 + 10, 355, floating_windows.height - 312 + 40 }))
+					{
+						if (m.lbutton)
+						{
+							POINT pt;
+
+							while (1)
+							{
+								UIControlTarget[L"RoundRect/PaintThicknessSchedule3/width"].v = UIControlTarget[L"RoundRect/PaintThicknessSchedule3/height"].v = 10;
+
+								GetCursorPos(&pt);
+
+								int idx = max(10, min(320, pt.x - floating_windows.x - 17));
+
+								if (idx <= 200) brush.width = 1 + int(double(idx - 10) / 190.0 * 49.0);
+								else if (idx <= 260) brush.width = 51 + int(double(idx - 200) / 60.0 * 49.0);
+								else brush.width = 101 + int(double(idx - 260) / 60.0 * 399.0);
+
+								if (!KEY_DOWN(VK_LBUTTON)) break;
+							}
+							UIControlTarget[L"RoundRect/PaintThicknessSchedule3/width"].v = UIControlTarget[L"RoundRect/PaintThicknessSchedule3/height"].v = 20;
+
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						}
+					}
+					else if (state == 1.11 && IsInRect(m.x, m.y, { 355, floating_windows.height - 312 + 5, 455, floating_windows.height - 312 + 45 }))
+					{
+						if (brush.mode != 2)
+						{
+							if (IsInRect(m.x, m.y, { 365, floating_windows.height - 312 + 5, 395, floating_windows.height - 312 + 45 }))
+							{
+								if (m.lbutton)
+								{
+									int lx = m.x, ly = m.y;
+									while (1)
+									{
+										ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
+										if (IsInRect(m.x, m.y, { 365, floating_windows.height - 312 + 5, 395, floating_windows.height - 312 + 45 }))
+										{
+											if (!m.lbutton)
+											{
+												brush.width = 3;
+												UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v = 1;
+
+												break;
+											}
+										}
+										else
+										{
+											hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+											break;
+										}
+									}
+									hiex::flushmessage_win32(EM_MOUSE, floating_window);
+								}
+							}
+							if (IsInRect(m.x, m.y, { 395, floating_windows.height - 312 + 5, 425, floating_windows.height - 312 + 45 }))
+							{
+								if (m.lbutton)
+								{
+									int lx = m.x, ly = m.y;
+									while (1)
+									{
+										ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
+										if (IsInRect(m.x, m.y, { 395, floating_windows.height - 312 + 5, 425, floating_windows.height - 312 + 45 }))
+										{
+											if (!m.lbutton)
+											{
+												brush.width = 10;
+												UIControlTarget[L"RoundRect/PaintThicknessSchedule5a/ellipse"].v = 2;
+
+												break;
+											}
+										}
+										else
+										{
+											hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+											break;
+										}
+									}
+									hiex::flushmessage_win32(EM_MOUSE, floating_window);
+								}
+							}
+							if (IsInRect(m.x, m.y, { 425, floating_windows.height - 312 + 5, 455, floating_windows.height - 312 + 45 }))
+							{
+								if (m.lbutton)
+								{
+									int lx = m.x, ly = m.y;
+									while (1)
+									{
+										ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
+										if (IsInRect(m.x, m.y, { 425, floating_windows.height - 312 + 5, 455, floating_windows.height - 312 + 45 }))
+										{
+											if (!m.lbutton)
+											{
+												brush.width = 20;
+												UIControlTarget[L"RoundRect/PaintThicknessSchedule6a/ellipse"].v = 10;
+
+												break;
+											}
+										}
+										else
+										{
+											hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+											break;
+										}
+									}
+									hiex::flushmessage_win32(EM_MOUSE, floating_window);
+								}
+							}
+						}
+						else
+						{
+							if (IsInRect(m.x, m.y, { 355, floating_windows.height - 312 + 5, 405, floating_windows.height - 312 + 45 }))
+							{
+								if (m.lbutton)
+								{
+									int lx = m.x, ly = m.y;
+									while (1)
+									{
+										ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
+										if (IsInRect(m.x, m.y, { 355, floating_windows.height - 312 + 5, 405, floating_windows.height - 312 + 45 }))
+										{
+											if (!m.lbutton)
+											{
+												brush.width = 35;
+												UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v = 20;
+
+												break;
+											}
+										}
+										else
+										{
+											hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+											break;
+										}
+									}
+									hiex::flushmessage_win32(EM_MOUSE, floating_window);
+								}
+							}
+							if (IsInRect(m.x, m.y, { 405, floating_windows.height - 312 + 5, 455, floating_windows.height - 312 + 45 }))
+							{
+								if (m.lbutton)
+								{
+									int lx = m.x, ly = m.y;
+									while (1)
+									{
+										ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
+										if (IsInRect(m.x, m.y, { 405, floating_windows.height - 312 + 5, 455, floating_windows.height - 312 + 45 }))
+										{
+											if (!m.lbutton)
+											{
+												brush.width = 50;
+												UIControlTarget[L"RoundRect/PaintThicknessSchedule6a/ellipse"].v = 20;
+
+												break;
+											}
+										}
+										else
+										{
+											hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+											break;
+										}
+									}
+									hiex::flushmessage_win32(EM_MOUSE, floating_window);
+								}
+							}
+						}
+					}
+					else if (state == 1.12 && IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColorChoose/x"].v, (int)UIControlTarget[L"RoundRect/BrushColorChoose/y"].v, (int)UIControlTarget[L"RoundRect/BrushColorChoose/x"].v + (int)UIControlTarget[L"RoundRect/BrushColorChoose/width"].v, (int)UIControlTarget[L"RoundRect/BrushColorChoose/y"].v + (int)UIControlTarget[L"RoundRect/BrushColorChoose/height"].v }))
+					{
+						if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColorChooseWheel/x"].v, (int)UIControlTarget[L"RoundRect/BrushColorChooseWheel/y"].v, (int)UIControlTarget[L"RoundRect/BrushColorChooseWheel/x"].v + (int)UIControlTarget[L"RoundRect/BrushColorChooseWheel/width"].v, (int)UIControlTarget[L"RoundRect/BrushColorChooseWheel/y"].v + (int)UIControlTarget[L"RoundRect/BrushColorChooseWheel/height"].v }))
+						{
+							if (m.lbutton)
+							{
+								POINT center{ int(UIControlTarget[L"RoundRect/BrushColorChooseWheel/x"].v + UIControlTarget[L"RoundRect/BrushColorChooseWheel/width"].v / 2), int(UIControlTarget[L"RoundRect/BrushColorChooseWheel/y"].v + UIControlTarget[L"RoundRect/BrushColorChooseWheel/height"].v / 2) };
+								POINT pt;
+
+								BrushColorChoose.last_x = -1, BrushColorChoose.last_y = -1;
+								while (1)
+								{
+									GetCursorPos(&pt);
+
+									pt.x -= floating_windows.x;
+									pt.y -= floating_windows.y;
+
+									int len = min(int(UIControlTarget[L"RoundRect/BrushColorChooseWheel/width"].v / 2 - 2), int(sqrt(pow(center.x - pt.x, 2) + pow(center.y - pt.y, 2))));
+									double length = sqrt(pow(center.x - pt.x, 2) + pow(center.y - pt.y, 2));
+
+									POINT result;
+									result.x = LONG(center.x + len * (pt.x - center.x) / length - UIControl[L"RoundRect/BrushColorChooseWheel/x"].v);
+									result.y = LONG(center.y + len * (pt.y - center.y) / length - UIControl[L"RoundRect/BrushColorChooseWheel/y"].v);
+
+									std::shared_lock<std::shared_mutex> lock(ColorPaletteSm);
+
+									int width = ColorPaletteImg.getwidth();
+									DWORD* pBuffer = GetImageBuffer(&ColorPaletteImg);
+									DWORD colorValue = pBuffer[result.y * width + result.x];
+									int blue = (colorValue & 0xFF);
+									int green = (colorValue >> 8) & 0xFF;
+									int red = (colorValue >> 16) & 0xFF;
+
+									lock.unlock();
+
+									brush.color = brush.primary_colour = RGBA(red, green, blue, (brush.color >> 24) & 0xFF);
+									if (computeContrast(RGB(red, green, blue), RGB(255, 255, 255)) >= 3) BackgroundColorMode = 0;
+									else BackgroundColorMode = 1;
+
+									BrushColorChoose.x = result.x, BrushColorChoose.y = result.y;
+									UIControlTarget[L"RoundRect/BrushColorChooseMark/x"].v = UIControl[L"RoundRect/BrushColorChooseMark/x"].v = result.x + UIControl[L"RoundRect/BrushColorChooseWheel/x"].v - 7;
+									UIControlTarget[L"RoundRect/BrushColorChooseMark/y"].v = UIControl[L"RoundRect/BrushColorChooseMark/y"].v = result.y + UIControl[L"RoundRect/BrushColorChooseWheel/y"].v - 7;
+
+									if (!KEY_DOWN(VK_LBUTTON)) break;
+								}
+								BrushColorChoose.last_x = BrushColorChoose.x, BrushColorChoose.last_y = BrushColorChoose.y;
+
+								hiex::flushmessage_win32(EM_MOUSE, floating_window);
+							}
+						}
+					}
+
+					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor1/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor1/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor1/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor1/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor1/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor1/height"].v }))
+					{
+						if (m.lbutton)
+						{
+							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor1/fill"].v, 255);
+							BackgroundColorMode = 1;
+
+							BrushColorChoose.x = BrushColorChoose.y = 0;
+							if (state == 1.11 || state == 1.12) state = 1.1;
+
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						}
+					}
+					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor2/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor2/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor2/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor2/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor2/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor2/height"].v }))
+					{
+						if (m.lbutton)
+						{
+							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor2/fill"].v, 255);
+							BackgroundColorMode = 0;
+
+							BrushColorChoose.x = BrushColorChoose.y = 0;
+							if (state == 1.11 || state == 1.12) state = 1.1;
+
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						}
+					}
+					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor3/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor3/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor3/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor3/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor3/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor3/height"].v }))
+					{
+						if (m.lbutton)
+						{
+							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor3/fill"].v, 255);
+							BackgroundColorMode = 1;
+
+							BrushColorChoose.x = BrushColorChoose.y = 0;
+							if (state == 1.11 || state == 1.12) state = 1.1;
+
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						}
+					}
+					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor4/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor4/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor4/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor4/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor4/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor4/height"].v }))
+					{
+						if (m.lbutton)
+						{
+							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor4/fill"].v, 255);
+							BackgroundColorMode = 0;
+
+							BrushColorChoose.x = BrushColorChoose.y = 0;
+							if (state == 1.11 || state == 1.12) state = 1.1;
+
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						}
+					}
+					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor5/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor5/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor5/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor5/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor5/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor5/height"].v }))
+					{
+						if (m.lbutton)
+						{
+							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor5/fill"].v, 255);
+							BackgroundColorMode = 1;
+
+							BrushColorChoose.x = BrushColorChoose.y = 0;
+							if (state == 1.11 || state == 1.12) state = 1.1;
+
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						}
+					}
+					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor6/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor6/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor6/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor6/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor6/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor6/height"].v }))
+					{
+						if (m.lbutton)
+						{
+							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor6/fill"].v, 255);
+							BackgroundColorMode = 0;
+
+							BrushColorChoose.x = BrushColorChoose.y = 0;
+							if (state == 1.11 || state == 1.12) state = 1.1;
+
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						}
+					}
+					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor7/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor7/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor7/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor7/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor7/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor7/height"].v }))
+					{
+						if (m.lbutton)
+						{
+							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor7/fill"].v, 255);
+							BackgroundColorMode = 1;
+
+							BrushColorChoose.x = BrushColorChoose.y = 0;
+							if (state == 1.11 || state == 1.12) state = 1.1;
+
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						}
+					}
+					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor8/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor8/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor8/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor8/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor8/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor8/height"].v }))
+					{
+						if (m.lbutton)
+						{
+							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor8/fill"].v, 255);
+							BackgroundColorMode = 0;
+
+							BrushColorChoose.x = BrushColorChoose.y = 0;
+							if (state == 1.11 || state == 1.12) state = 1.1;
+
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						}
+					}
+					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor9/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor9/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor9/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor9/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor9/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor9/height"].v }))
+					{
+						if (m.lbutton)
+						{
+							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor9/fill"].v, 255);
+							BackgroundColorMode = 1;
+
+							BrushColorChoose.x = BrushColorChoose.y = 0;
+							if (state == 1.11 || state == 1.12) state = 1.1;
+
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						}
+					}
+					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor10/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor10/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor10/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor10/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor10/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor10/height"].v }))
+					{
+						if (m.lbutton)
+						{
+							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor10/fill"].v, 255);
+							BackgroundColorMode = 0;
+
+							BrushColorChoose.x = BrushColorChoose.y = 0;
+							if (state == 1.11 || state == 1.12) state = 1.1;
+
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						}
+					}
+					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor11/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor11/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor11/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor11/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor11/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor11/height"].v }))
+					{
+						if (m.lbutton)
+						{
+							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor11/fill"].v, 255);
+							BackgroundColorMode = 1;
+
+							BrushColorChoose.x = BrushColorChoose.y = 0;
+							if (state == 1.11 || state == 1.12) state = 1.1;
+
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						}
+					}
+					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor12/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor12/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor12/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor12/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor12/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor12/height"].v }))
+					{
+						if (m.lbutton)
+						{
+							int lx = m.x, ly = m.y;
+							while (1)
+							{
+								ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
+								if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor12/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor12/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor12/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor12/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor12/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor12/height"].v }))
+								{
+									if (!m.lbutton)
+									{
+										if (state == 1.12) state = 1.1;
+										else state = 1.12;
+
+										break;
+									}
+								}
+								else
+								{
+									hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+									break;
+								}
+							}
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+							MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
+						}
+					}
+
+					if (IsInRect(m.x, m.y, { 5, floating_windows.height - 55 + 5, 5 + 90, floating_windows.height - 55 + 5 + 30 }))
+					{
+						if (m.lbutton)
+						{
+							if (brush.mode == 2)
+							{
+								brush.HighlighterWidthHistory = brush.width;
+								brush.width = brush.PenWidthHistory;
+							}
+							brush.mode = 1;
+
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						}
+					}
+					else if (IsInRect(m.x, m.y, { 95, floating_windows.height - 55 + 5, 95 + 90, floating_windows.height - 55 + 5 + 30 }))
+					{
+						if (m.lbutton)
+						{
+							if (brush.mode != 2)
+							{
+								brush.PenWidthHistory = brush.width;
+								brush.width = brush.HighlighterWidthHistory;
+							}
+							brush.mode = 2;
+
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						}
+					}
+					else if (IsInRect(m.x, m.y, { 195, floating_windows.height - 55 + 5,195 + 90, floating_windows.height - 55 + 5 + 30 }))
+					{
+						if (m.lbutton)
+						{
+							if (brush.mode != 1 && brush.mode != 2)
+							{
+								brush.mode = 1;
+							}
+
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						}
+					}
+					else if (IsInRect(m.x, m.y, { 285, floating_windows.height - 55 + 5,285 + 90, floating_windows.height - 55 + 5 + 30 }))
+					{
+						if (m.lbutton)
+						{
+							if (brush.mode == 2)
+							{
+								brush.HighlighterWidthHistory = brush.width;
+								brush.width = brush.PenWidthHistory;
+							}
+							brush.mode = 3;
+
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						}
+					}
+					else if (IsInRect(m.x, m.y, { 375, floating_windows.height - 55 + 5,375 + 90, floating_windows.height - 55 + 5 + 30 }))
+					{
+						if (m.lbutton)
+						{
+							if (brush.mode == 2)
+							{
+								brush.HighlighterWidthHistory = brush.width;
+								brush.width = brush.PenWidthHistory;
+							}
+							brush.mode = 4;
+
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						}
+					}
+
+					if (!m.lbutton && (IsInRect(m.x, m.y, { 1, floating_windows.height - 256, 1 + floating_windows.width - 106, floating_windows.height - 256 + 90 }) || IsInRect(m.x, m.y, { 0, floating_windows.height - 50, 0 + floating_windows.width, floating_windows.height - 50 + 50 })) && brush_connect) state = 1;
+				}
+				//橡皮
+				if (rubber.select == false && IsInRect(m.x, m.y, { 192 + 8, floating_windows.height - 156 + 8, 192 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
+				{
+					if (m.lbutton)
+					{
+						lx = m.x, ly = m.y;
+						while (1)
+						{
+							ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
+							if (IsInRect(m.x, m.y, { 192 + 8, floating_windows.height - 156 + 8, 192 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
+							{
+								if (!m.lbutton)
+								{
+									state = 1;
+									rubber.select = true;
+									brush.select = false;
+									choose.select = false;
+
+									if (SeewoCamera)
+									{
+										penetrate.select = false;
+										FreezeFrame.mode = 1;
+									}
+
+									break;
+								}
+							}
+							else
+							{
+								hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+								break;
+							}
+						}
+						hiex::flushmessage_win32(EM_MOUSE, floating_window);
+					}
+				}
+				//撤回画板
+				{
+					if ((!RecallImage.empty() || (!FirstDraw && RecallImage.empty())) && IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
+					{
+						if (m.lbutton)
+						{
+							lx = m.x, ly = m.y;
+							while (1)
+							{
+								hiex::getmessage_win32(&m, EM_MOUSE, floating_window);
+								if (IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
+								{
+									if (!m.lbutton)
+									{
+										std::shared_lock<std::shared_mutex> lock1(PointTempSm);
+										bool start = !TouchTemp.empty();
+										lock1.unlock();
+										if (start) break;
+
+										pair<int, int> tmp_recond = make_pair(0, 0);
+										int tmp_recall_image_type = 0;
+										if (!RecallImage.empty())
+										{
+											tmp_recond = RecallImage.back().recond;
+											tmp_recall_image_type = RecallImage.back().type;
+
+											if (RecallImage.back().type == 2 && !choose.select && !CompareImagesWithBuffer(&drawpad, &RecallImage.back().img));
+											else RecallImage.pop_back();
+											deque<RecallStruct>(RecallImage).swap(RecallImage); // 使用swap技巧来释放未使用的内存
+										}
+
+										if (!RecallImage.empty())
+										{
+											drawpad = RecallImage.back().img;
+											extreme_point = RecallImage.back().extreme_point;
+											recall_image_recond = RecallImage.back().recond.first;
+										}
+										else if (tmp_recond.first > 10) goto SuperRecovery2;
+										else
+										{
+											if (tmp_recall_image_type == 2) goto SuperRecovery2;
+											SetImageColor(drawpad, RGBA(0, 0, 0, 0), true);
+											extreme_point.clear();
+											recall_image_recond = 0;
+											FirstDraw = true;
+										}
+										SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
+										hiex::TransparentImage(&window_background, 0, 0, &drawpad);
+
+										if (!choose.select)
+										{
+											// 设置BLENDFUNCTION结构体
+											BLENDFUNCTION blend;
+											blend.BlendOp = AC_SRC_OVER;
+											blend.BlendFlags = 0;
+											blend.SourceConstantAlpha = 255; // 设置透明度，0为全透明，255为不透明
+											blend.AlphaFormat = AC_SRC_ALPHA; // 使用源图像的alpha通道
+											HDC hdcScreen = GetDC(NULL);
+											// 调用UpdateLayeredWindow函数更新窗口
+											POINT ptSrc = { 0,0 };
+											SIZE sizeWnd = { drawpad.getwidth(),drawpad.getheight() };
+											POINT ptDst = { 0,0 }; // 设置窗口位置
+											UPDATELAYEREDWINDOWINFO ulwi = { 0 };
+											ulwi.cbSize = sizeof(ulwi);
+											ulwi.hdcDst = hdcScreen;
+											ulwi.pptDst = &ptDst;
+											ulwi.psize = &sizeWnd;
+											ulwi.pptSrc = &ptSrc;
+											ulwi.crKey = RGB(255, 255, 255);
+											ulwi.pblend = &blend;
+											ulwi.dwFlags = ULW_ALPHA;
+
+											// 定义要更新的矩形区域
+											ulwi.hdcSrc = GetImageHDC(&window_background);
+											UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
+										}
+										else
+										{
+											reserve_drawpad = true;
+
+											brush.select = true;
+											rubber.select = false;
+											choose.select = false;
+										}
+
+										break;
+									}
+								}
+								else
+								{
+									hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+									break;
+								}
+							}
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						}
+					}
+					else if (RecallImage.empty() && current_record_pointer <= total_record_pointer + 1 && practical_total_record_pointer && IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
+					{
+						if (m.lbutton)
+						{
+							lx = m.x, ly = m.y;
+							while (1)
+							{
+								hiex::getmessage_win32(&m, EM_MOUSE, floating_window);
+								if (IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
+								{
+									if (!m.lbutton)
+									{
+									SuperRecovery2:
+
+										if (current_record_pointer == total_record_pointer + 1)
+										{
+											choose.select = true;
+											brush.select = false;
+											rubber.select = false;
+											break;
+										}
+										//Testw(string_to_wstring(convert_to_gbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString())).c_str());
+										if (_access(convert_to_gbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString()).c_str(), 4) == -1) break;
+
+										filesystem::path pathObj(convert_to_gbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString()));
+										wstring file_name1 = pathObj.parent_path().filename().wstring();
+										wstring file_name2 = pathObj.stem().wstring();
+
+										std::wistringstream temp_wiss(file_name1 + L" " + file_name2);
+										temp_wiss >> std::get_time(&RecallImageTm, L"%Y-%m-%d %H-%M-%S");
+
+										FreezeRecall = 500;
+
+										std::shared_lock<std::shared_mutex> lock1(PointTempSm);
+										bool start = !TouchTemp.empty();
+										lock1.unlock();
+										if (start) break;
+
+										IMAGE temp;
+										loadimage(&temp, string_to_wstring(convert_to_gbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString())).c_str());
+										drawpad = temp, extreme_point = map<pair<int, int>, bool>();
+
+										current_record_pointer++;
+
+										SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
+										hiex::TransparentImage(&window_background, 0, 0, &drawpad);
+
+										if (brush.select)
+										{
+											// 设置BLENDFUNCTION结构体
+											BLENDFUNCTION blend;
+											blend.BlendOp = AC_SRC_OVER;
+											blend.BlendFlags = 0;
+											blend.SourceConstantAlpha = 255; // 设置透明度，0为全透明，255为不透明
+											blend.AlphaFormat = AC_SRC_ALPHA; // 使用源图像的alpha通道
+											HDC hdcScreen = GetDC(NULL);
+											// 调用UpdateLayeredWindow函数更新窗口
+											POINT ptSrc = { 0,0 };
+											SIZE sizeWnd = { drawpad.getwidth(),drawpad.getheight() };
+											POINT ptDst = { 0,0 }; // 设置窗口位置
+											UPDATELAYEREDWINDOWINFO ulwi = { 0 };
+											ulwi.cbSize = sizeof(ulwi);
+											ulwi.hdcDst = hdcScreen;
+											ulwi.pptDst = &ptDst;
+											ulwi.psize = &sizeWnd;
+											ulwi.pptSrc = &ptSrc;
+											ulwi.crKey = RGB(255, 255, 255);
+											ulwi.pblend = &blend;
+											ulwi.dwFlags = ULW_ALPHA;
+
+											// 定义要更新的矩形区域
+											ulwi.hdcSrc = GetImageHDC(&window_background);
+											UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
+										}
+										else
+										{
+											reserve_drawpad = true;
+
+											brush.select = true;
+											rubber.select = false;
+											choose.select = false;
+										}
+
+										break;
+									}
+								}
+								else
+								{
+									hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+									break;
+								}
+							}
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						}
+					}
+				}
+				//选项
+				if (IsInRect(m.x, m.y, { 288 + 8, floating_windows.height - 156 + 8, 288 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
+				{
+					if (m.lbutton)
+					{
+						lx = m.x, ly = m.y;
+						while (1)
+						{
+							ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
+							if (IsInRect(m.x, m.y, { 288 + 8, floating_windows.height - 156 + 8, 288 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
+							{
+								if (!m.lbutton)
+								{
+									if (test.select) test.select = false;
+									else test.select = true;
+
+									break;
+								}
+							}
+							else
+							{
+								hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+								break;
+							}
+						}
+						hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+						MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
+					}
+				}
+
+				//插件：随机点名
+				if (plug_in_RandomRollCall.select == 2)
+				{
+					if (IsInRect(m.x, m.y, { 2, floating_windows.height - 55, 2 + 100, floating_windows.height - 55 + 40 }))
+					{
+						if (m.lbutton)
+						{
+							lx = m.x, ly = m.y;
+							while (1)
+							{
+								ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
+								if (IsInRect(m.x, m.y, { 2, floating_windows.height - 55, 2 + 100, floating_windows.height - 55 + 40 }))
+								{
+									if (!m.lbutton)
+									{
+										if (_waccess((string_to_wstring(global_path) + L"plug-in\\随机点名\\随机点名.exe").c_str(), 0) == 0 && !isProcessRunning((string_to_wstring(global_path) + L"plug-in\\随机点名\\随机点名.exe").c_str()))
+										{
+											STARTUPINFOA si = { 0 };
+											si.cb = sizeof(si);
+											PROCESS_INFORMATION pi = { 0 };
+											CreateProcessA(NULL, (global_path + "plug-in\\随机点名\\随机点名.exe").data(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
+											CloseHandle(pi.hProcess);
+											CloseHandle(pi.hThread);
+										}
+
+										break;
+									}
+								}
+								else
+								{
+									hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+									break;
+								}
+							}
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+							MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
+						}
+					}
+				}
 			}
 		}
+		else hiex::flushmessage_win32(EM_MOUSE, floating_window);
 	}
 }
 
@@ -5644,33 +6534,48 @@ int floating_main()
 	thread_status[L"floating_main"] = true;
 	GetLocalTime(&sys_time);
 
+	//LOG(INFO) << "尝试启动PPT状态获取线程";
 	thread ppt_state_thread(ppt_state);
 	ppt_state_thread.detach();
+	//LOG(INFO) << "成功启动PPT状态获取线程";
+	//LOG(INFO) << "尝试启动PPT窗口绘制线程";
 	thread DrawControlWindow_thread(DrawControlWindow);
 	DrawControlWindow_thread.detach();
+	//LOG(INFO) << "成功启动PPT窗口绘制线程";
+	//LOG(INFO) << "尝试启动PPT窗口交互线程";
 	thread ControlManipulation_thread(ControlManipulation);
 	ControlManipulation_thread.detach();
+	//LOG(INFO) << "成功启动PPT窗口交互线程";
 	//thread GetTime_thread(GetTime);
 	//GetTime_thread.detach();
+	//LOG(INFO) << "尝试启动悬浮窗窗口绘制线程";
 	thread DrawScreen_thread(DrawScreen);
 	DrawScreen_thread.detach();
+	//LOG(INFO) << "成功启动悬浮窗窗口绘制线程";
 
+	//LOG(INFO) << "尝试启动黑名单窗口拦截线程";
 	thread black_block_thread(black_block);
 	black_block_thread.detach();
+	//LOG(INFO) << "成功启动黑名单窗口拦截线程";
 
 	if (!debug)
 	{
+		//LOG(INFO) << "尝试检查并补齐本地文件";
 		if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1)
 		{
 			//创建路径
 			filesystem::create_directory(string_to_wstring(global_path) + L"api");
 
-			if (_waccess((string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str(), 0) == -1 || _waccess((string_to_wstring(global_path) + L"api\\智绘教CrashedHandlerClose.exe").c_str(), 0) == -1)
-			{
-				ExtractResource((string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str(), L"EXE", MAKEINTRESOURCE(201));
-				ExtractResource((string_to_wstring(global_path) + L"api\\智绘教CrashedHandlerClose.exe").c_str(), L"EXE", MAKEINTRESOURCE(202));
-			}
+			//if (_waccess((string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str(), 0) == -1 || _waccess((string_to_wstring(global_path) + L"api\\智绘教CrashedHandlerClose.exe").c_str(), 0) == -1)
+			//{
+			//	ExtractResource((string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str(), L"EXE", MAKEINTRESOURCE(201));
+			//	ExtractResource((string_to_wstring(global_path) + L"api\\智绘教CrashedHandlerClose.exe").c_str(), L"EXE", MAKEINTRESOURCE(202));
+			//}
 		}
+		ExtractResource((string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str(), L"EXE", MAKEINTRESOURCE(201));
+		ExtractResource((string_to_wstring(global_path) + L"api\\智绘教CrashedHandlerClose.exe").c_str(), L"EXE", MAKEINTRESOURCE(202));
+
+		//LOG(INFO) << "成功检查并补齐本地文件";
 
 		/*
 		//注册icu
@@ -5682,12 +6587,17 @@ int floating_main()
 		}
 		*/
 
+		//LOG(INFO) << "尝试启动程序崩溃反馈线程";
 		thread CrashedHandler_thread(CrashedHandler);
 		CrashedHandler_thread.detach();
+		//LOG(INFO) << "成功启动程序崩溃反馈线程";
+		//LOG(INFO) << "尝试启动程序自动更新线程";
 		thread AutomaticUpdate_thread(AutomaticUpdate);
 		AutomaticUpdate_thread.detach();
+		//LOG(INFO) << "成功启动程序自动更新线程";
 	}
 
+	//LOG(INFO) << "进入悬浮窗窗口交互线程";
 	MouseInteraction();
 
 	while (1)

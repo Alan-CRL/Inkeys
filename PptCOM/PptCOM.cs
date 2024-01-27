@@ -55,6 +55,8 @@ namespace PptCOM
 
         string IsPptDependencyLoaded();
 
+        string slideNameIndex();
+
         int currentSlideIndex();
 
         int totalSlideIndex();
@@ -75,7 +77,7 @@ namespace PptCOM
 
         public string LinkTest()
         {
-            return "C# COM接口 连接成功，版本 20231013.01";
+            return "C# COM接口 连接成功，版本 20240123.01";
         }
 
         public string IsPptDependencyLoaded()
@@ -89,6 +91,32 @@ namespace PptCOM
             {
                 return ex.Message;
             }
+        }
+
+        public string slideNameIndex()
+        {
+            string slidesName = "";
+
+            try
+            {
+                // 获取正在播放的PPT应用程序对象
+                PPT.Application pptApp = new PPT.Application();
+                // 获取当前播放的PPT文档对象
+                PPT.Presentation pptDoc = pptApp.ActivePresentation;
+
+                // 获取正在播放的PPT的名称
+                slidesName = pptDoc.FullName;
+
+                // 释放资源
+                pptDoc = null;
+                pptApp = null;
+            }
+            catch
+            {
+                // 获取PPT信息失败
+            }
+
+            return slidesName;
         }
 
         public int currentSlideIndex()

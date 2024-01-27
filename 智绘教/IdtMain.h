@@ -58,6 +58,8 @@
 #include <versionhelpers.h>							// 提供版本辅助函数
 #include <mutex>									// 提供互斥量相关功能
 #include <shared_mutex>								// 提供共享互斥量功能
+#include <unordered_map>
+//#include <spdlog/spdlog.h>						//提供日志记录服务
 
 #include "IdtKey.h" // 服务器密钥（我们不开源服务器密钥，以防您纂改我们的服务器）
 
@@ -84,10 +86,6 @@ using namespace Gdiplus;
 
 #define Sleep(int) this_thread::sleep_for(chrono::milliseconds(int))
 
-#define Test() MessageBox(NULL, L"标记处", L"标记", MB_OK | MB_SYSTEMMODAL)
-#define Testi(int) MessageBox(NULL, to_wstring(int).c_str(), L"数值标记", MB_OK | MB_SYSTEMMODAL)
-#define Testw(wstring) MessageBox(NULL, wstring.c_str(), L"字符标记", MB_OK | MB_SYSTEMMODAL)
-
 extern bool debug;
 extern bool already;
 
@@ -104,3 +102,8 @@ extern wstring server_updata_error_reason;
 
 extern bool off_signal; //关闭指令
 extern map <wstring, bool> thread_status; //线程状态管理
+
+//调测专用
+void Test();
+void Testi(int t);
+void Testw(wstring t);

@@ -33,7 +33,7 @@ string wstring_to_string(const wstring& ws)
 	return s;
 }
 
-//string ת wstring
+//string to wstring
 wstring convert_to_wstring(const string s)
 {
 	LPCSTR pszSrc = s.c_str();
@@ -50,7 +50,7 @@ wstring convert_to_wstring(const string s)
 	delete pwszDst;
 	return wcharString;
 }
-//wstring ת string
+//wstring to string
 string convert_to_string(const wstring str)
 {
 	int size = WideCharToMultiByte(CP_ACP, 0, str.c_str(), str.size(), nullptr, 0, nullptr, nullptr);
@@ -58,12 +58,12 @@ string convert_to_string(const wstring str)
 	WideCharToMultiByte(CP_ACP, 0, str.c_str(), str.size(), p_str.get(), size, nullptr, nullptr);
 	return std::string(p_str.get());
 }
-//c# string ת wstring
+//c# string to wstring
 wstring bstr_to_wstring(const _bstr_t& bstr)
 {
 	return static_cast<wchar_t*>(bstr);
 }
-//string ת LPCWSTR
+//string to LPCWSTR
 LPCWSTR stringtoLPCWSTR(string str)
 {
 	size_t size = str.length();
@@ -78,7 +78,7 @@ LPCWSTR stringtoLPCWSTR(string str)
 	MultiByteToWideChar(CP_ACP, 0, str.c_str(), size, (LPWSTR)buffer, wLen);
 	return buffer;
 }
-//string ת urlencode
+//string to urlencode
 string convert_to_urlencode(string str)
 {
 	int size(str.size() * 3 + 1);
@@ -102,7 +102,7 @@ string convert_to_urlencode(string str)
 	str = pstr.get();
 	return str;
 }
-//utf-8 ת GBK
+//utf-8 to GBK
 string convert_to_gbk(string strUTF8)
 {
 	int len = MultiByteToWideChar(CP_UTF8, 0, strUTF8.c_str(), -1, NULL, 0);
@@ -119,7 +119,7 @@ string convert_to_gbk(string strUTF8)
 	delete[]wszGBK;
 	return strTemp;
 }
-//GBK ת utf-8
+//GBK to utf-8
 string convert_to_utf8(string str)
 {
 	wstring x = string_to_wstring(str);

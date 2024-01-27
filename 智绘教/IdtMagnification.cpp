@@ -1,4 +1,5 @@
 #include "IdtMagnification.h"
+#include <winuser.h>
 
 IMAGE MagnificationBackground = CreateImageColor(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), RGBA(255, 255, 255, 255), false);
 HWND hwndHost, hwndMag;
@@ -142,19 +143,21 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 	return ret;
 }
 
+bool RequestUpdateMagWindow;
 void MagnifierThread()
 {
+	//LOG(INFO) << "尝试初始化MagnificationAPI";
 	MagInitialize();
+	//LOG(INFO) << "成功初始化MagnificationAPI";
 
+	//LOG(INFO) << "尝试创建MagnificationAPI虚拟窗口";
 	SetupMagnifier(GetModuleHandle(0));
 	ShowWindow(hwndHost, SW_HIDE);
 	UpdateWindow(hwndHost);
+	//LOG(INFO) << "成功创建MagnificationAPI虚拟窗口";
 
 	while (!off_signal)
 	{
-		UpdateMagWindow();
-		hiex::DelayFPS(25);
-
 		if (magnificationWindowReady >= 4)
 		{
 			std::vector<HWND> hwndList;
@@ -165,8 +168,27 @@ void MagnifierThread()
 			MagSetWindowFilterList(hwndMag, MW_FILTERMODE_EXCLUDE, hwndList.size(), hwndList.data());
 
 			magnificationWindowReady = -1;
+			//LOG(INFO) << "成功MagnificationAPI刷新第一帧";
+
+			break;
+		}
+
+		Sleep(500);
+	}
+
+	RequestUpdateMagWindow = true;
+	while (!off_signal)
+	{
+		//hiex::DelayFPS(24);
+		while (!RequestUpdateMagWindow) Sleep(100);
+
+		{
+			UpdateMagWindow();
+			RequestUpdateMagWindow = false;
 		}
 	}
 
+	//LOG(INFO) << "尝试释放MagnificationAPI";
 	MagUninitialize();
+	//LOG(INFO) << "成功释放MagnificationAPI";
 }

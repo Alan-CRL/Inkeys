@@ -230,6 +230,7 @@ wstring GetMainHardDiskSerialNumber()
 		EOAC_NONE,
 		NULL
 	);
+
 	if (SUCCEEDED(hr))
 	{
 		IWbemLocator* pWbemLocator = NULL;
@@ -309,8 +310,11 @@ wstring GetMainHardDiskSerialNumber()
 
 							if (SUCCEEDED(hr))
 							{
-								// 将序列号转换为 wstring
-								serialNumber = vtProp.bstrVal;
+								if (vtProp.vt == VT_BSTR)
+								{
+									// 将序列号转换为 wstring
+									serialNumber = vtProp.bstrVal;
+								}
 
 								VariantClear(&vtProp);
 							}
@@ -336,4 +340,142 @@ bool isValidString(const wstring& str)
 		if (!iswprint(ch) && !iswspace(ch))  return false;
 	}
 	return true;
+}
+
+//快捷方式判断
+bool IsShortcutPointingToDirectory(const std::wstring& shortcutPath, const std::wstring& targetDirectory)
+{
+	IShellLink* psl;
+	//CoInitialize(NULL);
+
+	// 创建一个IShellLink对象
+	HRESULT hres = CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLink, (LPVOID*)&psl);
+	if (SUCCEEDED(hres)) {
+		IPersistFile* ppf;
+
+		// 获取IShellLink的IPersistFile接口
+		hres = psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf);
+		if (SUCCEEDED(hres)) {
+			// 打开快捷方式文件
+			hres = ppf->Load(shortcutPath.c_str(), STGM_READ);
+			if (SUCCEEDED(hres)) {
+				WIN32_FIND_DATAW wfd;
+				ZeroMemory(&wfd, sizeof(wfd));
+				// 获取快捷方式的目标路径
+				hres = psl->GetPath(wfd.cFileName, MAX_PATH, NULL, SLGP_RAWPATH);
+				if (SUCCEEDED(hres)) {
+					// 检查目标路径是否与指定目录相匹配
+					if (std::wstring(wfd.cFileName).find(targetDirectory) != std::wstring::npos) {
+						return true;
+					}
+				}
+			}
+			ppf->Release();
+		}
+		psl->Release();
+	}
+	//CoUninitialize();
+
+	return false;
+}
+bool CreateShortcut(const std::wstring& shortcutPath, const std::wstring& targetExePath)
+{
+	//CoInitialize(NULL);
+
+	// 创建一个IShellLink对象
+	IShellLink* psl;
+	HRESULT hres = CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLink, (LPVOID*)&psl);
+
+	if (SUCCEEDED(hres)) {
+		// 设置快捷方式的目标路径
+		psl->SetPath(targetExePath.c_str());
+
+		// 获取桌面目录
+		LPITEMIDLIST pidl;
+		SHGetSpecialFolderLocation(NULL, CSIDL_DESKTOP, &pidl);
+
+		// 创建一个IShellLink对象的IPersistFile接口
+		IPersistFile* ppf;
+		hres = psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf);
+
+		if (SUCCEEDED(hres)) {
+			// 保存快捷方式
+			hres = ppf->Save(shortcutPath.c_str(), TRUE);
+			ppf->Release();
+		}
+
+		psl->Release();
+	}
+
+	//CoUninitialize();
+
+	return SUCCEEDED(hres);
+}
+void SetShortcut()
+{
+	wchar_t desktopPath[MAX_PATH];
+	wstring DesktopPath;
+
+	if (SHGetSpecialFolderPathW(0, desktopPath, CSIDL_DESKTOP, FALSE)) DesktopPath = wstring(desktopPath) + L"\\";
+	else return;
+
+	if (_waccess_s((DesktopPath + L"智绘教(屏幕批注画板工具).lnk").c_str(), 0) == 0)
+	{
+		if (IsShortcutPointingToDirectory(DesktopPath + L"智绘教(屏幕批注画板工具).lnk", string_to_wstring(global_path) + L"智绘教.exe"))
+		{
+			bool flag = false;
+
+			for (const auto& entry : std::filesystem::directory_iterator(DesktopPath))
+			{
+				if (std::filesystem::is_regular_file(entry) && entry.path().extension() == L".lnk")
+				{
+					if (entry.path().wstring() != DesktopPath + L"智绘教(屏幕批注画板工具).lnk" && IsShortcutPointingToDirectory(entry.path().wstring(), string_to_wstring(global_path) + L"智绘教.exe"))
+					{
+						std::error_code ec;
+						std::filesystem::remove(entry.path().wstring(), ec);
+
+						flag = true;
+					}
+				}
+			}
+
+			if (!flag) return;
+		}
+		else
+		{
+			std::error_code ec;
+			std::filesystem::remove(DesktopPath + L"智绘教(屏幕批注画板工具).lnk", ec);
+			CreateShortcut(DesktopPath + L"智绘教(屏幕批注画板工具).lnk", string_to_wstring(global_path) + L"智绘教.exe");
+
+			for (const auto& entry : std::filesystem::directory_iterator(DesktopPath))
+			{
+				if (std::filesystem::is_regular_file(entry) && entry.path().extension() == L".lnk")
+				{
+					if (entry.path().wstring() != DesktopPath + L"智绘教(屏幕批注画板工具).lnk" && IsShortcutPointingToDirectory(entry.path().wstring(), string_to_wstring(global_path) + L"智绘教.exe"))
+					{
+						std::error_code ec;
+						std::filesystem::remove(entry.path().wstring(), ec);
+					}
+				}
+			}
+		}
+	}
+	else
+	{
+		for (const auto& entry : std::filesystem::directory_iterator(DesktopPath))
+		{
+			if (std::filesystem::is_regular_file(entry) && entry.path().extension() == L".lnk")
+			{
+				if (IsShortcutPointingToDirectory(entry.path().wstring(), string_to_wstring(global_path) + L"智绘教.exe"))
+				{
+					std::error_code ec;
+					std::filesystem::remove(entry.path().wstring(), ec);
+				}
+			}
+		}
+		CreateShortcut(DesktopPath + L"智绘教(屏幕批注画板工具).lnk", string_to_wstring(global_path) + L"智绘教.exe");
+	}
+
+	SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
+	return;
 }

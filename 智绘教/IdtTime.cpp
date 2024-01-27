@@ -60,3 +60,13 @@ string GetCurrentTimeAll()
 	ss << std::put_time(&buf, "%Y/%m/%d %H:%M:%S"); // 格式化时间
 	return ss.str();
 }
+
+tm GetCurrentLocalTime()
+{
+	time_t currentTime = time(nullptr);
+	tm localTime = {};
+
+	localtime_s(&localTime, &currentTime);
+
+	return localTime;
+}

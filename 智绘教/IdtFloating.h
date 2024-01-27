@@ -2,9 +2,12 @@
 #include "IdtMain.h"
 
 #include "IdtDraw.h"
+#include "IdtDrawpad.h"
+#include "IdtFreezeFrame.h"
 #include "IdtImage.h"
 #include "IdtMagnification.h"
 #include "IdtPlug-in.h"
+#include "IdtSkin.h"
 #include "IdtText.h"
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
@@ -19,11 +22,12 @@ struct floating_windowsStruct
 extern floating_windowsStruct floating_windows;
 
 extern IMAGE floating_icon[20], sign;
+extern IMAGE skin[5];
 
 extern double state;
 extern double target_status;
 
-extern bool RestoreSketchpad, empty_drawpad;
+extern bool reserve_drawpad;
 extern bool smallcard_refresh;
 
 //置顶程序窗口
@@ -50,6 +54,8 @@ map<wstring, UIControlColorStruct>& map<wstring, UIControlColorStruct>::operator
 //选色盘
 Color ColorFromHSV(float hue, float saturation, float value);
 IMAGE DrawHSVWheel(int r, int z = 0, int angle = 0);
+//时钟表盘
+pair<double, double> GetPointOnCircle(double x, double y, double r, double angle);
 
 //绘制屏幕
 void DrawScreen();

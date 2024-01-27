@@ -12,19 +12,15 @@
 #include "IdtTime.h"
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
+#include "IdtHistoricalDrawpad.h"
 
-extern bool main_open, draw_content;
+extern bool main_open;
 extern int TestMainMode;
+extern bool FirstDraw;
 
 RECT DrawGradientLine(HDC hdc, int x1, int y1, int x2, int y2, float width, Color color);
 bool checkIntersection(RECT rect1, RECT rect2);
 double EuclideanDistance(POINT a, POINT b);
-
-void removeEmptyFolders(std::wstring path);
-void removeUnknownFiles(std::wstring path, std::deque<std::wstring> knownFiles);
-deque<wstring> getPrevTwoDays(const std::wstring& date, int day = 7);
-//保存图像到指定目录
-void SaveScreenShot(IMAGE img);
 
 void ControlTestMain();
 
@@ -33,4 +29,15 @@ int test_main();
 
 void FreezeFrameWindow();
 
+extern unordered_map<LONG, shared_mutex> StrokeImageSm;
+extern shared_mutex StrokeImageListSm;
+extern map<LONG, pair<IMAGE*, int>> StrokeImage;
+extern vector<LONG> StrokeImageList;
+extern shared_mutex StrokeBackImageSm;
+
+extern IMAGE drawpad; //主画板
+extern IMAGE window_background;
+
+void MultiFingerDrawing(LONG pid, POINT pt);
+void DrawpadDrawing();
 int drawpad_main();

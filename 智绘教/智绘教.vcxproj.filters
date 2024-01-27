@@ -201,9 +201,6 @@
     <ClInclude Include="IdtMain.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="IdtConfiguration.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="IdtRts.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -235,6 +232,18 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="IdtDrawpad.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtHistoricalDrawpad.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtFreezeFrame.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtDisplayManagement.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtSkin.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
@@ -410,6 +419,18 @@
     <ClCompile Include="IdtImage.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="IdtHistoricalDrawpad.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtFreezeFrame.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtDisplayManagement.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtSkin.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="智绘教.rc">
@@ -511,6 +532,15 @@
       <Filter>资源文件</Filter>
     </Image>
     <Image Include="src\seewo_camera.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\skin\dragon.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\skin\dragon_sign.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\skin\dragon_background.png">
       <Filter>资源文件</Filter>
     </Image>
   </ItemGroup>

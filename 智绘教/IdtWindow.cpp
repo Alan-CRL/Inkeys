@@ -8,6 +8,8 @@ HWND freeze_window = NULL; //定格背景窗口
 
 bool FreezePPT;
 HWND ppt_show;
+wstring ppt_title;
+map<wstring, bool> ppt_title_recond;
 
 //窗口强制置顶
 BOOL OnForceShow(HWND hWnd)

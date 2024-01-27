@@ -3,8 +3,9 @@
 
 extern int uRealTimeStylus;
 
-extern bool touchDown;   // 表示触摸设备是否被按下
-extern int touchNum;         // 触摸点的点击个数
+extern bool touchDown;												// 表示触摸设备是否被按下
+extern int touchNum;												// 触摸点的点击个数
+extern unordered_map<LONG, pair<int, int>> PreviousPointPosition;	// 用于速度计算
 
 struct TouchMode
 {
@@ -119,7 +120,8 @@ public:
 		lock1.unlock();
 
 		std::unique_lock<std::shared_mutex> lock2(TouchSpeedSm);
-		TouchSpeed[TouchCnt] = 1;
+		TouchSpeed[TouchCnt] = 0;
+		PreviousPointPosition[TouchCnt].first = PreviousPointPosition[TouchCnt].second = -1;
 		lock2.unlock();
 
 		std::unique_lock<std::shared_mutex> lock3(PointListSm);

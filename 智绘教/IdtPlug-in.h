@@ -32,11 +32,19 @@ struct ppt_info_stayStruct
 };
 extern ppt_info_stayStruct ppt_info_stay;
 
+extern std::chrono::high_resolution_clock::time_point PPTManipulated;
+
 wstring LinkTest();
 wstring IsPptDependencyLoaded();
 HWND GetPptShow();
+wstring GetPptTitle();
 bool EndPptShow();
 
+//ppt °´¼ü¼àÌý
+LRESULT CALLBACK PptHookCallback(int nCode, WPARAM wParam, LPARAM lParam);
+void PptInstallHook();
+
+//ppt ¿Ø¼þ
 void DrawControlWindow();
 void ControlManipulation();
 

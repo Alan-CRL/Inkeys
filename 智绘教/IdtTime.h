@@ -1,5 +1,6 @@
 #pragma once
 #include "IdtMain.h"
+#include <ctime>
 
 extern SYSTEMTIME sys_time;
 //Ê±¼ä´Á
@@ -12,3 +13,5 @@ wstring CurrentTime();
 
 void GetTime();
 string GetCurrentTimeAll();
+
+tm GetCurrentLocalTime();

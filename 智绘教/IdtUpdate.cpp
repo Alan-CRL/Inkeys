@@ -32,13 +32,16 @@ void CrashedHandler()
 		CloseHandle(pi.hProcess);
 		CloseHandle(pi.hThread);
 
-		Sleep(100);
+		Sleep(500);
 		if (!isProcessRunning((string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str()))
 		{
 			WinExec((global_path + "api\\智绘教CrashedHandler.exe").c_str(), SW_NORMAL);
 
-			Sleep(100);
-			if (!isProcessRunning((string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str())) ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+			Sleep(500);
+			if (!isProcessRunning((string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str()))
+			{
+				ShellExecute(NULL, NULL, (string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+			}
 		}
 	}
 
@@ -69,7 +72,7 @@ wstring get_domain_name(wstring url) {
 wstring convertToHttp(const wstring& url)
 {
 	//更新保险
-	if (getCurrentDate() >= L"20231020") return url;
+	//if (getCurrentDate() >= L"20231020") return url;
 
 	wstring httpPrefix = L"http://";
 	if (url.length() >= 7 && url.compare(0, 7, httpPrefix) == 0) return url;
@@ -361,9 +364,9 @@ void NetUpdate()
 
 				filesystem::create_directory(string_to_wstring(global_path) + L"tmp", ec); //创建路径
 
-				DeleteUrlCacheEntry(L"http://api.vore.top");
+				DeleteUrlCacheEntry(L"https://api.vore.top");
 
-				wstring Download1Request = L"http://api.vore.top/api/IPdata?timestamp=" + getTimestamp();
+				wstring Download1Request = L"https://api.vore.top/api/IPdata?timestamp=" + getTimestamp();
 				string Download1Path = global_path + "tmp\\info.json";
 				HRESULT	download1 = URLDownloadToFileW( // 从网络上下载数据到本地文件
 					nullptr,

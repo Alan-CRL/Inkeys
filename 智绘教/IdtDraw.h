@@ -82,7 +82,8 @@ void SetAlphaToOne(IMAGE* pImg);
 //ÖÇÄÜ»æÍ¼²¿·Ö
 
 extern map<pair<int, int>, bool> extreme_point;
+extern shared_mutex ExtremePointSm;
 //extern map<pair<Point, Point >, bool> extreme_line;
 double pointToLineDistance(Point lineStart, Point lineEnd, Point p);
 double pointToLineSegmentDistance(Point lineStart, Point lineEnd, Point p);
-bool isLine(vector<Point> points, int tolerance);
+bool isLine(vector<Point> points, int tolerance, std::chrono::high_resolution_clock::time_point start);

@@ -11,6 +11,8 @@ extern HWND freeze_window; //定格背景窗口
 
 extern bool FreezePPT;
 extern HWND ppt_show;
+extern wstring ppt_title;
+extern map<wstring, bool> ppt_title_recond;
 
 //窗口强制置顶
 BOOL OnForceShow(HWND hWnd);
