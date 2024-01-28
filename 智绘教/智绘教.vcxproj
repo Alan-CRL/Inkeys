@@ -262,6 +262,7 @@
     <Image Include="src\sign1.png" />
     <Image Include="src\sign2.png" />
     <Image Include="src\sign3.png" />
+    <Image Include="src\sign4.png" />
     <Image Include="src\skin\dragon.png" />
     <Image Include="src\skin\dragon_background.png" />
     <Image Include="src\skin\dragon_sign.png" />

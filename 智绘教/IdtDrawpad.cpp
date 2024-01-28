@@ -197,6 +197,7 @@ int test_main()
 	loadimage(&test_sign[1], L"PNG", L"sign2");
 	loadimage(&test_sign[2], L"PNG", L"sign3");
 	loadimage(&test_sign[3], L"PNG", L"sign4");
+	loadimage(&test_sign[4], L"PNG", L"sign5");
 
 	IMAGE test_icon[5];
 	loadimage(&test_icon[1], L"PNG", L"test_icon1");
@@ -282,7 +283,7 @@ int test_main()
 						graphics.DrawString(L"关闭此页面需再次点击 选项 按钮", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
 					}
 
-					hiex::TransparentImage(&test_content, 50, 140, &test_sign[2]);
+					hiex::TransparentImage(&test_content, 50, 115, &test_sign[2]);
 
 					if (!server_feedback.empty() && server_feedback != "")
 					{
@@ -664,6 +665,8 @@ int test_main()
 						}
 						graphics.DrawString(L"关于", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
 					}
+
+					hiex::TransparentImage(&test_background, 10, 486, &test_sign[4]);
 				}
 				//标题栏
 				{
