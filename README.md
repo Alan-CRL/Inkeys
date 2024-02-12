@@ -57,8 +57,14 @@
 
 ## 下载体验
 
-转到 [GitHub](https://github.com/Alan-CRL/Intelligent-Drawing-Teaching/releases) 发布页面下载最新版本按照提示运行即可或可以联系作者获取。软件经过反复测试打磨，可以直接安装在班级一体机上使用。
+### 官方下载
+ [GitHub](https://github.com/Alan-CRL/Intelligent-Drawing-Teaching/releases) 
 
+### 其他下载
+[蓝奏云](https://wwm.lanpv.com/b0439qbfe) 密码:0000 由[imshito](https://imshito.eu.org)提供
+
+### tips
+发布页面下载最新版本按照提示运行即可或可以联系作者获取。软件经过反复测试打磨，可以直接安装在班级一体机上使用。
 运行要求：Windows 7 及以上 + .NET framework 3.5 及以上，支持 PC 与 触摸一体机 使用。  
 编译环境：VS2022 + MSVC143 + C++17 + EasyX20230723 + .NET framework 3.5 开发者工具包。  
 .NET 功能只用于 PPT 联动，后续 PPT联动模块将使用 C++ COM 接口替代 C# COM 接口
