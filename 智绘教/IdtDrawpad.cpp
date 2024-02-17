@@ -568,6 +568,8 @@ void MultiFingerDrawing(LONG pid, POINT pt)
 }
 void DrawpadDrawing()
 {
+	std::unique_lock<std::shared_mutex> LockRecallImageSm(RecallImageSm);
+
 	thread_status[L"DrawpadDrawing"] = true;
 
 	// 设置BLENDFUNCTION结构体
@@ -667,6 +669,7 @@ void DrawpadDrawing()
 						std::unique_lock<std::shared_mutex> LockStrokeBackImageSm(StrokeBackImageSm);
 						std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
 
+
 						RecallImage.push_back({ drawpad, extreme_point, 0, make_pair(recall_image_recond, recall_image_reference) });
 						RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
 
@@ -691,6 +694,7 @@ void DrawpadDrawing()
 				{
 					std::unique_lock<std::shared_mutex> LockStrokeBackImageSm(StrokeBackImageSm);
 					std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
+
 
 					RecallImage.back().type = 1;
 					if (off_signal) SaveScreenShot(RecallImage.back().img, true);
@@ -1116,6 +1120,7 @@ void DrawpadDrawing()
 
 		tRecord = clock();
 	}
+	LockRecallImageSm.unlock();
 
 DrawpadDrawingEnd:
 	thread_status[L"DrawpadDrawing"] = false;

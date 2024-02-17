@@ -146,49 +146,51 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 bool RequestUpdateMagWindow;
 void MagnifierThread()
 {
-	//LOG(INFO) << "尝试初始化MagnificationAPI";
-	MagInitialize();
-	//LOG(INFO) << "成功初始化MagnificationAPI";
+	//FIXME: 线程安全问题修复
+	// 
+	////LOG(INFO) << "尝试初始化MagnificationAPI";
+	//MagInitialize();
+	////LOG(INFO) << "成功初始化MagnificationAPI";
 
-	//LOG(INFO) << "尝试创建MagnificationAPI虚拟窗口";
-	SetupMagnifier(GetModuleHandle(0));
-	ShowWindow(hwndHost, SW_HIDE);
-	UpdateWindow(hwndHost);
-	//LOG(INFO) << "成功创建MagnificationAPI虚拟窗口";
+	////LOG(INFO) << "尝试创建MagnificationAPI虚拟窗口";
+	//SetupMagnifier(GetModuleHandle(0));
+	//ShowWindow(hwndHost, SW_HIDE);
+	//UpdateWindow(hwndHost);
+	////LOG(INFO) << "成功创建MagnificationAPI虚拟窗口";
 
-	while (!off_signal)
-	{
-		if (magnificationWindowReady >= 4)
-		{
-			std::vector<HWND> hwndList;
-			hwndList.emplace_back(floating_window);
-			hwndList.emplace_back(drawpad_window);
-			hwndList.emplace_back(ppt_window);
-			hwndList.emplace_back(setting_window);
-			MagSetWindowFilterList(hwndMag, MW_FILTERMODE_EXCLUDE, hwndList.size(), hwndList.data());
+	//while (!off_signal)
+	//{
+	//	if (magnificationWindowReady >= 4)
+	//	{
+	//		std::vector<HWND> hwndList;
+	//		hwndList.emplace_back(floating_window);
+	//		hwndList.emplace_back(drawpad_window);
+	//		hwndList.emplace_back(ppt_window);
+	//		hwndList.emplace_back(setting_window);
+	//		MagSetWindowFilterList(hwndMag, MW_FILTERMODE_EXCLUDE, hwndList.size(), hwndList.data());
 
-			magnificationWindowReady = -1;
-			//LOG(INFO) << "成功MagnificationAPI刷新第一帧";
+	//		magnificationWindowReady = -1;
+	//		//LOG(INFO) << "成功MagnificationAPI刷新第一帧";
 
-			break;
-		}
+	//		break;
+	//	}
 
-		Sleep(500);
-	}
+	//	Sleep(500);
+	//}
 
-	RequestUpdateMagWindow = true;
-	while (!off_signal)
-	{
-		//hiex::DelayFPS(24);
-		while (!RequestUpdateMagWindow) Sleep(100);
+	//RequestUpdateMagWindow = true;
+	//while (!off_signal)
+	//{
+	//	//hiex::DelayFPS(24);
+	//	while (!RequestUpdateMagWindow) Sleep(100);
 
-		{
-			UpdateMagWindow();
-			RequestUpdateMagWindow = false;
-		}
-	}
+	//	{
+	//		UpdateMagWindow();
+	//		RequestUpdateMagWindow = false;
+	//	}
+	//}
 
-	//LOG(INFO) << "尝试释放MagnificationAPI";
-	MagUninitialize();
-	//LOG(INFO) << "成功释放MagnificationAPI";
+	////LOG(INFO) << "尝试释放MagnificationAPI";
+	//MagUninitialize();
+	////LOG(INFO) << "成功释放MagnificationAPI";
 }

@@ -12,6 +12,7 @@ chrono::high_resolution_clock::time_point RecallImageManipulated;
 tm RecallImageTm;
 int RecallImagePeak = 0;
 deque<RecallStruct> RecallImage;//³·»ØÕ»
+shared_mutex RecallImageSm;
 
 //Ðü¸¡´°
 IMAGE background(576, 386);

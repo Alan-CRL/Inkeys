@@ -20,6 +20,7 @@ struct RecallStruct
 };
 extern int RecallImagePeak;
 extern deque<RecallStruct> RecallImage;//³·»ØÕ»
+extern shared_mutex RecallImageSm;
 
 //Ðü¸¡´°
 extern IMAGE background;
