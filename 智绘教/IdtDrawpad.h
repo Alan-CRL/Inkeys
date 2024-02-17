@@ -15,17 +15,12 @@
 #include "IdtHistoricalDrawpad.h"
 
 extern bool main_open;
-extern int TestMainMode;
+extern int SettingMainMode;
 extern bool FirstDraw;
 
 RECT DrawGradientLine(HDC hdc, int x1, int y1, int x2, int y2, float width, Color color);
 bool checkIntersection(RECT rect1, RECT rect2);
 double EuclideanDistance(POINT a, POINT b);
-
-void ControlTestMain();
-
-LRESULT CALLBACK TestWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-int test_main();
 
 void FreezeFrameWindow();
 

@@ -9,6 +9,14 @@ wstring GetCurrentExeDirectory()
 	filesystem::path fullPath(buffer);
 	return fullPath.parent_path().wstring();
 }
+wstring GetCurrentExePath()
+{
+	wchar_t buffer[MAX_PATH];
+	DWORD length = GetModuleFileNameW(NULL, buffer, sizeof(buffer) / sizeof(wchar_t));
+	if (length == 0 || length == sizeof(buffer) / sizeof(wchar_t)) return L"";
+
+	return (wstring)buffer;
+}
 //开机启动项设置
 bool ModifyRegedit(bool bAutoRun)
 {
@@ -419,9 +427,9 @@ void SetShortcut()
 	if (SHGetSpecialFolderPathW(0, desktopPath, CSIDL_DESKTOP, FALSE)) DesktopPath = wstring(desktopPath) + L"\\";
 	else return;
 
-	if (_waccess_s((DesktopPath + L"智绘教(屏幕批注画板工具).lnk").c_str(), 0) == 0)
+	if (_waccess_s((DesktopPath + L"智绘教(屏幕批注工具).lnk").c_str(), 0) == 0)
 	{
-		if (IsShortcutPointingToDirectory(DesktopPath + L"智绘教(屏幕批注画板工具).lnk", string_to_wstring(global_path) + L"智绘教.exe"))
+		if (IsShortcutPointingToDirectory(DesktopPath + L"智绘教(屏幕批注工具).lnk", GetCurrentExePath()))
 		{
 			bool flag = false;
 
@@ -429,7 +437,7 @@ void SetShortcut()
 			{
 				if (std::filesystem::is_regular_file(entry) && entry.path().extension() == L".lnk")
 				{
-					if (entry.path().wstring() != DesktopPath + L"智绘教(屏幕批注画板工具).lnk" && IsShortcutPointingToDirectory(entry.path().wstring(), string_to_wstring(global_path) + L"智绘教.exe"))
+					if (entry.path().wstring() != DesktopPath + L"智绘教(屏幕批注工具).lnk" && IsShortcutPointingToDirectory(entry.path().wstring(), GetCurrentExePath()))
 					{
 						std::error_code ec;
 						std::filesystem::remove(entry.path().wstring(), ec);
@@ -444,14 +452,14 @@ void SetShortcut()
 		else
 		{
 			std::error_code ec;
-			std::filesystem::remove(DesktopPath + L"智绘教(屏幕批注画板工具).lnk", ec);
-			CreateShortcut(DesktopPath + L"智绘教(屏幕批注画板工具).lnk", string_to_wstring(global_path) + L"智绘教.exe");
+			std::filesystem::remove(DesktopPath + L"智绘教(屏幕批注工具).lnk", ec);
+			CreateShortcut(DesktopPath + L"智绘教(屏幕批注工具).lnk", GetCurrentExePath());
 
 			for (const auto& entry : std::filesystem::directory_iterator(DesktopPath))
 			{
 				if (std::filesystem::is_regular_file(entry) && entry.path().extension() == L".lnk")
 				{
-					if (entry.path().wstring() != DesktopPath + L"智绘教(屏幕批注画板工具).lnk" && IsShortcutPointingToDirectory(entry.path().wstring(), string_to_wstring(global_path) + L"智绘教.exe"))
+					if (entry.path().wstring() != DesktopPath + L"智绘教(屏幕批注工具).lnk" && IsShortcutPointingToDirectory(entry.path().wstring(), GetCurrentExePath()))
 					{
 						std::error_code ec;
 						std::filesystem::remove(entry.path().wstring(), ec);
@@ -466,14 +474,14 @@ void SetShortcut()
 		{
 			if (std::filesystem::is_regular_file(entry) && entry.path().extension() == L".lnk")
 			{
-				if (IsShortcutPointingToDirectory(entry.path().wstring(), string_to_wstring(global_path) + L"智绘教.exe"))
+				if (IsShortcutPointingToDirectory(entry.path().wstring(), GetCurrentExePath()))
 				{
 					std::error_code ec;
 					std::filesystem::remove(entry.path().wstring(), ec);
 				}
 			}
 		}
-		CreateShortcut(DesktopPath + L"智绘教(屏幕批注画板工具).lnk", string_to_wstring(global_path) + L"智绘教.exe");
+		CreateShortcut(DesktopPath + L"智绘教(屏幕批注工具).lnk", GetCurrentExePath());
 	}
 
 	SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);

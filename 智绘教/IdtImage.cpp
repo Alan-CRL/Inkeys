@@ -6,12 +6,11 @@ IMAGE putout; //主画板上叠加的控件内容
 IMAGE tester(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)); //图形绘制画板
 IMAGE pptdrawpad(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)); //PPT控件画板
 
-IMAGE test_sign[5];
-
 int recall_image_recond, recall_image_reference;
 shared_mutex RecallImageManipulatedSm;
 chrono::high_resolution_clock::time_point RecallImageManipulated;
 tm RecallImageTm;
+int RecallImagePeak = 0;
 deque<RecallStruct> RecallImage;//撤回栈
 
 //悬浮窗

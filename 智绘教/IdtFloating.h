@@ -7,7 +7,6 @@
 #include "IdtImage.h"
 #include "IdtMagnification.h"
 #include "IdtPlug-in.h"
-#include "IdtSkin.h"
 #include "IdtText.h"
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
@@ -29,9 +28,6 @@ extern double target_status;
 
 extern bool reserve_drawpad;
 extern bool smallcard_refresh;
-
-//ÖÃ¶¥³ÌÐò´°¿Ú
-void TopWindow();
 
 //UI ¿Ø¼þ
 

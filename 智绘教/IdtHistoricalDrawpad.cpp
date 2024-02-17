@@ -138,7 +138,7 @@ void LoadDrawpad()
 //保存图像到指定目录
 void SaveScreenShot(IMAGE img, bool record_pointer_add)
 {
-	if (!setlist.experimental_functions || displays_number != 1) return;
+	if (displays_number != 1) return;
 
 	wstring date = CurrentDate(), time = CurrentTime();
 	if (_waccess((string_to_wstring(global_path) + L"ScreenShot").c_str(), 0 == -1)) CreateDirectory((string_to_wstring(global_path) + L"ScreenShot").c_str(), NULL);
@@ -208,5 +208,5 @@ void SaveScreenShot(IMAGE img, bool record_pointer_add)
 	}
 
 	if (record_pointer_add) current_record_pointer++, reference_record_pointer++;
-	total_record_pointer = (int)record_value["Image_Properties"].size();
+	total_record_pointer = practical_total_record_pointer = (int)record_value["Image_Properties"].size();
 }

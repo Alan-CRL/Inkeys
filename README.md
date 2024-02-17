@@ -10,11 +10,11 @@
 [程序主界面展示](https://codebus.cn/f/r/96d6e4c3-0033-4945-bdf5-7845cab75f40/1.png)  
 
 ### 未来功能（按照实现顺序排序）
-- 多指绘图（已实现，测试中）
-- 全屏白、黑板
-- UI 3.0
-- 激光笔
+- 实时手抖修正
+- UI 3.0（包括全新操作逻辑，全新界面以及更多的自定义功能，界面缩放与自定义按键）
 - 皮肤模块
+- 全屏白、黑板
+- 激光笔
 - 历史画板恢复
 - 图层
 - “贴图镜”
@@ -58,10 +58,11 @@
 
 ## 下载体验
 
+夸克网盘分流：[https://pan.quark.cn/s/e6adc1b881dc](https://pan.quark.cn/s/e6adc1b881dc)  
 转到 [GitHub](https://github.com/Alan-CRL/Intelligent-Drawing-Teaching/releases) 发布页面下载最新版本按照提示运行即可或可以联系作者获取。软件经过反复测试打磨，可以直接安装在班级一体机上使用。
 
-运行要求：Windows 7 及以上 + .NET framework 3.5 及以上，支持 PC 与 触摸一体机 使用。  
-编译环境：VS2022 + MSVC143 + C++17 + EasyX20230723 + .NET framework 3.5 开发者工具包。  
+运行要求：Windows 7 及以上 + .NET framework 4.0 及以上，支持 PC 与 触摸一体机 使用。  
+编译环境：VS2022 + MSVC143 + C++17 + EasyX20230723 + .NET framework 4.0 开发者工具包。  
 .NET 功能只用于 PPT 联动，后续 PPT联动模块将使用 C++ COM 接口替代 C# COM 接口
 
 ## 技术分享

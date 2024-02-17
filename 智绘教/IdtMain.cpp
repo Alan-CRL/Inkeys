@@ -15,26 +15,26 @@
 
 #include "IdtConfiguration.h"
 #include "IdtDisplayManagement.h"
+#include "IdtDrawpad.h"
 #include "IdtImage.h"
 #include "IdtMagnification.h"
 #include "IdtOther.h"
 #include "IdtRts.h"
-#include "IdtSkin.h"
+#include "IdtSetting.h"
 #include "IdtText.h"
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
 
 int floating_main();
 int drawpad_main();
-int test_main();
+int SettingMain();
 void FreezeFrameWindow();
 
-bool debug = false;
 bool already = false;
 
 wstring buildTime = __DATE__ L" " __TIME__; //构建时间
-string edition_date = "20240128a"; //程序发布日期
-string edition_code = "2401 - Happy New Year!"; //程序版本
+string edition_date = "20240217a"; //程序发布日期
+string edition_code = "2402 - Happy New Year!"; //程序版本
 
 wstring userid; //用户ID（主板序列号）
 string global_path; //程序当前路径
@@ -47,6 +47,7 @@ bool off_signal = false; //关闭指令
 map <wstring, bool> thread_status; //线程状态管理
 
 //调测专用
+#ifndef IDT_RELEASE
 void Test()
 {
 	MessageBox(NULL, L"标记处", L"标记", MB_OK | MB_SYSTEMMODAL);
@@ -59,6 +60,7 @@ void Testw(wstring t)
 {
 	MessageBox(NULL, t.c_str(), L"字符标记", MB_OK | MB_SYSTEMMODAL);
 }
+#endif
 
 // 程序入口点
 int main()
@@ -133,9 +135,11 @@ int main()
 
 		stringFormat.SetAlignment(StringAlignmentCenter);
 		stringFormat.SetLineAlignment(StringAlignmentCenter);
+		stringFormat.SetFormatFlags(StringFormatFlagsNoWrap);
 
 		stringFormat_left.SetAlignment(StringAlignmentNear);
 		stringFormat_left.SetLineAlignment(StringAlignmentNear);
+		stringFormat_left.SetFormatFlags(StringFormatFlagsNoWrap);
 	}
 	//LOG(INFO) << "成功初始化字体";
 
@@ -261,14 +265,6 @@ int main()
 	if (EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, reinterpret_cast<LPARAM>(&displays_number)));
 	else displays_number = 1;
 
-	//皮肤预处理
-	{
-		wstring time = CurrentDate();
-
-		if (L"2024-01-22" <= time && time <= L"2024-02-23") skin_mode = 3;
-		else skin_mode = 1;
-	}
-
 	// 创建窗口
 
 	//LOG(INFO) << "尝试创建悬浮窗窗口";
@@ -291,79 +287,28 @@ int main()
 	freeze_window = initgraph(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 	//LOG(INFO) << "成功创建背景窗口";
 
-	//LOG(INFO) << "尝试创建选项窗口";
-	hiex::PreSetWindowShowState(SW_HIDE);
-	test_window = initgraph(1010, 750);
-	//LOG(INFO) << "成功创建选项窗口";
-
 	SetWindowPos(floating_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-	SetWindowPos(drawpad_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-	SetWindowPos(ppt_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-	SetWindowPos(freeze_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-	SetWindowPos(test_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+	SetWindowPos(ppt_window, floating_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+	SetWindowPos(drawpad_window, ppt_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+	SetWindowPos(freeze_window, drawpad_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+	SetWindowPos(setting_window, freeze_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+	thread TopWindowThread(TopWindow);
+	TopWindowThread.detach();
 
 	//LOG(INFO) << "尝试获取配置信息";
 	//初始化信息获取
 	{
-		if (_waccess((string_to_wstring(global_path) + L"opt\\deploy.json").c_str(), 4) == -1)
-		{
-			CreateDirectory((string_to_wstring(global_path) + L"opt").c_str(), NULL);
+		if (_waccess((string_to_wstring(global_path) + L"opt\\deploy.json").c_str(), 4) == -1) FirstSetting(true);
 
-			Json::StyledWriter outjson;
-			Json::Value root;
+		ReadSetting(true);
+		WriteSetting();
 
-			root["edition"] = Json::Value(edition_date);
-			root["startup"] = Json::Value(true);
-			root["experimental_functions"] = Json::Value(true);
-
-			ofstream writejson;
-			writejson.imbue(locale("zh_CN.UTF8"));
-			writejson.open(wstring_to_string(string_to_wstring(global_path) + L"opt\\deploy.json").c_str());
-			writejson << outjson.write(root);
-			writejson.close();
-		}
-
-		{
-			Json::Reader reader;
-			Json::Value root;
-
-			ifstream readjson;
-			readjson.imbue(locale("zh_CN.UTF8"));
-			readjson.open(wstring_to_string(string_to_wstring(global_path) + L"opt\\deploy.json").c_str());
-
-			if (reader.parse(readjson, root))
-			{
-				if (root.isMember("startup")) setlist.startup = root["startup"].asBool();
-				if (root.isMember("experimental_functions")) setlist.experimental_functions = root["experimental_functions"].asBool();
-			}
-
-			readjson.close();
-		}
-		{
-			Json::StyledWriter outjson;
-			Json::Value root;
-
-			root["edition"] = Json::Value(edition_date);
-			root["startup"] = Json::Value(setlist.startup);
-			root["experimental_functions"] = Json::Value(setlist.experimental_functions);
-
-			ofstream writejson;
-			writejson.imbue(locale("zh_CN.UTF8"));
-			writejson.open(wstring_to_string(string_to_wstring(global_path) + L"opt\\deploy.json").c_str());
-			writejson << outjson.write(root);
-			writejson.close();
-		}
-
-		if (setlist.startup == true) ModifyRegedit(true);
-		else ModifyRegedit(false);
-
-		if (setlist.experimental_functions && displays_number == 1)
+		if (displays_number == 1)
 		{
 			thread MagnifierThread_thread(MagnifierThread);
 			MagnifierThread_thread.detach();
 		}
-
-		if (displays_number != 1) MessageBox(floating_window, (L"检测到计算机拥有 " + to_wstring(displays_number) + L" 个拓展显示器，智绘教目前不支持多拓展显示器电脑！\n\n程序将继续启动，但窗口定格，历史画板保存，超级恢复功能将失效。\n且仅能在主显示器上绘图！").c_str(), L"智绘教警告", MB_OK | MB_SYSTEMMODAL);
+		else MessageBox(floating_window, (L"检测到计算机拥有 " + to_wstring(displays_number) + L" 个显示器，智绘教目前不支持拥有拓展显示器电脑！\n\n程序将继续启动，但窗口定格，历史画板保存，超级恢复功能将失效。\n且仅能在主显示器上绘图！").c_str(), L"智绘教警告", MB_OK | MB_SYSTEMMODAL);
 	}
 	//LOG(INFO) << "成功获取配置信息";
 
@@ -453,7 +398,7 @@ int main()
 	//LOG(INFO) << "成功启动画笔窗口线程";
 
 	//LOG(INFO) << "尝试启动选项窗口线程";
-	thread test_main_thread(test_main);
+	thread test_main_thread(SettingMain);
 	test_main_thread.detach();
 	//LOG(INFO) << "成功启动选项窗口线程";
 	//LOG(INFO) << "尝试启动背景窗口线程";
@@ -473,7 +418,7 @@ int main()
 	int i = 1;
 	for (; i <= 20; i++)
 	{
-		if (!thread_status[L"floating_main"] && !thread_status[L"drawpad_main"] && !thread_status[L"test_main"] && !thread_status[L"FreezeFrameWindow"] && !thread_status[L"NetUpdate"]) break;
+		if (!thread_status[L"floating_main"] && !thread_status[L"drawpad_main"] && !thread_status[L"SettingMain"] && !thread_status[L"FreezeFrameWindow"] && !thread_status[L"NetUpdate"]) break;
 		Sleep(500);
 	}
 

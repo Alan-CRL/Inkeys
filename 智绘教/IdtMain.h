@@ -16,6 +16,7 @@
 // 首次编译需要确认 .NET Framework 版本为 4.0，如果不一致请执行 位于 PptCOM 的 <切换 .NET Framework 指南>
 
 #pragma once
+#define IDT_RELEASE
 
 #pragma comment( linker, "/subsystem:windows /entry:mainCRTStartup" )
 
@@ -86,7 +87,6 @@ using namespace Gdiplus;
 
 #define Sleep(int) this_thread::sleep_for(chrono::milliseconds(int))
 
-extern bool debug;
 extern bool already;
 
 extern wstring buildTime; //构建时间
@@ -104,6 +104,8 @@ extern bool off_signal; //关闭指令
 extern map <wstring, bool> thread_status; //线程状态管理
 
 //调测专用
+#ifndef IDT_RELEASE
 void Test();
 void Testi(int t);
 void Testw(wstring t);
+#endif

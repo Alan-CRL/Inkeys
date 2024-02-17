@@ -183,10 +183,6 @@ void DrawControlWindow()
 		SetWindowLong(ppt_window, GWL_STYLE, GetWindowLong(ppt_window, GWL_STYLE) & ~WS_CAPTION);//隐藏标题栏
 		SetWindowPos(ppt_window, NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_DRAWFRAME | SWP_NOACTIVATE);
 		SetWindowLong(ppt_window, GWL_EXSTYLE, WS_EX_TOOLWINDOW);//隐藏任务栏
-
-		LONG style = GetWindowLong(ppt_window, GWL_EXSTYLE);
-		style |= WS_EX_NOACTIVATE;
-		SetWindowLong(ppt_window, GWL_EXSTYLE, style);
 	}
 
 	// 设置BLENDFUNCTION结构体
@@ -209,9 +205,17 @@ void DrawControlWindow()
 	ulwi.crKey = RGB(255, 255, 255);
 	ulwi.pblend = &blend;
 	ulwi.dwFlags = ULW_ALPHA;
-	LONG nRet = ::GetWindowLong(ppt_window, GWL_EXSTYLE);
-	nRet |= WS_EX_LAYERED;
-	::SetWindowLong(ppt_window, GWL_EXSTYLE, nRet);
+
+	do
+	{
+		Sleep(10);
+		::SetWindowLong(ppt_window, GWL_EXSTYLE, ::GetWindowLong(ppt_window, GWL_EXSTYLE) | WS_EX_LAYERED);
+	} while (!(::GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_LAYERED));
+	do
+	{
+		Sleep(10);
+		::SetWindowLong(ppt_window, GWL_EXSTYLE, ::GetWindowLong(ppt_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+	} while (!(::GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE));
 
 	magnificationWindowReady++;
 	for (int for_i = 1; !off_signal; for_i = 2)

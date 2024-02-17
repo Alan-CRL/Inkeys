@@ -7,6 +7,7 @@
 #include "IdtImage.h"
 #include "IdtMagnification.h"
 #include "IdtPlug-in.h"
+#include "IdtSetting.h"
 
 extern int FreezeRecall;
 

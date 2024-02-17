@@ -164,7 +164,7 @@ void MagnifierThread()
 			hwndList.emplace_back(floating_window);
 			hwndList.emplace_back(drawpad_window);
 			hwndList.emplace_back(ppt_window);
-			hwndList.emplace_back(test_window);
+			hwndList.emplace_back(setting_window);
 			MagSetWindowFilterList(hwndMag, MW_FILTERMODE_EXCLUDE, hwndList.size(), hwndList.data());
 
 			magnificationWindowReady = -1;

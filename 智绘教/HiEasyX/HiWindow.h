@@ -477,7 +477,7 @@ namespace HiEasyX
 	 *
 	 * @param[in] rct	双缓冲更新区域（坐标都为 0 表示全部区域）
 	*/
-	void FlushDrawing(RECT rct = { 0 });
+	void FlushDrawing(RECT rct = { 0 }, HWND hWnd = nullptr);
 
 	/**
 	 * @brief <pre>

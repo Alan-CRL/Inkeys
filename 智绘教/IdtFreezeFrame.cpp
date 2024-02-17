@@ -4,9 +4,9 @@ int FreezeRecall;
 
 void FreezeFrameWindow()
 {
-	this_thread::sleep_for(chrono::seconds(3));
+	while (!already) this_thread::sleep_for(chrono::milliseconds(50));
 
-	if (!setlist.experimental_functions || displays_number != 1) return;
+	if (displays_number != 1) return;
 	while (magnificationWindowReady != -1) this_thread::sleep_for(chrono::milliseconds(50));
 
 	thread_status[L"FreezeFrameWindow"] = true;
@@ -15,10 +15,6 @@ void FreezeFrameWindow()
 	SetWindowLong(freeze_window, GWL_STYLE, GetWindowLong(freeze_window, GWL_STYLE) & ~WS_CAPTION);//隐藏标题栏
 	SetWindowPos(freeze_window, NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_DRAWFRAME);
 	SetWindowLong(freeze_window, GWL_EXSTYLE, WS_EX_TOOLWINDOW);//隐藏任务栏
-
-	LONG style = GetWindowLong(freeze_window, GWL_EXSTYLE);
-	style |= WS_EX_NOACTIVATE;
-	SetWindowLong(freeze_window, GWL_EXSTYLE, style);
 
 	IMAGE freeze_background(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 	SetImageColor(freeze_background, RGBA(0, 0, 0, 0), true);
@@ -43,9 +39,17 @@ void FreezeFrameWindow()
 	ulwi.crKey = RGB(255, 255, 255);
 	ulwi.pblend = &blend;
 	ulwi.dwFlags = ULW_ALPHA;
-	LONG nRet = ::GetWindowLong(freeze_window, GWL_EXSTYLE);
-	nRet |= WS_EX_LAYERED;
-	::SetWindowLong(freeze_window, GWL_EXSTYLE, nRet);
+
+	do
+	{
+		Sleep(10);
+		::SetWindowLong(freeze_window, GWL_EXSTYLE, ::GetWindowLong(freeze_window, GWL_EXSTYLE) | WS_EX_LAYERED);
+	} while (!(::GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_LAYERED));
+	do
+	{
+		Sleep(10);
+		::SetWindowLong(freeze_window, GWL_EXSTYLE, ::GetWindowLong(freeze_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+	} while (!(::GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE));
 
 	ulwi.hdcSrc = GetImageHDC(&freeze_background);
 	UpdateLayeredWindowIndirect(freeze_window, &ulwi);
@@ -74,11 +78,6 @@ void FreezeFrameWindow()
 
 				SetImageColor(freeze_background, RGBA(0, 0, 0, 0), true);
 				hiex::TransparentImage(&freeze_background, 0, 0, &MagnificationTmp);
-
-				if (test.select) SetWindowPos(freeze_window, test_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-				else if (!choose.select) SetWindowPos(freeze_window, drawpad_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-				else if (ppt_show != NULL) SetWindowPos(freeze_window, ppt_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-				else SetWindowPos(freeze_window, floating_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
 				ulwi.hdcSrc = GetImageHDC(&freeze_background);
 				UpdateLayeredWindowIndirect(freeze_window, &ulwi);
@@ -171,11 +170,6 @@ void FreezeFrameWindow()
 					}
 				}
 
-				if (test.select) SetWindowPos(freeze_window, test_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-				else if (!choose.select) SetWindowPos(freeze_window, drawpad_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-				else if (ppt_show != NULL) SetWindowPos(freeze_window, ppt_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-				else SetWindowPos(freeze_window, floating_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-
 				Sleep(20);
 			}
 
@@ -205,12 +199,8 @@ void FreezeFrameWindow()
 			int for_i = -10;
 			for (for_i = -10; for_i <= 60 && FreezePPT && !off_signal; for_i++)
 			{
-				if (test.select) SetWindowPos(freeze_window, test_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-				else if (!choose.select)  SetWindowPos(freeze_window, drawpad_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-				else SetWindowPos(freeze_window, ppt_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-
 				SetImageColor(freeze_background, RGBA(0, 0, 0, 140), true);
-				hiex::TransparentImage(&freeze_background, GetSystemMetrics(SM_CXSCREEN) / 2 - 500, GetSystemMetrics(SM_CYSCREEN) / 2 - 163, &test_sign[3]);
+				hiex::TransparentImage(&freeze_background, GetSystemMetrics(SM_CXSCREEN) / 2 - 500, GetSystemMetrics(SM_CYSCREEN) / 2 - 163, &SettingSign[3]);
 
 				hiex::EasyX_Gdiplus_SolidRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 300, (float)GetSystemMetrics(SM_CYSCREEN) / 2 + 200, 600, 10, 10, 10, RGBA(255, 255, 255, 100), true, SmoothingModeHighQuality, &freeze_background);
 				hiex::EasyX_Gdiplus_SolidRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 300, (float)GetSystemMetrics(SM_CYSCREEN) / 2 + 200, (float)max(0, min(50, for_i)) * 12, 10, 10, 10, RGBA(255, 255, 255, 255), false, SmoothingModeHighQuality, &freeze_background);

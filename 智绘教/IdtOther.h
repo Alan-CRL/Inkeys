@@ -10,6 +10,7 @@
 #pragma comment(lib, "shell32.lib")
 
 wstring GetCurrentExeDirectory();
+wstring GetCurrentExePath();
 //开机启动项设置
 bool ModifyRegedit(bool bAutoRun);
 //网络状态获取

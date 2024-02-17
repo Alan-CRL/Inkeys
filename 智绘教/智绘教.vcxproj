@@ -56,13 +56,21 @@
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(IntDir)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <Optimization>Disabled</Optimization>
+      <Optimization>Full</Optimization>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <Link>
-      <SubSystem>Windows</SubSystem>
+      <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
     </Link>
     <Manifest>
       <EnableDpiAwareness>true</EnableDpiAwareness>
@@ -144,6 +152,7 @@
     <ClInclude Include="HiEasyX\HiSysGUI\SysRadioButton.h" />
     <ClInclude Include="HiEasyX\HiSysGUI\SysStatic.h" />
     <ClInclude Include="HiEasyX\HiWindow.h" />
+    <ClInclude Include="IdtConfiguration.h" />
     <ClInclude Include="IdtDisplayManagement.h" />
     <ClInclude Include="IdtDrawpad.h" />
     <ClInclude Include="IdtFloating.h" />
@@ -155,7 +164,21 @@
     <ClInclude Include="IdtMain.h" />
     <ClInclude Include="IdtOther.h" />
     <ClInclude Include="IdtPlug-in.h" />
-    <ClInclude Include="IdtSkin.h" />
+    <ClInclude Include="IdtSetting.h" />
+    <ClInclude Include="imgui\imconfig.h" />
+    <ClInclude Include="imgui\imgui.h" />
+    <ClInclude Include="imgui\imgui_impl_dx11.h" />
+    <ClInclude Include="imgui\imgui_impl_win32.h" />
+    <ClInclude Include="imgui\imgui_internal.h" />
+    <ClInclude Include="imgui\imgui_offset_rect.h" />
+    <ClInclude Include="imgui\imgui_toggle.h" />
+    <ClInclude Include="imgui\imgui_toggle_math.h" />
+    <ClInclude Include="imgui\imgui_toggle_palette.h" />
+    <ClInclude Include="imgui\imgui_toggle_presets.h" />
+    <ClInclude Include="imgui\imgui_toggle_renderer.h" />
+    <ClInclude Include="imgui\imstb_rectpack.h" />
+    <ClInclude Include="imgui\imstb_textedit.h" />
+    <ClInclude Include="imgui\imstb_truetype.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="IdtRts.h" />
     <ClInclude Include="stb_image\stb-master\stb_image.h" />
@@ -169,6 +192,7 @@
     <ClInclude Include="zip_utils\zip.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="IdtConfiguration.cpp" />
     <ClCompile Include="IdtDisplayManagement.cpp" />
     <ClCompile Include="IdtDraw.cpp" />
     <ClCompile Include="IdtDraw.h" />
@@ -216,7 +240,17 @@
     <ClCompile Include="IdtImage.cpp" />
     <ClCompile Include="IdtKey.cpp" />
     <ClCompile Include="IdtRts.cpp" />
-    <ClCompile Include="IdtSkin.cpp" />
+    <ClCompile Include="IdtSetting.cpp" />
+    <ClCompile Include="imgui\imgui.cpp" />
+    <ClCompile Include="imgui\imgui_draw.cpp" />
+    <ClCompile Include="imgui\imgui_impl_dx11.cpp" />
+    <ClCompile Include="imgui\imgui_impl_win32.cpp" />
+    <ClCompile Include="imgui\imgui_tables.cpp" />
+    <ClCompile Include="imgui\imgui_toggle.cpp" />
+    <ClCompile Include="imgui\imgui_toggle_palette.cpp" />
+    <ClCompile Include="imgui\imgui_toggle_presets.cpp" />
+    <ClCompile Include="imgui\imgui_toggle_renderer.cpp" />
+    <ClCompile Include="imgui\imgui_widgets.cpp" />
     <ClCompile Include="json\lib_json\json_reader.cpp" />
     <ClCompile Include="json\lib_json\json_value.cpp" />
     <ClCompile Include="json\lib_json\json_writer.cpp" />
@@ -238,6 +272,7 @@
     <Image Include="src\bug.png" />
     <Image Include="src\choice.png" />
     <Image Include="src\choose.png" />
+    <Image Include="src\choose_clear.png" />
     <Image Include="src\curve.png" />
     <Image Include="src\endshow.png" />
     <Image Include="src\freeze-frame.png" />
@@ -273,6 +308,7 @@
     <Image Include="src\write.png" />
   </ItemGroup>
   <ItemGroup>
+    <Font Include="src\ttf\Douyu_Font.otf" />
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf">
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</DeploymentContent>
     </Font>
@@ -280,6 +316,7 @@
   <ItemGroup>
     <None Include="exe\智绘教CrashedHandler.exe" />
     <None Include="exe\智绘教CrashedHandlerClose.exe" />
+    <None Include="exe\智绘教StartupItemSettings.exe" />
     <None Include="PptCOM.dll" />
   </ItemGroup>
   <ItemGroup>

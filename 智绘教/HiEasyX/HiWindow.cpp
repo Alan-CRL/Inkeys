@@ -513,12 +513,13 @@ namespace HiEasyX
 	}// FlushDrawing
 
 	// 提供给用户的接口
-	void FlushDrawing(RECT rct)
+	void FlushDrawing(RECT rct, HWND hWnd)
 	{
 		// 为了防止用户更新双缓冲时窗口拉伸导致画布冲突，必须在窗口任务内调用此函数
-		if (IsInTask())
+		if (IsInTask(hWnd))
 		{
-			FlushDrawing(g_nFocusWindowIndex, rct);
+			if (hWnd != nullptr) FlushDrawing(GetWindowIndex(hWnd), rct);
+			else FlushDrawing(g_nFocusWindowIndex, rct);
 		}
 	}
 
@@ -1687,7 +1688,7 @@ namespace HiEasyX
 			TranslateMessage(&Msg);
 			DispatchMessage(&Msg);
 		}
-		}
+	}
 
 	HWND initgraph_win32(int w, int h, int flag, LPCTSTR lpszWndTitle, WNDPROC WindowProcess, HWND hParent)
 	{
@@ -2053,4 +2054,4 @@ namespace HiEasyX
 	{
 		flushmessage_win32(filter, g_vecWindows[m_nWindowIndex].hWnd);
 	}
-		}
+}

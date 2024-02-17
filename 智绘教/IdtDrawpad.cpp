@@ -1,7 +1,6 @@
 #include "IdtDrawpad.h"
 
 bool main_open;
-int TestMainMode = 1;
 bool FirstDraw = true;
 
 //将要废弃的绘制函数
@@ -38,679 +37,6 @@ bool checkIntersection(RECT rect1, RECT rect2)
 double EuclideanDistance(POINT a, POINT b)
 {
 	return std::sqrt(std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2));
-}
-
-void ControlTestMain()
-{
-	ExMessage m;
-	while (!off_signal)
-	{
-		hiex::getmessage_win32(&m, EM_MOUSE, test_window);
-
-		if (TestMainMode == 1 && IsInRect(m.x, m.y, { 220, 625, 980, 675 }))
-		{
-			if (m.lbutton)
-			{
-				int lx = m.x, ly = m.y;
-				while (1)
-				{
-					ExMessage m = hiex::getmessage_win32(EM_MOUSE, test_window);
-					if (IsInRect(m.x, m.y, { 20, 625, 780, 675 }))
-					{
-						if (!m.lbutton)
-						{
-							if (setlist.experimental_functions) setlist.experimental_functions = false;
-							else setlist.experimental_functions = true;
-
-							{
-								Json::StyledWriter outjson;
-								Json::Value root;
-
-								root["edition"] = Json::Value(edition_date);
-								root["startup"] = Json::Value(setlist.startup);
-								root["experimental_functions"] = Json::Value(setlist.experimental_functions);
-
-								ofstream writejson;
-								writejson.imbue(locale("zh_CN.UTF8"));
-								writejson.open(wstring_to_string(string_to_wstring(global_path) + L"opt\\deploy.json").c_str());
-								writejson << outjson.write(root);
-								writejson.close();
-							}
-
-							break;
-						}
-					}
-					else
-					{
-						hiex::flushmessage_win32(EM_MOUSE, test_window);
-
-						break;
-					}
-				}
-				hiex::flushmessage_win32(EM_MOUSE, test_window);
-			}
-		}
-
-		else if (IsInRect(m.x, m.y, { 10, 15, 190, 75 }))
-		{
-			if (m.lbutton)
-			{
-				int lx = m.x, ly = m.y;
-				while (1)
-				{
-					ExMessage m = hiex::getmessage_win32(EM_MOUSE, test_window);
-					if (IsInRect(m.x, m.y, { 10, 15, 190, 75 }))
-					{
-						if (!m.lbutton)
-						{
-							TestMainMode = 1;
-
-							break;
-						}
-					}
-					else
-					{
-						hiex::flushmessage_win32(EM_MOUSE, test_window);
-
-						break;
-					}
-				}
-				hiex::flushmessage_win32(EM_MOUSE, test_window);
-			}
-		}
-		else if (IsInRect(m.x, m.y, { 10, 85, 190, 145 }))
-		{
-			if (m.lbutton)
-			{
-				int lx = m.x, ly = m.y;
-				while (1)
-				{
-					ExMessage m = hiex::getmessage_win32(EM_MOUSE, test_window);
-					if (IsInRect(m.x, m.y, { 10, 85, 190, 145 }))
-					{
-						if (!m.lbutton)
-						{
-							TestMainMode = 2;
-
-							break;
-						}
-					}
-					else
-					{
-						hiex::flushmessage_win32(EM_MOUSE, test_window);
-
-						break;
-					}
-				}
-				hiex::flushmessage_win32(EM_MOUSE, test_window);
-			}
-		}
-		else if (IsInRect(m.x, m.y, { 10, 155, 190, 215 }))
-		{
-			if (m.lbutton)
-			{
-				int lx = m.x, ly = m.y;
-				while (1)
-				{
-					ExMessage m = hiex::getmessage_win32(EM_MOUSE, test_window);
-					if (IsInRect(m.x, m.y, { 10, 155, 190, 215 }))
-					{
-						if (!m.lbutton)
-						{
-							TestMainMode = 3;
-
-							break;
-						}
-					}
-					else
-					{
-						hiex::flushmessage_win32(EM_MOUSE, test_window);
-
-						break;
-					}
-				}
-				hiex::flushmessage_win32(EM_MOUSE, test_window);
-			}
-		}
-	}
-}
-
-LRESULT CALLBACK TestWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-	switch (uMsg)
-	{
-	case WM_CLOSE:
-		return 0;
-
-	default:
-		return HIWINDOW_DEFAULT_PROC;
-	}
-	return 0;
-}
-int test_main()
-{
-	this_thread::sleep_for(chrono::seconds(3));
-	while (!already) this_thread::sleep_for(chrono::milliseconds(50));
-
-	thread_status[L"test_main"] = true;
-
-	loadimage(&test_sign[1], L"PNG", L"sign2");
-	loadimage(&test_sign[2], L"PNG", L"sign3");
-	loadimage(&test_sign[3], L"PNG", L"sign4");
-	loadimage(&test_sign[4], L"PNG", L"sign5");
-
-	IMAGE test_icon[5];
-	loadimage(&test_icon[1], L"PNG", L"test_icon1");
-	loadimage(&test_icon[2], L"PNG", L"test_icon2");
-	loadimage(&test_icon[3], L"PNG", L"test_icon3");
-
-	DisableResizing(test_window, true);//禁止窗口拉伸
-	DisableSystemMenu(test_window, true);
-
-	LONG style = GetWindowLong(test_window, GWL_STYLE);
-	style &= ~WS_SYSMENU;
-	SetWindowLong(test_window, GWL_STYLE, style);
-
-	hiex::SetWndProcFunc(test_window, TestWndProc);
-
-	// 设置BLENDFUNCTION结构体
-	BLENDFUNCTION blend;
-	blend.BlendOp = AC_SRC_OVER;
-	blend.BlendFlags = 0;
-	blend.SourceConstantAlpha = 255; // 设置透明度，0为全透明，255为不透明
-	blend.AlphaFormat = AC_SRC_ALPHA; // 使用源图像的alpha通道
-	HDC hdcScreen = GetDC(NULL);
-	// 调用UpdateLayeredWindow函数更新窗口
-	POINT ptSrc = { 0,0 };
-	SIZE sizeWnd = { 1010, 750 };
-	POINT ptDst = { 0,0 }; // 设置窗口位置
-	UPDATELAYEREDWINDOWINFO ulwi = { 0 };
-	ulwi.cbSize = sizeof(ulwi);
-	ulwi.hdcDst = hdcScreen;
-	ulwi.pptDst = &ptDst;
-	ulwi.psize = &sizeWnd;
-	ulwi.pptSrc = &ptSrc;
-	ulwi.crKey = RGB(255, 255, 255);
-	ulwi.pblend = &blend;
-	ulwi.dwFlags = ULW_ALPHA;
-	LONG nRet = ::GetWindowLong(test_window, GWL_EXSTYLE);
-	nRet |= WS_EX_LAYERED;
-	::SetWindowLong(test_window, GWL_EXSTYLE, nRet);
-
-	thread ControlTestMain_thread(ControlTestMain);
-	ControlTestMain_thread.detach();
-
-	POINT pt;
-	IMAGE test_title(1010, 750), test_background(1010, 710), test_content(800, 700);
-
-	magnificationWindowReady++;
-	while (!off_signal)
-	{
-		Sleep(500);
-
-		if (test.select == true)
-		{
-			wstring ppt_LinkTest = LinkTest();
-			wstring ppt_IsPptDependencyLoaded = IsPptDependencyLoaded();
-			Graphics graphics(GetImageHDC(&test_content));
-
-			if (!IsWindowVisible(test_window)) ShowWindow(test_window, SW_SHOW);
-
-			while (!off_signal)
-			{
-				if (!choose.select) SetWindowPos(test_window, drawpad_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-				else if (ppt_show != NULL) SetWindowPos(test_window, ppt_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-				else SetWindowPos(test_window, floating_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-
-				SetImageColor(test_background, RGBA(0, 0, 0, 0), true);
-				hiex::EasyX_Gdiplus_SolidRoundRect(0, 0, 1000, 700, 20, 20, RGBA(245, 245, 245, 255), false, SmoothingModeHighQuality, &test_background);
-
-				if (TestMainMode == 1)
-				{
-					SetImageColor(test_content, RGBA(0, 0, 0, 0), true);
-					hiex::EasyX_Gdiplus_SolidRoundRect(0, 0, 800, 700, 20, 20, RGBA(255, 255, 255, 255), false, SmoothingModeHighQuality, &test_content);
-
-					{
-						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 20, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(0, 0, 0, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 0;
-							dwords_rect.top = 0;
-							dwords_rect.right = 800;
-							dwords_rect.bottom = 30;
-						}
-						graphics.DrawString(L"关闭此页面需再次点击 选项 按钮", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-
-					hiex::TransparentImage(&test_content, 50, 115, &test_sign[2]);
-
-					if (!server_feedback.empty() && server_feedback != "")
-					{
-						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 20, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(0, 0, 0, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 0;
-							dwords_rect.top = 480;
-							dwords_rect.right = 800;
-							dwords_rect.bottom = 560;
-						}
-						graphics.DrawString(string_to_wstring(server_feedback).c_str(), -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-
-					if (AutomaticUpdateStep == 0)
-					{
-						hiex::EasyX_Gdiplus_RoundRect(20, 560, 760, 50, 20, 20, RGBA(130, 130, 130, 255), 2, false, SmoothingModeHighQuality, &test_content);
-
-						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 25, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(130, 130, 130, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 20;
-							dwords_rect.top = 560;
-							dwords_rect.right = 20 + 760;
-							dwords_rect.bottom = 560 + 50;
-						}
-						graphics.DrawString(L"程序自动更新待启用", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-					else if (AutomaticUpdateStep == 1)
-					{
-						hiex::EasyX_Gdiplus_RoundRect(20, 560, 760, 50, 20, 20, RGBA(106, 156, 45, 255), 2, false, SmoothingModeHighQuality, &test_content);
-
-						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 25, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(106, 156, 45, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 20;
-							dwords_rect.top = 560;
-							dwords_rect.right = 20 + 760;
-							dwords_rect.bottom = 560 + 50;
-						}
-						graphics.DrawString(L"程序版本已经是最新", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-					else if (AutomaticUpdateStep == 2)
-					{
-						hiex::EasyX_Gdiplus_RoundRect(20, 560, 760, 50, 20, 20, RGBA(245, 166, 35, 255), 2, false, SmoothingModeHighQuality, &test_content);
-
-						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 25, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(245, 166, 35, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 20;
-							dwords_rect.top = 560;
-							dwords_rect.right = 20 + 760;
-							dwords_rect.bottom = 560 + 50;
-						}
-						graphics.DrawString(L"新版本排队下载中", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-					else if (AutomaticUpdateStep == 3)
-					{
-						hiex::EasyX_Gdiplus_RoundRect(20, 560, 760, 50, 20, 20, RGBA(106, 156, 45, 255), 2, false, SmoothingModeHighQuality, &test_content);
-
-						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 25, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(106, 156, 45, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 20;
-							dwords_rect.top = 560;
-							dwords_rect.right = 20 + 760;
-							dwords_rect.bottom = 560 + 50;
-						}
-						graphics.DrawString(L"重启软件以更新到最新版本", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-
-					if (setlist.experimental_functions)
-					{
-						hiex::EasyX_Gdiplus_RoundRect(20, 620, 760, 50, 20, 20, RGBA(0, 111, 225, 255), 2, false, SmoothingModeHighQuality, &test_content);
-
-						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 25, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(0, 111, 225, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 20;
-							dwords_rect.top = 620;
-							dwords_rect.right = 20 + 760;
-							dwords_rect.bottom = 620 + 50;
-						}
-						graphics.DrawString(L"程序实验性功能 已启用（点击禁用）", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-					else
-					{
-						hiex::EasyX_Gdiplus_RoundRect(20, 620, 760, 50, 20, 20, RGBA(130, 130, 130, 255), 2, false, SmoothingModeHighQuality, &test_content);
-
-						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 25, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(130, 130, 130, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 20;
-							dwords_rect.top = 620;
-							dwords_rect.right = 20 + 760;
-							dwords_rect.bottom = 620 + 50;
-						}
-						graphics.DrawString(L"程序实验性功能 已禁用（点击启用）", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-				}
-				if (TestMainMode == 2)
-				{
-					SetImageColor(test_content, RGBA(0, 0, 0, 0), true);
-					hiex::EasyX_Gdiplus_SolidRoundRect(0, 0, 800, 700, 20, 20, RGBA(255, 255, 255, 255), false, SmoothingModeHighQuality, &test_content);
-
-					{
-						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 20, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(0, 0, 0, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 0;
-							dwords_rect.top = 0;
-							dwords_rect.right = 800;
-							dwords_rect.bottom = 30;
-						}
-						graphics.DrawString(L"关闭此页面需再次点击 选项 按钮", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-
-					Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 18, FontStyleRegular, UnitPixel);
-					SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(0, 0, 0), false));
-					graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-					{
-						dwords_rect.left = 0;
-						dwords_rect.top = 0;
-						dwords_rect.right = 800;
-						dwords_rect.bottom = 700;
-					}
-
-					GetCursorPos(&pt);
-
-					wstring text = L"\n\n鼠标左键按下：";
-					text += KEY_DOWN(VK_LBUTTON) ? L"是" : L"否";
-					text += L"\n光标坐标 " + to_wstring(pt.x) + L"," + to_wstring(pt.y);
-
-					text += L"\n\n此程序使用 RealTimeStylus 触控库（测试触控需进入画笔模式）";
-					text += L"\n其兼容 WinXP 及以上版本的系统，效率较高，支持多点触控";
-
-					if (uRealTimeStylus == 2) text += L"\n\nRealTimeStylus 消息：按下";
-					else if (uRealTimeStylus == 3) text += L"\n\nRealTimeStylus 消息：抬起";
-					else if (uRealTimeStylus == 4) text += L"\n\nRealTimeStylus 消息：移动";
-					else text += L"\n\nRealTimeStylus 消息：就绪";
-
-					text += L"\n触控按下：";
-					text += touchDown ? L"是" : L"否";
-					text += L"\n按下触控点数量：";
-					text += to_wstring(touchNum);
-
-					for (int i = 0; i < touchNum; i++)
-					{
-						std::shared_lock<std::shared_mutex> lock1(PointPosSm);
-						POINT pt = TouchPos[TouchList[i]].pt;
-						lock1.unlock();
-
-						std::shared_lock<std::shared_mutex> lock2(TouchSpeedSm);
-						double speed = TouchSpeed[TouchList[i]];
-						lock2.unlock();
-
-						text += L"\n触控点" + to_wstring(i + 1) + L" pid" + to_wstring(TouchList[i]) + L" 坐标" + to_wstring(pt.x) + L"," + to_wstring(pt.y) + L" 速度" + to_wstring(speed);
-					}
-
-					text += L"\n\nTouchList ";
-					for (const auto& val : TouchList)
-					{
-						text += to_wstring(val) + L" ";
-					}
-					text += L"\nTouchTemp ";
-					for (size_t i = 0; i < TouchTemp.size(); ++i)
-					{
-						text += to_wstring(TouchTemp[i].pid) + L" ";
-					}
-
-					text += L"\n\n撤回库当前大小：" + to_wstring(RecallImage.size());
-					text += L"\n撤回库 recall_image_recond：" + to_wstring(recall_image_recond);
-					text += L"\n撤回库 total_record_pointer：" + to_wstring(total_record_pointer);
-					text += L"\n撤回库 practical_total_record_pointer：" + to_wstring(practical_total_record_pointer);
-					//text += L"\n\n撤回库 reference_record_pointer：" + to_wstring(reference_record_pointer);
-					//text += L"\n撤回库 current_record_pointer：" + to_wstring(current_record_pointer);
-					text += L"\n首次绘制状态：", text += (FirstDraw == true) ? L"是" : L"否";
-
-					text += L"\n\nCOM二进制接口 联动组件 状态：\n";
-					text += ppt_LinkTest;
-					text += L"\nPPT 联动组件状态：";
-					text += ppt_IsPptDependencyLoaded;
-
-					text += L"\n\nPPT 状态：";
-					text += ppt_info_stay.TotalPage != -1 ? L"正在播放" : L"未播放";
-					text += L"\nPPT 总页面数：";
-					text += to_wstring(ppt_info_stay.TotalPage);
-					text += L"\nPPT 当前页序号：";
-					text += to_wstring(ppt_info_stay.CurrentPage);
-
-					graphics.DrawString(text.c_str(), -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-				}
-				if (TestMainMode == 3)
-				{
-					SetImageColor(test_content, RGBA(0, 0, 0, 0), true);
-					hiex::EasyX_Gdiplus_SolidRoundRect(0, 0, 800, 700, 20, 20, RGBA(255, 255, 255, 255), false, SmoothingModeHighQuality, &test_content);
-
-					hiex::TransparentImage(&test_content, 100, 20, &test_sign[1]);
-					{
-						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 20, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(0, 0, 0, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 0;
-							dwords_rect.top = 0;
-							dwords_rect.right = 800;
-							dwords_rect.bottom = 30;
-						}
-						graphics.DrawString(L"关闭此页面需再次点击 选项 按钮", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-
-					Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 18, FontStyleRegular, UnitPixel);
-					SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(0, 0, 0), false));
-					graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-					{
-						dwords_rect.left = 0;
-						dwords_rect.top = 305;
-						dwords_rect.right = 800;
-						dwords_rect.bottom = 630;
-					}
-
-					wstring text = L"程序版本：" + string_to_wstring(edition_code);
-					text += L"\n程序发布版本：" + string_to_wstring(edition_date) + L" 默认分支";
-					text += L"\n程序构建时间：" + buildTime;
-					text += L"\n用户ID：" + userid;
-
-					text += L"\n\n更新通道：LTS";
-					if (!server_code.empty() && server_code != "")
-					{
-						text += L"\n联网版本代号：" + string_to_wstring(server_code);
-						if (server_code == "GWSR") text += L" （广外专用版本）";
-					}
-					if (procedure_updata_error == 1) text += L"\n程序自动更新：已启用";
-					else if (procedure_updata_error == 2) text += L"\n程序自动更新：发生网络错误";
-					else text += L"\n程序自动更新：载入中（等待服务器反馈）";
-
-					if (!server_feedback.empty() && server_feedback != "") text += L"\n服务器反馈信息：" + string_to_wstring(server_feedback);
-					if (server_updata_error)
-					{
-						text += L"\n\n服务器通信错误：Error" + to_wstring(server_updata_error);
-						if (!server_updata_error_reason.empty()) text += L"\n" + server_updata_error_reason;
-					}
-
-					graphics.DrawString(text.c_str(), -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-
-					{
-						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 18, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(6, 39, 182), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 0;
-							dwords_rect.top = 630;
-							dwords_rect.right = 800;
-							dwords_rect.bottom = 700;
-						}
-						graphics.DrawString(L"软件作者联系方式\nQQ: 2685549821\ne-mail: alan-crl@foxmail.com", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-				}
-
-				//侧栏
-				{
-					Graphics graphics(GetImageHDC(&test_background));
-
-					if (TestMainMode == 1)
-					{
-						hiex::EasyX_Gdiplus_FillRoundRect(10, 10, 180, 60, 20, 20, RGBA(0, 111, 225, 255), RGBA(230, 230, 230, 255), 3, false, SmoothingModeHighQuality, &test_background);
-
-						ChangeColor(test_icon[1], RGBA(0, 111, 225, 255));
-						hiex::TransparentImage(&test_background, 20, 20, &test_icon[1]);
-
-						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 24, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(0, 111, 225, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 70;
-							dwords_rect.top = 10;
-							dwords_rect.right = 70 + 110;
-							dwords_rect.bottom = 10 + 63;
-						}
-						graphics.DrawString(L"主页", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-					else
-					{
-						hiex::EasyX_Gdiplus_FillRoundRect(10, 10, 180, 60, 20, 20, RGBA(230, 230, 230, 255), RGBA(230, 230, 230, 255), 3, false, SmoothingModeHighQuality, &test_background);
-
-						ChangeColor(test_icon[1], RGBA(130, 130, 130, 255));
-						hiex::TransparentImage(&test_background, 20, 20, &test_icon[1]);
-
-						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 24, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(130, 130, 130, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 70;
-							dwords_rect.top = 10;
-							dwords_rect.right = 70 + 110;
-							dwords_rect.bottom = 10 + 63;
-						}
-						graphics.DrawString(L"主页", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-
-					if (TestMainMode == 2)
-					{
-						hiex::EasyX_Gdiplus_FillRoundRect(10, 80, 180, 60, 20, 20, RGBA(0, 111, 225, 255), RGBA(230, 230, 230, 255), 3, false, SmoothingModeHighQuality, &test_background);
-
-						ChangeColor(test_icon[2], RGBA(0, 111, 225, 255));
-						hiex::TransparentImage(&test_background, 20, 90, &test_icon[2]);
-
-						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 24, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(0, 111, 225, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 70;
-							dwords_rect.top = 80;
-							dwords_rect.right = 70 + 110;
-							dwords_rect.bottom = 80 + 63;
-						}
-						graphics.DrawString(L"调测", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-					else
-					{
-						hiex::EasyX_Gdiplus_FillRoundRect(10, 80, 180, 60, 20, 20, RGBA(230, 230, 230, 255), RGBA(230, 230, 230, 255), 3, false, SmoothingModeHighQuality, &test_background);
-
-						ChangeColor(test_icon[2], RGBA(130, 130, 130, 255));
-						hiex::TransparentImage(&test_background, 20, 90, &test_icon[2]);
-
-						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 24, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(130, 130, 130, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 70;
-							dwords_rect.top = 80;
-							dwords_rect.right = 70 + 110;
-							dwords_rect.bottom = 80 + 63;
-						}
-						graphics.DrawString(L"调测", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-
-					if (TestMainMode == 3)
-					{
-						hiex::EasyX_Gdiplus_FillRoundRect(10, 150, 180, 60, 20, 20, RGBA(0, 111, 225, 255), RGBA(230, 230, 230, 255), 3, false, SmoothingModeHighQuality, &test_background);
-
-						ChangeColor(test_icon[3], RGBA(0, 111, 225, 255));
-						hiex::TransparentImage(&test_background, 20, 160, &test_icon[3]);
-
-						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 24, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(0, 111, 225, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 70;
-							dwords_rect.top = 150;
-							dwords_rect.right = 70 + 110;
-							dwords_rect.bottom = 150 + 63;
-						}
-						graphics.DrawString(L"关于", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-					else
-					{
-						hiex::EasyX_Gdiplus_FillRoundRect(10, 150, 180, 60, 20, 20, RGBA(230, 230, 230, 255), RGBA(230, 230, 230, 255), 3, false, SmoothingModeHighQuality, &test_background);
-
-						ChangeColor(test_icon[3], RGBA(130, 130, 130, 255));
-						hiex::TransparentImage(&test_background, 20, 160, &test_icon[3]);
-
-						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 24, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(130, 130, 130, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 70;
-							dwords_rect.top = 150;
-							dwords_rect.right = 70 + 110;
-							dwords_rect.bottom = 150 + 63;
-						}
-						graphics.DrawString(L"关于", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-
-					hiex::TransparentImage(&test_background, 10, 486, &test_sign[4]);
-				}
-				//标题栏
-				{
-					SetImageColor(test_title, RGBA(0, 0, 0, 0), true);
-					hiex::EasyX_Gdiplus_SolidRoundRect(5, 5, 1000, 740, 20, 20, RGBA(0, 111, 225, 200), true, SmoothingModeHighQuality, &test_title);
-
-					Graphics graphics(GetImageHDC(&test_title));
-					Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 22, FontStyleRegular, UnitPixel);
-					SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(255, 255, 255, 255), false));
-					graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-					{
-						words_rect.left = 5;
-						words_rect.top = 5;
-						words_rect.right = 1005;
-						words_rect.bottom = 50;
-					}
-					graphics.DrawString(L"智绘教 程序选项", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
-				}
-				hiex::TransparentImage(&test_background, 200, 0, &test_content);
-				hiex::TransparentImage(&test_title, 5, 45, &test_background);
-				hiex::EasyX_Gdiplus_RoundRect(5, 5, 1000, 740, 20, 20, RGBA(0, 111, 225, 255), 3, false, SmoothingModeHighQuality, &test_title);
-
-				{
-					RECT rect;
-					GetWindowRect(test_window, &rect);
-
-					POINT ptDst = { rect.left, rect.top };
-					ulwi.pptDst = &ptDst;
-					ulwi.hdcSrc = GetImageHDC(&test_title);
-					UpdateLayeredWindowIndirect(test_window, &ulwi);
-				}
-
-				if (off_signal || !test.select) break;
-
-				Sleep(20);
-			}
-		}
-		else if (IsWindowVisible(test_window)) ShowWindow(test_window, SW_HIDE);
-	}
-
-	ShowWindow(test_window, SW_HIDE);
-	thread_status[L"test_main"] = false;
-
-	return 0;
 }
 
 unordered_map<LONG, shared_mutex> StrokeImageSm;
@@ -808,17 +134,13 @@ void MultiFingerDrawing(LONG pid, POINT pt)
 
 			mouse.x = pt.x, mouse.y = pt.y;
 
-			if (setlist.experimental_functions)
-			{
-				if (speed <= 0.2) trubbersize = 60;
-				else if (speed <= 20) trubbersize = max(25, speed * 2.33 + 13.33);
-				else trubbersize = min(200, 3 * speed);
+			if (speed <= 0.2) trubbersize = 60;
+			else if (speed <= 20) trubbersize = max(25, speed * 2.33 + 13.33);
+			else trubbersize = min(200, 3 * speed);
 
-				if (trubbersize == -1) trubbersize = rubbersize;
-				if (rubbersize < trubbersize) rubbersize = rubbersize + max(0.1, (trubbersize - rubbersize) / 50);
-				else if (rubbersize > trubbersize) rubbersize = rubbersize + min(-0.1, (trubbersize - rubbersize) / 50);
-			}
-			else rubbersize = 60;
+			if (trubbersize == -1) trubbersize = rubbersize;
+			if (rubbersize < trubbersize) rubbersize = rubbersize + max(0.1, (trubbersize - rubbersize) / 50);
+			else if (rubbersize > trubbersize) rubbersize = rubbersize + min(-0.1, (trubbersize - rubbersize) / 50);
 
 			if ((pt.x == mouse.last_x && pt.y == mouse.last_y))
 			{
@@ -1269,14 +591,21 @@ void DrawpadDrawing()
 	ulwi.pblend = &blend;
 	ulwi.dwFlags = ULW_ALPHA;
 
-	LONG nRet = ::GetWindowLong(drawpad_window, GWL_EXSTYLE);
-	nRet |= WS_EX_LAYERED;
-	::SetWindowLong(drawpad_window, GWL_EXSTYLE, nRet);
+	do
+	{
+		Sleep(10);
+		::SetWindowLong(drawpad_window, GWL_EXSTYLE, ::GetWindowLong(drawpad_window, GWL_EXSTYLE) | WS_EX_LAYERED);
+	} while (!(::GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_LAYERED));
+	do
+	{
+		Sleep(10);
+		::SetWindowLong(drawpad_window, GWL_EXSTYLE, ::GetWindowLong(drawpad_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+	} while (!(::GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE));
 
 	window_background.Resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 	drawpad.Resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 
-	SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
+	SetImageColor(window_background, RGBA(0, 0, 0, 0), true);
 	SetImageColor(drawpad, RGBA(0, 0, 0, 0), true);
 	{
 		ulwi.hdcSrc = GetImageHDC(&window_background);
@@ -1318,6 +647,7 @@ void DrawpadDrawing()
 						std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
 
 						RecallImage.push_back({ drawpad, extreme_point, 0, make_pair(recall_image_recond, recall_image_reference) });
+						RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
 
 						LockExtremePointSm.unlock();
 						LockStrokeBackImageSm.unlock();
@@ -1338,6 +668,7 @@ void DrawpadDrawing()
 						std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
 
 						RecallImage.push_back({ drawpad, extreme_point, 0, make_pair(recall_image_recond, recall_image_reference) });
+						RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
 
 						if (RecallImage.size() > 10)
 						{
@@ -1346,7 +677,6 @@ void DrawpadDrawing()
 								if (RecallImage.front().type == 1)
 								{
 									current_record_pointer = reference_record_pointer = max(1, reference_record_pointer - 1);
-									practical_total_record_pointer++;
 								}
 								RecallImage.pop_front();
 							}
@@ -1372,6 +702,8 @@ void DrawpadDrawing()
 
 					extreme_point.clear();
 					RecallImage.push_back({ empty_drawpad, extreme_point, 2, make_pair(0,0) });
+					RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
+
 					if (RecallImage.size() > 10)
 					{
 						while (RecallImage.size() > 10)
@@ -1379,7 +711,6 @@ void DrawpadDrawing()
 							if (RecallImage.front().type == 1)
 							{
 								current_record_pointer = reference_record_pointer = max(1, reference_record_pointer - 1);
-								practical_total_record_pointer++;
 							}
 							RecallImage.pop_front();
 						}
@@ -1448,9 +779,6 @@ void DrawpadDrawing()
 
 				while (1)
 				{
-					if (ppt_show != NULL) SetWindowPos(drawpad_window, ppt_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-					else SetWindowPos(drawpad_window, floating_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-
 					if (ppt_info.currentSlides != ppt_info_stay.CurrentPage || ppt_info.totalSlides != ppt_info_stay.TotalPage)
 					{
 						if (ppt_info.currentSlides != ppt_info_stay.CurrentPage && ppt_info.totalSlides == ppt_info_stay.TotalPage)
@@ -1471,6 +799,8 @@ void DrawpadDrawing()
 
 								extreme_point.clear();
 								RecallImage.push_back({ empty_drawpad, extreme_point, 0, make_pair(0,0) });
+								RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
+
 								if (RecallImage.size() > 10)
 								{
 									while (RecallImage.size() > 10)
@@ -1478,7 +808,6 @@ void DrawpadDrawing()
 										if (RecallImage.front().type == 1)
 										{
 											current_record_pointer = reference_record_pointer = max(1, reference_record_pointer - 1);
-											practical_total_record_pointer++;
 										}
 										RecallImage.pop_front();
 									}
@@ -1523,9 +852,6 @@ void DrawpadDrawing()
 				TouchTemp.clear();
 			}
 
-			if (ppt_show != NULL) SetWindowPos(drawpad_window, ppt_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-			else SetWindowPos(drawpad_window, floating_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-
 			std::shared_lock<std::shared_mutex> lock1(StrokeImageListSm);
 			bool start = !StrokeImageList.empty();
 			lock1.unlock();
@@ -1556,6 +882,8 @@ void DrawpadDrawing()
 
 						extreme_point.clear();
 						RecallImage.push_back({ empty_drawpad, extreme_point, 0, make_pair(0,0) });
+						RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
+
 						if (RecallImage.size() > 10)
 						{
 							while (RecallImage.size() > 10)
@@ -1563,7 +891,6 @@ void DrawpadDrawing()
 								if (RecallImage.front().type == 1)
 								{
 									current_record_pointer = reference_record_pointer = max(1, reference_record_pointer - 1);
-									practical_total_record_pointer++;
 								}
 								RecallImage.pop_front();
 							}
@@ -1675,6 +1002,7 @@ void DrawpadDrawing()
 						std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
 
 						RecallImage.push_back({ drawpad, extreme_point, 0, make_pair(recall_image_recond,recall_image_reference) });
+						RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
 
 						if (RecallImage.size() > 10)
 						{
@@ -1683,7 +1011,6 @@ void DrawpadDrawing()
 								if (RecallImage.front().type == 1)
 								{
 									current_record_pointer = reference_record_pointer = max(1, reference_record_pointer - 1);
-									practical_total_record_pointer++;
 								}
 								RecallImage.pop_front();
 							}
@@ -1745,6 +1072,7 @@ void DrawpadDrawing()
 							std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
 
 							RecallImage.push_back({ drawpad, extreme_point, 0, make_pair(recall_image_recond,recall_image_reference) });
+							RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
 							if (RecallImage.size() > 10)
 							{
 								while (RecallImage.size() > 10)
@@ -1752,7 +1080,6 @@ void DrawpadDrawing()
 									if (RecallImage.front().type == 1)
 									{
 										current_record_pointer = reference_record_pointer = max(1, reference_record_pointer - 1);
-										practical_total_record_pointer++;
 									}
 									RecallImage.pop_front();
 								}
@@ -1825,19 +1152,21 @@ int drawpad_main()
 		setbkmode(TRANSPARENT);
 		setbkcolor(RGB(255, 255, 255));
 
-		HiBeginDraw();
+		BEGIN_TASK_WND(drawpad_window);
 		cleardevice();
-		hiex::FlushDrawing({ 0 }); HiEndDraw();
+
+		Gdiplus::Graphics graphics(GetImageHDC(hiex::GetWindowImage(drawpad_window)));
+		Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 50, FontStyleRegular, UnitPixel);
+		Gdiplus::SolidBrush WordBrush(Color(255, 0, 0, 0));
+		graphics.DrawString(L"Drawpad 预备窗口", -1, &gp_font, PointF(10.0f, 10.0f), &stringFormat_left, &WordBrush);
+
+		END_TASK();
+		REDRAW_WINDOW(drawpad_window);
 
 		DisableResizing(drawpad_window, true);//禁止窗口拉伸
 		SetWindowLong(drawpad_window, GWL_STYLE, GetWindowLong(drawpad_window, GWL_STYLE) & ~WS_CAPTION);//隐藏标题栏
 		SetWindowPos(drawpad_window, NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_DRAWFRAME);
 		SetWindowLong(drawpad_window, GWL_EXSTYLE, WS_EX_TOOLWINDOW);//隐藏任务栏
-
-		//SetWindowTransparent(drawpad_window, true, 255);
-
-		// 屏幕置顶
-		//SetWindowPos(drawpad_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_SHOWWINDOW);
 	}
 	//媒体初始化
 	{
@@ -1860,11 +1189,6 @@ int drawpad_main()
 	{
 		SetImageColor(alpha_drawpad, RGBA(0, 0, 0, 0), true);
 
-		SetWindowPos(drawpad_window, floating_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-		LONG style = GetWindowLong(drawpad_window, GWL_EXSTYLE);
-		style |= WS_EX_NOACTIVATE;
-		SetWindowLong(drawpad_window, GWL_EXSTYLE, style);
-
 		//启动绘图库程序
 		hiex::Gdiplus_Try_Starup();
 
@@ -1885,15 +1209,17 @@ int drawpad_main()
 				//开始绘图
 				if (start)
 				{
-					if (rubber.select != true && (brush.mode == 1 || brush.mode == 2) && int(state) == 1) target_status = 0;
+					if (int(state) == 1 && rubber.select && setlist.RubberRecover) target_status = 0;
+					else if (int(state) == 1 && brush.select && setlist.BrushRecover) target_status = 0;
+
 					if (current_record_pointer != reference_record_pointer)
 					{
 						current_record_pointer = reference_record_pointer = max(1, reference_record_pointer - 1);
-						practical_total_record_pointer++;
 
 						shared_lock<std::shared_mutex> LockStrokeBackImageSm(StrokeBackImageSm);
 						shared_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
 						RecallImage.push_back({ drawpad, extreme_point, 0 });
+						RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
 						LockExtremePointSm.unlock();
 						LockStrokeBackImageSm.unlock();
 					}

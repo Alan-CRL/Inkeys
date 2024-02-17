@@ -139,13 +139,25 @@ void saveImageToPNG(IMAGE img, const char* filename, bool alpha, int compression
 	if (alpha)
 	{
 		unsigned char* data = new unsigned char[width * height * 4];
-		for (int y = 0; y < height; ++y) {
-			for (int x = 0; x < width; ++x) {
-				COLORREF color = pMem[y * width + x];
-				data[(y * width + x) * 4 + 0] = GetBValue(color); // Swap the red and blue components
-				data[(y * width + x) * 4 + 1] = GetGValue(color);
-				data[(y * width + x) * 4 + 2] = GetRValue(color); // Swap the red and blue components
-				data[(y * width + x) * 4 + 3] = color >> 24;
+		for (int y = 0; y < height; ++y)
+		{
+			for (int x = 0; x < width; ++x)
+			{
+				DWORD color = pMem[y * width + x];
+				unsigned char alpha = (color & 0xFF000000) >> 24;
+				if (alpha != 0)
+				{
+					data[(y * width + x) * 4 + 0] = ((color & 0x00FF0000) >> 16) * 255 / alpha;
+					data[(y * width + x) * 4 + 1] = ((color & 0x0000FF00) >> 8) * 255 / alpha;
+					data[(y * width + x) * 4 + 2] = ((color & 0x000000FF) >> 0) * 255 / alpha;
+				}
+				else
+				{
+					data[(y * width + x) * 4 + 0] = 0;
+					data[(y * width + x) * 4 + 1] = 0;
+					data[(y * width + x) * 4 + 2] = 0;
+				}
+				data[(y * width + x) * 4 + 3] = alpha;
 			}
 		}
 
@@ -155,18 +167,21 @@ void saveImageToPNG(IMAGE img, const char* filename, bool alpha, int compression
 	}
 	else
 	{
-		unsigned char* data = new unsigned char[width * height * 3];
-		for (int y = 0; y < height; ++y) {
-			for (int x = 0; x < width; ++x) {
-				COLORREF color = pMem[y * width + x];
-				data[(y * width + x) * 3 + 0] = GetBValue(color); // Swap the red and blue components
-				data[(y * width + x) * 3 + 1] = GetGValue(color);
-				data[(y * width + x) * 3 + 2] = GetRValue(color); // Swap the red and blue components
+		unsigned char* data = new unsigned char[width * height * 4];
+		for (int y = 0; y < height; ++y)
+		{
+			for (int x = 0; x < width; ++x)
+			{
+				DWORD color = pMem[y * width + x];
+				data[(y * width + x) * 4 + 0] = (color & 0x00FF0000) >> 16;
+				data[(y * width + x) * 4 + 1] = (color & 0x0000FF00) >> 8;
+				data[(y * width + x) * 4 + 2] = (color & 0x000000FF) >> 0;
+				data[(y * width + x) * 4 + 3] = 255;
 			}
 		}
 
 		stbi_write_png_compression_level = compression_level;
-		stbi_write_png(filename, width, height, 3, data, width * 3);
+		stbi_write_png(filename, width, height, 4, data, width * 4);
 		delete[] data;
 	}
 }
@@ -213,18 +228,21 @@ void saveImageToJPG(IMAGE img, const char* filename, int quality)
 	DWORD* pMem = GetImageBuffer(&img);
 
 	unsigned char* data = new unsigned char[width * height * 3];
-
-	for (int y = 0; y < height; y++) {
-		for (int x = 0; x < width; x++) {
+	for (int y = 0; y < height; y++)
+	{
+		for (int x = 0; x < width; x++)
+		{
 			COLORREF color = pMem[y * width + x];
 			data[(y * width + x) * 3 + 0] = GetBValue(color);
 			data[(y * width + x) * 3 + 1] = GetGValue(color);
 			data[(y * width + x) * 3 + 2] = GetRValue(color);
 		}
 	}
+
 	stbi_write_jpg(filename, width, height, 3, data, quality);
 	delete[] data;
 }
+
 //±È½ÏÍ¼Ïñ
 bool CompareImagesWithBuffer(IMAGE* img1, IMAGE* img2)
 {
