@@ -6,8 +6,8 @@
 ## 项目介绍
 智绘教项目创立于 2023 年 2 月，由于班上一体机自带的画板程序并不好用，于是智绘教应运而生。智绘教通过长期教师的使用反馈，反复打磨，并高速发展。是一款运行于 Windows 平台的软件，无需安装即可使用。其使用 HiEasyX(EasyX 拓展库) 和 GDI+ 作为图形库，高质量抗锯齿与超低延迟，且支持多指绘制……
 
-![程序主界面展示](https://codebus.cn/f/r/96d6e4c3-0033-4945-bdf5-7845cab75f40/1.png)  
-[程序主界面展示](https://codebus.cn/f/r/96d6e4c3-0033-4945-bdf5-7845cab75f40/1.png)  
+![程序主界面展示](https://codebus.cn/f/a/0/0/677/1.png)  
+[程序主界面展示](https://codebus.cn/f/a/0/0/677/1.png)  
 
 ### 未来功能（按照实现顺序排序）
 - 实时手抖修正
@@ -23,20 +23,20 @@
 
 除了书写等基础功能外，程序还包含许多特色功能。（动图如果加载失败，可以点击图片下方链接）  
 
-![动态画板背景、窗口定格与穿透](https://codebus.cn/f/r/96d6e4c3-0033-4945-bdf5-7845cab75f40/2.gif)  
-[动态画板背景、窗口定格与穿透](https://codebus.cn/f/r/96d6e4c3-0033-4945-bdf5-7845cab75f40/2.gif)  
+![动态画板背景、窗口定格与穿透](https://codebus.cn/f/a/0/0/677/2.gif)  
+[动态画板背景、窗口定格与穿透](https://codebus.cn/f/a/0/0/677/2.gif)  
 
-![智能绘图模块（智能直线绘制/直线吸附/矩形吸附/平滑笔迹/智能粗细橡皮擦）](https://codebus.cn/f/r/96d6e4c3-0033-4945-bdf5-7845cab75f40/3.gif)  
-[智能绘图模块（智能直线绘制/直线吸附/矩形吸附/平滑笔迹/智能粗细橡皮擦）](https://codebus.cn/f/r/96d6e4c3-0033-4945-bdf5-7845cab75f40/3.gif)  
+![智能绘图模块（智能直线绘制/直线吸附/矩形吸附/平滑笔迹/智能粗细橡皮擦）](https://codebus.cn/f/a/0/0/677/3.gif)  
+[智能绘图模块（智能直线绘制/直线吸附/矩形吸附/平滑笔迹/智能粗细橡皮擦）](https://codebus.cn/f/a/0/0/677/3.gif)  
 
-![炫彩全 RGBA 绘图，1-500 粗细调节](https://codebus.cn/f/r/96d6e4c3-0033-4945-bdf5-7845cab75f40/4.gif)  
-[炫彩全 RGBA 绘图，1-500 粗细调节](https://codebus.cn/f/r/96d6e4c3-0033-4945-bdf5-7845cab75f40/4.gif)  
+![炫彩全 RGBA 绘图，1-500 粗细调节](https://codebus.cn/f/a/0/0/677/4.gif)  
+[炫彩全 RGBA 绘图，1-500 粗细调节](https://codebus.cn/f/a/0/0/677/4.gif)  
 
-![全新 UI 与可打断动画（0.3 倍速）](https://codebus.cn/f/r/96d6e4c3-0033-4945-bdf5-7845cab75f40/5.gif)  
-[全新 UI 与可打断动画（0.3 倍速）](https://codebus.cn/f/r/96d6e4c3-0033-4945-bdf5-7845cab75f40/5.gif)  
+![全新 UI 与可打断动画（0.3 倍速）](https://codebus.cn/f/a/0/0/677/5.gif)  
+[全新 UI 与可打断动画（0.3 倍速）](https://codebus.cn/f/a/0/0/677/5.gif)  
 
-![PPT 联动（翻页/笔迹保留）](https://codebus.cn/f/r/96d6e4c3-0033-4945-bdf5-7845cab75f40/6.gif)  
-[PPT 联动（翻页/笔迹保留）](https://codebus.cn/f/r/96d6e4c3-0033-4945-bdf5-7845cab75f40/6.gif)  
+![PPT 联动（翻页/笔迹保留）](https://codebus.cn/f/a/0/0/677/6.gif)  
+[PPT 联动（翻页/笔迹保留）](https://codebus.cn/f/a/0/0/677/6.gif)  
 
 还有许多功能比如标准笔迹/荧光笔迹，撤回和历史画板恢复，画板绘制内容自动保存本地，PPT 插件/随机点名插件……
 
