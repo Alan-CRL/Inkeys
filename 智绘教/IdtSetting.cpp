@@ -763,7 +763,6 @@ int SettingMain()
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // 启用键盘控制
-	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // 启用游戏手柄控制
 
 	ImGui::StyleColorsLight();
 
@@ -908,7 +907,7 @@ int SettingMain()
 	int PushStyleColorNum = 0, PushFontNum = 0;
 	int QueryWaitingTime = 5;
 
-	bool StartUp = false;
+	bool StartUp = false, CreateLnk = true;
 	bool BrushRecover = setlist.BrushRecover, RubberRecover = setlist.RubberRecover;
 
 	wstring ppt_LinkTest = LinkTest();
@@ -939,19 +938,13 @@ int SettingMain()
 				break;
 			}
 		}
-		hiex::DelayFPS(recond, 25);
+		hiex::DelayFPS(recond, 10);
 
 		ImGui_ImplDX11_NewFrame();
 		ImGui_ImplWin32_NewFrame();
 		ImGui::NewFrame();
 
 		{
-			static bool CheckBox_1 = false, CheckBox_2 = true;
-			static int InputInt = 0;
-			static int Comb = 0;
-			static float InputFloat = 0;
-			static char InputString[80] = { '?' };
-
 			//定义栏操作
 			static int Tab = 0;
 			enum Tab
@@ -1017,6 +1010,8 @@ int SettingMain()
 					Tab = Tab::tab4;
 				}
 				while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
+
+				ImGui::SetCursorPos({ 10.0f,244.0f });
 
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab5 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab5 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
@@ -1199,9 +1194,11 @@ int SettingMain()
 
 				{
 					ImGui::SetCursorPosX(20.0f);
-					ImGui::BeginChild(u8"程序环境", { 730.0f,85.0f }, true, ImGuiWindowFlags_NoScrollbar);
+					ImGui::BeginChild(u8"程序环境", { 730.0f,125.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
 					{
+						ImGui::SetCursorPosY(10.0f);
+
 						Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
 						CenteredText(u8" 查询开机启动状态", 4.0f);
@@ -1277,6 +1274,8 @@ int SettingMain()
 						}
 					}
 					{
+						ImGui::SetCursorPosY(45.0f);
+
 						Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
 						CenteredText(u8" 开机自动启动", 4.0f);
@@ -1332,13 +1331,41 @@ int SettingMain()
 							}
 						}
 					}
+					{
+						ImGui::SetCursorPosY(80.0f);
+
+						Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+						CenteredText(u8" 启动时创建桌面快捷方式", 4.0f);
+
+						Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
+						ImGui::SameLine();
+						HelpMarker(u8"程序将在每次启动时在桌面创建快捷方式\n后续这项功能将变身成为插件，并拥有更多的自定义功能", ImGui::GetStyleColorVec4(ImGuiCol_Text));
+
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+						ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
+						ImGui::Toggle(u8"##启动时创建桌面快捷方式", &CreateLnk, config);
+
+						if (setlist.CreateLnk != CreateLnk)
+						{
+							setlist.CreateLnk = CreateLnk;
+							WriteSetting();
+						}
+					}
+
 					ImGui::EndChild();
 				}
 				{
 					ImGui::SetCursorPosX(20.0f);
-					ImGui::BeginChild(u8"画笔调整", { 730.0f,50.0f }, true, ImGuiWindowFlags_NoScrollbar);
+					ImGui::BeginChild(u8"画笔调整", { 730.0f,90.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
 					{
+						ImGui::SetCursorPosY(10.0f);
+
 						Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
 						CenteredText(u8" 画笔绘制时自动收起主栏", 4.0f);
@@ -1357,13 +1384,9 @@ int SettingMain()
 							WriteSetting();
 						}
 					}
-					ImGui::EndChild();
-				}
-				{
-					ImGui::SetCursorPosX(20.0f);
-					ImGui::BeginChild(u8"橡皮调整", { 730.0f,50.0f }, true, ImGuiWindowFlags_NoScrollbar);
-
 					{
+						ImGui::SetCursorPosY(45.0f);
+
 						Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
 						CenteredText(u8" 橡皮擦除时自动收起主栏", 4.0f);
@@ -1382,6 +1405,7 @@ int SettingMain()
 							WriteSetting();
 						}
 					}
+
 					ImGui::EndChild();
 				}
 
@@ -1577,9 +1601,10 @@ int SettingMain()
 					{
 						text = L"作者留言\n\n";
 						text += L"首先非常感谢您使用智绘教，也感谢您对智绘教的支持~\n\n";
-						text += L"智绘教是 GPLv3 开源免费软件，欢迎大家加入智绘教的开发。\n";
-						text += L"目前急需解决的是程序的内存占用问题，智绘教占用的内存是在太大了！\n下个版本估计就会有所改善。\n\n";
-						text += L"正处开学，时间紧迫，先写这么多。";
+						text += L"智绘教是 GPLv3 开源免费软件，欢迎大家加入智绘教的开发\n";
+						text += L"目前急需解决的是程序的内存占用问题，智绘教占用的内存是在太大了！\n下个版本估计就会有所改善\n\n";
+						text += L"近期我发现智绘教的用户量大幅增加，我非常感谢各位对智绘教的支持\n也感谢许多大佬和站长对智绘教的推广与肯定\n这两天我也得到了许多用户反馈，这个版本就是专门修复CPU占用率高，同时还解决了一些小问题\n\n";
+						text += L"我会尽我所能开发智绘教，但是更新的速度和新功能的实现速度肯定比不上商业软件\n正处开学，时间紧迫，先写这么";
 					}
 
 					int left_x = 10, right_x = 760;
@@ -1649,17 +1674,14 @@ int SettingMain()
 		if (!test.select)
 		{
 			if (ShowWindow && IsWindowVisible(setting_window)) ::ShowWindow(setting_window, SW_HIDE), ShowWindow = false;
-			while (!test.select && !off_signal)
-			{
-				MSG msg;
-				while (::PeekMessage(&msg, setting_window, 0U, 0U, PM_REMOVE))
-				{
-					::TranslateMessage(&msg);
-					::DispatchMessage(&msg);
-				}
-			}
+			while (!test.select) Sleep(100);
 		}
-		if (!ShowWindow && !IsWindowVisible(setting_window)) ::ShowWindow(setting_window, SW_SHOW), ShowWindow = true;
+		else if (!ShowWindow && !IsWindowVisible(setting_window))
+		{
+			::ShowWindow(setting_window, SW_SHOW);
+			::SetForegroundWindow(setting_window);
+			ShowWindow = true;
+		}
 	}
 	::ShowWindow(setting_window, SW_HIDE);
 
@@ -1711,6 +1733,7 @@ void FirstSetting(bool info)
 	Json::Value root;
 
 	root["edition"] = Json::Value(edition_date);
+	root["CreateLnk"] = Json::Value(true);
 	root["BrushRecover"] = Json::Value(true);
 	root["RubberRecover"] = Json::Value(false);
 	root["SetSkinMode"] = Json::Value(0);
@@ -1732,6 +1755,7 @@ bool ReadSetting(bool first)
 
 	if (reader.parse(readjson, root))
 	{
+		if (root.isMember("CreateLnk")) setlist.CreateLnk = root["CreateLnk"].asBool();
 		if (root.isMember("BrushRecover")) setlist.BrushRecover = root["BrushRecover"].asBool();
 		if (root.isMember("RubberRecover")) setlist.RubberRecover = root["RubberRecover"].asBool();
 		if (root.isMember("SetSkinMode")) setlist.SetSkinMode = root["SetSkinMode"].asInt();
@@ -1760,6 +1784,7 @@ bool WriteSetting()
 	Json::Value root;
 
 	root["edition"] = Json::Value(edition_date);
+	root["CreateLnk"] = Json::Value(setlist.CreateLnk);
 	root["BrushRecover"] = Json::Value(setlist.BrushRecover);
 	root["RubberRecover"] = Json::Value(setlist.RubberRecover);
 	root["SetSkinMode"] = Json::Value(setlist.SetSkinMode);

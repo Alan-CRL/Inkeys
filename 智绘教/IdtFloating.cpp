@@ -5183,7 +5183,7 @@ void DrawScreen()
 		if (for_num == 1) ShowWindow(floating_window, SW_SHOW);
 		if (tRecord)
 		{
-			int delay = 1000 / 40 - (clock() - tRecord);
+			int delay = 1000 / 48 - (clock() - tRecord);
 			if (delay > 0) std::this_thread::sleep_for(std::chrono::milliseconds(delay));
 		}
 		tRecord = clock();

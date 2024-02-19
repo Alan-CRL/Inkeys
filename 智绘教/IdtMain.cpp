@@ -33,7 +33,7 @@ void FreezeFrameWindow();
 bool already = false;
 
 wstring buildTime = __DATE__ L" " __TIME__; //构建时间
-string edition_date = "20240217a"; //程序发布日期
+string edition_date = "20240220a"; //程序发布日期
 string edition_code = "2402 - Happy New Year!"; //程序版本
 
 wstring userid; //用户ID（主板序列号）
@@ -250,6 +250,16 @@ int main()
 	}
 	//LOG(INFO) << "成功检查程序更新";
 
+	//LOG(INFO) << "尝试获取配置信息";
+	//初始化信息获取
+	{
+		if (_waccess((string_to_wstring(global_path) + L"opt\\deploy.json").c_str(), 4) == -1) FirstSetting(true);
+
+		ReadSetting(true);
+		WriteSetting();
+	}
+	//LOG(INFO) << "成功获取配置信息";
+
 	//LOG(INFO) << "尝试初始化COM";
 	CoInitialize(NULL);
 	//LOG(INFO) << "成功初始化COM";
@@ -260,10 +270,16 @@ int main()
 	//LOG(INFO) << "成功获取用户ID";
 
 	//桌面快捷方式注册
-	SetShortcut();
+	if (setlist.CreateLnk) SetShortcut();
 	//显示器检查
 	if (EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, reinterpret_cast<LPARAM>(&displays_number)));
 	else displays_number = 1;
+	if (displays_number == 1)
+	{
+		thread MagnifierThread_thread(MagnifierThread);
+		MagnifierThread_thread.detach();
+	}
+	else MessageBox(floating_window, (L"检测到计算机拥有 " + to_wstring(displays_number) + L" 个显示器，智绘教目前不支持拥有拓展显示器电脑！\n\n程序将继续启动，但窗口定格，历史画板保存，超级恢复功能将失效。\n且仅能在主显示器上绘图！").c_str(), L"智绘教警告", MB_OK | MB_SYSTEMMODAL);
 
 	// 创建窗口
 
@@ -294,23 +310,6 @@ int main()
 	SetWindowPos(setting_window, freeze_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 	thread TopWindowThread(TopWindow);
 	TopWindowThread.detach();
-
-	//LOG(INFO) << "尝试获取配置信息";
-	//初始化信息获取
-	{
-		if (_waccess((string_to_wstring(global_path) + L"opt\\deploy.json").c_str(), 4) == -1) FirstSetting(true);
-
-		ReadSetting(true);
-		WriteSetting();
-
-		if (displays_number == 1)
-		{
-			thread MagnifierThread_thread(MagnifierThread);
-			MagnifierThread_thread.detach();
-		}
-		else MessageBox(floating_window, (L"检测到计算机拥有 " + to_wstring(displays_number) + L" 个显示器，智绘教目前不支持拥有拓展显示器电脑！\n\n程序将继续启动，但窗口定格，历史画板保存，超级恢复功能将失效。\n且仅能在主显示器上绘图！").c_str(), L"智绘教警告", MB_OK | MB_SYSTEMMODAL);
-	}
-	//LOG(INFO) << "成功获取配置信息";
 
 	//LOG(INFO) << "尝试加载PptCOM类库";
 	//PptCOM 组件加载
@@ -400,6 +399,7 @@ int main()
 	//LOG(INFO) << "尝试启动选项窗口线程";
 	thread test_main_thread(SettingMain);
 	test_main_thread.detach();
+
 	//LOG(INFO) << "成功启动选项窗口线程";
 	//LOG(INFO) << "尝试启动背景窗口线程";
 	thread FreezeFrameWindow_thread(FreezeFrameWindow);
