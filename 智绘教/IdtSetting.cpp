@@ -904,11 +904,13 @@ int SettingMain()
 	config.Size = { 60.0f,30.0f };
 	config.Flags = ImGuiToggleFlags_Animated;
 
+	int QuestNumbers = 0;
 	int PushStyleColorNum = 0, PushFontNum = 0;
 	int QueryWaitingTime = 5;
 
-	bool StartUp = false, CreateLnk = true;
+	bool StartUp = false, CreateLnk = setlist.CreateLnk;
 	bool BrushRecover = setlist.BrushRecover, RubberRecover = setlist.RubberRecover;
+	int SetSkinMode = setlist.SetSkinMode;
 
 	wstring ppt_LinkTest = LinkTest();
 	wstring ppt_IsPptDependencyLoaded = L"组件应该没问题(状态显示存在问题，后面再修复)";// = IsPptDependencyLoaded(); //TODO 问题所在
@@ -1235,7 +1237,7 @@ int SettingMain()
 							if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1) filesystem::create_directory(string_to_wstring(global_path) + L"api");
 							ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 
-							ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"query\" /\"" + GetCurrentExePath() + L"\\智绘教.exe\"").c_str(), NULL, SW_SHOWNORMAL);
+							ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"query" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath()).c_str(), NULL, SW_SHOWNORMAL);
 
 							DWORD dwBytesRead;
 							WCHAR buffer[4096];
@@ -1255,12 +1257,12 @@ int SettingMain()
 								if (ReadFile(hPipe, buffer, sizeof(buffer), &dwBytesRead, NULL))
 								{
 									receivedData.assign(buffer, dwBytesRead / sizeof(WCHAR));
-									if (receivedData == L"fail")
+									if (receivedData == to_wstring(QuestNumbers) + L"fail")
 									{
 										receivedData = L"Success";
 										setlist.StartUp = 1, StartUp = false;
 									}
-									else if (receivedData == L"success")
+									else if (receivedData == to_wstring(QuestNumbers) + L"success")
 									{
 										receivedData = L"Success";
 										setlist.StartUp = 2, StartUp = true;
@@ -1271,6 +1273,7 @@ int SettingMain()
 							}
 
 							CloseHandle(hPipe);
+							QuestNumbers++, QuestNumbers %= 10;
 						}
 					}
 					{
@@ -1300,8 +1303,8 @@ int SettingMain()
 								if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1) filesystem::create_directory(string_to_wstring(global_path) + L"api");
 								ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 
-								if (StartUp) ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"set\" /\"" + GetCurrentExePath() + L"\"").c_str(), NULL, SW_SHOWNORMAL);
-								else ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"delete\" /\"" + GetCurrentExePath() + L"\"").c_str(), NULL, SW_SHOWNORMAL);
+								if (StartUp) ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"set" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\"").c_str(), NULL, SW_SHOWNORMAL);
+								else ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"delete" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\"").c_str(), NULL, SW_SHOWNORMAL);
 
 								DWORD dwBytesRead;
 								WCHAR buffer[4096];
@@ -1321,13 +1324,14 @@ int SettingMain()
 									if (ReadFile(hPipe, buffer, sizeof(buffer), &dwBytesRead, NULL))
 									{
 										treceivedData.assign(buffer, dwBytesRead / sizeof(WCHAR));
-										if (treceivedData == L"fail") setlist.StartUp = 1, StartUp = false;
-										else if (treceivedData == L"success") setlist.StartUp = 2, StartUp = true;
+										if (treceivedData == to_wstring(QuestNumbers) + L"fail") setlist.StartUp = 1, StartUp = false;
+										else if (treceivedData == to_wstring(QuestNumbers) + L"success") setlist.StartUp = 2, StartUp = true;
 									}
 								}
 								else setlist.StartUp = 0, receivedData = L"Renew";
 
 								CloseHandle(hPipe);
+								QuestNumbers++, QuestNumbers %= 10;
 							}
 						}
 					}
@@ -1354,6 +1358,48 @@ int SettingMain()
 						{
 							setlist.CreateLnk = CreateLnk;
 							WriteSetting();
+
+							if (CreateLnk) SetShortcut();
+						}
+					}
+
+					ImGui::EndChild();
+				}
+				{
+					ImGui::SetCursorPosX(20.0f);
+					ImGui::BeginChild(u8"外观调整", { 730.0f,50.0f }, true, ImGuiWindowFlags_NoScrollbar);
+
+					{
+						ImGui::SetCursorPosY(8.0f);
+
+						Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+						CenteredText(u8" 外观皮肤", 4.0f);
+
+						ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 130.0f);
+						static const char* items[] = { u8"  推荐皮肤", u8"  默认皮肤", u8"  极简时钟", u8"  龙年迎新" };
+						ImGui::SetNextItemWidth(120);
+
+						Font->Scale = 0.82f, PushFontNum++, ImGui::PushFont(Font);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+						ImGui::Combo(u8"##外观皮肤", &SetSkinMode, items, IM_ARRAYSIZE(items));
+
+						if (setlist.SetSkinMode != SetSkinMode)
+						{
+							setlist.SetSkinMode = SetSkinMode;
+							WriteSetting();
+
+							if (SetSkinMode == 0)
+							{
+								wstring time = CurrentDate();
+
+								if (L"2024-01-22" <= time && time <= L"2024-02-23") setlist.SkinMode = 3;
+								else setlist.SkinMode = 1;
+							}
+							else setlist.SkinMode = SetSkinMode;
 						}
 					}
 
@@ -1530,27 +1576,17 @@ int SettingMain()
 					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f);
 					wstring text;
 					{
-						text = L"程序版本：" + string_to_wstring(edition_code);
-						text += L"\n程序发布版本：" + string_to_wstring(edition_date) + L" 默认分支";
-						text += L"\n程序构建时间：" + buildTime;
-						text += L"\n用户ID：" + userid;
+						text = L"程序版本代号 " + string_to_wstring(edition_code);
+						text += L"\n程序发布版本 " + string_to_wstring(edition_date);
+						text += L"\n程序构建时间 " + buildTime;
+						text += L"\n用户ID " + userid;
 
-						text += L"\n\n更新通道：LTS";
-						if (!server_code.empty() && server_code != "")
-						{
-							text += L"\n联网版本代号：" + string_to_wstring(server_code);
-							if (server_code == "GWSR") text += L" （广外专用版本）";
-						}
-						if (procedure_updata_error == 1) text += L"\n程序自动更新：已启用";
-						else if (procedure_updata_error == 2) text += L"\n程序自动更新：发生网络错误";
-						else text += L"\n程序自动更新：载入中（等待服务器反馈）";
+						text += L"\n\n更新通道为正式版本通道";
+						if (procedure_updata_error == 1) text += L"\n程序自动更新已启用";
+						else if (procedure_updata_error == 2) text += L"\n程序自动更新发生网络错误";
+						else text += L"\n程序自动更新载入中（等待服务器反馈）";
 
-						if (!server_feedback.empty() && server_feedback != "") text += L"\n服务器反馈信息：" + string_to_wstring(server_feedback);
-						if (server_updata_error)
-						{
-							text += L"\n\n服务器通信错误：Error" + to_wstring(server_updata_error);
-							if (!server_updata_error_reason.empty()) text += L"\n" + server_updata_error_reason;
-						}
+						text += L"\n在此版本中，您的所有数据都将在本地进行处理";
 					}
 
 					int left_x = 10, right_x = 760;
@@ -1650,10 +1686,42 @@ int SettingMain()
 
 			ImGui::EndChild();
 
-			ImGui::SetCursorPos({ 120.0f,44.0f + 616.0f + 5.0f });
-			Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
-			PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-			CenteredText(u8"所有设置都会自动保存并立即生效", 4.0f);
+			{
+				ImGui::SetCursorPos({ 120.0f,44.0f + 616.0f + 5.0f });
+				Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
+				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+				CenteredText(u8"所有设置都会自动保存并立即生效", 4.0f);
+			}
+			{
+				if (AutomaticUpdateStep == 0)
+				{
+					ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(u8"程序自动更新等待启用").x,44.0f + 616.0f + 5.0f });
+					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(150 / 255.0f, 150 / 255.0f, 150 / 255.0f, 1.0f));
+					CenteredText(u8"程序自动更新等待启用", 4.0f);
+				}
+				else if (AutomaticUpdateStep == 1)
+				{
+					ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(u8"程序已经是最新版本").x , 44.0f + 616.0f + 5.0f });
+					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(98 / 255.0f, 175 / 255.0f, 82 / 255.0f, 1.0f));
+					CenteredText(u8"程序已经是最新版本", 4.0f);
+				}
+				else if (AutomaticUpdateStep == 2)
+				{
+					ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(u8"新版本正极速下载中").x , 44.0f + 616.0f + 5.0f });
+					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(229 / 255.0f, 55 / 255.0f, 66 / 255.0f, 1.0f));
+					CenteredText(u8"新版本正极速下载中", 4.0f);
+				}
+				else if (AutomaticUpdateStep == 3)
+				{
+					ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(u8"重启程序以更新到最新版本").x , 44.0f + 616.0f + 5.0f });
+					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(229 / 255.0f, 55 / 255.0f, 66 / 255.0f, 1.0f));
+					CenteredText(u8"重启程序以更新到最新版本", 4.0f);
+				}
+			}
 
 			ImGui::End();
 
@@ -1674,7 +1742,7 @@ int SettingMain()
 		if (!test.select)
 		{
 			if (ShowWindow && IsWindowVisible(setting_window)) ::ShowWindow(setting_window, SW_HIDE), ShowWindow = false;
-			while (!test.select) Sleep(100);
+			while (!test.select && !off_signal) Sleep(100);
 		}
 		else if (!ShowWindow && !IsWindowVisible(setting_window))
 		{
@@ -1733,7 +1801,7 @@ void FirstSetting(bool info)
 	Json::Value root;
 
 	root["edition"] = Json::Value(edition_date);
-	root["CreateLnk"] = Json::Value(true);
+	root["CreateLnk"] = Json::Value(false);
 	root["BrushRecover"] = Json::Value(true);
 	root["RubberRecover"] = Json::Value(false);
 	root["SetSkinMode"] = Json::Value(0);

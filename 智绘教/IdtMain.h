@@ -59,10 +59,10 @@
 #include <versionhelpers.h>							// 提供版本辅助函数
 #include <mutex>									// 提供互斥量相关功能
 #include <shared_mutex>								// 提供共享互斥量功能
-#include <unordered_map>
 //#include <spdlog/spdlog.h>						//提供日志记录服务
 
-#include "IdtKey.h" // 服务器密钥（我们不开源服务器密钥，以防您纂改我们的服务器）
+//智绘教服务器停用
+//#include "IdtKey.h" // 服务器密钥
 
 //链接库
 #pragma comment(lib, "gdiplus.lib")
@@ -96,7 +96,6 @@ extern string edition_code; //程序版本
 extern wstring userid; //用户ID（主板序列号）
 extern string global_path; //程序当前路径
 
-extern string server_feedback, server_code;
 extern double server_updata_error, procedure_updata_error;
 extern wstring server_updata_error_reason;
 

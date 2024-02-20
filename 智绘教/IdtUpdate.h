@@ -15,4 +15,5 @@ extern int AutomaticUpdateStep;
 void AutomaticUpdate();
 
 //程序注册 + 网络登记
-void NetUpdate();
+//用户量过大后被废弃
+//void NetUpdate();

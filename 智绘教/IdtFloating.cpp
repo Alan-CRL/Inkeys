@@ -3810,8 +3810,9 @@ void DrawScreen()
 				if (UIControl[key].s && UIControl[key].v != UIControlTarget[key].v)
 				{
 					if (abs(UIControl[key].v - UIControlTarget[key].v) <= UIControl[key].e) UIControl[key].v = float(UIControlTarget[key].v);
-					else if (UIControl[key].v < UIControlTarget[key].v) UIControl[key].v = float(UIControl[key].v + max(UIControl[key].e, (UIControlTarget[key].v - UIControl[key].v) / UIControl[key].s));
-					else UIControl[key].v = float(UIControl[key].v + min(-UIControl[key].e, (UIControlTarget[key].v - UIControl[key].v) / UIControl[key].s));
+
+					else if (UIControl[key].v < UIControlTarget[key].v) UIControl[key].v = float(UIControl[key].v + max(UIControl[key].e, (UIControlTarget[key].v - UIControl[key].v) / UIControl[key].s * 2));
+					else UIControl[key].v = float(UIControl[key].v + min(-UIControl[key].e, (UIControlTarget[key].v - UIControl[key].v) / UIControl[key].s * 2));
 				}
 			}
 			for (const auto& [key, value] : UIControlColor)
@@ -3830,20 +3831,24 @@ void DrawScreen()
 					float a2 = float((UIControlColorTarget[key].v >> 24) & 0xff);
 
 					if (abs(r1 - r2) <= UIControlColor[key].e) r1 = r2;
-					else if (r1 < r2) r1 = r1 + max(UIControlColor[key].e, (r2 - r1) / UIControlColor[key].s);
-					else if (r1 > r2) r1 = r1 + min(-UIControlColor[key].e, (r2 - r1) / UIControlColor[key].s);
+
+					else if (r1 < r2) r1 = r1 + max(UIControlColor[key].e, (r2 - r1) / UIControlColor[key].s * 2);
+					else if (r1 > r2) r1 = r1 + min(-UIControlColor[key].e, (r2 - r1) / UIControlColor[key].s * 2);
 
 					if (abs(g1 - g2) <= UIControlColor[key].e) g1 = g2;
-					else if (g1 < g2) g1 = g1 + max(UIControlColor[key].e, (g2 - g1) / UIControlColor[key].s);
-					else if (g1 > g2) g1 = g1 + min(-UIControlColor[key].e, (g2 - g1) / UIControlColor[key].s);
+
+					else if (g1 < g2) g1 = g1 + max(UIControlColor[key].e, (g2 - g1) / UIControlColor[key].s * 2);
+					else if (g1 > g2) g1 = g1 + min(-UIControlColor[key].e, (g2 - g1) / UIControlColor[key].s * 2);
 
 					if (abs(b1 - b2) <= UIControlColor[key].e) b1 = b2;
-					else if (b1 < b2) b1 = b1 + max(UIControlColor[key].e, (b2 - b1) / UIControlColor[key].s);
-					else if (b1 > b2) b1 = b1 + min(-UIControlColor[key].e, (b2 - b1) / UIControlColor[key].s);
+
+					else if (b1 < b2) b1 = b1 + max(UIControlColor[key].e, (b2 - b1) / UIControlColor[key].s * 2);
+					else if (b1 > b2) b1 = b1 + min(-UIControlColor[key].e, (b2 - b1) / UIControlColor[key].s * 2);
 
 					if (abs(a1 - a2) <= UIControlColor[key].e) a1 = a2;
-					else if (a1 < a2) a1 = a1 + max(UIControlColor[key].e, (a2 - a1) / UIControlColor[key].s);
-					else if (a1 > a2) a1 = a1 + min(-UIControlColor[key].e, (a2 - a1) / UIControlColor[key].s);
+
+					else if (a1 < a2) a1 = a1 + max(UIControlColor[key].e, (a2 - a1) / UIControlColor[key].s * 2);
+					else if (a1 > a2) a1 = a1 + min(-UIControlColor[key].e, (a2 - a1) / UIControlColor[key].s * 2);
 
 					UIControlColor[key].v = RGBA(max(0, min(255, (int)r1)), max(0, min(255, (int)g1)), max(0, min(255, (int)b1)), max(0, min(255, (int)a1)));
 				}
@@ -4607,6 +4612,7 @@ void DrawScreen()
 			{
 				ChangeColor(floating_icon[7], UIControlColor[L"Image/test/fill"].v);
 				hiex::TransparentImage(&background, int(UIControl[L"Image/test/x"].v), int(UIControl[L"Image/test/y"].v), &floating_icon[7], int((UIControlColor[L"Image/test/fill"].v >> 24) & 0xff));
+				if (AutomaticUpdateStep == 3) hiex::EasyX_Gdiplus_SolidEllipse(UIControl[L"Image/test/x"].v + 30, UIControl[L"Image/test/y"].v, 10, 10, RGBA(228, 55, 66, 255), false, SmoothingModeHighQuality, &background);
 
 				Gdiplus::Font gp_font(&HarmonyOS_fontFamily, UIControl[L"Words/test/height"].v, FontStyleRegular, UnitPixel);
 				SolidBrush WordBrush(hiex::ConvertToGdiplusColor(UIControlColor[L"Words/test/words_color"].v, true));
@@ -4681,7 +4687,7 @@ void DrawScreen()
 						hiex::TransparentImage(&background, int(UIControl[L"Image/Sign1/x"].v), int(UIControl[L"Image/Sign1/y"].v), &sign, int(UIControl[L"Image/Sign1/transparency"].v));
 					}
 
-					//时钟表盘（已经可用，后续启用）
+					//时钟表盘
 					else if (setlist.SkinMode == 2)
 					{
 						hiex::EasyX_Gdiplus_FillEllipse(UIControl[L"Ellipse/Ellipse1/x"].v, UIControl[L"Ellipse/Ellipse1/y"].v, UIControl[L"Ellipse/Ellipse1/width"].v, UIControl[L"Ellipse/Ellipse1/height"].v, SET_ALPHA(UIControlColor[L"Ellipse/Ellipse1/frame"].v, (int)UIControl[L"Image/Sign1/frame_transparency"].v), UIControlColor[L"Ellipse/Ellipse1/fill"].v, 2, true, SmoothingModeHighQuality, &background);
@@ -4905,10 +4911,10 @@ void DrawScreen()
 							}
 						}
 
-						hiex::TransparentImage(&background, int(UIControl[L"Image/Sign1/x"].v), int(UIControl[L"Image/Sign1/y"].v), &sign, int(UIControl[L"Image/Sign1/transparency"].v));
+						hiex::TransparentImage(&background, int(UIControl[L"Image/Sign1/x"].v - 18), int(UIControl[L"Image/Sign1/y"].v - 18), &skin[2]);
 					}
 
-					//龙年迎新（制作中，测试中）
+					//龙年迎新
 					else if (setlist.SkinMode == 3)
 					{
 						hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v), int(UIControl[L"Ellipse/Ellipse1/y"].v), &skin[1], (UIControlColor[L"Ellipse/Ellipse1/fill"].v >> 24) & 0xFF);
@@ -5183,7 +5189,7 @@ void DrawScreen()
 		if (for_num == 1) ShowWindow(floating_window, SW_SHOW);
 		if (tRecord)
 		{
-			int delay = 1000 / 48 - (clock() - tRecord);
+			int delay = 1000 / 24 - (clock() - tRecord);
 			if (delay > 0) std::this_thread::sleep_for(std::chrono::milliseconds(delay));
 		}
 		tRecord = clock();

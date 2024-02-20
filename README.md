@@ -58,7 +58,7 @@
 
 ## 下载体验
 
-夸克网盘分流：[https://pan.quark.cn/s/e6adc1b881dc](https://pan.quark.cn/s/e6adc1b881dc)  
+网盘分流：[123云盘免登录高速下载](https://www.123pan.com/s/duk9-n4dAd.html)  
 转到 [GitHub](https://github.com/Alan-CRL/Intelligent-Drawing-Teaching/releases) 发布页面下载最新版本按照提示运行即可或可以联系作者获取。软件经过反复测试打磨，可以直接安装在班级一体机上使用。
 
 运行要求：Windows 7 及以上 + .NET framework 4.0 及以上，支持 PC 与 触摸一体机 使用。  

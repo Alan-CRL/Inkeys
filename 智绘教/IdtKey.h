@@ -1,3 +1,3 @@
-#include <string>
+//#include <string>
 
-extern std::wstring api_key;
+//extern std::wstring api_key
