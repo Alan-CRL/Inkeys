@@ -321,6 +321,8 @@ void AutomaticUpdate()
 }
 
 //程序注册 + 网络登记
+//用户量过大后被废弃
+/*
 void NetUpdate()
 {
 	this_thread::sleep_for(chrono::seconds(3));
@@ -788,3 +790,4 @@ void NetUpdate()
 
 	thread_status[L"NetUpdate"] = false;
 }
+*/

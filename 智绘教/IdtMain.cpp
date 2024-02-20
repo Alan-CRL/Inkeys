@@ -33,13 +33,12 @@ void FreezeFrameWindow();
 bool already = false;
 
 wstring buildTime = __DATE__ L" " __TIME__; //构建时间
-string edition_date = "20240220c(dev)"; //程序发布日期
+string edition_date = "20240220c"; //程序发布日期
 string edition_code = "2402 - Happy New Year!"; //程序版本
 
 wstring userid; //用户ID（主板序列号）
 string global_path; //程序当前路径
 
-string server_feedback, server_code;
 double server_updata_error, procedure_updata_error;
 wstring server_updata_error_reason;
 
@@ -407,8 +406,8 @@ int main()
 	//LOG(INFO) << "成功启动背景窗口线程";
 
 	//LOG(INFO) << "尝试启动程序网络注册线程";
-	thread NetUpdate_thread(NetUpdate);
-	NetUpdate_thread.detach();
+	//thread NetUpdate_thread(NetUpdate);
+	//NetUpdate_thread.detach();
 	//LOG(INFO) << "成功启动程序网络注册线程";
 
 	while (!off_signal) Sleep(500);
