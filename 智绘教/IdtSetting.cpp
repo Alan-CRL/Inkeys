@@ -904,10 +904,11 @@ int SettingMain()
 	config.Size = { 60.0f,30.0f };
 	config.Flags = ImGuiToggleFlags_Animated;
 
+	int QuestNumbers = 0;
 	int PushStyleColorNum = 0, PushFontNum = 0;
 	int QueryWaitingTime = 5;
 
-	bool StartUp = false, CreateLnk = true;
+	bool StartUp = false, CreateLnk = setlist.CreateLnk;
 	bool BrushRecover = setlist.BrushRecover, RubberRecover = setlist.RubberRecover;
 
 	wstring ppt_LinkTest = LinkTest();
@@ -1235,7 +1236,7 @@ int SettingMain()
 							if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1) filesystem::create_directory(string_to_wstring(global_path) + L"api");
 							ExtractResource((string_to_wstring(global_path) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 
-							ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe").c_str(), (L"/\"query\" /\"" + GetCurrentExePath() + L"\\ÖÇ»æ½Ì.exe\"").c_str(), NULL, SW_SHOWNORMAL);
+							ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe").c_str(), (L"/\"query" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath()).c_str(), NULL, SW_SHOWNORMAL);
 
 							DWORD dwBytesRead;
 							WCHAR buffer[4096];
@@ -1255,12 +1256,12 @@ int SettingMain()
 								if (ReadFile(hPipe, buffer, sizeof(buffer), &dwBytesRead, NULL))
 								{
 									receivedData.assign(buffer, dwBytesRead / sizeof(WCHAR));
-									if (receivedData == L"fail")
+									if (receivedData == to_wstring(QuestNumbers) + L"fail")
 									{
 										receivedData = L"Success";
 										setlist.StartUp = 1, StartUp = false;
 									}
-									else if (receivedData == L"success")
+									else if (receivedData == to_wstring(QuestNumbers) + L"success")
 									{
 										receivedData = L"Success";
 										setlist.StartUp = 2, StartUp = true;
@@ -1271,6 +1272,7 @@ int SettingMain()
 							}
 
 							CloseHandle(hPipe);
+							QuestNumbers++, QuestNumbers %= 10;
 						}
 					}
 					{
@@ -1300,8 +1302,8 @@ int SettingMain()
 								if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1) filesystem::create_directory(string_to_wstring(global_path) + L"api");
 								ExtractResource((string_to_wstring(global_path) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 
-								if (StartUp) ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe").c_str(), (L"/\"set\" /\"" + GetCurrentExePath() + L"\"").c_str(), NULL, SW_SHOWNORMAL);
-								else ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe").c_str(), (L"/\"delete\" /\"" + GetCurrentExePath() + L"\"").c_str(), NULL, SW_SHOWNORMAL);
+								if (StartUp) ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe").c_str(), (L"/\"set" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\"").c_str(), NULL, SW_SHOWNORMAL);
+								else ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe").c_str(), (L"/\"delete" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\"").c_str(), NULL, SW_SHOWNORMAL);
 
 								DWORD dwBytesRead;
 								WCHAR buffer[4096];
@@ -1321,13 +1323,14 @@ int SettingMain()
 									if (ReadFile(hPipe, buffer, sizeof(buffer), &dwBytesRead, NULL))
 									{
 										treceivedData.assign(buffer, dwBytesRead / sizeof(WCHAR));
-										if (treceivedData == L"fail") setlist.StartUp = 1, StartUp = false;
-										else if (treceivedData == L"success") setlist.StartUp = 2, StartUp = true;
+										if (treceivedData == to_wstring(QuestNumbers) + L"fail") setlist.StartUp = 1, StartUp = false;
+										else if (treceivedData == to_wstring(QuestNumbers) + L"success") setlist.StartUp = 2, StartUp = true;
 									}
 								}
 								else setlist.StartUp = 0, receivedData = L"Renew";
 
 								CloseHandle(hPipe);
+								QuestNumbers++, QuestNumbers %= 10;
 							}
 						}
 					}
@@ -1674,7 +1677,7 @@ int SettingMain()
 		if (!test.select)
 		{
 			if (ShowWindow && IsWindowVisible(setting_window)) ::ShowWindow(setting_window, SW_HIDE), ShowWindow = false;
-			while (!test.select) Sleep(100);
+			while (!test.select && !off_signal) Sleep(100);
 		}
 		else if (!ShowWindow && !IsWindowVisible(setting_window))
 		{
@@ -1733,7 +1736,7 @@ void FirstSetting(bool info)
 	Json::Value root;
 
 	root["edition"] = Json::Value(edition_date);
-	root["CreateLnk"] = Json::Value(true);
+	root["CreateLnk"] = Json::Value(false);
 	root["BrushRecover"] = Json::Value(true);
 	root["RubberRecover"] = Json::Value(false);
 	root["SetSkinMode"] = Json::Value(0);

@@ -33,7 +33,7 @@ void FreezeFrameWindow();
 bool already = false;
 
 wstring buildTime = __DATE__ L" " __TIME__; //构建时间
-string edition_date = "20240220a"; //程序发布日期
+string edition_date = "20240220c(dev)"; //程序发布日期
 string edition_code = "2402 - Happy New Year!"; //程序版本
 
 wstring userid; //用户ID（主板序列号）

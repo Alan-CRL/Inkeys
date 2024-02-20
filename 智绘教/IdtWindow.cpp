@@ -78,8 +78,6 @@ wstring GetWindowText(HWND hWnd)
 //置顶程序窗口
 void TopWindow()
 {
-	Sleep(3000);
-
 	//窗口强制置顶
 	{
 		HWND hForeWnd = NULL;
@@ -98,6 +96,8 @@ void TopWindow()
 		::AttachThreadInput(dwCurID, dwForeID, FALSE);
 	}
 	SetWindowPos(floating_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+
+	Sleep(3000);
 	while (1)
 	{
 		SetWindowPos(floating_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);

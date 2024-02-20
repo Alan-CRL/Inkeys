@@ -5,7 +5,7 @@ struct SetListStruct
 {
 	SetListStruct()
 	{
-		StartUp = 0, CreateLnk = true;
+		StartUp = 0, CreateLnk = false;
 		BrushRecover = true, RubberRecover = false;
 
 		SetSkinMode = 0, SkinMode = 1;
