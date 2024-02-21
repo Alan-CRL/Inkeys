@@ -6,8 +6,8 @@
 ## 项目介绍
 智绘教项目创立于 2023 年 2 月，由于班上一体机自带的画板程序并不好用，于是智绘教应运而生。智绘教通过长期教师的使用反馈，反复打磨，并高速发展。是一款运行于 Windows 平台的软件，无需安装即可使用。其使用 HiEasyX(EasyX 拓展库) 和 GDI+ 作为图形库，高质量抗锯齿与超低延迟，且支持多指绘制……
 
-![智绘教这半年](https://vip.123pan.cn/1709404/IDT/IMAGE/IdtTemp.png)  
-[智绘教这半年](https://vip.123pan.cn/1709404/IDT/IMAGE/IdtTemp.png)  
+![智绘教这半年](https://vip.123pan.cn/1709404/IDT/IMAGE/IdtTemp.gif)  
+[智绘教这半年](https://vip.123pan.cn/1709404/IDT/IMAGE/IdtTemp.gif)  
 
 ### 未来功能（按照实现顺序排序）
 - 实时手抖修正
