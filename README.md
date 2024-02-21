@@ -1,7 +1,9 @@
 # Intelligent-Drawing-Teaching
 智绘教，适用于 Windows 桌面的悬浮窗画笔程序，高效绘制和丰富功能，只为尽可能地提供课堂教学效率。适用于触摸屏设备和PC端。
 
-[CodeBus 上的智绘教介绍](https://codebus.cn/alancrl/intelligent-painting-teaching)
+[CodeBus 上的智绘教介绍](https://codebus.cn/alancrl/intelligent-painting-teaching)  
+
+**官方Q群**：618720802
 
 ## 项目介绍
 智绘教项目创立于 2023 年 2 月，由于班上一体机自带的画板程序并不好用，于是智绘教应运而生。智绘教通过长期教师的使用反馈，反复打磨，并高速发展。是一款运行于 Windows 平台的软件，无需安装即可使用。其使用 HiEasyX(EasyX 拓展库) 和 GDI+ 作为图形库，高质量抗锯齿与超低延迟，且支持多指绘制……
