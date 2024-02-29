@@ -14,6 +14,9 @@
 #include <vector>
 #include <thread>
 
+#include <shared_mutex>
+#include <deque>
+
 #ifdef _MSC_VER
 #pragma comment (lib, "Msimg32.lib")
 #endif
@@ -97,6 +100,8 @@ namespace HiEasyX
 		std::vector<SysControlBase*> vecSysCtrl;	///< 记录创建的系统控件
 		bool bHasCtrl = false;						///< 是否创建过系统控件
 	};
+	extern std::deque<std::shared_mutex> g_vecWindows_vecMessage_sm;
+	extern std::vector<EasyWindow> g_vecWindows;
 
 	/**
 	 * @brief <pre>
@@ -777,6 +782,9 @@ namespace HiEasyX
 	 * @return MOUSEMSG 消息
 	*/
 	MOUSEMSG To_MouseMsg(ExMessage msgEx);
+
+	// 智绘教零散交互
+	int GetWindowIndex(HWND hWnd, bool flag);
 }
 
 ////////////****** 任务指令宏定义 ******////////////

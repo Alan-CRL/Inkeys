@@ -1,7 +1,22 @@
 #include "IdtDrawpad.h"
 
+#include "IdtConfiguration.h"
+#include "IdtDraw.h"
+#include "IdtFloating.h"
+#include "IdtHistoricalDrawpad.h"
+#include "IdtImage.h"
+#include "IdtMagnification.h"
+#include "IdtPlug-in.h"
+#include "IdtRts.h"
+#include "IdtText.h"
+#include "IdtTime.h"
+#include "IdtUpdate.h"
+#include "IdtWindow.h"
+//#include <ink_stroke_modeler/stroke_modeler.h>
+
 bool main_open;
 bool FirstDraw = true;
+bool IdtHotkey;
 
 //将要废弃的绘制函数
 RECT DrawGradientLine(HDC hdc, int x1, int y1, int x2, int y2, float width, Color color)
@@ -48,6 +63,317 @@ shared_mutex StrokeBackImageSm;
 IMAGE drawpad(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)); //主画板
 IMAGE window_background(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 
+unordered_map<BYTE, bool> KeyBoradDown;
+HHOOK DrawpadHookCall;
+LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
+{
+	if (nCode >= 0)
+	{
+		KBDLLHOOKSTRUCT* pKeyInfo = (KBDLLHOOKSTRUCT*)lParam;
+
+		if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) KeyBoradDown[pKeyInfo->vkCode] = true;
+		else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) KeyBoradDown[pKeyInfo->vkCode] = false;
+
+		if (ppt_show != NULL)
+		{
+			switch (wParam)
+			{
+			case WM_KEYDOWN:
+			case WM_SYSKEYDOWN:
+			{
+				// 检查按下的键
+				switch (pKeyInfo->vkCode)
+				{
+				case VK_NEXT:   // PgDn
+				case VK_PRIOR:  // PgUp
+				case VK_SPACE:  // 空格键
+				case VK_LEFT:   // 左箭头
+				case VK_RIGHT:  // 右箭头
+				case VK_UP:     // 上箭头
+				case VK_DOWN:   // 下箭头
+				case VK_ESCAPE:   // 退出
+					std::unique_lock<std::shared_mutex> LockPPTManipulatedSm(PPTManipulatedSm);
+					PPTManipulated = std::chrono::high_resolution_clock::now();
+					LockPPTManipulatedSm.unlock();
+					break;
+				}
+				break;
+			}
+			}
+		}
+
+		if (!choose.select && !penetrate.select)
+		{
+			if (wParam == WM_KEYDOWN || wParam == WM_KEYUP || wParam == WM_SYSKEYDOWN || wParam == WM_SYSKEYUP)
+			{
+				ExMessage msgKey = {};
+				msgKey.message = wParam;
+				msgKey.vkcode = (BYTE)pKeyInfo->vkCode;
+				msgKey.scancode = (BYTE)pKeyInfo->scanCode;
+				msgKey.extended = bool(pKeyInfo->flags & LLKHF_EXTENDED);
+				msgKey.prevdown = bool((HIWORD(pKeyInfo->flags) & KF_REPEAT) == KF_REPEAT);
+
+				int index = hiex::GetWindowIndex(drawpad_window, false);
+				std::unique_lock<std::shared_mutex> lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
+				hiex::g_vecWindows[index].vecMessage.push_back(msgKey);
+				lg_vecWindows_vecMessage_sm.unlock();
+
+				if (ppt_show != NULL)
+				{
+					switch (pKeyInfo->vkCode)
+					{
+					case 0x30:
+					case 0x31:
+					case 0x32:
+					case 0x33:
+					case 0x34:
+					case 0x35:
+					case 0x36:
+					case 0x37:
+					case 0x38:
+					case 0x39:
+					case 0x41:
+					case 0x42:
+					case 0x43:
+					case 0x44:
+					case 0x45:
+					case 0x46:
+					case 0x47:
+					case 0x48:
+					case 0x49:
+					case 0x4A:
+					case 0x4B:
+					case 0x4C:
+					case 0x4D:
+					case 0x4E:
+					case 0x4F:
+					case 0x50:
+					case 0x51:
+					case 0x52:
+					case 0x53:
+					case 0x54:
+					case 0x55:
+					case 0x56:
+					case 0x57:
+					case 0x58:
+					case 0x59:
+					case 0x5A:
+					case VK_NUMPAD0:
+					case VK_NUMPAD1:
+					case VK_NUMPAD2:
+					case VK_NUMPAD3:
+					case VK_NUMPAD4:
+					case VK_NUMPAD5:
+					case VK_NUMPAD6:
+					case VK_NUMPAD7:
+					case VK_NUMPAD8:
+					case VK_NUMPAD9:
+
+					case VK_NEXT:   // PgDn
+					case VK_PRIOR:  // PgUp
+					case VK_SPACE:  // 空格键
+					case VK_LEFT:   // 左箭头
+					case VK_RIGHT:  // 右箭头
+					case VK_UP:     // 上箭头
+					case VK_DOWN:   // 下箭头
+					case VK_ESCAPE:   // 退出
+
+					{
+						return 1;
+					}
+
+					default:
+						return CallNextHookEx(DrawpadHookCall, nCode, wParam, lParam);
+					}
+				}
+				else
+				{
+					switch (pKeyInfo->vkCode)
+					{
+					case 0x30:
+					case 0x31:
+					case 0x32:
+					case 0x33:
+					case 0x34:
+					case 0x35:
+					case 0x36:
+					case 0x37:
+					case 0x38:
+					case 0x39:
+					case 0x41:
+					case 0x42:
+					case 0x43:
+					case 0x44:
+					case 0x45:
+					case 0x46:
+					case 0x47:
+					case 0x48:
+					case 0x49:
+					case 0x4A:
+					case 0x4B:
+					case 0x4C:
+					case 0x4D:
+					case 0x4E:
+					case 0x4F:
+					case 0x50:
+					case 0x51:
+					case 0x52:
+					case 0x53:
+					case 0x54:
+					case 0x55:
+					case 0x56:
+					case 0x57:
+					case 0x58:
+					case 0x59:
+					case 0x5A:
+					case VK_NUMPAD0:
+					case VK_NUMPAD1:
+					case VK_NUMPAD2:
+					case VK_NUMPAD3:
+					case VK_NUMPAD4:
+					case VK_NUMPAD5:
+					case VK_NUMPAD6:
+					case VK_NUMPAD7:
+					case VK_NUMPAD8:
+					case VK_NUMPAD9:
+					{
+						return 1;
+					}
+
+					default:
+						return CallNextHookEx(DrawpadHookCall, nCode, wParam, lParam);
+					}
+				}
+			}
+		}
+	}
+	// 继续传递事件给下一个钩子或目标窗口
+	return CallNextHookEx(DrawpadHookCall, nCode, wParam, lParam);
+}
+void DrawpadInstallHook()
+{
+	// 安装钩子
+	DrawpadHookCall = SetWindowsHookEx(WH_KEYBOARD_LL, DrawpadHookCallback, NULL, 0);
+	if (DrawpadHookCall == NULL) return;
+
+	MSG msg;
+	while (!off_signal && GetMessage(&msg, NULL, 0, 0))
+	{
+		TranslateMessage(&msg);
+		DispatchMessage(&msg);
+	}
+
+	// 卸载钩子
+	UnhookWindowsHookEx(DrawpadHookCall);
+}
+
+void KeyboardInteraction()
+{
+	thread_status[L"KeyboardInteraction"] = true;
+
+	ExMessage m;
+	while (!off_signal)
+	{
+		hiex::getmessage_win32(&m, EM_KEY, drawpad_window);
+
+		if (ppt_show != NULL)
+		{
+			if (m.message == WM_KEYDOWN && (m.vkcode == VK_DOWN || m.vkcode == VK_RIGHT || m.vkcode == VK_NEXT || m.vkcode == VK_SPACE || m.vkcode == VK_UP || m.vkcode == VK_LEFT || m.vkcode == VK_PRIOR))
+			{
+				auto vkcode = m.vkcode;
+
+				if (vkcode == VK_UP || vkcode == VK_LEFT || vkcode == VK_PRIOR)
+				{
+					// 上一页
+					SetForegroundWindow(ppt_show);
+					ppt_info_stay.CurrentPage = PreviousPptSlides();
+					std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
+					while (1)
+					{
+						if (!KeyBoradDown[vkcode]) break;
+						if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400) ppt_info_stay.CurrentPage = PreviousPptSlides();
+
+						Sleep(15);
+					}
+				}
+				else
+				{
+					// 下一页
+					int temp_currentpage = ppt_info_stay.CurrentPage;
+					if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
+					{
+						if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+						{
+							EndPptShow();
+
+							brush.select = false;
+							rubber.select = false;
+							penetrate.select = false;
+							choose.select = true;
+						}
+					}
+					else
+					{
+						SetForegroundWindow(ppt_show);
+						ppt_info_stay.CurrentPage = NextPptSlides(temp_currentpage);
+						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
+						while (1)
+						{
+							if (!KeyBoradDown[vkcode]) break;
+
+							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
+							{
+								temp_currentpage = ppt_info_stay.CurrentPage;
+								if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
+								{
+									if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+									{
+										EndPptShow();
+
+										brush.select = false;
+										rubber.select = false;
+										penetrate.select = false;
+										choose.select = true;
+									}
+									break;
+								}
+								else if (temp_currentpage == -1) break;
+								ppt_info_stay.CurrentPage = NextPptSlides(temp_currentpage);
+							}
+
+							Sleep(15);
+						}
+					}
+				}
+			}
+			else if (m.message == WM_KEYDOWN && m.vkcode == VK_ESCAPE)
+			{
+				auto vkcode = m.vkcode;
+
+				while (KeyBoradDown[vkcode]) Sleep(20);
+
+				if (choose.select == false && penetrate.select == false)
+				{
+					if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+					{
+						EndPptShow();
+
+						brush.select = false;
+						rubber.select = false;
+						penetrate.select = false;
+						choose.select = true;
+					}
+				}
+				else EndPptShow();
+			}
+		}
+
+		hiex::flushmessage_win32(EM_KEY, drawpad_window);
+	}
+
+	thread_status[L"KeyboardInteraction"] = false;
+}
+
 void MultiFingerDrawing(LONG pid, POINT pt)
 {
 	struct Mouse
@@ -61,7 +387,7 @@ void MultiFingerDrawing(LONG pid, POINT pt)
 		bool rubber_choose = rubber.select, brush_choose = brush.select;
 		int width = brush.width, mode = brush.mode;
 		COLORREF color = brush.color;
-	}draw_info;
+	}  draw_info;
 
 	IMAGE Canvas(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 	SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
@@ -134,9 +460,20 @@ void MultiFingerDrawing(LONG pid, POINT pt)
 
 			mouse.x = pt.x, mouse.y = pt.y;
 
-			if (speed <= 0.2) trubbersize = 60;
-			else if (speed <= 20) trubbersize = max(25, speed * 2.33 + 13.33);
-			else trubbersize = min(200, 3 * speed);
+			if (setlist.RubberMode == 1)
+			{
+				// PC 鼠标
+				if (speed <= 0.2) trubbersize = 60;
+				else if (speed <= 30) trubbersize = max(25, speed * 2.33 + 2.33);
+				else trubbersize = min(200, speed + 30);
+			}
+			else
+			{
+				// 触摸设备
+				if (speed <= 0.2) trubbersize = 60;
+				else if (speed <= 20) trubbersize = max(25, speed * 2.33 + 13.33);
+				else trubbersize = min(200, 3 * speed);
+			}
 
 			if (trubbersize == -1) trubbersize = rubbersize;
 			if (rubbersize < trubbersize) rubbersize = rubbersize + max(0.1, (trubbersize - rubbersize) / 50);
@@ -331,7 +668,7 @@ void MultiFingerDrawing(LONG pid, POINT pt)
 			double redundance = max(GetSystemMetrics(SM_CXSCREEN) / 192, min((GetSystemMetrics(SM_CXSCREEN)) / 76.8, double(GetSystemMetrics(SM_CXSCREEN)) / double((-0.036) * writing_distance + 135)));
 
 			//直线绘制
-			if (writing_distance >= 120 && (abs(circumscribed_rectangle.left - circumscribed_rectangle.right) >= 120 || abs(circumscribed_rectangle.top - circumscribed_rectangle.bottom) >= 120) && isLine(points, int(redundance), std::chrono::high_resolution_clock::now()))
+			if (setlist.IntelligentDrawing && writing_distance >= 120 && (abs(circumscribed_rectangle.left - circumscribed_rectangle.right) >= 120 || abs(circumscribed_rectangle.top - circumscribed_rectangle.bottom) >= 120) && isLine(points, int(redundance), std::chrono::high_resolution_clock::now()))
 			{
 				Point start(points[0]), end(points[points.size() - 1]);
 
@@ -398,7 +735,7 @@ void MultiFingerDrawing(LONG pid, POINT pt)
 				graphics.DrawLine(&pen, start.X, start.Y, end.X, end.Y);
 			}
 			//平滑曲线
-			else if (points.size() > 2)
+			else if (setlist.SmoothWriting && points.size() > 2)
 			{
 				SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
 
@@ -417,7 +754,7 @@ void MultiFingerDrawing(LONG pid, POINT pt)
 		else if (draw_info.mode == 2)
 		{
 			//平滑曲线
-			if (points.size() > 2)
+			if (setlist.SmoothWriting && points.size() > 2)
 			{
 				SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
 
@@ -437,7 +774,7 @@ void MultiFingerDrawing(LONG pid, POINT pt)
 		else if (draw_info.mode == 4)
 		{
 			//端点匹配
-			if (points.size() == 2)
+			if (setlist.IntelligentDrawing && points.size() == 2)
 			{
 				Point l1 = points[0];
 				Point l2 = Point(points[0].X, points[points.size() - 1].Y);
@@ -779,11 +1116,70 @@ void DrawpadDrawing()
 
 				while (1)
 				{
-					if (ppt_info.currentSlides != ppt_info_stay.CurrentPage || ppt_info.totalSlides != ppt_info_stay.TotalPage)
+					int temp_currentpage = ppt_info_stay.CurrentPage, temp_totalpage = ppt_info_stay.TotalPage;
+					if (ppt_info.currentSlides != temp_currentpage || ppt_info.totalSlides != temp_totalpage)
 					{
-						if (ppt_info.currentSlides != ppt_info_stay.CurrentPage && ppt_info.totalSlides == ppt_info_stay.TotalPage)
+						if (ppt_info.currentSlides != temp_currentpage && ppt_info.totalSlides == temp_totalpage)
 						{
 							IMAGE empty_drawpad = CreateImageColor(drawpad.getwidth(), drawpad.getheight(), RGBA(0, 0, 0, 0), true);
+							if (reference_record_pointer == current_record_pointer && !CompareImagesWithBuffer(&empty_drawpad, &drawpad))
+							{
+								if (RecallImage.empty())
+								{
+									bool save_recond = false;
+									if (recall_image_reference > recall_image_recond) recall_image_recond++;
+									else recall_image_recond = recall_image_reference = recall_image_reference + 1, save_recond = true;
+
+									if (recall_image_recond % 10 == 0 && save_recond && recall_image_recond >= 20)
+									{
+										thread SaveScreenShot_thread(SaveScreenShot, RecallImage[0].img, false);
+										SaveScreenShot_thread.detach();
+									}
+
+									std::unique_lock<std::shared_mutex> LockStrokeBackImageSm(StrokeBackImageSm);
+									std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
+
+									RecallImage.push_back({ drawpad, extreme_point, 0, make_pair(recall_image_recond, recall_image_reference) });
+									RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
+
+									LockExtremePointSm.unlock();
+									LockStrokeBackImageSm.unlock();
+								}
+								else if (!RecallImage.empty() && !CompareImagesWithBuffer(&drawpad, &RecallImage.back().img))
+								{
+									bool save_recond = false;
+									if (recall_image_reference > recall_image_recond) recall_image_recond++;
+									else recall_image_recond = recall_image_reference = recall_image_reference + 1, save_recond = true;
+
+									if (recall_image_recond % 10 == 0 && save_recond && recall_image_recond >= 20)
+									{
+										thread SaveScreenShot_thread(SaveScreenShot, RecallImage[0].img, false);
+										SaveScreenShot_thread.detach();
+									}
+
+									std::unique_lock<std::shared_mutex> LockStrokeBackImageSm(StrokeBackImageSm);
+									std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
+
+									RecallImage.push_back({ drawpad, extreme_point, 0, make_pair(recall_image_recond, recall_image_reference) });
+									RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
+
+									if (RecallImage.size() > 10)
+									{
+										while (RecallImage.size() > 10)
+										{
+											if (RecallImage.front().type == 1)
+											{
+												current_record_pointer = reference_record_pointer = max(1, reference_record_pointer - 1);
+											}
+											RecallImage.pop_front();
+										}
+									}
+
+									LockExtremePointSm.unlock();
+									LockStrokeBackImageSm.unlock();
+								}
+							}
+
 							if (!RecallImage.empty() && !CompareImagesWithBuffer(&empty_drawpad, &RecallImage.back().img))
 							{
 								std::unique_lock<std::shared_mutex> LockStrokeBackImageSm(StrokeBackImageSm);
@@ -817,17 +1213,17 @@ void DrawpadDrawing()
 								LockStrokeBackImageSm.unlock();
 							}
 
-							if (ppt_img.is_saved[ppt_info_stay.CurrentPage] == true)
+							if (ppt_img.is_saved[temp_currentpage] == true)
 							{
-								drawpad = ppt_img.image[ppt_info_stay.CurrentPage];
+								drawpad = ppt_img.image[temp_currentpage];
 							}
 							else
 							{
-								if (ppt_info_stay.TotalPage != -1) SetImageColor(drawpad, RGBA(0, 0, 0, 0), true);
+								if (temp_totalpage != -1) SetImageColor(drawpad, RGBA(0, 0, 0, 0), true);
 							}
 						}
-						ppt_info.currentSlides = ppt_info_stay.CurrentPage;
-						ppt_info.totalSlides = ppt_info_stay.TotalPage;
+						ppt_info.currentSlides = temp_currentpage;
+						ppt_info.totalSlides = temp_totalpage;
 
 						{
 							SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
@@ -862,11 +1258,71 @@ void DrawpadDrawing()
 				if (!choose.select) goto ChooseEnd;
 				goto DrawpadDrawingEnd;
 			}
-			if (ppt_info.currentSlides != ppt_info_stay.CurrentPage || ppt_info.totalSlides != ppt_info_stay.TotalPage)
+
+			int temp_currentpage = ppt_info_stay.CurrentPage, temp_totalpage = ppt_info_stay.TotalPage;
+			if (ppt_info.currentSlides != temp_currentpage || ppt_info.totalSlides != temp_totalpage)
 			{
-				if (ppt_info.currentSlides != ppt_info_stay.CurrentPage && ppt_info.totalSlides == ppt_info_stay.TotalPage)
+				if (ppt_info.currentSlides != temp_currentpage && ppt_info.totalSlides == temp_totalpage)
 				{
 					IMAGE empty_drawpad = CreateImageColor(drawpad.getwidth(), drawpad.getheight(), RGBA(0, 0, 0, 0), true);
+					if (reference_record_pointer == current_record_pointer && !CompareImagesWithBuffer(&empty_drawpad, &drawpad))
+					{
+						if (RecallImage.empty())
+						{
+							bool save_recond = false;
+							if (recall_image_reference > recall_image_recond) recall_image_recond++;
+							else recall_image_recond = recall_image_reference = recall_image_reference + 1, save_recond = true;
+
+							if (recall_image_recond % 10 == 0 && save_recond && recall_image_recond >= 20)
+							{
+								thread SaveScreenShot_thread(SaveScreenShot, RecallImage[0].img, false);
+								SaveScreenShot_thread.detach();
+							}
+
+							std::unique_lock<std::shared_mutex> LockStrokeBackImageSm(StrokeBackImageSm);
+							std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
+
+							RecallImage.push_back({ drawpad, extreme_point, 0, make_pair(recall_image_recond, recall_image_reference) });
+							RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
+
+							LockExtremePointSm.unlock();
+							LockStrokeBackImageSm.unlock();
+						}
+						else if (!RecallImage.empty() && !CompareImagesWithBuffer(&drawpad, &RecallImage.back().img))
+						{
+							bool save_recond = false;
+							if (recall_image_reference > recall_image_recond) recall_image_recond++;
+							else recall_image_recond = recall_image_reference = recall_image_reference + 1, save_recond = true;
+
+							if (recall_image_recond % 10 == 0 && save_recond && recall_image_recond >= 20)
+							{
+								thread SaveScreenShot_thread(SaveScreenShot, RecallImage[0].img, false);
+								SaveScreenShot_thread.detach();
+							}
+
+							std::unique_lock<std::shared_mutex> LockStrokeBackImageSm(StrokeBackImageSm);
+							std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
+
+							RecallImage.push_back({ drawpad, extreme_point, 0, make_pair(recall_image_recond, recall_image_reference) });
+							RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
+
+							if (RecallImage.size() > 10)
+							{
+								while (RecallImage.size() > 10)
+								{
+									if (RecallImage.front().type == 1)
+									{
+										current_record_pointer = reference_record_pointer = max(1, reference_record_pointer - 1);
+									}
+									RecallImage.pop_front();
+								}
+							}
+
+							LockExtremePointSm.unlock();
+							LockStrokeBackImageSm.unlock();
+						}
+					}
+
 					if (!RecallImage.empty() && !CompareImagesWithBuffer(&empty_drawpad, &RecallImage.back().img))
 					{
 						std::unique_lock<std::shared_mutex> LockStrokeBackImageSm(StrokeBackImageSm);
@@ -900,16 +1356,16 @@ void DrawpadDrawing()
 						LockStrokeBackImageSm.unlock();
 					}
 
-					if (ppt_img.is_saved[ppt_info_stay.CurrentPage] == true)
+					if (ppt_img.is_saved[temp_currentpage] == true)
 					{
-						drawpad = ppt_img.image[ppt_info_stay.CurrentPage];
+						drawpad = ppt_img.image[temp_currentpage];
 					}
 					else
 					{
-						if (ppt_info_stay.TotalPage != -1) SetImageColor(drawpad, RGBA(0, 0, 0, 0), true);
+						if (temp_totalpage != -1) SetImageColor(drawpad, RGBA(0, 0, 0, 0), true);
 					}
 				}
-				else if (ppt_info.totalSlides != ppt_info_stay.TotalPage && ppt_info_stay.TotalPage == -1)
+				else if (ppt_info.totalSlides != temp_totalpage && temp_totalpage == -1)
 				{
 					choose.select = true;
 
@@ -917,8 +1373,8 @@ void DrawpadDrawing()
 					rubber.select = false;
 					penetrate.select = false;
 				}
-				ppt_info.currentSlides = ppt_info_stay.CurrentPage;
-				ppt_info.totalSlides = ppt_info_stay.TotalPage;
+				ppt_info.currentSlides = temp_currentpage;
+				ppt_info.totalSlides = temp_totalpage;
 
 				{
 					SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
@@ -1186,6 +1642,10 @@ int drawpad_main()
 
 	thread DrawpadDrawing_thread(DrawpadDrawing);
 	DrawpadDrawing_thread.detach();
+	thread KeyboardInteractionThread(KeyboardInteraction);
+	KeyboardInteractionThread.detach();
+	thread DrawpadInstallHookThread(DrawpadInstallHook);
+	DrawpadInstallHookThread.detach();
 	{
 		SetImageColor(alpha_drawpad, RGBA(0, 0, 0, 0), true);
 
@@ -1250,7 +1710,8 @@ int drawpad_main()
 
 	ShowWindow(drawpad_window, SW_HIDE);
 
-	for (int i = 1; i <= 10; i++)
+	int i = 1;
+	for (; i <= 10; i++)
 	{
 		if (!thread_status[L"DrawpadDrawing"]) break;
 		Sleep(500);

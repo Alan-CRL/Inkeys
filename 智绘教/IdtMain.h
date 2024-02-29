@@ -18,6 +18,11 @@
 #pragma once
 #define IDT_RELEASE
 
+// 简易 TODO
+// 最后一页时向右按钮显示为结束放映
+// 动画演示时不应该启动ppt
+// 结束放映和穿透进入放映可能会丢失笔迹
+
 #pragma comment( linker, "/subsystem:windows /entry:mainCRTStartup" )
 
 //基础类

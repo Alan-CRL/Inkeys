@@ -1,16 +1,6 @@
 #pragma once
 #include "IdtMain.h"
 
-#include "IdtDraw.h"
-#include "IdtDrawpad.h"
-#include "IdtFreezeFrame.h"
-#include "IdtImage.h"
-#include "IdtMagnification.h"
-#include "IdtPlug-in.h"
-#include "IdtText.h"
-#include "IdtUpdate.h"
-#include "IdtWindow.h"
-
 //´°¿Ú¿ØÖÆ¼¯
 struct floating_windowsStruct
 {
@@ -20,7 +10,7 @@ struct floating_windowsStruct
 };
 extern floating_windowsStruct floating_windows;
 
-extern IMAGE floating_icon[20], sign;
+extern IMAGE floating_icon[25], sign;
 extern IMAGE skin[5];
 
 extern double state;

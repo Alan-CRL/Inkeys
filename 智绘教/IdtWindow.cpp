@@ -1,5 +1,8 @@
 #include "IdtWindow.h"
 
+#include "IdtDraw.h"
+#include "IdtDrawpad.h"
+
 HWND floating_window = NULL; //Ðü¸¡´°´°¿Ú
 HWND drawpad_window = NULL; //»­°å´°¿Ú
 HWND ppt_window = NULL; //PPT¿Ø¼þ´°¿Ú
@@ -8,7 +11,7 @@ HWND freeze_window = NULL; //¶¨¸ñ±³¾°´°¿Ú
 
 bool FreezePPT;
 HWND ppt_show;
-wstring ppt_title;
+wstring ppt_title, ppt_software;
 map<wstring, bool> ppt_title_recond;
 
 //´°¿ÚÊÇ·ñÖÃ¶¥
@@ -122,6 +125,6 @@ void TopWindow()
 			SetWindowPos(freeze_window, drawpad_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 		}
 
-		Sleep(100);
+		Sleep(1000);
 	}
 }

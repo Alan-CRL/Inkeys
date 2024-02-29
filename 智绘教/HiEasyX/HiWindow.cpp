@@ -18,12 +18,14 @@ namespace HiEasyX
 	////////////****** 全局变量 ******////////////
 
 	WNDCLASSEX				g_WndClassEx;								///< 窗口类
-	TCHAR					g_lpszClassName[] = _T("HiEasyX");				///< 窗口类名
+	TCHAR					g_lpszClassName[] = _T("HiEasyX");			///< 窗口类名
 	ScreenSize				g_screenSize;								///< 显示器信息
 	HWND					g_hConsole;									///< 控制台句柄
 	HINSTANCE				g_hInstance = GetModuleHandle(0);			///< 程序实例
 
-	std::vector<EasyWindow>	g_vecWindows;								///< 窗口表（管理多窗口）
+	std::deque<std::shared_mutex> g_vecWindows_vecMessage_sm;
+	std::vector<EasyWindow> g_vecWindows;								///< 窗口表（管理多窗口）
+
 	int						g_nFocusWindowIndex = NO_WINDOW_INDEX;		///< 当前操作焦点窗口索引
 
 	bool					g_isInTask = false;							///< 标记处于任务中
@@ -191,7 +193,9 @@ namespace HiEasyX
 		}
 
 		// 释放消息列表内存
+		std::unique_lock<std::shared_mutex> lg_vecWindows_vecMessage_sm(g_vecWindows_vecMessage_sm[index]);
 		std::vector<ExMessage>().swap(g_vecWindows[index].vecMessage);
+		lg_vecWindows_vecMessage_sm.unlock();
 
 		//DestroyWindow(g_vecWindows[index].hWnd);
 		//PostQuitMessage(0);
@@ -668,7 +672,9 @@ namespace HiEasyX
 		int index = GetWindowIndex(hWnd);
 		if (IsAliveWindow(index))
 		{
+			std::shared_lock<std::shared_mutex> lg_vecWindows_vecMessage_sm(g_vecWindows_vecMessage_sm[index]);
 			return g_vecWindows[index].vecMessage;
+			lg_vecWindows_vecMessage_sm.unlock();
 		}
 		else
 		{
@@ -1005,8 +1011,9 @@ namespace HiEasyX
 				msgMouse.x = (short)p.x;
 				msgMouse.y = (short)p.y;
 			}
-
+			std::unique_lock<std::shared_mutex> lg_vecWindows_vecMessage_sm(g_vecWindows_vecMessage_sm[indexWnd]);
 			g_vecWindows[indexWnd].vecMessage.push_back(msgMouse);
+			lg_vecWindows_vecMessage_sm.unlock();
 		}
 		break;
 
@@ -1047,7 +1054,9 @@ namespace HiEasyX
 			msgKey.extended = isExtendedKey;
 			msgKey.prevdown = repeatFlag;
 
+			std::unique_lock<std::shared_mutex> lg_vecWindows_vecMessage_sm(g_vecWindows_vecMessage_sm[indexWnd]);
 			g_vecWindows[indexWnd].vecMessage.push_back(msgKey);
+			lg_vecWindows_vecMessage_sm.unlock();
 
 			// 给控制台发一份，支持 _getch() 系列函数
 			PostMessage(g_hConsole, msg, wParam, lParam);
@@ -1060,7 +1069,10 @@ namespace HiEasyX
 			ExMessage msgChar = {};
 			msgChar.message = msg;
 			msgChar.ch = (TCHAR)wParam;
+
+			std::unique_lock<std::shared_mutex> lg_vecWindows_vecMessage_sm(g_vecWindows_vecMessage_sm[indexWnd]);
 			g_vecWindows[indexWnd].vecMessage.push_back(msgChar);
+			lg_vecWindows_vecMessage_sm.unlock();
 
 			// 通知控制台
 			PostMessage(g_hConsole, msg, wParam, lParam);
@@ -1076,7 +1088,9 @@ namespace HiEasyX
 			msgWindow.message = msg;
 			msgWindow.wParam = wParam;
 			msgWindow.lParam = lParam;
+			std::unique_lock<std::shared_mutex> lg_vecWindows_vecMessage_sm(g_vecWindows_vecMessage_sm[indexWnd]);
 			g_vecWindows[indexWnd].vecMessage.push_back(msgWindow);
+			lg_vecWindows_vecMessage_sm.unlock();
 		}
 		break;
 		}
@@ -1556,7 +1570,11 @@ namespace HiEasyX
 
 		// 在创建窗口前将窗口加入容器，预设句柄为空，方便过程函数接收 WM_CREATE 消息
 		InitWindowStruct(wnd, hParent, w, h, WindowProcess);
+
+		g_vecWindows_vecMessage_sm.emplace_back();
+		std::unique_lock<std::shared_mutex> lg_vecWindows_vecMessage_sm(g_vecWindows_vecMessage_sm[nIndexWnd]);
 		g_vecWindows.push_back(wnd);
+		lg_vecWindows_vecMessage_sm.unlock();
 
 		// 创建窗口
 		for (int i = 0;; i++)

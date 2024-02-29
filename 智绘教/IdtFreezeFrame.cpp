@@ -1,5 +1,14 @@
 #include "IdtFreezeFrame.h"
 
+#include "IdtConfiguration.h"
+#include "IdtDisplayManagement.h"
+#include "IdtDraw.h"
+#include "IdtImage.h"
+#include "IdtMagnification.h"
+#include "IdtPlug-in.h"
+#include "IdtSetting.h"
+#include "IdtText.h"
+
 int FreezeRecall;
 
 void FreezeFrameWindow()
