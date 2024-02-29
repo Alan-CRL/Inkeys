@@ -1,22 +1,9 @@
 #pragma once
 #include "IdtMain.h"
 
-#include "IdtConfiguration.h"
-#include "IdtDraw.h"
-#include "IdtFloating.h"
-#include "IdtImage.h"
-#include "IdtMagnification.h"
-#include "IdtPlug-in.h"
-#include "IdtRts.h"
-#include "IdtText.h"
-#include "IdtTime.h"
-#include "IdtUpdate.h"
-#include "IdtWindow.h"
-#include "IdtHistoricalDrawpad.h"
-
 extern bool main_open;
-extern int SettingMainMode;
 extern bool FirstDraw;
+extern bool IdtHotkey;
 
 RECT DrawGradientLine(HDC hdc, int x1, int y1, int x2, int y2, float width, Color color);
 bool checkIntersection(RECT rect1, RECT rect2);
@@ -32,6 +19,11 @@ extern shared_mutex StrokeBackImageSm;
 
 extern IMAGE drawpad; //Ö÷»­°å
 extern IMAGE window_background;
+
+extern unordered_map<BYTE, bool> KeyBoradDown;
+extern HHOOK DrawpadHookCall;
+LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam);
+void DrawpadInstallHook();
 
 void MultiFingerDrawing(LONG pid, POINT pt);
 void DrawpadDrawing();

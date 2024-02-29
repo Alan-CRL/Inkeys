@@ -33,8 +33,8 @@ void FreezeFrameWindow();
 bool already = false;
 
 wstring buildTime = __DATE__ L" " __TIME__; //构建时间
-string edition_date = "20240220c"; //程序发布日期
-string edition_code = "2402 - Happy New Year!"; //程序版本
+string edition_date = "20240228a"; //程序发布日期
+string edition_code = "2402"; //程序版本
 
 wstring userid; //用户ID（主板序列号）
 string global_path; //程序当前路径
@@ -268,8 +268,6 @@ int main()
 	if (userid.empty() || !isValidString(userid) || (userid.find(L"[") != userid.npos || userid.find(L"]") != userid.npos || userid.find(L";") != userid.npos || userid.find(L",") != userid.npos)) userid = L"无法正确识别";
 	//LOG(INFO) << "成功获取用户ID";
 
-	//桌面快捷方式注册
-	if (setlist.CreateLnk) SetShortcut();
 	//显示器检查
 	if (EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, reinterpret_cast<LPARAM>(&displays_number)));
 	else displays_number = 1;
@@ -279,6 +277,12 @@ int main()
 		MagnifierThread_thread.detach();
 	}
 	else MessageBox(floating_window, (L"检测到计算机拥有 " + to_wstring(displays_number) + L" 个显示器，智绘教目前不支持拥有拓展显示器电脑！\n\n程序将继续启动，但窗口定格，历史画板保存，超级恢复功能将失效。\n且仅能在主显示器上绘图！").c_str(), L"智绘教警告", MB_OK | MB_SYSTEMMODAL);
+
+	//桌面快捷方式注册
+	if (setlist.CreateLnk) SetShortcut();
+	// 快捷键注册
+	// thread RegisterHotkeyThread(RegisterHotkey);
+	// RegisterHotkeyThread.detach();
 
 	// 创建窗口
 

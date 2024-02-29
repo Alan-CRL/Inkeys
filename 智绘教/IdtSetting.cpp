@@ -1,7 +1,36 @@
 #include "IdtSetting.h"
 
+#include "IdtConfiguration.h"
+#include "IdtDraw.h"
+#include "IdtDrawpad.h"
+#include "IdtHistoricalDrawpad.h"
+#include "IdtImage.h"
+#include "IdtMagnification.h"
+#include "IdtOther.h"
+#include "IdtPlug-in.h"
+#include "IdtRts.h"
+#include "IdtText.h"
+#include "IdtUpdate.h"
+#include "IdtWindow.h"
+
+#include "imgui/imconfig.h"
+#include "imgui/imgui.h"
+#include "imgui/imgui_impl_dx11.h"
+#include "imgui/imgui_impl_win32.h"
+#include "imgui/imgui_internal.h"
+#include "imgui/imgui_toggle.h"
+#include "imgui/imgui_toggle_presets.h"
+#include "imgui/imstb_rectpack.h"
+#include "imgui/imstb_textedit.h"
+#include "imgui/imstb_truetype.h"
+#include <tchar.h>
+
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image/stb-master/stb_image.h"
+
+// 示例
+static void HelpMarker(const char* desc, ImVec4 Color);
+static void CenteredText(const char* desc, float displacement);
 
 IMAGE SettingSign[5];
 WNDCLASSEX ImGuiWc;
@@ -15,706 +44,6 @@ int SettingWindowX = (ScreenWidth - SettingWindowWidth) / 2;
 int SettingWindowY = (ScreenHeight - SettingWindowHeight) / 2;
 int SettingWindowWidth = 900;
 int SettingWindowHeight = 700;
-
-/*
-LRESULT CALLBACK TestWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-	switch (uMsg)
-	{
-	case WM_CLOSE:
-		return 0;
-
-	default:
-		return HIWINDOW_DEFAULT_PROC;
-	}
-	return 0;
-}
-void ControlTestMain()
-{
-	ExMessage m;
-	while (!off_signal)
-	{
-		hiex::getmessage_win32(&m, EM_MOUSE, setting_window);
-
-		if (SettingMainMode == 1 && IsInRect(m.x, m.y, { 220, 625, 980, 675 }))
-		{
-			if (m.lbutton)
-			{
-				int lx = m.x, ly = m.y;
-				while (1)
-				{
-					ExMessage m = hiex::getmessage_win32(EM_MOUSE, setting_window);
-					if (IsInRect(m.x, m.y, { 20, 625, 780, 675 }))
-					{
-						if (!m.lbutton)
-						{
-							if (setlist.experimental_functions) setlist.experimental_functions = false;
-							else setlist.experimental_functions = true;
-
-							{
-								Json::StyledWriter outjson;
-								Json::Value root;
-
-								root["edition"] = Json::Value(edition_date);
-								root["StartUp"] = Json::Value(setlist.StartUp);
-								root["experimental_functions"] = Json::Value(setlist.experimental_functions);
-
-								ofstream writejson;
-								writejson.imbue(locale("zh_CN.UTF8"));
-								writejson.open(wstring_to_string(string_to_wstring(global_path) + L"opt\\deploy.json").c_str());
-								writejson << outjson.write(root);
-								writejson.close();
-							}
-
-							break;
-						}
-					}
-					else
-					{
-						hiex::flushmessage_win32(EM_MOUSE, setting_window);
-
-						break;
-					}
-				}
-				hiex::flushmessage_win32(EM_MOUSE, setting_window);
-			}
-		}
-
-		else if (IsInRect(m.x, m.y, { 10, 15, 190, 75 }))
-		{
-			if (m.lbutton)
-			{
-				int lx = m.x, ly = m.y;
-				while (1)
-				{
-					ExMessage m = hiex::getmessage_win32(EM_MOUSE, setting_window);
-					if (IsInRect(m.x, m.y, { 10, 15, 190, 75 }))
-					{
-						if (!m.lbutton)
-						{
-							SettingMainMode = 1;
-
-							break;
-						}
-					}
-					else
-					{
-						hiex::flushmessage_win32(EM_MOUSE, setting_window);
-
-						break;
-					}
-				}
-				hiex::flushmessage_win32(EM_MOUSE, setting_window);
-			}
-		}
-		else if (IsInRect(m.x, m.y, { 10, 85, 190, 145 }))
-		{
-			if (m.lbutton)
-			{
-				int lx = m.x, ly = m.y;
-				while (1)
-				{
-					ExMessage m = hiex::getmessage_win32(EM_MOUSE, setting_window);
-					if (IsInRect(m.x, m.y, { 10, 85, 190, 145 }))
-					{
-						if (!m.lbutton)
-						{
-							SettingMainMode = 2;
-
-							break;
-						}
-					}
-					else
-					{
-						hiex::flushmessage_win32(EM_MOUSE, setting_window);
-
-						break;
-					}
-				}
-				hiex::flushmessage_win32(EM_MOUSE, setting_window);
-			}
-		}
-		else if (IsInRect(m.x, m.y, { 10, 155, 190, 215 }))
-		{
-			if (m.lbutton)
-			{
-				int lx = m.x, ly = m.y;
-				while (1)
-				{
-					ExMessage m = hiex::getmessage_win32(EM_MOUSE, setting_window);
-					if (IsInRect(m.x, m.y, { 10, 155, 190, 215 }))
-					{
-						if (!m.lbutton)
-						{
-							SettingMainMode = 3;
-
-							break;
-						}
-					}
-					else
-					{
-						hiex::flushmessage_win32(EM_MOUSE, setting_window);
-
-						break;
-					}
-				}
-				hiex::flushmessage_win32(EM_MOUSE, setting_window);
-			}
-		}
-	}
-}
-int SettingMain()
-{
-	this_thread::sleep_for(chrono::seconds(3));
-	while (!already) this_thread::sleep_for(chrono::milliseconds(50));
-
-	thread_status[L"SettingMain"] = true;
-
-	loadimage(&SettingSign[1], L"PNG", L"sign2");
-	loadimage(&SettingSign[2], L"PNG", L"sign3");
-	loadimage(&SettingSign[3], L"PNG", L"sign4");
-	loadimage(&SettingSign[4], L"PNG", L"sign5");
-
-	IMAGE test_icon[5];
-	loadimage(&test_icon[1], L"PNG", L"test_icon1");
-	loadimage(&test_icon[2], L"PNG", L"test_icon2");
-	loadimage(&test_icon[3], L"PNG", L"test_icon3");
-
-	DisableResizing(setting_window, true);//禁止窗口拉伸
-	DisableSystemMenu(setting_window, true);
-
-	LONG style = GetWindowLong(setting_window, GWL_STYLE);
-	style &= ~WS_SYSMENU;
-	SetWindowLong(setting_window, GWL_STYLE, style);
-
-	hiex::SetWndProcFunc(setting_window, TestWndProc);
-
-	// 设置BLENDFUNCTION结构体
-	BLENDFUNCTION blend;
-	blend.BlendOp = AC_SRC_OVER;
-	blend.BlendFlags = 0;
-	blend.SourceConstantAlpha = 255; // 设置透明度，0为全透明，255为不透明
-	blend.AlphaFormat = AC_SRC_ALPHA; // 使用源图像的alpha通道
-	HDC hdcScreen = GetDC(NULL);
-	// 调用UpdateLayeredWindow函数更新窗口
-	POINT ptSrc = { 0,0 };
-	SIZE sizeWnd = { 1010, 750 };
-	POINT ptDst = { 0,0 }; // 设置窗口位置
-	UPDATELAYEREDWINDOWINFO ulwi = { 0 };
-	ulwi.cbSize = sizeof(ulwi);
-	ulwi.hdcDst = hdcScreen;
-	ulwi.pptDst = &ptDst;
-	ulwi.psize = &sizeWnd;
-	ulwi.pptSrc = &ptSrc;
-	ulwi.crKey = RGB(255, 255, 255);
-	ulwi.pblend = &blend;
-	ulwi.dwFlags = ULW_ALPHA;
-	LONG nRet = ::GetWindowLong(setting_window, GWL_EXSTYLE);
-	nRet |= WS_EX_LAYERED;
-	::SetWindowLong(setting_window, GWL_EXSTYLE, nRet);
-
-	thread ControlTestMain_thread(ControlTestMain);
-	ControlTestMain_thread.detach();
-
-	POINT pt;
-	IMAGE test_title(1010, 750), test_background(1010, 710), test_content(800, 700);
-
-	if (gif_load && _waccess((string_to_wstring(global_path) + L"Toothless.gif").c_str(), 4) == 0)
-	{
-		GIF_dynamic_effect.load((string_to_wstring(global_path) + L"Toothless.gif").c_str());
-		GIF_dynamic_effect.bind(GetImageHDC(&test_title));
-		GIF_dynamic_effect.setPos(250, 120);
-		GIF_dynamic_effect.setSize(0, 0);
-	}
-
-	magnificationWindowReady++;
-	while (!off_signal)
-	{
-		Sleep(500);
-
-		if (test.select == true)
-		{
-			wstring ppt_LinkTest = LinkTest();
-			wstring ppt_IsPptDependencyLoaded = IsPptDependencyLoaded();
-			Graphics graphics(GetImageHDC(&test_content));
-
-			if (!IsWindowVisible(setting_window)) ShowWindow(setting_window, SW_SHOW);
-
-			while (!off_signal)
-			{
-				if (!choose.select) SetWindowPos(setting_window, drawpad_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-				else if (ppt_show != NULL) SetWindowPos(setting_window, ppt_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-				else SetWindowPos(setting_window, floating_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-
-				SetImageColor(test_background, RGBA(0, 0, 0, 0), true);
-				hiex::EasyX_Gdiplus_SolidRoundRect(0, 0, 1000, 700, 20, 20, RGBA(245, 245, 245, 255), false, SmoothingModeHighQuality, &test_background);
-
-				if (gif_load && !GIF_dynamic_effect.IsPlaying() && SettingMainMode == 1) GIF_dynamic_effect.play();
-
-				if (SettingMainMode == 1)
-				{
-					SetImageColor(test_content, RGBA(0, 0, 0, 0), true);
-					hiex::EasyX_Gdiplus_SolidRoundRect(0, 0, 800, 700, 20, 20, RGBA(255, 255, 255, 255), false, SmoothingModeHighQuality, &test_content);
-
-					{
-						Gdiplus::Font20 gp_font(&HarmonyOS_fontFamily, 20, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(0, 0, 0, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 0;
-							dwords_rect.top = 0;
-							dwords_rect.right = 800;
-							dwords_rect.bottom = 30;
-						}
-						graphics.DrawString(L"关闭此页面需再次点击 选项 按钮", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-
-					hiex::TransparentImage(&test_content, 50, 140, &SettingSign[2]);
-
-					if (!server_feedback.empty() && server_feedback != "")
-					{
-						Gdiplus::Font20 gp_font(&HarmonyOS_fontFamily, 20, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(0, 0, 0, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 0;
-							dwords_rect.top = 480;
-							dwords_rect.right = 800;
-							dwords_rect.bottom = 560;
-						}
-						graphics.DrawString(string_to_wstring(server_feedback).c_str(), -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-
-					if (AutomaticUpdateStep == 0)
-					{
-						hiex::EasyX_Gdiplus_RoundRect(20, 560, 760, 50, 20, 20, RGBA(130, 130, 130, 255), 2, false, SmoothingModeHighQuality, &test_content);
-
-						Gdiplus::Font20 gp_font(&HarmonyOS_fontFamily, 25, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(130, 130, 130, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 20;
-							dwords_rect.top = 560;
-							dwords_rect.right = 20 + 760;
-							dwords_rect.bottom = 560 + 50;
-						}
-						graphics.DrawString(L"程序自动更新待启用", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-					else if (AutomaticUpdateStep == 1)
-					{
-						hiex::EasyX_Gdiplus_RoundRect(20, 560, 760, 50, 20, 20, RGBA(106, 156, 45, 255), 2, false, SmoothingModeHighQuality, &test_content);
-
-						Gdiplus::Font20 gp_font(&HarmonyOS_fontFamily, 25, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(106, 156, 45, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 20;
-							dwords_rect.top = 560;
-							dwords_rect.right = 20 + 760;
-							dwords_rect.bottom = 560 + 50;
-						}
-						graphics.DrawString(L"程序版本已经是最新", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-					else if (AutomaticUpdateStep == 2)
-					{
-						hiex::EasyX_Gdiplus_RoundRect(20, 560, 760, 50, 20, 20, RGBA(245, 166, 35, 255), 2, false, SmoothingModeHighQuality, &test_content);
-
-						Gdiplus::Font20 gp_font(&HarmonyOS_fontFamily, 25, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(245, 166, 35, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 20;
-							dwords_rect.top = 560;
-							dwords_rect.right = 20 + 760;
-							dwords_rect.bottom = 560 + 50;
-						}
-						graphics.DrawString(L"新版本排队下载中", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-					else if (AutomaticUpdateStep == 3)
-					{
-						hiex::EasyX_Gdiplus_RoundRect(20, 560, 760, 50, 20, 20, RGBA(106, 156, 45, 255), 2, false, SmoothingModeHighQuality, &test_content);
-
-						Gdiplus::Font20 gp_font(&HarmonyOS_fontFamily, 25, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(106, 156, 45, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 20;
-							dwords_rect.top = 560;
-							dwords_rect.right = 20 + 760;
-							dwords_rect.bottom = 560 + 50;
-						}
-						graphics.DrawString(L"重启软件以更新到最新版本", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-
-					if (setlist.experimental_functions)
-					{
-						hiex::EasyX_Gdiplus_RoundRect(20, 620, 760, 50, 20, 20, RGBA(0, 111, 225, 255), 2, false, SmoothingModeHighQuality, &test_content);
-
-						Gdiplus::Font20 gp_font(&HarmonyOS_fontFamily, 25, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(0, 111, 225, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 20;
-							dwords_rect.top = 620;
-							dwords_rect.right = 20 + 760;
-							dwords_rect.bottom = 620 + 50;
-						}
-						graphics.DrawString(L"程序实验性功能 已启用（点击禁用）", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-					else
-					{
-						hiex::EasyX_Gdiplus_RoundRect(20, 620, 760, 50, 20, 20, RGBA(130, 130, 130, 255), 2, false, SmoothingModeHighQuality, &test_content);
-
-						Gdiplus::Font20 gp_font(&HarmonyOS_fontFamily, 25, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(130, 130, 130, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 20;
-							dwords_rect.top = 620;
-							dwords_rect.right = 20 + 760;
-							dwords_rect.bottom = 620 + 50;
-						}
-						graphics.DrawString(L"程序实验性功能 已禁用（点击启用）", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-				}
-				if (SettingMainMode == 2)
-				{
-					SetImageColor(test_content, RGBA(0, 0, 0, 0), true);
-					hiex::EasyX_Gdiplus_SolidRoundRect(0, 0, 800, 700, 20, 20, RGBA(255, 255, 255, 255), false, SmoothingModeHighQuality, &test_content);
-
-					{
-						Gdiplus::Font20 gp_font(&HarmonyOS_fontFamily, 20, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(0, 0, 0, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 0;
-							dwords_rect.top = 0;
-							dwords_rect.right = 800;
-							dwords_rect.bottom = 30;
-						}
-						graphics.DrawString(L"关闭此页面需再次点击 选项 按钮", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-
-					Gdiplus::Font20 gp_font(&HarmonyOS_fontFamily, 18, FontStyleRegular, UnitPixel);
-					SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(0, 0, 0), false));
-					graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-					{
-						dwords_rect.left = 0;
-						dwords_rect.top = 0;
-						dwords_rect.right = 800;
-						dwords_rect.bottom = 700;
-					}
-
-					GetCursorPos(&pt);
-
-					wstring text = L"\n\n鼠标左键按下：";
-					text += KEY_DOWN(VK_LBUTTON) ? L"是" : L"否";
-					text += L"\n光标坐标 " + to_wstring(pt.x) + L"," + to_wstring(pt.y);
-
-					text += L"\n\n此程序使用 RealTimeStylus 触控库（测试触控需进入画笔模式）";
-					text += L"\n其兼容 WinXP 及以上版本的系统，效率较高，支持多点触控";
-
-					if (uRealTimeStylus == 2) text += L"\n\nRealTimeStylus 消息：按下";
-					else if (uRealTimeStylus == 3) text += L"\n\nRealTimeStylus 消息：抬起";
-					else if (uRealTimeStylus == 4) text += L"\n\nRealTimeStylus 消息：移动";
-					else text += L"\n\nRealTimeStylus 消息：就绪";
-
-					text += L"\n触控按下：";
-					text += touchDown ? L"是" : L"否";
-					text += L"\n按下触控点数量：";
-					text += to_wstring(touchNum);
-
-					for (int i = 0; i < touchNum; i++)
-					{
-						std::shared_lock<std::shared_mutex> lock1(PointPosSm);
-						POINT pt = TouchPos[TouchList[i]].pt;
-						lock1.unlock();
-
-						std::shared_lock<std::shared_mutex> lock2(TouchSpeedSm);
-						double speed = TouchSpeed[TouchList[i]];
-						lock2.unlock();
-
-						text += L"\n触控点" + to_wstring(i + 1) + L" pid" + to_wstring(TouchList[i]) + L" 坐标" + to_wstring(pt.x) + L"," + to_wstring(pt.y) + L" 速度" + to_wstring(speed);
-					}
-
-					text += L"\n\nTouchList ";
-					for (const auto& val : TouchList)
-					{
-						text += to_wstring(val) + L" ";
-					}
-					text += L"\nTouchTemp ";
-					for (size_t i = 0; i < TouchTemp.size(); ++i)
-					{
-						text += to_wstring(TouchTemp[i].pid) + L" ";
-					}
-
-					text += L"\n\n撤回库当前大小：" + to_wstring(RecallImage.size());
-					text += L"\n撤回库 recall_image_recond：" + to_wstring(recall_image_recond);
-					text += L"\n撤回库 total_record_pointer：" + to_wstring(total_record_pointer);
-					text += L"\n撤回库 practical_total_record_pointer：" + to_wstring(practical_total_record_pointer);
-					//text += L"\n\n撤回库 reference_record_pointer：" + to_wstring(reference_record_pointer);
-					//text += L"\n撤回库 current_record_pointer：" + to_wstring(current_record_pointer);
-					text += L"\n首次绘制状态：", text += (FirstDraw == true) ? L"是" : L"否";
-
-					text += L"\n\nCOM二进制接口 联动组件 状态：\n";
-					text += ppt_LinkTest;
-					text += L"\nPPT 联动组件状态：";
-					text += ppt_IsPptDependencyLoaded;
-
-					text += L"\n\nPPT 状态：";
-					text += ppt_info_stay.TotalPage != -1 ? L"正在播放" : L"未播放";
-					text += L"\nPPT 总页面数：";
-					text += to_wstring(ppt_info_stay.TotalPage);
-					text += L"\nPPT 当前页序号：";
-					text += to_wstring(ppt_info_stay.CurrentPage);
-
-					graphics.DrawString(text.c_str(), -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-				}
-				if (SettingMainMode == 3)
-				{
-					SetImageColor(test_content, RGBA(0, 0, 0, 0), true);
-					hiex::EasyX_Gdiplus_SolidRoundRect(0, 0, 800, 700, 20, 20, RGBA(255, 255, 255, 255), false, SmoothingModeHighQuality, &test_content);
-
-					hiex::TransparentImage(&test_content, 100, 20, &SettingSign[1]);
-					{
-						Gdiplus::Font20 gp_font(&HarmonyOS_fontFamily, 20, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(0, 0, 0, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 0;
-							dwords_rect.top = 0;
-							dwords_rect.right = 800;
-							dwords_rect.bottom = 30;
-						}
-						graphics.DrawString(L"关闭此页面需再次点击 选项 按钮", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-
-					Gdiplus::Font20 gp_font(&HarmonyOS_fontFamily, 18, FontStyleRegular, UnitPixel);
-					SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(0, 0, 0), false));
-					graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-					{
-						dwords_rect.left = 0;
-						dwords_rect.top = 305;
-						dwords_rect.right = 800;
-						dwords_rect.bottom = 630;
-					}
-
-					wstring text = L"程序版本：" + string_to_wstring(edition_code);
-					text += L"\n程序发布版本：" + string_to_wstring(edition_date) + L" 默认分支";
-					text += L"\n程序构建时间：" + buildTime;
-					text += L"\n用户ID：" + userid;
-
-					if (gif_load)
-					{
-						text += L"\n\n更新通道：EasterEgg 不参与更新";
-						text += L"\n（参与更新需要删除同目录下的彩蛋 GIF 文件）";
-					}
-					else
-					{
-						text += L"\n\n更新通道：LTS";
-						if (!server_code.empty() && server_code != "")
-						{
-							text += L"\n联网版本代号：" + string_to_wstring(server_code);
-							if (server_code == "GWSR") text += L" （广外专用版本）";
-						}
-						if (procedure_updata_error == 1) text += L"\n程序自动更新：已启用";
-						else if (procedure_updata_error == 2) text += L"\n程序自动更新：发生网络错误";
-						else text += L"\n程序自动更新：载入中（等待服务器反馈）";
-					}
-
-					if (!server_feedback.empty() && server_feedback != "") text += L"\n服务器反馈信息：" + string_to_wstring(server_feedback);
-					if (server_updata_error)
-					{
-						text += L"\n\n服务器通信错误：Error" + to_wstring(server_updata_error);
-						if (!server_updata_error_reason.empty()) text += L"\n" + server_updata_error_reason;
-					}
-
-					graphics.DrawString(text.c_str(), -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-
-					{
-						Gdiplus::Font20 gp_font(&HarmonyOS_fontFamily, 18, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(6, 39, 182), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 0;
-							dwords_rect.top = 630;
-							dwords_rect.right = 800;
-							dwords_rect.bottom = 700;
-						}
-						graphics.DrawString(L"软件作者联系方式\nQQ: 2685549821\ne-mail: alan-crl@foxmail.com", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-				}
-
-				//侧栏
-				{
-					Graphics graphics(GetImageHDC(&test_background));
-
-					if (SettingMainMode == 1)
-					{
-						hiex::EasyX_Gdiplus_FillRoundRect(10, 10, 180, 60, 20, 20, RGBA(0, 111, 225, 255), RGBA(230, 230, 230, 255), 3, false, SmoothingModeHighQuality, &test_background);
-
-						ChangeColor(test_icon[1], RGBA(0, 111, 225, 255));
-						hiex::TransparentImage(&test_background, 20, 20, &test_icon[1]);
-
-						Gdiplus::Font20 gp_font(&HarmonyOS_fontFamily, 24, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(0, 111, 225, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 70;
-							dwords_rect.top = 10;
-							dwords_rect.right = 70 + 110;
-							dwords_rect.bottom = 10 + 63;
-						}
-						graphics.DrawString(L"主页", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-					else
-					{
-						hiex::EasyX_Gdiplus_FillRoundRect(10, 10, 180, 60, 20, 20, RGBA(230, 230, 230, 255), RGBA(230, 230, 230, 255), 3, false, SmoothingModeHighQuality, &test_background);
-
-						ChangeColor(test_icon[1], RGBA(130, 130, 130, 255));
-						hiex::TransparentImage(&test_background, 20, 20, &test_icon[1]);
-
-						Gdiplus::Font20 gp_font(&HarmonyOS_fontFamily, 24, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(130, 130, 130, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 70;
-							dwords_rect.top = 10;
-							dwords_rect.right = 70 + 110;
-							dwords_rect.bottom = 10 + 63;
-						}
-						graphics.DrawString(L"主页", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-
-					if (SettingMainMode == 2)
-					{
-						hiex::EasyX_Gdiplus_FillRoundRect(10, 80, 180, 60, 20, 20, RGBA(0, 111, 225, 255), RGBA(230, 230, 230, 255), 3, false, SmoothingModeHighQuality, &test_background);
-
-						ChangeColor(test_icon[2], RGBA(0, 111, 225, 255));
-						hiex::TransparentImage(&test_background, 20, 90, &test_icon[2]);
-
-						Gdiplus::Font20 gp_font(&HarmonyOS_fontFamily, 24, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(0, 111, 225, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 70;
-							dwords_rect.top = 80;
-							dwords_rect.right = 70 + 110;
-							dwords_rect.bottom = 80 + 63;
-						}
-						graphics.DrawString(L"调测", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-					else
-					{
-						hiex::EasyX_Gdiplus_FillRoundRect(10, 80, 180, 60, 20, 20, RGBA(230, 230, 230, 255), RGBA(230, 230, 230, 255), 3, false, SmoothingModeHighQuality, &test_background);
-
-						ChangeColor(test_icon[2], RGBA(130, 130, 130, 255));
-						hiex::TransparentImage(&test_background, 20, 90, &test_icon[2]);
-
-						Gdiplus::Font20 gp_font(&HarmonyOS_fontFamily, 24, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(130, 130, 130, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 70;
-							dwords_rect.top = 80;
-							dwords_rect.right = 70 + 110;
-							dwords_rect.bottom = 80 + 63;
-						}
-						graphics.DrawString(L"调测", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-
-					if (SettingMainMode == 3)
-					{
-						hiex::EasyX_Gdiplus_FillRoundRect(10, 150, 180, 60, 20, 20, RGBA(0, 111, 225, 255), RGBA(230, 230, 230, 255), 3, false, SmoothingModeHighQuality, &test_background);
-
-						ChangeColor(test_icon[3], RGBA(0, 111, 225, 255));
-						hiex::TransparentImage(&test_background, 20, 160, &test_icon[3]);
-
-						Gdiplus::Font20 gp_font(&HarmonyOS_fontFamily, 24, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(0, 111, 225, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 70;
-							dwords_rect.top = 150;
-							dwords_rect.right = 70 + 110;
-							dwords_rect.bottom = 150 + 63;
-						}
-						graphics.DrawString(L"关于", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-					else
-					{
-						hiex::EasyX_Gdiplus_FillRoundRect(10, 150, 180, 60, 20, 20, RGBA(230, 230, 230, 255), RGBA(230, 230, 230, 255), 3, false, SmoothingModeHighQuality, &test_background);
-
-						ChangeColor(test_icon[3], RGBA(130, 130, 130, 255));
-						hiex::TransparentImage(&test_background, 20, 160, &test_icon[3]);
-
-						Gdiplus::Font20 gp_font(&HarmonyOS_fontFamily, 24, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(130, 130, 130, 255), false));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = 70;
-							dwords_rect.top = 150;
-							dwords_rect.right = 70 + 110;
-							dwords_rect.bottom = 150 + 63;
-						}
-						graphics.DrawString(L"关于", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-					}
-
-					hiex::TransparentImage(&test_background, 10, 486, &SettingSign[4]);
-				}
-				//标题栏
-				{
-					SetImageColor(test_title, RGBA(0, 0, 0, 0), true);
-					hiex::EasyX_Gdiplus_SolidRoundRect(5, 5, 1000, 740, 20, 20, RGBA(0, 111, 225, 200), true, SmoothingModeHighQuality, &test_title);
-
-					Graphics graphics(GetImageHDC(&test_title));
-					Gdiplus::Font20 gp_font(&HarmonyOS_fontFamily, 22, FontStyleRegular, UnitPixel);
-					SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(255, 255, 255, 255), false));
-					graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-					{
-						words_rect.left = 5;
-						words_rect.top = 5;
-						words_rect.right = 1005;
-						words_rect.bottom = 50;
-					}
-					graphics.DrawString(L"智绘教 程序选项", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
-				}
-				hiex::TransparentImage(&test_background, 200, 0, &test_content);
-				hiex::TransparentImage(&test_title, 5, 45, &test_background);
-				hiex::EasyX_Gdiplus_RoundRect(5, 5, 1000, 740, 20, 20, RGBA(0, 111, 225, 255), 3, false, SmoothingModeHighQuality, &test_title);
-
-				if (gif_load && SettingMainMode == 1) GIF_dynamic_effect.draw();
-
-				{
-					RECT rect;
-					GetWindowRect(setting_window, &rect);
-
-					POINT ptDst = { rect.left, rect.top };
-					ulwi.pptDst = &ptDst;
-					ulwi.hdcSrc = GetImageHDC(&test_title);
-					UpdateLayeredWindowIndirect(setting_window, &ulwi);
-				}
-
-				if (off_signal || !test.select) break;
-
-				Sleep(20);
-			}
-
-			if (gif_load && GIF_dynamic_effect.IsPlaying())
-			{
-				GIF_dynamic_effect.pause();
-				GIF_dynamic_effect.resetPlayState();
-			}
-		}
-		else if (IsWindowVisible(setting_window)) ShowWindow(setting_window, SW_HIDE);
-	}
-
-	ShowWindow(setting_window, SW_HIDE);
-	thread_status[L"SettingMain"] = false;
-
-	return 0;
-}
-*/
 
 void SettingSeekBar()
 {
@@ -910,6 +239,8 @@ int SettingMain()
 
 	bool StartUp = false, CreateLnk = setlist.CreateLnk;
 	bool BrushRecover = setlist.BrushRecover, RubberRecover = setlist.RubberRecover;
+	int RubberMode = setlist.RubberMode;
+	bool IntelligentDrawing = setlist.IntelligentDrawing, SmoothWriting = setlist.SmoothWriting;
 	int SetSkinMode = setlist.SetSkinMode;
 
 	wstring ppt_LinkTest = LinkTest();
@@ -955,7 +286,9 @@ int SettingMain()
 				tab2,
 				tab3,
 				tab4,
-				tab5
+				tab5,
+				tab6,
+				tab7
 			};
 
 			ImGui::SetNextWindowPos({ 0,0 });//设置窗口位置
@@ -966,7 +299,6 @@ int SettingMain()
 
 			{
 				ImGui::SetCursorPos({ 10.0f,44.0f });
-
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab1 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab1 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 				if (Tab == Tab::tab1) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
@@ -978,52 +310,81 @@ int SettingMain()
 				while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
 
 				ImGui::SetCursorPos({ 10.0f,94.0f });
-
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab2 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab2 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 				if (Tab == Tab::tab2) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 				if (Tab == Tab::tab2) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-				if (ImGui::Button(u8"常规", { 100.0f,40.0f }))
+				if (ImGui::Button(u8"通用", { 100.0f,40.0f }))
 				{
 					Tab = Tab::tab2;
 				}
 				while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
 
 				ImGui::SetCursorPos({ 10.0f,144.0f });
-
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab3 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab3 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 				if (Tab == Tab::tab3) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 				if (Tab == Tab::tab3) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-				if (ImGui::Button(u8"调测", { 100.0f,40.0f }))
+				if (ImGui::Button(u8"绘制", { 100.0f,40.0f }))
 				{
 					Tab = Tab::tab3;
 				}
 				while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
 
 				ImGui::SetCursorPos({ 10.0f,194.0f });
-
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab4 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab4 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 				if (Tab == Tab::tab4) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 				if (Tab == Tab::tab4) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-				if (ImGui::Button(u8"关于", { 100.0f,40.0f }))
+				if (ImGui::Button(u8"快捷键", { 100.0f,40.0f }))
 				{
 					Tab = Tab::tab4;
 				}
 				while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
 
 				ImGui::SetCursorPos({ 10.0f,244.0f });
-
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab5 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab5 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 				if (Tab == Tab::tab5) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 				if (Tab == Tab::tab5) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-				if (ImGui::Button(u8"作者留言", { 100.0f,40.0f }))
+				if (ImGui::Button(u8"程序调测", { 100.0f,40.0f }))
 				{
 					Tab = Tab::tab5;
 				}
 				while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
+
+				ImGui::SetCursorPos({ 10.0f,294.0f });
+				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab6 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab6 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+				if (Tab == Tab::tab6) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+				if (Tab == Tab::tab6) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+				if (ImGui::Button(u8"作者留言", { 100.0f,40.0f }))
+				{
+					Tab = Tab::tab6;
+				}
+				while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
+
+				ImGui::SetCursorPos({ 10.0f,344.0f });
+				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab7 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab7 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+				if (Tab == Tab::tab7) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+				if (Tab == Tab::tab7) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+				if (ImGui::Button(u8"关于", { 100.0f,40.0f }))
+				{
+					Tab = Tab::tab7;
+				}
+				while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
+
+				ImGui::SetCursorPos({ 10.0f,44.0f + 616.0f - 30.0f });
+				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+				if (ImGui::Button(u8"关闭程序", { 100.0f,30.0f }))
+				{
+					test.select = false;
+					off_signal = true;
+				}
 			}
 
 			ImGui::SetCursorPos({ 120.0f,44.0f });
@@ -1034,7 +395,49 @@ int SettingMain()
 				// 主页
 				Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 
-				ImGui::SetCursorPos({ 35.0f,ImGui::GetCursorPosY() + 40.0f });
+				{
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(235 / 255.0f, 10 / 255.0f, 20 / 255.0f, 1.0f));
+
+					ImGui::SetCursorPosY(10.0f);
+					int left_x = 10, right_x = 760;
+
+					std::vector<std::string> lines;
+					std::wstring line, temp;
+					std::wstringstream ss(L"推荐使用 1080P 分辨率，高于此分辨率可能会引发问题并影响体验\n高分辨率屏幕的适配将与 UI3.0 在稍后同步进行开发");
+
+					while (getline(ss, temp, L'\n'))
+					{
+						bool flag = false;
+						line = L"";
+
+						for (wchar_t ch : temp)
+						{
+							flag = false;
+
+							float text_width = ImGui::CalcTextSize(convert_to_utf8(wstring_to_string(line + ch)).c_str()).x;
+							if (text_width > (right_x - left_x))
+							{
+								lines.emplace_back(convert_to_utf8(wstring_to_string(line)));
+								line = L"", flag = true;
+							}
+
+							line += ch;
+						}
+
+						if (!flag) lines.emplace_back(convert_to_utf8(wstring_to_string(line)));
+					}
+
+					for (const auto& temp : lines)
+					{
+						float text_width = ImGui::CalcTextSize(temp.c_str()).x;
+						float text_indentation = ((right_x - left_x) - text_width) * 0.5f;
+						if (text_indentation < 0)  text_indentation = 0;
+						ImGui::SetCursorPosX(left_x + text_indentation);
+						ImGui::TextUnformatted(temp.c_str());
+					}
+				}
+
+				ImGui::SetCursorPos({ 35.0f,60.0f });
 				ImGui::Image((void*)TextureSettingSign[2], ImVec2((float)SettingSign[2].getwidth(), (float)SettingSign[2].getheight()));
 
 				/*
@@ -1104,6 +507,8 @@ int SettingMain()
 				}*/
 
 				{
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+
 					ImGui::SetCursorPosY(616.0f - 168.0f);
 					std::wstring author = L"软件作者联系方式\nQQ: 2685549821\nEmail: alan-crl@foxmail.com";
 					int left_x = 10, right_x = 570;
@@ -1392,13 +797,7 @@ int SettingMain()
 							setlist.SetSkinMode = SetSkinMode;
 							WriteSetting();
 
-							if (SetSkinMode == 0)
-							{
-								wstring time = CurrentDate();
-
-								if (L"2024-01-22" <= time && time <= L"2024-02-23") setlist.SkinMode = 3;
-								else setlist.SkinMode = 1;
-							}
+							if (SetSkinMode == 0) setlist.SkinMode = 1;
 							else setlist.SkinMode = SetSkinMode;
 						}
 					}
@@ -1456,8 +855,146 @@ int SettingMain()
 				}
 
 				break;
+
 			case Tab::tab3:
-				//调测
+				// 绘制
+				ImGui::SetCursorPosY(20.0f);
+				{
+					ImGui::SetCursorPosX(20.0f);
+					ImGui::BeginChild(u8"智能绘图调整", { 730.0f,90.0f }, true, ImGuiWindowFlags_NoScrollbar);
+
+					{
+						ImGui::SetCursorPosY(10.0f);
+
+						Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+						CenteredText(u8" 智能绘图", 4.0f);
+
+						Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
+						ImGui::SameLine(); HelpMarker(u8"抬笔时可以将与直线相似的墨迹转换成直线\n还可以直线吸附和矩形吸附", ImGui::GetStyleColorVec4(ImGuiCol_Text));
+
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+						ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
+						ImGui::Toggle(u8"##智能绘图", &IntelligentDrawing, config);
+
+						if (setlist.IntelligentDrawing != IntelligentDrawing)
+						{
+							setlist.IntelligentDrawing = IntelligentDrawing;
+							WriteSetting();
+						}
+					}
+					{
+						ImGui::SetCursorPosY(45.0f);
+
+						Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+						CenteredText(u8" 平滑墨迹", 4.0f);
+
+						Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
+						ImGui::SameLine(); HelpMarker(u8"抬笔时自动平滑墨迹", ImGui::GetStyleColorVec4(ImGuiCol_Text));
+
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+						ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
+						ImGui::Toggle(u8"##平滑墨迹", &SmoothWriting, config);
+
+						if (setlist.SmoothWriting != SmoothWriting)
+						{
+							setlist.SmoothWriting = SmoothWriting;
+							WriteSetting();
+						}
+					}
+
+					ImGui::EndChild();
+				}
+				{
+					ImGui::SetCursorPosX(20.0f);
+					ImGui::BeginChild(u8"橡皮调整", { 730.0f,50.0f }, true, ImGuiWindowFlags_NoScrollbar);
+
+					{
+						ImGui::SetCursorPosY(8.0f);
+
+						Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+						CenteredText(u8" 橡皮粗细灵敏度", 4.0f);
+
+						ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 130.0f);
+						static const char* items[] = { u8"  触摸设备", u8"  PC 鼠标" };
+						ImGui::SetNextItemWidth(120);
+
+						Font->Scale = 0.82f, PushFontNum++, ImGui::PushFont(Font);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+						ImGui::Combo(u8"##橡皮粗细灵敏度", &RubberMode, items, IM_ARRAYSIZE(items));
+
+						if (setlist.RubberMode != RubberMode)
+						{
+							setlist.RubberMode = RubberMode;
+							WriteSetting();
+						}
+					}
+
+					ImGui::EndChild();
+				}
+
+				break;
+
+			case Tab::tab4:
+				//快捷键
+				Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
+				{
+					ImGui::SetCursorPosY(10.0f);
+
+					int left_x = 10, right_x = 760;
+
+					std::vector<std::string> lines;
+					std::wstring line, temp;
+					std::wstringstream ss(L"快捷键正在测试，敬请期待");
+
+					while (getline(ss, temp, L'\n'))
+					{
+						bool flag = false;
+						line = L"";
+
+						for (wchar_t ch : temp)
+						{
+							flag = false;
+
+							float text_width = ImGui::CalcTextSize(convert_to_utf8(wstring_to_string(line + ch)).c_str()).x;
+							if (text_width > (right_x - left_x))
+							{
+								lines.emplace_back(convert_to_utf8(wstring_to_string(line)));
+								line = L"", flag = true;
+							}
+
+							line += ch;
+						}
+
+						if (!flag) lines.emplace_back(convert_to_utf8(wstring_to_string(line)));
+					}
+
+					for (const auto& temp : lines)
+					{
+						float text_width = ImGui::CalcTextSize(temp.c_str()).x;
+						float text_indentation = ((right_x - left_x) - text_width) * 0.5f;
+						if (text_indentation < 0)  text_indentation = 0;
+						ImGui::SetCursorPosX(left_x + text_indentation);
+						ImGui::TextUnformatted(temp.c_str());
+					}
+				}
+				break;
+
+			case Tab::tab5:
+				//程序调测
 				Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 				{
 					ImGui::SetCursorPosY(10.0f);
@@ -1469,13 +1006,10 @@ int SettingMain()
 						text += KEY_DOWN(VK_LBUTTON) ? L"是" : L"否";
 						text += L"\n光标坐标 " + to_wstring(pt.x) + L"," + to_wstring(pt.y);
 
-						text += L"\n\n此程序使用 RealTimeStylus 触控库（测试触控需进入画笔模式）";
-						text += L"\n其兼容 WinXP 及以上版本的系统，效率较高，支持多点触控";
-
-						if (uRealTimeStylus == 2) text += L"\n\nRealTimeStylus 消息：按下";
-						else if (uRealTimeStylus == 3) text += L"\n\nRealTimeStylus 消息：抬起";
-						else if (uRealTimeStylus == 4) text += L"\n\nRealTimeStylus 消息：移动";
-						else text += L"\n\nRealTimeStylus 消息：就绪";
+						if (uRealTimeStylus == 2) text += L"\n\n触控库消息：按下";
+						else if (uRealTimeStylus == 3) text += L"\n\n触控库消息：抬起";
+						else if (uRealTimeStylus == 4) text += L"\n\n触控库消息：移动";
+						else text += L"\n\n触控库消息：就绪";
 
 						text += L"\n触控按下：";
 						text += touchDown ? L"是" : L"否";
@@ -1566,27 +1100,19 @@ int SettingMain()
 				}
 				break;
 
-			case Tab::tab4:
-				// 关于
-				ImGui::SetCursorPos({ 35.0f,ImGui::GetCursorPosY() + 40.0f });
-				ImGui::Image((void*)TextureSettingSign[1], ImVec2((float)SettingSign[1].getwidth(), (float)SettingSign[1].getheight()));
-
+			case Tab::tab6:
+				// 作者留言
 				Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 				{
-					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f);
+					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
 					wstring text;
 					{
-						text = L"程序版本代号 " + string_to_wstring(edition_code);
-						text += L"\n程序发布版本 " + string_to_wstring(edition_date);
-						text += L"\n程序构建时间 " + buildTime;
-						text += L"\n用户ID " + userid;
-
-						text += L"\n\n更新通道为正式版本通道";
-						if (procedure_updata_error == 1) text += L"\n程序自动更新已启用";
-						else if (procedure_updata_error == 2) text += L"\n程序自动更新发生网络错误";
-						else text += L"\n程序自动更新载入中（等待服务器反馈）";
-
-						text += L"\n在此版本中，您的所有数据都将在本地进行处理";
+						text = L"作者留言\n\n";
+						text += L"首先非常感谢您使用智绘教，也感谢您对智绘教的支持~\n\n";
+						text += L"智绘教是 GPLv3 开源免费软件，欢迎大家加入智绘教的开发\n";
+						text += L"目前急需解决的是程序的内存占用问题，智绘教占用的内存实在是太大了！\n下个版本估计就会有所改善\n\n";
+						text += L"近期我发现智绘教的用户量大幅增加，我非常感谢各位对智绘教的支持\n也感谢许多大佬和站长对智绘教的推广与肯定\n这两天我也得到了许多用户反馈，这个版本增加了对WPS的联动支持，同时还解决了一些小问题\n\n";
+						text += L"我会尽我所能开发智绘教，但是更新的速度和新功能的实现速度肯定比不上商业软件\n正处开学，时间紧迫，先写这么多";
 					}
 
 					int left_x = 10, right_x = 760;
@@ -1628,19 +1154,28 @@ int SettingMain()
 				}
 
 				break;
-			case Tab::tab5:
-				// 作者留言
+
+			case Tab::tab7:
+				// 关于
+				ImGui::SetCursorPos({ 35.0f,ImGui::GetCursorPosY() + 40.0f });
+				ImGui::Image((void*)TextureSettingSign[1], ImVec2((float)SettingSign[1].getwidth(), (float)SettingSign[1].getheight()));
+
 				Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 				{
-					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
+					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f);
 					wstring text;
 					{
-						text = L"作者留言\n\n";
-						text += L"首先非常感谢您使用智绘教，也感谢您对智绘教的支持~\n\n";
-						text += L"智绘教是 GPLv3 开源免费软件，欢迎大家加入智绘教的开发\n";
-						text += L"目前急需解决的是程序的内存占用问题，智绘教占用的内存是在太大了！\n下个版本估计就会有所改善\n\n";
-						text += L"近期我发现智绘教的用户量大幅增加，我非常感谢各位对智绘教的支持\n也感谢许多大佬和站长对智绘教的推广与肯定\n这两天我也得到了许多用户反馈，这个版本就是专门修复CPU占用率高，同时还解决了一些小问题\n\n";
-						text += L"我会尽我所能开发智绘教，但是更新的速度和新功能的实现速度肯定比不上商业软件\n正处开学，时间紧迫，先写这么";
+						text = L"程序版本代号 " + string_to_wstring(edition_code);
+						text += L"\n程序发布版本 " + string_to_wstring(edition_date);
+						text += L"\n程序构建时间 " + buildTime;
+						text += L"\n用户ID " + userid;
+
+						text += L"\n\n更新通道为正式版本通道";
+						if (procedure_updata_error == 1) text += L"\n程序自动更新已启用";
+						else if (procedure_updata_error == 2) text += L"\n程序自动更新发生网络错误";
+						else text += L"\n程序自动更新载入中（等待服务器反馈）";
+
+						text += L"\n在此版本中，您的所有数据都将在本地进行处理";
 					}
 
 					int left_x = 10, right_x = 760;
@@ -1755,14 +1290,12 @@ int SettingMain()
 
 	ImGui_ImplDX11_Shutdown();
 	ImGui_ImplWin32_Shutdown();
-	//ImGui::DestroyContext(); //不知道为啥加了就蹦了
+	// ImGui::DestroyContext(); //不知道为啥加了就蹦了
 
 	CleanupDeviceD3D();
-	::DestroyWindow(setting_window);
 	::UnregisterClass(ImGuiWc.lpszClassName, ImGuiWc.hInstance);
 
 	thread_status[L"SettingMain"] = false;
-
 	return 0;
 }
 
@@ -1804,6 +1337,9 @@ void FirstSetting(bool info)
 	root["CreateLnk"] = Json::Value(false);
 	root["BrushRecover"] = Json::Value(true);
 	root["RubberRecover"] = Json::Value(false);
+	root["RubberMode"] = Json::Value(0);
+	root["IntelligentDrawing"] = Json::Value(true);
+	root["SmoothWriting"] = Json::Value(true);
 	root["SetSkinMode"] = Json::Value(0);
 
 	ofstream writejson;
@@ -1826,18 +1362,15 @@ bool ReadSetting(bool first)
 		if (root.isMember("CreateLnk")) setlist.CreateLnk = root["CreateLnk"].asBool();
 		if (root.isMember("BrushRecover")) setlist.BrushRecover = root["BrushRecover"].asBool();
 		if (root.isMember("RubberRecover")) setlist.RubberRecover = root["RubberRecover"].asBool();
+		if (root.isMember("RubberMode")) setlist.RubberMode = root["RubberMode"].asBool();
+		if (root.isMember("IntelligentDrawing")) setlist.IntelligentDrawing = root["IntelligentDrawing"].asBool();
+		if (root.isMember("SmoothWriting")) setlist.SmoothWriting = root["SmoothWriting"].asBool();
 		if (root.isMember("SetSkinMode")) setlist.SetSkinMode = root["SetSkinMode"].asInt();
 
 		//预处理
 		if (first)
 		{
-			wstring time = CurrentDate();
-
-			if (setlist.SetSkinMode == 0)
-			{
-				if (L"2024-01-22" <= time && time <= L"2024-02-23") setlist.SkinMode = 3;
-				else setlist.SkinMode = 1;
-			}
+			if (setlist.SetSkinMode == 0) setlist.SkinMode = 1;
 			else setlist.SkinMode = setlist.SetSkinMode;
 		}
 	}
@@ -1855,6 +1388,9 @@ bool WriteSetting()
 	root["CreateLnk"] = Json::Value(setlist.CreateLnk);
 	root["BrushRecover"] = Json::Value(setlist.BrushRecover);
 	root["RubberRecover"] = Json::Value(setlist.RubberRecover);
+	root["RubberMode"] = Json::Value(setlist.RubberMode);
+	root["IntelligentDrawing"] = Json::Value(setlist.IntelligentDrawing);
+	root["SmoothWriting"] = Json::Value(setlist.SmoothWriting);
 	root["SetSkinMode"] = Json::Value(setlist.SetSkinMode);
 
 	ofstream writejson;
@@ -1985,4 +1521,25 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		return 0;
 	}
 	return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+}
+
+// 示例
+static void HelpMarker(const char* desc, ImVec4 Color)
+{
+	ImGui::TextColored(Color, u8"(?)");
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::BeginTooltip();
+		ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+		ImGui::TextUnformatted(desc);
+		ImGui::PopTextWrapPos();
+		ImGui::EndTooltip();
+	}
+}
+static void CenteredText(const char* desc, float displacement)
+{
+	float temp = ImGui::GetCursorPosY();
+	ImGui::SetCursorPosY(temp + displacement);
+	ImGui::TextUnformatted(desc);
+	ImGui::SetCursorPosY(temp);
 }

@@ -42,7 +42,7 @@ using System;
 using System.Runtime.InteropServices;
 
 using Microsoft.Office.Core;
-using PPT = Microsoft.Office.Interop.PowerPoint;
+using Microsoft.Office.Interop.PowerPoint;
 
 namespace PptCOM
 {
@@ -61,6 +61,10 @@ namespace PptCOM
 
         int totalSlideIndex();
 
+        int NextSlideShow(int check);
+
+        int PreviousSlideShow();
+
         IntPtr GetPptHwnd();
 
         void EndSlideShow();
@@ -71,20 +75,24 @@ namespace PptCOM
     [Guid("C44270BE-9A52-400F-AD7C-ED42050A77D8")]
     public class PptCOMServer : IPptCOMServer
     {
+        public static Microsoft.Office.Interop.PowerPoint.Application pptApp;
+        public static Microsoft.Office.Interop.PowerPoint.Presentation pptDoc;
+        public static Microsoft.Office.Interop.PowerPoint.SlideShowWindow pptWindow;
+
         public PptCOMServer()
         {
         }
 
         public string LinkTest()
         {
-            return "C# COM接口 连接成功，版本 20240123.01";
+            return "C# COM接口 连接成功，版本 20240226.02";
         }
 
         public string IsPptDependencyLoaded()
         {
             try
             {
-                PPT.Application pptApp = new PPT.Application();
+                pptApp = (Microsoft.Office.Interop.PowerPoint.Application)Marshal.GetActiveObject("PowerPoint.Application");
                 return "组件正常";
             }
             catch (Exception ex)
@@ -100,16 +108,13 @@ namespace PptCOM
             try
             {
                 // 获取正在播放的PPT应用程序对象
-                PPT.Application pptApp = new PPT.Application();
+                pptApp = (Microsoft.Office.Interop.PowerPoint.Application)Marshal.GetActiveObject("PowerPoint.Application");
                 // 获取当前播放的PPT文档对象
-                PPT.Presentation pptDoc = pptApp.ActivePresentation;
+                pptDoc = pptApp.ActivePresentation;
 
                 // 获取正在播放的PPT的名称
-                slidesName = pptDoc.FullName;
-
-                // 释放资源
-                pptDoc = null;
-                pptApp = null;
+                slidesName += pptDoc.FullName + "\n";
+                slidesName += pptApp.Caption;
             }
             catch
             {
@@ -125,22 +130,8 @@ namespace PptCOM
 
             try
             {
-                // 获取正在播放的PPT应用程序对象
-                PPT.Application pptApp = new PPT.Application();
-                // 获取当前播放的PPT文档对象
-                PPT.Presentation pptDoc = pptApp.ActivePresentation;
-                // 获取当前播放的PPT幻灯片窗口对象
-                PPT.SlideShowWindow pptWindow = pptDoc.SlideShowWindow;
-                // 获取当前播放的幻灯片页对象
-                PPT.Slide pptSlide = pptWindow.View.Slide;
                 // 获取当前播放的幻灯片页索引
-                currentSlides = pptSlide.SlideIndex;
-
-                // 释放资源
-                pptSlide = null;
-                pptWindow = null;
-                pptDoc = null;
-                pptApp = null;
+                currentSlides = pptWindow.View.Slide.SlideIndex;
             }
             catch
             {
@@ -157,25 +148,52 @@ namespace PptCOM
             try
             {
                 // 获取正在播放的PPT应用程序对象
-                PPT.Application pptApp = new PPT.Application();
+                pptApp = (Microsoft.Office.Interop.PowerPoint.Application)Marshal.GetActiveObject("PowerPoint.Application");
                 // 获取当前播放的PPT文档对象
-                PPT.Presentation pptDoc = pptApp.ActivePresentation;
-                // 获取当前播放的PPT幻灯片窗口对象
-                PPT.SlideShowWindow pptWindow = pptDoc.SlideShowWindow;
+                pptDoc = pptApp.ActivePresentation;
+                // 获取当前播放的PPT幻灯片窗口对象（保证当前处于放映状态）
+                pptWindow = pptDoc.SlideShowWindow;
+
                 // 获取当前播放的幻灯片总页数
                 totalSlides = pptDoc.Slides.Count;
-
-                // 释放资源
-                pptWindow = null;
-                pptDoc = null;
-                pptApp = null;
             }
             catch
             {
-                // 获取PPT信息失败
             }
 
             return totalSlides;
+        }
+
+        public int NextSlideShow(int check)
+        {
+            try
+            {
+                int temp_SlideIndex = pptWindow.View.Slide.SlideIndex;
+                if (temp_SlideIndex != check && check != -1) return pptWindow.View.Slide.SlideIndex;
+
+                // 下一页
+                pptWindow.View.Next();
+                // 获取当前播放的幻灯片页索引
+                return pptWindow.View.Slide.SlideIndex;
+            }
+            catch
+            {
+            }
+            return -1;
+        }
+
+        public int PreviousSlideShow()
+        {
+            try
+            {   // 上一页
+                pptWindow.View.Previous();
+                // 获取当前播放的幻灯片页索引
+                return pptWindow.View.Slide.SlideIndex;
+            }
+            catch
+            {
+            }
+            return -1;
         }
 
         public IntPtr GetPptHwnd()
@@ -184,19 +202,14 @@ namespace PptCOM
             try
             {
                 // 获取正在播放的PPT应用程序对象
-                PPT.Application pptApp = new PPT.Application();
+                pptApp = (Microsoft.Office.Interop.PowerPoint.Application)Marshal.GetActiveObject("PowerPoint.Application");
                 // 获取当前播放的PPT文档对象
-                PPT.Presentation pptDoc = pptApp.ActivePresentation;
+                pptDoc = pptApp.ActivePresentation;
                 // 获取当前播放的PPT幻灯片窗口对象
-                PPT.SlideShowWindow pptWindow = pptDoc.SlideShowWindow;
+                pptWindow = pptDoc.SlideShowWindow;
 
                 // 获取PPT窗口句柄
                 hWnd = new IntPtr(pptWindow.HWND);
-
-                // 释放资源
-                pptWindow = null;
-                pptDoc = null;
-                pptApp = null;
             }
             catch
             {
@@ -209,20 +222,8 @@ namespace PptCOM
         {
             try
             {
-                // 获取正在播放的PPT应用程序对象
-                PPT.Application pptApp = new PPT.Application();
-                // 获取当前播放的PPT文档对象
-                PPT.Presentation pptDoc = pptApp.ActivePresentation;
-                // 获取当前播放的PPT幻灯片窗口对象
-                PPT.SlideShowWindow pptWindow = pptDoc.SlideShowWindow;
-
                 // 结束放映
                 pptWindow.View.Exit();
-
-                // 释放资源
-                pptWindow = null;
-                pptDoc = null;
-                pptApp = null;
             }
             catch
             {

@@ -1,11 +1,6 @@
 #pragma once
 #include "IdtMain.h"
 
-#include "IdtMagnification.h"
-#include "IdtRts.h"
-#include "IdtText.h"
-#include "IdtWindow.h"
-
 extern IMAGE ppt_icon[5];
 extern bool SeewoCamera; //希沃视频展台是否开启
 
@@ -32,6 +27,7 @@ struct ppt_info_stayStruct
 };
 extern ppt_info_stayStruct ppt_info_stay;
 
+extern shared_mutex PPTManipulatedSm;
 extern std::chrono::high_resolution_clock::time_point PPTManipulated;
 
 wstring LinkTest();
@@ -40,9 +36,8 @@ HWND GetPptShow();
 wstring GetPptTitle();
 bool EndPptShow();
 
-//ppt 按键监听
-LRESULT CALLBACK PptHookCallback(int nCode, WPARAM wParam, LPARAM lParam);
-void PptInstallHook();
+int NextPptSlides(int check);
+int PreviousPptSlides();
 
 //ppt 控件
 void DrawControlWindow();

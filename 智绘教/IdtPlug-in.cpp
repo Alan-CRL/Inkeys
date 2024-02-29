@@ -1,5 +1,11 @@
 #include "IdtPlug-in.h"
+
+#include "IdtDraw.h"
 #include "IdtFloating.h"
+#include "IdtMagnification.h"
+#include "IdtRts.h"
+#include "IdtText.h"
+#include "IdtWindow.h"
 
 ppt_infoStruct ppt_info = { -1, -1 };
 ppt_imgStruct ppt_img = { false };
@@ -118,56 +124,31 @@ bool EndPptShow()
 	return false;
 }
 
-//ppt 按键监听
-LRESULT CALLBACK PptHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
+int NextPptSlides(int check)
 {
-	if (nCode >= 0) {
-		switch (wParam) {
-		case WM_KEYDOWN:
-		case WM_SYSKEYDOWN: {
-			KBDLLHOOKSTRUCT* kbdStruct = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
-			// 检查按下的键
-			switch (kbdStruct->vkCode) {
-			case VK_NEXT:   // PgDn
-			case VK_PRIOR:  // PgUp
-			case VK_SPACE:  // 空格键
-			case VK_LEFT:   // 左箭头
-			case VK_RIGHT:  // 右箭头
-			case VK_UP:     // 上箭头
-			case VK_DOWN:   // 下箭头
-				std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-				PPTManipulated = std::chrono::high_resolution_clock::now();
-				lock1.unlock();
-				break;
-			}
-			break;
-		}
-		case WM_LBUTTONDOWN: // 鼠标左键按下
-		case WM_MOUSEWHEEL:  // 鼠标滚轮滚动
-			std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-			PPTManipulated = std::chrono::high_resolution_clock::now();
-			lock1.unlock();
-			break;
-		}
-	}
-	// 继续传递事件给下一个钩子或目标窗口
-	return CallNextHookEx(NULL, nCode, wParam, lParam);
-}
-void PptInstallHook()
-{
-	HHOOK hook = SetWindowsHookEx(WH_KEYBOARD_LL, PptHookCallback, GetModuleHandle(NULL), 0);
-	if (hook == NULL) return;
-
-	// 消息循环
-	MSG msg;
-	while (GetMessage(&msg, NULL, 0, 0) != 0)
+	IPptCOMServerPtr pto;
+	try
 	{
-		TranslateMessage(&msg);
-		DispatchMessage(&msg);
+		_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
+		return pto->NextSlideShow(check);
 	}
-
-	// 卸载钩子
-	UnhookWindowsHookEx(hook);
+	catch (_com_error)
+	{
+	}
+	return -1;
+}
+int PreviousPptSlides()
+{
+	IPptCOMServerPtr pto;
+	try
+	{
+		_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
+		return pto->PreviousSlideShow();
+	}
+	catch (_com_error)
+	{
+	}
+	return -1;
 }
 
 //ppt 控件
@@ -311,7 +292,13 @@ void DrawControlWindow()
 			{
 				ShowWindow(ppt_window, SW_SHOWNOACTIVATE);
 				ppt_show = GetPptShow();
-				ppt_title = GetPptTitle();
+
+				std::wstringstream ss(GetPptTitle());
+				getline(ss, ppt_title);
+				getline(ss, ppt_software);
+
+				if (ppt_software.find(L"WPS") != ppt_software.npos) ppt_software = L"WPS";
+				else ppt_software = L"PowerPoint";
 
 				if (!ppt_title_recond[ppt_title]) FreezePPT = true;
 			}
@@ -325,7 +312,7 @@ void DrawControlWindow()
 				ppt_img.image.clear();
 
 				ShowWindow(ppt_window, SW_HIDE);
-				ppt_show = NULL;
+				ppt_show = NULL, ppt_software = L"";
 
 				FreezePPT = false;
 			}
@@ -338,9 +325,6 @@ void DrawControlWindow()
 }
 void ControlManipulation()
 {
-	std::thread hookThread(PptInstallHook);
-	hookThread.detach();
-
 	ExMessage m;
 	while (!off_signal)
 	{
@@ -353,6 +337,33 @@ void ControlManipulation()
 				//上一页
 				if (IsInRect(m.x, m.y, { 5, GetSystemMetrics(SM_CYSCREEN) - 60 + 5, 5 + 50, GetSystemMetrics(SM_CYSCREEN) - 60 + 5 + 50 }))
 				{
+					if (m.lbutton)
+					{
+						SetForegroundWindow(ppt_show);
+
+						std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
+						PPTManipulated = std::chrono::high_resolution_clock::now();
+						lock1.unlock();
+						ppt_info_stay.CurrentPage = PreviousPptSlides();
+
+						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
+						while (1)
+						{
+							if (!KEY_DOWN(VK_LBUTTON)) break;
+							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
+							{
+								std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
+								PPTManipulated = std::chrono::high_resolution_clock::now();
+								lock1.unlock();
+
+								ppt_info_stay.CurrentPage = PreviousPptSlides();
+							}
+
+							Sleep(15);
+						}
+					}
+
+					/*
 					if (m.lbutton)
 					{
 						int lx = m.x, ly = m.y;
@@ -368,8 +379,7 @@ void ControlManipulation()
 									lock1.unlock();
 
 									SetForegroundWindow(ppt_show);
-									keybd_event(VK_PRIOR, 0, 0, 0);
-									keybd_event(VK_PRIOR, 0, KEYEVENTF_KEYUP, 0);
+									ppt_info_stay.CurrentPage = PreviousPptSlides();
 
 									break;
 								}
@@ -381,13 +391,81 @@ void ControlManipulation()
 								break;
 							}
 						}
-						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
-					}
+					}*/
 				}
 
 				//下一页
 				if (IsInRect(m.x, m.y, { 130 + 5, GetSystemMetrics(SM_CYSCREEN) - 60 + 5, 130 + 5 + 50, GetSystemMetrics(SM_CYSCREEN) - 60 + 5 + 50 }))
 				{
+					if (m.lbutton)
+					{
+						int temp_currentpage = ppt_info_stay.CurrentPage;
+						if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
+						{
+							if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+							{
+								std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
+								PPTManipulated = std::chrono::high_resolution_clock::now();
+								lock1.unlock();
+								EndPptShow();
+
+								brush.select = false;
+								rubber.select = false;
+								penetrate.select = false;
+								choose.select = true;
+							}
+						}
+						else if (temp_currentpage == -1)
+						{
+							std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
+							PPTManipulated = std::chrono::high_resolution_clock::now();
+							lock1.unlock();
+							EndPptShow();
+						}
+						else
+						{
+							SetForegroundWindow(ppt_show);
+
+							std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
+							PPTManipulated = std::chrono::high_resolution_clock::now();
+							lock1.unlock();
+							ppt_info_stay.CurrentPage = NextPptSlides(temp_currentpage);
+
+							std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
+							while (1)
+							{
+								if (!KEY_DOWN(VK_LBUTTON)) break;
+
+								if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
+								{
+									temp_currentpage = ppt_info_stay.CurrentPage;
+									if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
+									{
+										if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+										{
+											EndPptShow();
+
+											brush.select = false;
+											rubber.select = false;
+											penetrate.select = false;
+											choose.select = true;
+										}
+										break;
+									}
+									else if (temp_currentpage == -1) break;
+
+									std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
+									PPTManipulated = std::chrono::high_resolution_clock::now();
+									lock1.unlock();
+									ppt_info_stay.CurrentPage = NextPptSlides(temp_currentpage);
+								}
+
+								Sleep(15);
+							}
+						}
+					}
+
+					/*
 					if (m.lbutton)
 					{
 						int lx = m.x, ly = m.y;
@@ -398,7 +476,7 @@ void ControlManipulation()
 							{
 								if (!m.lbutton)
 								{
-									if (ppt_info.currentSlides == -1 && choose.select == false && penetrate.select == false)
+									if (ppt_info_stay.CurrentPage == -1 && choose.select == false && penetrate.select == false)
 									{
 										if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) != 1) break;
 
@@ -413,8 +491,7 @@ void ControlManipulation()
 									lock1.unlock();
 
 									SetForegroundWindow(ppt_show);
-									keybd_event(VK_NEXT, 0, 0, 0);
-									keybd_event(VK_NEXT, 0, KEYEVENTF_KEYUP, 0);
+									ppt_info_stay.CurrentPage = NextPptSlides();
 
 									break;
 								}
@@ -427,7 +504,7 @@ void ControlManipulation()
 							}
 						}
 						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
-					}
+					}*/
 				}
 			}
 			//中间
@@ -482,33 +559,28 @@ void ControlManipulation()
 				{
 					if (m.lbutton)
 					{
-						int lx = m.x, ly = m.y;
+						SetForegroundWindow(ppt_show);
+
+						std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
+						PPTManipulated = std::chrono::high_resolution_clock::now();
+						lock1.unlock();
+						ppt_info_stay.CurrentPage = PreviousPptSlides();
+
+						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 						while (1)
 						{
-							ExMessage m = hiex::getmessage_win32(EM_MOUSE, ppt_window);
-							if (IsInRect(m.x, m.y, { GetSystemMetrics(SM_CXSCREEN) - 185, GetSystemMetrics(SM_CYSCREEN) - 60 + 5, GetSystemMetrics(SM_CXSCREEN) - 185 + 50, GetSystemMetrics(SM_CYSCREEN) - 60 + 5 + 50 }))
+							if (!KEY_DOWN(VK_LBUTTON)) break;
+							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
-								if (!m.lbutton)
-								{
-									std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-									PPTManipulated = std::chrono::high_resolution_clock::now();
-									lock1.unlock();
+								std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
+								PPTManipulated = std::chrono::high_resolution_clock::now();
+								lock1.unlock();
 
-									SetForegroundWindow(ppt_show);
-									keybd_event(VK_PRIOR, 0, 0, 0);
-									keybd_event(VK_PRIOR, 0, KEYEVENTF_KEYUP, 0);
-
-									break;
-								}
+								ppt_info_stay.CurrentPage = PreviousPptSlides();
 							}
-							else
-							{
-								hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 
-								break;
-							}
+							Sleep(15);
 						}
-						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 					}
 				}
 
@@ -517,46 +589,75 @@ void ControlManipulation()
 				{
 					if (m.lbutton)
 					{
-						int lx = m.x, ly = m.y;
-						while (1)
+						int temp_currentpage = ppt_info_stay.CurrentPage;
+						if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
 						{
-							ExMessage m = hiex::getmessage_win32(EM_MOUSE, ppt_window);
-							if (IsInRect(m.x, m.y, { GetSystemMetrics(SM_CXSCREEN) - 55, GetSystemMetrics(SM_CYSCREEN) - 60 + 5, GetSystemMetrics(SM_CXSCREEN) - 55 + 50, GetSystemMetrics(SM_CYSCREEN) - 60 + 5 + 50 }))
+							if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
 							{
-								if (!m.lbutton)
-								{
-									if (ppt_info.currentSlides == -1 && choose.select == false && penetrate.select == false)
-									{
-										if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) != 1) break;
+								std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
+								PPTManipulated = std::chrono::high_resolution_clock::now();
+								lock1.unlock();
+								EndPptShow();
 
-										brush.select = false;
-										rubber.select = false;
-										penetrate.select = false;
-										choose.select = true;
+								brush.select = false;
+								rubber.select = false;
+								penetrate.select = false;
+								choose.select = true;
+							}
+						}
+						else if (temp_currentpage == -1)
+						{
+							std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
+							PPTManipulated = std::chrono::high_resolution_clock::now();
+							lock1.unlock();
+							EndPptShow();
+						}
+						else
+						{
+							SetForegroundWindow(ppt_show);
+
+							std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
+							PPTManipulated = std::chrono::high_resolution_clock::now();
+							lock1.unlock();
+							ppt_info_stay.CurrentPage = NextPptSlides(temp_currentpage);
+
+							std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
+							while (1)
+							{
+								if (!KEY_DOWN(VK_LBUTTON)) break;
+
+								if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
+								{
+									temp_currentpage = ppt_info_stay.CurrentPage;
+									if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
+									{
+										if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+										{
+											EndPptShow();
+
+											brush.select = false;
+											rubber.select = false;
+											penetrate.select = false;
+											choose.select = true;
+										}
+										break;
 									}
+									else if (temp_currentpage == -1) break;
 
 									std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
 									PPTManipulated = std::chrono::high_resolution_clock::now();
 									lock1.unlock();
-
-									SetForegroundWindow(ppt_show);
-									keybd_event(VK_NEXT, 0, 0, 0);
-									keybd_event(VK_NEXT, 0, KEYEVENTF_KEYUP, 0);
-
-									break;
+									ppt_info_stay.CurrentPage = NextPptSlides(temp_currentpage);
 								}
-							}
-							else
-							{
-								hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 
-								break;
+								Sleep(15);
 							}
 						}
-						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 					}
 				}
 			}
+
+			hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 		}
 		else Sleep(100);
 	}
@@ -589,6 +690,8 @@ int GetTotalPage()
 	{
 		_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
 		totalSlides = pto->totalSlideIndex();
+		//wstring temp = bstr_to_wstring(pto->totalSlideIndex());
+		//Testw(temp);
 	}
 	catch (_com_error)
 	{
@@ -601,21 +704,21 @@ void ppt_state()
 	thread_status[L"ppt_state"] = true;
 	while (!off_signal)
 	{
-		ppt_info_stay.CurrentPage = GetCurrentPage();
-		ppt_info_stay.TotalPage = GetTotalPage();
+		if (ppt_info_stay.CurrentPage == -1) ppt_info_stay.TotalPage = GetTotalPage();
 
-		if (ppt_info_stay.TotalPage == -1 && !off_signal) Sleep(3000);
-		else if (!off_signal && std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - PPTManipulated).count() <= 5000) Sleep(10);
+		if (ppt_info_stay.TotalPage != -1) ppt_info_stay.CurrentPage = GetCurrentPage();
+		else ppt_info_stay.CurrentPage = -1;
+
+		if (ppt_info_stay.TotalPage == -1 && !off_signal) for (int i = 0; i <= 30 && !off_signal; i++) Sleep(100);
 		else if (!off_signal)
 		{
-			for (int i = 0; i <= 15; i++)
+			for (int i = 0; i <= 30 && !off_signal; i++)
 			{
-				Sleep(10);
+				Sleep(100);
 
 				std::shared_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-				bool ret = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - PPTManipulated).count() <= 5000;
+				bool ret = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - PPTManipulated).count() <= 3000;
 				lock1.unlock();
-
 				if (ret) break;
 			}
 		}

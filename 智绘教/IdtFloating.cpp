@@ -1,9 +1,21 @@
 #pragma once
 #include "IdtFloating.h"
 
+#include "IdtDraw.h"
+#include "IdtDrawpad.h"
+#include "IdtFreezeFrame.h"
+#include "IdtHistoricalDrawpad.h"
+#include "IdtImage.h"
+#include "IdtMagnification.h"
+#include "IdtPlug-in.h"
+#include "IdtRts.h"
+#include "IdtText.h"
+#include "IdtUpdate.h"
+#include "IdtWindow.h"
+
 floating_windowsStruct floating_windows;
 
-IMAGE floating_icon[20], sign;
+IMAGE floating_icon[25], sign;
 IMAGE skin[5];
 
 double state;
@@ -151,6 +163,7 @@ void DrawScreen()
 			loadimage(&floating_icon[16], L"PNG", L"icon16", 25, 25, true);
 			loadimage(&floating_icon[18], L"PNG", L"icon18", 20, 20, true);
 			loadimage(&floating_icon[17], L"PNG", L"icon17", 20, 20, true);
+			loadimage(&floating_icon[20], L"PNG", L"icon20", 20, 20, true);
 
 			loadimage(&sign, L"PNG", L"sign1", 30, 30, true);
 
@@ -866,6 +879,7 @@ void DrawScreen()
 		}
 	}
 
+	//Testw(L"悬浮窗窗口绘制线程 初始化完成");
 	// 设置BLENDFUNCTION结构体
 	BLENDFUNCTION blend;
 	blend.BlendOp = AC_SRC_OVER;
@@ -4652,7 +4666,6 @@ void DrawScreen()
 			hiex::EasyX_Gdiplus_RoundRect(UIControl[L"RoundRect/RoundRect2/x"].v, UIControl[L"RoundRect/RoundRect2/y"].v, UIControl[L"RoundRect/RoundRect2/width"].v, UIControl[L"RoundRect/RoundRect2/height"].v, UIControl[L"RoundRect/RoundRect2/ellipsewidth"].v, UIControl[L"RoundRect/RoundRect2/ellipseheight"].v, UIControlColor[L"RoundRect/RoundRect2/frame"].v, 2.5, true, SmoothingModeHighQuality, &background);
 
 			//主按钮
-
 			{
 				{
 					Graphics eraser(GetImageHDC(&background));
@@ -4680,7 +4693,11 @@ void DrawScreen()
 
 						//模式图标
 						{
-							if (ppt_info_stay.TotalPage != -1) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 35), int(UIControl[L"Ellipse/Ellipse1/y"].v + 63), &floating_icon[16], 255);
+							if (ppt_info_stay.TotalPage != -1)
+							{
+								if (ppt_software == L"PowerPoint") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 35), int(UIControl[L"Ellipse/Ellipse1/y"].v + 63), &floating_icon[16], 255);
+								else if (ppt_software == L"WPS") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[20], 255);
+							}
 							else if (SeewoCamera == true) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 66), &floating_icon[18], 255);
 						}
 
@@ -4694,7 +4711,11 @@ void DrawScreen()
 
 						//模式图标
 						{
-							if (ppt_info_stay.TotalPage != -1) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 35), int(UIControl[L"Ellipse/Ellipse1/y"].v + 60), &floating_icon[16], 200);
+							if (ppt_info_stay.TotalPage != -1)
+							{
+								if (ppt_software == L"PowerPoint") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 35), int(UIControl[L"Ellipse/Ellipse1/y"].v + 63), &floating_icon[16], 255);
+								else if (ppt_software == L"WPS") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[20], 255);
+							}
 							else if (SeewoCamera == true) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 63), &floating_icon[18], 200);
 						}
 
@@ -4923,7 +4944,11 @@ void DrawScreen()
 
 						//模式图标
 						{
-							if (ppt_info_stay.TotalPage != -1) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 35), int(UIControl[L"Ellipse/Ellipse1/y"].v + 63), &floating_icon[16], 255);
+							if (ppt_info_stay.TotalPage != -1)
+							{
+								if (ppt_software == L"PowerPoint") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 35), int(UIControl[L"Ellipse/Ellipse1/y"].v + 63), &floating_icon[16], 255);
+								else if (ppt_software == L"WPS") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[20], 255);
+							}
 							else if (SeewoCamera == true) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 66), &floating_icon[18], 255);
 						}
 
@@ -5231,6 +5256,8 @@ void SeekBar(ExMessage m)
 
 void MouseInteraction()
 {
+	thread_status[L"MouseInteraction"] = true;
+
 	int brush_connect = -1;
 
 	ExMessage m;
@@ -6524,6 +6551,8 @@ void MouseInteraction()
 		}
 		else hiex::flushmessage_win32(EM_MOUSE, floating_window);
 	}
+
+	thread_status[L"MouseInteraction"] = false;
 }
 
 int floating_main()
@@ -6597,12 +6626,16 @@ int floating_main()
 #endif
 
 	//LOG(INFO) << "进入悬浮窗窗口交互线程";
-	MouseInteraction();
+	thread MouseInteractionThread(MouseInteraction);
+	MouseInteractionThread.detach();
 
-	while (1)
+	while (!off_signal) Sleep(500);
+
+	int i = 1;
+	for (; i <= 10; i++)
 	{
-		if (!thread_status[L"CrashedHandler"] /*&& !thread_status[L"ppt_state"] && !thread_status[L"ControlManipulation"] */ && !thread_status[L"GetTime"] && !thread_status[L"DrawScreen"] && !thread_status[L"api_read_pipe"] && !thread_status[L"black_block"])
-			break;
+		if (!thread_status[L"CrashedHandler"] /*&& !thread_status[L"ppt_state"] && !thread_status[L"ControlManipulation"] */ && !thread_status[L"GetTime"] && !thread_status[L"DrawScreen"] && !thread_status[L"api_read_pipe"] && !thread_status[L"black_block"]) break;
+		Sleep(500);
 	}
 
 	thread_status[L"floating_main"] = false;
