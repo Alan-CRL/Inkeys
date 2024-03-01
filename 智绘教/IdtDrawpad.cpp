@@ -67,7 +67,7 @@ unordered_map<BYTE, bool> KeyBoradDown;
 HHOOK DrawpadHookCall;
 LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 {
-	if (nCode >= 0)
+	if (nCode >= 0 && (wParam == WM_KEYDOWN || wParam == WM_KEYUP || wParam == WM_SYSKEYDOWN || wParam == WM_SYSKEYUP))
 	{
 		KBDLLHOOKSTRUCT* pKeyInfo = (KBDLLHOOKSTRUCT*)lParam;
 
@@ -76,14 +76,89 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 
 		if (ppt_show != NULL)
 		{
-			switch (wParam)
+			// 检查按下的键
+			switch (pKeyInfo->vkCode)
 			{
-			case WM_KEYDOWN:
-			case WM_SYSKEYDOWN:
+			case VK_NEXT:   // PgDn
+			case VK_PRIOR:  // PgUp
+			case VK_SPACE:  // 空格键
+			case VK_LEFT:   // 左箭头
+			case VK_RIGHT:  // 右箭头
+			case VK_UP:     // 上箭头
+			case VK_DOWN:   // 下箭头
+			case VK_ESCAPE:   // 退出
+				std::unique_lock<std::shared_mutex> LockPPTManipulatedSm(PPTManipulatedSm);
+				PPTManipulated = std::chrono::high_resolution_clock::now();
+				LockPPTManipulatedSm.unlock();
+				break;
+			}
+		}
+
+		if (!choose.select && !penetrate.select)
+		{
+			ExMessage msgKey = {};
+			msgKey.message = wParam;
+			msgKey.vkcode = (BYTE)pKeyInfo->vkCode;
+			msgKey.scancode = (BYTE)pKeyInfo->scanCode;
+			msgKey.extended = bool(pKeyInfo->flags & LLKHF_EXTENDED);
+			msgKey.prevdown = bool((HIWORD(pKeyInfo->flags) & KF_REPEAT) == KF_REPEAT);
+
+			int index = hiex::GetWindowIndex(drawpad_window, false);
+			std::unique_lock<std::shared_mutex> lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
+			hiex::g_vecWindows[index].vecMessage.push_back(msgKey);
+			lg_vecWindows_vecMessage_sm.unlock();
+
+			if (ppt_show != NULL)
 			{
-				// 检查按下的键
 				switch (pKeyInfo->vkCode)
 				{
+				case 0x30:
+				case 0x31:
+				case 0x32:
+				case 0x33:
+				case 0x34:
+				case 0x35:
+				case 0x36:
+				case 0x37:
+				case 0x38:
+				case 0x39:
+				case 0x41:
+				case 0x42:
+				case 0x43:
+				case 0x44:
+				case 0x45:
+				case 0x46:
+				case 0x47:
+				case 0x48:
+				case 0x49:
+				case 0x4A:
+				case 0x4B:
+				case 0x4C:
+				case 0x4D:
+				case 0x4E:
+				case 0x4F:
+				case 0x50:
+				case 0x51:
+				case 0x52:
+				case 0x53:
+				case 0x54:
+				case 0x55:
+				case 0x56:
+				case 0x57:
+				case 0x58:
+				case 0x59:
+				case 0x5A:
+				case VK_NUMPAD0:
+				case VK_NUMPAD1:
+				case VK_NUMPAD2:
+				case VK_NUMPAD3:
+				case VK_NUMPAD4:
+				case VK_NUMPAD5:
+				case VK_NUMPAD6:
+				case VK_NUMPAD7:
+				case VK_NUMPAD8:
+				case VK_NUMPAD9:
+
 				case VK_NEXT:   // PgDn
 				case VK_PRIOR:  // PgUp
 				case VK_SPACE:  // 空格键
@@ -92,157 +167,71 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 				case VK_UP:     // 上箭头
 				case VK_DOWN:   // 下箭头
 				case VK_ESCAPE:   // 退出
-					std::unique_lock<std::shared_mutex> LockPPTManipulatedSm(PPTManipulatedSm);
-					PPTManipulated = std::chrono::high_resolution_clock::now();
-					LockPPTManipulatedSm.unlock();
-					break;
-				}
-				break;
-			}
-			}
-		}
 
-		if (!choose.select && !penetrate.select)
-		{
-			if (wParam == WM_KEYDOWN || wParam == WM_KEYUP || wParam == WM_SYSKEYDOWN || wParam == WM_SYSKEYUP)
+				{
+					return 1;
+				}
+
+				default:
+					return CallNextHookEx(DrawpadHookCall, nCode, wParam, lParam);
+				}
+			}
+			else
 			{
-				ExMessage msgKey = {};
-				msgKey.message = wParam;
-				msgKey.vkcode = (BYTE)pKeyInfo->vkCode;
-				msgKey.scancode = (BYTE)pKeyInfo->scanCode;
-				msgKey.extended = bool(pKeyInfo->flags & LLKHF_EXTENDED);
-				msgKey.prevdown = bool((HIWORD(pKeyInfo->flags) & KF_REPEAT) == KF_REPEAT);
-
-				int index = hiex::GetWindowIndex(drawpad_window, false);
-				std::unique_lock<std::shared_mutex> lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
-				hiex::g_vecWindows[index].vecMessage.push_back(msgKey);
-				lg_vecWindows_vecMessage_sm.unlock();
-
-				if (ppt_show != NULL)
+				switch (pKeyInfo->vkCode)
 				{
-					switch (pKeyInfo->vkCode)
-					{
-					case 0x30:
-					case 0x31:
-					case 0x32:
-					case 0x33:
-					case 0x34:
-					case 0x35:
-					case 0x36:
-					case 0x37:
-					case 0x38:
-					case 0x39:
-					case 0x41:
-					case 0x42:
-					case 0x43:
-					case 0x44:
-					case 0x45:
-					case 0x46:
-					case 0x47:
-					case 0x48:
-					case 0x49:
-					case 0x4A:
-					case 0x4B:
-					case 0x4C:
-					case 0x4D:
-					case 0x4E:
-					case 0x4F:
-					case 0x50:
-					case 0x51:
-					case 0x52:
-					case 0x53:
-					case 0x54:
-					case 0x55:
-					case 0x56:
-					case 0x57:
-					case 0x58:
-					case 0x59:
-					case 0x5A:
-					case VK_NUMPAD0:
-					case VK_NUMPAD1:
-					case VK_NUMPAD2:
-					case VK_NUMPAD3:
-					case VK_NUMPAD4:
-					case VK_NUMPAD5:
-					case VK_NUMPAD6:
-					case VK_NUMPAD7:
-					case VK_NUMPAD8:
-					case VK_NUMPAD9:
-
-					case VK_NEXT:   // PgDn
-					case VK_PRIOR:  // PgUp
-					case VK_SPACE:  // 空格键
-					case VK_LEFT:   // 左箭头
-					case VK_RIGHT:  // 右箭头
-					case VK_UP:     // 上箭头
-					case VK_DOWN:   // 下箭头
-					case VK_ESCAPE:   // 退出
-
-					{
-						return 1;
-					}
-
-					default:
-						return CallNextHookEx(DrawpadHookCall, nCode, wParam, lParam);
-					}
+				case 0x30:
+				case 0x31:
+				case 0x32:
+				case 0x33:
+				case 0x34:
+				case 0x35:
+				case 0x36:
+				case 0x37:
+				case 0x38:
+				case 0x39:
+				case 0x41:
+				case 0x42:
+				case 0x43:
+				case 0x44:
+				case 0x45:
+				case 0x46:
+				case 0x47:
+				case 0x48:
+				case 0x49:
+				case 0x4A:
+				case 0x4B:
+				case 0x4C:
+				case 0x4D:
+				case 0x4E:
+				case 0x4F:
+				case 0x50:
+				case 0x51:
+				case 0x52:
+				case 0x53:
+				case 0x54:
+				case 0x55:
+				case 0x56:
+				case 0x57:
+				case 0x58:
+				case 0x59:
+				case 0x5A:
+				case VK_NUMPAD0:
+				case VK_NUMPAD1:
+				case VK_NUMPAD2:
+				case VK_NUMPAD3:
+				case VK_NUMPAD4:
+				case VK_NUMPAD5:
+				case VK_NUMPAD6:
+				case VK_NUMPAD7:
+				case VK_NUMPAD8:
+				case VK_NUMPAD9:
+				{
+					return 1;
 				}
-				else
-				{
-					switch (pKeyInfo->vkCode)
-					{
-					case 0x30:
-					case 0x31:
-					case 0x32:
-					case 0x33:
-					case 0x34:
-					case 0x35:
-					case 0x36:
-					case 0x37:
-					case 0x38:
-					case 0x39:
-					case 0x41:
-					case 0x42:
-					case 0x43:
-					case 0x44:
-					case 0x45:
-					case 0x46:
-					case 0x47:
-					case 0x48:
-					case 0x49:
-					case 0x4A:
-					case 0x4B:
-					case 0x4C:
-					case 0x4D:
-					case 0x4E:
-					case 0x4F:
-					case 0x50:
-					case 0x51:
-					case 0x52:
-					case 0x53:
-					case 0x54:
-					case 0x55:
-					case 0x56:
-					case 0x57:
-					case 0x58:
-					case 0x59:
-					case 0x5A:
-					case VK_NUMPAD0:
-					case VK_NUMPAD1:
-					case VK_NUMPAD2:
-					case VK_NUMPAD3:
-					case VK_NUMPAD4:
-					case VK_NUMPAD5:
-					case VK_NUMPAD6:
-					case VK_NUMPAD7:
-					case VK_NUMPAD8:
-					case VK_NUMPAD9:
-					{
-						return 1;
-					}
 
-					default:
-						return CallNextHookEx(DrawpadHookCall, nCode, wParam, lParam);
-					}
+				default:
+					return CallNextHookEx(DrawpadHookCall, nCode, wParam, lParam);
 				}
 			}
 		}
@@ -1623,12 +1612,6 @@ int drawpad_main()
 		SetWindowLong(drawpad_window, GWL_STYLE, GetWindowLong(drawpad_window, GWL_STYLE) & ~WS_CAPTION);//隐藏标题栏
 		SetWindowPos(drawpad_window, NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_DRAWFRAME);
 		SetWindowLong(drawpad_window, GWL_EXSTYLE, WS_EX_TOOLWINDOW);//隐藏任务栏
-	}
-	//媒体初始化
-	{
-		loadimage(&ppt_icon[1], L"PNG", L"ppt1");
-		loadimage(&ppt_icon[2], L"PNG", L"ppt2");
-		loadimage(&ppt_icon[3], L"PNG", L"ppt3");
 	}
 
 	//初始化数值

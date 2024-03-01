@@ -165,6 +165,16 @@ void DrawControlWindow()
 		SetWindowPos(ppt_window, NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_DRAWFRAME | SWP_NOACTIVATE);
 		SetWindowLong(ppt_window, GWL_EXSTYLE, WS_EX_TOOLWINDOW);//隐藏任务栏
 	}
+	//媒体初始化
+	{
+		loadimage(&ppt_icon[1], L"PNG", L"ppt1");
+		loadimage(&ppt_icon[2], L"PNG", L"ppt2");
+		loadimage(&ppt_icon[3], L"PNG", L"ppt3");
+
+		ChangeColor(ppt_icon[1], RGB(80, 80, 80));
+		ChangeColor(ppt_icon[2], RGB(80, 80, 80));
+		ChangeColor(ppt_icon[3], RGB(80, 80, 80));
+	}
 
 	// 设置BLENDFUNCTION结构体
 	BLENDFUNCTION blend;
@@ -201,8 +211,8 @@ void DrawControlWindow()
 	magnificationWindowReady++;
 	for (int for_i = 1; !off_signal; for_i = 2)
 	{
-		int currentSlides = ppt_info.currentSlides;
 		int totalSlides = ppt_info.totalSlides;
+		int currentSlides = ppt_info.currentSlides;
 
 		if (totalSlides != -1)
 		{
@@ -210,17 +220,17 @@ void DrawControlWindow()
 
 			//左侧翻页
 			{
-				hiex::EasyX_Gdiplus_FillRoundRect(5, (float)GetSystemMetrics(SM_CYSCREEN) - 60 + 5, 50, 50, 20, 20, SET_ALPHA(RGB(100, 100, 100), 255), SET_ALPHA(WHITE, 160), 1, true, SmoothingModeHighQuality, &ppt_background);
+				hiex::EasyX_Gdiplus_FillRoundRect(5, (float)GetSystemMetrics(SM_CYSCREEN) - 60 + 5, 50, 50, 20, 20, RGBA(80, 80, 80, 255), RGBA(255, 255, 255, 160), 1, true, SmoothingModeHighQuality, &ppt_background);
 				hiex::TransparentImage(&ppt_background, 5 + 5, GetSystemMetrics(SM_CYSCREEN) - 60 + 5 + 5, &ppt_icon[1]);
 
-				hiex::EasyX_Gdiplus_FillRoundRect(55 + 5, (float)GetSystemMetrics(SM_CYSCREEN) - 60 + 5, 70, 50, 20, 20, SET_ALPHA(RGB(100, 100, 100), 255), SET_ALPHA(WHITE, 160), 1, true, SmoothingModeHighQuality, &ppt_background);
+				hiex::EasyX_Gdiplus_FillRoundRect(55 + 5, (float)GetSystemMetrics(SM_CYSCREEN) - 60 + 5, 70, 50, 20, 20, RGBA(80, 80, 80, 255), RGBA(255, 255, 255, 160), 1, true, SmoothingModeHighQuality, &ppt_background);
 				{
 					wstring text = currentSlides == -1 ? L"-" : to_wstring(currentSlides);
 					text += L"/";
 					text += to_wstring(totalSlides);
 
 					Gdiplus::Font gp_font(&HarmonyOS_fontFamily, Gdiplus::REAL(text.length() > 5 ? 16 : (text.length() > 3 ? 20 : 24)), FontStyleRegular, UnitPixel);
-					SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(100, 100, 100), false));
+					SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(80, 80, 80), false));
 					graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
 					{
 						pptwords_rect.left = (55 + 5);
@@ -232,17 +242,18 @@ void DrawControlWindow()
 					graphics.DrawString(text.c_str(), -1, &gp_font, hiex::RECTToRectF(pptwords_rect), &stringFormat, &WordBrush);
 				}
 
-				hiex::EasyX_Gdiplus_FillRoundRect(130 + 5, (float)GetSystemMetrics(SM_CYSCREEN) - 60 + 5, 50, 50, 20, 20, SET_ALPHA(RGB(100, 100, 100), 255), SET_ALPHA(WHITE, 160), 1, true, SmoothingModeHighQuality, &ppt_background);
-				hiex::TransparentImage(&ppt_background, 130 + 5 + 5, GetSystemMetrics(SM_CYSCREEN) - 60 + 5 + 5, &ppt_icon[2]);
+				hiex::EasyX_Gdiplus_FillRoundRect(130 + 5, (float)GetSystemMetrics(SM_CYSCREEN) - 60 + 5, 50, 50, 20, 20, RGBA(80, 80, 80, 255), RGBA(255, 255, 255, 160), 1, true, SmoothingModeHighQuality, &ppt_background);
+				if (currentSlides == -1) hiex::TransparentImage(&ppt_background, 130 + 5 + 5 + 5, GetSystemMetrics(SM_CYSCREEN) - 60 + 5 + 5 + 5, &ppt_icon[3]);
+				else hiex::TransparentImage(&ppt_background, 130 + 5 + 5, GetSystemMetrics(SM_CYSCREEN) - 60 + 5 + 5, &ppt_icon[2]);
 			}
 			//中间控件
 			{
-				hiex::EasyX_Gdiplus_FillRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 70, (float)GetSystemMetrics(SM_CYSCREEN) - 60 + 5, 140, 50, 20, 20, SET_ALPHA(RGB(100, 100, 100), 255), SET_ALPHA(WHITE, 160), 1, true, SmoothingModeHighQuality, &ppt_background);
+				hiex::EasyX_Gdiplus_FillRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 70, (float)GetSystemMetrics(SM_CYSCREEN) - 60 + 5, 140, 50, 20, 20, RGBA(80, 80, 80, 255), RGBA(255, 255, 255, 160), 1, true, SmoothingModeHighQuality, &ppt_background);
 				{
 					hiex::TransparentImage(&ppt_background, GetSystemMetrics(SM_CXSCREEN) / 2 - 70 + 10, GetSystemMetrics(SM_CYSCREEN) - 60 + 5 + 10, &ppt_icon[3]);
 
 					Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 20, FontStyleRegular, UnitPixel);
-					SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(100, 100, 100), false));
+					SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(80, 80, 80), false));
 					graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
 					{
 						pptwords_rect.left = (GetSystemMetrics(SM_CXSCREEN) / 2 - 70) + 40;
@@ -256,17 +267,17 @@ void DrawControlWindow()
 			}
 			//右侧翻页
 			{
-				hiex::EasyX_Gdiplus_FillRoundRect((float)GetSystemMetrics(SM_CXSCREEN) - 185, (float)GetSystemMetrics(SM_CYSCREEN) - 60 + 5, 50, 50, 20, 20, SET_ALPHA(RGB(130, 130, 130), 255), SET_ALPHA(WHITE, 160), 1, true, SmoothingModeHighQuality, &ppt_background);
+				hiex::EasyX_Gdiplus_FillRoundRect((float)GetSystemMetrics(SM_CXSCREEN) - 185, (float)GetSystemMetrics(SM_CYSCREEN) - 60 + 5, 50, 50, 20, 20, RGBA(80, 80, 80, 255), RGBA(255, 255, 255, 160), 1, true, SmoothingModeHighQuality, &ppt_background);
 				hiex::TransparentImage(&ppt_background, GetSystemMetrics(SM_CXSCREEN) - 185 + 5, GetSystemMetrics(SM_CYSCREEN) - 60 + 5 + 5, &ppt_icon[1]);
 
-				hiex::EasyX_Gdiplus_FillRoundRect((float)GetSystemMetrics(SM_CXSCREEN) - 130, (float)GetSystemMetrics(SM_CYSCREEN) - 60 + 5, 70, 50, 20, 20, SET_ALPHA(RGB(130, 130, 130), 255), SET_ALPHA(WHITE, 160), 1, true, SmoothingModeHighQuality, &ppt_background);
+				hiex::EasyX_Gdiplus_FillRoundRect((float)GetSystemMetrics(SM_CXSCREEN) - 130, (float)GetSystemMetrics(SM_CYSCREEN) - 60 + 5, 70, 50, 20, 20, RGBA(80, 80, 80, 255), RGBA(255, 255, 255, 160), 1, true, SmoothingModeHighQuality, &ppt_background);
 				{
 					wstring text = currentSlides == -1 ? L"-" : to_wstring(currentSlides);
 					text += L"/";
 					text += to_wstring(totalSlides);
 
 					Gdiplus::Font gp_font(&HarmonyOS_fontFamily, Gdiplus::REAL(text.length() > 5 ? 16 : (text.length() > 3 ? 20 : 24)), FontStyleRegular, UnitPixel);
-					SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(100, 100, 100), false));
+					SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(80, 80, 80), false));
 					graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
 					{
 						pptwords_rect.left = (GetSystemMetrics(SM_CXSCREEN) - 130);
@@ -278,8 +289,9 @@ void DrawControlWindow()
 					graphics.DrawString(text.c_str(), -1, &gp_font, hiex::RECTToRectF(pptwords_rect), &stringFormat, &WordBrush);
 				}
 
-				hiex::EasyX_Gdiplus_FillRoundRect((float)GetSystemMetrics(SM_CXSCREEN) - 55, (float)GetSystemMetrics(SM_CYSCREEN) - 60 + 5, 50, 50, 20, 20, SET_ALPHA(RGB(130, 130, 130), 255), SET_ALPHA(WHITE, 160), 1, true, SmoothingModeHighQuality, &ppt_background);
-				hiex::TransparentImage(&ppt_background, GetSystemMetrics(SM_CXSCREEN) - 55 + 5, GetSystemMetrics(SM_CYSCREEN) - 60 + 5 + 5, &ppt_icon[2]);
+				hiex::EasyX_Gdiplus_FillRoundRect((float)GetSystemMetrics(SM_CXSCREEN) - 55, (float)GetSystemMetrics(SM_CYSCREEN) - 60 + 5, 50, 50, 20, 20, RGBA(80, 80, 80, 255), RGBA(255, 255, 255, 160), 1, true, SmoothingModeHighQuality, &ppt_background);
+				if (currentSlides == -1) hiex::TransparentImage(&ppt_background, GetSystemMetrics(SM_CXSCREEN) - 55 + 5 + 5, GetSystemMetrics(SM_CYSCREEN) - 60 + 5 + 5 + 5, &ppt_icon[3]);
+				else hiex::TransparentImage(&ppt_background, GetSystemMetrics(SM_CXSCREEN) - 55 + 5, GetSystemMetrics(SM_CYSCREEN) - 60 + 5 + 5, &ppt_icon[2]);
 			}
 
 			{
@@ -287,7 +299,6 @@ void DrawControlWindow()
 				UpdateLayeredWindowIndirect(ppt_window, &ulwi);
 			}
 
-			SetWindowPos(ppt_window, floating_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 			if (!IsWindowVisible(ppt_window))
 			{
 				ShowWindow(ppt_window, SW_SHOWNOACTIVATE);
@@ -361,6 +372,8 @@ void ControlManipulation()
 
 							Sleep(15);
 						}
+
+						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 					}
 
 					/*
@@ -452,17 +465,20 @@ void ControlManipulation()
 										}
 										break;
 									}
-									else if (temp_currentpage == -1) break;
-
-									std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-									PPTManipulated = std::chrono::high_resolution_clock::now();
-									lock1.unlock();
-									ppt_info_stay.CurrentPage = NextPptSlides(temp_currentpage);
+									else if (temp_currentpage != -1)
+									{
+										std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
+										PPTManipulated = std::chrono::high_resolution_clock::now();
+										lock1.unlock();
+										ppt_info_stay.CurrentPage = NextPptSlides(temp_currentpage);
+									}
 								}
 
 								Sleep(15);
 							}
 						}
+
+						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 					}
 
 					/*
@@ -548,6 +564,7 @@ void ControlManipulation()
 								break;
 							}
 						}
+
 						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 					}
 				}
@@ -581,6 +598,8 @@ void ControlManipulation()
 
 							Sleep(15);
 						}
+
+						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 					}
 				}
 
@@ -642,24 +661,25 @@ void ControlManipulation()
 										}
 										break;
 									}
-									else if (temp_currentpage == -1) break;
-
-									std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-									PPTManipulated = std::chrono::high_resolution_clock::now();
-									lock1.unlock();
-									ppt_info_stay.CurrentPage = NextPptSlides(temp_currentpage);
+									else if (temp_currentpage != -1)
+									{
+										std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
+										PPTManipulated = std::chrono::high_resolution_clock::now();
+										lock1.unlock();
+										ppt_info_stay.CurrentPage = NextPptSlides(temp_currentpage);
+									}
 								}
 
 								Sleep(15);
 							}
 						}
+
+						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 					}
 				}
 			}
-
-			hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 		}
-		else Sleep(100);
+		else Sleep(500);
 	}
 }
 
