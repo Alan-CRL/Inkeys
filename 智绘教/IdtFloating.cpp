@@ -4693,7 +4693,7 @@ void DrawScreen()
 
 						//模式图标
 						{
-							if (ppt_info_stay.TotalPage != -1)
+							if (PptInfoState.TotalPage != -1)
 							{
 								if (ppt_software == L"PowerPoint") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 35), int(UIControl[L"Ellipse/Ellipse1/y"].v + 63), &floating_icon[16], 255);
 								else if (ppt_software == L"WPS") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[20], 255);
@@ -4711,7 +4711,7 @@ void DrawScreen()
 
 						//模式图标
 						{
-							if (ppt_info_stay.TotalPage != -1)
+							if (PptInfoState.TotalPage != -1)
 							{
 								if (ppt_software == L"PowerPoint") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 35), int(UIControl[L"Ellipse/Ellipse1/y"].v + 63), &floating_icon[16], 255);
 								else if (ppt_software == L"WPS") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[20], 255);
@@ -4944,7 +4944,7 @@ void DrawScreen()
 
 						//模式图标
 						{
-							if (ppt_info_stay.TotalPage != -1)
+							if (PptInfoState.TotalPage != -1)
 							{
 								if (ppt_software == L"PowerPoint") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 35), int(UIControl[L"Ellipse/Ellipse1/y"].v + 63), &floating_icon[16], 255);
 								else if (ppt_software == L"WPS") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[20], 255);
@@ -6564,14 +6564,14 @@ int floating_main()
 	thread ppt_state_thread(ppt_state);
 	ppt_state_thread.detach();
 	//LOG(INFO) << "成功启动PPT状态获取线程";
-	//LOG(INFO) << "尝试启动PPT窗口绘制线程";
-	thread DrawControlWindow_thread(DrawControlWindow);
-	DrawControlWindow_thread.detach();
-	//LOG(INFO) << "成功启动PPT窗口绘制线程";
-	//LOG(INFO) << "尝试启动PPT窗口交互线程";
-	thread ControlManipulation_thread(ControlManipulation);
-	ControlManipulation_thread.detach();
-	//LOG(INFO) << "成功启动PPT窗口交互线程";
+
+	thread DrawControlWindowThread(DrawControlWindow);
+	DrawControlWindowThread.detach();
+	thread ControlManipulationThread(ControlManipulation);
+	ControlManipulationThread.detach();
+	thread KeyboardInteractionThread(KeyboardInteraction);
+	KeyboardInteractionThread.detach();
+
 	//thread GetTime_thread(GetTime);
 	//GetTime_thread.detach();
 	//LOG(INFO) << "尝试启动悬浮窗窗口绘制线程";

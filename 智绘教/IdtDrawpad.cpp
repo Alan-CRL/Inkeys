@@ -18,42 +18,6 @@ bool main_open;
 bool FirstDraw = true;
 bool IdtHotkey;
 
-//将要废弃的绘制函数
-RECT DrawGradientLine(HDC hdc, int x1, int y1, int x2, int y2, float width, Color color)
-{
-	Graphics graphics(hdc);
-	graphics.SetSmoothingMode(SmoothingModeHighQuality);
-
-	Pen pen(color);
-	pen.SetEndCap(LineCapRound);
-
-	pen.SetWidth(width);
-	graphics.DrawLine(&pen, x1, y1, x2, y2);
-
-	// 计算外切矩形
-	RECT rect;
-	rect.left = LONG(max(0, min(x1, x2) - width));
-	rect.top = LONG(max(0, min(y1, y2) - width));
-	rect.right = LONG(max(x1, x2) + width);
-	rect.bottom = LONG(max(y1, y2) + width);
-
-	return rect;
-}
-bool checkIntersection(RECT rect1, RECT rect2)
-{
-	if (rect1.right < rect2.left || rect1.left > rect2.right) {
-		return false;
-	}
-	if (rect1.bottom < rect2.top || rect1.top > rect2.bottom) {
-		return false;
-	}
-	return true;
-}
-double EuclideanDistance(POINT a, POINT b)
-{
-	return std::sqrt(std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2));
-}
-
 unordered_map<LONG, shared_mutex> StrokeImageSm;
 shared_mutex StrokeImageListSm;
 map<LONG, pair<IMAGE*, int>> StrokeImage; // second 表示绘制状态 01画笔 23橡皮 （单绘制/双停止）
@@ -65,6 +29,7 @@ IMAGE window_background(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCR
 
 unordered_map<BYTE, bool> KeyBoradDown;
 HHOOK DrawpadHookCall;
+bool IsHotkeyDown;
 LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 {
 	if (nCode >= 0 && (wParam == WM_KEYDOWN || wParam == WM_KEYUP || wParam == WM_SYSKEYDOWN || wParam == WM_SYSKEYUP))
@@ -74,23 +39,76 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 		if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) KeyBoradDown[pKeyInfo->vkCode] = true;
 		else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) KeyBoradDown[pKeyInfo->vkCode] = false;
 
+		if (!IsHotkeyDown && (KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]) && (KeyBoradDown[VK_LWIN] || KeyBoradDown[VK_RWIN]) && (KeyBoradDown[VK_MENU] || KeyBoradDown[VK_LMENU] || KeyBoradDown[VK_RMENU]))
+		{
+			IsHotkeyDown = true;
+
+			if (choose.select)
+			{
+				brush.select = true;
+				rubber.select = false;
+				choose.select = false;
+				penetrate.select = false;
+
+				if (SeewoCamera) FreezeFrame.mode = 1;
+			}
+			else
+			{
+				choose.select = true;
+				brush.select = false;
+				rubber.select = false;
+				penetrate.select = false;
+
+				if (!FreezeFrame.select || penetrate.select) FreezeFrame.mode = 0, FreezeFrame.select = false;
+			}
+		}
+		else if (IsHotkeyDown && !(KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]) && !(KeyBoradDown[VK_LWIN] || KeyBoradDown[VK_RWIN]) && !(KeyBoradDown[VK_MENU] || KeyBoradDown[VK_LMENU] || KeyBoradDown[VK_RMENU])) IsHotkeyDown = false;
+
 		if (ppt_show != NULL)
 		{
 			// 检查按下的键
 			switch (pKeyInfo->vkCode)
 			{
-			case VK_NEXT:   // PgDn
-			case VK_PRIOR:  // PgUp
 			case VK_SPACE:  // 空格键
-			case VK_LEFT:   // 左箭头
+			case VK_NEXT:   // PgDn
 			case VK_RIGHT:  // 右箭头
-			case VK_UP:     // 上箭头
 			case VK_DOWN:   // 下箭头
-			case VK_ESCAPE:   // 退出
+			{
+				if (KeyBoradDown[pKeyInfo->vkCode])
+				{
+					PPTUIControlColor[L"RoundRect/RoundRectLeft2/fill"].v = RGBA(200, 200, 200, 255);
+					PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v = RGBA(200, 200, 200, 255);
+				}
+
 				std::unique_lock<std::shared_mutex> LockPPTManipulatedSm(PPTManipulatedSm);
 				PPTManipulated = std::chrono::high_resolution_clock::now();
 				LockPPTManipulatedSm.unlock();
 				break;
+			}
+
+			case VK_PRIOR:  // PgUp
+			case VK_LEFT:   // 左箭头
+			case VK_UP:     // 上箭头
+			{
+				if (KeyBoradDown[pKeyInfo->vkCode])
+				{
+					PPTUIControlColor[L"RoundRect/RoundRectLeft1/fill"].v = RGBA(200, 200, 200, 255);
+					PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v = RGBA(200, 200, 200, 255);
+				}
+
+				std::unique_lock<std::shared_mutex> LockPPTManipulatedSm(PPTManipulatedSm);
+				PPTManipulated = std::chrono::high_resolution_clock::now();
+				LockPPTManipulatedSm.unlock();
+				break;
+			}
+
+			case VK_ESCAPE:   // 退出
+			{
+				std::unique_lock<std::shared_mutex> LockPPTManipulatedSm(PPTManipulatedSm);
+				PPTManipulated = std::chrono::high_resolution_clock::now();
+				LockPPTManipulatedSm.unlock();
+				break;
+			}
 			}
 		}
 
@@ -256,111 +274,9 @@ void DrawpadInstallHook()
 	UnhookWindowsHookEx(DrawpadHookCall);
 }
 
-void KeyboardInteraction()
+double EuclideanDistance(POINT a, POINT b)
 {
-	thread_status[L"KeyboardInteraction"] = true;
-
-	ExMessage m;
-	while (!off_signal)
-	{
-		hiex::getmessage_win32(&m, EM_KEY, drawpad_window);
-
-		if (ppt_show != NULL)
-		{
-			if (m.message == WM_KEYDOWN && (m.vkcode == VK_DOWN || m.vkcode == VK_RIGHT || m.vkcode == VK_NEXT || m.vkcode == VK_SPACE || m.vkcode == VK_UP || m.vkcode == VK_LEFT || m.vkcode == VK_PRIOR))
-			{
-				auto vkcode = m.vkcode;
-
-				if (vkcode == VK_UP || vkcode == VK_LEFT || vkcode == VK_PRIOR)
-				{
-					// 上一页
-					SetForegroundWindow(ppt_show);
-					ppt_info_stay.CurrentPage = PreviousPptSlides();
-					std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
-					while (1)
-					{
-						if (!KeyBoradDown[vkcode]) break;
-						if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400) ppt_info_stay.CurrentPage = PreviousPptSlides();
-
-						Sleep(15);
-					}
-				}
-				else
-				{
-					// 下一页
-					int temp_currentpage = ppt_info_stay.CurrentPage;
-					if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
-					{
-						if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
-						{
-							EndPptShow();
-
-							brush.select = false;
-							rubber.select = false;
-							penetrate.select = false;
-							choose.select = true;
-						}
-					}
-					else
-					{
-						SetForegroundWindow(ppt_show);
-						ppt_info_stay.CurrentPage = NextPptSlides(temp_currentpage);
-						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
-						while (1)
-						{
-							if (!KeyBoradDown[vkcode]) break;
-
-							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
-							{
-								temp_currentpage = ppt_info_stay.CurrentPage;
-								if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
-								{
-									if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
-									{
-										EndPptShow();
-
-										brush.select = false;
-										rubber.select = false;
-										penetrate.select = false;
-										choose.select = true;
-									}
-									break;
-								}
-								else if (temp_currentpage == -1) break;
-								ppt_info_stay.CurrentPage = NextPptSlides(temp_currentpage);
-							}
-
-							Sleep(15);
-						}
-					}
-				}
-			}
-			else if (m.message == WM_KEYDOWN && m.vkcode == VK_ESCAPE)
-			{
-				auto vkcode = m.vkcode;
-
-				while (KeyBoradDown[vkcode]) Sleep(20);
-
-				if (choose.select == false && penetrate.select == false)
-				{
-					if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
-					{
-						EndPptShow();
-
-						brush.select = false;
-						rubber.select = false;
-						penetrate.select = false;
-						choose.select = true;
-					}
-				}
-				else EndPptShow();
-			}
-		}
-
-		hiex::flushmessage_win32(EM_KEY, drawpad_window);
-	}
-
-	thread_status[L"KeyboardInteraction"] = false;
+	return std::sqrt(std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2));
 }
 
 void MultiFingerDrawing(LONG pid, POINT pt)
@@ -1056,14 +972,14 @@ void DrawpadDrawing()
 
 				if (off_signal) goto DrawpadDrawingEnd;
 
-				if (RecallImage.size() >= 1 && ppt_info.totalSlides != -1)
+				if (RecallImage.size() >= 1 && PptInfoStateBuffer.TotalPage != -1)
 				{
 					if (!CompareImagesWithBuffer(&empty_drawpad, &drawpad))
 					{
-						ppt_img.is_save = true;
-						ppt_img.is_saved[ppt_info.currentSlides] = true;
+						PptImg.IsSave = true;
+						PptImg.IsSaved[PptInfoStateBuffer.CurrentPage] = true;
 
-						ppt_img.image[ppt_info.currentSlides] = drawpad;
+						PptImg.Image[PptInfoStateBuffer.CurrentPage] = drawpad;
 					}
 				}
 				recall_image_recond = 0, FirstDraw = true;
@@ -1075,16 +991,16 @@ void DrawpadDrawing()
 				{
 					Sleep(50);
 
-					if (ppt_info.currentSlides != ppt_info_stay.CurrentPage) ppt_info.currentSlides = ppt_info_stay.CurrentPage, ppt_switch_count++;
-					ppt_info.totalSlides = ppt_info_stay.TotalPage;
+					if (PptInfoStateBuffer.CurrentPage != PptInfoState.CurrentPage) PptInfoStateBuffer.CurrentPage = PptInfoState.CurrentPage, ppt_switch_count++;
+					PptInfoStateBuffer.TotalPage = PptInfoState.TotalPage;
 
 					if (off_signal) goto DrawpadDrawingEnd;
 				}
 
 				{
-					if (ppt_info.totalSlides != -1 && ppt_switch_count != 0 && ppt_img.is_saved[ppt_info.currentSlides])
+					if (PptInfoStateBuffer.TotalPage != -1 && ppt_switch_count != 0 && PptImg.IsSaved[PptInfoStateBuffer.CurrentPage])
 					{
-						drawpad = ppt_img.image[ppt_info.currentSlides];
+						drawpad = PptImg.Image[PptInfoStateBuffer.CurrentPage];
 					}
 					else if (!reserve_drawpad) SetImageColor(drawpad, RGBA(0, 0, 0, 0), true);
 					reserve_drawpad = false;
@@ -1105,10 +1021,10 @@ void DrawpadDrawing()
 
 				while (1)
 				{
-					int temp_currentpage = ppt_info_stay.CurrentPage, temp_totalpage = ppt_info_stay.TotalPage;
-					if (ppt_info.currentSlides != temp_currentpage || ppt_info.totalSlides != temp_totalpage)
+					int temp_currentpage = PptInfoState.CurrentPage, temp_totalpage = PptInfoState.TotalPage;
+					if (PptInfoStateBuffer.CurrentPage != temp_currentpage || PptInfoStateBuffer.TotalPage != temp_totalpage)
 					{
-						if (ppt_info.currentSlides != temp_currentpage && ppt_info.totalSlides == temp_totalpage)
+						if (PptInfoStateBuffer.CurrentPage != temp_currentpage && PptInfoStateBuffer.TotalPage == temp_totalpage)
 						{
 							IMAGE empty_drawpad = CreateImageColor(drawpad.getwidth(), drawpad.getheight(), RGBA(0, 0, 0, 0), true);
 							if (reference_record_pointer == current_record_pointer && !CompareImagesWithBuffer(&empty_drawpad, &drawpad))
@@ -1178,9 +1094,9 @@ void DrawpadDrawing()
 								thread SaveScreenShot_thread(SaveScreenShot, RecallImage.back().img, true);
 								SaveScreenShot_thread.detach();
 
-								ppt_img.is_save = true;
-								ppt_img.is_saved[ppt_info.currentSlides] = true;
-								ppt_img.image[ppt_info.currentSlides] = RecallImage.back().img;
+								PptImg.IsSave = true;
+								PptImg.IsSaved[PptInfoStateBuffer.CurrentPage] = true;
+								PptImg.Image[PptInfoStateBuffer.CurrentPage] = RecallImage.back().img;
 
 								extreme_point.clear();
 								RecallImage.push_back({ empty_drawpad, extreme_point, 0, make_pair(0,0) });
@@ -1202,17 +1118,17 @@ void DrawpadDrawing()
 								LockStrokeBackImageSm.unlock();
 							}
 
-							if (ppt_img.is_saved[temp_currentpage] == true)
+							if (PptImg.IsSaved[temp_currentpage] == true)
 							{
-								drawpad = ppt_img.image[temp_currentpage];
+								drawpad = PptImg.Image[temp_currentpage];
 							}
 							else
 							{
 								if (temp_totalpage != -1) SetImageColor(drawpad, RGBA(0, 0, 0, 0), true);
 							}
 						}
-						ppt_info.currentSlides = temp_currentpage;
-						ppt_info.totalSlides = temp_totalpage;
+						PptInfoStateBuffer.CurrentPage = temp_currentpage;
+						PptInfoStateBuffer.TotalPage = temp_totalpage;
 
 						{
 							SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
@@ -1248,10 +1164,10 @@ void DrawpadDrawing()
 				goto DrawpadDrawingEnd;
 			}
 
-			int temp_currentpage = ppt_info_stay.CurrentPage, temp_totalpage = ppt_info_stay.TotalPage;
-			if (ppt_info.currentSlides != temp_currentpage || ppt_info.totalSlides != temp_totalpage)
+			int temp_currentpage = PptInfoState.CurrentPage, temp_totalpage = PptInfoState.TotalPage;
+			if (PptInfoStateBuffer.CurrentPage != temp_currentpage || PptInfoStateBuffer.TotalPage != temp_totalpage)
 			{
-				if (ppt_info.currentSlides != temp_currentpage && ppt_info.totalSlides == temp_totalpage)
+				if (PptInfoStateBuffer.CurrentPage != temp_currentpage && PptInfoStateBuffer.TotalPage == temp_totalpage)
 				{
 					IMAGE empty_drawpad = CreateImageColor(drawpad.getwidth(), drawpad.getheight(), RGBA(0, 0, 0, 0), true);
 					if (reference_record_pointer == current_record_pointer && !CompareImagesWithBuffer(&empty_drawpad, &drawpad))
@@ -1321,9 +1237,9 @@ void DrawpadDrawing()
 						thread SaveScreenShot_thread(SaveScreenShot, RecallImage.back().img, true);
 						SaveScreenShot_thread.detach();
 
-						ppt_img.is_save = true;
-						ppt_img.is_saved[ppt_info.currentSlides] = true;
-						ppt_img.image[ppt_info.currentSlides] = RecallImage.back().img;
+						PptImg.IsSave = true;
+						PptImg.IsSaved[PptInfoStateBuffer.CurrentPage] = true;
+						PptImg.Image[PptInfoStateBuffer.CurrentPage] = RecallImage.back().img;
 
 						extreme_point.clear();
 						RecallImage.push_back({ empty_drawpad, extreme_point, 0, make_pair(0,0) });
@@ -1345,16 +1261,16 @@ void DrawpadDrawing()
 						LockStrokeBackImageSm.unlock();
 					}
 
-					if (ppt_img.is_saved[temp_currentpage] == true)
+					if (PptImg.IsSaved[temp_currentpage] == true)
 					{
-						drawpad = ppt_img.image[temp_currentpage];
+						drawpad = PptImg.Image[temp_currentpage];
 					}
 					else
 					{
 						if (temp_totalpage != -1) SetImageColor(drawpad, RGBA(0, 0, 0, 0), true);
 					}
 				}
-				else if (ppt_info.totalSlides != temp_totalpage && temp_totalpage == -1)
+				else if (PptInfoStateBuffer.TotalPage != temp_totalpage && temp_totalpage == -1)
 				{
 					choose.select = true;
 
@@ -1362,8 +1278,8 @@ void DrawpadDrawing()
 					rubber.select = false;
 					penetrate.select = false;
 				}
-				ppt_info.currentSlides = temp_currentpage;
-				ppt_info.totalSlides = temp_totalpage;
+				PptInfoStateBuffer.CurrentPage = temp_currentpage;
+				PptInfoStateBuffer.TotalPage = temp_totalpage;
 
 				{
 					SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
@@ -1625,8 +1541,6 @@ int drawpad_main()
 
 	thread DrawpadDrawing_thread(DrawpadDrawing);
 	DrawpadDrawing_thread.detach();
-	thread KeyboardInteractionThread(KeyboardInteraction);
-	KeyboardInteractionThread.detach();
 	thread DrawpadInstallHookThread(DrawpadInstallHook);
 	DrawpadInstallHookThread.detach();
 	{
