@@ -177,7 +177,7 @@ int PreviousPptSlides()
 	return -1;
 }
 
-int PptAdvanceMode = 1;
+int PptAdvanceMode = -1;
 
 map<wstring, PPTUIControlStruct> PPTUIControl, PPTUIControlTarget;
 map<wstring, PPTUIControlStruct>& map<wstring, PPTUIControlStruct>::operator=(const map<wstring, PPTUIControlStruct>& m)
