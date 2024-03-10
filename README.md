@@ -1,9 +1,10 @@
 # Intelligent-Drawing-Teaching
-智绘教，适用于 Windows 桌面的悬浮窗画笔程序，高效绘制和丰富功能，只为尽可能地提供课堂教学效率。适用于触摸屏设备和PC端。
+智绘教，适用于 Windows 的屏幕批注工具，高效批注和丰富功能，只为尽可能地提高课堂教学效率，适用于触摸屏设备和PC端。
 
 [CodeBus 上的智绘教介绍](https://codebus.cn/alancrl/intelligent-painting-teaching)  
 
-**官方Q群**：618720802
+**官方Q群**：618720802  
+网盘下载分流：[123云盘免登录高速下载](https://www.123pan.com/s/duk9-n4dAd.html)  
 
 ## 项目介绍
 智绘教项目创立于 2023 年 2 月，由于班上一体机自带的画板程序并不好用，于是智绘教应运而生。智绘教通过长期教师的使用反馈，反复打磨，并高速发展。是一款运行于 Windows 平台的软件，无需安装即可使用。其使用 HiEasyX(EasyX 拓展库) 和 GDI+ 作为图形库，高质量抗锯齿与超低延迟，且支持多指绘制……
@@ -48,7 +49,7 @@
 
 ---
 
-智绘教，基于 C++ 和 C# 开发打造的开源项目，其适用于 Windows7 及以上平台。
+智绘教，基于 C++ 开发打造的开源项目，其适用于 Windows7 及以上平台。
 
 ## 使用方法
 
@@ -65,9 +66,9 @@
 网盘分流：[123云盘免登录高速下载](https://www.123pan.com/s/duk9-n4dAd.html)  
 转到 [GitHub](https://github.com/Alan-CRL/Intelligent-Drawing-Teaching/releases) 发布页面下载最新版本按照提示运行即可或可以联系作者获取。软件经过反复测试打磨，可以直接安装在班级一体机上使用。
 
-运行要求：Windows 7 及以上 + .NET framework 4.0 及以上，支持 PC 与 触摸一体机 使用。  
+运行要求：Windows 7 及以上 + .NET framework 4.0 及以上 + dx11 及以上，支持 PC 与 触摸一体机 使用。  
 编译环境：VS2022 + MSVC143 + C++17 + EasyX20230723 + .NET framework 4.0 开发者工具包。  
-.NET 功能只用于 PPT 联动，后续 PPT联动模块将使用 C++ COM 接口替代 C# COM 接口
+.NET 功能只用于 PPT联动，后续 PPT联动模块将考虑使用 C++ COM 接口替代 C# COM 接口
 
 ## 技术分享
 
@@ -97,5 +98,5 @@
 [JsonCPP](https://github.com/open-source-parsers/jsoncpp)  
 [Stb_image](https://github.com/nothings/stb)  
 [Hashlib++](https://github.com/aksalj/hashlibpp)  
-[Zip Utils](https://www.codeproject.com/Articles/7530/Zip-Utils-Clean-Elegant-Simple-Cplusplus-Win)   
-[International Components for Unicode](https://github.com/unicode-org/icu)  
+[Zip Utils](https://www.codeproject.com/Articles/7530/Zip-Utils-Clean-Elegant-Simple-Cplusplus-Win)  
+[Imgui](https://github.com/ocornut/imgui)  

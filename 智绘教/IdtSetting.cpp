@@ -958,7 +958,7 @@ int SettingMain()
 
 					std::vector<std::string> lines;
 					std::wstring line, temp;
-					std::wstringstream ss(L"快捷键正在测试，敬请期待");
+					std::wstringstream ss(L"按下 Ctrl + Win + Alt 切换选择/画笔\n\n其余快捷键和自定义正在测试，敬请期待");
 
 					while (getline(ss, temp, L'\n'))
 					{
@@ -1054,11 +1054,11 @@ int SettingMain()
 						text += ppt_IsPptDependencyLoaded;
 
 						text += L"\n\nPPT 状态：";
-						text += ppt_info_stay.TotalPage != -1 ? L"正在播放" : L"未播放";
+						text += PptInfoState.TotalPage != -1 ? L"正在播放" : L"未播放";
 						text += L"\nPPT 总页面数：";
-						text += to_wstring(ppt_info_stay.TotalPage);
+						text += to_wstring(PptInfoState.TotalPage);
 						text += L"\nPPT 当前页序号：";
-						text += to_wstring(ppt_info_stay.CurrentPage);
+						text += to_wstring(PptInfoState.CurrentPage);
 					}
 
 					int left_x = 10, right_x = 760;
@@ -1112,7 +1112,7 @@ int SettingMain()
 						text += L"智绘教是 GPLv3 开源免费软件，欢迎大家加入智绘教的开发\n";
 						text += L"目前急需解决的是程序的内存占用问题，智绘教占用的内存实在是太大了！\n下个版本估计就会有所改善\n\n";
 						text += L"近期我发现智绘教的用户量大幅增加，我非常感谢各位对智绘教的支持\n也感谢许多大佬和站长对智绘教的推广与肯定\n这两天我也得到了许多用户反馈，这个版本增加了对WPS的联动支持，同时还解决了一些小问题\n\n";
-						text += L"我会尽我所能开发智绘教，但是更新的速度和新功能的实现速度肯定比不上商业软件\n正处开学，时间紧迫，先写这么多";
+						text += L"我会尽我所能开发智绘教，但是更新的速度和新功能的实现速度肯定比不上商业软件\n正处开学，时间紧迫，先写这么多\n\n2024.02.28";
 					}
 
 					int left_x = 10, right_x = 760;
@@ -1175,7 +1175,7 @@ int SettingMain()
 						else if (procedure_updata_error == 2) text += L"\n程序自动更新发生网络错误";
 						else text += L"\n程序自动更新载入中（等待服务器反馈）";
 
-						text += L"\n在此版本中，您的所有数据都将在本地进行处理";
+						text += L"\n\n在此版本中，您的所有数据都将在本地进行处理";
 					}
 
 					int left_x = 10, right_x = 760;

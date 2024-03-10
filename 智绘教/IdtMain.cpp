@@ -33,8 +33,8 @@ void FreezeFrameWindow();
 bool already = false;
 
 wstring buildTime = __DATE__ L" " __TIME__; //构建时间
-string edition_date = "20240228a"; //程序发布日期
-string edition_code = "2402"; //程序版本
+string edition_date = "20240309b"; //程序发布日期
+string edition_code = "24H1"; //程序版本
 
 wstring userid; //用户ID（主板序列号）
 string global_path; //程序当前路径
@@ -265,7 +265,7 @@ int main()
 
 	//LOG(INFO) << "尝试获取用户ID";
 	userid = GetMainHardDiskSerialNumber();
-	if (userid.empty() || !isValidString(userid) || (userid.find(L"[") != userid.npos || userid.find(L"]") != userid.npos || userid.find(L";") != userid.npos || userid.find(L",") != userid.npos)) userid = L"无法正确识别";
+	if (userid.empty() || !isValidString(userid)) userid = L"无法正确识别";
 	//LOG(INFO) << "成功获取用户ID";
 
 	//显示器检查

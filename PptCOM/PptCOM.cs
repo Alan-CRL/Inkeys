@@ -55,6 +55,10 @@ namespace PptCOM
 
         string IsPptDependencyLoaded();
 
+        int GetSlideShowViewAdvanceMode();
+
+        int SetSlideShowViewAdvanceMode(int AdvanceMode);
+
         string slideNameIndex();
 
         int currentSlideIndex();
@@ -85,7 +89,7 @@ namespace PptCOM
 
         public string LinkTest()
         {
-            return "C# COM接口 连接成功，版本 20240226.02";
+            return "C# COM接口 连接成功，版本 20240308.01";
         }
 
         public string IsPptDependencyLoaded()
@@ -122,6 +126,35 @@ namespace PptCOM
             }
 
             return slidesName;
+        }
+
+        public int GetSlideShowViewAdvanceMode()
+        {
+            int AdvanceMode = -1;
+
+            try
+            {
+                if (pptDoc.SlideShowSettings.AdvanceMode == PpSlideShowAdvanceMode.ppSlideShowUseSlideTimings) AdvanceMode = 1;
+                else AdvanceMode = 0;
+            }
+            catch
+            {
+            }
+
+            return AdvanceMode;
+        }
+
+        public int SetSlideShowViewAdvanceMode(int AdvanceMode)
+        {
+            try
+            {
+                if (AdvanceMode == 1) pptDoc.SlideShowSettings.AdvanceMode = PpSlideShowAdvanceMode.ppSlideShowUseSlideTimings;
+            }
+            catch
+            {
+            }
+
+            return AdvanceMode;
         }
 
         public int currentSlideIndex()

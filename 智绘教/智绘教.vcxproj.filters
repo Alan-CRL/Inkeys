@@ -633,6 +633,15 @@
     <Image Include="src\wps_wpp.png">
       <Filter>资源文件</Filter>
     </Image>
+    <Image Include="src\ppt\end_show.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\ppt\arrow_left.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\ppt\arrow_right.png">
+      <Filter>资源文件</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />

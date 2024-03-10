@@ -1,31 +1,25 @@
 #pragma once
 #include "IdtMain.h"
 
-extern IMAGE ppt_icon[5];
+extern IMAGE PptIcon[5];
 extern bool SeewoCamera; //希沃视频展台是否开启
 
-//PPT联动
+// PPT联动
 
-struct ppt_infoStruct
+struct PptImgStruct
 {
-	int currentSlides;
-	int totalSlides;
+	bool IsSave;
+	map<int, bool> IsSaved;
+	map<int, IMAGE> Image;
 };
-extern ppt_infoStruct ppt_info;
+extern PptImgStruct PptImg;
 
-struct ppt_imgStruct
-{
-	bool is_save;
-	map<int, bool> is_saved;
-	map<int, IMAGE> image;
-};
-extern ppt_imgStruct ppt_img;
-
-struct ppt_info_stayStruct
+struct PptInfoStateStruct
 {
 	int CurrentPage, TotalPage;
 };
-extern ppt_info_stayStruct ppt_info_stay;
+extern PptInfoStateStruct PptInfoStateBuffer;
+extern PptInfoStateStruct PptInfoState;
 
 extern shared_mutex PPTManipulatedSm;
 extern std::chrono::high_resolution_clock::time_point PPTManipulated;
@@ -36,12 +30,30 @@ HWND GetPptShow();
 wstring GetPptTitle();
 bool EndPptShow();
 
+struct PPTUIControlStruct
+{
+	float v, s, e;
+};
+extern map<wstring, PPTUIControlStruct> PPTUIControl, PPTUIControlTarget;
+map<wstring, PPTUIControlStruct>& map<wstring, PPTUIControlStruct>::operator=(const map<wstring, PPTUIControlStruct>& m);
+
+struct PPTUIControlColorStruct
+{
+	COLORREF v;
+	float s, e;
+};
+extern map<wstring, PPTUIControlColorStruct> PPTUIControlColor, PPTUIControlColorTarget;
+map<wstring, PPTUIControlColorStruct>& map<wstring, PPTUIControlColorStruct>::operator=(const map<wstring, PPTUIControlColorStruct>& m);
+
+extern map<wstring, wstring> PPTUIControlString, PPTUIControlStringTarget;
+
 int NextPptSlides(int check);
 int PreviousPptSlides();
 
 //ppt 控件
 void DrawControlWindow();
 void ControlManipulation();
+void KeyboardInteraction();
 
 //获取当前页编号
 int GetCurrentPage();
