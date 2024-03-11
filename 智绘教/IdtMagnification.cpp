@@ -67,7 +67,9 @@ void UpdateMagWindow()
 
 	// Set the source rectangle for the magnifier control.
 	std::unique_lock<std::shared_mutex> lock1(MagnificationBackgroundSm);
+	//MagShowSystemCursor(FALSE);
 	MagSetWindowSource(hwndMag, sourceRect);
+	//MagShowSystemCursor(TRUE);
 	lock1.unlock();
 
 	// Reclaim topmost status, to prevent unmagnified menus from remaining in view.
