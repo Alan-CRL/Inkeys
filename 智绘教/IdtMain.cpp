@@ -33,7 +33,7 @@ void FreezeFrameWindow();
 bool already = false;
 
 wstring buildTime = __DATE__ L" " __TIME__; //构建时间
-string edition_date = "20240310d(Beta)"; //程序发布日期
+string edition_date = "20240311c(Beta)"; //程序发布日期
 string edition_code = "24H1"; //程序版本
 
 wstring userid; //用户ID（主板序列号）
@@ -115,14 +115,14 @@ int main()
 		DWORD dwResourceSize = SizeofResource(hModule, hResource);
 		fontCollection.AddMemoryFont(pResourceData, dwResourceSize);
 
+		INT numFound = 0;
+		fontCollection.GetFamilies(1, &HarmonyOS_fontFamily, &numFound);
+
 		//filesystem::create_directory(string_to_wstring(global_path) + L"ttf");
 		//ExtractResource((string_to_wstring(global_path) + L"ttf\\HarmonyOS_Sans_SC_Regular.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
 		//fontCollection.AddFontFile((string_to_wstring(global_path) + L"ttf\\HarmonyOS_Sans_SC_Regular.ttf").c_str());
 		//filesystem::path directory((string_to_wstring(global_path) + L"ttf").c_str());
 		//filesystem::remove_all(directory);
-
-		INT numFound = 0;
-		fontCollection.GetFamilies(1, &HarmonyOS_fontFamily, &numFound);
 
 		//AddFontResourceEx((string_to_wstring(global_path) + L"ttf\\HarmonyOS_Sans_SC_Regular.ttf").c_str(), FR_PRIVATE, NULL);
 		//AddFontResourceEx((string_to_wstring(global_path) + L"ttf\\Douyu_Font.otf").c_str(), FR_PRIVATE, NULL);

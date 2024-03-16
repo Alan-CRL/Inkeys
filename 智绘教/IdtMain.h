@@ -16,7 +16,7 @@
 // 首次编译需要确认 .NET Framework 版本为 4.0，如果不一致请执行 位于 PptCOM 的 <切换 .NET Framework 指南>
 
 #pragma once
-#define IDT_RELEASE
+//#define IDT_RELEASE
 
 // 简易 TODO
 // 最后一页时向右按钮显示为结束放映
@@ -37,7 +37,7 @@
 #include <gdiplus.h>								// GDI+绘图接口
 
 //COM类
-#include <atlbase.h>								// ATL(Active Template Library)的基本头文件
+//#include <atlbase.h>								// ATL(Active Template Library)的基本头文件
 #include <comutil.h>								// COM的实用程序集
 #include <ole2.h>									// OLE库（对象链接与嵌入）
 #include <rtscom.h>									// RTS 触控库
