@@ -16,7 +16,7 @@
 // 首次编译需要确认 .NET Framework 版本为 4.0，如果不一致请执行 位于 PptCOM 的 <切换 .NET Framework 指南>
 
 #pragma once
-//#define IDT_RELEASE
+#define IDT_RELEASE
 
 // 简易 TODO
 // 最后一页时向右按钮显示为结束放映

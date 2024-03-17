@@ -223,9 +223,9 @@ template <class T> void DxObjectSafeRelease(T** ppT)
 D2D1::ColorF ConvertToD2DColor(COLORREF color, bool reserve_alpha = true)
 {
 	return D2D1::ColorF(
-		GetBValue(color) / 255.0f,
-		GetGValue(color) / 255.0f,
 		GetRValue(color) / 255.0f,
+		GetGValue(color) / 255.0f,
+		GetBValue(color) / 255.0f,
 		(reserve_alpha ? GetAValue(color) : 255) / 255.0f
 	);
 }
@@ -264,6 +264,8 @@ private:
 };
 IDWriteFontCollectionLoader* MemoryFontLoader::instance_ = NULL;
 
+// TODO 控件缩放、控件置于左右两侧、控件拖动、UI 计算与绘制分离
+
 //ppt 控件
 bool UiChange;
 void DrawControlWindow()
@@ -272,11 +274,17 @@ void DrawControlWindow()
 
 	IMAGE ppt_background = CreateImageColor(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), RGBA(0, 0, 0, 0), true);
 
-	//Graphics graphics(GetImageHDC(&ppt_background));
+	//ppt窗口初始化
+	{
+		DisableResizing(ppt_window, true);//禁止窗口拉伸
+		SetWindowLong(ppt_window, GWL_STYLE, GetWindowLong(ppt_window, GWL_STYLE) & ~WS_CAPTION);//隐藏标题栏
+		SetWindowPos(ppt_window, NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_DRAWFRAME | SWP_NOACTIVATE);
+		SetWindowLong(ppt_window, GWL_EXSTYLE, WS_EX_TOOLWINDOW);//隐藏任务栏
+	}
 
 	// 创建 D2D 工厂
 	ID2D1Factory* Factory = NULL;
-	HRESULT ResultHandle = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &Factory);
+	D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &Factory);
 	// D2D1_FACTORY_TYPE_MULTI_THREADED 多线程后，该参数指定将可以公用一个工厂
 
 	// 创建 DC Render 并指定硬件加速
@@ -289,7 +297,7 @@ void DrawControlWindow()
 
 	// 创建 EasyX 兼容的 DC Render Target
 	ID2D1DCRenderTarget* DCRenderTarget;
-	HRESULT Result = Factory->CreateDCRenderTarget(&Property, &DCRenderTarget);
+	Factory->CreateDCRenderTarget(&Property, &DCRenderTarget);
 
 	// 绑定 EasyX DC
 	RECT PptBackgroundWindowRect = { 0, 0, ppt_background.getwidth(), ppt_background.getheight() };
@@ -297,14 +305,6 @@ void DrawControlWindow()
 
 	// 设置抗锯齿
 	DCRenderTarget->SetAntialiasMode(D2D1_ANTIALIAS_MODE::D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-
-	//ppt窗口初始化
-	{
-		DisableResizing(ppt_window, true);//禁止窗口拉伸
-		SetWindowLong(ppt_window, GWL_STYLE, GetWindowLong(ppt_window, GWL_STYLE) & ~WS_CAPTION);//隐藏标题栏
-		SetWindowPos(ppt_window, NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_DRAWFRAME | SWP_NOACTIVATE);
-		SetWindowLong(ppt_window, GWL_EXSTYLE, WS_EX_TOOLWINDOW);//隐藏任务栏
-	}
 
 	//媒体初始化
 	ID2D1Bitmap* PptIconBitmap[5] = { NULL };
@@ -659,7 +659,7 @@ void DrawControlWindow()
 		// UI 计算部分
 		{
 			// UI 控件位置定义
-			if (1 || TotalSlides != -1)
+			if (TotalSlides != -1)
 			{
 				// 左侧控件
 				{
@@ -1058,7 +1058,7 @@ void DrawControlWindow()
 		}
 
 		// 控件加载部分
-		if (!Initialization && (TotalSlides != -1 || 1))
+		if (!Initialization && TotalSlides != -1)
 		{
 			ppt_show = GetPptShow();
 
@@ -1069,7 +1069,7 @@ void DrawControlWindow()
 			if (ppt_software.find(L"WPS") != ppt_software.npos) ppt_software = L"WPS";
 			else ppt_software = L"PowerPoint";
 
-			//if (!ppt_title_recond[ppt_title]) FreezePPT = true;
+			if (!ppt_title_recond[ppt_title]) FreezePPT = true;
 			Initialization = true;
 		}
 		else if (Initialization && TotalSlides == -1)
@@ -1112,16 +1112,8 @@ void DrawControlWindow()
 					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
 					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectLeft/frame/width"].v);
 
-					if (pFrameBrush)
-					{
-						pFrameBrush->Release();
-						pFrameBrush = NULL;
-					}
-					if (pFillBrush)
-					{
-						pFillBrush->Release();
-						pFillBrush = NULL;
-					}
+					DxObjectSafeRelease(&pFrameBrush);
+					DxObjectSafeRelease(&pFillBrush);
 				}
 
 				// RoundRect/RoundRectLeft1
@@ -1143,16 +1135,8 @@ void DrawControlWindow()
 					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
 					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectLeft1/frame/width"].v);
 
-					if (pFrameBrush)
-					{
-						pFrameBrush->Release();
-						pFrameBrush = NULL;
-					}
-					if (pFillBrush)
-					{
-						pFillBrush->Release();
-						pFillBrush = NULL;
-					}
+					DxObjectSafeRelease(&pFrameBrush);
+					DxObjectSafeRelease(&pFillBrush);
 				}
 				// Image/RoundRectLeft1
 				{
@@ -1192,11 +1176,7 @@ void DrawControlWindow()
 						pBrush
 					);
 
-					if (pBrush)
-					{
-						pBrush->Release();
-						pBrush = NULL;
-					}
+					DxObjectSafeRelease(&pBrush);
 				}
 
 				// RoundRect/RoundRectLeft2
@@ -1218,16 +1198,8 @@ void DrawControlWindow()
 					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
 					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectLeft2/frame/width"].v);
 
-					if (pFrameBrush)
-					{
-						pFrameBrush->Release();
-						pFrameBrush = NULL;
-					}
-					if (pFillBrush)
-					{
-						pFillBrush->Release();
-						pFillBrush = NULL;
-					}
+					DxObjectSafeRelease(&pFrameBrush);
+					DxObjectSafeRelease(&pFillBrush);
 				}
 				// Image/RoundRectLeft2
 				{
@@ -1235,7 +1207,6 @@ void DrawControlWindow()
 					else DCRenderTarget->DrawBitmap(PptIconBitmap[2], D2D1::RectF(PPTUIControl[L"Image/RoundRectLeft2/x"].v, PPTUIControl[L"Image/RoundRectLeft2/y"].v, PPTUIControl[L"Image/RoundRectLeft2/x"].v + PptIcon[2].getwidth(), PPTUIControl[L"Image/RoundRectLeft2/y"].v + PptIcon[2].getheight()), PPTUIControl[L"Image/RoundRectLeft2/transparency"].v / 255.0f);
 				}
 			}
-
 			// 中间控件
 			{
 				// RoundRect/RoundRectMiddle
@@ -1257,16 +1228,8 @@ void DrawControlWindow()
 					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
 					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectMiddle/frame/width"].v);
 
-					if (pFrameBrush)
-					{
-						pFrameBrush->Release();
-						pFrameBrush = NULL;
-					}
-					if (pFillBrush)
-					{
-						pFillBrush->Release();
-						pFillBrush = NULL;
-					}
+					DxObjectSafeRelease(&pFrameBrush);
+					DxObjectSafeRelease(&pFillBrush);
 				}
 
 				// RoundRect/RoundRectMiddle1
@@ -1288,49 +1251,131 @@ void DrawControlWindow()
 					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
 					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectMiddle1/frame/width"].v);
 
-					if (pFrameBrush)
-					{
-						pFrameBrush->Release();
-						pFrameBrush = NULL;
-					}
-					if (pFillBrush)
-					{
-						pFillBrush->Release();
-						pFillBrush = NULL;
-					}
+					DxObjectSafeRelease(&pFrameBrush);
+					DxObjectSafeRelease(&pFillBrush);
 				}
 				// Image/RoundRectMiddle1
 				{
 					DCRenderTarget->DrawBitmap(PptIconBitmap[3], D2D1::RectF(PPTUIControl[L"Image/RoundRectMiddle1/x"].v, PPTUIControl[L"Image/RoundRectMiddle1/y"].v, PPTUIControl[L"Image/RoundRectMiddle1/x"].v + PptIcon[3].getwidth(), PPTUIControl[L"Image/RoundRectMiddle1/y"].v + PptIcon[3].getheight()), PPTUIControl[L"Image/RoundRectMiddle1/transparency"].v / 255.0f);
 				}
 			}
-
-			/*
 			// 右侧控件
 			{
-				hiex::EasyX_Gdiplus_FillRoundRect(PPTUIControl[L"RoundRect/RoundRectRight/x"].v, PPTUIControl[L"RoundRect/RoundRectRight/y"].v, PPTUIControl[L"RoundRect/RoundRectRight/width"].v, PPTUIControl[L"RoundRect/RoundRectRight/height"].v, PPTUIControl[L"RoundRect/RoundRectRight/ellipsewidth"].v, PPTUIControl[L"RoundRect/RoundRectRight/ellipseheight"].v, PPTUIControlColor[L"RoundRect/RoundRectRight/frame"].v, PPTUIControlColor[L"RoundRect/RoundRectRight/fill"].v, PPTUIControl[L"RoundRect/RoundRectRight/frame/width"].v, true, SmoothingModeHighQuality, &ppt_background);
-
-				hiex::EasyX_Gdiplus_FillRoundRect(PPTUIControl[L"RoundRect/RoundRectRight1/x"].v, PPTUIControl[L"RoundRect/RoundRectRight1/y"].v, PPTUIControl[L"RoundRect/RoundRectRight1/width"].v, PPTUIControl[L"RoundRect/RoundRectRight1/height"].v, PPTUIControl[L"RoundRect/RoundRectRight1/ellipsewidth"].v, PPTUIControl[L"RoundRect/RoundRectRight1/ellipseheight"].v, PPTUIControlColor[L"RoundRect/RoundRectRight1/frame"].v, PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v, PPTUIControl[L"RoundRect/RoundRectRight1/frame/width"].v, true, SmoothingModeHighQuality, &ppt_background);
-				hiex::TransparentImage(&ppt_background, int(PPTUIControl[L"Image/RoundRectRight1/x"].v), int(PPTUIControl[L"Image/RoundRectRight1/y"].v), &PptIcon[1], int(PPTUIControl[L"Image/RoundRectRight1/transparency"].v));
-
+				// RoundRect/RoundRectRight
 				{
-					Gdiplus::Font gp_font(&HarmonyOS_fontFamily, (Gdiplus::REAL)PPTUIControl[L"Words/InfoRight/height"].v, FontStyleRegular, UnitPixel);
-					SolidBrush WordBrush(hiex::ConvertToGdiplusColor(PPTUIControlColor[L"Words/InfoRight/words_color"].v, true));
-					graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-					{
-						pptwords_rect.left = (int)PPTUIControl[L"Words/InfoRight/left"].v;
-						pptwords_rect.top = (int)PPTUIControl[L"Words/InfoRight/top"].v;
-						pptwords_rect.right = (int)PPTUIControl[L"Words/InfoRight/right"].v;
-						pptwords_rect.bottom = (int)PPTUIControl[L"Words/InfoRight/bottom"].v;
-					}
-					graphics.DrawString(PPTUIControlString[L"Info/Pages"].c_str(), -1, &gp_font, hiex::RECTToRectF(pptwords_rect), &stringFormat, &WordBrush);
+					ID2D1SolidColorBrush* pFrameBrush = NULL;
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(PPTUIControlColor[L"RoundRect/RoundRectRight/frame"].v), &pFrameBrush);
+					ID2D1SolidColorBrush* pFillBrush = NULL;
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(PPTUIControlColor[L"RoundRect/RoundRectRight/fill"].v), &pFillBrush);
+
+					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
+						PPTUIControl[L"RoundRect/RoundRectRight/x"].v,
+						PPTUIControl[L"RoundRect/RoundRectRight/y"].v,
+						PPTUIControl[L"RoundRect/RoundRectRight/x"].v + PPTUIControl[L"RoundRect/RoundRectRight/width"].v,
+						PPTUIControl[L"RoundRect/RoundRectRight/y"].v + PPTUIControl[L"RoundRect/RoundRectRight/height"].v),
+						PPTUIControl[L"RoundRect/RoundRectRight/ellipsewidth"].v / 2.0f,
+						PPTUIControl[L"RoundRect/RoundRectRight/ellipseheight"].v / 2.0f
+					);
+
+					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
+					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectRight/frame/width"].v);
+
+					DxObjectSafeRelease(&pFrameBrush);
+					DxObjectSafeRelease(&pFillBrush);
 				}
 
-				hiex::EasyX_Gdiplus_FillRoundRect(PPTUIControl[L"RoundRect/RoundRectRight2/x"].v, PPTUIControl[L"RoundRect/RoundRectRight2/y"].v, PPTUIControl[L"RoundRect/RoundRectRight2/width"].v, PPTUIControl[L"RoundRect/RoundRectRight2/height"].v, PPTUIControl[L"RoundRect/RoundRectRight2/ellipsewidth"].v, PPTUIControl[L"RoundRect/RoundRectRight2/ellipseheight"].v, PPTUIControlColor[L"RoundRect/RoundRectRight2/frame"].v, PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v, PPTUIControl[L"RoundRect/RoundRectRight2/frame/width"].v, true, SmoothingModeHighQuality, &ppt_background);
-				if (CurrentSlides == -1) hiex::TransparentImage(&ppt_background, int(PPTUIControl[L"Image/RoundRectRight2/x"].v), int(PPTUIControl[L"Image/RoundRectRight2/y"].v), &PptIcon[3], int(PPTUIControl[L"Image/RoundRectRight2/transparency"].v));
-				else hiex::TransparentImage(&ppt_background, int(PPTUIControl[L"Image/RoundRectRight2/x"].v), int(PPTUIControl[L"Image/RoundRectRight2/y"].v), &PptIcon[2], int(PPTUIControl[L"Image/RoundRectRight2/transparency"].v));
+				// RoundRect/RoundRectRight1
+				{
+					ID2D1SolidColorBrush* pFrameBrush = NULL;
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(PPTUIControlColor[L"RoundRect/RoundRectRight1/frame"].v), &pFrameBrush);
+					ID2D1SolidColorBrush* pFillBrush = NULL;
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v), &pFillBrush);
+
+					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
+						PPTUIControl[L"RoundRect/RoundRectRight1/x"].v,
+						PPTUIControl[L"RoundRect/RoundRectRight1/y"].v,
+						PPTUIControl[L"RoundRect/RoundRectRight1/x"].v + PPTUIControl[L"RoundRect/RoundRectRight1/width"].v,
+						PPTUIControl[L"RoundRect/RoundRectRight1/y"].v + PPTUIControl[L"RoundRect/RoundRectRight1/height"].v),
+						PPTUIControl[L"RoundRect/RoundRectRight1/ellipsewidth"].v / 2.0f,
+						PPTUIControl[L"RoundRect/RoundRectRight1/ellipseheight"].v / 2.0f
+					);
+
+					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
+					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectRight1/frame/width"].v);
+
+					DxObjectSafeRelease(&pFrameBrush);
+					DxObjectSafeRelease(&pFillBrush);
+				}
+				// Image/RoundRectRight1
+				{
+					DCRenderTarget->DrawBitmap(PptIconBitmap[1], D2D1::RectF(PPTUIControl[L"Image/RoundRectRight1/x"].v, PPTUIControl[L"Image/RoundRectRight1/y"].v, PPTUIControl[L"Image/RoundRectRight1/x"].v + PptIcon[1].getwidth(), PPTUIControl[L"Image/RoundRectRight1/y"].v + PptIcon[1].getheight()), PPTUIControl[L"Image/RoundRectRight1/transparency"].v / 255.0f);
+				}
+
+				// Words/InfoRight
+				{
+					IDWriteTextFormat* textFormat = NULL;
+					TextFactory->CreateTextFormat(
+						L"HarmonyOS Sans SC",
+						D2DFontCollection,
+						DWRITE_FONT_WEIGHT_NORMAL,
+						DWRITE_FONT_STYLE_NORMAL,
+						DWRITE_FONT_STRETCH_NORMAL,
+						PPTUIControl[L"Words/InfoRight/height"].v,
+						L"zh-cn",
+						&textFormat
+					);
+
+					ID2D1SolidColorBrush* pBrush = NULL;
+					DCRenderTarget->CreateSolidColorBrush(D2D1::ColorF(ConvertToD2DColor(PPTUIControlColor[L"Words/InfoRight/words_color"].v)), &pBrush);
+
+					textFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+					textFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+
+					DCRenderTarget->DrawText(
+						PPTUIControlString[L"Info/Pages"].c_str(),  // 文本
+						wcslen(PPTUIControlString[L"Info/Pages"].c_str()),  // 文本长度
+						textFormat,  // 文本格式
+						D2D1::RectF(
+							PPTUIControl[L"Words/InfoRight/left"].v,
+							PPTUIControl[L"Words/InfoRight/top"].v,
+							PPTUIControl[L"Words/InfoRight/right"].v,
+							PPTUIControl[L"Words/InfoRight/bottom"].v
+						),
+						pBrush
+					);
+
+					DxObjectSafeRelease(&pBrush);
+				}
+
+				// RoundRect/RoundRectRight2
+				{
+					ID2D1SolidColorBrush* pFrameBrush = NULL;
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(PPTUIControlColor[L"RoundRect/RoundRectRight2/frame"].v), &pFrameBrush);
+					ID2D1SolidColorBrush* pFillBrush = NULL;
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v), &pFillBrush);
+
+					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
+						PPTUIControl[L"RoundRect/RoundRectRight2/x"].v,
+						PPTUIControl[L"RoundRect/RoundRectRight2/y"].v,
+						PPTUIControl[L"RoundRect/RoundRectRight2/x"].v + PPTUIControl[L"RoundRect/RoundRectRight2/width"].v,
+						PPTUIControl[L"RoundRect/RoundRectRight2/y"].v + PPTUIControl[L"RoundRect/RoundRectRight2/height"].v),
+						PPTUIControl[L"RoundRect/RoundRectRight2/ellipsewidth"].v / 2.0f,
+						PPTUIControl[L"RoundRect/RoundRectRight2/ellipseheight"].v / 2.0f
+					);
+
+					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
+					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectRight2/frame/width"].v);
+
+					DxObjectSafeRelease(&pFrameBrush);
+					DxObjectSafeRelease(&pFillBrush);
+				}
+				// Image/RoundRectRight2
+				{
+					if (CurrentSlides == -1) DCRenderTarget->DrawBitmap(PptIconBitmap[3], D2D1::RectF(PPTUIControl[L"Image/RoundRectRight2/x"].v, PPTUIControl[L"Image/RoundRectRight2/y"].v, PPTUIControl[L"Image/RoundRectRight2/x"].v + PptIcon[3].getwidth(), PPTUIControl[L"Image/RoundRectRight2/y"].v + PptIcon[3].getheight()), PPTUIControl[L"Image/RoundRectRight2/transparency"].v / 255.0f);
+					else DCRenderTarget->DrawBitmap(PptIconBitmap[2], D2D1::RectF(PPTUIControl[L"Image/RoundRectRight2/x"].v, PPTUIControl[L"Image/RoundRectRight2/y"].v, PPTUIControl[L"Image/RoundRectRight2/x"].v + PptIcon[2].getwidth(), PPTUIControl[L"Image/RoundRectRight2/y"].v + PptIcon[2].getheight()), PPTUIControl[L"Image/RoundRectRight2/transparency"].v / 255.0f);
+				}
 			}
-			 */
+
 			DCRenderTarget->EndDraw();
 
 			{
@@ -1351,6 +1396,12 @@ void DrawControlWindow()
 		}
 		else Sleep(100);
 	}
+
+	DxObjectSafeRelease(&D2DFontCollection);
+	DxObjectSafeRelease(&TextFactory);
+	for (int r = 0; r < (int)size(PptIconBitmap); r++) DxObjectSafeRelease(&PptIconBitmap[r]);
+	DxObjectSafeRelease(&DCRenderTarget);
+	DxObjectSafeRelease(&Factory);
 
 	thread_status[L"DrawControlWindow"] = false;
 }

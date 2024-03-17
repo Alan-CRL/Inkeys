@@ -541,6 +541,7 @@ void MultiFingerDrawing(LONG pid, POINT pt)
 					instant_writing_distance += (int)EuclideanDistance({ mouse.last_x, mouse.last_y }, { pt.x, pt.y });
 					if (instant_writing_distance >= 4)
 					{
+						// if (!points.empty()) points.push_back(Point((points.back().X + mouse.x) / 2.0f, (points.back().Y + mouse.y) / 2.0f));
 						points.push_back(Point(mouse.x, mouse.y));
 						instant_writing_distance %= 4;
 					}
