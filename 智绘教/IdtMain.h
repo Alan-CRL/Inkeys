@@ -37,7 +37,7 @@
 #include <gdiplus.h>								// GDI+绘图接口
 
 //COM类
-#include <atlbase.h>								// ATL(Active Template Library)的基本头文件
+//#include <atlbase.h>								// ATL(Active Template Library)的基本头文件
 #include <comutil.h>								// COM的实用程序集
 #include <ole2.h>									// OLE库（对象链接与嵌入）
 #include <rtscom.h>									// RTS 触控库

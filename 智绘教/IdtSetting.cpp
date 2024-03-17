@@ -295,7 +295,7 @@ int SettingMain()
 			ImGui::SetNextWindowSize({ static_cast<float>(SettingWindowWidth),static_cast<float>(SettingWindowHeight) });//设置窗口大小
 
 			Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
-			ImGui::Begin(u8"智绘教选项", &test.select, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings);//开始绘制窗口
+			ImGui::Begin(reinterpret_cast<const char*>(u8"智绘教选项"), &test.select, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings);//开始绘制窗口
 
 			{
 				ImGui::SetCursorPos({ 10.0f,44.0f });
@@ -303,7 +303,7 @@ int SettingMain()
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab1 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 				if (Tab == Tab::tab1) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 				if (Tab == Tab::tab1) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-				if (ImGui::Button(u8"主页", { 100.0f,40.0f }))
+				if (ImGui::Button(reinterpret_cast<const char*>(u8"主页"), { 100.0f,40.0f }))
 				{
 					Tab = Tab::tab1;
 				}
@@ -314,7 +314,7 @@ int SettingMain()
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab2 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 				if (Tab == Tab::tab2) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 				if (Tab == Tab::tab2) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-				if (ImGui::Button(u8"通用", { 100.0f,40.0f }))
+				if (ImGui::Button(reinterpret_cast<const char*>(u8"通用"), { 100.0f,40.0f }))
 				{
 					Tab = Tab::tab2;
 				}
@@ -325,7 +325,7 @@ int SettingMain()
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab3 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 				if (Tab == Tab::tab3) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 				if (Tab == Tab::tab3) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-				if (ImGui::Button(u8"绘制", { 100.0f,40.0f }))
+				if (ImGui::Button(reinterpret_cast<const char*>(u8"绘制"), { 100.0f,40.0f }))
 				{
 					Tab = Tab::tab3;
 				}
@@ -336,7 +336,7 @@ int SettingMain()
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab4 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 				if (Tab == Tab::tab4) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 				if (Tab == Tab::tab4) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-				if (ImGui::Button(u8"快捷键", { 100.0f,40.0f }))
+				if (ImGui::Button(reinterpret_cast<const char*>(u8"快捷键"), { 100.0f,40.0f }))
 				{
 					Tab = Tab::tab4;
 				}
@@ -347,7 +347,7 @@ int SettingMain()
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab5 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 				if (Tab == Tab::tab5) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 				if (Tab == Tab::tab5) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-				if (ImGui::Button(u8"程序调测", { 100.0f,40.0f }))
+				if (ImGui::Button(reinterpret_cast<const char*>(u8"程序调测"), { 100.0f,40.0f }))
 				{
 					Tab = Tab::tab5;
 				}
@@ -358,7 +358,7 @@ int SettingMain()
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab6 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 				if (Tab == Tab::tab6) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 				if (Tab == Tab::tab6) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-				if (ImGui::Button(u8"作者留言", { 100.0f,40.0f }))
+				if (ImGui::Button(reinterpret_cast<const char*>(u8"作者留言"), { 100.0f,40.0f }))
 				{
 					Tab = Tab::tab6;
 				}
@@ -369,7 +369,7 @@ int SettingMain()
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab7 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 				if (Tab == Tab::tab7) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 				if (Tab == Tab::tab7) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-				if (ImGui::Button(u8"关于", { 100.0f,40.0f }))
+				if (ImGui::Button(reinterpret_cast<const char*>(u8"关于"), { 100.0f,40.0f }))
 				{
 					Tab = Tab::tab7;
 				}
@@ -380,7 +380,7 @@ int SettingMain()
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-				if (ImGui::Button(u8"关闭程序", { 100.0f,30.0f }))
+				if (ImGui::Button(reinterpret_cast<const char*>(u8"关闭程序"), { 100.0f,30.0f }))
 				{
 					test.select = false;
 					off_signal = true;
@@ -388,7 +388,7 @@ int SettingMain()
 			}
 
 			ImGui::SetCursorPos({ 120.0f,44.0f });
-			ImGui::BeginChild(u8"公告栏", { 770.0f,616.0f }, true);
+			ImGui::BeginChild(reinterpret_cast<const char*>(u8"公告栏"), { 770.0f,616.0f }, true);
 			switch (Tab)
 			{
 			case Tab::tab1:
@@ -439,72 +439,6 @@ int SettingMain()
 
 				ImGui::SetCursorPos({ 35.0f,60.0f });
 				ImGui::Image((void*)TextureSettingSign[2], ImVec2((float)SettingSign[2].getwidth(), (float)SettingSign[2].getheight()));
-
-				/*
-				if (AutomaticUpdateStep == 0)
-				{
-					ImGui::SetCursorPos({ 185.0f - (float)SettingSign[4].getwidth() / 2.0f,ImGui::GetCursorPosY() + 20 });
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-					if (ImGui::Button(u8"程序自动更新待启用", { 400.0f,50.0f }))
-					{
-						//TODO
-					}
-				}
-				else if (AutomaticUpdateStep == 1)
-				{
-					ImGui::SetCursorPos({ 185.0f - (float)SettingSign[4].getwidth() / 2.0f,ImGui::GetCursorPosY() + 20 });
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(106 / 255.0f, 156 / 255.0f, 45 / 255.0f, 1.0f));
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(93 / 255.0f, 136 / 255.0f, 39 / 255.0f, 1.0f));
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(79 / 255.0f, 116 / 255.0f, 34 / 255.0f, 1.0f));
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-					if (ImGui::Button(u8"程序版本已经是最新", { 400.0f,50.0f }))
-					{
-						//TODO
-					}
-				}
-				else if (AutomaticUpdateStep == 2)
-				{
-					ImGui::SetCursorPos({ 185.0f - (float)SettingSign[4].getwidth() / 2.0f,ImGui::GetCursorPosY() + 20 });
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(245 / 255.0f, 166 / 255.0f, 35 / 255.0f, 1.0f));
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(225 / 255.0f, 153 / 255.0f, 34 / 255.0f, 1.0f));
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(205 / 255.0f, 140 / 255.0f, 33 / 255.0f, 1.0f));
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-					if (ImGui::Button(u8"程序新版本排队下载中", { 400.0f,50.0f }))
-					{
-						//TODO
-					}
-				}
-				else if (AutomaticUpdateStep == 3)
-				{
-					ImGui::SetCursorPos({ 185.0f - (float)SettingSign[4].getwidth() / 2.0f,ImGui::GetCursorPosY() + 20 });
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 153 / 255.0f, 255 / 255.0f, 1.0f));
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 141 / 255.0f, 235 / 255.0f, 1.0f));
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 129 / 255.0f, 215 / 255.0f, 1.0f));
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-					if (ImGui::Button(u8"重启程序以更新到最新版本", { 400.0f,50.0f }))
-					{
-						//TODO
-					}
-				}
-				while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
-
-				{
-					float CursorPosY = ImGui::GetCursorPosY();
-
-					ImGui::SetCursorPos({ 185.0f - (float)SettingSign[4].getwidth() / 2.0f,CursorPosY + 10 });
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 153 / 255.0f, 255 / 255.0f, 1.0f));
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 141 / 255.0f, 235 / 255.0f, 1.0f));
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 129 / 255.0f, 215 / 255.0f, 1.0f));
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-					if (ImGui::Button(u8"实验性新功能", { 400.0f,50.0f }))
-					{
-						//TODO
-					}
-					while (PushStyleColorNum) PushStyleColorNum--,ImGui::PopStyleColor();
-				}*/
 
 				{
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
@@ -601,26 +535,26 @@ int SettingMain()
 
 				{
 					ImGui::SetCursorPosX(20.0f);
-					ImGui::BeginChild(u8"程序环境", { 730.0f,125.0f }, true, ImGuiWindowFlags_NoScrollbar);
+					ImGui::BeginChild(reinterpret_cast<const char*>(u8"程序环境"), { 730.0f,125.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
 					{
 						ImGui::SetCursorPosY(10.0f);
 
 						Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-						CenteredText(u8" 查询开机启动状态", 4.0f);
+						CenteredText(reinterpret_cast<const char*>(u8" 查询开机启动状态"), 4.0f);
 
 						Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
-						ImGui::SameLine(); HelpMarker(u8"调整开机自动启动设置前需要查询当前状态（程序将申请管理员权限）", ImGui::GetStyleColorVec4(ImGuiCol_Text));
+						ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"调整开机自动启动设置前需要查询当前状态（程序将申请管理员权限）"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
 
 						if (!receivedData.empty())
 						{
 							string temp, helptemp;
-							if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Succe") temp = u8"查询状态成功", helptemp = u8"可以调整开机启动设置";
-							else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Error") temp = u8"查询状态错误 " + wstring_to_string(receivedData), helptemp = u8"再次点击查询尝试，或重启程序以管理员身份运行";
-							else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"TimeO") temp = u8"查询状态超时", helptemp = u8"再次点击查询尝试\n同时超时时间将从 5 秒调整为 15 秒", QueryWaitingTime = 15;
-							else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Renew") temp = u8"需要重新查询状态", helptemp = u8"调整开机自动启动设置时超时，请再次点击查询\n同时超时时间将从 5 秒调整为 15 秒", QueryWaitingTime = 15;
-							else temp = u8"未知错误", helptemp = u8"再次点击查询尝试，或重启程序以管理员身份运行";
+							if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Succe") temp = reinterpret_cast<const char*>(u8"查询状态成功"), helptemp = reinterpret_cast<const char*>(u8"可以调整开机启动设置");
+							else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Error") temp = reinterpret_cast<const char*>(u8"查询状态错误 ") + wstring_to_string(receivedData), helptemp = reinterpret_cast<const char*>(u8"再次点击查询尝试，或重启程序以管理员身份运行");
+							else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"TimeO") temp = reinterpret_cast<const char*>(u8"查询状态超时"), helptemp = reinterpret_cast<const char*>(u8"再次点击查询尝试\n同时超时时间将从 5 秒调整为 15 秒"), QueryWaitingTime = 15;
+							else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Renew") temp = reinterpret_cast<const char*>(u8"需要重新查询状态"), helptemp = reinterpret_cast<const char*>(u8"调整开机自动启动设置时超时，请再次点击查询\n同时超时时间将从 5 秒调整为 15 秒"), QueryWaitingTime = 15;
+							else temp = reinterpret_cast<const char*>(u8"未知错误"), helptemp = reinterpret_cast<const char*>(u8"再次点击查询尝试，或重启程序以管理员身份运行");
 
 							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 80.0f - ImGui::CalcTextSize(temp.c_str()).x - 30.0f);
@@ -637,7 +571,7 @@ int SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-						if (ImGui::Button(u8"查询", { 60.0f,30.0f }))
+						if (ImGui::Button(reinterpret_cast<const char*>(u8"查询"), { 60.0f,30.0f }))
 						{
 							if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1) filesystem::create_directory(string_to_wstring(global_path) + L"api");
 							ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
@@ -686,12 +620,12 @@ int SettingMain()
 
 						Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-						CenteredText(u8" 开机自动启动", 4.0f);
+						CenteredText(reinterpret_cast<const char*>(u8" 开机自动启动"), 4.0f);
 
 						Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
 						ImGui::SameLine();
-						if (setlist.StartUp) HelpMarker(u8"程序将申请管理员权限", ImGui::GetStyleColorVec4(ImGuiCol_Text));
-						else HelpMarker(u8"调整开机自动启动设置前需要查询当前状态（程序将申请管理员权限）\n请点击上方按钮查询当前状态", ImGui::GetStyleColorVec4(ImGuiCol_Text));
+						if (setlist.StartUp) HelpMarker(reinterpret_cast<const char*>(u8"程序将申请管理员权限"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
+						else HelpMarker(reinterpret_cast<const char*>(u8"调整开机自动启动设置前需要查询当前状态（程序将申请管理员权限）\n请点击上方按钮查询当前状态"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
 
 						if (setlist.StartUp)
 						{
@@ -701,7 +635,7 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
-							ImGui::Toggle(u8"##开机自动启动", &StartUp, config);
+							ImGui::Toggle(reinterpret_cast<const char*>(u8"##开机自动启动"), &StartUp, config);
 
 							if (setlist.StartUp - 1 != (int)StartUp)
 							{
@@ -745,11 +679,11 @@ int SettingMain()
 
 						Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-						CenteredText(u8" 启动时创建桌面快捷方式", 4.0f);
+						CenteredText(reinterpret_cast<const char*>(u8" 启动时创建桌面快捷方式"), 4.0f);
 
 						Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
 						ImGui::SameLine();
-						HelpMarker(u8"程序将在每次启动时在桌面创建快捷方式\n后续这项功能将变身成为插件，并拥有更多的自定义功能", ImGui::GetStyleColorVec4(ImGuiCol_Text));
+						HelpMarker(reinterpret_cast<const char*>(u8"程序将在每次启动时在桌面创建快捷方式\n后续这项功能将变身成为插件，并拥有更多的自定义功能"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
 
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
@@ -757,7 +691,7 @@ int SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 						ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
-						ImGui::Toggle(u8"##启动时创建桌面快捷方式", &CreateLnk, config);
+						ImGui::Toggle(reinterpret_cast<const char*>(u8"##启动时创建桌面快捷方式"), &CreateLnk, config);
 
 						if (setlist.CreateLnk != CreateLnk)
 						{
@@ -772,17 +706,17 @@ int SettingMain()
 				}
 				{
 					ImGui::SetCursorPosX(20.0f);
-					ImGui::BeginChild(u8"外观调整", { 730.0f,50.0f }, true, ImGuiWindowFlags_NoScrollbar);
+					ImGui::BeginChild(reinterpret_cast<const char*>(u8"外观调整"), { 730.0f,50.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
 					{
 						ImGui::SetCursorPosY(8.0f);
 
 						Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-						CenteredText(u8" 外观皮肤", 4.0f);
+						CenteredText(reinterpret_cast<const char*>(u8" 外观皮肤"), 4.0f);
 
 						ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 130.0f);
-						static const char* items[] = { u8"  推荐皮肤", u8"  默认皮肤", u8"  极简时钟", u8"  龙年迎新" };
+						static const char* items[] = { reinterpret_cast<const char*>(u8"  推荐皮肤"), reinterpret_cast<const char*>(u8"  默认皮肤"), reinterpret_cast<const char*>(u8"  极简时钟"), reinterpret_cast<const char*>(u8"  龙年迎新") };
 						ImGui::SetNextItemWidth(120);
 
 						Font->Scale = 0.82f, PushFontNum++, ImGui::PushFont(Font);
@@ -790,7 +724,7 @@ int SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-						ImGui::Combo(u8"##外观皮肤", &SetSkinMode, items, IM_ARRAYSIZE(items));
+						ImGui::Combo(reinterpret_cast<const char*>(u8"##外观皮肤"), &SetSkinMode, items, IM_ARRAYSIZE(items));
 
 						if (setlist.SetSkinMode != SetSkinMode)
 						{
@@ -806,14 +740,14 @@ int SettingMain()
 				}
 				{
 					ImGui::SetCursorPosX(20.0f);
-					ImGui::BeginChild(u8"画笔调整", { 730.0f,90.0f }, true, ImGuiWindowFlags_NoScrollbar);
+					ImGui::BeginChild(reinterpret_cast<const char*>(u8"画笔调整"), { 730.0f,90.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
 					{
 						ImGui::SetCursorPosY(10.0f);
 
 						Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-						CenteredText(u8" 画笔绘制时自动收起主栏", 4.0f);
+						CenteredText(reinterpret_cast<const char*>(u8" 画笔绘制时自动收起主栏"), 4.0f);
 
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
@@ -821,7 +755,7 @@ int SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 						ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
-						ImGui::Toggle(u8"##画笔绘制时自动收起主栏", &BrushRecover, config);
+						ImGui::Toggle(reinterpret_cast<const char*>(u8"##画笔绘制时自动收起主栏"), &BrushRecover, config);
 
 						if (setlist.BrushRecover != BrushRecover)
 						{
@@ -834,7 +768,7 @@ int SettingMain()
 
 						Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-						CenteredText(u8" 橡皮擦除时自动收起主栏", 4.0f);
+						CenteredText(reinterpret_cast<const char*>(u8" 橡皮擦除时自动收起主栏"), 4.0f);
 
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
@@ -842,7 +776,7 @@ int SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 						ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
-						ImGui::Toggle(u8"##橡皮擦除时自动收起主栏", &RubberRecover, config);
+						ImGui::Toggle(reinterpret_cast<const char*>(u8"##橡皮擦除时自动收起主栏"), &RubberRecover, config);
 
 						if (setlist.RubberRecover != RubberRecover)
 						{
@@ -861,17 +795,17 @@ int SettingMain()
 				ImGui::SetCursorPosY(20.0f);
 				{
 					ImGui::SetCursorPosX(20.0f);
-					ImGui::BeginChild(u8"智能绘图调整", { 730.0f,90.0f }, true, ImGuiWindowFlags_NoScrollbar);
+					ImGui::BeginChild(reinterpret_cast<const char*>(u8"智能绘图调整"), { 730.0f,90.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
 					{
 						ImGui::SetCursorPosY(10.0f);
 
 						Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-						CenteredText(u8" 智能绘图", 4.0f);
+						CenteredText(reinterpret_cast<const char*>(u8" 智能绘图"), 4.0f);
 
 						Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
-						ImGui::SameLine(); HelpMarker(u8"抬笔时可以将与直线相似的墨迹转换成直线\n还可以直线吸附和矩形吸附", ImGui::GetStyleColorVec4(ImGuiCol_Text));
+						ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"抬笔时可以将与直线相似的墨迹转换成直线\n还可以直线吸附和矩形吸附"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
 
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
@@ -879,7 +813,7 @@ int SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 						ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
-						ImGui::Toggle(u8"##智能绘图", &IntelligentDrawing, config);
+						ImGui::Toggle(reinterpret_cast<const char*>(u8"##智能绘图"), &IntelligentDrawing, config);
 
 						if (setlist.IntelligentDrawing != IntelligentDrawing)
 						{
@@ -892,10 +826,10 @@ int SettingMain()
 
 						Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-						CenteredText(u8" 平滑墨迹", 4.0f);
+						CenteredText(reinterpret_cast<const char*>(u8" 平滑墨迹"), 4.0f);
 
 						Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
-						ImGui::SameLine(); HelpMarker(u8"抬笔时自动平滑墨迹", ImGui::GetStyleColorVec4(ImGuiCol_Text));
+						ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"抬笔时自动平滑墨迹"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
 
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
@@ -903,7 +837,7 @@ int SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 						ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
-						ImGui::Toggle(u8"##平滑墨迹", &SmoothWriting, config);
+						ImGui::Toggle(reinterpret_cast<const char*>(u8"##平滑墨迹"), &SmoothWriting, config);
 
 						if (setlist.SmoothWriting != SmoothWriting)
 						{
@@ -916,17 +850,17 @@ int SettingMain()
 				}
 				{
 					ImGui::SetCursorPosX(20.0f);
-					ImGui::BeginChild(u8"橡皮调整", { 730.0f,50.0f }, true, ImGuiWindowFlags_NoScrollbar);
+					ImGui::BeginChild(reinterpret_cast<const char*>(u8"橡皮调整"), { 730.0f,50.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
 					{
 						ImGui::SetCursorPosY(8.0f);
 
 						Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-						CenteredText(u8" 橡皮粗细灵敏度", 4.0f);
+						CenteredText(reinterpret_cast<const char*>(u8" 橡皮粗细灵敏度"), 4.0f);
 
 						ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 130.0f);
-						static const char* items[] = { u8"  触摸设备", u8"  PC 鼠标" };
+						static const char* items[] = { reinterpret_cast<const char*>(u8"  触摸设备"), reinterpret_cast<const char*>(u8"  PC 鼠标") };
 						ImGui::SetNextItemWidth(120);
 
 						Font->Scale = 0.82f, PushFontNum++, ImGui::PushFont(Font);
@@ -934,7 +868,7 @@ int SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-						ImGui::Combo(u8"##橡皮粗细灵敏度", &RubberMode, items, IM_ARRAYSIZE(items));
+						ImGui::Combo(reinterpret_cast<const char*>(u8"##橡皮粗细灵敏度"), &RubberMode, items, IM_ARRAYSIZE(items));
 
 						if (setlist.RubberMode != RubberMode)
 						{
@@ -1225,36 +1159,36 @@ int SettingMain()
 				ImGui::SetCursorPos({ 120.0f,44.0f + 616.0f + 5.0f });
 				Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-				CenteredText(u8"所有设置都会自动保存并立即生效", 4.0f);
+				CenteredText(reinterpret_cast<const char*>(u8"所有设置都会自动保存并立即生效"), 4.0f);
 			}
 			{
 				if (AutomaticUpdateStep == 0)
 				{
-					ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(u8"程序自动更新等待启用").x,44.0f + 616.0f + 5.0f });
+					ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(reinterpret_cast<const char*>(u8"程序自动更新等待启用")).x,44.0f + 616.0f + 5.0f });
 					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(150 / 255.0f, 150 / 255.0f, 150 / 255.0f, 1.0f));
-					CenteredText(u8"程序自动更新等待启用", 4.0f);
+					CenteredText(reinterpret_cast<const char*>(u8"程序自动更新等待启用"), 4.0f);
 				}
 				else if (AutomaticUpdateStep == 1)
 				{
-					ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(u8"程序已经是最新版本").x , 44.0f + 616.0f + 5.0f });
+					ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(reinterpret_cast<const char*>(u8"程序已经是最新版本")).x , 44.0f + 616.0f + 5.0f });
 					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(98 / 255.0f, 175 / 255.0f, 82 / 255.0f, 1.0f));
-					CenteredText(u8"程序已经是最新版本", 4.0f);
+					CenteredText(reinterpret_cast<const char*>(u8"程序已经是最新版本"), 4.0f);
 				}
 				else if (AutomaticUpdateStep == 2)
 				{
-					ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(u8"新版本正极速下载中").x , 44.0f + 616.0f + 5.0f });
+					ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(reinterpret_cast<const char*>(u8"新版本正极速下载中")).x , 44.0f + 616.0f + 5.0f });
 					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(229 / 255.0f, 55 / 255.0f, 66 / 255.0f, 1.0f));
-					CenteredText(u8"新版本正极速下载中", 4.0f);
+					CenteredText(reinterpret_cast<const char*>(u8"新版本正极速下载中"), 4.0f);
 				}
 				else if (AutomaticUpdateStep == 3)
 				{
-					ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(u8"重启程序以更新到最新版本").x , 44.0f + 616.0f + 5.0f });
+					ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(reinterpret_cast<const char*>(u8"重启程序以更新到最新版本")).x , 44.0f + 616.0f + 5.0f });
 					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(229 / 255.0f, 55 / 255.0f, 66 / 255.0f, 1.0f));
-					CenteredText(u8"重启程序以更新到最新版本", 4.0f);
+					CenteredText(reinterpret_cast<const char*>(u8"重启程序以更新到最新版本"), 4.0f);
 				}
 			}
 
@@ -1526,7 +1460,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 // 示例
 static void HelpMarker(const char* desc, ImVec4 Color)
 {
-	ImGui::TextColored(Color, u8"(?)");
+	ImGui::TextColored(Color, reinterpret_cast<const char*>(u8"(?)"));
 	if (ImGui::IsItemHovered())
 	{
 		ImGui::BeginTooltip();

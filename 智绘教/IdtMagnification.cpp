@@ -12,6 +12,16 @@ RECT hostWindowRect;
 HINSTANCE hInst;
 BOOL MagImageScaling(HWND hwnd, void* srcdata, MAGIMAGEHEADER srcheader, void* destdata, MAGIMAGEHEADER destheader, RECT unclipped, RECT clipped, HRGN dirty)
 {
+	int ImageWidth = srcheader.width;
+	int ImageHeight = srcheader.height;
+
+	IMAGE SrcImage(ImageWidth, ImageHeight);
+	DWORD* SrcBuffer = GetImageBuffer(&SrcImage);
+	memcpy(SrcBuffer, (LPBYTE)srcdata + srcheader.offset, ImageWidth * ImageHeight * 4);
+
+	MagnificationBackground = SrcImage;
+
+	/*
 	BITMAPINFOHEADER bmif;
 	HBITMAP hBmp = NULL;
 	BYTE* pBits = nullptr;
@@ -49,12 +59,17 @@ BOOL MagImageScaling(HWND hwnd, void* srcdata, MAGIMAGEHEADER srcheader, void* d
 	if (hBmp && pBits)
 	{
 		memcpy(pBits, pData, bmif.biSizeImage);
+
+		std::unique_lock<std::shared_mutex> LockMagnificationBackgroundSm(MagnificationBackgroundSm);
 		MagnificationBackground = Bitmap2Image(&hBmp, false);
+		LockMagnificationBackgroundSm.unlock();
 	}
 
 	delete[] pLineData;
 	delete[] pData;
 	DeleteObject(hBmp);
+
+	*/
 
 	return 1;
 }
@@ -67,7 +82,9 @@ void UpdateMagWindow()
 
 	// Set the source rectangle for the magnifier control.
 	std::unique_lock<std::shared_mutex> lock1(MagnificationBackgroundSm);
+	//MagShowSystemCursor(FALSE);
 	MagSetWindowSource(hwndMag, sourceRect);
+	//MagShowSystemCursor(TRUE);
 	lock1.unlock();
 
 	// Reclaim topmost status, to prevent unmagnified menus from remaining in view.

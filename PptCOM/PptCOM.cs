@@ -65,6 +65,8 @@ namespace PptCOM
 
         int totalSlideIndex();
 
+        //string totalSlideIndex();
+
         int NextSlideShow(int check);
 
         int PreviousSlideShow();
@@ -177,6 +179,7 @@ namespace PptCOM
         public int totalSlideIndex()
         {
             int totalSlides = -1;
+            //string temp;
 
             try
             {
@@ -190,10 +193,12 @@ namespace PptCOM
                 // 获取当前播放的幻灯片总页数
                 totalSlides = pptDoc.Slides.Count;
             }
-            catch
+            catch// (Exception ex)
             {
+                //return ex.Message;
             }
 
+            //return "yes";
             return totalSlides;
         }
 
