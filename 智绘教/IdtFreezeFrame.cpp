@@ -15,7 +15,14 @@ void FreezeFrameWindow()
 {
 	while (!already) this_thread::sleep_for(chrono::milliseconds(50));
 
-	if (displays_number != 1) return;
+	shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
+	if (DisplaysNumber != 1)
+	{
+		DisplaysNumberLock.unlock();
+		return;
+	}
+	DisplaysNumberLock.unlock();
+
 	while (magnificationWindowReady != -1) this_thread::sleep_for(chrono::milliseconds(50));
 
 	thread_status[L"FreezeFrameWindow"] = true;
@@ -93,7 +100,7 @@ void FreezeFrameWindow()
 				show_freeze_window = true;
 			}
 
-			if (SeewoCamera) wait = 480;
+			if (SeewoCameraIsOpen) wait = 480;
 			while (!off_signal)
 			{
 				if (FreezeFrame.mode != 1 || ppt_show != NULL) break;
@@ -111,7 +118,7 @@ void FreezeFrameWindow()
 
 					FreezeFrame.update = false;
 				}
-				else if (wait > 0 && SeewoCamera)
+				else if (wait > 0 && SeewoCameraIsOpen)
 				{
 					hiex::TransparentImage(&freeze_background, 0, 0, &MagnificationTmp);
 

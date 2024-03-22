@@ -50,7 +50,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 				choose.select = false;
 				penetrate.select = false;
 
-				if (SeewoCamera) FreezeFrame.mode = 1;
+				if (SeewoCameraIsOpen) FreezeFrame.mode = 1;
 			}
 			else
 			{
@@ -475,24 +475,56 @@ void MultiFingerDrawing(LONG pid, POINT pt)
 		StrokeImageList.emplace_back(pid);
 		lock2.unlock();
 
+		bool StopTimingDisable = false;
+		POINT StopTimingPoint = { -1,-1 };
+		chrono::high_resolution_clock::time_point StopTiming = std::chrono::high_resolution_clock::now();
+
 		clock_t tRecord = clock();
 		while (1)
 		{
-			std::shared_lock<std::shared_mutex> lock0(PointPosSm);
-			bool unfind = TouchPos.find(pid) == TouchPos.end();
-			if (unfind)
+			// 确认触摸点存在
 			{
+				std::shared_lock<std::shared_mutex> lock0(PointPosSm);
+				bool unfind = TouchPos.find(pid) == TouchPos.end();
+				if (unfind)
+				{
+					lock0.unlock();
+					break;
+				}
+				pt = TouchPos[pid].pt;
 				lock0.unlock();
-				break;
+
+				std::shared_lock<std::shared_mutex> lock2(PointListSm);
+				auto it = std::find(TouchList.begin(), TouchList.end(), pid);
+				lock2.unlock();
+
+				if (it == TouchList.end()) break;
 			}
-			pt = TouchPos[pid].pt;
-			lock0.unlock();
 
-			std::shared_lock<std::shared_mutex> lock2(PointListSm);
-			auto it = std::find(TouchList.begin(), TouchList.end(), pid);
-			lock2.unlock();
+			// 延迟拉直
+			if (!StopTimingDisable && !points.empty())
+			{
+				if (sqrt((pt.x - StopTimingPoint.x) * (pt.x - StopTimingPoint.x) + (pt.y - StopTimingPoint.y) * (pt.y - StopTimingPoint.y)) > 5)
+				{
+					StopTimingPoint = pt;
+					StopTiming = std::chrono::high_resolution_clock::now();
+				}
+				else if (chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - StopTiming).count() >= 1000)
+				{
+					if (sqrt((pt.x - points[0].X) * (pt.x - points[0].X) + (pt.y - points[0].Y) * (pt.y - points[0].Y)) >= 120)
+					{
+						double redundance = max(GetSystemMetrics(SM_CXSCREEN) / 192, min((GetSystemMetrics(SM_CXSCREEN)) / 76.8, double(GetSystemMetrics(SM_CXSCREEN)) / double((-0.036) * writing_distance + 135)));
 
-			if (it == TouchList.end()) break;
+						// 5 倍宽松精度
+						if (isLine(points, int(redundance * 5.0f), std::chrono::high_resolution_clock::now()))
+						{
+							draw_info.mode = 3;
+							mouse.last_x = points[0].X, mouse.last_y = points[0].Y;
+						}
+						else StopTimingDisable = true;
+					}
+				}
+			}
 			if (pt.x == mouse.last_x && pt.y == mouse.last_y) continue;
 
 			if (draw_info.mode == 3)
@@ -1489,7 +1521,7 @@ int drawpad_main()
 
 	//画笔初始化
 	{
-		brush.width = 3;
+		brush.width = 4;
 		brush.color = brush.primary_colour = RGBA(50, 30, 181, 255);
 	}
 	//窗口初始化

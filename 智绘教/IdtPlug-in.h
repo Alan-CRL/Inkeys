@@ -1,10 +1,36 @@
+/*
+ * @file		IdtPlug-in.h
+ * @brief		IDT plugin linkage | 智绘教插件联动
+ * @note		PPT linkage components and other plugins | PPT联动组件和其他插件等
+ *
+ * @author		AlanCRL
+ * @qq			2685549821
+ * @email		alan-crl@foxmail.com
+*/
+
 #pragma once
 #include "IdtMain.h"
 
-extern IMAGE PptIcon[5];
-extern bool SeewoCamera; //希沃视频展台是否开启
+// All function and variable descriptions should be in the corresponding cpp file.
+// 所有的函数和变量说明应该在对应的 cpp 文件中。
 
-// PPT联动
+extern shared_mutex PPTManipulatedSm;
+extern chrono::high_resolution_clock::time_point PPTManipulated;
+
+struct PPTUIControlStruct
+{
+	float v, s, e;
+};
+struct PPTUIControlColorStruct
+{
+	COLORREF v;
+	float s, e;
+};
+extern map<wstring, PPTUIControlStruct> PPTUIControl, PPTUIControlTarget;
+map<wstring, PPTUIControlStruct>& map<wstring, PPTUIControlStruct>::operator=(const map<wstring, PPTUIControlStruct>& m);
+extern map<wstring, PPTUIControlColorStruct> PPTUIControlColor, PPTUIControlColorTarget;
+map<wstring, PPTUIControlColorStruct>& map<wstring, PPTUIControlColorStruct>::operator=(const map<wstring, PPTUIControlColorStruct>& m);
+extern map<wstring, wstring> PPTUIControlString, PPTUIControlStringTarget;
 
 struct PptImgStruct
 {
@@ -13,55 +39,20 @@ struct PptImgStruct
 	map<int, IMAGE> Image;
 };
 extern PptImgStruct PptImg;
-
 struct PptInfoStateStruct
 {
 	int CurrentPage, TotalPage;
 };
 extern PptInfoStateStruct PptInfoStateBuffer;
 extern PptInfoStateStruct PptInfoState;
-
-extern shared_mutex PPTManipulatedSm;
-extern std::chrono::high_resolution_clock::time_point PPTManipulated;
+extern bool PptWindowBackgroundUiChange;
+extern bool SeewoCameraIsOpen;
 
 wstring LinkTest();
 wstring IsPptDependencyLoaded();
-HWND GetPptShow();
-wstring GetPptTitle();
 bool EndPptShow();
-
-struct PPTUIControlStruct
-{
-	float v, s, e;
-};
-extern map<wstring, PPTUIControlStruct> PPTUIControl, PPTUIControlTarget;
-map<wstring, PPTUIControlStruct>& map<wstring, PPTUIControlStruct>::operator=(const map<wstring, PPTUIControlStruct>& m);
-
-struct PPTUIControlColorStruct
-{
-	COLORREF v;
-	float s, e;
-};
-extern map<wstring, PPTUIControlColorStruct> PPTUIControlColor, PPTUIControlColorTarget;
-map<wstring, PPTUIControlColorStruct>& map<wstring, PPTUIControlColorStruct>::operator=(const map<wstring, PPTUIControlColorStruct>& m);
-
-extern map<wstring, wstring> PPTUIControlString, PPTUIControlStringTarget;
-
 int NextPptSlides(int check);
 int PreviousPptSlides();
-
-//ppt 控件
-void DrawControlWindow();
-void ControlManipulation();
-void KeyboardInteraction();
-
-//获取当前页编号
-int GetCurrentPage();
-//获取总页数
-int GetTotalPage();
-void ppt_state();
-
-//弹窗拦截
-//关闭AIClass和希沃白板5窗口
-HWND FindWindowByStrings(const std::wstring& className, const std::wstring& windowTitle, const std::wstring& style, int width = 0, int height = 0);
-void black_block();
+void GetPptState();
+void PPTLinkageMain();
+void BlackBlock();

@@ -16,14 +16,17 @@
 // 首次编译需要确认 .NET Framework 版本为 4.0，如果不一致请执行 位于 PptCOM 的 <切换 .NET Framework 指南>
 
 #pragma once
-#define IDT_RELEASE
-
-// 简易 TODO
-// 最后一页时向右按钮显示为结束放映
-// 动画演示时不应该启动ppt
-// 结束放映和穿透进入放映可能会丢失笔迹
 
 #pragma comment( linker, "/subsystem:windows /entry:mainCRTStartup" )
+#define IDT_RELEASE
+
+// 智绘教最低兼容 Windows 7
+// #define _WIN32_WINNT 0x0601
+// #define WINVER 0x0601
+
+// 简易 TODO
+// 动画演示时不应该启动ppt
+// 结束放映和穿透进入放映可能会丢失笔迹
 
 //基础类
 #include <iostream>									// 提供标准输入输出流
@@ -37,7 +40,6 @@
 #include <gdiplus.h>								// GDI+绘图接口
 
 //COM类
-//#include <atlbase.h>								// ATL(Active Template Library)的基本头文件
 #include <comutil.h>								// COM的实用程序集
 #include <ole2.h>									// OLE库（对象链接与嵌入）
 #include <rtscom.h>									// RTS 触控库

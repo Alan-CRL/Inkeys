@@ -4698,7 +4698,7 @@ void DrawScreen()
 								if (ppt_software == L"PowerPoint") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 35), int(UIControl[L"Ellipse/Ellipse1/y"].v + 63), &floating_icon[16], 255);
 								else if (ppt_software == L"WPS") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[20], 255);
 							}
-							else if (SeewoCamera == true) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 66), &floating_icon[18], 255);
+							else if (SeewoCameraIsOpen == true) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 66), &floating_icon[18], 255);
 						}
 
 						hiex::TransparentImage(&background, int(UIControl[L"Image/Sign1/x"].v), int(UIControl[L"Image/Sign1/y"].v), &sign, int(UIControl[L"Image/Sign1/transparency"].v));
@@ -4716,7 +4716,7 @@ void DrawScreen()
 								if (ppt_software == L"PowerPoint") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 35), int(UIControl[L"Ellipse/Ellipse1/y"].v + 63), &floating_icon[16], 255);
 								else if (ppt_software == L"WPS") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[20], 255);
 							}
-							else if (SeewoCamera == true) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 63), &floating_icon[18], 200);
+							else if (SeewoCameraIsOpen == true) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 63), &floating_icon[18], 200);
 						}
 
 						//时钟
@@ -4949,7 +4949,7 @@ void DrawScreen()
 								if (ppt_software == L"PowerPoint") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 35), int(UIControl[L"Ellipse/Ellipse1/y"].v + 63), &floating_icon[16], 255);
 								else if (ppt_software == L"WPS") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[20], 255);
 							}
-							else if (SeewoCamera == true) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 66), &floating_icon[18], 255);
+							else if (SeewoCameraIsOpen == true) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 66), &floating_icon[18], 255);
 						}
 
 						hiex::TransparentImage(&background, int(UIControl[L"Image/Sign1/x"].v - 18), int(UIControl[L"Image/Sign1/y"].v - 18), &skin[2]);
@@ -5445,7 +5445,7 @@ void MouseInteraction()
 									if (start) break;
 
 									IMAGE temp;
-									loadimage(&temp, string_to_wstring(convert_to_gbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString())).c_str());
+									loadimage(&temp, string_to_wstring(convert_to_gbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString())).c_str(), drawpad.getwidth(), drawpad.getheight(), true);
 									drawpad = temp, extreme_point = map<pair<int, int>, bool>();
 
 									current_record_pointer++;
@@ -5685,7 +5685,7 @@ void MouseInteraction()
 									choose.select = false;
 									state = 1.1, brush_connect = true;
 
-									if (SeewoCamera)
+									if (SeewoCameraIsOpen)
 									{
 										penetrate.select = false;
 										FreezeFrame.mode = 1;
@@ -5703,7 +5703,7 @@ void MouseInteraction()
 											rubber.select = false;
 											choose.select = false;
 
-											if (SeewoCamera)
+											if (SeewoCameraIsOpen)
 											{
 												penetrate.select = false;
 												FreezeFrame.mode = 1;
@@ -5810,7 +5810,7 @@ void MouseInteraction()
 										{
 											if (!m.lbutton)
 											{
-												brush.width = 3;
+												brush.width = 4;
 												UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v = 1;
 
 												break;
@@ -6258,7 +6258,7 @@ void MouseInteraction()
 									brush.select = false;
 									choose.select = false;
 
-									if (SeewoCamera)
+									if (SeewoCameraIsOpen)
 									{
 										penetrate.select = false;
 										FreezeFrame.mode = 1;
@@ -6416,7 +6416,7 @@ void MouseInteraction()
 										if (start) break;
 
 										IMAGE temp;
-										loadimage(&temp, string_to_wstring(convert_to_gbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString())).c_str());
+										loadimage(&temp, string_to_wstring(convert_to_gbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString())).c_str(), drawpad.getwidth(), drawpad.getheight(), true);
 										drawpad = temp, extreme_point = map<pair<int, int>, bool>();
 
 										current_record_pointer++;
@@ -6560,17 +6560,8 @@ int floating_main()
 	thread_status[L"floating_main"] = true;
 	GetLocalTime(&sys_time);
 
-	//LOG(INFO) << "尝试启动PPT状态获取线程";
-	thread ppt_state_thread(ppt_state);
-	ppt_state_thread.detach();
-	//LOG(INFO) << "成功启动PPT状态获取线程";
-
-	thread DrawControlWindowThread(DrawControlWindow);
-	DrawControlWindowThread.detach();
-	thread ControlManipulationThread(ControlManipulation);
-	ControlManipulationThread.detach();
-	thread KeyboardInteractionThread(KeyboardInteraction);
-	KeyboardInteractionThread.detach();
+	thread PPTLinkageMainThread(PPTLinkageMain);
+	PPTLinkageMainThread.detach();
 
 	//thread GetTime_thread(GetTime);
 	//GetTime_thread.detach();
@@ -6580,8 +6571,8 @@ int floating_main()
 	//LOG(INFO) << "成功启动悬浮窗窗口绘制线程";
 
 	//LOG(INFO) << "尝试启动黑名单窗口拦截线程";
-	thread black_block_thread(black_block);
-	black_block_thread.detach();
+	thread BlackBlock_thread(BlackBlock);
+	BlackBlock_thread.detach();
 	//LOG(INFO) << "成功启动黑名单窗口拦截线程";
 
 #ifdef IDT_RELEASE
@@ -6634,7 +6625,7 @@ int floating_main()
 	int i = 1;
 	for (; i <= 10; i++)
 	{
-		if (!thread_status[L"CrashedHandler"] /*&& !thread_status[L"ppt_state"] && !thread_status[L"ControlManipulation"] */ && !thread_status[L"GetTime"] && !thread_status[L"DrawScreen"] && !thread_status[L"api_read_pipe"] && !thread_status[L"black_block"]) break;
+		if (!thread_status[L"CrashedHandler"] && !thread_status[L"PPTLinkageMain"]/*&& !thread_status[L"GetPptState"] && !thread_status[L"ControlManipulation"] */ && !thread_status[L"GetTime"] && !thread_status[L"DrawScreen"] && !thread_status[L"api_read_pipe"] && !thread_status[L"BlackBlock"]) break;
 		Sleep(500);
 	}
 
