@@ -18,7 +18,7 @@
 #pragma once
 
 #pragma comment( linker, "/subsystem:windows /entry:mainCRTStartup" )
-#define IDT_RELEASE
+//#define IDT_RELEASE
 
 // ÖÇ»æ½Ì×îµÍ¼æÈÝ Windows 7
 // #define _WIN32_WINNT 0x0601

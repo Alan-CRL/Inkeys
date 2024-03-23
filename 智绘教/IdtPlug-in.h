@@ -32,6 +32,9 @@ extern map<wstring, PPTUIControlColorStruct> PPTUIControlColor, PPTUIControlColo
 map<wstring, PPTUIControlColorStruct>& map<wstring, PPTUIControlColorStruct>::operator=(const map<wstring, PPTUIControlColorStruct>& m);
 extern map<wstring, wstring> PPTUIControlString, PPTUIControlStringTarget;
 
+extern float PPTUIScale;
+extern bool PPTUIScaleRecommend;
+
 struct PptImgStruct
 {
 	bool IsSave;
