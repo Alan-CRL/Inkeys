@@ -138,7 +138,13 @@ void LoadDrawpad()
 //保存图像到指定目录
 void SaveScreenShot(IMAGE img, bool record_pointer_add)
 {
-	if (displays_number != 1) return;
+	shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
+	if (DisplaysNumber != 1)
+	{
+		DisplaysNumberLock.unlock();
+		return;
+	}
+	DisplaysNumberLock.unlock();
 
 	wstring date = CurrentDate(), time = CurrentTime();
 	if (_waccess((string_to_wstring(global_path) + L"ScreenShot").c_str(), 0 == -1)) CreateDirectory((string_to_wstring(global_path) + L"ScreenShot").c_str(), NULL);

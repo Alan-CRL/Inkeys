@@ -5,6 +5,9 @@ void CrashedHandler()
 {
 	thread_status[L"CrashedHandler"] = true;
 
+	this_thread::sleep_for(chrono::seconds(3));
+	while (!already) this_thread::sleep_for(chrono::milliseconds(50));
+
 	//±ÜÃâÖØ¸´´ò¿ª
 	/*
 	if (_waccess((string_to_wstring(global_path) + L"api\\open.txt").c_str(), 6) == 0)

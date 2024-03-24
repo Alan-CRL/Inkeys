@@ -271,7 +271,7 @@ int SettingMain()
 				break;
 			}
 		}
-		hiex::DelayFPS(recond, 10);
+		hiex::DelayFPS(recond, 24);
 
 		ImGui_ImplDX11_NewFrame();
 		ImGui_ImplWin32_NewFrame();
@@ -288,7 +288,8 @@ int SettingMain()
 				tab4,
 				tab5,
 				tab6,
-				tab7
+				tab7,
+				tab8
 			};
 
 			ImGui::SetNextWindowPos({ 0,0 });//设置窗口位置
@@ -347,9 +348,9 @@ int SettingMain()
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab5 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 				if (Tab == Tab::tab5) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 				if (Tab == Tab::tab5) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-				if (ImGui::Button(reinterpret_cast<const char*>(u8"程序调测"), { 100.0f,40.0f }))
+				if (ImGui::Button(reinterpret_cast<const char*>(u8"实验室"), { 100.0f,40.0f }))
 				{
-					Tab = Tab::tab5;
+					// Tab = Tab::tab5;
 				}
 				while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
 
@@ -358,22 +359,35 @@ int SettingMain()
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab6 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 				if (Tab == Tab::tab6) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 				if (Tab == Tab::tab6) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-				if (ImGui::Button(reinterpret_cast<const char*>(u8"作者留言"), { 100.0f,40.0f }))
+				if (ImGui::Button(reinterpret_cast<const char*>(u8"程序调测"), { 100.0f,40.0f }))
 				{
 					Tab = Tab::tab6;
 				}
 				while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
 
 				ImGui::SetCursorPos({ 10.0f,344.0f });
-				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab7 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab7 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
-				if (Tab == Tab::tab7) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-				if (Tab == Tab::tab7) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab8 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab8 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+				if (Tab == Tab::tab8) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+				if (Tab == Tab::tab8) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 				if (ImGui::Button(reinterpret_cast<const char*>(u8"关于"), { 100.0f,40.0f }))
+				{
+					Tab = Tab::tab8;
+				}
+				while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
+
+				Font->Scale = 0.65f, ImGui::PushFont(Font);
+				ImGui::SetCursorPos({ 10.0f,44.0f + 616.0f - 80.0f });
+				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
+				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+				if (ImGui::Button(reinterpret_cast<const char*>(u8"临时停更公告"), { 100.0f,40.0f }))
 				{
 					Tab = Tab::tab7;
 				}
 				while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
+				ImGui::PopFont();
 
 				ImGui::SetCursorPos({ 10.0f,44.0f + 616.0f - 30.0f });
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
@@ -805,7 +819,7 @@ int SettingMain()
 						CenteredText(reinterpret_cast<const char*>(u8" 智能绘图"), 4.0f);
 
 						Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
-						ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"抬笔时可以将与直线相似的墨迹转换成直线\n还可以直线吸附和矩形吸附"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
+						ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"绘制时停留可以将与直线相似的墨迹拉直\n抬笔时可以将与直线相似的墨迹拉直（精度较高）\n还可以直线吸附和矩形吸附"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
 
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
@@ -927,7 +941,40 @@ int SettingMain()
 				}
 				break;
 
-			case Tab::tab5:
+				/*
+				case Tab::tab5:
+					// 实验室
+					ImGui::SetCursorPosY(20.0f);
+					{
+						ImGui::SetCursorPosX(20.0f);
+						ImGui::BeginChild(reinterpret_cast<const char*>(u8"PPT 控件缩放比例"), { 730.0f,50.0f }, true, ImGuiWindowFlags_NoScrollbar);
+
+						{
+							ImGui::SetCursorPosY(8.0f);
+
+							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+							CenteredText(reinterpret_cast<const char*>(u8" 外观皮肤"), 4.0f);
+
+							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 230.0f);
+							ImGui::SetNextItemWidth(220);
+
+							Font->Scale = 0.82f, PushFontNum++, ImGui::PushFont(Font);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0 / 255.0f, 131 / 255.0f, 245 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+							ImGui::SliderFloat(reinterpret_cast<const char*>(u8"##PPT 控件缩放比例"), &PPTUIScale, 0.25f, 3.0f, reinterpret_cast<const char*>(u8"%.5f 倍缩放"));
+						}
+
+						ImGui::EndChild();
+					}
+					break;
+				*/
+
+			case Tab::tab6:
 				//程序调测
 				Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 				{
@@ -1034,19 +1081,17 @@ int SettingMain()
 				}
 				break;
 
-			case Tab::tab6:
-				// 作者留言
+			case Tab::tab7:
+				// 临时停更公告
 				Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 				{
 					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
 					wstring text;
 					{
-						text = L"作者留言\n\n";
+						text = L"临时停更公告\n\n";
 						text += L"首先非常感谢您使用智绘教，也感谢您对智绘教的支持~\n\n";
-						text += L"智绘教是 GPLv3 开源免费软件，欢迎大家加入智绘教的开发\n";
-						text += L"目前急需解决的是程序的内存占用问题，智绘教占用的内存实在是太大了！\n下个版本估计就会有所改善\n\n";
-						text += L"近期我发现智绘教的用户量大幅增加，我非常感谢各位对智绘教的支持\n也感谢许多大佬和站长对智绘教的推广与肯定\n这两天我也得到了许多用户反馈，这个版本增加了对WPS的联动支持，同时还解决了一些小问题\n\n";
-						text += L"我会尽我所能开发智绘教，但是更新的速度和新功能的实现速度肯定比不上商业软件\n正处开学，时间紧迫，先写这么多\n\n2024.02.28";
+						text += L"开发者本人即将中考，目前只有80天左右了，接下来2个月智绘教将暂时停止开发\n";
+						text += L"感谢各位对智绘教的大力支持！\n\n2024.03.24";
 					}
 
 					int left_x = 10, right_x = 760;
@@ -1089,7 +1134,7 @@ int SettingMain()
 
 				break;
 
-			case Tab::tab7:
+			case Tab::tab8:
 				// 关于
 				ImGui::SetCursorPos({ 35.0f,ImGui::GetCursorPosY() + 40.0f });
 				ImGui::Image((void*)TextureSettingSign[1], ImVec2((float)SettingSign[1].getwidth(), (float)SettingSign[1].getheight()));

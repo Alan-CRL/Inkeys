@@ -25,6 +25,10 @@
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
 
+#include <shellscalingapi.h>
+#include <lm.h>
+#pragma comment(lib, "netapi32.lib")
+
 int floating_main();
 int drawpad_main();
 int SettingMain();
@@ -33,8 +37,8 @@ void FreezeFrameWindow();
 bool already = false;
 
 wstring buildTime = __DATE__ L" " __TIME__; //构建时间
-string edition_date = "20240317a"; //程序发布日期
-string edition_code = "24H1"; //程序版本
+string edition_date = "20240324a"; //程序发布日期
+string edition_code = "24H1(BetaH2)"; //程序版本
 
 wstring userid; //用户ID（主板序列号）
 string global_path; //程序当前路径
@@ -83,18 +87,21 @@ int main()
 	//LOG(INFO) << "尝试初始化DPI";
 	//DPI 初始化
 	{
-		HINSTANCE hUser32 = LoadLibrary(L"User32.dll");
-		if (hUser32)
+		HMODULE hShcore = LoadLibrary(L"Shcore.dll");
+		if (hShcore != NULL)
 		{
-			typedef BOOL(WINAPI* LPSetProcessDPIAware)(void);
-			LPSetProcessDPIAware pSetProcessDPIAware = (LPSetProcessDPIAware)GetProcAddress(hUser32, "SetProcessDPIAware");
-			if (pSetProcessDPIAware)
+			typedef HRESULT(WINAPI* LPFNSPDPIA)(PROCESS_DPI_AWARENESS);
+			LPFNSPDPIA lSetProcessDpiAwareness = (LPFNSPDPIA)GetProcAddress(hShcore, "SetProcessDpiAwareness");
+			if (lSetProcessDpiAwareness != NULL)
 			{
-				pSetProcessDPIAware();
+				HRESULT hr = lSetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
+				if (!SUCCEEDED(hr)) SetProcessDPIAware();
 			}
-			FreeLibrary(hUser32);
+			else SetProcessDPIAware();
+
+			FreeLibrary(hShcore);
 		}
-		//else LOG(ERROR) << "失败加载User32.dll";
+		else SetProcessDPIAware();
 
 		//图像DPI转化
 		{
@@ -269,14 +276,18 @@ int main()
 	//LOG(INFO) << "成功获取用户ID";
 
 	//显示器检查
-	if (EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, reinterpret_cast<LPARAM>(&displays_number)));
-	else displays_number = 1;
-	if (displays_number == 1)
+	DisplayManagementMain();
+
+	shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
+	int DisplaysNumberTemp = DisplaysNumber;
+	DisplaysNumberLock.unlock();
+
+	if (DisplaysNumberTemp)
 	{
 		thread MagnifierThread_thread(MagnifierThread);
 		MagnifierThread_thread.detach();
 	}
-	else MessageBox(floating_window, (L"检测到计算机拥有 " + to_wstring(displays_number) + L" 个显示器，智绘教目前不支持拥有拓展显示器电脑！\n\n程序将继续启动，但窗口定格，历史画板保存，超级恢复功能将失效。\n且仅能在主显示器上绘图！").c_str(), L"智绘教警告", MB_OK | MB_SYSTEMMODAL);
+	else MessageBox(floating_window, (L"检测到计算机拥有 " + to_wstring(DisplaysNumberTemp) + L" 个显示器，智绘教目前不支持拥有拓展显示器电脑！\n\n程序将继续启动，但窗口定格，历史画板保存，超级恢复功能将失效。\n且仅能在主显示器上绘图！").c_str(), L"智绘教警告", MB_OK | MB_SYSTEMMODAL);
 
 	//桌面快捷方式注册
 	if (setlist.CreateLnk) SetShortcut();
