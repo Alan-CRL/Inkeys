@@ -18,7 +18,7 @@
 #pragma once
 
 #pragma comment( linker, "/subsystem:windows /entry:mainCRTStartup" )
-//#define IDT_RELEASE
+#define IDT_RELEASE
 
 // 智绘教最低兼容 Windows 7
 // #define _WIN32_WINNT 0x0601
@@ -27,6 +27,8 @@
 // 简易 TODO
 // 动画演示时不应该启动ppt
 // 结束放映和穿透进入放映可能会丢失笔迹
+// PPT 控件在 win7 下下沉
+// PPT 翻页没有滚轮支持
 
 //基础类
 #include <iostream>									// 提供标准输入输出流

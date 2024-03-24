@@ -368,15 +368,13 @@ void MultiFingerDrawing(LONG pid, POINT pt)
 			if (setlist.RubberMode == 1)
 			{
 				// PC  Û±Í
-				if (speed <= 0.2) trubbersize = 60;
-				else if (speed <= 30) trubbersize = max(25, speed * 2.33 + 2.33);
+				if (speed <= 30) trubbersize = max(25, speed * 2.33 + 2.33);
 				else trubbersize = min(200, speed + 30);
 			}
 			else
 			{
 				// ¥•√˛…Ë±∏
-				if (speed <= 0.2) trubbersize = 60;
-				else if (speed <= 20) trubbersize = max(25, speed * 2.33 + 13.33);
+				if (speed <= 20) trubbersize = max(25, speed * 2.33 + 13.33);
 				else trubbersize = min(200, 3 * speed);
 			}
 
@@ -475,7 +473,7 @@ void MultiFingerDrawing(LONG pid, POINT pt)
 		StrokeImageList.emplace_back(pid);
 		lock2.unlock();
 
-		bool StopTimingDisable = false;
+		bool StopTimingDisable = !setlist.IntelligentDrawing;
 		POINT StopTimingPoint = { -1,-1 };
 		chrono::high_resolution_clock::time_point StopTiming = std::chrono::high_resolution_clock::now();
 
