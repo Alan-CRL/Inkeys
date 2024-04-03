@@ -88,7 +88,7 @@ void UpdateMagWindow()
 	lock1.unlock();
 
 	// Reclaim topmost status, to prevent unmagnified menus from remaining in view.
-	SetWindowPos(hwndHost, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
+	SetWindowPos(hwndHost, freeze_window, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
 
 	// Force redraw.
 	InvalidateRect(hwndMag, NULL, TRUE);
@@ -120,7 +120,7 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 	hostWindowRect.right = GetSystemMetrics(SM_CXSCREEN);
 
 	RegisterHostWindowClass(hinst);
-	hwndHost = CreateWindowEx(WS_EX_TOPMOST | WS_EX_LAYERED, TEXT("MagnifierWindow"), TEXT("Screen Magnifier Sample"), RESTOREDWINDOWSTYLES, 0, 0, hostWindowRect.right, hostWindowRect.bottom, NULL, NULL, hInst, NULL);
+	hwndHost = CreateWindowEx(WS_EX_TOPMOST | WS_EX_LAYERED, TEXT("MagnifierWindow"), TEXT("Idt Screen Magnifier"), RESTOREDWINDOWSTYLES, 0, 0, hostWindowRect.right, hostWindowRect.bottom, NULL, NULL, hInst, NULL);
 	if (!hwndHost) return FALSE;
 
 	SetLayeredWindowAttributes(hwndHost, 0, 255, LWA_ALPHA);

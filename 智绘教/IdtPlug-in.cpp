@@ -143,7 +143,7 @@ IMAGE PptIcon[5]; // Button icons for PPT controls | PPT 控件的按键图标
 IMAGE PptWindowBackground; // PPT window background canvas | PPT 窗口背景画布
 
 int PptAdvanceMode = -1;
-bool PptWindowBackgroundUiChange;
+bool PptWindowBackgroundUiChange = true;
 
 wstring LinkTest()
 {

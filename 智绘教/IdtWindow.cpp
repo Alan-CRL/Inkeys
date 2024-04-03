@@ -2,6 +2,7 @@
 
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
+#include "IdtText.h"
 
 HWND floating_window = NULL; //悬浮窗窗口
 HWND drawpad_window = NULL; //画板窗口
@@ -79,6 +80,69 @@ wstring GetWindowText(HWND hWnd)
 }
 
 //置顶程序窗口
+
+vector<wstring> sswindows;
+
+int GetWindowTextSafe(HWND hWnd, LPTSTR lpString, int nMaxCount)
+{
+	if (NULL == hWnd || FALSE == IsWindow(hWnd) || NULL == lpString || 0 == nMaxCount)
+	{
+		return GetWindowText(hWnd, lpString, nMaxCount);
+	}
+	DWORD dwHwndProcessID = 0;
+	DWORD dwHwndThreadID = 0;
+	dwHwndThreadID = GetWindowThreadProcessId(hWnd, &dwHwndProcessID);		//获取窗口所属的进程和线程ID
+
+	if (dwHwndProcessID != GetCurrentProcessId())		//窗口进程不是当前调用进程时，返回原本调用
+	{
+		return GetWindowText(hWnd, lpString, nMaxCount);
+	}
+
+	//窗口进程是当前进程时：
+	if (dwHwndThreadID == GetCurrentThreadId())			//窗口线程就是当前调用线程，返回原本调用
+	{
+		return GetWindowText(hWnd, lpString, nMaxCount);
+	}
+
+#ifndef _UNICODE
+	WCHAR* lpStringUnicode = new WCHAR[nMaxCount];
+	InternalGetWindowText(hWnd, lpStringUnicode, nMaxCount);
+	int size = WideCharToMultiByte(CP_ACP, 0, lpStringUnicode, -1, NULL, 0, NULL, NULL);
+	if (size <= nMaxCount)
+	{
+		size = WideCharToMultiByte(CP_ACP, 0, lpStringUnicode, -1, lpString, size, NULL, NULL);
+		if (NULL != lpStringUnicode)
+		{
+			delete[]lpStringUnicode;
+			lpStringUnicode = NULL;
+		}
+		return size;
+	}
+	if (NULL != lpStringUnicode)
+	{
+		delete[]lpStringUnicode;
+		lpStringUnicode = NULL;
+	}
+	return 0;
+
+#else
+	return InternalGetWindowText(hWnd, lpString, nMaxCount);
+#endif
+}
+
+wstring GetWindowTitle(HWND hWnd)
+{
+	wchar_t title[256];
+	GetWindowTextSafe(hWnd, title, sizeof(title) / sizeof(wchar_t));
+	return wstring(title);
+}
+BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam)
+{
+	sswindows.push_back(GetWindowTitle(hWnd));
+
+	return TRUE;
+}
+
 void TopWindow()
 {
 	/*
@@ -105,6 +169,22 @@ void TopWindow()
 	Sleep(3000);
 	while (1)
 	{
+		{
+			sswindows.clear();
+			EnumWindows(EnumWindowsProc, 0);
+
+			ofstream writejson;
+			writejson.imbue(locale("zh_CN.UTF8"));
+			writejson.open(wstring_to_string(string_to_wstring(global_path) + L"bug fix 240402.01.log").c_str());
+
+			for (int i = 0; i < (int)sswindows.size(); i++)
+			{
+				writejson << to_string(i) << " " + wstring_to_string(sswindows[i]) << endl;
+			}
+
+			writejson.close();
+		}
+
 		try
 		{
 			SetWindowPos(floating_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);

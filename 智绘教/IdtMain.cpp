@@ -37,7 +37,7 @@ void FreezeFrameWindow();
 bool already = false;
 
 wstring buildTime = __DATE__ L" " __TIME__; //构建时间
-string edition_date = "20240324a"; //程序发布日期
+string edition_date = "20240403a(bug fix 240402.01)"; //程序发布日期
 string edition_code = "24H1(BetaH2)"; //程序版本
 
 wstring userid; //用户ID（主板序列号）
@@ -302,15 +302,15 @@ int main()
 	floating_window = initgraph(background.getwidth(), background.getheight());
 	//LOG(INFO) << "成功创建悬浮窗窗口";
 
-	//LOG(INFO) << "尝试创建画笔窗口";
-	hiex::PreSetWindowShowState(SW_HIDE);
-	drawpad_window = initgraph(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-	//LOG(INFO) << "成功创建画笔窗口";
-
 	//LOG(INFO) << "尝试创建PPT控件";
 	hiex::PreSetWindowShowState(SW_HIDE);
 	ppt_window = initgraph(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 	//LOG(INFO) << "成功创建PPT控件";
+	//
+	//LOG(INFO) << "尝试创建画笔窗口";
+	hiex::PreSetWindowShowState(SW_HIDE);
+	drawpad_window = initgraph(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+	//LOG(INFO) << "成功创建画笔窗口";
 
 	//LOG(INFO) << "尝试创建背景窗口";
 	hiex::PreSetWindowShowState(SW_HIDE);
