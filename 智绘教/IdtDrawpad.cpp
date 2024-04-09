@@ -279,6 +279,67 @@ double EuclideanDistance(POINT a, POINT b)
 	return std::sqrt(std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2));
 }
 
+// Temp
+vector<wstring> sswindows;
+int GetWindowTextSafe(HWND hWnd, LPTSTR lpString, int nMaxCount)
+{
+	if (NULL == hWnd || FALSE == IsWindow(hWnd) || NULL == lpString || 0 == nMaxCount)
+	{
+		return GetWindowText(hWnd, lpString, nMaxCount);
+	}
+	DWORD dwHwndProcessID = 0;
+	DWORD dwHwndThreadID = 0;
+	dwHwndThreadID = GetWindowThreadProcessId(hWnd, &dwHwndProcessID);		//获取窗口所属的进程和线程ID
+
+	if (dwHwndProcessID != GetCurrentProcessId())		//窗口进程不是当前调用进程时，返回原本调用
+	{
+		return GetWindowText(hWnd, lpString, nMaxCount);
+	}
+
+	//窗口进程是当前进程时：
+	if (dwHwndThreadID == GetCurrentThreadId())			//窗口线程就是当前调用线程，返回原本调用
+	{
+		return GetWindowText(hWnd, lpString, nMaxCount);
+	}
+
+#ifndef _UNICODE
+	WCHAR* lpStringUnicode = new WCHAR[nMaxCount];
+	InternalGetWindowText(hWnd, lpStringUnicode, nMaxCount);
+	int size = WideCharToMultiByte(CP_ACP, 0, lpStringUnicode, -1, NULL, 0, NULL, NULL);
+	if (size <= nMaxCount)
+	{
+		size = WideCharToMultiByte(CP_ACP, 0, lpStringUnicode, -1, lpString, size, NULL, NULL);
+		if (NULL != lpStringUnicode)
+		{
+			delete[]lpStringUnicode;
+			lpStringUnicode = NULL;
+		}
+		return size;
+	}
+	if (NULL != lpStringUnicode)
+	{
+		delete[]lpStringUnicode;
+		lpStringUnicode = NULL;
+	}
+	return 0;
+
+#else
+	return InternalGetWindowText(hWnd, lpString, nMaxCount);
+#endif
+}
+wstring GetWindowTitle(HWND hWnd)
+{
+	wchar_t title[256];
+	GetWindowTextSafe(hWnd, title, sizeof(title) / sizeof(wchar_t));
+	return wstring(title);
+}
+BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam)
+{
+	sswindows.push_back(GetWindowTitle(hWnd));
+
+	return TRUE;
+}
+
 void MultiFingerDrawing(LONG pid, POINT pt)
 {
 	struct Mouse
@@ -888,7 +949,7 @@ void DrawpadDrawing()
 
 	chrono::high_resolution_clock::time_point reckon;
 	clock_t tRecord = 0;
-	for (;;)
+	for (int bug_fix_i = 1;; bug_fix_i = 2)
 	{
 		for (int for_i = 1;; for_i = 2)
 		{
@@ -1503,6 +1564,32 @@ void DrawpadDrawing()
 			}
 		}
 
+		if (bug_fix_i == 1)
+		{
+			DWORD* pMem = GetImageBuffer(&window_background);
+			if ((pMem[0] & 0xFF000000) >> 24 == 0)
+			{
+				MessageBox(floating_window, L"智绘教画板显示出现问题，点击确定以重启智绘教\n此方案可能解决该问题", L"智绘教警告", MB_OK);
+
+				{
+					sswindows.clear();
+					EnumWindows(EnumWindowsProc, 0);
+
+					ofstream writejson;
+					writejson.imbue(locale("zh_CN.UTF8"));
+					writejson.open(wstring_to_string(string_to_wstring(global_path) + L"bug fix 240408.01.log").c_str());
+
+					for (int i = 0; i < (int)sswindows.size(); i++)
+					{
+						writejson << to_string(i) << " " + wstring_to_string(sswindows[i]) << endl;
+					}
+
+					writejson.close();
+				}
+
+				off_signal = 2;
+			}
+		}
 		ulwi.hdcSrc = GetImageHDC(&window_background);
 		UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
 
@@ -1568,7 +1655,6 @@ int drawpad_main()
 	}
 
 	magnificationWindowReady++;
-	//LOG(INFO) << "成功初始化画笔窗口绘制模块";
 
 	thread DrawpadDrawing_thread(DrawpadDrawing);
 	DrawpadDrawing_thread.detach();
@@ -1580,7 +1666,6 @@ int drawpad_main()
 		//启动绘图库程序
 		hiex::Gdiplus_Try_Starup();
 
-		//LOG(INFO) << "成功初始化画笔窗口绘制模块配置内容，并进入主循环";
 		while (!off_signal)
 		{
 			if (choose.select == true || penetrate.select == true)

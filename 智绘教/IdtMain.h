@@ -20,7 +20,7 @@
 #pragma comment( linker, "/subsystem:windows /entry:mainCRTStartup" )
 #define IDT_RELEASE
 
-// 智绘教最低兼容 Windows 7
+// 智绘教最低兼容 Windows 7 sp0（当前为 sp1）
 // #define _WIN32_WINNT 0x0601
 // #define WINVER 0x0601
 
@@ -69,7 +69,11 @@
 #include <versionhelpers.h>							// 提供版本辅助函数
 #include <mutex>									// 提供互斥量相关功能
 #include <shared_mutex>								// 提供共享互斥量功能
-//#include <spdlog/spdlog.h>						//提供日志记录服务
+
+#include <spdlog/spdlog.h>							// 提供日志记录服务
+#include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/sinks/rotating_file_sink.h>
+#include <spdlog/async.h>
 
 //智绘教服务器停用
 //#include "IdtKey.h" // 服务器密钥
@@ -109,9 +113,13 @@ extern string global_path; //程序当前路径
 extern double server_updata_error, procedure_updata_error;
 extern wstring server_updata_error_reason;
 
-extern bool off_signal; //关闭指令
+extern int off_signal, off_signal_ready; //关闭指令
 extern map <wstring, bool> thread_status; //线程状态管理
 
+extern shared_ptr<spdlog::logger> IDTLogger;
+
+// 路径权限检测
+bool HasReadWriteAccess(const std::wstring& directoryPath);
 //调测专用
 #ifndef IDT_RELEASE
 void Test();

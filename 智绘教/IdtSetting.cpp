@@ -25,9 +25,6 @@
 #include "imgui/imstb_truetype.h"
 #include <tchar.h>
 
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image/stb-master/stb_image.h"
-
 //  æ¿˝
 static void HelpMarker(const char* desc, ImVec4 Color);
 static void CenteredText(const char* desc, float displacement);
@@ -377,7 +374,7 @@ int SettingMain()
 				while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
 
 				Font->Scale = 0.65f, ImGui::PushFont(Font);
-				ImGui::SetCursorPos({ 10.0f,44.0f + 616.0f - 80.0f });
+				ImGui::SetCursorPos({ 10.0f,44.0f + 616.0f - 110.0f });
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
@@ -388,6 +385,17 @@ int SettingMain()
 				}
 				while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
 				ImGui::PopFont();
+
+				ImGui::SetCursorPos({ 10.0f,44.0f + 616.0f - 65.0f });
+				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+				if (ImGui::Button(reinterpret_cast<const char*>(u8"÷ÿ∆Ù≥Ã–Ú"), { 100.0f,30.0f }))
+				{
+					test.select = false;
+					off_signal = 2;
+				}
 
 				ImGui::SetCursorPos({ 10.0f,44.0f + 616.0f - 30.0f });
 				PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));

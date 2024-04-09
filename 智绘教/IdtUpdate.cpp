@@ -8,17 +8,6 @@ void CrashedHandler()
 	this_thread::sleep_for(chrono::seconds(3));
 	while (!already) this_thread::sleep_for(chrono::milliseconds(50));
 
-	//避免重复打开
-	/*
-	if (_waccess((string_to_wstring(global_path) + L"api\\open.txt").c_str(), 6) == 0)
-	{
-		off_signal = true;
-		filesystem::remove(string_to_wstring(global_path) + L"api\\open.txt");
-		thread_status[L"CrashedHandler"] = false;
-		return;
-	}
-	*/
-
 	ofstream write;
 	write.imbue(locale("zh_CN.UTF8"));
 
@@ -27,29 +16,9 @@ void CrashedHandler()
 	write.close();
 
 	if (!isProcessRunning((string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str()))
-	{
-		STARTUPINFOA si = { 0 };
-		si.cb = sizeof(si);
-		PROCESS_INFORMATION pi = { 0 };
-		CreateProcessA(NULL, (global_path + "api\\智绘教CrashedHandler.exe").data(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
-		CloseHandle(pi.hProcess);
-		CloseHandle(pi.hThread);
-
-		Sleep(500);
-		if (!isProcessRunning((string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str()))
-		{
-			WinExec((global_path + "api\\智绘教CrashedHandler.exe").c_str(), SW_NORMAL);
-
-			Sleep(500);
-			if (!isProcessRunning((string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str()))
-			{
-				ShellExecute(NULL, NULL, (string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
-			}
-		}
-	}
+		ShellExecute(NULL, NULL, (string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
 
 	int value = 2;
-
 	while (!off_signal)
 	{
 		write.open(wstring_to_string(string_to_wstring(global_path) + L"api\\open.txt").c_str());
@@ -57,14 +26,27 @@ void CrashedHandler()
 		write.close();
 
 		value++;
-		if (value > 1000) value = 1;
+		if (value > 100000000) value = 2;
 
 		Sleep(1000);
 	}
 
-	filesystem::remove(string_to_wstring(global_path) + L"api\\open.txt");
+	if (off_signal == 2)
+	{
+		write.open(wstring_to_string(string_to_wstring(global_path) + L"api\\open.txt").c_str());
+		write << -2;
+		write.close();
+	}
+	else
+	{
+		error_code ec;
+		filesystem::remove(string_to_wstring(global_path) + L"api\\open.txt", ec);
+	}
+
 	thread_status[L"CrashedHandler"] = false;
+	off_signal_ready = true;
 }
+
 //程序自动更新
 wstring get_domain_name(wstring url) {
 	wregex pattern(L"([a-zA-z]+://[^/]+)");
