@@ -37,6 +37,9 @@
     <Filter Include="头文件\ImGui">
       <UniqueIdentifier>{57f1632a-a797-465d-9724-186df01a45a6}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\wintoastlib">
+      <UniqueIdentifier>{06db5fb6-cb32-4573-b596-f3a300f178f5}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HiEasyX.h">
@@ -294,6 +297,12 @@
     <ClInclude Include="IdtConfiguration.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="IdtSysNotifications.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="wintoastlib\wintoastlib.h">
+      <Filter>头文件\wintoastlib</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HiEasyX\HiGUI\Button.cpp">
@@ -512,6 +521,12 @@
     <ClCompile Include="IdtConfiguration.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="IdtSysNotifications.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="wintoastlib\wintoastlib.cpp">
+      <Filter>头文件\wintoastlib</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="智绘教.rc">
@@ -640,6 +655,9 @@
       <Filter>资源文件</Filter>
     </Image>
     <Image Include="src\ppt\arrow_right.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\icon.png">
       <Filter>资源文件</Filter>
     </Image>
   </ItemGroup>

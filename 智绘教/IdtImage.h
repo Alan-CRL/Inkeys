@@ -26,3 +26,4 @@ extern IMAGE background;
 extern Graphics graphics;
 
 Bitmap* IMAGEToBitmap(IMAGE* easyXImage);
+bool ImgCpy(IMAGE* tag, IMAGE* src);

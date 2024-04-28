@@ -2,9 +2,8 @@
 #include "IdtMain.h"
 
 #include "IdtWindow.h"
-#include <magnification.h>							// ∑≈¥ÛAPI
+#include <magnification.h>
 #pragma comment(lib, "magnification.lib")
-#define RESTOREDWINDOWSTYLES WS_SIZEBOX | WS_SYSMENU | WS_CLIPCHILDREN | WS_CAPTION | WS_MAXIMIZEBOX
 
 extern IMAGE MagnificationBackground;
 extern HWND hwndHost, hwndMag;

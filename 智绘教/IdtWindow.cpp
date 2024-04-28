@@ -2,6 +2,7 @@
 
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
+#include "IdtText.h"
 
 HWND floating_window = NULL; //Ðü¸¡´°´°¿Ú
 HWND drawpad_window = NULL; //»­°å´°¿Ú
@@ -79,6 +80,7 @@ wstring GetWindowText(HWND hWnd)
 }
 
 //ÖÃ¶¥³ÌÐò´°¿Ú
+
 void TopWindow()
 {
 	/*
