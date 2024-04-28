@@ -1,8 +1,11 @@
 #include "IdtMagnification.h"
 #include <winuser.h>
 
+#include <d3d9.h>
+#pragma comment(lib, "d3d9")
+
+HWND hwndMag;
 IMAGE MagnificationBackground = CreateImageColor(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), RGBA(255, 255, 255, 255), false);
-HWND hwndHost, hwndMag;
 int magnificationWindowReady;
 
 shared_mutex MagnificationBackgroundSm;
@@ -21,77 +24,15 @@ BOOL MagImageScaling(HWND hwnd, void* srcdata, MAGIMAGEHEADER srcheader, void* d
 
 	MagnificationBackground = SrcImage;
 
-	/*
-	BITMAPINFOHEADER bmif;
-	HBITMAP hBmp = NULL;
-	BYTE* pBits = nullptr;
-
-	bmif.biSize = sizeof(BITMAPINFOHEADER);
-	bmif.biHeight = srcheader.height;
-	bmif.biWidth = srcheader.width;
-	bmif.biSizeImage = bmif.biWidth * bmif.biHeight * 4;
-	bmif.biPlanes = 1;
-	bmif.biBitCount = (WORD)(bmif.biSizeImage / bmif.biHeight / bmif.biWidth * 8);
-	bmif.biCompression = BI_RGB;
-
-	LPBYTE pData = (BYTE*)new BYTE[bmif.biSizeImage];
-	memcpy(pData, (LPBYTE)srcdata + srcheader.offset, bmif.biSizeImage);
-	LONG nLineSize = bmif.biWidth * bmif.biBitCount / 8;
-	BYTE* pLineData = new BYTE[nLineSize];
-	LONG nLineStartIndex = 0;
-	LONG nLineEndIndex = bmif.biHeight - 1;
-	while (nLineStartIndex < nLineEndIndex)
-	{
-		BYTE* pStart = pData + (nLineStartIndex * nLineSize);
-		BYTE* pEnd = pData + (nLineEndIndex * nLineSize);
-		memcpy(pLineData, pStart, nLineSize);
-		memcpy(pStart, pEnd, nLineSize);
-		memcpy(pEnd, pLineData, nLineSize);
-		nLineStartIndex++;
-		nLineEndIndex--;
-	}
-
-	// 使用CreateDIBSection来创建HBITMAP
-	HDC hDC = GetDC(NULL);
-	hBmp = CreateDIBSection(hDC, (BITMAPINFO*)&bmif, DIB_RGB_COLORS, (void**)&pBits, NULL, 0);
-	ReleaseDC(NULL, hDC);
-
-	if (hBmp && pBits)
-	{
-		memcpy(pBits, pData, bmif.biSizeImage);
-
-		std::unique_lock<std::shared_mutex> LockMagnificationBackgroundSm(MagnificationBackgroundSm);
-		MagnificationBackground = Bitmap2Image(&hBmp, false);
-		LockMagnificationBackgroundSm.unlock();
-	}
-
-	delete[] pLineData;
-	delete[] pData;
-	DeleteObject(hBmp);
-
-	*/
-
 	return 1;
 }
 void UpdateMagWindow()
 {
-	POINT mousePoint;
-	GetCursorPos(&mousePoint);
-
 	RECT sourceRect = { 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
 
-	// Set the source rectangle for the magnifier control.
 	std::unique_lock<std::shared_mutex> lock1(MagnificationBackgroundSm);
-	//MagShowSystemCursor(FALSE);
 	MagSetWindowSource(hwndMag, sourceRect);
-	//MagShowSystemCursor(TRUE);
 	lock1.unlock();
-
-	// Reclaim topmost status, to prevent unmagnified menus from remaining in view.
-	SetWindowPos(hwndHost, freeze_window, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
-
-	// Force redraw.
-	InvalidateRect(hwndMag, NULL, TRUE);
 }
 
 LRESULT CALLBACK MagnifierWindowWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -119,32 +60,39 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 	hostWindowRect.left = 0;
 	hostWindowRect.right = GetSystemMetrics(SM_CXSCREEN);
 
+	IDTLogger->info("[放大API线程][SetupMagnifier] 注册放大API窗口类");
 	RegisterHostWindowClass(hinst);
-	hwndHost = CreateWindowEx(WS_EX_TOPMOST | WS_EX_LAYERED, TEXT("MagnifierWindow"), TEXT("Idt Screen Magnifier"), RESTOREDWINDOWSTYLES, 0, 0, hostWindowRect.right, hostWindowRect.bottom, NULL, NULL, hInst, NULL);
-	if (!hwndHost) return FALSE;
+	IDTLogger->info("[放大API线程][SetupMagnifier] 注册放大API窗口类完成");
 
-	SetLayeredWindowAttributes(hwndHost, 0, 255, LWA_ALPHA);
+	IDTLogger->info("[放大API线程][SetupMagnifier] 创建放大API窗口");
+	hwndMag = CreateWindow(WC_MAGNIFIER, TEXT("Idt Magnifier Window"), MS_SHOWMAGNIFIEDCURSOR, hostWindowRect.left, hostWindowRect.top, hostWindowRect.right, hostWindowRect.bottom, /*hwndHost*/NULL, NULL, hInst, NULL);
+	if (!hwndMag)
+	{
+		IDTLogger->error("[放大API线程][SetupMagnifier] 创建放大API窗口失败" + to_string(GetLastError()));
+		return FALSE;
+	}
+	else IDTLogger->info("[放大API线程][SetupMagnifier] 创建放大API窗口完成");
 
-	GetClientRect(hwndHost, &magWindowRect);
-	hwndMag = CreateWindow(WC_MAGNIFIER, TEXT("MagnifierWindow"), WS_CHILD | MS_SHOWMAGNIFIEDCURSOR | WS_VISIBLE, magWindowRect.left, magWindowRect.top, magWindowRect.right, magWindowRect.bottom, hwndHost, NULL, hInst, NULL);
-	if (!hwndMag) return FALSE;
-
+	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API窗口样式");
 	SetWindowLong(hwndMag, GWL_STYLE, GetWindowLong(hwndMag, GWL_STYLE) & ~WS_CAPTION);//隐藏标题栏
 	SetWindowPos(hwndMag, NULL, hostWindowRect.left, hostWindowRect.top, hostWindowRect.right - hostWindowRect.left, hostWindowRect.bottom - hostWindowRect.top, SWP_NOMOVE | SWP_NOZORDER | SWP_DRAWFRAME);
 	SetWindowLong(hwndMag, GWL_EXSTYLE, WS_EX_TOOLWINDOW);//隐藏任务栏
+	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API窗口完成");
 
-	// Set the magnification factor.
+	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API工厂");
 	MAGTRANSFORM matrix;
 	memset(&matrix, 0, sizeof(matrix));
 	matrix.v[0][0] = 1.0f;
 	matrix.v[1][1] = 1.0f;
 	matrix.v[2][2] = 1.0f;
+	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API工厂完成");
 
+	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API转换矩阵");
 	BOOL ret = MagSetWindowTransform(hwndMag, &matrix);
 	if (ret)
 	{
 		MAGCOLOREFFECT magEffectInvert =
-		{ { // MagEffectInvert
+		{ {
 			{  1.0f,  0.0f,  0.0f,  0.0f,  0.0f },
 			{  0.0f,  1.0f,  0.0f,  0.0f,  0.0f },
 			{  0.0f,  0.0f,  1.0f,  0.0f,  0.0f },
@@ -153,9 +101,14 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 		} };
 
 		ret = MagSetColorEffect(hwndMag, NULL);
-	}
 
+		IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API转换矩阵完成");
+	}
+	else IDTLogger->error("[放大API线程][SetupMagnifier] 设置放大API转换矩阵失败");
+
+	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API回调函数");
 	MagSetImageScalingCallback(hwndMag, (MagImageScalingCallback)MagImageScaling);
+	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API回调函数完成");
 
 	return ret;
 }
@@ -163,16 +116,23 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 bool RequestUpdateMagWindow;
 void MagnifierThread()
 {
-	//LOG(INFO) << "尝试初始化MagnificationAPI";
-	MagInitialize();
-	//LOG(INFO) << "成功初始化MagnificationAPI";
+	IDTLogger->info("[放大API线程][MagnifierThread] 初始化MagInitialize");
+	if (!MagInitialize())
+	{
+		IDTLogger->error("[放大API线程][MagnifierThread] 初始化MagInitialize失败");
+		return;
+	}
+	else IDTLogger->info("[放大API线程][MagnifierThread] 初始化MagInitialize完成");
 
-	//LOG(INFO) << "尝试创建MagnificationAPI虚拟窗口";
-	SetupMagnifier(GetModuleHandle(0));
-	ShowWindow(hwndHost, SW_HIDE);
-	UpdateWindow(hwndHost);
-	//LOG(INFO) << "成功创建MagnificationAPI虚拟窗口";
+	IDTLogger->info("[放大API线程][MagnifierThread] 启动放大API");
+	if (!SetupMagnifier(GetModuleHandle(0)))
+	{
+		IDTLogger->error("[放大API线程][MagnifierThread] 启动放大API失败");
+		return;
+	}
+	else IDTLogger->info("[放大API线程][MagnifierThread] 启动放大API完成");
 
+	IDTLogger->info("[放大API线程][MagnifierThread] 等待穿透窗口创建");
 	while (!off_signal)
 	{
 		if (magnificationWindowReady >= 4)
@@ -182,30 +142,54 @@ void MagnifierThread()
 			hwndList.emplace_back(drawpad_window);
 			hwndList.emplace_back(ppt_window);
 			hwndList.emplace_back(setting_window);
-			MagSetWindowFilterList(hwndMag, MW_FILTERMODE_EXCLUDE, hwndList.size(), hwndList.data());
+
+			IDTLogger->info("[放大API线程][MagnifierThread] 设置穿透窗口列表");
+
+			if (MagSetWindowFilterList(hwndMag, MW_FILTERMODE_EXCLUDE, hwndList.size(), hwndList.data()) == FALSE)
+			{
+				IDirect3D9* pD3D = Direct3DCreate9(D3D_SDK_VERSION);
+				if (pD3D != nullptr)
+				{
+					D3DCAPS9 caps;
+					HRESULT hr = pD3D->GetDeviceCaps(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, &caps);
+					if (SUCCEEDED(hr))
+					{
+						if (caps.DevCaps & D3DDEVCAPS_HWTRANSFORMANDLIGHT) IDTLogger->error("[放大API线程][MagnifierThread] 设置穿透窗口列表失败（设备支持 WDDM 1.0 版本但原因未知）");
+						else IDTLogger->error("[放大API线程][MagnifierThread] 设置穿透窗口列表失败（设备不支持 WDDM 1.0 版本）");
+					}
+					else IDTLogger->error("[放大API线程][MagnifierThread] 设置穿透窗口列表失败（无法 GetDeviceCaps 并查询是否支持 WDDM）");
+
+					pD3D->Release();
+				}
+				else IDTLogger->error("[放大API线程][MagnifierThread] 设置穿透窗口列表失败（无法初始化 IDirect3D9 并查询是否支持 WDDM）");
+			}
+			else IDTLogger->info("[放大API线程][MagnifierThread] 设置穿透窗口列表完成");
 
 			magnificationWindowReady = -1;
-			//LOG(INFO) << "成功MagnificationAPI刷新第一帧";
 
 			break;
 		}
 
 		Sleep(500);
 	}
+	IDTLogger->info("[放大API线程][MagnifierThread] 等待穿透窗口创建完成");
 
 	RequestUpdateMagWindow = true;
 	while (!off_signal)
 	{
-		//hiex::DelayFPS(24);
-		while (!RequestUpdateMagWindow) Sleep(100);
+		while (!RequestUpdateMagWindow && !off_signal) Sleep(100);
+		if (off_signal) break;
 
 		{
+			IDTLogger->info("[放大API线程][MagnifierThread] 更新API图像");
 			UpdateMagWindow();
+			IDTLogger->info("[放大API线程][MagnifierThread] 更新API图像完成");
+
 			RequestUpdateMagWindow = false;
 		}
 	}
 
-	//LOG(INFO) << "尝试释放MagnificationAPI";
+	IDTLogger->info("[放大API线程][MagnifierThread] 反向初始化MagUninitialize");
 	MagUninitialize();
-	//LOG(INFO) << "成功释放MagnificationAPI";
+	IDTLogger->info("[放大API线程][MagnifierThread] 反向初始化MagUninitialize完成");
 }

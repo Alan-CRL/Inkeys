@@ -68,8 +68,25 @@ wstring convertToHttp(const wstring& url)
 int AutomaticUpdateStep = 0;
 void AutomaticUpdate()
 {
+	/*
+	AutomaticUpdateStep 含义
+	0 程序自动更新未启动
+	1 程序自动更新载入中
+	2 程序自动更新网络连接错误
+	3 程序自动更新下载最新版本信息时失败
+	4 程序自动更新下载的最新版本信息不符合规范
+	5 程序自动更新下载的最新版本信息中不包含 LTS 通道
+	6 新版本正极速下载中
+	7 程序自动更新下载最新版本程序失败
+	8 程序自动更新下载的最新版本程序损坏
+	9 重启更新到最新版本
+	10 程序已经是最新版本
+	*/
+
 	this_thread::sleep_for(chrono::seconds(3));
 	while (!already) this_thread::sleep_for(chrono::milliseconds(50));
+
+	AutomaticUpdateStep = 1;
 
 	struct
 	{
@@ -93,10 +110,11 @@ void AutomaticUpdate()
 		against = false;
 
 		//获取最新版本信息
-		if (state && checkIsNetwork())
+		if (state)
 		{
 			filesystem::create_directory(string_to_wstring(global_path) + L"installer"); //创建路径
 			filesystem::remove(string_to_wstring(global_path) + L"installer\\new_download.json");
+
 			info.edition_date = L"";
 			info.edition_code = L"";
 			info.explain = L"";
@@ -119,8 +137,6 @@ void AutomaticUpdate()
 
 			if (download1 == S_OK)
 			{
-				procedure_updata_error = 1;
-
 				Json::Reader reader;
 				Json::Value root;
 
@@ -146,20 +162,34 @@ void AutomaticUpdate()
 						}
 						info.representation = string_to_wstring(convert_to_gbk(root["LTS"]["representation"].asString()));
 					}
+					else
+					{
+						AutomaticUpdateStep = 5;
+						state = false;
+					}
+				}
+				else
+				{
+					AutomaticUpdateStep = 4;
+					state = false;
 				}
 
 				injson.close();
 			}
-			else state = false;
+			else
+			{
+				state = false;
+				if (!checkIsNetwork()) AutomaticUpdateStep = 2;
+				else AutomaticUpdateStep = 3;
+			}
 
 			filesystem::remove(string_to_wstring(global_path) + L"installer\\new_download.json");
 		}
-		else procedure_updata_error = 2;
 
 		//下载最新版本
-		if (state && checkIsNetwork() && info.edition_date != L"" && info.edition_date > string_to_wstring(edition_date))
+		if (state && info.edition_date != L"" && info.edition_date > string_to_wstring(edition_date))
 		{
-			update = true, AutomaticUpdateStep = 2;
+			update = true;
 			if (_waccess((string_to_wstring(global_path) + L"installer\\update.json").c_str(), 4) == 0)
 			{
 				wstring tedition, tpath;
@@ -203,6 +233,8 @@ void AutomaticUpdate()
 
 			if (update)
 			{
+				AutomaticUpdateStep = 6;
+
 				filesystem::create_directory(string_to_wstring(global_path) + L"installer"); //创建路径
 				filesystem::remove(string_to_wstring(global_path) + L"installer\\new_procedure.tmp");
 
@@ -249,7 +281,11 @@ void AutomaticUpdate()
 
 						filesystem::remove(string_to_wstring(global_path) + L"installer\\new_procedure" + timestamp + L".zip");
 						filesystem::rename(string_to_wstring(global_path) + L"installer\\" + info.representation, string_to_wstring(global_path) + L"installer\\new_procedure" + timestamp + L".exe", ec);
-						if (ec) continue;
+						if (ec)
+						{
+							AutomaticUpdateStep = 8;
+							continue;
+						}
 
 						string hash_md5, hash_sha256;
 						{
@@ -285,20 +321,21 @@ void AutomaticUpdate()
 							writejson.close();
 
 							against = false;
-							AutomaticUpdateStep = 3;
+							AutomaticUpdateStep = 9;
 
 							break;
 						}
 						else
 						{
-							AutomaticUpdateStep = 0;
+							AutomaticUpdateStep = 8;
 							filesystem::remove(string_to_wstring(global_path) + L"installer\\new_procedure" + timestamp + L".exe");
 						}
 					}
+					else AutomaticUpdateStep = 7;
 				}
 			}
 		}
-		else AutomaticUpdateStep = 1;
+		else if (state && info.edition_date != L"" && info.edition_date <= string_to_wstring(edition_date)) AutomaticUpdateStep = 10;
 
 		if (against) this_thread::sleep_for(chrono::seconds(30));
 		else this_thread::sleep_for(chrono::minutes(30));

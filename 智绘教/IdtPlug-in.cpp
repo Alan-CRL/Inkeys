@@ -408,9 +408,9 @@ void DrawControlWindow()
 					unsigned char alpha = (color & 0xFF000000) >> 24;
 					if (alpha != 0)
 					{
-						data[(y * width + x) * 4 + 0] = ((color & 0x00FF0000) >> 16) * 255 / alpha;
-						data[(y * width + x) * 4 + 1] = ((color & 0x0000FF00) >> 8) * 255 / alpha;
-						data[(y * width + x) * 4 + 2] = ((color & 0x000000FF) >> 0) * 255 / alpha;
+						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
 					}
 					else
 					{
@@ -440,9 +440,9 @@ void DrawControlWindow()
 					unsigned char alpha = (color & 0xFF000000) >> 24;
 					if (alpha != 0)
 					{
-						data[(y * width + x) * 4 + 0] = ((color & 0x00FF0000) >> 16) * 255 / alpha;
-						data[(y * width + x) * 4 + 1] = ((color & 0x0000FF00) >> 8) * 255 / alpha;
-						data[(y * width + x) * 4 + 2] = ((color & 0x000000FF) >> 0) * 255 / alpha;
+						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
 					}
 					else
 					{
@@ -472,9 +472,9 @@ void DrawControlWindow()
 					unsigned char alpha = (color & 0xFF000000) >> 24;
 					if (alpha != 0)
 					{
-						data[(y * width + x) * 4 + 0] = ((color & 0x00FF0000) >> 16) * 255 / alpha;
-						data[(y * width + x) * 4 + 1] = ((color & 0x0000FF00) >> 8) * 255 / alpha;
-						data[(y * width + x) * 4 + 2] = ((color & 0x000000FF) >> 0) * 255 / alpha;
+						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
 					}
 					else
 					{

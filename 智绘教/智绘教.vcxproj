@@ -101,6 +101,7 @@
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <LargeAddressAware>true</LargeAddressAware>
     </Link>
     <Manifest>
       <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
@@ -167,6 +168,7 @@
     <ClInclude Include="IdtOther.h" />
     <ClInclude Include="IdtPlug-in.h" />
     <ClInclude Include="IdtSetting.h" />
+    <ClInclude Include="IdtSysNotifications.h" />
     <ClInclude Include="imgui\imconfig.h" />
     <ClInclude Include="imgui\imgui.h" />
     <ClInclude Include="imgui\imgui_impl_dx11.h" />
@@ -190,6 +192,7 @@
     <ClInclude Include="IdtTime.h" />
     <ClInclude Include="IdtUpdate.h" />
     <ClInclude Include="IdtWindow.h" />
+    <ClInclude Include="wintoastlib\wintoastlib.h" />
     <ClInclude Include="zip_utils\unzip.h" />
     <ClInclude Include="zip_utils\zip.h" />
   </ItemGroup>
@@ -243,6 +246,7 @@
     <ClCompile Include="IdtKey.cpp" />
     <ClCompile Include="IdtRts.cpp" />
     <ClCompile Include="IdtSetting.cpp" />
+    <ClCompile Include="IdtSysNotifications.cpp" />
     <ClCompile Include="imgui\imgui.cpp" />
     <ClCompile Include="imgui\imgui_draw.cpp" />
     <ClCompile Include="imgui\imgui_impl_dx11.cpp" />
@@ -264,6 +268,7 @@
     <ClCompile Include="IdtTime.cpp" />
     <ClCompile Include="IdtUpdate.cpp" />
     <ClCompile Include="IdtWindow.cpp" />
+    <ClCompile Include="wintoastlib\wintoastlib.cpp" />
     <ClCompile Include="zip_utils\unzip.cpp" />
     <ClCompile Include="zip_utils\zip.cpp" />
   </ItemGroup>
@@ -282,6 +287,7 @@
     <Image Include="src\highlighter_brush.png" />
     <Image Include="src\home.png" />
     <Image Include="src\icon.ico" />
+    <Image Include="src\icon.png" />
     <Image Include="src\info.png" />
     <Image Include="src\left.png" />
     <Image Include="src\line.png" />

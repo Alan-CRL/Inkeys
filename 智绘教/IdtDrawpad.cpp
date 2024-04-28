@@ -36,8 +36,8 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 	{
 		KBDLLHOOKSTRUCT* pKeyInfo = (KBDLLHOOKSTRUCT*)lParam;
 
-		if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) KeyBoradDown[pKeyInfo->vkCode] = true;
-		else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) KeyBoradDown[pKeyInfo->vkCode] = false;
+		if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) KeyBoradDown[(BYTE)pKeyInfo->vkCode] = true;
+		else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) KeyBoradDown[(BYTE)pKeyInfo->vkCode] = false;
 
 		if (!IsHotkeyDown && (KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]) && (KeyBoradDown[VK_LWIN] || KeyBoradDown[VK_RWIN]) && (KeyBoradDown[VK_MENU] || KeyBoradDown[VK_LMENU] || KeyBoradDown[VK_RMENU]))
 		{
@@ -74,7 +74,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			case VK_RIGHT:  // 右箭头
 			case VK_DOWN:   // 下箭头
 			{
-				if (KeyBoradDown[pKeyInfo->vkCode])
+				if (KeyBoradDown[(BYTE)pKeyInfo->vkCode])
 				{
 					PPTUIControlColor[L"RoundRect/RoundRectLeft2/fill"].v = RGBA(200, 200, 200, 255);
 					PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v = RGBA(200, 200, 200, 255);
@@ -90,7 +90,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			case VK_LEFT:   // 左箭头
 			case VK_UP:     // 上箭头
 			{
-				if (KeyBoradDown[pKeyInfo->vkCode])
+				if (KeyBoradDown[(BYTE)pKeyInfo->vkCode])
 				{
 					PPTUIControlColor[L"RoundRect/RoundRectLeft1/fill"].v = RGBA(200, 200, 200, 255);
 					PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v = RGBA(200, 200, 200, 255);
@@ -355,9 +355,11 @@ void MultiFingerDrawing(LONG pid, POINT pt)
 		COLORREF color = brush.color;
 	}  draw_info;
 
-	IMAGE Canvas(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-	SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
-	IMAGE* BackCanvas = new IMAGE;
+	int cxscreen = GetSystemMetrics(SM_CXSCREEN);
+	int cyscreen = GetSystemMetrics(SM_CYSCREEN);
+
+	IMAGE Canvas = CreateImageColor(cxscreen, cyscreen, RGBA(0, 0, 0, 0), true);
+	IMAGE* BackCanvas = new IMAGE(cxscreen, cyscreen);
 
 	std::chrono::high_resolution_clock::time_point start;
 	if (draw_info.rubber_choose == true)
@@ -561,7 +563,7 @@ void MultiFingerDrawing(LONG pid, POINT pt)
 			}
 
 			// 延迟拉直
-			if (!StopTimingDisable && !points.empty())
+			if (draw_info.mode == 1 && !StopTimingDisable && !points.empty())
 			{
 				if (sqrt((pt.x - StopTimingPoint.x) * (pt.x - StopTimingPoint.x) + (pt.y - StopTimingPoint.y) * (pt.y - StopTimingPoint.y)) > 5)
 				{
@@ -655,7 +657,9 @@ void MultiFingerDrawing(LONG pid, POINT pt)
 
 		start = std::chrono::high_resolution_clock::now();
 		std::unique_lock<std::shared_mutex> lock3(StrokeImageSm[pid]);
-		*BackCanvas = Canvas;
+
+		ImgCpy(BackCanvas, &Canvas);
+
 		StrokeImage[pid] = make_pair(BackCanvas, draw_info.mode == 2 ? (/*draw_info.color >> 24*/130) * 10 + 0 : 2550);
 		lock3.unlock();
 
@@ -891,13 +895,16 @@ void MultiFingerDrawing(LONG pid, POINT pt)
 	lock3.unlock();
 
 	std::unique_lock<std::shared_mutex> lock4(StrokeImageSm[pid]);
-	*BackCanvas = Canvas;
+
+	ImgCpy(BackCanvas, &Canvas);
+
 	if (draw_info.rubber_choose == true) StrokeImage[pid] = make_pair(BackCanvas, 2553);
 	else if (draw_info.brush_choose == true)
 	{
 		if (draw_info.mode == 2) StrokeImage[pid] = make_pair(BackCanvas, (/*draw_info.color >> 24*/130) * 10 + 1);
 		else StrokeImage[pid] = make_pair(BackCanvas, 2551);
 	}
+
 	lock4.unlock();
 }
 void DrawpadDrawing()
@@ -921,7 +928,7 @@ void DrawpadDrawing()
 	ulwi.pptDst = &ptDst;
 	ulwi.psize = &sizeWnd;
 	ulwi.pptSrc = &ptSrc;
-	ulwi.crKey = RGB(255, 255, 255);
+	ulwi.crKey = 0;
 	ulwi.pblend = &blend;
 	ulwi.dwFlags = ULW_ALPHA;
 
@@ -949,7 +956,7 @@ void DrawpadDrawing()
 
 	chrono::high_resolution_clock::time_point reckon;
 	clock_t tRecord = 0;
-	for (int bug_fix_i = 1;; bug_fix_i = 2)
+	for (;;)
 	{
 		for (int for_i = 1;; for_i = 2)
 		{
@@ -981,7 +988,7 @@ void DrawpadDrawing()
 						std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
 
 						RecallImage.push_back({ drawpad, extreme_point, 0, make_pair(recall_image_recond, recall_image_reference) });
-						RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
+						RecallImagePeak = max((int)RecallImage.size(), RecallImagePeak);
 
 						LockExtremePointSm.unlock();
 						LockStrokeBackImageSm.unlock();
@@ -1002,7 +1009,7 @@ void DrawpadDrawing()
 						std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
 
 						RecallImage.push_back({ drawpad, extreme_point, 0, make_pair(recall_image_recond, recall_image_reference) });
-						RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
+						RecallImagePeak = max((int)RecallImage.size(), RecallImagePeak);
 
 						if (RecallImage.size() > 10)
 						{
@@ -1036,7 +1043,7 @@ void DrawpadDrawing()
 
 					extreme_point.clear();
 					RecallImage.push_back({ empty_drawpad, extreme_point, 2, make_pair(0,0) });
-					RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
+					RecallImagePeak = max((int)RecallImage.size(), RecallImagePeak);
 
 					if (RecallImage.size() > 10)
 					{
@@ -1137,7 +1144,7 @@ void DrawpadDrawing()
 									std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
 
 									RecallImage.push_back({ drawpad, extreme_point, 0, make_pair(recall_image_recond, recall_image_reference) });
-									RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
+									RecallImagePeak = max((int)RecallImage.size(), RecallImagePeak);
 
 									LockExtremePointSm.unlock();
 									LockStrokeBackImageSm.unlock();
@@ -1158,7 +1165,7 @@ void DrawpadDrawing()
 									std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
 
 									RecallImage.push_back({ drawpad, extreme_point, 0, make_pair(recall_image_recond, recall_image_reference) });
-									RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
+									RecallImagePeak = max((int)RecallImage.size(), RecallImagePeak);
 
 									if (RecallImage.size() > 10)
 									{
@@ -1192,7 +1199,7 @@ void DrawpadDrawing()
 
 								extreme_point.clear();
 								RecallImage.push_back({ empty_drawpad, extreme_point, 0, make_pair(0,0) });
-								RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
+								RecallImagePeak = max((int)RecallImage.size(), RecallImagePeak);
 
 								if (RecallImage.size() > 10)
 								{
@@ -1280,7 +1287,7 @@ void DrawpadDrawing()
 							std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
 
 							RecallImage.push_back({ drawpad, extreme_point, 0, make_pair(recall_image_recond, recall_image_reference) });
-							RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
+							RecallImagePeak = max((int)RecallImage.size(), RecallImagePeak);
 
 							LockExtremePointSm.unlock();
 							LockStrokeBackImageSm.unlock();
@@ -1301,7 +1308,7 @@ void DrawpadDrawing()
 							std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
 
 							RecallImage.push_back({ drawpad, extreme_point, 0, make_pair(recall_image_recond, recall_image_reference) });
-							RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
+							RecallImagePeak = max((int)RecallImage.size(), RecallImagePeak);
 
 							if (RecallImage.size() > 10)
 							{
@@ -1335,7 +1342,7 @@ void DrawpadDrawing()
 
 						extreme_point.clear();
 						RecallImage.push_back({ empty_drawpad, extreme_point, 0, make_pair(0,0) });
-						RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
+						RecallImagePeak = max((int)RecallImage.size(), RecallImagePeak);
 
 						if (RecallImage.size() > 10)
 						{
@@ -1455,7 +1462,7 @@ void DrawpadDrawing()
 						std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
 
 						RecallImage.push_back({ drawpad, extreme_point, 0, make_pair(recall_image_recond,recall_image_reference) });
-						RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
+						RecallImagePeak = max((int)RecallImage.size(), RecallImagePeak);
 
 						if (RecallImage.size() > 10)
 						{
@@ -1525,7 +1532,7 @@ void DrawpadDrawing()
 							std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
 
 							RecallImage.push_back({ drawpad, extreme_point, 0, make_pair(recall_image_recond,recall_image_reference) });
-							RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
+							RecallImagePeak = max((int)RecallImage.size(), RecallImagePeak);
 							if (RecallImage.size() > 10)
 							{
 								while (RecallImage.size() > 10)
@@ -1564,34 +1571,29 @@ void DrawpadDrawing()
 			}
 		}
 
-		if (bug_fix_i == 1)
+		ulwi.hdcSrc = GetImageHDC(&window_background);
+		if (!UpdateLayeredWindowIndirect(drawpad_window, &ulwi))
 		{
-			DWORD* pMem = GetImageBuffer(&window_background);
-			if ((pMem[0] & 0xFF000000) >> 24 == 0)
+			MessageBox(floating_window, L"智绘教画板显示出现问题，点击确定以重启智绘教\n此方案可能解决该问题", L"智绘教警告", MB_OK);
+
 			{
-				MessageBox(floating_window, L"智绘教画板显示出现问题，点击确定以重启智绘教\n此方案可能解决该问题", L"智绘教警告", MB_OK);
+				sswindows.clear();
+				EnumWindows(EnumWindowsProc, 0);
 
+				ofstream writejson;
+				writejson.imbue(locale("zh_CN.UTF8"));
+				writejson.open(wstring_to_string(string_to_wstring(global_path) + L"bug fix 240408.01.log").c_str());
+
+				for (int i = 0; i < (int)sswindows.size(); i++)
 				{
-					sswindows.clear();
-					EnumWindows(EnumWindowsProc, 0);
-
-					ofstream writejson;
-					writejson.imbue(locale("zh_CN.UTF8"));
-					writejson.open(wstring_to_string(string_to_wstring(global_path) + L"bug fix 240408.01.log").c_str());
-
-					for (int i = 0; i < (int)sswindows.size(); i++)
-					{
-						writejson << to_string(i) << " " + wstring_to_string(sswindows[i]) << endl;
-					}
-
-					writejson.close();
+					writejson << to_string(i) << " " + wstring_to_string(sswindows[i]) << endl;
 				}
 
-				off_signal = 2;
+				writejson.close();
 			}
+
+			off_signal = 2;
 		}
-		ulwi.hdcSrc = GetImageHDC(&window_background);
-		UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
 
 		tRecord = clock();
 	}
@@ -1692,7 +1694,7 @@ int drawpad_main()
 						shared_lock<std::shared_mutex> LockStrokeBackImageSm(StrokeBackImageSm);
 						shared_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
 						RecallImage.push_back({ drawpad, extreme_point, 0 });
-						RecallImagePeak = max(RecallImage.size(), RecallImagePeak);
+						RecallImagePeak = max((int)RecallImage.size(), RecallImagePeak);
 						LockExtremePointSm.unlock();
 						LockStrokeBackImageSm.unlock();
 					}

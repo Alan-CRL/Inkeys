@@ -9,6 +9,7 @@ IMAGE pptdrawpad(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)); 
 int recall_image_recond, recall_image_reference;
 shared_mutex RecallImageManipulatedSm;
 chrono::high_resolution_clock::time_point RecallImageManipulated;
+
 tm RecallImageTm;
 int RecallImagePeak = 0;
 deque<RecallStruct> RecallImage;//³·»ØÕ»
@@ -57,4 +58,27 @@ Bitmap* IMAGEToBitmap(IMAGE* easyXImage)
 	bitmap->UnlockBits(&bitmapData);
 
 	return bitmap;
+}
+bool ImgCpy(IMAGE* tag, IMAGE* src)
+{
+	if (tag == NULL || src == NULL) return false;
+	if (tag->getwidth() != src->getwidth() || tag->getheight() != src->getheight())
+	{
+		tag->Resize(src->getwidth(), src->getheight());
+	}
+
+	int width = src->getwidth();
+	int height = src->getheight();
+	DWORD* pSrc = GetImageBuffer(src);
+	DWORD* pTag = GetImageBuffer(tag);
+
+	for (int y = 0; y < height; ++y)
+	{
+		for (int x = 0; x < width; ++x)
+		{
+			pTag[y * width + x] = pSrc[y * width + x];
+		}
+	}
+
+	return true;
 }
