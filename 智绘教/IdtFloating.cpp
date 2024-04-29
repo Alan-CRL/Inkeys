@@ -5263,7 +5263,7 @@ void MouseInteraction()
 	ExMessage m;
 	int lx, ly;
 
-	std::chrono::high_resolution_clock::time_point MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
+	std::chrono::high_resolution_clock::time_point MouseInteractionManipulated;
 	while (!off_signal)
 	{
 		hiex::getmessage_win32(&m, EM_MOUSE, floating_window);

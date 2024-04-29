@@ -38,7 +38,7 @@ void FreezeFrameWindow();
 bool already = false;
 
 wstring buildTime = __DATE__ L" " __TIME__; //构建时间
-string edition_date = "20240429g"; //程序发布日期
+string edition_date = "20240429h"; //程序发布日期
 string edition_channel = "Beta"; //程序发布日期
 string edition_code = "24H1(BetaH2)"; //程序版本
 
