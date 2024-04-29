@@ -105,6 +105,7 @@ extern bool already;
 
 extern wstring buildTime; //构建时间
 extern string edition_date; //程序发布日期
+extern string edition_channel;
 extern string edition_code; //程序版本
 
 extern wstring userid; //用户ID（主板序列号）
@@ -123,6 +124,7 @@ bool HasReadWriteAccess(const std::wstring& directoryPath);
 //调测专用
 #ifndef IDT_RELEASE
 void Test();
-void Testi(int t);
+void Testi(long long t);
 void Testw(wstring t);
+void Testa(string t);
 #endif

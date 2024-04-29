@@ -17,6 +17,16 @@ wstring GetCurrentExePath()
 
 	return (wstring)buffer;
 }
+wstring GetCurrentExeName()
+{
+	wchar_t buffer[MAX_PATH];
+	DWORD length = GetModuleFileNameW(NULL, buffer, sizeof(buffer) / sizeof(wchar_t));
+	if (length == 0 || length == sizeof(buffer) / sizeof(wchar_t)) return L"";
+
+	filesystem::path fullPath(buffer);
+	return fullPath.filename().wstring();
+}
+
 //开机启动项设置
 bool ModifyRegedit(bool bAutoRun)
 {

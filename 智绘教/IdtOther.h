@@ -11,6 +11,8 @@
 
 wstring GetCurrentExeDirectory();
 wstring GetCurrentExePath();
+wstring GetCurrentExeName();
+
 //开机启动项设置
 bool ModifyRegedit(bool bAutoRun);
 //网络状态获取

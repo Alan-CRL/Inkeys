@@ -1,9 +1,11 @@
 #pragma once
 #include "IdtMain.h"
 
-#include "IdtWindow.h"
-#include "IdtTime.h"
+#include "IdtConfiguration.h"
 #include "IdtOther.h"
+#include "IdtSetting.h"
+#include "IdtTime.h"
+#include "IdtWindow.h"
 
 //≥Ã–Ú±¿¿£±£ª§
 void CrashedHandler();
