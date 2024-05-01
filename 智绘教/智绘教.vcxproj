@@ -241,6 +241,8 @@
     <ClCompile Include="IdtDrawpad.cpp" />
     <ClCompile Include="IdtFloating.cpp" />
     <ClCompile Include="IdtFreezeFrame.cpp" />
+    <ClCompile Include="IdtGuid.cpp" />
+    <ClCompile Include="IdtGuid.h" />
     <ClCompile Include="IdtHistoricalDrawpad.cpp" />
     <ClCompile Include="IdtImage.cpp" />
     <ClCompile Include="IdtKey.cpp" />

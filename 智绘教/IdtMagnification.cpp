@@ -22,6 +22,7 @@ BOOL MagImageScaling(HWND hwnd, void* srcdata, MAGIMAGEHEADER srcheader, void* d
 	DWORD* SrcBuffer = GetImageBuffer(&SrcImage);
 	memcpy(SrcBuffer, (LPBYTE)srcdata + srcheader.offset, ImageWidth * ImageHeight * 4);
 
+	hiex::RemoveImageTransparency(&SrcImage);
 	std::unique_lock<std::shared_mutex> LockMagnificationBackgroundSm(MagnificationBackgroundSm);
 	MagnificationBackground = SrcImage;
 	LockMagnificationBackgroundSm.unlock();
@@ -107,7 +108,7 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 			{  0.0f,  1.0f,  0.0f,  0.0f,  0.0f },
 			{  0.0f,  0.0f,  1.0f,  0.0f,  0.0f },
 			{  0.0f,  0.0f,  0.0f,  1.0f,  0.0f },
-			{  1.0f,  1.0f,  1.0f,  0.0f,  1.0f }
+			{  0.0f,  0.0f,  0.0f,  0.0f,  1.0f }
 		} };
 
 		ret = MagSetColorEffect(hwndMag, NULL);

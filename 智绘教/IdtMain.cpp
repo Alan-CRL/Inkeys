@@ -16,6 +16,7 @@
 #include "IdtConfiguration.h"
 #include "IdtDisplayManagement.h"
 #include "IdtDrawpad.h"
+#include "IdtGuid.h"
 #include "IdtImage.h"
 #include "IdtMagnification.h"
 #include "IdtOther.h"
@@ -37,10 +38,10 @@ void FreezeFrameWindow();
 
 bool already = false;
 
-wstring buildTime = __DATE__ L" " __TIME__; //构建时间
-string edition_date = "20240429h"; //程序发布日期
-string edition_channel = "Beta"; //程序发布日期
-string edition_code = "24H1(BetaH2)"; //程序版本
+wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
+string edition_date = "20240501a";				//程序发布日期
+string edition_channel = "Beta";				//程序发布通道
+string edition_code = "24H1(BetaH2)";			//程序版本
 
 wstring userid; //用户ID（主板序列号）
 string global_path; //程序当前路径
@@ -51,7 +52,7 @@ map <wstring, bool> thread_status; //线程状态管理
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-int main()
+int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
 {
 	// 路径预处理
 	{
@@ -66,8 +67,8 @@ int main()
 	}
 	// 用户ID获取
 	{
-		userid = GetMainHardDiskSerialNumber();
-		if (userid.empty() || !isValidString(userid)) userid = L"用户ID无法正确识别";
+		userid = string_to_wstring(getDeviceGUID());
+		if (userid.empty() || !isValidString(userid)) userid = L"Error";
 	}
 	// 日志服务初始化
 	{
@@ -77,7 +78,7 @@ int main()
 		if (_waccess((string_to_wstring(global_path) + L"log").c_str(), 0) == -1) filesystem::create_directory(string_to_wstring(global_path) + L"log", ec);
 		else
 		{
-			// 历史画板清理
+			// 历史日志清理
 
 			auto getCurrentTimeStamp = []()
 				{
@@ -114,16 +115,34 @@ int main()
 					return (currentTimeStamp - fileTimeStamp) >= (7LL * 24LL * 60LL * 60LL * 1000LL) || (currentTimeStamp - fileTimeStamp) < 0; // 7天的毫秒数
 				};
 
-			auto deleteOldLogFiles = [&isLogFile, &isOldLogFile](const filesystem::path& directory)
+			auto calculateDirectorySize = [](const filesystem::path& directoryPath)
 				{
+					uintmax_t totalSize = 0;
+					for (const auto& entry : filesystem::directory_iterator(directoryPath))
+					{
+						if (entry.is_regular_file()) {
+							totalSize += entry.file_size();
+						}
+					}
+					return totalSize;
+				};
+
+			auto deleteOldLogFiles = [&isLogFile, &isOldLogFile, &calculateDirectorySize](const filesystem::path& directory)
+				{
+					uintmax_t totalSize = calculateDirectorySize(directory);
+
 					for (const auto& entry : filesystem::directory_iterator(directory))
 					{
 						if (entry.is_regular_file())
 						{
-							if (!isLogFile(entry.path().filename().string()) || isOldLogFile(entry.path()))
+							if (isLogFile(entry.path().filename().string()) && (totalSize > 10485760LL || isOldLogFile(entry.path())))
 							{
+								uintmax_t entrySize = entry.file_size();
+
 								error_code ec;
 								filesystem::remove(entry.path(), ec);
+
+								if (!ec) totalSize -= entrySize;
 							}
 						}
 					}
@@ -132,7 +151,10 @@ int main()
 			string directoryPath = global_path + "log";
 
 			filesystem::path directory(directoryPath);
-			if (filesystem::exists(directory) && filesystem::is_directory(directory)) deleteOldLogFiles(directory);
+			if (filesystem::exists(directory) && filesystem::is_directory(directory))
+			{
+				deleteOldLogFiles(directory);
+			}
 		}
 
 		if (_waccess((string_to_wstring(global_path) + L"log\\idt" + Timestamp + L".log").c_str(), 0) == 0) filesystem::remove(string_to_wstring(global_path) + L"log\\idt" + Timestamp + L".log", ec);

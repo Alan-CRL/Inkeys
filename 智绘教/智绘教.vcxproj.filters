@@ -527,6 +527,12 @@
     <ClCompile Include="wintoastlib\wintoastlib.cpp">
       <Filter>头文件\wintoastlib</Filter>
     </ClCompile>
+    <ClCompile Include="IdtGuid.h">
+      <Filter>头文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtGuid.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="智绘教.rc">

@@ -44,7 +44,7 @@ int SettingWindowHeight = 700;
 
 void SettingSeekBar()
 {
-	if (!KEY_DOWN(VK_LBUTTON)) return;
+	if (!KeyBoradDown[VK_LBUTTON]) return;
 
 	POINT p;
 	GetCursorPos(&p);
@@ -54,7 +54,7 @@ void SettingSeekBar()
 
 	while (1)
 	{
-		if (!KEY_DOWN(VK_LBUTTON)) break;
+		if (!KeyBoradDown[VK_LBUTTON]) break;
 
 		POINT p;
 		GetCursorPos(&p);
@@ -1007,7 +1007,7 @@ int SettingMain()
 							GetCursorPos(&pt);
 
 							text = L"鼠标左键按下：";
-							text += KEY_DOWN(VK_LBUTTON) ? L"是" : L"否";
+							text += KeyBoradDown[VK_LBUTTON] ? L"是" : L"否";
 							text += L"\n光标坐标 " + to_wstring(pt.x) + L"," + to_wstring(pt.y);
 
 							if (uRealTimeStylus == 2) text += L"\n\n触控库消息：按下";
@@ -1174,6 +1174,9 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
 							CenteredText(reinterpret_cast<const char*>(u8" 更新通道"), 4.0f);
 
+							Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
+							ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"正式通道(LTS) 提供经过验证的稳定程序版本\n公测通道(Beta) 提供稳定性一般的程序版本\n非正式通道程序均未提交杀软进行防误报处理\n\n一旦更新，则无法通过自动更新回退版本\n当选择的更新通道不可用时，则会切换会默认通道"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
+
 							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 180.0f);
 							ImGui::SetNextItemWidth(170);
 
@@ -1232,7 +1235,7 @@ int SettingMain()
 							text += L"\n程序构建模式 IDT_DEBUG（非发布调测版本）";
 #endif
 
-							if (userid == L"用户ID无法正确识别") text += L"\n用户ID无法正确识别";
+							if (userid == L"Error") text += L"\n用户ID无法正确识别";
 							else text += L"\n用户ID " + userid;
 
 							text += L"\n\n在此版本中，您的所有数据都将在本地进行处理";
