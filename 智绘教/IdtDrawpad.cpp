@@ -12,7 +12,9 @@
 #include "IdtTime.h"
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
-//#include <ink_stroke_modeler/stroke_modeler.h>
+
+// 实时平滑测试
+#pragma comment(lib, "absl/AbslWin32MT.lib")
 
 bool main_open;
 bool FirstDraw = true;
@@ -1611,7 +1613,7 @@ int drawpad_main()
 
 	//画笔初始化
 	{
-		brush.width = 4;
+		brush.width = 3;
 		brush.color = brush.primary_colour = RGBA(50, 30, 181, 255);
 	}
 	//窗口初始化

@@ -20,6 +20,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam);
 void DrawpadInstallHook();
 
 double EuclideanDistance(POINT a, POINT b);
+//double EuclideanDistance(PointF a, PointF b);
 
 void MultiFingerDrawing(LONG pid, POINT pt);
 void DrawpadDrawing();

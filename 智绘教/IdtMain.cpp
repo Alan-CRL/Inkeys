@@ -39,8 +39,8 @@ void FreezeFrameWindow();
 bool already = false;
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string edition_date = "20240501a";				//程序发布日期
-string edition_channel = "Beta";				//程序发布通道
+string edition_date = "20240504a";				//程序发布日期
+string edition_channel = "LTS";					//程序发布通道
 string edition_code = "24H1(BetaH2)";			//程序版本
 
 wstring userid; //用户ID（主板序列号）
@@ -52,6 +52,7 @@ map <wstring, bool> thread_status; //线程状态管理
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
+//int main()
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
 {
 	// 路径预处理
@@ -403,6 +404,15 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		INT numFound = 0;
 		fontCollection.GetFamilies(1, &HarmonyOS_fontFamily, &numFound);
+
+		{
+			if (_waccess((string_to_wstring(global_path) + L"ttf").c_str(), 0) == -1)
+			{
+				error_code ec;
+				filesystem::create_directory(string_to_wstring(global_path) + L"ttf", ec);
+			}
+			ExtractResource((string_to_wstring(global_path) + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
+		}
 
 		IDTLogger->info("[主线程][IdtMain] 加载字体完成");
 

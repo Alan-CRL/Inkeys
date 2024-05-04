@@ -52,11 +52,11 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpp17</LanguageStandard>
-      <Optimization>Full</Optimization>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -65,16 +65,16 @@
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <OptimizeReferences>true</OptimizeReferences>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
-      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <Manifest>
-      <EnableDpiAwareness>true</EnableDpiAwareness>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
     </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -88,7 +88,7 @@
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <CompileAsManaged>
       </CompileAsManaged>
     </ClCompile>
@@ -100,7 +100,7 @@
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>./additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
     </Link>
     <Manifest>
@@ -108,6 +108,22 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\internal_types.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\position_modeler.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\input_predictor.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\axis_predictor.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\kalman_filter.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\matrix.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_predictor.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\stroke_end_predictor.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\stylus_state_modeler.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\utils.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\validation.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\wobble_smoother.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\numbers.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\params.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\stroke_modeler.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\types.h" />
     <ClInclude Include="hashlib2plus\hashlibpp.h" />
     <ClInclude Include="hashlib2plus\hl_exception.h" />
     <ClInclude Include="hashlib2plus\hl_hashwrapper.h" />
@@ -160,6 +176,7 @@
     <ClInclude Include="IdtDrawpad.h" />
     <ClInclude Include="IdtFloating.h" />
     <ClInclude Include="IdtFreezeFrame.h" />
+    <ClInclude Include="IdtGuid.h" />
     <ClInclude Include="IdtHistoricalDrawpad.h" />
     <ClInclude Include="IdtImage.h" />
     <ClInclude Include="IdtKey.h" />
@@ -197,6 +214,17 @@
     <ClInclude Include="zip_utils\zip.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\internal_types.cc" />
+    <ClCompile Include="additional\ink_stroke_modeler\internal\position_modeler.cc" />
+    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\axis_predictor.cc" />
+    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\kalman_filter.cc" />
+    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc" />
+    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\stroke_end_predictor.cc" />
+    <ClCompile Include="additional\ink_stroke_modeler\internal\stylus_state_modeler.cc" />
+    <ClCompile Include="additional\ink_stroke_modeler\internal\wobble_smoother.cc" />
+    <ClCompile Include="additional\ink_stroke_modeler\params.cc" />
+    <ClCompile Include="additional\ink_stroke_modeler\stroke_modeler.cc" />
+    <ClCompile Include="additional\ink_stroke_modeler\types.cc" />
     <ClCompile Include="IdtConfiguration.cpp" />
     <ClCompile Include="IdtDisplayManagement.cpp" />
     <ClCompile Include="IdtDraw.cpp" />
@@ -242,7 +270,6 @@
     <ClCompile Include="IdtFloating.cpp" />
     <ClCompile Include="IdtFreezeFrame.cpp" />
     <ClCompile Include="IdtGuid.cpp" />
-    <ClCompile Include="IdtGuid.h" />
     <ClCompile Include="IdtHistoricalDrawpad.cpp" />
     <ClCompile Include="IdtImage.cpp" />
     <ClCompile Include="IdtKey.cpp" />

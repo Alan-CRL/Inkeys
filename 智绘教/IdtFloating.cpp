@@ -5877,7 +5877,7 @@ void MouseInteraction()
 										{
 											if (!m.lbutton)
 											{
-												brush.width = 4;
+												brush.width = 3;
 												UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v = 1;
 
 												break;

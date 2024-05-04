@@ -216,12 +216,16 @@ int SettingMain()
 		ImGui_ImplWin32_Init(setting_window);
 		ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 
-		if (_waccess((string_to_wstring(global_path) + L"ttf").c_str(), 0) == -1)
+		if (_waccess((string_to_wstring(global_path) + L"ttf\\hmossscr.ttf").c_str(), 0) == -1)
 		{
-			error_code ec;
-			filesystem::create_directory(string_to_wstring(global_path) + L"ttf", ec);
+			if (_waccess((string_to_wstring(global_path) + L"ttf").c_str(), 0) == -1)
+			{
+				error_code ec;
+				filesystem::create_directory(string_to_wstring(global_path) + L"ttf", ec);
+			}
+			ExtractResource((string_to_wstring(global_path) + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
 		}
-		ExtractResource((string_to_wstring(global_path) + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
+
 		ImFont* Font = io.Fonts->AddFontFromFileTTF(convert_to_utf8(global_path + "ttf\\hmossscr.ttf").c_str(), 28.0f, nullptr, io.Fonts->GetGlyphRangesChineseFull());
 
 		ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
@@ -482,7 +486,7 @@ int SettingMain()
 
 						ImGui::SetCursorPosY(616.0f - 168.0f);
 						std::wstring author = L"软件作者联系方式\nQQ: 2685549821\nEmail: alan-crl@foxmail.com";
-						int left_x = 10, right_x = 570;
+						int left_x = 10, right_x = 370;
 
 						std::vector<std::string> lines;
 						std::wstring line, temp;
@@ -523,7 +527,7 @@ int SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 
 						std::wstring author = L"官方Q群：618720802\n感谢各位一直以来对智绘教的支持~";
-						int left_x = 10, right_x = 570;
+						int left_x = 10, right_x = 370;
 
 						std::vector<std::string> lines;
 						std::wstring line, temp;
@@ -1175,7 +1179,7 @@ int SettingMain()
 							CenteredText(reinterpret_cast<const char*>(u8" 更新通道"), 4.0f);
 
 							Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
-							ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"正式通道(LTS) 提供经过验证的稳定程序版本\n公测通道(Beta) 提供稳定性一般的程序版本\n非正式通道程序均未提交杀软进行防误报处理\n\n一旦更新，则无法通过自动更新回退版本\n当选择的更新通道不可用时，则会切换会默认通道"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
+							ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"正式通道(LTS) 提供经过验证的稳定程序版本\n公测通道(Beta) 提供稳定性一般的程序版本\n非正式通道程序均未提交杀软进行防误报处理\n\n一旦更新，则无法通过自动更新回退版本\n当选择的更新通道不可用时，则会切换回默认通道"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
 
 							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 180.0f);
 							ImGui::SetNextItemWidth(170);
@@ -1213,6 +1217,7 @@ int SettingMain()
 
 							if (flag && setlist.UpdateChannel != UpdateChannel)
 							{
+								AutomaticUpdateStep = 1;
 								setlist.UpdateChannel = UpdateChannel;
 								WriteSetting();
 							}
@@ -1363,10 +1368,10 @@ int SettingMain()
 					}
 					else if (AutomaticUpdateStep == 10)
 					{
-						ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(reinterpret_cast<const char*>((u8"程序已经是最新版本（" + setlist.UpdateChannel + u8"通道）").c_str())).x , 44.0f + 616.0f + 5.0f });
+						ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(convert_to_utf8("程序已经是最新版本（" + setlist.UpdateChannel + "通道）").c_str()).x , 44.0f + 616.0f + 5.0f });
 						Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(98 / 255.0f, 175 / 255.0f, 82 / 255.0f, 1.0f));
-						CenteredText(reinterpret_cast<const char*>((u8"程序已经是最新版本（" + setlist.UpdateChannel + u8"通道）").c_str()), 4.0f);
+						CenteredText(reinterpret_cast<const char*>(convert_to_utf8("程序已经是最新版本（" + setlist.UpdateChannel + "通道）").c_str()), 4.0f);
 					}
 				}
 

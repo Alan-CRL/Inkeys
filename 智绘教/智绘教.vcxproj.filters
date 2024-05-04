@@ -40,6 +40,18 @@
     <Filter Include="头文件\wintoastlib">
       <UniqueIdentifier>{06db5fb6-cb32-4573-b596-f3a300f178f5}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\ink_stroke_modeler">
+      <UniqueIdentifier>{2f7350d8-3da3-4758-a8ba-49ffc01213c4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\ink_stroke_modeler\internal">
+      <UniqueIdentifier>{75497968-b337-40ce-a5fe-2a27ba4b9f0a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\ink_stroke_modeler\internal\prediction">
+      <UniqueIdentifier>{ecccb94a-b410-422c-ae0d-32cfe4e602df}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\ink_stroke_modeler\internal\prediction\kalman_filter">
+      <UniqueIdentifier>{0860afbf-b1c6-414d-9c5b-ae34ef2e8502}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HiEasyX.h">
@@ -303,6 +315,57 @@
     <ClInclude Include="wintoastlib\wintoastlib.h">
       <Filter>头文件\wintoastlib</Filter>
     </ClInclude>
+    <ClInclude Include="IdtGuid.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\axis_predictor.h">
+      <Filter>头文件\ink_stroke_modeler\internal\prediction\kalman_filter</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\kalman_filter.h">
+      <Filter>头文件\ink_stroke_modeler\internal\prediction\kalman_filter</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\matrix.h">
+      <Filter>头文件\ink_stroke_modeler\internal\prediction\kalman_filter</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\input_predictor.h">
+      <Filter>头文件\ink_stroke_modeler\internal\prediction</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_predictor.h">
+      <Filter>头文件\ink_stroke_modeler\internal\prediction</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\stroke_end_predictor.h">
+      <Filter>头文件\ink_stroke_modeler\internal\prediction</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\internal_types.h">
+      <Filter>头文件\ink_stroke_modeler\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\position_modeler.h">
+      <Filter>头文件\ink_stroke_modeler\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\stylus_state_modeler.h">
+      <Filter>头文件\ink_stroke_modeler\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\utils.h">
+      <Filter>头文件\ink_stroke_modeler\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\validation.h">
+      <Filter>头文件\ink_stroke_modeler\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\wobble_smoother.h">
+      <Filter>头文件\ink_stroke_modeler\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\numbers.h">
+      <Filter>头文件\ink_stroke_modeler</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\params.h">
+      <Filter>头文件\ink_stroke_modeler</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\stroke_modeler.h">
+      <Filter>头文件\ink_stroke_modeler</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\types.h">
+      <Filter>头文件\ink_stroke_modeler</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HiEasyX\HiGUI\Button.cpp">
@@ -527,11 +590,41 @@
     <ClCompile Include="wintoastlib\wintoastlib.cpp">
       <Filter>头文件\wintoastlib</Filter>
     </ClCompile>
-    <ClCompile Include="IdtGuid.h">
-      <Filter>头文件</Filter>
-    </ClCompile>
     <ClCompile Include="IdtGuid.cpp">
       <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\axis_predictor.cc">
+      <Filter>头文件\ink_stroke_modeler\internal\prediction\kalman_filter</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\kalman_filter.cc">
+      <Filter>头文件\ink_stroke_modeler\internal\prediction\kalman_filter</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc">
+      <Filter>头文件\ink_stroke_modeler\internal\prediction</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\stroke_end_predictor.cc">
+      <Filter>头文件\ink_stroke_modeler\internal\prediction</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\internal_types.cc">
+      <Filter>头文件\ink_stroke_modeler\internal</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\position_modeler.cc">
+      <Filter>头文件\ink_stroke_modeler\internal</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\stylus_state_modeler.cc">
+      <Filter>头文件\ink_stroke_modeler\internal</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\wobble_smoother.cc">
+      <Filter>头文件\ink_stroke_modeler\internal</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\params.cc">
+      <Filter>头文件\ink_stroke_modeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\stroke_modeler.cc">
+      <Filter>头文件\ink_stroke_modeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\types.cc">
+      <Filter>头文件\ink_stroke_modeler</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

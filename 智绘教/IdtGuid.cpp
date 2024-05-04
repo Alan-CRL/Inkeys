@@ -2,8 +2,6 @@
 
 #include "IdtText.h"
 
-#include <iomanip>
-#include <map>
 #pragma comment(lib, "msvcprt.lib")
 
 constexpr auto BUFFER_SIZE = (512);
