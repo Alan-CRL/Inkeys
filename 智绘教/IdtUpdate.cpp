@@ -1,5 +1,12 @@
 #include "IdtUpdate.h"
 
+#include "IdtConfiguration.h"
+#include "IdtOther.h"
+#include "IdtSetting.h"
+#include "IdtText.h"
+#include "IdtTime.h"
+#include "IdtWindow.h"
+
 //程序崩溃保护
 void CrashedHandler()
 {
@@ -15,8 +22,73 @@ void CrashedHandler()
 	write << 1;
 	write.close();
 
-	if (!isProcessRunning((string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str()))
-		ShellExecute(NULL, NULL, (string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+	// 启动崩溃重启助手
+	{
+		bool start = true;
+
+		// 检查本地文件完整性
+		{
+			if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1)
+			{
+				error_code ec;
+				filesystem::create_directory(string_to_wstring(global_path) + L"api", ec);
+			}
+
+			string CrashedHandlerMd5 = "014f5e4d2373380e597dc28b5c810ee0";
+			string CrashedHandlerSHA256 = "b2d6603aeeb432ead4a552714ebed788d2ceb30129c36c307fe8db1f36356055";
+			string CrashedHandlerCloseMd5 = "fe467cafd4093667fd04ffcc2d3157e5";
+			string CrashedHandlerCloseSHA256 = "5a1d4c6f903d57242106c21828a4f72678fb9ab4363c55139346e799b8100a5d";
+
+			if (_waccess((string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str(), 0) == -1)
+				if (!ExtractResource((string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str(), L"EXE", MAKEINTRESOURCE(201)))
+					start = false;
+			if (_waccess((string_to_wstring(global_path) + L"api\\api\\智绘教CrashedHandlerClose.exe").c_str(), 0) == -1)
+				if (!ExtractResource((string_to_wstring(global_path) + L"api\\智绘教CrashedHandlerClose.exe").c_str(), L"EXE", MAKEINTRESOURCE(202)))
+					start = false;
+
+			{
+				string hash_md5, hash_sha256;
+				{
+					hashwrapper* myWrapper = new md5wrapper();
+					hash_md5 = myWrapper->getHashFromFile(global_path + "api\\智绘教CrashedHandler.exe");
+					delete myWrapper;
+				}
+				{
+					hashwrapper* myWrapper = new sha256wrapper();
+					hash_sha256 = myWrapper->getHashFromFile(global_path + "api\\智绘教CrashedHandler.exe");
+					delete myWrapper;
+				}
+
+				if (hash_md5 != CrashedHandlerMd5 || hash_sha256 != CrashedHandlerSHA256)
+					if (!ExtractResource((string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str(), L"EXE", MAKEINTRESOURCE(201)))
+						start = false;
+			}
+			{
+				string hash_md5, hash_sha256;
+				{
+					hashwrapper* myWrapper = new md5wrapper();
+					hash_md5 = myWrapper->getHashFromFile(global_path + "api\\智绘教CrashedHandlerClose.exe");
+					delete myWrapper;
+				}
+				{
+					hashwrapper* myWrapper = new sha256wrapper();
+					hash_sha256 = myWrapper->getHashFromFile(global_path + "api\\智绘教CrashedHandlerClose.exe");
+					delete myWrapper;
+				}
+
+				if (hash_md5 != CrashedHandlerCloseMd5 || hash_sha256 != CrashedHandlerCloseSHA256)
+					if (!ExtractResource((string_to_wstring(global_path) + L"api\\智绘教CrashedHandlerClose.exe").c_str(), L"EXE", MAKEINTRESOURCE(202)))
+						start = false;
+			}
+		}
+
+		// 启动崩溃助手
+		if (start && !isProcessRunning((string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str()))
+		{
+			wstring path = GetCurrentExePath();
+			ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str(), (L"/\"" + path + L"\"").c_str(), NULL, SW_SHOWNORMAL);
+		}
+	}
 
 	int value = 2;
 	while (!off_signal)
@@ -48,6 +120,7 @@ void CrashedHandler()
 }
 
 //程序自动更新
+int AutomaticUpdateStep = 0;
 wstring get_domain_name(wstring url) {
 	wregex pattern(L"([a-zA-z]+://[^/]+)");
 	wsmatch match;
@@ -64,8 +137,6 @@ wstring convertToHttp(const wstring& url)
 	else if (url.length() >= 8 && url.compare(0, 8, L"https://") == 0) return httpPrefix + url.substr(8);
 	else return httpPrefix + url;
 }
-
-int AutomaticUpdateStep = 0;
 void AutomaticUpdate()
 {
 	/*

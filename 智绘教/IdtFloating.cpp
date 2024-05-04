@@ -6645,24 +6645,6 @@ int floating_main()
 	//LOG(INFO) << "成功启动黑名单窗口拦截线程";
 
 #ifdef IDT_RELEASE
-
-	//LOG(INFO) << "尝试检查并补齐本地文件";
-	if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1)
-	{
-		//创建路径
-		filesystem::create_directory(string_to_wstring(global_path) + L"api");
-
-		//if (_waccess((string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str(), 0) == -1 || _waccess((string_to_wstring(global_path) + L"api\\智绘教CrashedHandlerClose.exe").c_str(), 0) == -1)
-		//{
-		//	ExtractResource((string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str(), L"EXE", MAKEINTRESOURCE(201));
-		//	ExtractResource((string_to_wstring(global_path) + L"api\\智绘教CrashedHandlerClose.exe").c_str(), L"EXE", MAKEINTRESOURCE(202));
-		//}
-	}
-	ExtractResource((string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str(), L"EXE", MAKEINTRESOURCE(201));
-	ExtractResource((string_to_wstring(global_path) + L"api\\智绘教CrashedHandlerClose.exe").c_str(), L"EXE", MAKEINTRESOURCE(202));
-
-	//LOG(INFO) << "成功检查并补齐本地文件";
-
 	/*
 	//注册icu
 	if (_waccess((string_to_wstring(global_path) + L"icudt73.dll").c_str(), 0) == -1 || _waccess((string_to_wstring(global_path) + L"icuin73.dll").c_str(), 0) == -1 || _waccess((string_to_wstring(global_path) + L"icuuc73.dll").c_str(), 0) == -1)

@@ -1385,7 +1385,7 @@ namespace HiEasyX
 		return lResult;
 	}
 
-	void RegisterWndClass()
+	void RegisterWndClass(LPCTSTR lpszClassName)
 	{
 		HICON hIcon = g_hIconDefault;
 		HICON hIconSm = g_hIconDefault;
@@ -1405,7 +1405,7 @@ namespace HiEasyX
 		g_WndClassEx.hCursor = LoadCursor(nullptr, IDC_ARROW);
 		g_WndClassEx.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
 		g_WndClassEx.lpszMenuName = nullptr;
-		g_WndClassEx.lpszClassName = g_lpszClassName;
+		g_WndClassEx.lpszClassName = lpszClassName;
 
 		// 注册窗口类
 		if (!RegisterClassEx(&g_WndClassEx))
@@ -1452,7 +1452,7 @@ namespace HiEasyX
 	}
 
 	// 真正创建窗口的函数（阻塞）
-	void InitWindow(int w, int h, int flag, LPCTSTR lpszWndTitle, WNDPROC WindowProcess, HWND hParent, int* nDoneFlag, bool* nStartAnimation, HWND* hWnd)
+	void InitWindow(int w, int h, int flag, LPCTSTR lpszWndTitle, LPCTSTR lpszClassName, WNDPROC WindowProcess, HWND hParent, int* nDoneFlag, bool* nStartAnimation, HWND* hWnd)
 	{
 		static int nWndCount = 0;	// 已创建窗口计数（用于生成窗口标题）
 
@@ -1461,6 +1461,7 @@ namespace HiEasyX
 #else
 		std::string strTitle;		// 窗口标题
 #endif
+		if (_tcslen(lpszClassName) == 0) lpszClassName = g_lpszClassName;
 
 		EasyWindow wnd;				// 窗口信息
 		int nFrameW, nFrameH;		// 窗口标题栏宽高（各个窗口可能不同）
@@ -1519,7 +1520,7 @@ namespace HiEasyX
 			g_hIconDefault = GetDefaultAppIcon();
 
 			// 注册窗口类
-			RegisterWndClass();
+			RegisterWndClass(lpszClassName);
 			g_hConsole = GetConsoleWindow();
 
 			// 隐藏控制台
@@ -1599,7 +1600,7 @@ namespace HiEasyX
 #ifdef UNICODE
 			wnd.hWnd = CreateWindowEx(
 				final_style_ex,
-				g_lpszClassName,
+				lpszClassName,
 				wstrTitle.c_str(),
 				final_style,
 				CW_USEDEFAULT, CW_USEDEFAULT,
@@ -1612,7 +1613,7 @@ namespace HiEasyX
 #else
 			wnd.hWnd = CreateWindowEx(
 				final_style_ex,
-				g_lpszClassName,
+				lpszClassName,
 				strTitle.c_str(),
 				final_style,
 				CW_USEDEFAULT, CW_USEDEFAULT,
@@ -1712,9 +1713,9 @@ namespace HiEasyX
 			TranslateMessage(&Msg);
 			DispatchMessage(&Msg);
 		}
-		}
+	}
 
-	HWND initgraph_win32(int w, int h, int flag, LPCTSTR lpszWndTitle, WNDPROC WindowProcess, HWND hParent)
+	HWND initgraph_win32(int w, int h, int flag, LPCTSTR lpszWndTitle, LPCTSTR lpszClassName, WNDPROC WindowProcess, HWND hParent)
 	{
 		// 标记是否已经完成窗口创建任务
 		int nDoneFlag = 0;
@@ -1729,7 +1730,7 @@ namespace HiEasyX
 			EnableWindow(hParent, false);
 		}
 
-		std::thread(InitWindow, w, h, flag, lpszWndTitle, WindowProcess, hParent, &nDoneFlag, &nStartAnimation, &hWnd).detach();
+		std::thread(InitWindow, w, h, flag, lpszWndTitle, lpszClassName, WindowProcess, hParent, &nDoneFlag, &nStartAnimation, &hWnd).detach();
 
 		while (nDoneFlag == 0)	Sleep(50);		// 等待窗口创建完成
 		if (nDoneFlag == -1)
@@ -1814,7 +1815,7 @@ namespace HiEasyX
 			if (m_isPrePos)			PreSetWindowPos(m_pPrePos.x, m_pPrePos.y);
 			if (m_isPreShowState)	PreSetWindowShowState(m_nPreCmdShow);
 
-			HWND hwnd = initgraph_win32(w, h, flag, lpszWndTitle, WindowProcess, hParent);
+			HWND hwnd = initgraph_win32(w, h, flag, lpszWndTitle, L"", WindowProcess, hParent);
 			int index = GetWindowIndex(hwnd);
 			m_nWindowIndex = index;
 			m_isCreated = true;
@@ -2078,4 +2079,4 @@ namespace HiEasyX
 	{
 		flushmessage_win32(filter, g_vecWindows[m_nWindowIndex].hWnd);
 	}
-		}
+}

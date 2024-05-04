@@ -2511,7 +2511,7 @@ void BlackBlock()
 		HWND ai_class = FindWindowByStrings(L"UIIrregularWindow", L"UIIrregularWindow", L"-1811939328");
 		if (ai_class != NULL) PostMessage(ai_class, WM_CLOSE, 0, 0);
 
-		HWND Seewo_Whiteboard = FindWindowByStrings(L"HwndWrapper[EasiNote;;", L"", L"369623040", 550, 200);
+		HWND Seewo_Whiteboard = FindWindowByStrings(L"HwndWrapper[EasiNote", L"", L"369623040", 550, 200);
 		if (Seewo_Whiteboard != NULL) PostMessage(Seewo_Whiteboard, WM_CLOSE, 0, 0);
 
 		HWND Seewo_Camera = FindWindowByStrings(L"HwndWrapper[EasiCamera.exe;;", L"œ£Œ÷ ”∆µ’πÃ®", L"386400256");

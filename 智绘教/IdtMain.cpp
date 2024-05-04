@@ -24,6 +24,7 @@
 #include "IdtSetting.h"
 #include "IdtSysNotifications.h"
 #include "IdtText.h"
+#include "IdtTime.h"
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
 
@@ -39,8 +40,8 @@ void FreezeFrameWindow();
 bool already = false;
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string edition_date = "20240504a";				//程序发布日期
-string edition_channel = "LTS";					//程序发布通道
+string edition_date = "20240504c";				//程序发布日期
+string edition_channel = "Dev";					//程序发布通道
 string edition_code = "24H1(BetaH2)";			//程序版本
 
 wstring userid; //用户ID（主板序列号）
@@ -536,24 +537,28 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 	// 窗口
 	{
+		wstring ClassName;
+		if (userid == L"Error") ClassName = L"IdtHiEasyX";
+		else ClassName = userid;
+
 		IDTLogger->info("[主线程][IdtMain] 创建悬浮窗窗口");
 		hiex::PreSetWindowShowState(SW_HIDE);
-		floating_window = initgraph(background.getwidth(), background.getheight());
+		floating_window = hiex::initgraph_win32(background.getwidth(), background.getheight(), 0, L"IdtFloatingWindow", ClassName.c_str());
 		IDTLogger->info("[主线程][IdtMain] 创建悬浮窗窗口完成");
 
 		IDTLogger->info("[主线程][IdtMain] 创建PPT批注控件窗口");
 		hiex::PreSetWindowShowState(SW_HIDE);
-		ppt_window = initgraph(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+		ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"IdtPptWindow", ClassName.c_str());
 		IDTLogger->info("[主线程][IdtMain] 创建PPT批注控件窗口完成");
 
 		IDTLogger->info("[主线程][IdtMain] 创建画板窗口");
 		hiex::PreSetWindowShowState(SW_HIDE);
-		drawpad_window = initgraph(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"IdtDrawpadWindow", ClassName.c_str());
 		IDTLogger->info("[主线程][IdtMain] 创建画板窗口完成");
 
 		IDTLogger->info("[主线程][IdtMain] 创建定格背景窗口");
 		hiex::PreSetWindowShowState(SW_HIDE);
-		freeze_window = initgraph(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+		freeze_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"IdtFreezeWindow", ClassName.c_str());
 		IDTLogger->info("[主线程][IdtMain] 创建定格背景窗口完成");
 
 		IDTLogger->info("[主线程][IdtMain] 置顶悬浮窗窗口");

@@ -614,10 +614,44 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
 							if (ImGui::Button(reinterpret_cast<const char*>(u8"查询"), { 60.0f,30.0f }))
 							{
-								if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1) filesystem::create_directory(string_to_wstring(global_path) + L"api");
-								ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+								{
+									// 检查本地文件完整性
+									{
+										if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1)
+										{
+											error_code ec;
+											filesystem::create_directory(string_to_wstring(global_path) + L"api", ec);
+										}
 
-								ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"query" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
+										string StartupItemSettingsMd5 = "abaadf527bc925a85507a8361d2d9d44";
+										string StartupItemSettingsSHA256 = "57df0ed39d797fd286deb583d81450bb8838b98ce92741e91c9a01d9a4ac3b81";
+
+										if (_waccess((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), 0) == -1)
+											ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+										else
+										{
+											string hash_md5, hash_sha256;
+											{
+												hashwrapper* myWrapper = new md5wrapper();
+												hash_md5 = myWrapper->getHashFromFile(global_path + "api\\智绘教StartupItemSettings.exe");
+												delete myWrapper;
+											}
+											{
+												hashwrapper* myWrapper = new sha256wrapper();
+												hash_sha256 = myWrapper->getHashFromFile(global_path + "api\\智绘教StartupItemSettings.exe");
+												delete myWrapper;
+											}
+
+											if (hash_md5 != StartupItemSettingsMd5 || hash_sha256 != StartupItemSettingsSHA256)
+												ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+										}
+									}
+
+									ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"query" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
+								}
+								//if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1) filesystem::create_directory(string_to_wstring(global_path) + L"api");
+								//ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+								//ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"query" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
 
 								DWORD dwBytesRead;
 								WCHAR buffer[4096];
@@ -651,8 +685,8 @@ int SettingMain()
 									}
 									else receivedData = L"Error" + to_wstring(GetLastError());
 								}
-
 								CloseHandle(hPipe);
+
 								QuestNumbers++, QuestNumbers %= 10;
 							}
 						}
@@ -680,11 +714,44 @@ int SettingMain()
 
 								if (setlist.StartUp - 1 != (int)StartUp)
 								{
-									if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1) filesystem::create_directory(string_to_wstring(global_path) + L"api");
-									ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+									{
+										// 检查本地文件完整性
+										{
+											if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1)
+											{
+												error_code ec;
+												filesystem::create_directory(string_to_wstring(global_path) + L"api", ec);
+											}
 
-									if (StartUp) ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"set" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
-									else ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"delete" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
+											string StartupItemSettingsMd5 = "abaadf527bc925a85507a8361d2d9d44";
+											string StartupItemSettingsSHA256 = "57df0ed39d797fd286deb583d81450bb8838b98ce92741e91c9a01d9a4ac3b81";
+
+											if (_waccess((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), 0) == -1)
+												ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+											else
+											{
+												string hash_md5, hash_sha256;
+												{
+													hashwrapper* myWrapper = new md5wrapper();
+													hash_md5 = myWrapper->getHashFromFile(global_path + "api\\智绘教StartupItemSettings.exe");
+													delete myWrapper;
+												}
+												{
+													hashwrapper* myWrapper = new sha256wrapper();
+													hash_sha256 = myWrapper->getHashFromFile(global_path + "api\\智绘教StartupItemSettings.exe");
+													delete myWrapper;
+												}
+
+												if (hash_md5 != StartupItemSettingsMd5 || hash_sha256 != StartupItemSettingsSHA256)
+													ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+											}
+										}
+
+										if (StartUp) ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"set" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
+										else ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"delete" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
+									}
+									//if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1) filesystem::create_directory(string_to_wstring(global_path) + L"api");
+									//ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 
 									DWORD dwBytesRead;
 									WCHAR buffer[4096];

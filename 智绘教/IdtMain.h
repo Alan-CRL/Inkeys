@@ -17,7 +17,7 @@
 
 #pragma once
 
-#define IDT_RELEASE
+// #define IDT_RELEASE
 
 // 智绘教最低兼容 Windows 7 sp0（当前为 sp1）
 // #define _WIN32_WINNT 0x0601
