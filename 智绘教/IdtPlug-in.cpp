@@ -2464,59 +2464,153 @@ bool SeewoCameraIsOpen; // Is EasiCamera started | 希沃视频展台是否启动
 // --------------------------------------------------
 // Blacklist window interception | 黑名单窗口拦截
 
-HWND FindWindowByStrings(const std::wstring& className, const std::wstring& windowTitle, const std::wstring& style, int width = 0, int height = 0)
+bool FindAiClassFloating(HWND* outHwnd)
 {
-	HWND hwnd = NULL;
-	while ((hwnd = FindWindowEx(NULL, hwnd, NULL, NULL)) != NULL)
+	wstring className = L"UIIrregularWindow";
+	wstring windowTitle = L"UIIrregularWindow";
+	LONG style = -1811939328;
+
+	HWND inquiryHwnd = NULL;
+	while ((inquiryHwnd = FindWindowEx(NULL, inquiryHwnd, NULL, NULL)) != NULL)
 	{
 		TCHAR classNameBuffer[1024];
-		GetClassName(hwnd, classNameBuffer, 1024);
+		GetClassName(inquiryHwnd, classNameBuffer, 1024);
 		if (_tcsstr(classNameBuffer, className.c_str()) == NULL) continue;
 
 		TCHAR title[1024];
-		GetWindowText(hwnd, title, 1024);
+		GetWindowText(inquiryHwnd, title, 1024);
 		if (_tcsstr(title, windowTitle.c_str()) == NULL) continue;
 
-		if (windowTitle.length() == 0)
+		if (GetWindowLong(inquiryHwnd, GWL_STYLE) == style)
 		{
-			if (wstring(title) == windowTitle && to_wstring(GetWindowLong(hwnd, GWL_STYLE)) == style)
+			*outHwnd = inquiryHwnd;
+			return true;
+		}
+	}
+
+	return false;
+}
+bool FindSeewoWhiteboardFloating(HWND* outHwnd)
+{
+	wstring className = L"HwndWrapper[EasiNote";
+	LONG style = 369623040;
+	int width = 550;
+	int height = 200;
+
+	HWND inquiryHwnd = NULL;
+	while ((inquiryHwnd = FindWindowEx(NULL, inquiryHwnd, NULL, NULL)) != NULL)
+	{
+		TCHAR classNameBuffer[1024];
+		GetClassName(inquiryHwnd, classNameBuffer, 1024);
+		if (_tcsstr(classNameBuffer, className.c_str()) == NULL) continue;
+
+		if (GetWindowLong(inquiryHwnd, GWL_STYLE) != style) continue;
+
+		{
+			RECT rect{};
+			DwmGetWindowAttribute(inquiryHwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &rect, sizeof(RECT));
+			int twidth = rect.right - rect.left, thwight = rect.bottom - rect.top;
+
+			HDC hdc = GetDC(NULL);
+			int horizontalDPI = GetDeviceCaps(hdc, LOGPIXELSX);
+			int verticalDPI = GetDeviceCaps(hdc, LOGPIXELSY);
+			ReleaseDC(NULL, hdc);
+			float scale = (horizontalDPI + verticalDPI) / 2.0f / 96.0f;
+
+			if (abs(width * scale - twidth) <= 1 && abs(height * scale - thwight) <= 1)
 			{
-				if (width && height)
-				{
-					RECT rect{};
-					DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &rect, sizeof(RECT));
-					int twidth = rect.right - rect.left, thwight = rect.bottom - rect.top;
-
-					HDC hdc = GetDC(NULL);
-					int horizontalDPI = GetDeviceCaps(hdc, LOGPIXELSX);
-					int verticalDPI = GetDeviceCaps(hdc, LOGPIXELSY);
-					ReleaseDC(NULL, hdc);
-					float scale = (horizontalDPI + verticalDPI) / 2.0f / 96.0f;
-
-					if (abs(width * scale - twidth) <= 1 && abs(height * scale - thwight) <= 1) return hwnd;
-				}
-				else return hwnd;
+				*outHwnd = inquiryHwnd;
+				return true;
 			}
 		}
-		else if (to_wstring(GetWindowLong(hwnd, GWL_STYLE)) == style) return hwnd;
 	}
-	return NULL;
+
+	return false;
 }
+
+bool FindSeewoHeduIntegration(HWND* outHwnd)
+{
+	wstring className = L"Chrome_WidgetWin_1";
+	wstring windowTitle = L"希沃品课——integration";
+	LONG style = -1811939328;
+
+	function<BOOL(HWND, LPARAM)> fib = [](HWND hwnd, LPARAM lParam)
+		{
+			return TRUE;
+		};
+
+	HWND inquiryHwnd = NULL;
+	while ((inquiryHwnd = FindWindowEx(NULL, inquiryHwnd, NULL, NULL)) != NULL)
+	{
+		TCHAR classNameBuffer[1024];
+		GetClassName(inquiryHwnd, classNameBuffer, 1024);
+		if (_tcsstr(classNameBuffer, className.c_str()) == NULL) continue;
+
+		Testi(GetWindowLong(inquiryHwnd, GWL_STYLE));
+
+		TCHAR title[1024];
+		GetWindowText(inquiryHwnd, title, 1024);
+		if (_tcsstr(title, windowTitle.c_str()) == NULL) continue;
+
+		Testi(GetWindowLong(inquiryHwnd, GWL_STYLE));
+		if (GetWindowLong(inquiryHwnd, GWL_STYLE) == style)
+		{
+			*outHwnd = inquiryHwnd;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool FindSeewoCamera()
+{
+	wstring className = L"HwndWrapper[EasiCamera.exe;;";
+	wstring windowTitle = L"希沃视频展台";
+	LONG style = 386400256;
+
+	HWND inquiryHwnd = NULL;
+	while ((inquiryHwnd = FindWindowEx(NULL, inquiryHwnd, NULL, NULL)) != NULL)
+	{
+		TCHAR classNameBuffer[1024];
+		GetClassName(inquiryHwnd, classNameBuffer, 1024);
+		if (_tcsstr(classNameBuffer, className.c_str()) == NULL) continue;
+
+		TCHAR title[1024];
+		GetWindowText(inquiryHwnd, title, 1024);
+		if (_tcsstr(title, windowTitle.c_str()) == NULL) continue;
+
+		if (GetWindowLong(inquiryHwnd, GWL_STYLE) == style)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
 // Discover and close the AIClass drawing window and Seewo Easinote 5 drawing window | 发现并关闭 AIClass 绘制窗口和 希沃白板5 绘制窗口
 void BlackBlock()
 {
 	thread_status[L"BlackBlock"] = true;
 	while (!off_signal)
 	{
-		HWND ai_class = FindWindowByStrings(L"UIIrregularWindow", L"UIIrregularWindow", L"-1811939328");
-		if (ai_class != NULL) PostMessage(ai_class, WM_CLOSE, 0, 0);
+		/*
+		HWND AiClass = nullptr;
+		if (FindAiClassFloating(&AiClass))
+			PostMessage(AiClass, WM_CLOSE, 0, 0);
 
-		HWND Seewo_Whiteboard = FindWindowByStrings(L"HwndWrapper[EasiNote", L"", L"369623040", 550, 200);
-		if (Seewo_Whiteboard != NULL) PostMessage(Seewo_Whiteboard, WM_CLOSE, 0, 0);
+		HWND SeewoWhiteboard = nullptr;
+		if (FindSeewoWhiteboardFloating(&SeewoWhiteboard))
+			PostMessage(SeewoWhiteboard, WM_CLOSE, 0, 0);
+		*/
 
-		HWND Seewo_Camera = FindWindowByStrings(L"HwndWrapper[EasiCamera.exe;;", L"希沃视频展台", L"386400256");
-		if (Seewo_Camera != NULL) SeewoCameraIsOpen = true;
-		else SeewoCameraIsOpen = false;
+		HWND SeewoHeduIntegration = nullptr;
+		if (FindSeewoWhiteboardFloating(&SeewoHeduIntegration))
+			PostMessage(SeewoHeduIntegration, WM_CLOSE, 0, 0);
+
+		//if (FindSeewoCamera()) SeewoCameraIsOpen = true;
+		//else SeewoCameraIsOpen = false;
 
 		for (int i = 1; i <= 5 && !off_signal; i++) Sleep(1000);
 	}
