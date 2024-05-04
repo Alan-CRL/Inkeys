@@ -44,7 +44,7 @@ int SettingWindowHeight = 700;
 
 void SettingSeekBar()
 {
-	if (!KEY_DOWN(VK_LBUTTON)) return;
+	if (!KeyBoradDown[VK_LBUTTON]) return;
 
 	POINT p;
 	GetCursorPos(&p);
@@ -54,7 +54,7 @@ void SettingSeekBar()
 
 	while (1)
 	{
-		if (!KEY_DOWN(VK_LBUTTON)) break;
+		if (!KeyBoradDown[VK_LBUTTON]) break;
 
 		POINT p;
 		GetCursorPos(&p);
@@ -216,12 +216,16 @@ int SettingMain()
 		ImGui_ImplWin32_Init(setting_window);
 		ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 
-		if (_waccess((string_to_wstring(global_path) + L"ttf").c_str(), 0) == -1)
+		if (_waccess((string_to_wstring(global_path) + L"ttf\\hmossscr.ttf").c_str(), 0) == -1)
 		{
-			error_code ec;
-			filesystem::create_directory(string_to_wstring(global_path) + L"ttf", ec);
+			if (_waccess((string_to_wstring(global_path) + L"ttf").c_str(), 0) == -1)
+			{
+				error_code ec;
+				filesystem::create_directory(string_to_wstring(global_path) + L"ttf", ec);
+			}
+			ExtractResource((string_to_wstring(global_path) + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
 		}
-		ExtractResource((string_to_wstring(global_path) + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
+
 		ImFont* Font = io.Fonts->AddFontFromFileTTF(convert_to_utf8(global_path + "ttf\\hmossscr.ttf").c_str(), 28.0f, nullptr, io.Fonts->GetGlyphRangesChineseFull());
 
 		ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
@@ -252,6 +256,7 @@ int SettingMain()
 		bool StartUp = false, CreateLnk = setlist.CreateLnk;
 		bool BrushRecover = setlist.BrushRecover, RubberRecover = setlist.RubberRecover;
 		int RubberMode = setlist.RubberMode;
+		string UpdateChannel = setlist.UpdateChannel;
 		bool IntelligentDrawing = setlist.IntelligentDrawing, SmoothWriting = setlist.SmoothWriting;
 		int SetSkinMode = setlist.SetSkinMode;
 
@@ -481,7 +486,7 @@ int SettingMain()
 
 						ImGui::SetCursorPosY(616.0f - 168.0f);
 						std::wstring author = L"软件作者联系方式\nQQ: 2685549821\nEmail: alan-crl@foxmail.com";
-						int left_x = 10, right_x = 570;
+						int left_x = 10, right_x = 370;
 
 						std::vector<std::string> lines;
 						std::wstring line, temp;
@@ -522,7 +527,7 @@ int SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 
 						std::wstring author = L"官方Q群：618720802\n感谢各位一直以来对智绘教的支持~";
-						int left_x = 10, right_x = 570;
+						int left_x = 10, right_x = 370;
 
 						std::vector<std::string> lines;
 						std::wstring line, temp;
@@ -612,7 +617,7 @@ int SettingMain()
 								if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1) filesystem::create_directory(string_to_wstring(global_path) + L"api");
 								ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 
-								ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"query" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath()).c_str(), NULL, SW_SHOWNORMAL);
+								ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"query" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
 
 								DWORD dwBytesRead;
 								WCHAR buffer[4096];
@@ -678,8 +683,8 @@ int SettingMain()
 									if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1) filesystem::create_directory(string_to_wstring(global_path) + L"api");
 									ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 
-									if (StartUp) ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"set" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\"").c_str(), NULL, SW_SHOWNORMAL);
-									else ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"delete" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\"").c_str(), NULL, SW_SHOWNORMAL);
+									if (StartUp) ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"set" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
+									else ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"delete" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
 
 									DWORD dwBytesRead;
 									WCHAR buffer[4096];
@@ -1006,7 +1011,7 @@ int SettingMain()
 							GetCursorPos(&pt);
 
 							text = L"鼠标左键按下：";
-							text += KEY_DOWN(VK_LBUTTON) ? L"是" : L"否";
+							text += KeyBoradDown[VK_LBUTTON] ? L"是" : L"否";
 							text += L"\n光标坐标 " + to_wstring(pt.x) + L"," + to_wstring(pt.y);
 
 							if (uRealTimeStylus == 2) text += L"\n\n触控库消息：按下";
@@ -1163,11 +1168,70 @@ int SettingMain()
 
 					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 					{
+						ImGui::SetCursorPos({ 20.0f,ImGui::GetCursorPosY() + 20.0f });
+						ImGui::BeginChild(reinterpret_cast<const char*>(u8"更新通道调整"), { 730.0f,50.0f }, true, ImGuiWindowFlags_NoScrollbar);
+
+						{
+							ImGui::SetCursorPosY(8.0f);
+
+							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+							CenteredText(reinterpret_cast<const char*>(u8" 更新通道"), 4.0f);
+
+							Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
+							ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"正式通道(LTS) 提供经过验证的稳定程序版本\n公测通道(Beta) 提供稳定性一般的程序版本\n非正式通道程序均未提交杀软进行防误报处理\n\n一旦更新，则无法通过自动更新回退版本\n当选择的更新通道不可用时，则会切换回默认通道"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
+
+							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 180.0f);
+							ImGui::SetNextItemWidth(170);
+
+							Font->Scale = 0.82f, PushFontNum++, ImGui::PushFont(Font);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+
+							int UpdateChannelMode;
+							if (UpdateChannel == "LTS" || UpdateChannel == "Beta")
+							{
+								if (UpdateChannel == "LTS") UpdateChannelMode = 0;
+								else if (UpdateChannel == "Beta") UpdateChannelMode = 1;
+
+								static const char* items1[] = { reinterpret_cast<const char*>(u8" 正式通道(LTS)"), reinterpret_cast<const char*>(u8" 公测通道(Beta)") };
+
+								ImGui::Combo(reinterpret_cast<const char*>(u8"##更新通道"), &UpdateChannelMode, items1, IM_ARRAYSIZE(items1));
+							}
+							else
+							{
+								UpdateChannelMode = 2;
+
+								static const char* items2[] = { reinterpret_cast<const char*>(u8" 正式通道(LTS)"), reinterpret_cast<const char*>(u8" 公测通道(Beta)"), reinterpret_cast<const char*>(u8" 其他通道") };
+
+								ImGui::Combo(reinterpret_cast<const char*>(u8"##更新通道"), &UpdateChannelMode, items2, IM_ARRAYSIZE(items2));
+							}
+
+							bool flag = false;
+							if (UpdateChannelMode == 0 && UpdateChannel != "LTS") UpdateChannel = "LTS", flag = true;
+							else if (UpdateChannelMode == 1 && UpdateChannel != "Beta") UpdateChannel = "Beta", flag = true;
+
+							if (flag && setlist.UpdateChannel != UpdateChannel)
+							{
+								AutomaticUpdateStep = 1;
+								setlist.UpdateChannel = UpdateChannel;
+								WriteSetting();
+							}
+							else if (setlist.UpdateChannel != UpdateChannel) UpdateChannel = setlist.UpdateChannel;
+						}
+
+						ImGui::EndChild();
+					}
+					{
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f);
 						wstring text;
 						{
 							text = L"程序版本代号 " + string_to_wstring(edition_code);
-							text += L"\n程序发布版本 " + string_to_wstring(edition_date);
+							text += L"\n程序发布版本 " + string_to_wstring(edition_date) + L"(" + string_to_wstring(edition_channel) + L")";
 							text += L"\n程序构建时间 " + buildTime;
 
 #ifdef IDT_RELEASE
@@ -1176,11 +1240,10 @@ int SettingMain()
 							text += L"\n程序构建模式 IDT_DEBUG（非发布调测版本）";
 #endif
 
-							if (userid == L"用户ID无法正确识别") text += L"\n用户ID无法正确识别";
+							if (userid == L"Error") text += L"\n用户ID无法正确识别";
 							else text += L"\n用户ID " + userid;
 
-							text += L"\n\n更新通道为正式版本通道";
-							text += L"\n在此版本中，您的所有数据都将在本地进行处理";
+							text += L"\n\n在此版本中，您的所有数据都将在本地进行处理";
 						}
 
 						int left_x = 10, right_x = 760;
@@ -1270,10 +1333,10 @@ int SettingMain()
 					}
 					else if (AutomaticUpdateStep == 5)
 					{
-						ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(reinterpret_cast<const char*>(u8"程序自动更新下载的最新版本信息中不包含 LTS 通道")).x , 44.0f + 616.0f + 5.0f });
+						ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(reinterpret_cast<const char*>(u8"程序自动更新下载的最新版本信息中不包含所选的通道")).x , 44.0f + 616.0f + 5.0f });
 						Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(229 / 255.0f, 55 / 255.0f, 66 / 255.0f, 1.0f));
-						CenteredText(reinterpret_cast<const char*>(u8"程序自动更新下载的最新版本信息中不包含 LTS 通道"), 4.0f);
+						CenteredText(reinterpret_cast<const char*>(u8"程序自动更新下载的最新版本信息中不包含所选的通道"), 4.0f);
 					}
 					else if (AutomaticUpdateStep == 6)
 					{
@@ -1305,10 +1368,10 @@ int SettingMain()
 					}
 					else if (AutomaticUpdateStep == 10)
 					{
-						ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(reinterpret_cast<const char*>(u8"程序已经是最新版本")).x , 44.0f + 616.0f + 5.0f });
+						ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(convert_to_utf8("程序已经是最新版本（" + setlist.UpdateChannel + "通道）").c_str()).x , 44.0f + 616.0f + 5.0f });
 						Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(98 / 255.0f, 175 / 255.0f, 82 / 255.0f, 1.0f));
-						CenteredText(reinterpret_cast<const char*>(u8"程序已经是最新版本"), 4.0f);
+						CenteredText(reinterpret_cast<const char*>(convert_to_utf8("程序已经是最新版本（" + setlist.UpdateChannel + "通道）").c_str()), 4.0f);
 					}
 				}
 
@@ -1357,7 +1420,7 @@ void FirstSetting(bool info)
 		if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1) filesystem::create_directory(string_to_wstring(global_path) + L"api");
 		ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 
-		ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"set\" /\"" + GetCurrentExePath() + L"\"").c_str(), NULL, SW_SHOWNORMAL);
+		ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"set\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
 
 		DWORD dwBytesRead;
 		WCHAR buffer[4096];
@@ -1392,6 +1455,7 @@ void FirstSetting(bool info)
 	root["IntelligentDrawing"] = Json::Value(true);
 	root["SmoothWriting"] = Json::Value(true);
 	root["SetSkinMode"] = Json::Value(0);
+	root["UpdateChannel"] = Json::Value("LTS");
 
 	ofstream writejson;
 	writejson.imbue(locale("zh_CN.UTF8"));
@@ -1417,6 +1481,7 @@ bool ReadSetting(bool first)
 		if (root.isMember("IntelligentDrawing")) setlist.IntelligentDrawing = root["IntelligentDrawing"].asBool();
 		if (root.isMember("SmoothWriting")) setlist.SmoothWriting = root["SmoothWriting"].asBool();
 		if (root.isMember("SetSkinMode")) setlist.SetSkinMode = root["SetSkinMode"].asInt();
+		if (root.isMember("UpdateChannel")) setlist.UpdateChannel = root["UpdateChannel"].asString();
 
 		//预处理
 		if (first)
@@ -1443,6 +1508,7 @@ bool WriteSetting()
 	root["IntelligentDrawing"] = Json::Value(setlist.IntelligentDrawing);
 	root["SmoothWriting"] = Json::Value(setlist.SmoothWriting);
 	root["SetSkinMode"] = Json::Value(setlist.SetSkinMode);
+	root["UpdateChannel"] = Json::Value(setlist.UpdateChannel);
 
 	ofstream writejson;
 	writejson.imbue(locale("zh_CN.UTF8"));

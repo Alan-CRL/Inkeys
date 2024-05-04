@@ -16,6 +16,7 @@
 #include "IdtConfiguration.h"
 #include "IdtDisplayManagement.h"
 #include "IdtDrawpad.h"
+#include "IdtGuid.h"
 #include "IdtImage.h"
 #include "IdtMagnification.h"
 #include "IdtOther.h"
@@ -37,9 +38,10 @@ void FreezeFrameWindow();
 
 bool already = false;
 
-wstring buildTime = __DATE__ L" " __TIME__; //构建时间
-string edition_date = "20240427b(Beta)"; //程序发布日期
-string edition_code = "24H1(BetaH2)"; //程序版本
+wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
+string edition_date = "20240504a";				//程序发布日期
+string edition_channel = "LTS";					//程序发布通道
+string edition_code = "24H1(BetaH2)";			//程序版本
 
 wstring userid; //用户ID（主板序列号）
 string global_path; //程序当前路径
@@ -50,7 +52,8 @@ map <wstring, bool> thread_status; //线程状态管理
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-int main()
+//int main()
+int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
 {
 	// 路径预处理
 	{
@@ -58,23 +61,106 @@ int main()
 
 		if (!HasReadWriteAccess(string_to_wstring(global_path)))
 		{
-			if (IsUserAnAdmin()) MessageBox(NULL, L"当前目录权限受限无法正常运行，请将程序转移至其他目录", L"智绘教提示", MB_OK);
+			if (IsUserAnAdmin()) MessageBox(NULL, L"当前目录权限受限无法正常运行，请将程序转移至其他目录后再运行", L"智绘教提示", MB_SYSTEMMODAL | MB_OK);
 			else ShellExecute(NULL, L"runas", GetCurrentExePath().c_str(), NULL, NULL, SW_SHOWNORMAL);
 			return 0;
 		}
 	}
 	// 用户ID获取
 	{
-		userid = GetMainHardDiskSerialNumber();
-		if (userid.empty() || !isValidString(userid)) userid = L"用户ID无法正确识别";
+		userid = string_to_wstring(getDeviceGUID());
+		if (userid.empty() || !isValidString(userid)) userid = L"Error";
 	}
 	// 日志服务初始化
 	{
+		wstring Timestamp = getTimestamp();
+
 		error_code ec;
 		if (_waccess((string_to_wstring(global_path) + L"log").c_str(), 0) == -1) filesystem::create_directory(string_to_wstring(global_path) + L"log", ec);
-		if (_waccess((string_to_wstring(global_path) + L"log\\idt.log").c_str(), 0) == 0) filesystem::remove(string_to_wstring(global_path) + L"log\\idt.log", ec);
+		else
+		{
+			// 历史日志清理
 
-		auto IDTLoggerFileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(global_path + "log\\idt.log");
+			auto getCurrentTimeStamp = []()
+				{
+					auto now = chrono::system_clock::now();
+					auto duration = now.time_since_epoch();
+					return chrono::duration_cast<chrono::milliseconds>(duration).count();
+				};
+
+			auto isLogFile = [](const string& filename)
+				{
+					regex pattern("idt\\d+\\.log");
+					return regex_match(filename, pattern);
+				};
+
+			auto getTimeStampFromFilename = [](const string& filename)
+				{
+					regex pattern("idt(\\d+)\\.log");
+
+					smatch match;
+					if (regex_search(filename, match, pattern))
+					{
+						string timestampStr = match[1];
+						return stoll(timestampStr);
+					}
+					return -1LL;
+				};
+
+			auto isOldLogFile = [&getCurrentTimeStamp, &getTimeStampFromFilename](const filesystem::path& filepath)
+				{
+					time_t currentTimeStamp = getCurrentTimeStamp();
+					time_t fileTimeStamp = getTimeStampFromFilename(filepath.filename().string());
+
+					if (fileTimeStamp == -1) return false;
+					return (currentTimeStamp - fileTimeStamp) >= (7LL * 24LL * 60LL * 60LL * 1000LL) || (currentTimeStamp - fileTimeStamp) < 0; // 7天的毫秒数
+				};
+
+			auto calculateDirectorySize = [](const filesystem::path& directoryPath)
+				{
+					uintmax_t totalSize = 0;
+					for (const auto& entry : filesystem::directory_iterator(directoryPath))
+					{
+						if (entry.is_regular_file()) {
+							totalSize += entry.file_size();
+						}
+					}
+					return totalSize;
+				};
+
+			auto deleteOldLogFiles = [&isLogFile, &isOldLogFile, &calculateDirectorySize](const filesystem::path& directory)
+				{
+					uintmax_t totalSize = calculateDirectorySize(directory);
+
+					for (const auto& entry : filesystem::directory_iterator(directory))
+					{
+						if (entry.is_regular_file())
+						{
+							if (isLogFile(entry.path().filename().string()) && (totalSize > 10485760LL || isOldLogFile(entry.path())))
+							{
+								uintmax_t entrySize = entry.file_size();
+
+								error_code ec;
+								filesystem::remove(entry.path(), ec);
+
+								if (!ec) totalSize -= entrySize;
+							}
+						}
+					}
+				};
+
+			string directoryPath = global_path + "log";
+
+			filesystem::path directory(directoryPath);
+			if (filesystem::exists(directory) && filesystem::is_directory(directory))
+			{
+				deleteOldLogFiles(directory);
+			}
+		}
+
+		if (_waccess((string_to_wstring(global_path) + L"log\\idt" + Timestamp + L".log").c_str(), 0) == 0) filesystem::remove(string_to_wstring(global_path) + L"log\\idt" + Timestamp + L".log", ec);
+
+		auto IDTLoggerFileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(global_path + "log\\idt" + wstring_to_string(Timestamp) + ".log");
 
 		spdlog::init_thread_pool(8192, 64);
 		IDTLogger = std::make_shared<spdlog::async_logger>("IDTLogger", IDTLoggerFileSink, spdlog::thread_pool(), spdlog::async_overflow_policy::block);
@@ -95,6 +181,10 @@ int main()
 		if (_waccess((string_to_wstring(global_path) + L"update.json").c_str(), 4) == 0)
 		{
 			wstring tedition, representation;
+			string thash_md5, thash_sha256;
+			wstring old_name;
+
+			bool flag = true;
 
 			Json::Reader reader;
 			Json::Value root;
@@ -105,13 +195,38 @@ int main()
 
 			if (reader.parse(readjson, root))
 			{
-				tedition = string_to_wstring(convert_to_gbk(root["edition"].asString()));
-				representation = string_to_wstring(convert_to_gbk(root["representation"].asString()));
-			}
+				if (root.isMember("edition")) tedition = string_to_wstring(convert_to_gbk(root["edition"].asString()));
+				else flag = false;
 
+				if (root.isMember("representation")) representation = string_to_wstring(convert_to_gbk(root["representation"].asString()));
+				else flag = false;
+
+				if (root.isMember("hash"))
+				{
+					if (root["hash"].isMember("md5")) thash_md5 = convert_to_gbk(root["hash"]["md5"].asString());
+					else flag = false;
+					if (root["hash"].isMember("sha256")) thash_sha256 = convert_to_gbk(root["hash"]["sha256"].asString());
+					else flag = false;
+				}
+				else flag = false;
+
+				if (root.isMember("old_name")) old_name = string_to_wstring(convert_to_gbk(root["old_name"].asString()));
+			}
 			readjson.close();
 
-			if (tedition == string_to_wstring(edition_date))
+			string hash_md5, hash_sha256;
+			{
+				hashwrapper* myWrapper = new md5wrapper();
+				hash_md5 = myWrapper->getHashFromFile(wstring_to_string(GetCurrentExePath()));
+				delete myWrapper;
+			}
+			{
+				hashwrapper* myWrapper = new sha256wrapper();
+				hash_sha256 = myWrapper->getHashFromFile(wstring_to_string(GetCurrentExePath()));
+				delete myWrapper;
+			}
+
+			if (flag && tedition == string_to_wstring(edition_date) && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
 			{
 				//符合条件，开始替换版本
 
@@ -121,15 +236,23 @@ int main()
 				string main_path = directory.parent_path().parent_path().string();
 
 				error_code ec;
-				filesystem::remove(string_to_wstring(main_path) + L"\\智绘教.exe", ec);
+				if (!old_name.empty()) filesystem::remove(string_to_wstring(main_path) + L"\\" + old_name, ec);
+				else filesystem::remove(string_to_wstring(main_path) + L"\\智绘教.exe", ec);
 				filesystem::copy_file(string_to_wstring(global_path) + representation, string_to_wstring(main_path) + L"\\智绘教.exe", std::filesystem::copy_options::overwrite_existing, ec);
 
-				STARTUPINFOA si = { 0 };
-				si.cb = sizeof(si);
-				PROCESS_INFORMATION pi = { 0 };
-				CreateProcessA(NULL, (main_path + "\\智绘教.exe").data(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
-				CloseHandle(pi.hProcess);
-				CloseHandle(pi.hThread);
+				ShellExecute(NULL, NULL, (string_to_wstring(main_path) + L"\\智绘教.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+
+				return 0;
+			}
+			else
+			{
+				error_code ec;
+				filesystem::remove(string_to_wstring(global_path) + L"update.json", ec);
+
+				filesystem::path directory(global_path);
+				string main_path = directory.parent_path().parent_path().string();
+				if (!old_name.empty()) ShellExecute(NULL, NULL, (string_to_wstring(main_path) + L"\\" + old_name).c_str(), NULL, NULL, SW_SHOWNORMAL);
+				else ShellExecute(NULL, NULL, (string_to_wstring(main_path) + L"\\智绘教.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
 
 				return 0;
 			}
@@ -138,6 +261,8 @@ int main()
 		{
 			wstring tedition, path;
 			string thash_md5, thash_sha256;
+
+			bool flag = true;
 
 			Json::Reader reader;
 			Json::Value root;
@@ -148,11 +273,20 @@ int main()
 
 			if (reader.parse(readjson, root))
 			{
-				tedition = string_to_wstring(convert_to_gbk(root["edition"].asString()));
-				path = string_to_wstring(convert_to_gbk(root["path"].asString()));
+				if (root.isMember("edition")) tedition = string_to_wstring(convert_to_gbk(root["edition"].asString()));
+				else flag = false;
 
-				thash_md5 = convert_to_gbk(root["hash"]["md5"].asString());
-				thash_sha256 = convert_to_gbk(root["hash"]["sha256"].asString());
+				if (root.isMember("path")) path = string_to_wstring(convert_to_gbk(root["path"].asString()));
+				else flag = false;
+
+				if (root.isMember("hash"))
+				{
+					if (root["hash"].isMember("md5")) thash_md5 = convert_to_gbk(root["hash"]["md5"].asString());
+					else flag = false;
+					if (root["hash"].isMember("sha256")) thash_sha256 = convert_to_gbk(root["hash"]["sha256"].asString());
+					else flag = false;
+				}
+				else flag = false;
 			}
 
 			readjson.close();
@@ -169,9 +303,22 @@ int main()
 				delete myWrapper;
 			}
 
-			if (tedition > string_to_wstring(edition_date) && _waccess((string_to_wstring(global_path) + path).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
+			if (flag && tedition > string_to_wstring(edition_date) && _waccess((string_to_wstring(global_path) + path).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
 			{
 				//符合条件，开始替换版本
+				{
+					root["old_name"] = Json::Value(convert_to_utf8(wstring_to_string(GetCurrentExeName())));
+
+					Json::StreamWriterBuilder outjson;
+					outjson.settings_["emitUTF8"] = true;
+					std::unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
+					ofstream writejson;
+					writejson.imbue(locale("zh_CN.UTF8"));
+					writejson.open(wstring_to_string(string_to_wstring(global_path) + L"installer\\update.json").c_str());
+					writer->write(root, &writejson);
+					writejson.close();
+				}
+
 				if (ExtractResource((string_to_wstring(global_path) + L"Inkeys.png").c_str(), L"PNG_ICON", MAKEINTRESOURCE(236)))
 				{
 					IdtSysNotificationsImageAndText04(L"智绘教", 5000, string_to_wstring(global_path) + L"Inkeys.png", L"智绘教正在自动更新，请耐心等待", L"已通过 MD5 和 SHA265 完整性校验", L"版本号 " + string_to_wstring(edition_date) + L" -> " + tedition);
@@ -179,13 +326,7 @@ int main()
 					error_code ec;
 					filesystem::remove(string_to_wstring(global_path) + L"Inkeys.png", ec);
 				}
-
-				STARTUPINFOA si = { 0 };
-				si.cb = sizeof(si);
-				PROCESS_INFORMATION pi = { 0 };
-				CreateProcessA(NULL, (global_path + wstring_to_string(path)).data(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
-				CloseHandle(pi.hProcess);
-				CloseHandle(pi.hThread);
+				ShellExecute(NULL, NULL, (string_to_wstring(global_path) + path).c_str(), NULL, NULL, SW_SHOWNORMAL);
 
 				return 0;
 			}
@@ -263,6 +404,15 @@ int main()
 
 		INT numFound = 0;
 		fontCollection.GetFamilies(1, &HarmonyOS_fontFamily, &numFound);
+
+		{
+			if (_waccess((string_to_wstring(global_path) + L"ttf").c_str(), 0) == -1)
+			{
+				error_code ec;
+				filesystem::create_directory(string_to_wstring(global_path) + L"ttf", ec);
+			}
+			ExtractResource((string_to_wstring(global_path) + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
+		}
 
 		IDTLogger->info("[主线程][IdtMain] 加载字体完成");
 
@@ -556,12 +706,16 @@ void Test()
 {
 	MessageBox(NULL, L"标记处", L"标记", MB_OK | MB_SYSTEMMODAL);
 }
-void Testi(int t)
+void Testi(long long t)
 {
 	MessageBox(NULL, to_wstring(t).c_str(), L"数值标记", MB_OK | MB_SYSTEMMODAL);
 }
 void Testw(wstring t)
 {
-	MessageBox(NULL, t.c_str(), L"字符标记", MB_OK | MB_SYSTEMMODAL);
+	MessageBoxW(NULL, t.c_str(), L"字符标记", MB_OK | MB_SYSTEMMODAL);
+}
+void Testa(string t)
+{
+	MessageBoxA(NULL, t.c_str(), "字符标记", MB_OK | MB_SYSTEMMODAL);
 }
 #endif

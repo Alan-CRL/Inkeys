@@ -7,6 +7,8 @@
 #include "HiCanvas.h"
 #include "HiSysGUI/SysControlBase.h"
 
+#include <chrono>
+
 // ‘§¡Ùœ˚œ¢ø’º‰
 #define MSG_RESERVE_SIZE		100
 
@@ -143,7 +145,7 @@ namespace HiEasyX
 		{
 			while (g_vecWindows[index].isBusyProcessing)
 			{
-				HpSleep(1);
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			}
 		}
 	}
@@ -167,7 +169,7 @@ namespace HiEasyX
 		{
 			while (g_isInTask)
 			{
-				HpSleep(1);
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			}
 		}
 	}
@@ -734,7 +736,11 @@ namespace HiEasyX
 
 	ExMessage getmessage_win32(BYTE filter, HWND hWnd)
 	{
-		while (!IsNewMessage(filter, hWnd))	HpSleep(1);
+		while (!IsNewMessage(filter, hWnd))
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+
 		ExMessage msg = GetNextMessage(filter, hWnd);
 		RemoveMessage(hWnd);
 		return msg;
@@ -1706,7 +1712,7 @@ namespace HiEasyX
 			TranslateMessage(&Msg);
 			DispatchMessage(&Msg);
 		}
-	}
+		}
 
 	HWND initgraph_win32(int w, int h, int flag, LPCTSTR lpszWndTitle, WNDPROC WindowProcess, HWND hParent)
 	{
@@ -2072,4 +2078,4 @@ namespace HiEasyX
 	{
 		flushmessage_win32(filter, g_vecWindows[m_nWindowIndex].hWnd);
 	}
-}
+		}

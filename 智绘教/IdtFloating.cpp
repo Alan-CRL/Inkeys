@@ -125,6 +125,104 @@ pair<double, double> GetPointOnCircle(double x, double y, double r, double angle
 	return make_pair(px + 0.5, py + 0.5);
 }
 
+void SeekBar(ExMessage m)
+{
+	if (!KeyBoradDown[VK_LBUTTON]) return;
+
+	POINT p;
+	GetCursorPos(&p);
+
+	int pop_x = p.x;
+	int pop_y = p.y;
+
+	while (1)
+	{
+		if (!KeyBoradDown[VK_LBUTTON]) break;
+
+		POINT p;
+		GetCursorPos(&p);
+
+		pop_x = p.x;
+		pop_y = p.y;
+
+		SetWindowPos(floating_window, NULL,
+			floating_windows.x = min(GetSystemMetrics(SM_CXSCREEN) - floating_windows.width, max(1, p.x - m.x)),
+			floating_windows.y = min(GetSystemMetrics(SM_CYSCREEN) - floating_windows.height, max(1, p.y - m.y)),
+			0,
+			0,
+			SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE);
+	}
+
+	return;
+}
+
+HHOOK FloatingHookCall;
+LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
+{
+	if (nCode >= 0)
+	{
+		if (wParam == WM_LBUTTONDOWN) KeyBoradDown[VK_LBUTTON] = true;
+		else if (wParam == WM_MBUTTONDOWN) KeyBoradDown[VK_MBUTTON] = true;
+		else if (wParam == WM_RBUTTONDOWN) KeyBoradDown[VK_RBUTTON] = true;
+		else if (wParam == WM_LBUTTONUP) KeyBoradDown[VK_LBUTTON] = false;
+		else if (wParam == WM_MBUTTONUP) KeyBoradDown[VK_MBUTTON] = false;
+		else if (wParam == WM_RBUTTONUP) KeyBoradDown[VK_RBUTTON] = false;
+
+		if (wParam == WM_MOUSEWHEEL && !choose.select && !penetrate.select && ppt_show != NULL)
+		{
+			MSLLHOOKSTRUCT* pMouseStruct = (MSLLHOOKSTRUCT*)lParam;
+
+			ExMessage msgKey = {};
+			msgKey.message = WM_MOUSEWHEEL;
+			msgKey.wheel = GET_WHEEL_DELTA_WPARAM(pMouseStruct->mouseData);
+
+			if (msgKey.wheel <= -120)
+			{
+				PPTUIControlColor[L"RoundRect/RoundRectLeft2/fill"].v = RGBA(200, 200, 200, 255);
+				PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v = RGBA(200, 200, 200, 255);
+
+				std::unique_lock<std::shared_mutex> LockPPTManipulatedSm(PPTManipulatedSm);
+				PPTManipulated = std::chrono::high_resolution_clock::now();
+				LockPPTManipulatedSm.unlock();
+			}
+			else
+			{
+				PPTUIControlColor[L"RoundRect/RoundRectLeft1/fill"].v = RGBA(200, 200, 200, 255);
+				PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v = RGBA(200, 200, 200, 255);
+
+				std::unique_lock<std::shared_mutex> LockPPTManipulatedSm(PPTManipulatedSm);
+				PPTManipulated = std::chrono::high_resolution_clock::now();
+				LockPPTManipulatedSm.unlock();
+			}
+
+			int index = hiex::GetWindowIndex(ppt_window, false);
+			std::unique_lock<std::shared_mutex> lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
+			hiex::g_vecWindows[index].vecMessage.push_back(msgKey);
+			lg_vecWindows_vecMessage_sm.unlock();
+
+			return 1;
+		}
+	}
+	// 继续传递事件给下一个钩子或目标窗口
+	return CallNextHookEx(FloatingHookCall, nCode, wParam, lParam);
+}
+void FloatingInstallHook()
+{
+	// 安装钩子
+	FloatingHookCall = SetWindowsHookEx(WH_MOUSE_LL, FloatingHookCallback, NULL, 0);
+	if (FloatingHookCall == NULL) return;
+
+	MSG msg;
+	while (!off_signal && GetMessage(&msg, NULL, 0, 0))
+	{
+		TranslateMessage(&msg);
+		DispatchMessage(&msg);
+	}
+
+	// 卸载钩子
+	UnhookWindowsHookEx(FloatingHookCall);
+}
+
 //绘制屏幕
 void DrawScreen()
 {
@@ -5223,37 +5321,6 @@ void DrawScreen()
 	ShowWindow(floating_window, SW_HIDE);
 	thread_status[L"DrawScreen"] = false;
 }
-void SeekBar(ExMessage m)
-{
-	if (!KEY_DOWN(VK_LBUTTON)) return;
-
-	POINT p;
-	GetCursorPos(&p);
-
-	int pop_x = p.x;
-	int pop_y = p.y;
-
-	while (1)
-	{
-		if (!KEY_DOWN(VK_LBUTTON)) break;
-
-		POINT p;
-		GetCursorPos(&p);
-
-		pop_x = p.x;
-		pop_y = p.y;
-
-		SetWindowPos(floating_window, NULL,
-			floating_windows.x = min(GetSystemMetrics(SM_CXSCREEN) - floating_windows.width, max(1, p.x - m.x)),
-			floating_windows.y = min(GetSystemMetrics(SM_CYSCREEN) - floating_windows.height, max(1, p.y - m.y)),
-			0,
-			0,
-			SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE);
-	}
-
-	return;
-}
-
 void MouseInteraction()
 {
 	thread_status[L"MouseInteraction"] = true;
@@ -5263,7 +5330,7 @@ void MouseInteraction()
 	ExMessage m;
 	int lx, ly;
 
-	std::chrono::high_resolution_clock::time_point MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
+	std::chrono::high_resolution_clock::time_point MouseInteractionManipulated;
 	while (!off_signal)
 	{
 		hiex::getmessage_win32(&m, EM_MOUSE, floating_window);
@@ -5787,7 +5854,7 @@ void MouseInteraction()
 								else if (idx <= 260) brush.width = 51 + int(double(idx - 200) / 60.0 * 49.0);
 								else brush.width = 101 + int(double(idx - 260) / 60.0 * 399.0);
 
-								if (!KEY_DOWN(VK_LBUTTON)) break;
+								if (!KeyBoradDown[VK_LBUTTON]) break;
 							}
 							UIControlTarget[L"RoundRect/PaintThicknessSchedule3/width"].v = UIControlTarget[L"RoundRect/PaintThicknessSchedule3/height"].v = 20;
 
@@ -5810,7 +5877,7 @@ void MouseInteraction()
 										{
 											if (!m.lbutton)
 											{
-												brush.width = 4;
+												brush.width = 3;
 												UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v = 1;
 
 												break;
@@ -5986,7 +6053,7 @@ void MouseInteraction()
 									UIControlTarget[L"RoundRect/BrushColorChooseMark/x"].v = UIControl[L"RoundRect/BrushColorChooseMark/x"].v = result.x + UIControl[L"RoundRect/BrushColorChooseWheel/x"].v - 7;
 									UIControlTarget[L"RoundRect/BrushColorChooseMark/y"].v = UIControl[L"RoundRect/BrushColorChooseMark/y"].v = result.y + UIControl[L"RoundRect/BrushColorChooseWheel/y"].v - 7;
 
-									if (!KEY_DOWN(VK_LBUTTON)) break;
+									if (!KeyBoradDown[VK_LBUTTON]) break;
 								}
 								BrushColorChoose.last_x = BrushColorChoose.x, BrushColorChoose.last_y = BrushColorChoose.y;
 
@@ -6560,6 +6627,8 @@ int floating_main()
 	thread_status[L"floating_main"] = true;
 	GetLocalTime(&sys_time);
 
+	thread FloatingInstallHookThread(FloatingInstallHook);
+	FloatingInstallHookThread.detach();
 	thread PPTLinkageMainThread(PPTLinkageMain);
 	PPTLinkageMainThread.detach();
 

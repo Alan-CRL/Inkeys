@@ -12,6 +12,8 @@ struct SetListStruct
 		IntelligentDrawing = true, SmoothWriting = true;
 
 		SetSkinMode = 0, SkinMode = 1;
+
+		UpdateChannel = "LTS";
 	}
 
 	int StartUp; bool CreateLnk;
@@ -21,5 +23,7 @@ struct SetListStruct
 	bool IntelligentDrawing, SmoothWriting;
 
 	int SetSkinMode, SkinMode;
+
+	string UpdateChannel;
 };
 extern SetListStruct setlist;

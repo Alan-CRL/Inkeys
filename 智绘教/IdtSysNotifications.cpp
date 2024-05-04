@@ -40,6 +40,7 @@ bool IdtSysNotificationsImageAndText04(std::wstring AppName, int HideTime, std::
 		INT64 id = WinToast::instance()->showToast(toast, new IdtSysNotificationsToastHandler());
 
 		if (HideTime == 0) return true;
+		else if (id < 0) return false;
 		else
 		{
 			std::this_thread::sleep_for(std::chrono::milliseconds(HideTime));
@@ -71,6 +72,7 @@ bool IdtSysNotificationsText04(std::wstring AppName, int HideTime, std::wstring 
 		INT64 id = WinToast::instance()->showToast(toast, new IdtSysNotificationsToastHandler());
 
 		if (HideTime == 0) return true;
+		else if (id < 0) return false;
 		else
 		{
 			std::this_thread::sleep_for(std::chrono::milliseconds(HideTime));

@@ -12,7 +12,9 @@
 #include "IdtTime.h"
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
-//#include <ink_stroke_modeler/stroke_modeler.h>
+
+// 实时平滑测试
+#pragma comment(lib, "absl/AbslWin32MT.lib")
 
 bool main_open;
 bool FirstDraw = true;
@@ -1574,7 +1576,7 @@ void DrawpadDrawing()
 		ulwi.hdcSrc = GetImageHDC(&window_background);
 		if (!UpdateLayeredWindowIndirect(drawpad_window, &ulwi))
 		{
-			MessageBox(floating_window, L"智绘教画板显示出现问题，点击确定以重启智绘教\n此方案可能解决该问题", L"智绘教警告", MB_OK);
+			MessageBox(floating_window, L"智绘教画板显示出现问题，点击确定以重启智绘教\n此方案可能解决该问题", L"智绘教警告", MB_OK | MB_SYSTEMMODAL);
 
 			{
 				sswindows.clear();
@@ -1584,6 +1586,7 @@ void DrawpadDrawing()
 				writejson.imbue(locale("zh_CN.UTF8"));
 				writejson.open(wstring_to_string(string_to_wstring(global_path) + L"bug fix 240408.01.log").c_str());
 
+				writejson << "UpdateLayeredWindowIndirect Error" << GetLastError() << endl;
 				for (int i = 0; i < (int)sswindows.size(); i++)
 				{
 					writejson << to_string(i) << " " + wstring_to_string(sswindows[i]) << endl;
@@ -1593,6 +1596,8 @@ void DrawpadDrawing()
 			}
 
 			off_signal = 2;
+
+			break;
 		}
 
 		tRecord = clock();
@@ -1608,7 +1613,7 @@ int drawpad_main()
 
 	//画笔初始化
 	{
-		brush.width = 4;
+		brush.width = 3;
 		brush.color = brush.primary_colour = RGBA(50, 30, 181, 255);
 	}
 	//窗口初始化
