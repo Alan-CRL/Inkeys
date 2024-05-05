@@ -2464,48 +2464,57 @@ bool SeewoCameraIsOpen; // Is EasiCamera started | 希沃视频展台是否启动
 // --------------------------------------------------
 // Blacklist window interception | 黑名单窗口拦截
 
-bool FindAiClassFloating(HWND* outHwnd)
+struct
 {
-	wstring className = L"UIIrregularWindow";
-	wstring windowTitle = L"UIIrregularWindow";
-	LONG style = -1811939328;
+	bool hasClassName;
+	wstring className;
 
-	HWND inquiryHwnd = NULL;
-	while ((inquiryHwnd = FindWindowEx(NULL, inquiryHwnd, NULL, NULL)) != NULL)
+	bool hasWindowTitle;
+	wstring windowTitle;
+
+	bool hasStyle;
+	LONG style;
+
+	bool hasWidthHeight;
+	int width;
+	int height;
+
+	bool foundHwnd = false;
+	HWND outHwnd = nullptr;
+}WindowSearch[10];
+int WindowSearchSize;
+
+BOOL CALLBACK EnumWindowsCallback(HWND inquiryHwnd, LPARAM lParam)
+{
+	EnumChildWindows(inquiryHwnd, EnumWindowsCallback, lParam);
+
+	int foundCnt = 0;
+	for (int i = 0; i < WindowSearchSize; i++)
 	{
-		TCHAR classNameBuffer[1024];
-		GetClassName(inquiryHwnd, classNameBuffer, 1024);
-		if (_tcsstr(classNameBuffer, className.c_str()) == NULL) continue;
-
-		TCHAR title[1024];
-		GetWindowText(inquiryHwnd, title, 1024);
-		if (_tcsstr(title, windowTitle.c_str()) == NULL) continue;
-
-		if (GetWindowLong(inquiryHwnd, GWL_STYLE) == style)
+		if (WindowSearch[i].hasClassName)
 		{
-			*outHwnd = inquiryHwnd;
-			return true;
+			TCHAR classNameBuffer[1024];
+			GetClassName(inquiryHwnd, classNameBuffer, 1024);
+			if (_tcsstr(classNameBuffer, WindowSearch[i].className.c_str()) == NULL)
+				continue;
 		}
-	}
+		if (WindowSearch[i].hasWindowTitle)
+		{
+			TCHAR windowTitleBuffer[1024];
+			GetWindowText(inquiryHwnd, windowTitleBuffer, 1024);
+			if (_tcsstr(windowTitleBuffer, WindowSearch[i].windowTitle.c_str()) == NULL)
+				continue;
+		}
 
-	return false;
-}
-bool FindSeewoWhiteboardFloating(HWND* outHwnd)
-{
-	wstring className = L"HwndWrapper[EasiNote";
-	LONG style = 369623040;
-	int width = 550;
-	int height = 200;
+		//Testi((DWORD)inquiryHwnd);
+		//Testi(GetWindowLong(inquiryHwnd, GWL_STYLE));
 
-	HWND inquiryHwnd = NULL;
-	while ((inquiryHwnd = FindWindowEx(NULL, inquiryHwnd, NULL, NULL)) != NULL)
-	{
-		TCHAR classNameBuffer[1024];
-		GetClassName(inquiryHwnd, classNameBuffer, 1024);
-		if (_tcsstr(classNameBuffer, className.c_str()) == NULL) continue;
-
-		if (GetWindowLong(inquiryHwnd, GWL_STYLE) != style) continue;
-
+		if (WindowSearch[i].hasStyle)
+		{
+			if (GetWindowLong(inquiryHwnd, GWL_STYLE) != WindowSearch[i].style)
+				continue;
+		}
+		if (WindowSearch[i].hasWidthHeight)
 		{
 			RECT rect{};
 			DwmGetWindowAttribute(inquiryHwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &rect, sizeof(RECT));
@@ -2517,84 +2526,120 @@ bool FindSeewoWhiteboardFloating(HWND* outHwnd)
 			ReleaseDC(NULL, hdc);
 			float scale = (horizontalDPI + verticalDPI) / 2.0f / 96.0f;
 
-			if (abs(width * scale - twidth) <= 1 && abs(height * scale - thwight) <= 1)
-			{
-				*outHwnd = inquiryHwnd;
-				return true;
-			}
+			if (abs(WindowSearch[i].width * scale - twidth) > 1 || abs(WindowSearch[i].height * scale - thwight) > 1)
+				continue;
 		}
+
+		WindowSearch[i].outHwnd = inquiryHwnd;
+		WindowSearch[i].foundHwnd = true;
 	}
 
-	return false;
-}
-
-bool FindSeewoHeduIntegration(HWND* outHwnd)
-{
-	wstring className = L"Chrome_WidgetWin_1";
-	wstring windowTitle = L"希沃品课——integration";
-	LONG style = -1811939328;
-
-	function<BOOL(HWND, LPARAM)> fib = [](HWND hwnd, LPARAM lParam)
-		{
-			return TRUE;
-		};
-
-	HWND inquiryHwnd = NULL;
-	while ((inquiryHwnd = FindWindowEx(NULL, inquiryHwnd, NULL, NULL)) != NULL)
+	for (int i = 0; i < WindowSearchSize; i++)
 	{
-		TCHAR classNameBuffer[1024];
-		GetClassName(inquiryHwnd, classNameBuffer, 1024);
-		if (_tcsstr(classNameBuffer, className.c_str()) == NULL) continue;
-
-		Testi(GetWindowLong(inquiryHwnd, GWL_STYLE));
-
-		TCHAR title[1024];
-		GetWindowText(inquiryHwnd, title, 1024);
-		if (_tcsstr(title, windowTitle.c_str()) == NULL) continue;
-
-		Testi(GetWindowLong(inquiryHwnd, GWL_STYLE));
-		if (GetWindowLong(inquiryHwnd, GWL_STYLE) == style)
-		{
-			*outHwnd = inquiryHwnd;
-			return true;
-		}
+		if (WindowSearch[i].foundHwnd)
+			foundCnt++;
 	}
 
-	return false;
-}
-
-bool FindSeewoCamera()
-{
-	wstring className = L"HwndWrapper[EasiCamera.exe;;";
-	wstring windowTitle = L"希沃视频展台";
-	LONG style = 386400256;
-
-	HWND inquiryHwnd = NULL;
-	while ((inquiryHwnd = FindWindowEx(NULL, inquiryHwnd, NULL, NULL)) != NULL)
-	{
-		TCHAR classNameBuffer[1024];
-		GetClassName(inquiryHwnd, classNameBuffer, 1024);
-		if (_tcsstr(classNameBuffer, className.c_str()) == NULL) continue;
-
-		TCHAR title[1024];
-		GetWindowText(inquiryHwnd, title, 1024);
-		if (_tcsstr(title, windowTitle.c_str()) == NULL) continue;
-
-		if (GetWindowLong(inquiryHwnd, GWL_STYLE) == style)
-		{
-			return true;
-		}
-	}
-
-	return false;
+	if (foundCnt == WindowSearchSize) return FALSE;
+	return TRUE;
 }
 
 // Discover and close the AIClass drawing window and Seewo Easinote 5 drawing window | 发现并关闭 AIClass 绘制窗口和 希沃白板5 绘制窗口
 void BlackBlock()
 {
 	thread_status[L"BlackBlock"] = true;
+
+	{
+		// AiClass
+		WindowSearch[0].hasClassName = true;
+		WindowSearch[0].className = L"UIWndTransparent";
+		WindowSearch[0].hasWindowTitle = true;
+		WindowSearch[0].windowTitle = L"TransparentWindow";
+		WindowSearch[0].hasStyle = true;
+		WindowSearch[0].style = -2080374784;
+	}
+	{
+		// 希沃悬浮窗画板
+		WindowSearch[1].hasClassName = true;
+		WindowSearch[1].className = L"HwndWrapper[EasiNote";
+		WindowSearch[1].hasStyle = true;
+		WindowSearch[1].style = 369623040;
+		WindowSearch[1].hasWidthHeight = true;
+		WindowSearch[1].width = 550;
+		WindowSearch[1].height = 200;
+	}
+	{
+		// 希沃视频展台
+		WindowSearch[2].hasClassName = true;
+		WindowSearch[2].className = L"HwndWrapper[EasiCamera.exe;;";
+		WindowSearch[2].hasWindowTitle = true;
+		WindowSearch[2].windowTitle = L"希沃视频展台";
+		WindowSearch[2].hasStyle = true;
+		WindowSearch[2].style = 386400256;
+	}
+	{
+		// 希沃品课（悬浮窗画板和PPT控件）
+		WindowSearch[3].hasClassName = true;
+		WindowSearch[3].className = L"Chrome_WidgetWin_1";
+		WindowSearch[3].hasWindowTitle = true;
+		WindowSearch[3].windowTitle = L"希沃品课——integration";
+		WindowSearch[3].hasStyle = true;
+		WindowSearch[3].style = 335675392;
+	}
+	{
+		// 希沃品课画板
+		WindowSearch[4].hasClassName = true;
+		WindowSearch[4].className = L"HwndWrapper[BoardService;;";
+		WindowSearch[4].hasStyle = true;
+		WindowSearch[4].style = 369623040;
+	}
+	{
+		// 希沃PPT小工具
+		WindowSearch[5].hasClassName = true;
+		WindowSearch[5].className = L"HwndWrapper[PPTService.exe;;";
+		WindowSearch[5].hasStyle = true;
+		WindowSearch[5].style = 369623040;
+	}
+	WindowSearchSize = 6;
+
 	while (!off_signal)
 	{
+		EnumWindows(EnumWindowsCallback, 0);
+
+		if (WindowSearch[0].foundHwnd)
+		{
+			PostMessage(WindowSearch[0].outHwnd, WM_CLOSE, 0, 0);
+			WindowSearch[0].foundHwnd = false;
+		}
+		if (WindowSearch[1].foundHwnd)
+		{
+			PostMessage(WindowSearch[1].outHwnd, WM_CLOSE, 0, 0);
+			WindowSearch[1].foundHwnd = false;
+		}
+
+		if (WindowSearch[2].foundHwnd)
+		{
+			SeewoCameraIsOpen = true;
+			WindowSearch[2].foundHwnd = false;
+		}
+		else SeewoCameraIsOpen = false;
+
+		if (WindowSearch[3].foundHwnd)
+		{
+			PostMessage(WindowSearch[3].outHwnd, WM_CLOSE, 0, 0);
+			WindowSearch[3].foundHwnd = false;
+		}
+		if (WindowSearch[4].foundHwnd)
+		{
+			PostMessage(WindowSearch[4].outHwnd, WM_CLOSE, 0, 0);
+			WindowSearch[4].foundHwnd = false;
+		}
+		if (WindowSearch[5].foundHwnd)
+		{
+			PostMessage(WindowSearch[5].outHwnd, WM_CLOSE, 0, 0);
+			WindowSearch[5].foundHwnd = false;
+		}
+
 		/*
 		HWND AiClass = nullptr;
 		if (FindAiClassFloating(&AiClass))
@@ -2603,11 +2648,11 @@ void BlackBlock()
 		HWND SeewoWhiteboard = nullptr;
 		if (FindSeewoWhiteboardFloating(&SeewoWhiteboard))
 			PostMessage(SeewoWhiteboard, WM_CLOSE, 0, 0);
-		*/
 
 		HWND SeewoHeduIntegration = nullptr;
 		if (FindSeewoWhiteboardFloating(&SeewoHeduIntegration))
 			PostMessage(SeewoHeduIntegration, WM_CLOSE, 0, 0);
+		*/
 
 		//if (FindSeewoCamera()) SeewoCameraIsOpen = true;
 		//else SeewoCameraIsOpen = false;
