@@ -280,159 +280,6 @@ void GetPptState()
 	thread_status[L"GetPptState"] = false;
 }
 
-/*
-* Dwrite win7 支持版本不能从内存中加载字体，故只能从本地字体文件加载
-*
-class IdtFontFileStream :public IDWriteFontFileStream
-{
-public:
-	// IDWriteFontFileLoader methods
-	STDMETHOD(GetFileSize)(UINT64* fileSize) override
-	{
-		//Testi(1);
-
-		*fileSize = m_collectionKeySize;
-
-		return S_OK;
-	}
-	STDMETHOD(GetLastWriteTime)(UINT64* lastWriteTime) override
-	{
-		//Testi(2);
-
-		*lastWriteTime = 0;
-
-		return S_OK;
-	}
-	STDMETHOD(ReadFileFragment)(void const** fragmentStart, UINT64 fileOffset, UINT64 fragmentSize, void** fragmentContext) override
-	{
-		//Testi(3);
-
-		//Testi(fileOffset);
-		//Testi(fragmentSize);
-
-		void const* offsetAddress = reinterpret_cast<void const*>(reinterpret_cast<uintptr_t>(m_collectionKey) + fileOffset);
-
-		vector<BYTE>* fontData = new vector<BYTE>(fragmentSize);
-		memcpy(fontData->data(), offsetAddress, fragmentSize);
-
-		//Testw(to_wstring((*fontData)[0]) + L" " + to_wstring((*fontData)[1]) + L" " + to_wstring((*fontData)[2]) + L" " + to_wstring((*fontData)[3]) + L" " + to_wstring((*fontData)[4]) + L" " + to_wstring((*fontData)[5]) + L" " + to_wstring((*fontData)[6]) + L" " + to_wstring((*fontData)[7]));
-
-		*fragmentStart = fontData->data();
-		*fragmentContext = fontData;
-
-		return S_OK;
-	}
-	void STDMETHODCALLTYPE ReleaseFileFragment(void* fragmentContext) override
-	{
-		//Testi(4);
-
-		delete fragmentContext;
-
-		return;
-	}
-
-	// Idt methods
-	STDMETHOD(SetFont)(void const* collectionKey, UINT32 collectionKeySize)
-	{
-		//Testi(5);
-
-		m_collectionKey = collectionKey;
-		m_collectionKeySize = collectionKeySize;
-
-		return S_OK;
-	}
-
-	// IUnknown methods
-	STDMETHOD_(ULONG, AddRef)()
-	{
-		return InterlockedIncrement(&m_cRefCount);
-	}
-	STDMETHOD_(ULONG, Release)()
-	{
-		ULONG cNewRefCount = InterlockedDecrement(&m_cRefCount);
-		if (cNewRefCount == 0)
-		{
-			delete this;
-		}
-		return cNewRefCount;
-	}
-	STDMETHOD(QueryInterface)(REFIID riid, LPVOID* ppvObj)
-	{
-		if ((riid == IID_IStylusSyncPlugin) || (riid == IID_IUnknown))
-		{
-			*ppvObj = this;
-			AddRef();
-			return S_OK;
-		}
-		else if ((riid == IID_IMarshal) && (m_punkFTMarshaller != NULL))
-		{
-			return m_punkFTMarshaller->QueryInterface(riid, ppvObj);
-		}
-
-		*ppvObj = NULL;
-		return E_NOINTERFACE;
-	}
-
-private:
-	void const* m_collectionKey;
-	UINT32 m_collectionKeySize;
-
-	LONG m_cRefCount;
-	IUnknown* m_punkFTMarshaller;
-};
-class IdtFontFileLoader :public IDWriteFontFileLoader
-{
-public:
-	// IDWriteFontFileLoader methods
-	STDMETHOD(CreateStreamFromKey)(void const* fontFileReferenceKey, UINT32 fontFileReferenceKeySize, IDWriteFontFileStream** fontFileStream) override
-	{
-		//Testi(6);
-
-		IdtFontFileStream* D2DFontFileStream = new IdtFontFileStream;
-		D2DFontFileStream->SetFont(fontFileReferenceKey, fontFileReferenceKeySize);
-
-		*fontFileStream = D2DFontFileStream;
-
-		return S_OK;
-	}
-
-	// IUnknown methods
-	STDMETHOD_(ULONG, AddRef)()
-	{
-		return InterlockedIncrement(&m_cRefCount);
-	}
-	STDMETHOD_(ULONG, Release)()
-	{
-		ULONG cNewRefCount = InterlockedDecrement(&m_cRefCount);
-		if (cNewRefCount == 0)
-		{
-			delete this;
-		}
-		return cNewRefCount;
-	}
-	STDMETHOD(QueryInterface)(REFIID riid, LPVOID* ppvObj)
-	{
-		if ((riid == IID_IStylusSyncPlugin) || (riid == IID_IUnknown))
-		{
-			*ppvObj = this;
-			AddRef();
-			return S_OK;
-		}
-		else if ((riid == IID_IMarshal) && (m_punkFTMarshaller != NULL))
-		{
-			return m_punkFTMarshaller->QueryInterface(riid, ppvObj);
-		}
-
-		*ppvObj = NULL;
-		return E_NOINTERFACE;
-	}
-
-private:
-	LONG m_cRefCount;
-	IUnknown* m_punkFTMarshaller;
-};
-*/
-
 void DrawControlWindow()
 {
 	thread_status[L"DrawControlWindow"] = true;
@@ -465,7 +312,7 @@ void DrawControlWindow()
 	DCRenderTarget->SetAntialiasMode(D2D1_ANTIALIAS_MODE::D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 
 	//媒体初始化
-	ID2D1Bitmap1* PptIconBitmap[5] = { NULL };
+	Bitmap* PptIconImage[5] = { nullptr };
 	{
 		loadimage(&PptIcon[1], L"PNG", L"ppt1");
 		loadimage(&PptIcon[2], L"PNG", L"ppt2");
@@ -480,111 +327,126 @@ void DrawControlWindow()
 			int height = PptIcon[1].getheight();
 			DWORD* pMem = GetImageBuffer(&PptIcon[1]);
 
-			unsigned char* data = new unsigned char[width * height * 4];
-			for (int y = 0; y < height; ++y)
+			PptIconImage[1] = new Bitmap(width, height, PixelFormat32bppARGB);
+
+			BitmapData bmpData;
+			Rect rect(0, 0, width, height);
+			PptIconImage[1]->LockBits(&rect, ImageLockModeWrite, PixelFormat32bppARGB, &bmpData);
+
+			int stride = bmpData.Stride;
+			BYTE* pDst = (BYTE*)bmpData.Scan0;
+			for (int y = 0; y < height; y++)
 			{
-				for (int x = 0; x < width; ++x)
+				for (int x = 0; x < width; x++)
 				{
+					//Testw(L"to " + to_wstring(x));
+
 					DWORD color = pMem[y * width + x];
 					unsigned char alpha = (color & 0xFF000000) >> 24;
+
+					int idx = y * stride + x * 4;
 					if (alpha != 0)
 					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						pDst[idx + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+						pDst[idx + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+						pDst[idx + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
 					}
 					else
 					{
-						data[(y * width + x) * 4 + 0] = 0;
-						data[(y * width + x) * 4 + 1] = 0;
-						data[(y * width + x) * 4 + 2] = 0;
+						pDst[idx + 0] = 0;
+						pDst[idx + 1] = 0;
+						pDst[idx + 2] = 0;
 					}
-					data[(y * width + x) * 4 + 3] = alpha;
+					pDst[idx + 3] = alpha;
 				}
 			}
 
-			D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-
-			ID2D1Bitmap* temp;
-			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &temp);
-			PptIconBitmap[1]->CopyFromBitmap(nullptr, temp, nullptr);
-
-			DxObjectSafeRelease(&temp);
-			delete[] data;
+			// 解锁位图
+			PptIconImage[1]->UnlockBits(&bmpData);
 		}
 		{
 			int width = PptIcon[2].getwidth();
 			int height = PptIcon[2].getheight();
 			DWORD* pMem = GetImageBuffer(&PptIcon[2]);
 
-			unsigned char* data = new unsigned char[width * height * 4];
-			for (int y = 0; y < height; ++y)
+			PptIconImage[2] = new Bitmap(width, height, PixelFormat32bppARGB);
+
+			BitmapData bmpData;
+			Rect rect(0, 0, width, height);
+			PptIconImage[2]->LockBits(&rect, ImageLockModeWrite, PixelFormat32bppARGB, &bmpData);
+
+			int stride = bmpData.Stride;
+			BYTE* pDst = (BYTE*)bmpData.Scan0;
+			for (int y = 0; y < height; y++)
 			{
-				for (int x = 0; x < width; ++x)
+				for (int x = 0; x < width; x++)
 				{
+					//Testw(L"to " + to_wstring(x));
+
 					DWORD color = pMem[y * width + x];
 					unsigned char alpha = (color & 0xFF000000) >> 24;
+
+					int idx = y * stride + x * 4;
 					if (alpha != 0)
 					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						pDst[idx + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+						pDst[idx + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+						pDst[idx + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
 					}
 					else
 					{
-						data[(y * width + x) * 4 + 0] = 0;
-						data[(y * width + x) * 4 + 1] = 0;
-						data[(y * width + x) * 4 + 2] = 0;
+						pDst[idx + 0] = 0;
+						pDst[idx + 1] = 0;
+						pDst[idx + 2] = 0;
 					}
-					data[(y * width + x) * 4 + 3] = alpha;
+					pDst[idx + 3] = alpha;
 				}
 			}
 
-			D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-
-			ID2D1Bitmap* temp;
-			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &temp);
-			PptIconBitmap[2]->CopyFromBitmap(nullptr, temp, nullptr);
-
-			DxObjectSafeRelease(&temp);
-			delete[] data;
+			// 解锁位图
+			PptIconImage[2]->UnlockBits(&bmpData);
 		}
 		{
 			int width = PptIcon[3].getwidth();
 			int height = PptIcon[3].getheight();
 			DWORD* pMem = GetImageBuffer(&PptIcon[3]);
 
-			unsigned char* data = new unsigned char[width * height * 4];
-			for (int y = 0; y < height; ++y)
+			PptIconImage[3] = new Bitmap(width, height, PixelFormat32bppARGB);
+
+			BitmapData bmpData;
+			Rect rect(0, 0, width, height);
+			PptIconImage[3]->LockBits(&rect, ImageLockModeWrite, PixelFormat32bppARGB, &bmpData);
+
+			int stride = bmpData.Stride;
+			BYTE* pDst = (BYTE*)bmpData.Scan0;
+			for (int y = 0; y < height; y++)
 			{
-				for (int x = 0; x < width; ++x)
+				for (int x = 0; x < width; x++)
 				{
+					//Testw(L"to " + to_wstring(x));
+
 					DWORD color = pMem[y * width + x];
 					unsigned char alpha = (color & 0xFF000000) >> 24;
+
+					int idx = y * stride + x * 4;
 					if (alpha != 0)
 					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						pDst[idx + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+						pDst[idx + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+						pDst[idx + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
 					}
 					else
 					{
-						data[(y * width + x) * 4 + 0] = 0;
-						data[(y * width + x) * 4 + 1] = 0;
-						data[(y * width + x) * 4 + 2] = 0;
+						pDst[idx + 0] = 0;
+						pDst[idx + 1] = 0;
+						pDst[idx + 2] = 0;
 					}
-					data[(y * width + x) * 4 + 3] = alpha;
+					pDst[idx + 3] = alpha;
 				}
 			}
 
-			D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-
-			ID2D1Bitmap* temp;
-			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &temp);
-			PptIconBitmap[1]->CopyFromBitmap(nullptr, temp, nullptr);
-
-			DxObjectSafeRelease(&temp);
-			delete[] data;
+			// 解锁位图
+			PptIconImage[3]->UnlockBits(&bmpData);
 		}
 	}
 
@@ -1427,7 +1289,11 @@ void DrawControlWindow()
 				}
 				// Image/RoundRectLeft1
 				{
-					hiex::TransparentImage(&PptWindowBackground, PPTUIControl[L"Image/RoundRectLeft1/x"].v, PPTUIControl[L"Image/RoundRectLeft1/y"].v, PPTUIControl[L"Image/RoundRectLeft1/width"].v, PPTUIControl[L"Image/RoundRectLeft1/height"].v, &PptIcon[1], 0, 0, PptIcon[1].getwidth(), PptIcon[1].getheight(), PPTUIControl[L"Image/RoundRectLeft1/transparency"].v);
+					Graphics graphics(GetImageHDC(&PptWindowBackground));
+					RectF dstRect(PPTUIControl[L"Image/RoundRectLeft1/x"].v, PPTUIControl[L"Image/RoundRectLeft1/y"].v, PPTUIControl[L"Image/RoundRectLeft1/width"].v, PPTUIControl[L"Image/RoundRectLeft1/height"].v);
+
+					graphics.DrawImage(PptIconImage[1], dstRect, 0, 0, PptIconImage[1]->GetWidth(), PptIconImage[1]->GetHeight(), UnitPixel);
+
 					//DCRenderTarget->DrawBitmap(PptIconBitmap[1], D2D1::RectF(PPTUIControl[L"Image/RoundRectLeft1/x"].v, PPTUIControl[L"Image/RoundRectLeft1/y"].v, PPTUIControl[L"Image/RoundRectLeft1/x"].v + PPTUIControl[L"Image/RoundRectLeft1/width"].v, PPTUIControl[L"Image/RoundRectLeft1/y"].v + PPTUIControl[L"Image/RoundRectLeft1/height"].v), PPTUIControl[L"Image/RoundRectLeft1/transparency"].v / 255.0f);
 				}
 
@@ -1496,10 +1362,11 @@ void DrawControlWindow()
 				}
 				// Image/RoundRectLeft2
 				{
-					DCRenderTarget->BeginDraw();
-					if (CurrentSlides == -1) DCRenderTarget->DrawBitmap(PptIconBitmap[3], D2D1::RectF(PPTUIControl[L"Image/RoundRectLeft2/x"].v, PPTUIControl[L"Image/RoundRectLeft2/y"].v, PPTUIControl[L"Image/RoundRectLeft2/x"].v + PPTUIControl[L"Image/RoundRectLeft2/width"].v, PPTUIControl[L"Image/RoundRectLeft2/y"].v + PPTUIControl[L"Image/RoundRectLeft2/height"].v), PPTUIControl[L"Image/RoundRectLeft2/transparency"].v / 255.0f);
-					else DCRenderTarget->DrawBitmap(PptIconBitmap[2], D2D1::RectF(PPTUIControl[L"Image/RoundRectLeft2/x"].v, PPTUIControl[L"Image/RoundRectLeft2/y"].v, PPTUIControl[L"Image/RoundRectLeft2/x"].v + PPTUIControl[L"Image/RoundRectLeft2/width"].v, PPTUIControl[L"Image/RoundRectLeft2/y"].v + PPTUIControl[L"Image/RoundRectLeft2/height"].v), PPTUIControl[L"Image/RoundRectLeft2/transparency"].v / 255.0f);
-					DCRenderTarget->EndDraw();
+					Graphics graphics(GetImageHDC(&PptWindowBackground));
+					RectF dstRect(PPTUIControl[L"Image/RoundRectLeft2/x"].v, PPTUIControl[L"Image/RoundRectLeft2/y"].v, PPTUIControl[L"Image/RoundRectLeft2/width"].v, PPTUIControl[L"Image/RoundRectLeft2/height"].v);
+
+					if (CurrentSlides == -1) graphics.DrawImage(PptIconImage[3], dstRect, 0, 0, PptIconImage[3]->GetWidth(), PptIconImage[3]->GetHeight(), UnitPixel);
+					else graphics.DrawImage(PptIconImage[2], dstRect, 0, 0, PptIconImage[2]->GetWidth(), PptIconImage[2]->GetHeight(), UnitPixel);
 				}
 			}
 			// 中间控件
@@ -1555,9 +1422,10 @@ void DrawControlWindow()
 				}
 				// Image/RoundRectMiddle1
 				{
-					DCRenderTarget->BeginDraw();
-					DCRenderTarget->DrawBitmap(PptIconBitmap[3], D2D1::RectF(PPTUIControl[L"Image/RoundRectMiddle1/x"].v, PPTUIControl[L"Image/RoundRectMiddle1/y"].v, PPTUIControl[L"Image/RoundRectMiddle1/x"].v + PPTUIControl[L"Image/RoundRectMiddle1/width"].v, PPTUIControl[L"Image/RoundRectMiddle1/y"].v + PPTUIControl[L"Image/RoundRectMiddle1/height"].v), PPTUIControl[L"Image/RoundRectMiddle1/transparency"].v / 255.0f);
-					DCRenderTarget->EndDraw();
+					Graphics graphics(GetImageHDC(&PptWindowBackground));
+					RectF dstRect(PPTUIControl[L"Image/RoundRectMiddle1/x"].v, PPTUIControl[L"Image/RoundRectMiddle1/y"].v, PPTUIControl[L"Image/RoundRectMiddle1/width"].v, PPTUIControl[L"Image/RoundRectMiddle1/height"].v);
+
+					graphics.DrawImage(PptIconImage[3], dstRect, 0, 0, PptIconImage[3]->GetWidth(), PptIconImage[3]->GetHeight(), UnitPixel);
 				}
 			}
 			// 右侧控件
@@ -1613,9 +1481,10 @@ void DrawControlWindow()
 				}
 				// Image/RoundRectRight1
 				{
-					DCRenderTarget->BeginDraw();
-					DCRenderTarget->DrawBitmap(PptIconBitmap[1], D2D1::RectF(PPTUIControl[L"Image/RoundRectRight1/x"].v, PPTUIControl[L"Image/RoundRectRight1/y"].v, PPTUIControl[L"Image/RoundRectRight1/x"].v + PPTUIControl[L"Image/RoundRectRight1/width"].v, PPTUIControl[L"Image/RoundRectRight1/y"].v + PPTUIControl[L"Image/RoundRectRight1/height"].v), PPTUIControl[L"Image/RoundRectRight1/transparency"].v / 255.0f);
-					DCRenderTarget->EndDraw();
+					Graphics graphics(GetImageHDC(&PptWindowBackground));
+					RectF dstRect(PPTUIControl[L"Image/RoundRectRight1/x"].v, PPTUIControl[L"Image/RoundRectRight1/y"].v, PPTUIControl[L"Image/RoundRectRight1/width"].v, PPTUIControl[L"Image/RoundRectRight1/height"].v);
+
+					graphics.DrawImage(PptIconImage[1], dstRect, 0, 0, PptIconImage[1]->GetWidth(), PptIconImage[1]->GetHeight(), UnitPixel);
 				}
 
 				// Words/InfoRight
@@ -1682,10 +1551,11 @@ void DrawControlWindow()
 				}
 				// Image/RoundRectRight2
 				{
-					DCRenderTarget->BeginDraw();
-					if (CurrentSlides == -1) DCRenderTarget->DrawBitmap(PptIconBitmap[3], D2D1::RectF(PPTUIControl[L"Image/RoundRectRight2/x"].v, PPTUIControl[L"Image/RoundRectRight2/y"].v, PPTUIControl[L"Image/RoundRectRight2/x"].v + PPTUIControl[L"Image/RoundRectRight2/width"].v, PPTUIControl[L"Image/RoundRectRight2/y"].v + PPTUIControl[L"Image/RoundRectRight2/height"].v), PPTUIControl[L"Image/RoundRectRight2/transparency"].v / 255.0f);
-					else DCRenderTarget->DrawBitmap(PptIconBitmap[2], D2D1::RectF(PPTUIControl[L"Image/RoundRectRight2/x"].v, PPTUIControl[L"Image/RoundRectRight2/y"].v, PPTUIControl[L"Image/RoundRectRight2/x"].v + PPTUIControl[L"Image/RoundRectRight2/width"].v, PPTUIControl[L"Image/RoundRectRight2/y"].v + PPTUIControl[L"Image/RoundRectRight2/height"].v), PPTUIControl[L"Image/RoundRectRight2/transparency"].v / 255.0f);
-					DCRenderTarget->EndDraw();
+					Graphics graphics(GetImageHDC(&PptWindowBackground));
+					RectF dstRect(PPTUIControl[L"Image/RoundRectRight2/x"].v, PPTUIControl[L"Image/RoundRectRight2/y"].v, PPTUIControl[L"Image/RoundRectRight2/width"].v, PPTUIControl[L"Image/RoundRectRight2/height"].v);
+
+					if (CurrentSlides == -1) graphics.DrawImage(PptIconImage[3], dstRect, 0, 0, PptIconImage[3]->GetWidth(), PptIconImage[3]->GetHeight(), UnitPixel);
+					else graphics.DrawImage(PptIconImage[2], dstRect, 0, 0, PptIconImage[2]->GetWidth(), PptIconImage[2]->GetHeight(), UnitPixel);
 				}
 			}
 
@@ -1708,7 +1578,7 @@ void DrawControlWindow()
 		else Sleep(100);
 	}
 
-	for (int r = 0; r < (int)size(PptIconBitmap); r++) DxObjectSafeRelease(&PptIconBitmap[r]);
+	delete[] PptIconImage;
 	DxObjectSafeRelease(&DCRenderTarget);
 
 	thread_status[L"DrawControlWindow"] = false;
