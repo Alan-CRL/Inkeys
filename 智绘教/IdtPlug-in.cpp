@@ -2640,23 +2640,6 @@ void BlackBlock()
 			WindowSearch[5].foundHwnd = false;
 		}
 
-		/*
-		HWND AiClass = nullptr;
-		if (FindAiClassFloating(&AiClass))
-			PostMessage(AiClass, WM_CLOSE, 0, 0);
-
-		HWND SeewoWhiteboard = nullptr;
-		if (FindSeewoWhiteboardFloating(&SeewoWhiteboard))
-			PostMessage(SeewoWhiteboard, WM_CLOSE, 0, 0);
-
-		HWND SeewoHeduIntegration = nullptr;
-		if (FindSeewoWhiteboardFloating(&SeewoHeduIntegration))
-			PostMessage(SeewoHeduIntegration, WM_CLOSE, 0, 0);
-		*/
-
-		//if (FindSeewoCamera()) SeewoCameraIsOpen = true;
-		//else SeewoCameraIsOpen = false;
-
 		for (int i = 1; i <= 5 && !off_signal; i++) Sleep(1000);
 	}
 	thread_status[L"BlackBlock"] = false;

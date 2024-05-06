@@ -1033,7 +1033,6 @@ void DrawpadDrawing()
 
 					if (saveImage)
 					{
-						Testi(2);
 						if (off_signal) SaveScreenShot(RecallImage.back().img, true);
 						else
 						{
