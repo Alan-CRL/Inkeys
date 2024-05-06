@@ -127,6 +127,7 @@ COLORREF InvertColor(COLORREF color, bool alpha_enable)
 	// 返回反色
 	return inverted;
 }
+
 //保存图像到本地
 void saveImageToPNG(IMAGE img, const char* filename, bool alpha, int compression_level)
 {

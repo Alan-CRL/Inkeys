@@ -34,14 +34,7 @@
 #include "IdtText.h"
 #include "IdtWindow.h"
 #include "IdtOther.h"
-
-#include <d2d1.h>
-#include <dwrite.h>
-#include <wrl/client.h>
-#pragma comment(lib, "d2d1.lib")
-#pragma comment(lib, "dwrite.lib")
-
-using namespace Microsoft::WRL;
+#include "IdtD2DPreparation.h"
 
 // --------------------------------------------------
 // PPT controls | PPT 控件
@@ -82,28 +75,6 @@ map<wstring, wstring> PPTUIControlString, PPTUIControlStringTarget;
 
 float PPTUIScale = 1.0f;
 bool PPTUIScaleRecommend = true;
-
-template <class T> void DxObjectSafeRelease(T** ppT)
-{
-	if (*ppT)
-	{
-		(*ppT)->Release();
-		*ppT = NULL;
-	}
-}
-D2D1::ColorF ConvertToD2DColor(COLORREF Color, bool ReserveAlpha = true)
-{
-	return D2D1::ColorF(
-		GetRValue(Color) / 255.0f,
-		GetGValue(Color) / 255.0f,
-		GetBValue(Color) / 255.0f,
-		(ReserveAlpha ? GetAValue(Color) : 255) / 255.0f
-	);
-}
-void SetAlpha(COLORREF& Color, int Alpha)
-{
-	Color = (COLORREF)(((Color) & 0xFFFFFF) | ((Alpha) << 24));
-}
 
 PptImgStruct PptImg = { false }; // It stores image data generated during slide shows. | 其存储幻灯片放映时产生的图像数据。
 PptInfoStateStruct PptInfoState = { -1, -1 }; // It stores the current status of the slide show software, where First represents the total number of slide pages and Second represents the current slide number. | 其存储幻灯片放映软件当前的状态，First 代表总幻灯片页数，Second 代表当前幻灯片编号。
@@ -462,136 +433,6 @@ private:
 };
 */
 
-class IdtFontFileEnumerator : public IDWriteFontFileEnumerator
-{
-public:
-
-	// IDWriteFontFileEnumerator methods
-	STDMETHOD(GetCurrentFontFile)(IDWriteFontFile** fontFile) override
-	{
-		*fontFile = m_font[m_currentfontCount - 1];
-
-		return S_OK;
-	}
-	STDMETHOD(MoveNext)(BOOL* hasCurrentFile) override
-	{
-		m_currentfontCount++;
-		*hasCurrentFile = m_currentfontCount > (int)m_font.size() ? FALSE : TRUE;
-
-		return S_OK;
-	}
-
-	// Idt methods
-	STDMETHOD(AddFont)(IDWriteFactory* factory, wstring fontPath)
-	{
-		IDWriteFontFile* D2DFont = nullptr;
-
-		// 文件导入方案
-		factory->CreateFontFileReference(fontPath.c_str(), 0, &D2DFont);
-
-		m_font.push_back(D2DFont);
-
-		return S_OK;
-	}
-
-	// IUnknown methods
-	STDMETHOD_(ULONG, AddRef)()
-	{
-		return InterlockedIncrement(&m_cRefCount);
-	}
-	STDMETHOD_(ULONG, Release)()
-	{
-		ULONG cNewRefCount = InterlockedDecrement(&m_cRefCount);
-		if (cNewRefCount == 0)
-		{
-			delete this;
-		}
-		return cNewRefCount;
-	}
-	STDMETHOD(QueryInterface)(REFIID riid, LPVOID* ppvObj)
-	{
-		if ((riid == IID_IStylusSyncPlugin) || (riid == IID_IUnknown))
-		{
-			*ppvObj = this;
-			AddRef();
-			return S_OK;
-		}
-		else if ((riid == IID_IMarshal) && (m_punkFTMarshaller != NULL))
-		{
-			return m_punkFTMarshaller->QueryInterface(riid, ppvObj);
-		}
-
-		*ppvObj = NULL;
-		return E_NOINTERFACE;
-	}
-
-private:
-	int m_currentfontCount = 0;
-	IDWriteFactory* m_D2DTextFactory = nullptr;
-
-	vector<IDWriteFontFile*> m_font;
-
-	LONG m_cRefCount;
-	IUnknown* m_punkFTMarshaller;
-};
-class IdtFontCollectionLoader : public IDWriteFontCollectionLoader
-{
-public:
-
-	// IDWriteFontCollectionLoader methods
-	STDMETHOD(CreateEnumeratorFromKey)(IDWriteFactory* factory, void const* /*collectionKey*/, UINT32 /*collectionKeySize*/, IDWriteFontFileEnumerator** fontFileEnumerator) override
-	{
-		*fontFileEnumerator = D2DFontFileEnumerator;
-
-		return S_OK;
-	}
-
-	// Idt methods
-	STDMETHOD(AddFont)(IDWriteFactory* factory, wstring fontPath)
-	{
-		D2DFontFileEnumerator->AddFont(factory, fontPath);
-
-		return S_OK;
-	}
-
-	// IUnknown methods
-	STDMETHOD_(ULONG, AddRef)()
-	{
-		return InterlockedIncrement(&m_cRefCount);
-	}
-	STDMETHOD_(ULONG, Release)()
-	{
-		ULONG cNewRefCount = InterlockedDecrement(&m_cRefCount);
-		if (cNewRefCount == 0)
-		{
-			delete this;
-		}
-		return cNewRefCount;
-	}
-	STDMETHOD(QueryInterface)(REFIID riid, LPVOID* ppvObj)
-	{
-		if ((riid == IID_IStylusSyncPlugin) || (riid == IID_IUnknown))
-		{
-			*ppvObj = this;
-			AddRef();
-			return S_OK;
-		}
-		else if ((riid == IID_IMarshal) && (m_punkFTMarshaller != NULL))
-		{
-			return m_punkFTMarshaller->QueryInterface(riid, ppvObj);
-		}
-
-		*ppvObj = NULL;
-		return E_NOINTERFACE;
-	}
-
-private:
-	IdtFontFileEnumerator* D2DFontFileEnumerator = new IdtFontFileEnumerator;
-
-	LONG m_cRefCount;
-	IUnknown* m_punkFTMarshaller;
-};
-
 void DrawControlWindow()
 {
 	thread_status[L"DrawControlWindow"] = true;
@@ -612,22 +453,9 @@ void DrawControlWindow()
 		SetWindowPos(ppt_window, NULL, PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 	}
 
-	// 创建 D2D 工厂
-	ID2D1Factory* Factory = NULL;
-	D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &Factory);
-	// D2D1_FACTORY_TYPE_MULTI_THREADED 多线程后，该参数指定将可以公用一个工厂
-
-	// 创建 DC Render 并指定硬件加速
-	auto Property = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE::D2D1_RENDER_TARGET_TYPE_HARDWARE,
-		D2D1::PixelFormat(
-			DXGI_FORMAT_B8G8R8A8_UNORM,
-			D2D1_ALPHA_MODE_PREMULTIPLIED
-		), 0.0, 0.0, D2D1_RENDER_TARGET_USAGE_GDI_COMPATIBLE, D2D1_FEATURE_LEVEL_DEFAULT
-	);
-
 	// 创建 EasyX 兼容的 DC Render Target
-	ID2D1DCRenderTarget* DCRenderTarget;
-	Factory->CreateDCRenderTarget(&Property, &DCRenderTarget);
+	ID2D1DCRenderTarget* DCRenderTarget = nullptr;
+	D2DFactory->CreateDCRenderTarget(&D2DProperty, &DCRenderTarget);
 
 	// 绑定 EasyX DC
 	RECT PptBackgroundWindowRect = { 0, 0, PptWindowBackground.getwidth(), PptWindowBackground.getheight() };
@@ -637,7 +465,7 @@ void DrawControlWindow()
 	DCRenderTarget->SetAntialiasMode(D2D1_ANTIALIAS_MODE::D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 
 	//媒体初始化
-	ID2D1Bitmap* PptIconBitmap[5] = { NULL };
+	ID2D1Bitmap1* PptIconBitmap[5] = { NULL };
 	{
 		loadimage(&PptIcon[1], L"PNG", L"ppt1");
 		loadimage(&PptIcon[2], L"PNG", L"ppt2");
@@ -661,9 +489,9 @@ void DrawControlWindow()
 					unsigned char alpha = (color & 0xFF000000) >> 24;
 					if (alpha != 0)
 					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
 						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
 					}
 					else
 					{
@@ -676,7 +504,12 @@ void DrawControlWindow()
 			}
 
 			D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &PptIconBitmap[1]);
+
+			ID2D1Bitmap* temp;
+			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &temp);
+			PptIconBitmap[1]->CopyFromBitmap(nullptr, temp, nullptr);
+
+			DxObjectSafeRelease(&temp);
 			delete[] data;
 		}
 		{
@@ -693,9 +526,9 @@ void DrawControlWindow()
 					unsigned char alpha = (color & 0xFF000000) >> 24;
 					if (alpha != 0)
 					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
 						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
 					}
 					else
 					{
@@ -708,7 +541,12 @@ void DrawControlWindow()
 			}
 
 			D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &PptIconBitmap[2]);
+
+			ID2D1Bitmap* temp;
+			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &temp);
+			PptIconBitmap[2]->CopyFromBitmap(nullptr, temp, nullptr);
+
+			DxObjectSafeRelease(&temp);
 			delete[] data;
 		}
 		{
@@ -725,9 +563,9 @@ void DrawControlWindow()
 					unsigned char alpha = (color & 0xFF000000) >> 24;
 					if (alpha != 0)
 					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
 						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
 					}
 					else
 					{
@@ -740,42 +578,14 @@ void DrawControlWindow()
 			}
 
 			D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &PptIconBitmap[3]);
+
+			ID2D1Bitmap* temp;
+			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &temp);
+			PptIconBitmap[1]->CopyFromBitmap(nullptr, temp, nullptr);
+
+			DxObjectSafeRelease(&temp);
 			delete[] data;
 		}
-	}
-
-	// D2D 字体初始化
-	IDWriteFactory* TextFactory = nullptr;
-	IDWriteFontCollection* D2DFontCollection = nullptr;
-	{
-		if (_waccess((string_to_wstring(global_path) + L"ttf\\hmossscr.ttf").c_str(), 0) == -1)
-		{
-			if (_waccess((string_to_wstring(global_path) + L"ttf").c_str(), 0) == -1)
-			{
-				error_code ec;
-				filesystem::create_directory(string_to_wstring(global_path) + L"ttf", ec);
-			}
-			ExtractResource((string_to_wstring(global_path) + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
-		}
-
-		DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(&TextFactory));
-
-		/*
-		HMODULE hModule = GetModuleHandle(NULL);
-		HRSRC hResource = FindResource(hModule, MAKEINTRESOURCE(198), L"TTF");
-		HGLOBAL hMemory = LoadResource(hModule, hResource);
-		PVOID pResourceData = LockResource(hMemory);
-		DWORD dwResourceSize = SizeofResource(hModule, hResource);
-		*/
-
-		IdtFontCollectionLoader* D2DFontCollectionLoader = new IdtFontCollectionLoader;
-
-		D2DFontCollectionLoader->AddFont(TextFactory, string_to_wstring(global_path) + L"ttf\\hmossscr.ttf");
-
-		TextFactory->RegisterFontCollectionLoader(D2DFontCollectionLoader);
-		TextFactory->CreateCustomFontCollection(D2DFontCollectionLoader, 0, 0, &D2DFontCollection);
-		TextFactory->UnregisterFontCollectionLoader(D2DFontCollectionLoader);
 	}
 
 	//UI 初始化
@@ -1564,8 +1374,6 @@ void DrawControlWindow()
 		{
 			SetImageColor(PptWindowBackground, RGBA(0, 0, 0, 0), true);
 
-			DCRenderTarget->BeginDraw();
-
 			// 左侧控件
 			{
 				// RoundRect/RoundRectLeft
@@ -1584,8 +1392,10 @@ void DrawControlWindow()
 						PPTUIControl[L"RoundRect/RoundRectLeft/ellipseheight"].v / 2.0f
 					);
 
+					DCRenderTarget->BeginDraw();
 					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
 					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectLeft/frame/width"].v);
+					DCRenderTarget->EndDraw();
 
 					DxObjectSafeRelease(&pFrameBrush);
 					DxObjectSafeRelease(&pFillBrush);
@@ -1607,22 +1417,25 @@ void DrawControlWindow()
 						PPTUIControl[L"RoundRect/RoundRectLeft1/ellipseheight"].v / 2.0f
 					);
 
+					DCRenderTarget->BeginDraw();
 					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
 					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectLeft1/frame/width"].v);
+					DCRenderTarget->EndDraw();
 
 					DxObjectSafeRelease(&pFrameBrush);
 					DxObjectSafeRelease(&pFillBrush);
 				}
 				// Image/RoundRectLeft1
 				{
-					DCRenderTarget->DrawBitmap(PptIconBitmap[1], D2D1::RectF(PPTUIControl[L"Image/RoundRectLeft1/x"].v, PPTUIControl[L"Image/RoundRectLeft1/y"].v, PPTUIControl[L"Image/RoundRectLeft1/x"].v + PPTUIControl[L"Image/RoundRectLeft1/width"].v, PPTUIControl[L"Image/RoundRectLeft1/y"].v + PPTUIControl[L"Image/RoundRectLeft1/height"].v), PPTUIControl[L"Image/RoundRectLeft1/transparency"].v / 255.0f);
+					hiex::TransparentImage(&PptWindowBackground, PPTUIControl[L"Image/RoundRectLeft1/x"].v, PPTUIControl[L"Image/RoundRectLeft1/y"].v, PPTUIControl[L"Image/RoundRectLeft1/width"].v, PPTUIControl[L"Image/RoundRectLeft1/height"].v, &PptIcon[1], 0, 0, PptIcon[1].getwidth(), PptIcon[1].getheight(), PPTUIControl[L"Image/RoundRectLeft1/transparency"].v);
+					//DCRenderTarget->DrawBitmap(PptIconBitmap[1], D2D1::RectF(PPTUIControl[L"Image/RoundRectLeft1/x"].v, PPTUIControl[L"Image/RoundRectLeft1/y"].v, PPTUIControl[L"Image/RoundRectLeft1/x"].v + PPTUIControl[L"Image/RoundRectLeft1/width"].v, PPTUIControl[L"Image/RoundRectLeft1/y"].v + PPTUIControl[L"Image/RoundRectLeft1/height"].v), PPTUIControl[L"Image/RoundRectLeft1/transparency"].v / 255.0f);
 				}
 
 				// Words/InfoLeft
 				{
 					IDWriteTextFormat* textFormat = NULL;
 
-					TextFactory->CreateTextFormat(
+					D2DTextFactory->CreateTextFormat(
 						L"HarmonyOS Sans SC",
 						D2DFontCollection,
 						DWRITE_FONT_WEIGHT_NORMAL,
@@ -1639,6 +1452,7 @@ void DrawControlWindow()
 					textFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
 					textFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 
+					DCRenderTarget->BeginDraw();
 					DCRenderTarget->DrawText(
 						PPTUIControlString[L"Info/Pages"].c_str(),  // 文本
 						wcslen(PPTUIControlString[L"Info/Pages"].c_str()),  // 文本长度
@@ -1651,6 +1465,7 @@ void DrawControlWindow()
 						),
 						pBrush
 					);
+					DCRenderTarget->EndDraw();
 
 					DxObjectSafeRelease(&pBrush);
 				}
@@ -1671,16 +1486,20 @@ void DrawControlWindow()
 						PPTUIControl[L"RoundRect/RoundRectLeft2/ellipseheight"].v / 2.0f
 					);
 
+					DCRenderTarget->BeginDraw();
 					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
 					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectLeft2/frame/width"].v);
+					DCRenderTarget->EndDraw();
 
 					DxObjectSafeRelease(&pFrameBrush);
 					DxObjectSafeRelease(&pFillBrush);
 				}
 				// Image/RoundRectLeft2
 				{
+					DCRenderTarget->BeginDraw();
 					if (CurrentSlides == -1) DCRenderTarget->DrawBitmap(PptIconBitmap[3], D2D1::RectF(PPTUIControl[L"Image/RoundRectLeft2/x"].v, PPTUIControl[L"Image/RoundRectLeft2/y"].v, PPTUIControl[L"Image/RoundRectLeft2/x"].v + PPTUIControl[L"Image/RoundRectLeft2/width"].v, PPTUIControl[L"Image/RoundRectLeft2/y"].v + PPTUIControl[L"Image/RoundRectLeft2/height"].v), PPTUIControl[L"Image/RoundRectLeft2/transparency"].v / 255.0f);
 					else DCRenderTarget->DrawBitmap(PptIconBitmap[2], D2D1::RectF(PPTUIControl[L"Image/RoundRectLeft2/x"].v, PPTUIControl[L"Image/RoundRectLeft2/y"].v, PPTUIControl[L"Image/RoundRectLeft2/x"].v + PPTUIControl[L"Image/RoundRectLeft2/width"].v, PPTUIControl[L"Image/RoundRectLeft2/y"].v + PPTUIControl[L"Image/RoundRectLeft2/height"].v), PPTUIControl[L"Image/RoundRectLeft2/transparency"].v / 255.0f);
+					DCRenderTarget->EndDraw();
 				}
 			}
 			// 中间控件
@@ -1701,8 +1520,10 @@ void DrawControlWindow()
 						PPTUIControl[L"RoundRect/RoundRectMiddle/ellipseheight"].v / 2.0f
 					);
 
+					DCRenderTarget->BeginDraw();
 					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
 					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectMiddle/frame/width"].v);
+					DCRenderTarget->EndDraw();
 
 					DxObjectSafeRelease(&pFrameBrush);
 					DxObjectSafeRelease(&pFillBrush);
@@ -1724,15 +1545,19 @@ void DrawControlWindow()
 						PPTUIControl[L"RoundRect/RoundRectMiddle1/ellipseheight"].v / 2.0f
 					);
 
+					DCRenderTarget->BeginDraw();
 					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
 					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectMiddle1/frame/width"].v);
+					DCRenderTarget->EndDraw();
 
 					DxObjectSafeRelease(&pFrameBrush);
 					DxObjectSafeRelease(&pFillBrush);
 				}
 				// Image/RoundRectMiddle1
 				{
+					DCRenderTarget->BeginDraw();
 					DCRenderTarget->DrawBitmap(PptIconBitmap[3], D2D1::RectF(PPTUIControl[L"Image/RoundRectMiddle1/x"].v, PPTUIControl[L"Image/RoundRectMiddle1/y"].v, PPTUIControl[L"Image/RoundRectMiddle1/x"].v + PPTUIControl[L"Image/RoundRectMiddle1/width"].v, PPTUIControl[L"Image/RoundRectMiddle1/y"].v + PPTUIControl[L"Image/RoundRectMiddle1/height"].v), PPTUIControl[L"Image/RoundRectMiddle1/transparency"].v / 255.0f);
+					DCRenderTarget->EndDraw();
 				}
 			}
 			// 右侧控件
@@ -1753,8 +1578,10 @@ void DrawControlWindow()
 						PPTUIControl[L"RoundRect/RoundRectRight/ellipseheight"].v / 2.0f
 					);
 
+					DCRenderTarget->BeginDraw();
 					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
 					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectRight/frame/width"].v);
+					DCRenderTarget->EndDraw();
 
 					DxObjectSafeRelease(&pFrameBrush);
 					DxObjectSafeRelease(&pFillBrush);
@@ -1776,21 +1603,25 @@ void DrawControlWindow()
 						PPTUIControl[L"RoundRect/RoundRectRight1/ellipseheight"].v / 2.0f
 					);
 
+					DCRenderTarget->BeginDraw();
 					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
 					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectRight1/frame/width"].v);
+					DCRenderTarget->EndDraw();
 
 					DxObjectSafeRelease(&pFrameBrush);
 					DxObjectSafeRelease(&pFillBrush);
 				}
 				// Image/RoundRectRight1
 				{
+					DCRenderTarget->BeginDraw();
 					DCRenderTarget->DrawBitmap(PptIconBitmap[1], D2D1::RectF(PPTUIControl[L"Image/RoundRectRight1/x"].v, PPTUIControl[L"Image/RoundRectRight1/y"].v, PPTUIControl[L"Image/RoundRectRight1/x"].v + PPTUIControl[L"Image/RoundRectRight1/width"].v, PPTUIControl[L"Image/RoundRectRight1/y"].v + PPTUIControl[L"Image/RoundRectRight1/height"].v), PPTUIControl[L"Image/RoundRectRight1/transparency"].v / 255.0f);
+					DCRenderTarget->EndDraw();
 				}
 
 				// Words/InfoRight
 				{
 					IDWriteTextFormat* textFormat = NULL;
-					TextFactory->CreateTextFormat(
+					D2DTextFactory->CreateTextFormat(
 						L"HarmonyOS Sans SC",
 						D2DFontCollection,
 						DWRITE_FONT_WEIGHT_NORMAL,
@@ -1807,6 +1638,7 @@ void DrawControlWindow()
 					textFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
 					textFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 
+					DCRenderTarget->BeginDraw();
 					DCRenderTarget->DrawText(
 						PPTUIControlString[L"Info/Pages"].c_str(),  // 文本
 						wcslen(PPTUIControlString[L"Info/Pages"].c_str()),  // 文本长度
@@ -1819,6 +1651,7 @@ void DrawControlWindow()
 						),
 						pBrush
 					);
+					DCRenderTarget->EndDraw();
 
 					DxObjectSafeRelease(&pBrush);
 				}
@@ -1839,20 +1672,22 @@ void DrawControlWindow()
 						PPTUIControl[L"RoundRect/RoundRectRight2/ellipseheight"].v / 2.0f
 					);
 
+					DCRenderTarget->BeginDraw();
 					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
 					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectRight2/frame/width"].v);
+					DCRenderTarget->EndDraw();
 
 					DxObjectSafeRelease(&pFrameBrush);
 					DxObjectSafeRelease(&pFillBrush);
 				}
 				// Image/RoundRectRight2
 				{
+					DCRenderTarget->BeginDraw();
 					if (CurrentSlides == -1) DCRenderTarget->DrawBitmap(PptIconBitmap[3], D2D1::RectF(PPTUIControl[L"Image/RoundRectRight2/x"].v, PPTUIControl[L"Image/RoundRectRight2/y"].v, PPTUIControl[L"Image/RoundRectRight2/x"].v + PPTUIControl[L"Image/RoundRectRight2/width"].v, PPTUIControl[L"Image/RoundRectRight2/y"].v + PPTUIControl[L"Image/RoundRectRight2/height"].v), PPTUIControl[L"Image/RoundRectRight2/transparency"].v / 255.0f);
 					else DCRenderTarget->DrawBitmap(PptIconBitmap[2], D2D1::RectF(PPTUIControl[L"Image/RoundRectRight2/x"].v, PPTUIControl[L"Image/RoundRectRight2/y"].v, PPTUIControl[L"Image/RoundRectRight2/x"].v + PPTUIControl[L"Image/RoundRectRight2/width"].v, PPTUIControl[L"Image/RoundRectRight2/y"].v + PPTUIControl[L"Image/RoundRectRight2/height"].v), PPTUIControl[L"Image/RoundRectRight2/transparency"].v / 255.0f);
+					DCRenderTarget->EndDraw();
 				}
 			}
-
-			DCRenderTarget->EndDraw();
 
 			{
 				ulwi.hdcSrc = GetImageHDC(&PptWindowBackground);
@@ -1873,11 +1708,8 @@ void DrawControlWindow()
 		else Sleep(100);
 	}
 
-	DxObjectSafeRelease(&D2DFontCollection);
-	DxObjectSafeRelease(&TextFactory);
 	for (int r = 0; r < (int)size(PptIconBitmap); r++) DxObjectSafeRelease(&PptIconBitmap[r]);
 	DxObjectSafeRelease(&DCRenderTarget);
-	DxObjectSafeRelease(&Factory);
 
 	thread_status[L"DrawControlWindow"] = false;
 }

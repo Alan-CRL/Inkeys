@@ -14,6 +14,7 @@
 #include "IdtMain.h"
 
 #include "IdtConfiguration.h"
+#include "IdtD2DPreparation.h"
 #include "IdtDisplayManagement.h"
 #include "IdtDrawpad.h"
 #include "IdtGuid.h"
@@ -40,8 +41,8 @@ void FreezeFrameWindow();
 bool already = false;
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string edition_date = "20240505a";				//程序发布日期
-string edition_channel = "Beta";				//程序发布通道
+string edition_date = "20240506a";				//程序发布日期
+string edition_channel = "Dev";				//程序发布通道
 string edition_code = "24H1(BetaH2)";			//程序版本
 
 wstring userid; //用户ID（主板序列号）
@@ -390,6 +391,10 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		}
 		IDTLogger->info("[主线程][IdtMain] 初始化DPI完成");
 	}
+	// 界面绘图库初始化
+	{
+		D2DStarup();
+	}
 	// 字体初始化
 	{
 		IDTLogger->info("[主线程][IdtMain] 初始化字体");
@@ -413,6 +418,13 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				filesystem::create_directory(string_to_wstring(global_path) + L"ttf", ec);
 			}
 			ExtractResource((string_to_wstring(global_path) + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
+
+			IdtFontCollectionLoader* D2DFontCollectionLoader = new IdtFontCollectionLoader;
+			D2DFontCollectionLoader->AddFont(D2DTextFactory, string_to_wstring(global_path) + L"ttf\\hmossscr.ttf");
+
+			D2DTextFactory->RegisterFontCollectionLoader(D2DFontCollectionLoader);
+			D2DTextFactory->CreateCustomFontCollection(D2DFontCollectionLoader, 0, 0, &D2DFontCollection);
+			D2DTextFactory->UnregisterFontCollectionLoader(D2DFontCollectionLoader);
 		}
 
 		IDTLogger->info("[主线程][IdtMain] 加载字体完成");

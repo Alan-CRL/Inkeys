@@ -366,7 +366,7 @@ int SettingMain()
 					if (Tab == Tab::tab5) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 					if (ImGui::Button(reinterpret_cast<const char*>(u8"实验室"), { 100.0f,40.0f }))
 					{
-						// Tab = Tab::tab5;
+						Tab = Tab::tab5;
 					}
 					while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
 
@@ -1035,38 +1035,36 @@ int SettingMain()
 					}
 					break;
 
-					/*
-					case Tab::tab5:
-						// 实验室
-						ImGui::SetCursorPosY(20.0f);
+				case Tab::tab5:
+					// 实验室
+					ImGui::SetCursorPosY(20.0f);
+					{
+						ImGui::SetCursorPosX(20.0f);
+						ImGui::BeginChild(reinterpret_cast<const char*>(u8"PPT 控件缩放比例"), { 730.0f,50.0f }, true, ImGuiWindowFlags_NoScrollbar);
+
 						{
-							ImGui::SetCursorPosX(20.0f);
-							ImGui::BeginChild(reinterpret_cast<const char*>(u8"PPT 控件缩放比例"), { 730.0f,50.0f }, true, ImGuiWindowFlags_NoScrollbar);
+							ImGui::SetCursorPosY(8.0f);
 
-							{
-								ImGui::SetCursorPosY(8.0f);
+							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+							CenteredText(reinterpret_cast<const char*>(u8" 外观皮肤"), 4.0f);
 
-								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								CenteredText(reinterpret_cast<const char*>(u8" 外观皮肤"), 4.0f);
+							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 230.0f);
+							ImGui::SetNextItemWidth(220);
 
-								ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 230.0f);
-								ImGui::SetNextItemWidth(220);
-
-								Font->Scale = 0.82f, PushFontNum++, ImGui::PushFont(Font);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0 / 255.0f, 131 / 255.0f, 245 / 255.0f, 1.0f));
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								ImGui::SliderFloat(reinterpret_cast<const char*>(u8"##PPT 控件缩放比例"), &PPTUIScale, 0.25f, 3.0f, reinterpret_cast<const char*>(u8"%.5f 倍缩放"));
-							}
-
-							ImGui::EndChild();
+							Font->Scale = 0.82f, PushFontNum++, ImGui::PushFont(Font);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0 / 255.0f, 131 / 255.0f, 245 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+							ImGui::SliderFloat(reinterpret_cast<const char*>(u8"##PPT 控件缩放比例"), &PPTUIScale, 0.25f, 3.0f, reinterpret_cast<const char*>(u8"%.5f 倍缩放"));
 						}
-						break;
-					*/
+
+						ImGui::EndChild();
+					}
+					break;
 
 				case Tab::tab6:
 					//程序调测

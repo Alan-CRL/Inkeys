@@ -172,6 +172,7 @@
     <ClInclude Include="HiEasyX\HiSysGUI\SysStatic.h" />
     <ClInclude Include="HiEasyX\HiWindow.h" />
     <ClInclude Include="IdtConfiguration.h" />
+    <ClInclude Include="IdtD2DPreparation.h" />
     <ClInclude Include="IdtDisplayManagement.h" />
     <ClInclude Include="IdtDrawpad.h" />
     <ClInclude Include="IdtFloating.h" />
@@ -226,6 +227,7 @@
     <ClCompile Include="additional\ink_stroke_modeler\stroke_modeler.cc" />
     <ClCompile Include="additional\ink_stroke_modeler\types.cc" />
     <ClCompile Include="IdtConfiguration.cpp" />
+    <ClCompile Include="IdtD2DPreparation.cpp" />
     <ClCompile Include="IdtDisplayManagement.cpp" />
     <ClCompile Include="IdtDraw.cpp" />
     <ClCompile Include="IdtDraw.h" />
