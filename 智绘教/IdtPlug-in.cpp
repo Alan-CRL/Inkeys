@@ -2183,7 +2183,7 @@ struct
 
 	bool foundHwnd = false;
 	HWND outHwnd = nullptr;
-}WindowSearch[10];
+}WindowSearch[5];
 int WindowSearchSize;
 
 BOOL CALLBACK EnumWindowsCallback(HWND inquiryHwnd, LPARAM lParam)
@@ -2246,63 +2246,22 @@ BOOL CALLBACK EnumWindowsCallback(HWND inquiryHwnd, LPARAM lParam)
 	return TRUE;
 }
 
-// Discover and close the AIClass drawing window and Seewo Easinote 5 drawing window | 发现并关闭 AIClass 绘制窗口和 希沃白板5 绘制窗口
+// 发现 希沃视频展台 窗口
 void BlackBlock()
 {
 	thread_status[L"BlackBlock"] = true;
 
 	{
-		// AiClass
-		WindowSearch[0].hasClassName = true;
-		WindowSearch[0].className = L"UIWndTransparent";
-		WindowSearch[0].hasWindowTitle = true;
-		WindowSearch[0].windowTitle = L"TransparentWindow";
-		WindowSearch[0].hasStyle = true;
-		WindowSearch[0].style = -2080374784;
-	}
-	{
-		// 希沃悬浮窗画板
-		WindowSearch[1].hasClassName = true;
-		WindowSearch[1].className = L"HwndWrapper[EasiNote";
-		WindowSearch[1].hasStyle = true;
-		WindowSearch[1].style = 369623040;
-		WindowSearch[1].hasWidthHeight = true;
-		WindowSearch[1].width = 550;
-		WindowSearch[1].height = 200;
-	}
-	{
 		// 希沃视频展台
-		WindowSearch[2].hasClassName = true;
-		WindowSearch[2].className = L"HwndWrapper[EasiCamera.exe;;";
-		WindowSearch[2].hasWindowTitle = true;
-		WindowSearch[2].windowTitle = L"希沃视频展台";
-		WindowSearch[2].hasStyle = true;
-		WindowSearch[2].style = 386400256;
+		WindowSearch[0].hasClassName = true;
+		WindowSearch[0].className = L"HwndWrapper[EasiCamera.exe;;";
+		WindowSearch[0].hasWindowTitle = true;
+		WindowSearch[0].windowTitle = L"希沃视频展台";
+		WindowSearch[0].hasStyle = true;
+		WindowSearch[0].style = 386400256;
 	}
-	{
-		// 希沃品课（悬浮窗画板和PPT控件）
-		WindowSearch[3].hasClassName = true;
-		WindowSearch[3].className = L"Chrome_WidgetWin_1";
-		WindowSearch[3].hasWindowTitle = true;
-		WindowSearch[3].windowTitle = L"希沃品课——integration";
-		WindowSearch[3].hasStyle = true;
-		WindowSearch[3].style = 335675392;
-	}
-	{
-		// 希沃品课画板
-		WindowSearch[4].hasClassName = true;
-		WindowSearch[4].className = L"HwndWrapper[BoardService;;";
-		WindowSearch[4].hasStyle = true;
-		WindowSearch[4].style = 369623040;
-	}
-	{
-		// 希沃PPT小工具
-		WindowSearch[5].hasClassName = true;
-		WindowSearch[5].className = L"HwndWrapper[PPTService.exe;;";
-		WindowSearch[5].hasStyle = true;
-		WindowSearch[5].style = 369623040;
-	}
-	WindowSearchSize = 6;
+
+	WindowSearchSize = 1;
 
 	while (!off_signal)
 	{
@@ -2310,39 +2269,17 @@ void BlackBlock()
 
 		if (WindowSearch[0].foundHwnd)
 		{
-			PostMessage(WindowSearch[0].outHwnd, WM_CLOSE, 0, 0);
-			WindowSearch[0].foundHwnd = false;
-		}
-		if (WindowSearch[1].foundHwnd)
-		{
-			PostMessage(WindowSearch[1].outHwnd, WM_CLOSE, 0, 0);
-			WindowSearch[1].foundHwnd = false;
-		}
-
-		if (WindowSearch[2].foundHwnd)
-		{
 			SeewoCameraIsOpen = true;
-			WindowSearch[2].foundHwnd = false;
+			WindowSearch[0].foundHwnd = false;
 		}
 		else SeewoCameraIsOpen = false;
 
-		if (WindowSearch[3].foundHwnd)
-		{
-			PostMessage(WindowSearch[3].outHwnd, WM_CLOSE, 0, 0);
-			WindowSearch[3].foundHwnd = false;
-		}
-		if (WindowSearch[4].foundHwnd)
-		{
-			PostMessage(WindowSearch[4].outHwnd, WM_CLOSE, 0, 0);
-			WindowSearch[4].foundHwnd = false;
-		}
-		if (WindowSearch[5].foundHwnd)
-		{
-			PostMessage(WindowSearch[5].outHwnd, WM_CLOSE, 0, 0);
-			WindowSearch[5].foundHwnd = false;
-		}
-
-		for (int i = 1; i <= 5 && !off_signal; i++) Sleep(1000);
+		for (int i = 1; i <= 3 && !off_signal; i++) Sleep(1000);
 	}
 	thread_status[L"BlackBlock"] = false;
 }
+
+// --------------------------------------------------
+// 插件
+
+// DesktopDrawpadBlocker 插件
