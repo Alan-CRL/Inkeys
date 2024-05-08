@@ -146,7 +146,7 @@ void SaveScreenShot(IMAGE img, bool record_pointer_add)
 	}
 	DisplaysNumberLock.unlock();
 
-	wstring date = CurrentDate(), time = CurrentTime();
+	wstring date = CurrentDate(), time = CurrentTime(), stamp = getTimestamp();
 	if (_waccess((string_to_wstring(global_path) + L"ScreenShot").c_str(), 0 == -1)) CreateDirectory((string_to_wstring(global_path) + L"ScreenShot").c_str(), NULL);
 	if (_waccess((string_to_wstring(global_path) + L"ScreenShot\\" + date).c_str(), 0 == -1)) CreateDirectory((string_to_wstring(global_path) + L"ScreenShot\\" + date).c_str(), NULL);
 
@@ -160,12 +160,12 @@ void SaveScreenShot(IMAGE img, bool record_pointer_add)
 	IMAGE blending = MagnificationBackground;
 	lock1.unlock();
 
-	saveImageToPNG(img, wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + time + L".png").c_str(), true, 10);
-	saveImageToPNG(blending, wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + time + L"_background.png").c_str(), false, 10);
+	saveImageToPNG(img, wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + stamp + L".png").c_str(), true, 10);
+	saveImageToPNG(blending, wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png").c_str(), false, 10);
 
 	hiex::TransparentImage(&blending, 0, 0, &img);
-	//saveImageToJPG(blending, wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + time + L"_blending.jpg").c_str(),50);
-	//saveimage((string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + time + L"_blending.jpg").c_str(), &blending);
+	//saveImageToJPG(blending, wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg").c_str(),50);
+	//saveimage((string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg").c_str(), &blending);
 
 	//Í¼ÏñÄ¿Â¼ÊéÐ´
 	if (_waccess((string_to_wstring(global_path) + L"ScreenShot\\attribute_directory.json").c_str(), 4) == 0)
@@ -174,9 +174,9 @@ void SaveScreenShot(IMAGE img, bool record_pointer_add)
 			Json::Value set;
 			set["date"] = Json::Value(convert_to_utf8(wstring_to_string(date)));
 			set["time"] = Json::Value(convert_to_utf8(wstring_to_string(time)));
-			set["drawpad"] = Json::Value(convert_to_utf8(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + time + L".png")));
-			set["background"] = Json::Value(convert_to_utf8(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + time + L"_background.png")));
-			//set["blending"] = Json::Value(convert_to_utf8(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + time + L"_blending.jpg")));
+			set["drawpad"] = Json::Value(convert_to_utf8(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + stamp + L".png")));
+			set["background"] = Json::Value(convert_to_utf8(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png")));
+			//set["blending"] = Json::Value(convert_to_utf8(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg")));
 
 			record_value["Image_Properties"].insert(0, set);
 		}
@@ -196,9 +196,9 @@ void SaveScreenShot(IMAGE img, bool record_pointer_add)
 			Json::Value set;
 			set["date"] = Json::Value(convert_to_utf8(wstring_to_string(date)));
 			set["time"] = Json::Value(convert_to_utf8(wstring_to_string(time)));
-			set["drawpad"] = Json::Value(convert_to_utf8(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + time + L".png")));
-			set["background"] = Json::Value(convert_to_utf8(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + time + L"_background.png")));
-			//set["blending"] = Json::Value(convert_to_utf8(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + time + L"_blending.jpg")));
+			set["drawpad"] = Json::Value(convert_to_utf8(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + stamp + L".png")));
+			set["background"] = Json::Value(convert_to_utf8(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png")));
+			//set["blending"] = Json::Value(convert_to_utf8(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg")));
 
 			record_value["Image_Properties"].append(set);
 		}

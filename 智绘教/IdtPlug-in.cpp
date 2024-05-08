@@ -1578,7 +1578,7 @@ void DrawControlWindow()
 		else Sleep(100);
 	}
 
-	delete[] PptIconImage;
+	for (int i = 0; i < size(PptIconImage); i++) delete PptIconImage[i], PptIconImage[i] = nullptr;
 	DxObjectSafeRelease(&DCRenderTarget);
 
 	thread_status[L"DrawControlWindow"] = false;

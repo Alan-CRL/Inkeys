@@ -5501,8 +5501,23 @@ void MouseInteraction()
 									wstring file_name1 = pathObj.parent_path().filename().wstring();
 									wstring file_name2 = pathObj.stem().wstring();
 
-									std::wistringstream temp_wiss(file_name1 + L" " + file_name2);
-									temp_wiss >> std::get_time(&RecallImageTm, L"%Y-%m-%d %H-%M-%S");
+									// 符合最新的单个时间戳（带有毫秒）格式
+									if (regex_match(file_name2, wregex(L"\\d+")))
+									{
+										chrono::milliseconds ms(_wtoll(file_name2.c_str()));
+										time_t tt = std::chrono::system_clock::to_time_t(chrono::time_point<chrono::system_clock>(ms));
+										RecallImageTm = *std::localtime(&tt);
+									}
+
+									// 符合旧版 时-分-秒 格式
+									else if (regex_match(file_name1 + L" " + file_name2, wregex(L"\\d{4}-\\d{2}-\\d{2} \\d{2}-\\d{2}-\\d{2}")))
+									{
+										std::wistringstream temp_wiss(file_name1 + L" " + file_name2);
+										temp_wiss >> std::get_time(&RecallImageTm, L"%Y-%m-%d %H-%M-%S");
+									}
+
+									// 日期处理失败
+									else RecallImageTm = (tm)(NULL);
 
 									FreezeRecall = 500;
 
@@ -6472,8 +6487,23 @@ void MouseInteraction()
 										wstring file_name1 = pathObj.parent_path().filename().wstring();
 										wstring file_name2 = pathObj.stem().wstring();
 
-										std::wistringstream temp_wiss(file_name1 + L" " + file_name2);
-										temp_wiss >> std::get_time(&RecallImageTm, L"%Y-%m-%d %H-%M-%S");
+										// 符合最新的单个时间戳（带有毫秒）格式
+										if (regex_match(file_name2, wregex(L"\\d+")))
+										{
+											chrono::milliseconds ms(_wtoll(file_name2.c_str()));
+											time_t tt = std::chrono::system_clock::to_time_t(chrono::time_point<chrono::system_clock>(ms));
+											RecallImageTm = *std::localtime(&tt);
+										}
+
+										// 符合旧版 时-分-秒 格式
+										else if (regex_match(file_name1 + L" " + file_name2, wregex(L"\\d{4}-\\d{2}-\\d{2} \\d{2}-\\d{2}-\\d{2}")))
+										{
+											std::wistringstream temp_wiss(file_name1 + L" " + file_name2);
+											temp_wiss >> std::get_time(&RecallImageTm, L"%Y-%m-%d %H-%M-%S");
+										}
+
+										// 日期处理失败
+										else RecallImageTm = (tm)(NULL);
 
 										FreezeRecall = 500;
 
