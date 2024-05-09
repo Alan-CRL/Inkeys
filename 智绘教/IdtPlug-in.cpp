@@ -91,11 +91,11 @@ wstring LinkTest()
 {
 	wstring ret = L"COM库(.dll) 不存在，且发生严重错误，返回值被忽略";
 
-	if (_waccess((string_to_wstring(global_path) + L"PptCOM.dll").c_str(), 4) == 0)
+	if (_waccess((StringToWstring(globalPath) + L"PptCOM.dll").c_str(), 4) == 0)
 	{
 		try
 		{
-			ret = bstr_to_wstring(PptCOMPto->LinkTest());
+			ret = BstrToWstring(PptCOMPto->LinkTest());
 		}
 		catch (_com_error& err)
 		{
@@ -108,7 +108,7 @@ wstring LinkTest()
 
 		if (_wfullpath(absolutePath, L"PptCOM.dll", _MAX_PATH) != NULL)
 		{
-			ret = L"COM库(.dll) 不存在，预期调用目录为：\"" + string_to_wstring(global_path) + L"PptCOM.dll\"";
+			ret = L"COM库(.dll) 不存在，预期调用目录为：\"" + StringToWstring(globalPath) + L"PptCOM.dll\"";
 		}
 		else ret = L"COM库(.dll) 不存在，预期调用目录测算失败";
 	}
@@ -122,7 +122,7 @@ wstring GetPptTitle()
 
 	try
 	{
-		ret = bstr_to_wstring(PptCOMPto->slideNameIndex());
+		ret = BstrToWstring(PptCOMPto->slideNameIndex());
 
 		return ret;
 	}
@@ -215,7 +215,7 @@ int GetTotalPage()
 	{
 		_com_util::CheckError(PptCOMPto.CreateInstance(_uuidof(PptCOMServer)));
 		totalSlides = PptCOMPto->totalSlideIndex();
-		//Testw(bstr_to_wstring(PptCOMPto->totalSlideIndex()));
+		//Testw(BstrToWstring(PptCOMPto->totalSlideIndex()));
 	}
 	catch (_com_error)
 	{
@@ -228,7 +228,7 @@ int GetTotalPage()
 // PPT 状态获取轮询函数
 void GetPptState()
 {
-	thread_status[L"GetPptState"] = true;
+	threadStatus[L"GetPptState"] = true;
 
 	// 初始化
 	{
@@ -244,7 +244,7 @@ void GetPptState()
 		}
 	}
 
-	while (!off_signal)
+	while (!offSignal)
 	{
 		int tmp = -1;
 		try
@@ -257,17 +257,17 @@ void GetPptState()
 
 		if (tmp <= 0)
 		{
-			for (int i = 0; i <= 30 && !off_signal; i++)
+			for (int i = 0; i <= 30 && !offSignal; i++)
 				this_thread::sleep_for(chrono::milliseconds(100));
 		}
 	}
 
-	thread_status[L"GetPptState"] = false;
+	threadStatus[L"GetPptState"] = false;
 }
 
 void DrawControlWindow()
 {
-	thread_status[L"DrawControlWindow"] = true;
+	threadStatus[L"DrawControlWindow"] = true;
 
 	//ppt窗口初始化
 	MainMonitorStruct PPTMainMonitor;
@@ -674,7 +674,7 @@ void DrawControlWindow()
 
 	bool Initialization = false; // 控件初始化完毕
 	clock_t tRecord = clock();
-	for (bool IsShowWindow = false; !off_signal;)
+	for (bool IsShowWindow = false; !offSignal;)
 	{
 		int TotalSlides = PptInfoState.TotalPage;
 		int CurrentSlides = PptInfoState.CurrentPage;
@@ -1566,14 +1566,14 @@ void DrawControlWindow()
 	for (int i = 0; i < size(PptIconImage); i++) delete PptIconImage[i], PptIconImage[i] = nullptr;
 	DxObjectSafeRelease(&DCRenderTarget);
 
-	thread_status[L"DrawControlWindow"] = false;
+	threadStatus[L"DrawControlWindow"] = false;
 }
 void ControlManipulation()
 {
 	ExMessage m;
 	int last_x = -1, last_y = -1;
 
-	while (!off_signal)
+	while (!offSignal)
 	{
 		if (PptInfoStateBuffer.TotalPage != -1)
 		{
@@ -2013,7 +2013,7 @@ void ControlManipulation()
 void KeyboardInteraction()
 {
 	ExMessage m;
-	while (!off_signal)
+	while (!offSignal)
 	{
 		hiex::getmessage_win32(&m, EM_KEY, drawpad_window);
 
@@ -2118,7 +2118,7 @@ void KeyboardInteraction()
 }
 void PPTLinkageMain()
 {
-	thread_status[L"DrawControlWindow"] = true;
+	threadStatus[L"DrawControlWindow"] = true;
 
 	thread GetPptState_thread(GetPptState);
 	GetPptState_thread.detach();
@@ -2130,16 +2130,16 @@ void PPTLinkageMain()
 	thread KeyboardInteractionThread(KeyboardInteraction);
 	KeyboardInteractionThread.detach();
 
-	while (!off_signal) Sleep(500);
+	while (!offSignal) Sleep(500);
 
 	int i = 1;
 	for (; i <= 5; i++)
 	{
-		if (!thread_status[L"GetPptState"] && !thread_status[L"DrawControlWindow"]) break;
+		if (!threadStatus[L"GetPptState"] && !threadStatus[L"DrawControlWindow"]) break;
 		Sleep(500);
 	}
 
-	thread_status[L"DrawControlWindow"] = false;
+	threadStatus[L"DrawControlWindow"] = false;
 }
 
 // EasiCamera linkage | 希沃视频展台联动
@@ -2234,7 +2234,7 @@ BOOL CALLBACK EnumWindowsCallback(HWND inquiryHwnd, LPARAM lParam)
 // 发现 希沃视频展台 窗口
 void BlackBlock()
 {
-	thread_status[L"BlackBlock"] = true;
+	threadStatus[L"BlackBlock"] = true;
 
 	{
 		// 希沃视频展台
@@ -2248,7 +2248,7 @@ void BlackBlock()
 
 	WindowSearchSize = 1;
 
-	while (!off_signal)
+	while (!offSignal)
 	{
 		EnumWindows(EnumWindowsCallback, 0);
 
@@ -2259,9 +2259,9 @@ void BlackBlock()
 		}
 		else SeewoCameraIsOpen = false;
 
-		for (int i = 1; i <= 3 && !off_signal; i++) Sleep(1000);
+		for (int i = 1; i <= 3 && !offSignal; i++) Sleep(1000);
 	}
-	thread_status[L"BlackBlock"] = false;
+	threadStatus[L"BlackBlock"] = false;
 }
 
 // --------------------------------------------------

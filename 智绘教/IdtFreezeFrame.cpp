@@ -25,7 +25,7 @@ void FreezeFrameWindow()
 
 	while (magnificationWindowReady != -1) this_thread::sleep_for(chrono::milliseconds(50));
 
-	thread_status[L"FreezeFrameWindow"] = true;
+	threadStatus[L"FreezeFrameWindow"] = true;
 
 	DisableResizing(freeze_window, true);//禁止窗口拉伸
 	SetWindowLong(freeze_window, GWL_STYLE, GetWindowLong(freeze_window, GWL_STYLE) & ~WS_CAPTION);//隐藏标题栏
@@ -76,7 +76,7 @@ void FreezeFrameWindow()
 	bool show_freeze_window = false;
 
 	RECT fwords_rect;
-	while (!off_signal)
+	while (!offSignal)
 	{
 		Sleep(20);
 
@@ -101,7 +101,7 @@ void FreezeFrameWindow()
 			}
 
 			if (SeewoCameraIsOpen) wait = 480;
-			while (!off_signal)
+			while (!offSignal)
 			{
 				if (FreezeFrame.mode != 1 || ppt_show != NULL) break;
 
@@ -214,7 +214,7 @@ void FreezeFrameWindow()
 
 			clock_t tRecord = clock();
 			int for_i = -10;
-			for (for_i = -10; for_i <= 60 && FreezePPT && !off_signal; for_i++)
+			for (for_i = -10; for_i <= 60 && FreezePPT && !offSignal; for_i++)
 			{
 				SetImageColor(freeze_background, RGBA(0, 0, 0, 140), true);
 				hiex::TransparentImage(&freeze_background, GetSystemMetrics(SM_CXSCREEN) / 2 - 500, GetSystemMetrics(SM_CYSCREEN) / 2 - 163, &SettingSign[3]);
@@ -252,7 +252,7 @@ void FreezeFrameWindow()
 		}
 		if (FreezeFrame.mode != 1 && FreezeRecall)
 		{
-			while (!off_signal)
+			while (!offSignal)
 			{
 				SetImageColor(freeze_background, RGBA(0, 0, 0, 0), true);
 
@@ -293,5 +293,5 @@ void FreezeFrameWindow()
 			}
 		}
 	}
-	thread_status[L"FreezeFrameWindow"] = false;
+	threadStatus[L"FreezeFrameWindow"] = false;
 }

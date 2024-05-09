@@ -149,7 +149,7 @@ void MagnifierThread()
 	IDTLogger->info("[放大API线程][SetupMagnifier] 更新放大API窗口完成");
 
 	IDTLogger->info("[放大API线程][MagnifierThread] 等待穿透窗口创建");
-	while (!off_signal)
+	while (!offSignal)
 	{
 		if (magnificationWindowReady >= 4)
 		{
@@ -191,10 +191,10 @@ void MagnifierThread()
 	IDTLogger->info("[放大API线程][MagnifierThread] 等待穿透窗口创建完成");
 
 	RequestUpdateMagWindow = true;
-	while (!off_signal)
+	while (!offSignal)
 	{
-		while (!RequestUpdateMagWindow && !off_signal) Sleep(100);
-		if (off_signal) break;
+		while (!RequestUpdateMagWindow && !offSignal) Sleep(100);
+		if (offSignal) break;
 
 		{
 			IDTLogger->info("[放大API线程][MagnifierThread] 更新API图像");

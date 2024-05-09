@@ -50,16 +50,16 @@ Json::Value record_value;
 //载入记录
 void LoadDrawpad()
 {
-	if (_waccess((string_to_wstring(global_path) + L"ScreenShot\\attribute_directory.json").c_str(), 4) == 0)
+	if (_waccess((StringToWstring(globalPath) + L"ScreenShot\\attribute_directory.json").c_str(), 4) == 0)
 	{
 		Json::Reader reader;
 
 		ifstream readjson;
 		readjson.imbue(locale("zh_CN.UTF8"));
-		readjson.open(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\attribute_directory.json").c_str());
+		readjson.open(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\attribute_directory.json").c_str());
 
 		deque<wstring> authenticated_file;
-		authenticated_file.push_back(string_to_wstring(global_path) + L"ScreenShot\\attribute_directory.json");
+		authenticated_file.push_back(StringToWstring(globalPath) + L"ScreenShot\\attribute_directory.json");
 		if (reader.parse(readjson, record_value))
 		{
 			readjson.close();
@@ -68,41 +68,41 @@ void LoadDrawpad()
 			{
 				deque<wstring> date = getPrevTwoDays(CurrentDate(), 5);
 
-				auto it = find(date.begin(), date.end(), string_to_wstring(record_value["Image_Properties"][i]["date"].asString()));
+				auto it = find(date.begin(), date.end(), StringToWstring(record_value["Image_Properties"][i]["date"].asString()));
 				if (it == date.end())
 				{
-					remove(convert_to_gbk(record_value["Image_Properties"][i]["drawpad"].asString()).c_str());
-					remove(convert_to_gbk(record_value["Image_Properties"][i]["background"].asString()).c_str());
-					remove(convert_to_gbk(record_value["Image_Properties"][i]["blending"].asString()).c_str());
+					remove(ConvertToGbk(record_value["Image_Properties"][i]["drawpad"].asString()).c_str());
+					remove(ConvertToGbk(record_value["Image_Properties"][i]["background"].asString()).c_str());
+					remove(ConvertToGbk(record_value["Image_Properties"][i]["blending"].asString()).c_str());
 
 					record_value["Image_Properties"].removeIndex(i, nullptr);
 					i--;
 				}
-				else if (_waccess(string_to_wstring(convert_to_gbk(record_value["Image_Properties"][i]["drawpad"].asString())).c_str(), 0) == -1)
+				else if (_waccess(StringToWstring(ConvertToGbk(record_value["Image_Properties"][i]["drawpad"].asString())).c_str(), 0) == -1)
 				{
-					remove(convert_to_gbk(record_value["Image_Properties"][i]["drawpad"].asString()).c_str());
-					remove(convert_to_gbk(record_value["Image_Properties"][i]["background"].asString()).c_str());
-					remove(convert_to_gbk(record_value["Image_Properties"][i]["blending"].asString()).c_str());
+					remove(ConvertToGbk(record_value["Image_Properties"][i]["drawpad"].asString()).c_str());
+					remove(ConvertToGbk(record_value["Image_Properties"][i]["background"].asString()).c_str());
+					remove(ConvertToGbk(record_value["Image_Properties"][i]["blending"].asString()).c_str());
 
 					record_value["Image_Properties"].removeIndex(i, nullptr);
 					i--;
 				}
 				else
 				{
-					authenticated_file.push_back(string_to_wstring(convert_to_gbk(record_value["Image_Properties"][i]["drawpad"].asString())));
-					authenticated_file.push_back(string_to_wstring(convert_to_gbk(record_value["Image_Properties"][i]["background"].asString())));
-					authenticated_file.push_back(string_to_wstring(convert_to_gbk(record_value["Image_Properties"][i]["blending"].asString())));
+					authenticated_file.push_back(StringToWstring(ConvertToGbk(record_value["Image_Properties"][i]["drawpad"].asString())));
+					authenticated_file.push_back(StringToWstring(ConvertToGbk(record_value["Image_Properties"][i]["background"].asString())));
+					authenticated_file.push_back(StringToWstring(ConvertToGbk(record_value["Image_Properties"][i]["blending"].asString())));
 				}
 			}
-			removeUnknownFiles(string_to_wstring(global_path) + L"ScreenShot", authenticated_file);
-			removeEmptyFolders(string_to_wstring(global_path) + L"ScreenShot");
+			removeUnknownFiles(StringToWstring(globalPath) + L"ScreenShot", authenticated_file);
+			removeEmptyFolders(StringToWstring(globalPath) + L"ScreenShot");
 
 			Json::StreamWriterBuilder OutjsonBuilder;
 			OutjsonBuilder.settings_["emitUTF8"] = true;
 			std::unique_ptr<Json::StreamWriter> writer(OutjsonBuilder.newStreamWriter());
 			ofstream writejson;
 			writejson.imbue(locale("zh_CN.UTF8"));
-			writejson.open(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\attribute_directory.json").c_str());
+			writejson.open(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\attribute_directory.json").c_str());
 			writer->write(record_value, &writejson);
 			writejson.close();
 		}
@@ -111,13 +111,13 @@ void LoadDrawpad()
 	else
 	{
 		//创建路径
-		filesystem::create_directory(string_to_wstring(global_path) + L"ScreenShot");
+		filesystem::create_directory(StringToWstring(globalPath) + L"ScreenShot");
 
 		deque<wstring> authenticated_file;
-		authenticated_file.push_back(string_to_wstring(global_path) + L"ScreenShot\\attribute_directory.json");
+		authenticated_file.push_back(StringToWstring(globalPath) + L"ScreenShot\\attribute_directory.json");
 
-		removeUnknownFiles(string_to_wstring(global_path) + L"ScreenShot", authenticated_file);
-		removeEmptyFolders(string_to_wstring(global_path) + L"ScreenShot");
+		removeUnknownFiles(StringToWstring(globalPath) + L"ScreenShot", authenticated_file);
+		removeEmptyFolders(StringToWstring(globalPath) + L"ScreenShot");
 
 		record_value["Image_Properties"].append(Json::Value("nullptr"));
 		record_value["Image_Properties"].removeIndex(0, nullptr);
@@ -127,7 +127,7 @@ void LoadDrawpad()
 		std::unique_ptr<Json::StreamWriter> writer(OutjsonBuilder.newStreamWriter());
 		ofstream writejson;
 		writejson.imbue(locale("zh_CN.UTF8"));
-		writejson.open(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\attribute_directory.json").c_str());
+		writejson.open(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\attribute_directory.json").c_str());
 		writer->write(record_value, &writejson);
 		writejson.close();
 	}
@@ -147,8 +147,8 @@ void SaveScreenShot(IMAGE img, bool record_pointer_add)
 	DisplaysNumberLock.unlock();
 
 	wstring date = CurrentDate(), time = CurrentTime(), stamp = getTimestamp();
-	if (_waccess((string_to_wstring(global_path) + L"ScreenShot").c_str(), 0 == -1)) CreateDirectory((string_to_wstring(global_path) + L"ScreenShot").c_str(), NULL);
-	if (_waccess((string_to_wstring(global_path) + L"ScreenShot\\" + date).c_str(), 0 == -1)) CreateDirectory((string_to_wstring(global_path) + L"ScreenShot\\" + date).c_str(), NULL);
+	if (_waccess((StringToWstring(globalPath) + L"ScreenShot").c_str(), 0 == -1)) CreateDirectory((StringToWstring(globalPath) + L"ScreenShot").c_str(), NULL);
+	if (_waccess((StringToWstring(globalPath) + L"ScreenShot\\" + date).c_str(), 0 == -1)) CreateDirectory((StringToWstring(globalPath) + L"ScreenShot\\" + date).c_str(), NULL);
 
 	if (FreezeFrame.mode != 1)
 	{
@@ -160,23 +160,23 @@ void SaveScreenShot(IMAGE img, bool record_pointer_add)
 	IMAGE blending = MagnificationBackground;
 	lock1.unlock();
 
-	saveImageToPNG(img, wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + stamp + L".png").c_str(), true, 10);
-	saveImageToPNG(blending, wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png").c_str(), false, 10);
+	saveImageToPNG(img, WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L".png").c_str(), true, 10);
+	saveImageToPNG(blending, WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png").c_str(), false, 10);
 
 	hiex::TransparentImage(&blending, 0, 0, &img);
-	//saveImageToJPG(blending, wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg").c_str(),50);
-	//saveimage((string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg").c_str(), &blending);
+	//saveImageToJPG(blending, WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg").c_str(),50);
+	//saveimage((StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg").c_str(), &blending);
 
 	//图像目录书写
-	if (_waccess((string_to_wstring(global_path) + L"ScreenShot\\attribute_directory.json").c_str(), 4) == 0)
+	if (_waccess((StringToWstring(globalPath) + L"ScreenShot\\attribute_directory.json").c_str(), 4) == 0)
 	{
 		{
 			Json::Value set;
-			set["date"] = Json::Value(convert_to_utf8(wstring_to_string(date)));
-			set["time"] = Json::Value(convert_to_utf8(wstring_to_string(time)));
-			set["drawpad"] = Json::Value(convert_to_utf8(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + stamp + L".png")));
-			set["background"] = Json::Value(convert_to_utf8(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png")));
-			//set["blending"] = Json::Value(convert_to_utf8(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg")));
+			set["date"] = Json::Value(ConvertToUtf8(WstringToString(date)));
+			set["time"] = Json::Value(ConvertToUtf8(WstringToString(time)));
+			set["drawpad"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L".png")));
+			set["background"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png")));
+			//set["blending"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg")));
 
 			record_value["Image_Properties"].insert(0, set);
 		}
@@ -186,7 +186,7 @@ void SaveScreenShot(IMAGE img, bool record_pointer_add)
 		std::unique_ptr<Json::StreamWriter> writer(OutjsonBuilder.newStreamWriter());
 		ofstream writejson;
 		writejson.imbue(locale("zh_CN.UTF8"));
-		writejson.open(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\attribute_directory.json").c_str());
+		writejson.open(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\attribute_directory.json").c_str());
 		writer->write(record_value, &writejson);
 		writejson.close();
 	}
@@ -194,11 +194,11 @@ void SaveScreenShot(IMAGE img, bool record_pointer_add)
 	{
 		{
 			Json::Value set;
-			set["date"] = Json::Value(convert_to_utf8(wstring_to_string(date)));
-			set["time"] = Json::Value(convert_to_utf8(wstring_to_string(time)));
-			set["drawpad"] = Json::Value(convert_to_utf8(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + stamp + L".png")));
-			set["background"] = Json::Value(convert_to_utf8(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png")));
-			//set["blending"] = Json::Value(convert_to_utf8(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg")));
+			set["date"] = Json::Value(ConvertToUtf8(WstringToString(date)));
+			set["time"] = Json::Value(ConvertToUtf8(WstringToString(time)));
+			set["drawpad"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L".png")));
+			set["background"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png")));
+			//set["blending"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg")));
 
 			record_value["Image_Properties"].append(set);
 		}
@@ -208,7 +208,7 @@ void SaveScreenShot(IMAGE img, bool record_pointer_add)
 		std::unique_ptr<Json::StreamWriter> writer(OutjsonBuilder.newStreamWriter());
 		ofstream writejson;
 		writejson.imbue(locale("zh_CN.UTF8"));
-		writejson.open(wstring_to_string(string_to_wstring(global_path) + L"ScreenShot\\attribute_directory.json").c_str());
+		writejson.open(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\attribute_directory.json").c_str());
 		writer->write(record_value, &writejson);
 		writejson.close();
 	}

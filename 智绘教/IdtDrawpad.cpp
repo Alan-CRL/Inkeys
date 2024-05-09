@@ -266,7 +266,7 @@ void DrawpadInstallHook()
 	if (DrawpadHookCall == NULL) return;
 
 	MSG msg;
-	while (!off_signal && GetMessage(&msg, NULL, 0, 0))
+	while (!offSignal && GetMessage(&msg, NULL, 0, 0))
 	{
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
@@ -911,7 +911,7 @@ void MultiFingerDrawing(LONG pid, POINT pt)
 }
 void DrawpadDrawing()
 {
-	thread_status[L"DrawpadDrawing"] = true;
+	threadStatus[L"DrawpadDrawing"] = true;
 
 	// 设置BLENDFUNCTION结构体
 	BLENDFUNCTION blend;
@@ -1033,7 +1033,7 @@ void DrawpadDrawing()
 
 					if (saveImage)
 					{
-						if (off_signal) SaveScreenShot(RecallImage.back().img, true);
+						if (offSignal) SaveScreenShot(RecallImage.back().img, true);
 						else
 						{
 							thread SaveScreenShot_thread(SaveScreenShot, RecallImage.back().img, true);
@@ -1070,7 +1070,7 @@ void DrawpadDrawing()
 					LockStrokeBackImageSm.unlock();
 				}
 
-				if (off_signal) goto DrawpadDrawingEnd;
+				if (offSignal) goto DrawpadDrawingEnd;
 
 				if (RecallImage.size() >= 1 && PptInfoStateBuffer.TotalPage != -1)
 				{
@@ -1094,7 +1094,7 @@ void DrawpadDrawing()
 					if (PptInfoStateBuffer.CurrentPage != PptInfoState.CurrentPage) PptInfoStateBuffer.CurrentPage = PptInfoState.CurrentPage, ppt_switch_count++;
 					PptInfoStateBuffer.TotalPage = PptInfoState.TotalPage;
 
-					if (off_signal) goto DrawpadDrawingEnd;
+					if (offSignal) goto DrawpadDrawingEnd;
 				}
 
 				{
@@ -1240,7 +1240,7 @@ void DrawpadDrawing()
 
 					Sleep(50);
 
-					if (off_signal) goto DrawpadDrawingEnd;
+					if (offSignal) goto DrawpadDrawingEnd;
 					if (penetrate.select == true) continue;
 					break;
 				}
@@ -1257,7 +1257,7 @@ void DrawpadDrawing()
 			lock1.unlock();
 			if (start) break;
 
-			if (off_signal)
+			if (offSignal)
 			{
 				if (!choose.select) goto ChooseEnd;
 				goto DrawpadDrawingEnd;
@@ -1581,18 +1581,18 @@ void DrawpadDrawing()
 
 				ofstream writejson;
 				writejson.imbue(locale("zh_CN.UTF8"));
-				writejson.open(wstring_to_string(string_to_wstring(global_path) + L"bug fix 240408.01.log").c_str());
+				writejson.open(WstringToString(StringToWstring(globalPath) + L"bug fix 240408.01.log").c_str());
 
 				writejson << "UpdateLayeredWindowIndirect Error" << GetLastError() << endl;
 				for (int i = 0; i < (int)sswindows.size(); i++)
 				{
-					writejson << to_string(i) << " " + wstring_to_string(sswindows[i]) << endl;
+					writejson << to_string(i) << " " + WstringToString(sswindows[i]) << endl;
 				}
 
 				writejson.close();
 			}
 
-			off_signal = 2;
+			offSignal = 2;
 
 			break;
 		}
@@ -1601,12 +1601,12 @@ void DrawpadDrawing()
 	}
 
 DrawpadDrawingEnd:
-	thread_status[L"DrawpadDrawing"] = false;
+	threadStatus[L"DrawpadDrawing"] = false;
 	return;
 }
 int drawpad_main()
 {
-	thread_status[L"drawpad_main"] = true;
+	threadStatus[L"drawpad_main"] = true;
 
 	//画笔初始化
 	{
@@ -1670,7 +1670,7 @@ int drawpad_main()
 		//启动绘图库程序
 		hiex::Gdiplus_Try_Starup();
 
-		while (!off_signal)
+		while (!offSignal)
 		{
 			if (choose.select == true || penetrate.select == true)
 			{
@@ -1730,9 +1730,9 @@ int drawpad_main()
 	int i = 1;
 	for (; i <= 10; i++)
 	{
-		if (!thread_status[L"DrawpadDrawing"]) break;
+		if (!threadStatus[L"DrawpadDrawing"]) break;
 		Sleep(500);
 	}
-	thread_status[L"drawpad_main"] = false;
+	threadStatus[L"drawpad_main"] = false;
 	return 0;
 }

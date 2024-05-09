@@ -213,7 +213,7 @@ void FloatingInstallHook()
 	if (FloatingHookCall == NULL) return;
 
 	MSG msg;
-	while (!off_signal && GetMessage(&msg, NULL, 0, 0))
+	while (!offSignal && GetMessage(&msg, NULL, 0, 0))
 	{
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
@@ -228,7 +228,7 @@ void DrawScreen()
 {
 	Bitmap* bskin3;
 
-	thread_status[L"DrawScreen"] = true;
+	threadStatus[L"DrawScreen"] = true;
 	//初始化
 	{
 		//模式配置初始化
@@ -973,7 +973,7 @@ void DrawScreen()
 		}
 		//插件加载
 		{
-			if (_waccess((string_to_wstring(global_path) + L"plug-in\\随机点名\\随机点名.exe").c_str(), 4) == 0) plug_in_RandomRollCall.select = 1;
+			if (_waccess((StringToWstring(globalPath) + L"plug-in\\随机点名\\随机点名.exe").c_str(), 4) == 0) plug_in_RandomRollCall.select = 1;
 		}
 	}
 
@@ -1017,7 +1017,7 @@ void DrawScreen()
 
 	//LOG(INFO) << "成功初始化悬浮窗窗口绘制模块";
 	clock_t tRecord = clock();
-	for (int for_num = 1; !off_signal; for_num = 2)
+	for (int for_num = 1; !offSignal; for_num = 2)
 	{
 		//UI计算部分
 		{
@@ -5319,11 +5319,11 @@ void DrawScreen()
 	}
 
 	ShowWindow(floating_window, SW_HIDE);
-	thread_status[L"DrawScreen"] = false;
+	threadStatus[L"DrawScreen"] = false;
 }
 void MouseInteraction()
 {
-	thread_status[L"MouseInteraction"] = true;
+	threadStatus[L"MouseInteraction"] = true;
 
 	int brush_connect = -1;
 
@@ -5331,7 +5331,7 @@ void MouseInteraction()
 	int lx, ly;
 
 	std::chrono::high_resolution_clock::time_point MouseInteractionManipulated;
-	while (!off_signal)
+	while (!offSignal)
 	{
 		hiex::getmessage_win32(&m, EM_MOUSE, floating_window);
 
@@ -5371,7 +5371,7 @@ void MouseInteraction()
 
 					if (m.rbutton)
 					{
-						if (MessageBox(floating_window, L"是否关闭 智绘教 ？", L"智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) off_signal = true;
+						if (MessageBox(floating_window, L"是否关闭 智绘教 ？", L"智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) offSignal = true;
 					}
 				}
 
@@ -5494,10 +5494,10 @@ void MouseInteraction()
 										reference_record_pointer = 1;
 										break;
 									}
-									//Testw(string_to_wstring(convert_to_gbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString())).c_str());
-									if (_access(convert_to_gbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString()).c_str(), 4) == -1) break;
+									//Testw(StringToWstring(ConvertToGbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString())).c_str());
+									if (_access(ConvertToGbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString()).c_str(), 4) == -1) break;
 
-									filesystem::path pathObj(convert_to_gbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString()));
+									filesystem::path pathObj(ConvertToGbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString()));
 									wstring file_name1 = pathObj.parent_path().filename().wstring();
 									wstring file_name2 = pathObj.stem().wstring();
 
@@ -5527,7 +5527,7 @@ void MouseInteraction()
 									if (start) break;
 
 									IMAGE temp;
-									loadimage(&temp, string_to_wstring(convert_to_gbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString())).c_str(), drawpad.getwidth(), drawpad.getheight(), true);
+									loadimage(&temp, StringToWstring(ConvertToGbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString())).c_str(), drawpad.getwidth(), drawpad.getheight(), true);
 									drawpad = temp, extreme_point = map<pair<int, int>, bool>();
 
 									current_record_pointer++;
@@ -5621,7 +5621,7 @@ void MouseInteraction()
 
 					if (m.rbutton)
 					{
-						if (MessageBox(floating_window, L"是否关闭 智绘教 ？", L"智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) off_signal = true;
+						if (MessageBox(floating_window, L"是否关闭 智绘教 ？", L"智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) offSignal = true;
 					}
 				}
 
@@ -6480,10 +6480,10 @@ void MouseInteraction()
 											reference_record_pointer = 1;
 											break;
 										}
-										//Testw(string_to_wstring(convert_to_gbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString())).c_str());
-										if (_access(convert_to_gbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString()).c_str(), 4) == -1) break;
+										//Testw(StringToWstring(ConvertToGbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString())).c_str());
+										if (_access(ConvertToGbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString()).c_str(), 4) == -1) break;
 
-										filesystem::path pathObj(convert_to_gbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString()));
+										filesystem::path pathObj(ConvertToGbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString()));
 										wstring file_name1 = pathObj.parent_path().filename().wstring();
 										wstring file_name2 = pathObj.stem().wstring();
 
@@ -6513,7 +6513,7 @@ void MouseInteraction()
 										if (start) break;
 
 										IMAGE temp;
-										loadimage(&temp, string_to_wstring(convert_to_gbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString())).c_str(), drawpad.getwidth(), drawpad.getheight(), true);
+										loadimage(&temp, StringToWstring(ConvertToGbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString())).c_str(), drawpad.getwidth(), drawpad.getheight(), true);
 										drawpad = temp, extreme_point = map<pair<int, int>, bool>();
 
 										current_record_pointer++;
@@ -6618,12 +6618,12 @@ void MouseInteraction()
 								{
 									if (!m.lbutton)
 									{
-										if (_waccess((string_to_wstring(global_path) + L"plug-in\\随机点名\\随机点名.exe").c_str(), 0) == 0 && !isProcessRunning((string_to_wstring(global_path) + L"plug-in\\随机点名\\随机点名.exe").c_str()))
+										if (_waccess((StringToWstring(globalPath) + L"plug-in\\随机点名\\随机点名.exe").c_str(), 0) == 0 && !isProcessRunning((StringToWstring(globalPath) + L"plug-in\\随机点名\\随机点名.exe").c_str()))
 										{
 											STARTUPINFOA si = { 0 };
 											si.cb = sizeof(si);
 											PROCESS_INFORMATION pi = { 0 };
-											CreateProcessA(NULL, (global_path + "plug-in\\随机点名\\随机点名.exe").data(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
+											CreateProcessA(NULL, (globalPath + "plug-in\\随机点名\\随机点名.exe").data(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
 											CloseHandle(pi.hProcess);
 											CloseHandle(pi.hThread);
 										}
@@ -6649,12 +6649,12 @@ void MouseInteraction()
 		else hiex::flushmessage_win32(EM_MOUSE, floating_window);
 	}
 
-	thread_status[L"MouseInteraction"] = false;
+	threadStatus[L"MouseInteraction"] = false;
 }
 
 int floating_main()
 {
-	thread_status[L"floating_main"] = true;
+	threadStatus[L"floating_main"] = true;
 	GetLocalTime(&sys_time);
 
 	thread FloatingInstallHookThread(FloatingInstallHook);
@@ -6677,11 +6677,11 @@ int floating_main()
 #ifdef IDT_RELEASE
 	/*
 	//注册icu
-	if (_waccess((string_to_wstring(global_path) + L"icudt73.dll").c_str(), 0) == -1 || _waccess((string_to_wstring(global_path) + L"icuin73.dll").c_str(), 0) == -1 || _waccess((string_to_wstring(global_path) + L"icuuc73.dll").c_str(), 0) == -1)
+	if (_waccess((StringToWstring(globalPath) + L"icudt73.dll").c_str(), 0) == -1 || _waccess((StringToWstring(globalPath) + L"icuin73.dll").c_str(), 0) == -1 || _waccess((StringToWstring(globalPath) + L"icuuc73.dll").c_str(), 0) == -1)
 	{
-		ExtractResource((string_to_wstring(global_path) + L"icudt73.dll").c_str(), L"DLL", MAKEINTRESOURCE(207));
-		ExtractResource((string_to_wstring(global_path) + L"icuin73.dll").c_str(), L"DLL", MAKEINTRESOURCE(208));
-		ExtractResource((string_to_wstring(global_path) + L"icuuc73.dll").c_str(), L"DLL", MAKEINTRESOURCE(209));
+		ExtractResource((StringToWstring(globalPath) + L"icudt73.dll").c_str(), L"DLL", MAKEINTRESOURCE(207));
+		ExtractResource((StringToWstring(globalPath) + L"icuin73.dll").c_str(), L"DLL", MAKEINTRESOURCE(208));
+		ExtractResource((StringToWstring(globalPath) + L"icuuc73.dll").c_str(), L"DLL", MAKEINTRESOURCE(209));
 	}
 	*/
 
@@ -6701,15 +6701,15 @@ int floating_main()
 	thread MouseInteractionThread(MouseInteraction);
 	MouseInteractionThread.detach();
 
-	while (!off_signal) Sleep(500);
+	while (!offSignal) Sleep(500);
 
 	int i = 1;
 	for (; i <= 10; i++)
 	{
-		if (!thread_status[L"CrashedHandler"] && !thread_status[L"PPTLinkageMain"]/*&& !thread_status[L"GetPptState"] && !thread_status[L"ControlManipulation"] */ && !thread_status[L"GetTime"] && !thread_status[L"DrawScreen"] && !thread_status[L"api_read_pipe"] && !thread_status[L"BlackBlock"]) break;
+		if (!threadStatus[L"CrashedHandler"] && !threadStatus[L"PPTLinkageMain"]/*&& !threadStatus[L"GetPptState"] && !threadStatus[L"ControlManipulation"] */ && !threadStatus[L"GetTime"] && !threadStatus[L"DrawScreen"] && !threadStatus[L"api_read_pipe"] && !threadStatus[L"BlackBlock"]) break;
 		Sleep(500);
 	}
 
-	thread_status[L"floating_main"] = false;
+	threadStatus[L"floating_main"] = false;
 	return 0;
 }

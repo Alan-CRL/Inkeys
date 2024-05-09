@@ -73,7 +73,7 @@ void SettingSeekBar()
 int SettingMain()
 {
 	while (!already) this_thread::sleep_for(chrono::milliseconds(50));
-	thread_status[L"SettingMain"] = true;
+	threadStatus[L"SettingMain"] = true;
 
 	// 初始化部分
 	{
@@ -197,13 +197,13 @@ int SettingMain()
 	}
 
 	bool ShowWindow = false;
-	while (!off_signal)
+	while (!offSignal)
 	{
 		::ShowWindow(setting_window, SW_HIDE);
 		ShowWindow = false;
 
-		while (!test.select && !off_signal) Sleep(100);
-		if (off_signal) break;
+		while (!test.select && !offSignal) Sleep(100);
+		if (offSignal) break;
 
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
@@ -216,17 +216,17 @@ int SettingMain()
 		ImGui_ImplWin32_Init(setting_window);
 		ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 
-		if (_waccess((string_to_wstring(global_path) + L"ttf\\hmossscr.ttf").c_str(), 0) == -1)
+		if (_waccess((StringToWstring(globalPath) + L"ttf\\hmossscr.ttf").c_str(), 0) == -1)
 		{
-			if (_waccess((string_to_wstring(global_path) + L"ttf").c_str(), 0) == -1)
+			if (_waccess((StringToWstring(globalPath) + L"ttf").c_str(), 0) == -1)
 			{
 				error_code ec;
-				filesystem::create_directory(string_to_wstring(global_path) + L"ttf", ec);
+				filesystem::create_directory(StringToWstring(globalPath) + L"ttf", ec);
 			}
-			ExtractResource((string_to_wstring(global_path) + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
+			ExtractResource((StringToWstring(globalPath) + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
 		}
 
-		ImFont* Font = io.Fonts->AddFontFromFileTTF(convert_to_utf8(global_path + "ttf\\hmossscr.ttf").c_str(), 28.0f, nullptr, io.Fonts->GetGlyphRangesChineseFull());
+		ImFont* Font = io.Fonts->AddFontFromFileTTF(ConvertToUtf8(globalPath + "ttf\\hmossscr.ttf").c_str(), 28.0f, nullptr, io.Fonts->GetGlyphRangesChineseFull());
 
 		ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 		ImGuiStyle& style = ImGui::GetStyle();
@@ -260,12 +260,18 @@ int SettingMain()
 		bool IntelligentDrawing = setlist.IntelligentDrawing, SmoothWriting = setlist.SmoothWriting;
 		int SetSkinMode = setlist.SetSkinMode;
 
+		// 插件参数
+
+		bool DdbEnable = ddbSetList.DdbEnable;
+		bool DdbEnhance = ddbSetList.DdbEnhance;
+
+		// ==========
+
 		wstring ppt_LinkTest = LinkTest();
-		wstring ppt_IsPptDependencyLoaded = L"组件应该没问题(状态显示存在问题，后面再修复)";// = IsPptDependencyLoaded(); //TODO 问题所在
 		wstring receivedData;
 		POINT pt;
 
-		while (!off_signal)
+		while (!offSignal)
 		{
 			MSG msg;
 			while (::PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE))
@@ -306,6 +312,12 @@ int SettingMain()
 					tab6,
 					tab7,
 					tab8
+				};
+				static int TabPlugInIdx = 0;
+				enum TabPlugIn
+				{
+					tabPlug1,
+					tabPlug2
 				};
 
 				ImGui::SetNextWindowPos({ 0,0 });//设置窗口位置
@@ -353,7 +365,7 @@ int SettingMain()
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab4 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 					if (Tab == Tab::tab4) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 					if (Tab == Tab::tab4) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-					if (ImGui::Button(reinterpret_cast<const char*>(u8"快捷键"), { 100.0f,40.0f }))
+					if (ImGui::Button(reinterpret_cast<const char*>(u8"插件"), { 100.0f,40.0f }))
 					{
 						Tab = Tab::tab4;
 					}
@@ -364,7 +376,7 @@ int SettingMain()
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab5 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 					if (Tab == Tab::tab5) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 					if (Tab == Tab::tab5) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-					if (ImGui::Button(reinterpret_cast<const char*>(u8"实验室"), { 100.0f,40.0f }))
+					if (ImGui::Button(reinterpret_cast<const char*>(u8"快捷键"), { 100.0f,40.0f }))
 					{
 						Tab = Tab::tab5;
 					}
@@ -375,13 +387,24 @@ int SettingMain()
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab6 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 					if (Tab == Tab::tab6) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 					if (Tab == Tab::tab6) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-					if (ImGui::Button(reinterpret_cast<const char*>(u8"程序调测"), { 100.0f,40.0f }))
+					if (ImGui::Button(reinterpret_cast<const char*>(u8"实验室"), { 100.0f,40.0f }))
 					{
-						Tab = Tab::tab6;
+						//Tab = Tab::tab6;
 					}
 					ImGui::PopStyleColor(PushStyleColorNum);
 
 					ImGui::SetCursorPos({ 10.0f,344.0f });
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab7 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab7 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+					if (Tab == Tab::tab7) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+					if (Tab == Tab::tab7) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+					if (ImGui::Button(reinterpret_cast<const char*>(u8"程序调测"), { 100.0f,40.0f }))
+					{
+						Tab = Tab::tab7;
+					}
+					ImGui::PopStyleColor(PushStyleColorNum);
+
+					ImGui::SetCursorPos({ 10.0f,394.0f });
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab8 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab8 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 					if (Tab == Tab::tab8) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
@@ -402,7 +425,7 @@ int SettingMain()
 					if (ImGui::Button(reinterpret_cast<const char*>(u8"重启程序"), { 100.0f,30.0f }))
 					{
 						test.select = false;
-						off_signal = 2;
+						offSignal = 2;
 					}
 					ImGui::PopStyleColor(PushStyleColorNum);
 
@@ -414,7 +437,7 @@ int SettingMain()
 					if (ImGui::Button(reinterpret_cast<const char*>(u8"关闭程序"), { 100.0f,30.0f }))
 					{
 						test.select = false;
-						off_signal = true;
+						offSignal = true;
 					}
 					ImGui::PopStyleColor(PushStyleColorNum);
 				}
@@ -447,17 +470,17 @@ int SettingMain()
 							{
 								flag = false;
 
-								float text_width = ImGui::CalcTextSize(convert_to_utf8(wstring_to_string(line + ch)).c_str()).x;
+								float text_width = ImGui::CalcTextSize(ConvertToUtf8(WstringToString(line + ch)).c_str()).x;
 								if (text_width > (right_x - left_x))
 								{
-									lines.emplace_back(convert_to_utf8(wstring_to_string(line)));
+									lines.emplace_back(ConvertToUtf8(WstringToString(line)));
 									line = L"", flag = true;
 								}
 
 								line += ch;
 							}
 
-							if (!flag) lines.emplace_back(convert_to_utf8(wstring_to_string(line)));
+							if (!flag) lines.emplace_back(ConvertToUtf8(WstringToString(line)));
 						}
 
 						for (const auto& temp : lines)
@@ -495,17 +518,17 @@ int SettingMain()
 							{
 								flag = false;
 
-								float text_width = ImGui::CalcTextSize(convert_to_utf8(wstring_to_string(line + ch)).c_str()).x;
+								float text_width = ImGui::CalcTextSize(ConvertToUtf8(WstringToString(line + ch)).c_str()).x;
 								if (text_width > (right_x - left_x))
 								{
-									lines.emplace_back(convert_to_utf8(wstring_to_string(line)));
+									lines.emplace_back(ConvertToUtf8(WstringToString(line)));
 									line = L"", flag = true;
 								}
 
 								line += ch;
 							}
 
-							if (!flag) lines.emplace_back(convert_to_utf8(wstring_to_string(line)));
+							if (!flag) lines.emplace_back(ConvertToUtf8(WstringToString(line)));
 						}
 
 						for (const auto& temp : lines)
@@ -538,17 +561,17 @@ int SettingMain()
 							{
 								flag = false;
 
-								float text_width = ImGui::CalcTextSize(convert_to_utf8(wstring_to_string(line + ch)).c_str()).x;
+								float text_width = ImGui::CalcTextSize(ConvertToUtf8(WstringToString(line + ch)).c_str()).x;
 								if (text_width > (right_x - left_x))
 								{
-									lines.emplace_back(convert_to_utf8(wstring_to_string(line)));
+									lines.emplace_back(ConvertToUtf8(WstringToString(line)));
 									line = L"", flag = true;
 								}
 
 								line += ch;
 							}
 
-							if (!flag) lines.emplace_back(convert_to_utf8(wstring_to_string(line)));
+							if (!flag) lines.emplace_back(ConvertToUtf8(WstringToString(line)));
 						}
 
 						for (const auto& temp : lines)
@@ -593,7 +616,7 @@ int SettingMain()
 							{
 								string temp, helptemp;
 								if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Succe") temp = reinterpret_cast<const char*>(u8"查询状态成功"), helptemp = reinterpret_cast<const char*>(u8"可以调整开机启动设置");
-								else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Error") temp = reinterpret_cast<const char*>(u8"查询状态错误 ") + wstring_to_string(receivedData), helptemp = reinterpret_cast<const char*>(u8"再次点击查询尝试，或重启程序以管理员身份运行");
+								else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Error") temp = reinterpret_cast<const char*>(u8"查询状态错误 ") + WstringToString(receivedData), helptemp = reinterpret_cast<const char*>(u8"再次点击查询尝试，或重启程序以管理员身份运行");
 								else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"TimeO") temp = reinterpret_cast<const char*>(u8"查询状态超时"), helptemp = reinterpret_cast<const char*>(u8"再次点击查询尝试\n同时超时时间将从 5 秒调整为 15 秒"), QueryWaitingTime = 15;
 								else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Renew") temp = reinterpret_cast<const char*>(u8"需要重新查询状态"), helptemp = reinterpret_cast<const char*>(u8"调整开机自动启动设置时超时，请再次点击查询\n同时超时时间将从 5 秒调整为 15 秒"), QueryWaitingTime = 15;
 								else temp = reinterpret_cast<const char*>(u8"未知错误"), helptemp = reinterpret_cast<const char*>(u8"再次点击查询尝试，或重启程序以管理员身份运行");
@@ -618,41 +641,41 @@ int SettingMain()
 								{
 									// 检查本地文件完整性
 									{
-										if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1)
+										if (_waccess((StringToWstring(globalPath) + L"api").c_str(), 0) == -1)
 										{
 											error_code ec;
-											filesystem::create_directory(string_to_wstring(global_path) + L"api", ec);
+											filesystem::create_directory(StringToWstring(globalPath) + L"api", ec);
 										}
 
 										string StartupItemSettingsMd5 = "abaadf527bc925a85507a8361d2d9d44";
 										string StartupItemSettingsSHA256 = "57df0ed39d797fd286deb583d81450bb8838b98ce92741e91c9a01d9a4ac3b81";
 
-										if (_waccess((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), 0) == -1)
-											ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+										if (_waccess((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), 0) == -1)
+											ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 										else
 										{
 											string hash_md5, hash_sha256;
 											{
 												hashwrapper* myWrapper = new md5wrapper();
-												hash_md5 = myWrapper->getHashFromFile(global_path + "api\\智绘教StartupItemSettings.exe");
+												hash_md5 = myWrapper->getHashFromFile(globalPath + "api\\智绘教StartupItemSettings.exe");
 												delete myWrapper;
 											}
 											{
 												hashwrapper* myWrapper = new sha256wrapper();
-												hash_sha256 = myWrapper->getHashFromFile(global_path + "api\\智绘教StartupItemSettings.exe");
+												hash_sha256 = myWrapper->getHashFromFile(globalPath + "api\\智绘教StartupItemSettings.exe");
 												delete myWrapper;
 											}
 
 											if (hash_md5 != StartupItemSettingsMd5 || hash_sha256 != StartupItemSettingsSHA256)
-												ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+												ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 										}
 									}
 
-									ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"query" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
+									ShellExecute(NULL, L"runas", (StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"query" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
 								}
-								//if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1) filesystem::create_directory(string_to_wstring(global_path) + L"api");
-								//ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
-								//ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"query" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
+								//if (_waccess((StringToWstring(globalPath) + L"api").c_str(), 0) == -1) filesystem::create_directory(StringToWstring(globalPath) + L"api");
+								//ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+								//ShellExecute(NULL, L"runas", (StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"query" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
 
 								DWORD dwBytesRead;
 								WCHAR buffer[4096];
@@ -719,41 +742,41 @@ int SettingMain()
 									{
 										// 检查本地文件完整性
 										{
-											if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1)
+											if (_waccess((StringToWstring(globalPath) + L"api").c_str(), 0) == -1)
 											{
 												error_code ec;
-												filesystem::create_directory(string_to_wstring(global_path) + L"api", ec);
+												filesystem::create_directory(StringToWstring(globalPath) + L"api", ec);
 											}
 
 											string StartupItemSettingsMd5 = "abaadf527bc925a85507a8361d2d9d44";
 											string StartupItemSettingsSHA256 = "57df0ed39d797fd286deb583d81450bb8838b98ce92741e91c9a01d9a4ac3b81";
 
-											if (_waccess((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), 0) == -1)
-												ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+											if (_waccess((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), 0) == -1)
+												ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 											else
 											{
 												string hash_md5, hash_sha256;
 												{
 													hashwrapper* myWrapper = new md5wrapper();
-													hash_md5 = myWrapper->getHashFromFile(global_path + "api\\智绘教StartupItemSettings.exe");
+													hash_md5 = myWrapper->getHashFromFile(globalPath + "api\\智绘教StartupItemSettings.exe");
 													delete myWrapper;
 												}
 												{
 													hashwrapper* myWrapper = new sha256wrapper();
-													hash_sha256 = myWrapper->getHashFromFile(global_path + "api\\智绘教StartupItemSettings.exe");
+													hash_sha256 = myWrapper->getHashFromFile(globalPath + "api\\智绘教StartupItemSettings.exe");
 													delete myWrapper;
 												}
 
 												if (hash_md5 != StartupItemSettingsMd5 || hash_sha256 != StartupItemSettingsSHA256)
-													ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+													ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 											}
 										}
 
-										if (StartUp) ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"set" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
-										else ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"delete" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
+										if (StartUp) ShellExecute(NULL, L"runas", (StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"set" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
+										else ShellExecute(NULL, L"runas", (StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"delete" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
 									}
-									//if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1) filesystem::create_directory(string_to_wstring(global_path) + L"api");
-									//ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+									//if (_waccess((StringToWstring(globalPath) + L"api").c_str(), 0) == -1) filesystem::create_directory(StringToWstring(globalPath) + L"api");
+									//ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 
 									DWORD dwBytesRead;
 									WCHAR buffer[4096];
@@ -1007,6 +1030,303 @@ int SettingMain()
 					break;
 
 				case Tab::tab4:
+					// 插件
+					ImGui::BeginChild(reinterpret_cast<const char*>(u8"插件"), { 770.0f,616.0f }, true);
+
+					ImGui::SetCursorPosY(20.0f);
+
+					// 侧栏按钮
+					{
+						ImGui::SetCursorPos({ 10.0f,10.0f });
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, TabPlugInIdx == TabPlugIn::tabPlug1 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, TabPlugInIdx == TabPlugIn::tabPlug1 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+						if (TabPlugInIdx == TabPlugIn::tabPlug1) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+						if (TabPlugInIdx == TabPlugIn::tabPlug1) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+						if (ImGui::Button(reinterpret_cast<const char*>(u8"插件商店"), { 150.0f,40.0f }))
+						{
+							TabPlugInIdx = TabPlugIn::tabPlug1;
+						}
+						ImGui::PopStyleColor(PushStyleColorNum);
+
+						if (ddbSetList.DdbEnable)
+						{
+							ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 6.0f });
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, TabPlugInIdx == TabPlugIn::tabPlug2 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, TabPlugInIdx == TabPlugIn::tabPlug2 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+							if (TabPlugInIdx == TabPlugIn::tabPlug2) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+							if (TabPlugInIdx == TabPlugIn::tabPlug2) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+							if (ImGui::Button(reinterpret_cast<const char*>(u8"画板浮窗拦截"), { 150.0f,40.0f }))
+							{
+								TabPlugInIdx = TabPlugIn::tabPlug2;
+							}
+							ImGui::PopStyleColor(PushStyleColorNum);
+						}
+					}
+
+					ImGui::SetCursorPos({ 170.0f,10.0f });
+					switch (TabPlugInIdx)
+					{
+					case TabPlugIn::tabPlug1:
+						// 插件商店
+						ImGui::BeginChild(reinterpret_cast<const char*>(u8"插件商店"), { 590.0f,596.0f }, true);
+
+						// 画板浮窗拦截插件
+						{
+							ImGui::SetCursorPos({ 20.0f,10.0f });
+							ImGui::BeginChild(reinterpret_cast<const char*>(u8"画板浮窗拦截插件"), { 550.0f,120.0f }, true);
+
+							{
+								ImGui::SetCursorPos({ 120.0f,10.0f });
+
+								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								CenteredText(reinterpret_cast<const char*>(u8"画板浮窗拦截插件"), 4.0f);
+
+								Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(50 / 255.0f, 50 / 255.0f, 50 / 255.0f, 1.0f));
+								ImGui::SameLine(); CenteredText(reinterpret_cast<const char*>(WstringToString(ddbSetList.DdbEdition).c_str()), 8.0f);
+
+								ImGui::NewLine(); ImGui::SetCursorPosX(120.0f);
+								CenteredText(reinterpret_cast<const char*>(u8"剔除桌面上 希沃白板桌面悬浮窗 等\n杂乱无章的桌面画板悬浮窗，支持拦截各类\n桌面画板悬浮窗，以及 PPT 小工具等操控栏。"), 10.0f);
+
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+								ImGui::SameLine(); ImGui::SetCursorPos({ 550.0f - 70.0f,10.0f });
+								ImGui::Toggle(reinterpret_cast<const char*>(u8"##画板浮窗拦截插件"), &DdbEnable, config);
+
+								if (ddbSetList.DdbEnable != DdbEnable)
+								{
+									ddbSetList.DdbEnable = DdbEnable;
+
+									if (ddbSetList.DdbEnable)
+									{
+										ddbSetList.hostPath = GetCurrentExePath();
+										if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), 0) == -1)
+										{
+											if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB").c_str(), 0) == -1)
+											{
+												error_code ec;
+												filesystem::create_directories(StringToWstring(globalPath) + L"PlugIn\\DDB", ec);
+											}
+											ExtractResource((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
+										}
+										else
+										{
+											string hash_sha256;
+											{
+												hashwrapper* myWrapper = new sha256wrapper();
+												hash_sha256 = myWrapper->getHashFromFile(globalPath + "PlugIn\\DDB\\DesktopDrawpadBlocker.exe");
+												delete myWrapper;
+											}
+
+											if (hash_sha256 != ddbSetList.DdbSHA256)
+												ExtractResource((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
+										}
+
+										// 启动 DDB
+										if (!isProcessRunning((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str()))
+										{
+											DdbWriteSetting(true, false);
+											ShellExecute(NULL, L"runas", (StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+										}
+
+										ddbSetList.DdbEnable = true;
+										WriteSetting();
+									}
+									else
+									{
+										DdbWriteSetting(true, true);
+
+										ddbSetList.DdbEnable = false;
+										WriteSetting();
+									}
+								}
+
+								ImGui::PopStyleColor(PushStyleColorNum);
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+
+							ImGui::EndChild();
+						}
+
+						ImGui::EndChild();
+						break;
+
+					case TabPlugIn::tabPlug2:
+						// 画板浮窗拦截
+						ImGui::BeginChild(reinterpret_cast<const char*>(u8"画板浮窗拦截"), { 590.0f,596.0f }, true);
+
+						{
+							ImGui::SetCursorPosY(10.0f);
+
+							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+							CenteredText(reinterpret_cast<const char*>(u8" 增强模式"), 4.0f);
+
+							Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
+							ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"启用增强模式后，画板浮窗拦截程序将开机自动启动，并与智绘教独立运行，互不干扰。\n同时在智绘教关闭状态下，当插件拦截到其他软件的悬浮窗，则会重启智绘教。"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+							ImGui::SameLine(); ImGui::SetCursorPosX(590.0f - 70.0f);
+							ImGui::Toggle(reinterpret_cast<const char*>(u8"##智能绘图"), &DdbEnhance, config);
+
+							if (ddbSetList.DdbEnhance != DdbEnhance)
+							{
+								ddbSetList.DdbEnhance = DdbEnhance;
+								WriteSetting();
+
+								if (ddbSetList.DdbEnhance)
+								{
+									ddbSetList.mode = 0;
+									ddbSetList.restartHost = true;
+									DdbWriteSetting(true, false);
+
+									// 创建开机自启标识
+									std::ofstream file((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str());
+									file.close();
+
+									// 设置开机自启
+									{
+										// 检查本地文件完整性
+										{
+											if (_waccess((StringToWstring(globalPath) + L"api").c_str(), 0) == -1)
+											{
+												error_code ec;
+												filesystem::create_directory(StringToWstring(globalPath) + L"api", ec);
+											}
+
+											string StartupItemSettingsMd5 = "abaadf527bc925a85507a8361d2d9d44";
+											string StartupItemSettingsSHA256 = "57df0ed39d797fd286deb583d81450bb8838b98ce92741e91c9a01d9a4ac3b81";
+
+											if (_waccess((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), 0) == -1)
+												ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+											else
+											{
+												string hash_md5, hash_sha256;
+												{
+													hashwrapper* myWrapper = new md5wrapper();
+													hash_md5 = myWrapper->getHashFromFile(globalPath + "api\\智绘教StartupItemSettings.exe");
+													delete myWrapper;
+												}
+												{
+													hashwrapper* myWrapper = new sha256wrapper();
+													hash_sha256 = myWrapper->getHashFromFile(globalPath + "api\\智绘教StartupItemSettings.exe");
+													delete myWrapper;
+												}
+
+												if (hash_md5 != StartupItemSettingsMd5 || hash_sha256 != StartupItemSettingsSHA256)
+													ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+											}
+										}
+
+										ShellExecute(NULL, L"runas", (StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"set0\" /\"" + StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe\" /\"IdtDesktopDrawpadBlockerStartUp\"").c_str(), NULL, SW_SHOWNORMAL);
+									}
+
+									DWORD dwBytesRead;
+									WCHAR buffer[4096];
+									HANDLE hPipe = INVALID_HANDLE_VALUE;
+									wstring treceivedData;
+
+									int for_i;
+									for (for_i = 0; for_i <= QueryWaitingTime * 10; for_i++)
+									{
+										if (WaitNamedPipe(TEXT("\\\\.\\pipe\\IDTPipe1"), 100)) break;
+										else Sleep(100);
+									}
+
+									if (for_i <= QueryWaitingTime * 10)
+									{
+										hPipe = CreateFile(TEXT("\\\\.\\pipe\\IDTPipe1"), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+										ReadFile(hPipe, buffer, sizeof(buffer), &dwBytesRead, NULL);
+									}
+								}
+								else
+								{
+									ddbSetList.mode = 1;
+									ddbSetList.restartHost = true;
+									DdbWriteSetting(true, false);
+
+									// 移除开机自启标识
+									if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == 0)
+									{
+										error_code ec;
+										filesystem::remove(StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal", ec);
+									}
+
+									// 移除开机自启
+									{
+										// 检查本地文件完整性
+										{
+											if (_waccess((StringToWstring(globalPath) + L"api").c_str(), 0) == -1)
+											{
+												error_code ec;
+												filesystem::create_directory(StringToWstring(globalPath) + L"api", ec);
+											}
+
+											string StartupItemSettingsMd5 = "abaadf527bc925a85507a8361d2d9d44";
+											string StartupItemSettingsSHA256 = "57df0ed39d797fd286deb583d81450bb8838b98ce92741e91c9a01d9a4ac3b81";
+
+											if (_waccess((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), 0) == -1)
+												ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+											else
+											{
+												string hash_md5, hash_sha256;
+												{
+													hashwrapper* myWrapper = new md5wrapper();
+													hash_md5 = myWrapper->getHashFromFile(globalPath + "api\\智绘教StartupItemSettings.exe");
+													delete myWrapper;
+												}
+												{
+													hashwrapper* myWrapper = new sha256wrapper();
+													hash_sha256 = myWrapper->getHashFromFile(globalPath + "api\\智绘教StartupItemSettings.exe");
+													delete myWrapper;
+												}
+
+												if (hash_md5 != StartupItemSettingsMd5 || hash_sha256 != StartupItemSettingsSHA256)
+													ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+											}
+										}
+
+										ShellExecute(NULL, L"runas", (StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"delete0\" /\"" + StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe\" /\"IdtDesktopDrawpadBlockerStartUp\"").c_str(), NULL, SW_SHOWNORMAL);
+									}
+
+									DWORD dwBytesRead;
+									WCHAR buffer[4096];
+									HANDLE hPipe = INVALID_HANDLE_VALUE;
+									wstring treceivedData;
+
+									int for_i;
+									for (for_i = 0; for_i <= QueryWaitingTime * 10; for_i++)
+									{
+										if (WaitNamedPipe(TEXT("\\\\.\\pipe\\IDTPipe1"), 100)) break;
+										else Sleep(100);
+									}
+
+									if (for_i <= QueryWaitingTime * 10)
+									{
+										hPipe = CreateFile(TEXT("\\\\.\\pipe\\IDTPipe1"), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+										ReadFile(hPipe, buffer, sizeof(buffer), &dwBytesRead, NULL);
+									}
+								}
+							}
+							ImGui::PopStyleColor(PushStyleColorNum);
+						}
+
+						ImGui::EndChild();
+						break;
+					}
+
+					ImGui::EndChild();
+					break;
+
+				case Tab::tab5:
 					// 快捷键
 					ImGui::BeginChild(reinterpret_cast<const char*>(u8"快捷键"), { 770.0f,616.0f }, true);
 
@@ -1029,17 +1349,17 @@ int SettingMain()
 							{
 								flag = false;
 
-								float text_width = ImGui::CalcTextSize(convert_to_utf8(wstring_to_string(line + ch)).c_str()).x;
+								float text_width = ImGui::CalcTextSize(ConvertToUtf8(WstringToString(line + ch)).c_str()).x;
 								if (text_width > (right_x - left_x))
 								{
-									lines.emplace_back(convert_to_utf8(wstring_to_string(line)));
+									lines.emplace_back(ConvertToUtf8(WstringToString(line)));
 									line = L"", flag = true;
 								}
 
 								line += ch;
 							}
 
-							if (!flag) lines.emplace_back(convert_to_utf8(wstring_to_string(line)));
+							if (!flag) lines.emplace_back(ConvertToUtf8(WstringToString(line)));
 						}
 
 						for (const auto& temp : lines)
@@ -1056,7 +1376,7 @@ int SettingMain()
 					ImGui::EndChild();
 					break;
 
-				case Tab::tab5:
+				case Tab::tab6:
 					// 实验室
 					ImGui::BeginChild(reinterpret_cast<const char*>(u8"实验室"), { 770.0f,616.0f }, true);
 
@@ -1093,7 +1413,7 @@ int SettingMain()
 					ImGui::EndChild();
 					break;
 
-				case Tab::tab6:
+				case Tab::tab7:
 					// 程序调测
 					ImGui::BeginChild(reinterpret_cast<const char*>(u8"程序调测"), { 770.0f,616.0f }, true);
 
@@ -1150,10 +1470,8 @@ int SettingMain()
 							text += L"\n撤回库 current_record_pointer：" + to_wstring(current_record_pointer);
 							text += L"\n\n首次绘制状态：", text += (FirstDraw == true) ? L"是" : L"否";
 
-							text += L"\n\nCOM二进制接口 联动组件 状态：\n";
+							text += L"\n\nPPT COM接口 联动组件 状态：\n";
 							text += ppt_LinkTest;
-							text += L"\nPPT 联动组件状态：";
-							text += ppt_IsPptDependencyLoaded;
 
 							text += L"\n\nPPT 状态：";
 							text += PptInfoState.TotalPage != -1 ? L"正在播放" : L"未播放";
@@ -1178,17 +1496,17 @@ int SettingMain()
 							{
 								flag = false;
 
-								float text_width = ImGui::CalcTextSize(convert_to_utf8(wstring_to_string(line + ch)).c_str()).x;
+								float text_width = ImGui::CalcTextSize(ConvertToUtf8(WstringToString(line + ch)).c_str()).x;
 								if (text_width > (right_x - left_x))
 								{
-									lines.emplace_back(convert_to_utf8(wstring_to_string(line)));
+									lines.emplace_back(ConvertToUtf8(WstringToString(line)));
 									line = L"", flag = true;
 								}
 
 								line += ch;
 							}
 
-							if (!flag) lines.emplace_back(convert_to_utf8(wstring_to_string(line)));
+							if (!flag) lines.emplace_back(ConvertToUtf8(WstringToString(line)));
 						}
 
 						for (const auto& temp : lines)
@@ -1269,16 +1587,16 @@ int SettingMain()
 								WriteSetting();
 							}
 							else if (setlist.UpdateChannel != UpdateChannel) UpdateChannel = setlist.UpdateChannel;
-							}
+						}
 
 						ImGui::EndChild();
-						}
+					}
 					{
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f);
 						wstring text;
 						{
-							text = L"程序版本代号 " + string_to_wstring(edition_code);
-							text += L"\n程序发布版本 " + string_to_wstring(edition_date) + L"(" + string_to_wstring(edition_channel) + L")";
+							text = L"程序版本代号 " + StringToWstring(editionCode);
+							text += L"\n程序发布版本 " + StringToWstring(editionDate) + L"(" + StringToWstring(editionChannel) + L")";
 							text += L"\n程序构建时间 " + buildTime;
 
 #ifdef IDT_RELEASE
@@ -1287,8 +1605,8 @@ int SettingMain()
 							text += L"\n程序构建模式 IDT_DEBUG（非发布调测版本）";
 #endif
 
-							if (userid == L"Error") text += L"\n用户ID无法正确识别";
-							else text += L"\n用户ID " + userid;
+							if (userId == L"Error") text += L"\n用户ID无法正确识别";
+							else text += L"\n用户ID " + userId;
 
 							text += L"\n\n在此版本中，您的所有数据都将在本地进行处理";
 						}
@@ -1308,17 +1626,17 @@ int SettingMain()
 							{
 								flag = false;
 
-								float text_width = ImGui::CalcTextSize(convert_to_utf8(wstring_to_string(line + ch)).c_str()).x;
+								float text_width = ImGui::CalcTextSize(ConvertToUtf8(WstringToString(line + ch)).c_str()).x;
 								if (text_width > (right_x - left_x))
 								{
-									lines.emplace_back(convert_to_utf8(wstring_to_string(line)));
+									lines.emplace_back(ConvertToUtf8(WstringToString(line)));
 									line = L"", flag = true;
 								}
 
 								line += ch;
 							}
 
-							if (!flag) lines.emplace_back(convert_to_utf8(wstring_to_string(line)));
+							if (!flag) lines.emplace_back(ConvertToUtf8(WstringToString(line)));
 						}
 
 						for (const auto& temp : lines)
@@ -1333,7 +1651,7 @@ int SettingMain()
 
 					ImGui::EndChild();
 					break;
-					}
+				}
 
 				{
 					ImGui::SetCursorPos({ 120.0f,44.0f + 616.0f + 5.0f });
@@ -1415,10 +1733,10 @@ int SettingMain()
 					}
 					else if (AutomaticUpdateStep == 10)
 					{
-						ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(convert_to_utf8("程序已经是最新版本（" + setlist.UpdateChannel + "通道）").c_str()).x , 44.0f + 616.0f + 5.0f });
+						ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(ConvertToUtf8("程序已经是最新版本（" + setlist.UpdateChannel + "通道）").c_str()).x , 44.0f + 616.0f + 5.0f });
 						Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(98 / 255.0f, 175 / 255.0f, 82 / 255.0f, 1.0f));
-						CenteredText(reinterpret_cast<const char*>(convert_to_utf8("程序已经是最新版本（" + setlist.UpdateChannel + "通道）").c_str()), 4.0f);
+						CenteredText(reinterpret_cast<const char*>(ConvertToUtf8("程序已经是最新版本（" + setlist.UpdateChannel + "通道）").c_str()), 4.0f);
 					}
 
 					ImGui::PopStyleColor(PushStyleColorNum);
@@ -1428,7 +1746,7 @@ int SettingMain()
 
 				ImGui::PopStyleColor(PushStyleColorNum);
 				while (PushFontNum) PushFontNum--, ImGui::PopFont();
-				}
+			}
 
 			// 渲染
 			ImGui::Render();
@@ -1447,7 +1765,7 @@ int SettingMain()
 				::SetForegroundWindow(setting_window);
 				ShowWindow = true;
 			}
-			}
+		}
 
 		//::ShowWindow(setting_window, SW_HIDE);
 
@@ -1456,20 +1774,20 @@ int SettingMain()
 		ImGui_ImplDX11_Shutdown();
 		ImGui_ImplWin32_Shutdown();
 		ImGui::DestroyContext();
-		}
-
-	thread_status[L"SettingMain"] = false;
-	return 0;
 	}
+
+	threadStatus[L"SettingMain"] = false;
+	return 0;
+}
 
 void FirstSetting(bool info)
 {
 	if (info && MessageBox(floating_window, L"欢迎使用智绘教~\n本向导还在建设中，目前较为简陋，请谅解\n\n是否尝试设置智绘教开机自动启动？", L"智绘教首次使用向导alpha", MB_YESNO | MB_SYSTEMMODAL) == 6)
 	{
-		if (_waccess((string_to_wstring(global_path) + L"api").c_str(), 0) == -1) filesystem::create_directory(string_to_wstring(global_path) + L"api");
-		ExtractResource((string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+		if (_waccess((StringToWstring(globalPath) + L"api").c_str(), 0) == -1) filesystem::create_directory(StringToWstring(globalPath) + L"api");
+		ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 
-		ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"set\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
+		ShellExecute(NULL, L"runas", (StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"set\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
 
 		DWORD dwBytesRead;
 		WCHAR buffer[4096];
@@ -1492,11 +1810,11 @@ void FirstSetting(bool info)
 		CloseHandle(hPipe);
 	}
 
-	if (_waccess((string_to_wstring(global_path) + L"opt").c_str(), 0) == -1) filesystem::create_directory(string_to_wstring(global_path) + L"opt");
+	if (_waccess((StringToWstring(globalPath) + L"opt").c_str(), 0) == -1) filesystem::create_directory(StringToWstring(globalPath) + L"opt");
 	Json::StyledWriter outjson;
 	Json::Value root;
 
-	root["edition"] = Json::Value(edition_date);
+	root["edition"] = Json::Value(editionDate);
 	root["CreateLnk"] = Json::Value(false);
 	root["BrushRecover"] = Json::Value(true);
 	root["RubberRecover"] = Json::Value(false);
@@ -1506,9 +1824,12 @@ void FirstSetting(bool info)
 	root["SetSkinMode"] = Json::Value(0);
 	root["UpdateChannel"] = Json::Value("LTS");
 
+	root["PlugIn"]["DdbEnable"] = Json::Value(true);
+	root["PlugIn"]["DdbEnhance"] = Json::Value(false);
+
 	ofstream writejson;
 	writejson.imbue(locale("zh_CN.UTF8"));
-	writejson.open(wstring_to_string(string_to_wstring(global_path) + L"opt\\deploy.json").c_str());
+	writejson.open(WstringToString(StringToWstring(globalPath) + L"opt\\deploy.json").c_str());
 	writejson << outjson.write(root);
 	writejson.close();
 }
@@ -1519,7 +1840,7 @@ bool ReadSetting(bool first)
 
 	ifstream readjson;
 	readjson.imbue(locale("zh_CN.UTF8"));
-	readjson.open(wstring_to_string(string_to_wstring(global_path) + L"opt\\deploy.json").c_str());
+	readjson.open(WstringToString(StringToWstring(globalPath) + L"opt\\deploy.json").c_str());
 
 	if (reader.parse(readjson, root))
 	{
@@ -1531,6 +1852,12 @@ bool ReadSetting(bool first)
 		if (root.isMember("SmoothWriting")) setlist.SmoothWriting = root["SmoothWriting"].asBool();
 		if (root.isMember("SetSkinMode")) setlist.SetSkinMode = root["SetSkinMode"].asInt();
 		if (root.isMember("UpdateChannel")) setlist.UpdateChannel = root["UpdateChannel"].asString();
+
+		if (root.isMember("PlugIn"))
+		{
+			if (root["PlugIn"].isMember("DdbEnable")) ddbSetList.DdbEnable = root["PlugIn"]["DdbEnable"].asBool();
+			if (root["PlugIn"].isMember("DdbEnhance")) ddbSetList.DdbEnhance = root["PlugIn"]["DdbEnhance"].asBool();
+		}
 
 		//预处理
 		if (first)
@@ -1549,7 +1876,7 @@ bool WriteSetting()
 	Json::StyledWriter outjson;
 	Json::Value root;
 
-	root["edition"] = Json::Value(edition_date);
+	root["edition"] = Json::Value(editionDate);
 	root["CreateLnk"] = Json::Value(setlist.CreateLnk);
 	root["BrushRecover"] = Json::Value(setlist.BrushRecover);
 	root["RubberRecover"] = Json::Value(setlist.RubberRecover);
@@ -1559,9 +1886,12 @@ bool WriteSetting()
 	root["SetSkinMode"] = Json::Value(setlist.SetSkinMode);
 	root["UpdateChannel"] = Json::Value(setlist.UpdateChannel);
 
+	root["PlugIn"]["DdbEnable"] = Json::Value(ddbSetList.DdbEnable);
+	root["PlugIn"]["DdbEnhance"] = Json::Value(ddbSetList.DdbEnhance);
+
 	ofstream writejson;
 	writejson.imbue(locale("zh_CN.UTF8"));
-	writejson.open(wstring_to_string(string_to_wstring(global_path) + L"opt\\deploy.json").c_str());
+	writejson.open(WstringToString(StringToWstring(globalPath) + L"opt\\deploy.json").c_str());
 	writejson << outjson.write(root);
 	writejson.close();
 

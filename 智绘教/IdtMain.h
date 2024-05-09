@@ -17,7 +17,7 @@
 
 #pragma once
 
-// #define IDT_RELEASE
+#define IDT_RELEASE
 // #pragma comment( linker, "/subsystem:windows /entry:mainCRTStartup" )
 
 // 智绘教最低兼容 Windows 7 sp0（当前为 sp1）
@@ -97,18 +97,15 @@ using namespace Gdiplus;
 extern bool already;
 
 extern wstring buildTime; //构建时间
-extern string edition_date; //程序发布日期
-extern string edition_channel;
-extern string edition_code; //程序版本
+extern string editionDate; //程序发布日期
+extern string editionChannel;
+extern string editionCode; //程序版本
 
-extern wstring userid; //用户ID（主板序列号）
-extern string global_path; //程序当前路径
+extern wstring userId; //用户ID（主板序列号）
+extern string globalPath; //程序当前路径
 
-extern double server_updata_error, procedure_updata_error;
-extern wstring server_updata_error_reason;
-
-extern int off_signal, off_signal_ready; //关闭指令
-extern map <wstring, bool> thread_status; //线程状态管理
+extern int offSignal, offSignalReady; //关闭指令
+extern map <wstring, bool> threadStatus; //线程状态管理
 
 extern shared_ptr<spdlog::logger> IDTLogger;
 

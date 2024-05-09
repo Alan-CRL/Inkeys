@@ -91,9 +91,10 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <CompileAsManaged>
       </CompileAsManaged>
+      <GenerateSourceDependencies>true</GenerateSourceDependencies>
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -304,6 +305,7 @@
     <ClCompile Include="zip_utils\zip.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ResourceCompile Include="src\icon.rc" />
     <ResourceCompile Include="智绘教.rc" />
   </ItemGroup>
   <ItemGroup>
@@ -357,6 +359,7 @@
     </Font>
   </ItemGroup>
   <ItemGroup>
+    <None Include="exe\DesktopDrawpadBlocker.exe" />
     <None Include="exe\智绘教CrashedHandler.exe" />
     <None Include="exe\智绘教CrashedHandlerClose.exe" />
     <None Include="exe\智绘教StartupItemSettings.exe" />
