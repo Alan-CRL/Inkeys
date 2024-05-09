@@ -43,6 +43,7 @@
 
 #import "PptCOM.tlb" // C# Class Library PptCOM Project Library (PptCOM. cs) | C# 类库 PptCOM 项目库 (PptCOM. cs)
 using namespace PptCOM;
+IPptCOMServerPtr PptCOMPto;
 
 shared_mutex PPTManipulatedSm;
 chrono::high_resolution_clock::time_point PPTManipulated;
@@ -92,11 +93,9 @@ wstring LinkTest()
 
 	if (_waccess((string_to_wstring(global_path) + L"PptCOM.dll").c_str(), 4) == 0)
 	{
-		IPptCOMServerPtr pto;
 		try
 		{
-			_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
-			ret = bstr_to_wstring(pto->LinkTest());
+			ret = bstr_to_wstring(PptCOMPto->LinkTest());
 		}
 		catch (_com_error& err)
 		{
@@ -116,19 +115,19 @@ wstring LinkTest()
 
 	return ret;
 }
-wstring IsPptDependencyLoaded()
-{
-	wstring ret = L"PPT 联动组件异常，且发生严重错误，返回值被忽略";
 
-	IPptCOMServerPtr pto;
+wstring GetPptTitle()
+{
+	wstring ret = L"";
+
 	try
 	{
-		_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
-		ret = L"COM接口正常，C#类库反馈信息：" + bstr_to_wstring(pto->IsPptDependencyLoaded());
+		ret = bstr_to_wstring(PptCOMPto->slideNameIndex());
+
+		return ret;
 	}
-	catch (_com_error& err)
+	catch (_com_error)
 	{
-		ret = L"COM接口异常：" + wstring(err.ErrorMessage());
 	}
 
 	return ret;
@@ -137,12 +136,9 @@ HWND GetPptShow()
 {
 	HWND hWnd = NULL;
 
-	IPptCOMServerPtr pto;
 	try
 	{
-		_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
-
-		_variant_t result = pto->GetPptHwnd();
+		_variant_t result = PptCOMPto->GetPptHwnd();
 		hWnd = (HWND)result.llVal;
 
 		return hWnd;
@@ -153,31 +149,34 @@ HWND GetPptShow()
 
 	return NULL;
 }
-wstring GetPptTitle()
-{
-	wstring ret = L"";
 
-	IPptCOMServerPtr pto;
+int NextPptSlides(int check)
+{
 	try
 	{
-		_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
-		ret = bstr_to_wstring(pto->slideNameIndex());
-
-		return ret;
+		return PptCOMPto->NextSlideShow(check);
 	}
 	catch (_com_error)
 	{
 	}
-
-	return ret;
+	return -1;
+}
+int PreviousPptSlides()
+{
+	try
+	{
+		return PptCOMPto->PreviousSlideShow();
+	}
+	catch (_com_error)
+	{
+	}
+	return -1;
 }
 bool EndPptShow()
 {
-	IPptCOMServerPtr pto;
 	try
 	{
-		_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
-		pto->EndSlideShow();
+		PptCOMPto->EndSlideShow();
 
 		return true;
 	}
@@ -188,43 +187,17 @@ bool EndPptShow()
 	return false;
 }
 
-int NextPptSlides(int check)
-{
-	IPptCOMServerPtr pto;
-	try
-	{
-		_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
-		return pto->NextSlideShow(check);
-	}
-	catch (_com_error)
-	{
-	}
-	return -1;
-}
-int PreviousPptSlides()
-{
-	IPptCOMServerPtr pto;
-	try
-	{
-		_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
-		return pto->PreviousSlideShow();
-	}
-	catch (_com_error)
-	{
-	}
-	return -1;
-}
-
+/*
 // 获取 PPT 当前页编号
 int GetCurrentPage()
 {
 	int currentSlides = -1;
 
-	IPptCOMServerPtr pto;
+	IPptCOMServerPtr PptCOMPto;
 	try
 	{
-		_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
-		currentSlides = pto->currentSlideIndex();
+		_com_util::CheckError(PptCOMPto.CreateInstance(_uuidof(PptCOMServer)));
+		currentSlides = PptCOMPto->currentSlideIndex();
 	}
 	catch (_com_error)
 	{
@@ -237,12 +210,12 @@ int GetTotalPage()
 {
 	int totalSlides = -1;
 
-	IPptCOMServerPtr pto;
+	IPptCOMServerPtr PptCOMPto;
 	try
 	{
-		_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
-		totalSlides = pto->totalSlideIndex();
-		//Testw(bstr_to_wstring(pto->totalSlideIndex()));
+		_com_util::CheckError(PptCOMPto.CreateInstance(_uuidof(PptCOMServer)));
+		totalSlides = PptCOMPto->totalSlideIndex();
+		//Testw(bstr_to_wstring(PptCOMPto->totalSlideIndex()));
 	}
 	catch (_com_error)
 	{
@@ -250,30 +223,42 @@ int GetTotalPage()
 
 	return totalSlides;
 }
+*/
+
 // PPT 状态获取轮询函数
 void GetPptState()
 {
 	thread_status[L"GetPptState"] = true;
 
+	// 初始化
+	{
+		bool rel = false;
+
+		try
+		{
+			_com_util::CheckError(PptCOMPto.CreateInstance(_uuidof(PptCOMServer)));
+			rel = PptCOMPto->Initialization(&PptInfoState.TotalPage, &PptInfoState.CurrentPage);
+		}
+		catch (_com_error)
+		{
+		}
+	}
+
 	while (!off_signal)
 	{
-		if (PptInfoState.CurrentPage == -1) PptInfoState.TotalPage = GetTotalPage();
+		int tmp = -1;
+		try
+		{
+			tmp = PptCOMPto->IsPptOpen();
+		}
+		catch (_com_error)
+		{
+		}
 
-		if (PptInfoState.TotalPage != -1) PptInfoState.CurrentPage = GetCurrentPage();
-		else PptInfoState.CurrentPage = -1;
-
-		if (PptInfoState.TotalPage == -1 && !off_signal) for (int i = 0; i <= 30 && !off_signal; i++) Sleep(100);
-		else if (!off_signal)
+		if (tmp <= 0)
 		{
 			for (int i = 0; i <= 30 && !off_signal; i++)
-			{
-				Sleep(100);
-
-				std::shared_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-				bool ret = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - PPTManipulated).count() <= 3000;
-				lock1.unlock();
-				if (ret) break;
-			}
+				this_thread::sleep_for(chrono::milliseconds(100));
 		}
 	}
 

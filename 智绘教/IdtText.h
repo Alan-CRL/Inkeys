@@ -16,8 +16,12 @@ string wstring_to_string(const wstring& ws);
 wstring convert_to_wstring(const string s);
 //wstring ת string
 string convert_to_string(const wstring str);
-//c# string ת wstring
+
+//c# string to wstring
 wstring bstr_to_wstring(const _bstr_t& bstr);
+//wstring to c# string
+_bstr_t wstring_to_bstr(const wstring& str);
+
 //string ת LPCWSTR
 LPCWSTR stringtoLPCWSTR(string str);
 //string ת urlencode

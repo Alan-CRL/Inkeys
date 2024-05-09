@@ -324,7 +324,7 @@ int SettingMain()
 					{
 						Tab = Tab::tab1;
 					}
-					while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
+					ImGui::PopStyleColor(PushStyleColorNum);
 
 					ImGui::SetCursorPos({ 10.0f,94.0f });
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab2 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
@@ -335,7 +335,7 @@ int SettingMain()
 					{
 						Tab = Tab::tab2;
 					}
-					while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
+					ImGui::PopStyleColor(PushStyleColorNum);
 
 					ImGui::SetCursorPos({ 10.0f,144.0f });
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab3 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
@@ -346,7 +346,7 @@ int SettingMain()
 					{
 						Tab = Tab::tab3;
 					}
-					while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
+					ImGui::PopStyleColor(PushStyleColorNum);
 
 					ImGui::SetCursorPos({ 10.0f,194.0f });
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab4 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
@@ -357,7 +357,7 @@ int SettingMain()
 					{
 						Tab = Tab::tab4;
 					}
-					while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
+					ImGui::PopStyleColor(PushStyleColorNum);
 
 					ImGui::SetCursorPos({ 10.0f,244.0f });
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab5 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
@@ -368,7 +368,7 @@ int SettingMain()
 					{
 						Tab = Tab::tab5;
 					}
-					while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
+					ImGui::PopStyleColor(PushStyleColorNum);
 
 					ImGui::SetCursorPos({ 10.0f,294.0f });
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab6 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
@@ -379,7 +379,7 @@ int SettingMain()
 					{
 						Tab = Tab::tab6;
 					}
-					while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
+					ImGui::PopStyleColor(PushStyleColorNum);
 
 					ImGui::SetCursorPos({ 10.0f,344.0f });
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab8 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
@@ -390,20 +390,9 @@ int SettingMain()
 					{
 						Tab = Tab::tab8;
 					}
-					while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
+					ImGui::PopStyleColor(PushStyleColorNum);
 
-					Font->Scale = 0.65f, ImGui::PushFont(Font);
-					ImGui::SetCursorPos({ 10.0f,44.0f + 616.0f - 110.0f });
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
-					if (ImGui::Button(reinterpret_cast<const char*>(u8"临时停更公告"), { 100.0f,40.0f }))
-					{
-						Tab = Tab::tab7;
-					}
-					while (PushStyleColorNum) PushStyleColorNum--, ImGui::PopStyleColor();
-					ImGui::PopFont();
+					// --------------------
 
 					ImGui::SetCursorPos({ 10.0f,44.0f + 616.0f - 65.0f });
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
@@ -415,6 +404,7 @@ int SettingMain()
 						test.select = false;
 						off_signal = 2;
 					}
+					ImGui::PopStyleColor(PushStyleColorNum);
 
 					ImGui::SetCursorPos({ 10.0f,44.0f + 616.0f - 30.0f });
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
@@ -426,14 +416,16 @@ int SettingMain()
 						test.select = false;
 						off_signal = true;
 					}
+					ImGui::PopStyleColor(PushStyleColorNum);
 				}
 
 				ImGui::SetCursorPos({ 120.0f,44.0f });
-				ImGui::BeginChild(reinterpret_cast<const char*>(u8"公告栏"), { 770.0f,616.0f }, true);
 				switch (Tab)
 				{
 				case Tab::tab1:
 					// 主页
+					ImGui::BeginChild(reinterpret_cast<const char*>(u8"主页"), { 770.0f,616.0f }, true);
+
 					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 
 					{
@@ -476,6 +468,8 @@ int SettingMain()
 							ImGui::SetCursorPosX(left_x + text_indentation);
 							ImGui::TextUnformatted(temp.c_str());
 						}
+
+						ImGui::PopStyleColor(PushStyleColorNum);
 					}
 
 					ImGui::SetCursorPos({ 35.0f,60.0f });
@@ -522,6 +516,8 @@ int SettingMain()
 							ImGui::SetCursorPosX(left_x + text_indentation);
 							ImGui::TextUnformatted(temp.c_str());
 						}
+
+						ImGui::PopStyleColor(PushStyleColorNum);
 					}
 					{
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
@@ -563,15 +559,20 @@ int SettingMain()
 							ImGui::SetCursorPosX(left_x + text_indentation);
 							ImGui::TextUnformatted(temp.c_str());
 						}
+
+						ImGui::PopStyleColor(PushStyleColorNum);
 					}
 
 					ImGui::SetCursorPos({ 760.0f - (float)SettingSign[4].getwidth(),606.0f - (float)SettingSign[4].getheight() });
 					ImGui::Image((void*)TextureSettingSign[4], ImVec2((float)SettingSign[4].getwidth(), (float)SettingSign[4].getheight()));
 
+					ImGui::EndChild();
 					break;
 
 				case Tab::tab2:
 					// 通用
+					ImGui::BeginChild(reinterpret_cast<const char*>(u8"通用"), { 770.0f,616.0f }, true);
+
 					ImGui::SetCursorPosY(20.0f);
 
 					{
@@ -689,6 +690,7 @@ int SettingMain()
 
 								QuestNumbers++, QuestNumbers %= 10;
 							}
+							ImGui::PopStyleColor(PushStyleColorNum);
 						}
 						{
 							ImGui::SetCursorPosY(45.0f);
@@ -781,6 +783,7 @@ int SettingMain()
 									QuestNumbers++, QuestNumbers %= 10;
 								}
 							}
+							ImGui::PopStyleColor(PushStyleColorNum);
 						}
 						{
 							ImGui::SetCursorPosY(80.0f);
@@ -808,6 +811,7 @@ int SettingMain()
 
 								if (CreateLnk) SetShortcut();
 							}
+							ImGui::PopStyleColor(PushStyleColorNum);
 						}
 
 						ImGui::EndChild();
@@ -832,6 +836,8 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 							ImGui::Combo(reinterpret_cast<const char*>(u8"##外观皮肤"), &SetSkinMode, items, IM_ARRAYSIZE(items));
 
 							if (setlist.SetSkinMode != SetSkinMode)
@@ -842,6 +848,7 @@ int SettingMain()
 								if (SetSkinMode == 0) setlist.SkinMode = 1;
 								else setlist.SkinMode = SetSkinMode;
 							}
+							ImGui::PopStyleColor(PushStyleColorNum);
 						}
 
 						ImGui::EndChild();
@@ -896,10 +903,13 @@ int SettingMain()
 						ImGui::EndChild();
 					}
 
+					ImGui::EndChild();
 					break;
 
 				case Tab::tab3:
 					// 绘制
+					ImGui::BeginChild(reinterpret_cast<const char*>(u8"绘制"), { 770.0f,616.0f }, true);
+
 					ImGui::SetCursorPosY(20.0f);
 					{
 						ImGui::SetCursorPosX(20.0f);
@@ -928,6 +938,7 @@ int SettingMain()
 								setlist.IntelligentDrawing = IntelligentDrawing;
 								WriteSetting();
 							}
+							ImGui::PopStyleColor(PushStyleColorNum);
 						}
 						{
 							ImGui::SetCursorPosY(45.0f);
@@ -952,6 +963,7 @@ int SettingMain()
 								setlist.SmoothWriting = SmoothWriting;
 								WriteSetting();
 							}
+							ImGui::PopStyleColor(PushStyleColorNum);
 						}
 
 						ImGui::EndChild();
@@ -976,6 +988,8 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 							ImGui::Combo(reinterpret_cast<const char*>(u8"##橡皮粗细灵敏度"), &RubberMode, items, IM_ARRAYSIZE(items));
 
 							if (setlist.RubberMode != RubberMode)
@@ -983,15 +997,19 @@ int SettingMain()
 								setlist.RubberMode = RubberMode;
 								WriteSetting();
 							}
+							ImGui::PopStyleColor(PushStyleColorNum);
 						}
 
 						ImGui::EndChild();
 					}
 
+					ImGui::EndChild();
 					break;
 
 				case Tab::tab4:
-					//快捷键
+					// 快捷键
+					ImGui::BeginChild(reinterpret_cast<const char*>(u8"快捷键"), { 770.0f,616.0f }, true);
+
 					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 					{
 						ImGui::SetCursorPosY(10.0f);
@@ -1032,11 +1050,16 @@ int SettingMain()
 							ImGui::SetCursorPosX(left_x + text_indentation);
 							ImGui::TextUnformatted(temp.c_str());
 						}
+						ImGui::PopStyleColor(PushStyleColorNum);
 					}
+
+					ImGui::EndChild();
 					break;
 
 				case Tab::tab5:
 					// 实验室
+					ImGui::BeginChild(reinterpret_cast<const char*>(u8"实验室"), { 770.0f,616.0f }, true);
+
 					ImGui::SetCursorPosY(20.0f);
 					{
 						ImGui::SetCursorPosX(20.0f);
@@ -1060,14 +1083,20 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
 							ImGui::SliderFloat(reinterpret_cast<const char*>(u8"##PPT 控件缩放比例"), &PPTUIScale, 0.25f, 3.0f, reinterpret_cast<const char*>(u8"%.5f 倍缩放"));
+
+							ImGui::PopStyleColor(PushStyleColorNum);
 						}
 
 						ImGui::EndChild();
 					}
+
+					ImGui::EndChild();
 					break;
 
 				case Tab::tab6:
-					//程序调测
+					// 程序调测
+					ImGui::BeginChild(reinterpret_cast<const char*>(u8"程序调测"), { 770.0f,616.0f }, true);
+
 					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 					{
 						ImGui::SetCursorPosY(10.0f);
@@ -1170,64 +1199,17 @@ int SettingMain()
 							ImGui::SetCursorPosX(left_x + text_indentation);
 							ImGui::TextUnformatted(temp.c_str());
 						}
-					}
-					break;
 
-				case Tab::tab7:
-					// 临时停更公告
-					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
-					{
-						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
-						wstring text;
-						{
-							text = L"临时停更公告\n\n";
-							text += L"首先非常感谢您使用智绘教，也感谢您对智绘教的支持~\n\n";
-							text += L"开发者本人即将中考，目前只有80天左右了，接下来2个月智绘教将暂时停止开发\n";
-							text += L"感谢各位对智绘教的大力支持！\n\n2024.03.24";
-						}
-
-						int left_x = 10, right_x = 760;
-
-						std::vector<std::string> lines;
-						std::wstring line, temp;
-						std::wstringstream ss(text);
-
-						while (getline(ss, temp, L'\n'))
-						{
-							bool flag = false;
-							line = L"";
-
-							for (wchar_t ch : temp)
-							{
-								flag = false;
-
-								float text_width = ImGui::CalcTextSize(convert_to_utf8(wstring_to_string(line + ch)).c_str()).x;
-								if (text_width > (right_x - left_x))
-								{
-									lines.emplace_back(convert_to_utf8(wstring_to_string(line)));
-									line = L"", flag = true;
-								}
-
-								line += ch;
-							}
-
-							if (!flag) lines.emplace_back(convert_to_utf8(wstring_to_string(line)));
-						}
-
-						for (const auto& temp : lines)
-						{
-							float text_width = ImGui::CalcTextSize(temp.c_str()).x;
-							float text_indentation = ((right_x - left_x) - text_width) * 0.5f;
-							if (text_indentation < 0)  text_indentation = 0;
-							ImGui::SetCursorPosX(left_x + text_indentation);
-							ImGui::TextUnformatted(temp.c_str());
-						}
+						ImGui::PopStyleColor(PushStyleColorNum);
 					}
 
+					ImGui::EndChild();
 					break;
 
 				case Tab::tab8:
 					// 关于
+					ImGui::BeginChild(reinterpret_cast<const char*>(u8"关于"), { 770.0f,616.0f }, true);
+
 					ImGui::SetCursorPos({ 35.0f,ImGui::GetCursorPosY() + 40.0f });
 					ImGui::Image((void*)TextureSettingSign[1], ImVec2((float)SettingSign[1].getwidth(), (float)SettingSign[1].getheight()));
 
@@ -1287,10 +1269,10 @@ int SettingMain()
 								WriteSetting();
 							}
 							else if (setlist.UpdateChannel != UpdateChannel) UpdateChannel = setlist.UpdateChannel;
-						}
+							}
 
 						ImGui::EndChild();
-					}
+						}
 					{
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f);
 						wstring text;
@@ -1349,16 +1331,16 @@ int SettingMain()
 						}
 					}
 
+					ImGui::EndChild();
 					break;
-				}
-
-				ImGui::EndChild();
+					}
 
 				{
 					ImGui::SetCursorPos({ 120.0f,44.0f + 616.0f + 5.0f });
 					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
 					CenteredText(reinterpret_cast<const char*>(u8"所有设置都会自动保存并立即生效"), 4.0f);
+					ImGui::PopStyleColor(PushStyleColorNum);
 				}
 				{
 					if (AutomaticUpdateStep == 0)
@@ -1438,13 +1420,15 @@ int SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(98 / 255.0f, 175 / 255.0f, 82 / 255.0f, 1.0f));
 						CenteredText(reinterpret_cast<const char*>(convert_to_utf8("程序已经是最新版本（" + setlist.UpdateChannel + "通道）").c_str()), 4.0f);
 					}
+
+					ImGui::PopStyleColor(PushStyleColorNum);
 				}
 
 				ImGui::End();
 
 				ImGui::PopStyleColor(PushStyleColorNum);
 				while (PushFontNum) PushFontNum--, ImGui::PopFont();
-			}
+				}
 
 			// 渲染
 			ImGui::Render();
@@ -1463,7 +1447,7 @@ int SettingMain()
 				::SetForegroundWindow(setting_window);
 				ShowWindow = true;
 			}
-		}
+			}
 
 		//::ShowWindow(setting_window, SW_HIDE);
 
@@ -1472,11 +1456,11 @@ int SettingMain()
 		ImGui_ImplDX11_Shutdown();
 		ImGui_ImplWin32_Shutdown();
 		ImGui::DestroyContext();
-	}
+		}
 
 	thread_status[L"SettingMain"] = false;
 	return 0;
-}
+	}
 
 void FirstSetting(bool info)
 {

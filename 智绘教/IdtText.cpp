@@ -58,11 +58,18 @@ string convert_to_string(const wstring str)
 	WideCharToMultiByte(CP_ACP, 0, str.c_str(), str.size(), p_str.get(), size, nullptr, nullptr);
 	return std::string(p_str.get());
 }
+
 //c# string to wstring
 wstring bstr_to_wstring(const _bstr_t& bstr)
 {
 	return static_cast<wchar_t*>(bstr);
 }
+//wstring to c# string
+_bstr_t wstring_to_bstr(const wstring& str)
+{
+	return _bstr_t(str.c_str());
+}
+
 //string to LPCWSTR
 LPCWSTR stringtoLPCWSTR(string str)
 {

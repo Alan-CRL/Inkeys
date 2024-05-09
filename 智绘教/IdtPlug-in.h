@@ -44,7 +44,7 @@ struct PptImgStruct
 extern PptImgStruct PptImg;
 struct PptInfoStateStruct
 {
-	int CurrentPage, TotalPage;
+	long CurrentPage, TotalPage;
 };
 extern PptInfoStateStruct PptInfoStateBuffer;
 extern PptInfoStateStruct PptInfoState;
@@ -52,10 +52,12 @@ extern bool PptWindowBackgroundUiChange;
 extern bool SeewoCameraIsOpen;
 
 wstring LinkTest();
-wstring IsPptDependencyLoaded();
-bool EndPptShow();
+
 int NextPptSlides(int check);
 int PreviousPptSlides();
+bool EndPptShow();
+
 void GetPptState();
+
 void PPTLinkageMain();
 void BlackBlock();

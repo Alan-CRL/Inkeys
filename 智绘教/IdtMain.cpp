@@ -41,7 +41,7 @@ void FreezeFrameWindow();
 bool already = false;
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string edition_date = "20240508a";				//程序发布日期
+string edition_date = "20240509a";				//程序发布日期
 string edition_channel = "Dev";				//程序发布通道
 string edition_code = "24H1(BetaH2)";			//程序版本
 
@@ -54,8 +54,7 @@ map <wstring, bool> thread_status; //线程状态管理
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-//int main()
-int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
+int main()
 {
 	// 路径预处理
 	{
