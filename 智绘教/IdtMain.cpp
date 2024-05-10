@@ -41,7 +41,7 @@ void FreezeFrameWindow();
 bool already = false;
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string editionDate = "20240509b";				//程序发布日期
+string editionDate = "20240510a";				//程序发布日期
 string editionChannel = "Beta";				//程序发布通道
 string editionCode = "24H1(BetaH2)";			//程序版本
 
@@ -218,12 +218,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			string hash_md5, hash_sha256;
 			{
 				hashwrapper* myWrapper = new md5wrapper();
-				hash_md5 = myWrapper->getHashFromFile(WstringToString(GetCurrentExePath()));
+				hash_md5 = myWrapper->getHashFromFileW(GetCurrentExePath());
 				delete myWrapper;
 			}
 			{
 				hashwrapper* myWrapper = new sha256wrapper();
-				hash_sha256 = myWrapper->getHashFromFile(WstringToString(GetCurrentExePath()));
+				hash_sha256 = myWrapper->getHashFromFileW(GetCurrentExePath());
 				delete myWrapper;
 			}
 
@@ -295,12 +295,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			string hash_md5, hash_sha256;
 			{
 				hashwrapper* myWrapper = new md5wrapper();
-				hash_md5 = myWrapper->getHashFromFile(globalPath + WstringToString(path));
+				hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + path);
 				delete myWrapper;
 			}
 			{
 				hashwrapper* myWrapper = new sha256wrapper();
-				hash_sha256 = myWrapper->getHashFromFile(globalPath + WstringToString(path));
+				hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + path);
 				delete myWrapper;
 			}
 
@@ -494,7 +494,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				string hash_sha256;
 				{
 					hashwrapper* myWrapper = new sha256wrapper();
-					hash_sha256 = myWrapper->getHashFromFile(globalPath + "PlugIn\\DDB\\DesktopDrawpadBlocker.exe");
+					hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe");
 					delete myWrapper;
 				}
 
@@ -520,7 +520,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				&& _waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == -1)
 			{
 				DdbWriteSetting(true, false);
-				ShellExecute(NULL, L"runas", (StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+				ShellExecute(NULL, NULL, (StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
 			}
 		}
 		else if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB").c_str(), 0) == 0)

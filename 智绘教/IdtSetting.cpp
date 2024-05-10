@@ -657,12 +657,12 @@ int SettingMain()
 											string hash_md5, hash_sha256;
 											{
 												hashwrapper* myWrapper = new md5wrapper();
-												hash_md5 = myWrapper->getHashFromFile(globalPath + "api\\ÖÇ»æ½ÌStartupItemSettings.exe");
+												hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe");
 												delete myWrapper;
 											}
 											{
 												hashwrapper* myWrapper = new sha256wrapper();
-												hash_sha256 = myWrapper->getHashFromFile(globalPath + "api\\ÖÇ»æ½ÌStartupItemSettings.exe");
+												hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe");
 												delete myWrapper;
 											}
 
@@ -758,12 +758,12 @@ int SettingMain()
 												string hash_md5, hash_sha256;
 												{
 													hashwrapper* myWrapper = new md5wrapper();
-													hash_md5 = myWrapper->getHashFromFile(globalPath + "api\\ÖÇ»æ½ÌStartupItemSettings.exe");
+													hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe");
 													delete myWrapper;
 												}
 												{
 													hashwrapper* myWrapper = new sha256wrapper();
-													hash_sha256 = myWrapper->getHashFromFile(globalPath + "api\\ÖÇ»æ½ÌStartupItemSettings.exe");
+													hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe");
 													delete myWrapper;
 												}
 
@@ -1118,7 +1118,7 @@ int SettingMain()
 											string hash_sha256;
 											{
 												hashwrapper* myWrapper = new sha256wrapper();
-												hash_sha256 = myWrapper->getHashFromFile(globalPath + "PlugIn\\DDB\\DesktopDrawpadBlocker.exe");
+												hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe");
 												delete myWrapper;
 											}
 
@@ -1130,7 +1130,7 @@ int SettingMain()
 										if (!isProcessRunning((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str()))
 										{
 											DdbWriteSetting(true, false);
-											ShellExecute(NULL, L"runas", (StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+											ShellExecute(NULL, NULL, (StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
 										}
 
 										ddbSetList.DdbEnable = true;
@@ -1212,12 +1212,12 @@ int SettingMain()
 												string hash_md5, hash_sha256;
 												{
 													hashwrapper* myWrapper = new md5wrapper();
-													hash_md5 = myWrapper->getHashFromFile(globalPath + "api\\ÖÇ»æ½ÌStartupItemSettings.exe");
+													hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe");
 													delete myWrapper;
 												}
 												{
 													hashwrapper* myWrapper = new sha256wrapper();
-													hash_sha256 = myWrapper->getHashFromFile(globalPath + "api\\ÖÇ»æ½ÌStartupItemSettings.exe");
+													hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe");
 													delete myWrapper;
 												}
 
@@ -1280,12 +1280,12 @@ int SettingMain()
 												string hash_md5, hash_sha256;
 												{
 													hashwrapper* myWrapper = new md5wrapper();
-													hash_md5 = myWrapper->getHashFromFile(globalPath + "api\\ÖÇ»æ½ÌStartupItemSettings.exe");
+													hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe");
 													delete myWrapper;
 												}
 												{
 													hashwrapper* myWrapper = new sha256wrapper();
-													hash_sha256 = myWrapper->getHashFromFile(globalPath + "api\\ÖÇ»æ½ÌStartupItemSettings.exe");
+													hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe");
 													delete myWrapper;
 												}
 

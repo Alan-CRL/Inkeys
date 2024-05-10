@@ -50,12 +50,12 @@ void CrashedHandler()
 				string hash_md5, hash_sha256;
 				{
 					hashwrapper* myWrapper = new md5wrapper();
-					hash_md5 = myWrapper->getHashFromFile(globalPath + "api\\ÖÇ»æ½ÌCrashedHandler.exe");
+					hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌCrashedHandler.exe");
 					delete myWrapper;
 				}
 				{
 					hashwrapper* myWrapper = new sha256wrapper();
-					hash_sha256 = myWrapper->getHashFromFile(globalPath + "api\\ÖÇ»æ½ÌCrashedHandler.exe");
+					hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌCrashedHandler.exe");
 					delete myWrapper;
 				}
 
@@ -67,12 +67,12 @@ void CrashedHandler()
 				string hash_md5, hash_sha256;
 				{
 					hashwrapper* myWrapper = new md5wrapper();
-					hash_md5 = myWrapper->getHashFromFile(globalPath + "api\\ÖÇ»æ½ÌCrashedHandlerClose.exe");
+					hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌCrashedHandlerClose.exe");
 					delete myWrapper;
 				}
 				{
 					hashwrapper* myWrapper = new sha256wrapper();
-					hash_sha256 = myWrapper->getHashFromFile(globalPath + "api\\ÖÇ»æ½ÌCrashedHandlerClose.exe");
+					hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌCrashedHandlerClose.exe");
 					delete myWrapper;
 				}
 
@@ -86,7 +86,7 @@ void CrashedHandler()
 		if (start && !isProcessRunning((StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌCrashedHandler.exe").c_str()))
 		{
 			wstring path = GetCurrentExePath();
-			ShellExecute(NULL, L"runas", (StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌCrashedHandler.exe").c_str(), (L"/\"" + path + L"\"").c_str(), NULL, SW_SHOWNORMAL);
+			ShellExecute(NULL, NULL, (StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌCrashedHandler.exe").c_str(), (L"/\"" + path + L"\"").c_str(), NULL, SW_SHOWNORMAL);
 		}
 	}
 
@@ -369,12 +369,12 @@ void AutomaticUpdate()
 				string hash_md5, hash_sha256;
 				{
 					hashwrapper* myWrapper = new md5wrapper();
-					hash_md5 = myWrapper->getHashFromFile(globalPath + WstringToString(tpath));
+					hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + tpath);
 					delete myWrapper;
 				}
 				{
 					hashwrapper* myWrapper = new sha256wrapper();
-					hash_sha256 = myWrapper->getHashFromFile(globalPath + WstringToString(tpath));
+					hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + tpath);
 					delete myWrapper;
 				}
 
@@ -444,12 +444,12 @@ void AutomaticUpdate()
 						string hash_md5, hash_sha256;
 						{
 							hashwrapper* myWrapper = new md5wrapper();
-							hash_md5 = myWrapper->getHashFromFile(globalPath + "installer\\new_procedure" + WstringToString(timestamp) + ".exe");
+							hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"installer\\new_procedure" + timestamp + L".exe");
 							delete myWrapper;
 						}
 						{
 							hashwrapper* myWrapper = new sha256wrapper();
-							hash_sha256 = myWrapper->getHashFromFile(globalPath + "installer\\new_procedure" + WstringToString(timestamp) + ".exe");
+							hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"installer\\new_procedure" + timestamp + L".exe");
 							delete myWrapper;
 						}
 
