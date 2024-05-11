@@ -1126,6 +1126,12 @@ int SettingMain()
 												ExtractResource((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
 										}
 
+										// 创建开机自启标识
+										if (ddbSetList.DdbEnhance && _waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == -1)
+										{
+											std::ofstream file((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str());
+											file.close();
+										}
 										// 启动 DDB
 										if (!isProcessRunning((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str()))
 										{
@@ -1139,6 +1145,13 @@ int SettingMain()
 									else
 									{
 										DdbWriteSetting(true, true);
+
+										// 移除开机自启标识
+										if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == 0)
+										{
+											error_code ec;
+											filesystem::remove(StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal", ec);
+										}
 
 										ddbSetList.DdbEnable = false;
 										WriteSetting();
@@ -1189,8 +1202,11 @@ int SettingMain()
 									DdbWriteSetting(true, false);
 
 									// 创建开机自启标识
-									std::ofstream file((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str());
-									file.close();
+									if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == -1)
+									{
+										std::ofstream file((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str());
+										file.close();
+									}
 
 									// 设置开机自启
 									{

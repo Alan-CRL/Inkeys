@@ -16,7 +16,7 @@ void FreezeFrameWindow()
 	while (!already) this_thread::sleep_for(chrono::milliseconds(50));
 
 	shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
-	if (DisplaysNumber != 1)
+	if (DisplaysNumber > 1)
 	{
 		DisplaysNumberLock.unlock();
 		return;

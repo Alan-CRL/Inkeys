@@ -139,7 +139,7 @@ void LoadDrawpad()
 void SaveScreenShot(IMAGE img, bool record_pointer_add)
 {
 	shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
-	if (DisplaysNumber != 1)
+	if (DisplaysNumber > 1)
 	{
 		DisplaysNumberLock.unlock();
 		return;

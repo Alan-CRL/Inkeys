@@ -41,7 +41,7 @@ void FreezeFrameWindow();
 bool already = false;
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string editionDate = "20240510a";				//程序发布日期
+string editionDate = "20240511a";				//程序发布日期
 string editionChannel = "Beta";				//程序发布通道
 string editionCode = "24H1(BetaH2)";			//程序版本
 
@@ -516,8 +516,20 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				ddbSetList.restartHost = true;
 			}
 
-			if (!isProcessRunning((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str())
-				&& _waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == -1)
+			// 创建开机自启标识
+			if (ddbSetList.DdbEnhance && _waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == -1)
+			{
+				std::ofstream file((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str());
+				file.close();
+			}
+			// 移除开机自启标识
+			else if (!ddbSetList.DdbEnhance && _waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == 0)
+			{
+				error_code ec;
+				filesystem::remove(StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal", ec);
+			}
+
+			if (!isProcessRunning((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str()))
 			{
 				DdbWriteSetting(true, false);
 				ShellExecute(NULL, NULL, (StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
@@ -577,7 +589,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
 		int DisplaysNumberTemp = DisplaysNumber;
 		DisplaysNumberLock.unlock();
-		if (DisplaysNumberTemp)
+
+		if (DisplaysNumberTemp <= 1)
 		{
 			IDTLogger->info("[主线程][IdtMain] MagnifierThread函数线程启动");
 			thread MagnifierThread_thread(MagnifierThread);
