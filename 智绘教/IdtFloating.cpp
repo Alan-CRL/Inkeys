@@ -5372,6 +5372,7 @@ void MouseInteraction()
 					if (m.rbutton)
 					{
 						if (MessageBox(floating_window, L"是否关闭 智绘教 ？", L"智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) offSignal = true;
+						hiex::flushmessage_win32(EM_MOUSE, floating_window);
 					}
 				}
 
@@ -5622,6 +5623,7 @@ void MouseInteraction()
 					if (m.rbutton)
 					{
 						if (MessageBox(floating_window, L"是否关闭 智绘教 ？", L"智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) offSignal = true;
+						hiex::flushmessage_win32(EM_MOUSE, floating_window);
 					}
 				}
 

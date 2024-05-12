@@ -455,6 +455,27 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		IDTLogger->info("[主线程][IdtMain] 设置字体完成");
 		IDTLogger->info("[主线程][IdtMain] 初始化字体完成");
 	}
+	// 监视器信息初始化
+	{
+		IDTLogger->info("[主线程][IdtMain] 初始化监视器信息");
+
+		// 显示器检查
+		IDTLogger->info("[主线程][IdtMain] 监视器信息查询");
+		DisplayManagementMain();
+		IDTLogger->info("[主线程][IdtMain] 监视器信息查询完成");
+
+		shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
+		int DisplaysNumberTemp = DisplaysNumber;
+		DisplaysNumberLock.unlock();
+
+		IDTLogger->info("[主线程][IdtMain] MagnifierThread函数线程启动");
+		thread MagnifierThread_thread(MagnifierThread);
+		MagnifierThread_thread.detach();
+
+		if (DisplaysNumberTemp > 1) IDTLogger->warn("[主线程][IdtMain] 拥有多个监视器");
+
+		IDTLogger->info("[主线程][IdtMain] 初始化监视器信息完成");
+	}
 	// 配置信息初始化
 	{
 		IDTLogger->info("[主线程][IdtMain] 初始化配置信息");
@@ -466,6 +487,14 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			IDTLogger->info("[主线程][IdtMain] 生成配置信息");
 			FirstSetting(true);
 			IDTLogger->info("[主线程][IdtMain] 生成配置信息完成");
+
+			{
+				shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
+				int DisplaysNumberTemp = DisplaysNumber;
+				DisplaysNumberLock.unlock();
+				if (DisplaysNumberTemp > 1)
+					MessageBox(floating_window, (L"检测到计算机拥有 " + to_wstring(DisplaysNumberTemp) + L" 个显示器，智绘教目前不支持在拓展显示器上绘图！\n仅能在主显示器上绘图！").c_str(), L"智绘教警告", MB_OK | MB_SYSTEMMODAL);
+			}
 		}
 
 		IDTLogger->info("[主线程][IdtMain] 读取配置信息");
@@ -576,33 +605,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		}
 
 		IDTLogger->info("[主线程][IdtMain] 初始化COM完成");
-	}
-	// 监视器信息初始化
-	{
-		IDTLogger->info("[主线程][IdtMain] 初始化监视器信息");
-
-		// 显示器检查
-		IDTLogger->info("[主线程][IdtMain] 监视器信息查询");
-		DisplayManagementMain();
-		IDTLogger->info("[主线程][IdtMain] 监视器信息查询完成");
-
-		shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
-		int DisplaysNumberTemp = DisplaysNumber;
-		DisplaysNumberLock.unlock();
-
-		if (DisplaysNumberTemp <= 1)
-		{
-			IDTLogger->info("[主线程][IdtMain] MagnifierThread函数线程启动");
-			thread MagnifierThread_thread(MagnifierThread);
-			MagnifierThread_thread.detach();
-		}
-		else
-		{
-			IDTLogger->warn("[主线程][IdtMain] 拥有多个监视器");
-			MessageBox(floating_window, (L"检测到计算机拥有 " + to_wstring(DisplaysNumberTemp) + L" 个显示器，智绘教目前不支持拥有拓展显示器电脑！\n\n程序将继续启动，但窗口定格，历史画板保存，超级恢复功能将失效。\n且仅能在主显示器上绘图！").c_str(), L"智绘教警告", MB_OK | MB_SYSTEMMODAL);
-		}
-
-		IDTLogger->info("[主线程][IdtMain] 初始化监视器信息完成");
 	}
 	//桌面快捷方式初始化
 	if (setlist.CreateLnk)

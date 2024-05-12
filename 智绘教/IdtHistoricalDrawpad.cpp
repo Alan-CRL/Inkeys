@@ -139,12 +139,6 @@ void LoadDrawpad()
 void SaveScreenShot(IMAGE img, bool record_pointer_add)
 {
 	shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
-	if (DisplaysNumber > 1)
-	{
-		DisplaysNumberLock.unlock();
-		return;
-	}
-	DisplaysNumberLock.unlock();
 
 	wstring date = CurrentDate(), time = CurrentTime(), stamp = getTimestamp();
 	if (_waccess((StringToWstring(globalPath) + L"ScreenShot").c_str(), 0 == -1)) CreateDirectory((StringToWstring(globalPath) + L"ScreenShot").c_str(), NULL);

@@ -1552,7 +1552,7 @@ void DrawControlWindow()
 				// ¶¯Ì¬Æ½ºâÖ¡ÂÊ
 				if (tRecord)
 				{
-					int delay = 1000 / 24 - (clock() - tRecord);
+					int delay = 1000 / 144 - (clock() - tRecord);
 					if (delay > 0) std::this_thread::sleep_for(std::chrono::milliseconds(delay));
 				}
 				tRecord = clock();
