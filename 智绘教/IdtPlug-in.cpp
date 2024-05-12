@@ -39,7 +39,7 @@
 // --------------------------------------------------
 // PPT controls | PPT 控件
 
-// TODO 控件缩放、控件置于左右两侧、控件拖动、UI 计算与绘制分离
+// TODO 1 控件缩放、控件置于左右两侧、控件拖动、UI 计算与绘制分离
 
 #import "PptCOM.tlb" // C# Class Library PptCOM Project Library (PptCOM. cs) | C# 类库 PptCOM 项目库 (PptCOM. cs)
 using namespace PptCOM;
