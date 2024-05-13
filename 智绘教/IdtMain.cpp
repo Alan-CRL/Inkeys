@@ -31,6 +31,7 @@
 
 #include <lm.h>
 #include <shellscalingapi.h>
+#include <shlobj.h>
 #pragma comment(lib, "netapi32.lib")
 
 int floating_main();
@@ -41,8 +42,8 @@ void FreezeFrameWindow();
 bool already = false;
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string editionDate = "20240511a";				//程序发布日期
-string editionChannel = "Beta";				//程序发布通道
+string editionDate = "20240513a";				//程序发布日期
+string editionChannel = "Dev";				//程序发布通道
 string editionCode = "24H1(BetaH2)";			//程序版本
 
 wstring userId; //用户ID（主板序列号）
@@ -67,6 +68,16 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			return 0;
 		}
 	}
+	// 防止重复启动
+	{
+		if (_waccess((StringToWstring(globalPath) + L"force_start.signal").c_str(), 0) == 0)
+		{
+			error_code ec;
+			filesystem::remove(StringToWstring(globalPath) + L"force_start.signal", ec);
+		}
+		else if (ProcessRunningCnt(GetCurrentExePath()) > 1) return 0;
+	}
+
 	// 用户ID获取
 	{
 		userId = StringToWstring(getDeviceGUID());
@@ -771,17 +782,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 	IDTLogger->info("[主线程][IdtMain] 已结束智绘教所有线程并关闭程序");
 	return 0;
-}
-// 路径权限检测
-bool HasReadWriteAccess(const std::wstring& directoryPath)
-{
-	DWORD attributes = GetFileAttributesW(directoryPath.c_str());
-	if (attributes == INVALID_FILE_ATTRIBUTES) return false;
-	if (!(attributes & FILE_ATTRIBUTE_DIRECTORY)) return false;
-	if (attributes & FILE_ATTRIBUTE_READONLY) return false;
-	if (attributes & FILE_ATTRIBUTE_READONLY) return false;
-
-	return true;
 }
 
 // 调测专用

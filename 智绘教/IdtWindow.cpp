@@ -20,40 +20,7 @@ bool IsWindowFocused(HWND hWnd)
 {
 	return GetForegroundWindow() == hWnd;
 }
-//程序进程状态获取
-bool isProcessRunning(const std::wstring& processPath)
-{
-	PROCESSENTRY32 entry;
-	entry.dwSize = sizeof(PROCESSENTRY32);
 
-	HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
-
-	if (Process32First(snapshot, &entry)) {
-		do {
-			// 打开进程句柄
-			HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, entry.th32ProcessID);
-			if (process == NULL) {
-				continue;
-			}
-
-			// 获取进程完整路径
-			wchar_t path[MAX_PATH];
-			DWORD size = MAX_PATH;
-			if (QueryFullProcessImageName(process, 0, path, &size)) {
-				if (processPath == path) {
-					CloseHandle(process);
-					CloseHandle(snapshot);
-					return true;
-				}
-			}
-
-			CloseHandle(process);
-		} while (Process32Next(snapshot, &entry));
-	}
-
-	CloseHandle(snapshot);
-	return false;
-}
 HWND GetLastFocusWindow()
 {
 	GUITHREADINFO guiThreadInfo;

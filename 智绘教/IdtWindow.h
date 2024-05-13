@@ -16,8 +16,7 @@ extern map<wstring, bool> ppt_title_recond;
 
 //窗口是否置顶
 bool IsWindowFocused(HWND hWnd);
-//程序进程状态获取
-bool isProcessRunning(const std::wstring& processPath);
+
 HWND GetLastFocusWindow();
 wstring GetWindowText(HWND hWnd);
 

@@ -956,6 +956,9 @@ void DrawControlWindow()
 						PPTUIControlTarget[L"RoundRect/RoundRectLeft1/ellipsewidth"].v = (35) * PPTUIScale;
 						PPTUIControlTarget[L"RoundRect/RoundRectLeft1/frame/width"].v = (1) * PPTUIScale;
 
+						PPTUIControlColorTarget[L"RoundRect/RoundRectLeft1/fill"].v = RGBA(250, 250, 250, 0);
+						PPTUIControlColorTarget[L"RoundRect/RoundRectLeft1/frame"].v = RGBA(200, 200, 200, 0);
+
 						{
 							PPTUIControlTarget[L"Image/RoundRectLeft1/x"].v = PPTUIControlTarget[L"RoundRect/RoundRectLeft1/x"].v + (5) * PPTUIScale;
 							PPTUIControlTarget[L"Image/RoundRectLeft1/y"].v = PPTUIControlTarget[L"RoundRect/RoundRectLeft1/y"].v + (5) * PPTUIScale;
@@ -982,6 +985,9 @@ void DrawControlWindow()
 						PPTUIControlTarget[L"RoundRect/RoundRectLeft2/ellipsewidth"].v = (35) * PPTUIScale;
 						PPTUIControlTarget[L"RoundRect/RoundRectLeft2/frame/width"].v = (1) * PPTUIScale;
 
+						PPTUIControlColorTarget[L"RoundRect/RoundRectLeft2/fill"].v = RGBA(250, 250, 250, 0);
+						PPTUIControlColorTarget[L"RoundRect/RoundRectLeft2/frame"].v = RGBA(200, 200, 200, 0);
+
 						{
 							PPTUIControlTarget[L"Image/RoundRectLeft2/x"].v = PPTUIControlTarget[L"RoundRect/RoundRectLeft2/x"].v + (5) * PPTUIScale;
 							PPTUIControlTarget[L"Image/RoundRectLeft2/y"].v = PPTUIControlTarget[L"RoundRect/RoundRectLeft2/y"].v + (5) * PPTUIScale;
@@ -998,6 +1004,9 @@ void DrawControlWindow()
 						PPTUIControlTarget[L"RoundRect/RoundRectLeft3/ellipseheight"].v = (35) * PPTUIScale;
 						PPTUIControlTarget[L"RoundRect/RoundRectLeft3/ellipsewidth"].v = (35) * PPTUIScale;
 						PPTUIControlTarget[L"RoundRect/RoundRectLeft3/frame/width"].v = (1) * PPTUIScale;
+
+						PPTUIControlColorTarget[L"RoundRect/RoundRectLeft3/fill"].v = RGBA(250, 250, 250, 0);
+						PPTUIControlColorTarget[L"RoundRect/RoundRectLeft3/frame"].v = RGBA(200, 200, 200, 0);
 
 						SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectLeft3/fill"].v, 0);
 						SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectLeft3/frame"].v, 0);
@@ -1035,6 +1044,9 @@ void DrawControlWindow()
 						PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/ellipsewidth"].v = (35) * PPTUIScale;
 						PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/frame/width"].v = (1) * PPTUIScale;
 
+						PPTUIControlColorTarget[L"RoundRect/RoundRectMiddle1/fill"].v = RGBA(250, 250, 250, 0);
+						PPTUIControlColorTarget[L"RoundRect/RoundRectMiddle1/frame"].v = RGBA(200, 200, 200, 0);
+
 						{
 							PPTUIControlTarget[L"Image/RoundRectMiddle1/x"].v = PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/x"].v + (5) * PPTUIScale;
 							PPTUIControlTarget[L"Image/RoundRectMiddle1/y"].v = PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/y"].v + (5) * PPTUIScale;
@@ -1066,6 +1078,9 @@ void DrawControlWindow()
 						PPTUIControlTarget[L"RoundRect/RoundRectRight1/ellipsewidth"].v = (35) * PPTUIScale;
 						PPTUIControlTarget[L"RoundRect/RoundRectRight1/frame/width"].v = (1) * PPTUIScale;
 
+						PPTUIControlColorTarget[L"RoundRect/RoundRectRight1/fill"].v = RGBA(250, 250, 250, 0);
+						PPTUIControlColorTarget[L"RoundRect/RoundRectRight1/frame"].v = RGBA(200, 200, 200, 0);
+
 						{
 							PPTUIControlTarget[L"Image/RoundRectRight1/x"].v = PPTUIControlTarget[L"RoundRect/RoundRectRight1/x"].v + (5) * PPTUIScale;
 							PPTUIControlTarget[L"Image/RoundRectRight1/y"].v = PPTUIControlTarget[L"RoundRect/RoundRectRight1/y"].v + (5) * PPTUIScale;
@@ -1091,6 +1106,9 @@ void DrawControlWindow()
 						PPTUIControlTarget[L"RoundRect/RoundRectRight2/ellipseheight"].v = (35) * PPTUIScale;
 						PPTUIControlTarget[L"RoundRect/RoundRectRight2/ellipsewidth"].v = (35) * PPTUIScale;
 						PPTUIControlTarget[L"RoundRect/RoundRectRight2/frame/width"].v = (1) * PPTUIScale;
+
+						PPTUIControlColorTarget[L"RoundRect/RoundRectRight2/fill"].v = RGBA(250, 250, 250, 0);
+						PPTUIControlColorTarget[L"RoundRect/RoundRectRight2/frame"].v = RGBA(200, 200, 200, 0);
 
 						{
 							PPTUIControlTarget[L"Image/RoundRectRight2/x"].v = PPTUIControlTarget[L"RoundRect/RoundRectRight2/x"].v + (5) * PPTUIScale;
@@ -2005,6 +2023,8 @@ void ControlManipulation()
 		}
 		else
 		{
+			last_x = -1, last_y = -1;
+
 			hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 			Sleep(500);
 		}

@@ -1,6 +1,7 @@
 #include "IdtUpdate.h"
 
 #include "IdtConfiguration.h"
+#include "IdtHash.h"
 #include "IdtOther.h"
 #include "IdtSetting.h"
 #include "IdtText.h"
@@ -33,11 +34,6 @@ void CrashedHandler()
 				error_code ec;
 				filesystem::create_directory(StringToWstring(globalPath) + L"api", ec);
 			}
-
-			string CrashedHandlerMd5 = "014f5e4d2373380e597dc28b5c810ee0";
-			string CrashedHandlerSHA256 = "b2d6603aeeb432ead4a552714ebed788d2ceb30129c36c307fe8db1f36356055";
-			string CrashedHandlerCloseMd5 = "fe467cafd4093667fd04ffcc2d3157e5";
-			string CrashedHandlerCloseSHA256 = "5a1d4c6f903d57242106c21828a4f72678fb9ab4363c55139346e799b8100a5d";
 
 			if (_waccess((StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌCrashedHandler.exe").c_str(), 0) == -1)
 				if (!ExtractResource((StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌCrashedHandler.exe").c_str(), L"EXE", MAKEINTRESOURCE(201)))

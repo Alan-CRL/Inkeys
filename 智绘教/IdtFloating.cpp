@@ -7,6 +7,7 @@
 #include "IdtHistoricalDrawpad.h"
 #include "IdtImage.h"
 #include "IdtMagnification.h"
+#include "IdtOther.h"
 #include "IdtPlug-in.h"
 #include "IdtRts.h"
 #include "IdtText.h"

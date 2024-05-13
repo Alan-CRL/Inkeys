@@ -109,8 +109,6 @@ extern map <wstring, bool> threadStatus; //线程状态管理
 
 extern shared_ptr<spdlog::logger> IDTLogger;
 
-// 路径权限检测
-bool HasReadWriteAccess(const std::wstring& directoryPath);
 //调测专用
 #ifndef IDT_RELEASE
 void Test();

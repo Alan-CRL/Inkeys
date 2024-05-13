@@ -47,6 +47,7 @@
     <IncludePath>$(IncludePath)</IncludePath>
     <LibraryPath>$(LibraryPath)</LibraryPath>
     <GenerateManifest>false</GenerateManifest>
+    <LinkIncremental>true</LinkIncremental>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -179,6 +180,7 @@
     <ClInclude Include="IdtFloating.h" />
     <ClInclude Include="IdtFreezeFrame.h" />
     <ClInclude Include="IdtGuid.h" />
+    <ClInclude Include="IdtHash.h" />
     <ClInclude Include="IdtHistoricalDrawpad.h" />
     <ClInclude Include="IdtImage.h" />
     <ClInclude Include="IdtKey.h" />
@@ -273,6 +275,7 @@
     <ClCompile Include="IdtFloating.cpp" />
     <ClCompile Include="IdtFreezeFrame.cpp" />
     <ClCompile Include="IdtGuid.cpp" />
+    <ClCompile Include="IdtHash.cpp" />
     <ClCompile Include="IdtHistoricalDrawpad.cpp" />
     <ClCompile Include="IdtImage.cpp" />
     <ClCompile Include="IdtKey.cpp" />

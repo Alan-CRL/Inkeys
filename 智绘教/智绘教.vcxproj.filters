@@ -369,6 +369,9 @@
     <ClInclude Include="IdtD2DPreparation.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="IdtHash.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HiEasyX\HiGUI\Button.cpp">
@@ -630,6 +633,9 @@
       <Filter>头文件\ink_stroke_modeler</Filter>
     </ClCompile>
     <ClCompile Include="IdtD2DPreparation.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtHash.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

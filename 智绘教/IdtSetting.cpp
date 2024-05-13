@@ -3,6 +3,7 @@
 #include "IdtConfiguration.h"
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
+#include "IdtHash.h"
 #include "IdtHistoricalDrawpad.h"
 #include "IdtImage.h"
 #include "IdtMagnification.h"
@@ -647,9 +648,6 @@ int SettingMain()
 											filesystem::create_directory(StringToWstring(globalPath) + L"api", ec);
 										}
 
-										string StartupItemSettingsMd5 = "abaadf527bc925a85507a8361d2d9d44";
-										string StartupItemSettingsSHA256 = "57df0ed39d797fd286deb583d81450bb8838b98ce92741e91c9a01d9a4ac3b81";
-
 										if (_waccess((StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe").c_str(), 0) == -1)
 											ExtractResource((StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 										else
@@ -747,9 +745,6 @@ int SettingMain()
 												error_code ec;
 												filesystem::create_directory(StringToWstring(globalPath) + L"api", ec);
 											}
-
-											string StartupItemSettingsMd5 = "abaadf527bc925a85507a8361d2d9d44";
-											string StartupItemSettingsSHA256 = "57df0ed39d797fd286deb583d81450bb8838b98ce92741e91c9a01d9a4ac3b81";
 
 											if (_waccess((StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe").c_str(), 0) == -1)
 												ExtractResource((StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
@@ -1218,9 +1213,6 @@ int SettingMain()
 												filesystem::create_directory(StringToWstring(globalPath) + L"api", ec);
 											}
 
-											string StartupItemSettingsMd5 = "abaadf527bc925a85507a8361d2d9d44";
-											string StartupItemSettingsSHA256 = "57df0ed39d797fd286deb583d81450bb8838b98ce92741e91c9a01d9a4ac3b81";
-
 											if (_waccess((StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe").c_str(), 0) == -1)
 												ExtractResource((StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 											else
@@ -1285,9 +1277,6 @@ int SettingMain()
 												error_code ec;
 												filesystem::create_directory(StringToWstring(globalPath) + L"api", ec);
 											}
-
-											string StartupItemSettingsMd5 = "abaadf527bc925a85507a8361d2d9d44";
-											string StartupItemSettingsSHA256 = "57df0ed39d797fd286deb583d81450bb8838b98ce92741e91c9a01d9a4ac3b81";
 
 											if (_waccess((StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe").c_str(), 0) == -1)
 												ExtractResource((StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌStartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
