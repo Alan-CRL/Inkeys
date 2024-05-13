@@ -73,7 +73,6 @@ void SettingSeekBar()
 }
 int SettingMain()
 {
-	while (!already) this_thread::sleep_for(chrono::milliseconds(50));
 	threadStatus[L"SettingMain"] = true;
 
 	// 初始化部分

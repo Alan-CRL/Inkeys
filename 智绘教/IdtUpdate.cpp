@@ -13,9 +13,6 @@ void CrashedHandler()
 {
 	threadStatus[L"CrashedHandler"] = true;
 
-	this_thread::sleep_for(chrono::seconds(3));
-	while (!already) this_thread::sleep_for(chrono::milliseconds(50));
-
 	ofstream write;
 	write.imbue(locale("zh_CN.UTF8"));
 
@@ -150,8 +147,8 @@ void AutomaticUpdate()
 	10 程序已经是最新版本
 	*/
 
-	this_thread::sleep_for(chrono::seconds(3));
-	while (!already) this_thread::sleep_for(chrono::milliseconds(50));
+	//this_thread::sleep_for(chrono::seconds(3));
+	//while (!already) this_thread::sleep_for(chrono::milliseconds(50));
 
 	struct
 	{

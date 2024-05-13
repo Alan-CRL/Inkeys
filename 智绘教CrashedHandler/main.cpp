@@ -14,7 +14,7 @@ using namespace std;
 #define Testi(int) MessageBox(NULL, to_wstring(int).c_str(), L"数值标记", MB_OK | MB_SYSTEMMODAL)
 #define Testw(wstring) MessageBox(NULL, wstring.c_str(), L"字符标记", MB_OK | MB_SYSTEMMODAL)
 
-string edition_date = "20240513.01";
+string edition_date = "20240513.02";
 string global_path; //程序当前路径
 string main_path; //主程序路径
 
@@ -205,7 +205,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		}
 
 		filesystem::path directory(global_path);
-		main_path = directory.parent_path().parent_path().string();
+		main_path = directory.parent_path().parent_path().string() + "\\";
 	}
 
 	wstring exePath;
@@ -213,7 +213,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	getline(wss, exePath, L'/');
 	getline(wss, exePath, L'\"');
 	getline(wss, exePath, L'\"');
-	if (exePath == L"") exePath = string_to_wstring(main_path) + L"\\智绘教.exe";
+	if (exePath == L"") exePath = string_to_wstring(main_path) + L"智绘教.exe";
 
 	while (1)
 	{

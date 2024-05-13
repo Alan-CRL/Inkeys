@@ -1,15 +1,28 @@
 #pragma once
 #include "IdtMain.h"
 
+// 选色轮相关
 struct BrushColorChooseStruct
 {
 	int x, y;
 	int last_x, last_y;
 };
 extern BrushColorChooseStruct BrushColorChoose;
-
 extern IMAGE ColorPaletteImg;
 extern shared_mutex ColorPaletteSm;
+
+enum DrawModeSelectEnum
+{
+	IdtSelection,
+	IdtPen,
+	IdtEraser
+};
+
+class DrawMode
+{
+public:
+	DrawModeSelectEnum DrawModeSelect = DrawModeSelectEnum::IdtSelection;
+};
 
 struct penetrateStruct
 {
@@ -19,7 +32,6 @@ extern penetrateStruct penetrate;
 struct chooseStruct
 {
 	bool select;
-	bool mode;
 }; //选择
 extern chooseStruct choose;
 struct brushStruct
@@ -34,9 +46,10 @@ extern brushStruct brush;
 struct rubberStruct
 {
 	bool select;
-	int mode;
 }; //橡皮
 extern rubberStruct rubber;
+
+// TODO 老旧残留
 struct testStruct
 {
 	bool select;

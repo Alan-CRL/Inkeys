@@ -13,7 +13,6 @@ int FreezeRecall;
 
 void FreezeFrameWindow()
 {
-	while (!already) this_thread::sleep_for(chrono::milliseconds(50));
 	while (magnificationWindowReady != -1) this_thread::sleep_for(chrono::milliseconds(50));
 
 	threadStatus[L"FreezeFrameWindow"] = true;

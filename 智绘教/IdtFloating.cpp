@@ -1013,7 +1013,6 @@ void DrawScreen()
 
 	graphics.SetSmoothingMode(SmoothingModeHighQuality);
 
-	already = true;
 	magnificationWindowReady++;
 
 	//LOG(INFO) << "成功初始化悬浮窗窗口绘制模块";
@@ -5727,14 +5726,6 @@ void MouseInteraction()
 										rubber.select = false;
 										choose.select = true;
 										penetrate.select = false;
-									}
-									else if (choose.mode == true)
-									{
-										choose.mode = false;
-									}
-									else if (choose.mode == false)
-									{
-										choose.mode = true;
 									}
 
 									break;

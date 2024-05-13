@@ -1,8 +1,8 @@
 #include "IdtHash.h"
 
-string CrashedHandlerMd5 = "1166b01e6487d401d99e7cc6f3136159";
-string CrashedHandlerSHA256 = "c7454b27d217914a5a6fd9eb7716a6663711f5e5a1c39bb3a407b83c72de5f5d";
-string CrashedHandlerCloseMd5 = "c04204787ac6cf96b04af9048b78596b";
-string CrashedHandlerCloseSHA256 = "aba1d80625b4ff95d1878f6756171e55ac5c0f04ed96d13822b01d14a9510560";
-string StartupItemSettingsMd5 = "d5db0b30344842cd0ab6eafab08d8f56";
-string StartupItemSettingsSHA256 = "4a83cf37d79408291a52d851bd3468c602958cafe752231319676d481df0e4e3";
+string CrashedHandlerMd5 = "f8a90f4b8eb59a1e7786c952604e4b31";
+string CrashedHandlerSHA256 = "b7f9fa870d1c822d69f231525ea0841074e613590042764b6215475e50d1bc1f";
+string CrashedHandlerCloseMd5 = "1de82db76ceccdef72a83f10077a5e24";
+string CrashedHandlerCloseSHA256 = "5b05aaf0c0cc038cdc67e8f6eca7ae6e48753feab749d3aad58df8dd859a4aa7";
+string StartupItemSettingsMd5 = "2aea1581e24f82c07c5e5a97d4cd2f4c";
+string StartupItemSettingsSHA256 = "cddd398057d23b5b1f774884fcf886500a611acdc5046d6352ecf70e653794fd";

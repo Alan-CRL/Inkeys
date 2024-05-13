@@ -17,7 +17,7 @@
 
 #pragma once
 
-// #define IDT_RELEASE
+#define IDT_RELEASE
 // #pragma comment( linker, "/subsystem:windows /entry:mainCRTStartup" )
 
 // 智绘教最低兼容 Windows 7 sp0（当前为 sp1）
@@ -93,8 +93,6 @@ using namespace Gdiplus;
 #define HiEndDraw() END_TASK(); REDRAW_WINDOW()
 
 #define Sleep(int) this_thread::sleep_for(chrono::milliseconds(int))
-
-extern bool already;
 
 extern wstring buildTime; //构建时间
 extern string editionDate; //程序发布日期
