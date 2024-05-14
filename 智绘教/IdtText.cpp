@@ -33,32 +33,6 @@ string WstringToString(const wstring& ws)
 	return s;
 }
 
-//string to wstring
-wstring convert_to_wstring(const string s)
-{
-	LPCSTR pszSrc = s.c_str();
-	int nLen = s.size();
-
-	int nSize = MultiByteToWideChar(CP_ACP, 0, (LPCSTR)pszSrc, nLen, 0, 0);
-	WCHAR* pwszDst = new WCHAR[nSize + 1];
-	MultiByteToWideChar(CP_ACP, 0, (LPCSTR)pszSrc, nLen, pwszDst, nSize);
-	pwszDst[nSize] = 0;
-	if (pwszDst[0] == 0xFEFF) // skip Oxfeff
-		for (int i = 0; i < nSize; i++)
-			pwszDst[i] = pwszDst[i + 1];
-	wstring wcharString(pwszDst);
-	delete pwszDst;
-	return wcharString;
-}
-//wstring to string
-string convert_to_string(const wstring str)
-{
-	int size = WideCharToMultiByte(CP_ACP, 0, str.c_str(), str.size(), nullptr, 0, nullptr, nullptr);
-	auto p_str(std::make_unique<char[]>(size + 1));
-	WideCharToMultiByte(CP_ACP, 0, str.c_str(), str.size(), p_str.get(), size, nullptr, nullptr);
-	return std::string(p_str.get());
-}
-
 //c# string to wstring
 wstring BstrToWstring(const _bstr_t& bstr)
 {

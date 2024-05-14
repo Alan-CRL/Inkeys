@@ -62,9 +62,9 @@ namespace PptCOM
         //
         string slideNameIndex();
 
-        int NextSlideShow(int check);
+        unsafe void NextSlideShow(int check);
 
-        int PreviousSlideShow();
+        unsafe void PreviousSlideShow();
 
         IntPtr GetPptHwnd();
 
@@ -83,6 +83,7 @@ namespace PptCOM
 
         private unsafe int* pptTotalPage;
         private unsafe int* pptCurrentPage;
+        private int polling = 0;
 
         public string LinkTest()
         {
@@ -109,12 +110,18 @@ namespace PptCOM
         // 事件查询函数
         private unsafe void SlideShowChange(Microsoft.Office.Interop.PowerPoint.SlideShowWindow Wn)
         {
+            if (pptActWindow.View.Slide.SlideIndex >= pptActDoc.Slides.Count) polling = 1;
+            else polling = 0;
+
             *pptCurrentPage = pptActWindow.View.Slide.SlideIndex;
         }
 
         private unsafe void SlideShowBegin(Microsoft.Office.Interop.PowerPoint.SlideShowWindow Wn)
         {
             pptActWindow = Wn;
+
+            if (pptActWindow.View.Slide.SlideIndex >= pptActDoc.Slides.Count) polling = 1;
+            else polling = 0;
 
             // 获取页数
             *pptCurrentPage = pptActWindow.View.Slide.SlideIndex;
@@ -144,17 +151,36 @@ namespace PptCOM
                 {
                     pptActDoc = pptApp.ActivePresentation;
 
+                    int tempTotalPage;
                     try
                     {
                         pptActWindow = pptActDoc.SlideShowWindow;
-
-                        *pptCurrentPage = pptActWindow.View.Slide.SlideIndex;
-                        *pptTotalPage = pptActDoc.Slides.Count;
+                        *pptTotalPage = tempTotalPage = pptActDoc.Slides.Count;
                     }
                     catch
                     {
+                        *pptTotalPage = tempTotalPage = -1;
+                    }
+
+                    if (tempTotalPage == -1)
+                    {
                         *pptCurrentPage = -1;
-                        *pptTotalPage = -1;
+                        polling = 0;
+                    }
+                    else
+                    {
+                        try
+                        {
+                            *pptCurrentPage = pptActWindow.View.Slide.SlideIndex;
+
+                            if (pptActWindow.View.Slide.SlideIndex >= pptActDoc.Slides.Count) polling = 1;
+                            else polling = 0;
+                        }
+                        catch
+                        {
+                            *pptCurrentPage = -1;
+                            polling = 1;
+                        }
                     }
 
                     // 绑定事件
@@ -162,7 +188,24 @@ namespace PptCOM
                     pptApp.SlideShowBegin += new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowBeginEventHandler(SlideShowBegin);
                     pptApp.SlideShowEnd += new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowEndEventHandler(SlideShowShowEnd);
 
-                    while (pptActDoc == pptApp.ActivePresentation) Thread.Sleep(500);
+                    while (true)
+                    {
+                        if (pptActDoc != pptApp.ActivePresentation) break;
+                        if (polling != 0)
+                        {
+                            try
+                            {
+                                *pptCurrentPage = pptActWindow.View.Slide.SlideIndex;
+                                polling = 2;
+                            }
+                            catch
+                            {
+                                *pptCurrentPage = -1;
+                            }
+                        }
+
+                        Thread.Sleep(500);
+                    }
 
                     // 解绑事件
                     pptApp.SlideShowNextSlide -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowNextSlideEventHandler(SlideShowChange);
@@ -251,36 +294,40 @@ namespace PptCOM
         */
 
         // 操控函数
-        public int NextSlideShow(int check)
+        public unsafe void NextSlideShow(int check)
         {
             try
             {
                 int temp_SlideIndex = pptActWindow.View.Slide.SlideIndex;
-                if (temp_SlideIndex != check && check != -1) return pptActWindow.View.Slide.SlideIndex;
+                if (temp_SlideIndex != check && check != -1) return;
 
                 // 下一页
-                pptActWindow.View.Next();
-                // 获取当前播放的幻灯片页索引
-                return pptActWindow.View.Slide.SlideIndex;
+                if (polling != 0)
+                {
+                    if (polling == 2)
+                        pptActWindow.View.Next();
+                    polling = 1;
+                }
+                else pptActWindow.View.Next();
+                //*pptCurrentPage = pptActWindow.View.CurrentShowPosition;
             }
             catch
             {
             }
-            return -1;
+            return;
         }
 
-        public int PreviousSlideShow()
+        public unsafe void PreviousSlideShow()
         {
             try
             {   // 上一页
                 pptActWindow.View.Previous();
-                // 获取当前播放的幻灯片页索引
-                return pptActWindow.View.Slide.SlideIndex;
+                //*pptCurrentPage = pptActWindow.View.CurrentShowPosition;
             }
             catch
             {
             }
-            return -1;
+            return;
         }
 
         public void EndSlideShow()

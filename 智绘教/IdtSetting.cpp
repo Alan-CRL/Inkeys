@@ -1815,7 +1815,7 @@ void FirstSetting(bool info)
 	}
 
 	if (_waccess((StringToWstring(globalPath) + L"opt").c_str(), 0) == -1) filesystem::create_directory(StringToWstring(globalPath) + L"opt");
-	Json::StyledWriter outjson;
+
 	Json::Value root;
 
 	root["edition"] = Json::Value(editionDate);
@@ -1831,10 +1831,13 @@ void FirstSetting(bool info)
 	root["PlugIn"]["DdbEnable"] = Json::Value(true);
 	root["PlugIn"]["DdbEnhance"] = Json::Value(false);
 
+	Json::StreamWriterBuilder outjson;
+	outjson.settings_["emitUTF8"] = true;
+	std::unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
 	ofstream writejson;
 	writejson.imbue(locale("zh_CN.UTF8"));
 	writejson.open(WstringToString(StringToWstring(globalPath) + L"opt\\deploy.json").c_str());
-	writejson << outjson.write(root);
+	writer->write(root, &writejson);
 	writejson.close();
 }
 bool ReadSetting(bool first)
@@ -1877,7 +1880,6 @@ bool ReadSetting(bool first)
 }
 bool WriteSetting()
 {
-	Json::StyledWriter outjson;
 	Json::Value root;
 
 	root["edition"] = Json::Value(editionDate);
@@ -1893,10 +1895,13 @@ bool WriteSetting()
 	root["PlugIn"]["DdbEnable"] = Json::Value(ddbSetList.DdbEnable);
 	root["PlugIn"]["DdbEnhance"] = Json::Value(ddbSetList.DdbEnhance);
 
+	Json::StreamWriterBuilder outjson;
+	outjson.settings_["emitUTF8"] = true;
+	std::unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
 	ofstream writejson;
 	writejson.imbue(locale("zh_CN.UTF8"));
 	writejson.open(WstringToString(StringToWstring(globalPath) + L"opt\\deploy.json").c_str());
-	writejson << outjson.write(root);
+	writer->write(root, &writejson);
 	writejson.close();
 
 	return true;

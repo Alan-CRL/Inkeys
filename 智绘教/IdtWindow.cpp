@@ -53,52 +53,40 @@ void TopWindow()
 	/*
 	//窗口强制置顶
 	{
-		HWND hForeWnd = NULL;
-		DWORD dwForeID = 0;
-		DWORD dwCurID = 0;
+		HWND hForeWnd = GetForegroundWindow();
+		DWORD dwForeID = GetCurrentThreadId();
+		DWORD dwCurID = GetWindowThreadProcessId(hForeWnd, NULL);
+		AttachThreadInput(dwCurID, dwForeID, TRUE);
+		SetWindowPos(floating_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE);
+		SetWindowPos(floating_window, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE);
+		SetForegroundWindow(floating_window);
+		AttachThreadInput(dwCurID, dwForeID, FALSE);
 
-		hForeWnd = ::GetForegroundWindow();
-		dwCurID = ::GetCurrentThreadId();
-		dwForeID = ::GetWindowThreadProcessId(hForeWnd, NULL);
-		::AttachThreadInput(dwCurID, dwForeID, TRUE);
-		//::ShowWindow(hWnd, SW_SHOWNORMAL);
-		::SetWindowPos(floating_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE);
-		::SetWindowPos(floating_window, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE);
-		::SetForegroundWindow(floating_window);
-		// 将前台窗口线程贴附到当前线程（也就是程序A中的调用线程）
-		::AttachThreadInput(dwCurID, dwForeID, FALSE);
+		SetWindowPos(floating_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 	}
-	SetWindowPos(floating_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 	*/
 
-	Sleep(3000);
 	while (1)
 	{
-		try
-		{
-			SetWindowPos(floating_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-			SetWindowPos(ppt_window, floating_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+		if (!SetWindowPos(floating_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)) IDTLogger->warn("[窗口置顶线程][TopWindow] 置顶悬浮窗窗口时失败 Error" + to_string(GetLastError()));
+		if (!SetWindowPos(ppt_window, floating_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)) IDTLogger->warn("[窗口置顶线程][TopWindow] 置顶PPT批注控件窗口时失败 Error" + to_string(GetLastError()));
 
-			if (!choose.select)
+		if (!choose.select)
+		{
+			std::shared_lock<std::shared_mutex> lock1(StrokeImageListSm);
+			bool flag = StrokeImageList.empty();
+			lock1.unlock();
+			if (flag)
 			{
-				std::shared_lock<std::shared_mutex> lock1(StrokeImageListSm);
-				bool flag = StrokeImageList.empty();
-				lock1.unlock();
-				if (flag)
-				{
-					SetWindowPos(drawpad_window, ppt_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-					SetWindowPos(freeze_window, drawpad_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-				}
-			}
-			else
-			{
-				SetWindowPos(drawpad_window, ppt_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-				SetWindowPos(freeze_window, drawpad_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+				if (!SetWindowPos(drawpad_window, ppt_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)) IDTLogger->warn("[窗口置顶线程][TopWindow] 置顶画板窗口时失败 Error" + to_string(GetLastError()));
+				if (!SetWindowPos(freeze_window, drawpad_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)) IDTLogger->warn("[窗口置顶线程][TopWindow] 置顶定格背景窗口时失败 Error" + to_string(GetLastError()));
 			}
 		}
-		catch (...)
+		else
 		{
-		};
+			if (!SetWindowPos(drawpad_window, ppt_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)) IDTLogger->warn("[窗口置顶线程][TopWindow] 置顶画板窗口时失败 Error" + to_string(GetLastError()));
+			if (!SetWindowPos(freeze_window, drawpad_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)) IDTLogger->warn("[窗口置顶线程][TopWindow] 置顶定格背景窗窗口时失败 Error" + to_string(GetLastError()));
+		}
 
 		Sleep(1000);
 	}

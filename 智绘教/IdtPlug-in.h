@@ -53,8 +53,8 @@ extern bool SeewoCameraIsOpen;
 
 wstring LinkTest();
 
-int NextPptSlides(int check);
-int PreviousPptSlides();
+void NextPptSlides(int check);
+void PreviousPptSlides();
 bool EndPptShow();
 
 void GetPptState();

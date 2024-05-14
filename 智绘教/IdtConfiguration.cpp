@@ -63,13 +63,12 @@ bool DdbReadSetting()
 }
 bool DdbWriteSetting(bool change, bool close)
 {
-	Json::StyledWriter outjson;
 	Json::Value root;
 
 	root["SleepTime"] = Json::Value(ddbSetList.sleepTime);
 
 	root["Mode"]["Mode"] = Json::Value(ddbSetList.mode);
-	root["Mode"]["HostPath"] = Json::Value(ConvertToUtf8(WstringToString(ddbSetList.hostPath)));
+	root["Mode"]["HostPath"] = Json::Value(WstringToString(ddbSetList.hostPath));
 	root["Mode"]["RestartHost"] = Json::Value(ddbSetList.restartHost);
 
 	root["Intercept"]["AiClassFloating"] = Json::Value(ddbSetList.InterceptWindow[0]);
@@ -80,10 +79,13 @@ bool DdbWriteSetting(bool change, bool close)
 	root["~ConfigurationChange"] = Json::Value(change);
 	root["~KeepOpen"] = Json::Value(!close);
 
+	Json::StreamWriterBuilder outjson;
+	outjson.settings_["emitUTF8"] = true;
+	std::unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
 	ofstream writejson;
 	writejson.imbue(locale("zh_CN.UTF8"));
 	writejson.open(WstringToString(StringToWstring(globalPath) + L"PlugIn\\DDB\\interaction_configuration.json").c_str());
-	writejson << outjson.write(root);
+	writer->write(root, &writejson);
 	writejson.close();
 
 	return true;

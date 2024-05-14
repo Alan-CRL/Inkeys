@@ -150,27 +150,27 @@ HWND GetPptShow()
 	return NULL;
 }
 
-void NextPptSlides(int check)
+int NextPptSlides(int check)
 {
 	try
 	{
-		PptCOMPto->NextSlideShow(check);
+		return PptCOMPto->NextSlideShow(check);
 	}
 	catch (_com_error)
 	{
 	}
-	return;
+	return -1;
 }
-void PreviousPptSlides()
+int PreviousPptSlides()
 {
 	try
 	{
-		PptCOMPto->PreviousSlideShow();
+		return PptCOMPto->PreviousSlideShow();
 	}
 	catch (_com_error)
 	{
 	}
-	return;
+	return -1;
 }
 bool EndPptShow()
 {
@@ -244,8 +244,6 @@ void GetPptState()
 		}
 	}
 
-	//Testi(1);
-
 	while (!offSignal)
 	{
 		int tmp = -1;
@@ -299,7 +297,7 @@ void DrawControlWindow()
 	DCRenderTarget->SetAntialiasMode(D2D1_ANTIALIAS_MODE::D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 
 	//媒体初始化
-	ID2D1Bitmap* PptIconBitmap[5] = { NULL };
+	Bitmap* PptIconImage[5] = { nullptr };
 	{
 		loadimage(&PptIcon[1], L"PNG", L"ppt1");
 		loadimage(&PptIcon[2], L"PNG", L"ppt2");
@@ -314,96 +312,126 @@ void DrawControlWindow()
 			int height = PptIcon[1].getheight();
 			DWORD* pMem = GetImageBuffer(&PptIcon[1]);
 
-			unsigned char* data = new unsigned char[width * height * 4];
-			for (int y = 0; y < height; ++y)
+			PptIconImage[1] = new Bitmap(width, height, PixelFormat32bppARGB);
+
+			BitmapData bmpData;
+			Rect rect(0, 0, width, height);
+			PptIconImage[1]->LockBits(&rect, ImageLockModeWrite, PixelFormat32bppARGB, &bmpData);
+
+			int stride = bmpData.Stride;
+			BYTE* pDst = (BYTE*)bmpData.Scan0;
+			for (int y = 0; y < height; y++)
 			{
-				for (int x = 0; x < width; ++x)
+				for (int x = 0; x < width; x++)
 				{
+					//Testw(L"to " + to_wstring(x));
+
 					DWORD color = pMem[y * width + x];
 					unsigned char alpha = (color & 0xFF000000) >> 24;
+
+					int idx = y * stride + x * 4;
 					if (alpha != 0)
 					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+						pDst[idx + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+						pDst[idx + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+						pDst[idx + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
 					}
 					else
 					{
-						data[(y * width + x) * 4 + 0] = 0;
-						data[(y * width + x) * 4 + 1] = 0;
-						data[(y * width + x) * 4 + 2] = 0;
+						pDst[idx + 0] = 0;
+						pDst[idx + 1] = 0;
+						pDst[idx + 2] = 0;
 					}
-					data[(y * width + x) * 4 + 3] = alpha;
+					pDst[idx + 3] = alpha;
 				}
 			}
 
-			D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &PptIconBitmap[1]);
-			delete[] data;
+			// 解锁位图
+			PptIconImage[1]->UnlockBits(&bmpData);
 		}
 		{
 			int width = PptIcon[2].getwidth();
 			int height = PptIcon[2].getheight();
 			DWORD* pMem = GetImageBuffer(&PptIcon[2]);
 
-			unsigned char* data = new unsigned char[width * height * 4];
-			for (int y = 0; y < height; ++y)
+			PptIconImage[2] = new Bitmap(width, height, PixelFormat32bppARGB);
+
+			BitmapData bmpData;
+			Rect rect(0, 0, width, height);
+			PptIconImage[2]->LockBits(&rect, ImageLockModeWrite, PixelFormat32bppARGB, &bmpData);
+
+			int stride = bmpData.Stride;
+			BYTE* pDst = (BYTE*)bmpData.Scan0;
+			for (int y = 0; y < height; y++)
 			{
-				for (int x = 0; x < width; ++x)
+				for (int x = 0; x < width; x++)
 				{
+					//Testw(L"to " + to_wstring(x));
+
 					DWORD color = pMem[y * width + x];
 					unsigned char alpha = (color & 0xFF000000) >> 24;
+
+					int idx = y * stride + x * 4;
 					if (alpha != 0)
 					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+						pDst[idx + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+						pDst[idx + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+						pDst[idx + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
 					}
 					else
 					{
-						data[(y * width + x) * 4 + 0] = 0;
-						data[(y * width + x) * 4 + 1] = 0;
-						data[(y * width + x) * 4 + 2] = 0;
+						pDst[idx + 0] = 0;
+						pDst[idx + 1] = 0;
+						pDst[idx + 2] = 0;
 					}
-					data[(y * width + x) * 4 + 3] = alpha;
+					pDst[idx + 3] = alpha;
 				}
 			}
 
-			D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &PptIconBitmap[2]);
-			delete[] data;
+			// 解锁位图
+			PptIconImage[2]->UnlockBits(&bmpData);
 		}
 		{
 			int width = PptIcon[3].getwidth();
 			int height = PptIcon[3].getheight();
 			DWORD* pMem = GetImageBuffer(&PptIcon[3]);
 
-			unsigned char* data = new unsigned char[width * height * 4];
-			for (int y = 0; y < height; ++y)
+			PptIconImage[3] = new Bitmap(width, height, PixelFormat32bppARGB);
+
+			BitmapData bmpData;
+			Rect rect(0, 0, width, height);
+			PptIconImage[3]->LockBits(&rect, ImageLockModeWrite, PixelFormat32bppARGB, &bmpData);
+
+			int stride = bmpData.Stride;
+			BYTE* pDst = (BYTE*)bmpData.Scan0;
+			for (int y = 0; y < height; y++)
 			{
-				for (int x = 0; x < width; ++x)
+				for (int x = 0; x < width; x++)
 				{
+					//Testw(L"to " + to_wstring(x));
+
 					DWORD color = pMem[y * width + x];
 					unsigned char alpha = (color & 0xFF000000) >> 24;
+
+					int idx = y * stride + x * 4;
 					if (alpha != 0)
 					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+						pDst[idx + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+						pDst[idx + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+						pDst[idx + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
 					}
 					else
 					{
-						data[(y * width + x) * 4 + 0] = 0;
-						data[(y * width + x) * 4 + 1] = 0;
-						data[(y * width + x) * 4 + 2] = 0;
+						pDst[idx + 0] = 0;
+						pDst[idx + 1] = 0;
+						pDst[idx + 2] = 0;
 					}
-					data[(y * width + x) * 4 + 3] = alpha;
+					pDst[idx + 3] = alpha;
 				}
 			}
 
-			D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &PptIconBitmap[3]);
-			delete[] data;
+			// 解锁位图
+			PptIconImage[3]->UnlockBits(&bmpData);
 		}
 	}
 
@@ -1262,7 +1290,14 @@ void DrawControlWindow()
 				}
 				// Image/RoundRectLeft1
 				{
-					DCRenderTarget->DrawBitmap(PptIconBitmap[1], D2D1::RectF(PPTUIControl[L"Image/RoundRectLeft1/x"].v, PPTUIControl[L"Image/RoundRectLeft1/y"].v, PPTUIControl[L"Image/RoundRectLeft1/x"].v + PPTUIControl[L"Image/RoundRectLeft1/width"].v, PPTUIControl[L"Image/RoundRectLeft1/y"].v + PPTUIControl[L"Image/RoundRectLeft1/height"].v), PPTUIControl[L"Image/RoundRectLeft1/transparency"].v / 255.0f);
+					Graphics graphics(GetImageHDC(&PptWindowBackground));
+					RectF dstRect(PPTUIControl[L"Image/RoundRectLeft1/x"].v, PPTUIControl[L"Image/RoundRectLeft1/y"].v, PPTUIControl[L"Image/RoundRectLeft1/width"].v, PPTUIControl[L"Image/RoundRectLeft1/height"].v);
+
+					//DCRenderTarget->EndDraw();
+					graphics.DrawImage(PptIconImage[1], dstRect, 0, 0, PptIconImage[1]->GetWidth(), PptIconImage[1]->GetHeight(), UnitPixel);
+					//DCRenderTarget->BeginDraw();
+
+					//DCRenderTarget->DrawBitmap(PptIconBitmap[1], D2D1::RectF(PPTUIControl[L"Image/RoundRectLeft1/x"].v, PPTUIControl[L"Image/RoundRectLeft1/y"].v, PPTUIControl[L"Image/RoundRectLeft1/x"].v + PPTUIControl[L"Image/RoundRectLeft1/width"].v, PPTUIControl[L"Image/RoundRectLeft1/y"].v + PPTUIControl[L"Image/RoundRectLeft1/height"].v), PPTUIControl[L"Image/RoundRectLeft1/transparency"].v / 255.0f);
 				}
 
 				// Words/InfoLeft
@@ -1326,8 +1361,13 @@ void DrawControlWindow()
 				}
 				// Image/RoundRectLeft2
 				{
-					if (CurrentSlides == -1) DCRenderTarget->DrawBitmap(PptIconBitmap[3], D2D1::RectF(PPTUIControl[L"Image/RoundRectLeft2/x"].v, PPTUIControl[L"Image/RoundRectLeft2/y"].v, PPTUIControl[L"Image/RoundRectLeft2/x"].v + PPTUIControl[L"Image/RoundRectLeft2/width"].v, PPTUIControl[L"Image/RoundRectLeft2/y"].v + PPTUIControl[L"Image/RoundRectLeft2/height"].v), PPTUIControl[L"Image/RoundRectLeft2/transparency"].v / 255.0f);
-					else DCRenderTarget->DrawBitmap(PptIconBitmap[2], D2D1::RectF(PPTUIControl[L"Image/RoundRectLeft2/x"].v, PPTUIControl[L"Image/RoundRectLeft2/y"].v, PPTUIControl[L"Image/RoundRectLeft2/x"].v + PPTUIControl[L"Image/RoundRectLeft2/width"].v, PPTUIControl[L"Image/RoundRectLeft2/y"].v + PPTUIControl[L"Image/RoundRectLeft2/height"].v), PPTUIControl[L"Image/RoundRectLeft2/transparency"].v / 255.0f);
+					Graphics graphics(GetImageHDC(&PptWindowBackground));
+					RectF dstRect(PPTUIControl[L"Image/RoundRectLeft2/x"].v, PPTUIControl[L"Image/RoundRectLeft2/y"].v, PPTUIControl[L"Image/RoundRectLeft2/width"].v, PPTUIControl[L"Image/RoundRectLeft2/height"].v);
+
+					//DCRenderTarget->EndDraw();
+					if (CurrentSlides == -1) graphics.DrawImage(PptIconImage[3], dstRect, 0, 0, PptIconImage[3]->GetWidth(), PptIconImage[3]->GetHeight(), UnitPixel);
+					else graphics.DrawImage(PptIconImage[2], dstRect, 0, 0, PptIconImage[2]->GetWidth(), PptIconImage[2]->GetHeight(), UnitPixel);
+					//DCRenderTarget->BeginDraw();
 				}
 			}
 			// 中间控件
@@ -1379,7 +1419,12 @@ void DrawControlWindow()
 				}
 				// Image/RoundRectMiddle1
 				{
-					DCRenderTarget->DrawBitmap(PptIconBitmap[3], D2D1::RectF(PPTUIControl[L"Image/RoundRectMiddle1/x"].v, PPTUIControl[L"Image/RoundRectMiddle1/y"].v, PPTUIControl[L"Image/RoundRectMiddle1/x"].v + PPTUIControl[L"Image/RoundRectMiddle1/width"].v, PPTUIControl[L"Image/RoundRectMiddle1/y"].v + PPTUIControl[L"Image/RoundRectMiddle1/height"].v), PPTUIControl[L"Image/RoundRectMiddle1/transparency"].v / 255.0f);
+					Graphics graphics(GetImageHDC(&PptWindowBackground));
+					RectF dstRect(PPTUIControl[L"Image/RoundRectMiddle1/x"].v, PPTUIControl[L"Image/RoundRectMiddle1/y"].v, PPTUIControl[L"Image/RoundRectMiddle1/width"].v, PPTUIControl[L"Image/RoundRectMiddle1/height"].v);
+
+					//DCRenderTarget->EndDraw();
+					graphics.DrawImage(PptIconImage[3], dstRect, 0, 0, PptIconImage[3]->GetWidth(), PptIconImage[3]->GetHeight(), UnitPixel);
+					//DCRenderTarget->BeginDraw();
 				}
 			}
 			// 右侧控件
@@ -1431,7 +1476,12 @@ void DrawControlWindow()
 				}
 				// Image/RoundRectRight1
 				{
-					DCRenderTarget->DrawBitmap(PptIconBitmap[1], D2D1::RectF(PPTUIControl[L"Image/RoundRectRight1/x"].v, PPTUIControl[L"Image/RoundRectRight1/y"].v, PPTUIControl[L"Image/RoundRectRight1/x"].v + PPTUIControl[L"Image/RoundRectRight1/width"].v, PPTUIControl[L"Image/RoundRectRight1/y"].v + PPTUIControl[L"Image/RoundRectRight1/height"].v), PPTUIControl[L"Image/RoundRectRight1/transparency"].v / 255.0f);
+					Graphics graphics(GetImageHDC(&PptWindowBackground));
+					RectF dstRect(PPTUIControl[L"Image/RoundRectRight1/x"].v, PPTUIControl[L"Image/RoundRectRight1/y"].v, PPTUIControl[L"Image/RoundRectRight1/width"].v, PPTUIControl[L"Image/RoundRectRight1/height"].v);
+
+					//DCRenderTarget->EndDraw();
+					graphics.DrawImage(PptIconImage[1], dstRect, 0, 0, PptIconImage[1]->GetWidth(), PptIconImage[1]->GetHeight(), UnitPixel);
+					//DCRenderTarget->BeginDraw();
 				}
 
 				// Words/InfoRight
@@ -1494,8 +1544,13 @@ void DrawControlWindow()
 				}
 				// Image/RoundRectRight2
 				{
-					if (CurrentSlides == -1) DCRenderTarget->DrawBitmap(PptIconBitmap[3], D2D1::RectF(PPTUIControl[L"Image/RoundRectRight2/x"].v, PPTUIControl[L"Image/RoundRectRight2/y"].v, PPTUIControl[L"Image/RoundRectRight2/x"].v + PPTUIControl[L"Image/RoundRectRight2/width"].v, PPTUIControl[L"Image/RoundRectRight2/y"].v + PPTUIControl[L"Image/RoundRectRight2/height"].v), PPTUIControl[L"Image/RoundRectRight2/transparency"].v / 255.0f);
-					else DCRenderTarget->DrawBitmap(PptIconBitmap[2], D2D1::RectF(PPTUIControl[L"Image/RoundRectRight2/x"].v, PPTUIControl[L"Image/RoundRectRight2/y"].v, PPTUIControl[L"Image/RoundRectRight2/x"].v + PPTUIControl[L"Image/RoundRectRight2/width"].v, PPTUIControl[L"Image/RoundRectRight2/y"].v + PPTUIControl[L"Image/RoundRectRight2/height"].v), PPTUIControl[L"Image/RoundRectRight2/transparency"].v / 255.0f);
+					Graphics graphics(GetImageHDC(&PptWindowBackground));
+					RectF dstRect(PPTUIControl[L"Image/RoundRectRight2/x"].v, PPTUIControl[L"Image/RoundRectRight2/y"].v, PPTUIControl[L"Image/RoundRectRight2/width"].v, PPTUIControl[L"Image/RoundRectRight2/height"].v);
+
+					//DCRenderTarget->EndDraw();
+					if (CurrentSlides == -1) graphics.DrawImage(PptIconImage[3], dstRect, 0, 0, PptIconImage[3]->GetWidth(), PptIconImage[3]->GetHeight(), UnitPixel);
+					else graphics.DrawImage(PptIconImage[2], dstRect, 0, 0, PptIconImage[2]->GetWidth(), PptIconImage[2]->GetHeight(), UnitPixel);
+					//DCRenderTarget->BeginDraw();
 				}
 			}
 
@@ -1510,7 +1565,7 @@ void DrawControlWindow()
 				if (tRecord)
 				{
 					int delay = 1000 / 24 - (clock() - tRecord);
-					if (delay > 0) std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+					//if (delay > 0) std::this_thread::sleep_for(std::chrono::milliseconds(delay));
 				}
 				tRecord = clock();
 
@@ -1520,7 +1575,7 @@ void DrawControlWindow()
 		else Sleep(100);
 	}
 
-	for (int r = 0; r < (int)size(PptIconBitmap); r++) DxObjectSafeRelease(&PptIconBitmap[r]);
+	for (int i = 0; i < size(PptIconImage); i++) delete PptIconImage[i], PptIconImage[i] = nullptr;
 	DxObjectSafeRelease(&DCRenderTarget);
 
 	threadStatus[L"DrawControlWindow"] = false;
@@ -1556,7 +1611,7 @@ void ControlManipulation()
 					PPTManipulated = std::chrono::high_resolution_clock::now();
 					lock1.unlock();
 
-					PreviousPptSlides();
+					PptInfoState.CurrentPage = PreviousPptSlides();
 					PPTUIControlColor[L"RoundRect/RoundRectLeft1/fill"].v = RGBA(200, 200, 200, 255);
 
 					std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
@@ -1569,7 +1624,7 @@ void ControlManipulation()
 							PPTManipulated = std::chrono::high_resolution_clock::now();
 							lock1.unlock();
 
-							PreviousPptSlides();
+							PptInfoState.CurrentPage = PreviousPptSlides();
 							PPTUIControlColor[L"RoundRect/RoundRectLeft1/fill"].v = RGBA(200, 200, 200, 255);
 						}
 
@@ -1625,7 +1680,7 @@ void ControlManipulation()
 						PPTManipulated = std::chrono::high_resolution_clock::now();
 						lock1.unlock();
 
-						NextPptSlides(temp_currentpage);
+						PptInfoState.CurrentPage = NextPptSlides(temp_currentpage);
 						PPTUIControlColor[L"RoundRect/RoundRectLeft2/fill"].v = RGBA(200, 200, 200, 255);
 
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
@@ -1655,7 +1710,7 @@ void ControlManipulation()
 									PPTManipulated = std::chrono::high_resolution_clock::now();
 									lock1.unlock();
 
-									NextPptSlides(temp_currentpage);
+									PptInfoState.CurrentPage = NextPptSlides(temp_currentpage);
 									PPTUIControlColor[L"RoundRect/RoundRectLeft2/fill"].v = RGBA(200, 200, 200, 255);
 								}
 							}
@@ -1785,7 +1840,7 @@ void ControlManipulation()
 					PPTManipulated = std::chrono::high_resolution_clock::now();
 					lock1.unlock();
 
-					PreviousPptSlides();
+					PptInfoState.CurrentPage = PreviousPptSlides();
 					PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v = RGBA(200, 200, 200, 255);
 
 					std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
@@ -1798,7 +1853,7 @@ void ControlManipulation()
 							PPTManipulated = std::chrono::high_resolution_clock::now();
 							lock1.unlock();
 
-							PreviousPptSlides();
+							PptInfoState.CurrentPage = PreviousPptSlides();
 							PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v = RGBA(200, 200, 200, 255);
 						}
 
@@ -1854,7 +1909,7 @@ void ControlManipulation()
 						PPTManipulated = std::chrono::high_resolution_clock::now();
 						lock1.unlock();
 
-						NextPptSlides(temp_currentpage);
+						PptInfoState.CurrentPage = NextPptSlides(temp_currentpage);
 						PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v = RGBA(200, 200, 200, 255);
 
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
@@ -1884,7 +1939,7 @@ void ControlManipulation()
 									PPTManipulated = std::chrono::high_resolution_clock::now();
 									lock1.unlock();
 
-									NextPptSlides(temp_currentpage);
+									PptInfoState.CurrentPage = NextPptSlides(temp_currentpage);
 									PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v = RGBA(200, 200, 200, 255);
 								}
 							}
@@ -1936,7 +1991,7 @@ void ControlManipulation()
 					{
 						SetForegroundWindow(ppt_show);
 
-						NextPptSlides(temp_currentpage);
+						PptInfoState.CurrentPage = NextPptSlides(temp_currentpage);
 						PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v = RGBA(200, 200, 200, 255);
 					}
 
@@ -1952,7 +2007,7 @@ void ControlManipulation()
 					PPTManipulated = std::chrono::high_resolution_clock::now();
 					lock1.unlock();
 
-					PreviousPptSlides();
+					PptInfoState.CurrentPage = PreviousPptSlides();
 					PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v = RGBA(200, 200, 200, 255);
 
 					PPTUIControlColorTarget[L"RoundRect/RoundRectRight1/fill"].v = RGBA(250, 250, 250, 160);
@@ -1987,13 +2042,13 @@ void KeyboardInteraction()
 					// 上一页
 					SetForegroundWindow(ppt_show);
 
-					PreviousPptSlides();
+					PptInfoState.CurrentPage = PreviousPptSlides();
 
 					std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 					while (1)
 					{
 						if (!KeyBoradDown[vkcode]) break;
-						if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400) PreviousPptSlides();
+						if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400) PptInfoState.CurrentPage = PreviousPptSlides();
 
 						Sleep(15);
 					}
@@ -2018,7 +2073,7 @@ void KeyboardInteraction()
 					{
 						SetForegroundWindow(ppt_show);
 
-						NextPptSlides(temp_currentpage);
+						PptInfoState.CurrentPage = NextPptSlides(temp_currentpage);
 
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 						while (1)
@@ -2042,8 +2097,7 @@ void KeyboardInteraction()
 									break;
 								}
 								else if (temp_currentpage == -1) break;
-
-								NextPptSlides(temp_currentpage);
+								PptInfoState.CurrentPage = NextPptSlides(temp_currentpage);
 							}
 
 							Sleep(15);

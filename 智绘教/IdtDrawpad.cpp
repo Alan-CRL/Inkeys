@@ -281,67 +281,6 @@ double EuclideanDistance(POINT a, POINT b)
 	return std::sqrt(std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2));
 }
 
-// Temp
-vector<wstring> sswindows;
-int GetWindowTextSafe(HWND hWnd, LPTSTR lpString, int nMaxCount)
-{
-	if (NULL == hWnd || FALSE == IsWindow(hWnd) || NULL == lpString || 0 == nMaxCount)
-	{
-		return GetWindowText(hWnd, lpString, nMaxCount);
-	}
-	DWORD dwHwndProcessID = 0;
-	DWORD dwHwndThreadID = 0;
-	dwHwndThreadID = GetWindowThreadProcessId(hWnd, &dwHwndProcessID);		//获取窗口所属的进程和线程ID
-
-	if (dwHwndProcessID != GetCurrentProcessId())		//窗口进程不是当前调用进程时，返回原本调用
-	{
-		return GetWindowText(hWnd, lpString, nMaxCount);
-	}
-
-	//窗口进程是当前进程时：
-	if (dwHwndThreadID == GetCurrentThreadId())			//窗口线程就是当前调用线程，返回原本调用
-	{
-		return GetWindowText(hWnd, lpString, nMaxCount);
-	}
-
-#ifndef _UNICODE
-	WCHAR* lpStringUnicode = new WCHAR[nMaxCount];
-	InternalGetWindowText(hWnd, lpStringUnicode, nMaxCount);
-	int size = WideCharToMultiByte(CP_ACP, 0, lpStringUnicode, -1, NULL, 0, NULL, NULL);
-	if (size <= nMaxCount)
-	{
-		size = WideCharToMultiByte(CP_ACP, 0, lpStringUnicode, -1, lpString, size, NULL, NULL);
-		if (NULL != lpStringUnicode)
-		{
-			delete[]lpStringUnicode;
-			lpStringUnicode = NULL;
-		}
-		return size;
-	}
-	if (NULL != lpStringUnicode)
-	{
-		delete[]lpStringUnicode;
-		lpStringUnicode = NULL;
-	}
-	return 0;
-
-#else
-	return InternalGetWindowText(hWnd, lpString, nMaxCount);
-#endif
-}
-wstring GetWindowTitle(HWND hWnd)
-{
-	wchar_t title[256];
-	GetWindowTextSafe(hWnd, title, sizeof(title) / sizeof(wchar_t));
-	return wstring(title);
-}
-BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam)
-{
-	sswindows.push_back(GetWindowTitle(hWnd));
-
-	return TRUE;
-}
-
 void MultiFingerDrawing(LONG pid, POINT pt)
 {
 	struct Mouse
@@ -1574,24 +1513,6 @@ void DrawpadDrawing()
 		if (!UpdateLayeredWindowIndirect(drawpad_window, &ulwi))
 		{
 			MessageBox(floating_window, L"智绘教画板显示出现问题，点击确定以重启智绘教\n此方案可能解决该问题", L"智绘教警告", MB_OK | MB_SYSTEMMODAL);
-
-			{
-				sswindows.clear();
-				EnumWindows(EnumWindowsProc, 0);
-
-				ofstream writejson;
-				writejson.imbue(locale("zh_CN.UTF8"));
-				writejson.open(WstringToString(StringToWstring(globalPath) + L"bug fix 240408.01.log").c_str());
-
-				writejson << "UpdateLayeredWindowIndirect Error" << GetLastError() << endl;
-				for (int i = 0; i < (int)sswindows.size(); i++)
-				{
-					writejson << to_string(i) << " " + WstringToString(sswindows[i]) << endl;
-				}
-
-				writejson.close();
-			}
-
 			offSignal = 2;
 
 			break;

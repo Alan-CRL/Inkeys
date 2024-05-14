@@ -40,8 +40,8 @@ int SettingMain();
 void FreezeFrameWindow();
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string editionDate = "20240513b";				//程序发布日期
-string editionChannel = "Beta";				//程序发布通道
+string editionDate = "20240514e";				//程序发布日期
+string editionChannel = "Dev";				//程序发布通道
 string editionCode = "24H1(BetaH2)";			//程序版本
 
 wstring userId; //用户ID（主板序列号）
@@ -518,6 +518,24 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	{
 		if (ddbSetList.DdbEnable)
 		{
+			// 配置 json
+			{
+				if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\interaction_configuration.json").c_str(), 0) == 0) DdbReadSetting();
+
+				ddbSetList.hostPath = GetCurrentExePath();
+				if (ddbSetList.DdbEnhance)
+				{
+					ddbSetList.mode = 0;
+					ddbSetList.restartHost = true;
+				}
+				else
+				{
+					ddbSetList.mode = 1;
+					ddbSetList.restartHost = true;
+				}
+			}
+
+			// 配置 EXE
 			if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), 0) == -1)
 			{
 				if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB").c_str(), 0) == -1)
@@ -537,21 +555,19 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				}
 
 				if (hash_sha256 != ddbSetList.DdbSHA256)
+				{
+					if (isProcessRunning((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str()))
+					{
+						DdbWriteSetting(true, true);
+						for (int i = 0; i < 5; i++)
+						{
+							if (!isProcessRunning((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str()))
+								break;
+							this_thread::sleep_for(chrono::milliseconds(1000));
+						}
+					}
 					ExtractResource((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
-			}
-
-			if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\interaction_configuration.json").c_str(), 0) == 0) DdbReadSetting();
-
-			ddbSetList.hostPath = GetCurrentExePath();
-			if (ddbSetList.DdbEnhance)
-			{
-				ddbSetList.mode = 0;
-				ddbSetList.restartHost = true;
-			}
-			else
-			{
-				ddbSetList.mode = 1;
-				ddbSetList.restartHost = true;
+				}
 			}
 
 			// 创建开机自启标识
@@ -567,6 +583,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				filesystem::remove(StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal", ec);
 			}
 
+			// 启动 DDB
 			if (!isProcessRunning((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str()))
 			{
 				DdbWriteSetting(true, false);
@@ -631,32 +648,32 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] 创建悬浮窗窗口");
 		hiex::PreSetWindowShowState(SW_HIDE);
-		floating_window = hiex::initgraph_win32(background.getwidth(), background.getheight(), 0, L"IdtFloatingWindow", ClassName.c_str());
+		floating_window = hiex::initgraph_win32(background.getwidth(), background.getheight(), 0, L"Idt1 FloatingWindow", ClassName.c_str());
 		IDTLogger->info("[主线程][IdtMain] 创建悬浮窗窗口完成");
 
 		IDTLogger->info("[主线程][IdtMain] 创建PPT批注控件窗口");
 		hiex::PreSetWindowShowState(SW_HIDE);
-		ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"IdtPptWindow", ClassName.c_str());
+		ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Idt2 PptWindow", ClassName.c_str());
 		IDTLogger->info("[主线程][IdtMain] 创建PPT批注控件窗口完成");
 
 		IDTLogger->info("[主线程][IdtMain] 创建画板窗口");
 		hiex::PreSetWindowShowState(SW_HIDE);
-		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"IdtDrawpadWindow", ClassName.c_str());
+		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Idt3 DrawpadWindow", ClassName.c_str());
 		IDTLogger->info("[主线程][IdtMain] 创建画板窗口完成");
 
 		IDTLogger->info("[主线程][IdtMain] 创建定格背景窗口");
 		hiex::PreSetWindowShowState(SW_HIDE);
-		freeze_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"IdtFreezeWindow", ClassName.c_str());
+		freeze_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Idt4 FreezeWindow", ClassName.c_str());
 		IDTLogger->info("[主线程][IdtMain] 创建定格背景窗口完成");
 
+		IDTLogger->info("[主线程][IdtMain] 置顶定格背景窗口");
+		SetWindowPos(freeze_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+		IDTLogger->info("[主线程][IdtMain] 置顶画板窗口");
+		SetWindowPos(drawpad_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+		IDTLogger->info("[主线程][IdtMain] 置顶PPT批注控件窗口");
+		SetWindowPos(ppt_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 		IDTLogger->info("[主线程][IdtMain] 置顶悬浮窗窗口");
 		SetWindowPos(floating_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-		IDTLogger->info("[主线程][IdtMain] 置顶PPT批注控件窗口");
-		SetWindowPos(ppt_window, floating_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-		IDTLogger->info("[主线程][IdtMain] 置顶画板窗口");
-		SetWindowPos(drawpad_window, ppt_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-		IDTLogger->info("[主线程][IdtMain] 置顶定格背景窗口");
-		SetWindowPos(freeze_window, drawpad_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
 		IDTLogger->info("[主线程][IdtMain] TopWindow函数线程启动");
 		thread TopWindowThread(TopWindow);

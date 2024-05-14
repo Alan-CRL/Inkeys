@@ -10,8 +10,7 @@
 #include "forwards.h"
 #endif // if !defined(JSON_IS_AMALGAMATION)
 
-#pragma pack(push)
-#pragma pack()
+#pragma pack(push, 8)
 
 namespace Json {
 

@@ -44,9 +44,7 @@
 
 //文件类
 #include <filesystem>								// 文件系统库
-#include "json/reader.h"							// JSON读取库
-#include "json/value.h"								// JSON值操作库
-#include "json/writer.h"							// JSON写入库
+#include "json/json.h"								// JSON操作库
 #include "hashlib2plus/hashlibpp.h"					// 哈希库
 #include "zip_utils/unzip.h"						// 解压缩库
 
