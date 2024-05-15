@@ -21,6 +21,7 @@
 #include "IdtImage.h"
 #include "IdtMagnification.h"
 #include "IdtOther.h"
+#include "IdtPlug-in.h"
 #include "IdtRts.h"
 #include "IdtSetting.h"
 #include "IdtSysNotifications.h"
@@ -40,8 +41,8 @@ int SettingMain();
 void FreezeFrameWindow();
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string editionDate = "20240514e";				//程序发布日期
-string editionChannel = "Dev";				//程序发布通道
+string editionDate = "20240515e";				//程序发布日期
+string editionChannel = "Beta";				//程序发布通道
 string editionCode = "24H1(BetaH2)";			//程序版本
 
 wstring userId; //用户ID（主板序列号）
@@ -66,6 +67,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			return 0;
 		}
 	}
+#ifdef IDT_RELEASE
 	// 防止重复启动
 	{
 		if (_waccess((StringToWstring(globalPath) + L"force_start.signal").c_str(), 0) == 0)
@@ -75,6 +77,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		}
 		else if (ProcessRunningCnt(GetCurrentExePath()) > 1) return 0;
 	}
+#endif
 
 	// 用户ID获取
 	{
@@ -240,7 +243,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			{
 				//符合条件，开始替换版本
 
-				Sleep(1000);
+				this_thread::sleep_for(chrono::milliseconds(1000));
 
 				filesystem::path directory(globalPath);
 				string main_path = directory.parent_path().parent_path().string();
@@ -516,85 +519,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 插件配置初始化
 	{
-		if (ddbSetList.DdbEnable)
-		{
-			// 配置 json
-			{
-				if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\interaction_configuration.json").c_str(), 0) == 0) DdbReadSetting();
-
-				ddbSetList.hostPath = GetCurrentExePath();
-				if (ddbSetList.DdbEnhance)
-				{
-					ddbSetList.mode = 0;
-					ddbSetList.restartHost = true;
-				}
-				else
-				{
-					ddbSetList.mode = 1;
-					ddbSetList.restartHost = true;
-				}
-			}
-
-			// 配置 EXE
-			if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), 0) == -1)
-			{
-				if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB").c_str(), 0) == -1)
-				{
-					error_code ec;
-					filesystem::create_directories(StringToWstring(globalPath) + L"PlugIn\\DDB", ec);
-				}
-				ExtractResource((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
-			}
-			else
-			{
-				string hash_sha256;
-				{
-					hashwrapper* myWrapper = new sha256wrapper();
-					hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe");
-					delete myWrapper;
-				}
-
-				if (hash_sha256 != ddbSetList.DdbSHA256)
-				{
-					if (isProcessRunning((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str()))
-					{
-						DdbWriteSetting(true, true);
-						for (int i = 0; i < 5; i++)
-						{
-							if (!isProcessRunning((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str()))
-								break;
-							this_thread::sleep_for(chrono::milliseconds(1000));
-						}
-					}
-					ExtractResource((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
-				}
-			}
-
-			// 创建开机自启标识
-			if (ddbSetList.DdbEnhance && _waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == -1)
-			{
-				std::ofstream file((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str());
-				file.close();
-			}
-			// 移除开机自启标识
-			else if (!ddbSetList.DdbEnhance && _waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == 0)
-			{
-				error_code ec;
-				filesystem::remove(StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal", ec);
-			}
-
-			// 启动 DDB
-			if (!isProcessRunning((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str()))
-			{
-				DdbWriteSetting(true, false);
-				ShellExecute(NULL, NULL, (StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
-			}
-		}
-		else if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB").c_str(), 0) == 0)
-		{
-			error_code ec;
-			filesystem::remove_all(StringToWstring(globalPath) + L"PlugIn\\DDB", ec);
-		}
+		// 启动 DesktopDrawpadBlocker
+		thread(StartDesktopDrawpadBlocker).detach();
 	}
 	// COM初始化
 	HANDLE hActCtx;
@@ -646,34 +572,28 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		if (userId == L"Error") ClassName = L"IdtHiEasyX";
 		else ClassName = userId;
 
-		IDTLogger->info("[主线程][IdtMain] 创建悬浮窗窗口");
-		hiex::PreSetWindowShowState(SW_HIDE);
-		floating_window = hiex::initgraph_win32(background.getwidth(), background.getheight(), 0, L"Idt1 FloatingWindow", ClassName.c_str());
-		IDTLogger->info("[主线程][IdtMain] 创建悬浮窗窗口完成");
-
-		IDTLogger->info("[主线程][IdtMain] 创建PPT批注控件窗口");
-		hiex::PreSetWindowShowState(SW_HIDE);
-		ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Idt2 PptWindow", ClassName.c_str());
-		IDTLogger->info("[主线程][IdtMain] 创建PPT批注控件窗口完成");
-
-		IDTLogger->info("[主线程][IdtMain] 创建画板窗口");
-		hiex::PreSetWindowShowState(SW_HIDE);
-		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Idt3 DrawpadWindow", ClassName.c_str());
-		IDTLogger->info("[主线程][IdtMain] 创建画板窗口完成");
-
 		IDTLogger->info("[主线程][IdtMain] 创建定格背景窗口");
 		hiex::PreSetWindowShowState(SW_HIDE);
 		freeze_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Idt4 FreezeWindow", ClassName.c_str());
 		IDTLogger->info("[主线程][IdtMain] 创建定格背景窗口完成");
 
-		IDTLogger->info("[主线程][IdtMain] 置顶定格背景窗口");
+		IDTLogger->info("[主线程][IdtMain] 创建画板窗口");
+		hiex::PreSetWindowShowState(SW_HIDE);
+		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Idt3 DrawpadWindow", ClassName.c_str(), nullptr, freeze_window);
+		IDTLogger->info("[主线程][IdtMain] 创建画板窗口完成");
+
+		IDTLogger->info("[主线程][IdtMain] 创建PPT批注控件窗口");
+		hiex::PreSetWindowShowState(SW_HIDE);
+		ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Idt2 PptWindow", ClassName.c_str(), nullptr, drawpad_window);
+		IDTLogger->info("[主线程][IdtMain] 创建PPT批注控件窗口完成");
+
+		IDTLogger->info("[主线程][IdtMain] 创建悬浮窗窗口");
+		hiex::PreSetWindowShowState(SW_HIDE);
+		floating_window = hiex::initgraph_win32(background.getwidth(), background.getheight(), 0, L"Idt1 FloatingWindow", ClassName.c_str(), nullptr, ppt_window);
+		IDTLogger->info("[主线程][IdtMain] 创建悬浮窗窗口完成");
+
+		// 画板窗口在注册 RTS 前必须拥有置顶属性，在显示前先进行一次全局置顶
 		SetWindowPos(freeze_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-		IDTLogger->info("[主线程][IdtMain] 置顶画板窗口");
-		SetWindowPos(drawpad_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-		IDTLogger->info("[主线程][IdtMain] 置顶PPT批注控件窗口");
-		SetWindowPos(ppt_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-		IDTLogger->info("[主线程][IdtMain] 置顶悬浮窗窗口");
-		SetWindowPos(floating_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
 		IDTLogger->info("[主线程][IdtMain] TopWindow函数线程启动");
 		thread TopWindowThread(TopWindow);
@@ -761,7 +681,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		FreezeFrameWindow_thread.detach();
 	}
 
-	while (!offSignal) Sleep(500);
+	while (!offSignal) this_thread::sleep_for(chrono::milliseconds(500));
 
 	IDTLogger->info("[主线程][IdtMain] 等待各函数线程结束");
 
@@ -769,7 +689,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	for (; WaitingCount < 20; WaitingCount++)
 	{
 		if (!threadStatus[L"floating_main"] && !threadStatus[L"drawpad_main"] && !threadStatus[L"SettingMain"] && !threadStatus[L"FreezeFrameWindow"] && !threadStatus[L"NetUpdate"]) break;
-		Sleep(500);
+		this_thread::sleep_for(chrono::milliseconds(500));
 	}
 	if (WaitingCount >= 20) IDTLogger->warn("[主线程][IdtMain] 结束函数线程超时并强制结束线程");
 
@@ -791,7 +711,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 #ifdef IDT_RELEASE
 	IDTLogger->info("[主线程][IdtMain] 等待崩溃重启助手结束");
-	while (!offSignalReady) Sleep(500);
+	while (!offSignalReady) this_thread::sleep_for(chrono::milliseconds(500));
 	IDTLogger->info("[主线程][IdtMain] 崩溃重启助手结束");
 #endif
 

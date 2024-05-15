@@ -93,7 +93,7 @@ void CrashedHandler()
 		value++;
 		if (value > 100000000) value = 2;
 
-		Sleep(1000);
+		this_thread::sleep_for(chrono::milliseconds(1000));
 	}
 
 	if (offSignal == 2)

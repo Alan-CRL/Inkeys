@@ -1,13 +1,13 @@
 #pragma once
 #include "IdtMain.h"
 
-#include "IdtWindow.h"
 #include <magnification.h>
 #pragma comment(lib, "magnification.lib")
 
 extern IMAGE MagnificationBackground;
 extern HWND hwndHost, hwndMag;
-extern int magnificationWindowReady;
+
+extern bool magnificationReady;
 
 extern shared_mutex MagnificationBackgroundSm;
 extern RECT magWindowRect;

@@ -44,7 +44,7 @@ void GetTime()
 	while (!offSignal)
 	{
 		GetLocalTime(&sys_time);
-		Sleep(1000);
+		this_thread::sleep_for(chrono::milliseconds(1000));
 	}
 	threadStatus[L"GetTime"] = false;
 }

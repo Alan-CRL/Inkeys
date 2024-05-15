@@ -53,7 +53,7 @@ namespace PptCOM
     [Guid("65F6E9C1-63EC-4003-B89F-8F425A3C2FEA")]
     public interface IPptCOMServer
     {
-        string LinkTest();
+        string GetVersion();
 
         unsafe bool Initialization(int* TotalPage, int* CurrentPage);
 
@@ -83,11 +83,13 @@ namespace PptCOM
 
         private unsafe int* pptTotalPage;
         private unsafe int* pptCurrentPage;
-        private int polling = 0;
 
-        public string LinkTest()
+        private int polling = 0; // 结束界面轮询
+        private DateTime updateTime; // 更新时间点
+
+        public string GetVersion()
         {
-            return "C# COM接口 连接成功，版本 20240508.01";
+            return "20240515a";
         }
 
         // 初始化函数
@@ -110,6 +112,8 @@ namespace PptCOM
         // 事件查询函数
         private unsafe void SlideShowChange(Microsoft.Office.Interop.PowerPoint.SlideShowWindow Wn)
         {
+            updateTime = DateTime.Now;
+
             if (pptActWindow.View.Slide.SlideIndex >= pptActDoc.Slides.Count) polling = 1;
             else polling = 0;
 
@@ -118,6 +122,7 @@ namespace PptCOM
 
         private unsafe void SlideShowBegin(Microsoft.Office.Interop.PowerPoint.SlideShowWindow Wn)
         {
+            updateTime = DateTime.Now;
             pptActWindow = Wn;
 
             if (pptActWindow.View.Slide.SlideIndex >= pptActDoc.Slides.Count) polling = 1;
@@ -130,6 +135,8 @@ namespace PptCOM
 
         private unsafe void SlideShowShowEnd(Microsoft.Office.Interop.PowerPoint.Presentation Wn)
         {
+            updateTime = DateTime.Now;
+
             *pptCurrentPage = -1;
             *pptTotalPage = -1;
         }
@@ -150,6 +157,7 @@ namespace PptCOM
                 if (ret > 0)
                 {
                     pptActDoc = pptApp.ActivePresentation;
+                    updateTime = DateTime.Now;
 
                     int tempTotalPage;
                     try
@@ -202,6 +210,44 @@ namespace PptCOM
                             {
                                 *pptCurrentPage = -1;
                             }
+                        }
+
+                        // 计时轮询（超过3秒不刷新就轮询一次）
+                        if ((DateTime.Now - updateTime).TotalMilliseconds > 3000)
+                        {
+                            try
+                            {
+                                // 获取当前播放的PPT幻灯片窗口对象（保证当前处于放映状态）
+                                if (pptActDoc.SlideShowWindow != null) *pptTotalPage = tempTotalPage = pptActDoc.Slides.Count;
+                                else *pptTotalPage = tempTotalPage = -1;
+                            }
+                            catch
+                            {
+                                *pptTotalPage = tempTotalPage = -1;
+                            }
+
+                            if (tempTotalPage == -1)
+                            {
+                                *pptCurrentPage = -1;
+                                polling = 0;
+                            }
+                            else
+                            {
+                                try
+                                {
+                                    *pptCurrentPage = pptActWindow.View.Slide.SlideIndex;
+
+                                    if (pptActWindow.View.Slide.SlideIndex >= pptActDoc.Slides.Count) polling = 1;
+                                    else polling = 0;
+                                }
+                                catch
+                                {
+                                    *pptCurrentPage = -1;
+                                    polling = 1;
+                                }
+                            }
+
+                            updateTime = DateTime.Now;
                         }
 
                         Thread.Sleep(500);

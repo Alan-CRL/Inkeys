@@ -8,13 +8,12 @@
 #include "IdtPlug-in.h"
 #include "IdtSetting.h"
 #include "IdtText.h"
+#include "IdtWindow.h"
 
 int FreezeRecall;
 
 void FreezeFrameWindow()
 {
-	while (magnificationWindowReady != -1) this_thread::sleep_for(chrono::milliseconds(50));
-
 	threadStatus[L"FreezeFrameWindow"] = true;
 
 	DisableResizing(freeze_window, true);//禁止窗口拉伸
@@ -48,18 +47,20 @@ void FreezeFrameWindow()
 
 	do
 	{
-		Sleep(10);
+		this_thread::sleep_for(chrono::milliseconds(10));
 		::SetWindowLong(freeze_window, GWL_EXSTYLE, ::GetWindowLong(freeze_window, GWL_EXSTYLE) | WS_EX_LAYERED);
 	} while (!(::GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_LAYERED));
 	do
 	{
-		Sleep(10);
+		this_thread::sleep_for(chrono::milliseconds(10));
 		::SetWindowLong(freeze_window, GWL_EXSTYLE, ::GetWindowLong(freeze_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
 	} while (!(::GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE));
 
 	ulwi.hdcSrc = GetImageHDC(&freeze_background);
 	UpdateLayeredWindowIndirect(freeze_window, &ulwi);
-	ShowWindow(freeze_window, SW_SHOW);
+
+	IdtWindowsIsVisible.freezeWindow = true;
+	//ShowWindow(freeze_window, SW_SHOW);
 
 	FreezeFrame.update = true;
 	int wait = 0;
@@ -68,127 +69,135 @@ void FreezeFrameWindow()
 	RECT fwords_rect;
 	while (!offSignal)
 	{
-		Sleep(20);
+		this_thread::sleep_for(chrono::milliseconds(20));
 
-		if (FreezeFrame.mode == 1)
+		if (magnificationReady)
 		{
-			IMAGE MagnificationTmp;
-			if (!show_freeze_window)
+			if (FreezeFrame.mode == 1)
 			{
-				RequestUpdateMagWindow = true;
-				while (RequestUpdateMagWindow) Sleep(100);
-
-				std::shared_lock<std::shared_mutex> lock1(MagnificationBackgroundSm);
-				MagnificationTmp = MagnificationBackground;
-				lock1.unlock();
-
-				SetImageColor(freeze_background, RGBA(0, 0, 0, 0), true);
-				hiex::TransparentImage(&freeze_background, 0, 0, &MagnificationTmp);
-
-				ulwi.hdcSrc = GetImageHDC(&freeze_background);
-				UpdateLayeredWindowIndirect(freeze_window, &ulwi);
-				show_freeze_window = true;
-			}
-
-			if (SeewoCameraIsOpen) wait = 480;
-			while (!offSignal)
-			{
-				if (FreezeFrame.mode != 1 || ppt_show != NULL) break;
-
-				if (FreezeFrame.update)
+				IMAGE MagnificationTmp;
+				if (!show_freeze_window)
 				{
+					RequestUpdateMagWindow = true;
+					while (RequestUpdateMagWindow) this_thread::sleep_for(chrono::milliseconds(100));
+
 					std::shared_lock<std::shared_mutex> lock1(MagnificationBackgroundSm);
 					MagnificationTmp = MagnificationBackground;
 					lock1.unlock();
 
 					SetImageColor(freeze_background, RGBA(0, 0, 0, 0), true);
 					hiex::TransparentImage(&freeze_background, 0, 0, &MagnificationTmp);
+
 					ulwi.hdcSrc = GetImageHDC(&freeze_background);
 					UpdateLayeredWindowIndirect(freeze_window, &ulwi);
-
-					FreezeFrame.update = false;
+					show_freeze_window = true;
 				}
-				else if (wait > 0 && SeewoCameraIsOpen)
+
+				if (SeewoCameraIsOpen) wait = 480;
+				while (!offSignal)
 				{
-					hiex::TransparentImage(&freeze_background, 0, 0, &MagnificationTmp);
+					if (FreezeFrame.mode != 1 || ppt_show != NULL) break;
 
-					hiex::EasyX_Gdiplus_FillRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 160, (float)GetSystemMetrics(SM_CYSCREEN) - 200, 320, 50, 20, 20, RGBA(255, 255, 225, min(255, wait)), RGBA(0, 0, 0, min(150, wait)), 2, true, SmoothingModeHighQuality, &freeze_background);
-
-					Graphics graphics(GetImageHDC(&freeze_background));
-					Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 24, FontStyleRegular, UnitPixel);
-					SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(255, 255, 255, min(255, wait)), true));
-					graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
+					if (FreezeFrame.update)
 					{
-						dwords_rect.left = GetSystemMetrics(SM_CXSCREEN) / 2 - 160;
-						dwords_rect.top = GetSystemMetrics(SM_CYSCREEN) - 200;
-						dwords_rect.right = GetSystemMetrics(SM_CXSCREEN) / 2 + 160;
-						dwords_rect.bottom = GetSystemMetrics(SM_CYSCREEN) - 200 + 52;
-					}
-					graphics.DrawString(L"智绘教已自动开启 画面定格", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
+						std::shared_lock<std::shared_mutex> lock1(MagnificationBackgroundSm);
+						MagnificationTmp = MagnificationBackground;
+						lock1.unlock();
 
-					ulwi.hdcSrc = GetImageHDC(&freeze_background);
-					UpdateLayeredWindowIndirect(freeze_window, &ulwi);
-
-					wait -= 8;
-
-					if (wait == 0)
-					{
+						SetImageColor(freeze_background, RGBA(0, 0, 0, 0), true);
 						hiex::TransparentImage(&freeze_background, 0, 0, &MagnificationTmp);
-
 						ulwi.hdcSrc = GetImageHDC(&freeze_background);
 						UpdateLayeredWindowIndirect(freeze_window, &ulwi);
+
+						FreezeFrame.update = false;
 					}
-				}
-				else if (FreezeRecall > 0)
-				{
-					hiex::TransparentImage(&freeze_background, 0, 0, &MagnificationTmp);
-					hiex::EasyX_Gdiplus_FillRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 160, (float)GetSystemMetrics(SM_CYSCREEN) - 200, 320, 50, 20, 20, RGBA(255, 255, 225, min(255, FreezeRecall)), RGBA(0, 0, 0, min(150, FreezeRecall)), 2, true, SmoothingModeHighQuality, &freeze_background);
-
-					wchar_t buffer[100];
-					if (RecallImageTm.tm_mday == 0) swprintf_s(buffer, L"超级恢复");
-					else swprintf_s(buffer, L"超级恢复 %02d月%02d日 %02d:%02d:%02d", RecallImageTm.tm_mon + 1, RecallImageTm.tm_mday, RecallImageTm.tm_hour, RecallImageTm.tm_min, RecallImageTm.tm_sec);
-
-					Graphics graphics(GetImageHDC(&freeze_background));
-					Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 22, FontStyleRegular, UnitPixel);
-					SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(255, 255, 255, min(255, FreezeRecall)), true));
-					graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-					{
-						fwords_rect.left = GetSystemMetrics(SM_CXSCREEN) / 2 - 160;
-						fwords_rect.top = GetSystemMetrics(SM_CYSCREEN) - 200;
-						fwords_rect.right = GetSystemMetrics(SM_CXSCREEN) / 2 + 160;
-						fwords_rect.bottom = GetSystemMetrics(SM_CYSCREEN) - 200 + 52;
-					}
-					graphics.DrawString(buffer, -1, &gp_font, hiex::RECTToRectF(fwords_rect), &stringFormat, &WordBrush);
-
-					ulwi.hdcSrc = GetImageHDC(&freeze_background);
-					UpdateLayeredWindowIndirect(freeze_window, &ulwi);
-
-					FreezeRecall -= 10;
-
-					if (FreezeRecall <= 0)
+					else if (wait > 0 && SeewoCameraIsOpen)
 					{
 						hiex::TransparentImage(&freeze_background, 0, 0, &MagnificationTmp);
+
+						hiex::EasyX_Gdiplus_FillRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 160, (float)GetSystemMetrics(SM_CYSCREEN) - 200, 320, 50, 20, 20, RGBA(255, 255, 225, min(255, wait)), RGBA(0, 0, 0, min(150, wait)), 2, true, SmoothingModeHighQuality, &freeze_background);
+
+						Graphics graphics(GetImageHDC(&freeze_background));
+						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 24, FontStyleRegular, UnitPixel);
+						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(255, 255, 255, min(255, wait)), true));
+						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
+						{
+							dwords_rect.left = GetSystemMetrics(SM_CXSCREEN) / 2 - 160;
+							dwords_rect.top = GetSystemMetrics(SM_CYSCREEN) - 200;
+							dwords_rect.right = GetSystemMetrics(SM_CXSCREEN) / 2 + 160;
+							dwords_rect.bottom = GetSystemMetrics(SM_CYSCREEN) - 200 + 52;
+						}
+						graphics.DrawString(L"智绘教已自动开启 画面定格", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
 
 						ulwi.hdcSrc = GetImageHDC(&freeze_background);
 						UpdateLayeredWindowIndirect(freeze_window, &ulwi);
 
-						if (FreezeRecall <= 0) FreezeRecall = 0;
-						break;
+						wait -= 8;
+
+						if (wait == 0)
+						{
+							hiex::TransparentImage(&freeze_background, 0, 0, &MagnificationTmp);
+
+							ulwi.hdcSrc = GetImageHDC(&freeze_background);
+							UpdateLayeredWindowIndirect(freeze_window, &ulwi);
+						}
 					}
+					else if (FreezeRecall > 0)
+					{
+						hiex::TransparentImage(&freeze_background, 0, 0, &MagnificationTmp);
+						hiex::EasyX_Gdiplus_FillRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 160, (float)GetSystemMetrics(SM_CYSCREEN) - 200, 320, 50, 20, 20, RGBA(255, 255, 225, min(255, FreezeRecall)), RGBA(0, 0, 0, min(150, FreezeRecall)), 2, true, SmoothingModeHighQuality, &freeze_background);
+
+						wchar_t buffer[100];
+						if (RecallImageTm.tm_mday == 0) swprintf_s(buffer, L"超级恢复");
+						else swprintf_s(buffer, L"超级恢复 %02d月%02d日 %02d:%02d:%02d", RecallImageTm.tm_mon + 1, RecallImageTm.tm_mday, RecallImageTm.tm_hour, RecallImageTm.tm_min, RecallImageTm.tm_sec);
+
+						Graphics graphics(GetImageHDC(&freeze_background));
+						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 22, FontStyleRegular, UnitPixel);
+						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(255, 255, 255, min(255, FreezeRecall)), true));
+						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
+						{
+							fwords_rect.left = GetSystemMetrics(SM_CXSCREEN) / 2 - 160;
+							fwords_rect.top = GetSystemMetrics(SM_CYSCREEN) - 200;
+							fwords_rect.right = GetSystemMetrics(SM_CXSCREEN) / 2 + 160;
+							fwords_rect.bottom = GetSystemMetrics(SM_CYSCREEN) - 200 + 52;
+						}
+						graphics.DrawString(buffer, -1, &gp_font, hiex::RECTToRectF(fwords_rect), &stringFormat, &WordBrush);
+
+						ulwi.hdcSrc = GetImageHDC(&freeze_background);
+						UpdateLayeredWindowIndirect(freeze_window, &ulwi);
+
+						FreezeRecall -= 10;
+
+						if (FreezeRecall <= 0)
+						{
+							hiex::TransparentImage(&freeze_background, 0, 0, &MagnificationTmp);
+
+							ulwi.hdcSrc = GetImageHDC(&freeze_background);
+							UpdateLayeredWindowIndirect(freeze_window, &ulwi);
+
+							if (FreezeRecall <= 0) FreezeRecall = 0;
+							break;
+						}
+					}
+
+					this_thread::sleep_for(chrono::milliseconds(20));
 				}
 
-				Sleep(20);
+				if (ppt_show != NULL) FreezeFrame.mode = 0;
+				FreezeFrame.update = true;
 			}
-
-			if (ppt_show != NULL) FreezeFrame.mode = 0;
-			FreezeFrame.update = true;
+			else if (show_freeze_window)
+			{
+				SetImageColor(freeze_background, RGBA(0, 0, 0, 0), true);
+				ulwi.hdcSrc = GetImageHDC(&freeze_background);
+				UpdateLayeredWindowIndirect(freeze_window, &ulwi);
+				show_freeze_window = false;
+			}
 		}
-		else if (show_freeze_window)
+		else if (FreezeFrame.mode == 1)
 		{
-			SetImageColor(freeze_background, RGBA(0, 0, 0, 0), true);
-			ulwi.hdcSrc = GetImageHDC(&freeze_background);
-			UpdateLayeredWindowIndirect(freeze_window, &ulwi);
-			show_freeze_window = false;
+			FreezeFrame.mode = 0;
+			FreezeFrame.select = false;
 		}
 
 		if (FreezeFrame.mode != 1 && FreezePPT)
@@ -268,7 +277,7 @@ void FreezeFrameWindow()
 				UpdateLayeredWindowIndirect(freeze_window, &ulwi);
 
 				FreezeRecall -= 10;
-				Sleep(20);
+				this_thread::sleep_for(chrono::milliseconds(20));
 
 				if (FreezeRecall <= 0)
 				{

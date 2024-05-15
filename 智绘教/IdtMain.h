@@ -85,12 +85,8 @@
 using namespace std;
 using namespace Gdiplus;
 
-#define KEY_DOWN(VK_NONAME) ((GetAsyncKeyState(VK_NONAME) & 0x8000) ? 1:0)
-
 #define HiBeginDraw() BEGIN_TASK()
 #define HiEndDraw() END_TASK(); REDRAW_WINDOW()
-
-#define Sleep(int) this_thread::sleep_for(chrono::milliseconds(int))
 
 extern wstring buildTime; //构建时间
 extern string editionDate; //程序发布日期
@@ -111,4 +107,6 @@ void Test();
 void Testi(long long t);
 void Testw(wstring t);
 void Testa(string t);
+
+#define Sleep(int) this_thread::sleep_for(chrono::milliseconds(int))
 #endif

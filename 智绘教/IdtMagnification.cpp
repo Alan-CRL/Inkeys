@@ -1,12 +1,15 @@
 #include "IdtMagnification.h"
 #include <winuser.h>
 
+#include "IdtWindow.h"
+
 #include <d3d9.h>
 #pragma comment(lib, "d3d9")
 
 HWND hwndHost, hwndMag;
 IMAGE MagnificationBackground = CreateImageColor(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), RGBA(255, 255, 255, 255), false);
-int magnificationWindowReady;
+
+bool magnificationReady;
 
 shared_mutex MagnificationBackgroundSm;
 RECT magWindowRect;
@@ -27,7 +30,7 @@ BOOL MagImageScaling(HWND hwnd, void* srcdata, MAGIMAGEHEADER srcheader, void* d
 	MagnificationBackground = SrcImage;
 	LockMagnificationBackgroundSm.unlock();
 
-	return 1;
+	return TRUE;
 }
 void UpdateMagWindow()
 {
@@ -151,13 +154,14 @@ void MagnifierThread()
 	IDTLogger->info("[放大API线程][MagnifierThread] 等待穿透窗口创建");
 	while (!offSignal)
 	{
-		if (magnificationWindowReady >= 4)
+		if (IdtWindowsIsVisible.allCompleted)
 		{
 			std::vector<HWND> hwndList;
 			hwndList.emplace_back(floating_window);
-			hwndList.emplace_back(drawpad_window);
 			hwndList.emplace_back(ppt_window);
-			hwndList.emplace_back(setting_window);
+			hwndList.emplace_back(drawpad_window);
+			hwndList.emplace_back(freeze_window);
+			//hwndList.emplace_back(setting_window);
 
 			IDTLogger->info("[放大API线程][MagnifierThread] 设置穿透窗口列表");
 
@@ -179,21 +183,23 @@ void MagnifierThread()
 				}
 				else IDTLogger->error("[放大API线程][MagnifierThread] 设置穿透窗口列表失败（无法初始化 IDirect3D9 并查询是否支持 WDDM）");
 			}
-			else IDTLogger->info("[放大API线程][MagnifierThread] 设置穿透窗口列表完成");
-
-			magnificationWindowReady = -1;
+			else
+			{
+				IDTLogger->info("[放大API线程][MagnifierThread] 设置穿透窗口列表完成");
+				magnificationReady = true;
+			}
 
 			break;
 		}
 
-		Sleep(500);
+		this_thread::sleep_for(chrono::milliseconds(500));
 	}
 	IDTLogger->info("[放大API线程][MagnifierThread] 等待穿透窗口创建完成");
 
 	RequestUpdateMagWindow = true;
 	while (!offSignal)
 	{
-		while (!RequestUpdateMagWindow && !offSignal) Sleep(100);
+		while (!RequestUpdateMagWindow && !offSignal) this_thread::sleep_for(chrono::milliseconds(100));
 		if (offSignal) break;
 
 		{

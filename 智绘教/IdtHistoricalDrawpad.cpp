@@ -144,20 +144,19 @@ void SaveScreenShot(IMAGE img, bool record_pointer_add)
 	if (_waccess((StringToWstring(globalPath) + L"ScreenShot").c_str(), 0 == -1)) CreateDirectory((StringToWstring(globalPath) + L"ScreenShot").c_str(), NULL);
 	if (_waccess((StringToWstring(globalPath) + L"ScreenShot\\" + date).c_str(), 0 == -1)) CreateDirectory((StringToWstring(globalPath) + L"ScreenShot\\" + date).c_str(), NULL);
 
-	if (FreezeFrame.mode != 1)
+	saveImageToPNG(img, WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L".png").c_str(), true, 10);
+	if (magnificationReady)
 	{
 		RequestUpdateMagWindow = true;
-		while (RequestUpdateMagWindow) Sleep(100);
+		while (RequestUpdateMagWindow) this_thread::sleep_for(chrono::milliseconds(100));
+
+		std::shared_lock<std::shared_mutex> lock1(MagnificationBackgroundSm);
+		IMAGE blending = MagnificationBackground;
+		lock1.unlock();
+		saveImageToPNG(blending, WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png").c_str(), false, 10);
 	}
 
-	std::shared_lock<std::shared_mutex> lock1(MagnificationBackgroundSm);
-	IMAGE blending = MagnificationBackground;
-	lock1.unlock();
-
-	saveImageToPNG(img, WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L".png").c_str(), true, 10);
-	saveImageToPNG(blending, WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png").c_str(), false, 10);
-
-	hiex::TransparentImage(&blending, 0, 0, &img);
+	//hiex::TransparentImage(&blending, 0, 0, &img);
 	//saveImageToJPG(blending, WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg").c_str(),50);
 	//saveimage((StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg").c_str(), &blending);
 
@@ -169,7 +168,7 @@ void SaveScreenShot(IMAGE img, bool record_pointer_add)
 			set["date"] = Json::Value(ConvertToUtf8(WstringToString(date)));
 			set["time"] = Json::Value(ConvertToUtf8(WstringToString(time)));
 			set["drawpad"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L".png")));
-			set["background"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png")));
+			if (magnificationReady) set["background"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png")));
 			//set["blending"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg")));
 
 			record_value["Image_Properties"].insert(0, set);
@@ -191,7 +190,7 @@ void SaveScreenShot(IMAGE img, bool record_pointer_add)
 			set["date"] = Json::Value(ConvertToUtf8(WstringToString(date)));
 			set["time"] = Json::Value(ConvertToUtf8(WstringToString(time)));
 			set["drawpad"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L".png")));
-			set["background"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png")));
+			if (magnificationReady) set["background"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png")));
 			//set["blending"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg")));
 
 			record_value["Image_Properties"].append(set);

@@ -204,7 +204,9 @@ LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			return 1;
 		}
 	}
+
 	// 继续传递事件给下一个钩子或目标窗口
+	if (offSignal) return 1;
 	return CallNextHookEx(FloatingHookCall, nCode, wParam, lParam);
 }
 void FloatingInstallHook()
@@ -1002,18 +1004,16 @@ void DrawScreen()
 
 	do
 	{
-		Sleep(10);
+		this_thread::sleep_for(chrono::milliseconds(10));
 		::SetWindowLong(floating_window, GWL_EXSTYLE, ::GetWindowLong(floating_window, GWL_EXSTYLE) | WS_EX_LAYERED);
 	} while (!(::GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_LAYERED));
 	do
 	{
-		Sleep(10);
+		this_thread::sleep_for(chrono::milliseconds(10));
 		::SetWindowLong(floating_window, GWL_EXSTYLE, ::GetWindowLong(floating_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
 	} while (!(::GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE));
 
 	graphics.SetSmoothingMode(SmoothingModeHighQuality);
-
-	magnificationWindowReady++;
 
 	//LOG(INFO) << "成功初始化悬浮窗窗口绘制模块";
 	clock_t tRecord = clock();
@@ -5309,7 +5309,11 @@ void DrawScreen()
 		}
 		else state = target_status;
 
-		if (for_num == 1) ShowWindow(floating_window, SW_SHOW);
+		if (for_num == 1)
+		{
+			IdtWindowsIsVisible.floatingWindow = true;
+			//ShowWindow(floating_window, SW_SHOW);
+		}
 		if (tRecord)
 		{
 			int delay = 1000 / 24 - (clock() - tRecord);
@@ -5318,7 +5322,6 @@ void DrawScreen()
 		tRecord = clock();
 	}
 
-	ShowWindow(floating_window, SW_HIDE);
 	threadStatus[L"DrawScreen"] = false;
 }
 void MouseInteraction()
@@ -5341,7 +5344,7 @@ void MouseInteraction()
 			{
 				if (IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 156, floating_windows.width - 96 + 96, floating_windows.height - 156 + 96 }))
 				{
-					if (m.lbutton)
+					if (m.message == WM_LBUTTONDOWN)
 					{
 						lx = m.x, ly = m.y;
 						while (1)
@@ -5369,7 +5372,7 @@ void MouseInteraction()
 						MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
 					}
 
-					if (m.rbutton)
+					if (m.message == WM_RBUTTONDOWN)
 					{
 						if (MessageBox(floating_window, L"是否关闭 智绘教 ？", L"智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) offSignal = true;
 						hiex::flushmessage_win32(EM_MOUSE, floating_window);
@@ -5378,7 +5381,7 @@ void MouseInteraction()
 
 				if (!choose.select && (!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0)) && IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
 				{
-					if (m.lbutton)
+					if (m.message == WM_LBUTTONDOWN)
 					{
 						lx = m.x, ly = m.y;
 						while (1)
@@ -5474,7 +5477,7 @@ void MouseInteraction()
 				}
 				else if (!choose.select && RecallImage.empty() && current_record_pointer <= total_record_pointer + 1 && practical_total_record_pointer && IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
 				{
-					if (m.lbutton)
+					if (m.message == WM_LBUTTONDOWN)
 					{
 						lx = m.x, ly = m.y;
 						while (1)
@@ -5590,7 +5593,7 @@ void MouseInteraction()
 			{
 				if (IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 156, floating_windows.width - 96 + 96, floating_windows.height - 156 + 96 }))
 				{
-					if (m.lbutton)
+					if (m.message == WM_LBUTTONDOWN)
 					{
 						lx = m.x, ly = m.y;
 						while (1)
@@ -5620,7 +5623,7 @@ void MouseInteraction()
 						MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
 					}
 
-					if (m.rbutton)
+					if (m.message == WM_RBUTTONDOWN)
 					{
 						if (MessageBox(floating_window, L"是否关闭 智绘教 ？", L"智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) offSignal = true;
 						hiex::flushmessage_win32(EM_MOUSE, floating_window);
@@ -5630,7 +5633,7 @@ void MouseInteraction()
 				//窗口穿透
 				if (choose.select == false && IsInRect(m.x, m.y, { floating_windows.width - 96 + 4, floating_windows.height - 256 + 8, floating_windows.width - 96 + 4 + 88, floating_windows.height - 256 + 8 + 40 }))
 				{
-					if (m.lbutton)
+					if (m.message == WM_LBUTTONDOWN)
 					{
 						lx = m.x, ly = m.y;
 						while (1)
@@ -5669,7 +5672,7 @@ void MouseInteraction()
 				//窗口定格
 				if (ppt_show == NULL && IsInRect(m.x, m.y, { floating_windows.width - 96 + 4, floating_windows.height - 256 + 50, floating_windows.width - 96 + 4 + 88, floating_windows.height - 256 + 50 + 40 }))
 				{
-					if (m.lbutton)
+					if (m.message == WM_LBUTTONDOWN)
 					{
 						lx = m.x, ly = m.y;
 						while (1)
@@ -5707,7 +5710,7 @@ void MouseInteraction()
 				//选择
 				if (IsInRect(m.x, m.y, { 0 + 8, floating_windows.height - 156 + 8, 0 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
 				{
-					if (m.lbutton)
+					if (m.message == WM_LBUTTONDOWN)
 					{
 						lx = m.x, ly = m.y;
 						while (1)
@@ -5744,7 +5747,7 @@ void MouseInteraction()
 				//画笔
 				if (IsInRect(m.x, m.y, { 96 + 8, floating_windows.height - 156 + 8, 96 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
 				{
-					if (m.lbutton)
+					if (m.message == WM_LBUTTONDOWN)
 					{
 						lx = m.x, ly = m.y;
 						brush_connect = false;
@@ -5817,7 +5820,7 @@ void MouseInteraction()
 				{
 					if ((state == 1.1 || state == 1.11 || state == 1.12) && IsInRect(m.x, m.y, { int(UIControl[L"RoundRect/PaintThickness/x"].v), int(UIControl[L"RoundRect/PaintThickness/y"].v), int(UIControl[L"RoundRect/PaintThickness/x"].v + UIControl[L"RoundRect/PaintThickness/width"].v), int(UIControl[L"RoundRect/PaintThickness/y"].v + UIControl[L"RoundRect/PaintThickness/height"].v) }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN)
 						{
 							lx = m.x, ly = m.y;
 							while (1)
@@ -5847,7 +5850,7 @@ void MouseInteraction()
 					}
 					else if (state == 1.11 && IsInRect(m.x, m.y, { 15, floating_windows.height - 312 + 10, 355, floating_windows.height - 312 + 40 }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN)
 						{
 							POINT pt;
 
@@ -5876,7 +5879,7 @@ void MouseInteraction()
 						{
 							if (IsInRect(m.x, m.y, { 365, floating_windows.height - 312 + 5, 395, floating_windows.height - 312 + 45 }))
 							{
-								if (m.lbutton)
+								if (m.message == WM_LBUTTONDOWN)
 								{
 									int lx = m.x, ly = m.y;
 									while (1)
@@ -5904,7 +5907,7 @@ void MouseInteraction()
 							}
 							if (IsInRect(m.x, m.y, { 395, floating_windows.height - 312 + 5, 425, floating_windows.height - 312 + 45 }))
 							{
-								if (m.lbutton)
+								if (m.message == WM_LBUTTONDOWN)
 								{
 									int lx = m.x, ly = m.y;
 									while (1)
@@ -5932,7 +5935,7 @@ void MouseInteraction()
 							}
 							if (IsInRect(m.x, m.y, { 425, floating_windows.height - 312 + 5, 455, floating_windows.height - 312 + 45 }))
 							{
-								if (m.lbutton)
+								if (m.message == WM_LBUTTONDOWN)
 								{
 									int lx = m.x, ly = m.y;
 									while (1)
@@ -5963,7 +5966,7 @@ void MouseInteraction()
 						{
 							if (IsInRect(m.x, m.y, { 355, floating_windows.height - 312 + 5, 405, floating_windows.height - 312 + 45 }))
 							{
-								if (m.lbutton)
+								if (m.message == WM_LBUTTONDOWN)
 								{
 									int lx = m.x, ly = m.y;
 									while (1)
@@ -5991,7 +5994,7 @@ void MouseInteraction()
 							}
 							if (IsInRect(m.x, m.y, { 405, floating_windows.height - 312 + 5, 455, floating_windows.height - 312 + 45 }))
 							{
-								if (m.lbutton)
+								if (m.message == WM_LBUTTONDOWN)
 								{
 									int lx = m.x, ly = m.y;
 									while (1)
@@ -6023,7 +6026,7 @@ void MouseInteraction()
 					{
 						if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColorChooseWheel/x"].v, (int)UIControlTarget[L"RoundRect/BrushColorChooseWheel/y"].v, (int)UIControlTarget[L"RoundRect/BrushColorChooseWheel/x"].v + (int)UIControlTarget[L"RoundRect/BrushColorChooseWheel/width"].v, (int)UIControlTarget[L"RoundRect/BrushColorChooseWheel/y"].v + (int)UIControlTarget[L"RoundRect/BrushColorChooseWheel/height"].v }))
 						{
-							if (m.lbutton)
+							if (m.message == WM_LBUTTONDOWN)
 							{
 								POINT center{ int(UIControlTarget[L"RoundRect/BrushColorChooseWheel/x"].v + UIControlTarget[L"RoundRect/BrushColorChooseWheel/width"].v / 2), int(UIControlTarget[L"RoundRect/BrushColorChooseWheel/y"].v + UIControlTarget[L"RoundRect/BrushColorChooseWheel/height"].v / 2) };
 								POINT pt;
@@ -6073,7 +6076,7 @@ void MouseInteraction()
 
 					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor1/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor1/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor1/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor1/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor1/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor1/height"].v }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor1/fill"].v, 255);
 							BackgroundColorMode = 1;
@@ -6086,7 +6089,7 @@ void MouseInteraction()
 					}
 					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor2/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor2/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor2/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor2/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor2/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor2/height"].v }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor2/fill"].v, 255);
 							BackgroundColorMode = 0;
@@ -6099,7 +6102,7 @@ void MouseInteraction()
 					}
 					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor3/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor3/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor3/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor3/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor3/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor3/height"].v }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor3/fill"].v, 255);
 							BackgroundColorMode = 1;
@@ -6112,7 +6115,7 @@ void MouseInteraction()
 					}
 					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor4/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor4/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor4/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor4/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor4/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor4/height"].v }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor4/fill"].v, 255);
 							BackgroundColorMode = 0;
@@ -6125,7 +6128,7 @@ void MouseInteraction()
 					}
 					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor5/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor5/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor5/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor5/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor5/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor5/height"].v }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor5/fill"].v, 255);
 							BackgroundColorMode = 1;
@@ -6138,7 +6141,7 @@ void MouseInteraction()
 					}
 					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor6/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor6/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor6/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor6/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor6/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor6/height"].v }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor6/fill"].v, 255);
 							BackgroundColorMode = 0;
@@ -6151,7 +6154,7 @@ void MouseInteraction()
 					}
 					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor7/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor7/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor7/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor7/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor7/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor7/height"].v }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor7/fill"].v, 255);
 							BackgroundColorMode = 1;
@@ -6164,7 +6167,7 @@ void MouseInteraction()
 					}
 					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor8/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor8/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor8/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor8/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor8/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor8/height"].v }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor8/fill"].v, 255);
 							BackgroundColorMode = 0;
@@ -6177,7 +6180,7 @@ void MouseInteraction()
 					}
 					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor9/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor9/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor9/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor9/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor9/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor9/height"].v }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor9/fill"].v, 255);
 							BackgroundColorMode = 1;
@@ -6190,7 +6193,7 @@ void MouseInteraction()
 					}
 					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor10/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor10/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor10/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor10/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor10/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor10/height"].v }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor10/fill"].v, 255);
 							BackgroundColorMode = 0;
@@ -6203,7 +6206,7 @@ void MouseInteraction()
 					}
 					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor11/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor11/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor11/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor11/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor11/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor11/height"].v }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							brush.color = brush.primary_colour = SET_ALPHA(UIControlColor[L"RoundRect/BrushColor11/fill"].v, 255);
 							BackgroundColorMode = 1;
@@ -6216,7 +6219,7 @@ void MouseInteraction()
 					}
 					else if (IsInRect(m.x, m.y, { (int)UIControlTarget[L"RoundRect/BrushColor12/x"].v, (int)UIControlTarget[L"RoundRect/BrushColor12/y"].v, (int)UIControlTarget[L"RoundRect/BrushColor12/x"].v + (int)UIControlTarget[L"RoundRect/BrushColor12/width"].v, (int)UIControlTarget[L"RoundRect/BrushColor12/y"].v + (int)UIControlTarget[L"RoundRect/BrushColor12/height"].v }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN)
 						{
 							int lx = m.x, ly = m.y;
 							while (1)
@@ -6247,7 +6250,7 @@ void MouseInteraction()
 
 					if (IsInRect(m.x, m.y, { 5, floating_windows.height - 55 + 5, 5 + 90, floating_windows.height - 55 + 5 + 30 }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN)
 						{
 							if (brush.mode == 2)
 							{
@@ -6261,7 +6264,7 @@ void MouseInteraction()
 					}
 					else if (IsInRect(m.x, m.y, { 95, floating_windows.height - 55 + 5, 95 + 90, floating_windows.height - 55 + 5 + 30 }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN)
 						{
 							if (brush.mode != 2)
 							{
@@ -6275,7 +6278,7 @@ void MouseInteraction()
 					}
 					else if (IsInRect(m.x, m.y, { 195, floating_windows.height - 55 + 5,195 + 90, floating_windows.height - 55 + 5 + 30 }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN)
 						{
 							if (brush.mode != 1 && brush.mode != 2)
 							{
@@ -6287,7 +6290,7 @@ void MouseInteraction()
 					}
 					else if (IsInRect(m.x, m.y, { 285, floating_windows.height - 55 + 5,285 + 90, floating_windows.height - 55 + 5 + 30 }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN)
 						{
 							if (brush.mode == 2)
 							{
@@ -6301,7 +6304,7 @@ void MouseInteraction()
 					}
 					else if (IsInRect(m.x, m.y, { 375, floating_windows.height - 55 + 5,375 + 90, floating_windows.height - 55 + 5 + 30 }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN)
 						{
 							if (brush.mode == 2)
 							{
@@ -6319,7 +6322,7 @@ void MouseInteraction()
 				//橡皮
 				if (rubber.select == false && IsInRect(m.x, m.y, { 192 + 8, floating_windows.height - 156 + 8, 192 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
 				{
-					if (m.lbutton)
+					if (m.message == WM_LBUTTONDOWN)
 					{
 						lx = m.x, ly = m.y;
 						while (1)
@@ -6357,7 +6360,7 @@ void MouseInteraction()
 				{
 					if ((!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0)) && IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN)
 						{
 							lx = m.x, ly = m.y;
 							while (1)
@@ -6453,7 +6456,7 @@ void MouseInteraction()
 					}
 					else if (RecallImage.empty() && current_record_pointer <= total_record_pointer + 1 && practical_total_record_pointer && IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN)
 						{
 							lx = m.x, ly = m.y;
 							while (1)
@@ -6568,7 +6571,7 @@ void MouseInteraction()
 				//选项
 				if (IsInRect(m.x, m.y, { 288 + 8, floating_windows.height - 156 + 8, 288 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
 				{
-					if (m.lbutton)
+					if (m.message == WM_LBUTTONDOWN)
 					{
 						lx = m.x, ly = m.y;
 						while (1)
@@ -6602,7 +6605,7 @@ void MouseInteraction()
 				{
 					if (IsInRect(m.x, m.y, { 2, floating_windows.height - 55, 2 + 100, floating_windows.height - 55 + 40 }))
 					{
-						if (m.lbutton)
+						if (m.message == WM_LBUTTONDOWN)
 						{
 							lx = m.x, ly = m.y;
 							while (1)
@@ -6695,13 +6698,13 @@ int floating_main()
 	thread MouseInteractionThread(MouseInteraction);
 	MouseInteractionThread.detach();
 
-	while (!offSignal) Sleep(500);
+	while (!offSignal) this_thread::sleep_for(chrono::milliseconds(500));
 
 	int i = 1;
 	for (; i <= 10; i++)
 	{
 		if (!threadStatus[L"CrashedHandler"] && !threadStatus[L"PPTLinkageMain"]/*&& !threadStatus[L"GetPptState"] && !threadStatus[L"ControlManipulation"] */ && !threadStatus[L"GetTime"] && !threadStatus[L"DrawScreen"] && !threadStatus[L"api_read_pipe"] && !threadStatus[L"BlackBlock"]) break;
-		Sleep(500);
+		this_thread::sleep_for(chrono::milliseconds(500));
 	}
 
 	threadStatus[L"floating_main"] = false;

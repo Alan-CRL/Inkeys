@@ -87,8 +87,6 @@ int SettingMain()
 		::ShowWindow(setting_window, SW_HIDE);
 		::UpdateWindow(setting_window);
 
-		magnificationWindowReady++;
-
 		CreateDeviceD3D(setting_window);
 
 		loadimage(&SettingSign[1], L"PNG", L"sign2");
@@ -202,7 +200,7 @@ int SettingMain()
 		::ShowWindow(setting_window, SW_HIDE);
 		ShowWindow = false;
 
-		while (!test.select && !offSignal) Sleep(100);
+		while (!test.select && !offSignal) this_thread::sleep_for(chrono::milliseconds(100));
 		if (offSignal) break;
 
 		IMGUI_CHECKVERSION();
@@ -682,7 +680,7 @@ int SettingMain()
 								for (for_i = 0; for_i <= QueryWaitingTime * 10; for_i++)
 								{
 									if (WaitNamedPipe(TEXT("\\\\.\\pipe\\IDTPipe1"), 100)) break;
-									else Sleep(100);
+									else this_thread::sleep_for(chrono::milliseconds(100));
 								}
 
 								if (for_i > QueryWaitingTime * 10) receivedData = L"TimeOut";
@@ -781,7 +779,7 @@ int SettingMain()
 									for (for_i = 0; for_i <= QueryWaitingTime * 10; for_i++)
 									{
 										if (WaitNamedPipe(TEXT("\\\\.\\pipe\\IDTPipe1"), 100)) break;
-										else Sleep(100);
+										else this_thread::sleep_for(chrono::milliseconds(100));
 									}
 
 									if (for_i <= QueryWaitingTime * 10)
@@ -1245,7 +1243,7 @@ int SettingMain()
 									for (for_i = 0; for_i <= QueryWaitingTime * 10; for_i++)
 									{
 										if (WaitNamedPipe(TEXT("\\\\.\\pipe\\IDTPipe1"), 100)) break;
-										else Sleep(100);
+										else this_thread::sleep_for(chrono::milliseconds(100));
 									}
 
 									if (for_i <= QueryWaitingTime * 10)
@@ -1310,7 +1308,7 @@ int SettingMain()
 									for (for_i = 0; for_i <= QueryWaitingTime * 10; for_i++)
 									{
 										if (WaitNamedPipe(TEXT("\\\\.\\pipe\\IDTPipe1"), 100)) break;
-										else Sleep(100);
+										else this_thread::sleep_for(chrono::milliseconds(100));
 									}
 
 									if (for_i <= QueryWaitingTime * 10)
@@ -1802,7 +1800,7 @@ void FirstSetting(bool info)
 		for (for_i = 0; for_i <= 5000; for_i++)
 		{
 			if (WaitNamedPipe(TEXT("\\\\.\\pipe\\IDTPipe1"), 100)) break;
-			else Sleep(100);
+			else this_thread::sleep_for(chrono::milliseconds(100));
 		}
 
 		if (for_i <= 5000)

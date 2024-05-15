@@ -25,6 +25,7 @@
 
 #include "IdtPlug-in.h"
 
+#include "IdtConfiguration.h"
 #include "IdtDisplayManagement.h"
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
@@ -95,7 +96,7 @@ wstring LinkTest()
 	{
 		try
 		{
-			ret = BstrToWstring(PptCOMPto->LinkTest());
+			ret = L"C# PptCOM接口 连接成功，版本 " + BstrToWstring(PptCOMPto->GetVersion());
 		}
 		catch (_com_error& err)
 		{
@@ -243,8 +244,6 @@ void GetPptState()
 		{
 		}
 	}
-
-	//Testi(1);
 
 	while (!offSignal)
 	{
@@ -594,7 +593,7 @@ void DrawControlWindow()
 
 		// 文字控件
 		{
-			PPTUIControlString[L"Info/Pages"] = L"-1/-1";
+			PPTUIControlString[L"Info/Pages"] = L"Inkeys";
 		}
 
 		PPTUIControlTarget = PPTUIControl;
@@ -630,16 +629,14 @@ void DrawControlWindow()
 
 	do
 	{
-		Sleep(10);
+		this_thread::sleep_for(chrono::milliseconds(10));
 		::SetWindowLong(ppt_window, GWL_EXSTYLE, ::GetWindowLong(ppt_window, GWL_EXSTYLE) | WS_EX_LAYERED);
 	} while (!(::GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_LAYERED));
 	do
 	{
-		Sleep(10);
+		this_thread::sleep_for(chrono::milliseconds(10));
 		::SetWindowLong(ppt_window, GWL_EXSTYLE, ::GetWindowLong(ppt_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
 	} while (!(::GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE));
-
-	magnificationWindowReady++;
 
 	int TotalSlides = -1, TotalSlidesLast = -2;
 	int CurrentSlides = -1;
@@ -884,7 +881,7 @@ void DrawControlWindow()
 				{
 					{
 						wstring temp;
-						if (TotalSlides >= 100 || TotalSlides >= 100)
+						if (CurrentSlides >= 100 || TotalSlides >= 100)
 						{
 							temp = CurrentSlides == -1 ? L"-" : to_wstring(CurrentSlides);
 							temp += L"\n";
@@ -1095,7 +1092,7 @@ void DrawControlWindow()
 				// 文字控件
 				{
 					{
-						PPTUIControlStringTarget[L"Info/Pages"] = L"-1/-1";
+						PPTUIControlStringTarget[L"Info/Pages"] = L"Inkeys";
 					}
 				}
 
@@ -1505,7 +1502,13 @@ void DrawControlWindow()
 				ulwi.hdcSrc = GetImageHDC(&PptWindowBackground);
 				UpdateLayeredWindowIndirect(ppt_window, &ulwi);
 
-				if (!IsShowWindow) ShowWindow(ppt_window, SW_SHOW), IsShowWindow = true;
+				if (!IsShowWindow)
+				{
+					IdtWindowsIsVisible.pptWindow = true;
+					//ShowWindow(ppt_window, SW_SHOW);
+
+					IsShowWindow = true;
+				}
 				// 动态平衡帧率
 				if (tRecord)
 				{
@@ -1517,7 +1520,7 @@ void DrawControlWindow()
 				PptWindowBackgroundUiChange = false;
 			}
 		}
-		else Sleep(100);
+		else this_thread::sleep_for(chrono::milliseconds(100));
 	}
 
 	for (int r = 0; r < (int)size(PptIconBitmap); r++) DxObjectSafeRelease(&PptIconBitmap[r]);
@@ -1548,7 +1551,7 @@ void ControlManipulation()
 				else PPTUIControlColorTarget[L"RoundRect/RoundRectLeft1/fill"].v = RGBA(250, 250, 250, 160);
 				PptWindowBackgroundUiChange = true;
 
-				if (m.lbutton)
+				if (m.message == WM_LBUTTONDOWN)
 				{
 					SetForegroundWindow(ppt_show);
 
@@ -1573,7 +1576,7 @@ void ControlManipulation()
 							PPTUIControlColor[L"RoundRect/RoundRectLeft1/fill"].v = RGBA(200, 200, 200, 255);
 						}
 
-						Sleep(15);
+						this_thread::sleep_for(chrono::milliseconds(15));
 					}
 
 					PPTUIControlColorTarget[L"RoundRect/RoundRectLeft1/fill"].v = RGBA(250, 250, 250, 160);
@@ -1592,7 +1595,7 @@ void ControlManipulation()
 				else PPTUIControlColorTarget[L"RoundRect/RoundRectLeft2/fill"].v = RGBA(250, 250, 250, 160);
 				PptWindowBackgroundUiChange = true;
 
-				if (m.lbutton)
+				if (m.message == WM_LBUTTONDOWN)
 				{
 					int temp_currentpage = PptInfoState.CurrentPage;
 					if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
@@ -1660,7 +1663,7 @@ void ControlManipulation()
 								}
 							}
 
-							Sleep(15);
+							this_thread::sleep_for(chrono::milliseconds(15));
 						}
 					}
 
@@ -1722,7 +1725,7 @@ void ControlManipulation()
 				else PPTUIControlColorTarget[L"RoundRect/RoundRectMiddle1/fill"].v = RGBA(250, 250, 250, 160);
 				PptWindowBackgroundUiChange = true;
 
-				if (m.lbutton)
+				if (m.message == WM_LBUTTONDOWN)
 				{
 					int lx = m.x, ly = m.y;
 					while (1)
@@ -1777,7 +1780,7 @@ void ControlManipulation()
 				else PPTUIControlColorTarget[L"RoundRect/RoundRectRight1/fill"].v = RGBA(250, 250, 250, 160);
 				PptWindowBackgroundUiChange = true;
 
-				if (m.lbutton)
+				if (m.message == WM_LBUTTONDOWN)
 				{
 					SetForegroundWindow(ppt_show);
 
@@ -1802,7 +1805,7 @@ void ControlManipulation()
 							PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v = RGBA(200, 200, 200, 255);
 						}
 
-						Sleep(15);
+						this_thread::sleep_for(chrono::milliseconds(15));
 					}
 
 					PPTUIControlColorTarget[L"RoundRect/RoundRectRight1/fill"].v = RGBA(250, 250, 250, 160);
@@ -1821,7 +1824,7 @@ void ControlManipulation()
 				else PPTUIControlColorTarget[L"RoundRect/RoundRectRight2/fill"].v = RGBA(250, 250, 250, 160);
 				PptWindowBackgroundUiChange = true;
 
-				if (m.lbutton)
+				if (m.message == WM_LBUTTONDOWN)
 				{
 					int temp_currentpage = PptInfoState.CurrentPage;
 					if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
@@ -1889,7 +1892,7 @@ void ControlManipulation()
 								}
 							}
 
-							Sleep(15);
+							this_thread::sleep_for(chrono::milliseconds(15));
 						}
 					}
 
@@ -1965,7 +1968,7 @@ void ControlManipulation()
 			last_x = -1, last_y = -1;
 
 			hiex::flushmessage_win32(EM_MOUSE, ppt_window);
-			Sleep(500);
+			this_thread::sleep_for(chrono::milliseconds(500));
 		}
 	}
 }
@@ -1995,7 +1998,7 @@ void KeyboardInteraction()
 						if (!KeyBoradDown[vkcode]) break;
 						if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400) PreviousPptSlides();
 
-						Sleep(15);
+						this_thread::sleep_for(chrono::milliseconds(15));
 					}
 				}
 				else
@@ -2046,7 +2049,7 @@ void KeyboardInteraction()
 								NextPptSlides(temp_currentpage);
 							}
 
-							Sleep(15);
+							this_thread::sleep_for(chrono::milliseconds(15));
 						}
 					}
 				}
@@ -2055,7 +2058,7 @@ void KeyboardInteraction()
 			{
 				auto vkcode = m.vkcode;
 
-				while (KeyBoradDown[vkcode]) Sleep(20);
+				while (KeyBoradDown[vkcode]) this_thread::sleep_for(chrono::milliseconds(20));
 
 				if (choose.select == false && penetrate.select == false)
 				{
@@ -2090,13 +2093,13 @@ void PPTLinkageMain()
 	thread KeyboardInteractionThread(KeyboardInteraction);
 	KeyboardInteractionThread.detach();
 
-	while (!offSignal) Sleep(500);
+	while (!offSignal) this_thread::sleep_for(chrono::milliseconds(500));
 
 	int i = 1;
 	for (; i <= 5; i++)
 	{
 		if (!threadStatus[L"GetPptState"] && !threadStatus[L"DrawControlWindow"]) break;
-		Sleep(500);
+		this_thread::sleep_for(chrono::milliseconds(500));
 	}
 
 	threadStatus[L"DrawControlWindow"] = false;
@@ -2219,7 +2222,7 @@ void BlackBlock()
 		}
 		else SeewoCameraIsOpen = false;
 
-		for (int i = 1; i <= 3 && !offSignal; i++) Sleep(1000);
+		for (int i = 1; i <= 3 && !offSignal; i++) this_thread::sleep_for(chrono::milliseconds(1000));
 	}
 	threadStatus[L"BlackBlock"] = false;
 }
@@ -2228,3 +2231,87 @@ void BlackBlock()
 // 插件
 
 // DesktopDrawpadBlocker 插件
+void StartDesktopDrawpadBlocker()
+{
+	if (ddbSetList.DdbEnable)
+	{
+		// 配置 json
+		{
+			if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\interaction_configuration.json").c_str(), 0) == 0) DdbReadSetting();
+
+			ddbSetList.hostPath = GetCurrentExePath();
+			if (ddbSetList.DdbEnhance)
+			{
+				ddbSetList.mode = 0;
+				ddbSetList.restartHost = true;
+			}
+			else
+			{
+				ddbSetList.mode = 1;
+				ddbSetList.restartHost = true;
+			}
+		}
+
+		// 配置 EXE
+		if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), 0) == -1)
+		{
+			if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB").c_str(), 0) == -1)
+			{
+				error_code ec;
+				filesystem::create_directories(StringToWstring(globalPath) + L"PlugIn\\DDB", ec);
+			}
+			ExtractResource((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
+		}
+		else
+		{
+			string hash_sha256;
+			{
+				hashwrapper* myWrapper = new sha256wrapper();
+				hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe");
+				delete myWrapper;
+			}
+
+			if (hash_sha256 != ddbSetList.DdbSHA256)
+			{
+				if (isProcessRunning((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str()))
+				{
+					// 需要关闭旧版 DDB 并更新版本
+
+					DdbWriteSetting(true, true);
+					for (int i = 1; i <= 20; i++)
+					{
+						if (!isProcessRunning((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str()))
+							break;
+						this_thread::sleep_for(chrono::milliseconds(500));
+					}
+				}
+				ExtractResource((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
+			}
+		}
+
+		// 创建开机自启标识
+		if (ddbSetList.DdbEnhance && _waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == -1)
+		{
+			std::ofstream file((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str());
+			file.close();
+		}
+		// 移除开机自启标识
+		else if (!ddbSetList.DdbEnhance && _waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == 0)
+		{
+			error_code ec;
+			filesystem::remove(StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal", ec);
+		}
+
+		// 启动 DDB
+		if (!isProcessRunning((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str()))
+		{
+			DdbWriteSetting(true, false);
+			ShellExecute(NULL, NULL, (StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+		}
+	}
+	else if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB").c_str(), 0) == 0)
+	{
+		error_code ec;
+		filesystem::remove_all(StringToWstring(globalPath) + L"PlugIn\\DDB", ec);
+	}
+}

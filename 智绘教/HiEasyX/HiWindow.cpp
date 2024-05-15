@@ -1489,15 +1489,15 @@ namespace HiEasyX
 		{
 #ifdef UNICODE
 			wstrTitle = L"EasyX_" + (std::wstring)GetEasyXVer() + L" HiEasyX (" _HIEASYX_VER_STR_ + L")";
-			if (nWndCount != 0)
+			if (nIndexWnd != 0)
 			{
-				wstrTitle += L" ( WindowID: " + std::to_wstring(nWndCount) + L" )";
+				wstrTitle += L" ( WindowID: " + std::to_wstring(nIndexWnd) + L" )";
 			}
 #else
 			strTitle = "EasyX_" + (std::string)GetEasyXVer() + " HiEasyX (" _HIEASYX_VER_STR_ + ")";
-			if (nWndCount != 0)
+			if (nIndexWnd != 0)
 			{
-				strTitle += " ( WindowID: " + std::to_string(nWndCount) + " )";
+				strTitle += " ( WindowID: " + std::to_string(nIndexWnd) + " )";
 			}
 #endif
 		}
@@ -1511,7 +1511,7 @@ namespace HiEasyX
 		}
 
 		// 第一次创建窗口 --- 初始化各项数据
-		if (nWndCount == 0)
+		if (nIndexWnd == 0)
 		{
 			// 获取分辨率
 			g_screenSize = GetScreenSize();
@@ -1727,7 +1727,7 @@ namespace HiEasyX
 		if (hParent)
 		{
 			// 禁用父窗口（该窗口被销毁后，父窗口将会恢复正常）
-			EnableWindow(hParent, false);
+			//EnableWindow(hParent, false);
 		}
 
 		std::thread(InitWindow, w, h, flag, lpszWndTitle, lpszClassName, WindowProcess, hParent, &nDoneFlag, &nStartAnimation, &hWnd).detach();
@@ -1737,7 +1737,7 @@ namespace HiEasyX
 		{
 			if (hParent)						// 创建子窗口失败，则使父窗口恢复正常
 			{
-				EnableWindow(hParent, true);
+				//EnableWindow(hParent, true);
 			}
 			return nullptr;
 		}

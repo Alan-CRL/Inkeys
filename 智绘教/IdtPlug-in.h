@@ -58,6 +58,13 @@ void PreviousPptSlides();
 bool EndPptShow();
 
 void GetPptState();
-
 void PPTLinkageMain();
+
+// 发现 希沃视频展台 窗口
 void BlackBlock();
+
+// --------------------------------------------------
+// 插件
+
+// DesktopDrawpadBlocker 插件
+void StartDesktopDrawpadBlocker();

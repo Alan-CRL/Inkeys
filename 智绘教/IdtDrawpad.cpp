@@ -256,7 +256,9 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			}
 		}
 	}
+
 	// 继续传递事件给下一个钩子或目标窗口
+	if (offSignal) return 1;
 	return CallNextHookEx(DrawpadHookCall, nCode, wParam, lParam);
 }
 void DrawpadInstallHook()
@@ -875,12 +877,12 @@ void DrawpadDrawing()
 
 	do
 	{
-		Sleep(10);
+		this_thread::sleep_for(chrono::milliseconds(10));
 		::SetWindowLong(drawpad_window, GWL_EXSTYLE, ::GetWindowLong(drawpad_window, GWL_EXSTYLE) | WS_EX_LAYERED);
 	} while (!(::GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_LAYERED));
 	do
 	{
-		Sleep(10);
+		this_thread::sleep_for(chrono::milliseconds(10));
 		::SetWindowLong(drawpad_window, GWL_EXSTYLE, ::GetWindowLong(drawpad_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
 	} while (!(::GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE));
 
@@ -893,7 +895,8 @@ void DrawpadDrawing()
 		ulwi.hdcSrc = GetImageHDC(&window_background);
 		UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
 	}
-	ShowWindow(drawpad_window, SW_SHOW);
+	IdtWindowsIsVisible.drawpadWindow = true;
+	//ShowWindow(drawpad_window, SW_SHOW);
 
 	chrono::high_resolution_clock::time_point reckon;
 	clock_t tRecord = 0;
@@ -1028,7 +1031,7 @@ void DrawpadDrawing()
 				int ppt_switch_count = 0;
 				while (choose.select)
 				{
-					Sleep(50);
+					this_thread::sleep_for(chrono::milliseconds(50));
 
 					if (PptInfoStateBuffer.CurrentPage != PptInfoState.CurrentPage) PptInfoStateBuffer.CurrentPage = PptInfoState.CurrentPage, ppt_switch_count++;
 					PptInfoStateBuffer.TotalPage = PptInfoState.TotalPage;
@@ -1177,7 +1180,7 @@ void DrawpadDrawing()
 						}
 					}
 
-					Sleep(50);
+					this_thread::sleep_for(chrono::milliseconds(50));
 
 					if (offSignal) goto DrawpadDrawingEnd;
 					if (penetrate.select == true) continue;
@@ -1327,7 +1330,7 @@ void DrawpadDrawing()
 				}
 			}
 
-			Sleep(10);
+			this_thread::sleep_for(chrono::milliseconds(10));
 		}
 		reckon = std::chrono::high_resolution_clock::now();
 
@@ -1579,8 +1582,6 @@ int drawpad_main()
 		LoadDrawpad();
 	}
 
-	magnificationWindowReady++;
-
 	thread DrawpadDrawing_thread(DrawpadDrawing);
 	DrawpadDrawing_thread.detach();
 	thread DrawpadInstallHookThread(DrawpadInstallHook);
@@ -1595,7 +1596,7 @@ int drawpad_main()
 		{
 			if (choose.select == true || penetrate.select == true)
 			{
-				Sleep(100);
+				this_thread::sleep_for(chrono::milliseconds(100));
 				continue;
 			}
 
@@ -1642,17 +1643,15 @@ int drawpad_main()
 				else break;
 			}
 
-			Sleep(10);
+			this_thread::sleep_for(chrono::milliseconds(10));
 		}
 	}
-
-	ShowWindow(drawpad_window, SW_HIDE);
 
 	int i = 1;
 	for (; i <= 10; i++)
 	{
 		if (!threadStatus[L"DrawpadDrawing"]) break;
-		Sleep(500);
+		this_thread::sleep_for(chrono::milliseconds(500));
 	}
 	threadStatus[L"drawpad_main"] = false;
 	return 0;
