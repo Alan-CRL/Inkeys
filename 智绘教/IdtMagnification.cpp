@@ -2,42 +2,43 @@
 #include <winuser.h>
 
 #include "IdtWindow.h"
+#include "IdtDraw.h"
 
 #include <d3d9.h>
 #pragma comment(lib, "d3d9")
 
 HWND hwndHost, hwndMag;
-IMAGE MagnificationBackground = CreateImageColor(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), RGBA(255, 255, 255, 255), false);
+HINSTANCE hInst;
+IMAGE MagnificationBackground;
 
 bool magnificationReady;
 
 shared_mutex MagnificationBackgroundSm;
-RECT magWindowRect;
 RECT hostWindowRect;
 
-HINSTANCE hInst;
-BOOL MagImageScaling(HWND hwnd, void* srcdata, MAGIMAGEHEADER srcheader, void* destdata, MAGIMAGEHEADER destheader, RECT unclipped, RECT clipped, HRGN dirty)
-{
-	int ImageWidth = srcheader.width;
-	int ImageHeight = srcheader.height;
-
-	IMAGE SrcImage(ImageWidth, ImageHeight);
-	DWORD* SrcBuffer = GetImageBuffer(&SrcImage);
-	memcpy(SrcBuffer, (LPBYTE)srcdata + srcheader.offset, ImageWidth * ImageHeight * 4);
-
-	hiex::RemoveImageTransparency(&SrcImage);
-	std::unique_lock<std::shared_mutex> LockMagnificationBackgroundSm(MagnificationBackgroundSm);
-	MagnificationBackground = SrcImage;
-	LockMagnificationBackgroundSm.unlock();
-
-	return TRUE;
-}
 void UpdateMagWindow()
 {
-	RECT sourceRect = { 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
-
+	RECT sourceRect = { 0, 0, GetSystemMetrics(SM_CXSCREEN) - 1, GetSystemMetrics(SM_CYSCREEN) - 1 };
 	MagSetWindowSource(hwndMag, sourceRect);
+
+	SetWindowPos(hwndHost, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
 	InvalidateRect(hwndMag, NULL, TRUE);
+
+	HDC hdcDest = nullptr;
+	{
+		std::shared_lock<std::shared_mutex> LockMagnificationBackgroundSm(MagnificationBackgroundSm);
+		hdcDest = GetImageHDC(&MagnificationBackground);
+		LockMagnificationBackgroundSm.unlock();
+	}
+	{
+		std::unique_lock<std::shared_mutex> LockMagnificationBackgroundSm(MagnificationBackgroundSm);
+
+		if (MagnificationBackground.getwidth() != GetSystemMetrics(SM_CXSCREEN) || MagnificationBackground.getheight() != GetSystemMetrics(SM_CYSCREEN))
+			MagnificationBackground.Resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+		PrintWindow(hwndMag, hdcDest, PW_RENDERFULLCONTENT);
+
+		LockMagnificationBackgroundSm.unlock();
+	}
 }
 
 LRESULT CALLBACK MagnifierWindowWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -78,8 +79,12 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 	}
 	else IDTLogger->info("[放大API线程][SetupMagnifier] 创建放大API主机窗口完成");
 
+	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API主机窗口透明度");
+	SetLayeredWindowAttributes(hwndHost, 0, 0, LWA_ALPHA);
+	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API主机窗口透明度完成");
+
 	IDTLogger->info("[放大API线程][SetupMagnifier] 创建放大API窗口");
-	hwndMag = CreateWindow(WC_MAGNIFIER, TEXT("MagnifierWindow"), WS_CHILD | MS_CLIPAROUNDCURSOR | WS_VISIBLE, magWindowRect.left, magWindowRect.top, magWindowRect.right, magWindowRect.bottom, hwndHost, NULL, hInst, NULL);
+	hwndMag = CreateWindow(WC_MAGNIFIER, TEXT("MagnifierWindow"), WS_CHILD | MS_CLIPAROUNDCURSOR | WS_VISIBLE, hostWindowRect.left, hostWindowRect.top, hostWindowRect.right, hostWindowRect.bottom, hwndHost, NULL, hInst, NULL);
 	if (!hwndMag)
 	{
 		IDTLogger->error("[放大API线程][SetupMagnifier] 创建放大API窗口失败" + to_string(GetLastError()));
@@ -88,10 +93,10 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 	else IDTLogger->info("[放大API线程][SetupMagnifier] 创建放大API窗口完成");
 
 	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API窗口样式");
-	SetWindowLong(hwndMag, GWL_STYLE, GetWindowLong(hwndMag, GWL_STYLE) & ~WS_CAPTION);//隐藏标题栏
-	SetWindowLong(hwndMag, GWL_EXSTYLE, WS_EX_TOOLWINDOW);//隐藏任务栏
-	SetWindowPos(hwndMag, NULL, hostWindowRect.left, hostWindowRect.top, hostWindowRect.right - hostWindowRect.left, hostWindowRect.bottom - hostWindowRect.top, SWP_NOMOVE | SWP_NOZORDER | SWP_DRAWFRAME);
-	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API窗口完成");
+	SetWindowLong(hwndHost, GWL_STYLE, GetWindowLong(hwndHost, GWL_STYLE) & ~WS_CAPTION); // 隐藏标题栏
+	SetWindowLong(hwndHost, GWL_STYLE, GetWindowLong(hwndHost, GWL_STYLE) & ~WS_THICKFRAME); // 禁止窗口拉伸
+	SetWindowLong(hwndHost, GWL_EXSTYLE, (GetWindowLong(hwndHost, GWL_EXSTYLE) | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW); // 隐藏任务栏图标
+	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API窗口样式完成");
 
 	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API工厂");
 	MAGTRANSFORM matrix;
@@ -114,15 +119,11 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 			{  0.0f,  0.0f,  0.0f,  0.0f,  1.0f }
 		} };
 
-		ret = MagSetColorEffect(hwndMag, NULL);
+		ret = MagSetColorEffect(hwndMag, &magEffectInvert);
 
 		IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API转换矩阵完成");
 	}
 	else IDTLogger->error("[放大API线程][SetupMagnifier] 设置放大API转换矩阵失败");
-
-	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API回调函数");
-	MagSetImageScalingCallback(hwndMag, (MagImageScalingCallback)MagImageScaling);
-	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API回调函数完成");
 
 	return ret;
 }
@@ -147,10 +148,23 @@ void MagnifierThread()
 	else IDTLogger->info("[放大API线程][MagnifierThread] 启动放大API完成");
 
 	IDTLogger->info("[放大API线程][SetupMagnifier] 更新放大API窗口");
-	ShowWindow(hwndHost, SW_HIDE);
+	ShowWindow(hwndHost, SW_SHOW);
 	UpdateWindow(hwndHost);
 	IDTLogger->info("[放大API线程][SetupMagnifier] 更新放大API窗口完成");
 
+	IDTLogger->info("[放大API线程][SetupMagnifier] 启动放大API服务进程");
+	thread(MagnifierUpdate).detach();
+	IDTLogger->info("[放大API线程][SetupMagnifier] 启动放大API服务进程成功");
+
+	MSG msg;
+	while (GetMessage(&msg, NULL, 0, 0))
+	{
+		TranslateMessage(&msg);
+		DispatchMessage(&msg);
+	}
+}
+void MagnifierUpdate()
+{
 	IDTLogger->info("[放大API线程][MagnifierThread] 等待穿透窗口创建");
 	while (!offSignal)
 	{

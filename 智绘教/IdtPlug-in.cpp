@@ -627,16 +627,20 @@ void DrawControlWindow()
 		ulwi.dwFlags = ULW_ALPHA;
 	}
 
-	do
+	while (!(GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_LAYERED))
 	{
+		SetWindowLong(ppt_window, GWL_EXSTYLE, GetWindowLong(ppt_window, GWL_EXSTYLE) | WS_EX_LAYERED);
+		if (GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_LAYERED) break;
+
 		this_thread::sleep_for(chrono::milliseconds(10));
-		::SetWindowLong(ppt_window, GWL_EXSTYLE, ::GetWindowLong(ppt_window, GWL_EXSTYLE) | WS_EX_LAYERED);
-	} while (!(::GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_LAYERED));
-	do
+	}
+	while (!(GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE))
 	{
+		SetWindowLong(ppt_window, GWL_EXSTYLE, GetWindowLong(ppt_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+		if (GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
+
 		this_thread::sleep_for(chrono::milliseconds(10));
-		::SetWindowLong(ppt_window, GWL_EXSTYLE, ::GetWindowLong(ppt_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
-	} while (!(::GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE));
+	}
 
 	int TotalSlides = -1, TotalSlidesLast = -2;
 	int CurrentSlides = -1;

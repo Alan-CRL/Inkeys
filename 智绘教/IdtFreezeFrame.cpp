@@ -45,16 +45,20 @@ void FreezeFrameWindow()
 	ulwi.pblend = &blend;
 	ulwi.dwFlags = ULW_ALPHA;
 
-	do
+	while (!(GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_LAYERED))
 	{
+		SetWindowLong(freeze_window, GWL_EXSTYLE, GetWindowLong(freeze_window, GWL_EXSTYLE) | WS_EX_LAYERED);
+		if (GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_LAYERED) break;
+
 		this_thread::sleep_for(chrono::milliseconds(10));
-		::SetWindowLong(freeze_window, GWL_EXSTYLE, ::GetWindowLong(freeze_window, GWL_EXSTYLE) | WS_EX_LAYERED);
-	} while (!(::GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_LAYERED));
-	do
+	}
+	while (!(GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE))
 	{
+		SetWindowLong(freeze_window, GWL_EXSTYLE, GetWindowLong(freeze_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+		if (GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
+
 		this_thread::sleep_for(chrono::milliseconds(10));
-		::SetWindowLong(freeze_window, GWL_EXSTYLE, ::GetWindowLong(freeze_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
-	} while (!(::GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE));
+	}
 
 	ulwi.hdcSrc = GetImageHDC(&freeze_background);
 	UpdateLayeredWindowIndirect(freeze_window, &ulwi);

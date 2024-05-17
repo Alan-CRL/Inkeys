@@ -88,7 +88,10 @@ void TopWindow()
 	ShowWindow(freeze_window, SW_SHOW);
 	IDTLogger->info("[窗口置顶线程][TopWindow] 显示窗口完成");
 
+	// 置顶前缓冲
 	while (uRealTimeStylus != 1) this_thread::sleep_for(chrono::milliseconds(500));
+	this_thread::sleep_for(chrono::milliseconds(1000));
+
 	while (!offSignal)
 	{
 		// 检查窗口显示状态
@@ -97,6 +100,69 @@ void TopWindow()
 			if (!IsWindowVisible(ppt_window)) ShowWindow(ppt_window, SW_SHOW);
 			if (!IsWindowVisible(drawpad_window)) ShowWindow(drawpad_window, SW_SHOW);
 			if (!IsWindowVisible(freeze_window)) ShowWindow(freeze_window, SW_SHOW);
+		}
+
+		// 检查窗口扩展样式
+		{
+			while (!(GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_LAYERED))
+			{
+				SetWindowLong(floating_window, GWL_EXSTYLE, GetWindowLong(floating_window, GWL_EXSTYLE) | WS_EX_LAYERED);
+				if (GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_LAYERED) break;
+
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+			while (!(GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE))
+			{
+				SetWindowLong(floating_window, GWL_EXSTYLE, GetWindowLong(floating_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+				if (GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
+
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+
+			while (!(GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_LAYERED))
+			{
+				SetWindowLong(ppt_window, GWL_EXSTYLE, GetWindowLong(ppt_window, GWL_EXSTYLE) | WS_EX_LAYERED);
+				if (GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_LAYERED) break;
+
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+			while (!(GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE))
+			{
+				SetWindowLong(ppt_window, GWL_EXSTYLE, GetWindowLong(ppt_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+				if (GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
+
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+
+			while (!(GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_LAYERED))
+			{
+				SetWindowLong(drawpad_window, GWL_EXSTYLE, GetWindowLong(drawpad_window, GWL_EXSTYLE) | WS_EX_LAYERED);
+				if (GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_LAYERED) break;
+
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+			while (!(GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE))
+			{
+				SetWindowLong(drawpad_window, GWL_EXSTYLE, GetWindowLong(drawpad_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+				if (GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
+
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+
+			while (!(GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_LAYERED))
+			{
+				SetWindowLong(freeze_window, GWL_EXSTYLE, GetWindowLong(freeze_window, GWL_EXSTYLE) | WS_EX_LAYERED);
+				if (GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_LAYERED) break;
+
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+			while (!(GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE))
+			{
+				SetWindowLong(freeze_window, GWL_EXSTYLE, GetWindowLong(freeze_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+				if (GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
+
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
 		}
 
 		// 置顶窗口

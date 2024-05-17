@@ -258,7 +258,6 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 	}
 
 	// 继续传递事件给下一个钩子或目标窗口
-	if (offSignal) return 1;
 	return CallNextHookEx(DrawpadHookCall, nCode, wParam, lParam);
 }
 void DrawpadInstallHook()
@@ -875,16 +874,20 @@ void DrawpadDrawing()
 	ulwi.pblend = &blend;
 	ulwi.dwFlags = ULW_ALPHA;
 
-	do
+	while (!(GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_LAYERED))
 	{
+		SetWindowLong(drawpad_window, GWL_EXSTYLE, GetWindowLong(drawpad_window, GWL_EXSTYLE) | WS_EX_LAYERED);
+		if (GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_LAYERED) break;
+
 		this_thread::sleep_for(chrono::milliseconds(10));
-		::SetWindowLong(drawpad_window, GWL_EXSTYLE, ::GetWindowLong(drawpad_window, GWL_EXSTYLE) | WS_EX_LAYERED);
-	} while (!(::GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_LAYERED));
-	do
+	}
+	while (!(GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE))
 	{
+		SetWindowLong(drawpad_window, GWL_EXSTYLE, GetWindowLong(drawpad_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+		if (GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
+
 		this_thread::sleep_for(chrono::milliseconds(10));
-		::SetWindowLong(drawpad_window, GWL_EXSTYLE, ::GetWindowLong(drawpad_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
-	} while (!(::GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE));
+	}
 
 	window_background.Resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 	drawpad.Resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));

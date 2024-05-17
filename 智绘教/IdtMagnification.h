@@ -5,15 +5,14 @@
 #pragma comment(lib, "magnification.lib")
 
 extern IMAGE MagnificationBackground;
+extern HINSTANCE hInst;
 extern HWND hwndHost, hwndMag;
 
 extern bool magnificationReady;
 
 extern shared_mutex MagnificationBackgroundSm;
-extern RECT magWindowRect;
 extern RECT hostWindowRect;
 
-extern HINSTANCE hInst;
 BOOL MagImageScaling(HWND hwnd, void* srcdata, MAGIMAGEHEADER srcheader, void* destdata, MAGIMAGEHEADER destheader, RECT unclipped, RECT clipped, HRGN dirty);
 void UpdateMagWindow();
 
@@ -24,3 +23,4 @@ BOOL SetupMagnifier(HINSTANCE hinst);
 extern bool RequestUpdateMagWindow;
 
 void MagnifierThread();
+void MagnifierUpdate();

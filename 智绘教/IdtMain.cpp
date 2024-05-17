@@ -41,7 +41,7 @@ int SettingMain();
 void FreezeFrameWindow();
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string editionDate = "20240515e";				//程序发布日期
+string editionDate = "20240517a";				//程序发布日期
 string editionChannel = "Beta";				//程序发布通道
 string editionCode = "24H1(BetaH2)";			//程序版本
 
@@ -594,6 +594,19 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		// 画板窗口在注册 RTS 前必须拥有置顶属性，在显示前先进行一次全局置顶
 		SetWindowPos(freeze_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+
+		// 画板窗口提前配置其不能拥有焦点的样式，再注册 RTS
+		{
+			while (!(GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE))
+			{
+				SetWindowLong(drawpad_window, GWL_EXSTYLE, GetWindowLong(drawpad_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+				if (GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
+
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+
+			SetWindowPos(drawpad_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+		}
 
 		IDTLogger->info("[主线程][IdtMain] TopWindow函数线程启动");
 		thread TopWindowThread(TopWindow);

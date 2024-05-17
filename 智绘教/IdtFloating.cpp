@@ -206,7 +206,6 @@ LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 	}
 
 	// 继续传递事件给下一个钩子或目标窗口
-	if (offSignal) return 1;
 	return CallNextHookEx(FloatingHookCall, nCode, wParam, lParam);
 }
 void FloatingInstallHook()
@@ -1002,16 +1001,20 @@ void DrawScreen()
 	ulwi.pblend = &blend;
 	ulwi.dwFlags = ULW_ALPHA;
 
-	do
+	while (!(GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_LAYERED))
 	{
+		SetWindowLong(floating_window, GWL_EXSTYLE, GetWindowLong(floating_window, GWL_EXSTYLE) | WS_EX_LAYERED);
+		if (GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_LAYERED) break;
+
 		this_thread::sleep_for(chrono::milliseconds(10));
-		::SetWindowLong(floating_window, GWL_EXSTYLE, ::GetWindowLong(floating_window, GWL_EXSTYLE) | WS_EX_LAYERED);
-	} while (!(::GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_LAYERED));
-	do
+	}
+	while (!(GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE))
 	{
+		SetWindowLong(floating_window, GWL_EXSTYLE, GetWindowLong(floating_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+		if (GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
+
 		this_thread::sleep_for(chrono::milliseconds(10));
-		::SetWindowLong(floating_window, GWL_EXSTYLE, ::GetWindowLong(floating_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
-	} while (!(::GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE));
+	}
 
 	graphics.SetSmoothingMode(SmoothingModeHighQuality);
 
