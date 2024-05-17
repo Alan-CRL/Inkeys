@@ -35,8 +35,8 @@ struct DdbSetListStruct
 		DdbEnable = true;
 		DdbEnhance = false;
 
-		DdbEdition = L"20240514c";
-		DdbSHA256 = "87c0bc5701dbdf19ce7b801ee893007cf2bf96b2afe2c9070b3ec4ca57ad1a7d";
+		DdbEdition = L"20240517a";
+		DdbSHA256 = "811288094e6e5e59c0c4c2e878f30bbb7b752f574b882c81642389ba7f1a18a5";
 
 		// -----
 

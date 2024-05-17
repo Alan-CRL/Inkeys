@@ -20,7 +20,7 @@
 #define IDT_RELEASE
 // #pragma comment( linker, "/subsystem:windows /entry:mainCRTStartup" )
 
-// 智绘教最低兼容 Windows 7 sp0（当前为 sp1）
+// 智绘教最低兼容 Windows 7 sp1
 // #define _WIN32_WINNT 0x0601
 // #define WINVER 0x0601
 

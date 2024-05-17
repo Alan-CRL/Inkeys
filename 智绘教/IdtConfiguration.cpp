@@ -37,22 +37,33 @@ bool DdbReadSetting()
 
 		if (root.isMember("Intercept") && root["Intercept"].isObject())
 		{
-			if (root["Intercept"].isMember("AiClassFloating") && root["Intercept"]["AiClassFloating"].isBool())
+			if (root["Intercept"].isMember("SeewoWhiteboard3Floating") && root["Intercept"]["SeewoWhiteboard3Floating"].isBool())
 			{
-				ddbSetList.InterceptWindow[0] = root["Intercept"]["AiClassFloating"].asBool();
+				ddbSetList.InterceptWindow[0] = root["Intercept"]["SeewoWhiteboard3Floating"].asBool();
 			}
-			if (root["Intercept"].isMember("SeewoWhiteboardFloating") && root["Intercept"]["SeewoWhiteboardFloating"].isBool())
+			if (root["Intercept"].isMember("SeewoWhiteboard5Floating") && root["Intercept"]["SeewoWhiteboard5Floating"].isBool())
 			{
-				ddbSetList.InterceptWindow[1] = root["Intercept"]["SeewoWhiteboardFloating"].asBool();
+				ddbSetList.InterceptWindow[1] = root["Intercept"]["SeewoWhiteboard5Floating"].asBool();
+			}
+			if (root["Intercept"].isMember("SeewoWhiteboard5CFloating") && root["Intercept"]["SeewoWhiteboard5CFloating"].isBool())
+			{
+				ddbSetList.InterceptWindow[2] = root["Intercept"]["SeewoWhiteboard5CFloating"].asBool();
 			}
 			if (root["Intercept"].isMember("SeewoPincoFloating") && root["Intercept"]["SeewoPincoFloating"].isBool())
 			{
-				ddbSetList.InterceptWindow[2] = ddbSetList.InterceptWindow[3] = root["Intercept"]["SeewoPincoFloating"].asBool();
+				ddbSetList.InterceptWindow[3] = ddbSetList.InterceptWindow[4] = root["Intercept"]["SeewoPincoFloating"].asBool();
 			}
-
 			if (root["Intercept"].isMember("SeewoPPTFloating") && root["Intercept"]["SeewoPPTFloating"].isBool())
 			{
-				ddbSetList.InterceptWindow[4] = root["Intercept"]["SeewoPPTFloating"].asBool();
+				ddbSetList.InterceptWindow[5] = root["Intercept"]["SeewoPPTFloating"].asBool();
+			}
+			if (root["Intercept"].isMember("AiClassFloating") && root["Intercept"]["AiClassFloating"].isBool())
+			{
+				ddbSetList.InterceptWindow[6] = root["Intercept"]["AiClassFloating"].asBool();
+			}
+			if (root["Intercept"].isMember("HiteAnnotationFloating") && root["Intercept"]["HiteAnnotationFloating"].isBool())
+			{
+				ddbSetList.InterceptWindow[7] = root["Intercept"]["HiteAnnotationFloating"].asBool();
 			}
 		}
 	}
@@ -71,10 +82,13 @@ bool DdbWriteSetting(bool change, bool close)
 	root["Mode"]["HostPath"] = Json::Value(WstringToString(ddbSetList.hostPath));
 	root["Mode"]["RestartHost"] = Json::Value(ddbSetList.restartHost);
 
-	root["Intercept"]["AiClassFloating"] = Json::Value(ddbSetList.InterceptWindow[0]);
-	root["Intercept"]["SeewoWhiteboardFloating"] = Json::Value(ddbSetList.InterceptWindow[1]);
-	root["Intercept"]["SeewoPincoFloating"] = Json::Value(ddbSetList.InterceptWindow[2]);
-	root["Intercept"]["SeewoPPTFloating"] = Json::Value(ddbSetList.InterceptWindow[4]);
+	root["Intercept"]["SeewoWhiteboard3Floating"] = Json::Value(ddbSetList.InterceptWindow[0]);
+	root["Intercept"]["SeewoWhiteboard5Floating"] = Json::Value(ddbSetList.InterceptWindow[1]);
+	root["Intercept"]["SeewoWhiteboard5CFloating"] = Json::Value(ddbSetList.InterceptWindow[2]);
+	root["Intercept"]["SeewoPincoFloating"] = Json::Value(ddbSetList.InterceptWindow[3]);
+	root["Intercept"]["SeewoPPTFloating"] = Json::Value(ddbSetList.InterceptWindow[5]);
+	root["Intercept"]["AiClassFloating"] = Json::Value(ddbSetList.InterceptWindow[6]);
+	root["Intercept"]["HiteAnnotationFloating"] = Json::Value(ddbSetList.InterceptWindow[7]);
 
 	root["~ConfigurationChange"] = Json::Value(change);
 	root["~KeepOpen"] = Json::Value(!close);
