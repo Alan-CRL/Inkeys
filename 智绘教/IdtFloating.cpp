@@ -260,7 +260,7 @@ void DrawScreen()
 			loadimage(&floating_icon[14], L"PNG", L"icon14", 20, 20, true);
 			loadimage(&floating_icon[15], L"PNG", L"icon15", 20, 20, true);
 
-			loadimage(&floating_icon[16], L"PNG", L"icon16", 25, 25, true);
+			loadimage(&floating_icon[16], L"PNG", L"icon16", 20, 20, true);
 			loadimage(&floating_icon[18], L"PNG", L"icon18", 20, 20, true);
 			loadimage(&floating_icon[17], L"PNG", L"icon17", 20, 20, true);
 			loadimage(&floating_icon[20], L"PNG", L"icon20", 20, 20, true);

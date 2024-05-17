@@ -37,6 +37,9 @@ void UpdateMagWindow()
 			MagnificationBackground.Resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 		PrintWindow(hwndMag, hdcDest, PW_RENDERFULLCONTENT);
 
+		//saveimage(L"123.png", &MagnificationBackground);
+		//Test();
+
 		LockMagnificationBackgroundSm.unlock();
 	}
 }

@@ -96,71 +96,107 @@ void TopWindow()
 	{
 		// 检查窗口显示状态
 		{
-			if (!IsWindowVisible(floating_window)) ShowWindow(floating_window, SW_SHOW);
-			if (!IsWindowVisible(ppt_window)) ShowWindow(ppt_window, SW_SHOW);
-			if (!IsWindowVisible(drawpad_window)) ShowWindow(drawpad_window, SW_SHOW);
-			if (!IsWindowVisible(freeze_window)) ShowWindow(freeze_window, SW_SHOW);
+			for (int i = 1; i <= 10 && !IsWindowVisible(floating_window); i++)
+			{
+				IDTLogger->warn("[窗口置顶线程][TopWindow] 悬浮窗窗口被隐藏 Try" + to_string(i));
+				ShowWindow(floating_window, SW_SHOW);
+
+				if (IsWindowVisible(floating_window)) break;
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+			for (int i = 1; i <= 10 && !IsWindowVisible(ppt_window); i++)
+			{
+				IDTLogger->warn("[窗口置顶线程][TopWindow] PPT控件窗口被隐藏 Try" + to_string(i));
+				ShowWindow(ppt_window, SW_SHOW);
+
+				if (IsWindowVisible(ppt_window)) break;
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+			for (int i = 1; i <= 10 && !IsWindowVisible(drawpad_window); i++)
+			{
+				IDTLogger->warn("[窗口置顶线程][TopWindow] 画板窗口被隐藏 Try" + to_string(i));
+				ShowWindow(drawpad_window, SW_SHOW);
+
+				if (IsWindowVisible(drawpad_window)) break;
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+			for (int i = 1; i <= 10 && !IsWindowVisible(freeze_window); i++)
+			{
+				IDTLogger->warn("[窗口置顶线程][TopWindow] 定格窗口被隐藏 Try" + to_string(i));
+				ShowWindow(freeze_window, SW_SHOW);
+
+				if (IsWindowVisible(freeze_window)) break;
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
 		}
 
 		// 检查窗口扩展样式
 		{
-			while (!(GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_LAYERED))
+			for (int i = 1; i <= 10 && !(GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_LAYERED); i++)
 			{
+				IDTLogger->warn("[窗口置顶线程][TopWindow] 悬浮窗窗口 WS_EX_LAYERED 样式被隐藏 Try" + to_string(i));
 				SetWindowLong(floating_window, GWL_EXSTYLE, GetWindowLong(floating_window, GWL_EXSTYLE) | WS_EX_LAYERED);
+
 				if (GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_LAYERED) break;
-
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
-			while (!(GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE))
+			for (int i = 1; i <= 10 && !(GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE); i++)
 			{
+				IDTLogger->warn("[窗口置顶线程][TopWindow] 悬浮窗窗口 WS_EX_NOACTIVATE 样式被隐藏 Try" + to_string(i));
 				SetWindowLong(floating_window, GWL_EXSTYLE, GetWindowLong(floating_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+
 				if (GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
-
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
 
-			while (!(GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_LAYERED))
+			for (int i = 1; i <= 10 && !(GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_LAYERED); i++)
 			{
+				IDTLogger->warn("[窗口置顶线程][TopWindow] PPT控件窗口 WS_EX_LAYERED 样式被隐藏 Try" + to_string(i));
 				SetWindowLong(ppt_window, GWL_EXSTYLE, GetWindowLong(ppt_window, GWL_EXSTYLE) | WS_EX_LAYERED);
+
 				if (GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_LAYERED) break;
-
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
-			while (!(GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE))
+			for (int i = 1; i <= 10 && !(GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE); i++)
 			{
+				IDTLogger->warn("[窗口置顶线程][TopWindow] PPT控件窗口 WS_EX_NOACTIVATE 样式被隐藏 Try" + to_string(i));
 				SetWindowLong(ppt_window, GWL_EXSTYLE, GetWindowLong(ppt_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+
 				if (GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
-
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
 
-			while (!(GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_LAYERED))
+			for (int i = 1; i <= 10 && !(GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_LAYERED); i++)
 			{
+				IDTLogger->warn("[窗口置顶线程][TopWindow] 画板窗口 WS_EX_LAYERED 样式被隐藏 Try" + to_string(i));
 				SetWindowLong(drawpad_window, GWL_EXSTYLE, GetWindowLong(drawpad_window, GWL_EXSTYLE) | WS_EX_LAYERED);
+
 				if (GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_LAYERED) break;
-
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
-			while (!(GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE))
+			for (int i = 1; i <= 10 && !(GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE); i++)
 			{
+				IDTLogger->warn("[窗口置顶线程][TopWindow] 画板窗口 WS_EX_NOACTIVATE 样式被隐藏 Try" + to_string(i));
 				SetWindowLong(drawpad_window, GWL_EXSTYLE, GetWindowLong(drawpad_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+
 				if (GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
-
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
 
-			while (!(GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_LAYERED))
+			for (int i = 1; i <= 10 && !(GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_LAYERED); i++)
 			{
+				IDTLogger->warn("[窗口置顶线程][TopWindow] 定格窗口 WS_EX_LAYERED 样式被隐藏 Try" + to_string(i));
 				SetWindowLong(freeze_window, GWL_EXSTYLE, GetWindowLong(freeze_window, GWL_EXSTYLE) | WS_EX_LAYERED);
-				if (GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_LAYERED) break;
 
+				if (GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_LAYERED) break;
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
-			while (!(GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE))
+			for (int i = 1; i <= 10 && !(GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE); i++)
 			{
+				IDTLogger->warn("[窗口置顶线程][TopWindow] 定格窗口 WS_EX_NOACTIVATE 样式被隐藏 Try" + to_string(i));
 				SetWindowLong(freeze_window, GWL_EXSTYLE, GetWindowLong(freeze_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
-				if (GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
 
+				if (GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
 		}
@@ -204,7 +240,7 @@ void TopWindow()
 		}
 
 		// 延迟等待
-		for (int i = 1; i <= 10; i++)
+		for (int i = 1; i <= 30; i++)
 		{
 			if (offSignal) break;
 			this_thread::sleep_for(chrono::milliseconds(100));
