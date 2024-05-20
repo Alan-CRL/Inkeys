@@ -7,8 +7,6 @@
 
 using namespace std;
 
-#define Sleep(int) this_thread::sleep_for(chrono::milliseconds(int))
-
 void Test()
 {
 	MessageBox(NULL, L"标记处", L"标记", MB_OK | MB_SYSTEMMODAL);
@@ -22,7 +20,7 @@ void Testw(wstring t)
 	MessageBox(NULL, t.c_str(), L"字符标记", MB_OK | MB_SYSTEMMODAL);
 }
 
-string edition_date = "20240428.01";
+string edition_date = "20240520.01";
 wstring DataToSend = L"nullptr";
 
 //string to wstring
@@ -107,9 +105,17 @@ bool QueryStartupSelfStart(wstring path, wstring nameclass)
 	return true;
 }
 
+void CloseTheProgramWithin15Seconds()
+{
+	this_thread::sleep_for(chrono::seconds(15));
+	exit(0);
+}
+
 // 程序入口点
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
 {
+	thread(CloseTheProgramWithin15Seconds).detach();
+
 	wstring parameters, path, NameClass;
 	wstringstream wss(GetCommandLineW());
 
@@ -180,7 +186,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	for (for_i = 0; for_i <= 5; for_i++)
 	{
 		if (ConnectNamedPipe(hPipe, &oOverlap)) break;
-		else Sleep(100);
+		else this_thread::sleep_for(chrono::milliseconds(100));
 	}
 
 	if (for_i <= 5) WriteFile(hPipe, DataToSend.data(), DataToSend.size() * sizeof(wchar_t), &dwBytesWritten, NULL);

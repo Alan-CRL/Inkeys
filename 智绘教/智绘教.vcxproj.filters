@@ -213,9 +213,6 @@
     <ClInclude Include="zip_utils\zip.h">
       <Filter>头文件\ZipUtils</Filter>
     </ClInclude>
-    <ClInclude Include="IdtKey.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="IdtMain.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -537,9 +534,6 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="IdtDrawpad.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtKey.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="IdtRts.cpp">

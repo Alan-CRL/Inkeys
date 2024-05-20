@@ -280,36 +280,6 @@ void DrawpadInstallHook()
 	UnhookWindowsHookEx(DrawpadHookCall);
 }
 
-void KeyInteraction()
-{
-	threadStatus[L"KeyInteraction"] = true;
-
-	ExMessage m;
-	while (!offSignal)
-	{
-		hiex::getmessage_win32(&m, EM_KEY, drawpad_window);
-
-		if (m.vkcode == 0x5A && m.message == WM_KEYDOWN)
-		{
-			while (1)
-			{
-				if (!KeyBoradDown[0x5A])
-				{
-					if (!choose.select && (!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0))) IdtRecall();
-					else if (!choose.select && RecallImage.empty() && current_record_pointer <= total_record_pointer + 1 && practical_total_record_pointer) IdtRecovery();
-
-					break;
-				}
-
-				this_thread::sleep_for(chrono::milliseconds(10));
-			}
-			hiex::flushmessage_win32(EM_KEY, drawpad_window);
-		}
-	}
-
-	threadStatus[L"KeyInteraction"] = false;
-}
-
 double EuclideanDistance(POINT a, POINT b)
 {
 	return std::sqrt(std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2));
@@ -1619,8 +1589,6 @@ int drawpad_main()
 
 	thread DrawpadDrawing_thread(DrawpadDrawing);
 	DrawpadDrawing_thread.detach();
-	//thread threadKeyInteraction(KeyInteraction);
-	//threadKeyInteraction.detach();
 	thread DrawpadInstallHookThread(DrawpadInstallHook);
 	DrawpadInstallHookThread.detach();
 	{

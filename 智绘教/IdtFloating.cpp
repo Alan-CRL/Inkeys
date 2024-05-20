@@ -5377,12 +5377,11 @@ void MouseInteraction()
 						MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
 					}
 
-					/*
-					if (m.message == WM_RBUTTONDOWN)
+					if (m.message == WM_RBUTTONDOWN && setlist.RightClickClose)
 					{
 						if (MessageBox(floating_window, L"是否关闭 智绘教 ？", L"智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) offSignal = true;
 						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}*/
+					}
 				}
 
 				if (!choose.select && (!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0)) && IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
@@ -5472,12 +5471,11 @@ void MouseInteraction()
 						MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
 					}
 
-					/*
-					if (m.message == WM_RBUTTONDOWN)
+					if (m.message == WM_RBUTTONDOWN && setlist.RightClickClose)
 					{
 						if (MessageBox(floating_window, L"是否关闭 智绘教 ？", L"智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) offSignal = true;
 						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}*/
+					}
 				}
 
 				//窗口穿透

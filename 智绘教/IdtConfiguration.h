@@ -6,6 +6,7 @@ struct SetListStruct
 	SetListStruct()
 	{
 		StartUp = 0, CreateLnk = false;
+		RightClickClose = false;
 		BrushRecover = true, RubberRecover = false;
 		RubberMode = 0;
 
@@ -17,10 +18,12 @@ struct SetListStruct
 	}
 
 	int StartUp; bool CreateLnk;
+
+	bool RightClickClose;
 	bool BrushRecover, RubberRecover;
-	int RubberMode;
 
 	bool IntelligentDrawing, SmoothWriting;
+	int RubberMode;
 
 	int SetSkinMode, SkinMode;
 
@@ -35,7 +38,7 @@ struct PptComSetListStruct
 		fixedHandWriting = true;
 	}
 
-	int fixedHandWriting;
+	bool fixedHandWriting;
 };
 extern PptComSetListStruct pptComSetlist;
 

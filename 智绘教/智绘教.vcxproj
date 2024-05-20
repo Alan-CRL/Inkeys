@@ -184,7 +184,6 @@
     <ClInclude Include="IdtHash.h" />
     <ClInclude Include="IdtHistoricalDrawpad.h" />
     <ClInclude Include="IdtImage.h" />
-    <ClInclude Include="IdtKey.h" />
     <ClInclude Include="IdtMagnification.h" />
     <ClInclude Include="IdtMain.h" />
     <ClInclude Include="IdtOther.h" />
@@ -280,7 +279,6 @@
     <ClCompile Include="IdtHash.cpp" />
     <ClCompile Include="IdtHistoricalDrawpad.cpp" />
     <ClCompile Include="IdtImage.cpp" />
-    <ClCompile Include="IdtKey.cpp" />
     <ClCompile Include="IdtRts.cpp" />
     <ClCompile Include="IdtSetting.cpp" />
     <ClCompile Include="IdtState.cpp" />

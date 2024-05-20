@@ -36,6 +36,8 @@
 #include "IdtWindow.h"
 #include "IdtOther.h"
 #include "IdtD2DPreparation.h"
+#include "IdtHistoricalDrawpad.h"
+#include "IdtImage.h"
 
 // --------------------------------------------------
 // PPT controls | PPT ¿Ø¼þ
@@ -2081,6 +2083,22 @@ void KeyboardInteraction()
 					}
 				}
 				else EndPptShow();
+			}
+		}
+
+		if (m.vkcode == (BYTE)0x5A && m.message == WM_KEYDOWN)
+		{
+			while (1)
+			{
+				if (!KeyBoradDown[(BYTE)0x5A])
+				{
+					if (!choose.select && (!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0))) IdtRecall();
+					else if (!choose.select && RecallImage.empty() && current_record_pointer <= total_record_pointer + 1 && practical_total_record_pointer) IdtRecovery();
+
+					break;
+				}
+
+				this_thread::sleep_for(chrono::milliseconds(10));
 			}
 		}
 

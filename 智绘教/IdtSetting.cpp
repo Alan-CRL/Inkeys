@@ -251,7 +251,11 @@ int SettingMain()
 		int PushStyleColorNum = 0, PushFontNum = 0;
 		int QueryWaitingTime = 5;
 
-		bool StartUp = false, CreateLnk = setlist.CreateLnk;
+		bool StartUp = false;
+		if (setlist.StartUp == 2) StartUp = true;
+
+		bool CreateLnk = setlist.CreateLnk;
+		bool RightClickClose = setlist.RightClickClose;
 		bool BrushRecover = setlist.BrushRecover, RubberRecover = setlist.RubberRecover;
 		int RubberMode = setlist.RubberMode;
 		string UpdateChannel = setlist.UpdateChannel;
@@ -693,6 +697,7 @@ int SettingMain()
 									if (ReadFile(hPipe, buffer, sizeof(buffer), &dwBytesRead, NULL))
 									{
 										receivedData.assign(buffer, dwBytesRead / sizeof(WCHAR));
+
 										if (receivedData == to_wstring(QuestNumbers) + L"fail")
 										{
 											receivedData = L"Success";
@@ -799,6 +804,8 @@ int SettingMain()
 
 									CloseHandle(hPipe);
 									QuestNumbers++, QuestNumbers %= 10;
+
+									if (setlist.StartUp - 1 != (int)StartUp) setlist.StartUp = 0, receivedData = L"Renew";
 								}
 							}
 							ImGui::PopStyleColor(PushStyleColorNum);
@@ -873,10 +880,31 @@ int SettingMain()
 					}
 					{
 						ImGui::SetCursorPosX(20.0f);
-						ImGui::BeginChild(reinterpret_cast<const char*>(u8"画笔调整"), { 730.0f,90.0f }, true, ImGuiWindowFlags_NoScrollbar);
+						ImGui::BeginChild(reinterpret_cast<const char*>(u8"画笔调整"), { 730.0f,125.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
 						{
 							ImGui::SetCursorPosY(10.0f);
+
+							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+							CenteredText(reinterpret_cast<const char*>(u8" 右键主栏图标时弹窗提示关闭程序"), 4.0f);
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
+							ImGui::Toggle(reinterpret_cast<const char*>(u8"##右键主栏图标时弹窗提示关闭程序"), &RightClickClose, config);
+
+							if (setlist.RightClickClose != RightClickClose)
+							{
+								setlist.RightClickClose = RightClickClose;
+								WriteSetting();
+							}
+						}
+						{
+							ImGui::SetCursorPosY(45.0f);
 
 							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
@@ -897,7 +925,7 @@ int SettingMain()
 							}
 						}
 						{
-							ImGui::SetCursorPosY(45.0f);
+							ImGui::SetCursorPosY(80.0f);
 
 							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
@@ -1421,7 +1449,7 @@ int SettingMain()
 
 						std::vector<std::string> lines;
 						std::wstring line, temp;
-						std::wstringstream ss(L"按下 Ctrl + Win + Alt 切换选择/画笔\n\n其余快捷键和自定义正在测试，敬请期待");
+						std::wstringstream ss(L"按下 Ctrl + Win + Alt 切换选择/画笔\nZ（绘制模式下） 撤回/超级恢复\n\n其余快捷键和自定义正在测试，敬请期待");
 
 						while (getline(ss, temp, L'\n'))
 						{
@@ -1905,6 +1933,7 @@ void FirstSetting(bool info)
 
 	root["edition"] = Json::Value(editionDate);
 	root["CreateLnk"] = Json::Value(false);
+	root["RightClickClose"] = Json::Value(false);
 	root["BrushRecover"] = Json::Value(true);
 	root["RubberRecover"] = Json::Value(false);
 	root["RubberMode"] = Json::Value(0);
@@ -1939,6 +1968,7 @@ bool ReadSetting(bool first)
 	if (reader.parse(readjson, root))
 	{
 		if (root.isMember("CreateLnk")) setlist.CreateLnk = root["CreateLnk"].asBool();
+		if (root.isMember("RightClickClose")) setlist.RightClickClose = root["RightClickClose"].asBool();
 		if (root.isMember("BrushRecover")) setlist.BrushRecover = root["BrushRecover"].asBool();
 		if (root.isMember("RubberRecover")) setlist.RubberRecover = root["RubberRecover"].asBool();
 		if (root.isMember("RubberMode")) setlist.RubberMode = root["RubberMode"].asBool();
@@ -1973,6 +2003,7 @@ bool WriteSetting()
 
 	root["edition"] = Json::Value(editionDate);
 	root["CreateLnk"] = Json::Value(setlist.CreateLnk);
+	root["RightClickClose"] = Json::Value(setlist.RightClickClose);
 	root["BrushRecover"] = Json::Value(setlist.BrushRecover);
 	root["RubberRecover"] = Json::Value(setlist.RubberRecover);
 	root["RubberMode"] = Json::Value(setlist.RubberMode);
