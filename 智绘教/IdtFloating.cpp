@@ -1,6 +1,7 @@
 #pragma once
 #include "IdtFloating.h"
 
+#include "IdtConfiguration.h"
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
 #include "IdtFreezeFrame.h"
@@ -11,6 +12,7 @@
 #include "IdtPlug-in.h"
 #include "IdtRts.h"
 #include "IdtText.h"
+#include "IdtTime.h"
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
 
@@ -5375,11 +5377,12 @@ void MouseInteraction()
 						MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
 					}
 
+					/*
 					if (m.message == WM_RBUTTONDOWN)
 					{
 						if (MessageBox(floating_window, L"是否关闭 智绘教 ？", L"智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) offSignal = true;
 						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
+					}*/
 				}
 
 				if (!choose.select && (!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0)) && IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
@@ -5394,77 +5397,7 @@ void MouseInteraction()
 							{
 								if (!m.lbutton)
 								{
-									std::shared_lock<std::shared_mutex> lock1(PointTempSm);
-									bool start = !TouchTemp.empty();
-									lock1.unlock();
-									if (start) break;
-
-									pair<int, int> tmp_recond = make_pair(0, 0);
-									int tmp_recall_image_type = 0;
-									if (!RecallImage.empty())
-									{
-										tmp_recond = RecallImage.back().recond;
-										tmp_recall_image_type = RecallImage.back().type;
-
-										if (RecallImage.back().type == 2 && !choose.select && !CompareImagesWithBuffer(&drawpad, &RecallImage.back().img));
-										else RecallImage.pop_back();
-										deque<RecallStruct>(RecallImage).swap(RecallImage); // 使用swap技巧来释放未使用的内存
-									}
-
-									if (!RecallImage.empty())
-									{
-										drawpad = RecallImage.back().img;
-										extreme_point = RecallImage.back().extreme_point;
-										recall_image_recond = RecallImage.back().recond.first;
-									}
-									else if (tmp_recond.first > 10) goto SuperRecovery1;
-									else
-									{
-										if (tmp_recall_image_type == 2) goto SuperRecovery1;
-										SetImageColor(drawpad, RGBA(0, 0, 0, 0), true);
-										extreme_point.clear();
-										recall_image_recond = 0;
-										FirstDraw = true;
-									}
-									SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
-									hiex::TransparentImage(&window_background, 0, 0, &drawpad);
-
-									if (!choose.select)
-									{
-										// 设置BLENDFUNCTION结构体
-										BLENDFUNCTION blend;
-										blend.BlendOp = AC_SRC_OVER;
-										blend.BlendFlags = 0;
-										blend.SourceConstantAlpha = 255; // 设置透明度，0为全透明，255为不透明
-										blend.AlphaFormat = AC_SRC_ALPHA; // 使用源图像的alpha通道
-										HDC hdcScreen = GetDC(NULL);
-										// 调用UpdateLayeredWindow函数更新窗口
-										POINT ptSrc = { 0,0 };
-										SIZE sizeWnd = { drawpad.getwidth(),drawpad.getheight() };
-										POINT ptDst = { 0,0 }; // 设置窗口位置
-										UPDATELAYEREDWINDOWINFO ulwi = { 0 };
-										ulwi.cbSize = sizeof(ulwi);
-										ulwi.hdcDst = hdcScreen;
-										ulwi.pptDst = &ptDst;
-										ulwi.psize = &sizeWnd;
-										ulwi.pptSrc = &ptSrc;
-										ulwi.crKey = RGB(255, 255, 255);
-										ulwi.pblend = &blend;
-										ulwi.dwFlags = ULW_ALPHA;
-
-										// 定义要更新的矩形区域
-										ulwi.hdcSrc = GetImageHDC(&window_background);
-										UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
-									}
-									else
-									{
-										reserve_drawpad = true;
-
-										brush.select = true;
-										rubber.select = false;
-										choose.select = false;
-									}
-
+									IdtRecall();
 									break;
 								}
 							}
@@ -5490,94 +5423,7 @@ void MouseInteraction()
 							{
 								if (!m.lbutton)
 								{
-								SuperRecovery1:
-
-									if (current_record_pointer == total_record_pointer + 1)
-									{
-										choose.select = true;
-										brush.select = false;
-										rubber.select = false;
-
-										reference_record_pointer = 1;
-										break;
-									}
-									//Testw(StringToWstring(ConvertToGbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString())).c_str());
-									if (_access(ConvertToGbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString()).c_str(), 4) == -1) break;
-
-									filesystem::path pathObj(ConvertToGbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString()));
-									wstring file_name1 = pathObj.parent_path().filename().wstring();
-									wstring file_name2 = pathObj.stem().wstring();
-
-									// 符合最新的单个时间戳（带有毫秒）格式
-									if (regex_match(file_name2, wregex(L"\\d+")))
-									{
-										chrono::milliseconds ms(_wtoll(file_name2.c_str()));
-										time_t tt = std::chrono::system_clock::to_time_t(chrono::time_point<chrono::system_clock>(ms));
-										RecallImageTm = *std::localtime(&tt);
-									}
-
-									// 符合旧版 时-分-秒 格式
-									else if (regex_match(file_name1 + L" " + file_name2, wregex(L"\\d{4}-\\d{2}-\\d{2} \\d{2}-\\d{2}-\\d{2}")))
-									{
-										std::wistringstream temp_wiss(file_name1 + L" " + file_name2);
-										temp_wiss >> std::get_time(&RecallImageTm, L"%Y-%m-%d %H-%M-%S");
-									}
-
-									// 日期处理失败
-									else RecallImageTm = (tm)(NULL);
-
-									FreezeRecall = 500;
-
-									std::shared_lock<std::shared_mutex> lock1(PointTempSm);
-									bool start = !TouchTemp.empty();
-									lock1.unlock();
-									if (start) break;
-
-									IMAGE temp;
-									loadimage(&temp, StringToWstring(ConvertToGbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString())).c_str(), drawpad.getwidth(), drawpad.getheight(), true);
-									drawpad = temp, extreme_point = map<pair<int, int>, bool>();
-
-									current_record_pointer++;
-
-									SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
-									hiex::TransparentImage(&window_background, 0, 0, &drawpad);
-
-									if (brush.select)
-									{
-										// 设置BLENDFUNCTION结构体
-										BLENDFUNCTION blend;
-										blend.BlendOp = AC_SRC_OVER;
-										blend.BlendFlags = 0;
-										blend.SourceConstantAlpha = 255; // 设置透明度，0为全透明，255为不透明
-										blend.AlphaFormat = AC_SRC_ALPHA; // 使用源图像的alpha通道
-										HDC hdcScreen = GetDC(NULL);
-										// 调用UpdateLayeredWindow函数更新窗口
-										POINT ptSrc = { 0,0 };
-										SIZE sizeWnd = { drawpad.getwidth(),drawpad.getheight() };
-										POINT ptDst = { 0,0 }; // 设置窗口位置
-										UPDATELAYEREDWINDOWINFO ulwi = { 0 };
-										ulwi.cbSize = sizeof(ulwi);
-										ulwi.hdcDst = hdcScreen;
-										ulwi.pptDst = &ptDst;
-										ulwi.psize = &sizeWnd;
-										ulwi.pptSrc = &ptSrc;
-										ulwi.crKey = RGB(255, 255, 255);
-										ulwi.pblend = &blend;
-										ulwi.dwFlags = ULW_ALPHA;
-
-										// 定义要更新的矩形区域
-										ulwi.hdcSrc = GetImageHDC(&window_background);
-										UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
-									}
-									else
-									{
-										reserve_drawpad = true;
-
-										brush.select = true;
-										rubber.select = false;
-										choose.select = false;
-									}
-
+									IdtRecovery();
 									break;
 								}
 							}
@@ -5626,11 +5472,12 @@ void MouseInteraction()
 						MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
 					}
 
+					/*
 					if (m.message == WM_RBUTTONDOWN)
 					{
 						if (MessageBox(floating_window, L"是否关闭 智绘教 ？", L"智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) offSignal = true;
 						hiex::flushmessage_win32(EM_MOUSE, floating_window);
-					}
+					}*/
 				}
 
 				//窗口穿透
@@ -6373,77 +6220,7 @@ void MouseInteraction()
 								{
 									if (!m.lbutton)
 									{
-										std::shared_lock<std::shared_mutex> lock1(PointTempSm);
-										bool start = !TouchTemp.empty();
-										lock1.unlock();
-										if (start) break;
-
-										pair<int, int> tmp_recond = make_pair(0, 0);
-										int tmp_recall_image_type = 0;
-										if (!RecallImage.empty())
-										{
-											tmp_recond = RecallImage.back().recond;
-											tmp_recall_image_type = RecallImage.back().type;
-
-											if (RecallImage.back().type == 2 && !choose.select && !CompareImagesWithBuffer(&drawpad, &RecallImage.back().img));
-											else RecallImage.pop_back();
-											deque<RecallStruct>(RecallImage).swap(RecallImage); // 使用swap技巧来释放未使用的内存
-										}
-
-										if (!RecallImage.empty())
-										{
-											drawpad = RecallImage.back().img;
-											extreme_point = RecallImage.back().extreme_point;
-											recall_image_recond = RecallImage.back().recond.first;
-										}
-										else if (tmp_recond.first > 10) goto SuperRecovery2;
-										else
-										{
-											if (tmp_recall_image_type == 2) goto SuperRecovery2;
-											SetImageColor(drawpad, RGBA(0, 0, 0, 0), true);
-											extreme_point.clear();
-											recall_image_recond = 0;
-											FirstDraw = true;
-										}
-										SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
-										hiex::TransparentImage(&window_background, 0, 0, &drawpad);
-
-										if (!choose.select)
-										{
-											// 设置BLENDFUNCTION结构体
-											BLENDFUNCTION blend;
-											blend.BlendOp = AC_SRC_OVER;
-											blend.BlendFlags = 0;
-											blend.SourceConstantAlpha = 255; // 设置透明度，0为全透明，255为不透明
-											blend.AlphaFormat = AC_SRC_ALPHA; // 使用源图像的alpha通道
-											HDC hdcScreen = GetDC(NULL);
-											// 调用UpdateLayeredWindow函数更新窗口
-											POINT ptSrc = { 0,0 };
-											SIZE sizeWnd = { drawpad.getwidth(),drawpad.getheight() };
-											POINT ptDst = { 0,0 }; // 设置窗口位置
-											UPDATELAYEREDWINDOWINFO ulwi = { 0 };
-											ulwi.cbSize = sizeof(ulwi);
-											ulwi.hdcDst = hdcScreen;
-											ulwi.pptDst = &ptDst;
-											ulwi.psize = &sizeWnd;
-											ulwi.pptSrc = &ptSrc;
-											ulwi.crKey = RGB(255, 255, 255);
-											ulwi.pblend = &blend;
-											ulwi.dwFlags = ULW_ALPHA;
-
-											// 定义要更新的矩形区域
-											ulwi.hdcSrc = GetImageHDC(&window_background);
-											UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
-										}
-										else
-										{
-											reserve_drawpad = true;
-
-											brush.select = true;
-											rubber.select = false;
-											choose.select = false;
-										}
-
+										IdtRecall();
 										break;
 									}
 								}
@@ -6469,94 +6246,7 @@ void MouseInteraction()
 								{
 									if (!m.lbutton)
 									{
-									SuperRecovery2:
-
-										if (current_record_pointer == total_record_pointer + 1)
-										{
-											choose.select = true;
-											brush.select = false;
-											rubber.select = false;
-
-											reference_record_pointer = 1;
-											break;
-										}
-										//Testw(StringToWstring(ConvertToGbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString())).c_str());
-										if (_access(ConvertToGbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString()).c_str(), 4) == -1) break;
-
-										filesystem::path pathObj(ConvertToGbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString()));
-										wstring file_name1 = pathObj.parent_path().filename().wstring();
-										wstring file_name2 = pathObj.stem().wstring();
-
-										// 符合最新的单个时间戳（带有毫秒）格式
-										if (regex_match(file_name2, wregex(L"\\d+")))
-										{
-											chrono::milliseconds ms(_wtoll(file_name2.c_str()));
-											time_t tt = std::chrono::system_clock::to_time_t(chrono::time_point<chrono::system_clock>(ms));
-											RecallImageTm = *std::localtime(&tt);
-										}
-
-										// 符合旧版 时-分-秒 格式
-										else if (regex_match(file_name1 + L" " + file_name2, wregex(L"\\d{4}-\\d{2}-\\d{2} \\d{2}-\\d{2}-\\d{2}")))
-										{
-											std::wistringstream temp_wiss(file_name1 + L" " + file_name2);
-											temp_wiss >> std::get_time(&RecallImageTm, L"%Y-%m-%d %H-%M-%S");
-										}
-
-										// 日期处理失败
-										else RecallImageTm = (tm)(NULL);
-
-										FreezeRecall = 500;
-
-										std::shared_lock<std::shared_mutex> lock1(PointTempSm);
-										bool start = !TouchTemp.empty();
-										lock1.unlock();
-										if (start) break;
-
-										IMAGE temp;
-										loadimage(&temp, StringToWstring(ConvertToGbk(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString())).c_str(), drawpad.getwidth(), drawpad.getheight(), true);
-										drawpad = temp, extreme_point = map<pair<int, int>, bool>();
-
-										current_record_pointer++;
-
-										SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
-										hiex::TransparentImage(&window_background, 0, 0, &drawpad);
-
-										if (brush.select)
-										{
-											// 设置BLENDFUNCTION结构体
-											BLENDFUNCTION blend;
-											blend.BlendOp = AC_SRC_OVER;
-											blend.BlendFlags = 0;
-											blend.SourceConstantAlpha = 255; // 设置透明度，0为全透明，255为不透明
-											blend.AlphaFormat = AC_SRC_ALPHA; // 使用源图像的alpha通道
-											HDC hdcScreen = GetDC(NULL);
-											// 调用UpdateLayeredWindow函数更新窗口
-											POINT ptSrc = { 0,0 };
-											SIZE sizeWnd = { drawpad.getwidth(),drawpad.getheight() };
-											POINT ptDst = { 0,0 }; // 设置窗口位置
-											UPDATELAYEREDWINDOWINFO ulwi = { 0 };
-											ulwi.cbSize = sizeof(ulwi);
-											ulwi.hdcDst = hdcScreen;
-											ulwi.pptDst = &ptDst;
-											ulwi.psize = &sizeWnd;
-											ulwi.pptSrc = &ptSrc;
-											ulwi.crKey = RGB(255, 255, 255);
-											ulwi.pblend = &blend;
-											ulwi.dwFlags = ULW_ALPHA;
-
-											// 定义要更新的矩形区域
-											ulwi.hdcSrc = GetImageHDC(&window_background);
-											UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
-										}
-										else
-										{
-											reserve_drawpad = true;
-
-											brush.select = true;
-											rubber.select = false;
-											choose.select = false;
-										}
-
+										IdtRecovery();
 										break;
 									}
 								}
@@ -6603,7 +6293,7 @@ void MouseInteraction()
 					}
 				}
 
-				//插件：随机点名
+				// 临时插件：随机点名
 				if (plug_in_RandomRollCall.select == 2)
 				{
 					if (IsInRect(m.x, m.y, { 2, floating_windows.height - 55, 2 + 100, floating_windows.height - 55 + 40 }))

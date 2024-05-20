@@ -266,7 +266,6 @@ int SettingMain()
 
 		// ==========
 
-		wstring ppt_LinkTest = LinkTest();
 		wstring receivedData;
 		POINT pt;
 
@@ -1091,9 +1090,16 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
 								CenteredText(reinterpret_cast<const char*>(u8"PPT 演示联动插件"), 4.0f);
 
-								Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(50 / 255.0f, 50 / 255.0f, 50 / 255.0f, 1.0f));
-								ImGui::SameLine(); CenteredText(reinterpret_cast<const char*>(WstringToString(ddbSetList.DdbEdition).c_str()), 8.0f);
+								// 版本号
+								{
+									wstring version;
+									if (pptComVersion.substr(0, 7) == L"Error: ") version = L"插件发生错误 版本号未知";
+									else version = pptComVersion;
+
+									Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(50 / 255.0f, 50 / 255.0f, 50 / 255.0f, 1.0f));
+									ImGui::SameLine(); CenteredText(reinterpret_cast<const char*>(WstringToString(version).c_str()), 8.0f);
+								}
 
 								ImGui::NewLine(); ImGui::SetCursorPosX(120.0f);
 								CenteredText(reinterpret_cast<const char*>(u8"支持 Microsoft PowerPoint 和 WPS 等演示软件，\n可以让笔迹固定在页面上，同时提供快捷底栏交互控件。\n绘制模式下可以自由翻页，对 PPT 原有功能无限制。"), 10.0f);
@@ -1547,8 +1553,14 @@ int SettingMain()
 							text += L"\n撤回库 current_record_pointer：" + to_wstring(current_record_pointer);
 							text += L"\n\n首次绘制状态：", text += (FirstDraw == true) ? L"是" : L"否";
 
-							text += L"\n\nPPT COM接口 联动组件 状态：\n";
-							text += ppt_LinkTest;
+							{
+								wstring ppt_LinkTest;
+								if (pptComVersion.substr(0, 7) == L"Error: ") ppt_LinkTest = L"发生错误 " + pptComVersion;
+								else ppt_LinkTest = L"连接成功，版本 " + pptComVersion;
+
+								text += L"\n\nPPT COM接口 联动组件 状态：";
+								text += ppt_LinkTest;
+							}
 
 							text += L"\n\nPPT 状态：";
 							text += PptInfoState.TotalPage != -1 ? L"正在播放" : L"未播放";

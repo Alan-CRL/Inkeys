@@ -11,7 +11,10 @@ extern map<LONG, pair<IMAGE*, int>> StrokeImage;
 extern vector<LONG> StrokeImageList;
 extern shared_mutex StrokeBackImageSm;
 
-extern IMAGE drawpad; //Ö÷»­°å
+extern bool drawWaiting;
+extern shared_mutex drawWaitingSm;
+
+extern IMAGE drawpad;
 extern IMAGE window_background;
 
 extern unordered_map<BYTE, bool> KeyBoradDown;
@@ -19,9 +22,10 @@ extern HHOOK DrawpadHookCall;
 LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam);
 void DrawpadInstallHook();
 
+void KeyInteraction();
+
 double EuclideanDistance(POINT a, POINT b);
 //double EuclideanDistance(PointF a, PointF b);
-
 void MultiFingerDrawing(LONG pid, POINT pt);
 void DrawpadDrawing();
 int drawpad_main();

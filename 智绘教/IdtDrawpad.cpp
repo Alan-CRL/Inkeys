@@ -26,6 +26,9 @@ map<LONG, pair<IMAGE*, int>> StrokeImage; // second ±íÊ¾»æÖÆ×´Ì¬ 01»­±Ê 23ÏðÆ¤ £
 vector<LONG> StrokeImageList;
 shared_mutex StrokeBackImageSm;
 
+bool drawWaiting; // »æÖÆµÈ´ý£ºÆôÓÃ±êÊ¶Ê±ÔÝÊ±Í£Ö¹»æÖÆ
+shared_mutex drawWaitingSm;
+
 IMAGE drawpad(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)); //Ö÷»­°å
 IMAGE window_background(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 
@@ -277,11 +280,40 @@ void DrawpadInstallHook()
 	UnhookWindowsHookEx(DrawpadHookCall);
 }
 
+void KeyInteraction()
+{
+	threadStatus[L"KeyInteraction"] = true;
+
+	ExMessage m;
+	while (!offSignal)
+	{
+		hiex::getmessage_win32(&m, EM_KEY, drawpad_window);
+
+		if (m.vkcode == 0x5A && m.message == WM_KEYDOWN)
+		{
+			while (1)
+			{
+				if (!KeyBoradDown[0x5A])
+				{
+					if (!choose.select && (!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0))) IdtRecall();
+					else if (!choose.select && RecallImage.empty() && current_record_pointer <= total_record_pointer + 1 && practical_total_record_pointer) IdtRecovery();
+
+					break;
+				}
+
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+			hiex::flushmessage_win32(EM_KEY, drawpad_window);
+		}
+	}
+
+	threadStatus[L"KeyInteraction"] = false;
+}
+
 double EuclideanDistance(POINT a, POINT b)
 {
 	return std::sqrt(std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2));
 }
-
 void MultiFingerDrawing(LONG pid, POINT pt)
 {
 	struct Mouse
@@ -1587,6 +1619,8 @@ int drawpad_main()
 
 	thread DrawpadDrawing_thread(DrawpadDrawing);
 	DrawpadDrawing_thread.detach();
+	//thread threadKeyInteraction(KeyInteraction);
+	//threadKeyInteraction.detach();
 	thread DrawpadInstallHookThread(DrawpadInstallHook);
 	DrawpadInstallHookThread.detach();
 	{
@@ -1605,9 +1639,16 @@ int drawpad_main()
 
 			while (1)
 			{
-				std::shared_lock<std::shared_mutex> lock1(PointTempSm);
+				std::shared_lock<std::shared_mutex> LockPointTempSm(PointTempSm);
 				bool start = !TouchTemp.empty();
-				lock1.unlock();
+				LockPointTempSm.unlock();
+				if (start)
+				{
+					shared_lock<shared_mutex> LockdrawWaitingSm(drawWaitingSm);
+					bool start = !drawWaiting;
+					LockdrawWaitingSm.unlock();
+				}
+
 				//¿ªÊ¼»æÍ¼
 				if (start)
 				{

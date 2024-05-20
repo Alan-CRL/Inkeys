@@ -51,7 +51,8 @@ extern PptInfoStateStruct PptInfoState;
 extern bool PptWindowBackgroundUiChange;
 extern bool SeewoCameraIsOpen;
 
-wstring LinkTest();
+extern wstring pptComVersion;
+wstring GetPptComVersion();
 
 void NextPptSlides(int check);
 void PreviousPptSlides();

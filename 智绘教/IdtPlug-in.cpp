@@ -88,19 +88,21 @@ IMAGE PptWindowBackground; // PPT window background canvas | PPT 窗口背景画布
 int PptAdvanceMode = -1;
 bool PptWindowBackgroundUiChange = true;
 
-wstring LinkTest()
+wstring pptComVersion;
+wstring GetPptComVersion()
 {
-	wstring ret = L"COM库(.dll) 不存在，且发生严重错误，返回值被忽略";
+	wstring ret = L"Error: COM库(.dll) 不存在，且发生严重错误，返回值被忽略";
 
 	if (_waccess((StringToWstring(globalPath) + L"PptCOM.dll").c_str(), 4) == 0)
 	{
 		try
 		{
-			ret = L"C# PptCOM接口 连接成功，版本 " + BstrToWstring(PptCOMPto->GetVersion());
+			ret = BstrToWstring(PptCOMPto->GetVersion());
+			if (!regex_match(ret, wregex(L"\\d{8}[a-z]"))) ret = L"Error: " + ret;
 		}
 		catch (_com_error& err)
 		{
-			ret = L"COM库(.dll) 存在，COM成功初始化，但C++端COM接口异常：" + wstring(err.ErrorMessage());
+			ret = L"Error: COM库(.dll) 存在，COM成功初始化，但C++端COM接口异常：" + wstring(err.ErrorMessage());
 		}
 	}
 	else
@@ -109,9 +111,9 @@ wstring LinkTest()
 
 		if (_wfullpath(absolutePath, L"PptCOM.dll", _MAX_PATH) != NULL)
 		{
-			ret = L"COM库(.dll) 不存在，预期调用目录为：\"" + StringToWstring(globalPath) + L"PptCOM.dll\"";
+			ret = L"Error: COM库(.dll) 不存在，预期调用目录为：\"" + StringToWstring(globalPath) + L"PptCOM.dll\"";
 		}
-		else ret = L"COM库(.dll) 不存在，预期调用目录测算失败";
+		else ret = L"Error: COM库(.dll) 不存在，预期调用目录测算失败";
 	}
 
 	return ret;
@@ -243,6 +245,8 @@ void GetPptState()
 		catch (_com_error)
 		{
 		}
+
+		pptComVersion = GetPptComVersion();
 	}
 
 	while (!offSignal)
