@@ -7,6 +7,8 @@
 #include <d3d9.h>
 #pragma comment(lib, "d3d9")
 
+// IDT 定格功能的完整体验需要 Windows 8.1
+
 HWND hwndHost, hwndMag;
 HINSTANCE hInst;
 IMAGE MagnificationBackground;
@@ -15,52 +17,31 @@ bool magnificationReady;
 
 shared_mutex MagnificationBackgroundSm;
 RECT hostWindowRect;
+int MagTransparency;
 
 void UpdateMagWindow()
 {
 	RECT sourceRect = { 0, 0, GetSystemMetrics(SM_CXSCREEN) - 1, GetSystemMetrics(SM_CYSCREEN) - 1 };
 	MagSetWindowSource(hwndMag, sourceRect);
-
-	SetWindowPos(hwndHost, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
 	InvalidateRect(hwndMag, NULL, TRUE);
 
-	HDC hdcDest = nullptr;
-	{
-		std::shared_lock<std::shared_mutex> LockMagnificationBackgroundSm(MagnificationBackgroundSm);
-		hdcDest = GetImageHDC(&MagnificationBackground);
-		LockMagnificationBackgroundSm.unlock();
-	}
+	/*
 	{
 		std::unique_lock<std::shared_mutex> LockMagnificationBackgroundSm(MagnificationBackgroundSm);
 
 		if (MagnificationBackground.getwidth() != GetSystemMetrics(SM_CXSCREEN) || MagnificationBackground.getheight() != GetSystemMetrics(SM_CYSCREEN))
 			MagnificationBackground.Resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-		PrintWindow(hwndMag, hdcDest, PW_RENDERFULLCONTENT);
 
-		//saveimage(L"123.png", &MagnificationBackground);
-		//Test();
+		PrintWindow(hwndMag, GetImageHDC(&MagnificationBackground), PW_RENDERFULLCONTENT);
+		hiex::RemoveImageTransparency(&MagnificationBackground);
 
 		LockMagnificationBackgroundSm.unlock();
-	}
+	}*/
 }
 
-LRESULT CALLBACK MagnifierWindowWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK MagnifierHostWindowWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	return DefWindowProc(hWnd, message, wParam, lParam);
-}
-ATOM RegisterHostWindowClass(HINSTANCE hInstance)
-{
-	WNDCLASSEX wcex = {};
-
-	wcex.cbSize = sizeof(WNDCLASSEX);
-	wcex.style = CS_HREDRAW | CS_VREDRAW;
-	wcex.lpfnWndProc = MagnifierWindowWndProc;
-	wcex.hInstance = hInstance;
-	wcex.hCursor = LoadCursor(NULL, IDC_ARROW);
-	wcex.hbrBackground = (HBRUSH)(1 + COLOR_BTNFACE);
-	wcex.lpszClassName = TEXT("MagnifierWindow");
-
-	return RegisterClassEx(&wcex);
+	return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 BOOL SetupMagnifier(HINSTANCE hinst)
 {
@@ -69,12 +50,26 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 	hostWindowRect.left = 0;
 	hostWindowRect.right = GetSystemMetrics(SM_CXSCREEN);
 
-	IDTLogger->info("[放大API线程][SetupMagnifier] 注册放大API窗口");
-	RegisterHostWindowClass(hinst);
-	IDTLogger->info("[放大API线程][SetupMagnifier] 注册放大API窗口完成");
+	{
+		IDTLogger->info("[放大API线程][SetupMagnifier] 注册放大API主机窗口");
+
+		WNDCLASSEX wcex = {};
+
+		wcex.cbSize = sizeof(WNDCLASSEX);
+		wcex.style = CS_HREDRAW | CS_VREDRAW;
+		wcex.lpfnWndProc = MagnifierHostWindowWndProc;
+		wcex.hInstance = hinst;
+		wcex.hCursor = LoadCursor(NULL, IDC_ARROW);
+		wcex.hbrBackground = (HBRUSH)(1 + COLOR_BTNFACE);
+		wcex.lpszClassName = TEXT("IdtMagnifierWindowHost");
+
+		RegisterClassEx(&wcex);
+
+		IDTLogger->info("[放大API线程][SetupMagnifier] 注册放大API主机窗口完成");
+	}
 
 	IDTLogger->info("[放大API线程][SetupMagnifier] 创建放大API主机窗口");
-	hwndHost = CreateWindowEx(WS_EX_TOPMOST | WS_EX_LAYERED, TEXT("MagnifierWindow"), TEXT("Idt Screen Magnifier"), WS_SIZEBOX | WS_SYSMENU | WS_CLIPCHILDREN | WS_CAPTION | WS_MAXIMIZEBOX, 0, 0, hostWindowRect.right, hostWindowRect.bottom, NULL, NULL, hInst, NULL);
+	hwndHost = CreateWindowEx(WS_EX_TOPMOST | WS_EX_LAYERED, TEXT("IdtMagnifierWindowHost"), TEXT("IdtScreenMagnifierHost"), WS_SIZEBOX | WS_SYSMENU | WS_CLIPCHILDREN | WS_CAPTION | WS_MAXIMIZEBOX, 0, 0, hostWindowRect.right, hostWindowRect.bottom, NULL, NULL, hInst, NULL);
 	if (!hwndHost)
 	{
 		IDTLogger->error("[放大API线程][SetupMagnifier] 创建放大API主机窗口失败" + to_string(GetLastError()));
@@ -87,7 +82,7 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API主机窗口透明度完成");
 
 	IDTLogger->info("[放大API线程][SetupMagnifier] 创建放大API窗口");
-	hwndMag = CreateWindow(WC_MAGNIFIER, TEXT("MagnifierWindow"), WS_CHILD | MS_CLIPAROUNDCURSOR | WS_VISIBLE, hostWindowRect.left, hostWindowRect.top, hostWindowRect.right, hostWindowRect.bottom, hwndHost, NULL, hInst, NULL);
+	hwndMag = CreateWindow(WC_MAGNIFIER, TEXT("IdtScreenMagnifierMag"), WS_CHILD | MS_CLIPAROUNDCURSOR | WS_VISIBLE, hostWindowRect.left, hostWindowRect.top, hostWindowRect.right, hostWindowRect.bottom, hwndHost, NULL, hInst, NULL);
 	if (!hwndMag)
 	{
 		IDTLogger->error("[放大API线程][SetupMagnifier] 创建放大API窗口失败" + to_string(GetLastError()));
@@ -98,6 +93,8 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API窗口样式");
 	SetWindowLong(hwndHost, GWL_STYLE, GetWindowLong(hwndHost, GWL_STYLE) & ~WS_CAPTION); // 隐藏标题栏
 	SetWindowLong(hwndHost, GWL_STYLE, GetWindowLong(hwndHost, GWL_STYLE) & ~WS_THICKFRAME); // 禁止窗口拉伸
+	SetWindowPos(hwndHost, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED);
+
 	SetWindowLong(hwndHost, GWL_EXSTYLE, (GetWindowLong(hwndHost, GWL_EXSTYLE) | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW); // 隐藏任务栏图标
 	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API窗口样式完成");
 
@@ -131,7 +128,14 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 	return ret;
 }
 
-bool RequestUpdateMagWindow;
+int RequestUpdateMagWindow;
+/*
+* RequestUpdateMagWindow 管理 IDT 放大行为
+* 0 隐藏窗口
+* 1 显示窗口并定格
+* 2 显示窗口并实时
+*/
+
 void MagnifierThread()
 {
 	IDTLogger->info("[放大API线程][MagnifierThread] 初始化MagInitialize");
@@ -213,18 +217,34 @@ void MagnifierUpdate()
 	}
 	IDTLogger->info("[放大API线程][MagnifierThread] 等待穿透窗口创建完成");
 
-	RequestUpdateMagWindow = true;
 	while (!offSignal)
 	{
-		while (!RequestUpdateMagWindow && !offSignal) this_thread::sleep_for(chrono::milliseconds(100));
-		if (offSignal) break;
-
+		if (RequestUpdateMagWindow == 1)
 		{
-			IDTLogger->info("[放大API线程][MagnifierThread] 更新API图像");
-			UpdateMagWindow();
-			IDTLogger->info("[放大API线程][MagnifierThread] 更新API图像完成");
+			if (MagTransparency == 0)
+			{
+				UpdateMagWindow();
 
-			RequestUpdateMagWindow = false;
+				SetLayeredWindowAttributes(hwndHost, 0, 255, LWA_ALPHA);
+				MagTransparency = 255;
+			}
+
+			for (int i = 0; RequestUpdateMagWindow == 1; i++, i %= 10)
+			{
+				if (!i) SetWindowPos(hwndHost, freeze_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+
+				this_thread::sleep_for(chrono::milliseconds(100));
+			}
+		}
+		else if (RequestUpdateMagWindow == 0)
+		{
+			if (MagTransparency == 255)
+			{
+				SetLayeredWindowAttributes(hwndHost, 0, 0, LWA_ALPHA);
+				MagTransparency = 0;
+			}
+
+			while (RequestUpdateMagWindow == 0) this_thread::sleep_for(chrono::milliseconds(50));
 		}
 	}
 

@@ -28,6 +28,17 @@ struct SetListStruct
 };
 extern SetListStruct setlist;
 
+struct PptComSetListStruct
+{
+	PptComSetListStruct()
+	{
+		fixedHandWriting = true;
+	}
+
+	int fixedHandWriting;
+};
+extern PptComSetListStruct pptComSetlist;
+
 struct DdbSetListStruct
 {
 	DdbSetListStruct()

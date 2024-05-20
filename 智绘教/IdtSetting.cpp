@@ -262,6 +262,7 @@ int SettingMain()
 
 		bool DdbEnable = ddbSetList.DdbEnable;
 		bool DdbEnhance = ddbSetList.DdbEnhance;
+		bool FixedHandWriting = pptComSetlist.fixedHandWriting;
 
 		// ==========
 
@@ -315,7 +316,8 @@ int SettingMain()
 				enum TabPlugIn
 				{
 					tabPlug1,
-					tabPlug2
+					tabPlug2,
+					tabPlug3
 				};
 
 				ImGui::SetNextWindowPos({ 0,0 });//设置窗口位置
@@ -336,7 +338,7 @@ int SettingMain()
 					}
 					ImGui::PopStyleColor(PushStyleColorNum);
 
-					ImGui::SetCursorPos({ 10.0f,94.0f });
+					ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 10.0f });
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab2 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab2 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 					if (Tab == Tab::tab2) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
@@ -347,7 +349,7 @@ int SettingMain()
 					}
 					ImGui::PopStyleColor(PushStyleColorNum);
 
-					ImGui::SetCursorPos({ 10.0f,144.0f });
+					ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 10.0f });
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab3 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab3 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 					if (Tab == Tab::tab3) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
@@ -358,7 +360,7 @@ int SettingMain()
 					}
 					ImGui::PopStyleColor(PushStyleColorNum);
 
-					ImGui::SetCursorPos({ 10.0f,194.0f });
+					ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 10.0f });
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab4 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab4 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 					if (Tab == Tab::tab4) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
@@ -369,7 +371,7 @@ int SettingMain()
 					}
 					ImGui::PopStyleColor(PushStyleColorNum);
 
-					ImGui::SetCursorPos({ 10.0f,244.0f });
+					ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 10.0f });
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab5 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab5 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 					if (Tab == Tab::tab5) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
@@ -380,18 +382,20 @@ int SettingMain()
 					}
 					ImGui::PopStyleColor(PushStyleColorNum);
 
-					ImGui::SetCursorPos({ 10.0f,294.0f });
+					/*
+					ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 50.0f });
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab6 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab6 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 					if (Tab == Tab::tab6) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 					if (Tab == Tab::tab6) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 					if (ImGui::Button(reinterpret_cast<const char*>(u8"实验室"), { 100.0f,40.0f }))
 					{
-						//Tab = Tab::tab6;
+						Tab = Tab::tab6;
 					}
 					ImGui::PopStyleColor(PushStyleColorNum);
+					*/
 
-					ImGui::SetCursorPos({ 10.0f,344.0f });
+					ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 10.0f });
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab7 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab7 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 					if (Tab == Tab::tab7) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
@@ -402,7 +406,7 @@ int SettingMain()
 					}
 					ImGui::PopStyleColor(PushStyleColorNum);
 
-					ImGui::SetCursorPos({ 10.0f,394.0f });
+					ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 10.0f });
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, Tab == Tab::tab8 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Tab == Tab::tab8 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 					if (Tab == Tab::tab8) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
@@ -1040,16 +1044,29 @@ int SettingMain()
 						}
 						ImGui::PopStyleColor(PushStyleColorNum);
 
-						if (ddbSetList.DdbEnable)
 						{
 							ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 6.0f });
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, TabPlugInIdx == TabPlugIn::tabPlug2 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, TabPlugInIdx == TabPlugIn::tabPlug2 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 							if (TabPlugInIdx == TabPlugIn::tabPlug2) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 							if (TabPlugInIdx == TabPlugIn::tabPlug2) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-							if (ImGui::Button(reinterpret_cast<const char*>(u8"画板浮窗拦截"), { 150.0f,40.0f }))
+							if (ImGui::Button(reinterpret_cast<const char*>(u8"PPT 演示联动"), { 150.0f,40.0f }))
 							{
 								TabPlugInIdx = TabPlugIn::tabPlug2;
+							}
+							ImGui::PopStyleColor(PushStyleColorNum);
+						}
+
+						if (ddbSetList.DdbEnable)
+						{
+							ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 6.0f });
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, TabPlugInIdx == TabPlugIn::tabPlug3 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, TabPlugInIdx == TabPlugIn::tabPlug3 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+							if (TabPlugInIdx == TabPlugIn::tabPlug3) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+							if (TabPlugInIdx == TabPlugIn::tabPlug3) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+							if (ImGui::Button(reinterpret_cast<const char*>(u8"画板浮窗拦截"), { 150.0f,40.0f }))
+							{
+								TabPlugInIdx = TabPlugIn::tabPlug3;
 							}
 							ImGui::PopStyleColor(PushStyleColorNum);
 						}
@@ -1062,9 +1079,34 @@ int SettingMain()
 						// 插件商店
 						ImGui::BeginChild(reinterpret_cast<const char*>(u8"插件商店"), { 590.0f,596.0f }, true);
 
+						// PPT 演示联动插件
+						{
+							ImGui::SetCursorPos({ 20.0f,ImGui::GetCursorPosY() + 10.0f });
+							ImGui::BeginChild(reinterpret_cast<const char*>(u8"PPT 演示联动插件"), { 550.0f,120.0f }, true);
+
+							{
+								ImGui::SetCursorPos({ 120.0f,10.0f });
+
+								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								CenteredText(reinterpret_cast<const char*>(u8"PPT 演示联动插件"), 4.0f);
+
+								Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(50 / 255.0f, 50 / 255.0f, 50 / 255.0f, 1.0f));
+								ImGui::SameLine(); CenteredText(reinterpret_cast<const char*>(WstringToString(ddbSetList.DdbEdition).c_str()), 8.0f);
+
+								ImGui::NewLine(); ImGui::SetCursorPosX(120.0f);
+								CenteredText(reinterpret_cast<const char*>(u8"支持 Microsoft PowerPoint 和 WPS 等演示软件，\n可以让笔迹固定在页面上，同时提供快捷底栏交互控件。\n绘制模式下可以自由翻页，对 PPT 原有功能无限制。"), 10.0f);
+
+								ImGui::PopStyleColor(PushStyleColorNum);
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+
+							ImGui::EndChild();
+						}
 						// 画板浮窗拦截插件
 						{
-							ImGui::SetCursorPos({ 20.0f,10.0f });
+							ImGui::SetCursorPos({ 20.0f,ImGui::GetCursorPosY() + 10.0f });
 							ImGui::BeginChild(reinterpret_cast<const char*>(u8"画板浮窗拦截插件"), { 550.0f,120.0f }, true);
 
 							{
@@ -1161,6 +1203,39 @@ int SettingMain()
 						break;
 
 					case TabPlugIn::tabPlug2:
+						// PPT 演示联动
+						ImGui::BeginChild(reinterpret_cast<const char*>(u8"PPT 演示联动"), { 590.0f,596.0f }, true);
+
+						{
+							ImGui::SetCursorPosY(10.0f);
+
+							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+							CenteredText(reinterpret_cast<const char*>(u8" 墨迹固定在对应页面上"), 4.0f);
+
+							Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
+							ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"每个 PPT 页面都将拥有各自独立的画布\n（翻页不会清空之前页面所绘制的墨迹，可以返回前一页面继续绘制）"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+							ImGui::SameLine(); ImGui::SetCursorPosX(590.0f - 70.0f);
+							ImGui::Toggle(reinterpret_cast<const char*>(u8"##墨迹固定在对应页面上"), &FixedHandWriting, config);
+
+							if (pptComSetlist.fixedHandWriting != FixedHandWriting)
+							{
+								pptComSetlist.fixedHandWriting = FixedHandWriting;
+								WriteSetting();
+							}
+							ImGui::PopStyleColor(PushStyleColorNum);
+						}
+
+						ImGui::EndChild();
+						break;
+
+					case TabPlugIn::tabPlug3:
 						// 画板浮窗拦截
 						ImGui::BeginChild(reinterpret_cast<const char*>(u8"画板浮窗拦截"), { 590.0f,596.0f }, true);
 
@@ -1829,6 +1904,8 @@ void FirstSetting(bool info)
 	root["PlugIn"]["DdbEnable"] = Json::Value(true);
 	root["PlugIn"]["DdbEnhance"] = Json::Value(false);
 
+	root["PlugIn"]["FixedHandWriting"] = Json::Value(true);
+
 	Json::StreamWriterBuilder outjson;
 	outjson.settings_["emitUTF8"] = true;
 	std::unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
@@ -1862,6 +1939,8 @@ bool ReadSetting(bool first)
 		{
 			if (root["PlugIn"].isMember("DdbEnable")) ddbSetList.DdbEnable = root["PlugIn"]["DdbEnable"].asBool();
 			if (root["PlugIn"].isMember("DdbEnhance")) ddbSetList.DdbEnhance = root["PlugIn"]["DdbEnhance"].asBool();
+
+			if (root["PlugIn"].isMember("FixedHandWriting")) pptComSetlist.fixedHandWriting = root["PlugIn"]["FixedHandWriting"].asBool();
 		}
 
 		//预处理
@@ -1892,6 +1971,8 @@ bool WriteSetting()
 
 	root["PlugIn"]["DdbEnable"] = Json::Value(ddbSetList.DdbEnable);
 	root["PlugIn"]["DdbEnhance"] = Json::Value(ddbSetList.DdbEnhance);
+
+	root["PlugIn"]["FixedHandWriting"] = Json::Value(pptComSetlist.fixedHandWriting);
 
 	Json::StreamWriterBuilder outjson;
 	outjson.settings_["emitUTF8"] = true;

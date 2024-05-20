@@ -79,21 +79,9 @@ void FreezeFrameWindow()
 		{
 			if (FreezeFrame.mode == 1)
 			{
-				IMAGE MagnificationTmp;
 				if (!show_freeze_window)
 				{
-					RequestUpdateMagWindow = true;
-					while (RequestUpdateMagWindow) this_thread::sleep_for(chrono::milliseconds(100));
-
-					std::shared_lock<std::shared_mutex> lock1(MagnificationBackgroundSm);
-					MagnificationTmp = MagnificationBackground;
-					lock1.unlock();
-
-					SetImageColor(freeze_background, RGBA(0, 0, 0, 0), true);
-					hiex::TransparentImage(&freeze_background, 0, 0, &MagnificationTmp);
-
-					ulwi.hdcSrc = GetImageHDC(&freeze_background);
-					UpdateLayeredWindowIndirect(freeze_window, &ulwi);
+					RequestUpdateMagWindow = 1;
 					show_freeze_window = true;
 				}
 
@@ -102,22 +90,9 @@ void FreezeFrameWindow()
 				{
 					if (FreezeFrame.mode != 1 || ppt_show != NULL) break;
 
-					if (FreezeFrame.update)
+					if (wait > 0 && SeewoCameraIsOpen)
 					{
-						std::shared_lock<std::shared_mutex> lock1(MagnificationBackgroundSm);
-						MagnificationTmp = MagnificationBackground;
-						lock1.unlock();
-
 						SetImageColor(freeze_background, RGBA(0, 0, 0, 0), true);
-						hiex::TransparentImage(&freeze_background, 0, 0, &MagnificationTmp);
-						ulwi.hdcSrc = GetImageHDC(&freeze_background);
-						UpdateLayeredWindowIndirect(freeze_window, &ulwi);
-
-						FreezeFrame.update = false;
-					}
-					else if (wait > 0 && SeewoCameraIsOpen)
-					{
-						hiex::TransparentImage(&freeze_background, 0, 0, &MagnificationTmp);
 
 						hiex::EasyX_Gdiplus_FillRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 160, (float)GetSystemMetrics(SM_CYSCREEN) - 200, 320, 50, 20, 20, RGBA(255, 255, 225, min(255, wait)), RGBA(0, 0, 0, min(150, wait)), 2, true, SmoothingModeHighQuality, &freeze_background);
 
@@ -131,24 +106,24 @@ void FreezeFrameWindow()
 							dwords_rect.right = GetSystemMetrics(SM_CXSCREEN) / 2 + 160;
 							dwords_rect.bottom = GetSystemMetrics(SM_CYSCREEN) - 200 + 52;
 						}
-						graphics.DrawString(L"智绘教已自动开启 画面定格", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
+						graphics.DrawString(L"智绘教已开启 背景定格", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
 
 						ulwi.hdcSrc = GetImageHDC(&freeze_background);
 						UpdateLayeredWindowIndirect(freeze_window, &ulwi);
 
 						wait -= 8;
 
-						if (wait == 0)
+						if (wait <= 0)
 						{
-							hiex::TransparentImage(&freeze_background, 0, 0, &MagnificationTmp);
-
+							SetImageColor(freeze_background, RGBA(0, 0, 0, 0), true);
 							ulwi.hdcSrc = GetImageHDC(&freeze_background);
 							UpdateLayeredWindowIndirect(freeze_window, &ulwi);
 						}
 					}
 					else if (FreezeRecall > 0)
 					{
-						hiex::TransparentImage(&freeze_background, 0, 0, &MagnificationTmp);
+						SetImageColor(freeze_background, RGBA(0, 0, 0, 0), true);
+
 						hiex::EasyX_Gdiplus_FillRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 160, (float)GetSystemMetrics(SM_CYSCREEN) - 200, 320, 50, 20, 20, RGBA(255, 255, 225, min(255, FreezeRecall)), RGBA(0, 0, 0, min(150, FreezeRecall)), 2, true, SmoothingModeHighQuality, &freeze_background);
 
 						wchar_t buffer[100];
@@ -174,8 +149,7 @@ void FreezeFrameWindow()
 
 						if (FreezeRecall <= 0)
 						{
-							hiex::TransparentImage(&freeze_background, 0, 0, &MagnificationTmp);
-
+							SetImageColor(freeze_background, RGBA(0, 0, 0, 0), true);
 							ulwi.hdcSrc = GetImageHDC(&freeze_background);
 							UpdateLayeredWindowIndirect(freeze_window, &ulwi);
 
@@ -195,6 +169,8 @@ void FreezeFrameWindow()
 				SetImageColor(freeze_background, RGBA(0, 0, 0, 0), true);
 				ulwi.hdcSrc = GetImageHDC(&freeze_background);
 				UpdateLayeredWindowIndirect(freeze_window, &ulwi);
+
+				RequestUpdateMagWindow = 0;
 				show_freeze_window = false;
 			}
 		}

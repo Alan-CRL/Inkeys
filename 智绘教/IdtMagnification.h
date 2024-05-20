@@ -13,14 +13,7 @@ extern bool magnificationReady;
 extern shared_mutex MagnificationBackgroundSm;
 extern RECT hostWindowRect;
 
-BOOL MagImageScaling(HWND hwnd, void* srcdata, MAGIMAGEHEADER srcheader, void* destdata, MAGIMAGEHEADER destheader, RECT unclipped, RECT clipped, HRGN dirty);
-void UpdateMagWindow();
-
-LRESULT CALLBACK MagnifierWindowWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-ATOM RegisterHostWindowClass(HINSTANCE hInstance);
-BOOL SetupMagnifier(HINSTANCE hinst);
-
-extern bool RequestUpdateMagWindow;
+extern int RequestUpdateMagWindow;
 
 void MagnifierThread();
 void MagnifierUpdate();

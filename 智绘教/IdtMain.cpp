@@ -41,8 +41,8 @@ int SettingMain();
 void FreezeFrameWindow();
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string editionDate = "20240517d";				//程序发布日期
-string editionChannel = "Dev";				//程序发布通道
+string editionDate = "20240519b";				//程序发布日期
+string editionChannel = "Beta";				//程序发布通道
 string editionCode = "24H1(BetaH2)";			//程序版本
 
 wstring userId; //用户ID（主板序列号）

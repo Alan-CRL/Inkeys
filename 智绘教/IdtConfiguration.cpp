@@ -4,6 +4,8 @@
 
 SetListStruct setlist;
 
+PptComSetListStruct pptComSetlist;
+
 DdbSetListStruct ddbSetList;
 bool DdbReadSetting()
 {

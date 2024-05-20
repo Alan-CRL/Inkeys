@@ -1069,7 +1069,7 @@ void DrawpadDrawing()
 					int temp_currentpage = PptInfoState.CurrentPage, temp_totalpage = PptInfoState.TotalPage;
 					if (PptInfoStateBuffer.CurrentPage != temp_currentpage || PptInfoStateBuffer.TotalPage != temp_totalpage)
 					{
-						if (PptInfoStateBuffer.CurrentPage != temp_currentpage && PptInfoStateBuffer.TotalPage == temp_totalpage)
+						if (pptComSetlist.fixedHandWriting && PptInfoStateBuffer.CurrentPage != temp_currentpage && PptInfoStateBuffer.TotalPage == temp_totalpage)
 						{
 							IMAGE empty_drawpad = CreateImageColor(drawpad.getwidth(), drawpad.getheight(), RGBA(0, 0, 0, 0), true);
 							if (reference_record_pointer == current_record_pointer && !CompareImagesWithBuffer(&empty_drawpad, &drawpad))
@@ -1211,7 +1211,7 @@ void DrawpadDrawing()
 			int temp_currentpage = PptInfoState.CurrentPage, temp_totalpage = PptInfoState.TotalPage;
 			if (PptInfoStateBuffer.CurrentPage != temp_currentpage || PptInfoStateBuffer.TotalPage != temp_totalpage)
 			{
-				if (PptInfoStateBuffer.CurrentPage != temp_currentpage && PptInfoStateBuffer.TotalPage == temp_totalpage)
+				if (pptComSetlist.fixedHandWriting && PptInfoStateBuffer.CurrentPage != temp_currentpage && PptInfoStateBuffer.TotalPage == temp_totalpage)
 				{
 					IMAGE empty_drawpad = CreateImageColor(drawpad.getwidth(), drawpad.getheight(), RGBA(0, 0, 0, 0), true);
 					if (reference_record_pointer == current_record_pointer && !CompareImagesWithBuffer(&empty_drawpad, &drawpad))
