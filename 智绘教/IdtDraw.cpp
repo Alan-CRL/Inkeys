@@ -7,10 +7,10 @@ BrushColorChooseStruct BrushColorChoose = { 0,0,-1,-1 };
 IMAGE ColorPaletteImg;
 shared_mutex ColorPaletteSm;
 
+DrawModeClass drawMode;
+
 penetrateStruct penetrate; //´°¿Ú´©Í¸
-chooseStruct choose; //Ñ¡Ôñ
-brushStruct brush = { false,3,1,RGBA(0,0,0,0),RGBA(0,0,0,0),3,40 }; //»­±Ê
-rubberStruct rubber; //ÏðÆ¤
+brushStruct brush = { 3,1,RGBA(0,0,0,0),RGBA(0,0,0,0) }; //»­±Ê
 testStruct test; //µ÷²â
 
 plug_in_RandomRollCallStruct plug_in_RandomRollCall;

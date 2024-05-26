@@ -202,7 +202,7 @@ void TopWindow()
 		}
 
 		// ÖÃ¶¥´°¿Ú
-		if (!choose.select)
+		if (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && !penetrate.select)
 		{
 			std::shared_lock<std::shared_mutex> lock1(StrokeImageListSm);
 			bool flag = StrokeImageList.empty();

@@ -48,20 +48,24 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 		{
 			IsHotkeyDown = true;
 
-			if (choose.select)
+			if (drawMode.DrawModeSelect == DrawModeSelectEnum::IdtSelection)
 			{
-				brush.select = true;
-				rubber.select = false;
-				choose.select = false;
+				drawMode.DrawModeSelect = DrawModeSelectEnum::IdtPen;
+
+				//brush.select = true;
+				//rubber.select = false;
+				//choose.select = false;
 				penetrate.select = false;
 
 				if (SeewoCameraIsOpen) FreezeFrame.mode = 1;
 			}
 			else
 			{
-				choose.select = true;
-				brush.select = false;
-				rubber.select = false;
+				drawMode.DrawModeSelect = DrawModeSelectEnum::IdtSelection;
+
+				//choose.select = true;
+				//brush.select = false;
+				//rubber.select = false;
 				penetrate.select = false;
 
 				if (!FreezeFrame.select || penetrate.select) FreezeFrame.mode = 0, FreezeFrame.select = false;
@@ -117,7 +121,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			}
 		}
 
-		if (!choose.select && !penetrate.select)
+		if (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && !penetrate.select)
 		{
 			ExMessage msgKey = {};
 			msgKey.message = wParam;
@@ -909,7 +913,7 @@ void DrawpadDrawing()
 	{
 		for (int for_i = 1;; for_i = 2)
 		{
-			if (choose.select == true)
+			if (drawMode.DrawModeSelect == DrawModeSelectEnum::IdtSelection)
 			{
 			ChooseEnd:
 				{
@@ -1034,7 +1038,7 @@ void DrawpadDrawing()
 				RecallImageManipulated = std::chrono::high_resolution_clock::time_point();
 
 				int ppt_switch_count = 0;
-				while (choose.select)
+				while (drawMode.DrawModeSelect == DrawModeSelectEnum::IdtSelection)
 				{
 					this_thread::sleep_for(chrono::milliseconds(50));
 
@@ -1206,7 +1210,7 @@ void DrawpadDrawing()
 
 			if (offSignal)
 			{
-				if (!choose.select) goto ChooseEnd;
+				if (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection) goto ChooseEnd;
 				goto DrawpadDrawingEnd;
 			}
 
@@ -1317,10 +1321,11 @@ void DrawpadDrawing()
 				}
 				else if (PptInfoStateBuffer.TotalPage != temp_totalpage && temp_totalpage == -1)
 				{
-					choose.select = true;
+					drawMode.DrawModeSelect = DrawModeSelectEnum::IdtSelection;
+					//choose.select = true;
 
-					brush.select = false;
-					rubber.select = false;
+					//brush.select = false;
+					//rubber.select = false;
 					penetrate.select = false;
 				}
 				PptInfoStateBuffer.CurrentPage = temp_currentpage;
@@ -1599,7 +1604,7 @@ int drawpad_main()
 
 		while (!offSignal)
 		{
-			if (choose.select == true || penetrate.select == true)
+			if (drawMode.DrawModeSelect == DrawModeSelectEnum::IdtSelection || penetrate.select == true)
 			{
 				this_thread::sleep_for(chrono::milliseconds(100));
 				continue;
@@ -1620,8 +1625,8 @@ int drawpad_main()
 				//¿ªÊ¼»æÍ¼
 				if (start)
 				{
-					if (int(state) == 1 && rubber.select && setlist.RubberRecover) target_status = 0;
-					else if (int(state) == 1 && brush.select && setlist.BrushRecover) target_status = 0;
+					if (int(state) == 1 && drawMode.DrawModeSelect == DrawModeSelectEnum::IdtEraser && setlist.RubberRecover) target_status = 0;
+					else if (int(state) == 1 && drawMode.DrawModeSelect == DrawModeSelectEnum::IdtPen && setlist.BrushRecover) target_status = 0;
 
 					if (current_record_pointer != reference_record_pointer)
 					{

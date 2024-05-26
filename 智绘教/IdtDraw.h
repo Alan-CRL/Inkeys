@@ -17,39 +17,60 @@ enum DrawModeSelectEnum
 	IdtPen,
 	IdtEraser
 };
-
-class DrawMode
+enum PenModeSelectEnum
 {
-public:
-	DrawModeSelectEnum DrawModeSelect = DrawModeSelectEnum::IdtSelection;
+	IdtPenBrush1,
+	IdtPenHighlighter1
 };
 
+class DrawModeClass
+{
+public:
+	DrawModeClass()
+	{
+		DrawModeSelect = DrawModeSelectEnum::IdtSelection;
+		DrawModeSelectEcho = DrawModeSelectEnum::IdtSelection;
+
+		Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
+		Pen.Brush1.width = 3;
+		Pen.Brush1.color = RGBA(50, 30, 181, 255);
+	}
+
+public:
+	DrawModeSelectEnum DrawModeSelect;
+	DrawModeSelectEnum DrawModeSelectEcho;
+
+	struct
+	{
+		PenModeSelectEnum ModeSelect;
+
+		struct
+		{
+			int width;
+			COLORREF color;
+		}Brush1;
+		struct
+		{
+			int width;
+			COLORREF color;
+		}Highlighter1;
+	}Pen;
+};
+extern DrawModeClass drawMode;
+
+struct brushStruct
+{
+	int width, mode;
+	COLORREF color, primary_colour;
+}; //»­±Ê
+extern brushStruct brush;
+
+// TODO ÀÏ¾É²ÐÁô
 struct penetrateStruct
 {
 	bool select;
 }; //´°¿Ú´©Í¸
 extern penetrateStruct penetrate;
-struct chooseStruct
-{
-	bool select;
-}; //Ñ¡Ôñ
-extern chooseStruct choose;
-struct brushStruct
-{
-	bool select;
-	int width, mode;
-	COLORREF color, primary_colour;
-
-	int PenWidthHistory, HighlighterWidthHistory;
-}; //»­±Ê
-extern brushStruct brush;
-struct rubberStruct
-{
-	bool select;
-}; //ÏðÆ¤
-extern rubberStruct rubber;
-
-// TODO ÀÏ¾É²ÐÁô
 struct testStruct
 {
 	bool select;

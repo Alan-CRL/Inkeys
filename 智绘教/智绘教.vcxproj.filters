@@ -774,6 +774,12 @@
     <Image Include="src\icon.png">
       <Filter>资源文件</Filter>
     </Image>
+    <Image Include="src\PluginFlag1.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\PluginFlag2.png">
+      <Filter>资源文件</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />

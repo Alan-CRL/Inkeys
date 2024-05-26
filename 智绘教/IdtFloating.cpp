@@ -171,7 +171,7 @@ LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 		else if (wParam == WM_MBUTTONUP) KeyBoradDown[VK_MBUTTON] = false;
 		else if (wParam == WM_RBUTTONUP) KeyBoradDown[VK_RBUTTON] = false;
 
-		if (wParam == WM_MOUSEWHEEL && !choose.select && !penetrate.select && ppt_show != NULL)
+		if (wParam == WM_MOUSEWHEEL && drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && !penetrate.select && ppt_show != NULL)
 		{
 			MSLLHOOKSTRUCT* pMouseStruct = (MSLLHOOKSTRUCT*)lParam;
 
@@ -235,10 +235,6 @@ void DrawScreen()
 	threadStatus[L"DrawScreen"] = true;
 	//初始化
 	{
-		//模式配置初始化
-		{
-			choose.select = true;
-		}
 		//媒体资源读取
 		{
 			loadimage(&floating_icon[0], L"PNG", L"icon0", 40, 40, true);
@@ -1033,7 +1029,7 @@ void DrawScreen()
 					if (setlist.SkinMode == 1 || setlist.SkinMode == 2) UIControlColorTarget[L"Ellipse/Ellipse1/fill"].v = RGBA(0, 0, 0, 150);
 					else if (setlist.SkinMode == 3) UIControlColorTarget[L"Ellipse/Ellipse1/fill"].v = RGBA(0, 0, 0, 180);
 
-					if (!choose.select && !rubber.select) UIControlColorTarget[L"Ellipse/Ellipse1/frame"].v = brush.color;
+					if (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && drawMode.DrawModeSelect != DrawModeSelectEnum::IdtEraser) UIControlColorTarget[L"Ellipse/Ellipse1/frame"].v = brush.color;
 					else
 					{
 						if (setlist.SkinMode == 1 || setlist.SkinMode == 2) UIControlColorTarget[L"Ellipse/Ellipse1/frame"].v = RGBA(255, 255, 225, 255);
@@ -1826,7 +1822,7 @@ void DrawScreen()
 					if (setlist.SkinMode == 1 || setlist.SkinMode == 2) UIControlColorTarget[L"Ellipse/Ellipse1/frame"].v = RGBA(0, 111, 225, 255);
 					else if (setlist.SkinMode == 3)
 					{
-						if (!choose.select && !rubber.select) UIControlColorTarget[L"Ellipse/Ellipse1/frame"].v = brush.color;
+						if (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && drawMode.DrawModeSelect != DrawModeSelectEnum::IdtEraser) UIControlColorTarget[L"Ellipse/Ellipse1/frame"].v = brush.color;
 						else UIControlColorTarget[L"Ellipse/Ellipse1/frame"].v = RGBA(235, 151, 39, 255);
 					}
 
@@ -1852,7 +1848,7 @@ void DrawScreen()
 						}
 					}
 					{
-						if (choose.select == true)
+						if (drawMode.DrawModeSelect == DrawModeSelectEnum::IdtSelection)
 						{
 							UIControlTarget[L"RoundRect/RoundRect2/x"].v = float(0 + 8);
 							UIControlTarget[L"RoundRect/RoundRect2/y"].v = float(floating_windows.height - 156 + 8);
@@ -1864,7 +1860,7 @@ void DrawScreen()
 							if (BackgroundColorMode == 0) UIControlColorTarget[L"RoundRect/RoundRect2/frame"].v = RGBA(98, 175, 82, 255);
 							else if (BackgroundColorMode == 1) UIControlColorTarget[L"RoundRect/RoundRect2/frame"].v = RGBA(98, 175, 82, 255);
 						}
-						else if (brush.select == true)
+						else if (drawMode.DrawModeSelect == DrawModeSelectEnum::IdtPen)
 						{
 							UIControlTarget[L"RoundRect/RoundRect2/x"].v = float(96 + 8);
 							UIControlTarget[L"RoundRect/RoundRect2/y"].v = float(floating_windows.height - 156 + 8);
@@ -1875,7 +1871,7 @@ void DrawScreen()
 
 							UIControlColorTarget[L"RoundRect/RoundRect2/frame"].v = SET_ALPHA(brush.color, 255);
 						}
-						else if (rubber.select == true)
+						else if (drawMode.DrawModeSelect == DrawModeSelectEnum::IdtEraser)
 						{
 							UIControlTarget[L"RoundRect/RoundRect2/x"].v = float(192 + 8);
 							UIControlTarget[L"RoundRect/RoundRect2/y"].v = float(floating_windows.height - 156 + 8);
@@ -3522,16 +3518,16 @@ void DrawScreen()
 					{
 						UIControlTarget[L"Image/choose/x"].v = float(0 + 28);
 						UIControlTarget[L"Image/choose/y"].v = float(floating_windows.height - 140);
-						if (choose.select) UIControlColorTarget[L"Image/choose/fill"].v = RGBA(98, 175, 82, 255);
+						if (drawMode.DrawModeSelect == DrawModeSelectEnum::IdtSelection) UIControlColorTarget[L"Image/choose/fill"].v = RGBA(98, 175, 82, 255);
 						else UIControlColorTarget[L"Image/choose/fill"].v = RGBA(130, 130, 130, 255);
 					}
 					//画笔
 					{
-						if (brush.width >= 100 && brush.select == true) UIControlTarget[L"Image/brush/x"].v = float(96 + 23);
+						if (brush.width >= 100 && drawMode.DrawModeSelect == DrawModeSelectEnum::IdtPen) UIControlTarget[L"Image/brush/x"].v = float(96 + 23);
 						else UIControlTarget[L"Image/brush/x"].v = float(96 + 28);
 						UIControlTarget[L"Image/brush/y"].v = float(floating_windows.height - 140);
 
-						if (brush.select == true) UIControlColorTarget[L"Image/brush/fill"].v = SET_ALPHA(brush.color, 255);
+						if (drawMode.DrawModeSelect == DrawModeSelectEnum::IdtPen) UIControlColorTarget[L"Image/brush/fill"].v = SET_ALPHA(brush.color, 255);
 						else UIControlColorTarget[L"Image/brush/fill"].v = RGBA(130, 130, 130, 255);
 
 						//画笔底部栏
@@ -3643,7 +3639,7 @@ void DrawScreen()
 					{
 						UIControlTarget[L"Image/rubber/x"].v = float(192 + 28);
 						UIControlTarget[L"Image/rubber/y"].v = float(floating_windows.height - 140);
-						if (rubber.select) UIControlColorTarget[L"Image/rubber/fill"].v = RGBA(98, 175, 82, 255);
+						if (drawMode.DrawModeSelect == DrawModeSelectEnum::IdtEraser) UIControlColorTarget[L"Image/rubber/fill"].v = RGBA(98, 175, 82, 255);
 						else UIControlColorTarget[L"Image/rubber/fill"].v = RGBA(130, 130, 130, 255);
 					}
 					//程序调测
@@ -3660,7 +3656,7 @@ void DrawScreen()
 					{
 						UIControlTarget[L"Words/choose/height"].v = float(18);
 						UIControlTarget[L"Words/choose/top"].v = float(floating_windows.height - 155 + 48);
-						if (choose.select)
+						if (drawMode.DrawModeSelect == DrawModeSelectEnum::IdtSelection)
 						{
 							UIControlTarget[L"Words/choose/left"].v = float(0 + 14);
 							UIControlTarget[L"Words/choose/right"].v = float(0 + 0 + 83);
@@ -3672,7 +3668,7 @@ void DrawScreen()
 						}
 						UIControlTarget[L"Words/choose/bottom"].v = float(floating_windows.height - 155 + 48 + 48);
 
-						if (choose.select) UIControlColorTarget[L"Words/choose/words_color"].v = RGBA(98, 175, 82, 255);
+						if (drawMode.DrawModeSelect == DrawModeSelectEnum::IdtSelection) UIControlColorTarget[L"Words/choose/words_color"].v = RGBA(98, 175, 82, 255);
 						else UIControlColorTarget[L"Words/choose/words_color"].v = RGBA(130, 130, 130, 255);
 					}
 					//画笔
@@ -3682,7 +3678,7 @@ void DrawScreen()
 						UIControlTarget[L"Words/brush/top"].v = float(floating_windows.height - 155 + 48);
 						UIControlTarget[L"Words/brush/right"].v = float(96 + 7 + 83);
 						UIControlTarget[L"Words/brush/bottom"].v = float(floating_windows.height - 155 + 48 + 48);
-						if (brush.select) UIControlColorTarget[L"Words/brush/words_color"].v = SET_ALPHA(brush.color, 255);
+						if (drawMode.DrawModeSelect == DrawModeSelectEnum::IdtPen) UIControlColorTarget[L"Words/brush/words_color"].v = SET_ALPHA(brush.color, 255);
 						else UIControlColorTarget[L"Words/brush/words_color"].v = RGBA(130, 130, 130, 255);
 
 						{
@@ -3690,7 +3686,7 @@ void DrawScreen()
 							else UIControlTarget[L"Words/brushSize/left"].v = float(96 + 7 + 45);
 							UIControlTarget[L"Words/brushSize/top"].v = float(floating_windows.height - 156 + 35);
 
-							if (brush.select) UIControlColorTarget[L"Words/brushSize/words_color"].v = SET_ALPHA(brush.color, 255);
+							if (drawMode.DrawModeSelect == DrawModeSelectEnum::IdtPen) UIControlColorTarget[L"Words/brushSize/words_color"].v = SET_ALPHA(brush.color, 255);
 							else UIControlColorTarget[L"Words/brushSize/words_color"].v = SET_ALPHA(brush.color, 0);
 						}
 
@@ -3906,7 +3902,7 @@ void DrawScreen()
 						UIControlTarget[L"Words/rubber/top"].v = float(floating_windows.height - 155 + 48);
 						UIControlTarget[L"Words/rubber/right"].v = float(192 + 7 + 83);
 						UIControlTarget[L"Words/rubber/bottom"].v = float(floating_windows.height - 155 + 48 + 48);
-						if (rubber.select) UIControlColorTarget[L"Words/rubber/words_color"].v = RGBA(98, 175, 82, 255);
+						if (drawMode.DrawModeSelect == DrawModeSelectEnum::IdtEraser) UIControlColorTarget[L"Words/rubber/words_color"].v = RGBA(98, 175, 82, 255);
 						else UIControlColorTarget[L"Words/rubber/words_color"].v = RGBA(130, 130, 130, 255);
 					}
 					//程序调测
@@ -4502,7 +4498,7 @@ void DrawScreen()
 					words_rect.right = LONG(UIControl[L"Words/choose/right"].v);
 					words_rect.bottom = LONG(UIControl[L"Words/choose/bottom"].v);
 				}
-				if (choose.select) graphics.DrawString(L"选择", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				if (drawMode.DrawModeSelect == DrawModeSelectEnum::IdtSelection) graphics.DrawString(L"选择", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 				else graphics.DrawString(L"选择(清空)", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 			}
 			//画笔
@@ -5059,7 +5055,7 @@ void DrawScreen()
 					}
 				}
 
-				if (choose.select != true && (int)state == 1)
+				if (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && (int)state == 1)
 				{
 					{
 						if (setlist.SkinMode == 1 || setlist.SkinMode == 2) hiex::EasyX_Gdiplus_FillRoundRect((float)floating_windows.width - 96, (float)floating_windows.height - 257, 96, 96, 25, 25, RGB(150, 150, 150), BackgroundColorMode == 0 ? RGB(255, 255, 255) : RGB(30, 33, 41), 2, false, SmoothingModeHighQuality, &background);
@@ -5145,7 +5141,7 @@ void DrawScreen()
 				}
 				if ((int)state == 1)
 				{
-					if (ppt_show == NULL && choose.select == true)
+					if (ppt_show == NULL && drawMode.DrawModeSelect == DrawModeSelectEnum::IdtSelection)
 					{
 						if (setlist.SkinMode == 1 || setlist.SkinMode == 2) hiex::EasyX_Gdiplus_FillRoundRect((float)floating_windows.width - 96, (float)floating_windows.height - 256 + 44, 96, 51, 25, 25, RGB(150, 150, 150), BackgroundColorMode == 0 ? RGB(255, 255, 255) : RGB(30, 33, 41), 2, false, SmoothingModeHighQuality, &background);
 						else if (setlist.SkinMode == 3)
@@ -5227,7 +5223,7 @@ void DrawScreen()
 							graphics.DrawString(L"定格", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 						}
 					}
-					else if (choose.select == false)
+					else if (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection)
 					{
 						if (FreezeFrame.mode == 1)
 						{
@@ -5268,9 +5264,9 @@ void DrawScreen()
 					}
 				}
 
-				if ((!choose.select || (int)state == 1) && (!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0)))
+				if ((drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection || (int)state == 1) && (!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0)))
 				{
-					hiex::EasyX_Gdiplus_FillRoundRect((float)floating_windows.width - 96, (float)floating_windows.height - 55, 96, 40, 25, 25, (!choose.select && !rubber.select) ? brush.color : RGBA(255, 255, 255, 255), RGBA(0, 0, 0, 150), 2, true, SmoothingModeHighQuality, &background);
+					hiex::EasyX_Gdiplus_FillRoundRect((float)floating_windows.width - 96, (float)floating_windows.height - 55, 96, 40, 25, 25, (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && drawMode.DrawModeSelect != DrawModeSelectEnum::IdtEraser) ? brush.color : RGBA(255, 255, 255, 255), RGBA(0, 0, 0, 150), 2, true, SmoothingModeHighQuality, &background);
 					ChangeColor(floating_icon[3], RGB(255, 255, 255));
 					hiex::TransparentImage(&background, floating_windows.width - 86, floating_windows.height - 50, &floating_icon[3]);
 
@@ -5285,9 +5281,9 @@ void DrawScreen()
 					}
 					graphics.DrawString(L"撤回", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 				}
-				else if ((!choose.select || (int)state == 1) && RecallImage.empty() && current_record_pointer <= total_record_pointer + 1 && practical_total_record_pointer)
+				else if ((drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection || (int)state == 1) && RecallImage.empty() && current_record_pointer <= total_record_pointer + 1 && practical_total_record_pointer)
 				{
-					hiex::EasyX_Gdiplus_FillRoundRect((float)floating_windows.width - 96, (float)floating_windows.height - 55, 96, 40, 25, 25, (!choose.select && !rubber.select) ? brush.color : RGBA(255, 255, 255, 255), RGBA(0, 0, 0, 150), 2, true, SmoothingModeHighQuality, &background);
+					hiex::EasyX_Gdiplus_FillRoundRect((float)floating_windows.width - 96, (float)floating_windows.height - 55, 96, 40, 25, 25, (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && drawMode.DrawModeSelect != DrawModeSelectEnum::IdtEraser) ? brush.color : RGBA(255, 255, 255, 255), RGBA(0, 0, 0, 150), 2, true, SmoothingModeHighQuality, &background);
 
 					Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 20, FontStyleRegular, UnitPixel);
 					SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGB(255, 255, 255), false));
@@ -5384,7 +5380,7 @@ void MouseInteraction()
 					}
 				}
 
-				if (!choose.select && (!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0)) && IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
+				if (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && (!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0)) && IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
@@ -5410,7 +5406,7 @@ void MouseInteraction()
 						hiex::flushmessage_win32(EM_MOUSE, floating_window);
 					}
 				}
-				else if (!choose.select && RecallImage.empty() && current_record_pointer <= total_record_pointer + 1 && practical_total_record_pointer && IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
+				else if (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && RecallImage.empty() && current_record_pointer <= total_record_pointer + 1 && practical_total_record_pointer && IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
@@ -5479,7 +5475,7 @@ void MouseInteraction()
 				}
 
 				//窗口穿透
-				if (choose.select == false && IsInRect(m.x, m.y, { floating_windows.width - 96 + 4, floating_windows.height - 256 + 8, floating_windows.width - 96 + 4 + 88, floating_windows.height - 256 + 8 + 40 }))
+				if (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && IsInRect(m.x, m.y, { floating_windows.width - 96 + 4, floating_windows.height - 256 + 8, floating_windows.width - 96 + 4 + 88, floating_windows.height - 256 + 8 + 40 }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
@@ -5534,7 +5530,7 @@ void MouseInteraction()
 									{
 										penetrate.select = false;
 
-										if (choose.select == true) FreezeFrame.select = true;
+										if (drawMode.DrawModeSelect == DrawModeSelectEnum::IdtSelection) FreezeFrame.select = true;
 										FreezeFrame.mode = 1;
 									}
 									else FreezeFrame.mode = 0, FreezeFrame.select = false;
@@ -5568,14 +5564,15 @@ void MouseInteraction()
 							{
 								if (!m.lbutton)
 								{
-									if (choose.select == false)
+									if (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection)
 									{
 										state = 1;
 										if (!FreezeFrame.select || penetrate.select) FreezeFrame.mode = 0, FreezeFrame.select = false;
 
-										brush.select = false;
-										rubber.select = false;
-										choose.select = true;
+										drawMode.DrawModeSelect = DrawModeSelectEnum::IdtSelection;
+										//brush.select = false;
+										//rubber.select = false;
+										//choose.select = true;
 										penetrate.select = false;
 									}
 
@@ -5607,9 +5604,11 @@ void MouseInteraction()
 							{
 								if (abs(ly - m.y) >= 20 && state == 1)
 								{
-									brush.select = true;
-									rubber.select = false;
-									choose.select = false;
+									//brush.select = true;
+									//rubber.select = false;
+									//choose.select = false;
+									drawMode.DrawModeSelect = DrawModeSelectEnum::IdtPen;
+
 									state = 1.1, brush_connect = true;
 
 									if (SeewoCameraIsOpen)
@@ -5623,12 +5622,13 @@ void MouseInteraction()
 								{
 									if (!m.lbutton)
 									{
-										if (brush.select == false)
+										if (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtPen)
 										{
 											state = 1;
-											brush.select = true;
-											rubber.select = false;
-											choose.select = false;
+											//brush.select = true;
+											//rubber.select = false;
+											//choose.select = false;
+											drawMode.DrawModeSelect = DrawModeSelectEnum::IdtPen;
 
 											if (SeewoCameraIsOpen)
 											{
@@ -6102,8 +6102,8 @@ void MouseInteraction()
 						{
 							if (brush.mode == 2)
 							{
-								brush.HighlighterWidthHistory = brush.width;
-								brush.width = brush.PenWidthHistory;
+								//brush.HighlighterWidthHistory = brush.width;
+								//brush.width = brush.PenWidthHistory;
 							}
 							brush.mode = 1;
 
@@ -6116,8 +6116,8 @@ void MouseInteraction()
 						{
 							if (brush.mode != 2)
 							{
-								brush.PenWidthHistory = brush.width;
-								brush.width = brush.HighlighterWidthHistory;
+								//brush.PenWidthHistory = brush.width;
+								//brush.width = brush.HighlighterWidthHistory;
 							}
 							brush.mode = 2;
 
@@ -6142,8 +6142,8 @@ void MouseInteraction()
 						{
 							if (brush.mode == 2)
 							{
-								brush.HighlighterWidthHistory = brush.width;
-								brush.width = brush.PenWidthHistory;
+								//brush.HighlighterWidthHistory = brush.width;
+								//brush.width = brush.PenWidthHistory;
 							}
 							brush.mode = 3;
 
@@ -6156,8 +6156,8 @@ void MouseInteraction()
 						{
 							if (brush.mode == 2)
 							{
-								brush.HighlighterWidthHistory = brush.width;
-								brush.width = brush.PenWidthHistory;
+								//brush.HighlighterWidthHistory = brush.width;
+								//brush.width = brush.PenWidthHistory;
 							}
 							brush.mode = 4;
 
@@ -6168,7 +6168,7 @@ void MouseInteraction()
 					if (!m.lbutton && (IsInRect(m.x, m.y, { 1, floating_windows.height - 256, 1 + floating_windows.width - 106, floating_windows.height - 256 + 90 }) || IsInRect(m.x, m.y, { 0, floating_windows.height - 50, 0 + floating_windows.width, floating_windows.height - 50 + 50 })) && brush_connect) state = 1;
 				}
 				//橡皮
-				if (rubber.select == false && IsInRect(m.x, m.y, { 192 + 8, floating_windows.height - 156 + 8, 192 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
+				if (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtEraser && IsInRect(m.x, m.y, { 192 + 8, floating_windows.height - 156 + 8, 192 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
@@ -6181,9 +6181,10 @@ void MouseInteraction()
 								if (!m.lbutton)
 								{
 									state = 1;
-									rubber.select = true;
-									brush.select = false;
-									choose.select = false;
+									//rubber.select = true;
+									//brush.select = false;
+									//choose.select = false;
+									drawMode.DrawModeSelect = DrawModeSelectEnum::IdtEraser;
 
 									if (SeewoCameraIsOpen)
 									{

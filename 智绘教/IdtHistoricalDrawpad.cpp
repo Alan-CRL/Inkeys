@@ -259,7 +259,7 @@ void IdtRecall()
 		tmp_recond = RecallImage.back().recond;
 		tmp_recall_image_type = RecallImage.back().type;
 
-		if (RecallImage.back().type == 2 && !choose.select && !CompareImagesWithBuffer(&drawpad, &RecallImage.back().img));
+		if (RecallImage.back().type == 2 && drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && !CompareImagesWithBuffer(&drawpad, &RecallImage.back().img));
 		else RecallImage.pop_back();
 		deque<RecallStruct>(RecallImage).swap(RecallImage); // 使用swap技巧来释放未使用的内存
 	}
@@ -291,7 +291,7 @@ void IdtRecall()
 	SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
 	hiex::TransparentImage(&window_background, 0, 0, &drawpad);
 
-	if (!choose.select)
+	if (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection)
 	{
 		// 设置BLENDFUNCTION结构体
 		BLENDFUNCTION blend;
@@ -322,9 +322,10 @@ void IdtRecall()
 	{
 		reserve_drawpad = true;
 
-		brush.select = true;
-		rubber.select = false;
-		choose.select = false;
+		//brush.select = true;
+		//rubber.select = false;
+		//choose.select = false;
+		drawMode.DrawModeSelect = DrawModeSelectEnum::IdtPen;
 	}
 
 	// 取消标识绘制等待
@@ -340,9 +341,10 @@ void IdtRecovery()
 {
 	if (current_record_pointer == total_record_pointer + 1)
 	{
-		choose.select = true;
-		brush.select = false;
-		rubber.select = false;
+		drawMode.DrawModeSelect = DrawModeSelectEnum::IdtSelection;
+		//choose.select = true;
+		//brush.select = false;
+		//rubber.select = false;
 
 		reference_record_pointer = 1;
 		return;
@@ -416,7 +418,7 @@ void IdtRecovery()
 	SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
 	hiex::TransparentImage(&window_background, 0, 0, &drawpad);
 
-	if (brush.select)
+	if (drawMode.DrawModeSelect == DrawModeSelectEnum::IdtPen)
 	{
 		// 设置BLENDFUNCTION结构体
 		BLENDFUNCTION blend;
@@ -447,9 +449,10 @@ void IdtRecovery()
 	{
 		reserve_drawpad = true;
 
-		brush.select = true;
-		rubber.select = false;
-		choose.select = false;
+		//brush.select = true;
+		//rubber.select = false;
+		//choose.select = false;
+		drawMode.DrawModeSelect = DrawModeSelectEnum::IdtPen;
 	}
 
 	// 取消标识绘制等待

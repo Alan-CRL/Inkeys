@@ -30,9 +30,9 @@
 static void HelpMarker(const char* desc, ImVec4 Color);
 static void CenteredText(const char* desc, float displacement);
 
-IMAGE SettingSign[5];
+IMAGE SettingSign[10];
 WNDCLASSEX ImGuiWc;
-ID3D11ShaderResourceView* TextureSettingSign[5];
+ID3D11ShaderResourceView* TextureSettingSign[10];
 int SettingMainMode = 1;
 
 int ScreenWidth = GetSystemMetrics(SM_CXSCREEN);//获取显示器的宽
@@ -188,6 +188,75 @@ int SettingMain()
 			}
 
 			bool ret = LoadTextureFromFile(data, width, height, &TextureSettingSign[4]);
+			delete[] data;
+
+			IM_ASSERT(ret);
+		}
+
+		loadimage(&SettingSign[5], L"PNG", L"PluginFlag1", 100, 100, true);
+		{
+			int width = SettingSign[5].getwidth();
+			int height = SettingSign[5].getheight();
+			DWORD* pMem = GetImageBuffer(&SettingSign[5]);
+
+			unsigned char* data = new unsigned char[width * height * 4];
+			for (int y = 0; y < height; ++y)
+			{
+				for (int x = 0; x < width; ++x)
+				{
+					DWORD color = pMem[y * width + x];
+					unsigned char alpha = (color & 0xFF000000) >> 24;
+					if (alpha != 0)
+					{
+						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+					}
+					else
+					{
+						data[(y * width + x) * 4 + 0] = 0;
+						data[(y * width + x) * 4 + 1] = 0;
+						data[(y * width + x) * 4 + 2] = 0;
+					}
+					data[(y * width + x) * 4 + 3] = alpha;
+				}
+			}
+
+			bool ret = LoadTextureFromFile(data, width, height, &TextureSettingSign[5]);
+			delete[] data;
+
+			IM_ASSERT(ret);
+		}
+		loadimage(&SettingSign[6], L"PNG", L"PluginFlag2", 100, 100, true);
+		{
+			int width = SettingSign[6].getwidth();
+			int height = SettingSign[6].getheight();
+			DWORD* pMem = GetImageBuffer(&SettingSign[6]);
+
+			unsigned char* data = new unsigned char[width * height * 4];
+			for (int y = 0; y < height; ++y)
+			{
+				for (int x = 0; x < width; ++x)
+				{
+					DWORD color = pMem[y * width + x];
+					unsigned char alpha = (color & 0xFF000000) >> 24;
+					if (alpha != 0)
+					{
+						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+					}
+					else
+					{
+						data[(y * width + x) * 4 + 0] = 0;
+						data[(y * width + x) * 4 + 1] = 0;
+						data[(y * width + x) * 4 + 2] = 0;
+					}
+					data[(y * width + x) * 4 + 3] = alpha;
+				}
+			}
+
+			bool ret = LoadTextureFromFile(data, width, height, &TextureSettingSign[6]);
 			delete[] data;
 
 			IM_ASSERT(ret);
@@ -1112,6 +1181,9 @@ int SettingMain()
 							ImGui::BeginChild(reinterpret_cast<const char*>(u8"PPT 演示联动插件"), { 550.0f,120.0f }, true);
 
 							{
+								ImGui::SetCursorPos({ 10.0f,10.0f });
+								ImGui::Image((void*)TextureSettingSign[5], ImVec2((float)SettingSign[5].getwidth(), (float)SettingSign[5].getheight()));
+
 								ImGui::SetCursorPos({ 120.0f,10.0f });
 
 								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
@@ -1144,6 +1216,9 @@ int SettingMain()
 							ImGui::BeginChild(reinterpret_cast<const char*>(u8"画板浮窗拦截插件"), { 550.0f,120.0f }, true);
 
 							{
+								ImGui::SetCursorPos({ 10.0f,10.0f });
+								ImGui::Image((void*)TextureSettingSign[6], ImVec2((float)SettingSign[6].getwidth(), (float)SettingSign[6].getheight()));
+
 								ImGui::SetCursorPos({ 120.0f,10.0f });
 
 								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);

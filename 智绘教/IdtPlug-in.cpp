@@ -1608,7 +1608,7 @@ void ControlManipulation()
 				if (m.message == WM_LBUTTONDOWN)
 				{
 					int temp_currentpage = PptInfoState.CurrentPage;
-					if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
+					if (temp_currentpage == -1 && drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && penetrate.select == false)
 					{
 						if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
 						{
@@ -1617,10 +1617,11 @@ void ControlManipulation()
 							lock1.unlock();
 							EndPptShow();
 
-							brush.select = false;
-							rubber.select = false;
+							//brush.select = false;
+							//rubber.select = false;
 							penetrate.select = false;
-							choose.select = true;
+							//choose.select = true;
+							drawMode.DrawModeSelect = DrawModeSelectEnum::IdtSelection;
 						}
 					}
 					else if (temp_currentpage == -1)
@@ -1649,16 +1650,17 @@ void ControlManipulation()
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								temp_currentpage = PptInfoState.CurrentPage;
-								if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
+								if (temp_currentpage == -1 && drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && penetrate.select == false)
 								{
 									if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
 									{
 										EndPptShow();
 
-										brush.select = false;
-										rubber.select = false;
+										//brush.select = false;
+										//rubber.select = false;
 										penetrate.select = false;
-										choose.select = true;
+										//choose.select = true;
+										drawMode.DrawModeSelect = DrawModeSelectEnum::IdtSelection;
 									}
 									break;
 								}
@@ -1747,14 +1749,15 @@ void ControlManipulation()
 							{
 								PPTUIControlColor[L"RoundRect/RoundRectMiddle1/fill"].v = RGBA(200, 200, 200, 255);
 
-								if (choose.select == false && penetrate.select == false)
+								if (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && penetrate.select == false)
 								{
 									if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) != 1) break;
 
-									brush.select = false;
-									rubber.select = false;
+									//brush.select = false;
+									//rubber.select = false;
 									penetrate.select = false;
-									choose.select = true;
+									//choose.select = true;
+									drawMode.DrawModeSelect = DrawModeSelectEnum::IdtSelection;
 								}
 
 								std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
@@ -1837,7 +1840,7 @@ void ControlManipulation()
 				if (m.message == WM_LBUTTONDOWN)
 				{
 					int temp_currentpage = PptInfoState.CurrentPage;
-					if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
+					if (temp_currentpage == -1 && drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && penetrate.select == false)
 					{
 						if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
 						{
@@ -1846,10 +1849,11 @@ void ControlManipulation()
 							lock1.unlock();
 							EndPptShow();
 
-							brush.select = false;
-							rubber.select = false;
+							//brush.select = false;
+							//rubber.select = false;
 							penetrate.select = false;
-							choose.select = true;
+							//choose.select = true;
+							drawMode.DrawModeSelect = DrawModeSelectEnum::IdtSelection;
 						}
 					}
 					else if (temp_currentpage == -1)
@@ -1878,16 +1882,17 @@ void ControlManipulation()
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								temp_currentpage = PptInfoState.CurrentPage;
-								if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
+								if (temp_currentpage == -1 && drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && penetrate.select == false)
 								{
 									if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
 									{
 										EndPptShow();
 
-										brush.select = false;
-										rubber.select = false;
+										//brush.select = false;
+										//rubber.select = false;
 										penetrate.select = false;
-										choose.select = true;
+										//choose.select = true;
+										drawMode.DrawModeSelect = DrawModeSelectEnum::IdtSelection;
 									}
 									break;
 								}
@@ -1923,7 +1928,7 @@ void ControlManipulation()
 				if (m.wheel <= -120)
 				{
 					int temp_currentpage = PptInfoState.CurrentPage;
-					if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
+					if (temp_currentpage == -1 && drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && penetrate.select == false)
 					{
 						if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
 						{
@@ -1932,10 +1937,11 @@ void ControlManipulation()
 							lock1.unlock();
 							EndPptShow();
 
-							brush.select = false;
-							rubber.select = false;
+							//brush.select = false;
+							//rubber.select = false;
 							penetrate.select = false;
-							choose.select = true;
+							//choose.select = true;
+							drawMode.DrawModeSelect = DrawModeSelectEnum::IdtSelection;
 						}
 					}
 					else if (temp_currentpage == -1)
@@ -2015,16 +2021,17 @@ void KeyboardInteraction()
 				{
 					// 下一页
 					int temp_currentpage = PptInfoState.CurrentPage;
-					if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
+					if (temp_currentpage == -1 && drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && penetrate.select == false)
 					{
 						if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
 						{
 							EndPptShow();
 
-							brush.select = false;
-							rubber.select = false;
+							//brush.select = false;
+							//rubber.select = false;
 							penetrate.select = false;
-							choose.select = true;
+							//choose.select = true;
+							drawMode.DrawModeSelect = DrawModeSelectEnum::IdtSelection;
 						}
 					}
 					else
@@ -2041,16 +2048,17 @@ void KeyboardInteraction()
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								temp_currentpage = PptInfoState.CurrentPage;
-								if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
+								if (temp_currentpage == -1 && drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && penetrate.select == false)
 								{
 									if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
 									{
 										EndPptShow();
 
-										brush.select = false;
-										rubber.select = false;
+										//brush.select = false;
+										//rubber.select = false;
 										penetrate.select = false;
-										choose.select = true;
+										//choose.select = true;
+										drawMode.DrawModeSelect = DrawModeSelectEnum::IdtSelection;
 									}
 									break;
 								}
@@ -2070,16 +2078,17 @@ void KeyboardInteraction()
 
 				while (KeyBoradDown[vkcode]) this_thread::sleep_for(chrono::milliseconds(20));
 
-				if (choose.select == false && penetrate.select == false)
+				if (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && penetrate.select == false)
 				{
 					if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
 					{
 						EndPptShow();
 
-						brush.select = false;
-						rubber.select = false;
+						//brush.select = false;
+						//rubber.select = false;
 						penetrate.select = false;
-						choose.select = true;
+						//choose.select = true;
+						drawMode.DrawModeSelect = DrawModeSelectEnum::IdtSelection;
 					}
 				}
 				else EndPptShow();
@@ -2092,8 +2101,8 @@ void KeyboardInteraction()
 			{
 				if (!KeyBoradDown[(BYTE)0x5A])
 				{
-					if (!choose.select && (!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0))) IdtRecall();
-					else if (!choose.select && RecallImage.empty() && current_record_pointer <= total_record_pointer + 1 && practical_total_record_pointer) IdtRecovery();
+					if (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && (!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0))) IdtRecall();
+					else if (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && RecallImage.empty() && current_record_pointer <= total_record_pointer + 1 && practical_total_record_pointer) IdtRecovery();
 
 					break;
 				}
