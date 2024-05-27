@@ -8,6 +8,7 @@
 #include "IdtFreezeFrame.h"
 #include "IdtImage.h"
 #include "IdtMagnification.h"
+#include "IdtState.h"
 #include "IdtText.h"
 #include "IdtTime.h"
 #include "IdtWindow.h"
@@ -259,7 +260,7 @@ void IdtRecall()
 		tmp_recond = RecallImage.back().recond;
 		tmp_recall_image_type = RecallImage.back().type;
 
-		if (RecallImage.back().type == 2 && drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && !CompareImagesWithBuffer(&drawpad, &RecallImage.back().img));
+		if (RecallImage.back().type == 2 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && !CompareImagesWithBuffer(&drawpad, &RecallImage.back().img));
 		else RecallImage.pop_back();
 		deque<RecallStruct>(RecallImage).swap(RecallImage); // 使用swap技巧来释放未使用的内存
 	}
@@ -291,7 +292,7 @@ void IdtRecall()
 	SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
 	hiex::TransparentImage(&window_background, 0, 0, &drawpad);
 
-	if (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection)
+	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection)
 	{
 		// 设置BLENDFUNCTION结构体
 		BLENDFUNCTION blend;
@@ -325,7 +326,7 @@ void IdtRecall()
 		//brush.select = true;
 		//rubber.select = false;
 		//choose.select = false;
-		drawMode.DrawModeSelect = DrawModeSelectEnum::IdtPen;
+		stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
 	}
 
 	// 取消标识绘制等待
@@ -341,7 +342,7 @@ void IdtRecovery()
 {
 	if (current_record_pointer == total_record_pointer + 1)
 	{
-		drawMode.DrawModeSelect = DrawModeSelectEnum::IdtSelection;
+		stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
 		//choose.select = true;
 		//brush.select = false;
 		//rubber.select = false;
@@ -418,7 +419,7 @@ void IdtRecovery()
 	SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
 	hiex::TransparentImage(&window_background, 0, 0, &drawpad);
 
-	if (drawMode.DrawModeSelect == DrawModeSelectEnum::IdtPen)
+	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
 		// 设置BLENDFUNCTION结构体
 		BLENDFUNCTION blend;
@@ -452,7 +453,7 @@ void IdtRecovery()
 		//brush.select = true;
 		//rubber.select = false;
 		//choose.select = false;
-		drawMode.DrawModeSelect = DrawModeSelectEnum::IdtPen;
+		stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
 	}
 
 	// 取消标识绘制等待

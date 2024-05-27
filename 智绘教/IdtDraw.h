@@ -11,60 +11,6 @@ extern BrushColorChooseStruct BrushColorChoose;
 extern IMAGE ColorPaletteImg;
 extern shared_mutex ColorPaletteSm;
 
-enum DrawModeSelectEnum
-{
-	IdtSelection,
-	IdtPen,
-	IdtEraser
-};
-enum PenModeSelectEnum
-{
-	IdtPenBrush1,
-	IdtPenHighlighter1
-};
-
-class DrawModeClass
-{
-public:
-	DrawModeClass()
-	{
-		DrawModeSelect = DrawModeSelectEnum::IdtSelection;
-		DrawModeSelectEcho = DrawModeSelectEnum::IdtSelection;
-
-		Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
-		Pen.Brush1.width = 3;
-		Pen.Brush1.color = RGBA(50, 30, 181, 255);
-	}
-
-public:
-	DrawModeSelectEnum DrawModeSelect;
-	DrawModeSelectEnum DrawModeSelectEcho;
-
-	struct
-	{
-		PenModeSelectEnum ModeSelect;
-
-		struct
-		{
-			int width;
-			COLORREF color;
-		}Brush1;
-		struct
-		{
-			int width;
-			COLORREF color;
-		}Highlighter1;
-	}Pen;
-};
-extern DrawModeClass drawMode;
-
-struct brushStruct
-{
-	int width, mode;
-	COLORREF color, primary_colour;
-}; //画笔
-extern brushStruct brush;
-
 // TODO 老旧残留
 struct penetrateStruct
 {
@@ -113,8 +59,9 @@ bool CompareImagesWithBuffer(IMAGE* img1, IMAGE* img2);
 //设置图像必须不拥有全透明像素（将所有全透明像素点透明度设置为1）
 void SetAlphaToOne(IMAGE* pImg);
 
-//智能绘图部分
+double EuclideanDistance(POINT a, POINT b);
 
+//智能绘图部分
 extern map<pair<int, int>, bool> extreme_point;
 extern shared_mutex ExtremePointSm;
 //extern map<pair<Point, Point >, bool> extreme_line;

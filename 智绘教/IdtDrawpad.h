@@ -22,10 +22,4 @@ extern HHOOK DrawpadHookCall;
 LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam);
 void DrawpadInstallHook();
 
-void KeyInteraction();
-
-double EuclideanDistance(POINT a, POINT b);
-//double EuclideanDistance(PointF a, PointF b);
-void MultiFingerDrawing(LONG pid, POINT pt);
-void DrawpadDrawing();
 int drawpad_main();

@@ -7,10 +7,7 @@ BrushColorChooseStruct BrushColorChoose = { 0,0,-1,-1 };
 IMAGE ColorPaletteImg;
 shared_mutex ColorPaletteSm;
 
-DrawModeClass drawMode;
-
 penetrateStruct penetrate; //窗口穿透
-brushStruct brush = { 3,1,RGBA(0,0,0,0),RGBA(0,0,0,0) }; //画笔
 testStruct test; //调测
 
 plug_in_RandomRollCallStruct plug_in_RandomRollCall;
@@ -279,6 +276,11 @@ void SetAlphaToOne(IMAGE* pImg) // pImg是绘图设备指针
 			pBuffer[i] = color;
 		}
 	}
+}
+
+double EuclideanDistance(POINT a, POINT b)
+{
+	return std::sqrt(std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2));
 }
 
 //智能绘图部分

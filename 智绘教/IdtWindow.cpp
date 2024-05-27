@@ -3,6 +3,7 @@
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
 #include "IdtRts.h"
+#include "IdtState.h"
 #include "IdtText.h"
 
 HWND floating_window = NULL; //Ðü¸¡´°´°¿Ú
@@ -202,7 +203,7 @@ void TopWindow()
 		}
 
 		// ÖÃ¶¥´°¿Ú
-		if (drawMode.DrawModeSelect != DrawModeSelectEnum::IdtSelection && !penetrate.select)
+		if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && !penetrate.select)
 		{
 			std::shared_lock<std::shared_mutex> lock1(StrokeImageListSm);
 			bool flag = StrokeImageList.empty();
