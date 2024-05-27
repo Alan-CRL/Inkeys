@@ -24,6 +24,7 @@
 #include "IdtPlug-in.h"
 #include "IdtRts.h"
 #include "IdtSetting.h"
+#include "IdtState.h"
 #include "IdtSysNotifications.h"
 #include "IdtText.h"
 #include "IdtTime.h"
@@ -41,7 +42,7 @@ int SettingMain();
 void FreezeFrameWindow();
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string editionDate = "20240526a";				//程序发布日期
+string editionDate = "20240527a";				//程序发布日期
 string editionChannel = "Dev";					//程序发布通道
 string editionCode = "24H1(BetaH2)";			//程序版本
 
@@ -692,6 +693,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		IDTLogger->info("[主线程][IdtMain] FreezeFrameWindow函数线程启动");
 		thread FreezeFrameWindow_thread(FreezeFrameWindow);
 		FreezeFrameWindow_thread.detach();
+
+		IDTLogger->info("[主线程][IdtMain] StateMonitoring函数线程启动");
+		thread(StateMonitoring).detach();
 	}
 
 	while (!offSignal) this_thread::sleep_for(chrono::milliseconds(500));

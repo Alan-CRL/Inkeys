@@ -810,8 +810,8 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 			{
 				pointInfo.x = pt.x, pointInfo.y = pt.y;
 
-				Pen pen(hiex::ConvertToGdiplusColor(stateInfo.Shape.StraightLine1.color, false));
-				pen.SetWidth(Gdiplus::REAL(stateInfo.Shape.StraightLine1.width));
+				Pen pen(hiex::ConvertToGdiplusColor(stateInfo.Pen.Brush1.color, false));
+				pen.SetWidth(Gdiplus::REAL(stateInfo.Pen.Brush1.width));
 				pen.SetStartCap(LineCapRound);
 				pen.SetEndCap(LineCapRound);
 
@@ -834,7 +834,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 				unique_lock lockStrokeImageSm(StrokeImageSm[pid]);
 				{
 					SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
-					hiex::EasyX_Gdiplus_RoundRect((float)rectangle_x, (float)rectangle_y, (float)rectangle_heigth, (float)rectangle_width, 3, 3, stateInfo.Shape.Rectangle1.color, stateInfo.Shape.Rectangle1.width, false, SmoothingModeHighQuality, &Canvas);
+					hiex::EasyX_Gdiplus_RoundRect((float)rectangle_x, (float)rectangle_y, (float)rectangle_heigth, (float)rectangle_width, 3, 3, stateInfo.Pen.Brush1.color, stateInfo.Pen.Brush1.width, false, SmoothingModeHighQuality, &Canvas);
 				}
 				lockStrokeImageSm.unlock();
 			}
@@ -1060,7 +1060,7 @@ void DrawpadDrawing()
 	clock_t tRecord = 0;
 	for (;;)
 	{
-		for (int for_i = 1;; for_i = 2)
+		for (;;)
 		{
 			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
 			{
@@ -1185,6 +1185,8 @@ void DrawpadDrawing()
 				recall_image_recond = 0, FirstDraw = true;
 				current_record_pointer = reference_record_pointer;
 				RecallImageManipulated = std::chrono::high_resolution_clock::time_point();
+
+				stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
 
 				int ppt_switch_count = 0;
 				while (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
@@ -1355,6 +1357,8 @@ void DrawpadDrawing()
 			std::shared_lock<std::shared_mutex> lock1(StrokeImageListSm);
 			bool start = !StrokeImageList.empty();
 			lock1.unlock();
+
+			stateMode.StateModeSelectEcho = stateMode.StateModeSelect;
 			if (start) break;
 
 			if (offSignal)
@@ -1674,7 +1678,7 @@ void DrawpadDrawing()
 		ulwi.hdcSrc = GetImageHDC(&window_background);
 		if (!UpdateLayeredWindowIndirect(drawpad_window, &ulwi))
 		{
-			MessageBox(floating_window, L"智绘教画板显示出现问题，点击确定以重启智绘教\n此方案可能解决该问题", L"智绘教警告", MB_OK | MB_SYSTEMMODAL);
+			MessageBox(floating_window, L"智绘教画板显示出现问题，点击确定以重启智绘教\n此方案可能解决该问题", L"智绘教状态监测助手", MB_OK | MB_SYSTEMMODAL);
 			offSignal = 2;
 
 			break;

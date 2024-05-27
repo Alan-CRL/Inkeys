@@ -1,5 +1,8 @@
 #include "IdtState.h"
 
+#include "IdtDraw.h"
+#include "IdtWindow.h"
+
 StateModeClass stateMode;
 
 bool SetPenWidth(float targetWidth)
@@ -12,8 +15,8 @@ bool SetPenWidth(float targetWidth)
 	}
 	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
 	{
-		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) stateMode.Shape.StraightLine1.width = targetWidth;
-		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) stateMode.Shape.Rectangle1.width = targetWidth;
+		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) stateMode.Pen.Brush1.width = targetWidth;
+		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) stateMode.Pen.Brush1.width = targetWidth;
 		else return false;
 	}
 	else return false;
@@ -30,13 +33,40 @@ bool SetPenColor(COLORREF targetColor)
 	}
 	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
 	{
-		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) stateMode.Shape.StraightLine1.color = targetColor;
-		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) stateMode.Shape.Rectangle1.color = targetColor;
+		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) stateMode.Pen.Brush1.color = targetColor;
+		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) stateMode.Pen.Brush1.color = targetColor;
 		else return false;
 	}
 	else return false;
 
 	return true;
+}
+
+// 状态监测
+void StateMonitoring()
+{
+	// 监测代码暂时不加入安全退出
+
+	chrono::high_resolution_clock::time_point StateMonitoringManipulated = chrono::high_resolution_clock::now();
+	while (!offSignal)
+	{
+		if (penetrate.select)
+		{
+			while (penetrate.select) this_thread::sleep_for(chrono::milliseconds(100));
+			StateMonitoringManipulated = chrono::high_resolution_clock::now();
+		}
+
+		if (stateMode.StateModeSelect == stateMode.StateModeSelectEcho) StateMonitoringManipulated = chrono::high_resolution_clock::now();
+		if (chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now() - StateMonitoringManipulated).count() >= 3000 && !offSignal)
+		{
+			MessageBox(floating_window, L"智绘教画板状态出现问题，点击确定以重启智绘教\n此方案可能解决该问题", L"智绘教状态监测助手", MB_OK | MB_SYSTEMMODAL);
+			offSignal = 2;
+
+			return;
+		}
+
+		this_thread::sleep_for(chrono::milliseconds(500));
+	}
 }
 
 bool GetStateMode_Discard(StateModeStruct_Discard* stateModeInfo)
@@ -63,15 +93,15 @@ bool GetStateMode_Discard(StateModeStruct_Discard* stateModeInfo)
 	{
 		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1)
 		{
-			stateModeInfo->brushWidth = stateMode.Shape.StraightLine1.width;
-			stateModeInfo->brushColor = stateMode.Shape.StraightLine1.color;
+			stateModeInfo->brushWidth = stateMode.Pen.Brush1.width;
+			stateModeInfo->brushColor = stateMode.Pen.Brush1.color;
 
 			stateModeInfo->brushMode = 3;
 		}
 		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1)
 		{
-			stateModeInfo->brushWidth = stateMode.Shape.Rectangle1.width;
-			stateModeInfo->brushColor = stateMode.Shape.Rectangle1.color;
+			stateModeInfo->brushWidth = stateMode.Pen.Brush1.width;
+			stateModeInfo->brushColor = stateMode.Pen.Brush1.color;
 
 			stateModeInfo->brushMode = 4;
 		}

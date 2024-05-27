@@ -23,6 +23,8 @@ enum ShapeModeSelectEnum
 	IdtShapeCircle1
 };
 
+// 当前情况下 直线 和 矩形 绘制的样式跟随画笔
+
 class StateModeClass
 {
 public:
@@ -86,6 +88,8 @@ extern StateModeClass stateMode;
 
 bool SetPenWidth(float targetWidth);
 bool SetPenColor(COLORREF targetColor);
+
+void StateMonitoring();
 
 struct StateModeStruct_Discard
 {
