@@ -49,9 +49,6 @@
 using namespace PptCOM;
 IPptCOMServerPtr PptCOMPto;
 
-shared_mutex PPTManipulatedSm;
-chrono::high_resolution_clock::time_point PPTManipulated;
-
 map<wstring, PPTUIControlStruct> PPTUIControl, PPTUIControlTarget;
 map<wstring, PPTUIControlStruct>& map<wstring, PPTUIControlStruct>::operator=(const map<wstring, PPTUIControlStruct>& m)
 {
@@ -1528,10 +1525,6 @@ void ControlManipulation()
 				{
 					SetForegroundWindow(ppt_show);
 
-					std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-					PPTManipulated = std::chrono::high_resolution_clock::now();
-					lock1.unlock();
-
 					PreviousPptSlides();
 					PPTUIControlColor[L"RoundRect/RoundRectLeft1/fill"].v = RGBA(200, 200, 200, 255);
 
@@ -1541,10 +1534,6 @@ void ControlManipulation()
 						if (!KeyBoradDown[VK_LBUTTON]) break;
 						if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 						{
-							std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-							PPTManipulated = std::chrono::high_resolution_clock::now();
-							lock1.unlock();
-
 							PreviousPptSlides();
 							PPTUIControlColor[L"RoundRect/RoundRectLeft1/fill"].v = RGBA(200, 200, 200, 255);
 						}
@@ -1575,32 +1564,16 @@ void ControlManipulation()
 					{
 						if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
 						{
-							std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-							PPTManipulated = std::chrono::high_resolution_clock::now();
-							lock1.unlock();
-							EndPptShow();
-
-							//brush.select = false;
-							//rubber.select = false;
-							penetrate.select = false;
-							//choose.select = true;
-							stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
+							ChangeStateModeToSelection();
 						}
 					}
 					else if (temp_currentpage == -1)
 					{
-						std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-						PPTManipulated = std::chrono::high_resolution_clock::now();
-						lock1.unlock();
 						EndPptShow();
 					}
 					else
 					{
 						SetForegroundWindow(ppt_show);
-
-						std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-						PPTManipulated = std::chrono::high_resolution_clock::now();
-						lock1.unlock();
 
 						NextPptSlides(temp_currentpage);
 						PPTUIControlColor[L"RoundRect/RoundRectLeft2/fill"].v = RGBA(200, 200, 200, 255);
@@ -1619,20 +1592,12 @@ void ControlManipulation()
 									{
 										EndPptShow();
 
-										//brush.select = false;
-										//rubber.select = false;
-										penetrate.select = false;
-										//choose.select = true;
-										stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
+										ChangeStateModeToSelection();
 									}
 									break;
 								}
 								else if (temp_currentpage != -1)
 								{
-									std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-									PPTManipulated = std::chrono::high_resolution_clock::now();
-									lock1.unlock();
-
 									NextPptSlides(temp_currentpage);
 									PPTUIControlColor[L"RoundRect/RoundRectLeft2/fill"].v = RGBA(200, 200, 200, 255);
 								}
@@ -1649,47 +1614,6 @@ void ControlManipulation()
 					GetCursorPos(&pt);
 					last_x = pt.x, last_y = pt.y;
 				}
-
-				/*
-				if (m.lbutton)
-				{
-					int lx = m.x, ly = m.y;
-					while (1)
-					{
-						ExMessage m = hiex::getmessage_win32(EM_MOUSE, ppt_window);
-						if (IsInRect(m.x, m.y, { 130 + 5, PPTMainMonitor.MonitorHeight - 60 + 5, 130 + 5 + 50, PPTMainMonitor.MonitorHeight - 60 + 5 + 50 }))
-						{
-							if (!m.lbutton)
-							{
-								if (PptInfoState.CurrentPage == -1 && choose.select == false && penetrate.select == false)
-								{
-									if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) != 1) break;
-
-									brush.select = false;
-									rubber.select = false;
-									penetrate.select = false;
-									choose.select = true;
-								}
-
-								std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-								PPTManipulated = std::chrono::high_resolution_clock::now();
-								lock1.unlock();
-
-								SetForegroundWindow(ppt_show);
-								PptInfoState.CurrentPage = NextPptSlides();
-
-								break;
-							}
-						}
-						else
-						{
-							hiex::flushmessage_win32(EM_MOUSE, ppt_window);
-
-							break;
-						}
-					}
-					hiex::flushmessage_win32(EM_MOUSE, ppt_window);
-				}*/
 			}
 			else if (PptInfoStateBuffer.TotalPage != -1) PPTUIControlColorTarget[L"RoundRect/RoundRectLeft2/fill"].v = RGBA(250, 250, 250, 160);
 
@@ -1716,16 +1640,8 @@ void ControlManipulation()
 								{
 									if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) != 1) break;
 
-									//brush.select = false;
-									//rubber.select = false;
-									penetrate.select = false;
-									//choose.select = true;
-									stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
+									ChangeStateModeToSelection();
 								}
-
-								std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-								PPTManipulated = std::chrono::high_resolution_clock::now();
-								lock1.unlock();
 
 								EndPptShow();
 
@@ -1760,10 +1676,6 @@ void ControlManipulation()
 				{
 					SetForegroundWindow(ppt_show);
 
-					std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-					PPTManipulated = std::chrono::high_resolution_clock::now();
-					lock1.unlock();
-
 					PreviousPptSlides();
 					PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v = RGBA(200, 200, 200, 255);
 
@@ -1773,10 +1685,6 @@ void ControlManipulation()
 						if (!KeyBoradDown[VK_LBUTTON]) break;
 						if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 						{
-							std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-							PPTManipulated = std::chrono::high_resolution_clock::now();
-							lock1.unlock();
-
 							PreviousPptSlides();
 							PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v = RGBA(200, 200, 200, 255);
 						}
@@ -1807,32 +1715,18 @@ void ControlManipulation()
 					{
 						if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
 						{
-							std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-							PPTManipulated = std::chrono::high_resolution_clock::now();
-							lock1.unlock();
 							EndPptShow();
 
-							//brush.select = false;
-							//rubber.select = false;
-							penetrate.select = false;
-							//choose.select = true;
-							stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
+							ChangeStateModeToSelection();
 						}
 					}
 					else if (temp_currentpage == -1)
 					{
-						std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-						PPTManipulated = std::chrono::high_resolution_clock::now();
-						lock1.unlock();
 						EndPptShow();
 					}
 					else
 					{
 						SetForegroundWindow(ppt_show);
-
-						std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-						PPTManipulated = std::chrono::high_resolution_clock::now();
-						lock1.unlock();
 
 						NextPptSlides(temp_currentpage);
 						PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v = RGBA(200, 200, 200, 255);
@@ -1851,20 +1745,12 @@ void ControlManipulation()
 									{
 										EndPptShow();
 
-										//brush.select = false;
-										//rubber.select = false;
-										penetrate.select = false;
-										//choose.select = true;
-										stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
+										ChangeStateModeToSelection();
 									}
 									break;
 								}
 								else if (temp_currentpage != -1)
 								{
-									std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-									PPTManipulated = std::chrono::high_resolution_clock::now();
-									lock1.unlock();
-
 									NextPptSlides(temp_currentpage);
 									PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v = RGBA(200, 200, 200, 255);
 								}
@@ -1895,23 +1781,13 @@ void ControlManipulation()
 					{
 						if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
 						{
-							std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-							PPTManipulated = std::chrono::high_resolution_clock::now();
-							lock1.unlock();
 							EndPptShow();
 
-							//brush.select = false;
-							//rubber.select = false;
-							penetrate.select = false;
-							//choose.select = true;
-							stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
+							ChangeStateModeToSelection();
 						}
 					}
 					else if (temp_currentpage == -1)
 					{
-						std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-						PPTManipulated = std::chrono::high_resolution_clock::now();
-						lock1.unlock();
 						EndPptShow();
 					}
 					else
@@ -1930,10 +1806,6 @@ void ControlManipulation()
 				{
 					SetForegroundWindow(ppt_show);
 
-					std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-					PPTManipulated = std::chrono::high_resolution_clock::now();
-					lock1.unlock();
-
 					PreviousPptSlides();
 					PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v = RGBA(200, 200, 200, 255);
 
@@ -1951,132 +1823,6 @@ void ControlManipulation()
 		}
 	}
 }
-void KeyboardInteraction()
-{
-	ExMessage m;
-	while (!offSignal)
-	{
-		hiex::getmessage_win32(&m, EM_KEY, drawpad_window);
-
-		if (PptInfoState.TotalPage != -1)
-		{
-			if (m.message == WM_KEYDOWN && (m.vkcode == VK_DOWN || m.vkcode == VK_RIGHT || m.vkcode == VK_NEXT || m.vkcode == VK_SPACE || m.vkcode == VK_UP || m.vkcode == VK_LEFT || m.vkcode == VK_PRIOR))
-			{
-				auto vkcode = m.vkcode;
-
-				if (vkcode == VK_UP || vkcode == VK_LEFT || vkcode == VK_PRIOR)
-				{
-					// 上一页
-					SetForegroundWindow(ppt_show);
-
-					PreviousPptSlides();
-
-					std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
-					while (1)
-					{
-						if (!KeyBoradDown[vkcode]) break;
-						if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400) PreviousPptSlides();
-
-						this_thread::sleep_for(chrono::milliseconds(15));
-					}
-				}
-				else
-				{
-					// 下一页
-					int temp_currentpage = PptInfoState.CurrentPage;
-					if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
-					{
-						if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
-						{
-							EndPptShow();
-
-							//brush.select = false;
-							//rubber.select = false;
-							penetrate.select = false;
-							//choose.select = true;
-							stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
-						}
-					}
-					else
-					{
-						SetForegroundWindow(ppt_show);
-
-						NextPptSlides(temp_currentpage);
-
-						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
-						while (1)
-						{
-							if (!KeyBoradDown[vkcode]) break;
-
-							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
-							{
-								temp_currentpage = PptInfoState.CurrentPage;
-								if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
-								{
-									if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
-									{
-										EndPptShow();
-
-										//brush.select = false;
-										//rubber.select = false;
-										penetrate.select = false;
-										//choose.select = true;
-										stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
-									}
-									break;
-								}
-								else if (temp_currentpage == -1) break;
-
-								NextPptSlides(temp_currentpage);
-							}
-
-							this_thread::sleep_for(chrono::milliseconds(15));
-						}
-					}
-				}
-			}
-			else if (m.message == WM_KEYDOWN && m.vkcode == VK_ESCAPE)
-			{
-				auto vkcode = m.vkcode;
-
-				while (KeyBoradDown[vkcode]) this_thread::sleep_for(chrono::milliseconds(20));
-
-				if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
-				{
-					if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
-					{
-						EndPptShow();
-
-						//brush.select = false;
-						//rubber.select = false;
-						penetrate.select = false;
-						//choose.select = true;
-						stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
-					}
-				}
-				else EndPptShow();
-			}
-		}
-
-		if (m.vkcode == (BYTE)0x5A && m.message == WM_KEYDOWN)
-		{
-			while (1)
-			{
-				if (!KeyBoradDown[(BYTE)0x5A])
-				{
-					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && (!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0))) IdtRecall();
-					else if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && RecallImage.empty() && current_record_pointer <= total_record_pointer + 1 && practical_total_record_pointer) IdtRecovery();
-
-					break;
-				}
-
-				this_thread::sleep_for(chrono::milliseconds(10));
-			}
-		}
-
-		hiex::flushmessage_win32(EM_KEY, drawpad_window);
-	}
-}
 void PPTLinkageMain()
 {
 	threadStatus[L"DrawControlWindow"] = true;
@@ -2088,8 +1834,6 @@ void PPTLinkageMain()
 	DrawControlWindowThread.detach();
 	thread ControlManipulationThread(ControlManipulation);
 	ControlManipulationThread.detach();
-	thread KeyboardInteractionThread(KeyboardInteraction);
-	KeyboardInteractionThread.detach();
 
 	while (!offSignal) this_thread::sleep_for(chrono::milliseconds(500));
 
@@ -2101,128 +1845,6 @@ void PPTLinkageMain()
 	}
 
 	threadStatus[L"DrawControlWindow"] = false;
-}
-
-// EasiCamera linkage | 希沃视频展台联动
-// Entering the drawing mode in EasiCamera will automatically activate the freeze frame function. The detection function is completed by ·BlackBlock· together.
-// 在希沃视频展台下进入绘制，将自动开启定格功能。检测功能由 ·BlackBlock· 一并完成。
-
-bool SeewoCameraIsOpen; // Is EasiCamera started | 希沃视频展台是否启动
-
-// --------------------------------------------------
-// Blacklist window interception | 黑名单窗口拦截
-
-struct
-{
-	bool hasClassName;
-	wstring className;
-
-	bool hasWindowTitle;
-	wstring windowTitle;
-
-	bool hasStyle;
-	LONG style;
-
-	bool hasWidthHeight;
-	int width;
-	int height;
-
-	bool foundHwnd = false;
-	HWND outHwnd = nullptr;
-}WindowSearch[2];
-int WindowSearchSize;
-
-BOOL CALLBACK EnumWindowsCallback(HWND inquiryHwnd, LPARAM lParam)
-{
-	EnumChildWindows(inquiryHwnd, EnumWindowsCallback, lParam);
-
-	int foundCnt = 0;
-	for (int i = 0; i < WindowSearchSize; i++)
-	{
-		if (WindowSearch[i].hasClassName)
-		{
-			TCHAR classNameBuffer[1024];
-			GetClassName(inquiryHwnd, classNameBuffer, 1024);
-			if (_tcsstr(classNameBuffer, WindowSearch[i].className.c_str()) == NULL)
-				continue;
-		}
-		if (WindowSearch[i].hasWindowTitle)
-		{
-			TCHAR windowTitleBuffer[1024];
-			GetWindowText(inquiryHwnd, windowTitleBuffer, 1024);
-			if (_tcsstr(windowTitleBuffer, WindowSearch[i].windowTitle.c_str()) == NULL)
-				continue;
-		}
-
-		//Testi((DWORD)inquiryHwnd);
-		//Testi(GetWindowLong(inquiryHwnd, GWL_STYLE));
-
-		if (WindowSearch[i].hasStyle)
-		{
-			if (GetWindowLong(inquiryHwnd, GWL_STYLE) != WindowSearch[i].style)
-				continue;
-		}
-		if (WindowSearch[i].hasWidthHeight)
-		{
-			RECT rect{};
-			DwmGetWindowAttribute(inquiryHwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &rect, sizeof(RECT));
-			int twidth = rect.right - rect.left, thwight = rect.bottom - rect.top;
-
-			HDC hdc = GetDC(NULL);
-			int horizontalDPI = GetDeviceCaps(hdc, LOGPIXELSX);
-			int verticalDPI = GetDeviceCaps(hdc, LOGPIXELSY);
-			ReleaseDC(NULL, hdc);
-			float scale = (horizontalDPI + verticalDPI) / 2.0f / 96.0f;
-
-			if (abs(WindowSearch[i].width * scale - twidth) > 1 || abs(WindowSearch[i].height * scale - thwight) > 1)
-				continue;
-		}
-
-		WindowSearch[i].outHwnd = inquiryHwnd;
-		WindowSearch[i].foundHwnd = true;
-	}
-
-	for (int i = 0; i < WindowSearchSize; i++)
-	{
-		if (WindowSearch[i].foundHwnd)
-			foundCnt++;
-	}
-
-	if (foundCnt == WindowSearchSize) return FALSE;
-	return TRUE;
-}
-
-// 发现 希沃视频展台 窗口
-void BlackBlock()
-{
-	threadStatus[L"BlackBlock"] = true;
-
-	{
-		// 希沃视频展台
-		WindowSearch[0].hasClassName = true;
-		WindowSearch[0].className = L"HwndWrapper[EasiCamera.exe;;";
-		WindowSearch[0].hasWindowTitle = true;
-		WindowSearch[0].windowTitle = L"希沃视频展台";
-		WindowSearch[0].hasStyle = true;
-		WindowSearch[0].style = 386400256;
-	}
-
-	WindowSearchSize = 1;
-
-	while (!offSignal)
-	{
-		EnumWindows(EnumWindowsCallback, 0);
-
-		if (WindowSearch[0].foundHwnd)
-		{
-			SeewoCameraIsOpen = true;
-			WindowSearch[0].foundHwnd = false;
-		}
-		else SeewoCameraIsOpen = false;
-
-		for (int i = 1; i <= 3 && !offSignal; i++) this_thread::sleep_for(chrono::milliseconds(1000));
-	}
-	threadStatus[L"BlackBlock"] = false;
 }
 
 // --------------------------------------------------

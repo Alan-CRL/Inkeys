@@ -42,9 +42,9 @@ int SettingMain();
 void FreezeFrameWindow();
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string editionDate = "20240527a";				//程序发布日期
-string editionChannel = "Dev";					//程序发布通道
-string editionCode = "24H1(BetaH2)";			//程序版本
+string editionDate = "20240604c";				//程序发布日期
+string editionChannel = "LTS";					//程序发布通道
+string editionCode = "24H2";					//程序版本 (BetaH3)
 
 wstring userId; //用户ID（主板序列号）
 string globalPath; //程序当前路径
@@ -413,14 +413,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] 加载字体");
 
-		HMODULE hModule = GetModuleHandle(NULL);
-		HRSRC hResource = FindResource(hModule, MAKEINTRESOURCE(198), L"TTF");
-		HGLOBAL hMemory = LoadResource(hModule, hResource);
-		PVOID pResourceData = LockResource(hMemory);
-		DWORD dwResourceSize = SizeofResource(hModule, hResource);
-		fontCollection.AddMemoryFont(pResourceData, dwResourceSize);
-
 		INT numFound = 0;
+		HRSRC hRes = ::FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
+		HGLOBAL hMem = ::LoadResource(NULL, hRes);
+		DWORD dwSize = ::SizeofResource(NULL, hRes);
+
+		fontCollection.AddMemoryFont(hMem, dwSize);
 		fontCollection.GetFamilies(1, &HarmonyOS_fontFamily, &numFound);
 
 		{

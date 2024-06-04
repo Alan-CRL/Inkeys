@@ -184,23 +184,15 @@ LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			{
 				PPTUIControlColor[L"RoundRect/RoundRectLeft2/fill"].v = RGBA(200, 200, 200, 255);
 				PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v = RGBA(200, 200, 200, 255);
-
-				std::unique_lock<std::shared_mutex> LockPPTManipulatedSm(PPTManipulatedSm);
-				PPTManipulated = std::chrono::high_resolution_clock::now();
-				LockPPTManipulatedSm.unlock();
 			}
 			else
 			{
 				PPTUIControlColor[L"RoundRect/RoundRectLeft1/fill"].v = RGBA(200, 200, 200, 255);
 				PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v = RGBA(200, 200, 200, 255);
-
-				std::unique_lock<std::shared_mutex> LockPPTManipulatedSm(PPTManipulatedSm);
-				PPTManipulated = std::chrono::high_resolution_clock::now();
-				LockPPTManipulatedSm.unlock();
 			}
 
 			int index = hiex::GetWindowIndex(ppt_window, false);
-			std::unique_lock<std::shared_mutex> lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
+			unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
 			hiex::g_vecWindows[index].vecMessage.push_back(msgKey);
 			lg_vecWindows_vecMessage_sm.unlock();
 
@@ -4619,7 +4611,7 @@ void DrawScreen()
 								if (ppt_software == L"PowerPoint") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[16], 255);
 								else if (ppt_software == L"WPS") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[20], 255);
 							}
-							else if (SeewoCameraIsOpen == true) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[18], 255);
+							//else if (SeewoCameraIsOpen == true) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[18], 255);
 						}
 
 						hiex::TransparentImage(&background, int(UIControl[L"Image/Sign1/x"].v), int(UIControl[L"Image/Sign1/y"].v), &sign, int(UIControl[L"Image/Sign1/transparency"].v));
@@ -4637,7 +4629,7 @@ void DrawScreen()
 								if (ppt_software == L"PowerPoint") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[16], 255);
 								else if (ppt_software == L"WPS") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[20], 255);
 							}
-							else if (SeewoCameraIsOpen == true) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[18], 255);
+							//else if (SeewoCameraIsOpen == true) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[18], 255);
 						}
 
 						//时钟
@@ -4870,7 +4862,7 @@ void DrawScreen()
 								if (ppt_software == L"PowerPoint") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[16], 255);
 								else if (ppt_software == L"WPS") hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[20], 255);
 							}
-							else if (SeewoCameraIsOpen == true) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[18], 255);
+							//else if (SeewoCameraIsOpen == true) hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 38), int(UIControl[L"Ellipse/Ellipse1/y"].v + 67), &floating_icon[18], 255);
 						}
 
 						hiex::TransparentImage(&background, int(UIControl[L"Image/Sign1/x"].v - 18), int(UIControl[L"Image/Sign1/y"].v - 18), &skin[2]);
@@ -5299,8 +5291,8 @@ void MouseInteraction()
 					}
 				}
 
-				//窗口穿透
-				if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && IsInRect(m.x, m.y, { floating_windows.width - 96 + 4, floating_windows.height - 256 + 8, floating_windows.width - 96 + 4 + 88, floating_windows.height - 256 + 8 + 40 }))
+				// 窗口穿透
+				if (IsInRect(m.x, m.y, { floating_windows.width - 96 + 4, floating_windows.height - 256 + 8, floating_windows.width - 96 + 4 + 88, floating_windows.height - 256 + 8 + 40 }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
@@ -5312,15 +5304,18 @@ void MouseInteraction()
 							{
 								if (!m.lbutton)
 								{
-									if (penetrate.select)
+									if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection)
 									{
-										penetrate.select = false;
-										if (FreezeFrame.mode == 2) FreezeFrame.mode = 1;
-									}
-									else
-									{
-										if (FreezeFrame.mode == 1) FreezeFrame.mode = 2;
-										penetrate.select = true;
+										if (penetrate.select)
+										{
+											penetrate.select = false;
+											if (FreezeFrame.mode == 2) FreezeFrame.mode = 1;
+										}
+										else
+										{
+											if (FreezeFrame.mode == 1) FreezeFrame.mode = 2;
+											penetrate.select = true;
+										}
 									}
 
 									break;
@@ -5338,7 +5333,7 @@ void MouseInteraction()
 						MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
 					}
 				}
-				//窗口定格
+				// 窗口定格
 				if (ppt_show == NULL && IsInRect(m.x, m.y, { floating_windows.width - 96 + 4, floating_windows.height - 256 + 50, floating_windows.width - 96 + 4 + 88, floating_windows.height - 256 + 50 + 40 }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
@@ -5353,12 +5348,16 @@ void MouseInteraction()
 								{
 									if (FreezeFrame.mode != 1)
 									{
+										FreezeFrame.mode = 1;
 										penetrate.select = false;
 
 										if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) FreezeFrame.select = true;
-										FreezeFrame.mode = 1;
 									}
-									else FreezeFrame.mode = 0, FreezeFrame.select = false;
+									else
+									{
+										FreezeFrame.mode = 0;
+										FreezeFrame.select = false;
+									}
 
 									break;
 								}
@@ -5376,7 +5375,7 @@ void MouseInteraction()
 					}
 				}
 
-				//选择
+				// 选择
 				if (IsInRect(m.x, m.y, { 0 + 8, floating_windows.height - 156 + 8, 0 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
@@ -5389,17 +5388,8 @@ void MouseInteraction()
 							{
 								if (!m.lbutton)
 								{
-									if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection)
-									{
-										state = 1;
-										if (!FreezeFrame.select || penetrate.select) FreezeFrame.mode = 0, FreezeFrame.select = false;
-
-										stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
-										//brush.select = false;
-										//rubber.select = false;
-										//choose.select = true;
-										penetrate.select = false;
-									}
+									state = 1;
+									if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection) ChangeStateModeToSelection();
 
 									break;
 								}
@@ -5414,7 +5404,7 @@ void MouseInteraction()
 						hiex::flushmessage_win32(EM_MOUSE, floating_window);
 					}
 				}
-				//画笔
+				// 画笔
 				if (IsInRect(m.x, m.y, { 96 + 8, floating_windows.height - 156 + 8, 96 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
@@ -5429,18 +5419,8 @@ void MouseInteraction()
 							{
 								if (abs(ly - m.y) >= 20 && state == 1)
 								{
-									//brush.select = true;
-									//rubber.select = false;
-									//choose.select = false;
-									stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
-
 									state = 1.1, brush_connect = true;
-
-									if (SeewoCameraIsOpen)
-									{
-										penetrate.select = false;
-										FreezeFrame.mode = 1;
-									}
+									if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen && stateMode.StateModeSelect != StateModeSelectEnum::IdtShape) ChangeStateModeToPen();
 								}
 								else if (abs(ly - m.y) >= 20) brush_connect = true;
 								else
@@ -5450,16 +5430,7 @@ void MouseInteraction()
 										if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen && stateMode.StateModeSelect != StateModeSelectEnum::IdtShape)
 										{
 											state = 1;
-											//brush.select = true;
-											//rubber.select = false;
-											//choose.select = false;
-											stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
-
-											if (SeewoCameraIsOpen)
-											{
-												penetrate.select = false;
-												FreezeFrame.mode = 1;
-											}
+											ChangeStateModeToPen();
 										}
 										else if (state == 1)
 										{
@@ -5488,7 +5459,7 @@ void MouseInteraction()
 						hiex::flushmessage_win32(EM_MOUSE, floating_window);
 					}
 				}
-				//画笔选项1
+				// 画笔选项
 				else if (state == 1.1 || state == 1.11 || state == 1.12)
 				{
 					if ((state == 1.1 || state == 1.11 || state == 1.12) && IsInRect(m.x, m.y, { int(UIControl[L"RoundRect/PaintThickness/x"].v), int(UIControl[L"RoundRect/PaintThickness/y"].v), int(UIControl[L"RoundRect/PaintThickness/x"].v + UIControl[L"RoundRect/PaintThickness/width"].v), int(UIControl[L"RoundRect/PaintThickness/y"].v + UIControl[L"RoundRect/PaintThickness/height"].v) }))
@@ -5934,7 +5905,7 @@ void MouseInteraction()
 								stateMode.Pen.Brush1.width = floatingInfo.brushWidth;
 							}
 
-							stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
+							if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen) ChangeStateModeToPen();
 							stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
 
 							hiex::flushmessage_win32(EM_MOUSE, floating_window);
@@ -5944,7 +5915,7 @@ void MouseInteraction()
 					{
 						if (m.message == WM_LBUTTONDOWN)
 						{
-							stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
+							if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen) ChangeStateModeToPen();
 							stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenHighlighter1;
 
 							hiex::flushmessage_win32(EM_MOUSE, floating_window);
@@ -5962,7 +5933,7 @@ void MouseInteraction()
 									stateMode.Pen.Brush1.width = floatingInfo.brushWidth;
 								}
 
-								stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
+								if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen) ChangeStateModeToPen();
 								stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
 							}
 
@@ -5976,7 +5947,7 @@ void MouseInteraction()
 							stateMode.Shape.StraightLine1.color = stateMode.Pen.Brush1.color;
 							stateMode.Shape.StraightLine1.width = stateMode.Pen.Brush1.width;
 
-							stateMode.StateModeSelect = StateModeSelectEnum::IdtShape;
+							if (stateMode.StateModeSelect != StateModeSelectEnum::IdtShape) ChangeStateModeToShape();
 							stateMode.Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeStraightLine1;
 
 							hiex::flushmessage_win32(EM_MOUSE, floating_window);
@@ -5989,7 +5960,7 @@ void MouseInteraction()
 							stateMode.Shape.Rectangle1.color = stateMode.Pen.Brush1.color;
 							stateMode.Shape.Rectangle1.width = stateMode.Pen.Brush1.width;
 
-							stateMode.StateModeSelect = StateModeSelectEnum::IdtShape;
+							if (stateMode.StateModeSelect != StateModeSelectEnum::IdtShape) ChangeStateModeToShape();
 							stateMode.Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeRectangle1;
 
 							hiex::flushmessage_win32(EM_MOUSE, floating_window);
@@ -5998,8 +5969,8 @@ void MouseInteraction()
 
 					if (!m.lbutton && (IsInRect(m.x, m.y, { 1, floating_windows.height - 256, 1 + floating_windows.width - 106, floating_windows.height - 256 + 90 }) || IsInRect(m.x, m.y, { 0, floating_windows.height - 50, 0 + floating_windows.width, floating_windows.height - 50 + 50 })) && brush_connect) state = 1;
 				}
-				//橡皮
-				if (stateMode.StateModeSelect != StateModeSelectEnum::IdtEraser && IsInRect(m.x, m.y, { 192 + 8, floating_windows.height - 156 + 8, 192 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
+				// 橡皮
+				if (IsInRect(m.x, m.y, { 192 + 8, floating_windows.height - 156 + 8, 192 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
@@ -6012,16 +5983,7 @@ void MouseInteraction()
 								if (!m.lbutton)
 								{
 									state = 1;
-									//rubber.select = true;
-									//brush.select = false;
-									//choose.select = false;
-									stateMode.StateModeSelect = StateModeSelectEnum::IdtEraser;
-
-									if (SeewoCameraIsOpen)
-									{
-										penetrate.select = false;
-										FreezeFrame.mode = 1;
-									}
+									if (stateMode.StateModeSelect != StateModeSelectEnum::IdtEraser) ChangeStateModeToEraser();
 
 									break;
 								}
@@ -6036,7 +5998,7 @@ void MouseInteraction()
 						hiex::flushmessage_win32(EM_MOUSE, floating_window);
 					}
 				}
-				//撤回画板
+				// 撤回和超级恢复
 				{
 					if ((!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0)) && IsInRect(m.x, m.y, { floating_windows.width - 96, floating_windows.height - 55, floating_windows.width - 96 + 96, floating_windows.height - 50 + 40 }))
 					{
@@ -6091,7 +6053,7 @@ void MouseInteraction()
 						}
 					}
 				}
-				//选项
+				// 选项
 				if (IsInRect(m.x, m.y, { 288 + 8, floating_windows.height - 156 + 8, 288 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
@@ -6188,11 +6150,6 @@ int floating_main()
 	thread DrawScreen_thread(DrawScreen);
 	DrawScreen_thread.detach();
 	//LOG(INFO) << "成功启动悬浮窗窗口绘制线程";
-
-	//LOG(INFO) << "尝试启动黑名单窗口拦截线程";
-	thread BlackBlock_thread(BlackBlock);
-	BlackBlock_thread.detach();
-	//LOG(INFO) << "成功启动黑名单窗口拦截线程";
 
 #ifdef IDT_RELEASE
 	/*

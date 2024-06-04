@@ -50,28 +50,8 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 		{
 			IsHotkeyDown = true;
 
-			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
-			{
-				stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
-
-				//brush.select = true;
-				//rubber.select = false;
-				//choose.select = false;
-				penetrate.select = false;
-
-				if (SeewoCameraIsOpen) FreezeFrame.mode = 1;
-			}
-			else
-			{
-				stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
-
-				//choose.select = true;
-				//brush.select = false;
-				//rubber.select = false;
-				penetrate.select = false;
-
-				if (!FreezeFrame.select || penetrate.select) FreezeFrame.mode = 0, FreezeFrame.select = false;
-			}
+			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) ChangeStateModeToPen();
+			else ChangeStateModeToSelection();
 		}
 		else if (IsHotkeyDown && !(KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]) && !(KeyBoradDown[VK_LWIN] || KeyBoradDown[VK_RWIN]) && !(KeyBoradDown[VK_MENU] || KeyBoradDown[VK_LMENU] || KeyBoradDown[VK_RMENU])) IsHotkeyDown = false;
 
@@ -90,10 +70,6 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 					PPTUIControlColor[L"RoundRect/RoundRectLeft2/fill"].v = RGBA(200, 200, 200, 255);
 					PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v = RGBA(200, 200, 200, 255);
 				}
-
-				std::unique_lock<std::shared_mutex> LockPPTManipulatedSm(PPTManipulatedSm);
-				PPTManipulated = std::chrono::high_resolution_clock::now();
-				LockPPTManipulatedSm.unlock();
 				break;
 			}
 
@@ -106,18 +82,11 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 					PPTUIControlColor[L"RoundRect/RoundRectLeft1/fill"].v = RGBA(200, 200, 200, 255);
 					PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v = RGBA(200, 200, 200, 255);
 				}
-
-				std::unique_lock<std::shared_mutex> LockPPTManipulatedSm(PPTManipulatedSm);
-				PPTManipulated = std::chrono::high_resolution_clock::now();
-				LockPPTManipulatedSm.unlock();
 				break;
 			}
 
-			case VK_ESCAPE:   // 退出
+			case VK_ESCAPE:   // ESC
 			{
-				std::unique_lock<std::shared_mutex> LockPPTManipulatedSm(PPTManipulatedSm);
-				PPTManipulated = std::chrono::high_resolution_clock::now();
-				LockPPTManipulatedSm.unlock();
 				break;
 			}
 			}
@@ -132,8 +101,10 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			msgKey.extended = bool(pKeyInfo->flags & LLKHF_EXTENDED);
 			msgKey.prevdown = bool((HIWORD(pKeyInfo->flags) & KF_REPEAT) == KF_REPEAT);
 
+			msgKey.ctrl = (KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]);
+
 			int index = hiex::GetWindowIndex(drawpad_window, false);
-			std::unique_lock<std::shared_mutex> lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
+			unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
 			hiex::g_vecWindows[index].vecMessage.push_back(msgKey);
 			lg_vecWindows_vecMessage_sm.unlock();
 
@@ -202,7 +173,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 				}
 
 				default:
-					return CallNextHookEx(DrawpadHookCall, nCode, wParam, lParam);
+					break;
 				}
 			}
 			else
@@ -260,9 +231,40 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 				}
 
 				default:
-					return CallNextHookEx(DrawpadHookCall, nCode, wParam, lParam);
+					break;
 				}
 			}
+		}
+
+		// 定格所需的额外情况
+		else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection && (KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]) && (BYTE)pKeyInfo->vkCode == (BYTE)0x51)
+		{
+			ExMessage msgKey = {};
+			msgKey.message = wParam;
+			msgKey.vkcode = (BYTE)0x51;
+			msgKey.ctrl = true;
+
+			int index = hiex::GetWindowIndex(drawpad_window, false);
+			unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
+			hiex::g_vecWindows[index].vecMessage.push_back(msgKey);
+			lg_vecWindows_vecMessage_sm.unlock();
+
+			return 1;
+		}
+		// 穿透所需的额外情况
+		else if (penetrate.select && (KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]) && (BYTE)pKeyInfo->vkCode == (BYTE)0x45)
+		{
+			ExMessage msgKey = {};
+			msgKey.message = wParam;
+			msgKey.vkcode = (BYTE)0x45;
+			msgKey.ctrl = true;
+
+			int index = hiex::GetWindowIndex(drawpad_window, false);
+			unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
+			hiex::g_vecWindows[index].vecMessage.push_back(msgKey);
+			lg_vecWindows_vecMessage_sm.unlock();
+
+			return 1;
 		}
 	}
 
@@ -284,6 +286,187 @@ void DrawpadInstallHook()
 
 	// 卸载钩子
 	UnhookWindowsHookEx(DrawpadHookCall);
+}
+void KeyboardInteraction()
+{
+	ExMessage m;
+	while (!offSignal)
+	{
+		hiex::getmessage_win32(&m, EM_KEY, drawpad_window);
+
+		if (PptInfoState.TotalPage != -1)
+		{
+			if (m.message == WM_KEYDOWN && (m.vkcode == VK_DOWN || m.vkcode == VK_RIGHT || m.vkcode == VK_NEXT || m.vkcode == VK_SPACE || m.vkcode == VK_UP || m.vkcode == VK_LEFT || m.vkcode == VK_PRIOR))
+			{
+				auto vkcode = m.vkcode;
+
+				if (vkcode == VK_UP || vkcode == VK_LEFT || vkcode == VK_PRIOR)
+				{
+					// 上一页
+					SetForegroundWindow(ppt_show);
+
+					PreviousPptSlides();
+
+					std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
+					while (1)
+					{
+						if (!KeyBoradDown[vkcode]) break;
+						if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400) PreviousPptSlides();
+
+						this_thread::sleep_for(chrono::milliseconds(15));
+					}
+				}
+				else
+				{
+					// 下一页
+					int temp_currentpage = PptInfoState.CurrentPage;
+					if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
+					{
+						if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+						{
+							EndPptShow();
+
+							//brush.select = false;
+							//rubber.select = false;
+							penetrate.select = false;
+							//choose.select = true;
+							stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
+						}
+					}
+					else
+					{
+						SetForegroundWindow(ppt_show);
+
+						NextPptSlides(temp_currentpage);
+
+						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
+						while (1)
+						{
+							if (!KeyBoradDown[vkcode]) break;
+
+							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
+							{
+								temp_currentpage = PptInfoState.CurrentPage;
+								if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
+								{
+									if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+									{
+										EndPptShow();
+
+										//brush.select = false;
+										//rubber.select = false;
+										penetrate.select = false;
+										//choose.select = true;
+										stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
+									}
+									break;
+								}
+								else if (temp_currentpage == -1) break;
+
+								NextPptSlides(temp_currentpage);
+							}
+
+							this_thread::sleep_for(chrono::milliseconds(15));
+						}
+					}
+				}
+			}
+			else if (m.message == WM_KEYDOWN && m.vkcode == VK_ESCAPE)
+			{
+				auto vkcode = m.vkcode;
+
+				while (KeyBoradDown[vkcode]) this_thread::sleep_for(chrono::milliseconds(20));
+
+				if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
+				{
+					if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+					{
+						EndPptShow();
+
+						//brush.select = false;
+						//rubber.select = false;
+						penetrate.select = false;
+						//choose.select = true;
+						stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
+					}
+				}
+				else EndPptShow();
+			}
+		}
+
+		// 定格 Q
+		if (m.vkcode == (BYTE)0x51 && m.ctrl && m.message == WM_KEYDOWN)
+		{
+			while (1)
+			{
+				if (!KeyBoradDown[(BYTE)0x51])
+				{
+					if (FreezeFrame.mode != 1)
+					{
+						FreezeFrame.mode = 1;
+						penetrate.select = false;
+
+						if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) FreezeFrame.select = true;
+					}
+					else
+					{
+						FreezeFrame.mode = 0;
+						FreezeFrame.select = false;
+					}
+
+					break;
+				}
+
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+		}
+		// 穿透 E
+		if (m.vkcode == (BYTE)0x45 && m.ctrl && m.message == WM_KEYDOWN)
+		{
+			while (1)
+			{
+				if (!KeyBoradDown[(BYTE)0x45])
+				{
+					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection)
+					{
+						if (penetrate.select)
+						{
+							penetrate.select = false;
+							if (FreezeFrame.mode == 2) FreezeFrame.mode = 1;
+						}
+						else
+						{
+							if (FreezeFrame.mode == 1) FreezeFrame.mode = 2;
+							penetrate.select = true;
+						}
+					}
+
+					break;
+				}
+
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+		}
+
+		// 撤回 Z
+		if (m.vkcode == (BYTE)0x5A && m.message == WM_KEYDOWN)
+		{
+			while (1)
+			{
+				if (!KeyBoradDown[(BYTE)0x5A])
+				{
+					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && (!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0))) IdtRecall();
+					else if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && RecallImage.empty() && current_record_pointer <= total_record_pointer + 1 && practical_total_record_pointer) IdtRecovery();
+
+					break;
+				}
+
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+		}
+
+		hiex::flushmessage_win32(EM_KEY, drawpad_window);
+	}
 }
 
 void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
@@ -1744,6 +1927,7 @@ int drawpad_main()
 	DrawpadDrawing_thread.detach();
 	thread DrawpadInstallHookThread(DrawpadInstallHook);
 	DrawpadInstallHookThread.detach();
+	thread(KeyboardInteraction).detach();
 	{
 		SetImageColor(alpha_drawpad, RGBA(0, 0, 0, 0), true);
 

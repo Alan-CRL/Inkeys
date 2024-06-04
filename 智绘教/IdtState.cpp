@@ -1,6 +1,8 @@
 #include "IdtState.h"
 
 #include "IdtDraw.h"
+#include "IdtDrawpad.h"
+#include "IdtPlug-in.h"
 #include "IdtWindow.h"
 
 StateModeClass stateMode;
@@ -39,6 +41,169 @@ bool SetPenColor(COLORREF targetColor)
 	}
 	else return false;
 
+	return true;
+}
+bool ChangeStateModeToSelection()
+{
+	// 标识绘制等待
+	{
+		unique_lock<shared_mutex> lockdrawWaitingSm(drawWaitingSm);
+		drawWaiting = true;
+		lockdrawWaitingSm.unlock();
+	}
+	// 防止绘图时冲突
+	{
+		shared_lock lockStrokeImageListSm(StrokeImageListSm);
+		bool start = !StrokeImageList.empty();
+		lockStrokeImageListSm.unlock();
+
+		// 正在绘制则取消操作
+		if (start)
+		{
+			// 取消标识绘制等待
+			{
+				unique_lock lockdrawWaitingSm(drawWaitingSm);
+				drawWaiting = false;
+				lockdrawWaitingSm.unlock();
+			}
+			return false;
+		}
+	}
+
+	// 切换状态
+	{
+		if (!FreezeFrame.select || penetrate.select) FreezeFrame.mode = 0, FreezeFrame.select = false;
+		if (penetrate.select) penetrate.select = false;
+
+		stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
+	}
+
+	// 取消标识绘制等待
+	{
+		unique_lock lockdrawWaitingSm(drawWaitingSm);
+		drawWaiting = false;
+		lockdrawWaitingSm.unlock();
+	}
+	return true;
+}
+bool ChangeStateModeToPen()
+{
+	// 标识绘制等待
+	{
+		unique_lock<shared_mutex> lockdrawWaitingSm(drawWaitingSm);
+		drawWaiting = true;
+		lockdrawWaitingSm.unlock();
+	}
+	// 防止绘图时冲突
+	{
+		shared_lock lockStrokeImageListSm(StrokeImageListSm);
+		bool start = !StrokeImageList.empty();
+		lockStrokeImageListSm.unlock();
+
+		// 正在绘制则取消操作
+		if (start)
+		{
+			// 取消标识绘制等待
+			{
+				unique_lock lockdrawWaitingSm(drawWaitingSm);
+				drawWaiting = false;
+				lockdrawWaitingSm.unlock();
+			}
+			return false;
+		}
+	}
+
+	// 切换状态
+	{
+		stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
+	}
+
+	// 取消标识绘制等待
+	{
+		unique_lock lockdrawWaitingSm(drawWaitingSm);
+		drawWaiting = false;
+		lockdrawWaitingSm.unlock();
+	}
+	return true;
+}
+bool ChangeStateModeToShape()
+{
+	// 标识绘制等待
+	{
+		unique_lock<shared_mutex> lockdrawWaitingSm(drawWaitingSm);
+		drawWaiting = true;
+		lockdrawWaitingSm.unlock();
+	}
+	// 防止绘图时冲突
+	{
+		shared_lock lockStrokeImageListSm(StrokeImageListSm);
+		bool start = !StrokeImageList.empty();
+		lockStrokeImageListSm.unlock();
+
+		// 正在绘制则取消操作
+		if (start)
+		{
+			// 取消标识绘制等待
+			{
+				unique_lock lockdrawWaitingSm(drawWaitingSm);
+				drawWaiting = false;
+				lockdrawWaitingSm.unlock();
+			}
+			return false;
+		}
+	}
+
+	// 切换状态
+	{
+		stateMode.StateModeSelect = StateModeSelectEnum::IdtShape;
+	}
+
+	// 取消标识绘制等待
+	{
+		unique_lock lockdrawWaitingSm(drawWaitingSm);
+		drawWaiting = false;
+		lockdrawWaitingSm.unlock();
+	}
+	return true;
+}
+bool ChangeStateModeToEraser()
+{
+	// 标识绘制等待
+	{
+		unique_lock<shared_mutex> lockdrawWaitingSm(drawWaitingSm);
+		drawWaiting = true;
+		lockdrawWaitingSm.unlock();
+	}
+	// 防止绘图时冲突
+	{
+		shared_lock lockStrokeImageListSm(StrokeImageListSm);
+		bool start = !StrokeImageList.empty();
+		lockStrokeImageListSm.unlock();
+
+		// 正在绘制则取消操作
+		if (start)
+		{
+			// 取消标识绘制等待
+			{
+				unique_lock lockdrawWaitingSm(drawWaitingSm);
+				drawWaiting = false;
+				lockdrawWaitingSm.unlock();
+			}
+			return false;
+		}
+	}
+
+	// 切换状态
+	{
+		stateMode.StateModeSelect = StateModeSelectEnum::IdtEraser;
+	}
+
+	// 取消标识绘制等待
+	{
+		unique_lock lockdrawWaitingSm(drawWaitingSm);
+		drawWaiting = false;
+		lockdrawWaitingSm.unlock();
+	}
 	return true;
 }
 

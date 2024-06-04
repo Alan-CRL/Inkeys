@@ -88,6 +88,10 @@ extern StateModeClass stateMode;
 
 bool SetPenWidth(float targetWidth);
 bool SetPenColor(COLORREF targetColor);
+bool ChangeStateModeToSelection();
+bool ChangeStateModeToPen();
+bool ChangeStateModeToShape();
+bool ChangeStateModeToEraser();
 
 void StateMonitoring();
 

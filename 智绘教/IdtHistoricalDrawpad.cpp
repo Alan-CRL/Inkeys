@@ -60,7 +60,7 @@ int current_record_pointer, total_record_pointer;
 int reference_record_pointer, practical_total_record_pointer;
 Json::Value record_value;
 
-//载入记录
+// 载入记录
 void LoadDrawpad()
 {
 	if (_waccess((StringToWstring(globalPath) + L"ScreenShot\\attribute_directory.json").c_str(), 4) == 0)
@@ -148,7 +148,7 @@ void LoadDrawpad()
 	current_record_pointer = reference_record_pointer = 1;
 	total_record_pointer = practical_total_record_pointer = (int)record_value["Image_Properties"].size();
 }
-//保存图像到指定目录
+// 保存图像到指定目录
 void SaveScreenShot(IMAGE img, bool record_pointer_add)
 {
 	shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
@@ -323,9 +323,6 @@ void IdtRecall()
 	{
 		reserve_drawpad = true;
 
-		//brush.select = true;
-		//rubber.select = false;
-		//choose.select = false;
 		stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
 	}
 
@@ -343,9 +340,6 @@ void IdtRecovery()
 	if (current_record_pointer == total_record_pointer + 1)
 	{
 		stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
-		//choose.select = true;
-		//brush.select = false;
-		//rubber.select = false;
 
 		reference_record_pointer = 1;
 		return;
@@ -450,9 +444,6 @@ void IdtRecovery()
 	{
 		reserve_drawpad = true;
 
-		//brush.select = true;
-		//rubber.select = false;
-		//choose.select = false;
 		stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
 	}
 

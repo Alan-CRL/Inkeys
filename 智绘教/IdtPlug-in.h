@@ -14,9 +14,6 @@
 // All function and variable descriptions should be in the corresponding cpp file.
 // 所有的函数和变量说明应该在对应的 cpp 文件中。
 
-extern shared_mutex PPTManipulatedSm;
-extern chrono::high_resolution_clock::time_point PPTManipulated;
-
 struct PPTUIControlStruct
 {
 	float v, s, e;
@@ -49,7 +46,6 @@ struct PptInfoStateStruct
 extern PptInfoStateStruct PptInfoStateBuffer;
 extern PptInfoStateStruct PptInfoState;
 extern bool PptWindowBackgroundUiChange;
-extern bool SeewoCameraIsOpen;
 
 extern wstring pptComVersion;
 wstring GetPptComVersion();
@@ -60,9 +56,6 @@ bool EndPptShow();
 
 void GetPptState();
 void PPTLinkageMain();
-
-// 发现 希沃视频展台 窗口
-void BlackBlock();
 
 // --------------------------------------------------
 // 插件

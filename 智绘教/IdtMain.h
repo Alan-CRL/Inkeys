@@ -17,13 +17,13 @@
 
 #pragma once
 
-// #define IDT_RELEASE
+#define IDT_RELEASE
 // #pragma comment( linker, "/subsystem:windows /entry:mainCRTStartup" )
 
 // 智绘教最低兼容 Windows 7 sp1
 // #define _WIN32_WINNT 0x0601
 // #define WINVER 0x0601
-
+//
 //基础类
 #include <iostream>									// 提供标准输入输出流
 #include <thread>									// 提供线程相关的类和函数
@@ -66,9 +66,6 @@
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/async.h>
 
-//智绘教服务器停用
-//#include "IdtKey.h" // 服务器密钥
-
 //链接库
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "comsuppw.lib")
@@ -108,5 +105,5 @@ void Testi(long long t);
 void Testw(wstring t);
 void Testa(string t);
 
-#define Sleep(int) this_thread::sleep_for(chrono::milliseconds(int))
+// this_thread::sleep_for(chrono::milliseconds(int))
 #endif

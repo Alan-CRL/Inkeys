@@ -85,42 +85,11 @@ void FreezeFrameWindow()
 					show_freeze_window = true;
 				}
 
-				if (SeewoCameraIsOpen) wait = 480;
 				while (!offSignal)
 				{
 					if (FreezeFrame.mode != 1 || ppt_show != NULL) break;
 
-					if (wait > 0 && SeewoCameraIsOpen)
-					{
-						SetImageColor(freeze_background, RGBA(0, 0, 0, 0), true);
-
-						hiex::EasyX_Gdiplus_FillRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 160, (float)GetSystemMetrics(SM_CYSCREEN) - 200, 320, 50, 20, 20, RGBA(255, 255, 225, min(255, wait)), RGBA(0, 0, 0, min(150, wait)), 2, true, SmoothingModeHighQuality, &freeze_background);
-
-						Graphics graphics(GetImageHDC(&freeze_background));
-						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 24, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(hiex::ConvertToGdiplusColor(RGBA(255, 255, 255, min(255, wait)), true));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							dwords_rect.left = GetSystemMetrics(SM_CXSCREEN) / 2 - 160;
-							dwords_rect.top = GetSystemMetrics(SM_CYSCREEN) - 200;
-							dwords_rect.right = GetSystemMetrics(SM_CXSCREEN) / 2 + 160;
-							dwords_rect.bottom = GetSystemMetrics(SM_CYSCREEN) - 200 + 52;
-						}
-						graphics.DrawString(L"智绘教已开启 背景定格", -1, &gp_font, hiex::RECTToRectF(dwords_rect), &stringFormat, &WordBrush);
-
-						ulwi.hdcSrc = GetImageHDC(&freeze_background);
-						UpdateLayeredWindowIndirect(freeze_window, &ulwi);
-
-						wait -= 8;
-
-						if (wait <= 0)
-						{
-							SetImageColor(freeze_background, RGBA(0, 0, 0, 0), true);
-							ulwi.hdcSrc = GetImageHDC(&freeze_background);
-							UpdateLayeredWindowIndirect(freeze_window, &ulwi);
-						}
-					}
-					else if (FreezeRecall > 0)
+					if (FreezeRecall > 0)
 					{
 						SetImageColor(freeze_background, RGBA(0, 0, 0, 0), true);
 
