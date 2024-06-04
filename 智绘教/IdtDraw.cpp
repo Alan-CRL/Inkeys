@@ -8,9 +8,6 @@ IMAGE ColorPaletteImg;
 shared_mutex ColorPaletteSm;
 
 penetrateStruct penetrate; //窗口穿透
-chooseStruct choose; //选择
-brushStruct brush = { false,3,1,RGBA(0,0,0,0),RGBA(0,0,0,0),3,40 }; //画笔
-rubberStruct rubber; //橡皮
 testStruct test; //调测
 
 plug_in_RandomRollCallStruct plug_in_RandomRollCall;
@@ -127,6 +124,7 @@ COLORREF InvertColor(COLORREF color, bool alpha_enable)
 	// 返回反色
 	return inverted;
 }
+
 //保存图像到本地
 void saveImageToPNG(IMAGE img, const char* filename, bool alpha, int compression_level)
 {
@@ -278,6 +276,11 @@ void SetAlphaToOne(IMAGE* pImg) // pImg是绘图设备指针
 			pBuffer[i] = color;
 		}
 	}
+}
+
+double EuclideanDistance(POINT a, POINT b)
+{
+	return std::sqrt(std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2));
 }
 
 //智能绘图部分

@@ -213,9 +213,6 @@
     <ClInclude Include="zip_utils\zip.h">
       <Filter>头文件\ZipUtils</Filter>
     </ClInclude>
-    <ClInclude Include="IdtKey.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="IdtMain.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -365,6 +362,15 @@
     </ClInclude>
     <ClInclude Include="additional\ink_stroke_modeler\types.h">
       <Filter>头文件\ink_stroke_modeler</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtD2DPreparation.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtHash.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtState.h">
+      <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -530,9 +536,6 @@
     <ClCompile Include="IdtDrawpad.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="IdtKey.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="IdtRts.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -626,9 +629,21 @@
     <ClCompile Include="additional\ink_stroke_modeler\types.cc">
       <Filter>头文件\ink_stroke_modeler</Filter>
     </ClCompile>
+    <ClCompile Include="IdtD2DPreparation.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtHash.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtState.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="智绘教.rc">
+      <Filter>资源文件</Filter>
+    </ResourceCompile>
+    <ResourceCompile Include="src\icon.rc">
       <Filter>资源文件</Filter>
     </ResourceCompile>
   </ItemGroup>
@@ -759,6 +774,15 @@
     <Image Include="src\icon.png">
       <Filter>资源文件</Filter>
     </Image>
+    <Image Include="src\PluginFlag1.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\PluginFlag2.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\sign5.png">
+      <Filter>资源文件</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />
@@ -769,6 +793,7 @@
     <None Include="exe\智绘教CrashedHandlerClose.exe" />
     <None Include="PptCOM.dll" />
     <None Include="exe\智绘教StartupItemSettings.exe" />
+    <None Include="exe\DesktopDrawpadBlocker.exe" />
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="..\PptCOM\PptCOM.manifest" />

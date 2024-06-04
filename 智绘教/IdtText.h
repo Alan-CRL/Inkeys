@@ -8,21 +8,21 @@ extern StringFormat stringFormat_left;
 extern RECT words_rect, dwords_rect, pptwords_rect;
 
 //string to wstring
-wstring string_to_wstring(const string& s);
+wstring StringToWstring(const string& s);
 //wstring to string
-string wstring_to_string(const wstring& ws);
+string WstringToString(const wstring& ws);
 
-//string ת wstring
-wstring convert_to_wstring(const string s);
-//wstring ת string
-string convert_to_string(const wstring str);
-//c# string ת wstring
-wstring bstr_to_wstring(const _bstr_t& bstr);
-//string ת LPCWSTR
-LPCWSTR stringtoLPCWSTR(string str);
-//string ת urlencode
-string convert_to_urlencode(string str);
-//utf-8 ת GBK
-string convert_to_gbk(string strUTF8);
-//GBK ת utf-8
-string convert_to_utf8(string str);
+//c# string to wstring
+wstring BstrToWstring(const _bstr_t& bstr);
+//wstring to c# string
+_bstr_t WstringToBstr(const wstring& str);
+
+//string to LPCWSTR
+LPCWSTR StringToLPCWSTR(string str);
+//string to urlencode
+string StringToUrlencode(string str);
+
+//utf-8 to GBK
+string ConvertToGbk(string strUTF8);
+//GBK to utf-8
+string ConvertToUtf8(string str);

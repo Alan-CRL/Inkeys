@@ -348,6 +348,7 @@ namespace HiEasyX
 		int h = 480,
 		int flag = EW_NORMAL,
 		LPCTSTR lpszWndTitle = _T(""),
+		LPCTSTR lpszClassName = _T(""),
 		WNDPROC WindowProcess = nullptr,
 		HWND hParent = nullptr
 	);

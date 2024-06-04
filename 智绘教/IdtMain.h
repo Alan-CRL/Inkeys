@@ -18,11 +18,12 @@
 #pragma once
 
 #define IDT_RELEASE
+// #pragma comment( linker, "/subsystem:windows /entry:mainCRTStartup" )
 
-// 智绘教最低兼容 Windows 7 sp0（当前为 sp1）
+// 智绘教最低兼容 Windows 7 sp1
 // #define _WIN32_WINNT 0x0601
 // #define WINVER 0x0601
-
+//
 //基础类
 #include <iostream>									// 提供标准输入输出流
 #include <thread>									// 提供线程相关的类和函数
@@ -43,9 +44,7 @@
 
 //文件类
 #include <filesystem>								// 文件系统库
-#include "json/reader.h"							// JSON读取库
-#include "json/value.h"								// JSON值操作库
-#include "json/writer.h"							// JSON写入库
+#include "json/json.h"								// JSON操作库
 #include "hashlib2plus/hashlibpp.h"					// 哈希库
 #include "zip_utils/unzip.h"						// 解压缩库
 
@@ -67,9 +66,6 @@
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/async.h>
 
-//智绘教服务器停用
-//#include "IdtKey.h" // 服务器密钥
-
 //链接库
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "comsuppw.lib")
@@ -86,37 +82,28 @@
 using namespace std;
 using namespace Gdiplus;
 
-#define KEY_DOWN(VK_NONAME) ((GetAsyncKeyState(VK_NONAME) & 0x8000) ? 1:0)
-
 #define HiBeginDraw() BEGIN_TASK()
 #define HiEndDraw() END_TASK(); REDRAW_WINDOW()
 
-#define Sleep(int) this_thread::sleep_for(chrono::milliseconds(int))
-
-extern bool already;
-
 extern wstring buildTime; //构建时间
-extern string edition_date; //程序发布日期
-extern string edition_channel;
-extern string edition_code; //程序版本
+extern string editionDate; //程序发布日期
+extern string editionChannel;
+extern string editionCode; //程序版本
 
-extern wstring userid; //用户ID（主板序列号）
-extern string global_path; //程序当前路径
+extern wstring userId; //用户ID（主板序列号）
+extern string globalPath; //程序当前路径
 
-extern double server_updata_error, procedure_updata_error;
-extern wstring server_updata_error_reason;
-
-extern int off_signal, off_signal_ready; //关闭指令
-extern map <wstring, bool> thread_status; //线程状态管理
+extern int offSignal, offSignalReady; //关闭指令
+extern map <wstring, bool> threadStatus; //线程状态管理
 
 extern shared_ptr<spdlog::logger> IDTLogger;
 
-// 路径权限检测
-bool HasReadWriteAccess(const std::wstring& directoryPath);
 //调测专用
 #ifndef IDT_RELEASE
 void Test();
 void Testi(long long t);
 void Testw(wstring t);
 void Testa(string t);
+
+// this_thread::sleep_for(chrono::milliseconds(int))
 #endif

@@ -91,7 +91,7 @@ void DisplayManagementPolling()
 	HWND hwnd = CreateWindowEx(0, L"IdtDisplayManagementClass", NULL, 0, 0, 0, 0, 0, NULL, NULL, NULL, NULL);
 
 	MSG msg;
-	while (!off_signal && GetMessage(&msg, NULL, 0, 0))
+	while (!offSignal && GetMessage(&msg, NULL, 0, 0))
 	{
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);

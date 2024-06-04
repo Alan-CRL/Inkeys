@@ -14,9 +14,6 @@
 // All function and variable descriptions should be in the corresponding cpp file.
 // 所有的函数和变量说明应该在对应的 cpp 文件中。
 
-extern shared_mutex PPTManipulatedSm;
-extern chrono::high_resolution_clock::time_point PPTManipulated;
-
 struct PPTUIControlStruct
 {
 	float v, s, e;
@@ -44,18 +41,24 @@ struct PptImgStruct
 extern PptImgStruct PptImg;
 struct PptInfoStateStruct
 {
-	int CurrentPage, TotalPage;
+	long CurrentPage, TotalPage;
 };
 extern PptInfoStateStruct PptInfoStateBuffer;
 extern PptInfoStateStruct PptInfoState;
 extern bool PptWindowBackgroundUiChange;
-extern bool SeewoCameraIsOpen;
 
-wstring LinkTest();
-wstring IsPptDependencyLoaded();
+extern wstring pptComVersion;
+wstring GetPptComVersion();
+
+void NextPptSlides(int check);
+void PreviousPptSlides();
 bool EndPptShow();
-int NextPptSlides(int check);
-int PreviousPptSlides();
+
 void GetPptState();
 void PPTLinkageMain();
-void BlackBlock();
+
+// --------------------------------------------------
+// 插件
+
+// DesktopDrawpadBlocker 插件
+void StartDesktopDrawpadBlocker();

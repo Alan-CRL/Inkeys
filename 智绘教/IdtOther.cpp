@@ -1,5 +1,14 @@
 #include "IdtOther.h"
 
+#include <io.h>
+#include <objbase.h>
+#include <psapi.h>
+#include <shlobj.h>
+#include <shlwapi.h>
+#include <tlhelp32.h>
+#pragma comment(lib, "shlwapi.lib")
+#pragma comment(lib, "shell32.lib")
+
 wstring GetCurrentExeDirectory()
 {
 	wchar_t buffer[MAX_PATH];
@@ -226,4 +235,87 @@ void SetShortcut()
 
 	SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
 	return;
+}
+
+// 程序进程状态获取
+bool isProcessRunning(const std::wstring& processPath)
+{
+	PROCESSENTRY32 entry;
+	entry.dwSize = sizeof(PROCESSENTRY32);
+
+	HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
+
+	if (Process32First(snapshot, &entry)) {
+		do {
+			// 打开进程句柄
+			HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, entry.th32ProcessID);
+			if (process == NULL) {
+				continue;
+			}
+
+			// 获取进程完整路径
+			wchar_t path[MAX_PATH];
+			DWORD size = MAX_PATH;
+			if (QueryFullProcessImageName(process, 0, path, &size)) {
+				if (processPath == path) {
+					CloseHandle(process);
+					CloseHandle(snapshot);
+					return true;
+				}
+			}
+
+			CloseHandle(process);
+		} while (Process32Next(snapshot, &entry));
+	}
+
+	CloseHandle(snapshot);
+	return false;
+}
+// 进程程序路径查询
+int ProcessRunningCnt(const std::wstring& processPath)
+{
+	int ret = 0;
+
+	PROCESSENTRY32 entry;
+	entry.dwSize = sizeof(PROCESSENTRY32);
+	HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
+
+	if (Process32First(snapshot, &entry))
+	{
+		while (Process32Next(snapshot, &entry))
+		{
+			// 获取进程的完整路径
+			wchar_t processFullPath[MAX_PATH] = L"";
+
+			HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, entry.th32ProcessID);
+			if (hProcess)
+			{
+				HMODULE hMod;
+				DWORD cbNeeded;
+				if (EnumProcessModules(hProcess, &hMod, sizeof(hMod), &cbNeeded))
+				{
+					GetModuleFileNameExW(hProcess, hMod, processFullPath, MAX_PATH);
+				}
+				CloseHandle(hProcess);
+			}
+
+			// 比较路径是否相同
+			if (wcslen(processFullPath) > 0 && wcscmp(processFullPath, processPath.c_str()) == 0) ret++;
+		}
+	}
+
+	CloseHandle(snapshot);
+	return ret;
+}
+
+// 路径权限检测
+bool HasReadWriteAccess(const std::wstring& directoryPath)
+{
+	DWORD attributes = GetFileAttributesW(directoryPath.c_str());
+	if (attributes == INVALID_FILE_ATTRIBUTES) return false;
+	if (!(attributes & FILE_ATTRIBUTE_DIRECTORY)) return false;
+	if (attributes & FILE_ATTRIBUTE_READONLY) return false;
+	if (attributes & FILE_ATTRIBUTE_READONLY) return false;
+
+	return true;
 }

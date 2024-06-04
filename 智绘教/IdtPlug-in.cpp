@@ -25,6 +25,7 @@
 
 #include "IdtPlug-in.h"
 
+#include "IdtConfiguration.h"
 #include "IdtDisplayManagement.h"
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
@@ -34,25 +35,19 @@
 #include "IdtText.h"
 #include "IdtWindow.h"
 #include "IdtOther.h"
-
-#include <d2d1.h>
-#include <dwrite.h>
-#include <wrl/client.h>
-#pragma comment(lib, "d2d1.lib")
-#pragma comment(lib, "dwrite.lib")
-
-using namespace Microsoft::WRL;
+#include "IdtD2DPreparation.h"
+#include "IdtHistoricalDrawpad.h"
+#include "IdtImage.h"
+#include "IdtState.h"
 
 // --------------------------------------------------
 // PPT controls | PPT 控件
 
-// TODO 控件缩放、控件置于左右两侧、控件拖动、UI 计算与绘制分离
+// TODO 1 控件缩放、控件置于左右两侧、控件拖动、UI 计算与绘制分离
 
 #import "PptCOM.tlb" // C# Class Library PptCOM Project Library (PptCOM. cs) | C# 类库 PptCOM 项目库 (PptCOM. cs)
 using namespace PptCOM;
-
-shared_mutex PPTManipulatedSm;
-chrono::high_resolution_clock::time_point PPTManipulated;
+IPptCOMServerPtr PptCOMPto;
 
 map<wstring, PPTUIControlStruct> PPTUIControl, PPTUIControlTarget;
 map<wstring, PPTUIControlStruct>& map<wstring, PPTUIControlStruct>::operator=(const map<wstring, PPTUIControlStruct>& m)
@@ -83,28 +78,6 @@ map<wstring, wstring> PPTUIControlString, PPTUIControlStringTarget;
 float PPTUIScale = 1.0f;
 bool PPTUIScaleRecommend = true;
 
-template <class T> void DxObjectSafeRelease(T** ppT)
-{
-	if (*ppT)
-	{
-		(*ppT)->Release();
-		*ppT = NULL;
-	}
-}
-D2D1::ColorF ConvertToD2DColor(COLORREF Color, bool ReserveAlpha = true)
-{
-	return D2D1::ColorF(
-		GetRValue(Color) / 255.0f,
-		GetGValue(Color) / 255.0f,
-		GetBValue(Color) / 255.0f,
-		(ReserveAlpha ? GetAValue(Color) : 255) / 255.0f
-	);
-}
-void SetAlpha(COLORREF& Color, int Alpha)
-{
-	Color = (COLORREF)(((Color) & 0xFFFFFF) | ((Alpha) << 24));
-}
-
 PptImgStruct PptImg = { false }; // It stores image data generated during slide shows. | 其存储幻灯片放映时产生的图像数据。
 PptInfoStateStruct PptInfoState = { -1, -1 }; // It stores the current status of the slide show software, where First represents the total number of slide pages and Second represents the current slide number. | 其存储幻灯片放映软件当前的状态，First 代表总幻灯片页数，Second 代表当前幻灯片编号。
 PptInfoStateStruct PptInfoStateBuffer = { -1, -1 }; // Buffered variables for ·PptInfoState·. *1 | PptInfoState 的缓冲变量。*1
@@ -115,21 +88,21 @@ IMAGE PptWindowBackground; // PPT window background canvas | PPT 窗口背景画布
 int PptAdvanceMode = -1;
 bool PptWindowBackgroundUiChange = true;
 
-wstring LinkTest()
+wstring pptComVersion;
+wstring GetPptComVersion()
 {
-	wstring ret = L"COM库(.dll) 不存在，且发生严重错误，返回值被忽略";
+	wstring ret = L"Error: COM库(.dll) 不存在，且发生严重错误，返回值被忽略";
 
-	if (_waccess((string_to_wstring(global_path) + L"PptCOM.dll").c_str(), 4) == 0)
+	if (_waccess((StringToWstring(globalPath) + L"PptCOM.dll").c_str(), 4) == 0)
 	{
-		IPptCOMServerPtr pto;
 		try
 		{
-			_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
-			ret = bstr_to_wstring(pto->LinkTest());
+			ret = BstrToWstring(PptCOMPto->GetVersion());
+			if (!regex_match(ret, wregex(L"\\d{8}[a-z]"))) ret = L"Error: " + ret;
 		}
 		catch (_com_error& err)
 		{
-			ret = L"COM库(.dll) 存在，COM成功初始化，但C++端COM接口异常：" + wstring(err.ErrorMessage());
+			ret = L"Error: COM库(.dll) 存在，COM成功初始化，但C++端COM接口异常：" + wstring(err.ErrorMessage());
 		}
 	}
 	else
@@ -138,26 +111,26 @@ wstring LinkTest()
 
 		if (_wfullpath(absolutePath, L"PptCOM.dll", _MAX_PATH) != NULL)
 		{
-			ret = L"COM库(.dll) 不存在，预期调用目录为：\"" + string_to_wstring(global_path) + L"PptCOM.dll\"";
+			ret = L"Error: COM库(.dll) 不存在，预期调用目录为：\"" + StringToWstring(globalPath) + L"PptCOM.dll\"";
 		}
-		else ret = L"COM库(.dll) 不存在，预期调用目录测算失败";
+		else ret = L"Error: COM库(.dll) 不存在，预期调用目录测算失败";
 	}
 
 	return ret;
 }
-wstring IsPptDependencyLoaded()
-{
-	wstring ret = L"PPT 联动组件异常，且发生严重错误，返回值被忽略";
 
-	IPptCOMServerPtr pto;
+wstring GetPptTitle()
+{
+	wstring ret = L"";
+
 	try
 	{
-		_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
-		ret = L"COM接口正常，C#类库反馈信息：" + bstr_to_wstring(pto->IsPptDependencyLoaded());
+		ret = BstrToWstring(PptCOMPto->slideNameIndex());
+
+		return ret;
 	}
-	catch (_com_error& err)
+	catch (_com_error)
 	{
-		ret = L"COM接口异常：" + wstring(err.ErrorMessage());
 	}
 
 	return ret;
@@ -166,12 +139,9 @@ HWND GetPptShow()
 {
 	HWND hWnd = NULL;
 
-	IPptCOMServerPtr pto;
 	try
 	{
-		_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
-
-		_variant_t result = pto->GetPptHwnd();
+		_variant_t result = PptCOMPto->GetPptHwnd();
 		hWnd = (HWND)result.llVal;
 
 		return hWnd;
@@ -182,31 +152,34 @@ HWND GetPptShow()
 
 	return NULL;
 }
-wstring GetPptTitle()
-{
-	wstring ret = L"";
 
-	IPptCOMServerPtr pto;
+void NextPptSlides(int check)
+{
 	try
 	{
-		_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
-		ret = bstr_to_wstring(pto->slideNameIndex());
-
-		return ret;
+		PptCOMPto->NextSlideShow(check);
 	}
 	catch (_com_error)
 	{
 	}
-
-	return ret;
+	return;
+}
+void PreviousPptSlides()
+{
+	try
+	{
+		PptCOMPto->PreviousSlideShow();
+	}
+	catch (_com_error)
+	{
+	}
+	return;
 }
 bool EndPptShow()
 {
-	IPptCOMServerPtr pto;
 	try
 	{
-		_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
-		pto->EndSlideShow();
+		PptCOMPto->EndSlideShow();
 
 		return true;
 	}
@@ -217,384 +190,51 @@ bool EndPptShow()
 	return false;
 }
 
-int NextPptSlides(int check)
-{
-	IPptCOMServerPtr pto;
-	try
-	{
-		_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
-		return pto->NextSlideShow(check);
-	}
-	catch (_com_error)
-	{
-	}
-	return -1;
-}
-int PreviousPptSlides()
-{
-	IPptCOMServerPtr pto;
-	try
-	{
-		_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
-		return pto->PreviousSlideShow();
-	}
-	catch (_com_error)
-	{
-	}
-	return -1;
-}
-
-// 获取 PPT 当前页编号
-int GetCurrentPage()
-{
-	int currentSlides = -1;
-
-	IPptCOMServerPtr pto;
-	try
-	{
-		_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
-		currentSlides = pto->currentSlideIndex();
-	}
-	catch (_com_error)
-	{
-	}
-
-	return currentSlides;
-}
-// 获取 PPT 总页数
-int GetTotalPage()
-{
-	int totalSlides = -1;
-
-	IPptCOMServerPtr pto;
-	try
-	{
-		_com_util::CheckError(pto.CreateInstance(_uuidof(PptCOMServer)));
-		totalSlides = pto->totalSlideIndex();
-		//Testw(bstr_to_wstring(pto->totalSlideIndex()));
-	}
-	catch (_com_error)
-	{
-	}
-
-	return totalSlides;
-}
 // PPT 状态获取轮询函数
 void GetPptState()
 {
-	thread_status[L"GetPptState"] = true;
+	threadStatus[L"GetPptState"] = true;
 
-	while (!off_signal)
+	// 初始化
 	{
-		if (PptInfoState.CurrentPage == -1) PptInfoState.TotalPage = GetTotalPage();
+		bool rel = false;
 
-		if (PptInfoState.TotalPage != -1) PptInfoState.CurrentPage = GetCurrentPage();
-		else PptInfoState.CurrentPage = -1;
-
-		if (PptInfoState.TotalPage == -1 && !off_signal) for (int i = 0; i <= 30 && !off_signal; i++) Sleep(100);
-		else if (!off_signal)
+		try
 		{
-			for (int i = 0; i <= 30 && !off_signal; i++)
-			{
-				Sleep(100);
+			_com_util::CheckError(PptCOMPto.CreateInstance(_uuidof(PptCOMServer)));
+			rel = PptCOMPto->Initialization(&PptInfoState.TotalPage, &PptInfoState.CurrentPage);
+		}
+		catch (_com_error)
+		{
+		}
 
-				std::shared_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-				bool ret = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - PPTManipulated).count() <= 3000;
-				lock1.unlock();
-				if (ret) break;
-			}
+		pptComVersion = GetPptComVersion();
+	}
+
+	while (!offSignal)
+	{
+		int tmp = -1;
+		try
+		{
+			tmp = PptCOMPto->IsPptOpen();
+		}
+		catch (_com_error)
+		{
+		}
+
+		if (tmp <= 0)
+		{
+			for (int i = 0; i <= 30 && !offSignal; i++)
+				this_thread::sleep_for(chrono::milliseconds(100));
 		}
 	}
 
-	thread_status[L"GetPptState"] = false;
+	threadStatus[L"GetPptState"] = false;
 }
-
-/*
-* Dwrite win7 支持版本不能从内存中加载字体，故只能从本地字体文件加载
-*
-class IdtFontFileStream :public IDWriteFontFileStream
-{
-public:
-	// IDWriteFontFileLoader methods
-	STDMETHOD(GetFileSize)(UINT64* fileSize) override
-	{
-		//Testi(1);
-
-		*fileSize = m_collectionKeySize;
-
-		return S_OK;
-	}
-	STDMETHOD(GetLastWriteTime)(UINT64* lastWriteTime) override
-	{
-		//Testi(2);
-
-		*lastWriteTime = 0;
-
-		return S_OK;
-	}
-	STDMETHOD(ReadFileFragment)(void const** fragmentStart, UINT64 fileOffset, UINT64 fragmentSize, void** fragmentContext) override
-	{
-		//Testi(3);
-
-		//Testi(fileOffset);
-		//Testi(fragmentSize);
-
-		void const* offsetAddress = reinterpret_cast<void const*>(reinterpret_cast<uintptr_t>(m_collectionKey) + fileOffset);
-
-		vector<BYTE>* fontData = new vector<BYTE>(fragmentSize);
-		memcpy(fontData->data(), offsetAddress, fragmentSize);
-
-		//Testw(to_wstring((*fontData)[0]) + L" " + to_wstring((*fontData)[1]) + L" " + to_wstring((*fontData)[2]) + L" " + to_wstring((*fontData)[3]) + L" " + to_wstring((*fontData)[4]) + L" " + to_wstring((*fontData)[5]) + L" " + to_wstring((*fontData)[6]) + L" " + to_wstring((*fontData)[7]));
-
-		*fragmentStart = fontData->data();
-		*fragmentContext = fontData;
-
-		return S_OK;
-	}
-	void STDMETHODCALLTYPE ReleaseFileFragment(void* fragmentContext) override
-	{
-		//Testi(4);
-
-		delete fragmentContext;
-
-		return;
-	}
-
-	// Idt methods
-	STDMETHOD(SetFont)(void const* collectionKey, UINT32 collectionKeySize)
-	{
-		//Testi(5);
-
-		m_collectionKey = collectionKey;
-		m_collectionKeySize = collectionKeySize;
-
-		return S_OK;
-	}
-
-	// IUnknown methods
-	STDMETHOD_(ULONG, AddRef)()
-	{
-		return InterlockedIncrement(&m_cRefCount);
-	}
-	STDMETHOD_(ULONG, Release)()
-	{
-		ULONG cNewRefCount = InterlockedDecrement(&m_cRefCount);
-		if (cNewRefCount == 0)
-		{
-			delete this;
-		}
-		return cNewRefCount;
-	}
-	STDMETHOD(QueryInterface)(REFIID riid, LPVOID* ppvObj)
-	{
-		if ((riid == IID_IStylusSyncPlugin) || (riid == IID_IUnknown))
-		{
-			*ppvObj = this;
-			AddRef();
-			return S_OK;
-		}
-		else if ((riid == IID_IMarshal) && (m_punkFTMarshaller != NULL))
-		{
-			return m_punkFTMarshaller->QueryInterface(riid, ppvObj);
-		}
-
-		*ppvObj = NULL;
-		return E_NOINTERFACE;
-	}
-
-private:
-	void const* m_collectionKey;
-	UINT32 m_collectionKeySize;
-
-	LONG m_cRefCount;
-	IUnknown* m_punkFTMarshaller;
-};
-class IdtFontFileLoader :public IDWriteFontFileLoader
-{
-public:
-	// IDWriteFontFileLoader methods
-	STDMETHOD(CreateStreamFromKey)(void const* fontFileReferenceKey, UINT32 fontFileReferenceKeySize, IDWriteFontFileStream** fontFileStream) override
-	{
-		//Testi(6);
-
-		IdtFontFileStream* D2DFontFileStream = new IdtFontFileStream;
-		D2DFontFileStream->SetFont(fontFileReferenceKey, fontFileReferenceKeySize);
-
-		*fontFileStream = D2DFontFileStream;
-
-		return S_OK;
-	}
-
-	// IUnknown methods
-	STDMETHOD_(ULONG, AddRef)()
-	{
-		return InterlockedIncrement(&m_cRefCount);
-	}
-	STDMETHOD_(ULONG, Release)()
-	{
-		ULONG cNewRefCount = InterlockedDecrement(&m_cRefCount);
-		if (cNewRefCount == 0)
-		{
-			delete this;
-		}
-		return cNewRefCount;
-	}
-	STDMETHOD(QueryInterface)(REFIID riid, LPVOID* ppvObj)
-	{
-		if ((riid == IID_IStylusSyncPlugin) || (riid == IID_IUnknown))
-		{
-			*ppvObj = this;
-			AddRef();
-			return S_OK;
-		}
-		else if ((riid == IID_IMarshal) && (m_punkFTMarshaller != NULL))
-		{
-			return m_punkFTMarshaller->QueryInterface(riid, ppvObj);
-		}
-
-		*ppvObj = NULL;
-		return E_NOINTERFACE;
-	}
-
-private:
-	LONG m_cRefCount;
-	IUnknown* m_punkFTMarshaller;
-};
-*/
-
-class IdtFontFileEnumerator : public IDWriteFontFileEnumerator
-{
-public:
-
-	// IDWriteFontFileEnumerator methods
-	STDMETHOD(GetCurrentFontFile)(IDWriteFontFile** fontFile) override
-	{
-		*fontFile = m_font[m_currentfontCount - 1];
-
-		return S_OK;
-	}
-	STDMETHOD(MoveNext)(BOOL* hasCurrentFile) override
-	{
-		m_currentfontCount++;
-		*hasCurrentFile = m_currentfontCount > (int)m_font.size() ? FALSE : TRUE;
-
-		return S_OK;
-	}
-
-	// Idt methods
-	STDMETHOD(AddFont)(IDWriteFactory* factory, wstring fontPath)
-	{
-		IDWriteFontFile* D2DFont = nullptr;
-
-		// 文件导入方案
-		factory->CreateFontFileReference(fontPath.c_str(), 0, &D2DFont);
-
-		m_font.push_back(D2DFont);
-
-		return S_OK;
-	}
-
-	// IUnknown methods
-	STDMETHOD_(ULONG, AddRef)()
-	{
-		return InterlockedIncrement(&m_cRefCount);
-	}
-	STDMETHOD_(ULONG, Release)()
-	{
-		ULONG cNewRefCount = InterlockedDecrement(&m_cRefCount);
-		if (cNewRefCount == 0)
-		{
-			delete this;
-		}
-		return cNewRefCount;
-	}
-	STDMETHOD(QueryInterface)(REFIID riid, LPVOID* ppvObj)
-	{
-		if ((riid == IID_IStylusSyncPlugin) || (riid == IID_IUnknown))
-		{
-			*ppvObj = this;
-			AddRef();
-			return S_OK;
-		}
-		else if ((riid == IID_IMarshal) && (m_punkFTMarshaller != NULL))
-		{
-			return m_punkFTMarshaller->QueryInterface(riid, ppvObj);
-		}
-
-		*ppvObj = NULL;
-		return E_NOINTERFACE;
-	}
-
-private:
-	int m_currentfontCount = 0;
-	IDWriteFactory* m_D2DTextFactory = nullptr;
-
-	vector<IDWriteFontFile*> m_font;
-
-	LONG m_cRefCount;
-	IUnknown* m_punkFTMarshaller;
-};
-class IdtFontCollectionLoader : public IDWriteFontCollectionLoader
-{
-public:
-
-	// IDWriteFontCollectionLoader methods
-	STDMETHOD(CreateEnumeratorFromKey)(IDWriteFactory* factory, void const* /*collectionKey*/, UINT32 /*collectionKeySize*/, IDWriteFontFileEnumerator** fontFileEnumerator) override
-	{
-		*fontFileEnumerator = D2DFontFileEnumerator;
-
-		return S_OK;
-	}
-
-	// Idt methods
-	STDMETHOD(AddFont)(IDWriteFactory* factory, wstring fontPath)
-	{
-		D2DFontFileEnumerator->AddFont(factory, fontPath);
-
-		return S_OK;
-	}
-
-	// IUnknown methods
-	STDMETHOD_(ULONG, AddRef)()
-	{
-		return InterlockedIncrement(&m_cRefCount);
-	}
-	STDMETHOD_(ULONG, Release)()
-	{
-		ULONG cNewRefCount = InterlockedDecrement(&m_cRefCount);
-		if (cNewRefCount == 0)
-		{
-			delete this;
-		}
-		return cNewRefCount;
-	}
-	STDMETHOD(QueryInterface)(REFIID riid, LPVOID* ppvObj)
-	{
-		if ((riid == IID_IStylusSyncPlugin) || (riid == IID_IUnknown))
-		{
-			*ppvObj = this;
-			AddRef();
-			return S_OK;
-		}
-		else if ((riid == IID_IMarshal) && (m_punkFTMarshaller != NULL))
-		{
-			return m_punkFTMarshaller->QueryInterface(riid, ppvObj);
-		}
-
-		*ppvObj = NULL;
-		return E_NOINTERFACE;
-	}
-
-private:
-	IdtFontFileEnumerator* D2DFontFileEnumerator = new IdtFontFileEnumerator;
-
-	LONG m_cRefCount;
-	IUnknown* m_punkFTMarshaller;
-};
 
 void DrawControlWindow()
 {
-	thread_status[L"DrawControlWindow"] = true;
+	threadStatus[L"DrawControlWindow"] = true;
 
 	//ppt窗口初始化
 	MainMonitorStruct PPTMainMonitor;
@@ -612,22 +252,9 @@ void DrawControlWindow()
 		SetWindowPos(ppt_window, NULL, PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 	}
 
-	// 创建 D2D 工厂
-	ID2D1Factory* Factory = NULL;
-	D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &Factory);
-	// D2D1_FACTORY_TYPE_MULTI_THREADED 多线程后，该参数指定将可以公用一个工厂
-
-	// 创建 DC Render 并指定硬件加速
-	auto Property = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE::D2D1_RENDER_TARGET_TYPE_HARDWARE,
-		D2D1::PixelFormat(
-			DXGI_FORMAT_B8G8R8A8_UNORM,
-			D2D1_ALPHA_MODE_PREMULTIPLIED
-		), 0.0, 0.0, D2D1_RENDER_TARGET_USAGE_GDI_COMPATIBLE, D2D1_FEATURE_LEVEL_DEFAULT
-	);
-
 	// 创建 EasyX 兼容的 DC Render Target
-	ID2D1DCRenderTarget* DCRenderTarget;
-	Factory->CreateDCRenderTarget(&Property, &DCRenderTarget);
+	ID2D1DCRenderTarget* DCRenderTarget = nullptr;
+	D2DFactory->CreateDCRenderTarget(&D2DProperty, &DCRenderTarget);
 
 	// 绑定 EasyX DC
 	RECT PptBackgroundWindowRect = { 0, 0, PptWindowBackground.getwidth(), PptWindowBackground.getheight() };
@@ -743,39 +370,6 @@ void DrawControlWindow()
 			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &PptIconBitmap[3]);
 			delete[] data;
 		}
-	}
-
-	// D2D 字体初始化
-	IDWriteFactory* TextFactory = nullptr;
-	IDWriteFontCollection* D2DFontCollection = nullptr;
-	{
-		if (_waccess((string_to_wstring(global_path) + L"ttf\\hmossscr.ttf").c_str(), 0) == -1)
-		{
-			if (_waccess((string_to_wstring(global_path) + L"ttf").c_str(), 0) == -1)
-			{
-				error_code ec;
-				filesystem::create_directory(string_to_wstring(global_path) + L"ttf", ec);
-			}
-			ExtractResource((string_to_wstring(global_path) + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
-		}
-
-		DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(&TextFactory));
-
-		/*
-		HMODULE hModule = GetModuleHandle(NULL);
-		HRSRC hResource = FindResource(hModule, MAKEINTRESOURCE(198), L"TTF");
-		HGLOBAL hMemory = LoadResource(hModule, hResource);
-		PVOID pResourceData = LockResource(hMemory);
-		DWORD dwResourceSize = SizeofResource(hModule, hResource);
-		*/
-
-		IdtFontCollectionLoader* D2DFontCollectionLoader = new IdtFontCollectionLoader;
-
-		D2DFontCollectionLoader->AddFont(TextFactory, string_to_wstring(global_path) + L"ttf\\hmossscr.ttf");
-
-		TextFactory->RegisterFontCollectionLoader(D2DFontCollectionLoader);
-		TextFactory->CreateCustomFontCollection(D2DFontCollectionLoader, 0, 0, &D2DFontCollection);
-		TextFactory->UnregisterFontCollectionLoader(D2DFontCollectionLoader);
 	}
 
 	//UI 初始化
@@ -965,7 +559,7 @@ void DrawControlWindow()
 
 		// 文字控件
 		{
-			PPTUIControlString[L"Info/Pages"] = L"-1/-1";
+			PPTUIControlString[L"Info/Pages"] = L"Inkeys"; // TODO
 		}
 
 		PPTUIControlTarget = PPTUIControl;
@@ -999,25 +593,27 @@ void DrawControlWindow()
 		ulwi.dwFlags = ULW_ALPHA;
 	}
 
-	do
+	while (!(GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_LAYERED))
 	{
-		Sleep(10);
-		::SetWindowLong(ppt_window, GWL_EXSTYLE, ::GetWindowLong(ppt_window, GWL_EXSTYLE) | WS_EX_LAYERED);
-	} while (!(::GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_LAYERED));
-	do
-	{
-		Sleep(10);
-		::SetWindowLong(ppt_window, GWL_EXSTYLE, ::GetWindowLong(ppt_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
-	} while (!(::GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE));
+		SetWindowLong(ppt_window, GWL_EXSTYLE, GetWindowLong(ppt_window, GWL_EXSTYLE) | WS_EX_LAYERED);
+		if (GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_LAYERED) break;
 
-	magnificationWindowReady++;
+		this_thread::sleep_for(chrono::milliseconds(10));
+	}
+	while (!(GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE))
+	{
+		SetWindowLong(ppt_window, GWL_EXSTYLE, GetWindowLong(ppt_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+		if (GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
+
+		this_thread::sleep_for(chrono::milliseconds(10));
+	}
 
 	int TotalSlides = -1, TotalSlidesLast = -2;
 	int CurrentSlides = -1;
 
 	bool Initialization = false; // 控件初始化完毕
 	clock_t tRecord = clock();
-	for (bool IsShowWindow = false; !off_signal;)
+	for (bool IsShowWindow = false; !offSignal;)
 	{
 		int TotalSlides = PptInfoState.TotalPage;
 		int CurrentSlides = PptInfoState.CurrentPage;
@@ -1255,7 +851,7 @@ void DrawControlWindow()
 				{
 					{
 						wstring temp;
-						if (TotalSlides >= 100 || TotalSlides >= 100)
+						if (CurrentSlides >= 100 || TotalSlides >= 100)
 						{
 							temp = CurrentSlides == -1 ? L"-" : to_wstring(CurrentSlides);
 							temp += L"\n";
@@ -1299,6 +895,9 @@ void DrawControlWindow()
 						PPTUIControlTarget[L"RoundRect/RoundRectLeft1/ellipsewidth"].v = (35) * PPTUIScale;
 						PPTUIControlTarget[L"RoundRect/RoundRectLeft1/frame/width"].v = (1) * PPTUIScale;
 
+						PPTUIControlColorTarget[L"RoundRect/RoundRectLeft1/fill"].v = RGBA(250, 250, 250, 0);
+						PPTUIControlColorTarget[L"RoundRect/RoundRectLeft1/frame"].v = RGBA(200, 200, 200, 0);
+
 						{
 							PPTUIControlTarget[L"Image/RoundRectLeft1/x"].v = PPTUIControlTarget[L"RoundRect/RoundRectLeft1/x"].v + (5) * PPTUIScale;
 							PPTUIControlTarget[L"Image/RoundRectLeft1/y"].v = PPTUIControlTarget[L"RoundRect/RoundRectLeft1/y"].v + (5) * PPTUIScale;
@@ -1325,6 +924,9 @@ void DrawControlWindow()
 						PPTUIControlTarget[L"RoundRect/RoundRectLeft2/ellipsewidth"].v = (35) * PPTUIScale;
 						PPTUIControlTarget[L"RoundRect/RoundRectLeft2/frame/width"].v = (1) * PPTUIScale;
 
+						PPTUIControlColorTarget[L"RoundRect/RoundRectLeft2/fill"].v = RGBA(250, 250, 250, 0);
+						PPTUIControlColorTarget[L"RoundRect/RoundRectLeft2/frame"].v = RGBA(200, 200, 200, 0);
+
 						{
 							PPTUIControlTarget[L"Image/RoundRectLeft2/x"].v = PPTUIControlTarget[L"RoundRect/RoundRectLeft2/x"].v + (5) * PPTUIScale;
 							PPTUIControlTarget[L"Image/RoundRectLeft2/y"].v = PPTUIControlTarget[L"RoundRect/RoundRectLeft2/y"].v + (5) * PPTUIScale;
@@ -1341,6 +943,9 @@ void DrawControlWindow()
 						PPTUIControlTarget[L"RoundRect/RoundRectLeft3/ellipseheight"].v = (35) * PPTUIScale;
 						PPTUIControlTarget[L"RoundRect/RoundRectLeft3/ellipsewidth"].v = (35) * PPTUIScale;
 						PPTUIControlTarget[L"RoundRect/RoundRectLeft3/frame/width"].v = (1) * PPTUIScale;
+
+						PPTUIControlColorTarget[L"RoundRect/RoundRectLeft3/fill"].v = RGBA(250, 250, 250, 0);
+						PPTUIControlColorTarget[L"RoundRect/RoundRectLeft3/frame"].v = RGBA(200, 200, 200, 0);
 
 						SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectLeft3/fill"].v, 0);
 						SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectLeft3/frame"].v, 0);
@@ -1378,6 +983,9 @@ void DrawControlWindow()
 						PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/ellipsewidth"].v = (35) * PPTUIScale;
 						PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/frame/width"].v = (1) * PPTUIScale;
 
+						PPTUIControlColorTarget[L"RoundRect/RoundRectMiddle1/fill"].v = RGBA(250, 250, 250, 0);
+						PPTUIControlColorTarget[L"RoundRect/RoundRectMiddle1/frame"].v = RGBA(200, 200, 200, 0);
+
 						{
 							PPTUIControlTarget[L"Image/RoundRectMiddle1/x"].v = PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/x"].v + (5) * PPTUIScale;
 							PPTUIControlTarget[L"Image/RoundRectMiddle1/y"].v = PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/y"].v + (5) * PPTUIScale;
@@ -1409,6 +1017,9 @@ void DrawControlWindow()
 						PPTUIControlTarget[L"RoundRect/RoundRectRight1/ellipsewidth"].v = (35) * PPTUIScale;
 						PPTUIControlTarget[L"RoundRect/RoundRectRight1/frame/width"].v = (1) * PPTUIScale;
 
+						PPTUIControlColorTarget[L"RoundRect/RoundRectRight1/fill"].v = RGBA(250, 250, 250, 0);
+						PPTUIControlColorTarget[L"RoundRect/RoundRectRight1/frame"].v = RGBA(200, 200, 200, 0);
+
 						{
 							PPTUIControlTarget[L"Image/RoundRectRight1/x"].v = PPTUIControlTarget[L"RoundRect/RoundRectRight1/x"].v + (5) * PPTUIScale;
 							PPTUIControlTarget[L"Image/RoundRectRight1/y"].v = PPTUIControlTarget[L"RoundRect/RoundRectRight1/y"].v + (5) * PPTUIScale;
@@ -1435,6 +1046,9 @@ void DrawControlWindow()
 						PPTUIControlTarget[L"RoundRect/RoundRectRight2/ellipsewidth"].v = (35) * PPTUIScale;
 						PPTUIControlTarget[L"RoundRect/RoundRectRight2/frame/width"].v = (1) * PPTUIScale;
 
+						PPTUIControlColorTarget[L"RoundRect/RoundRectRight2/fill"].v = RGBA(250, 250, 250, 0);
+						PPTUIControlColorTarget[L"RoundRect/RoundRectRight2/frame"].v = RGBA(200, 200, 200, 0);
+
 						{
 							PPTUIControlTarget[L"Image/RoundRectRight2/x"].v = PPTUIControlTarget[L"RoundRect/RoundRectRight2/x"].v + (5) * PPTUIScale;
 							PPTUIControlTarget[L"Image/RoundRectRight2/y"].v = PPTUIControlTarget[L"RoundRect/RoundRectRight2/y"].v + (5) * PPTUIScale;
@@ -1448,7 +1062,7 @@ void DrawControlWindow()
 				// 文字控件
 				{
 					{
-						PPTUIControlStringTarget[L"Info/Pages"] = L"-1/-1";
+						PPTUIControlStringTarget[L"Info/Pages"] = L"Inkeys";
 					}
 				}
 
@@ -1622,7 +1236,7 @@ void DrawControlWindow()
 				{
 					IDWriteTextFormat* textFormat = NULL;
 
-					TextFactory->CreateTextFormat(
+					D2DTextFactory->CreateTextFormat(
 						L"HarmonyOS Sans SC",
 						D2DFontCollection,
 						DWRITE_FONT_WEIGHT_NORMAL,
@@ -1790,7 +1404,7 @@ void DrawControlWindow()
 				// Words/InfoRight
 				{
 					IDWriteTextFormat* textFormat = NULL;
-					TextFactory->CreateTextFormat(
+					D2DTextFactory->CreateTextFormat(
 						L"HarmonyOS Sans SC",
 						D2DFontCollection,
 						DWRITE_FONT_WEIGHT_NORMAL,
@@ -1858,7 +1472,13 @@ void DrawControlWindow()
 				ulwi.hdcSrc = GetImageHDC(&PptWindowBackground);
 				UpdateLayeredWindowIndirect(ppt_window, &ulwi);
 
-				if (!IsShowWindow) ShowWindow(ppt_window, SW_SHOW), IsShowWindow = true;
+				if (!IsShowWindow)
+				{
+					IdtWindowsIsVisible.pptWindow = true;
+					//ShowWindow(ppt_window, SW_SHOW);
+
+					IsShowWindow = true;
+				}
 				// 动态平衡帧率
 				if (tRecord)
 				{
@@ -1870,23 +1490,20 @@ void DrawControlWindow()
 				PptWindowBackgroundUiChange = false;
 			}
 		}
-		else Sleep(100);
+		else this_thread::sleep_for(chrono::milliseconds(100));
 	}
 
-	DxObjectSafeRelease(&D2DFontCollection);
-	DxObjectSafeRelease(&TextFactory);
 	for (int r = 0; r < (int)size(PptIconBitmap); r++) DxObjectSafeRelease(&PptIconBitmap[r]);
 	DxObjectSafeRelease(&DCRenderTarget);
-	DxObjectSafeRelease(&Factory);
 
-	thread_status[L"DrawControlWindow"] = false;
+	threadStatus[L"DrawControlWindow"] = false;
 }
 void ControlManipulation()
 {
 	ExMessage m;
 	int last_x = -1, last_y = -1;
 
-	while (!off_signal)
+	while (!offSignal)
 	{
 		if (PptInfoStateBuffer.TotalPage != -1)
 		{
@@ -1904,15 +1521,11 @@ void ControlManipulation()
 				else PPTUIControlColorTarget[L"RoundRect/RoundRectLeft1/fill"].v = RGBA(250, 250, 250, 160);
 				PptWindowBackgroundUiChange = true;
 
-				if (m.lbutton)
+				if (m.message == WM_LBUTTONDOWN)
 				{
 					SetForegroundWindow(ppt_show);
 
-					std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-					PPTManipulated = std::chrono::high_resolution_clock::now();
-					lock1.unlock();
-
-					PptInfoState.CurrentPage = PreviousPptSlides();
+					PreviousPptSlides();
 					PPTUIControlColor[L"RoundRect/RoundRectLeft1/fill"].v = RGBA(200, 200, 200, 255);
 
 					std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
@@ -1921,15 +1534,11 @@ void ControlManipulation()
 						if (!KeyBoradDown[VK_LBUTTON]) break;
 						if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 						{
-							std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-							PPTManipulated = std::chrono::high_resolution_clock::now();
-							lock1.unlock();
-
-							PptInfoState.CurrentPage = PreviousPptSlides();
+							PreviousPptSlides();
 							PPTUIControlColor[L"RoundRect/RoundRectLeft1/fill"].v = RGBA(200, 200, 200, 255);
 						}
 
-						Sleep(15);
+						this_thread::sleep_for(chrono::milliseconds(15));
 					}
 
 					PPTUIControlColorTarget[L"RoundRect/RoundRectLeft1/fill"].v = RGBA(250, 250, 250, 160);
@@ -1948,40 +1557,25 @@ void ControlManipulation()
 				else PPTUIControlColorTarget[L"RoundRect/RoundRectLeft2/fill"].v = RGBA(250, 250, 250, 160);
 				PptWindowBackgroundUiChange = true;
 
-				if (m.lbutton)
+				if (m.message == WM_LBUTTONDOWN)
 				{
 					int temp_currentpage = PptInfoState.CurrentPage;
-					if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
+					if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 					{
 						if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
 						{
-							std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-							PPTManipulated = std::chrono::high_resolution_clock::now();
-							lock1.unlock();
-							EndPptShow();
-
-							brush.select = false;
-							rubber.select = false;
-							penetrate.select = false;
-							choose.select = true;
+							ChangeStateModeToSelection();
 						}
 					}
 					else if (temp_currentpage == -1)
 					{
-						std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-						PPTManipulated = std::chrono::high_resolution_clock::now();
-						lock1.unlock();
 						EndPptShow();
 					}
 					else
 					{
 						SetForegroundWindow(ppt_show);
 
-						std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-						PPTManipulated = std::chrono::high_resolution_clock::now();
-						lock1.unlock();
-
-						PptInfoState.CurrentPage = NextPptSlides(temp_currentpage);
+						NextPptSlides(temp_currentpage);
 						PPTUIControlColor[L"RoundRect/RoundRectLeft2/fill"].v = RGBA(200, 200, 200, 255);
 
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
@@ -1992,31 +1586,24 @@ void ControlManipulation()
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								temp_currentpage = PptInfoState.CurrentPage;
-								if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
+								if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 								{
 									if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
 									{
 										EndPptShow();
 
-										brush.select = false;
-										rubber.select = false;
-										penetrate.select = false;
-										choose.select = true;
+										ChangeStateModeToSelection();
 									}
 									break;
 								}
 								else if (temp_currentpage != -1)
 								{
-									std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-									PPTManipulated = std::chrono::high_resolution_clock::now();
-									lock1.unlock();
-
-									PptInfoState.CurrentPage = NextPptSlides(temp_currentpage);
+									NextPptSlides(temp_currentpage);
 									PPTUIControlColor[L"RoundRect/RoundRectLeft2/fill"].v = RGBA(200, 200, 200, 255);
 								}
 							}
 
-							Sleep(15);
+							this_thread::sleep_for(chrono::milliseconds(15));
 						}
 					}
 
@@ -2027,47 +1614,6 @@ void ControlManipulation()
 					GetCursorPos(&pt);
 					last_x = pt.x, last_y = pt.y;
 				}
-
-				/*
-				if (m.lbutton)
-				{
-					int lx = m.x, ly = m.y;
-					while (1)
-					{
-						ExMessage m = hiex::getmessage_win32(EM_MOUSE, ppt_window);
-						if (IsInRect(m.x, m.y, { 130 + 5, PPTMainMonitor.MonitorHeight - 60 + 5, 130 + 5 + 50, PPTMainMonitor.MonitorHeight - 60 + 5 + 50 }))
-						{
-							if (!m.lbutton)
-							{
-								if (PptInfoState.CurrentPage == -1 && choose.select == false && penetrate.select == false)
-								{
-									if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) != 1) break;
-
-									brush.select = false;
-									rubber.select = false;
-									penetrate.select = false;
-									choose.select = true;
-								}
-
-								std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-								PPTManipulated = std::chrono::high_resolution_clock::now();
-								lock1.unlock();
-
-								SetForegroundWindow(ppt_show);
-								PptInfoState.CurrentPage = NextPptSlides();
-
-								break;
-							}
-						}
-						else
-						{
-							hiex::flushmessage_win32(EM_MOUSE, ppt_window);
-
-							break;
-						}
-					}
-					hiex::flushmessage_win32(EM_MOUSE, ppt_window);
-				}*/
 			}
 			else if (PptInfoStateBuffer.TotalPage != -1) PPTUIControlColorTarget[L"RoundRect/RoundRectLeft2/fill"].v = RGBA(250, 250, 250, 160);
 
@@ -2078,7 +1624,7 @@ void ControlManipulation()
 				else PPTUIControlColorTarget[L"RoundRect/RoundRectMiddle1/fill"].v = RGBA(250, 250, 250, 160);
 				PptWindowBackgroundUiChange = true;
 
-				if (m.lbutton)
+				if (m.message == WM_LBUTTONDOWN)
 				{
 					int lx = m.x, ly = m.y;
 					while (1)
@@ -2090,19 +1636,12 @@ void ControlManipulation()
 							{
 								PPTUIControlColor[L"RoundRect/RoundRectMiddle1/fill"].v = RGBA(200, 200, 200, 255);
 
-								if (choose.select == false && penetrate.select == false)
+								if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 								{
 									if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) != 1) break;
 
-									brush.select = false;
-									rubber.select = false;
-									penetrate.select = false;
-									choose.select = true;
+									ChangeStateModeToSelection();
 								}
-
-								std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-								PPTManipulated = std::chrono::high_resolution_clock::now();
-								lock1.unlock();
 
 								EndPptShow();
 
@@ -2133,15 +1672,11 @@ void ControlManipulation()
 				else PPTUIControlColorTarget[L"RoundRect/RoundRectRight1/fill"].v = RGBA(250, 250, 250, 160);
 				PptWindowBackgroundUiChange = true;
 
-				if (m.lbutton)
+				if (m.message == WM_LBUTTONDOWN)
 				{
 					SetForegroundWindow(ppt_show);
 
-					std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-					PPTManipulated = std::chrono::high_resolution_clock::now();
-					lock1.unlock();
-
-					PptInfoState.CurrentPage = PreviousPptSlides();
+					PreviousPptSlides();
 					PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v = RGBA(200, 200, 200, 255);
 
 					std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
@@ -2150,15 +1685,11 @@ void ControlManipulation()
 						if (!KeyBoradDown[VK_LBUTTON]) break;
 						if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 						{
-							std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-							PPTManipulated = std::chrono::high_resolution_clock::now();
-							lock1.unlock();
-
-							PptInfoState.CurrentPage = PreviousPptSlides();
+							PreviousPptSlides();
 							PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v = RGBA(200, 200, 200, 255);
 						}
 
-						Sleep(15);
+						this_thread::sleep_for(chrono::milliseconds(15));
 					}
 
 					PPTUIControlColorTarget[L"RoundRect/RoundRectRight1/fill"].v = RGBA(250, 250, 250, 160);
@@ -2177,40 +1708,27 @@ void ControlManipulation()
 				else PPTUIControlColorTarget[L"RoundRect/RoundRectRight2/fill"].v = RGBA(250, 250, 250, 160);
 				PptWindowBackgroundUiChange = true;
 
-				if (m.lbutton)
+				if (m.message == WM_LBUTTONDOWN)
 				{
 					int temp_currentpage = PptInfoState.CurrentPage;
-					if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
+					if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 					{
 						if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
 						{
-							std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-							PPTManipulated = std::chrono::high_resolution_clock::now();
-							lock1.unlock();
 							EndPptShow();
 
-							brush.select = false;
-							rubber.select = false;
-							penetrate.select = false;
-							choose.select = true;
+							ChangeStateModeToSelection();
 						}
 					}
 					else if (temp_currentpage == -1)
 					{
-						std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-						PPTManipulated = std::chrono::high_resolution_clock::now();
-						lock1.unlock();
 						EndPptShow();
 					}
 					else
 					{
 						SetForegroundWindow(ppt_show);
 
-						std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-						PPTManipulated = std::chrono::high_resolution_clock::now();
-						lock1.unlock();
-
-						PptInfoState.CurrentPage = NextPptSlides(temp_currentpage);
+						NextPptSlides(temp_currentpage);
 						PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v = RGBA(200, 200, 200, 255);
 
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
@@ -2221,31 +1739,24 @@ void ControlManipulation()
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								temp_currentpage = PptInfoState.CurrentPage;
-								if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
+								if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 								{
 									if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
 									{
 										EndPptShow();
 
-										brush.select = false;
-										rubber.select = false;
-										penetrate.select = false;
-										choose.select = true;
+										ChangeStateModeToSelection();
 									}
 									break;
 								}
 								else if (temp_currentpage != -1)
 								{
-									std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-									PPTManipulated = std::chrono::high_resolution_clock::now();
-									lock1.unlock();
-
-									PptInfoState.CurrentPage = NextPptSlides(temp_currentpage);
+									NextPptSlides(temp_currentpage);
 									PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v = RGBA(200, 200, 200, 255);
 								}
 							}
 
-							Sleep(15);
+							this_thread::sleep_for(chrono::milliseconds(15));
 						}
 					}
 
@@ -2266,33 +1777,24 @@ void ControlManipulation()
 				if (m.wheel <= -120)
 				{
 					int temp_currentpage = PptInfoState.CurrentPage;
-					if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
+					if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 					{
 						if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
 						{
-							std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-							PPTManipulated = std::chrono::high_resolution_clock::now();
-							lock1.unlock();
 							EndPptShow();
 
-							brush.select = false;
-							rubber.select = false;
-							penetrate.select = false;
-							choose.select = true;
+							ChangeStateModeToSelection();
 						}
 					}
 					else if (temp_currentpage == -1)
 					{
-						std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-						PPTManipulated = std::chrono::high_resolution_clock::now();
-						lock1.unlock();
 						EndPptShow();
 					}
 					else
 					{
 						SetForegroundWindow(ppt_show);
 
-						PptInfoState.CurrentPage = NextPptSlides(temp_currentpage);
+						NextPptSlides(temp_currentpage);
 						PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v = RGBA(200, 200, 200, 255);
 					}
 
@@ -2304,11 +1806,7 @@ void ControlManipulation()
 				{
 					SetForegroundWindow(ppt_show);
 
-					std::unique_lock<std::shared_mutex> lock1(PPTManipulatedSm);
-					PPTManipulated = std::chrono::high_resolution_clock::now();
-					lock1.unlock();
-
-					PptInfoState.CurrentPage = PreviousPptSlides();
+					PreviousPptSlides();
 					PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v = RGBA(200, 200, 200, 255);
 
 					PPTUIControlColorTarget[L"RoundRect/RoundRectRight1/fill"].v = RGBA(250, 250, 250, 160);
@@ -2318,120 +1816,16 @@ void ControlManipulation()
 		}
 		else
 		{
+			last_x = -1, last_y = -1;
+
 			hiex::flushmessage_win32(EM_MOUSE, ppt_window);
-			Sleep(500);
+			this_thread::sleep_for(chrono::milliseconds(500));
 		}
-	}
-}
-void KeyboardInteraction()
-{
-	ExMessage m;
-	while (!off_signal)
-	{
-		hiex::getmessage_win32(&m, EM_KEY, drawpad_window);
-
-		if (PptInfoState.TotalPage != -1)
-		{
-			if (m.message == WM_KEYDOWN && (m.vkcode == VK_DOWN || m.vkcode == VK_RIGHT || m.vkcode == VK_NEXT || m.vkcode == VK_SPACE || m.vkcode == VK_UP || m.vkcode == VK_LEFT || m.vkcode == VK_PRIOR))
-			{
-				auto vkcode = m.vkcode;
-
-				if (vkcode == VK_UP || vkcode == VK_LEFT || vkcode == VK_PRIOR)
-				{
-					// 上一页
-					SetForegroundWindow(ppt_show);
-
-					PptInfoState.CurrentPage = PreviousPptSlides();
-
-					std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
-					while (1)
-					{
-						if (!KeyBoradDown[vkcode]) break;
-						if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400) PptInfoState.CurrentPage = PreviousPptSlides();
-
-						Sleep(15);
-					}
-				}
-				else
-				{
-					// 下一页
-					int temp_currentpage = PptInfoState.CurrentPage;
-					if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
-					{
-						if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
-						{
-							EndPptShow();
-
-							brush.select = false;
-							rubber.select = false;
-							penetrate.select = false;
-							choose.select = true;
-						}
-					}
-					else
-					{
-						SetForegroundWindow(ppt_show);
-
-						PptInfoState.CurrentPage = NextPptSlides(temp_currentpage);
-
-						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
-						while (1)
-						{
-							if (!KeyBoradDown[vkcode]) break;
-
-							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
-							{
-								temp_currentpage = PptInfoState.CurrentPage;
-								if (temp_currentpage == -1 && choose.select == false && penetrate.select == false)
-								{
-									if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
-									{
-										EndPptShow();
-
-										brush.select = false;
-										rubber.select = false;
-										penetrate.select = false;
-										choose.select = true;
-									}
-									break;
-								}
-								else if (temp_currentpage == -1) break;
-								PptInfoState.CurrentPage = NextPptSlides(temp_currentpage);
-							}
-
-							Sleep(15);
-						}
-					}
-				}
-			}
-			else if (m.message == WM_KEYDOWN && m.vkcode == VK_ESCAPE)
-			{
-				auto vkcode = m.vkcode;
-
-				while (KeyBoradDown[vkcode]) Sleep(20);
-
-				if (choose.select == false && penetrate.select == false)
-				{
-					if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
-					{
-						EndPptShow();
-
-						brush.select = false;
-						rubber.select = false;
-						penetrate.select = false;
-						choose.select = true;
-					}
-				}
-				else EndPptShow();
-			}
-		}
-
-		hiex::flushmessage_win32(EM_KEY, drawpad_window);
 	}
 }
 void PPTLinkageMain()
 {
-	thread_status[L"DrawControlWindow"] = true;
+	threadStatus[L"DrawControlWindow"] = true;
 
 	thread GetPptState_thread(GetPptState);
 	GetPptState_thread.detach();
@@ -2440,85 +1834,104 @@ void PPTLinkageMain()
 	DrawControlWindowThread.detach();
 	thread ControlManipulationThread(ControlManipulation);
 	ControlManipulationThread.detach();
-	thread KeyboardInteractionThread(KeyboardInteraction);
-	KeyboardInteractionThread.detach();
 
-	while (!off_signal) Sleep(500);
+	while (!offSignal) this_thread::sleep_for(chrono::milliseconds(500));
 
 	int i = 1;
 	for (; i <= 5; i++)
 	{
-		if (!thread_status[L"GetPptState"] && !thread_status[L"DrawControlWindow"]) break;
-		Sleep(500);
+		if (!threadStatus[L"GetPptState"] && !threadStatus[L"DrawControlWindow"]) break;
+		this_thread::sleep_for(chrono::milliseconds(500));
 	}
 
-	thread_status[L"DrawControlWindow"] = false;
+	threadStatus[L"DrawControlWindow"] = false;
 }
-
-// EasiCamera linkage | 希沃视频展台联动
-// Entering the drawing mode in EasiCamera will automatically activate the freeze frame function. The detection function is completed by ·BlackBlock· together.
-// 在希沃视频展台下进入绘制，将自动开启定格功能。检测功能由 ·BlackBlock· 一并完成。
-
-bool SeewoCameraIsOpen; // Is EasiCamera started | 希沃视频展台是否启动
 
 // --------------------------------------------------
-// Blacklist window interception | 黑名单窗口拦截
+// 插件
 
-HWND FindWindowByStrings(const std::wstring& className, const std::wstring& windowTitle, const std::wstring& style, int width = 0, int height = 0)
+// DesktopDrawpadBlocker 插件
+void StartDesktopDrawpadBlocker()
 {
-	HWND hwnd = NULL;
-	while ((hwnd = FindWindowEx(NULL, hwnd, NULL, NULL)) != NULL)
+	if (ddbSetList.DdbEnable)
 	{
-		TCHAR classNameBuffer[1024];
-		GetClassName(hwnd, classNameBuffer, 1024);
-		if (_tcsstr(classNameBuffer, className.c_str()) == NULL) continue;
-
-		TCHAR title[1024];
-		GetWindowText(hwnd, title, 1024);
-		if (_tcsstr(title, windowTitle.c_str()) == NULL) continue;
-
-		if (windowTitle.length() == 0)
+		// 配置 json
 		{
-			if (wstring(title) == windowTitle && to_wstring(GetWindowLong(hwnd, GWL_STYLE)) == style)
+			if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\interaction_configuration.json").c_str(), 0) == 0) DdbReadSetting();
+
+			ddbSetList.hostPath = GetCurrentExePath();
+			if (ddbSetList.DdbEnhance)
 			{
-				if (width && height)
-				{
-					RECT rect{};
-					DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &rect, sizeof(RECT));
-					int twidth = rect.right - rect.left, thwight = rect.bottom - rect.top;
-
-					HDC hdc = GetDC(NULL);
-					int horizontalDPI = GetDeviceCaps(hdc, LOGPIXELSX);
-					int verticalDPI = GetDeviceCaps(hdc, LOGPIXELSY);
-					ReleaseDC(NULL, hdc);
-					float scale = (horizontalDPI + verticalDPI) / 2.0f / 96.0f;
-
-					if (abs(width * scale - twidth) <= 1 && abs(height * scale - thwight) <= 1) return hwnd;
-				}
-				else return hwnd;
+				ddbSetList.mode = 0;
+				ddbSetList.restartHost = true;
+			}
+			else
+			{
+				ddbSetList.mode = 1;
+				ddbSetList.restartHost = true;
 			}
 		}
-		else if (to_wstring(GetWindowLong(hwnd, GWL_STYLE)) == style) return hwnd;
+
+		// 配置 EXE
+		if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), 0) == -1)
+		{
+			if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB").c_str(), 0) == -1)
+			{
+				error_code ec;
+				filesystem::create_directories(StringToWstring(globalPath) + L"PlugIn\\DDB", ec);
+			}
+			ExtractResource((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
+		}
+		else
+		{
+			string hash_sha256;
+			{
+				hashwrapper* myWrapper = new sha256wrapper();
+				hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe");
+				delete myWrapper;
+			}
+
+			if (hash_sha256 != ddbSetList.DdbSHA256)
+			{
+				if (isProcessRunning((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str()))
+				{
+					// 需要关闭旧版 DDB 并更新版本
+
+					DdbWriteSetting(true, true);
+					for (int i = 1; i <= 20; i++)
+					{
+						if (!isProcessRunning((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str()))
+							break;
+						this_thread::sleep_for(chrono::milliseconds(500));
+					}
+				}
+				ExtractResource((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
+			}
+		}
+
+		// 创建开机自启标识
+		if (ddbSetList.DdbEnhance && _waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == -1)
+		{
+			std::ofstream file((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str());
+			file.close();
+		}
+		// 移除开机自启标识
+		else if (!ddbSetList.DdbEnhance && _waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == 0)
+		{
+			error_code ec;
+			filesystem::remove(StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal", ec);
+		}
+
+		// 启动 DDB
+		if (!isProcessRunning((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str()))
+		{
+			DdbWriteSetting(true, false);
+			ShellExecute(NULL, NULL, (StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+		}
 	}
-	return NULL;
-}
-// Discover and close the AIClass drawing window and Seewo Easinote 5 drawing window | 发现并关闭 AIClass 绘制窗口和 希沃白板5 绘制窗口
-void BlackBlock()
-{
-	thread_status[L"BlackBlock"] = true;
-	while (!off_signal)
+	else if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB").c_str(), 0) == 0)
 	{
-		HWND ai_class = FindWindowByStrings(L"UIIrregularWindow", L"UIIrregularWindow", L"-1811939328");
-		if (ai_class != NULL) PostMessage(ai_class, WM_CLOSE, 0, 0);
-
-		HWND Seewo_Whiteboard = FindWindowByStrings(L"HwndWrapper[EasiNote;;", L"", L"369623040", 550, 200);
-		if (Seewo_Whiteboard != NULL) PostMessage(Seewo_Whiteboard, WM_CLOSE, 0, 0);
-
-		HWND Seewo_Camera = FindWindowByStrings(L"HwndWrapper[EasiCamera.exe;;", L"希沃视频展台", L"386400256");
-		if (Seewo_Camera != NULL) SeewoCameraIsOpen = true;
-		else SeewoCameraIsOpen = false;
-
-		for (int i = 1; i <= 5 && !off_signal; i++) Sleep(1000);
+		error_code ec;
+		filesystem::remove_all(StringToWstring(globalPath) + L"PlugIn\\DDB", ec);
 	}
-	thread_status[L"BlackBlock"] = false;
 }

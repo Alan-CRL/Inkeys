@@ -1,53 +1,119 @@
 #include "IdtUpdate.h"
 
+#include "IdtConfiguration.h"
+#include "IdtHash.h"
+#include "IdtOther.h"
+#include "IdtSetting.h"
+#include "IdtText.h"
+#include "IdtTime.h"
+#include "IdtWindow.h"
+
 //程序崩溃保护
 void CrashedHandler()
 {
-	thread_status[L"CrashedHandler"] = true;
-
-	this_thread::sleep_for(chrono::seconds(3));
-	while (!already) this_thread::sleep_for(chrono::milliseconds(50));
+	threadStatus[L"CrashedHandler"] = true;
 
 	ofstream write;
 	write.imbue(locale("zh_CN.UTF8"));
 
-	write.open(wstring_to_string(string_to_wstring(global_path) + L"api\\open.txt").c_str());
+	write.open(WstringToString(StringToWstring(globalPath) + L"api\\open.txt").c_str());
 	write << 1;
 	write.close();
 
-	if (!isProcessRunning((string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str()))
-		ShellExecute(NULL, NULL, (string_to_wstring(global_path) + L"api\\智绘教CrashedHandler.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+	// 启动崩溃重启助手
+	{
+		bool start = true;
+
+		// 检查本地文件完整性
+		{
+			if (_waccess((StringToWstring(globalPath) + L"api").c_str(), 0) == -1)
+			{
+				error_code ec;
+				filesystem::create_directory(StringToWstring(globalPath) + L"api", ec);
+			}
+
+			if (_waccess((StringToWstring(globalPath) + L"api\\智绘教CrashedHandler.exe").c_str(), 0) == -1)
+				if (!ExtractResource((StringToWstring(globalPath) + L"api\\智绘教CrashedHandler.exe").c_str(), L"EXE", MAKEINTRESOURCE(201)))
+					start = false;
+			if (_waccess((StringToWstring(globalPath) + L"api\\api\\智绘教CrashedHandlerClose.exe").c_str(), 0) == -1)
+				if (!ExtractResource((StringToWstring(globalPath) + L"api\\智绘教CrashedHandlerClose.exe").c_str(), L"EXE", MAKEINTRESOURCE(202)))
+					start = false;
+
+			{
+				string hash_md5, hash_sha256;
+				{
+					hashwrapper* myWrapper = new md5wrapper();
+					hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\智绘教CrashedHandler.exe");
+					delete myWrapper;
+				}
+				{
+					hashwrapper* myWrapper = new sha256wrapper();
+					hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\智绘教CrashedHandler.exe");
+					delete myWrapper;
+				}
+
+				if (hash_md5 != CrashedHandlerMd5 || hash_sha256 != CrashedHandlerSHA256)
+					if (!ExtractResource((StringToWstring(globalPath) + L"api\\智绘教CrashedHandler.exe").c_str(), L"EXE", MAKEINTRESOURCE(201)))
+						start = false;
+			}
+			{
+				string hash_md5, hash_sha256;
+				{
+					hashwrapper* myWrapper = new md5wrapper();
+					hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\智绘教CrashedHandlerClose.exe");
+					delete myWrapper;
+				}
+				{
+					hashwrapper* myWrapper = new sha256wrapper();
+					hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\智绘教CrashedHandlerClose.exe");
+					delete myWrapper;
+				}
+
+				if (hash_md5 != CrashedHandlerCloseMd5 || hash_sha256 != CrashedHandlerCloseSHA256)
+					if (!ExtractResource((StringToWstring(globalPath) + L"api\\智绘教CrashedHandlerClose.exe").c_str(), L"EXE", MAKEINTRESOURCE(202)))
+						start = false;
+			}
+		}
+
+		// 启动崩溃助手
+		if (start && !isProcessRunning((StringToWstring(globalPath) + L"api\\智绘教CrashedHandler.exe").c_str()))
+		{
+			wstring path = GetCurrentExePath();
+			ShellExecute(NULL, NULL, (StringToWstring(globalPath) + L"api\\智绘教CrashedHandler.exe").c_str(), (L"/\"" + path + L"\"").c_str(), NULL, SW_SHOWNORMAL);
+		}
+	}
 
 	int value = 2;
-	while (!off_signal)
+	while (!offSignal)
 	{
-		write.open(wstring_to_string(string_to_wstring(global_path) + L"api\\open.txt").c_str());
+		write.open(WstringToString(StringToWstring(globalPath) + L"api\\open.txt").c_str());
 		write << value;
 		write.close();
 
 		value++;
 		if (value > 100000000) value = 2;
 
-		Sleep(1000);
+		this_thread::sleep_for(chrono::milliseconds(1000));
 	}
 
-	if (off_signal == 2)
+	if (offSignal == 2)
 	{
-		write.open(wstring_to_string(string_to_wstring(global_path) + L"api\\open.txt").c_str());
+		write.open(WstringToString(StringToWstring(globalPath) + L"api\\open.txt").c_str());
 		write << -2;
 		write.close();
 	}
 	else
 	{
 		error_code ec;
-		filesystem::remove(string_to_wstring(global_path) + L"api\\open.txt", ec);
+		filesystem::remove(StringToWstring(globalPath) + L"api\\open.txt", ec);
 	}
 
-	thread_status[L"CrashedHandler"] = false;
-	off_signal_ready = true;
+	threadStatus[L"CrashedHandler"] = false;
+	offSignalReady = true;
 }
 
 //程序自动更新
+int AutomaticUpdateStep = 0;
 wstring get_domain_name(wstring url) {
 	wregex pattern(L"([a-zA-z]+://[^/]+)");
 	wsmatch match;
@@ -64,8 +130,6 @@ wstring convertToHttp(const wstring& url)
 	else if (url.length() >= 8 && url.compare(0, 8, L"https://") == 0) return httpPrefix + url.substr(8);
 	else return httpPrefix + url;
 }
-
-int AutomaticUpdateStep = 0;
 void AutomaticUpdate()
 {
 	/*
@@ -83,13 +147,13 @@ void AutomaticUpdate()
 	10 程序已经是最新版本
 	*/
 
-	this_thread::sleep_for(chrono::seconds(3));
-	while (!already) this_thread::sleep_for(chrono::milliseconds(50));
+	//this_thread::sleep_for(chrono::seconds(3));
+	//while (!already) this_thread::sleep_for(chrono::milliseconds(50));
 
 	struct
 	{
-		wstring edition_date;
-		wstring edition_code;
+		wstring editionDate;
+		wstring editionCode;
 		wstring explain;
 		wstring representation;
 		wstring path[10];
@@ -105,7 +169,7 @@ void AutomaticUpdate()
 
 	bool against = false;
 
-	while (!off_signal)
+	while (!offSignal)
 	{
 		AutomaticUpdateStep = 1;
 
@@ -116,11 +180,11 @@ void AutomaticUpdate()
 		if (state)
 		{
 			error_code ec;
-			filesystem::create_directory(string_to_wstring(global_path) + L"installer", ec); //创建路径
-			filesystem::remove(string_to_wstring(global_path) + L"installer\\new_download.json", ec);
+			filesystem::create_directory(StringToWstring(globalPath) + L"installer", ec); //创建路径
+			filesystem::remove(StringToWstring(globalPath) + L"installer\\new_download.json", ec);
 
-			info.edition_date = L"";
-			info.edition_code = L"";
+			info.editionDate = L"";
+			info.editionCode = L"";
 			info.explain = L"";
 			info.representation = L"";
 			info.hash_md5 = "";
@@ -133,7 +197,7 @@ void AutomaticUpdate()
 				download1 = URLDownloadToFileW( // 从网络上下载数据到本地文件
 					nullptr,                  // 在这里，写 nullptr 就行
 					(L"http://home.alan-crl.top/version_identification/official_version.json?timestamp=" + getTimestamp()).c_str(), // 在这里写上网址
-					stringtoLPCWSTR(global_path + "installer\\new_download.json"),            // 文件名写在这
+					StringToLPCWSTR(globalPath + "installer\\new_download.json"),            // 文件名写在这
 					0,                        // 写 0 就对了
 					nullptr                   // 也是，在这里写 nullptr 就行
 				);
@@ -145,7 +209,7 @@ void AutomaticUpdate()
 				download1 = URLDownloadToFileW( // 从网络上下载数据到本地文件
 					nullptr,                  // 在这里，写 nullptr 就行
 					(L"https://vip.123pan.cn/1709404/version_identification/official_version.json?timestamp=" + getTimestamp()).c_str(), // 在这里写上网址
-					stringtoLPCWSTR(global_path + "installer\\new_download.json"),            // 文件名写在这
+					StringToLPCWSTR(globalPath + "installer\\new_download.json"),            // 文件名写在这
 					0,                        // 写 0 就对了
 					nullptr                   // 也是，在这里写 nullptr 就行
 				);
@@ -158,7 +222,7 @@ void AutomaticUpdate()
 
 				ifstream injson;
 				injson.imbue(locale("zh_CN.UTF8"));
-				injson.open(wstring_to_string(string_to_wstring(global_path) + L"installer\\new_download.json").c_str());
+				injson.open(WstringToString(StringToWstring(globalPath) + L"installer\\new_download.json").c_str());
 
 				if (reader.parse(injson, root))
 				{
@@ -166,20 +230,20 @@ void AutomaticUpdate()
 
 					if (root.isMember(channel))
 					{
-						if (root[channel].isMember("edition_date")) info.edition_date = string_to_wstring(convert_to_gbk(root[channel]["edition_date"].asString()));
+						if (root[channel].isMember("edition_date")) info.editionDate = StringToWstring(ConvertToGbk(root[channel]["edition_date"].asString()));
 						else flag = 1;
 
-						if (root[channel].isMember("edition_code")) info.edition_code = string_to_wstring(convert_to_gbk(root[channel]["edition_code"].asString()));
+						if (root[channel].isMember("edition_code")) info.editionCode = StringToWstring(ConvertToGbk(root[channel]["edition_code"].asString()));
 						else flag = 1;
 
-						if (root[channel].isMember("explain")) info.explain = string_to_wstring(convert_to_gbk(root[channel]["explain"].asString()));
+						if (root[channel].isMember("explain")) info.explain = StringToWstring(ConvertToGbk(root[channel]["explain"].asString()));
 
 						if (root[channel].isMember("hash"))
 						{
-							if (root[channel]["hash"].isMember("md5")) info.hash_md5 = convert_to_gbk(root[channel]["hash"]["md5"].asString());
+							if (root[channel]["hash"].isMember("md5")) info.hash_md5 = ConvertToGbk(root[channel]["hash"]["md5"].asString());
 							else flag = 1;
 
-							if (root[channel]["hash"].isMember("sha256")) info.hash_sha256 = convert_to_gbk(root[channel]["hash"]["sha256"].asString());
+							if (root[channel]["hash"].isMember("sha256")) info.hash_sha256 = ConvertToGbk(root[channel]["hash"]["sha256"].asString());
 							else flag = 1;
 						}
 						else flag = 1;
@@ -189,36 +253,35 @@ void AutomaticUpdate()
 							info.path_size = root[channel]["path"].size();
 							for (int i = 0; i < min(info.path_size, 10); i++)
 							{
-								info.path[i] = string_to_wstring(convert_to_gbk(root[channel]["path"][i].asString()));
+								info.path[i] = StringToWstring(ConvertToGbk(root[channel]["path"][i].asString()));
 							}
 
 							if (info.path_size <= 0) flag = 1;
 						}
 						else flag = 1;
 
-						if (root[channel].isMember("representation")) info.representation = string_to_wstring(convert_to_gbk(root[channel]["representation"].asString()));
+						if (root[channel].isMember("representation")) info.representation = StringToWstring(ConvertToGbk(root[channel]["representation"].asString()));
 						else flag = 1;
 					}
-
 					if (!root.isMember(channel) && root.size() >= 1)
 					{
 						Json::Value::Members members = root.getMemberNames();
 						channel = members[0];
 
-						if (root[channel].isMember("edition_date")) info.edition_date = string_to_wstring(convert_to_gbk(root[channel]["edition_date"].asString()));
+						if (root[channel].isMember("edition_date")) info.editionDate = StringToWstring(ConvertToGbk(root[channel]["edition_date"].asString()));
 						else flag = 1;
 
-						if (root[channel].isMember("edition_code")) info.edition_code = string_to_wstring(convert_to_gbk(root[channel]["edition_code"].asString()));
+						if (root[channel].isMember("edition_code")) info.editionCode = StringToWstring(ConvertToGbk(root[channel]["edition_code"].asString()));
 						else flag = 1;
 
-						if (root[channel].isMember("explain")) info.explain = string_to_wstring(convert_to_gbk(root[channel]["explain"].asString()));
+						if (root[channel].isMember("explain")) info.explain = StringToWstring(ConvertToGbk(root[channel]["explain"].asString()));
 
 						if (root[channel].isMember("hash"))
 						{
-							if (root[channel]["hash"].isMember("md5")) info.hash_md5 = convert_to_gbk(root[channel]["hash"]["md5"].asString());
+							if (root[channel]["hash"].isMember("md5")) info.hash_md5 = ConvertToGbk(root[channel]["hash"]["md5"].asString());
 							else flag = 1;
 
-							if (root[channel]["hash"].isMember("sha256")) info.hash_sha256 = convert_to_gbk(root[channel]["hash"]["sha256"].asString());
+							if (root[channel]["hash"].isMember("sha256")) info.hash_sha256 = ConvertToGbk(root[channel]["hash"]["sha256"].asString());
 							else flag = 1;
 						}
 						else flag = 1;
@@ -228,14 +291,14 @@ void AutomaticUpdate()
 							info.path_size = root[channel]["path"].size();
 							for (int i = 0; i < min(info.path_size, 10); i++)
 							{
-								info.path[i] = string_to_wstring(convert_to_gbk(root[channel]["path"][i].asString()));
+								info.path[i] = StringToWstring(ConvertToGbk(root[channel]["path"][i].asString()));
 							}
 
 							if (info.path_size <= 0) flag = 2;
 						}
 						else flag = 1;
 
-						if (root[channel].isMember("representation")) info.representation = string_to_wstring(convert_to_gbk(root[channel]["representation"].asString()));
+						if (root[channel].isMember("representation")) info.representation = StringToWstring(ConvertToGbk(root[channel]["representation"].asString()));
 						else flag = 1;
 
 						if (!flag)
@@ -244,6 +307,7 @@ void AutomaticUpdate()
 							WriteSetting();
 						}
 					}
+
 					if (flag)
 					{
 						AutomaticUpdateStep = 5;
@@ -265,14 +329,14 @@ void AutomaticUpdate()
 				else AutomaticUpdateStep = 3;
 			}
 
-			filesystem::remove(string_to_wstring(global_path) + L"installer\\new_download.json", ec);
+			filesystem::remove(StringToWstring(globalPath) + L"installer\\new_download.json", ec);
 		}
 
 		//下载最新版本
-		if (state && info.edition_date != L"" && info.edition_date > string_to_wstring(edition_date))
+		if (state && info.editionDate != L"" && info.editionDate > StringToWstring(editionDate))
 		{
 			update = true;
-			if (_waccess((string_to_wstring(global_path) + L"installer\\update.json").c_str(), 4) == 0)
+			if (_waccess((StringToWstring(globalPath) + L"installer\\update.json").c_str(), 4) == 0)
 			{
 				wstring tedition, tpath;
 				string thash_md5, thash_sha256;
@@ -282,15 +346,15 @@ void AutomaticUpdate()
 
 				ifstream readjson;
 				readjson.imbue(locale("zh_CN.UTF8"));
-				readjson.open(wstring_to_string(string_to_wstring(global_path) + L"installer\\update.json").c_str());
+				readjson.open(WstringToString(StringToWstring(globalPath) + L"installer\\update.json").c_str());
 
 				if (reader.parse(readjson, root))
 				{
-					tedition = string_to_wstring(convert_to_gbk(root["edition"].asString()));
-					tpath = string_to_wstring(convert_to_gbk(root["path"].asString()));
+					tedition = StringToWstring(ConvertToGbk(root["edition"].asString()));
+					tpath = StringToWstring(ConvertToGbk(root["path"].asString()));
 
-					thash_md5 = convert_to_gbk(root["hash"]["md5"].asString());
-					thash_sha256 = convert_to_gbk(root["hash"]["sha256"].asString());
+					thash_md5 = ConvertToGbk(root["hash"]["md5"].asString());
+					thash_sha256 = ConvertToGbk(root["hash"]["sha256"].asString());
 				}
 
 				readjson.close();
@@ -298,16 +362,16 @@ void AutomaticUpdate()
 				string hash_md5, hash_sha256;
 				{
 					hashwrapper* myWrapper = new md5wrapper();
-					hash_md5 = myWrapper->getHashFromFile(global_path + wstring_to_string(tpath));
+					hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + tpath);
 					delete myWrapper;
 				}
 				{
 					hashwrapper* myWrapper = new sha256wrapper();
-					hash_sha256 = myWrapper->getHashFromFile(global_path + wstring_to_string(tpath));
+					hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + tpath);
 					delete myWrapper;
 				}
 
-				if (tedition >= info.edition_date && _waccess((string_to_wstring(global_path) + tpath).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
+				if (tedition >= info.editionDate && _waccess((StringToWstring(globalPath) + tpath).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
 				{
 					update = false;
 				}
@@ -318,8 +382,8 @@ void AutomaticUpdate()
 				AutomaticUpdateStep = 6;
 
 				error_code ec;
-				filesystem::create_directory(string_to_wstring(global_path) + L"installer", ec); //创建路径
-				filesystem::remove(string_to_wstring(global_path) + L"installer\\new_procedure.tmp", ec);
+				filesystem::create_directory(StringToWstring(globalPath) + L"installer", ec); //创建路径
+				filesystem::remove(StringToWstring(globalPath) + L"installer\\new_procedure.tmp", ec);
 
 				against = true;
 				for (int i = 0; i < info.path_size; i++)
@@ -331,7 +395,7 @@ void AutomaticUpdate()
 						download2 = URLDownloadToFileW( // 从网络上下载数据到本地文件
 							nullptr,                  // 在这里，写 nullptr 就行
 							(convertToHttp(info.path[i]) + L"?timestamp=" + getTimestamp()).c_str(), // 在这里写上网址
-							stringtoLPCWSTR(global_path + "installer\\new_procedure.tmp"),            // 文件名写在这
+							StringToLPCWSTR(globalPath + "installer\\new_procedure.tmp"),            // 文件名写在这
 							0,                        // 写 0 就对了
 							nullptr                   // 也是，在这里写 nullptr 就行
 						);
@@ -342,15 +406,15 @@ void AutomaticUpdate()
 						wstring timestamp = getTimestamp();
 
 						error_code ec;
-						filesystem::remove(string_to_wstring(global_path) + L"installer\\new_procedure" + timestamp + L".exe", ec);
-						filesystem::remove(string_to_wstring(global_path) + L"installer\\" + info.representation + L".exe", ec);
+						filesystem::remove(StringToWstring(globalPath) + L"installer\\new_procedure" + timestamp + L".exe", ec);
+						filesystem::remove(StringToWstring(globalPath) + L"installer\\" + info.representation + L".exe", ec);
 
-						filesystem::rename(string_to_wstring(global_path) + L"installer\\new_procedure.tmp", string_to_wstring(global_path) + L"installer\\new_procedure" + timestamp + L".zip", ec);
+						filesystem::rename(StringToWstring(globalPath) + L"installer\\new_procedure.tmp", StringToWstring(globalPath) + L"installer\\new_procedure" + timestamp + L".zip", ec);
 						if (ec) continue;
 
 						{
-							HZIP hz = OpenZip((string_to_wstring(global_path) + L"installer\\new_procedure" + timestamp + L".zip").c_str(), 0);
-							SetUnzipBaseDir(hz, (string_to_wstring(global_path) + L"installer\\").c_str());
+							HZIP hz = OpenZip((StringToWstring(globalPath) + L"installer\\new_procedure" + timestamp + L".zip").c_str(), 0);
+							SetUnzipBaseDir(hz, (StringToWstring(globalPath) + L"installer\\").c_str());
 							ZIPENTRY ze;
 							GetZipItem(hz, -1, &ze);
 							int numitems = ze.index;
@@ -362,8 +426,8 @@ void AutomaticUpdate()
 							CloseZip(hz);
 						}
 
-						filesystem::remove(string_to_wstring(global_path) + L"installer\\new_procedure" + timestamp + L".zip", ec);
-						filesystem::rename(string_to_wstring(global_path) + L"installer\\" + info.representation, string_to_wstring(global_path) + L"installer\\new_procedure" + timestamp + L".exe", ec);
+						filesystem::remove(StringToWstring(globalPath) + L"installer\\new_procedure" + timestamp + L".zip", ec);
+						filesystem::rename(StringToWstring(globalPath) + L"installer\\" + info.representation, StringToWstring(globalPath) + L"installer\\new_procedure" + timestamp + L".exe", ec);
 						if (ec)
 						{
 							AutomaticUpdateStep = 8;
@@ -373,12 +437,12 @@ void AutomaticUpdate()
 						string hash_md5, hash_sha256;
 						{
 							hashwrapper* myWrapper = new md5wrapper();
-							hash_md5 = myWrapper->getHashFromFile(global_path + "installer\\new_procedure" + wstring_to_string(timestamp) + ".exe");
+							hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"installer\\new_procedure" + timestamp + L".exe");
 							delete myWrapper;
 						}
 						{
 							hashwrapper* myWrapper = new sha256wrapper();
-							hash_sha256 = myWrapper->getHashFromFile(global_path + "installer\\new_procedure" + wstring_to_string(timestamp) + ".exe");
+							hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"installer\\new_procedure" + timestamp + L".exe");
 							delete myWrapper;
 						}
 
@@ -387,21 +451,21 @@ void AutomaticUpdate()
 						{
 							Json::Value root;
 
-							root["edition"] = Json::Value(wstring_to_string(info.edition_date));
-							root["path"] = Json::Value("installer\\new_procedure" + wstring_to_string(timestamp) + ".exe");
-							root["representation"] = Json::Value("new_procedure" + wstring_to_string(timestamp) + ".exe");
+							root["edition"] = Json::Value(WstringToString(info.editionDate));
+							root["path"] = Json::Value("installer\\new_procedure" + WstringToString(timestamp) + ".exe");
+							root["representation"] = Json::Value("new_procedure" + WstringToString(timestamp) + ".exe");
 
 							root["hash"]["md5"] = Json::Value(info.hash_md5);
 							root["hash"]["sha256"] = Json::Value(info.hash_sha256);
 
-							root["old_name"] = Json::Value(convert_to_utf8("智绘教.exe"));
+							root["old_name"] = Json::Value(ConvertToUtf8("智绘教.exe"));
 
 							Json::StreamWriterBuilder outjson;
 							outjson.settings_["emitUTF8"] = true;
 							std::unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
 							ofstream writejson;
 							writejson.imbue(locale("zh_CN.UTF8"));
-							writejson.open(wstring_to_string(string_to_wstring(global_path) + L"installer\\update.json").c_str());
+							writejson.open(WstringToString(StringToWstring(globalPath) + L"installer\\update.json").c_str());
 							writer->write(root, &writejson);
 							writejson.close();
 
@@ -415,20 +479,20 @@ void AutomaticUpdate()
 							AutomaticUpdateStep = 8;
 
 							error_code ec;
-							filesystem::remove(string_to_wstring(global_path) + L"installer\\new_procedure" + timestamp + L".exe", ec);
+							filesystem::remove(StringToWstring(globalPath) + L"installer\\new_procedure" + timestamp + L".exe", ec);
 						}
 					}
 					else AutomaticUpdateStep = 7;
 				}
 			}
 		}
-		else if (state && info.edition_date != L"" && info.edition_date <= string_to_wstring(edition_date)) AutomaticUpdateStep = 10;
+		else if (state && info.editionDate != L"" && info.editionDate <= StringToWstring(editionDate)) AutomaticUpdateStep = 10;
 
 		if (against)
 		{
 			for (int i = 1; i <= 10; i++)
 			{
-				if (off_signal) break;
+				if (offSignal) break;
 				if (channel != setlist.UpdateChannel)
 				{
 					channel = setlist.UpdateChannel;
@@ -442,7 +506,7 @@ void AutomaticUpdate()
 		{
 			for (int i = 1; i <= 1800; i++)
 			{
-				if (off_signal) break;
+				if (offSignal) break;
 				if (channel != setlist.UpdateChannel)
 				{
 					channel = setlist.UpdateChannel;

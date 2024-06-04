@@ -47,6 +47,8 @@
     <IncludePath>$(IncludePath)</IncludePath>
     <LibraryPath>$(LibraryPath)</LibraryPath>
     <GenerateManifest>false</GenerateManifest>
+    <LinkIncremental>
+    </LinkIncremental>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -91,6 +93,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <CompileAsManaged>
       </CompileAsManaged>
+      <GenerateSourceDependencies>true</GenerateSourceDependencies>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -172,19 +175,21 @@
     <ClInclude Include="HiEasyX\HiSysGUI\SysStatic.h" />
     <ClInclude Include="HiEasyX\HiWindow.h" />
     <ClInclude Include="IdtConfiguration.h" />
+    <ClInclude Include="IdtD2DPreparation.h" />
     <ClInclude Include="IdtDisplayManagement.h" />
     <ClInclude Include="IdtDrawpad.h" />
     <ClInclude Include="IdtFloating.h" />
     <ClInclude Include="IdtFreezeFrame.h" />
     <ClInclude Include="IdtGuid.h" />
+    <ClInclude Include="IdtHash.h" />
     <ClInclude Include="IdtHistoricalDrawpad.h" />
     <ClInclude Include="IdtImage.h" />
-    <ClInclude Include="IdtKey.h" />
     <ClInclude Include="IdtMagnification.h" />
     <ClInclude Include="IdtMain.h" />
     <ClInclude Include="IdtOther.h" />
     <ClInclude Include="IdtPlug-in.h" />
     <ClInclude Include="IdtSetting.h" />
+    <ClInclude Include="IdtState.h" />
     <ClInclude Include="IdtSysNotifications.h" />
     <ClInclude Include="imgui\imconfig.h" />
     <ClInclude Include="imgui\imgui.h" />
@@ -226,6 +231,7 @@
     <ClCompile Include="additional\ink_stroke_modeler\stroke_modeler.cc" />
     <ClCompile Include="additional\ink_stroke_modeler\types.cc" />
     <ClCompile Include="IdtConfiguration.cpp" />
+    <ClCompile Include="IdtD2DPreparation.cpp" />
     <ClCompile Include="IdtDisplayManagement.cpp" />
     <ClCompile Include="IdtDraw.cpp" />
     <ClCompile Include="IdtDraw.h" />
@@ -270,11 +276,12 @@
     <ClCompile Include="IdtFloating.cpp" />
     <ClCompile Include="IdtFreezeFrame.cpp" />
     <ClCompile Include="IdtGuid.cpp" />
+    <ClCompile Include="IdtHash.cpp" />
     <ClCompile Include="IdtHistoricalDrawpad.cpp" />
     <ClCompile Include="IdtImage.cpp" />
-    <ClCompile Include="IdtKey.cpp" />
     <ClCompile Include="IdtRts.cpp" />
     <ClCompile Include="IdtSetting.cpp" />
+    <ClCompile Include="IdtState.cpp" />
     <ClCompile Include="IdtSysNotifications.cpp" />
     <ClCompile Include="imgui\imgui.cpp" />
     <ClCompile Include="imgui\imgui_draw.cpp" />
@@ -302,6 +309,7 @@
     <ClCompile Include="zip_utils\zip.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ResourceCompile Include="src\icon.rc" />
     <ResourceCompile Include="智绘教.rc" />
   </ItemGroup>
   <ItemGroup>
@@ -325,6 +333,8 @@
     <Image Include="src\option.png" />
     <Image Include="src\paint_brush.png" />
     <Image Include="src\perspective.png" />
+    <Image Include="src\PluginFlag1.png" />
+    <Image Include="src\PluginFlag2.png" />
     <Image Include="src\ppt\arrow_left.png" />
     <Image Include="src\ppt\arrow_right.png" />
     <Image Include="src\ppt\end_show.png" />
@@ -338,6 +348,7 @@
     <Image Include="src\sign2.png" />
     <Image Include="src\sign3.png" />
     <Image Include="src\sign4.png" />
+    <Image Include="src\sign5.png" />
     <Image Include="src\skin\dragon.png" />
     <Image Include="src\skin\dragon_background.png" />
     <Image Include="src\skin\dragon_sign.png" />
@@ -355,6 +366,7 @@
     </Font>
   </ItemGroup>
   <ItemGroup>
+    <None Include="exe\DesktopDrawpadBlocker.exe" />
     <None Include="exe\智绘教CrashedHandler.exe" />
     <None Include="exe\智绘教CrashedHandlerClose.exe" />
     <None Include="exe\智绘教StartupItemSettings.exe" />

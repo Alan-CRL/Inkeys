@@ -40,13 +40,13 @@ wstring CurrentTime()
 
 void GetTime()
 {
-	thread_status[L"GetTime"] = true;
-	while (!off_signal)
+	threadStatus[L"GetTime"] = true;
+	while (!offSignal)
 	{
 		GetLocalTime(&sys_time);
-		Sleep(1000);
+		this_thread::sleep_for(chrono::milliseconds(1000));
 	}
-	thread_status[L"GetTime"] = false;
+	threadStatus[L"GetTime"] = false;
 }
 string GetCurrentTimeAll()
 {

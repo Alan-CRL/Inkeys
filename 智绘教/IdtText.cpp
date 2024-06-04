@@ -7,7 +7,7 @@ StringFormat stringFormat_left;
 RECT words_rect, dwords_rect, pptwords_rect;
 
 //string to wstring
-wstring string_to_wstring(const string& s)
+wstring StringToWstring(const string& s)
 {
 	if (s.empty()) return L"";
 
@@ -20,7 +20,7 @@ wstring string_to_wstring(const string& s)
 	return ws;
 }
 //wstring to string
-string wstring_to_string(const wstring& ws)
+string WstringToString(const wstring& ws)
 {
 	if (ws.empty()) return "";
 
@@ -33,38 +33,19 @@ string wstring_to_string(const wstring& ws)
 	return s;
 }
 
-//string to wstring
-wstring convert_to_wstring(const string s)
-{
-	LPCSTR pszSrc = s.c_str();
-	int nLen = s.size();
-
-	int nSize = MultiByteToWideChar(CP_ACP, 0, (LPCSTR)pszSrc, nLen, 0, 0);
-	WCHAR* pwszDst = new WCHAR[nSize + 1];
-	MultiByteToWideChar(CP_ACP, 0, (LPCSTR)pszSrc, nLen, pwszDst, nSize);
-	pwszDst[nSize] = 0;
-	if (pwszDst[0] == 0xFEFF) // skip Oxfeff
-		for (int i = 0; i < nSize; i++)
-			pwszDst[i] = pwszDst[i + 1];
-	wstring wcharString(pwszDst);
-	delete pwszDst;
-	return wcharString;
-}
-//wstring to string
-string convert_to_string(const wstring str)
-{
-	int size = WideCharToMultiByte(CP_ACP, 0, str.c_str(), str.size(), nullptr, 0, nullptr, nullptr);
-	auto p_str(std::make_unique<char[]>(size + 1));
-	WideCharToMultiByte(CP_ACP, 0, str.c_str(), str.size(), p_str.get(), size, nullptr, nullptr);
-	return std::string(p_str.get());
-}
 //c# string to wstring
-wstring bstr_to_wstring(const _bstr_t& bstr)
+wstring BstrToWstring(const _bstr_t& bstr)
 {
 	return static_cast<wchar_t*>(bstr);
 }
+//wstring to c# string
+_bstr_t WstringToBstr(const wstring& str)
+{
+	return _bstr_t(str.c_str());
+}
+
 //string to LPCWSTR
-LPCWSTR stringtoLPCWSTR(string str)
+LPCWSTR StringToLPCWSTR(string str)
 {
 	size_t size = str.length();
 	int wLen = ::MultiByteToWideChar(CP_UTF8,
@@ -79,7 +60,7 @@ LPCWSTR stringtoLPCWSTR(string str)
 	return buffer;
 }
 //string to urlencode
-string convert_to_urlencode(string str)
+string StringToUrlencode(string str)
 {
 	int size(str.size() * 3 + 1);
 	auto pstr(std::make_unique<char[]>(size + 1));
@@ -102,8 +83,9 @@ string convert_to_urlencode(string str)
 	str = pstr.get();
 	return str;
 }
+
 //utf-8 to GBK
-string convert_to_gbk(string strUTF8)
+string ConvertToGbk(string strUTF8)
 {
 	int len = MultiByteToWideChar(CP_UTF8, 0, strUTF8.c_str(), -1, NULL, 0);
 	TCHAR* wszGBK = new TCHAR[len + 1];
@@ -120,9 +102,9 @@ string convert_to_gbk(string strUTF8)
 	return strTemp;
 }
 //GBK to utf-8
-string convert_to_utf8(string str)
+string ConvertToUtf8(string str)
 {
-	wstring x = string_to_wstring(str);
+	wstring x = StringToWstring(str);
 
 	int size = WideCharToMultiByte(CP_UTF8, 0, x.c_str(), x.size(), nullptr, 0, nullptr, nullptr);
 	auto p_str(std::make_unique<char[]>(size + 1));

@@ -4,9 +4,9 @@
 #include <d3d11.h>
 #pragma comment(lib, "d3d11")
 
-extern IMAGE SettingSign[5];
+extern IMAGE SettingSign[10];
 extern WNDCLASSEX ImGuiWc;
-extern ID3D11ShaderResourceView* TextureSettingSign[5];
+extern ID3D11ShaderResourceView* TextureSettingSign[10];
 extern int SettingMainMode;
 
 extern int SettingWindowX;

@@ -9,8 +9,7 @@
 #include <cstring>
 #include <memory>
 
-#pragma pack(push)
-#pragma pack()
+#pragma pack(push, 8)
 
 namespace Json {
 template <typename T> class SecureAllocator {

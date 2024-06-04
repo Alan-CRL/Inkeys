@@ -14,21 +14,26 @@
 #include "IdtMain.h"
 
 #include "IdtConfiguration.h"
+#include "IdtD2DPreparation.h"
 #include "IdtDisplayManagement.h"
 #include "IdtDrawpad.h"
 #include "IdtGuid.h"
 #include "IdtImage.h"
 #include "IdtMagnification.h"
 #include "IdtOther.h"
+#include "IdtPlug-in.h"
 #include "IdtRts.h"
 #include "IdtSetting.h"
+#include "IdtState.h"
 #include "IdtSysNotifications.h"
 #include "IdtText.h"
+#include "IdtTime.h"
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
 
 #include <lm.h>
 #include <shellscalingapi.h>
+#include <shlobj.h>
 #pragma comment(lib, "netapi32.lib")
 
 int floating_main();
@@ -36,47 +41,56 @@ int drawpad_main();
 int SettingMain();
 void FreezeFrameWindow();
 
-bool already = false;
-
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string edition_date = "20240504a";				//程序发布日期
-string edition_channel = "LTS";					//程序发布通道
-string edition_code = "24H1(BetaH2)";			//程序版本
+string editionDate = "20240604c";				//程序发布日期
+string editionChannel = "LTS";					//程序发布通道
+string editionCode = "24H2";					//程序版本 (BetaH3)
 
-wstring userid; //用户ID（主板序列号）
-string global_path; //程序当前路径
+wstring userId; //用户ID（主板序列号）
+string globalPath; //程序当前路径
 
-int off_signal = false, off_signal_ready = false; //关闭指令
-map <wstring, bool> thread_status; //线程状态管理
+int offSignal = false, offSignalReady = false; //关闭指令
+map <wstring, bool> threadStatus; //线程状态管理
 
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-//int main()
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
 {
 	// 路径预处理
 	{
-		global_path = wstring_to_string(GetCurrentExeDirectory() + L"\\");
+		globalPath = WstringToString(GetCurrentExeDirectory() + L"\\");
 
-		if (!HasReadWriteAccess(string_to_wstring(global_path)))
+		if (!HasReadWriteAccess(StringToWstring(globalPath)))
 		{
 			if (IsUserAnAdmin()) MessageBox(NULL, L"当前目录权限受限无法正常运行，请将程序转移至其他目录后再运行", L"智绘教提示", MB_SYSTEMMODAL | MB_OK);
 			else ShellExecute(NULL, L"runas", GetCurrentExePath().c_str(), NULL, NULL, SW_SHOWNORMAL);
 			return 0;
 		}
 	}
+#ifdef IDT_RELEASE
+	// 防止重复启动
+	{
+		if (_waccess((StringToWstring(globalPath) + L"force_start.signal").c_str(), 0) == 0)
+		{
+			error_code ec;
+			filesystem::remove(StringToWstring(globalPath) + L"force_start.signal", ec);
+		}
+		else if (ProcessRunningCnt(GetCurrentExePath()) > 1) return 0;
+	}
+#endif
+
 	// 用户ID获取
 	{
-		userid = string_to_wstring(getDeviceGUID());
-		if (userid.empty() || !isValidString(userid)) userid = L"Error";
+		userId = StringToWstring(getDeviceGUID());
+		if (userId.empty() || !isValidString(userId)) userId = L"Error";
 	}
 	// 日志服务初始化
 	{
 		wstring Timestamp = getTimestamp();
 
 		error_code ec;
-		if (_waccess((string_to_wstring(global_path) + L"log").c_str(), 0) == -1) filesystem::create_directory(string_to_wstring(global_path) + L"log", ec);
+		if (_waccess((StringToWstring(globalPath) + L"log").c_str(), 0) == -1) filesystem::create_directory(StringToWstring(globalPath) + L"log", ec);
 		else
 		{
 			// 历史日志清理
@@ -149,7 +163,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 					}
 				};
 
-			string directoryPath = global_path + "log";
+			string directoryPath = globalPath + "log";
 
 			filesystem::path directory(directoryPath);
 			if (filesystem::exists(directory) && filesystem::is_directory(directory))
@@ -158,9 +172,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			}
 		}
 
-		if (_waccess((string_to_wstring(global_path) + L"log\\idt" + Timestamp + L".log").c_str(), 0) == 0) filesystem::remove(string_to_wstring(global_path) + L"log\\idt" + Timestamp + L".log", ec);
+		if (_waccess((StringToWstring(globalPath) + L"log\\idt" + Timestamp + L".log").c_str(), 0) == 0) filesystem::remove(StringToWstring(globalPath) + L"log\\idt" + Timestamp + L".log", ec);
 
-		auto IDTLoggerFileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(global_path + "log\\idt" + wstring_to_string(Timestamp) + ".log");
+		auto IDTLoggerFileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(globalPath + "log\\idt" + WstringToString(Timestamp) + ".log");
 
 		spdlog::init_thread_pool(8192, 64);
 		IDTLogger = std::make_shared<spdlog::async_logger>("IDTLogger", IDTLoggerFileSink, spdlog::thread_pool(), spdlog::async_overflow_policy::block);
@@ -169,7 +183,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		IDTLogger->set_pattern("[%l][%H:%M:%S.%e]%v");
 
 		IDTLogger->flush_on(spdlog::level::info);
-		IDTLogger->info("[主线程][IdtMain] 日志开始记录 " + wstring_to_string(userid));
+		IDTLogger->info("[主线程][IdtMain] 日志开始记录 " + WstringToString(userId));
 
 		//logger->info("");
 		//logger->warn("");
@@ -178,7 +192,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 程序自动更新
 	{
-		if (_waccess((string_to_wstring(global_path) + L"update.json").c_str(), 4) == 0)
+		if (_waccess((StringToWstring(globalPath) + L"update.json").c_str(), 4) == 0)
 		{
 			wstring tedition, representation;
 			string thash_md5, thash_sha256;
@@ -191,73 +205,73 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 			ifstream readjson;
 			readjson.imbue(locale("zh_CN.UTF8"));
-			readjson.open(wstring_to_string(string_to_wstring(global_path) + L"update.json").c_str());
+			readjson.open(WstringToString(StringToWstring(globalPath) + L"update.json").c_str());
 
 			if (reader.parse(readjson, root))
 			{
-				if (root.isMember("edition")) tedition = string_to_wstring(convert_to_gbk(root["edition"].asString()));
+				if (root.isMember("edition")) tedition = StringToWstring(ConvertToGbk(root["edition"].asString()));
 				else flag = false;
 
-				if (root.isMember("representation")) representation = string_to_wstring(convert_to_gbk(root["representation"].asString()));
+				if (root.isMember("representation")) representation = StringToWstring(ConvertToGbk(root["representation"].asString()));
 				else flag = false;
 
 				if (root.isMember("hash"))
 				{
-					if (root["hash"].isMember("md5")) thash_md5 = convert_to_gbk(root["hash"]["md5"].asString());
+					if (root["hash"].isMember("md5")) thash_md5 = ConvertToGbk(root["hash"]["md5"].asString());
 					else flag = false;
-					if (root["hash"].isMember("sha256")) thash_sha256 = convert_to_gbk(root["hash"]["sha256"].asString());
+					if (root["hash"].isMember("sha256")) thash_sha256 = ConvertToGbk(root["hash"]["sha256"].asString());
 					else flag = false;
 				}
 				else flag = false;
 
-				if (root.isMember("old_name")) old_name = string_to_wstring(convert_to_gbk(root["old_name"].asString()));
+				if (root.isMember("old_name")) old_name = StringToWstring(ConvertToGbk(root["old_name"].asString()));
 			}
 			readjson.close();
 
 			string hash_md5, hash_sha256;
 			{
 				hashwrapper* myWrapper = new md5wrapper();
-				hash_md5 = myWrapper->getHashFromFile(wstring_to_string(GetCurrentExePath()));
+				hash_md5 = myWrapper->getHashFromFileW(GetCurrentExePath());
 				delete myWrapper;
 			}
 			{
 				hashwrapper* myWrapper = new sha256wrapper();
-				hash_sha256 = myWrapper->getHashFromFile(wstring_to_string(GetCurrentExePath()));
+				hash_sha256 = myWrapper->getHashFromFileW(GetCurrentExePath());
 				delete myWrapper;
 			}
 
-			if (flag && tedition == string_to_wstring(edition_date) && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
+			if (flag && tedition == StringToWstring(editionDate) && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
 			{
 				//符合条件，开始替换版本
 
-				Sleep(1000);
+				this_thread::sleep_for(chrono::milliseconds(1000));
 
-				filesystem::path directory(global_path);
+				filesystem::path directory(globalPath);
 				string main_path = directory.parent_path().parent_path().string();
 
 				error_code ec;
-				if (!old_name.empty()) filesystem::remove(string_to_wstring(main_path) + L"\\" + old_name, ec);
-				else filesystem::remove(string_to_wstring(main_path) + L"\\智绘教.exe", ec);
-				filesystem::copy_file(string_to_wstring(global_path) + representation, string_to_wstring(main_path) + L"\\智绘教.exe", std::filesystem::copy_options::overwrite_existing, ec);
+				if (!old_name.empty()) filesystem::remove(StringToWstring(main_path) + L"\\" + old_name, ec);
+				else filesystem::remove(StringToWstring(main_path) + L"\\智绘教.exe", ec);
+				filesystem::copy_file(StringToWstring(globalPath) + representation, StringToWstring(main_path) + L"\\智绘教.exe", std::filesystem::copy_options::overwrite_existing, ec);
 
-				ShellExecute(NULL, NULL, (string_to_wstring(main_path) + L"\\智绘教.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+				ShellExecute(NULL, NULL, (StringToWstring(main_path) + L"\\智绘教.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
 
 				return 0;
 			}
 			else
 			{
 				error_code ec;
-				filesystem::remove(string_to_wstring(global_path) + L"update.json", ec);
+				filesystem::remove(StringToWstring(globalPath) + L"update.json", ec);
 
-				filesystem::path directory(global_path);
+				filesystem::path directory(globalPath);
 				string main_path = directory.parent_path().parent_path().string();
-				if (!old_name.empty()) ShellExecute(NULL, NULL, (string_to_wstring(main_path) + L"\\" + old_name).c_str(), NULL, NULL, SW_SHOWNORMAL);
-				else ShellExecute(NULL, NULL, (string_to_wstring(main_path) + L"\\智绘教.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+				if (!old_name.empty()) ShellExecute(NULL, NULL, (StringToWstring(main_path) + L"\\" + old_name).c_str(), NULL, NULL, SW_SHOWNORMAL);
+				else ShellExecute(NULL, NULL, (StringToWstring(main_path) + L"\\智绘教.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
 
 				return 0;
 			}
 		}
-		if (_waccess((string_to_wstring(global_path) + L"installer\\update.json").c_str(), 4) == 0)
+		if (_waccess((StringToWstring(globalPath) + L"installer\\update.json").c_str(), 4) == 0)
 		{
 			wstring tedition, path;
 			string thash_md5, thash_sha256;
@@ -269,21 +283,21 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 			ifstream readjson;
 			readjson.imbue(locale("zh_CN.UTF8"));
-			readjson.open(wstring_to_string(string_to_wstring(global_path) + L"installer\\update.json").c_str());
+			readjson.open(WstringToString(StringToWstring(globalPath) + L"installer\\update.json").c_str());
 
 			if (reader.parse(readjson, root))
 			{
-				if (root.isMember("edition")) tedition = string_to_wstring(convert_to_gbk(root["edition"].asString()));
+				if (root.isMember("edition")) tedition = StringToWstring(ConvertToGbk(root["edition"].asString()));
 				else flag = false;
 
-				if (root.isMember("path")) path = string_to_wstring(convert_to_gbk(root["path"].asString()));
+				if (root.isMember("path")) path = StringToWstring(ConvertToGbk(root["path"].asString()));
 				else flag = false;
 
 				if (root.isMember("hash"))
 				{
-					if (root["hash"].isMember("md5")) thash_md5 = convert_to_gbk(root["hash"]["md5"].asString());
+					if (root["hash"].isMember("md5")) thash_md5 = ConvertToGbk(root["hash"]["md5"].asString());
 					else flag = false;
-					if (root["hash"].isMember("sha256")) thash_sha256 = convert_to_gbk(root["hash"]["sha256"].asString());
+					if (root["hash"].isMember("sha256")) thash_sha256 = ConvertToGbk(root["hash"]["sha256"].asString());
 					else flag = false;
 				}
 				else flag = false;
@@ -294,49 +308,49 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			string hash_md5, hash_sha256;
 			{
 				hashwrapper* myWrapper = new md5wrapper();
-				hash_md5 = myWrapper->getHashFromFile(global_path + wstring_to_string(path));
+				hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + path);
 				delete myWrapper;
 			}
 			{
 				hashwrapper* myWrapper = new sha256wrapper();
-				hash_sha256 = myWrapper->getHashFromFile(global_path + wstring_to_string(path));
+				hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + path);
 				delete myWrapper;
 			}
 
-			if (flag && tedition > string_to_wstring(edition_date) && _waccess((string_to_wstring(global_path) + path).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
+			if (flag && tedition > StringToWstring(editionDate) && _waccess((StringToWstring(globalPath) + path).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
 			{
 				//符合条件，开始替换版本
 				{
-					root["old_name"] = Json::Value(convert_to_utf8(wstring_to_string(GetCurrentExeName())));
+					root["old_name"] = Json::Value(ConvertToUtf8(WstringToString(GetCurrentExeName())));
 
 					Json::StreamWriterBuilder outjson;
 					outjson.settings_["emitUTF8"] = true;
 					std::unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
 					ofstream writejson;
 					writejson.imbue(locale("zh_CN.UTF8"));
-					writejson.open(wstring_to_string(string_to_wstring(global_path) + L"installer\\update.json").c_str());
+					writejson.open(WstringToString(StringToWstring(globalPath) + L"installer\\update.json").c_str());
 					writer->write(root, &writejson);
 					writejson.close();
 				}
 
-				if (ExtractResource((string_to_wstring(global_path) + L"Inkeys.png").c_str(), L"PNG_ICON", MAKEINTRESOURCE(236)))
+				if (ExtractResource((StringToWstring(globalPath) + L"Inkeys.png").c_str(), L"PNG_ICON", MAKEINTRESOURCE(236)))
 				{
-					IdtSysNotificationsImageAndText04(L"智绘教", 5000, string_to_wstring(global_path) + L"Inkeys.png", L"智绘教正在自动更新，请耐心等待", L"已通过 MD5 和 SHA265 完整性校验", L"版本号 " + string_to_wstring(edition_date) + L" -> " + tedition);
+					IdtSysNotificationsImageAndText04(L"智绘教", 5000, StringToWstring(globalPath) + L"Inkeys.png", L"智绘教正在自动更新，请耐心等待", L"已通过 MD5 和 SHA265 完整性校验", L"版本号 " + StringToWstring(editionDate) + L" -> " + tedition);
 
 					error_code ec;
-					filesystem::remove(string_to_wstring(global_path) + L"Inkeys.png", ec);
+					filesystem::remove(StringToWstring(globalPath) + L"Inkeys.png", ec);
 				}
-				ShellExecute(NULL, NULL, (string_to_wstring(global_path) + path).c_str(), NULL, NULL, SW_SHOWNORMAL);
+				ShellExecute(NULL, NULL, (StringToWstring(globalPath) + path).c_str(), NULL, NULL, SW_SHOWNORMAL);
 
 				return 0;
 			}
-			else if (tedition == string_to_wstring(edition_date))
+			else if (tedition == StringToWstring(editionDate))
 			{
 				std::error_code ec;
-				filesystem::remove_all(string_to_wstring(global_path) + L"installer", ec);
-				filesystem::remove_all(string_to_wstring(global_path) + L"api", ec);
+				filesystem::remove_all(StringToWstring(globalPath) + L"installer", ec);
+				filesystem::remove_all(StringToWstring(globalPath) + L"api", ec);
 
-				filesystem::remove(string_to_wstring(global_path) + L"PptCOM.dll", ec);
+				filesystem::remove(StringToWstring(globalPath) + L"PptCOM.dll", ec);
 			}
 		}
 	}
@@ -389,42 +403,51 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		}
 		IDTLogger->info("[主线程][IdtMain] 初始化DPI完成");
 	}
+	// 界面绘图库初始化
+	{
+		D2DStarup();
+	}
 	// 字体初始化
 	{
 		IDTLogger->info("[主线程][IdtMain] 初始化字体");
 
 		IDTLogger->info("[主线程][IdtMain] 加载字体");
 
-		HMODULE hModule = GetModuleHandle(NULL);
-		HRSRC hResource = FindResource(hModule, MAKEINTRESOURCE(198), L"TTF");
-		HGLOBAL hMemory = LoadResource(hModule, hResource);
-		PVOID pResourceData = LockResource(hMemory);
-		DWORD dwResourceSize = SizeofResource(hModule, hResource);
-		fontCollection.AddMemoryFont(pResourceData, dwResourceSize);
-
 		INT numFound = 0;
+		HRSRC hRes = ::FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
+		HGLOBAL hMem = ::LoadResource(NULL, hRes);
+		DWORD dwSize = ::SizeofResource(NULL, hRes);
+
+		fontCollection.AddMemoryFont(hMem, dwSize);
 		fontCollection.GetFamilies(1, &HarmonyOS_fontFamily, &numFound);
 
 		{
-			if (_waccess((string_to_wstring(global_path) + L"ttf").c_str(), 0) == -1)
+			if (_waccess((StringToWstring(globalPath) + L"ttf").c_str(), 0) == -1)
 			{
 				error_code ec;
-				filesystem::create_directory(string_to_wstring(global_path) + L"ttf", ec);
+				filesystem::create_directory(StringToWstring(globalPath) + L"ttf", ec);
 			}
-			ExtractResource((string_to_wstring(global_path) + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
+			ExtractResource((StringToWstring(globalPath) + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
+
+			IdtFontCollectionLoader* D2DFontCollectionLoader = new IdtFontCollectionLoader;
+			D2DFontCollectionLoader->AddFont(D2DTextFactory, StringToWstring(globalPath) + L"ttf\\hmossscr.ttf");
+
+			D2DTextFactory->RegisterFontCollectionLoader(D2DFontCollectionLoader);
+			D2DTextFactory->CreateCustomFontCollection(D2DFontCollectionLoader, 0, 0, &D2DFontCollection);
+			D2DTextFactory->UnregisterFontCollectionLoader(D2DFontCollectionLoader);
 		}
 
 		IDTLogger->info("[主线程][IdtMain] 加载字体完成");
 
-		//filesystem::create_directory(string_to_wstring(global_path) + L"ttf");
-		//ExtractResource((string_to_wstring(global_path) + L"ttf\\HarmonyOS_Sans_SC_Regular.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
-		//fontCollection.AddFontFile((string_to_wstring(global_path) + L"ttf\\HarmonyOS_Sans_SC_Regular.ttf").c_str());
-		//filesystem::path directory((string_to_wstring(global_path) + L"ttf").c_str());
+		//filesystem::create_directory(StringToWstring(globalPath) + L"ttf");
+		//ExtractResource((StringToWstring(globalPath) + L"ttf\\HarmonyOS_Sans_SC_Regular.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
+		//fontCollection.AddFontFile((StringToWstring(globalPath) + L"ttf\\HarmonyOS_Sans_SC_Regular.ttf").c_str());
+		//filesystem::path directory((StringToWstring(globalPath) + L"ttf").c_str());
 		//filesystem::remove_all(directory);
 
-		//AddFontResourceEx((string_to_wstring(global_path) + L"ttf\\HarmonyOS_Sans_SC_Regular.ttf").c_str(), FR_PRIVATE, NULL);
-		//AddFontResourceEx((string_to_wstring(global_path) + L"ttf\\Douyu_Font.otf").c_str(), FR_PRIVATE, NULL);
-		//AddFontResourceEx((string_to_wstring(global_path) + L"ttf\\SmileySans-Oblique.ttf").c_str(), FR_PRIVATE, NULL);
+		//AddFontResourceEx((StringToWstring(globalPath) + L"ttf\\HarmonyOS_Sans_SC_Regular.ttf").c_str(), FR_PRIVATE, NULL);
+		//AddFontResourceEx((StringToWstring(globalPath) + L"ttf\\Douyu_Font.otf").c_str(), FR_PRIVATE, NULL);
+		//AddFontResourceEx((StringToWstring(globalPath) + L"ttf\\SmileySans-Oblique.ttf").c_str(), FR_PRIVATE, NULL);
 
 		//wcscpy(font.lfFaceName, L"HarmonyOS Sans SC");
 		//wcscpy(font.lfFaceName, L"DOUYU Gdiplus::Font");
@@ -443,17 +466,46 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		IDTLogger->info("[主线程][IdtMain] 设置字体完成");
 		IDTLogger->info("[主线程][IdtMain] 初始化字体完成");
 	}
+	// 监视器信息初始化
+	{
+		IDTLogger->info("[主线程][IdtMain] 初始化监视器信息");
+
+		// 显示器检查
+		IDTLogger->info("[主线程][IdtMain] 监视器信息查询");
+		DisplayManagementMain();
+		IDTLogger->info("[主线程][IdtMain] 监视器信息查询完成");
+
+		shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
+		int DisplaysNumberTemp = DisplaysNumber;
+		DisplaysNumberLock.unlock();
+
+		IDTLogger->info("[主线程][IdtMain] MagnifierThread函数线程启动");
+		thread MagnifierThread_thread(MagnifierThread);
+		MagnifierThread_thread.detach();
+
+		if (DisplaysNumberTemp > 1) IDTLogger->warn("[主线程][IdtMain] 拥有多个监视器");
+
+		IDTLogger->info("[主线程][IdtMain] 初始化监视器信息完成");
+	}
 	// 配置信息初始化
 	{
 		IDTLogger->info("[主线程][IdtMain] 初始化配置信息");
 
-		if (_waccess((string_to_wstring(global_path) + L"opt\\deploy.json").c_str(), 4) == -1)
+		if (_waccess((StringToWstring(globalPath) + L"opt\\deploy.json").c_str(), 4) == -1)
 		{
 			IDTLogger->warn("[主线程][IdtMain] 配置信息不存在");
 
 			IDTLogger->info("[主线程][IdtMain] 生成配置信息");
 			FirstSetting(true);
 			IDTLogger->info("[主线程][IdtMain] 生成配置信息完成");
+
+			{
+				shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
+				int DisplaysNumberTemp = DisplaysNumber;
+				DisplaysNumberLock.unlock();
+				if (DisplaysNumberTemp > 1)
+					MessageBox(floating_window, (L"检测到计算机拥有 " + to_wstring(DisplaysNumberTemp) + L" 个显示器，智绘教目前不支持在拓展显示器上绘图！\n仅能在主显示器上绘图！").c_str(), L"智绘教警告", MB_OK | MB_SYSTEMMODAL);
+			}
 		}
 
 		IDTLogger->info("[主线程][IdtMain] 读取配置信息");
@@ -463,6 +515,11 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		IDTLogger->info("[主线程][IdtMain] 更新配置信息");
 		WriteSetting();
 		IDTLogger->info("[主线程][IdtMain] 更新配置信息完成");
+	}
+	// 插件配置初始化
+	{
+		// 启动 DesktopDrawpadBlocker
+		thread(StartDesktopDrawpadBlocker).detach();
 	}
 	// COM初始化
 	HANDLE hActCtx;
@@ -477,7 +534,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		//PptCOM 组件加载
 		{
 			IDTLogger->info("[主线程][IdtMain] 初始化PptCOM.dll");
-			ExtractResource((string_to_wstring(global_path) + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(222));
+			ExtractResource((StringToWstring(globalPath) + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(222));
 			IDTLogger->info("[主线程][IdtMain] 初始化PptCOM.dll完成");
 
 			IDTLogger->info("[主线程][IdtMain] 初始化上下文API");
@@ -494,37 +551,11 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			IDTLogger->info("[主线程][IdtMain] 初始化上下文API完成");
 
 			IDTLogger->info("[主线程][IdtMain] 载入PptCOM.dll");
-			HMODULE hModule = LoadLibrary((string_to_wstring(global_path) + L"PptCOM.dll").c_str());
+			HMODULE hModule = LoadLibrary((StringToWstring(globalPath) + L"PptCOM.dll").c_str());
 			IDTLogger->info("[主线程][IdtMain] 载入PptCOM.dll完成");
 		}
 
 		IDTLogger->info("[主线程][IdtMain] 初始化COM完成");
-	}
-	// 监视器信息初始化
-	{
-		IDTLogger->info("[主线程][IdtMain] 初始化监视器信息");
-
-		// 显示器检查
-		IDTLogger->info("[主线程][IdtMain] 监视器信息查询");
-		DisplayManagementMain();
-		IDTLogger->info("[主线程][IdtMain] 监视器信息查询完成");
-
-		shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
-		int DisplaysNumberTemp = DisplaysNumber;
-		DisplaysNumberLock.unlock();
-		if (DisplaysNumberTemp)
-		{
-			IDTLogger->info("[主线程][IdtMain] MagnifierThread函数线程启动");
-			thread MagnifierThread_thread(MagnifierThread);
-			MagnifierThread_thread.detach();
-		}
-		else
-		{
-			IDTLogger->warn("[主线程][IdtMain] 拥有多个监视器");
-			MessageBox(floating_window, (L"检测到计算机拥有 " + to_wstring(DisplaysNumberTemp) + L" 个显示器，智绘教目前不支持拥有拓展显示器电脑！\n\n程序将继续启动，但窗口定格，历史画板保存，超级恢复功能将失效。\n且仅能在主显示器上绘图！").c_str(), L"智绘教警告", MB_OK | MB_SYSTEMMODAL);
-		}
-
-		IDTLogger->info("[主线程][IdtMain] 初始化监视器信息完成");
 	}
 	//桌面快捷方式初始化
 	if (setlist.CreateLnk)
@@ -536,34 +567,45 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 	// 窗口
 	{
-		IDTLogger->info("[主线程][IdtMain] 创建悬浮窗窗口");
-		hiex::PreSetWindowShowState(SW_HIDE);
-		floating_window = initgraph(background.getwidth(), background.getheight());
-		IDTLogger->info("[主线程][IdtMain] 创建悬浮窗窗口完成");
-
-		IDTLogger->info("[主线程][IdtMain] 创建PPT批注控件窗口");
-		hiex::PreSetWindowShowState(SW_HIDE);
-		ppt_window = initgraph(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-		IDTLogger->info("[主线程][IdtMain] 创建PPT批注控件窗口完成");
-
-		IDTLogger->info("[主线程][IdtMain] 创建画板窗口");
-		hiex::PreSetWindowShowState(SW_HIDE);
-		drawpad_window = initgraph(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-		IDTLogger->info("[主线程][IdtMain] 创建画板窗口完成");
+		wstring ClassName;
+		if (userId == L"Error") ClassName = L"IdtHiEasyX";
+		else ClassName = userId;
 
 		IDTLogger->info("[主线程][IdtMain] 创建定格背景窗口");
 		hiex::PreSetWindowShowState(SW_HIDE);
-		freeze_window = initgraph(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+		freeze_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Idt4 FreezeWindow", ClassName.c_str());
 		IDTLogger->info("[主线程][IdtMain] 创建定格背景窗口完成");
 
-		IDTLogger->info("[主线程][IdtMain] 置顶悬浮窗窗口");
-		SetWindowPos(floating_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-		IDTLogger->info("[主线程][IdtMain] 置顶PPT批注控件窗口");
-		SetWindowPos(ppt_window, floating_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-		IDTLogger->info("[主线程][IdtMain] 置顶画板窗口");
-		SetWindowPos(drawpad_window, ppt_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-		IDTLogger->info("[主线程][IdtMain] 置顶定格背景窗口");
-		SetWindowPos(freeze_window, drawpad_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+		IDTLogger->info("[主线程][IdtMain] 创建画板窗口");
+		hiex::PreSetWindowShowState(SW_HIDE);
+		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Idt3 DrawpadWindow", ClassName.c_str(), nullptr, freeze_window);
+		IDTLogger->info("[主线程][IdtMain] 创建画板窗口完成");
+
+		IDTLogger->info("[主线程][IdtMain] 创建PPT批注控件窗口");
+		hiex::PreSetWindowShowState(SW_HIDE);
+		ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Idt2 PptWindow", ClassName.c_str(), nullptr, drawpad_window);
+		IDTLogger->info("[主线程][IdtMain] 创建PPT批注控件窗口完成");
+
+		IDTLogger->info("[主线程][IdtMain] 创建悬浮窗窗口");
+		hiex::PreSetWindowShowState(SW_HIDE);
+		floating_window = hiex::initgraph_win32(background.getwidth(), background.getheight(), 0, L"Idt1 FloatingWindow", ClassName.c_str(), nullptr, ppt_window);
+		IDTLogger->info("[主线程][IdtMain] 创建悬浮窗窗口完成");
+
+		// 画板窗口在注册 RTS 前必须拥有置顶属性，在显示前先进行一次全局置顶
+		SetWindowPos(freeze_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+
+		// 画板窗口提前配置其不能拥有焦点的样式，再注册 RTS
+		{
+			while (!(GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE))
+			{
+				SetWindowLong(drawpad_window, GWL_EXSTYLE, GetWindowLong(drawpad_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+				if (GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
+
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+
+			SetWindowPos(drawpad_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+		}
 
 		IDTLogger->info("[主线程][IdtMain] TopWindow函数线程启动");
 		thread TopWindowThread(TopWindow);
@@ -618,7 +660,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		{
 			MessageBox(NULL, (L"触控库 RTS 初始化失败，程序停止运行！\nRTS_Err" + to_wstring(-uRealTimeStylus)).c_str(), L"错误", MB_OK | MB_SYSTEMMODAL);
 
-			off_signal = true;
+			offSignal = true;
 
 			// 反初始化 COM 环境
 			CoUninitialize();
@@ -649,17 +691,20 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		IDTLogger->info("[主线程][IdtMain] FreezeFrameWindow函数线程启动");
 		thread FreezeFrameWindow_thread(FreezeFrameWindow);
 		FreezeFrameWindow_thread.detach();
+
+		IDTLogger->info("[主线程][IdtMain] StateMonitoring函数线程启动");
+		thread(StateMonitoring).detach();
 	}
 
-	while (!off_signal) Sleep(500);
+	while (!offSignal) this_thread::sleep_for(chrono::milliseconds(500));
 
 	IDTLogger->info("[主线程][IdtMain] 等待各函数线程结束");
 
 	int WaitingCount = 0;
 	for (; WaitingCount < 20; WaitingCount++)
 	{
-		if (!thread_status[L"floating_main"] && !thread_status[L"drawpad_main"] && !thread_status[L"SettingMain"] && !thread_status[L"FreezeFrameWindow"] && !thread_status[L"NetUpdate"]) break;
-		Sleep(500);
+		if (!threadStatus[L"floating_main"] && !threadStatus[L"drawpad_main"] && !threadStatus[L"SettingMain"] && !threadStatus[L"FreezeFrameWindow"] && !threadStatus[L"NetUpdate"]) break;
+		this_thread::sleep_for(chrono::milliseconds(500));
 	}
 	if (WaitingCount >= 20) IDTLogger->warn("[主线程][IdtMain] 结束函数线程超时并强制结束线程");
 
@@ -681,23 +726,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 #ifdef IDT_RELEASE
 	IDTLogger->info("[主线程][IdtMain] 等待崩溃重启助手结束");
-	while (!off_signal_ready) Sleep(500);
+	while (!offSignalReady) this_thread::sleep_for(chrono::milliseconds(500));
 	IDTLogger->info("[主线程][IdtMain] 崩溃重启助手结束");
 #endif
 
 	IDTLogger->info("[主线程][IdtMain] 已结束智绘教所有线程并关闭程序");
 	return 0;
-}
-// 路径权限检测
-bool HasReadWriteAccess(const std::wstring& directoryPath)
-{
-	DWORD attributes = GetFileAttributesW(directoryPath.c_str());
-	if (attributes == INVALID_FILE_ATTRIBUTES) return false;
-	if (!(attributes & FILE_ATTRIBUTE_DIRECTORY)) return false;
-	if (attributes & FILE_ATTRIBUTE_READONLY) return false;
-	if (attributes & FILE_ATTRIBUTE_READONLY) return false;
-
-	return true;
 }
 
 // 调测专用

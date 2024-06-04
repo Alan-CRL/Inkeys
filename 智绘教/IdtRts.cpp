@@ -93,7 +93,7 @@ void RTSSpeed()
 	double speed;
 
 	clock_t tRecord = 0;
-	while (!off_signal)
+	while (!offSignal)
 	{
 		for (int i = 0; i < touchNum; i++)
 		{

@@ -20,8 +20,7 @@
 #pragma warning(disable : 4251)
 #endif // if defined(JSONCPP_DISABLE_DLL_INTERFACE_WARNING)
 
-#pragma pack(push)
-#pragma pack()
+#pragma pack(push, 8)
 
 namespace Json {
 
@@ -218,7 +217,7 @@ private:
  *     - otherwise, it the values do not fit on one line, or the array contains
  *       object or non empty array, then print one value per line.
  *
- * If the Value have comments then they are outputted according to their
+ * If the Value have comments then they are outputed according to their
  *#CommentPlacement.
  *
  * \sa Reader, Value, Value::setComment()
@@ -287,7 +286,7 @@ private:
  *     - otherwise, it the values do not fit on one line, or the array contains
  *       object or non empty array, then print one value per line.
  *
- * If the Value have comments then they are outputted according to their
+ * If the Value have comments then they are outputed according to their
  #CommentPlacement.
  *
  * \sa Reader, Value, Value::setComment()

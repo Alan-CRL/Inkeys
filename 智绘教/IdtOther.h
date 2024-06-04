@@ -2,13 +2,6 @@
 #include "IdtMain.h"
 #include "IdtText.h"
 
-#include <shlobj.h>
-#include <shlwapi.h>
-#include <objbase.h>
-#include <io.h>
-#pragma comment(lib, "shlwapi.lib")
-#pragma comment(lib, "shell32.lib")
-
 wstring GetCurrentExeDirectory();
 wstring GetCurrentExePath();
 wstring GetCurrentExeName();
@@ -25,3 +18,11 @@ bool isValidString(const wstring& str);
 bool IsShortcutPointingToDirectory(const std::wstring& shortcutPath, const std::wstring& targetDirectory);
 bool CreateShortcut(const std::wstring& shortcutPath, const std::wstring& targetExePath);
 void SetShortcut();
+
+// 程序进程状态获取
+bool isProcessRunning(const std::wstring& processPath);
+// 进程程序路径查询
+int ProcessRunningCnt(const std::wstring& processPath);
+
+// 路径权限检测
+bool HasReadWriteAccess(const std::wstring& directoryPath);

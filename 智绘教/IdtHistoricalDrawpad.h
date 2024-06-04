@@ -1,13 +1,6 @@
 #pragma once
 #include "IdtMain.h"
 
-#include "IdtConfiguration.h"
-#include "IdtDisplayManagement.h"
-#include "IdtDraw.h"
-#include "IdtMagnification.h"
-#include "IdtText.h"
-#include "IdtTime.h"
-
 void removeEmptyFolders(std::wstring path);
 void removeUnknownFiles(std::wstring path, std::deque<std::wstring> knownFiles);
 deque<wstring> getPrevTwoDays(const std::wstring& date, int day);
@@ -20,3 +13,8 @@ extern Json::Value record_value;
 void LoadDrawpad();
 //保存图像到指定目录
 void SaveScreenShot(IMAGE img, bool record_pointer_add);
+
+// 撤回操作
+void IdtRecall();
+// 超级恢复操作
+void IdtRecovery();

@@ -1,42 +1,22 @@
 #pragma once
 #include "IdtMain.h"
 
+// 选色轮相关
 struct BrushColorChooseStruct
 {
 	int x, y;
 	int last_x, last_y;
 };
 extern BrushColorChooseStruct BrushColorChoose;
-
 extern IMAGE ColorPaletteImg;
 extern shared_mutex ColorPaletteSm;
 
+// TODO 老旧残留
 struct penetrateStruct
 {
 	bool select;
 }; //窗口穿透
 extern penetrateStruct penetrate;
-struct chooseStruct
-{
-	bool select;
-	bool mode;
-}; //选择
-extern chooseStruct choose;
-struct brushStruct
-{
-	bool select;
-	int width, mode;
-	COLORREF color, primary_colour;
-
-	int PenWidthHistory, HighlighterWidthHistory;
-}; //画笔
-extern brushStruct brush;
-struct rubberStruct
-{
-	bool select;
-	int mode;
-}; //橡皮
-extern rubberStruct rubber;
 struct testStruct
 {
 	bool select;
@@ -79,8 +59,9 @@ bool CompareImagesWithBuffer(IMAGE* img1, IMAGE* img2);
 //设置图像必须不拥有全透明像素（将所有全透明像素点透明度设置为1）
 void SetAlphaToOne(IMAGE* pImg);
 
-//智能绘图部分
+double EuclideanDistance(POINT a, POINT b);
 
+//智能绘图部分
 extern map<pair<int, int>, bool> extreme_point;
 extern shared_mutex ExtremePointSm;
 //extern map<pair<Point, Point >, bool> extreme_line;
