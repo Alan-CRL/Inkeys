@@ -620,8 +620,8 @@ int SettingMain()
 
 					// --------------------
 
+#ifndef IDT_RELEASE
 					// 实验室
-					/*
 					{
 						ImGui::SetCursorPos({ 10.0f,44.0f + 616.0f - 135.0f });
 
@@ -634,7 +634,7 @@ int SettingMain()
 						ImGui::PopStyleColor(PushStyleColorNum);
 						ImGui::PopStyleVar(PushStyleVarNum);
 					}
-					*/
+#endif
 
 					// 程序调测
 					{

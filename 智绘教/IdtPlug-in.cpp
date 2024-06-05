@@ -461,35 +461,35 @@ void DrawControlWindow()
 		}
 		// 中间控件
 		{
-			PPTUIControl[L"RoundRect/RoundRectMiddle/x"] = { (float)PPTMainMonitor.MonitorWidth / 2 - (30) * PPTUIScale, 5, 1 };
-			PPTUIControl[L"RoundRect/RoundRectMiddle/y"] = { (float)PPTMainMonitor.MonitorHeight + (5) * PPTUIScale, 5, 1 };
-			PPTUIControl[L"RoundRect/RoundRectMiddle/width"] = { (60) * PPTUIScale, 5, 1 };
-			PPTUIControl[L"RoundRect/RoundRectMiddle/height"] = { (60) * PPTUIScale, 5, 1 };
-			PPTUIControl[L"RoundRect/RoundRectMiddle/ellipseheight"] = { (30) * PPTUIScale, 5, 1 };
-			PPTUIControl[L"RoundRect/RoundRectMiddle/ellipsewidth"] = { (30) * PPTUIScale, 5, 1 };
-			PPTUIControl[L"RoundRect/RoundRectMiddle/frame/width"] = { (1) * PPTUIScale, 5, 1 };
+			PPTUIControl[L"RoundRect/RoundRectMiddleLeft/x"] = { (float)PPTMainMonitor.MonitorWidth / 2 - (30) * PPTUIScale, 5, 1 };
+			PPTUIControl[L"RoundRect/RoundRectMiddleLeft/y"] = { (float)PPTMainMonitor.MonitorHeight + (5) * PPTUIScale, 5, 1 };
+			PPTUIControl[L"RoundRect/RoundRectMiddleLeft/width"] = { (60) * PPTUIScale, 5, 1 };
+			PPTUIControl[L"RoundRect/RoundRectMiddleLeft/height"] = { (60) * PPTUIScale, 5, 1 };
+			PPTUIControl[L"RoundRect/RoundRectMiddleLeft/ellipseheight"] = { (30) * PPTUIScale, 5, 1 };
+			PPTUIControl[L"RoundRect/RoundRectMiddleLeft/ellipsewidth"] = { (30) * PPTUIScale, 5, 1 };
+			PPTUIControl[L"RoundRect/RoundRectMiddleLeft/frame/width"] = { (1) * PPTUIScale, 5, 1 };
 
-			PPTUIControlColor[L"RoundRect/RoundRectMiddle/fill"] = { RGBA(225, 225, 225, 0), 5, 1 };
-			PPTUIControlColor[L"RoundRect/RoundRectMiddle/frame"] = { RGBA(200, 200, 200, 0), 10, 1 };
+			PPTUIControlColor[L"RoundRect/RoundRectMiddleLeft/fill"] = { RGBA(225, 225, 225, 0), 5, 1 };
+			PPTUIControlColor[L"RoundRect/RoundRectMiddleLeft/frame"] = { RGBA(200, 200, 200, 0), 10, 1 };
 
 			{
-				PPTUIControl[L"RoundRect/RoundRectMiddle1/x"] = { (float)PPTUIControl[L"RoundRect/RoundRectMiddle/x"].v + (5) * PPTUIScale, 5, 1 };
-				PPTUIControl[L"RoundRect/RoundRectMiddle1/y"] = { (float)PPTUIControl[L"RoundRect/RoundRectMiddle/y"].v + (5) * PPTUIScale, 5, 1 };
-				PPTUIControl[L"RoundRect/RoundRectMiddle1/width"] = { (50) * PPTUIScale, 5, 1 };
-				PPTUIControl[L"RoundRect/RoundRectMiddle1/height"] = { (50) * PPTUIScale, 5, 1 };
-				PPTUIControl[L"RoundRect/RoundRectMiddle1/ellipseheight"] = { (35) * PPTUIScale, 5, 1 };
-				PPTUIControl[L"RoundRect/RoundRectMiddle1/ellipsewidth"] = { (35) * PPTUIScale, 5, 1 };
-				PPTUIControl[L"RoundRect/RoundRectMiddle1/frame/width"] = { (1) * PPTUIScale, 5, 1 };
+				PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/x"] = { (float)PPTUIControl[L"RoundRect/RoundRectMiddleLeft/x"].v + (5) * PPTUIScale, 5, 1 };
+				PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/y"] = { (float)PPTUIControl[L"RoundRect/RoundRectMiddleLeft/y"].v + (5) * PPTUIScale, 5, 1 };
+				PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/width"] = { (50) * PPTUIScale, 5, 1 };
+				PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/height"] = { (50) * PPTUIScale, 5, 1 };
+				PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/ellipseheight"] = { (35) * PPTUIScale, 5, 1 };
+				PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/ellipsewidth"] = { (35) * PPTUIScale, 5, 1 };
+				PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/frame/width"] = { (1) * PPTUIScale, 5, 1 };
 
-				PPTUIControlColor[L"RoundRect/RoundRectMiddle1/fill"] = { RGBA(250, 250, 250, 0), 3, 1 };
-				PPTUIControlColor[L"RoundRect/RoundRectMiddle1/frame"] = { RGBA(200, 200, 200, 0), 10, 1 };
+				PPTUIControlColor[L"RoundRect/RoundRectMiddleLeft1/fill"] = { RGBA(250, 250, 250, 0), 3, 1 };
+				PPTUIControlColor[L"RoundRect/RoundRectMiddleLeft1/frame"] = { RGBA(200, 200, 200, 0), 10, 1 };
 
 				{
-					PPTUIControl[L"Image/RoundRectMiddle1/x"] = { (float)PPTUIControl[L"RoundRect/RoundRectMiddle1/x"].v + (5) * PPTUIScale, 5, 1 };
-					PPTUIControl[L"Image/RoundRectMiddle1/y"] = { (float)PPTUIControl[L"RoundRect/RoundRectMiddle1/y"].v + (5) * PPTUIScale, 5, 1 };
-					PPTUIControl[L"Image/RoundRectMiddle1/width"] = { (40) * PPTUIScale, 5, 1 };
-					PPTUIControl[L"Image/RoundRectMiddle1/height"] = { (40) * PPTUIScale, 5, 1 };
-					PPTUIControl[L"Image/RoundRectMiddle1/transparency"] = { 0, 10, 1 };
+					PPTUIControl[L"Image/RoundRectMiddleLeft1/x"] = { (float)PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/x"].v + (5) * PPTUIScale, 5, 1 };
+					PPTUIControl[L"Image/RoundRectMiddleLeft1/y"] = { (float)PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/y"].v + (5) * PPTUIScale, 5, 1 };
+					PPTUIControl[L"Image/RoundRectMiddleLeft1/width"] = { (40) * PPTUIScale, 5, 1 };
+					PPTUIControl[L"Image/RoundRectMiddleLeft1/height"] = { (40) * PPTUIScale, 5, 1 };
+					PPTUIControl[L"Image/RoundRectMiddleLeft1/transparency"] = { 0, 10, 1 };
 				}
 			}
 		}
@@ -651,8 +651,8 @@ void DrawControlWindow()
 					SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectLeft2/fill"].v, 160);
 					SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectLeft2/frame"].v, 160);
 
-					SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectMiddle1/fill"].v, 160);
-					SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectMiddle1/frame"].v, 160);
+					SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectMiddleLeft1/fill"].v, 160);
+					SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectMiddleLeft1/frame"].v, 160);
 
 					SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectRight1/fill"].v, 160);
 					SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectRight1/frame"].v, 160);
@@ -760,32 +760,32 @@ void DrawControlWindow()
 				}
 				// 中间控件
 				{
-					PPTUIControlTarget[L"RoundRect/RoundRectMiddle/x"].v = PPTMainMonitor.MonitorWidth / 2 - (30) * PPTUIScale;
-					PPTUIControlTarget[L"RoundRect/RoundRectMiddle/y"].v = PPTMainMonitor.MonitorHeight - (65) * PPTUIScale;
-					PPTUIControlTarget[L"RoundRect/RoundRectMiddle/width"].v = (60) * PPTUIScale;
-					PPTUIControlTarget[L"RoundRect/RoundRectMiddle/height"].v = (60) * PPTUIScale;
-					PPTUIControlTarget[L"RoundRect/RoundRectMiddle/ellipseheight"].v = (30) * PPTUIScale;
-					PPTUIControlTarget[L"RoundRect/RoundRectMiddle/ellipsewidth"].v = (30) * PPTUIScale;
-					PPTUIControlTarget[L"RoundRect/RoundRectMiddle/frame/width"].v = (1) * PPTUIScale;
+					PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft/x"].v = PPTMainMonitor.MonitorWidth / 2 - (30) * PPTUIScale;
+					PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft/y"].v = PPTMainMonitor.MonitorHeight - (65) * PPTUIScale;
+					PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft/width"].v = (60) * PPTUIScale;
+					PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft/height"].v = (60) * PPTUIScale;
+					PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft/ellipseheight"].v = (30) * PPTUIScale;
+					PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft/ellipsewidth"].v = (30) * PPTUIScale;
+					PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft/frame/width"].v = (1) * PPTUIScale;
 
-					SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectMiddle/fill"].v, 160);
-					SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectMiddle/frame"].v, 160);
+					SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectMiddleLeft/fill"].v, 160);
+					SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectMiddleLeft/frame"].v, 160);
 
 					{
-						PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/x"].v = PPTUIControlTarget[L"RoundRect/RoundRectMiddle/x"].v + (5) * PPTUIScale;
-						PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/y"].v = PPTUIControlTarget[L"RoundRect/RoundRectMiddle/y"].v + (5) * PPTUIScale;
-						PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/width"].v = (50) * PPTUIScale;
-						PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/height"].v = (50) * PPTUIScale;
-						PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/ellipseheight"].v = (35) * PPTUIScale;
-						PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/ellipsewidth"].v = (35) * PPTUIScale;
-						PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/frame/width"].v = (1) * PPTUIScale;
+						PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft1/x"].v = PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft/x"].v + (5) * PPTUIScale;
+						PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft1/y"].v = PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft/y"].v + (5) * PPTUIScale;
+						PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft1/width"].v = (50) * PPTUIScale;
+						PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft1/height"].v = (50) * PPTUIScale;
+						PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft1/ellipseheight"].v = (35) * PPTUIScale;
+						PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft1/ellipsewidth"].v = (35) * PPTUIScale;
+						PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft1/frame/width"].v = (1) * PPTUIScale;
 
 						{
-							PPTUIControlTarget[L"Image/RoundRectMiddle1/x"].v = PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/x"].v + (5) * PPTUIScale;
-							PPTUIControlTarget[L"Image/RoundRectMiddle1/y"].v = PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/y"].v + (5) * PPTUIScale;
-							PPTUIControlTarget[L"Image/RoundRectMiddle1/width"].v = (40) * PPTUIScale;
-							PPTUIControlTarget[L"Image/RoundRectMiddle1/height"].v = (40) * PPTUIScale;
-							PPTUIControlTarget[L"Image/RoundRectMiddle1/transparency"].v = 255;
+							PPTUIControlTarget[L"Image/RoundRectMiddleLeft1/x"].v = PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft1/x"].v + (5) * PPTUIScale;
+							PPTUIControlTarget[L"Image/RoundRectMiddleLeft1/y"].v = PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft1/y"].v + (5) * PPTUIScale;
+							PPTUIControlTarget[L"Image/RoundRectMiddleLeft1/width"].v = (40) * PPTUIScale;
+							PPTUIControlTarget[L"Image/RoundRectMiddleLeft1/height"].v = (40) * PPTUIScale;
+							PPTUIControlTarget[L"Image/RoundRectMiddleLeft1/transparency"].v = 255;
 						}
 					}
 				}
@@ -963,35 +963,35 @@ void DrawControlWindow()
 				}
 				// 中间控件
 				{
-					PPTUIControlTarget[L"RoundRect/RoundRectMiddle/x"].v = PPTMainMonitor.MonitorWidth / 2 - (30) * PPTUIScale;
-					PPTUIControlTarget[L"RoundRect/RoundRectMiddle/y"].v = PPTMainMonitor.MonitorHeight + (5) * PPTUIScale;
-					PPTUIControlTarget[L"RoundRect/RoundRectMiddle/width"].v = (60) * PPTUIScale;
-					PPTUIControlTarget[L"RoundRect/RoundRectMiddle/height"].v = (60) * PPTUIScale;
-					PPTUIControlTarget[L"RoundRect/RoundRectMiddle/ellipseheight"].v = (30) * PPTUIScale;
-					PPTUIControlTarget[L"RoundRect/RoundRectMiddle/ellipsewidth"].v = (30) * PPTUIScale;
-					PPTUIControlTarget[L"RoundRect/RoundRectMiddle/frame/width"].v = (1) * PPTUIScale;
+					PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft/x"].v = PPTMainMonitor.MonitorWidth / 2 - (30) * PPTUIScale;
+					PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft/y"].v = PPTMainMonitor.MonitorHeight + (5) * PPTUIScale;
+					PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft/width"].v = (60) * PPTUIScale;
+					PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft/height"].v = (60) * PPTUIScale;
+					PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft/ellipseheight"].v = (30) * PPTUIScale;
+					PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft/ellipsewidth"].v = (30) * PPTUIScale;
+					PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft/frame/width"].v = (1) * PPTUIScale;
 
-					SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectMiddle/fill"].v, 0);
-					SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectMiddle/frame"].v, 0);
+					SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectMiddleLeft/fill"].v, 0);
+					SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectMiddleLeft/frame"].v, 0);
 
 					{
-						PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/x"].v = PPTUIControlTarget[L"RoundRect/RoundRectMiddle/x"].v + (5) * PPTUIScale;
-						PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/y"].v = PPTUIControlTarget[L"RoundRect/RoundRectMiddle/y"].v + (5) * PPTUIScale;
-						PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/width"].v = (50) * PPTUIScale;
-						PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/height"].v = (50) * PPTUIScale;
-						PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/ellipseheight"].v = (35) * PPTUIScale;
-						PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/ellipsewidth"].v = (35) * PPTUIScale;
-						PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/frame/width"].v = (1) * PPTUIScale;
+						PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft1/x"].v = PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft/x"].v + (5) * PPTUIScale;
+						PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft1/y"].v = PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft/y"].v + (5) * PPTUIScale;
+						PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft1/width"].v = (50) * PPTUIScale;
+						PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft1/height"].v = (50) * PPTUIScale;
+						PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft1/ellipseheight"].v = (35) * PPTUIScale;
+						PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft1/ellipsewidth"].v = (35) * PPTUIScale;
+						PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft1/frame/width"].v = (1) * PPTUIScale;
 
-						PPTUIControlColorTarget[L"RoundRect/RoundRectMiddle1/fill"].v = RGBA(250, 250, 250, 0);
-						PPTUIControlColorTarget[L"RoundRect/RoundRectMiddle1/frame"].v = RGBA(200, 200, 200, 0);
+						PPTUIControlColorTarget[L"RoundRect/RoundRectMiddleLeft1/fill"].v = RGBA(250, 250, 250, 0);
+						PPTUIControlColorTarget[L"RoundRect/RoundRectMiddleLeft1/frame"].v = RGBA(200, 200, 200, 0);
 
 						{
-							PPTUIControlTarget[L"Image/RoundRectMiddle1/x"].v = PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/x"].v + (5) * PPTUIScale;
-							PPTUIControlTarget[L"Image/RoundRectMiddle1/y"].v = PPTUIControlTarget[L"RoundRect/RoundRectMiddle1/y"].v + (5) * PPTUIScale;
-							PPTUIControlTarget[L"Image/RoundRectMiddle1/width"].v = (40) * PPTUIScale;
-							PPTUIControlTarget[L"Image/RoundRectMiddle1/height"].v = (40) * PPTUIScale;
-							PPTUIControlTarget[L"Image/RoundRectMiddle1/transparency"].v = 0;
+							PPTUIControlTarget[L"Image/RoundRectMiddleLeft1/x"].v = PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft1/x"].v + (5) * PPTUIScale;
+							PPTUIControlTarget[L"Image/RoundRectMiddleLeft1/y"].v = PPTUIControlTarget[L"RoundRect/RoundRectMiddleLeft1/y"].v + (5) * PPTUIScale;
+							PPTUIControlTarget[L"Image/RoundRectMiddleLeft1/width"].v = (40) * PPTUIScale;
+							PPTUIControlTarget[L"Image/RoundRectMiddleLeft1/height"].v = (40) * PPTUIScale;
+							PPTUIControlTarget[L"Image/RoundRectMiddleLeft1/transparency"].v = 0;
 						}
 					}
 				}
@@ -1076,8 +1076,8 @@ void DrawControlWindow()
 						SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectLeft2/fill"].v, 0);
 						SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectLeft2/frame"].v, 0);
 
-						SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectMiddle1/fill"].v, 0);
-						SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectMiddle1/frame"].v, 0);
+						SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectMiddleLeft1/fill"].v, 0);
+						SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectMiddleLeft1/frame"].v, 0);
 
 						SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectRight1/fill"].v, 0);
 						SetAlpha(PPTUIControlColorTarget[L"RoundRect/RoundRectRight1/frame"].v, 0);
@@ -1299,54 +1299,54 @@ void DrawControlWindow()
 			}
 			// 中间控件
 			{
-				// RoundRect/RoundRectMiddle
+				// RoundRect/RoundRectMiddleLeft
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(PPTUIControlColor[L"RoundRect/RoundRectMiddle/frame"].v), &pFrameBrush);
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(PPTUIControlColor[L"RoundRect/RoundRectMiddleLeft/frame"].v), &pFrameBrush);
 					ID2D1SolidColorBrush* pFillBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(PPTUIControlColor[L"RoundRect/RoundRectMiddle/fill"].v), &pFillBrush);
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(PPTUIControlColor[L"RoundRect/RoundRectMiddleLeft/fill"].v), &pFillBrush);
 
 					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
-						PPTUIControl[L"RoundRect/RoundRectMiddle/x"].v,
-						PPTUIControl[L"RoundRect/RoundRectMiddle/y"].v,
-						PPTUIControl[L"RoundRect/RoundRectMiddle/x"].v + PPTUIControl[L"RoundRect/RoundRectMiddle/width"].v,
-						PPTUIControl[L"RoundRect/RoundRectMiddle/y"].v + PPTUIControl[L"RoundRect/RoundRectMiddle/height"].v),
-						PPTUIControl[L"RoundRect/RoundRectMiddle/ellipsewidth"].v / 2.0f,
-						PPTUIControl[L"RoundRect/RoundRectMiddle/ellipseheight"].v / 2.0f
+						PPTUIControl[L"RoundRect/RoundRectMiddleLeft/x"].v,
+						PPTUIControl[L"RoundRect/RoundRectMiddleLeft/y"].v,
+						PPTUIControl[L"RoundRect/RoundRectMiddleLeft/x"].v + PPTUIControl[L"RoundRect/RoundRectMiddleLeft/width"].v,
+						PPTUIControl[L"RoundRect/RoundRectMiddleLeft/y"].v + PPTUIControl[L"RoundRect/RoundRectMiddleLeft/height"].v),
+						PPTUIControl[L"RoundRect/RoundRectMiddleLeft/ellipsewidth"].v / 2.0f,
+						PPTUIControl[L"RoundRect/RoundRectMiddleLeft/ellipseheight"].v / 2.0f
 					);
 
 					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
-					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectMiddle/frame/width"].v);
+					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectMiddleLeft/frame/width"].v);
 
 					DxObjectSafeRelease(&pFrameBrush);
 					DxObjectSafeRelease(&pFillBrush);
 				}
 
-				// RoundRect/RoundRectMiddle1
+				// RoundRect/RoundRectMiddleLeft1
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(PPTUIControlColor[L"RoundRect/RoundRectMiddle1/frame"].v), &pFrameBrush);
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(PPTUIControlColor[L"RoundRect/RoundRectMiddleLeft1/frame"].v), &pFrameBrush);
 					ID2D1SolidColorBrush* pFillBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(PPTUIControlColor[L"RoundRect/RoundRectMiddle1/fill"].v), &pFillBrush);
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(PPTUIControlColor[L"RoundRect/RoundRectMiddleLeft1/fill"].v), &pFillBrush);
 
 					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
-						PPTUIControl[L"RoundRect/RoundRectMiddle1/x"].v,
-						PPTUIControl[L"RoundRect/RoundRectMiddle1/y"].v,
-						PPTUIControl[L"RoundRect/RoundRectMiddle1/x"].v + PPTUIControl[L"RoundRect/RoundRectMiddle1/width"].v,
-						PPTUIControl[L"RoundRect/RoundRectMiddle1/y"].v + PPTUIControl[L"RoundRect/RoundRectMiddle1/height"].v),
-						PPTUIControl[L"RoundRect/RoundRectMiddle1/ellipsewidth"].v / 2.0f,
-						PPTUIControl[L"RoundRect/RoundRectMiddle1/ellipseheight"].v / 2.0f
+						PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/x"].v,
+						PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/y"].v,
+						PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/x"].v + PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/width"].v,
+						PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/y"].v + PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/height"].v),
+						PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/ellipsewidth"].v / 2.0f,
+						PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/ellipseheight"].v / 2.0f
 					);
 
 					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
-					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectMiddle1/frame/width"].v);
+					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/frame/width"].v);
 
 					DxObjectSafeRelease(&pFrameBrush);
 					DxObjectSafeRelease(&pFillBrush);
 				}
-				// Image/RoundRectMiddle1
+				// Image/RoundRectMiddleLeft1
 				{
-					DCRenderTarget->DrawBitmap(PptIconBitmap[3], D2D1::RectF(PPTUIControl[L"Image/RoundRectMiddle1/x"].v, PPTUIControl[L"Image/RoundRectMiddle1/y"].v, PPTUIControl[L"Image/RoundRectMiddle1/x"].v + PPTUIControl[L"Image/RoundRectMiddle1/width"].v, PPTUIControl[L"Image/RoundRectMiddle1/y"].v + PPTUIControl[L"Image/RoundRectMiddle1/height"].v), PPTUIControl[L"Image/RoundRectMiddle1/transparency"].v / 255.0f);
+					DCRenderTarget->DrawBitmap(PptIconBitmap[3], D2D1::RectF(PPTUIControl[L"Image/RoundRectMiddleLeft1/x"].v, PPTUIControl[L"Image/RoundRectMiddleLeft1/y"].v, PPTUIControl[L"Image/RoundRectMiddleLeft1/x"].v + PPTUIControl[L"Image/RoundRectMiddleLeft1/width"].v, PPTUIControl[L"Image/RoundRectMiddleLeft1/y"].v + PPTUIControl[L"Image/RoundRectMiddleLeft1/height"].v), PPTUIControl[L"Image/RoundRectMiddleLeft1/transparency"].v / 255.0f);
 				}
 			}
 			// 右侧控件
@@ -1618,10 +1618,10 @@ void ControlManipulation()
 			else if (PptInfoStateBuffer.TotalPage != -1) PPTUIControlColorTarget[L"RoundRect/RoundRectLeft2/fill"].v = RGBA(250, 250, 250, 160);
 
 			// 中间 结束放映
-			if (IsInRect(m.x, m.y, { (int)PPTUIControl[L"RoundRect/RoundRectMiddle1/x"].v,(int)PPTUIControl[L"RoundRect/RoundRectMiddle1/y"].v,(int)PPTUIControl[L"RoundRect/RoundRectMiddle1/x"].v + (int)PPTUIControl[L"RoundRect/RoundRectMiddle1/width"].v,(int)PPTUIControl[L"RoundRect/RoundRectMiddle1/y"].v + (int)PPTUIControl[L"RoundRect/RoundRectMiddle1/height"].v }))
+			if (IsInRect(m.x, m.y, { (int)PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/x"].v,(int)PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/y"].v,(int)PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/x"].v + (int)PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/width"].v,(int)PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/y"].v + (int)PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/height"].v }))
 			{
-				if (last_x != m.x || last_y != m.y) PPTUIControlColorTarget[L"RoundRect/RoundRectMiddle1/fill"].v = PPTUIControlColor[L"RoundRect/RoundRectMiddle1/fill"].v = RGBA(225, 225, 225, 255);
-				else PPTUIControlColorTarget[L"RoundRect/RoundRectMiddle1/fill"].v = RGBA(250, 250, 250, 160);
+				if (last_x != m.x || last_y != m.y) PPTUIControlColorTarget[L"RoundRect/RoundRectMiddleLeft1/fill"].v = PPTUIControlColor[L"RoundRect/RoundRectMiddleLeft1/fill"].v = RGBA(225, 225, 225, 255);
+				else PPTUIControlColorTarget[L"RoundRect/RoundRectMiddleLeft1/fill"].v = RGBA(250, 250, 250, 160);
 				PptWindowBackgroundUiChange = true;
 
 				if (m.message == WM_LBUTTONDOWN)
@@ -1630,11 +1630,11 @@ void ControlManipulation()
 					while (1)
 					{
 						ExMessage m = hiex::getmessage_win32(EM_MOUSE, ppt_window);
-						if (IsInRect(m.x, m.y, { (int)PPTUIControl[L"RoundRect/RoundRectMiddle1/x"].v,(int)PPTUIControl[L"RoundRect/RoundRectMiddle1/y"].v,(int)PPTUIControl[L"RoundRect/RoundRectMiddle1/x"].v + (int)PPTUIControl[L"RoundRect/RoundRectMiddle1/width"].v,(int)PPTUIControl[L"RoundRect/RoundRectMiddle1/y"].v + (int)PPTUIControl[L"RoundRect/RoundRectMiddle1/height"].v }))
+						if (IsInRect(m.x, m.y, { (int)PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/x"].v,(int)PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/y"].v,(int)PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/x"].v + (int)PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/width"].v,(int)PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/y"].v + (int)PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/height"].v }))
 						{
 							if (!m.lbutton)
 							{
-								PPTUIControlColor[L"RoundRect/RoundRectMiddle1/fill"].v = RGBA(200, 200, 200, 255);
+								PPTUIControlColor[L"RoundRect/RoundRectMiddleLeft1/fill"].v = RGBA(200, 200, 200, 255);
 
 								if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 								{
@@ -1663,7 +1663,7 @@ void ControlManipulation()
 					last_x = pt.x, last_y = pt.y;
 				}
 			}
-			else if (PptInfoStateBuffer.TotalPage != -1) PPTUIControlColorTarget[L"RoundRect/RoundRectMiddle1/fill"].v = RGBA(250, 250, 250, 160);
+			else if (PptInfoStateBuffer.TotalPage != -1) PPTUIControlColorTarget[L"RoundRect/RoundRectMiddleLeft1/fill"].v = RGBA(250, 250, 250, 160);
 
 			// 右侧 上一页
 			if (IsInRect(m.x, m.y, { (int)PPTUIControl[L"RoundRect/RoundRectRight1/x"].v,(int)PPTUIControl[L"RoundRect/RoundRectRight1/y"].v,(int)PPTUIControl[L"RoundRect/RoundRectRight1/x"].v + (int)PPTUIControl[L"RoundRect/RoundRectRight1/width"].v,(int)PPTUIControl[L"RoundRect/RoundRectRight1/y"].v + (int)PPTUIControl[L"RoundRect/RoundRectRight1/height"].v }))
