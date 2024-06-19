@@ -42,9 +42,9 @@ int SettingMain();
 void FreezeFrameWindow();
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string editionDate = "20240604c";				//程序发布日期
+string editionDate = "20240619a";				//程序发布日期
 string editionChannel = "LTS";					//程序发布通道
-string editionCode = "24H2";					//程序版本 (BetaH3)
+string editionCode = "24H2(fix)";				//程序版本 (BetaH3)
 
 wstring userId; //用户ID（主板序列号）
 string globalPath; //程序当前路径
@@ -61,11 +61,44 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	{
 		globalPath = WstringToString(GetCurrentExeDirectory() + L"\\");
 
-		if (!HasReadWriteAccess(StringToWstring(globalPath)))
 		{
-			if (IsUserAnAdmin()) MessageBox(NULL, L"当前目录权限受限无法正常运行，请将程序转移至其他目录后再运行", L"智绘教提示", MB_SYSTEMMODAL | MB_OK);
-			else ShellExecute(NULL, L"runas", GetCurrentExePath().c_str(), NULL, NULL, SW_SHOWNORMAL);
-			return 0;
+			int typeRoot = 0;
+
+			if (globalPath.find("C:\\Program Files\\") != globalPath.npos || globalPath.find("C:\\Program Files (x86)\\") != globalPath.npos || globalPath.find("C:\\Windows\\") != globalPath.npos) typeRoot = 2;
+			else
+			{
+				wstring time = getTimestamp();
+				wstring path = StringToWstring(globalPath) + L"IdtRootCheck" + time;
+
+				error_code ec;
+				try {
+					// 创建空白文件
+					wofstream ofs(path);
+					if (!ofs) typeRoot = 1;
+					ofs.close();
+					if (_waccess(path.c_str(), 0) == -1) typeRoot = 1;
+
+					// 删除文件
+					filesystem::remove(path, ec);
+					if (ec) typeRoot = 1;
+					if (_waccess(path.c_str(), 0) == 0) typeRoot = 1;
+				}
+				catch (const filesystem::filesystem_error)
+				{
+					typeRoot = 1;
+				}
+			}
+
+			if (typeRoot == 1)
+			{
+				MessageBox(NULL, L"当前目录权限受限无法正常运行，请将程序转移至其他目录后再运行", L"智绘教提示", MB_SYSTEMMODAL | MB_OK);
+				return 0;
+			}
+			else if (typeRoot == 2)
+			{
+				MessageBox(NULL, L"当前目录权限受限（文件操作被重定向到虚拟存储目录）无法正常运行，请将程序转移至其他目录后再运行", L"智绘教提示", MB_SYSTEMMODAL | MB_OK);
+				return 0;
+			}
 		}
 	}
 #ifdef IDT_RELEASE
@@ -252,9 +285,11 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				error_code ec;
 				if (!old_name.empty()) filesystem::remove(StringToWstring(main_path) + L"\\" + old_name, ec);
 				else filesystem::remove(StringToWstring(main_path) + L"\\智绘教.exe", ec);
-				filesystem::copy_file(StringToWstring(globalPath) + representation, StringToWstring(main_path) + L"\\智绘教.exe", std::filesystem::copy_options::overwrite_existing, ec);
 
-				ShellExecute(NULL, NULL, (StringToWstring(main_path) + L"\\智绘教.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+				wstring target = StringToWstring(main_path) + L"\\智绘教" + StringToWstring(editionDate) + L".exe";
+				filesystem::copy_file(StringToWstring(globalPath) + representation, target, filesystem::copy_options::overwrite_existing, ec);
+
+				ShellExecute(NULL, NULL, target.c_str(), NULL, NULL, SW_SHOWNORMAL);
 
 				return 0;
 			}
@@ -265,6 +300,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 				filesystem::path directory(globalPath);
 				string main_path = directory.parent_path().parent_path().string();
+
 				if (!old_name.empty()) ShellExecute(NULL, NULL, (StringToWstring(main_path) + L"\\" + old_name).c_str(), NULL, NULL, SW_SHOWNORMAL);
 				else ShellExecute(NULL, NULL, (StringToWstring(main_path) + L"\\智绘教.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
 

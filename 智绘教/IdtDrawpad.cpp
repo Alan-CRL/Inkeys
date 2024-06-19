@@ -97,11 +97,9 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			ExMessage msgKey = {};
 			msgKey.message = wParam;
 			msgKey.vkcode = (BYTE)pKeyInfo->vkCode;
-			msgKey.scancode = (BYTE)pKeyInfo->scanCode;
-			msgKey.extended = bool(pKeyInfo->flags & LLKHF_EXTENDED);
-			msgKey.prevdown = bool((HIWORD(pKeyInfo->flags) & KF_REPEAT) == KF_REPEAT);
 
-			msgKey.ctrl = (KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]);
+			// 借用结构：是否按下 ctrl
+			msgKey.prevdown = (KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]);
 
 			int index = hiex::GetWindowIndex(drawpad_window, false);
 			unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
@@ -299,6 +297,7 @@ void KeyboardInteraction()
 			if (m.message == WM_KEYDOWN && (m.vkcode == VK_DOWN || m.vkcode == VK_RIGHT || m.vkcode == VK_NEXT || m.vkcode == VK_SPACE || m.vkcode == VK_UP || m.vkcode == VK_LEFT || m.vkcode == VK_PRIOR))
 			{
 				auto vkcode = m.vkcode;
+				cout << "pk " << (int)vkcode << endl;
 
 				if (vkcode == VK_UP || vkcode == VK_LEFT || vkcode == VK_PRIOR)
 				{
@@ -395,7 +394,7 @@ void KeyboardInteraction()
 		}
 
 		// 定格 Q
-		if (m.vkcode == (BYTE)0x51 && m.ctrl && m.message == WM_KEYDOWN)
+		if (m.vkcode == (BYTE)0x51 && m.prevdown && m.message == WM_KEYDOWN)
 		{
 			while (1)
 			{
@@ -421,7 +420,7 @@ void KeyboardInteraction()
 			}
 		}
 		// 穿透 E
-		if (m.vkcode == (BYTE)0x45 && m.ctrl && m.message == WM_KEYDOWN)
+		if (m.vkcode == (BYTE)0x45 && m.prevdown && m.message == WM_KEYDOWN)
 		{
 			while (1)
 			{

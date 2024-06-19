@@ -12,8 +12,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PptCOM", "PptCOM\PptCOM.csp
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "智绘教CrashedHandler", "智绘教CrashedHandler\智绘教CrashedHandler.vcxproj", "{9A062020-3F2D-4753-99F0-64AC4DC1600A}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "智绘教CrashedHandlerClose", "智绘教CrashedHandlerClose\智绘教CrashedHandlerClose.vcxproj", "{AED1D291-8241-486B-9D16-E53862F74103}"
-EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "智绘教StartupItemSettings", "智绘教StartupItemSettings\智绘教StartupItemSettings.vcxproj", "{38189408-F6E5-478E-B94D-A9F998DA6BDA}"
 EndProject
 Global
@@ -48,14 +46,6 @@ Global
 		{9A062020-3F2D-4753-99F0-64AC4DC1600A}.Release|Win32.Build.0 = Release|Win32
 		{9A062020-3F2D-4753-99F0-64AC4DC1600A}.Release|x64.ActiveCfg = Release|x64
 		{9A062020-3F2D-4753-99F0-64AC4DC1600A}.Release|x64.Build.0 = Release|x64
-		{AED1D291-8241-486B-9D16-E53862F74103}.Debug|Win32.ActiveCfg = Debug|Win32
-		{AED1D291-8241-486B-9D16-E53862F74103}.Debug|Win32.Build.0 = Debug|Win32
-		{AED1D291-8241-486B-9D16-E53862F74103}.Debug|x64.ActiveCfg = Debug|x64
-		{AED1D291-8241-486B-9D16-E53862F74103}.Debug|x64.Build.0 = Debug|x64
-		{AED1D291-8241-486B-9D16-E53862F74103}.Release|Win32.ActiveCfg = Release|Win32
-		{AED1D291-8241-486B-9D16-E53862F74103}.Release|Win32.Build.0 = Release|Win32
-		{AED1D291-8241-486B-9D16-E53862F74103}.Release|x64.ActiveCfg = Release|x64
-		{AED1D291-8241-486B-9D16-E53862F74103}.Release|x64.Build.0 = Release|x64
 		{38189408-F6E5-478E-B94D-A9F998DA6BDA}.Debug|Win32.ActiveCfg = Debug|Win32
 		{38189408-F6E5-478E-B94D-A9F998DA6BDA}.Debug|Win32.Build.0 = Debug|Win32
 		{38189408-F6E5-478E-B94D-A9F998DA6BDA}.Debug|x64.ActiveCfg = Debug|x64

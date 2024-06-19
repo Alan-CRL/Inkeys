@@ -12,7 +12,6 @@
 #define IDI_ICON1                       191
 #define IDR_TTF1                        198
 #define IDR_EXE1                        201
-#define IDR_EXE2                        202
 #define IDB_PNG5                        205
 #define IDB_PNG7                        206
 #define IDB_PNG10                       210
