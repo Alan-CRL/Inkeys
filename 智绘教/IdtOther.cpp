@@ -307,15 +307,3 @@ int ProcessRunningCnt(const std::wstring& processPath)
 	CloseHandle(snapshot);
 	return ret;
 }
-
-// Â·¾¶È¨ÏÞ¼ì²â
-bool HasReadWriteAccess(const std::wstring& directoryPath)
-{
-	DWORD attributes = GetFileAttributesW(directoryPath.c_str());
-	if (attributes == INVALID_FILE_ATTRIBUTES) return false;
-	if (!(attributes & FILE_ATTRIBUTE_DIRECTORY)) return false;
-	if (attributes & FILE_ATTRIBUTE_READONLY) return false;
-	if (attributes & FILE_ATTRIBUTE_READONLY) return false;
-
-	return true;
-}

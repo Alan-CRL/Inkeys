@@ -23,6 +23,3 @@ void SetShortcut();
 bool isProcessRunning(const std::wstring& processPath);
 // 进程程序路径查询
 int ProcessRunningCnt(const std::wstring& processPath);
-
-// 路径权限检测
-bool HasReadWriteAccess(const std::wstring& directoryPath);
