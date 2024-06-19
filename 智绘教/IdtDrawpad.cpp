@@ -302,6 +302,8 @@ void KeyboardInteraction()
 
 				if (vkcode == VK_UP || vkcode == VK_LEFT || vkcode == VK_PRIOR)
 				{
+					Testi(1);
+
 					// 上一页
 					SetForegroundWindow(ppt_show);
 
@@ -318,6 +320,8 @@ void KeyboardInteraction()
 				}
 				else
 				{
+					Testi(2);
+
 					// 下一页
 					int temp_currentpage = PptInfoState.CurrentPage;
 					if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)

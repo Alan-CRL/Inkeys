@@ -14,7 +14,7 @@ using namespace std;
 #define Testi(int) MessageBox(NULL, to_wstring(int).c_str(), L"数值标记", MB_OK | MB_SYSTEMMODAL)
 #define Testw(wstring) MessageBox(NULL, wstring.c_str(), L"字符标记", MB_OK | MB_SYSTEMMODAL)
 
-string edition_date = "20240513.02";
+string edition_date = "20240618.01";
 string global_path; //程序当前路径
 string main_path; //主程序路径
 
@@ -259,8 +259,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 				if (MessageBox(NULL, L"智绘教(屏幕批注程序) 疑似崩溃\n\n是否重启程序？", (L"智绘教崩溃重启 版本" + string_to_wstring(edition_date)).c_str(), MB_YESNO | MB_SYSTEMMODAL) == IDYES)
 				{
-					if (isProcessRunning(exePath))
-						ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"智绘教CrashedHandlerClose.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+					//if (isProcessRunning(exePath))
+					//	ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"智绘教CrashedHandlerClose.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
 
 					error_code ec;
 					filesystem::remove(string_to_wstring(global_path) + L"open.txt", ec);

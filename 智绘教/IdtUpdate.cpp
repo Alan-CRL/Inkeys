@@ -35,9 +35,6 @@ void CrashedHandler()
 			if (_waccess((StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌCrashedHandler.exe").c_str(), 0) == -1)
 				if (!ExtractResource((StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌCrashedHandler.exe").c_str(), L"EXE", MAKEINTRESOURCE(201)))
 					start = false;
-			if (_waccess((StringToWstring(globalPath) + L"api\\api\\ÖÇ»æ½ÌCrashedHandlerClose.exe").c_str(), 0) == -1)
-				if (!ExtractResource((StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌCrashedHandlerClose.exe").c_str(), L"EXE", MAKEINTRESOURCE(202)))
-					start = false;
 
 			{
 				string hash_md5, hash_sha256;
@@ -54,23 +51,6 @@ void CrashedHandler()
 
 				if (hash_md5 != CrashedHandlerMd5 || hash_sha256 != CrashedHandlerSHA256)
 					if (!ExtractResource((StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌCrashedHandler.exe").c_str(), L"EXE", MAKEINTRESOURCE(201)))
-						start = false;
-			}
-			{
-				string hash_md5, hash_sha256;
-				{
-					hashwrapper* myWrapper = new md5wrapper();
-					hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌCrashedHandlerClose.exe");
-					delete myWrapper;
-				}
-				{
-					hashwrapper* myWrapper = new sha256wrapper();
-					hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌCrashedHandlerClose.exe");
-					delete myWrapper;
-				}
-
-				if (hash_md5 != CrashedHandlerCloseMd5 || hash_sha256 != CrashedHandlerCloseSHA256)
-					if (!ExtractResource((StringToWstring(globalPath) + L"api\\ÖÇ»æ½ÌCrashedHandlerClose.exe").c_str(), L"EXE", MAKEINTRESOURCE(202)))
 						start = false;
 			}
 		}
