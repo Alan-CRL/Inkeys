@@ -14,15 +14,101 @@
 // All function and variable descriptions should be in the corresponding cpp file.
 // 所有的函数和变量说明应该在对应的 cpp 文件中。
 
-struct PPTUIControlStruct
+class UiWidgetValue
 {
+public:
 	float v, s, e;
 };
-struct PPTUIControlColorStruct
+class UiWidgetColor
 {
+public:
 	COLORREF v;
 	float s, e;
 };
+
+enum PptUiRegionWidgetID
+{
+	LeftSide,
+	MiddleSide,
+	RightSide
+};
+enum PptUiRoundRectWidgetID
+{
+	LeftSide_PageWidget,
+	LeftSide_PageWidget_PreviousPage,
+	LeftSide_PageWidget_NextPage,
+	MiddleSide_TabSlideWidget,
+	MiddleSide_TabSlideWidget_EndShow,
+	MiddleSide_TabDrawpadWidget,
+	// ...
+	RightSide_PageWidget,
+	RightSide_PageWidget_PreviousPage,
+	RightSide_PageWidget_NextPage
+};
+enum PptUiImageWidgetID
+{
+	LeftSide_PreviousPage,
+	LeftSide_NextPage,
+	MiddleSide_EndShow,
+	RightSide_PreviousPage,
+	RightSide_NextPage
+};
+enum PptUiWordsWidgetID
+{
+	LeftSide_PageNum,
+	RightSide_PageNum
+};
+
+class PptUiRegionWidgetClass
+{
+public:
+	UiWidgetValue X;
+	UiWidgetValue Y;
+	UiWidgetValue Width;
+	UiWidgetValue Height;
+};
+class PptUiRoundRectWidgetClass
+{
+public:
+	UiWidgetValue X;
+	UiWidgetValue Y;
+	UiWidgetValue Width;
+	UiWidgetValue Height;
+	UiWidgetValue EllipseWidth;
+	UiWidgetValue EllipseHeight;
+
+	UiWidgetValue FrameThickness;
+	UiWidgetColor FrameColor;
+	UiWidgetColor FillColor;
+};
+class PptUiImageWidgetClass
+{
+public:
+	UiWidgetValue X;
+	UiWidgetValue Y;
+	UiWidgetValue Width;
+	UiWidgetValue Height;
+	UiWidgetValue Transparency;
+	IMAGE* Img;
+};
+class PptUiWordsWidgetClass
+{
+public:
+	UiWidgetValue Left;
+	UiWidgetValue Top;
+	UiWidgetValue Right;
+	UiWidgetValue Bottom;
+
+	UiWidgetValue WordsHeight;
+	UiWidgetColor WordsColor;
+
+	wstring WordsContent;
+};
+
+extern PptUiRoundRectWidgetClass pptUiRoundRectWidget[55], pptUiRoundRectWidgetTarget[55];
+extern PptUiImageWidgetClass pptUiImageWidget[15], pptUiImageWidgetTarget[15];
+extern PptUiWordsWidgetClass pptUiWordsWidget[15], pptUiWordsWidgetTarget[15];
+
 extern map<wstring, PPTUIControlStruct> PPTUIControl, PPTUIControlTarget;
 map<wstring, PPTUIControlStruct>& map<wstring, PPTUIControlStruct>::operator=(const map<wstring, PPTUIControlStruct>& m);
 extern map<wstring, PPTUIControlColorStruct> PPTUIControlColor, PPTUIControlColorTarget;
