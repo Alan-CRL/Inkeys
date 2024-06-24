@@ -972,7 +972,6 @@ void DrawScreen()
 		}
 	}
 
-	//Testw(L"悬浮窗窗口绘制线程 初始化完成");
 	// 设置BLENDFUNCTION结构体
 	BLENDFUNCTION blend;
 	blend.BlendOp = AC_SRC_OVER;
@@ -6183,7 +6182,7 @@ int floating_main()
 	int i = 1;
 	for (; i <= 10; i++)
 	{
-		if (!threadStatus[L"CrashedHandler"] && !threadStatus[L"PPTLinkageMain"]/*&& !threadStatus[L"GetPptState"] && !threadStatus[L"ControlManipulation"] */ && !threadStatus[L"GetTime"] && !threadStatus[L"DrawScreen"] && !threadStatus[L"api_read_pipe"] && !threadStatus[L"BlackBlock"]) break;
+		if (!threadStatus[L"CrashedHandler"] && !threadStatus[L"PPTLinkageMain"]/*&& !threadStatus[L"GetPptState"] && !threadStatus[L"PptInteract"] */ && !threadStatus[L"GetTime"] && !threadStatus[L"DrawScreen"] && !threadStatus[L"api_read_pipe"] && !threadStatus[L"BlackBlock"]) break;
 		this_thread::sleep_for(chrono::milliseconds(500));
 	}
 
