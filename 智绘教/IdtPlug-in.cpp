@@ -1147,7 +1147,7 @@ void PptDraw()
 
 			// 左侧控件
 			{
-				// RoundRect/RoundRectLeft
+				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::LeftSide_PageWidget]
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
 					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::LeftSide_PageWidget].FrameColor.v), &pFrameBrush);
@@ -1170,7 +1170,7 @@ void PptDraw()
 					DxObjectSafeRelease(&pFillBrush);
 				}
 
-				// RoundRect/RoundRectLeft1
+				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::LeftSide_PageWidget_PreviousPage]
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
 					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::LeftSide_PageWidget_PreviousPage].FrameColor.v), &pFrameBrush);
@@ -1192,12 +1192,12 @@ void PptDraw()
 					DxObjectSafeRelease(&pFrameBrush);
 					DxObjectSafeRelease(&pFillBrush);
 				}
-				// Image/RoundRectLeft1
+				// pptUiImageWidget[PptUiImageWidgetID::LeftSide_PreviousPage]
 				{
 					DCRenderTarget->DrawBitmap(pptUiImageWidget[PptUiImageWidgetID::LeftSide_PreviousPage].Img, D2D1::RectF(pptUiImageWidget[PptUiImageWidgetID::LeftSide_PreviousPage].X.v, pptUiImageWidget[PptUiImageWidgetID::LeftSide_PreviousPage].Y.v, pptUiImageWidget[PptUiImageWidgetID::LeftSide_PreviousPage].X.v + pptUiImageWidget[PptUiImageWidgetID::LeftSide_PreviousPage].Width.v, pptUiImageWidget[PptUiImageWidgetID::LeftSide_PreviousPage].Y.v + pptUiImageWidget[PptUiImageWidgetID::LeftSide_PreviousPage].Height.v), pptUiImageWidget[PptUiImageWidgetID::LeftSide_PreviousPage].Transparency.v / 255.0f);
 				}
 
-				// Words/InfoLeft
+				// pptUiWordsWidget[PptUiWordsWidgetID::LeftSide_PageNum]
 				{
 					IDWriteTextFormat* textFormat = NULL;
 
@@ -1234,7 +1234,7 @@ void PptDraw()
 					DxObjectSafeRelease(&pBrush);
 				}
 
-				// RoundRect/RoundRectLeft2
+				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::LeftSide_PageWidget_NextPage]
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
 					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::LeftSide_PageWidget_NextPage].FrameColor.v), &pFrameBrush);
@@ -1256,14 +1256,14 @@ void PptDraw()
 					DxObjectSafeRelease(&pFrameBrush);
 					DxObjectSafeRelease(&pFillBrush);
 				}
-				// Image/RoundRectLeft2
+				// pptUiImageWidget[PptUiImageWidgetID::LeftSide_NextPage]
 				{
 					DCRenderTarget->DrawBitmap(pptUiImageWidget[PptUiImageWidgetID::LeftSide_NextPage].Img, D2D1::RectF(pptUiImageWidget[PptUiImageWidgetID::LeftSide_NextPage].X.v, pptUiImageWidget[PptUiImageWidgetID::LeftSide_NextPage].Y.v, pptUiImageWidget[PptUiImageWidgetID::LeftSide_NextPage].X.v + pptUiImageWidget[PptUiImageWidgetID::LeftSide_NextPage].Width.v, pptUiImageWidget[PptUiImageWidgetID::LeftSide_NextPage].Y.v + pptUiImageWidget[PptUiImageWidgetID::LeftSide_NextPage].Height.v), pptUiImageWidget[PptUiImageWidgetID::LeftSide_NextPage].Transparency.v / 255.0f);
 				}
 			}
 			// 中间控件
 			{
-				// RoundRect/RoundRectMiddleLeft
+				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_TabSlideWidget]
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
 					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_TabSlideWidget].FrameColor.v), &pFrameBrush);
@@ -1286,7 +1286,7 @@ void PptDraw()
 					DxObjectSafeRelease(&pFillBrush);
 				}
 
-				// RoundRect/RoundRectMiddleLeft1
+				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_TabSlideWidget_EndShow]
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
 					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_TabSlideWidget_EndShow].FrameColor.v), &pFrameBrush);
@@ -1308,14 +1308,14 @@ void PptDraw()
 					DxObjectSafeRelease(&pFrameBrush);
 					DxObjectSafeRelease(&pFillBrush);
 				}
-				// Image/RoundRectMiddleLeft1
+				// pptUiImageWidget[PptUiImageWidgetID::MiddleSide_EndShow]
 				{
 					DCRenderTarget->DrawBitmap(pptUiImageWidget[PptUiImageWidgetID::MiddleSide_EndShow].Img, D2D1::RectF(pptUiImageWidget[PptUiImageWidgetID::MiddleSide_EndShow].X.v, pptUiImageWidget[PptUiImageWidgetID::MiddleSide_EndShow].Y.v, pptUiImageWidget[PptUiImageWidgetID::MiddleSide_EndShow].X.v + pptUiImageWidget[PptUiImageWidgetID::MiddleSide_EndShow].Width.v, pptUiImageWidget[PptUiImageWidgetID::MiddleSide_EndShow].Y.v + pptUiImageWidget[PptUiImageWidgetID::MiddleSide_EndShow].Height.v), pptUiImageWidget[PptUiImageWidgetID::MiddleSide_EndShow].Transparency.v / 255.0f);
 				}
 			}
 			// 右侧控件
 			{
-				// RoundRect/RoundRectRight
+				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget]
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
 					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget].FrameColor.v), &pFrameBrush);
@@ -1338,7 +1338,7 @@ void PptDraw()
 					DxObjectSafeRelease(&pFillBrush);
 				}
 
-				// RoundRect/RoundRectRight1
+				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_PreviousPage]
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
 					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_PreviousPage].FrameColor.v), &pFrameBrush);
@@ -1360,12 +1360,12 @@ void PptDraw()
 					DxObjectSafeRelease(&pFrameBrush);
 					DxObjectSafeRelease(&pFillBrush);
 				}
-				// Image/RoundRectRight1
+				// pptUiImageWidget[PptUiImageWidgetID::RightSide_PreviousPage]
 				{
-					DCRenderTarget->DrawBitmap(PptIconBitmap[1], D2D1::RectF(PPTUIControl[L"Image/RoundRectRight1/x"].v, PPTUIControl[L"Image/RoundRectRight1/y"].v, PPTUIControl[L"Image/RoundRectRight1/x"].v + PPTUIControl[L"Image/RoundRectRight1/width"].v, PPTUIControl[L"Image/RoundRectRight1/y"].v + PPTUIControl[L"Image/RoundRectRight1/height"].v), PPTUIControl[L"Image/RoundRectRight1/transparency"].v / 255.0f);
+					DCRenderTarget->DrawBitmap(pptUiImageWidget[PptUiImageWidgetID::RightSide_PreviousPage].Img, D2D1::RectF(pptUiImageWidget[PptUiImageWidgetID::RightSide_PreviousPage].X.v, pptUiImageWidget[PptUiImageWidgetID::RightSide_PreviousPage].Y.v, pptUiImageWidget[PptUiImageWidgetID::RightSide_PreviousPage].X.v + pptUiImageWidget[PptUiImageWidgetID::RightSide_PreviousPage].Width.v, pptUiImageWidget[PptUiImageWidgetID::RightSide_PreviousPage].Y.v + pptUiImageWidget[PptUiImageWidgetID::RightSide_PreviousPage].Height.v), pptUiImageWidget[PptUiImageWidgetID::RightSide_PreviousPage].Transparency.v / 255.0f);
 				}
 
-				// Words/InfoRight
+				// pptUiWordsWidget[PptUiWordsWidgetID::RightSide_PageNum]
 				{
 					IDWriteTextFormat* textFormat = NULL;
 					D2DTextFactory->CreateTextFormat(
@@ -1374,26 +1374,26 @@ void PptDraw()
 						DWRITE_FONT_WEIGHT_NORMAL,
 						DWRITE_FONT_STYLE_NORMAL,
 						DWRITE_FONT_STRETCH_NORMAL,
-						PPTUIControl[L"Words/InfoRight/height"].v,
+						pptUiWordsWidget[PptUiWordsWidgetID::RightSide_PageNum].WordsHeight.v,
 						L"zh-cn",
 						&textFormat
 					);
 
 					ID2D1SolidColorBrush* pBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(D2D1::ColorF(ConvertToD2DColor(PPTUIControlColor[L"Words/InfoRight/words_color"].v)), &pBrush);
+					DCRenderTarget->CreateSolidColorBrush(D2D1::ColorF(ConvertToD2DColor(pptUiWordsWidget[PptUiWordsWidgetID::RightSide_PageNum].WordsColor.v)), &pBrush);
 
 					textFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
 					textFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 
 					DCRenderTarget->DrawText(
-						PPTUIControlString[L"Info/Pages"].c_str(),  // 文本
-						wcslen(PPTUIControlString[L"Info/Pages"].c_str()),  // 文本长度
+						pptUiWordsWidget[PptUiWordsWidgetID::RightSide_PageNum].WordsContent.c_str(),  // 文本
+						wcslen(pptUiWordsWidget[PptUiWordsWidgetID::RightSide_PageNum].WordsContent.c_str()),  // 文本长度
 						textFormat,  // 文本格式
 						D2D1::RectF(
-							PPTUIControl[L"Words/InfoRight/left"].v,
-							PPTUIControl[L"Words/InfoRight/top"].v,
-							PPTUIControl[L"Words/InfoRight/right"].v,
-							PPTUIControl[L"Words/InfoRight/bottom"].v
+							pptUiWordsWidget[PptUiWordsWidgetID::RightSide_PageNum].Left.v,
+							pptUiWordsWidget[PptUiWordsWidgetID::RightSide_PageNum].Top.v,
+							pptUiWordsWidget[PptUiWordsWidgetID::RightSide_PageNum].Right.v,
+							pptUiWordsWidget[PptUiWordsWidgetID::RightSide_PageNum].Bottom.v
 						),
 						pBrush
 					);
@@ -1401,32 +1401,31 @@ void PptDraw()
 					DxObjectSafeRelease(&pBrush);
 				}
 
-				// RoundRect/RoundRectRight2
+				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage]
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(PPTUIControlColor[L"RoundRect/RoundRectRight2/frame"].v), &pFrameBrush);
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].FrameColor.v), &pFrameBrush);
 					ID2D1SolidColorBrush* pFillBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v), &pFillBrush);
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].FillColor.v), &pFillBrush);
 
 					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
-						PPTUIControl[L"RoundRect/RoundRectRight2/x"].v,
-						PPTUIControl[L"RoundRect/RoundRectRight2/y"].v,
-						PPTUIControl[L"RoundRect/RoundRectRight2/x"].v + PPTUIControl[L"RoundRect/RoundRectRight2/width"].v,
-						PPTUIControl[L"RoundRect/RoundRectRight2/y"].v + PPTUIControl[L"RoundRect/RoundRectRight2/height"].v),
-						PPTUIControl[L"RoundRect/RoundRectRight2/ellipsewidth"].v / 2.0f,
-						PPTUIControl[L"RoundRect/RoundRectRight2/ellipseheight"].v / 2.0f
+						pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].X.v,
+						pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].Y.v,
+						pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].Width.v,
+						pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].Height.v),
+						pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].EllipseWidth.v / 2.0f,
+						pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].EllipseHeight.v / 2.0f
 					);
 
 					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
-					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, PPTUIControl[L"RoundRect/RoundRectRight2/frame/width"].v);
+					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].FrameThickness.v);
 
 					DxObjectSafeRelease(&pFrameBrush);
 					DxObjectSafeRelease(&pFillBrush);
 				}
-				// Image/RoundRectRight2
+				// pptUiImageWidget[PptUiImageWidgetID::RightSide_NextPage]
 				{
-					if (CurrentSlides == -1) DCRenderTarget->DrawBitmap(PptIconBitmap[3], D2D1::RectF(PPTUIControl[L"Image/RoundRectRight2/x"].v, PPTUIControl[L"Image/RoundRectRight2/y"].v, PPTUIControl[L"Image/RoundRectRight2/x"].v + PPTUIControl[L"Image/RoundRectRight2/width"].v, PPTUIControl[L"Image/RoundRectRight2/y"].v + PPTUIControl[L"Image/RoundRectRight2/height"].v), PPTUIControl[L"Image/RoundRectRight2/transparency"].v / 255.0f);
-					else DCRenderTarget->DrawBitmap(PptIconBitmap[2], D2D1::RectF(PPTUIControl[L"Image/RoundRectRight2/x"].v, PPTUIControl[L"Image/RoundRectRight2/y"].v, PPTUIControl[L"Image/RoundRectRight2/x"].v + PPTUIControl[L"Image/RoundRectRight2/width"].v, PPTUIControl[L"Image/RoundRectRight2/y"].v + PPTUIControl[L"Image/RoundRectRight2/height"].v), PPTUIControl[L"Image/RoundRectRight2/transparency"].v / 255.0f);
+					DCRenderTarget->DrawBitmap(pptUiImageWidget[PptUiImageWidgetID::RightSide_NextPage].Img, D2D1::RectF(pptUiImageWidget[PptUiImageWidgetID::RightSide_NextPage].X.v, pptUiImageWidget[PptUiImageWidgetID::RightSide_NextPage].Y.v, pptUiImageWidget[PptUiImageWidgetID::RightSide_NextPage].X.v + pptUiImageWidget[PptUiImageWidgetID::RightSide_NextPage].Width.v, pptUiImageWidget[PptUiImageWidgetID::RightSide_NextPage].Y.v + pptUiImageWidget[PptUiImageWidgetID::RightSide_NextPage].Height.v), pptUiImageWidget[PptUiImageWidgetID::RightSide_NextPage].Transparency.v / 255.0f);
 				}
 			}
 
