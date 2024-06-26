@@ -35,7 +35,6 @@
 #include "IdtText.h"
 #include "IdtWindow.h"
 #include "IdtOther.h"
-#include "IdtD2DPreparation.h"
 #include "IdtHistoricalDrawpad.h"
 #include "IdtImage.h"
 #include "IdtState.h"
@@ -48,97 +47,6 @@
 #import "PptCOM.tlb" // C# Class Library PptCOM Project Library (PptCOM. cs) | C# 类库 PptCOM 项目库 (PptCOM. cs)
 using namespace PptCOM;
 IPptCOMServerPtr PptCOMPto;
-
-class PptUiWidgetValue
-{
-public:
-	float v, s, e;
-};
-class PptUiWidgetColor
-{
-public:
-	COLORREF v;
-	float s, e;
-};
-
-enum PptUiRegionWidgetID
-{
-	LeftSide,
-	MiddleSide,
-	RightSide
-};
-enum PptUiRoundRectWidgetID
-{
-	LeftSide_PageWidget,
-	LeftSide_PageWidget_PreviousPage,
-	LeftSide_PageWidget_NextPage,
-	MiddleSide_TabSlideWidget,
-	MiddleSide_TabSlideWidget_EndShow,
-	MiddleSide_TabDrawpadWidget,
-	// ...
-	RightSide_PageWidget,
-	RightSide_PageWidget_PreviousPage,
-	RightSide_PageWidget_NextPage
-};
-enum PptUiImageWidgetID
-{
-	LeftSide_PreviousPage,
-	LeftSide_NextPage,
-	MiddleSide_EndShow,
-	RightSide_PreviousPage,
-	RightSide_NextPage
-};
-enum PptUiWordsWidgetID
-{
-	LeftSide_PageNum,
-	RightSide_PageNum
-};
-
-class PptUiRegionWidgetClass
-{
-public:
-	PptUiWidgetValue X;
-	PptUiWidgetValue Y;
-	PptUiWidgetValue Width;
-	PptUiWidgetValue Height;
-};
-class PptUiRoundRectWidgetClass
-{
-public:
-	PptUiWidgetValue X;
-	PptUiWidgetValue Y;
-	PptUiWidgetValue Width;
-	PptUiWidgetValue Height;
-	PptUiWidgetValue EllipseWidth;
-	PptUiWidgetValue EllipseHeight;
-
-	PptUiWidgetValue FrameThickness;
-	PptUiWidgetColor FrameColor;
-	PptUiWidgetColor FillColor;
-};
-class PptUiImageWidgetClass
-{
-public:
-	PptUiWidgetValue X;
-	PptUiWidgetValue Y;
-	PptUiWidgetValue Width;
-	PptUiWidgetValue Height;
-	PptUiWidgetValue Transparency;
-	ID2D1Bitmap* Img;
-};
-class PptUiWordsWidgetClass
-{
-public:
-	PptUiWidgetValue Left;
-	PptUiWidgetValue Top;
-	PptUiWidgetValue Right;
-	PptUiWidgetValue Bottom;
-
-	PptUiWidgetValue WordsHeight;
-	PptUiWidgetColor WordsColor;
-
-	wstring WordsContent;
-};
 
 PptUiRoundRectWidgetClass pptUiRoundRectWidget[9], pptUiRoundRectWidgetTarget[9];
 PptUiImageWidgetClass pptUiImageWidget[5], pptUiImageWidgetTarget[5];
@@ -1478,7 +1386,7 @@ void PptInteract()
 			}
 
 			// 左侧 上一页
-			if (PptUiIsInRoundRect(m.x, m.y, pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::LeftSide_PageWidget_PreviousPage]))
+			if (PptUiIsInRoundRect(m.x, m.y, pptUiRoundRectWidget[PptUiRoundRectWidgetID::LeftSide_PageWidget_PreviousPage]))
 			{
 				if (last_x != m.x || last_y != m.y) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::LeftSide_PageWidget_PreviousPage].FillColor.v = pptUiRoundRectWidget[PptUiRoundRectWidgetID::LeftSide_PageWidget_PreviousPage].FillColor.v = RGBA(225, 225, 225, 255);
 				else pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::LeftSide_PageWidget_PreviousPage].FillColor.v = RGBA(250, 250, 250, 160);
@@ -1514,7 +1422,7 @@ void PptInteract()
 			}
 			else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::LeftSide_PageWidget_PreviousPage].FillColor.v = RGBA(250, 250, 250, 160);
 			// 左侧 下一页
-			if (PptUiIsInRoundRect(m.x, m.y, pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::LeftSide_PageWidget_NextPage]))
+			if (PptUiIsInRoundRect(m.x, m.y, pptUiRoundRectWidget[PptUiRoundRectWidgetID::LeftSide_PageWidget_NextPage]))
 			{
 				if (last_x != m.x || last_y != m.y) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::LeftSide_PageWidget_NextPage].FillColor.v = pptUiRoundRectWidget[PptUiRoundRectWidgetID::LeftSide_PageWidget_NextPage].FillColor.v = RGBA(225, 225, 225, 255);
 				else pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::LeftSide_PageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
@@ -1581,7 +1489,7 @@ void PptInteract()
 			else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::LeftSide_PageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
 
 			// 中间 结束放映
-			if (PptUiIsInRoundRect(m.x, m.y, pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_TabSlideWidget_EndShow]))
+			if (PptUiIsInRoundRect(m.x, m.y, pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_TabSlideWidget_EndShow]))
 			{
 				if (last_x != m.x || last_y != m.y) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_TabSlideWidget_EndShow].FillColor.v = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_TabSlideWidget_EndShow].FillColor.v = RGBA(225, 225, 225, 255);
 				else pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_TabSlideWidget_EndShow].FillColor.v = RGBA(250, 250, 250, 160);
@@ -1593,7 +1501,7 @@ void PptInteract()
 					while (1)
 					{
 						ExMessage m = hiex::getmessage_win32(EM_MOUSE, ppt_window);
-						if (IsInRect(m.x, m.y, { (int)PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/x"].v,(int)PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/y"].v,(int)PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/x"].v + (int)PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/width"].v,(int)PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/y"].v + (int)PPTUIControl[L"RoundRect/RoundRectMiddleLeft1/height"].v }))
+						if (PptUiIsInRoundRect(m.x, m.y, pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_TabSlideWidget_EndShow]))
 						{
 							if (!m.lbutton)
 							{
@@ -1629,10 +1537,10 @@ void PptInteract()
 			else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_TabSlideWidget_EndShow].FillColor.v = RGBA(250, 250, 250, 160);
 
 			// 右侧 上一页
-			if (IsInRect(m.x, m.y, { (int)PPTUIControl[L"RoundRect/RoundRectRight1/x"].v,(int)PPTUIControl[L"RoundRect/RoundRectRight1/y"].v,(int)PPTUIControl[L"RoundRect/RoundRectRight1/x"].v + (int)PPTUIControl[L"RoundRect/RoundRectRight1/width"].v,(int)PPTUIControl[L"RoundRect/RoundRectRight1/y"].v + (int)PPTUIControl[L"RoundRect/RoundRectRight1/height"].v }))
+			if (PptUiIsInRoundRect(m.x, m.y, pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_PreviousPage]))
 			{
-				if (last_x != m.x || last_y != m.y) PPTUIControlColorTarget[L"RoundRect/RoundRectRight1/fill"].v = PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v = RGBA(225, 225, 225, 255);
-				else PPTUIControlColorTarget[L"RoundRect/RoundRectRight1/fill"].v = RGBA(250, 250, 250, 160);
+				if (last_x != m.x || last_y != m.y) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::RightSide_PageWidget_PreviousPage].FillColor.v = pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_PreviousPage].FillColor.v = RGBA(225, 225, 225, 255);
+				else pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::RightSide_PageWidget_PreviousPage].FillColor.v = RGBA(250, 250, 250, 160);
 				PptWindowBackgroundUiChange = true;
 
 				if (m.message == WM_LBUTTONDOWN)
@@ -1640,7 +1548,7 @@ void PptInteract()
 					SetForegroundWindow(ppt_show);
 
 					PreviousPptSlides();
-					PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v = RGBA(200, 200, 200, 255);
+					pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
 
 					std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 					while (1)
@@ -1649,13 +1557,13 @@ void PptInteract()
 						if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 						{
 							PreviousPptSlides();
-							PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v = RGBA(200, 200, 200, 255);
+							pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
 						}
 
 						this_thread::sleep_for(chrono::milliseconds(15));
 					}
 
-					PPTUIControlColorTarget[L"RoundRect/RoundRectRight1/fill"].v = RGBA(250, 250, 250, 160);
+					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::RightSide_PageWidget_PreviousPage].FillColor.v = RGBA(250, 250, 250, 160);
 					hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 
 					POINT pt;
@@ -1663,12 +1571,12 @@ void PptInteract()
 					last_x = pt.x, last_y = pt.y;
 				}
 			}
-			else if (PptInfoStateBuffer.TotalPage != -1) PPTUIControlColorTarget[L"RoundRect/RoundRectRight1/fill"].v = RGBA(250, 250, 250, 160);
+			else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::RightSide_PageWidget_PreviousPage].FillColor.v = RGBA(250, 250, 250, 160);
 			// 右侧 下一页
-			if (IsInRect(m.x, m.y, { (int)PPTUIControl[L"RoundRect/RoundRectRight2/x"].v,(int)PPTUIControl[L"RoundRect/RoundRectRight2/y"].v,(int)PPTUIControl[L"RoundRect/RoundRectRight2/x"].v + (int)PPTUIControl[L"RoundRect/RoundRectRight2/width"].v,(int)PPTUIControl[L"RoundRect/RoundRectRight2/y"].v + (int)PPTUIControl[L"RoundRect/RoundRectRight2/height"].v }))
+			if (PptUiIsInRoundRect(m.x, m.y, pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage]))
 			{
-				if (last_x != m.x || last_y != m.y) PPTUIControlColorTarget[L"RoundRect/RoundRectRight2/fill"].v = PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v = RGBA(225, 225, 225, 255);
-				else PPTUIControlColorTarget[L"RoundRect/RoundRectRight2/fill"].v = RGBA(250, 250, 250, 160);
+				if (last_x != m.x || last_y != m.y) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].FillColor.v = pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].FillColor.v = RGBA(225, 225, 225, 255);
+				else pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
 				PptWindowBackgroundUiChange = true;
 
 				if (m.message == WM_LBUTTONDOWN)
@@ -1692,7 +1600,7 @@ void PptInteract()
 						SetForegroundWindow(ppt_show);
 
 						NextPptSlides(temp_currentpage);
-						PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v = RGBA(200, 200, 200, 255);
+						pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
 
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 						while (1)
@@ -1715,7 +1623,7 @@ void PptInteract()
 								else if (temp_currentpage != -1)
 								{
 									NextPptSlides(temp_currentpage);
-									PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v = RGBA(200, 200, 200, 255);
+									pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
 								}
 							}
 
@@ -1723,7 +1631,7 @@ void PptInteract()
 						}
 					}
 
-					PPTUIControlColorTarget[L"RoundRect/RoundRectRight2/fill"].v = RGBA(250, 250, 250, 160);
+					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
 					hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 
 					POINT pt;
@@ -1731,7 +1639,7 @@ void PptInteract()
 					last_x = pt.x, last_y = pt.y;
 				}
 			}
-			else if (PptInfoStateBuffer.TotalPage != -1) PPTUIControlColorTarget[L"RoundRect/RoundRectRight2/fill"].v = RGBA(250, 250, 250, 160);
+			else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
 
 			// 滚轮消息
 			if (m.message == WM_MOUSEWHEEL)
@@ -1758,10 +1666,10 @@ void PptInteract()
 						SetForegroundWindow(ppt_show);
 
 						NextPptSlides(temp_currentpage);
-						PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v = RGBA(200, 200, 200, 255);
+						//pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
 					}
 
-					PPTUIControlColorTarget[L"RoundRect/RoundRectRight2/fill"].v = RGBA(250, 250, 250, 160);
+					//pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
 					hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 				}
 				// 上一页
@@ -1770,9 +1678,9 @@ void PptInteract()
 					SetForegroundWindow(ppt_show);
 
 					PreviousPptSlides();
-					PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v = RGBA(200, 200, 200, 255);
+					//pptUiRoundRectWidget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
 
-					PPTUIControlColorTarget[L"RoundRect/RoundRectRight1/fill"].v = RGBA(250, 250, 250, 160);
+					//pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
 					hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 				}
 			}

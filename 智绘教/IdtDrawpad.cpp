@@ -67,8 +67,8 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			{
 				if (KeyBoradDown[(BYTE)pKeyInfo->vkCode])
 				{
-					PPTUIControlColor[L"RoundRect/RoundRectLeft2/fill"].v = RGBA(200, 200, 200, 255);
-					PPTUIControlColor[L"RoundRect/RoundRectRight2/fill"].v = RGBA(200, 200, 200, 255);
+					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::LeftSide_PageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
+					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::RightSide_PageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
 				}
 				break;
 			}
@@ -79,8 +79,8 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			{
 				if (KeyBoradDown[(BYTE)pKeyInfo->vkCode])
 				{
-					PPTUIControlColor[L"RoundRect/RoundRectLeft1/fill"].v = RGBA(200, 200, 200, 255);
-					PPTUIControlColor[L"RoundRect/RoundRectRight1/fill"].v = RGBA(200, 200, 200, 255);
+					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::LeftSide_PageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
+					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::RightSide_PageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
 				}
 				break;
 			}
