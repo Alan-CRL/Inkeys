@@ -23,10 +23,10 @@ public:
 	{
 		replace = false;
 	}
-	PptUiWidgetValue(float vTarget, float sTarget, float eTarget)
+	PptUiWidgetValue(float sTarget, float eTarget, bool replaceTarget = true)
 	{
-		v = vTarget, s = sTarget, e = eTarget;
-		replace = false;
+		v = 0, s = sTarget, e = eTarget;
+		replace = replaceTarget;
 	}
 
 public:
@@ -40,10 +40,10 @@ public:
 	{
 		replace = false;
 	}
-	PptUiWidgetColor(COLORREF vTarget, float sTarget, float eTarget)
+	PptUiWidgetColor(COLORREF vTarget, float sTarget, float eTarget, bool replaceTarget = true)
 	{
 		v = vTarget, s = sTarget, e = eTarget;
-		replace = false;
+		replace = replaceTarget;
 	}
 
 public:
@@ -171,7 +171,6 @@ void NextPptSlides(int check);
 void PreviousPptSlides();
 bool EndPptShow();
 
-void GetPptState();
 void PPTLinkageMain();
 
 // --------------------------------------------------

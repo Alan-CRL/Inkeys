@@ -5128,6 +5128,7 @@ void DrawScreen()
 			IdtWindowsIsVisible.floatingWindow = true;
 			//ShowWindow(floating_window, SW_SHOW);
 		}
+
 		if (tRecord)
 		{
 			int delay = 1000 / 24 - (clock() - tRecord);
