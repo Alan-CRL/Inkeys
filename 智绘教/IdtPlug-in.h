@@ -19,13 +19,37 @@
 class PptUiWidgetValue
 {
 public:
+	PptUiWidgetValue()
+	{
+		replace = false;
+	}
+	PptUiWidgetValue(float vTarget, float sTarget, float eTarget)
+	{
+		v = vTarget, s = sTarget, e = eTarget;
+		replace = false;
+	}
+
+public:
 	float v, s, e;
+	bool replace;
 };
 class PptUiWidgetColor
 {
 public:
+	PptUiWidgetColor()
+	{
+		replace = false;
+	}
+	PptUiWidgetColor(COLORREF vTarget, float sTarget, float eTarget)
+	{
+		v = vTarget, s = sTarget, e = eTarget;
+		replace = false;
+	}
+
+public:
 	COLORREF v;
 	float s, e;
+	bool replace;
 };
 
 enum PptUiRegionWidgetID
@@ -86,6 +110,12 @@ public:
 class PptUiImageWidgetClass
 {
 public:
+	PptUiImageWidgetClass()
+	{
+		Img = NULL;
+	}
+
+public:
 	PptUiWidgetValue X;
 	PptUiWidgetValue Y;
 	PptUiWidgetValue Width;
@@ -95,6 +125,12 @@ public:
 };
 class PptUiWordsWidgetClass
 {
+public:
+	PptUiWordsWidgetClass()
+	{
+		WordsContent = L"";
+	}
+
 public:
 	PptUiWidgetValue Left;
 	PptUiWidgetValue Top;
