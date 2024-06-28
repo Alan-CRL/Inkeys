@@ -367,6 +367,11 @@ int SettingMain()
 
 		// 插件参数
 
+		float PptUiWidgetScaleWidget = 1.0f;
+		float PptUiWidgetScaleLeftWidget = PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
+		float PptUiWidgetScaleRightWidget = PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
+		float PptUiWidgetScaleMiddleWidget = PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+
 		bool DdbEnable = ddbSetList.DdbEnable;
 		bool DdbEnhance = ddbSetList.DdbEnhance;
 		bool FixedHandWriting = pptComSetlist.fixedHandWriting;
@@ -2112,7 +2117,7 @@ int SettingMain()
 
 							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(reinterpret_cast<const char*>(u8" 外观皮肤"), 4.0f);
+							CenteredText(reinterpret_cast<const char*>(u8" PPT 控件缩放比例"), 4.0f);
 
 							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 230.0f);
 							ImGui::SetNextItemWidth(220);
@@ -2124,9 +2129,15 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0 / 255.0f, 131 / 255.0f, 245 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							ImGui::SliderFloat(reinterpret_cast<const char*>(u8"##PPT 控件缩放比例"), &PPTUIScale, 0.25f, 3.0f, reinterpret_cast<const char*>(u8"%.5f 倍缩放"));
+							ImGui::SliderFloat(reinterpret_cast<const char*>(u8"##PPT 控件缩放比例"), &PptUiWidgetScaleWidget, 0.25f, 3.0f, reinterpret_cast<const char*>(u8"%.5f 倍缩放"));
 
 							ImGui::PopStyleColor(PushStyleColorNum);
+						}
+
+						{
+							PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget] = PptUiWidgetScaleWidget;
+							PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget] = PptUiWidgetScaleWidget;
+							PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget] = PptUiWidgetScaleWidget;
 						}
 
 						ImGui::EndChild();

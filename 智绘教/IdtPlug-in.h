@@ -16,6 +16,14 @@
 // All function and variable descriptions should be in the corresponding cpp file.
 // 所有的函数和变量说明应该在对应的 cpp 文件中。
 
+// --------------------------------------------------
+// PPT 联动插件
+
+// -------------------------
+// UI 对象
+
+extern bool PptUiAnimationEnable;
+
 class PptUiWidgetValue
 {
 public:
@@ -60,29 +68,30 @@ enum PptUiRegionWidgetID
 };
 enum PptUiRoundRectWidgetID
 {
-	LeftSide_PageWidget,
-	LeftSide_PageWidget_PreviousPage,
-	LeftSide_PageWidget_NextPage,
-	MiddleSide_TabSlideWidget,
-	MiddleSide_TabSlideWidget_EndShow,
-	MiddleSide_TabDrawpadWidget,
-	// ...
-	RightSide_PageWidget,
-	RightSide_PageWidget_PreviousPage,
-	RightSide_PageWidget_NextPage
+	//...
+	BottomSide_LeftPageWidget,
+	BottomSide_LeftPageWidget_PreviousPage,
+	BottomSide_LeftPageWidget_NextPage,
+	BottomSide_RightPageWidget,
+	BottomSide_RightPageWidget_PreviousPage,
+	BottomSide_RightPageWidget_NextPage,
+
+	BottomSide_MiddleTabSlideWidget,
+	BottomSide_MiddleTabSlideWidget_EndShow,
+	BottomSide_MiddleTabDrawpadWidget
 };
 enum PptUiImageWidgetID
 {
-	LeftSide_PreviousPage,
-	LeftSide_NextPage,
-	MiddleSide_EndShow,
-	RightSide_PreviousPage,
-	RightSide_NextPage
+	BottomSide_LeftPreviousPage,
+	BottomSide_LeftNextPage,
+	BottomSide_MiddleEndShow,
+	BottomSide_RightPreviousPage,
+	BottomSide_RightNextPage
 };
 enum PptUiWordsWidgetID
 {
-	LeftSide_PageNum,
-	RightSide_PageNum
+	BottomSide_LeftPageNum,
+	BottomSide_RightPageNum
 };
 
 class PptUiRegionWidgetClass
@@ -147,7 +156,19 @@ extern PptUiRoundRectWidgetClass pptUiRoundRectWidget[9], pptUiRoundRectWidgetTa
 extern PptUiImageWidgetClass pptUiImageWidget[5], pptUiImageWidgetTarget[5];
 extern PptUiWordsWidgetClass pptUiWordsWidget[2], pptUiWordsWidgetTarget[2];
 
-extern float PPTUIScale;
+// -------------------------
+// UI 缩放
+
+enum PptUiWidgetScaleID
+{
+	BottomSide_LeftWidget,
+	BottomSide_RightWidget,
+	BottomSide_MiddleWidget
+};
+extern float PptUiWidgetScale[3];
+
+// -------------------------
+// ppt 信息
 
 struct PptImgStruct
 {
@@ -165,7 +186,9 @@ extern PptInfoStateStruct PptInfoState;
 extern bool PptWindowBackgroundUiChange;
 
 extern wstring pptComVersion;
-wstring GetPptComVersion();
+
+// -------------------------
+// Ppt 状态
 
 void NextPptSlides(int check);
 void PreviousPptSlides();
@@ -174,7 +197,6 @@ bool EndPptShow();
 void PPTLinkageMain();
 
 // --------------------------------------------------
-// 插件
+// 其他插件
 
-// DesktopDrawpadBlocker 插件
 void StartDesktopDrawpadBlocker();
