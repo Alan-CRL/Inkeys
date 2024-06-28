@@ -234,13 +234,14 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			}
 		}
 
-		// 定格所需的额外情况
+		// 定格所需的额外情况（禁用，否则用户会无法使用 Ctrl + Q 快捷键：后续提供选项，让可以全局指定）
+		/*
 		else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection && (KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]) && (BYTE)pKeyInfo->vkCode == (BYTE)0x51)
 		{
 			ExMessage msgKey = {};
 			msgKey.message = wParam;
 			msgKey.vkcode = (BYTE)0x51;
-			msgKey.ctrl = true;
+			msgKey.prevdown = true; // 借用结构：按下 ctrl
 
 			int index = hiex::GetWindowIndex(drawpad_window, false);
 			unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
@@ -249,13 +250,14 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 
 			return 1;
 		}
+		*/
 		// 穿透所需的额外情况
 		else if (penetrate.select && (KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]) && (BYTE)pKeyInfo->vkCode == (BYTE)0x45)
 		{
 			ExMessage msgKey = {};
 			msgKey.message = wParam;
 			msgKey.vkcode = (BYTE)0x45;
-			msgKey.ctrl = true;
+			msgKey.prevdown = true; // 借用结构：按下 ctrl
 
 			int index = hiex::GetWindowIndex(drawpad_window, false);
 			unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);

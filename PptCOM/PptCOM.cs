@@ -89,7 +89,7 @@ namespace PptCOM
 
         public string GetVersion()
         {
-            return "20240515a";
+            return "20240628a";
         }
 
         // 初始化函数
@@ -350,17 +350,27 @@ namespace PptCOM
                 // 下一页
                 if (polling != 0)
                 {
-                    if (polling == 2)
-                        pptActWindow.View.Next();
+                    if (polling == 2) pptActWindow.View.Next();
+                    else if (polling == 1)
+                    {
+                        int currentPageTemp = -1;
+                        try
+                        {
+                            currentPageTemp = pptActWindow.View.Slide.SlideIndex;
+                        }
+                        catch
+                        {
+                            currentPageTemp = -1;
+                        }
+                        if (currentPageTemp != -1) pptActWindow.View.Next();
+                    }
                     polling = 1;
                 }
                 else pptActWindow.View.Next();
-                //*pptCurrentPage = pptActWindow.View.CurrentShowPosition;
             }
             catch
             {
             }
-            return;
         }
 
         public unsafe void PreviousSlideShow()
@@ -368,7 +378,6 @@ namespace PptCOM
             try
             {   // 上一页
                 pptActWindow.View.Previous();
-                //*pptCurrentPage = pptActWindow.View.CurrentShowPosition;
             }
             catch
             {

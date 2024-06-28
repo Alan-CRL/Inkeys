@@ -1028,7 +1028,7 @@ void PptInfo()
 			//if (!ppt_title_recond[ppt_title]) FreezePPT = true;
 			Initialization = true;
 		}
-		else if (Initialization && PptInfoState.CurrentPage == -1)
+		else if (Initialization && PptInfoState.TotalPage == -1)
 		{
 			PptImg.IsSave = false;
 			PptImg.IsSaved.clear();
