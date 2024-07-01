@@ -68,7 +68,6 @@ enum PptUiRegionWidgetID
 };
 enum PptUiRoundRectWidgetID
 {
-	//...
 	BottomSide_LeftPageWidget,
 	BottomSide_LeftPageWidget_PreviousPage,
 	BottomSide_LeftPageWidget_NextPage,
@@ -78,7 +77,14 @@ enum PptUiRoundRectWidgetID
 
 	BottomSide_MiddleTabSlideWidget,
 	BottomSide_MiddleTabSlideWidget_EndShow,
-	BottomSide_MiddleTabDrawpadWidget
+	BottomSide_MiddleTabDrawpadWidget,
+
+	MiddleSide_LeftPageWidget,
+	MiddleSide_LeftPageWidget_PreviousPage,
+	MiddleSide_LeftPageWidget_NextPage,
+	MiddleSide_RightPageWidget,
+	MiddleSide_RightPageWidget_PreviousPage,
+	MiddleSide_RightPageWidget_NextPage
 };
 enum PptUiImageWidgetID
 {
@@ -86,12 +92,24 @@ enum PptUiImageWidgetID
 	BottomSide_LeftNextPage,
 	BottomSide_MiddleEndShow,
 	BottomSide_RightPreviousPage,
-	BottomSide_RightNextPage
+	BottomSide_RightNextPage,
+
+	MiddleSide_LeftPreviousPage,
+	MiddleSide_LeftNextPage,
+	MiddleSide_RightPreviousPage,
+	MiddleSide_RightNextPage
 };
 enum PptUiWordsWidgetID
 {
-	BottomSide_LeftPageNum,
-	BottomSide_RightPageNum
+	BottomSide_LeftPageNum_Above,
+	BottomSide_LeftPageNum_Below,
+	BottomSide_RightPageNum_Above,
+	BottomSide_RightPageNum_Below,
+
+	MiddleSide_LeftPageNum_Above,
+	MiddleSide_LeftPageNum_Below,
+	MiddleSide_RightPageNum_Above,
+	MiddleSide_RightPageNum_Below
 };
 
 class PptUiRegionWidgetClass
@@ -152,9 +170,9 @@ public:
 	wstring WordsContent;
 };
 
-extern PptUiRoundRectWidgetClass pptUiRoundRectWidget[9], pptUiRoundRectWidgetTarget[9];
-extern PptUiImageWidgetClass pptUiImageWidget[5], pptUiImageWidgetTarget[5];
-extern PptUiWordsWidgetClass pptUiWordsWidget[2], pptUiWordsWidgetTarget[2];
+extern PptUiRoundRectWidgetClass pptUiRoundRectWidget[15], pptUiRoundRectWidgetTarget[15];
+extern PptUiImageWidgetClass pptUiImageWidget[9], pptUiImageWidgetTarget[9];
+extern PptUiWordsWidgetClass pptUiWordsWidget[8], pptUiWordsWidgetTarget[8];
 
 // -------------------------
 // UI Àı∑≈
@@ -163,9 +181,12 @@ enum PptUiWidgetScaleID
 {
 	BottomSide_LeftWidget,
 	BottomSide_RightWidget,
-	BottomSide_MiddleWidget
+	BottomSide_MiddleWidget,
+
+	MiddleSide_LeftWidget,
+	MiddleSide_RightWidget
 };
-extern float PptUiWidgetScale[3];
+extern float PptUiWidgetScale[5];
 
 // -------------------------
 // ppt –≈œ¢

@@ -96,7 +96,7 @@
       <GenerateSourceDependencies>true</GenerateSourceDependencies>
     </ClCompile>
     <Link>
-      <SubSystem>Windows</SubSystem>
+      <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -335,8 +335,10 @@
     <Image Include="src\perspective.png" />
     <Image Include="src\PluginFlag1.png" />
     <Image Include="src\PluginFlag2.png" />
+    <Image Include="src\ppt\arrow_down.png" />
     <Image Include="src\ppt\arrow_left.png" />
     <Image Include="src\ppt\arrow_right.png" />
+    <Image Include="src\ppt\arrow_up.png" />
     <Image Include="src\ppt\end_show.png" />
     <Image Include="src\rectangle.png" />
     <Image Include="src\right.png" />
