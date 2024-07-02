@@ -19,6 +19,8 @@ extern shared_mutex DisplaysNumberSm;
 extern vector<tuple<HMONITOR, RECT, bool>> DisplaysInfo; // 显示器句柄、显示器范围、是否是主显示器
 extern shared_mutex DisplaysInfoSm;
 
+extern bool enableAppBarAutoHide;
+
 struct MainMonitorStruct
 {
 	HMONITOR Monitor;

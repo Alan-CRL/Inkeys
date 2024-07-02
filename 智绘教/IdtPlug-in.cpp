@@ -43,11 +43,12 @@ IPptCOMServerPtr PptCOMPto;
 
 bool PptUiAnimationEnable;
 
+PptUiLineWidgetClass pptUiLineWidget[5], pptUiLineWidgetTarget[5];
 PptUiRoundRectWidgetClass pptUiRoundRectWidget[15], pptUiRoundRectWidgetTarget[15];
 PptUiImageWidgetClass pptUiImageWidget[9], pptUiImageWidgetTarget[9];
 PptUiWordsWidgetClass pptUiWordsWidget[8], pptUiWordsWidgetTarget[8];
 
-float PptUiWidgetScale[5];
+float PptUiWidgetScale[3];
 ID2D1Bitmap* pptIconBitmap[6];
 
 void PptUiWidgetValueTransformation(float* v, float tv, float s, float e, int num = 1)
@@ -143,7 +144,7 @@ IMAGE PptIcon[6]; // PPT 控件的按键图标
 IMAGE PptWindowBackground; // PPT 窗口背景画布
 
 bool PptUiChangeSignal;
-bool PptUiAllReplaceSignal;
+int PptUiAllReplaceSignal;
 
 wstring pptComVersion;
 wstring GetPptComVersion()
@@ -287,42 +288,481 @@ bool EndPptShow()
 	return false;
 }
 
-void PptUI(MainMonitorStruct* PPTMainMonitorStruct)
+void PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
+{
+	if (!KeyBoradDown[VK_LBUTTON]) return;
+	PptUiAllReplaceSignal = 1;
+
+	MainMonitorStruct PPTMainMonitor;
+	shared_lock<shared_mutex> DisplaysInfoLock(DisplaysInfoSm);
+	PPTMainMonitor = MainMonitor;
+	DisplaysInfoLock.unlock();
+
+	POINT p;
+	GetCursorPos(&p);
+
+	// 自身数值记录
+	float widthFirst = pptComSetlist.bottomBothWidth;
+	float heightFirst = pptComSetlist.bottomBothHeight;
+	float widthTarget = pptComSetlist.bottomBothWidth;
+	float heightTarget = pptComSetlist.bottomBothHeight;
+	float widthFeasible = pptComSetlist.bottomBothWidth;
+	float heightFeasible = pptComSetlist.bottomBothHeight;
+
+	float LeftWidgetX = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v - widthFirst;
+	float LeftWidgetY = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + heightFirst;
+	float LeftWidgetWidth = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Width.v;
+	float LeftWidgetHeight = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Height.v;
+	float RightWidgetX = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].X.v + widthFirst;
+	float RightWidgetY = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + heightFirst;
+	float RightWidgetWidth = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Width.v;
+	float RightWidgetHeight = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Height.v;
+
+	float WidgetScale = PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+
+	// 对象数值记录
+	float BottomMiddleWidgetX = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X.v;
+	float BottomMiddleWidgetY = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v;
+	float BottomMiddleWidgetWidth = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Width.v;
+	float BottomMiddleWidgetHeight = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Height.v;
+	float MiddleLeftWidgetX = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v;
+	float MiddleLeftWidgetY = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Y.v;
+	float MiddleLeftWidgetWidth = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Width.v;
+	float MiddleLeftWidgetHeight = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Height.v;
+	float MiddleRightWidgetX = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v;
+	float MiddleRightWidgetY = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y.v;
+	float MiddleRightWidgetWidth = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Width.v;
+	float MiddleRightWidgetHeight = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Height.v;
+
+	for (;;)
+	{
+		if (!KeyBoradDown[VK_LBUTTON]) break;
+
+		POINT p;
+		GetCursorPos(&p);
+
+		if (xReverse) widthTarget = widthFirst - float(p.x - firstX);
+		else widthTarget = widthFirst + float(p.x - firstX);
+		heightTarget = heightFirst - float(p.y - firstY);
+
+		// 排斥/吸附边框
+		{
+			// 左侧
+			{
+				if (LeftWidgetX + widthTarget <= 5 * WidgetScale) widthTarget = 5 * WidgetScale - LeftWidgetX;
+				if (LeftWidgetY - heightTarget <= 5 * WidgetScale) heightTarget = LeftWidgetY - 5 * WidgetScale;
+				if (LeftWidgetX + widthTarget + LeftWidgetWidth >= PPTMainMonitor.MonitorWidth / 2.0f - 5 * WidgetScale) widthTarget = PPTMainMonitor.MonitorWidth / 2.0f - 5 * WidgetScale - LeftWidgetX - LeftWidgetWidth;
+				if (LeftWidgetY - heightTarget + LeftWidgetHeight >= PPTMainMonitor.MonitorHeight - 5 * WidgetScale) heightTarget = LeftWidgetY + LeftWidgetHeight - PPTMainMonitor.MonitorHeight + 5 * WidgetScale;
+			}
+			// 右侧
+			{
+				if (RightWidgetX - widthTarget <= PPTMainMonitor.MonitorWidth / 2.0f + 5 * WidgetScale) widthTarget = RightWidgetX - PPTMainMonitor.MonitorWidth / 2.0f - 5 * WidgetScale;
+				if (RightWidgetY - heightTarget <= 5 * WidgetScale) heightTarget = RightWidgetY - 5 * WidgetScale;
+				if (RightWidgetX - widthTarget + RightWidgetWidth >= PPTMainMonitor.MonitorWidth - 5 * WidgetScale) widthTarget = RightWidgetX + RightWidgetWidth - PPTMainMonitor.MonitorWidth + 5 * WidgetScale;
+				if (RightWidgetY - heightTarget + RightWidgetHeight >= PPTMainMonitor.MonitorHeight - 5 * WidgetScale) heightTarget = RightWidgetY + RightWidgetHeight - PPTMainMonitor.MonitorHeight + 5 * WidgetScale;
+			}
+
+			if (abs(widthTarget) <= 10 && abs(heightTarget) <= 10)
+			{
+				widthTarget = 0;
+				heightTarget = 0;
+			}
+		}
+
+		bool repelSignal = false;
+		// 左侧排斥对象
+		{
+			// 底部中间控件
+			{
+				if (LeftWidgetY - heightTarget <= BottomMiddleWidgetY + BottomMiddleWidgetHeight + 10 * WidgetScale && LeftWidgetY - heightTarget + LeftWidgetHeight >= BottomMiddleWidgetY - 10 * WidgetScale
+					&& LeftWidgetX + widthTarget <= BottomMiddleWidgetX + BottomMiddleWidgetWidth + 10 * WidgetScale && LeftWidgetX + widthTarget + LeftWidgetWidth >= BottomMiddleWidgetX - 10 * WidgetScale)
+				{
+					widthTarget = widthFeasible;
+					heightTarget = heightFeasible;
+					repelSignal = true;
+				}
+			}
+			// 中部左侧控件
+			{
+				if (LeftWidgetY - heightTarget <= MiddleLeftWidgetY + MiddleLeftWidgetHeight + 10 * WidgetScale && LeftWidgetY - heightTarget + LeftWidgetHeight >= MiddleLeftWidgetY - 10 * WidgetScale
+					&& LeftWidgetX + widthTarget <= MiddleLeftWidgetX + MiddleLeftWidgetWidth + 10 * WidgetScale && LeftWidgetX + widthTarget + LeftWidgetWidth >= MiddleLeftWidgetX - 10 * WidgetScale)
+				{
+					widthTarget = widthFeasible;
+					heightTarget = heightFeasible;
+					repelSignal = true;
+				}
+			}
+		}
+		// 右侧排斥对象
+		{
+			// 底部中间控件
+			{
+				if (RightWidgetY - heightTarget <= BottomMiddleWidgetY + BottomMiddleWidgetHeight + 10 * WidgetScale && RightWidgetY - heightTarget + RightWidgetHeight >= BottomMiddleWidgetY - 10 * WidgetScale
+					&& RightWidgetX - widthTarget <= BottomMiddleWidgetX + BottomMiddleWidgetWidth + 10 * WidgetScale && RightWidgetX - widthTarget + RightWidgetWidth >= BottomMiddleWidgetX - 10 * WidgetScale)
+				{
+					widthTarget = widthFeasible;
+					heightTarget = heightFeasible;
+					repelSignal = true;
+				}
+			}
+			// 中部右侧控件
+			{
+				if (RightWidgetY - heightTarget <= MiddleRightWidgetY + MiddleRightWidgetHeight + 10 * WidgetScale && RightWidgetY - heightTarget + RightWidgetHeight >= MiddleRightWidgetY - 10 * WidgetScale
+					&& RightWidgetX - widthTarget <= MiddleRightWidgetX + MiddleRightWidgetWidth + 10 * WidgetScale && RightWidgetX - widthTarget + RightWidgetWidth >= MiddleRightWidgetX - 10 * WidgetScale)
+				{
+					widthTarget = widthFeasible;
+					heightTarget = heightFeasible;
+					repelSignal = true;
+				}
+			}
+		}
+		// 更新可行值
+		if (!repelSignal)
+		{
+			widthFeasible = widthTarget;
+			heightFeasible = heightTarget;
+		}
+
+		pptComSetlist.bottomBothWidth = widthTarget;
+		pptComSetlist.bottomBothHeight = heightTarget;
+
+		this_thread::sleep_for(chrono::milliseconds(5));
+	}
+	// 写入文件
+	if (pptComSetlist.bottomBothWidth != widthFirst || pptComSetlist.bottomBothHeight != heightFirst)
+	{
+	}
+
+	PptUiAllReplaceSignal = -1;
+	return;
+}
+void PptMiddlePageWidgetSeekBar(int firstX, int firstY, bool xReverse)
+{
+	if (!KeyBoradDown[VK_LBUTTON]) return;
+	PptUiAllReplaceSignal = 1;
+
+	MainMonitorStruct PPTMainMonitor;
+	shared_lock<shared_mutex> DisplaysInfoLock(DisplaysInfoSm);
+	PPTMainMonitor = MainMonitor;
+	DisplaysInfoLock.unlock();
+
+	POINT p;
+	GetCursorPos(&p);
+
+	// 自身数值记录
+	float widthFirst = pptComSetlist.middleBothWidth;
+	float heightFirst = pptComSetlist.middleBothHeight;
+	float widthTarget = pptComSetlist.middleBothWidth;
+	float heightTarget = pptComSetlist.middleBothHeight;
+	float widthFeasible = pptComSetlist.middleBothWidth;
+	float heightFeasible = pptComSetlist.middleBothHeight;
+
+	float LeftWidgetX = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v - widthFirst;
+	float LeftWidgetY = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Y.v + heightFirst;
+	float LeftWidgetWidth = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Width.v;
+	float LeftWidgetHeight = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Height.v;
+	float RightWidgetX = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + widthFirst;
+	float RightWidgetY = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y.v + heightFirst;
+	float RightWidgetWidth = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Width.v;
+	float RightWidgetHeight = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Height.v;
+
+	float WidgetScale = PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+
+	// 对象数值记录
+	float BottomMiddleWidgetX = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X.v;
+	float BottomMiddleWidgetY = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v;
+	float BottomMiddleWidgetWidth = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Width.v;
+	float BottomMiddleWidgetHeight = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Height.v;
+	float BottomLeftWidgetX = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v;
+	float BottomLeftWidgetY = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v;
+	float BottomLeftWidgetWidth = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Width.v;
+	float BottomLeftWidgetHeight = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Height.v;
+	float BottomRightWidgetX = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].X.v;
+	float BottomRightWidgetY = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v;
+	float BottomRightWidgetWidth = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Width.v;
+	float BottomRightWidgetHeight = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Height.v;
+
+	for (;;)
+	{
+		if (!KeyBoradDown[VK_LBUTTON]) break;
+
+		POINT p;
+		GetCursorPos(&p);
+
+		if (xReverse) widthTarget = widthFirst - float(p.x - firstX);
+		else widthTarget = widthFirst + float(p.x - firstX);
+		heightTarget = heightFirst - float(p.y - firstY);
+
+		// 排斥/吸附边框
+		{
+			// 左侧
+			{
+				if (LeftWidgetX + widthTarget <= 5 * WidgetScale) widthTarget = 5 * WidgetScale - LeftWidgetX;
+				if (LeftWidgetY - heightTarget <= 5 * WidgetScale) heightTarget = LeftWidgetY - 5 * WidgetScale;
+				if (LeftWidgetX + widthTarget + LeftWidgetWidth >= PPTMainMonitor.MonitorWidth / 2.0f - 5 * WidgetScale) widthTarget = PPTMainMonitor.MonitorWidth / 2.0f - 5 * WidgetScale - LeftWidgetX - LeftWidgetWidth;
+				if (LeftWidgetY - heightTarget + LeftWidgetHeight >= PPTMainMonitor.MonitorHeight - 5 * WidgetScale) heightTarget = LeftWidgetY + LeftWidgetHeight - PPTMainMonitor.MonitorHeight + 5 * WidgetScale;
+			}
+			// 右侧
+			{
+				if (RightWidgetX - widthTarget <= PPTMainMonitor.MonitorWidth / 2.0f + 5 * WidgetScale) widthTarget = RightWidgetX - PPTMainMonitor.MonitorWidth / 2.0f - 5 * WidgetScale;
+				if (RightWidgetY - heightTarget <= 5 * WidgetScale) heightTarget = RightWidgetY - 5 * WidgetScale;
+				if (RightWidgetX - widthTarget + RightWidgetWidth >= PPTMainMonitor.MonitorWidth - 5 * WidgetScale) widthTarget = RightWidgetX + RightWidgetWidth - PPTMainMonitor.MonitorWidth + 5 * WidgetScale;
+				if (RightWidgetY - heightTarget + RightWidgetHeight >= PPTMainMonitor.MonitorHeight - 5 * WidgetScale) heightTarget = RightWidgetY + RightWidgetHeight - PPTMainMonitor.MonitorHeight + 5 * WidgetScale;
+			}
+
+			if (abs(widthTarget) <= 10 && abs(heightTarget) <= 10)
+			{
+				widthTarget = 0;
+				heightTarget = 0;
+			}
+		}
+
+		bool repelSignal = false;
+		// 左侧排斥对象
+		{
+			// 底部中间控件
+			{
+				if (LeftWidgetY - heightTarget <= BottomMiddleWidgetY + BottomMiddleWidgetHeight + 10 * WidgetScale && LeftWidgetY - heightTarget + LeftWidgetHeight >= BottomMiddleWidgetY - 10 * WidgetScale
+					&& LeftWidgetX + widthTarget <= BottomMiddleWidgetX + BottomMiddleWidgetWidth + 10 * WidgetScale && LeftWidgetX + widthTarget + LeftWidgetWidth >= BottomMiddleWidgetX - 10 * WidgetScale)
+				{
+					widthTarget = widthFeasible;
+					heightTarget = heightFeasible;
+					repelSignal = true;
+				}
+			}
+			// 中部左侧控件
+			{
+				if (LeftWidgetY - heightTarget <= BottomLeftWidgetY + BottomLeftWidgetHeight + 10 * WidgetScale && LeftWidgetY - heightTarget + LeftWidgetHeight >= BottomLeftWidgetY - 10 * WidgetScale
+					&& LeftWidgetX + widthTarget <= BottomLeftWidgetX + BottomLeftWidgetWidth + 10 * WidgetScale && LeftWidgetX + widthTarget + LeftWidgetWidth >= BottomLeftWidgetX - 10 * WidgetScale)
+				{
+					widthTarget = widthFeasible;
+					heightTarget = heightFeasible;
+					repelSignal = true;
+				}
+			}
+		}
+		// 右侧排斥对象
+		{
+			// 底部中间控件
+			{
+				if (RightWidgetY - heightTarget <= BottomMiddleWidgetY + BottomMiddleWidgetHeight + 10 * WidgetScale && RightWidgetY - heightTarget + RightWidgetHeight >= BottomMiddleWidgetY - 10 * WidgetScale
+					&& RightWidgetX - widthTarget <= BottomMiddleWidgetX + BottomMiddleWidgetWidth + 10 * WidgetScale && RightWidgetX - widthTarget + RightWidgetWidth >= BottomMiddleWidgetX - 10 * WidgetScale)
+				{
+					widthTarget = widthFeasible;
+					heightTarget = heightFeasible;
+					repelSignal = true;
+				}
+			}
+			// 中部右侧控件
+			{
+				if (RightWidgetY - heightTarget <= BottomRightWidgetY + BottomRightWidgetHeight + 10 * WidgetScale && RightWidgetY - heightTarget + RightWidgetHeight >= BottomRightWidgetY - 10 * WidgetScale
+					&& RightWidgetX - widthTarget <= BottomRightWidgetX + BottomRightWidgetWidth + 10 * WidgetScale && RightWidgetX - widthTarget + RightWidgetWidth >= BottomRightWidgetX - 10 * WidgetScale)
+				{
+					widthTarget = widthFeasible;
+					heightTarget = heightFeasible;
+					repelSignal = true;
+				}
+			}
+		}
+		// 更新可行值
+		if (!repelSignal)
+		{
+			widthFeasible = widthTarget;
+			heightFeasible = heightTarget;
+		}
+
+		pptComSetlist.middleBothWidth = widthTarget;
+		pptComSetlist.middleBothHeight = heightTarget;
+
+		this_thread::sleep_for(chrono::milliseconds(5));
+	}
+	// 写入文件
+	if (pptComSetlist.middleBothWidth != widthFirst || pptComSetlist.middleBothHeight != heightFirst)
+	{
+	}
+
+	PptUiAllReplaceSignal = -1;
+	return;
+}
+void PptBottomMiddleSeekBar(int firstX, int firstY)
+{
+	if (!KeyBoradDown[VK_LBUTTON]) return;
+	PptUiAllReplaceSignal = 1;
+
+	MainMonitorStruct PPTMainMonitor;
+	shared_lock<shared_mutex> DisplaysInfoLock(DisplaysInfoSm);
+	PPTMainMonitor = MainMonitor;
+	DisplaysInfoLock.unlock();
+
+	POINT p;
+	GetCursorPos(&p);
+
+	// 自身数值记录
+	float widthFirst = pptComSetlist.bottomMiddleWidth;
+	float heightFirst = pptComSetlist.bottomMiddleHeight;
+	float widthTarget = pptComSetlist.bottomMiddleWidth;
+	float heightTarget = pptComSetlist.bottomMiddleHeight;
+	float widthFeasible = pptComSetlist.bottomMiddleWidth;
+	float heightFeasible = pptComSetlist.bottomMiddleHeight;
+
+	float WidgetX = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X.v - widthFirst;
+	float WidgetY = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v + heightFirst;
+	float WidgetWidth = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Width.v;
+	float WidgetHeight = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Height.v;
+
+	float WidgetScale = PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+
+	// 对象数值记录
+	float BottomLeftWidgetX = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v;
+	float BottomLeftWidgetY = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v;
+	float BottomLeftWidgetWidth = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Width.v;
+	float BottomLeftWidgetHeight = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Height.v;
+	float BottomRightWidgetX = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].X.v;
+	float BottomRightWidgetY = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v;
+	float BottomRightWidgetWidth = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Width.v;
+	float BottomRightWidgetHeight = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Height.v;
+	float MiddleLeftWidgetX = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v;
+	float MiddleLeftWidgetY = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Y.v;
+	float MiddleLeftWidgetWidth = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Width.v;
+	float MiddleLeftWidgetHeight = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Height.v;
+	float MiddleRightWidgetX = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v;
+	float MiddleRightWidgetY = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y.v;
+	float MiddleRightWidgetWidth = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Width.v;
+	float MiddleRightWidgetHeight = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Height.v;
+
+	for (;;)
+	{
+		if (!KeyBoradDown[VK_LBUTTON]) break;
+
+		POINT p;
+		GetCursorPos(&p);
+
+		widthTarget = widthFirst + float(p.x - firstX);
+		heightTarget = heightFirst - float(p.y - firstY);
+
+		// 排斥/吸附边框
+		{
+			if (WidgetX + widthTarget <= 5 * WidgetScale) widthTarget = 5 * WidgetScale - WidgetX;
+			if (WidgetY - heightTarget <= 5 * WidgetScale) heightTarget = WidgetY - 5 * WidgetScale;
+			if (WidgetX + widthTarget + WidgetWidth >= PPTMainMonitor.MonitorWidth - 5 * WidgetScale) widthTarget = PPTMainMonitor.MonitorWidth - 5 * WidgetScale - WidgetX - WidgetWidth;
+			if (WidgetY - heightTarget + WidgetHeight >= PPTMainMonitor.MonitorHeight - 5 * WidgetScale) heightTarget = WidgetY + WidgetHeight - PPTMainMonitor.MonitorHeight + 5 * WidgetScale;
+
+			if (abs(widthTarget) <= 10 && abs(heightTarget) <= 10)
+			{
+				widthTarget = 0;
+				heightTarget = 0;
+			}
+		}
+
+		bool repelSignal = false;
+		// 排斥对象
+		{
+			// 底部左侧控件
+			{
+				if (WidgetY - heightTarget <= BottomLeftWidgetY + BottomLeftWidgetHeight + 10 * WidgetScale && WidgetY - heightTarget + WidgetHeight >= BottomLeftWidgetY - 10 * WidgetScale
+					&& WidgetX + widthTarget <= BottomLeftWidgetX + BottomLeftWidgetWidth + 10 * WidgetScale && WidgetX + widthTarget + WidgetWidth >= BottomLeftWidgetX - 10 * WidgetScale)
+				{
+					widthTarget = widthFeasible;
+					heightTarget = heightFeasible;
+					repelSignal = true;
+				}
+			}
+			// 底部右侧控件
+			{
+				if (WidgetY - heightTarget <= BottomRightWidgetY + BottomRightWidgetHeight + 10 * WidgetScale && WidgetY - heightTarget + WidgetHeight >= BottomRightWidgetY - 10 * WidgetScale
+					&& WidgetX + widthTarget <= BottomRightWidgetX + BottomRightWidgetWidth + 10 * WidgetScale && WidgetX + widthTarget + WidgetWidth >= BottomRightWidgetX - 10 * WidgetScale)
+				{
+					widthTarget = widthFeasible;
+					heightTarget = heightFeasible;
+					repelSignal = true;
+				}
+			}
+			// 中部左侧控件
+			{
+				if (WidgetY - heightTarget <= MiddleLeftWidgetY + MiddleLeftWidgetHeight + 10 * WidgetScale && WidgetY - heightTarget + WidgetHeight >= MiddleLeftWidgetY - 10 * WidgetScale
+					&& WidgetX + widthTarget <= MiddleLeftWidgetX + MiddleLeftWidgetWidth + 10 * WidgetScale && WidgetX + widthTarget + WidgetWidth >= MiddleLeftWidgetX - 10 * WidgetScale)
+				{
+					widthTarget = widthFeasible;
+					heightTarget = heightFeasible;
+					repelSignal = true;
+				}
+			}
+			// 中部右侧控件
+			{
+				if (WidgetY - heightTarget <= MiddleRightWidgetY + MiddleRightWidgetHeight + 10 * WidgetScale && WidgetY - heightTarget + WidgetHeight >= MiddleRightWidgetY - 10 * WidgetScale
+					&& WidgetX + widthTarget <= MiddleRightWidgetX + MiddleRightWidgetWidth + 10 * WidgetScale && WidgetX + widthTarget + WidgetWidth >= MiddleRightWidgetX - 10 * WidgetScale)
+				{
+					widthTarget = widthFeasible;
+					heightTarget = heightFeasible;
+					repelSignal = true;
+				}
+			}
+		}
+
+		// 更新可行值
+		if (!repelSignal)
+		{
+			widthFeasible = widthTarget;
+			heightFeasible = heightTarget;
+		}
+
+		pptComSetlist.bottomMiddleWidth = widthTarget;
+		pptComSetlist.bottomMiddleHeight = heightTarget;
+
+		this_thread::sleep_for(chrono::milliseconds(5));
+	}
+	// 写入文件
+	if (pptComSetlist.bottomMiddleWidth != widthFirst || pptComSetlist.bottomMiddleHeight != heightFirst)
+	{
+	}
+
+	PptUiAllReplaceSignal = -1;
+	return;
+}
+
+void PptUI()
 {
 	threadStatus[L"PptUI"] = true;
 
 	// 监视器信息初始化
 	MainMonitorStruct PPTMainMonitor;
-	shared_lock<shared_mutex> DisplaysInfoLock2(DisplaysInfoSm);
-	PPTMainMonitor = *PPTMainMonitorStruct;
-	DisplaysInfoLock2.unlock();
+	shared_lock<shared_mutex> DisplaysInfoLock(DisplaysInfoSm);
+	PPTMainMonitor = MainMonitor;
+	DisplaysInfoLock.unlock();
 
 	// 启用 UI 动画
 	PptUiAnimationEnable = true;
 
 	// UI 缩放初始化
 	{
-		PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget] = 1.0f;
-		PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget] = 1.0f;
+		PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget] = 1.0f;
 		PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget] = 1.0f;
-
-		PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget] = 1.0f;
-		PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget] = 1.0f;
+		PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget] = 1.0f;
 	}
 
 	// UI 初始化
 	{
 		// 底部左侧控件
 		{
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Width = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Height = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].EllipseWidth = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].EllipseHeight = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FrameThickness = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FillColor = PptUiWidgetColor(RGBA(225, 225, 225, 0), 25, 1);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FrameColor = PptUiWidgetColor(RGBA(200, 200, 200, 0), 25, 1);
+			{
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Width = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Height = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].EllipseWidth = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].EllipseHeight = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FrameThickness = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FillColor = PptUiWidgetColor(RGBA(225, 225, 225, 0), 25, 1);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FrameColor = PptUiWidgetColor(RGBA(200, 200, 200, 0), 25, 1);
+			}
+			{
+				pptUiLineWidget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].X1 = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Y1 = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].X2 = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Y2 = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Thickness = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Color = PptUiWidgetColor(RGBA(30, 30, 30, 0), 25, 1);
+			}
 
 			{
 				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].X = PptUiWidgetValue(15, 0.1f);
@@ -380,15 +820,25 @@ void PptUI(MainMonitorStruct* PPTMainMonitorStruct)
 		}
 		// 底部右侧控件
 		{
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].X = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Width = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Height = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].EllipseWidth = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].EllipseHeight = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FrameThickness = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FillColor = PptUiWidgetColor(RGBA(225, 225, 225, 0), 25, 1);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FrameColor = PptUiWidgetColor(RGBA(200, 200, 200, 0), 25, 1);
+			{
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].X = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Width = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Height = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].EllipseWidth = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].EllipseHeight = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FrameThickness = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FillColor = PptUiWidgetColor(RGBA(225, 225, 225, 0), 25, 1);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FrameColor = PptUiWidgetColor(RGBA(200, 200, 200, 0), 25, 1);
+			}
+			{
+				pptUiLineWidget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].X1 = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Y1 = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].X2 = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Y2 = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Thickness = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Color = PptUiWidgetColor(RGBA(30, 30, 30, 0), 25, 1);
+			}
 
 			{
 				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].X = PptUiWidgetValue(15, 0.1f);
@@ -444,49 +894,28 @@ void PptUI(MainMonitorStruct* PPTMainMonitorStruct)
 				pptUiImageWidget[PptUiImageWidgetID::BottomSide_RightNextPage].Img = pptIconBitmap[2];
 			}
 		}
-		// 底部中间控件
-		{
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Width = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Height = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].EllipseWidth = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].EllipseHeight = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameThickness = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FillColor = PptUiWidgetColor(RGBA(225, 225, 225, 0), 25, 1);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameColor = PptUiWidgetColor(RGBA(200, 200, 200, 0), 25, 1);
-
-			{
-				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].X = PptUiWidgetValue(15, 0.1f);
-				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Y = PptUiWidgetValue(15, 0.1f);
-				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Width = PptUiWidgetValue(15, 0.1f);
-				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Height = PptUiWidgetValue(15, 0.1f);
-				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].EllipseWidth = PptUiWidgetValue(15, 0.1f);
-				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].EllipseHeight = PptUiWidgetValue(15, 0.1f);
-				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FrameThickness = PptUiWidgetValue(15, 0.1f);
-				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FillColor = PptUiWidgetColor(RGBA(250, 250, 250, 0), 10, 1);
-				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FrameColor = PptUiWidgetColor(RGBA(200, 200, 200, 0), 25, 1);
-
-				pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].X = PptUiWidgetValue(15, 0.1f);
-				pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Y = PptUiWidgetValue(15, 0.1f);
-				pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Width = PptUiWidgetValue(15, 0.1f);
-				pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Height = PptUiWidgetValue(15, 0.1f);
-				pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Transparency = PptUiWidgetValue(25, 1);
-				pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Img = pptIconBitmap[3];
-			}
-		}
 
 		// 中部左侧控件
 		{
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Y = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Width = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Height = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].EllipseWidth = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].EllipseHeight = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FrameThickness = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FillColor = PptUiWidgetColor(RGBA(225, 225, 225, 0), 25, 1);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FrameColor = PptUiWidgetColor(RGBA(200, 200, 200, 0), 25, 1);
+			{
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Y = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Width = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Height = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].EllipseWidth = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].EllipseHeight = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FrameThickness = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FillColor = PptUiWidgetColor(RGBA(225, 225, 225, 0), 25, 1);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FrameColor = PptUiWidgetColor(RGBA(200, 200, 200, 0), 25, 1);
+			}
+			{
+				pptUiLineWidget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].X1 = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Y1 = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].X2 = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Y2 = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Thickness = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Color = PptUiWidgetColor(RGBA(30, 30, 30, 0), 25, 1);
+			}
 
 			{
 				pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].X = PptUiWidgetValue(15, 0.1f);
@@ -544,15 +973,25 @@ void PptUI(MainMonitorStruct* PPTMainMonitorStruct)
 		}
 		// 中部右侧控件
 		{
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Width = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Height = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].EllipseWidth = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].EllipseHeight = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FrameThickness = PptUiWidgetValue(15, 0.1f);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FillColor = PptUiWidgetColor(RGBA(225, 225, 225, 0), 25, 1);
-			pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FrameColor = PptUiWidgetColor(RGBA(200, 200, 200, 0), 25, 1);
+			{
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Width = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Height = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].EllipseWidth = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].EllipseHeight = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FrameThickness = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FillColor = PptUiWidgetColor(RGBA(225, 225, 225, 0), 25, 1);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FrameColor = PptUiWidgetColor(RGBA(200, 200, 200, 0), 25, 1);
+			}
+			{
+				pptUiLineWidget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].X1 = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Y1 = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].X2 = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Y2 = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Thickness = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Color = PptUiWidgetColor(RGBA(30, 30, 30, 0), 25, 1);
+			}
 
 			{
 				pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].X = PptUiWidgetValue(15, 0.1f);
@@ -609,6 +1048,49 @@ void PptUI(MainMonitorStruct* PPTMainMonitorStruct)
 			}
 		}
 
+		// 底部中间控件
+		{
+			{
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Width = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Height = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].EllipseWidth = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].EllipseHeight = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameThickness = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FillColor = PptUiWidgetColor(RGBA(225, 225, 225, 0), 25, 1);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameColor = PptUiWidgetColor(RGBA(200, 200, 200, 0), 25, 1);
+			}
+			{
+				pptUiLineWidget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].X1 = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Y1 = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].X2 = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Y2 = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Thickness = PptUiWidgetValue(15, 0.1f);
+				pptUiLineWidget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Color = PptUiWidgetColor(RGBA(30, 30, 30, 0), 25, 1);
+			}
+
+			{
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].X = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Y = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Width = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Height = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].EllipseWidth = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].EllipseHeight = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FrameThickness = PptUiWidgetValue(15, 0.1f);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FillColor = PptUiWidgetColor(RGBA(250, 250, 250, 0), 10, 1);
+				pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FrameColor = PptUiWidgetColor(RGBA(200, 200, 200, 0), 25, 1);
+
+				pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].X = PptUiWidgetValue(15, 0.1f);
+				pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Y = PptUiWidgetValue(15, 0.1f);
+				pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Width = PptUiWidgetValue(15, 0.1f);
+				pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Height = PptUiWidgetValue(15, 0.1f);
+				pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Transparency = PptUiWidgetValue(25, 1);
+				pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Img = pptIconBitmap[3];
+			}
+		}
+
+		memcpy(pptUiLineWidgetTarget, pptUiLineWidget, sizeof(pptUiLineWidget));
 		memcpy(pptUiRoundRectWidgetTarget, pptUiRoundRectWidget, sizeof(pptUiRoundRectWidget));
 		memcpy(pptUiImageWidgetTarget, pptUiImageWidget, sizeof(pptUiImageWidget));
 		memcpy(pptUiWordsWidgetTarget, pptUiWordsWidget, sizeof(pptUiWordsWidget));
@@ -622,9 +1104,9 @@ void PptUI(MainMonitorStruct* PPTMainMonitorStruct)
 	for (; !offSignal;)
 	{
 		// 监视器信息监测
-		shared_lock<shared_mutex> DisplaysInfoLock2(DisplaysInfoSm);
-		PPTMainMonitor = *PPTMainMonitorStruct;
-		DisplaysInfoLock2.unlock();
+		shared_lock<shared_mutex> DisplaysInfoLock(DisplaysInfoSm);
+		PPTMainMonitor = MainMonitor;
+		DisplaysInfoLock.unlock();
 
 		// Ppt 信息监测
 		int pptTotalSlides = PptInfoState.TotalPage;
@@ -688,77 +1170,88 @@ void PptUI(MainMonitorStruct* PPTMainMonitorStruct)
 			{
 				// 底部左侧控件
 				{
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v = (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-					if (pptTotalSlides == -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v = PPTMainMonitor.MonitorHeight + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-					else pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v = PPTMainMonitor.MonitorHeight - (65) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Width.v = (185) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Height.v = (60) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].EllipseWidth.v = (30) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].EllipseHeight.v = (30) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-					if (pptTotalSlides == -1)
 					{
-						SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FillColor.v, 0);
-						SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FrameColor.v, 0);
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v = floor(pptComSetlist.bottomBothWidth + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget]);
+						if (pptTotalSlides == -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v = floor(PPTMainMonitor.MonitorHeight + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget]);
+						else pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v = floor(PPTMainMonitor.MonitorHeight - pptComSetlist.bottomBothHeight + (-65) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget]);
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Width.v = (195) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Height.v = (60) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].EllipseWidth.v = (30) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].EllipseHeight.v = (30) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						if (pptTotalSlides == -1)
+						{
+							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FillColor.v, 0);
+							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FrameColor.v, 0);
+						}
+						else
+						{
+							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FillColor.v, 160);
+							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FrameColor.v, 160);
+						}
 					}
-					else
 					{
-						SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FillColor.v, 160);
-						SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FrameColor.v, 160);
+						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].X1.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v + (5 + 3) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Y1.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + (15) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].X2.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v + (5 + 3) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Y2.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Height.v + (-15) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Thickness.v = 1 * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						if (pptTotalSlides == -1) SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Color.v, 0);
+						else SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Color.v, 250);
 					}
 
 					{
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].Width.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].Height.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].EllipseWidth.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].EllipseHeight.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].X.v = pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].X1.v + (2 + 5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].Width.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].Height.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].EllipseWidth.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].EllipseHeight.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
 
 						{
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].Width.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].Height.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].Width.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].Height.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
 							if (pptTotalSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].Transparency.v = 0;
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].Transparency.v = 255;
 							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].Img = pptIconBitmap[1];
 						}
 					}
 					{
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Left.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].X.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].Width.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Top.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Left.v + (65) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Top.v + (5 + 30) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].WordsHeight.v = (24) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Left.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].X.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].Width.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Top.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Left.v + (65) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Top.v + (5 + 30) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].WordsHeight.v = (24) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
 						if (pptTotalSlides == -1) SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].WordsColor.v, 0);
 						else SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].WordsColor.v, 255);
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].WordsContent = pptCurrentSlides < 0 ? L"-" : to_wstring(min(9999, pptCurrentSlides));
 
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].Left.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].X.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].Width.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].Top.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + (5 + 25) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Left.v + (65) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Top.v + (55) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].WordsHeight.v = (16) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].Left.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].X.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].Width.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].Top.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + (5 + 25) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Left.v + (65) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Top.v + (55) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].WordsHeight.v = (16) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
 						if (pptTotalSlides == -1) SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].WordsColor.v, 0);
 						else SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].WordsColor.v, 255);
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].WordsContent = L"/" + to_wstring(min(9999, pptTotalSlides));
 					}
 					{
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].X.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Right.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].Width.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].Height.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].EllipseWidth.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].EllipseHeight.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].X.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Right.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].Width.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].Height.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].EllipseWidth.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].EllipseHeight.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
 
 						{
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Width.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Height.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Width.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Height.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
 							if (pptTotalSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Transparency.v = 0;
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Transparency.v = 255;
 							if (pptCurrentSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Img = pptIconBitmap[3];
@@ -768,199 +1261,181 @@ void PptUI(MainMonitorStruct* PPTMainMonitorStruct)
 				}
 				// 底部右侧控件
 				{
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].X.v = PPTMainMonitor.MonitorWidth - (190) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-					if (pptTotalSlides == -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v = PPTMainMonitor.MonitorHeight + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-					else pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v = PPTMainMonitor.MonitorHeight - (65) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Width.v = (185) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Height.v = (60) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].EllipseWidth.v = (30) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].EllipseHeight.v = (30) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-					if (pptTotalSlides == -1)
 					{
-						SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FillColor.v, 0);
-						SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FrameColor.v, 0);
-					}
-					else
-					{
-						SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FillColor.v, 160);
-						SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FrameColor.v, 160);
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].X.v = floor(PPTMainMonitor.MonitorWidth - pptComSetlist.bottomBothWidth - (200) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget]);
+						if (pptTotalSlides == -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v = floor(PPTMainMonitor.MonitorHeight + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget]);
+						else pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v = floor(PPTMainMonitor.MonitorHeight - pptComSetlist.bottomBothHeight + (-65) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget]);
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Width.v = (195) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Height.v = (60) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].EllipseWidth.v = (30) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].EllipseHeight.v = (30) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						if (pptTotalSlides == -1)
+						{
+							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FillColor.v, 0);
+							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FrameColor.v, 0);
+						}
+						else
+						{
+							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FillColor.v, 160);
+							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FrameColor.v, 160);
+						}
 					}
 
 					{
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].Width.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].Height.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].EllipseWidth.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].EllipseHeight.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].Width.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].Height.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].EllipseWidth.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].EllipseHeight.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
 
 						{
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightPreviousPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightPreviousPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightPreviousPage].Width.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightPreviousPage].Height.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightPreviousPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightPreviousPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightPreviousPage].Width.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightPreviousPage].Height.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
 							if (pptTotalSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightPreviousPage].Transparency.v = 0;
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightPreviousPage].Transparency.v = 255;
 							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightPreviousPage].Img = pptIconBitmap[1];
 						}
 					}
 					{
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Left.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].X.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].Width.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Top.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Left.v + (65) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Top.v + (5 + 30) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].WordsHeight.v = (24) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Left.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].X.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].Width.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Top.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Left.v + (65) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Top.v + (5 + 30) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].WordsHeight.v = (24) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
 						if (pptTotalSlides == -1) SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].WordsColor.v, 0);
 						else SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].WordsColor.v, 255);
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].WordsContent = pptCurrentSlides < 0 ? L"-" : to_wstring(min(9999, pptCurrentSlides));
 
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].Left.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].X.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].Width.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].Top.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + (5 + 25) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Left.v + (65) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Top.v + (55) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].WordsHeight.v = (16) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].Left.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].X.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].Width.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].Top.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + (5 + 25) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Left.v + (65) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Top.v + (55) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].WordsHeight.v = (16) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
 						if (pptTotalSlides == -1) SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].WordsColor.v, 0);
 						else SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].WordsColor.v, 255);
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].WordsContent = L"/" + to_wstring(min(9999, pptTotalSlides));
 					}
 					{
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].X.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Right.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].Width.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].Height.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].EllipseWidth.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].EllipseHeight.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].X.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Right.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].Width.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].Height.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].EllipseWidth.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].EllipseHeight.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
 
 						{
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightNextPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightNextPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightNextPage].Width.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightNextPage].Height.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightNextPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightNextPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightNextPage].Width.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightNextPage].Height.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
 							if (pptTotalSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightNextPage].Transparency.v = 0;
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightNextPage].Transparency.v = 255;
 							if (pptCurrentSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightNextPage].Img = pptIconBitmap[3];
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightNextPage].Img = pptIconBitmap[2];
 						}
 					}
-				}
-				// 底部中间控件
-				{
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X.v = PPTMainMonitor.MonitorWidth / 2 - (30) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-					if (pptTotalSlides == -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v = PPTMainMonitor.MonitorHeight + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-					else pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v = PPTMainMonitor.MonitorHeight - (65) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Width.v = (60) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Height.v = (60) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].EllipseWidth.v = (30) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].EllipseHeight.v = (30) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-					if (pptTotalSlides == -1)
-					{
-						SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FillColor.v, 0);
-						SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameColor.v, 0);
-					}
-					else
-					{
-						SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FillColor.v, 160);
-						SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameColor.v, 160);
-					}
 
 					{
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Width.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Height.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].EllipseWidth.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].EllipseHeight.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-
-						{
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_MiddleEndShow].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Width.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Height.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
-							if (pptTotalSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Transparency.v = 0;
-							else pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Transparency.v = 255;
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Img = pptIconBitmap[3];
-						}
+						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].X1.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].X.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].Width.v + (5 + 2) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Y1.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + (15) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].X2.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].X.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].Width.v + (5 + 2) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Y2.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Height.v + (-15) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Thickness.v = 1 * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+						if (pptTotalSlides == -1) SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Color.v, 0);
+						else SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Color.v, 250);
 					}
 				}
 
 				// 中部左侧控件
 				{
-					if (pptTotalSlides == -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v = (-65) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-					else pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v = (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Y.v = PPTMainMonitor.MonitorHeight / 2.0f - (175 / 2.0f) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Width.v = (60) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Height.v = (175) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].EllipseWidth.v = (30) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].EllipseHeight.v = (30) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-					if (pptTotalSlides == -1)
 					{
-						SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FillColor.v, 0);
-						SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FrameColor.v, 0);
+						if (pptTotalSlides == -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v = floor((-65) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget]);
+						else pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v = floor(pptComSetlist.middleBothWidth + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget]);
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Y.v = floor(PPTMainMonitor.MonitorHeight / 2.0f - pptComSetlist.middleBothHeight - (185 / 2.0f) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget]);
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Width.v = (60) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Height.v = (185) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].EllipseWidth.v = (30) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].EllipseHeight.v = (30) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						if (pptTotalSlides == -1)
+						{
+							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FillColor.v, 0);
+							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FrameColor.v, 0);
+						}
+						else
+						{
+							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FillColor.v, 160);
+							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FrameColor.v, 160);
+						}
 					}
-					else
 					{
-						SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FillColor.v, 160);
-						SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FrameColor.v, 160);
+						pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].X1.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + (15) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Y1.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Y.v + (5 + 3) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].X2.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Width.v + (-15) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Y2.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Y.v + (5 + 3) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Thickness.v = 1 * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						if (pptTotalSlides == -1) SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Color.v, 0);
+						else SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Color.v, 250);
 					}
 
 					{
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Width.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Height.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].EllipseWidth.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].EllipseHeight.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Y.v = pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Y1.v + (2 + 5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Width.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Height.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].EllipseWidth.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].EllipseHeight.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
 
 						{
-							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].Width.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].Height.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].Width.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].Height.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
 							if (pptTotalSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].Transparency.v = 0;
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].Transparency.v = 255;
 							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].Img = pptIconBitmap[4];
 						}
 					}
 					{
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].Left.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].Top.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Y.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Height.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].Left.v + (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].Top.v + (5 + 35) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].WordsHeight.v = (24) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].Left.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].Top.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Y.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Height.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].Left.v + (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].Top.v + (5 + 35) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].WordsHeight.v = (24) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
 						if (pptTotalSlides == -1) SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].WordsColor.v, 0);
 						else SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].WordsColor.v, 255);
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].WordsContent = pptCurrentSlides < 0 ? L"-" : to_wstring(min(999, pptCurrentSlides));
 
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].Left.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].Top.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Y.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Height.v + (5 + 30) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].Left.v + (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].Top.v + (25) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].WordsHeight.v = (16) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].Left.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].Top.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Y.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Height.v + (5 + 30) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].Left.v + (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].Top.v + (25) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].WordsHeight.v = (16) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
 						if (pptTotalSlides == -1) SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].WordsColor.v, 0);
 						else SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].WordsColor.v, 255);
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].WordsContent = L"/" + to_wstring(min(999, pptTotalSlides));
 					}
 					{
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].Y.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].Bottom.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].Width.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].Height.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].EllipseWidth.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].EllipseHeight.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].Y.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].Bottom.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].Width.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].Height.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].EllipseWidth.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].EllipseHeight.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
 
 						{
-							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftNextPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Width.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Height.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_LeftWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftNextPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Width.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Height.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
 							if (pptTotalSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Transparency.v = 0;
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Transparency.v = 255;
 							if (pptCurrentSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Img = pptIconBitmap[3];
@@ -970,81 +1445,145 @@ void PptUI(MainMonitorStruct* PPTMainMonitorStruct)
 				}
 				// 中部右侧控件
 				{
-					if (pptTotalSlides == -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v = PPTMainMonitor.MonitorWidth + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-					else pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v = PPTMainMonitor.MonitorWidth + (-65) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y.v = PPTMainMonitor.MonitorHeight / 2.0f - (175 / 2.0f) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Width.v = (60) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Height.v = (175) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].EllipseWidth.v = (30) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].EllipseHeight.v = (30) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-					pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-					if (pptTotalSlides == -1)
 					{
-						SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FillColor.v, 0);
-						SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FrameColor.v, 0);
+						if (pptTotalSlides == -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v = floor(PPTMainMonitor.MonitorWidth + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget]);
+						else pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v = floor(PPTMainMonitor.MonitorWidth - pptComSetlist.middleBothWidth + (-65) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget]);
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y.v = floor(PPTMainMonitor.MonitorHeight / 2.0f - pptComSetlist.middleBothHeight - (185 / 2.0f) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget]);
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Width.v = (60) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Height.v = (185) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].EllipseWidth.v = (30) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].EllipseHeight.v = (30) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						if (pptTotalSlides == -1)
+						{
+							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FillColor.v, 0);
+							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FrameColor.v, 0);
+						}
+						else
+						{
+							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FillColor.v, 160);
+							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FrameColor.v, 160);
+						}
 					}
-					else
 					{
-						SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FillColor.v, 160);
-						SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FrameColor.v, 160);
+						pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].X1.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + (15) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Y1.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y.v + (5 + 3) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].X2.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Width.v + (-15) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Y2.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y.v + (5 + 3) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Thickness.v = 1 * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						if (pptTotalSlides == -1) SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Color.v, 0);
+						else SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Color.v, 250);
 					}
 
 					{
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Width.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Height.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].EllipseWidth.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].EllipseHeight.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Y.v = pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Y1.v + (2 + 5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Width.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Height.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].EllipseWidth.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].EllipseHeight.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
 
 						{
-							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].Width.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].Height.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].Width.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].Height.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
 							if (pptTotalSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].Transparency.v = 0;
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].Transparency.v = 255;
 							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].Img = pptIconBitmap[4];
 						}
 					}
 					{
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].Left.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].Top.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Y.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Height.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].Left.v + (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].Top.v + (5 + 35) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].WordsHeight.v = (24) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].Left.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].Top.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Y.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Height.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].Left.v + (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].Top.v + (5 + 35) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].WordsHeight.v = (24) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
 						if (pptTotalSlides == -1) SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].WordsColor.v, 0);
 						else SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].WordsColor.v, 255);
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].WordsContent = pptCurrentSlides < 0 ? L"-" : to_wstring(min(999, pptCurrentSlides));
 
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].Left.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].Top.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Y.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Height.v + (5 + 30) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].Left.v + (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].Top.v + (25) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].WordsHeight.v = (16) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].Left.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].Top.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Y.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Height.v + (5 + 30) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].Left.v + (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].Top.v + (25) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].WordsHeight.v = (16) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
 						if (pptTotalSlides == -1) SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].WordsColor.v, 0);
 						else SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].WordsColor.v, 255);
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].WordsContent = L"/" + to_wstring(min(999, pptTotalSlides));
 					}
 					{
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].Y.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].Bottom.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].Width.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].Height.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].EllipseWidth.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].EllipseHeight.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].Y.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].Bottom.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].Width.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].Height.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].EllipseWidth.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].EllipseHeight.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
 
 						{
-							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightNextPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightNextPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightNextPage].Width.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
-							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightNextPage].Height.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_RightWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightNextPage].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightNextPage].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightNextPage].Width.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightNextPage].Height.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
 							if (pptTotalSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightNextPage].Transparency.v = 0;
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightNextPage].Transparency.v = 255;
 							if (pptCurrentSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightNextPage].Img = pptIconBitmap[3];
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightNextPage].Img = pptIconBitmap[5];
+						}
+					}
+				}
+
+				// 底部中间控件
+				{
+					{
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X.v = floor(PPTMainMonitor.MonitorWidth / 2 + pptComSetlist.bottomMiddleWidth + (-70 / 2.0f) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget]);
+						if (pptTotalSlides == -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v = floor(PPTMainMonitor.MonitorHeight + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget]);
+						else pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v = floor(PPTMainMonitor.MonitorHeight - pptComSetlist.bottomMiddleHeight + (-65) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget]);
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Width.v = (70) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Height.v = (60) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].EllipseWidth.v = (30) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].EllipseHeight.v = (30) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+						if (pptTotalSlides == -1)
+						{
+							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FillColor.v, 0);
+							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameColor.v, 0);
+						}
+						else
+						{
+							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FillColor.v, 160);
+							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameColor.v, 160);
+						}
+					}
+					{
+						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].X1.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X.v + (5 + 3) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Y1.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v + (15) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].X2.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X.v + (5 + 3) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Y2.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Height.v + (-15) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Thickness.v = 1 * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+						if (pptTotalSlides == -1) SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Color.v, 0);
+						else SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Color.v, 250);
+					}
+
+					{
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].X.v = pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].X1.v + (2 + 5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Width.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Height.v = (50) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].EllipseWidth.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].EllipseHeight.v = (35) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FrameThickness.v = (1) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+
+						{
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_MiddleEndShow].X.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].X.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Y.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Y.v + (5) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Width.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Height.v = (40) * PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+							if (pptTotalSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Transparency.v = 0;
+							else pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Transparency.v = 255;
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Img = pptIconBitmap[3];
 						}
 					}
 				}
@@ -1054,6 +1593,83 @@ void PptUI(MainMonitorStruct* PPTMainMonitorStruct)
 			{
 				tPptUiChangeSignal = false;
 
+				// 直线
+				for (int i = 0; i < size(pptUiLineWidgetTarget); i++)
+				{
+					if (pptUiLineWidget[i].X1.replace || PptUiAllReplaceSignal || !PptUiAnimationEnable)
+					{
+						pptUiLineWidget[i].X1.replace = false;
+						pptUiLineWidget[i].X1.v = pptUiLineWidgetTarget[i].X1.v;
+						tPptUiChangeSignal = true;
+					}
+					else if (pptUiLineWidget[i].X1.v != pptUiLineWidgetTarget[i].X1.v)
+					{
+						PptUiWidgetValueTransformation(&pptUiLineWidget[i].X1.v, pptUiLineWidgetTarget[i].X1.v, pptUiLineWidgetTarget[i].X1.s, pptUiLineWidgetTarget[i].X1.e);
+						tPptUiChangeSignal = true;
+					}
+
+					if (pptUiLineWidget[i].Y1.replace || PptUiAllReplaceSignal || !PptUiAnimationEnable)
+					{
+						pptUiLineWidget[i].Y1.replace = false;
+						pptUiLineWidget[i].Y1.v = pptUiLineWidgetTarget[i].Y1.v;
+						tPptUiChangeSignal = true;
+					}
+					else if (pptUiLineWidget[i].Y1.v != pptUiLineWidgetTarget[i].X1.v)
+					{
+						PptUiWidgetValueTransformation(&pptUiLineWidget[i].Y1.v, pptUiLineWidgetTarget[i].Y1.v, pptUiLineWidgetTarget[i].Y1.s, pptUiLineWidgetTarget[i].Y1.e);
+						tPptUiChangeSignal = true;
+					}
+
+					if (pptUiLineWidget[i].X2.replace || PptUiAllReplaceSignal || !PptUiAnimationEnable)
+					{
+						pptUiLineWidget[i].X2.replace = false;
+						pptUiLineWidget[i].X2.v = pptUiLineWidgetTarget[i].X2.v;
+						tPptUiChangeSignal = true;
+					}
+					else if (pptUiLineWidget[i].X2.v != pptUiLineWidgetTarget[i].X2.v)
+					{
+						PptUiWidgetValueTransformation(&pptUiLineWidget[i].X2.v, pptUiLineWidgetTarget[i].X2.v, pptUiLineWidgetTarget[i].X2.s, pptUiLineWidgetTarget[i].X2.e);
+						tPptUiChangeSignal = true;
+					}
+
+					if (pptUiLineWidget[i].Y2.replace || PptUiAllReplaceSignal || !PptUiAnimationEnable)
+					{
+						pptUiLineWidget[i].Y2.replace = false;
+						pptUiLineWidget[i].Y2.v = pptUiLineWidgetTarget[i].Y2.v;
+						tPptUiChangeSignal = true;
+					}
+					else if (pptUiLineWidget[i].Y2.v != pptUiLineWidgetTarget[i].Y2.v)
+					{
+						PptUiWidgetValueTransformation(&pptUiLineWidget[i].Y2.v, pptUiLineWidgetTarget[i].Y2.v, pptUiLineWidgetTarget[i].Y2.s, pptUiLineWidgetTarget[i].Y2.e);
+						tPptUiChangeSignal = true;
+					}
+
+					//=====
+
+					if (pptUiLineWidget[i].Thickness.replace || PptUiAllReplaceSignal || !PptUiAnimationEnable)
+					{
+						pptUiLineWidget[i].Thickness.replace = false;
+						pptUiLineWidget[i].Thickness.v = pptUiLineWidgetTarget[i].Thickness.v;
+						tPptUiChangeSignal = true;
+					}
+					else if (pptUiLineWidget[i].Thickness.v != pptUiLineWidgetTarget[i].Thickness.v)
+					{
+						PptUiWidgetValueTransformation(&pptUiLineWidget[i].Thickness.v, pptUiLineWidgetTarget[i].Thickness.v, pptUiLineWidgetTarget[i].Thickness.s, pptUiLineWidgetTarget[i].Thickness.e);
+						tPptUiChangeSignal = true;
+					}
+
+					if (pptUiLineWidget[i].Color.replace || PptUiAllReplaceSignal || !PptUiAnimationEnable)
+					{
+						pptUiLineWidget[i].Color.replace = false;
+						pptUiLineWidget[i].Color.v = pptUiLineWidgetTarget[i].Color.v;
+						tPptUiChangeSignal = true;
+					}
+					else if (pptUiLineWidget[i].Color.v != pptUiLineWidgetTarget[i].Color.v)
+					{
+						PptUiWidgetColorTransformation(&pptUiLineWidget[i].Color.v, pptUiLineWidgetTarget[i].Color.v, pptUiLineWidgetTarget[i].Color.s, pptUiLineWidgetTarget[i].Color.e);
+						tPptUiChangeSignal = true;
+					}
+				}
 				// 矩形
 				for (int i = 0; i < size(pptUiRoundRectWidgetTarget); i++)
 				{
@@ -1327,7 +1943,7 @@ void PptUI(MainMonitorStruct* PPTMainMonitorStruct)
 				if (tPptUiChangeSignal) PptUiChangeSignal = true;
 				else PptUiChangeSignal = false;
 
-				if (PptUiAllReplaceSignal) PptUiAllReplaceSignal = false;
+				if (PptUiAllReplaceSignal == -1) PptUiAllReplaceSignal = 0;
 			}
 		}
 
@@ -1588,7 +2204,7 @@ void PptDraw()
 		}
 	}
 
-	thread(PptUI, &PPTMainMonitor).detach();
+	thread(PptUI).detach();
 
 	// 设置BLENDFUNCTION结构体
 	BLENDFUNCTION blend;
@@ -1655,7 +2271,7 @@ void PptDraw()
 				RECT PptBackgroundWindowRect = { 0, 0, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight };
 				DCRenderTarget->BindDC(GetImageHDC(&PptWindowBackground), &PptBackgroundWindowRect);
 
-				PptUiAllReplaceSignal = true;
+				PptUiAllReplaceSignal = -1;
 			}
 		}
 
@@ -1689,6 +2305,28 @@ void PptDraw()
 
 					DxObjectSafeRelease(&pFrameBrush);
 					DxObjectSafeRelease(&pFillBrush);
+				}
+				// pptUiLineWidget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar]
+				{
+					ID2D1SolidColorBrush* pBrush = NULL;
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiLineWidget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Color.v), &pBrush);
+
+					ID2D1StrokeStyle* pStrokeStyle = NULL;
+					D2D1_STROKE_STYLE_PROPERTIES strokeStyleProperties = D2D1::StrokeStyleProperties();
+					strokeStyleProperties.startCap = D2D1_CAP_STYLE_ROUND;
+					strokeStyleProperties.endCap = D2D1_CAP_STYLE_ROUND;
+					D2DFactory->CreateStrokeStyle(&strokeStyleProperties, NULL, 0, &pStrokeStyle);
+
+					DCRenderTarget->DrawLine(
+						D2D1::Point2F(pptUiLineWidget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].X1.v, pptUiLineWidget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Y1.v),
+						D2D1::Point2F(pptUiLineWidget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].X2.v, pptUiLineWidget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Y2.v),
+						pBrush,
+						pptUiLineWidget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Thickness.v,
+						pStrokeStyle
+					);
+
+					DxObjectSafeRelease(&pBrush);
+					DxObjectSafeRelease(&pStrokeStyle);
 				}
 
 				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage]
@@ -1977,58 +2615,28 @@ void PptDraw()
 				{
 					DCRenderTarget->DrawBitmap(pptUiImageWidget[PptUiImageWidgetID::BottomSide_RightNextPage].Img, D2D1::RectF(pptUiImageWidget[PptUiImageWidgetID::BottomSide_RightNextPage].X.v, pptUiImageWidget[PptUiImageWidgetID::BottomSide_RightNextPage].Y.v, pptUiImageWidget[PptUiImageWidgetID::BottomSide_RightNextPage].X.v + pptUiImageWidget[PptUiImageWidgetID::BottomSide_RightNextPage].Width.v, pptUiImageWidget[PptUiImageWidgetID::BottomSide_RightNextPage].Y.v + pptUiImageWidget[PptUiImageWidgetID::BottomSide_RightNextPage].Height.v), pptUiImageWidget[PptUiImageWidgetID::BottomSide_RightNextPage].Transparency.v / 255.0f);
 				}
-			}
-			// 底部中间控件
-			{
-				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget]
-				{
-					ID2D1SolidColorBrush* pFrameBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameColor.v), &pFrameBrush);
-					ID2D1SolidColorBrush* pFillBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FillColor.v), &pFillBrush);
 
-					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
-						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X.v,
-						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v,
-						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Width.v,
-						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Height.v),
-						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].EllipseWidth.v / 2.0f,
-						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].EllipseHeight.v / 2.0f
+				// pptUiLineWidget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar]
+				{
+					ID2D1SolidColorBrush* pBrush = NULL;
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiLineWidget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Color.v), &pBrush);
+
+					ID2D1StrokeStyle* pStrokeStyle = NULL;
+					D2D1_STROKE_STYLE_PROPERTIES strokeStyleProperties = D2D1::StrokeStyleProperties();
+					strokeStyleProperties.startCap = D2D1_CAP_STYLE_ROUND;
+					strokeStyleProperties.endCap = D2D1_CAP_STYLE_ROUND;
+					D2DFactory->CreateStrokeStyle(&strokeStyleProperties, NULL, 0, &pStrokeStyle);
+
+					DCRenderTarget->DrawLine(
+						D2D1::Point2F(pptUiLineWidget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].X1.v, pptUiLineWidget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Y1.v),
+						D2D1::Point2F(pptUiLineWidget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].X2.v, pptUiLineWidget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Y2.v),
+						pBrush,
+						pptUiLineWidget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Thickness.v,
+						pStrokeStyle
 					);
 
-					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
-					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameThickness.v);
-
-					DxObjectSafeRelease(&pFrameBrush);
-					DxObjectSafeRelease(&pFillBrush);
-				}
-
-				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow]
-				{
-					ID2D1SolidColorBrush* pFrameBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FrameColor.v), &pFrameBrush);
-					ID2D1SolidColorBrush* pFillBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FillColor.v), &pFillBrush);
-
-					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
-						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].X.v,
-						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Y.v,
-						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Width.v,
-						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Height.v),
-						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].EllipseWidth.v / 2.0f,
-						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].EllipseHeight.v / 2.0f
-					);
-
-					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
-					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FrameThickness.v);
-
-					DxObjectSafeRelease(&pFrameBrush);
-					DxObjectSafeRelease(&pFillBrush);
-				}
-				// pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow]
-				if (pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Img != NULL)
-				{
-					DCRenderTarget->DrawBitmap(pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Img, D2D1::RectF(pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].X.v, pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Y.v, pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].X.v + pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Width.v, pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Y.v + pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Height.v), pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Transparency.v / 255.0f);
+					DxObjectSafeRelease(&pBrush);
+					DxObjectSafeRelease(&pStrokeStyle);
 				}
 			}
 
@@ -2055,6 +2663,28 @@ void PptDraw()
 
 					DxObjectSafeRelease(&pFrameBrush);
 					DxObjectSafeRelease(&pFillBrush);
+				}
+				// pptUiLineWidget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar]
+				{
+					ID2D1SolidColorBrush* pBrush = NULL;
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiLineWidget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Color.v), &pBrush);
+
+					ID2D1StrokeStyle* pStrokeStyle = NULL;
+					D2D1_STROKE_STYLE_PROPERTIES strokeStyleProperties = D2D1::StrokeStyleProperties();
+					strokeStyleProperties.startCap = D2D1_CAP_STYLE_ROUND;
+					strokeStyleProperties.endCap = D2D1_CAP_STYLE_ROUND;
+					D2DFactory->CreateStrokeStyle(&strokeStyleProperties, NULL, 0, &pStrokeStyle);
+
+					DCRenderTarget->DrawLine(
+						D2D1::Point2F(pptUiLineWidget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].X1.v, pptUiLineWidget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Y1.v),
+						D2D1::Point2F(pptUiLineWidget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].X2.v, pptUiLineWidget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Y2.v),
+						pBrush,
+						pptUiLineWidget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Thickness.v,
+						pStrokeStyle
+					);
+
+					DxObjectSafeRelease(&pBrush);
+					DxObjectSafeRelease(&pStrokeStyle);
 				}
 
 				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage]
@@ -2222,6 +2852,28 @@ void PptDraw()
 					DxObjectSafeRelease(&pFrameBrush);
 					DxObjectSafeRelease(&pFillBrush);
 				}
+				// pptUiLineWidget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar]
+				{
+					ID2D1SolidColorBrush* pBrush = NULL;
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiLineWidget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Color.v), &pBrush);
+
+					ID2D1StrokeStyle* pStrokeStyle = NULL;
+					D2D1_STROKE_STYLE_PROPERTIES strokeStyleProperties = D2D1::StrokeStyleProperties();
+					strokeStyleProperties.startCap = D2D1_CAP_STYLE_ROUND;
+					strokeStyleProperties.endCap = D2D1_CAP_STYLE_ROUND;
+					D2DFactory->CreateStrokeStyle(&strokeStyleProperties, NULL, 0, &pStrokeStyle);
+
+					DCRenderTarget->DrawLine(
+						D2D1::Point2F(pptUiLineWidget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].X1.v, pptUiLineWidget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Y1.v),
+						D2D1::Point2F(pptUiLineWidget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].X2.v, pptUiLineWidget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Y2.v),
+						pBrush,
+						pptUiLineWidget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Thickness.v,
+						pStrokeStyle
+					);
+
+					DxObjectSafeRelease(&pBrush);
+					DxObjectSafeRelease(&pStrokeStyle);
+				}
 
 				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage]
 				{
@@ -2362,6 +3014,82 @@ void PptDraw()
 						pptUiImageWidget[PptUiImageWidgetID::MiddleSide_RightNextPage].X.v + pptUiImageWidget[PptUiImageWidgetID::MiddleSide_RightNextPage].Width.v,
 						pptUiImageWidget[PptUiImageWidgetID::MiddleSide_RightNextPage].Y.v + pptUiImageWidget[PptUiImageWidgetID::MiddleSide_RightNextPage].Height.v),
 						pptUiImageWidget[PptUiImageWidgetID::MiddleSide_RightNextPage].Transparency.v / 255.0f);
+				}
+			}
+
+			// 底部中间控件
+			{
+				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget]
+				{
+					ID2D1SolidColorBrush* pFrameBrush = NULL;
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameColor.v), &pFrameBrush);
+					ID2D1SolidColorBrush* pFillBrush = NULL;
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FillColor.v), &pFillBrush);
+
+					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
+						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X.v,
+						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v,
+						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Width.v,
+						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Height.v),
+						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].EllipseWidth.v / 2.0f,
+						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].EllipseHeight.v / 2.0f
+					);
+
+					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
+					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameThickness.v);
+
+					DxObjectSafeRelease(&pFrameBrush);
+					DxObjectSafeRelease(&pFillBrush);
+				}
+				// pptUiLineWidget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar]
+				{
+					ID2D1SolidColorBrush* pBrush = NULL;
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiLineWidget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Color.v), &pBrush);
+
+					ID2D1StrokeStyle* pStrokeStyle = NULL;
+					D2D1_STROKE_STYLE_PROPERTIES strokeStyleProperties = D2D1::StrokeStyleProperties();
+					strokeStyleProperties.startCap = D2D1_CAP_STYLE_ROUND;
+					strokeStyleProperties.endCap = D2D1_CAP_STYLE_ROUND;
+					D2DFactory->CreateStrokeStyle(&strokeStyleProperties, NULL, 0, &pStrokeStyle);
+
+					DCRenderTarget->DrawLine(
+						D2D1::Point2F(pptUiLineWidget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].X1.v, pptUiLineWidget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Y1.v),
+						D2D1::Point2F(pptUiLineWidget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].X2.v, pptUiLineWidget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Y2.v),
+						pBrush,
+						pptUiLineWidget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Thickness.v,
+						pStrokeStyle
+					);
+
+					DxObjectSafeRelease(&pBrush);
+					DxObjectSafeRelease(&pStrokeStyle);
+				}
+
+				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow]
+				{
+					ID2D1SolidColorBrush* pFrameBrush = NULL;
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FrameColor.v), &pFrameBrush);
+					ID2D1SolidColorBrush* pFillBrush = NULL;
+					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FillColor.v), &pFillBrush);
+
+					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
+						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].X.v,
+						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Y.v,
+						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Width.v,
+						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].Height.v),
+						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].EllipseWidth.v / 2.0f,
+						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].EllipseHeight.v / 2.0f
+					);
+
+					DCRenderTarget->FillRoundedRectangle(&roundedRect, pFillBrush);
+					DCRenderTarget->DrawRoundedRectangle(&roundedRect, pFrameBrush, pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FrameThickness.v);
+
+					DxObjectSafeRelease(&pFrameBrush);
+					DxObjectSafeRelease(&pFillBrush);
+				}
+				// pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow]
+				if (pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Img != NULL)
+				{
+					DCRenderTarget->DrawBitmap(pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Img, D2D1::RectF(pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].X.v, pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Y.v, pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].X.v + pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Width.v, pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Y.v + pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Height.v), pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Transparency.v / 255.0f);
 				}
 			}
 
@@ -2569,6 +3297,16 @@ void PptInteract()
 				}
 			}
 			else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
+			// 底部左侧拖动条
+			if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Width.v) }))
+			{
+				if (m.message == WM_LBUTTONDOWN)
+				{
+					PptBottomPageWidgetSeekBar(m.x, m.y, false);
+					hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+				}
+			}
+
 			// 底部右侧控件 上一页
 			if (PptUiIsInRoundRect(m.x, m.y, pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage]))
 			{
@@ -2685,55 +3423,15 @@ void PptInteract()
 				}
 			}
 			else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
-
-			// 底部中间控件 结束放映
-			if (PptUiIsInRoundRect(m.x, m.y, pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow]))
+			// 底部右侧拖动条
+			if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Width.v) }))
 			{
-				if (last_x != m.x || last_y != m.y)
-				{
-					if (pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FillColor.v != RGBA(225, 225, 225, 255))
-					{
-						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FillColor.v = RGBA(225, 225, 225, 255);
-						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FillColor.replace = true;
-					}
-				}
-				else pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FillColor.v = RGBA(250, 250, 250, 160);
-
 				if (m.message == WM_LBUTTONDOWN)
 				{
-					int lx = m.x, ly = m.y;
-					while (1)
-					{
-						ExMessage m = hiex::getmessage_win32(EM_MOUSE, ppt_window);
-						if (PptUiIsInRoundRect(m.x, m.y, pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow]))
-						{
-							if (!m.lbutton)
-							{
-								pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FillColor.v = RGBA(200, 200, 200, 255);
-
-								if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
-								{
-									if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) != 1) break;
-
-									ChangeStateModeToSelection();
-								}
-
-								EndPptShow();
-
-								break;
-							}
-						}
-						else break;
-					}
-
+					PptBottomPageWidgetSeekBar(m.x, m.y, true);
 					hiex::flushmessage_win32(EM_MOUSE, ppt_window);
-
-					POINT pt;
-					GetCursorPos(&pt);
-					last_x = pt.x, last_y = pt.y;
 				}
 			}
-			else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FillColor.v = RGBA(250, 250, 250, 160);
 
 			// 中部左侧控件 上一页
 			if (PptUiIsInRoundRect(m.x, m.y, pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage]))
@@ -2849,6 +3547,16 @@ void PptInteract()
 				}
 			}
 			else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
+			// 中部左侧拖动条
+			if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].Y.v) }))
+			{
+				if (m.message == WM_LBUTTONDOWN)
+				{
+					PptMiddlePageWidgetSeekBar(m.x, m.y, false);
+					hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+				}
+			}
+
 			// 中部右侧控件 上一页
 			if (PptUiIsInRoundRect(m.x, m.y, pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage]))
 			{
@@ -2963,6 +3671,73 @@ void PptInteract()
 				}
 			}
 			else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
+			// 中部右侧拖动条
+			if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Y.v) }))
+			{
+				if (m.message == WM_LBUTTONDOWN)
+				{
+					PptMiddlePageWidgetSeekBar(m.x, m.y, true);
+					hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+				}
+			}
+
+			// 底部中间控件 结束放映
+			if (PptUiIsInRoundRect(m.x, m.y, pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow]))
+			{
+				if (last_x != m.x || last_y != m.y)
+				{
+					if (pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FillColor.v != RGBA(225, 225, 225, 255))
+					{
+						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FillColor.v = RGBA(225, 225, 225, 255);
+						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FillColor.replace = true;
+					}
+				}
+				else pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FillColor.v = RGBA(250, 250, 250, 160);
+
+				if (m.message == WM_LBUTTONDOWN)
+				{
+					int lx = m.x, ly = m.y;
+					while (1)
+					{
+						ExMessage m = hiex::getmessage_win32(EM_MOUSE, ppt_window);
+						if (PptUiIsInRoundRect(m.x, m.y, pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow]))
+						{
+							if (!m.lbutton)
+							{
+								pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FillColor.v = RGBA(200, 200, 200, 255);
+
+								if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
+								{
+									if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) != 1) break;
+
+									ChangeStateModeToSelection();
+								}
+
+								EndPptShow();
+
+								break;
+							}
+						}
+						else break;
+					}
+
+					hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+
+					POINT pt;
+					GetCursorPos(&pt);
+					last_x = pt.x, last_y = pt.y;
+				}
+			}
+			else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FillColor.v = RGBA(250, 250, 250, 160);
+			// 底部左侧拖动条
+			if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Width.v) }))
+			{
+				if (m.message == WM_LBUTTONDOWN)
+				{
+					PptBottomMiddleSeekBar(m.x, m.y);
+					hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+				}
+			}
 		}
 		else
 		{

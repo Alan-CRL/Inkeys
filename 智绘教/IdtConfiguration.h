@@ -36,9 +36,23 @@ struct PptComSetListStruct
 	PptComSetListStruct()
 	{
 		fixedHandWriting = true;
+
+		bottomBothWidth = 0;
+		bottomBothHeight = 0;
+		middleBothWidth = 0;
+		middleBothHeight = 0;
+		bottomMiddleWidth = 0;
+		bottomMiddleHeight = 0;
 	}
 
 	bool fixedHandWriting;
+
+	float bottomBothWidth;
+	float bottomBothHeight;
+	float middleBothWidth;
+	float middleBothHeight;
+	float bottomMiddleWidth;
+	float bottomMiddleHeight;
 };
 extern PptComSetListStruct pptComSetlist;
 

@@ -368,8 +368,8 @@ int SettingMain()
 		// ²å¼þ²ÎÊý
 
 		float PptUiWidgetScaleWidget = 1.0f;
-		float PptUiWidgetScaleLeftWidget = PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget];
-		float PptUiWidgetScaleRightWidget = PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget];
+		float PptUiWidgetScaleLeftWidget = PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+		float PptUiWidgetScaleRightWidget = PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
 		float PptUiWidgetScaleMiddleWidget = PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
 
 		bool DdbEnable = ddbSetList.DdbEnable;
@@ -2135,9 +2135,7 @@ int SettingMain()
 						}
 
 						{
-							PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_LeftWidget] = PptUiWidgetScaleWidget;
-							PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_RightWidget] = PptUiWidgetScaleWidget;
-							PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget] = PptUiWidgetScaleWidget;
+							PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget] = PptUiWidgetScaleWidget;
 						}
 
 						ImGui::EndChild();

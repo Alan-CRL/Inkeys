@@ -45,10 +45,10 @@ LRESULT CALLBACK MagnifierHostWindowWndProc(HWND hwnd, UINT uMsg, WPARAM wParam,
 }
 BOOL SetupMagnifier(HINSTANCE hinst)
 {
-	hostWindowRect.top = 0;
-	hostWindowRect.bottom = GetSystemMetrics(SM_CYSCREEN);
 	hostWindowRect.left = 0;
+	hostWindowRect.top = 0;
 	hostWindowRect.right = GetSystemMetrics(SM_CXSCREEN);
+	hostWindowRect.bottom = GetSystemMetrics(SM_CYSCREEN) - 1;
 
 	{
 		IDTLogger->info("[放大API线程][SetupMagnifier] 注册放大API主机窗口");

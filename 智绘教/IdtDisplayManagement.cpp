@@ -28,6 +28,8 @@ int MonitorEnumProcCount;
 int MonitorEnumProcCountTarget;
 map<HMONITOR, MONITORINFO> DisplaysInfoTemp;
 
+bool enableAppBarAutoHide;
+
 BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData)
 {
 	if (MonitorEnumProcCount == 0) MonitorEnumProcCountTarget = GetSystemMetrics(SM_CMONITORS);

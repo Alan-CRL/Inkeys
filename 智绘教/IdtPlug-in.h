@@ -66,6 +66,14 @@ enum PptUiRegionWidgetID
 	MiddleSide,
 	RightSide
 };
+enum PptUiLineWidgetID
+{
+	BottomSide_LeftPageWidget_SeekBar,
+	BottomSide_RightPageWidget_SeekBar,
+	BottomSide_MiddleWidget_SeekBar,
+	MiddleSide_LeftPageWidget_SeekBar,
+	MiddleSide_RightPageWidget_SeekBar
+};
 enum PptUiRoundRectWidgetID
 {
 	BottomSide_LeftPageWidget,
@@ -120,6 +128,17 @@ public:
 	PptUiWidgetValue Width;
 	PptUiWidgetValue Height;
 };
+class PptUiLineWidgetClass
+{
+public:
+	PptUiWidgetValue X1;
+	PptUiWidgetValue Y1;
+	PptUiWidgetValue X2;
+	PptUiWidgetValue Y2;
+
+	PptUiWidgetValue Thickness;
+	PptUiWidgetColor Color;
+};
 class PptUiRoundRectWidgetClass
 {
 public:
@@ -170,6 +189,7 @@ public:
 	wstring WordsContent;
 };
 
+extern PptUiLineWidgetClass pptUiLineWidget[5], pptUiLineWidgetTarget[5];
 extern PptUiRoundRectWidgetClass pptUiRoundRectWidget[15], pptUiRoundRectWidgetTarget[15];
 extern PptUiImageWidgetClass pptUiImageWidget[9], pptUiImageWidgetTarget[9];
 extern PptUiWordsWidgetClass pptUiWordsWidget[8], pptUiWordsWidgetTarget[8];
@@ -179,14 +199,11 @@ extern PptUiWordsWidgetClass pptUiWordsWidget[8], pptUiWordsWidgetTarget[8];
 
 enum PptUiWidgetScaleID
 {
-	BottomSide_LeftWidget,
-	BottomSide_RightWidget,
+	BottomSide_BothWidget,
 	BottomSide_MiddleWidget,
-
-	MiddleSide_LeftWidget,
-	MiddleSide_RightWidget
+	MiddleSide_BothWidget
 };
-extern float PptUiWidgetScale[5];
+extern float PptUiWidgetScale[3];
 
 // -------------------------
 // ppt пео╒
