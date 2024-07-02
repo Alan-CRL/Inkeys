@@ -1255,6 +1255,8 @@ void DrawpadDrawing()
 			ChooseEnd:
 				{
 					SetImageColor(window_background, RGBA(0, 0, 0, 0), true);
+
+					if (drawpad_window) SetWindowPos(freeze_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
 					ulwi.hdcSrc = GetImageHDC(&window_background);
 					UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
 				}
@@ -1398,6 +1400,7 @@ void DrawpadDrawing()
 					SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
 					hiex::TransparentImage(&window_background, 0, 0, &drawpad);
 
+					if (drawpad_window) SetWindowPos(freeze_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 					ulwi.hdcSrc = GetImageHDC(&window_background);
 					UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
 				}
@@ -1405,6 +1408,8 @@ void DrawpadDrawing()
 			}
 			if (penetrate.select == true)
 			{
+				if (drawpad_window) SetWindowPos(freeze_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
+
 				LONG nRet = ::GetWindowLong(drawpad_window, GWL_EXSTYLE);
 				nRet |= WS_EX_TRANSPARENT;
 				::SetWindowLong(drawpad_window, GWL_EXSTYLE, nRet);
@@ -1534,6 +1539,8 @@ void DrawpadDrawing()
 					if (penetrate.select == true) continue;
 					break;
 				}
+
+				if (drawpad_window) SetWindowPos(freeze_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 
 				nRet = ::GetWindowLong(drawpad_window, GWL_EXSTYLE);
 				nRet &= ~WS_EX_TRANSPARENT;
@@ -1920,6 +1927,8 @@ int drawpad_main()
 		SetWindowLong(drawpad_window, GWL_STYLE, GetWindowLong(drawpad_window, GWL_STYLE) & ~WS_CAPTION);//隐藏标题栏
 		SetWindowPos(drawpad_window, NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_DRAWFRAME);
 		SetWindowLong(drawpad_window, GWL_EXSTYLE, WS_EX_TOOLWINDOW);//隐藏任务栏
+
+		SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 	}
 
 	//初始化数值

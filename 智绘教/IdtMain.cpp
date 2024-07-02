@@ -512,6 +512,11 @@ int main()
 		DisplayManagementMain();
 		IDTLogger->info("[主线程][IdtMain] 监视器信息查询完成");
 
+		IDTLogger->info("[主线程][IdtMain] 初始化应用栏信息");
+		APPBARDATA abd{};
+		enableAppBarAutoHide = (SHAppBarMessage(ABM_GETSTATE, &abd) == ABS_AUTOHIDE);
+		IDTLogger->info("[主线程][IdtMain] 初始化应用栏信息完成");
+
 		shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
 		int DisplaysNumberTemp = DisplaysNumber;
 		DisplaysNumberLock.unlock();
@@ -519,14 +524,8 @@ int main()
 		IDTLogger->info("[主线程][IdtMain] MagnifierThread函数线程启动");
 		thread MagnifierThread_thread(MagnifierThread);
 		MagnifierThread_thread.detach();
-		Testa("No!");
 
 		if (DisplaysNumberTemp > 1) IDTLogger->warn("[主线程][IdtMain] 拥有多个监视器");
-
-		IDTLogger->info("[主线程][IdtMain] 初始化应用栏信息");
-		APPBARDATA abd{};
-		enableAppBarAutoHide = (SHAppBarMessage(ABM_GETSTATE, &abd) == ABS_AUTOHIDE);
-		IDTLogger->info("[主线程][IdtMain] 初始化应用栏信息完成");
 
 		IDTLogger->info("[主线程][IdtMain] 初始化监视器信息完成");
 	}
@@ -775,7 +774,7 @@ int main()
 
 	IDTLogger->info("[主线程][IdtMain] 已结束智绘教所有线程并关闭程序");
 	return 0;
-	}
+}
 
 // 调测专用
 #ifndef IDT_RELEASE

@@ -3,6 +3,7 @@
 
 #include "IdtWindow.h"
 #include "IdtDraw.h"
+#include "IdtDisplayManagement.h"
 
 #include <d3d9.h>
 #pragma comment(lib, "d3d9")
@@ -48,7 +49,8 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 	hostWindowRect.left = 0;
 	hostWindowRect.top = 0;
 	hostWindowRect.right = GetSystemMetrics(SM_CXSCREEN);
-	hostWindowRect.bottom = GetSystemMetrics(SM_CYSCREEN) - 1;
+	if (enableAppBarAutoHide) hostWindowRect.bottom = GetSystemMetrics(SM_CYSCREEN) - 1;
+	else hostWindowRect.bottom = GetSystemMetrics(SM_CYSCREEN);
 
 	{
 		IDTLogger->info("[放大API线程][SetupMagnifier] 注册放大API主机窗口");
@@ -93,7 +95,7 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API窗口样式");
 	SetWindowLong(hwndHost, GWL_STYLE, GetWindowLong(hwndHost, GWL_STYLE) & ~WS_CAPTION); // 隐藏标题栏
 	SetWindowLong(hwndHost, GWL_STYLE, GetWindowLong(hwndHost, GWL_STYLE) & ~WS_THICKFRAME); // 禁止窗口拉伸
-	SetWindowPos(hwndHost, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED);
+	SetWindowPos(hwndHost, nullptr, 0, 0, 0, 0, SWP_NOSIZE | SWP_FRAMECHANGED);
 
 	SetWindowLong(hwndHost, GWL_EXSTYLE, (GetWindowLong(hwndHost, GWL_EXSTYLE) | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW); // 隐藏任务栏图标
 	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API窗口样式完成");

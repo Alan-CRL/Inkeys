@@ -21,6 +21,9 @@ void FreezeFrameWindow()
 	SetWindowPos(freeze_window, NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_DRAWFRAME);
 	SetWindowLong(freeze_window, GWL_EXSTYLE, WS_EX_TOOLWINDOW);//Òþ²ØÈÎÎñÀ¸
 
+	if (enableAppBarAutoHide) SetWindowPos(freeze_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
+	else SetWindowPos(freeze_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+
 	IMAGE freeze_background(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 	SetImageColor(freeze_background, RGBA(0, 0, 0, 0), true);
 
