@@ -318,7 +318,7 @@ void PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 	float RightWidgetWidth = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Width.v;
 	float RightWidgetHeight = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Height.v;
 
-	float WidgetScale = PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
+	float WidgetScale = min(min(PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget], PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget]), PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget]);
 
 	// 对象数值记录
 	float BottomMiddleWidgetX = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X.v;
@@ -466,7 +466,7 @@ void PptMiddlePageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 	float RightWidgetWidth = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Width.v;
 	float RightWidgetHeight = pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Height.v;
 
-	float WidgetScale = PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget];
+	float WidgetScale = min(min(PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget], PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget]), PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget]);
 
 	// 对象数值记录
 	float BottomMiddleWidgetX = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X.v;
@@ -610,7 +610,7 @@ void PptBottomMiddleSeekBar(int firstX, int firstY)
 	float WidgetWidth = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Width.v;
 	float WidgetHeight = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Height.v;
 
-	float WidgetScale = PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
+	float WidgetScale = min(min(PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget], PptUiWidgetScale[PptUiWidgetScaleID::MiddleSide_BothWidget]), PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget]);
 
 	// 对象数值记录
 	float BottomLeftWidgetX = pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v;
@@ -1977,7 +1977,7 @@ void PptInfo()
 			if (ppt_software.find(L"WPS") != ppt_software.npos) ppt_software = L"WPS";
 			else ppt_software = L"PowerPoint";
 
-			//if (!ppt_title_recond[ppt_title]) FreezePPT = true;
+			if (!ppt_title_recond[ppt_title]) FreezePPT = true;
 			Initialization = true;
 		}
 		else if (Initialization && PptInfoState.TotalPage == -1)
@@ -2013,9 +2013,16 @@ void PptDraw()
 		PPTMainMonitor = MainMonitor;
 		DisplaysInfoLock2.unlock();
 
-		PptWindowBackground.Resize(PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight);
-		if (enableAppBarAutoHide) SetWindowPos(ppt_window, NULL, PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
-		else SetWindowPos(ppt_window, NULL, PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+		if (enableAppBarAutoHide)
+		{
+			PptWindowBackground.Resize(PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight - 1);
+			SetWindowPos(ppt_window, NULL, PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
+		}
+		else
+		{
+			PptWindowBackground.Resize(PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight);
+			SetWindowPos(ppt_window, NULL, PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+		}
 	}
 
 	// 创建 EasyX 兼容的 DC Render Target
@@ -2261,11 +2268,17 @@ void PptDraw()
 
 			if (MainMonitorDifferent)
 			{
-				PptWindowBackground.Resize(PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight);
+				if (enableAppBarAutoHide)
+				{
+					PptWindowBackground.Resize(PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight - 1);
+					SetWindowPos(ppt_window, NULL, PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
+				}
+				else
+				{
+					PptWindowBackground.Resize(PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight);
+					SetWindowPos(ppt_window, NULL, PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+				}
 				ulwi.hdcSrc = GetImageHDC(&PptWindowBackground);
-
-				if (enableAppBarAutoHide) SetWindowPos(ppt_window, NULL, PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
-				else SetWindowPos(ppt_window, NULL, PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 
 				sizeWnd = { PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight };
 				POINT ptDst = { PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top };

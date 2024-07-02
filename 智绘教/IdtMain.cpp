@@ -42,7 +42,7 @@ int SettingMain();
 void FreezeFrameWindow();
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string editionDate = "20240702a";				//程序发布日期
+string editionDate = "20240702b";				//程序发布日期
 string editionChannel = "Dev";					//程序发布通道
 string editionCode = "24H2(BetaH3)";			//程序版本
 
@@ -55,8 +55,7 @@ map <wstring, bool> threadStatus; //线程状态管理
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-int main()
-//int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
+int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
 {
 	// 路径预处理
 	{
@@ -722,13 +721,13 @@ int main()
 		thread floating_main_thread(floating_main);
 		floating_main_thread.detach();
 
-		IDTLogger->info("[主线程][IdtMain] drawpad_main函数线程启动");
-		thread drawpad_main_thread(drawpad_main);
-		drawpad_main_thread.detach();
-
 		IDTLogger->info("[主线程][IdtMain] SettingMain函数线程启动");
 		thread test_main_thread(SettingMain);
 		test_main_thread.detach();
+
+		IDTLogger->info("[主线程][IdtMain] drawpad_main函数线程启动");
+		thread drawpad_main_thread(drawpad_main);
+		drawpad_main_thread.detach();
 
 		IDTLogger->info("[主线程][IdtMain] FreezeFrameWindow函数线程启动");
 		thread FreezeFrameWindow_thread(FreezeFrameWindow);

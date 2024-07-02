@@ -1256,9 +1256,11 @@ void DrawpadDrawing()
 				{
 					SetImageColor(window_background, RGBA(0, 0, 0, 0), true);
 
-					if (drawpad_window) SetWindowPos(freeze_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
 					ulwi.hdcSrc = GetImageHDC(&window_background);
 					UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
+
+					if (enableAppBarAutoHide)
+						SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
 				}
 				bool saveImage = true;
 
@@ -1400,7 +1402,8 @@ void DrawpadDrawing()
 					SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
 					hiex::TransparentImage(&window_background, 0, 0, &drawpad);
 
-					if (drawpad_window) SetWindowPos(freeze_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+					if (enableAppBarAutoHide) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+
 					ulwi.hdcSrc = GetImageHDC(&window_background);
 					UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
 				}
@@ -1408,7 +1411,7 @@ void DrawpadDrawing()
 			}
 			if (penetrate.select == true)
 			{
-				if (drawpad_window) SetWindowPos(freeze_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
+				if (enableAppBarAutoHide) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
 
 				LONG nRet = ::GetWindowLong(drawpad_window, GWL_EXSTYLE);
 				nRet |= WS_EX_TRANSPARENT;
@@ -1540,7 +1543,7 @@ void DrawpadDrawing()
 					break;
 				}
 
-				if (drawpad_window) SetWindowPos(freeze_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+				if (enableAppBarAutoHide) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 
 				nRet = ::GetWindowLong(drawpad_window, GWL_EXSTYLE);
 				nRet &= ~WS_EX_TRANSPARENT;
