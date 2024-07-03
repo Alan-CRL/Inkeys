@@ -360,6 +360,7 @@ int SettingMain()
 		bool CreateLnk = setlist.CreateLnk;
 		bool RightClickClose = setlist.RightClickClose;
 		bool BrushRecover = setlist.BrushRecover, RubberRecover = setlist.RubberRecover;
+		bool CompatibleTaskBarAutoHide = setlist.compatibleTaskBarAutoHide;
 		int RubberMode = setlist.RubberMode;
 		string UpdateChannel = setlist.UpdateChannel;
 		bool IntelligentDrawing = setlist.IntelligentDrawing, SmoothWriting = setlist.SmoothWriting;
@@ -367,14 +368,25 @@ int SettingMain()
 
 		// 插件参数
 
-		float PptUiWidgetScaleWidget = 1.0f;
-		float PptUiWidgetScaleLeftWidget = PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
-		float PptUiWidgetScaleRightWidget = PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget];
-		float PptUiWidgetScaleMiddleWidget = PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_MiddleWidget];
-
 		bool DdbEnable = ddbSetList.DdbEnable;
 		bool DdbEnhance = ddbSetList.DdbEnhance;
-		bool FixedHandWriting = pptComSetlist.fixedHandWriting;
+
+		float PptUiWidgetScaleWidget = 1.0f, PptUiWidgetScaleWidgetRecord = 1.0f;
+		float BottomSideBothWidgetScale = pptComSetlist.bottomSideBothWidgetScale;
+		float MiddleSideBothWidgetScale = pptComSetlist.middleSideBothWidgetScale;
+		float BottomSideMiddleWidgetScale = pptComSetlist.bottomSideMiddleWidgetScale;
+
+		bool PptComFixedHandWriting = pptComSetlist.fixedHandWriting;
+		bool MemoryWidgetPosition = pptComSetlist.memoryWidgetPosition;
+		bool ShowBottomBoth = pptComSetlist.showBottomBoth;
+		bool ShowMiddleBoth = pptComSetlist.showMiddleBoth;
+		bool ShowBottomMiddle = pptComSetlist.showBottomMiddle;
+		float BottomBothWidth = pptComSetlist.bottomBothWidth;
+		float BottomBothHeight = pptComSetlist.bottomBothHeight;
+		float MiddleBothWidth = pptComSetlist.middleBothWidth;
+		float MiddleBothHeight = pptComSetlist.middleBothHeight;
+		float BottomMiddleWidth = pptComSetlist.bottomMiddleWidth;
+		float BottomMiddleHeight = pptComSetlist.bottomMiddleHeight;
 
 		// ==========
 
@@ -1185,6 +1197,55 @@ int SettingMain()
 
 						ImGui::EndChild();
 					}
+					{
+						ImGui::SetCursorPosX(20.0f);
+						ImGui::BeginChild(reinterpret_cast<const char*>(u8"兼容性调整"), { 730.0f,105.0f }, true, ImGuiWindowFlags_NoScrollbar);
+
+						{
+							ImGui::SetCursorPosY(10.0f);
+
+							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+							CenteredText(reinterpret_cast<const char*>(u8" 兼容自动隐藏的任务栏"), 4.0f);
+
+							Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
+							ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"如果您设置了“自动隐藏任务栏”选项，则建议打开此项\n\n开启后：绘制效果可能会收到影响\n关闭后：有其他最大化应用时，则无法使用鼠标升起任务栏"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
+							ImGui::Toggle(reinterpret_cast<const char*>(u8"##兼容自动隐藏的任务栏"), &CompatibleTaskBarAutoHide, config);
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+							{
+								string temp = reinterpret_cast<const char*>(u8"软件只在启动时做出调整，修改此项需要重启智绘教才能生效。");
+								float text_width = ImGui::CalcTextSize(temp.c_str()).x;
+								float text_indentation = ((730 - 0) - text_width) * 0.5f;
+								if (text_indentation < 0)  text_indentation = 0;
+								ImGui::SetCursorPosX(0 + text_indentation);
+								ImGui::TextUnformatted(temp.c_str());
+							}
+							{
+								string temp = reinterpret_cast<const char*>(u8"开启此项时，如果您调整“自动隐藏任务栏”选项或改变任务栏方位，则需要重启智绘教。");
+								float text_width = ImGui::CalcTextSize(temp.c_str()).x;
+								float text_indentation = ((730 - 0) - text_width) * 0.5f;
+								if (text_indentation < 0)  text_indentation = 0;
+								ImGui::SetCursorPosX(0 + text_indentation);
+								ImGui::TextUnformatted(temp.c_str());
+							}
+
+							if (setlist.compatibleTaskBarAutoHide != CompatibleTaskBarAutoHide)
+							{
+								setlist.compatibleTaskBarAutoHide = CompatibleTaskBarAutoHide;
+								WriteSetting();
+							}
+						}
+
+						ImGui::EndChild();
+					}
 
 					ImGui::EndChild();
 					break;
@@ -1488,29 +1549,250 @@ int SettingMain()
 						ImGui::BeginChild(reinterpret_cast<const char*>(u8"PPT 演示联动"), { 590.0f,596.0f }, true);
 
 						{
-							ImGui::SetCursorPosY(10.0f);
+							ImGui::SetCursorPos({ 20.0f,20.0f });
+							ImGui::BeginChild(reinterpret_cast<const char*>(u8"PPT 演示联动行为调整"), { 550.0f,60.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
-							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(reinterpret_cast<const char*>(u8" 墨迹固定在对应页面上"), 4.0f);
-
-							Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
-							ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"每个 PPT 页面都将拥有各自独立的画布\n（翻页不会清空之前页面所绘制的墨迹，可以返回前一页面继续绘制）"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
-
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-							ImGui::SameLine(); ImGui::SetCursorPosX(590.0f - 70.0f);
-							ImGui::Toggle(reinterpret_cast<const char*>(u8"##墨迹固定在对应页面上"), &FixedHandWriting, config);
-
-							if (pptComSetlist.fixedHandWriting != FixedHandWriting)
 							{
-								pptComSetlist.fixedHandWriting = FixedHandWriting;
-								WriteSetting();
+								ImGui::SetCursorPosY(10.0f);
+
+								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								CenteredText(reinterpret_cast<const char*>(u8" 墨迹固定在对应页面上"), 4.0f);
+
+								Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
+								ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"每个 PPT 页面都将拥有各自独立的画布\n（翻页不会清空之前页面所绘制的墨迹，可以返回前一页面继续绘制）"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
+
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+								ImGui::SameLine(); ImGui::SetCursorPosX(550.0f - 70.0f);
+								ImGui::Toggle(reinterpret_cast<const char*>(u8"##墨迹固定在对应页面上"), &PptComFixedHandWriting, config);
+
+								if (pptComSetlist.fixedHandWriting != PptComFixedHandWriting)
+								{
+									pptComSetlist.fixedHandWriting = PptComFixedHandWriting;
+									PptComWriteSetting();
+								}
+								ImGui::PopStyleColor(PushStyleColorNum);
 							}
-							ImGui::PopStyleColor(PushStyleColorNum);
+
+							ImGui::EndChild();
+						}
+						{
+							ImGui::SetCursorPos({ 20.0f,ImGui::GetCursorPosY() + 5.0f });
+							ImGui::BeginChild(reinterpret_cast<const char*>(u8"PPT 演示联动控件显示调整"), { 550.0f,125.0f }, true, ImGuiWindowFlags_NoScrollbar);
+
+							{
+								ImGui::SetCursorPosY(10.0f);
+
+								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								CenteredText(reinterpret_cast<const char*>(u8" 显示底部两侧控件"), 4.0f);
+
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+								ImGui::SameLine(); ImGui::SetCursorPosX(550.0f - 70.0f);
+								ImGui::Toggle(reinterpret_cast<const char*>(u8"##显示底部两侧控件"), &ShowBottomBoth, config);
+
+								if (pptComSetlist.showBottomBoth != ShowBottomBoth)
+								{
+									pptComSetlist.showBottomBoth = ShowBottomBoth;
+									PptComWriteSetting();
+								}
+								ImGui::PopStyleColor(PushStyleColorNum);
+							}
+							{
+								ImGui::SetCursorPosY(45.0f);
+
+								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								CenteredText(reinterpret_cast<const char*>(u8" 显示中部两侧控件"), 4.0f);
+
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+								ImGui::SameLine(); ImGui::SetCursorPosX(550.0f - 70.0f);
+								ImGui::Toggle(reinterpret_cast<const char*>(u8"##显示中部两侧控件"), &ShowMiddleBoth, config);
+
+								if (pptComSetlist.showMiddleBoth != ShowMiddleBoth)
+								{
+									pptComSetlist.showMiddleBoth = ShowMiddleBoth;
+									PptComWriteSetting();
+								}
+								ImGui::PopStyleColor(PushStyleColorNum);
+							}
+							{
+								ImGui::SetCursorPosY(80.0f);
+
+								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								CenteredText(reinterpret_cast<const char*>(u8" 显示底部主栏控件"), 4.0f);
+
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+								ImGui::SameLine(); ImGui::SetCursorPosX(550.0f - 70.0f);
+								ImGui::Toggle(reinterpret_cast<const char*>(u8"##显示底部主栏控件"), &ShowBottomMiddle, config);
+
+								if (pptComSetlist.showBottomMiddle != ShowBottomMiddle)
+								{
+									pptComSetlist.showBottomMiddle = ShowBottomMiddle;
+									PptComWriteSetting();
+								}
+								ImGui::PopStyleColor(PushStyleColorNum);
+							}
+
+							ImGui::EndChild();
+						}
+						{
+							ImGui::SetCursorPos({ 20.0f,ImGui::GetCursorPosY() + 5.0f });
+							ImGui::BeginChild(reinterpret_cast<const char*>(u8"PPT 演示联动控件位置调整"), { 550.0f,90.0f }, true, ImGuiWindowFlags_NoScrollbar);
+
+							{
+								ImGui::SetCursorPosY(10.0f);
+
+								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								CenteredText(reinterpret_cast<const char*>(u8" 控件位置"), 4.0f);
+
+								Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
+								ImGui::SameLine(); ImGui::SetCursorPosX(550.0f - 70.0f);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								if (ImGui::Button(reinterpret_cast<const char*>(u8"重置"), { 60.0f,30.0f }))
+								{
+									pptComSetlist.bottomBothWidth = BottomBothWidth = 0;
+									pptComSetlist.bottomBothHeight = BottomBothHeight = 0;
+									pptComSetlist.middleBothWidth = MiddleBothWidth = 0;
+									pptComSetlist.middleBothHeight = MiddleBothHeight = 0;
+									pptComSetlist.bottomMiddleWidth = BottomMiddleWidth = 0;
+									pptComSetlist.bottomMiddleHeight = BottomMiddleHeight = 0;
+
+									PptComWriteSetting();
+								}
+								ImGui::PopStyleColor(PushStyleColorNum);
+							}
+							{
+								ImGui::SetCursorPosY(45.0f);
+
+								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								CenteredText(reinterpret_cast<const char*>(u8" 记忆控件位置"), 4.0f);
+
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+								ImGui::SameLine(); ImGui::SetCursorPosX(550.0f - 70.0f);
+								ImGui::Toggle(reinterpret_cast<const char*>(u8"##记忆控件位置"), &MemoryWidgetPosition, config);
+
+								if (pptComSetlist.memoryWidgetPosition != MemoryWidgetPosition)
+								{
+									pptComSetlist.memoryWidgetPosition = MemoryWidgetPosition;
+									PptComWriteSetting();
+								}
+								ImGui::PopStyleColor(PushStyleColorNum);
+							}
+
+							ImGui::EndChild();
+						}
+						{
+							ImGui::SetCursorPos({ 20.0f,ImGui::GetCursorPosY() + 5.0f });
+							ImGui::BeginChild(reinterpret_cast<const char*>(u8"PPT 演示联动控件缩放调整"), { 550.0f,160.0f }, true, ImGuiWindowFlags_NoScrollbar);
+
+							{
+								ImGui::SetCursorPosY(10.0f);
+
+								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								CenteredText(reinterpret_cast<const char*>(u8" 控件缩放"), 4.0f);
+
+								Font->Scale = 0.82f, PushFontNum++, ImGui::PushFont(Font);
+								ImGui::PushItemWidth(300.0f);
+								ImGui::SameLine(); ImGui::SetCursorPosX(550.0f - 70.0f - 305.0f);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(175 / 255.0f, 175 / 255.0f, 175 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(155 / 255.0f, 155 / 255.0f, 155 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								ImGui::SliderFloat(reinterpret_cast<const char*>(u8"##PPT 控件缩放总控"), &PptUiWidgetScaleWidget, 0.25f, 3.0f, reinterpret_cast<const char*>(u8"%.15f 倍缩放"));
+								ImGui::PopItemWidth();
+								if (PptUiWidgetScaleWidget != PptUiWidgetScaleWidgetRecord)
+								{
+									PptUiWidgetScaleWidgetRecord = PptUiWidgetScaleWidget;
+									pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale = PptUiWidgetScaleWidget;
+									pptComSetlist.bottomSideBothWidgetScale = MiddleSideBothWidgetScale = PptUiWidgetScaleWidget;
+									pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = PptUiWidgetScaleWidget;
+								}
+
+								Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
+								ImGui::SameLine(); ImGui::SetCursorPosX(550.0f - 70.0f);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								if (ImGui::Button(reinterpret_cast<const char*>(u8"重置##PPT 控件缩放总控"), { 60.0f,30.0f }))
+								{
+									PptUiWidgetScaleWidgetRecord = PptUiWidgetScaleWidget = 1.0f;
+									pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale = 1.0f;
+									pptComSetlist.bottomSideBothWidgetScale = MiddleSideBothWidgetScale = 1.0f;
+									pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = 1.0f;
+
+									PptComWriteSetting();
+								}
+								ImGui::PopStyleColor(PushStyleColorNum);
+							}
+							{
+								ImGui::SetCursorPosY(45.0f);
+
+								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								CenteredText(reinterpret_cast<const char*>(u8" 底栏两侧控件"), 4.0f);
+
+								Font->Scale = 0.82f, PushFontNum++, ImGui::PushFont(Font);
+								ImGui::PushItemWidth(300.0f);
+								ImGui::SameLine(); ImGui::SetCursorPosX(550.0f - 70.0f - 305.0f);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(175 / 255.0f, 175 / 255.0f, 175 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(155 / 255.0f, 155 / 255.0f, 155 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								ImGui::SliderFloat(reinterpret_cast<const char*>(u8"##PPT 底栏两侧控件"), &BottomSideBothWidgetScale, 0.25f, 3.0f, reinterpret_cast<const char*>(u8"%.15f 倍缩放"));
+								ImGui::PopItemWidth();
+								if (pptComSetlist.bottomSideBothWidgetScale != BottomSideBothWidgetScale)
+								{
+									pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale;
+								}
+
+								Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
+								ImGui::SameLine(); ImGui::SetCursorPosX(550.0f - 70.0f);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								if (ImGui::Button(reinterpret_cast<const char*>(u8"重置##PPT 底栏两侧控件"), { 60.0f,30.0f }))
+								{
+									pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale = 1.0f;
+									PptComWriteSetting();
+								}
+								ImGui::PopStyleColor(PushStyleColorNum);
+							}
+
+							ImGui::EndChild();
 						}
 
 						ImGui::EndChild();
@@ -2106,41 +2388,6 @@ int SettingMain()
 				case Tab::tab8:
 				{
 					ImGui::BeginChild(reinterpret_cast<const char*>(u8"实验室"), { 770.0f,616.0f }, true);
-
-					ImGui::SetCursorPosY(20.0f);
-					{
-						ImGui::SetCursorPosX(20.0f);
-						ImGui::BeginChild(reinterpret_cast<const char*>(u8"PPT 控件缩放比例"), { 730.0f,50.0f }, true, ImGuiWindowFlags_NoScrollbar);
-
-						{
-							ImGui::SetCursorPosY(8.0f);
-
-							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(reinterpret_cast<const char*>(u8" PPT 控件缩放比例"), 4.0f);
-
-							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 230.0f);
-							ImGui::SetNextItemWidth(220);
-
-							Font->Scale = 0.82f, PushFontNum++, ImGui::PushFont(Font);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0 / 255.0f, 131 / 255.0f, 245 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							ImGui::SliderFloat(reinterpret_cast<const char*>(u8"##PPT 控件缩放比例"), &PptUiWidgetScaleWidget, 0.25f, 3.0f, reinterpret_cast<const char*>(u8"%.5f 倍缩放"));
-
-							ImGui::PopStyleColor(PushStyleColorNum);
-						}
-
-						{
-							PptUiWidgetScale[PptUiWidgetScaleID::BottomSide_BothWidget] = PptUiWidgetScaleWidget;
-						}
-
-						ImGui::EndChild();
-					}
-
 					ImGui::EndChild();
 					break;
 				}
@@ -2392,65 +2639,6 @@ int SettingMain()
 	return 0;
 }
 
-void FirstSetting(bool info)
-{
-	if (info && MessageBox(floating_window, L"欢迎使用智绘教~\n本向导还在建设中，目前较为简陋，请谅解\n\n是否尝试设置智绘教开机自动启动？", L"智绘教首次使用向导alpha", MB_YESNO | MB_SYSTEMMODAL) == 6)
-	{
-		if (_waccess((StringToWstring(globalPath) + L"api").c_str(), 0) == -1) filesystem::create_directory(StringToWstring(globalPath) + L"api");
-		ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
-
-		ShellExecute(NULL, L"runas", (StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"set\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
-
-		DWORD dwBytesRead;
-		WCHAR buffer[4096];
-		HANDLE hPipe = INVALID_HANDLE_VALUE;
-		wstring treceivedData;
-
-		int for_i;
-		for (for_i = 0; for_i <= 5000; for_i++)
-		{
-			if (WaitNamedPipe(TEXT("\\\\.\\pipe\\IDTPipe1"), 100)) break;
-			else this_thread::sleep_for(chrono::milliseconds(100));
-		}
-
-		if (for_i <= 5000)
-		{
-			hPipe = CreateFile(TEXT("\\\\.\\pipe\\IDTPipe1"), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-			if (ReadFile(hPipe, buffer, sizeof(buffer), &dwBytesRead, NULL)) treceivedData.assign(buffer, dwBytesRead / sizeof(WCHAR));
-		}
-
-		CloseHandle(hPipe);
-	}
-
-	if (_waccess((StringToWstring(globalPath) + L"opt").c_str(), 0) == -1) filesystem::create_directory(StringToWstring(globalPath) + L"opt");
-
-	Json::Value root;
-
-	root["edition"] = Json::Value(editionDate);
-	root["CreateLnk"] = Json::Value(false);
-	root["RightClickClose"] = Json::Value(false);
-	root["BrushRecover"] = Json::Value(true);
-	root["RubberRecover"] = Json::Value(false);
-	root["RubberMode"] = Json::Value(0);
-	root["IntelligentDrawing"] = Json::Value(true);
-	root["SmoothWriting"] = Json::Value(true);
-	root["SetSkinMode"] = Json::Value(0);
-	root["UpdateChannel"] = Json::Value("LTS");
-
-	root["PlugIn"]["DdbEnable"] = Json::Value(true);
-	root["PlugIn"]["DdbEnhance"] = Json::Value(false);
-
-	root["PlugIn"]["FixedHandWriting"] = Json::Value(true);
-
-	Json::StreamWriterBuilder outjson;
-	outjson.settings_["emitUTF8"] = true;
-	std::unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
-	ofstream writejson;
-	writejson.imbue(locale("zh_CN.UTF8"));
-	writejson.open(WstringToString(StringToWstring(globalPath) + L"opt\\deploy.json").c_str());
-	writer->write(root, &writejson);
-	writejson.close();
-}
 bool ReadSetting(bool first)
 {
 	Json::Reader reader;
@@ -2466,6 +2654,7 @@ bool ReadSetting(bool first)
 		if (root.isMember("RightClickClose")) setlist.RightClickClose = root["RightClickClose"].asBool();
 		if (root.isMember("BrushRecover")) setlist.BrushRecover = root["BrushRecover"].asBool();
 		if (root.isMember("RubberRecover")) setlist.RubberRecover = root["RubberRecover"].asBool();
+		if (root.isMember("CompatibleTaskBarAutoHide")) setlist.compatibleTaskBarAutoHide = root["CompatibleTaskBarAutoHide"].asBool();
 		if (root.isMember("RubberMode")) setlist.RubberMode = root["RubberMode"].asBool();
 		if (root.isMember("IntelligentDrawing")) setlist.IntelligentDrawing = root["IntelligentDrawing"].asBool();
 		if (root.isMember("SmoothWriting")) setlist.SmoothWriting = root["SmoothWriting"].asBool();
@@ -2476,8 +2665,6 @@ bool ReadSetting(bool first)
 		{
 			if (root["PlugIn"].isMember("DdbEnable")) ddbSetList.DdbEnable = root["PlugIn"]["DdbEnable"].asBool();
 			if (root["PlugIn"].isMember("DdbEnhance")) ddbSetList.DdbEnhance = root["PlugIn"]["DdbEnhance"].asBool();
-
-			if (root["PlugIn"].isMember("FixedHandWriting")) pptComSetlist.fixedHandWriting = root["PlugIn"]["FixedHandWriting"].asBool();
 		}
 
 		//预处理
@@ -2494,6 +2681,9 @@ bool ReadSetting(bool first)
 }
 bool WriteSetting()
 {
+	if (_waccess((StringToWstring(globalPath) + L"opt").c_str(), 0) == -1)
+		filesystem::create_directory(StringToWstring(globalPath) + L"opt");
+
 	Json::Value root;
 
 	root["edition"] = Json::Value(editionDate);
@@ -2501,6 +2691,7 @@ bool WriteSetting()
 	root["RightClickClose"] = Json::Value(setlist.RightClickClose);
 	root["BrushRecover"] = Json::Value(setlist.BrushRecover);
 	root["RubberRecover"] = Json::Value(setlist.RubberRecover);
+	root["CompatibleTaskBarAutoHide"] = Json::Value(setlist.compatibleTaskBarAutoHide);
 	root["RubberMode"] = Json::Value(setlist.RubberMode);
 	root["IntelligentDrawing"] = Json::Value(setlist.IntelligentDrawing);
 	root["SmoothWriting"] = Json::Value(setlist.SmoothWriting);
@@ -2509,8 +2700,6 @@ bool WriteSetting()
 
 	root["PlugIn"]["DdbEnable"] = Json::Value(ddbSetList.DdbEnable);
 	root["PlugIn"]["DdbEnhance"] = Json::Value(ddbSetList.DdbEnhance);
-
-	root["PlugIn"]["FixedHandWriting"] = Json::Value(pptComSetlist.fixedHandWriting);
 
 	Json::StreamWriterBuilder outjson;
 	outjson.settings_["emitUTF8"] = true;

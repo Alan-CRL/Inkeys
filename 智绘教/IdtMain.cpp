@@ -42,7 +42,7 @@ int SettingMain();
 void FreezeFrameWindow();
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string editionDate = "20240702b";				//程序发布日期
+string editionDate = "20240703a";				//程序发布日期
 string editionChannel = "Dev";					//程序发布通道
 string editionCode = "24H2(BetaH3)";			//程序版本
 
@@ -55,7 +55,8 @@ map <wstring, bool> threadStatus; //线程状态管理
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
+int main()
+// int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
 {
 	// 路径预处理
 	{
@@ -371,7 +372,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 				if (ExtractResource((StringToWstring(globalPath) + L"Inkeys.png").c_str(), L"PNG_ICON", MAKEINTRESOURCE(236)))
 				{
-					IdtSysNotificationsImageAndText04(L"智绘教", 5000, StringToWstring(globalPath) + L"Inkeys.png", L"智绘教正在自动更新，请耐心等待", L"已通过 MD5 和 SHA265 完整性校验", L"版本号 " + StringToWstring(editionDate) + L" -> " + tedition);
+					IdtSysNotificationsImageAndText04(L"智绘教", 5000, StringToWstring(globalPath) + L"Inkeys.png", L"智绘教正在自动更新，请耐心等待", L"已通过 MD5 和 SHA256 完整性校验", L"版本号 " + StringToWstring(editionDate) + L" -> " + tedition);
 
 					error_code ec;
 					filesystem::remove(StringToWstring(globalPath) + L"Inkeys.png", ec);
@@ -502,6 +503,34 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		IDTLogger->info("[主线程][IdtMain] 设置字体完成");
 		IDTLogger->info("[主线程][IdtMain] 初始化字体完成");
 	}
+	// 配置信息初始化
+	{
+		IDTLogger->info("[主线程][IdtMain] 初始化配置信息");
+
+		if (_waccess((StringToWstring(globalPath) + L"opt\\deploy.json").c_str(), 4) == -1)
+		{
+			IDTLogger->warn("[主线程][IdtMain] 配置信息不存在");
+
+			{
+				shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
+				int DisplaysNumberTemp = DisplaysNumber;
+				DisplaysNumberLock.unlock();
+
+				if (DisplaysNumberTemp > 1)
+					MessageBox(floating_window, (L"检测到计算机拥有 " + to_wstring(DisplaysNumberTemp) + L" 个显示器，智绘教目前不支持在拓展显示器上绘图！\n仅能在主显示器上绘图！").c_str(), L"智绘教警告", MB_OK | MB_SYSTEMMODAL);
+			}
+		}
+		else
+		{
+			IDTLogger->info("[主线程][IdtMain] 读取配置信息");
+			ReadSetting(true);
+			IDTLogger->info("[主线程][IdtMain] 读取配置信息完成");
+		}
+
+		IDTLogger->info("[主线程][IdtMain] 更新配置信息");
+		WriteSetting();
+		IDTLogger->info("[主线程][IdtMain] 更新配置信息完成");
+	}
 	// 监视器信息初始化
 	{
 		IDTLogger->info("[主线程][IdtMain] 初始化监视器信息");
@@ -513,7 +542,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] 初始化应用栏信息");
 		APPBARDATA abd{};
-		enableAppBarAutoHide = (SHAppBarMessage(ABM_GETSTATE, &abd) == ABS_AUTOHIDE);
+		enableAppBarAutoHide = (setlist.compatibleTaskBarAutoHide && (SHAppBarMessage(ABM_GETSTATE, &abd) == ABS_AUTOHIDE));
 		IDTLogger->info("[主线程][IdtMain] 初始化应用栏信息完成");
 
 		shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
@@ -527,35 +556,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		if (DisplaysNumberTemp > 1) IDTLogger->warn("[主线程][IdtMain] 拥有多个监视器");
 
 		IDTLogger->info("[主线程][IdtMain] 初始化监视器信息完成");
-	}
-	// 配置信息初始化
-	{
-		IDTLogger->info("[主线程][IdtMain] 初始化配置信息");
-
-		if (_waccess((StringToWstring(globalPath) + L"opt\\deploy.json").c_str(), 4) == -1)
-		{
-			IDTLogger->warn("[主线程][IdtMain] 配置信息不存在");
-
-			IDTLogger->info("[主线程][IdtMain] 生成配置信息");
-			FirstSetting(true);
-			IDTLogger->info("[主线程][IdtMain] 生成配置信息完成");
-
-			{
-				shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
-				int DisplaysNumberTemp = DisplaysNumber;
-				DisplaysNumberLock.unlock();
-				if (DisplaysNumberTemp > 1)
-					MessageBox(floating_window, (L"检测到计算机拥有 " + to_wstring(DisplaysNumberTemp) + L" 个显示器，智绘教目前不支持在拓展显示器上绘图！\n仅能在主显示器上绘图！").c_str(), L"智绘教警告", MB_OK | MB_SYSTEMMODAL);
-			}
-		}
-
-		IDTLogger->info("[主线程][IdtMain] 读取配置信息");
-		ReadSetting(true);
-		IDTLogger->info("[主线程][IdtMain] 读取配置信息完成");
-
-		IDTLogger->info("[主线程][IdtMain] 更新配置信息");
-		WriteSetting();
-		IDTLogger->info("[主线程][IdtMain] 更新配置信息完成");
 	}
 	// 插件配置初始化
 	{
@@ -737,17 +737,21 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		thread(StateMonitoring).detach();
 	}
 
+	IDTLogger->info("[主线程][IdtMain] 开始等待关闭程序信号发出");
+
 	while (!offSignal) this_thread::sleep_for(chrono::milliseconds(500));
 
 	IDTLogger->info("[主线程][IdtMain] 等待各函数线程结束");
 
-	int WaitingCount = 0;
-	for (; WaitingCount < 20; WaitingCount++)
 	{
-		if (!threadStatus[L"floating_main"] && !threadStatus[L"drawpad_main"] && !threadStatus[L"SettingMain"] && !threadStatus[L"FreezeFrameWindow"] && !threadStatus[L"NetUpdate"]) break;
-		this_thread::sleep_for(chrono::milliseconds(500));
+		int WaitingCount = 0;
+		for (; WaitingCount < 20; WaitingCount++)
+		{
+			if (!threadStatus[L"floating_main"] && !threadStatus[L"drawpad_main"] && !threadStatus[L"SettingMain"] && !threadStatus[L"FreezeFrameWindow"] && !threadStatus[L"NetUpdate"]) break;
+			this_thread::sleep_for(chrono::milliseconds(500));
+		}
+		if (WaitingCount >= 20) IDTLogger->warn("[主线程][IdtMain] 结束函数线程超时并强制结束线程");
 	}
-	if (WaitingCount >= 20) IDTLogger->warn("[主线程][IdtMain] 结束函数线程超时并强制结束线程");
 
 	// 反初始化 COM 环境
 	{
@@ -767,7 +771,15 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 #ifdef IDT_RELEASE
 	IDTLogger->info("[主线程][IdtMain] 等待崩溃重启助手结束");
-	while (!offSignalReady) this_thread::sleep_for(chrono::milliseconds(500));
+	{
+		int WaitingCount = 0;
+		for (; WaitingCount < 20; WaitingCount++)
+		{
+			if (offSignalReady) break;
+			this_thread::sleep_for(chrono::milliseconds(500));
+		}
+		if (WaitingCount >= 20) IDTLogger->warn("[主线程][IdtMain] 等待崩溃重启助手结束超时并强制退出");
+	}
 	IDTLogger->info("[主线程][IdtMain] 崩溃重启助手结束");
 #endif
 

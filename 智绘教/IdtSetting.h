@@ -17,7 +17,6 @@ extern int SettingWindowHeight;
 void SettingSeekBar();
 int SettingMain();
 
-void FirstSetting(bool info);
 bool ReadSetting(bool first);
 bool WriteSetting();
 

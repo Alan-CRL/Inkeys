@@ -17,7 +17,7 @@
 
 #pragma once
 
-#define IDT_RELEASE
+// #define IDT_RELEASE
 // #pragma comment( linker, "/subsystem:windows /entry:mainCRTStartup" )
 
 // ÖÇ»æ½Ì×îµÍ¼æÈÝ Windows 7 sp1

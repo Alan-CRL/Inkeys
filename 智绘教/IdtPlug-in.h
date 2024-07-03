@@ -195,17 +195,6 @@ extern PptUiImageWidgetClass pptUiImageWidget[9], pptUiImageWidgetTarget[9];
 extern PptUiWordsWidgetClass pptUiWordsWidget[8], pptUiWordsWidgetTarget[8];
 
 // -------------------------
-// UI Àı∑≈
-
-enum PptUiWidgetScaleID
-{
-	BottomSide_BothWidget,
-	BottomSide_MiddleWidget,
-	MiddleSide_BothWidget
-};
-extern float PptUiWidgetScale[3];
-
-// -------------------------
 // ppt –≈œ¢
 
 struct PptImgStruct

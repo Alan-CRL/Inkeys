@@ -15,6 +15,8 @@ struct SetListStruct
 		SetSkinMode = 0, SkinMode = 1;
 
 		UpdateChannel = "LTS";
+
+		compatibleTaskBarAutoHide = true;
 	}
 
 	int StartUp; bool CreateLnk;
@@ -28,6 +30,9 @@ struct SetListStruct
 	int SetSkinMode, SkinMode;
 
 	string UpdateChannel;
+
+	// 兼容自动隐藏的任务栏
+	bool compatibleTaskBarAutoHide;
 };
 extern SetListStruct setlist;
 
@@ -36,6 +41,11 @@ struct PptComSetListStruct
 	PptComSetListStruct()
 	{
 		fixedHandWriting = true;
+		memoryWidgetPosition = true;
+
+		showBottomBoth = true;
+		showMiddleBoth = false;
+		showBottomMiddle = true;
 
 		bottomBothWidth = 0;
 		bottomBothHeight = 0;
@@ -43,18 +53,38 @@ struct PptComSetListStruct
 		middleBothHeight = 0;
 		bottomMiddleWidth = 0;
 		bottomMiddleHeight = 0;
+
+		bottomSideBothWidgetScale = 1.0f;
+		bottomSideMiddleWidgetScale = 1.0f;
+		middleSideBothWidgetScale = 1.0f;
 	}
 
+	// 墨迹固定在对应页面上
 	bool fixedHandWriting;
+	// 记忆控件位置
+	bool memoryWidgetPosition;
 
+	// 控件显示
+	bool showBottomBoth;
+	bool showMiddleBoth;
+	bool showBottomMiddle;
+
+	// 控件方位
 	float bottomBothWidth;
 	float bottomBothHeight;
 	float middleBothWidth;
 	float middleBothHeight;
 	float bottomMiddleWidth;
 	float bottomMiddleHeight;
+
+	// 控件缩放
+	float bottomSideBothWidgetScale;
+	float bottomSideMiddleWidgetScale;
+	float middleSideBothWidgetScale;
 };
 extern PptComSetListStruct pptComSetlist;
+bool PptComReadSetting();
+bool PptComWriteSetting();
 
 struct DdbSetListStruct
 {

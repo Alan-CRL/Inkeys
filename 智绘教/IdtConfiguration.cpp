@@ -5,6 +5,79 @@
 SetListStruct setlist;
 
 PptComSetListStruct pptComSetlist;
+bool PptComReadSetting()
+{
+	Json::Reader reader;
+	Json::Value root;
+
+	ifstream readjson;
+	readjson.imbue(locale("zh_CN.UTF8"));
+	readjson.open(WstringToString(StringToWstring(globalPath) + L"opt\\pptcom_configuration.json").c_str());
+
+	if (reader.parse(readjson, root))
+	{
+		if (root.isMember("FixedHandWriting") && root["FixedHandWriting"].isBool()) pptComSetlist.fixedHandWriting = root["FixedHandWriting"].asBool();
+		if (root.isMember("MemoryWidgetPosition") && root["MemoryWidgetPosition"].isBool()) pptComSetlist.memoryWidgetPosition = root["MemoryWidgetPosition"].asBool();
+
+		if (root.isMember("ShowBottomBoth") && root["ShowBottomBoth"].isBool()) pptComSetlist.showBottomBoth = root["ShowBottomBoth"].asBool();
+		if (root.isMember("ShowMiddleBoth") && root["ShowMiddleBoth"].isBool()) pptComSetlist.showMiddleBoth = root["ShowMiddleBoth"].asBool();
+		if (root.isMember("ShowBottomMiddle") && root["ShowBottomMiddle"].isBool()) pptComSetlist.showBottomMiddle = root["ShowBottomMiddle"].asBool();
+
+		if (pptComSetlist.memoryWidgetPosition)
+		{
+			if (root.isMember("BottomBothWidth") && root["BottomBothWidth"].isDouble()) pptComSetlist.bottomBothWidth = (float)root["BottomBothWidth"].asDouble();
+			if (root.isMember("BottomBothHeight") && root["BottomBothHeight"].isDouble()) pptComSetlist.bottomBothHeight = (float)root["BottomBothHeight"].asDouble();
+			if (root.isMember("MiddleBothWidth") && root["MiddleBothWidth"].isDouble()) pptComSetlist.middleBothWidth = (float)root["MiddleBothWidth"].asDouble();
+			if (root.isMember("MiddleBothHeight") && root["MiddleBothHeight"].isDouble()) pptComSetlist.middleBothHeight = (float)root["MiddleBothHeight"].asDouble();
+			if (root.isMember("BottomMiddleWidth") && root["BottomMiddleWidth"].isDouble()) pptComSetlist.bottomMiddleWidth = (float)root["BottomMiddleWidth"].asDouble();
+			if (root.isMember("BottomMiddleHeight") && root["BottomMiddleHeight"].isDouble()) pptComSetlist.bottomMiddleHeight = (float)root["BottomMiddleHeight"].asDouble();
+		}
+
+		if (root.isMember("BottomSideBothWidgetScale") && root["BottomSideBothWidgetScale"].isDouble()) pptComSetlist.bottomSideBothWidgetScale = (float)root["BottomSideBothWidgetScale"].asDouble();
+		if (root.isMember("BottomSideMiddleWidgetScale") && root["BottomSideMiddleWidgetScale"].isDouble()) pptComSetlist.bottomSideMiddleWidgetScale = (float)root["BottomSideMiddleWidgetScale"].asDouble();
+		if (root.isMember("MiddleSideBothWidgetScale") && root["MiddleSideBothWidgetScale"].isDouble()) pptComSetlist.middleSideBothWidgetScale = (float)root["MiddleSideBothWidgetScale"].asDouble();
+	}
+
+	readjson.close();
+
+	return true;
+}
+bool PptComWriteSetting()
+{
+	if (_waccess((StringToWstring(globalPath) + L"opt").c_str(), 0) == -1)
+		filesystem::create_directory(StringToWstring(globalPath) + L"opt");
+
+	Json::Value root;
+
+	root["FixedHandWriting"] = Json::Value(pptComSetlist.fixedHandWriting);
+	root["MemoryWidgetPosition"] = Json::Value(pptComSetlist.memoryWidgetPosition);
+
+	root["ShowBottomBoth"] = Json::Value(pptComSetlist.showBottomBoth);
+	root["ShowMiddleBoth"] = Json::Value(pptComSetlist.showMiddleBoth);
+	root["ShowBottomMiddle"] = Json::Value(pptComSetlist.showBottomMiddle);
+
+	root["BottomBothWidth"] = Json::Value(pptComSetlist.bottomBothWidth);
+	root["BottomBothHeight"] = Json::Value(pptComSetlist.bottomBothHeight);
+	root["MiddleBothWidth"] = Json::Value(pptComSetlist.middleBothWidth);
+	root["MiddleBothHeight"] = Json::Value(pptComSetlist.middleBothHeight);
+	root["BottomMiddleWidth"] = Json::Value(pptComSetlist.bottomMiddleWidth);
+	root["BottomMiddleHeight"] = Json::Value(pptComSetlist.bottomMiddleHeight);
+
+	root["BottomSideBothWidgetScale"] = Json::Value(pptComSetlist.bottomSideBothWidgetScale);
+	root["BottomSideMiddleWidgetScale"] = Json::Value(pptComSetlist.bottomSideMiddleWidgetScale);
+	root["MiddleSideBothWidgetScale"] = Json::Value(pptComSetlist.middleSideBothWidgetScale);
+
+	Json::StreamWriterBuilder outjson;
+	outjson.settings_["emitUTF8"] = true;
+	std::unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
+	ofstream writejson;
+	writejson.imbue(locale("zh_CN.UTF8"));
+	writejson.open(WstringToString(StringToWstring(globalPath) + L"opt\\pptcom_configuration.json").c_str());
+	writer->write(root, &writejson);
+	writejson.close();
+
+	return true;
+}
 
 DdbSetListStruct ddbSetList;
 bool DdbReadSetting()
