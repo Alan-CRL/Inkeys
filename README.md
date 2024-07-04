@@ -14,7 +14,8 @@
 
 原名 `Intelligent-Drawing-Teaching`（简称 IDT）
 
-![封面](GithubRes/cover.png?raw=true)
+![](GithubRes/cover1.png?raw=true#gh-dark-mode-only)
+![](GithubRes/cover2.png?raw=true#gh-light-mode-only)
 
 </div>
 
