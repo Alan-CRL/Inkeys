@@ -42,7 +42,7 @@ int SettingMain();
 void FreezeFrameWindow();
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string editionDate = "20240703a";				//程序发布日期
+string editionDate = "20240704a";				//程序发布日期
 string editionChannel = "Dev";					//程序发布通道
 string editionCode = "24H2(BetaH3)";			//程序版本
 
@@ -56,7 +56,7 @@ shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
 int main()
-// int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
+//int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
 {
 	// 路径预处理
 	{
@@ -550,8 +550,7 @@ int main()
 		DisplaysNumberLock.unlock();
 
 		IDTLogger->info("[主线程][IdtMain] MagnifierThread函数线程启动");
-		thread MagnifierThread_thread(MagnifierThread);
-		MagnifierThread_thread.detach();
+		thread(MagnifierThread).detach();
 
 		if (DisplaysNumberTemp > 1) IDTLogger->warn("[主线程][IdtMain] 拥有多个监视器");
 

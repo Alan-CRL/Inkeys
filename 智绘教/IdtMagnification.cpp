@@ -40,6 +40,11 @@ void UpdateMagWindow()
 	}*/
 }
 
+LONG WINAPI MyUnhandledExceptionFilter(EXCEPTION_POINTERS* ExceptionInfo) {
+	std::cerr << "Unhandled exception occurred. Exception code: " << ExceptionInfo->ExceptionRecord->ExceptionCode << std::endl;
+	return EXCEPTION_EXECUTE_HANDLER;
+}
+
 LRESULT CALLBACK MagnifierHostWindowWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);
@@ -84,13 +89,27 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API主机窗口透明度完成");
 
 	IDTLogger->info("[放大API线程][SetupMagnifier] 创建放大API窗口");
+	Testi(1);
+
+	SetUnhandledExceptionFilter(MyUnhandledExceptionFilter);
+
+	cerr << hostWindowRect.left << endl;
+	cerr << hostWindowRect.top << endl;
+	cerr << hostWindowRect.right << endl;
+	cerr << hostWindowRect.bottom << endl;
+	cerr << (!hwndHost) << endl;
 	hwndMag = CreateWindow(WC_MAGNIFIER, TEXT("IdtScreenMagnifierMag"), WS_CHILD | MS_CLIPAROUNDCURSOR | WS_VISIBLE, hostWindowRect.left, hostWindowRect.top, hostWindowRect.right, hostWindowRect.bottom, hwndHost, NULL, hInst, NULL);
+
+	Testi(2);
+
 	if (!hwndMag)
 	{
 		IDTLogger->error("[放大API线程][SetupMagnifier] 创建放大API窗口失败" + to_string(GetLastError()));
 		return FALSE;
 	}
 	else IDTLogger->info("[放大API线程][SetupMagnifier] 创建放大API窗口完成");
+
+	Testi(3);
 
 	IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API窗口样式");
 	SetWindowLong(hwndHost, GWL_STYLE, GetWindowLong(hwndHost, GWL_STYLE) & ~WS_CAPTION); // 隐藏标题栏

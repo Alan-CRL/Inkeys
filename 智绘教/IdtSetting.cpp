@@ -1710,7 +1710,7 @@ int SettingMain()
 						}
 						{
 							ImGui::SetCursorPos({ 20.0f,ImGui::GetCursorPosY() + 5.0f });
-							ImGui::BeginChild(reinterpret_cast<const char*>(u8"PPT 演示联动控件缩放调整"), { 550.0f,160.0f }, true, ImGuiWindowFlags_NoScrollbar);
+							ImGui::BeginChild(reinterpret_cast<const char*>(u8"PPT 演示联动控件缩放调整"), { 550.0f,195.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
 							{
 								ImGui::SetCursorPosY(10.0f);
@@ -1760,7 +1760,7 @@ int SettingMain()
 
 								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								CenteredText(reinterpret_cast<const char*>(u8" 底栏两侧控件"), 4.0f);
+								CenteredText(reinterpret_cast<const char*>(u8" 底部两侧控件"), 4.0f);
 
 								Font->Scale = 0.82f, PushFontNum++, ImGui::PushFont(Font);
 								ImGui::PushItemWidth(300.0f);
@@ -1771,7 +1771,7 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(175 / 255.0f, 175 / 255.0f, 175 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(155 / 255.0f, 155 / 255.0f, 155 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								ImGui::SliderFloat(reinterpret_cast<const char*>(u8"##PPT 底栏两侧控件"), &BottomSideBothWidgetScale, 0.25f, 3.0f, reinterpret_cast<const char*>(u8"%.15f 倍缩放"));
+								ImGui::SliderFloat(reinterpret_cast<const char*>(u8"##PPT 底部两侧控件"), &BottomSideBothWidgetScale, 0.25f, 3.0f, reinterpret_cast<const char*>(u8"%.15f 倍缩放"));
 								ImGui::PopItemWidth();
 								if (pptComSetlist.bottomSideBothWidgetScale != BottomSideBothWidgetScale)
 								{
@@ -1784,9 +1784,101 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								if (ImGui::Button(reinterpret_cast<const char*>(u8"重置##PPT 底栏两侧控件"), { 60.0f,30.0f }))
+								if (ImGui::Button(reinterpret_cast<const char*>(u8"重置##PPT 底部两侧控件"), { 60.0f,30.0f }))
 								{
 									pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale = 1.0f;
+									PptComWriteSetting();
+								}
+								ImGui::PopStyleColor(PushStyleColorNum);
+							}
+							{
+								ImGui::SetCursorPosY(80.0f);
+
+								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								CenteredText(reinterpret_cast<const char*>(u8" 中部两侧控件"), 4.0f);
+
+								Font->Scale = 0.82f, PushFontNum++, ImGui::PushFont(Font);
+								ImGui::PushItemWidth(300.0f);
+								ImGui::SameLine(); ImGui::SetCursorPosX(550.0f - 70.0f - 305.0f);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(175 / 255.0f, 175 / 255.0f, 175 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(155 / 255.0f, 155 / 255.0f, 155 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								ImGui::SliderFloat(reinterpret_cast<const char*>(u8"##PPT 中部两侧控件"), &MiddleSideBothWidgetScale, 0.25f, 3.0f, reinterpret_cast<const char*>(u8"%.15f 倍缩放"));
+								ImGui::PopItemWidth();
+								if (pptComSetlist.middleSideBothWidgetScale != MiddleSideBothWidgetScale)
+								{
+									pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale;
+								}
+
+								Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
+								ImGui::SameLine(); ImGui::SetCursorPosX(550.0f - 70.0f);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								if (ImGui::Button(reinterpret_cast<const char*>(u8"重置##PPT 底部两侧控件"), { 60.0f,30.0f }))
+								{
+									pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale = 1.0f;
+									PptComWriteSetting();
+								}
+								ImGui::PopStyleColor(PushStyleColorNum);
+							}
+							{
+								ImGui::SetCursorPosY(115.0f);
+
+								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								CenteredText(reinterpret_cast<const char*>(u8" 底部主栏控件"), 4.0f);
+
+								Font->Scale = 0.82f, PushFontNum++, ImGui::PushFont(Font);
+								ImGui::PushItemWidth(300.0f);
+								ImGui::SameLine(); ImGui::SetCursorPosX(550.0f - 70.0f - 305.0f);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(175 / 255.0f, 175 / 255.0f, 175 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(155 / 255.0f, 155 / 255.0f, 155 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								ImGui::SliderFloat(reinterpret_cast<const char*>(u8"##PPT 底部主栏控件"), &BottomSideMiddleWidgetScale, 0.25f, 3.0f, reinterpret_cast<const char*>(u8"%.15f 倍缩放"));
+								ImGui::PopItemWidth();
+								if (pptComSetlist.bottomSideMiddleWidgetScale != BottomSideMiddleWidgetScale)
+								{
+									pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale;
+								}
+
+								Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
+								ImGui::SameLine(); ImGui::SetCursorPosX(550.0f - 70.0f);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								if (ImGui::Button(reinterpret_cast<const char*>(u8"重置##PPT 底部主栏控件"), { 60.0f,30.0f }))
+								{
+									pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = 1.0f;
+									PptComWriteSetting();
+								}
+								ImGui::PopStyleColor(PushStyleColorNum);
+							}
+
+							{
+								ImGui::SetCursorPosY(155.0f);
+								Font->Scale = 0.8f, PushFontNum++, ImGui::PushFont(Font);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(235 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								CenteredText(reinterpret_cast<const char*>(u8" 修改滑块后需要点击保存才能将配置保存本地"), 4.0f);
+
+								ImGui::SetCursorPosY(155.0f);
+								Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
+								ImGui::SetCursorPosX(550.0f - 70.0f);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								if (ImGui::Button(reinterpret_cast<const char*>(u8"保存##PPT 控件缩放总控"), { 60.0f,30.0f }))
+								{
 									PptComWriteSetting();
 								}
 								ImGui::PopStyleColor(PushStyleColorNum);
