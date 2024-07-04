@@ -1,6 +1,6 @@
 <div align="center">
 
-![LOGO](GithubRes/logo.png?raw=true)
+[![LOGO](GithubRes/logo.png?raw=true "LOGO")](# "LOGO")
 
 # 智绘教 Inkeys
 **简体中文 | [English]()**  
