@@ -1,102 +1,52 @@
-# Intelligent-Drawing-Teaching
-智绘教，适用于 Windows 的屏幕批注工具，高效批注和丰富功能，只为尽可能地提高课堂教学效率，适用于触摸屏设备和PC端。
+<div align="center">
 
-[CodeBus 上的智绘教介绍](https://codebus.cn/alancrl/intelligent-painting-teaching)  
+![LOGO](GithubRes/logo.png?raw=true)
 
-**官方Q群**：618720802  
-网盘下载分流：[123云盘免登录高速下载](https://www.123pan.com/s/duk9-n4dAd.html)  
+# 智绘教 Inkeys
+**简体中文 | [English]()**  
 
-## 项目介绍
-智绘教项目创立于 2023 年 2 月，由于班上一体机自带的画板程序并不好用，于是智绘教应运而生。智绘教通过长期教师的使用反馈，反复打磨，并高速发展。是一款运行于 Windows 平台的软件，无需安装即可使用。其使用 HiEasyX(EasyX 拓展库) 和 GDI+ 作为图形库，高质量抗锯齿与超低延迟，且支持多指绘制……
+[立即下载](https://www.123pan.com/s/duk9-n4dAd.html) | [发布版本](https://github.com/Alan-CRL/IDT/releases) | [常见问题]()
+  
+[![交流群](https://img.shields.io/badge/-%E4%BA%A4%E6%B5%81%E7%BE%A4%20618720802-blue?style=flat&logo=TencentQQ)](https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6)  ![GitHub issues](https://img.shields.io/github/issues/Alan-CRL/IDT?logo=github&color=green)  ![GitHub stars](https://img.shields.io/github/stars/Alan-CRL/IDT)
 
-![程序主界面展示](https://codebus.cn/f/a/0/0/677/1.png)  
-[程序主界面展示](https://codebus.cn/f/a/0/0/677/1.png)  
+适用于 Windows 的屏幕批注工具，高效批注和丰富功能，  
+只为尽可能地提高课堂教学效率，适用于触摸屏设备和PC端。 
 
-### 未来目标功能
-- 快捷键
-- 实时手抖修正（-> 模拟笔锋 -> 模拟压根 -> 笔触压根）
-- UI 3.0（包括全新操作逻辑，全新界面以及更多的自定义功能，界面缩放与自定义按键）
-- 全屏白、黑板
-- 激光笔
-- 自定皮肤模块
-- 插件模块（暂定计时器和随机点名）
-- “贴图镜”
-- 历史画板恢复
-- 图层
+原名 `Intelligent-Drawing-Teaching`（简称 IDT）
 
----
+![封面](GithubRes/cover.png?raw=true)
 
-除了书写等基础功能外，程序还包含许多特色功能。（动图如果加载失败，可以点击图片下方链接）  
+</div>
 
-![动态画板背景、窗口定格与穿透](https://codebus.cn/f/a/0/0/677/2.gif)  
-[动态画板背景、窗口定格与穿透](https://codebus.cn/f/a/0/0/677/2.gif)  
+## 集锦
+**[Bilibili 上的 24H2 版本发布视频](https://www.bilibili.com/video/BV1Tz421z72e/)**  
+[Bilibili 上的 24H1 版本发布视频（较旧）](https://www.bilibili.com/video/BV1vJ4m147rN/)  
+[Codebus 上的介绍推文（较旧）](https://codebus.cn/alancrl/intelligent-painting-teaching)  
 
-![智能绘图模块（智能直线绘制/直线吸附/矩形吸附/平滑笔迹/智能粗细橡皮擦）](https://codebus.cn/f/a/0/0/677/3.gif)  
-[智能绘图模块（智能直线绘制/直线吸附/矩形吸附/平滑笔迹/智能粗细橡皮擦）](https://codebus.cn/f/a/0/0/677/3.gif)  
+## 好消息 !!!
+智绘教 UI3 已经开始制作，这将是一个史诗级更新。  
+针对 大屏触摸环境 和 PC鼠标环境 等，推出多种 UI 样式。  
+让智绘教在各个设备上，都更易用，更好用！
 
-![炫彩全 RGBA 绘图，1-500 粗细调节](https://codebus.cn/f/a/0/0/677/4.gif)  
-[炫彩全 RGBA 绘图，1-500 粗细调节](https://codebus.cn/f/a/0/0/677/4.gif)  
+## 为什么要使用智绘教？
+正在编写中，敬请期待……
 
-![全新 UI 与可打断动画（0.3 倍速）](https://codebus.cn/f/a/0/0/677/5.gif)  
-[全新 UI 与可打断动画（0.3 倍速）](https://codebus.cn/f/a/0/0/677/5.gif)  
+## 下载
+[免登录云盘](https://www.123pan.com/s/duk9-n4dAd.html) | [Github Release](https://www.123pan.com/s/duk9-n4dAd.html)  
 
-![PPT 联动（翻页/笔迹保留）](https://codebus.cn/f/a/0/0/677/6.gif)  
-[PPT 联动（翻页/笔迹保留）](https://codebus.cn/f/a/0/0/677/6.gif)  
+#### 要求
+最低支持 Windows 7 Service Pack 1，支持 32 / 64 位系统。  
+对于 win7 用户，需要 `d3dcompiler_47.dll`，可以通过 KB2670838 更新获取或使用 DXR 修复工具。
 
-还有许多功能比如标准笔迹/荧光笔迹，撤回和历史画板恢复，画板绘制内容自动保存本地，PPT 插件/随机点名插件……
+#### 提示
+获取 公测版本 及 开发版本 请加 [官方用户QQ群](https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6) 下载。
 
-程序支持多指绘制以及模拟笔锋(均未完善)，可根据电脑环境自动选择 RTS 触控库 或 鼠标位置 作为绘制输入。
+## 展望
+`全新外观` `笔锋压感` `墨迹识别` `书写平滑` `丰富插件` ……  
+你能猜中哪一个会率先发布吗？
 
----
-
-智绘教，基于 C++ 开发打造的开源项目，其适用于 Windows7 及以上平台。
-
-## 使用方法
-
-点击悬浮窗图标展开主界面，再点击画笔即可开始书写。再次点击画笔即可展开画笔选项。点击图标则会收回悬浮窗。
-
-点击选择则消除笔迹且可操控桌面，点击橡皮即可擦除笔迹（不会破坏背景）。
-
-程序开始书写后，其背景就是你的电脑桌面（实时动态变化）。窗口定格：使背景静止。窗口穿透：保持笔迹展示，同时可以操控桌面。
-
-不小心消除笔迹？点击图标下方恢复即可恢复笔迹。不小心写错了？点击撤回即可撤回。
-
-## 下载体验
-
-网盘分流：[123云盘免登录高速下载](https://www.123pan.com/s/duk9-n4dAd.html)  
-转到 [GitHub](https://github.com/Alan-CRL/Intelligent-Drawing-Teaching/releases) 发布页面下载最新版本按照提示运行即可或可以联系作者获取。软件经过反复测试打磨，可以直接安装在班级一体机上使用。
-
-运行要求：Windows 7 及以上 + .NET framework 4.0 及以上 + dx11 及以上，支持 PC 与 触摸一体机 使用。  
-编译环境：VS2022 + MSVC143 + C++17 + EasyX20230723 + .NET framework 4.0 开发者工具包。  
-.NET 功能只用于 PPT联动，后续 PPT联动模块将考虑使用 C++ COM 接口替代 C# COM 接口
-
-## 技术分享
-
-查看我的开源代码或咨询本人，你可以了解并学习以下许多的难题的解决方案。
-
-- 了解学习使用 HiEasyX(EasyX 拓展库) 实现多窗口绘制与多窗口消息处理。
-- 了解学习 UI 动画的运作方式，以及打断动画的实现。
-- 了解学习使用 GDI+/D2D(未完善) 实现抗锯齿绘图并根据书写速度模拟笔锋、以及显卡加速运用。
-- 了解学习使用 RTS 触控库，并支持多指绘制。
-- 了解学习使用窗口样式，实现窗口穿透。使用 MagnificationAPI 实现穿透窗口截图，并运用于窗口定格。
-- 了解学习如何将程序所需的图片字体资源等，都打包到程序资源中，使程序可以单文件运行。
-- 了解学习使用 JsonCpp、ZipUtils、ICU、相关 API 实现软件自动更新以及崩溃反馈/JSON 文件读取/ZIP 文件解压/用正确编码读取文件。
-- 了解学习使用 RegOpenKeyEx 调整注册表，实现开机自动启动。
-- 了解学习我自制的直线拟合函数，运用数学知识判断该模拟是否符合直线特征。
-- 了解学习在 C++ 中通过免注册 COM 组件调用 C# 类库，并获取 PPT 放映状态。
-- 了解学习如何扫描窗口类名和获取大小，并实现识别其他窗口。
-- 了解学习使用 StbImage 将 IMAGE 图像无损地保存到本地 png 中（带有透明通道）。
-- 了解学习字符转换并使用 ICU 和相关 API 实现 utf8、utf16/unicode、gbk、urlencode 的互相转换。
-- 了解学习 STL 线程锁的实现，完成多线程下的读锁与写锁。
-
-……
-
-还许多功能和内容我就不一一阐述了。有疑问欢迎联系我~ QQ2685549821
-
-## 项目引用
-[HiEasyX](https://github.com/zouhuidong/HiEasyX)  
-[JsonCPP](https://github.com/open-source-parsers/jsoncpp)  
-[Stb_image](https://github.com/nothings/stb)  
-[Hashlib++](https://github.com/aksalj/hashlibpp)  
-[Zip Utils](https://www.codeproject.com/Articles/7530/Zip-Utils-Clean-Elegant-Simple-Cplusplus-Win)  
-[Imgui](https://github.com/ocornut/imgui)  
+## 反馈
+问题报告与功能建议：[点击此处](https://www.wjx.cn/vm/mqNTTRL.aspx#)  
+[官方用户QQ群](https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6)：`618720802`  
+作者QQ：`2685549821`  
+作者邮箱：`alan-crl@foxmail.com`
