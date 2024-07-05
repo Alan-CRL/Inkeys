@@ -42,7 +42,7 @@ int SettingMain();
 void FreezeFrameWindow();
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string editionDate = "20240704a";				//程序发布日期
+string editionDate = "20240705b";				//程序发布日期
 string editionChannel = "Dev";					//程序发布通道
 string editionCode = "24H2(BetaH3)";			//程序版本
 
@@ -217,7 +217,7 @@ int main()
 		IDTLogger->set_pattern("[%l][%H:%M:%S.%e]%v");
 
 		IDTLogger->flush_on(spdlog::level::info);
-		IDTLogger->info("[主线程][IdtMain] 日志开始记录 " + WstringToString(userId));
+		IDTLogger->info("[主线程][IdtMain] 日志开始记录 " + editionDate + " " + WstringToString(userId));
 
 		//logger->info("");
 		//logger->warn("");
