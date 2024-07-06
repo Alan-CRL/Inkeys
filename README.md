@@ -5,7 +5,7 @@
 # 智绘教 Inkeys
 **简体中文 | [English]()**  
 
-[立即下载](https://www.123pan.com/s/duk9-n4dAd.html) | [发布版本](https://github.com/Alan-CRL/IDT/releases) | [常见问题]()
+[立即下载](https://www.123pan.com/s/duk9-n4dAd.html) | [官方网站](www.inkeys.top) | [常见问题]()
   
 [![交流群](https://img.shields.io/badge/-%E4%BA%A4%E6%B5%81%E7%BE%A4%20618720802-blue?style=flat&logo=TencentQQ)](https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6)  ![GitHub issues](https://img.shields.io/github/issues/Alan-CRL/IDT?logo=github&color=green)  ![GitHub stars](https://img.shields.io/github/stars/Alan-CRL/IDT)
 
