@@ -60,32 +60,6 @@ ATOM RegisterHostWindowClass(HINSTANCE hInstance)
 }
 BOOL SetupMagnifier(HINSTANCE hinst)
 {
-	// Set bounds of host window according to screen size.
-	hostWindowRect.top = 0;
-	hostWindowRect.bottom = GetSystemMetrics(SM_CYSCREEN) / 2;  // top quarter of screen
-	hostWindowRect.left = 0;
-	hostWindowRect.right = GetSystemMetrics(SM_CXSCREEN) / 2;
-
-	// Create the host window.
-	RegisterHostWindowClass(hinst);
-	hwndHost = CreateWindowEx(WS_EX_TOPMOST | WS_EX_LAYERED,
-		TEXT("IdtMagnifierWindowHost"), L"IdtScreenMagnifierHost",
-		WS_SIZEBOX | WS_SYSMENU | WS_CLIPCHILDREN | WS_CAPTION | WS_MAXIMIZEBOX,
-		200, 200, hostWindowRect.right, hostWindowRect.bottom, NULL, NULL, hInst, NULL);
-	if (!hwndHost) Testi(1);
-
-	// Make the window opaque.
-	SetLayeredWindowAttributes(hwndHost, 0, 255, LWA_ALPHA);
-
-	// Create a magnifier control that fills the client area.
-	hwndMag = CreateWindow(WC_MAGNIFIER, TEXT("IdtScreenMagnifierMag"),
-		WS_CHILD | MS_SHOWMAGNIFIEDCURSOR | WS_VISIBLE,
-		hostWindowRect.left, hostWindowRect.top, hostWindowRect.right, hostWindowRect.bottom, hwndHost, NULL, hInst, NULL);
-	if (!hwndMag) Testi(2);
-
-	// 以上为初始化实验部分
-	Testi(123);
-
 	hostWindowRect.left = 0;
 	hostWindowRect.top = 0;
 	hostWindowRect.right = GetSystemMetrics(SM_CXSCREEN);
@@ -97,7 +71,9 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 	IDTLogger->info("[放大API线程][SetupMagnifier] 注册放大API主机窗口完成");
 
 	IDTLogger->info("[放大API线程][SetupMagnifier] 创建放大API主机窗口");
-	hwndHost = CreateWindowEx(WS_EX_TOPMOST | WS_EX_LAYERED, TEXT("IdtMagnifierWindowHost"), TEXT("IdtScreenMagnifierHost"), WS_SIZEBOX | WS_SYSMENU | WS_CLIPCHILDREN | WS_CAPTION | WS_MAXIMIZEBOX, 0, 0, hostWindowRect.right, hostWindowRect.bottom, NULL, NULL, hInst, NULL);
+	hwndHost = CreateWindowEx(WS_EX_TOPMOST | WS_EX_LAYERED, TEXT("IdtMagnifierWindowHost"), TEXT("IdtScreenMagnifierHost"),
+		WS_SIZEBOX | WS_SYSMENU | WS_CLIPCHILDREN | WS_CAPTION | WS_MAXIMIZEBOX,
+		0, 0, hostWindowRect.right, hostWindowRect.bottom, NULL, NULL, hInst, NULL);
 	if (!hwndHost)
 	{
 		IDTLogger->error("[放大API线程][SetupMagnifier] 创建放大API主机窗口失败" + to_string(GetLastError()));

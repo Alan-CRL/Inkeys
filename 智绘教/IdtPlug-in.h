@@ -217,6 +217,14 @@ extern wstring pptComVersion;
 // -------------------------
 // Ppt ״̬
 
+enum PptUiStateEnum
+{
+	Expand,
+	Close,
+	Hide,
+	EndShowQ
+};
+
 void NextPptSlides(int check);
 void PreviousPptSlides();
 bool EndPptShow();
