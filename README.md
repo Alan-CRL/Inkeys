@@ -1,19 +1,18 @@
 <div align="center">
 
-新版 Readme 尚未完善 访问[旧版 Readme 页面](https://github.com/Alan-CRL/IDT/blob/1d63b4ba18e01f7ac45abb0e470d2748380b4407/README.md)
-  
-  
+新版 Readme 尚未完善 访问[旧版 Readme 页面](https://github.com/Alan-CRL/IDT/blob/1d63b4ba18e01f7ac45abb0e470d2748380b4407/README.md)  
+
 [![LOGO](GithubRes/logo.png?raw=true "LOGO")](# "LOGO")
 
-# 智绘教 Inkeys
-**简体中文 | [English]()**  
+# 智绘教Inkeys
+**简体中文** | [English](README_EN.md)  
 
 [官网下载](https://www.inkeys.top/col.jsp?id=106) | **[官方网站](https://www.inkeys.top)** | 常见问题
 
 [![交流群](https://img.shields.io/badge/-%E4%BA%A4%E6%B5%81%E7%BE%A4%20618720802-blue?style=flat&logo=TencentQQ)](https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6)  ![GitHub issues](https://img.shields.io/github/issues/Alan-CRL/IDT?logo=github&color=green)  ![GitHub stars](https://img.shields.io/github/stars/Alan-CRL/IDT)
 
-适用于 Windows 的屏幕批注工具，高效批注和丰富功能，  
-只为尽可能地提高课堂教学效率，适用于触摸屏设备和PC端。 
+Windows 屏幕批注工具，拥有高效批注和丰富功能，  
+让屏幕演示变得简单，让教学授课变得高效，适用于触摸设备和PC端。
 
 原名 `Intelligent-Drawing-Teaching`（简称 IDT）
 
@@ -56,16 +55,16 @@
 作者邮箱：`alan-crl@foxmail.com`
 
 ---
----
----
 
 ## 编译说明
 
 ### 编译环境
-- VS2022（MSVC143 C++20）
-> 需要 C++ 和 C# 桌面开发环境
-- EasyX（EasyX_2023大暑版）
-- .NET Framework 4.0（或更高版本，最低支持 3.5）
+- Visual Studio 2022 (MSVC v143 编译器)
+> 勾选 `.NET 桌面开发` `使用 C++ 的桌面开发` `Windows 应用程序开发` 等工作负荷
+- C++ 20
+- Windows 11 SDK 10.26100
+- [EasyX](https://easyx.cn/download/EasyX_2023%E5%A4%A7%E6%9A%91%E7%89%88.exe) (EasyX_2023大暑版)
+- .NET Framework 4.0 SDK
 
 ### 分支说明
 - `main`：主仓库，存储近期较为稳定的可构建的程序源码
@@ -74,9 +73,10 @@
 ### 编译步骤
 智绘教采用完全开源方式，所有源码和资源全部开源  
 1. 下载 `main` 仓库  
-2. 使用 `VS2022` 打开 `智绘教.sln`  
-3. 切换为 `Release | Win32` 构建配置
-4. 点击构建即可生成程序
+2. 使用 Visual Studio 2022 打开 `智绘教.sln`  
+3. 选择 `智绘教` 项目
+4. 切换为 `Release | Win32` 构建配置
+5. 点击构建即可生成程序
 
 ## 项目引用
 [Dear Imgui](https://github.com/ocornut/imgui)  
