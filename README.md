@@ -1,12 +1,15 @@
 <div align="center">
 
+新版 Readme 尚未完善 访问[旧版 Readme 页面](https://github.com/Alan-CRL/IDT/blob/1d63b4ba18e01f7ac45abb0e470d2748380b4407/README.md)
+  
+  
 [![LOGO](GithubRes/logo.png?raw=true "LOGO")](# "LOGO")
 
 # 智绘教 Inkeys
 **简体中文 | [English]()**  
 
-[立即下载](https://www.123pan.com/s/duk9-n4dAd.html) | [官方网站](http://www.inkeys.top) | [常见问题]()
-  
+[官网下载](https://www.inkeys.top/col.jsp?id=106) | **[官方网站](https://www.inkeys.top)** | 常见问题
+
 [![交流群](https://img.shields.io/badge/-%E4%BA%A4%E6%B5%81%E7%BE%A4%20618720802-blue?style=flat&logo=TencentQQ)](https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6)  ![GitHub issues](https://img.shields.io/github/issues/Alan-CRL/IDT?logo=github&color=green)  ![GitHub stars](https://img.shields.io/github/stars/Alan-CRL/IDT)
 
 适用于 Windows 的屏幕批注工具，高效批注和丰富功能，  
@@ -20,8 +23,8 @@
 </div>
 
 ## 集锦
-**[Bilibili 上的 24H2 版本发布视频](https://www.bilibili.com/video/BV1Tz421z72e/)**  
-[Bilibili 上的 24H1 版本发布视频（较旧）](https://www.bilibili.com/video/BV1vJ4m147rN/)  
+**[Bilibili 上的 24H2 版本介绍视频](https://www.bilibili.com/video/BV1Tz421z72e/)**  
+[Bilibili 上的 24H1 版本介绍视频（较旧）](https://www.bilibili.com/video/BV1vJ4m147rN/)  
 [Codebus 上的介绍推文（较旧）](https://codebus.cn/alancrl/intelligent-painting-teaching)  
 
 ## 好消息 !!!
@@ -33,7 +36,7 @@
 正在编写中，敬请期待……
 
 ## 下载
-[免登录云盘](https://www.123pan.com/s/duk9-n4dAd.html) | [Github Release](https://www.123pan.com/s/duk9-n4dAd.html)  
+[官网下载页](https://www.inkeys.top/col.jsp?id=106) | [免登录云盘](https://www.123pan.com/s/duk9-n4dAd.html) | [Github Release 附件](https://github.com/Alan-CRL/IDT/releases)  
 
 #### 要求
 最低支持 Windows 7 Service Pack 1，支持 32 / 64 位系统。  
@@ -51,3 +54,36 @@
 [官方用户QQ群](https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6)：`618720802`  
 作者QQ：`2685549821`  
 作者邮箱：`alan-crl@foxmail.com`
+
+---
+---
+---
+
+## 编译说明
+
+### 编译环境
+- VS2022（MSVC143 C++20）
+> 需要 C++ 和 C# 桌面开发环境
+- EasyX（EasyX_2023大暑版）
+- .NET Framework 4.0（或更高版本，最低支持 3.5）
+
+### 分支说明
+- `main`：主仓库，存储近期较为稳定的可构建的程序源码
+- `dev`：分支仓库，每日及时更新，存储自动保存的源码，可能无法构建
+
+### 编译步骤
+智绘教采用完全开源方式，所有源码和资源全部开源  
+1. 下载 `main` 仓库  
+2. 使用 `VS2022` 打开 `智绘教.sln`  
+3. 切换为 `Release | Win32` 构建配置
+4. 点击构建即可生成程序
+
+## 项目引用
+[Dear Imgui](https://github.com/ocornut/imgui)  
+[DesktopDrawpadBlocker](https://github.com/Alan-CRL/DesktopDrawpadBlocker)  
+[Hashlib++](https://github.com/aksalj/hashlibpp)  
+[HiEasyX](https://github.com/zouhuidong/HiEasyX)  
+[JsonCpp](https://github.com/open-source-parsers/jsoncpp)  
+[Stb](https://github.com/nothings/stb)  
+[WinToast](https://github.com/mohabouje/WinToast)  
+[Zip Utils](https://www.codeproject.com/Articles/7530/Zip-Utils-Clean-Elegant-Simple-Cplusplus-Win)  

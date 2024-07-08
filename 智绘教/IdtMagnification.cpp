@@ -11,7 +11,6 @@
 // IDT 定格功能的完整体验需要 Windows 8.1
 
 HWND hwndHost, hwndMag;
-HINSTANCE hInst;
 IMAGE MagnificationBackground;
 
 bool magnificationReady;
@@ -73,7 +72,7 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 	IDTLogger->info("[放大API线程][SetupMagnifier] 创建放大API主机窗口");
 	hwndHost = CreateWindowEx(WS_EX_TOPMOST | WS_EX_LAYERED, TEXT("IdtMagnifierWindowHost"), TEXT("IdtScreenMagnifierHost"),
 		WS_SIZEBOX | WS_SYSMENU | WS_CLIPCHILDREN | WS_CAPTION | WS_MAXIMIZEBOX,
-		0, 0, hostWindowRect.right, hostWindowRect.bottom, NULL, NULL, hInst, NULL);
+		0, 0, hostWindowRect.right, hostWindowRect.bottom, NULL, NULL, hinst, NULL);
 	if (!hwndHost)
 	{
 		IDTLogger->error("[放大API线程][SetupMagnifier] 创建放大API主机窗口失败" + to_string(GetLastError()));
@@ -88,7 +87,7 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 	IDTLogger->info("[放大API线程][SetupMagnifier] 创建放大API窗口");
 	hwndMag = CreateWindow(WC_MAGNIFIER, TEXT("IdtScreenMagnifierMag"),
 		WS_CHILD | MS_CLIPAROUNDCURSOR | WS_VISIBLE,
-		hostWindowRect.left, hostWindowRect.top, hostWindowRect.right, hostWindowRect.bottom, hwndHost, NULL, hInst, NULL);
+		hostWindowRect.left, hostWindowRect.top, hostWindowRect.right, hostWindowRect.bottom, hwndHost, NULL, hinst, NULL);
 	if (!hwndMag)
 	{
 		IDTLogger->error("[放大API线程][SetupMagnifier] 创建放大API窗口失败" + to_string(GetLastError()));

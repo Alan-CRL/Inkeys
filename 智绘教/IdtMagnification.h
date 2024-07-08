@@ -5,7 +5,6 @@
 #pragma comment(lib, "magnification.lib")
 
 extern IMAGE MagnificationBackground;
-extern HINSTANCE hInst;
 extern HWND hwndHost, hwndMag;
 
 extern bool magnificationReady;
