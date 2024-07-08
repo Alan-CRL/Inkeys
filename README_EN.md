@@ -54,9 +54,9 @@ Author QQ: `2685549821`
 
 ---
 
-## 编译说明
+## Compile Instructions
 
-### 编译环境
+### Compile Preparation
 - Visual Studio 2022 (MSVC v143 Compiler)
 > Check `.NET Desktop Development` `C++ Desktop Development` `Windows Application Development` Workload.
 - C++ 20
