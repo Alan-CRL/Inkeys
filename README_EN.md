@@ -45,7 +45,7 @@ The minimum support is `Windows 7 Service Pack 1` and supports `32/64 bit` windo
 For Windows 7 users, `d3dcompiler_47.dll` is required, which can be obtained through `KB2670838` update.  
 
 ## Future Features
-`New style` `Pen tip and pressure sensitivity` `Ink Recognition` `Smooth writing ink` `Various plugins` and so on.  
+`New style` `Pen tip and pressure sensitivity` `Ink recognition` `Smooth writing ink` `Various plugins` and so on.  
 Can you guess which one will be released first?  
 
 ## Feedback

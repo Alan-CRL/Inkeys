@@ -217,13 +217,18 @@ extern wstring pptComVersion;
 // -------------------------
 // Ppt ×´Ì¬
 
-enum PptUiStateEnum
+enum PptUiWidgetStateEnum
 {
-	Expand,
+	Unknow,
 	Close,
+	Expand,
 	Hide,
 	EndShowQ
 };
+extern PptUiWidgetStateEnum pptUiWidgetState;
+
+// -------------------------
+// Ppt Ö÷Ïî
 
 void NextPptSlides(int check);
 void PreviousPptSlides();
