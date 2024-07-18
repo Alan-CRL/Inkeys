@@ -1,0 +1,56 @@
+{
+	"Language" : "en-US",
+	"MainColumn" : 
+	{
+		"Centre" : 
+		{
+			"Select" : "Select",
+			"SelectClean" : "Select(Del)",
+			"Pen" : "Pen",
+			"Eraser" : "Eraser",
+			"Options" : "Options"
+		}
+	},
+	"Settings" :
+	{
+		"Settings" : "Inkeys Options",
+		
+		"Operate" :
+		{
+			"Query" : "Query",
+			"Save" : "Save"
+		},
+		
+		"Home" :
+		{
+			"Home" : "Home",
+			"Prompt" : "Recommend using 1080P resolution, higher than 1080P may affect the experience.\nThe adaptation of high-resolution screens will be developed with UI3 later.",
+			"Feedback": "Provide feedback\nQQ: 2685549821\nEmail: alan-crl@foxmail.com",
+			"Thanks": "Thank you for your support of Inkeys~",
+			"Button1" : "Reward us\n(customized features)",
+			"Button2" : "智绘教Inkeys\nCommunity Card",
+			"Button3" : "Github Repository",
+			"Button4" : "Official Website",
+			"Language" : "Language"
+		},
+		"Regular" :
+		{
+			"Regular" : "Regular"
+		},
+		
+		"Update" :
+		{
+			"Tip0" : "Program automatic update not started.",
+			"Tip1" : "Program automatic update is loading.",
+			"Tip2" : "Program automatic update network connection error.",
+			"Tip3" : "Failed to download the latest version information.",
+			"Tip4" : "The latest version information downloaded does not comply with the specifications.",
+			"Tip5" : "The latest version information downloaded does not include the selected channel.",
+			"Tip6" : "The new version is currently being downloaded at lightning speed.",
+			"Tip7" : "Failed to download the latest version of the program.",
+			"Tip8" : "The latest version of the downloaded program is damaged.",
+			"Tip9" : "Restart and update to the latest version.",
+			"Tip10" : "The program is already the latest version."
+		}
+	}
+}

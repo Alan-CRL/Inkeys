@@ -1,0 +1,56 @@
+{
+	"Language" : "zh-CN",
+	"MainColumn" : 
+	{
+		"Centre" : 
+		{
+			"Select" : "选择",
+			"SelectClean" : "选择(清空)",
+			"Pen" : "画笔",
+			"Eraser" : "橡皮",
+			"Options" : "选项"
+		}
+	},
+	"Settings" :
+	{
+		"Settings" : "智绘教Inkeys 选项",
+		
+		"Operate" :
+		{
+			"Query" : "查询",
+			"Save" : "保存"
+		},
+		
+		"Home" :
+		{
+			"Home" : "主页",
+			"Prompt" : "推荐使用 1080P 分辨率，高于此分辨率可能会引发问题并影响体验\n高分辨率屏幕的适配将与 UI3 在稍后同步进行开发",
+			"Feedback" : "软件作者联系方式\nQQ: 2685549821\nEmail: alan-crl@foxmail.com",
+			"Thanks" : "官方Q群：618720802\n感谢各位一直以来对智绘教的支持~",
+			"Button1" : "打赏赞助\n(含功能定制)",
+			"Button2" : "智绘教Inkeys\n社区名片",
+			"Button3" : "Github 开源仓库",
+			"Button4" : "官方网站",
+			"Language" : "语言(Language)"
+		},
+		"Regular" :
+		{
+			"Regular" : "常规"
+		},
+		
+		"Update" :
+		{
+			"Tip0" : "程序自动更新未启动",
+			"Tip1" : "程序自动更新载入中",
+			"Tip2" : "程序自动更新网络连接错误",
+			"Tip3" : "程序自动更新下载最新版本信息时失败",
+			"Tip4" : "程序自动更新下载的最新版本信息不符合规范",
+			"Tip5" : "程序自动更新下载的最新版本信息中不包含所选的通道",
+			"Tip6" : "新版本正极速下载中",
+			"Tip7" : "程序自动更新下载最新版本程序失败",
+			"Tip8" : "程序自动更新下载的最新版本程序损坏",
+			"Tip9" : "重启更新到最新版本",
+			"Tip10" : "程序已经是最新版本"
+		}
+	}
+}

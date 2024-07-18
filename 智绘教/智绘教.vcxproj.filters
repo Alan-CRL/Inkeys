@@ -372,6 +372,9 @@
     <ClInclude Include="IdtState.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="IdtI18n.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HiEasyX\HiGUI\Button.cpp">
@@ -638,12 +641,12 @@
     <ClCompile Include="IdtState.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="IdtI18n.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="智绘教.rc">
-      <Filter>资源文件</Filter>
-    </ResourceCompile>
-    <ResourceCompile Include="src\icon.rc">
       <Filter>资源文件</Filter>
     </ResourceCompile>
   </ItemGroup>
@@ -789,6 +792,18 @@
     <Image Include="src\ppt\arrow_up.png">
       <Filter>资源文件</Filter>
     </Image>
+    <Image Include="src\i18n\Home1_en-US.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\i18n\Home2_en-US.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\i18n\Home1_zh-CN.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\i18n\Home2_zh-CN.png">
+      <Filter>资源文件</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />
@@ -800,6 +815,8 @@
     <None Include="PptCOM.dll" />
     <None Include="exe\智绘教StartupItemSettings.exe" />
     <None Include="exe\DesktopDrawpadBlocker.exe" />
+    <None Include="src\i18n\zh-CN.json" />
+    <None Include="src\i18n\en-US.json" />
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="..\PptCOM\PptCOM.manifest" />
