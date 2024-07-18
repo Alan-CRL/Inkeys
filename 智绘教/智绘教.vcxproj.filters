@@ -1,0 +1,807 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="头文件\HiEasyX">
+      <UniqueIdentifier>{2e03b9bb-420e-4299-9bab-cb6b8e174341}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\HiEasyX\HiGUI">
+      <UniqueIdentifier>{be31b9e3-af03-4091-8eef-748b8802b7be}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\HiEasyX\HiSysGUI">
+      <UniqueIdentifier>{594605a8-07f6-4f1f-99d6-9121281e72a3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\JsonCpp">
+      <UniqueIdentifier>{07bbf3c5-e35e-43a7-9257-11bf810d59c8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\HashLib++">
+      <UniqueIdentifier>{a244e36f-a9f3-45d7-a362-8546c599fd7a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\StbImage">
+      <UniqueIdentifier>{61b69328-eb34-40b2-8718-b53e6a4a43b2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\ZipUtils">
+      <UniqueIdentifier>{6f1cc623-127b-4008-9ee6-ca06885aa322}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\ImGui">
+      <UniqueIdentifier>{57f1632a-a797-465d-9724-186df01a45a6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\wintoastlib">
+      <UniqueIdentifier>{06db5fb6-cb32-4573-b596-f3a300f178f5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\ink_stroke_modeler">
+      <UniqueIdentifier>{2f7350d8-3da3-4758-a8ba-49ffc01213c4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\ink_stroke_modeler\internal">
+      <UniqueIdentifier>{75497968-b337-40ce-a5fe-2a27ba4b9f0a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\ink_stroke_modeler\internal\prediction">
+      <UniqueIdentifier>{ecccb94a-b410-422c-ae0d-32cfe4e602df}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\ink_stroke_modeler\internal\prediction\kalman_filter">
+      <UniqueIdentifier>{0860afbf-b1c6-414d-9c5b-ae34ef2e8502}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="HiEasyX.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiGUI\Button.h">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiGUI\ControlBase.h">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiGUI\HiGUI.h">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiGUI\Page.h">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiGUI\ProgressCtrl.h">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiGUI\ScrollBar.h">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiGUI\Static.h">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiSysGUI\HiSysGUI.h">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiSysGUI\SysButton.h">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiSysGUI\SysCheckBox.h">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiSysGUI\SysComboBox.h">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiSysGUI\SysControlBase.h">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiSysGUI\SysEdit.h">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiSysGUI\SysGroup.h">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiSysGUI\SysGroupBox.h">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiSysGUI\SysRadioButton.h">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiSysGUI\SysStatic.h">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiCanvas.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiContainer.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiDef.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiDrawingProperty.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiFPS.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiFunc.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiGdiplus.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiGif.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiIcon.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiMacro.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiMouseDrag.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiMusicMCI.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiStart.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="HiEasyX\HiWindow.h">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClInclude>
+    <ClInclude Include="stb_image\stb-master\stb_image.h">
+      <Filter>头文件\StbImage</Filter>
+    </ClInclude>
+    <ClInclude Include="stb_image\stb-master\stb_image_resize.h">
+      <Filter>头文件\StbImage</Filter>
+    </ClInclude>
+    <ClInclude Include="stb_image\stb-master\stb_image_write.h">
+      <Filter>头文件\StbImage</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hashlibpp.h">
+      <Filter>头文件\HashLib++</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_exception.h">
+      <Filter>头文件\HashLib++</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_hashwrapper.h">
+      <Filter>头文件\HashLib++</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_md5.h">
+      <Filter>头文件\HashLib++</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_md5wrapper.h">
+      <Filter>头文件\HashLib++</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_sha1.h">
+      <Filter>头文件\HashLib++</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_sha1wrapper.h">
+      <Filter>头文件\HashLib++</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_sha2ext.h">
+      <Filter>头文件\HashLib++</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_sha2mac.h">
+      <Filter>头文件\HashLib++</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_sha256.h">
+      <Filter>头文件\HashLib++</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_sha256wrapper.h">
+      <Filter>头文件\HashLib++</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_sha384wrapper.h">
+      <Filter>头文件\HashLib++</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_sha512wrapper.h">
+      <Filter>头文件\HashLib++</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_types.h">
+      <Filter>头文件\HashLib++</Filter>
+    </ClInclude>
+    <ClInclude Include="hashlib2plus\hl_wrapperfactory.h">
+      <Filter>头文件\HashLib++</Filter>
+    </ClInclude>
+    <ClInclude Include="zip_utils\unzip.h">
+      <Filter>头文件\ZipUtils</Filter>
+    </ClInclude>
+    <ClInclude Include="zip_utils\zip.h">
+      <Filter>头文件\ZipUtils</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtMain.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtRts.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtImage.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtText.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtWindow.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtMagnification.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtTime.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtPlug-in.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtOther.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtUpdate.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtFloating.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtDrawpad.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtHistoricalDrawpad.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtFreezeFrame.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtDisplayManagement.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtSetting.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="imgui\imconfig.h">
+      <Filter>头文件\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="imgui\imgui.h">
+      <Filter>头文件\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="imgui\imgui_impl_dx11.h">
+      <Filter>头文件\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="imgui\imgui_impl_win32.h">
+      <Filter>头文件\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="imgui\imgui_internal.h">
+      <Filter>头文件\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="imgui\imstb_rectpack.h">
+      <Filter>头文件\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="imgui\imstb_textedit.h">
+      <Filter>头文件\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="imgui\imstb_truetype.h">
+      <Filter>头文件\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="imgui\imgui_offset_rect.h">
+      <Filter>头文件\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="imgui\imgui_toggle.h">
+      <Filter>头文件\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="imgui\imgui_toggle_math.h">
+      <Filter>头文件\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="imgui\imgui_toggle_palette.h">
+      <Filter>头文件\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="imgui\imgui_toggle_presets.h">
+      <Filter>头文件\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="imgui\imgui_toggle_renderer.h">
+      <Filter>头文件\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtConfiguration.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtSysNotifications.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="wintoastlib\wintoastlib.h">
+      <Filter>头文件\wintoastlib</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtGuid.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\axis_predictor.h">
+      <Filter>头文件\ink_stroke_modeler\internal\prediction\kalman_filter</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\kalman_filter.h">
+      <Filter>头文件\ink_stroke_modeler\internal\prediction\kalman_filter</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\matrix.h">
+      <Filter>头文件\ink_stroke_modeler\internal\prediction\kalman_filter</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\input_predictor.h">
+      <Filter>头文件\ink_stroke_modeler\internal\prediction</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_predictor.h">
+      <Filter>头文件\ink_stroke_modeler\internal\prediction</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\stroke_end_predictor.h">
+      <Filter>头文件\ink_stroke_modeler\internal\prediction</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\internal_types.h">
+      <Filter>头文件\ink_stroke_modeler\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\position_modeler.h">
+      <Filter>头文件\ink_stroke_modeler\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\stylus_state_modeler.h">
+      <Filter>头文件\ink_stroke_modeler\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\utils.h">
+      <Filter>头文件\ink_stroke_modeler\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\validation.h">
+      <Filter>头文件\ink_stroke_modeler\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\wobble_smoother.h">
+      <Filter>头文件\ink_stroke_modeler\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\numbers.h">
+      <Filter>头文件\ink_stroke_modeler</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\params.h">
+      <Filter>头文件\ink_stroke_modeler</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\stroke_modeler.h">
+      <Filter>头文件\ink_stroke_modeler</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\types.h">
+      <Filter>头文件\ink_stroke_modeler</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtD2DPreparation.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtHash.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtState.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="HiEasyX\HiGUI\Button.cpp">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiGUI\ControlBase.cpp">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiGUI\Page.cpp">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiGUI\ProgressCtrl.cpp">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiGUI\ScrollBar.cpp">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiGUI\Static.cpp">
+      <Filter>头文件\HiEasyX\HiGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiSysGUI\SysButton.cpp">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiSysGUI\SysCheckBox.cpp">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiSysGUI\SysComboBox.cpp">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiSysGUI\SysControlBase.cpp">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiSysGUI\SysEdit.cpp">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiSysGUI\SysGroup.cpp">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiSysGUI\SysGroupBox.cpp">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiSysGUI\SysRadioButton.cpp">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiSysGUI\SysStatic.cpp">
+      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiCanvas.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiContainer.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiDrawingProperty.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiFPS.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiFunc.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiGdiplus.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiGif.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiIcon.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiMouseDrag.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiMusicMCI.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiStart.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="HiEasyX\HiWindow.cpp">
+      <Filter>头文件\HiEasyX</Filter>
+    </ClCompile>
+    <ClCompile Include="json\lib_json\json_reader.cpp">
+      <Filter>头文件\JsonCpp</Filter>
+    </ClCompile>
+    <ClCompile Include="json\lib_json\json_value.cpp">
+      <Filter>头文件\JsonCpp</Filter>
+    </ClCompile>
+    <ClCompile Include="json\lib_json\json_writer.cpp">
+      <Filter>头文件\JsonCpp</Filter>
+    </ClCompile>
+    <ClCompile Include="hashlib2plus\hl_md5.cpp">
+      <Filter>头文件\HashLib++</Filter>
+    </ClCompile>
+    <ClCompile Include="hashlib2plus\hl_md5wrapper.cpp">
+      <Filter>头文件\HashLib++</Filter>
+    </ClCompile>
+    <ClCompile Include="hashlib2plus\hl_sha1.cpp">
+      <Filter>头文件\HashLib++</Filter>
+    </ClCompile>
+    <ClCompile Include="hashlib2plus\hl_sha1wrapper.cpp">
+      <Filter>头文件\HashLib++</Filter>
+    </ClCompile>
+    <ClCompile Include="hashlib2plus\hl_sha2ext.cpp">
+      <Filter>头文件\HashLib++</Filter>
+    </ClCompile>
+    <ClCompile Include="hashlib2plus\hl_sha256.cpp">
+      <Filter>头文件\HashLib++</Filter>
+    </ClCompile>
+    <ClCompile Include="hashlib2plus\hl_sha256wrapper.cpp">
+      <Filter>头文件\HashLib++</Filter>
+    </ClCompile>
+    <ClCompile Include="hashlib2plus\hl_sha384wrapper.cpp">
+      <Filter>头文件\HashLib++</Filter>
+    </ClCompile>
+    <ClCompile Include="hashlib2plus\hl_sha512wrapper.cpp">
+      <Filter>头文件\HashLib++</Filter>
+    </ClCompile>
+    <ClCompile Include="hashlib2plus\hl_wrapperfactory.cpp">
+      <Filter>头文件\HashLib++</Filter>
+    </ClCompile>
+    <ClCompile Include="zip_utils\unzip.cpp">
+      <Filter>头文件\ZipUtils</Filter>
+    </ClCompile>
+    <ClCompile Include="zip_utils\zip.cpp">
+      <Filter>头文件\ZipUtils</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtText.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtWindow.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtMagnification.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtDraw.h">
+      <Filter>头文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtDraw.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtTime.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtPlug-in.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtOther.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtUpdate.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtMain.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtFloating.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtDrawpad.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtRts.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtImage.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtHistoricalDrawpad.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtFreezeFrame.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtDisplayManagement.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtSetting.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="imgui\imgui.cpp">
+      <Filter>头文件\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="imgui\imgui_draw.cpp">
+      <Filter>头文件\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="imgui\imgui_impl_dx11.cpp">
+      <Filter>头文件\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="imgui\imgui_impl_win32.cpp">
+      <Filter>头文件\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="imgui\imgui_tables.cpp">
+      <Filter>头文件\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="imgui\imgui_widgets.cpp">
+      <Filter>头文件\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="imgui\imgui_toggle.cpp">
+      <Filter>头文件\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="imgui\imgui_toggle_palette.cpp">
+      <Filter>头文件\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="imgui\imgui_toggle_presets.cpp">
+      <Filter>头文件\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="imgui\imgui_toggle_renderer.cpp">
+      <Filter>头文件\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtConfiguration.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtSysNotifications.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="wintoastlib\wintoastlib.cpp">
+      <Filter>头文件\wintoastlib</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtGuid.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\axis_predictor.cc">
+      <Filter>头文件\ink_stroke_modeler\internal\prediction\kalman_filter</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\kalman_filter.cc">
+      <Filter>头文件\ink_stroke_modeler\internal\prediction\kalman_filter</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc">
+      <Filter>头文件\ink_stroke_modeler\internal\prediction</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\stroke_end_predictor.cc">
+      <Filter>头文件\ink_stroke_modeler\internal\prediction</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\internal_types.cc">
+      <Filter>头文件\ink_stroke_modeler\internal</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\position_modeler.cc">
+      <Filter>头文件\ink_stroke_modeler\internal</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\stylus_state_modeler.cc">
+      <Filter>头文件\ink_stroke_modeler\internal</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\wobble_smoother.cc">
+      <Filter>头文件\ink_stroke_modeler\internal</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\params.cc">
+      <Filter>头文件\ink_stroke_modeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\stroke_modeler.cc">
+      <Filter>头文件\ink_stroke_modeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\types.cc">
+      <Filter>头文件\ink_stroke_modeler</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtD2DPreparation.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtHash.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtState.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="智绘教.rc">
+      <Filter>资源文件</Filter>
+    </ResourceCompile>
+    <ResourceCompile Include="src\icon.rc">
+      <Filter>资源文件</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="src\endshow.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\left.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\right.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\write.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\sign.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\rubber.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\choose.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\undo.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\scale.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\more.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\perspective.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\choice.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\highlighter_brush.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\paint_brush.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\curve.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\line.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\rectangle.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\ms_ppt.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\icon.ico">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\weather\weather3.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\weather\png00001.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\tick.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\sign1.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\gwxq.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\option.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\bug.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\info.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\home.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\sign2.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\freeze-frame.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\sign3.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\seewo_camera.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\skin\dragon.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\skin\dragon_sign.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\skin\dragon_background.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\sign4.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\choose_clear.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\wps_wpp.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\ppt\end_show.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\ppt\arrow_left.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\ppt\arrow_right.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\icon.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\PluginFlag1.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\PluginFlag2.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\sign5.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\ppt\arrow_down.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\ppt\arrow_up.png">
+      <Filter>资源文件</Filter>
+    </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />
+    <Font Include="src\ttf\Douyu_Font.otf" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="exe\智绘教CrashedHandler.exe" />
+    <None Include="exe\智绘教CrashedHandlerClose.exe" />
+    <None Include="PptCOM.dll" />
+    <None Include="exe\智绘教StartupItemSettings.exe" />
+    <None Include="exe\DesktopDrawpadBlocker.exe" />
+  </ItemGroup>
+  <ItemGroup>
+    <Manifest Include="..\PptCOM\PptCOM.manifest" />
+  </ItemGroup>
+</Project>
