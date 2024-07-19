@@ -3,8 +3,8 @@
  * @brief		智绘教项目中心头文件
  * @note		用于声明中心头文件以及相关中心变量
  *
- * @envir		VisualStudio 2022 | MSVC 143 | .NET Framework 3.5 | EasyX_20230723 | Windows 11
- * @site		https://github.com/Alan-CRL/Intelligent-Drawing-Teaching
+ * @envir		VisualStudio 2022 | MSVC 143 | .NET Framework 3.5 | EasyX_20240601
+ * @site		https://github.com/Alan-CRL/IDT
  *
  * @author		Alan-CRL
  * @qq			2685549821

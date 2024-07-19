@@ -838,6 +838,21 @@ int SettingMain()
 						ImGui::PopStyleColor(PushStyleColorNum);
 					}
 
+					{
+						ImGui::SetCursorPos({ 770.0f - 400.0f,616.0f - 70.0f });
+
+						Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 100 / 255.0f, 203 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 89 / 255.0f, 180 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+						if (ImGui::Button(reinterpret_cast<const char*>(u8"打赏赞助\n智绘教Inkeys"), { 200.0f,60.0f }))
+						{
+							Tab = Tab::tab6;
+						}
+						ImGui::PopStyleColor(PushStyleColorNum);
+					}
+
 					ImGui::SetCursorPos({ 760.0f - (float)SettingSign[4].getwidth(),606.0f - (float)SettingSign[4].getheight() });
 					ImGui::Image((void*)TextureSettingSign[4], ImVec2((float)SettingSign[4].getwidth(), (float)SettingSign[4].getheight()));
 
@@ -2309,14 +2324,15 @@ int SettingMain()
 								wstring text;
 								{
 									text +=
-										L"智绘教20240718a --------------------\n"
+										L"智绘教20240719a --------------------\n"
 										L"+ PPT 控件可以拖动并自定义缩放\n"
 										L"+ 兼容自动隐藏任务栏选项\n"
 										L"- 修复选择模式下 Ctrl + Q 被占用的问题\n"
 										L"- 修复 Ctrl + E 打开穿透过后，无法关闭穿透的问题\n"
 										L"- 修复 PPT 最后一页无法长按翻页的问题\n"
 										L"- 修复选项窗口名称不正确的问题\n"
-										L"- PPT 潜在的内存泄露的问题\n"
+										L"- 修复 PPT 潜在的内存泄露的问题\n"
+										L"- 修复多屏用户无法在主显示器上绘图的问题\n"
 										L"\n"
 										L"智绘教20240619a --------------------\n"
 										L"+ 在系统保护的目录下运行程序会提示用户\n"
@@ -2525,7 +2541,7 @@ int SettingMain()
 
 					ImGui::EndChild();
 					break;
-				}
+					}
 
 				// ---------------------
 
@@ -2750,7 +2766,7 @@ int SettingMain()
 
 				ImGui::PopStyleColor(PushStyleColorNum);
 				while (PushFontNum) PushFontNum--, ImGui::PopFont();
-			}
+				}
 
 			// 渲染
 			ImGui::Render();
@@ -2769,7 +2785,7 @@ int SettingMain()
 				::SetForegroundWindow(setting_window);
 				ShowWindow = true;
 			}
-		}
+			}
 
 		//::ShowWindow(setting_window, SW_HIDE);
 
@@ -2778,11 +2794,11 @@ int SettingMain()
 		ImGui_ImplDX11_Shutdown();
 		ImGui_ImplWin32_Shutdown();
 		ImGui::DestroyContext();
-	}
+		}
 
 	threadStatus[L"SettingMain"] = false;
 	return 0;
-}
+	}
 
 bool ReadSetting(bool first)
 {

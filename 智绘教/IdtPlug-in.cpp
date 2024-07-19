@@ -1978,7 +1978,7 @@ void PptInfo()
 			if (ppt_software.find(L"WPS") != ppt_software.npos) ppt_software = L"WPS";
 			else ppt_software = L"PowerPoint";
 
-			// if (!ppt_title_recond[ppt_title]) FreezePPT = true;
+			if (!ppt_title_recond[ppt_title]) FreezePPT = true;
 			Initialization = true;
 		}
 		else if (Initialization && PptInfoState.TotalPage == -1)

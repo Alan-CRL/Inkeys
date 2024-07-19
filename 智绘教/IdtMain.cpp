@@ -3,8 +3,8 @@
  * @brief		智绘教项目中心源文件
  * @note		用于初始化智绘教并调用相关模块
  *
- * @envir		VisualStudio 2022 | MSVC 143 | .NET Framework 4.0 | EasyX_20230723 | Windows 11
- * @site		https://github.com/Alan-CRL/Intelligent-Drawing-Teaching
+ * @envir		VisualStudio 2022 | MSVC 143 | .NET Framework 4.0 | EasyX_20240601
+ * @site		https://github.com/Alan-CRL/IDT
  *
  * @author		Alan-CRL
  * @qq			2685549821
@@ -42,7 +42,7 @@ int SettingMain();
 void FreezeFrameWindow();
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string editionDate = "20240718a";				//程序发布日期
+string editionDate = "20240719a";				//程序发布日期
 string editionChannel = "LTS";					//程序发布通道
 string editionCode = "24H2(BetaH3)";			//程序版本
 

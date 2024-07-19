@@ -2,6 +2,9 @@
 
 新版 Readme 尚未完善 访问[旧版 Readme 页面](https://github.com/Alan-CRL/IDT/blob/1d63b4ba18e01f7ac45abb0e470d2748380b4407/README.md)  
 
+您当前看到的是为了临时停更前构建的稳定版本独立分支，如果需要访问历史 commits 请转到 [dev分支](https://github.com/Alan-CRL/IDT/tree/dev)。  
+**非常抱歉的通知您，由于开发者本人原因，即日起至 2024.11 智绘教将临时停止更新**
+
 [![LOGO](GithubRes/logo.png?raw=true "LOGO")](# "LOGO")
 
 # 智绘教Inkeys

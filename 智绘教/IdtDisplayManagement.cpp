@@ -52,7 +52,7 @@ BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMoni
 			DisplaysInfo.push_back(make_tuple(Monitor, MonitorInfo.rcMonitor, (monitorInfo.dwFlags & MONITORINFOF_PRIMARY)));
 			DisplaysInfoLock.unlock();
 
-			if (monitorInfo.dwFlags & MONITORINFOF_PRIMARY)
+			if (MonitorInfo.dwFlags & MONITORINFOF_PRIMARY)
 			{
 				unique_lock<shared_mutex> MainMonitorLock(MainMonitorSm);
 
