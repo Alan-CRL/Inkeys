@@ -148,8 +148,9 @@ void AutomaticUpdate()
 	bool update = true;
 
 	bool against = false;
+	int updateTimes = 0;
 
-	while (!offSignal)
+	for (; !offSignal && updateTimes <= 10; updateTimes++)
 	{
 		AutomaticUpdateStep = 1;
 
@@ -495,6 +496,7 @@ void AutomaticUpdate()
 
 				this_thread::sleep_for(chrono::seconds(1));
 			}
+			updateTimes = 0;
 		}
 	}
 }
