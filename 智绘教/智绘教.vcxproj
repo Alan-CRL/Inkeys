@@ -1,13 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|ARM">
+      <Configuration>Debug</Configuration>
+      <Platform>ARM</Platform>
+    </ProjectConfiguration>
     <ProjectConfiguration Include="Debug|Win32">
       <Configuration>Debug</Configuration>
       <Platform>Win32</Platform>
     </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|ARM">
+      <Configuration>Release</Configuration>
+      <Platform>ARM</Platform>
+    </ProjectConfiguration>
     <ProjectConfiguration Include="Release|Win32">
       <Configuration>Release</Configuration>
       <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
@@ -15,7 +31,7 @@
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{c74d4d04-f81c-42fe-8d90-7042ba3bb8a0}</ProjectGuid>
     <RootNamespace>智绘教</RootNamespace>
-    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.22621.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -24,7 +40,33 @@
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
@@ -39,7 +81,19 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
@@ -50,7 +104,77 @@
     <LinkIncremental>
     </LinkIncremental>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <IncludePath>$(IncludePath)</IncludePath>
+    <LibraryPath>$(LibraryPath)</LibraryPath>
+    <GenerateManifest>false</GenerateManifest>
+    <LinkIncremental />
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">
+    <IncludePath>$(IncludePath)</IncludePath>
+    <LibraryPath>$(LibraryPath)</LibraryPath>
+    <GenerateManifest>false</GenerateManifest>
+    <LinkIncremental />
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <Optimization>Disabled</Optimization>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
+      <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <AdditionalLibraryDirectories>.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+    <Manifest>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <Optimization>Disabled</Optimization>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
+      <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <AdditionalLibraryDirectories>.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+    <Manifest>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
@@ -110,38 +234,115 @@
       <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
     </Manifest>
   </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <Optimization>Full</Optimization>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <CompileAsManaged>
+      </CompileAsManaged>
+      <GenerateSourceDependencies>true</GenerateSourceDependencies>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
+      <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalLibraryDirectories>./additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <LargeAddressAware>true</LargeAddressAware>
+    </Link>
+    <Manifest>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <Optimization>Full</Optimization>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <CompileAsManaged>
+      </CompileAsManaged>
+      <GenerateSourceDependencies>true</GenerateSourceDependencies>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
+      <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalLibraryDirectories>./additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <LargeAddressAware>true</LargeAddressAware>
+    </Link>
+    <Manifest>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
+    </Manifest>
+  </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="additional\ink_stroke_modeler\internal\internal_types.h" />
-    <ClInclude Include="additional\ink_stroke_modeler\internal\position_modeler.h" />
-    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\input_predictor.h" />
-    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\axis_predictor.h" />
-    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\kalman_filter.h" />
-    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\matrix.h" />
-    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_predictor.h" />
-    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\stroke_end_predictor.h" />
-    <ClInclude Include="additional\ink_stroke_modeler\internal\stylus_state_modeler.h" />
-    <ClInclude Include="additional\ink_stroke_modeler\internal\utils.h" />
-    <ClInclude Include="additional\ink_stroke_modeler\internal\validation.h" />
-    <ClInclude Include="additional\ink_stroke_modeler\internal\wobble_smoother.h" />
-    <ClInclude Include="additional\ink_stroke_modeler\numbers.h" />
-    <ClInclude Include="additional\ink_stroke_modeler\params.h" />
-    <ClInclude Include="additional\ink_stroke_modeler\stroke_modeler.h" />
-    <ClInclude Include="additional\ink_stroke_modeler\types.h" />
-    <ClInclude Include="hashlib2plus\hashlibpp.h" />
-    <ClInclude Include="hashlib2plus\hl_exception.h" />
-    <ClInclude Include="hashlib2plus\hl_hashwrapper.h" />
-    <ClInclude Include="hashlib2plus\hl_md5.h" />
-    <ClInclude Include="hashlib2plus\hl_md5wrapper.h" />
-    <ClInclude Include="hashlib2plus\hl_sha1.h" />
-    <ClInclude Include="hashlib2plus\hl_sha1wrapper.h" />
-    <ClInclude Include="hashlib2plus\hl_sha256.h" />
-    <ClInclude Include="hashlib2plus\hl_sha256wrapper.h" />
-    <ClInclude Include="hashlib2plus\hl_sha2ext.h" />
-    <ClInclude Include="hashlib2plus\hl_sha2mac.h" />
-    <ClInclude Include="hashlib2plus\hl_sha384wrapper.h" />
-    <ClInclude Include="hashlib2plus\hl_sha512wrapper.h" />
-    <ClInclude Include="hashlib2plus\hl_types.h" />
-    <ClInclude Include="hashlib2plus\hl_wrapperfactory.h" />
+    <ClInclude Include="additional\hashlib++\hashlibpp.h" />
+    <ClInclude Include="additional\hashlib++\hl_exception.h" />
+    <ClInclude Include="additional\hashlib++\hl_hashwrapper.h" />
+    <ClInclude Include="additional\hashlib++\hl_md5.h" />
+    <ClInclude Include="additional\hashlib++\hl_md5wrapper.h" />
+    <ClInclude Include="additional\hashlib++\hl_sha1.h" />
+    <ClInclude Include="additional\hashlib++\hl_sha1wrapper.h" />
+    <ClInclude Include="additional\hashlib++\hl_sha256.h" />
+    <ClInclude Include="additional\hashlib++\hl_sha256wrapper.h" />
+    <ClInclude Include="additional\hashlib++\hl_sha2ext.h" />
+    <ClInclude Include="additional\hashlib++\hl_sha2mac.h" />
+    <ClInclude Include="additional\hashlib++\hl_sha384wrapper.h" />
+    <ClInclude Include="additional\hashlib++\hl_sha512wrapper.h" />
+    <ClInclude Include="additional\hashlib++\hl_types.h" />
+    <ClInclude Include="additional\hashlib++\hl_wrapperfactory.h" />
+    <ClInclude Include="additional\imgui\imconfig.h" />
+    <ClInclude Include="additional\imgui\imgui.h" />
+    <ClInclude Include="additional\imgui\imgui_impl_dx11.h" />
+    <ClInclude Include="additional\imgui\imgui_impl_win32.h" />
+    <ClInclude Include="additional\imgui\imgui_internal.h" />
+    <ClInclude Include="additional\imgui\imgui_offset_rect.h" />
+    <ClInclude Include="additional\imgui\imgui_toggle.h" />
+    <ClInclude Include="additional\imgui\imgui_toggle_math.h" />
+    <ClInclude Include="additional\imgui\imgui_toggle_palette.h" />
+    <ClInclude Include="additional\imgui\imgui_toggle_presets.h" />
+    <ClInclude Include="additional\imgui\imgui_toggle_renderer.h" />
+    <ClInclude Include="additional\imgui\imstb_rectpack.h" />
+    <ClInclude Include="additional\imgui\imstb_textedit.h" />
+    <ClInclude Include="additional\imgui\imstb_truetype.h" />
+    <ClInclude Include="additional\jsoncpp\allocator.h" />
+    <ClInclude Include="additional\jsoncpp\assertions.h" />
+    <ClInclude Include="additional\jsoncpp\config.h" />
+    <ClInclude Include="additional\jsoncpp\forwards.h" />
+    <ClInclude Include="additional\jsoncpp\json.h" />
+    <ClInclude Include="additional\jsoncpp\json_features.h" />
+    <ClInclude Include="additional\jsoncpp\lib_json\json_tool.h" />
+    <ClInclude Include="additional\jsoncpp\reader.h" />
+    <ClInclude Include="additional\jsoncpp\value.h" />
+    <ClInclude Include="additional\jsoncpp\version.h" />
+    <ClInclude Include="additional\jsoncpp\writer.h" />
+    <ClInclude Include="additional\stbimage\stb_image.h" />
+    <ClInclude Include="additional\stbimage\stb_image_resize.h" />
+    <ClInclude Include="additional\stbimage\stb_image_write.h" />
+    <ClInclude Include="additional\wintoastlib\wintoastlib.h" />
+    <ClInclude Include="additional\ziputils\unzip.h" />
+    <ClInclude Include="additional\ziputils\zip.h" />
     <ClInclude Include="HiEasyX.h" />
     <ClInclude Include="HiEasyX\HiCanvas.h" />
     <ClInclude Include="HiEasyX\HiContainer.h" />
@@ -190,62 +391,48 @@
     <ClInclude Include="IdtOther.h" />
     <ClInclude Include="IdtPlug-in.h" />
     <ClInclude Include="IdtSetting.h" />
+    <ClInclude Include="IdtStart.h" />
     <ClInclude Include="IdtState.h" />
     <ClInclude Include="IdtSysNotifications.h" />
-    <ClInclude Include="imgui\imconfig.h" />
-    <ClInclude Include="imgui\imgui.h" />
-    <ClInclude Include="imgui\imgui_impl_dx11.h" />
-    <ClInclude Include="imgui\imgui_impl_win32.h" />
-    <ClInclude Include="imgui\imgui_internal.h" />
-    <ClInclude Include="imgui\imgui_offset_rect.h" />
-    <ClInclude Include="imgui\imgui_toggle.h" />
-    <ClInclude Include="imgui\imgui_toggle_math.h" />
-    <ClInclude Include="imgui\imgui_toggle_palette.h" />
-    <ClInclude Include="imgui\imgui_toggle_presets.h" />
-    <ClInclude Include="imgui\imgui_toggle_renderer.h" />
-    <ClInclude Include="imgui\imstb_rectpack.h" />
-    <ClInclude Include="imgui\imstb_textedit.h" />
-    <ClInclude Include="imgui\imstb_truetype.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="IdtRts.h" />
-    <ClInclude Include="stb_image\stb-master\stb_image.h" />
-    <ClInclude Include="stb_image\stb-master\stb_image_resize.h" />
-    <ClInclude Include="stb_image\stb-master\stb_image_write.h" />
     <ClInclude Include="IdtText.h" />
     <ClInclude Include="IdtTime.h" />
     <ClInclude Include="IdtUpdate.h" />
     <ClInclude Include="IdtWindow.h" />
-    <ClInclude Include="wintoastlib\wintoastlib.h" />
-    <ClInclude Include="zip_utils\unzip.h" />
-    <ClInclude Include="zip_utils\zip.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="additional\ink_stroke_modeler\internal\internal_types.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\internal\position_modeler.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\axis_predictor.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\kalman_filter.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\stroke_end_predictor.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\internal\stylus_state_modeler.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\internal\wobble_smoother.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\params.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\stroke_modeler.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\types.cc" />
+    <ClCompile Include="additional\hashlib++\hl_md5.cpp" />
+    <ClCompile Include="additional\hashlib++\hl_md5wrapper.cpp" />
+    <ClCompile Include="additional\hashlib++\hl_sha1.cpp" />
+    <ClCompile Include="additional\hashlib++\hl_sha1wrapper.cpp" />
+    <ClCompile Include="additional\hashlib++\hl_sha256.cpp" />
+    <ClCompile Include="additional\hashlib++\hl_sha256wrapper.cpp" />
+    <ClCompile Include="additional\hashlib++\hl_sha2ext.cpp" />
+    <ClCompile Include="additional\hashlib++\hl_sha384wrapper.cpp" />
+    <ClCompile Include="additional\hashlib++\hl_sha512wrapper.cpp" />
+    <ClCompile Include="additional\hashlib++\hl_wrapperfactory.cpp" />
+    <ClCompile Include="additional\imgui\imgui.cpp" />
+    <ClCompile Include="additional\imgui\imgui_draw.cpp" />
+    <ClCompile Include="additional\imgui\imgui_impl_dx11.cpp" />
+    <ClCompile Include="additional\imgui\imgui_impl_win32.cpp" />
+    <ClCompile Include="additional\imgui\imgui_tables.cpp" />
+    <ClCompile Include="additional\imgui\imgui_toggle.cpp" />
+    <ClCompile Include="additional\imgui\imgui_toggle_palette.cpp" />
+    <ClCompile Include="additional\imgui\imgui_toggle_presets.cpp" />
+    <ClCompile Include="additional\imgui\imgui_toggle_renderer.cpp" />
+    <ClCompile Include="additional\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="additional\jsoncpp\lib_json\json_reader.cpp" />
+    <ClCompile Include="additional\jsoncpp\lib_json\json_value.cpp" />
+    <ClCompile Include="additional\jsoncpp\lib_json\json_writer.cpp" />
+    <ClCompile Include="additional\wintoastlib\wintoastlib.cpp" />
+    <ClCompile Include="additional\ziputils\unzip.cpp" />
+    <ClCompile Include="additional\ziputils\zip.cpp" />
     <ClCompile Include="IdtConfiguration.cpp" />
     <ClCompile Include="IdtD2DPreparation.cpp" />
     <ClCompile Include="IdtDisplayManagement.cpp" />
     <ClCompile Include="IdtDraw.cpp" />
     <ClCompile Include="IdtDraw.h" />
-    <ClCompile Include="hashlib2plus\hl_md5.cpp" />
-    <ClCompile Include="hashlib2plus\hl_md5wrapper.cpp" />
-    <ClCompile Include="hashlib2plus\hl_sha1.cpp" />
-    <ClCompile Include="hashlib2plus\hl_sha1wrapper.cpp" />
-    <ClCompile Include="hashlib2plus\hl_sha256.cpp" />
-    <ClCompile Include="hashlib2plus\hl_sha256wrapper.cpp" />
-    <ClCompile Include="hashlib2plus\hl_sha2ext.cpp" />
-    <ClCompile Include="hashlib2plus\hl_sha384wrapper.cpp" />
-    <ClCompile Include="hashlib2plus\hl_sha512wrapper.cpp" />
-    <ClCompile Include="hashlib2plus\hl_wrapperfactory.cpp" />
     <ClCompile Include="HiEasyX\HiCanvas.cpp" />
     <ClCompile Include="HiEasyX\HiContainer.cpp" />
     <ClCompile Include="HiEasyX\HiDrawingProperty.cpp" />
@@ -283,21 +470,9 @@
     <ClCompile Include="IdtImage.cpp" />
     <ClCompile Include="IdtRts.cpp" />
     <ClCompile Include="IdtSetting.cpp" />
+    <ClCompile Include="IdtStart.cpp" />
     <ClCompile Include="IdtState.cpp" />
     <ClCompile Include="IdtSysNotifications.cpp" />
-    <ClCompile Include="imgui\imgui.cpp" />
-    <ClCompile Include="imgui\imgui_draw.cpp" />
-    <ClCompile Include="imgui\imgui_impl_dx11.cpp" />
-    <ClCompile Include="imgui\imgui_impl_win32.cpp" />
-    <ClCompile Include="imgui\imgui_tables.cpp" />
-    <ClCompile Include="imgui\imgui_toggle.cpp" />
-    <ClCompile Include="imgui\imgui_toggle_palette.cpp" />
-    <ClCompile Include="imgui\imgui_toggle_presets.cpp" />
-    <ClCompile Include="imgui\imgui_toggle_renderer.cpp" />
-    <ClCompile Include="imgui\imgui_widgets.cpp" />
-    <ClCompile Include="json\lib_json\json_reader.cpp" />
-    <ClCompile Include="json\lib_json\json_value.cpp" />
-    <ClCompile Include="json\lib_json\json_writer.cpp" />
     <ClCompile Include="IdtMagnification.cpp" />
     <ClCompile Include="IdtMain.cpp" />
     <ClCompile Include="IdtOther.cpp" />
@@ -306,9 +481,6 @@
     <ClCompile Include="IdtTime.cpp" />
     <ClCompile Include="IdtUpdate.cpp" />
     <ClCompile Include="IdtWindow.cpp" />
-    <ClCompile Include="wintoastlib\wintoastlib.cpp" />
-    <ClCompile Include="zip_utils\unzip.cpp" />
-    <ClCompile Include="zip_utils\zip.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="智绘教.rc" />
@@ -370,6 +542,8 @@
     <Font Include="src\ttf\Douyu_Font.otf" />
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf">
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</DeploymentContent>
+      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</DeploymentContent>
+      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">true</DeploymentContent>
     </Font>
   </ItemGroup>
   <ItemGroup>
@@ -404,7 +578,19 @@
   <PropertyGroup Condition="'$(Platform)'=='Win32'">
     <TlbPlatform>win32</TlbPlatform>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Platform)'=='x64'">
+    <TlbPlatform>win32</TlbPlatform>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Platform)'=='ARM'">
+    <TlbPlatform>win32</TlbPlatform>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <GenerateManifest>false</GenerateManifest>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <GenerateManifest>false</GenerateManifest>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">
     <GenerateManifest>false</GenerateManifest>
   </PropertyGroup>
   <!-- Create 32-bit or 64-bit type library from .Net Framework assembly for #import directive -->
