@@ -1,4 +1,4 @@
-// Formatting library for C++ - formatters for standard library types
+﻿// Formatting library for C++ - formatters for standard library types
 //
 // Copyright (c) 2012 - present, Victor Zverovich
 // All rights reserved.

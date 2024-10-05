@@ -1,4 +1,4 @@
-#include "HiDrawingProperty.h"
+﻿#include "HiDrawingProperty.h"
 
 namespace HiEasyX
 {

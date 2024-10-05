@@ -1,4 +1,4 @@
-/*
+﻿/*
   Formatting library for C++
 
   Copyright (c) 2012 - present, Victor Zverovich

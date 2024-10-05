@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	ProgressCtrl.h
- * @brief	HiGUI ¿Ø¼ş·ÖÖ§£º½ø¶ÈÌõ¿Ø¼ş
+ * @brief	HiGUI æ§ä»¶åˆ†æ”¯ï¼šè¿›åº¦æ¡æ§ä»¶
  * @author	huidong
 */
 
@@ -13,30 +13,30 @@
 namespace HiEasyX
 {
 	/**
-	 * @brief ½ø¶ÈÌõ¿Ø¼ş
+	 * @brief è¿›åº¦æ¡æ§ä»¶
 	*/
 	class ProgressCtrl : public ControlBase
 	{
 	protected:
 
-		bool m_bEnableAnimation = true;					///< ÊÇ·ñÆôÓÃ¶¯»­Ğ§¹û
+		bool m_bEnableAnimation = true;					///< æ˜¯å¦å¯ç”¨åŠ¨ç”»æ•ˆæœ
 
-		int m_nLightPos = 0;							///< ¹âÔ´Î»ÖÃ
-		clock_t m_tClock = 0;							///< ±£ÁôÉÏÒ»´Î¶¯»­µÄ»æÖÆÊ±¼ä
-		float m_fSpeedRatio = 0.4f;						///< ¶¯»­ËÙ¶È£¨Ã¿Ãë¾­¹ı×Ü³¤¶ÈµÄ¶àÉÙ£©
+		int m_nLightPos = 0;							///< å…‰æºä½ç½®
+		clock_t m_tClock = 0;							///< ä¿ç•™ä¸Šä¸€æ¬¡åŠ¨ç”»çš„ç»˜åˆ¶æ—¶é—´
+		float m_fSpeedRatio = 0.4f;						///< åŠ¨ç”»é€Ÿåº¦ï¼ˆæ¯ç§’ç»è¿‡æ€»é•¿åº¦çš„å¤šå°‘ï¼‰
 
-		float m_fLenRatio = 0.8f;						///< ¶¯»­¹âÁÁĞ§¹û³¤¶ÈÕ¼±È
+		float m_fLenRatio = 0.8f;						///< åŠ¨ç”»å…‰äº®æ•ˆæœé•¿åº¦å æ¯”
 
-		float m_fBarColorLightness = 0.35f;				///< ½ø¶ÈÌõÑÕÉ«ÁÁ¶È
-		float m_fBarLightLightness = 0.41f;				///< ½ø¶ÈÌõ¹âÔ´ÁÁ¶È
+		float m_fBarColorLightness = 0.35f;				///< è¿›åº¦æ¡é¢œè‰²äº®åº¦
+		float m_fBarLightLightness = 0.41f;				///< è¿›åº¦æ¡å…‰æºäº®åº¦
 
-		COLORREF m_cBar;								///< ½ø¶ÈÌõÑÕÉ«£¨²»ÓÃÓÚÁÁ¶È²ÉÑù£©
+		COLORREF m_cBar;								///< è¿›åº¦æ¡é¢œè‰²ï¼ˆä¸ç”¨äºäº®åº¦é‡‡æ ·ï¼‰
 
-		float m_fH = 0;									///< É«ÏàĞÅÏ¢
-		float m_fS = 0;									///< ±¥ºÍ¶ÈĞÅÏ¢
+		float m_fH = 0;									///< è‰²ç›¸ä¿¡æ¯
+		float m_fS = 0;									///< é¥±å’Œåº¦ä¿¡æ¯
 
-		int m_nPos = 0;									///< ½ø¶ÈÌõ½ø¶È
-		int m_nLen = 100;								///< ½ø¶È×Ü³¤¶È
+		int m_nPos = 0;									///< è¿›åº¦æ¡è¿›åº¦
+		int m_nLen = 100;								///< è¿›åº¦æ€»é•¿åº¦
 
 		virtual void Init();
 
@@ -47,51 +47,51 @@ namespace HiEasyX
 		ProgressCtrl(int x, int y, int w, int h, int len);
 
 		/**
-		 * @brief »ñÈ¡ÄÚÈİ³¤¶È
+		 * @brief è·å–å†…å®¹é•¿åº¦
 		*/
 		virtual int GetContentLength() const { return m_nLen; }
 
 		/**
-		 * @brief ÉèÖÃÄÚÈİ³¤¶È
-		 * @param[in] len ÄÚÈİ³¤¶È
+		 * @brief è®¾ç½®å†…å®¹é•¿åº¦
+		 * @param[in] len å†…å®¹é•¿åº¦
 		*/
 		virtual void SetContentLength(int len);
 
 		/**
-		 * @brief »ñÈ¡½ø¶È£¨ÄÚÈİ³¤¶È¼´Îª×Ü½ø¶È£©
+		 * @brief è·å–è¿›åº¦ï¼ˆå†…å®¹é•¿åº¦å³ä¸ºæ€»è¿›åº¦ï¼‰
 		*/
 		virtual int GetProcess() const { return m_nPos; }
 
 		/**
-		 * @brief ÉèÖÃ½ø¶È£¨ÄÚÈİ³¤¶È¼´Îª×Ü½ø¶È£©
-		 * @param[in] pos ½ø¶È
+		 * @brief è®¾ç½®è¿›åº¦ï¼ˆå†…å®¹é•¿åº¦å³ä¸ºæ€»è¿›åº¦ï¼‰
+		 * @param[in] pos è¿›åº¦
 		*/
 		virtual void SetProcess(int pos);
 
 		/**
-		 * @brief ½ø¶È¼ÓÒ»
+		 * @brief è¿›åº¦åŠ ä¸€
 		*/
 		virtual void Step();
 
 		/**
-		 * @brief »ñÈ¡½ø¶ÈÌõÑÕÉ«
+		 * @brief è·å–è¿›åº¦æ¡é¢œè‰²
 		*/
 		virtual COLORREF GetBarColor() const { return m_cBar; }
 
 		/**
-		 * @brief ÉèÖÃ½ø¶ÈÌõÑÕÉ«
-		 * @param[in] cBar ½ø¶ÈÌõÑÕÉ«
+		 * @brief è®¾ç½®è¿›åº¦æ¡é¢œè‰²
+		 * @param[in] cBar è¿›åº¦æ¡é¢œè‰²
 		*/
 		virtual void SetBarColor(COLORREF cBar);
 
 		/**
-		 * @brief »ñÈ¡¶¯»­ÆôÓÃ×´Ì¬
+		 * @brief è·å–åŠ¨ç”»å¯ç”¨çŠ¶æ€
 		*/
 		virtual bool GetAnimationState() const { return m_bEnableAnimation; }
 
 		/**
-		 * @brief ÉèÖÃÊÇ·ñÆôÓÃ¶¯»­
-		 * @param[in] enable ÊÇ·ñÆôÓÃ
+		 * @brief è®¾ç½®æ˜¯å¦å¯ç”¨åŠ¨ç”»
+		 * @param[in] enable æ˜¯å¦å¯ç”¨
 		*/
 		virtual void EnableAnimation(bool enable);
 

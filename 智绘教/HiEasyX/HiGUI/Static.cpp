@@ -1,4 +1,4 @@
-#include "Static.h"
+﻿#include "Static.h"
 
 namespace HiEasyX
 {

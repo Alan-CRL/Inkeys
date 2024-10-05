@@ -1,7 +1,7 @@
-/* 
+﻿/* 
  * hashlib++ - a simple hash library for C++
  * 
- * Copyright (c) 2007-2010 Benjamin Grüdelbach
+ * Copyright (c) 2007-2010 Benjamin Gr眉delbach
  * 
  * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:

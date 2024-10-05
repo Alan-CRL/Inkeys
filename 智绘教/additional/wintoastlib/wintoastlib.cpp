@@ -1,4 +1,4 @@
-/** 
+﻿/** 
  * MIT License
  *
  * Copyright (C) 2016-2023 WinToast v1.3.0 - Mohammed Boujemaoui <mohabouje@gmail.com>

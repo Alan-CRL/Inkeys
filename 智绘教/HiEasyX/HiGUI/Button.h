@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	Button.h
- * @brief	HiGUI ¿Ø¼þ·ÖÖ§£º°´Å¥¿Ø¼þ
+ * @brief	HiGUI æŽ§ä»¶åˆ†æ”¯ï¼šæŒ‰é’®æŽ§ä»¶
  * @author	huidong
 */
 
@@ -11,19 +11,19 @@
 namespace HiEasyX
 {
 	/**
-	 * @brief °´Å¥¿Ø¼þ
+	 * @brief æŒ‰é’®æŽ§ä»¶
 	*/
 	class Button : public ControlBase
 	{
 	protected:
 
-		bool m_bEnableClassicStyle = false;	///< ÊÇ·ñÊ¹ÓÃ¾­µäÑùÊ½
+		bool m_bEnableClassicStyle = false;	///< æ˜¯å¦ä½¿ç”¨ç»å…¸æ ·å¼
 
 		virtual void InitColor();
 
 	public:
 
-		// °´Å¥ÑÕÉ«ÉèÖÃ£¨ÏÖ´úÑùÊ½£©
+		// æŒ‰é’®é¢œè‰²è®¾ç½®ï¼ˆçŽ°ä»£æ ·å¼ï¼‰
 		COLORREF m_cBorder_Normal = MODERN_BORDER_GRAY;
 		COLORREF m_cBackground_Normal = MODERN_FILL_GRAY;
 		COLORREF m_cBorder_Hovered = MODERN_BORDER_BLUE;
@@ -35,8 +35,8 @@ namespace HiEasyX
 		COLORREF m_cBorder_Disabled = GRAY;
 		COLORREF m_cBackground_Disabled = GRAY;
 
-		COLORREF m_cClassicNormalBorder3D = GRAY;			///< Î´°´ÏÂÊ±µÄ 3D ±ß¿òÑÕÉ«£¨¾­µäÑùÊ½£©
-		COLORREF m_cClassicPressedBorder3D = LIGHTGRAY;		///< °´ÏÂÊ±µÄ 3D ±ß¿òÑÕÉ«£¨¾­µäÑùÊ½£©
+		COLORREF m_cClassicNormalBorder3D = GRAY;			///< æœªæŒ‰ä¸‹æ—¶çš„ 3D è¾¹æ¡†é¢œè‰²ï¼ˆç»å…¸æ ·å¼ï¼‰
+		COLORREF m_cClassicPressedBorder3D = LIGHTGRAY;		///< æŒ‰ä¸‹æ—¶çš„ 3D è¾¹æ¡†é¢œè‰²ï¼ˆç»å…¸æ ·å¼ï¼‰
 
 		Button();
 
@@ -47,26 +47,26 @@ namespace HiEasyX
 #endif
 
 		/**
-		 * @brief ÆôÓÃ¿Ø¼þ
-		 * @param[in] enable ÊÇ·ñÆôÓÃ
+		 * @brief å¯ç”¨æŽ§ä»¶
+		 * @param[in] enable æ˜¯å¦å¯ç”¨
 		*/
 		void SetEnable(bool enable) override;
 
 		/**
-		 * @brief ÊÇ·ñÆôÓÃ¾­µäÑùÊ½
-		 * @param[in] enable ÊÇ·ñÆôÓÃ
+		 * @brief æ˜¯å¦å¯ç”¨ç»å…¸æ ·å¼
+		 * @param[in] enable æ˜¯å¦å¯ç”¨
 		*/
 		virtual void EnableClassicStyle(bool enable);
 		
 		/**
-		 * @brief ¸üÐÂÏûÏ¢
-		 * @param[in] msg ÏûÏ¢
+		 * @brief æ›´æ–°æ¶ˆæ¯
+		 * @param[in] msg æ¶ˆæ¯
 		*/
 		void UpdateMessage(ExMessage msg) override;
 
 		/**
-		 * @brief »æÖÆ
-		 * @param[in] draw_child ÊÇ·ñ»æÖÆ×Ó¿Ø¼þ
+		 * @brief ç»˜åˆ¶
+		 * @param[in] draw_child æ˜¯å¦ç»˜åˆ¶å­æŽ§ä»¶
 		*/
 		void Draw(bool draw_child = true) override;
 	};

@@ -1,4 +1,4 @@
-// Formatting library for C++ - optional wchar_t and exotic character support
+﻿// Formatting library for C++ - optional wchar_t and exotic character support
 //
 // Copyright (c) 2012 - present, Victor Zverovich
 // All rights reserved.

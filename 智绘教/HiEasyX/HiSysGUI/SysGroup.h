@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	SysGroup.h
- * @brief	HiSysGUI ¿Ø¼þ·ÖÖ§£º·Ö×é±êÖ¾
+ * @brief	HiSysGUI æŽ§ä»¶åˆ†æ”¯ï¼šåˆ†ç»„æ ‡å¿—
  * @author	huidong
 */
 
@@ -11,7 +11,7 @@
 namespace HiEasyX
 {
 	/**
-	 * @brief ÏµÍ³¿Ø¼þ·Ö×é±êÖ¾
+	 * @brief ç³»ç»ŸæŽ§ä»¶åˆ†ç»„æ ‡å¿—
 	*/
 	class SysGroup : public SysControlBase
 	{

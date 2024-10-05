@@ -1,4 +1,4 @@
-#include "HiMusicMCI.h"
+ï»¿#include "HiMusicMCI.h"
 #include <Digitalv.h>
 
 #ifdef _MSC_VER
@@ -26,8 +26,8 @@ namespace HiEasyX
 		if (nDeviceID != -1) this->close();
 	}
 
-	// ´ò¿ªÎÄ¼ş
-	// ³É¹¦·µ»Ø true£¬Ê§°Ü·µ»Ø false
+	// æ‰“å¼€æ–‡ä»¶
+	// æˆåŠŸè¿”å› trueï¼Œå¤±è´¥è¿”å› false
 	bool MusicMCI::open(LPCTSTR strSongPath) noexcept
 	{
 		MCI_OPEN_PARMS mciOP;
@@ -49,8 +49,8 @@ namespace HiEasyX
 		}
 	}
 
-	// ²¥·Å
-	// ³É¹¦·µ»Ø true£¬Ê§°Ü·µ»Ø false
+	// æ’­æ”¾
+	// æˆåŠŸè¿”å› trueï¼Œå¤±è´¥è¿”å› false
 	bool MusicMCI::play()noexcept
 	{
 		MCI_PLAY_PARMS mciPP{};
@@ -63,8 +63,8 @@ namespace HiEasyX
 			return false;
 	}
 
-	// ÔİÍ£²¥·Å
-	// ³É¹¦·µ»Ø true£¬Ê§°Ü·µ»Ø false
+	// æš‚åœæ’­æ”¾
+	// æˆåŠŸè¿”å› trueï¼Œå¤±è´¥è¿”å› false
 	bool MusicMCI::pause()noexcept
 	{
 		MCI_GENERIC_PARMS mciGP{};
@@ -77,8 +77,8 @@ namespace HiEasyX
 			return false;
 	}
 
-	// Í£Ö¹²¥·Å²¢Ê¹½ø¶È·µ»Øµ½¿ªÍ·
-	// ³É¹¦·µ»Ø true£¬Ê§°Ü·µ»Ø false
+	// åœæ­¢æ’­æ”¾å¹¶ä½¿è¿›åº¦è¿”å›åˆ°å¼€å¤´
+	// æˆåŠŸè¿”å› trueï¼Œå¤±è´¥è¿”å› false
 	bool MusicMCI::stop()noexcept
 	{
 		MCI_SEEK_PARMS mciSP{};
@@ -91,8 +91,8 @@ namespace HiEasyX
 			return false;
 	}
 
-	// ¹Ø±ÕMCIÉè±¸
-	// ³É¹¦·µ»Ø true£¬Ê§°Ü·µ»Ø false
+	// å…³é—­MCIè®¾å¤‡
+	// æˆåŠŸè¿”å› trueï¼Œå¤±è´¥è¿”å› false
 	bool MusicMCI::close()noexcept
 	{
 		MCI_GENERIC_PARMS mciGP{};
@@ -108,8 +108,8 @@ namespace HiEasyX
 			return false;
 	}
 
-	// »ñµÃµ±Ç°²¥·Å½ø¶È£¬pos ÒÔ ms Îªµ¥Î»
-	// ³É¹¦·µ»Ø true£¬Ê§°Ü·µ»Ø false
+	// è·å¾—å½“å‰æ’­æ”¾è¿›åº¦ï¼Œpos ä»¥ ms ä¸ºå•ä½
+	// æˆåŠŸè¿”å› trueï¼Œå¤±è´¥è¿”å› false
 	bool MusicMCI::getCurrentTime(DWORD& pos)noexcept
 	{
 		MCI_STATUS_PARMS mciSP{};
@@ -129,15 +129,15 @@ namespace HiEasyX
 		}
 	}
 
-	// »ñÈ¡ÒôÀÖ×ÜÊ±³¤£¬time ÒÔms Îªµ¥Î»
-	// ³É¹¦·µ»Ø true£¬Ê§°Ü·µ»Ø false
+	// è·å–éŸ³ä¹æ€»æ—¶é•¿ï¼Œtime ä»¥ms ä¸ºå•ä½
+	// æˆåŠŸè¿”å› trueï¼Œå¤±è´¥è¿”å› false
 	bool MusicMCI::getTotalTime(DWORD& time)noexcept
 	{
 		MCI_STATUS_PARMS mciSP{};
 
 		mciSP.dwItem = MCI_STATUS_LENGTH;
 		const DWORD dwReturn = mciSendCommand(nDeviceID, MCI_STATUS,
-			MCI_WAIT | MCI_STATUS_ITEM, (DWORD_PTR)(static_cast<LPVOID>(&mciSP)));		// ¹Ø¼ü£¬È¡µÃ³¤¶È
+			MCI_WAIT | MCI_STATUS_ITEM, (DWORD_PTR)(static_cast<LPVOID>(&mciSP)));		// å…³é”®ï¼Œå–å¾—é•¿åº¦
 		if (dwReturn == 0)
 		{
 			time = static_cast<DWORD>(mciSP.dwReturn);
@@ -150,8 +150,8 @@ namespace HiEasyX
 		}
 	}
 
-	// ÉèÖÃÒôÁ¿´óĞ¡£¬ÒôÁ¿Öµ·¶Î§ÔÚ 0 µ½ 1000
-	// ³É¹¦·µ»Ø true£¬Ê§°Ü·µ»Ø false
+	// è®¾ç½®éŸ³é‡å¤§å°ï¼ŒéŸ³é‡å€¼èŒƒå›´åœ¨ 0 åˆ° 1000
+	// æˆåŠŸè¿”å› trueï¼Œå¤±è´¥è¿”å› false
 	bool MusicMCI::setVolume(size_t nVolumeValue)noexcept
 	{
 		if (nVolumeValue > 1000)
@@ -174,8 +174,8 @@ namespace HiEasyX
 			return false;
 	}
 
-	// ÉèÖÃ²¥·ÅÆğÊ¼Î»ÖÃ
-	// ³É¹¦·µ»Ø true£¬Ê§°Ü·µ»Ø false
+	// è®¾ç½®æ’­æ”¾èµ·å§‹ä½ç½®
+	// æˆåŠŸè¿”å› trueï¼Œå¤±è´¥è¿”å› false
 	bool MusicMCI::setStartTime(size_t start_time) noexcept
 	{
 		DWORD end_time = 0;

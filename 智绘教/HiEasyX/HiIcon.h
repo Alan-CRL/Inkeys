@@ -1,7 +1,7 @@
-/**
+ï»¿/**
  * @file	HiIcon.h
- * @brief	HiEasyX ¿âµÄÍ¼±êÄ£¿é
- * @note	´æ´¢ HiEasyX Í¼±ê
+ * @brief	HiEasyX åº“çš„å›¾æ ‡æ¨¡å—
+ * @note	å­˜å‚¨ HiEasyX å›¾æ ‡
  * @author	huidong
 */
 
@@ -9,21 +9,21 @@
 
 #include <graphics.h>
 
-// Í¼±ê´óĞ¡
+// å›¾æ ‡å¤§å°
 #define HIICON_WIDTH	64
 #define HIICON_HEIGHT	64
 
 namespace HiEasyX
 {
 	/**
-	 * @brief »ñÈ¡Í¼±êÏÔ´æ
-	 * @see Í¼±ê´óĞ¡ HIICON_WIDTH, HIICON_HEIGHT
-	 * @return ÏÔ´æÖ¸Õë
+	 * @brief è·å–å›¾æ ‡æ˜¾å­˜
+	 * @see å›¾æ ‡å¤§å° HIICON_WIDTH, HIICON_HEIGHT
+	 * @return æ˜¾å­˜æŒ‡é’ˆ
 	*/
 	DWORD* GetIconImageBuffer();
 
 	/**
-	 * @brief »ñÈ¡Í¼±ê¶ÔÏó£¨ÏÔ´æµÄ¿½±´£©
+	 * @brief è·å–å›¾æ ‡å¯¹è±¡ï¼ˆæ˜¾å­˜çš„æ‹·è´ï¼‰
 	*/
 	IMAGE* GetIconImage();
 };

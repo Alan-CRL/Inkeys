@@ -1,7 +1,7 @@
-/*
+ï»¿/*
  * hashlib++ - a simple hash library for C++
  *
- * Copyright (c) 2007-2011 Benjamin Grüdelbach
+ * Copyright (c) 2007-2011 Benjamin Gré»¡elbach
  *
  * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
@@ -280,7 +280,7 @@ public:
 		return(hashIt());
 	}
 
-	// IDT ×ÔÐÐÔöÌíº¯Êý
+	// IDT è‡ªè¡Œå¢žæ·»å‡½æ•°
 	virtual std::string getHashFromFileW(std::wstring filename)
 	{
 		FILE* file;

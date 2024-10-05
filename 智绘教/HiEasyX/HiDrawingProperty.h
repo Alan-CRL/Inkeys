@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	HiDrawingProperty.h
- * @brief	HiEasyX ¿âµÄ»æÍ¼ÊôĞÔ´æ´¢Ä£¿é
+ * @brief	HiEasyX åº“çš„ç»˜å›¾å±æ€§å­˜å‚¨æ¨¡å—
  * @author	huidong
 */
 
@@ -12,10 +12,10 @@ namespace HiEasyX
 {
 	/**
 	 * @brief <pre>
-	 *		»æÍ¼ÊôĞÔ×Ü¿Øµ¥Ôª
+	 *		ç»˜å›¾å±æ€§æ€»æ§å•å…ƒ
 	 *
-	 *	±¸×¢£º
-	 *		EasyX Ä¿Ç°ÎŞ·¨»ñÈ¡ setorigin ºÍ setcliprgn ËùÉèÖÃµÄÖµ
+	 *	å¤‡æ³¨ï¼š
+	 *		EasyX ç›®å‰æ— æ³•è·å– setorigin å’Œ setcliprgn æ‰€è®¾ç½®çš„å€¼
 	 * </pre>
 	*/
 	class DrawingProperty
@@ -38,32 +38,32 @@ namespace HiEasyX
 		LOGFONT m_font;
 
 		/**
-		 * @brief ±£´æµ±Ç°ËùÓĞµÄ»æÍ¼ÊôĞÔ
+		 * @brief ä¿å­˜å½“å‰æ‰€æœ‰çš„ç»˜å›¾å±æ€§
 		*/
 		void SaveProperty();
 
 		/**
-		 * @brief Ö»±£´æµ±Ç°»æÍ¼¶ÔÏó
+		 * @brief åªä¿å­˜å½“å‰ç»˜å›¾å¯¹è±¡
 		*/
 		void SaveWorkingImageOnly();
 
 		/**
-		 * @brief Ó¦ÓÃ±£´æµÄËùÓĞ»æÍ¼ÊôĞÔ
+		 * @brief åº”ç”¨ä¿å­˜çš„æ‰€æœ‰ç»˜å›¾å±æ€§
 		*/
 		void ApplyProperty();
 
 		/**
-		 * @brief Ö»»Ö¸´»æÍ¼¶ÔÏó
+		 * @brief åªæ¢å¤ç»˜å›¾å¯¹è±¡
 		*/
 		void ApplyWorkingImageOnly();
 
 		/**
-		 * @brief ÅĞ¶ÏÊÇ·ñ±£´æÁË»æÍ¼ÊôĞÔ
+		 * @brief åˆ¤æ–­æ˜¯å¦ä¿å­˜äº†ç»˜å›¾å±æ€§
 		*/
 		bool IsSaved();
 
 		/**
-		 * @brief ÖØÖÃ±£´æ×´Ì¬
+		 * @brief é‡ç½®ä¿å­˜çŠ¶æ€
 		*/
 		void Reset();
 	};

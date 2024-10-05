@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	HiGdiPlus.h
- * @brief	HiEasyX ¿âµÄ GDI+ »æÍ¼Ä£¿é
+ * @brief	HiEasyX åº“çš„ GDI+ ç»˜å›¾æ¨¡å—
  * @author	huidong
 */
 
@@ -11,30 +11,30 @@
 
 namespace HiEasyX
 {
-	/////// GDI+ »·¾³ÅäÖÃ ///////
+	/////// GDI+ ç¯å¢ƒé…ç½® ///////
 
 	//
-	//	±¸×¢£º
-	//		µ÷ÓÃÏÂÃæµÄ»æÍ¼º¯ÊıÊ±£¬»á×Ô¶¯³¢ÊÔÆô¶¯ GDI+¡£
+	//	å¤‡æ³¨ï¼š
+	//		è°ƒç”¨ä¸‹é¢çš„ç»˜å›¾å‡½æ•°æ—¶ï¼Œä¼šè‡ªåŠ¨å°è¯•å¯åŠ¨ GDI+ã€‚
 	//
-	//		´´½¨ HiWindow »æÍ¼´°¿ÚÊ±Ò²»á×Ô¶¯Æô¶¯ GDI+£¬×îºóÒ»¸ö»æÍ¼´°¿Ú¹Ø±ÕÊ±£¬GDI+ »á×Ô¶¯¹Ø±Õ¡£
-	//		Èç¹ûÃ»ÓĞ´´½¨»æÍ¼´°¿Ú£¬ÔòĞèÒªÊÖ¶¯¹Ø±Õ GDI+¡£
+	//		åˆ›å»º HiWindow ç»˜å›¾çª—å£æ—¶ä¹Ÿä¼šè‡ªåŠ¨å¯åŠ¨ GDI+ï¼Œæœ€åä¸€ä¸ªç»˜å›¾çª—å£å…³é—­æ—¶ï¼ŒGDI+ ä¼šè‡ªåŠ¨å…³é—­ã€‚
+	//		å¦‚æœæ²¡æœ‰åˆ›å»ºç»˜å›¾çª—å£ï¼Œåˆ™éœ€è¦æ‰‹åŠ¨å…³é—­ GDI+ã€‚
 	//
 
 	/**
-	 * @brief Æô¶¯ GDI+£¬Èç¹ûÒÑ¾­Æô¶¯ÔòÖ±½Ó·µ»Ø
+	 * @brief å¯åŠ¨ GDI+ï¼Œå¦‚æœå·²ç»å¯åŠ¨åˆ™ç›´æ¥è¿”å›
 	*/
 	void Gdiplus_Try_Starup();
 
 	/**
-	 * @brief ¹Ø±Õ GDI+
+	 * @brief å…³é—­ GDI+
 	*/
 	void Gdiplus_Shutdown();
 
-	/////// GDI+ »ù´¡·â×° ///////
+	/////// GDI+ åŸºç¡€å°è£… ///////
 
 	/**
-	 * @brief »­Ïß
+	 * @brief ç”»çº¿
 	*/
 	void Gdiplus_Line(
 		HDC hdc,
@@ -48,7 +48,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­¶à±ßĞÎ
+	 * @brief ç”»å¤šè¾¹å½¢
 	*/
 	void Gdiplus_Polygon(
 		HDC hdc,
@@ -60,7 +60,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­ÎŞ±ß¿òÌî³ä¶à±ßĞÎ
+	 * @brief ç”»æ— è¾¹æ¡†å¡«å……å¤šè¾¹å½¢
 	*/
 	void Gdiplus_SolidPolygon(
 		HDC hdc,
@@ -71,7 +71,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­¾ØĞÎ
+	 * @brief ç”»çŸ©å½¢
 	*/
 	void Gdiplus_Rectangle(
 		HDC hdc,
@@ -85,7 +85,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­ÎŞ±ß¿òÌî³ä¾ØĞÎ
+	 * @brief ç”»æ— è¾¹æ¡†å¡«å……çŸ©å½¢
 	*/
 	void Gdiplus_SolidRectangle(
 		HDC hdc,
@@ -98,7 +98,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­ÍÖÔ²
+	 * @brief ç”»æ¤­åœ†
 	*/
 	void Gdiplus_Ellipse(
 		HDC hdc,
@@ -112,7 +112,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­ÎŞ±ß¿òÌî³äÍÖÔ²
+	 * @brief ç”»æ— è¾¹æ¡†å¡«å……æ¤­åœ†
 	*/
 	void Gdiplus_SolidEllipse(
 		HDC hdc,
@@ -125,7 +125,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­±ı×´Í¼£¨´«ÈëË³Ê±Õë½Ç¶È£©
+	 * @brief ç”»é¥¼çŠ¶å›¾ï¼ˆä¼ å…¥é¡ºæ—¶é’ˆè§’åº¦ï¼‰
 	*/
 	void Gdiplus_Pie(
 		HDC hdc,
@@ -141,7 +141,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­ÎŞ±ß¿òÌî³ä±ı×´Í¼£¨´«ÈëË³Ê±Õë½Ç¶È£©
+	 * @brief ç”»æ— è¾¹æ¡†å¡«å……é¥¼çŠ¶å›¾ï¼ˆä¼ å…¥é¡ºæ—¶é’ˆè§’åº¦ï¼‰
 	*/
 	void Gdiplus_SolidPie(
 		HDC hdc,
@@ -156,7 +156,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­Ô²»¡£¨´«ÈëË³Ê±Õë½Ç¶È£©
+	 * @brief ç”»åœ†å¼§ï¼ˆä¼ å…¥é¡ºæ—¶é’ˆè§’åº¦ï¼‰
 	*/
 	void Gdiplus_Arc(
 		HDC hdc,
@@ -171,28 +171,28 @@ namespace HiEasyX
 		Gdiplus::SmoothingMode smoothing_mode
 	);
 
-	/////// EasyX ·ç¸ñµÄ GDI+ ·â×° ///////
+	/////// EasyX é£æ ¼çš„ GDI+ å°è£… ///////
 
 	////////////////////////////////////////////////////////////////
 	//
-	// ×¢£ºÒÔÏÂ EasyX ·ç¸ñ½Ó¿ÚÖĞ
+	// æ³¨ï¼šä»¥ä¸‹ EasyX é£æ ¼æ¥å£ä¸­
 	//
-	//		enable_alpha	±íÊ¾ÊÇ·ñÊ¹ÓÃ´«ÈëÑÕÉ«µÄ alpha Öµ
-	//		enable_aa		±íÊ¾ÊÇ·ñ¿ªÆô¿¹¾â³İ
-	//		pImg			±íÊ¾Ä¿±ê»æÖÆ»­²¼
+	//		enable_alpha	è¡¨ç¤ºæ˜¯å¦ä½¿ç”¨ä¼ å…¥é¢œè‰²çš„ alpha å€¼
+	//		enable_aa		è¡¨ç¤ºæ˜¯å¦å¼€å¯æŠ—é”¯é½¿
+	//		pImg			è¡¨ç¤ºç›®æ ‡ç»˜åˆ¶ç”»å¸ƒ
 	//
 	////////////////////////////////////////////////////////////////
 
 	/**
-	 * @brief ×ª»» COLORREF µ½ Gdiplus::Color
-	 * @param[in] color				Ô­ÑÕÉ«
-	 * @param[in] reserve_alpha		ÊÇ·ñ±£Áô COLORREF ÖĞµÄ alpha Öµ
-	 * @return ×ª»»ºóµÄ Gdiplus::Color É«Öµ
+	 * @brief è½¬æ¢ COLORREF åˆ° Gdiplus::Color
+	 * @param[in] color				åŸé¢œè‰²
+	 * @param[in] reserve_alpha		æ˜¯å¦ä¿ç•™ COLORREF ä¸­çš„ alpha å€¼
+	 * @return è½¬æ¢åçš„ Gdiplus::Color è‰²å€¼
 	*/
 	Gdiplus::Color ConvertToGdiplusColor(COLORREF color, bool reserve_alpha = false);
 
 	/**
-	 * @brief »­Ö±Ïß
+	 * @brief ç”»ç›´çº¿
 	*/
 	void EasyX_Gdiplus_Line(
 		float x1,
@@ -207,7 +207,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­¶à±ßĞÎ
+	 * @brief ç”»å¤šè¾¹å½¢
 	*/
 	void EasyX_Gdiplus_Polygon(
 		int points_num,
@@ -220,7 +220,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­ÎŞ±ß¿òÌî³ä¶à±ßĞÎ
+	 * @brief ç”»æ— è¾¹æ¡†å¡«å……å¤šè¾¹å½¢
 	*/
 	void EasyX_Gdiplus_SolidPolygon(
 		int points_num,
@@ -232,7 +232,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­ÓĞ±ß¿òÌî³ä¶à±ßĞÎ
+	 * @brief ç”»æœ‰è¾¹æ¡†å¡«å……å¤šè¾¹å½¢
 	*/
 	void EasyX_Gdiplus_FillPolygon(
 		int points_num,
@@ -246,7 +246,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­¾ØĞÎ
+	 * @brief ç”»çŸ©å½¢
 	*/
 	void EasyX_Gdiplus_Rectangle(
 		float x,
@@ -261,7 +261,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­ÎŞ±ß¿òÌî³ä¾ØĞÎ
+	 * @brief ç”»æ— è¾¹æ¡†å¡«å……çŸ©å½¢
 	*/
 	void EasyX_Gdiplus_SolidRectangle(
 		float x,
@@ -275,7 +275,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­ÓĞ±ß¿òÌî³ä¾ØĞÎ
+	 * @brief ç”»æœ‰è¾¹æ¡†å¡«å……çŸ©å½¢
 	*/
 	void EasyX_Gdiplus_FillRectangle(
 		float x,
@@ -291,7 +291,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­Ô²½Ç¾ØĞÎ
+	 * @brief ç”»åœ†è§’çŸ©å½¢
 	*/
 	void EasyX_Gdiplus_RoundRect(
 		float x,
@@ -308,7 +308,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­ÎŞ±ß¿òÌî³äÔ²½Ç¾ØĞÎ
+	 * @brief ç”»æ— è¾¹æ¡†å¡«å……åœ†è§’çŸ©å½¢
 	*/
 	void EasyX_Gdiplus_SolidRoundRect(
 		float x,
@@ -324,7 +324,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­ÓĞ±ß¿òÌî³äÔ²½Ç¾ØĞÎ
+	 * @brief ç”»æœ‰è¾¹æ¡†å¡«å……åœ†è§’çŸ©å½¢
 	*/
 	void EasyX_Gdiplus_FillRoundRect(
 		float x,
@@ -342,7 +342,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­ÍÖÔ²
+	 * @brief ç”»æ¤­åœ†
 	*/
 	void EasyX_Gdiplus_Ellipse(
 		float x,
@@ -357,7 +357,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­ÎŞ±ß¿òÌî³äÍÖÔ²
+	 * @brief ç”»æ— è¾¹æ¡†å¡«å……æ¤­åœ†
 	*/
 	void EasyX_Gdiplus_SolidEllipse(
 		float x,
@@ -371,7 +371,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­ÓĞ±ß¿òÌî³äÍÖÔ²
+	 * @brief ç”»æœ‰è¾¹æ¡†å¡«å……æ¤­åœ†
 	*/
 	void EasyX_Gdiplus_FillEllipse(
 		float x,
@@ -387,7 +387,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­±ı×´Í¼£¨´«ÈëÄæÊ±Õë½Ç¶È£©
+	 * @brief ç”»é¥¼çŠ¶å›¾ï¼ˆä¼ å…¥é€†æ—¶é’ˆè§’åº¦ï¼‰
 	*/
 	void EasyX_Gdiplus_Pie(
 		float x,
@@ -404,7 +404,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­ÎŞ±ß¿òÌî³ä±ı×´Í¼£¨´«ÈëÄæÊ±Õë½Ç¶È£©
+	 * @brief ç”»æ— è¾¹æ¡†å¡«å……é¥¼çŠ¶å›¾ï¼ˆä¼ å…¥é€†æ—¶é’ˆè§’åº¦ï¼‰
 	*/
 	void EasyX_Gdiplus_SolidPie(
 		float x,
@@ -420,7 +420,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­ÓĞ±ß¿òÌî³ä±ı×´Í¼£¨´«ÈëÄæÊ±Õë½Ç¶È£©
+	 * @brief ç”»æœ‰è¾¹æ¡†å¡«å……é¥¼çŠ¶å›¾ï¼ˆä¼ å…¥é€†æ—¶é’ˆè§’åº¦ï¼‰
 	*/
 	void EasyX_Gdiplus_FillPie(
 		float x,
@@ -438,7 +438,7 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief »­Ô²»¡£¨´«ÈëÄæÊ±Õë½Ç¶È£©
+	 * @brief ç”»åœ†å¼§ï¼ˆä¼ å…¥é€†æ—¶é’ˆè§’åº¦ï¼‰
 	*/
 	void EasyX_Gdiplus_Arc(
 		float x,
@@ -455,12 +455,12 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief ½« RECT ×ª»»Îª RectF
+	 * @brief å°† RECT è½¬æ¢ä¸º RectF
 	*/
 	Gdiplus::RectF RECTToRectF(RECT x);
 
 	/**
-	 * @brief ½« RectF ×ª»»Îª RECT
+	 * @brief å°† RectF è½¬æ¢ä¸º RECT
 	*/
 	RECT RectFToRECT(Gdiplus::RectF x);
 };

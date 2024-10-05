@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	Container.h
- * @brief	HiEasyX ¿âµÄ»ù´¡ÈÝÆ÷
+ * @brief	HiEasyX åº“çš„åŸºç¡€å®¹å™¨
  * @author	huidong
 */
 
@@ -11,13 +11,13 @@
 namespace HiEasyX
 {
 	/**
-	 * @brief »ù´¡ÈÝÆ÷
+	 * @brief åŸºç¡€å®¹å™¨
 	*/
 	class Container
 	{
 	protected:
 
-		RECT m_rct = { 0 };					///< ÈÝÆ÷ÇøÓò
+		RECT m_rct = { 0 };					///< å®¹å™¨åŒºåŸŸ
 
 	public:
 
@@ -26,25 +26,25 @@ namespace HiEasyX
 		virtual ~Container();
 
 		/**
-		 * @brief ÏìÓ¦¸üÐÂÇøÓòÏûÏ¢
-		 * @param[in] rctOld ¾ÉµÄÇøÓò
+		 * @brief å“åº”æ›´æ–°åŒºåŸŸæ¶ˆæ¯
+		 * @param[in] rctOld æ—§çš„åŒºåŸŸ
 		*/
 		virtual void UpdateRect(RECT rctOld);
 
 		RECT GetRect() const { return m_rct; }
 
 		/**
-		 * @brief ÉèÖÃÎ»ÖÃºÍ¿í¸ß
-		 * @param[in] x	Î»ÖÃ
-		 * @param[in] y	Î»ÖÃ
-		 * @param[in] w	¿í
-		 * @param[in] h	¸ß
+		 * @brief è®¾ç½®ä½ç½®å’Œå®½é«˜
+		 * @param[in] x	ä½ç½®
+		 * @param[in] y	ä½ç½®
+		 * @param[in] w	å®½
+		 * @param[in] h	é«˜
 		*/
 		void SetRect(int x, int y, int w, int h);
 
 		/**
-		 * @brief ÉèÖÃ¾ØÐÎÇøÓò
-		 * @param[in] rct ÇøÓò
+		 * @brief è®¾ç½®çŸ©å½¢åŒºåŸŸ
+		 * @param[in] rct åŒºåŸŸ
 		*/
 		void SetRect(RECT rct);
 

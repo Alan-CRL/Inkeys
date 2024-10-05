@@ -1,4 +1,4 @@
-#include "SysControlBase.h"
+ï»¿#include "SysControlBase.h"
 
 #include "../HiWindow.h"
 
@@ -127,11 +127,11 @@ namespace HiEasyX
 
 	bool SysControlBase::IsFocused()
 	{
-		DWORD SelfThreadId = GetCurrentThreadId();						// »ñÈ¡×ÔÉíÏß³Ì ID
-		DWORD ForeThreadId = GetWindowThreadProcessId(m_hParent, NULL);	// ¸ù¾İ´°¿Ú¾ä±ú»ñÈ¡Ïß³Ì ID
-		AttachThreadInput(ForeThreadId, SelfThreadId, true);			// ¸½¼Óµ½Ïß³Ì
-		HWND hWnd = GetFocus();											// »ñÈ¡¾ßÓĞÊäÈë½¹µãµÄ´°¿Ú¾ä±ú
-		AttachThreadInput(ForeThreadId, SelfThreadId, false);			// È¡Ïû¸½¼Óµ½Ïß³Ì
+		DWORD SelfThreadId = GetCurrentThreadId();						// è·å–è‡ªèº«çº¿ç¨‹ ID
+		DWORD ForeThreadId = GetWindowThreadProcessId(m_hParent, NULL);	// æ ¹æ®çª—å£å¥æŸ„è·å–çº¿ç¨‹ ID
+		AttachThreadInput(ForeThreadId, SelfThreadId, true);			// é™„åŠ åˆ°çº¿ç¨‹
+		HWND hWnd = GetFocus();											// è·å–å…·æœ‰è¾“å…¥ç„¦ç‚¹çš„çª—å£å¥æŸ„
+		AttachThreadInput(ForeThreadId, SelfThreadId, false);			// å–æ¶ˆé™„åŠ åˆ°çº¿ç¨‹
 		return hWnd == GetHandle();
 	}
 

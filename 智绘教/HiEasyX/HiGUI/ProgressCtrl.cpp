@@ -1,4 +1,4 @@
-#include "ProgressCtrl.h"
+ï»¿#include "ProgressCtrl.h"
 
 namespace HiEasyX
 {
@@ -60,7 +60,7 @@ namespace HiEasyX
 	{
 		m_bEnableAnimation = enable;
 
-		// ÆôÓÃ¶¯»­ºó£¬×ÜÊÇÖØ»æ
+		// å¯ç”¨åŠ¨ç”»åï¼Œæ€»æ˜¯é‡ç»˜
 		m_bAlwaysRedrawAndRender = m_bEnableAnimation;
 
 		MarkNeedRedrawAndRender();
@@ -72,7 +72,7 @@ namespace HiEasyX
 		{
 			ControlBase::Draw(false);
 
-			// »æÖÆ½áÊøÎ»ÖÃ
+			// ç»˜åˆ¶ç»“æŸä½ç½®
 			int nEnd = (int)((m_nPos / (float)m_nLen) * (GetWidth() - 2));
 
 			m_canvas.SolidRectangle(
@@ -80,14 +80,14 @@ namespace HiEasyX
 				true, m_cBar
 			);
 
-			// »æÖÆ¶¯»­Ğ§¹û
+			// ç»˜åˆ¶åŠ¨ç”»æ•ˆæœ
 			if (m_bEnableAnimation)
 			{
-				// ¶¯»­½ø¶È
+				// åŠ¨ç”»è¿›åº¦
 				if (m_tClock == 0)	m_tClock = clock();
 				float fProcess = (
-					((clock() - m_tClock) / (float)CLOCKS_PER_SEC)	// ¾­¹ıÊ±³¤
-					/ (1 / m_fSpeedRatio)							// ×ÜÊ±³¤
+					((clock() - m_tClock) / (float)CLOCKS_PER_SEC)	// ç»è¿‡æ—¶é•¿
+					/ (1 / m_fSpeedRatio)							// æ€»æ—¶é•¿
 					);
 				if (fProcess >= 1)
 				{
@@ -95,14 +95,14 @@ namespace HiEasyX
 					m_tClock = clock();
 				}
 
-				int nAnimationLen = (int)(m_nPos / (float)m_nLen * GetWidth() * m_fLenRatio);		// ¶¯»­Ğ§¹û³¤¶È
-				int nAnimationLenHalf = nAnimationLen / 2;										// ¶¯»­Ğ§¹û°ë³¤
-				int draw_pos = (int)((nEnd + nAnimationLen) * fProcess) - nAnimationLenHalf;	// ¹âÔ´»æÖÆ x ×ø±ê
+				int nAnimationLen = (int)(m_nPos / (float)m_nLen * GetWidth() * m_fLenRatio);		// åŠ¨ç”»æ•ˆæœé•¿åº¦
+				int nAnimationLenHalf = nAnimationLen / 2;										// åŠ¨ç”»æ•ˆæœåŠé•¿
+				int draw_pos = (int)((nEnd + nAnimationLen) * fProcess) - nAnimationLenHalf;	// å…‰æºç»˜åˆ¶ x åæ ‡
 				for (int i = -nAnimationLenHalf; i < nAnimationLenHalf; i++)
 				{
-					int pos = i + draw_pos;		// µ±Ç°»æÖÆ x ×ø±ê
+					int pos = i + draw_pos;		// å½“å‰ç»˜åˆ¶ x åæ ‡
 
-					// µ±Ç°»æÖÆÁÁ¶È
+					// å½“å‰ç»˜åˆ¶äº®åº¦
 					float l = (m_fBarColorLightness - m_fBarLightLightness) * (abs(i) / (float)nAnimationLenHalf) + m_fBarLightLightness;
 					if (pos >= 1 && pos <= nEnd)
 					{

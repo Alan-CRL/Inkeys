@@ -1,4 +1,4 @@
-#include <windows.h>
+ï»¿#include <windows.h>
 #include <filesystem>
 #include <iostream>
 #include <sddl.h>
@@ -9,15 +9,15 @@ using namespace std;
 
 void Test()
 {
-	MessageBox(NULL, L"±ê¼Ç´¦", L"±ê¼Ç", MB_OK | MB_SYSTEMMODAL);
+	MessageBox(NULL, L"æ ‡è®°å¤„", L"æ ‡è®°", MB_OK | MB_SYSTEMMODAL);
 }
 void Testi(int t)
 {
-	MessageBox(NULL, to_wstring(t).c_str(), L"ÊıÖµ±ê¼Ç", MB_OK | MB_SYSTEMMODAL);
+	MessageBox(NULL, to_wstring(t).c_str(), L"æ•°å€¼æ ‡è®°", MB_OK | MB_SYSTEMMODAL);
 }
 void Testw(wstring t)
 {
-	MessageBox(NULL, t.c_str(), L"×Ö·û±ê¼Ç", MB_OK | MB_SYSTEMMODAL);
+	MessageBox(NULL, t.c_str(), L"å­—ç¬¦æ ‡è®°", MB_OK | MB_SYSTEMMODAL);
 }
 
 string edition_date = "20240520.01";
@@ -88,14 +88,14 @@ bool QueryStartupSelfStart(wstring path, wstring nameclass)
 
 	HKEY hKey;
 	LPCTSTR lpRun = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-	long lRet = RegOpenKeyEx(HKEY_LOCAL_MACHINE, lpRun, 0, KEY_READ, &hKey); // ĞŞ¸Ä´Ë´¦ÎªKEY_READ
+	long lRet = RegOpenKeyEx(HKEY_LOCAL_MACHINE, lpRun, 0, KEY_READ, &hKey); // ä¿®æ”¹æ­¤å¤„ä¸ºKEY_READ
 	if (lRet != ERROR_SUCCESS) return false;
 
 	wchar_t regValue[MAX_PATH] = { 0 };
 	DWORD dwType;
 	DWORD dwSize = sizeof(regValue);
 	lRet = RegQueryValueEx(hKey, nameclass.c_str(), 0, &dwType, (LPBYTE)regValue, &dwSize);
-	if (lRet != ERROR_SUCCESS || dwType != REG_SZ || (wcscmp(regValue, pFileName) != 0 && wcscmp(regValue, pFileName2) != 0)) // Èç¹û²éÑ¯²»µ½Öµ»òÕßÖµ²»ÊÇ×Ö·û´®»òÕßÖµ²»µÈÓÚÖ¸¶¨Â·¾¶£¬Ôò·µ»Øfalse
+	if (lRet != ERROR_SUCCESS || dwType != REG_SZ || (wcscmp(regValue, pFileName) != 0 && wcscmp(regValue, pFileName2) != 0)) // å¦‚æœæŸ¥è¯¢ä¸åˆ°å€¼æˆ–è€…å€¼ä¸æ˜¯å­—ç¬¦ä¸²æˆ–è€…å€¼ä¸ç­‰äºæŒ‡å®šè·¯å¾„ï¼Œåˆ™è¿”å›false
 	{
 		RegCloseKey(hKey);
 		return false;
@@ -111,7 +111,7 @@ void CloseTheProgramWithin15Seconds()
 	exit(0);
 }
 
-// ³ÌĞòÈë¿Úµã
+// ç¨‹åºå…¥å£ç‚¹
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
 {
 	thread(CloseTheProgramWithin15Seconds).detach();
@@ -153,7 +153,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 	/*
 		DWORD dwBytesWritten;
-		wstring dataToSend = L"¹ÜµÀÉèÖÃ²âÊÔ";
+		wstring dataToSend = L"ç®¡é“è®¾ç½®æµ‹è¯•";
 
 		SECURITY_ATTRIBUTES sa = { sizeof(SECURITY_ATTRIBUTES), NULL, TRUE };
 		HANDLE hPipe = CreateNamedPipe(TEXT("\\\\.\\pipe\\IDTPipe1"), PIPE_ACCESS_DUPLEX, PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT, PIPE_UNLIMITED_INSTANCES, 0, 0, NMPWAIT_WAIT_FOREVER, &sa);

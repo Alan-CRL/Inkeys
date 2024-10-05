@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	HiFPS.h
- * @brief	HiEasyX ¿âµÄÖ¡ÂÊÄ£¿é
+ * @brief	HiEasyX åº“çš„å¸§ç‡æ¨¡å—
  * @author	huidong
 */
 
@@ -16,24 +16,24 @@ namespace HiEasyX
 	struct tDelayFPS
 	{
 		clock_t tRecord;
-		tDelayFPS();  // ÉùÃ÷¹¹Ôìº¯Êı£¬¶¨Òå½«ÔÚ HiFPS.cpp ÖĞ½øĞĞ
+		tDelayFPS();  // å£°æ˜æ„é€ å‡½æ•°ï¼Œå®šä¹‰å°†åœ¨ HiFPS.cpp ä¸­è¿›è¡Œ
 	};
 
 	/**
-	 * @brief ¸ù¾İÄ¿±êÖ¡ÂÊÑÓÊ±
-	 * @param[in] fps			Ö¡ÂÊ
-	 * @param[in] wait_long		ÊÇ·ñ³¤µÈ´ı£¨½µµÍÕ¼ÓÃ£©
+	 * @brief æ ¹æ®ç›®æ ‡å¸§ç‡å»¶æ—¶
+	 * @param[in] fps			å¸§ç‡
+	 * @param[in] wait_long		æ˜¯å¦é•¿ç­‰å¾…ï¼ˆé™ä½å ç”¨ï¼‰
 	*/
 
-	// DelayFPS ÓÚ 24/01/31 ¸üĞÂ
-	// ´Ë´Î¸üĞÂ¶ÔÕâ¸öº¯Êı½øĞĞ¸Ä¶¯£¬ÆäÄ¿µÄÊÇ½â¾ö¶àÏß³ÌÊ¹ÓÃÊ±Òı·¢µÄÎÊÌâ£¬²¢Ìá¸ß¾«¶È
-	// Í¬Ê±½« HpSleep(delay); ¸ÄÎª std::this_thread::sleep_for(std::chrono::milliseconds(delay)); ÓĞÖúÓÚ½øÒ»²½Ìá¸ß¾«¶È
-	// this_thread::sleep_for º¯Êı´æÔÚÎÊÌâ£¬¾İ https://developercommunity.visualstudio.com/t/Modifying-the-system-time-to-the-past-s/10476559 ÖĞ£¬Ò»¶Ô´Ëº¯Êı½øĞĞĞŞ¸´£¬ÇëÈ·ÈÏ MSVC °æ±¾ÒÔ±ÜÃâ´íÎó
-	// Ê¹ÓÃÄ£°å
+	// DelayFPS äº 24/01/31 æ›´æ–°
+	// æ­¤æ¬¡æ›´æ–°å¯¹è¿™ä¸ªå‡½æ•°è¿›è¡Œæ”¹åŠ¨ï¼Œå…¶ç›®çš„æ˜¯è§£å†³å¤šçº¿ç¨‹ä½¿ç”¨æ—¶å¼•å‘çš„é—®é¢˜ï¼Œå¹¶æé«˜ç²¾åº¦
+	// åŒæ—¶å°† HpSleep(delay); æ”¹ä¸º std::this_thread::sleep_for(std::chrono::milliseconds(delay)); æœ‰åŠ©äºè¿›ä¸€æ­¥æé«˜ç²¾åº¦
+	// this_thread::sleep_for å‡½æ•°å­˜åœ¨é—®é¢˜ï¼Œæ® https://developercommunity.visualstudio.com/t/Modifying-the-system-time-to-the-past-s/10476559 ä¸­ï¼Œä¸€å¯¹æ­¤å‡½æ•°è¿›è¡Œä¿®å¤ï¼Œè¯·ç¡®è®¤ MSVC ç‰ˆæœ¬ä»¥é¿å…é”™è¯¯
+	// ä½¿ç”¨æ¨¡æ¿
 	/*
 		static hiex::tDelayFPS recond;
 		hiex::DelayFPS(recond, 24);
 	*/
-	// »òÊÇÔÚÑ­»·ÉÏÒ»¼¶¶¨Òå hiex::tDelayFPS recond; ĞèÒªÈ·±£Ã¿¸öÏß³ÌÖĞÓĞ×Ô¼ºµÄ tDelayFPS£¬¶à¸öÏß³Ì²»ÄÜÊ¹ÓÃÍ¬Ò»¸ö tDelayFPS
+	// æˆ–æ˜¯åœ¨å¾ªç¯ä¸Šä¸€çº§å®šä¹‰ hiex::tDelayFPS recond; éœ€è¦ç¡®ä¿æ¯ä¸ªçº¿ç¨‹ä¸­æœ‰è‡ªå·±çš„ tDelayFPSï¼Œå¤šä¸ªçº¿ç¨‹ä¸èƒ½ä½¿ç”¨åŒä¸€ä¸ª tDelayFPS
 	void DelayFPS(tDelayFPS& Record, int fps, bool wait_long = false);
 };

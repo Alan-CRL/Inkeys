@@ -1,4 +1,4 @@
-// Copyright(c) 2016 Alexander Dalshov & spdlog contributors.
+﻿// Copyright(c) 2016 Alexander Dalshov & spdlog contributors.
 // Distributed under the MIT License (http://opensource.org/licenses/MIT)
 
 #pragma once

@@ -1,4 +1,4 @@
-#include "HiMouseDrag.h"
+﻿#include "HiMouseDrag.h"
 
 namespace HiEasyX
 {

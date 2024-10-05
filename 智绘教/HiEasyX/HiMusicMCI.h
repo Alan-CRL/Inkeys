@@ -1,7 +1,7 @@
-/**
+ï»¿/**
  * @file	HiMusicMCI.h
- * @brief	HiEasyX ¿âµÄÉùÒôÄ£¿é
- * @author	ÓÆÔ¶µÄ²Ôñ· <2237505658@qq.com>, huidong£¨ÐÞ¸Ä£©
+ * @brief	HiEasyX åº“çš„å£°éŸ³æ¨¡å—
+ * @author	æ‚ è¿œçš„è‹ç©¹ <2237505658@qq.com>, huidongï¼ˆä¿®æ”¹ï¼‰
 */
 
 #pragma once
@@ -12,26 +12,26 @@ namespace HiEasyX
 {
 	/**
 	 * @brief <pre>
-	 *		MusicMCI£¨ÒôÀÖ²¥·Å²Ù×÷²ã£©
-	 *		Ö§³Ö²¥·Å¡¢ÔÝÍ£¡¢ÉèÖÃÒôÁ¿¡¢»ñÈ¡²¥·ÅÊ±¼äµÈ²Ù×÷
+	 *		MusicMCIï¼ˆéŸ³ä¹æ’­æ”¾æ“ä½œå±‚ï¼‰
+	 *		æ”¯æŒæ’­æ”¾ã€æš‚åœã€è®¾ç½®éŸ³é‡ã€èŽ·å–æ’­æ”¾æ—¶é—´ç­‰æ“ä½œ
 	 * </pre>
 	*/
 	class MusicMCI
 	{
 	private:
-		MCIDEVICEID nDeviceID;									///< Éè±¸ID
+		MCIDEVICEID nDeviceID;									///< è®¾å¤‡ID
 
 	public:
-		MusicMCI()noexcept;										///< Ä¬ÈÏ¹¹Ôìº¯Êý
-		virtual ~MusicMCI();									///< ÐéÎö¹¹º¯Êý
-		bool open(LPCTSTR music)noexcept;						///< ´ò¿ªÒôÀÖ
-		bool play()noexcept;									///< ²¥·ÅÒôÀÖ
-		bool pause()noexcept;									///< ÔÝÍ£ÒôÀÖ
-		bool stop()noexcept;									///< Í£Ö¹²¥·Å
-		bool close()noexcept;									///< ¹Ø±ÕÒôÀÖ
-		bool getCurrentTime(DWORD& pos)noexcept;				///< »ñÈ¡µ±Ç°²¥·ÅÊ±¼ä
-		bool getTotalTime(DWORD& time)noexcept;					///< »ñÈ¡ÒôÀÖ×ÜÊ±³¤
-		bool setVolume(size_t volume)noexcept;					///< ÉèÖÃÒôÁ¿´óÐ¡
-		bool setStartTime(size_t start)noexcept;				///< ÉèÖÃ²¥·ÅÎ»ÖÃ
+		MusicMCI()noexcept;										///< é»˜è®¤æž„é€ å‡½æ•°
+		virtual ~MusicMCI();									///< è™šæžæž„å‡½æ•°
+		bool open(LPCTSTR music)noexcept;						///< æ‰“å¼€éŸ³ä¹
+		bool play()noexcept;									///< æ’­æ”¾éŸ³ä¹
+		bool pause()noexcept;									///< æš‚åœéŸ³ä¹
+		bool stop()noexcept;									///< åœæ­¢æ’­æ”¾
+		bool close()noexcept;									///< å…³é—­éŸ³ä¹
+		bool getCurrentTime(DWORD& pos)noexcept;				///< èŽ·å–å½“å‰æ’­æ”¾æ—¶é—´
+		bool getTotalTime(DWORD& time)noexcept;					///< èŽ·å–éŸ³ä¹æ€»æ—¶é•¿
+		bool setVolume(size_t volume)noexcept;					///< è®¾ç½®éŸ³é‡å¤§å°
+		bool setStartTime(size_t start)noexcept;				///< è®¾ç½®æ’­æ”¾ä½ç½®
 	};
 };

@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	SysStatic.h
- * @brief	HiSysGUI ¿Ø¼ş·ÖÖ§£º¾²Ì¬¿Ø¼ş
+ * @brief	HiSysGUI æ§ä»¶åˆ†æ”¯ï¼šé™æ€æ§ä»¶
  * @author	huidong
 */
 
@@ -13,7 +13,7 @@
 namespace HiEasyX
 {
 	/**
-	 * @brief ÏµÍ³¾²Ì¬¿Ø¼ş
+	 * @brief ç³»ç»Ÿé™æ€æ§ä»¶
 	*/
 	class SysStatic : public SysControlBase
 	{
@@ -34,15 +34,15 @@ namespace HiEasyX
 #endif
 
 		/**
-		 * @brief ÉèÖÃÎÄ±¾¾ÓÖĞ
-		 * @param[in] center ÊÇ·ñ¾ÓÖĞ
+		 * @brief è®¾ç½®æ–‡æœ¬å±…ä¸­
+		 * @param[in] center æ˜¯å¦å±…ä¸­
 		*/
 		void Center(bool center);
 
 		/**
-		 * @brief ÉèÖÃÍ¼Æ¬
-		 * @param[in] enable	ÊÇ·ñÆôÓÃÍ¼Ïñ
-		 * @param[in] img		Í¼Ïñ
+		 * @brief è®¾ç½®å›¾ç‰‡
+		 * @param[in] enable	æ˜¯å¦å¯ç”¨å›¾åƒ
+		 * @param[in] img		å›¾åƒ
 		*/
 		void Image(bool enable, IMAGE* img = nullptr);
 	};

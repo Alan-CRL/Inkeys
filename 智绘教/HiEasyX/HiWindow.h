@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	HiWindow.h
- * @brief	HiEasyX ¿âµÄ´°¿ÚÄ£¿é
+ * @brief	HiEasyX åº“çš„çª—å£æ¨¡å—
  * @author	huidong
 */
 
@@ -23,30 +23,30 @@
 
 #define __HIWINDOW_H__
 
-// ²¹³ä»æÍ¼´°¿Ú³õÊ¼»¯²ÎÊı
-// ÆÕÍ¨´°¿Ú
+// è¡¥å……ç»˜å›¾çª—å£åˆå§‹åŒ–å‚æ•°
+// æ™®é€šçª—å£
 #define EW_NORMAL							0
 
-// ÎŞ´°¿ÚÊ±µÄË÷Òı
+// æ— çª—å£æ—¶çš„ç´¢å¼•
 #define NO_WINDOW_INDEX						-1
 
-// ´°¿Ú¹ı³Ìº¯ÊıÄ¬ÈÏ·µ»ØÖµ
+// çª—å£è¿‡ç¨‹å‡½æ•°é»˜è®¤è¿”å›å€¼
 #define HIWINDOW_DEFAULT_PROC				(LRESULT)(-10086)
 
-// ÍĞÅÌÏûÏ¢
+// æ‰˜ç›˜æ¶ˆæ¯
 #define WM_TRAY								(WM_USER + 9337)
 
-// ÏµÍ³¿Ø¼ş´´½¨ÏûÏ¢
-// wParam ´«Èë SysControlBase*
-// lParam ´«Èë CREATESTRUCT*
+// ç³»ç»Ÿæ§ä»¶åˆ›å»ºæ¶ˆæ¯
+// wParam ä¼ å…¥ SysControlBase*
+// lParam ä¼ å…¥ CREATESTRUCT*
 #define WM_SYSCTRL_CREATE					(WM_USER + 9338)
 
-// ÏµÍ³¿Ø¼şÎö¹¹ÏûÏ¢
-// wParam ´«Èë SysControlBase*
+// ç³»ç»Ÿæ§ä»¶ææ„æ¶ˆæ¯
+// wParam ä¼ å…¥ SysControlBase*
 #define WM_SYSCTRL_DELETE					(WM_USER + 9339)
 
-// ÓÃ»§ÖØ»æÏûÏ¢£¬ÎŞĞè²ÎÊı
-// ÓÃ»§µ÷ÓÃ RedrawWindow ÒÔÖØ»æ´°¿ÚÊ±»á·¢ËÍ´ËÏûÏ¢¶ø·Ç WN_PAINT
+// ç”¨æˆ·é‡ç»˜æ¶ˆæ¯ï¼Œæ— éœ€å‚æ•°
+// ç”¨æˆ·è°ƒç”¨ RedrawWindow ä»¥é‡ç»˜çª—å£æ—¶ä¼šå‘é€æ­¤æ¶ˆæ¯è€Œé WN_PAINT
 #define WM_USER_REDRAW						(WM_USER + 9340)
 
 namespace HiEasyX
@@ -54,74 +54,74 @@ namespace HiEasyX
 	class Canvas;
 	class SysControlBase;
 
-	////////////****** ÀàĞÍ¶¨Òå ******////////////
+	////////////****** ç±»å‹å®šä¹‰ ******////////////
 
 	/**
-	 * @brief	´°¿Ú
-	 * @note	ÔÚ InitWindowStruct º¯ÊıÖĞ³õÊ¼»¯´Ë½á¹¹Ìå
+	 * @brief	çª—å£
+	 * @note	åœ¨ InitWindowStruct å‡½æ•°ä¸­åˆå§‹åŒ–æ­¤ç»“æ„ä½“
 	*/
 	struct EasyWindow
 	{
-		bool isAlive;								///< ´°¿ÚÊÇ·ñ´æÔÚ
+		bool isAlive;								///< çª—å£æ˜¯å¦å­˜åœ¨
 
-		HWND hWnd;									///< ´°¿Ú¾ä±ú
-		HWND hParent;								///< ¸¸´°¿Ú¾ä±ú
+		HWND hWnd;									///< çª—å£å¥æŸ„
+		HWND hParent;								///< çˆ¶çª—å£å¥æŸ„
 
-		IMAGE* pImg;								///< ´°¿ÚÍ¼Ïñ
-		IMAGE* pBufferImg;							///< Í¼Ïñ»º³åÇø
-		Canvas* pBufferImgCanvas;					///< Í¼Ïñ»º³åÇø°ó¶¨µÄ»­²¼Ö¸Õë
-		bool isNeedFlush;							///< ÊÇ·ñĞèÒªÊä³ö»æÍ¼»º³å
+		IMAGE* pImg;								///< çª—å£å›¾åƒ
+		IMAGE* pBufferImg;							///< å›¾åƒç¼“å†²åŒº
+		Canvas* pBufferImgCanvas;					///< å›¾åƒç¼“å†²åŒºç»‘å®šçš„ç”»å¸ƒæŒ‡é’ˆ
+		bool isNeedFlush;							///< æ˜¯å¦éœ€è¦è¾“å‡ºç»˜å›¾ç¼“å†²
 
-		WNDPROC funcWndProc;						///< ´°¿ÚÏûÏ¢´¦Àíº¯Êı
+		WNDPROC funcWndProc;						///< çª—å£æ¶ˆæ¯å¤„ç†å‡½æ•°
 
-		std::vector<ExMessage> vecMessage;			///< Ä£Äâ EasyX ´°¿ÚÏûÏ¢¶ÓÁĞ
+		std::vector<ExMessage> vecMessage;			///< æ¨¡æ‹Ÿ EasyX çª—å£æ¶ˆæ¯é˜Ÿåˆ—
 
-		bool isUseTray;								///< ÊÇ·ñÊ¹ÓÃÍĞÅÌ
-		NOTIFYICONDATA nid;							///< ÍĞÅÌĞÅÏ¢
-		bool isUseTrayMenu;							///< ÊÇ·ñÊ¹ÓÃÍĞÅÌ²Ëµ¥
-		HMENU hTrayMenu;							///< ÍĞÅÌ²Ëµ¥
+		bool isUseTray;								///< æ˜¯å¦ä½¿ç”¨æ‰˜ç›˜
+		NOTIFYICONDATA nid;							///< æ‰˜ç›˜ä¿¡æ¯
+		bool isUseTrayMenu;							///< æ˜¯å¦ä½¿ç”¨æ‰˜ç›˜èœå•
+		HMENU hTrayMenu;							///< æ‰˜ç›˜èœå•
 
 		/**
 		 * @brief <pre>
-		 *		ÍĞÅÌ²Ëµ¥ÏûÏ¢´¦Àíº¯ÊıÖ¸Õë
+		 *		æ‰˜ç›˜èœå•æ¶ˆæ¯å¤„ç†å‡½æ•°æŒ‡é’ˆ
 		 *
-		 * ±¸×¢£º
-		 *		¸ø³ö´Ëº¯ÊıÊÇÎªÁË·½±ãÏìÓ¦ÍĞÅÌµÄ²Ëµ¥ÏûÏ¢
-		 *		ÈçĞèÏìÓ¦ÍêÕûµÄÍĞÅÌÏûÏ¢£¬Çë×Ô¶¨Òå´°¿Ú¹ı³Ìº¯Êı²¢´¦Àí WM_TRAY ÏûÏ¢
+		 * å¤‡æ³¨ï¼š
+		 *		ç»™å‡ºæ­¤å‡½æ•°æ˜¯ä¸ºäº†æ–¹ä¾¿å“åº”æ‰˜ç›˜çš„èœå•æ¶ˆæ¯
+		 *		å¦‚éœ€å“åº”å®Œæ•´çš„æ‰˜ç›˜æ¶ˆæ¯ï¼Œè¯·è‡ªå®šä¹‰çª—å£è¿‡ç¨‹å‡½æ•°å¹¶å¤„ç† WM_TRAY æ¶ˆæ¯
 		 * </pre>
 		*/
 		void(*funcTrayMenuProc)(UINT);
 
-		bool isNewSize;								///< ´°¿Ú´óĞ¡ÊÇ·ñ¸Ä±ä
-		bool isBusyProcessing;						///< ÊÇ·ñÕıÃ¦ÓÚ´¦ÀíÄÚ²¿ÏûÏ¢£¨Ö¸²»ÔÊĞíÓÃ»§Æô¶¯ÈÎÎñµÄÇé¿ö£©
+		bool isNewSize;								///< çª—å£å¤§å°æ˜¯å¦æ”¹å˜
+		bool isBusyProcessing;						///< æ˜¯å¦æ­£å¿™äºå¤„ç†å†…éƒ¨æ¶ˆæ¯ï¼ˆæŒ‡ä¸å…è®¸ç”¨æˆ·å¯åŠ¨ä»»åŠ¡çš„æƒ…å†µï¼‰
 
-		int nSkipPixels;							///< »æÖÆÊ±Ìø¹ıµÄÏñËØµãÊıÁ¿£¨½µÖÊĞÔËÙ»æ£©
+		int nSkipPixels;							///< ç»˜åˆ¶æ—¶è·³è¿‡çš„åƒç´ ç‚¹æ•°é‡ï¼ˆé™è´¨æ€§é€Ÿç»˜ï¼‰
 
-		std::vector<SysControlBase*> vecSysCtrl;	///< ¼ÇÂ¼´´½¨µÄÏµÍ³¿Ø¼ş
-		bool bHasCtrl = false;						///< ÊÇ·ñ´´½¨¹ıÏµÍ³¿Ø¼ş
+		std::vector<SysControlBase*> vecSysCtrl;	///< è®°å½•åˆ›å»ºçš„ç³»ç»Ÿæ§ä»¶
+		bool bHasCtrl = false;						///< æ˜¯å¦åˆ›å»ºè¿‡ç³»ç»Ÿæ§ä»¶
 	};
 	extern std::deque<std::shared_mutex> g_vecWindows_vecMessage_sm;
 	extern std::vector<EasyWindow> g_vecWindows;
 
 	/**
 	 * @brief <pre>
-	 *		»æÖÆÄ£Ê½£¨´Ó»º³åÇø»æÖÆµ½´°¿Ú£©
+	 *		ç»˜åˆ¶æ¨¡å¼ï¼ˆä»ç¼“å†²åŒºç»˜åˆ¶åˆ°çª—å£ï¼‰
 	 *
-	 *	±¸×¢£º
-	 *		Ò»°ãÊ¹ÓÃ DM_Normal ¼´¿É¡£
+	 *	å¤‡æ³¨ï¼š
+	 *		ä¸€èˆ¬ä½¿ç”¨ DM_Normal å³å¯ã€‚
 	 * </pre>
 	*/
 	enum DrawMode
 	{
-		DM_Real,		///< ÍêÈ«°´Êµ¼Ê»æÖÆ£¨Ã¿´ÎÒªÇóÖØ»æ¶¼Á¢¼´Ö´ĞĞ£¬¿ÉÄÜµ¼ÖÂ³ÌĞò¿¨¶Ù£©
-		DM_Normal,		///< Õı³£»æÖÆ£¨ÏÖÔÚºÍ DM_Real ÊÇµÈ¼ÛÁË£©
-		DM_Fast,		///< ¿ìËÙ»æÖÆ£¨·¢ËÍ WM_USER_REDRAW ÏûÏ¢£¬¿ÉÄÜÌø¹ı²¿·Ö»æÖÆ£©
-		DM_VeryFast,	///< ¼«ËÙ»æÖÆ£¨·¢ËÍ WM_USER_REDRAW ÏûÏ¢£¬¿ÉÄÜÌø¹ıºÜ¶à»æÖÆ£©
-		DM_Fastest,		///< ×î¿ìµÄ»æÖÆ·½Ê½£¨·¢ËÍ WM_USER_REDRAW ÏûÏ¢£¬¿ÉÄÜÌø¹ı´ó²¿·Ö»æÖÆ£©
+		DM_Real,		///< å®Œå…¨æŒ‰å®é™…ç»˜åˆ¶ï¼ˆæ¯æ¬¡è¦æ±‚é‡ç»˜éƒ½ç«‹å³æ‰§è¡Œï¼Œå¯èƒ½å¯¼è‡´ç¨‹åºå¡é¡¿ï¼‰
+		DM_Normal,		///< æ­£å¸¸ç»˜åˆ¶ï¼ˆç°åœ¨å’Œ DM_Real æ˜¯ç­‰ä»·äº†ï¼‰
+		DM_Fast,		///< å¿«é€Ÿç»˜åˆ¶ï¼ˆå‘é€ WM_USER_REDRAW æ¶ˆæ¯ï¼Œå¯èƒ½è·³è¿‡éƒ¨åˆ†ç»˜åˆ¶ï¼‰
+		DM_VeryFast,	///< æé€Ÿç»˜åˆ¶ï¼ˆå‘é€ WM_USER_REDRAW æ¶ˆæ¯ï¼Œå¯èƒ½è·³è¿‡å¾ˆå¤šç»˜åˆ¶ï¼‰
+		DM_Fastest,		///< æœ€å¿«çš„ç»˜åˆ¶æ–¹å¼ï¼ˆå‘é€ WM_USER_REDRAW æ¶ˆæ¯ï¼Œå¯èƒ½è·³è¿‡å¤§éƒ¨åˆ†ç»˜åˆ¶ï¼‰
 	};
 
 	/**
-	 * @brief ´°¿Ú
+	 * @brief çª—å£
 	*/
 	class Window
 	{
@@ -165,7 +165,7 @@ namespace HiEasyX
 		);
 
 		/**
-		 * @brief µÈ¼ÛÓÚ InitWindow
+		 * @brief ç­‰ä»·äº InitWindow
 		*/
 		HWND Create(
 			int w = 640,
@@ -179,7 +179,7 @@ namespace HiEasyX
 		void CloseWindow();
 
 		/**
-		 * @brief µÈ¼ÛÓÚ CloseWindow
+		 * @brief ç­‰ä»·äº CloseWindow
 		*/
 		void Destroy();
 
@@ -199,16 +199,16 @@ namespace HiEasyX
 		void SetQuickDraw(UINT nSkipPixels);
 
 		/**
-		 * @brief ÖØ»æ´°¿Ú
+		 * @brief é‡ç»˜çª—å£
 		*/
 		void Redraw();
 
 		/**
 		 * @brief <pre>
-		 *		¸üĞÂ´°¿ÚµÄË«»º³å
+		 *		æ›´æ–°çª—å£çš„åŒç¼“å†²
 		 *
-		 *	×¢Òâ£º
-		 *		±ØĞëÔÚ´°¿ÚÈÎÎñÄÚµ÷ÓÃ´Ëº¯Êı£¬Ïê¼û hiex::FlushDrawing
+		 *	æ³¨æ„ï¼š
+		 *		å¿…é¡»åœ¨çª—å£ä»»åŠ¡å†…è°ƒç”¨æ­¤å‡½æ•°ï¼Œè¯¦è§ hiex::FlushDrawing
 		 * </pre>
 		*/
 		void FlushDrawing(RECT rct = { 0 });
@@ -237,27 +237,27 @@ namespace HiEasyX
 		POINT GetPos();
 
 		/**
-		 * @brief »ñÈ¡Õû¸ö´°¿ÚµÄ´óĞ¡
+		 * @brief è·å–æ•´ä¸ªçª—å£çš„å¤§å°
 		*/
 		SIZE GetWindowSize();
 
 		/**
-		 * @brief »ñÈ¡Õû¸ö´°¿ÚµÄ¿í¶È
+		 * @brief è·å–æ•´ä¸ªçª—å£çš„å®½åº¦
 		*/
 		int GetWindowWidth();
 
 		/**
-		 * @brief »ñÈ¡Õû¸ö´°¿ÚµÄ¸ß¶È
+		 * @brief è·å–æ•´ä¸ªçª—å£çš„é«˜åº¦
 		*/
 		int GetWindowHeight();
 
 		/**
-		 * @brief »ñÈ¡¿Í»§Çø¿í¶È
+		 * @brief è·å–å®¢æˆ·åŒºå®½åº¦
 		*/
 		int GetClientWidth();
 
 		/**
-		 * @brief »ñÈ¡¿Í»§Çø¸ß¶È
+		 * @brief è·å–å®¢æˆ·åŒºé«˜åº¦
 		*/
 		int GetClientHeight();
 
@@ -270,7 +270,7 @@ namespace HiEasyX
 		void SetTitle(LPCTSTR lpszTitle);
 
 		/**
-		 * @brief ÅĞ¶Ï´Ë´°¿ÚÊÇ·ñÎªÓÃ»§ÕıÔÚÊ¹ÓÃµÄ´°¿Ú
+		 * @brief åˆ¤æ–­æ­¤çª—å£æ˜¯å¦ä¸ºç”¨æˆ·æ­£åœ¨ä½¿ç”¨çš„çª—å£
 		*/
 		bool IsForegroundWindow();
 
@@ -280,36 +280,36 @@ namespace HiEasyX
 		void Flush_Message(BYTE filter = -1);
 	};
 
-	////////////****** ´°ÌåÏà¹Øº¯Êı ******////////////
+	////////////****** çª—ä½“ç›¸å…³å‡½æ•° ******////////////
 
 	/**
 	 * @brief <pre>
-	 *		´´½¨ Win32 »æÍ¼´°¿Ú£¨ÒìÓÚÔ­Éú EasyX ´°¿Ú£©
+	 *		åˆ›å»º Win32 ç»˜å›¾çª—å£ï¼ˆå¼‚äºåŸç”Ÿ EasyX çª—å£ï¼‰
 	 *
-	 *	±¸×¢£º
-	 *		´°¿ÚÄ¬ÈÏÖ§³ÖË«»÷ÏûÏ¢¡¢µ÷Õû´óĞ¡£¨Ê¹ÓÃ EnableResizing ºêÉèÖÃÊÇ·ñ¿ÉÒÔµ÷Õû´óĞ¡£©
+	 *	å¤‡æ³¨ï¼š
+	 *		çª—å£é»˜è®¤æ”¯æŒåŒå‡»æ¶ˆæ¯ã€è°ƒæ•´å¤§å°ï¼ˆä½¿ç”¨ EnableResizing å®è®¾ç½®æ˜¯å¦å¯ä»¥è°ƒæ•´å¤§å°ï¼‰
 	 * </pre>
 	 *
-	 * @param[in] w					´°¿Ú¿í
-	 * @param[in] h					´°¿Ú¸ß
-	 * @param[in] flag				´°¿ÚÑùÊ½£¨EW_ ÏµÁĞºê£¬Ä¬ÈÏÎª EW_NORMAL£©
-	 * @param[in] lpszWndTitle		´°¿Ú±êÌâ
-	 * @param[in] WindowProcess		´°¿Ú¹ı³Ìº¯Êı
-	 * @param[in] hParent			¸¸´°¿Ú¾ä±ú
-	 * @return ´´½¨µÄ´°¿Ú¾ä±ú
+	 * @param[in] w					çª—å£å®½
+	 * @param[in] h					çª—å£é«˜
+	 * @param[in] flag				çª—å£æ ·å¼ï¼ˆEW_ ç³»åˆ—å®ï¼Œé»˜è®¤ä¸º EW_NORMALï¼‰
+	 * @param[in] lpszWndTitle		çª—å£æ ‡é¢˜
+	 * @param[in] WindowProcess		çª—å£è¿‡ç¨‹å‡½æ•°
+	 * @param[in] hParent			çˆ¶çª—å£å¥æŸ„
+	 * @return åˆ›å»ºçš„çª—å£å¥æŸ„
 	 *
 	 * @bug
-	 *		²»½¨Òé´óÅúÁ¿´´½¨»æÍ¼´°¿Ú£¬Èç¹û±ØÒª£¬ÇëÊÊµ±Ìí¼ÓÑÓÊ±£¬·ñÔò¿ÉÄÜµ¼ÖÂÎ´ÖªÎÊÌâ¡£
+	 *		ä¸å»ºè®®å¤§æ‰¹é‡åˆ›å»ºç»˜å›¾çª—å£ï¼Œå¦‚æœå¿…è¦ï¼Œè¯·é€‚å½“æ·»åŠ å»¶æ—¶ï¼Œå¦åˆ™å¯èƒ½å¯¼è‡´æœªçŸ¥é—®é¢˜ã€‚
 	 *
-	 * @par ´°¿Ú¹ı³Ìº¯Êı¹æ·¶ <pre>
+	 * @par çª—å£è¿‡ç¨‹å‡½æ•°è§„èŒƒ <pre>
 	 *
-	 *		º¯ÊıÇ©Ãû£º
+	 *		å‡½æ•°ç­¾åï¼š
 	 *			LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 	 *
-	 *		×¢ÒâÊÂÏî£º
-	 *			ÈôÒªÒÔÄ¬ÈÏ·½Ê½´¦ÀíÏûÏ¢£¬Ôò·µ»Ø HIWINDOW_DEFAULT_PROC ¼´¿É£¨²»ÒªÊ¹ÓÃ DefWindowProc º¯Êı£©
+	 *		æ³¨æ„äº‹é¡¹ï¼š
+	 *			è‹¥è¦ä»¥é»˜è®¤æ–¹å¼å¤„ç†æ¶ˆæ¯ï¼Œåˆ™è¿”å› HIWINDOW_DEFAULT_PROC å³å¯ï¼ˆä¸è¦ä½¿ç”¨ DefWindowProc å‡½æ•°ï¼‰
 	 *
-	 *		Ê¾Àıº¯Êı£º
+	 *		ç¤ºä¾‹å‡½æ•°ï¼š
 	 * @code
 				LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				{
@@ -326,14 +326,14 @@ namespace HiEasyX
 						break;
 
 					case WM_DESTROY:
-						// TODO: ÔÚ´Ë´¦ÊÍ·ÅÉêÇëµÄÄÚ´æ
+						// TODO: åœ¨æ­¤å¤„é‡Šæ”¾ç”³è¯·çš„å†…å­˜
 						PostQuitMessage(0);
 						break;
 
 					default:
-						return HIWINDOW_DEFAULT_PROC;	// ±êÊ¶Ê¹ÓÃÄ¬ÈÏÏûÏ¢´¦Àíº¯Êı¼ÌĞø´¦Àí
+						return HIWINDOW_DEFAULT_PROC;	// æ ‡è¯†ä½¿ç”¨é»˜è®¤æ¶ˆæ¯å¤„ç†å‡½æ•°ç»§ç»­å¤„ç†
 
-						// ÈôÒªÒÔÄ¬ÈÏ·½Ê½´¦Àí£¬ÇëÎğÊ¹ÓÃ´ËÓï¾ä
+						// è‹¥è¦ä»¥é»˜è®¤æ–¹å¼å¤„ç†ï¼Œè¯·å‹¿ä½¿ç”¨æ­¤è¯­å¥
 						//return DefWindowProc(hWnd, msg, wParam, lParam);
 						break;
 					}
@@ -358,466 +358,466 @@ namespace HiEasyX
 	bool close_console();
 
 	/**
-	 * @brief ¹Ø±ÕÄ³Ò»»æÍ¼´°¿Ú
-	 * @param[in] hWnd ´°¿Ú¾ä±ú£¨Îª¿Õ´ú±íËùÓĞ»æÍ¼´°¿Ú£©
+	 * @brief å…³é—­æŸä¸€ç»˜å›¾çª—å£
+	 * @param[in] hWnd çª—å£å¥æŸ„ï¼ˆä¸ºç©ºä»£è¡¨æ‰€æœ‰ç»˜å›¾çª—å£ï¼‰
 	*/
 	void closegraph_win32(HWND hWnd = nullptr);
 
 	/**
-	 * @brief ÉèÖÃÄ³´°¿ÚµÄ¹ı³Ìº¯Êı
-	 * @param[in] hWnd ´°¿Ú¾ä±ú£¨Îª¿Õ±êÊ¶µ±Ç°»î¶¯´°¿Ú£©
-	 * @param[in] WindowProcess ĞÂµÄ¹ı³Ìº¯Êı
+	 * @brief è®¾ç½®æŸçª—å£çš„è¿‡ç¨‹å‡½æ•°
+	 * @param[in] hWnd çª—å£å¥æŸ„ï¼ˆä¸ºç©ºæ ‡è¯†å½“å‰æ´»åŠ¨çª—å£ï¼‰
+	 * @param[in] WindowProcess æ–°çš„è¿‡ç¨‹å‡½æ•°
 	*/
 	void SetWndProcFunc(HWND hWnd, WNDPROC WindowProcess);
 
 	/**
-	 * @brief µÃµ½µ±Ç°»î¶¯»æÍ¼´°¿ÚµÄ¾ä±ú
+	 * @brief å¾—åˆ°å½“å‰æ´»åŠ¨ç»˜å›¾çª—å£çš„å¥æŸ„
 	*/
 	HWND GetHWnd_win32();
 
 	/**
-	 * @brief ³õÊ¼»¯´°¿Ú½áÊøºó£¬¿ÉÒÔÓÃ´Ëº¯Êı×èÈûµÈ´ıÄ¿±ê´°¿Ú±»¹Ø±Õ£¬È»ºóº¯Êı·µ»Ø
-	 * @param[in] hWnd Ä¿±ê´°¿Ú£¨Îª¿Õ´ú±íËùÓĞ´°¿Ú£©
+	 * @brief åˆå§‹åŒ–çª—å£ç»“æŸåï¼Œå¯ä»¥ç”¨æ­¤å‡½æ•°é˜»å¡ç­‰å¾…ç›®æ ‡çª—å£è¢«å…³é—­ï¼Œç„¶åå‡½æ•°è¿”å›
+	 * @param[in] hWnd ç›®æ ‡çª—å£ï¼ˆä¸ºç©ºä»£è¡¨æ‰€æœ‰çª—å£ï¼‰
 	*/
 	void init_end(HWND hWnd = nullptr);
 
 	/**
-	 * @brief ÉèÖÃ£ºµ±´°¿Ú¶¼±»Ïú»ÙÊ±£¬×Ô¶¯ÍË³ö³ÌĞò
+	 * @brief è®¾ç½®ï¼šå½“çª—å£éƒ½è¢«é”€æ¯æ—¶ï¼Œè‡ªåŠ¨é€€å‡ºç¨‹åº
 	*/
 	void AutoExit();
 
 	/**
-	 * @brief ÊÇ·ñ»¹´æÔÚÎ´Ïú»ÙµÄ»æÍ¼´°¿Ú
+	 * @brief æ˜¯å¦è¿˜å­˜åœ¨æœªé”€æ¯çš„ç»˜å›¾çª—å£
 	*/
 	bool IsAnyWindow();
 
 	/**
-	 * @brief ÅĞ¶ÏÒ»´°¿ÚÊÇ·ñ»¹´æÔÚ£¨Î´±»¹Ø±Õ£©
-	 * @param[in] hWnd ´°¿Ú¾ä±ú£¨Îª¿Õ±íÊ¾µ±Ç°»î¶¯´°¿Ú£©
-	 * @return ÊÇ·ñ´æÔÚ
+	 * @brief åˆ¤æ–­ä¸€çª—å£æ˜¯å¦è¿˜å­˜åœ¨ï¼ˆæœªè¢«å…³é—­ï¼‰
+	 * @param[in] hWnd çª—å£å¥æŸ„ï¼ˆä¸ºç©ºè¡¨ç¤ºå½“å‰æ´»åŠ¨çª—å£ï¼‰
+	 * @return æ˜¯å¦å­˜åœ¨
 	*/
 	bool IsAliveWindow(HWND hWnd = nullptr);
 
 	/**
-	 * @brief »ñÈ¡Ä³´°¿ÚµÄÍ¼ÏñÖ¸Õë
-	 * @param[in] hWnd ´°¿Ú¾ä±ú£¨Îª¿Õ±íÊ¾µ±Ç°»î¶¯´°¿Ú£©
-	 * @return »º³åÇøÍ¼ÏñÖ¸Õë
+	 * @brief è·å–æŸçª—å£çš„å›¾åƒæŒ‡é’ˆ
+	 * @param[in] hWnd çª—å£å¥æŸ„ï¼ˆä¸ºç©ºè¡¨ç¤ºå½“å‰æ´»åŠ¨çª—å£ï¼‰
+	 * @return ç¼“å†²åŒºå›¾åƒæŒ‡é’ˆ
 	*/
 	IMAGE* GetWindowImage(HWND hWnd = nullptr);
 
 	/**
-	 * @brief »ñÈ¡´°¿Ú»­²¼Ö¸Õë
-	 * @param[in] hWnd ´°¿Ú¾ä±ú£¨Îª¿Õ±íÊ¾µ±Ç°»î¶¯´°¿Ú£©
-	 * @return »­²¼Ö¸Õë£¬ÈôÎ´°ó¶¨»­²¼Ôò·µ»Ø¿Õ
+	 * @brief è·å–çª—å£ç”»å¸ƒæŒ‡é’ˆ
+	 * @param[in] hWnd çª—å£å¥æŸ„ï¼ˆä¸ºç©ºè¡¨ç¤ºå½“å‰æ´»åŠ¨çª—å£ï¼‰
+	 * @return ç”»å¸ƒæŒ‡é’ˆï¼Œè‹¥æœªç»‘å®šç”»å¸ƒåˆ™è¿”å›ç©º
 	*/
 	Canvas* GetWindowCanvas(HWND hWnd = nullptr);
 
 	/**
 	 * @brief <pre>
-	 *		°ó¶¨´°¿Ú»­²¼Ö¸Õë
+	 *		ç»‘å®šçª—å£ç”»å¸ƒæŒ‡é’ˆ
 	 *
-	 *	±¸×¢£º
-	 *		°ó¶¨ºó£¬Ê¹ÓÃ»­²¼»æÍ¼Ê±½«×Ô¶¯¿ªÆôÈÎÎñ£¬ÎŞĞèÓÃ»§¿ªÆô£¬µ«²»»á×Ô¶¯Ë¢ĞÂÆÁÄ»
+	 *	å¤‡æ³¨ï¼š
+	 *		ç»‘å®šåï¼Œä½¿ç”¨ç”»å¸ƒç»˜å›¾æ—¶å°†è‡ªåŠ¨å¼€å¯ä»»åŠ¡ï¼Œæ— éœ€ç”¨æˆ·å¼€å¯ï¼Œä½†ä¸ä¼šè‡ªåŠ¨åˆ·æ–°å±å¹•
 	 * </pre>
 	 *
-	 * @param[in] pCanvas »­²¼Ö¸Õë
-	 * @param[in] hWnd ´°¿Ú¾ä±ú£¨Îª¿Õ±íÊ¾µ±Ç°»î¶¯´°¿Ú£©
+	 * @param[in] pCanvas ç”»å¸ƒæŒ‡é’ˆ
+	 * @param[in] hWnd çª—å£å¥æŸ„ï¼ˆä¸ºç©ºè¡¨ç¤ºå½“å‰æ´»åŠ¨çª—å£ï¼‰
 	*/
 	void BindWindowCanvas(Canvas* pCanvas, HWND hWnd = nullptr);
 
 	/**
-	 * @brief µÃµ½µ±Ç°»æÍ¼´°¿ÚµÄÏêÏ¸ĞÅÏ¢
+	 * @brief å¾—åˆ°å½“å‰ç»˜å›¾çª—å£çš„è¯¦ç»†ä¿¡æ¯
 	*/
 	EasyWindow GetWorkingWindow();
 
 	/**
-	 * @brief µÈ´ıµ±Ç°ÈÎÎñÍê³É²¢ÉèÖÃ»î¶¯´°¿Ú
-	 * @param[in] hWnd ĞÂµÄ»î¶¯´°¿Ú¾ä±ú
-	 * @return ÊÇ·ñÉèÖÃ³É¹¦
+	 * @brief ç­‰å¾…å½“å‰ä»»åŠ¡å®Œæˆå¹¶è®¾ç½®æ´»åŠ¨çª—å£
+	 * @param[in] hWnd æ–°çš„æ´»åŠ¨çª—å£å¥æŸ„
+	 * @return æ˜¯å¦è®¾ç½®æˆåŠŸ
 	*/
 	bool SetWorkingWindow(HWND hWnd);
 
 	/**
-	 * @brief ÉèÖÃ¼ÓËÙ»æÖÆÌø¹ı¶àÉÙÏñËØµã
-	 * @warning ´Ë¼ÓËÙĞ§¹ûÊÇÓĞËğµÄ£¬¼ÓËÙĞ§¹ûÓëÌø¹ıµÄÏñËØµãÊıÕıÏà¹Ø
-	 * @param[in] nSkipPixels Ìø¹ıµÄÏñËØµãÊıÄ¿
-	 * @param[in] hWnd ´°¿Ú¾ä±ú£¨Îª¿Õ±íÊ¾µ±Ç°»î¶¯´°¿Ú£©
+	 * @brief è®¾ç½®åŠ é€Ÿç»˜åˆ¶è·³è¿‡å¤šå°‘åƒç´ ç‚¹
+	 * @warning æ­¤åŠ é€Ÿæ•ˆæœæ˜¯æœ‰æŸçš„ï¼ŒåŠ é€Ÿæ•ˆæœä¸è·³è¿‡çš„åƒç´ ç‚¹æ•°æ­£ç›¸å…³
+	 * @param[in] nSkipPixels è·³è¿‡çš„åƒç´ ç‚¹æ•°ç›®
+	 * @param[in] hWnd çª—å£å¥æŸ„ï¼ˆä¸ºç©ºè¡¨ç¤ºå½“å‰æ´»åŠ¨çª—å£ï¼‰
 	*/
 	void QuickDraw(UINT nSkipPixels, HWND hWnd = nullptr);
 
 	/**
-	 * @brief »ñÈ¡È«¾Ö»æÖÆÄ£Ê½
+	 * @brief è·å–å…¨å±€ç»˜åˆ¶æ¨¡å¼
 	*/
 	DrawMode GetDrawMode();
 
 	/**
-	 * @brief ÉèÖÃÈ«¾Ö»æÖÆÄ£Ê½
-	 * @param[in] mode È«¾Ö»æÖÆÄ£Ê½
+	 * @brief è®¾ç½®å…¨å±€ç»˜åˆ¶æ¨¡å¼
+	 * @param[in] mode å…¨å±€ç»˜åˆ¶æ¨¡å¼
 	*/
 	void SetDrawMode(DrawMode mode);
 
 	/**
-	 * @brief Í¨ÖªÖØ»æ»æÍ¼´°¿Ú£¨ÔÚ WM_PAINT ÏûÏ¢ÄÚ»æÍ¼²»ĞèÒªÊ¹ÓÃ´Ëº¯Êı£©
-	 * @param[in] hWnd ÒªÖØ»æµÄ´°¿Ú
+	 * @brief é€šçŸ¥é‡ç»˜ç»˜å›¾çª—å£ï¼ˆåœ¨ WM_PAINT æ¶ˆæ¯å†…ç»˜å›¾ä¸éœ€è¦ä½¿ç”¨æ­¤å‡½æ•°ï¼‰
+	 * @param[in] hWnd è¦é‡ç»˜çš„çª—å£
 	*/
 	void RedrawWindow(HWND hWnd = nullptr);
 
 	/**
 	 * @brief <pre>
-	 *		¸üĞÂµ±Ç°»î¶¯´°¿ÚµÄË«»º³å
+	 *		æ›´æ–°å½“å‰æ´»åŠ¨çª—å£çš„åŒç¼“å†²
 	 *
-	 *	×¢Òâ£º
-	 *		ÓÉÓÚ°²È«ĞÔÎÊÌâ£¬±ØĞëÔÚ´°¿ÚÈÎÎñÄÚµ÷ÓÃ´Ëº¯Êı£¬·ñÔò²»»á¸üĞÂË«»º³å¡£
+	 *	æ³¨æ„ï¼š
+	 *		ç”±äºå®‰å…¨æ€§é—®é¢˜ï¼Œå¿…é¡»åœ¨çª—å£ä»»åŠ¡å†…è°ƒç”¨æ­¤å‡½æ•°ï¼Œå¦åˆ™ä¸ä¼šæ›´æ–°åŒç¼“å†²ã€‚
 	 *
-	 *	±¸×¢£º
-	 *		ÈôÒªÖØ»æ´°¿ÚÇëÊ¹ÓÃ RedrawWindow
+	 *	å¤‡æ³¨ï¼š
+	 *		è‹¥è¦é‡ç»˜çª—å£è¯·ä½¿ç”¨ RedrawWindow
 	 *
-	 *	Ê¾Àı£º
+	 *	ç¤ºä¾‹ï¼š
 	 * @code
 			BEGIN_TASK();
 			hiex::FlushDrawing({ 200,200,300,300 });
-			END_TASK(false);	// ×¢Òâ£¬½áÊøÈÎÎñÊ±±ê¼Ç false ±íÊ¾²»¸üĞÂË«»º³å£¬ÒòÎªÉÏÃæÒÑ¾­¸üĞÂ¹ıÁË
+			END_TASK(false);	// æ³¨æ„ï¼Œç»“æŸä»»åŠ¡æ—¶æ ‡è®° false è¡¨ç¤ºä¸æ›´æ–°åŒç¼“å†²ï¼Œå› ä¸ºä¸Šé¢å·²ç»æ›´æ–°è¿‡äº†
 			REDRAW_WINDOW();
 	 * @endcode
 	 * </pre>
 	 *
-	 * @param[in] rct	Ë«»º³å¸üĞÂÇøÓò£¨×ø±ê¶¼Îª 0 ±íÊ¾È«²¿ÇøÓò£©
+	 * @param[in] rct	åŒç¼“å†²æ›´æ–°åŒºåŸŸï¼ˆåæ ‡éƒ½ä¸º 0 è¡¨ç¤ºå…¨éƒ¨åŒºåŸŸï¼‰
 	*/
 	void FlushDrawing(RECT rct = { 0 }, HWND hWnd = nullptr);
 
 	/**
 	 * @brief <pre>
-	 *		ÊÇ·ñÆôÓÃ×Ô¶¯Ë¢ĞÂË«»º³å
+	 *		æ˜¯å¦å¯ç”¨è‡ªåŠ¨åˆ·æ–°åŒç¼“å†²
 	 *
-	 *	±¸×¢£º
-	 *		Ä¬ÈÏÇé¿öÏÂÊÇ×Ô¶¯Ë¢ĞÂË«»º³åµÄ£¬¼´Ã¿´Î½áÊø´°¿ÚÈÎÎñÊ±£¬EndTask »á¸ù¾İ´«ÈëµÄ²ÎÊı£¬
-	 *		¾ö¶¨Òª²»Òª±ê¼Ç¡°ĞèÒªË¢ĞÂË«»º³å¡±£¬±ê¼Çºó£¬´°¿Ú½«»áÔÚÏÂÒ»´ÎÓöµ½ÖØ»æÏûÏ¢µÄÊ±ºòË¢ĞÂË«»º³å¡£
+	 *	å¤‡æ³¨ï¼š
+	 *		é»˜è®¤æƒ…å†µä¸‹æ˜¯è‡ªåŠ¨åˆ·æ–°åŒç¼“å†²çš„ï¼Œå³æ¯æ¬¡ç»“æŸçª—å£ä»»åŠ¡æ—¶ï¼ŒEndTask ä¼šæ ¹æ®ä¼ å…¥çš„å‚æ•°ï¼Œ
+	 *		å†³å®šè¦ä¸è¦æ ‡è®°â€œéœ€è¦åˆ·æ–°åŒç¼“å†²â€ï¼Œæ ‡è®°åï¼Œçª—å£å°†ä¼šåœ¨ä¸‹ä¸€æ¬¡é‡åˆ°é‡ç»˜æ¶ˆæ¯çš„æ—¶å€™åˆ·æ–°åŒç¼“å†²ã€‚
 	 *
-	 *		µ«ÊÇ£¬ÔÚÆµ·±ÖØ»æµÄÇé¿öÏÂ£¬ÓÉÓÚ¶àÏß³ÌĞ­µ÷ÎÊÌâ£¬×Ô¶¯Ë¢ĞÂµÄĞ§ÂÊ¿ÉÄÜ»á±äµÍ¡£
-	 *		ËùÒÔÄã¿ÉÒÔ¹Ø±Õ×Ô¶¯Ë¢ĞÂË«»º³å£¬ÏàÓ¦µØ£¬ÄãĞèÒªÊ¹ÓÃ FlushDrawing º¯ÊıÊÖ¶¯Ë¢ĞÂË«»º³å¡£
+	 *		ä½†æ˜¯ï¼Œåœ¨é¢‘ç¹é‡ç»˜çš„æƒ…å†µä¸‹ï¼Œç”±äºå¤šçº¿ç¨‹åè°ƒé—®é¢˜ï¼Œè‡ªåŠ¨åˆ·æ–°çš„æ•ˆç‡å¯èƒ½ä¼šå˜ä½ã€‚
+	 *		æ‰€ä»¥ä½ å¯ä»¥å…³é—­è‡ªåŠ¨åˆ·æ–°åŒç¼“å†²ï¼Œç›¸åº”åœ°ï¼Œä½ éœ€è¦ä½¿ç”¨ FlushDrawing å‡½æ•°æ‰‹åŠ¨åˆ·æ–°åŒç¼“å†²ã€‚
 	 * </pre>
 	*/
 	void EnableAutoFlush(bool enable);
 
 	/**
 	 * @brief <pre>
-	 *		Îªµ±Ç°»î¶¯´°¿ÚÆô¶¯ÈÎÎñ
+	 *		ä¸ºå½“å‰æ´»åŠ¨çª—å£å¯åŠ¨ä»»åŠ¡
 	 *
-	 *	±¸×¢£º
-	 *		µ÷ÓÃ EasyX º¯Êı½øĞĞ»æÍ¼»ò»ñÈ¡ÏûÏ¢Ê±£¬¶¼Ó¦µ±Æô¶¯ÈÎÎñ¡£
+	 *	å¤‡æ³¨ï¼š
+	 *		è°ƒç”¨ EasyX å‡½æ•°è¿›è¡Œç»˜å›¾æˆ–è·å–æ¶ˆæ¯æ—¶ï¼Œéƒ½åº”å½“å¯åŠ¨ä»»åŠ¡ã€‚
 	 * </pre>
 	 *
-	 * @return ÊÇ·ñÆô¶¯³É¹¦£¨ÈôÒÑÔÚÈÎÎñÖĞÒ²·µ»Ø true£©
+	 * @return æ˜¯å¦å¯åŠ¨æˆåŠŸï¼ˆè‹¥å·²åœ¨ä»»åŠ¡ä¸­ä¹Ÿè¿”å› trueï¼‰
 	*/
 	bool BeginTask();
 
 	/**
-	 * @brief ÖÕÖ¹µ±Ç°´°¿ÚÈÎÎñ
-	 * @param[in] flush ÊÇ·ñ±ê¼ÇĞèÒª¸üĞÂË«»º³å£¨µ«²»»á×Ô¶¯Ë¢ĞÂ´°¿Ú£©
+	 * @brief ç»ˆæ­¢å½“å‰çª—å£ä»»åŠ¡
+	 * @param[in] flush æ˜¯å¦æ ‡è®°éœ€è¦æ›´æ–°åŒç¼“å†²ï¼ˆä½†ä¸ä¼šè‡ªåŠ¨åˆ·æ–°çª—å£ï¼‰
 	*/
 	void EndTask(bool flush = true);
 
 	/**
 	 * @brief <pre>
-	 *		ÅĞ¶ÏÄ³´°¿ÚÊÇ·ñÔÚÈÎÎñÖĞ
+	 *		åˆ¤æ–­æŸçª—å£æ˜¯å¦åœ¨ä»»åŠ¡ä¸­
 	 *
-	 *	±¸×¢£º
-	 *		´°¿ÚÈÎÎñÊÇ¶ÓÁĞÊ½µÄ£¬Ö»ÓĞ»î¶¯´°¿Ú¿ÉÄÜ´¦ÔÚÈÎÎñÖĞ¡£
-	 *		¹ÊÈô´«Èë´°¿Ú²»ÊÇ»î¶¯´°¿Ú£¬½«Ö±½Ó·µ»Ø false¡£
+	 *	å¤‡æ³¨ï¼š
+	 *		çª—å£ä»»åŠ¡æ˜¯é˜Ÿåˆ—å¼çš„ï¼Œåªæœ‰æ´»åŠ¨çª—å£å¯èƒ½å¤„åœ¨ä»»åŠ¡ä¸­ã€‚
+	 *		æ•…è‹¥ä¼ å…¥çª—å£ä¸æ˜¯æ´»åŠ¨çª—å£ï¼Œå°†ç›´æ¥è¿”å› falseã€‚
 	 * </pre>
 	 *
-	 * @param[in] hWnd ´°¿Ú¾ä±ú£¨Îª¿Õ±íÊ¾µ±Ç°»î¶¯´°¿Ú£©
-	 * @return ÊÇ·ñÔÚÈÎÎñÖĞ
+	 * @param[in] hWnd çª—å£å¥æŸ„ï¼ˆä¸ºç©ºè¡¨ç¤ºå½“å‰æ´»åŠ¨çª—å£ï¼‰
+	 * @return æ˜¯å¦åœ¨ä»»åŠ¡ä¸­
 	*/
 	bool IsInTask(HWND hWnd = nullptr);
 
 	/**
-	 * @brief ×èÈûµÈ´ıÄ³´°¿ÚÈÎÎñÍê³É
-	 * @param[in] hWnd ´°¿Ú¾ä±ú£¨Îª¿Õ±íÊ¾µ±Ç°»î¶¯´°¿Ú£©
+	 * @brief é˜»å¡ç­‰å¾…æŸçª—å£ä»»åŠ¡å®Œæˆ
+	 * @param[in] hWnd çª—å£å¥æŸ„ï¼ˆä¸ºç©ºè¡¨ç¤ºå½“å‰æ´»åŠ¨çª—å£ï¼‰
 	*/
 	void WaitForTask(HWND hWnd = nullptr);
 
 	/**
-	 * @brief ÅĞ¶ÏÄ³´°¿ÚµÄ´óĞ¡ÊÇ·ñ¸Ä±ä
-	 * @param[in] hWnd ´°¿Ú¾ä±ú£¨Îª¿Õ±íÊ¾µ±Ç°»î¶¯´°¿Ú£©
-	 * @return ´°¿ÚµÄ´óĞ¡ÊÇ·ñ¸Ä±ä
+	 * @brief åˆ¤æ–­æŸçª—å£çš„å¤§å°æ˜¯å¦æ”¹å˜
+	 * @param[in] hWnd çª—å£å¥æŸ„ï¼ˆä¸ºç©ºè¡¨ç¤ºå½“å‰æ´»åŠ¨çª—å£ï¼‰
+	 * @return çª—å£çš„å¤§å°æ˜¯å¦æ”¹å˜
 	*/
 	bool IsWindowSizeChanged(HWND hWnd = nullptr);
 
 	/**
 	 * @brief <pre>
-	 *		Îª´°¿Ú´´½¨Ò»¸öÍĞÅÌ
+	 *		ä¸ºçª—å£åˆ›å»ºä¸€ä¸ªæ‰˜ç›˜
 	 *
-	 *	×¢Òâ£º
-	 *		ÔÚ HiEasyX ÖĞ£¬Ã¿¸ö´°¿Ú½öÄÜÎÈ¶¨Õ¼ÓĞÒ»¸öÍĞÅÌ
+	 *	æ³¨æ„ï¼š
+	 *		åœ¨ HiEasyX ä¸­ï¼Œæ¯ä¸ªçª—å£ä»…èƒ½ç¨³å®šå æœ‰ä¸€ä¸ªæ‰˜ç›˜
 	 * </pre>
 	 *
-	 * @param[in] lpszTrayName ÍĞÅÌÌáÊ¾ÎÄ±¾
-	 * @param[in] hWnd ´°¿Ú¾ä±ú£¨Îª¿Õ±íÊ¾µ±Ç°»î¶¯´°¿Ú£©
+	 * @param[in] lpszTrayName æ‰˜ç›˜æç¤ºæ–‡æœ¬
+	 * @param[in] hWnd çª—å£å¥æŸ„ï¼ˆä¸ºç©ºè¡¨ç¤ºå½“å‰æ´»åŠ¨çª—å£ï¼‰
 	*/
 	void CreateTray(LPCTSTR lpszTrayName, HWND hWnd = nullptr);
 
 	/**
-	 * @brief É¾³ıÄ³´°¿ÚµÄÍĞÅÌ
-	 * @param[in] hWnd ´°¿Ú¾ä±ú£¨Îª¿Õ±íÊ¾µ±Ç°»î¶¯´°¿Ú£©
+	 * @brief åˆ é™¤æŸçª—å£çš„æ‰˜ç›˜
+	 * @param[in] hWnd çª—å£å¥æŸ„ï¼ˆä¸ºç©ºè¡¨ç¤ºå½“å‰æ´»åŠ¨çª—å£ï¼‰
 	*/
 	void DeleteTray(HWND hWnd = nullptr);
 
 	/**
-	 * @brief ÉèÖÃÍĞÅÌ²Ëµ¥£¨ÔÊĞíÔÚÈÎºÎÊ±ºòÉèÖÃ£©
-	 * @param[in] hMenu	²Ëµ¥
-	 * @param[in] hWnd	´°¿Ú¾ä±ú£¨Îª¿Õ±íÊ¾µ±Ç°»î¶¯´°¿Ú£©
+	 * @brief è®¾ç½®æ‰˜ç›˜èœå•ï¼ˆå…è®¸åœ¨ä»»ä½•æ—¶å€™è®¾ç½®ï¼‰
+	 * @param[in] hMenu	èœå•
+	 * @param[in] hWnd	çª—å£å¥æŸ„ï¼ˆä¸ºç©ºè¡¨ç¤ºå½“å‰æ´»åŠ¨çª—å£ï¼‰
 	*/
 	void SetTrayMenu(HMENU hMenu, HWND hWnd = nullptr);
 
 	/**
-	 * @brief ÉèÖÃÍĞÅÌ²Ëµ¥ÏûÏ¢´¦Àíº¯Êı
-	 * @param[in] pFunc	ÏûÏ¢´¦Àíº¯Êı
-	 * @param[in] hWnd	´°¿Ú¾ä±ú£¨Îª¿Õ±íÊ¾µ±Ç°»î¶¯´°¿Ú£©
+	 * @brief è®¾ç½®æ‰˜ç›˜èœå•æ¶ˆæ¯å¤„ç†å‡½æ•°
+	 * @param[in] pFunc	æ¶ˆæ¯å¤„ç†å‡½æ•°
+	 * @param[in] hWnd	çª—å£å¥æŸ„ï¼ˆä¸ºç©ºè¡¨ç¤ºå½“å‰æ´»åŠ¨çª—å£ï¼‰
 	*/
 	void SetTrayMenuProcFunc(void(*pFunc)(UINT), HWND hWnd = nullptr);
 
 	/**
-	 * @brief »ñÈ¡×Ô¶¨Òå³ÌĞòÍ¼±êµÄÆôÓÃ×´Ì¬
+	 * @brief è·å–è‡ªå®šä¹‰ç¨‹åºå›¾æ ‡çš„å¯ç”¨çŠ¶æ€
 	*/
 	bool GetCustomIconState();
 
 	/**
 	 * @brief <pre>
-	 *		Ê¹ÓÃ×Ô¶¨ÒåÍ¼±ê×ÊÔ´×÷Îª³ÌĞòÍ¼±ê
+	 *		ä½¿ç”¨è‡ªå®šä¹‰å›¾æ ‡èµ„æºä½œä¸ºç¨‹åºå›¾æ ‡
 	 *
-	 *	±¸×¢£º
-	 *		±ØĞëÔÚµÚÒ»´Î´´½¨´°¿ÚÇ°¾Íµ÷ÓÃ¸Ãº¯Êı²ÅÄÜÉúĞ§¡£
-	 *		Ê¹ÓÃ MAKEINTRESOURCE ºê¿ÉÒÔ½«×ÊÔ´ ID ×ªÎª×Ö·û´®¡£
+	 *	å¤‡æ³¨ï¼š
+	 *		å¿…é¡»åœ¨ç¬¬ä¸€æ¬¡åˆ›å»ºçª—å£å‰å°±è°ƒç”¨è¯¥å‡½æ•°æ‰èƒ½ç”Ÿæ•ˆã€‚
+	 *		ä½¿ç”¨ MAKEINTRESOURCE å®å¯ä»¥å°†èµ„æº ID è½¬ä¸ºå­—ç¬¦ä¸²ã€‚
 	 * </pre>
 	 *
-	 * @param[in] lpszIcon		´óÍ¼±ê×ÊÔ´
-	 * @param[in] lpszIconSm	Ğ¡Í¼±ê×ÊÔ´
+	 * @param[in] lpszIcon		å¤§å›¾æ ‡èµ„æº
+	 * @param[in] lpszIconSm	å°å›¾æ ‡èµ„æº
 	*/
 	void SetCustomIcon(LPCTSTR lpszIcon, LPCTSTR lpszIconSm);
 
 	/**
 	 * @brief <pre>
-	 *		ÔÚ´´½¨´°¿ÚÇ°ÉèÖÃ´°¿ÚÑùÊ½£¬½ö¶Ô´Ë²Ù×÷ºóÊ×¸öĞÂ´°¿ÚÉúĞ§
+	 *		åœ¨åˆ›å»ºçª—å£å‰è®¾ç½®çª—å£æ ·å¼ï¼Œä»…å¯¹æ­¤æ“ä½œåé¦–ä¸ªæ–°çª—å£ç”Ÿæ•ˆ
 	 *
-	 *	×¢Òâ£º
-	 *		ĞÂ´°¿ÚµÄËùÓĞÆÕÍ¨ÑùÊ½¶¼½«±»µ±Ç°ÑùÊ½¸²¸Ç
+	 *	æ³¨æ„ï¼š
+	 *		æ–°çª—å£çš„æ‰€æœ‰æ™®é€šæ ·å¼éƒ½å°†è¢«å½“å‰æ ·å¼è¦†ç›–
 	 * </pre>
 	 *
-	 * @param[in] lStyle ĞÂÑùÊ½
+	 * @param[in] lStyle æ–°æ ·å¼
 	*/
 	void PreSetWindowStyle(long lStyle);
 
 	/**
 	 * @brief <pre>
-	 *		ÔÚ´´½¨´°¿ÚÇ°ÉèÖÃ´°¿ÚÀ©Õ¹ÑùÊ½£¬½ö¶Ô´Ë²Ù×÷ºóÊ×¸öĞÂ´°¿ÚÉúĞ§
+	 *		åœ¨åˆ›å»ºçª—å£å‰è®¾ç½®çª—å£æ‰©å±•æ ·å¼ï¼Œä»…å¯¹æ­¤æ“ä½œåé¦–ä¸ªæ–°çª—å£ç”Ÿæ•ˆ
 	 *
-	 *	×¢Òâ£º
-	 *		ĞÂ´°¿ÚµÄËùÓĞÀ©Õ¹ÑùÊ½¶¼½«±»µ±Ç°ÑùÊ½¸²¸Ç
+	 *	æ³¨æ„ï¼š
+	 *		æ–°çª—å£çš„æ‰€æœ‰æ‰©å±•æ ·å¼éƒ½å°†è¢«å½“å‰æ ·å¼è¦†ç›–
 	 * </pre>
 	 *
-	 * @param[in] lStyleEx ĞÂÑùÊ½
+	 * @param[in] lStyleEx æ–°æ ·å¼
 	*/
 	void PreSetWindowStyleEx(long lStyleEx);
 
 	/**
-	 * @brief ÔÚ´´½¨´°¿ÚÇ°ÉèÖÃ´°¿ÚÎ»ÖÃ£¬½ö¶Ô´Ë²Ù×÷ºóÊ×¸öĞÂ´°¿ÚÉúĞ§
-	 * @param[in] x	Î»ÖÃ
-	 * @param[in] y	Î»ÖÃ
+	 * @brief åœ¨åˆ›å»ºçª—å£å‰è®¾ç½®çª—å£ä½ç½®ï¼Œä»…å¯¹æ­¤æ“ä½œåé¦–ä¸ªæ–°çª—å£ç”Ÿæ•ˆ
+	 * @param[in] x	ä½ç½®
+	 * @param[in] y	ä½ç½®
 	*/
 	void PreSetWindowPos(int x, int y);
 
 	/**
-	 * @brief ÔÚ´´½¨´°¿ÚÇ°ÉèÖÃ´°¿ÚÏÔÊ¾×´Ì¬£¬½ö¶Ô´Ë²Ù×÷ºóÊ×¸öĞÂ´°¿ÚÉúĞ§
-	 * @param[in] nCmdShow ÏÔÊ¾×´Ì¬£¨ºÍ ShowWindow ÓÃ·¨Ò»ÖÂ£©
+	 * @brief åœ¨åˆ›å»ºçª—å£å‰è®¾ç½®çª—å£æ˜¾ç¤ºçŠ¶æ€ï¼Œä»…å¯¹æ­¤æ“ä½œåé¦–ä¸ªæ–°çª—å£ç”Ÿæ•ˆ
+	 * @param[in] nCmdShow æ˜¾ç¤ºçŠ¶æ€ï¼ˆå’Œ ShowWindow ç”¨æ³•ä¸€è‡´ï¼‰
 	*/
 	void PreSetWindowShowState(int nCmdShow);
 
 	/**
-	 * @brief ÉèÖÃÄ³´°¿ÚÑùÊ½
-	 * @param[in] lNewStyle ĞÂÑùÊ½
-	 * @param[in] hWnd		´°¿Ú¾ä±ú£¨Îª¿Õ´ú±íµ±Ç°»î¶¯´°¿Ú£©
-	 * @return ·µ»ØÉÏÒ»´ÎÉèÖÃµÄ´°¿ÚÑùÊ½£¬Ê§°Ü·µ»Ø 0
+	 * @brief è®¾ç½®æŸçª—å£æ ·å¼
+	 * @param[in] lNewStyle æ–°æ ·å¼
+	 * @param[in] hWnd		çª—å£å¥æŸ„ï¼ˆä¸ºç©ºä»£è¡¨å½“å‰æ´»åŠ¨çª—å£ï¼‰
+	 * @return è¿”å›ä¸Šä¸€æ¬¡è®¾ç½®çš„çª—å£æ ·å¼ï¼Œå¤±è´¥è¿”å› 0
 	*/
 	int SetWindowStyle(long lNewStyle, HWND hWnd = nullptr);
 
 	/**
-	 * @brief ÉèÖÃÄ³´°¿ÚÀ©Õ¹ÑùÊ½
-	 * @param[in] lNewExStyle	ĞÂÑùÊ½
-	 * @param[in] hWnd 			´°¿Ú¾ä±ú£¨Îª¿Õ´ú±íµ±Ç°»î¶¯´°¿Ú£©
-	 * @return ·µ»ØÉÏÒ»´ÎÉèÖÃµÄ´°¿ÚÑùÊ½£¬Ê§°Ü·µ»Ø 0
+	 * @brief è®¾ç½®æŸçª—å£æ‰©å±•æ ·å¼
+	 * @param[in] lNewExStyle	æ–°æ ·å¼
+	 * @param[in] hWnd 			çª—å£å¥æŸ„ï¼ˆä¸ºç©ºä»£è¡¨å½“å‰æ´»åŠ¨çª—å£ï¼‰
+	 * @return è¿”å›ä¸Šä¸€æ¬¡è®¾ç½®çš„çª—å£æ ·å¼ï¼Œå¤±è´¥è¿”å› 0
 	*/
 	int SetWindowExStyle(long lNewExStyle, HWND hWnd = nullptr);
 
 	/**
-	 * @brief »ñÈ¡´°¿ÚÎ»ÖÃ
-	 * @param[in] hWnd ´°¿Ú¾ä±ú£¨Îª¿Õ´ú±íµ±Ç°»î¶¯´°¿Ú£©
-	 * @return ´°¿ÚÎ»ÖÃ
+	 * @brief è·å–çª—å£ä½ç½®
+	 * @param[in] hWnd çª—å£å¥æŸ„ï¼ˆä¸ºç©ºä»£è¡¨å½“å‰æ´»åŠ¨çª—å£ï¼‰
+	 * @return çª—å£ä½ç½®
 	*/
 	POINT GetWindowPos(HWND hWnd = nullptr);
 
 	/**
-	 * @brief »ñÈ¡´°¿Ú´óĞ¡
-	 * @param[in] hWnd ´°¿Ú¾ä±ú£¨Îª¿Õ´ú±íµ±Ç°»î¶¯´°¿Ú£©
-	 * @return ´°¿Ú´óĞ¡
+	 * @brief è·å–çª—å£å¤§å°
+	 * @param[in] hWnd çª—å£å¥æŸ„ï¼ˆä¸ºç©ºä»£è¡¨å½“å‰æ´»åŠ¨çª—å£ï¼‰
+	 * @return çª—å£å¤§å°
 	*/
 	SIZE GetWindowSize(HWND hWnd = nullptr);
 
 	/**
-	 * @brief ÒÆ¶¯´°¿Ú
-	 * @param[in] x		Î»ÖÃ
-	 * @param[in] y		Î»ÖÃ
-	 * @param[in] hWnd	´°¿Ú¾ä±ú£¨Îª¿Õ´ú±íµ±Ç°»î¶¯´°¿Ú£©
+	 * @brief ç§»åŠ¨çª—å£
+	 * @param[in] x		ä½ç½®
+	 * @param[in] y		ä½ç½®
+	 * @param[in] hWnd	çª—å£å¥æŸ„ï¼ˆä¸ºç©ºä»£è¡¨å½“å‰æ´»åŠ¨çª—å£ï¼‰
 	*/
 	void MoveWindow(int x, int y, HWND hWnd = nullptr);
 
 	/**
-	 * @brief Ïà¶ÔÒÆ¶¯´°¿Ú
-	 * @param[in] dx	Ïà¶ÔÎ»ÒÆ
-	 * @param[in] dy	Ïà¶ÔÎ»ÒÆ
-	 * @param[in] hWnd	´°¿Ú¾ä±ú£¨Îª¿Õ´ú±íµ±Ç°»î¶¯´°¿Ú£©
+	 * @brief ç›¸å¯¹ç§»åŠ¨çª—å£
+	 * @param[in] dx	ç›¸å¯¹ä½ç§»
+	 * @param[in] dy	ç›¸å¯¹ä½ç§»
+	 * @param[in] hWnd	çª—å£å¥æŸ„ï¼ˆä¸ºç©ºä»£è¡¨å½“å‰æ´»åŠ¨çª—å£ï¼‰
 	*/
 	void MoveWindowRel(int dx, int dy, HWND hWnd = nullptr);
 
 	/**
-	 * @brief ÖØÉè´°¿Ú´óĞ¡
-	 * @param[in] w		´°¿Ú¿í
-	 * @param[in] h		´°¿Ú¸ß
-	 * @param[in] hWnd	´°¿Ú¾ä±ú£¨Îª¿Õ´ú±íµ±Ç°»î¶¯´°¿Ú£©
+	 * @brief é‡è®¾çª—å£å¤§å°
+	 * @param[in] w		çª—å£å®½
+	 * @param[in] h		çª—å£é«˜
+	 * @param[in] hWnd	çª—å£å¥æŸ„ï¼ˆä¸ºç©ºä»£è¡¨å½“å‰æ´»åŠ¨çª—å£ï¼‰
 	*/
 	void ResizeWindow(int w, int h, HWND hWnd = nullptr);
 
 	/**
-	 * @brief ÉèÖÃ´°¿Ú±êÌâÎÄ±¾
-	 * @param[in] lpszTitle		ĞÂµÄ´°¿Ú±êÌâ
-	 * @param[in] hWnd			´°¿Ú¾ä±ú£¨Îª¿Õ´ú±íµ±Ç°»î¶¯´°¿Ú£©
+	 * @brief è®¾ç½®çª—å£æ ‡é¢˜æ–‡æœ¬
+	 * @param[in] lpszTitle		æ–°çš„çª—å£æ ‡é¢˜
+	 * @param[in] hWnd			çª—å£å¥æŸ„ï¼ˆä¸ºç©ºä»£è¡¨å½“å‰æ´»åŠ¨çª—å£ï¼‰
 	*/
 	void SetWindowTitle(LPCTSTR lpszTitle, HWND hWnd = nullptr);
 
-	////////////****** ÏûÏ¢Ïà¹Øº¯Êı ******////////////
+	////////////****** æ¶ˆæ¯ç›¸å…³å‡½æ•° ******////////////
 
-	//// ExMessage Ê½º¯Êı
+	//// ExMessage å¼å‡½æ•°
 
 	/**
-	 * @brief ×èÈûµÈ´ı£¬Ö±µ½»ñÈ¡µ½Ò»¸öĞÂÏûÏ¢
-	 * @param[in] filter	ÏûÏ¢É¸Ñ¡·½Ê½
-	 * @param[in] hWnd		´°¿Ú¾ä±ú£¨Îª¿Õ´ú±íµ±Ç°»î¶¯´°¿Ú£©
-	 * @return »ñÈ¡µ½µÄÏûÏ¢
+	 * @brief é˜»å¡ç­‰å¾…ï¼Œç›´åˆ°è·å–åˆ°ä¸€ä¸ªæ–°æ¶ˆæ¯
+	 * @param[in] filter	æ¶ˆæ¯ç­›é€‰æ–¹å¼
+	 * @param[in] hWnd		çª—å£å¥æŸ„ï¼ˆä¸ºç©ºä»£è¡¨å½“å‰æ´»åŠ¨çª—å£ï¼‰
+	 * @return è·å–åˆ°çš„æ¶ˆæ¯
 	*/
 	ExMessage getmessage_win32(BYTE filter = -1, HWND hWnd = nullptr);
 
 	/**
-	 * @brief ×èÈûµÈ´ı£¬Ö±µ½»ñÈ¡µ½Ò»¸öĞÂÏûÏ¢
-	 * @param[out] msg	·µ»Ø»ñÈ¡µ½µÄÏûÏ¢
-	 * @param[in] filter	ÏûÏ¢É¸Ñ¡·½Ê½
-	 * @param[in] hWnd		´°¿Ú¾ä±ú£¨Îª¿Õ´ú±íµ±Ç°»î¶¯´°¿Ú£©
+	 * @brief é˜»å¡ç­‰å¾…ï¼Œç›´åˆ°è·å–åˆ°ä¸€ä¸ªæ–°æ¶ˆæ¯
+	 * @param[out] msg	è¿”å›è·å–åˆ°çš„æ¶ˆæ¯
+	 * @param[in] filter	æ¶ˆæ¯ç­›é€‰æ–¹å¼
+	 * @param[in] hWnd		çª—å£å¥æŸ„ï¼ˆä¸ºç©ºä»£è¡¨å½“å‰æ´»åŠ¨çª—å£ï¼‰
 	*/
 	void getmessage_win32(ExMessage* msg, BYTE filter = -1, HWND hWnd = nullptr);
 
 	/**
-	 * @brief »ñÈ¡Ò»¸öÏûÏ¢£¬Á¢¼´·µ»ØÊÇ·ñ»ñÈ¡³É¹¦
-	 * @param[out] msg	·µ»Ø»ñÈ¡µ½µÄÏûÏ¢
-	 * @param[in] filter	ÏûÏ¢É¸Ñ¡·½Ê½
-	 * @param[in] removemsg	»ñÈ¡ÏûÏ¢ºóÊÇ·ñ½«ÆäÒÆ³ı
-	 * @param[in] hWnd		´°¿Ú¾ä±ú£¨Îª¿Õ´ú±íµ±Ç°»î¶¯´°¿Ú£©
-	 * @return ÊÇ·ñ»ñÈ¡µ½ÏûÏ¢
+	 * @brief è·å–ä¸€ä¸ªæ¶ˆæ¯ï¼Œç«‹å³è¿”å›æ˜¯å¦è·å–æˆåŠŸ
+	 * @param[out] msg	è¿”å›è·å–åˆ°çš„æ¶ˆæ¯
+	 * @param[in] filter	æ¶ˆæ¯ç­›é€‰æ–¹å¼
+	 * @param[in] removemsg	è·å–æ¶ˆæ¯åæ˜¯å¦å°†å…¶ç§»é™¤
+	 * @param[in] hWnd		çª—å£å¥æŸ„ï¼ˆä¸ºç©ºä»£è¡¨å½“å‰æ´»åŠ¨çª—å£ï¼‰
+	 * @return æ˜¯å¦è·å–åˆ°æ¶ˆæ¯
 	*/
 	bool peekmessage_win32(ExMessage* msg, BYTE filter = -1, bool removemsg = true, HWND hWnd = nullptr);
 
 	/**
-	 * @brief Çå³ıËùÓĞÏûÏ¢¼ÇÂ¼
-	 * @param[in] filter	ÏûÏ¢É¸Ñ¡·½Ê½
-	 * @param[in] hWnd		´°¿Ú¾ä±ú£¨Îª¿Õ´ú±íµ±Ç°»î¶¯´°¿Ú£©
+	 * @brief æ¸…é™¤æ‰€æœ‰æ¶ˆæ¯è®°å½•
+	 * @param[in] filter	æ¶ˆæ¯ç­›é€‰æ–¹å¼
+	 * @param[in] hWnd		çª—å£å¥æŸ„ï¼ˆä¸ºç©ºä»£è¡¨å½“å‰æ´»åŠ¨çª—å£ï¼‰
 	*/
 	void flushmessage_win32(BYTE filter = -1, HWND hWnd = nullptr);
 
-	//// MOUSEMSG Ê½º¯Êı£¨¼æÈİ£©
+	//// MOUSEMSG å¼å‡½æ•°ï¼ˆå…¼å®¹ï¼‰
 
 	/**
-	 * @brief ¼ì²éÊÇ·ñ´æÔÚÊó±êÏûÏ¢
-	 * @param[in] hWnd ´°¿Ú¾ä±ú£¨Îª¿Õ´ú±íµ±Ç°»î¶¯´°¿Ú£©
-	 * @return ÊÇ·ñ´æÔÚÊó±êÏûÏ¢
+	 * @brief æ£€æŸ¥æ˜¯å¦å­˜åœ¨é¼ æ ‡æ¶ˆæ¯
+	 * @param[in] hWnd çª—å£å¥æŸ„ï¼ˆä¸ºç©ºä»£è¡¨å½“å‰æ´»åŠ¨çª—å£ï¼‰
+	 * @return æ˜¯å¦å­˜åœ¨é¼ æ ‡æ¶ˆæ¯
 	*/
 	bool MouseHit_win32(HWND hWnd = nullptr);
 
 	/**
-	 * @brief ×èÈûµÈ´ı£¬Ö±µ½»ñÈ¡µ½Ò»¸öĞÂµÄÊó±êÏûÏ¢
-	 * @param[in] hWnd ´°¿Ú¾ä±ú£¨Îª¿Õ´ú±íµ±Ç°»î¶¯´°¿Ú£©
-	 * @return Êó±êÏûÏ¢
+	 * @brief é˜»å¡ç­‰å¾…ï¼Œç›´åˆ°è·å–åˆ°ä¸€ä¸ªæ–°çš„é¼ æ ‡æ¶ˆæ¯
+	 * @param[in] hWnd çª—å£å¥æŸ„ï¼ˆä¸ºç©ºä»£è¡¨å½“å‰æ´»åŠ¨çª—å£ï¼‰
+	 * @return é¼ æ ‡æ¶ˆæ¯
 	*/
 	MOUSEMSG GetMouseMsg_win32(HWND hWnd = nullptr);
 
 	/**
-	 * @brief »ñÈ¡Ò»¸öĞÂµÄÊó±êÏûÏ¢£¬Á¢¼´·µ»ØÊÇ·ñ»ñÈ¡³É¹¦
-	 * @param[out] pMsg		·µ»Ø»ñÈ¡µ½µÄÏûÏ¢
-	 * @param[in] bRemoveMsg	»ñÈ¡ÏûÏ¢ºóÊÇ·ñ½«ÆäÒÆ³ı
-	 * @param[in] hWnd			´°¿Ú¾ä±ú£¨Îª¿Õ´ú±íµ±Ç°»î¶¯´°¿Ú£©
-	 * @return ÊÇ·ñ»ñÈ¡µ½ÏûÏ¢
+	 * @brief è·å–ä¸€ä¸ªæ–°çš„é¼ æ ‡æ¶ˆæ¯ï¼Œç«‹å³è¿”å›æ˜¯å¦è·å–æˆåŠŸ
+	 * @param[out] pMsg		è¿”å›è·å–åˆ°çš„æ¶ˆæ¯
+	 * @param[in] bRemoveMsg	è·å–æ¶ˆæ¯åæ˜¯å¦å°†å…¶ç§»é™¤
+	 * @param[in] hWnd			çª—å£å¥æŸ„ï¼ˆä¸ºç©ºä»£è¡¨å½“å‰æ´»åŠ¨çª—å£ï¼‰
+	 * @return æ˜¯å¦è·å–åˆ°æ¶ˆæ¯
 	*/
 	bool PeekMouseMsg_win32(MOUSEMSG* pMsg, bool bRemoveMsg = true, HWND hWnd = nullptr);
 
 	/**
-	 * @brief Çå¿ÕÊó±êÏûÏ¢
-	 * @param[in] hWnd ´°¿Ú¾ä±ú£¨Îª¿Õ´ú±íµ±Ç°»î¶¯´°¿Ú£©
+	 * @brief æ¸…ç©ºé¼ æ ‡æ¶ˆæ¯
+	 * @param[in] hWnd çª—å£å¥æŸ„ï¼ˆä¸ºç©ºä»£è¡¨å½“å‰æ´»åŠ¨çª—å£ï¼‰
 	*/
 	void FlushMouseMsgBuffer_win32(HWND hWnd = nullptr);
 
-	//// ×ª»»
+	//// è½¬æ¢
 
 	/**
-	 * @brief MOUSEMSG ×ª ExMessage
-	 * @param[in] msg MOUSEMSG ÏûÏ¢
-	 * @return ExMessage ÏûÏ¢
+	 * @brief MOUSEMSG è½¬ ExMessage
+	 * @param[in] msg MOUSEMSG æ¶ˆæ¯
+	 * @return ExMessage æ¶ˆæ¯
 	*/
 	ExMessage To_ExMessage(MOUSEMSG msg);
 
 	/**
 	 * @brief <pre>
-	 *		ExMessage ×ª MOUSEMSG
+	 *		ExMessage è½¬ MOUSEMSG
 	 *
-	 *	±¸×¢£º
-	 *		ExMessage ÏûÏ¢ÀàĞÍÈô²»ÊÇ EM_MOUSE£¬Ôò·µ»Ø¿Õ
+	 *	å¤‡æ³¨ï¼š
+	 *		ExMessage æ¶ˆæ¯ç±»å‹è‹¥ä¸æ˜¯ EM_MOUSEï¼Œåˆ™è¿”å›ç©º
 	 * </pre>
 	 *
-	 * @param[in] msgEx ExMessage ÏûÏ¢
-	 * @return MOUSEMSG ÏûÏ¢
+	 * @param[in] msgEx ExMessage æ¶ˆæ¯
+	 * @return MOUSEMSG æ¶ˆæ¯
 	*/
 	MOUSEMSG To_MouseMsg(ExMessage msgEx);
 
-	// ÖÇ»æ½ÌÁãÉ¢½»»¥
+	// æ™ºç»˜æ•™é›¶æ•£äº¤äº’
 	int GetWindowIndex(HWND hWnd, bool flag);
 }
 
-////////////****** ÈÎÎñÖ¸Áîºê¶¨Òå ******////////////
+////////////****** ä»»åŠ¡æŒ‡ä»¤å®å®šä¹‰ ******////////////
 
-// Æô¶¯Ò»¶Î£¨»æÍ¼£©ÈÎÎñ£¨»æÖÆµ½µ±Ç°»æÍ¼´°¿Ú£©
+// å¯åŠ¨ä¸€æ®µï¼ˆç»˜å›¾ï¼‰ä»»åŠ¡ï¼ˆç»˜åˆ¶åˆ°å½“å‰ç»˜å›¾çª—å£ï¼‰
 #define BEGIN_TASK()\
 	if (HiEasyX::SetWorkingWindow(nullptr))\
 	{\
 		if (HiEasyX::BeginTask())\
-		{(0)	/* ´Ë´¦Ç¿ÖÆÒªÇó¼Ó·ÖºÅ */
+		{(0)	/* æ­¤å¤„å¼ºåˆ¶è¦æ±‚åŠ åˆ†å· */
 
-// Æô¶¯Ò»¶Î£¨»æÍ¼£©ÈÎÎñ£¨Ö¸¶¨Ä¿±ê»æÍ¼´°¿Ú£©
+// å¯åŠ¨ä¸€æ®µï¼ˆç»˜å›¾ï¼‰ä»»åŠ¡ï¼ˆæŒ‡å®šç›®æ ‡ç»˜å›¾çª—å£ï¼‰
 #define BEGIN_TASK_WND(hWnd)\
-	/* ÉèÖÃ¹¤×÷´°¿ÚÊ±½«×Ô¶¯µÈ´ıÈÎÎñ */\
+	/* è®¾ç½®å·¥ä½œçª—å£æ—¶å°†è‡ªåŠ¨ç­‰å¾…ä»»åŠ¡ */\
 	if (HiEasyX::SetWorkingWindow(hWnd))\
 	{\
 		if (HiEasyX::BeginTask())\
 		{(0)
 
-// ½áÊøÒ»¶Î£¨»æÍ¼£©ÈÎÎñ£¬²¢Êä³ö»æÍ¼»º´æ£¨ĞëÓë BEGIN_TASK Á¬ÓÃ£©
+// ç»“æŸä¸€æ®µï¼ˆç»˜å›¾ï¼‰ä»»åŠ¡ï¼Œå¹¶è¾“å‡ºç»˜å›¾ç¼“å­˜ï¼ˆé¡»ä¸ BEGIN_TASK è¿ç”¨ï¼‰
 #define END_TASK(...)\
 			HiEasyX::EndTask(__VA_ARGS__);\
 		}\
 	}(0)
 
-// ÒªÇó´°¿ÚÖØ»æ
+// è¦æ±‚çª—å£é‡ç»˜
 #define REDRAW_WINDOW(...)		HiEasyX::RedrawWindow(__VA_ARGS__)
 
-////////////****** ´°¿ÚÑùÊ½ºê¶¨Òå ******////////////
+////////////****** çª—å£æ ·å¼å®å®šä¹‰ ******////////////
 
-// ÆôÓÃÄ³ÊôĞÔ
-// ´ËºêÎªÄ£°åºê
+// å¯ç”¨æŸå±æ€§
+// æ­¤å®ä¸ºæ¨¡æ¿å®
 #define EnableSomeStyle(hwnd, state, exstyle, enable_style, disable_style)\
 			(exstyle ?\
 				(state ?\
@@ -842,41 +842,41 @@ namespace HiEasyX
 				)\
 			)
 
-// ÊÇ·ñÔÊĞíÄ³´°¿Ú¸Ä±ä´óĞ¡
+// æ˜¯å¦å…è®¸æŸçª—å£æ”¹å˜å¤§å°
 #define EnableResizing(hwnd, state)\
 			EnableSomeStyle(hwnd, state, false, WS_SIZEBOX | WS_MAXIMIZEBOX, ~WS_SIZEBOX & ~WS_MAXIMIZEBOX)
 
 #define DisableResizing(hwnd, state)	EnableResizing(hwnd, !state)
 
-// ÊÇ·ñÆôÓÃÄ³´°¿ÚµÄÏµÍ³±êÌâÀ¸°´Å¥
+// æ˜¯å¦å¯ç”¨æŸçª—å£çš„ç³»ç»Ÿæ ‡é¢˜æ æŒ‰é’®
 #define EnableSystemMenu(hwnd, state)\
 			EnableSomeStyle(hwnd, state, false, WS_SYSMENU, ~WS_SYSMENU)
 
 #define DisableSystemMenu(hwnd, state)	EnableSystemMenu(hwnd, !state)
 
-// ÊÇ·ñÆôÓÃµ±Ç°´°¿ÚµÄ¹¤¾ßÀ¸ÑùÊ½
+// æ˜¯å¦å¯ç”¨å½“å‰çª—å£çš„å·¥å…·æ æ ·å¼
 #define EnableToolWindowStyle(hwnd, state)\
 		EnableSomeStyle(hwnd, state, true, WS_EX_TOOLWINDOW, ~WS_EX_TOOLWINDOW)
 
 #define DisableToolWindowStyle(hwnd, state)	EnableToolWindowStyle(hwnd, !state)
 
-////////////****** ¼üÅÌÏûÏ¢ºê¶¨Òå ******////////////
+////////////****** é”®ç›˜æ¶ˆæ¯å®å®šä¹‰ ******////////////
 
-// ÅĞ¶ÏÈ«¾Ö°´¼ü×´Ì¬
+// åˆ¤æ–­å…¨å±€æŒ‰é”®çŠ¶æ€
 #define KEY_DOWN(VK_NONAME) ((GetAsyncKeyState(VK_NONAME) & 0x8000) ? 1:0)
 
-// ÅĞ¶Ïµ±Ç°»î¶¯´°¿ÚÊÇ·ñ½ÓÊÜµ½Ä³°´¼üÏûÏ¢
+// åˆ¤æ–­å½“å‰æ´»åŠ¨çª—å£æ˜¯å¦æ¥å—åˆ°æŸæŒ‰é”®æ¶ˆæ¯
 #define KEY_DOWN_WND(VK_NONAME) (GetForegroundWindow() == HiEasyX::GetHWnd_win32() && KEY_DOWN(VK_NONAME))
 
-////////////****** EasyX Ô­Éúº¯ÊıµÄºêÌæ»» ******////////////
+////////////****** EasyX åŸç”Ÿå‡½æ•°çš„å®æ›¿æ¢ ******////////////
 
-// ÈôÊ¹ÓÃ EasyX Ô­Éúº¯Êı´´½¨´°¿Ú£¬Ôò¹Ø±Õ´°¿ÚÊ±×Ô¶¯ÍË³ö³ÌĞò
+// è‹¥ä½¿ç”¨ EasyX åŸç”Ÿå‡½æ•°åˆ›å»ºçª—å£ï¼Œåˆ™å…³é—­çª—å£æ—¶è‡ªåŠ¨é€€å‡ºç¨‹åº
 #define initgraph(...)			HiEasyX::initgraph_win32(__VA_ARGS__);\
 								HiEasyX::AutoExit()
 
 #define closegraph				HiEasyX::closegraph_win32
 
-// Ä¬ÈÏÊ¹ÓÃË«»º³å£¬¹Ê BeginBatchDraw ÎŞÒâÒå
+// é»˜è®¤ä½¿ç”¨åŒç¼“å†²ï¼Œæ•… BeginBatchDraw æ— æ„ä¹‰
 #define BeginBatchDraw()
 #define FlushBatchDraw()		REDRAW_WINDOW()
 #define EndBatchDraw()			REDRAW_WINDOW()
@@ -892,7 +892,7 @@ namespace HiEasyX
 #define PeekMouseMsg			HiEasyX::PeekMouseMsg_win32
 #define FlushMouseMsgBuffer		HiEasyX::FlushMouseMsgBuffer_win32
 
-////////////****** ÒÑ¾­·ÏÆúµÄºê ******////////////
+////////////****** å·²ç»åºŸå¼ƒçš„å® ******////////////
 
-// ´ËºêÒÑ¾­ÆúÓÃ£¬ÇëÊ¹ÓÃ REDRAW_WINDOW ºê
+// æ­¤å®å·²ç»å¼ƒç”¨ï¼Œè¯·ä½¿ç”¨ REDRAW_WINDOW å®
 #define FLUSH_DRAW() (This_macro_is_deprecated___Please_use_macro__REDRAW_WINDOW__)

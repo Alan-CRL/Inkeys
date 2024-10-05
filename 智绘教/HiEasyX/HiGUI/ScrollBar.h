@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	ScrollBar.h
- * @brief	HiGUI ¿Ø¼ş·ÖÖ§£º¹ö¶¯Ìõ¿Ø¼ş
+ * @brief	HiGUI æ§ä»¶åˆ†æ”¯ï¼šæ»šåŠ¨æ¡æ§ä»¶
  * @author	huidong
 */
 
@@ -15,93 +15,93 @@
 namespace HiEasyX
 {
 	/**
-	 * @brief ¹ö¶¯Ìõ¿Ø¼ş
+	 * @brief æ»šåŠ¨æ¡æ§ä»¶
 	*/
 	class ScrollBar : public ControlBase
 	{
 	public:
 
 		/**
-		 * @brief ¹ö¶¯ÌõĞÅÏ¢
+		 * @brief æ»šåŠ¨æ¡ä¿¡æ¯
 		*/
 		struct ScrollBarInfo
 		{
-			int btnW, btnH;			///< ÆÕÍ¨°´Å¥³ß´ç
-			int slider_free_len;	///< »¬¿é¿ÉÒÔÕ¼¾İµÄÏñËØ³¤¶È
-			int slider_move_len;	///< »¬¿é¶¥µã¿ÉÒÔÒÆ¶¯µÄÏñËØ³¤¶È
-			int slider_len;			///< »¬¿éÏñËØ³¤¶È
+			int btnW, btnH;			///< æ™®é€šæŒ‰é’®å°ºå¯¸
+			int slider_free_len;	///< æ»‘å—å¯ä»¥å æ®çš„åƒç´ é•¿åº¦
+			int slider_move_len;	///< æ»‘å—é¡¶ç‚¹å¯ä»¥ç§»åŠ¨çš„åƒç´ é•¿åº¦
+			int slider_len;			///< æ»‘å—åƒç´ é•¿åº¦
 		};
 
 	protected:
 
-		int m_nBtnHeight = 20;				///< °´Å¥¸ß¶È£¨ÊúÖ±·ÅÖÃÊ±ÓĞĞ§£©
-		int m_nBtnWidth = 20;				///< °´Å¥¿í¶È£¨Ë®Æ½·ÅÖÃÊ±ÓĞĞ§£©
+		int m_nBtnHeight = 20;				///< æŒ‰é’®é«˜åº¦ï¼ˆç«–ç›´æ”¾ç½®æ—¶æœ‰æ•ˆï¼‰
+		int m_nBtnWidth = 20;				///< æŒ‰é’®å®½åº¦ï¼ˆæ°´å¹³æ”¾ç½®æ—¶æœ‰æ•ˆï¼‰
 
-		bool m_bHorizontal = false;			///< ÊÇ·ñË®Æ½·ÅÖÃ
+		bool m_bHorizontal = false;			///< æ˜¯å¦æ°´å¹³æ”¾ç½®
 
-		int m_nDrawInterval = 6;			///< »æÖÆ¼äÏ¶
+		int m_nDrawInterval = 6;			///< ç»˜åˆ¶é—´éš™
 
-		// °´Å¥
+		// æŒ‰é’®
 		Button m_btnTop;
 		Button m_btnUp;
 		Button m_btnDown;
 		Button m_btnBottom;
 		Button m_btnDrag;
 		MouseDrag m_MouseDrag;
-		bool m_bDragging = false;			///< ÊÇ·ñÕıÔÚÍÏ¶¯
-		int m_nSliderSpeed = 20;			///< °´×¡°´Å¥Ê±»¬¿éÃ¿ÃëÔËĞĞµÄÄÚÈİ³¤¶È
-		clock_t m_tPressed = 0;				///< °´Å¥°´×¡¼ÆÊ±
+		bool m_bDragging = false;			///< æ˜¯å¦æ­£åœ¨æ‹–åŠ¨
+		int m_nSliderSpeed = 20;			///< æŒ‰ä½æŒ‰é’®æ—¶æ»‘å—æ¯ç§’è¿è¡Œçš„å†…å®¹é•¿åº¦
+		clock_t m_tPressed = 0;				///< æŒ‰é’®æŒ‰ä½è®¡æ—¶
 
-		float m_fPos = 0;					///< »¬¿éÄÚÈİÎ»ÖÃ
-		int m_nLen = 0;						///< ÄÚÈİ×Ü³¤¶È
-		float m_fPosRatio = 0;				///< »¬¿éÄÚÈİÎ»ÖÃ±ÈÀı
+		float m_fPos = 0;					///< æ»‘å—å†…å®¹ä½ç½®
+		int m_nLen = 0;						///< å†…å®¹æ€»é•¿åº¦
+		float m_fPosRatio = 0;				///< æ»‘å—å†…å®¹ä½ç½®æ¯”ä¾‹
 
-		ScrollBarInfo m_info = {};			///< ¹ö¶¯ÌõĞÅÏ¢
+		ScrollBarInfo m_info = {};			///< æ»šåŠ¨æ¡ä¿¡æ¯
 
-		int m_nViewLen = 10;				///< ÊÓÒ°ÄÚÈİ³¤¶È
-		float m_fViewRatio = 1;				///< ÊÓÒ°·¶Î§Õ¼×Ü³¤¶ÈµÄ±È
+		int m_nViewLen = 10;				///< è§†é‡å†…å®¹é•¿åº¦
+		float m_fViewRatio = 1;				///< è§†é‡èŒƒå›´å æ€»é•¿åº¦çš„æ¯”
 
-		bool m_bSliderPosChanged = false;	///< ±ê¼Ç»¬¿éÎ»ÖÃ¸Ä±ä
+		bool m_bSliderPosChanged = false;	///< æ ‡è®°æ»‘å—ä½ç½®æ”¹å˜
 
-		RECT m_rctOnWheel = { 0 };			///< ÏìÓ¦¹öÂÖÏûÏ¢µÄÇøÓò£¨¿Í»§Çø×ø±ê£©
-		bool m_bSetOnWheelRct = false;		///< ÊÇ·ñÉèÖÃÁË¹öÂÖÏûÏ¢µÄÏìÓ¦ÇøÓò
+		RECT m_rctOnWheel = { 0 };			///< å“åº”æ»šè½®æ¶ˆæ¯çš„åŒºåŸŸï¼ˆå®¢æˆ·åŒºåæ ‡ï¼‰
+		bool m_bSetOnWheelRct = false;		///< æ˜¯å¦è®¾ç½®äº†æ»šè½®æ¶ˆæ¯çš„å“åº”åŒºåŸŸ
 
 		/**
-		 * @brief ³õÊ¼»¯
+		 * @brief åˆå§‹åŒ–
 		*/
 		virtual void Init();
 
 		/**
-		 * @brief ÏìÓ¦ÌØÊâ°´Å¥ÏûÏ¢£¨Top ºÍ Bottom£©
-		 * @param[in] pThis	ÀàÖ¸Õë
-		 * @param[in] pCtrl	¿Ø¼ş
-		 * @param[in] msgid	ÏûÏ¢ ID
-		 * @param[in] msg	ÏûÏ¢ÄÚÈİ
+		 * @brief å“åº”ç‰¹æ®ŠæŒ‰é’®æ¶ˆæ¯ï¼ˆTop å’Œ Bottomï¼‰
+		 * @param[in] pThis	ç±»æŒ‡é’ˆ
+		 * @param[in] pCtrl	æ§ä»¶
+		 * @param[in] msgid	æ¶ˆæ¯ ID
+		 * @param[in] msg	æ¶ˆæ¯å†…å®¹
 		*/
 		static void OnSpecialButtonMsg(void* pThis, ControlBase* pCtrl, int msgid, ExMessage msg);
 
 		/**
-		 * @brief ÏìÓ¦ÆÕÍ¨°´Å¥ÏûÏ¢£¨Up ºÍ Down£©
+		 * @brief å“åº”æ™®é€šæŒ‰é’®æ¶ˆæ¯ï¼ˆUp å’Œ Downï¼‰
 		*/
 		virtual void OnNormalButtonMsg();
 
 		/**
-		 * @brief ¸üĞÂ»¬¿éÎ»ÖÃÇøÓò
+		 * @brief æ›´æ–°æ»‘å—ä½ç½®åŒºåŸŸ
 		*/
 		virtual void UpdateSliderRect();
 
 		/**
-		 * @brief ¸üĞÂÎ»ÖÃ±ÈÀı
+		 * @brief æ›´æ–°ä½ç½®æ¯”ä¾‹
 		*/
 		void UpdatePosRatio();
 
 		/**
-		 * @brief ¸üĞÂÊÓÒ°±ÈÀı
+		 * @brief æ›´æ–°è§†é‡æ¯”ä¾‹
 		*/
 		void UpdateViewRatio();
 
 		/**
-		 * @brief ¸üĞÂ¹ö¶¯ÌõĞÅÏ¢
+		 * @brief æ›´æ–°æ»šåŠ¨æ¡ä¿¡æ¯
 		*/
 		void UpdateScrollBarInfo();
 
@@ -114,94 +114,94 @@ namespace HiEasyX
 		int GetButtonHeight() const { return m_nBtnHeight; }
 
 		/**
-		 * @brief ÉèÖÃ°´Å¥¸ß¶È£¨ÊúÖ±·ÅÖÃÊ±ÉúĞ§£©
-		 * @param[in] h ¸ß¶È
+		 * @brief è®¾ç½®æŒ‰é’®é«˜åº¦ï¼ˆç«–ç›´æ”¾ç½®æ—¶ç”Ÿæ•ˆï¼‰
+		 * @param[in] h é«˜åº¦
 		*/
 		void SetButtonHeight(int h);
 
 		int GetButtonWidth() const { return m_nBtnWidth; }
 
 		/**
-		 * @brief ÉèÖÃ°´Å¥¿í¶È£¨Ë®Æ½·ÅÖÃÊ±ÉúĞ§£©
-		 * @param[in] w ¿í¶È
+		 * @brief è®¾ç½®æŒ‰é’®å®½åº¦ï¼ˆæ°´å¹³æ”¾ç½®æ—¶ç”Ÿæ•ˆï¼‰
+		 * @param[in] w å®½åº¦
 		*/
 		void SetButtonWidth(int w);
 
 		/**
-		 * @brief ÅĞ¶ÏÊÇ·ñÕıÔÚÍÏ¶¯
+		 * @brief åˆ¤æ–­æ˜¯å¦æ­£åœ¨æ‹–åŠ¨
 		*/
 		bool IsDragging() const { return m_bDragging; }
 
 		/**
-		 * @brief »ñÈ¡»¬¿éÏñËØ³¤¶È
+		 * @brief è·å–æ»‘å—åƒç´ é•¿åº¦
 		*/
 		int GetSliderLength() const { return m_info.slider_len; }
 
 		/**
-		 * @brief »ñÈ¡»¬¿éÄÚÈİÎ»ÖÃ
+		 * @brief è·å–æ»‘å—å†…å®¹ä½ç½®
 		*/
 		int GetSliderContentPos() const { return (int)m_fPos; }
 
 		/**
-		 * @brief ÉèÖÃ»¬¿éÄÚÈİÎ»ÖÃ
-		 * @param[in] pos »¬¿éÎ»ÖÃ
+		 * @brief è®¾ç½®æ»‘å—å†…å®¹ä½ç½®
+		 * @param[in] pos æ»‘å—ä½ç½®
 		*/
 		void SetSliderContentPos(float pos);
 
 		/**
-		 * @brief Ïà¶ÔÒÆ¶¯»¬¿éµÄÄÚÈİÎ»ÖÃ
-		 * @param[in] d »¬¿éÎ»ÖÃ
+		 * @brief ç›¸å¯¹ç§»åŠ¨æ»‘å—çš„å†…å®¹ä½ç½®
+		 * @param[in] d æ»‘å—ä½ç½®
 		*/
 		void MoveSlider(float d);
 
 		/**
-		 * @brief »ñÈ¡¹ö¶¯ÌõÄÚÈİ³¤¶È
+		 * @brief è·å–æ»šåŠ¨æ¡å†…å®¹é•¿åº¦
 		*/
 		int GetContentLength() const { return m_nLen; }
 
 		/**
-		 * @brief ÉèÖÃ¹ö¶¯ÌõÄÚÈİ³¤¶È
-		 * @param[in] len ÄÚÈİ³¤¶È
+		 * @brief è®¾ç½®æ»šåŠ¨æ¡å†…å®¹é•¿åº¦
+		 * @param[in] len å†…å®¹é•¿åº¦
 		*/
 		void SetContentLength(int len);
 
 		int GetViewLength() const { return m_nViewLen; }
 
 		/**
-		 * @brief ÉèÖÃÊÓÒ°ÄÚÈİ³¤¶È
-		 * @param[in] len ÊÓÒ°ÄÚÈİ³¤¶È
+		 * @brief è®¾ç½®è§†é‡å†…å®¹é•¿åº¦
+		 * @param[in] len è§†é‡å†…å®¹é•¿åº¦
 		*/
 		void SetViewLength(int len);
 
 		int GetSliderSpeed() const { return m_nSliderSpeed; }
 
 		/**
-		 * @brief ÉèÖÃ°´ÏÂ°´Å¥Ê±»¬¿éµÄÔËĞĞËÙ¶È
-		 * @param[in] speed ÔËĞĞËÙ¶È£¨Ã¿Ãë¾­¹ıµÄÄÚÈİ³¤¶È£©
+		 * @brief è®¾ç½®æŒ‰ä¸‹æŒ‰é’®æ—¶æ»‘å—çš„è¿è¡Œé€Ÿåº¦
+		 * @param[in] speed è¿è¡Œé€Ÿåº¦ï¼ˆæ¯ç§’ç»è¿‡çš„å†…å®¹é•¿åº¦ï¼‰
 		*/
 		void SetSliderSpeed(int speed);
 
 		bool IsHorizontal() const { return m_bHorizontal; }
 
 		/**
-		 * @brief ÆôÓÃË®Æ½·ÅÖÃ
-		 * @param[in] enable ÊÇ·ñÆôÓÃ
+		 * @brief å¯ç”¨æ°´å¹³æ”¾ç½®
+		 * @param[in] enable æ˜¯å¦å¯ç”¨
 		*/
 		void EnableHorizontal(bool enable);
 
 		/**
-		 * @brief ÅĞ¶Ï»¬¿éÎ»ÖÃÊÇ·ñ¸Ä±ä
+		 * @brief åˆ¤æ–­æ»‘å—ä½ç½®æ˜¯å¦æ”¹å˜
 		*/
 		bool IsSliderPosChanged();
 
 		/**
-		 * @brief »ñÈ¡ÏìÓ¦¹öÂÖÏûÏ¢µÄÇøÓò£¨Î´×Ô¶¨ÒåÊ±·µ»Ø¿ÕÇøÓò£©
+		 * @brief è·å–å“åº”æ»šè½®æ¶ˆæ¯çš„åŒºåŸŸï¼ˆæœªè‡ªå®šä¹‰æ—¶è¿”å›ç©ºåŒºåŸŸï¼‰
 		*/
 		RECT GetOnWheelRect() const { return m_rctOnWheel; }
 
 		/**
-		 * @brief ÉèÖÃÏìÓ¦¹öÂÖÏûÏ¢µÄÇøÓò£¨¿Í»§Çø×ø±ê£©
-		 * @param[in] rct ÏûÏ¢ÏìÓ¦ÇøÓò
+		 * @brief è®¾ç½®å“åº”æ»šè½®æ¶ˆæ¯çš„åŒºåŸŸï¼ˆå®¢æˆ·åŒºåæ ‡ï¼‰
+		 * @param[in] rct æ¶ˆæ¯å“åº”åŒºåŸŸ
 		*/
 		void SetOnWheelRect(RECT rct);
 

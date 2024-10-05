@@ -1,4 +1,4 @@
-#include "HiFunc.h"
+ï»¿#include "HiFunc.h"
 
 #include <iostream>
 #include <time.h>
@@ -14,18 +14,18 @@ ScreenSize GetScreenSize()
 	return { left,top,w,h };
 }
 
-// »ñÈ¡Í¼Ïñ³ß´ç
-// ¿ÉÒÔ·½±ãµØ´¦Àí IMAGE Ö¸ÕëÎª¿Õ£¬¼´Ö¸ÏòÖ÷»æÍ¼´°¿ÚµÄÇé¿ö
+// è·å–å›¾åƒå°ºå¯¸
+// å¯ä»¥æ–¹ä¾¿åœ°å¤„ç† IMAGE æŒ‡é’ˆä¸ºç©ºï¼Œå³æŒ‡å‘ä¸»ç»˜å›¾çª—å£çš„æƒ…å†µ
 void GetImageSize(IMAGE* pImg, int* width, int* height)
 {
-	// ÆÕÍ¨ IMAGE Ö¸Õë
+	// æ™®é€š IMAGE æŒ‡é’ˆ
 	if (pImg)
 	{
 		*width = pImg->getwidth();
 		*height = pImg->getheight();
 	}
 
-	// nullptr ¶ÔÓ¦»æÍ¼´°¿Ú
+	// nullptr å¯¹åº”ç»˜å›¾çª—å£
 	else
 	{
 		IMAGE* pOld = GetWorkingImage();
@@ -66,9 +66,9 @@ void SetImageColor(IMAGE& img, COLORREF color, bool enable_alpha)
 
 HBITMAP Image2Bitmap(IMAGE* img, bool enable_alpha)
 {
-	// ²âÊÔ½áÂÛ
-	// ÈôÍ¼ÏñÖĞÓĞÈÎºÎÏñËØ alpha ²»Îª 0£¬ÔòÆôÓÃ alpha
-	// ÈôÍ¼Ïñ alpha È«²¿Îª 0£¬Ôò±íÊ¾ÍêÈ«²»Í¸Ã÷
+	// æµ‹è¯•ç»“è®º
+	// è‹¥å›¾åƒä¸­æœ‰ä»»ä½•åƒç´  alpha ä¸ä¸º 0ï¼Œåˆ™å¯ç”¨ alpha
+	// è‹¥å›¾åƒ alpha å…¨éƒ¨ä¸º 0ï¼Œåˆ™è¡¨ç¤ºå®Œå…¨ä¸é€æ˜
 
 	DWORD* pBuf = GetImageBuffer(img);
 	if (!enable_alpha)
@@ -125,17 +125,17 @@ HICON Bitmap2Icon(HBITMAP hBmp)
 
 void HpSleep(int ms)
 {
-	static clock_t oldclock = clock();		// ¾²Ì¬±äÁ¿£¬¼ÇÂ¼ÉÏÒ»´Î tick
+	static clock_t oldclock = clock();		// é™æ€å˜é‡ï¼Œè®°å½•ä¸Šä¸€æ¬¡ tick
 	static int c = CLOCKS_PER_SEC / 1000;
 
-	oldclock += ms * c;						// ¸üĞÂ tick
+	oldclock += ms * c;						// æ›´æ–° tick
 
-	if (clock() > oldclock)					// Èç¹ûÒÑ¾­³¬Ê±£¬ÎŞĞèÑÓÊ±
+	if (clock() > oldclock)					// å¦‚æœå·²ç»è¶…æ—¶ï¼Œæ— éœ€å»¶æ—¶
 		oldclock = clock();
 	else
-		while (clock() < oldclock)			// ÑÓÊ±
-			Sleep(1);						// ÊÍ·Å CPU ¿ØÖÆÈ¨£¬½µµÍ CPU Õ¼ÓÃÂÊ
-	//			Sleep(0);						// ¸ü¸ß¾«¶È¡¢¸ü¸ß CPU Õ¼ÓÃÂÊ
+		while (clock() < oldclock)			// å»¶æ—¶
+			Sleep(1);						// é‡Šæ”¾ CPU æ§åˆ¶æƒï¼Œé™ä½ CPU å ç”¨ç‡
+	//			Sleep(0);						// æ›´é«˜ç²¾åº¦ã€æ›´é«˜ CPU å ç”¨ç‡
 }
 
 bool IsInRect(int x, int y, RECT rct)
@@ -184,7 +184,7 @@ UINT GetExMessageType(ExMessage msg)
 
 void SetWindowTransparent(HWND HWnd, bool enable, int alpha)
 {
-	//²âÊÔ½áÂÛ£º´Ëº¯Êı²»ÄÜÓë UpdateLayeredWindow Ò»Í¬Ê¹ÓÃ
+	//æµ‹è¯•ç»“è®ºï¼šæ­¤å‡½æ•°ä¸èƒ½ä¸ UpdateLayeredWindow ä¸€åŒä½¿ç”¨
 
 	LONG nRet = ::GetWindowLong(HWnd, GWL_EXSTYLE);
 	nRet |= WS_EX_LAYERED;
@@ -203,9 +203,9 @@ namespace HiEasyX
 		int w = Srcimg->getwidth();
 		int h = Srcimg->getheight();
 
-		// ½á¹¹ÌåµÄµÚÈı¸ö³ÉÔ±±íÊ¾¶îÍâµÄÍ¸Ã÷¶È£¬0 ±íÊ¾È«Í¸Ã÷£¬255 ±íÊ¾²»Í¸Ã÷¡£
+		// ç»“æ„ä½“çš„ç¬¬ä¸‰ä¸ªæˆå‘˜è¡¨ç¤ºé¢å¤–çš„é€æ˜åº¦ï¼Œ0 è¡¨ç¤ºå…¨é€æ˜ï¼Œ255 è¡¨ç¤ºä¸é€æ˜ã€‚
 		BLENDFUNCTION bf = { AC_SRC_OVER, 0, (BYTE)transparency, AC_SRC_ALPHA };
-		// Ê¹ÓÃ Windows GDI º¯ÊıÊµÏÖ°ëÍ¸Ã÷Î»Í¼
+		// ä½¿ç”¨ Windows GDI å‡½æ•°å®ç°åŠé€æ˜ä½å›¾
 		AlphaBlend(dstDC, DstimgX, DstimgY, w, h, srcDC, 0, 0, w, h, bf);
 	}
 	void TransparentImage(IMAGE* Dstimg, int DstimgX, int DstimgY, int DstimgWidth, int DstimgHeight, IMAGE* Srcimg, int SrcimgX, int SrcimgY, int SourceWidth, int SourceHeight, int transparency)
@@ -213,9 +213,9 @@ namespace HiEasyX
 		HDC dstDC = GetImageHDC(Dstimg);
 		HDC srcDC = GetImageHDC(Srcimg);
 
-		// ½á¹¹ÌåµÄµÚÈı¸ö³ÉÔ±±íÊ¾¶îÍâµÄÍ¸Ã÷¶È£¬0 ±íÊ¾È«Í¸Ã÷£¬255 ±íÊ¾²»Í¸Ã÷¡£
+		// ç»“æ„ä½“çš„ç¬¬ä¸‰ä¸ªæˆå‘˜è¡¨ç¤ºé¢å¤–çš„é€æ˜åº¦ï¼Œ0 è¡¨ç¤ºå…¨é€æ˜ï¼Œ255 è¡¨ç¤ºä¸é€æ˜ã€‚
 		BLENDFUNCTION bf = { AC_SRC_OVER, 0, (BYTE)transparency, AC_SRC_ALPHA };
-		// Ê¹ÓÃ Windows GDI º¯ÊıÊµÏÖ°ëÍ¸Ã÷Î»Í¼
+		// ä½¿ç”¨ Windows GDI å‡½æ•°å®ç°åŠé€æ˜ä½å›¾
 		AlphaBlend(dstDC, DstimgX, DstimgY, DstimgWidth, DstimgHeight, srcDC, SrcimgX, SrcimgY, SourceWidth, SourceHeight, bf);
 	}
 
@@ -236,9 +236,9 @@ namespace HiEasyX
 		SetImageColor(*img, RGBA(0, 0, 0, 0), true);
 		HDC SrcDC = GetImageHDC(img);
 
-		// ½á¹¹ÌåµÄµÚÈı¸ö³ÉÔ±±íÊ¾¶îÍâµÄÍ¸Ã÷¶È£¬0 ±íÊ¾È«Í¸Ã÷£¬255 ±íÊ¾²»Í¸Ã÷¡£
+		// ç»“æ„ä½“çš„ç¬¬ä¸‰ä¸ªæˆå‘˜è¡¨ç¤ºé¢å¤–çš„é€æ˜åº¦ï¼Œ0 è¡¨ç¤ºå…¨é€æ˜ï¼Œ255 è¡¨ç¤ºä¸é€æ˜ã€‚
 		BLENDFUNCTION bf = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
-		// Ê¹ÓÃ Windows GDI º¯ÊıÊµÏÖ°ëÍ¸Ã÷Î»Í¼
+		// ä½¿ç”¨ Windows GDI å‡½æ•°å®ç°åŠé€æ˜ä½å›¾
 		AlphaBlend(SrcDC, 0, 0, w, h, DstDC, 0, 0, DstW, DstH, bf);
 
 		return true;

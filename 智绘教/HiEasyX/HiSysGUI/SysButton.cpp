@@ -1,4 +1,4 @@
-#include "SysButton.h"
+﻿#include "SysButton.h"
 #include "../HiFunc.h"
 #include <tchar.h>
 

@@ -1,0 +1,60 @@
+﻿#include "IdtNet.h"
+
+#pragma comment(lib, "libssl_static.lib")
+#pragma comment(lib, "libcrypto_static.lib")
+
+#define CPPHTTPLIB_OPENSSL_SUPPORT
+#include "cpphttplib/httplib.h"
+
+std::string GetEditionInformation()
+{
+	httplib::Result res;
+	httplib::Headers headers = { {"Cache-Control", "no-cache"}, {"Pragma", "no-cache"} };
+
+	// 尝试主地址
+	{
+		httplib::SSLClient scli("vip.123pan.cn");
+		scli.set_follow_location(true);
+		scli.set_connection_timeout(5);
+		scli.set_read_timeout(10);
+
+		// 尝试 Https 连接
+		res = scli.Get("/1709404/version_identification/official_version.json", headers);
+		if (!res || res->status != 200)
+		{
+			// 失败后尝试使用 Http 连接
+			httplib::Client cli("vip.123pan.cn");
+			scli.set_follow_location(true);
+			scli.set_connection_timeout(5);
+			scli.set_read_timeout(10);
+
+			res = cli.Get("/1709404/version_identification/official_version.json", headers);
+		}
+
+		if (res && res->status == 200) return res->body;
+	}
+	// 尝试备用地址
+	{
+		httplib::SSLClient scli("home.alan-crl.top");
+		scli.set_follow_location(true);
+		scli.set_connection_timeout(5);
+		scli.set_read_timeout(10);
+
+		// 尝试 Https 连接
+		res = scli.Get("/version_identification/official_version.json", headers);
+		if (!res || res->status != 200)
+		{
+			// 失败后尝试使用 Http 连接
+			httplib::Client cli("home.alan-crl.top");
+			scli.set_follow_location(true);
+			scli.set_connection_timeout(5);
+			scli.set_read_timeout(10);
+
+			res = cli.Get("/version_identification/official_version.json", headers);
+		}
+
+		if (res && res->status == 200) return res->body;
+	}
+
+	return "Error";
+}

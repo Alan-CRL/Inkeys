@@ -1,9 +1,9 @@
-/**
+ï»¿/**
  * @file		HiEasyX.h
- * @brief		HiEasyX ¿âÍ·ÎÄ¼ş
- * @note		HiEasyX ÊÇ»ùÓÚ EasyX µÄÀ©Õ¹¿â£¬Ö§³Ö´´½¨¶à´°¿Ú¡¢Í¸Ã÷¿¹¾â³İ»æÍ¼¡¢ÏµÍ³ UI ×é¼şµÈµÈ¡£
+ * @brief		HiEasyX åº“å¤´æ–‡ä»¶
+ * @note		HiEasyX æ˜¯åŸºäº EasyX çš„æ‰©å±•åº“ï¼Œæ”¯æŒåˆ›å»ºå¤šçª—å£ã€é€æ˜æŠ—é”¯é½¿ç»˜å›¾ã€ç³»ç»Ÿ UI ç»„ä»¶ç­‰ç­‰ã€‚
  *
- * @version		Ver 0.4.1 (ÖÇ»æ½Ì×¨ÓÃ°æ)
+ * @version		Ver 0.4.1 (æ™ºç»˜æ•™ä¸“ç”¨ç‰ˆ)
  * @envir		VisualStudio 2022 | EasyX_20220901 | Windows 11
  * @site		https://github.com/zouhuidong/HiEasyX
  *
@@ -18,13 +18,13 @@
  * @create		2022.07.20
  * @update		2023.07.18
  *
- * @attention	Èç¹ûÊ¹ÓÃMinGWºÍTDMµÈ±àÒëÆ÷£¬ÔòĞèÒªÌí¼ÓÁ´½ÓÑ¡Ïî:-leasyx -lmsimg32 -lgdiplus -lgdi32 -lwinmm
- * 				ĞèÒªÊ¹ÓÃ C++14 ¼°ÒÔÉÏ±ê×¼£¬±àÒëÊ±ĞèÑ¡Ôñ ISO C++14 (»òÒÔÉÏ±ê×¼)±ê×¼»òÌí¼Ó±àÒëÑ¡Ïî:-std=c++14 (»òÒÔÉÏ±ê×¼)
+ * @attention	å¦‚æœä½¿ç”¨MinGWå’ŒTDMç­‰ç¼–è¯‘å™¨ï¼Œåˆ™éœ€è¦æ·»åŠ é“¾æ¥é€‰é¡¹:-leasyx -lmsimg32 -lgdiplus -lgdi32 -lwinmm
+ * 				éœ€è¦ä½¿ç”¨ C++14 åŠä»¥ä¸Šæ ‡å‡†ï¼Œç¼–è¯‘æ—¶éœ€é€‰æ‹© ISO C++14 (æˆ–ä»¥ä¸Šæ ‡å‡†)æ ‡å‡†æˆ–æ·»åŠ ç¼–è¯‘é€‰é¡¹:-std=c++14 (æˆ–ä»¥ä¸Šæ ‡å‡†)
 */
 
-/* ÖÇ»æ½Ìµ÷Õû
-* 1 É¾È¥ HpSleep ¸ÄÎª chrono ¿â
-* 2 ¸¸×Ó´°¿ÚÒì³££¬É¾È¥Ä£Ì¬´°¿ÚÉè¶¨
+/* æ™ºç»˜æ•™è°ƒæ•´
+* 1 åˆ å» HpSleep æ”¹ä¸º chrono åº“
+* 2 çˆ¶å­çª—å£å¼‚å¸¸ï¼Œåˆ å»æ¨¡æ€çª—å£è®¾å®š
 */
 
 #pragma once
@@ -40,7 +40,7 @@
 #include "HiEasyX/HiMusicMCI.h"
 #include "HiEasyX/HiGif.h"
 
-// Î´Ñ¡ÔñÊ¹ÓÃÔ­Éú EasyX
+// æœªé€‰æ‹©ä½¿ç”¨åŸç”Ÿ EasyX
 #ifndef _NATIVE_EASYX_
 #include "HiEasyX/HiWindow.h"
 #include "HiEasyX/HiSysGUI/HiSysGUI.h"
@@ -50,8 +50,8 @@
 #include "HiEasyX/HiCanvas.h"
 #include "HiEasyX/HiGUI/HiGUI.h"
 
-// HiEasyX ÃüÃû¿Õ¼äËõĞ´
+// HiEasyX å‘½åç©ºé—´ç¼©å†™
 namespace hiex = HiEasyX;
 
-// ¼æÈİ¾É°æ EasyWin32 ÃüÃû¿Õ¼ä£¬Çë¾¡Á¿Ê¹ÓÃ HiEasyX ÃüÃû¿Õ¼ä
+// å…¼å®¹æ—§ç‰ˆ EasyWin32 å‘½åç©ºé—´ï¼Œè¯·å°½é‡ä½¿ç”¨ HiEasyX å‘½åç©ºé—´
 namespace EasyWin32 = HiEasyX;

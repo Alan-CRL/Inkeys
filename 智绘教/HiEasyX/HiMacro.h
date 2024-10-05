@@ -1,6 +1,6 @@
-/**
+﻿/**
  * @file	HiMacro.h
- * @brief	HiEasyX ��ĳ��ú궨��ģ��
+ * @brief	HiEasyX 库的常用宏定义模块
  * @author	huidong
 */
 
@@ -8,67 +8,67 @@
 
 #include <graphics.h>
 
-////// ͸�����
+////// 透明相关
 
-// ��� rgb ɫ�ʺ� alpha ͸����
-// �Դ��еĴ洢��ʽ��argb
-// COLORREF �Ĵ洢��ʽ��abgr
+// 混合 rgb 色彩和 alpha 透明度
+// 显存中的存储方式：argb
+// COLORREF 的存储方式：abgr
 #define RGBA(r, g, b, a)				(COLORREF)( ((b)<<16) | ((g)<<8) | (r) | ((a)<<24) )
 
-// ��ȡ rgba ɫֵ��͸����
+// 获取 rgba 色值的透明度
 #define GetAValue(rgba)					(BYTE)( ((rgba)>>24) & 0xFF )
 
-// �Ƴ� rgba ɫֵ��͸���ȣ���Ϊ 255 ��͸����
+// 移除 rgba 色值的透明度（设为 255 不透明）
 #define REMOVE_ALPHA(rgba)				(COLORREF)( rgba | 0xFF000000 )
 
-// �� rgb ɫֵ����͸����
+// 给 rgb 色值设置透明度
 #define SET_ALPHA(rgb, a)				(COLORREF)( ((rgb) & 0xFFFFFF) | ((a)<<24) )
 
-// ��ȡĳ�Ҷȶ�Ӧ�� rgb ɫֵ
+// 获取某灰度对应的 rgb 色值
 #define GRAY_COLOR(gray)				RGB(gray, gray, gray)
 
-// ��ȡĳ�Ҷȶ�Ӧ�� rgb ɫֵ����͸���ȣ�
+// 获取某灰度对应的 rgb 色值（带透明度）
 #define GRAY_COLOR_ALPHA(gray, a)		RGBA(gray, gray, gray, a)
 
-////// EasyX ��ͼ�����궨��
+////// EasyX 绘图函数宏定义
 
 #define rectangle_RECT(rct)				rectangle(rct.left,rct.top,rct.right,rct.bottom);
 #define fillrectangle_RECT(rct)			fillrectangle(rct.left,rct.top,rct.right,rct.bottom);
 #define solidrectangle_RECT(rct)		solidrectangle(rct.left,rct.top,rct.right,rct.bottom);
 
-////// ��ѧ
+////// 数学
 
-// Բ����
+// 圆周率
 #define PI 3.1415926535
 
-////// ����
+////// 矩形
 
-// �� RECT �߿����� d ����
+// 将 RECT 边框扩大 d 像素
 #define EXPAND_RECT(rct, d)				(rct).left		-= d;\
 										(rct).top		-= d;\
 										(rct).right		+= d;\
 										(rct).bottom	+= d
 
-// �� RECT �߿��С d ����
+// 将 RECT 边框减小 d 像素
 #define REDUCE_RECT(rct, d)				(rct).left		+= d;\
 										(rct).top		+= d;\
 										(rct).right		-= d;\
 										(rct).bottom	-= d
 
-// �Ƿ��������
+// 是否包含矩形
 #define IS_INCLUDE_RECT(rctParent, rctChild)	(	(rctChild).left		>= (rctParent).left		\
 												&&	(rctChild).right	<= (rctParent).right	\
 												&&	(rctChild).top		>= (rctParent).top		\
 												&&	(rctChild).bottom	<= (rctParent).bottom	)
 
-// �ƶ�����
+// 移动矩形
 #define MOVE_RECT(rct, dx, dy)			(rct).left		+= dx;\
 										(rct).top		+= dy;\
 										(rct).right		+= dx;\
 										(rct).bottom	+= dy
 
 /**
- * @brief ����ɫ����չ
+ * @brief 常用色彩扩展
 */
 enum EXTRA_COLORS
 {
@@ -100,15 +100,15 @@ enum EXTRA_COLORS
 	WHITESMOKE = RGB(0xF5, 0xF5, 0xF5),
 	YELLOWGREEN = RGB(0x9A, 0xCD, 0x32),
 	
-	CLASSICGRAY = RGB(0xF0, 0xF0, 0xF0),			///< Windows �����
+	CLASSICGRAY = RGB(0xF0, 0xF0, 0xF0),			///< Windows 经典灰
 
-	MODERN_BORDER_GRAY = 0xadadad,					///< �ִ��߿��
-	MODERN_FILL_GRAY = 0xe1e1e1,					///< �ִ�����
+	MODERN_BORDER_GRAY = 0xadadad,					///< 现代边框灰
+	MODERN_FILL_GRAY = 0xe1e1e1,					///< 现代填充灰
 
-	MODERN_BORDER_BLUE = 0xd77800,					///< �ִ��߿���
-	MODERN_FILL_BLUE = 0xfbf1e5,					///< �ִ������
+	MODERN_BORDER_BLUE = 0xd77800,					///< 现代边框蓝
+	MODERN_FILL_BLUE = 0xfbf1e5,					///< 现代填充蓝
 
-	MODERN_BORDER_PRESSED_BLUE = 0x995400,			///< �ִ��߿��������£�
-	MODERN_FILL_PRESSED_BLUE = 0xf7e4cc,			///< �ִ�����������£�
+	MODERN_BORDER_PRESSED_BLUE = 0x995400,			///< 现代边框蓝（按下）
+	MODERN_FILL_PRESSED_BLUE = 0xf7e4cc,			///< 现代填充蓝（按下）
 };
 

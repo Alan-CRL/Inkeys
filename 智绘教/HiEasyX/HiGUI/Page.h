@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	Page.h
- * @brief	HiGUI ¿Ø¼ş·ÖÖ§£ºÒ³¿Ø¼ş
+ * @brief	HiGUI æ§ä»¶åˆ†æ”¯ï¼šé¡µæ§ä»¶
  * @author	huidong
 */
 
@@ -11,7 +11,7 @@
 namespace HiEasyX
 {
 	/**
-	 * @brief Ò³¿Ø¼ş
+	 * @brief é¡µæ§ä»¶
 	*/
 	class Page : public ControlBase
 	{
@@ -30,38 +30,38 @@ namespace HiEasyX
 		Page(Canvas* pCanvas);
 
 		/**
-		 * @brief °ó¶¨µ½»­²¼£¬äÖÈ¾Ê±Ä¬ÈÏÊä³öµ½´Ë»­²¼
-		 * @param[in] pCanvas »­²¼
+		 * @brief ç»‘å®šåˆ°ç”»å¸ƒï¼Œæ¸²æŸ“æ—¶é»˜è®¤è¾“å‡ºåˆ°æ­¤ç”»å¸ƒ
+		 * @param[in] pCanvas ç”»å¸ƒ
 		*/
 		virtual void BindToCanvas(Canvas* pCanvas);
 
 		/**
-		 * @brief ¼ÓÈë¿Ø¼ş
-		 * @param[in] pCtrl		¿Ø¼ş
-		 * @param[in] offset_x	×ø±êÆ«ÒÆ
-		 * @param[in] offset_y	×ø±êÆ«ÒÆ
+		 * @brief åŠ å…¥æ§ä»¶
+		 * @param[in] pCtrl		æ§ä»¶
+		 * @param[in] offset_x	åæ ‡åç§»
+		 * @param[in] offset_y	åæ ‡åç§»
 		*/
 		virtual void push(ControlBase* pCtrl, int offset_x = 0, int offset_y = 0);
 
 		virtual void push(const std::list<ControlBase*> list);
 
 		/**
-		 * @brief ÒÆ³ı¿Ø¼ş
-		 * @param[in] pCtrl ¿Ø¼ş
+		 * @brief ç§»é™¤æ§ä»¶
+		 * @param[in] pCtrl æ§ä»¶
 		*/
 		virtual void remove(ControlBase* pCtrl);
 
 		/**
-		 * @brief äÖÈ¾
-		 * @param[in] dst		ÔØÌå»­²¼£¨Îª¿ÕÔòÊä³öµ½ÒÑ°ó¶¨»­²¼£©
-		 * @param[in] pRct		ÄÚ²¿Ê¹ÓÃ
-		 * @param[in] pCount	ÄÚ²¿Ê¹ÓÃ
+		 * @brief æ¸²æŸ“
+		 * @param[in] dst		è½½ä½“ç”»å¸ƒï¼ˆä¸ºç©ºåˆ™è¾“å‡ºåˆ°å·²ç»‘å®šç”»å¸ƒï¼‰
+		 * @param[in] pRct		å†…éƒ¨ä½¿ç”¨
+		 * @param[in] pCount	å†…éƒ¨ä½¿ç”¨
 		*/
 		void Render(Canvas* dst = nullptr, RECT* pRct = nullptr, int* pCount = 0) override;
 
 		/**
-		 * @brief ¸üĞÂ¿Ø¼ş£¬²¢Êä³öµ½Ä³»­²¼£¨¿Ø¼şÖØ»æ²¢äÖÈ¾£©
-		 * @param[in] pCanvas ÔØÌå»­²¼£¨Îª¿ÕÔòÊä³öµ½ÒÑ°ó¶¨»­²¼£©
+		 * @brief æ›´æ–°æ§ä»¶ï¼Œå¹¶è¾“å‡ºåˆ°æŸç”»å¸ƒï¼ˆæ§ä»¶é‡ç»˜å¹¶æ¸²æŸ“ï¼‰
+		 * @param[in] pCanvas è½½ä½“ç”»å¸ƒï¼ˆä¸ºç©ºåˆ™è¾“å‡ºåˆ°å·²ç»‘å®šç”»å¸ƒï¼‰
 		*/
 		void UpdateImage(Canvas* pCanvas = nullptr);
 	};

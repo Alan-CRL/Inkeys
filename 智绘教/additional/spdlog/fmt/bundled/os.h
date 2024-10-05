@@ -1,4 +1,4 @@
-// Formatting library for C++ - optional OS-specific functionality
+﻿// Formatting library for C++ - optional OS-specific functionality
 //
 // Copyright (c) 2012 - present, Victor Zverovich
 // All rights reserved.

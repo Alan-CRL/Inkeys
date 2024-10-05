@@ -1,7 +1,7 @@
-/* 
+ï»¿/* 
  * hashlib++ - a simple hash library for C++
  * 
- * Copyright (c) 2007-2010 Benjamin Grüdelbach
+ * Copyright (c) 2007-2010 Benjamin Gr?delbach
  *
  * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
@@ -158,7 +158,7 @@ class SHA2ext
 		 *  @brief 	Internal method
 		 *
 		 *  		used by SHA512 and SHA384
-		 *  @author	Benjamin Grüdelbach
+		 *  @author	Benjamin Gr?delbach
 		 *  @param	context The context of the operation
 		 */  
 		void SHA512_Last(HL_SHA512_CTX* context);

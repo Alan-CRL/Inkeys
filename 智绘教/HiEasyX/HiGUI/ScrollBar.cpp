@@ -1,4 +1,4 @@
-#include "ScrollBar.h"
+ï»¿#include "ScrollBar.h"
 
 namespace HiEasyX
 {
@@ -119,7 +119,7 @@ namespace HiEasyX
 			m_info.slider_free_len = GetHeight() - m_info.btnH * 4;
 		}
 
-		m_info.slider_free_len -= 2;	// ×óÓÒ¸÷¿Õ³ö 1 ÏñËØ
+		m_info.slider_free_len -= 2;	// å·¦å³å„ç©ºå‡º 1 åƒç´ 
 		m_info.slider_len = (int)(m_info.slider_free_len * m_fViewRatio);
 		m_info.slider_move_len = m_info.slider_free_len - m_info.slider_len;
 	}
@@ -225,10 +225,10 @@ namespace HiEasyX
 		{
 			ControlBase::UpdateMessage(msg);
 
-			// ´Ë´¦ÏìÓ¦ÏûÏ¢ÎŞĞè×ª»»
+			// æ­¤å¤„å“åº”æ¶ˆæ¯æ— éœ€è½¬æ¢
 			//TransformMessage(msg);
 
-			// ¼ì²éÍÏ¶¯×´Ì¬
+			// æ£€æŸ¥æ‹–åŠ¨çŠ¶æ€
 			m_MouseDrag.UpdateMessage(msg);
 			if (m_btnDrag.IsPressed())
 			{
@@ -239,7 +239,7 @@ namespace HiEasyX
 				m_bDragging = false;
 			}
 
-			// ÍÏ¶¯ÏûÏ¢
+			// æ‹–åŠ¨æ¶ˆæ¯
 			if (m_bDragging && m_MouseDrag.IsLeftDrag())
 			{
 				if (m_info.slider_move_len)
@@ -249,7 +249,7 @@ namespace HiEasyX
 				}
 			}
 
-			// ¹öÂÖÏûÏ¢ÏìÓ¦ÇøÓò
+			// æ»šè½®æ¶ˆæ¯å“åº”åŒºåŸŸ
 			RECT rctWheel = m_bSetOnWheelRct ? m_rctOnWheel : m_rct;
 			bool bWheel = false;
 			if (IsInRect(msg.x, msg.y, rctWheel) || m_bDragging)
@@ -261,7 +261,7 @@ namespace HiEasyX
 				}
 			}
 
-			// ÍÏ¶¯»ò¹öÂÖÊ±ĞèÒªÖØ»æ
+			// æ‹–åŠ¨æˆ–æ»šè½®æ—¶éœ€è¦é‡ç»˜
 			if (m_bDragging || bWheel)
 			{
 				MarkNeedRedrawAndRender();
@@ -271,8 +271,8 @@ namespace HiEasyX
 
 	void ScrollBar::Draw(bool draw_child)
 	{
-		// °´Å¥ÏûÏ¢
-		// ÓÉÓÚ°´ÏÂÏûÏ¢²»»áÒ»Ö±·¢ËÍ£¬ËùÒÔ´ËÏûÏ¢Ö»ÄÜÔÚÃ¿´ÎÖØ»æÊ±´¦Àí
+		// æŒ‰é’®æ¶ˆæ¯
+		// ç”±äºæŒ‰ä¸‹æ¶ˆæ¯ä¸ä¼šä¸€ç›´å‘é€ï¼Œæ‰€ä»¥æ­¤æ¶ˆæ¯åªèƒ½åœ¨æ¯æ¬¡é‡ç»˜æ—¶å¤„ç†
 		OnNormalButtonMsg();
 
 		if (m_bRedraw)
@@ -292,7 +292,7 @@ namespace HiEasyX
 				int middle_y = GetHeight() / 2;
 				int right_x = m_nBtnWidth - m_nDrawInterval;
 
-				// »æÖÆ³¯×ó¼ıÍ·
+				// ç»˜åˆ¶æœå·¦ç®­å¤´
 				auto pDrawLeft = [this, cLine, bottom_y, middle_y, right_x](Canvas& canvas) {
 					canvas.SetLineColor(cLine);
 					canvas.MoveTo(right_x, m_nDrawInterval);
@@ -300,7 +300,7 @@ namespace HiEasyX
 					canvas.LineTo(right_x, bottom_y);
 				};
 
-				// »æÖÆ³¯ÓÒ¼ıÍ·
+				// ç»˜åˆ¶æœå³ç®­å¤´
 				auto pDrawRight = [this, cLine, bottom_y, middle_y, right_x](Canvas& canvas) {
 					canvas.SetLineColor(cLine);
 					canvas.MoveTo(m_nDrawInterval, m_nDrawInterval);
@@ -322,7 +322,7 @@ namespace HiEasyX
 				int middle_x = GetWidth() / 2;
 				int right_x = GetWidth() - m_nDrawInterval;
 
-				// »æÖÆ³¯ÉÏ¼ıÍ·
+				// ç»˜åˆ¶æœä¸Šç®­å¤´
 				auto pDrawUp = [this, cLine, bottom_y, middle_x, right_x](Canvas& canvas) {
 					canvas.SetLineColor(cLine);
 					canvas.MoveTo(m_nDrawInterval, bottom_y);
@@ -330,7 +330,7 @@ namespace HiEasyX
 					canvas.LineTo(right_x, bottom_y);
 				};
 
-				// »æÖÆ³¯ÏÂ¼ıÍ·
+				// ç»˜åˆ¶æœä¸‹ç®­å¤´
 				auto pDrawDown = [this, cLine, bottom_y, middle_x, right_x](Canvas& canvas) {
 					canvas.SetLineColor(cLine);
 					canvas.MoveTo(m_nDrawInterval, m_nDrawInterval);

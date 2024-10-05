@@ -1,4 +1,4 @@
-#include <filesystem>
+ï»¿#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <ShlObj.h>
@@ -10,13 +10,13 @@
 using namespace std;
 
 #define Sleep(int) this_thread::sleep_for(chrono::milliseconds(int))
-#define Test() MessageBox(NULL, L"±ê¼Ç´¦", L"±ê¼Ç", MB_OK | MB_SYSTEMMODAL)
-#define Testi(int) MessageBox(NULL, to_wstring(int).c_str(), L"ÊıÖµ±ê¼Ç", MB_OK | MB_SYSTEMMODAL)
-#define Testw(wstring) MessageBox(NULL, wstring.c_str(), L"×Ö·û±ê¼Ç", MB_OK | MB_SYSTEMMODAL)
+#define Test() MessageBox(NULL, L"æ ‡è®°å¤„", L"æ ‡è®°", MB_OK | MB_SYSTEMMODAL)
+#define Testi(int) MessageBox(NULL, to_wstring(int).c_str(), L"æ•°å€¼æ ‡è®°", MB_OK | MB_SYSTEMMODAL)
+#define Testw(wstring) MessageBox(NULL, wstring.c_str(), L"å­—ç¬¦æ ‡è®°", MB_OK | MB_SYSTEMMODAL)
 
 string edition_date = "20240618.01";
-string global_path; //³ÌĞòµ±Ç°Â·¾¶
-string main_path; //Ö÷³ÌĞòÂ·¾¶
+string global_path; //ç¨‹åºå½“å‰è·¯å¾„
+string main_path; //ä¸»ç¨‹åºè·¯å¾„
 
 //string to wstring
 wstring string_to_wstring(const string& s)
@@ -62,7 +62,7 @@ wstring GetCurrentExePath()
 
 	return (wstring)buffer;
 }
-// Â·¾¶È¨ÏŞ¼ì²â
+// è·¯å¾„æƒé™æ£€æµ‹
 bool HasReadWriteAccess(const std::wstring& directoryPath)
 {
 	DWORD attributes = GetFileAttributesW(directoryPath.c_str());
@@ -74,7 +74,7 @@ bool HasReadWriteAccess(const std::wstring& directoryPath)
 	return true;
 }
 
-//³ÌĞò½ø³Ì×´Ì¬»ñÈ¡
+//ç¨‹åºè¿›ç¨‹çŠ¶æ€è·å–
 bool isProcessRunning(const std::wstring& processPath)
 {
 	PROCESSENTRY32 entry;
@@ -84,13 +84,13 @@ bool isProcessRunning(const std::wstring& processPath)
 
 	if (Process32First(snapshot, &entry)) {
 		do {
-			// ´ò¿ª½ø³Ì¾ä±ú
+			// æ‰“å¼€è¿›ç¨‹å¥æŸ„
 			HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, entry.th32ProcessID);
 			if (process == NULL) {
 				continue;
 			}
 
-			// »ñÈ¡½ø³ÌÍêÕûÂ·¾¶
+			// è·å–è¿›ç¨‹å®Œæ•´è·¯å¾„
 			wchar_t path[MAX_PATH];
 			DWORD size = MAX_PATH;
 			if (QueryFullProcessImageName(process, 0, path, &size)) {
@@ -108,9 +108,9 @@ bool isProcessRunning(const std::wstring& processPath)
 	CloseHandle(snapshot);
 	return false;
 }
-//ÖÕÖ¹½ø³Ì
+//ç»ˆæ­¢è¿›ç¨‹
 bool TerminateProcess(const std::wstring& processPath) {
-	// ´´½¨½ø³Ì¿ìÕÕ
+	// åˆ›å»ºè¿›ç¨‹å¿«ç…§
 	HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
 	if (snapshot == INVALID_HANDLE_VALUE) {
 		return false;
@@ -119,19 +119,19 @@ bool TerminateProcess(const std::wstring& processPath) {
 	PROCESSENTRY32 entry;
 	entry.dwSize = sizeof(PROCESSENTRY32);
 
-	// ±éÀú½ø³Ì¿ìÕÕ
+	// éå†è¿›ç¨‹å¿«ç…§
 	if (Process32First(snapshot, &entry)) {
 		do {
-			// ±È½Ï½ø³ÌÂ·¾¶
+			// æ¯”è¾ƒè¿›ç¨‹è·¯å¾„
 			if (processPath == entry.szExeFile) {
-				// ´ò¿ª½ø³Ì¾ä±ú
+				// æ‰“å¼€è¿›ç¨‹å¥æŸ„
 				HANDLE process = OpenProcess(PROCESS_TERMINATE, FALSE, entry.th32ProcessID);
 				if (process == NULL) {
 					CloseHandle(snapshot);
 					return false;
 				}
 
-				// ÖÕÖ¹½ø³Ì
+				// ç»ˆæ­¢è¿›ç¨‹
 				TerminateProcess(process, 0);
 				CloseHandle(process);
 			}
@@ -144,20 +144,20 @@ bool TerminateProcess(const std::wstring& processPath) {
 vector<HWND> GetProcessWindows(const std::wstring& processPath) {
 	std::vector<HWND> result;
 
-	// »ñÈ¡½ø³Ì ID
+	// è·å–è¿›ç¨‹ ID
 	DWORD processId = 0;
 	PROCESSENTRY32 entry;
 	entry.dwSize = sizeof(PROCESSENTRY32);
 	HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
 	if (Process32First(snapshot, &entry)) {
 		do {
-			// ´ò¿ª½ø³Ì¾ä±ú
+			// æ‰“å¼€è¿›ç¨‹å¥æŸ„
 			HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, entry.th32ProcessID);
 			if (process == NULL) {
 				continue;
 			}
 
-			// »ñÈ¡½ø³ÌÍêÕûÂ·¾¶
+			// è·å–è¿›ç¨‹å®Œæ•´è·¯å¾„
 			wchar_t path[MAX_PATH];
 			DWORD size = MAX_PATH;
 			if (QueryFullProcessImageName(process, 0, path, &size)) {
@@ -173,7 +173,7 @@ vector<HWND> GetProcessWindows(const std::wstring& processPath) {
 	}
 	CloseHandle(snapshot);
 
-	// Ã¶¾Ù´°¿Ú
+	// æšä¸¾çª—å£
 	auto param = std::pair{ processId, &result };
 	EnumWindows([](HWND hwnd, LPARAM lParam) -> BOOL {
 		auto& [processId, result] = *reinterpret_cast<std::pair<DWORD, std::vector<HWND>*>*>(lParam);
@@ -190,16 +190,16 @@ vector<HWND> GetProcessWindows(const std::wstring& processPath) {
 	return result;
 }
 
-// ³ÌĞòÈë¿Úµã
+// ç¨‹åºå…¥å£ç‚¹
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
 {
-	//È«¾ÖÂ·¾¶Ô¤´¦Àí
+	//å…¨å±€è·¯å¾„é¢„å¤„ç†
 	{
 		global_path = wstring_to_string(GetCurrentExeDirectory() + L"\\");
 
 		if (!HasReadWriteAccess(string_to_wstring(global_path)))
 		{
-			if (IsUserAnAdmin()) MessageBox(NULL, L"µ±Ç°Ä¿Â¼È¨ÏŞÊÜÏŞÎŞ·¨Õı³£ÔËĞĞ£¬Çë½«³ÌĞò×ªÒÆÖÁÆäËûÄ¿Â¼", L"ÖÇ»æ½Ì±ÀÀ£±£»¤ÌáÊ¾", MB_OK);
+			if (IsUserAnAdmin()) MessageBox(NULL, L"å½“å‰ç›®å½•æƒé™å—é™æ— æ³•æ­£å¸¸è¿è¡Œï¼Œè¯·å°†ç¨‹åºè½¬ç§»è‡³å…¶ä»–ç›®å½•", L"æ™ºç»˜æ•™å´©æºƒä¿æŠ¤æç¤º", MB_OK);
 			else ShellExecute(NULL, L"runas", GetCurrentExePath().c_str(), NULL, NULL, SW_SHOWNORMAL);
 			return 0;
 		}
@@ -213,7 +213,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	getline(wss, exePath, L'/');
 	getline(wss, exePath, L'\"');
 	getline(wss, exePath, L'\"');
-	if (exePath == L"") exePath = string_to_wstring(main_path) + L"ÖÇ»æ½Ì.exe";
+	if (exePath == L"") exePath = string_to_wstring(main_path) + L"æ™ºç»˜æ•™.exe";
 
 	while (1)
 	{
@@ -257,10 +257,10 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			{
 			solve:
 
-				if (MessageBox(NULL, L"ÖÇ»æ½Ì(ÆÁÄ»Åú×¢³ÌĞò) ÒÉËÆ±ÀÀ£\n\nÊÇ·ñÖØÆô³ÌĞò£¿", (L"ÖÇ»æ½Ì±ÀÀ£ÖØÆô °æ±¾" + string_to_wstring(edition_date)).c_str(), MB_YESNO | MB_SYSTEMMODAL) == IDYES)
+				if (MessageBox(NULL, L"æ™ºç»˜æ•™(å±å¹•æ‰¹æ³¨ç¨‹åº) ç–‘ä¼¼å´©æºƒ\n\næ˜¯å¦é‡å¯ç¨‹åºï¼Ÿ", (L"æ™ºç»˜æ•™å´©æºƒé‡å¯ ç‰ˆæœ¬" + string_to_wstring(edition_date)).c_str(), MB_YESNO | MB_SYSTEMMODAL) == IDYES)
 				{
 					//if (isProcessRunning(exePath))
-					//	ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"ÖÇ»æ½ÌCrashedHandlerClose.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+					//	ShellExecute(NULL, L"runas", (string_to_wstring(global_path) + L"æ™ºç»˜æ•™CrashedHandlerClose.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
 
 					error_code ec;
 					filesystem::remove(string_to_wstring(global_path) + L"open.txt", ec);

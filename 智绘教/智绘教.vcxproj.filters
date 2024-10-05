@@ -22,26 +22,50 @@
     <Filter Include="头文件\HiEasyX\HiSysGUI">
       <UniqueIdentifier>{594605a8-07f6-4f1f-99d6-9121281e72a3}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\ZipUtils">
-      <UniqueIdentifier>{6f1cc623-127b-4008-9ee6-ca06885aa322}</UniqueIdentifier>
+    <Filter Include="头文件\Additional">
+      <UniqueIdentifier>{1bdd4c2e-4346-44fb-9ad6-b03fa2767a63}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\HashLib++">
-      <UniqueIdentifier>{728c15d5-7544-4d95-8a3b-3ebf505c63f3}</UniqueIdentifier>
+    <Filter Include="头文件\Additional\CppHttplib">
+      <UniqueIdentifier>{a70b0e1a-8604-4bd8-b830-ee3a3af4b8d4}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\StbImage">
-      <UniqueIdentifier>{5d35bdb6-ebff-4079-9041-8e114ddddfa6}</UniqueIdentifier>
+    <Filter Include="头文件\Additional\HashLib++">
+      <UniqueIdentifier>{8a4edc4b-7858-40e8-874a-a2e878e2e6e7}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\WinToastLib">
-      <UniqueIdentifier>{6be1cf3f-5e0c-4d98-831d-3eb9cb9efd4d}</UniqueIdentifier>
+    <Filter Include="头文件\Additional\Imgui">
+      <UniqueIdentifier>{001e6116-1c4e-4fd0-9487-bb5936347151}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\JsonCpp">
-      <UniqueIdentifier>{0f708d06-c13c-4442-9d0b-7335cfaf763d}</UniqueIdentifier>
+    <Filter Include="头文件\Additional\JsonCpp">
+      <UniqueIdentifier>{26e681e1-8954-4772-b303-337e46c4a2e9}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\JsonCpp\lib_json">
-      <UniqueIdentifier>{3b6389fb-73b5-40b3-9e07-16d621dab5f6}</UniqueIdentifier>
+    <Filter Include="头文件\Additional\JsonCpp\lib_json">
+      <UniqueIdentifier>{b6e7c9dc-dea7-43b9-9e06-d905d8a7ce96}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\ImGui">
-      <UniqueIdentifier>{e67ac109-40da-4e48-aa40-d9f8e096eb20}</UniqueIdentifier>
+    <Filter Include="头文件\Additional\SpdLog">
+      <UniqueIdentifier>{dfde0fbe-be58-4b13-80dd-a600398c105f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\SpdLog\cfg">
+      <UniqueIdentifier>{758cd303-19a9-42bf-bc47-6a6ba6bd1957}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\SpdLog\details">
+      <UniqueIdentifier>{fe5ec9f4-af30-4373-a600-16798539bf4b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\SpdLog\fmt">
+      <UniqueIdentifier>{a4276863-cd64-41c0-966d-3fab23b73fd5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\SpdLog\sinks">
+      <UniqueIdentifier>{7675550c-532a-485b-af47-6601418db825}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\SpdLog\fmt\bundled">
+      <UniqueIdentifier>{04a59d6c-d9f3-494e-a175-62995c1afea9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\StbImage">
+      <UniqueIdentifier>{d6e10050-a0f3-411f-ab59-e865236ce23f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\WinToastLib">
+      <UniqueIdentifier>{e5e67105-0d69-464d-bc37-a9e684369e87}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\ZipUtils">
+      <UniqueIdentifier>{833e3b3d-58da-4d5c-a694-a98d502b5dc7}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -213,145 +237,463 @@
     <ClInclude Include="IdtI18n.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_md5.h">
-      <Filter>头文件\HashLib++</Filter>
+    <ClInclude Include="IdtStart.h">
+      <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_md5wrapper.h">
-      <Filter>头文件\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_sha1.h">
-      <Filter>头文件\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_sha1wrapper.h">
-      <Filter>头文件\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_sha2ext.h">
-      <Filter>头文件\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_sha2mac.h">
-      <Filter>头文件\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_sha256.h">
-      <Filter>头文件\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_sha256wrapper.h">
-      <Filter>头文件\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_sha384wrapper.h">
-      <Filter>头文件\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_sha512wrapper.h">
-      <Filter>头文件\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_types.h">
-      <Filter>头文件\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_wrapperfactory.h">
-      <Filter>头文件\HashLib++</Filter>
+    <ClInclude Include="additional\cpphttplib\httplib.h">
+      <Filter>头文件\Additional\CppHttplib</Filter>
     </ClInclude>
     <ClInclude Include="additional\hashlib++\hashlibpp.h">
-      <Filter>头文件\HashLib++</Filter>
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClInclude>
     <ClInclude Include="additional\hashlib++\hl_exception.h">
-      <Filter>头文件\HashLib++</Filter>
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClInclude>
     <ClInclude Include="additional\hashlib++\hl_hashwrapper.h">
-      <Filter>头文件\HashLib++</Filter>
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClInclude>
-    <ClInclude Include="additional\stbimage\stb_image.h">
-      <Filter>头文件\StbImage</Filter>
+    <ClInclude Include="additional\hashlib++\hl_md5.h">
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClInclude>
-    <ClInclude Include="additional\stbimage\stb_image_resize.h">
-      <Filter>头文件\StbImage</Filter>
+    <ClInclude Include="additional\hashlib++\hl_md5wrapper.h">
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClInclude>
-    <ClInclude Include="additional\stbimage\stb_image_write.h">
-      <Filter>头文件\StbImage</Filter>
+    <ClInclude Include="additional\hashlib++\hl_sha1.h">
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClInclude>
-    <ClInclude Include="additional\wintoastlib\wintoastlib.h">
-      <Filter>头文件\WinToastLib</Filter>
+    <ClInclude Include="additional\hashlib++\hl_sha1wrapper.h">
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClInclude>
-    <ClInclude Include="additional\ziputils\unzip.h">
-      <Filter>头文件\ZipUtils</Filter>
+    <ClInclude Include="additional\hashlib++\hl_sha2ext.h">
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClInclude>
-    <ClInclude Include="additional\ziputils\zip.h">
-      <Filter>头文件\ZipUtils</Filter>
+    <ClInclude Include="additional\hashlib++\hl_sha2mac.h">
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClInclude>
-    <ClInclude Include="additional\jsoncpp\lib_json\json_tool.h">
-      <Filter>头文件\JsonCpp\lib_json</Filter>
+    <ClInclude Include="additional\hashlib++\hl_sha256.h">
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClInclude>
-    <ClInclude Include="additional\jsoncpp\allocator.h">
-      <Filter>头文件\JsonCpp</Filter>
+    <ClInclude Include="additional\hashlib++\hl_sha256wrapper.h">
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClInclude>
-    <ClInclude Include="additional\jsoncpp\assertions.h">
-      <Filter>头文件\JsonCpp</Filter>
+    <ClInclude Include="additional\hashlib++\hl_sha384wrapper.h">
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClInclude>
-    <ClInclude Include="additional\jsoncpp\config.h">
-      <Filter>头文件\JsonCpp</Filter>
+    <ClInclude Include="additional\hashlib++\hl_sha512wrapper.h">
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClInclude>
-    <ClInclude Include="additional\jsoncpp\forwards.h">
-      <Filter>头文件\JsonCpp</Filter>
+    <ClInclude Include="additional\hashlib++\hl_types.h">
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClInclude>
-    <ClInclude Include="additional\jsoncpp\json.h">
-      <Filter>头文件\JsonCpp</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\jsoncpp\json_features.h">
-      <Filter>头文件\JsonCpp</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\jsoncpp\reader.h">
-      <Filter>头文件\JsonCpp</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\jsoncpp\value.h">
-      <Filter>头文件\JsonCpp</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\jsoncpp\version.h">
-      <Filter>头文件\JsonCpp</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\jsoncpp\writer.h">
-      <Filter>头文件\JsonCpp</Filter>
+    <ClInclude Include="additional\hashlib++\hl_wrapperfactory.h">
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClInclude>
     <ClInclude Include="additional\imgui\imconfig.h">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
     <ClInclude Include="additional\imgui\imgui.h">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
     <ClInclude Include="additional\imgui\imgui_impl_dx11.h">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
     <ClInclude Include="additional\imgui\imgui_impl_win32.h">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
     <ClInclude Include="additional\imgui\imgui_internal.h">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
     <ClInclude Include="additional\imgui\imgui_offset_rect.h">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
     <ClInclude Include="additional\imgui\imgui_toggle.h">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
     <ClInclude Include="additional\imgui\imgui_toggle_math.h">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
     <ClInclude Include="additional\imgui\imgui_toggle_palette.h">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
     <ClInclude Include="additional\imgui\imgui_toggle_presets.h">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
     <ClInclude Include="additional\imgui\imgui_toggle_renderer.h">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
     <ClInclude Include="additional\imgui\imstb_rectpack.h">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
     <ClInclude Include="additional\imgui\imstb_textedit.h">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
     <ClInclude Include="additional\imgui\imstb_truetype.h">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
-    <ClInclude Include="IdtStart.h">
+    <ClInclude Include="additional\jsoncpp\allocator.h">
+      <Filter>头文件\Additional\JsonCpp</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\jsoncpp\assertions.h">
+      <Filter>头文件\Additional\JsonCpp</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\jsoncpp\config.h">
+      <Filter>头文件\Additional\JsonCpp</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\jsoncpp\forwards.h">
+      <Filter>头文件\Additional\JsonCpp</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\jsoncpp\json.h">
+      <Filter>头文件\Additional\JsonCpp</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\jsoncpp\json_features.h">
+      <Filter>头文件\Additional\JsonCpp</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\jsoncpp\reader.h">
+      <Filter>头文件\Additional\JsonCpp</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\jsoncpp\value.h">
+      <Filter>头文件\Additional\JsonCpp</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\jsoncpp\version.h">
+      <Filter>头文件\Additional\JsonCpp</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\jsoncpp\writer.h">
+      <Filter>头文件\Additional\JsonCpp</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\jsoncpp\lib_json\json_tool.h">
+      <Filter>头文件\Additional\JsonCpp\lib_json</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\cfg\argv.h">
+      <Filter>头文件\Additional\SpdLog\cfg</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\cfg\env.h">
+      <Filter>头文件\Additional\SpdLog\cfg</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\cfg\helpers.h">
+      <Filter>头文件\Additional\SpdLog\cfg</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\cfg\helpers-inl.h">
+      <Filter>头文件\Additional\SpdLog\cfg</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\backtracer.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\backtracer-inl.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\circular_q.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\console_globals.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\file_helper.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\file_helper-inl.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\fmt_helper.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\log_msg.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\log_msg_buffer.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\log_msg_buffer-inl.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\log_msg-inl.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\mpmc_blocking_q.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\null_mutex.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\os.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\os-inl.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\periodic_worker.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\periodic_worker-inl.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\registry.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\registry-inl.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\synchronous_factory.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\tcp_client.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\tcp_client-windows.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\thread_pool.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\thread_pool-inl.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\udp_client.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\udp_client-windows.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\details\windows_include.h">
+      <Filter>头文件\Additional\SpdLog\details</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\bundled\args.h">
+      <Filter>头文件\Additional\SpdLog\fmt\bundled</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\bundled\chrono.h">
+      <Filter>头文件\Additional\SpdLog\fmt\bundled</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\bundled\color.h">
+      <Filter>头文件\Additional\SpdLog\fmt\bundled</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\bundled\compile.h">
+      <Filter>头文件\Additional\SpdLog\fmt\bundled</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\bundled\core.h">
+      <Filter>头文件\Additional\SpdLog\fmt\bundled</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\bundled\format.h">
+      <Filter>头文件\Additional\SpdLog\fmt\bundled</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\bundled\format-inl.h">
+      <Filter>头文件\Additional\SpdLog\fmt\bundled</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\bundled\locale.h">
+      <Filter>头文件\Additional\SpdLog\fmt\bundled</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\bundled\os.h">
+      <Filter>头文件\Additional\SpdLog\fmt\bundled</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\bundled\ostream.h">
+      <Filter>头文件\Additional\SpdLog\fmt\bundled</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\bundled\printf.h">
+      <Filter>头文件\Additional\SpdLog\fmt\bundled</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\bundled\ranges.h">
+      <Filter>头文件\Additional\SpdLog\fmt\bundled</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\bundled\std.h">
+      <Filter>头文件\Additional\SpdLog\fmt\bundled</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\bundled\xchar.h">
+      <Filter>头文件\Additional\SpdLog\fmt\bundled</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\bin_to_hex.h">
+      <Filter>头文件\Additional\SpdLog\fmt</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\chrono.h">
+      <Filter>头文件\Additional\SpdLog\fmt</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\compile.h">
+      <Filter>头文件\Additional\SpdLog\fmt</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\fmt.h">
+      <Filter>头文件\Additional\SpdLog\fmt</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\ostr.h">
+      <Filter>头文件\Additional\SpdLog\fmt</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\ranges.h">
+      <Filter>头文件\Additional\SpdLog\fmt</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\std.h">
+      <Filter>头文件\Additional\SpdLog\fmt</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fmt\xchar.h">
+      <Filter>头文件\Additional\SpdLog\fmt</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\android_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\ansicolor_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\ansicolor_sink-inl.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\base_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\base_sink-inl.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\basic_file_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\basic_file_sink-inl.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\callback_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\daily_file_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\dist_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\dup_filter_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\hourly_file_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\kafka_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\mongo_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\msvc_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\null_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\ostream_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\qt_sinks.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\ringbuffer_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\rotating_file_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\rotating_file_sink-inl.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\sink-inl.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\stdout_color_sinks.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\stdout_color_sinks-inl.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\stdout_sinks.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\stdout_sinks-inl.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\syslog_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\systemd_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\tcp_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\udp_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\win_eventlog_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\wincolor_sink.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\sinks\wincolor_sink-inl.h">
+      <Filter>头文件\Additional\SpdLog\sinks</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\async.h">
+      <Filter>头文件\Additional\SpdLog</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\async_logger.h">
+      <Filter>头文件\Additional\SpdLog</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\async_logger-inl.h">
+      <Filter>头文件\Additional\SpdLog</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\common.h">
+      <Filter>头文件\Additional\SpdLog</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\common-inl.h">
+      <Filter>头文件\Additional\SpdLog</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\formatter.h">
+      <Filter>头文件\Additional\SpdLog</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\fwd.h">
+      <Filter>头文件\Additional\SpdLog</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\logger.h">
+      <Filter>头文件\Additional\SpdLog</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\logger-inl.h">
+      <Filter>头文件\Additional\SpdLog</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\mdc.h">
+      <Filter>头文件\Additional\SpdLog</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\pattern_formatter.h">
+      <Filter>头文件\Additional\SpdLog</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\pattern_formatter-inl.h">
+      <Filter>头文件\Additional\SpdLog</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\spdlog.h">
+      <Filter>头文件\Additional\SpdLog</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\spdlog-inl.h">
+      <Filter>头文件\Additional\SpdLog</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\stopwatch.h">
+      <Filter>头文件\Additional\SpdLog</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\tweakme.h">
+      <Filter>头文件\Additional\SpdLog</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\spdlog\version.h">
+      <Filter>头文件\Additional\SpdLog</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\stbimage\stb_image.h">
+      <Filter>头文件\Additional\StbImage</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\stbimage\stb_image_resize.h">
+      <Filter>头文件\Additional\StbImage</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\stbimage\stb_image_write.h">
+      <Filter>头文件\Additional\StbImage</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\wintoastlib\wintoastlib.h">
+      <Filter>头文件\Additional\WinToastLib</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ziputils\unzip.h">
+      <Filter>头文件\Additional\ZipUtils</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ziputils\zip.h">
+      <Filter>头文件\Additional\ZipUtils</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtNet.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
@@ -512,85 +854,88 @@
     <ClCompile Include="IdtI18n.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="additional\hashlib++\hl_md5wrapper.cpp">
-      <Filter>头文件\HashLib++</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\hashlib++\hl_sha1.cpp">
-      <Filter>头文件\HashLib++</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\hashlib++\hl_sha1wrapper.cpp">
-      <Filter>头文件\HashLib++</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\hashlib++\hl_sha2ext.cpp">
-      <Filter>头文件\HashLib++</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\hashlib++\hl_sha256.cpp">
-      <Filter>头文件\HashLib++</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\hashlib++\hl_sha256wrapper.cpp">
-      <Filter>头文件\HashLib++</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\hashlib++\hl_sha384wrapper.cpp">
-      <Filter>头文件\HashLib++</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\hashlib++\hl_sha512wrapper.cpp">
-      <Filter>头文件\HashLib++</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\hashlib++\hl_wrapperfactory.cpp">
-      <Filter>头文件\HashLib++</Filter>
+    <ClCompile Include="IdtStart.cpp">
+      <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="additional\hashlib++\hl_md5.cpp">
-      <Filter>头文件\HashLib++</Filter>
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClCompile>
-    <ClCompile Include="additional\wintoastlib\wintoastlib.cpp">
-      <Filter>头文件\WinToastLib</Filter>
+    <ClCompile Include="additional\hashlib++\hl_md5wrapper.cpp">
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClCompile>
-    <ClCompile Include="additional\ziputils\unzip.cpp">
-      <Filter>头文件\ZipUtils</Filter>
+    <ClCompile Include="additional\hashlib++\hl_sha1.cpp">
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClCompile>
-    <ClCompile Include="additional\ziputils\zip.cpp">
-      <Filter>头文件\ZipUtils</Filter>
+    <ClCompile Include="additional\hashlib++\hl_sha1wrapper.cpp">
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClCompile>
-    <ClCompile Include="additional\jsoncpp\lib_json\json_reader.cpp">
-      <Filter>头文件\JsonCpp\lib_json</Filter>
+    <ClCompile Include="additional\hashlib++\hl_sha2ext.cpp">
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClCompile>
-    <ClCompile Include="additional\jsoncpp\lib_json\json_value.cpp">
-      <Filter>头文件\JsonCpp\lib_json</Filter>
+    <ClCompile Include="additional\hashlib++\hl_sha256.cpp">
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClCompile>
-    <ClCompile Include="additional\jsoncpp\lib_json\json_writer.cpp">
-      <Filter>头文件\JsonCpp\lib_json</Filter>
+    <ClCompile Include="additional\hashlib++\hl_sha256wrapper.cpp">
+      <Filter>头文件\Additional\HashLib++</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\hashlib++\hl_sha384wrapper.cpp">
+      <Filter>头文件\Additional\HashLib++</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\hashlib++\hl_sha512wrapper.cpp">
+      <Filter>头文件\Additional\HashLib++</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\hashlib++\hl_wrapperfactory.cpp">
+      <Filter>头文件\Additional\HashLib++</Filter>
     </ClCompile>
     <ClCompile Include="additional\imgui\imgui.cpp">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
     <ClCompile Include="additional\imgui\imgui_draw.cpp">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
     <ClCompile Include="additional\imgui\imgui_impl_dx11.cpp">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
     <ClCompile Include="additional\imgui\imgui_impl_win32.cpp">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
     <ClCompile Include="additional\imgui\imgui_tables.cpp">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
     <ClCompile Include="additional\imgui\imgui_toggle.cpp">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
     <ClCompile Include="additional\imgui\imgui_toggle_palette.cpp">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
     <ClCompile Include="additional\imgui\imgui_toggle_presets.cpp">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
     <ClCompile Include="additional\imgui\imgui_toggle_renderer.cpp">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
     <ClCompile Include="additional\imgui\imgui_widgets.cpp">
-      <Filter>头文件\ImGui</Filter>
+      <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
-    <ClCompile Include="IdtStart.cpp">
+    <ClCompile Include="additional\jsoncpp\lib_json\json_reader.cpp">
+      <Filter>头文件\Additional\JsonCpp\lib_json</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\jsoncpp\lib_json\json_value.cpp">
+      <Filter>头文件\Additional\JsonCpp\lib_json</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\jsoncpp\lib_json\json_writer.cpp">
+      <Filter>头文件\Additional\JsonCpp\lib_json</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\wintoastlib\wintoastlib.cpp">
+      <Filter>头文件\Additional\WinToastLib</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ziputils\unzip.cpp">
+      <Filter>头文件\Additional\ZipUtils</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ziputils\zip.cpp">
+      <Filter>头文件\Additional\ZipUtils</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtNet.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
@@ -766,6 +1111,12 @@
     <None Include="exe\DesktopDrawpadBlocker.exe" />
     <None Include="src\i18n\zh-CN.json" />
     <None Include="src\i18n\en-US.json" />
+    <None Include="additional\jsoncpp\lib_json\json_valueiterator.inl">
+      <Filter>头文件\Additional\JsonCpp\lib_json</Filter>
+    </None>
+    <None Include="additional\spdlog\fmt\bundled\fmt.license.rst">
+      <Filter>头文件\Additional\SpdLog\fmt\bundled</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="..\PptCOM\PptCOM.manifest" />

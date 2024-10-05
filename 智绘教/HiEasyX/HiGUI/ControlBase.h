@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	ControlBase.h
- * @brief	HiGUI ¿Ø¼ş·ÖÖ§£º¿Ø¼ş»ù´¡
+ * @brief	HiGUI æ§ä»¶åˆ†æ”¯ï¼šæ§ä»¶åŸºç¡€
  * @author	huidong
 */
 
@@ -15,127 +15,127 @@
 namespace HiEasyX
 {
 	/**
-	 * @brief ¿Ø¼ş»ù´¡
+	 * @brief æ§ä»¶åŸºç¡€
 	*/
 	enum CtrlMessage
 	{
-		CM_OTHER,						///< Î´ÌØÊâ±êÊ¶µÄÆäËüÏûÏ¢
-		CM_HOVER,						///< ĞüÍ£
-		CM_HOVER_OVER,					///< ĞüÍ£½áÊø
-		CM_PRESS,						///< °´ÏÂ
-		CM_PRESS_OVER,					///< °´ÏÂ½áÊø
-		CM_CLICK,						///< µ¥»÷
-		CM_DOUBLE_CLICK,				///< Ë«»÷
-		CM_FOCUS,						///< »ñÈ¡½¹µã
-		CM_FOCUS_OVER,					///< ¶ªÊ§½¹µã
+		CM_OTHER,						///< æœªç‰¹æ®Šæ ‡è¯†çš„å…¶å®ƒæ¶ˆæ¯
+		CM_HOVER,						///< æ‚¬åœ
+		CM_HOVER_OVER,					///< æ‚¬åœç»“æŸ
+		CM_PRESS,						///< æŒ‰ä¸‹
+		CM_PRESS_OVER,					///< æŒ‰ä¸‹ç»“æŸ
+		CM_CLICK,						///< å•å‡»
+		CM_DOUBLE_CLICK,				///< åŒå‡»
+		CM_FOCUS,						///< è·å–ç„¦ç‚¹
+		CM_FOCUS_OVER,					///< ä¸¢å¤±ç„¦ç‚¹
 
 	};
 
 	class ControlBase;
 
 	/**
-	 * @brief ¿Ø¼şÏûÏ¢´¦Àíº¯Êı
-	 * @param[in] _Ctrl	´«Èë¿Ø¼şÖ¸Õë
-	 * @param[in] _MsgId	´«ÈëÏûÏ¢±êÊ¶´úÂë
-	 * @param[in] _ExMsg	´«ÈëÏûÏ¢£¨Êó±ê×ø±êÒÑ±ä»»µ½¿Ø¼ş£©
+	 * @brief æ§ä»¶æ¶ˆæ¯å¤„ç†å‡½æ•°
+	 * @param[in] _Ctrl	ä¼ å…¥æ§ä»¶æŒ‡é’ˆ
+	 * @param[in] _MsgId	ä¼ å…¥æ¶ˆæ¯æ ‡è¯†ä»£ç 
+	 * @param[in] _ExMsg	ä¼ å…¥æ¶ˆæ¯ï¼ˆé¼ æ ‡åæ ‡å·²å˜æ¢åˆ°æ§ä»¶ï¼‰
 	*/
 	typedef void (*MESSAGE_PROC_FUNC)(ControlBase* _Ctrl, int _MsgId, ExMessage _ExMsg);
 
 	/**
-	 * @brief Ö§³Ö¾²Ì¬Ààº¯Êı×÷Îª¿Ø¼şÏûÏ¢´¦Àíº¯Êı
+	 * @brief æ”¯æŒé™æ€ç±»å‡½æ•°ä½œä¸ºæ§ä»¶æ¶ˆæ¯å¤„ç†å‡½æ•°
 	*/
 	typedef void (*MESSAGE_PROC_FUNC_CLASS)(void* _This, ControlBase* _Ctrl, int _MsgId, ExMessage _ExMsg);
 
 	/**
-	 * @brief ¿Ø¼ş»ù´¡
+	 * @brief æ§ä»¶åŸºç¡€
 	*/
 	class ControlBase : public Container
 	{
 	protected:
 
-		bool m_bEnabled = true;										///< ÊÇ·ñ¿ÉÓÃ
-		bool m_bVisible = true;										///< ÊÇ·ñ¿É¼û
+		bool m_bEnabled = true;										///< æ˜¯å¦å¯ç”¨
+		bool m_bVisible = true;										///< æ˜¯å¦å¯è§
 
-		// ÖØ»æºÍäÖÈ¾±êÖ¾
-		bool m_bAutoRedrawWhenReceiveMsg = true;					///< µ±Ä¬ÈÏÏûÏ¢´¦Àíº¯Êı½ÓÊÜµ½ÏûÏ¢Ê±£¬ÊÇ·ñ×Ô¶¯±êÊ¶ÖØ»æºÍäÖÈ¾
-		bool m_bRedraw = true;										///< ±êÊ¶ĞèÒªÖØ»æ
-		bool m_bRender = true;										///< ±êÊ¶ĞèÒªäÖÈ¾
-		bool m_bClear = false;										///< ±êÊ¶ĞèÒªÇå¿ÕÄ³ÇøÓò
-		RECT m_rctClear = { 0 };									///< ¼ÇÂ¼ĞèÒªÇå¿ÕµÄÇøÓò
-		bool m_bAlwaysRedrawAndRender = false;						///< ×ÜÊÇÖØ»æºÍäÖÈ¾£¨Õ¼ÓÃ¸ü¸ß£©
+		// é‡ç»˜å’Œæ¸²æŸ“æ ‡å¿—
+		bool m_bAutoRedrawWhenReceiveMsg = true;					///< å½“é»˜è®¤æ¶ˆæ¯å¤„ç†å‡½æ•°æ¥å—åˆ°æ¶ˆæ¯æ—¶ï¼Œæ˜¯å¦è‡ªåŠ¨æ ‡è¯†é‡ç»˜å’Œæ¸²æŸ“
+		bool m_bRedraw = true;										///< æ ‡è¯†éœ€è¦é‡ç»˜
+		bool m_bRender = true;										///< æ ‡è¯†éœ€è¦æ¸²æŸ“
+		bool m_bClear = false;										///< æ ‡è¯†éœ€è¦æ¸…ç©ºæŸåŒºåŸŸ
+		RECT m_rctClear = { 0 };									///< è®°å½•éœ€è¦æ¸…ç©ºçš„åŒºåŸŸ
+		bool m_bAlwaysRedrawAndRender = false;						///< æ€»æ˜¯é‡ç»˜å’Œæ¸²æŸ“ï¼ˆå ç”¨æ›´é«˜ï¼‰
 
 #ifdef UNICODE
-		std::wstring m_wstrText;									///< ¿Ø¼şÎÄ±¾
+		std::wstring m_wstrText;									///< æ§ä»¶æ–‡æœ¬
 #else
-		std::string m_strText;									///< ¿Ø¼şÎÄ±¾
+		std::string m_strText;									///< æ§ä»¶æ–‡æœ¬
 #endif
 
-		Canvas m_canvas;											///< »­²¼
-		BYTE m_alpha = 255;											///< Í¸Ã÷¶È
-		bool m_bUseCanvasAlpha = false;								///< ÊÇ·ñÊ¹ÓÃ»­²¼×ÔÉíµÄÍ¸Ã÷¶ÈĞÅÏ¢
-		bool m_isAlphaCalculated = false;							///< »­²¼ÊÇ·ñÒÑ¾­¼ÆËãÍ¸Ã÷»ìºÏÑÕÉ«
+		Canvas m_canvas;											///< ç”»å¸ƒ
+		BYTE m_alpha = 255;											///< é€æ˜åº¦
+		bool m_bUseCanvasAlpha = false;								///< æ˜¯å¦ä½¿ç”¨ç”»å¸ƒè‡ªèº«çš„é€æ˜åº¦ä¿¡æ¯
+		bool m_isAlphaCalculated = false;							///< ç”»å¸ƒæ˜¯å¦å·²ç»è®¡ç®—é€æ˜æ··åˆé¢œè‰²
 
-		COLORREF m_cBorder = MODERN_BORDER_GRAY;					///< ±ß¿òÑÕÉ«
-		COLORREF m_cBackground = CLASSICGRAY;						///< ±³¾°É«
-		COLORREF m_cText = BLACK;									///< ÎÄ±¾ÑÕÉ«
+		COLORREF m_cBorder = MODERN_BORDER_GRAY;					///< è¾¹æ¡†é¢œè‰²
+		COLORREF m_cBackground = CLASSICGRAY;						///< èƒŒæ™¯è‰²
+		COLORREF m_cText = BLACK;									///< æ–‡æœ¬é¢œè‰²
 
-		bool m_bEnableBorder = true;								///< ÊÇ·ñ»æÖÆ±ß¿ò
-		int m_nBorderThickness = 1;									///< ±ß¿ò´ÖÏ¸
+		bool m_bEnableBorder = true;								///< æ˜¯å¦ç»˜åˆ¶è¾¹æ¡†
+		int m_nBorderThickness = 1;									///< è¾¹æ¡†ç²—ç»†
 
-		bool m_bCompleteFirstSetRect = false;						///< ÊÇ·ñÒÑ¾­Íê³ÉµÚÒ»´ÎÉèÖÃÇøÓò
+		bool m_bCompleteFirstSetRect = false;						///< æ˜¯å¦å·²ç»å®Œæˆç¬¬ä¸€æ¬¡è®¾ç½®åŒºåŸŸ
 
-		ControlBase* m_pParent = nullptr;							///< ¸¸¿Ø¼ş
-		std::list<ControlBase*> m_listChild;						///< ×Ó¿Ø¼ş
+		ControlBase* m_pParent = nullptr;							///< çˆ¶æ§ä»¶
+		std::list<ControlBase*> m_listChild;						///< å­æ§ä»¶
 
-		bool m_bAutoSizeForChild = false;							///< Îª×Ó¿Ø¼ş×Ô¶¯¸Ä±ä´óĞ¡ÒÔÈİÄÉ¿Ø¼ş
+		bool m_bAutoSizeForChild = false;							///< ä¸ºå­æ§ä»¶è‡ªåŠ¨æ”¹å˜å¤§å°ä»¥å®¹çº³æ§ä»¶
 
-		MESSAGE_PROC_FUNC m_funcMessageProc = nullptr;				///< ÏûÏ¢´¦Àíº¯Êı
-		MESSAGE_PROC_FUNC_CLASS m_funcMessageProc_Class = nullptr;	///< Èô°ó¶¨µÄÏûÏ¢´¦Àíº¯ÊıÊÇ¾²Ì¬Ààº¯Êı£¬Ôò¼ÇÂ¼ÆäµØÖ·
-		void* m_pCalledClass = nullptr;								///< Èô°ó¶¨µÄÏûÏ¢´¦Àíº¯ÊıÊÇ¾²Ì¬Ààº¯Êı£¬Ôò¼ÇÂ¼¸ÃÀàÖ¸Õë
+		MESSAGE_PROC_FUNC m_funcMessageProc = nullptr;				///< æ¶ˆæ¯å¤„ç†å‡½æ•°
+		MESSAGE_PROC_FUNC_CLASS m_funcMessageProc_Class = nullptr;	///< è‹¥ç»‘å®šçš„æ¶ˆæ¯å¤„ç†å‡½æ•°æ˜¯é™æ€ç±»å‡½æ•°ï¼Œåˆ™è®°å½•å…¶åœ°å€
+		void* m_pCalledClass = nullptr;								///< è‹¥ç»‘å®šçš„æ¶ˆæ¯å¤„ç†å‡½æ•°æ˜¯é™æ€ç±»å‡½æ•°ï¼Œåˆ™è®°å½•è¯¥ç±»æŒ‡é’ˆ
 
-		bool m_bHovered = false;									///< Êó±êÊÇ·ñĞüÍ£
-		bool m_bPressed = false;									///< Êó±êÊÇ·ñ°´ÏÂ
-		bool m_bFocused = false;									///< ÊÇ·ñÓµÓĞ½¹µã
+		bool m_bHovered = false;									///< é¼ æ ‡æ˜¯å¦æ‚¬åœ
+		bool m_bPressed = false;									///< é¼ æ ‡æ˜¯å¦æŒ‰ä¸‹
+		bool m_bFocused = false;									///< æ˜¯å¦æ‹¥æœ‰ç„¦ç‚¹
 
 		/**
-		 * @brief ¸üĞÂÇøÓòÏûÏ¢´¦Àí
-		 * @param[in] rctOld ¾ÉÇøÓò
+		 * @brief æ›´æ–°åŒºåŸŸæ¶ˆæ¯å¤„ç†
+		 * @param[in] rctOld æ—§åŒºåŸŸ
 		*/
 		void UpdateRect(RECT rctOld) override;
 
 		/**
-		 * @brief ±ê¼ÇĞèÒªÖØ»æºÍäÖÈ¾
+		 * @brief æ ‡è®°éœ€è¦é‡ç»˜å’Œæ¸²æŸ“
 		*/
 		void MarkNeedRedrawAndRender();
 
 		/**
-		 * @brief ±ê¼ÇĞèÒªÇå¿Õ¾ØĞÎÇøÓò
-		 * @param[in] rct ĞèÒªÇå¿ÕµÄÇøÓò
+		 * @brief æ ‡è®°éœ€è¦æ¸…ç©ºçŸ©å½¢åŒºåŸŸ
+		 * @param[in] rct éœ€è¦æ¸…ç©ºçš„åŒºåŸŸ
 		*/
 		void MarkNeedClearRect(RECT rct);
 
 		/**
-		 * @brief »æÖÆ×Ó¿Ø¼ş
+		 * @brief ç»˜åˆ¶å­æ§ä»¶
 		*/
 		virtual void DrawChild();
 
 		/**
-		 * @brief ×ª»»ÏûÏ¢
-		 * @param[in, out] msg Òª×ª»»µÄÏûÏ¢
-		 * @return ×ª»»ºóµÄÏûÏ¢
+		 * @brief è½¬æ¢æ¶ˆæ¯
+		 * @param[in, out] msg è¦è½¬æ¢çš„æ¶ˆæ¯
+		 * @return è½¬æ¢åçš„æ¶ˆæ¯
 		*/
 		virtual ExMessage& TransformMessage(ExMessage& msg);
 
 		/**
-		 * @brief ·Ö·¢ÏûÏ¢µ½ÓÃ»§º¯Êı
-		 * @param[in] msgid	ÏûÏ¢ ID
-		 * @param[in] msg		ÏûÏ¢ÄÚÈİ
+		 * @brief åˆ†å‘æ¶ˆæ¯åˆ°ç”¨æˆ·å‡½æ•°
+		 * @param[in] msgid	æ¶ˆæ¯ ID
+		 * @param[in] msg		æ¶ˆæ¯å†…å®¹
 		*/
 		virtual void CallUserMsgProcFunc(int msgid, ExMessage msg);
 
 		/**
-		 * @brief ×Ó¿Ø¼şÇøÓò±ä¸ü
-		 * @param[in] pChild ÇøÓò±ä¸üµÄ×Ó¿Ø¼ş
+		 * @brief å­æ§ä»¶åŒºåŸŸå˜æ›´
+		 * @param[in] pChild åŒºåŸŸå˜æ›´çš„å­æ§ä»¶
 		*/
 		virtual void ChildRectChanged(ControlBase* pChild);
 
@@ -160,23 +160,23 @@ namespace HiEasyX
 		ControlBase* GetParent() { return m_pParent; }
 
 		/**
-		 * @brief ÉèÖÃ¸¸¿Ø¼ş£¨¸¸¿Ø¼şµ÷ÓÃ AddChild£©
-		 * @param[in] p ¸¸¿Ø¼ş
+		 * @brief è®¾ç½®çˆ¶æ§ä»¶ï¼ˆçˆ¶æ§ä»¶è°ƒç”¨ AddChildï¼‰
+		 * @param[in] p çˆ¶æ§ä»¶
 		*/
 		virtual void SetParent(ControlBase* p);
 
 		virtual bool IsAutoSizeForChild() const { return m_bAutoSizeForChild; }
 
 		/**
-		 * @brief Îª×Ó¿Ø¼ş×Ô¶¯¸Ä±ä´óĞ¡ÒÔÈİÄÉ¿Ø¼ş£¨²»ÈİÄÉ¸º×ø±ê²¿·Ö£©
-		 * @param[in] enable ÊÇ·ñÆôÓÃ
+		 * @brief ä¸ºå­æ§ä»¶è‡ªåŠ¨æ”¹å˜å¤§å°ä»¥å®¹çº³æ§ä»¶ï¼ˆä¸å®¹çº³è´Ÿåæ ‡éƒ¨åˆ†ï¼‰
+		 * @param[in] enable æ˜¯å¦å¯ç”¨
 		*/
 		virtual void EnableAutoSizeForChild(bool enable);
 
 		std::list<ControlBase*>& GetChildList();
 
 		/**
-		 * @brief »ñÈ¡×Ó¿Ø¼ş×ÜÊı
+		 * @brief è·å–å­æ§ä»¶æ€»æ•°
 		*/
 		size_t GetChildCount();
 
@@ -195,8 +195,8 @@ namespace HiEasyX
 		virtual bool GetAutoRedrawState() const { return m_bAutoRedrawWhenReceiveMsg; }
 
 		/**
-		 * @brief ÆôÓÃ×Ô¶¯ÖØ»æ£¨½ÓÊÜµ½»ù´¡ÏûÏ¢ÊÂ¼şÊ±×Ô¶¯±êÊ¶ĞèÒªÖØ»æ£©
-		 * @param[in] enable ÊÇ·ñÆôÓÃ
+		 * @brief å¯ç”¨è‡ªåŠ¨é‡ç»˜ï¼ˆæ¥å—åˆ°åŸºç¡€æ¶ˆæ¯äº‹ä»¶æ—¶è‡ªåŠ¨æ ‡è¯†éœ€è¦é‡ç»˜ï¼‰
+		 * @param[in] enable æ˜¯å¦å¯ç”¨
 		*/
 		virtual void EnableAutoRedraw(bool enable);
 
@@ -225,55 +225,55 @@ namespace HiEasyX
 		virtual void Draw_Text(int nTextOffsetX = 0, int nTextOffsetY = 0);
 
 		/**
-		 * @brief ÖØ»æ¿Ø¼ş
+		 * @brief é‡ç»˜æ§ä»¶
 		*/
 		virtual void Redraw();
 
 		/**
-		 * @brief »æÖÆ¿Ø¼ş
-		 * @param[in] draw_child ÊÇ·ñ»æÖÆ×Ó¿Ø¼ş
+		 * @brief ç»˜åˆ¶æ§ä»¶
+		 * @param[in] draw_child æ˜¯å¦ç»˜åˆ¶å­æ§ä»¶
 		*/
 		virtual void Draw(bool draw_child = true);
 
 		/**
-		 * @brief äÖÈ¾¿Ø¼şµ½Íâ²¿
-		 * @param[in] dst			äÖÈ¾Ä¿±ê
-		 * @param[in] pRct			ÄÚ²¿Ê¹ÓÃ£¬´«Èë¸¸¿Ø¼şäÖÈ¾ÇøÓòÊı×é
-		 * @param[in, out] pCount	ÄÚ²¿Ê¹ÓÃ£¬´«Èë¸¸¿Ø¼şäÖÈ¾ÇøÓòÊıÁ¿Ö¸Õë
+		 * @brief æ¸²æŸ“æ§ä»¶åˆ°å¤–éƒ¨
+		 * @param[in] dst			æ¸²æŸ“ç›®æ ‡
+		 * @param[in] pRct			å†…éƒ¨ä½¿ç”¨ï¼Œä¼ å…¥çˆ¶æ§ä»¶æ¸²æŸ“åŒºåŸŸæ•°ç»„
+		 * @param[in, out] pCount	å†…éƒ¨ä½¿ç”¨ï¼Œä¼ å…¥çˆ¶æ§ä»¶æ¸²æŸ“åŒºåŸŸæ•°é‡æŒ‡é’ˆ
 		*/
 		virtual void Render(Canvas* dst, RECT* pRct = nullptr, int* pCount = 0);
 
 		/**
-		 * @brief ÉèÖÃÏûÏ¢ÏìÓ¦º¯Êı
-		 * @param[in] func ÏûÏ¢ÏìÓ¦º¯Êı
+		 * @brief è®¾ç½®æ¶ˆæ¯å“åº”å‡½æ•°
+		 * @param[in] func æ¶ˆæ¯å“åº”å‡½æ•°
 		*/
 		virtual void SetMsgProcFunc(MESSAGE_PROC_FUNC func);
 
 		/**
-		 * @brief ÉèÖÃÏûÏ¢ÏìÓ¦º¯ÊıÎª¾²Ì¬Ààº¯Êı
-		 * @param[in] static_class_func		ÏûÏ¢ÏìÓ¦º¯Êı£¨¾²Ì¬Ààº¯Êı£©
-		 * @param[in] _this					ÀàÖ¸Õë
+		 * @brief è®¾ç½®æ¶ˆæ¯å“åº”å‡½æ•°ä¸ºé™æ€ç±»å‡½æ•°
+		 * @param[in] static_class_func		æ¶ˆæ¯å“åº”å‡½æ•°ï¼ˆé™æ€ç±»å‡½æ•°ï¼‰
+		 * @param[in] _this					ç±»æŒ‡é’ˆ
 		*/
 		virtual void SetMsgProcFunc(MESSAGE_PROC_FUNC_CLASS static_class_func, void* _this);
 
 		/**
-		 * @brief ¸üĞÂÏûÏ¢
-		 * @param[in] msg ĞÂÏûÏ¢
+		 * @brief æ›´æ–°æ¶ˆæ¯
+		 * @param[in] msg æ–°æ¶ˆæ¯
 		*/
 		virtual void UpdateMessage(ExMessage msg);
 
 		/**
-		 * @brief ÅĞ¶ÏÊó±êÊÇ·ñĞüÍ£
+		 * @brief åˆ¤æ–­é¼ æ ‡æ˜¯å¦æ‚¬åœ
 		*/
 		virtual bool IsHovered() const { return m_bHovered; }
 
 		/**
-		 * @brief ÅĞ¶ÏÊÇ·ñÓµÓĞ½¹µã
+		 * @brief åˆ¤æ–­æ˜¯å¦æ‹¥æœ‰ç„¦ç‚¹
 		*/
 		virtual bool IsFocused() const { return m_bFocused; }
 
 		/**
-		 * @brief ÅĞ¶ÏÊÇ·ñ°´ÏÂ
+		 * @brief åˆ¤æ–­æ˜¯å¦æŒ‰ä¸‹
 		*/
 		virtual bool IsPressed() const { return m_bPressed; }
 	};

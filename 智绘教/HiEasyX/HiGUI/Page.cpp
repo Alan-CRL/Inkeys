@@ -1,4 +1,4 @@
-#include "Page.h"
+ï»¿#include "Page.h"
 
 #include "../HiDrawingProperty.h"
 
@@ -8,7 +8,7 @@ namespace HiEasyX
 	{
 		EnableBorder(false);
 
-		// TODO£ºµÈ EasyX ĞŞºÃÁËÔÙÆôÓÃ
+		// TODOï¼šç­‰ EasyX ä¿®å¥½äº†å†å¯ç”¨
 		//SetBkColor(cBk);
 
 		m_bAutoRedrawWhenReceiveMsg = false;

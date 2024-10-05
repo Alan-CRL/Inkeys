@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	SysCheckBox.h
- * @brief	HiSysGUI ¿Ø¼ş·ÖÖ§£º¸´Ñ¡¿ò
+ * @brief	HiSysGUI æ§ä»¶åˆ†æ”¯ï¼šå¤é€‰æ¡†
  * @author	huidong
 */
 
@@ -11,7 +11,7 @@
 namespace HiEasyX
 {
 	/**
-	 * @brief ÏµÍ³¸´Ñ¡¿ò¿Ø¼ş
+	 * @brief ç³»ç»Ÿå¤é€‰æ¡†æ§ä»¶
 	*/
 	class SysCheckBox : public SysControlBase
 	{
@@ -38,13 +38,13 @@ namespace HiEasyX
 		LRESULT UpdateMessage(UINT msg, WPARAM wParam, LPARAM lParam, bool& bRet) override;
 
 		/**
-		 * @brief ×¢²áµã»÷ÏûÏ¢
-		 * @param[in] pFunc ÏûÏ¢ÏìÓ¦º¯Êı
+		 * @brief æ³¨å†Œç‚¹å‡»æ¶ˆæ¯
+		 * @param[in] pFunc æ¶ˆæ¯å“åº”å‡½æ•°
 		*/
 		void RegisterMessage(void (*pFunc)(bool checked));
 
 		/**
-		 * @brief »ñÈ¡Ñ¡ÖĞ×´Ì¬
+		 * @brief è·å–é€‰ä¸­çŠ¶æ€
 		*/
 		bool IsChecked() const { return m_bChecked; }
 

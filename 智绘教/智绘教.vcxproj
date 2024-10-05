@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|ARM">
@@ -213,7 +213,7 @@
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;.\binarypackage\OpenSSL-Win32\include;$(IntDir)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <CompileAsManaged>
       </CompileAsManaged>
@@ -227,11 +227,12 @@
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>./additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>./additional;./binarypackage/OpenSSL-Win32/lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
     </Link>
     <Manifest>
       <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
+      <AdditionalManifestFiles>%(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -297,6 +298,7 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="additional\cpphttplib\httplib.h" />
     <ClInclude Include="additional\hashlib++\hashlibpp.h" />
     <ClInclude Include="additional\hashlib++\hl_exception.h" />
     <ClInclude Include="additional\hashlib++\hl_hashwrapper.h" />
@@ -337,6 +339,110 @@
     <ClInclude Include="additional\jsoncpp\value.h" />
     <ClInclude Include="additional\jsoncpp\version.h" />
     <ClInclude Include="additional\jsoncpp\writer.h" />
+    <ClInclude Include="additional\spdlog\async.h" />
+    <ClInclude Include="additional\spdlog\async_logger-inl.h" />
+    <ClInclude Include="additional\spdlog\async_logger.h" />
+    <ClInclude Include="additional\spdlog\cfg\argv.h" />
+    <ClInclude Include="additional\spdlog\cfg\env.h" />
+    <ClInclude Include="additional\spdlog\cfg\helpers-inl.h" />
+    <ClInclude Include="additional\spdlog\cfg\helpers.h" />
+    <ClInclude Include="additional\spdlog\common-inl.h" />
+    <ClInclude Include="additional\spdlog\common.h" />
+    <ClInclude Include="additional\spdlog\details\backtracer-inl.h" />
+    <ClInclude Include="additional\spdlog\details\backtracer.h" />
+    <ClInclude Include="additional\spdlog\details\circular_q.h" />
+    <ClInclude Include="additional\spdlog\details\console_globals.h" />
+    <ClInclude Include="additional\spdlog\details\file_helper-inl.h" />
+    <ClInclude Include="additional\spdlog\details\file_helper.h" />
+    <ClInclude Include="additional\spdlog\details\fmt_helper.h" />
+    <ClInclude Include="additional\spdlog\details\log_msg-inl.h" />
+    <ClInclude Include="additional\spdlog\details\log_msg.h" />
+    <ClInclude Include="additional\spdlog\details\log_msg_buffer-inl.h" />
+    <ClInclude Include="additional\spdlog\details\log_msg_buffer.h" />
+    <ClInclude Include="additional\spdlog\details\mpmc_blocking_q.h" />
+    <ClInclude Include="additional\spdlog\details\null_mutex.h" />
+    <ClInclude Include="additional\spdlog\details\os-inl.h" />
+    <ClInclude Include="additional\spdlog\details\os.h" />
+    <ClInclude Include="additional\spdlog\details\periodic_worker-inl.h" />
+    <ClInclude Include="additional\spdlog\details\periodic_worker.h" />
+    <ClInclude Include="additional\spdlog\details\registry-inl.h" />
+    <ClInclude Include="additional\spdlog\details\registry.h" />
+    <ClInclude Include="additional\spdlog\details\synchronous_factory.h" />
+    <ClInclude Include="additional\spdlog\details\tcp_client-windows.h" />
+    <ClInclude Include="additional\spdlog\details\tcp_client.h" />
+    <ClInclude Include="additional\spdlog\details\thread_pool-inl.h" />
+    <ClInclude Include="additional\spdlog\details\thread_pool.h" />
+    <ClInclude Include="additional\spdlog\details\udp_client-windows.h" />
+    <ClInclude Include="additional\spdlog\details\udp_client.h" />
+    <ClInclude Include="additional\spdlog\details\windows_include.h" />
+    <ClInclude Include="additional\spdlog\fmt\bin_to_hex.h" />
+    <ClInclude Include="additional\spdlog\fmt\bundled\args.h" />
+    <ClInclude Include="additional\spdlog\fmt\bundled\chrono.h" />
+    <ClInclude Include="additional\spdlog\fmt\bundled\color.h" />
+    <ClInclude Include="additional\spdlog\fmt\bundled\compile.h" />
+    <ClInclude Include="additional\spdlog\fmt\bundled\core.h" />
+    <ClInclude Include="additional\spdlog\fmt\bundled\format-inl.h" />
+    <ClInclude Include="additional\spdlog\fmt\bundled\format.h" />
+    <ClInclude Include="additional\spdlog\fmt\bundled\locale.h" />
+    <ClInclude Include="additional\spdlog\fmt\bundled\os.h" />
+    <ClInclude Include="additional\spdlog\fmt\bundled\ostream.h" />
+    <ClInclude Include="additional\spdlog\fmt\bundled\printf.h" />
+    <ClInclude Include="additional\spdlog\fmt\bundled\ranges.h" />
+    <ClInclude Include="additional\spdlog\fmt\bundled\std.h" />
+    <ClInclude Include="additional\spdlog\fmt\bundled\xchar.h" />
+    <ClInclude Include="additional\spdlog\fmt\chrono.h" />
+    <ClInclude Include="additional\spdlog\fmt\compile.h" />
+    <ClInclude Include="additional\spdlog\fmt\fmt.h" />
+    <ClInclude Include="additional\spdlog\fmt\ostr.h" />
+    <ClInclude Include="additional\spdlog\fmt\ranges.h" />
+    <ClInclude Include="additional\spdlog\fmt\std.h" />
+    <ClInclude Include="additional\spdlog\fmt\xchar.h" />
+    <ClInclude Include="additional\spdlog\formatter.h" />
+    <ClInclude Include="additional\spdlog\fwd.h" />
+    <ClInclude Include="additional\spdlog\logger-inl.h" />
+    <ClInclude Include="additional\spdlog\logger.h" />
+    <ClInclude Include="additional\spdlog\mdc.h" />
+    <ClInclude Include="additional\spdlog\pattern_formatter-inl.h" />
+    <ClInclude Include="additional\spdlog\pattern_formatter.h" />
+    <ClInclude Include="additional\spdlog\sinks\android_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\ansicolor_sink-inl.h" />
+    <ClInclude Include="additional\spdlog\sinks\ansicolor_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\base_sink-inl.h" />
+    <ClInclude Include="additional\spdlog\sinks\base_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\basic_file_sink-inl.h" />
+    <ClInclude Include="additional\spdlog\sinks\basic_file_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\callback_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\daily_file_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\dist_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\dup_filter_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\hourly_file_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\kafka_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\mongo_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\msvc_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\null_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\ostream_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\qt_sinks.h" />
+    <ClInclude Include="additional\spdlog\sinks\ringbuffer_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\rotating_file_sink-inl.h" />
+    <ClInclude Include="additional\spdlog\sinks\rotating_file_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\sink-inl.h" />
+    <ClInclude Include="additional\spdlog\sinks\sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\stdout_color_sinks-inl.h" />
+    <ClInclude Include="additional\spdlog\sinks\stdout_color_sinks.h" />
+    <ClInclude Include="additional\spdlog\sinks\stdout_sinks-inl.h" />
+    <ClInclude Include="additional\spdlog\sinks\stdout_sinks.h" />
+    <ClInclude Include="additional\spdlog\sinks\syslog_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\systemd_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\tcp_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\udp_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\wincolor_sink-inl.h" />
+    <ClInclude Include="additional\spdlog\sinks\wincolor_sink.h" />
+    <ClInclude Include="additional\spdlog\sinks\win_eventlog_sink.h" />
+    <ClInclude Include="additional\spdlog\spdlog-inl.h" />
+    <ClInclude Include="additional\spdlog\spdlog.h" />
+    <ClInclude Include="additional\spdlog\stopwatch.h" />
+    <ClInclude Include="additional\spdlog\tweakme.h" />
+    <ClInclude Include="additional\spdlog\version.h" />
     <ClInclude Include="additional\stbimage\stb_image.h" />
     <ClInclude Include="additional\stbimage\stb_image_resize.h" />
     <ClInclude Include="additional\stbimage\stb_image_write.h" />
@@ -388,6 +494,7 @@
     <ClInclude Include="IdtImage.h" />
     <ClInclude Include="IdtMagnification.h" />
     <ClInclude Include="IdtMain.h" />
+    <ClInclude Include="IdtNet.h" />
     <ClInclude Include="IdtOther.h" />
     <ClInclude Include="IdtPlug-in.h" />
     <ClInclude Include="IdtSetting.h" />
@@ -468,6 +575,7 @@
     <ClCompile Include="IdtHistoricalDrawpad.cpp" />
     <ClCompile Include="IdtI18n.cpp" />
     <ClCompile Include="IdtImage.cpp" />
+    <ClCompile Include="IdtNet.cpp" />
     <ClCompile Include="IdtRts.cpp" />
     <ClCompile Include="IdtSetting.cpp" />
     <ClCompile Include="IdtStart.cpp" />
@@ -547,6 +655,8 @@
     </Font>
   </ItemGroup>
   <ItemGroup>
+    <None Include="additional\jsoncpp\lib_json\json_valueiterator.inl" />
+    <None Include="additional\spdlog\fmt\bundled\fmt.license.rst" />
     <None Include="exe\DesktopDrawpadBlocker.exe" />
     <None Include="exe\智绘教CrashedHandler.exe" />
     <None Include="exe\智绘教CrashedHandlerClose.exe" />

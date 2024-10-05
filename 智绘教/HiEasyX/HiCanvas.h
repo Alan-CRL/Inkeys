@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	HiCanvas.h
- * @brief	HiEasyX ¿âµÄ»­²¼Ä£¿é
+ * @brief	HiEasyX åº“çš„ç”»å¸ƒæ¨¡å—
  * @author	huidong
 */
 
@@ -15,55 +15,55 @@
 namespace HiEasyX
 {
 	/**
-	 * @brief ¸ù¾İÍ¸Ã÷¶È»ìºÏÑÕÉ«
-	 * @param[in] cDst		Ô­Î»ÖÃÏñËØ
-	 * @param[in] cSrc		´ı»æÖÆÏñËØ£¨¸ù¾İÆäÍ¸Ã÷¶È»ìºÏÑÕÉ«£©
+	 * @brief æ ¹æ®é€æ˜åº¦æ··åˆé¢œè‰²
+	 * @param[in] cDst		åŸä½ç½®åƒç´ 
+	 * @param[in] cSrc		å¾…ç»˜åˆ¶åƒç´ ï¼ˆæ ¹æ®å…¶é€æ˜åº¦æ··åˆé¢œè‰²ï¼‰
 	 *
 	 * @param[in] isCalculated <pre>
-	 *		´ı»æÖÆÏñËØµãÊÇ·ñÒÑ¾­³ËÒÔËüµÄÍ¸Ã÷¶È
+	 *		å¾…ç»˜åˆ¶åƒç´ ç‚¹æ˜¯å¦å·²ç»ä¹˜ä»¥å®ƒçš„é€æ˜åº¦
 	 *
-	 *	±¸×¢£º
-	 *		´Ë²ÎÊıÓÃÓÚÒ»Ğ©ÌØÊâÇé¿ö£¬ÀıÈçÍ¸Ã÷ png Í¼ÏñÖĞµÄÏñËØ¾ÍÊÇÒÑ¾­³Ë¹ıÍ¸Ã÷¶ÈµÄ¡£
+	 *	å¤‡æ³¨ï¼š
+	 *		æ­¤å‚æ•°ç”¨äºä¸€äº›ç‰¹æ®Šæƒ…å†µï¼Œä¾‹å¦‚é€æ˜ png å›¾åƒä¸­çš„åƒç´ å°±æ˜¯å·²ç»ä¹˜è¿‡é€æ˜åº¦çš„ã€‚
 	 * </pre>
 	 *
-	 * @param[in] alpha		µş¼ÓÔÚ src ÉÏµÄÍ¸Ã÷¶È£¨Ä¬ÈÏÎª 255£¬¼´²»µş¼Ó£©
-	 * @return »ìºÏºóµÄÑÕÉ«£¨²»º¬ alpha Öµ£©
+	 * @param[in] alpha		å åŠ åœ¨ src ä¸Šçš„é€æ˜åº¦ï¼ˆé»˜è®¤ä¸º 255ï¼Œå³ä¸å åŠ ï¼‰
+	 * @return æ··åˆåçš„é¢œè‰²ï¼ˆä¸å« alpha å€¼ï¼‰
 	*/
 	COLORREF MixAlphaColor(COLORREF cDst, COLORREF cSrc, bool isCalculated, BYTE alpha = 255);
 
 	/**
 	 * @brief <pre>
-	 *		¿ìËÙ¸´ÖÆÍ¼Ïñ£¨¿É¿ªÆôÍ¸Ã÷Í¨µÀ£©
+	 *		å¿«é€Ÿå¤åˆ¶å›¾åƒï¼ˆå¯å¼€å¯é€æ˜é€šé“ï¼‰
 	 *
-	 *	±¸×¢£º
-	 *		ÈôÎ´ÆôÓÃÈÎºÎÍ¸Ã÷Í¨µÀ£¬µÈÍ¬ÓÚÖ±½Ó¸´ÖÆÍ¼Ïñ¡£´ËÊ±½«±£ÁôÔ­Í¼ÏñµÄÍ¸Ã÷¶ÈĞÅÏ¢£¬·ñÔò²»±£ÁôÍ¸Ã÷¶ÈĞÅÏ¢¡£
+	 *	å¤‡æ³¨ï¼š
+	 *		è‹¥æœªå¯ç”¨ä»»ä½•é€æ˜é€šé“ï¼Œç­‰åŒäºç›´æ¥å¤åˆ¶å›¾åƒã€‚æ­¤æ—¶å°†ä¿ç•™åŸå›¾åƒçš„é€æ˜åº¦ä¿¡æ¯ï¼Œå¦åˆ™ä¸ä¿ç•™é€æ˜åº¦ä¿¡æ¯ã€‚
 	 * </pre>
 	 *
-	 * @param[in] x					Í¼ÏñÊä³ö x ×ø±ê
-	 * @param[in] y					Í¼ÏñÊä³ö y ×ø±ê
-	 * @param[in] pDst				ÔØÌåÍ¼ÏñÖ¸Õë
-	 * @param[in] wDst				ÔØÌåÍ¼Ïñ¿í
-	 * @param[in] hDst				ÔØÌåÍ¼Ïñ¸ß
-	 * @param[in] pSrc				´ıÊä³öÍ¼ÏñÖ¸Õë
-	 * @param[in] wSrc				´ıÊä³öÍ¼Ïñ¿í
-	 * @param[in] hSrc				´ıÊä³öÍ¼Ïñ¸ß
-	 * @param[in] crop				´ıÊä³öÍ¼Ïñ²Ã¼ôÇøÓò£¨right »ò bottom Îª 0 ±íÊ¾²»²Ã¼ô£©
-	 * @param[in] alpha				µş¼ÓÍ¸Ã÷¶È£¨Í¸Ã÷ 0 ~ 255 ²»Í¸Ã÷£©
+	 * @param[in] x					å›¾åƒè¾“å‡º x åæ ‡
+	 * @param[in] y					å›¾åƒè¾“å‡º y åæ ‡
+	 * @param[in] pDst				è½½ä½“å›¾åƒæŒ‡é’ˆ
+	 * @param[in] wDst				è½½ä½“å›¾åƒå®½
+	 * @param[in] hDst				è½½ä½“å›¾åƒé«˜
+	 * @param[in] pSrc				å¾…è¾“å‡ºå›¾åƒæŒ‡é’ˆ
+	 * @param[in] wSrc				å¾…è¾“å‡ºå›¾åƒå®½
+	 * @param[in] hSrc				å¾…è¾“å‡ºå›¾åƒé«˜
+	 * @param[in] crop				å¾…è¾“å‡ºå›¾åƒè£å‰ªåŒºåŸŸï¼ˆright æˆ– bottom ä¸º 0 è¡¨ç¤ºä¸è£å‰ªï¼‰
+	 * @param[in] alpha				å åŠ é€æ˜åº¦ï¼ˆé€æ˜ 0 ~ 255 ä¸é€æ˜ï¼‰
 	 *
 	 * @param[in] bUseSrcAlpha <pre>
-	 *		ÊÇ·ñÊ¹ÓÃ´ıÊä³öÍ¼ÏñÍ¸Ã÷¶È½øĞĞ»ìºÏ£¨Ğë±£Ö¤ IMAGE ÖĞº¬ÓĞÍ¸Ã÷¶ÈĞÅÏ¢£©
+	 *		æ˜¯å¦ä½¿ç”¨å¾…è¾“å‡ºå›¾åƒé€æ˜åº¦è¿›è¡Œæ··åˆï¼ˆé¡»ä¿è¯ IMAGE ä¸­å«æœ‰é€æ˜åº¦ä¿¡æ¯ï¼‰
 	 *
-	 *	±¸×¢£º
-	 *		EasyX ÖĞµÄÍ¼ÏñÒ»°ãÎŞÍ¸Ã÷¶È£¨Ä¬ÈÏÉèÎª 0£¬¼´È«Í¸Ã÷£©£¬¹ÊÒ»°ã²»Ê¹ÓÃÔ­Í¼Í¸Ã÷¶È¡£
-	 *		Í¨³£Ö»ÓĞ png Í¼Ïñ£¬»òÊÇÌØµØÉú³ÉµÄÍ¼Ïñ²Åº¬ÓĞÍ¸Ã÷¶ÈĞÅÏ¢¡£
+	 *	å¤‡æ³¨ï¼š
+	 *		EasyX ä¸­çš„å›¾åƒä¸€èˆ¬æ— é€æ˜åº¦ï¼ˆé»˜è®¤è®¾ä¸º 0ï¼Œå³å…¨é€æ˜ï¼‰ï¼Œæ•…ä¸€èˆ¬ä¸ä½¿ç”¨åŸå›¾é€æ˜åº¦ã€‚
+	 *		é€šå¸¸åªæœ‰ png å›¾åƒï¼Œæˆ–æ˜¯ç‰¹åœ°ç”Ÿæˆçš„å›¾åƒæ‰å«æœ‰é€æ˜åº¦ä¿¡æ¯ã€‚
 	 * </pre>
 	 *
 	 * @param[in] isCalculated <pre>
-	 *		±ê¼Ç´ıÊä³öÍ¼ÏñÊÇ·ñÒÑ¾­¼ÆËãºÃ»ìºÏºóµÄÑÕÉ«£¨ÆôÓÃÍ¼ÏñÍ¸Ã÷¶ÈÊ±ÓĞĞ§£©
+	 *		æ ‡è®°å¾…è¾“å‡ºå›¾åƒæ˜¯å¦å·²ç»è®¡ç®—å¥½æ··åˆåçš„é¢œè‰²ï¼ˆå¯ç”¨å›¾åƒé€æ˜åº¦æ—¶æœ‰æ•ˆï¼‰
 	 *
-	 *	×¢Òâ£º
-	 *		png Í¼ÏñÏñËØÑÕÉ«¶¼ÒÑ½øĞĞ¹ı»ìºÏÔËËã¡£
-	 *		¿ªÆôºó£¬Ô­Í¼Ïñ±ã²»ÔÙ¼ÆËã»ìºÏÑÕÉ«£¬Ö»ÓĞÔØÌåÍ¼Ïñ²ÎÓë¼ÆËã¡£
+	 *	æ³¨æ„ï¼š
+	 *		png å›¾åƒåƒç´ é¢œè‰²éƒ½å·²è¿›è¡Œè¿‡æ··åˆè¿ç®—ã€‚
+	 *		å¼€å¯åï¼ŒåŸå›¾åƒä¾¿ä¸å†è®¡ç®—æ··åˆé¢œè‰²ï¼Œåªæœ‰è½½ä½“å›¾åƒå‚ä¸è®¡ç®—ã€‚
 	 * </pre>
 	*/
 	void CopyImage_Alpha(
@@ -78,203 +78,203 @@ namespace HiEasyX
 	);
 
 	/**
-	 * @brief Ğı×ªÍ¼Ïñ£¨±£ÁôÍ¸Ã÷ĞÅÏ¢£¬×ÔÊÊÓ¦´óĞ¡£©
-	 * @param[in] pImg			Ô­Í¼Ïñ
-	 * @param[in] radian		Ğı×ª»¡¶È
-	 * @param[in] bkcolor		±³¾°Ìî³äÑÕÉ«
-	 * @return	Ğı×ªºóµÄÍ¼Ïñ
+	 * @brief æ—‹è½¬å›¾åƒï¼ˆä¿ç•™é€æ˜ä¿¡æ¯ï¼Œè‡ªé€‚åº”å¤§å°ï¼‰
+	 * @param[in] pImg			åŸå›¾åƒ
+	 * @param[in] radian		æ—‹è½¬å¼§åº¦
+	 * @param[in] bkcolor		èƒŒæ™¯å¡«å……é¢œè‰²
+	 * @return	æ—‹è½¬åçš„å›¾åƒ
 	*/
 	IMAGE RotateImage_Alpha(IMAGE* pImg, double radian, COLORREF bkcolor = BLACK);
 
 	/**
-	 * @brief	Ëõ·ÅÍ¼Ïñ£¨´Ö²ÚµÄ¡¢¼´²»²åÖµµÄËõ·Å£¬±£ÁôÍ¸Ã÷¶ÈĞÅÏ¢£©
-	 * @param[in] srcimg		Ô­Í¼Ïñ
-	 * @param[in] width			Ä¿±ê¿í¶È
-	 * @param[in] height		Ä¿±ê¸ß¶È£¨Îª 0 Ôò¸ù¾İ¿í¶È°´±ÈÀıËõ·Å£©
-	 * @return Ëõ·ÅºóµÄÍ¼Ïñ
+	 * @brief	ç¼©æ”¾å›¾åƒï¼ˆç²—ç³™çš„ã€å³ä¸æ’å€¼çš„ç¼©æ”¾ï¼Œä¿ç•™é€æ˜åº¦ä¿¡æ¯ï¼‰
+	 * @param[in] srcimg		åŸå›¾åƒ
+	 * @param[in] width			ç›®æ ‡å®½åº¦
+	 * @param[in] height		ç›®æ ‡é«˜åº¦ï¼ˆä¸º 0 åˆ™æ ¹æ®å®½åº¦æŒ‰æ¯”ä¾‹ç¼©æ”¾ï¼‰
+	 * @return ç¼©æ”¾åçš„å›¾åƒ
 	*/
 	IMAGE ZoomImage_Rough_Alpha(IMAGE* srcimg, int width, int height = 0);
 
 	/**
-	 * @brief	Ëõ·ÅÍ¼Ïñ£¨Ë«ÏßĞÔ²åÖµ£¬±£ÁôÍ¸Ã÷¶ÈĞÅÏ¢£©
-	 * @param[in] srcimg		Ô­Í¼Ïñ
-	 * @param[in] width			Ä¿±ê¿í¶È
-	 * @param[in] height		Ä¿±ê¸ß¶È£¨Îª 0 Ôò¸ù¾İ¿í¶È°´±ÈÀıËõ·Å£©
-	 * @return Ëõ·ÅºóµÄÍ¼Ïñ
+	 * @brief	ç¼©æ”¾å›¾åƒï¼ˆåŒçº¿æ€§æ’å€¼ï¼Œä¿ç•™é€æ˜åº¦ä¿¡æ¯ï¼‰
+	 * @param[in] srcimg		åŸå›¾åƒ
+	 * @param[in] width			ç›®æ ‡å®½åº¦
+	 * @param[in] height		ç›®æ ‡é«˜åº¦ï¼ˆä¸º 0 åˆ™æ ¹æ®å®½åº¦æŒ‰æ¯”ä¾‹ç¼©æ”¾ï¼‰
+	 * @return ç¼©æ”¾åçš„å›¾åƒ
 	*/
 	IMAGE ZoomImage_Alpha(IMAGE* srcimg, int width, int height = 0);
 
 	/**
-	 * @brief	Í¼ÏñËõ·Å£¨»ùÓÚ Win32 API£¬±È½Ï¿ì£¬±£ÁôÍ¸Ã÷¶ÈĞÅÏ¢£©
-	 * @param[in] srcimg		Ô­Í¼Ïñ
-	 * @param[in] width			Ä¿±ê¿í¶È
-	 * @param[in] height		Ä¿±ê¸ß¶È£¨Îª 0 Ôò¸ù¾İ¿í¶È°´±ÈÀıËõ·Å£©
-	 * @return Ëõ·ÅºóµÄÍ¼Ïñ
+	 * @brief	å›¾åƒç¼©æ”¾ï¼ˆåŸºäº Win32 APIï¼Œæ¯”è¾ƒå¿«ï¼Œä¿ç•™é€æ˜åº¦ä¿¡æ¯ï¼‰
+	 * @param[in] srcimg		åŸå›¾åƒ
+	 * @param[in] width			ç›®æ ‡å®½åº¦
+	 * @param[in] height		ç›®æ ‡é«˜åº¦ï¼ˆä¸º 0 åˆ™æ ¹æ®å®½åº¦æŒ‰æ¯”ä¾‹ç¼©æ”¾ï¼‰
+	 * @return ç¼©æ”¾åçš„å›¾åƒ
 	*/
 	IMAGE ZoomImage_Win32_Alpha(IMAGE* srcimg, int width, int height = 0);
 
 	/**
-	 * @brief »­²¼
+	 * @brief ç”»å¸ƒ
 	*/
 	class Canvas : public IMAGE
 	{
 	public:
 
-		// ÔÊĞí´Ëº¯Êıµ÷ÓÃ BindToWindow º¯Êı
+		// å…è®¸æ­¤å‡½æ•°è°ƒç”¨ BindToWindow å‡½æ•°
 		friend void BindWindowCanvas(Canvas*, HWND);
 
 	protected:
 
-		/////// ±äÁ¿ ///////
+		/////// å˜é‡ ///////
 
-		DrawingProperty m_property;			///< ±£´æÍâ½ç»æÍ¼ÊôĞÔ£¨ÓÃÓÚ±£´æ¾ÉµÄ»æÍ¼¶ÔÏóÖ¸Õë£©
+		DrawingProperty m_property;			///< ä¿å­˜å¤–ç•Œç»˜å›¾å±æ€§ï¼ˆç”¨äºä¿å­˜æ—§çš„ç»˜å›¾å¯¹è±¡æŒ‡é’ˆï¼‰
 
-		DWORD* m_pBuf = nullptr;			///< Í¼ÏñÄÚ´æÖ¸Õë
-		int m_nWidth, m_nHeight;			///< Í¼Ïñ¿í¸ß
-		int m_nBufSize;						///< Í¼ÏñÃæ»ı
+		DWORD* m_pBuf = nullptr;			///< å›¾åƒå†…å­˜æŒ‡é’ˆ
+		int m_nWidth, m_nHeight;			///< å›¾åƒå®½é«˜
+		int m_nBufSize;						///< å›¾åƒé¢ç§¯
 
-		bool m_bBindToImgPointer;			///< ¸Ã»­²¼ÊÇ·ñ°ó¶¨µ½Í¼ÏñÖ¸Õë
-		IMAGE* m_pImg;						///< »­²¼°ó¶¨µÄÍ¼ÏñÖ¸Õë£¨Èô»­²¼°ó¶¨µ½Ö¸Õë£©
+		bool m_bBindToImgPointer;			///< è¯¥ç”»å¸ƒæ˜¯å¦ç»‘å®šåˆ°å›¾åƒæŒ‡é’ˆ
+		IMAGE* m_pImg;						///< ç”»å¸ƒç»‘å®šçš„å›¾åƒæŒ‡é’ˆï¼ˆè‹¥ç”»å¸ƒç»‘å®šåˆ°æŒ‡é’ˆï¼‰
 
-		bool m_bBatchDraw;					///< ÊÇ·ñÆôÓÃÁËÅúÁ¿»æÖÆ
+		bool m_bBatchDraw;					///< æ˜¯å¦å¯ç”¨äº†æ‰¹é‡ç»˜åˆ¶
 
-		COLORREF m_cGPLineColor = WHITE;	///< GDI+ »æÍ¼Ê±Ê¹ÓÃµÄÏßÌõÑÕÉ«
-		COLORREF m_cGPFillColor = WHITE;	///< GDI+ »æÍ¼Ê±Ê¹ÓÃµÄÌî³äÑÕÉ«
-		float m_fGPLineWidth = 1.f;			///< GDI+ »æÍ¼Ê±µÄÏßÌõ¿í¶È
-		bool m_bGPAlpha = false;			///< GDI+ »æÍ¼Ê±ÊÇ·ñÆôÓÃÍ¸Ã÷¶È
-		Gdiplus::SmoothingMode m_enuSmoothingMode = Gdiplus::SmoothingModeAntiAlias;	///< GDI+ ¿¹¾â³İÄ£Ê½
+		COLORREF m_cGPLineColor = WHITE;	///< GDI+ ç»˜å›¾æ—¶ä½¿ç”¨çš„çº¿æ¡é¢œè‰²
+		COLORREF m_cGPFillColor = WHITE;	///< GDI+ ç»˜å›¾æ—¶ä½¿ç”¨çš„å¡«å……é¢œè‰²
+		float m_fGPLineWidth = 1.f;			///< GDI+ ç»˜å›¾æ—¶çš„çº¿æ¡å®½åº¦
+		bool m_bGPAlpha = false;			///< GDI+ ç»˜å›¾æ—¶æ˜¯å¦å¯ç”¨é€æ˜åº¦
+		Gdiplus::SmoothingMode m_enuSmoothingMode = Gdiplus::SmoothingModeAntiAlias;	///< GDI+ æŠ—é”¯é½¿æ¨¡å¼
 
-		HWND m_hBindWindow;					///< °ó¶¨µ½µÄ´°¿Ú
-		bool m_bAutoMarkFlushWindow = true;	///< °ó¶¨µ½´°¿ÚÊ±£¬±ê¼ÇÊÇ·ñÔÚ»æÖÆºó×Ô¶¯ÉèÖÃĞèÒª¸üĞÂË«»º³å
+		HWND m_hBindWindow;					///< ç»‘å®šåˆ°çš„çª—å£
+		bool m_bAutoMarkFlushWindow = true;	///< ç»‘å®šåˆ°çª—å£æ—¶ï¼Œæ ‡è®°æ˜¯å¦åœ¨ç»˜åˆ¶åè‡ªåŠ¨è®¾ç½®éœ€è¦æ›´æ–°åŒç¼“å†²
 
-		/////// º¯Êı ///////
+		/////// å‡½æ•° ///////
 
 		/**
-		 * @brief Çå¿Õ´ó²¿·ÖÉèÖÃ
+		 * @brief æ¸…ç©ºå¤§éƒ¨åˆ†è®¾ç½®
 		*/
 		void CleanUpSettings();
 
 		/**
-		 * @brief µ¥¶ÀÆô¶¯ HiWindow µÄ´°¿ÚÈÎÎñ£¨Èç¹û°ó¶¨ÁË´°¿Ú£©
-		 * @return ÊÇ·ñÆô¶¯³É¹¦
+		 * @brief å•ç‹¬å¯åŠ¨ HiWindow çš„çª—å£ä»»åŠ¡ï¼ˆå¦‚æœç»‘å®šäº†çª—å£ï¼‰
+		 * @return æ˜¯å¦å¯åŠ¨æˆåŠŸ
 		*/
 		bool BeginWindowTask();
 
 		/**
-		 * @brief ½áÊø HiWindow µÄ´°¿ÚÈÎÎñ
+		 * @brief ç»“æŸ HiWindow çš„çª—å£ä»»åŠ¡
 		*/
 		void EndWindowTask();
 
 		/**
 		 * @brief <pre>
-		 *		µ÷ÓÃ EasyX »æÍ¼º¯ÊıÇ°£¬ÉèÖÃ¸Ã»­²¼ÎªÄ¿±ê»æÍ¼»­²¼
+		 *		è°ƒç”¨ EasyX ç»˜å›¾å‡½æ•°å‰ï¼Œè®¾ç½®è¯¥ç”»å¸ƒä¸ºç›®æ ‡ç»˜å›¾ç”»å¸ƒ
 		 *
-		 *	±¸×¢£º
-		 *		Èô°ó¶¨ÁË´°¿Ú£¬Ôò×Ô¶¯Æô¶¯´°¿ÚÈÎÎñ
+		 *	å¤‡æ³¨ï¼š
+		 *		è‹¥ç»‘å®šäº†çª—å£ï¼Œåˆ™è‡ªåŠ¨å¯åŠ¨çª—å£ä»»åŠ¡
 		 * </pre>
 		 *
-		 * @return ÊÇ·ñÉèÖÃ³É¹¦
+		 * @return æ˜¯å¦è®¾ç½®æˆåŠŸ
 		*/
 		bool BeginDrawing();
 
 		/**
-		 * @brief µ÷ÓÃ EasyX »æÍ¼º¯ÊıÍê±Ï£¬»Ö¸´ÏÈÇ°µÄ»æÍ¼×´Ì¬
+		 * @brief è°ƒç”¨ EasyX ç»˜å›¾å‡½æ•°å®Œæ¯•ï¼Œæ¢å¤å…ˆå‰çš„ç»˜å›¾çŠ¶æ€
 		*/
 		void EndDrawing();
 
 		/**
 		 * @brief <pre>
-		 *		½«»­²¼°ó¶¨µ½´°¿Ú£¨»­²¼´óĞ¡Ëæ´°¿Ú×Ô¶¯µ÷Õû£©
+		 *		å°†ç”»å¸ƒç»‘å®šåˆ°çª—å£ï¼ˆç”»å¸ƒå¤§å°éšçª—å£è‡ªåŠ¨è°ƒæ•´ï¼‰
 		 *
-		 *	±¸×¢£º
-		 *		´Ëº¯ÊıÖ»Ó¦¸Ã±» BindWindowCanvas º¯Êıµ÷ÓÃ
+		 *	å¤‡æ³¨ï¼š
+		 *		æ­¤å‡½æ•°åªåº”è¯¥è¢« BindWindowCanvas å‡½æ•°è°ƒç”¨
 		 * </pre>
 		 *
-		 * @param[in] hWnd Ä¿±ê´°¿Ú
-		 * @param[in] pImg ´°¿ÚÍ¼Ïñ»º³åÇø
-		 * @return ´Ë»­²¼
+		 * @param[in] hWnd ç›®æ ‡çª—å£
+		 * @param[in] pImg çª—å£å›¾åƒç¼“å†²åŒº
+		 * @return æ­¤ç”»å¸ƒ
 		*/
 		Canvas& BindToWindow(HWND hWnd, IMAGE* pImg);
 
 	public:
 
-		/////// »­²¼²Ù×÷º¯Êı ///////
+		/////// ç”»å¸ƒæ“ä½œå‡½æ•° ///////
 
 		Canvas();
 
 		Canvas(int w, int h, COLORREF cBk = BLACK);
 
 		/**
-		 * @brief ¸´ÖÆÍ¼ÏñÄÚÈİ£¨°ó¶¨Í¼ÏñÖ¸ÕëÇëµ÷ÓÃ BindToImage£©
-		 * @param[in] pImg Ô­Í¼Ïñ
+		 * @brief å¤åˆ¶å›¾åƒå†…å®¹ï¼ˆç»‘å®šå›¾åƒæŒ‡é’ˆè¯·è°ƒç”¨ BindToImageï¼‰
+		 * @param[in] pImg åŸå›¾åƒ
 		*/
 		Canvas(IMAGE* pImg);
 		Canvas(IMAGE img);
 
 		/**
-		 * @brief ¸´ÖÆÍ¼ÏñÄÚÈİ£¨°ó¶¨Í¼ÏñÖ¸ÕëÇëµ÷ÓÃ BindToImage£©
-		 * @param[in] pImg Ô­Í¼Ïñ
+		 * @brief å¤åˆ¶å›¾åƒå†…å®¹ï¼ˆç»‘å®šå›¾åƒæŒ‡é’ˆè¯·è°ƒç”¨ BindToImageï¼‰
+		 * @param[in] pImg åŸå›¾åƒ
 		*/
 		Canvas& operator= (IMAGE* pImg);
 		Canvas& operator= (IMAGE img);
 
 		/**
 		 * @brief <pre>
-		 *		ÖØĞÂ¼ÓÔØÍ¼Ïñ³ß´çĞÅÏ¢
+		 *		é‡æ–°åŠ è½½å›¾åƒå°ºå¯¸ä¿¡æ¯
 		 *
-		 * ±¸×¢£º
-		 *		Èô°ó¶¨ÁËÍ¼ÏñÖ¸Õë£¬µ±Íâ²¿µ÷ÕûÍ¼Ïñ´óĞ¡ºó£¬Ğëµ÷ÓÃ´Ëº¯Êı
+		 * å¤‡æ³¨ï¼š
+		 *		è‹¥ç»‘å®šäº†å›¾åƒæŒ‡é’ˆï¼Œå½“å¤–éƒ¨è°ƒæ•´å›¾åƒå¤§å°åï¼Œé¡»è°ƒç”¨æ­¤å‡½æ•°
 		 * </pre>
 		*/
 		void UpdateSizeInfo();
 
 		/**
-		 * @brief ÖØÉè»­²¼´óĞ¡£¨Èô°ó¶¨ÁË´°¿Ú£¬Ôò²»½¨Òéµ÷ÓÃ£©
-		 * @param[in] w Ä¿±ê¿í¶È
-		 * @param[in] h Ä¿±ê¸ß¶È
+		 * @brief é‡è®¾ç”»å¸ƒå¤§å°ï¼ˆè‹¥ç»‘å®šäº†çª—å£ï¼Œåˆ™ä¸å»ºè®®è°ƒç”¨ï¼‰
+		 * @param[in] w ç›®æ ‡å®½åº¦
+		 * @param[in] h ç›®æ ‡é«˜åº¦
 		*/
 		void Resize(int w, int h) override;
 
 		/**
 		 * @brief <pre>
-		 *		°ó¶¨µ½Í¼ÏñÖ¸Õë
+		 *		ç»‘å®šåˆ°å›¾åƒæŒ‡é’ˆ
 		 *
-		 *	×¢Òâ£º
-		 *		°ó¶¨µ½Í¼ÏñÖ¸Õëºó£¬Èç¹ûÔÚÍâ²¿µ÷ÕûÁËÍ¼Ïñ´óĞ¡£¬ÔòĞèÒªµ÷ÓÃ UpdateSizeInfo ÖØĞÂ¼ÓÔØÍ¼ÏñĞÅÏ¢
+		 *	æ³¨æ„ï¼š
+		 *		ç»‘å®šåˆ°å›¾åƒæŒ‡é’ˆåï¼Œå¦‚æœåœ¨å¤–éƒ¨è°ƒæ•´äº†å›¾åƒå¤§å°ï¼Œåˆ™éœ€è¦è°ƒç”¨ UpdateSizeInfo é‡æ–°åŠ è½½å›¾åƒä¿¡æ¯
 		 * </pre>
 		 *
-		 * @param[in] pImg Ä¿±êÍ¼ÏñÖ¸Õë
-		 * @return ´Ë»­²¼
+		 * @param[in] pImg ç›®æ ‡å›¾åƒæŒ‡é’ˆ
+		 * @return æ­¤ç”»å¸ƒ
 		*/
 		Canvas& BindToImage(IMAGE* pImg);
 
 		/**
 		 * @brief <pre>
-		 *		»ñÈ¡»­²¼ IMAGE Ö¸Õë
+		 *		è·å–ç”»å¸ƒ IMAGE æŒ‡é’ˆ
 		 *
-		 *	×¢Òâ£º
-		 *		ÓĞµÄÊ±ºò»­²¼°ó¶¨ÁË±ğµÄ IMAGE£¬ËùÒÔ»æÍ¼Ê±²»ÄÜÖ±½ÓÊ¹ÓÃ this£¬±ØĞëµ÷ÓÃ´Ëº¯Êı¡£
+		 *	æ³¨æ„ï¼š
+		 *		æœ‰çš„æ—¶å€™ç”»å¸ƒç»‘å®šäº†åˆ«çš„ IMAGEï¼Œæ‰€ä»¥ç»˜å›¾æ—¶ä¸èƒ½ç›´æ¥ä½¿ç”¨ thisï¼Œå¿…é¡»è°ƒç”¨æ­¤å‡½æ•°ã€‚
 		 * </pre>
 		*/
 		IMAGE* GetImagePointer() { return m_bBindToImgPointer ? m_pImg : this; }
 
 		/**
-		 * @brief µÈ¼ÛÓÚ GetImagePointer()
+		 * @brief ç­‰ä»·äº GetImagePointer()
 		*/
 		IMAGE* Pt() { return m_bBindToImgPointer ? m_pImg : this; }
 
 		/**
-		 * @brief »ñÈ¡Í¼Ïñ»º³åÇøÖ¸Õë
+		 * @brief è·å–å›¾åƒç¼“å†²åŒºæŒ‡é’ˆ
 		*/
 		DWORD* GetBuffer() const { return m_pBuf; }
 
 		/**
-		 * @brief »ñÈ¡Í¼Ïñ»º³åÇø´óĞ¡£¬¼´Í¼ÏñÃæ»ı£¨¿í * ¸ß£©
+		 * @brief è·å–å›¾åƒç¼“å†²åŒºå¤§å°ï¼Œå³å›¾åƒé¢ç§¯ï¼ˆå®½ * é«˜ï¼‰
 		*/
 		int GetBufferSize() const { return m_nBufSize; }
 
 		/**
-		 * @brief »ñÈ¡»­²¼µÄ HDC
+		 * @brief è·å–ç”»å¸ƒçš„ HDC
 		*/
 		HDC GetHDC() { return GetImageHDC(GetImagePointer()); }
 
@@ -285,61 +285,61 @@ namespace HiEasyX
 
 		/**
 		 * @brief <pre>
-		 *		°ó¶¨µ½´°¿ÚÊ±£¬ÉèÖÃÊÇ·ñÔÚÃ¿´Î»æÖÆºó¶¼×Ô¶¯±ê¼ÇË¢ĞÂ´°¿ÚË«»º³å
+		 *		ç»‘å®šåˆ°çª—å£æ—¶ï¼Œè®¾ç½®æ˜¯å¦åœ¨æ¯æ¬¡ç»˜åˆ¶åéƒ½è‡ªåŠ¨æ ‡è®°åˆ·æ–°çª—å£åŒç¼“å†²
 		 *
-		 *	±¸×¢£º
-		 *		±ê¼ÇË¢ĞÂ´°¿ÚË«»º³å²¢²»ÒâÎ¶×Å¼´Ê±Ë¢ĞÂ¡£
-		 *		±ê¼Çºó£¬´°¿Ú½«»áÔÚÏÂÒ»´Î½ÓÊÜµ½»æÖÆÏûÏ¢Ê±¸üĞÂË«»º³å¡£
+		 *	å¤‡æ³¨ï¼š
+		 *		æ ‡è®°åˆ·æ–°çª—å£åŒç¼“å†²å¹¶ä¸æ„å‘³ç€å³æ—¶åˆ·æ–°ã€‚
+		 *		æ ‡è®°åï¼Œçª—å£å°†ä¼šåœ¨ä¸‹ä¸€æ¬¡æ¥å—åˆ°ç»˜åˆ¶æ¶ˆæ¯æ—¶æ›´æ–°åŒç¼“å†²ã€‚
 		 * </pre>
 		*/
 		void EnableAutoMarkFlushWindow(bool enable);
 		bool IsEnableAutoMarkFlushWindow() const { return m_bAutoMarkFlushWindow; }
 
-		/////// »æÍ¼×´Ì¬ÉèÖÃº¯Êı ///////
+		/////// ç»˜å›¾çŠ¶æ€è®¾ç½®å‡½æ•° ///////
 
 		/**
 		 * @brief <pre>
-		 *		¿ªÊ¼´óÅúÁ¿»æÖÆ£¨¸Ãº¯Êı²¢·ÇÓÃÓÚ¿ªÆôË«»º³å£©
+		 *		å¼€å§‹å¤§æ‰¹é‡ç»˜åˆ¶ï¼ˆè¯¥å‡½æ•°å¹¶éç”¨äºå¼€å¯åŒç¼“å†²ï¼‰
 		 *
-		 *	±¸×¢£º
-		 *		µ÷ÓÃ¸Ãº¯Êıºó£¬µ±Ç°»æÍ¼Ä¿±ê½«×ªÒÆµ½¸Ã»­²¼£¬´ËºóÃ¿´Î»æÖÆ²»»á»Ö¸´»æÍ¼Ä¿±ê
+		 *	å¤‡æ³¨ï¼š
+		 *		è°ƒç”¨è¯¥å‡½æ•°åï¼Œå½“å‰ç»˜å›¾ç›®æ ‡å°†è½¬ç§»åˆ°è¯¥ç”»å¸ƒï¼Œæ­¤åæ¯æ¬¡ç»˜åˆ¶ä¸ä¼šæ¢å¤ç»˜å›¾ç›®æ ‡
 		 * </pre>
 		*/
 		void BeginBatchDrawing();
 
 		/**
 		 * @brief <pre>
-		 *		½áÊøÅúÁ¿»æÖÆ
+		 *		ç»“æŸæ‰¹é‡ç»˜åˆ¶
 		 *
-		 *	±¸×¢£º
-		 *		»æÍ¼Ä¿±ê½«»Ö¸´µ½ÅúÁ¿»æÖÆÇ°µÄ×´Ì¬
+		 *	å¤‡æ³¨ï¼š
+		 *		ç»˜å›¾ç›®æ ‡å°†æ¢å¤åˆ°æ‰¹é‡ç»˜åˆ¶å‰çš„çŠ¶æ€
 		 * </pre>
 		*/
 		void EndBatchDrawing();
 
-		/////// EasyX ·ç¸ñµÄ»ù´¡»æÍ¼º¯Êı ///////
+		/////// EasyX é£æ ¼çš„åŸºç¡€ç»˜å›¾å‡½æ•° ///////
 
 		/**
-		 * @brief ÅĞ¶ÏÄ³µãÊÇ·ñÎ»ÓÚÍ¼ÏñÖĞ
-		 * @param[in] x ×ø±ê
-		 * @param[in] y ×ø±ê
-		 * @param[out] pIndex ·µ»Ø¸ÃµãÊı×éË÷Òı
-		 * @return ÊÇ·ñÎ»ÓÚÍ¼ÏñÖĞ
+		 * @brief åˆ¤æ–­æŸç‚¹æ˜¯å¦ä½äºå›¾åƒä¸­
+		 * @param[in] x åæ ‡
+		 * @param[in] y åæ ‡
+		 * @param[out] pIndex è¿”å›è¯¥ç‚¹æ•°ç»„ç´¢å¼•
+		 * @return æ˜¯å¦ä½äºå›¾åƒä¸­
 		*/
 		bool IsValidPoint(int x, int y, int* pIndex = nullptr);
 
 		/**
 		 * @brief <pre>
-		 *		ÓÃ±³¾°É«Çå¿Õ»­²¼
+		 *		ç”¨èƒŒæ™¯è‰²æ¸…ç©ºç”»å¸ƒ
 		 *
-		 *	±¸×¢£º
-		 *		´Ëº¯Êı½«ºöÂÔ±³¾°É«µÄÍ¸Ã÷¶È£¬²¢Ö±½Ó¶Ô»­²¼ÌîÈë 255 µÄÍ¸Ã÷¶È£¨¼´²»Í¸Ã÷£©¡£
+		 *	å¤‡æ³¨ï¼š
+		 *		æ­¤å‡½æ•°å°†å¿½ç•¥èƒŒæ™¯è‰²çš„é€æ˜åº¦ï¼Œå¹¶ç›´æ¥å¯¹ç”»å¸ƒå¡«å…¥ 255 çš„é€æ˜åº¦ï¼ˆå³ä¸é€æ˜ï¼‰ã€‚
 		 * </pre>
 		*/
 		void Clear(bool isSetColor = false, COLORREF bkcolor = BLACK);
 
 		/**
-		 * @brief ÓÃ±³¾°É«Çå¿Õ»­²¼£¨Çø±ğÓÚ Clear º¯Êı£¬´Ëº¯ÊıÄ¬ÈÏ±£Áô±³¾°É«ÖĞµÄÍ¸Ã÷¶È£©
+		 * @brief ç”¨èƒŒæ™¯è‰²æ¸…ç©ºç”»å¸ƒï¼ˆåŒºåˆ«äº Clear å‡½æ•°ï¼Œæ­¤å‡½æ•°é»˜è®¤ä¿ç•™èƒŒæ™¯è‰²ä¸­çš„é€æ˜åº¦ï¼‰
 		*/
 		void Clear_Alpha(bool isSetColor = false, COLORREF bkcolor = BLACK, bool ignore_alpha = false);
 
@@ -376,7 +376,7 @@ namespace HiEasyX
 		void SetBkMode(int mode);
 
 		/**
-		 * @brief ÉèÖÃ»æÍ¼×´Ì¬ÎªÔ­Ê¼×´Ì¬
+		 * @brief è®¾ç½®ç»˜å›¾çŠ¶æ€ä¸ºåŸå§‹çŠ¶æ€
 		*/
 		void SetDefault();
 
@@ -384,17 +384,17 @@ namespace HiEasyX
 		void PutPixel(int x, int y, COLORREF c);
 
 		/**
-		 * @brief  Ö±½Ó²Ù×÷ÏÔ´æ»ñÈ¡µã
+		 * @brief  ç›´æ¥æ“ä½œæ˜¾å­˜è·å–ç‚¹
 		*/
 		COLORREF GetPixel_Direct(int x, int y);
 
 		/**
-		 * @brief Ö±½Ó²Ù×÷ÏÔ´æ»æÖÆµã
+		 * @brief ç›´æ¥æ“ä½œæ˜¾å­˜ç»˜åˆ¶ç‚¹
 		*/
 		void PutPixel_Direct(int x, int y, COLORREF c);
 
 		/**
-		 * @brief Ö±½Ó²Ù×÷ÏÔ´æ»æÖÆ´øÓĞÍ¸Ã÷¶ÈµÄµã£¨Ê¹ÓÃ COLORREF ÖĞµÄÍ¸Ã÷¶È£©
+		 * @brief ç›´æ¥æ“ä½œæ˜¾å­˜ç»˜åˆ¶å¸¦æœ‰é€æ˜åº¦çš„ç‚¹ï¼ˆä½¿ç”¨ COLORREF ä¸­çš„é€æ˜åº¦ï¼‰
 		*/
 		void PutPixel_Direct_Alpha(int x, int y, COLORREF c);
 
@@ -453,50 +453,50 @@ namespace HiEasyX
 		void PolyBezier(const POINT* points, int num, bool isSetColor = false, COLORREF c = 0);
 
 		/**
-		 * @brief Ìî³äÄ³ÇøÓò
-		 * @param[in] x				Ìî³äÆğÊ¼Î»ÖÃ
-		 * @param[in] y				Ìî³äÆğÊ¼Î»ÖÃ
-		 * @param[in] color			Ìî³äÑÕÉ«
+		 * @brief å¡«å……æŸåŒºåŸŸ
+		 * @param[in] x				å¡«å……èµ·å§‹ä½ç½®
+		 * @param[in] y				å¡«å……èµ·å§‹ä½ç½®
+		 * @param[in] color			å¡«å……é¢œè‰²
 		 *
 		 * @param[in] filltype <pre>
-		 *		Ìî³äÄ£Ê½£¬ÓĞÒÔÏÂÁ½ÖÖÑ¡Ôñ£º
-		 *		FLOODFILLBORDER		Ö¸¶¨ color ÎªÌî³ä±ß½çÑÕÉ«£¬¼´Óöµ½´ËÑÕÉ«ºóÍ£Ö¹Ìî³ä
-		 *		FLOODFILLSURFACE	Ö¸¶¨ color ÎªÌî³ä±íÃæÑÕÉ«£¬¼´Ö»Ìî³ä´ËÑÕÉ«
+		 *		å¡«å……æ¨¡å¼ï¼Œæœ‰ä»¥ä¸‹ä¸¤ç§é€‰æ‹©ï¼š
+		 *		FLOODFILLBORDER		æŒ‡å®š color ä¸ºå¡«å……è¾¹ç•Œé¢œè‰²ï¼Œå³é‡åˆ°æ­¤é¢œè‰²ååœæ­¢å¡«å……
+		 *		FLOODFILLSURFACE	æŒ‡å®š color ä¸ºå¡«å……è¡¨é¢é¢œè‰²ï¼Œå³åªå¡«å……æ­¤é¢œè‰²
 		 * </pre>
 		 *
-		 * @param[in] isSetColor		ÊÇ·ñÉèÖÃÌî³äÑÕÉ«
-		 * @param[in] cFill			Ìî³äÑÕÉ«
+		 * @param[in] isSetColor		æ˜¯å¦è®¾ç½®å¡«å……é¢œè‰²
+		 * @param[in] cFill			å¡«å……é¢œè‰²
 		*/
 		void FloodFill(int x, int y, COLORREF color, int filltype = FLOODFILLBORDER, bool isSetColor = false, COLORREF cFill = 0);
 
 		/**
-		 * @brief ÔÚÖ¸¶¨Î»ÖÃÊä³öÎÄ±¾
-		 * @param[in] x				Î»ÖÃ
-		 * @param[in] y				Î»ÖÃ
-		 * @param[in] lpszText			ÎÄ±¾
-		 * @param[in] isSetColor		ÊÇ·ñÉèÖÃÑÕÉ«
-		 * @param[in] c				ÎÄ±¾ÑÕÉ«
-		 * @return ÎÄ±¾ÏñËØ¿í¶È
+		 * @brief åœ¨æŒ‡å®šä½ç½®è¾“å‡ºæ–‡æœ¬
+		 * @param[in] x				ä½ç½®
+		 * @param[in] y				ä½ç½®
+		 * @param[in] lpszText			æ–‡æœ¬
+		 * @param[in] isSetColor		æ˜¯å¦è®¾ç½®é¢œè‰²
+		 * @param[in] c				æ–‡æœ¬é¢œè‰²
+		 * @return æ–‡æœ¬åƒç´ å®½åº¦
 		*/
 		int OutTextXY(int x, int y, LPCTSTR lpszText, bool isSetColor = false, COLORREF c = 0);
 
 		int OutTextXY(int x, int y, TCHAR ch, bool isSetColor = false, COLORREF c = 0);
 
 		/**
-		 * @brief ÔÚÖ¸¶¨Î»ÖÃÊä³ö¸ñÊ½»¯ÎÄ±¾
-		 * @param[in] x			Î»ÖÃ
-		 * @param[in] y			Î»ÖÃ
-		 * @param[in] _Size		¸ñÊ½»¯ÎÄ±¾×î´ó³¤¶È
-		 * @param[in] _Format		¸ñÊ½»¯×Ö·û´®
-		 * @param[in]				²»¶¨²ÎÊı
-		 * @return ÎÄ±¾ÏñËØ¿í¶È
+		 * @brief åœ¨æŒ‡å®šä½ç½®è¾“å‡ºæ ¼å¼åŒ–æ–‡æœ¬
+		 * @param[in] x			ä½ç½®
+		 * @param[in] y			ä½ç½®
+		 * @param[in] _Size		æ ¼å¼åŒ–æ–‡æœ¬æœ€å¤§é•¿åº¦
+		 * @param[in] _Format		æ ¼å¼åŒ–å­—ç¬¦ä¸²
+		 * @param[in]				ä¸å®šå‚æ•°
+		 * @return æ–‡æœ¬åƒç´ å®½åº¦
 		*/
 		int OutTextXY_Format(int x, int y, int _Size, LPCTSTR _Format, ...);
 
 		/**
-		 * @brief »ñÈ¡ÎÄ±¾ÏñËØ¿í¶È
-		 * @param[in] lpszText ÎÄ±¾
-		 * @return »ñÈ¡ÎÄ±¾ÏñËØ¿í¶È
+		 * @brief è·å–æ–‡æœ¬åƒç´ å®½åº¦
+		 * @param[in] lpszText æ–‡æœ¬
+		 * @return è·å–æ–‡æœ¬åƒç´ å®½åº¦
 		*/
 		int TextWidth(LPCTSTR lpszText);
 
@@ -507,19 +507,19 @@ namespace HiEasyX
 		int Draw_Text(TCHAR ch, RECT* pRect, UINT uFormat, bool isSetColor = false, COLORREF c = 0);
 
 		/**
-		 * @brief ÔÚÄ³ÇøÓò¾ÓÖĞÊä³öÎÄ×Ö
-		 * @param[in] lpszText			ÎÄ±¾
-		 * @param[in] rct				Êä³öÇøÓò£¬Ä¬ÈÏÎª»­²¼ÇøÓò
-		 * @param[in] isSetColor		ÊÇ·ñÉèÖÃÑÕÉ«
-		 * @param[in] c					ÎÄ±¾ÑÕÉ«
+		 * @brief åœ¨æŸåŒºåŸŸå±…ä¸­è¾“å‡ºæ–‡å­—
+		 * @param[in] lpszText			æ–‡æœ¬
+		 * @param[in] rct				è¾“å‡ºåŒºåŸŸï¼Œé»˜è®¤ä¸ºç”»å¸ƒåŒºåŸŸ
+		 * @param[in] isSetColor		æ˜¯å¦è®¾ç½®é¢œè‰²
+		 * @param[in] c					æ–‡æœ¬é¢œè‰²
 		*/
 		void CenterText(LPCTSTR lpszText, RECT rct = { -1 }, bool isSetColor = false, COLORREF c = 0);
 
 		/**
-		 * @brief ¾ÓÖĞÊä³ö¸ñÊ½»¯ÎÄ±¾
-		 * @param[in] _Size			¸ñÊ½»¯ÎÄ±¾×î´ó³¤¶È
-		 * @param[in] _Format		¸ñÊ½»¯×Ö·û´®
-		 * @param[in]				²»¶¨²ÎÊı
+		 * @brief å±…ä¸­è¾“å‡ºæ ¼å¼åŒ–æ–‡æœ¬
+		 * @param[in] _Size			æ ¼å¼åŒ–æ–‡æœ¬æœ€å¤§é•¿åº¦
+		 * @param[in] _Format		æ ¼å¼åŒ–å­—ç¬¦ä¸²
+		 * @param[in]				ä¸å®šå‚æ•°
 		*/
 		void CenterText_Format(int _Size, LPCTSTR _Format, ...);
 
@@ -530,62 +530,62 @@ namespace HiEasyX
 		void SetTextStyle(LOGFONT font);
 
 		/**
-		 * @brief ÉèÖÃ×ÖÌå´óĞ¡
-		 * @param[in] nHeight	¸ß¶È
-		 * @param[in] nWidth	¿í¶È£¨Îª 0 Ê±£¬×Ô¶¯Óë¸ß¶ÈÆ¥Åä£©
+		 * @brief è®¾ç½®å­—ä½“å¤§å°
+		 * @param[in] nHeight	é«˜åº¦
+		 * @param[in] nWidth	å®½åº¦ï¼ˆä¸º 0 æ—¶ï¼Œè‡ªåŠ¨ä¸é«˜åº¦åŒ¹é…ï¼‰
 		*/
 		void SetFont(int nHeight, int nWidth = 0);
 
 		/**
-		 * @brief ÉèÖÃÊ¹ÓÃ×ÖÌåµÄÃû³Æ
-		 * @param[in] lpsz ×ÖÌåÃû³Æ
+		 * @brief è®¾ç½®ä½¿ç”¨å­—ä½“çš„åç§°
+		 * @param[in] lpsz å­—ä½“åç§°
 		*/
 		void SetTypeface(LPCTSTR lpsz);
 
 		/**
-		 * @brief ÉèÖÃ×Ö·û´®µÄÊéĞ´½Ç¶È£¨µ¥Î» 0.1 ¶È£©
-		 * @param[in] lfEscapement ½Ç¶È
+		 * @brief è®¾ç½®å­—ç¬¦ä¸²çš„ä¹¦å†™è§’åº¦ï¼ˆå•ä½ 0.1 åº¦ï¼‰
+		 * @param[in] lfEscapement è§’åº¦
 		*/
 		void SetTextEscapement(LONG lfEscapement);
 
 		/**
-		 * @brief ÉèÖÃÃ¿¸ö×Ö·ûµÄÊéĞ´½Ç¶È£¨µ¥Î» 0.1 ¶È£©
-		 * @param[in] lfOrientation ½Ç¶È
+		 * @brief è®¾ç½®æ¯ä¸ªå­—ç¬¦çš„ä¹¦å†™è§’åº¦ï¼ˆå•ä½ 0.1 åº¦ï¼‰
+		 * @param[in] lfOrientation è§’åº¦
 		*/
 		void SetTextOrientation(LONG lfOrientation);
 
 		/**
-		 * @brief ÉèÖÃ×Ö·ûµÄ±Ê»­´ÖÏ¸£¨·¶Î§ Ä¬ÈÏ 0 ~ 1000 ×î´Ö£©
-		 * @param[in] lfWeight ´ÖÏ¸
+		 * @brief è®¾ç½®å­—ç¬¦çš„ç¬”ç”»ç²—ç»†ï¼ˆèŒƒå›´ é»˜è®¤ 0 ~ 1000 æœ€ç²—ï¼‰
+		 * @param[in] lfWeight ç²—ç»†
 		*/
 		void SetTextWeight(LONG lfWeight);
 
 		/**
-		 * @brief ÉèÖÃ×ÖÌåÊÇ·ñÎªĞ±Ìå
-		 * @param[in] lfItalic ÊÇ·ñÊ¹ÓÃĞ±Ìå
+		 * @brief è®¾ç½®å­—ä½“æ˜¯å¦ä¸ºæ–œä½“
+		 * @param[in] lfItalic æ˜¯å¦ä½¿ç”¨æ–œä½“
 		*/
 		void SetTextItalic(bool lfItalic);
 
 		/**
-		 * @brief ÉèÖÃ×ÖÌåÊÇ·ñÓĞÏÂ»®Ïß
-		 * @param[in] lfUnderline ÊÇ·ñÊ¹ÓÃÏÂ»®Ïß
+		 * @brief è®¾ç½®å­—ä½“æ˜¯å¦æœ‰ä¸‹åˆ’çº¿
+		 * @param[in] lfUnderline æ˜¯å¦ä½¿ç”¨ä¸‹åˆ’çº¿
 		*/
 		void SetTextUnderline(bool lfUnderline);
 
 		/**
-		 * @brief ÉèÖÃ×ÖÌåÊÇ·ñÓĞÉ¾³ıÏß
-		 * @param[in] lfStrikeOut ÊÇ·ñÊ¹ÓÃÉ¾³ıÏß
+		 * @brief è®¾ç½®å­—ä½“æ˜¯å¦æœ‰åˆ é™¤çº¿
+		 * @param[in] lfStrikeOut æ˜¯å¦ä½¿ç”¨åˆ é™¤çº¿
 		*/
 		void SetTextStrikeOut(bool lfStrikeOut);
 
 		/**
-		 * @brief »ñÈ¡Ç°¾°É«
+		 * @brief è·å–å‰æ™¯è‰²
 		*/
 		COLORREF GetColor();
 
 		/**
-		 * @brief ÉèÖÃÇ°¾°É«
-		 * @param[in] color Ç°¾°É«
+		 * @brief è®¾ç½®å‰æ™¯è‰²
+		 * @param[in] color å‰æ™¯è‰²
 		*/
 		void SetColor(COLORREF color);
 
@@ -602,32 +602,32 @@ namespace HiEasyX
 		void OutText(TCHAR ch, bool isSetColor = false, COLORREF c = 0);
 
 		/**
-		 * @brief Êä³ö¸ñÊ½»¯ÎÄ±¾
-		 * @param[in] _Size			¸ñÊ½»¯ÎÄ±¾×î´ó³¤¶È
-		 * @param[in] _Format		¸ñÊ½»¯×Ö·û´®
-		 * @param[in]				²»¶¨²ÎÊı
-		 * @return ÎÄ±¾ÏñËØ¿í¶È
+		 * @brief è¾“å‡ºæ ¼å¼åŒ–æ–‡æœ¬
+		 * @param[in] _Size			æ ¼å¼åŒ–æ–‡æœ¬æœ€å¤§é•¿åº¦
+		 * @param[in] _Format		æ ¼å¼åŒ–å­—ç¬¦ä¸²
+		 * @param[in]				ä¸å®šå‚æ•°
+		 * @return æ–‡æœ¬åƒç´ å®½åº¦
 		*/
 		int OutText_Format(int _Size, LPCTSTR _Format, ...);
 
 		/**
 		 * @brief <pre>
-		 *		¼ÓÔØÍ¼Æ¬ÎÄ¼şµ½»­²¼
+		 *		åŠ è½½å›¾ç‰‡æ–‡ä»¶åˆ°ç”»å¸ƒ
 		 *
-		 *	±¸×¢£º
-		 *		Èô¿ªÆôÍ¸Ã÷Í¨µÀ£¬Ôò¸´ÖÆµ½»­²¼ÉÏµÄÄÚÈİ²»»á±£ÁôÔ­Í¼ÏñµÄÍ¸Ã÷¶ÈĞÅÏ¢
+		 *	å¤‡æ³¨ï¼š
+		 *		è‹¥å¼€å¯é€æ˜é€šé“ï¼Œåˆ™å¤åˆ¶åˆ°ç”»å¸ƒä¸Šçš„å†…å®¹ä¸ä¼šä¿ç•™åŸå›¾åƒçš„é€æ˜åº¦ä¿¡æ¯
 		 * </pre>
 		 *
-		 * @param[in] lpszImgFile		Í¼ÏñÎÄ¼şÂ·¾¶
-		 * @param[in] x					Êä³öµ½»­²¼µÄÎ»ÖÃ
-		 * @param[in] y					Êä³öµ½»­²¼µÄÎ»ÖÃ
-		 * @param[in] bResize			ÊÇ·ñµ÷Õû»­²¼´óĞ¡ÒÔÕıºÃÈİÄÉÍ¼Ïñ£¨¶ÔÓÚÎŞ¿í¸ßµÄ»­²¼»á×Ô¶¯µ÷Õû´óĞ¡£©
-		 * @param[in] nWidth			Í¼ÏñÄ¿±êÀ­Éì³ß´ç£¬Îª 0 ±íÊ¾²»À­Éì
-		 * @param[in] nHeight			Í¼ÏñÄ¿±êÀ­Éì³ß´ç£¬Îª 0 ±íÊ¾²»À­Éì
-		 * @param[in] alpha				µş¼ÓÍ¸Ã÷¶È
-		 * @param[in] bUseSrcAlpha		ÊÇ·ñÊ¹ÓÃÔ­Í¼µÄÍ¸Ã÷¶ÈĞÅÏ¢½øĞĞ»ìºÏ£¨½öÖ§³ÖÓĞÍ¸Ã÷¶ÈĞÅÏ¢µÄ png Í¼Ïñ£©
-		 * @param[in] isCalculated		Ô­Í¼ÊÇ·ñÒÑ¾­»ìºÏÍ¸Ã÷¶È
-		 * @return ¶ÁÈ¡µ½µÄ IMAGE ¶ÔÏó
+		 * @param[in] lpszImgFile		å›¾åƒæ–‡ä»¶è·¯å¾„
+		 * @param[in] x					è¾“å‡ºåˆ°ç”»å¸ƒçš„ä½ç½®
+		 * @param[in] y					è¾“å‡ºåˆ°ç”»å¸ƒçš„ä½ç½®
+		 * @param[in] bResize			æ˜¯å¦è°ƒæ•´ç”»å¸ƒå¤§å°ä»¥æ­£å¥½å®¹çº³å›¾åƒï¼ˆå¯¹äºæ— å®½é«˜çš„ç”»å¸ƒä¼šè‡ªåŠ¨è°ƒæ•´å¤§å°ï¼‰
+		 * @param[in] nWidth			å›¾åƒç›®æ ‡æ‹‰ä¼¸å°ºå¯¸ï¼Œä¸º 0 è¡¨ç¤ºä¸æ‹‰ä¼¸
+		 * @param[in] nHeight			å›¾åƒç›®æ ‡æ‹‰ä¼¸å°ºå¯¸ï¼Œä¸º 0 è¡¨ç¤ºä¸æ‹‰ä¼¸
+		 * @param[in] alpha				å åŠ é€æ˜åº¦
+		 * @param[in] bUseSrcAlpha		æ˜¯å¦ä½¿ç”¨åŸå›¾çš„é€æ˜åº¦ä¿¡æ¯è¿›è¡Œæ··åˆï¼ˆä»…æ”¯æŒæœ‰é€æ˜åº¦ä¿¡æ¯çš„ png å›¾åƒï¼‰
+		 * @param[in] isCalculated		åŸå›¾æ˜¯å¦å·²ç»æ··åˆé€æ˜åº¦
+		 * @return è¯»å–åˆ°çš„ IMAGE å¯¹è±¡
 		*/
 		IMAGE Load_Image_Alpha(
 			LPCTSTR lpszImgFile,
@@ -642,14 +642,14 @@ namespace HiEasyX
 		);
 
 		/**
-		 * @brief »æÖÆÍ¼Ïñµ½¸Ã»­²¼
-		 * @param[in] x					Í¼ÏñÊäÈëÎ»ÖÃ
-		 * @param[in] y					Í¼ÏñÊäÈëÎ»ÖÃ
-		 * @param[in] pImg				´ıÊäÈëÍ¼Ïñ
-		 * @param[in] crop				²Ã¼ôÇøÓò
-		 * @param[in] alpha				µş¼ÓÍ¸Ã÷¶È
-		 * @param[in] bUseSrcAlpha		ÊÇ·ñÊ¹ÓÃÔ­Í¼Í¸Ã÷¶È
-		 * @param[in] isCalculated		Ô­Í¼ÊÇ·ñÒÑ¾­»ìºÏÍ¸Ã÷¶È
+		 * @brief ç»˜åˆ¶å›¾åƒåˆ°è¯¥ç”»å¸ƒ
+		 * @param[in] x					å›¾åƒè¾“å…¥ä½ç½®
+		 * @param[in] y					å›¾åƒè¾“å…¥ä½ç½®
+		 * @param[in] pImg				å¾…è¾“å…¥å›¾åƒ
+		 * @param[in] crop				è£å‰ªåŒºåŸŸ
+		 * @param[in] alpha				å åŠ é€æ˜åº¦
+		 * @param[in] bUseSrcAlpha		æ˜¯å¦ä½¿ç”¨åŸå›¾é€æ˜åº¦
+		 * @param[in] isCalculated		åŸå›¾æ˜¯å¦å·²ç»æ··åˆé€æ˜åº¦
 		*/
 		void PutImageIn_Alpha(
 			int x,
@@ -662,14 +662,14 @@ namespace HiEasyX
 		);
 
 		/**
-		 * @brief ½«¸Ã»­²¼µÄÍ¼Ïñ»æÖÆµ½ÁíÒ»»­²¼ÖĞ
-		 * @param[in] x				»æÖÆÎ»ÖÃ
-		 * @param[in] y				»æÖÆÎ»ÖÃ
-		 * @param[in] pImg			Ä¿±ê»æÖÆ»­²¼
-		 * @param[in] crop			²Ã¼ôÇøÓò£¨Ä¬ÈÏ²»²Ã¼ô£©
-		 * @param[in] alpha			µş¼ÓÍ¸Ã÷¶È
-		 * @param[in] bUseSrcAlpha	ÊÇ·ñÊ¹ÓÃ´Ë»­²¼Í¸Ã÷¶È
-		 * @param[in] isCalculated	»­²¼ÏñËØÊÇ·ñÒÑ¾­Í¸Ã÷»ìºÏ
+		 * @brief å°†è¯¥ç”»å¸ƒçš„å›¾åƒç»˜åˆ¶åˆ°å¦ä¸€ç”»å¸ƒä¸­
+		 * @param[in] x				ç»˜åˆ¶ä½ç½®
+		 * @param[in] y				ç»˜åˆ¶ä½ç½®
+		 * @param[in] pImg			ç›®æ ‡ç»˜åˆ¶ç”»å¸ƒ
+		 * @param[in] crop			è£å‰ªåŒºåŸŸï¼ˆé»˜è®¤ä¸è£å‰ªï¼‰
+		 * @param[in] alpha			å åŠ é€æ˜åº¦
+		 * @param[in] bUseSrcAlpha	æ˜¯å¦ä½¿ç”¨æ­¤ç”»å¸ƒé€æ˜åº¦
+		 * @param[in] isCalculated	ç”»å¸ƒåƒç´ æ˜¯å¦å·²ç»é€æ˜æ··åˆ
 		*/
 		void RenderTo(
 			int x,
@@ -682,58 +682,58 @@ namespace HiEasyX
 		);
 
 		/**
-		 * @brief EasyX Ô­ÉúĞı×ªº¯Êı
-		 * @param[in] radian		Ğı×ª»¡¶È
-		 * @param[in] bkcolor		Ìî³ä±³¾°É«
-		 * @param[in] autosize		ÊÇ·ñ×ÔÊÊÓ¦Ğı×ªÍ¼Ïñ´óĞ¡
-		 * @param[in] highquality	¸ßÖÊÁ¿
+		 * @brief EasyX åŸç”Ÿæ—‹è½¬å‡½æ•°
+		 * @param[in] radian		æ—‹è½¬å¼§åº¦
+		 * @param[in] bkcolor		å¡«å……èƒŒæ™¯è‰²
+		 * @param[in] autosize		æ˜¯å¦è‡ªé€‚åº”æ—‹è½¬å›¾åƒå¤§å°
+		 * @param[in] highquality	é«˜è´¨é‡
 		*/
 		void RotateImage(double radian, COLORREF bkcolor = BLACK, bool autosize = false, bool highquality = true);
 
 		/**
-		 * @brief Ğı×ªÍ¼Ïñ£¨±£Áô Alpha ĞÅÏ¢£©
-		 * @param[in] radian	Ğı×ª»¡¶È
-		 * @param[in] bkcolor	Ìî³ä±³¾°É«
+		 * @brief æ—‹è½¬å›¾åƒï¼ˆä¿ç•™ Alpha ä¿¡æ¯ï¼‰
+		 * @param[in] radian	æ—‹è½¬å¼§åº¦
+		 * @param[in] bkcolor	å¡«å……èƒŒæ™¯è‰²
 		*/
 		void RotateImage_Alpha(double radian, COLORREF bkcolor = BLACK);
 
 		/**
-		 * @brief Ëõ·ÅÍ¼Ïñ£¨´Ö²ÚµÄ¡¢¼´²»²åÖµµÄËõ·Å£¬±£ÁôÍ¸Ã÷¶ÈĞÅÏ¢£©
-		 * @param[in] nW	Ä¿±ê¿í¶È
-		 * @param[in] nH	Ä¿±ê¸ß¶È£¨Îª 0 Ôò¸ù¾İ¿í¶È°´±ÈÀıËõ·Å£©
+		 * @brief ç¼©æ”¾å›¾åƒï¼ˆç²—ç³™çš„ã€å³ä¸æ’å€¼çš„ç¼©æ”¾ï¼Œä¿ç•™é€æ˜åº¦ä¿¡æ¯ï¼‰
+		 * @param[in] nW	ç›®æ ‡å®½åº¦
+		 * @param[in] nH	ç›®æ ‡é«˜åº¦ï¼ˆä¸º 0 åˆ™æ ¹æ®å®½åº¦æŒ‰æ¯”ä¾‹ç¼©æ”¾ï¼‰
 		*/
 		void ZoomImage_Rough_Alpha(int nW, int nH = 0);
 
 		/**
-		 * @brief Ëõ·ÅÍ¼Ïñ£¨Ë«ÏßĞÔ²åÖµ£¬±£ÁôÍ¸Ã÷¶ÈĞÅÏ¢£©
-		 * @param[in] nW	Ä¿±ê¿í¶È
-		 * @param[in] nH	Ä¿±ê¸ß¶È£¨Îª 0 Ôò¸ù¾İ¿í¶È°´±ÈÀıËõ·Å£©
+		 * @brief ç¼©æ”¾å›¾åƒï¼ˆåŒçº¿æ€§æ’å€¼ï¼Œä¿ç•™é€æ˜åº¦ä¿¡æ¯ï¼‰
+		 * @param[in] nW	ç›®æ ‡å®½åº¦
+		 * @param[in] nH	ç›®æ ‡é«˜åº¦ï¼ˆä¸º 0 åˆ™æ ¹æ®å®½åº¦æŒ‰æ¯”ä¾‹ç¼©æ”¾ï¼‰
 		*/
 		void ZoomImage_Alpha(int nW, int nH = 0);
 
 		/**
-		 * @brief Ëõ·ÅÍ¼Ïñ£¨»ùÓÚ Win32 API£¬±È½Ï¿ì£¬±£ÁôÍ¸Ã÷¶ÈĞÅÏ¢£©
-		 * @param[in] nW	Ä¿±ê¿í¶È
-		 * @param[in] nH	Ä¿±ê¸ß¶È£¨Îª 0 Ôò¸ù¾İ¿í¶È°´±ÈÀıËõ·Å£©
+		 * @brief ç¼©æ”¾å›¾åƒï¼ˆåŸºäº Win32 APIï¼Œæ¯”è¾ƒå¿«ï¼Œä¿ç•™é€æ˜åº¦ä¿¡æ¯ï¼‰
+		 * @param[in] nW	ç›®æ ‡å®½åº¦
+		 * @param[in] nH	ç›®æ ‡é«˜åº¦ï¼ˆä¸º 0 åˆ™æ ¹æ®å®½åº¦æŒ‰æ¯”ä¾‹ç¼©æ”¾ï¼‰
 		*/
 		void ZoomImage_Win32_Alpha(int nW, int nH = 0);
 
 		/**
-		 * @brief Ëõ·ÅÍ¼Ïñ£¨»ùÓÚ Win32 API£¬±È½Ï¿ì£¬±£ÁôÍ¸Ã÷¶ÈĞÅÏ¢£©
-		 * @param[in] nW	Ä¿±ê¿í¶È
-		 * @param[in] nH	Ä¿±ê¸ß¶È£¨Îª 0 Ôò¸ù¾İ¿í¶È°´±ÈÀıËõ·Å£©
+		 * @brief ç¼©æ”¾å›¾åƒï¼ˆåŸºäº Win32 APIï¼Œæ¯”è¾ƒå¿«ï¼Œä¿ç•™é€æ˜åº¦ä¿¡æ¯ï¼‰
+		 * @param[in] nW	ç›®æ ‡å®½åº¦
+		 * @param[in] nH	ç›®æ ‡é«˜åº¦ï¼ˆä¸º 0 åˆ™æ ¹æ®å®½åº¦æŒ‰æ¯”ä¾‹ç¼©æ”¾ï¼‰
 		*/
 		void ZoomImage_Gdiplus_Alpha(int nW, int nH = 0);
 
-		/////// GDI+ Ïà¹Ø»æÍ¼º¯Êı ///////
+		/////// GDI+ ç›¸å…³ç»˜å›¾å‡½æ•° ///////
 
 		////////////////////////////////////////////////////////////////////
 		//
-		// ×¢Òâ£º
-		//		GDI+ »æÍ¼º¯Êı²»ºÍ EasyX Ô­Éúº¯Êı¹²ÏíÍ¬ÑùµÄ»æÍ¼ÑÕÉ«£¬
-		//		ÕâÊÇÒòÎª GDI+ µÄ»æÍ¼º¯ÊıÖ§³ÖÍ¸Ã÷£¬¶ø EasyX Ô­Éúº¯Êı²»Ö§³Ö¡£
+		// æ³¨æ„ï¼š
+		//		GDI+ ç»˜å›¾å‡½æ•°ä¸å’Œ EasyX åŸç”Ÿå‡½æ•°å…±äº«åŒæ ·çš„ç»˜å›¾é¢œè‰²ï¼Œ
+		//		è¿™æ˜¯å› ä¸º GDI+ çš„ç»˜å›¾å‡½æ•°æ”¯æŒé€æ˜ï¼Œè€Œ EasyX åŸç”Ÿå‡½æ•°ä¸æ”¯æŒã€‚
 		//
-		//		¿ÉÒÔÊ¹ÓÃ RGBA »ò SET_ALPHA ºêÉèÖÃ´øÍ¸Ã÷¶ÈµÄÑÕÉ«
+		//		å¯ä»¥ä½¿ç”¨ RGBA æˆ– SET_ALPHA å®è®¾ç½®å¸¦é€æ˜åº¦çš„é¢œè‰²
 		//
 		////////////////////////////////////////////////////////////////////
 
@@ -746,12 +746,12 @@ namespace HiEasyX
 		float GP_GetLineWidth() const { return m_fGPLineWidth; }
 
 		/**
-		 * @brief ÉèÖÃ GDI+ »æÖÆÊ±ÊÇ·ñÊ¹ÓÃÍ¸Ã÷¶È£¨Ä¬ÈÏ²»Ê¹ÓÃ£©
+		 * @brief è®¾ç½® GDI+ ç»˜åˆ¶æ—¶æ˜¯å¦ä½¿ç”¨é€æ˜åº¦ï¼ˆé»˜è®¤ä¸ä½¿ç”¨ï¼‰
 		*/
 		void GP_EnableAlpha(bool enable);
 
 		/**
-		 * @brief ÉèÖÃ GDI+ ¿¹¾â³İÄ£Ê½
+		 * @brief è®¾ç½® GDI+ æŠ—é”¯é½¿æ¨¡å¼
 		*/
 		void GP_SetSmoothingMode(Gdiplus::SmoothingMode smoothing_mode);
 
@@ -784,25 +784,25 @@ namespace HiEasyX
 	};
 
 	/**
-	 * @brief Í¼Ïñ¿é
+	 * @brief å›¾åƒå—
 	*/
 	class ImageBlock
 	{
 	private:
 		Canvas* m_pCanvas = nullptr;
-		bool m_isCreated = false;			///< »­²¼ÊÇ·ñÎª×Ô¼º´´½¨µÄ
+		bool m_isCreated = false;			///< ç”»å¸ƒæ˜¯å¦ä¸ºè‡ªå·±åˆ›å»ºçš„
 
-		void DeleteMyCanvas();				///< É¾³ı×Ô¼º´´½¨µÄ»­²¼
+		void DeleteMyCanvas();				///< åˆ é™¤è‡ªå·±åˆ›å»ºçš„ç”»å¸ƒ
 
 	public:
-		int x = 0, y = 0;					///< Í¼ÏñÏÔÊ¾ÔÚÍ¼²ãµÄÎ»ÖÃ
-		RECT rctCrop = { 0 };				///< ²Ã¼ôĞÅÏ¢
-		bool bUseSrcAlpha = false;			///< ÊÇ·ñÊ¹ÓÃÍ¼Ïñ×ÔÉíµÄ alpha Êı¾İ
+		int x = 0, y = 0;					///< å›¾åƒæ˜¾ç¤ºåœ¨å›¾å±‚çš„ä½ç½®
+		RECT rctCrop = { 0 };				///< è£å‰ªä¿¡æ¯
+		bool bUseSrcAlpha = false;			///< æ˜¯å¦ä½¿ç”¨å›¾åƒè‡ªèº«çš„ alpha æ•°æ®
 
-		bool isAlphaCalculated = false;		///< Í¼ÏñÉ«ÖµÊÇ·ñÒÑ»ìºÏÍ¸Ã÷¶È£¨Ê¹ÓÃ×ÔÉíÍ¸Ã÷¶ÈÊ±ÓĞĞ§£©
+		bool isAlphaCalculated = false;		///< å›¾åƒè‰²å€¼æ˜¯å¦å·²æ··åˆé€æ˜åº¦ï¼ˆä½¿ç”¨è‡ªèº«é€æ˜åº¦æ—¶æœ‰æ•ˆï¼‰
 
-		BYTE alpha = 255;					///< »æÖÆµ½Í¼²ãÊ±µÄµş¼ÓÍ¸Ã÷¶È
-		bool bVisible = true;				///< Í¼ÏñÊÇ·ñ¿É¼û
+		BYTE alpha = 255;					///< ç»˜åˆ¶åˆ°å›¾å±‚æ—¶çš„å åŠ é€æ˜åº¦
+		bool bVisible = true;				///< å›¾åƒæ˜¯å¦å¯è§
 
 		ImageBlock();
 
@@ -811,23 +811,23 @@ namespace HiEasyX
 		ImageBlock(int _x, int _y, Canvas* pCanvas);
 
 		/**
-		 * @brief ĞÂ½¨»­²¼
-		 * @param[in] _x		Î»ÖÃ
-		 * @param[in] _y		Î»ÖÃ
-		 * @param[in] w		¿í¶È
-		 * @param[in] h		¸ß¶È
-		 * @param[in] cBk		±³¾°É«
+		 * @brief æ–°å»ºç”»å¸ƒ
+		 * @param[in] _x		ä½ç½®
+		 * @param[in] _y		ä½ç½®
+		 * @param[in] w		å®½åº¦
+		 * @param[in] h		é«˜åº¦
+		 * @param[in] cBk		èƒŒæ™¯è‰²
 		*/
 		ImageBlock(int _x, int _y, int w, int h, COLORREF cBk = 0);
 
 		virtual ~ImageBlock();
 
 		/**
-		 * @brief ²»°ó¶¨Íâ²¿»­²¼£¬Ö±½ÓĞÂ½¨»­²¼
-		 * @param[in] w		¿í¶È
-		 * @param[in] h		¸ß¶È
-		 * @param[in] cBk		±³¾°É«
-		 * @return »­²¼
+		 * @brief ä¸ç»‘å®šå¤–éƒ¨ç”»å¸ƒï¼Œç›´æ¥æ–°å»ºç”»å¸ƒ
+		 * @param[in] w		å®½åº¦
+		 * @param[in] h		é«˜åº¦
+		 * @param[in] cBk		èƒŒæ™¯è‰²
+		 * @return ç”»å¸ƒ
 		*/
 		Canvas* CreateCanvas(int w, int h, COLORREF cBk = 0);
 
@@ -840,33 +840,33 @@ namespace HiEasyX
 		void SetPos(int _x, int _y);
 
 		/**
-		 * @brief »æÖÆµ½»­²¼
-		 * @param[in] pImg		Ä¿±ê»æÖÆ»­²¼
-		 * @param[in] _alpha	µş¼ÓÍ¸Ã÷¶È
+		 * @brief ç»˜åˆ¶åˆ°ç”»å¸ƒ
+		 * @param[in] pImg		ç›®æ ‡ç»˜åˆ¶ç”»å¸ƒ
+		 * @param[in] _alpha	å åŠ é€æ˜åº¦
 		*/
 		virtual void Render(IMAGE* pImg, BYTE _alpha);
 	};
 
 	/**
-	 * @brief Í¼²ã
+	 * @brief å›¾å±‚
 	*/
 	class Layer : public std::list<ImageBlock*>
 	{
 	private:
-		DrawingProperty m_property[2];		///< ±£´æÉÏ´ÎµÄ»æÍ¼ÊôĞÔ
+		DrawingProperty m_property[2];		///< ä¿å­˜ä¸Šæ¬¡çš„ç»˜å›¾å±æ€§
 
 	public:
-		bool bVisible = true;				///< Í¼²ãÊÇ·ñ¿É¼û
-		BYTE alpha = 255;					///< Í¼²ãÖĞËùÓĞÍ¼Ïñ¿éµÄµş¼ÓÍ¸Ã÷¶È
-		bool bOutline = false;				///< ÊÇ·ñÏÔÊ¾ÂÖÀª
-		bool bText = false;					///< ÈôÏÔÊ¾ÂÖÀª£¬ÊÇ·ñÏÔÊ¾ÎÄ×Ö
+		bool bVisible = true;				///< å›¾å±‚æ˜¯å¦å¯è§
+		BYTE alpha = 255;					///< å›¾å±‚ä¸­æ‰€æœ‰å›¾åƒå—çš„å åŠ é€æ˜åº¦
+		bool bOutline = false;				///< æ˜¯å¦æ˜¾ç¤ºè½®å»“
+		bool bText = false;					///< è‹¥æ˜¾ç¤ºè½®å»“ï¼Œæ˜¯å¦æ˜¾ç¤ºæ–‡å­—
 
 		/**
-		 * @brief äÖÈ¾µ½»­²¼
-		 * @param[in] pImg				Ä¿±ê»æÖÆ»­²¼
-		 * @param[in] bShowOutline		ÊÇ·ñÏÔÊ¾ÂÖÀª
-		 * @param[in] bShowText		ÊÇ·ñÏÔÊ¾ÂÖÀªÎÄ±¾
-		 * @param[in] wstrAddedText	¸½¼ÓÂÖÀªÎÄ±¾
+		 * @brief æ¸²æŸ“åˆ°ç”»å¸ƒ
+		 * @param[in] pImg				ç›®æ ‡ç»˜åˆ¶ç”»å¸ƒ
+		 * @param[in] bShowOutline		æ˜¯å¦æ˜¾ç¤ºè½®å»“
+		 * @param[in] bShowText		æ˜¯å¦æ˜¾ç¤ºè½®å»“æ–‡æœ¬
+		 * @param[in] wstrAddedText	é™„åŠ è½®å»“æ–‡æœ¬
 		*/
 		#ifdef UNICODE
 		void Render(IMAGE* pImg = nullptr, bool bShowOutline = false, bool bShowText = true, std::wstring wstrAddedText = L"");
@@ -876,7 +876,7 @@ namespace HiEasyX
 	};
 
 	/**
-	 * @brief ÌØÊâÍ¼²ãË³Ğò±êÊ¶
+	 * @brief ç‰¹æ®Šå›¾å±‚é¡ºåºæ ‡è¯†
 	*/
 	enum LayerOrder
 	{
@@ -889,93 +889,93 @@ namespace HiEasyX
 
 	/**
 	 * @brief <pre>
-	 *		³¡¾°
+	 *		åœºæ™¯
 	 *
-	 *	±¸×¢£º
-	 *		Í¼²ãË÷ÒıÔ½´ó£¬Í¼²ãÔ½¿¿Ç°
+	 *	å¤‡æ³¨ï¼š
+	 *		å›¾å±‚ç´¢å¼•è¶Šå¤§ï¼Œå›¾å±‚è¶Šé å‰
 	 * </pre>
 	*/
 	class Scene : public std::vector<Layer*>
 	{
 	private:
 
-		DrawingProperty m_property;				///< ±£´æÖ®Ç°µÄ»æÍ¼ÊôĞÔ
+		DrawingProperty m_property;				///< ä¿å­˜ä¹‹å‰çš„ç»˜å›¾å±æ€§
 
-		// ÌØÊâÍ¼²ã
-		Layer m_layerBottomMost;				///< ×îµ×²ã
-		Layer m_layerBottom;					///< µ×²ã
-		Layer m_layerTop;						///< ¶¥²ã
-		Layer m_layerTopMost;					///< ×î¶¥²ã
+		// ç‰¹æ®Šå›¾å±‚
+		Layer m_layerBottomMost;				///< æœ€åº•å±‚
+		Layer m_layerBottom;					///< åº•å±‚
+		Layer m_layerTop;						///< é¡¶å±‚
+		Layer m_layerTopMost;					///< æœ€é¡¶å±‚
 
 	public:
 
 		/**
 		 * @brief <pre>
-		 *		»ñÈ¡ËùÓĞÍ¼²ãµÄ¿½±´
+		 *		è·å–æ‰€æœ‰å›¾å±‚çš„æ‹·è´
 		 *
-		 *	±¸×¢£º
-		 *		Í¼²ãË÷ÒıÔ½´ó£¬Í¼²ãÔ½¿¿Ç°
+		 *	å¤‡æ³¨ï¼š
+		 *		å›¾å±‚ç´¢å¼•è¶Šå¤§ï¼Œå›¾å±‚è¶Šé å‰
 		 * </pre>
 		 *
-		 * @return ËùÓĞÍ¼²ãµÄ¿½±´
+		 * @return æ‰€æœ‰å›¾å±‚çš„æ‹·è´
 		*/
 		std::vector<Layer*> GetAllLayer();
 
 		/**
-		 * @brief »ñÈ¡ËùÓĞÍ¼²ãµÄ×ÜÊı
+		 * @brief è·å–æ‰€æœ‰å›¾å±‚çš„æ€»æ•°
 		*/
 		size_t GetAllLayerSize() const;
 
 		/**
 		 * @brief <pre>
-		 *		»ñÈ¡ÌØÊâÍ¼²ã£¨³ıÁËÆÕÍ¨Í¼²ãÍâµÄÆäËûÍ¼²ã£¬¼û LayerOrder£©
+		 *		è·å–ç‰¹æ®Šå›¾å±‚ï¼ˆé™¤äº†æ™®é€šå›¾å±‚å¤–çš„å…¶ä»–å›¾å±‚ï¼Œè§ LayerOrderï¼‰
 		 *
-		 *	±¸×¢£º
-		 *		²»½¨ÒéÀÄÓÃÌØÊâÍ¼²ã
+		 *	å¤‡æ³¨ï¼š
+		 *		ä¸å»ºè®®æ»¥ç”¨ç‰¹æ®Šå›¾å±‚
 		 * </pre>
 		 *
-		 * @param[in] order ÌØÊâÍ¼²ãË÷Òı
-		 * @return ÌØÊâÍ¼²ã
+		 * @param[in] order ç‰¹æ®Šå›¾å±‚ç´¢å¼•
+		 * @return ç‰¹æ®Šå›¾å±‚
 		*/
 		Layer* GetSpecialLayer(LayerOrder order);
 
 		/**
-		 * @brief äÖÈ¾µ½»­²¼
-		 * @param[in] pImg				Ä¿±ê»æÖÆ»­²¼
-		 * @param[in] bShowAllOutline	ÊÇ·ñÏÔÊ¾ÂÖÀª
-		 * @param[in] bShowAllText		ÊÇ·ñÏÔÊ¾ÂÖÀªÎÄ±¾
+		 * @brief æ¸²æŸ“åˆ°ç”»å¸ƒ
+		 * @param[in] pImg				ç›®æ ‡ç»˜åˆ¶ç”»å¸ƒ
+		 * @param[in] bShowAllOutline	æ˜¯å¦æ˜¾ç¤ºè½®å»“
+		 * @param[in] bShowAllText		æ˜¯å¦æ˜¾ç¤ºè½®å»“æ–‡æœ¬
 		*/
 		void Render(IMAGE* pImg = nullptr, bool bShowAllOutline = false, bool bShowAllText = true);
 	};
 }
 
-////////////////********* ºê¶¨Òå *********////////////////
+////////////////********* å®å®šä¹‰ *********////////////////
 
 //
-// ×¼±¸»æÖÆÍ¸Ã÷Í¼ĞÎ£¨ÏÈ»æÖÆÍ¼ĞÎµ½ÁÙÊ±»­²¼ÖĞ£¬È»ºóÔÙÊä³öµ½ĞèÒª»æÖÆµÄµØ·½£©
-// nGraphW, nGraphH		Ëù»æÖÆÍ¸Ã÷Í¼ĞÎµÄ¿í¸ß
+// å‡†å¤‡ç»˜åˆ¶é€æ˜å›¾å½¢ï¼ˆå…ˆç»˜åˆ¶å›¾å½¢åˆ°ä¸´æ—¶ç”»å¸ƒä¸­ï¼Œç„¶åå†è¾“å‡ºåˆ°éœ€è¦ç»˜åˆ¶çš„åœ°æ–¹ï¼‰
+// nGraphW, nGraphH		æ‰€ç»˜åˆ¶é€æ˜å›¾å½¢çš„å®½é«˜
 //
-// ×¢Òâ£ºĞèÒªÅäºÏ DRAW_TNS_RENDER_TO ºêÊ¹ÓÃ
+// æ³¨æ„ï¼šéœ€è¦é…åˆ DRAW_TNS_RENDER_TO å®ä½¿ç”¨
 //
-// Ê¹ÓÃ·½·¨£º
-//		ÔÚ DRAW_TNS_INIT_GRAPHICS ºêºÍ DRAW_TNS_RENDER_TO ºêÖ®¼ä£¬²åÈëÒ»¸ö´úÂë¿é¡£
-//		ÔÚÕâ¸ö´úÂë¿éÖĞÊ¹ÓÃ Canvas ±äÁ¿ graphics ½øĞĞ»æÖÆ¡£
-//		»æÖÆÊ±µ÷ÓÃ Canvas µÄÆÕÍ¨»æÍ¼º¯Êı¼´¿É£¬ÎŞĞè GDI+ ÏµÁĞ·â×°º¯Êı£¨´ø "GP_" Ç°×ºµÄº¯Êı£©
-//		»òÕßÖ±½ÓÊ¹ÓÃÔ­Éú EasyX º¯Êı½øĞĞ»æÖÆÒ²¿ÉÒÔ¡£
+// ä½¿ç”¨æ–¹æ³•ï¼š
+//		åœ¨ DRAW_TNS_INIT_GRAPHICS å®å’Œ DRAW_TNS_RENDER_TO å®ä¹‹é—´ï¼Œæ’å…¥ä¸€ä¸ªä»£ç å—ã€‚
+//		åœ¨è¿™ä¸ªä»£ç å—ä¸­ä½¿ç”¨ Canvas å˜é‡ graphics è¿›è¡Œç»˜åˆ¶ã€‚
+//		ç»˜åˆ¶æ—¶è°ƒç”¨ Canvas çš„æ™®é€šç»˜å›¾å‡½æ•°å³å¯ï¼Œæ— éœ€ GDI+ ç³»åˆ—å°è£…å‡½æ•°ï¼ˆå¸¦ "GP_" å‰ç¼€çš„å‡½æ•°ï¼‰
+//		æˆ–è€…ç›´æ¥ä½¿ç”¨åŸç”Ÿ EasyX å‡½æ•°è¿›è¡Œç»˜åˆ¶ä¹Ÿå¯ä»¥ã€‚
 //
-// Ê¹ÓÃÊ¾Àı£º
+// ä½¿ç”¨ç¤ºä¾‹ï¼š
 /*
-	// ×¼±¸»æÖÆÍ¸Ã÷Í¼ĞÎ£¨ÉèÖÃÍ¼ĞÎµÄ¿í¸ß£©
+	// å‡†å¤‡ç»˜åˆ¶é€æ˜å›¾å½¢ï¼ˆè®¾ç½®å›¾å½¢çš„å®½é«˜ï¼‰
 	DRAW_TNS_INIT_GRAPHICS(201, 201);
 	{
-		// ÔÚ´úÂë¿éÖĞÊ¹ÓÃ Canvas µÄÆÕÍ¨»æÍ¼º¯Êı½øĞĞ»æÖÆ¼´¿É
+		// åœ¨ä»£ç å—ä¸­ä½¿ç”¨ Canvas çš„æ™®é€šç»˜å›¾å‡½æ•°è¿›è¡Œç»˜åˆ¶å³å¯
 		graphics.SetLineThickness(5);
 		graphics.FillRoundRect(0, 0, 200, 200, 20, 20, true, GREEN, PURPLE);
 
-		// ÏñÕâÑùÊ¹ÓÃ EasyX Ô­Éúº¯Êı»æÖÆÒ²¿ÉÒÔ
+		// åƒè¿™æ ·ä½¿ç”¨ EasyX åŸç”Ÿå‡½æ•°ç»˜åˆ¶ä¹Ÿå¯ä»¥
 		line(20, 20, 50, 50);
 	}
-	// ×îºóÑ¡Ôñ½«Õâ¸öÍ¸Ã÷Í¼ĞÎ»æÖÆµ½ÄÄÀï£¬²¢ÉèÖÃ»æÖÆÍ¸Ã÷¶È
+	// æœ€åé€‰æ‹©å°†è¿™ä¸ªé€æ˜å›¾å½¢ç»˜åˆ¶åˆ°å“ªé‡Œï¼Œå¹¶è®¾ç½®ç»˜åˆ¶é€æ˜åº¦
 	DRAW_TNS_RENDER_TO(120, 120, yourImagePointer, 100);
 */
 //
@@ -985,13 +985,13 @@ namespace HiEasyX
 		graphics.BeginBatchDrawing();(0)
 
 //
-// Íê³É»æÖÆÍ¸Ã÷Í¼ĞÎ£¬²¢Êä³ö»æÖÆµÄÍ¼ĞÎ
-// nRenderX		Êä³öÎ»ÖÃ X ×ø±ê
-// nRenderY		Êä³öÎ»ÖÃ Y ×ø±ê
-// pDstImg		Í¸Ã÷Í¼ĞÎÊä³öµÄÄ¿±ê»­²¼£¨IMAGE*£©
-// alpha		Êä³öÍ¼ĞÎÊ±Ê¹ÓÃµÄÍ¸Ã÷¶È£¨ÍêÈ«Í¸Ã÷ 0 ~ 255 ²»Í¸Ã÷£©
+// å®Œæˆç»˜åˆ¶é€æ˜å›¾å½¢ï¼Œå¹¶è¾“å‡ºç»˜åˆ¶çš„å›¾å½¢
+// nRenderX		è¾“å‡ºä½ç½® X åæ ‡
+// nRenderY		è¾“å‡ºä½ç½® Y åæ ‡
+// pDstImg		é€æ˜å›¾å½¢è¾“å‡ºçš„ç›®æ ‡ç”»å¸ƒï¼ˆIMAGE*ï¼‰
+// alpha		è¾“å‡ºå›¾å½¢æ—¶ä½¿ç”¨çš„é€æ˜åº¦ï¼ˆå®Œå…¨é€æ˜ 0 ~ 255 ä¸é€æ˜ï¼‰
 //
-// ×¢Òâ£ºĞèÒªÅäºÏ DRAW_TNS_INIT_GRAPHICS ºêÊ¹ÓÃ£¬¾ßÌåÓÃ·¨¼û DRAW_TNS_INIT_GRAPHICS ºêµÄ×¢ÊÍ
+// æ³¨æ„ï¼šéœ€è¦é…åˆ DRAW_TNS_INIT_GRAPHICS å®ä½¿ç”¨ï¼Œå…·ä½“ç”¨æ³•è§ DRAW_TNS_INIT_GRAPHICS å®çš„æ³¨é‡Š
 //
 #define DRAW_TNS_RENDER_TO(nRenderX, nRenderY, pDstImg, alpha) \
 		graphics.EndBatchDrawing();\

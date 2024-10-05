@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	HiFunc.h
- * @brief	HiEasyX ¿âµÄ³£ÓÃÔÓÏîº¯Êı
+ * @brief	HiEasyX åº“çš„å¸¸ç”¨æ‚é¡¹å‡½æ•°
  * @author	huidong
 */
 
@@ -15,211 +15,211 @@
 #endif
 
 /**
- * @brief ´æ´¢Õû¸öÆÁÄ»µÄ´óĞ¡ĞÅÏ¢£¨¶àÏÔÊ¾Æ÷£©
+ * @brief å­˜å‚¨æ•´ä¸ªå±å¹•çš„å¤§å°ä¿¡æ¯ï¼ˆå¤šæ˜¾ç¤ºå™¨ï¼‰
 */
 struct ScreenSize
 {
-	int left;	///< ¶àÏÔÊ¾Æ÷µÄ×óÉÏ½Ç x ×ø±ê
-	int top;	///< ¶àÏÔÊ¾Æ÷µÄ×óÉÏ½Ç y ×ø±ê
-	int w;		///< ¶àÏÔÊ¾Æ÷µÄ×ÜºÍ¿í¶È
-	int h;		///< ¶àÏÔÊ¾Æ÷µÄ×ÜºÍ¸ß¶È
+	int left;	///< å¤šæ˜¾ç¤ºå™¨çš„å·¦ä¸Šè§’ x åæ ‡
+	int top;	///< å¤šæ˜¾ç¤ºå™¨çš„å·¦ä¸Šè§’ y åæ ‡
+	int w;		///< å¤šæ˜¾ç¤ºå™¨çš„æ€»å’Œå®½åº¦
+	int h;		///< å¤šæ˜¾ç¤ºå™¨çš„æ€»å’Œé«˜åº¦
 };
 
 /**
- * @brief »ñÈ¡¶àÏÔÊ¾Æ÷´óĞ¡ĞÅÏ¢
+ * @brief è·å–å¤šæ˜¾ç¤ºå™¨å¤§å°ä¿¡æ¯
 */
 ScreenSize GetScreenSize();
 
 /**
  * @brief <pre>
- *		»ñÈ¡Í¼Ïñ³ß´ç
+ *		è·å–å›¾åƒå°ºå¯¸
  *
- *	±¸×¢£º
- *		¿ÉÒÔ·½±ãµØ´¦Àí IMAGE Ö¸ÕëÎª¿Õ£¬¼´Ö¸ÏòÖ÷»æÍ¼´°¿ÚµÄÇé¿ö
+ *	å¤‡æ³¨ï¼š
+ *		å¯ä»¥æ–¹ä¾¿åœ°å¤„ç† IMAGE æŒ‡é’ˆä¸ºç©ºï¼Œå³æŒ‡å‘ä¸»ç»˜å›¾çª—å£çš„æƒ…å†µ
  * </pre>
  *
- * @param[in] pImg			Ä¿±êÍ¼Ïñ
- * @param[out] width		·µ»ØÍ¼Ïñ¿í
- * @param[out] height		·µ»ØÍ¼Ïñ¸ß
+ * @param[in] pImg			ç›®æ ‡å›¾åƒ
+ * @param[out] width		è¿”å›å›¾åƒå®½
+ * @param[out] height		è¿”å›å›¾åƒé«˜
 */
 void GetImageSize(IMAGE* pImg, int* width, int* height);
 
 /**
  * @brief <pre>
- *		·´×ªÍ¼Ïñ Alpha Öµ
+ *		åè½¬å›¾åƒ Alpha å€¼
  *
- *	±¸×¢£º
- *		½« alpha Öµ²»Îª 0 µÄÒ»ÇĞÏñËØµÄ alpha ÉèÎª 0£¬
- *		Í¬Ê±½« alpha ÖµÎª 0 µÄÒ»ÇĞÏñËØµÄ alpha ÉèÎª 255¡£
+ *	å¤‡æ³¨ï¼š
+ *		å°† alpha å€¼ä¸ä¸º 0 çš„ä¸€åˆ‡åƒç´ çš„ alpha è®¾ä¸º 0ï¼Œ
+ *		åŒæ—¶å°† alpha å€¼ä¸º 0 çš„ä¸€åˆ‡åƒç´ çš„ alpha è®¾ä¸º 255ã€‚
  * </pre>
  *
- * @param[in, out] pBuf		ÏÔ´æÖ¸Õë
- * @param[in] size			ÏÔ´æ´óĞ¡
- * @return ÏÔ´æÖ¸Õë£¨ºÍÔ­À´Ò»Ñù£©
+ * @param[in, out] pBuf		æ˜¾å­˜æŒ‡é’ˆ
+ * @param[in] size			æ˜¾å­˜å¤§å°
+ * @return æ˜¾å­˜æŒ‡é’ˆï¼ˆå’ŒåŸæ¥ä¸€æ ·ï¼‰
 */
 DWORD* ReverseAlpha(DWORD* pBuf, int size);
 
 /**
  * @brief <pre>
- *		´´½¨Ö¸¶¨³ß´ç¼°ÑÕÉ«µÄÍ¼Ïñ
+ *		åˆ›å»ºæŒ‡å®šå°ºå¯¸åŠé¢œè‰²çš„å›¾åƒ
  *
- *	±¸×¢£º
- *		color ¿ÉÒÔ´øÓĞÍ¸Ã÷¶È¡£
- *		enable_alpha ÈôÎª false Ôò»á½«·µ»ØÍ¼ÏñÍ¸Ã÷¶ÈÉèÎª 255¡£
+ *	å¤‡æ³¨ï¼š
+ *		color å¯ä»¥å¸¦æœ‰é€æ˜åº¦ã€‚
+ *		enable_alpha è‹¥ä¸º false åˆ™ä¼šå°†è¿”å›å›¾åƒé€æ˜åº¦è®¾ä¸º 255ã€‚
  * </pre>
  *
- * @param[in] w					·µ»ØÍ¼Ïñ¿í¶È
- * @param[in] h					·µ»ØÍ¼Ïñ¸ß¶È
- * @param[in] color				·µ»ØÍ¼ÏñÌî³äÑÕÉ«
- * @param[in] enable_alpha		ÊÇ·ñÔÊĞíÍ¼ÏñµÄ alpha ĞÅÏ¢
- * @return ÏÔ´æÖ¸Õë£¨ºÍÔ­À´Ò»Ñù£©
+ * @param[in] w					è¿”å›å›¾åƒå®½åº¦
+ * @param[in] h					è¿”å›å›¾åƒé«˜åº¦
+ * @param[in] color				è¿”å›å›¾åƒå¡«å……é¢œè‰²
+ * @param[in] enable_alpha		æ˜¯å¦å…è®¸å›¾åƒçš„ alpha ä¿¡æ¯
+ * @return æ˜¾å­˜æŒ‡é’ˆï¼ˆå’ŒåŸæ¥ä¸€æ ·ï¼‰
 */
 IMAGE CreateImageColor(int w, int h, COLORREF color, bool enable_alpha);
 
 /**
  * @brief <pre>
- *		ÉèÖÃÍ¼ÏñµÄ±³¾°ÑÕÉ«
+ *		è®¾ç½®å›¾åƒçš„èƒŒæ™¯é¢œè‰²
  *
- *	±¸×¢£º
- *		color ¿ÉÒÔ´øÓĞÍ¸Ã÷¶È¡£
- *		enable_alpha ÈôÎª false Ôò»á½«Í¼ÏñÍ¸Ã÷¶ÈÉèÎª 255¡£
+ *	å¤‡æ³¨ï¼š
+ *		color å¯ä»¥å¸¦æœ‰é€æ˜åº¦ã€‚
+ *		enable_alpha è‹¥ä¸º false åˆ™ä¼šå°†å›¾åƒé€æ˜åº¦è®¾ä¸º 255ã€‚
  * </pre>
  *
- * @param[in] img				ÉèÖÃµÄÍ¼Ïñ
- * @param[in] color				Í¼ÏñÌî³äÑÕÉ«
- * @param[in] enable_alpha		ÊÇ·ñÔÊĞíÑÕÉ«µÄ alpha ĞÅÏ¢
- * @return ÏÔ´æÖ¸Õë£¨ºÍÔ­À´Ò»Ñù£©
+ * @param[in] img				è®¾ç½®çš„å›¾åƒ
+ * @param[in] color				å›¾åƒå¡«å……é¢œè‰²
+ * @param[in] enable_alpha		æ˜¯å¦å…è®¸é¢œè‰²çš„ alpha ä¿¡æ¯
+ * @return æ˜¾å­˜æŒ‡é’ˆï¼ˆå’ŒåŸæ¥ä¸€æ ·ï¼‰
 */
 void SetImageColor(IMAGE& img, COLORREF color, bool enable_alpha);
 
 /**
- * @brief µÃµ½ IMAGE ¶ÔÏóµÄ HBITMAP
- * @param[in] img			Ä¿±êÍ¼Ïñ
+ * @brief å¾—åˆ° IMAGE å¯¹è±¡çš„ HBITMAP
+ * @param[in] img			ç›®æ ‡å›¾åƒ
  *
  * @param[in] enable_alpha <pre>
- *		ÊÇ·ñÔÊĞíÍ¼ÏñµÄ alpha ĞÅÏ¢
+ *		æ˜¯å¦å…è®¸å›¾åƒçš„ alpha ä¿¡æ¯
  *
- *	×¢Òâ£º
- *		ÈôÍ¼Ïñ alpha ÖµÈ«Îª 0£¬Ôò±íÊ¾²»ÆôÓÃÍ¸Ã÷»ìºÏ
+ *	æ³¨æ„ï¼š
+ *		è‹¥å›¾åƒ alpha å€¼å…¨ä¸º 0ï¼Œåˆ™è¡¨ç¤ºä¸å¯ç”¨é€æ˜æ··åˆ
  * </pre>
  *
- * @return ×ª»»µÃµ½µÄÎ»Í¼¾ä±ú
+ * @return è½¬æ¢å¾—åˆ°çš„ä½å›¾å¥æŸ„
 */
 HBITMAP Image2Bitmap(IMAGE* img, bool enable_alpha);
 
 /**
- * @brief µÃµ½ HBITMAP ¶ÔÏóµÄ IMAGE
- * @param[in] img			Ä¿±êÍ¼Ïñ
+ * @brief å¾—åˆ° HBITMAP å¯¹è±¡çš„ IMAGE
+ * @param[in] img			ç›®æ ‡å›¾åƒ
  *
  * @param[in] enable_alpha <pre>
- *		ÊÇ·ñÔÊĞíÍ¼ÏñµÄ alpha ĞÅÏ¢
+ *		æ˜¯å¦å…è®¸å›¾åƒçš„ alpha ä¿¡æ¯
  *
- *	×¢Òâ£º
- *		ÈôÍ¼Ïñ alpha ÖµÈ«Îª 0£¬Ôò±íÊ¾²»ÆôÓÃÍ¸Ã÷»ìºÏ
+ *	æ³¨æ„ï¼š
+ *		è‹¥å›¾åƒ alpha å€¼å…¨ä¸º 0ï¼Œåˆ™è¡¨ç¤ºä¸å¯ç”¨é€æ˜æ··åˆ
  * </pre>
  *
- * @return ×ª»»µÃµ½µÄÎ»Í¼¾ä±ú
+ * @return è½¬æ¢å¾—åˆ°çš„ä½å›¾å¥æŸ„
 */
 IMAGE Bitmap2Image(HBITMAP* hBitmap, bool enable_alpha);
 
 /**
- * @brief HBITMAP ×ª HICON
- * @param[in] hBmp Î»Í¼¾ä±ú
- * @return Í¼±ê¾ä±ú
+ * @brief HBITMAP è½¬ HICON
+ * @param[in] hBmp ä½å›¾å¥æŸ„
+ * @return å›¾æ ‡å¥æŸ„
 */
 HICON Bitmap2Icon(HBITMAP hBmp);
 
 /**
- * @brief ¾«È·ÑÓÊ±º¯Êı£¨¿ÉÒÔ¾«È·µ½ 1ms£¬¾«¶È ¡À1ms£©
+ * @brief ç²¾ç¡®å»¶æ—¶å‡½æ•°ï¼ˆå¯ä»¥ç²¾ç¡®åˆ° 1msï¼Œç²¾åº¦ Â±1msï¼‰
  * @author yangw80 <yw80@qq.com>
  * @date 2011-5-4
- * @param[in] ms ÑÓÊ±³¤¶È£¨µ¥Î»£ººÁÃë£©
+ * @param[in] ms å»¶æ—¶é•¿åº¦ï¼ˆå•ä½ï¼šæ¯«ç§’ï¼‰
 */
 void HpSleep(int ms);
 
 /**
- * @brief µãÊÇ·ñÎ»ÓÚ¾ØĞÎÄÚ
- * @param[in] x		Î»ÖÃ
- * @param[in] y		Î»ÖÃ
- * @param[in] rct		¾ØĞÎ
- * @return µãÊÇ·ñÎ»ÓÚ¾ØĞÎÄÚ
+ * @brief ç‚¹æ˜¯å¦ä½äºçŸ©å½¢å†…
+ * @param[in] x		ä½ç½®
+ * @param[in] y		ä½ç½®
+ * @param[in] rct		çŸ©å½¢
+ * @return ç‚¹æ˜¯å¦ä½äºçŸ©å½¢å†…
 */
 bool IsInRect(int x, int y, RECT rct);
 
 /**
- * @brief »ñÈ¡ ExMessage µÄÏûÏ¢ÀàĞÍ
- * @param[in] msg ÏûÏ¢
- * @return EM_ ÏûÏ¢ÀàĞÍÖĞµÄÒ»ÖÖ£¬ÈôÊ§°Ü·µ»Ø 0
+ * @brief è·å– ExMessage çš„æ¶ˆæ¯ç±»å‹
+ * @param[in] msg æ¶ˆæ¯
+ * @return EM_ æ¶ˆæ¯ç±»å‹ä¸­çš„ä¸€ç§ï¼Œè‹¥å¤±è´¥è¿”å› 0
 */
 UINT GetExMessageType(ExMessage msg);
 
 /**
- * @brief ÉèÖÃ´°¿ÚÍ¸Ã÷¶È
- * @param[in] HWnd ´°¿Ú¾ä±ú
- * @param[in] enable ÊÇ·ñÆôÓÃ´°¿ÚÍ¸Ã÷¶È
- * @param[in] alpha ´°¿ÚÍ¸Ã÷¶ÈÖµ 0-255
+ * @brief è®¾ç½®çª—å£é€æ˜åº¦
+ * @param[in] HWnd çª—å£å¥æŸ„
+ * @param[in] enable æ˜¯å¦å¯ç”¨çª—å£é€æ˜åº¦
+ * @param[in] alpha çª—å£é€æ˜åº¦å€¼ 0-255
 */
 void SetWindowTransparent(HWND HWnd, bool enable, int alpha = 0xFF);
 
 namespace HiEasyX
 {
 	/**
-	 * @brief »æÖÆÍ¼Ïñ£¨¿É°üº¬Í¸Ã÷Í¨µÀ£©
-	 * @param[in] Dstimg Ö¸ÏòÄ¿±êÎ»Í¼µÄÖ¸Õë£¨Èç¹ûÖ±½Ó»æÖÆµ½´°¿ÚÖĞÔòÌîÈë hiex::GetWindowImage() £©
-	 * @param[in] DstimgX Ä¿±êÎ»Í¼ÉÏ»æÖÆµÄ×óÉÏ½Çºá×ø±ê
-	 * @param[in] DstimgY Ä¿±êÎ»Í¼ÉÏ»æÖÆµÄ×óÉÏ½Ç×İ×ø±ê
-	 * @param[in] Srcimg Ö¸ÏòÔ´Î»Í¼µÄÖ¸Õë
-	 * @param[in] transparency µş¼ÓÍ¸Ã÷¶È
+	 * @brief ç»˜åˆ¶å›¾åƒï¼ˆå¯åŒ…å«é€æ˜é€šé“ï¼‰
+	 * @param[in] Dstimg æŒ‡å‘ç›®æ ‡ä½å›¾çš„æŒ‡é’ˆï¼ˆå¦‚æœç›´æ¥ç»˜åˆ¶åˆ°çª—å£ä¸­åˆ™å¡«å…¥ hiex::GetWindowImage() ï¼‰
+	 * @param[in] DstimgX ç›®æ ‡ä½å›¾ä¸Šç»˜åˆ¶çš„å·¦ä¸Šè§’æ¨ªåæ ‡
+	 * @param[in] DstimgY ç›®æ ‡ä½å›¾ä¸Šç»˜åˆ¶çš„å·¦ä¸Šè§’çºµåæ ‡
+	 * @param[in] Srcimg æŒ‡å‘æºä½å›¾çš„æŒ‡é’ˆ
+	 * @param[in] transparency å åŠ é€æ˜åº¦
 	 *
-	 *	×¢Òâ£º
-	 *		»æÖÆ³öÀ´µÄÎ»Í¼´óĞ¡½«Óë Srcimg ÖĞµÄÍ¼ÏñÒ»ÖÂ
+	 *	æ³¨æ„ï¼š
+	 *		ç»˜åˆ¶å‡ºæ¥çš„ä½å›¾å¤§å°å°†ä¸ Srcimg ä¸­çš„å›¾åƒä¸€è‡´
 	 * </pre>
 	*/
 	void TransparentImage(IMAGE* Dstimg, int DstimgX, int DstimgY, IMAGE* Srcimg, int transparency = 255);
 
 	/**
-	 * @brief »æÖÆÍ¼Ïñ£¨¿É°üº¬Í¸Ã÷Í¨µÀ£©
-	 * @param[in] Dstimg Ö¸ÏòÄ¿±êÎ»Í¼µÄÖ¸Õë£¨Èç¹ûÖ±½Ó»æÖÆµ½´°¿ÚÖĞÔòÌîÈë hiex::GetWindowImage() £©
-	 * @param[in] DstimgX Ä¿±êÎ»Í¼ÉÏ»æÖÆµÄ×óÉÏ½Çºá×ø±ê
-	 * @param[in] DstimgY Ä¿±êÎ»Í¼ÉÏ»æÖÆµÄ×óÉÏ½Ç×İ×ø±ê
-	 * @param[in] DstimgWidth Ä¿±êÎ»Í¼ÉÏ»æÖÆµÄ¿í¶È
-	 * @param[in] DstimgHeight Ä¿±êÎ»Í¼ÉÏ»æÖÆµÄ¸ß¶È
-	 * @param[in] Srcimg Ö¸ÏòÔ´Î»Í¼µÄÖ¸Õë
-	 * @param[in] SrcimgX Ô´Î»Í¼ÖĞÒª»æÖÆµÄÇøÓòµÄ×óÉÏ½Çºá×ø±ê
-	 * @param[in] SrcimgY Ô´Î»Í¼ÖĞÒª»æÖÆµÄÇøÓòµÄ×óÉÏ½Ç×İ×ø±ê
-	 * @param[in] SourceWidth Ô´Î»Í¼ÖĞÒª»æÖÆµÄÇøÓòµÄ¿í¶È
-	 * @param[in] SourceHeight Ô´Î»Í¼ÖĞÒª»æÖÆµÄÇøÓòµÄ¸ß¶È
-	 * @param[in] transparency µş¼ÓÍ¸Ã÷¶È
+	 * @brief ç»˜åˆ¶å›¾åƒï¼ˆå¯åŒ…å«é€æ˜é€šé“ï¼‰
+	 * @param[in] Dstimg æŒ‡å‘ç›®æ ‡ä½å›¾çš„æŒ‡é’ˆï¼ˆå¦‚æœç›´æ¥ç»˜åˆ¶åˆ°çª—å£ä¸­åˆ™å¡«å…¥ hiex::GetWindowImage() ï¼‰
+	 * @param[in] DstimgX ç›®æ ‡ä½å›¾ä¸Šç»˜åˆ¶çš„å·¦ä¸Šè§’æ¨ªåæ ‡
+	 * @param[in] DstimgY ç›®æ ‡ä½å›¾ä¸Šç»˜åˆ¶çš„å·¦ä¸Šè§’çºµåæ ‡
+	 * @param[in] DstimgWidth ç›®æ ‡ä½å›¾ä¸Šç»˜åˆ¶çš„å®½åº¦
+	 * @param[in] DstimgHeight ç›®æ ‡ä½å›¾ä¸Šç»˜åˆ¶çš„é«˜åº¦
+	 * @param[in] Srcimg æŒ‡å‘æºä½å›¾çš„æŒ‡é’ˆ
+	 * @param[in] SrcimgX æºä½å›¾ä¸­è¦ç»˜åˆ¶çš„åŒºåŸŸçš„å·¦ä¸Šè§’æ¨ªåæ ‡
+	 * @param[in] SrcimgY æºä½å›¾ä¸­è¦ç»˜åˆ¶çš„åŒºåŸŸçš„å·¦ä¸Šè§’çºµåæ ‡
+	 * @param[in] SourceWidth æºä½å›¾ä¸­è¦ç»˜åˆ¶çš„åŒºåŸŸçš„å®½åº¦
+	 * @param[in] SourceHeight æºä½å›¾ä¸­è¦ç»˜åˆ¶çš„åŒºåŸŸçš„é«˜åº¦
+	 * @param[in] transparency å åŠ é€æ˜åº¦
 	 *
-	 *	×¢Òâ£º
-	 *		Èô Ä¿±êÎ»Í¼ÉÏ»æÖÆµÄ¿í¸ß ²»µÈÓÚ Ô´Î»Í¼ÖĞÒª»æÖÆµÄÇøÓòµÄ¿í¸ß£¬ÄÇÃ´Ô´Î»Í¼ÖĞµÄÇøÓò½«»á±»À­Éì»òÑ¹ËõÒÔÊÊÓ¦Ä¿±êÎ»Í¼ÉÏµÄ»æÖÆÇøÓò
+	 *	æ³¨æ„ï¼š
+	 *		è‹¥ ç›®æ ‡ä½å›¾ä¸Šç»˜åˆ¶çš„å®½é«˜ ä¸ç­‰äº æºä½å›¾ä¸­è¦ç»˜åˆ¶çš„åŒºåŸŸçš„å®½é«˜ï¼Œé‚£ä¹ˆæºä½å›¾ä¸­çš„åŒºåŸŸå°†ä¼šè¢«æ‹‰ä¼¸æˆ–å‹ç¼©ä»¥é€‚åº”ç›®æ ‡ä½å›¾ä¸Šçš„ç»˜åˆ¶åŒºåŸŸ
 	 * </pre>
 	*/
 	void TransparentImage(IMAGE* Dstimg, int DstimgX, int DstimgY, int DstimgWidth, int DstimgHeight, IMAGE* Srcimg, int SrcimgX, int SrcimgY, int SourceWidth, int SourceHeight, int transparency = 255);
 
 	/**
-	 * @brief À­ÉìÍ¼Ïñ£¨¿É°üº¬Í¸Ã÷Í¨µÀ£©
-	 * @param[in] img Ö¸ÏòÄ¿Ô´Î»Í¼µÄÖ¸Õë
-	 * @param[in] w Ö¸¶¨À­Éì¹ıºóµÄ¿í¶È£¨Îª 0 Ôò°´¸ß¶È±ÈÀıËõ·Å£©
-	 * @param[in] h Ö¸¶¨À­Éì¹ıºóµÄ¸ß¶È£¨Îª 0 Ôò°´¿í¶È±ÈÀıËõ·Å£©
+	 * @brief æ‹‰ä¼¸å›¾åƒï¼ˆå¯åŒ…å«é€æ˜é€šé“ï¼‰
+	 * @param[in] img æŒ‡å‘ç›®æºä½å›¾çš„æŒ‡é’ˆ
+	 * @param[in] w æŒ‡å®šæ‹‰ä¼¸è¿‡åçš„å®½åº¦ï¼ˆä¸º 0 åˆ™æŒ‰é«˜åº¦æ¯”ä¾‹ç¼©æ”¾ï¼‰
+	 * @param[in] h æŒ‡å®šæ‹‰ä¼¸è¿‡åçš„é«˜åº¦ï¼ˆä¸º 0 åˆ™æŒ‰å®½åº¦æ¯”ä¾‹ç¼©æ”¾ï¼‰
 	 *
-	 *	×¢Òâ£º
-	 *		À­Éì¹ıºóÍ¼ÏñµØÖ·²»±ä£¬¿É²»°´ÕÕ±ÈÀıÀ­Éì
+	 *	æ³¨æ„ï¼š
+	 *		æ‹‰ä¼¸è¿‡åå›¾åƒåœ°å€ä¸å˜ï¼Œå¯ä¸æŒ‰ç…§æ¯”ä¾‹æ‹‰ä¼¸
 	 * </pre>
 	*/
 	bool ZoomImage_Gdiplus_Alpha(IMAGE* img, int w, int h);
 
 	/**
-	 * @brief ÈÚºÏ£¨µş¼Ó£©Í¼ÏñÍ¸Ã÷¶È
-	 * @param[in] img Ö¸ÏòÄ¿Ô´Î»Í¼µÄÖ¸Õë
-	 * @param[in] transparency ĞèÒªÈÚºÏ£¨µş¼Ó£©µÄÍ¸Ã÷¶È
+	 * @brief èåˆï¼ˆå åŠ ï¼‰å›¾åƒé€æ˜åº¦
+	 * @param[in] img æŒ‡å‘ç›®æºä½å›¾çš„æŒ‡é’ˆ
+	 * @param[in] transparency éœ€è¦èåˆï¼ˆå åŠ ï¼‰çš„é€æ˜åº¦
 	 * </pre>
 	*/
 	void OverlayImageTransparency(IMAGE* img, int transparency);
 
 	/**
-	 * @brief ÒÆ³ıÍ¼ÏñÍ¸Ã÷Í¨µÀ
-	 * @param[in] img Ö¸ÏòÄ¿Ô´Î»Í¼µÄÖ¸Õë
+	 * @brief ç§»é™¤å›¾åƒé€æ˜é€šé“
+	 * @param[in] img æŒ‡å‘ç›®æºä½å›¾çš„æŒ‡é’ˆ
 	 * </pre>
 	*/
 	void RemoveImageTransparency(IMAGE* img);

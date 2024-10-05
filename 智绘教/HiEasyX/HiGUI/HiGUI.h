@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	HiGUI.h
- * @brief	HiEasyX ¿âµÄÍ¼ĞÎÓÃ»§½çÃæÄ£¿é
+ * @brief	HiEasyX åº“çš„å›¾å½¢ç”¨æˆ·ç•Œé¢æ¨¡å—
  * @author	huidong
 */
 

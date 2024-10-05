@@ -1,4 +1,4 @@
-#include "SysGroup.h"
+﻿#include "SysGroup.h"
 #include <tchar.h>
 
 namespace HiEasyX

@@ -1,4 +1,4 @@
-#include "HiGdiplus.h"
+ï»¿#include "HiGdiplus.h"
 #include "HiMacro.h"
 
 #ifdef _MSC_VER
@@ -268,7 +268,7 @@ namespace HiEasyX
 		IMAGE* pImg
 	)
 	{
-		// ×ª»»µãµÄÀàĞÍ
+		// è½¬æ¢ç‚¹çš„ç±»å‹
 		Gdiplus::PointF* pPts = new Gdiplus::PointF[points_num];
 		for (int i = 0; i < points_num; i++)
 		{
@@ -297,7 +297,7 @@ namespace HiEasyX
 		IMAGE* pImg
 	)
 	{
-		// ×ª»»µãµÄÀàĞÍ
+		// è½¬æ¢ç‚¹çš„ç±»å‹
 		Gdiplus::PointF* pPts = new Gdiplus::PointF[points_num];
 		for (int i = 0; i < points_num; i++)
 		{

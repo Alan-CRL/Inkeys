@@ -1,4 +1,4 @@
-#include "SysRadioButton.h"
+﻿#include "SysRadioButton.h"
 #include <tchar.h>
 
 namespace HiEasyX
@@ -42,8 +42,8 @@ namespace HiEasyX
 	{
 		if (msg == WM_COMMAND)
 		{
-			// ֻҪ�ǰ���������Ϣ���ж�
-			// ����ֻ�ж��Լ�����Ϣ����Ϊͬ���������ѡ��ѡ��ʱ���Լ��ղ�����Ϣ
+			// 只要是按键按下消息就判断
+			// 不能只判断自己的消息，因为同组的其它单选框被选择时，自己收不到消息
 			if (HIWORD(wParam) == BN_CLICKED)
 			{
 				bool checked = Button_GetCheck(GetHandle());

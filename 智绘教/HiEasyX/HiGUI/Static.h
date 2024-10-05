@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	Static.h
- * @brief	HiGUI ¿Ø¼ş·ÖÖ§£º¾²Ì¬¿Ø¼ş
+ * @brief	HiGUI æ§ä»¶åˆ†æ”¯ï¼šé™æ€æ§ä»¶
  * @author	huidong
 */
 
@@ -11,7 +11,7 @@
 namespace HiEasyX
 {
 	/**
-	 * @brief ¾²Ì¬£¨ÎÄ±¾¡¢Í¼Ïñ£©¿Ø¼ş
+	 * @brief é™æ€ï¼ˆæ–‡æœ¬ã€å›¾åƒï¼‰æ§ä»¶
 	*/
 	class Static : public ControlBase
 	{
@@ -58,12 +58,12 @@ namespace HiEasyX
 		virtual void ClearText();
 
 		/**
-		 * @brief Ìí¼ÓÎÄ±¾
-		 * @param[in] wstr				ÎÄ±¾
-		 * @param[in] isSetTextColor	ÊÇ·ñÉèÖÃ´ËÎÄ±¾ÑÕÉ«
-		 * @param[in] cText				ÎÄ±¾ÑÕÉ«
-		 * @param[in] isSetBkColor		ÊÇ·ñÉèÖÃ´ËÎÄ±¾±³¾°ÑÕÉ«
-		 * @param[in] cBk				ÎÄ±¾±³¾°É«
+		 * @brief æ·»åŠ æ–‡æœ¬
+		 * @param[in] wstr				æ–‡æœ¬
+		 * @param[in] isSetTextColor	æ˜¯å¦è®¾ç½®æ­¤æ–‡æœ¬é¢œè‰²
+		 * @param[in] cText				æ–‡æœ¬é¢œè‰²
+		 * @param[in] isSetBkColor		æ˜¯å¦è®¾ç½®æ­¤æ–‡æœ¬èƒŒæ™¯é¢œè‰²
+		 * @param[in] cBk				æ–‡æœ¬èƒŒæ™¯è‰²
 		*/
 #ifdef UNICODE
 		virtual void AddText(
@@ -92,13 +92,13 @@ namespace HiEasyX
 		void SetText(std::vector<Char> vecText);
 
 		/**
-		 * @brief »ñÈ¡»º´æµÄÍ¼Ïñ
+		 * @brief è·å–ç¼“å­˜çš„å›¾åƒ
 		*/
 		virtual ImageBlock* GetImage() { return m_pImgBlock; }
 
 		/**
-		 * @brief ÉèÖÃÏÔÊ¾Í¼Ïñ
-		 * @param[in] pImgBlockmg ÒªÏÔÊ¾µÄÍ¼Ïñ¿é
+		 * @brief è®¾ç½®æ˜¾ç¤ºå›¾åƒ
+		 * @param[in] pImgBlockmg è¦æ˜¾ç¤ºçš„å›¾åƒå—
 		*/
 		virtual void SetImage(ImageBlock* pImgBlockmg);
 

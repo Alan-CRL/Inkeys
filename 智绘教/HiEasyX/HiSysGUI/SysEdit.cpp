@@ -1,4 +1,4 @@
-#include "SysEdit.h"
+ï»¿#include "SysEdit.h"
 #include <tchar.h>
 
 namespace HiEasyX
@@ -15,7 +15,7 @@ namespace HiEasyX
 
 		ApplyProperty();
 
-		// ´´½¨»­Ë¢
+		// åˆ›å»ºç”»åˆ·
 		SetBkColor(m_cBk);
 	}
 

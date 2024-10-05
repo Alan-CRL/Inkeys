@@ -1,4 +1,4 @@
-// Formatting library for C++ - experimental format string compilation
+﻿// Formatting library for C++ - experimental format string compilation
 //
 // Copyright (c) 2012 - present, Victor Zverovich and fmt contributors
 // All rights reserved.

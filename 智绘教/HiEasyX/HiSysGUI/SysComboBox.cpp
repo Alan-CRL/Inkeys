@@ -1,4 +1,4 @@
-#include "SysComboBox.h"
+ï»¿#include "SysComboBox.h"
 #include <tchar.h>
 
 namespace HiEasyX
@@ -13,11 +13,11 @@ namespace HiEasyX
 			m_lBasicStyle
 		);
 
-		// CBS_SIMPLE Ä¬ÈÏ¿ÉÒÔ±à¼­
-		// ÈôÒª½ûÓÃÊäÈë£¬±ØĞë»ñÈ¡±à¼­¿òµÄ¾ä±ú
+		// CBS_SIMPLE é»˜è®¤å¯ä»¥ç¼–è¾‘
+		// è‹¥è¦ç¦ç”¨è¾“å…¥ï¼Œå¿…é¡»è·å–ç¼–è¾‘æ¡†çš„å¥æŸ„
 		if (m_bSimple_No_Edit)
 		{
-			// »ñÈ¡ÊäÈë¿ò¾ä±ú£¬²¢ÉèÖÃÎªÖ»¶Á
+			// è·å–è¾“å…¥æ¡†å¥æŸ„ï¼Œå¹¶è®¾ç½®ä¸ºåªè¯»
 			HWND combobox_edit = ChildWindowFromPoint(GetHandle(), { 3,3 });
 			Edit_SetReadOnly(combobox_edit, true);
 		}

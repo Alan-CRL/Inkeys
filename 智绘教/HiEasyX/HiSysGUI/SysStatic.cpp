@@ -1,4 +1,4 @@
-#include "SysStatic.h"
+﻿#include "SysStatic.h"
 #include "../HiFunc.h"
 #include <tchar.h>
 

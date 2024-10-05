@@ -1,4 +1,4 @@
-#include "SysCheckBox.h"
+﻿#include "SysCheckBox.h"
 #include <tchar.h>
 
 namespace HiEasyX

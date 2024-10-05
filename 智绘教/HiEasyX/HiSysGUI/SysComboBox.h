@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	SysComboBox.h
- * @brief	HiSysGUI ¿Ø¼ş·ÖÖ§£º×éºÏ¿ò
+ * @brief	HiSysGUI æ§ä»¶åˆ†æ”¯ï¼šç»„åˆæ¡†
  * @author	huidong
 */
 
@@ -11,7 +11,7 @@
 namespace HiEasyX
 {
 	/**
-	 * @brief ÏµÍ³×éºÏ¿ò¿Ø¼ş
+	 * @brief ç³»ç»Ÿç»„åˆæ¡†æ§ä»¶
 	*/
 	class SysComboBox : public SysControlBase
 	{
@@ -30,8 +30,8 @@ namespace HiEasyX
 #endif
 
 		/**
-		 * @brief	±ê¼ÇÓÃ»§ÉèÖÃÁË CBS_SIMPLE Í¬Ê±½ûÓÃÊäÈë
-		 *			´ËĞèÇóĞèÒªÌØÊâÊµÏÖ
+		 * @brief	æ ‡è®°ç”¨æˆ·è®¾ç½®äº† CBS_SIMPLE åŒæ—¶ç¦ç”¨è¾“å…¥
+		 *			æ­¤éœ€æ±‚éœ€è¦ç‰¹æ®Šå®ç°
 		*/
 		bool m_bSimple_No_Edit = false;
 
@@ -42,13 +42,13 @@ namespace HiEasyX
 	public:
 
 		/**
-		 * @brief ×éºÏ¿ò¿Ø¼şÔ¤ÉèÑùÊ½£¨±ØĞëÔÚ´´½¨Ç°ÉèÖÃ²ÅÓĞĞ§£©
+		 * @brief ç»„åˆæ¡†æ§ä»¶é¢„è®¾æ ·å¼ï¼ˆå¿…é¡»åœ¨åˆ›å»ºå‰è®¾ç½®æ‰æœ‰æ•ˆï¼‰
 		*/
 		struct PreStyle
 		{
-			bool always_show_list = false;		///< ÊÇ·ñ×ÜÊÇÏÔÊ¾ÁĞ±í
-			bool editable = false;				///< ÊÇ·ñ¿É±à¼­
-			bool sort = false;					///< ÊÇ·ñ×Ô¶¯ÅÅĞò
+			bool always_show_list = false;		///< æ˜¯å¦æ€»æ˜¯æ˜¾ç¤ºåˆ—è¡¨
+			bool editable = false;				///< æ˜¯å¦å¯ç¼–è¾‘
+			bool sort = false;					///< æ˜¯å¦è‡ªåŠ¨æ’åº
 		};
 
 		SysComboBox();
@@ -62,15 +62,15 @@ namespace HiEasyX
 #endif
 
 		/**
-		 * @brief ÔÚ´´½¨¿Ø¼şÇ°Ô¤ÉèÑùÊ½
+		 * @brief åœ¨åˆ›å»ºæ§ä»¶å‰é¢„è®¾æ ·å¼
 		*/
 		void PreSetStyle(PreStyle pre_style);
 
 		LRESULT UpdateMessage(UINT msg, WPARAM wParam, LPARAM lParam, bool& bRet) override;
 
 		/**
-		 * @brief ×¢²áÑ¡ÔñÏûÏ¢
-		 * @param[in] pFunc ÏûÏ¢ÏìÓ¦º¯Êı
+		 * @brief æ³¨å†Œé€‰æ‹©æ¶ˆæ¯
+		 * @param[in] pFunc æ¶ˆæ¯å“åº”å‡½æ•°
 		*/
 #ifdef UNICODE
 		void RegisterSelMessage(void (*pFunc)(int sel, std::wstring wstrSelText));
@@ -79,8 +79,8 @@ namespace HiEasyX
 #endif
 
 		/**
-		 * @brief ×¢²á±à¼­ÏûÏ¢
-		 * @param[in] pFunc ÏûÏ¢ÏìÓ¦º¯Êı
+		 * @brief æ³¨å†Œç¼–è¾‘æ¶ˆæ¯
+		 * @param[in] pFunc æ¶ˆæ¯å“åº”å‡½æ•°
 		*/
 #ifdef UNICODE
 		void RegisterEditMessage(void (*pFunc)(std::wstring wstrText));
@@ -89,20 +89,20 @@ namespace HiEasyX
 #endif
 
 		/**
-		 * @brief »ñÈ¡Ñ¡ÖĞµÄË÷Òı
+		 * @brief è·å–é€‰ä¸­çš„ç´¢å¼•
 		*/
 		int GetSel() const { return m_nSel; }
 
 		/**
-		 * @brief ÉèÖÃÑ¡ÖĞµÄË÷Òı
-		 * @param[in] sel Ñ¡ÖĞµÄË÷Òı
+		 * @brief è®¾ç½®é€‰ä¸­çš„ç´¢å¼•
+		 * @param[in] sel é€‰ä¸­çš„ç´¢å¼•
 		*/
 		void SetSel(int sel);
 
 		/**
-		 * @brief Ñ¡Ôñ¾ßÓĞÖ¸¶¨ÎÄ±¾µÄÒ»Ïî
-		 * @param[in] wstrText Ö¸¶¨ÎÄ±¾
-		 * @return ÊÇ·ñÑ¡Ôñ³É¹¦
+		 * @brief é€‰æ‹©å…·æœ‰æŒ‡å®šæ–‡æœ¬çš„ä¸€é¡¹
+		 * @param[in] wstrText æŒ‡å®šæ–‡æœ¬
+		 * @return æ˜¯å¦é€‰æ‹©æˆåŠŸ
 		*/
 #ifdef UNICODE
 		bool SelectString(std::wstring wstrText);
@@ -111,8 +111,8 @@ namespace HiEasyX
 #endif
 
 		/**
-		 * @brief Ôö¼ÓÏî
-		 * @param[in] wstrText ÏîÎÄ±¾
+		 * @brief å¢åŠ é¡¹
+		 * @param[in] wstrText é¡¹æ–‡æœ¬
 		*/
 #ifdef UNICODE
 		void AddString(std::wstring wstrText);
@@ -121,9 +121,9 @@ namespace HiEasyX
 #endif
 
 		/**
-		 * @brief ²åÈëÏî
-		 * @param[in] index		²åÈëÎ»ÖÃ
-		 * @param[in] wstrText	ÏîÎÄ±¾
+		 * @brief æ’å…¥é¡¹
+		 * @param[in] index		æ’å…¥ä½ç½®
+		 * @param[in] wstrText	é¡¹æ–‡æœ¬
 		*/
 #ifdef UNICODE
 		void InsertString(int index, std::wstring wstrText);
@@ -132,34 +132,34 @@ namespace HiEasyX
 #endif
 
 		/**
-		 * @brief É¾³ıÏî
-		 * @param[in] index	ÏîË÷Òı
+		 * @brief åˆ é™¤é¡¹
+		 * @param[in] index	é¡¹ç´¢å¼•
 		*/
 		void DeleteString(int index);
 
 		/**
-		 * @brief »ñÈ¡ÁĞ±íÄÚÈİÊıÁ¿
+		 * @brief è·å–åˆ—è¡¨å†…å®¹æ•°é‡
 		*/
 		int GetCount();
 
 		/**
-		 * @brief Çå¿ÕÁĞ±í
+		 * @brief æ¸…ç©ºåˆ—è¡¨
 		*/
 		void Clear();
 
 		/**
-		 * @brief ÏÔÊ¾ÁĞ±í
-		 * @param[in] enable ÊÇ·ñÏÔÊ¾ÁĞ±í
+		 * @brief æ˜¾ç¤ºåˆ—è¡¨
+		 * @param[in] enable æ˜¯å¦æ˜¾ç¤ºåˆ—è¡¨
 		*/
 		void ShowDropdown(bool enable);
 
 		/**
-		 * @brief ÅĞ¶ÏÑ¡ÔñÏîÊÇ·ñ±ä»¯
+		 * @brief åˆ¤æ–­é€‰æ‹©é¡¹æ˜¯å¦å˜åŒ–
 		*/
 		bool IsSelChanged();
 
 		/**
-		 * @brief ÅĞ¶ÏÊÇ·ñ±»±à¼­
+		 * @brief åˆ¤æ–­æ˜¯å¦è¢«ç¼–è¾‘
 		*/
 		bool IsEdited();
 	};

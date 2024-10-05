@@ -1,10 +1,10 @@
-#include "ControlBase.h"
+ï»¿#include "ControlBase.h"
 
 namespace HiEasyX
 {
 	void ControlBase::Init()
 	{
-		// TODO£ºµÈ EasyX ĞŞ¸´ºó¼ÓÉÏ
+		// TODOï¼šç­‰ EasyX ä¿®å¤ååŠ ä¸Š
 		/*m_canvas.SetTypeface(L"Arial");
 		m_canvas.SetBkColor(m_cBackground);
 		m_canvas.SetTextColor(m_cText);
@@ -41,13 +41,13 @@ namespace HiEasyX
 
 		m_canvas.Resize(GetWidth(), GetHeight());
 
-		// ±êÊ¶ÖØ»æºÍäÖÈ¾
+		// æ ‡è¯†é‡ç»˜å’Œæ¸²æŸ“
 		MarkNeedRedrawAndRender();
 
-		// ²»ÊÇµÚÒ»´ÎÉèÖÃÎ»ÖÃÊ±£¬ĞèÒªÇå³ı¾ÉÇøÓò
+		// ä¸æ˜¯ç¬¬ä¸€æ¬¡è®¾ç½®ä½ç½®æ—¶ï¼Œéœ€è¦æ¸…é™¤æ—§åŒºåŸŸ
 		if (m_bCompleteFirstSetRect)
 		{
-			// ±êÊ¶Çå¿Õ¾ÉÇøÓò
+			// æ ‡è¯†æ¸…ç©ºæ—§åŒºåŸŸ
 			MarkNeedClearRect(rctOld);
 		}
 		else
@@ -66,7 +66,7 @@ namespace HiEasyX
 		m_bRedraw = true;
 		m_bRender = true;
 
-		// ÖØ»æºó£¬äÖÈ¾Ê±Ò²ÒªäÖÈ¾×Ó¿Ø¼ş£¬·ñÔò»á¸²¸Ç
+		// é‡ç»˜åï¼Œæ¸²æŸ“æ—¶ä¹Ÿè¦æ¸²æŸ“å­æ§ä»¶ï¼Œå¦åˆ™ä¼šè¦†ç›–
 		for (auto& child : m_listChild)
 			child->m_bRender = true;
 	}
@@ -141,12 +141,12 @@ namespace HiEasyX
 	{
 		m_bVisible = bVisible;
 
-		// ÉèÎª¿É¼ûÊ±ÖØĞÂäÖÈ¾
+		// è®¾ä¸ºå¯è§æ—¶é‡æ–°æ¸²æŸ“
 		if (m_bVisible)
 		{
 			m_bRender = true;
 		}
-		// ÉèÎª²»¿É¼ûÊ±Çå³ı
+		// è®¾ä¸ºä¸å¯è§æ—¶æ¸…é™¤
 		else
 		{
 			MarkNeedClearRect(m_rct);
@@ -278,13 +278,13 @@ namespace HiEasyX
 
 	void ControlBase::Render(Canvas* dst, RECT* pRct, int* pCount)
 	{
-		// µ±Ç°¿Ø¼ş»ñÈ¡µ½µÄÖØ»æ¾ØĞÎ¼ÇÂ¼
-		size_t size = m_bRender ? 1 : GetChildCount();	// Èô×ÔÉíĞèÒª»æÖÆ£¬ÔòÖ»ĞèÒª¼ÇÂ¼Ò»¸ö¾ØĞÎ
+		// å½“å‰æ§ä»¶è·å–åˆ°çš„é‡ç»˜çŸ©å½¢è®°å½•
+		size_t size = m_bRender ? 1 : GetChildCount();	// è‹¥è‡ªèº«éœ€è¦ç»˜åˆ¶ï¼Œåˆ™åªéœ€è¦è®°å½•ä¸€ä¸ªçŸ©å½¢
 		RECT* my_rct = new RECT[size];
-		int my_count = 0;								// µ±Ç°¿Ø¼ş»ñÈ¡µ½µÄÖØ»æÇøÓòÊıÁ¿Í³¼Æ
+		int my_count = 0;								// å½“å‰æ§ä»¶è·å–åˆ°çš„é‡ç»˜åŒºåŸŸæ•°é‡ç»Ÿè®¡
 
-		// Îªµ±Ç°¿Ø¼şµÄ×Ó¿Ø¼şÖ´ĞĞÇå³ıÈÎÎñ
-		// ±ØĞëÔÚ Render Ç°Ö´ĞĞ£¬·ñÔò¿ÉÄÜ¸²¸ÇĞ§¹û
+		// ä¸ºå½“å‰æ§ä»¶çš„å­æ§ä»¶æ‰§è¡Œæ¸…é™¤ä»»åŠ¡
+		// å¿…é¡»åœ¨ Render å‰æ‰§è¡Œï¼Œå¦åˆ™å¯èƒ½è¦†ç›–æ•ˆæœ
 		for (auto& child : m_listChild)
 		{
 			if (child->m_bClear)
@@ -298,16 +298,16 @@ namespace HiEasyX
 			}
 		}
 
-		// ¿Ø¼ş±ØĞë¿ÉÏÔÊ¾²ÅäÖÈ¾
+		// æ§ä»¶å¿…é¡»å¯æ˜¾ç¤ºæ‰æ¸²æŸ“
 		if (m_bVisible)
 		{
-			// ×Ó¿Ø¼ş¿ÉÄÜºÜ¶à£¬¿ªÆôÅúÁ¿»æÖÆ
+			// å­æ§ä»¶å¯èƒ½å¾ˆå¤šï¼Œå¼€å¯æ‰¹é‡ç»˜åˆ¶
 			m_canvas.BeginBatchDrawing();
 
-			// Èç¹û×ÔÉíĞèÒªäÖÈ¾£¬ÔòÖ»ĞèÒª¼ÇÂ¼×ÔÉí¾ØĞÎ
+			// å¦‚æœè‡ªèº«éœ€è¦æ¸²æŸ“ï¼Œåˆ™åªéœ€è¦è®°å½•è‡ªèº«çŸ©å½¢
 			if (m_bRender || m_bAlwaysRedrawAndRender)
 			{
-				// ×Ó¿Ø¼şÏÈ»æÖÆµ½´Ë¿Ø¼ş»­²¼ÉÏ£¬ÔÙ»æÖÆµ½ dst
+				// å­æ§ä»¶å…ˆç»˜åˆ¶åˆ°æ­¤æ§ä»¶ç”»å¸ƒä¸Šï¼Œå†ç»˜åˆ¶åˆ° dst
 				for (auto& child : m_listChild)
 					child->Render(&m_canvas);
 
@@ -317,7 +317,7 @@ namespace HiEasyX
 					m_bRender = false;
 			}
 
-			// Èô×ÔÉí²»äÖÈ¾£¬Ôò±ØĞë¼ÇÂ¼×Ó¿Ø¼şäÖÈ¾ÇøÓò
+			// è‹¥è‡ªèº«ä¸æ¸²æŸ“ï¼Œåˆ™å¿…é¡»è®°å½•å­æ§ä»¶æ¸²æŸ“åŒºåŸŸ
 			else
 			{
 				for (auto& child : m_listChild)
@@ -328,7 +328,7 @@ namespace HiEasyX
 
 			m_canvas.EndBatchDrawing();
 
-			// äÖÈ¾ÓĞ¸üĞÂµÄÇøÓò
+			// æ¸²æŸ“æœ‰æ›´æ–°çš„åŒºåŸŸ
 			for (int i = 0; i < my_count; i++)
 			{
 				dst->PutImageIn_Alpha(
@@ -339,7 +339,7 @@ namespace HiEasyX
 				);
 			}
 
-			// ÎªÁË·µ»ØÇøÓòĞÅÏ¢¸ø¸¸¿Ø¼ş£¬ĞèÒª×ª»»ÇøÓò×ø±ê²Î¿¼Ïµ
+			// ä¸ºäº†è¿”å›åŒºåŸŸä¿¡æ¯ç»™çˆ¶æ§ä»¶ï¼Œéœ€è¦è½¬æ¢åŒºåŸŸåæ ‡å‚è€ƒç³»
 			if (pRct)
 			{
 				for (int i = 0; i < my_count; i++)
@@ -419,13 +419,13 @@ namespace HiEasyX
 		{
 			TransformMessage(msg);
 
-			// ±êÊ¶¸ÃÏûÏ¢ÊÇ·ñÖµµÃÖØ»æ
+			// æ ‡è¯†è¯¥æ¶ˆæ¯æ˜¯å¦å€¼å¾—é‡ç»˜
 			bool msg_worth_redraw = false;
 
-			// Êó±êÔÚÇøÓòÄÚ
+			// é¼ æ ‡åœ¨åŒºåŸŸå†…
 			if (IsInRect(msg.x, msg.y, { 0,0,GetWidth(),GetHeight() }))
 			{
-				// Êó±êÒÆÈë
+				// é¼ æ ‡ç§»å…¥
 				if (!m_bHovered)
 				{
 					m_bHovered = true;
@@ -474,10 +474,10 @@ namespace HiEasyX
 				msg_worth_redraw = true;
 			}
 
-			// Êó±ê²»ÔÚÇøÓòÄÚ
+			// é¼ æ ‡ä¸åœ¨åŒºåŸŸå†…
 			else
 			{
-				// ÒÆ³ö
+				// ç§»å‡º
 				if (m_bHovered)
 				{
 					m_bHovered = false;
@@ -486,7 +486,7 @@ namespace HiEasyX
 					msg_worth_redraw = true;
 				}
 
-				// Àë¿ªÇøÓò£¬°´ÏÂÊ§Ğ§
+				// ç¦»å¼€åŒºåŸŸï¼ŒæŒ‰ä¸‹å¤±æ•ˆ
 				if (m_bPressed)
 				{
 					m_bPressed = false;
@@ -518,7 +518,7 @@ namespace HiEasyX
 				}
 			}
 
-			// Ä¬ÈÏÖØ»æ£¬ÇÒÂú×ãÌõ¼ş
+			// é»˜è®¤é‡ç»˜ï¼Œä¸”æ»¡è¶³æ¡ä»¶
 			if (m_bAutoRedrawWhenReceiveMsg && msg_worth_redraw)
 			{
 				MarkNeedRedrawAndRender();

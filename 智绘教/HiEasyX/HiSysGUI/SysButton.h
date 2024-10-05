@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	SysButton.h
- * @brief	HiSysGUI ¿Ø¼ş·ÖÖ§£º°´Å¥
+ * @brief	HiSysGUI æ§ä»¶åˆ†æ”¯ï¼šæŒ‰é’®
  * @author	huidong
 */
 
@@ -13,7 +13,7 @@
 namespace HiEasyX
 {
 	/**
-	 * @brief ÏµÍ³°´Å¥¿Ø¼ş
+	 * @brief ç³»ç»ŸæŒ‰é’®æ§ä»¶
 	*/
 	class SysButton : public SysControlBase
 	{
@@ -40,30 +40,30 @@ namespace HiEasyX
 		LRESULT UpdateMessage(UINT msg, WPARAM wParam, LPARAM lParam, bool& bRet) override;
 
 		/**
-		 * @brief ×¢²áµã»÷ÏûÏ¢
-		 * @param[in] pFunc ÏûÏ¢´¦Àíº¯Êı
+		 * @brief æ³¨å†Œç‚¹å‡»æ¶ˆæ¯
+		 * @param[in] pFunc æ¶ˆæ¯å¤„ç†å‡½æ•°
 		*/
 		void RegisterMessage(void (*pFunc)());
 
 		/**
-		 * @brief ÉèÖÃÍ¼Æ¬
-		 * @param[in] enable		ÊÇ·ñÆôÓÃ°´Å¥Í¼Æ¬
-		 * @param[in] img			Í¼Æ¬
-		 * @param[in] reserve_text	ÊÇ·ñ±£Áô°´Å¥ÖĞµÄÎÄ×Ö
+		 * @brief è®¾ç½®å›¾ç‰‡
+		 * @param[in] enable		æ˜¯å¦å¯ç”¨æŒ‰é’®å›¾ç‰‡
+		 * @param[in] img			å›¾ç‰‡
+		 * @param[in] reserve_text	æ˜¯å¦ä¿ç•™æŒ‰é’®ä¸­çš„æ–‡å­—
 		*/
 		void Image(bool enable, IMAGE* img = nullptr, bool reserve_text = false);
 
 		/**
-		 * @brief »ñÈ¡µã»÷´ÎÊı
+		 * @brief è·å–ç‚¹å‡»æ¬¡æ•°
 		*/
 		int GetClickCount();
 
 		/**
 		 * @brief <pre>
-		 *		ÅĞ¶ÏÊÇ·ñµã»÷°´¼ü
+		 *		åˆ¤æ–­æ˜¯å¦ç‚¹å‡»æŒ‰é”®
 		 * 
-		 *	±¸×¢£º
-		 *		½¨ÒéÊ¹ÓÃ GetClickCount£¬Ê¹ÓÃ´Ëº¯Êı¿ÉÄÜ¶ªÊ§µã»÷´ÎÊıĞÅÏ¢
+		 *	å¤‡æ³¨ï¼š
+		 *		å»ºè®®ä½¿ç”¨ GetClickCountï¼Œä½¿ç”¨æ­¤å‡½æ•°å¯èƒ½ä¸¢å¤±ç‚¹å‡»æ¬¡æ•°ä¿¡æ¯
 		 * </pre>
 		*/
 		bool IsClicked();

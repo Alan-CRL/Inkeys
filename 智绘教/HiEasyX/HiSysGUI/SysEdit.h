@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	SysEdit.h
- * @brief	HiSysGUI ¿Ø¼þ·ÖÖ§£ºÊäÈë¿ò
+ * @brief	HiSysGUI æŽ§ä»¶åˆ†æ”¯ï¼šè¾“å…¥æ¡†
  * @author	huidong
 */
 
@@ -13,24 +13,24 @@
 namespace HiEasyX
 {
 	/**
-	 * @brief ÏµÍ³ÊäÈë¿ò¿Ø¼þ
+	 * @brief ç³»ç»Ÿè¾“å…¥æ¡†æŽ§ä»¶
 	*/
 	class SysEdit : public SysControlBase
 	{
 	private:
 
 		/**
-		 * @brief ±à¼­¿òÊôÐÔ
+		 * @brief ç¼–è¾‘æ¡†å±žæ€§
 		*/
 		struct Property
 		{
-			bool left_align = true;			///< ÎÄ×Ö×ó¶ÔÆë
-			bool right_align = false;		///< ÎÄ×ÖÓÒ¶ÔÆë
-			bool uppercase = false;			///< ÊäÈëÄÚÈÝ×ª´óÐ´
-			bool lowercase = false;			///< ÊäÈëÄÚÈÝ×ªÐ¡Ð´
-			bool password = false;			///< ÃÜÂë¿ò
-			bool read_only = false;			///< Ö»¶Á
-			bool number_only = false;		///< ½öÊý×ÖÊäÈë
+			bool left_align = true;			///< æ–‡å­—å·¦å¯¹é½
+			bool right_align = false;		///< æ–‡å­—å³å¯¹é½
+			bool uppercase = false;			///< è¾“å…¥å†…å®¹è½¬å¤§å†™
+			bool lowercase = false;			///< è¾“å…¥å†…å®¹è½¬å°å†™
+			bool password = false;			///< å¯†ç æ¡†
+			bool read_only = false;			///< åªè¯»
+			bool number_only = false;		///< ä»…æ•°å­—è¾“å…¥
 		} m_property;
 
 		long m_lBasicStyle = WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER;
@@ -49,7 +49,7 @@ namespace HiEasyX
 		HBRUSH hBk = nullptr;
 
 		/**
-		 * @brief Ó¦ÓÃÉèÖÃµÄÊôÐÔ
+		 * @brief åº”ç”¨è®¾ç½®çš„å±žæ€§
 		*/
 		void ApplyProperty();
 
@@ -60,16 +60,16 @@ namespace HiEasyX
 	public:
 
 		/**
-		 * @brief ±à¼­¿òÔ¤ÉèÑùÊ½£¨±ØÐëÔÚ´´½¨Ç°ÉèÖÃ²ÅÓÐÐ§£©
+		 * @brief ç¼–è¾‘æ¡†é¢„è®¾æ ·å¼ï¼ˆå¿…é¡»åœ¨åˆ›å»ºå‰è®¾ç½®æ‰æœ‰æ•ˆï¼‰
 		*/
 		struct PreStyle
 		{
-			bool multiline = false;			///< ¶àÐÐÎÄ±¾
-			bool center_text = false;		///< ÎÄ±¾¾ÓÖÐ
-			bool vscroll = false;			///< ÓµÓÐ´¹Ö±¹ö¶¯Ìõ
-			bool auto_vscroll = false;		///< ×Ô¶¯´¹Ö±¹ö¶¯
-			bool hscroll = false;			///< ÓµÓÐË®Æ½¹ö¶¯Ìõ
-			bool auto_hscroll = false;		///< ×Ô¶¯Ë®Æ½¹ö¶¯
+			bool multiline = false;			///< å¤šè¡Œæ–‡æœ¬
+			bool center_text = false;		///< æ–‡æœ¬å±…ä¸­
+			bool vscroll = false;			///< æ‹¥æœ‰åž‚ç›´æ»šåŠ¨æ¡
+			bool auto_vscroll = false;		///< è‡ªåŠ¨åž‚ç›´æ»šåŠ¨
+			bool hscroll = false;			///< æ‹¥æœ‰æ°´å¹³æ»šåŠ¨æ¡
+			bool auto_hscroll = false;		///< è‡ªåŠ¨æ°´å¹³æ»šåŠ¨
 		};
 
 		SysEdit();
@@ -85,15 +85,15 @@ namespace HiEasyX
 		~SysEdit() override;
 
 		/**
-		 * @brief ÔÚ´´½¨¿Ø¼þÇ°Ô¤Éè¿Ø¼þÑùÊ½
+		 * @brief åœ¨åˆ›å»ºæŽ§ä»¶å‰é¢„è®¾æŽ§ä»¶æ ·å¼
 		*/
 		void PreSetStyle(PreStyle pre_style);
 
 		LRESULT UpdateMessage(UINT msg, WPARAM wParam, LPARAM lParam, bool& bRet) override;
 
 		/**
-		 * @brief ×¢²áÊäÈëÏûÏ¢
-		 * @param[in] pFunc ÏûÏ¢ÏìÓ¦º¯Êý
+		 * @brief æ³¨å†Œè¾“å…¥æ¶ˆæ¯
+		 * @param[in] pFunc æ¶ˆæ¯å“åº”å‡½æ•°
 		*/
 #ifdef UNICODE
 		void RegisterMessage(void (*pFunc)(std::wstring wstrText));
@@ -102,107 +102,107 @@ namespace HiEasyX
 #endif
 
 		/**
-		 * @brief ÉèÖÃÎÄ±¾ÓÒ¶ÔÆë
-		 * @param[in] enable ÊÇ·ñÆôÓÃÓÒ¶ÔÆë
+		 * @brief è®¾ç½®æ–‡æœ¬å³å¯¹é½
+		 * @param[in] enable æ˜¯å¦å¯ç”¨å³å¯¹é½
 		*/
 		void RightAlign(bool enable);
 
 		/**
-		 * @brief ×Ô¶¯×ª´óÐ´
-		 * @param[in] enable ÊÇ·ñÆôÓÃ×ª´óÐ´
+		 * @brief è‡ªåŠ¨è½¬å¤§å†™
+		 * @param[in] enable æ˜¯å¦å¯ç”¨è½¬å¤§å†™
 		*/
 		void Uppercase(bool enable);
 
 		/**
-		 * @brief ×Ô¶¯×ªÐ¡Ð´
-		 * @param[in] enable ÊÇ·ñÆôÓÃ×ªÐ¡Ð´
+		 * @brief è‡ªåŠ¨è½¬å°å†™
+		 * @param[in] enable æ˜¯å¦å¯ç”¨è½¬å°å†™
 		*/
 		void Lowercase(bool enable);
 
 		/**
-		 * @brief ÉèÖÃÃÜÂë¿ò
-		 * @param[in] enable ÊÇ·ñÆôÓÃÃÜÂë¿ò
+		 * @brief è®¾ç½®å¯†ç æ¡†
+		 * @param[in] enable æ˜¯å¦å¯ç”¨å¯†ç æ¡†
 		*/
 		void Password(bool enable);
 
 		/**
-		 * @brief ÉèÖÃÖ»¶Á
-		 * @param[in] enable ÊÇ·ñÆôÓÃÖ»¶Á
+		 * @brief è®¾ç½®åªè¯»
+		 * @param[in] enable æ˜¯å¦å¯ç”¨åªè¯»
 		*/
 		void ReadOnly(bool enable);
 
 		/**
-		 * @brief ÉèÖÃ½öÊý×Ö
-		 * @param[in] enable ÊÇ·ñÆôÓÃ½öÊý×ÖÊäÈë
+		 * @brief è®¾ç½®ä»…æ•°å­—
+		 * @param[in] enable æ˜¯å¦å¯ç”¨ä»…æ•°å­—è¾“å…¥
 		*/
 		void NumberOnly(bool enable);
 
 		/**
-		 * @brief »ñÈ¡×î´óÊäÈë³¤¶È
+		 * @brief èŽ·å–æœ€å¤§è¾“å…¥é•¿åº¦
 		*/
 		int GetMaxTextLength();
 
 		/**
-		 * @brief ÏÞÖÆ×î´óÊäÈë³¤¶È
-		 * @param[in] len ×î´óÊäÈë³¤¶È
+		 * @brief é™åˆ¶æœ€å¤§è¾“å…¥é•¿åº¦
+		 * @param[in] len æœ€å¤§è¾“å…¥é•¿åº¦
 		*/
 		void SetMaxTextLength(int len);
 
 		/**
-		 * @brief ÉèÖÃ¿Ø¼þ±³¾°É«
-		 * @param[in] color ¿Ø¼þ±³¾°É«
+		 * @brief è®¾ç½®æŽ§ä»¶èƒŒæ™¯è‰²
+		 * @param[in] color æŽ§ä»¶èƒŒæ™¯è‰²
 		*/
 		void SetBkColor(COLORREF color);
 
 		/**
-		 * @brief ÉèÖÃÎÄ±¾±³¾°É«
-		 * @param[in] color ÎÄ±¾±³¾°É«
+		 * @brief è®¾ç½®æ–‡æœ¬èƒŒæ™¯è‰²
+		 * @param[in] color æ–‡æœ¬èƒŒæ™¯è‰²
 		*/
 		void SetTextBkColor(COLORREF color);
 
 		/**
-		 * @brief ÉèÖÃÎÄ±¾ÑÕÉ«
-		 * @param[in] color ÎÄ±¾ÑÕÉ«
+		 * @brief è®¾ç½®æ–‡æœ¬é¢œè‰²
+		 * @param[in] color æ–‡æœ¬é¢œè‰²
 		*/
 		void SetTextColor(COLORREF color);
 
 		/**
-		 * @brief »ñÈ¡¹â±êÑ¡ÔñÇøÓò
-		 * @param[out] begin	¹â±êÆðÊ¼Î»ÖÃ
-		 * @param[out] end		Ñ¡Ôñ½áÊøÎ»ÖÃ
+		 * @brief èŽ·å–å…‰æ ‡é€‰æ‹©åŒºåŸŸ
+		 * @param[out] begin	å…‰æ ‡èµ·å§‹ä½ç½®
+		 * @param[out] end		é€‰æ‹©ç»“æŸä½ç½®
 		*/
 		void GetSel(int* begin, int* end);
 
 		/**
-		 * @brief ÉèÖÃ¹â±êÑ¡ÔñÇøÓò
-		 * @param[in] begin 	¹â±êÆðÊ¼Î»ÖÃ
-		 * @param[in] end 		Ñ¡Ôñ½áÊøÎ»ÖÃ£¨Îª -1 ¿É±íÊ¾½áÎ²£©
+		 * @brief è®¾ç½®å…‰æ ‡é€‰æ‹©åŒºåŸŸ
+		 * @param[in] begin 	å…‰æ ‡èµ·å§‹ä½ç½®
+		 * @param[in] end 		é€‰æ‹©ç»“æŸä½ç½®ï¼ˆä¸º -1 å¯è¡¨ç¤ºç»“å°¾ï¼‰
 		*/
 		void SetSel(int begin, int end);
 
 		/**
-		 * @brief ¸´ÖÆÑ¡ÖÐµÄÎÄ±¾
+		 * @brief å¤åˆ¶é€‰ä¸­çš„æ–‡æœ¬
 		*/
 		void Copy();
 
 		/**
-		 * @brief ¼ôÇÐÑ¡ÖÐµÄÎÄ±¾
+		 * @brief å‰ªåˆ‡é€‰ä¸­çš„æ–‡æœ¬
 		*/
 		void Cut();
 
 		/**
-		 * @brief ´Ó¼ôÇÐ°åð¤ÌùÎÄ±¾µ½µ±Ç°Î»ÖÃ
+		 * @brief ä»Žå‰ªåˆ‡æ¿é»è´´æ–‡æœ¬åˆ°å½“å‰ä½ç½®
 		*/
 		void Paste();
 
 		/**
-		 * @brief É¾³ýÑ¡ÖÐµÄÎÄ±¾
+		 * @brief åˆ é™¤é€‰ä¸­çš„æ–‡æœ¬
 		*/
 		void Delete();
 
 		/**
-		 * @brief Ìæ»»Ñ¡ÖÐµÄÎÄ±¾
-		 * @param[in] wstrText Ìæ»»ÎÄ±¾
+		 * @brief æ›¿æ¢é€‰ä¸­çš„æ–‡æœ¬
+		 * @param[in] wstrText æ›¿æ¢æ–‡æœ¬
 		*/
 #ifdef UNICODE
 		void Replace(std::wstring wstrText);
@@ -211,7 +211,7 @@ namespace HiEasyX
 #endif
 
 		/**
-		 * @brief ÅÐ¶ÏÊÇ·ñ±»±à¼­
+		 * @brief åˆ¤æ–­æ˜¯å¦è¢«ç¼–è¾‘
 		*/
 		bool IsEdited();
 	};

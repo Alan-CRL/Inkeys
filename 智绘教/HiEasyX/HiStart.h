@@ -1,8 +1,8 @@
-/**
+ï»¿/**
  * @file	HiStart.h
- * @brief	HiEasyX ¿âµÄ¿ªÊ¼½çÃæäÖÈ¾Ä£¿é 2.0
- * @note	¿ª³¡¶¯»­¸Ä±à×ÔÂıÑòÑòµÄ¡¶ÒÕÊõ×ÖÏµÁĞ£º±ù·âµÄ EasyX¡·
- * @author	ÂıÑòÑò <yw80@qq.com>£¬1.0 ÓÉ huidong£¨¸Ä±à£©£¬2.0 ÓÉ Alan-CRL£¨¸Ä±à£©
+ * @brief	HiEasyX åº“çš„å¼€å§‹ç•Œé¢æ¸²æŸ“æ¨¡å— 2.0
+ * @note	å¼€åœºåŠ¨ç”»æ”¹ç¼–è‡ªæ…¢ç¾Šç¾Šçš„ã€Šè‰ºæœ¯å­—ç³»åˆ—ï¼šå†°å°çš„ EasyXã€‹
+ * @author	æ…¢ç¾Šç¾Š <yw80@qq.com>ï¼Œ1.0 ç”± huidongï¼ˆæ”¹ç¼–ï¼‰ï¼Œ2.0 ç”± Alan-CRLï¼ˆæ”¹ç¼–ï¼‰
 */
 
 #pragma once
@@ -11,7 +11,7 @@
 namespace HiEasyX
 {
 	/**
-	 * @brief äÖÈ¾¿ª³¡¶¯»­
+	 * @brief æ¸²æŸ“å¼€åœºåŠ¨ç”»
 	*/
 	void RenderStartScene(HWND hWnd, int w, int h, int nPreCmdShow);
 }

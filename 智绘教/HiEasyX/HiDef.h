@@ -1,17 +1,17 @@
-/**
+﻿/**
  * @file	HiDef.h
- * @brief	HiEasyX ������ö���
+ * @brief	HiEasyX 库的配置定义
  * @author	huidong
 */
 
-// �汾����
+// 版本定义
 #define _HIEASYX_VER_STR_	_T("Ver 0.4.1")
 
-// ʹ��ԭ�� EasyX ���ڣ�Ĭ��Ϊ HiWindow��
+// 使用原生 EasyX 窗口（默认为 HiWindow）
 //#define _NATIVE_EASYX_
 
-// ȡ�� Release ģʽ�ĳ�����������
+// 取消 Release 模式的程序启动动画
 #define _NO_START_ANIMATION_
 
-// ȡ��ϵͳ�ؼ����ִ���ʽ������ MSVC �������¿������ã�
+// 取消系统控件的现代样式（仅在 MSVC 编译器下可以设置）
 //#define _NO_MORDEN_SYSCTRL_

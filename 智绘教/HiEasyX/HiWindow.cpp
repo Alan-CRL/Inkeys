@@ -1,4 +1,4 @@
-#include "HiWindow.h"
+ï»¿#include "HiWindow.h"
 
 #include "HiMacro.h"
 #include "HiIcon.h"
@@ -9,64 +9,64 @@
 
 #include <chrono>
 
-// Ô¤ÁôÏûÏ¢¿Õ¼ä
+// é¢„ç•™æ¶ˆæ¯ç©ºé—´
 #define MSG_RESERVE_SIZE		100
 
-// Ô¤Áô¿Ø¼ş¿Õ¼ä
+// é¢„ç•™æ§ä»¶ç©ºé—´
 #define SYSCTRL_RESERVE_SIZE	100
 
 namespace HiEasyX
 {
-	////////////****** È«¾Ö±äÁ¿ ******////////////
+	////////////****** å…¨å±€å˜é‡ ******////////////
 
-	WNDCLASSEX				g_WndClassEx;								///< ´°¿ÚÀà
-	TCHAR					g_lpszClassName[] = _T("HiEasyX");			///< ´°¿ÚÀàÃû
-	ScreenSize				g_screenSize;								///< ÏÔÊ¾Æ÷ĞÅÏ¢
-	HWND					g_hConsole;									///< ¿ØÖÆÌ¨¾ä±ú
-	HINSTANCE				g_hInstance = GetModuleHandle(0);			///< ³ÌĞòÊµÀı
+	WNDCLASSEX				g_WndClassEx;								///< çª—å£ç±»
+	TCHAR					g_lpszClassName[] = _T("HiEasyX");			///< çª—å£ç±»å
+	ScreenSize				g_screenSize;								///< æ˜¾ç¤ºå™¨ä¿¡æ¯
+	HWND					g_hConsole;									///< æ§åˆ¶å°å¥æŸ„
+	HINSTANCE				g_hInstance = GetModuleHandle(0);			///< ç¨‹åºå®ä¾‹
 
 	std::deque<std::shared_mutex> g_vecWindows_vecMessage_sm;
-	std::vector<EasyWindow> g_vecWindows;								///< ´°¿Ú±í£¨¹ÜÀí¶à´°¿Ú£©
+	std::vector<EasyWindow> g_vecWindows;								///< çª—å£è¡¨ï¼ˆç®¡ç†å¤šçª—å£ï¼‰
 
-	int						g_nFocusWindowIndex = NO_WINDOW_INDEX;		///< µ±Ç°²Ù×÷½¹µã´°¿ÚË÷Òı
+	int						g_nFocusWindowIndex = NO_WINDOW_INDEX;		///< å½“å‰æ“ä½œç„¦ç‚¹çª—å£ç´¢å¼•
 
-	bool					g_isInTask = false;							///< ±ê¼Ç´¦ÓÚÈÎÎñÖĞ
+	bool					g_isInTask = false;							///< æ ‡è®°å¤„äºä»»åŠ¡ä¸­
 
-	HICON					g_hIconDefault;								///< Ä¬ÈÏ³ÌĞòÍ¼±ê
-	LPCTSTR					g_lpszCustomIcon = nullptr;					///< ×Ô¶¨Òå³ÌĞòÍ¼±ê×ÊÔ´£¬Îª¿Õ±íÊ¾²»Ê¹ÓÃ
+	HICON					g_hIconDefault;								///< é»˜è®¤ç¨‹åºå›¾æ ‡
+	LPCTSTR					g_lpszCustomIcon = nullptr;					///< è‡ªå®šä¹‰ç¨‹åºå›¾æ ‡èµ„æºï¼Œä¸ºç©ºè¡¨ç¤ºä¸ä½¿ç”¨
 	LPCTSTR					g_lpszCustomIconSm = nullptr;
-	HICON					g_hCustomIcon;								///< ×Ô¶¨Òå³ÌĞòÍ¼±ê
+	HICON					g_hCustomIcon;								///< è‡ªå®šä¹‰ç¨‹åºå›¾æ ‡
 	HICON					g_hCustomIconSm;
 
-	bool					g_isPreStyle = false;						///< ÊÇ·ñÔ¤Éè´°¿ÚÑùÊ½
-	bool					g_isPreStyleEx = false;						///< ÊÇ·ñÔ¤Éè´°¿ÚÀ©Õ¹ÑùÊ½
-	bool					g_isPrePos = false;							///< ÊÇ·ñÔ¤Éè´°¿ÚÎ»ÖÃ
-	bool					g_isPreShowState = false;					///< ÊÇ·ñÔ¤Éè´°¿ÚÏÔÊ¾×´Ì¬
-	long					g_lPreStyle;								///< ´´½¨´°¿ÚÇ°µÄÔ¤ÉèÑùÊ½
-	long					g_lPreStyleEx;								///< ´´½¨´°¿ÚÇ°µÄÔ¤ÉèÀ©Õ¹ÑùÊ½
-	POINT					g_pPrePos;									///< ´´½¨´°¿ÚÇ°µÄÔ¤Éè´°¿ÚÎ»ÖÃ
-	int						g_nPreCmdShow;								///< ´´½¨´°¿ÚÇ°µÄÔ¤ÉèÏÔÊ¾×´Ì¬
+	bool					g_isPreStyle = false;						///< æ˜¯å¦é¢„è®¾çª—å£æ ·å¼
+	bool					g_isPreStyleEx = false;						///< æ˜¯å¦é¢„è®¾çª—å£æ‰©å±•æ ·å¼
+	bool					g_isPrePos = false;							///< æ˜¯å¦é¢„è®¾çª—å£ä½ç½®
+	bool					g_isPreShowState = false;					///< æ˜¯å¦é¢„è®¾çª—å£æ˜¾ç¤ºçŠ¶æ€
+	long					g_lPreStyle;								///< åˆ›å»ºçª—å£å‰çš„é¢„è®¾æ ·å¼
+	long					g_lPreStyleEx;								///< åˆ›å»ºçª—å£å‰çš„é¢„è®¾æ‰©å±•æ ·å¼
+	POINT					g_pPrePos;									///< åˆ›å»ºçª—å£å‰çš„é¢„è®¾çª—å£ä½ç½®
+	int						g_nPreCmdShow;								///< åˆ›å»ºçª—å£å‰çš„é¢„è®¾æ˜¾ç¤ºçŠ¶æ€
 
-	DrawMode				g_fDrawMode = DM_Normal;					///< È«¾Ö»æÖÆÄ£Ê½
-	bool					g_bAutoFlush = true;						///< ÊÇ·ñ×Ô¶¯Ë¢ĞÂË«»º³å
+	DrawMode				g_fDrawMode = DM_Normal;					///< å…¨å±€ç»˜åˆ¶æ¨¡å¼
+	bool					g_bAutoFlush = true;						///< æ˜¯å¦è‡ªåŠ¨åˆ·æ–°åŒç¼“å†²
 
-	UINT					g_uWM_TASKBARCREATED;						///< ÏµÍ³ÈÎÎñÀ¸ÏûÏ¢´úÂë
+	UINT					g_uWM_TASKBARCREATED;						///< ç³»ç»Ÿä»»åŠ¡æ æ¶ˆæ¯ä»£ç 
 
-	////////////****** º¯Êı¶¨Òå ******////////////
+	////////////****** å‡½æ•°å®šä¹‰ ******////////////
 
-	// ¼ìÑé´°¿ÚË÷ÒıÊÇ·ñºÏ·¨
+	// æ£€éªŒçª—å£ç´¢å¼•æ˜¯å¦åˆæ³•
 	bool IsValidWindowIndex(int index)
 	{
 		return index >= 0 && index < (int)g_vecWindows.size();
 	}
 
-	// µ±Ç°ÊÇ·ñ´æÔÚ²Ù×÷½¹µã´°¿Ú£¨Èô´æÔÚ£¬ÔòÒ»¶¨ÊÇ»î´°¿Ú£©
+	// å½“å‰æ˜¯å¦å­˜åœ¨æ“ä½œç„¦ç‚¹çª—å£ï¼ˆè‹¥å­˜åœ¨ï¼Œåˆ™ä¸€å®šæ˜¯æ´»çª—å£ï¼‰
 	bool IsFocusWindowExisted()
 	{
 		return IsValidWindowIndex(g_nFocusWindowIndex);
 	}
 
-	// »ñÈ¡µ±Ç°²Ù×÷½¹µã´°¿Ú
+	// è·å–å½“å‰æ“ä½œç„¦ç‚¹çª—å£
 	EasyWindow& GetFocusWindow()
 	{
 		static EasyWindow wndEmpty;
@@ -81,9 +81,9 @@ namespace HiEasyX
 		}
 	}
 
-	// Í¨¹ı¾ä±ú»ñµÃ´Ë´°¿ÚÔÚ´°¿Ú¼ÇÂ¼±íÖĞµÄË÷Òı
-	// ´«Èë nullptr ´ú±íµ±Ç°»î¶¯´°¿Ú
-	// Î´ÕÒµ½·µ»Ø NO_WINDOW_INDEX
+	// é€šè¿‡å¥æŸ„è·å¾—æ­¤çª—å£åœ¨çª—å£è®°å½•è¡¨ä¸­çš„ç´¢å¼•
+	// ä¼ å…¥ nullptr ä»£è¡¨å½“å‰æ´»åŠ¨çª—å£
+	// æœªæ‰¾åˆ°è¿”å› NO_WINDOW_INDEX
 	int GetWindowIndex(HWND hWnd, bool flag = false)
 	{
 		if (hWnd == nullptr)
@@ -137,10 +137,10 @@ namespace HiEasyX
 		return IsValidWindowIndex(index) && g_vecWindows[index].isAlive;
 	}
 
-	// µÈ´ı´°¿ÚÄÚ²¿ÏûÏ¢´¦ÀíÍê³É
+	// ç­‰å¾…çª—å£å†…éƒ¨æ¶ˆæ¯å¤„ç†å®Œæˆ
 	void WaitForProcessing(int index)
 	{
-		// ËÀ´°¿Ú¿ÉÄÜÕıÔÚÏú»Ù£¬¹Ê²»ÓÃ isAliveWindow
+		// æ­»çª—å£å¯èƒ½æ­£åœ¨é”€æ¯ï¼Œæ•…ä¸ç”¨ isAliveWindow
 		if (IsValidWindowIndex(index))
 		{
 			while (g_vecWindows[index].isBusyProcessing)
@@ -150,10 +150,10 @@ namespace HiEasyX
 		}
 	}
 
-	// ½« IMAGE ÄÚÈİ¸´ÖÆµ½ HDC ÉÏ
-	// pImg		Ô­Í¼Ïñ
-	// hdc		»æÖÆµÄ HDC
-	// rct		ÔÚ HDC ÉÏµÄ»æÖÆÇøÓò
+	// å°† IMAGE å†…å®¹å¤åˆ¶åˆ° HDC ä¸Š
+	// pImg		åŸå›¾åƒ
+	// hdc		ç»˜åˆ¶çš„ HDC
+	// rct		åœ¨ HDC ä¸Šçš„ç»˜åˆ¶åŒºåŸŸ
 	void CopyImageToHDC(IMAGE* pImg, HDC hdc, RECT rct)
 	{
 		//HDC hdc = GetDC(hWnd);
@@ -164,7 +164,7 @@ namespace HiEasyX
 
 	void WaitForTask(HWND hWnd)
 	{
-		// Î´ÉèÖÃ¾ä±úÊ±Ö»ĞèÒªµÈ´ı£¬ÈôÉèÖÃÁËÔòĞèÒªÅĞ¶Ï¸Ã¾ä±úÊÇ·ñ¶ÔÓ¦»î¶¯´°¿Ú
+		// æœªè®¾ç½®å¥æŸ„æ—¶åªéœ€è¦ç­‰å¾…ï¼Œè‹¥è®¾ç½®äº†åˆ™éœ€è¦åˆ¤æ–­è¯¥å¥æŸ„æ˜¯å¦å¯¹åº”æ´»åŠ¨çª—å£
 		if (!hWnd || (IsFocusWindowExisted() && GetFocusWindow().hWnd == hWnd))
 		{
 			while (g_isInTask)
@@ -174,7 +174,7 @@ namespace HiEasyX
 		}
 	}
 
-	// ÊÍ·Å´°¿ÚÄÚ´æ
+	// é‡Šæ”¾çª—å£å†…å­˜
 	void FreeWindow(int index)
 	{
 		if (!IsValidWindowIndex(index))
@@ -182,7 +182,7 @@ namespace HiEasyX
 			return;
 		}
 
-		// ÊÍ·Å»æÍ¼»º³å
+		// é‡Šæ”¾ç»˜å›¾ç¼“å†²
 		if (g_vecWindows[index].pImg)
 		{
 			delete g_vecWindows[index].pImg;
@@ -194,7 +194,7 @@ namespace HiEasyX
 			g_vecWindows[index].pBufferImg = nullptr;
 		}
 
-		// ÊÍ·ÅÏûÏ¢ÁĞ±íÄÚ´æ
+		// é‡Šæ”¾æ¶ˆæ¯åˆ—è¡¨å†…å­˜
 		std::unique_lock<std::shared_mutex> lg_vecWindows_vecMessage_sm(g_vecWindows_vecMessage_sm[index]);
 		std::vector<ExMessage>().swap(g_vecWindows[index].vecMessage);
 		lg_vecWindows_vecMessage_sm.unlock();
@@ -203,8 +203,8 @@ namespace HiEasyX
 		//PostQuitMessage(0);
 	}
 
-	// ´Ëº¯ÊıÓÃÓÚÄÚ²¿µ÷ÓÃ£¬°´´°¿ÚË÷Òı±ê¼Ç¹Ø±Õ´°¿Ú¡¢ÊÍ·ÅÄÚ´æ
-	// ÖØÒª£º´Ëº¯Êı½ö¿ÉÔÚ WndProc Ïß³ÌÖĞµ÷ÓÃ£¬·ñÔòÎŞ·¨¹Ø±Õ´°¿Ú
+	// æ­¤å‡½æ•°ç”¨äºå†…éƒ¨è°ƒç”¨ï¼ŒæŒ‰çª—å£ç´¢å¼•æ ‡è®°å…³é—­çª—å£ã€é‡Šæ”¾å†…å­˜
+	// é‡è¦ï¼šæ­¤å‡½æ•°ä»…å¯åœ¨ WndProc çº¿ç¨‹ä¸­è°ƒç”¨ï¼Œå¦åˆ™æ— æ³•å…³é—­çª—å£
 	void closegraph_win32(int index)
 	{
 		if (!IsAliveWindow(index))
@@ -212,53 +212,53 @@ namespace HiEasyX
 			return;
 		}
 
-		// ÏÈÉèÖÃ´°¿ÚËÀÍö£¬ÔÙ±êÊ¶Ã¦Âµ£¬µÈ´ıÈÎÎñ½áÊø
+		// å…ˆè®¾ç½®çª—å£æ­»äº¡ï¼Œå†æ ‡è¯†å¿™ç¢Œï¼Œç­‰å¾…ä»»åŠ¡ç»“æŸ
 		g_vecWindows[index].isAlive = false;
 		g_vecWindows[index].isBusyProcessing = true;
 		WaitForTask(g_vecWindows[index].hWnd);
 
-		// ÈôÒÑÉèÖÃ¸¸´°¿ÚÎªÄ£Ì¬´°¿Ú£¬ÔòĞèÒª½«¸¸´°¿Ú»Ö¸´Õı³£
+		// è‹¥å·²è®¾ç½®çˆ¶çª—å£ä¸ºæ¨¡æ€çª—å£ï¼Œåˆ™éœ€è¦å°†çˆ¶çª—å£æ¢å¤æ­£å¸¸
 		if (g_vecWindows[index].hParent != nullptr)
 		{
 			EnableWindow(g_vecWindows[index].hParent, true);
 			SetForegroundWindow(g_vecWindows[index].hParent);
 		}
 
-		// Ğ¶ÔØÍĞÅÌ
+		// å¸è½½æ‰˜ç›˜
 		DeleteTray(g_vecWindows[index].hWnd);
 
-		// Èç¹û»î¶¯´°¿Ú±»Ïú»Ù£¬ÔòĞèÒªÖØÖÃ»î¶¯´°¿ÚË÷Òı
+		// å¦‚æœæ´»åŠ¨çª—å£è¢«é”€æ¯ï¼Œåˆ™éœ€è¦é‡ç½®æ´»åŠ¨çª—å£ç´¢å¼•
 		if (index == g_nFocusWindowIndex)
 		{
 			g_nFocusWindowIndex = NO_WINDOW_INDEX;
 		}
 
-		// ÊÍ·Å´°¿ÚÄÚ´æ
+		// é‡Šæ”¾çª—å£å†…å­˜
 		FreeWindow(index);
 
-		// ¹Ø±ÕÃ¦Âµ±êÊ¶
+		// å…³é—­å¿™ç¢Œæ ‡è¯†
 		g_vecWindows[index].isBusyProcessing = false;
 
-		// Èç¹û¹Ø±Õ´Ë´°¿Úºó²»´æÔÚÈÎºÎ´°¿Ú
+		// å¦‚æœå…³é—­æ­¤çª—å£åä¸å­˜åœ¨ä»»ä½•çª—å£
 		if (!IsAnyWindow())
 		{
-			// ¹Ø±Õ GDI+ »æÍ¼»·¾³
+			// å…³é—­ GDI+ ç»˜å›¾ç¯å¢ƒ
 			Gdiplus_Shutdown();
 		}
 	}
 
-	// ´Ëº¯ÊıÓÃÓÚÍâ²¿µ÷ÓÃ£¬Ö»ÊÇÏòÄ¿±ê´°¿ÚÏß³Ì·¢ËÍ¹Ø±Õ´°¿ÚÏûÏ¢
+	// æ­¤å‡½æ•°ç”¨äºå¤–éƒ¨è°ƒç”¨ï¼Œåªæ˜¯å‘ç›®æ ‡çª—å£çº¿ç¨‹å‘é€å…³é—­çª—å£æ¶ˆæ¯
 	void closegraph_win32(HWND hWnd)
 	{
-		// ¹Ø±ÕÈ«²¿
+		// å…³é—­å…¨éƒ¨
 		if (hWnd == nullptr)
 		{
 			for (int i = 0; i < (int)g_vecWindows.size(); i++)
 			{
 				if (g_vecWindows[i].isAlive)
 				{
-					// ±ØĞë½»ÓÉÔ­Ïß³Ì DestroyWindow
-					// ·¢ËÍ WM_DESTROY Ê±ÌØÊâ±ê¼Ç wParam Îª 1£¬±íÊ¾³ÌĞòÃüÁîÏú»Ù´°¿Ú
+					// å¿…é¡»äº¤ç”±åŸçº¿ç¨‹ DestroyWindow
+					// å‘é€ WM_DESTROY æ—¶ç‰¹æ®Šæ ‡è®° wParam ä¸º 1ï¼Œè¡¨ç¤ºç¨‹åºå‘½ä»¤é”€æ¯çª—å£
 					SendMessage(g_vecWindows[i].hWnd, WM_DESTROY, 1, 0);
 				}
 			}
@@ -390,7 +390,7 @@ namespace HiEasyX
 		g_fDrawMode = mode;
 	}
 
-	// ÄÚ²¿º¯Êı£¬Ö±½Ó·¢ËÍÓÃ»§ÖØ»æÏûÏ¢
+	// å†…éƒ¨å‡½æ•°ï¼Œç›´æ¥å‘é€ç”¨æˆ·é‡ç»˜æ¶ˆæ¯
 	void SendUserRedrawMsg(HWND hWnd)
 	{
 		SendMessage(hWnd, WM_USER_REDRAW, 0, 0);
@@ -408,7 +408,7 @@ namespace HiEasyX
 			break;
 
 		case DM_Normal:
-			// Õâ¸öÌ«ÂıÁË
+			// è¿™ä¸ªå¤ªæ…¢äº†
 			//InvalidateRect(hWnd, nullptr, false);
 			SendUserRedrawMsg(hWnd);
 			break;
@@ -430,8 +430,8 @@ namespace HiEasyX
 		}
 	}
 
-	// ¸üĞÂ´°¿Ú»­²¼µÄË«»º³å
-	// rct ¸üĞÂÇøÓò£¨×ø±ê¶¼Îª 0 ±íÊ¾È«²¿ÇøÓò£©
+	// æ›´æ–°çª—å£ç”»å¸ƒçš„åŒç¼“å†²
+	// rct æ›´æ–°åŒºåŸŸï¼ˆåæ ‡éƒ½ä¸º 0 è¡¨ç¤ºå…¨éƒ¨åŒºåŸŸï¼‰
 	void FlushDrawing(int index, RECT rct = { 0 })
 	{
 		if (!IsAliveWindow(index))
@@ -442,14 +442,14 @@ namespace HiEasyX
 		int w = g_vecWindows[index].pImg->getwidth();
 		int h = g_vecWindows[index].pImg->getheight();
 
-		// ÊÇ·ñÈ«²¿¸üĞÂ
+		// æ˜¯å¦å…¨éƒ¨æ›´æ–°
 		bool isAllFlush = !(rct.left && rct.top && rct.right && rct.bottom);
 
-		// Ë«»º³åµÄÁ½²ã»­²¼
+		// åŒç¼“å†²çš„ä¸¤å±‚ç”»å¸ƒ
 		DWORD* dst = GetImageBuffer(g_vecWindows[index].pImg);
 		DWORD* src = GetImageBuffer(g_vecWindows[index].pBufferImg);
 
-		// ²¿·ÖÖØ»æÊ±£¬ĞŞÕıÖØ»æÇøÓò
+		// éƒ¨åˆ†é‡ç»˜æ—¶ï¼Œä¿®æ­£é‡ç»˜åŒºåŸŸ
 		RECT rctCorrected = rct;
 		if (!isAllFlush)
 		{
@@ -459,16 +459,16 @@ namespace HiEasyX
 			if (rct.bottom > h)		rctCorrected.bottom = h;
 		}
 
-		// ²»Ìø¹ıÏñËØµÄÄ£Ê½
+		// ä¸è·³è¿‡åƒç´ çš„æ¨¡å¼
 		if (g_vecWindows[index].nSkipPixels == 0)
 		{
-			// È«²¿¸üĞÂ
+			// å…¨éƒ¨æ›´æ–°
 			if (isAllFlush)
 			{
 				// fastest
 				memcpy(dst, src, sizeof(DWORD) * w * h);
 			}
-			// ²¿·Ö¸üĞÂ
+			// éƒ¨åˆ†æ›´æ–°
 			else
 			{
 				for (int x = rctCorrected.left; x < rctCorrected.right; x++)
@@ -481,16 +481,16 @@ namespace HiEasyX
 				}
 			}
 		}
-		// Ìø¹ıÏñËØµÄÄ£Ê½
+		// è·³è¿‡åƒç´ çš„æ¨¡å¼
 		else
 		{
-			// È«²¿¸üĞÂ
+			// å…¨éƒ¨æ›´æ–°
 			if (isAllFlush)
 			{
 				int len = w * h;
-				for (int i = 0; i < len; i++)		// ÏßĞÔ±éÀú»­²¼
+				for (int i = 0; i < len; i++)		// çº¿æ€§éå†ç”»å¸ƒ
 				{
-					if (dst[i] == src[i])			// ÈôÁ½»­²¼Ä³Î»ÖÃÉ«²ÊÖØµş£¬ÔòÌø¹ı½ÓÏÂÀ´µÄ n ¸öÏñËØµã
+					if (dst[i] == src[i])			// è‹¥ä¸¤ç”»å¸ƒæŸä½ç½®è‰²å½©é‡å ï¼Œåˆ™è·³è¿‡æ¥ä¸‹æ¥çš„ n ä¸ªåƒç´ ç‚¹
 					{
 						i += g_vecWindows[index].nSkipPixels;
 						continue;
@@ -498,15 +498,15 @@ namespace HiEasyX
 					dst[i] = src[i];
 				}
 			}
-			// ²¿·Ö¸üĞÂ
+			// éƒ¨åˆ†æ›´æ–°
 			else
 			{
-				for (int y = rctCorrected.top; y < rctCorrected.bottom; y++)	// ÔÚ¾ØĞÎÇøÓòÄÚ±éÀú»­²¼
+				for (int y = rctCorrected.top; y < rctCorrected.bottom; y++)	// åœ¨çŸ©å½¢åŒºåŸŸå†…éå†ç”»å¸ƒ
 				{
 					for (int x = rctCorrected.left; x < rctCorrected.right; x++)
 					{
 						int index = x + y * w;
-						if (dst[index] == src[index])	// ÈôÁ½»­²¼Ä³Î»ÖÃÉ«²ÊÖØµş£¬ÔòÔÚ x ·½ÏòÉÏÌø¹ı½ÓÏÂÀ´µÄ n ¸öÏñËØµã
+						if (dst[index] == src[index])	// è‹¥ä¸¤ç”»å¸ƒæŸä½ç½®è‰²å½©é‡å ï¼Œåˆ™åœ¨ x æ–¹å‘ä¸Šè·³è¿‡æ¥ä¸‹æ¥çš„ n ä¸ªåƒç´ ç‚¹
 						{
 							x += g_vecWindows[index].nSkipPixels;
 							continue;
@@ -518,10 +518,10 @@ namespace HiEasyX
 		}
 	}// FlushDrawing
 
-	// Ìá¹©¸øÓÃ»§µÄ½Ó¿Ú
+	// æä¾›ç»™ç”¨æˆ·çš„æ¥å£
 	void FlushDrawing(RECT rct, HWND hWnd)
 	{
-		// ÎªÁË·ÀÖ¹ÓÃ»§¸üĞÂË«»º³åÊ±´°¿ÚÀ­Éìµ¼ÖÂ»­²¼³åÍ»£¬±ØĞëÔÚ´°¿ÚÈÎÎñÄÚµ÷ÓÃ´Ëº¯Êı
+		// ä¸ºäº†é˜²æ­¢ç”¨æˆ·æ›´æ–°åŒç¼“å†²æ—¶çª—å£æ‹‰ä¼¸å¯¼è‡´ç”»å¸ƒå†²çªï¼Œå¿…é¡»åœ¨çª—å£ä»»åŠ¡å†…è°ƒç”¨æ­¤å‡½æ•°
 		if (IsInTask(hWnd))
 		{
 			if (hWnd != nullptr) FlushDrawing(GetWindowIndex(hWnd), rct);
@@ -536,7 +536,7 @@ namespace HiEasyX
 
 	bool BeginTask()
 	{
-		// ²»×ö´°¿ÚÆ¥ÅäÅĞ¶Ï£¬Ö»¼ìÑéÊÇ·ñ´¦ÓÚÈÎÎñÖĞ
+		// ä¸åšçª—å£åŒ¹é…åˆ¤æ–­ï¼Œåªæ£€éªŒæ˜¯å¦å¤„äºä»»åŠ¡ä¸­
 		if (!g_isInTask && IsFocusWindowExisted())
 		{
 			WaitForProcessing(g_nFocusWindowIndex);
@@ -564,7 +564,7 @@ namespace HiEasyX
 		return g_isInTask && (hWnd ? GetFocusWindow().hWnd == hWnd : true);
 	}
 
-	// ÖØĞÂµ÷Õû´°¿Ú»­²¼´óĞ¡
+	// é‡æ–°è°ƒæ•´çª—å£ç”»å¸ƒå¤§å°
 	void ResizeWindowImage(int index, RECT rct)
 	{
 		if (IsAliveWindow(index))
@@ -609,7 +609,7 @@ namespace HiEasyX
 	{
 		int index = GetWindowIndex(hWnd);
 
-		// ËÀ´°¿ÚÉ¾³ıÊ±»áµ÷ÓÃ¸Ãº¯Êı£¬ËùÒÔ²»ÅĞ¶Ï´°¿ÚËÀ»î£¬Ö»ĞèÒªÅĞ¶Ï´°¿ÚÊÇ·ñ´æÔÚ
+		// æ­»çª—å£åˆ é™¤æ—¶ä¼šè°ƒç”¨è¯¥å‡½æ•°ï¼Œæ‰€ä»¥ä¸åˆ¤æ–­çª—å£æ­»æ´»ï¼Œåªéœ€è¦åˆ¤æ–­çª—å£æ˜¯å¦å­˜åœ¨
 		if (IsValidWindowIndex(index))
 		{
 			if (g_vecWindows[index].isUseTray)
@@ -667,7 +667,7 @@ namespace HiEasyX
 		g_hCustomIconSm = LoadIcon(g_hInstance, lpszIconSm);
 	}
 
-	// »ñÈ¡ÏûÏ¢ÈİÆ÷
+	// è·å–æ¶ˆæ¯å®¹å™¨
 	std::vector<ExMessage>& GetMsgVector(HWND hWnd)
 	{
 		static std::vector<ExMessage> vec;
@@ -685,7 +685,7 @@ namespace HiEasyX
 		}
 	}
 
-	// ÒÆ³ıµ±Ç°ÏûÏ¢
+	// ç§»é™¤å½“å‰æ¶ˆæ¯
 	void RemoveMessage(HWND hWnd)
 	{
 		if (GetMsgVector(hWnd).size())
@@ -694,8 +694,8 @@ namespace HiEasyX
 		}
 	}
 
-	// Çå¿ÕÏûÏ¢
-	// Ö§³Ö»ìºÏÏûÏ¢ÀàĞÍ
+	// æ¸…ç©ºæ¶ˆæ¯
+	// æ”¯æŒæ··åˆæ¶ˆæ¯ç±»å‹
 	void ClearMessage(BYTE filter, HWND hWnd)
 	{
 		for (size_t i = 0; i < GetMsgVector(hWnd).size(); i++)
@@ -703,8 +703,8 @@ namespace HiEasyX
 				GetMsgVector(hWnd).erase(GetMsgVector(hWnd).begin() + i--);
 	}
 
-	// ÊÇ·ñÓĞĞÂÏûÏ¢
-	// Ö§³Ö»ìºÏÏûÏ¢ÀàĞÍ
+	// æ˜¯å¦æœ‰æ–°æ¶ˆæ¯
+	// æ”¯æŒæ··åˆæ¶ˆæ¯ç±»å‹
 	bool IsNewMessage(BYTE filter, HWND hWnd)
 	{
 		for (auto& element : GetMsgVector(hWnd))
@@ -713,8 +713,8 @@ namespace HiEasyX
 		return false;
 	}
 
-	// Çå³ıÏûÏ¢£¬Ö±ÖÁ»ñÈ¡µ½·ûºÏÀàĞÍµÄÏûÏ¢
-	// Ö§³Ö»ìºÏÏûÏ¢ÀàĞÍ
+	// æ¸…é™¤æ¶ˆæ¯ï¼Œç›´è‡³è·å–åˆ°ç¬¦åˆç±»å‹çš„æ¶ˆæ¯
+	// æ”¯æŒæ··åˆæ¶ˆæ¯ç±»å‹
 	ExMessage GetNextMessage(BYTE filter, HWND hWnd)
 	{
 		if (IsNewMessage(filter, hWnd))
@@ -902,7 +902,7 @@ namespace HiEasyX
 		SetWindowText(hWnd, lpszTitle);
 	}
 
-	// »ñÈ¡Ä¬ÈÏ´°¿ÚÍ¼±ê
+	// è·å–é»˜è®¤çª—å£å›¾æ ‡
 	HICON GetDefaultAppIcon()
 	{
 		static HBITMAP hBmp = Image2Bitmap(GetIconImage(), true);
@@ -922,8 +922,8 @@ namespace HiEasyX
 		GetClientRect(g_vecWindows[indexWnd].hWnd, &rctWnd);
 
 		WaitForProcessing(indexWnd);
-		g_vecWindows[indexWnd].isBusyProcessing = true;		// ²»ÄÜÔÙÆô¶¯ÈÎÎñ
-		WaitForTask(g_vecWindows[indexWnd].hWnd);			// µÈ´ı×îºóÒ»¸öÈÎÎñÍê³É
+		g_vecWindows[indexWnd].isBusyProcessing = true;		// ä¸èƒ½å†å¯åŠ¨ä»»åŠ¡
+		WaitForTask(g_vecWindows[indexWnd].hWnd);			// ç­‰å¾…æœ€åä¸€ä¸ªä»»åŠ¡å®Œæˆ
 
 		ResizeWindowImage(indexWnd, rctWnd);
 		if (g_vecWindows[indexWnd].pBufferImgCanvas)
@@ -944,18 +944,18 @@ namespace HiEasyX
 
 			switch (lParam)
 			{
-				// ×ó¼ü¼¤»î´°¿Ú
+				// å·¦é”®æ¿€æ´»çª—å£
 			case WM_LBUTTONDOWN:
 				SetForegroundWindow(hWnd);
 				break;
 
-				// ÓÒ¼ü´ò¿ª²Ëµ¥
+				// å³é”®æ‰“å¼€èœå•
 			case WM_RBUTTONDOWN:
 				if (g_vecWindows[indexWnd].isUseTrayMenu)
 				{
-					SetForegroundWindow(hWnd);	// ¼¤»îÒ»ÏÂ´°¿Ú£¬·ÀÖ¹²Ëµ¥²»ÏûÊ§
+					SetForegroundWindow(hWnd);	// æ¿€æ´»ä¸€ä¸‹çª—å£ï¼Œé˜²æ­¢èœå•ä¸æ¶ˆå¤±
 
-					// ÏÔÊ¾²Ëµ¥²¢¸ú×Ù
+					// æ˜¾ç¤ºèœå•å¹¶è·Ÿè¸ª
 					int nMenuId = TrackPopupMenu(g_vecWindows[indexWnd].hTrayMenu, TPM_RETURNCMD, ptMouse.x, ptMouse.y, 0, hWnd, nullptr);
 					if (nMenuId == 0) PostMessage(hWnd, WM_LBUTTONDOWN, 0, 0);
 					if (g_vecWindows[indexWnd].funcTrayMenuProc)
@@ -979,10 +979,10 @@ namespace HiEasyX
 		}
 	}
 
-	// µÇ¼ÇÏûÏ¢£¨ExMessage£©
+	// ç™»è®°æ¶ˆæ¯ï¼ˆExMessageï¼‰
 	void RegisterExMessage(int indexWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	{
-		// ¼ÇÂ¼ÏûÏ¢ÊÂ¼ş
+		// è®°å½•æ¶ˆæ¯äº‹ä»¶
 		switch (msg)
 		{
 			// EM_MOUSE
@@ -1009,7 +1009,7 @@ namespace HiEasyX
 			msgMouse.mbutton = LOWORD(wParam) & 0x10 ? true : false;
 			msgMouse.rbutton = LOWORD(wParam) & 0x02 ? true : false;
 
-			// ÓĞ¹öÂÖÏûÏ¢Ê±£¬µÃµ½µÄ×ø±êÊÇÆÁÄ»×ø±ê£¬ĞèÒª×ª»»
+			// æœ‰æ»šè½®æ¶ˆæ¯æ—¶ï¼Œå¾—åˆ°çš„åæ ‡æ˜¯å±å¹•åæ ‡ï¼Œéœ€è¦è½¬æ¢
 			if (msgMouse.wheel)
 			{
 				POINT p = { msgMouse.x ,msgMouse.y };
@@ -1042,7 +1042,7 @@ namespace HiEasyX
 			WORD repeatCount = LOWORD(lParam);                            // repeat count, > 0 if several keydown messages was combined into one message
 			BOOL upFlag = (keyFlags & KF_UP) == KF_UP;                    // transition-state flag, 1 on keyup
 
-			// ¹¦ÄÜ¼ü£º²»Çø·Ö×óÓÒ
+			// åŠŸèƒ½é”®ï¼šä¸åŒºåˆ†å·¦å³
 			// if we want to distinguish these keys:
 			//switch (vkCode)
 			//{
@@ -1064,7 +1064,7 @@ namespace HiEasyX
 			g_vecWindows[indexWnd].vecMessage.push_back(msgKey);
 			lg_vecWindows_vecMessage_sm.unlock();
 
-			// ¸ø¿ØÖÆÌ¨·¢Ò»·İ£¬Ö§³Ö _getch() ÏµÁĞº¯Êı
+			// ç»™æ§åˆ¶å°å‘ä¸€ä»½ï¼Œæ”¯æŒ _getch() ç³»åˆ—å‡½æ•°
 			PostMessage(g_hConsole, msg, wParam, lParam);
 		}
 		break;
@@ -1080,7 +1080,7 @@ namespace HiEasyX
 			g_vecWindows[indexWnd].vecMessage.push_back(msgChar);
 			lg_vecWindows_vecMessage_sm.unlock();
 
-			// Í¨Öª¿ØÖÆÌ¨
+			// é€šçŸ¥æ§åˆ¶å°
 			PostMessage(g_hConsole, msg, wParam, lParam);
 		}
 		break;
@@ -1102,24 +1102,24 @@ namespace HiEasyX
 		}
 	}
 
-	// »æÖÆÓÃ»§ÄÚÈİ
+	// ç»˜åˆ¶ç”¨æˆ·å†…å®¹
 	void OnPaint(int indexWnd, HDC hdc)
 	{
-		// ÔÚ¿ªÆô×Ô¶¯Ë¢ĞÂË«»º³åµÄÇé¿öÏÂ£¬´¦ÀíË«»º³åµÄË¢ĞÂÈÎÎñ
+		// åœ¨å¼€å¯è‡ªåŠ¨åˆ·æ–°åŒç¼“å†²çš„æƒ…å†µä¸‹ï¼Œå¤„ç†åŒç¼“å†²çš„åˆ·æ–°ä»»åŠ¡
 		if (g_bAutoFlush && g_vecWindows[indexWnd].isNeedFlush)
 		{
 			WaitForProcessing(indexWnd);
-			g_vecWindows[indexWnd].isBusyProcessing = true;		// ²»ÄÜÔÙÆô¶¯ÈÎÎñ
-			WaitForTask(g_vecWindows[indexWnd].hWnd);			// µÈ´ı×îºóÒ»¸öÈÎÎñÍê³É
+			g_vecWindows[indexWnd].isBusyProcessing = true;		// ä¸èƒ½å†å¯åŠ¨ä»»åŠ¡
+			WaitForTask(g_vecWindows[indexWnd].hWnd);			// ç­‰å¾…æœ€åä¸€ä¸ªä»»åŠ¡å®Œæˆ
 
-			// ¸üĞÂË«»º³å
+			// æ›´æ–°åŒç¼“å†²
 			FlushDrawing(indexWnd);
 			g_vecWindows[indexWnd].isNeedFlush = false;
 
 			g_vecWindows[indexWnd].isBusyProcessing = false;
 		}
 
-		// ½«»æÍ¼ÄÚÈİÊä³öµ½´°¿Ú HDC
+		// å°†ç»˜å›¾å†…å®¹è¾“å‡ºåˆ°çª—å£ HDC
 		RECT rctWnd;
 		GetClientRect(g_vecWindows[indexWnd].hWnd, &rctWnd);
 		CopyImageToHDC(g_vecWindows[indexWnd].pImg, hdc, rctWnd);
@@ -1130,8 +1130,8 @@ namespace HiEasyX
 		//RECT rctWnd;
 		//GetWindowRect(hWnd, &rctWnd);
 
-		//// ÒÆ¶¯´°¿Ú³¬³öÆÁÄ»Ê±¿ÉÄÜµ¼ÖÂ×Ó´°¿ÚÏÔÊ¾ÓĞÎÊÌâ£¬ËùÒÔ´ËÊ±ĞèÒª³¹µ×ÖØ»æ
-		//// Èç¹ûÓÃ»§´úÂëÒ»Ö±ÔÚÇ¿ÖÆÖØ»æ£¬Ôò´Ë²Ù×÷¶àÓà¡£
+		//// ç§»åŠ¨çª—å£è¶…å‡ºå±å¹•æ—¶å¯èƒ½å¯¼è‡´å­çª—å£æ˜¾ç¤ºæœ‰é—®é¢˜ï¼Œæ‰€ä»¥æ­¤æ—¶éœ€è¦å½»åº•é‡ç»˜
+		//// å¦‚æœç”¨æˆ·ä»£ç ä¸€ç›´åœ¨å¼ºåˆ¶é‡ç»˜ï¼Œåˆ™æ­¤æ“ä½œå¤šä½™ã€‚
 		//if (rctWnd.left < g_screenSize.left || rctWnd.top < g_screenSize.top
 		//	|| rctWnd.right > g_screenSize.left + g_screenSize.w
 		//	|| rctWnd.bottom > g_screenSize.top + g_screenSize.h)
@@ -1144,8 +1144,8 @@ namespace HiEasyX
 	{
 		closegraph_win32(indexWnd);
 
-		// ´æÔÚ²ÎÊı£¬ÒâÎ¶×ÅÕâÊÇÓÃ»§µ÷ÓÃ closegraph_win32 Ïú»Ù´°¿Ú
-		// ¹ÊÔÙµ÷ÓÃ DestroyWindow
+		// å­˜åœ¨å‚æ•°ï¼Œæ„å‘³ç€è¿™æ˜¯ç”¨æˆ·è°ƒç”¨ closegraph_win32 é”€æ¯çª—å£
+		// æ•…å†è°ƒç”¨ DestroyWindow
 		if (wParam)
 		{
 			DestroyWindow(g_vecWindows[indexWnd].hWnd);
@@ -1167,18 +1167,18 @@ namespace HiEasyX
 			c->lpCreateParams
 		);
 
-		// ¼ÇÂ¼
+		// è®°å½•
 		g_vecWindows[indexWnd].vecSysCtrl.push_back((SysControlBase*)wParam);
 		return hWnd;
 	}
 
-	// ´¦ÀíÏµÍ³¿Ø¼şÏûÏ¢
-	// bRet ´«³ö£¬±ê¼ÇÊÇ·ñÖ±½Ó·µ»Ø
+	// å¤„ç†ç³»ç»Ÿæ§ä»¶æ¶ˆæ¯
+	// bRet ä¼ å‡ºï¼Œæ ‡è®°æ˜¯å¦ç›´æ¥è¿”å›
 	LRESULT SysCtrlProc(int indexWnd, UINT msg, WPARAM wParam, LPARAM lParam, bool& bRet)
 	{
 		switch (msg)
 		{
-			// ´´½¨ÏµÍ³¿Ø¼ş
+			// åˆ›å»ºç³»ç»Ÿæ§ä»¶
 		case WM_SYSCTRL_CREATE:
 		{
 			g_vecWindows[indexWnd].bHasCtrl = true;
@@ -1187,10 +1187,10 @@ namespace HiEasyX
 			break;
 		}
 
-		// Îö¹¹ÏµÍ³¿Ø¼ş
+		// ææ„ç³»ç»Ÿæ§ä»¶
 		case WM_SYSCTRL_DELETE:
 		{
-			// ±»Îö¹¹µÄ¿Ø¼şÖ¸Õë±ê¼ÇÎª¿Õ
+			// è¢«ææ„çš„æ§ä»¶æŒ‡é’ˆæ ‡è®°ä¸ºç©º
 			for (size_t i = 0; i < g_vecWindows[indexWnd].vecSysCtrl.size(); i++)
 			{
 				if (g_vecWindows[indexWnd].vecSysCtrl[i] == (SysControlBase*)wParam)
@@ -1205,7 +1205,7 @@ namespace HiEasyX
 		}
 		}
 
-		// ´æÔÚ¿Ø¼şÊ±£¬ÅÉ·¢ÏûÏ¢
+		// å­˜åœ¨æ§ä»¶æ—¶ï¼Œæ´¾å‘æ¶ˆæ¯
 		if (g_vecWindows[indexWnd].bHasCtrl)
 		{
 			bool bCtrlRet = false;
@@ -1232,20 +1232,20 @@ namespace HiEasyX
 	{
 	}
 
-	// ´°¿Ú¹ı³Ìº¯Êı
+	// çª—å£è¿‡ç¨‹å‡½æ•°
 	LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	{
-		// ´°¿Ú¾ØĞÎĞÅÏ¢
-		LRESULT resultUserProc = HIWINDOW_DEFAULT_PROC;		// ¼ÇÂ¼ÓÃ»§´°¿Ú¹ı³Ìº¯Êı·µ»ØÖµ
-		int indexWnd = GetWindowIndex(hWnd);				// ¸Ã´°¿ÚÔÚÒÑ¼ÇÂ¼ÁĞ±íÖĞµÄË÷Òı
+		// çª—å£çŸ©å½¢ä¿¡æ¯
+		LRESULT resultUserProc = HIWINDOW_DEFAULT_PROC;		// è®°å½•ç”¨æˆ·çª—å£è¿‡ç¨‹å‡½æ•°è¿”å›å€¼
+		int indexWnd = GetWindowIndex(hWnd);				// è¯¥çª—å£åœ¨å·²è®°å½•åˆ—è¡¨ä¸­çš„ç´¢å¼•
 
-		// µ÷ÓÃ´°¿Ú²»ÔÚ´°¿ÚÁĞ±íÄÚ£¬ÔòÊ¹ÓÃÄ¬ÈÏ·½·¨½øĞĞ´¦Àí£¨ÎŞĞè¼ì²é´°¿ÚËÀ»î£©
+		// è°ƒç”¨çª—å£ä¸åœ¨çª—å£åˆ—è¡¨å†…ï¼Œåˆ™ä½¿ç”¨é»˜è®¤æ–¹æ³•è¿›è¡Œå¤„ç†ï¼ˆæ— éœ€æ£€æŸ¥çª—å£æ­»æ´»ï¼‰
 		if (!IsValidWindowIndex(indexWnd))
 		{
-			// Ò²ÓĞ¿ÉÄÜÕıÔÚ½ÓÊÕ WM_CREATE ÏûÏ¢£¬´ËÊ±´°¿Ú»¹Î´¼ÓÈëÁĞ±í£¬Ôòµ÷ÓÃÓÃ»§¹ı³Ìº¯Êı
+			// ä¹Ÿæœ‰å¯èƒ½æ­£åœ¨æ¥æ”¶ WM_CREATE æ¶ˆæ¯ï¼Œæ­¤æ—¶çª—å£è¿˜æœªåŠ å…¥åˆ—è¡¨ï¼Œåˆ™è°ƒç”¨ç”¨æˆ·è¿‡ç¨‹å‡½æ•°
 			if (msg == WM_CREATE)
 			{
-				// ´ËÊ±ĞèÒªĞŞÕı index
+				// æ­¤æ—¶éœ€è¦ä¿®æ­£ index
 				int indexReal = (int)g_vecWindows.size() - 1;
 				OnCreate(indexReal, hWnd, lParam);
 				WNDPROC proc = g_vecWindows[indexReal].funcWndProc;
@@ -1258,22 +1258,22 @@ namespace HiEasyX
 			return DefWindowProc(hWnd, msg, wParam, lParam);
 		}
 
-		//** ¿ªÊ¼´¦Àí´°¿ÚÏûÏ¢ **//
+		//** å¼€å§‹å¤„ç†çª—å£æ¶ˆæ¯ **//
 
-		// Ô¤ÏÈ´¦Àí²¿·ÖÏûÏ¢
+		// é¢„å…ˆå¤„ç†éƒ¨åˆ†æ¶ˆæ¯
 		switch (msg)
 		{
 		case WM_SIZE:
 			OnSize(indexWnd);
 			break;
 
-			// ÍĞÅÌÏûÏ¢
+			// æ‰˜ç›˜æ¶ˆæ¯
 		case WM_TRAY:
 			OnTray(indexWnd, lParam);
 			break;
 
 		default:
-			// ÏµÍ³ÈÎÎñÀ¸ÖØĞÂ´´½¨£¬´ËÊ±¿ÉÄÜĞèÒªÖØĞÂ´´½¨ÍĞÅÌ
+			// ç³»ç»Ÿä»»åŠ¡æ é‡æ–°åˆ›å»ºï¼Œæ­¤æ—¶å¯èƒ½éœ€è¦é‡æ–°åˆ›å»ºæ‰˜ç›˜
 			if (msg == g_uWM_TASKBARCREATED)
 			{
 				OnTaskBarCreated(indexWnd);
@@ -1281,31 +1281,31 @@ namespace HiEasyX
 			break;
 		}
 
-		// »î´°¿ÚµÄÒ»°ãÊÂ¼ş´¦Àí
+		// æ´»çª—å£çš„ä¸€èˆ¬äº‹ä»¶å¤„ç†
 		if (IsAliveWindow(indexWnd))
 		{
-			// µÇ¼ÇÏûÏ¢
+			// ç™»è®°æ¶ˆæ¯
 			RegisterExMessage(indexWnd, msg, wParam, lParam);
 
-			// ´¦ÀíÏµÍ³¿Ø¼şÏûÏ¢
+			// å¤„ç†ç³»ç»Ÿæ§ä»¶æ¶ˆæ¯
 			bool bRetSysCtrl = false;
 			LRESULT lrSysCtrl = SysCtrlProc(indexWnd, msg, wParam, lParam, bRetSysCtrl);
 			if (bRetSysCtrl)
 				return lrSysCtrl;
 		}
 
-		// µ÷ÓÃÓÃ»§ÏûÏ¢´¦Àíº¯Êı
+		// è°ƒç”¨ç”¨æˆ·æ¶ˆæ¯å¤„ç†å‡½æ•°
 		if (g_vecWindows[indexWnd].funcWndProc)
 		{
 			resultUserProc = g_vecWindows[indexWnd].funcWndProc(hWnd, msg, wParam, lParam);
 		}
 
-		// ÉÆºó¹¤×÷
+		// å–„åå·¥ä½œ
 		switch (msg)
 		{
-			// ÓÃ»§ÖØ»æÏûÏ¢£¬´¦ÀíÍêÖ±½Ó·µ»Ø
-			// Ò²ÎŞĞèµ÷ÓÃÏµÍ³ÖØ»æ·½·¨
-			// ·Å×ÅÊÇÎªÁËÈÃÓÃ»§Ò²ÄÜ´¦Àíµ½Õâ¸öÏûÏ¢
+			// ç”¨æˆ·é‡ç»˜æ¶ˆæ¯ï¼Œå¤„ç†å®Œç›´æ¥è¿”å›
+			// ä¹Ÿæ— éœ€è°ƒç”¨ç³»ç»Ÿé‡ç»˜æ–¹æ³•
+			// æ”¾ç€æ˜¯ä¸ºäº†è®©ç”¨æˆ·ä¹Ÿèƒ½å¤„ç†åˆ°è¿™ä¸ªæ¶ˆæ¯
 		case WM_USER_REDRAW:
 		{
 			HDC hdc = GetDC(hWnd);
@@ -1315,7 +1315,7 @@ namespace HiEasyX
 			break;
 		}
 
-		// ÒòÎªÓÃ»§¿ÉÄÜÔÚ¹ı³Ìº¯ÊıÖĞ»æÍ¼£¬ÒªÔÚËûÖ®ºóÊä³ö»º´æ
+		// å› ä¸ºç”¨æˆ·å¯èƒ½åœ¨è¿‡ç¨‹å‡½æ•°ä¸­ç»˜å›¾ï¼Œè¦åœ¨ä»–ä¹‹åè¾“å‡ºç¼“å­˜
 		case WM_PAINT:
 		{
 			HDC			hdc;
@@ -1324,7 +1324,7 @@ namespace HiEasyX
 			OnPaint(indexWnd, hdc);
 			EndPaint(hWnd, &ps);
 
-			// WM_PAINT ÏûÏ¢ÖĞĞèÒªµ÷ÓÃÏµÍ³»æÖÆ·½·¨
+			// WM_PAINT æ¶ˆæ¯ä¸­éœ€è¦è°ƒç”¨ç³»ç»Ÿç»˜åˆ¶æ–¹æ³•
 			DefWindowProc(hWnd, WM_PAINT, 0, 0);
 			break;
 		}
@@ -1333,18 +1333,18 @@ namespace HiEasyX
 			OnMove(hWnd);
 			break;
 
-			// ¹Ø±Õ´°¿Ú£¬ÊÍ·ÅÄÚ´æ
+			// å…³é—­çª—å£ï¼Œé‡Šæ”¾å†…å­˜
 		case WM_DESTROY:
 			OnDestroy(indexWnd, wParam);
 			break;
 		}
 
-		// ·µ»ØÖµ
+		// è¿”å›å€¼
 		LRESULT lResult = 0;
 
-		// ´Ë´¦Í³Ò»ÔÚº¯ÊıÄ©Î²·µ»Ø
+		// æ­¤å¤„ç»Ÿä¸€åœ¨å‡½æ•°æœ«å°¾è¿”å›
 
-		// ÓÃ»§Î´´¦Àí´ËÏûÏ¢
+		// ç”¨æˆ·æœªå¤„ç†æ­¤æ¶ˆæ¯
 		if (!g_vecWindows[indexWnd].funcWndProc || resultUserProc == HIWINDOW_DEFAULT_PROC)
 		{
 			switch (msg)
@@ -1357,7 +1357,7 @@ namespace HiEasyX
 				PostQuitMessage(0);
 				break;
 
-				// WM_PAINT ÏûÏ¢ÎŞĞèÖØ¸´µ÷ÓÃÄ¬ÈÏ·½·¨
+				// WM_PAINT æ¶ˆæ¯æ— éœ€é‡å¤è°ƒç”¨é»˜è®¤æ–¹æ³•
 			case WM_PAINT:
 				break;
 
@@ -1367,7 +1367,7 @@ namespace HiEasyX
 			}
 		}
 
-		// ÓÃ»§ÒÑ´¦Àí´ËÏûÏ¢
+		// ç”¨æˆ·å·²å¤„ç†æ­¤æ¶ˆæ¯
 		else
 		{
 			switch (msg)
@@ -1407,7 +1407,7 @@ namespace HiEasyX
 		g_WndClassEx.lpszMenuName = nullptr;
 		g_WndClassEx.lpszClassName = lpszClassName;
 
-		// ×¢²á´°¿ÚÀà
+		// æ³¨å†Œçª—å£ç±»
 		if (!RegisterClassEx(&g_WndClassEx))
 		{
 #ifdef UNICODE
@@ -1420,7 +1420,7 @@ namespace HiEasyX
 		}
 	}
 
-	// ³õÊ¼»¯´°¿Ú½á¹¹Ìå
+	// åˆå§‹åŒ–çª—å£ç»“æ„ä½“
 	EasyWindow& InitWindowStruct(EasyWindow& wnd, HWND hParent, int w, int h, WNDPROC WindowProcess)
 	{
 		wnd.isAlive = true;
@@ -1451,23 +1451,23 @@ namespace HiEasyX
 		SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 	}
 
-	// ÕæÕı´´½¨´°¿ÚµÄº¯Êı£¨×èÈû£©
+	// çœŸæ­£åˆ›å»ºçª—å£çš„å‡½æ•°ï¼ˆé˜»å¡ï¼‰
 	void InitWindow(int w, int h, int flag, LPCTSTR lpszWndTitle, LPCTSTR lpszClassName, WNDPROC WindowProcess, HWND hParent, int* nDoneFlag, bool* nStartAnimation, HWND* hWnd)
 	{
-		static int nWndCount = 0;	// ÒÑ´´½¨´°¿Ú¼ÆÊı£¨ÓÃÓÚÉú³É´°¿Ú±êÌâ£©
+		static int nWndCount = 0;	// å·²åˆ›å»ºçª—å£è®¡æ•°ï¼ˆç”¨äºç”Ÿæˆçª—å£æ ‡é¢˜ï¼‰
 
 #ifdef UNICODE
-		std::wstring wstrTitle;		// ´°¿Ú±êÌâ
+		std::wstring wstrTitle;		// çª—å£æ ‡é¢˜
 #else
-		std::string strTitle;		// ´°¿Ú±êÌâ
+		std::string strTitle;		// çª—å£æ ‡é¢˜
 #endif
 		if (_tcslen(lpszClassName) == 0) lpszClassName = g_lpszClassName;
 
-		EasyWindow wnd;				// ´°¿ÚĞÅÏ¢
-		int nFrameW, nFrameH;		// ´°¿Ú±êÌâÀ¸¿í¸ß£¨¸÷¸ö´°¿Ú¿ÉÄÜ²»Í¬£©
-		int nIndexWnd = nWndCount;	// ¼ÇÂ¼Õâ¸ö´°¿ÚµÄ id
+		EasyWindow wnd;				// çª—å£ä¿¡æ¯
+		int nFrameW, nFrameH;		// çª—å£æ ‡é¢˜æ å®½é«˜ï¼ˆå„ä¸ªçª—å£å¯èƒ½ä¸åŒï¼‰
+		int nIndexWnd = nWndCount;	// è®°å½•è¿™ä¸ªçª—å£çš„ id
 
-		// ¿ÉÄÜ¶à¸ö´°¿ÚÍ¬Ê±ÔÚ´´½¨£¬ÎªÁË·ÀÖ¹Ô¤Éè´°¿ÚÊôĞÔ½»²æ£¬ÏÈ±¸·İÊı¾İ£¬ÈÃ³öÈ«¾Ö±äÁ¿
+		// å¯èƒ½å¤šä¸ªçª—å£åŒæ—¶åœ¨åˆ›å»ºï¼Œä¸ºäº†é˜²æ­¢é¢„è®¾çª—å£å±æ€§äº¤å‰ï¼Œå…ˆå¤‡ä»½æ•°æ®ï¼Œè®©å‡ºå…¨å±€å˜é‡
 		bool isPreStyle = g_isPreStyle;
 		bool isPreStyleEx = g_isPreStyleEx;
 		bool isPrePos = g_isPrePos;
@@ -1484,7 +1484,7 @@ namespace HiEasyX
 		g_isPrePos = false;
 		g_isPreShowState = false;
 
-		// Î´ÉèÖÃ±êÌâ
+		// æœªè®¾ç½®æ ‡é¢˜
 		if (lstrlen(lpszWndTitle) == 0)
 		{
 #ifdef UNICODE
@@ -1510,26 +1510,26 @@ namespace HiEasyX
 #endif
 		}
 
-		// µÚÒ»´Î´´½¨´°¿Ú --- ³õÊ¼»¯¸÷ÏîÊı¾İ
+		// ç¬¬ä¸€æ¬¡åˆ›å»ºçª—å£ --- åˆå§‹åŒ–å„é¡¹æ•°æ®
 		if (nIndexWnd == 0)
 		{
-			// »ñÈ¡·Ö±æÂÊ
+			// è·å–åˆ†è¾¨ç‡
 			g_screenSize = GetScreenSize();
 
-			// Ä¬ÈÏ³ÌĞòÍ¼±ê
+			// é»˜è®¤ç¨‹åºå›¾æ ‡
 			g_hIconDefault = GetDefaultAppIcon();
 
-			// ×¢²á´°¿ÚÀà
+			// æ³¨å†Œçª—å£ç±»
 			RegisterWndClass(lpszClassName);
 			g_hConsole = GetConsoleWindow();
 
-			// Òş²Ø¿ØÖÆÌ¨
+			// éšè—æ§åˆ¶å°
 			if (g_hConsole)
 			{
 				ShowWindow(g_hConsole, SW_HIDE);
 			}
 
-			// »ñÈ¡ÏµÍ³ÈÎÎñÀ¸×Ô¶¨ÒåµÄÏûÏ¢´úÂë
+			// è·å–ç³»ç»Ÿä»»åŠ¡æ è‡ªå®šä¹‰çš„æ¶ˆæ¯ä»£ç 
 			g_uWM_TASKBARCREATED = RegisterWindowMessage(TEXT("TaskbarCreated"));
 
 #ifndef _DEBUG
@@ -1546,36 +1546,36 @@ namespace HiEasyX
 #endif
 		}
 
-		// Èç¹ûÏÖÔÚ²»´æÔÚÈÎºÎ´°¿Ú
+		// å¦‚æœç°åœ¨ä¸å­˜åœ¨ä»»ä½•çª—å£
 		if (!IsAnyWindow())
 		{
-			// ³õÊ¼»¯ GDI+ »æÍ¼»·¾³
+			// åˆå§‹åŒ– GDI+ ç»˜å›¾ç¯å¢ƒ
 			Gdiplus_Try_Starup();
 		}
 
-		// ¿ØÖÆÌ¨
+		// æ§åˆ¶å°
 		if (g_hConsole && flag & EW_SHOWCONSOLE)
 		{
 			ShowWindow(g_hConsole, flag & SW_NORMAL);
 		}
 
-		// ÓÃ»§ÔÚ´´½¨´°¿ÚÊ±ÉèÖÃµÄ´°¿ÚÊôĞÔ
+		// ç”¨æˆ·åœ¨åˆ›å»ºçª—å£æ—¶è®¾ç½®çš„çª—å£å±æ€§
 		long user_style = WS_OVERLAPPEDWINDOW;
-		if (flag & EW_NOMINIMIZE)	// ÌŞ³ı×îĞ¡»¯°´Å¥
+		if (flag & EW_NOMINIMIZE)	// å‰”é™¤æœ€å°åŒ–æŒ‰é’®
 		{
 			user_style &= ~WS_MINIMIZEBOX & ~WS_MAXIMIZEBOX & ~WS_SIZEBOX;
 		}
-		// ´Ë·½·¨²»ĞĞ£¬ÔÚÏÂÃæ´¦Àí´ËÊôĞÔ
+		// æ­¤æ–¹æ³•ä¸è¡Œï¼Œåœ¨ä¸‹é¢å¤„ç†æ­¤å±æ€§
 		/*if (flag & EW_NOCLOSE)
 		{
 			user_style &= ~WS_SYSMENU;
 		}*/
-		if (flag & EW_DBLCLKS)		// Ö§³ÖË«»÷
+		if (flag & EW_DBLCLKS)		// æ”¯æŒåŒå‡»
 		{
 			user_style |= CS_DBLCLKS;
 		}
 
-		// ÔÚ´´½¨´°¿ÚÇ°½«´°¿Ú¼ÓÈëÈİÆ÷£¬Ô¤Éè¾ä±úÎª¿Õ£¬·½±ã¹ı³Ìº¯Êı½ÓÊÕ WM_CREATE ÏûÏ¢
+		// åœ¨åˆ›å»ºçª—å£å‰å°†çª—å£åŠ å…¥å®¹å™¨ï¼Œé¢„è®¾å¥æŸ„ä¸ºç©ºï¼Œæ–¹ä¾¿è¿‡ç¨‹å‡½æ•°æ¥æ”¶ WM_CREATE æ¶ˆæ¯
 		InitWindowStruct(wnd, hParent, w, h, WindowProcess);
 
 		g_vecWindows_vecMessage_sm.emplace_back();
@@ -1583,16 +1583,16 @@ namespace HiEasyX
 		g_vecWindows.push_back(wnd);
 		lg_vecWindows_vecMessage_sm.unlock();
 
-		// ´´½¨´°¿Ú
+		// åˆ›å»ºçª—å£
 		for (int i = 0;; i++)
 		{
-			// ×îÖÕÈ·¶¨Ê¹ÓÃµÄ´°¿ÚÑùÊ½
+			// æœ€ç»ˆç¡®å®šä½¿ç”¨çš„çª—å£æ ·å¼
 			long final_style = user_style;
 			if (isPreStyle)
 				final_style = lPreStyle;
-			final_style |= WS_CLIPCHILDREN;	// ±ØĞë¼ÓÈë´ËÑùÊ½
+			final_style |= WS_CLIPCHILDREN;	// å¿…é¡»åŠ å…¥æ­¤æ ·å¼
 
-			// ×îÖÕÈ·¶¨Ê¹ÓÃµÄ´°¿ÚÀ©Õ¹ÑùÊ½
+			// æœ€ç»ˆç¡®å®šä½¿ç”¨çš„çª—å£æ‰©å±•æ ·å¼
 			long final_style_ex = WS_EX_WINDOWEDGE;
 			if (isPreStyleEx)
 				final_style_ex = lPreStyleEx;
@@ -1604,7 +1604,7 @@ namespace HiEasyX
 				wstrTitle.c_str(),
 				final_style,
 				CW_USEDEFAULT, CW_USEDEFAULT,
-				w, h,	// ¿í¸ßÏÖÔÚÕâÑùÉèÖÃ£¬ÉÔºó»ñÈ¡±ß¿ò´óĞ¡ºóÔÙµ÷Õû
+				w, h,	// å®½é«˜ç°åœ¨è¿™æ ·è®¾ç½®ï¼Œç¨åè·å–è¾¹æ¡†å¤§å°åå†è°ƒæ•´
 				hParent,
 				nullptr,
 				g_hInstance,
@@ -1617,7 +1617,7 @@ namespace HiEasyX
 				strTitle.c_str(),
 				final_style,
 				CW_USEDEFAULT, CW_USEDEFAULT,
-				w, h,	// ¿í¸ßÏÖÔÚÕâÑùÉèÖÃ£¬ÉÔºó»ñÈ¡±ß¿ò´óĞ¡ºóÔÙµ÷Õû
+				w, h,	// å®½é«˜ç°åœ¨è¿™æ ·è®¾ç½®ï¼Œç¨åè·å–è¾¹æ¡†å¤§å°åå†è°ƒæ•´
 				hParent,
 				nullptr,
 				g_hInstance,
@@ -1627,12 +1627,12 @@ namespace HiEasyX
 
 			if (wnd.hWnd)
 			{
-				// ´´½¨´°¿Ú³É¹¦ºó£¬ÔÙ½«¾ä±ú¼ÇÂ¼
+				// åˆ›å»ºçª—å£æˆåŠŸåï¼Œå†å°†å¥æŸ„è®°å½•
 				g_vecWindows[g_vecWindows.size() - 1].hWnd = wnd.hWnd;
 				break;
 			}
 
-			// Èı´Î´´½¨´°¿ÚÊ§°Ü£¬²»ÔÙ³¢ÊÔ
+			// ä¸‰æ¬¡åˆ›å»ºçª—å£å¤±è´¥ï¼Œä¸å†å°è¯•
 			else if (i == 2)
 			{
 #ifdef UNICODE
@@ -1646,31 +1646,31 @@ namespace HiEasyX
 			}
 		}
 
-		// ÌŞ³ı¹Ø±Õ°´Å¥
+		// å‰”é™¤å…³é—­æŒ‰é’®
 		if (flag & EW_NOCLOSE)
 		{
 			HMENU hmenu = GetSystemMenu(wnd.hWnd, false);
 			RemoveMenu(hmenu, SC_CLOSE, MF_BYCOMMAND);
 		}
 
-		// ÇÀ¶á´°¿Ú½¹µã
+		// æŠ¢å¤ºçª—å£ç„¦ç‚¹
 		SetWorkingWindow(wnd.hWnd);
 
 		*hWnd = wnd.hWnd;
 
-		// ´°¿Ú´´½¨Íê±Ï
+		// çª—å£åˆ›å»ºå®Œæ¯•
 		nWndCount++;
 
-		// ×¢Òâ£º
-		//	±ØĞëÔÚÏÔÊ¾´°¿ÚÇ°±ê¼ÇÒÑ¾­Íê³É´´½¨´°¿Ú¡£
-		//	ÒòÎª¿ÉÒÔÔÚ×Ô¶¨Òå¹ı³Ìº¯ÊıÖĞ´´½¨×Ó´°¿Ú£¬ÈôÊÇ²»ÔÚÏÔÊ¾´°¿ÚÇ°±ê¼Ç´°¿Ú´´½¨Íê³É£¬
-		//	¾Í»áµ¼ÖÂ¸¸´°¿Ú¹ı³Ìº¯Êı×èÈû£¬½ÓÏÂÀ´ÏÔÊ¾´°¿Ú¾Í»á×èÈû£¬½ø¶øµ¼ÖÂÕû¸ö´°¿Ú¼ÙËÀ¡£
+		// æ³¨æ„ï¼š
+		//	å¿…é¡»åœ¨æ˜¾ç¤ºçª—å£å‰æ ‡è®°å·²ç»å®Œæˆåˆ›å»ºçª—å£ã€‚
+		//	å› ä¸ºå¯ä»¥åœ¨è‡ªå®šä¹‰è¿‡ç¨‹å‡½æ•°ä¸­åˆ›å»ºå­çª—å£ï¼Œè‹¥æ˜¯ä¸åœ¨æ˜¾ç¤ºçª—å£å‰æ ‡è®°çª—å£åˆ›å»ºå®Œæˆï¼Œ
+		//	å°±ä¼šå¯¼è‡´çˆ¶çª—å£è¿‡ç¨‹å‡½æ•°é˜»å¡ï¼Œæ¥ä¸‹æ¥æ˜¾ç¤ºçª—å£å°±ä¼šé˜»å¡ï¼Œè¿›è€Œå¯¼è‡´æ•´ä¸ªçª—å£å‡æ­»ã€‚
 		*nDoneFlag = 1;
 		if (!start_animation) *nStartAnimation = true;
 
-		//** ÏÔÊ¾´°¿ÚµÈºóĞø´¦Àí **//
+		//** æ˜¾ç¤ºçª—å£ç­‰åç»­å¤„ç† **//
 
-		// »ñÈ¡±ß¿ò´óĞ¡£¬²¹Æë»æÍ¼Çø´óĞ¡
+		// è·å–è¾¹æ¡†å¤§å°ï¼Œè¡¥é½ç»˜å›¾åŒºå¤§å°
 		RECT rcClient, rcWnd;
 		GetClientRect(wnd.hWnd, &rcClient);
 		GetWindowRect(wnd.hWnd, &rcWnd);
@@ -1696,17 +1696,17 @@ namespace HiEasyX
 			ShowWindow(wnd.hWnd, isPreShowState ? nPreCmdShow : SW_SHOWNORMAL);
 			UpdateWindow(wnd.hWnd);
 		}
-		// ·¢²¼Ä£Ê½ÏÂäÖÈ¾¿ª³¡¶¯»­
+		// å‘å¸ƒæ¨¡å¼ä¸‹æ¸²æŸ“å¼€åœºåŠ¨ç”»
 		if (start_animation == true)
 		{
-			// äÖÈ¾¿ª³¡¶¯»­
+			// æ¸²æŸ“å¼€åœºåŠ¨ç”»
 			std::thread([&]() {
 				InitRenderStartScene(wnd.hWnd, w, h, isPreShowState ? nPreCmdShow : SW_SHOWNORMAL, *nStartAnimation);
 				}).detach();
 		}
 
-		// ÏûÏ¢ÅÉ·¢£¬×èÈû
-		// ´°¿ÚÏú»Ùºó»á×Ô¶¯ÍË³ö
+		// æ¶ˆæ¯æ´¾å‘ï¼Œé˜»å¡
+		// çª—å£é”€æ¯åä¼šè‡ªåŠ¨é€€å‡º
 		MSG Msg;
 		while (GetMessage(&Msg, 0, 0, 0) > 0)
 		{
@@ -1717,25 +1717,25 @@ namespace HiEasyX
 
 	HWND initgraph_win32(int w, int h, int flag, LPCTSTR lpszWndTitle, LPCTSTR lpszClassName, WNDPROC WindowProcess, HWND hParent)
 	{
-		// ±ê¼ÇÊÇ·ñÒÑ¾­Íê³É´°¿Ú´´½¨ÈÎÎñ
+		// æ ‡è®°æ˜¯å¦å·²ç»å®Œæˆçª—å£åˆ›å»ºä»»åŠ¡
 		int nDoneFlag = 0;
 		HWND hWnd = nullptr;
 
 		bool nStartAnimation = false;
 
-		// ´æÔÚ¸¸´°¿ÚÊ±£¬ÊµÏÖÄ£Ì¬´°¿Ú
+		// å­˜åœ¨çˆ¶çª—å£æ—¶ï¼Œå®ç°æ¨¡æ€çª—å£
 		if (hParent)
 		{
-			// ½ûÓÃ¸¸´°¿Ú£¨¸Ã´°¿Ú±»Ïú»Ùºó£¬¸¸´°¿Ú½«»á»Ö¸´Õı³££©
+			// ç¦ç”¨çˆ¶çª—å£ï¼ˆè¯¥çª—å£è¢«é”€æ¯åï¼Œçˆ¶çª—å£å°†ä¼šæ¢å¤æ­£å¸¸ï¼‰
 			//EnableWindow(hParent, false);
 		}
 
 		std::thread(InitWindow, w, h, flag, lpszWndTitle, lpszClassName, WindowProcess, hParent, &nDoneFlag, &nStartAnimation, &hWnd).detach();
 
-		while (nDoneFlag == 0)	Sleep(50);		// µÈ´ı´°¿Ú´´½¨Íê³É
+		while (nDoneFlag == 0)	Sleep(50);		// ç­‰å¾…çª—å£åˆ›å»ºå®Œæˆ
 		if (nDoneFlag == -1)
 		{
-			if (hParent)						// ´´½¨×Ó´°¿ÚÊ§°Ü£¬ÔòÊ¹¸¸´°¿Ú»Ö¸´Õı³£
+			if (hParent)						// åˆ›å»ºå­çª—å£å¤±è´¥ï¼Œåˆ™ä½¿çˆ¶çª—å£æ¢å¤æ­£å¸¸
 			{
 				//EnableWindow(hParent, true);
 			}
@@ -1743,8 +1743,8 @@ namespace HiEasyX
 		}
 		else
 		{
-			while (nStartAnimation == false)	Sleep(50);		// µÈ´ı³õÊ¼¶¯»­Íê³É
-			// Ô¤Éè±³¾°É«
+			while (nStartAnimation == false)	Sleep(50);		// ç­‰å¾…åˆå§‹åŠ¨ç”»å®Œæˆ
+			// é¢„è®¾èƒŒæ™¯è‰²
 			if (SetWorkingWindow(hWnd) && BeginTask())
 			{
 				setbkcolor(CLASSICGRAY);
@@ -1809,7 +1809,7 @@ namespace HiEasyX
 	{
 		if (!m_isCreated)
 		{
-			// Ô¤Éè´°¿ÚÊôĞÔ
+			// é¢„è®¾çª—å£å±æ€§
 			if (m_isPreStyle)		PreSetWindowStyle(m_lPreStyle);
 			if (m_isPreStyleEx)		PreSetWindowStyleEx(m_lPreStyleEx);
 			if (m_isPrePos)			PreSetWindowPos(m_pPrePos.x, m_pPrePos.y);
@@ -2030,7 +2030,7 @@ namespace HiEasyX
 
 	void Window::SetTransparent(bool enable, int alpha)
 	{
-		//²âÊÔ½áÂÛ£º´Ëº¯Êı²»ÄÜÓë UpdateLayeredWindow Ò»Í¬Ê¹ÓÃ
+		//æµ‹è¯•ç»“è®ºï¼šæ­¤å‡½æ•°ä¸èƒ½ä¸ UpdateLayeredWindow ä¸€åŒä½¿ç”¨
 
 		LONG nRet = ::GetWindowLong(g_vecWindows[m_nWindowIndex].hWnd, GWL_EXSTYLE);
 		nRet |= WS_EX_LAYERED;

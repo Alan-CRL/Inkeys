@@ -1,4 +1,4 @@
-#include "HiCanvas.h"
+ï»¿#include "HiCanvas.h"
 
 #include "HiMacro.h"
 #include "HiWindow.h"
@@ -8,12 +8,12 @@ namespace HiEasyX
 {
 	COLORREF MixAlphaColor(COLORREF cDst, COLORREF cSrc, bool isCalculated, BYTE alpha)
 	{
-		float fSrc = GetAValue(cSrc) / 255.0f;	// ´ı»æÖÆÏñËØµÄÍ¸Ã÷¶È
-		if (alpha != 255)						// µş¼ÓÍ¸Ã÷¶È
+		float fSrc = GetAValue(cSrc) / 255.0f;	// å¾…ç»˜åˆ¶åƒç´ çš„é€æ˜åº¦
+		if (alpha != 255)						// å åŠ é€æ˜åº¦
 			fSrc *= alpha / 255.0f;
-		if (fSrc == 0.0f)						// »æÖÆÍ¸Ã÷¶ÈÎª 0 Ê±²»×öÈÎºÎ´¦Àí
+		if (fSrc == 0.0f)						// ç»˜åˆ¶é€æ˜åº¦ä¸º 0 æ—¶ä¸åšä»»ä½•å¤„ç†
 			return cDst;
-		float fDst = 1 - fSrc;					// Ô­Î»ÖÃÏñËØÓ¦³ËÍ¸Ã÷¶È
+		float fDst = 1 - fSrc;					// åŸä½ç½®åƒç´ åº”ä¹˜é€æ˜åº¦
 
 		if (isCalculated)
 		{
@@ -35,24 +35,24 @@ namespace HiEasyX
 
 	void CopyImage_Alpha(int x, int y, DWORD* pDst, int wDst, int hDst, DWORD* pSrc, int wSrc, int hSrc, RECT crop, BYTE alpha, bool bUseSrcAlpha, bool isCalculated)
 	{
-		// ¶Ô´ıÊä³öÍ¼ÏñµÄ²Ã¼ôÆğµã»òÖÕµãÎŞĞ§
+		// å¯¹å¾…è¾“å‡ºå›¾åƒçš„è£å‰ªèµ·ç‚¹æˆ–ç»ˆç‚¹æ— æ•ˆ
 		if (crop.left > wSrc || crop.top > hSrc || crop.right < crop.left || crop.bottom < crop.top)
 			return;
 
-		// ÏŞÖÆÔ­Í¼¿í¸ß
+		// é™åˆ¶åŸå›¾å®½é«˜
 		int limit_w = ((crop.right && crop.right < wSrc) ? crop.right : wSrc);
 		int limit_h = ((crop.bottom && crop.bottom < hSrc) ? crop.bottom : hSrc);
 
-		// ±ê¼Ç²»Ê¹ÓÃÈÎºÎÍ¸Ã÷Í¨µÀ
+		// æ ‡è®°ä¸ä½¿ç”¨ä»»ä½•é€æ˜é€šé“
 		bool bNoAlpha = false;
 		float fTransparent = alpha / 255.0f;
 		if (alpha == 255 && !bUseSrcAlpha)	bNoAlpha = true;
 
-		// ±£Ö¤Ö»ÓĞÔÚÊ¹ÓÃÔ­Í¼Í¸Ã÷¶ÈÊ±£¬ÒÑ¼ÆËã±ê¼Ç²ÅÄÜ¿ªÆô
+		// ä¿è¯åªæœ‰åœ¨ä½¿ç”¨åŸå›¾é€æ˜åº¦æ—¶ï¼Œå·²è®¡ç®—æ ‡è®°æ‰èƒ½å¼€å¯
 		if (!bUseSrcAlpha)	isCalculated = false;
 
-		// i j -> Ô­Í¼Ë÷Òı£¨ÈôÊä³öÎ»ÖÃÎª¸º£¬ÔòÂÔ¹ı³¬³ö·¶Î§²¿·Ö£©
-		// nx ny -> ÔØÌåÍ¼ÏñË÷Òı
+		// i j -> åŸå›¾ç´¢å¼•ï¼ˆè‹¥è¾“å‡ºä½ç½®ä¸ºè´Ÿï¼Œåˆ™ç•¥è¿‡è¶…å‡ºèŒƒå›´éƒ¨åˆ†ï¼‰
+		// nx ny -> è½½ä½“å›¾åƒç´¢å¼•
 		for (int i = (x < 0 ? -x : 0) + crop.left, nx = i + x; i < limit_w && nx < wDst; i++, nx++)
 		{
 			for (int j = (y < 0 ? -y : 0) + crop.top, ny = j + y; j < limit_h && ny < hDst; j++, ny++)
@@ -82,15 +82,15 @@ namespace HiEasyX
 
 	IMAGE RotateImage_Alpha(IMAGE* pImg, double radian, COLORREF bkcolor)
 	{
-		radian = -radian;														// ÓÉÓÚ y Öá·­×ª£¬Ğı×ª½Ç¶ÈĞèÒª±ä¸º
-		float fSin = (float)sin(radian), fCos = (float)cos(radian);				// ´æ´¢Èı½Çº¯ÊıÖµ
+		radian = -radian;														// ç”±äº y è½´ç¿»è½¬ï¼Œæ—‹è½¬è§’åº¦éœ€è¦å˜è´Ÿ
+		float fSin = (float)sin(radian), fCos = (float)cos(radian);				// å­˜å‚¨ä¸‰è§’å‡½æ•°å€¼
 		float fNSin = (float)sin(-radian), fNCos = (float)cos(-radian);
-		int left = 0, top = 0, right = 0, bottom = 0;							// Ğı×ªºóÍ¼Ïñ¶¥µã
+		int left = 0, top = 0, right = 0, bottom = 0;							// æ—‹è½¬åå›¾åƒé¡¶ç‚¹
 		int w, h;
 		GetImageSize(pImg, &w, &h);
 		DWORD* pBuf = GetImageBuffer(pImg);
-		POINT points[4] = { { 0, 0 },{ w, 0 },{ 0, h },{ w, h } };				// ´æ´¢Í¼Ïñ¶¥µã
-		for (int j = 0; j < 4; j++)												// Ğı×ªÍ¼Ïñ¶¥µã£¬ËÑË÷Ğı×ªºóµÄÍ¼Ïñ±ß½ç
+		POINT points[4] = { { 0, 0 },{ w, 0 },{ 0, h },{ w, h } };				// å­˜å‚¨å›¾åƒé¡¶ç‚¹
+		for (int j = 0; j < 4; j++)												// æ—‹è½¬å›¾åƒé¡¶ç‚¹ï¼Œæœç´¢æ—‹è½¬åçš„å›¾åƒè¾¹ç•Œ
 		{
 			points[j] = {
 				(int)(points[j].x * fCos - points[j].y * fSin),
@@ -102,25 +102,25 @@ namespace HiEasyX
 			if (points[j].y < points[bottom].y)	bottom = j;
 		}
 
-		int nw = points[right].x - points[left].x;								// Ğı×ªºóµÄÍ¼Ïñ³ß´ç
+		int nw = points[right].x - points[left].x;								// æ—‹è½¬åçš„å›¾åƒå°ºå¯¸
 		int nh = points[top].y - points[bottom].y;
 		int nSize = nw * nh;
-		int offset_x = points[left].x < 0 ? points[left].x : 0;					// Ğı×ªºóÍ¼Ïñ³¬³öµÚÒ»ÏóÏŞµÄÎ»ÒÆ£¨¾İ´Ëµ÷ÕûÍ¼ÏñÎ»ÖÃ£©
+		int offset_x = points[left].x < 0 ? points[left].x : 0;					// æ—‹è½¬åå›¾åƒè¶…å‡ºç¬¬ä¸€è±¡é™çš„ä½ç§»ï¼ˆæ®æ­¤è°ƒæ•´å›¾åƒä½ç½®ï¼‰
 		int offset_y = points[bottom].y < 0 ? points[bottom].y : 0;
 
 		IMAGE img(nw, nh);
 		DWORD* pNewBuf = GetImageBuffer(&img);
-		if (bkcolor != BLACK)													// ÉèÖÃÍ¼Ïñ±³¾°É«
+		if (bkcolor != BLACK)													// è®¾ç½®å›¾åƒèƒŒæ™¯è‰²
 			for (int i = 0; i < nSize; i++)
 				pNewBuf[i] = BGR(bkcolor);
 
-		for (int i = offset_x, ni = 0; ni < nw; i++, ni++)						// i ÓÃÓÚÓ³ÉäÔ­Í¼Ïñ×ø±ê£¬ni ÓÃÓÚ¶¨Î»Ğı×ªºóÍ¼Ïñ×ø±ê
+		for (int i = offset_x, ni = 0; ni < nw; i++, ni++)						// i ç”¨äºæ˜ å°„åŸå›¾åƒåæ ‡ï¼Œni ç”¨äºå®šä½æ—‹è½¬åå›¾åƒåæ ‡
 		{
 			for (int j = offset_y, nj = 0; nj < nh; j++, nj++)
 			{
-				int nx = (int)(i * fNCos - j * fNSin);							// ´ÓĞı×ªºóµÄÍ¼Ïñ×ø±êÏòÔ­Í¼Ïñ×ø±êÓ³Éä
+				int nx = (int)(i * fNCos - j * fNSin);							// ä»æ—‹è½¬åçš„å›¾åƒåæ ‡å‘åŸå›¾åƒåæ ‡æ˜ å°„
 				int ny = (int)(i * fNSin + j * fNCos);
-				if (nx >= 0 && nx < w && ny >= 0 && ny < h)						// ÈôÄ¿±êÓ³ÉäÔÚÔ­Í¼Ïñ·¶Î§ÄÚ£¬Ôò¿½±´É«Öµ
+				if (nx >= 0 && nx < w && ny >= 0 && ny < h)						// è‹¥ç›®æ ‡æ˜ å°„åœ¨åŸå›¾åƒèŒƒå›´å†…ï¼Œåˆ™æ‹·è´è‰²å€¼
 					pNewBuf[nj * nw + ni] = pBuf[ny * w + nx];
 			}
 		}
@@ -133,7 +133,7 @@ namespace HiEasyX
 		int src_width, src_height;
 		GetImageSize(srcimg, &src_width, &src_height);
 
-		// ×Ô¶¯Ëõ·Å
+		// è‡ªåŠ¨ç¼©æ”¾
 		if (height == 0)
 		{
 			height = width * src_height / src_width;
@@ -152,7 +152,7 @@ namespace HiEasyX
 		{
 			for (int ix = 0; ix < width; ix++)
 			{
-				// ¼ÆËãÔ­Í¼ÏàÓ¦×ø±ê
+				// è®¡ç®—åŸå›¾ç›¸åº”åæ ‡
 				int x_scale = (int)(w_scale_rate * ix);
 				int y_scale = (int)(h_scale_rate * iy);
 				dst[ix + iy * width] = src[(int)(x_scale + y_scale * src_width)];
@@ -167,7 +167,7 @@ namespace HiEasyX
 		int old_w, old_h;
 		GetImageSize(srcimg, &old_w, &old_h);
 
-		// ×Ô¶¯Ëõ·Å
+		// è‡ªåŠ¨ç¼©æ”¾
 		if (height == 0)
 		{
 			height = width * old_h / old_w;
@@ -177,15 +177,15 @@ namespace HiEasyX
 		DWORD* src = GetImageBuffer(srcimg);
 		DWORD* dst = GetImageBuffer(&output);
 
-		// Ë«ÏßĞÔ²åÖµ£¨ÒòÎªÏòÏÂÈ¡Ñù£¬ËùÒÔ w, h ¶¼Òª¼õÒ»±ÜÃâÔ½½ç£©
+		// åŒçº¿æ€§æ’å€¼ï¼ˆå› ä¸ºå‘ä¸‹å–æ ·ï¼Œæ‰€ä»¥ w, h éƒ½è¦å‡ä¸€é¿å…è¶Šç•Œï¼‰
 		for (int i = 0; i < height - 1; i++)
 		{
 			for (int j = 0; j < width - 1; j++)
 			{
-				int xt = j * old_w / width;		// ĞÂÍ¼×ø±êÓ³Éäµ½Ô­Í¼ÉÏµÄÎ»ÖÃ
+				int xt = j * old_w / width;		// æ–°å›¾åæ ‡æ˜ å°„åˆ°åŸå›¾ä¸Šçš„ä½ç½®
 				int yt = i * old_h / height;
 
-				// ÊµÏÖÖğĞĞ¼ÓÔØÍ¼Æ¬
+				// å®ç°é€è¡ŒåŠ è½½å›¾ç‰‡
 				byte r = (
 					GetRValue(src[xt + yt * old_w]) +
 					GetRValue(src[xt + yt * old_w + 1]) +
@@ -202,7 +202,7 @@ namespace HiEasyX
 					GetBValue(src[xt + (yt + 1) * old_w]) +
 					GetBValue(src[xt + (yt + 1) * old_w + 1])) / 4;
 
-				// ¸³Öµ£¬±£Áô alpha
+				// èµ‹å€¼ï¼Œä¿ç•™ alpha
 				dst[i * width + j] = RGBA(r, g, b, GetAValue(src[xt + yt * old_w]));
 			}
 		}
@@ -215,7 +215,7 @@ namespace HiEasyX
 		int w, h;
 		GetImageSize(srcimg, &w, &h);
 
-		// ×Ô¶¯Ëõ·Å
+		// è‡ªåŠ¨ç¼©æ”¾
 		if (height == 0)
 		{
 			height = width * h / w;
@@ -258,7 +258,7 @@ namespace HiEasyX
 		}
 		else
 		{
-			// ÄÚ²¿×ÜÊÇµ÷ÓÃ´Ëº¯Êı£¬¹ÊÎ´°ó¶¨´°¿ÚÊ±Ö±½Ó·µ»Ø true
+			// å†…éƒ¨æ€»æ˜¯è°ƒç”¨æ­¤å‡½æ•°ï¼Œæ•…æœªç»‘å®šçª—å£æ—¶ç›´æ¥è¿”å› true
 			return true;
 		}
 	}
@@ -284,7 +284,7 @@ namespace HiEasyX
 
 	void Canvas::EndDrawing()
 	{
-		// ÅúÁ¿»æÖÆÄ£Ê½ÏÂ£¬²»ÍË³ö»æÍ¼Ä¿±ê
+		// æ‰¹é‡ç»˜åˆ¶æ¨¡å¼ä¸‹ï¼Œä¸é€€å‡ºç»˜å›¾ç›®æ ‡
 		if (!m_bBatchDraw)
 		{
 			if (m_property.IsSaved())
@@ -332,7 +332,7 @@ namespace HiEasyX
 			Resize(w, h);
 			UpdateSizeInfo();
 
-			// ²»Ê¹ÓÃ IMAGE::operator=£¬ÒòÎªËü²»Ö§³ÖÖ¸Õë
+			// ä¸ä½¿ç”¨ IMAGE::operator=ï¼Œå› ä¸ºå®ƒä¸æ”¯æŒæŒ‡é’ˆ
 			memcpy(m_pBuf, GetImageBuffer(pImg), m_nBufSize * sizeof(COLORREF));
 			EndWindowTask();
 		}
@@ -433,7 +433,7 @@ namespace HiEasyX
 
 	void Canvas::RenderTo(int x, int y, IMAGE* pImg, RECT crop, BYTE alpha, bool bUseSrcAlpha, bool isCalculated)
 	{
-		int w, h;	// Ä¿±êÊä³ö»­²¼³ß´ç
+		int w, h;	// ç›®æ ‡è¾“å‡ºç”»å¸ƒå°ºå¯¸
 		GetImageSize(pImg, &w, &h);
 		if (BeginWindowTask())
 		{
@@ -473,7 +473,7 @@ namespace HiEasyX
 			if (isSetColor)	setbkcolor(bkcolor);
 			DWORD bk_bgr = BGR(getbkcolor());
 
-			if (ignore_alpha)		// ÉèÖÃ±³¾°Í¸Ã÷¶ÈÎª 255£¨²»Í¸Ã÷£©
+			if (ignore_alpha)		// è®¾ç½®èƒŒæ™¯é€æ˜åº¦ä¸º 255ï¼ˆä¸é€æ˜ï¼‰
 				bk_bgr |= 0xFF000000;
 
 			for (int i = 0; i < m_nBufSize; i++)
@@ -1617,25 +1617,25 @@ namespace HiEasyX
 
 	IMAGE Canvas::Load_Image_Alpha(LPCTSTR lpszImgFile, int x, int y, bool bResize, int nWidth, int nHeight, BYTE alpha, bool bUseSrcAlpha, bool isCalculated)
 	{
-		// ±ê¼Çµ½µ×Òª²»Òªµ÷ÕûÍ¼Ïñ´óĞ¡
+		// æ ‡è®°åˆ°åº•è¦ä¸è¦è°ƒæ•´å›¾åƒå¤§å°
 		bool resize_flag = bResize;
 		if (m_nWidth == 0 && m_nHeight == 0)
 		{
 			resize_flag = true;
 		}
 
-		// Èç¹û³¬³ö»­²¼·¶Î§¶øÓÖ²»µ÷ÕûÍ¼Ïñ´óĞ¡£¬ÔòÖ±½Ó·µ»Ø
+		// å¦‚æœè¶…å‡ºç”»å¸ƒèŒƒå›´è€Œåˆä¸è°ƒæ•´å›¾åƒå¤§å°ï¼Œåˆ™ç›´æ¥è¿”å›
 		if (!resize_flag && (x > m_nWidth || y > m_nHeight))	return {};
 
-		// ¼ÓÔØÍ¼Ïñ
+		// åŠ è½½å›¾åƒ
 		IMAGE img;
 		loadimage(&img, lpszImgFile, nWidth, nHeight, true);
 		int w = img.getwidth(), h = img.getheight();
 
-		// Èç¹ûÍ¼ÏñÔÚ×ó²à»òÉÏ·½Ô½½ç£¬ÄÇÃ´²»ÓÃÊä³öÁË
+		// å¦‚æœå›¾åƒåœ¨å·¦ä¾§æˆ–ä¸Šæ–¹è¶Šç•Œï¼Œé‚£ä¹ˆä¸ç”¨è¾“å‡ºäº†
 		if (x <= -w || y <= -h)	return {};
 
-		// µ÷ÕûÍ¼Ïñ´óĞ¡
+		// è°ƒæ•´å›¾åƒå¤§å°
 		if (resize_flag)
 		{
 			int nw = x + w;
@@ -1643,14 +1643,14 @@ namespace HiEasyX
 			Resize(nw, nh);
 		}
 
-		// Êä³öÍ¼Ïñ
+		// è¾“å‡ºå›¾åƒ
 		PutImageIn_Alpha(x, y, &img, { 0 }, alpha, bUseSrcAlpha, isCalculated);
 		return img;
 	}
 
 	void Canvas::PutImageIn_Alpha(int x, int y, IMAGE* pImg, RECT crop, BYTE alpha, bool bUseSrcAlpha, bool isCalculated)
 	{
-		int w, h;	// Ô­Í¼Ïñ³ß´ç
+		int w, h;	// åŸå›¾åƒå°ºå¯¸
 		GetImageSize(pImg, &w, &h);
 		if (BeginWindowTask())
 		{
@@ -2072,7 +2072,7 @@ namespace HiEasyX
 			{
 				element->Render(pImg, alpha);
 
-				// »æÖÆÂÖÀª
+				// ç»˜åˆ¶è½®å»“
 				if (flagOutline)
 				{
 					RECT rctImg = {
@@ -2086,7 +2086,7 @@ namespace HiEasyX
 					EXPAND_RECT(rctImg, 1);
 					canvas.Rectangle(rctImg, true, WHITE);
 
-					// »æÖÆÎÄ±¾
+					// ç»˜åˆ¶æ–‡æœ¬
 					if (flagText)
 					{
 						std::wstring wstrOriginText = L" Block[" + std::to_wstring(i) + L"]";
@@ -2148,7 +2148,7 @@ namespace HiEasyX
 			{
 				element->Render(pImg, alpha);
 
-				// »æÖÆÂÖÀª
+				// ç»˜åˆ¶è½®å»“
 				if (flagOutline)
 				{
 					RECT rctImg = {
@@ -2162,7 +2162,7 @@ namespace HiEasyX
 					EXPAND_RECT(rctImg, 1);
 					canvas.Rectangle(rctImg, true, WHITE);
 
-					// »æÖÆÎÄ±¾
+					// ç»˜åˆ¶æ–‡æœ¬
 					if (flagText)
 					{
 						std::string strOriginText = " Block[" + std::to_string(i) + "]";
@@ -2209,7 +2209,7 @@ namespace HiEasyX
 
 	size_t Scene::GetAllLayerSize() const
 	{
-		// ÆÕÍ¨Í¼²ã¼Ó 4 ¸öÌØÊâÍ¼²ã
+		// æ™®é€šå›¾å±‚åŠ  4 ä¸ªç‰¹æ®Šå›¾å±‚
 		return this->size() + 4;
 	}
 

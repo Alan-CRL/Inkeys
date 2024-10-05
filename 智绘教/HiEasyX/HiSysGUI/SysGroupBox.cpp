@@ -1,4 +1,4 @@
-#include "SysGroupBox.h"
+﻿#include "SysGroupBox.h"
 #include <tchar.h>
 
 namespace HiEasyX

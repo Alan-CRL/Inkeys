@@ -1,7 +1,7 @@
-/**
+ï»¿/**
  * @file	HiGif.h
- * @brief	HiEasyX ¿âµÄ¶¯Í¼Ä£¿é
- * @author	ÒÀÏ¡_yixy£¬huidong£¨ĞŞ¸Ä£©
+ * @brief	HiEasyX åº“çš„åŠ¨å›¾æ¨¡å—
+ * @author	ä¾ç¨€_yixyï¼Œhuidongï¼ˆä¿®æ”¹ï¼‰
 */
 
 #pragma once
@@ -15,20 +15,20 @@ namespace HiEasyX
 {
 	/**
 	 * @brief <pre>
-	 *		Gif ¶¯Í¼
+	 *		Gif åŠ¨å›¾
 	 *
-	 *	Ê¹ÓÃ·½·¨£º
-	 *		1. load ¼ÓÔØÍ¼Ïñ
-	 *		2. bind °ó¶¨Êä³ö HDC
-	 *		3. £¨¿ÉÑ¡£©setPos ÉèÖÃÎ»ÖÃ
-	 *		4. £¨¿ÉÑ¡£©setSize ÉèÖÃËõ·Å´óĞ¡£¨Îª 0 ±íÊ¾Ô­Í¼´óĞ¡£©
-	 *		5. play ¿ªÊ¼²¥·Å
-	 *		6. draw »æÖÆµ½ HDC
+	 *	ä½¿ç”¨æ–¹æ³•ï¼š
+	 *		1. load åŠ è½½å›¾åƒ
+	 *		2. bind ç»‘å®šè¾“å‡º HDC
+	 *		3. ï¼ˆå¯é€‰ï¼‰setPos è®¾ç½®ä½ç½®
+	 *		4. ï¼ˆå¯é€‰ï¼‰setSize è®¾ç½®ç¼©æ”¾å¤§å°ï¼ˆä¸º 0 è¡¨ç¤ºåŸå›¾å¤§å°ï¼‰
+	 *		5. play å¼€å§‹æ’­æ”¾
+	 *		6. draw ç»˜åˆ¶åˆ° HDC
 	 * </pre>
 	 * 
 	 * @bug <pre>
-	 *		1. ÊÍ·ÅÊ±¿ÉÄÜ±ÀÀ£
-	 *		2. ¶Ô°ó¶¨µÄ HDC µ÷Õû´óĞ¡¿ÉÄÜµ¼ÖÂ±ÀÀ£
+	 *		1. é‡Šæ”¾æ—¶å¯èƒ½å´©æºƒ
+	 *		2. å¯¹ç»‘å®šçš„ HDC è°ƒæ•´å¤§å°å¯èƒ½å¯¼è‡´å´©æºƒ
 	 * </pre>
 	*/
 	class Gif
@@ -37,23 +37,23 @@ namespace HiEasyX
 
 		int x, y;
 		int width, height;
-		int frameCount;					///< Ö¡Êı
+		int frameCount;					///< å¸§æ•°
 
-		HDC hdc;						///< Éè±¸¾ä±ú
-		Gdiplus::Graphics* graphics;	///< Í¼ĞÎ¶ÔÏó
+		HDC hdc;						///< è®¾å¤‡å¥æŸ„
+		Gdiplus::Graphics* graphics;	///< å›¾å½¢å¯¹è±¡
 
-		Gdiplus::Bitmap* gifImage;		///< gif Í¼Ïñ
-		Gdiplus::PropertyItem* pItem;	///< Ö¡ÑÓÊ±Êı¾İ
+		Gdiplus::Bitmap* gifImage;		///< gif å›¾åƒ
+		Gdiplus::PropertyItem* pItem;	///< å¸§å»¶æ—¶æ•°æ®
 
-		int curFrame;					///< µ±Ç°Ö¡
-		clock_t pauseTime;				///< ÔİÍ£Ê±¼ä
+		int curFrame;					///< å½“å‰å¸§
+		clock_t pauseTime;				///< æš‚åœæ—¶é—´
 
-		clock_t	frameBaseTime;			///< Ö¡»ù×¼Ê±¼ä
-		clock_t	curDelayTime;			///< µ±Ç°Ö¡µÄÒÑ²¥·ÅÊ±¼ä
-		clock_t	frameDelayTime;			///< µ±Ç°Ö¡µÄ×ÜÑÓÊ±Ê±¼ä
+		clock_t	frameBaseTime;			///< å¸§åŸºå‡†æ—¶é—´
+		clock_t	curDelayTime;			///< å½“å‰å¸§çš„å·²æ’­æ”¾æ—¶é—´
+		clock_t	frameDelayTime;			///< å½“å‰å¸§çš„æ€»å»¶æ—¶æ—¶é—´
 
-		bool playing;					///< ÊÇ·ñ²¥·Å
-		bool visible;					///< ÊÇ·ñ¿É¼û
+		bool playing;					///< æ˜¯å¦æ’­æ”¾
+		bool visible;					///< æ˜¯å¦å¯è§
 
 	public:
 
@@ -65,63 +65,63 @@ namespace HiEasyX
 		Gif& operator=(const Gif& gif);
 
 		/**
-		 * @brief ¼ÓÔØÍ¼Ïñ
-		 * @param[in] gifFileName Í¼ÏñÎÄ¼şÂ·¾¶
+		 * @brief åŠ è½½å›¾åƒ
+		 * @param[in] gifFileName å›¾åƒæ–‡ä»¶è·¯å¾„
 		*/
 		void load(const WCHAR* gifFileName);
 
 		/**
-		 * @brief °ó¶¨Éè±¸
-		 * @param[in] hdc »æÍ¼Éè±¸
+		 * @brief ç»‘å®šè®¾å¤‡
+		 * @param[in] hdc ç»˜å›¾è®¾å¤‡
 		*/
 		void bind(HDC hdc);
 
 		/**
-		 * @brief Çå¿ÕÍ¼Ïñ
+		 * @brief æ¸…ç©ºå›¾åƒ
 		*/
 		void clear();
 
-		// Î»ÖÃ
+		// ä½ç½®
 		void setPos(int x, int y);
 		void setSize(int width, int height);
 
 		int getX() const { return x; }
 		int getY() const { return y; }
 
-		// ÉèÖÃºóµÄÍ¼Ïñ´óĞ¡£¨Îª 0 ±íÊ¾Ê¹ÓÃÔ­Í¼´óĞ¡£©
+		// è®¾ç½®åçš„å›¾åƒå¤§å°ï¼ˆä¸º 0 è¡¨ç¤ºä½¿ç”¨åŸå›¾å¤§å°ï¼‰
 		int getWidth() const { return width; }
 		int getHeight() const { return height; }
 
-		// Ô­Í¼´óĞ¡
+		// åŸå›¾å¤§å°
 		int getOrginWidth() const;
 		int getOrginHeight() const;
 
-		// Ö¡ĞÅÏ¢
+		// å¸§ä¿¡æ¯
 		int getFrameCount() const { return frameCount; }
 		int getCurFrame() const { return curFrame; }
 
-		// ÑÓÊ±Ê±¼ä»ñÈ¡£¬ÉèÖÃ
+		// å»¶æ—¶æ—¶é—´è·å–ï¼Œè®¾ç½®
 		int getDelayTime(int frame) const;
 		void setDelayTime(int frame, long time_ms);
 		void setAllDelayTime(long time_ms);
 
-		// ¸üĞÂÊ±¼ä£¬¼ÆËãµ±Ç°Ö¡
+		// æ›´æ–°æ—¶é—´ï¼Œè®¡ç®—å½“å‰å¸§
 		void updateTime();
 
-		// »æÖÆµ±Ç°Ö¡»òÖ¸¶¨Ö¡
+		// ç»˜åˆ¶å½“å‰å¸§æˆ–æŒ‡å®šå¸§
 		void draw();
 		void draw(int x, int y);
 		void drawFrame(int frame);
 		void drawFrame(int frame, int x, int y);
 
 		/**
-		 * @brief »ñÈ¡Í¼Ïñ
-		 * @param[in] pimg		ÔØÌå
-		 * @param[in] frame	Ö¡Ë÷Òı
+		 * @brief è·å–å›¾åƒ
+		 * @param[in] pimg		è½½ä½“
+		 * @param[in] frame	å¸§ç´¢å¼•
 		*/
 		void getimage(IMAGE* pimg, int frame);
 
-		// ²¥·Å×´Ì¬¿ØÖÆ
+		// æ’­æ”¾çŠ¶æ€æ§åˆ¶
 		void play();
 		void pause();
 		void toggle();
@@ -134,7 +134,7 @@ namespace HiEasyX
 		bool IsAnimation() const { return frameCount > 1; }
 
 		/**
-		 * @brief ÖØÖÃ²¥·Å×´Ì¬
+		 * @brief é‡ç½®æ’­æ”¾çŠ¶æ€
 		*/
 		void resetPlayState();
 
@@ -143,12 +143,12 @@ namespace HiEasyX
 	private:
 
 		/**
-		 * @brief ³õÊ¼»¯
+		 * @brief åˆå§‹åŒ–
 		*/
 		void init();
 
 		/**
-		 * @brief ¶ÁÈ¡Í¼ÏñĞÅÏ¢
+		 * @brief è¯»å–å›¾åƒä¿¡æ¯
 		*/
 		void read();
 

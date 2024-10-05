@@ -1,6 +1,6 @@
-/**
+ï»¿/**
  * @file	HiMouseDrag.h
- * @brief	HiEasyX ¿âµÄÊó±êÍÏ¶¯´¦ÀíÄ£¿é
+ * @brief	HiEasyX åº“çš„é¼ æ ‡æ‹–åŠ¨å¤„ç†æ¨¡å—
  * @author	huidong
 */
 
@@ -12,12 +12,12 @@ namespace HiEasyX
 {
 	/**
 	 * @brief <pre>
-	 *		Êó±êÍÏ¶¯ÊÂ¼ş´¦ÀíÆ÷
+	 *		é¼ æ ‡æ‹–åŠ¨äº‹ä»¶å¤„ç†å™¨
 	 *	
-	 *	µ÷ÓÃ·½·¨£º
-	 *		1. µ÷ÓÃ UpdateMessage ¸üĞÂÊó±êÏûÏ¢
-	 *		2. µ÷ÓÃ isLeftDrag£¬isMiddleDrag£¬isRightDrag º¯ÊıÅĞ¶ÏÕıÔÚÍÏ¶¯µÄÊó±ê°´¼ü
-	 *		3. µ÷ÓÃ GetDragX£¬GetDragY »ñÈ¡Êó±êÍÏ¶¯Ê±Êó±ê×ø±êµÄ±ä»¯Á¿
+	 *	è°ƒç”¨æ–¹æ³•ï¼š
+	 *		1. è°ƒç”¨ UpdateMessage æ›´æ–°é¼ æ ‡æ¶ˆæ¯
+	 *		2. è°ƒç”¨ isLeftDragï¼ŒisMiddleDragï¼ŒisRightDrag å‡½æ•°åˆ¤æ–­æ­£åœ¨æ‹–åŠ¨çš„é¼ æ ‡æŒ‰é”®
+	 *		3. è°ƒç”¨ GetDragXï¼ŒGetDragY è·å–é¼ æ ‡æ‹–åŠ¨æ—¶é¼ æ ‡åæ ‡çš„å˜åŒ–é‡
 	 * </pre>
 	*/
 	class MouseDrag
@@ -33,14 +33,14 @@ namespace HiEasyX
 		
 	public:
 
-		void UpdateMessage(ExMessage m);	///< ¸üĞÂÊó±êÏûÏ¢
+		void UpdateMessage(ExMessage m);	///< æ›´æ–°é¼ æ ‡æ¶ˆæ¯
 
-		bool IsLeftDrag();					///< Êó±ê×ó¼üÊÇ·ñÍÏ¶¯
-		bool IsMiddleDrag();				///< Êó±êÖĞ¼üÊÇ·ñÍÏ¶¯
-		bool IsRightDrag();					///< Êó±êÓÒ¼üÊÇ·ñÍÏ¶¯
+		bool IsLeftDrag();					///< é¼ æ ‡å·¦é”®æ˜¯å¦æ‹–åŠ¨
+		bool IsMiddleDrag();				///< é¼ æ ‡ä¸­é”®æ˜¯å¦æ‹–åŠ¨
+		bool IsRightDrag();					///< é¼ æ ‡å³é”®æ˜¯å¦æ‹–åŠ¨
 
-		int GetDragX();						///< »ñÈ¡ÍÏ¶¯µÄ x ×ø±êÆ«ÒÆÁ¿
-		int GetDragY();						///< »ñÈ¡ÍÏ¶¯µÄ y ×ø±êÆ«ÒÆÁ¿
+		int GetDragX();						///< è·å–æ‹–åŠ¨çš„ x åæ ‡åç§»é‡
+		int GetDragY();						///< è·å–æ‹–åŠ¨çš„ y åæ ‡åç§»é‡
 	};
 
 };
