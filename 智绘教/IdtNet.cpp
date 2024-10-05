@@ -58,3 +58,28 @@ std::string GetEditionInformation()
 
 	return "Error";
 }
+bool DownloadEdition(std::string domain, std::string path, std::wstring directory, std::wstring fileName)
+{
+	MessageBoxA(NULL, domain.c_str(), path.c_str(), MB_OK);
+
+	httplib::Result res;
+	httplib::Headers headers = { {"Cache-Control", "no-cache"}, {"Pragma", "no-cache"} };
+	long long fileSize = 0;
+
+	httplib::SSLClient scli(domain);
+	scli.set_follow_location(true);
+	scli.set_connection_timeout(5);
+
+	// 尝试 Https 连接
+	res = scli.Head(path.c_str());
+	if (res && res->status == 200)
+	{
+		auto it = res->headers.find("Content-Length");
+		if (it == res->headers.end()) return false;
+
+		fileSize = stoll(it->second);
+	}
+	else
+	{
+	}
+}

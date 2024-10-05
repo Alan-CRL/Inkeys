@@ -60,7 +60,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 {
 	// 路径预处理
 	{
-		globalPath = WstringToString(GetCurrentExeDirectory() + L"\\");
+		globalPath = utf16ToUtf8(GetCurrentExeDirectory() + L"\\");
+		MessageBoxW(NULL, utf8ToUtf16(globalPath).c_str(), L"", MB_OK);
 
 		{
 			int typeRoot = 0;
@@ -69,7 +70,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			else
 			{
 				wstring time = getTimestamp();
-				wstring path = StringToWstring(globalPath) + L"IdtRootCheck" + time;
+				wstring path = utf8ToUtf16(globalPath) + L"IdtRootCheck" + time;
 
 				error_code ec;
 				try {

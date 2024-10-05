@@ -209,6 +209,42 @@ EditionInfoClass GetEditionInfo(string channel)
 	return retEditionInfo;
 }
 
+void splitUrl(string input_url, string& prefix, string& domain, string& path)
+{
+	// 更新后的正则表达式，捕获前缀，并要求域名中至少包含一个点
+	regex url_regex(R"(^\s*(?:([a-zA-Z]+://))?((?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,})(/\S*)?\s*$)", regex::icase);
+	smatch url_match_result;
+
+	if (regex_match(input_url, url_match_result, url_regex))
+	{
+		prefix = url_match_result[1].matched ? url_match_result[1].str() : "";
+		domain = url_match_result[2].str();
+		path = url_match_result[3].matched ? url_match_result[3].str() : "";
+	}
+	else
+	{
+		prefix.clear();
+		domain.clear();
+		path.clear();
+	}
+}
+int DownloadNewProgram(DownloadNewProgramStateClass* state, string url)
+{
+	MessageBoxA(NULL, "1", "", MB_OK);
+
+	error_code ec;
+	filesystem::create_directory(StringToWstring(globalPath) + L"installer", ec); //创建路径
+
+	MessageBoxA(NULL, "2", "", MB_OK);
+	string prefix, domain, path;
+	splitUrl(url, prefix, domain, path);
+
+	MessageBoxA(NULL, globalPath.c_str(), "", MB_OK);
+	MessageBoxW(NULL, utf8ToUtf16(globalPath).c_str(), L"", MB_OK);
+	wstring timestamp = getTimestamp();
+	bool reslut = DownloadEdition(domain, path, utf8ToUtf16(globalPath) + L"installer\\", L"new_procedure_" + timestamp + L".tmp");
+}
+
 void AutomaticUpdate()
 {
 	/*
@@ -318,15 +354,9 @@ void AutomaticUpdate()
 			{
 				AutomaticUpdateStep = 6;
 
-				error_code ec;
-				filesystem::create_directory(StringToWstring(globalPath) + L"installer", ec); //创建路径
-				filesystem::remove(StringToWstring(globalPath) + L"installer\\new_procedure.tmp", ec);
-
 				against = true;
-				for (int i = 0; i < info.path_size; i++)
+				for (int i = 0; i < editionInfo.path_size; i++)
 				{
-					DeleteUrlCacheEntry(convertToHttp(get_domain_name(info.path[i])).c_str());
-
 					HRESULT download2;
 					{
 						download2 = URLDownloadToFileW( // 从网络上下载数据到本地文件
@@ -340,8 +370,6 @@ void AutomaticUpdate()
 
 					if (download2 == S_OK)
 					{
-						wstring timestamp = getTimestamp();
-
 						error_code ec;
 						filesystem::remove(StringToWstring(globalPath) + L"installer\\new_procedure" + timestamp + L".exe", ec);
 						filesystem::remove(StringToWstring(globalPath) + L"installer\\" + info.representation + L".exe", ec);
@@ -421,7 +449,8 @@ void AutomaticUpdate()
 					}
 					else AutomaticUpdateStep = 7;
 				}
-			}*/
+			}
+			*/
 		}
 		/*
 		else if (state && info.editionDate != L"" && info.editionDate <= StringToWstring(editionDate)) AutomaticUpdateStep = 10;

@@ -38,6 +38,14 @@ public:
 };
 EditionInfoClass GetEditionInfo(string channel);
 
+class DownloadNewProgramStateClass
+{
+	long long downloadedSize;
+	long long fileSize;
+};
+void splitUrl(string input_url, string& prefix, string& domain, string& path);
+int DownloadNewProgram(DownloadNewProgramStateClass* state, string url);
+
 //程序自动更新
 extern int AutomaticUpdateStep;
 wstring get_domain_name(wstring url);
