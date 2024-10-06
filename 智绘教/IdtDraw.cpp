@@ -126,7 +126,7 @@ COLORREF InvertColor(COLORREF color, bool alpha_enable)
 }
 
 //保存图像到本地
-void saveImageToPNG(IMAGE img, const char* filename, bool alpha, int compression_level)
+bool saveImageToPNG(IMAGE img, const wstring& filePath, bool alpha, int compression_level)
 {
 	int width = img.getwidth();
 	int height = img.getheight();
@@ -134,14 +134,14 @@ void saveImageToPNG(IMAGE img, const char* filename, bool alpha, int compression
 	// Get the image buffer of the IMAGE object
 	DWORD* pMem = GetImageBuffer(&img);
 
-	if (alpha)
+	unsigned char* data = new unsigned char[width * height * 4];
+	for (int y = 0; y < height; ++y)
 	{
-		unsigned char* data = new unsigned char[width * height * 4];
-		for (int y = 0; y < height; ++y)
+		for (int x = 0; x < width; ++x)
 		{
-			for (int x = 0; x < width; ++x)
+			DWORD color = pMem[y * width + x];
+			if (alpha)
 			{
-				DWORD color = pMem[y * width + x];
 				unsigned char alpha = (color & 0xFF000000) >> 24;
 				if (alpha != 0)
 				{
@@ -157,88 +157,39 @@ void saveImageToPNG(IMAGE img, const char* filename, bool alpha, int compression
 				}
 				data[(y * width + x) * 4 + 3] = alpha;
 			}
-		}
-
-		stbi_write_png_compression_level = compression_level;
-		stbi_write_png(filename, width, height, 4, data, width * 4);
-		delete[] data;
-	}
-	else
-	{
-		unsigned char* data = new unsigned char[width * height * 4];
-		for (int y = 0; y < height; ++y)
-		{
-			for (int x = 0; x < width; ++x)
+			else
 			{
-				DWORD color = pMem[y * width + x];
 				data[(y * width + x) * 4 + 0] = unsigned char((color & 0x00FF0000) >> 16);
 				data[(y * width + x) * 4 + 1] = unsigned char((color & 0x0000FF00) >> 8);
 				data[(y * width + x) * 4 + 2] = unsigned char((color & 0x000000FF) >> 0);
 				data[(y * width + x) * 4 + 3] = 255;
 			}
 		}
-
-		stbi_write_png_compression_level = compression_level;
-		stbi_write_png(filename, width, height, 4, data, width * 4);
-		delete[] data;
 	}
-}
-void SaveHBITMAPToPNG(HBITMAP hBitmap, const char* filename)
-{
-	BITMAP bmp;
-	GetObject(hBitmap, sizeof(bmp), &bmp);
 
-	int width = bmp.bmWidth;
-	int height = bmp.bmHeight;
-
-	HDC hdc = GetDC(NULL);
-	HDC memDC = CreateCompatibleDC(hdc);
-	HBITMAP oldBmp = (HBITMAP)SelectObject(memDC, hBitmap);
-
-	unsigned char* pixels = new unsigned char[width * height * 4];
-	BITMAPINFOHEADER bih;
-	bih.biSize = sizeof(BITMAPINFOHEADER);
-	bih.biWidth = width;
-	bih.biHeight = -height;
-	bih.biPlanes = 1;
-	bih.biBitCount = 32;
-	bih.biCompression = BI_RGB;
-	bih.biSizeImage = 0;
-	bih.biXPelsPerMeter = 0;
-	bih.biYPelsPerMeter = 0;
-	bih.biClrUsed = 0;
-	bih.biClrImportant = 0;
-
-	GetDIBits(memDC, hBitmap, 0, height, pixels, (BITMAPINFO*)&bih, DIB_RGB_COLORS);
-
-	stbi_flip_vertically_on_write(1);
-	stbi_write_png(filename, width, height, 4, pixels, width * 4);
-
-	delete[] pixels;
-
-	SelectObject(memDC, oldBmp);
-	DeleteDC(memDC);
-}
-void saveImageToJPG(IMAGE img, const char* filename, int quality)
-{
-	int width = img.getwidth();
-	int height = img.getheight();
-	DWORD* pMem = GetImageBuffer(&img);
-
-	unsigned char* data = new unsigned char[width * height * 3];
-	for (int y = 0; y < height; y++)
+	// 使用宽字符函数打开文件
+	FILE* file = nullptr;
+	errno_t err = _wfopen_s(&file, filePath.c_str(), L"wb");
+	if (err != 0 || file == nullptr)
 	{
-		for (int x = 0; x < width; x++)
-		{
-			COLORREF color = pMem[y * width + x];
-			data[(y * width + x) * 3 + 0] = GetBValue(color);
-			data[(y * width + x) * 3 + 1] = GetGValue(color);
-			data[(y * width + x) * 3 + 2] = GetRValue(color);
-		}
+		delete[] data;
+		return false;
 	}
 
-	stbi_write_jpg(filename, width, height, 3, data, quality);
+	auto writeCallback = [](void* context, void* data, int size)
+		{
+			FILE* file = static_cast<FILE*>(context);
+			size_t written = fwrite(data, 1, size, file);
+		};
+
+	stbi_write_png_compression_level = compression_level;
+	int result = stbi_write_png_to_func(writeCallback, file, width, height, 4, data, width * 4);
+
+	fclose(file);
 	delete[] data;
+
+	if (result == 0) return false;
+	return true;
 }
 
 //比较图像

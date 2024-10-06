@@ -89,7 +89,7 @@ bool DdbReadSetting()
 
 	ifstream readjson;
 	readjson.imbue(locale("zh_CN.UTF8"));
-	readjson.open((globalPath + L"PlugIn\\DDB\\interaction_configuration.json").c_str());
+	readjson.open(globalPath + L"PlugIn\\DDB\\interaction_configuration.json");
 
 	if (reader.parse(readjson, root))
 	{
@@ -173,7 +173,7 @@ bool DdbWriteSetting(bool change, bool close)
 	std::unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
 	ofstream writejson;
 	writejson.imbue(locale("zh_CN.UTF8"));
-	writejson.open((globalPath + L"PlugIn\\DDB\\interaction_configuration.json").c_str());
+	writejson.open(globalPath + L"PlugIn\\DDB\\interaction_configuration.json");
 	writer->write(root, &writejson);
 	writejson.close();
 

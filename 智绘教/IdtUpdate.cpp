@@ -17,7 +17,7 @@ void CrashedHandler()
 	ofstream write;
 	write.imbue(locale("zh_CN.UTF8"));
 
-	write.open(WstringToString(StringToWstring(globalPath) + L"api\\open.txt").c_str());
+	write.open(globalPath + L"api\\open.txt");
 	write << 1;
 	write.close();
 
@@ -27,47 +27,47 @@ void CrashedHandler()
 
 		// 检查本地文件完整性
 		{
-			if (_waccess((StringToWstring(globalPath) + L"api").c_str(), 0) == -1)
+			if (_waccess((globalPath + L"api").c_str(), 0) == -1)
 			{
 				error_code ec;
-				filesystem::create_directory(StringToWstring(globalPath) + L"api", ec);
+				filesystem::create_directory(globalPath + L"api", ec);
 			}
 
-			if (_waccess((StringToWstring(globalPath) + L"api\\智绘教CrashedHandler.exe").c_str(), 0) == -1)
-				if (!ExtractResource((StringToWstring(globalPath) + L"api\\智绘教CrashedHandler.exe").c_str(), L"EXE", MAKEINTRESOURCE(201)))
+			if (_waccess((globalPath + L"api\\智绘教CrashedHandler.exe").c_str(), 0) == -1)
+				if (!ExtractResource((globalPath + L"api\\智绘教CrashedHandler.exe").c_str(), L"EXE", MAKEINTRESOURCE(201)))
 					start = false;
 
 			{
 				string hash_md5, hash_sha256;
 				{
 					hashwrapper* myWrapper = new md5wrapper();
-					hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\智绘教CrashedHandler.exe");
+					hash_md5 = myWrapper->getHashFromFileW(globalPath + L"api\\智绘教CrashedHandler.exe");
 					delete myWrapper;
 				}
 				{
 					hashwrapper* myWrapper = new sha256wrapper();
-					hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\智绘教CrashedHandler.exe");
+					hash_sha256 = myWrapper->getHashFromFileW(globalPath + L"api\\智绘教CrashedHandler.exe");
 					delete myWrapper;
 				}
 
 				if (hash_md5 != CrashedHandlerMd5 || hash_sha256 != CrashedHandlerSHA256)
-					if (!ExtractResource((StringToWstring(globalPath) + L"api\\智绘教CrashedHandler.exe").c_str(), L"EXE", MAKEINTRESOURCE(201)))
+					if (!ExtractResource((globalPath + L"api\\智绘教CrashedHandler.exe").c_str(), L"EXE", MAKEINTRESOURCE(201)))
 						start = false;
 			}
 		}
 
 		// 启动崩溃助手
-		if (start && !isProcessRunning((StringToWstring(globalPath) + L"api\\智绘教CrashedHandler.exe").c_str()))
+		if (start && !isProcessRunning((globalPath + L"api\\智绘教CrashedHandler.exe").c_str()))
 		{
 			wstring path = GetCurrentExePath();
-			ShellExecute(NULL, NULL, (StringToWstring(globalPath) + L"api\\智绘教CrashedHandler.exe").c_str(), (L"/\"" + path + L"\"").c_str(), NULL, SW_SHOWNORMAL);
+			ShellExecute(NULL, NULL, (globalPath + L"api\\智绘教CrashedHandler.exe").c_str(), (L"/\"" + path + L"\"").c_str(), NULL, SW_SHOWNORMAL);
 		}
 	}
 
 	int value = 2;
 	while (!offSignal)
 	{
-		write.open(WstringToString(StringToWstring(globalPath) + L"api\\open.txt").c_str());
+		write.open(globalPath + L"api\\open.txt");
 		write << value;
 		write.close();
 
@@ -79,14 +79,14 @@ void CrashedHandler()
 
 	if (offSignal == 2)
 	{
-		write.open(WstringToString(StringToWstring(globalPath) + L"api\\open.txt").c_str());
+		write.open(globalPath + L"api\\open.txt");
 		write << -2;
 		write.close();
 	}
 	else
 	{
 		error_code ec;
-		filesystem::remove(StringToWstring(globalPath) + L"api\\open.txt", ec);
+		filesystem::remove(globalPath + L"api\\open.txt", ec);
 	}
 
 	threadStatus[L"CrashedHandler"] = false;
@@ -233,16 +233,16 @@ int DownloadNewProgram(DownloadNewProgramStateClass* state, string url)
 	MessageBoxA(NULL, "1", "", MB_OK);
 
 	error_code ec;
-	filesystem::create_directory(StringToWstring(globalPath) + L"installer", ec); //创建路径
+	filesystem::create_directory(globalPath + L"installer", ec); //创建路径
 
 	MessageBoxA(NULL, "2", "", MB_OK);
 	string prefix, domain, path;
 	splitUrl(url, prefix, domain, path);
 
-	MessageBoxA(NULL, globalPath.c_str(), "", MB_OK);
-	MessageBoxW(NULL, utf8ToUtf16(globalPath).c_str(), L"", MB_OK);
+	//MessageBoxA(NULL, globalPath.c_str(), "", MB_OK);
+	//MessageBoxW(NULL, utf8ToUtf16(globalPath).c_str(), L"", MB_OK);
 	wstring timestamp = getTimestamp();
-	bool reslut = DownloadEdition(domain, path, utf8ToUtf16(globalPath) + L"installer\\", L"new_procedure_" + timestamp + L".tmp");
+	bool reslut = DownloadEdition(domain, path, globalPath + L"installer\\", L"new_procedure_" + timestamp + L".tmp");
 }
 
 void AutomaticUpdate()
@@ -296,10 +296,10 @@ void AutomaticUpdate()
 		}
 
 		//下载最新版本
-		if (state && editionInfo.editionDate != L"" && editionInfo.editionDate > utf8ToUtf16(editionDate))
+		if (state && editionInfo.editionDate != L"" && editionInfo.editionDate > editionDate)
 		{
 			update = true;
-			if (_waccess((utf8ToUtf16(globalPath) + L"installer\\update.json").c_str(), 4) == 0)
+			if (_waccess((globalPath + L"installer\\update.json").c_str(), 4) == 0)
 			{
 				wstring tedition, tpath;
 				string thash_md5, thash_sha256;
@@ -309,7 +309,7 @@ void AutomaticUpdate()
 
 				ifstream readjson;
 				readjson.imbue(locale("zh_CN.UTF8"));
-				readjson.open((utf8ToUtf16(globalPath) + L"installer\\update.json").c_str());
+				readjson.open((globalPath + L"installer\\update.json").c_str());
 
 				bool fileDamage = false;
 				if (reader.parse(readjson, root))
@@ -335,16 +335,16 @@ void AutomaticUpdate()
 					string hash_md5, hash_sha256;
 					{
 						hashwrapper* myWrapper = new md5wrapper();
-						hash_md5 = myWrapper->getHashFromFileW(utf8ToUtf16(globalPath) + tpath);
+						hash_md5 = myWrapper->getHashFromFileW(globalPath + tpath);
 						delete myWrapper;
 					}
 					{
 						hashwrapper* myWrapper = new sha256wrapper();
-						hash_sha256 = myWrapper->getHashFromFileW(utf8ToUtf16(globalPath) + tpath);
+						hash_sha256 = myWrapper->getHashFromFileW(globalPath + tpath);
 						delete myWrapper;
 					}
 
-					if (tedition >= editionInfo.editionDate && _waccess((utf8ToUtf16(globalPath) + tpath).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
+					if (tedition >= editionInfo.editionDate && _waccess((globalPath + tpath).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
 						update = false;
 				}
 			}

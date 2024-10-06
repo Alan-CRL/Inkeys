@@ -287,17 +287,17 @@ int SettingMain()
 		ImGui_ImplWin32_Init(setting_window);
 		ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 
-		if (_waccess((StringToWstring(globalPath) + L"ttf\\hmossscr.ttf").c_str(), 0) == -1)
+		if (_waccess((globalPath + L"ttf\\hmossscr.ttf").c_str(), 0) == -1)
 		{
-			if (_waccess((StringToWstring(globalPath) + L"ttf").c_str(), 0) == -1)
+			if (_waccess((globalPath + L"ttf").c_str(), 0) == -1)
 			{
 				error_code ec;
-				filesystem::create_directory(StringToWstring(globalPath) + L"ttf", ec);
+				filesystem::create_directory(globalPath + L"ttf", ec);
 			}
-			ExtractResource((StringToWstring(globalPath) + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
+			ExtractResource((globalPath + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
 		}
 
-		ImFont* Font = io.Fonts->AddFontFromFileTTF(ConvertToUtf8(globalPath + "ttf\\hmossscr.ttf").c_str(), 28.0f, nullptr, io.Fonts->GetGlyphRangesChineseFull());
+		ImFont* Font = io.Fonts->AddFontFromFileTTF((utf16ToUtf8(globalPath) + "ttf\\hmossscr.ttf").c_str(), 28.0f, nullptr, io.Fonts->GetGlyphRangesChineseFull());
 
 		ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 		ImGuiStyle& style = ImGui::GetStyle();
@@ -934,7 +934,7 @@ int SettingMain()
 							{
 								string temp, helptemp;
 								if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Succe") temp = reinterpret_cast<const char*>(u8"查询状态成功"), helptemp = reinterpret_cast<const char*>(u8"可以调整开机启动设置");
-								else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Error") temp = reinterpret_cast<const char*>(u8"查询状态错误 ") + WstringToString(receivedData), helptemp = reinterpret_cast<const char*>(u8"再次点击查询尝试，或重启程序以管理员身份运行");
+								else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Error") temp = reinterpret_cast<const char*>(u8"查询状态错误 ") + utf16ToUtf8(receivedData), helptemp = reinterpret_cast<const char*>(u8"再次点击查询尝试，或重启程序以管理员身份运行");
 								else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"TimeO") temp = reinterpret_cast<const char*>(u8"查询状态超时"), helptemp = reinterpret_cast<const char*>(u8"再次点击查询尝试\n同时超时时间将从 5 秒调整为 15 秒"), QueryWaitingTime = 15;
 								else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Renew") temp = reinterpret_cast<const char*>(u8"需要重新查询状态"), helptemp = reinterpret_cast<const char*>(u8"调整开机自动启动设置时超时，请再次点击查询\n同时超时时间将从 5 秒调整为 15 秒"), QueryWaitingTime = 15;
 								else temp = reinterpret_cast<const char*>(u8"未知错误"), helptemp = reinterpret_cast<const char*>(u8"再次点击查询尝试，或重启程序以管理员身份运行");
@@ -959,34 +959,34 @@ int SettingMain()
 								{
 									// 检查本地文件完整性
 									{
-										if (_waccess((StringToWstring(globalPath) + L"api").c_str(), 0) == -1)
+										if (_waccess((globalPath + L"api").c_str(), 0) == -1)
 										{
 											error_code ec;
-											filesystem::create_directory(StringToWstring(globalPath) + L"api", ec);
+											filesystem::create_directory(globalPath + L"api", ec);
 										}
 
-										if (_waccess((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), 0) == -1)
-											ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+										if (_waccess((globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), 0) == -1)
+											ExtractResource((globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 										else
 										{
 											string hash_md5, hash_sha256;
 											{
 												hashwrapper* myWrapper = new md5wrapper();
-												hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe");
+												hash_md5 = myWrapper->getHashFromFileW(globalPath + L"api\\智绘教StartupItemSettings.exe");
 												delete myWrapper;
 											}
 											{
 												hashwrapper* myWrapper = new sha256wrapper();
-												hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe");
+												hash_sha256 = myWrapper->getHashFromFileW(globalPath + L"api\\智绘教StartupItemSettings.exe");
 												delete myWrapper;
 											}
 
 											if (hash_md5 != StartupItemSettingsMd5 || hash_sha256 != StartupItemSettingsSHA256)
-												ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+												ExtractResource((globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 										}
 									}
 
-									ShellExecute(NULL, L"runas", (StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"query" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
+									ShellExecute(NULL, L"runas", (globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"query" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
 								}
 								//if (_waccess((StringToWstring(globalPath) + L"api").c_str(), 0) == -1) filesystem::create_directory(StringToWstring(globalPath) + L"api");
 								//ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
@@ -1058,35 +1058,35 @@ int SettingMain()
 									{
 										// 检查本地文件完整性
 										{
-											if (_waccess((StringToWstring(globalPath) + L"api").c_str(), 0) == -1)
+											if (_waccess((globalPath + L"api").c_str(), 0) == -1)
 											{
 												error_code ec;
-												filesystem::create_directory(StringToWstring(globalPath) + L"api", ec);
+												filesystem::create_directory(globalPath + L"api", ec);
 											}
 
-											if (_waccess((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), 0) == -1)
-												ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+											if (_waccess((globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), 0) == -1)
+												ExtractResource((globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 											else
 											{
 												string hash_md5, hash_sha256;
 												{
 													hashwrapper* myWrapper = new md5wrapper();
-													hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe");
+													hash_md5 = myWrapper->getHashFromFileW(globalPath + L"api\\智绘教StartupItemSettings.exe");
 													delete myWrapper;
 												}
 												{
 													hashwrapper* myWrapper = new sha256wrapper();
-													hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe");
+													hash_sha256 = myWrapper->getHashFromFileW(globalPath + L"api\\智绘教StartupItemSettings.exe");
 													delete myWrapper;
 												}
 
 												if (hash_md5 != StartupItemSettingsMd5 || hash_sha256 != StartupItemSettingsSHA256)
-													ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+													ExtractResource((globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 											}
 										}
 
-										if (StartUp) ShellExecute(NULL, L"runas", (StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"set" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
-										else ShellExecute(NULL, L"runas", (StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"delete" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
+										if (StartUp) ShellExecuteW(NULL, L"runas", (globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"set" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
+										else ShellExecuteW(NULL, L"runas", (globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"delete" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
 									}
 									//if (_waccess((StringToWstring(globalPath) + L"api").c_str(), 0) == -1) filesystem::create_directory(StringToWstring(globalPath) + L"api");
 									//ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
@@ -1495,7 +1495,7 @@ int SettingMain()
 
 									Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(50 / 255.0f, 50 / 255.0f, 50 / 255.0f, 1.0f));
-									ImGui::SameLine(); CenteredText(reinterpret_cast<const char*>(WstringToString(version).c_str()), 8.0f);
+									ImGui::SameLine(); CenteredText(utf16ToUtf8(version).c_str(), 8.0f);
 								}
 
 								ImGui::NewLine(); ImGui::SetCursorPosX(120.0f);
@@ -1524,7 +1524,7 @@ int SettingMain()
 
 								Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(50 / 255.0f, 50 / 255.0f, 50 / 255.0f, 1.0f));
-								ImGui::SameLine(); CenteredText(reinterpret_cast<const char*>(WstringToString(ddbSetList.DdbEdition).c_str()), 8.0f);
+								ImGui::SameLine(); CenteredText(utf16ToUtf8(ddbSetList.DdbEdition).c_str(), 8.0f);
 
 								ImGui::NewLine(); ImGui::SetCursorPosX(120.0f);
 								CenteredText(reinterpret_cast<const char*>(u8"剔除桌面上 希沃白板桌面悬浮窗 等\n杂乱无章的桌面画板悬浮窗，支持拦截各类\n桌面画板悬浮窗，以及 PPT 小工具等操控栏。"), 10.0f);
@@ -1544,39 +1544,39 @@ int SettingMain()
 									if (ddbSetList.DdbEnable)
 									{
 										ddbSetList.hostPath = GetCurrentExePath();
-										if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), 0) == -1)
+										if (_waccess((globalPath + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), 0) == -1)
 										{
-											if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB").c_str(), 0) == -1)
+											if (_waccess((globalPath + L"PlugIn\\DDB").c_str(), 0) == -1)
 											{
 												error_code ec;
-												filesystem::create_directories(StringToWstring(globalPath) + L"PlugIn\\DDB", ec);
+												filesystem::create_directories(globalPath + L"PlugIn\\DDB", ec);
 											}
-											ExtractResource((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
+											ExtractResource((globalPath + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
 										}
 										else
 										{
 											string hash_sha256;
 											{
 												hashwrapper* myWrapper = new sha256wrapper();
-												hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe");
+												hash_sha256 = myWrapper->getHashFromFileW(globalPath + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe");
 												delete myWrapper;
 											}
 
 											if (hash_sha256 != ddbSetList.DdbSHA256)
-												ExtractResource((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
+												ExtractResource((globalPath + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
 										}
 
 										// 创建开机自启标识
-										if (ddbSetList.DdbEnhance && _waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == -1)
+										if (ddbSetList.DdbEnhance && _waccess((globalPath + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == -1)
 										{
-											std::ofstream file((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str());
+											std::ofstream file((globalPath + L"PlugIn\\DDB\\start_up.signal").c_str());
 											file.close();
 										}
 										// 启动 DDB
-										if (!isProcessRunning((StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str()))
+										if (!isProcessRunning((globalPath + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str()))
 										{
 											DdbWriteSetting(true, false);
-											ShellExecute(NULL, NULL, (StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+											ShellExecute(NULL, NULL, (globalPath + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
 										}
 
 										ddbSetList.DdbEnable = true;
@@ -1587,10 +1587,10 @@ int SettingMain()
 										DdbWriteSetting(true, true);
 
 										// 移除开机自启标识
-										if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == 0)
+										if (_waccess((globalPath + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == 0)
 										{
 											error_code ec;
-											filesystem::remove(StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal", ec);
+											filesystem::remove(globalPath + L"PlugIn\\DDB\\start_up.signal", ec);
 										}
 
 										ddbSetList.DdbEnable = false;
@@ -1988,9 +1988,9 @@ int SettingMain()
 									DdbWriteSetting(true, false);
 
 									// 创建开机自启标识
-									if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == -1)
+									if (_waccess((globalPath + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == -1)
 									{
-										std::ofstream file((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str());
+										std::ofstream file(globalPath + L"PlugIn\\DDB\\start_up.signal");
 										file.close();
 									}
 
@@ -1998,34 +1998,34 @@ int SettingMain()
 									{
 										// 检查本地文件完整性
 										{
-											if (_waccess((StringToWstring(globalPath) + L"api").c_str(), 0) == -1)
+											if (_waccess((globalPath + L"api").c_str(), 0) == -1)
 											{
 												error_code ec;
-												filesystem::create_directory(StringToWstring(globalPath) + L"api", ec);
+												filesystem::create_directory(globalPath + L"api", ec);
 											}
 
-											if (_waccess((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), 0) == -1)
-												ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+											if (_waccess((globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), 0) == -1)
+												ExtractResource((globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 											else
 											{
 												string hash_md5, hash_sha256;
 												{
 													hashwrapper* myWrapper = new md5wrapper();
-													hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe");
+													hash_md5 = myWrapper->getHashFromFileW(globalPath + L"api\\智绘教StartupItemSettings.exe");
 													delete myWrapper;
 												}
 												{
 													hashwrapper* myWrapper = new sha256wrapper();
-													hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe");
+													hash_sha256 = myWrapper->getHashFromFileW(globalPath + L"api\\智绘教StartupItemSettings.exe");
 													delete myWrapper;
 												}
 
 												if (hash_md5 != StartupItemSettingsMd5 || hash_sha256 != StartupItemSettingsSHA256)
-													ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+													ExtractResource((globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 											}
 										}
 
-										ShellExecute(NULL, L"runas", (StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"set0\" /\"" + StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe\" /\"IdtDesktopDrawpadBlockerStartUp\"").c_str(), NULL, SW_SHOWNORMAL);
+										ShellExecuteW(NULL, L"runas", (globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"set0\" /\"" + globalPath + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe\" /\"IdtDesktopDrawpadBlockerStartUp\"").c_str(), NULL, SW_SHOWNORMAL);
 									}
 
 									DWORD dwBytesRead;
@@ -2053,44 +2053,44 @@ int SettingMain()
 									DdbWriteSetting(true, false);
 
 									// 移除开机自启标识
-									if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == 0)
+									if (_waccess((globalPath + L"PlugIn\\DDB\\start_up.signal").c_str(), 0) == 0)
 									{
 										error_code ec;
-										filesystem::remove(StringToWstring(globalPath) + L"PlugIn\\DDB\\start_up.signal", ec);
+										filesystem::remove(globalPath + L"PlugIn\\DDB\\start_up.signal", ec);
 									}
 
 									// 移除开机自启
 									{
 										// 检查本地文件完整性
 										{
-											if (_waccess((StringToWstring(globalPath) + L"api").c_str(), 0) == -1)
+											if (_waccess((globalPath + L"api").c_str(), 0) == -1)
 											{
 												error_code ec;
-												filesystem::create_directory(StringToWstring(globalPath) + L"api", ec);
+												filesystem::create_directory(globalPath + L"api", ec);
 											}
 
-											if (_waccess((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), 0) == -1)
-												ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+											if (_waccess((globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), 0) == -1)
+												ExtractResource((globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 											else
 											{
 												string hash_md5, hash_sha256;
 												{
 													hashwrapper* myWrapper = new md5wrapper();
-													hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe");
+													hash_md5 = myWrapper->getHashFromFileW(globalPath + L"api\\智绘教StartupItemSettings.exe");
 													delete myWrapper;
 												}
 												{
 													hashwrapper* myWrapper = new sha256wrapper();
-													hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe");
+													hash_sha256 = myWrapper->getHashFromFileW(globalPath + L"api\\智绘教StartupItemSettings.exe");
 													delete myWrapper;
 												}
 
 												if (hash_md5 != StartupItemSettingsMd5 || hash_sha256 != StartupItemSettingsSHA256)
-													ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
+													ExtractResource((globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
 											}
 										}
 
-										ShellExecute(NULL, L"runas", (StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"delete0\" /\"" + StringToWstring(globalPath) + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe\" /\"IdtDesktopDrawpadBlockerStartUp\"").c_str(), NULL, SW_SHOWNORMAL);
+										ShellExecuteW(NULL, L"runas", (globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"delete0\" /\"" + globalPath + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe\" /\"IdtDesktopDrawpadBlockerStartUp\"").c_str(), NULL, SW_SHOWNORMAL);
 									}
 
 									DWORD dwBytesRead;
@@ -2147,17 +2147,17 @@ int SettingMain()
 							{
 								flag = false;
 
-								float text_width = ImGui::CalcTextSize(ConvertToUtf8(WstringToString(line + ch)).c_str()).x;
+								float text_width = ImGui::CalcTextSize(utf16ToUtf8(line + ch).c_str()).x;
 								if (text_width > (right_x - left_x))
 								{
-									lines.emplace_back(ConvertToUtf8(WstringToString(line)));
+									lines.emplace_back(utf16ToUtf8(line));
 									line = L"", flag = true;
 								}
 
 								line += ch;
 							}
 
-							if (!flag) lines.emplace_back(ConvertToUtf8(WstringToString(line)));
+							if (!flag) lines.emplace_back(utf16ToUtf8(line));
 						}
 
 						for (const auto& temp : lines)
@@ -2199,8 +2199,8 @@ int SettingMain()
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f);
 						wstring text;
 						{
-							text = L"程序版本代号 " + StringToWstring(editionCode);
-							text += L"\n程序发布版本 " + StringToWstring(editionDate) + L"(" + StringToWstring(editionChannel) + L")";
+							text = L"程序版本代号 " + editionCode;
+							text += L"\n程序发布版本 " + editionDate + L"(" + editionChannel + L")";
 							text += L"\n程序构建时间 " + buildTime;
 
 #ifdef IDT_RELEASE
@@ -2230,17 +2230,17 @@ int SettingMain()
 							{
 								flag = false;
 
-								float text_width = ImGui::CalcTextSize(ConvertToUtf8(WstringToString(line + ch)).c_str()).x;
+								float text_width = ImGui::CalcTextSize(utf16ToUtf8(line + ch).c_str()).x;
 								if (text_width > (right_x - left_x))
 								{
-									lines.emplace_back(ConvertToUtf8(WstringToString(line)));
+									lines.emplace_back(utf16ToUtf8(line));
 									line = L"", flag = true;
 								}
 
 								line += ch;
 							}
 
-							if (!flag) lines.emplace_back(ConvertToUtf8(WstringToString(line)));
+							if (!flag) lines.emplace_back(utf16ToUtf8(line));
 						}
 
 						for (const auto& temp : lines)
@@ -2318,7 +2318,7 @@ int SettingMain()
 							CenteredText(reinterpret_cast<const char*>(u8" 更新日志"), 4.0f);
 
 							Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
-							ImGui::SameLine(); CenteredText(reinterpret_cast<const char*>(ConvertToUtf8("当前版本" + editionDate).c_str()), 8.0f);
+							ImGui::SameLine(); CenteredText(("当前版本" + utf16ToUtf8(editionDate)).c_str(), 8.0f);
 
 							ImGui::SetCursorPos({ 20.0f,90.0f });
 							Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
@@ -2516,7 +2516,7 @@ int SettingMain()
 
 								while (getline(ss, temp, L'\n'))
 								{
-									lines.emplace_back(ConvertToUtf8(WstringToString(temp)));
+									lines.emplace_back(utf16ToUtf8(temp));
 								}
 
 								for (const auto& temp : lines)
@@ -2638,17 +2638,17 @@ int SettingMain()
 							{
 								flag = false;
 
-								float text_width = ImGui::CalcTextSize(ConvertToUtf8(WstringToString(line + ch)).c_str()).x;
+								float text_width = ImGui::CalcTextSize(utf16ToUtf8(line + ch).c_str()).x;
 								if (text_width > (right_x - left_x))
 								{
-									lines.emplace_back(ConvertToUtf8(WstringToString(line)));
+									lines.emplace_back(utf16ToUtf8(line));
 									line = L"", flag = true;
 								}
 
 								line += ch;
 							}
 
-							if (!flag) lines.emplace_back(ConvertToUtf8(WstringToString(line)));
+							if (!flag) lines.emplace_back(utf16ToUtf8(line));
 						}
 
 						for (const auto& temp : lines)
@@ -2806,7 +2806,7 @@ bool ReadSetting(bool first)
 
 	ifstream readjson;
 	readjson.imbue(locale("zh_CN.UTF8"));
-	readjson.open(WstringToString(StringToWstring(globalPath) + L"opt\\deploy.json").c_str());
+	readjson.open(globalPath + L"opt\\deploy.json");
 
 	if (reader.parse(readjson, root))
 	{
@@ -2841,12 +2841,12 @@ bool ReadSetting(bool first)
 }
 bool WriteSetting()
 {
-	if (_waccess((StringToWstring(globalPath) + L"opt").c_str(), 0) == -1)
-		filesystem::create_directory(StringToWstring(globalPath) + L"opt");
+	if (_waccess((globalPath + L"opt").c_str(), 0) == -1)
+		filesystem::create_directory(globalPath + L"opt");
 
 	Json::Value root;
 
-	root["edition"] = Json::Value(editionDate);
+	root["edition"] = Json::Value(utf16ToUtf8(editionDate));
 	root["CreateLnk"] = Json::Value(setlist.CreateLnk);
 	root["RightClickClose"] = Json::Value(setlist.RightClickClose);
 	root["BrushRecover"] = Json::Value(setlist.BrushRecover);
@@ -2866,7 +2866,7 @@ bool WriteSetting()
 	std::unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
 	ofstream writejson;
 	writejson.imbue(locale("zh_CN.UTF8"));
-	writejson.open(WstringToString(StringToWstring(globalPath) + L"opt\\deploy.json").c_str());
+	writejson.open(globalPath + L"opt\\deploy.json");
 	writer->write(root, &writejson);
 	writejson.close();
 

@@ -56,9 +56,22 @@ map <wstring, bool> threadStatus; //线程状态管理
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
+//int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
+int main()
 {
-	Testa(StringToUrlencode("你好，世界"));
+	// 当前下 string 的编码是否是 utf8 还有待验证
+	string s = "你好，世界";
+	// 输出每个字节的十六进制值
+	std::cout << "字符串的 UTF-8 编码 (十六进制表示): ";
+	for (unsigned char c : s) {
+		std::cout << std::hex << static_cast<int>(c) << " ";
+	}
+	std::cout << std::dec << std::endl;
+	// 直接输出字符串
+	std::cout << "字符串内容: " << s << std::endl;
+
+	// 全程序 string -> UTF8, wstring -> UTF16
+	Testa(StringToUrlencode(s));
 
 	// 路径预处理
 	{
@@ -201,7 +214,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				};
 
 			wstring directoryPath = globalPath + L"log";
-
 			filesystem::path directory(directoryPath);
 			if (filesystem::exists(directory) && filesystem::is_directory(directory))
 			{
@@ -242,7 +254,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 			ifstream readjson;
 			readjson.imbue(locale("zh_CN.UTF8"));
-			readjson.open((globalPath + L"update.json").c_str());
+			readjson.open(globalPath + L"update.json");
 
 			if (reader.parse(readjson, root))
 			{
@@ -293,7 +305,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				wstring target = main_path + L"\\智绘教" + editionDate + L".exe";
 				filesystem::copy_file(globalPath + representation, target, filesystem::copy_options::overwrite_existing, ec);
 
-				ShellExecute(NULL, NULL, target.c_str(), NULL, NULL, SW_SHOWNORMAL);
+				ShellExecuteW(NULL, NULL, target.c_str(), NULL, NULL, SW_SHOWNORMAL);
 
 				return 0;
 			}
@@ -323,7 +335,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 			ifstream readjson;
 			readjson.imbue(locale("zh_CN.UTF8"));
-			readjson.open((globalPath + L"installer\\update.json").c_str());
+			readjson.open(globalPath + L"installer\\update.json");
 
 			if (reader.parse(readjson, root))
 			{
@@ -368,7 +380,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 					std::unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
 					ofstream writejson;
 					writejson.imbue(locale("zh_CN.UTF8"));
-					writejson.open((globalPath + L"installer\\update.json").c_str());
+					writejson.open(globalPath + L"installer\\update.json");
 					writer->write(root, &writejson);
 					writejson.close();
 				}

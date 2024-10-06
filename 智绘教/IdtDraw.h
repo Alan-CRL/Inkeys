@@ -51,9 +51,8 @@ double color_distance(COLORREF c1, COLORREF c2);
 // 定义反色函数
 COLORREF InvertColor(COLORREF color, bool alpha_enable = false);
 //保存图像到本地
-void saveImageToPNG(IMAGE img, const char* filename, bool alpha = true, int compression_level = 9);
-void SaveHBITMAPToPNG(HBITMAP hBitmap, const char* filename);
-void saveImageToJPG(IMAGE img, const char* filename, int quality = 100);
+bool saveImageToPNG(IMAGE img, const wstring& filePath, bool alpha = true, int compression_level = 9);
+
 //比较图像
 bool CompareImagesWithBuffer(IMAGE* img1, IMAGE* img2);
 //设置图像必须不拥有全透明像素（将所有全透明像素点透明度设置为1）
