@@ -12,7 +12,7 @@ bool PptComReadSetting()
 
 	ifstream readjson;
 	readjson.imbue(locale("zh_CN.UTF8"));
-	readjson.open(WstringToString(StringToWstring(globalPath) + L"opt\\pptcom_configuration.json").c_str());
+	readjson.open((globalPath + L"opt\\pptcom_configuration.json").c_str());
 
 	if (reader.parse(readjson, root))
 	{
@@ -44,8 +44,8 @@ bool PptComReadSetting()
 }
 bool PptComWriteSetting()
 {
-	if (_waccess((StringToWstring(globalPath) + L"opt").c_str(), 0) == -1)
-		filesystem::create_directory(StringToWstring(globalPath) + L"opt");
+	if (_waccess((globalPath + L"opt").c_str(), 0) == -1)
+		filesystem::create_directory(globalPath + L"opt");
 
 	Json::Value root;
 
@@ -72,7 +72,7 @@ bool PptComWriteSetting()
 	std::unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
 	ofstream writejson;
 	writejson.imbue(locale("zh_CN.UTF8"));
-	writejson.open(WstringToString(StringToWstring(globalPath) + L"opt\\pptcom_configuration.json").c_str());
+	writejson.open((globalPath + L"opt\\pptcom_configuration.json").c_str());
 	writer->write(root, &writejson);
 	writejson.close();
 
@@ -82,14 +82,14 @@ bool PptComWriteSetting()
 DdbSetListStruct ddbSetList;
 bool DdbReadSetting()
 {
-	if (_waccess((StringToWstring(globalPath) + L"PlugIn\\DDB\\interaction_configuration.json").c_str(), 4) == -1) return false;
+	if (_waccess((globalPath + L"PlugIn\\DDB\\interaction_configuration.json").c_str(), 4) == -1) return false;
 
 	Json::Reader reader;
 	Json::Value root;
 
 	ifstream readjson;
 	readjson.imbue(locale("zh_CN.UTF8"));
-	readjson.open(WstringToString(StringToWstring(globalPath) + L"PlugIn\\DDB\\interaction_configuration.json").c_str());
+	readjson.open((globalPath + L"PlugIn\\DDB\\interaction_configuration.json").c_str());
 
 	if (reader.parse(readjson, root))
 	{
@@ -154,7 +154,7 @@ bool DdbWriteSetting(bool change, bool close)
 	root["SleepTime"] = Json::Value(ddbSetList.sleepTime);
 
 	root["Mode"]["Mode"] = Json::Value(ddbSetList.mode);
-	root["Mode"]["HostPath"] = Json::Value(WstringToString(ddbSetList.hostPath));
+	root["Mode"]["HostPath"] = Json::Value(utf16ToUtf8(ddbSetList.hostPath));
 	root["Mode"]["RestartHost"] = Json::Value(ddbSetList.restartHost);
 
 	root["Intercept"]["SeewoWhiteboard3Floating"] = Json::Value(ddbSetList.InterceptWindow[0]);
@@ -173,7 +173,7 @@ bool DdbWriteSetting(bool change, bool close)
 	std::unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
 	ofstream writejson;
 	writejson.imbue(locale("zh_CN.UTF8"));
-	writejson.open(WstringToString(StringToWstring(globalPath) + L"PlugIn\\DDB\\interaction_configuration.json").c_str());
+	writejson.open((globalPath + L"PlugIn\\DDB\\interaction_configuration.json").c_str());
 	writer->write(root, &writejson);
 	writejson.close();
 

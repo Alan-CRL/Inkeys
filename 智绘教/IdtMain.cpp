@@ -43,12 +43,12 @@ int SettingMain();
 void FreezeFrameWindow();
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-string editionDate = "20240714a";				//程序发布日期
-string editionChannel = "Dev";					//程序发布通道
-string editionCode = "24H2(BetaH3)";			//程序版本
+wstring editionDate = L"20240714a";				//程序发布日期
+wstring editionChannel = L"Dev";				//程序发布通道
+wstring editionCode = L"24H2(BetaH3)";			//程序版本
 
 wstring userId; //用户ID（主板序列号）
-string globalPath; //程序当前路径
+wstring globalPath; //程序当前路径
 
 int offSignal = false, offSignalReady = false; //关闭指令
 map <wstring, bool> threadStatus; //线程状态管理
@@ -58,19 +58,21 @@ shared_ptr<spdlog::logger> IDTLogger;
 // 程序入口点
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
 {
+	Testa(StringToUrlencode("你好，世界"));
+
 	// 路径预处理
 	{
-		globalPath = utf16ToUtf8(GetCurrentExeDirectory() + L"\\");
-		MessageBoxW(NULL, utf8ToUtf16(globalPath).c_str(), L"", MB_OK);
+		globalPath = GetCurrentExeDirectory() + L"\\";
+		MessageBoxW(NULL, globalPath.c_str(), L"", MB_OK);
 
 		{
 			int typeRoot = 0;
 
-			if (globalPath.find("C:\\Program Files\\") != globalPath.npos || globalPath.find("C:\\Program Files (x86)\\") != globalPath.npos || globalPath.find("C:\\Windows\\") != globalPath.npos) typeRoot = 2;
+			if (globalPath.find(L"C:\\Program Files\\") != globalPath.npos || globalPath.find(L"C:\\Program Files (x86)\\") != globalPath.npos || globalPath.find(L"C:\\Windows\\") != globalPath.npos) typeRoot = 2;
 			else
 			{
 				wstring time = getTimestamp();
-				wstring path = utf8ToUtf16(globalPath) + L"IdtRootCheck" + time;
+				wstring path = globalPath + L"IdtRootCheck" + time;
 
 				error_code ec;
 				try {
@@ -117,7 +119,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 	// 用户ID获取
 	{
-		userId = StringToWstring(getDeviceGUID());
+		userId = utf8ToUtf16(getDeviceGUID());
 		if (userId.empty() || !isValidString(userId)) userId = L"Error";
 	}
 	// 日志服务初始化
@@ -125,7 +127,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		wstring Timestamp = getTimestamp();
 
 		error_code ec;
-		if (_waccess((StringToWstring(globalPath) + L"log").c_str(), 0) == -1) filesystem::create_directory(StringToWstring(globalPath) + L"log", ec);
+		if (_waccess((globalPath + L"log").c_str(), 0) == -1) filesystem::create_directory(globalPath + L"log", ec);
 		else
 		{
 			// 历史日志清理
@@ -198,7 +200,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 					}
 				};
 
-			string directoryPath = globalPath + "log";
+			wstring directoryPath = globalPath + L"log";
 
 			filesystem::path directory(directoryPath);
 			if (filesystem::exists(directory) && filesystem::is_directory(directory))
@@ -207,9 +209,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			}
 		}
 
-		if (_waccess((StringToWstring(globalPath) + L"log\\idt" + Timestamp + L".log").c_str(), 0) == 0) filesystem::remove(StringToWstring(globalPath) + L"log\\idt" + Timestamp + L".log", ec);
+		if (_waccess((globalPath + L"log\\idt" + Timestamp + L".log").c_str(), 0) == 0) filesystem::remove(globalPath + L"log\\idt" + Timestamp + L".log", ec);
 
-		auto IDTLoggerFileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(globalPath + "log\\idt" + WstringToString(Timestamp) + ".log");
+		auto IDTLoggerFileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(utf16ToUtf8(globalPath) + "log\\idt" + utf16ToUtf8(Timestamp) + ".log");
 
 		spdlog::init_thread_pool(8192, 64);
 		IDTLogger = std::make_shared<spdlog::async_logger>("IDTLogger", IDTLoggerFileSink, spdlog::thread_pool(), spdlog::async_overflow_policy::block);
@@ -218,7 +220,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		IDTLogger->set_pattern("[%l][%H:%M:%S.%e]%v");
 
 		IDTLogger->flush_on(spdlog::level::info);
-		IDTLogger->info("[主线程][IdtMain] 日志开始记录 " + editionDate + " " + WstringToString(userId));
+		IDTLogger->info("[主线程][IdtMain] 日志开始记录 " + utf16ToUtf8(editionDate) + " " + utf16ToUtf8(userId));
 
 		//logger->info("");
 		//logger->warn("");
@@ -227,7 +229,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 程序自动更新
 	{
-		if (_waccess((StringToWstring(globalPath) + L"update.json").c_str(), 4) == 0)
+		if (_waccess((globalPath + L"update.json").c_str(), 4) == 0)
 		{
 			wstring tedition, representation;
 			string thash_md5, thash_sha256;
@@ -240,26 +242,26 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 			ifstream readjson;
 			readjson.imbue(locale("zh_CN.UTF8"));
-			readjson.open(WstringToString(StringToWstring(globalPath) + L"update.json").c_str());
+			readjson.open((globalPath + L"update.json").c_str());
 
 			if (reader.parse(readjson, root))
 			{
-				if (root.isMember("edition")) tedition = StringToWstring(ConvertToGbk(root["edition"].asString()));
+				if (root.isMember("edition")) tedition = utf8ToUtf16(root["edition"].asString());
 				else flag = false;
 
-				if (root.isMember("representation")) representation = StringToWstring(ConvertToGbk(root["representation"].asString()));
+				if (root.isMember("representation")) representation = utf8ToUtf16(root["representation"].asString());
 				else flag = false;
 
 				if (root.isMember("hash"))
 				{
-					if (root["hash"].isMember("md5")) thash_md5 = ConvertToGbk(root["hash"]["md5"].asString());
+					if (root["hash"].isMember("md5")) thash_md5 = root["hash"]["md5"].asString();
 					else flag = false;
-					if (root["hash"].isMember("sha256")) thash_sha256 = ConvertToGbk(root["hash"]["sha256"].asString());
+					if (root["hash"].isMember("sha256")) thash_sha256 = root["hash"]["sha256"].asString();
 					else flag = false;
 				}
 				else flag = false;
 
-				if (root.isMember("old_name")) old_name = StringToWstring(ConvertToGbk(root["old_name"].asString()));
+				if (root.isMember("old_name")) old_name = utf8ToUtf16(root["old_name"].asString());
 			}
 			readjson.close();
 
@@ -275,21 +277,21 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				delete myWrapper;
 			}
 
-			if (flag && tedition == StringToWstring(editionDate) && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
+			if (flag && tedition == editionDate && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
 			{
 				//符合条件，开始替换版本
 
 				this_thread::sleep_for(chrono::milliseconds(1000));
 
 				filesystem::path directory(globalPath);
-				string main_path = directory.parent_path().parent_path().string();
+				wstring main_path = directory.parent_path().parent_path().wstring();
 
 				error_code ec;
-				if (!old_name.empty()) filesystem::remove(StringToWstring(main_path) + L"\\" + old_name, ec);
-				else filesystem::remove(StringToWstring(main_path) + L"\\智绘教.exe", ec);
+				if (!old_name.empty()) filesystem::remove(main_path + L"\\" + old_name, ec);
+				else filesystem::remove(main_path + L"\\智绘教.exe", ec);
 
-				wstring target = StringToWstring(main_path) + L"\\智绘教" + StringToWstring(editionDate) + L".exe";
-				filesystem::copy_file(StringToWstring(globalPath) + representation, target, filesystem::copy_options::overwrite_existing, ec);
+				wstring target = main_path + L"\\智绘教" + editionDate + L".exe";
+				filesystem::copy_file(globalPath + representation, target, filesystem::copy_options::overwrite_existing, ec);
 
 				ShellExecute(NULL, NULL, target.c_str(), NULL, NULL, SW_SHOWNORMAL);
 
@@ -298,18 +300,18 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			else
 			{
 				error_code ec;
-				filesystem::remove(StringToWstring(globalPath) + L"update.json", ec);
+				filesystem::remove(globalPath + L"update.json", ec);
 
 				filesystem::path directory(globalPath);
-				string main_path = directory.parent_path().parent_path().string();
+				wstring main_path = directory.parent_path().parent_path().wstring();
 
-				if (!old_name.empty()) ShellExecute(NULL, NULL, (StringToWstring(main_path) + L"\\" + old_name).c_str(), NULL, NULL, SW_SHOWNORMAL);
-				else ShellExecute(NULL, NULL, (StringToWstring(main_path) + L"\\智绘教.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+				if (!old_name.empty()) ShellExecuteW(NULL, NULL, (main_path + L"\\" + old_name).c_str(), NULL, NULL, SW_SHOWNORMAL);
+				else ShellExecuteW(NULL, NULL, (main_path + L"\\智绘教.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
 
 				return 0;
 			}
 		}
-		if (_waccess((StringToWstring(globalPath) + L"installer\\update.json").c_str(), 4) == 0)
+		if (_waccess((globalPath + L"installer\\update.json").c_str(), 4) == 0)
 		{
 			wstring tedition, path;
 			string thash_md5, thash_sha256;
@@ -321,21 +323,21 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 			ifstream readjson;
 			readjson.imbue(locale("zh_CN.UTF8"));
-			readjson.open(WstringToString(StringToWstring(globalPath) + L"installer\\update.json").c_str());
+			readjson.open((globalPath + L"installer\\update.json").c_str());
 
 			if (reader.parse(readjson, root))
 			{
-				if (root.isMember("edition")) tedition = StringToWstring(ConvertToGbk(root["edition"].asString()));
+				if (root.isMember("edition")) tedition = utf8ToUtf16(root["edition"].asString());
 				else flag = false;
 
-				if (root.isMember("path")) path = StringToWstring(ConvertToGbk(root["path"].asString()));
+				if (root.isMember("path")) path = utf8ToUtf16(root["path"].asString());
 				else flag = false;
 
 				if (root.isMember("hash"))
 				{
-					if (root["hash"].isMember("md5")) thash_md5 = ConvertToGbk(root["hash"]["md5"].asString());
+					if (root["hash"].isMember("md5")) thash_md5 = root["hash"]["md5"].asString();
 					else flag = false;
-					if (root["hash"].isMember("sha256")) thash_sha256 = ConvertToGbk(root["hash"]["sha256"].asString());
+					if (root["hash"].isMember("sha256")) thash_sha256 = root["hash"]["sha256"].asString();
 					else flag = false;
 				}
 				else flag = false;
@@ -346,41 +348,40 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			string hash_md5, hash_sha256;
 			{
 				hashwrapper* myWrapper = new md5wrapper();
-				hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + path);
+				hash_md5 = myWrapper->getHashFromFileW(globalPath + path);
 				delete myWrapper;
 			}
 			{
 				hashwrapper* myWrapper = new sha256wrapper();
-				hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + path);
+				hash_sha256 = myWrapper->getHashFromFileW(globalPath + path);
 				delete myWrapper;
 			}
 
-			if (flag && tedition > StringToWstring(editionDate) && _waccess((StringToWstring(globalPath) + path).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
+			if (flag && tedition > editionDate && _waccess((globalPath + path).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
 			{
 				//符合条件，开始替换版本
 				{
-					root["old_name"] = Json::Value(ConvertToUtf8(WstringToString(GetCurrentExeName())));
+					root["old_name"] = Json::Value(utf16ToUtf8(GetCurrentExeName()));
 
 					Json::StreamWriterBuilder outjson;
 					outjson.settings_["emitUTF8"] = true;
 					std::unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
 					ofstream writejson;
 					writejson.imbue(locale("zh_CN.UTF8"));
-					writejson.open(WstringToString(StringToWstring(globalPath) + L"installer\\update.json").c_str());
+					writejson.open((globalPath + L"installer\\update.json").c_str());
 					writer->write(root, &writejson);
 					writejson.close();
 				}
-				ShellExecute(NULL, NULL, (StringToWstring(globalPath) + path).c_str(), NULL, NULL, SW_SHOWNORMAL);
+				ShellExecuteW(NULL, NULL, (globalPath + path).c_str(), NULL, NULL, SW_SHOWNORMAL);
 
 				return 0;
 			}
-			else if (tedition == StringToWstring(editionDate))
+			else if (tedition == editionDate)
 			{
-				std::error_code ec;
-				filesystem::remove_all(StringToWstring(globalPath) + L"installer", ec);
-				filesystem::remove_all(StringToWstring(globalPath) + L"api", ec);
-
-				filesystem::remove(StringToWstring(globalPath) + L"PptCOM.dll", ec);
+				error_code ec;
+				filesystem::remove_all(globalPath + L"installer", ec);
+				filesystem::remove_all(globalPath + L"api", ec);
+				filesystem::remove(globalPath + L"PptCOM.dll", ec);
 			}
 		}
 	}
@@ -453,15 +454,15 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		fontCollection.GetFamilies(1, &HarmonyOS_fontFamily, &numFound);
 
 		{
-			if (_waccess((StringToWstring(globalPath) + L"ttf").c_str(), 0) == -1)
+			if (_waccess((globalPath + L"ttf").c_str(), 0) == -1)
 			{
 				error_code ec;
-				filesystem::create_directory(StringToWstring(globalPath) + L"ttf", ec);
+				filesystem::create_directory(globalPath + L"ttf", ec);
 			}
-			ExtractResource((StringToWstring(globalPath) + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
+			ExtractResource((globalPath + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
 
 			IdtFontCollectionLoader* D2DFontCollectionLoader = new IdtFontCollectionLoader;
-			D2DFontCollectionLoader->AddFont(D2DTextFactory, StringToWstring(globalPath) + L"ttf\\hmossscr.ttf");
+			D2DFontCollectionLoader->AddFont(D2DTextFactory, globalPath + L"ttf\\hmossscr.ttf");
 
 			D2DTextFactory->RegisterFontCollectionLoader(D2DFontCollectionLoader);
 			D2DTextFactory->CreateCustomFontCollection(D2DFontCollectionLoader, 0, 0, &D2DFontCollection);
@@ -534,7 +535,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	{
 		IDTLogger->info("[主线程][IdtMain] 初始化配置信息");
 
-		if (1 || _waccess((StringToWstring(globalPath) + L"opt\\deploy.json").c_str(), 4) == -1)
+		if (1 || _waccess((globalPath + L"opt\\deploy.json").c_str(), 4) == -1)
 		{
 			IDTLogger->warn("[主线程][IdtMain] 配置信息不存在");
 
@@ -571,7 +572,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		//PptCOM 组件加载
 		{
 			IDTLogger->info("[主线程][IdtMain] 初始化PptCOM.dll");
-			ExtractResource((StringToWstring(globalPath) + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(222));
+			ExtractResource((globalPath + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(222));
 			IDTLogger->info("[主线程][IdtMain] 初始化PptCOM.dll完成");
 
 			IDTLogger->info("[主线程][IdtMain] 初始化上下文API");
@@ -588,7 +589,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			IDTLogger->info("[主线程][IdtMain] 初始化上下文API完成");
 
 			IDTLogger->info("[主线程][IdtMain] 载入PptCOM.dll");
-			HMODULE hModule = LoadLibrary((StringToWstring(globalPath) + L"PptCOM.dll").c_str());
+			HMODULE hModule = LoadLibraryW((globalPath + L"PptCOM.dll").c_str());
 			IDTLogger->info("[主线程][IdtMain] 载入PptCOM.dll完成");
 		}
 

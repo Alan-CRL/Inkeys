@@ -11,26 +11,74 @@
 
 wstring GetCurrentExeDirectory()
 {
-	wchar_t buffer[MAX_PATH];
-	DWORD length = GetModuleFileNameW(NULL, buffer, sizeof(buffer) / sizeof(wchar_t));
-	if (length == 0 || length == sizeof(buffer) / sizeof(wchar_t)) return L"";
+	DWORD bufferSize = MAX_PATH;
+	wstring buffer(bufferSize, L'\0');
+	DWORD length = 0;
+
+	while (true)
+	{
+		length = GetModuleFileNameW(NULL, &buffer[0], bufferSize);
+		if (length == 0) return L"";
+		else if (length < bufferSize)
+		{
+			buffer.resize(length);
+			break;
+		}
+		else
+		{
+			bufferSize *= 2;
+			buffer.resize(bufferSize, L'\0');
+		}
+	}
 
 	filesystem::path fullPath(buffer);
 	return fullPath.parent_path().wstring();
 }
 wstring GetCurrentExePath()
 {
-	wchar_t buffer[MAX_PATH];
-	DWORD length = GetModuleFileNameW(NULL, buffer, sizeof(buffer) / sizeof(wchar_t));
-	if (length == 0 || length == sizeof(buffer) / sizeof(wchar_t)) return L"";
+	DWORD bufferSize = MAX_PATH;
+	wstring buffer(bufferSize, L'\0');
+	DWORD length = 0;
 
-	return (wstring)buffer;
+	while (true)
+	{
+		length = GetModuleFileNameW(NULL, &buffer[0], bufferSize);
+		if (length == 0) return L"";
+		else if (length < bufferSize)
+		{
+			buffer.resize(length);
+			break;
+		}
+		else
+		{
+			bufferSize *= 2;
+			buffer.resize(bufferSize, L'\0');
+		}
+	}
+
+	return buffer;
 }
 wstring GetCurrentExeName()
 {
-	wchar_t buffer[MAX_PATH];
-	DWORD length = GetModuleFileNameW(NULL, buffer, sizeof(buffer) / sizeof(wchar_t));
-	if (length == 0 || length == sizeof(buffer) / sizeof(wchar_t)) return L"";
+	DWORD bufferSize = MAX_PATH;
+	wstring buffer(bufferSize, L'\0');
+	DWORD length = 0;
+
+	while (true)
+	{
+		length = GetModuleFileNameW(NULL, &buffer[0], bufferSize);
+		if (length == 0) return L"";
+		else if (length < bufferSize)
+		{
+			buffer.resize(length);
+			break;
+		}
+		else
+		{
+			bufferSize *= 2;
+			buffer.resize(bufferSize, L'\0');
+		}
+	}
 
 	filesystem::path fullPath(buffer);
 	return fullPath.filename().wstring();

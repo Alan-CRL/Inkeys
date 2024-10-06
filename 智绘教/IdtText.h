@@ -7,25 +7,10 @@ extern StringFormat stringFormat;
 extern StringFormat stringFormat_left;
 extern RECT words_rect, dwords_rect, pptwords_rect;
 
-wstring utf8ToUtf16(string input);
-string utf16ToUtf8(wstring input);
+wstring utf8ToUtf16(const string& input);
+string utf16ToUtf8(const wstring& input);
 
-//string to wstring
-wstring StringToWstring(const string& s);
-//wstring to string
-string WstringToString(const wstring& ws);
+wstring bstrToWstring(const _bstr_t& bstr);
+_bstr_t wstringToBstr(const wstring& str);
 
-//c# string to wstring
-wstring BstrToWstring(const _bstr_t& bstr);
-//wstring to c# string
-_bstr_t WstringToBstr(const wstring& str);
-
-//string to LPCWSTR
-LPCWSTR StringToLPCWSTR(string str);
-//string to urlencode
-string StringToUrlencode(string str);
-
-//utf-8 to GBK
-string ConvertToGbk(string strUTF8);
-//GBK to utf-8
-string ConvertToUtf8(string str);
+string StringToUrlencode(const string& str);

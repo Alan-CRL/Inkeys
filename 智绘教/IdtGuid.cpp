@@ -172,7 +172,7 @@ size_t_32 getBiosCpuDiskHashID()
 
 	GetBoardInfo();
 
-	string BoardUUID = WstringToString(BoardInfo.BoardUUID);
+	string BoardUUID = utf16ToUtf8(BoardInfo.BoardUUID);
 	if (!BoardUUID.empty() && BoardUUID.compare("FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF") != 0)
 	{
 		strcpy_s(chHex_str, (BoardUUID + "\r\n").c_str());
@@ -183,9 +183,9 @@ size_t_32 getBiosCpuDiskHashID()
 
 	string Guid;
 
-	string CPUID = WstringToString(GetCPUID());
-	string BoardSerialNumber = WstringToString(BoardInfo.BoardSerialNumber);
-	string MainHardDiskSerialNumber = WstringToString(BoardInfo.MainHardDiskSerialNumber);
+	string CPUID = utf16ToUtf8(GetCPUID());
+	string BoardSerialNumber = utf16ToUtf8(BoardInfo.BoardSerialNumber);
+	string MainHardDiskSerialNumber = utf16ToUtf8(BoardInfo.MainHardDiskSerialNumber);
 
 	if (!CPUID.empty()) Guid.append(CPUID + "\r\n");
 	if (!BoardSerialNumber.empty()) Guid.append(BoardSerialNumber + "\r\n");

@@ -160,7 +160,7 @@ wstring GetPptComVersion()
 	{
 		try
 		{
-			ret = BstrToWstring(PptCOMPto->GetVersion());
+			ret = bstrToWstring(PptCOMPto->GetVersion());
 			if (!regex_match(ret, wregex(L"\\d{8}[a-z]"))) ret = L"Error: " + ret;
 		}
 		catch (_com_error& err)
@@ -196,7 +196,7 @@ wstring GetPptTitle()
 
 	try
 	{
-		ret = BstrToWstring(PptCOMPto->slideNameIndex());
+		ret = bstrToWstring(PptCOMPto->slideNameIndex());
 
 		return ret;
 	}

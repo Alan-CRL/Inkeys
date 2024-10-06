@@ -92,12 +92,12 @@ using namespace Gdiplus;
 #define HiEndDraw() END_TASK(); REDRAW_WINDOW()
 
 extern wstring buildTime; //构建时间
-extern string editionDate; //程序发布日期
-extern string editionChannel;
-extern string editionCode; //程序版本
+extern wstring editionDate; //程序发布日期
+extern wstring editionChannel;
+extern wstring editionCode; //程序版本
 
 extern wstring userId; //用户ID（主板序列号）
-extern string globalPath; //程序当前路径
+extern wstring globalPath; //程序当前路径
 
 extern int offSignal, offSignalReady; //关闭指令
 extern map <wstring, bool> threadStatus; //线程状态管理

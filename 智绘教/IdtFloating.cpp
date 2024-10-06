@@ -973,7 +973,7 @@ void DrawScreen()
 		}
 		//插件加载
 		{
-			if (_waccess((StringToWstring(globalPath) + L"plug-in\\随机点名\\随机点名.exe").c_str(), 4) == 0) plug_in_RandomRollCall.select = 1;
+			if (_waccess((globalPath + L"plug-in\\随机点名\\随机点名.exe").c_str(), 4) == 0) plug_in_RandomRollCall.select = 1;
 		}
 	}
 
@@ -6105,15 +6105,8 @@ void MouseInteraction()
 								{
 									if (!m.lbutton)
 									{
-										if (_waccess((StringToWstring(globalPath) + L"plug-in\\随机点名\\随机点名.exe").c_str(), 0) == 0 && !isProcessRunning((StringToWstring(globalPath) + L"plug-in\\随机点名\\随机点名.exe").c_str()))
-										{
-											STARTUPINFOA si = { 0 };
-											si.cb = sizeof(si);
-											PROCESS_INFORMATION pi = { 0 };
-											CreateProcessA(NULL, (globalPath + "plug-in\\随机点名\\随机点名.exe").data(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
-											CloseHandle(pi.hProcess);
-											CloseHandle(pi.hThread);
-										}
+										if (_waccess((globalPath + L"plug-in\\随机点名\\随机点名.exe").c_str(), 0) == 0 && !isProcessRunning((globalPath + L"plug-in\\随机点名\\随机点名.exe").c_str()))
+											ShellExecuteW(NULL, NULL, (globalPath + L"plug-in\\随机点名\\随机点名.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
 
 										break;
 									}
