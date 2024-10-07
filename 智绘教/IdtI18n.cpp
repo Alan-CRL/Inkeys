@@ -24,7 +24,7 @@ bool loadI18n(int type, wstring path, wstring lang, bool initialization)
 	else if (type == 2)
 	{
 		ifstream ifs(path, ios::binary);
-		string content((istreambuf_iterator<char>(ifs)), istreambuf_iterator<char>());
+		jsonContent = string((istreambuf_iterator<char>(ifs)), istreambuf_iterator<char>());
 		ifs.close();
 
 		if (jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);

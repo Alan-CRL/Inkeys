@@ -63,6 +63,7 @@
 #include <variant>									// 更加安全的联合体用于 i18n
 
 // 日志类
+#define SPDLOG_WCHAR_FILENAMES
 #include <spdlog/spdlog.h>							// 提供日志记录服务
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/rotating_file_sink.h>
@@ -107,6 +108,7 @@ extern shared_ptr<spdlog::logger> IDTLogger;
 //调测专用
 #ifndef IDT_RELEASE
 void Test();
+void Testb(bool t);
 void Testi(long long t);
 void Testw(wstring t);
 void Testa(string t);

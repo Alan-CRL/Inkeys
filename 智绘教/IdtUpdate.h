@@ -30,7 +30,7 @@ public:
 	wstring editionCode;
 	wstring explain;
 	wstring representation;
-	wstring path[10];
+	string path[10];
 	int path_size;
 
 	string hash_md5;
@@ -40,11 +40,12 @@ EditionInfoClass GetEditionInfo(string channel);
 
 class DownloadNewProgramStateClass
 {
+public:
 	long long downloadedSize;
 	long long fileSize;
 };
 void splitUrl(string input_url, string& prefix, string& domain, string& path);
-int DownloadNewProgram(DownloadNewProgramStateClass* state, string url);
+int DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass editionInfo, string url);
 
 //程序自动更新
 extern int AutomaticUpdateStep;

@@ -43,7 +43,7 @@ int SettingMain();
 void FreezeFrameWindow();
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-wstring editionDate = L"20240714a";				//程序发布日期
+wstring editionDate = L"20241005a";				//程序发布日期
 wstring editionChannel = L"Dev";				//程序发布通道
 wstring editionCode = L"24H2(BetaH3)";			//程序版本
 
@@ -59,24 +59,9 @@ shared_ptr<spdlog::logger> IDTLogger;
 //int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
 int main()
 {
-	// 当前下 string 的编码是否是 utf8 还有待验证
-	string s = "你好，世界";
-	// 输出每个字节的十六进制值
-	std::cout << "字符串的 UTF-8 编码 (十六进制表示): ";
-	for (unsigned char c : s) {
-		std::cout << std::hex << static_cast<int>(c) << " ";
-	}
-	std::cout << std::dec << std::endl;
-	// 直接输出字符串
-	std::cout << "字符串内容: " << s << std::endl;
-
-	// 全程序 string -> UTF8, wstring -> UTF16
-	Testa(StringToUrlencode(s));
-
 	// 路径预处理
 	{
 		globalPath = GetCurrentExeDirectory() + L"\\";
-		MessageBoxW(NULL, globalPath.c_str(), L"", MB_OK);
 
 		{
 			int typeRoot = 0;
@@ -223,7 +208,7 @@ int main()
 
 		if (_waccess((globalPath + L"log\\idt" + Timestamp + L".log").c_str(), 0) == 0) filesystem::remove(globalPath + L"log\\idt" + Timestamp + L".log", ec);
 
-		auto IDTLoggerFileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(utf16ToUtf8(globalPath) + "log\\idt" + utf16ToUtf8(Timestamp) + ".log");
+		auto IDTLoggerFileSink = std::make_shared<spdlog::sinks::basic_file_sink<std::mutex>>(globalPath + L"log\\idt" + Timestamp + L".log", true);
 
 		spdlog::init_thread_pool(8192, 64);
 		IDTLogger = std::make_shared<spdlog::async_logger>("IDTLogger", IDTLoggerFileSink, spdlog::thread_pool(), spdlog::async_overflow_policy::block);
@@ -249,60 +234,73 @@ int main()
 
 			bool flag = true;
 
-			Json::Reader reader;
-			Json::Value root;
+			string jsonContent;
 
-			ifstream readjson;
-			readjson.imbue(locale("zh_CN.UTF8"));
-			readjson.open(globalPath + L"update.json");
+			ifstream ifs(globalPath + L"update.json", ios::binary);
+			jsonContent = string((istreambuf_iterator<char>(ifs)), istreambuf_iterator<char>());
+			ifs.close();
+			if (jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
 
-			if (reader.parse(readjson, root))
+			istringstream jsonContentStream(jsonContent);
+			Json::CharReaderBuilder readerBuilder;
+			Json::Value updateVal;
+			string jsonErr;
+
+			if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
 			{
-				if (root.isMember("edition")) tedition = utf8ToUtf16(root["edition"].asString());
+				if (updateVal.isMember("edition")) tedition = utf8ToUtf16(updateVal["edition"].asString());
 				else flag = false;
 
-				if (root.isMember("representation")) representation = utf8ToUtf16(root["representation"].asString());
+				if (updateVal.isMember("representation")) representation = utf8ToUtf16(updateVal["representation"].asString());
 				else flag = false;
 
-				if (root.isMember("hash"))
+				if (updateVal.isMember("hash"))
 				{
-					if (root["hash"].isMember("md5")) thash_md5 = root["hash"]["md5"].asString();
+					if (updateVal["hash"].isMember("md5")) thash_md5 = updateVal["hash"]["md5"].asString();
 					else flag = false;
-					if (root["hash"].isMember("sha256")) thash_sha256 = root["hash"]["sha256"].asString();
+					if (updateVal["hash"].isMember("sha256")) thash_sha256 = updateVal["hash"]["sha256"].asString();
 					else flag = false;
 				}
 				else flag = false;
 
-				if (root.isMember("old_name")) old_name = utf8ToUtf16(root["old_name"].asString());
+				if (updateVal.isMember("old_name")) old_name = utf8ToUtf16(updateVal["old_name"].asString());
 			}
-			readjson.close();
+			ifs.close();
 
 			string hash_md5, hash_sha256;
+			if (flag)
 			{
-				hashwrapper* myWrapper = new md5wrapper();
-				hash_md5 = myWrapper->getHashFromFileW(GetCurrentExePath());
-				delete myWrapper;
-			}
-			{
-				hashwrapper* myWrapper = new sha256wrapper();
-				hash_sha256 = myWrapper->getHashFromFileW(GetCurrentExePath());
-				delete myWrapper;
+				{
+					hashwrapper* myWrapper = new md5wrapper();
+					hash_md5 = myWrapper->getHashFromFileW(GetCurrentExePath());
+					delete myWrapper;
+				}
+				{
+					hashwrapper* myWrapper = new sha256wrapper();
+					hash_sha256 = myWrapper->getHashFromFileW(GetCurrentExePath());
+					delete myWrapper;
+				}
 			}
 
 			if (flag && tedition == editionDate && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
 			{
 				//符合条件，开始替换版本
-
-				this_thread::sleep_for(chrono::milliseconds(1000));
-
 				filesystem::path directory(globalPath);
-				wstring main_path = directory.parent_path().parent_path().wstring();
+				wstring main_path = directory.parent_path().parent_path().wstring() + L"\\";
+
+				while (true)
+				{
+					if (!old_name.empty()) if (!isProcessRunning((main_path + old_name).c_str())) break;
+					else if (!isProcessRunning((main_path + L"智绘教.exe").c_str())) break;
+
+					this_thread::sleep_for(chrono::milliseconds(10));
+				}
 
 				error_code ec;
-				if (!old_name.empty()) filesystem::remove(main_path + L"\\" + old_name, ec);
-				else filesystem::remove(main_path + L"\\智绘教.exe", ec);
+				if (!old_name.empty()) filesystem::remove(main_path + old_name, ec);
+				else filesystem::remove(main_path + L"智绘教.exe", ec);
 
-				wstring target = main_path + L"\\智绘教" + editionDate + L".exe";
+				wstring target = main_path + L"Inkeys" + editionDate + L".exe";
 				filesystem::copy_file(globalPath + representation, target, filesystem::copy_options::overwrite_existing, ec);
 
 				ShellExecuteW(NULL, NULL, target.c_str(), NULL, NULL, SW_SHOWNORMAL);
@@ -315,10 +313,10 @@ int main()
 				filesystem::remove(globalPath + L"update.json", ec);
 
 				filesystem::path directory(globalPath);
-				wstring main_path = directory.parent_path().parent_path().wstring();
+				wstring main_path = directory.parent_path().parent_path().wstring() + L"\\";
 
-				if (!old_name.empty()) ShellExecuteW(NULL, NULL, (main_path + L"\\" + old_name).c_str(), NULL, NULL, SW_SHOWNORMAL);
-				else ShellExecuteW(NULL, NULL, (main_path + L"\\智绘教.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+				if (!old_name.empty()) ShellExecuteW(NULL, NULL, (main_path + old_name).c_str(), NULL, NULL, SW_SHOWNORMAL);
+				else ShellExecuteW(NULL, NULL, (main_path + L"智绘教.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
 
 				return 0;
 			}
@@ -330,70 +328,75 @@ int main()
 
 			bool flag = true;
 
-			Json::Reader reader;
-			Json::Value root;
+			string jsonContent;
 
-			ifstream readjson;
-			readjson.imbue(locale("zh_CN.UTF8"));
-			readjson.open(globalPath + L"installer\\update.json");
+			ifstream ifs(globalPath + L"installer\\update.json", ios::binary);
+			jsonContent = string((istreambuf_iterator<char>(ifs)), istreambuf_iterator<char>());
+			ifs.close();
+			if (jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
 
-			if (reader.parse(readjson, root))
+			istringstream jsonContentStream(jsonContent);
+			Json::CharReaderBuilder readerBuilder;
+			Json::Value updateVal;
+			string jsonErr;
+
+			if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
 			{
-				if (root.isMember("edition")) tedition = utf8ToUtf16(root["edition"].asString());
+				if (updateVal.isMember("edition")) tedition = utf8ToUtf16(updateVal["edition"].asString());
 				else flag = false;
 
-				if (root.isMember("path")) path = utf8ToUtf16(root["path"].asString());
+				if (updateVal.isMember("path")) path = utf8ToUtf16(updateVal["path"].asString());
 				else flag = false;
 
-				if (root.isMember("hash"))
+				if (updateVal.isMember("hash"))
 				{
-					if (root["hash"].isMember("md5")) thash_md5 = root["hash"]["md5"].asString();
+					if (updateVal["hash"].isMember("md5")) thash_md5 = updateVal["hash"]["md5"].asString();
 					else flag = false;
-					if (root["hash"].isMember("sha256")) thash_sha256 = root["hash"]["sha256"].asString();
+					if (updateVal["hash"].isMember("sha256")) thash_sha256 = updateVal["hash"]["sha256"].asString();
 					else flag = false;
 				}
 				else flag = false;
 			}
-
-			readjson.close();
+			ifs.close();
 
 			string hash_md5, hash_sha256;
+			if (flag)
 			{
-				hashwrapper* myWrapper = new md5wrapper();
-				hash_md5 = myWrapper->getHashFromFileW(globalPath + path);
-				delete myWrapper;
-			}
-			{
-				hashwrapper* myWrapper = new sha256wrapper();
-				hash_sha256 = myWrapper->getHashFromFileW(globalPath + path);
-				delete myWrapper;
+				{
+					hashwrapper* myWrapper = new md5wrapper();
+					hash_md5 = myWrapper->getHashFromFileW(globalPath + path);
+					delete myWrapper;
+				}
+				{
+					hashwrapper* myWrapper = new sha256wrapper();
+					hash_sha256 = myWrapper->getHashFromFileW(globalPath + path);
+					delete myWrapper;
+				}
 			}
 
 			if (flag && tedition > editionDate && _waccess((globalPath + path).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
 			{
 				//符合条件，开始替换版本
 				{
-					root["old_name"] = Json::Value(utf16ToUtf8(GetCurrentExeName()));
+					updateVal["old_name"] = Json::Value(utf16ToUtf8(GetCurrentExeName()));
 
 					Json::StreamWriterBuilder outjson;
 					outjson.settings_["emitUTF8"] = true;
-					std::unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
-					ofstream writejson;
-					writejson.imbue(locale("zh_CN.UTF8"));
-					writejson.open(globalPath + L"installer\\update.json");
-					writer->write(root, &writejson);
+					unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
+					ofstream writejson(globalPath + L"installer\\update.json", ios::binary);
+					writejson << "\xEF\xBB\xBF";
+					writer->write(updateVal, &writejson);
 					writejson.close();
 				}
+				Testi(998244);
 				ShellExecuteW(NULL, NULL, (globalPath + path).c_str(), NULL, NULL, SW_SHOWNORMAL);
 
 				return 0;
 			}
-			else if (tedition == editionDate)
+			else
 			{
 				error_code ec;
 				filesystem::remove_all(globalPath + L"installer", ec);
-				filesystem::remove_all(globalPath + L"api", ec);
-				filesystem::remove(globalPath + L"PptCOM.dll", ec);
 			}
 		}
 	}
@@ -794,17 +797,21 @@ int main()
 
 	IDTLogger->info("[主线程][IdtMain] 已结束智绘教所有线程并关闭程序");
 	return 0;
-}
+	}
 
 // 调测专用
 #ifndef IDT_RELEASE
 void Test()
 {
-	MessageBox(NULL, L"标记处", L"标记", MB_OK | MB_SYSTEMMODAL);
+	MessageBoxW(NULL, L"标记处", L"标记", MB_OK | MB_SYSTEMMODAL);
+}
+void Testb(bool t)
+{
+	MessageBoxW(NULL, t ? L"true" : L"false", L"真否标记", MB_OK | MB_SYSTEMMODAL);
 }
 void Testi(long long t)
 {
-	MessageBox(NULL, to_wstring(t).c_str(), L"数值标记", MB_OK | MB_SYSTEMMODAL);
+	MessageBoxW(NULL, to_wstring(t).c_str(), L"数值标记", MB_OK | MB_SYSTEMMODAL);
 }
 void Testw(wstring t)
 {
@@ -812,6 +819,6 @@ void Testw(wstring t)
 }
 void Testa(string t)
 {
-	MessageBoxA(NULL, t.c_str(), "字符标记", MB_OK | MB_SYSTEMMODAL);
+	MessageBoxW(NULL, utf8ToUtf16(t).c_str(), L"字符标记", MB_OK | MB_SYSTEMMODAL);
 }
 #endif

@@ -51,7 +51,7 @@ void StartForInkeys()
 	Testi(editionInfo.errorCode);
 
 	DownloadNewProgramStateClass state;
-	DownloadNewProgram(&state, "https://vip.123pan.cn/1709404/version_identification/IdtUpload20240719a.zip");
+	DownloadNewProgram(&state, editionInfo, "https://vip.123pan.cn/1709404/version_identification/IdtUpload20240719a.zip");
 }
 
 int GetWindowsVersion()

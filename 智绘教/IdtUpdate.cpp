@@ -119,6 +119,7 @@ EditionInfoClass GetEditionInfo(string channel)
 	* 1 下载失败
 	* 2 下载信息损坏
 	* 3 下载信息不符合规范
+	* 200 下载信息成功
 	*/
 	EditionInfoClass retEditionInfo;
 
@@ -158,7 +159,7 @@ EditionInfoClass GetEditionInfo(string channel)
 			if (editionInfoValue[channel].isMember("path"))
 			{
 				retEditionInfo.path_size = editionInfoValue[channel]["path"].size();
-				for (int i = 0; i < min(retEditionInfo.path_size, 10); i++) retEditionInfo.path[i] = utf8ToUtf16(editionInfoValue[channel]["path"][i].asString());
+				for (int i = 0; i < min(retEditionInfo.path_size, 10); i++) retEditionInfo.path[i] = editionInfoValue[channel]["path"][i].asString();
 				if (retEditionInfo.path_size <= 0) informationCompliance = false;
 			}
 			else informationCompliance = false;
@@ -198,7 +199,11 @@ EditionInfoClass GetEditionInfo(string channel)
 			retEditionInfo.errorCode = 3;
 			return retEditionInfo;
 		}
-		else retEditionInfo.channel = channel;
+		else
+		{
+			retEditionInfo.channel = channel;
+			retEditionInfo.errorCode = 200;
+		}
 	}
 	else
 	{
@@ -228,21 +233,94 @@ void splitUrl(string input_url, string& prefix, string& domain, string& path)
 		path.clear();
 	}
 }
-int DownloadNewProgram(DownloadNewProgramStateClass* state, string url)
+int DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass editionInfo, string url)
 {
-	MessageBoxA(NULL, "1", "", MB_OK);
-
 	error_code ec;
-	filesystem::create_directory(globalPath + L"installer", ec); //创建路径
+	if (_waccess((globalPath + L"installer").c_str(), 4) == 0)
+	{
+		filesystem::remove_all(globalPath + L"installer", ec);
+		filesystem::create_directory(globalPath + L"installer", ec);
+	}
+	else filesystem::create_directory(globalPath + L"installer", ec);
 
-	MessageBoxA(NULL, "2", "", MB_OK);
 	string prefix, domain, path;
 	splitUrl(url, prefix, domain, path);
 
-	//MessageBoxA(NULL, globalPath.c_str(), "", MB_OK);
-	//MessageBoxW(NULL, utf8ToUtf16(globalPath).c_str(), L"", MB_OK);
 	wstring timestamp = getTimestamp();
-	bool reslut = DownloadEdition(domain, path, globalPath + L"installer\\", L"new_procedure_" + timestamp + L".tmp");
+	bool reslut = DownloadEdition(domain, path, globalPath + L"installer\\", L"new_procedure_" + timestamp + L".tmp", state->fileSize, state->downloadedSize);
+
+	if (reslut)
+	{
+		error_code ec;
+		filesystem::remove(globalPath + L"installer\\new_procedure_" + timestamp + L".exe", ec);
+		filesystem::remove(globalPath + L"installer\\" + editionInfo.representation, ec);
+
+		filesystem::rename(globalPath + L"installer\\new_procedure_" + timestamp + L".tmp", globalPath + L"installer\\new_procedure_" + timestamp + L".zip", ec);
+		if (ec) return 7;
+
+		HZIP hz = OpenZip((globalPath + L"installer\\new_procedure_" + timestamp + L".zip").c_str(), 0);
+		SetUnzipBaseDir(hz, (globalPath + L"installer").c_str());
+		ZIPENTRY ze;
+		GetZipItem(hz, -1, &ze);
+		int numitems = ze.index;
+		for (int i = 0; i < numitems; i++)
+		{
+			GetZipItem(hz, i, &ze);
+			UnzipItem(hz, i, ze.name);
+		}
+		CloseZip(hz);
+
+		filesystem::remove(globalPath + L"installer\\new_procedure_" + timestamp + L".zip", ec);
+		filesystem::rename(globalPath + L"installer\\" + editionInfo.representation, globalPath + L"installer\\new_procedure_" + timestamp + L".exe", ec);
+		if (ec) return 7;
+
+		string hash_md5, hash_sha256;
+		{
+			hashwrapper* myWrapper = new md5wrapper();
+			hash_md5 = myWrapper->getHashFromFileW(globalPath + L"installer\\new_procedure_" + timestamp + L".exe");
+			delete myWrapper;
+		}
+		{
+			hashwrapper* myWrapper = new sha256wrapper();
+			hash_sha256 = myWrapper->getHashFromFileW(globalPath + L"installer\\new_procedure_" + timestamp + L".exe");
+			delete myWrapper;
+		}
+
+		//创建 update.json 文件，指示更新
+		if (editionInfo.hash_md5 == hash_md5 && editionInfo.hash_sha256 == hash_sha256)
+		{
+			Json::Value root;
+
+			root["edition"] = Json::Value(utf16ToUtf8(editionInfo.editionDate));
+			root["path"] = Json::Value("installer\\new_procedure_" + utf16ToUtf8(timestamp) + ".exe");
+			root["representation"] = Json::Value("new_procedure_" + utf16ToUtf8(timestamp) + ".exe");
+
+			root["hash"]["md5"] = Json::Value(editionInfo.hash_md5);
+			root["hash"]["sha256"] = Json::Value(editionInfo.hash_sha256);
+
+			root["old_name"] = Json::Value(utf16ToUtf8(GetCurrentExeName()));
+
+			Json::StreamWriterBuilder outjson;
+			outjson.settings_["emitUTF8"] = true;
+			unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
+			ofstream writejson(globalPath + L"installer\\update.json", ios::binary);
+			writejson << "\xEF\xBB\xBF";
+			writer->write(root, &writejson);
+			writejson.close();
+
+			Testi(2);
+		}
+		else
+		{
+			error_code ec;
+			filesystem::remove(globalPath + L"installer\\new_procedure" + timestamp + L".exe", ec);
+
+			return 7;
+		}
+	}
+	else return 6;
+
+	return 8;
 }
 
 void AutomaticUpdate()
@@ -268,6 +346,9 @@ void AutomaticUpdate()
 	int updateTimes = 0;
 
 	EditionInfoClass editionInfo;
+	DownloadNewProgramStateClass downloadNewProgramState;
+
+	string channel = setlist.UpdateChannel;
 
 	for (; !offSignal && updateTimes <= 10; updateTimes++)
 	{
@@ -279,18 +360,18 @@ void AutomaticUpdate()
 		//获取最新版本信息
 		if (state)
 		{
-			editionInfo = GetEditionInfo(setlist.UpdateChannel);
+			editionInfo = GetEditionInfo(channel);
 
-			if (editionInfo.errorCode)
+			if (editionInfo.errorCode != 200)
 			{
 				state = false;
 				if (editionInfo.errorCode == 1) AutomaticUpdateStep = 2;
 				else if (editionInfo.errorCode == 2) AutomaticUpdateStep = 3;
 				else AutomaticUpdateStep = 4;
 			}
-			else if (setlist.UpdateChannel != editionInfo.channel)
+			else if (channel != editionInfo.channel)
 			{
-				setlist.UpdateChannel = editionInfo.channel;
+				setlist.UpdateChannel = channel = editionInfo.channel;
 				WriteSetting();
 			}
 		}
@@ -345,115 +426,31 @@ void AutomaticUpdate()
 					}
 
 					if (tedition >= editionInfo.editionDate && _waccess((globalPath + tpath).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
+					{
 						update = false;
+						AutomaticUpdateStep = 8;
+					}
 				}
 			}
 
-			/*
 			if (update)
 			{
-				AutomaticUpdateStep = 6;
+				AutomaticUpdateStep = 5;
 
 				against = true;
 				for (int i = 0; i < editionInfo.path_size; i++)
 				{
-					HRESULT download2;
+					int result = DownloadNewProgram(&downloadNewProgramState, editionInfo, editionInfo.path[i]);
+					AutomaticUpdateStep = result;
+					if (AutomaticUpdateStep == 8)
 					{
-						download2 = URLDownloadToFileW( // 从网络上下载数据到本地文件
-							nullptr,                  // 在这里，写 nullptr 就行
-							(convertToHttp(info.path[i]) + L"?timestamp=" + getTimestamp()).c_str(), // 在这里写上网址
-							StringToLPCWSTR(globalPath + "installer\\new_procedure.tmp"),            // 文件名写在这
-							0,                        // 写 0 就对了
-							nullptr                   // 也是，在这里写 nullptr 就行
-						);
+						against = false;
+						break;
 					}
-
-					if (download2 == S_OK)
-					{
-						error_code ec;
-						filesystem::remove(StringToWstring(globalPath) + L"installer\\new_procedure" + timestamp + L".exe", ec);
-						filesystem::remove(StringToWstring(globalPath) + L"installer\\" + info.representation + L".exe", ec);
-
-						filesystem::rename(StringToWstring(globalPath) + L"installer\\new_procedure.tmp", StringToWstring(globalPath) + L"installer\\new_procedure" + timestamp + L".zip", ec);
-						if (ec) continue;
-
-						{
-							HZIP hz = OpenZip((StringToWstring(globalPath) + L"installer\\new_procedure" + timestamp + L".zip").c_str(), 0);
-							SetUnzipBaseDir(hz, (StringToWstring(globalPath) + L"installer\\").c_str());
-							ZIPENTRY ze;
-							GetZipItem(hz, -1, &ze);
-							int numitems = ze.index;
-							for (int i = 0; i < numitems; i++)
-							{
-								GetZipItem(hz, i, &ze);
-								UnzipItem(hz, i, ze.name);
-							}
-							CloseZip(hz);
-						}
-
-						filesystem::remove(StringToWstring(globalPath) + L"installer\\new_procedure" + timestamp + L".zip", ec);
-						filesystem::rename(StringToWstring(globalPath) + L"installer\\" + info.representation, StringToWstring(globalPath) + L"installer\\new_procedure" + timestamp + L".exe", ec);
-						if (ec)
-						{
-							AutomaticUpdateStep = 8;
-							continue;
-						}
-
-						string hash_md5, hash_sha256;
-						{
-							hashwrapper* myWrapper = new md5wrapper();
-							hash_md5 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"installer\\new_procedure" + timestamp + L".exe");
-							delete myWrapper;
-						}
-						{
-							hashwrapper* myWrapper = new sha256wrapper();
-							hash_sha256 = myWrapper->getHashFromFileW(StringToWstring(globalPath) + L"installer\\new_procedure" + timestamp + L".exe");
-							delete myWrapper;
-						}
-
-						//创建 update.json 文件，指示更新
-						if (info.hash_md5 == hash_md5 && info.hash_sha256 == hash_sha256)
-						{
-							Json::Value root;
-
-							root["edition"] = Json::Value(WstringToString(info.editionDate));
-							root["path"] = Json::Value("installer\\new_procedure" + WstringToString(timestamp) + ".exe");
-							root["representation"] = Json::Value("new_procedure" + WstringToString(timestamp) + ".exe");
-
-							root["hash"]["md5"] = Json::Value(info.hash_md5);
-							root["hash"]["sha256"] = Json::Value(info.hash_sha256);
-
-							root["old_name"] = Json::Value(ConvertToUtf8("智绘教.exe"));
-
-							Json::StreamWriterBuilder outjson;
-							outjson.settings_["emitUTF8"] = true;
-							std::unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
-							ofstream writejson;
-							writejson.imbue(locale("zh_CN.UTF8"));
-							writejson.open(WstringToString(StringToWstring(globalPath) + L"installer\\update.json").c_str());
-							writer->write(root, &writejson);
-							writejson.close();
-
-							against = false;
-							AutomaticUpdateStep = 9;
-
-							break;
-						}
-						else
-						{
-							AutomaticUpdateStep = 8;
-
-							error_code ec;
-							filesystem::remove(StringToWstring(globalPath) + L"installer\\new_procedure" + timestamp + L".exe", ec);
-						}
-					}
-					else AutomaticUpdateStep = 7;
 				}
 			}
-			*/
 		}
-		/*
-		else if (state && info.editionDate != L"" && info.editionDate <= StringToWstring(editionDate)) AutomaticUpdateStep = 10;
+		else if (state && editionInfo.editionDate != L"" && editionInfo.editionDate <= editionDate) AutomaticUpdateStep = 10;
 
 		if (against)
 		{
@@ -483,6 +480,6 @@ void AutomaticUpdate()
 				this_thread::sleep_for(chrono::seconds(1));
 			}
 			updateTimes = 0;
-		}*/
+		}
 	}
 }
