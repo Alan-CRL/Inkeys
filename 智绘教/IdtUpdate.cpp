@@ -307,8 +307,6 @@ int DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass edi
 			writejson << "\xEF\xBB\xBF";
 			writer->write(root, &writejson);
 			writejson.close();
-
-			Testi(2);
 		}
 		else
 		{
@@ -450,7 +448,7 @@ void AutomaticUpdate()
 				}
 			}
 		}
-		else if (state && editionInfo.editionDate != L"" && editionInfo.editionDate <= editionDate) AutomaticUpdateStep = 10;
+		else if (state && editionInfo.editionDate != L"" && editionInfo.editionDate <= editionDate) AutomaticUpdateStep = 9;
 
 		if (against)
 		{

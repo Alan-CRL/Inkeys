@@ -128,8 +128,6 @@ bool loadI18n(int type, wstring path, wstring lang, bool initialization)
 				else if (initialization) i18n[i18nEnum::Settings_Update_Tip8] = "";
 				if (i18nVal["Settings"]["Update"].isMember("Tip9") && i18nVal["Settings"]["Update"]["Tip9"].isString()) i18n[i18nEnum::Settings_Update_Tip9] = i18nVal["Settings"]["Update"]["Tip9"].asString();
 				else if (initialization) i18n[i18nEnum::Settings_Update_Tip9] = "";
-				if (i18nVal["Settings"]["Update"].isMember("Tip10") && i18nVal["Settings"]["Update"]["Tip10"].isString()) i18n[i18nEnum::Settings_Update_Tip10] = i18nVal["Settings"]["Update"]["Tip10"].asString();
-				else if (initialization) i18n[i18nEnum::Settings_Update_Tip10] = "";
 			}
 		}
 

@@ -2745,17 +2745,9 @@ int SettingMain()
 					{
 						Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 
-						ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize(get<string>(i18n[i18nEnum::Settings_Update_Tip9]).c_str()).x , 44.0f + 616.0f + 5.0f });
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(229 / 255.0f, 55 / 255.0f, 66 / 255.0f, 1.0f));
-						CenteredText(get<string>(i18n[i18nEnum::Settings_Update_Tip9]).c_str(), 4.0f);
-					}
-					else if (AutomaticUpdateStep == 10)
-					{
-						Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
-
-						ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize((get<string>(i18n[i18nEnum::Settings_Update_Tip10]) + "(" + setlist.UpdateChannel + ")").c_str()).x , 44.0f + 616.0f + 5.0f });
+						ImGui::SetCursorPos({ 120.0f + 770.0f - ImGui::CalcTextSize((get<string>(i18n[i18nEnum::Settings_Update_Tip9]) + "(" + setlist.UpdateChannel + ")").c_str()).x , 44.0f + 616.0f + 5.0f });
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(98 / 255.0f, 175 / 255.0f, 82 / 255.0f, 1.0f));
-						CenteredText((get<string>(i18n[i18nEnum::Settings_Update_Tip10]) + "(" + setlist.UpdateChannel + ")").c_str(), 4.0f);
+						CenteredText((get<string>(i18n[i18nEnum::Settings_Update_Tip9]) + "(" + setlist.UpdateChannel + ")").c_str(), 4.0f);
 					}
 
 					ImGui::PopStyleColor(PushStyleColorNum);

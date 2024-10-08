@@ -33,8 +33,7 @@ enum i18nEnum
 	Settings_Update_Tip6,
 	Settings_Update_Tip7,
 	Settings_Update_Tip8,
-	Settings_Update_Tip9,
-	Settings_Update_Tip10
+	Settings_Update_Tip9
 };
 
 extern wstring i18nIdentifying;

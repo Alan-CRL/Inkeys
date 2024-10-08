@@ -43,7 +43,7 @@ int SettingMain();
 void FreezeFrameWindow();
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-wstring editionDate = L"20241005a";				//程序发布日期
+wstring editionDate = L"20241008a";				//程序发布日期
 wstring editionChannel = L"Dev";				//程序发布通道
 wstring editionCode = L"24H2(BetaH3)";			//程序版本
 
@@ -388,7 +388,6 @@ int main()
 					writer->write(updateVal, &writejson);
 					writejson.close();
 				}
-				Testi(998244);
 				ShellExecuteW(NULL, NULL, (globalPath + path).c_str(), NULL, NULL, SW_SHOWNORMAL);
 
 				return 0;
@@ -797,7 +796,7 @@ int main()
 
 	IDTLogger->info("[主线程][IdtMain] 已结束智绘教所有线程并关闭程序");
 	return 0;
-	}
+}
 
 // 调测专用
 #ifndef IDT_RELEASE

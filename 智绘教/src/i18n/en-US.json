@@ -40,17 +40,16 @@
 		
 		"Update" :
 		{
-			"Tip0" : "Program automatic update not started.",
-			"Tip1" : "Program automatic update is loading.",
-			"Tip2" : "Program automatic update network connection error.",
-			"Tip3" : "Failed to download the latest version information.",
-			"Tip4" : "The latest version information downloaded does not comply with the specifications.",
-			"Tip5" : "The latest version information downloaded does not include the selected channel.",
-			"Tip6" : "The new version is currently being downloaded at lightning speed.",
-			"Tip7" : "Failed to download the latest version of the program.",
-			"Tip8" : "The latest version of the downloaded program is damaged.",
-			"Tip9" : "Restart and update to the latest version.",
-			"Tip10" : "The program is already the latest version."
+			"Tip0" : "Automatic update not started",
+			"Tip1" : "Obtain new version information",
+			"Tip2" : "Download version information is failed",
+			"Tip3" : "Download version information is damaged",
+			"Tip4" : "Download version information is invalid",
+			"Tip5" : "Downloading new version",
+			"Tip6" : "Download the latest program is failed",
+			"Tip7" : "Download the latest program is damaged",
+			"Tip8" : "Restart and update to the latest version",
+			"Tip9" : "The program is the latest version"
 		}
 	}
 }

@@ -22,8 +22,28 @@ struct
 
 // 分辨率不合适、内存不合适、系统低于win10
 
+class EditionStateStruct
+{
+public:
+	bool result;
+	wstring editionDate;
+} editionState;
+void GetEdition()
+{
+	editionState.result = false, editionState.editionDate = L"";
+
+	EditionInfoClass editionInfo = GetEditionInfo("LTS");
+	if (editionInfo.errorCode == 200)
+	{
+		editionState.editionDate = editionInfo.editionDate;
+		editionState.result = true;
+	}
+}
+
 void StartForInkeys()
 {
+	thread(GetEdition).detach();
+
 	// 获取基础信息
 	{
 		// 主显示器信息
@@ -47,11 +67,8 @@ void StartForInkeys()
 		hardwareInfo.hasTouchDevice = (digitizerStatus & NID_READY) && (digitizerStatus & (NID_INTEGRATED_TOUCH | NID_EXTERNAL_TOUCH));
 	}
 
-	EditionInfoClass editionInfo = GetEditionInfo("LTS");
-	Testi(editionInfo.errorCode);
-
-	DownloadNewProgramStateClass state;
-	DownloadNewProgram(&state, editionInfo, "https://vip.123pan.cn/1709404/version_identification/IdtUpload20240719a.zip");
+	//DownloadNewProgramStateClass state;
+	//DownloadNewProgram(&state, editionInfo, "https://vip.123pan.cn/1709404/version_identification/IdtUpload20240719a.zip");
 }
 
 int GetWindowsVersion()

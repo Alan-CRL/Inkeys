@@ -115,8 +115,3 @@ void Testa(string t);
 
 // this_thread::sleep_for(chrono::milliseconds(int))
 #endif
-
-// IDT 字符编码规范
-// 代码文件尽量使用 UTF16 LE 编码存储
-// 全局尽量使用 wchar_t 和 wstring 等宽字符 UTF16 存储文字
-// 代码内字符串需要前缀 L""，尽量不使用 TEXT 和 _T 等
