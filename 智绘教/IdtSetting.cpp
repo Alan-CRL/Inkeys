@@ -15,17 +15,21 @@
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
 
-#include "imgui/imconfig.h"
 #include "imgui/imgui.h"
-#include "imgui/imgui_impl_dx11.h"
+#include "imgui/imgui_impl_dx9.h"
 #include "imgui/imgui_impl_win32.h"
+
 #include "imgui/imgui_internal.h"
 #include "imgui/imgui_toggle.h"
 #include "imgui/imgui_toggle_presets.h"
 #include "imgui/imstb_rectpack.h"
 #include "imgui/imstb_textedit.h"
 #include "imgui/imstb_truetype.h"
-#include <tchar.h>
+
+#define IMGUI_ENABLE_FREETYPE
+#include "imgui/imgui_freetype.h"
+
+#pragma comment(lib, "freetype/freetype.lib")
 
 // 示例
 static void HelpMarker(const char* desc, ImVec4 Color);
@@ -33,7 +37,7 @@ static void CenteredText(const char* desc, float displacement);
 
 IMAGE SettingSign[10];
 WNDCLASSEXW ImGuiWc;
-ID3D11ShaderResourceView* TextureSettingSign[10];
+PDIRECT3DTEXTURE9 TextureSettingSign[10];
 int SettingMainMode = 1;
 
 int ScreenWidth = GetSystemMetrics(SM_CXSCREEN);//获取显示器的宽
@@ -78,9 +82,9 @@ int SettingMain()
 
 	// 初始化部分
 	{
-		ImGuiWc = { sizeof(WNDCLASSEX), CS_CLASSDC, ImGuiWndProc, 0L, 0L, GetModuleHandle(NULL), NULL, NULL, NULL, NULL, get<wstring>(i18n[i18nEnum::SettingsW]).c_str(), NULL };
+		ImGuiWc = { sizeof(WNDCLASSEX), CS_CLASSDC, ImGuiWndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, get<wstring>(i18n[i18nEnum::SettingsW]).c_str(), nullptr };
 		RegisterClassExW(&ImGuiWc);
-		setting_window = CreateWindowW(ImGuiWc.lpszClassName, get<wstring>(i18n[i18nEnum::SettingsW]).c_str(), WS_OVERLAPPEDWINDOW, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, NULL, NULL, ImGuiWc.hInstance, NULL);
+		setting_window = CreateWindowW(ImGuiWc.lpszClassName, get<wstring>(i18n[i18nEnum::SettingsW]).c_str(), WS_OVERLAPPEDWINDOW, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, nullptr, nullptr, ImGuiWc.hInstance, nullptr);
 
 		SetWindowLong(setting_window, GWL_STYLE, GetWindowLong(setting_window, GWL_STYLE) & ~(WS_CAPTION | WS_BORDER | WS_THICKFRAME));
 		SetWindowPos(setting_window, NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_FRAMECHANGED);
@@ -106,9 +110,9 @@ int SettingMain()
 					unsigned char alpha = (color & 0xFF000000) >> 24;
 					if (alpha != 0)
 					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
 						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
 					}
 					else
 					{
@@ -120,7 +124,7 @@ int SettingMain()
 				}
 			}
 
-			bool ret = LoadTextureFromFile(data, width, height, &TextureSettingSign[1]);
+			bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[1]);
 			delete[] data;
 
 			IM_ASSERT(ret);
@@ -142,9 +146,9 @@ int SettingMain()
 					unsigned char alpha = (color & 0xFF000000) >> 24;
 					if (alpha != 0)
 					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
 						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
 					}
 					else
 					{
@@ -156,7 +160,7 @@ int SettingMain()
 				}
 			}
 
-			bool ret = LoadTextureFromFile(data, width, height, &TextureSettingSign[2]);
+			bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[2]);
 			delete[] data;
 
 			IM_ASSERT(ret);
@@ -177,9 +181,9 @@ int SettingMain()
 					unsigned char alpha = (color & 0xFF000000) >> 24;
 					if (alpha != 0)
 					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
 						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
 					}
 					else
 					{
@@ -191,7 +195,7 @@ int SettingMain()
 				}
 			}
 
-			bool ret = LoadTextureFromFile(data, width, height, &TextureSettingSign[7]);
+			bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[7]);
 			delete[] data;
 
 			IM_ASSERT(ret);
@@ -212,9 +216,9 @@ int SettingMain()
 					unsigned char alpha = (color & 0xFF000000) >> 24;
 					if (alpha != 0)
 					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
 						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
 					}
 					else
 					{
@@ -226,7 +230,7 @@ int SettingMain()
 				}
 			}
 
-			bool ret = LoadTextureFromFile(data, width, height, &TextureSettingSign[5]);
+			bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[5]);
 			delete[] data;
 
 			IM_ASSERT(ret);
@@ -246,9 +250,9 @@ int SettingMain()
 					unsigned char alpha = (color & 0xFF000000) >> 24;
 					if (alpha != 0)
 					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
 						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
 					}
 					else
 					{
@@ -260,7 +264,7 @@ int SettingMain()
 				}
 			}
 
-			bool ret = LoadTextureFromFile(data, width, height, &TextureSettingSign[6]);
+			bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[6]);
 			delete[] data;
 
 			IM_ASSERT(ret);
@@ -285,7 +289,7 @@ int SettingMain()
 		ImGui::StyleColorsLight();
 
 		ImGui_ImplWin32_Init(setting_window);
-		ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
+		ImGui_ImplDX9_Init(g_pd3dDevice);
 
 		if (_waccess((globalPath + L"ttf\\hmossscr.ttf").c_str(), 0) == -1)
 		{
@@ -392,9 +396,32 @@ int SettingMain()
 				}
 			}
 
+			// Handle lost D3D9 device
+			if (g_DeviceLost)
+			{
+				HRESULT hr = g_pd3dDevice->TestCooperativeLevel();
+				if (hr == D3DERR_DEVICELOST)
+				{
+					this_thread::sleep_for(chrono::milliseconds(10));
+					continue;
+				}
+				if (hr == D3DERR_DEVICENOTRESET) ResetDevice();
+				g_DeviceLost = false;
+			}
+
+			// Handle window resize (we don't resize directly in the WM_SIZE handler)
+			if (g_ResizeWidth != 0 && g_ResizeHeight != 0)
+			{
+				g_d3dpp.BackBufferWidth = g_ResizeWidth;
+				g_d3dpp.BackBufferHeight = g_ResizeHeight;
+				g_ResizeWidth = g_ResizeHeight = 0;
+				ResetDevice();
+			}
+
 			hiex::DelayFPS(recond, 24);
 
-			ImGui_ImplDX11_NewFrame();
+			// Start the Dear ImGui frame
+			ImGui_ImplDX9_NewFrame();
 			ImGui_ImplWin32_NewFrame();
 			ImGui::NewFrame();
 
@@ -428,7 +455,7 @@ int SettingMain()
 				ImGui::Begin(get<string>(i18n[i18nEnum::Settings]).c_str(), &test.select, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings);//开始绘制窗口
 
 				{
-					ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(255, 0, 255, 255)); // 设置边框颜色
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(255, 0, 255, 255)); // 设置边框颜色
 
 					// 主页
 					{
@@ -451,9 +478,6 @@ int SettingMain()
 						}
 
 						if (ImGui::Button(get<string>(i18n[i18nEnum::Settings_Home]).c_str(), { 100.0f,40.0f })) Tab = Tab::tab1;
-
-						ImGui::PopStyleColor(PushStyleColorNum);
-						ImGui::PopStyleVar(PushStyleVarNum);
 					}
 
 					// 常规
@@ -477,9 +501,6 @@ int SettingMain()
 						}
 
 						if (ImGui::Button(get<string>(i18n[i18nEnum::Settings_Regular]).c_str(), { 100.0f,40.0f })) Tab = Tab::tab2;
-
-						ImGui::PopStyleColor(PushStyleColorNum);
-						ImGui::PopStyleVar(PushStyleVarNum);
 					}
 
 					// 绘制
@@ -502,10 +523,7 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(225, 225, 225, 255));
 						}
 
-						if (ImGui::Button(reinterpret_cast<const char*>(u8"绘制"), { 100.0f,40.0f })) Tab = Tab::tab3;
-
-						ImGui::PopStyleColor(PushStyleColorNum);
-						ImGui::PopStyleVar(PushStyleVarNum);
+						if (ImGui::Button("绘制", { 100.0f,40.0f })) Tab = Tab::tab3;
 					}
 
 					// 插件
@@ -528,10 +546,7 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(225, 225, 225, 255));
 						}
 
-						if (ImGui::Button(reinterpret_cast<const char*>(u8"插件"), { 100.0f,40.0f })) Tab = Tab::tab4;
-
-						ImGui::PopStyleColor(PushStyleColorNum);
-						ImGui::PopStyleVar(PushStyleVarNum);
+						if (ImGui::Button("插件", { 100.0f,40.0f })) Tab = Tab::tab4;
 					}
 
 					// 快捷键
@@ -554,10 +569,7 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(225, 225, 225, 255));
 						}
 
-						if (ImGui::Button(reinterpret_cast<const char*>(u8"快捷键"), { 100.0f,40.0f })) Tab = Tab::tab5;
-
-						ImGui::PopStyleColor(PushStyleColorNum);
-						ImGui::PopStyleVar(PushStyleVarNum);
+						if (ImGui::Button("快捷键", { 100.0f,40.0f })) Tab = Tab::tab5;
 					}
 
 					// 社区名片
@@ -580,10 +592,7 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(225, 225, 225, 255));
 						}
 
-						if (ImGui::Button(reinterpret_cast<const char*>(u8"感谢墙"), { 100.0f,40.0f })) Tab = Tab::tab6;
-
-						ImGui::PopStyleColor(PushStyleColorNum);
-						ImGui::PopStyleVar(PushStyleVarNum);
+						if (ImGui::Button("感谢墙", { 100.0f,40.0f })) Tab = Tab::tab6;
 					}
 
 					// 软件版本
@@ -606,10 +615,7 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(225, 225, 225, 255));
 						}
 
-						if (ImGui::Button(reinterpret_cast<const char*>(u8"软件版本"), { 100.0f,40.0f })) Tab = Tab::tab7;
-
-						ImGui::PopStyleColor(PushStyleColorNum);
-						ImGui::PopStyleVar(PushStyleVarNum);
+						if (ImGui::Button("软件版本", { 100.0f,40.0f })) Tab = Tab::tab7;
 					}
 
 					// --------------------
@@ -623,10 +629,7 @@ int SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(215, 215, 215, 255));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(195, 195, 195, 255));
 
-						if (ImGui::Button(reinterpret_cast<const char*>(u8"实验室"), { 100.0f,30.0f })) Tab = Tab::tab8;
-
-						ImGui::PopStyleColor(PushStyleColorNum);
-						ImGui::PopStyleVar(PushStyleVarNum);
+						if (ImGui::Button("实验室", { 100.0f,30.0f })) Tab = Tab::tab8;
 					}
 #endif
 
@@ -639,10 +642,7 @@ int SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(86, 149, 86, 255));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
-						if (ImGui::Button(reinterpret_cast<const char*>(u8"程序调测"), { 100.0f,30.0f })) Tab = Tab::tab9;
-
-						ImGui::PopStyleColor(PushStyleColorNum);
-						ImGui::PopStyleVar(PushStyleVarNum);
+						if (ImGui::Button("程序调测", { 100.0f,30.0f })) Tab = Tab::tab9;
 					}
 
 					ImGui::SetCursorPos({ 10.0f,44.0f + 616.0f - 65.0f });
@@ -650,24 +650,22 @@ int SettingMain()
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-					if (ImGui::Button(reinterpret_cast<const char*>(u8"重启程序"), { 100.0f,30.0f }))
+					if (ImGui::Button("重启程序", { 100.0f,30.0f }))
 					{
 						test.select = false;
 						offSignal = 2;
 					}
-					ImGui::PopStyleColor(PushStyleColorNum);
 
 					ImGui::SetCursorPos({ 10.0f,44.0f + 616.0f - 30.0f });
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-					if (ImGui::Button(reinterpret_cast<const char*>(u8"关闭程序"), { 100.0f,30.0f }))
+					if (ImGui::Button("关闭程序", { 100.0f,30.0f }))
 					{
 						test.select = false;
 						offSignal = true;
 					}
-					ImGui::PopStyleColor(PushStyleColorNum);
 				}
 
 				ImGui::SetCursorPos({ 120.0f,44.0f });
@@ -676,7 +674,7 @@ int SettingMain()
 					// 主页
 				case Tab::tab1:
 				{
-					ImGui::BeginChild(reinterpret_cast<const char*>(u8"主页"), { 770.0f,616.0f }, true);
+					ImGui::BeginChild("主页", { 770.0f,616.0f }, true);
 
 					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 
@@ -720,12 +718,10 @@ int SettingMain()
 							ImGui::SetCursorPosX(left_x + text_indentation);
 							ImGui::TextUnformatted(temp.c_str());
 						}
-
-						ImGui::PopStyleColor(PushStyleColorNum);
 					}
 
 					ImGui::SetCursorPos({ 35.0f,70.0f });
-					ImGui::Image((void*)TextureSettingSign[2], ImVec2((float)SettingSign[2].getwidth(), (float)SettingSign[2].getheight()));
+					ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[2], ImVec2((float)SettingSign[2].getwidth(), (float)SettingSign[2].getheight()));
 
 					{
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
@@ -768,8 +764,6 @@ int SettingMain()
 							ImGui::SetCursorPosX(left_x + text_indentation);
 							ImGui::TextUnformatted(temp.c_str());
 						}
-
-						ImGui::PopStyleColor(PushStyleColorNum);
 					}
 					{
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
@@ -811,8 +805,6 @@ int SettingMain()
 							ImGui::SetCursorPosX(left_x + text_indentation);
 							ImGui::TextUnformatted(temp.c_str());
 						}
-
-						ImGui::PopStyleColor(PushStyleColorNum);
 					}
 					{
 						ImGui::SetCursorPos({ 770.0f - 395.0f,606.0f - 160.0f });
@@ -825,7 +817,6 @@ int SettingMain()
 						if (ImGui::Button(get<string>(i18n[i18nEnum::Settings_Home_Button1]).c_str(), { 190.0f,60.0f }))
 						{
 						}
-						ImGui::PopStyleColor(PushStyleColorNum);
 					}
 					{
 						ImGui::SetCursorPos({ 770.0f - 200.0f,606.0f - 160.0f });
@@ -839,7 +830,6 @@ int SettingMain()
 						{
 							Tab = Tab::tab6;
 						}
-						ImGui::PopStyleColor(PushStyleColorNum);
 					}
 					{
 						ImGui::SetCursorPos({ 770.0f - 395.0f,606.0f - 95.0f });
@@ -853,7 +843,6 @@ int SettingMain()
 						{
 							ShellExecute(0, 0, L"https://github.com/Alan-CRL/IDT", 0, 0, SW_SHOW);
 						}
-						ImGui::PopStyleColor(PushStyleColorNum);
 					}
 					{
 						ImGui::SetCursorPos({ 770.0f - 200.0f,606.0f - 95.0f });
@@ -867,7 +856,6 @@ int SettingMain()
 						{
 							ShellExecute(0, 0, L"https://www.inkeys.top", 0, 0, SW_SHOW);
 						}
-						ImGui::PopStyleColor(PushStyleColorNum);
 					}
 					{
 						ImGui::SetCursorPos({ 770.0f - 390.0f,606.0f - 60.0f });
@@ -877,7 +865,7 @@ int SettingMain()
 						CenteredText(get<string>(i18n[i18nEnum::Settings_Home_Language]).c_str(), 2.0f);
 
 						ImGui::SetCursorPos({ 770.0f - 260.0f,606.0f - 60.0f });
-						static const char* items[] = { reinterpret_cast<const char*>(u8"  Other Custom Languages "), reinterpret_cast<const char*>(u8"  English "), reinterpret_cast<const char*>(u8"  Simplified Chinese (简体中文) "), reinterpret_cast<const char*>(u8"  Traditional Chinese (正體中文) ") };
+						static const char* items[] = { "  Other Custom Languages ", "  English ", "  Simplified Chinese (简体中文) ", "  Traditional Chinese (正體中文) " };
 						ImGui::SetNextItemWidth(250);
 
 						Font->Scale = 0.6f, PushFontNum++, ImGui::PushFont(Font);
@@ -887,7 +875,7 @@ int SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
-						ImGui::Combo(reinterpret_cast<const char*>(u8"##语言选择"), &languageMode, items, IM_ARRAYSIZE(items));
+						ImGui::Combo("##语言选择", &languageMode, items, IM_ARRAYSIZE(items));
 
 						if (languageMode == 1 && i18nIdentifying != L"en-US")
 						{
@@ -901,10 +889,13 @@ int SettingMain()
 						{
 							//WriteSetting();
 						}
-
-						ImGui::PopStyleColor(PushStyleColorNum);
 					}
 
+					{
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
+					}
 					ImGui::EndChild();
 					break;
 				}
@@ -912,32 +903,32 @@ int SettingMain()
 				// 常规
 				case Tab::tab2:
 				{
-					ImGui::BeginChild(reinterpret_cast<const char*>(u8"通用"), { 770.0f,616.0f }, true);
+					ImGui::BeginChild("通用", { 770.0f,616.0f }, true);
 
 					ImGui::SetCursorPosY(20.0f);
 
 					{
 						ImGui::SetCursorPosX(20.0f);
-						ImGui::BeginChild(reinterpret_cast<const char*>(u8"程序环境"), { 730.0f,125.0f }, true, ImGuiWindowFlags_NoScrollbar);
+						ImGui::BeginChild("程序环境", { 730.0f,125.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
 						{
 							ImGui::SetCursorPosY(10.0f);
 
 							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(reinterpret_cast<const char*>(u8" 查询开机启动状态"), 4.0f);
+							CenteredText(" 查询开机启动状态", 4.0f);
 
 							Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
-							ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"调整开机自动启动设置前需要查询当前状态（程序将申请管理员权限）"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
+							ImGui::SameLine(); HelpMarker("调整开机自动启动设置前需要查询当前状态（程序将申请管理员权限）", ImGui::GetStyleColorVec4(ImGuiCol_Text));
 
 							if (!receivedData.empty())
 							{
 								string temp, helptemp;
-								if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Succe") temp = reinterpret_cast<const char*>(u8"查询状态成功"), helptemp = reinterpret_cast<const char*>(u8"可以调整开机启动设置");
-								else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Error") temp = reinterpret_cast<const char*>(u8"查询状态错误 ") + utf16ToUtf8(receivedData), helptemp = reinterpret_cast<const char*>(u8"再次点击查询尝试，或重启程序以管理员身份运行");
-								else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"TimeO") temp = reinterpret_cast<const char*>(u8"查询状态超时"), helptemp = reinterpret_cast<const char*>(u8"再次点击查询尝试\n同时超时时间将从 5 秒调整为 15 秒"), QueryWaitingTime = 15;
-								else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Renew") temp = reinterpret_cast<const char*>(u8"需要重新查询状态"), helptemp = reinterpret_cast<const char*>(u8"调整开机自动启动设置时超时，请再次点击查询\n同时超时时间将从 5 秒调整为 15 秒"), QueryWaitingTime = 15;
-								else temp = reinterpret_cast<const char*>(u8"未知错误"), helptemp = reinterpret_cast<const char*>(u8"再次点击查询尝试，或重启程序以管理员身份运行");
+								if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Succe") temp = "查询状态成功", helptemp = "可以调整开机启动设置";
+								else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Error") temp = "查询状态错误 " + utf16ToUtf8(receivedData), helptemp = "再次点击查询尝试，或重启程序以管理员身份运行";
+								else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"TimeO") temp = "查询状态超时", helptemp = "再次点击查询尝试\n同时超时时间将从 5 秒调整为 15 秒", QueryWaitingTime = 15;
+								else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Renew") temp = "需要重新查询状态", helptemp = "调整开机自动启动设置时超时，请再次点击查询\n同时超时时间将从 5 秒调整为 15 秒", QueryWaitingTime = 15;
+								else temp = "未知错误", helptemp = "再次点击查询尝试，或重启程序以管理员身份运行";
 
 								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 								ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 80.0f - ImGui::CalcTextSize(temp.c_str()).x - 30.0f);
@@ -954,7 +945,7 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							if (ImGui::Button(reinterpret_cast<const char*>(u8"查询"), { 60.0f,30.0f }))
+							if (ImGui::Button("查询", { 60.0f,30.0f }))
 							{
 								{
 									// 检查本地文件完整性
@@ -1029,19 +1020,18 @@ int SettingMain()
 
 								QuestNumbers++, QuestNumbers %= 10;
 							}
-							ImGui::PopStyleColor(PushStyleColorNum);
 						}
 						{
 							ImGui::SetCursorPosY(45.0f);
 
 							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(reinterpret_cast<const char*>(u8" 开机自动启动"), 4.0f);
+							CenteredText(" 开机自动启动", 4.0f);
 
 							Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
 							ImGui::SameLine();
-							if (setlist.StartUp) HelpMarker(reinterpret_cast<const char*>(u8"程序将申请管理员权限"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
-							else HelpMarker(reinterpret_cast<const char*>(u8"调整开机自动启动设置前需要查询当前状态（程序将申请管理员权限）\n请点击上方按钮查询当前状态"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
+							if (setlist.StartUp) HelpMarker("程序将申请管理员权限", ImGui::GetStyleColorVec4(ImGuiCol_Text));
+							else HelpMarker("调整开机自动启动设置前需要查询当前状态（程序将申请管理员权限）\n请点击上方按钮查询当前状态", ImGui::GetStyleColorVec4(ImGuiCol_Text));
 
 							if (setlist.StartUp)
 							{
@@ -1051,7 +1041,7 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
-								ImGui::Toggle(reinterpret_cast<const char*>(u8"##开机自动启动"), &StartUp, config);
+								ImGui::Toggle("##开机自动启动", &StartUp, config);
 
 								if (setlist.StartUp - 1 != (int)StartUp)
 								{
@@ -1121,18 +1111,17 @@ int SettingMain()
 									if (setlist.StartUp - 1 != (int)StartUp) setlist.StartUp = 0, receivedData = L"Renew";
 								}
 							}
-							ImGui::PopStyleColor(PushStyleColorNum);
 						}
 						{
 							ImGui::SetCursorPosY(80.0f);
 
 							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(reinterpret_cast<const char*>(u8" 启动时创建桌面快捷方式"), 4.0f);
+							CenteredText(" 启动时创建桌面快捷方式", 4.0f);
 
 							Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
 							ImGui::SameLine();
-							HelpMarker(reinterpret_cast<const char*>(u8"程序将在每次启动时在桌面创建快捷方式\n后续这项功能将变身成为插件，并拥有更多的自定义功能"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
+							HelpMarker("程序将在每次启动时在桌面创建快捷方式\n后续这项功能将变身成为插件，并拥有更多的自定义功能", ImGui::GetStyleColorVec4(ImGuiCol_Text));
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
@@ -1140,7 +1129,7 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
-							ImGui::Toggle(reinterpret_cast<const char*>(u8"##启动时创建桌面快捷方式"), &CreateLnk, config);
+							ImGui::Toggle("##启动时创建桌面快捷方式", &CreateLnk, config);
 
 							if (setlist.CreateLnk != CreateLnk)
 							{
@@ -1149,24 +1138,27 @@ int SettingMain()
 
 								if (CreateLnk) SetShortcut();
 							}
-							ImGui::PopStyleColor(PushStyleColorNum);
 						}
 
-						ImGui::EndChild();
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}ImGui::EndChild();
 					}
 					{
 						ImGui::SetCursorPosX(20.0f);
-						ImGui::BeginChild(reinterpret_cast<const char*>(u8"外观调整"), { 730.0f,50.0f }, true, ImGuiWindowFlags_NoScrollbar);
+						ImGui::BeginChild("外观调整", { 730.0f,50.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
 						{
 							ImGui::SetCursorPosY(8.0f);
 
 							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(reinterpret_cast<const char*>(u8" 外观皮肤"), 4.0f);
+							CenteredText(" 外观皮肤", 4.0f);
 
 							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 130.0f);
-							static const char* items[] = { reinterpret_cast<const char*>(u8"  推荐皮肤"), reinterpret_cast<const char*>(u8"  默认皮肤"), reinterpret_cast<const char*>(u8"  极简时钟"), reinterpret_cast<const char*>(u8"  龙年迎新") };
+							static const char* items[] = { "  推荐皮肤", "  默认皮肤", "  极简时钟", "  龙年迎新" };
 							ImGui::SetNextItemWidth(120);
 
 							Font->Scale = 0.82f, PushFontNum++, ImGui::PushFont(Font);
@@ -1176,7 +1168,7 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
-							ImGui::Combo(reinterpret_cast<const char*>(u8"##外观皮肤"), &SetSkinMode, items, IM_ARRAYSIZE(items));
+							ImGui::Combo("##外观皮肤", &SetSkinMode, items, IM_ARRAYSIZE(items));
 
 							if (setlist.SetSkinMode != SetSkinMode)
 							{
@@ -1186,21 +1178,25 @@ int SettingMain()
 								if (SetSkinMode == 0) setlist.SkinMode = 1;
 								else setlist.SkinMode = SetSkinMode;
 							}
-							ImGui::PopStyleColor(PushStyleColorNum);
 						}
 
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
 						ImGui::EndChild();
 					}
 					{
 						ImGui::SetCursorPosX(20.0f);
-						ImGui::BeginChild(reinterpret_cast<const char*>(u8"画笔调整"), { 730.0f,125.0f }, true, ImGuiWindowFlags_NoScrollbar);
+						ImGui::BeginChild("画笔调整", { 730.0f,125.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
 						{
 							ImGui::SetCursorPosY(10.0f);
 
 							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(reinterpret_cast<const char*>(u8" 右键主栏图标时弹窗提示关闭程序"), 4.0f);
+							CenteredText(" 右键主栏图标时弹窗提示关闭程序", 4.0f);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
@@ -1208,7 +1204,7 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
-							ImGui::Toggle(reinterpret_cast<const char*>(u8"##右键主栏图标时弹窗提示关闭程序"), &RightClickClose, config);
+							ImGui::Toggle("##右键主栏图标时弹窗提示关闭程序", &RightClickClose, config);
 
 							if (setlist.RightClickClose != RightClickClose)
 							{
@@ -1221,7 +1217,7 @@ int SettingMain()
 
 							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(reinterpret_cast<const char*>(u8" 画笔绘制时自动收起主栏"), 4.0f);
+							CenteredText(" 画笔绘制时自动收起主栏", 4.0f);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
@@ -1229,7 +1225,7 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
-							ImGui::Toggle(reinterpret_cast<const char*>(u8"##画笔绘制时自动收起主栏"), &BrushRecover, config);
+							ImGui::Toggle("##画笔绘制时自动收起主栏", &BrushRecover, config);
 
 							if (setlist.BrushRecover != BrushRecover)
 							{
@@ -1242,7 +1238,7 @@ int SettingMain()
 
 							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(reinterpret_cast<const char*>(u8" 橡皮擦除时自动收起主栏"), 4.0f);
+							CenteredText(" 橡皮擦除时自动收起主栏", 4.0f);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
@@ -1250,7 +1246,7 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
-							ImGui::Toggle(reinterpret_cast<const char*>(u8"##橡皮擦除时自动收起主栏"), &RubberRecover, config);
+							ImGui::Toggle("##橡皮擦除时自动收起主栏", &RubberRecover, config);
 
 							if (setlist.RubberRecover != RubberRecover)
 							{
@@ -1259,21 +1255,26 @@ int SettingMain()
 							}
 						}
 
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
 						ImGui::EndChild();
 					}
 					{
 						ImGui::SetCursorPosX(20.0f);
-						ImGui::BeginChild(reinterpret_cast<const char*>(u8"兼容性调整"), { 730.0f,105.0f }, true, ImGuiWindowFlags_NoScrollbar);
+						ImGui::BeginChild("兼容性调整", { 730.0f,105.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
 						{
 							ImGui::SetCursorPosY(10.0f);
 
 							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(reinterpret_cast<const char*>(u8" 兼容自动隐藏的任务栏"), 4.0f);
+							CenteredText(" 兼容自动隐藏的任务栏", 4.0f);
 
 							Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
-							ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"如果您设置了“自动隐藏任务栏”选项，则建议打开此项\n\n开启后：绘制效果可能会收到影响\n关闭后：有其他最大化应用时，则无法使用鼠标升起任务栏"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
+							ImGui::SameLine(); HelpMarker("如果您设置了“自动隐藏任务栏”选项，则建议打开此项\n\n开启后：绘制效果可能会收到影响\n关闭后：有其他最大化应用时，则无法使用鼠标升起任务栏", ImGui::GetStyleColorVec4(ImGuiCol_Text));
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
@@ -1281,11 +1282,11 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
-							ImGui::Toggle(reinterpret_cast<const char*>(u8"##兼容自动隐藏的任务栏"), &CompatibleTaskBarAutoHide, config);
+							ImGui::Toggle("##兼容自动隐藏的任务栏", &CompatibleTaskBarAutoHide, config);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
 							{
-								string temp = reinterpret_cast<const char*>(u8"软件只在启动时做出调整，修改此项需要重启智绘教才能生效。");
+								string temp = "软件只在启动时做出调整，修改此项需要重启智绘教才能生效。";
 								float text_width = ImGui::CalcTextSize(temp.c_str()).x;
 								float text_indentation = ((730 - 0) - text_width) * 0.5f;
 								if (text_indentation < 0)  text_indentation = 0;
@@ -1293,7 +1294,7 @@ int SettingMain()
 								ImGui::TextUnformatted(temp.c_str());
 							}
 							{
-								string temp = reinterpret_cast<const char*>(u8"开启此项时，如果您调整“自动隐藏任务栏”选项或改变任务栏方位，则需要重启智绘教。");
+								string temp = "开启此项时，如果您调整“自动隐藏任务栏”选项或改变任务栏方位，则需要重启智绘教。";
 								float text_width = ImGui::CalcTextSize(temp.c_str()).x;
 								float text_indentation = ((730 - 0) - text_width) * 0.5f;
 								if (text_indentation < 0)  text_indentation = 0;
@@ -1308,9 +1309,15 @@ int SettingMain()
 							}
 						}
 
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
 						ImGui::EndChild();
 					}
 
+					while (PushFontNum) PushFontNum--, ImGui::PopFont();
 					ImGui::EndChild();
 					break;
 				}
@@ -1318,22 +1325,22 @@ int SettingMain()
 				// 绘制
 				case Tab::tab3:
 				{
-					ImGui::BeginChild(reinterpret_cast<const char*>(u8"绘制"), { 770.0f,616.0f }, true);
+					ImGui::BeginChild("绘制", { 770.0f,616.0f }, true);
 
 					ImGui::SetCursorPosY(20.0f);
 					{
 						ImGui::SetCursorPosX(20.0f);
-						ImGui::BeginChild(reinterpret_cast<const char*>(u8"智能绘图调整"), { 730.0f,90.0f }, true, ImGuiWindowFlags_NoScrollbar);
+						ImGui::BeginChild("智能绘图调整", { 730.0f,90.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
 						{
 							ImGui::SetCursorPosY(10.0f);
 
 							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(reinterpret_cast<const char*>(u8" 智能绘图"), 4.0f);
+							CenteredText(" 智能绘图", 4.0f);
 
 							Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
-							ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"绘制时停留可以将与直线相似的墨迹拉直\n抬笔时可以将与直线相似的墨迹拉直（精度较高）\n还可以直线吸附和矩形吸附"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
+							ImGui::SameLine(); HelpMarker("绘制时停留可以将与直线相似的墨迹拉直\n抬笔时可以将与直线相似的墨迹拉直（精度较高）\n还可以直线吸附和矩形吸附", ImGui::GetStyleColorVec4(ImGuiCol_Text));
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
@@ -1341,24 +1348,23 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
-							ImGui::Toggle(reinterpret_cast<const char*>(u8"##智能绘图"), &IntelligentDrawing, config);
+							ImGui::Toggle("##智能绘图", &IntelligentDrawing, config);
 
 							if (setlist.IntelligentDrawing != IntelligentDrawing)
 							{
 								setlist.IntelligentDrawing = IntelligentDrawing;
 								WriteSetting();
 							}
-							ImGui::PopStyleColor(PushStyleColorNum);
 						}
 						{
 							ImGui::SetCursorPosY(45.0f);
 
 							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(reinterpret_cast<const char*>(u8" 平滑墨迹"), 4.0f);
+							CenteredText(" 平滑墨迹", 4.0f);
 
 							Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
-							ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"抬笔时自动平滑墨迹"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
+							ImGui::SameLine(); HelpMarker("抬笔时自动平滑墨迹", ImGui::GetStyleColorVec4(ImGuiCol_Text));
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
@@ -1366,31 +1372,35 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
-							ImGui::Toggle(reinterpret_cast<const char*>(u8"##平滑墨迹"), &SmoothWriting, config);
+							ImGui::Toggle("##平滑墨迹", &SmoothWriting, config);
 
 							if (setlist.SmoothWriting != SmoothWriting)
 							{
 								setlist.SmoothWriting = SmoothWriting;
 								WriteSetting();
 							}
-							ImGui::PopStyleColor(PushStyleColorNum);
 						}
 
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
 						ImGui::EndChild();
 					}
 					{
 						ImGui::SetCursorPosX(20.0f);
-						ImGui::BeginChild(reinterpret_cast<const char*>(u8"橡皮调整"), { 730.0f,50.0f }, true, ImGuiWindowFlags_NoScrollbar);
+						ImGui::BeginChild("橡皮调整", { 730.0f,50.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
 						{
 							ImGui::SetCursorPosY(8.0f);
 
 							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(reinterpret_cast<const char*>(u8" 橡皮粗细灵敏度"), 4.0f);
+							CenteredText(" 橡皮粗细灵敏度", 4.0f);
 
 							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 130.0f);
-							static const char* items[] = { reinterpret_cast<const char*>(u8"  触摸设备"), reinterpret_cast<const char*>(u8"  PC 鼠标") };
+							static const char* items[] = { "  触摸设备", "  PC 鼠标" };
 							ImGui::SetNextItemWidth(120);
 
 							Font->Scale = 0.82f, PushFontNum++, ImGui::PushFont(Font);
@@ -1400,16 +1410,20 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
-							ImGui::Combo(reinterpret_cast<const char*>(u8"##橡皮粗细灵敏度"), &RubberMode, items, IM_ARRAYSIZE(items));
+							ImGui::Combo("##橡皮粗细灵敏度", &RubberMode, items, IM_ARRAYSIZE(items));
 
 							if (setlist.RubberMode != RubberMode)
 							{
 								setlist.RubberMode = RubberMode;
 								WriteSetting();
 							}
-							ImGui::PopStyleColor(PushStyleColorNum);
 						}
 
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
 						ImGui::EndChild();
 					}
 
@@ -1420,7 +1434,7 @@ int SettingMain()
 				// 插件
 				case Tab::tab4:
 				{
-					ImGui::BeginChild(reinterpret_cast<const char*>(u8"插件"), { 770.0f,616.0f }, true);
+					ImGui::BeginChild("插件", { 770.0f,616.0f }, true);
 
 					ImGui::SetCursorPosY(20.0f);
 
@@ -1431,11 +1445,10 @@ int SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, TabPlugInIdx == TabPlugIn::tabPlug1 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 						if (TabPlugInIdx == TabPlugIn::tabPlug1) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 						if (TabPlugInIdx == TabPlugIn::tabPlug1) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-						if (ImGui::Button(reinterpret_cast<const char*>(u8"插件商店"), { 150.0f,40.0f }))
+						if (ImGui::Button("插件商店", { 150.0f,40.0f }))
 						{
 							TabPlugInIdx = TabPlugIn::tabPlug1;
 						}
-						ImGui::PopStyleColor(PushStyleColorNum);
 
 						{
 							ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 6.0f });
@@ -1443,11 +1456,10 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, TabPlugInIdx == TabPlugIn::tabPlug2 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 							if (TabPlugInIdx == TabPlugIn::tabPlug2) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 							if (TabPlugInIdx == TabPlugIn::tabPlug2) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-							if (ImGui::Button(reinterpret_cast<const char*>(u8"PPT 演示联动"), { 150.0f,40.0f }))
+							if (ImGui::Button("PPT 演示联动", { 150.0f,40.0f }))
 							{
 								TabPlugInIdx = TabPlugIn::tabPlug2;
 							}
-							ImGui::PopStyleColor(PushStyleColorNum);
 						}
 
 						if (ddbSetList.DdbEnable)
@@ -1457,11 +1469,10 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, TabPlugInIdx == TabPlugIn::tabPlug3 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 							if (TabPlugInIdx == TabPlugIn::tabPlug3) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 							if (TabPlugInIdx == TabPlugIn::tabPlug3) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-							if (ImGui::Button(reinterpret_cast<const char*>(u8"画板浮窗拦截"), { 150.0f,40.0f }))
+							if (ImGui::Button("画板浮窗拦截", { 150.0f,40.0f }))
 							{
 								TabPlugInIdx = TabPlugIn::tabPlug3;
 							}
-							ImGui::PopStyleColor(PushStyleColorNum);
 						}
 					}
 
@@ -1470,12 +1481,12 @@ int SettingMain()
 					{
 					case TabPlugIn::tabPlug1:
 						// 插件商店
-						ImGui::BeginChild(reinterpret_cast<const char*>(u8"插件商店"), { 590.0f,596.0f }, true);
+						ImGui::BeginChild("插件商店", { 590.0f,596.0f }, true);
 
 						// PPT 演示联动插件
 						{
 							ImGui::SetCursorPos({ 20.0f,ImGui::GetCursorPosY() + 10.0f });
-							ImGui::BeginChild(reinterpret_cast<const char*>(u8"PPT 演示联动插件"), { 550.0f,120.0f }, true);
+							ImGui::BeginChild("PPT 演示联动插件", { 550.0f,120.0f }, true);
 
 							{
 								ImGui::SetCursorPos({ 10.0f,10.0f });
@@ -1485,7 +1496,7 @@ int SettingMain()
 
 								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								CenteredText(reinterpret_cast<const char*>(u8"PPT 演示联动插件"), 4.0f);
+								CenteredText("PPT 演示联动插件", 4.0f);
 
 								// 版本号
 								{
@@ -1499,18 +1510,20 @@ int SettingMain()
 								}
 
 								ImGui::NewLine(); ImGui::SetCursorPosX(120.0f);
-								CenteredText(reinterpret_cast<const char*>(u8"支持 Microsoft PowerPoint 和 WPS 等演示软件，\n可以让笔迹固定在页面上，同时提供快捷底栏交互控件。\n绘制模式下可以自由翻页，对 PPT 原有功能无限制。"), 10.0f);
-
-								ImGui::PopStyleColor(PushStyleColorNum);
-								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+								CenteredText("支持 Microsoft PowerPoint 和 WPS 等演示软件，\n可以让笔迹固定在页面上，同时提供快捷底栏交互控件。\n绘制模式下可以自由翻页，对 PPT 原有功能无限制。", 10.0f);
 							}
 
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
 							ImGui::EndChild();
 						}
 						// 画板浮窗拦截插件
 						{
 							ImGui::SetCursorPos({ 20.0f,ImGui::GetCursorPosY() + 10.0f });
-							ImGui::BeginChild(reinterpret_cast<const char*>(u8"画板浮窗拦截插件"), { 550.0f,120.0f }, true);
+							ImGui::BeginChild("画板浮窗拦截插件", { 550.0f,120.0f }, true);
 
 							{
 								ImGui::SetCursorPos({ 10.0f,10.0f });
@@ -1520,14 +1533,14 @@ int SettingMain()
 
 								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								CenteredText(reinterpret_cast<const char*>(u8"画板浮窗拦截插件"), 4.0f);
+								CenteredText("画板浮窗拦截插件", 4.0f);
 
 								Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(50 / 255.0f, 50 / 255.0f, 50 / 255.0f, 1.0f));
 								ImGui::SameLine(); CenteredText(utf16ToUtf8(ddbSetList.DdbEdition).c_str(), 8.0f);
 
 								ImGui::NewLine(); ImGui::SetCursorPosX(120.0f);
-								CenteredText(reinterpret_cast<const char*>(u8"剔除桌面上 希沃白板桌面悬浮窗 等\n杂乱无章的桌面画板悬浮窗，支持拦截各类\n桌面画板悬浮窗，以及 PPT 小工具等操控栏。"), 10.0f);
+								CenteredText("剔除桌面上 希沃白板桌面悬浮窗 等\n杂乱无章的桌面画板悬浮窗，支持拦截各类\n桌面画板悬浮窗，以及 PPT 小工具等操控栏。", 10.0f);
 
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
@@ -1535,7 +1548,7 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::SameLine(); ImGui::SetCursorPos({ 550.0f - 70.0f,10.0f });
-								ImGui::Toggle(reinterpret_cast<const char*>(u8"##画板浮窗拦截插件"), &DdbEnable, config);
+								ImGui::Toggle("##画板浮窗拦截插件", &DdbEnable, config);
 
 								if (ddbSetList.DdbEnable != DdbEnable)
 								{
@@ -1597,34 +1610,41 @@ int SettingMain()
 										WriteSetting();
 									}
 								}
-
-								ImGui::PopStyleColor(PushStyleColorNum);
-								while (PushFontNum) PushFontNum--, ImGui::PopFont();
 							}
 
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
 							ImGui::EndChild();
 						}
 
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
 						ImGui::EndChild();
 						break;
 
 					case TabPlugIn::tabPlug2:
 						// PPT 演示联动
-						ImGui::BeginChild(reinterpret_cast<const char*>(u8"PPT 演示联动"), { 590.0f,596.0f }, true);
+						ImGui::BeginChild("PPT 演示联动", { 590.0f,596.0f }, true);
 
 						{
 							ImGui::SetCursorPos({ 20.0f,20.0f });
-							ImGui::BeginChild(reinterpret_cast<const char*>(u8"PPT 演示联动行为调整"), { 550.0f,60.0f }, true, ImGuiWindowFlags_NoScrollbar);
+							ImGui::BeginChild("PPT 演示联动行为调整", { 550.0f,60.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
 							{
 								ImGui::SetCursorPosY(10.0f);
 
 								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								CenteredText(reinterpret_cast<const char*>(u8" 墨迹固定在对应页面上"), 4.0f);
+								CenteredText(" 墨迹固定在对应页面上", 4.0f);
 
 								Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
-								ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"每个 PPT 页面都将拥有各自独立的画布\n（翻页不会清空之前页面所绘制的墨迹，可以返回前一页面继续绘制）"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
+								ImGui::SameLine(); HelpMarker("每个 PPT 页面都将拥有各自独立的画布\n（翻页不会清空之前页面所绘制的墨迹，可以返回前一页面继续绘制）", ImGui::GetStyleColorVec4(ImGuiCol_Text));
 
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
@@ -1632,28 +1652,32 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::SameLine(); ImGui::SetCursorPosX(550.0f - 70.0f);
-								ImGui::Toggle(reinterpret_cast<const char*>(u8"##墨迹固定在对应页面上"), &PptComFixedHandWriting, config);
+								ImGui::Toggle("##墨迹固定在对应页面上", &PptComFixedHandWriting, config);
 
 								if (pptComSetlist.fixedHandWriting != PptComFixedHandWriting)
 								{
 									pptComSetlist.fixedHandWriting = PptComFixedHandWriting;
 									PptComWriteSetting();
 								}
-								ImGui::PopStyleColor(PushStyleColorNum);
 							}
 
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
 							ImGui::EndChild();
 						}
 						{
 							ImGui::SetCursorPos({ 20.0f,ImGui::GetCursorPosY() + 5.0f });
-							ImGui::BeginChild(reinterpret_cast<const char*>(u8"PPT 演示联动控件显示调整"), { 550.0f,125.0f }, true, ImGuiWindowFlags_NoScrollbar);
+							ImGui::BeginChild("PPT 演示联动控件显示调整", { 550.0f,125.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
 							{
 								ImGui::SetCursorPosY(10.0f);
 
 								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								CenteredText(reinterpret_cast<const char*>(u8" 显示底部两侧控件"), 4.0f);
+								CenteredText(" 显示底部两侧控件", 4.0f);
 
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
@@ -1661,21 +1685,20 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::SameLine(); ImGui::SetCursorPosX(550.0f - 70.0f);
-								ImGui::Toggle(reinterpret_cast<const char*>(u8"##显示底部两侧控件"), &ShowBottomBoth, config);
+								ImGui::Toggle("##显示底部两侧控件", &ShowBottomBoth, config);
 
 								if (pptComSetlist.showBottomBoth != ShowBottomBoth)
 								{
 									pptComSetlist.showBottomBoth = ShowBottomBoth;
 									PptComWriteSetting();
 								}
-								ImGui::PopStyleColor(PushStyleColorNum);
 							}
 							{
 								ImGui::SetCursorPosY(45.0f);
 
 								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								CenteredText(reinterpret_cast<const char*>(u8" 显示中部两侧控件"), 4.0f);
+								CenteredText(" 显示中部两侧控件", 4.0f);
 
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
@@ -1683,21 +1706,20 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::SameLine(); ImGui::SetCursorPosX(550.0f - 70.0f);
-								ImGui::Toggle(reinterpret_cast<const char*>(u8"##显示中部两侧控件"), &ShowMiddleBoth, config);
+								ImGui::Toggle("##显示中部两侧控件", &ShowMiddleBoth, config);
 
 								if (pptComSetlist.showMiddleBoth != ShowMiddleBoth)
 								{
 									pptComSetlist.showMiddleBoth = ShowMiddleBoth;
 									PptComWriteSetting();
 								}
-								ImGui::PopStyleColor(PushStyleColorNum);
 							}
 							{
 								ImGui::SetCursorPosY(80.0f);
 
 								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								CenteredText(reinterpret_cast<const char*>(u8" 显示底部主栏控件"), 4.0f);
+								CenteredText(" 显示底部主栏控件", 4.0f);
 
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
@@ -1705,28 +1727,32 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::SameLine(); ImGui::SetCursorPosX(550.0f - 70.0f);
-								ImGui::Toggle(reinterpret_cast<const char*>(u8"##显示底部主栏控件"), &ShowBottomMiddle, config);
+								ImGui::Toggle("##显示底部主栏控件", &ShowBottomMiddle, config);
 
 								if (pptComSetlist.showBottomMiddle != ShowBottomMiddle)
 								{
 									pptComSetlist.showBottomMiddle = ShowBottomMiddle;
 									PptComWriteSetting();
 								}
-								ImGui::PopStyleColor(PushStyleColorNum);
 							}
 
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
 							ImGui::EndChild();
 						}
 						{
 							ImGui::SetCursorPos({ 20.0f,ImGui::GetCursorPosY() + 5.0f });
-							ImGui::BeginChild(reinterpret_cast<const char*>(u8"PPT 演示联动控件位置调整"), { 550.0f,90.0f }, true, ImGuiWindowFlags_NoScrollbar);
+							ImGui::BeginChild("PPT 演示联动控件位置调整", { 550.0f,90.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
 							{
 								ImGui::SetCursorPosY(10.0f);
 
 								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								CenteredText(reinterpret_cast<const char*>(u8" 控件位置"), 4.0f);
+								CenteredText(" 控件位置", 4.0f);
 
 								Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
 								ImGui::SameLine(); ImGui::SetCursorPosX(550.0f - 70.0f);
@@ -1734,7 +1760,7 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								if (ImGui::Button(reinterpret_cast<const char*>(u8"重置"), { 60.0f,30.0f }))
+								if (ImGui::Button("重置", { 60.0f,30.0f }))
 								{
 									pptComSetlist.bottomBothWidth = BottomBothWidth = 0;
 									pptComSetlist.bottomBothHeight = BottomBothHeight = 0;
@@ -1745,14 +1771,13 @@ int SettingMain()
 
 									PptComWriteSetting();
 								}
-								ImGui::PopStyleColor(PushStyleColorNum);
 							}
 							{
 								ImGui::SetCursorPosY(45.0f);
 
 								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								CenteredText(reinterpret_cast<const char*>(u8" 记忆控件位置"), 4.0f);
+								CenteredText(" 记忆控件位置", 4.0f);
 
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
@@ -1760,28 +1785,32 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::SameLine(); ImGui::SetCursorPosX(550.0f - 70.0f);
-								ImGui::Toggle(reinterpret_cast<const char*>(u8"##记忆控件位置"), &MemoryWidgetPosition, config);
+								ImGui::Toggle("##记忆控件位置", &MemoryWidgetPosition, config);
 
 								if (pptComSetlist.memoryWidgetPosition != MemoryWidgetPosition)
 								{
 									pptComSetlist.memoryWidgetPosition = MemoryWidgetPosition;
 									PptComWriteSetting();
 								}
-								ImGui::PopStyleColor(PushStyleColorNum);
 							}
 
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
 							ImGui::EndChild();
 						}
 						{
 							ImGui::SetCursorPos({ 20.0f,ImGui::GetCursorPosY() + 5.0f });
-							ImGui::BeginChild(reinterpret_cast<const char*>(u8"PPT 演示联动控件缩放调整"), { 550.0f,195.0f }, true, ImGuiWindowFlags_NoScrollbar);
+							ImGui::BeginChild("PPT 演示联动控件缩放调整", { 550.0f,195.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
 							{
 								ImGui::SetCursorPosY(10.0f);
 
 								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								CenteredText(reinterpret_cast<const char*>(u8" 控件缩放"), 4.0f);
+								CenteredText(" 控件缩放", 4.0f);
 
 								Font->Scale = 0.82f, PushFontNum++, ImGui::PushFont(Font);
 								ImGui::PushItemWidth(300.0f);
@@ -1792,7 +1821,7 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(175 / 255.0f, 175 / 255.0f, 175 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(155 / 255.0f, 155 / 255.0f, 155 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								ImGui::SliderFloat(reinterpret_cast<const char*>(u8"##PPT 控件缩放总控"), &PptUiWidgetScaleWidget, 0.25f, 3.0f, reinterpret_cast<const char*>(u8"%.15f 倍缩放"));
+								ImGui::SliderFloat("##PPT 控件缩放总控", &PptUiWidgetScaleWidget, 0.25f, 3.0f, "%.15f 倍缩放");
 								ImGui::PopItemWidth();
 								if (PptUiWidgetScaleWidget != PptUiWidgetScaleWidgetRecord)
 								{
@@ -1808,7 +1837,7 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								if (ImGui::Button(reinterpret_cast<const char*>(u8"重置##PPT 控件缩放总控"), { 60.0f,30.0f }))
+								if (ImGui::Button("重置##PPT 控件缩放总控", { 60.0f,30.0f }))
 								{
 									PptUiWidgetScaleWidgetRecord = PptUiWidgetScaleWidget = 1.0f;
 									pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale = 1.0f;
@@ -1817,14 +1846,13 @@ int SettingMain()
 
 									PptComWriteSetting();
 								}
-								ImGui::PopStyleColor(PushStyleColorNum);
 							}
 							{
 								ImGui::SetCursorPosY(45.0f);
 
 								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								CenteredText(reinterpret_cast<const char*>(u8" 底部两侧控件"), 4.0f);
+								CenteredText(" 底部两侧控件", 4.0f);
 
 								Font->Scale = 0.82f, PushFontNum++, ImGui::PushFont(Font);
 								ImGui::PushItemWidth(300.0f);
@@ -1835,7 +1863,7 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(175 / 255.0f, 175 / 255.0f, 175 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(155 / 255.0f, 155 / 255.0f, 155 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								ImGui::SliderFloat(reinterpret_cast<const char*>(u8"##PPT 底部两侧控件"), &BottomSideBothWidgetScale, 0.25f, 3.0f, reinterpret_cast<const char*>(u8"%.15f 倍缩放"));
+								ImGui::SliderFloat("##PPT 底部两侧控件", &BottomSideBothWidgetScale, 0.25f, 3.0f, "%.15f 倍缩放");
 								ImGui::PopItemWidth();
 								if (pptComSetlist.bottomSideBothWidgetScale != BottomSideBothWidgetScale)
 								{
@@ -1848,19 +1876,18 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								if (ImGui::Button(reinterpret_cast<const char*>(u8"重置##PPT 底部两侧控件"), { 60.0f,30.0f }))
+								if (ImGui::Button("重置##PPT 底部两侧控件", { 60.0f,30.0f }))
 								{
 									pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale = 1.0f;
 									PptComWriteSetting();
 								}
-								ImGui::PopStyleColor(PushStyleColorNum);
 							}
 							{
 								ImGui::SetCursorPosY(80.0f);
 
 								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								CenteredText(reinterpret_cast<const char*>(u8" 中部两侧控件"), 4.0f);
+								CenteredText(" 中部两侧控件", 4.0f);
 
 								Font->Scale = 0.82f, PushFontNum++, ImGui::PushFont(Font);
 								ImGui::PushItemWidth(300.0f);
@@ -1871,7 +1898,7 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(175 / 255.0f, 175 / 255.0f, 175 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(155 / 255.0f, 155 / 255.0f, 155 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								ImGui::SliderFloat(reinterpret_cast<const char*>(u8"##PPT 中部两侧控件"), &MiddleSideBothWidgetScale, 0.25f, 3.0f, reinterpret_cast<const char*>(u8"%.15f 倍缩放"));
+								ImGui::SliderFloat("##PPT 中部两侧控件", &MiddleSideBothWidgetScale, 0.25f, 3.0f, "%.15f 倍缩放");
 								ImGui::PopItemWidth();
 								if (pptComSetlist.middleSideBothWidgetScale != MiddleSideBothWidgetScale)
 								{
@@ -1884,19 +1911,18 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								if (ImGui::Button(reinterpret_cast<const char*>(u8"重置##PPT 底部两侧控件"), { 60.0f,30.0f }))
+								if (ImGui::Button("重置##PPT 底部两侧控件", { 60.0f,30.0f }))
 								{
 									pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale = 1.0f;
 									PptComWriteSetting();
 								}
-								ImGui::PopStyleColor(PushStyleColorNum);
 							}
 							{
 								ImGui::SetCursorPosY(115.0f);
 
 								Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								CenteredText(reinterpret_cast<const char*>(u8" 底部主栏控件"), 4.0f);
+								CenteredText(" 底部主栏控件", 4.0f);
 
 								Font->Scale = 0.82f, PushFontNum++, ImGui::PushFont(Font);
 								ImGui::PushItemWidth(300.0f);
@@ -1907,7 +1933,7 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(175 / 255.0f, 175 / 255.0f, 175 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(155 / 255.0f, 155 / 255.0f, 155 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								ImGui::SliderFloat(reinterpret_cast<const char*>(u8"##PPT 底部主栏控件"), &BottomSideMiddleWidgetScale, 0.25f, 3.0f, reinterpret_cast<const char*>(u8"%.15f 倍缩放"));
+								ImGui::SliderFloat("##PPT 底部主栏控件", &BottomSideMiddleWidgetScale, 0.25f, 3.0f, "%.15f 倍缩放");
 								ImGui::PopItemWidth();
 								if (pptComSetlist.bottomSideMiddleWidgetScale != BottomSideMiddleWidgetScale)
 								{
@@ -1920,19 +1946,18 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								if (ImGui::Button(reinterpret_cast<const char*>(u8"重置##PPT 底部主栏控件"), { 60.0f,30.0f }))
+								if (ImGui::Button("重置##PPT 底部主栏控件", { 60.0f,30.0f }))
 								{
 									pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = 1.0f;
 									PptComWriteSetting();
 								}
-								ImGui::PopStyleColor(PushStyleColorNum);
 							}
 
 							{
 								ImGui::SetCursorPosY(155.0f);
 								Font->Scale = 0.8f, PushFontNum++, ImGui::PushFont(Font);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(235 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								CenteredText(reinterpret_cast<const char*>(u8" 修改滑块后需要点击保存才能将配置保存本地"), 4.0f);
+								CenteredText(" 修改滑块后需要点击保存才能将配置保存本地", 4.0f);
 
 								ImGui::SetCursorPosY(155.0f);
 								Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
@@ -1941,32 +1966,41 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								if (ImGui::Button(reinterpret_cast<const char*>(u8"保存##PPT 控件缩放总控"), { 60.0f,30.0f }))
+								if (ImGui::Button("保存##PPT 控件缩放总控", { 60.0f,30.0f }))
 								{
 									PptComWriteSetting();
 								}
-								ImGui::PopStyleColor(PushStyleColorNum);
 							}
 
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
 							ImGui::EndChild();
 						}
 
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
 						ImGui::EndChild();
 						break;
 
 					case TabPlugIn::tabPlug3:
 						// 画板浮窗拦截
-						ImGui::BeginChild(reinterpret_cast<const char*>(u8"画板浮窗拦截"), { 590.0f,596.0f }, true);
+						ImGui::BeginChild("画板浮窗拦截", { 590.0f,596.0f }, true);
 
 						{
 							ImGui::SetCursorPosY(10.0f);
 
 							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(reinterpret_cast<const char*>(u8" 增强模式"), 4.0f);
+							CenteredText(" 增强模式", 4.0f);
 
 							Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
-							ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"启用增强模式后，画板浮窗拦截程序将开机自动启动，并与智绘教独立运行，互不干扰。\n同时在智绘教关闭状态下，当插件拦截到其他软件的悬浮窗，则会重启智绘教。"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
+							ImGui::SameLine(); HelpMarker("启用增强模式后，画板浮窗拦截程序将开机自动启动，并与智绘教独立运行，互不干扰。\n同时在智绘教关闭状态下，当插件拦截到其他软件的悬浮窗，则会重启智绘教。", ImGui::GetStyleColorVec4(ImGuiCol_Text));
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
@@ -1974,7 +2008,7 @@ int SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 							ImGui::SameLine(); ImGui::SetCursorPosX(590.0f - 70.0f);
-							ImGui::Toggle(reinterpret_cast<const char*>(u8"##智能绘图"), &DdbEnhance, config);
+							ImGui::Toggle("##智能绘图", &DdbEnhance, config);
 
 							if (ddbSetList.DdbEnhance != DdbEnhance)
 							{
@@ -2112,13 +2146,22 @@ int SettingMain()
 									}
 								}
 							}
-							ImGui::PopStyleColor(PushStyleColorNum);
 						}
 
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
 						ImGui::EndChild();
 						break;
 					}
 
+					{
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
+					}
 					ImGui::EndChild();
 					break;
 				}
@@ -2126,7 +2169,7 @@ int SettingMain()
 				// 快捷键
 				case Tab::tab5:
 				{
-					ImGui::BeginChild(reinterpret_cast<const char*>(u8"快捷键"), { 770.0f,616.0f }, true);
+					ImGui::BeginChild("快捷键", { 770.0f,616.0f }, true);
 
 					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 					{
@@ -2168,9 +2211,14 @@ int SettingMain()
 							ImGui::SetCursorPosX(left_x + text_indentation);
 							ImGui::TextUnformatted(temp.c_str());
 						}
-						ImGui::PopStyleColor(PushStyleColorNum);
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 					}
 
+					{
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
+					}
 					ImGui::EndChild();
 					break;
 				}
@@ -2178,11 +2226,16 @@ int SettingMain()
 				// 感谢墙
 				case Tab::tab6:
 				{
-					ImGui::BeginChild(reinterpret_cast<const char*>(u8"感谢墙"), { 770.0f,616.0f }, true);
+					ImGui::BeginChild("感谢墙", { 770.0f,616.0f }, true);
 
 					ImGui::SetCursorPos({ 10.0f,10.0f });
 					ImGui::Image((void*)TextureSettingSign[7], ImVec2((float)SettingSign[7].getwidth(), (float)SettingSign[7].getheight()));
 
+					{
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
+					}
 					ImGui::EndChild();
 					break;
 				}
@@ -2190,7 +2243,7 @@ int SettingMain()
 				// 程序版本
 				case Tab::tab7:
 				{
-					ImGui::BeginChild(reinterpret_cast<const char*>(u8"关于"), { 770.0f,616.0f }, true);
+					ImGui::BeginChild("关于", { 770.0f,616.0f }, true);
 
 					ImGui::SetCursorPos({ 35.0f,70.0f });
 					ImGui::Image((void*)TextureSettingSign[1], ImVec2((float)SettingSign[1].getwidth(), (float)SettingSign[1].getheight()));
@@ -2256,17 +2309,17 @@ int SettingMain()
 					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 					{
 						ImGui::SetCursorPos({ 20.0f,ImGui::GetCursorPosY() + 30.0f });
-						ImGui::BeginChild(reinterpret_cast<const char*>(u8"更新通道调整"), { 730.0f,500.0f }, true, ImGuiWindowFlags_NoScrollbar);
+						ImGui::BeginChild("更新通道调整", { 730.0f,500.0f }, true, ImGuiWindowFlags_NoScrollbar);
 
 						{
 							ImGui::SetCursorPosY(10.0f);
 
 							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(reinterpret_cast<const char*>(u8" 更新通道"), 4.0f);
+							CenteredText(" 更新通道", 4.0f);
 
 							Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
-							ImGui::SameLine(); HelpMarker(reinterpret_cast<const char*>(u8"正式通道(LTS) 提供经过验证的稳定程序版本\n公测通道(Beta) 提供稳定性一般的程序版本\n非正式通道程序均未提交杀软进行防误报处理\n\n一旦更新，则无法通过自动更新回退版本\n当选择的更新通道不可用时，则会切换回默认通道"), ImGui::GetStyleColorVec4(ImGuiCol_Text));
+							ImGui::SameLine(); HelpMarker("正式通道(LTS) 提供经过验证的稳定程序版本\n公测通道(Beta) 提供稳定性一般的程序版本\n非正式通道程序均未提交杀软进行防误报处理\n\n一旦更新，则无法通过自动更新回退版本\n当选择的更新通道不可用时，则会切换回默认通道", ImGui::GetStyleColorVec4(ImGuiCol_Text));
 
 							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 180.0f);
 							ImGui::SetNextItemWidth(170);
@@ -2285,17 +2338,17 @@ int SettingMain()
 								if (UpdateChannel == "LTS") UpdateChannelMode = 0;
 								else if (UpdateChannel == "Beta") UpdateChannelMode = 1;
 
-								static const char* items1[] = { reinterpret_cast<const char*>(u8" 正式通道(LTS)"), reinterpret_cast<const char*>(u8" 公测通道(Beta)") };
+								static const char* items1[] = { " 正式通道(LTS)", " 公测通道(Beta)" };
 
-								ImGui::Combo(reinterpret_cast<const char*>(u8"##更新通道"), &UpdateChannelMode, items1, IM_ARRAYSIZE(items1));
+								ImGui::Combo("##更新通道", &UpdateChannelMode, items1, IM_ARRAYSIZE(items1));
 							}
 							else
 							{
 								UpdateChannelMode = 2;
 
-								static const char* items2[] = { reinterpret_cast<const char*>(u8" 正式通道(LTS)"), reinterpret_cast<const char*>(u8" 公测通道(Beta)"), reinterpret_cast<const char*>(u8" 其他通道") };
+								static const char* items2[] = { " 正式通道(LTS)", " 公测通道(Beta)", " 其他通道" };
 
-								ImGui::Combo(reinterpret_cast<const char*>(u8"##更新通道"), &UpdateChannelMode, items2, IM_ARRAYSIZE(items2));
+								ImGui::Combo("##更新通道", &UpdateChannelMode, items2, IM_ARRAYSIZE(items2));
 							}
 
 							bool flag = false;
@@ -2315,7 +2368,7 @@ int SettingMain()
 
 							Font->Scale = 1.0f, PushFontNum++, ImGui::PushFont(Font);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(reinterpret_cast<const char*>(u8" 更新日志"), 4.0f);
+							CenteredText(" 更新日志", 4.0f);
 
 							Font->Scale = 0.7f, PushFontNum++, ImGui::PushFont(Font);
 							ImGui::SameLine(); CenteredText(("当前版本" + utf16ToUtf8(editionDate)).c_str(), 8.0f);
@@ -2323,7 +2376,7 @@ int SettingMain()
 							ImGui::SetCursorPos({ 20.0f,90.0f });
 							Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 							{
-								ImGui::BeginChild(reinterpret_cast<const char*>(u8"更新日志"), { 690.0f,400.0f }, true, ImGuiWindowFlags_AlwaysHorizontalScrollbar | ImGuiWindowFlags_AlwaysVerticalScrollbar);
+								ImGui::BeginChild("更新日志", { 690.0f,400.0f }, true, ImGuiWindowFlags_AlwaysHorizontalScrollbar | ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
 								ImGui::SetCursorPosY(10.0f);
 								wstring text;
@@ -2525,15 +2578,28 @@ int SettingMain()
 									ImGui::TextUnformatted(temp.c_str());
 								}
 
-								ImGui::PopStyleColor(PushStyleColorNum);
-
+								{
+									if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+									if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+									while (PushFontNum) PushFontNum--, ImGui::PopFont();
+								}
 								ImGui::EndChild();
 							}
 						}
 
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
 						ImGui::EndChild();
 					}
 
+					{
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
+					}
 					ImGui::EndChild();
 					break;
 				}
@@ -2543,7 +2609,13 @@ int SettingMain()
 				// 实验室
 				case Tab::tab8:
 				{
-					ImGui::BeginChild(reinterpret_cast<const char*>(u8"实验室"), { 770.0f,616.0f }, true);
+					ImGui::BeginChild("实验室", { 770.0f,616.0f }, true);
+
+					{
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
+					}
 					ImGui::EndChild();
 					break;
 				}
@@ -2551,7 +2623,7 @@ int SettingMain()
 				// 程序调测
 				case Tab::tab9:
 				{
-					ImGui::BeginChild(reinterpret_cast<const char*>(u8"程序调测"), { 770.0f,616.0f }, true);
+					ImGui::BeginChild("程序调测", { 770.0f,616.0f }, true);
 
 					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 					{
@@ -2660,9 +2732,14 @@ int SettingMain()
 							ImGui::TextUnformatted(temp.c_str());
 						}
 
-						ImGui::PopStyleColor(PushStyleColorNum);
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 					}
 
+					{
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
+					}
 					ImGui::EndChild();
 					break;
 				}
@@ -2749,25 +2826,31 @@ int SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(98 / 255.0f, 175 / 255.0f, 82 / 255.0f, 1.0f));
 						CenteredText((get<string>(i18n[i18nEnum::Settings_Update_Tip9]) + "(" + setlist.UpdateChannel + ")").c_str(), 4.0f);
 					}
-
-					ImGui::PopStyleColor(PushStyleColorNum);
 				}
 
+				{
+					if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+					if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+					while (PushFontNum) PushFontNum--, ImGui::PopFont();
+				}
 				ImGui::End();
-
-				ImGui::PopStyleColor(PushStyleColorNum);
-				while (PushFontNum) PushFontNum--, ImGui::PopFont();
 			}
 
 			// 渲染
-			ImGui::Render();
-			const float clear_color_with_alpha[4] = { clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w };
-			g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
-			g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clear_color_with_alpha);
-			ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-
-			g_pSwapChain->Present(1, 0); // 同步显示
-			//g_pSwapChain->Present(0, 0); // 无同步显示
+			ImGui::EndFrame();
+			g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, FALSE);
+			g_pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+			g_pd3dDevice->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
+			D3DCOLOR clear_col_dx = D3DCOLOR_RGBA((int)(clear_color.x * clear_color.w * 255.0f), (int)(clear_color.y * clear_color.w * 255.0f), (int)(clear_color.z * clear_color.w * 255.0f), (int)(clear_color.w * 255.0f));
+			g_pd3dDevice->Clear(0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, clear_col_dx, 1.0f, 0);
+			if (g_pd3dDevice->BeginScene() >= 0)
+			{
+				ImGui::Render();
+				ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
+				g_pd3dDevice->EndScene();
+			}
+			HRESULT result = g_pd3dDevice->Present(nullptr, nullptr, nullptr, nullptr);
+			if (result == D3DERR_DEVICELOST) g_DeviceLost = true;
 
 			if (!test.select) break;
 			if (!ShowWindow && !IsWindowVisible(setting_window))
@@ -2782,7 +2865,7 @@ int SettingMain()
 
 		io.Fonts->Clear();
 
-		ImGui_ImplDX11_Shutdown();
+		ImGui_ImplDX9_Shutdown();
 		ImGui_ImplWin32_Shutdown();
 		ImGui::DestroyContext();
 	}
@@ -2865,93 +2948,92 @@ bool WriteSetting()
 	return true;
 }
 
-// 辅助函数
+// Data
+LPDIRECT3D9 g_pD3D = nullptr;
+LPDIRECT3DDEVICE9 g_pd3dDevice = nullptr;
+bool g_DeviceLost = false;
+UINT g_ResizeWidth = 0, g_ResizeHeight = 0;
+D3DPRESENT_PARAMETERS g_d3dpp = {};
+
+// Forward declarations of helper functions
 bool CreateDeviceD3D(HWND hWnd)
 {
-	// 设置交换链
-	DXGI_SWAP_CHAIN_DESC sd;
-	ZeroMemory(&sd, sizeof(sd));
-	sd.BufferCount = 2;
-	sd.BufferDesc.Width = 0;
-	sd.BufferDesc.Height = 0;
-	sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	sd.BufferDesc.RefreshRate.Numerator = 60;
-	sd.BufferDesc.RefreshRate.Denominator = 1;
-	sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
-	sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-	sd.OutputWindow = hWnd;
-	sd.SampleDesc.Count = 1;
-	sd.SampleDesc.Quality = 0;
-	sd.Windowed = TRUE;
-	sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-
-	UINT createDeviceFlags = 0;
-	// createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
-	D3D_FEATURE_LEVEL featureLevel;
-	const D3D_FEATURE_LEVEL featureLevelArray[2] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0, };
-	HRESULT res = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, createDeviceFlags, featureLevelArray, 2, D3D11_SDK_VERSION, &sd, &g_pSwapChain, &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext);
-	if (res == DXGI_ERROR_UNSUPPORTED) // 如果硬件不可用，请尝试使用高性能的 WARP 软件驱动程序。
-		res = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, createDeviceFlags, featureLevelArray, 2, D3D11_SDK_VERSION, &sd, &g_pSwapChain, &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext);
-	if (res != S_OK)
+	if ((g_pD3D = Direct3DCreate9(D3D_SDK_VERSION)) == nullptr)
 		return false;
 
-	CreateRenderTarget();
+	// Create the D3DDevice
+	ZeroMemory(&g_d3dpp, sizeof(g_d3dpp));
+	g_d3dpp.Windowed = TRUE;
+	g_d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
+	g_d3dpp.BackBufferFormat = D3DFMT_UNKNOWN; // Need to use an explicit format with alpha if needing per-pixel alpha composition.
+	g_d3dpp.EnableAutoDepthStencil = TRUE;
+	g_d3dpp.AutoDepthStencilFormat = D3DFMT_D16;
+	g_d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_ONE;           // Present with vsync
+	//g_d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;   // Present without vsync, maximum unthrottled framerate
+	if (g_pD3D->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, hWnd, D3DCREATE_HARDWARE_VERTEXPROCESSING, &g_d3dpp, &g_pd3dDevice) < 0)
+		return false;
+
 	return true;
 }
 void CleanupDeviceD3D()
 {
-	CleanupRenderTarget();
-	if (g_pSwapChain) { g_pSwapChain->Release(); g_pSwapChain = nullptr; }
-	if (g_pd3dDeviceContext) { g_pd3dDeviceContext->Release(); g_pd3dDeviceContext = nullptr; }
 	if (g_pd3dDevice) { g_pd3dDevice->Release(); g_pd3dDevice = nullptr; }
+	if (g_pD3D) { g_pD3D->Release(); g_pD3D = nullptr; }
+}
+void ResetDevice()
+{
+	ImGui_ImplDX9_InvalidateDeviceObjects();
+	HRESULT hr = g_pd3dDevice->Reset(&g_d3dpp);
+	if (hr == D3DERR_INVALIDCALL)
+		IM_ASSERT(0);
+	ImGui_ImplDX9_CreateDeviceObjects();
 }
 
-void CreateRenderTarget()
+bool LoadTextureFromMemory(unsigned char* image_data, int width, int height, PDIRECT3DTEXTURE9* out_texture)
 {
-	ID3D11Texture2D* pBackBuffer;
-	g_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
-	g_pd3dDevice->CreateRenderTargetView(pBackBuffer, nullptr, &g_mainRenderTargetView);
-	pBackBuffer->Release();
-}
-void CleanupRenderTarget()
-{
-	if (g_mainRenderTargetView) { g_mainRenderTargetView->Release(); g_mainRenderTargetView = nullptr; }
-}
+	if (image_data == NULL || width <= 0 || height <= 0 || out_texture == NULL)
+		return false;
 
-bool LoadTextureFromFile(unsigned char* image_data, int width, int height, ID3D11ShaderResourceView** out_srv)
-{
-	if (image_data == NULL) return false;
+	// 创建纹理，MipLevels 设置为 1 表示不使用 mipmapping
+	PDIRECT3DTEXTURE9 texture = NULL;
+	HRESULT hr = g_pd3dDevice->CreateTexture(
+		width,
+		height,
+		1, // MipLevels，不生成 mipmap 级别
+		0, // Usage，默认值
+		D3DFMT_A8R8G8B8, // 像素格式，RGBA8
+		D3DPOOL_MANAGED, // 内存池类型
+		&texture,
+		NULL
+	);
 
-	// Create texture
-	D3D11_TEXTURE2D_DESC desc;
-	ZeroMemory(&desc, sizeof(desc));
-	desc.Width = width;
-	desc.Height = height;
-	desc.MipLevels = 1;
-	desc.ArraySize = 1;
-	desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	desc.SampleDesc.Count = 1;
-	desc.Usage = D3D11_USAGE_DEFAULT;
-	desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-	desc.CPUAccessFlags = 0;
+	if (FAILED(hr))
+		return false;
 
-	ID3D11Texture2D* pTexture = NULL;
-	D3D11_SUBRESOURCE_DATA subResource;
-	subResource.pSysMem = image_data;
-	subResource.SysMemPitch = desc.Width * 4;
-	subResource.SysMemSlicePitch = 0;
-	g_pd3dDevice->CreateTexture2D(&desc, &subResource, &pTexture);
+	// 锁定纹理以访问其内存
+	D3DLOCKED_RECT locked_rect;
+	hr = texture->LockRect(0, &locked_rect, NULL, 0);
+	if (FAILED(hr))
+	{
+		texture->Release();
+		return false;
+	}
 
-	// Create texture view
-	D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
-	ZeroMemory(&srvDesc, sizeof(srvDesc));
-	srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-	srvDesc.Texture2D.MipLevels = desc.MipLevels;
-	srvDesc.Texture2D.MostDetailedMip = 0;
-	g_pd3dDevice->CreateShaderResourceView(pTexture, &srvDesc, out_srv);
-	pTexture->Release();
+	// 复制图像数据到纹理
+	for (int y = 0; y < height; y++)
+	{
+		// 计算目标纹理行的起始地址
+		BYTE* pDest = static_cast<BYTE*>(locked_rect.pBits) + y * locked_rect.Pitch;
+		// 计算源图像行的起始地址
+		BYTE* pSrc = image_data + y * width * 4; // 每像素4字节（RGBA）
 
+		memcpy(pDest, pSrc, width * 4);
+	}
+
+	// 解锁纹理
+	texture->UnlockRect(0);
+
+	*out_texture = texture;
 	return true;
 }
 
@@ -2972,11 +3054,11 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	case WM_SIZE:
 		if (wParam == SIZE_MINIMIZED)
 			return 0;
-		g_ResizeWidth = (UINT)LOWORD(lParam); // 排队调整大小
+		g_ResizeWidth = (UINT)LOWORD(lParam); // Queue resize
 		g_ResizeHeight = (UINT)HIWORD(lParam);
 		return 0;
 	case WM_SYSCOMMAND:
-		if ((wParam & 0xfff0) == SC_KEYMENU) // 禁用 ALT 应用程序菜单
+		if ((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu
 			return 0;
 		break;
 	case WM_DESTROY:
@@ -2989,7 +3071,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 // 示例
 static void HelpMarker(const char* desc, ImVec4 Color)
 {
-	ImGui::TextColored(Color, reinterpret_cast<const char*>(u8"(?)"));
+	ImGui::TextColored(Color, "(?)");
 	if (ImGui::IsItemHovered())
 	{
 		ImGui::BeginTooltip();

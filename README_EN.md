@@ -63,6 +63,7 @@ Author QQ: `2685549821`
 - Windows 11 SDK 10.26100
 - [EasyX](https://easyx.cn/download/EasyX_2023%E5%A4%A7%E6%9A%91%E7%89%88.exe) (EasyX_2023 Summer Release Version)
 - .NET Framework 4.0 SDK
+- Microsoft DirectX SDK (June 2010)
 
 ### Branch Description
 - `main`: Store recently stable and buildable program source code.

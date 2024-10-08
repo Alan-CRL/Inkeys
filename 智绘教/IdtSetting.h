@@ -1,12 +1,13 @@
 ﻿#pragma once
 #include "IdtMain.h"
 
-#include <d3d11.h>
-#pragma comment(lib, "d3d11")
+#include <d3d9.h>
+#include <C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\Include\D3dx9tex.h>
+#pragma comment(lib, "d3d9")
 
 extern IMAGE SettingSign[10];
 extern WNDCLASSEXW ImGuiWc;
-extern ID3D11ShaderResourceView* TextureSettingSign[10];
+extern PDIRECT3DTEXTURE9 TextureSettingSign[10];
 extern int SettingMainMode;
 
 extern int SettingWindowX;
@@ -21,18 +22,16 @@ bool ReadSetting(bool first);
 bool WriteSetting();
 
 // Data
-static ID3D11Device* g_pd3dDevice = nullptr;
-static ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;
-static IDXGISwapChain* g_pSwapChain = nullptr;
-static UINT g_ResizeWidth = 0, g_ResizeHeight = 0;
-static ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
+extern LPDIRECT3D9 g_pD3D;
+extern LPDIRECT3DDEVICE9 g_pd3dDevice;
+extern bool g_DeviceLost;
+extern UINT g_ResizeWidth, g_ResizeHeight;
+extern D3DPRESENT_PARAMETERS g_d3dpp;
 
 // Forward declarations of helper functions
 bool CreateDeviceD3D(HWND hWnd);
 void CleanupDeviceD3D();
-void CreateRenderTarget();
-void CleanupRenderTarget();
-
-bool LoadTextureFromFile(unsigned char* image_data, int width, int height, ID3D11ShaderResourceView** out_srv);
-
+void ResetDevice();
 LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+bool LoadTextureFromMemory(unsigned char* image_data, int width, int height, PDIRECT3DTEXTURE9* out_texture);

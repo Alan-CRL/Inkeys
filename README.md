@@ -65,6 +65,7 @@ Windows 屏幕批注工具，拥有高效批注和丰富功能，
 - Windows 11 SDK 10.26100
 - [EasyX](https://easyx.cn/download/EasyX_2023%E5%A4%A7%E6%9A%91%E7%89%88.exe) (EasyX_2023大暑版)
 - .NET Framework 4.0 SDK
+- Microsoft DirectX SDK (June 2010)
 
 ### 分支说明
 - `main`：主仓库，存储近期较为稳定的可构建的程序源码
