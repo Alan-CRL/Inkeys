@@ -75,11 +75,11 @@ bool DownloadEdition(std::string domain, std::string path, std::wstring director
 	res = scli.Head(path.c_str());
 	if (res && res->status == 200)
 	{
-		auto it = res->headers.find("Content-Length");
-		if (it == res->headers.end()) return false;
-
-		fileSize = stoll(it->second);
 		isHttpsConnect = true;
+
+		auto it = res->headers.find("Content-Length");
+		if (it == res->headers.end()) fileSize = 0;
+		else fileSize = stoll(it->second);
 	}
 	else
 	{
@@ -91,9 +91,8 @@ bool DownloadEdition(std::string domain, std::string path, std::wstring director
 		if (res && res->status == 200)
 		{
 			auto it = res->headers.find("Content-Length");
-			if (it == res->headers.end()) return false;
-
-			fileSize = stoll(it->second);
+			if (it == res->headers.end()) fileSize = 0;
+			else fileSize = stoll(it->second);
 		}
 		else return false;
 	}
@@ -101,9 +100,12 @@ bool DownloadEdition(std::string domain, std::string path, std::wstring director
 	std::ofstream file(directory + fileName, std::ios::binary | std::ios::out);
 	if (!file) return false;
 
-	file.seekp(fileSize - 1);
-	file.write("", 1);
-	file.seekp(0);
+	if (fileSize > 0)
+	{
+		file.seekp(fileSize - 1);
+		file.write("", 1);
+		file.seekp(0);
+	}
 
 	auto callback = [&](const char* data, size_t data_length)
 		{

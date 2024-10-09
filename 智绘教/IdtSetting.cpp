@@ -305,15 +305,20 @@ int SettingMain()
 
 		ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 		ImGuiStyle& style = ImGui::GetStyle();
-		auto Color = style.Colors;
 
-		style.ChildRounding = 8.0f;
-		style.FrameRounding = 8.0f;
-		style.GrabRounding = 8.0f;
+		{
+			style.Colors[ImGuiCol_TitleBgActive] = ImVec4(235 / 255.0f, 238 / 255.0f, 245 / 252.0f, 1.0f);
 
-		style.Colors[ImGuiCol_WindowBg] = ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f);
-		style.Colors[ImGuiCol_ButtonHovered] = ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f);
-		style.Colors[ImGuiCol_ButtonActive] = ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f);
+			style.Colors[ImGuiCol_WindowBg] = ImVec4(245 / 255.0f, 248 / 255.0f, 255 / 252.0f, 1.0f);
+			style.Colors[ImGuiCol_ChildBg] = ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 252.0f, 1.0f);
+
+			style.FrameBorderSize = 1.0f;
+			style.ChildBorderSize = 1.0f;
+
+			style.ChildRounding = 8.0f;
+			style.FrameRounding = 8.0f;
+			style.GrabRounding = 8.0f;
+		}
 
 		//初始化定义变量
 		hiex::tDelayFPS recond;
@@ -675,6 +680,24 @@ int SettingMain()
 				case Tab::tab1:
 				{
 					ImGui::BeginChild("主页", { 770.0f,616.0f }, true);
+					{
+						ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+						ImVec2 child_pos = ImGui::GetWindowPos();
+						ImVec2 child_size = ImGui::GetWindowSize();
+
+						ImU32 color_top = IM_COL32(245, 248, 255, 255);
+						ImU32 color_middle = IM_COL32(255, 255, 255, 255);
+
+						ImVec2 top_left = child_pos;
+						ImVec2 bottom_right = ImVec2(child_pos.x + child_size.x, child_pos.y + child_size.y);
+
+						ImVec2 middle_left = ImVec2(child_pos.x, child_pos.y + child_size.y / 3.0f);
+						ImVec2 middle_right = ImVec2(child_pos.x + child_size.x, child_pos.y + child_size.y / 3.0f);
+
+						draw_list->AddRectFilledMultiColor(top_left, middle_right, color_top, color_top, color_middle, color_middle);
+						draw_list->AddRect(child_pos, bottom_right, ImGui::GetColorU32(ImGuiCol_Border), style.ChildRounding, ImDrawFlags_RoundCornersAll, 1.0f);
+					}
 
 					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 
@@ -904,6 +927,24 @@ int SettingMain()
 				case Tab::tab2:
 				{
 					ImGui::BeginChild("通用", { 770.0f,616.0f }, true);
+					{
+						ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+						ImVec2 child_pos = ImGui::GetWindowPos();
+						ImVec2 child_size = ImGui::GetWindowSize();
+
+						ImU32 color_top = IM_COL32(245, 248, 255, 255);
+						ImU32 color_middle = IM_COL32(255, 255, 255, 255);
+
+						ImVec2 top_left = child_pos;
+						ImVec2 bottom_right = ImVec2(child_pos.x + child_size.x, child_pos.y + child_size.y);
+
+						ImVec2 middle_left = ImVec2(child_pos.x, child_pos.y + child_size.y / 3.0f);
+						ImVec2 middle_right = ImVec2(child_pos.x + child_size.x, child_pos.y + child_size.y / 3.0f);
+
+						draw_list->AddRectFilledMultiColor(top_left, middle_right, color_top, color_top, color_middle, color_middle);
+						draw_list->AddRect(child_pos, bottom_right, ImGui::GetColorU32(ImGuiCol_Border), style.ChildRounding, ImDrawFlags_RoundCornersAll, 1.0f);
+					}
 
 					ImGui::SetCursorPosY(20.0f);
 
@@ -1326,6 +1367,24 @@ int SettingMain()
 				case Tab::tab3:
 				{
 					ImGui::BeginChild("绘制", { 770.0f,616.0f }, true);
+					{
+						ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+						ImVec2 child_pos = ImGui::GetWindowPos();
+						ImVec2 child_size = ImGui::GetWindowSize();
+
+						ImU32 color_top = IM_COL32(245, 248, 255, 255);
+						ImU32 color_middle = IM_COL32(255, 255, 255, 255);
+
+						ImVec2 top_left = child_pos;
+						ImVec2 bottom_right = ImVec2(child_pos.x + child_size.x, child_pos.y + child_size.y);
+
+						ImVec2 middle_left = ImVec2(child_pos.x, child_pos.y + child_size.y / 3.0f);
+						ImVec2 middle_right = ImVec2(child_pos.x + child_size.x, child_pos.y + child_size.y / 3.0f);
+
+						draw_list->AddRectFilledMultiColor(top_left, middle_right, color_top, color_top, color_middle, color_middle);
+						draw_list->AddRect(child_pos, bottom_right, ImGui::GetColorU32(ImGuiCol_Border), style.ChildRounding, ImDrawFlags_RoundCornersAll, 1.0f);
+					}
 
 					ImGui::SetCursorPosY(20.0f);
 					{
@@ -1435,6 +1494,24 @@ int SettingMain()
 				case Tab::tab4:
 				{
 					ImGui::BeginChild("插件", { 770.0f,616.0f }, true);
+					{
+						ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+						ImVec2 child_pos = ImGui::GetWindowPos();
+						ImVec2 child_size = ImGui::GetWindowSize();
+
+						ImU32 color_top = IM_COL32(245, 248, 255, 255);
+						ImU32 color_middle = IM_COL32(255, 255, 255, 255);
+
+						ImVec2 top_left = child_pos;
+						ImVec2 bottom_right = ImVec2(child_pos.x + child_size.x, child_pos.y + child_size.y);
+
+						ImVec2 middle_left = ImVec2(child_pos.x, child_pos.y + child_size.y / 3.0f);
+						ImVec2 middle_right = ImVec2(child_pos.x + child_size.x, child_pos.y + child_size.y / 3.0f);
+
+						draw_list->AddRectFilledMultiColor(top_left, middle_right, color_top, color_top, color_middle, color_middle);
+						draw_list->AddRect(child_pos, bottom_right, ImGui::GetColorU32(ImGuiCol_Border), style.ChildRounding, ImDrawFlags_RoundCornersAll, 1.0f);
+					}
 
 					ImGui::SetCursorPosY(20.0f);
 
@@ -2170,6 +2247,24 @@ int SettingMain()
 				case Tab::tab5:
 				{
 					ImGui::BeginChild("快捷键", { 770.0f,616.0f }, true);
+					{
+						ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+						ImVec2 child_pos = ImGui::GetWindowPos();
+						ImVec2 child_size = ImGui::GetWindowSize();
+
+						ImU32 color_top = IM_COL32(245, 248, 255, 255);
+						ImU32 color_middle = IM_COL32(255, 255, 255, 255);
+
+						ImVec2 top_left = child_pos;
+						ImVec2 bottom_right = ImVec2(child_pos.x + child_size.x, child_pos.y + child_size.y);
+
+						ImVec2 middle_left = ImVec2(child_pos.x, child_pos.y + child_size.y / 3.0f);
+						ImVec2 middle_right = ImVec2(child_pos.x + child_size.x, child_pos.y + child_size.y / 3.0f);
+
+						draw_list->AddRectFilledMultiColor(top_left, middle_right, color_top, color_top, color_middle, color_middle);
+						draw_list->AddRect(child_pos, bottom_right, ImGui::GetColorU32(ImGuiCol_Border), style.ChildRounding, ImDrawFlags_RoundCornersAll, 1.0f);
+					}
 
 					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 					{
@@ -2227,6 +2322,24 @@ int SettingMain()
 				case Tab::tab6:
 				{
 					ImGui::BeginChild("感谢墙", { 770.0f,616.0f }, true);
+					{
+						ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+						ImVec2 child_pos = ImGui::GetWindowPos();
+						ImVec2 child_size = ImGui::GetWindowSize();
+
+						ImU32 color_top = IM_COL32(245, 248, 255, 255);
+						ImU32 color_middle = IM_COL32(255, 255, 255, 255);
+
+						ImVec2 top_left = child_pos;
+						ImVec2 bottom_right = ImVec2(child_pos.x + child_size.x, child_pos.y + child_size.y);
+
+						ImVec2 middle_left = ImVec2(child_pos.x, child_pos.y + child_size.y / 3.0f);
+						ImVec2 middle_right = ImVec2(child_pos.x + child_size.x, child_pos.y + child_size.y / 3.0f);
+
+						draw_list->AddRectFilledMultiColor(top_left, middle_right, color_top, color_top, color_middle, color_middle);
+						draw_list->AddRect(child_pos, bottom_right, ImGui::GetColorU32(ImGuiCol_Border), style.ChildRounding, ImDrawFlags_RoundCornersAll, 1.0f);
+					}
 
 					ImGui::SetCursorPos({ 10.0f,10.0f });
 					ImGui::Image((void*)TextureSettingSign[7], ImVec2((float)SettingSign[7].getwidth(), (float)SettingSign[7].getheight()));
@@ -2244,6 +2357,24 @@ int SettingMain()
 				case Tab::tab7:
 				{
 					ImGui::BeginChild("关于", { 770.0f,616.0f }, true);
+					{
+						ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+						ImVec2 child_pos = ImGui::GetWindowPos();
+						ImVec2 child_size = ImGui::GetWindowSize();
+
+						ImU32 color_top = IM_COL32(245, 248, 255, 255);
+						ImU32 color_middle = IM_COL32(255, 255, 255, 255);
+
+						ImVec2 top_left = child_pos;
+						ImVec2 bottom_right = ImVec2(child_pos.x + child_size.x, child_pos.y + child_size.y);
+
+						ImVec2 middle_left = ImVec2(child_pos.x, child_pos.y + child_size.y / 3.0f);
+						ImVec2 middle_right = ImVec2(child_pos.x + child_size.x, child_pos.y + child_size.y / 3.0f);
+
+						draw_list->AddRectFilledMultiColor(top_left, middle_right, color_top, color_top, color_middle, color_middle);
+						draw_list->AddRect(child_pos, bottom_right, ImGui::GetColorU32(ImGuiCol_Border), style.ChildRounding, ImDrawFlags_RoundCornersAll, 1.0f);
+					}
 
 					ImGui::SetCursorPos({ 35.0f,70.0f });
 					ImGui::Image((void*)TextureSettingSign[1], ImVec2((float)SettingSign[1].getwidth(), (float)SettingSign[1].getheight()));
