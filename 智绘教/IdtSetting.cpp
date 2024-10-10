@@ -304,9 +304,17 @@ int SettingMain()
 		ImFontConfig font_cfg;
 		font_cfg.OversampleH = 1;
 		font_cfg.OversampleV = 1;
+		font_cfg.FontDataOwnedByAtlas = false;
 		font_cfg.FontBuilderFlags |= ImGuiFreeTypeBuilderFlags_LightHinting;
+		font_cfg.GlyphRanges = io.Fonts->GetGlyphRangesChineseFull();
 
-		ImFont* Font = io.Fonts->AddFontFromFileTTF((utf16ToUtf8(globalPath) + "ttf\\hmossscr.ttf").c_str(), 28.0f, &font_cfg, io.Fonts->GetGlyphRangesChineseFull());
+		HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
+		HGLOBAL hMem = LoadResource(NULL, hRes);
+		void* pLock = LockResource(hMem);
+		DWORD dwSize = SizeofResource(NULL, hRes);
+
+		ImFont* Font = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 28.0f, &font_cfg);
+		io.Fonts->Build();
 
 		ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 		ImGuiStyle& style = ImGui::GetStyle();
