@@ -301,16 +301,22 @@ int SettingMain()
 			ExtractResource((globalPath + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
 		}
 
-		ImFont* Font = io.Fonts->AddFontFromFileTTF((utf16ToUtf8(globalPath) + "ttf\\hmossscr.ttf").c_str(), 28.0f, nullptr, io.Fonts->GetGlyphRangesChineseFull());
+		ImFontConfig font_cfg;
+		font_cfg.OversampleH = 1;
+		font_cfg.OversampleV = 1;
+		font_cfg.FontBuilderFlags |= ImGuiFreeTypeBuilderFlags_LightHinting;
+
+		ImFont* Font = io.Fonts->AddFontFromFileTTF((utf16ToUtf8(globalPath) + "ttf\\hmossscr.ttf").c_str(), 28.0f, &font_cfg, io.Fonts->GetGlyphRangesChineseFull());
 
 		ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 		ImGuiStyle& style = ImGui::GetStyle();
 
 		{
-			style.Colors[ImGuiCol_TitleBgActive] = ImVec4(235 / 255.0f, 238 / 255.0f, 245 / 252.0f, 1.0f);
-
 			style.Colors[ImGuiCol_WindowBg] = ImVec4(245 / 255.0f, 248 / 255.0f, 255 / 252.0f, 1.0f);
 			style.Colors[ImGuiCol_ChildBg] = ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 252.0f, 1.0f);
+			style.Colors[ImGuiCol_TitleBgActive] = ImVec4(221 / 255.0f, 223 / 255.0f, 230 / 252.0f, 1.0f);
+
+			style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
 
 			style.FrameBorderSize = 1.0f;
 			style.ChildBorderSize = 1.0f;
@@ -460,29 +466,31 @@ int SettingMain()
 				ImGui::Begin(get<string>(i18n[i18nEnum::Settings]).c_str(), &test.select, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings);//开始绘制窗口
 
 				{
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(255, 0, 255, 255)); // 设置边框颜色
-
 					// 主页
 					{
 						ImGui::SetCursorPos({ 10.0f,44.0f });
 
 						if (Tab == Tab::tab1)
 						{
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 111, 225, 255));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 111, 225, 255));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 111, 225, 255));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 225, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(228, 237, 252, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(228, 237, 252, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(231, 233, 239, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 						}
 						else
 						{
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(245, 248, 255, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(231, 233, 239, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(228, 237, 252, 255));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
-							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(225, 225, 225, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 						}
 
-						if (ImGui::Button(get<string>(i18n[i18nEnum::Settings_Home]).c_str(), { 100.0f,40.0f })) Tab = Tab::tab1;
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
+						if (ImGui::Button(get<string>(i18n[i18nEnum::Settings_Home]).c_str(), { 150.0f,40.0f })) Tab = Tab::tab1;
 					}
 
 					// 常规
@@ -670,6 +678,12 @@ int SettingMain()
 					{
 						test.select = false;
 						offSignal = true;
+					}
+
+					{
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
 					}
 				}
 
