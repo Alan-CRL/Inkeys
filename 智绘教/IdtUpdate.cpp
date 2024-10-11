@@ -217,7 +217,7 @@ EditionInfoClass GetEditionInfo(string channel)
 void splitUrl(string input_url, string& prefix, string& domain, string& path)
 {
 	// 更新后的正则表达式，捕获前缀，并要求域名中至少包含一个点
-	regex url_regex(R"(^\s*(?:([a-zA-Z]+://))?((?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,})(/\S*)?\s*$)", regex::icase);
+	regex url_regex(R"(^\s*(?:([a-zA-Z]+://))?((?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?::\d+)?)(/\S*)?\s*$)", regex::icase);
 	smatch url_match_result;
 
 	if (regex_match(input_url, url_match_result, url_regex))

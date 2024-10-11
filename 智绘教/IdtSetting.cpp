@@ -80,6 +80,7 @@ int SettingMain()
 {
 	threadStatus[L"SettingMain"] = true;
 
+	Testi(1);
 	// 初始化部分
 	{
 		ImGuiWc = { sizeof(WNDCLASSEX), CS_CLASSDC, ImGuiWndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, get<wstring>(i18n[i18nEnum::SettingsW]).c_str(), nullptr };
@@ -270,6 +271,7 @@ int SettingMain()
 			IM_ASSERT(ret);
 		}
 	}
+	Testi(2);
 
 	bool ShowWindow = false;
 	while (!offSignal)
@@ -288,9 +290,11 @@ int SettingMain()
 
 		ImGui::StyleColorsLight();
 
+		Testi(3);
 		ImGui_ImplWin32_Init(setting_window);
 		ImGui_ImplDX9_Init(g_pd3dDevice);
 
+		Testi(4);
 		if (_waccess((globalPath + L"ttf\\hmossscr.ttf").c_str(), 0) == -1)
 		{
 			if (_waccess((globalPath + L"ttf").c_str(), 0) == -1)
@@ -301,6 +305,7 @@ int SettingMain()
 			ExtractResource((globalPath + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
 		}
 
+		Testi(5);
 		ImFontConfig font_cfg;
 		font_cfg.OversampleH = 1;
 		font_cfg.OversampleV = 1;
@@ -316,6 +321,7 @@ int SettingMain()
 		ImFont* Font = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 28.0f, &font_cfg);
 		io.Fonts->Build();
 
+		Testi(6);
 		ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 		ImGuiStyle& style = ImGui::GetStyle();
 
@@ -2419,7 +2425,7 @@ int SettingMain()
 							else text += L"\n用户ID " + userId;
 
 							text += L"\n\n在此版本中，您的所有数据都将在本地进行处理";
-						}
+					}
 
 						int left_x = 10, right_x = 760;
 
@@ -2457,7 +2463,7 @@ int SettingMain()
 							ImGui::SetCursorPosX(left_x + text_indentation);
 							ImGui::TextUnformatted(temp.c_str());
 						}
-					}
+				}
 
 					Font->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(Font);
 					{
@@ -2896,7 +2902,7 @@ int SettingMain()
 					ImGui::EndChild();
 					break;
 				}
-				}
+			}
 
 				{
 					if (AutomaticUpdateStep == 0)
@@ -2987,7 +2993,7 @@ int SettingMain()
 					while (PushFontNum) PushFontNum--, ImGui::PopFont();
 				}
 				ImGui::End();
-			}
+		}
 
 			// 渲染
 			ImGui::EndFrame();
@@ -3012,7 +3018,7 @@ int SettingMain()
 				::SetForegroundWindow(setting_window);
 				ShowWindow = true;
 			}
-		}
+	}
 
 		//::ShowWindow(setting_window, SW_HIDE);
 
@@ -3021,7 +3027,7 @@ int SettingMain()
 		ImGui_ImplDX9_Shutdown();
 		ImGui_ImplWin32_Shutdown();
 		ImGui::DestroyContext();
-	}
+}
 
 	threadStatus[L"SettingMain"] = false;
 	return 0;
