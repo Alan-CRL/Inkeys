@@ -167,11 +167,11 @@ int SettingMain()
 			IM_ASSERT(ret);
 		}
 
-		loadimage(&SettingSign[7], L"PNG", L"sign6");
+		loadimage(&SettingSign[3], L"PNG", L"Profile_Picture");
 		{
-			int width = SettingSign[7].getwidth();
-			int height = SettingSign[7].getheight();
-			DWORD* pMem = GetImageBuffer(&SettingSign[7]);
+			int width = SettingSign[3].getwidth();
+			int height = SettingSign[3].getheight();
+			DWORD* pMem = GetImageBuffer(&SettingSign[3]);
 
 			unsigned char* data = new unsigned char[width * height * 4];
 			for (int y = 0; y < height; ++y)
@@ -196,7 +196,7 @@ int SettingMain()
 				}
 			}
 
-			bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[7]);
+			bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[3]);
 			delete[] data;
 
 			IM_ASSERT(ret);
@@ -316,7 +316,7 @@ int SettingMain()
 
 		ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 28.0f, &font_cfg);
 
-		ImWchar icons_ranges[] = { 0xE900, 0xE90a, 0 };
+		ImWchar icons_ranges[] = { 0xE900, 0xE90f, 0 };
 		font_cfg.MergeMode = true;
 		font_cfg.GlyphOffset.y = 4.0f;
 		font_cfg.PixelSnapH = true;
@@ -619,7 +619,7 @@ int SettingMain()
 						if (ImGui::Button(" \ue904  快捷键", { 150.0f,40.0f })) Tab = Tab::tab5;
 					}
 
-					// 社区名片
+					// 软件版本
 					{
 						ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 10.0f });
 
@@ -643,12 +643,24 @@ int SettingMain()
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(" \ue905  社区名片", { 150.0f,40.0f })) Tab = Tab::tab6;
+						if (ImGui::Button(" \ue906  软件版本", { 150.0f,40.0f })) Tab = Tab::tab6;
 					}
 
-					// 软件版本
 					{
-						ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 10.0f });
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f);
+
+						ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+						ImVec2 p1 = ImVec2(35, ImGui::GetCursorPosY() - 1.0f);
+						ImVec2 p2 = ImVec2(135, ImGui::GetCursorPosY());
+						ImU32 color = IM_COL32(150, 150, 150, 255);
+
+						draw_list->AddRectFilled(p1, p2, color, 2.0f);
+					}
+
+					// 社区名片
+					{
+						ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 20.0f });
 
 						if (Tab == Tab::tab7)
 						{
@@ -670,10 +682,49 @@ int SettingMain()
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(" \ue906  软件版本", { 150.0f,40.0f })) Tab = Tab::tab7;
+						if (ImGui::Button(" \ue905  社区名片", { 150.0f,40.0f })) Tab = Tab::tab7;
+					}
+
+					// 赞助我们
+					{
+						ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 10.0f });
+
+						if (Tab == Tab::tab8)
+						{
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(228, 237, 252, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(228, 237, 252, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(231, 233, 239, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(13, 83, 255, 255));
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
+						}
+						else
+						{
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(245, 248, 255, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(231, 233, 239, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(228, 237, 252, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(13, 83, 255, 255));
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
+						}
+
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
+						if (ImGui::Button(" \ue90b  赞助我们", { 150.0f,40.0f })) Tab = Tab::tab8;
 					}
 
 					// --------------------
+
+					{
+						ImGui::SetCursorPosY(510.0f);
+
+						ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+						ImVec2 p1 = ImVec2(35, ImGui::GetCursorPosY() - 1.0f);
+						ImVec2 p2 = ImVec2(135, ImGui::GetCursorPosY());
+						ImU32 color = IM_COL32(150, 150, 150, 255);
+
+						draw_list->AddRectFilled(p1, p2, color, 2.0f);
+					}
 
 					// 程序调测
 					{
@@ -786,12 +837,49 @@ int SettingMain()
 						ImVec2 p_max = ImVec2(Cx + SettingSign[2].getwidth() + 4.0f, Cy + SettingSign[2].getheight() + 4.0f);
 
 						ImU32 color = IM_COL32(245, 248, 255, 255);
-						float rounding = 16.0f;
+						float rounding = 12.0f;
 						float thickness = 9.0f;
 
 						ImDrawList* draw_list = ImGui::GetWindowDrawList();
 						draw_list->AddRect(p_min, p_max, color, rounding, ImDrawFlags_None, thickness);
+
+						{
+							ImGui::SetCursorPos({ Cx + 15.0f,Cy + 15.0f });
+
+							{
+								ImFontMain->Scale = 1.0f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(236, 241, 255, 0));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(236, 241, 255, 30));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(236, 241, 255, 60));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
+							}
+							if (ImGui::Button("\ue90f", { 45.0f,45.0f }))
+							{
+								ShellExecuteW(0, 0, L"https://www.inkeys.top", 0, 0, SW_SHOW);
+							}
+						}
+						{
+							ImGui::SetCursorPos({ Cx + 70.0f,Cy + 15.0f });
+
+							{
+								ImFontMain->Scale = 0.88f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(236, 241, 255, 0));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(236, 241, 255, 30));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(236, 241, 255, 60));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
+							}
+							if (ImGui::Button("\ue90d", { 45.0f,45.0f }))
+							{
+								ShellExecuteW(0, 0, L"https://github.com/Alan-CRL/Inkeys", 0, 0, SW_SHOW);
+							}
+						}
 					}
+
+					/*
 					{
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 
@@ -983,7 +1071,7 @@ int SettingMain()
 							while (PushFontNum) PushFontNum--, ImGui::PopFont();
 						}
 						ImGui::EndChild();
-					}
+					}*/
 
 					break;
 				}
@@ -2327,26 +2415,8 @@ int SettingMain()
 					break;
 				}
 
-				// 感谢墙
-				case Tab::tab6:
-				{
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-					ImGui::BeginChild("感谢墙", { 770.0f,620.0f }, true);
-
-					ImGui::SetCursorPos({ 10.0f,10.0f });
-					ImGui::Image((void*)TextureSettingSign[7], ImVec2((float)SettingSign[7].getwidth(), (float)SettingSign[7].getheight()));
-
-					{
-						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-						while (PushFontNum) PushFontNum--, ImGui::PopFont();
-					}
-					ImGui::EndChild();
-					break;
-				}
-
 				// 程序版本
-				case Tab::tab7:
+				case Tab::tab6:
 				{
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 					ImGui::BeginChild("关于", { 770.0f,620.0f }, true);
@@ -2710,6 +2780,16 @@ int SettingMain()
 					break;
 				}
 
+				// 社区名片
+				case Tab::tab7:
+				{
+				}
+
+				// 赞助名片
+				case Tab::tab8:
+				{
+				}
+
 				// ---------------------
 
 				// 程序调测
@@ -2835,7 +2915,7 @@ int SettingMain()
 					ImGui::EndChild();
 					break;
 				}
-				}
+			}
 
 				{
 					if (AutomaticUpdateStep == 0)
@@ -2926,7 +3006,7 @@ int SettingMain()
 					while (PushFontNum) PushFontNum--, ImGui::PopFont();
 				}
 				ImGui::End();
-			}
+		}
 
 			// 渲染
 			ImGui::EndFrame();
@@ -2951,7 +3031,7 @@ int SettingMain()
 				::SetForegroundWindow(setting_window);
 				ShowWindow = true;
 			}
-		}
+	}
 
 		//::ShowWindow(setting_window, SW_HIDE);
 
@@ -2960,7 +3040,7 @@ int SettingMain()
 		ImGui_ImplDX9_Shutdown();
 		ImGui_ImplWin32_Shutdown();
 		ImGui::DestroyContext();
-	}
+}
 
 	threadStatus[L"SettingMain"] = false;
 	return 0;

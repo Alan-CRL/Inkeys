@@ -737,6 +737,7 @@
     <Image Include="src\setting\Home1_zh-CN.png" />
     <Image Include="src\setting\Home2_en-US.png" />
     <Image Include="src\setting\Home2_zh-CN.png" />
+    <Image Include="src\setting\Profile-picture.png" />
     <Image Include="src\sign.png" />
     <Image Include="src\sign1.png" />
     <Image Include="src\sign2.png" />

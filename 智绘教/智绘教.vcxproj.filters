@@ -1428,6 +1428,9 @@
     <Image Include="src\setting\Home1_zh-CN.png">
       <Filter>资源文件</Filter>
     </Image>
+    <Image Include="src\setting\Profile-picture.png">
+      <Filter>资源文件</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />
