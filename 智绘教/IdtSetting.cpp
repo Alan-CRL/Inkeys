@@ -26,11 +26,6 @@
 #include "imgui/imstb_textedit.h"
 #include "imgui/imstb_truetype.h"
 
-#define IMGUI_ENABLE_FREETYPE
-#include "imgui/imgui_freetype.h"
-
-#pragma comment(lib, "freetype/freetype.lib")
-
 // 示例
 static void HelpMarker(const char* desc, ImVec4 tmp);
 static void CenteredText(const char* desc, float displacement);
@@ -306,7 +301,6 @@ int SettingMain()
 		font_cfg.OversampleH = 1;
 		font_cfg.OversampleV = 1;
 		font_cfg.FontDataOwnedByAtlas = false;
-		font_cfg.FontBuilderFlags |= ImGuiFreeTypeBuilderFlags_LightHinting;
 		font_cfg.GlyphRanges = io.Fonts->GetGlyphRangesChineseFull();
 
 		HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
@@ -875,6 +869,20 @@ int SettingMain()
 							if (ImGui::Button("\ue90d", { 45.0f,45.0f }))
 							{
 								ShellExecuteW(0, 0, L"https://github.com/Alan-CRL/Inkeys", 0, 0, SW_SHOW);
+							}
+						}
+
+						{
+							ImGui::SetCursorPos({ Cx + 70.0f,Cy + 455.0f });
+
+							{
+								ImFontMain->Scale = 0.7f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(255, 255, 255, 255));
+							}
+							if (ImGui::TextLink("123123123123123"))
+							{
+								Testi(123);
 							}
 						}
 					}
@@ -2915,7 +2923,7 @@ int SettingMain()
 					ImGui::EndChild();
 					break;
 				}
-			}
+				}
 
 				{
 					if (AutomaticUpdateStep == 0)
@@ -3006,7 +3014,7 @@ int SettingMain()
 					while (PushFontNum) PushFontNum--, ImGui::PopFont();
 				}
 				ImGui::End();
-		}
+			}
 
 			// 渲染
 			ImGui::EndFrame();
@@ -3031,7 +3039,7 @@ int SettingMain()
 				::SetForegroundWindow(setting_window);
 				ShowWindow = true;
 			}
-	}
+		}
 
 		//::ShowWindow(setting_window, SW_HIDE);
 
@@ -3040,7 +3048,7 @@ int SettingMain()
 		ImGui_ImplDX9_Shutdown();
 		ImGui_ImplWin32_Shutdown();
 		ImGui::DestroyContext();
-}
+	}
 
 	threadStatus[L"SettingMain"] = false;
 	return 0;
