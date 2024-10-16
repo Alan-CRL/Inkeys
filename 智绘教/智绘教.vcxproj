@@ -631,6 +631,7 @@
     <Image Include="src\rubber.png" />
     <Image Include="src\scale.png" />
     <Image Include="src\seewo_camera.png" />
+    <Image Include="src\setting\Community-picture.png" />
     <Image Include="src\setting\Home1_en-US.png" />
     <Image Include="src\setting\Home1_zh-CN.png" />
     <Image Include="src\setting\Home2_en-US.png" />

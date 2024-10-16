@@ -310,7 +310,7 @@ int SettingMain()
 
 		ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 28.0f, &font_cfg);
 
-		ImWchar icons_ranges[] = { 0xE900, 0xE90f, 0 };
+		ImWchar icons_ranges[] = { 0xE900, 0xE911, 0 };
 		font_cfg.MergeMode = true;
 		font_cfg.GlyphOffset.y = 4.0f;
 		font_cfg.PixelSnapH = true;
@@ -873,16 +873,81 @@ int SettingMain()
 						}
 
 						{
-							ImGui::SetCursorPos({ Cx + 70.0f,Cy + 455.0f });
+							ImGui::SetCursorPos({ Cx + 100.0f,Cy + 390.0f });
+							ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[3], ImVec2((float)SettingSign[3].getwidth(), (float)SettingSign[3].getheight()));
 
+							ImGui::SetCursorPos({ Cx + 160.0f,Cy + 390.0f });
 							{
-								ImFontMain->Scale = 0.7f, PushFontNum++, ImGui::PushFont(ImFontMain);
-
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(255, 255, 255, 255));
+								ImFontMain->Scale = 1.0f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+								ImGui::TextUnformatted("AlanCRL");
 							}
-							if (ImGui::TextLink("123123123123123"))
+							ImGui::SetCursorPos({ Cx + 160.0f,Cy + 418.0f });
 							{
-								Testi(123);
+								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 0.7f));
+								ImGui::TextUnformatted("智绘教Inkeys 创始开发者");
+							}
+
+							{
+								ImGui::SetCursorPos({ Cx + 106.0f,Cy + 460.0f });
+								ImFontMain->Scale = 0.9f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+								ImGui::TextUnformatted("\ue90e");
+
+								ImGui::SetCursorPos({ Cx + 160.0f,Cy + 462.0f });
+								ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+								ImGui::TextUnformatted("2685549821");
+							}
+
+							{
+								ImGui::SetCursorPos({ Cx + 106.0f,Cy + 510.0f });
+								ImFontMain->Scale = 0.9f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+								ImGui::TextUnformatted("\ue90c");
+
+								ImGui::SetCursorPos({ Cx + 160.0f,Cy + 510.0f });
+								ImFontMain->Scale = 0.75f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+								ImGui::TextUnformatted("alan-crl@foxmail.com");
+							}
+						}
+						{
+							ImGui::SetCursorPos({ Cx + 468.0f,Cy + 400.0f });
+							ImFontMain->Scale = 0.95f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+							ImGui::TextUnformatted("\ue911");
+
+							ImGui::SetCursorPos({ Cx + 520.0f,Cy + 393.0f });
+							{
+								ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+								ImGui::TextUnformatted("QQ用户交流群");
+							}
+							ImGui::SetCursorPos({ Cx + 520.0f,Cy + 418.0f });
+							{
+								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 0.7f));
+								if (ImGui::TextLink("618720802"))
+								{
+									ShellExecuteW(0, 0, L"https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6", 0, 0, SW_SHOW);
+								}
+							}
+
+							{
+								ImGui::SetCursorPos({ Cx + 467.0f,Cy + 460.0f });
+								ImFontMain->Scale = 0.95f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+								ImGui::TextUnformatted("\ue910");
+
+								ImGui::SetCursorPos({ Cx + 520.0f,Cy + 462.0f });
+								ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+								if (ImGui::TextLink("Bilibili 宣发频道"))
+								{
+									ShellExecuteW(0, 0, L"https://space.bilibili.com/1330313497", 0, 0, SW_SHOW);
+								}
 							}
 						}
 					}
