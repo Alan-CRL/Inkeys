@@ -43,7 +43,7 @@ int SettingMain();
 void FreezeFrameWindow();
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-wstring editionDate = L"20241011a";				//程序发布日期
+wstring editionDate = L"20241018a";				//程序发布日期
 wstring editionChannel = L"Dev";				//程序发布通道
 wstring editionCode = L"24H2(BetaH3)";			//程序版本
 

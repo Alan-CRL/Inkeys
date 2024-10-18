@@ -3904,7 +3904,7 @@ void StartDesktopDrawpadBlocker()
 		if (!isProcessRunning((globalPath + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str()))
 		{
 			DdbWriteSetting(true, false);
-			ShellExecute(NULL, NULL, (globalPath + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+			ShellExecuteW(NULL, NULL, (globalPath + L"PlugIn\\DDB\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
 		}
 	}
 	else if (_waccess((globalPath + L"PlugIn\\DDB").c_str(), 0) == 0)

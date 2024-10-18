@@ -31,7 +31,12 @@ std::string GetEditionInformation()
 			res = cli.Get("/1709404/version_identification/official_version.json", headers);
 		}
 
-		if (res && res->status == 200) return res->body;
+		if (res && res->status == 200)
+		{
+			std::string ret = res->body;
+			if (ret.compare(0, 3, "\xEF\xBB\xBF") == 0) ret = ret.substr(3);
+			return ret;
+		}
 	}
 	// 尝试备用地址
 	{
@@ -53,7 +58,12 @@ std::string GetEditionInformation()
 			res = cli.Get("/version_identification/official_version.json", headers);
 		}
 
-		if (res && res->status == 200) return res->body;
+		if (res && res->status == 200)
+		{
+			std::string ret = res->body;
+			if (ret.compare(0, 3, "\xEF\xBB\xBF") == 0) ret = ret.substr(3);
+			return ret;
+		}
 	}
 
 	return "Error";
