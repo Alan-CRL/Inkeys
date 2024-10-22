@@ -4,6 +4,43 @@
 
 SetListStruct setlist;
 
+// 占用文件（读写权限）
+bool OccupyFile(HANDLE* hFile, const wstring& filePath)
+{
+	if (_waccess(filePath.c_str(), 0) == -1) return false;
+
+	for (int time = 1; time <= 5; time++)
+	{
+		*hFile = CreateFileW(
+			filePath.c_str(),
+			GENERIC_READ | GENERIC_WRITE,
+			0,              // 不共享，独占访问
+			NULL,
+			OPEN_EXISTING,
+			FILE_ATTRIBUTE_NORMAL,
+			NULL
+		);
+
+		if (*hFile != INVALID_HANDLE_VALUE) break;
+		else if (time >= 3) return false;
+
+		this_thread::sleep_for(chrono::milliseconds(100));
+	}
+
+	if (*hFile != INVALID_HANDLE_VALUE) return true;
+	return false;
+}
+// 释放文件
+bool UnOccupyFile(HANDLE* hFile)
+{
+	if (*hFile != NULL)
+	{
+		CloseHandle(*hFile);
+		return true;
+	}
+	return false;
+}
+
 PptComSetListStruct pptComSetlist;
 bool PptComReadSetting()
 {

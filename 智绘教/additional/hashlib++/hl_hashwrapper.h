@@ -174,7 +174,7 @@ public:
 	/**
 	 *  @brief 	Default destructor
 	 */
-	virtual ~hashwrapper(void) { };
+	virtual ~hashwrapper(void) {};
 
 	/**
 	 * @brief Method for testing the concrete implementation
@@ -280,7 +280,7 @@ public:
 		return(hashIt());
 	}
 
-	// IDT 自行增添函数
+	// Inkeys 自行增添函数
 	virtual std::string getHashFromFileW(std::wstring filename)
 	{
 		FILE* file;

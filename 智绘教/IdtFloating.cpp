@@ -6149,6 +6149,9 @@ int floating_main()
 	DrawScreen_thread.detach();
 	//LOG(INFO) << "成功启动悬浮窗窗口绘制线程";
 
+	//Testi(1);
+	//Testi(2);
+	// TODO
 #ifdef IDT_RELEASE
 	/*
 	//注册icu
@@ -6166,8 +6169,7 @@ int floating_main()
 	//LOG(INFO) << "成功启动程序崩溃反馈线程";
 	//LOG(INFO) << "尝试启动程序自动更新线程";
 
-	thread AutomaticUpdate_thread(AutomaticUpdate);
-	AutomaticUpdate_thread.detach();
+	thread(AutomaticUpdate).detach();
 
 	//LOG(INFO) << "成功启动程序自动更新线程";
 #endif

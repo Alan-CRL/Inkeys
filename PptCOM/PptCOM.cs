@@ -18,20 +18,6 @@
 //
 // 修改属性页中的指定框架
 //
-// 确认 NuGet 包 Costura.Fody 版本为 5.2.0
-//
-// 删除 FodyWeavers.xsd
-// 修改 PptCOM 项目目录下的 FodyWeavers.xml，修改内容为
-/*
-
-<?xml version="1.0" encoding="utf-8" ?>
-<Weavers>
-  <Costura />
-</Weavers>
-
-*/
-//
-//
 // 确认 PptCOM.manifest 中的 runtimeVersion 是你设置的版本全称（C:\Windows\Microsoft.NET\Framework），如 4.0.30319, 3.5
 // 生成 -> 清理 PptCOM，然后点击重新生成解决方案
 //

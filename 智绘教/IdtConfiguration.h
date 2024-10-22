@@ -36,6 +36,9 @@ struct SetListStruct
 };
 extern SetListStruct setlist;
 
+bool OccupyFile(HANDLE* hFile, const wstring& filePath);
+bool UnOccupyFile(HANDLE* hFile);
+
 struct PptComSetListStruct
 {
 	PptComSetListStruct()
@@ -93,8 +96,8 @@ struct DdbSetListStruct
 		DdbEnable = true;
 		DdbEnhance = false;
 
-		DdbEdition = L"20240517a";
-		DdbSHA256 = "811288094e6e5e59c0c4c2e878f30bbb7b752f574b882c81642389ba7f1a18a5";
+		DdbEdition = L"20241022a";
+		DdbSHA256 = "cea0ae8bb34d57e84307d3b78a4f6e61b7d4ae8d8ecf80098d9d422b566a61b6";
 
 		// -----
 

@@ -43,11 +43,11 @@ int SettingMain();
 void FreezeFrameWindow();
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-wstring editionDate = L"20241018a";				//程序发布日期
+wstring editionDate = L"20241022a";				//程序发布日期
 wstring editionChannel = L"Dev";				//程序发布通道
 wstring editionCode = L"24H2(BetaH3)";			//程序版本
 
-wstring userId; //用户ID（主板序列号）
+wstring userId; //用户GUID
 wstring globalPath; //程序当前路径
 
 int offSignal = false, offSignalReady = false; //关闭指令
@@ -233,39 +233,56 @@ int main()
 			wstring old_name;
 
 			bool flag = true;
-
 			string jsonContent;
 
-			ifstream ifs(globalPath + L"update.json", ios::binary);
-			jsonContent = string((istreambuf_iterator<char>(ifs)), istreambuf_iterator<char>());
-			ifs.close();
-			if (jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
-
-			istringstream jsonContentStream(jsonContent);
-			Json::CharReaderBuilder readerBuilder;
-			Json::Value updateVal;
-			string jsonErr;
-
-			if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+			HANDLE fileHandle = NULL;
+			if (OccupyFile(&fileHandle, globalPath + L"update.json"))
 			{
-				if (updateVal.isMember("edition")) tedition = utf8ToUtf16(updateVal["edition"].asString());
-				else flag = false;
+				LARGE_INTEGER fileSize;
+				if (flag && !GetFileSizeEx(fileHandle, &fileSize)) flag = false;
 
-				if (updateVal.isMember("representation")) representation = utf8ToUtf16(updateVal["representation"].asString());
-				else flag = false;
-
-				if (updateVal.isMember("hash"))
+				if (flag)
 				{
-					if (updateVal["hash"].isMember("md5")) thash_md5 = updateVal["hash"]["md5"].asString();
+					DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
+					jsonContent = string(dwSize, '\0');
+
+					DWORD bytesRead = 0;
+					if (flag && SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) flag = false;
+					if (flag && !ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize) flag = false;
+					if (flag && jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
+				}
+			}
+			else flag = false;
+			UnOccupyFile(&fileHandle);
+
+			Json::Value updateVal;
+			if (flag)
+			{
+				istringstream jsonContentStream(jsonContent);
+				Json::CharReaderBuilder readerBuilder;
+				string jsonErr;
+
+				if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+				{
+					if (updateVal.isMember("edition") && updateVal["edition"].isString()) tedition = utf8ToUtf16(updateVal["edition"].asString());
 					else flag = false;
-					if (updateVal["hash"].isMember("sha256")) thash_sha256 = updateVal["hash"]["sha256"].asString();
+
+					if (updateVal.isMember("representation") && updateVal["representation"].isString()) representation = utf8ToUtf16(updateVal["representation"].asString());
 					else flag = false;
+
+					if (updateVal.isMember("hash") && updateVal["hash"].isObject())
+					{
+						if (updateVal["hash"].isMember("md5") && updateVal["hash"]["md5"].isString()) thash_md5 = updateVal["hash"]["md5"].asString();
+						else flag = false;
+						if (updateVal["hash"].isMember("sha256") && updateVal["hash"]["sha256"].isString()) thash_sha256 = updateVal["hash"]["sha256"].asString();
+						else flag = false;
+					}
+					else flag = false;
+
+					if (updateVal.isMember("old_name") && updateVal["old_name"].isString()) old_name = utf8ToUtf16(updateVal["old_name"].asString());
 				}
 				else flag = false;
-
-				if (updateVal.isMember("old_name")) old_name = utf8ToUtf16(updateVal["old_name"].asString());
 			}
-			ifs.close();
 
 			string hash_md5, hash_sha256;
 			if (flag)
@@ -293,7 +310,7 @@ int main()
 					if (!old_name.empty()) if (!isProcessRunning((main_path + old_name).c_str())) break;
 					else if (!isProcessRunning((main_path + L"智绘教.exe").c_str())) break;
 
-					this_thread::sleep_for(chrono::milliseconds(10));
+					this_thread::sleep_for(chrono::milliseconds(100));
 				}
 
 				error_code ec;
@@ -307,7 +324,9 @@ int main()
 
 				return 0;
 			}
-			else
+			else flag = false;
+
+			if (!flag)
 			{
 				error_code ec;
 				filesystem::remove(globalPath + L"update.json", ec);
@@ -327,37 +346,54 @@ int main()
 			string thash_md5, thash_sha256;
 
 			bool flag = true;
-
 			string jsonContent;
 
-			ifstream ifs(globalPath + L"installer\\update.json", ios::binary);
-			jsonContent = string((istreambuf_iterator<char>(ifs)), istreambuf_iterator<char>());
-			ifs.close();
-			if (jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
-
-			istringstream jsonContentStream(jsonContent);
-			Json::CharReaderBuilder readerBuilder;
-			Json::Value updateVal;
-			string jsonErr;
-
-			if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+			HANDLE fileHandle = NULL;
+			if (OccupyFile(&fileHandle, globalPath + L"installer\\update.json"))
 			{
-				if (updateVal.isMember("edition")) tedition = utf8ToUtf16(updateVal["edition"].asString());
-				else flag = false;
+				LARGE_INTEGER fileSize;
+				if (flag && !GetFileSizeEx(fileHandle, &fileSize)) flag = false;
 
-				if (updateVal.isMember("path")) path = utf8ToUtf16(updateVal["path"].asString());
-				else flag = false;
-
-				if (updateVal.isMember("hash"))
+				if (flag)
 				{
-					if (updateVal["hash"].isMember("md5")) thash_md5 = updateVal["hash"]["md5"].asString();
+					DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
+					jsonContent = string(dwSize, '\0');
+
+					DWORD bytesRead = 0;
+					if (flag && SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) flag = false;
+					if (flag && !ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize) flag = false;
+					if (flag && jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
+				}
+			}
+			else flag = false;
+			UnOccupyFile(&fileHandle);
+
+			Json::Value updateVal;
+			if (flag)
+			{
+				istringstream jsonContentStream(jsonContent);
+				Json::CharReaderBuilder readerBuilder;
+				string jsonErr;
+
+				if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+				{
+					if (updateVal.isMember("edition") && updateVal["edition"].isString()) tedition = utf8ToUtf16(updateVal["edition"].asString());
 					else flag = false;
-					if (updateVal["hash"].isMember("sha256")) thash_sha256 = updateVal["hash"]["sha256"].asString();
+
+					if (updateVal.isMember("path") && updateVal["path"].isString()) path = utf8ToUtf16(updateVal["path"].asString());
+					else flag = false;
+
+					if (updateVal.isMember("hash") && updateVal["hash"].isObject())
+					{
+						if (updateVal["hash"].isMember("md5") && updateVal["hash"]["md5"].isString()) thash_md5 = updateVal["hash"]["md5"].asString();
+						else flag = false;
+						if (updateVal["hash"].isMember("sha256") && updateVal["hash"]["sha256"].isString()) thash_sha256 = updateVal["hash"]["sha256"].asString();
+						else flag = false;
+					}
 					else flag = false;
 				}
 				else flag = false;
 			}
-			ifs.close();
 
 			string hash_md5, hash_sha256;
 			if (flag)
@@ -377,22 +413,32 @@ int main()
 			if (flag && tedition > editionDate && _waccess((globalPath + path).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
 			{
 				//符合条件，开始替换版本
+
+				updateVal["old_name"] = Json::Value(utf16ToUtf8(GetCurrentExeName()));
+
+				if (!OccupyFile(&fileHandle, globalPath + L"installer\\update.json")) flag = false;
+				if (flag && SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) flag = false;
+				if (flag && !SetEndOfFile(fileHandle)) flag = false;
+
+				if (flag)
 				{
-					updateVal["old_name"] = Json::Value(utf16ToUtf8(GetCurrentExeName()));
+					Json::StreamWriterBuilder writerBuilder;
+					string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
 
-					Json::StreamWriterBuilder outjson;
-					outjson.settings_["emitUTF8"] = true;
-					unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
-					ofstream writejson(globalPath + L"installer\\update.json", ios::binary);
-					writejson << "\xEF\xBB\xBF";
-					writer->write(updateVal, &writejson);
-					writejson.close();
+					DWORD bytesWritten = 0;
+					if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size()) flag = false;
 				}
-				ShellExecuteW(NULL, NULL, (globalPath + path).c_str(), NULL, NULL, SW_SHOWNORMAL);
+				UnOccupyFile(&fileHandle);
 
-				return 0;
+				if (flag)
+				{
+					ShellExecuteW(NULL, NULL, (globalPath + path).c_str(), NULL, NULL, SW_SHOWNORMAL);
+					return 0;
+				}
 			}
-			else
+			else flag = false;
+
+			if (!flag)
 			{
 				error_code ec;
 				filesystem::remove_all(globalPath + L"installer", ec);
