@@ -10,16 +10,8 @@ extern WNDCLASSEXW ImGuiWc;
 extern PDIRECT3DTEXTURE9 TextureSettingSign[10];
 extern int SettingMainMode;
 
-extern int SettingWindowX;
-extern int SettingWindowY;
-extern int SettingWindowWidth;
-extern int SettingWindowHeight;
-
 void SettingSeekBar();
 int SettingMain();
-
-bool ReadSetting(bool first);
-bool WriteSetting();
 
 // Data
 extern LPDIRECT3D9 g_pD3D;

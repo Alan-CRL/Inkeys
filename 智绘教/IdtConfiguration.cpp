@@ -2,12 +2,39 @@
 
 #include "IdtText.h"
 
-SetListStruct setlist;
-
-// 占用文件（读写权限）
-bool OccupyFile(HANDLE* hFile, const wstring& filePath)
+// 占用文件
+bool OccupyFileForRead(HANDLE* hFile, const wstring& filePath)
 {
-	if (_waccess(filePath.c_str(), 0) == -1) return false;
+	if (!filesystem::exists(filePath)) return false;
+
+	for (int time = 1; time <= 5; time++)
+	{
+		*hFile = CreateFileW(
+			filePath.c_str(),
+			GENERIC_READ,
+			0,              // 不共享，独占访问
+			NULL,
+			OPEN_EXISTING,
+			FILE_ATTRIBUTE_NORMAL,
+			NULL
+		);
+
+		if (*hFile != INVALID_HANDLE_VALUE) break;
+		else if (time >= 3) return false;
+
+		this_thread::sleep_for(chrono::milliseconds(100));
+	}
+
+	if (*hFile != INVALID_HANDLE_VALUE) return true;
+	return false;
+}
+bool OccupyFileForWrite(HANDLE* hFile, const wstring& filePath)
+{
+	filesystem::path directoryPath = filesystem::path(filePath).parent_path();
+	if (!filesystem::exists(directoryPath)) {
+		error_code ec;
+		filesystem::create_directories(directoryPath, ec);
+	}
 
 	for (int time = 1; time <= 5; time++)
 	{
@@ -16,7 +43,7 @@ bool OccupyFile(HANDLE* hFile, const wstring& filePath)
 			GENERIC_READ | GENERIC_WRITE,
 			0,              // 不共享，独占访问
 			NULL,
-			OPEN_EXISTING,
+			OPEN_ALWAYS,
 			FILE_ATTRIBUTE_NORMAL,
 			NULL
 		);
@@ -41,178 +68,435 @@ bool UnOccupyFile(HANDLE* hFile)
 	return false;
 }
 
+SetListStruct setlist;
+bool ReadSetting(bool first)
+{
+	HANDLE fileHandle = NULL;
+	if (!OccupyFileForRead(&fileHandle, globalPath + L"opt\\deploy.json"))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	LARGE_INTEGER fileSize;
+	if (!GetFileSizeEx(fileHandle, &fileSize))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
+	string jsonContent = string(dwSize, '\0');
+
+	DWORD bytesRead = 0;
+	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+	if (!ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	if (jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
+	UnOccupyFile(&fileHandle);
+
+	istringstream jsonContentStream(jsonContent);
+	Json::CharReaderBuilder readerBuilder;
+	Json::Value updateVal;
+	string jsonErr;
+
+	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+	{
+		if (updateVal.isMember("CreateLnk") && updateVal["CreateLnk"].isBool())
+			setlist.CreateLnk = updateVal["CreateLnk"].asBool();
+		if (updateVal.isMember("RightClickClose") && updateVal["RightClickClose"].isBool())
+			setlist.RightClickClose = updateVal["RightClickClose"].asBool();
+		if (updateVal.isMember("BrushRecover") && updateVal["BrushRecover"].isBool())
+			setlist.BrushRecover = updateVal["BrushRecover"].asBool();
+		if (updateVal.isMember("RubberRecover") && updateVal["RubberRecover"].isBool())
+			setlist.RubberRecover = updateVal["RubberRecover"].asBool();
+		if (updateVal.isMember("CompatibleTaskBarAutoHide") && updateVal["CompatibleTaskBarAutoHide"].isBool())
+			setlist.compatibleTaskBarAutoHide = updateVal["CompatibleTaskBarAutoHide"].asBool();
+		if (updateVal.isMember("RubberMode") && updateVal["RubberMode"].isBool())
+			setlist.RubberMode = updateVal["RubberMode"].asBool();
+		if (updateVal.isMember("IntelligentDrawing") && updateVal["IntelligentDrawing"].isBool())
+			setlist.IntelligentDrawing = updateVal["IntelligentDrawing"].asBool();
+		if (updateVal.isMember("SmoothWriting") && updateVal["SmoothWriting"].isBool())
+			setlist.SmoothWriting = updateVal["SmoothWriting"].asBool();
+		if (updateVal.isMember("SetSkinMode") && updateVal["SetSkinMode"].isInt())
+			setlist.SetSkinMode = updateVal["SetSkinMode"].asInt();
+
+		if (updateVal.isMember("BasicInfo") && updateVal["BasicInfo"].isObject())
+		{
+			if (updateVal["BasicInfo"].isMember("UpdateChannel") && updateVal["BasicInfo"]["UpdateChannel"].isBool())
+				setlist.UpdateChannel = updateVal["BasicInfo"]["UpdateChannel"].asString();
+		}
+
+		if (updateVal.isMember("PlugIn") && updateVal["PlugIn"].isObject())
+		{
+			if (updateVal["PlugIn"].isMember("DdbEnable") && updateVal["PlugIn"]["DdbEnable"].isInt())
+				ddbSetList.DdbEnable = updateVal["PlugIn"]["DdbEnable"].asBool();
+			if (updateVal["PlugIn"].isMember("DdbEnhance") && updateVal["PlugIn"]["DdbEnhance"].isInt())
+				ddbSetList.DdbEnhance = updateVal["PlugIn"]["DdbEnhance"].asBool();
+		}
+
+		//预处理
+		if (first)
+		{
+			if (setlist.SetSkinMode == 0) setlist.SkinMode = 1;
+			else setlist.SkinMode = setlist.SetSkinMode;
+		}
+	}
+	return false;
+
+	return true;
+}
+bool WriteSetting()
+{
+	if (_waccess((globalPath + L"opt").c_str(), 0) == -1)
+	{
+		error_code ec;
+		filesystem::create_directory(globalPath + L"opt", ec);
+	}
+
+	Json::Value updateVal;
+	{
+		updateVal["CreateLnk"] = Json::Value(setlist.CreateLnk);
+		updateVal["RightClickClose"] = Json::Value(setlist.RightClickClose);
+		updateVal["BrushRecover"] = Json::Value(setlist.BrushRecover);
+		updateVal["RubberRecover"] = Json::Value(setlist.RubberRecover);
+		updateVal["CompatibleTaskBarAutoHide"] = Json::Value(setlist.compatibleTaskBarAutoHide);
+		updateVal["RubberMode"] = Json::Value(setlist.RubberMode);
+		updateVal["IntelligentDrawing"] = Json::Value(setlist.IntelligentDrawing);
+		updateVal["SmoothWriting"] = Json::Value(setlist.SmoothWriting);
+		updateVal["SetSkinMode"] = Json::Value(setlist.SetSkinMode);
+
+		updateVal["BasicInfo"]["UpdateChannel"] = Json::Value(setlist.UpdateChannel);
+		updateVal["BasicInfo"]["edition"] = Json::Value(utf16ToUtf8(editionDate));
+
+		updateVal["PlugIn"]["DdbEnable"] = Json::Value(ddbSetList.DdbEnable);
+		updateVal["PlugIn"]["DdbEnhance"] = Json::Value(ddbSetList.DdbEnhance);
+	}
+
+	HANDLE fileHandle = NULL;
+	if (!OccupyFileForWrite(&fileHandle, globalPath + L"opt\\deploy.json"))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+	if (!SetEndOfFile(fileHandle))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	Json::StreamWriterBuilder writerBuilder;
+	string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
+
+	DWORD bytesWritten = 0;
+	if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size())
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	UnOccupyFile(&fileHandle);
+	return true;
+}
+
 PptComSetListStruct pptComSetlist;
 bool PptComReadSetting()
 {
-	Json::Reader reader;
-	Json::Value root;
-
-	ifstream readjson;
-	readjson.imbue(locale("zh_CN.UTF8"));
-	readjson.open((globalPath + L"opt\\pptcom_configuration.json").c_str());
-
-	if (reader.parse(readjson, root))
+	HANDLE fileHandle = NULL;
+	if (!OccupyFileForRead(&fileHandle, globalPath + L"opt\\pptcom_configuration.json"))
 	{
-		if (root.isMember("FixedHandWriting") && root["FixedHandWriting"].isBool()) pptComSetlist.fixedHandWriting = root["FixedHandWriting"].asBool();
-		if (root.isMember("MemoryWidgetPosition") && root["MemoryWidgetPosition"].isBool()) pptComSetlist.memoryWidgetPosition = root["MemoryWidgetPosition"].asBool();
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
 
-		if (root.isMember("ShowBottomBoth") && root["ShowBottomBoth"].isBool()) pptComSetlist.showBottomBoth = root["ShowBottomBoth"].asBool();
-		if (root.isMember("ShowMiddleBoth") && root["ShowMiddleBoth"].isBool()) pptComSetlist.showMiddleBoth = root["ShowMiddleBoth"].asBool();
-		if (root.isMember("ShowBottomMiddle") && root["ShowBottomMiddle"].isBool()) pptComSetlist.showBottomMiddle = root["ShowBottomMiddle"].asBool();
+	LARGE_INTEGER fileSize;
+	if (!GetFileSizeEx(fileHandle, &fileSize))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
+	string jsonContent = string(dwSize, '\0');
+
+	DWORD bytesRead = 0;
+	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+	if (!ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	if (jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
+	UnOccupyFile(&fileHandle);
+
+	istringstream jsonContentStream(jsonContent);
+	Json::CharReaderBuilder readerBuilder;
+	Json::Value updateVal;
+	string jsonErr;
+
+	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+	{
+		if (updateVal.isMember("FixedHandWriting") && updateVal["FixedHandWriting"].isBool())
+			pptComSetlist.fixedHandWriting = updateVal["FixedHandWriting"].asBool();
+		if (updateVal.isMember("MemoryWidgetPosition") && updateVal["MemoryWidgetPosition"].isBool())
+			pptComSetlist.memoryWidgetPosition = updateVal["MemoryWidgetPosition"].asBool();
+
+		if (updateVal.isMember("ShowBottomBoth") && updateVal["ShowBottomBoth"].isBool())
+			pptComSetlist.showBottomBoth = updateVal["ShowBottomBoth"].asBool();
+		if (updateVal.isMember("ShowMiddleBoth") && updateVal["ShowMiddleBoth"].isBool())
+			pptComSetlist.showMiddleBoth = updateVal["ShowMiddleBoth"].asBool();
+		if (updateVal.isMember("ShowBottomMiddle") && updateVal["ShowBottomMiddle"].isBool())
+			pptComSetlist.showBottomMiddle = updateVal["ShowBottomMiddle"].asBool();
 
 		if (pptComSetlist.memoryWidgetPosition)
 		{
-			if (root.isMember("BottomBothWidth") && root["BottomBothWidth"].isDouble()) pptComSetlist.bottomBothWidth = (float)root["BottomBothWidth"].asDouble();
-			if (root.isMember("BottomBothHeight") && root["BottomBothHeight"].isDouble()) pptComSetlist.bottomBothHeight = (float)root["BottomBothHeight"].asDouble();
-			if (root.isMember("MiddleBothWidth") && root["MiddleBothWidth"].isDouble()) pptComSetlist.middleBothWidth = (float)root["MiddleBothWidth"].asDouble();
-			if (root.isMember("MiddleBothHeight") && root["MiddleBothHeight"].isDouble()) pptComSetlist.middleBothHeight = (float)root["MiddleBothHeight"].asDouble();
-			if (root.isMember("BottomMiddleWidth") && root["BottomMiddleWidth"].isDouble()) pptComSetlist.bottomMiddleWidth = (float)root["BottomMiddleWidth"].asDouble();
-			if (root.isMember("BottomMiddleHeight") && root["BottomMiddleHeight"].isDouble()) pptComSetlist.bottomMiddleHeight = (float)root["BottomMiddleHeight"].asDouble();
+			if (updateVal.isMember("BottomBothWidth") && updateVal["BottomBothWidth"].isDouble())
+				pptComSetlist.bottomBothWidth = (float)updateVal["BottomBothWidth"].asDouble();
+			if (updateVal.isMember("BottomBothHeight") && updateVal["BottomBothHeight"].isDouble())
+				pptComSetlist.bottomBothHeight = (float)updateVal["BottomBothHeight"].asDouble();
+			if (updateVal.isMember("MiddleBothWidth") && updateVal["MiddleBothWidth"].isDouble())
+				pptComSetlist.middleBothWidth = (float)updateVal["MiddleBothWidth"].asDouble();
+			if (updateVal.isMember("MiddleBothHeight") && updateVal["MiddleBothHeight"].isDouble())
+				pptComSetlist.middleBothHeight = (float)updateVal["MiddleBothHeight"].asDouble();
+			if (updateVal.isMember("BottomMiddleWidth") && updateVal["BottomMiddleWidth"].isDouble())
+				pptComSetlist.bottomMiddleWidth = (float)updateVal["BottomMiddleWidth"].asDouble();
+			if (updateVal.isMember("BottomMiddleHeight") && updateVal["BottomMiddleHeight"].isDouble())
+				pptComSetlist.bottomMiddleHeight = (float)updateVal["BottomMiddleHeight"].asDouble();
 		}
 
-		if (root.isMember("BottomSideBothWidgetScale") && root["BottomSideBothWidgetScale"].isDouble()) pptComSetlist.bottomSideBothWidgetScale = (float)root["BottomSideBothWidgetScale"].asDouble();
-		if (root.isMember("BottomSideMiddleWidgetScale") && root["BottomSideMiddleWidgetScale"].isDouble()) pptComSetlist.bottomSideMiddleWidgetScale = (float)root["BottomSideMiddleWidgetScale"].asDouble();
-		if (root.isMember("MiddleSideBothWidgetScale") && root["MiddleSideBothWidgetScale"].isDouble()) pptComSetlist.middleSideBothWidgetScale = (float)root["MiddleSideBothWidgetScale"].asDouble();
+		if (updateVal.isMember("BottomSideBothWidgetScale") && updateVal["BottomSideBothWidgetScale"].isDouble())
+			pptComSetlist.bottomSideBothWidgetScale = (float)updateVal["BottomSideBothWidgetScale"].asDouble();
+		if (updateVal.isMember("BottomSideMiddleWidgetScale") && updateVal["BottomSideMiddleWidgetScale"].isDouble())
+			pptComSetlist.bottomSideMiddleWidgetScale = (float)updateVal["BottomSideMiddleWidgetScale"].asDouble();
+		if (updateVal.isMember("MiddleSideBothWidgetScale") && updateVal["MiddleSideBothWidgetScale"].isDouble())
+			pptComSetlist.middleSideBothWidgetScale = (float)updateVal["MiddleSideBothWidgetScale"].asDouble();
 	}
-
-	readjson.close();
+	else return false;
 
 	return true;
 }
 bool PptComWriteSetting()
 {
 	if (_waccess((globalPath + L"opt").c_str(), 0) == -1)
-		filesystem::create_directory(globalPath + L"opt");
+	{
+		error_code ec;
+		filesystem::create_directory(globalPath + L"opt", ec);
+	}
 
-	Json::Value root;
+	Json::Value updateVal;
+	{
+		updateVal["FixedHandWriting"] = Json::Value(pptComSetlist.fixedHandWriting);
+		updateVal["MemoryWidgetPosition"] = Json::Value(pptComSetlist.memoryWidgetPosition);
 
-	root["FixedHandWriting"] = Json::Value(pptComSetlist.fixedHandWriting);
-	root["MemoryWidgetPosition"] = Json::Value(pptComSetlist.memoryWidgetPosition);
+		updateVal["ShowBottomBoth"] = Json::Value(pptComSetlist.showBottomBoth);
+		updateVal["ShowMiddleBoth"] = Json::Value(pptComSetlist.showMiddleBoth);
+		updateVal["ShowBottomMiddle"] = Json::Value(pptComSetlist.showBottomMiddle);
 
-	root["ShowBottomBoth"] = Json::Value(pptComSetlist.showBottomBoth);
-	root["ShowMiddleBoth"] = Json::Value(pptComSetlist.showMiddleBoth);
-	root["ShowBottomMiddle"] = Json::Value(pptComSetlist.showBottomMiddle);
+		updateVal["BottomBothWidth"] = Json::Value(pptComSetlist.bottomBothWidth);
+		updateVal["BottomBothHeight"] = Json::Value(pptComSetlist.bottomBothHeight);
+		updateVal["MiddleBothWidth"] = Json::Value(pptComSetlist.middleBothWidth);
+		updateVal["MiddleBothHeight"] = Json::Value(pptComSetlist.middleBothHeight);
+		updateVal["BottomMiddleWidth"] = Json::Value(pptComSetlist.bottomMiddleWidth);
+		updateVal["BottomMiddleHeight"] = Json::Value(pptComSetlist.bottomMiddleHeight);
 
-	root["BottomBothWidth"] = Json::Value(pptComSetlist.bottomBothWidth);
-	root["BottomBothHeight"] = Json::Value(pptComSetlist.bottomBothHeight);
-	root["MiddleBothWidth"] = Json::Value(pptComSetlist.middleBothWidth);
-	root["MiddleBothHeight"] = Json::Value(pptComSetlist.middleBothHeight);
-	root["BottomMiddleWidth"] = Json::Value(pptComSetlist.bottomMiddleWidth);
-	root["BottomMiddleHeight"] = Json::Value(pptComSetlist.bottomMiddleHeight);
+		updateVal["BottomSideBothWidgetScale"] = Json::Value(pptComSetlist.bottomSideBothWidgetScale);
+		updateVal["BottomSideMiddleWidgetScale"] = Json::Value(pptComSetlist.bottomSideMiddleWidgetScale);
+		updateVal["MiddleSideBothWidgetScale"] = Json::Value(pptComSetlist.middleSideBothWidgetScale);
+	}
 
-	root["BottomSideBothWidgetScale"] = Json::Value(pptComSetlist.bottomSideBothWidgetScale);
-	root["BottomSideMiddleWidgetScale"] = Json::Value(pptComSetlist.bottomSideMiddleWidgetScale);
-	root["MiddleSideBothWidgetScale"] = Json::Value(pptComSetlist.middleSideBothWidgetScale);
+	HANDLE fileHandle = NULL;
+	if (!OccupyFileForWrite(&fileHandle, globalPath + L"opt\\pptcom_configuration.json"))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+	if (!SetEndOfFile(fileHandle))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
 
-	Json::StreamWriterBuilder outjson;
-	outjson.settings_["emitUTF8"] = true;
-	std::unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
-	ofstream writejson;
-	writejson.imbue(locale("zh_CN.UTF8"));
-	writejson.open((globalPath + L"opt\\pptcom_configuration.json").c_str());
-	writer->write(root, &writejson);
-	writejson.close();
+	Json::StreamWriterBuilder writerBuilder;
+	string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
 
+	DWORD bytesWritten = 0;
+	if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size())
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	UnOccupyFile(&fileHandle);
 	return true;
 }
 
 DdbSetListStruct ddbSetList;
 bool DdbReadSetting()
 {
-	if (_waccess((globalPath + L"PlugIn\\DDB\\interaction_configuration.json").c_str(), 4) == -1) return false;
-
-	Json::Reader reader;
-	Json::Value root;
-
-	ifstream readjson;
-	readjson.imbue(locale("zh_CN.UTF8"));
-	readjson.open(globalPath + L"PlugIn\\DDB\\interaction_configuration.json");
-
-	if (reader.parse(readjson, root))
+	HANDLE fileHandle = NULL;
+	if (!OccupyFileForRead(&fileHandle, globalPath + L"PlugIn\\DDB\\interaction_configuration.json"))
 	{
-		if (root.isMember("SleepTime") && root["SleepTime"].isInt())
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	LARGE_INTEGER fileSize;
+	if (!GetFileSizeEx(fileHandle, &fileSize))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
+	string jsonContent = string(dwSize, '\0');
+
+	DWORD bytesRead = 0;
+	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+	if (!ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	if (jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
+	UnOccupyFile(&fileHandle);
+
+	istringstream jsonContentStream(jsonContent);
+	Json::CharReaderBuilder readerBuilder;
+	Json::Value updateVal;
+	string jsonErr;
+
+	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+	{
+		if (updateVal.isMember("SleepTime") && updateVal["SleepTime"].isInt())
 		{
-			ddbSetList.sleepTime = root["SleepTime"].asInt();
+			ddbSetList.sleepTime = updateVal["SleepTime"].asInt();
 		}
 
-		if (root.isMember("Mode") && root["Mode"].isObject())
+		if (updateVal.isMember("Mode") && updateVal["Mode"].isObject())
 		{
-			if (root["Mode"].isMember("Mode") && root["Mode"]["Mode"].isInt())
+			if (updateVal["Mode"].isMember("Mode") && updateVal["Mode"]["Mode"].isInt())
 			{
-				ddbSetList.mode = root["Mode"]["Mode"].asInt();
+				ddbSetList.mode = updateVal["Mode"]["Mode"].asInt();
 			}
-			if (root["Mode"].isMember("RestartHost") && root["Mode"]["RestartHost"].isBool())
+			if (updateVal["Mode"].isMember("RestartHost") && updateVal["Mode"]["RestartHost"].isBool())
 			{
-				ddbSetList.restartHost = root["Mode"]["RestartHost"].asBool();
+				ddbSetList.restartHost = updateVal["Mode"]["RestartHost"].asBool();
 			}
 		}
 
-		if (root.isMember("Intercept") && root["Intercept"].isObject())
+		if (updateVal.isMember("Intercept") && updateVal["Intercept"].isObject())
 		{
-			if (root["Intercept"].isMember("SeewoWhiteboard3Floating") && root["Intercept"]["SeewoWhiteboard3Floating"].isBool())
+			if (updateVal["Intercept"].isMember("SeewoWhiteboard3Floating") && updateVal["Intercept"]["SeewoWhiteboard3Floating"].isBool())
 			{
-				ddbSetList.InterceptWindow[0] = root["Intercept"]["SeewoWhiteboard3Floating"].asBool();
+				ddbSetList.InterceptWindow[0] = updateVal["Intercept"]["SeewoWhiteboard3Floating"].asBool();
 			}
-			if (root["Intercept"].isMember("SeewoWhiteboard5Floating") && root["Intercept"]["SeewoWhiteboard5Floating"].isBool())
+			if (updateVal["Intercept"].isMember("SeewoWhiteboard5Floating") && updateVal["Intercept"]["SeewoWhiteboard5Floating"].isBool())
 			{
-				ddbSetList.InterceptWindow[1] = root["Intercept"]["SeewoWhiteboard5Floating"].asBool();
+				ddbSetList.InterceptWindow[1] = updateVal["Intercept"]["SeewoWhiteboard5Floating"].asBool();
 			}
-			if (root["Intercept"].isMember("SeewoWhiteboard5CFloating") && root["Intercept"]["SeewoWhiteboard5CFloating"].isBool())
+			if (updateVal["Intercept"].isMember("SeewoWhiteboard5CFloating") && updateVal["Intercept"]["SeewoWhiteboard5CFloating"].isBool())
 			{
-				ddbSetList.InterceptWindow[2] = root["Intercept"]["SeewoWhiteboard5CFloating"].asBool();
+				ddbSetList.InterceptWindow[2] = updateVal["Intercept"]["SeewoWhiteboard5CFloating"].asBool();
 			}
-			if (root["Intercept"].isMember("SeewoPincoFloating") && root["Intercept"]["SeewoPincoFloating"].isBool())
+			if (updateVal["Intercept"].isMember("SeewoPincoFloating") && updateVal["Intercept"]["SeewoPincoFloating"].isBool())
 			{
-				ddbSetList.InterceptWindow[3] = ddbSetList.InterceptWindow[4] = root["Intercept"]["SeewoPincoFloating"].asBool();
+				ddbSetList.InterceptWindow[3] = ddbSetList.InterceptWindow[4] = updateVal["Intercept"]["SeewoPincoFloating"].asBool();
 			}
-			if (root["Intercept"].isMember("SeewoPPTFloating") && root["Intercept"]["SeewoPPTFloating"].isBool())
+			if (updateVal["Intercept"].isMember("SeewoPPTFloating") && updateVal["Intercept"]["SeewoPPTFloating"].isBool())
 			{
-				ddbSetList.InterceptWindow[5] = root["Intercept"]["SeewoPPTFloating"].asBool();
+				ddbSetList.InterceptWindow[5] = updateVal["Intercept"]["SeewoPPTFloating"].asBool();
 			}
-			if (root["Intercept"].isMember("AiClassFloating") && root["Intercept"]["AiClassFloating"].isBool())
+			if (updateVal["Intercept"].isMember("AiClassFloating") && updateVal["Intercept"]["AiClassFloating"].isBool())
 			{
-				ddbSetList.InterceptWindow[6] = root["Intercept"]["AiClassFloating"].asBool();
+				ddbSetList.InterceptWindow[6] = updateVal["Intercept"]["AiClassFloating"].asBool();
 			}
-			if (root["Intercept"].isMember("HiteAnnotationFloating") && root["Intercept"]["HiteAnnotationFloating"].isBool())
+			if (updateVal["Intercept"].isMember("HiteAnnotationFloating") && updateVal["Intercept"]["HiteAnnotationFloating"].isBool())
 			{
-				ddbSetList.InterceptWindow[7] = root["Intercept"]["HiteAnnotationFloating"].asBool();
+				ddbSetList.InterceptWindow[7] = updateVal["Intercept"]["HiteAnnotationFloating"].asBool();
 			}
 		}
 	}
-
-	readjson.close();
+	else return false;
 
 	return true;
 }
 bool DdbWriteSetting(bool change, bool close)
 {
-	Json::Value root;
+	Json::Value updateVal;
+	{
+		updateVal["SleepTime"] = Json::Value(ddbSetList.sleepTime);
 
-	root["SleepTime"] = Json::Value(ddbSetList.sleepTime);
+		updateVal["Mode"]["Mode"] = Json::Value(ddbSetList.mode);
+		updateVal["Mode"]["HostPath"] = Json::Value(utf16ToUtf8(ddbSetList.hostPath));
+		updateVal["Mode"]["RestartHost"] = Json::Value(ddbSetList.restartHost);
 
-	root["Mode"]["Mode"] = Json::Value(ddbSetList.mode);
-	root["Mode"]["HostPath"] = Json::Value(utf16ToUtf8(ddbSetList.hostPath));
-	root["Mode"]["RestartHost"] = Json::Value(ddbSetList.restartHost);
+		updateVal["Intercept"]["SeewoWhiteboard3Floating"] = Json::Value(ddbSetList.InterceptWindow[0]);
+		updateVal["Intercept"]["SeewoWhiteboard5Floating"] = Json::Value(ddbSetList.InterceptWindow[1]);
+		updateVal["Intercept"]["SeewoWhiteboard5CFloating"] = Json::Value(ddbSetList.InterceptWindow[2]);
+		updateVal["Intercept"]["SeewoPincoFloating"] = Json::Value(ddbSetList.InterceptWindow[3]);
+		updateVal["Intercept"]["SeewoPPTFloating"] = Json::Value(ddbSetList.InterceptWindow[5]);
+		updateVal["Intercept"]["AiClassFloating"] = Json::Value(ddbSetList.InterceptWindow[6]);
+		updateVal["Intercept"]["HiteAnnotationFloating"] = Json::Value(ddbSetList.InterceptWindow[7]);
 
-	root["Intercept"]["SeewoWhiteboard3Floating"] = Json::Value(ddbSetList.InterceptWindow[0]);
-	root["Intercept"]["SeewoWhiteboard5Floating"] = Json::Value(ddbSetList.InterceptWindow[1]);
-	root["Intercept"]["SeewoWhiteboard5CFloating"] = Json::Value(ddbSetList.InterceptWindow[2]);
-	root["Intercept"]["SeewoPincoFloating"] = Json::Value(ddbSetList.InterceptWindow[3]);
-	root["Intercept"]["SeewoPPTFloating"] = Json::Value(ddbSetList.InterceptWindow[5]);
-	root["Intercept"]["AiClassFloating"] = Json::Value(ddbSetList.InterceptWindow[6]);
-	root["Intercept"]["HiteAnnotationFloating"] = Json::Value(ddbSetList.InterceptWindow[7]);
+		updateVal["~ConfigurationChange"] = Json::Value(change);
+		updateVal["~KeepOpen"] = Json::Value(!close);
+	}
 
-	root["~ConfigurationChange"] = Json::Value(change);
-	root["~KeepOpen"] = Json::Value(!close);
+	HANDLE fileHandle = NULL;
+	if (!OccupyFileForWrite(&fileHandle, globalPath + L"PlugIn\\DDB\\interaction_configuration.json"))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+	if (!SetEndOfFile(fileHandle))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
 
-	Json::StreamWriterBuilder outjson;
-	outjson.settings_["emitUTF8"] = true;
-	std::unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
-	ofstream writejson;
-	writejson.imbue(locale("zh_CN.UTF8"));
-	writejson.open(globalPath + L"PlugIn\\DDB\\interaction_configuration.json");
-	writer->write(root, &writejson);
-	writejson.close();
+	Json::StreamWriterBuilder writerBuilder;
+	string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
 
+	DWORD bytesWritten = 0;
+	if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size())
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	UnOccupyFile(&fileHandle);
 	return true;
 }

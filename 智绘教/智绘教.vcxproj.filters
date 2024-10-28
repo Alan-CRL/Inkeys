@@ -696,6 +696,9 @@
     <ClInclude Include="additional\imgui\imstb_truetype.h">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
+    <ClInclude Include="IdtConfiguration.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HiEasyX\HiGUI\Button.cpp">
@@ -1119,11 +1122,9 @@
   </ItemGroup>
   <ItemGroup>
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />
-    <Font Include="src\ttf\Douyu_Font.otf" />
   </ItemGroup>
   <ItemGroup>
     <None Include="exe\智绘教CrashedHandler.exe" />
-    <None Include="exe\智绘教CrashedHandlerClose.exe" />
     <None Include="PptCOM.dll" />
     <None Include="exe\智绘教StartupItemSettings.exe" />
     <None Include="exe\DesktopDrawpadBlocker.exe" />

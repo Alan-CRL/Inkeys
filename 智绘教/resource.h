@@ -29,7 +29,6 @@
 #define IDB_PNG19                       225
 #define IDB_PNG20                       226
 #define IDB_PNG21                       227
-#define IDR_TTF2                        228
 #define IDR_EXE3                        229
 #define IDB_PNG22                       230
 #define IDB_PNG23                       231

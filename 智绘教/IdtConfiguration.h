@@ -1,6 +1,10 @@
 ﻿#pragma once
 #include "IdtMain.h"
 
+bool OccupyFileForRead(HANDLE* hFile, const wstring& filePath);
+bool OccupyFileForWrite(HANDLE* hFile, const wstring& filePath);
+bool UnOccupyFile(HANDLE* hFile);
+
 struct SetListStruct
 {
 	SetListStruct()
@@ -35,9 +39,8 @@ struct SetListStruct
 	bool compatibleTaskBarAutoHide;
 };
 extern SetListStruct setlist;
-
-bool OccupyFile(HANDLE* hFile, const wstring& filePath);
-bool UnOccupyFile(HANDLE* hFile);
+bool ReadSetting(bool first);
+bool WriteSetting();
 
 struct PptComSetListStruct
 {
@@ -96,8 +99,8 @@ struct DdbSetListStruct
 		DdbEnable = true;
 		DdbEnhance = false;
 
-		DdbEdition = L"20241022a";
-		DdbSHA256 = "cea0ae8bb34d57e84307d3b78a4f6e61b7d4ae8d8ecf80098d9d422b566a61b6";
+		DdbEdition = L"20241028a";
+		DdbSHA256 = "f71193cec78daee6ea70da0f37d240e63c7dbe28ff41897f48809fa0823c4798";
 
 		// -----
 

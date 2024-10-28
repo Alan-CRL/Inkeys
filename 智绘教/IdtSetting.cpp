@@ -1,6 +1,7 @@
 ﻿#include "IdtSetting.h"
 
 #include "IdtConfiguration.h"
+#include "IdtDisplayManagement.h"
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
 #include "IdtHash.h"
@@ -36,13 +37,10 @@ WNDCLASSEXW ImGuiWc;
 PDIRECT3DTEXTURE9 TextureSettingSign[10];
 int SettingMainMode = 1;
 
-int ScreenWidth = GetSystemMetrics(SM_CXSCREEN);//获取显示器的宽
-int ScreenHeight = GetSystemMetrics(SM_CYSCREEN);//获取显示器的高
-
-int SettingWindowX = (ScreenWidth - SettingWindowWidth) / 2;
-int SettingWindowY = (ScreenHeight - SettingWindowHeight) / 2;
-int SettingWindowWidth = 950;
-int SettingWindowHeight = 700;
+int SettingWindowX;
+int SettingWindowY;
+int SettingWindowWidth;
+int SettingWindowHeight;
 
 void SettingSeekBar()
 {
@@ -77,7 +75,20 @@ int SettingMain()
 	threadStatus[L"SettingMain"] = true;
 
 	// 初始化部分
+
+	float settingGlobalScale = 1.0f;
 	{
+		// 缩放计算
+		{
+			settingGlobalScale = max(settingGlobalScale, min((float)MainMonitor.MonitorWidth / 1920.0f, (float)MainMonitor.MonitorHeight / 1080.0f));
+			settingGlobalScale = max(settingGlobalScale, min((float)MainMonitor.MonitorWidth / 1080.0f, (float)MainMonitor.MonitorHeight / 1920.0f));
+
+			SettingWindowWidth = 950 * settingGlobalScale;
+			SettingWindowHeight = 700 * settingGlobalScale;
+			SettingWindowX = (MainMonitor.MonitorWidth - SettingWindowWidth) / 2;
+			SettingWindowY = (MainMonitor.MonitorHeight - SettingWindowHeight) / 2;
+		}
+
 		ImGuiWc = { sizeof(WNDCLASSEX), CS_CLASSDC, ImGuiWndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, get<wstring>(i18n[i18nEnum::SettingsW]).c_str(), nullptr };
 		RegisterClassExW(&ImGuiWc);
 		setting_window = CreateWindowW(ImGuiWc.lpszClassName, get<wstring>(i18n[i18nEnum::SettingsW]).c_str(), WS_OVERLAPPEDWINDOW, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, nullptr, nullptr, ImGuiWc.hInstance, nullptr);
@@ -90,180 +101,183 @@ int SettingMain()
 
 		CreateDeviceD3D(setting_window);
 
-		if (i18nIdentifying == L"zh-CN") loadimage(&SettingSign[1], L"PNG", L"Home2_zh-CN");
-		else loadimage(&SettingSign[1], L"PNG", L"Home2_en-US");
+		// 图像加载
 		{
-			int width = SettingSign[1].getwidth();
-			int height = SettingSign[1].getheight();
-			DWORD* pMem = GetImageBuffer(&SettingSign[1]);
-
-			unsigned char* data = new unsigned char[width * height * 4];
-			for (int y = 0; y < height; ++y)
+			if (i18nIdentifying == L"zh-CN") loadimage(&SettingSign[1], L"PNG", L"Home1_zh-CN", 770 * settingGlobalScale, 575 * settingGlobalScale, true);
+			else loadimage(&SettingSign[1], L"PNG", L"Home1_en-US", 770 * settingGlobalScale, 575 * settingGlobalScale, true);
 			{
-				for (int x = 0; x < width; ++x)
+				int width = SettingSign[1].getwidth();
+				int height = SettingSign[1].getheight();
+				DWORD* pMem = GetImageBuffer(&SettingSign[1]);
+
+				unsigned char* data = new unsigned char[width * height * 4];
+				for (int y = 0; y < height; ++y)
 				{
-					DWORD color = pMem[y * width + x];
-					unsigned char alpha = (color & 0xFF000000) >> 24;
-					if (alpha != 0)
+					for (int x = 0; x < width; ++x)
 					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						DWORD color = pMem[y * width + x];
+						unsigned char alpha = (color & 0xFF000000) >> 24;
+						if (alpha != 0)
+						{
+							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						}
+						else
+						{
+							data[(y * width + x) * 4 + 0] = 0;
+							data[(y * width + x) * 4 + 1] = 0;
+							data[(y * width + x) * 4 + 2] = 0;
+						}
+						data[(y * width + x) * 4 + 3] = alpha;
 					}
-					else
-					{
-						data[(y * width + x) * 4 + 0] = 0;
-						data[(y * width + x) * 4 + 1] = 0;
-						data[(y * width + x) * 4 + 2] = 0;
-					}
-					data[(y * width + x) * 4 + 3] = alpha;
 				}
+
+				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[1]);
+				delete[] data;
+
+				IM_ASSERT(ret);
 			}
 
-			bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[1]);
-			delete[] data;
-
-			IM_ASSERT(ret);
-		}
-
-		if (i18nIdentifying == L"zh-CN") loadimage(&SettingSign[2], L"PNG", L"Home1_zh-CN");
-		else loadimage(&SettingSign[2], L"PNG", L"Home1_en-US");
-		{
-			int width = SettingSign[2].getwidth();
-			int height = SettingSign[2].getheight();
-			DWORD* pMem = GetImageBuffer(&SettingSign[2]);
-
-			unsigned char* data = new unsigned char[width * height * 4];
-			for (int y = 0; y < height; ++y)
+			if (i18nIdentifying == L"zh-CN") loadimage(&SettingSign[2], L"PNG", L"Home2_zh-CN", 700 * settingGlobalScale, 192 * settingGlobalScale, true);
+			else loadimage(&SettingSign[2], L"PNG", L"Home2_en-US", 700 * settingGlobalScale, 192 * settingGlobalScale, true);
 			{
-				for (int x = 0; x < width; ++x)
+				int width = SettingSign[2].getwidth();
+				int height = SettingSign[2].getheight();
+				DWORD* pMem = GetImageBuffer(&SettingSign[2]);
+
+				unsigned char* data = new unsigned char[width * height * 4];
+				for (int y = 0; y < height; ++y)
 				{
-					DWORD color = pMem[y * width + x];
-					unsigned char alpha = (color & 0xFF000000) >> 24;
-					if (alpha != 0)
+					for (int x = 0; x < width; ++x)
 					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						DWORD color = pMem[y * width + x];
+						unsigned char alpha = (color & 0xFF000000) >> 24;
+						if (alpha != 0)
+						{
+							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						}
+						else
+						{
+							data[(y * width + x) * 4 + 0] = 0;
+							data[(y * width + x) * 4 + 1] = 0;
+							data[(y * width + x) * 4 + 2] = 0;
+						}
+						data[(y * width + x) * 4 + 3] = alpha;
 					}
-					else
-					{
-						data[(y * width + x) * 4 + 0] = 0;
-						data[(y * width + x) * 4 + 1] = 0;
-						data[(y * width + x) * 4 + 2] = 0;
-					}
-					data[(y * width + x) * 4 + 3] = alpha;
 				}
+
+				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[2]);
+				delete[] data;
+
+				IM_ASSERT(ret);
 			}
 
-			bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[2]);
-			delete[] data;
-
-			IM_ASSERT(ret);
-		}
-
-		loadimage(&SettingSign[3], L"PNG", L"Profile_Picture");
-		{
-			int width = SettingSign[3].getwidth();
-			int height = SettingSign[3].getheight();
-			DWORD* pMem = GetImageBuffer(&SettingSign[3]);
-
-			unsigned char* data = new unsigned char[width * height * 4];
-			for (int y = 0; y < height; ++y)
+			loadimage(&SettingSign[3], L"PNG", L"Profile_Picture", 45 * settingGlobalScale, 45 * settingGlobalScale, true);
 			{
-				for (int x = 0; x < width; ++x)
+				int width = SettingSign[3].getwidth();
+				int height = SettingSign[3].getheight();
+				DWORD* pMem = GetImageBuffer(&SettingSign[3]);
+
+				unsigned char* data = new unsigned char[width * height * 4];
+				for (int y = 0; y < height; ++y)
 				{
-					DWORD color = pMem[y * width + x];
-					unsigned char alpha = (color & 0xFF000000) >> 24;
-					if (alpha != 0)
+					for (int x = 0; x < width; ++x)
 					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						DWORD color = pMem[y * width + x];
+						unsigned char alpha = (color & 0xFF000000) >> 24;
+						if (alpha != 0)
+						{
+							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						}
+						else
+						{
+							data[(y * width + x) * 4 + 0] = 0;
+							data[(y * width + x) * 4 + 1] = 0;
+							data[(y * width + x) * 4 + 2] = 0;
+						}
+						data[(y * width + x) * 4 + 3] = alpha;
 					}
-					else
-					{
-						data[(y * width + x) * 4 + 0] = 0;
-						data[(y * width + x) * 4 + 1] = 0;
-						data[(y * width + x) * 4 + 2] = 0;
-					}
-					data[(y * width + x) * 4 + 3] = alpha;
 				}
+
+				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[3]);
+				delete[] data;
+
+				IM_ASSERT(ret);
 			}
 
-			bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[3]);
-			delete[] data;
-
-			IM_ASSERT(ret);
-		}
-
-		loadimage(&SettingSign[5], L"PNG", L"PluginFlag1", 100, 100, true);
-		{
-			int width = SettingSign[5].getwidth();
-			int height = SettingSign[5].getheight();
-			DWORD* pMem = GetImageBuffer(&SettingSign[5]);
-
-			unsigned char* data = new unsigned char[width * height * 4];
-			for (int y = 0; y < height; ++y)
+			loadimage(&SettingSign[5], L"PNG", L"PluginFlag1", 100 * settingGlobalScale, 100 * settingGlobalScale, true);
 			{
-				for (int x = 0; x < width; ++x)
+				int width = SettingSign[5].getwidth();
+				int height = SettingSign[5].getheight();
+				DWORD* pMem = GetImageBuffer(&SettingSign[5]);
+
+				unsigned char* data = new unsigned char[width * height * 4];
+				for (int y = 0; y < height; ++y)
 				{
-					DWORD color = pMem[y * width + x];
-					unsigned char alpha = (color & 0xFF000000) >> 24;
-					if (alpha != 0)
+					for (int x = 0; x < width; ++x)
 					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						DWORD color = pMem[y * width + x];
+						unsigned char alpha = (color & 0xFF000000) >> 24;
+						if (alpha != 0)
+						{
+							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						}
+						else
+						{
+							data[(y * width + x) * 4 + 0] = 0;
+							data[(y * width + x) * 4 + 1] = 0;
+							data[(y * width + x) * 4 + 2] = 0;
+						}
+						data[(y * width + x) * 4 + 3] = alpha;
 					}
-					else
-					{
-						data[(y * width + x) * 4 + 0] = 0;
-						data[(y * width + x) * 4 + 1] = 0;
-						data[(y * width + x) * 4 + 2] = 0;
-					}
-					data[(y * width + x) * 4 + 3] = alpha;
 				}
+
+				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[5]);
+				delete[] data;
+
+				IM_ASSERT(ret);
 			}
-
-			bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[5]);
-			delete[] data;
-
-			IM_ASSERT(ret);
-		}
-		loadimage(&SettingSign[6], L"PNG", L"PluginFlag2", 100, 100, true);
-		{
-			int width = SettingSign[6].getwidth();
-			int height = SettingSign[6].getheight();
-			DWORD* pMem = GetImageBuffer(&SettingSign[6]);
-
-			unsigned char* data = new unsigned char[width * height * 4];
-			for (int y = 0; y < height; ++y)
+			loadimage(&SettingSign[6], L"PNG", L"PluginFlag2", 100 * settingGlobalScale, 100 * settingGlobalScale, true);
 			{
-				for (int x = 0; x < width; ++x)
+				int width = SettingSign[6].getwidth();
+				int height = SettingSign[6].getheight();
+				DWORD* pMem = GetImageBuffer(&SettingSign[6]);
+
+				unsigned char* data = new unsigned char[width * height * 4];
+				for (int y = 0; y < height; ++y)
 				{
-					DWORD color = pMem[y * width + x];
-					unsigned char alpha = (color & 0xFF000000) >> 24;
-					if (alpha != 0)
+					for (int x = 0; x < width; ++x)
 					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						DWORD color = pMem[y * width + x];
+						unsigned char alpha = (color & 0xFF000000) >> 24;
+						if (alpha != 0)
+						{
+							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						}
+						else
+						{
+							data[(y * width + x) * 4 + 0] = 0;
+							data[(y * width + x) * 4 + 1] = 0;
+							data[(y * width + x) * 4 + 2] = 0;
+						}
+						data[(y * width + x) * 4 + 3] = alpha;
 					}
-					else
-					{
-						data[(y * width + x) * 4 + 0] = 0;
-						data[(y * width + x) * 4 + 1] = 0;
-						data[(y * width + x) * 4 + 2] = 0;
-					}
-					data[(y * width + x) * 4 + 3] = alpha;
 				}
+
+				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[6]);
+				delete[] data;
+
+				IM_ASSERT(ret);
 			}
-
-			bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[6]);
-			delete[] data;
-
-			IM_ASSERT(ret);
 		}
 	}
 
@@ -280,6 +294,7 @@ int SettingMain()
 		ImGui::CreateContext();
 		ImGuiIO& io = ImGui::GetIO(); (void)io;
 		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 		io.IniFilename = nullptr;
 
 		ImGui::StyleColorsLight();
@@ -308,13 +323,13 @@ int SettingMain()
 		void* pLock = LockResource(hMem);
 		DWORD dwSize = SizeofResource(NULL, hRes);
 
-		ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 28.0f, &font_cfg);
+		ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 28.0f * settingGlobalScale, &font_cfg);
 
 		ImWchar icons_ranges[] = { 0xE900, 0xE914, 0 };
 		font_cfg.MergeMode = true;
-		font_cfg.GlyphOffset.y = 4.0f;
+		font_cfg.GlyphOffset.y = 4.0f * settingGlobalScale;
 		font_cfg.PixelSnapH = true;
-		io.Fonts->AddFontFromFileTTF("icomoon.ttf", 32.0f, &font_cfg, icons_ranges);
+		io.Fonts->AddFontFromFileTTF("icomoon.ttf", 32.0f * settingGlobalScale, &font_cfg, icons_ranges);
 
 		io.Fonts->Build();
 
@@ -329,12 +344,12 @@ int SettingMain()
 
 			style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
 
-			style.FrameBorderSize = 1.0f;
-			style.ChildBorderSize = 1.0f;
+			style.FrameBorderSize = 1.0f * settingGlobalScale;
+			style.ChildBorderSize = 1.0f * settingGlobalScale;
 
-			style.ChildRounding = 8.0f;
-			style.FrameRounding = 8.0f;
-			style.GrabRounding = 8.0f;
+			style.ChildRounding = 8.0f * settingGlobalScale;
+			style.FrameRounding = 8.0f * settingGlobalScale;
+			style.GrabRounding = 8.0f * settingGlobalScale;
 		}
 
 		//初始化定义变量
@@ -342,9 +357,9 @@ int SettingMain()
 		POINT MoushPos = { 0,0 };
 
 		ImGuiToggleConfig config;
-		config.FrameRounding = 1.0f;
-		config.KnobRounding = 1.0f;
-		config.Size = { 35.0f,20.0f };
+		config.FrameRounding = 1.0f * settingGlobalScale;
+		config.KnobRounding = 1.0f * settingGlobalScale;
+		config.Size = { 35.0f * settingGlobalScale,20.0f * settingGlobalScale };
 		config.Flags = ImGuiToggleFlags_Animated;
 
 		int QuestNumbers = 0;
@@ -480,7 +495,7 @@ int SettingMain()
 				{
 					// 主页
 					{
-						ImGui::SetCursorPos({ 10.0f,40.0f });
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,40.0f * settingGlobalScale });
 
 						if (Tab == Tab::tab1)
 						{
@@ -502,12 +517,12 @@ int SettingMain()
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button((" \ue900  " + get<string>(i18n[i18nEnum::Settings_Home])).c_str(), { 150.0f,40.0f })) Tab = Tab::tab1;
+						if (ImGui::Button((" \ue900  " + get<string>(i18n[i18nEnum::Settings_Home])).c_str(), { 150.0f * settingGlobalScale,40.0f * settingGlobalScale })) Tab = Tab::tab1;
 					}
 
 					// 常规
 					{
-						ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 10.0f });
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 10.0f * settingGlobalScale });
 
 						if (Tab == Tab::tab2)
 						{
@@ -529,12 +544,12 @@ int SettingMain()
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button((" \ue901  " + get<string>(i18n[i18nEnum::Settings_Regular])).c_str(), { 150.0f,40.0f })) Tab = Tab::tab2;
+						if (ImGui::Button((" \ue901  " + get<string>(i18n[i18nEnum::Settings_Regular])).c_str(), { 150.0f * settingGlobalScale,40.0f * settingGlobalScale })) Tab = Tab::tab2;
 					}
 
 					// 绘制
 					{
-						ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 10.0f });
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 10.0f * settingGlobalScale });
 
 						if (Tab == Tab::tab3)
 						{
@@ -556,12 +571,12 @@ int SettingMain()
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(" \ue902  绘制", { 150.0f,40.0f })) Tab = Tab::tab3;
+						if (ImGui::Button(" \ue902  绘制", { 150.0f * settingGlobalScale,40.0f * settingGlobalScale })) Tab = Tab::tab3;
 					}
 
 					// 插件
 					{
-						ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 10.0f });
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 10.0f * settingGlobalScale });
 
 						if (Tab == Tab::tab4)
 						{
@@ -583,12 +598,12 @@ int SettingMain()
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(" \ue903  插件", { 150.0f,40.0f })) Tab = Tab::tab4;
+						if (ImGui::Button(" \ue903  插件", { 150.0f * settingGlobalScale,40.0f * settingGlobalScale })) Tab = Tab::tab4;
 					}
 
 					// 快捷键
 					{
-						ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 10.0f });
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 10.0f * settingGlobalScale });
 
 						if (Tab == Tab::tab5)
 						{
@@ -610,12 +625,12 @@ int SettingMain()
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(" \ue904  快捷键", { 150.0f,40.0f })) Tab = Tab::tab5;
+						if (ImGui::Button(" \ue904  快捷键", { 150.0f * settingGlobalScale,40.0f * settingGlobalScale })) Tab = Tab::tab5;
 					}
 
 					// 软件版本
 					{
-						ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 10.0f });
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 10.0f * settingGlobalScale });
 
 						if (Tab == Tab::tab6)
 						{
@@ -637,15 +652,17 @@ int SettingMain()
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(" \ue906  软件版本", { 150.0f,40.0f })) Tab = Tab::tab6;
+						if (ImGui::Button(" \ue906  软件版本", { 150.0f * settingGlobalScale,40.0f * settingGlobalScale })) Tab = Tab::tab6;
 					}
 
+					// --------------------
+
 					{
-						ImGui::SetCursorPosY(420);
+						ImGui::SetCursorPosY(420 * settingGlobalScale);
 
 						ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-						ImVec2 p1 = ImVec2(35, ImGui::GetCursorPosY() - 1.0f);
+						ImVec2 p1 = ImVec2(35, ImGui::GetCursorPosY() - 1.0f * settingGlobalScale);
 						ImVec2 p2 = ImVec2(135, ImGui::GetCursorPosY());
 						ImU32 color = IM_COL32(150, 150, 150, 255);
 
@@ -654,7 +671,7 @@ int SettingMain()
 
 					// 社区名片
 					{
-						ImGui::SetCursorPos({ 10.0f,440.0f });
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,440.0f * settingGlobalScale });
 
 						if (Tab == Tab::tab7)
 						{
@@ -676,12 +693,12 @@ int SettingMain()
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(" \ue905  社区名片", { 150.0f,40.0f })) Tab = Tab::tab7;
+						if (ImGui::Button(" \ue905  社区名片", { 150.0f * settingGlobalScale,40.0f * settingGlobalScale })) Tab = Tab::tab7;
 					}
 
 					// 赞助我们
 					{
-						ImGui::SetCursorPos({ 10.0f,490.0f });
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,490.0f * settingGlobalScale });
 
 						if (Tab == Tab::tab8)
 						{
@@ -703,17 +720,17 @@ int SettingMain()
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(" \ue90b  赞助我们", { 150.0f,40.0f })) Tab = Tab::tab8;
+						if (ImGui::Button(" \ue90b  赞助我们", { 150.0f * settingGlobalScale,40.0f * settingGlobalScale })) Tab = Tab::tab8;
 					}
 
 					// --------------------
 
 					{
-						ImGui::SetCursorPosY(550.0f);
+						ImGui::SetCursorPosY(550.0f * settingGlobalScale);
 
 						ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-						ImVec2 p1 = ImVec2(35, ImGui::GetCursorPosY() - 1.0f);
+						ImVec2 p1 = ImVec2(35, ImGui::GetCursorPosY() - 1.0f * settingGlobalScale);
 						ImVec2 p2 = ImVec2(135, ImGui::GetCursorPosY());
 						ImU32 color = IM_COL32(150, 150, 150, 255);
 
@@ -722,7 +739,7 @@ int SettingMain()
 
 					// 重启程序
 					{
-						ImGui::SetCursorPos({ 10.0f,570.0f });
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,570.0f * settingGlobalScale });
 
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(245, 248, 255, 255));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(231, 233, 239, 255));
@@ -731,7 +748,7 @@ int SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(" \ue908  重启程序", { 150.0f,40.0f }))
+						if (ImGui::Button(" \ue908  重启程序", { 150.0f * settingGlobalScale,40.0f * settingGlobalScale }))
 						{
 							test.select = false;
 							offSignal = 2;
@@ -740,7 +757,7 @@ int SettingMain()
 
 					// 关闭程序
 					{
-						ImGui::SetCursorPos({ 10.0f,620.0f });
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,620.0f * settingGlobalScale });
 
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 230, 230, 255));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(242, 218, 218, 255));
@@ -749,7 +766,7 @@ int SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(" \ue909  关闭程序", { 150.0f,40.0f }))
+						if (ImGui::Button(" \ue909  关闭程序", { 150.0f * settingGlobalScale,40.0f * settingGlobalScale }))
 						{
 							test.select = false;
 							offSignal = true;
@@ -758,7 +775,7 @@ int SettingMain()
 
 					// 程序调测
 					{
-						ImGui::SetCursorPos({ 10.0f,665.0f });
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,665.0f * settingGlobalScale });
 						ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 						if (Tab == Tab::tab9)
@@ -781,7 +798,7 @@ int SettingMain()
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.5f, 0.7f));
-						if (ImGui::Button("程序调测", { 150.0f,30.0f })) Tab = Tab::tab9;
+						if (ImGui::Button("程序调测", { 150.0f * settingGlobalScale,30.0f * settingGlobalScale })) Tab = Tab::tab9;
 					}
 
 					{
@@ -791,7 +808,7 @@ int SettingMain()
 					}
 				}
 
-				ImGui::SetCursorPos({ 170.0f,40.0f });
+				ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
 				switch (Tab)
 				{
 					// 主页
@@ -825,11 +842,11 @@ int SettingMain()
 						ImGui::SetCursorPos({ 170.0f,ImGui::GetCursorPosY() + 10.0f });
 						float Cx = ImGui::GetCursorPosX(), Cy = ImGui::GetCursorPosY();
 
-						ImVec2 image_size = ImVec2((float)SettingSign[2].getwidth(), (float)SettingSign[2].getheight());
+						ImVec2 image_size = ImVec2((float)SettingSign[1].getwidth(), (float)SettingSign[1].getheight());
 						ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[2], image_size);
 
 						ImVec2 p_min = ImVec2(Cx - 4.0f, Cy - 4.0f);
-						ImVec2 p_max = ImVec2(Cx + SettingSign[2].getwidth() + 4.0f, Cy + SettingSign[2].getheight() + 4.0f);
+						ImVec2 p_max = ImVec2(Cx + SettingSign[1].getwidth() + 4.0f, Cy + SettingSign[1].getheight() + 4.0f);
 
 						ImU32 color = IM_COL32(245, 248, 255, 255);
 						float rounding = 12.0f;
@@ -2925,80 +2942,6 @@ int SettingMain()
 
 	threadStatus[L"SettingMain"] = false;
 	return 0;
-}
-
-bool ReadSetting(bool first)
-{
-	Json::Reader reader;
-	Json::Value root;
-
-	ifstream readjson;
-	readjson.imbue(locale("zh_CN.UTF8"));
-	readjson.open(globalPath + L"opt\\deploy.json");
-
-	if (reader.parse(readjson, root))
-	{
-		if (root.isMember("CreateLnk")) setlist.CreateLnk = root["CreateLnk"].asBool();
-		if (root.isMember("RightClickClose")) setlist.RightClickClose = root["RightClickClose"].asBool();
-		if (root.isMember("BrushRecover")) setlist.BrushRecover = root["BrushRecover"].asBool();
-		if (root.isMember("RubberRecover")) setlist.RubberRecover = root["RubberRecover"].asBool();
-		if (root.isMember("CompatibleTaskBarAutoHide")) setlist.compatibleTaskBarAutoHide = root["CompatibleTaskBarAutoHide"].asBool();
-		if (root.isMember("RubberMode")) setlist.RubberMode = root["RubberMode"].asBool();
-		if (root.isMember("IntelligentDrawing")) setlist.IntelligentDrawing = root["IntelligentDrawing"].asBool();
-		if (root.isMember("SmoothWriting")) setlist.SmoothWriting = root["SmoothWriting"].asBool();
-		if (root.isMember("SetSkinMode")) setlist.SetSkinMode = root["SetSkinMode"].asInt();
-		if (root.isMember("UpdateChannel")) setlist.UpdateChannel = root["UpdateChannel"].asString();
-
-		if (root.isMember("PlugIn"))
-		{
-			if (root["PlugIn"].isMember("DdbEnable")) ddbSetList.DdbEnable = root["PlugIn"]["DdbEnable"].asBool();
-			if (root["PlugIn"].isMember("DdbEnhance")) ddbSetList.DdbEnhance = root["PlugIn"]["DdbEnhance"].asBool();
-		}
-
-		//预处理
-		if (first)
-		{
-			if (setlist.SetSkinMode == 0) setlist.SkinMode = 1;
-			else setlist.SkinMode = setlist.SetSkinMode;
-		}
-	}
-
-	readjson.close();
-
-	return true;
-}
-bool WriteSetting()
-{
-	if (_waccess((globalPath + L"opt").c_str(), 0) == -1)
-		filesystem::create_directory(globalPath + L"opt");
-
-	Json::Value root;
-
-	root["edition"] = Json::Value(utf16ToUtf8(editionDate));
-	root["CreateLnk"] = Json::Value(setlist.CreateLnk);
-	root["RightClickClose"] = Json::Value(setlist.RightClickClose);
-	root["BrushRecover"] = Json::Value(setlist.BrushRecover);
-	root["RubberRecover"] = Json::Value(setlist.RubberRecover);
-	root["CompatibleTaskBarAutoHide"] = Json::Value(setlist.compatibleTaskBarAutoHide);
-	root["RubberMode"] = Json::Value(setlist.RubberMode);
-	root["IntelligentDrawing"] = Json::Value(setlist.IntelligentDrawing);
-	root["SmoothWriting"] = Json::Value(setlist.SmoothWriting);
-	root["SetSkinMode"] = Json::Value(setlist.SetSkinMode);
-	root["UpdateChannel"] = Json::Value(setlist.UpdateChannel);
-
-	root["PlugIn"]["DdbEnable"] = Json::Value(ddbSetList.DdbEnable);
-	root["PlugIn"]["DdbEnhance"] = Json::Value(ddbSetList.DdbEnhance);
-
-	Json::StreamWriterBuilder outjson;
-	outjson.settings_["emitUTF8"] = true;
-	std::unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
-	ofstream writejson;
-	writejson.imbue(locale("zh_CN.UTF8"));
-	writejson.open(globalPath + L"opt\\deploy.json");
-	writer->write(root, &writejson);
-	writejson.close();
-
-	return true;
 }
 
 // Data

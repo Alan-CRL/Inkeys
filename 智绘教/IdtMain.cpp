@@ -43,9 +43,9 @@ int SettingMain();
 void FreezeFrameWindow();
 
 wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-wstring editionDate = L"20241022a";				//程序发布日期
+wstring editionDate = L"20241028a";				//程序发布日期
 wstring editionChannel = L"Dev";				//程序发布通道
-wstring editionCode = L"24H2(BetaH3)";			//程序版本
+wstring editionCode = L"24H2";			//程序版本
 
 wstring userId; //用户GUID
 wstring globalPath; //程序当前路径
@@ -56,8 +56,8 @@ map <wstring, bool> threadStatus; //线程状态管理
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-//int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
-int main()
+int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
+//int main()
 {
 	// 路径预处理
 	{
@@ -236,7 +236,7 @@ int main()
 			string jsonContent;
 
 			HANDLE fileHandle = NULL;
-			if (OccupyFile(&fileHandle, globalPath + L"update.json"))
+			if (OccupyFileForRead(&fileHandle, globalPath + L"update.json"))
 			{
 				LARGE_INTEGER fileSize;
 				if (flag && !GetFileSizeEx(fileHandle, &fileSize)) flag = false;
@@ -349,7 +349,7 @@ int main()
 			string jsonContent;
 
 			HANDLE fileHandle = NULL;
-			if (OccupyFile(&fileHandle, globalPath + L"installer\\update.json"))
+			if (OccupyFileForRead(&fileHandle, globalPath + L"installer\\update.json"))
 			{
 				LARGE_INTEGER fileSize;
 				if (flag && !GetFileSizeEx(fileHandle, &fileSize)) flag = false;
@@ -416,7 +416,7 @@ int main()
 
 				updateVal["old_name"] = Json::Value(utf16ToUtf8(GetCurrentExeName()));
 
-				if (!OccupyFile(&fileHandle, globalPath + L"installer\\update.json")) flag = false;
+				if (!OccupyFileForWrite(&fileHandle, globalPath + L"installer\\update.json")) flag = false;
 				if (flag && SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) flag = false;
 				if (flag && !SetEndOfFile(fileHandle)) flag = false;
 
@@ -595,12 +595,12 @@ int main()
 	{
 		IDTLogger->info("[主线程][IdtMain] 初始化配置信息");
 
-		if (1 || _waccess((globalPath + L"opt\\deploy.json").c_str(), 4) == -1)
+		if (_waccess((globalPath + L"opt\\deploy.json").c_str(), 4) == -1)
 		{
 			IDTLogger->warn("[主线程][IdtMain] 配置信息不存在");
 
 			// 联控测试：start 界面
-			StartForInkeys();
+			// StartForInkeys();
 		}
 		else
 		{
