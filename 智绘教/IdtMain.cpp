@@ -56,8 +56,8 @@ map <wstring, bool> threadStatus; //线程状态管理
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
-//int main()
+//int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
+int main()
 {
 	// 路径预处理
 	{

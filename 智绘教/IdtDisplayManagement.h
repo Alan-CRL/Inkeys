@@ -17,16 +17,46 @@
 extern int DisplaysNumber;
 extern shared_mutex DisplaysNumberSm;
 
-struct MonitorInfoStruct
+class EDIDInfoStruct
+{
+public:
+	EDIDInfoStruct() {};
+	EDIDInfoStruct(bool validTarget, wstring edidVersionTarget, wstring deviceIDTarget)
+	{
+		valid = validTarget;
+		edidVersion = edidVersionTarget;
+		deviceID = deviceIDTarget;
+	}
+
+public:
+	bool operator==(const EDIDInfoStruct& other) const
+	{
+		return valid == other.valid &&
+			edidVersion == other.edidVersion &&
+			deviceID == other.deviceID;
+	}
+	bool operator!=(const EDIDInfoStruct& other) const
+	{
+		return !(*this == other);
+	}
+
+public:
+	bool valid;
+	wstring edidVersion;
+	wstring deviceID;
+};
+
+class MonitorInfoStruct
 {
 public:
 	MonitorInfoStruct() {};
-	MonitorInfoStruct(HMONITOR MonitorTarget, RECT rcMonitorTarget, int MonitorWidthTarget, int MonitorHeightTarget, int MonitorPhyWidthTarget, int MonitorPhyHeightTarget, int displayOrientationTarget, bool isMainMonitorTarget)
+	MonitorInfoStruct(HMONITOR MonitorTarget, RECT rcMonitorTarget, int MonitorWidthTarget, int MonitorHeightTarget, EDIDInfoStruct edidInfoTarget, int MonitorPhyWidthTarget, int MonitorPhyHeightTarget, int displayOrientationTarget, bool isMainMonitorTarget)
 	{
 		Monitor = MonitorTarget;
 		rcMonitor = rcMonitorTarget;
 		MonitorWidth = MonitorWidthTarget;
 		MonitorHeight = MonitorHeightTarget;
+		edidInfo = edidInfoTarget;
 		MonitorPhyWidth = MonitorPhyWidthTarget;
 		MonitorPhyHeight = MonitorPhyHeightTarget;
 		displayOrientation = displayOrientationTarget;
@@ -41,6 +71,7 @@ public:
 			EqualRect(&rcMonitor, &other.rcMonitor) &&
 			MonitorWidth == other.MonitorWidth &&
 			MonitorHeight == other.MonitorHeight &&
+			edidInfo == other.edidInfo &&
 			MonitorPhyWidth == other.MonitorPhyWidth &&
 			MonitorPhyHeight == other.MonitorPhyHeight &&
 			displayOrientation == other.displayOrientation;
@@ -55,6 +86,7 @@ public:
 	RECT rcMonitor;
 	int MonitorWidth;
 	int MonitorHeight;
+	EDIDInfoStruct edidInfo;
 	int MonitorPhyWidth;
 	int MonitorPhyHeight;
 	int displayOrientation;

@@ -49,6 +49,8 @@ BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMoni
 
 		for (const auto& [Monitor, MonitorInfo] : DisplaysInfoTemp)
 		{
+			bool edidValid = false;
+			wstring edidVersion;
 			int phyWidth = 0, phyHeight = 0;
 			int displayOrientation = 0;
 			wstring strModel, strDriver;
@@ -66,13 +68,16 @@ BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMoni
 					break;
 				}
 			}
+
 			if (!deviceId.empty() && IdtGetModelDriverFromDeviceID(deviceId.c_str(), strModel, strDriver))
 			{
 				// 获取 EDID 数据
+				BYTE EDIDBuf[32]; // 我们只需要获取 18~22 的值，后面的可以截断
 				DWORD dwRealGetBytes = 0;
-				BYTE EDIDBuf[256] = { 0 };
 				if (IdtGetDeviceEDID(strModel.c_str(), strDriver.c_str(), EDIDBuf, sizeof(EDIDBuf), &dwRealGetBytes) && dwRealGetBytes >= 23)
 				{
+					edidValid = true;
+					edidVersion = to_wstring(EDIDBuf[18]) + L"." + to_wstring(EDIDBuf[19]);
 					phyWidth = EDIDBuf[21];
 					phyHeight = EDIDBuf[22];
 				}
@@ -81,7 +86,7 @@ BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMoni
 			DEVMODE devMode;
 			ZeroMemory(&devMode, sizeof(devMode));
 			devMode.dmSize = sizeof(devMode);
-			if (EnumDisplaySettings(monitorInfo.szDevice, ENUM_CURRENT_SETTINGS, &devMode))
+			if (EnumDisplaySettings(MonitorInfo.szDevice, ENUM_CURRENT_SETTINGS, &devMode))
 				displayOrientation = devMode.dmDisplayOrientation;
 
 			if (MonitorInfo.dwFlags & MONITORINFOF_PRIMARY)
@@ -93,13 +98,15 @@ BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMoni
 				MainMonitor.MonitorPhyWidth = phyWidth;
 				MainMonitor.MonitorPhyHeight = phyHeight;
 			}
+
 			unique_lock<shared_mutex> DisplaysInfoLock(DisplaysInfoSm);
 			DisplaysInfo.push_back(MonitorInfoStruct(Monitor,
 				MonitorInfo.rcMonitor,
 				MonitorInfo.rcMonitor.right - MonitorInfo.rcMonitor.left,
 				MonitorInfo.rcMonitor.bottom - MonitorInfo.rcMonitor.top,
-				phyWidth,
-				phyHeight, displayOrientation,
+				EDIDInfoStruct(edidValid, edidVersion, deviceId),
+				phyWidth, phyHeight,
+				displayOrientation,
 				(monitorInfo.dwFlags & MONITORINFOF_PRIMARY)));
 			DisplaysInfoLock.unlock();
 		}
@@ -186,10 +193,7 @@ bool IdtGetDeviceEDID(LPCWSTR lpModel, LPCWSTR lpDriver, BYTE* pDataBuf, DWORD d
 	HKEY hSubKey;
 	if (::RegOpenKeyEx(HKEY_LOCAL_MACHINE, wcSubKey, 0, KEY_READ, &hSubKey) != ERROR_SUCCESS) return false;
 
-	// 存放EDID数据
 	bool bGetEDIDSuccess = false;
-	BYTE EDIDBuf[256] = { 0 };
-	DWORD dwEDIDSize = sizeof(EDIDBuf);
 
 	// 枚举该子键下的键
 	DWORD dwIndex = 0;
@@ -203,7 +207,7 @@ bool IdtGetDeviceEDID(LPCWSTR lpModel, LPCWSTR lpDriver, BYTE* pDataBuf, DWORD d
 		{
 			// 打开的键下查询Driver键的值
 			dwSubKeyLen = sizeof(wcSubKey) / sizeof(wchar_t);
-			if (::RegQueryValueEx(hEnumKey, L"Driver", NULL, NULL, (LPBYTE)&wcSubKey, &dwSubKeyLen) == ERROR_SUCCESS
+			if (::RegQueryValueEx(hEnumKey, L"Driver", NULL, NULL, (LPBYTE)wcSubKey, &dwSubKeyLen) == ERROR_SUCCESS
 				&& _wcsicmp(wcSubKey, lpDriver) == 0 // Driver匹配
 				)
 			{
@@ -212,10 +216,14 @@ bool IdtGetDeviceEDID(LPCWSTR lpModel, LPCWSTR lpDriver, BYTE* pDataBuf, DWORD d
 				if (::RegOpenKeyEx(hEnumKey, L"Device Parameters", 0, KEY_READ, &hDevParaKey) == ERROR_SUCCESS)
 				{
 					// 读取EDID
-					memset(EDIDBuf, 0, sizeof(EDIDBuf));
-					dwEDIDSize = sizeof(EDIDBuf);
-					if (::RegQueryValueEx(hDevParaKey, L"EDID", NULL, NULL, (LPBYTE)&EDIDBuf, &dwEDIDSize) == ERROR_SUCCESS
-						&& IdtIsCorrectEDID(EDIDBuf, dwEDIDSize, lpModel) == true // 正确的EDID数据
+					vector<BYTE> EDIDBuf; // EDID 通常的块大小都为 128 字节，但是注册表信息中会自动包含拓展块。
+					// EDID 1.3 通常大小是 256，而 EDID 1.4 则通常是 384，2.0 则更多。所以我们考虑动态开内存，并在存储前先获取大小
+					DWORD dwEDIDSize = 0;
+					::RegQueryValueEx(hDevParaKey, L"EDID", NULL, NULL, NULL, &dwEDIDSize);
+					EDIDBuf.resize(dwEDIDSize);
+
+					if (::RegQueryValueEx(hDevParaKey, L"EDID", NULL, NULL, (LPBYTE)EDIDBuf.data(), &dwEDIDSize) == ERROR_SUCCESS
+						&& IdtIsCorrectEDID(EDIDBuf.data(), dwEDIDSize, lpModel) == true // 正确的EDID数据
 						)
 					{
 						// 得到输出参数
@@ -224,7 +232,7 @@ bool IdtGetDeviceEDID(LPCWSTR lpModel, LPCWSTR lpDriver, BYTE* pDataBuf, DWORD d
 						{
 							*pdwGetBytes = dwRealGetBytes;
 						}
-						memcpy(pDataBuf, EDIDBuf, dwRealGetBytes);
+						memcpy(pDataBuf, EDIDBuf.data(), dwRealGetBytes);
 
 						// 成功获取EDID数据
 						bGetEDIDSuccess = true;
