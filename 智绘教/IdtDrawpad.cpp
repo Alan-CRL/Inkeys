@@ -1160,7 +1160,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 					int h = abs(l1.Y - r2.Y) + 1;
 
 					SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
-					hiex::EasyX_Gdiplus_RoundRect((float)x, (float)y, (float)w, (float)h, 3, 3, stateInfo.Shape.Rectangle1.color, stateInfo.Shape.Rectangle1.width, false, SmoothingModeHighQuality, &Canvas);
+					hiex::EasyX_Gdiplus_RoundRect((float)x, (float)y, (float)w, (float)h, 3, 3, stateInfo.Pen.Brush1.color, stateInfo.Pen.Brush1.width, false, SmoothingModeHighQuality, &Canvas);
 				}
 			}
 		}
