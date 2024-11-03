@@ -27,10 +27,10 @@
 using System;
 using System.Threading;
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 
 using Microsoft.Office.Core;
 using Microsoft.Office.Interop.PowerPoint;
-using System.Runtime.CompilerServices;
 
 namespace PptCOM
 {
@@ -41,7 +41,7 @@ namespace PptCOM
     {
         string GetVersion();
 
-        unsafe bool Initialization(int* TotalPage, int* CurrentPage);
+        unsafe bool Initialization(int* TotalPage, int* CurrentPage, bool autoCloseWPSTarget);
 
         unsafe int IsPptOpen();
 
@@ -72,19 +72,25 @@ namespace PptCOM
 
         private int polling = 0; // 结束界面轮询
         private DateTime updateTime; // 更新时间点
+        private bool bindingEvents;
+
+        private bool autoCloseWPS = false;
+        private bool hasWpsProcessID;
+        private Process wpsProcess;
 
         public string GetVersion()
         {
-            return "20240628a";
+            return "20241103a";
         }
 
         // 初始化函数
-        public unsafe bool Initialization(int* TotalPage, int* CurrentPage)
+        public unsafe bool Initialization(int* TotalPage, int* CurrentPage, bool autoCloseWPSTarget)
         {
             try
             {
                 pptTotalPage = TotalPage;
                 pptCurrentPage = CurrentPage;
+                autoCloseWPS = autoCloseWPSTarget;
 
                 return true;
             }
@@ -94,6 +100,10 @@ namespace PptCOM
 
             return false;
         }
+
+        // 外部引用函数
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
         // 事件查询函数
         private unsafe void SlideShowChange(Microsoft.Office.Interop.PowerPoint.SlideShowWindow Wn)
@@ -127,20 +137,48 @@ namespace PptCOM
             *pptTotalPage = -1;
         }
 
+        private void PresentationBeforeClose(Microsoft.Office.Interop.PowerPoint.Presentation Wn, ref bool cancel)
+        {
+            if (bindingEvents && Wn == pptApp.ActivePresentation)
+            {
+                pptApp.SlideShowNextSlide -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowNextSlideEventHandler(SlideShowChange);
+                pptApp.SlideShowBegin -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowBeginEventHandler(SlideShowBegin);
+                pptApp.SlideShowEnd -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowEndEventHandler(SlideShowShowEnd);
+                pptApp.PresentationBeforeClose -= new Microsoft.Office.Interop.PowerPoint.EApplication_PresentationBeforeCloseEventHandler(PresentationBeforeClose);
+                bindingEvents = false;
+            }
+            // 对于延迟未关闭的 WPP，先记录进程 ID，待所有结束事件处理完毕后强制关闭
+            if (autoCloseWPS && Wn.Application.Path.Contains("Kingsoft\\WPS Office\\") && Wn.Application.Presentations.Count <= 1)
+            {
+                uint processId;
+                GetWindowThreadProcessId((IntPtr)Wn.Application.HWND, out processId);
+                wpsProcess = Process.GetProcessById((int)processId);
+                hasWpsProcessID = true;
+            }
+            cancel = false;
+        }
+
         // 判断是否有 Ppt 文件被打开（并注册事件）
         public unsafe int IsPptOpen()
         {
             int ret = 0;
+            bindingEvents = false;
+            hasWpsProcessID = false;
 
+            // 通用尝试，获取 Active 的 Application 并检测是否正确
             try
             {
-                // 获取幻灯片放映文档集合
+                // 获取活动的 Application 示例
                 pptApp = (Microsoft.Office.Interop.PowerPoint.Application)Marshal.GetActiveObject("PowerPoint.Application");
+                // 获取 PPT 文档实例个数（如果为 0 则是没有打开文件的 Application 实例，或是游离状态的 WPP）
+                ret = pptApp.Presentations.Count;
+            }
+            catch { }
 
-                Microsoft.Office.Interop.PowerPoint.Presentations presentations = pptApp.Presentations;
-                ret = presentations.Count;
-
-                if (ret > 0)
+            // 锁定 Application 并执行后续操作
+            if (ret > 0)
+            {
+                try
                 {
                     pptActDoc = pptApp.ActivePresentation;
                     updateTime = DateTime.Now;
@@ -178,77 +216,94 @@ namespace PptCOM
                     }
 
                     // 绑定事件
+                    bindingEvents = true;
                     pptApp.SlideShowNextSlide += new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowNextSlideEventHandler(SlideShowChange);
                     pptApp.SlideShowBegin += new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowBeginEventHandler(SlideShowBegin);
                     pptApp.SlideShowEnd += new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowEndEventHandler(SlideShowShowEnd);
+                    pptApp.PresentationBeforeClose += new Microsoft.Office.Interop.PowerPoint.EApplication_PresentationBeforeCloseEventHandler(PresentationBeforeClose);
 
-                    while (true)
+                    try
                     {
-                        if (pptActDoc != pptApp.ActivePresentation) break;
-                        if (polling != 0)
+                        while (true)
                         {
-                            try
-                            {
-                                *pptCurrentPage = pptActWindow.View.Slide.SlideIndex;
-                                polling = 2;
-                            }
-                            catch
-                            {
-                                *pptCurrentPage = -1;
-                            }
-                        }
-
-                        // 计时轮询（超过3秒不刷新就轮询一次）
-                        if ((DateTime.Now - updateTime).TotalMilliseconds > 3000)
-                        {
-                            try
-                            {
-                                // 获取当前播放的PPT幻灯片窗口对象（保证当前处于放映状态）
-                                if (pptActDoc.SlideShowWindow != null) *pptTotalPage = tempTotalPage = pptActDoc.Slides.Count;
-                                else *pptTotalPage = tempTotalPage = -1;
-                            }
-                            catch
-                            {
-                                *pptTotalPage = tempTotalPage = -1;
-                            }
-
-                            if (tempTotalPage == -1)
-                            {
-                                *pptCurrentPage = -1;
-                                polling = 0;
-                            }
-                            else
+                            if (pptActDoc != pptApp.ActivePresentation) break;
+                            if (polling != 0)
                             {
                                 try
                                 {
                                     *pptCurrentPage = pptActWindow.View.Slide.SlideIndex;
-
-                                    if (pptActWindow.View.Slide.SlideIndex >= pptActDoc.Slides.Count) polling = 1;
-                                    else polling = 0;
+                                    polling = 2;
                                 }
                                 catch
                                 {
                                     *pptCurrentPage = -1;
-                                    polling = 1;
                                 }
                             }
 
-                            updateTime = DateTime.Now;
-                        }
+                            // 计时轮询（超过3秒不刷新就轮询一次）
+                            if ((DateTime.Now - updateTime).TotalMilliseconds > 3000)
+                            {
+                                try
+                                {
+                                    // 获取当前播放的PPT幻灯片窗口对象（保证当前处于放映状态）
+                                    if (pptActDoc.SlideShowWindow != null) *pptTotalPage = tempTotalPage = pptActDoc.Slides.Count;
+                                    else *pptTotalPage = tempTotalPage = -1;
+                                }
+                                catch
+                                {
+                                    *pptTotalPage = tempTotalPage = -1;
+                                }
 
-                        Thread.Sleep(500);
+                                if (tempTotalPage == -1)
+                                {
+                                    *pptCurrentPage = -1;
+                                    polling = 0;
+                                }
+                                else
+                                {
+                                    try
+                                    {
+                                        *pptCurrentPage = pptActWindow.View.Slide.SlideIndex;
+
+                                        if (pptActWindow.View.Slide.SlideIndex >= pptActDoc.Slides.Count) polling = 1;
+                                        else polling = 0;
+                                    }
+                                    catch
+                                    {
+                                        *pptCurrentPage = -1;
+                                        polling = 1;
+                                    }
+                                }
+
+                                updateTime = DateTime.Now;
+                            }
+
+                            Thread.Sleep(500);
+                        }
                     }
+                    catch { }
 
                     // 解绑事件
-                    pptApp.SlideShowNextSlide -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowNextSlideEventHandler(SlideShowChange);
-                    pptApp.SlideShowBegin -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowBeginEventHandler(SlideShowBegin);
-                    pptApp.SlideShowEnd -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowEndEventHandler(SlideShowShowEnd);
+                    if (bindingEvents)
+                    {
+                        pptApp.SlideShowNextSlide -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowNextSlideEventHandler(SlideShowChange);
+                        pptApp.SlideShowBegin -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowBeginEventHandler(SlideShowBegin);
+                        pptApp.SlideShowEnd -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowEndEventHandler(SlideShowShowEnd);
+                        pptApp.PresentationBeforeClose -= new Microsoft.Office.Interop.PowerPoint.EApplication_PresentationBeforeCloseEventHandler(PresentationBeforeClose);
+                        bindingEvents = false;
+                    }
+                    // 关闭未正确关闭的 WPP 进程
+                    if (hasWpsProcessID == true && !wpsProcess.HasExited)
+                    {
+                        wpsProcess.Kill();
+                        hasWpsProcessID = false;
+                    }
                 }
+                catch { }
             }
-            catch
-            {
-            }
+            // else：则找不到 Application 示例，或 Application 示例均不符合条件。
 
+            *pptCurrentPage = -1; *pptTotalPage = -1;
             return ret;
         }
 
@@ -326,6 +381,7 @@ namespace PptCOM
         */
 
         // 操控函数
+
         public unsafe void NextSlideShow(int check)
         {
             try

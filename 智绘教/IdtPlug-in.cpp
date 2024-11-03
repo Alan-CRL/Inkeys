@@ -234,7 +234,7 @@ void GetPptState()
 		try
 		{
 			_com_util::CheckError(PptCOMPto.CreateInstance(_uuidof(PptCOMServer)));
-			rel = PptCOMPto->Initialization(&PptInfoState.TotalPage, &PptInfoState.CurrentPage);
+			rel = PptCOMPto->Initialization(&PptInfoState.TotalPage, &PptInfoState.CurrentPage, pptComSetlist.autoKillWpsProcess); // TODO
 		}
 		catch (_com_error)
 		{

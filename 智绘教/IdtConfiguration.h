@@ -63,6 +63,8 @@ struct PptComSetListStruct
 		bottomSideBothWidgetScale = 1.0f;
 		bottomSideMiddleWidgetScale = 1.0f;
 		middleSideBothWidgetScale = 1.0f;
+
+		autoKillWpsProcess = true;
 	}
 
 	// 墨迹固定在对应页面上
@@ -87,6 +89,9 @@ struct PptComSetListStruct
 	float bottomSideBothWidgetScale;
 	float bottomSideMiddleWidgetScale;
 	float middleSideBothWidgetScale;
+
+	// 自动结束未正确关闭的 WPP 进程
+	bool autoKillWpsProcess;
 };
 extern PptComSetListStruct pptComSetlist;
 bool PptComReadSetting();
