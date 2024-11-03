@@ -27,3 +27,7 @@ void ResetDevice();
 LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 bool LoadTextureFromMemory(unsigned char* image_data, int width, int height, PDIRECT3DTEXTURE9* out_texture);
+
+#define IDT_SETTINGS_ITEMS_WIDTH (SettingWindowWidth - 250.0f - 2*IDT_SETTINGS_ITEMS_MARGIN)
+#define IDT_SETTINGS_ITEMS_MARGIN 10.0f
+#define IDT_SETTINGS_TABS_WIDTH IDT_SETTINGS_ITEMS_WIDTH+2*IDT_SETTINGS_ITEMS_MARGIN

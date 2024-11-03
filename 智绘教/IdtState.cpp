@@ -36,7 +36,7 @@ bool SetPenColor(COLORREF targetColor)
 	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
 	{
 		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) stateMode.Pen.Brush1.color = targetColor;
-		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) stateMode.Pen.Brush1.color = targetColor;
+		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) stateMode.Shape.Rectangle1.color = stateMode.Pen.Brush1.color = targetColor;
 		else return false;
 	}
 	else return false;
