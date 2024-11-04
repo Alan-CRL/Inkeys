@@ -80,7 +80,7 @@ namespace PptCOM
 
         public string GetVersion()
         {
-            return "20241103a";
+            return "20241104a";
         }
 
         // 初始化函数
@@ -139,7 +139,7 @@ namespace PptCOM
 
         private void PresentationBeforeClose(Microsoft.Office.Interop.PowerPoint.Presentation Wn, ref bool cancel)
         {
-            if (bindingEvents && Wn == pptApp.ActivePresentation)
+            if (bindingEvents && Wn == pptActDoc)
             {
                 pptApp.SlideShowNextSlide -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowNextSlideEventHandler(SlideShowChange);
                 pptApp.SlideShowBegin -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowBeginEventHandler(SlideShowBegin);

@@ -146,6 +146,14 @@ bool isValidString(const wstring& str)
 	}
 	return true;
 }
+// 判断字符串中是否是合法 ASCII 字符
+bool isAsciiPrintable(const wstring& input)
+{
+	for (wchar_t c : input)
+		if (c < 32 || c > 126)
+			return false;
+	return true;
+}
 
 //快捷方式判断
 bool IsShortcutPointingToDirectory(const std::wstring& shortcutPath, const std::wstring& targetDirectory)

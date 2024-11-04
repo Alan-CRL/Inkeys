@@ -42,10 +42,10 @@ int drawpad_main();
 int SettingMain();
 void FreezeFrameWindow();
 
-wstring buildTime = __DATE__ L" " __TIME__;		//构建时间
-wstring editionDate = L"20241103a";				//程序发布日期
-wstring editionChannel = L"Dev";				//程序发布通道
-wstring editionCode = L"24H2";			//程序版本
+wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
+wstring editionDate = L"20241104a";				// 程序发布日期
+wstring editionChannel = L"Dev";				// 程序发布通道
+wstring editionCode = L"24H2";					// 程序发布代号
 
 wstring userId; //用户GUID
 wstring globalPath; //程序当前路径
@@ -56,13 +56,11 @@ map <wstring, bool> threadStatus; //线程状态管理
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-//int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
-int main()
+int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
 {
 	// 路径预处理
 	{
 		globalPath = GetCurrentExeDirectory() + L"\\";
-
 		{
 			int typeRoot = 0;
 
@@ -93,14 +91,21 @@ int main()
 
 			if (typeRoot == 1)
 			{
-				MessageBox(NULL, L"当前目录权限受限无法正常运行，请将程序转移至其他目录后再运行", L"智绘教提示", MB_SYSTEMMODAL | MB_OK);
+				MessageBox(NULL, L"The current directory permissions are restricted and cannot run normally. Please transfer the program to another directory before running it again.(#1)\n当前目录权限受限无法正常运行，请将程序转移至其他目录后再运行。(#1)", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
 				return 0;
 			}
 			else if (typeRoot == 2)
 			{
-				MessageBox(NULL, L"当前目录权限受限（文件操作被重定向到虚拟存储目录）无法正常运行，请将程序转移至其他目录后再运行", L"智绘教提示", MB_SYSTEMMODAL | MB_OK);
+				MessageBox(NULL, L"The current directory permissions are restricted (file operations are redirected to the virtual storage directory) and cannot run properly. Please transfer the program to another directory before running it again.(#2)\n当前目录权限受限（文件操作被重定向到虚拟存储目录）无法正常运行，请将程序转移至其他目录后再运行。(#2)", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
 				return 0;
 			}
+		}
+
+		wstring appName = GetCurrentExeName();
+		if (!isAsciiPrintable(appName))
+		{
+			MessageBox(NULL, L"The file name of this software can only contain English characters. Please rename and restart the software.(#3)\n此软件文件名称只能包含英文字符，请重命名后重启软件。(#3)", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
+			return 0;
 		}
 	}
 #ifdef IDT_RELEASE
@@ -448,29 +453,19 @@ int main()
 
 	// DPI初始化
 	{
-		IDTLogger->info("[主线程][IdtMain] 初始化DPI");
-
-		IDTLogger->info("[主线程][IdtMain] 加载Shcore.dll");
 		HMODULE hShcore = LoadLibrary(L"Shcore.dll");
 		if (hShcore != NULL)
 		{
-			IDTLogger->info("[主线程][IdtMain] 加载Shcore.dll成功");
-
-			IDTLogger->info("[主线程][IdtMain] 查询接口SetProcessDpiAwareness");
 			typedef HRESULT(WINAPI* LPFNSPDPIA)(PROCESS_DPI_AWARENESS);
 			LPFNSPDPIA lSetProcessDpiAwareness = (LPFNSPDPIA)GetProcAddress(hShcore, "SetProcessDpiAwareness");
 			if (lSetProcessDpiAwareness != NULL)
 			{
-				IDTLogger->info("[主线程][IdtMain] 查询接口SetProcessDpiAwareness成功");
-
-				IDTLogger->info("[主线程][IdtMain] 执行SetProcessDpiAwareness");
 				HRESULT hr = lSetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
 				if (!SUCCEEDED(hr))
 				{
 					IDTLogger->warn("[主线程][IdtMain] 执行SetProcessDpiAwareness失败");
 					if (!SetProcessDPIAware()) IDTLogger->error("[主线程][IdtMain] 调用SetProcessDPIAware失败");
 				}
-				else IDTLogger->info("[主线程][IdtMain] 执行SetProcessDpiAwareness成功");
 			}
 			else
 			{
@@ -492,18 +487,17 @@ int main()
 			tester.Resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 			pptdrawpad.Resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 		}
-		IDTLogger->info("[主线程][IdtMain] 初始化DPI完成");
+
+		IDTLogger->info("[主线程][IdtMain] DPI初始化完成");
 	}
 	// 界面绘图库初始化
 	{
 		D2DStarup();
+
+		IDTLogger->info("[主线程][IdtMain] 界面绘图库初始化完成");
 	}
 	// 字体初始化
 	{
-		IDTLogger->info("[主线程][IdtMain] 初始化字体");
-
-		IDTLogger->info("[主线程][IdtMain] 加载字体");
-
 		INT numFound = 0;
 		HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
 		HGLOBAL hMem = LoadResource(NULL, hRes);
@@ -529,8 +523,6 @@ int main()
 			D2DTextFactory->UnregisterFontCollectionLoader(D2DFontCollectionLoader);
 		}
 
-		IDTLogger->info("[主线程][IdtMain] 加载字体完成");
-
 		//filesystem::create_directory(StringToWstring(globalPath) + L"ttf");
 		//ExtractResource((StringToWstring(globalPath) + L"ttf\\HarmonyOS_Sans_SC_Regular.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
 		//fontCollection.AddFontFile((StringToWstring(globalPath) + L"ttf\\HarmonyOS_Sans_SC_Regular.ttf").c_str());
@@ -545,8 +537,6 @@ int main()
 		//wcscpy(font.lfFaceName, L"DOUYU Gdiplus::Font");
 		//wcscpy(font.lfFaceName, L"得意黑");
 
-		IDTLogger->info("[主线程][IdtMain] 设置字体");
-
 		stringFormat.SetAlignment(StringAlignmentCenter);
 		stringFormat.SetLineAlignment(StringAlignmentCenter);
 		stringFormat.SetFormatFlags(StringFormatFlagsNoWrap);
@@ -555,8 +545,7 @@ int main()
 		stringFormat_left.SetLineAlignment(StringAlignmentNear);
 		stringFormat_left.SetFormatFlags(StringFormatFlagsNoWrap);
 
-		IDTLogger->info("[主线程][IdtMain] 设置字体完成");
-		IDTLogger->info("[主线程][IdtMain] 初始化字体完成");
+		IDTLogger->info("[主线程][IdtMain] 字体初始化完成");
 	}
 	// I18N初始化
 	{
@@ -564,37 +553,29 @@ int main()
 		// 这样如果配置文件缺少某项也能用英语补齐
 		loadI18n(1, L"JSON", L"en-US");
 		loadI18n(1, L"JSON", L"zh-CN");
+
+		IDTLogger->info("[主线程][IdtMain] I18N初始化完成");
 	}
-	// 监视器信息初始化
+	// 显示器信息初始化
 	{
-		IDTLogger->info("[主线程][IdtMain] 初始化监视器信息");
-
 		// 显示器检查
-		IDTLogger->info("[主线程][IdtMain] 监视器信息查询");
 		DisplayManagementMain();
-		IDTLogger->info("[主线程][IdtMain] 监视器信息查询完成");
 
-		IDTLogger->info("[主线程][IdtMain] 初始化应用栏信息");
 		APPBARDATA abd{};
 		enableAppBarAutoHide = (setlist.compatibleTaskBarAutoHide && (SHAppBarMessage(ABM_GETSTATE, &abd) == ABS_AUTOHIDE));
-		IDTLogger->info("[主线程][IdtMain] 初始化应用栏信息完成");
 
 		shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
 		int DisplaysNumberTemp = DisplaysNumber;
 		DisplaysNumberLock.unlock();
 
-		IDTLogger->info("[主线程][IdtMain] MagnifierThread函数线程启动");
 		thread(MagnifierThread).detach();
 
-		if (DisplaysNumberTemp > 1) IDTLogger->warn("[主线程][IdtMain] 拥有多个监视器");
-
-		IDTLogger->info("[主线程][IdtMain] 初始化监视器信息完成");
+		if (DisplaysNumberTemp > 1) IDTLogger->warn("[主线程][IdtMain] 拥有多个显示器");
+		IDTLogger->info("[主线程][IdtMain] 显示器信息初始化完成");
 	}
 
 	// 配置信息初始化
 	{
-		IDTLogger->info("[主线程][IdtMain] 初始化配置信息");
-
 		if (_waccess((globalPath + L"opt\\deploy.json").c_str(), 4) == -1)
 		{
 			IDTLogger->warn("[主线程][IdtMain] 配置信息不存在");
@@ -604,14 +585,11 @@ int main()
 		}
 		else
 		{
-			IDTLogger->info("[主线程][IdtMain] 读取配置信息");
 			ReadSetting(true);
-			IDTLogger->info("[主线程][IdtMain] 读取配置信息完成");
 		}
-
-		IDTLogger->info("[主线程][IdtMain] 更新配置信息");
 		WriteSetting();
-		IDTLogger->info("[主线程][IdtMain] 更新配置信息完成");
+
+		IDTLogger->info("[主线程][IdtMain] 配置信息初始化完成");
 	}
 	// 插件配置初始化
 	{
@@ -623,19 +601,12 @@ int main()
 	HANDLE hActCtx;
 	ULONG_PTR ulCookie;
 	{
-		IDTLogger->info("[主线程][IdtMain] 初始化COM");
-
-		IDTLogger->info("[主线程][IdtMain] 初始化CoInitialize");
 		CoInitialize(NULL);
-		IDTLogger->info("[主线程][IdtMain] 初始化CoInitialize完成");
 
 		//PptCOM 组件加载
 		{
-			IDTLogger->info("[主线程][IdtMain] 初始化PptCOM.dll");
-			ExtractResource((globalPath + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(222));
-			IDTLogger->info("[主线程][IdtMain] 初始化PptCOM.dll完成");
-
-			IDTLogger->info("[主线程][IdtMain] 初始化上下文API");
+			if (!ExtractResource((globalPath + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(222)))
+				IDTLogger->warn("[主线程][IdtMain] 解压PptCOM.dll失败");
 
 			ACTCTX actCtx = { 0 };
 			actCtx.cbSize = sizeof(actCtx);
@@ -646,21 +617,17 @@ int main()
 			hActCtx = CreateActCtx(&actCtx);
 			ActivateActCtx(hActCtx, &ulCookie);
 
-			IDTLogger->info("[主线程][IdtMain] 初始化上下文API完成");
-
-			IDTLogger->info("[主线程][IdtMain] 载入PptCOM.dll");
 			HMODULE hModule = LoadLibraryW((globalPath + L"PptCOM.dll").c_str());
-			IDTLogger->info("[主线程][IdtMain] 载入PptCOM.dll完成");
 		}
 
-		IDTLogger->info("[主线程][IdtMain] 初始化COM完成");
+		IDTLogger->info("[主线程][IdtMain] COM初始化完成");
 	}
 	//桌面快捷方式初始化
 	if (setlist.CreateLnk)
 	{
-		IDTLogger->info("[主线程][IdtMain] 初始化桌面快捷方式");
 		SetShortcut();
-		IDTLogger->info("[主线程][IdtMain] 初始化桌面快捷方式完成");
+
+		IDTLogger->info("[主线程][IdtMain] 快捷方式初始化完成");
 	}
 
 	// 窗口
@@ -669,25 +636,17 @@ int main()
 		if (userId == L"Error") ClassName = L"IdtHiEasyX";
 		else ClassName = userId;
 
-		IDTLogger->info("[主线程][IdtMain] 创建定格背景窗口");
 		hiex::PreSetWindowShowState(SW_HIDE);
 		freeze_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Idt4 FreezeWindow", ClassName.c_str());
-		IDTLogger->info("[主线程][IdtMain] 创建定格背景窗口完成");
 
-		IDTLogger->info("[主线程][IdtMain] 创建画板窗口");
 		hiex::PreSetWindowShowState(SW_HIDE);
 		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Idt3 DrawpadWindow", ClassName.c_str(), nullptr, freeze_window);
-		IDTLogger->info("[主线程][IdtMain] 创建画板窗口完成");
 
-		IDTLogger->info("[主线程][IdtMain] 创建PPT批注控件窗口");
 		hiex::PreSetWindowShowState(SW_HIDE);
 		ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Idt2 PptWindow", ClassName.c_str(), nullptr, drawpad_window);
-		IDTLogger->info("[主线程][IdtMain] 创建PPT批注控件窗口完成");
 
-		IDTLogger->info("[主线程][IdtMain] 创建悬浮窗窗口");
 		hiex::PreSetWindowShowState(SW_HIDE);
 		floating_window = hiex::initgraph_win32(background.getwidth(), background.getheight(), 0, L"Idt1 FloatingWindow", ClassName.c_str(), nullptr, ppt_window);
-		IDTLogger->info("[主线程][IdtMain] 创建悬浮窗窗口完成");
 
 		// 画板窗口在注册 RTS 前必须拥有置顶属性，在显示前先进行一次全局置顶
 		SetWindowPos(freeze_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
@@ -705,20 +664,22 @@ int main()
 			SetWindowPos(drawpad_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 		}
 
-		IDTLogger->info("[主线程][IdtMain] TopWindow函数线程启动");
 		thread TopWindowThread(TopWindow);
 		TopWindowThread.detach();
+
+		IDTLogger->info("[主线程][IdtMain] 窗口初始化完成");
 	}
 	// RealTimeStylus触控库
 	{
-		IDTLogger->info("[主线程][IdtMain] 初始化RTS触控库");
+		bool hasErr = false;
+
 		// Create RTS object
 		g_pRealTimeStylus = CreateRealTimeStylus(drawpad_window);
 		if (g_pRealTimeStylus == NULL)
 		{
 			IDTLogger->warn("[主线程][IdtMain] RealTimeStylus 为 NULL");
 
-			uRealTimeStylus = -1;
+			hasErr = true;
 			goto RealTimeStylusEnd;
 		}
 
@@ -731,7 +692,7 @@ int main()
 			g_pRealTimeStylus->Release();
 			g_pRealTimeStylus = NULL;
 
-			uRealTimeStylus = -2;
+			hasErr = true;
 			goto RealTimeStylusEnd;
 		}
 
@@ -746,31 +707,29 @@ int main()
 			g_pRealTimeStylus->Release();
 			g_pRealTimeStylus = NULL;
 
-			uRealTimeStylus = -3;
+			hasErr = true;
 			goto RealTimeStylusEnd;
 		}
 
-		if (uRealTimeStylus == 0) uRealTimeStylus = 1;
-
 	RealTimeStylusEnd:
 
-		if (uRealTimeStylus <= 0)
+		if (hasErr)
 		{
-			MessageBox(NULL, (L"触控库 RTS 初始化失败，程序停止运行！\nRTS_Err" + to_wstring(-uRealTimeStylus)).c_str(), L"错误", MB_OK | MB_SYSTEMMODAL);
+			MessageBox(NULL, L"The program ended unexpectedly (RealTimeStylus touch library initialization failed).(#4)\n程序意外结束（RealTimeStylus 触控库初始化失败）。(#4)", L"Inkeys Error | 智绘教错误", MB_OK | MB_SYSTEMMODAL);
 
 			offSignal = true;
 
 			// 反初始化 COM 环境
 			CoUninitialize();
 
+			IDTLogger->critical("[主线程][IdtMain] 程序意外退出（初始化RealTimeStylus失败）");
 			return 0;
 		}
 
-		IDTLogger->info("[主线程][IdtMain] RTSSpeed函数线程启动");
 		thread RTSSpeed_thread(RTSSpeed);
 		RTSSpeed_thread.detach();
 
-		IDTLogger->info("[主线程][IdtMain] 初始化RTS触控库完成");
+		IDTLogger->info("[主线程][IdtMain] RealTimeStylus触控库初始化完成");
 	}
 	// 线程
 	{
