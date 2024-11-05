@@ -500,6 +500,12 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 		pointInfo.previousY = pt.y;
 	}
 
+	// 停留拉直误差(px)
+	int stopTimingError = 5;
+	if (MainMonitor.MonitorPhyWidth != 0 && MainMonitor.MonitorPhyHeight)
+	{
+	}
+
 	IMAGE Canvas = CreateImageColor(screenInfo.width, screenInfo.height, RGBA(0, 0, 0, 0), true);
 	IMAGE* BackCanvas = new IMAGE(screenInfo.width, screenInfo.height);
 
@@ -568,7 +574,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 				lockPointListSm.unlock();
 				if (it == TouchList.end()) break;
 			}
-			// 延迟拉直（Beta 待修改）
+			// 停留拉直
 			if (!StopTimingDisable && stateInfo.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1 && !actualPoints.empty())
 			{
 				if (sqrt((pt.x - StopTimingPoint.x) * (pt.x - StopTimingPoint.x) + (pt.y - StopTimingPoint.y) * (pt.y - StopTimingPoint.y)) > 5)
