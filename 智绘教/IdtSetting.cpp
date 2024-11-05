@@ -42,6 +42,8 @@ int SettingWindowY;
 int SettingWindowWidth;
 int SettingWindowHeight;
 
+float settingGlobalScale = 1.0f;
+
 void SettingSeekBar()
 {
 	if (!KeyBoradDown[VK_LBUTTON]) return;
@@ -70,13 +72,48 @@ void SettingSeekBar()
 
 	return;
 }
-int SettingMain()
+void SettingWindow(promise<void>& promise)
+{
+	threadStatus[L"SettingMain"] = true;
+
+	// 创建窗口
+	{
+		ImGuiWc = { sizeof(WNDCLASSEX), CS_CLASSDC, ImGuiWndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, get<wstring>(i18n[i18nEnum::SettingsW]).c_str(), nullptr };
+		RegisterClassExW(&ImGuiWc);
+		setting_window = CreateWindowW(ImGuiWc.lpszClassName, get<wstring>(i18n[i18nEnum::SettingsW]).c_str(), WS_OVERLAPPEDWINDOW, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, nullptr, nullptr, ImGuiWc.hInstance, nullptr);
+	}
+	promise.set_value();
+
+	MSG msg;
+	POINT MoushPos = { 0,0 };
+
+	while (!offSignal && GetMessage(&msg, nullptr, 0, 0))
+	{
+		TranslateMessage(&msg);
+		DispatchMessage(&msg);
+
+		switch (msg.message)
+		{
+		case WM_MOUSEMOVE:
+			MoushPos.x = GET_X_LPARAM(msg.lParam);
+			MoushPos.y = GET_Y_LPARAM(msg.lParam);
+
+			break;
+
+		case WM_LBUTTONDOWN:
+			if (IsInRect(MoushPos.x, MoushPos.y, { 0,0,870,30 })) SettingSeekBar();
+			break;
+		}
+	}
+
+	threadStatus[L"SettingMain"] = false;
+}
+
+void SettingMain()
 {
 	threadStatus[L"SettingMain"] = true;
 
 	// 初始化部分
-
-	float settingGlobalScale = 1.0f;
 	{
 		// 缩放计算
 		{
@@ -88,10 +125,14 @@ int SettingMain()
 			SettingWindowX = (MainMonitor.MonitorWidth - SettingWindowWidth) / 2;
 			SettingWindowY = (MainMonitor.MonitorHeight - SettingWindowHeight) / 2;
 		}
+		// 窗口初始化
+		{
+			promise<void> promise;
+			future<void> future = promise.get_future();
 
-		ImGuiWc = { sizeof(WNDCLASSEX), CS_CLASSDC, ImGuiWndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, get<wstring>(i18n[i18nEnum::SettingsW]).c_str(), nullptr };
-		RegisterClassExW(&ImGuiWc);
-		setting_window = CreateWindowW(ImGuiWc.lpszClassName, get<wstring>(i18n[i18nEnum::SettingsW]).c_str(), WS_OVERLAPPEDWINDOW, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, nullptr, nullptr, ImGuiWc.hInstance, nullptr);
+			thread(SettingWindow, ref(promise)).detach();
+			future.get();
+		}
 
 		SetWindowLong(setting_window, GWL_STYLE, GetWindowLong(setting_window, GWL_STYLE) & ~(WS_CAPTION | WS_BORDER | WS_THICKFRAME));
 		SetWindowPos(setting_window, NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_FRAMECHANGED);
@@ -103,8 +144,8 @@ int SettingMain()
 
 		// 图像加载
 		{
-			if (i18nIdentifying == L"zh-CN") loadimage(&SettingSign[1], L"PNG", L"Home1_zh-CN", 770 * settingGlobalScale, 575 * settingGlobalScale, true);
-			else loadimage(&SettingSign[1], L"PNG", L"Home1_en-US", 770 * settingGlobalScale, 575 * settingGlobalScale, true);
+			if (i18nIdentifying == L"zh-CN") loadimage(&SettingSign[1], L"PNG", L"Home1_zh-CN", 700 * settingGlobalScale, 192 * settingGlobalScale, true);
+			else loadimage(&SettingSign[1], L"PNG", L"Home1_en-US", 700 * settingGlobalScale, 192 * settingGlobalScale, true);
 			{
 				int width = SettingSign[1].getwidth();
 				int height = SettingSign[1].getheight();
@@ -139,8 +180,8 @@ int SettingMain()
 				IM_ASSERT(ret);
 			}
 
-			if (i18nIdentifying == L"zh-CN") loadimage(&SettingSign[2], L"PNG", L"Home2_zh-CN", 700 * settingGlobalScale, 192 * settingGlobalScale, true);
-			else loadimage(&SettingSign[2], L"PNG", L"Home2_en-US", 700 * settingGlobalScale, 192 * settingGlobalScale, true);
+			if (i18nIdentifying == L"zh-CN") loadimage(&SettingSign[2], L"PNG", L"Home2_zh-CN", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
+			else loadimage(&SettingSign[2], L"PNG", L"Home2_en-US", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
 			{
 				int width = SettingSign[2].getwidth();
 				int height = SettingSign[2].getheight();
@@ -170,6 +211,41 @@ int SettingMain()
 				}
 
 				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[2]);
+				delete[] data;
+
+				IM_ASSERT(ret);
+			}
+
+			loadimage(&SettingSign[4], L"PNG", L"Home_Backgroung", 970 * settingGlobalScale, 775 * settingGlobalScale, true);
+			{
+				int width = SettingSign[4].getwidth();
+				int height = SettingSign[4].getheight();
+				DWORD* pMem = GetImageBuffer(&SettingSign[4]);
+
+				unsigned char* data = new unsigned char[width * height * 4];
+				for (int y = 0; y < height; ++y)
+				{
+					for (int x = 0; x < width; ++x)
+					{
+						DWORD color = pMem[y * width + x];
+						unsigned char alpha = (color & 0xFF000000) >> 24;
+						if (alpha != 0)
+						{
+							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						}
+						else
+						{
+							data[(y * width + x) * 4 + 0] = 0;
+							data[(y * width + x) * 4 + 1] = 0;
+							data[(y * width + x) * 4 + 2] = 0;
+						}
+						data[(y * width + x) * 4 + 3] = alpha;
+					}
+				}
+
+				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[4]);
 				delete[] data;
 
 				IM_ASSERT(ret);
@@ -302,16 +378,6 @@ int SettingMain()
 		ImGui_ImplWin32_Init(setting_window);
 		ImGui_ImplDX9_Init(g_pd3dDevice);
 
-		if (_waccess((globalPath + L"ttf\\hmossscr.ttf").c_str(), 0) == -1)
-		{
-			if (_waccess((globalPath + L"ttf").c_str(), 0) == -1)
-			{
-				error_code ec;
-				filesystem::create_directory(globalPath + L"ttf", ec);
-			}
-			ExtractResource((globalPath + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
-		}
-
 		ImFontConfig font_cfg;
 		font_cfg.OversampleH = 1;
 		font_cfg.OversampleV = 1;
@@ -327,7 +393,7 @@ int SettingMain()
 
 		ImWchar icons_ranges[] = { 0xE900, 0xE914, 0 };
 		font_cfg.MergeMode = true;
-		font_cfg.GlyphOffset.y = 4.0f * settingGlobalScale;
+		font_cfg.GlyphOffset.y = 5.0f * settingGlobalScale;
 		font_cfg.PixelSnapH = true;
 		io.Fonts->AddFontFromFileTTF("icomoon.ttf", 32.0f * settingGlobalScale, &font_cfg, icons_ranges);
 
@@ -354,7 +420,6 @@ int SettingMain()
 
 		//初始化定义变量
 		hiex::tDelayFPS recond;
-		POINT MoushPos = { 0,0 };
 
 		ImGuiToggleConfig config;
 		config.FrameRounding = 1.0f * settingGlobalScale;
@@ -373,8 +438,7 @@ int SettingMain()
 		if (i18nIdentifying == L"zh-CN") languageMode = 2;
 		if (i18nIdentifying == L"zh-TW") languageMode = 3;
 
-		bool StartUp = false;
-		if (setlist.StartUp == 2) StartUp = true;
+		bool StartUp = setlist.startUp;
 
 		bool CreateLnk = setlist.CreateLnk;
 		bool RightClickClose = setlist.RightClickClose;
@@ -414,26 +478,6 @@ int SettingMain()
 
 		while (!offSignal)
 		{
-			MSG msg;
-			while (::PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE))
-			{
-				::TranslateMessage(&msg);
-				::DispatchMessage(&msg);
-
-				switch (msg.message)
-				{
-				case WM_MOUSEMOVE:
-					MoushPos.x = GET_X_LPARAM(msg.lParam);
-					MoushPos.y = GET_Y_LPARAM(msg.lParam);
-
-					break;
-
-				case WM_LBUTTONDOWN:
-					if (IsInRect(MoushPos.x, MoushPos.y, { 0,0,870,30 })) SettingSeekBar();
-					break;
-				}
-			}
-
 			// Handle lost D3D9 device
 			if (g_DeviceLost)
 			{
@@ -817,18 +861,19 @@ int SettingMain()
 					{
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(236, 241, 255, 255));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(175, 197, 255, 255));
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 
 						ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
-						ImGui::BeginChild("主页0", { 770.0f,30.0f }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("主页0", { 770.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-						string temp = "您现在使用的是 智绘教Inkeys2 早期测试版";
+						string temp = "推荐使用1080P分辨率，高于此分辨率可能会影响体验";
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(13, 83, 255, 255));
 
 						float text_width = ImGui::CalcTextSize(temp.c_str()).x;
-						float text_indentation = (770 - text_width) * 0.5f;
+						float text_indentation = (770 * settingGlobalScale - text_width) * 0.5f;
 						if (text_indentation < 0)  text_indentation = 0;
-						ImGui::SetCursorPosX(text_indentation);
+						ImGui::SetCursorPos({ text_indentation,8.0f * settingGlobalScale });
 						ImGui::TextUnformatted(temp.c_str());
 
 						{
@@ -839,27 +884,55 @@ int SettingMain()
 						ImGui::EndChild();
 					}
 					{
-						ImGui::SetCursorPos({ 170.0f,ImGui::GetCursorPosY() + 10.0f });
+						ImGui::SetCursorPos({ 170.0f * settingGlobalScale,ImGui::GetCursorPosY() + 10.0f * settingGlobalScale });
 						float Cx = ImGui::GetCursorPosX(), Cy = ImGui::GetCursorPosY();
-
-						ImVec2 image_size = ImVec2((float)SettingSign[1].getwidth(), (float)SettingSign[1].getheight());
-						ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[2], image_size);
-
-						ImVec2 p_min = ImVec2(Cx - 4.0f, Cy - 4.0f);
-						ImVec2 p_max = ImVec2(Cx + SettingSign[1].getwidth() + 4.0f, Cy + SettingSign[1].getheight() + 4.0f);
-
-						ImU32 color = IM_COL32(245, 248, 255, 255);
-						float rounding = 12.0f;
-						float thickness = 9.0f;
 
 						ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
+						ImVec2 p_min = ImVec2(Cx - 4.0f * settingGlobalScale, Cy - 4.0f * settingGlobalScale);
+						ImVec2 p_max = ImVec2(Cx + 770 * settingGlobalScale + 4.0f * settingGlobalScale, Cy + 575 * settingGlobalScale + 4.0f * settingGlobalScale);
 						ImGui::PushClipRect(p_min, p_max, true);
+
+						{
+							// 计算图像中心点
+							float Mx = SettingWindowX + Cx + 770.0f / 2.0f;
+							float My = SettingWindowY + Cy + 575.0f / 2.0f;
+
+							// 获取鼠标坐标
+							POINT Pt;
+							GetCursorPos(&Pt);
+
+							float Hx = Pt.x - Mx;
+							float Hy = Pt.y - My;
+
+							if (Hx < 0) Hx = min(1000, -Hx);
+							else Hx = min(1000, Hx);
+							if (Hy < 0) Hy = min(1000, -Hy);
+							else Hy = min(1000, Hy);
+
+							// 计算横向位移
+							float Sx = (Hx * (-0.5 / (1000.0f * settingGlobalScale)) + 1) * Hx * 0.2;
+							float Sy = (Hy * (-0.5 / (1000.0f * settingGlobalScale)) + 1) * Hy * 0.2;
+
+							ImGui::SetCursorPosX(Cx + Sx * (Pt.x >= Mx ? -1 : 1) - 100.0f * settingGlobalScale);
+							ImGui::SetCursorPosY(Cy + Sy * (Pt.y >= My ? -1 : 1) - 100.0f * settingGlobalScale);
+							ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[4], ImVec2((float)SettingSign[4].getwidth(), (float)SettingSign[4].getheight()));
+						}
+						{
+							ImGui::SetCursorPos({ Cx,Cy });
+							ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[2], ImVec2((float)SettingSign[2].getwidth(), (float)SettingSign[2].getheight()));
+						}
+
+						ImU32 color = IM_COL32(245, 248, 255, 255);
+						float rounding = 12.0f * settingGlobalScale;
+						float thickness = 9.0f * settingGlobalScale;
+
 						draw_list->AddRect(p_min, p_max, color, rounding, ImDrawFlags_None, thickness);
+
 						ImGui::PopClipRect();
 
 						{
-							ImGui::SetCursorPos({ Cx + 15.0f,Cy + 15.0f });
+							ImGui::SetCursorPos({ Cx + 15.0f * settingGlobalScale,Cy + 15.0f * settingGlobalScale });
 
 							{
 								ImFontMain->Scale = 1.0f, PushFontNum++, ImGui::PushFont(ImFontMain);
@@ -870,13 +943,13 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 							}
-							if (ImGui::Button("\ue90f", { 45.0f,45.0f }))
+							if (ImGui::Button("\ue90f", { 45.0f * settingGlobalScale,45.0f * settingGlobalScale }))
 							{
 								ShellExecuteW(0, 0, L"https://www.inkeys.top", 0, 0, SW_SHOW);
 							}
 						}
 						{
-							ImGui::SetCursorPos({ Cx + 70.0f,Cy + 15.0f });
+							ImGui::SetCursorPos({ Cx + 70.0f * settingGlobalScale,Cy + 15.0f * settingGlobalScale });
 
 							{
 								ImFontMain->Scale = 0.88f, PushFontNum++, ImGui::PushFont(ImFontMain);
@@ -887,23 +960,23 @@ int SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 							}
-							if (ImGui::Button("\ue90d", { 45.0f,45.0f }))
+							if (ImGui::Button("\ue90d", { 45.0f * settingGlobalScale,45.0f * settingGlobalScale }))
 							{
 								ShellExecuteW(0, 0, L"https://github.com/Alan-CRL/Inkeys", 0, 0, SW_SHOW);
 							}
 						}
 
 						{
-							ImGui::SetCursorPos({ Cx + 100.0f,Cy + 390.0f });
+							ImGui::SetCursorPos({ Cx + 100.0f * settingGlobalScale,Cy + 390.0f * settingGlobalScale });
 							ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[3], ImVec2((float)SettingSign[3].getwidth(), (float)SettingSign[3].getheight()));
 
-							ImGui::SetCursorPos({ Cx + 160.0f,Cy + 390.0f });
+							ImGui::SetCursorPos({ Cx + 160.0f * settingGlobalScale,Cy + 390.0f * settingGlobalScale });
 							{
 								ImFontMain->Scale = 1.0f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::TextUnformatted("AlanCRL");
 							}
-							ImGui::SetCursorPos({ Cx + 160.0f,Cy + 418.0f });
+							ImGui::SetCursorPos({ Cx + 160.0f * settingGlobalScale,Cy + 418.0f * settingGlobalScale });
 							{
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 0.7f));
@@ -911,42 +984,42 @@ int SettingMain()
 							}
 
 							{
-								ImGui::SetCursorPos({ Cx + 106.0f,Cy + 460.0f });
+								ImGui::SetCursorPos({ Cx + 106.0f * settingGlobalScale,Cy + 460.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.9f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::TextUnformatted("\ue90e");
 
-								ImGui::SetCursorPos({ Cx + 160.0f,Cy + 462.0f });
+								ImGui::SetCursorPos({ Cx + 160.0f * settingGlobalScale,Cy + 462.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::TextUnformatted("2685549821");
 							}
 
 							{
-								ImGui::SetCursorPos({ Cx + 106.0f,Cy + 510.0f });
+								ImGui::SetCursorPos({ Cx + 106.0f * settingGlobalScale,Cy + 510.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.9f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::TextUnformatted("\ue90c");
 
-								ImGui::SetCursorPos({ Cx + 160.0f,Cy + 510.0f });
+								ImGui::SetCursorPos({ Cx + 160.0f * settingGlobalScale,Cy + 510.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.75f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::TextUnformatted("alan-crl@foxmail.com");
 							}
 						}
 						{
-							ImGui::SetCursorPos({ Cx + 468.0f,Cy + 400.0f });
+							ImGui::SetCursorPos({ Cx + 468.0f * settingGlobalScale,Cy + 400.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.95f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 							ImGui::TextUnformatted("\ue911");
 
-							ImGui::SetCursorPos({ Cx + 520.0f,Cy + 393.0f });
+							ImGui::SetCursorPos({ Cx + 520.0f * settingGlobalScale,Cy + 393.0f * settingGlobalScale });
 							{
 								ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-								ImGui::TextUnformatted("QQ用户交流群");
+								ImGui::TextUnformatted("QQ 交流群");
 							}
-							ImGui::SetCursorPos({ Cx + 520.0f,Cy + 418.0f });
+							ImGui::SetCursorPos({ Cx + 520.0f * settingGlobalScale,Cy + 418.0f * settingGlobalScale });
 							{
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 0.7f));
@@ -957,12 +1030,12 @@ int SettingMain()
 							}
 
 							{
-								ImGui::SetCursorPos({ Cx + 467.0f,Cy + 460.0f });
+								ImGui::SetCursorPos({ Cx + 467.0f * settingGlobalScale,Cy + 460.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.95f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::TextUnformatted("\ue910");
 
-								ImGui::SetCursorPos({ Cx + 520.0f,Cy + 462.0f });
+								ImGui::SetCursorPos({ Cx + 520.0f * settingGlobalScale,Cy + 462.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								if (ImGui::TextLink("Bilibili 宣发频道"))
@@ -1010,195 +1083,26 @@ int SettingMain()
 							ImGui::SetCursorPos({ 30.0f, ImGui::GetCursorPosY() + 5.0f });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(120 / 255.0f, 120 / 255.0f, 120 / 255.0f, 1.0f));
-							ImGui::TextUnformatted("调整此选项时需要先点击上方按钮查询相关信息\n调整此选项时需要管理员权限");
+							ImGui::TextUnformatted("设置当前用户账户开机时启动 智绘教Inkeys");
 
-							if (setlist.StartUp)
-							{
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-								ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
-								ImGui::Toggle("##开机自动启动", &StartUp, config);
-
-								if (setlist.StartUp - 1 != (int)StartUp)
-								{
-									{
-										// 检查本地文件完整性
-										{
-											if (_waccess((globalPath + L"api").c_str(), 0) == -1)
-											{
-												error_code ec;
-												filesystem::create_directory(globalPath + L"api", ec);
-											}
-
-											if (_waccess((globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), 0) == -1)
-												ExtractResource((globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
-											else
-											{
-												string hash_md5, hash_sha256;
-												{
-													hashwrapper* myWrapper = new md5wrapper();
-													hash_md5 = myWrapper->getHashFromFileW(globalPath + L"api\\智绘教StartupItemSettings.exe");
-													delete myWrapper;
-												}
-												{
-													hashwrapper* myWrapper = new sha256wrapper();
-													hash_sha256 = myWrapper->getHashFromFileW(globalPath + L"api\\智绘教StartupItemSettings.exe");
-													delete myWrapper;
-												}
-
-												if (hash_md5 != StartupItemSettingsMd5 || hash_sha256 != StartupItemSettingsSHA256)
-													ExtractResource((globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
-											}
-										}
-
-										if (StartUp) ShellExecuteW(NULL, L"runas", (globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"set" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
-										else ShellExecuteW(NULL, L"runas", (globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"delete" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
-									}
-									//if (_waccess((StringToWstring(globalPath) + L"api").c_str(), 0) == -1) filesystem::create_directory(StringToWstring(globalPath) + L"api");
-									//ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
-
-									DWORD dwBytesRead;
-									WCHAR buffer[4096];
-									HANDLE hPipe = INVALID_HANDLE_VALUE;
-									wstring treceivedData;
-
-									int for_i;
-									for (for_i = 0; for_i <= QueryWaitingTime * 10; for_i++)
-									{
-										if (WaitNamedPipe(TEXT("\\\\.\\pipe\\IDTPipe1"), 100)) break;
-										else this_thread::sleep_for(chrono::milliseconds(100));
-									}
-
-									if (for_i <= QueryWaitingTime * 10)
-									{
-										hPipe = CreateFile(TEXT("\\\\.\\pipe\\IDTPipe1"), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-										if (ReadFile(hPipe, buffer, sizeof(buffer), &dwBytesRead, NULL))
-										{
-											treceivedData.assign(buffer, dwBytesRead / sizeof(WCHAR));
-											if (treceivedData == to_wstring(QuestNumbers) + L"fail") setlist.StartUp = 1, StartUp = false;
-											else if (treceivedData == to_wstring(QuestNumbers) + L"success") setlist.StartUp = 2, StartUp = true;
-										}
-									}
-									else setlist.StartUp = 0, receivedData = L"Renew";
-
-									CloseHandle(hPipe);
-									QuestNumbers++, QuestNumbers %= 10;
-
-									if (setlist.StartUp - 1 != (int)StartUp) setlist.StartUp = 0, receivedData = L"Renew";
-								}
-							}
-						}
-						{
-							ImFontMain->Scale = 1.0f, PushFontNum++, ImGui::PushFont(ImFontMain);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(" 查询开机启动状态", 4.0f);
-
-							ImFontMain->Scale = 0.7f, PushFontNum++, ImGui::PushFont(ImFontMain);
-							ImGui::SameLine(); HelpMarker("调整开机自动启动设置前需要查询当前状态（程序将申请管理员权限）", ImGui::GetStyleColorVec4(ImGuiCol_Text));
-
-							if (!receivedData.empty())
-							{
-								string temp, helptemp;
-								if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Succe") temp = "查询状态成功", helptemp = "可以调整开机启动设置";
-								else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Error") temp = "查询状态错误 " + utf16ToUtf8(receivedData), helptemp = "再次点击查询尝试，或重启程序以管理员身份运行";
-								else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"TimeO") temp = "查询状态超时", helptemp = "再次点击查询尝试\n同时超时时间将从 5 秒调整为 15 秒", QueryWaitingTime = 15;
-								else if (receivedData.length() >= 5 && receivedData.substr(0, 5) == L"Renew") temp = "需要重新查询状态", helptemp = "调整开机自动启动设置时超时，请再次点击查询\n同时超时时间将从 5 秒调整为 15 秒", QueryWaitingTime = 15;
-								else temp = "未知错误", helptemp = "再次点击查询尝试，或重启程序以管理员身份运行";
-
-								ImFontMain->Scale = 1.0f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 80.0f - ImGui::CalcTextSize(temp.c_str()).x - 30.0f);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-								CenteredText(temp.c_str(), 4.0f);
-
-								ImFontMain->Scale = 0.7f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								ImGui::SameLine(); HelpMarker(helptemp.c_str(), ImGui::GetStyleColorVec4(ImGuiCol_Text));
-							}
-
-							ImFontMain->Scale = 0.7f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							if (ImGui::Button("查询", { 60.0f,30.0f }))
+							ImGui::Toggle("##开机自动启动", &StartUp, config);
+
+							if (setlist.startUp != StartUp)
 							{
-								{
-									// 检查本地文件完整性
-									{
-										if (_waccess((globalPath + L"api").c_str(), 0) == -1)
-										{
-											error_code ec;
-											filesystem::create_directory(globalPath + L"api", ec);
-										}
+								SetStartupState(StartUp, GetCurrentExePath(), L"$Inkeys");
 
-										if (_waccess((globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), 0) == -1)
-											ExtractResource((globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
-										else
-										{
-											string hash_md5, hash_sha256;
-											{
-												hashwrapper* myWrapper = new md5wrapper();
-												hash_md5 = myWrapper->getHashFromFileW(globalPath + L"api\\智绘教StartupItemSettings.exe");
-												delete myWrapper;
-											}
-											{
-												hashwrapper* myWrapper = new sha256wrapper();
-												hash_sha256 = myWrapper->getHashFromFileW(globalPath + L"api\\智绘教StartupItemSettings.exe");
-												delete myWrapper;
-											}
-
-											if (hash_md5 != StartupItemSettingsMd5 || hash_sha256 != StartupItemSettingsSHA256)
-												ExtractResource((globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
-										}
-									}
-
-									ShellExecute(NULL, L"runas", (globalPath + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"query" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
-								}
-								//if (_waccess((StringToWstring(globalPath) + L"api").c_str(), 0) == -1) filesystem::create_directory(StringToWstring(globalPath) + L"api");
-								//ExtractResource((StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), L"EXE", MAKEINTRESOURCE(229));
-								//ShellExecute(NULL, L"runas", (StringToWstring(globalPath) + L"api\\智绘教StartupItemSettings.exe").c_str(), (L"/\"query" + to_wstring(QuestNumbers) + L"\" /\"" + GetCurrentExePath() + L"\" /\"xmg_drawpad_startup\"").c_str(), NULL, SW_SHOWNORMAL);
-
-								DWORD dwBytesRead;
-								WCHAR buffer[4096];
-								HANDLE hPipe = INVALID_HANDLE_VALUE;
-
-								int for_i;
-								for (for_i = 0; for_i <= QueryWaitingTime * 10; for_i++)
-								{
-									if (WaitNamedPipe(TEXT("\\\\.\\pipe\\IDTPipe1"), 100)) break;
-									else this_thread::sleep_for(chrono::milliseconds(100));
-								}
-
-								if (for_i > QueryWaitingTime * 10) receivedData = L"TimeOut";
-								else
-								{
-									hPipe = CreateFile(TEXT("\\\\.\\pipe\\IDTPipe1"), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-									if (ReadFile(hPipe, buffer, sizeof(buffer), &dwBytesRead, NULL))
-									{
-										receivedData.assign(buffer, dwBytesRead / sizeof(WCHAR));
-
-										if (receivedData == to_wstring(QuestNumbers) + L"fail")
-										{
-											receivedData = L"Success";
-											setlist.StartUp = 1, StartUp = false;
-										}
-										else if (receivedData == to_wstring(QuestNumbers) + L"success")
-										{
-											receivedData = L"Success";
-											setlist.StartUp = 2, StartUp = true;
-										}
-										else receivedData = L"Error unknown";
-									}
-									else receivedData = L"Error" + to_wstring(GetLastError());
-								}
-								CloseHandle(hPipe);
-
-								QuestNumbers++, QuestNumbers %= 10;
+								setlist.startUp = StartUp;
+								WriteSetting();
 							}
 						}
+
+						/*
 						{
 							ImGui::SetCursorPosY(80.0f);
 
@@ -1225,7 +1129,7 @@ int SettingMain()
 
 								if (CreateLnk) SetShortcut();
 							}
-						}
+						}*/
 
 						{
 							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
@@ -2941,7 +2845,7 @@ int SettingMain()
 	}
 
 	threadStatus[L"SettingMain"] = false;
-	return 0;
+	return;
 }
 
 // Data
@@ -3060,6 +2964,14 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	case WM_DESTROY:
 		::PostQuitMessage(0);
 		return 0;
+	case WM_MOVE:
+		RECT rect;
+		GetWindowRect(hWnd, &rect);
+
+		SettingWindowX = rect.left;
+		SettingWindowY = rect.top;
+
+		break;
 	}
 	return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 }

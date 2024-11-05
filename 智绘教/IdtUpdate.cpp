@@ -335,6 +335,7 @@ void AutomaticUpdate()
 	7 下载最新版本程序损坏
 	8 重启更新到最新版本
 	9 程序已经是最新版本
+	10 存在新版本，但是用户未开启自动更新
 	*/
 
 	bool state = true;

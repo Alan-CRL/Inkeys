@@ -17,12 +17,6 @@ HWND ppt_show;
 wstring ppt_title, ppt_software;
 map<wstring, bool> ppt_title_recond;
 
-//窗口是否置顶
-bool IsWindowFocused(HWND hWnd)
-{
-	return GetForegroundWindow() == hWnd;
-}
-
 HWND GetLastFocusWindow()
 {
 	GUITHREADINFO guiThreadInfo;
@@ -76,6 +70,7 @@ void TopWindow()
 	if (!IdtWindowsIsVisible.allCompleted)
 	{
 		IDTLogger->warn("[窗口置顶线程][TopWindow] 等待窗口初次绘制超时");
+		MessageBox(NULL, L"Program unexpected exit: The program window creation failed or was intercepted. Please restart the software and try again.(#5)\n程序意外退出：程序窗口创建失败或被拦截，请重启软件重试。(#5)", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
 
 		offSignal = true;
 		return;
@@ -221,7 +216,7 @@ void TopWindow()
 		}
 
 		// 检查置顶情况
-		if (!(GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_TOPMOST))
+		if (!(GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_TOPMOST) || freeze_window != GetForegroundWindow())
 		{
 			IDTLogger->warn("[窗口置顶线程][TopWindow] 置顶窗口失败");
 			IDTLogger->info("[窗口置顶线程][TopWindow] 强制置顶窗口");

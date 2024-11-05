@@ -4238,6 +4238,7 @@ void DrawScreen()
 
 						hiex::TransparentImage(&background, int(UIControl[L"Image/BrushColor11/x"].v), int(UIControl[L"Image/BrushColor11/y"].v), &floating_icon[17], int(UIControl[L"Image/BrushColor11/transparency"].v));
 					}
+					if (int(UIControl[L"RoundRect/BrushColor12/transparency"].v))
 					{
 						IMAGE img = DrawHSVWheel(int(UIControl[L"RoundRect/BrushColor12/width"].v), int(UIControl[L"RoundRect/BrushColor12/width"].v / 2 - 10), int(UIControlTarget[L"RoundRect/BrushColor12/angle"].v));
 						hiex::TransparentImage(&background, int(UIControl[L"RoundRect/BrushColor12/x"].v), int(UIControl[L"RoundRect/BrushColor12/y"].v), &img, int(UIControl[L"RoundRect/BrushColor12/transparency"].v));
@@ -6139,8 +6140,6 @@ int floating_main()
 
 	thread FloatingInstallHookThread(FloatingInstallHook);
 	FloatingInstallHookThread.detach();
-	thread PPTLinkageMainThread(PPTLinkageMain);
-	PPTLinkageMainThread.detach();
 
 	//thread GetTime_thread(GetTime);
 	//GetTime_thread.detach();

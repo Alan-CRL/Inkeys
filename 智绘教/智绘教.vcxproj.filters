@@ -1119,6 +1119,9 @@
     <Image Include="src\setting\Community-picture.png">
       <Filter>资源文件</Filter>
     </Image>
+    <Image Include="src\setting\Home_Backgroung.png">
+      <Filter>资源文件</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />

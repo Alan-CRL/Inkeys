@@ -10,8 +10,7 @@ extern WNDCLASSEXW ImGuiWc;
 extern PDIRECT3DTEXTURE9 TextureSettingSign[10];
 extern int SettingMainMode;
 
-void SettingSeekBar();
-int SettingMain();
+void SettingMain();
 
 // Data
 extern LPDIRECT3D9 g_pD3D;

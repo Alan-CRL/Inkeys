@@ -69,7 +69,7 @@ bool UnOccupyFile(HANDLE* hFile)
 }
 
 SetListStruct setlist;
-bool ReadSetting(bool first)
+bool ReadSetting()
 {
 	HANDLE fileHandle = NULL;
 	if (!OccupyFileForRead(&fileHandle, globalPath + L"opt\\deploy.json"))
@@ -110,6 +110,9 @@ bool ReadSetting(bool first)
 
 	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
 	{
+		if (updateVal.isMember("StartUp") && updateVal["StartUp"].isBool())
+			setlist.startUp = updateVal["StartUp"].asBool();
+
 		if (updateVal.isMember("CreateLnk") && updateVal["CreateLnk"].isBool())
 			setlist.CreateLnk = updateVal["CreateLnk"].asBool();
 		if (updateVal.isMember("RightClickClose") && updateVal["RightClickClose"].isBool())
@@ -142,13 +145,6 @@ bool ReadSetting(bool first)
 			if (updateVal["PlugIn"].isMember("DdbEnhance") && updateVal["PlugIn"]["DdbEnhance"].isInt())
 				ddbSetList.DdbEnhance = updateVal["PlugIn"]["DdbEnhance"].asBool();
 		}
-
-		//预处理
-		if (first)
-		{
-			if (setlist.SetSkinMode == 0) setlist.SkinMode = 1;
-			else setlist.SkinMode = setlist.SetSkinMode;
-		}
 	}
 	return false;
 
@@ -164,6 +160,8 @@ bool WriteSetting()
 
 	Json::Value updateVal;
 	{
+		updateVal["StartUp"] = Json::Value(setlist.startUp);
+
 		updateVal["CreateLnk"] = Json::Value(setlist.CreateLnk);
 		updateVal["RightClickClose"] = Json::Value(setlist.RightClickClose);
 		updateVal["BrushRecover"] = Json::Value(setlist.BrushRecover);

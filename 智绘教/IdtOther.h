@@ -18,3 +18,6 @@ void SetShortcut();
 
 bool isProcessRunning(const std::wstring& processPath);
 int ProcessRunningCnt(const std::wstring& processPath);
+
+bool SetStartupState(bool bAutoRun, wstring path, wstring nameclass);
+bool QueryStartupState(wstring path, wstring nameclass);

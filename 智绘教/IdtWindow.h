@@ -14,9 +14,6 @@ extern HWND ppt_show;
 extern wstring ppt_title, ppt_software;
 extern map<wstring, bool> ppt_title_recond;
 
-//窗口是否置顶
-bool IsWindowFocused(HWND hWnd);
-
 HWND GetLastFocusWindow();
 wstring GetWindowText(HWND hWnd);
 

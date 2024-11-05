@@ -217,7 +217,7 @@ bool IdtGetDeviceEDID(LPCWSTR lpModel, LPCWSTR lpDriver, BYTE* pDataBuf, DWORD d
 				{
 					// 读取EDID
 					vector<BYTE> EDIDBuf; // EDID 通常的块大小都为 128 字节，但是注册表信息中会自动包含拓展块。
-					// EDID 1.3 通常大小是 256，而 EDID 1.4 则通常是 384，2.0 则更多。所以我们考虑动态开内存，并在存储前先获取大小
+					// EDID 1.4 通常大小是 256，而带有 HDR 的 EDID 1.4 则通常是 384，2.0 则更多。所以我们考虑动态开内存，并在存储前先获取大小
 					DWORD dwEDIDSize = 0;
 					::RegQueryValueEx(hDevParaKey, L"EDID", NULL, NULL, NULL, &dwEDIDSize);
 					EDIDBuf.resize(dwEDIDSize);

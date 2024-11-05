@@ -17,6 +17,8 @@
 #include "IdtD2DPreparation.h"
 #include "IdtDisplayManagement.h"
 #include "IdtDrawpad.h"
+#include "IdtFloating.h"
+#include "IdtFreezeFrame.h"
 #include "IdtGuid.h"
 #include "IdtI18n.h"
 #include "IdtImage.h"
@@ -37,13 +39,8 @@
 #include <shlobj.h>
 #pragma comment(lib, "netapi32.lib")
 
-int floating_main();
-int drawpad_main();
-int SettingMain();
-void FreezeFrameWindow();
-
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20241104a";				// 程序发布日期
+wstring editionDate = L"20241105a";				// 程序发布日期
 wstring editionChannel = L"Dev";				// 程序发布通道
 wstring editionCode = L"24H2";					// 程序发布代号
 
@@ -111,10 +108,10 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 #ifdef IDT_RELEASE
 	// 防止重复启动
 	{
-		if (_waccess((StringToWstring(globalPath) + L"force_start.signal").c_str(), 0) == 0)
+		if (filesystem::exists(globalPath + L"force_start.signal"))
 		{
 			error_code ec;
-			filesystem::remove(StringToWstring(globalPath) + L"force_start.signal", ec);
+			filesystem::remove(globalPath + L"force_start.signal", ec);
 		}
 		else if (ProcessRunningCnt(GetCurrentExePath()) > 1) return 0;
 	}
@@ -576,32 +573,59 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 	// 配置信息初始化
 	{
-		if (_waccess((globalPath + L"opt\\deploy.json").c_str(), 4) == -1)
+		// 读取配置文件前初始化操作
 		{
-			IDTLogger->warn("[主线程][IdtMain] 配置信息不存在");
+			setlist.startUp = false;
+			setlist.CreateLnk = false;
+			setlist.RightClickClose = false;
+			setlist.BrushRecover = true;
+			setlist.RubberRecover = false;
+			setlist.SetSkinMode = 0;
+			setlist.SkinMode = 1;
+			setlist.compatibleTaskBarAutoHide = true;
 
-			// 联控测试：start 界面
-			// StartForInkeys();
+			setlist.RubberMode = 0;
+			setlist.IntelligentDrawing = true;
+			setlist.SmoothWriting = true;
+
+			setlist.UpdateChannel = "LTS";
 		}
-		else
+
+		// 读取配置
 		{
-			ReadSetting(true);
+			if (_waccess((globalPath + L"opt\\deploy.json").c_str(), 4) == -1)
+			{
+				IDTLogger->warn("[主线程][IdtMain] 配置信息不存在");
+
+				// 联控测试：start 界面
+				// StartForInkeys();
+			}
+			else ReadSetting();
+			WriteSetting();
 		}
-		WriteSetting();
+
+		// 初次读取配置后的操作
+		{
+			// 开机自启设定
+			{
+				bool isStartUp = QueryStartupState(GetCurrentExePath(), L"$Inkeys");
+				if (isStartUp != setlist.startUp) SetStartupState(setlist.startUp, GetCurrentExePath(), L"$Inkeys");
+			}
+			// 皮肤设定
+			{
+				if (setlist.SetSkinMode == 0) setlist.SkinMode = 1;
+				else setlist.SkinMode = setlist.SetSkinMode;
+			}
+		}
 
 		IDTLogger->info("[主线程][IdtMain] 配置信息初始化完成");
-	}
-	// 插件配置初始化
-	{
-		// 启动 DesktopDrawpadBlocker
-		thread(StartDesktopDrawpadBlocker).detach();
 	}
 
 	// COM初始化
 	HANDLE hActCtx;
 	ULONG_PTR ulCookie;
 	{
-		CoInitialize(NULL);
+		CoInitializeEx(NULL, COINIT_MULTITHREADED);
 
 		//PptCOM 组件加载
 		{
@@ -622,12 +646,16 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] COM初始化完成");
 	}
-	//桌面快捷方式初始化
-	if (setlist.CreateLnk)
+	// 插件配置初始化
 	{
-		SetShortcut();
-
-		IDTLogger->info("[主线程][IdtMain] 快捷方式初始化完成");
+		// 桌面快捷方式初始化
+		if (setlist.CreateLnk)
+		{
+			SetShortcut();
+			IDTLogger->info("[主线程][IdtMain] 快捷方式初始化完成");
+		}
+		// 启动 DesktopDrawpadBlocker
+		thread(StartDesktopDrawpadBlocker).detach();
 	}
 
 	// 窗口
@@ -715,14 +743,14 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		if (hasErr)
 		{
-			MessageBox(NULL, L"The program ended unexpectedly (RealTimeStylus touch library initialization failed).(#4)\n程序意外结束（RealTimeStylus 触控库初始化失败）。(#4)", L"Inkeys Error | 智绘教错误", MB_OK | MB_SYSTEMMODAL);
+			MessageBox(NULL, L"Program unexpected exit: RealTimeStylus touch library initialization failed.(#4)\n程序意外退出：RealTimeStylus 触控库初始化失败。(#4)", L"Inkeys Error | 智绘教错误", MB_OK | MB_SYSTEMMODAL);
 
 			offSignal = true;
 
 			// 反初始化 COM 环境
 			CoUninitialize();
 
-			IDTLogger->critical("[主线程][IdtMain] 程序意外退出（初始化RealTimeStylus失败）");
+			IDTLogger->critical("[主线程][IdtMain] 程序意外退出：RealTimeStylus 触控库初始化失败。");
 			return 0;
 		}
 
@@ -733,24 +761,16 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 线程
 	{
-		IDTLogger->info("[主线程][IdtMain] floating_main函数线程启动");
-		thread floating_main_thread(floating_main);
-		floating_main_thread.detach();
-
-		IDTLogger->info("[主线程][IdtMain] SettingMain函数线程启动");
-		thread test_main_thread(SettingMain);
-		test_main_thread.detach();
-
-		IDTLogger->info("[主线程][IdtMain] drawpad_main函数线程启动");
-		thread drawpad_main_thread(drawpad_main);
-		drawpad_main_thread.detach();
-
-		IDTLogger->info("[主线程][IdtMain] FreezeFrameWindow函数线程启动");
-		thread FreezeFrameWindow_thread(FreezeFrameWindow);
-		FreezeFrameWindow_thread.detach();
-
-		IDTLogger->info("[主线程][IdtMain] StateMonitoring函数线程启动");
+		thread(floating_main).detach();
+		thread(SettingMain).detach();
+		thread(drawpad_main).detach();
+		thread(FreezeFrameWindow).detach();
 		thread(StateMonitoring).detach();
+
+		// 启动 PPT 联动插件
+		thread(PPTLinkageMain).detach();
+
+		IDTLogger->info("[主线程][IdtMain] 线程初始化完成");
 	}
 
 	IDTLogger->info("[主线程][IdtMain] 开始等待关闭程序信号发出");
@@ -771,16 +791,10 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 	// 反初始化 COM 环境
 	{
-		IDTLogger->info("[主线程][IdtMain] 反初始化 COM 环境");
-
-		IDTLogger->info("[主线程][IdtMain] 初始化CoUninitialize");
 		CoUninitialize();
-		IDTLogger->info("[主线程][IdtMain] 初始化CoUninitialize完成");
 
-		IDTLogger->info("[主线程][IdtMain] 释放上下文API");
 		DeactivateActCtx(0, ulCookie);
 		ReleaseActCtx(hActCtx);
-		IDTLogger->info("[主线程][IdtMain] 释放上下文API完成");
 
 		IDTLogger->info("[主线程][IdtMain] 反初始化 COM 环境完成");
 	}

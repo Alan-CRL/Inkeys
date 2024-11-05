@@ -21,7 +21,7 @@ void FreezeFrameWindow()
 	SetWindowPos(freeze_window, NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_DRAWFRAME);
 	SetWindowLong(freeze_window, GWL_EXSTYLE, WS_EX_TOOLWINDOW);//隐藏任务栏
 
-	IMAGE freeze_background;
+	IMAGE freeze_background, PptSign;
 	if (enableAppBarAutoHide)
 	{
 		freeze_background.Resize(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight - 1);
@@ -33,6 +33,7 @@ void FreezeFrameWindow()
 		SetWindowPos(freeze_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 	}
 	SetImageColor(freeze_background, RGBA(0, 0, 0, 0), true);
+	loadimage(&PptSign, L"PNG", L"sign4");
 
 	// 设置BLENDFUNCTION结构体
 	BLENDFUNCTION blend;
@@ -175,7 +176,7 @@ void FreezeFrameWindow()
 			for (for_i = -10; for_i <= 60 && FreezePPT && !offSignal; for_i++)
 			{
 				SetImageColor(freeze_background, RGBA(0, 0, 0, 140), true);
-				hiex::TransparentImage(&freeze_background, GetSystemMetrics(SM_CXSCREEN) / 2 - 500, GetSystemMetrics(SM_CYSCREEN) / 2 - 163, &SettingSign[3]);
+				hiex::TransparentImage(&freeze_background, GetSystemMetrics(SM_CXSCREEN) / 2 - 500, GetSystemMetrics(SM_CYSCREEN) / 2 - 163, &PptSign);
 
 				hiex::EasyX_Gdiplus_SolidRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 300, (float)GetSystemMetrics(SM_CYSCREEN) / 2 + 200, 600, 10, 10, 10, RGBA(255, 255, 255, 100), true, SmoothingModeHighQuality, &freeze_background);
 				hiex::EasyX_Gdiplus_SolidRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 300, (float)GetSystemMetrics(SM_CYSCREEN) / 2 + 200, (float)max(0, min(50, for_i)) * 12, 10, 10, 10, RGBA(255, 255, 255, 255), false, SmoothingModeHighQuality, &freeze_background);

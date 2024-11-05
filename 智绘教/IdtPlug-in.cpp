@@ -235,12 +235,13 @@ void GetPptState()
 		{
 			_com_util::CheckError(PptCOMPto.CreateInstance(_uuidof(PptCOMServer)));
 			rel = PptCOMPto->Initialization(&PptInfoState.TotalPage, &PptInfoState.CurrentPage, pptComSetlist.autoKillWpsProcess); // TODO
-		}
-		catch (_com_error)
-		{
-		}
 
-		pptComVersion = GetPptComVersion();
+			pptComVersion = GetPptComVersion();
+		}
+		catch (_com_error err)
+		{
+			pptComVersion = L"Error: C++端初始化异常：" + wstring(err.ErrorMessage());
+		}
 	}
 
 	while (!offSignal)
@@ -1113,7 +1114,7 @@ void PptUI()
 
 	PptUiWidgetStateEnum pptUiWidgetThreadStateLast = PptUiWidgetStateEnum::Unknow;
 	int tPptUiChangeSignal;
-	PptUiChangeSignal = false;
+	PptUiChangeSignal = true;
 
 	clock_t tRecord = clock();
 	for (; !offSignal;)
@@ -1630,7 +1631,7 @@ void PptUI()
 						pptUiLineWidget[i].Y1.v = pptUiLineWidgetTarget[i].Y1.v;
 						tPptUiChangeSignal = true;
 					}
-					else if (pptUiLineWidget[i].Y1.v != pptUiLineWidgetTarget[i].X1.v)
+					else if (pptUiLineWidget[i].Y1.v != pptUiLineWidgetTarget[i].Y1.v)
 					{
 						PptUiWidgetValueTransformation(&pptUiLineWidget[i].Y1.v, pptUiLineWidgetTarget[i].Y1.v, pptUiLineWidgetTarget[i].Y1.s, pptUiLineWidgetTarget[i].Y1.e);
 						tPptUiChangeSignal = true;
@@ -1957,8 +1958,6 @@ void PptUI()
 				}
 
 				if (tPptUiChangeSignal) PptUiChangeSignal = true;
-				else PptUiChangeSignal = false;
-
 				if (PptUiAllReplaceSignal == -1) PptUiAllReplaceSignal = 0;
 			}
 		}
@@ -2313,6 +2312,7 @@ void PptDraw()
 		// 绘制部分
 		if (PptUiChangeSignal)
 		{
+			PptUiChangeSignal = false;
 			SetImageColor(PptWindowBackground, RGBA(0, 0, 0, 0), true);
 
 			DCRenderTarget->BeginDraw();
