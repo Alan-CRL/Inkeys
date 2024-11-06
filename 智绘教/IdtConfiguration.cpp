@@ -110,6 +110,8 @@ bool ReadSetting()
 
 	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
 	{
+		if (updateVal.isMember("SelectLanguage") && updateVal["SelectLanguage"].isBool())
+			setlist.selectLanguage = updateVal["SelectLanguage"].asBool();
 		if (updateVal.isMember("StartUp") && updateVal["StartUp"].isBool())
 			setlist.startUp = updateVal["StartUp"].asBool();
 
@@ -123,8 +125,11 @@ bool ReadSetting()
 			setlist.RubberRecover = updateVal["RubberRecover"].asBool();
 		if (updateVal.isMember("CompatibleTaskBarAutoHide") && updateVal["CompatibleTaskBarAutoHide"].isBool())
 			setlist.compatibleTaskBarAutoHide = updateVal["CompatibleTaskBarAutoHide"].asBool();
-		if (updateVal.isMember("RubberMode") && updateVal["RubberMode"].isBool())
-			setlist.RubberMode = updateVal["RubberMode"].asBool();
+		if (updateVal.isMember("ForceTop") && updateVal["ForceTop"].isBool())
+			setlist.forceTop = updateVal["ForceTop"].asBool();
+
+		if (updateVal.isMember("PaintDevice") && updateVal["PaintDevice"].isInt())
+			setlist.paintDevice = updateVal["PaintDevice"].asBool();
 		if (updateVal.isMember("IntelligentDrawing") && updateVal["IntelligentDrawing"].isBool())
 			setlist.IntelligentDrawing = updateVal["IntelligentDrawing"].asBool();
 		if (updateVal.isMember("SmoothWriting") && updateVal["SmoothWriting"].isBool())
@@ -160,6 +165,7 @@ bool WriteSetting()
 
 	Json::Value updateVal;
 	{
+		updateVal["SelectLanguage"] = Json::Value(setlist.selectLanguage);
 		updateVal["StartUp"] = Json::Value(setlist.startUp);
 
 		updateVal["CreateLnk"] = Json::Value(setlist.CreateLnk);
@@ -167,7 +173,9 @@ bool WriteSetting()
 		updateVal["BrushRecover"] = Json::Value(setlist.BrushRecover);
 		updateVal["RubberRecover"] = Json::Value(setlist.RubberRecover);
 		updateVal["CompatibleTaskBarAutoHide"] = Json::Value(setlist.compatibleTaskBarAutoHide);
-		updateVal["RubberMode"] = Json::Value(setlist.RubberMode);
+		updateVal["ForceTop"] = Json::Value(setlist.forceTop);
+
+		updateVal["PaintDevice"] = Json::Value(setlist.paintDevice);
 		updateVal["IntelligentDrawing"] = Json::Value(setlist.IntelligentDrawing);
 		updateVal["SmoothWriting"] = Json::Value(setlist.SmoothWriting);
 		updateVal["SetSkinMode"] = Json::Value(setlist.SetSkinMode);

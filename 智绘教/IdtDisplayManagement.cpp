@@ -13,6 +13,8 @@
 
 #include "IdtDisplayManagement.h"
 
+#include "IdtDraw.h"
+
 #include <dbt.h>
 #include <initguid.h>
 #include <ntddvdeo.h>
@@ -95,8 +97,9 @@ BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMoni
 				MainMonitor.rcMonitor = MonitorInfo.rcMonitor;
 				MainMonitor.MonitorWidth = MonitorInfo.rcMonitor.right - MonitorInfo.rcMonitor.left;
 				MainMonitor.MonitorHeight = MonitorInfo.rcMonitor.bottom - MonitorInfo.rcMonitor.top;
-				MainMonitor.MonitorPhyWidth = phyWidth;
-				MainMonitor.MonitorPhyHeight = phyHeight;
+				MainMonitor.edidInfo = EDIDInfoStruct(edidValid, edidVersion, deviceId);
+				MainMonitor.MonitorPhyWidth = phyWidth, MainMonitor.MonitorPhyHeight = phyHeight;
+				MainMonitor.displayOrientation = displayOrientation;
 			}
 
 			unique_lock<shared_mutex> DisplaysInfoLock(DisplaysInfoSm);
@@ -123,7 +126,13 @@ BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMoni
 }
 LRESULT CALLBACK IdtDisplayManagementWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	if (uMsg == WM_DISPLAYCHANGE || uMsg == WM_DEVICECHANGE) EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, NULL);
+	if (uMsg == WM_DISPLAYCHANGE || uMsg == WM_DEVICECHANGE)
+	{
+		EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, NULL);
+
+		drawingScale = GetDrawingScale();
+		stopTimingError = GetStopTimingError();
+	}
 
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }

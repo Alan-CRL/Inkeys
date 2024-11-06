@@ -59,6 +59,7 @@ bool CompareImagesWithBuffer(IMAGE* img1, IMAGE* img2);
 void SetAlphaToOne(IMAGE* pImg);
 
 double EuclideanDistance(POINT a, POINT b);
+double EuclideanDistanceP(Point a, Point b);
 
 //智能绘图部分
 extern map<pair<int, int>, bool> extreme_point;
@@ -66,4 +67,9 @@ extern shared_mutex ExtremePointSm;
 //extern map<pair<Point, Point >, bool> extreme_line;
 double pointToLineDistance(Point lineStart, Point lineEnd, Point p);
 double pointToLineSegmentDistance(Point lineStart, Point lineEnd, Point p);
-bool isLine(vector<Point> points, int tolerance, std::chrono::high_resolution_clock::time_point start);
+bool isLine(vector<Point> points, double tolerance, double drawingScale, std::chrono::high_resolution_clock::time_point start);
+
+extern int stopTimingError;
+int GetStopTimingError();
+extern float drawingScale;
+float GetDrawingScale();

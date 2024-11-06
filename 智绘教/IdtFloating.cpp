@@ -5198,7 +5198,7 @@ void MouseInteraction()
 
 					if (m.message == WM_RBUTTONDOWN && setlist.RightClickClose)
 					{
-						if (MessageBox(floating_window, L"是否关闭 智绘教 ？", L"智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) offSignal = true;
+						if (MessageBox(floating_window, L"Whether to turn off 智绘教Inkeys?\n是否关闭 智绘教Inkeys？", L"Inkeys Tips | 智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) offSignal = true;
 						hiex::flushmessage_win32(EM_MOUSE, floating_window);
 					}
 				}
@@ -5292,7 +5292,7 @@ void MouseInteraction()
 
 					if (m.message == WM_RBUTTONDOWN && setlist.RightClickClose)
 					{
-						if (MessageBox(floating_window, L"是否关闭 智绘教 ？", L"智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) offSignal = true;
+						if (MessageBox(floating_window, L"Whether to turn off 智绘教Inkeys?\n是否关闭 智绘教Inkeys？", L"Inkeys Tips | 智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) offSignal = true;
 						hiex::flushmessage_win32(EM_MOUSE, floating_window);
 					}
 				}
@@ -5541,7 +5541,7 @@ void MouseInteraction()
 										{
 											if (!m.lbutton)
 											{
-												SetPenWidth(3);
+												SetPenWidth(3 * drawingScale);
 												UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v = 1;
 
 												break;
@@ -5569,7 +5569,7 @@ void MouseInteraction()
 										{
 											if (!m.lbutton)
 											{
-												SetPenWidth(10);
+												SetPenWidth(10 * drawingScale);
 												UIControlTarget[L"RoundRect/PaintThicknessSchedule5a/ellipse"].v = 2;
 
 												break;
@@ -5597,7 +5597,7 @@ void MouseInteraction()
 										{
 											if (!m.lbutton)
 											{
-												SetPenWidth(20);
+												SetPenWidth(20 * drawingScale);
 												UIControlTarget[L"RoundRect/PaintThicknessSchedule6a/ellipse"].v = 10;
 
 												break;
@@ -5628,7 +5628,7 @@ void MouseInteraction()
 										{
 											if (!m.lbutton)
 											{
-												SetPenWidth(35);
+												SetPenWidth(35 * drawingScale);
 												UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v = 20;
 
 												break;
@@ -5656,7 +5656,7 @@ void MouseInteraction()
 										{
 											if (!m.lbutton)
 											{
-												SetPenWidth(50);
+												SetPenWidth(50 * drawingScale);
 												UIControlTarget[L"RoundRect/PaintThicknessSchedule6a/ellipse"].v = 20;
 
 												break;

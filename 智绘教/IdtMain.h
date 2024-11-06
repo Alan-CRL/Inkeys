@@ -110,6 +110,7 @@ extern shared_ptr<spdlog::logger> IDTLogger;
 void Test();
 void Testb(bool t);
 void Testi(long long t);
+void Testd(double t);
 void Testw(wstring t);
 void Testa(string t);
 

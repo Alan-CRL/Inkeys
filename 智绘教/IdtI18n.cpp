@@ -10,9 +10,10 @@ bool loadI18n(int type, wstring path, wstring lang, bool initialization)
 	string jsonContent;
 	if (type == 1)
 	{
-		int resNum = 245;
+		int resNum = 246;
 		if (lang == L"zh-CN") resNum = 245;
 		if (lang == L"en-US") resNum = 246;
+		//if (lang == L"zh-TW") resNum = 247;
 
 		HRSRC hRes = FindResourceW(NULL, MAKEINTRESOURCE(resNum), path.c_str());
 		HGLOBAL hMem = LoadResource(NULL, hRes);
@@ -72,8 +73,8 @@ bool loadI18n(int type, wstring path, wstring lang, bool initialization)
 
 			if (i18nVal["Settings"].isMember("Operate") && i18nVal["Settings"]["Operate"].isObject())
 			{
-				if (i18nVal["Settings"]["Operate"].isMember("Query") && i18nVal["Settings"]["Operate"]["Query"].isString()) i18n[i18nEnum::Settings_Operate_Query] = i18nVal["Settings"]["Operate"]["Query"].asString();
-				else if (initialization) i18n[i18nEnum::Settings_Operate_Query] = "";
+				if (i18nVal["Settings"]["Operate"].isMember("Reset") && i18nVal["Settings"]["Operate"]["Reset"].isString()) i18n[i18nEnum::Settings_Operate_Reset] = i18nVal["Settings"]["Operate"]["Reset"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Operate_Reset] = "";
 				if (i18nVal["Settings"]["Operate"].isMember("Save") && i18nVal["Settings"]["Operate"]["Save"].isString()) i18n[i18nEnum::Settings_Operate_Save] = i18nVal["Settings"]["Operate"]["Save"].asString();
 				else if (initialization) i18n[i18nEnum::Settings_Operate_Save] = "";
 			}
@@ -84,26 +85,65 @@ bool loadI18n(int type, wstring path, wstring lang, bool initialization)
 				else if (initialization) i18n[i18nEnum::Settings_Home] = "";
 				if (i18nVal["Settings"]["Home"].isMember("Prompt") && i18nVal["Settings"]["Home"]["Prompt"].isString()) i18n[i18nEnum::Settings_Home_Prompt] = i18nVal["Settings"]["Home"]["Prompt"].asString();
 				else if (initialization) i18n[i18nEnum::Settings_Home_Prompt] = "";
-				if (i18nVal["Settings"]["Home"].isMember("Feedback") && i18nVal["Settings"]["Home"]["Feedback"].isString()) i18n[i18nEnum::Settings_Home_Feedback] = i18nVal["Settings"]["Home"]["Feedback"].asString();
-				else if (initialization) i18n[i18nEnum::Settings_Home_Feedback] = "";
-				if (i18nVal["Settings"]["Home"].isMember("Thanks") && i18nVal["Settings"]["Home"]["Thanks"].isString()) i18n[i18nEnum::Settings_Home_Thanks] = i18nVal["Settings"]["Home"]["Thanks"].asString();
-				else if (initialization) i18n[i18nEnum::Settings_Home_Thanks] = "";
-				if (i18nVal["Settings"]["Home"].isMember("Button1") && i18nVal["Settings"]["Home"]["Button1"].isString()) i18n[i18nEnum::Settings_Home_Button1] = i18nVal["Settings"]["Home"]["Button1"].asString();
-				else if (initialization) i18n[i18nEnum::Settings_Home_Button1] = "";
-				if (i18nVal["Settings"]["Home"].isMember("Button2") && i18nVal["Settings"]["Home"]["Button2"].isString()) i18n[i18nEnum::Settings_Home_Button2] = i18nVal["Settings"]["Home"]["Button2"].asString();
-				else if (initialization) i18n[i18nEnum::Settings_Home_Button2] = "";
-				if (i18nVal["Settings"]["Home"].isMember("Button3") && i18nVal["Settings"]["Home"]["Button3"].isString()) i18n[i18nEnum::Settings_Home_Button3] = i18nVal["Settings"]["Home"]["Button3"].asString();
-				else if (initialization) i18n[i18nEnum::Settings_Home_Button3] = "";
-				if (i18nVal["Settings"]["Home"].isMember("Button4") && i18nVal["Settings"]["Home"]["Button4"].isString()) i18n[i18nEnum::Settings_Home_Button4] = i18nVal["Settings"]["Home"]["Button4"].asString();
-				else if (initialization) i18n[i18nEnum::Settings_Home_Button4] = "";
-				if (i18nVal["Settings"]["Home"].isMember("Language") && i18nVal["Settings"]["Home"]["Language"].isString()) i18n[i18nEnum::Settings_Home_Language] = i18nVal["Settings"]["Home"]["Language"].asString();
-				else if (initialization) i18n[i18nEnum::Settings_Home_Language] = "";
+				if (i18nVal["Settings"]["Home"].isMember("#1") && i18nVal["Settings"]["Home"]["#1"].isString()) i18n[i18nEnum::Settings_Home_1] = i18nVal["Settings"]["Home"]["#1"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Home_1] = "";
+				if (i18nVal["Settings"]["Home"].isMember("#2") && i18nVal["Settings"]["Home"]["#2"].isString()) i18n[i18nEnum::Settings_Home_2] = i18nVal["Settings"]["Home"]["#2"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Home_2] = "";
+				if (i18nVal["Settings"]["Home"].isMember("#3") && i18nVal["Settings"]["Home"]["#3"].isString()) i18n[i18nEnum::Settings_Home_3] = i18nVal["Settings"]["Home"]["#3"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Home_3] = "";
 			}
 
 			if (i18nVal["Settings"].isMember("Regular") && i18nVal["Settings"]["Regular"].isObject())
 			{
 				if (i18nVal["Settings"]["Regular"].isMember("Regular") && i18nVal["Settings"]["Regular"]["Regular"].isString()) i18n[i18nEnum::Settings_Regular] = i18nVal["Settings"]["Regular"]["Regular"].asString();
 				else if (initialization) i18n[i18nEnum::Settings_Regular] = "";
+
+				if (i18nVal["Settings"]["Regular"].isMember("#1") && i18nVal["Settings"]["Regular"]["#1"].isString()) i18n[i18nEnum::Settings_Regular_1] = i18nVal["Settings"]["Regular"]["#1"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_1] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#1_1") && i18nVal["Settings"]["Regular"]["#1_1"].isString()) i18n[i18nEnum::Settings_Regular_1_1] = i18nVal["Settings"]["Regular"]["#1_1"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_1_1] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#1_2") && i18nVal["Settings"]["Regular"]["#1_2"].isString()) i18n[i18nEnum::Settings_Regular_1_2] = i18nVal["Settings"]["Regular"]["#1_2"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_1_2] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#2") && i18nVal["Settings"]["Regular"]["#2"].isString()) i18n[i18nEnum::Settings_Regular_2] = i18nVal["Settings"]["Regular"]["#2"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_2] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#2_1") && i18nVal["Settings"]["Regular"]["#2_1"].isString()) i18n[i18nEnum::Settings_Regular_2_1] = i18nVal["Settings"]["Regular"]["#2_1"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_2_1] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#2_2") && i18nVal["Settings"]["Regular"]["#2_2"].isString()) i18n[i18nEnum::Settings_Regular_2_2] = i18nVal["Settings"]["Regular"]["#2_2"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_2_2] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#3") && i18nVal["Settings"]["Regular"]["#3"].isString()) i18n[i18nEnum::Settings_Regular_3] = i18nVal["Settings"]["Regular"]["#3"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_3] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#3_1") && i18nVal["Settings"]["Regular"]["#3_1"].isString()) i18n[i18nEnum::Settings_Regular_3_1] = i18nVal["Settings"]["Regular"]["#3_1"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_3_1] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#3_2") && i18nVal["Settings"]["Regular"]["#3_2"].isString()) i18n[i18nEnum::Settings_Regular_3_2] = i18nVal["Settings"]["Regular"]["#3_2"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_3_2] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#3_3") && i18nVal["Settings"]["Regular"]["#3_3"].isString()) i18n[i18nEnum::Settings_Regular_3_3] = i18nVal["Settings"]["Regular"]["#3_3"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_3_3] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#3_4") && i18nVal["Settings"]["Regular"]["#3_4"].isString()) i18n[i18nEnum::Settings_Regular_3_4] = i18nVal["Settings"]["Regular"]["#3_4"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_3_4] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#3_5") && i18nVal["Settings"]["Regular"]["#3_5"].isString()) i18n[i18nEnum::Settings_Regular_3_5] = i18nVal["Settings"]["Regular"]["#3_5"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_3_5] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#3_6") && i18nVal["Settings"]["Regular"]["#3_6"].isString()) i18n[i18nEnum::Settings_Regular_3_6] = i18nVal["Settings"]["Regular"]["#3_6"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_3_6] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#4") && i18nVal["Settings"]["Regular"]["#4"].isString()) i18n[i18nEnum::Settings_Regular_4] = i18nVal["Settings"]["Regular"]["#4"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_4] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#4_1") && i18nVal["Settings"]["Regular"]["#4_1"].isString()) i18n[i18nEnum::Settings_Regular_4_1] = i18nVal["Settings"]["Regular"]["#4_1"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_4_1] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#4_2") && i18nVal["Settings"]["Regular"]["#4_2"].isString()) i18n[i18nEnum::Settings_Regular_4_2] = i18nVal["Settings"]["Regular"]["#4_2"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_4_2] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#4_3") && i18nVal["Settings"]["Regular"]["#4_3"].isString()) i18n[i18nEnum::Settings_Regular_4_3] = i18nVal["Settings"]["Regular"]["#4_3"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_4_3] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#4_4") && i18nVal["Settings"]["Regular"]["#4_4"].isString()) i18n[i18nEnum::Settings_Regular_4_4] = i18nVal["Settings"]["Regular"]["#4_4"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_4_4] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#5") && i18nVal["Settings"]["Regular"]["#5"].isString()) i18n[i18nEnum::Settings_Regular_5] = i18nVal["Settings"]["Regular"]["#5"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_5] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#5_1") && i18nVal["Settings"]["Regular"]["#5_1"].isString()) i18n[i18nEnum::Settings_Regular_5_1] = i18nVal["Settings"]["Regular"]["#5_1"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_5_1] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#5_2") && i18nVal["Settings"]["Regular"]["#5_2"].isString()) i18n[i18nEnum::Settings_Regular_5_2] = i18nVal["Settings"]["Regular"]["#5_2"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_5_2] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#5_3") && i18nVal["Settings"]["Regular"]["#5_3"].isString()) i18n[i18nEnum::Settings_Regular_5_3] = i18nVal["Settings"]["Regular"]["#5_3"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_5_3] = "";
+				if (i18nVal["Settings"]["Regular"].isMember("#5_4") && i18nVal["Settings"]["Regular"]["#5_4"].isString()) i18n[i18nEnum::Settings_Regular_5_4] = i18nVal["Settings"]["Regular"]["#5_4"].asString();
+				else if (initialization) i18n[i18nEnum::Settings_Regular_5_4] = "";
 			}
 
 			if (i18nVal["Settings"].isMember("Update") && i18nVal["Settings"]["Update"].isObject())

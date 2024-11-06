@@ -7,6 +7,8 @@ bool UnOccupyFile(HANDLE* hFile);
 
 struct SetListStruct
 {
+	int selectLanguage;
+
 	bool startUp;
 	bool CreateLnk;
 
@@ -14,7 +16,7 @@ struct SetListStruct
 	bool BrushRecover, RubberRecover;
 
 	bool IntelligentDrawing, SmoothWriting;
-	int RubberMode;
+	int paintDevice;
 
 	int SetSkinMode, SkinMode;
 
@@ -22,6 +24,7 @@ struct SetListStruct
 
 	// 兼容自动隐藏的任务栏
 	bool compatibleTaskBarAutoHide;
+	bool forceTop;
 };
 extern SetListStruct setlist;
 bool ReadSetting();

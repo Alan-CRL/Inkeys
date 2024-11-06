@@ -1,5 +1,8 @@
 ﻿#include "IdtDraw.h"
 
+#include "IdtConfiguration.h"
+#include "IdtDisplayManagement.h"
+
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stbimage/stb_image_write.h"
 
@@ -233,21 +236,16 @@ double EuclideanDistance(POINT a, POINT b)
 {
 	return std::sqrt(std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2));
 }
+double EuclideanDistanceP(Point a, Point b)
+{
+	return std::sqrt(std::pow(a.X - b.X, 2) + std::pow(a.Y - b.Y, 2));
+}
 
 //智能绘图部分
 map<pair<int, int>, bool> extreme_point;
 shared_mutex ExtremePointSm;
 //map<pair<Point, Point >, bool> extreme_line;
-double pointToLineDistance(Point lineStart, Point lineEnd, Point p) {
-	if (lineStart.X == lineEnd.X) {
-		return abs(p.X - lineStart.X);
-	}
 
-	double a = double(lineEnd.Y - lineStart.Y) / (lineEnd.X - lineStart.X);
-	double b = lineStart.Y - a * lineStart.X;
-
-	return abs(a * p.X - p.Y + b) / sqrt(a * a + 1);
-}
 double pointToLineSegmentDistance(Point lineStart, Point lineEnd, Point p)
 {
 	double x1 = lineStart.X;
@@ -259,9 +257,10 @@ double pointToLineSegmentDistance(Point lineStart, Point lineEnd, Point p)
 
 	if (x1 == x2) {
 		if (y3 >= min(y1, y2) && y3 <= max(y1, y2)) {
-			return abs(x3 - x1);
+			return (x3 - x1);  // 移除了abs
 		}
 		else {
+			// 对于端点距离，仍然使用绝对值，因为这是实际距离
 			return min(sqrt(pow(x3 - x1, 2) + pow(y3 - y1, 2)), sqrt(pow(x3 - x2, 2) + pow(y3 - y2, 2)));
 		}
 	}
@@ -270,49 +269,92 @@ double pointToLineSegmentDistance(Point lineStart, Point lineEnd, Point p)
 	double b = y1 - a * x1;
 	double x4 = (a * (y3 - b) + x3) / (a * a + 1);
 	if (x4 >= min(x1, x2) && x4 <= max(x1, x2)) {
-		return abs(a * x3 - y3 + b) / sqrt(a * a + 1);
+		return (a * x3 - y3 + b) / sqrt(a * a + 1);  // 移除了abs
 	}
 	else {
+		// 对于端点距离，仍然使用绝对值，因为这是实际距离
 		return min(sqrt(pow(x3 - x1, 2) + pow(y3 - y1, 2)), sqrt(pow(x3 - x2, 2) + pow(y3 - y2, 2)));
 	}
 }
-bool isLine(vector<Point> points, int tolerance, std::chrono::high_resolution_clock::time_point start)
+bool isLine(vector<Point> points, double tolerance, double drawingScale, std::chrono::high_resolution_clock::time_point start)
 {
 	int n = points.size();
 	if (n < 2) return false;
 	if (n == 2) return true;
 
-	double last_distance = 0;
-	int trend = 0; //1远离 2靠近
-	int fluctuate = 0;
+	double minD = 0, maxD = 0;
+
+	double lineDis = EuclideanDistanceP(points.front(), points.back());
+	double minDis = lineDis;// 离终点最近的点到终点的距离
 
 	for (int i = 1; i < n - 1; i++)
 	{
-		if (i % 10 == 0 && std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count() > 50) return false;
+		if (i % 10 == 0 && std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count() > 100) return false;
 
-		double distance = pointToLineSegmentDistance(points[0], points[n - 1], points[i]);
-		if (distance > tolerance) return false;
+		double distance = pointToLineSegmentDistance(points.front(), points.back(), points[i]);
+		if (abs(distance) > tolerance) return false;
 
-		if (distance > last_distance)
-		{
-			if (trend != 1 && abs(distance - last_distance) >= double(tolerance) / 6.0)
-			{
-				fluctuate++;
-				trend = 1;
-				last_distance = distance;
-			}
-		}
-		else if (distance < last_distance)
-		{
-			if (trend != 2 && abs(distance - last_distance) >= double(tolerance) / 6.0)
-			{
-				fluctuate++;
-				trend = 2;
-				last_distance = distance;
-			}
-		}
+		minD = min(minD, distance);
+		maxD = max(maxD, distance);
+
+		double tmpDis = EuclideanDistanceP(points[i], points.back());
+		if (tmpDis < minDis) minDis = tmpDis;
+		if (tmpDis > minDis + lineDis / 4.0) return false;
 	}
 
-	if (fluctuate <= 5) return true;
-	else return false;
+	double disparity = maxD - minD;
+	if (disparity >= 5 * drawingScale)
+	{
+		int trend = 0; // 1: 标记正数最大点 2：标记负数最小点
+		double markMax = maxD, markMin = minD;
+		double minFluctuate = max(5 * drawingScale, disparity / 3.0);
+		int fluctuate = 0; // 波动次数
+
+		for (int i = 1; i < n - 1; i++)
+		{
+			if (i % 10 == 0 && std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count() > 100) return false;
+
+			double distance = pointToLineSegmentDistance(points.front(), points.back(), points[i]);
+
+			if (distance > markMin + minFluctuate && trend != 1)
+			{
+				trend = 1;
+				markMax = distance;
+				fluctuate++;
+			}
+
+			if (distance < markMax - minFluctuate && trend != 2)
+			{
+				trend = 2;
+				markMin = distance;
+				fluctuate++;
+			}
+
+			if (trend != 2) markMax = max(markMax, distance);
+			if (trend != 1) markMin = min(markMin, distance);
+		}
+
+		if (fluctuate <= 4) return true;
+		else return false;
+	}
+	return true;
+}
+
+// 临时过渡方案
+/*
+* 在绘图库架构 3.0 到来之前，不会对对当前架构做高分屏的支持
+*
+* 现在显示物理宽高只会运用于停留拉直的停留检测模块，期望停留范围是 0.3cm 触控设备/ 5px 鼠标
+*/
+// 停留拉直误差(px)
+int stopTimingError = 5;
+int GetStopTimingError()
+{
+	if (setlist.paintDevice == 1) return 5;
+	else return min(0.3f * (float)MainMonitor.MonitorWidth / (float)MainMonitor.MonitorPhyHeight, 0.5f * (float)MainMonitor.MonitorHeight / (float)MainMonitor.MonitorPhyHeight);
+}
+float drawingScale = 1.0f;
+float GetDrawingScale()
+{
+	return min((float)MainMonitor.MonitorWidth / 1920.0f, (float)MainMonitor.MonitorHeight / 1080.0f);
 }

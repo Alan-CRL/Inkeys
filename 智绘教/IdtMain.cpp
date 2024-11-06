@@ -53,7 +53,8 @@ map <wstring, bool> threadStatus; //线程状态管理
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
+//int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
+int main()
 {
 	// 路径预处理
 	{
@@ -113,7 +114,23 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			error_code ec;
 			filesystem::remove(globalPath + L"force_start.signal", ec);
 		}
-		else if (ProcessRunningCnt(GetCurrentExePath()) > 1) return 0;
+		else if (ProcessRunningCnt(GetCurrentExePath()) > 1)
+		{
+			if (filesystem::exists(globalPath + L"repeatedly_start.signal")) MessageBox(NULL, L"智绘教Inkeys is already running. If not, you need to end the relevant process and reopen the program.\n智绘教Inkeys 已经运行。如果没有则需要结束相关进程后重新打开程序。", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
+			else
+			{
+				HANDLE fileHandle = NULL;
+				OccupyFileForWrite(&fileHandle, globalPath + L"repeatedly_start.signal");
+				UnOccupyFile(&fileHandle);
+			}
+
+			return 0;
+		}
+		else if (filesystem::exists(globalPath + L"repeatedly_start.signal"))
+		{
+			error_code ec;
+			filesystem::remove(globalPath + L"repeatedly_start.signal", ec);
+		}
 	}
 #endif
 
@@ -493,6 +510,115 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] 界面绘图库初始化完成");
 	}
+	// 显示器信息初始化
+	{
+		// 显示器检查
+		DisplayManagementMain();
+
+		APPBARDATA abd{};
+		enableAppBarAutoHide = (setlist.compatibleTaskBarAutoHide && (SHAppBarMessage(ABM_GETSTATE, &abd) == ABS_AUTOHIDE));
+
+		shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
+		int DisplaysNumberTemp = DisplaysNumber;
+		DisplaysNumberLock.unlock();
+
+		thread(MagnifierThread).detach();
+
+		if (DisplaysNumberTemp > 1) IDTLogger->warn("[主线程][IdtMain] 拥有多个显示器");
+		IDTLogger->info("[主线程][IdtMain] 显示器信息初始化完成");
+	}
+
+	// 配置信息初始化
+	{
+		// 读取配置文件前初始化操作
+		{
+			setlist.startUp = false;
+			setlist.CreateLnk = false;
+			setlist.RightClickClose = false;
+			setlist.BrushRecover = true;
+			setlist.RubberRecover = false;
+			setlist.SetSkinMode = 0;
+			setlist.SkinMode = 1;
+			setlist.compatibleTaskBarAutoHide = true;
+			setlist.forceTop = true;
+
+			setlist.IntelligentDrawing = true;
+			setlist.SmoothWriting = true;
+
+			setlist.UpdateChannel = "LTS";
+
+			{
+				// 获取系统默认语言标识符
+				LANGID langId = GetSystemDefaultLangID();
+				// 获取主语言标识符
+				WORD primaryLangId = PRIMARYLANGID(langId);
+				// 获取子语言标识符
+				WORD subLangId = SUBLANGID(langId);
+
+				// 检查是否为中文
+				if (primaryLangId == LANG_CHINESE)
+				{
+					switch (subLangId) {
+					case SUBLANG_CHINESE_SIMPLIFIED:
+					case SUBLANG_CHINESE_SINGAPORE:
+					{
+						setlist.selectLanguage = 1;
+						break;
+					}
+
+					case SUBLANG_CHINESE_TRADITIONAL:
+					case SUBLANG_CHINESE_HONGKONG:
+					case SUBLANG_CHINESE_MACAU:
+					{
+						setlist.selectLanguage = 2;
+						break;
+					}
+					}
+				}
+				else setlist.selectLanguage = 0;
+			}
+			{
+				int digitizerStatus = GetSystemMetrics(SM_DIGITIZER);
+				bool hasTouchDevice = (digitizerStatus & NID_READY) && (digitizerStatus & (NID_INTEGRATED_TOUCH | NID_EXTERNAL_TOUCH));
+				if (hasTouchDevice)
+				{
+					if (MainMonitor.MonitorPhyWidth == 0 || MainMonitor.MonitorPhyHeight == 0) setlist.paintDevice = 1;
+					else if (MainMonitor.MonitorPhyWidth * MainMonitor.MonitorPhyHeight >= 1200) setlist.paintDevice = 1;
+					else setlist.paintDevice = 0;
+				}
+				else setlist.paintDevice = 0;
+			}
+		}
+
+		// 读取配置
+		{
+			if (_waccess((globalPath + L"opt\\deploy.json").c_str(), 4) == -1)
+			{
+				IDTLogger->warn("[主线程][IdtMain] 配置信息不存在");
+
+				// 联控测试：start 界面
+				// StartForInkeys();
+			}
+			else ReadSetting();
+			WriteSetting();
+		}
+
+		// 初次读取配置后的操作
+		{
+			// 开机自启设定
+			{
+				bool isStartUp = QueryStartupState(GetCurrentExePath(), L"$Inkeys");
+				if (isStartUp != setlist.startUp) SetStartupState(setlist.startUp, GetCurrentExePath(), L"$Inkeys");
+			}
+			// 皮肤设定
+			{
+				if (setlist.SetSkinMode == 0) setlist.SkinMode = 1;
+				else setlist.SkinMode = setlist.SetSkinMode;
+			}
+		}
+
+		IDTLogger->info("[主线程][IdtMain] 配置信息初始化完成");
+	}
 	// 字体初始化
 	{
 		INT numFound = 0;
@@ -550,75 +676,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		// 这样如果配置文件缺少某项也能用英语补齐
 		loadI18n(1, L"JSON", L"en-US");
 		loadI18n(1, L"JSON", L"zh-CN");
+		// TODO
 
 		IDTLogger->info("[主线程][IdtMain] I18N初始化完成");
-	}
-	// 显示器信息初始化
-	{
-		// 显示器检查
-		DisplayManagementMain();
-
-		APPBARDATA abd{};
-		enableAppBarAutoHide = (setlist.compatibleTaskBarAutoHide && (SHAppBarMessage(ABM_GETSTATE, &abd) == ABS_AUTOHIDE));
-
-		shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
-		int DisplaysNumberTemp = DisplaysNumber;
-		DisplaysNumberLock.unlock();
-
-		thread(MagnifierThread).detach();
-
-		if (DisplaysNumberTemp > 1) IDTLogger->warn("[主线程][IdtMain] 拥有多个显示器");
-		IDTLogger->info("[主线程][IdtMain] 显示器信息初始化完成");
-	}
-
-	// 配置信息初始化
-	{
-		// 读取配置文件前初始化操作
-		{
-			setlist.startUp = false;
-			setlist.CreateLnk = false;
-			setlist.RightClickClose = false;
-			setlist.BrushRecover = true;
-			setlist.RubberRecover = false;
-			setlist.SetSkinMode = 0;
-			setlist.SkinMode = 1;
-			setlist.compatibleTaskBarAutoHide = true;
-
-			setlist.RubberMode = 0;
-			setlist.IntelligentDrawing = true;
-			setlist.SmoothWriting = true;
-
-			setlist.UpdateChannel = "LTS";
-		}
-
-		// 读取配置
-		{
-			if (_waccess((globalPath + L"opt\\deploy.json").c_str(), 4) == -1)
-			{
-				IDTLogger->warn("[主线程][IdtMain] 配置信息不存在");
-
-				// 联控测试：start 界面
-				// StartForInkeys();
-			}
-			else ReadSetting();
-			WriteSetting();
-		}
-
-		// 初次读取配置后的操作
-		{
-			// 开机自启设定
-			{
-				bool isStartUp = QueryStartupState(GetCurrentExePath(), L"$Inkeys");
-				if (isStartUp != setlist.startUp) SetStartupState(setlist.startUp, GetCurrentExePath(), L"$Inkeys");
-			}
-			// 皮肤设定
-			{
-				if (setlist.SetSkinMode == 0) setlist.SkinMode = 1;
-				else setlist.SkinMode = setlist.SetSkinMode;
-			}
-		}
-
-		IDTLogger->info("[主线程][IdtMain] 配置信息初始化完成");
 	}
 
 	// COM初始化
@@ -830,6 +890,10 @@ void Testb(bool t)
 void Testi(long long t)
 {
 	MessageBoxW(NULL, to_wstring(t).c_str(), L"数值标记", MB_OK | MB_SYSTEMMODAL);
+}
+void Testd(double t)
+{
+	MessageBoxW(NULL, to_wstring(t).c_str(), L"浮点标记", MB_OK | MB_SYSTEMMODAL);
 }
 void Testw(wstring t)
 {

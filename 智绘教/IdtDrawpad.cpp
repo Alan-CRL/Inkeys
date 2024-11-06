@@ -15,9 +15,6 @@
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
 
-// 实时平滑测试
-// #pragma comment(lib, "absl/AbslWin32MT.lib")
-
 bool main_open;
 bool FirstDraw = true;
 bool IdtHotkey;
@@ -500,12 +497,6 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 		pointInfo.previousY = pt.y;
 	}
 
-	// 停留拉直误差(px)
-	int stopTimingError = 5;
-	if (MainMonitor.MonitorPhyWidth != 0 && MainMonitor.MonitorPhyHeight)
-	{
-	}
-
 	IMAGE Canvas = CreateImageColor(screenInfo.width, screenInfo.height, RGBA(0, 0, 0, 0), true);
 	IMAGE* BackCanvas = new IMAGE(screenInfo.width, screenInfo.height);
 
@@ -577,30 +568,25 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 			// 停留拉直
 			if (!StopTimingDisable && stateInfo.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1 && !actualPoints.empty())
 			{
-				if (sqrt((pt.x - StopTimingPoint.x) * (pt.x - StopTimingPoint.x) + (pt.y - StopTimingPoint.y) * (pt.y - StopTimingPoint.y)) > 5)
+				if (sqrt((pt.x - StopTimingPoint.x) * (pt.x - StopTimingPoint.x) + (pt.y - StopTimingPoint.y) * (pt.y - StopTimingPoint.y)) > stopTimingError)
 				{
 					StopTimingPoint = pt;
 					StopTiming = chrono::high_resolution_clock::now();
 				}
-				else if (chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now() - StopTiming).count() >= 1000)
+				else if (chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now() - StopTiming).count() >= 600)
 				{
-					if (sqrt((pt.x - actualPoints[0].X) * (pt.x - actualPoints[0].X) + (pt.y - actualPoints[0].Y) * (pt.y - actualPoints[0].Y)) >= 120)
+					double redundance = max(15.0 * drawingScale, (accurateWritingDistance / drawingScale * 0.03409 + 10.9092) * drawingScale) * 2.0f; // 降低精度
+					if (accurateWritingDistance / drawingScale >= 120 && (abs(inkTangentRectangle.left - inkTangentRectangle.right) / drawingScale >= 120 || abs(inkTangentRectangle.top - inkTangentRectangle.bottom) / drawingScale >= 120) && isLine(actualPoints, redundance, drawingScale, std::chrono::high_resolution_clock::now()))
 					{
-						double redundance = max(GetSystemMetrics(SM_CXSCREEN) / 192, min((GetSystemMetrics(SM_CXSCREEN)) / 76.8, double(GetSystemMetrics(SM_CXSCREEN)) / double((-0.036) * accurateWritingDistance + 135)));
+						stateInfo.StateModeSelect = StateModeSelectEnum::IdtShape;
+						stateInfo.Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeStraightLine1;
+						stateInfo.Shape.StraightLine1.width = stateInfo.Pen.Brush1.width;
+						stateInfo.Shape.StraightLine1.color = stateInfo.Pen.Brush1.color;
+						pointInfo.previousX = actualPoints[0].X, pointInfo.previousY = actualPoints[0].Y;
 
-						// 5 倍宽松精度
-						if (isLine(actualPoints, int(redundance * 5.0f), chrono::high_resolution_clock::now()))
-						{
-							stateInfo.StateModeSelect = StateModeSelectEnum::IdtShape;
-							stateInfo.Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeStraightLine1;
-							stateInfo.Shape.StraightLine1.width = stateInfo.Pen.Brush1.width;
-							stateInfo.Shape.StraightLine1.color = stateInfo.Pen.Brush1.color;
-							pointInfo.previousX = actualPoints[0].X, pointInfo.previousY = actualPoints[0].Y;
-
-							goto DelayStraighteningTarget;
-						}
-						else StopTimingDisable = true;
+						goto DelayStraighteningTarget;
 					}
+					else StopTimingDisable = true;
 				}
 			}
 
@@ -668,8 +654,8 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 			if (stateInfo.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1)
 			{
 				//直线绘制
-				double redundance = max(GetSystemMetrics(SM_CXSCREEN) / 192, min((GetSystemMetrics(SM_CXSCREEN)) / 76.8, double(GetSystemMetrics(SM_CXSCREEN)) / double((-0.036) * accurateWritingDistance + 135)));
-				if (setlist.IntelligentDrawing && accurateWritingDistance >= 120 && (abs(inkTangentRectangle.left - inkTangentRectangle.right) >= 120 || abs(inkTangentRectangle.top - inkTangentRectangle.bottom) >= 120) && isLine(actualPoints, int(redundance), std::chrono::high_resolution_clock::now()))
+				double redundance = max(15.0 * drawingScale, (accurateWritingDistance / drawingScale * 0.03409 + 10.9092) * drawingScale);
+				if (setlist.IntelligentDrawing && accurateWritingDistance / drawingScale >= 120 && (abs(inkTangentRectangle.left - inkTangentRectangle.right) / drawingScale >= 120 || abs(inkTangentRectangle.top - inkTangentRectangle.bottom) / drawingScale >= 120) && isLine(actualPoints, redundance, drawingScale, std::chrono::high_resolution_clock::now()))
 				{
 					Point start(actualPoints[0]), end(actualPoints[actualPoints.size() - 1]);
 
@@ -678,7 +664,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 						//起点匹配
 						{
 							Point start_target = start;
-							double distance = 10;
+							double distance = 10 * drawingScale;
 
 							std::shared_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
 							for (const auto& [point, value] : extreme_point)
@@ -699,7 +685,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 						//终点匹配
 						{
 							Point end_target = end;
-							double distance = 10;
+							double distance = 10 * drawingScale;
 
 							std::shared_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
 							for (const auto& [point, value] : extreme_point)
@@ -858,18 +844,19 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 			pointInfo.x = pt.x, pointInfo.y = pt.y;
 
 			// 计算智能橡皮大小
-			if (setlist.RubberMode == 1)
+			if (setlist.paintDevice == 1)
 			{
 				// PC 鼠标
-				if (speed <= 30) trubbersize = max(25, speed * 2.33 + 2.33);
-				else trubbersize = min(200, speed + 30);
+				if (speed <= 30) trubbersize = max(25, speed * 2.33 + 2.33) * drawingScale;
+				else trubbersize = min(200, speed + 30) * drawingScale;
 			}
 			else
 			{
 				// 触摸设备
-				if (speed <= 20) trubbersize = max(25, speed * 2.33 + 13.33);
-				else trubbersize = min(200, 3 * speed);
+				if (speed <= 20) trubbersize = max(25, speed * 2.33 + 13.33) * drawingScale;
+				else trubbersize = min(200, 3 * speed) * drawingScale;
 			}
+			//TODO
 
 			if (trubbersize == -1) trubbersize = rubbersize;
 			if (rubbersize < trubbersize) rubbersize = rubbersize + max(0.1, (trubbersize - rubbersize) / 50);
@@ -1054,7 +1041,75 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 
 		//智能绘图模块
 		{
-			if (stateInfo.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1); // 直线吸附待实现
+			// TODO 至少得有 120 * drawingScale 的长度
+			if (stateInfo.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1)
+			{
+				Point start(pointInfo.previousX, pointInfo.previousY), end(pointInfo.x, pointInfo.y);
+
+				//端点匹配
+				{
+					//起点匹配
+					{
+						Point start_target = start;
+						double distance = 10 * drawingScale;
+
+						std::shared_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
+						for (const auto& [point, value] : extreme_point)
+						{
+							if (value == true)
+							{
+								if (EuclideanDistance({ point.first,point.second }, { start.X,start.Y }) <= distance)
+								{
+									distance = EuclideanDistance({ point.first,point.second }, { start.X,start.Y });
+									start_target = { point.first,point.second };
+								}
+							}
+						}
+						LockExtremePointSm.unlock();
+
+						start = start_target;
+					}
+					//终点匹配
+					{
+						Point end_target = end;
+						double distance = 10 * drawingScale;
+
+						std::shared_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
+						for (const auto& [point, value] : extreme_point)
+						{
+							if (value == true)
+							{
+								if (EuclideanDistance({ point.first,point.second }, { end.X,end.Y }) <= distance)
+								{
+									distance = EuclideanDistance({ point.first,point.second }, { end.X,end.Y });
+									end_target = { point.first,point.second };
+								}
+							}
+						}
+						LockExtremePointSm.unlock();
+
+						end = end_target;
+					}
+				}
+
+				std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
+				extreme_point[{start.X, start.Y}] = extreme_point[{end.X, end.Y}] = true;
+				LockExtremePointSm.unlock();
+
+				SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
+
+				Graphics graphics(GetImageHDC(&Canvas));
+				graphics.SetSmoothingMode(SmoothingModeHighQuality);
+
+				Pen pen(hiex::ConvertToGdiplusColor(RGBA(0, 0, 0, 255), false));
+				pen.SetStartCap(LineCapRound);
+				pen.SetEndCap(LineCapRound);
+
+				pen.SetColor(hiex::ConvertToGdiplusColor(stateInfo.Pen.Brush1.color, false));
+				pen.SetWidth(stateInfo.Pen.Brush1.width);
+
+				graphics.DrawLine(&pen, start.X, start.Y, end.X, end.Y);
+			}
 			else if (stateInfo.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1)
 			{
 				//端点匹配
@@ -1069,7 +1124,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 					{
 						{
 							Point idx = l1;
-							double distance = 10;
+							double distance = 10 * drawingScale;
 
 							std::shared_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
 							for (const auto& [point, value] : extreme_point)
@@ -1092,7 +1147,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 						}
 						{
 							Point idx = l2;
-							double distance = 10;
+							double distance = 10 * drawingScale;
 
 							std::shared_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
 							for (const auto& [point, value] : extreme_point)
@@ -1115,7 +1170,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 						}
 						{
 							Point idx = r1;
-							double distance = 10;
+							double distance = 10 * drawingScale;
 							for (const auto& [point, value] : extreme_point)
 							{
 								if (value == true)
@@ -1134,7 +1189,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 						}
 						{
 							Point idx = r2;
-							double distance = 10;
+							double distance = 10 * drawingScale;
 							for (const auto& [point, value] : extreme_point)
 							{
 								if (value == true)
@@ -1943,6 +1998,9 @@ int drawpad_main()
 	{
 		//屏幕快照处理
 		LoadDrawpad();
+
+		drawingScale = GetDrawingScale();
+		stopTimingError = GetStopTimingError();
 	}
 
 	thread DrawpadDrawing_thread(DrawpadDrawing);

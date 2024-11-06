@@ -1,5 +1,6 @@
 ﻿#include "IdtWindow.h"
 
+#include "IdtConfiguration.h"
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
 #include "IdtRts.h"
@@ -216,7 +217,7 @@ void TopWindow()
 		}
 
 		// 检查置顶情况
-		if (!(GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_TOPMOST) || freeze_window != GetForegroundWindow())
+		if (setlist.forceTop && (!(GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_TOPMOST) || freeze_window != GetForegroundWindow()))
 		{
 			IDTLogger->warn("[窗口置顶线程][TopWindow] 置顶窗口失败");
 			IDTLogger->info("[窗口置顶线程][TopWindow] 强制置顶窗口");

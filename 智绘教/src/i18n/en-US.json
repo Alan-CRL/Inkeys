@@ -17,25 +17,44 @@
 		
 		"Operate" :
 		{
-			"Query" : "Query",
+			"Reset" : "Reset",
 			"Save" : "Save"
 		},
 		
 		"Home" :
 		{
 			"Home" : "Home",
-			"Prompt" : "Recommend using 1080P resolution, higher than 1080P may affect the experience.\nThe adaptation of high-resolution screens will be developed with UI3 later.",
-			"Feedback": "Provide feedback\nQQ: 2685549821\nEmail: alan-crl@foxmail.com",
-			"Thanks": "Thank you for your support of Inkeys~",
-			"Button1" : "Reward us\n(customized features)",
-			"Button2" : "智绘教Inkeys\nCommunity Card",
-			"Button3" : "Github Repository",
-			"Button4" : "Official Website",
-			"Language" : "Language"
+			"Prompt" : "Recommend using 1080P resolution, higher than this resolution may affect the experience",
+			"#1" : "智绘教Inkeys Founding Developer",
+			"#2" : "Tencent QQ User Group",
+			"#3" : "Bilibili Video Channel"
 		},
 		"Regular" :
 		{
-			"Regular" : "Regular"
+			"Regular" : "Regular",
+			"#1" : "Language and Internationalization",
+			"#1_1" : "Language(语言)",
+			"#1_2" : "Restart the software to take effect. | 重启软件生效。",
+			"#2" : "Startup and startup behavior",
+			"#2_1" : "Auto start",
+			"#2_2" : "Set 智绘教Inkeys to start when the current user account is turned on.",
+			"#3" : "Appearance Style",
+			"#3_1" : "Theme",
+			"#3_2" : "Selecting 'Recommended' will automatically replace the skin based on the official recommendation.",
+			"#3_3" : "  Recommended",
+			"#3_4" : "  Default",
+			"#3_5" : "  Tiny Clock",
+			"#3_6" : "  Dragon Year",
+			"#4" : "Other Behaviors",
+			"#4_1" : "Right click on the main icon to close the program",
+			"#4_2" : "A confirmation pop-up will appear.",
+			"#4_3" : "Fold up the main bar when drawing with a brush",
+			"#4_4" : "Fold up the main bar when erasing with a eraser",
+			"#5" : "Experimental Options",
+			"#5_1" : "Compatible with 'Auto-hide the taskbar'",
+			"#5_2" : "Restarting 智绘教Inkeys takes effect.",
+			"#5_3" : "Allow attempts to force the window to top",
+			"#5_4" : "May cause other program errors."
 		},
 		
 		"Update" :
