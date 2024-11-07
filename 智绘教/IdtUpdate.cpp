@@ -9,6 +9,11 @@
 #include "IdtWindow.h"
 #include "IdtNet.h"
 
+#if __has_include("IdtInsider.h")
+#include "IdtInsider.h"
+#define USE_INSIDER_VISION
+#endif
+
 //程序崩溃保护
 void CrashedHandler()
 {
@@ -323,6 +328,14 @@ int DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass edi
 
 void AutomaticUpdate()
 {
+#ifdef USE_INSIDER_VISION
+
+	if (!userId.empty() && userId != L"Error")
+		InsiderInitialization(utf16ToUtf8(userId), setlist.updateChannelExtra);
+	Testa(setlist.updateChannelExtra);
+
+#endif
+
 	/*
 	AutomaticUpdateStep 含义
 	0 自动更新未启动

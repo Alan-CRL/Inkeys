@@ -21,6 +21,7 @@ struct SetListStruct
 	int SetSkinMode, SkinMode;
 
 	string UpdateChannel;
+	string updateChannelExtra;
 
 	// 兼容自动隐藏的任务栏
 	bool compatibleTaskBarAutoHide;

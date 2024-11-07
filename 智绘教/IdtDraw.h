@@ -12,15 +12,18 @@ extern IMAGE ColorPaletteImg;
 extern shared_mutex ColorPaletteSm;
 
 // TODO 老旧残留
+
+//窗口穿透
 struct penetrateStruct
 {
 	bool select;
-}; //窗口穿透
+};
 extern penetrateStruct penetrate;
+//调测（现为设置)
 struct testStruct
 {
 	bool select;
-}; //调测
+};
 extern testStruct test;
 
 struct plug_in_RandomRollCallStruct
@@ -65,7 +68,6 @@ double EuclideanDistanceP(Point a, Point b);
 extern map<pair<int, int>, bool> extreme_point;
 extern shared_mutex ExtremePointSm;
 //extern map<pair<Point, Point >, bool> extreme_line;
-double pointToLineDistance(Point lineStart, Point lineEnd, Point p);
 double pointToLineSegmentDistance(Point lineStart, Point lineEnd, Point p);
 bool isLine(vector<Point> points, double tolerance, double drawingScale, std::chrono::high_resolution_clock::time_point start);
 

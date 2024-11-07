@@ -1041,74 +1041,76 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 
 		//智能绘图模块
 		{
-			// TODO 至少得有 120 * drawingScale 的长度
 			if (stateInfo.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1)
 			{
-				Point start(pointInfo.previousX, pointInfo.previousY), end(pointInfo.x, pointInfo.y);
-
-				//端点匹配
+				if (EuclideanDistance({ pointInfo.previousX, pointInfo.previousY }, { pointInfo.x, pointInfo.y }) / drawingScale >= 120)
 				{
-					//起点匹配
-					{
-						Point start_target = start;
-						double distance = 10 * drawingScale;
+					Point start(pointInfo.previousX, pointInfo.previousY), end(pointInfo.x, pointInfo.y);
 
-						std::shared_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
-						for (const auto& [point, value] : extreme_point)
+					//端点匹配
+					{
+						//起点匹配
 						{
-							if (value == true)
+							Point start_target = start;
+							double distance = 10 * drawingScale;
+
+							std::shared_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
+							for (const auto& [point, value] : extreme_point)
 							{
-								if (EuclideanDistance({ point.first,point.second }, { start.X,start.Y }) <= distance)
+								if (value == true)
 								{
-									distance = EuclideanDistance({ point.first,point.second }, { start.X,start.Y });
-									start_target = { point.first,point.second };
+									if (EuclideanDistance({ point.first,point.second }, { start.X,start.Y }) <= distance)
+									{
+										distance = EuclideanDistance({ point.first,point.second }, { start.X,start.Y });
+										start_target = { point.first,point.second };
+									}
 								}
 							}
+							LockExtremePointSm.unlock();
+
+							start = start_target;
 						}
-						LockExtremePointSm.unlock();
-
-						start = start_target;
-					}
-					//终点匹配
-					{
-						Point end_target = end;
-						double distance = 10 * drawingScale;
-
-						std::shared_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
-						for (const auto& [point, value] : extreme_point)
+						//终点匹配
 						{
-							if (value == true)
+							Point end_target = end;
+							double distance = 10 * drawingScale;
+
+							std::shared_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
+							for (const auto& [point, value] : extreme_point)
 							{
-								if (EuclideanDistance({ point.first,point.second }, { end.X,end.Y }) <= distance)
+								if (value == true)
 								{
-									distance = EuclideanDistance({ point.first,point.second }, { end.X,end.Y });
-									end_target = { point.first,point.second };
+									if (EuclideanDistance({ point.first,point.second }, { end.X,end.Y }) <= distance)
+									{
+										distance = EuclideanDistance({ point.first,point.second }, { end.X,end.Y });
+										end_target = { point.first,point.second };
+									}
 								}
 							}
-						}
-						LockExtremePointSm.unlock();
+							LockExtremePointSm.unlock();
 
-						end = end_target;
+							end = end_target;
+						}
 					}
+
+					std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
+					extreme_point[{start.X, start.Y}] = extreme_point[{end.X, end.Y}] = true;
+					LockExtremePointSm.unlock();
+
+					SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
+
+					Graphics graphics(GetImageHDC(&Canvas));
+					graphics.SetSmoothingMode(SmoothingModeHighQuality);
+
+					Pen pen(hiex::ConvertToGdiplusColor(RGBA(0, 0, 0, 255), false));
+					pen.SetStartCap(LineCapRound);
+					pen.SetEndCap(LineCapRound);
+
+					pen.SetColor(hiex::ConvertToGdiplusColor(stateInfo.Pen.Brush1.color, false));
+					pen.SetWidth(stateInfo.Pen.Brush1.width);
+
+					graphics.DrawLine(&pen, start.X, start.Y, end.X, end.Y);
 				}
-
-				std::unique_lock<std::shared_mutex> LockExtremePointSm(ExtremePointSm);
-				extreme_point[{start.X, start.Y}] = extreme_point[{end.X, end.Y}] = true;
-				LockExtremePointSm.unlock();
-
-				SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
-
-				Graphics graphics(GetImageHDC(&Canvas));
-				graphics.SetSmoothingMode(SmoothingModeHighQuality);
-
-				Pen pen(hiex::ConvertToGdiplusColor(RGBA(0, 0, 0, 255), false));
-				pen.SetStartCap(LineCapRound);
-				pen.SetEndCap(LineCapRound);
-
-				pen.SetColor(hiex::ConvertToGdiplusColor(stateInfo.Pen.Brush1.color, false));
-				pen.SetWidth(stateInfo.Pen.Brush1.width);
-
-				graphics.DrawLine(&pen, start.X, start.Y, end.X, end.Y);
 			}
 			else if (stateInfo.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1)
 			{

@@ -34,13 +34,15 @@
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
 
+#include "IdtInsider.h"
+
 #include <lm.h>
 #include <shellscalingapi.h>
 #include <shlobj.h>
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20241105a";				// 程序发布日期
+wstring editionDate = L"20241107a";				// 程序发布日期
 wstring editionChannel = L"Dev";				// 程序发布通道
 wstring editionCode = L"24H2";					// 程序发布代号
 
@@ -546,6 +548,7 @@ int main()
 			setlist.SmoothWriting = true;
 
 			setlist.UpdateChannel = "LTS";
+			setlist.updateChannelExtra = "";
 
 			{
 				// 获取系统默认语言标识符
@@ -716,6 +719,10 @@ int main()
 		}
 		// 启动 DesktopDrawpadBlocker
 		thread(StartDesktopDrawpadBlocker).detach();
+	}
+	// 自动更新初始化
+	{
+		thread(AutomaticUpdate).detach();
 	}
 
 	// 窗口

@@ -594,6 +594,7 @@
     <ClInclude Include="IdtHistoricalDrawpad.h" />
     <ClInclude Include="IdtI18n.h" />
     <ClInclude Include="IdtImage.h" />
+    <ClInclude Include="IdtInsider.h" />
     <ClInclude Include="IdtMagnification.h" />
     <ClInclude Include="IdtMain.h" />
     <ClInclude Include="IdtNet.h" />
@@ -677,6 +678,7 @@
     <ClCompile Include="IdtHistoricalDrawpad.cpp" />
     <ClCompile Include="IdtI18n.cpp" />
     <ClCompile Include="IdtImage.cpp" />
+    <ClCompile Include="IdtInsider.cpp" />
     <ClCompile Include="IdtNet.cpp" />
     <ClCompile Include="IdtRts.cpp" />
     <ClCompile Include="IdtSetting.cpp" />
@@ -762,6 +764,8 @@
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|ARM64EC'">true</DeploymentContent>
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">true</DeploymentContent>
     </Font>
+    <Font Include="src\ttf\HarmonyOS_Sans_TC_Regular.ttf" />
+    <Font Include="src\ttf\icomoon.ttf" />
   </ItemGroup>
   <ItemGroup>
     <None Include="additional\jsoncpp\lib_json\json_valueiterator.inl" />

@@ -381,20 +381,29 @@ void SettingMain()
 		font_cfg.OversampleH = 1;
 		font_cfg.OversampleV = 1;
 		font_cfg.FontDataOwnedByAtlas = false;
-		font_cfg.GlyphRanges = io.Fonts->GetGlyphRangesChineseFull();
 
-		HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
-		HGLOBAL hMem = LoadResource(NULL, hRes);
-		void* pLock = LockResource(hMem);
-		DWORD dwSize = SizeofResource(NULL, hRes);
+		{
+			HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
+			HGLOBAL hMem = LoadResource(NULL, hRes);
+			void* pLock = LockResource(hMem);
+			DWORD dwSize = SizeofResource(NULL, hRes);
 
-		ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 28.0f * settingGlobalScale, &font_cfg);
+			ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 28.0f * settingGlobalScale, &font_cfg, io.Fonts->GetGlyphRangesChineseFull());
+		}
 
-		ImWchar icons_ranges[] = { 0xE900, 0xE914, 0 };
+		ImWchar icons_ranges[] = { 0xE900, 0xE915, 0 };
 		font_cfg.MergeMode = true;
 		font_cfg.GlyphOffset.y = 5.0f * settingGlobalScale;
 		font_cfg.PixelSnapH = true;
-		io.Fonts->AddFontFromFileTTF("icomoon.ttf", 32.0f * settingGlobalScale, &font_cfg, icons_ranges);
+
+		{
+			HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(257), L"TTF");
+			HGLOBAL hMem = LoadResource(NULL, hRes);
+			void* pLock = LockResource(hMem);
+			DWORD dwSize = SizeofResource(NULL, hRes);
+
+			ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 32.0f * settingGlobalScale, &font_cfg, icons_ranges);
+		}
 
 		io.Fonts->Build();
 
@@ -986,38 +995,37 @@ void SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::TextUnformatted("\ue90e");
 
-								ImGui::SetCursorPos({ Cx + 160.0f * settingGlobalScale,Cy + 462.0f * settingGlobalScale });
+								ImGui::SetCursorPos({ Cx + 160.0f * settingGlobalScale,Cy + 465.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::TextUnformatted("2685549821");
 							}
 
 							{
-								ImGui::SetCursorPos({ Cx + 106.0f * settingGlobalScale,Cy + 510.0f * settingGlobalScale });
+								ImGui::SetCursorPos({ Cx + 106.0f * settingGlobalScale,Cy + 512.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.9f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::TextUnformatted("\ue90c");
 
-								ImGui::SetCursorPos({ Cx + 160.0f * settingGlobalScale,Cy + 510.0f * settingGlobalScale });
+								ImGui::SetCursorPos({ Cx + 160.0f * settingGlobalScale,Cy + 515.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.75f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::TextUnformatted("alan-crl@foxmail.com");
 							}
 						}
 						{
-							ImGui::SetCursorPos({ Cx + 468.0f * settingGlobalScale,Cy + 400.0f * settingGlobalScale });
-							ImFontMain->Scale = 0.95f, PushFontNum++, ImGui::PushFont(ImFontMain);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-							ImGui::TextUnformatted("\ue911");
-
-							ImGui::SetCursorPos({ Cx + 520.0f * settingGlobalScale,Cy + 393.0f * settingGlobalScale });
 							{
+								ImGui::SetCursorPos({ Cx + 468.0f * settingGlobalScale,Cy + 400.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.95f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+								ImGui::TextUnformatted("\ue911");
+
+								ImGui::SetCursorPos({ Cx + 520.0f * settingGlobalScale,Cy + 393.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::TextUnformatted(get<string>(i18n[i18nEnum::Settings_Home_2]).c_str());
-							}
-							ImGui::SetCursorPos({ Cx + 520.0f * settingGlobalScale,Cy + 418.0f * settingGlobalScale });
-							{
+
+								ImGui::SetCursorPos({ Cx + 520.0f * settingGlobalScale,Cy + 418.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 0.7f));
 								if (ImGui::TextLink("618720802"))
@@ -1036,6 +1044,21 @@ void SettingMain()
 								ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								if (ImGui::TextLink(get<string>(i18n[i18nEnum::Settings_Home_3]).c_str()))
+								{
+									ShellExecuteW(0, 0, L"https://space.bilibili.com/1330313497", 0, 0, SW_SHOW);
+								}
+							}
+
+							{
+								ImGui::SetCursorPos({ Cx + 467.0f * settingGlobalScale,Cy + 510.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.95f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+								ImGui::TextUnformatted("\ue912");
+
+								ImGui::SetCursorPos({ Cx + 520.0f * settingGlobalScale,Cy + 512.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+								if (ImGui::TextLink("问题/建议反馈问卷"))
 								{
 									ShellExecuteW(0, 0, L"https://space.bilibili.com/1330313497", 0, 0, SW_SHOW);
 								}

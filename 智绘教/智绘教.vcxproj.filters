@@ -699,6 +699,9 @@
     <ClInclude Include="IdtConfiguration.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="IdtInsider.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HiEasyX\HiGUI\Button.cpp">
@@ -941,6 +944,9 @@
     <ClCompile Include="additional\imgui\imgui_widgets.cpp">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
+    <ClCompile Include="IdtInsider.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="智绘教.rc">
@@ -1125,6 +1131,8 @@
   </ItemGroup>
   <ItemGroup>
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />
+    <Font Include="src\ttf\icomoon.ttf" />
+    <Font Include="src\ttf\HarmonyOS_Sans_TC_Regular.ttf" />
   </ItemGroup>
   <ItemGroup>
     <None Include="exe\智绘教CrashedHandler.exe" />
