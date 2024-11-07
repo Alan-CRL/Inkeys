@@ -34,8 +34,6 @@
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
 
-#include "IdtInsider.h"
-
 #include <lm.h>
 #include <shellscalingapi.h>
 #include <shlobj.h>
