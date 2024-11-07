@@ -1,9 +1,6 @@
 ﻿#pragma once
 #include "IdtMain.h"
 
-//程序崩溃保护
-void CrashedHandler();
-
 class EditionInfoClass
 {
 public:

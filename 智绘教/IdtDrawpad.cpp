@@ -541,7 +541,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 
 		// 待修改
 		POINT StopTimingPoint = { -1,-1 };
-		bool StopTimingDisable = !setlist.IntelligentDrawing;
+		bool StopTimingDisable = !setlist.waitStraighten;
 		chrono::high_resolution_clock::time_point StopTiming = std::chrono::high_resolution_clock::now();
 
 		clock_t tRecord = clock();
@@ -655,11 +655,12 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 			{
 				//直线绘制
 				double redundance = max(15.0 * drawingScale, (accurateWritingDistance / drawingScale * 0.03409 + 10.9092) * drawingScale);
-				if (setlist.IntelligentDrawing && accurateWritingDistance / drawingScale >= 120 && (abs(inkTangentRectangle.left - inkTangentRectangle.right) / drawingScale >= 120 || abs(inkTangentRectangle.top - inkTangentRectangle.bottom) / drawingScale >= 120) && isLine(actualPoints, redundance, drawingScale, std::chrono::high_resolution_clock::now()))
+				if (setlist.liftStraighten && accurateWritingDistance / drawingScale >= 120 && (abs(inkTangentRectangle.left - inkTangentRectangle.right) / drawingScale >= 120 || abs(inkTangentRectangle.top - inkTangentRectangle.bottom) / drawingScale >= 120) && isLine(actualPoints, redundance, drawingScale, std::chrono::high_resolution_clock::now()))
 				{
 					Point start(actualPoints[0]), end(actualPoints[actualPoints.size() - 1]);
 
-					//端点匹配
+					// 智能绘图：端点匹配
+					if (setlist.pointAdsorption)
 					{
 						//起点匹配
 						{
@@ -725,7 +726,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 				}
 
 				//平滑曲线
-				else if (setlist.SmoothWriting && actualPoints.size() > 2)
+				else if (setlist.smoothWriting && actualPoints.size() > 2)
 				{
 					SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
 
@@ -746,7 +747,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 			else if (stateInfo.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
 			{
 				//平滑曲线
-				if (setlist.SmoothWriting && actualPoints.size() > 2)
+				if (setlist.smoothWriting && actualPoints.size() > 2)
 				{
 					SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
 
@@ -844,19 +845,22 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 			pointInfo.x = pt.x, pointInfo.y = pt.y;
 
 			// 计算智能橡皮大小
-			if (setlist.paintDevice == 1)
+			if (setlist.smartEraser)
 			{
-				// PC 鼠标
-				if (speed <= 30) trubbersize = max(25, speed * 2.33 + 2.33) * drawingScale;
-				else trubbersize = min(200, speed + 30) * drawingScale;
+				if (setlist.paintDevice == 1)
+				{
+					// PC 鼠标
+					if (speed <= 30) trubbersize = max(25, speed * 2.33 + 2.33) * drawingScale;
+					else trubbersize = min(200, speed + 30) * drawingScale;
+				}
+				else
+				{
+					// 触摸设备
+					if (speed <= 20) trubbersize = max(25, speed * 2.33 + 13.33) * drawingScale;
+					else trubbersize = min(200, 3 * speed) * drawingScale;
+				}
 			}
-			else
-			{
-				// 触摸设备
-				if (speed <= 20) trubbersize = max(25, speed * 2.33 + 13.33) * drawingScale;
-				else trubbersize = min(200, 3 * speed) * drawingScale;
-			}
-			//TODO
+			else trubbersize = 60 * drawingScale;
 
 			if (trubbersize == -1) trubbersize = rubbersize;
 			if (rubbersize < trubbersize) rubbersize = rubbersize + max(0.1, (trubbersize - rubbersize) / 50);
@@ -1039,7 +1043,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 		}
 		lockStrokeImageSm.unlock();
 
-		//智能绘图模块
+		//智能绘图：端点吸附
 		{
 			if (stateInfo.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1)
 			{
@@ -1048,6 +1052,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 					Point start(pointInfo.previousX, pointInfo.previousY), end(pointInfo.x, pointInfo.y);
 
 					//端点匹配
+					if (setlist.pointAdsorption)
 					{
 						//起点匹配
 						{
@@ -1115,7 +1120,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 			else if (stateInfo.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1)
 			{
 				//端点匹配
-				if (setlist.IntelligentDrawing && (pointInfo.x != pointInfo.previousX || pointInfo.y != pointInfo.previousY))
+				if ((pointInfo.x != pointInfo.previousX || pointInfo.y != pointInfo.previousY))
 				{
 					Point l1 = Point(pointInfo.previousX, pointInfo.previousY);
 					Point l2 = Point(pointInfo.previousX, pointInfo.y);
@@ -1123,6 +1128,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 					Point r2 = Point(pointInfo.x, pointInfo.y);
 
 					//端点匹配
+					if (setlist.pointAdsorption)
 					{
 						{
 							Point idx = l1;

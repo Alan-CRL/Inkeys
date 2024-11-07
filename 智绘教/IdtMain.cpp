@@ -47,7 +47,7 @@ wstring editionCode = L"24H2";					// 程序发布代号
 wstring userId; //用户GUID
 wstring globalPath; //程序当前路径
 
-int offSignal = false, offSignalReady = false; //关闭指令
+int offSignal = false; //关闭指令
 map <wstring, bool> threadStatus; //线程状态管理
 
 shared_ptr<spdlog::logger> IDTLogger;
@@ -542,8 +542,10 @@ int main()
 			setlist.compatibleTaskBarAutoHide = true;
 			setlist.forceTop = true;
 
-			setlist.IntelligentDrawing = true;
-			setlist.SmoothWriting = true;
+			setlist.liftStraighten = false, setlist.waitStraighten = true;
+			setlist.pointAdsorption = true;
+			setlist.smoothWriting = true;
+			setlist.smartEraser = true;
 
 			setlist.UpdateChannel = "LTS";
 			setlist.updateChannelExtra = "";
@@ -583,8 +585,8 @@ int main()
 				bool hasTouchDevice = (digitizerStatus & NID_READY) && (digitizerStatus & (NID_INTEGRATED_TOUCH | NID_EXTERNAL_TOUCH));
 				if (hasTouchDevice)
 				{
-					if (MainMonitor.MonitorPhyWidth == 0 || MainMonitor.MonitorPhyHeight == 0) setlist.paintDevice = 1;
-					else if (MainMonitor.MonitorPhyWidth * MainMonitor.MonitorPhyHeight >= 1200) setlist.paintDevice = 1;
+					if (MainMonitor.MonitorPhyWidth == 0 || MainMonitor.MonitorPhyHeight == 0) setlist.paintDevice = 1, setlist.liftStraighten = true;
+					else if (MainMonitor.MonitorPhyWidth * MainMonitor.MonitorPhyHeight >= 1200) setlist.paintDevice = 1, setlist.liftStraighten = true;
 					else setlist.paintDevice = 0;
 				}
 				else setlist.paintDevice = 0;
@@ -718,10 +720,12 @@ int main()
 		// 启动 DesktopDrawpadBlocker
 		thread(StartDesktopDrawpadBlocker).detach();
 	}
+#ifdef IDT_RELEASE
 	// 自动更新初始化
 	{
 		thread(AutomaticUpdate).detach();
 	}
+#endif
 
 	// 窗口
 	{
@@ -863,24 +867,18 @@ int main()
 
 		IDTLogger->info("[主线程][IdtMain] 反初始化 COM 环境完成");
 	}
-
-#ifdef IDT_RELEASE
-	IDTLogger->info("[主线程][IdtMain] 等待崩溃重启助手结束");
+	if (offSignal == 2)
 	{
-		int WaitingCount = 0;
-		for (; WaitingCount < 20; WaitingCount++)
-		{
-			if (offSignalReady) break;
-			this_thread::sleep_for(chrono::milliseconds(500));
-		}
-		if (WaitingCount >= 20) IDTLogger->warn("[主线程][IdtMain] 等待崩溃重启助手结束超时并强制退出");
+		HANDLE fileHandle = NULL;
+		OccupyFileForWrite(&fileHandle, globalPath + L"force_start.signal");
+		UnOccupyFile(&fileHandle);
+
+		ShellExecuteW(NULL, NULL, GetCurrentExePath().c_str(), NULL, NULL, SW_SHOWNORMAL);
 	}
-	IDTLogger->info("[主线程][IdtMain] 崩溃重启助手结束");
-#endif
 
 	IDTLogger->info("[主线程][IdtMain] 已结束智绘教所有线程并关闭程序");
 	return 0;
-}
+	}
 
 // 调测专用
 #ifndef IDT_RELEASE

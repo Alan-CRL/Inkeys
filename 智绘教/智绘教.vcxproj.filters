@@ -225,9 +225,6 @@
     <ClInclude Include="IdtD2DPreparation.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="IdtHash.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="IdtState.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -848,9 +845,6 @@
     <ClCompile Include="IdtD2DPreparation.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="IdtHash.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="IdtState.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -1125,6 +1119,12 @@
     <Image Include="src\setting\Home_Backgroung.png">
       <Filter>资源文件</Filter>
     </Image>
+    <Image Include="src\setting\Home_Feedback.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\setting\Profile_Picture.png">
+      <Filter>资源文件</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />
@@ -1132,9 +1132,7 @@
     <Font Include="src\ttf\HarmonyOS_Sans_TC_Regular.ttf" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="exe\智绘教CrashedHandler.exe" />
     <None Include="PptCOM.dll" />
-    <None Include="exe\智绘教StartupItemSettings.exe" />
     <None Include="exe\DesktopDrawpadBlocker.exe" />
     <None Include="src\i18n\zh-CN.json" />
     <None Include="src\i18n\en-US.json" />

@@ -15,8 +15,11 @@ struct SetListStruct
 	bool RightClickClose;
 	bool BrushRecover, RubberRecover;
 
-	bool IntelligentDrawing, SmoothWriting;
 	int paintDevice;
+	bool liftStraighten, waitStraighten;
+	bool pointAdsorption;
+	bool smoothWriting;
+	bool smartEraser;
 
 	int SetSkinMode, SkinMode;
 
@@ -90,7 +93,7 @@ struct DdbSetListStruct
 {
 	DdbSetListStruct()
 	{
-		DdbEnable = true;
+		DdbEnable = false;
 		DdbEnhance = false;
 
 		DdbEdition = L"20241028a";

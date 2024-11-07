@@ -12,7 +12,6 @@
 #define IDB_PNG8                        188
 #define IDI_ICON1                       191
 #define IDR_TTF1                        198
-#define IDR_EXE1                        201
 #define IDB_PNG5                        205
 #define IDB_PNG7                        206
 #define IDB_PNG10                       210
@@ -29,7 +28,6 @@
 #define IDB_PNG19                       225
 #define IDB_PNG20                       226
 #define IDB_PNG21                       227
-#define IDR_EXE3                        229
 #define IDB_PNG22                       230
 #define IDB_PNG23                       231
 #define IDB_PNG24                       232
@@ -46,12 +44,13 @@
 #define IDB_PNG32                       255
 #define IDR_TTF2                        257
 #define IDR_TTF3                        258
+#define IDB_PNG33                       259
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        259
+#define _APS_NEXT_RESOURCE_VALUE        260
 #define _APS_NEXT_COMMAND_VALUE         40001
 #define _APS_NEXT_CONTROL_VALUE         1001
 #define _APS_NEXT_SYMED_VALUE           101

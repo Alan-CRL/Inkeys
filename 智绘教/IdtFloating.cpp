@@ -6148,15 +6148,6 @@ int floating_main()
 	DrawScreen_thread.detach();
 	//LOG(INFO) << "成功启动悬浮窗窗口绘制线程";
 
-	// TODO
-#ifdef IDT_RELEASE
-
-	//LOG(INFO) << "尝试启动程序崩溃反馈线程";
-	thread CrashedHandler_thread(CrashedHandler);
-	CrashedHandler_thread.detach();
-	//LOG(INFO) << "成功启动程序崩溃反馈线程";
-#endif
-
 	//LOG(INFO) << "进入悬浮窗窗口交互线程";
 	thread MouseInteractionThread(MouseInteraction);
 	MouseInteractionThread.detach();
@@ -6166,7 +6157,7 @@ int floating_main()
 	int i = 1;
 	for (; i <= 10; i++)
 	{
-		if (!threadStatus[L"CrashedHandler"] && !threadStatus[L"PPTLinkageMain"]/*&& !threadStatus[L"GetPptState"] && !threadStatus[L"PptInteract"] */ && !threadStatus[L"GetTime"] && !threadStatus[L"DrawScreen"] && !threadStatus[L"api_read_pipe"] && !threadStatus[L"BlackBlock"]) break;
+		if (!threadStatus[L"PPTLinkageMain"]/*&& !threadStatus[L"GetPptState"] && !threadStatus[L"PptInteract"] */ && !threadStatus[L"GetTime"] && !threadStatus[L"DrawScreen"] && !threadStatus[L"api_read_pipe"] && !threadStatus[L"BlackBlock"]) break;
 		this_thread::sleep_for(chrono::milliseconds(500));
 	}
 

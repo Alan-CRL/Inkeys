@@ -1,7 +1,6 @@
 ﻿#include "IdtUpdate.h"
 
 #include "IdtConfiguration.h"
-#include "IdtHash.h"
 #include "IdtOther.h"
 #include "IdtSetting.h"
 #include "IdtText.h"
@@ -13,90 +12,6 @@
 #include "IdtInsider.h"
 #define USE_INSIDER_VISION
 #endif
-
-//程序崩溃保护
-void CrashedHandler()
-{
-	threadStatus[L"CrashedHandler"] = true;
-
-	ofstream write;
-	write.imbue(locale("zh_CN.UTF8"));
-
-	write.open(globalPath + L"api\\open.txt");
-	write << 1;
-	write.close();
-
-	// 启动崩溃重启助手
-	{
-		bool start = true;
-
-		// 检查本地文件完整性
-		{
-			if (_waccess((globalPath + L"api").c_str(), 0) == -1)
-			{
-				error_code ec;
-				filesystem::create_directory(globalPath + L"api", ec);
-			}
-
-			if (_waccess((globalPath + L"api\\智绘教CrashedHandler.exe").c_str(), 0) == -1)
-				if (!ExtractResource((globalPath + L"api\\智绘教CrashedHandler.exe").c_str(), L"EXE", MAKEINTRESOURCE(201)))
-					start = false;
-
-			{
-				string hash_md5, hash_sha256;
-				{
-					hashwrapper* myWrapper = new md5wrapper();
-					hash_md5 = myWrapper->getHashFromFileW(globalPath + L"api\\智绘教CrashedHandler.exe");
-					delete myWrapper;
-				}
-				{
-					hashwrapper* myWrapper = new sha256wrapper();
-					hash_sha256 = myWrapper->getHashFromFileW(globalPath + L"api\\智绘教CrashedHandler.exe");
-					delete myWrapper;
-				}
-
-				if (hash_md5 != CrashedHandlerMd5 || hash_sha256 != CrashedHandlerSHA256)
-					if (!ExtractResource((globalPath + L"api\\智绘教CrashedHandler.exe").c_str(), L"EXE", MAKEINTRESOURCE(201)))
-						start = false;
-			}
-		}
-
-		// 启动崩溃助手
-		if (start && !isProcessRunning((globalPath + L"api\\智绘教CrashedHandler.exe").c_str()))
-		{
-			wstring path = GetCurrentExePath();
-			ShellExecute(NULL, NULL, (globalPath + L"api\\智绘教CrashedHandler.exe").c_str(), (L"/\"" + path + L"\"").c_str(), NULL, SW_SHOWNORMAL);
-		}
-	}
-
-	int value = 2;
-	while (!offSignal)
-	{
-		write.open(globalPath + L"api\\open.txt");
-		write << value;
-		write.close();
-
-		value++;
-		if (value > 100000000) value = 2;
-
-		this_thread::sleep_for(chrono::milliseconds(1000));
-	}
-
-	if (offSignal == 2)
-	{
-		write.open(globalPath + L"api\\open.txt");
-		write << -2;
-		write.close();
-	}
-	else
-	{
-		error_code ec;
-		filesystem::remove(globalPath + L"api\\open.txt", ec);
-	}
-
-	threadStatus[L"CrashedHandler"] = false;
-	offSignalReady = true;
-}
 
 //程序自动更新
 int AutomaticUpdateStep = 0;
@@ -332,7 +247,6 @@ void AutomaticUpdate()
 
 	if (!userId.empty() && userId != L"Error")
 		InsiderInitialization(utf16ToUtf8(userId), setlist.updateChannelExtra);
-	Testa(setlist.updateChannelExtra);
 
 #endif
 

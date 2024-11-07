@@ -590,7 +590,6 @@
     <ClInclude Include="IdtFloating.h" />
     <ClInclude Include="IdtFreezeFrame.h" />
     <ClInclude Include="IdtGuid.h" />
-    <ClInclude Include="IdtHash.h" />
     <ClInclude Include="IdtHistoricalDrawpad.h" />
     <ClInclude Include="IdtI18n.h" />
     <ClInclude Include="IdtImage.h" />
@@ -674,7 +673,6 @@
     <ClCompile Include="IdtFloating.cpp" />
     <ClCompile Include="IdtFreezeFrame.cpp" />
     <ClCompile Include="IdtGuid.cpp" />
-    <ClCompile Include="IdtHash.cpp" />
     <ClCompile Include="IdtHistoricalDrawpad.cpp" />
     <ClCompile Include="IdtI18n.cpp" />
     <ClCompile Include="IdtImage.cpp" />
@@ -739,7 +737,9 @@
     <Image Include="src\setting\Home2_en-US.png" />
     <Image Include="src\setting\Home2_zh-CN.png" />
     <Image Include="src\setting\Home_Backgroung.png" />
+    <Image Include="src\setting\Home_Feedback.png" />
     <Image Include="src\setting\Profile-picture.png" />
+    <Image Include="src\setting\Profile_Picture.png" />
     <Image Include="src\sign.png" />
     <Image Include="src\sign1.png" />
     <Image Include="src\sign2.png" />
@@ -770,8 +770,6 @@
     <None Include="additional\jsoncpp\lib_json\json_valueiterator.inl" />
     <None Include="additional\spdlog\fmt\bundled\fmt.license.rst" />
     <None Include="exe\DesktopDrawpadBlocker.exe" />
-    <None Include="exe\智绘教CrashedHandler.exe" />
-    <None Include="exe\智绘教StartupItemSettings.exe" />
     <None Include="PptCOM.dll" />
     <None Include="src\i18n\en-US.json" />
     <None Include="src\i18n\zh-CN.json" />

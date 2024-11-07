@@ -115,6 +115,8 @@ bool ReadSetting()
 		if (updateVal.isMember("StartUp") && updateVal["StartUp"].isBool())
 			setlist.startUp = updateVal["StartUp"].asBool();
 
+		if (updateVal.isMember("SetSkinMode") && updateVal["SetSkinMode"].isInt())
+			setlist.SetSkinMode = updateVal["SetSkinMode"].asInt();
 		if (updateVal.isMember("CreateLnk") && updateVal["CreateLnk"].isBool())
 			setlist.CreateLnk = updateVal["CreateLnk"].asBool();
 		if (updateVal.isMember("RightClickClose") && updateVal["RightClickClose"].isBool())
@@ -129,25 +131,29 @@ bool ReadSetting()
 			setlist.forceTop = updateVal["ForceTop"].asBool();
 
 		if (updateVal.isMember("PaintDevice") && updateVal["PaintDevice"].isInt())
-			setlist.paintDevice = updateVal["PaintDevice"].asBool();
-		if (updateVal.isMember("IntelligentDrawing") && updateVal["IntelligentDrawing"].isBool())
-			setlist.IntelligentDrawing = updateVal["IntelligentDrawing"].asBool();
+			setlist.paintDevice = updateVal["PaintDevice"].asInt();
+		if (updateVal.isMember("LiftStraighten") && updateVal["LiftStraighten"].isBool())
+			setlist.liftStraighten = updateVal["LiftStraighten"].asBool();
+		if (updateVal.isMember("WaitStraighten") && updateVal["WaitStraighten"].isBool())
+			setlist.waitStraighten = updateVal["WaitStraighten"].asBool();
+		if (updateVal.isMember("PointAdsorption") && updateVal["PointAdsorption"].isBool())
+			setlist.pointAdsorption = updateVal["PointAdsorption"].asBool();
 		if (updateVal.isMember("SmoothWriting") && updateVal["SmoothWriting"].isBool())
-			setlist.SmoothWriting = updateVal["SmoothWriting"].asBool();
-		if (updateVal.isMember("SetSkinMode") && updateVal["SetSkinMode"].isInt())
-			setlist.SetSkinMode = updateVal["SetSkinMode"].asInt();
+			setlist.smoothWriting = updateVal["SmoothWriting"].asBool();
+		if (updateVal.isMember("SmartEraser") && updateVal["SmartEraser"].isBool())
+			setlist.smartEraser = updateVal["SmartEraser"].asBool();
 
 		if (updateVal.isMember("BasicInfo") && updateVal["BasicInfo"].isObject())
 		{
-			if (updateVal["BasicInfo"].isMember("UpdateChannel") && updateVal["BasicInfo"]["UpdateChannel"].isBool())
+			if (updateVal["BasicInfo"].isMember("UpdateChannel") && updateVal["BasicInfo"]["UpdateChannel"].isString())
 				setlist.UpdateChannel = updateVal["BasicInfo"]["UpdateChannel"].asString();
 		}
 
 		if (updateVal.isMember("PlugIn") && updateVal["PlugIn"].isObject())
 		{
-			if (updateVal["PlugIn"].isMember("DdbEnable") && updateVal["PlugIn"]["DdbEnable"].isInt())
+			if (updateVal["PlugIn"].isMember("DdbEnable") && updateVal["PlugIn"]["DdbEnable"].isBool())
 				ddbSetList.DdbEnable = updateVal["PlugIn"]["DdbEnable"].asBool();
-			if (updateVal["PlugIn"].isMember("DdbEnhance") && updateVal["PlugIn"]["DdbEnhance"].isInt())
+			if (updateVal["PlugIn"].isMember("DdbEnhance") && updateVal["PlugIn"]["DdbEnhance"].isBool())
 				ddbSetList.DdbEnhance = updateVal["PlugIn"]["DdbEnhance"].asBool();
 		}
 	}
@@ -168,6 +174,7 @@ bool WriteSetting()
 		updateVal["SelectLanguage"] = Json::Value(setlist.selectLanguage);
 		updateVal["StartUp"] = Json::Value(setlist.startUp);
 
+		updateVal["SetSkinMode"] = Json::Value(setlist.SetSkinMode);
 		updateVal["CreateLnk"] = Json::Value(setlist.CreateLnk);
 		updateVal["RightClickClose"] = Json::Value(setlist.RightClickClose);
 		updateVal["BrushRecover"] = Json::Value(setlist.BrushRecover);
@@ -176,9 +183,11 @@ bool WriteSetting()
 		updateVal["ForceTop"] = Json::Value(setlist.forceTop);
 
 		updateVal["PaintDevice"] = Json::Value(setlist.paintDevice);
-		updateVal["IntelligentDrawing"] = Json::Value(setlist.IntelligentDrawing);
-		updateVal["SmoothWriting"] = Json::Value(setlist.SmoothWriting);
-		updateVal["SetSkinMode"] = Json::Value(setlist.SetSkinMode);
+		updateVal["LiftStraighten"] = Json::Value(setlist.liftStraighten);
+		updateVal["WaitStraighten"] = Json::Value(setlist.waitStraighten);
+		updateVal["PointAdsorption"] = Json::Value(setlist.pointAdsorption);
+		updateVal["SmoothWriting"] = Json::Value(setlist.smoothWriting);
+		updateVal["SmartEraser"] = Json::Value(setlist.smartEraser);
 
 		updateVal["BasicInfo"]["UpdateChannel"] = Json::Value(setlist.UpdateChannel);
 		updateVal["BasicInfo"]["edition"] = Json::Value(utf16ToUtf8(editionDate));
