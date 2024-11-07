@@ -41,8 +41,7 @@ Under development, please stay tuned ~
 [Github Release Assets](https://github.com/Alan-CRL/IDT/releases) | [Official Website Download(Chinese)](https://www.inkeys.top/col.jsp?id=106)   
 
 #### System Requirements
-The minimum support is `Windows 7 Service Pack 1` and supports `32/64 bit` windows.  
-For Windows 7 users, `d3dcompiler_47.dll` is required, which can be obtained through `KB2670838` update.  
+The minimum support is `Windows 7` and supports `x86 / x64 / arm64` windows.  
 
 ## Future Features
 `New style` `Pen tip and pressure sensitivity` `Ink recognition` `Smooth writing ink` `Various plugins` and so on.  
@@ -61,9 +60,8 @@ Author QQ: `2685549821`
 > Check `.NET Desktop Development` `C++ Desktop Development` `Windows Application Development` Workload.
 - C++ 20
 - Windows 11 SDK 10.26100
-- [EasyX](https://easyx.cn/download/EasyX_2023%E5%A4%A7%E6%9A%91%E7%89%88.exe) (EasyX_2023 Summer Release Version)
 - .NET Framework 4.0 SDK
-- Microsoft DirectX SDK (June 2010)
+- Microsoft DirectX SDK (June 2010) (Installed in the default path)
 
 ### Branch Description
 - `main`: Store recently stable and buildable program source code.
@@ -74,7 +72,7 @@ Inkeys adopts a completely open source approach, with all source code and resour
 1. Download `main` branch.  
 2. Use Visual Studio 2022 open `智绘教.sln`.  
 3. Choose `智绘教` project.
-4. Choose `Release | Win32` build configuration.
+4. Choose `Release` build configuration.
 5. Click on build to generate the program.
 
 ## Project Reference

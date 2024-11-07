@@ -38,8 +38,7 @@ Windows 屏幕批注工具，拥有高效批注和丰富功能，
 [官网下载页](https://www.inkeys.top/col.jsp?id=106) | [免登录云盘](https://www.123pan.com/s/duk9-n4dAd.html) | [Github Release 附件](https://github.com/Alan-CRL/IDT/releases)  
 
 #### 要求
-最低支持 Windows 7 Service Pack 1，支持 32 / 64 位系统。  
-对于 win7 用户，需要 `d3dcompiler_47.dll`，可以通过 KB2670838 更新获取或使用 DXR 修复工具。
+最低支持 Windows 7，支持 32位 / 64位 / Arm64 系统。  
 
 #### 提示
 获取 公测版本 及 开发版本 请加 [官方用户QQ群](https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6) 下载。
@@ -63,9 +62,8 @@ Windows 屏幕批注工具，拥有高效批注和丰富功能，
 > 勾选 `.NET 桌面开发` `使用 C++ 的桌面开发` `Windows 应用程序开发` 等工作负荷
 - C++ 20
 - Windows 11 SDK 10.26100
-- [EasyX](https://easyx.cn/download/EasyX_2023%E5%A4%A7%E6%9A%91%E7%89%88.exe) (EasyX_2023大暑版)
 - .NET Framework 4.0 SDK
-- Microsoft DirectX SDK (June 2010)
+- Microsoft DirectX SDK (June 2010)（安装于默认路径中）
 
 ### 分支说明
 - `main`：主仓库，存储近期较为稳定的可构建的程序源码
@@ -76,7 +74,7 @@ Windows 屏幕批注工具，拥有高效批注和丰富功能，
 1. 下载 `main` 仓库  
 2. 使用 Visual Studio 2022 打开 `智绘教.sln`  
 3. 选择 `智绘教` 项目
-4. 切换为 `Release | Win32` 构建配置
+4. 切换为 `Release` 构建配置
 5. 点击构建即可生成程序
 
 ## 项目引用
