@@ -699,9 +699,6 @@
     <ClInclude Include="IdtConfiguration.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="IdtInsider.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HiEasyX\HiGUI\Button.cpp">
@@ -944,7 +941,7 @@
     <ClCompile Include="additional\imgui\imgui_widgets.cpp">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
-    <ClCompile Include="IdtInsider.cpp">
+    <ClCompile Include="ExtraInclude.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
