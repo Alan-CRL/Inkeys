@@ -100,7 +100,7 @@ void SettingWindow(promise<void>& promise)
 			break;
 
 		case WM_LBUTTONDOWN:
-			if (IsInRect(MoushPos.x, MoushPos.y, { 0,0,870,30 })) SettingSeekBar();
+			if (IsInRect(MoushPos.x, MoushPos.y, { 0,0,int(930.0 * settingGlobalScale),int(20.0 * settingGlobalScale) })) SettingSeekBar();
 			break;
 		}
 	}
@@ -425,9 +425,15 @@ void SettingMain()
 			ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 28.0f * settingGlobalScale, &font_cfg, io.Fonts->GetGlyphRangesChineseFull());
 		}
 
-		ImWchar icons_ranges[] = { 0xE900, 0xE916, 0 };
+		ImWchar icons_ranges[] =
+		{
+			0xe80f, 0xe80f, // 主页
+			0xe713, 0xe713, // 常规
+			0xee56, 0xee56, // 绘制
+			0
+		};
 		font_cfg.MergeMode = true;
-		font_cfg.GlyphOffset.y = 5.0f * settingGlobalScale;
+		font_cfg.GlyphOffset.y = 6.0f * settingGlobalScale;
 		font_cfg.PixelSnapH = true;
 
 		{
@@ -444,10 +450,10 @@ void SettingMain()
 		ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 		{
 			ImGuiStyle& style = ImGui::GetStyle();
-			style.Colors[ImGuiCol_WindowBg] = ImVec4(245 / 255.0f, 248 / 255.0f, 255 / 252.0f, 1.0f);
-			style.Colors[ImGuiCol_ChildBg] = ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 252.0f, 1.0f);
+			style.Colors[ImGuiCol_WindowBg] = ImVec4(243 / 255.0f, 243 / 255.0f, 243 / 252.0f, 1.0f);
+			style.Colors[ImGuiCol_ChildBg] = ImVec4(251 / 255.0f, 251 / 255.0f, 251 / 252.0f, 1.0f);
 			style.Colors[ImGuiCol_TitleBgActive] = ImVec4(221 / 255.0f, 223 / 255.0f, 230 / 252.0f, 1.0f);
-			style.Colors[ImGuiCol_Border] = ImVec4(180 / 255.0f, 180 / 255.0f, 180 / 255.0f, 1.0f);
+			style.Colors[ImGuiCol_Border] = ImVec4(229 / 255.0f, 229 / 255.0f, 229 / 255.0f, 1.0f);
 
 			style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
 			style.WindowPadding = ImVec2(0.0f, 0.0f);
@@ -456,10 +462,10 @@ void SettingMain()
 			style.FrameBorderSize = 1.0f * settingGlobalScale;
 			style.ChildBorderSize = 1.0f * settingGlobalScale;
 
-			style.ChildRounding = 8.0f * settingGlobalScale;
-			style.FrameRounding = 8.0f * settingGlobalScale;
-			style.GrabRounding = 8.0f * settingGlobalScale;
-			style.PopupRounding = 8.0f * settingGlobalScale;
+			style.ChildRounding = 4.0f * settingGlobalScale;
+			style.FrameRounding = 4.0f * settingGlobalScale;
+			style.GrabRounding = 4.0f * settingGlobalScale;
+			style.PopupRounding = 4.0f * settingGlobalScale;
 		}
 
 		//初始化定义变量
@@ -475,7 +481,7 @@ void SettingMain()
 		int PushStyleColorNum = 0, PushFontNum = 0, PushStyleVarNum = 0;
 		int QueryWaitingTime = 5;
 
-		// ---
+		// 设置参数
 
 		int SelectLanguage = setlist.selectLanguage;
 		bool StartUp = setlist.startUp;
@@ -592,6 +598,8 @@ void SettingMain()
 				ImGui::Begin(settingTitle.c_str(), &test.select, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);//开始绘制窗口
 
 				{
+					ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
 					// 主页
 					{
 						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,40.0f * settingGlobalScale });
@@ -607,7 +615,7 @@ void SettingMain()
 						}
 						else
 						{
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(245, 248, 255, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(243, 243, 243, 255));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(231, 233, 239, 255));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(228, 237, 252, 255));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(60, 60, 60, 255));
@@ -615,8 +623,8 @@ void SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 						}
 
-						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button((" \ue900  " + get<string>(i18n[i18nEnum::Settings_Home])).c_str(), { 150.0f * settingGlobalScale,40.0f * settingGlobalScale })) settingTab = settingTabEnum::tab1;
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.6f));
+						if (ImGui::Button(("   \ue80f   " + get<string>(i18n[i18nEnum::Settings_Home])).c_str(), { 150.0f * settingGlobalScale,34.0f * settingGlobalScale })) settingTab = settingTabEnum::tab1;
 					}
 
 					// 常规
@@ -625,8 +633,8 @@ void SettingMain()
 
 						if (settingTab == settingTabEnum::tab2)
 						{
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(228, 237, 252, 255));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(228, 237, 252, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 9));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 9));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(231, 233, 239, 255));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
@@ -642,8 +650,8 @@ void SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 						}
 
-						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button((" \ue901  " + get<string>(i18n[i18nEnum::Settings_Regular])).c_str(), { 150.0f * settingGlobalScale,40.0f * settingGlobalScale })) settingTab = settingTabEnum::tab2;
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.6f));
+						if (ImGui::Button(("   \ue713   " + get<string>(i18n[i18nEnum::Settings_Regular])).c_str(), { 150.0f * settingGlobalScale,34.0f * settingGlobalScale })) settingTab = settingTabEnum::tab2;
 					}
 
 					// 绘制
@@ -652,8 +660,8 @@ void SettingMain()
 
 						if (settingTab == settingTabEnum::tab3)
 						{
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(228, 237, 252, 255));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(228, 237, 252, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 9));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 9));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(231, 233, 239, 255));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
@@ -669,8 +677,8 @@ void SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 						}
 
-						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(" \ue902  绘制", { 150.0f * settingGlobalScale,40.0f * settingGlobalScale })) settingTab = settingTabEnum::tab3;
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.6f));
+						if (ImGui::Button("   \uee56   绘制", { 150.0f * settingGlobalScale,40.0f * settingGlobalScale })) settingTab = settingTabEnum::tab3;
 					}
 
 					// 插件
@@ -1141,7 +1149,7 @@ void SettingMain()
 				// 常规
 				case settingTabEnum::tab2:
 				{
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(245 / 255.0f, 248 / 255.0f, 255 / 252.0f, 1.0f));
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 243));
 					ImGui::SetCursorPos({ 180.0f * settingGlobalScale,40.0f * settingGlobalScale });
 					ImGui::BeginChild("常规", { (750.0f + 15.0f) * settingGlobalScale,620.0f * settingGlobalScale }, false);
 
@@ -1159,7 +1167,7 @@ void SettingMain()
 						ImGui::TextUnformatted(get<string>(i18n[i18nEnum::Settings_Regular_1]).c_str());
 
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 252.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
 						ImGui::BeginChild("语言和国际化", { 750.0f * settingGlobalScale,100.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
@@ -1229,7 +1237,7 @@ void SettingMain()
 						ImGui::TextUnformatted(get<string>(i18n[i18nEnum::Settings_Regular_2]).c_str());
 
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 252.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
 						ImGui::BeginChild("开机自启及启动行为", { 750.0f * settingGlobalScale,100.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
@@ -1302,7 +1310,7 @@ void SettingMain()
 					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f * settingGlobalScale);
 					{
 						ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(120 / 255.0f, 120 / 255.0f, 120 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(251, 251, 251, 255));
 						ImGui::TextUnformatted(get<string>(i18n[i18nEnum::Settings_Regular_3]).c_str());
 
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
@@ -1379,7 +1387,7 @@ void SettingMain()
 						ImGui::TextUnformatted(get<string>(i18n[i18nEnum::Settings_Regular_4]).c_str());
 
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 252.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
 						ImGui::BeginChild("其他行为", { 750.0f * settingGlobalScale,190.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
@@ -1468,7 +1476,7 @@ void SettingMain()
 						ImGui::TextUnformatted(get<string>(i18n[i18nEnum::Settings_Regular_5]).c_str());
 
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 252.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
 						ImGui::BeginChild("实验选项", { 750.0f * settingGlobalScale,170.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
@@ -1818,53 +1826,95 @@ void SettingMain()
 				// 插件
 				case settingTabEnum::tab4:
 				{
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(245 / 255.0f, 248 / 255.0f, 255 / 252.0f, 1.0f));
-					ImGui::BeginChild("插件", { 770.0f,620.0f }, false);
-
-					ImGui::SetCursorPosY(20.0f);
-
-					// 侧栏按钮
-					{
-						ImGui::SetCursorPos({ 10.0f,10.0f });
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, settingPlugInTab == settingPlugInTabEnum::tabPlug1 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, settingPlugInTab == settingPlugInTabEnum::tabPlug1 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
-						if (settingPlugInTab == settingPlugInTabEnum::tabPlug1) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-						if (settingPlugInTab == settingPlugInTabEnum::tabPlug1) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-						if (ImGui::Button("插件商店", { 150.0f,40.0f }))
-						{
-							settingPlugInTab = settingPlugInTabEnum::tabPlug1;
-						}
-
-						{
-							ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 6.0f });
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, settingPlugInTab == settingPlugInTabEnum::tabPlug2 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, settingPlugInTab == settingPlugInTabEnum::tabPlug2 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
-							if (settingPlugInTab == settingPlugInTabEnum::tabPlug2) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-							if (settingPlugInTab == settingPlugInTabEnum::tabPlug2) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-							if (ImGui::Button("PPT 演示联动", { 150.0f,40.0f }))
-							{
-								settingPlugInTab = settingPlugInTabEnum::tabPlug2;
-							}
-						}
-
-						if (ddbSetList.DdbEnable)
-						{
-							ImGui::SetCursorPos({ 10.0f,ImGui::GetCursorPosY() + 6.0f });
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, settingPlugInTab == settingPlugInTabEnum::tabPlug3 ? ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, settingPlugInTab == settingPlugInTabEnum::tabPlug3 ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
-							if (settingPlugInTab == settingPlugInTabEnum::tabPlug3) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-							if (settingPlugInTab == settingPlugInTabEnum::tabPlug3) PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-							if (ImGui::Button("画板浮窗拦截", { 150.0f,40.0f }))
-							{
-								settingPlugInTab = settingPlugInTabEnum::tabPlug3;
-							}
-						}
-					}
-
-					ImGui::SetCursorPos({ 170.0f,10.0f });
 					switch (settingPlugInTab)
 					{
 					case settingPlugInTabEnum::tabPlug1:
+					{
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(245 / 255.0f, 248 / 255.0f, 255 / 252.0f, 1.0f));
+						ImGui::SetCursorPos({ 180.0f * settingGlobalScale,40.0f * settingGlobalScale });
+						ImGui::BeginChild("插件", { (750.0f + 15.0f) * settingGlobalScale,620.0f * settingGlobalScale }, false);
+
+						ImGui::SetCursorPosY(20.0f * settingGlobalScale);
+						{
+							ImFontMain->Scale = 1.0f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+							ImGui::TextUnformatted("插件");
+						}
+
+						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f * settingGlobalScale);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 252.0f, 1.0f));
+							ImGui::BeginChild("PPT演示助手", { 750.0f * settingGlobalScale,180.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+							{
+								ImGui::SetCursorPos({ 30.0f * settingGlobalScale, 25.0f * settingGlobalScale });
+
+								{
+									ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+									ImGui::TextUnformatted("PPT演示助手");
+								}
+								{
+									ImGui::SetCursorPos({ 30.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(120 / 255.0f, 120 / 255.0f, 120 / 255.0f, 1.0f));
+									{
+										if (pptComVersion.substr(0, 7) == L"Error: ") ImGui::TextUnformatted("版本号未知（插件发生错误）");
+										else ImGui::TextUnformatted(utf16ToUtf8(pptComVersion).c_str());
+									}
+								}
+
+								{
+									ImGui::SetCursorPos({ 30.0f * settingGlobalScale, ImGui::GetCursorPosY() + 15.0f * settingGlobalScale });
+
+									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
+									ImGui::BeginChild("PPT演示助手-介绍", { 540.0f * settingGlobalScale,70.0f * settingGlobalScale });
+
+									{
+										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(120 / 255.0f, 120 / 255.0f, 120 / 255.0f, 1.0f));
+
+										ImGui::TextWrapped("在幻灯片演示时提供演示控制按钮和画笔控制按钮。每页拥有独立画板，可以让笔迹固定在页面上。不影响原有功能和外接设备的使用，支持 Microsoft PowerPoint 和 WPS。");
+										//ImGui::TextWrapped("Provides presentation control buttons and pen control buttons during slideshow presentations. Each slide has an independent drawing board, allowing ink strokes to be fixed on the page. Does not affect existing functions and the use of external devices, supports both Microsoft PowerPoint and WPS.");
+									}
+
+									{
+										if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+										if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+										while (PushFontNum) PushFontNum--, ImGui::PopFont();
+									}
+									ImGui::EndChild();
+								}
+
+								{
+									ImGui::SetCursorPos({ 530.0f * settingGlobalScale, 25.0f * settingGlobalScale });
+
+									ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+
+									ImGui::TextUnformatted("\ue917");
+								}
+							}
+
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+							ImGui::EndChild();
+						}
+
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
+						ImGui::EndChild();
+						break;
+					}
+
+					/*
 						// 插件商店
 						ImGui::BeginChild("插件商店", { 590.0f,596.0f }, true);
 
@@ -2009,7 +2059,7 @@ void SettingMain()
 							while (PushFontNum) PushFontNum--, ImGui::PopFont();
 						}
 						ImGui::EndChild();
-						break;
+						break;*/
 
 					case settingPlugInTabEnum::tabPlug2:
 						// PPT 演示联动
@@ -2411,13 +2461,6 @@ void SettingMain()
 						ImGui::EndChild();
 						break;
 					}
-
-					{
-						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-						while (PushFontNum) PushFontNum--, ImGui::PopFont();
-					}
-					ImGui::EndChild();
 					break;
 				}
 
@@ -2981,6 +3024,7 @@ void SettingMain()
 				}
 				}
 
+				/*
 				{
 					if (AutomaticUpdateStep == 0)
 					{
@@ -3062,7 +3106,7 @@ void SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(98 / 255.0f, 175 / 255.0f, 82 / 255.0f, 1.0f));
 						CenteredText((get<string>(i18n[i18nEnum::Settings_Update_Tip9]) + "(" + setlist.UpdateChannel + ")").c_str(), 4.0f);
 					}
-				}
+				}*/
 
 				{
 					if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;

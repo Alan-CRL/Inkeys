@@ -152,35 +152,7 @@ PptInfoStateStruct PptInfoState = { -1, -1 }; // 其存储幻灯片放映软件�
 PptInfoStateStruct PptInfoStateBuffer = { -1, -1 }; // PptInfoState 的缓冲变量。*1
 
 wstring pptComVersion;
-wstring GetPptComVersion()
-{
-	wstring ret = L"Error: COM库(.dll) 不存在，且发生严重错误，返回值被忽略";
-
-	if (_waccess((globalPath + L"PptCOM.dll").c_str(), 4) == 0)
-	{
-		try
-		{
-			ret = bstrToWstring(PptCOMPto->GetVersion());
-			if (!regex_match(ret, wregex(L"\\d{8}[a-z]"))) ret = L"Error: " + ret;
-		}
-		catch (_com_error& err)
-		{
-			ret = L"Error: COM库(.dll) 存在，COM成功初始化，但C++端COM接口异常：" + wstring(err.ErrorMessage());
-		}
-	}
-	else
-	{
-		wchar_t absolutePath[_MAX_PATH];
-
-		if (_wfullpath(absolutePath, L"PptCOM.dll", _MAX_PATH) != NULL)
-		{
-			ret = L"Error: COM库(.dll) 不存在，预期调用目录为：\"" + globalPath + L"PptCOM.dll\"";
-		}
-		else ret = L"Error: COM库(.dll) 不存在，预期调用目录测算失败";
-	}
-
-	return ret;
-}
+wstring pptComExtraWarning;
 
 // -------------------------
 // Ppt 状态
@@ -189,6 +161,42 @@ PptUiWidgetStateEnum pptUiWidgetState = PptUiWidgetStateEnum::Close;
 
 // -------------------------
 // Ppt 主项
+
+bool CheckPptCom()
+{
+	try
+	{
+		_com_util::CheckError(PptCOMPto.CreateInstance(_uuidof(PptCOMServer)));
+	}
+	catch (_com_error err)
+	{
+		pptComVersion = L"Error: C++端初始化异常：" + wstring(err.ErrorMessage());
+		return false;
+	}
+
+	try
+	{
+		pptComVersion = PptCOMPto->CheckCOM();
+	}
+	catch (_com_error err)
+	{
+		pptComVersion = L"Error：C++ 端 COM 初始化异常：" + wstring(err.ErrorMessage());
+		return false;
+	}
+
+	if (pptComVersion.find(L"\n") != pptComVersion.npos)
+	{
+		pptComExtraWarning = pptComVersion.substr(pptComVersion.find('\n') + 1);
+		pptComVersion = pptComVersion.substr(0, pptComVersion.find('\n'));
+
+		//Testw(pptComExtraWarning);
+		//Testw(pptComVersion);
+
+		// TODO
+	}
+
+	return true;
+}
 
 wstring GetPptTitle()
 {
@@ -230,18 +238,22 @@ void GetPptState()
 	// 初始化
 	{
 		bool rel = false;
+		rel = CheckPptCom();
 
-		try
+		if (rel)
 		{
-			_com_util::CheckError(PptCOMPto.CreateInstance(_uuidof(PptCOMServer)));
-			rel = PptCOMPto->Initialization(&PptInfoState.TotalPage, &PptInfoState.CurrentPage, pptComSetlist.autoKillWpsProcess); // TODO
-
-			pptComVersion = GetPptComVersion();
+			try
+			{
+				_com_util::CheckError(PptCOMPto.CreateInstance(_uuidof(PptCOMServer)));
+				rel = PptCOMPto->Initialization(&PptInfoState.TotalPage, &PptInfoState.CurrentPage, pptComSetlist.autoKillWpsProcess);
+			}
+			catch (_com_error err)
+			{
+				pptComVersion = L"Error: C++端初始化异常：" + wstring(err.ErrorMessage());
+				rel = false;
+			}
 		}
-		catch (_com_error err)
-		{
-			pptComVersion = L"Error: C++端初始化异常：" + wstring(err.ErrorMessage());
-		}
+		if (!rel) return;
 	}
 
 	while (!offSignal)

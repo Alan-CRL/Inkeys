@@ -39,9 +39,8 @@ namespace PptCOM
     [Guid("65F6E9C1-63EC-4003-B89F-8F425A3C2FEA")]
     public interface IPptCOMServer
     {
-        string GetVersion();
-
         unsafe bool Initialization(int* TotalPage, int* CurrentPage, bool autoCloseWPSTarget);
+        string CheckCOM();
 
         unsafe int IsPptOpen();
 
@@ -78,11 +77,6 @@ namespace PptCOM
         private bool hasWpsProcessID;
         private Process wpsProcess;
 
-        public string GetVersion()
-        {
-            return "20241104a";
-        }
-
         // 初始化函数
         public unsafe bool Initialization(int* TotalPage, int* CurrentPage, bool autoCloseWPSTarget)
         {
@@ -99,6 +93,22 @@ namespace PptCOM
             }
 
             return false;
+        }
+        public string CheckCOM()
+        {
+            string ret = "20241108a";
+
+            try
+            {
+                Microsoft.Office.Interop.PowerPoint.Application pptTest = new Microsoft.Office.Interop.PowerPoint.Application();
+                Marshal.ReleaseComObject(pptTest);
+            }
+            catch (Exception ex)
+            {
+                ret += "\n" + ex.Message;
+            }
+
+            return ret;
         }
 
         // 外部引用函数
