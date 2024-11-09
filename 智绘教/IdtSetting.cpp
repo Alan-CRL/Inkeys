@@ -422,7 +422,8 @@ void SettingMain()
 			void* pLock = LockResource(hMem);
 			DWORD dwSize = SizeofResource(NULL, hRes);
 
-			ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 28.0f * settingGlobalScale, &font_cfg, io.Fonts->GetGlyphRangesChineseFull());
+			ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 30.0f * settingGlobalScale, &font_cfg, io.Fonts->GetGlyphRangesChineseFull());
+			// 字体自身偏小
 		}
 
 		ImWchar icons_ranges[] =
@@ -452,8 +453,10 @@ void SettingMain()
 			ImGuiStyle& style = ImGui::GetStyle();
 			style.Colors[ImGuiCol_WindowBg] = ImVec4(243 / 255.0f, 243 / 255.0f, 243 / 252.0f, 1.0f);
 			style.Colors[ImGuiCol_ChildBg] = ImVec4(251 / 255.0f, 251 / 255.0f, 251 / 252.0f, 1.0f);
-			style.Colors[ImGuiCol_TitleBgActive] = ImVec4(221 / 255.0f, 223 / 255.0f, 230 / 252.0f, 1.0f);
+			style.Colors[ImGuiCol_TitleBgActive] = ImVec4(251 / 255.0f, 251 / 255.0f, 251 / 252.0f, 1.0f);
 			style.Colors[ImGuiCol_Border] = ImVec4(229 / 255.0f, 229 / 255.0f, 229 / 255.0f, 1.0f);
+
+			style.ItemSpacing.y = 0;
 
 			style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
 			style.WindowPadding = ImVec2(0.0f, 0.0f);
@@ -585,7 +588,7 @@ void SettingMain()
 				ImGui::SetNextWindowPos({ 0,0 });//设置窗口位置
 				ImGui::SetNextWindowSize({ static_cast<float>(SettingWindowWidth),static_cast<float>(SettingWindowHeight) });//设置窗口大小
 
-				ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
+				ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 				string settingTitle = get<string>(i18n[i18nEnum::Settings]);
 				{
@@ -602,83 +605,83 @@ void SettingMain()
 
 					// 主页
 					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,40.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,20.0f * settingGlobalScale });
 
 						if (settingTab == settingTabEnum::tab1)
 						{
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(228, 237, 252, 255));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(228, 237, 252, 255));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(231, 233, 239, 255));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 						}
 						else
 						{
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(243, 243, 243, 255));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(231, 233, 239, 255));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(228, 237, 252, 255));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(60, 60, 60, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 0));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 0, 0, 6));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 						}
 
-						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.6f));
-						if (ImGui::Button(("   \ue80f   " + get<string>(i18n[i18nEnum::Settings_Home])).c_str(), { 150.0f * settingGlobalScale,34.0f * settingGlobalScale })) settingTab = settingTabEnum::tab1;
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
+						if (ImGui::Button(("   \ue80f   " + get<string>(i18n[i18nEnum::Settings_Home])).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab1;
 					}
 
 					// 常规
 					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 10.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
 
 						if (settingTab == settingTabEnum::tab2)
 						{
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 9));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 9));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(231, 233, 239, 255));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 						}
 						else
 						{
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(245, 248, 255, 255));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(231, 233, 239, 255));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(228, 237, 252, 255));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(60, 60, 60, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 0));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 0, 0, 6));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 						}
 
-						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.6f));
-						if (ImGui::Button(("   \ue713   " + get<string>(i18n[i18nEnum::Settings_Regular])).c_str(), { 150.0f * settingGlobalScale,34.0f * settingGlobalScale })) settingTab = settingTabEnum::tab2;
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
+						if (ImGui::Button(("   \ue713   " + get<string>(i18n[i18nEnum::Settings_Regular])).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab2;
 					}
 
 					// 绘制
 					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 10.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
 
 						if (settingTab == settingTabEnum::tab3)
 						{
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 9));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 9));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(231, 233, 239, 255));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 						}
 						else
 						{
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(245, 248, 255, 255));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(231, 233, 239, 255));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(228, 237, 252, 255));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(60, 60, 60, 255));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 0));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 0, 0, 6));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 						}
 
-						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.6f));
-						if (ImGui::Button("   \uee56   绘制", { 150.0f * settingGlobalScale,40.0f * settingGlobalScale })) settingTab = settingTabEnum::tab3;
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
+						if (ImGui::Button("   \uee56   绘制", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab3;
 					}
 
 					// 插件

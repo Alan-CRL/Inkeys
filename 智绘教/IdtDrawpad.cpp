@@ -948,6 +948,8 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 	}
 	else if (stateInfo.StateModeSelect == StateModeSelectEnum::IdtShape)
 	{
+		pointInfo.x = pointInfo.previousX, pointInfo.y = pointInfo.previousY;
+
 		// 进入绘制刷新队列
 		{
 			unique_lock lockStrokeImageSm(StrokeImageSm[pid]);
