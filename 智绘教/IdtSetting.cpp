@@ -100,7 +100,7 @@ void SettingWindow(promise<void>& promise)
 			break;
 
 		case WM_LBUTTONDOWN:
-			if (IsInRect(MoushPos.x, MoushPos.y, { 0,0,int(930.0 * settingGlobalScale),int(20.0 * settingGlobalScale) })) SettingSeekBar();
+			if (IsInRect(MoushPos.x, MoushPos.y, { 0,0,int(904.0 * settingGlobalScale),int(50.0 * settingGlobalScale) })) SettingSeekBar();
 			break;
 		}
 	}
@@ -414,6 +414,7 @@ void SettingMain()
 		ImFontConfig font_cfg;
 		font_cfg.OversampleH = 1;
 		font_cfg.OversampleV = 1;
+		font_cfg.GlyphOffset.y = 2.0f * settingGlobalScale;
 		font_cfg.FontDataOwnedByAtlas = false;
 
 		{
@@ -423,11 +424,13 @@ void SettingMain()
 			DWORD dwSize = SizeofResource(NULL, hRes);
 
 			ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 30.0f * settingGlobalScale, &font_cfg, io.Fonts->GetGlyphRangesChineseFull());
-			// 字体自身偏小
+			// 字体自身偏小，假设是 28px 字高
 		}
 
 		ImWchar icons_ranges[] =
 		{
+			0xe8bb, 0xe8bb, // 关闭
+
 			0xe80f, 0xe80f, // 主页
 			0xe713, 0xe713, // 常规
 			0xee56, 0xee56, // 绘制
@@ -451,14 +454,14 @@ void SettingMain()
 		ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 		{
 			ImGuiStyle& style = ImGui::GetStyle();
-			style.Colors[ImGuiCol_WindowBg] = ImVec4(243 / 255.0f, 243 / 255.0f, 243 / 252.0f, 1.0f);
-			style.Colors[ImGuiCol_ChildBg] = ImVec4(251 / 255.0f, 251 / 255.0f, 251 / 252.0f, 1.0f);
-			style.Colors[ImGuiCol_TitleBgActive] = ImVec4(251 / 255.0f, 251 / 255.0f, 251 / 252.0f, 1.0f);
+			style.Colors[ImGuiCol_WindowBg] = ImVec4(243 / 255.0f, 243 / 255.0f, 243 / 255.0f, 1.0f);
+			style.Colors[ImGuiCol_ChildBg] = ImVec4(251 / 255.0f, 251 / 255.0f, 251 / 255.0f, 1.0f);
+			style.Colors[ImGuiCol_TitleBgActive] = ImVec4(243 / 255.0f, 243 / 255.0f, 243 / 255.0f, 1.0f);
 			style.Colors[ImGuiCol_Border] = ImVec4(229 / 255.0f, 229 / 255.0f, 229 / 255.0f, 1.0f);
 
 			style.ItemSpacing.y = 0;
 
-			style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
+			style.WindowTitleAlign = ImVec2(0.0f, 0.5f);
 			style.WindowPadding = ImVec2(0.0f, 0.0f);
 			style.FramePadding = ImVec2(0.0f, 0.0f);
 
@@ -588,8 +591,6 @@ void SettingMain()
 				ImGui::SetNextWindowPos({ 0,0 });//设置窗口位置
 				ImGui::SetNextWindowSize({ static_cast<float>(SettingWindowWidth),static_cast<float>(SettingWindowHeight) });//设置窗口大小
 
-				ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
-
 				string settingTitle = get<string>(i18n[i18nEnum::Settings]);
 				{
 #if !__has_include("IdtInsider.h")
@@ -598,14 +599,36 @@ void SettingMain()
 					else settingTitle += " (Unofficial build version)";
 #endif
 				}
-				ImGui::Begin(settingTitle.c_str(), &test.select, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);//开始绘制窗口
+				ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(189, 189, 189, 255));
+				ImGui::Begin("主窗口", &test.select, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoTitleBar);//开始绘制窗口
+				ImGui::PopStyleColor();
+
+				{
+					ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+					ImGui::SetCursorPos({ 20.0f * settingGlobalScale,18.0f * settingGlobalScale });
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+					ImGui::TextUnformatted(settingTitle.c_str());
+
+					ImGui::SetCursorPos({ 904 * settingGlobalScale,0.0f * settingGlobalScale });
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 0));
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(196, 43, 28, 255));
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(200, 60, 49, 255));
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(255, 255, 255, 0));
+					PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
+					if (ImGui::Button("\ue8bb", { 46.0f * settingGlobalScale,32.0f * settingGlobalScale }))
+						test.select = false;
+
+					if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+					if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+					while (PushFontNum) PushFontNum--, ImGui::PopFont();
+				}
 
 				{
 					ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 					// 主页
 					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,20.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,60.0f * settingGlobalScale });
 
 						if (settingTab == settingTabEnum::tab1)
 						{
@@ -918,7 +941,7 @@ void SettingMain()
 					}
 				}
 
-				ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
+				ImGui::SetCursorPos({ 170.0f * settingGlobalScale,60.0f * settingGlobalScale });
 				switch (settingTab)
 				{
 					// 主页
