@@ -3161,7 +3161,7 @@ void PptDraw()
 				// 动态平衡帧率
 				if (tRecord)
 				{
-					int delay = 1000 / 60 - (clock() - tRecord);
+					int delay = 1000 / 24 - (clock() - tRecord);
 					if (delay > 0) this_thread::sleep_for(chrono::milliseconds(delay));
 				}
 				tRecord = clock();
