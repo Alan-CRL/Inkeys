@@ -414,7 +414,6 @@ void SettingMain()
 		ImFontConfig font_cfg;
 		font_cfg.OversampleH = 1;
 		font_cfg.OversampleV = 1;
-		font_cfg.GlyphOffset.y = 2.0f * settingGlobalScale;
 		font_cfg.FontDataOwnedByAtlas = false;
 
 		{
@@ -594,8 +593,8 @@ void SettingMain()
 				string settingTitle = get<string>(i18n[i18nEnum::Settings]);
 				{
 #if !__has_include("IdtInsider.h")
-					if (i18nIdentifying == "zh-CN") settingTitle += "（非官方构建版本）";
-					else if (i18nIdentifying == "zh-TW") settingTitle += "（非官方構建版本）";
+					if (i18nIdentifying == L"zh-CN") settingTitle += "（非官方构建版本）";
+					else if (i18nIdentifying == L"zh-TW") settingTitle += "（非官方構建版本）";
 					else settingTitle += " (Unofficial build version)";
 #endif
 				}
