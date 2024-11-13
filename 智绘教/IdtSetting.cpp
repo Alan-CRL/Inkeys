@@ -1863,33 +1863,33 @@ void SettingMain()
 					{
 					case settingPlugInTabEnum::tabPlug1:
 					{
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(245 / 255.0f, 248 / 255.0f, 255 / 252.0f, 1.0f));
-						ImGui::SetCursorPos({ 180.0f * settingGlobalScale,40.0f * settingGlobalScale });
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(243 / 255.0f, 243 / 255.0f, 243 / 252.0f, 1.0f));
+						ImGui::SetCursorPos({ 180.0f * settingGlobalScale,50.0f * settingGlobalScale });
 						ImGui::BeginChild("插件", { (750.0f + 15.0f) * settingGlobalScale,620.0f * settingGlobalScale }, false);
 
-						ImGui::SetCursorPosY(20.0f * settingGlobalScale);
+						ImGui::SetCursorPosY(40.0f * settingGlobalScale);
 						{
-							ImFontMain->Scale = 1.0f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
 							ImGui::TextUnformatted("插件");
 						}
 
 						{
-							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f * settingGlobalScale);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 252.0f, 1.0f));
-							ImGui::BeginChild("PPT演示助手", { 750.0f * settingGlobalScale,180.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 40.0f * settingGlobalScale);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(251 / 255.0f, 251 / 255.0f, 251 / 252.0f, 1.0f));
+							ImGui::BeginChild("PPT演示助手", { 750.0f * settingGlobalScale,130.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 							{
-								ImGui::SetCursorPos({ 30.0f * settingGlobalScale, 25.0f * settingGlobalScale });
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, 20.0f * settingGlobalScale });
 
 								{
-									ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
 									ImGui::TextUnformatted("PPT演示助手");
 								}
 								{
-									ImGui::SetCursorPos({ 30.0f * settingGlobalScale, ImGui::GetCursorPosY() });
-									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(120 / 255.0f, 120 / 255.0f, 120 / 255.0f, 1.0f));
 									{
 										if (pptComVersion.substr(0, 7) == L"Error: ") ImGui::TextUnformatted("版本号未知（插件发生错误）");
@@ -1898,14 +1898,14 @@ void SettingMain()
 								}
 
 								{
-									ImGui::SetCursorPos({ 30.0f * settingGlobalScale, ImGui::GetCursorPosY() + 15.0f * settingGlobalScale });
+									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() + 10.0f * settingGlobalScale });
 
 									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
-									ImGui::BeginChild("PPT演示助手-介绍", { 540.0f * settingGlobalScale,70.0f * settingGlobalScale });
+									ImGui::BeginChild("PPT演示助手-介绍", { 710.0f * settingGlobalScale,50.0f * settingGlobalScale });
 
 									{
-										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(120 / 255.0f, 120 / 255.0f, 120 / 255.0f, 1.0f));
 
 										ImGui::TextWrapped("在幻灯片演示时提供演示控制按钮和画笔控制按钮。每页拥有独立画板，可以让笔迹固定在页面上。不影响原有功能和外接设备的使用，支持 Microsoft PowerPoint 和 WPS。");
@@ -1918,15 +1918,6 @@ void SettingMain()
 										while (PushFontNum) PushFontNum--, ImGui::PopFont();
 									}
 									ImGui::EndChild();
-								}
-
-								{
-									ImGui::SetCursorPos({ 530.0f * settingGlobalScale, 25.0f * settingGlobalScale });
-
-									ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
-									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-
-									ImGui::TextUnformatted("\ue917");
 								}
 							}
 
