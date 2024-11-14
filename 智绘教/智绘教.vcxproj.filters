@@ -1125,6 +1125,9 @@
     <Image Include="src\setting\Profile_Picture.png">
       <Filter>资源文件</Filter>
     </Image>
+    <Image Include="src\PluginFlag3.png">
+      <Filter>资源文件</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />

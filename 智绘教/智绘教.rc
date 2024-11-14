@@ -129,6 +129,8 @@ HOME_BACKGROUNG         PNG                     "src\\setting\\Home_Backgroung.p
 
 HOME_FEEDBACK           PNG                     "src\\setting\\Home_Feedback.png"
 
+PluginFlag3             PNG                     "src\\PluginFlag3.png"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //

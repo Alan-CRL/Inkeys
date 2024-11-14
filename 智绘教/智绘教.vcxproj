@@ -721,6 +721,7 @@
     <Image Include="src\perspective.png" />
     <Image Include="src\PluginFlag1.png" />
     <Image Include="src\PluginFlag2.png" />
+    <Image Include="src\PluginFlag3.png" />
     <Image Include="src\ppt\arrow_down.png" />
     <Image Include="src\ppt\arrow_left.png" />
     <Image Include="src\ppt\arrow_right.png" />
