@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "imgui_toggle.h"
 
