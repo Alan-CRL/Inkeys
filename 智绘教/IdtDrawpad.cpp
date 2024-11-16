@@ -47,8 +47,8 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 		{
 			IsHotkeyDown = true;
 
-			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) ChangeStateModeToPen();
-			else ChangeStateModeToSelection();
+			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) { state = 1.1; ChangeStateModeToPen(); }
+                        else { state = 1; ChangeStateModeToSelection(); }
 		}
 		else if (IsHotkeyDown && !(KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]) && !(KeyBoradDown[VK_LWIN] || KeyBoradDown[VK_RWIN]) && !(KeyBoradDown[VK_MENU] || KeyBoradDown[VK_LMENU] || KeyBoradDown[VK_RMENU])) IsHotkeyDown = false;
 
