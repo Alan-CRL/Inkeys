@@ -89,9 +89,9 @@ extern PptComSetListStruct pptComSetlist;
 bool PptComReadSetting();
 bool PptComWriteSetting();
 
-struct DdbSetListStruct
+struct DdbInteractionSetListStruct
 {
-	DdbSetListStruct()
+	DdbInteractionSetListStruct()
 	{
 		DdbEnable = false;
 		DdbEnhance = false;
@@ -124,6 +124,6 @@ struct DdbSetListStruct
 
 	bool InterceptWindow[10];
 };
-extern DdbSetListStruct ddbSetList;
-bool DdbReadSetting();
-bool DdbWriteSetting(bool change, bool close);
+extern DdbInteractionSetListStruct ddbInteractionSetList;
+bool DdbReadInteraction();
+bool DdbWriteInteraction(bool change, bool close);

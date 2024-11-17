@@ -152,9 +152,9 @@ bool ReadSetting()
 		if (updateVal.isMember("PlugIn") && updateVal["PlugIn"].isObject())
 		{
 			if (updateVal["PlugIn"].isMember("DdbEnable") && updateVal["PlugIn"]["DdbEnable"].isBool())
-				ddbSetList.DdbEnable = updateVal["PlugIn"]["DdbEnable"].asBool();
+				ddbInteractionSetList.DdbEnable = updateVal["PlugIn"]["DdbEnable"].asBool();
 			if (updateVal["PlugIn"].isMember("DdbEnhance") && updateVal["PlugIn"]["DdbEnhance"].isBool())
-				ddbSetList.DdbEnhance = updateVal["PlugIn"]["DdbEnhance"].asBool();
+				ddbInteractionSetList.DdbEnhance = updateVal["PlugIn"]["DdbEnhance"].asBool();
 		}
 	}
 	return false;
@@ -192,8 +192,8 @@ bool WriteSetting()
 		updateVal["BasicInfo"]["UpdateChannel"] = Json::Value(setlist.UpdateChannel);
 		updateVal["BasicInfo"]["edition"] = Json::Value(utf16ToUtf8(editionDate));
 
-		updateVal["PlugIn"]["DdbEnable"] = Json::Value(ddbSetList.DdbEnable);
-		updateVal["PlugIn"]["DdbEnhance"] = Json::Value(ddbSetList.DdbEnhance);
+		updateVal["PlugIn"]["DdbEnable"] = Json::Value(ddbInteractionSetList.DdbEnable);
+		updateVal["PlugIn"]["DdbEnhance"] = Json::Value(ddbInteractionSetList.DdbEnhance);
 	}
 
 	HANDLE fileHandle = NULL;
@@ -373,11 +373,11 @@ bool PptComWriteSetting()
 	return true;
 }
 
-DdbSetListStruct ddbSetList;
-bool DdbReadSetting()
+DdbInteractionSetListStruct ddbInteractionSetList;
+bool DdbReadInteraction()
 {
 	HANDLE fileHandle = NULL;
-	if (!OccupyFileForRead(&fileHandle, globalPath + L"PlugIn\\DDB\\interaction_configuration.json"))
+	if (!OccupyFileForRead(&fileHandle, dataPath + L"\\DesktopDrawpadBlocker\\interaction_configuration.json"))
 	{
 		UnOccupyFile(&fileHandle);
 		return false;
@@ -417,18 +417,18 @@ bool DdbReadSetting()
 	{
 		if (updateVal.isMember("SleepTime") && updateVal["SleepTime"].isInt())
 		{
-			ddbSetList.sleepTime = updateVal["SleepTime"].asInt();
+			ddbInteractionSetList.sleepTime = updateVal["SleepTime"].asInt();
 		}
 
 		if (updateVal.isMember("Mode") && updateVal["Mode"].isObject())
 		{
 			if (updateVal["Mode"].isMember("Mode") && updateVal["Mode"]["Mode"].isInt())
 			{
-				ddbSetList.mode = updateVal["Mode"]["Mode"].asInt();
+				ddbInteractionSetList.mode = updateVal["Mode"]["Mode"].asInt();
 			}
 			if (updateVal["Mode"].isMember("RestartHost") && updateVal["Mode"]["RestartHost"].isBool())
 			{
-				ddbSetList.restartHost = updateVal["Mode"]["RestartHost"].asBool();
+				ddbInteractionSetList.restartHost = updateVal["Mode"]["RestartHost"].asBool();
 			}
 		}
 
@@ -436,31 +436,31 @@ bool DdbReadSetting()
 		{
 			if (updateVal["Intercept"].isMember("SeewoWhiteboard3Floating") && updateVal["Intercept"]["SeewoWhiteboard3Floating"].isBool())
 			{
-				ddbSetList.InterceptWindow[0] = updateVal["Intercept"]["SeewoWhiteboard3Floating"].asBool();
+				ddbInteractionSetList.InterceptWindow[0] = updateVal["Intercept"]["SeewoWhiteboard3Floating"].asBool();
 			}
 			if (updateVal["Intercept"].isMember("SeewoWhiteboard5Floating") && updateVal["Intercept"]["SeewoWhiteboard5Floating"].isBool())
 			{
-				ddbSetList.InterceptWindow[1] = updateVal["Intercept"]["SeewoWhiteboard5Floating"].asBool();
+				ddbInteractionSetList.InterceptWindow[1] = updateVal["Intercept"]["SeewoWhiteboard5Floating"].asBool();
 			}
 			if (updateVal["Intercept"].isMember("SeewoWhiteboard5CFloating") && updateVal["Intercept"]["SeewoWhiteboard5CFloating"].isBool())
 			{
-				ddbSetList.InterceptWindow[2] = updateVal["Intercept"]["SeewoWhiteboard5CFloating"].asBool();
+				ddbInteractionSetList.InterceptWindow[2] = updateVal["Intercept"]["SeewoWhiteboard5CFloating"].asBool();
 			}
 			if (updateVal["Intercept"].isMember("SeewoPincoFloating") && updateVal["Intercept"]["SeewoPincoFloating"].isBool())
 			{
-				ddbSetList.InterceptWindow[3] = ddbSetList.InterceptWindow[4] = updateVal["Intercept"]["SeewoPincoFloating"].asBool();
+				ddbInteractionSetList.InterceptWindow[3] = ddbInteractionSetList.InterceptWindow[4] = updateVal["Intercept"]["SeewoPincoFloating"].asBool();
 			}
 			if (updateVal["Intercept"].isMember("SeewoPPTFloating") && updateVal["Intercept"]["SeewoPPTFloating"].isBool())
 			{
-				ddbSetList.InterceptWindow[5] = updateVal["Intercept"]["SeewoPPTFloating"].asBool();
+				ddbInteractionSetList.InterceptWindow[5] = updateVal["Intercept"]["SeewoPPTFloating"].asBool();
 			}
 			if (updateVal["Intercept"].isMember("AiClassFloating") && updateVal["Intercept"]["AiClassFloating"].isBool())
 			{
-				ddbSetList.InterceptWindow[6] = updateVal["Intercept"]["AiClassFloating"].asBool();
+				ddbInteractionSetList.InterceptWindow[6] = updateVal["Intercept"]["AiClassFloating"].asBool();
 			}
 			if (updateVal["Intercept"].isMember("HiteAnnotationFloating") && updateVal["Intercept"]["HiteAnnotationFloating"].isBool())
 			{
-				ddbSetList.InterceptWindow[7] = updateVal["Intercept"]["HiteAnnotationFloating"].asBool();
+				ddbInteractionSetList.InterceptWindow[7] = updateVal["Intercept"]["HiteAnnotationFloating"].asBool();
 			}
 		}
 	}
@@ -468,30 +468,30 @@ bool DdbReadSetting()
 
 	return true;
 }
-bool DdbWriteSetting(bool change, bool close)
+bool DdbWriteInteraction(bool change, bool close)
 {
 	Json::Value updateVal;
 	{
-		updateVal["SleepTime"] = Json::Value(ddbSetList.sleepTime);
+		updateVal["SleepTime"] = Json::Value(ddbInteractionSetList.sleepTime);
 
-		updateVal["Mode"]["Mode"] = Json::Value(ddbSetList.mode);
-		updateVal["Mode"]["HostPath"] = Json::Value(utf16ToUtf8(ddbSetList.hostPath));
-		updateVal["Mode"]["RestartHost"] = Json::Value(ddbSetList.restartHost);
+		updateVal["Mode"]["Mode"] = Json::Value(ddbInteractionSetList.mode);
+		updateVal["Mode"]["HostPath"] = Json::Value(utf16ToUtf8(ddbInteractionSetList.hostPath));
+		updateVal["Mode"]["RestartHost"] = Json::Value(ddbInteractionSetList.restartHost);
 
-		updateVal["Intercept"]["SeewoWhiteboard3Floating"] = Json::Value(ddbSetList.InterceptWindow[0]);
-		updateVal["Intercept"]["SeewoWhiteboard5Floating"] = Json::Value(ddbSetList.InterceptWindow[1]);
-		updateVal["Intercept"]["SeewoWhiteboard5CFloating"] = Json::Value(ddbSetList.InterceptWindow[2]);
-		updateVal["Intercept"]["SeewoPincoFloating"] = Json::Value(ddbSetList.InterceptWindow[3]);
-		updateVal["Intercept"]["SeewoPPTFloating"] = Json::Value(ddbSetList.InterceptWindow[5]);
-		updateVal["Intercept"]["AiClassFloating"] = Json::Value(ddbSetList.InterceptWindow[6]);
-		updateVal["Intercept"]["HiteAnnotationFloating"] = Json::Value(ddbSetList.InterceptWindow[7]);
+		updateVal["Intercept"]["SeewoWhiteboard3Floating"] = Json::Value(ddbInteractionSetList.InterceptWindow[0]);
+		updateVal["Intercept"]["SeewoWhiteboard5Floating"] = Json::Value(ddbInteractionSetList.InterceptWindow[1]);
+		updateVal["Intercept"]["SeewoWhiteboard5CFloating"] = Json::Value(ddbInteractionSetList.InterceptWindow[2]);
+		updateVal["Intercept"]["SeewoPincoFloating"] = Json::Value(ddbInteractionSetList.InterceptWindow[3]);
+		updateVal["Intercept"]["SeewoPPTFloating"] = Json::Value(ddbInteractionSetList.InterceptWindow[5]);
+		updateVal["Intercept"]["AiClassFloating"] = Json::Value(ddbInteractionSetList.InterceptWindow[6]);
+		updateVal["Intercept"]["HiteAnnotationFloating"] = Json::Value(ddbInteractionSetList.InterceptWindow[7]);
 
 		updateVal["~ConfigurationChange"] = Json::Value(change);
 		updateVal["~KeepOpen"] = Json::Value(!close);
 	}
 
 	HANDLE fileHandle = NULL;
-	if (!OccupyFileForWrite(&fileHandle, globalPath + L"PlugIn\\DDB\\interaction_configuration.json"))
+	if (!OccupyFileForWrite(&fileHandle, dataPath + L"\\DesktopDrawpadBlocker\\interaction_configuration.json"))
 	{
 		UnOccupyFile(&fileHandle);
 		return false;

@@ -40,15 +40,16 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20241107a";				// 程序发布日期
+wstring editionDate = L"20241117a";				// 程序发布日期
 wstring editionChannel = L"Dev";				// 程序发布通道
 wstring editionCode = L"24H2";					// 程序发布代号
 
-wstring userId; //用户GUID
-wstring globalPath; //程序当前路径
+wstring userId;									// 用户GUID
+wstring globalPath;								// 程序当前路径
+wstring dataPath;								// 数据保存的路径
 
-int offSignal = false; //关闭指令
-map <wstring, bool> threadStatus; //线程状态管理
+int offSignal = false;							// 关闭指令
+map <wstring, bool> threadStatus;				// 线程状态管理
 
 shared_ptr<spdlog::logger> IDTLogger;
 
@@ -103,6 +104,14 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		{
 			MessageBox(NULL, L"The file name of this software can only contain English characters. Please rename and restart the software.(#3)\n此软件文件名称只能包含英文字符，请重命名后重启软件。(#3)", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
 			return 0;
+		}
+
+		// 获取数据存储路径
+		{
+			wchar_t buffer[MAX_PATH];
+			if (GetEnvironmentVariableW(L"ProgramData", buffer, MAX_PATH) != 0) dataPath = buffer;
+			else dataPath = L"C:\\ProgramData";
+			dataPath += L"\\Inkeys";
 		}
 	}
 #ifdef IDT_RELEASE
