@@ -1133,6 +1133,7 @@
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />
     <Font Include="src\ttf\HarmonyOS_Sans_TC_Regular.ttf" />
     <Font Include="src\ttf\Segoe Fluent Icons.ttf" />
+    <Font Include="src\ttf\icomoon.ttf" />
   </ItemGroup>
   <ItemGroup>
     <None Include="PptCOM.dll" />

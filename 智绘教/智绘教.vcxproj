@@ -765,6 +765,7 @@
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">true</DeploymentContent>
     </Font>
     <Font Include="src\ttf\HarmonyOS_Sans_TC_Regular.ttf" />
+    <Font Include="src\ttf\icomoon.ttf" />
     <Font Include="src\ttf\Segoe Fluent Icons.ttf" />
   </ItemGroup>
   <ItemGroup>

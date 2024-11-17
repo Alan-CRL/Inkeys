@@ -2,6 +2,7 @@
 
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
+#include "IdtFloating.h"
 #include "IdtPlug-in.h"
 #include "IdtWindow.h"
 
@@ -74,6 +75,8 @@ bool ChangeStateModeToSelection()
 	{
 		if (!FreezeFrame.select || penetrate.select) FreezeFrame.mode = 0, FreezeFrame.select = false;
 		if (penetrate.select) penetrate.select = false;
+
+		if (state == 1.1) state = 1;
 
 		stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
 	}

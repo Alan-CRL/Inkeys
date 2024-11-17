@@ -129,7 +129,7 @@ HOME_BACKGROUNG         PNG                     "src\\setting\\Home_Backgroung.p
 
 HOME_FEEDBACK           PNG                     "src\\setting\\Home_Feedback.png"
 
-PluginFlag3             PNG                     "src\\PluginFlag3.png"
+PLUGINFLAG3             PNG                     "src\\PluginFlag3.png"
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -152,6 +152,8 @@ IDR_TTF1                TTF                     "src\\ttf\\HarmonyOS_Sans_SC_Reg
 IDR_TTF2                TTF                     "src\\ttf\\Segoe Fluent Icons.ttf"
 
 IDR_TTF3                TTF                     "src\\ttf\\HarmonyOS_Sans_TC_Regular.ttf"
+
+IDR_TTF4                TTF                     "src\\ttf\\icomoon.ttf"
 
 
 /////////////////////////////////////////////////////////////////////////////
