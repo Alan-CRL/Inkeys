@@ -214,7 +214,7 @@ void SettingMain()
 				IM_ASSERT(ret);
 			}
 
-			loadimage(&SettingSign[4], L"PNG", L"Home_Backgroung", 970 * settingGlobalScale, 775 * settingGlobalScale, true);
+			loadimage(&SettingSign[4], L"PNG", L"Home_Backgroung", 970 * settingGlobalScale, 768 * settingGlobalScale, true);
 			{
 				int width = SettingSign[4].getwidth();
 				int height = SettingSign[4].getheight();
@@ -570,7 +570,6 @@ void SettingMain()
 		bool CompatibleTaskBarAutoHide = setlist.compatibleTaskBarAutoHide;
 		bool ForceTop = setlist.forceTop;
 		int PaintDevice = setlist.paintDevice;
-		string UpdateChannel = setlist.UpdateChannel;
 
 		bool LiftStraighten = setlist.liftStraighten, WaitStraighten = setlist.waitStraighten;
 		bool PointAdsorption = setlist.pointAdsorption;
@@ -698,6 +697,7 @@ void SettingMain()
 					while (PushFontNum) PushFontNum--, ImGui::PopFont();
 				}
 
+				// 左侧导航栏
 				{
 					ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
@@ -728,9 +728,49 @@ void SettingMain()
 						if (ImGui::Button(("   \ue80f   " + get<string>(i18n[i18nEnum::Settings_Home])).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab1;
 					}
 
-					// 常规
+					// 软件版本
 					{
 						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
+
+						if (settingTab == settingTabEnum::tab6)
+						{
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
+						}
+						else
+						{
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 0));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 0, 0, 6));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
+						}
+
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
+						if (ImGui::Button("   \ue946   软件版本", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab6;
+					}
+
+					// --------------------
+					{
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+
+						ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+						ImVec2 p1 = ImVec2(35, ImGui::GetCursorPosY() - 1.0f * settingGlobalScale);
+						ImVec2 p2 = ImVec2(135, ImGui::GetCursorPosY());
+						ImU32 color = IM_COL32(229, 229, 229, 255);
+
+						draw_list->AddRectFilled(p1, p2, color, 2.0f);
+					}
+
+					// 常规
+					{
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 3.0f * settingGlobalScale });
 
 						if (settingTab == settingTabEnum::tab2)
 						{
@@ -840,37 +880,9 @@ void SettingMain()
 						if (ImGui::Button("   \ue765   快捷键", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab5;
 					}
 
-					// 软件版本
-					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
-
-						if (settingTab == settingTabEnum::tab6)
-						{
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 10));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 0, 0, 10));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
-
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
-						}
-						else
-						{
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 0));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 0, 0, 6));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
-
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
-						}
-
-						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button("   \ue946   软件版本", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab6;
-					}
-
 					// --------------------
-
 					{
-						ImGui::SetCursorPosY(493 * settingGlobalScale);
+						ImGui::SetCursorPosY(487 * settingGlobalScale);
 
 						ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
@@ -883,7 +895,7 @@ void SettingMain()
 
 					// 社区名片
 					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,496.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,490.0f * settingGlobalScale });
 
 						if (settingTab == settingTabEnum::tab8)
 						{
@@ -910,7 +922,7 @@ void SettingMain()
 
 					// 赞助我们
 					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,536.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,530.0f * settingGlobalScale });
 
 						if (settingTab == settingTabEnum::tab8)
 						{
@@ -936,9 +948,8 @@ void SettingMain()
 					}
 
 					// --------------------
-
 					{
-						ImGui::SetCursorPosY(577.0f * settingGlobalScale);
+						ImGui::SetCursorPosY(571.0f * settingGlobalScale);
 
 						ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
@@ -951,7 +962,7 @@ void SettingMain()
 
 					// 重启程序
 					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,580.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,574.0f * settingGlobalScale });
 
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 0));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
@@ -970,7 +981,7 @@ void SettingMain()
 
 					// 关闭程序
 					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,620.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,614.0f * settingGlobalScale });
 
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 0));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
@@ -1022,8 +1033,6 @@ void SettingMain()
 					}
 				}
 
-				ImGui::SetCursorPos({ 170.0f * settingGlobalScale,42.0f * settingGlobalScale });
-
 				// 主版块 765<-750(770 主页) * 608
 				switch (settingTab)
 				{
@@ -1031,21 +1040,25 @@ void SettingMain()
 				case settingTabEnum::tab1:
 				{
 					{
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(236, 241, 255, 255));
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(175, 197, 255, 255));
+						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 42.0f * settingGlobalScale });
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+						ImGui::BeginChild("主页-提示", { 770.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-						ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						float cursosPosY = 0;
+						{
+							ImGui::SetCursorPos({ 10.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.55f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 95, 183, 255));
+							ImGui::TextUnformatted("\uf167");
+						}
+						{
+							ImGui::SetCursorPos({ 36.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
-						ImGui::BeginChild("主页0", { 770.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-
-						string temp = get<string>(i18n[i18nEnum::Settings_Home_Prompt]).c_str();
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(13, 83, 255, 255));
-
-						float text_width = ImGui::CalcTextSize(temp.c_str()).x;
-						float text_indentation = (770 * settingGlobalScale - text_width) * 0.5f;
-						if (text_indentation < 0)  text_indentation = 0;
-						ImGui::SetCursorPos({ text_indentation,8.0f * settingGlobalScale });
-						ImGui::TextUnformatted(temp.c_str());
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+							ImGui::TextUnformatted("推荐使用 1080P 分辨率，高于此分辨率可能会影响体验。");
+						}
 
 						{
 							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
@@ -1061,13 +1074,16 @@ void SettingMain()
 						ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
 						ImVec2 p_min = ImVec2(Cx - 4.0f * settingGlobalScale, Cy - 4.0f * settingGlobalScale);
-						ImVec2 p_max = ImVec2(Cx + 770 * settingGlobalScale + 4.0f * settingGlobalScale, Cy + 575 * settingGlobalScale + 4.0f * settingGlobalScale);
-						ImGui::PushClipRect(p_min, p_max, true);
+						ImVec2 p_max = ImVec2(Cx + 770 * settingGlobalScale + 4.0f * settingGlobalScale, Cy + 568 * settingGlobalScale + 4.0f * settingGlobalScale);
+
+						ImVec2 reg_min = ImVec2(Cx, Cy);
+						ImVec2 reg_max = ImVec2(Cx + 770 * settingGlobalScale, Cy + 568 * settingGlobalScale);
+						ImGui::PushClipRect(reg_min, reg_max, true);
 
 						{
 							// 计算图像中心点
 							float Mx = SettingWindowX + Cx + 770.0f / 2.0f;
-							float My = SettingWindowY + Cy + 575.0f / 2.0f;
+							float My = SettingWindowY + Cy + 568.0f / 2.0f;
 
 							// 获取鼠标坐标
 							POINT Pt;
@@ -1094,8 +1110,8 @@ void SettingMain()
 							ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[2], ImVec2((float)SettingSign[2].getwidth(), (float)SettingSign[2].getheight()));
 						}
 
-						ImU32 color = IM_COL32(245, 248, 255, 255);
-						float rounding = 12.0f * settingGlobalScale;
+						ImU32 color = IM_COL32(243, 243, 243, 255);
+						float rounding = 8.0f * settingGlobalScale;
 						float thickness = 9.0f * settingGlobalScale;
 
 						draw_list->AddRect(p_min, p_max, color, rounding, ImDrawFlags_None, thickness);
@@ -1155,7 +1171,7 @@ void SettingMain()
 							}
 
 							{
-								ImGui::SetCursorPos({ Cx + 106.0f * settingGlobalScale,Cy + 460.0f * settingGlobalScale });
+								ImGui::SetCursorPos({ Cx + 106.0f * settingGlobalScale,Cy + 465.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.9f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::TextUnformatted("\uf902");
@@ -1167,7 +1183,7 @@ void SettingMain()
 							}
 
 							{
-								ImGui::SetCursorPos({ Cx + 106.0f * settingGlobalScale,Cy + 512.0f * settingGlobalScale });
+								ImGui::SetCursorPos({ Cx + 106.0f * settingGlobalScale,Cy + 515.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.9f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::TextUnformatted("\uf903");
@@ -1180,7 +1196,7 @@ void SettingMain()
 						}
 						{
 							{
-								ImGui::SetCursorPos({ Cx + 468.0f * settingGlobalScale,Cy + 400.0f * settingGlobalScale });
+								ImGui::SetCursorPos({ Cx + 468.0f * settingGlobalScale,Cy + 405.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.95f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::TextUnformatted("\uf904");
@@ -1198,7 +1214,6 @@ void SettingMain()
 									ShellExecuteW(0, 0, L"https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6", 0, 0, SW_SHOW);
 								}
 							}
-
 							{
 								ImGui::SetCursorPos({ Cx + 467.0f * settingGlobalScale,Cy + 460.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.95f, PushFontNum++, ImGui::PushFont(ImFontMain);
@@ -1213,14 +1228,13 @@ void SettingMain()
 									ShellExecuteW(0, 0, L"https://space.bilibili.com/1330313497", 0, 0, SW_SHOW);
 								}
 							}
-
 							{
-								ImGui::SetCursorPos({ Cx + 467.0f * settingGlobalScale,Cy + 510.0f * settingGlobalScale });
+								ImGui::SetCursorPos({ Cx + 467.0f * settingGlobalScale,Cy + 515.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.95f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								ImGui::TextUnformatted("\uf906");
 
-								ImGui::SetCursorPos({ Cx + 520.0f * settingGlobalScale,Cy + 512.0f * settingGlobalScale });
+								ImGui::SetCursorPos({ Cx + 520.0f * settingGlobalScale,Cy + 515.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
 								if (ImGui::TextLink("问题/建议反馈"))
@@ -1245,6 +1259,7 @@ void SettingMain()
 								}
 							}
 						}
+
 						{
 							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
@@ -1255,10 +1270,143 @@ void SettingMain()
 					break;
 				}
 
+				// 软件版本
+				case settingTabEnum::tab6:
+				{
+					ImGui::SetCursorPos({ 180.0f * settingGlobalScale,40.0f * settingGlobalScale });
+
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+					ImGui::BeginChild("软件版本", { 750.0f,608.0f }, true);
+
+					ImGui::SetCursorPos({ 35.0f,70.0f });
+					ImGui::Image((void*)TextureSettingSign[1], ImVec2((float)SettingSign[1].getwidth(), (float)SettingSign[1].getheight()));
+
+					{
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f);
+						wstring text;
+						{
+							text += L"\n程序发布版本 " + editionDate + L"(" + editionChannel + L")";
+							text += L"\n程序架构和系统架构 " + programArchitecture + L" | " + targetArchitecture;
+#ifdef IDT_RELEASE
+							text += L"\n程序构建模式为发布版本";
+#else
+							text += L"\n程序构建模式为非发布调测版本";
+#endif
+
+							text += L"\n\n程序更新目标架构 " + utf8ToUtf16(setlist.updateArchitecture);
+							text += L"\n程序构建时间 " + buildTime;
+
+							if (userId == L"Error") text += L"\n\n用户ID无法正确识别";
+							else text += L"\n\n用户ID " + userId;
+						}
+
+						int left_x = 10, right_x = 760;
+
+						std::vector<std::string> lines;
+						std::wstring line, temp;
+						std::wstringstream ss(text);
+
+						while (getline(ss, temp, L'\n'))
+						{
+							bool flag = false;
+							line = L"";
+
+							for (wchar_t ch : temp)
+							{
+								flag = false;
+
+								float text_width = ImGui::CalcTextSize(utf16ToUtf8(line + ch).c_str()).x;
+								if (text_width > (right_x - left_x))
+								{
+									lines.emplace_back(utf16ToUtf8(line));
+									line = L"", flag = true;
+								}
+
+								line += ch;
+							}
+
+							if (!flag) lines.emplace_back(utf16ToUtf8(line));
+						}
+
+						for (const auto& temp : lines)
+						{
+							float text_width = ImGui::CalcTextSize(temp.c_str()).x;
+							float text_indentation = ((right_x - left_x) - text_width) * 0.5f;
+							if (text_indentation < 0)  text_indentation = 0;
+							ImGui::SetCursorPosX(left_x + text_indentation);
+							ImGui::TextUnformatted(temp.c_str());
+						}
+					}
+
+					ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
+					{
+						ImGui::SetCursorPos({ 20.0f,ImGui::GetCursorPosY() + 30.0f });
+						ImGui::BeginChild("更新通道调整", { 730.0f,50.0f }, true, ImGuiWindowFlags_NoScrollbar);
+
+						{
+							ImGui::SetCursorPosY(10.0f);
+
+							ImFontMain->Scale = 1.0f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+							CenteredText("  更新通道", 4.0f);
+
+							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 310.0f);
+							ImGui::SetNextItemWidth(300);
+
+							ImFontMain->Scale = 0.82f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+
+							int UpdateChannelMode;
+
+							vector<const char*> vec;
+							vec.emplace_back("  正式通道(LTS)");
+							if (!setlist.updateChannelExtra.empty()) vec.emplace_back("  预览通道(Insider)");
+
+							if (setlist.UpdateChannel.substr(0, 7) == "Insider" && vec.size() >= 2) UpdateChannelMode = 1;
+							else UpdateChannelMode = 0;
+							cerr << UpdateChannelMode << endl;
+
+							if (ImGui::Combo("##更新通道", &UpdateChannelMode, vec.data(), vec.size()))
+							{
+								if ((UpdateChannelMode == 0 && setlist.UpdateChannel != "LTS") ||
+									(UpdateChannelMode == 1 && setlist.UpdateChannel.substr(0, 7) != "Insider"))
+								{
+									if (UpdateChannelMode == 1) setlist.UpdateChannel = setlist.updateChannelExtra;
+									else setlist.UpdateChannel = "LTS";
+									WriteSetting();
+
+									AutomaticUpdateStep = 1;
+								}
+							}
+						}
+
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
+						ImGui::EndChild();
+					}
+
+					{
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
+					}
+					ImGui::EndChild();
+					break;
+				}
+
 				// 常规
 				case settingTabEnum::tab2:
 				{
 					ImGui::SetCursorPos({ 180.0f * settingGlobalScale,40.0f * settingGlobalScale });
+
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
 					ImGui::BeginChild("常规", { 765.0f * settingGlobalScale,608.0f * settingGlobalScale }, false);
 
@@ -1660,6 +1808,7 @@ void SettingMain()
 				case settingTabEnum::tab3:
 				{
 					ImGui::SetCursorPos({ 180.0f * settingGlobalScale,40.0f * settingGlobalScale });
+
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
 					ImGui::BeginChild("绘制", { 765.0f * settingGlobalScale,608.0f * settingGlobalScale }, false);
 
@@ -1935,11 +2084,11 @@ void SettingMain()
 				// 插件
 				case settingTabEnum::tab4:
 				{
+					ImGui::SetCursorPos({ 180.0f * settingGlobalScale,40.0f * settingGlobalScale });
 					switch (settingPlugInTab)
 					{
 					case settingPlugInTabEnum::tabPlug1:
 					{
-						ImGui::SetCursorPos({ 180.0f * settingGlobalScale,42.0f * settingGlobalScale });
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
 						ImGui::BeginChild("插件", { (750.0f + 15.0f) * settingGlobalScale,608.0f * settingGlobalScale }, false);
 
@@ -2156,7 +2305,6 @@ void SettingMain()
 
 					case settingPlugInTabEnum::tabPlug2:
 					{
-						ImGui::SetCursorPos({ 180.0f * settingGlobalScale,42.0f * settingGlobalScale });
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
 						ImGui::BeginChild("PPT演示助手", { 765.0f * settingGlobalScale,608.0f * settingGlobalScale }, false);
 
@@ -2874,7 +3022,6 @@ void SettingMain()
 
 					case settingPlugInTabEnum::tabPlug4:
 					{
-						ImGui::SetCursorPos({ 180.0f * settingGlobalScale,42.0f * settingGlobalScale });
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
 						ImGui::BeginChild("同类软件悬浮窗拦截助手", { 765.0f * settingGlobalScale,608.0f * settingGlobalScale }, false);
 
@@ -3178,8 +3325,10 @@ void SettingMain()
 				// 快捷键
 				case settingTabEnum::tab5:
 				{
+					ImGui::SetCursorPos({ 180.0f * settingGlobalScale,40.0f * settingGlobalScale });
+
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-					ImGui::BeginChild("快捷键", { 765.0f,608.0f }, true);
+					ImGui::BeginChild("快捷键", { 750.0f,608.0f }, true);
 
 					ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
 					{
@@ -3233,371 +3382,6 @@ void SettingMain()
 					break;
 				}
 
-				// 程序版本
-				case settingTabEnum::tab6:
-				{
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-					ImGui::BeginChild("关于", { 765.0f,608.0f }, true);
-
-					ImGui::SetCursorPos({ 35.0f,70.0f });
-					ImGui::Image((void*)TextureSettingSign[1], ImVec2((float)SettingSign[1].getwidth(), (float)SettingSign[1].getheight()));
-
-					{
-						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f);
-						wstring text;
-						{
-							text = L"程序版本代号 " + editionCode;
-							text += L"\n程序发布版本 " + editionDate + L"(" + editionChannel + L")";
-							text += L"\n程序构建时间 " + buildTime;
-
-#ifdef IDT_RELEASE
-							text += L"\n程序构建模式 IDT_RELEASE ";
-#else
-							text += L"\n程序构建模式 IDT_DEBUG（非发布调测版本）";
-#endif
-
-							if (userId == L"Error") text += L"\n用户ID无法正确识别";
-							else text += L"\n用户ID " + userId;
-
-							text += L"\n\n在此版本中，您的所有数据都将在本地进行处理";
-						}
-
-						int left_x = 10, right_x = 760;
-
-						std::vector<std::string> lines;
-						std::wstring line, temp;
-						std::wstringstream ss(text);
-
-						while (getline(ss, temp, L'\n'))
-						{
-							bool flag = false;
-							line = L"";
-
-							for (wchar_t ch : temp)
-							{
-								flag = false;
-
-								float text_width = ImGui::CalcTextSize(utf16ToUtf8(line + ch).c_str()).x;
-								if (text_width > (right_x - left_x))
-								{
-									lines.emplace_back(utf16ToUtf8(line));
-									line = L"", flag = true;
-								}
-
-								line += ch;
-							}
-
-							if (!flag) lines.emplace_back(utf16ToUtf8(line));
-						}
-
-						for (const auto& temp : lines)
-						{
-							float text_width = ImGui::CalcTextSize(temp.c_str()).x;
-							float text_indentation = ((right_x - left_x) - text_width) * 0.5f;
-							if (text_indentation < 0)  text_indentation = 0;
-							ImGui::SetCursorPosX(left_x + text_indentation);
-							ImGui::TextUnformatted(temp.c_str());
-						}
-					}
-
-					ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
-					{
-						ImGui::SetCursorPos({ 20.0f,ImGui::GetCursorPosY() + 30.0f });
-						ImGui::BeginChild("更新通道调整", { 730.0f,500.0f }, true, ImGuiWindowFlags_NoScrollbar);
-
-						{
-							ImGui::SetCursorPosY(10.0f);
-
-							ImFontMain->Scale = 1.0f, PushFontNum++, ImGui::PushFont(ImFontMain);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(" 更新通道", 4.0f);
-
-							ImFontMain->Scale = 0.7f, PushFontNum++, ImGui::PushFont(ImFontMain);
-							ImGui::SameLine(); HelpMarker("正式通道(LTS) 提供经过验证的稳定程序版本\n公测通道(Beta) 提供稳定性一般的程序版本\n非正式通道程序均未提交杀软进行防误报处理\n\n一旦更新，则无法通过自动更新回退版本\n当选择的更新通道不可用时，则会切换回默认通道", ImGui::GetStyleColorVec4(ImGuiCol_Text));
-
-							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 180.0f);
-							ImGui::SetNextItemWidth(170);
-
-							ImFontMain->Scale = 0.82f, PushFontNum++, ImGui::PushFont(ImFontMain);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
-
-							int UpdateChannelMode;
-							if (UpdateChannel == "LTS" || UpdateChannel == "Beta")
-							{
-								if (UpdateChannel == "LTS") UpdateChannelMode = 0;
-								else if (UpdateChannel == "Beta") UpdateChannelMode = 1;
-
-								static const char* items1[] = { " 正式通道(LTS)", " 公测通道(Beta)" };
-
-								ImGui::Combo("##更新通道", &UpdateChannelMode, items1, IM_ARRAYSIZE(items1));
-							}
-							else
-							{
-								UpdateChannelMode = 2;
-
-								static const char* items2[] = { " 正式通道(LTS)", " 公测通道(Beta)", " 其他通道" };
-
-								ImGui::Combo("##更新通道", &UpdateChannelMode, items2, IM_ARRAYSIZE(items2));
-							}
-
-							bool flag = false;
-							if (UpdateChannelMode == 0 && UpdateChannel != "LTS") UpdateChannel = "LTS", flag = true;
-							else if (UpdateChannelMode == 1 && UpdateChannel != "Beta") UpdateChannel = "Beta", flag = true;
-
-							if (flag && setlist.UpdateChannel != UpdateChannel)
-							{
-								AutomaticUpdateStep = 1;
-								setlist.UpdateChannel = UpdateChannel;
-								WriteSetting();
-							}
-							else if (setlist.UpdateChannel != UpdateChannel) UpdateChannel = setlist.UpdateChannel;
-						}
-						{
-							ImGui::SetCursorPosY(45.0f);
-
-							ImFontMain->Scale = 1.0f, PushFontNum++, ImGui::PushFont(ImFontMain);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(" 更新日志", 4.0f);
-
-							ImFontMain->Scale = 0.7f, PushFontNum++, ImGui::PushFont(ImFontMain);
-							ImGui::SameLine(); CenteredText(("当前版本" + utf16ToUtf8(editionDate)).c_str(), 8.0f);
-
-							ImGui::SetCursorPos({ 20.0f,90.0f });
-							ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
-							{
-								ImGui::BeginChild("更新日志", { 690.0f,400.0f }, true, ImGuiWindowFlags_AlwaysHorizontalScrollbar | ImGuiWindowFlags_AlwaysVerticalScrollbar);
-
-								ImGui::SetCursorPosY(10.0f);
-								wstring text;
-								{
-									text +=
-										L"智绘教20240619a --------------------\n"
-										L"+ 在系统保护的目录下运行程序会提示用户\n"
-										L"= 更新后软件文件名称将添加版本号\n"
-										L"- 修复了 ppt 控件点击和长按异常的问题\n"
-										L"- 去除了没有太大用处的 智绘教CrashedHandlerClose 子程序\n"
-										L"\n"
-										L"智绘教20240604c --------------------\n"
-										L"+ 新增软件感谢墙\n"
-										L"+ 新增更新日志\n"
-										L"= 优化设置布局和样式\n"
-										L"	智绘教20240601b(Beta)\n"
-										L"		+ 新增插件图标\n"
-										L"		+ 新增智绘教状态监控模块\n"
-										L"		+ 新增穿透和定格的快捷键\n"
-										L"		+ 新增右键主栏图标时弹窗提示关闭程序开关\n"
-										L"		- 修复 PPT 联动插件版本号设定错误\n"
-										L"		- 修复开机自启动被错误设置\n"
-										L"	智绘教20240519b(Beta)\n"
-										L"		+ 新增 希沃白板3 鸿合桌面白板 窗口拦截功能\n"
-										L"		+ 新增 PPT 翻页时不更新笔迹选项\n"
-										L"		= 优化逻辑，多屏用户解除限制，但只能在主监视器上绘图\n"
-										L"		= 优化逻辑，禁用窗口定格可以正常使用超级恢复\n"
-										L"		- 修复了部分系统下窗口无法连续置顶的问题\n"
-										L"		- 修复了 PPT 下页码显示区域不正常的问题\n"
-										L"		- 修复了 PPT 状态显示错位的问题\n"
-										L"		- 修复了 PPT 放映结束页页码错误的问题\n"
-										L"		- 修复了在窗口定格不可用时定格窗口异常的问题\n"
-										L"		- 修复定格下智绘教窗口被错误包含的问题\n"
-										L"		- 修复部分 win7 下窗口定格模块中放大API异常的问题\n"
-										L"		- 修复了DDB在增强模式下无法被更新的问题\n"
-										L"		- 修复了 64 位 ms office 无法使用联动的问题\n"
-										L"		- 修复了部分 win7 下窗口定格模块导致程序崩溃的问题\n"
-										L"		- 修复了 PPT 控件反应过慢的问题\n"
-										L"	智绘教20240513b(Beta)\n"
-										L"		+ 新增插件模块\n"
-										L"		+ 新增 DDB 插件可拦截桌面画板悬浮窗\n"
-										L"		= 保存的历史图片名称改为使用时间戳\n"
-										L"		= 优化 PPT 控件加载延迟\n"
-										L"		= 智绘教调整为不能重复启动\n"
-										L"		- 修复程序名不为智绘教时无法使用崩溃助手\n"
-										L"		- 修复 PPT 模式下笔迹被多次重复保存到本地的情况\n"
-										L"		- 修复多次弹出是否关闭智绘教弹窗\n"
-										L"		- 修复点击按钮结束放映后，鼠标翻页反应不能重置的问题\n"
-										L"		- 修复非放映模式下错误的出现PPT控件的问题\n"
-										L"\n"
-										L"智绘教20240504a --------------------\n"
-										L"+ 发布智绘教更新模块2.0 支持选择更新通道 LTS / Beta（更快，更安全 + 双次双码校验）\n"
-										L"+ 支持日志文件 7 天自动清理和总日志文件大小限制 10MB\n"
-										L"+ 继续完善日志系统\n"
-										L"+ 增加PPT鼠标滚轮翻页支持\n"
-										L"+ 启用程序新标志和名称\n"
-										L"+ 重写用户ID模块，统一ID格式\n"
-										L"= 调整开机启动项程序，为插件系统铺路\n"
-										L"= 优化定格模块窗口管理\n"
-										L"- 修复程序文件名不为 \"智绘教.exe\" 时不能自动更新的问题\n"
-										L"- 修复焦点被占用情况下无法拖动窗口问题\n"
-										L"- 修复了 PPT 控件中文字字体不正确的问题\n"
-										L"\n"
-										L"智绘教20240427a --------------------\n"
-										L"+ 新增 4K 及以上分辨率监视器支持\n"
-										L"+ 完善部分日志记录模块\n"
-										L"+ 在 win7 发生窗口穿透问题时会提示重启\n"
-										L"+ 更新时系统通知提示（在 Win8 及以上系统中才会启用；自 智绘教20240421a - 智绘教20240427a）\n"
-										L"= 大幅降低运行内存占用（自 智绘教20240421a - 智绘教20240427a）\n"
-										L"- 修复稳定性相关问题\n"
-										L"- 优化代码逻辑，消灭编译警告\n"
-										L"\n"
-										L"智绘教20240421a --------------------\n"
-										L"+ 新增重启程序按钮\n"
-										L"+ 新增在画板无法绘制时会提示重启\n"
-										L"+ 试用日志记录系统\n"
-										L"- 修复窗口置顶中可能存在的问题\n"
-										L"- 修复关闭程序后弹窗崩溃重启助手提示的问题\n"
-										L"\n"
-										L"智绘教20240317a --------------------\n"
-										L"+ PPT 联动部分 UI 启动 D2D 显卡加速绘制\n"
-										L"- 修复 PPT 载入界面重复出现 BUG\n"
-										L"- 修复 PPT 组件显示效果 BUG\n"
-										L"\n"
-										L"智绘教20240309b --------------------\n"
-										L"+ 重写 PPT 联动部分 UI，并增加动画\n"
-										L"+ 测试性地启用了全局快捷键 Ctrl + Win + Alt\n"
-										L"- 修复了 PPT 组件下按钮失效的问题\n"
-										L"\n"
-										L"智绘教20240228a --------------------\n"
-										L"+ 新增了对 WPS 的联动支持\n"
-										L"+ PPT 联动控件底层重写，新的按键消息处理机制\n"
-										L"+ 支持键盘和界面按钮长按翻页\n"
-										L"+ 新增 PC鼠标 橡皮粗细灵敏度预设\n"
-										L"= 选项界面增加更多丰富选项\n"
-										L"\n"
-										L"智绘教20240220c --------------------\n"
-										L"+ 新增皮肤选择功能\n"
-										L"+ 新增极简时钟皮肤\n"
-										L"+ 新增程序更新提示\n"
-										L"+ 启用程序更新高速服务器\n"
-										L"= 移除智绘教后台统计模块\n"
-										L"= 降低界面帧率，降低CPU占用率\n"
-										L"- 修复开机启动查询异常问题\n"
-										L"- 修复快捷快捷方式设置异常问题\n"
-										L"- 修复CPU占用过大问题\n"
-										L"\n"
-										L"智绘教20240217a --------------------\n"
-										L"+ 新增全新选项界面\n"
-										L"+ 新增开机启动管理程序\n"
-										L"+ 新增欢迎向导demo\n"
-										L"= 优化程序逻辑提示体验\n"
-										L"= 优化了程序选项本地保存方式\n"
-										L"- 修复了历史画板报错图片半透明像素异常的问题\n"
-										L"- 修复了COM类库连接导致的内存泄露问题\n"
-										L"- 修复了超级恢复和撤回不连续的问题\n"
-										L"- 修复了部分系统下开启白屏的问题\n"
-										L"- 修复了窗口置顶冲突的问题\n"
-										L"\n"
-										L"智绘教20240128a --------------------\n"
-										L"+ 新增：多指绘图（多指书写、直线、矩形与橡皮）\n"
-										L"+ 新增：超级恢复功能，可恢复历史画板\n"
-										L"+ 新增：撤回功能全面重做，二阶恢复功能\n"
-										L"+ 新增：延迟记录撤回步骤，一秒内的书写笔迹算为一步\n"
-										L"+ 新增：撤回记录自动保存到本地\n"
-										L"+ 新增：龙年限时皮肤\n"
-										L"= 优化：当桌面快捷方式已经创建时，则不刷新桌面\n"
-										L"= 优化：在程序关闭时，会有提示窗\n"
-										L"= 优化：在PPT结束放映时，会有提示窗提示结束放映会丢失绘制笔迹\n"
-										L"= 优化：快速点击按钮时，仅会当做单击处理\n"
-										L"= 优化：绘制效果，效率增高\n"
-										L"= 优化：进入同一PPT时，仅展示一次加载动画\n"
-										L"= 优化：对多拓展显示器的设备有弹窗提示，多拓展显示器的设备可使用智绘教基础功能\n"
-										L"- 修复：窗口移动进度异常的问题\n"
-										L"- 修复：在PPT放映时，点击结束放映按钮后，响应速度有延迟的问题\n"
-										L"- 修复：在PPT放映时，控件不置顶和无法绘制的问题\n"
-										L"- 修复：在PPT放映时，并缩放后无法切换页面的问题\n"
-										L"- 修复：在PPT加载动画展示时打开穿透导致控件闪烁的问题\n"
-										L"- 修复：橡皮按下但不能擦除的问题\n"
-										L"- 修复：橡皮擦除时是六边形的问题\n"
-										L"- 修复：橡皮擦除时粗细变化不均匀的问题\n"
-										L"- 修复：刷新帧率不均匀的问题\n"
-										L"- 修复：未绘制内容也显示恢复按钮的问题\n"
-										L"- 修复：画板内容被误清空的问题\n"
-										L"- 修复：Windows7下启动程序需要管理员权限的问题\n"
-										L"- 修复：开启窗口定格时主窗口会闪烁的问题\n"
-										L"- 修复：波浪线被识别成直线精度异常的问题\n"
-										L"- 修复：在关闭实验性新功能的情况下，程序卡死的问题\n"
-										L"\n"
-										L"智绘教20231106a --------------------\n"
-										L"+ 新增程序启动会自动在桌面创建快捷方式\n"
-										L"= 优化代码逻辑，大幅度提高了书写流畅度\n"
-										L"= 优化PPT界面切换时响应速度\n"
-										L"= 优化智能橡皮粗细，符合一体机操作习惯\n"
-										L"= 优化了智能绘图的代码，提示响应速度\n"
-										L"= 修改放大API工作方式，减少内存和CPU占用\n"
-										L"- 修复了在有未完成绘制任务时点击撤回导致崩溃的情况\n"
-										L"- 修复了PPT界面穿透离开后，未监测到PPT已结束放映的问题\n"
-										L"\n"
-										L"智绘教20231013a --------------------\n"
-										L"+ 使用上下文API，在补全 DLL 后再加载清单。这是为了程序单文件也可以启动。\n"
-										L"\n"
-										L"智绘教20231009a --------------------\n"
-										L"+ 转换 PPT联动插件 类库，并启用免注册 COM 组件\n"
-										L"\n"
-										L"智绘教20231008a --------------------\n"
-										L"+ 新增窗口定格\n"
-										L"+ 新增智能粗细橡皮擦\n"
-										L"+ 新增画笔粗细条件\n"
-										L"+ 新增选色轮\n"
-										L"+ 新增 3 种配色，并优化部分颜色\n"
-										L"+ 智能绘图模块：矩形绘制新增四点吸附\n"
-										L"+ 智能绘图模块：自动直线新增吸附\n"
-										L"+ 新增崩溃保护\n"
-										L"+ 在 希沃视频展台 开启绘制时，会自动打开窗口定格\n"
-										L"+ 在 MsPPT 开始放映时，会显示加载画面\n"
-										L"= 调整窗口穿透按钮窗口位置\n"
-										L"= 调整历史画板保存API\n"
-										L"= 在 win7 下新增对 随机点名 插件的支持\n"
-										L"= 触控调测 改版变为 选项\n"
-										L"- 修复自动更新错误识别成 Https ://\n"
-										L"\n"
-										L"智绘教20230920b --------------------\n"
-										L"智绘教正式发布！";
-								}
-
-								vector<string> lines;
-								wstring temp;
-								wstringstream ss(text);
-
-								while (getline(ss, temp, L'\n'))
-								{
-									lines.emplace_back(utf16ToUtf8(temp));
-								}
-
-								for (const auto& temp : lines)
-								{
-									ImGui::SetCursorPosX(13);
-									ImGui::TextUnformatted(temp.c_str());
-								}
-
-								{
-									if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-									if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-									while (PushFontNum) PushFontNum--, ImGui::PopFont();
-								}
-								ImGui::EndChild();
-							}
-						}
-
-						{
-							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-							while (PushFontNum) PushFontNum--, ImGui::PopFont();
-						}
-						ImGui::EndChild();
-					}
-
-					{
-						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-						while (PushFontNum) PushFontNum--, ImGui::PopFont();
-					}
-					ImGui::EndChild();
-					break;
-				}
-
 				// 社区名片
 				case settingTabEnum::tab7:
 				{
@@ -3613,7 +3397,8 @@ void SettingMain()
 				// 程序调测
 				case settingTabEnum::tab9:
 				{
-					ImGui::BeginChild("程序调测", { 765.0f,608.0f }, true);
+					ImGui::SetCursorPos({ 180.0f * settingGlobalScale,40.0f * settingGlobalScale });
+					ImGui::BeginChild("程序调测", { 750.0f,608.0f }, true);
 
 					ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
 					{
@@ -3639,14 +3424,14 @@ void SettingMain()
 							for (int i = 0; i < touchNum; i++)
 							{
 								std::shared_lock<std::shared_mutex> lock1(PointPosSm);
-								POINT pt = TouchPos[TouchList[i]].pt;
+								TouchMode mode = TouchPos[TouchList[i]];
 								lock1.unlock();
 
 								std::shared_lock<std::shared_mutex> lock2(TouchSpeedSm);
 								double speed = TouchSpeed[TouchList[i]];
 								lock2.unlock();
 
-								text += L"\n触控点" + to_wstring(i + 1) + L" pid" + to_wstring(TouchList[i]) + L" 坐标" + to_wstring(pt.x) + L"," + to_wstring(pt.y) + L" 速度" + to_wstring(speed);
+								text += L"\n触控点" + to_wstring(i + 1) + L" pid" + to_wstring(TouchList[i]) + L" 坐标" + to_wstring(mode.pt.x) + L"," + to_wstring(mode.pt.y) + L" " + to_wstring(mode.touchWidth) + L"*" + to_wstring(mode.touchHeight) + L" 速度" + to_wstring(speed);
 							}
 
 							text += L"\n\nTouchList ";
@@ -3735,89 +3520,361 @@ void SettingMain()
 				}
 				}
 
-				/*
+				// 底栏：更新信息提示栏
 				{
 					if (AutomaticUpdateStep == 0)
 					{
-						ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+						ImGui::BeginChild("更新状态-提示", { 770.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-						ImGui::SetCursorPos({ 170.0f + 770.0f - ImGui::CalcTextSize(get<string>(i18n[i18nEnum::Settings_Update_Tip0]).c_str()).x,45.0f + 615.0f + 5.0f });
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(150 / 255.0f, 150 / 255.0f, 150 / 255.0f, 1.0f));
-						CenteredText(get<string>(i18n[i18nEnum::Settings_Update_Tip0]).c_str(), 4.0f);
+						float cursosPosY = 0;
+						{
+							ImGui::SetCursorPos({ 10.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.55f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 95, 183, 255));
+							ImGui::TextUnformatted("\uf167");
+						}
+						{
+							ImGui::SetCursorPos({ 36.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::Settings_Update_Tip0]).c_str());
+						}
+
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
+						ImGui::EndChild();
 					}
 					else if (AutomaticUpdateStep == 1)
 					{
-						ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+						ImGui::BeginChild("更新状态-提示", { 770.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-						ImGui::SetCursorPos({ 170.0f + 770.0f - ImGui::CalcTextSize(get<string>(i18n[i18nEnum::Settings_Update_Tip1]).c_str()).x,45.0f + 615.0f + 5.0f });
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(150 / 255.0f, 150 / 255.0f, 150 / 255.0f, 1.0f));
-						CenteredText(get<string>(i18n[i18nEnum::Settings_Update_Tip1]).c_str(), 4.0f);
+						float cursosPosY = 0;
+						{
+							ImGui::SetCursorPos({ 10.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.55f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 95, 183, 255));
+							ImGui::TextUnformatted("\uf167");
+						}
+						{
+							ImGui::SetCursorPos({ 36.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::Settings_Update_Tip1]).c_str());
+						}
+
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
+						ImGui::EndChild();
 					}
 					else if (AutomaticUpdateStep == 2)
 					{
-						ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+						ImGui::BeginChild("更新状态-提示", { 770.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-						ImGui::SetCursorPos({ 170.0f + 770.0f - ImGui::CalcTextSize(get<string>(i18n[i18nEnum::Settings_Update_Tip2]).c_str()).x , 45.0f + 615.0f + 5.0f });
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(229 / 255.0f, 55 / 255.0f, 66 / 255.0f, 1.0f));
-						CenteredText(get<string>(i18n[i18nEnum::Settings_Update_Tip2]).c_str(), 4.0f);
+						float cursosPosY = 0;
+						{
+							ImGui::SetCursorPos({ 10.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.55f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 95, 183, 255));
+							ImGui::TextUnformatted("\uf167");
+						}
+						{
+							ImGui::SetCursorPos({ 36.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::Settings_Update_Tip2]).c_str());
+						}
+
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
+						ImGui::EndChild();
 					}
 					else if (AutomaticUpdateStep == 3)
 					{
-						ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+						ImGui::BeginChild("更新状态-提示", { 770.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-						ImGui::SetCursorPos({ 170.0f + 770.0f - ImGui::CalcTextSize(get<string>(i18n[i18nEnum::Settings_Update_Tip3]).c_str()).x , 45.0f + 615.0f + 5.0f });
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(229 / 255.0f, 55 / 255.0f, 66 / 255.0f, 1.0f));
-						CenteredText(get<string>(i18n[i18nEnum::Settings_Update_Tip3]).c_str(), 4.0f);
+						float cursosPosY = 0;
+						{
+							ImGui::SetCursorPos({ 10.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.55f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 95, 183, 255));
+							ImGui::TextUnformatted("\uf167");
+						}
+						{
+							ImGui::SetCursorPos({ 36.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::Settings_Update_Tip3]).c_str());
+						}
+
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
+						ImGui::EndChild();
 					}
 					else if (AutomaticUpdateStep == 4)
 					{
-						ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+						ImGui::BeginChild("更新状态-提示", { 770.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-						ImGui::SetCursorPos({ 170.0f + 770.0f - ImGui::CalcTextSize(get<string>(i18n[i18nEnum::Settings_Update_Tip4]).c_str()).x , 45.0f + 615.0f + 5.0f });
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(229 / 255.0f, 55 / 255.0f, 66 / 255.0f, 1.0f));
-						CenteredText(get<string>(i18n[i18nEnum::Settings_Update_Tip4]).c_str(), 4.0f);
+						float cursosPosY = 0;
+						{
+							ImGui::SetCursorPos({ 10.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.55f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 95, 183, 255));
+							ImGui::TextUnformatted("\uf167");
+						}
+						{
+							ImGui::SetCursorPos({ 36.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::Settings_Update_Tip4]).c_str());
+						}
+
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
+						ImGui::EndChild();
 					}
 					else if (AutomaticUpdateStep == 5)
 					{
-						ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+						ImGui::BeginChild("更新状态-提示", { 770.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-						ImGui::SetCursorPos({ 170.0f + 770.0f - ImGui::CalcTextSize(get<string>(i18n[i18nEnum::Settings_Update_Tip5]).c_str()).x , 45.0f + 615.0f + 5.0f });
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(229 / 255.0f, 55 / 255.0f, 66 / 255.0f, 1.0f));
-						CenteredText(get<string>(i18n[i18nEnum::Settings_Update_Tip5]).c_str(), 4.0f);
+						float cursosPosY = 0;
+						{
+							ImGui::SetCursorPos({ 10.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.55f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 95, 183, 255));
+							ImGui::TextUnformatted("\uf167");
+						}
+						{
+							ImGui::SetCursorPos({ 36.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::Settings_Update_Tip5]).c_str());
+						}
+
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
+						ImGui::EndChild();
 					}
 					else if (AutomaticUpdateStep == 6)
 					{
-						ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+						ImGui::BeginChild("更新状态-提示", { 770.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-						ImGui::SetCursorPos({ 170.0f + 770.0f - ImGui::CalcTextSize(get<string>(i18n[i18nEnum::Settings_Update_Tip6]).c_str()).x , 45.0f + 615.0f + 5.0f });
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(229 / 255.0f, 55 / 255.0f, 66 / 255.0f, 1.0f));
-						CenteredText(get<string>(i18n[i18nEnum::Settings_Update_Tip6]).c_str(), 4.0f);
+						float cursosPosY = 0;
+						{
+							ImGui::SetCursorPos({ 10.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.55f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 95, 183, 255));
+							ImGui::TextUnformatted("\uf167");
+						}
+						{
+							ImGui::SetCursorPos({ 36.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::Settings_Update_Tip6]).c_str());
+						}
+
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
+						ImGui::EndChild();
 					}
 					else if (AutomaticUpdateStep == 7)
 					{
-						ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+						ImGui::BeginChild("更新状态-提示", { 770.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-						ImGui::SetCursorPos({ 170.0f + 770.0f - ImGui::CalcTextSize(get<string>(i18n[i18nEnum::Settings_Update_Tip7]).c_str()).x , 45.0f + 615.0f + 5.0f });
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(229 / 255.0f, 55 / 255.0f, 66 / 255.0f, 1.0f));
-						CenteredText(get<string>(i18n[i18nEnum::Settings_Update_Tip7]).c_str(), 4.0f);
+						float cursosPosY = 0;
+						{
+							ImGui::SetCursorPos({ 10.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.55f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 95, 183, 255));
+							ImGui::TextUnformatted("\uf167");
+						}
+						{
+							ImGui::SetCursorPos({ 36.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::Settings_Update_Tip7]).c_str());
+						}
+
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
+						ImGui::EndChild();
 					}
 					else if (AutomaticUpdateStep == 8)
 					{
-						ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+						ImGui::BeginChild("更新状态-提示", { 770.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-						ImGui::SetCursorPos({ 170.0f + 770.0f - ImGui::CalcTextSize(get<string>(i18n[i18nEnum::Settings_Update_Tip8]).c_str()).x , 45.0f + 615.0f + 5.0f });
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(229 / 255.0f, 55 / 255.0f, 66 / 255.0f, 1.0f));
-						CenteredText(get<string>(i18n[i18nEnum::Settings_Update_Tip8]).c_str(), 4.0f);
+						float cursosPosY = 0;
+						{
+							ImGui::SetCursorPos({ 10.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.55f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 95, 183, 255));
+							ImGui::TextUnformatted("\uf167");
+						}
+						{
+							ImGui::SetCursorPos({ 36.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::Settings_Update_Tip8]).c_str());
+						}
+
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
+						ImGui::EndChild();
 					}
 					else if (AutomaticUpdateStep == 9)
 					{
-						ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+						ImGui::BeginChild("更新状态-提示", { 770.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-						ImGui::SetCursorPos({ 170.0f + 770.0f - ImGui::CalcTextSize((get<string>(i18n[i18nEnum::Settings_Update_Tip9]) + "(" + setlist.UpdateChannel + ")").c_str()).x , 45.0f + 615.0f + 5.0f });
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(98 / 255.0f, 175 / 255.0f, 82 / 255.0f, 1.0f));
-						CenteredText((get<string>(i18n[i18nEnum::Settings_Update_Tip9]) + "(" + setlist.UpdateChannel + ")").c_str(), 4.0f);
+						float cursosPosY = 0;
+						{
+							ImGui::SetCursorPos({ 10.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.55f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 95, 183, 255));
+							ImGui::TextUnformatted("\uf167");
+						}
+						{
+							ImGui::SetCursorPos({ 36.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+
+							string channel = "（其他通道）";
+							if (setlist.UpdateChannel == "LTS") channel = "（正式通道）";
+							else if (setlist.UpdateChannel.substr(0, 7) == "Insider") channel = "（预览通道）";
+
+							ImGui::TextUnformatted((get<string>(i18n[i18nEnum::Settings_Update_Tip9]) + channel).c_str());
+						}
+
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
+						ImGui::EndChild();
 					}
-				}*/
+					else if (AutomaticUpdateStep == 10)
+					{
+						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+						ImGui::BeginChild("更新状态-提示", { 770.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+						float cursosPosY = 0;
+						{
+							ImGui::SetCursorPos({ 10.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.55f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 95, 183, 255));
+							ImGui::TextUnformatted("\uf167");
+						}
+						{
+							ImGui::SetCursorPos({ 36.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+							ImGui::TextUnformatted("程序相对最新版本更新");
+						}
+
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
+						ImGui::EndChild();
+					}
+					else if (AutomaticUpdateStep == 11)
+					{
+						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+						ImGui::BeginChild("更新状态-提示", { 770.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+						float cursosPosY = 0;
+						{
+							ImGui::SetCursorPos({ 10.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.55f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 95, 183, 255));
+							ImGui::TextUnformatted("\uf167");
+						}
+						{
+							ImGui::SetCursorPos({ 36.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+							ImGui::TextUnformatted("发现程序新版本");
+						}
+
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
+						ImGui::EndChild();
+					}
+				}
 
 				{
 					if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
@@ -3977,6 +4034,14 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	case WM_SYSCOMMAND:
 		if ((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu
 			return 0;
+
+		// 拦截任务栏关闭指令
+		if ((wParam & 0xFFF0) == SC_CLOSE)
+		{
+			test.select = false;
+			return 0;
+		}
+
 		break;
 	case WM_DESTROY:
 		::PostQuitMessage(0);
@@ -3990,6 +4055,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 		break;
 	}
+
 	return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 

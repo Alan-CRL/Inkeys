@@ -25,6 +25,7 @@ struct SetListStruct
 
 	string UpdateChannel;
 	string updateChannelExtra;
+	string updateArchitecture;
 
 	// 兼容自动隐藏的任务栏
 	bool compatibleTaskBarAutoHide;

@@ -95,11 +95,13 @@ using namespace Gdiplus;
 extern wstring buildTime;
 extern wstring editionDate;
 extern wstring editionChannel;
-extern wstring editionCode;
 
 extern wstring userId;
 extern wstring globalPath;
 extern wstring dataPath;
+
+extern wstring programArchitecture;
+extern wstring targetArchitecture;
 
 extern int offSignal, offSignalReady; //关闭指令
 extern map <wstring, bool> threadStatus; //线程状态管理

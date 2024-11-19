@@ -10,6 +10,8 @@ extern unordered_map<LONG, pair<int, int>> PreviousPointPosition;	// 用于速�
 struct TouchMode
 {
 	POINT pt;
+	long long touchWidth;
+	long long touchHeight;
 };
 extern unordered_map<LONG, double> TouchSpeed;
 extern unordered_map<LONG, TouchMode> TouchPos;
@@ -114,6 +116,8 @@ public:
 		TouchMode mode{};
 		mode.pt.x = LONG(pPacket[0] * fInkToDeviceScaleX + 0.5);
 		mode.pt.y = LONG(pPacket[1] * fInkToDeviceScaleY + 0.5);
+		mode.touchWidth = pPacket[2];
+		mode.touchHeight = pPacket[3];
 
 		std::unique_lock<std::shared_mutex> lock1(PointPosSm);
 		TouchPos[TouchCnt] = mode;
@@ -191,6 +195,8 @@ public:
 		TouchMode mode{};
 		mode.pt.x = LONG(pPacket[0] * fInkToDeviceScaleX + 0.5);
 		mode.pt.y = LONG(pPacket[1] * fInkToDeviceScaleY + 0.5);
+		mode.touchWidth = pPacket[2];
+		mode.touchHeight = pPacket[3];
 
 		std::unique_lock<std::shared_mutex> lock2(PointPosSm);
 		TouchPos[TouchPointer[pStylusInfo->cid]] = mode;

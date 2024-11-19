@@ -243,13 +243,6 @@ int DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass edi
 
 void AutomaticUpdate()
 {
-#ifdef USE_INSIDER_VISION
-
-	if (!userId.empty() && userId != L"Error")
-		InsiderInitialization(utf16ToUtf8(userId), setlist.updateChannelExtra);
-
-#endif
-
 	/*
 	AutomaticUpdateStep 含义
 	0 自动更新未启动
@@ -262,7 +255,8 @@ void AutomaticUpdate()
 	7 下载最新版本程序损坏
 	8 重启更新到最新版本
 	9 程序已经是最新版本
-	10 存在新版本，但是用户未开启自动更新
+	10 程序相对最新版本更新
+	11 发现程序新版本
 	*/
 
 	bool state = true;
@@ -279,6 +273,44 @@ void AutomaticUpdate()
 	for (; !offSignal && updateTimes <= 10; updateTimes++)
 	{
 		AutomaticUpdateStep = 1;
+
+		// 获取Insider通道令牌
+		{
+#ifdef USE_INSIDER_VISION
+
+			// 获取Insider通道令牌
+			if (!userId.empty() && userId != L"Error")
+			{
+				string updateChannelExtra;
+				if (InsiderInitialization(utf16ToUtf8(userId), updateChannelExtra))
+				{
+					setlist.updateChannelExtra = updateChannelExtra;
+					if (!updateChannelExtra.empty())
+					{
+						if (setlist.UpdateChannel.substr(0, 7) == "Insider" && setlist.UpdateChannel != updateChannelExtra)
+						{
+							// 令牌已经变更
+							setlist.UpdateChannel = updateChannelExtra;
+							WriteSetting();
+						}
+					}
+					else
+					{
+						// 已经不拥有获取新令牌的资格
+						setlist.UpdateChannel = "LTS";
+						WriteSetting();
+					}
+				}
+			}
+
+			// 获取令牌失败则会尝试使用以前记录过的令牌
+			if (setlist.UpdateChannel.substr(0, 7) == "Insider" && setlist.updateChannelExtra.empty())
+			{
+				setlist.updateChannelExtra = setlist.UpdateChannel;
+			}
+#endif
+		}
+		channel = setlist.UpdateChannel;
 
 		state = true;
 		against = false;
@@ -305,6 +337,8 @@ void AutomaticUpdate()
 		//下载最新版本
 		if (state && editionInfo.editionDate != L"" && editionInfo.editionDate > editionDate)
 		{
+			AutomaticUpdateStep = 11;
+
 			update = true;
 			if (_waccess((globalPath + L"installer\\update.json").c_str(), 4) == 0)
 			{
@@ -358,7 +392,6 @@ void AutomaticUpdate()
 					}
 				}
 			}
-
 			if (update)
 			{
 				AutomaticUpdateStep = 5;
@@ -376,18 +409,18 @@ void AutomaticUpdate()
 				}
 			}
 		}
-		else if (state && editionInfo.editionDate != L"" && editionInfo.editionDate <= editionDate) AutomaticUpdateStep = 9;
+		else if (state && editionInfo.editionDate != L"")
+		{
+			if (editionInfo.editionDate < editionDate) AutomaticUpdateStep = 10;
+			else AutomaticUpdateStep = 9;
+		}
 
 		if (against)
 		{
 			for (int i = 1; i <= 10; i++)
 			{
 				if (offSignal) break;
-				if (channel != setlist.UpdateChannel)
-				{
-					channel = setlist.UpdateChannel;
-					break;
-				}
+				if (channel != setlist.UpdateChannel) break;
 
 				this_thread::sleep_for(chrono::seconds(1));
 			}
@@ -397,11 +430,7 @@ void AutomaticUpdate()
 			for (int i = 1; i <= 1800; i++)
 			{
 				if (offSignal) break;
-				if (channel != setlist.UpdateChannel)
-				{
-					channel = setlist.UpdateChannel;
-					break;
-				}
+				if (channel != setlist.UpdateChannel) break;
 
 				this_thread::sleep_for(chrono::seconds(1));
 			}

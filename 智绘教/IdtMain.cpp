@@ -40,13 +40,15 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20241117a";				// 程序发布日期
-wstring editionChannel = L"Dev";				// 程序发布通道
-wstring editionCode = L"24H2";					// 程序发布代号
+wstring editionDate = L"20241119a";				// 程序发布日期
+wstring editionChannel = L"Insider";			// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
 wstring dataPath;								// 数据保存的路径
+
+wstring programArchitecture = L"win32";
+wstring targetArchitecture = L"win32";
 
 int offSignal = false;							// 关闭指令
 map <wstring, bool> threadStatus;				// 线程状态管理
@@ -114,9 +116,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			dataPath += L"\\Inkeys";
 		}
 	}
-#ifdef IDT_RELEASE
 	// 防止重复启动
 	{
+#ifdef IDT_RELEASE
 		if (filesystem::exists(globalPath + L"force_start.signal"))
 		{
 			error_code ec;
@@ -139,8 +141,59 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			error_code ec;
 			filesystem::remove(globalPath + L"repeatedly_start.signal", ec);
 		}
-	}
 #endif
+	}
+	// 体系架构识别
+	{
+#if defined(_M_ARM64) || defined(_M_ARM64EC)
+		programArchitecture = L"arm64";
+#elif defined(_WIN64)
+		programArchitecture = L"win64";
+#else
+		programArchitecture = L"win32";
+#endif
+
+		USHORT processMachine = 0, nativeMachine = 0;
+		bool successFlg = false;
+
+		HMODULE hKernel32 = GetModuleHandleW(L"kernel32");
+		if (hKernel32)
+		{
+			typedef BOOL(WINAPI* LPFN_ISWOW64PROCESS2)(HANDLE, USHORT*, USHORT*);
+			LPFN_ISWOW64PROCESS2 fnIsWow64Process2 = (LPFN_ISWOW64PROCESS2)GetProcAddress(hKernel32, "IsWow64Process2");
+
+			if (fnIsWow64Process2)
+			{
+				// 如果 IsWow64Process2 可用
+				if (fnIsWow64Process2(GetCurrentProcess(), &processMachine, &nativeMachine))
+				{
+					if (nativeMachine == IMAGE_FILE_MACHINE_ARM64)
+					{
+						targetArchitecture = L"arm64";
+						successFlg = true;
+					}
+					else if (nativeMachine == IMAGE_FILE_MACHINE_AMD64)
+					{
+						targetArchitecture = L"win64";
+						successFlg = true;
+					}
+					else
+					{
+						targetArchitecture = L"win32";
+						successFlg = true;
+					}
+				}
+			}
+		}
+		if (!successFlg)
+		{
+			SYSTEM_INFO sysInfo;
+			GetNativeSystemInfo(&sysInfo);
+			if (sysInfo.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_ARM64) targetArchitecture = L"arm64";
+			else if (sysInfo.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64) targetArchitecture = L"win64";
+			else targetArchitecture = L"win32";
+		}
+	}
 
 	// 用户ID获取
 	{
@@ -557,6 +610,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 			setlist.UpdateChannel = "LTS";
 			setlist.updateChannelExtra = "";
+			setlist.updateArchitecture = "win32";
 
 			{
 				// 获取系统默认语言标识符
@@ -728,12 +782,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		// 启动 DesktopDrawpadBlocker
 		thread(StartDesktopDrawpadBlocker).detach();
 	}
-#ifdef IDT_RELEASE
 	// 自动更新初始化
 	{
+#ifdef IDT_RELEASE
 		thread(AutomaticUpdate).detach();
-	}
 #endif
+	}
 
 	// 窗口
 	{
@@ -778,6 +832,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	{
 		bool hasErr = false;
 
+		HRESULT hr;
+		GUID desiredPacketProperties[] = { GUID_PACKETPROPERTY_GUID_X, GUID_PACKETPROPERTY_GUID_Y, GUID_PACKETPROPERTY_GUID_WIDTH, GUID_PACKETPROPERTY_GUID_HEIGHT };
+
 		// Create RTS object
 		g_pRealTimeStylus = CreateRealTimeStylus(drawpad_window);
 		if (g_pRealTimeStylus == NULL)
@@ -786,6 +843,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 			hasErr = true;
 			goto RealTimeStylusEnd;
+		}
+
+		hr = g_pRealTimeStylus->SetDesiredPacketDescription(4, desiredPacketProperties);
+		if (FAILED(hr))
+		{
+			Testi(1);
 		}
 
 		// Create EventHandler object
@@ -834,6 +897,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		thread RTSSpeed_thread(RTSSpeed);
 		RTSSpeed_thread.detach();
 
+		rtsWait = false;
 		IDTLogger->info("[主线程][IdtMain] RealTimeStylus触控库初始化完成");
 	}
 	// 线程
