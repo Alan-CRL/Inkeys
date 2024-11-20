@@ -845,6 +845,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			goto RealTimeStylusEnd;
 		}
 
+		// TODO
 		hr = g_pRealTimeStylus->SetDesiredPacketDescription(4, desiredPacketProperties);
 		if (FAILED(hr))
 		{

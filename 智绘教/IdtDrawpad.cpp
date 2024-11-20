@@ -1982,20 +1982,6 @@ int drawpad_main()
 			//hiex::SetWndProcFunc(drawpad_window, WndProc);
 		}
 
-		setbkmode(TRANSPARENT);
-		setbkcolor(RGB(255, 255, 255));
-
-		BEGIN_TASK_WND(drawpad_window);
-		cleardevice();
-
-		Gdiplus::Graphics graphics(GetImageHDC(hiex::GetWindowImage(drawpad_window)));
-		Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 50, FontStyleRegular, UnitPixel);
-		Gdiplus::SolidBrush WordBrush(Color(255, 0, 0, 0));
-		graphics.DrawString(L"Drawpad 预备窗口", -1, &gp_font, PointF(10.0f, 10.0f), &stringFormat_left, &WordBrush);
-
-		END_TASK();
-		REDRAW_WINDOW(drawpad_window);
-
 		DisableResizing(drawpad_window, true);//禁止窗口拉伸
 		SetWindowLong(drawpad_window, GWL_STYLE, GetWindowLong(drawpad_window, GWL_STYLE) & ~WS_CAPTION);//隐藏标题栏
 		SetWindowPos(drawpad_window, NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_DRAWFRAME);

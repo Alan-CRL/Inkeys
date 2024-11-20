@@ -274,8 +274,8 @@ void DrawScreen()
 		{
 			//SetWindowTransparent(true, 0);
 
-			setbkmode(TRANSPARENT);
-			setbkcolor(RGB(255, 255, 255));
+			//setbkmode(TRANSPARENT);
+			//setbkcolor(RGB(255, 255, 255));
 
 			DisableResizing(floating_window, true);//禁止窗口拉伸
 			SetWindowLong(floating_window, GWL_STYLE, GetWindowLong(floating_window, GWL_STYLE) & ~WS_CAPTION);//隐藏标题栏

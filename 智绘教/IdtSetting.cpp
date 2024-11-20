@@ -1057,7 +1057,8 @@ void SettingMain()
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted("推荐使用 1080P 分辨率，高于此分辨率可能会影响体验。");
+							ImGui::TextUnformatted("推荐使用 1080P 至 1800P 分辨率的显示器，高于此范围可能会影响使用体验。");
+							//ImGui::TextUnformatted("A monitor with a resolution of 1080P to 1800P is recommended, above which the experience may be affected.");
 						}
 
 						{

@@ -185,12 +185,12 @@ namespace HiEasyX
 		// 释放绘图缓冲
 		if (g_vecWindows[index].pImg)
 		{
-			delete g_vecWindows[index].pImg;
+			//f delete g_vecWindows[index].pImg;
 			g_vecWindows[index].pImg = nullptr;
 		}
 		if (g_vecWindows[index].pBufferImg)
 		{
-			delete g_vecWindows[index].pBufferImg;
+			//f delete g_vecWindows[index].pBufferImg;
 			g_vecWindows[index].pBufferImg = nullptr;
 		}
 
@@ -569,8 +569,8 @@ namespace HiEasyX
 	{
 		if (IsAliveWindow(index))
 		{
-			g_vecWindows[index].pImg->Resize(rct.right, rct.bottom);
-			g_vecWindows[index].pBufferImg->Resize(rct.right, rct.bottom);
+			//f g_vecWindows[index].pImg->Resize(rct.right, rct.bottom);
+			//f g_vecWindows[index].pBufferImg->Resize(rct.right, rct.bottom);
 			g_vecWindows[index].isNewSize = true;
 		}
 	}
@@ -1426,8 +1426,8 @@ namespace HiEasyX
 		wnd.isAlive = true;
 		wnd.hWnd = nullptr;
 		wnd.hParent = hParent;
-		wnd.pImg = new IMAGE(w, h);
-		wnd.pBufferImg = new IMAGE(w, h);
+		//f wnd.pImg = new IMAGE(w, h);
+		//f wnd.pBufferImg = new IMAGE(w, h);
 		wnd.pBufferImgCanvas = nullptr;
 		wnd.isNeedFlush = false;
 		wnd.funcWndProc = WindowProcess;
@@ -1745,7 +1745,8 @@ namespace HiEasyX
 		{
 			while (nStartAnimation == false)	Sleep(50);		// 等待初始动画完成
 			// 预设背景色
-			if (SetWorkingWindow(hWnd) && BeginTask())
+			//f
+			/*if (SetWorkingWindow(hWnd) && BeginTask())
 			{
 				setbkcolor(CLASSICGRAY);
 				settextcolor(BLACK);
@@ -1754,7 +1755,7 @@ namespace HiEasyX
 				cleardevice();
 				EndTask();
 				RedrawWindow();
-			}
+			}*/
 
 			return hWnd;
 		}
