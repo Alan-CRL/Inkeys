@@ -58,6 +58,9 @@ struct PptComSetListStruct
 		middleSideBothWidgetScale = 1.0f;
 
 		autoKillWpsProcess = true;
+
+		// 附加信息项
+		setAdmin = false;
 	}
 
 	// 墨迹固定在对应页面上
@@ -85,6 +88,9 @@ struct PptComSetListStruct
 
 	// 自动结束未正确关闭的 WPP 进程
 	bool autoKillWpsProcess;
+
+	// 附加信息项
+	bool setAdmin;
 };
 extern PptComSetListStruct pptComSetlist;
 bool PptComReadSetting();

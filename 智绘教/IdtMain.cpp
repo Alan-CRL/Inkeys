@@ -40,7 +40,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20241120a";				// 程序发布日期
+wstring editionDate = L"20241121a";				// 程序发布日期
 wstring editionChannel = L"dev";			// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -833,7 +833,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		bool hasErr = false;
 
 		HRESULT hr;
-		GUID desiredPacketProperties[] = { GUID_PACKETPROPERTY_GUID_X, GUID_PACKETPROPERTY_GUID_Y, GUID_PACKETPROPERTY_GUID_WIDTH, GUID_PACKETPROPERTY_GUID_HEIGHT };
+		GUID desiredPacketProperties[] = { GUID_PACKETPROPERTY_GUID_X, GUID_PACKETPROPERTY_GUID_Y, GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE,GUID_PACKETPROPERTY_GUID_WIDTH, GUID_PACKETPROPERTY_GUID_HEIGHT };
 
 		// Create RTS object
 		g_pRealTimeStylus = CreateRealTimeStylus(drawpad_window);
@@ -845,11 +845,17 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			goto RealTimeStylusEnd;
 		}
 
-		// TODO
-		hr = g_pRealTimeStylus->SetDesiredPacketDescription(4, desiredPacketProperties);
+		// 设置属性包
+		hr = g_pRealTimeStylus->SetDesiredPacketDescription(5, desiredPacketProperties);
 		if (FAILED(hr))
 		{
-			Testi(1);
+			IDTLogger->warn("[主线程][IdtMain] SetDesiredPacketDescription 为 失败");
+
+			g_pRealTimeStylus->Release();
+			g_pRealTimeStylus = NULL;
+
+			hasErr = true;
+			goto RealTimeStylusEnd;
 		}
 
 		// Create EventHandler object

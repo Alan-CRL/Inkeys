@@ -10,8 +10,15 @@ extern unordered_map<LONG, pair<int, int>> PreviousPointPosition;	// 用于速�
 struct TouchMode
 {
 	POINT pt;
+	double pressure;
 	long long touchWidth;
 	long long touchHeight;
+
+	// 辅助变量
+	FLOAT inkToDeviceScaleX;
+	FLOAT inkToDeviceScaleY;
+	LONG logicalMin;
+	LONG logicalMax;
 };
 extern unordered_map<LONG, double> TouchSpeed;
 extern unordered_map<LONG, TouchMode> TouchPos;
@@ -21,6 +28,10 @@ struct TouchInfo
 {
 	LONG pid;
 	POINT pt;
+
+	// 信息变量
+	int type; // 触摸0 手写笔1 左键2 右键3
+	bool isInvertedCursor;
 };
 extern deque<TouchInfo> TouchTemp;
 
@@ -52,164 +63,12 @@ class CSyncEventHandlerRTS : public IStylusSyncPlugin
 
 public:
 	// Factory method
-	static IStylusSyncPlugin* Create(IRealTimeStylus* pRealTimeStylus)
-	{
-		// Check input argument
-		if (pRealTimeStylus == NULL)
-		{
-			//ASSERT(pRealTimeStylus != NULL && L"CSyncEventHandlerRTS::Create: invalid argument RealTimeStylus");
-			return NULL;
-		}
+	static IStylusSyncPlugin* Create(IRealTimeStylus* pRealTimeStylus);
 
-		// Instantiate CSyncEventHandlerRTS object
-		CSyncEventHandlerRTS* pSyncEventHandlerRTS = new CSyncEventHandlerRTS();
-		if (pSyncEventHandlerRTS == NULL)
-		{
-			//ASSERT(pSyncEventHandlerRTS != NULL && L"CSyncEventHandlerRTS::Create: cannot create instance of CSyncEventHandlerRTS");
-			return NULL;
-		}
-
-		// Create free-threaded marshaller for this object and aggregate it.
-		HRESULT hr = CoCreateFreeThreadedMarshaler(pSyncEventHandlerRTS, &pSyncEventHandlerRTS->m_punkFTMarshaller);
-		if (FAILED(hr))
-		{
-			//ASSERT(SUCCEEDED(hr) && L"CSyncEventHandlerRTS::Create: cannot create free-threaded marshaller");
-			pSyncEventHandlerRTS->Release();
-			return NULL;
-		}
-
-		// Add CSyncEventHandlerRTS object to the list of synchronous plugins in the RTS object.
-		hr = pRealTimeStylus->AddStylusSyncPlugin(
-			0,                      // insert plugin at position 0 in the sync plugin list
-			pSyncEventHandlerRTS);  // plugin to be inserted - event handler CSyncEventHandlerRTS
-		if (FAILED(hr))
-		{
-			//ASSERT(SUCCEEDED(hr) && L"CEventHandlerRTS::Create: failed to add CSyncEventHandlerRTS to the RealTimeStylus plugins");
-			pSyncEventHandlerRTS->Release();
-			return NULL;
-		}
-
-		return pSyncEventHandlerRTS;
-	}
-
-	STDMETHOD(StylusDown)(IRealTimeStylus* piRtsSrc, const StylusInfo* pStylusInfo, ULONG /*cPktCount*/, LONG* pPacket, LONG** /*ppInOutPkts*/)
-	{
-		uRealTimeStylus = 2;
-
-		// 这是一个按下状态
-
-		TABLET_CONTEXT_ID* pTcids;
-		ULONG ulTcidCount;
-		TABLET_CONTEXT_ID tcid;
-		FLOAT fInkToDeviceScaleX;
-		FLOAT fInkToDeviceScaleY;
-		ULONG ulPacketProperties;
-		PACKET_PROPERTY* pPacketProperties;
-
-		piRtsSrc->GetAllTabletContextIds(&ulTcidCount, &pTcids);
-		tcid = *pTcids;
-		piRtsSrc->GetPacketDescriptionData(tcid, &fInkToDeviceScaleX, &fInkToDeviceScaleY, &ulPacketProperties, &pPacketProperties);
-
-		TouchCnt++;
-		TouchPointer[pStylusInfo->cid] = TouchCnt;
-
-		TouchMode mode{};
-		mode.pt.x = LONG(pPacket[0] * fInkToDeviceScaleX + 0.5);
-		mode.pt.y = LONG(pPacket[1] * fInkToDeviceScaleY + 0.5);
-		mode.touchWidth = pPacket[2];
-		mode.touchHeight = pPacket[3];
-
-		std::unique_lock<std::shared_mutex> lock1(PointPosSm);
-		TouchPos[TouchCnt] = mode;
-		lock1.unlock();
-
-		std::unique_lock<std::shared_mutex> lock2(TouchSpeedSm);
-		TouchSpeed[TouchCnt] = 0;
-		PreviousPointPosition[TouchCnt].first = PreviousPointPosition[TouchCnt].second = -1;
-		lock2.unlock();
-
-		std::unique_lock<std::shared_mutex> lock3(PointListSm);
-		TouchList.push_back(TouchCnt);
-		lock3.unlock();
-
-		TouchInfo info{};
-		info.pid = TouchCnt;
-		info.pt = mode.pt;
-
-		std::unique_lock<std::shared_mutex> lock4(PointTempSm);
-		TouchTemp.push_back(info);
-		lock4.unlock();
-
-		TouchCnt %= 100000;
-
-		touchNum++;
-		touchDown = true;
-
-		return S_OK;
-	}
-	STDMETHOD(StylusUp)(IRealTimeStylus*, const StylusInfo* pStylusInfo, ULONG /*cPktCount*/, LONG* pPacket, LONG** /*ppInOutPkts*/)
-	{
-		uRealTimeStylus = 3;
-
-		// 这是一个抬起状态
-
-		touchNum = max(0, touchNum - 1);
-		if (touchNum == 0) touchDown = false;
-
-		auto it = std::find(TouchList.begin(), TouchList.end(), TouchPointer[pStylusInfo->cid]);
-		if (it != TouchList.end())
-		{
-			std::unique_lock<std::shared_mutex> lock1(PointListSm);
-			TouchList.erase(it);
-			TouchPointer.erase(pStylusInfo->cid);
-			lock1.unlock();
-		}
-
-		if (touchNum == 0)
-		{
-			std::unique_lock<std::shared_mutex> lock(PointPosSm);
-			TouchPos.clear();
-			lock.unlock();
-		}
-
-		return S_OK;
-	}
-	STDMETHOD(Packets)(IRealTimeStylus* piRtsSrc, const StylusInfo* pStylusInfo, ULONG /*cPktCount*/, ULONG /*cPktBuffLength*/, LONG* pPacket, ULONG* /*pcInOutPkts*/, LONG** /*ppInOutPkts*/)
-	{
-		uRealTimeStylus = 4;
-
-		// 这是一个移动状态
-
-		TABLET_CONTEXT_ID* pTcids;
-		ULONG ulTcidCount;
-		TABLET_CONTEXT_ID tcid;
-		FLOAT fInkToDeviceScaleX;
-		FLOAT fInkToDeviceScaleY;
-		ULONG ulPacketProperties;
-		PACKET_PROPERTY* pPacketProperties;
-
-		piRtsSrc->GetAllTabletContextIds(&ulTcidCount, &pTcids);
-		tcid = *pTcids;
-		piRtsSrc->GetPacketDescriptionData(tcid, &fInkToDeviceScaleX, &fInkToDeviceScaleY, &ulPacketProperties, &pPacketProperties);
-
-		TouchMode mode{};
-		mode.pt.x = LONG(pPacket[0] * fInkToDeviceScaleX + 0.5);
-		mode.pt.y = LONG(pPacket[1] * fInkToDeviceScaleY + 0.5);
-		mode.touchWidth = pPacket[2];
-		mode.touchHeight = pPacket[3];
-
-		std::unique_lock<std::shared_mutex> lock2(PointPosSm);
-		TouchPos[TouchPointer[pStylusInfo->cid]] = mode;
-		lock2.unlock();
-
-		return S_OK;
-	}
-	STDMETHOD(DataInterest)(RealTimeStylusDataInterest* pDataInterest)
-	{
-		*pDataInterest = (RealTimeStylusDataInterest)(RTSDI_StylusDown | RTSDI_Packets | RTSDI_StylusUp);
-
-		return S_OK;
-	}
+	STDMETHOD(StylusDown)(IRealTimeStylus* piRtsSrc, const StylusInfo* pStylusInfo, ULONG cPktCount, LONG* pPacket, LONG** ppInOutPkts);
+	STDMETHOD(StylusUp)(IRealTimeStylus*, const StylusInfo* pStylusInfo, ULONG cPktCount, LONG* pPacket, LONG** ppInOutPkts);
+	STDMETHOD(Packets)(IRealTimeStylus* piRtsSrc, const StylusInfo* pStylusInfo, ULONG cPktCount, ULONG cPktBuffLength, LONG* pPacket, ULONG* pcInOutPkts, LONG** ppInOutPkts);
+	STDMETHOD(DataInterest)(RealTimeStylusDataInterest* pDataInterest);
 
 	// IStylusSyncPlugin methods with trivial inline implementation, they all return S_OK
 	STDMETHOD(RealTimeStylusEnabled)(IRealTimeStylus*, ULONG, const TABLET_CONTEXT_ID*) { return S_OK; }

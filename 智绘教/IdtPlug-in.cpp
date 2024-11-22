@@ -3818,6 +3818,8 @@ void PPTLinkageMain()
 		if (_waccess((globalPath + L"opt\\pptcom_configuration.json").c_str(), 4) == 0) PptComReadSetting();
 		PptComWriteSetting();
 	}
+	// 检查相关注册表项目
+	pptComSetlist.setAdmin = IsPowerPointRunAsAdminSet();
 
 	thread(GetPptState).detach();
 	thread(PptInfo).detach();
@@ -3835,6 +3837,90 @@ void PPTLinkageMain()
 	}
 
 	threadStatus[L"PptDraw"] = false;
+}
+
+// 附加检测项
+bool IsPowerPointRunAsAdminSet()
+{
+	// Registry paths to check
+	const std::wstring subKeys[] = {
+		L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers"
+	};
+
+	// Registry roots to check
+	HKEY hRoots[] = { HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER };
+
+	for (HKEY hRoot : hRoots)
+	{
+		for (const std::wstring& subKey : subKeys)
+		{
+			HKEY hKey;
+			// Open the registry key
+			if (RegOpenKeyExW(hRoot, subKey.c_str(), 0, KEY_READ, &hKey) == ERROR_SUCCESS)
+			{
+				DWORD valueCount = 0;
+				DWORD maxValueNameLen = 0;
+				DWORD maxValueDataLen = 0;
+				// Get the number of values and their max sizes
+				if (RegQueryInfoKeyW(hKey, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+					&valueCount, &maxValueNameLen, &maxValueDataLen, nullptr, nullptr) == ERROR_SUCCESS)
+				{
+					// Increase lengths to accommodate null terminators
+					maxValueNameLen++;
+					maxValueDataLen++;
+
+					// Allocate buffers
+					std::wstring valueName(maxValueNameLen, L'\0');
+					std::vector<BYTE> data(maxValueDataLen);
+
+					// Enumerate all values
+					for (DWORD i = 0; i < valueCount; ++i)
+					{
+						DWORD valueNameLen = maxValueNameLen;
+						DWORD dataSize = maxValueDataLen;
+						DWORD type = 0;
+
+						// Enumerate each value
+						if (RegEnumValueW(hKey, i, &valueName[0], &valueNameLen, nullptr, &type, data.data(), &dataSize) == ERROR_SUCCESS)
+						{
+							valueName.resize(valueNameLen);
+
+							// Convert value name to lowercase for case-insensitive comparison
+							std::wstring lowerValueName = valueName;
+							std::transform(lowerValueName.begin(), lowerValueName.end(), lowerValueName.begin(), ::towlower);
+
+							// Check if the value name contains "powerpoint.exe"
+							if (lowerValueName.find(L"powerpoint.exe") != std::wstring::npos || lowerValueName.find(L"ksolaunch.exe") != std::wstring::npos)
+							{
+								if (type == REG_SZ)
+								{
+									// Convert data to wide string
+									std::wstring dataStr(reinterpret_cast<WCHAR*>(data.data()), dataSize / sizeof(WCHAR) - 1);
+
+									// Convert data string to lowercase
+									std::wstring lowerDataStr = dataStr;
+									std::transform(lowerDataStr.begin(), lowerDataStr.end(), lowerDataStr.begin(), ::towlower);
+
+									// Check if data contains "runasadmin"
+									if (lowerDataStr.find(L"runasadmin") != std::wstring::npos)
+									{
+										RegCloseKey(hKey);
+										return true;
+									}
+								}
+							}
+
+							// Reset buffers for next iteration
+							valueName.assign(maxValueNameLen, L'\0');
+							data.assign(maxValueDataLen, 0);
+						}
+					}
+				}
+				RegCloseKey(hKey);
+			}
+		}
+	}
+	return false;
 }
 
 // --------------------------------------------------

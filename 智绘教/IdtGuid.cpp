@@ -2,82 +2,12 @@
 
 #include "IdtText.h"
 
-#pragma comment(lib, "msvcprt.lib")
-
-constexpr auto BUFFER_SIZE = (512);
-typedef unsigned int size_t_32;
-
 struct
 {
 	wstring BoardUUID;
 	wstring BoardSerialNumber;
 	wstring MainHardDiskSerialNumber;
 }BoardInfo;
-
-unsigned int BKDRHash(char* str)
-{
-	unsigned int seed = 131; // 31 131 1313 13131 131313 etc..
-	unsigned int hash = 0;
-
-	while (*str)
-	{
-		hash = hash * seed + (*str++);
-	}
-
-	return (hash & 0x7FFFFFFF);
-}
-string hash32_to_guid(size_t_32 hash_value)
-{
-	char chHex_str[BUFFER_SIZE] = { 0 };
-
-	stringstream ss;
-	ss << setfill('0') << setw(8) << hex << hash_value;
-	string hex_str = ss.str();
-	strcpy_s(chHex_str, hex_str.c_str());
-
-	size_t_32 num1 = BKDRHash(chHex_str);
-	stringstream ss1;
-	ss1 << setfill('0') << setw(8) << hex << num1;
-	string hex_str1 = ss1.str();
-	memset(chHex_str, 0, sizeof(chHex_str));
-	size_t_32 num2 = BKDRHash(chHex_str);
-	stringstream ss2;
-	ss2 << setfill('0') << setw(8) << hex << num2;
-	string hex_str2 = ss2.str();
-	memset(chHex_str, 0, sizeof(chHex_str));
-	strcpy_s(chHex_str, hex_str2.c_str());
-
-	size_t_32 num3 = BKDRHash(chHex_str);
-	stringstream ss3;
-	ss3 << setfill('0') << setw(8) << hex << num3;
-	string hex_str3 = ss3.str();
-	memset(chHex_str, 0, sizeof(chHex_str));
-	strcpy_s(chHex_str, hex_str3.c_str());
-
-	// 构造GUID的格式
-	string guid_str = "{" + hex_str.substr(0, 8) + "-" + hex_str1.substr(0, 4) + "-" +
-		hex_str1.substr(4, 4) + "-" +
-		hex_str2.substr(0, 4) + "-" +
-		hex_str2.substr(4, 4) + hex_str3.substr(0, 8) + "}";
-
-	return guid_str;
-}
-
-wstring GetCPUID()
-{
-	wstring strCPUID;
-	int CPUInfo[4] = { -1 };
-	unsigned long s1, s2;
-	wchar_t buffer[17];
-
-	__cpuid(CPUInfo, 1);
-	s1 = CPUInfo[3];
-	s2 = CPUInfo[0];
-
-	swprintf(buffer, 17, L"%08X%08X", s1, s2);
-	strCPUID = buffer;
-	return strCPUID;
-}
 void GetBoardInfo()
 {
 	// 初始化COM
@@ -96,6 +26,7 @@ void GetBoardInfo()
 			if (SUCCEEDED(hres))
 			{
 				IEnumWbemClassObject* pEnumerator = NULL;
+
 				hres = pSvc->ExecQuery((_bstr_t)L"WQL", (_bstr_t)L"SELECT UUID FROM Win32_ComputerSystemProduct", WBEM_FLAG_FORWARD_ONLY, NULL, &pEnumerator);
 				if (SUCCEEDED(hres))
 				{
@@ -165,41 +96,38 @@ void GetBoardInfo()
 	CoUninitialize();
 }
 
-size_t_32 getBiosCpuDiskHashID()
+string getBiosCpuDiskHashID()
 {
-	size_t_32 num;
-	char chHex_str[BUFFER_SIZE] = { 0 };
-
 	GetBoardInfo();
 
-	string BoardUUID = utf16ToUtf8(BoardInfo.BoardUUID);
-	if (!BoardUUID.empty() && BoardUUID.compare("FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF") != 0)
-	{
-		strcpy_s(chHex_str, (BoardUUID + "\r\n").c_str());
-		num = BKDRHash(chHex_str);
-
-		return num;
-	}
-
 	string Guid;
-
-	string CPUID = utf16ToUtf8(GetCPUID());
+	string BoardUUID = utf16ToUtf8(BoardInfo.BoardUUID);
 	string BoardSerialNumber = utf16ToUtf8(BoardInfo.BoardSerialNumber);
 	string MainHardDiskSerialNumber = utf16ToUtf8(BoardInfo.MainHardDiskSerialNumber);
 
-	if (!CPUID.empty()) Guid.append(CPUID + "\r\n");
-	if (!BoardSerialNumber.empty()) Guid.append(BoardSerialNumber + "\r\n");
-	if (!MainHardDiskSerialNumber.empty()) Guid.append(MainHardDiskSerialNumber + "\r\n");
+	if (!BoardUUID.empty() && BoardUUID.compare("FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF") != 0) Guid.append(BoardUUID + "\n");
+	if (!BoardSerialNumber.empty()) Guid.append(BoardSerialNumber + "\n");
+	if (!MainHardDiskSerialNumber.empty()) Guid.append(MainHardDiskSerialNumber + "\n");
 
-	memset(chHex_str, 0, sizeof(chHex_str));
-	strcpy_s(chHex_str, Guid.c_str());
-	num = BKDRHash(chHex_str);
+	return Guid;
+}
+string generateGUID(const string& input)
+{
+	md5wrapper hasher;
+	string hash = hasher.getHashFromString(input);
 
-	return num;
+	string guid = "{" + hash.substr(0, 8) + "-" +
+		hash.substr(8, 4) + "-" +
+		hash.substr(12, 4) + "-" +
+		hash.substr(16, 4) + "-" +
+		hash.substr(20, 12) + "}";
+
+	return guid;
 }
 
 string getDeviceGUID()
 {
-	size_t_32 num = getBiosCpuDiskHashID();
-	return hash32_to_guid(num);
+	string deviceGuid = getBiosCpuDiskHashID();
+	if (deviceGuid.empty()) return "Error";
+	return generateGUID(deviceGuid);
 }

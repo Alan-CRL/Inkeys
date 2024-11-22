@@ -1654,7 +1654,7 @@ namespace HiEasyX
 		}
 
 		// 抢夺窗口焦点
-		SetWorkingWindow(wnd.hWnd);
+		//f SetWorkingWindow(wnd.hWnd);
 
 		*hWnd = wnd.hWnd;
 

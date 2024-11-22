@@ -471,7 +471,7 @@ void KeyboardInteraction()
 	}
 }
 
-void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
+void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeSelectEnum stateModeSelect)
 {
 	struct
 	{
@@ -504,7 +504,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 	Graphics graphics(GetImageHDC(&Canvas));
 	graphics.SetSmoothingMode(SmoothingModeHighQuality);
 
-	if (stateInfo.StateModeSelect == StateModeSelectEnum::IdtPen)
+	if (stateModeSelect == StateModeSelectEnum::IdtPen)
 	{
 		double accurateWritingDistance = 0;
 		int instantWritingDistance = 0;
@@ -767,7 +767,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 			}
 		}
 	}
-	else if (stateInfo.StateModeSelect == StateModeSelectEnum::IdtEraser)
+	else if (stateModeSelect == StateModeSelectEnum::IdtEraser)
 	{
 		double speed;
 		double rubbersize = 15, trubbersize = -1;
@@ -946,7 +946,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo)
 		SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
 		lockStrokeImageSm.unlock();
 	}
-	else if (stateInfo.StateModeSelect == StateModeSelectEnum::IdtShape)
+	else if (stateModeSelect == StateModeSelectEnum::IdtShape)
 	{
 		pointInfo.x = pointInfo.previousX, pointInfo.y = pointInfo.previousY;
 
@@ -2038,8 +2038,15 @@ int drawpad_main()
 				//开始绘图
 				if (start)
 				{
-					if (int(state) == 1 && stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser && setlist.RubberRecover) target_status = 0;
-					else if (int(state) == 1 && stateMode.StateModeSelect == StateModeSelectEnum::IdtPen && setlist.BrushRecover) target_status = 0;
+					StateModeSelectEnum nextPointMode = stateMode.StateModeSelect;
+
+					shared_lock<shared_mutex> lock1(PointTempSm);
+					TouchInfo touchPoint = TouchTemp.front();
+					lock1.unlock();
+					if (touchPoint.isInvertedCursor || touchPoint.type == 3) nextPointMode = StateModeSelectEnum::IdtEraser;
+
+					if (int(state) == 1 && nextPointMode == StateModeSelectEnum::IdtEraser && setlist.RubberRecover) target_status = 0;
+					else if (int(state) == 1 && nextPointMode == StateModeSelectEnum::IdtPen && setlist.BrushRecover) target_status = 0;
 
 					if (current_record_pointer != reference_record_pointer)
 					{
@@ -2055,19 +2062,11 @@ int drawpad_main()
 					if (FirstDraw) RecallImageManipulated = std::chrono::high_resolution_clock::now();
 					FirstDraw = false;
 
-					std::shared_lock<std::shared_mutex> lock1(PointTempSm);
-					LONG pid = TouchTemp.front().pid;
-					POINT pt = TouchTemp.front().pt;
-					lock1.unlock();
-
-					std::unique_lock<std::shared_mutex> lock2(PointTempSm);
+					unique_lock<shared_mutex> lock2(PointTempSm);
 					TouchTemp.pop_front();
 					lock2.unlock();
 
-					//hiex::PreSetWindowShowState(SW_HIDE);
-					//HWND draw_window = initgraph(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-
-					thread MultiFingerDrawing_thread(MultiFingerDrawing, pid, pt, stateMode);
+					thread MultiFingerDrawing_thread(MultiFingerDrawing, touchPoint.pid, touchPoint.pt, stateMode, nextPointMode);
 					MultiFingerDrawing_thread.detach();
 				}
 				else break;

@@ -239,6 +239,8 @@ bool EndPptShow();
 
 void PPTLinkageMain();
 
+bool IsPowerPointRunAsAdminSet();
+
 // --------------------------------------------------
 // 其他插件
 
