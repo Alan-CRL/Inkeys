@@ -40,7 +40,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20241121a";				// 程序发布日期
+wstring editionDate = L"20241124a";				// 程序发布日期
 wstring editionChannel = L"dev";			// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -594,7 +594,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		// 读取配置文件前初始化操作
 		{
 			setlist.startUp = false;
-			setlist.CreateLnk = false;
+			setlist.correctLnk = true;
+			setlist.createLnk = false;
+
 			setlist.RightClickClose = false;
 			setlist.BrushRecover = true;
 			setlist.RubberRecover = false;
@@ -647,11 +649,24 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				bool hasTouchDevice = (digitizerStatus & NID_READY) && (digitizerStatus & (NID_INTEGRATED_TOUCH | NID_EXTERNAL_TOUCH));
 				if (hasTouchDevice)
 				{
-					if (MainMonitor.MonitorPhyWidth == 0 || MainMonitor.MonitorPhyHeight == 0) setlist.paintDevice = 1, setlist.liftStraighten = true;
-					else if (MainMonitor.MonitorPhyWidth * MainMonitor.MonitorPhyHeight >= 1200) setlist.paintDevice = 1, setlist.liftStraighten = true;
-					else setlist.paintDevice = 0;
+					if (MainMonitor.MonitorPhyWidth == 0 || MainMonitor.MonitorPhyHeight == 0) setlist.paintDevice = 0, setlist.liftStraighten = true;
+					else if (MainMonitor.MonitorPhyWidth * MainMonitor.MonitorPhyHeight >= 1200) setlist.paintDevice = 0, setlist.liftStraighten = true;
+					else setlist.paintDevice = 1;
 				}
-				else setlist.paintDevice = 0;
+				else setlist.paintDevice = 1;
+			}
+			{
+				//// 获取屏幕设备上下文
+				//HDC screen = GetDC(NULL);
+
+				//// 获取屏幕的 DPI 值
+				//int dpiX = GetDeviceCaps(screen, LOGPIXELSX);
+				//int dpiY = GetDeviceCaps(screen, LOGPIXELSY);
+
+				//// 释放设备上下文
+				//ReleaseDC(NULL, screen);
+
+				setlist.settingGlobalScale = 1.0f;
 			}
 		}
 
@@ -774,11 +789,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	// 插件配置初始化
 	{
 		// 桌面快捷方式初始化
-		if (setlist.CreateLnk)
-		{
-			SetShortcut();
-			IDTLogger->info("[主线程][IdtMain] 快捷方式初始化完成");
-		}
+		SetShortcut();
 		// 启动 DesktopDrawpadBlocker
 		thread(StartDesktopDrawpadBlocker).detach();
 	}

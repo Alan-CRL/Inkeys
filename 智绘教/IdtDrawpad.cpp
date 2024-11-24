@@ -300,7 +300,6 @@ void KeyboardInteraction()
 			if (m.message == WM_KEYDOWN && (m.vkcode == VK_DOWN || m.vkcode == VK_RIGHT || m.vkcode == VK_NEXT || m.vkcode == VK_SPACE || m.vkcode == VK_UP || m.vkcode == VK_LEFT || m.vkcode == VK_PRIOR))
 			{
 				auto vkcode = m.vkcode;
-				cout << "pk " << (int)vkcode << endl;
 
 				if (vkcode == VK_UP || vkcode == VK_LEFT || vkcode == VK_PRIOR)
 				{
@@ -575,8 +574,10 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 				}
 				else if (chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now() - StopTiming).count() >= 600)
 				{
-					double redundance = max(15.0 * drawingScale, (accurateWritingDistance / drawingScale * 0.03409 + 10.9092) * drawingScale) * 2.0f; // 降低精度
-					if (accurateWritingDistance / drawingScale >= 120 && (abs(inkTangentRectangle.left - inkTangentRectangle.right) / drawingScale >= 120 || abs(inkTangentRectangle.top - inkTangentRectangle.bottom) / drawingScale >= 120) && isLine(actualPoints, redundance, drawingScale, std::chrono::high_resolution_clock::now()))
+					double distance = EuclideanDistanceP(actualPoints.front(), actualPoints.back());
+
+					double redundance = max(15.0 * drawingScale, (distance / drawingScale * 0.03409 + 10.9092) * drawingScale) * 2.0f; // 降低精度
+					if (distance / drawingScale >= 120 && (abs(inkTangentRectangle.left - inkTangentRectangle.right) / drawingScale >= 120 || abs(inkTangentRectangle.top - inkTangentRectangle.bottom) / drawingScale >= 120) && isLine(actualPoints, redundance, drawingScale, std::chrono::high_resolution_clock::now()))
 					{
 						stateInfo.StateModeSelect = StateModeSelectEnum::IdtShape;
 						stateInfo.Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeStraightLine1;
@@ -654,8 +655,10 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 			if (stateInfo.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1)
 			{
 				//直线绘制
-				double redundance = max(15.0 * drawingScale, (accurateWritingDistance / drawingScale * 0.03409 + 10.9092) * drawingScale);
-				if (setlist.liftStraighten && accurateWritingDistance / drawingScale >= 120 && (abs(inkTangentRectangle.left - inkTangentRectangle.right) / drawingScale >= 120 || abs(inkTangentRectangle.top - inkTangentRectangle.bottom) / drawingScale >= 120) && isLine(actualPoints, redundance, drawingScale, std::chrono::high_resolution_clock::now()))
+				double distance = EuclideanDistanceP(actualPoints.front(), actualPoints.back());
+
+				double redundance = max(15.0 * drawingScale, (distance / drawingScale * 0.03409 + 10.9092) * drawingScale);
+				if (setlist.liftStraighten && distance / drawingScale >= 120 && (abs(inkTangentRectangle.left - inkTangentRectangle.right) / drawingScale >= 120 || abs(inkTangentRectangle.top - inkTangentRectangle.bottom) / drawingScale >= 120) && isLine(actualPoints, redundance, drawingScale, std::chrono::high_resolution_clock::now()))
 				{
 					Point start(actualPoints[0]), end(actualPoints[actualPoints.size() - 1]);
 

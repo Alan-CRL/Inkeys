@@ -167,10 +167,11 @@ LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 	if (nCode >= 0)
 	{
 		if (wParam == WM_LBUTTONDOWN) KeyBoradDown[VK_LBUTTON] = true;
-		else if (wParam == WM_MBUTTONDOWN) KeyBoradDown[VK_MBUTTON] = true;
-		else if (wParam == WM_RBUTTONDOWN) KeyBoradDown[VK_RBUTTON] = true;
 		else if (wParam == WM_LBUTTONUP) KeyBoradDown[VK_LBUTTON] = false;
+		else if (wParam == WM_MBUTTONDOWN) KeyBoradDown[VK_MBUTTON] = true;
 		else if (wParam == WM_MBUTTONUP) KeyBoradDown[VK_MBUTTON] = false;
+
+		else if (wParam == WM_RBUTTONDOWN) KeyBoradDown[VK_RBUTTON] = true;
 		else if (wParam == WM_RBUTTONUP) KeyBoradDown[VK_RBUTTON] = false;
 
 		if (wParam == WM_MOUSEWHEEL && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && !penetrate.select && ppt_show != NULL)

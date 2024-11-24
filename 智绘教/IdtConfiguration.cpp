@@ -114,11 +114,15 @@ bool ReadSetting()
 			setlist.selectLanguage = updateVal["SelectLanguage"].asBool();
 		if (updateVal.isMember("StartUp") && updateVal["StartUp"].isBool())
 			setlist.startUp = updateVal["StartUp"].asBool();
+		if (updateVal.isMember("SettingGlobalScale") && updateVal["SettingGlobalScale"].isDouble())
+			setlist.settingGlobalScale = updateVal["SettingGlobalScale"].asDouble();
+		if (updateVal.isMember("CorrectLnk") && updateVal["CorrectLnk"].isBool())
+			setlist.correctLnk = updateVal["CorrectLnk"].asBool();
+		if (updateVal.isMember("CreateLnk") && updateVal["CreateLnk"].isBool())
+			setlist.createLnk = updateVal["CreateLnk"].asBool();
 
 		if (updateVal.isMember("SetSkinMode") && updateVal["SetSkinMode"].isInt())
 			setlist.SetSkinMode = updateVal["SetSkinMode"].asInt();
-		if (updateVal.isMember("CreateLnk") && updateVal["CreateLnk"].isBool())
-			setlist.CreateLnk = updateVal["CreateLnk"].asBool();
 		if (updateVal.isMember("RightClickClose") && updateVal["RightClickClose"].isBool())
 			setlist.RightClickClose = updateVal["RightClickClose"].asBool();
 		if (updateVal.isMember("BrushRecover") && updateVal["BrushRecover"].isBool())
@@ -173,9 +177,11 @@ bool WriteSetting()
 	{
 		updateVal["SelectLanguage"] = Json::Value(setlist.selectLanguage);
 		updateVal["StartUp"] = Json::Value(setlist.startUp);
+		updateVal["SettingGlobalScale"] = Json::Value(setlist.settingGlobalScale);
+		updateVal["CorrectLnk"] = Json::Value(setlist.correctLnk);
+		updateVal["CreateLnk"] = Json::Value(setlist.createLnk);
 
 		updateVal["SetSkinMode"] = Json::Value(setlist.SetSkinMode);
-		updateVal["CreateLnk"] = Json::Value(setlist.CreateLnk);
 		updateVal["RightClickClose"] = Json::Value(setlist.RightClickClose);
 		updateVal["BrushRecover"] = Json::Value(setlist.BrushRecover);
 		updateVal["RubberRecover"] = Json::Value(setlist.RubberRecover);

@@ -1,5 +1,8 @@
 ﻿#include "IdtOther.h"
 
+#include "IdtConfiguration.h"
+#include "IdtI18n.h"
+
 #include <io.h>
 #include <objbase.h>
 #include <psapi.h>
@@ -232,61 +235,44 @@ void SetShortcut()
 	if (SHGetSpecialFolderPathW(0, desktopPath, CSIDL_DESKTOP, FALSE)) DesktopPath = wstring(desktopPath) + L"\\";
 	else return;
 
-	if (_waccess_s((DesktopPath + L"智绘教(屏幕批注工具).lnk").c_str(), 0) == 0)
+	if (setlist.correctLnk)
 	{
-		if (IsShortcutPointingToDirectory(DesktopPath + L"智绘教(屏幕批注工具).lnk", GetCurrentExePath()))
+		if (_waccess((DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk").c_str(), 0) == 0)
 		{
-			bool flag = false;
-
-			for (const auto& entry : std::filesystem::directory_iterator(DesktopPath))
+			// 存在对应名称的 Lnk
+			if (!IsShortcutPointingToDirectory(DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]) + L".lnk", GetCurrentExePath()))
 			{
-				if (std::filesystem::is_regular_file(entry) && entry.path().extension() == L".lnk")
-				{
-					if (entry.path().wstring() != DesktopPath + L"智绘教(屏幕批注工具).lnk" && IsShortcutPointingToDirectory(entry.path().wstring(), GetCurrentExePath()))
-					{
-						std::error_code ec;
-						std::filesystem::remove(entry.path().wstring(), ec);
+				// 不指向当前的程序路径
+				error_code ec;
+				filesystem::remove(DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]) + L".lnk", ec);
 
-						flag = true;
-					}
-				}
+				CreateShortcut(DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk", GetCurrentExePath());
 			}
-
-			if (!flag) return;
 		}
-		else
 		{
-			std::error_code ec;
-			std::filesystem::remove(DesktopPath + L"智绘教(屏幕批注工具).lnk", ec);
-			CreateShortcut(DesktopPath + L"智绘教(屏幕批注工具).lnk", GetCurrentExePath());
-
-			for (const auto& entry : std::filesystem::directory_iterator(DesktopPath))
+			for (const auto& entry : filesystem::directory_iterator(DesktopPath))
 			{
-				if (std::filesystem::is_regular_file(entry) && entry.path().extension() == L".lnk")
+				if (filesystem::is_regular_file(entry) && entry.path().extension() == L".lnk")
 				{
-					if (entry.path().wstring() != DesktopPath + L"智绘教(屏幕批注工具).lnk" && IsShortcutPointingToDirectory(entry.path().wstring(), GetCurrentExePath()))
+					if (IsShortcutPointingToDirectory(entry.path().wstring(), GetCurrentExePath()))
 					{
-						std::error_code ec;
-						std::filesystem::remove(entry.path().wstring(), ec);
+						// 存在指向当前的程序路径的快捷方式，但是其名称并不正确
+						error_code ec;
+						filesystem::remove(entry.path().wstring(), ec);
+
+						CreateShortcut(DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]) + L".lnk", GetCurrentExePath());
 					}
 				}
 			}
 		}
 	}
-	else
+
+	if (setlist.createLnk)
 	{
-		for (const auto& entry : std::filesystem::directory_iterator(DesktopPath))
+		if (_waccess((DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk").c_str(), 0) == -1)
 		{
-			if (std::filesystem::is_regular_file(entry) && entry.path().extension() == L".lnk")
-			{
-				if (IsShortcutPointingToDirectory(entry.path().wstring(), GetCurrentExePath()))
-				{
-					std::error_code ec;
-					std::filesystem::remove(entry.path().wstring(), ec);
-				}
-			}
+			CreateShortcut(DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk", GetCurrentExePath());
 		}
-		CreateShortcut(DesktopPath + L"智绘教(屏幕批注工具).lnk", GetCurrentExePath());
 	}
 
 	SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);

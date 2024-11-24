@@ -10,6 +10,8 @@ enum i18nEnum
 	MainColumn_Centre_Eraser,
 	MainColumn_Centre_Options,
 
+	LnkName,
+
 	Settings,
 	SettingsW,
 	Settings_Operate_Reset,
@@ -61,4 +63,4 @@ enum i18nEnum
 extern wstring i18nIdentifying;
 extern unordered_map<i18nEnum, variant<string, wstring>> i18n;
 
-bool loadI18n(int type, wstring path, wstring lang = L"en-US", bool initialization = false);
+bool loadI18n(int type, wstring path, wstring lang = L"en-US");

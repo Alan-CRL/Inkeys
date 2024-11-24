@@ -1,6 +1,6 @@
-//{{NO_DEPENDENCIES}}
-// Microsoft Visual C++ ���ɵİ����ļ���
-// �� �ǻ��.rc ʹ��
+﻿//{{NO_DEPENDENCIES}}
+// Microsoft Visual C++ 生成的包含文件。
+// 供 智绘教.rc 使用
 //
 #define VS_VERSION_INFO                 1
 #define IDB_PNG3                        117

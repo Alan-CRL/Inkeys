@@ -8,9 +8,10 @@ bool UnOccupyFile(HANDLE* hFile);
 struct SetListStruct
 {
 	int selectLanguage;
+	float settingGlobalScale;
 
 	bool startUp;
-	bool CreateLnk;
+	bool createLnk, correctLnk;
 
 	bool RightClickClose;
 	bool BrushRecover, RubberRecover;
