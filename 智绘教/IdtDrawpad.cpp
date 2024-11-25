@@ -15,6 +15,8 @@
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
 
+#include <queue>
+
 bool main_open;
 bool FirstDraw = true;
 bool IdtHotkey;
@@ -470,6 +472,27 @@ void KeyboardInteraction()
 	}
 }
 
+// 落笔预备
+shared_mutex prepareCanvasQueueSm;
+queue<IMAGE*> prepareCanvasQueue;
+void PrepareCanvas(int width, int height)
+{
+	for (;;)
+	{
+		shared_lock<shared_mutex> lockPrepareCanvasQueue1(prepareCanvasQueueSm);
+		int queueSize = prepareCanvasQueue.size();
+		lockPrepareCanvasQueue1.unlock();
+		if (queueSize >= 4) break;
+
+		IMAGE* canvas = new IMAGE(width, height);
+		SetImageColor(*canvas, RGBA(0, 0, 0, 0), true);
+
+		unique_lock<shared_mutex> lockPrepareCanvasQueue2(prepareCanvasQueueSm);
+		prepareCanvasQueue.push(canvas);
+		lockPrepareCanvasQueue2.unlock();
+	}
+}
+
 void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeSelectEnum stateModeSelect)
 {
 	struct
@@ -478,10 +501,14 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 		int height;
 	} screenInfo;
 	{
-		shared_lock<shared_mutex> DisplaysInfoLock(DisplaysInfoSm);
+		/*shared_lock<shared_mutex> DisplaysInfoLock(DisplaysInfoSm);
 		screenInfo.width = MainMonitor.MonitorWidth;
 		screenInfo.height = MainMonitor.MonitorHeight;
-		DisplaysInfoLock.unlock();
+		DisplaysInfoLock.unlock();*/
+
+		// TODO
+		screenInfo.width = 3840;
+		screenInfo.height = 2160;
 	}
 
 	struct
@@ -496,11 +523,41 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 		pointInfo.previousY = pt.y;
 	}
 
-	IMAGE Canvas = CreateImageColor(screenInfo.width, screenInfo.height, RGBA(0, 0, 0, 0), true);
-	IMAGE* BackCanvas = new IMAGE(screenInfo.width, screenInfo.height);
+	auto start = std::chrono::high_resolution_clock::now();
+	IMAGE* Canvas = nullptr;
+
+	shared_lock<shared_mutex> lockPrepareCanvasQueue1(prepareCanvasQueueSm);
+	bool isPrepareCanvasQueueEmpty = prepareCanvasQueue.empty();
+	if (!isPrepareCanvasQueueEmpty)
+	{
+		Canvas = prepareCanvasQueue.front();
+		lockPrepareCanvasQueue1.unlock();
+
+		unique_lock<shared_mutex> lockPrepareCanvasQueue2(prepareCanvasQueueSm);
+		prepareCanvasQueue.pop();
+		lockPrepareCanvasQueue2.unlock();
+
+		if (Canvas->getwidth() != screenInfo.width || Canvas->getheight() != screenInfo.height)
+		{
+			Canvas->Resize(screenInfo.width, screenInfo.height);
+			SetImageColor(*Canvas, RGBA(0, 0, 0, 0), true);
+		}
+	}
+	else
+	{
+		lockPrepareCanvasQueue1.unlock();
+
+		Canvas = new IMAGE(screenInfo.width, screenInfo.height);
+		SetImageColor(*Canvas, RGBA(0, 0, 0, 0), true);
+	}
+	thread(PrepareCanvas, screenInfo.width, screenInfo.height).detach();
+
+	cerr << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start).count() << "us" << endl;
+
+	if (Canvas == nullptr) Testw(L"ERROR");
 
 	// 绘制画布定义
-	Graphics graphics(GetImageHDC(&Canvas));
+	Graphics graphics(GetImageHDC(Canvas));
 	graphics.SetSmoothingMode(SmoothingModeHighQuality);
 
 	if (stateModeSelect == StateModeSelectEnum::IdtPen)
@@ -515,11 +572,11 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 		{
 			if (stateInfo.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1)
 			{
-				hiex::EasyX_Gdiplus_SolidEllipse(float((float)pointInfo.previousX - stateInfo.Pen.Brush1.width / 2.0), float((float)pointInfo.previousY - stateInfo.Pen.Brush1.width / 2.0), stateInfo.Pen.Brush1.width, stateInfo.Pen.Brush1.width, stateInfo.Pen.Brush1.color, false, SmoothingModeHighQuality, &Canvas);
+				hiex::EasyX_Gdiplus_SolidEllipse(float((float)pointInfo.previousX - stateInfo.Pen.Brush1.width / 2.0), float((float)pointInfo.previousY - stateInfo.Pen.Brush1.width / 2.0), stateInfo.Pen.Brush1.width, stateInfo.Pen.Brush1.width, stateInfo.Pen.Brush1.color, false, SmoothingModeHighQuality, Canvas);
 			}
 			else if (stateInfo.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
 			{
-				hiex::EasyX_Gdiplus_SolidEllipse(float((float)pointInfo.previousX - stateInfo.Pen.Highlighter1.width / 2.0), float((float)pointInfo.previousY - stateInfo.Pen.Highlighter1.width / 2.0), stateInfo.Pen.Highlighter1.width, stateInfo.Pen.Highlighter1.width, stateInfo.Pen.Highlighter1.color, false, SmoothingModeHighQuality, &Canvas);
+				hiex::EasyX_Gdiplus_SolidEllipse(float((float)pointInfo.previousX - stateInfo.Pen.Highlighter1.width / 2.0), float((float)pointInfo.previousY - stateInfo.Pen.Highlighter1.width / 2.0), stateInfo.Pen.Highlighter1.width, stateInfo.Pen.Highlighter1.width, stateInfo.Pen.Highlighter1.color, false, SmoothingModeHighQuality, Canvas);
 			}
 		}
 
@@ -528,8 +585,8 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 			unique_lock lockStrokeImageSm(StrokeImageSm[pid]);
 			{
 				// 前三位为透明度，后一位为操作状态
-				if (stateInfo.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) StrokeImage[pid] = make_pair(&Canvas, 1300);
-				else StrokeImage[pid] = make_pair(&Canvas, 2550);
+				if (stateInfo.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) StrokeImage[pid] = make_pair(Canvas, 1300);
+				else StrokeImage[pid] = make_pair(Canvas, 2550);
 			}
 			lockStrokeImageSm.unlock();
 
@@ -548,7 +605,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 		{
 			// 确认触摸点存在
 			{
-				shared_lock<shared_mutex> lockPointPosSm(PointPosSm);
+				shared_lock<shared_mutex> lockPointPosSm(touchPosSm);
 				{
 					if (TouchPos.find(pid) == TouchPos.end())
 					{
@@ -559,7 +616,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 				}
 				lockPointPosSm.unlock();
 
-				shared_lock lockPointListSm(PointListSm);
+				shared_lock lockPointListSm(pointListSm);
 				auto it = std::find(TouchList.begin(), TouchList.end(), pid);
 				lockPointListSm.unlock();
 				if (it == TouchList.end()) break;
@@ -641,15 +698,6 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 			}
 		}
 
-		// 定格绘制刷新队列
-		unique_lock lockStrokeImageSm(StrokeImageSm[pid]);
-		{
-			ImgCpy(BackCanvas, &Canvas);
-			if (stateInfo.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) StrokeImage[pid] = make_pair(BackCanvas, 1300);
-			else StrokeImage[pid] = make_pair(BackCanvas, 2550);
-		}
-		lockStrokeImageSm.unlock();
-
 		//智能绘图模块
 		{
 			if (stateInfo.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1)
@@ -713,11 +761,6 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 					extreme_point[{start.X, start.Y}] = extreme_point[{end.X, end.Y}] = true;
 					LockExtremePointSm.unlock();
 
-					SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
-
-					Graphics graphics(GetImageHDC(&Canvas));
-					graphics.SetSmoothingMode(SmoothingModeHighQuality);
-
 					Pen pen(hiex::ConvertToGdiplusColor(RGBA(0, 0, 0, 255), false));
 					pen.SetStartCap(LineCapRound);
 					pen.SetEndCap(LineCapRound);
@@ -725,17 +768,15 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 					pen.SetColor(hiex::ConvertToGdiplusColor(stateInfo.Pen.Brush1.color, false));
 					pen.SetWidth(stateInfo.Pen.Brush1.width);
 
+					unique_lock lockStrokeImageSm(StrokeImageSm[pid]);
+					SetImageColor(*Canvas, RGBA(0, 0, 0, 0), true);
 					graphics.DrawLine(&pen, start.X, start.Y, end.X, end.Y);
+					lockStrokeImageSm.unlock();
 				}
 
 				//平滑曲线
 				else if (setlist.smoothWriting && actualPoints.size() > 2)
 				{
-					SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
-
-					Graphics graphics(GetImageHDC(&Canvas));
-					graphics.SetSmoothingMode(SmoothingModeHighQuality);
-
 					Pen pen(hiex::ConvertToGdiplusColor(RGBA(0, 0, 0, 255), false));
 					pen.SetLineJoin(LineJoinRound);
 					pen.SetStartCap(LineCapRound);
@@ -744,7 +785,10 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 					pen.SetColor(hiex::ConvertToGdiplusColor(stateInfo.Pen.Brush1.color, false));
 					pen.SetWidth(stateInfo.Pen.Brush1.width);
 
+					unique_lock lockStrokeImageSm(StrokeImageSm[pid]);
+					SetImageColor(*Canvas, RGBA(0, 0, 0, 0), true);
 					graphics.DrawCurve(&pen, actualPoints.data(), actualPoints.size(), 0.4f);
+					lockStrokeImageSm.unlock();
 				}
 			}
 			else if (stateInfo.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
@@ -752,11 +796,6 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 				//平滑曲线
 				if (setlist.smoothWriting && actualPoints.size() > 2)
 				{
-					SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
-
-					Graphics graphics(GetImageHDC(&Canvas));
-					graphics.SetSmoothingMode(SmoothingModeHighQuality);
-
 					Pen pen(hiex::ConvertToGdiplusColor(RGBA(0, 0, 0, 255), false));
 					pen.SetLineJoin(LineJoinRound);
 					pen.SetStartCap(LineCapRound);
@@ -765,7 +804,10 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 					pen.SetColor(hiex::ConvertToGdiplusColor(stateInfo.Pen.Highlighter1.color, false));
 					pen.SetWidth(stateInfo.Pen.Highlighter1.width);
 
+					unique_lock lockStrokeImageSm(StrokeImageSm[pid]);
+					SetImageColor(*Canvas, RGBA(0, 0, 0, 0), true);
 					graphics.DrawCurve(&pen, actualPoints.data(), actualPoints.size(), 0.4f);
+					lockStrokeImageSm.unlock();
 				}
 			}
 		}
@@ -804,13 +846,13 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 			}
 			LockExtremePointSm.unlock();
 
-			hiex::EasyX_Gdiplus_Ellipse(pointInfo.previousX - (float)(rubbersize) / 2, pointInfo.previousY - (float)(rubbersize) / 2, (float)rubbersize, (float)rubbersize, RGBA(130, 130, 130, 200), 3, true, SmoothingModeHighQuality, &Canvas);
+			hiex::EasyX_Gdiplus_Ellipse(pointInfo.previousX - (float)(rubbersize) / 2, pointInfo.previousY - (float)(rubbersize) / 2, (float)rubbersize, (float)rubbersize, RGBA(130, 130, 130, 200), 3, true, SmoothingModeHighQuality, Canvas);
 		}
 
 		// 进入绘制刷新队列
 		{
 			unique_lock lockStrokeImageSm(StrokeImageSm[pid]);
-			StrokeImage[pid] = make_pair(&Canvas, 2552);
+			StrokeImage[pid] = make_pair(Canvas, 2552);
 			lockStrokeImageSm.unlock();
 
 			unique_lock lockStrokeImageListSm(StrokeImageListSm);
@@ -822,7 +864,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 		{
 			// 确认触摸点存在
 			{
-				shared_lock<shared_mutex> lockPointPosSm(PointPosSm);
+				shared_lock<shared_mutex> lockPointPosSm(touchPosSm);
 				{
 					if (TouchPos.find(pid) == TouchPos.end())
 					{
@@ -833,14 +875,14 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 				}
 				lockPointPosSm.unlock();
 
-				shared_lock lockPointListSm(PointListSm);
+				shared_lock lockPointListSm(pointListSm);
 				auto it = std::find(TouchList.begin(), TouchList.end(), pid);
 				lockPointListSm.unlock();
 				if (it == TouchList.end()) break;
 			}
 			// 获取书写速度
 			{
-				shared_lock lockTouchSpeedSm(TouchSpeedSm);
+				shared_lock lockTouchSpeedSm(touchSpeedSm);
 				speed = TouchSpeed[pid];
 				lockTouchSpeedSm.unlock();
 			}
@@ -897,8 +939,8 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 
 				// 绘制橡皮外框
 				unique_lock lockStrokeImageSm(StrokeImageSm[pid]);
-				SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
-				hiex::EasyX_Gdiplus_Ellipse(pointInfo.x - (float)(rubbersize) / 2, pointInfo.y - (float)(rubbersize) / 2, (float)rubbersize, (float)rubbersize, RGBA(130, 130, 130, 200), 3, true, SmoothingModeHighQuality, &Canvas);
+				SetImageColor(*Canvas, RGBA(0, 0, 0, 0), true);
+				hiex::EasyX_Gdiplus_Ellipse(pointInfo.x - (float)(rubbersize) / 2, pointInfo.y - (float)(rubbersize) / 2, (float)rubbersize, (float)rubbersize, RGBA(130, 130, 130, 200), 3, true, SmoothingModeHighQuality, Canvas);
 				lockStrokeImageSm.unlock();
 			}
 			else
@@ -936,17 +978,16 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 
 				// 绘制橡皮外框
 				unique_lock lockStrokeImageSm(StrokeImageSm[pid]);
-				SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
-				hiex::EasyX_Gdiplus_Ellipse(pointInfo.x - (float)(rubbersize) / 2, pointInfo.y - (float)(rubbersize) / 2, (float)rubbersize, (float)rubbersize, RGBA(130, 130, 130, 200), 3, true, SmoothingModeHighQuality, &Canvas);
+				SetImageColor(*Canvas, RGBA(0, 0, 0, 0), true);
+				hiex::EasyX_Gdiplus_Ellipse(pointInfo.x - (float)(rubbersize) / 2, pointInfo.y - (float)(rubbersize) / 2, (float)rubbersize, (float)rubbersize, RGBA(130, 130, 130, 200), 3, true, SmoothingModeHighQuality, Canvas);
 				lockStrokeImageSm.unlock();
 			}
 
 			pointInfo.previousX = pointInfo.x, pointInfo.previousY = pointInfo.y;
 		}
 
-		// 考虑不需要操作，所以不需要 定格绘制刷新队列，只需要擦除橡皮边框
 		unique_lock lockStrokeImageSm(StrokeImageSm[pid]);
-		SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
+		SetImageColor(*Canvas, RGBA(0, 0, 0, 0), true);
 		lockStrokeImageSm.unlock();
 	}
 	else if (stateModeSelect == StateModeSelectEnum::IdtShape)
@@ -956,7 +997,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 		// 进入绘制刷新队列
 		{
 			unique_lock lockStrokeImageSm(StrokeImageSm[pid]);
-			StrokeImage[pid] = make_pair(&Canvas, 2550);
+			StrokeImage[pid] = make_pair(Canvas, 2550);
 			lockStrokeImageSm.unlock();
 
 			unique_lock lockStrokeImageListSm(StrokeImageListSm);
@@ -971,7 +1012,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 		{
 			// 确认触摸点存在
 			{
-				shared_lock<shared_mutex> lockPointPosSm(PointPosSm);
+				shared_lock<shared_mutex> lockPointPosSm(touchPosSm);
 				{
 					if (TouchPos.find(pid) == TouchPos.end())
 					{
@@ -982,7 +1023,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 				}
 				lockPointPosSm.unlock();
 
-				shared_lock lockPointListSm(PointListSm);
+				shared_lock lockPointListSm(pointListSm);
 				auto it = std::find(TouchList.begin(), TouchList.end(), pid);
 				lockPointListSm.unlock();
 				if (it == TouchList.end()) break;
@@ -1008,7 +1049,7 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 				// 绘制直线
 				unique_lock lockStrokeImageSm(StrokeImageSm[pid]);
 				{
-					SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
+					SetImageColor(*Canvas, RGBA(0, 0, 0, 0), true);
 					graphics.DrawLine(&pen, pointInfo.previousX, pointInfo.previousY, pointInfo.x, pointInfo.y);
 				}
 				lockStrokeImageSm.unlock();
@@ -1023,8 +1064,8 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 				// 绘制矩形
 				unique_lock lockStrokeImageSm(StrokeImageSm[pid]);
 				{
-					SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
-					hiex::EasyX_Gdiplus_RoundRect((float)rectangle_x, (float)rectangle_y, (float)rectangle_heigth, (float)rectangle_width, 3, 3, stateInfo.Pen.Brush1.color, stateInfo.Pen.Brush1.width, false, SmoothingModeHighQuality, &Canvas);
+					SetImageColor(*Canvas, RGBA(0, 0, 0, 0), true);
+					hiex::EasyX_Gdiplus_RoundRect((float)rectangle_x, (float)rectangle_y, (float)rectangle_heigth, (float)rectangle_width, 3, 3, stateInfo.Pen.Brush1.color, stateInfo.Pen.Brush1.width, false, SmoothingModeHighQuality, Canvas);
 				}
 				lockStrokeImageSm.unlock();
 			}
@@ -1039,14 +1080,6 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 				tRecord = clock();
 			}
 		}
-
-		// 定格绘制刷新队列
-		unique_lock lockStrokeImageSm(StrokeImageSm[pid]);
-		{
-			ImgCpy(BackCanvas, &Canvas);
-			StrokeImage[pid] = make_pair(BackCanvas, 2550);
-		}
-		lockStrokeImageSm.unlock();
 
 		//智能绘图：端点吸附
 		{
@@ -1107,11 +1140,6 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 					extreme_point[{start.X, start.Y}] = extreme_point[{end.X, end.Y}] = true;
 					LockExtremePointSm.unlock();
 
-					SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
-
-					Graphics graphics(GetImageHDC(&Canvas));
-					graphics.SetSmoothingMode(SmoothingModeHighQuality);
-
 					Pen pen(hiex::ConvertToGdiplusColor(RGBA(0, 0, 0, 255), false));
 					pen.SetStartCap(LineCapRound);
 					pen.SetEndCap(LineCapRound);
@@ -1119,7 +1147,10 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 					pen.SetColor(hiex::ConvertToGdiplusColor(stateInfo.Pen.Brush1.color, false));
 					pen.SetWidth(stateInfo.Pen.Brush1.width);
 
+					unique_lock lockStrokeImageSm(StrokeImageSm[pid]);
+					SetImageColor(*Canvas, RGBA(0, 0, 0, 0), true);
 					graphics.DrawLine(&pen, start.X, start.Y, end.X, end.Y);
+					lockStrokeImageSm.unlock();
 				}
 			}
 			else if (stateInfo.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1)
@@ -1233,39 +1264,38 @@ void MultiFingerDrawing(LONG pid, POINT pt, StateModeClass stateInfo, StateModeS
 					int w = abs(l1.X - r2.X) + 1;
 					int h = abs(l1.Y - r2.Y) + 1;
 
-					SetImageColor(Canvas, RGBA(0, 0, 0, 0), true);
-					hiex::EasyX_Gdiplus_RoundRect((float)x, (float)y, (float)w, (float)h, 3, 3, stateInfo.Pen.Brush1.color, stateInfo.Pen.Brush1.width, false, SmoothingModeHighQuality, &Canvas);
+					unique_lock lockStrokeImageSm(StrokeImageSm[pid]);
+					SetImageColor(*Canvas, RGBA(0, 0, 0, 0), true);
+					hiex::EasyX_Gdiplus_RoundRect((float)x, (float)y, (float)w, (float)h, 3, 3, stateInfo.Pen.Brush1.color, stateInfo.Pen.Brush1.width, false, SmoothingModeHighQuality, Canvas);
+					lockStrokeImageSm.unlock();
 				}
 			}
 		}
 	}
 
-	// 删除触摸点
-	unique_lock lockPointPosSm(PointPosSm);
-	{
-		TouchPos.erase(pid);
-	}
-	lockPointPosSm.unlock();
-
 	// 退出绘制刷新队列
 	unique_lock lockStrokeImageSm(StrokeImageSm[pid]);
 	{
-		ImgCpy(BackCanvas, &Canvas);
 		if (stateInfo.StateModeSelect == StateModeSelectEnum::IdtPen)
 		{
-			if (stateInfo.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) StrokeImage[pid] = make_pair(BackCanvas, (/*draw_info.color >> 24*/130) * 10 + 1);
-			else StrokeImage[pid] = make_pair(BackCanvas, 2551);
+			if (stateInfo.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) StrokeImage[pid] = make_pair(Canvas, (/*draw_info.color >> 24*/130) * 10 + 1);
+			else StrokeImage[pid] = make_pair(Canvas, 2551);
 		}
 		else if (stateInfo.StateModeSelect == StateModeSelectEnum::IdtEraser)
 		{
-			StrokeImage[pid] = make_pair(BackCanvas, 2553);
+			StrokeImage[pid] = make_pair(Canvas, 2553);
 		}
 		else if (stateInfo.StateModeSelect == StateModeSelectEnum::IdtShape)
 		{
-			StrokeImage[pid] = make_pair(BackCanvas, 2551);
+			StrokeImage[pid] = make_pair(Canvas, 2551);
 		}
 	}
 	lockStrokeImageSm.unlock();
+
+	// 删除触摸点
+	unique_lock lockPointPosSm(touchPosSm);
+	if (TouchPos.find(pid) != TouchPos.end()) TouchPos.erase(pid);
+	lockPointPosSm.unlock();
 }
 void DrawpadDrawing()
 {
@@ -1481,7 +1511,17 @@ void DrawpadDrawing()
 					ulwi.hdcSrc = GetImageHDC(&window_background);
 					UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
 				}
+
+				unique_lock<shared_mutex> lockPointPosSm(touchPosSm);
+				if (!TouchPos.empty()) Testw(L"TouchPos");
+				TouchPos.clear();
+				lockPointPosSm.unlock();
+				unique_lock lockPointListSm(pointListSm);
+				TouchList.clear();
+				lockPointListSm.unlock();
+				unique_lock<shared_mutex> lockPointTempSm(touchTempSm);
 				TouchTemp.clear();
+				lockPointTempSm.unlock();
 			}
 			if (penetrate.select == true)
 			{
@@ -2015,8 +2055,19 @@ int drawpad_main()
 	{
 		SetImageColor(alpha_drawpad, RGBA(0, 0, 0, 0), true);
 
-		//启动绘图库程序
+		// 启动绘图库程序
 		hiex::Gdiplus_Try_Starup();
+
+		// 落笔预备
+		{
+			shared_lock<shared_mutex> DisplaysInfoLock(DisplaysInfoSm);
+			int width = MainMonitor.MonitorWidth;
+			int height = MainMonitor.MonitorHeight;
+			DisplaysInfoLock.unlock();
+
+			//PrepareCanvas(width, height);
+			PrepareCanvas(3840, 2160);
+		}
 
 		while (!offSignal)
 		{
@@ -2028,7 +2079,7 @@ int drawpad_main()
 
 			while (1)
 			{
-				std::shared_lock<std::shared_mutex> LockPointTempSm(PointTempSm);
+				std::shared_lock<std::shared_mutex> LockPointTempSm(touchTempSm);
 				bool start = !TouchTemp.empty();
 				LockPointTempSm.unlock();
 				if (start)
@@ -2043,7 +2094,7 @@ int drawpad_main()
 				{
 					StateModeSelectEnum nextPointMode = stateMode.StateModeSelect;
 
-					shared_lock<shared_mutex> lock1(PointTempSm);
+					shared_lock<shared_mutex> lock1(touchTempSm);
 					TouchInfo touchPoint = TouchTemp.front();
 					lock1.unlock();
 					if (touchPoint.isInvertedCursor || touchPoint.type == 3) nextPointMode = StateModeSelectEnum::IdtEraser;
@@ -2065,7 +2116,7 @@ int drawpad_main()
 					if (FirstDraw) RecallImageManipulated = std::chrono::high_resolution_clock::now();
 					FirstDraw = false;
 
-					unique_lock<shared_mutex> lock2(PointTempSm);
+					unique_lock<shared_mutex> lock2(touchTempSm);
 					TouchTemp.pop_front();
 					lock2.unlock();
 

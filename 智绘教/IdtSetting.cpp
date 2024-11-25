@@ -3855,17 +3855,20 @@ void SettingMain()
 							else text += L"\n\n输入设备消息：就绪";
 
 							text += L"\n输入设备按下：";
+
+							shared_lock<shared_mutex> locktouchNum(touchNumSm);
 							text += touchDown ? L"是" : L"否";
 							text += L"\n输入设备点：";
 							text += to_wstring(touchNum);
+							locktouchNum.unlock();
 
 							for (int i = 0; i < touchNum; i++)
 							{
-								std::shared_lock<std::shared_mutex> lock1(PointPosSm);
+								std::shared_lock<std::shared_mutex> lock1(touchPosSm);
 								TouchMode mode = TouchPos[TouchList[i]];
 								lock1.unlock();
 
-								std::shared_lock<std::shared_mutex> lock2(TouchSpeedSm);
+								std::shared_lock<std::shared_mutex> lock2(touchSpeedSm);
 								double speed = TouchSpeed[TouchList[i]];
 								lock2.unlock();
 

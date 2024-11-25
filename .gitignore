@@ -3,15 +3,14 @@
 /Debug/
 /x64/
 /ARM64EC/
+/ARM64/
 /PptCOM/bin/
 /PptCOM/obj/
 /智绘教/Release/
 /智绘教/Debug/
 /智绘教/x64/
 /智绘教/ARM64EC/
-/智绘教CrashedHandler/Release/
-/智绘教CrashedHandlerClose/Release/
-/智绘教StartupItemSettings/Release/
+/智绘教/ARM64/
 /智绘教/IdtInsider.h
 /智绘教/IdtInsider.cpp
 /auto upload.bat

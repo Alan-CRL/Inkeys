@@ -4,19 +4,20 @@
 
 int uRealTimeStylus;
 
-bool touchDown = false;							// 表示触摸设备是否被按下
-int touchNum = 0;								// 触摸点的点击个数
+bool touchDown = false;										// 表示触摸设备是否被按下
+int touchNum = 0;											// 触摸点的点击个数
+
 unordered_map<LONG, pair<int, int>> PreviousPointPosition;	//用于速度计算
-
 unordered_map<LONG, double> TouchSpeed;
-unordered_map<LONG, TouchMode> TouchPos;
-vector<LONG> TouchList;
 
+unordered_map<LONG, TouchMode> TouchPos;
 deque<TouchInfo> TouchTemp;
+vector<LONG> TouchList;
 
 LONG TouchCnt = 0;
 unordered_map<LONG, LONG> TouchPointer;
-shared_mutex PointPosSm, TouchSpeedSm, PointListSm, PointTempSm;
+
+shared_mutex touchNumSm, touchPosSm, touchSpeedSm, pointListSm, touchTempSm, touchPointerSm;
 
 IRealTimeStylus* g_pRealTimeStylus = NULL;
 IStylusSyncPlugin* g_pSyncEventHandlerRTS = NULL;
@@ -181,19 +182,22 @@ HRESULT CSyncEventHandlerRTS::StylusDown(IRealTimeStylus* piRtsSrc, const Stylus
 	}
 	CoTaskMemFree(pPacketProperties);
 
-	TouchCnt++;
-	TouchPointer[pStylusInfo->cid] = TouchCnt;
+	unique_lock<shared_mutex> lockTouchPointer(touchPointerSm);
+	TouchPointer[pStylusInfo->cid] = ++TouchCnt;
+	info.pid = TouchCnt;
+	TouchCnt %= 100000;
+	lockTouchPointer.unlock();
 
-	std::unique_lock<std::shared_mutex> lock1(PointPosSm);
+	std::unique_lock<std::shared_mutex> lock1(touchPosSm);
 	TouchPos[TouchCnt] = mode;
 	lock1.unlock();
 
-	std::unique_lock<std::shared_mutex> lock2(TouchSpeedSm);
+	std::unique_lock<std::shared_mutex> lock2(touchSpeedSm);
 	TouchSpeed[TouchCnt] = 0;
 	PreviousPointPosition[TouchCnt].first = PreviousPointPosition[TouchCnt].second = -1;
 	lock2.unlock();
 
-	std::unique_lock<std::shared_mutex> lock3(PointListSm);
+	std::unique_lock<std::shared_mutex> lock3(pointListSm);
 	TouchList.push_back(TouchCnt);
 	lock3.unlock();
 
@@ -223,17 +227,15 @@ HRESULT CSyncEventHandlerRTS::StylusDown(IRealTimeStylus* piRtsSrc, const Stylus
 	}
 	info.isInvertedCursor = pStylusInfo->bIsInvertedCursor;
 
-	info.pid = TouchCnt;
 	info.pt = mode.pt;
 
-	std::unique_lock<std::shared_mutex> lock4(PointTempSm);
+	std::unique_lock<std::shared_mutex> lock4(touchTempSm);
 	TouchTemp.push_back(info);
 	lock4.unlock();
 
-	TouchCnt %= 100000;
-
-	touchNum++;
-	touchDown = true;
+	unique_lock<shared_mutex> locktouchNum(touchNumSm);
+	touchNum++, touchDown = true;
+	locktouchNum.unlock();
 
 	return S_OK;
 }
@@ -243,21 +245,27 @@ HRESULT CSyncEventHandlerRTS::StylusUp(IRealTimeStylus*, const StylusInfo* pStyl
 
 	// 这是一个抬起状态
 
+	unique_lock<shared_mutex> locktouchNum(touchNumSm);
 	touchNum = max(0, touchNum - 1);
 	if (touchNum == 0) touchDown = false;
+	locktouchNum.unlock();
 
 	auto it = std::find(TouchList.begin(), TouchList.end(), TouchPointer[pStylusInfo->cid]);
 	if (it != TouchList.end())
 	{
-		std::unique_lock<std::shared_mutex> lock1(PointListSm);
+		std::unique_lock<std::shared_mutex> lock1(pointListSm);
 		TouchList.erase(it);
 		TouchPointer.erase(pStylusInfo->cid);
 		lock1.unlock();
 	}
 
-	if (touchNum == 0)
+	shared_lock<shared_mutex> locktouchNum2(touchNumSm);
+	int touchNumTemp = touchNum;
+	locktouchNum2.unlock();
+
+	if (touchNumTemp == 0)
 	{
-		std::unique_lock<std::shared_mutex> lock(PointPosSm);
+		unique_lock<shared_mutex> lock(touchPosSm);
 		TouchPos.clear();
 		lock.unlock();
 	}
@@ -274,8 +282,12 @@ HRESULT CSyncEventHandlerRTS::Packets(IRealTimeStylus* piRtsSrc, const StylusInf
 	PACKET_PROPERTY* pPacketProperties;
 	piRtsSrc->GetPacketDescriptionData(pStylusInfo->tcid, nullptr, nullptr, &ulPacketProperties, &pPacketProperties);
 
-	shared_lock<shared_mutex> lock1(PointPosSm);
-	TouchMode mode = TouchPos[TouchPointer[pStylusInfo->cid]];
+	shared_lock<shared_mutex> lockTouchPointer(touchPointerSm);
+	int pid = TouchPointer[pStylusInfo->cid];
+	lockTouchPointer.unlock();
+
+	shared_lock<shared_mutex> lock1(touchPosSm);
+	TouchMode mode = TouchPos[pid];
 	lock1.unlock();
 	for (int i = 0; i < ulPacketProperties; i++)
 	{
@@ -288,8 +300,8 @@ HRESULT CSyncEventHandlerRTS::Packets(IRealTimeStylus* piRtsSrc, const StylusInf
 	}
 	CoTaskMemFree(pPacketProperties);
 
-	unique_lock<shared_mutex> lock2(PointPosSm);
-	TouchPos[TouchPointer[pStylusInfo->cid]] = mode;
+	unique_lock<shared_mutex> lock2(touchPosSm);
+	TouchPos[pid] = mode;
 	lock2.unlock();
 
 	return S_OK;
@@ -311,17 +323,17 @@ void RTSSpeed()
 	{
 		for (int i = 0; i < touchNum; i++)
 		{
-			std::shared_lock<std::shared_mutex> lock1(PointPosSm);
+			std::shared_lock<std::shared_mutex> lock1(touchPosSm);
 			x = TouchPos[TouchList[i]].pt.x;
 			y = TouchPos[TouchList[i]].pt.y;
 			lock1.unlock();
 
-			std::shared_lock<std::shared_mutex> lock2(TouchSpeedSm);
+			std::shared_lock<std::shared_mutex> lock2(touchSpeedSm);
 			if (PreviousPointPosition[TouchList[i]].first == -1 && PreviousPointPosition[TouchList[i]].second == -1) PreviousPointPosition[TouchList[i]].first = x, PreviousPointPosition[TouchList[i]].second = y, speed = 1;
 			else speed = (TouchSpeed[TouchList[i]] + sqrt(pow(x - PreviousPointPosition[TouchList[i]].first, 2) + pow(y - PreviousPointPosition[TouchList[i]].second, 2))) / 2;
 			lock2.unlock();
 
-			std::unique_lock<std::shared_mutex> lock3(TouchSpeedSm);
+			std::unique_lock<std::shared_mutex> lock3(touchSpeedSm);
 			TouchSpeed[TouchList[i]] = speed;
 			lock3.unlock();
 

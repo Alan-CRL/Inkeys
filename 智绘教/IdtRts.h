@@ -5,6 +5,7 @@ extern int uRealTimeStylus;
 
 extern bool touchDown;												// 表示触摸设备是否被按下
 extern int touchNum;												// 触摸点的点击个数
+
 extern unordered_map<LONG, pair<int, int>> PreviousPointPosition;	// 用于速度计算
 
 struct TouchMode
@@ -35,9 +36,7 @@ struct TouchInfo
 };
 extern deque<TouchInfo> TouchTemp;
 
-extern LONG TouchCnt;
-extern unordered_map<LONG, LONG> TouchPointer;
-extern shared_mutex PointPosSm, TouchSpeedSm, PointListSm, PointTempSm;
+extern shared_mutex touchNumSm, touchPosSm, touchSpeedSm, pointListSm, touchTempSm, touchPointerSm;
 
 extern IRealTimeStylus* g_pRealTimeStylus;
 extern IStylusSyncPlugin* g_pSyncEventHandlerRTS;
