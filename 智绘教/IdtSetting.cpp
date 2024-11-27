@@ -582,7 +582,7 @@ void SettingMain()
 		bool LiftStraighten = setlist.liftStraighten, WaitStraighten = setlist.waitStraighten;
 		bool PointAdsorption = setlist.pointAdsorption;
 		bool SmoothWriting = setlist.smoothWriting;
-		bool SmartEraser = setlist.smartEraser;
+		//bool SmartEraser = setlist.smartEraser;
 
 		// 插件参数
 
@@ -2113,7 +2113,7 @@ void SettingMain()
 						}
 						ImGui::EndChild();
 					}
-					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f * settingGlobalScale);
+					/*ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f * settingGlobalScale);
 					{
 						ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(120 / 255.0f, 120 / 255.0f, 120 / 255.0f, 1.0f));
@@ -2157,7 +2157,7 @@ void SettingMain()
 							while (PushFontNum) PushFontNum--, ImGui::PopFont();
 						}
 						ImGui::EndChild();
-					}
+					}*/
 
 					ImGui::EndChild();
 					break;

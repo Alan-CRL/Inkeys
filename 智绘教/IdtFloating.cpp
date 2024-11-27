@@ -5133,7 +5133,6 @@ void DrawScreen()
 		if (for_num == 1)
 		{
 			IdtWindowsIsVisible.floatingWindow = true;
-			//ShowWindow(floating_window, SW_SHOW);
 		}
 
 		if (tRecord)

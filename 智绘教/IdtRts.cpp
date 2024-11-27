@@ -225,9 +225,8 @@ HRESULT CSyncEventHandlerRTS::StylusDown(IRealTimeStylus* piRtsSrc, const Stylus
 		piTablet2->Release();
 		piTablet->Release();
 	}
-	info.isInvertedCursor = pStylusInfo->bIsInvertedCursor;
-
-	info.pt = mode.pt;
+	mode.isInvertedCursor = pStylusInfo->bIsInvertedCursor;
+	info.mode = mode;
 
 	std::unique_lock<std::shared_mutex> lock4(touchTempSm);
 	TouchTemp.push_back(info);

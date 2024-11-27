@@ -14,6 +14,7 @@ struct TouchMode
 	double pressure;
 	long long touchWidth;
 	long long touchHeight;
+	bool isInvertedCursor;
 
 	// 辅助变量
 	FLOAT inkToDeviceScaleX;
@@ -28,11 +29,10 @@ extern vector<LONG> TouchList;
 struct TouchInfo
 {
 	LONG pid;
-	POINT pt;
+	TouchMode mode;
 
 	// 信息变量
 	int type; // 触摸0 手写笔1 左键2 右键3
-	bool isInvertedCursor;
 };
 extern deque<TouchInfo> TouchTemp;
 

@@ -7,30 +7,54 @@ bool UnOccupyFile(HANDLE* hFile);
 
 struct SetListStruct
 {
+#pragma region 软件版本
+	string UpdateChannel;
+	string updateChannelExtra;
+	string updateArchitecture;
+#pragma endregion
+
+#pragma region 常规
 	int selectLanguage;
-	float settingGlobalScale;
 
 	bool startUp;
-	bool createLnk, correctLnk;
+
+	int SetSkinMode, SkinMode;
+	float settingGlobalScale;
 
 	bool RightClickClose;
 	bool BrushRecover, RubberRecover;
 
-	int paintDevice;
-	bool liftStraighten, waitStraighten;
-	bool pointAdsorption;
-	bool smoothWriting;
-	bool smartEraser;
-
-	int SetSkinMode, SkinMode;
-
-	string UpdateChannel;
-	string updateChannelExtra;
-	string updateArchitecture;
-
 	// 兼容自动隐藏的任务栏
 	bool compatibleTaskBarAutoHide;
 	bool forceTop;
+#pragma endregion
+
+#pragma region 绘制
+	int paintDevice;
+
+	bool liftStraighten, waitStraighten;
+	bool pointAdsorption;
+
+	bool smoothWriting;
+
+	struct
+	{
+		int eraserMode; // 0笔速模式 1压感模式 2固定粗细
+		bool eraserPressurePriority;
+		int eraserSize;
+	}eraserSetting;
+#pragma endregion
+
+#pragma region 性能
+	struct
+	{
+		int preparationQuantity;
+	}performanceSetting;
+#pragma endregion
+
+#pragma region 插件
+	bool createLnk, correctLnk;
+#pragma endregion
 };
 extern SetListStruct setlist;
 bool ReadSetting();

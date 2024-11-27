@@ -144,8 +144,21 @@ bool ReadSetting()
 			setlist.pointAdsorption = updateVal["PointAdsorption"].asBool();
 		if (updateVal.isMember("SmoothWriting") && updateVal["SmoothWriting"].isBool())
 			setlist.smoothWriting = updateVal["SmoothWriting"].asBool();
-		if (updateVal.isMember("SmartEraser") && updateVal["SmartEraser"].isBool())
-			setlist.smartEraser = updateVal["SmartEraser"].asBool();
+		if (updateVal.isMember("EraserSetting") && updateVal["EraserSetting"].isObject())
+		{
+			if (updateVal["EraserSetting"].isMember("EraserMode") && updateVal["EraserSetting"]["EraserMode"].isInt())
+				setlist.eraserSetting.eraserMode = updateVal["EraserSetting"]["EraserMode"].asInt();
+			if (updateVal["EraserSetting"].isMember("EraserPressurePriority") && updateVal["EraserSetting"]["EraserPressurePriority"].isBool())
+				setlist.eraserSetting.eraserPressurePriority = updateVal["EraserSetting"]["EraserPressurePriority"].asBool();
+			if (updateVal["EraserSetting"].isMember("EraserSize") && updateVal["EraserSetting"]["EraserSize"].isInt())
+				setlist.eraserSetting.eraserSize = updateVal["EraserSetting"]["EraserSize"].asInt();
+		}
+
+		if (updateVal.isMember("Performance") && updateVal["Performance"].isObject())
+		{
+			if (updateVal["Performance"].isMember("PreparationQuantity") && updateVal["Performance"]["PreparationQuantity"].isInt())
+				setlist.performanceSetting.preparationQuantity = updateVal["Performance"]["PreparationQuantity"].asInt();
+		}
 
 		if (updateVal.isMember("BasicInfo") && updateVal["BasicInfo"].isObject())
 		{
@@ -161,7 +174,7 @@ bool ReadSetting()
 				ddbInteractionSetList.DdbEnhance = updateVal["PlugIn"]["DdbEnhance"].asBool();
 		}
 	}
-	return false;
+	else return false;
 
 	return true;
 }
@@ -193,7 +206,15 @@ bool WriteSetting()
 		updateVal["WaitStraighten"] = Json::Value(setlist.waitStraighten);
 		updateVal["PointAdsorption"] = Json::Value(setlist.pointAdsorption);
 		updateVal["SmoothWriting"] = Json::Value(setlist.smoothWriting);
-		updateVal["SmartEraser"] = Json::Value(setlist.smartEraser);
+		{
+			updateVal["EraserSetting"]["EraserMode"] = Json::Value(setlist.eraserSetting.eraserMode);
+			updateVal["EraserSetting"]["EraserPressurePriority"] = Json::Value(setlist.eraserSetting.eraserPressurePriority);
+			updateVal["EraserSetting"]["EraserSize"] = Json::Value(setlist.eraserSetting.eraserSize);
+		}
+
+		{
+			updateVal["Performance"]["PreparationQuantity"] = Json::Value(setlist.performanceSetting.preparationQuantity);
+		}
 
 		updateVal["BasicInfo"]["UpdateChannel"] = Json::Value(setlist.UpdateChannel);
 		updateVal["BasicInfo"]["edition"] = Json::Value(utf16ToUtf8(editionDate));

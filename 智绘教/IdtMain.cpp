@@ -16,6 +16,7 @@
 #include "IdtConfiguration.h"
 #include "IdtD2DPreparation.h"
 #include "IdtDisplayManagement.h"
+#include "IdtDraw.h"
 #include "IdtDrawpad.h"
 #include "IdtFloating.h"
 #include "IdtFreezeFrame.h"
@@ -594,26 +595,51 @@ int main()
 	{
 		// 读取配置文件前初始化操作
 		{
-			setlist.startUp = false;
-			setlist.correctLnk = true;
-			setlist.createLnk = false;
+			// 软件版本
+			{
+				setlist.UpdateChannel = "LTS";
+				setlist.updateChannelExtra = "";
+				setlist.updateArchitecture = "win32";
+			}
+			// 常规
+			{
+				setlist.startUp = false;
 
-			setlist.RightClickClose = false;
-			setlist.BrushRecover = true;
-			setlist.RubberRecover = false;
-			setlist.SetSkinMode = 0;
-			setlist.SkinMode = 1;
-			setlist.compatibleTaskBarAutoHide = true;
-			setlist.forceTop = true;
+				setlist.SetSkinMode = 0;
+				setlist.SkinMode = 1;
 
-			setlist.liftStraighten = false, setlist.waitStraighten = true;
-			setlist.pointAdsorption = true;
-			setlist.smoothWriting = true;
-			setlist.smartEraser = true;
+				setlist.RightClickClose = false;
+				setlist.BrushRecover = true;
+				setlist.RubberRecover = false;
 
-			setlist.UpdateChannel = "LTS";
-			setlist.updateChannelExtra = "";
-			setlist.updateArchitecture = "win32";
+				setlist.compatibleTaskBarAutoHide = true;
+				setlist.forceTop = true;
+			}
+			// 绘制
+			{
+				setlist.liftStraighten = false, setlist.waitStraighten = true;
+				setlist.pointAdsorption = true;
+
+				setlist.smoothWriting = true;
+
+				{
+					setlist.eraserSetting.eraserMode = 0;
+					setlist.eraserSetting.eraserPressurePriority = true;
+
+					float drawingScale = GetDrawingScale();
+					setlist.eraserSetting.eraserSize = 60 * drawingScale;
+				}
+			}
+			// 性能
+			{
+				setlist.performanceSetting.preparationQuantity = 2;
+			}
+
+			// 插件
+			{
+				setlist.correctLnk = true;
+				setlist.createLnk = false;
+			}
 
 			{
 				// 获取系统默认语言标识符
