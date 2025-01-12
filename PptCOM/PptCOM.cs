@@ -29,6 +29,8 @@ using System.Threading;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 
+using System.Windows.Forms;
+
 using Microsoft.Office.Core;
 using Microsoft.Office.Interop.PowerPoint;
 
@@ -96,12 +98,14 @@ namespace PptCOM
         }
         public string CheckCOM()
         {
-            string ret = "20241108a";
+            string ret = "20250112a";
 
             try
             {
                 Microsoft.Office.Interop.PowerPoint.Application pptTest = new Microsoft.Office.Interop.PowerPoint.Application();
                 Marshal.ReleaseComObject(pptTest);
+
+                // TODO 需要测试对于没有安装 Powerpoint 设备，或是只有 WPS 的设备是否工作正常
             }
             catch (Exception ex)
             {
@@ -180,6 +184,7 @@ namespace PptCOM
             {
                 // 获取活动的 Application 示例
                 pptApp = (Microsoft.Office.Interop.PowerPoint.Application)Marshal.GetActiveObject("PowerPoint.Application");
+
                 // 获取 PPT 文档实例个数（如果为 0 则是没有打开文件的 Application 实例，或是游离状态的 WPP）
                 ret = pptApp.Presentations.Count;
             }

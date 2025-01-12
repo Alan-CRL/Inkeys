@@ -3935,7 +3935,7 @@ void DrawScreen()
 			{
 				if (UIControlColor[key].s && UIControlColor[key].v != UIControlColorTarget[key].v)
 				{
-					//TODO
+					//TODO ？
 					float r1 = GetRValue(UIControlColor[key].v);
 					float g1 = GetGValue(UIControlColor[key].v);
 					float b1 = GetBValue(UIControlColor[key].v);
@@ -5174,7 +5174,7 @@ void MouseInteraction()
 						while (1)
 						{
 							m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-							if (abs(m.x - lx) <= 5 && abs(m.y - ly) <= 5)
+							if (abs(m.x - lx) <= 20 && abs(m.y - ly) <= 20)
 							{
 								if (!m.lbutton)
 								{
@@ -5266,7 +5266,7 @@ void MouseInteraction()
 						while (1)
 						{
 							m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-							if (abs(m.x - lx) <= 5 && abs(m.y - ly) <= 5)
+							if (abs(m.x - lx) <= 20 && abs(m.y - ly) <= 20)
 							{
 								if (!m.lbutton)
 								{

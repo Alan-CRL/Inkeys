@@ -5,10 +5,35 @@ extern bool main_open;
 extern bool FirstDraw;
 extern bool IdtHotkey;
 
-extern unordered_map<LONG, shared_mutex> StrokeImageSm;
+class StrokeImageClass
+{
+public:
+	StrokeImageClass()
+	{
+		canvas = nullptr;
+		endMode = 0;
+		alpha = 255;
+	}
+	~StrokeImageClass()
+	{
+		if (canvas != nullptr)
+		{
+			delete canvas;
+			canvas = nullptr;
+		}
+	}
+
+public:
+	shared_mutex sm;
+	IMAGE* canvas;
+	int endMode; // 1 绘制到画布上 2 不绘制到画布上
+	int alpha;
+};
+extern StrokeImageClass strokeImage;
+
 extern shared_mutex StrokeImageListSm;
-extern map<LONG, pair<IMAGE*, int>> StrokeImage;
-extern vector<LONG> StrokeImageList;
+extern vector<StrokeImageClass*> StrokeImageList;
+
 extern shared_mutex StrokeBackImageSm;
 
 extern bool drawWaiting;

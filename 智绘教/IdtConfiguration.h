@@ -128,8 +128,8 @@ struct DdbInteractionSetListStruct
 		DdbEnable = false;
 		DdbEnhance = false;
 
-		DdbEdition = L"20241028a";
-		DdbSHA256 = "f71193cec78daee6ea70da0f37d240e63c7dbe28ff41897f48809fa0823c4798";
+		DdbEdition = L"20250112b";
+		DdbSHA256 = "e8bacbc95788857b012f8c09cfdaffa5e2c0569f51ec6483053c8b33fafd03e2";
 
 		// -----
 

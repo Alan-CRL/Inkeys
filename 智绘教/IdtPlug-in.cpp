@@ -192,7 +192,7 @@ bool CheckPptCom()
 		//Testw(pptComExtraWarning);
 		//Testw(pptComVersion);
 
-		// TODO
+		// TODO ？
 	}
 
 	return true;
@@ -259,6 +259,7 @@ void GetPptState()
 	while (!offSignal)
 	{
 		int tmp = -1;
+
 		try
 		{
 			tmp = PptCOMPto->IsPptOpen();
@@ -1283,7 +1284,7 @@ void PptUI()
 							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Height.v = (40) * pptComSetlist.bottomSideBothWidgetScale;
 							if (pptUiWidgetState == PptUiWidgetStateEnum::Close) pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Transparency.v = 0;
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Transparency.v = 255;
-							if (pptUiWidgetState == PptUiWidgetStateEnum::Close) pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Img = pptIconBitmap[3];
+							if (pptCurrentSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Img = pptIconBitmap[3];
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Img = pptIconBitmap[2];
 						}
 					}
@@ -3353,8 +3354,8 @@ void PptInteract()
 					}
 				}
 				else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
-				// 底部左侧拖动条
-				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Width.v) }))
+				// 底部左侧全局拖动条
+				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Height.v) }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
@@ -3479,8 +3480,8 @@ void PptInteract()
 					}
 				}
 				else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
-				// 底部右侧拖动条
-				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Width.v) }))
+				// 底部右侧全局拖动条
+				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Height.v) }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
@@ -3605,8 +3606,8 @@ void PptInteract()
 					}
 				}
 				else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
-				// 中部左侧拖动条
-				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].Y.v) }))
+				// 中部左侧全局拖动条
+				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Height.v) }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
@@ -3729,8 +3730,8 @@ void PptInteract()
 					}
 				}
 				else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
-				// 中部右侧拖动条
-				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Y.v) }))
+				// 中部右侧全局拖动条
+				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Height.v) }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
@@ -3789,8 +3790,9 @@ void PptInteract()
 					}
 				}
 				else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FillColor.v = RGBA(250, 250, 250, 160);
-				// 底部左侧拖动条
-				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Width.v) }))
+
+				// 底部全局拖动条
+				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Height.v) }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
@@ -3842,12 +3844,10 @@ void PPTLinkageMain()
 // 附加检测项
 bool IsPowerPointRunAsAdminSet()
 {
-	// Registry paths to check
 	const std::wstring subKeys[] = {
 		L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers"
 	};
 
-	// Registry roots to check
 	HKEY hRoots[] = { HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER };
 
 	for (HKEY hRoot : hRoots)
@@ -3855,53 +3855,42 @@ bool IsPowerPointRunAsAdminSet()
 		for (const std::wstring& subKey : subKeys)
 		{
 			HKEY hKey;
-			// Open the registry key
 			if (RegOpenKeyExW(hRoot, subKey.c_str(), 0, KEY_READ, &hKey) == ERROR_SUCCESS)
 			{
 				DWORD valueCount = 0;
 				DWORD maxValueNameLen = 0;
 				DWORD maxValueDataLen = 0;
-				// Get the number of values and their max sizes
-				if (RegQueryInfoKeyW(hKey, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-					&valueCount, &maxValueNameLen, &maxValueDataLen, nullptr, nullptr) == ERROR_SUCCESS)
+
+				if (RegQueryInfoKeyW(hKey, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &valueCount, &maxValueNameLen, &maxValueDataLen, nullptr, nullptr) == ERROR_SUCCESS)
 				{
-					// Increase lengths to accommodate null terminators
 					maxValueNameLen++;
 					maxValueDataLen++;
 
-					// Allocate buffers
 					std::wstring valueName(maxValueNameLen, L'\0');
 					std::vector<BYTE> data(maxValueDataLen);
 
-					// Enumerate all values
 					for (DWORD i = 0; i < valueCount; ++i)
 					{
 						DWORD valueNameLen = maxValueNameLen;
 						DWORD dataSize = maxValueDataLen;
 						DWORD type = 0;
 
-						// Enumerate each value
 						if (RegEnumValueW(hKey, i, &valueName[0], &valueNameLen, nullptr, &type, data.data(), &dataSize) == ERROR_SUCCESS)
 						{
 							valueName.resize(valueNameLen);
 
-							// Convert value name to lowercase for case-insensitive comparison
 							std::wstring lowerValueName = valueName;
 							std::transform(lowerValueName.begin(), lowerValueName.end(), lowerValueName.begin(), ::towlower);
 
-							// Check if the value name contains "powerpoint.exe"
-							if (lowerValueName.find(L"powerpoint.exe") != std::wstring::npos || lowerValueName.find(L"ksolaunch.exe") != std::wstring::npos)
+							if (lowerValueName.find(L"powerpnt.exe") != std::wstring::npos || lowerValueName.find(L"ksolaunch.exe") != std::wstring::npos)
 							{
 								if (type == REG_SZ)
 								{
-									// Convert data to wide string
 									std::wstring dataStr(reinterpret_cast<WCHAR*>(data.data()), dataSize / sizeof(WCHAR) - 1);
 
-									// Convert data string to lowercase
 									std::wstring lowerDataStr = dataStr;
 									std::transform(lowerDataStr.begin(), lowerDataStr.end(), lowerDataStr.begin(), ::towlower);
 
-									// Check if data contains "runasadmin"
 									if (lowerDataStr.find(L"runasadmin") != std::wstring::npos)
 									{
 										RegCloseKey(hKey);
@@ -3910,7 +3899,6 @@ bool IsPowerPointRunAsAdminSet()
 								}
 							}
 
-							// Reset buffers for next iteration
 							valueName.assign(maxValueNameLen, L'\0');
 							data.assign(maxValueDataLen, 0);
 						}

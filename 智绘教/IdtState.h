@@ -36,16 +36,16 @@ public:
 		{
 			Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
 			Pen.Brush1.width = 3;
-			Pen.Brush1.color = RGBA(50, 30, 181, 255);
+			Pen.Brush1.color = RGBA(255, 16, 0, 255);
 			Pen.Highlighter1.width = 35;
-			Pen.Highlighter1.color = RGBA(255, 16, 0, 255); // TODO
+			Pen.Highlighter1.color = RGBA(255, 16, 0, 255); // TODO 后续添加透明度选项
 		}
 		{
 			Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeStraightLine1;
 			Shape.StraightLine1.width = 3;
-			Shape.StraightLine1.color = RGBA(50, 30, 181, 255);
+			Shape.StraightLine1.color = RGBA(255, 16, 0, 255);
 			Shape.Rectangle1.width = 3;
-			Shape.Rectangle1.color = RGBA(50, 30, 181, 255);
+			Shape.Rectangle1.color = RGBA(255, 16, 0, 255);
 		}
 	}
 

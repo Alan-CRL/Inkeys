@@ -41,7 +41,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20241125a";				// 程序发布日期
+wstring editionDate = L"20250112d";				// 程序发布日期
 wstring editionChannel = L"dev";			// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -57,8 +57,8 @@ map <wstring, bool> threadStatus;				// 线程状态管理
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-// int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
-int main()
+int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
+//int main()
 {
 	// 路径预处理
 	{
@@ -753,20 +753,6 @@ int main()
 			D2DTextFactory->UnregisterFontCollectionLoader(D2DFontCollectionLoader);
 		}
 
-		//filesystem::create_directory(StringToWstring(globalPath) + L"ttf");
-		//ExtractResource((StringToWstring(globalPath) + L"ttf\\HarmonyOS_Sans_SC_Regular.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
-		//fontCollection.AddFontFile((StringToWstring(globalPath) + L"ttf\\HarmonyOS_Sans_SC_Regular.ttf").c_str());
-		//filesystem::path directory((StringToWstring(globalPath) + L"ttf").c_str());
-		//filesystem::remove_all(directory);
-
-		//AddFontResourceEx((StringToWstring(globalPath) + L"ttf\\HarmonyOS_Sans_SC_Regular.ttf").c_str(), FR_PRIVATE, NULL);
-		//AddFontResourceEx((StringToWstring(globalPath) + L"ttf\\Douyu_Font.otf").c_str(), FR_PRIVATE, NULL);
-		//AddFontResourceEx((StringToWstring(globalPath) + L"ttf\\SmileySans-Oblique.ttf").c_str(), FR_PRIVATE, NULL);
-
-		//wcscpy(font.lfFaceName, L"HarmonyOS Sans SC");
-		//wcscpy(font.lfFaceName, L"DOUYU Gdiplus::Font");
-		//wcscpy(font.lfFaceName, L"得意黑");
-
 		stringFormat.SetAlignment(StringAlignmentCenter);
 		stringFormat.SetLineAlignment(StringAlignmentCenter);
 		stringFormat.SetFormatFlags(StringFormatFlagsNoWrap);
@@ -783,7 +769,7 @@ int main()
 		// 这样如果配置文件缺少某项也能用英语补齐
 		loadI18n(1, L"JSON", L"en-US");
 		loadI18n(1, L"JSON", L"zh-CN");
-		// TODO
+		// TODO 允许切换到英语
 
 		IDTLogger->info("[主线程][IdtMain] I18N初始化完成");
 	}

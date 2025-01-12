@@ -1536,36 +1536,6 @@ void SettingMain()
 							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::Settings_Regular_2_2]).c_str());
 						}
 
-						// TODO
-						/*
-						{
-							ImGui::SetCursorPosY(80.0f);
-
-							ImFontMain->Scale = 1.0f, PushFontNum++, ImGui::PushFont(ImFontMain);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							CenteredText(" 启动时创建桌面快捷方式", 4.0f);
-
-							ImFontMain->Scale = 0.7f, PushFontNum++, ImGui::PushFont(ImFontMain);
-							ImGui::SameLine();
-							HelpMarker("程序将在每次启动时在桌面创建快捷方式\n后续这项功能将变身成为插件，并拥有更多的自定义功能", ImGui::GetStyleColorVec4(ImGuiCol_Text));
-
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-							ImGui::SameLine(); ImGui::SetCursorPosX(730.0f - 70.0f);
-							ImGui::Toggle("##启动时创建桌面快捷方式", &CreateLnk, config);
-
-							if (setlist.CreateLnk != CreateLnk)
-							{
-								setlist.CreateLnk = CreateLnk;
-								WriteSetting();
-
-								if (CreateLnk) SetShortcut();
-							}
-						}*/
-
 						{
 							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
@@ -3859,7 +3829,7 @@ void SettingMain()
 							shared_lock<shared_mutex> locktouchNum(touchNumSm);
 							text += touchDown ? L"是" : L"否";
 							text += L"\n输入设备点：";
-							text += to_wstring(touchNum);
+							text += to_wstring(touchNum) + L"\n";
 							locktouchNum.unlock();
 
 							for (int i = 0; i < touchNum; i++)
