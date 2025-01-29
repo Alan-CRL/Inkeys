@@ -1,7 +1,7 @@
 <div align="center">
 
-We are very sorry to inform you that the program itself did not produce an international language.  
-**We expect to complete this task within 2 months.**  
+We are sorry to inform you that the internationalization language of the program itself is not yet complete and has not been added to the program.  
+**We will complete it as soon as possible!**  
   
   
 [![LOGO](GithubRes/logo.png?raw=true "LOGO")](# "LOGO")
@@ -41,7 +41,7 @@ Under development, please stay tuned ~
 [Github Release Assets](https://github.com/Alan-CRL/IDT/releases) | [Official Website Download(Chinese)](https://www.inkeys.top/col.jsp?id=106)   
 
 #### System Requirements
-The minimum support is `Windows 7` and supports `x86 / x64 / arm64` windows.  
+The minimum support is `Windows 7 (sp0)` and supports `x86 / x64 / arm64` windows.  
 
 ## Future Features
 `New style` `Pen tip and pressure sensitivity` `Ink recognition` `Smooth writing ink` `Various plugins` and so on.  
