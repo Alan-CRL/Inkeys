@@ -5711,8 +5711,6 @@ void MouseInteraction()
 									lock.unlock();
 
 									SetPenColor(RGBA(red, green, blue, (floatingInfo.brushColor >> 24) & 0xFF));
-									if (computeContrast(RGB(red, green, blue), RGB(255, 255, 255)) >= 3) BackgroundColorMode = 0;
-									else BackgroundColorMode = 1;
 
 									BrushColorChoose.x = result.x, BrushColorChoose.y = result.y;
 									UIControlTarget[L"RoundRect/BrushColorChooseMark/x"].v = UIControl[L"RoundRect/BrushColorChooseMark/x"].v = result.x + UIControl[L"RoundRect/BrushColorChooseWheel/x"].v - 7;
@@ -5732,7 +5730,6 @@ void MouseInteraction()
 						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							SetPenColor(SET_ALPHA(UIControlColor[L"RoundRect/BrushColor1/fill"].v, 255));
-							BackgroundColorMode = 1;
 
 							BrushColorChoose.x = BrushColorChoose.y = 0;
 							if (state == 1.11 || state == 1.12) state = 1.1;
@@ -5745,7 +5742,6 @@ void MouseInteraction()
 						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							SetPenColor(SET_ALPHA(UIControlColor[L"RoundRect/BrushColor2/fill"].v, 255));
-							BackgroundColorMode = 0;
 
 							BrushColorChoose.x = BrushColorChoose.y = 0;
 							if (state == 1.11 || state == 1.12) state = 1.1;
@@ -5758,7 +5754,6 @@ void MouseInteraction()
 						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							SetPenColor(SET_ALPHA(UIControlColor[L"RoundRect/BrushColor3/fill"].v, 255));
-							BackgroundColorMode = 1;
 
 							BrushColorChoose.x = BrushColorChoose.y = 0;
 							if (state == 1.11 || state == 1.12) state = 1.1;
@@ -5771,7 +5766,6 @@ void MouseInteraction()
 						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							SetPenColor(SET_ALPHA(UIControlColor[L"RoundRect/BrushColor4/fill"].v, 255));
-							BackgroundColorMode = 0;
 
 							BrushColorChoose.x = BrushColorChoose.y = 0;
 							if (state == 1.11 || state == 1.12) state = 1.1;
@@ -5784,7 +5778,6 @@ void MouseInteraction()
 						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							SetPenColor(SET_ALPHA(UIControlColor[L"RoundRect/BrushColor5/fill"].v, 255));
-							BackgroundColorMode = 1;
 
 							BrushColorChoose.x = BrushColorChoose.y = 0;
 							if (state == 1.11 || state == 1.12) state = 1.1;
@@ -5797,7 +5790,6 @@ void MouseInteraction()
 						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							SetPenColor(SET_ALPHA(UIControlColor[L"RoundRect/BrushColor6/fill"].v, 255));
-							BackgroundColorMode = 0;
 
 							BrushColorChoose.x = BrushColorChoose.y = 0;
 							if (state == 1.11 || state == 1.12) state = 1.1;
@@ -5810,7 +5802,6 @@ void MouseInteraction()
 						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							SetPenColor(SET_ALPHA(UIControlColor[L"RoundRect/BrushColor7/fill"].v, 255));
-							BackgroundColorMode = 1;
 
 							BrushColorChoose.x = BrushColorChoose.y = 0;
 							if (state == 1.11 || state == 1.12) state = 1.1;
@@ -5823,7 +5814,6 @@ void MouseInteraction()
 						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							SetPenColor(SET_ALPHA(UIControlColor[L"RoundRect/BrushColor8/fill"].v, 255));
-							BackgroundColorMode = 0;
 
 							BrushColorChoose.x = BrushColorChoose.y = 0;
 							if (state == 1.11 || state == 1.12) state = 1.1;
@@ -5836,7 +5826,6 @@ void MouseInteraction()
 						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							SetPenColor(SET_ALPHA(UIControlColor[L"RoundRect/BrushColor9/fill"].v, 255));
-							BackgroundColorMode = 1;
 
 							BrushColorChoose.x = BrushColorChoose.y = 0;
 							if (state == 1.11 || state == 1.12) state = 1.1;
@@ -5849,7 +5838,6 @@ void MouseInteraction()
 						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							SetPenColor(SET_ALPHA(UIControlColor[L"RoundRect/BrushColor10/fill"].v, 255));
-							BackgroundColorMode = 0;
 
 							BrushColorChoose.x = BrushColorChoose.y = 0;
 							if (state == 1.11 || state == 1.12) state = 1.1;
@@ -5862,7 +5850,6 @@ void MouseInteraction()
 						if (m.message == WM_LBUTTONDOWN || (brush_connect && m.lbutton))
 						{
 							SetPenColor(SET_ALPHA(UIControlColor[L"RoundRect/BrushColor11/fill"].v, 255));
-							BackgroundColorMode = 1;
 
 							BrushColorChoose.x = BrushColorChoose.y = 0;
 							if (state == 1.11 || state == 1.12) state = 1.1;
@@ -5911,8 +5898,27 @@ void MouseInteraction()
 								stateMode.Pen.Brush1.width = floatingInfo.brushWidth;
 							}
 
-							if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen) ChangeStateModeToPen();
 							stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
+							if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen) ChangeStateModeToPen();
+							else
+							{
+								// TODO 临时方案：改变 UI 背景颜色
+
+								COLORREF targetColor;
+								if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
+								{
+									if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1) targetColor = stateMode.Pen.Brush1.color;
+									else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) targetColor = stateMode.Pen.Highlighter1.color;
+								}
+								else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
+								{
+									if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) targetColor = stateMode.Pen.Brush1.color;
+									else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) targetColor = stateMode.Pen.Brush1.color;
+								}
+
+								if (computeContrast(targetColor, RGB(255, 255, 255)) >= 3) BackgroundColorMode = 0;
+								else BackgroundColorMode = 1;
+							}
 
 							hiex::flushmessage_win32(EM_MOUSE, floating_window);
 						}
@@ -5921,8 +5927,27 @@ void MouseInteraction()
 					{
 						if (m.message == WM_LBUTTONDOWN)
 						{
-							if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen) ChangeStateModeToPen();
 							stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenHighlighter1;
+							if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen) ChangeStateModeToPen();
+							else
+							{
+								// TODO 临时方案：改变 UI 背景颜色
+
+								COLORREF targetColor;
+								if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
+								{
+									if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1) targetColor = stateMode.Pen.Brush1.color;
+									else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) targetColor = stateMode.Pen.Highlighter1.color;
+								}
+								else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
+								{
+									if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) targetColor = stateMode.Pen.Brush1.color;
+									else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) targetColor = stateMode.Pen.Brush1.color;
+								}
+
+								if (computeContrast(targetColor, RGB(255, 255, 255)) >= 3) BackgroundColorMode = 0;
+								else BackgroundColorMode = 1;
+							}
 
 							hiex::flushmessage_win32(EM_MOUSE, floating_window);
 						}

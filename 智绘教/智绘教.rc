@@ -131,6 +131,8 @@ HOME_FEEDBACK           PNG                     "src\\setting\\Home_Feedback.png
 
 PLUGINFLAG3             PNG                     "src\\PluginFlag3.png"
 
+SettingSponsor          PNG                     "src\\setting\\SettingSponsor.png"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //

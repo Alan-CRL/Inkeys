@@ -8,11 +8,6 @@
 #include "IdtWindow.h"
 #include "IdtNet.h"
 
-#if __has_include("IdtInsider.h")
-#include "IdtInsider.h"
-#define USE_INSIDER_VISION
-#endif
-
 //程序自动更新
 int AutomaticUpdateStep = 0;
 wstring get_domain_name(wstring url) {
@@ -273,43 +268,6 @@ void AutomaticUpdate()
 	for (; !offSignal && updateTimes <= 10; updateTimes++)
 	{
 		AutomaticUpdateStep = 1;
-
-		// 获取Insider通道令牌
-		{
-#ifdef USE_INSIDER_VISION
-
-			// 获取Insider通道令牌
-			if (!userId.empty() && userId != L"Error")
-			{
-				string updateChannelExtra;
-				if (InsiderInitialization(utf16ToUtf8(userId), updateChannelExtra))
-				{
-					setlist.updateChannelExtra = updateChannelExtra;
-					if (!updateChannelExtra.empty())
-					{
-						if (setlist.UpdateChannel.substr(0, 7) == "Insider" && setlist.UpdateChannel != updateChannelExtra)
-						{
-							// 令牌已经变更
-							setlist.UpdateChannel = updateChannelExtra;
-							WriteSetting();
-						}
-					}
-					else
-					{
-						// 已经不拥有获取新令牌的资格
-						setlist.UpdateChannel = "LTS";
-						WriteSetting();
-					}
-				}
-			}
-
-			// 获取令牌失败则会尝试使用以前记录过的令牌
-			if (setlist.UpdateChannel.substr(0, 7) == "Insider" && setlist.updateChannelExtra.empty())
-			{
-				setlist.updateChannelExtra = setlist.UpdateChannel;
-			}
-#endif
-		}
 		channel = setlist.UpdateChannel;
 
 		state = true;

@@ -5,7 +5,6 @@
 #include <C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\Include\D3dx9tex.h>
 #pragma comment(lib, "d3d9")
 
-extern IMAGE SettingSign[10];
 extern WNDCLASSEXW ImGuiWc;
 extern PDIRECT3DTEXTURE9 TextureSettingSign[10];
 extern int SettingMainMode;

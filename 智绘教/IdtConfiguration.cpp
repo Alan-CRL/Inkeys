@@ -148,8 +148,6 @@ bool ReadSetting()
 		{
 			if (updateVal["EraserSetting"].isMember("EraserMode") && updateVal["EraserSetting"]["EraserMode"].isInt())
 				setlist.eraserSetting.eraserMode = updateVal["EraserSetting"]["EraserMode"].asInt();
-			if (updateVal["EraserSetting"].isMember("EraserPressurePriority") && updateVal["EraserSetting"]["EraserPressurePriority"].isBool())
-				setlist.eraserSetting.eraserPressurePriority = updateVal["EraserSetting"]["EraserPressurePriority"].asBool();
 			if (updateVal["EraserSetting"].isMember("EraserSize") && updateVal["EraserSetting"]["EraserSize"].isInt())
 				setlist.eraserSetting.eraserSize = updateVal["EraserSetting"]["EraserSize"].asInt();
 		}
@@ -208,7 +206,6 @@ bool WriteSetting()
 		updateVal["SmoothWriting"] = Json::Value(setlist.smoothWriting);
 		{
 			updateVal["EraserSetting"]["EraserMode"] = Json::Value(setlist.eraserSetting.eraserMode);
-			updateVal["EraserSetting"]["EraserPressurePriority"] = Json::Value(setlist.eraserSetting.eraserPressurePriority);
 			updateVal["EraserSetting"]["EraserSize"] = Json::Value(setlist.eraserSetting.eraserSize);
 		}
 

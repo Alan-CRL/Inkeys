@@ -9,7 +9,6 @@ struct SetListStruct
 {
 #pragma region 软件版本
 	string UpdateChannel;
-	string updateChannelExtra;
 	string updateArchitecture;
 #pragma endregion
 
@@ -39,8 +38,7 @@ struct SetListStruct
 
 	struct
 	{
-		int eraserMode; // 0笔速模式 1压感模式 2固定粗细
-		bool eraserPressurePriority;
+		int eraserMode; // 0压感粗细 1笔速粗细 2固定粗细
 		int eraserSize;
 	}eraserSetting;
 #pragma endregion
@@ -128,8 +126,8 @@ struct DdbInteractionSetListStruct
 		DdbEnable = false;
 		DdbEnhance = false;
 
-		DdbEdition = L"20250112b";
-		DdbSHA256 = "e8bacbc95788857b012f8c09cfdaffa5e2c0569f51ec6483053c8b33fafd03e2";
+		DdbEdition = L"20250113b";
+		DdbSHA256 = "7ac3a52accefee2a109664aaf1c645a6f48b0339229fa601a9219a64822ea9a6";
 
 		// -----
 

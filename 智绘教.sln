@@ -10,6 +10,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "智绘教", "智绘教\智�
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PptCOM", "PptCOM\PptCOM.csproj", "{A7B02228-179F-4B8E-BA8F-82D50066FB66}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "InkeysModifyStartupSettings", "InkeysModifyStartupSettings\InkeysModifyStartupSettings.vcxproj", "{627C7EA5-CB81-49ED-9A8C-D466193925EE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Release|ARM64EC = Release|ARM64EC
@@ -29,6 +31,12 @@ Global
 		{A7B02228-179F-4B8E-BA8F-82D50066FB66}.Release|Win32.Build.0 = Release|Any CPU
 		{A7B02228-179F-4B8E-BA8F-82D50066FB66}.Release|x64.ActiveCfg = Release|Any CPU
 		{A7B02228-179F-4B8E-BA8F-82D50066FB66}.Release|x64.Build.0 = Release|Any CPU
+		{627C7EA5-CB81-49ED-9A8C-D466193925EE}.Release|ARM64EC.ActiveCfg = Release|x64
+		{627C7EA5-CB81-49ED-9A8C-D466193925EE}.Release|ARM64EC.Build.0 = Release|x64
+		{627C7EA5-CB81-49ED-9A8C-D466193925EE}.Release|Win32.ActiveCfg = Release|Win32
+		{627C7EA5-CB81-49ED-9A8C-D466193925EE}.Release|Win32.Build.0 = Release|Win32
+		{627C7EA5-CB81-49ED-9A8C-D466193925EE}.Release|x64.ActiveCfg = Release|x64
+		{627C7EA5-CB81-49ED-9A8C-D466193925EE}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

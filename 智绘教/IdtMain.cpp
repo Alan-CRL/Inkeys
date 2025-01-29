@@ -41,8 +41,8 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250112d";				// 程序发布日期
-wstring editionChannel = L"dev";			// 程序发布通道
+wstring editionDate = L"20250128a";				// 程序发布日期
+wstring editionChannel = L"LTS";				// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -147,8 +147,10 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 体系架构识别
 	{
-#if defined(_M_ARM64) || defined(_M_ARM64EC)
+#if defined(_M_ARM64)
 		programArchitecture = L"arm64";
+#elif defined(_M_ARM64EC)
+		programArchitecture = L"arm64ec";
 #elif defined(_WIN64)
 		programArchitecture = L"win64";
 #else
@@ -598,7 +600,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			// 软件版本
 			{
 				setlist.UpdateChannel = "LTS";
-				setlist.updateChannelExtra = "";
 				setlist.updateArchitecture = "win32";
 			}
 			// 常规
@@ -624,7 +625,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 				{
 					setlist.eraserSetting.eraserMode = 0;
-					setlist.eraserSetting.eraserPressurePriority = true;
 
 					float drawingScale = GetDrawingScale();
 					setlist.eraserSetting.eraserSize = 60 * drawingScale;

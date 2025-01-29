@@ -31,8 +31,12 @@ static void HelpMarker(const char* desc, ImVec4 tmp);
 static void CenteredText(const char* desc, float displacement);
 ImFont* ImFontMain;
 
-IMAGE SettingSign[10];
 WNDCLASSEXW ImGuiWc;
+struct
+{
+	int width;
+	int height;
+} settingSign[10];
 PDIRECT3DTEXTURE9 TextureSettingSign[10];
 int SettingMainMode = 1;
 
@@ -143,12 +147,14 @@ void SettingMain()
 
 		// 图像加载
 		{
-			if (i18nIdentifying == L"zh-CN") loadimage(&SettingSign[1], L"PNG", L"Home1_zh-CN", 700 * settingGlobalScale, 240 * settingGlobalScale, true);
-			else loadimage(&SettingSign[1], L"PNG", L"Home1_en-US", 700 * settingGlobalScale, 240 * settingGlobalScale, true);
+			IMAGE SettingSign;
+
+			if (i18nIdentifying == L"zh-CN") loadimage(&SettingSign, L"PNG", L"Home1_zh-CN", 700 * settingGlobalScale, 215 * settingGlobalScale, true);
+			else loadimage(&SettingSign, L"PNG", L"Home1_en-US", 700 * settingGlobalScale, 240 * settingGlobalScale, true);
 			{
-				int width = SettingSign[1].getwidth();
-				int height = SettingSign[1].getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign[1]);
+				int width = settingSign[1].width = SettingSign.getwidth();
+				int height = settingSign[1].height = SettingSign.getheight();
+				DWORD* pMem = GetImageBuffer(&SettingSign);
 
 				unsigned char* data = new unsigned char[width * height * 4];
 				for (int y = 0; y < height; ++y)
@@ -179,12 +185,12 @@ void SettingMain()
 				IM_ASSERT(ret);
 			}
 
-			if (i18nIdentifying == L"zh-CN") loadimage(&SettingSign[2], L"PNG", L"Home2_zh-CN", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
-			else loadimage(&SettingSign[2], L"PNG", L"Home2_en-US", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
+			if (i18nIdentifying == L"zh-CN") loadimage(&SettingSign, L"PNG", L"Home2_zh-CN", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
+			else loadimage(&SettingSign, L"PNG", L"Home2_en-US", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
 			{
-				int width = SettingSign[2].getwidth();
-				int height = SettingSign[2].getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign[2]);
+				int width = settingSign[2].width = SettingSign.getwidth();
+				int height = settingSign[2].height = SettingSign.getheight();
+				DWORD* pMem = GetImageBuffer(&SettingSign);
 
 				unsigned char* data = new unsigned char[width * height * 4];
 				for (int y = 0; y < height; ++y)
@@ -215,81 +221,11 @@ void SettingMain()
 				IM_ASSERT(ret);
 			}
 
-			loadimage(&SettingSign[4], L"PNG", L"Home_Backgroung", 970 * settingGlobalScale, 768 * settingGlobalScale, true);
+			loadimage(&SettingSign, L"PNG", L"PluginFlag1", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
 			{
-				int width = SettingSign[4].getwidth();
-				int height = SettingSign[4].getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign[4]);
-
-				unsigned char* data = new unsigned char[width * height * 4];
-				for (int y = 0; y < height; ++y)
-				{
-					for (int x = 0; x < width; ++x)
-					{
-						DWORD color = pMem[y * width + x];
-						unsigned char alpha = (color & 0xFF000000) >> 24;
-						if (alpha != 0)
-						{
-							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						}
-						else
-						{
-							data[(y * width + x) * 4 + 0] = 0;
-							data[(y * width + x) * 4 + 1] = 0;
-							data[(y * width + x) * 4 + 2] = 0;
-						}
-						data[(y * width + x) * 4 + 3] = alpha;
-					}
-				}
-
-				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[4]);
-				delete[] data;
-
-				IM_ASSERT(ret);
-			}
-
-			loadimage(&SettingSign[3], L"PNG", L"Profile_Picture", 45 * settingGlobalScale, 45 * settingGlobalScale, true);
-			{
-				int width = SettingSign[3].getwidth();
-				int height = SettingSign[3].getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign[3]);
-
-				unsigned char* data = new unsigned char[width * height * 4];
-				for (int y = 0; y < height; ++y)
-				{
-					for (int x = 0; x < width; ++x)
-					{
-						DWORD color = pMem[y * width + x];
-						unsigned char alpha = (color & 0xFF000000) >> 24;
-						if (alpha != 0)
-						{
-							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						}
-						else
-						{
-							data[(y * width + x) * 4 + 0] = 0;
-							data[(y * width + x) * 4 + 1] = 0;
-							data[(y * width + x) * 4 + 2] = 0;
-						}
-						data[(y * width + x) * 4 + 3] = alpha;
-					}
-				}
-
-				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[3]);
-				delete[] data;
-
-				IM_ASSERT(ret);
-			}
-
-			loadimage(&SettingSign[5], L"PNG", L"PluginFlag1", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
-			{
-				int width = SettingSign[5].getwidth();
-				int height = SettingSign[5].getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign[5]);
+				int width = settingSign[5].width = SettingSign.getwidth();
+				int height = settingSign[5].height = SettingSign.getheight();
+				DWORD* pMem = GetImageBuffer(&SettingSign);
 
 				unsigned char* data = new unsigned char[width * height * 4];
 				for (int y = 0; y < height; ++y)
@@ -319,11 +255,11 @@ void SettingMain()
 
 				IM_ASSERT(ret);
 			}
-			loadimage(&SettingSign[6], L"PNG", L"PluginFlag2", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
+			loadimage(&SettingSign, L"PNG", L"PluginFlag2", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
 			{
-				int width = SettingSign[6].getwidth();
-				int height = SettingSign[6].getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign[6]);
+				int width = settingSign[6].width = SettingSign.getwidth();
+				int height = settingSign[6].height = SettingSign.getheight();
+				DWORD* pMem = GetImageBuffer(&SettingSign);
 
 				unsigned char* data = new unsigned char[width * height * 4];
 				for (int y = 0; y < height; ++y)
@@ -353,11 +289,11 @@ void SettingMain()
 
 				IM_ASSERT(ret);
 			}
-			loadimage(&SettingSign[8], L"PNG", L"PluginFlag3", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
+			loadimage(&SettingSign, L"PNG", L"PluginFlag3", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
 			{
-				int width = SettingSign[8].getwidth();
-				int height = SettingSign[8].getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign[8]);
+				int width = settingSign[8].width = SettingSign.getwidth();
+				int height = settingSign[8].height = SettingSign.getheight();
+				DWORD* pMem = GetImageBuffer(&SettingSign);
 
 				unsigned char* data = new unsigned char[width * height * 4];
 				for (int y = 0; y < height; ++y)
@@ -388,11 +324,79 @@ void SettingMain()
 				IM_ASSERT(ret);
 			}
 
-			loadimage(&SettingSign[7], L"PNG", L"Home_Feedback", 100 * settingGlobalScale, 100 * settingGlobalScale, true);
+			loadimage(&SettingSign, L"PNG", L"Home_Backgroung", 970 * settingGlobalScale, 768 * settingGlobalScale, true);
 			{
-				int width = SettingSign[7].getwidth();
-				int height = SettingSign[7].getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign[7]);
+				int width = settingSign[4].width = SettingSign.getwidth();
+				int height = settingSign[4].height = SettingSign.getheight();
+				DWORD* pMem = GetImageBuffer(&SettingSign);
+
+				unsigned char* data = new unsigned char[width * height * 4];
+				for (int y = 0; y < height; ++y)
+				{
+					for (int x = 0; x < width; ++x)
+					{
+						DWORD color = pMem[y * width + x];
+						unsigned char alpha = (color & 0xFF000000) >> 24;
+						if (alpha != 0)
+						{
+							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						}
+						else
+						{
+							data[(y * width + x) * 4 + 0] = 0;
+							data[(y * width + x) * 4 + 1] = 0;
+							data[(y * width + x) * 4 + 2] = 0;
+						}
+						data[(y * width + x) * 4 + 3] = alpha;
+					}
+				}
+
+				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[4]);
+				delete[] data;
+
+				IM_ASSERT(ret);
+			}
+			loadimage(&SettingSign, L"PNG", L"Profile_Picture", 45 * settingGlobalScale, 45 * settingGlobalScale, true);
+			{
+				int width = settingSign[3].width = SettingSign.getwidth();
+				int height = settingSign[3].height = SettingSign.getheight();
+				DWORD* pMem = GetImageBuffer(&SettingSign);
+
+				unsigned char* data = new unsigned char[width * height * 4];
+				for (int y = 0; y < height; ++y)
+				{
+					for (int x = 0; x < width; ++x)
+					{
+						DWORD color = pMem[y * width + x];
+						unsigned char alpha = (color & 0xFF000000) >> 24;
+						if (alpha != 0)
+						{
+							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						}
+						else
+						{
+							data[(y * width + x) * 4 + 0] = 0;
+							data[(y * width + x) * 4 + 1] = 0;
+							data[(y * width + x) * 4 + 2] = 0;
+						}
+						data[(y * width + x) * 4 + 3] = alpha;
+					}
+				}
+
+				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[3]);
+				delete[] data;
+
+				IM_ASSERT(ret);
+			}
+			loadimage(&SettingSign, L"PNG", L"Home_Feedback", 100 * settingGlobalScale, 100 * settingGlobalScale, true);
+			{
+				int width = settingSign[7].width = SettingSign.getwidth();
+				int height = settingSign[7].height = SettingSign.getheight();
+				DWORD* pMem = GetImageBuffer(&SettingSign);
 
 				unsigned char* data = new unsigned char[width * height * 4];
 				for (int y = 0; y < height; ++y)
@@ -418,6 +422,41 @@ void SettingMain()
 				}
 
 				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[7]);
+				delete[] data;
+
+				IM_ASSERT(ret);
+			}
+
+			loadimage(&SettingSign, L"PNG", L"SettingSponsor", 650 * settingGlobalScale, 460 * settingGlobalScale, true);
+			{
+				int width = settingSign[9].width = SettingSign.getwidth();
+				int height = settingSign[9].height = SettingSign.getheight();
+				DWORD* pMem = GetImageBuffer(&SettingSign);
+
+				unsigned char* data = new unsigned char[width * height * 4];
+				for (int y = 0; y < height; ++y)
+				{
+					for (int x = 0; x < width; ++x)
+					{
+						DWORD color = pMem[y * width + x];
+						unsigned char alpha = (color & 0xFF000000) >> 24;
+						if (alpha != 0)
+						{
+							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+						}
+						else
+						{
+							data[(y * width + x) * 4 + 0] = 0;
+							data[(y * width + x) * 4 + 1] = 0;
+							data[(y * width + x) * 4 + 2] = 0;
+						}
+						data[(y * width + x) * 4 + 3] = alpha;
+					}
+				}
+
+				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[9]);
 				delete[] data;
 
 				IM_ASSERT(ret);
@@ -475,6 +514,7 @@ void SettingMain()
 				0xe80f, 0xe80f, // 主页
 				0xe7b8, 0xe7b8, // 常规
 				0xee56, 0xee56, // 绘制
+				0xec4a, 0xec4a, // 性能
 				0xe74c, 0xe74c, // 插件
 				0xe765, 0xe765, // 快捷键
 				0xe946, 0xe946, // 软件版本
@@ -582,7 +622,9 @@ void SettingMain()
 		bool LiftStraighten = setlist.liftStraighten, WaitStraighten = setlist.waitStraighten;
 		bool PointAdsorption = setlist.pointAdsorption;
 		bool SmoothWriting = setlist.smoothWriting;
-		//bool SmartEraser = setlist.smartEraser;
+		int EraserMode = setlist.eraserSetting.eraserMode;
+
+		int PreparationQuantity = setlist.performanceSetting.preparationQuantity;
 
 		// 插件参数
 
@@ -653,6 +695,7 @@ void SettingMain()
 					tab1,
 					tab2,
 					tab3,
+					tabPerformance,
 					tab4,
 					tab5,
 					tab6,
@@ -671,14 +714,6 @@ void SettingMain()
 				ImGui::SetNextWindowPos({ 0,0 });//设置窗口位置
 				ImGui::SetNextWindowSize({ static_cast<float>(SettingWindowWidth),static_cast<float>(SettingWindowHeight) });//设置窗口大小
 
-				string settingTitle = get<string>(i18n[i18nEnum::Settings]);
-				{
-#if !__has_include("IdtInsider.h")
-					if (i18nIdentifying == L"zh-CN") settingTitle += "（非官方构建版本）";
-					else if (i18nIdentifying == L"zh-TW") settingTitle += "（非官方構建版本）";
-					else settingTitle += " (Unofficial build version)";
-#endif
-				}
 				ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(189, 189, 189, 255));
 				ImGui::Begin("主窗口", &test.select, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoTitleBar);//开始绘制窗口
 				ImGui::PopStyleColor();
@@ -688,7 +723,7 @@ void SettingMain()
 					ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 					ImGui::SetCursorPos({ 20.0f * settingGlobalScale,14.0f * settingGlobalScale });
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
-					ImGui::TextUnformatted(("\ue713   " + settingTitle).c_str());
+					ImGui::TextUnformatted(("\ue713   " + get<string>(i18n[i18nEnum::Settings])).c_str());
 
 					ImFontMain->Scale = 0.3f, PushFontNum++, ImGui::PushFont(ImFontMain);
 					ImGui::SetCursorPos({ 904 * settingGlobalScale,0.0f * settingGlobalScale });
@@ -831,6 +866,33 @@ void SettingMain()
 						if (ImGui::Button("   \uee56   绘制", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab3;
 					}
 
+					// 性能
+					{
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
+
+						if (settingTab == settingTabEnum::tabPerformance)
+						{
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
+						}
+						else
+						{
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 0));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 0, 0, 6));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
+						}
+
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
+						if (ImGui::Button("   \uec4a   性能", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tabPerformance;
+					}
+
 					// 插件
 					{
 						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
@@ -891,7 +953,7 @@ void SettingMain()
 
 					// --------------------
 					{
-						ImGui::SetCursorPosY(487 * settingGlobalScale);
+						ImGui::SetCursorPosY(486 * settingGlobalScale);
 
 						ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
@@ -906,7 +968,7 @@ void SettingMain()
 					{
 						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,490.0f * settingGlobalScale });
 
-						if (settingTab == settingTabEnum::tab8)
+						if (settingTab == settingTabEnum::tab7)
 						{
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 10));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
@@ -926,7 +988,7 @@ void SettingMain()
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button("   \ue716   社区名片", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })); //settingTab = settingTabEnum::tab7;
+						if (ImGui::Button("   \ue716   社区名片", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab7;
 					}
 
 					// 赞助我们
@@ -938,7 +1000,7 @@ void SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 10));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 0, 0, 10));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 95, 183, 255));
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 						}
@@ -947,18 +1009,18 @@ void SettingMain()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 0));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 0, 0, 6));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 95, 183, 255));
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button("   \ue789   赞助我们", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })); //settingTab = settingTabEnum::tab8;
+						if (ImGui::Button("   \ue789   赞助我们", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab8;
 					}
 
 					// --------------------
 					{
-						ImGui::SetCursorPosY(571.0f * settingGlobalScale);
+						ImGui::SetCursorPosY(570.0f * settingGlobalScale);
 
 						ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
@@ -1113,11 +1175,11 @@ void SettingMain()
 
 							ImGui::SetCursorPosX(Cx + Sx * (Pt.x >= Mx ? -1 : 1) - 100.0f * settingGlobalScale);
 							ImGui::SetCursorPosY(Cy + Sy * (Pt.y >= My ? -1 : 1) - 100.0f * settingGlobalScale);
-							ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[4], ImVec2((float)SettingSign[4].getwidth(), (float)SettingSign[4].getheight()));
+							ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[4], ImVec2((float)settingSign[4].width, (float)settingSign[4].height));
 						}
 						{
 							ImGui::SetCursorPos({ Cx,Cy });
-							ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[2], ImVec2((float)SettingSign[2].getwidth(), (float)SettingSign[2].getheight()));
+							ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[2], ImVec2((float)settingSign[2].width, (float)settingSign[2].height));
 						}
 
 						ImU32 color = IM_COL32(243, 243, 243, 255);
@@ -1165,7 +1227,7 @@ void SettingMain()
 
 						{
 							ImGui::SetCursorPos({ Cx + 100.0f * settingGlobalScale,Cy + 390.0f * settingGlobalScale });
-							ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[3], ImVec2((float)SettingSign[3].getwidth(), (float)SettingSign[3].getheight()));
+							ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[3], ImVec2((float)settingSign[3].width, (float)settingSign[3].height));
 
 							ImGui::SetCursorPos({ Cx + 160.0f * settingGlobalScale,Cy + 390.0f * settingGlobalScale });
 							{
@@ -1264,7 +1326,7 @@ void SettingMain()
 									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5.0f * settingGlobalScale, 5.0f * settingGlobalScale));
 
 									ImGui::BeginTooltip();
-									ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[7], ImVec2((float)SettingSign[7].getwidth(), (float)SettingSign[7].getheight()));
+									ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[7], ImVec2((float)settingSign[7].width, (float)settingSign[7].height));
 									ImGui::EndTooltip();
 								}
 							}
@@ -1289,10 +1351,10 @@ void SettingMain()
 					ImGui::BeginChild("软件版本", { 750.0f * settingGlobalScale,608.0f * settingGlobalScale }, true);
 
 					ImGui::SetCursorPos({ 35.0f * settingGlobalScale,20.0f * settingGlobalScale });
-					ImGui::Image((void*)TextureSettingSign[1], ImVec2((float)SettingSign[1].getwidth(), (float)SettingSign[1].getheight()));
+					ImGui::Image((void*)TextureSettingSign[1], ImVec2((float)settingSign[1].width, (float)settingSign[1].height));
 
 					{
-						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f);
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY());
 						wstring text;
 						{
 							text += L"\n程序发布版本 " + editionDate + L"(" + editionChannel + L")";
@@ -1351,7 +1413,7 @@ void SettingMain()
 					ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
 					{
 						ImGui::SetCursorPos({ 20.0f * settingGlobalScale,ImGui::GetCursorPosY() + 30.0f * settingGlobalScale });
-						ImGui::BeginChild("更新通道调整", { 710.0f * settingGlobalScale,50.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar);
+						ImGui::BeginChild("更新通道调整", { 710.0f * settingGlobalScale,55.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar);
 
 						{
 							ImGui::SetCursorPosY(10.0f * settingGlobalScale);
@@ -1375,22 +1437,66 @@ void SettingMain()
 
 							vector<const char*> vec;
 							vec.emplace_back("  正式通道(LTS)");
-							if (!setlist.updateChannelExtra.empty()) vec.emplace_back("  预览通道(Insider)");
+							vec.emplace_back("  预览通道(Insider)");
 
-							if (setlist.UpdateChannel.substr(0, 7) == "Insider" && vec.size() >= 2) UpdateChannelMode = 1;
+							if (setlist.UpdateChannel == "Insider") UpdateChannelMode = 1;
 							else UpdateChannelMode = 0;
 
 							if (ImGui::Combo("##更新通道", &UpdateChannelMode, vec.data(), vec.size()))
 							{
 								if ((UpdateChannelMode == 0 && setlist.UpdateChannel != "LTS") ||
-									(UpdateChannelMode == 1 && setlist.UpdateChannel.substr(0, 7) != "Insider"))
+									(UpdateChannelMode == 1 && setlist.UpdateChannel != "Insider"))
 								{
-									if (UpdateChannelMode == 1) setlist.UpdateChannel = setlist.updateChannelExtra;
+									if (UpdateChannelMode == 1) setlist.UpdateChannel = "Insider";
 									else setlist.UpdateChannel = "LTS";
 									WriteSetting();
 
 									AutomaticUpdateStep = 1;
 								}
+							}
+						}
+
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
+						ImGui::EndChild();
+					}
+					// 临时方案
+					{
+						ImGui::SetCursorPos({ 20.0f * settingGlobalScale,ImGui::GetCursorPosY() + 10.0f * settingGlobalScale });
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+						ImGui::BeginChild("复制用户ID", { 710.0f * settingGlobalScale,60.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+						float cursosPosY = 0;
+						{
+							ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+							ImGui::TextUnformatted("复制用户ID");
+						}
+						{
+							ImGui::SetCursorPos({ 590.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 179));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(249, 249, 249, 128));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
+							if (ImGui::Button("复制", { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+							{
+								OpenClipboard(NULL); // 打开剪切板
+								EmptyClipboard(); // 清空剪切板
+								size_t size = (userId.length() + 1) * sizeof(wchar_t); // 计算需要的内存大小（包括结尾的null字符）
+								HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE, size); // 分配全局内存
+								wchar_t* pDest = (wchar_t*)GlobalLock(hGlobal); // 锁定内存并获取指针
+								wcscpy_s(pDest, userId.length() + 1, userId.c_str()); // 复制文本到全局内存
+								GlobalUnlock(hGlobal); // 解锁内存
+								SetClipboardData(CF_UNICODETEXT, hGlobal); // 设置剪切板数据
+								CloseClipboard(); // 关闭剪切板
 							}
 						}
 
@@ -1426,6 +1532,7 @@ void SettingMain()
 						ImGui::TextUnformatted(get<string>(i18n[i18nEnum::Settings_Regular]).c_str());
 					}
 
+					/*
 					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f * settingGlobalScale);
 					{
 						ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
@@ -1496,6 +1603,7 @@ void SettingMain()
 						}
 						ImGui::EndChild();
 					}
+					*/
 					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f * settingGlobalScale);
 					{
 						ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
@@ -1550,7 +1658,7 @@ void SettingMain()
 						ImGui::TextUnformatted(get<string>(i18n[i18nEnum::Settings_Regular_3]).c_str());
 
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(251 / 255.0f, 251 / 255.0f, 251 / 255.0f, 1.0f));
 						ImGui::BeginChild("外观样式", { 750.0f * settingGlobalScale,110.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
@@ -2083,7 +2191,7 @@ void SettingMain()
 						}
 						ImGui::EndChild();
 					}
-					/*ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f * settingGlobalScale);
+					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f * settingGlobalScale);
 					{
 						ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(120 / 255.0f, 120 / 255.0f, 120 / 255.0f, 1.0f));
@@ -2091,34 +2199,59 @@ void SettingMain()
 
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-						ImGui::BeginChild("擦除行为", { 750.0f * settingGlobalScale,100.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("擦除行为", { 750.0f * settingGlobalScale,110.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
 							ImGui::SetCursorPos({ 30.0f * settingGlobalScale, ImGui::GetCursorPosY() + 25.0f * settingGlobalScale });
 
 							ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
-							ImGui::TextUnformatted("智能粗细橡皮擦");
+							ImGui::TextUnformatted("橡皮粗细计算方式");
 							float markY = ImGui::GetCursorPosY();
 
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0 / 255.0f, 111 / 255.0f, 225 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0 / 255.0f, 101 / 255.0f, 205 / 255.0f, 1.0f));
+							ImGui::SameLine(); ImGui::SetCursorPosX((750.0f - 230.0f) * settingGlobalScale);
+							static const char* items[] = { "  压感粗细", "  笔速粗细", "  固定粗细" };
+							ImGui::SetNextItemWidth(200 * settingGlobalScale);
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-							ImGui::SameLine(); ImGui::SetCursorPosX((750.0f - 65.0f) * settingGlobalScale);
-							ImGui::Toggle("##智能粗细橡皮擦", &SmartEraser, config);
-
-							if (setlist.smartEraser != SmartEraser)
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 3.75f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 9.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_SelectableTextAlign, ImVec2(0.0f, 0.5f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 10.0f));
+							if (ImGui::BeginCombo("##橡皮粗细计算方式", items[EraserMode]))
 							{
-								setlist.smartEraser = SmartEraser;
+								for (int i = 0; i < IM_ARRAYSIZE(items); i++)
+								{
+									const bool is_selected = (EraserMode == i);
+									if (ImGui::Selectable(items[i], is_selected))
+									{
+										EraserMode = i;
+									}
+
+									if (is_selected) ImGui::SetItemDefaultFocus();
+								}
+
+								ImGui::EndCombo();
+							}
+
+							if (setlist.eraserSetting.eraserMode != EraserMode)
+							{
+								setlist.eraserSetting.eraserMode = EraserMode;
 								WriteSetting();
 							}
 
-							ImGui::SetCursorPos({ 30.0f * settingGlobalScale, markY + 5.0f * settingGlobalScale });
+							ImGui::SetCursorPos({ 30.0f * settingGlobalScale, markY + 15.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(120 / 255.0f, 120 / 255.0f, 120 / 255.0f, 1.0f));
-							ImGui::TextUnformatted("根据擦除速度智能调整橡皮粗细。");
+							ImGui::TextUnformatted("如果当前计算方式不满足条件，软件会继续尝试下一个。");
 						}
 
 						{
@@ -2127,8 +2260,127 @@ void SettingMain()
 							while (PushFontNum) PushFontNum--, ImGui::PopFont();
 						}
 						ImGui::EndChild();
-					}*/
+					}
 
+					ImGui::EndChild();
+					break;
+				}
+
+				// 性能
+				case settingTabEnum::tabPerformance:
+				{
+					ImGui::SetCursorPos({ 180.0f * settingGlobalScale,40.0f * settingGlobalScale });
+
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
+					ImGui::BeginChild("性能", { (750.0f + 15.0f) * settingGlobalScale,608.0f * settingGlobalScale }, false);
+
+					ImGui::SetCursorPosY(10.0f * settingGlobalScale);
+					{
+						ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+						ImGui::TextUnformatted("性能");
+					}
+
+					{
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(255, 255, 255, 0));
+						ImGui::BeginChild("性能#1", { 750.0f * settingGlobalScale,130.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+						{
+							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+							ImGui::TextUnformatted("绘图模块");
+						}
+
+						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+							ImGui::BeginChild("##落笔预备", { 750.0f * settingGlobalScale,70.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+							float cursosPosY = 0;
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+								ImGui::TextUnformatted("落笔预备");
+							}
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
+								ImGui::TextUnformatted("越大则越多手指落下时更快开始绘制，但会占用更多内存。");
+							}
+							{
+								ImGui::SetCursorPos({ 435.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+								ImGui::PushItemWidth(300.0f * settingGlobalScale);
+
+								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(255, 255, 255, 179));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(249, 249, 249, 128));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgActive, IM_COL32(249, 249, 249, 77));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrab, IM_COL32(0, 95, 184, 255));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, IM_COL32(0, 95, 184, 230));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
+								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 6.0f * settingGlobalScale));
+								ImGui::SliderInt("##落笔预备数量", &PreparationQuantity, 0, 20, "");
+
+								ImGui::PopItemWidth();
+
+								bool isItemHovered = ImGui::IsItemHovered();
+								bool isItemActive = ImGui::IsItemActive();
+
+								if (ImGui::IsItemHovered())
+								{
+									PushFontNum++, ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_PopupBg, IM_COL32(255, 255, 255, 255));
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f * settingGlobalScale);
+									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f * settingGlobalScale, 8.0f * settingGlobalScale));
+
+									ImGui::BeginTooltip();
+
+									ImGui::TextUnformatted(format("{:d} 指", PreparationQuantity).c_str());
+
+									ImGui::EndTooltip();
+								}
+								if (!isItemActive && PreparationQuantity != setlist.performanceSetting.preparationQuantity)
+								{
+									setlist.performanceSetting.preparationQuantity = PreparationQuantity;
+									WriteSetting();
+
+									// 落笔预备
+									ResetPrepareCanvas();
+								}
+							}
+
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+							ImGui::EndChild();
+						}
+
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
+						ImGui::EndChild();
+					}
+
+					{
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
+					}
 					ImGui::EndChild();
 					break;
 				}
@@ -2159,7 +2411,7 @@ void SettingMain()
 							{
 								{
 									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, 20.0f * settingGlobalScale });
-									ImGui::Image((void*)TextureSettingSign[5], ImVec2((float)SettingSign[5].getwidth(), (float)SettingSign[5].getheight()));
+									ImGui::Image((void*)TextureSettingSign[5], ImVec2((float)settingSign[5].width, (float)settingSign[5].height));
 								}
 								{
 									ImGui::SetCursorPos({ 60.0f * settingGlobalScale, 20.0f * settingGlobalScale });
@@ -2226,7 +2478,7 @@ void SettingMain()
 							{
 								{
 									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, 20.0f * settingGlobalScale });
-									ImGui::Image((void*)TextureSettingSign[6], ImVec2((float)SettingSign[6].getwidth(), (float)SettingSign[6].getheight()));
+									ImGui::Image((void*)TextureSettingSign[6], ImVec2((float)settingSign[6].width, (float)settingSign[6].height));
 								}
 								{
 									ImGui::SetCursorPos({ 60.0f * settingGlobalScale, 20.0f * settingGlobalScale });
@@ -2290,7 +2542,7 @@ void SettingMain()
 							{
 								{
 									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, 20.0f * settingGlobalScale });
-									ImGui::Image((void*)TextureSettingSign[8], ImVec2((float)SettingSign[8].getwidth(), (float)SettingSign[8].getheight()));
+									ImGui::Image((void*)TextureSettingSign[8], ImVec2((float)settingSign[8].width, (float)settingSign[8].height));
 								}
 								{
 									ImGui::SetCursorPos({ 60.0f * settingGlobalScale, 20.0f * settingGlobalScale });
@@ -3322,7 +3574,7 @@ void SettingMain()
 										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-										ImGui::TextWrapped("软件启动时将修正桌面已经存在的软件快捷方式。软件自动更新后将会改变文件名，推荐开启。");
+										ImGui::TextWrapped("软件启动时将修正桌面已经存在的软件快捷方式。软件自动更新后可能会改变文件名，推荐开启。");
 									}
 
 									{
@@ -3799,11 +4051,123 @@ void SettingMain()
 				// 社区名片
 				case settingTabEnum::tab7:
 				{
+					ImGui::SetCursorPos({ 180.0f * settingGlobalScale,40.0f * settingGlobalScale });
+
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+					ImGui::BeginChild("快捷键", { 750.0f * settingGlobalScale,608.0f * settingGlobalScale }, true);
+
+					ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
+					{
+						ImGui::SetCursorPosY(10.0f * settingGlobalScale);
+
+						int left_x = 10 * settingGlobalScale, right_x = 760 * settingGlobalScale;
+
+						std::vector<std::string> lines;
+						std::wstring line, temp;
+						std::wstringstream ss(L"界面还在开发中，敬请期待\n\n致谢名单（很抱歉当前界面尚未完善）\n郑子杰 Zijie Zheng ￥151.2\nbin ￥100\n路人甲 ￥100\nHettyBig ￥20\n建俊 ￥19.99\nLEON - 小清新 ￥19.99\n凌汛 ￥9.99\nKrouis ￥9.99\n爱发电用户_997e8 ￥9.99\n爱发电用户_55381 ￥9.99\n\n和所有支持智绘教的朋友们~");
+
+						while (getline(ss, temp, L'\n'))
+						{
+							bool flag = false;
+							line = L"";
+
+							for (wchar_t ch : temp)
+							{
+								flag = false;
+
+								float text_width = ImGui::CalcTextSize(utf16ToUtf8(line + ch).c_str()).x;
+								if (text_width > (right_x - left_x))
+								{
+									lines.emplace_back(utf16ToUtf8(line));
+									line = L"", flag = true;
+								}
+
+								line += ch;
+							}
+
+							if (!flag) lines.emplace_back(utf16ToUtf8(line));
+						}
+
+						for (const auto& temp : lines)
+						{
+							float text_width = ImGui::CalcTextSize(temp.c_str()).x;
+							float text_indentation = ((right_x - left_x) - text_width) * 0.5f;
+							if (text_indentation < 0)  text_indentation = 0;
+							ImGui::SetCursorPosX(left_x + text_indentation);
+							ImGui::TextUnformatted(temp.c_str());
+						}
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+					}
+
+					{
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
+					}
+					ImGui::EndChild();
+					break;
 				}
 
-				// 赞助名片
+				// 赞助我们
 				case settingTabEnum::tab8:
 				{
+					ImGui::SetCursorPos({ 180.0f * settingGlobalScale,40.0f * settingGlobalScale });
+
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
+					ImGui::BeginChild("赞助我们", { 750.0f * settingGlobalScale,608.0f * settingGlobalScale }, true);
+
+					ImGui::SetCursorPos({ 50.0f * settingGlobalScale,20.0f * settingGlobalScale });
+					ImGui::Image((void*)TextureSettingSign[9], ImVec2((float)settingSign[9].width, (float)settingSign[9].height));
+
+					{
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f);
+						wstring text = L"成功赞助后，可以联系作者修改社区名片赞助列表中的头像和昵称。";
+
+						int left_x = 10 * settingGlobalScale, right_x = 760 * settingGlobalScale;
+
+						std::vector<std::string> lines;
+						std::wstring line, temp;
+						std::wstringstream ss(text);
+
+						while (getline(ss, temp, L'\n'))
+						{
+							bool flag = false;
+							line = L"";
+
+							for (wchar_t ch : temp)
+							{
+								flag = false;
+
+								float text_width = ImGui::CalcTextSize(utf16ToUtf8(line + ch).c_str()).x;
+								if (text_width > (right_x - left_x))
+								{
+									lines.emplace_back(utf16ToUtf8(line));
+									line = L"", flag = true;
+								}
+
+								line += ch;
+							}
+
+							if (!flag) lines.emplace_back(utf16ToUtf8(line));
+						}
+
+						for (const auto& temp : lines)
+						{
+							float text_width = ImGui::CalcTextSize(temp.c_str()).x;
+							float text_indentation = ((right_x - left_x) - text_width) * 0.5f;
+							if (text_indentation < 0)  text_indentation = 0;
+							ImGui::SetCursorPosX(left_x + text_indentation);
+							ImGui::TextUnformatted(temp.c_str());
+						}
+					}
+
+					{
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
+					}
+					ImGui::EndChild();
+					break;
 				}
 
 				// ---------------------
@@ -4215,7 +4579,7 @@ void SettingMain()
 
 							string channel = "（其他通道）";
 							if (setlist.UpdateChannel == "LTS") channel = "（正式通道）";
-							else if (setlist.UpdateChannel.substr(0, 7) == "Insider") channel = "（预览通道）";
+							else if (setlist.UpdateChannel == "Insider") channel = "（预览通道）";
 
 							ImGui::TextUnformatted((get<string>(i18n[i18nEnum::Settings_Update_Tip9]) + channel).c_str());
 						}
@@ -4248,7 +4612,7 @@ void SettingMain()
 
 							string channel = "（其他通道）";
 							if (setlist.UpdateChannel == "LTS") channel = "（正式通道）";
-							else if (setlist.UpdateChannel.substr(0, 7) == "Insider") channel = "（预览通道）";
+							else if (setlist.UpdateChannel == "Insider") channel = "（预览通道）";
 
 							ImGui::TextUnformatted(("程序相对最新版本更新" + channel).c_str());
 						}

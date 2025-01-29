@@ -42,6 +42,10 @@ bool SetPenColor(COLORREF targetColor)
 	}
 	else return false;
 
+	// 临时方案：改变 UI 背景颜色
+	if (computeContrast(targetColor, RGB(255, 255, 255)) >= 3) BackgroundColorMode = 0;
+	else BackgroundColorMode = 1;
+
 	return true;
 }
 bool ChangeStateModeToSelection()
@@ -79,6 +83,10 @@ bool ChangeStateModeToSelection()
 		if (state == 1.1) state = 1;
 
 		stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
+	}
+	// TODO 临时方案：改变 UI 背景颜色
+	{
+		BackgroundColorMode = 0;
 	}
 
 	// 取消标识绘制等待
@@ -120,6 +128,23 @@ bool ChangeStateModeToPen()
 	{
 		stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
 	}
+	// TODO 临时方案：改变 UI 背景颜色
+	{
+		COLORREF targetColor;
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
+		{
+			if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1) targetColor = stateMode.Pen.Brush1.color;
+			else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) targetColor = stateMode.Pen.Highlighter1.color;
+		}
+		else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
+		{
+			if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) targetColor = stateMode.Pen.Brush1.color;
+			else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) targetColor = stateMode.Pen.Brush1.color;
+		}
+
+		if (computeContrast(targetColor, RGB(255, 255, 255)) >= 3) BackgroundColorMode = 0;
+		else BackgroundColorMode = 1;
+	}
 
 	// 取消标识绘制等待
 	{
@@ -160,6 +185,23 @@ bool ChangeStateModeToShape()
 	{
 		stateMode.StateModeSelect = StateModeSelectEnum::IdtShape;
 	}
+	// TODO 临时方案：改变 UI 背景颜色
+	{
+		COLORREF targetColor;
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
+		{
+			if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1) targetColor = stateMode.Pen.Brush1.color;
+			else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) targetColor = stateMode.Pen.Highlighter1.color;
+		}
+		else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
+		{
+			if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) targetColor = stateMode.Pen.Brush1.color;
+			else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) targetColor = stateMode.Pen.Brush1.color;
+		}
+
+		if (computeContrast(targetColor, RGB(255, 255, 255)) >= 3) BackgroundColorMode = 0;
+		else BackgroundColorMode = 1;
+	}
 
 	// 取消标识绘制等待
 	{
@@ -199,6 +241,10 @@ bool ChangeStateModeToEraser()
 	// 切换状态
 	{
 		stateMode.StateModeSelect = StateModeSelectEnum::IdtEraser;
+	}
+	// TODO 临时方案：改变 UI 背景颜色
+	{
+		BackgroundColorMode = 0;
 	}
 
 	// 取消标识绘制等待

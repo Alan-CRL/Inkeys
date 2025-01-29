@@ -504,7 +504,7 @@ void ResetPrepareCanvas()
 	int height = MainMonitor.MonitorHeight;
 	DisplaysInfoLock.unlock();
 
-	shared_lock<shared_mutex> lockPrepareCanvasQueue1(prepareCanvasQueueSm);
+	unique_lock<shared_mutex> lockPrepareCanvasQueue1(prepareCanvasQueueSm);
 	while (prepareCanvasQueue.size() != setlist.performanceSetting.preparationQuantity)
 	{
 		if (prepareCanvasQueue.size() > setlist.performanceSetting.preparationQuantity)
@@ -551,16 +551,12 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 
 	IMAGE* Canvas = nullptr;
 	{
-		shared_lock<shared_mutex> lockPrepareCanvasQueue1(prepareCanvasQueueSm);
-		bool isPrepareCanvasQueueEmpty = prepareCanvasQueue.empty();
-		if (!isPrepareCanvasQueueEmpty)
+		unique_lock<shared_mutex> lockPrepareCanvasQueue1(prepareCanvasQueueSm);
+		if (!prepareCanvasQueue.empty())
 		{
 			Canvas = prepareCanvasQueue.front();
-			lockPrepareCanvasQueue1.unlock();
-
-			unique_lock<shared_mutex> lockPrepareCanvasQueue2(prepareCanvasQueueSm);
 			prepareCanvasQueue.pop();
-			lockPrepareCanvasQueue2.unlock();
+			lockPrepareCanvasQueue1.unlock();
 
 			if (Canvas->getwidth() != screenInfo.width || Canvas->getheight() != screenInfo.height)
 			{
@@ -839,6 +835,7 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 	{
 		double speed;
 		double rubbersize, trubbersize = -1;
+		int eraserMode = 2;
 
 		// 设定画布
 		shared_lock lockStrokeBackImageSm(StrokeBackImageSm);
@@ -847,14 +844,15 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 
 		// 初始智能橡皮粗细
 		{
-			if (setlist.eraserSetting.eraserMode == 0 && (!setlist.eraserSetting.eraserPressurePriority || (initialMode.pressure == 0.0 || initialMode.isInvertedCursor)))
-				rubbersize = drawingScale * 20.0;
-			else if ((setlist.eraserSetting.eraserMode == 1 || setlist.eraserSetting.eraserMode == 0) && (initialMode.pressure != 0.0 && !initialMode.isInvertedCursor))
-				rubbersize = setlist.eraserSetting.eraserSize * 1.5 * initialMode.pressure + drawingScale * 20.0;
+			if (setlist.eraserSetting.eraserMode <= 0 && (initialMode.pressure != 0.0 && !initialMode.isInvertedCursor)) eraserMode = 0; // 压感粗细
+			else if (setlist.eraserSetting.eraserMode <= 1) eraserMode = 1; // 笔速粗细
+			else eraserMode = 2; // 固定粗细
+
+			if (eraserMode == 0) rubbersize = setlist.eraserSetting.eraserSize * 1.5 * initialMode.pressure + drawingScale * 20.0;
+			else if (eraserMode == 1) rubbersize = drawingScale * 20.0;
 			else rubbersize = setlist.eraserSetting.eraserSize;
 		}
 		// TODO 橡皮 OC 平滑和全套橡皮粗细管理模块
-		//cerr << "= " << rubbersize << endl;
 
 		//首次绘制
 		{
@@ -923,7 +921,8 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 
 			// 过程智能橡皮粗细
 			{
-				if (setlist.eraserSetting.eraserMode == 0 && (!setlist.eraserSetting.eraserPressurePriority || (mode.pressure == 0.0 || mode.isInvertedCursor)))
+				if (eraserMode == 0) rubbersize = setlist.eraserSetting.eraserSize * 1.5 * mode.pressure + drawingScale * 20.0;
+				else if (eraserMode == 1)
 				{
 					if (setlist.paintDevice == 1)
 					{
@@ -933,14 +932,10 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 					}
 					else
 					{
-						// 触摸
+						// 触摸设备
 						if (speed <= 20) trubbersize = max(25, speed * 2.33 + 13.33) * drawingScale;
 						else trubbersize = min(200, 3 * speed) * drawingScale;
 					}
-				}
-				else if ((setlist.eraserSetting.eraserMode == 1 || setlist.eraserSetting.eraserMode == 0) && (mode.pressure != 0.0 && !mode.isInvertedCursor))
-				{
-					rubbersize = setlist.eraserSetting.eraserSize * 1.5 * mode.pressure + drawingScale * 20.0;
 				}
 				else rubbersize = setlist.eraserSetting.eraserSize;
 			}
@@ -2064,14 +2059,7 @@ int drawpad_main()
 		hiex::Gdiplus_Try_Starup();
 
 		// 落笔预备
-		{
-			shared_lock<shared_mutex> DisplaysInfoLock(DisplaysInfoSm);
-			int width = MainMonitor.MonitorWidth;
-			int height = MainMonitor.MonitorHeight;
-			DisplaysInfoLock.unlock();
-
-			PrepareCanvas(width, height);
-		}
+		ResetPrepareCanvas();
 
 		while (!offSignal)
 		{
