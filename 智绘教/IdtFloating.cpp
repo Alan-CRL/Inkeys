@@ -236,37 +236,37 @@ void DrawScreen()
 	{
 		//媒体资源读取
 		{
-			loadimage(&floating_icon[0], L"PNG", L"icon0", 40, 40, true);
-			loadimage(&floating_icon[19], L"PNG", L"icon19", 15, 15, true);
+			idtLoadImage(&floating_icon[0], L"PNG", L"icon0", 40, 40, true);
+			idtLoadImage(&floating_icon[19], L"PNG", L"icon19", 15, 15, true);
 
-			loadimage(&floating_icon[1], L"PNG", L"icon1", 40, 40, true);
-			loadimage(&floating_icon[2], L"PNG", L"icon2", 40, 40, true);
-			loadimage(&floating_icon[3], L"PNG", L"icon3", 30, 30, true);
-			loadimage(&floating_icon[4], L"PNG", L"icon4");
-			loadimage(&floating_icon[5], L"PNG", L"icon5");
+			idtLoadImage(&floating_icon[1], L"PNG", L"icon1", 40, 40, true);
+			idtLoadImage(&floating_icon[2], L"PNG", L"icon2", 40, 40, true);
+			idtLoadImage(&floating_icon[3], L"PNG", L"icon3", 30, 30, true);
+			idtLoadImage(&floating_icon[4], L"PNG", L"icon4");
+			idtLoadImage(&floating_icon[5], L"PNG", L"icon5");
 
-			loadimage(&floating_icon[7], L"PNG", L"icon7");
-			loadimage(&floating_icon[10], L"PNG", L"icon10");
+			idtLoadImage(&floating_icon[7], L"PNG", L"icon7");
+			idtLoadImage(&floating_icon[10], L"PNG", L"icon10");
 
-			loadimage(&floating_icon[6], L"PNG", L"icon6", 30, 30, true);
-			loadimage(&floating_icon[8], L"PNG", L"icon8", 30, 30, true);
+			idtLoadImage(&floating_icon[6], L"PNG", L"icon6", 30, 30, true);
+			idtLoadImage(&floating_icon[8], L"PNG", L"icon8", 30, 30, true);
 
-			loadimage(&floating_icon[11], L"PNG", L"icon11", 20, 20, true);
-			loadimage(&floating_icon[12], L"PNG", L"icon12", 20, 20, true);
-			loadimage(&floating_icon[13], L"PNG", L"icon13", 20, 20, true);
-			loadimage(&floating_icon[14], L"PNG", L"icon14", 20, 20, true);
-			loadimage(&floating_icon[15], L"PNG", L"icon15", 20, 20, true);
+			idtLoadImage(&floating_icon[11], L"PNG", L"icon11", 20, 20, true);
+			idtLoadImage(&floating_icon[12], L"PNG", L"icon12", 20, 20, true);
+			idtLoadImage(&floating_icon[13], L"PNG", L"icon13", 20, 20, true);
+			idtLoadImage(&floating_icon[14], L"PNG", L"icon14", 20, 20, true);
+			idtLoadImage(&floating_icon[15], L"PNG", L"icon15", 20, 20, true);
 
-			loadimage(&floating_icon[16], L"PNG", L"icon16", 20, 20, true);
-			loadimage(&floating_icon[18], L"PNG", L"icon18", 20, 20, true);
-			loadimage(&floating_icon[17], L"PNG", L"icon17", 20, 20, true);
-			loadimage(&floating_icon[20], L"PNG", L"icon20", 20, 20, true);
+			idtLoadImage(&floating_icon[16], L"PNG", L"icon16", 20, 20, true);
+			idtLoadImage(&floating_icon[18], L"PNG", L"icon18", 20, 20, true);
+			idtLoadImage(&floating_icon[17], L"PNG", L"icon17", 20, 20, true);
+			idtLoadImage(&floating_icon[20], L"PNG", L"icon20", 20, 20, true);
 
-			loadimage(&sign, L"PNG", L"sign1", 30, 30, true);
+			idtLoadImage(&sign, L"PNG", L"sign1", 30, 30, true);
 
-			loadimage(&skin[1], L"PNG", L"skin1");
-			loadimage(&skin[2], L"PNG", L"skin1-2");
-			loadimage(&skin[3], L"PNG", L"skin1-3");
+			idtLoadImage(&skin[1], L"PNG", L"skin1");
+			idtLoadImage(&skin[2], L"PNG", L"skin1-2");
+			idtLoadImage(&skin[3], L"PNG", L"skin1-3");
 
 			bskin3 = IMAGEToBitmap(&skin[3]);
 		}
@@ -4502,8 +4502,8 @@ void DrawScreen()
 					words_rect.right = LONG(UIControl[L"Words/choose/right"].v);
 					words_rect.bottom = LONG(UIControl[L"Words/choose/bottom"].v);
 				}
-				if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumn_Centre_Select]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
-				else graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumn_Centre_SelectClean]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumnSelect]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumnSelectClean]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 			}
 			//画笔
 			{
@@ -4519,7 +4519,7 @@ void DrawScreen()
 					words_rect.right = LONG(UIControl[L"Words/brush/right"].v);
 					words_rect.bottom = LONG(UIControl[L"Words/brush/bottom"].v);
 				}
-				graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumn_Centre_Pen]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumnPen]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 
 				WordBrush.SetColor(hiex::ConvertToGdiplusColor(UIControlColor[L"Words/brushSize/words_color"].v, true));
 				Gdiplus::Font gp_font_02(&HarmonyOS_fontFamily, 20, FontStyleRegular, UnitPixel);
@@ -4539,7 +4539,7 @@ void DrawScreen()
 					words_rect.right = LONG(UIControl[L"Words/rubber/right"].v);
 					words_rect.bottom = LONG(UIControl[L"Words/rubber/bottom"].v);
 				}
-				graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumn_Centre_Eraser]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumnEraser]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 			}
 			//选项
 			{
@@ -4556,7 +4556,7 @@ void DrawScreen()
 					words_rect.right = LONG(UIControl[L"Words/test/right"].v);
 					words_rect.bottom = LONG(UIControl[L"Words/test/bottom"].v);
 				}
-				graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumn_Centre_Options]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumnOptions]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 			}
 
 			//插件空位1：随机点名

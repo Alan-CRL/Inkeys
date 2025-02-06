@@ -41,8 +41,8 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250128a";				// 程序发布日期
-wstring editionChannel = L"LTS";				// 程序发布通道
+wstring editionDate = L"20250206a";				// 程序发布日期
+wstring editionChannel = L"Dev";			// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -57,8 +57,8 @@ map <wstring, bool> threadStatus;				// 线程状态管理
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
-//int main()
+//int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
+int main()
 {
 	// 路径预处理
 	{
@@ -197,6 +197,10 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			else if (sysInfo.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64) targetArchitecture = L"win64";
 			else targetArchitecture = L"win32";
 		}
+
+		if (targetArchitecture == L"arm64" && programArchitecture != L"arm64" && programArchitecture != L"arm64ec") inconsistentArchitecture = true;
+		if (targetArchitecture == L"win64" && programArchitecture != L"win64") inconsistentArchitecture = true;
+		if (targetArchitecture == L"win32" && programArchitecture != L"win32") inconsistentArchitecture = true;
 	}
 
 	// 用户ID获取
@@ -401,7 +405,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				if (!old_name.empty()) filesystem::remove(main_path + old_name, ec);
 				else filesystem::remove(main_path + L"智绘教.exe", ec);
 
-				wstring target = main_path + L"Inkeys" + editionDate + L".exe";
+				wstring target = main_path + L"Inkeys" + L".exe";
 				filesystem::copy_file(globalPath + representation, target, filesystem::copy_options::overwrite_existing, ec);
 
 				ShellExecuteW(NULL, NULL, target.c_str(), NULL, NULL, SW_SHOWNORMAL);
@@ -430,6 +434,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			string thash_md5, thash_sha256;
 
 			bool flag = true;
+			bool mandatoryUpdate = false;
 			string jsonContent;
 
 			HANDLE fileHandle = NULL;
@@ -475,6 +480,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 						else flag = false;
 					}
 					else flag = false;
+
+					if (updateVal.isMember("MandatoryUpdate") && updateVal["MandatoryUpdate"].isBool())
+						mandatoryUpdate = updateVal["MandatoryUpdate"].asBool();
 				}
 				else flag = false;
 			}
@@ -494,11 +502,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				}
 			}
 
-			if (flag && tedition > editionDate && _waccess((globalPath + path).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
+			if (flag && (tedition > editionDate || mandatoryUpdate) && _waccess((globalPath + path).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
 			{
 				//符合条件，开始替换版本
 
 				updateVal["old_name"] = Json::Value(utf16ToUtf8(GetCurrentExeName()));
+				if (mandatoryUpdate) updateVal["MandatoryUpdate"] = Json::Value(false);
 
 				if (!OccupyFileForWrite(&fileHandle, globalPath + L"installer\\update.json")) flag = false;
 				if (flag && SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) flag = false;
@@ -569,38 +578,29 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] DPI初始化完成");
 	}
-	// 界面绘图库初始化
+
+	// I18N初始化
 	{
-		D2DStarup();
+		// 先读取完整性的英语文件，在读取配置指定的语言文件
+		// 这样如果配置文件缺少某项也能用英语补齐
+		loadI18n(1, L"JSON", L"en-US");
+		loadI18n(1, L"JSON", L"zh-CN");
+		// TODO 允许切换到英语
 
-		IDTLogger->info("[主线程][IdtMain] 界面绘图库初始化完成");
+		IDTLogger->info("[主线程][IdtMain] I18N初始化完成");
 	}
-	// 显示器信息初始化
-	{
-		// 显示器检查
-		DisplayManagementMain();
-
-		APPBARDATA abd{};
-		enableAppBarAutoHide = (setlist.compatibleTaskBarAutoHide && (SHAppBarMessage(ABM_GETSTATE, &abd) == ABS_AUTOHIDE));
-
-		shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
-		int DisplaysNumberTemp = DisplaysNumber;
-		DisplaysNumberLock.unlock();
-
-		thread(MagnifierThread).detach();
-
-		if (DisplaysNumberTemp > 1) IDTLogger->warn("[主线程][IdtMain] 拥有多个显示器");
-		IDTLogger->info("[主线程][IdtMain] 显示器信息初始化完成");
-	}
-
 	// 配置信息初始化
 	{
 		// 读取配置文件前初始化操作
 		{
 			// 软件版本
 			{
+				setlist.enableAutoUpdate = true;
 				setlist.UpdateChannel = "LTS";
-				setlist.updateArchitecture = "win32";
+				{
+					setlist.updateArchitecture = utf16ToUtf8(programArchitecture);
+					if (setlist.updateArchitecture == "arm64ec") setlist.updateArchitecture = "arm64";
+				}
 			}
 			// 常规
 			{
@@ -637,8 +637,10 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 			// 插件
 			{
-				setlist.correctLnk = true;
-				setlist.createLnk = false;
+				{
+					setlist.shortcutAssistant.correctLnk = true;
+					setlist.shortcutAssistant.createLnk = false;
+				}
 			}
 
 			{
@@ -726,6 +728,52 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] 配置信息初始化完成");
 	}
+	// 插件配置初始化
+	{
+		// 桌面快捷方式初始化
+		shortcutAssistant.SetShortcut();
+		// 启动 DesktopDrawpadBlocker
+		StartDesktopDrawpadBlocker();
+	}
+
+	// COM初始化
+	HANDLE hActCtx;
+	ULONG_PTR ulCookie;
+	{
+		CoInitializeEx(NULL, COINIT_MULTITHREADED);
+
+		//PptCOM 组件加载
+		{
+			if (!ExtractResource((globalPath + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(222)))
+				IDTLogger->warn("[主线程][IdtMain] 解压PptCOM.dll失败");
+
+			ACTCTX actCtx = { 0 };
+			actCtx.cbSize = sizeof(actCtx);
+			actCtx.dwFlags = ACTCTX_FLAG_RESOURCE_NAME_VALID | ACTCTX_FLAG_HMODULE_VALID;
+			actCtx.lpResourceName = MAKEINTRESOURCE(221);
+			actCtx.hModule = GetModuleHandle(NULL);
+
+			hActCtx = CreateActCtx(&actCtx);
+			ActivateActCtx(hActCtx, &ulCookie);
+
+			HMODULE hModule = LoadLibraryW((globalPath + L"PptCOM.dll").c_str());
+		}
+
+		IDTLogger->info("[主线程][IdtMain] COM初始化完成");
+	}
+	// 自动更新初始化
+	{
+#ifdef IDT_RELEASE
+		thread(AutomaticUpdate).detach();
+#endif
+	}
+
+	// 界面绘图库初始化
+	{
+		D2DStarup();
+
+		IDTLogger->info("[主线程][IdtMain] 界面绘图库初始化完成");
+	}
 	// 字体初始化
 	{
 		INT numFound = 0;
@@ -763,54 +811,22 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] 字体初始化完成");
 	}
-	// I18N初始化
+	// 显示器信息初始化
 	{
-		// 先读取完整性的英语文件，在读取配置指定的语言文件
-		// 这样如果配置文件缺少某项也能用英语补齐
-		loadI18n(1, L"JSON", L"en-US");
-		loadI18n(1, L"JSON", L"zh-CN");
-		// TODO 允许切换到英语
+		// 显示器检查
+		DisplayManagementMain();
 
-		IDTLogger->info("[主线程][IdtMain] I18N初始化完成");
-	}
+		APPBARDATA abd{};
+		enableAppBarAutoHide = (setlist.compatibleTaskBarAutoHide && (SHAppBarMessage(ABM_GETSTATE, &abd) == ABS_AUTOHIDE));
 
-	// COM初始化
-	HANDLE hActCtx;
-	ULONG_PTR ulCookie;
-	{
-		CoInitializeEx(NULL, COINIT_MULTITHREADED);
+		shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
+		int DisplaysNumberTemp = DisplaysNumber;
+		DisplaysNumberLock.unlock();
 
-		//PptCOM 组件加载
-		{
-			if (!ExtractResource((globalPath + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(222)))
-				IDTLogger->warn("[主线程][IdtMain] 解压PptCOM.dll失败");
+		thread(MagnifierThread).detach();
 
-			ACTCTX actCtx = { 0 };
-			actCtx.cbSize = sizeof(actCtx);
-			actCtx.dwFlags = ACTCTX_FLAG_RESOURCE_NAME_VALID | ACTCTX_FLAG_HMODULE_VALID;
-			actCtx.lpResourceName = MAKEINTRESOURCE(221);
-			actCtx.hModule = GetModuleHandle(NULL);
-
-			hActCtx = CreateActCtx(&actCtx);
-			ActivateActCtx(hActCtx, &ulCookie);
-
-			HMODULE hModule = LoadLibraryW((globalPath + L"PptCOM.dll").c_str());
-		}
-
-		IDTLogger->info("[主线程][IdtMain] COM初始化完成");
-	}
-	// 插件配置初始化
-	{
-		// 桌面快捷方式初始化
-		SetShortcut();
-		// 启动 DesktopDrawpadBlocker
-		thread(StartDesktopDrawpadBlocker).detach();
-	}
-	// 自动更新初始化
-	{
-#ifdef IDT_RELEASE
-		thread(AutomaticUpdate).detach();
-#endif
+		if (DisplaysNumberTemp > 1) IDTLogger->warn("[主线程][IdtMain] 拥有多个显示器");
+		IDTLogger->info("[主线程][IdtMain] 显示器信息初始化完成");
 	}
 
 	// 窗口

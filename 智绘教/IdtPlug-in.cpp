@@ -33,6 +33,15 @@
 #include "IdtHistoricalDrawpad.h"
 #include "IdtImage.h"
 #include "IdtState.h"
+#include "IdtI18n.h"
+
+#include <objbase.h>
+#include <psapi.h>
+#include <shlobj.h>
+#include <shlwapi.h>
+#include <tlhelp32.h>
+#pragma comment(lib, "shlwapi.lib")
+#pragma comment(lib, "shell32.lib")
 
 // --------------------------------------------------
 // PPT 联动插件
@@ -2070,11 +2079,11 @@ void PptDraw()
 
 	//媒体初始化
 	{
-		loadimage(&PptIcon[1], L"PNG", L"ppt1");
-		loadimage(&PptIcon[2], L"PNG", L"ppt2");
-		loadimage(&PptIcon[3], L"PNG", L"ppt3");
-		loadimage(&PptIcon[4], L"PNG", L"ppt4");
-		loadimage(&PptIcon[5], L"PNG", L"ppt5");
+		idtLoadImage(&PptIcon[1], L"PNG", L"ppt1");
+		idtLoadImage(&PptIcon[2], L"PNG", L"ppt2");
+		idtLoadImage(&PptIcon[3], L"PNG", L"ppt3");
+		idtLoadImage(&PptIcon[4], L"PNG", L"ppt4");
+		idtLoadImage(&PptIcon[5], L"PNG", L"ppt5");
 
 		ChangeColor(PptIcon[1], RGB(50, 50, 50));
 		ChangeColor(PptIcon[2], RGB(50, 50, 50));
@@ -3924,16 +3933,9 @@ void StartDesktopDrawpadBlocker()
 			if (_waccess((dataPath + L"\\DesktopDrawpadBlocker\\interaction_configuration.json").c_str(), 0) == 0) DdbReadInteraction();
 
 			ddbInteractionSetList.hostPath = GetCurrentExePath();
-			if (ddbInteractionSetList.DdbEnhance)
-			{
-				ddbInteractionSetList.mode = 0;
-				ddbInteractionSetList.restartHost = true;
-			}
-			else
-			{
-				ddbInteractionSetList.mode = 1;
-				ddbInteractionSetList.restartHost = true;
-			}
+
+			ddbInteractionSetList.mode = 1;
+			ddbInteractionSetList.restartHost = true;
 		}
 
 		// 配置 EXE
@@ -3973,24 +3975,12 @@ void StartDesktopDrawpadBlocker()
 			}
 		}
 
-		// 创建开机自启标识
-		if (ddbInteractionSetList.DdbEnhance && _waccess((dataPath + L"\\DesktopDrawpadBlocker\\start_up.signal").c_str(), 0) == -1)
-		{
-			std::ofstream file((dataPath + L"\\DesktopDrawpadBlocker\\start_up.signal").c_str());
-			file.close();
-		}
-		// 移除开机自启标识
-		else if (!ddbInteractionSetList.DdbEnhance && _waccess((dataPath + L"\\DesktopDrawpadBlocker\\start_up.signal").c_str(), 0) == 0)
-		{
-			error_code ec;
-			filesystem::remove(dataPath + L"\\DesktopDrawpadBlocker\\start_up.signal", ec);
-		}
-
 		// 启动 DDB
 		if (!isProcessRunning((dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
 		{
 			DdbWriteInteraction(true, false);
-			ShellExecuteW(NULL, NULL, (dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+			if (ddbInteractionSetList.runAsAdmin) ShellExecuteW(NULL, L"runas", (dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+			else ShellExecuteW(NULL, NULL, (dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
 		}
 	}
 	else if (_waccess((dataPath + L"\\DesktopDrawpadBlocker").c_str(), 0) == 0)
@@ -3998,4 +3988,126 @@ void StartDesktopDrawpadBlocker()
 		error_code ec;
 		filesystem::remove_all(dataPath + L"\\DesktopDrawpadBlocker", ec);
 	}
+}
+
+// 快捷方式保障助手 插件
+ShortcutAssistantClass shortcutAssistant;
+void ShortcutAssistantClass::SetShortcut()
+{
+	wchar_t desktopPath[MAX_PATH];
+	wstring DesktopPath;
+
+	if (SHGetSpecialFolderPathW(0, desktopPath, CSIDL_DESKTOP, FALSE)) DesktopPath = wstring(desktopPath) + L"\\";
+	else return;
+
+	if (setlist.shortcutAssistant.correctLnk)
+	{
+		if (_waccess((DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk").c_str(), 0) == 0)
+		{
+			// 存在对应名称的 Lnk
+			if (!IsShortcutPointingToDirectory(DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]) + L".lnk", GetCurrentExePath()))
+			{
+				// 不指向当前的程序路径
+				error_code ec;
+				filesystem::remove(DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]) + L".lnk", ec);
+
+				CreateShortcut(DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk", GetCurrentExePath());
+			}
+		}
+		{
+			for (const auto& entry : filesystem::directory_iterator(DesktopPath))
+			{
+				if (filesystem::is_regular_file(entry) && entry.path().extension() == L".lnk")
+				{
+					if (IsShortcutPointingToDirectory(entry.path().wstring(), GetCurrentExePath()))
+					{
+						// 存在指向当前的程序路径的快捷方式，但是其名称并不正确
+						error_code ec;
+						filesystem::remove(entry.path().wstring(), ec);
+
+						CreateShortcut(DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]) + L".lnk", GetCurrentExePath());
+					}
+				}
+			}
+		}
+	}
+
+	if (setlist.shortcutAssistant.createLnk)
+	{
+		if (_waccess((DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk").c_str(), 0) == -1)
+		{
+			CreateShortcut(DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk", GetCurrentExePath());
+		}
+	}
+
+	SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
+	return;
+}
+bool ShortcutAssistantClass::IsShortcutPointingToDirectory(const std::wstring& shortcutPath, const std::wstring& targetDirectory)
+{
+	IShellLink* psl;
+	//CoInitialize(NULL);
+
+	// 创建一个IShellLink对象
+	HRESULT hres = CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLink, (LPVOID*)&psl);
+	if (SUCCEEDED(hres)) {
+		IPersistFile* ppf;
+
+		// 获取IShellLink的IPersistFile接口
+		hres = psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf);
+		if (SUCCEEDED(hres)) {
+			// 打开快捷方式文件
+			hres = ppf->Load(shortcutPath.c_str(), STGM_READ);
+			if (SUCCEEDED(hres)) {
+				WIN32_FIND_DATAW wfd;
+				ZeroMemory(&wfd, sizeof(wfd));
+				// 获取快捷方式的目标路径
+				hres = psl->GetPath(wfd.cFileName, MAX_PATH, NULL, SLGP_RAWPATH);
+				if (SUCCEEDED(hres)) {
+					// 检查目标路径是否与指定目录相匹配
+					if (std::wstring(wfd.cFileName).find(targetDirectory) != std::wstring::npos) {
+						return true;
+					}
+				}
+			}
+			ppf->Release();
+		}
+		psl->Release();
+	}
+	//CoUninitialize();
+
+	return false;
+}
+bool ShortcutAssistantClass::CreateShortcut(const std::wstring& shortcutPath, const std::wstring& targetExePath)
+{
+	//CoInitialize(NULL);
+
+	// 创建一个IShellLink对象
+	IShellLink* psl;
+	HRESULT hres = CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLink, (LPVOID*)&psl);
+
+	if (SUCCEEDED(hres)) {
+		// 设置快捷方式的目标路径
+		psl->SetPath(targetExePath.c_str());
+
+		// 获取桌面目录
+		LPITEMIDLIST pidl;
+		SHGetSpecialFolderLocation(NULL, CSIDL_DESKTOP, &pidl);
+
+		// 创建一个IShellLink对象的IPersistFile接口
+		IPersistFile* ppf;
+		hres = psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf);
+
+		if (SUCCEEDED(hres)) {
+			// 保存快捷方式
+			hres = ppf->Save(shortcutPath.c_str(), TRUE);
+			ppf->Release();
+		}
+
+		psl->Release();
+	}
+
+	//CoUninitialize();
+
+	return SUCCEEDED(hres);
 }

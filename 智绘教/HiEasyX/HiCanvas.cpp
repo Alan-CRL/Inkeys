@@ -1206,13 +1206,13 @@ namespace HiEasyX
 			va_list list;
 			va_start(list, _Format);
 			char* buf = new char[_Size];
-			
+
 #ifdef _MSC_VER
 			_vsnprintf_s(buf, _Size, _TRUNCATE, _Format, list);
 #else
 			_vsnprintf(buf, _Size, _Format, list);
 #endif
-			
+
 			va_end(list);
 
 			outtextxy(x, y, buf);
@@ -1315,13 +1315,13 @@ namespace HiEasyX
 		va_list list;
 		va_start(list, _Format);
 		TCHAR* buf = new TCHAR[_Size];
-		
+
 #ifdef _MSC_VER
 		_vsnprintf_s(buf, _Size, _TRUNCATE, _Format, list);
 #else
 		_vsnprintf(buf, _Size, _Format, list);
 #endif
-		
+
 		va_end(list);
 
 		CenterText(buf);
@@ -1595,13 +1595,13 @@ namespace HiEasyX
 			va_list list;
 			va_start(list, _Format);
 			TCHAR* buf = new TCHAR[_Size];
-			
+
 #ifdef _MSC_VER
 			_vsnprintf_s(buf, _Size, _TRUNCATE, _Format, list);
 #else
 			_vsnprintf(buf, _Size, _Format, list);
 #endif
-			
+
 			va_end(list);
 
 			outtext(buf);

@@ -33,7 +33,7 @@ void FreezeFrameWindow()
 		SetWindowPos(freeze_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 	}
 	SetImageColor(freeze_background, RGBA(0, 0, 0, 0), true);
-	loadimage(&PptSign, L"PNG", L"sign4");
+	idtLoadImage(&PptSign, L"PNG", L"sign4");
 
 	// 设置BLENDFUNCTION结构体
 	BLENDFUNCTION blend;
