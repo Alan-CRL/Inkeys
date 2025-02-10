@@ -66,9 +66,6 @@ void StartForInkeys()
 		int digitizerStatus = GetSystemMetrics(SM_DIGITIZER);
 		hardwareInfo.hasTouchDevice = (digitizerStatus & NID_READY) && (digitizerStatus & (NID_INTEGRATED_TOUCH | NID_EXTERNAL_TOUCH));
 	}
-
-	//DownloadNewProgramStateClass state;
-	//DownloadNewProgram(&state, editionInfo, "https://vip.123pan.cn/1709404/version_identification/IdtUpload20240719a.zip");
 }
 
 int GetWindowsVersion()

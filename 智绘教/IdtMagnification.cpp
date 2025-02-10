@@ -1,9 +1,10 @@
 ﻿#include "IdtMagnification.h"
 #include <winuser.h>
 
-#include "IdtWindow.h"
-#include "IdtDraw.h"
+#include "IdtConfiguration.h"
 #include "IdtDisplayManagement.h"
+#include "IdtDraw.h"
+#include "IdtWindow.h"
 
 #include <d3d9.h>
 #pragma comment(lib, "d3d9")
@@ -63,7 +64,7 @@ BOOL SetupMagnifier(HINSTANCE hinst)
 	hostWindowRect.left = 0;
 	hostWindowRect.top = 0;
 	hostWindowRect.right = GetSystemMetrics(SM_CXSCREEN);
-	if (enableAppBarAutoHide) hostWindowRect.bottom = GetSystemMetrics(SM_CYSCREEN) - 1;
+	if (setlist.avoidFullScreen) hostWindowRect.bottom = GetSystemMetrics(SM_CYSCREEN) - 1;
 	else hostWindowRect.bottom = GetSystemMetrics(SM_CYSCREEN);
 
 	IDTLogger->info("[放大API线程][SetupMagnifier] 注册放大API主机窗口");

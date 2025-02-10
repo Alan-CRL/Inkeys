@@ -125,10 +125,8 @@ bool ReadSetting()
 			setlist.BrushRecover = updateVal["BrushRecover"].asBool();
 		if (updateVal.isMember("RubberRecover") && updateVal["RubberRecover"].isBool())
 			setlist.RubberRecover = updateVal["RubberRecover"].asBool();
-		if (updateVal.isMember("CompatibleTaskBarAutoHide") && updateVal["CompatibleTaskBarAutoHide"].isBool())
-			setlist.compatibleTaskBarAutoHide = updateVal["CompatibleTaskBarAutoHide"].asBool();
-		if (updateVal.isMember("ForceTop") && updateVal["ForceTop"].isBool())
-			setlist.forceTop = updateVal["ForceTop"].asBool();
+		if (updateVal.isMember("AvoidFullScreen") && updateVal["AvoidFullScreen"].isBool())
+			setlist.avoidFullScreen = updateVal["AvoidFullScreen"].asBool();
 
 		if (updateVal.isMember("PaintDevice") && updateVal["PaintDevice"].isInt())
 			setlist.paintDevice = updateVal["PaintDevice"].asInt();
@@ -208,8 +206,7 @@ bool WriteSetting()
 		updateVal["RightClickClose"] = Json::Value(setlist.RightClickClose);
 		updateVal["BrushRecover"] = Json::Value(setlist.BrushRecover);
 		updateVal["RubberRecover"] = Json::Value(setlist.RubberRecover);
-		updateVal["CompatibleTaskBarAutoHide"] = Json::Value(setlist.compatibleTaskBarAutoHide);
-		updateVal["ForceTop"] = Json::Value(setlist.forceTop);
+		updateVal["AvoidFullScreen"] = Json::Value(setlist.avoidFullScreen);
 
 		updateVal["PaintDevice"] = Json::Value(setlist.paintDevice);
 		updateVal["LiftStraighten"] = Json::Value(setlist.liftStraighten);

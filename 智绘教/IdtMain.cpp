@@ -41,8 +41,8 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250206a";				// 程序发布日期
-wstring editionChannel = L"Dev";			// 程序发布通道
+wstring editionDate = L"20250209a";				// 程序发布日期
+wstring editionChannel = L"LTS";				// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -57,8 +57,8 @@ map <wstring, bool> threadStatus;				// 线程状态管理
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-//int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
-int main()
+int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
+// int main()
 {
 	// 路径预处理
 	{
@@ -201,116 +201,6 @@ int main()
 		if (targetArchitecture == L"arm64" && programArchitecture != L"arm64" && programArchitecture != L"arm64ec") inconsistentArchitecture = true;
 		if (targetArchitecture == L"win64" && programArchitecture != L"win64") inconsistentArchitecture = true;
 		if (targetArchitecture == L"win32" && programArchitecture != L"win32") inconsistentArchitecture = true;
-	}
-
-	// 用户ID获取
-	{
-		userId = utf8ToUtf16(getDeviceGUID());
-		if (userId.empty() || !isValidString(userId)) userId = L"Error";
-	}
-	// 日志服务初始化
-	{
-		wstring Timestamp = getTimestamp();
-
-		error_code ec;
-		if (_waccess((globalPath + L"log").c_str(), 0) == -1) filesystem::create_directory(globalPath + L"log", ec);
-		else
-		{
-			// 历史日志清理
-
-			auto getCurrentTimeStamp = []()
-				{
-					auto now = chrono::system_clock::now();
-					auto duration = now.time_since_epoch();
-					return chrono::duration_cast<chrono::milliseconds>(duration).count();
-				};
-
-			auto isLogFile = [](const string& filename)
-				{
-					regex pattern("idt\\d+\\.log");
-					return regex_match(filename, pattern);
-				};
-
-			auto getTimeStampFromFilename = [](const string& filename)
-				{
-					regex pattern("idt(\\d+)\\.log");
-
-					smatch match;
-					if (regex_search(filename, match, pattern))
-					{
-						string timestampStr = match[1];
-						return stoll(timestampStr);
-					}
-					return -1LL;
-				};
-
-			auto isOldLogFile = [&getCurrentTimeStamp, &getTimeStampFromFilename](const filesystem::path& filepath)
-				{
-					time_t currentTimeStamp = getCurrentTimeStamp();
-					time_t fileTimeStamp = getTimeStampFromFilename(filepath.filename().string());
-
-					if (fileTimeStamp == -1) return false;
-					return (currentTimeStamp - fileTimeStamp) >= (7LL * 24LL * 60LL * 60LL * 1000LL) || (currentTimeStamp - fileTimeStamp) < 0; // 7天的毫秒数
-				};
-
-			auto calculateDirectorySize = [](const filesystem::path& directoryPath)
-				{
-					uintmax_t totalSize = 0;
-					for (const auto& entry : filesystem::directory_iterator(directoryPath))
-					{
-						if (entry.is_regular_file()) {
-							totalSize += entry.file_size();
-						}
-					}
-					return totalSize;
-				};
-
-			auto deleteOldLogFiles = [&isLogFile, &isOldLogFile, &calculateDirectorySize](const filesystem::path& directory)
-				{
-					uintmax_t totalSize = calculateDirectorySize(directory);
-
-					for (const auto& entry : filesystem::directory_iterator(directory))
-					{
-						if (entry.is_regular_file())
-						{
-							if (isLogFile(entry.path().filename().string()) && (totalSize > 10485760LL || isOldLogFile(entry.path())))
-							{
-								uintmax_t entrySize = entry.file_size();
-
-								error_code ec;
-								filesystem::remove(entry.path(), ec);
-
-								if (!ec) totalSize -= entrySize;
-							}
-						}
-					}
-				};
-
-			wstring directoryPath = globalPath + L"log";
-			filesystem::path directory(directoryPath);
-			if (filesystem::exists(directory) && filesystem::is_directory(directory))
-			{
-				deleteOldLogFiles(directory);
-			}
-		}
-
-		if (_waccess((globalPath + L"log\\idt" + Timestamp + L".log").c_str(), 0) == 0) filesystem::remove(globalPath + L"log\\idt" + Timestamp + L".log", ec);
-
-		auto IDTLoggerFileSink = std::make_shared<spdlog::sinks::basic_file_sink<std::mutex>>(globalPath + L"log\\idt" + Timestamp + L".log", true);
-
-		spdlog::init_thread_pool(8192, 64);
-		IDTLogger = std::make_shared<spdlog::async_logger>("IDTLogger", IDTLoggerFileSink, spdlog::thread_pool(), spdlog::async_overflow_policy::block);
-
-		IDTLogger->set_level(spdlog::level::info);
-		IDTLogger->set_pattern("[%l][%H:%M:%S.%e]%v");
-
-		IDTLogger->flush_on(spdlog::level::info);
-		IDTLogger->info("[主线程][IdtMain] 日志开始记录 " + utf16ToUtf8(editionDate) + " " + utf16ToUtf8(userId));
-
-		//logger->info("");
-		//logger->warn("");
-		//logger->error("");
-		//logger->critical("");
 	}
 	// 程序自动更新
 	{
@@ -539,6 +429,125 @@ int main()
 		}
 	}
 
+	// InkeysSuperTop 阶段
+	{
+		/*error_code ec;
+		if (filesystem::exists(globalPath + L"superTop_failed.signal", ec)) filesystem::remove(globalPath + L"superTop_failed.signal", ec);
+
+		HANDLE fileHandle = NULL;
+		OccupyFileForWrite(&fileHandle, globalPath + L"superTop_try.signal");
+		UnOccupyFile(&fileHandle);*/
+	}
+
+	// 用户ID获取
+	{
+		userId = utf8ToUtf16(getDeviceGUID());
+		if (userId.empty() || !isValidString(userId)) userId = L"Error";
+	}
+	// 日志服务初始化
+	{
+		wstring Timestamp = getTimestamp();
+
+		error_code ec;
+		if (_waccess((globalPath + L"log").c_str(), 0) == -1) filesystem::create_directory(globalPath + L"log", ec);
+		else
+		{
+			// 历史日志清理
+
+			auto getCurrentTimeStamp = []()
+				{
+					auto now = chrono::system_clock::now();
+					auto duration = now.time_since_epoch();
+					return chrono::duration_cast<chrono::milliseconds>(duration).count();
+				};
+
+			auto isLogFile = [](const string& filename)
+				{
+					regex pattern("idt\\d+\\.log");
+					return regex_match(filename, pattern);
+				};
+
+			auto getTimeStampFromFilename = [](const string& filename)
+				{
+					regex pattern("idt(\\d+)\\.log");
+
+					smatch match;
+					if (regex_search(filename, match, pattern))
+					{
+						string timestampStr = match[1];
+						return stoll(timestampStr);
+					}
+					return -1LL;
+				};
+
+			auto isOldLogFile = [&getCurrentTimeStamp, &getTimeStampFromFilename](const filesystem::path& filepath)
+				{
+					time_t currentTimeStamp = getCurrentTimeStamp();
+					time_t fileTimeStamp = getTimeStampFromFilename(filepath.filename().string());
+
+					if (fileTimeStamp == -1) return false;
+					return (currentTimeStamp - fileTimeStamp) >= (7LL * 24LL * 60LL * 60LL * 1000LL) || (currentTimeStamp - fileTimeStamp) < 0; // 7天的毫秒数
+				};
+
+			auto calculateDirectorySize = [](const filesystem::path& directoryPath)
+				{
+					uintmax_t totalSize = 0;
+					for (const auto& entry : filesystem::directory_iterator(directoryPath))
+					{
+						if (entry.is_regular_file()) {
+							totalSize += entry.file_size();
+						}
+					}
+					return totalSize;
+				};
+
+			auto deleteOldLogFiles = [&isLogFile, &isOldLogFile, &calculateDirectorySize](const filesystem::path& directory)
+				{
+					uintmax_t totalSize = calculateDirectorySize(directory);
+
+					for (const auto& entry : filesystem::directory_iterator(directory))
+					{
+						if (entry.is_regular_file())
+						{
+							if (isLogFile(entry.path().filename().string()) && (totalSize > 10485760LL || isOldLogFile(entry.path())))
+							{
+								uintmax_t entrySize = entry.file_size();
+
+								error_code ec;
+								filesystem::remove(entry.path(), ec);
+
+								if (!ec) totalSize -= entrySize;
+							}
+						}
+					}
+				};
+
+			wstring directoryPath = globalPath + L"log";
+			filesystem::path directory(directoryPath);
+			if (filesystem::exists(directory) && filesystem::is_directory(directory))
+			{
+				deleteOldLogFiles(directory);
+			}
+		}
+
+		if (_waccess((globalPath + L"log\\idt" + Timestamp + L".log").c_str(), 0) == 0) filesystem::remove(globalPath + L"log\\idt" + Timestamp + L".log", ec);
+
+		auto IDTLoggerFileSink = std::make_shared<spdlog::sinks::basic_file_sink<std::mutex>>(globalPath + L"log\\idt" + Timestamp + L".log", true);
+
+		spdlog::init_thread_pool(8192, 64);
+		IDTLogger = std::make_shared<spdlog::async_logger>("IDTLogger", IDTLoggerFileSink, spdlog::thread_pool(), spdlog::async_overflow_policy::block);
+
+		IDTLogger->set_level(spdlog::level::info);
+		IDTLogger->set_pattern("[%l][%H:%M:%S.%e]%v");
+
+		IDTLogger->flush_on(spdlog::level::info);
+		IDTLogger->info("[主线程][IdtMain] 日志开始记录 " + utf16ToUtf8(editionDate) + " " + utf16ToUtf8(userId));
+
+		//logger->info("");
+		//logger->warn("");
+		//logger->error("");
+		//logger->critical("");
+	}
 	// DPI初始化
 	{
 		HMODULE hShcore = LoadLibrary(L"Shcore.dll");
@@ -613,8 +622,7 @@ int main()
 				setlist.BrushRecover = true;
 				setlist.RubberRecover = false;
 
-				setlist.compatibleTaskBarAutoHide = true;
-				setlist.forceTop = true;
+				setlist.avoidFullScreen = true;
 			}
 			// 绘制
 			{
@@ -815,9 +823,6 @@ int main()
 	{
 		// 显示器检查
 		DisplayManagementMain();
-
-		APPBARDATA abd{};
-		enableAppBarAutoHide = (setlist.compatibleTaskBarAutoHide && (SHAppBarMessage(ABM_GETSTATE, &abd) == ABS_AUTOHIDE));
 
 		shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
 		int DisplaysNumberTemp = DisplaysNumber;

@@ -24,9 +24,7 @@ struct SetListStruct
 	bool RightClickClose;
 	bool BrushRecover, RubberRecover;
 
-	// 兼容自动隐藏的任务栏
-	bool compatibleTaskBarAutoHide;
-	bool forceTop;
+	bool avoidFullScreen;
 #pragma endregion
 
 #pragma region 绘制

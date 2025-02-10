@@ -97,8 +97,6 @@ public:
 extern vector<MonitorInfoStruct> MonitorInfo;
 extern shared_mutex DisplaysInfoSm;
 
-extern bool enableAppBarAutoHide;
-
 extern MonitorInfoStruct MainMonitor;
 
 bool IdtGetModelDriverFromDeviceID(LPCWSTR lpDeviceID, wstring& model, wstring& driver);
