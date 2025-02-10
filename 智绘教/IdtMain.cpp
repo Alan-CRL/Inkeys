@@ -41,7 +41,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250128a";				// 程序发布日期
+wstring editionDate = L"20250209a";				// 程序发布日期
 wstring editionChannel = L"LTS";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -58,7 +58,7 @@ shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
-//int main()
+// int main()
 {
 	// 路径预处理
 	{
@@ -197,6 +197,246 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			else if (sysInfo.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64) targetArchitecture = L"win64";
 			else targetArchitecture = L"win32";
 		}
+
+		if (targetArchitecture == L"arm64" && programArchitecture != L"arm64" && programArchitecture != L"arm64ec") inconsistentArchitecture = true;
+		if (targetArchitecture == L"win64" && programArchitecture != L"win64") inconsistentArchitecture = true;
+		if (targetArchitecture == L"win32" && programArchitecture != L"win32") inconsistentArchitecture = true;
+	}
+	// 程序自动更新
+	{
+		if (_waccess((globalPath + L"update.json").c_str(), 4) == 0)
+		{
+			wstring tedition, representation;
+			string thash_md5, thash_sha256;
+			wstring old_name;
+
+			bool flag = true;
+			string jsonContent;
+
+			HANDLE fileHandle = NULL;
+			if (OccupyFileForRead(&fileHandle, globalPath + L"update.json"))
+			{
+				LARGE_INTEGER fileSize;
+				if (flag && !GetFileSizeEx(fileHandle, &fileSize)) flag = false;
+
+				if (flag)
+				{
+					DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
+					jsonContent = string(dwSize, '\0');
+
+					DWORD bytesRead = 0;
+					if (flag && SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) flag = false;
+					if (flag && !ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize) flag = false;
+					if (flag && jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
+				}
+			}
+			else flag = false;
+			UnOccupyFile(&fileHandle);
+
+			Json::Value updateVal;
+			if (flag)
+			{
+				istringstream jsonContentStream(jsonContent);
+				Json::CharReaderBuilder readerBuilder;
+				string jsonErr;
+
+				if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+				{
+					if (updateVal.isMember("edition") && updateVal["edition"].isString()) tedition = utf8ToUtf16(updateVal["edition"].asString());
+					else flag = false;
+
+					if (updateVal.isMember("representation") && updateVal["representation"].isString()) representation = utf8ToUtf16(updateVal["representation"].asString());
+					else flag = false;
+
+					if (updateVal.isMember("hash") && updateVal["hash"].isObject())
+					{
+						if (updateVal["hash"].isMember("md5") && updateVal["hash"]["md5"].isString()) thash_md5 = updateVal["hash"]["md5"].asString();
+						else flag = false;
+						if (updateVal["hash"].isMember("sha256") && updateVal["hash"]["sha256"].isString()) thash_sha256 = updateVal["hash"]["sha256"].asString();
+						else flag = false;
+					}
+					else flag = false;
+
+					if (updateVal.isMember("old_name") && updateVal["old_name"].isString()) old_name = utf8ToUtf16(updateVal["old_name"].asString());
+				}
+				else flag = false;
+			}
+
+			string hash_md5, hash_sha256;
+			if (flag)
+			{
+				{
+					hashwrapper* myWrapper = new md5wrapper();
+					hash_md5 = myWrapper->getHashFromFileW(GetCurrentExePath());
+					delete myWrapper;
+				}
+				{
+					hashwrapper* myWrapper = new sha256wrapper();
+					hash_sha256 = myWrapper->getHashFromFileW(GetCurrentExePath());
+					delete myWrapper;
+				}
+			}
+
+			if (flag && tedition == editionDate && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
+			{
+				//符合条件，开始替换版本
+				filesystem::path directory(globalPath);
+				wstring main_path = directory.parent_path().parent_path().wstring() + L"\\";
+
+				while (true)
+				{
+					if (!old_name.empty()) if (!isProcessRunning((main_path + old_name).c_str())) break;
+					else if (!isProcessRunning((main_path + L"智绘教.exe").c_str())) break;
+
+					this_thread::sleep_for(chrono::milliseconds(100));
+				}
+
+				error_code ec;
+				if (!old_name.empty()) filesystem::remove(main_path + old_name, ec);
+				else filesystem::remove(main_path + L"智绘教.exe", ec);
+
+				wstring target = main_path + L"Inkeys" + L".exe";
+				filesystem::copy_file(globalPath + representation, target, filesystem::copy_options::overwrite_existing, ec);
+
+				ShellExecuteW(NULL, NULL, target.c_str(), NULL, NULL, SW_SHOWNORMAL);
+
+				return 0;
+			}
+			else flag = false;
+
+			if (!flag)
+			{
+				error_code ec;
+				filesystem::remove(globalPath + L"update.json", ec);
+
+				filesystem::path directory(globalPath);
+				wstring main_path = directory.parent_path().parent_path().wstring() + L"\\";
+
+				if (!old_name.empty()) ShellExecuteW(NULL, NULL, (main_path + old_name).c_str(), NULL, NULL, SW_SHOWNORMAL);
+				else ShellExecuteW(NULL, NULL, (main_path + L"智绘教.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+
+				return 0;
+			}
+		}
+		if (_waccess((globalPath + L"installer\\update.json").c_str(), 4) == 0)
+		{
+			wstring tedition, path;
+			string thash_md5, thash_sha256;
+
+			bool flag = true;
+			bool mandatoryUpdate = false;
+			string jsonContent;
+
+			HANDLE fileHandle = NULL;
+			if (OccupyFileForRead(&fileHandle, globalPath + L"installer\\update.json"))
+			{
+				LARGE_INTEGER fileSize;
+				if (flag && !GetFileSizeEx(fileHandle, &fileSize)) flag = false;
+
+				if (flag)
+				{
+					DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
+					jsonContent = string(dwSize, '\0');
+
+					DWORD bytesRead = 0;
+					if (flag && SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) flag = false;
+					if (flag && !ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize) flag = false;
+					if (flag && jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
+				}
+			}
+			else flag = false;
+			UnOccupyFile(&fileHandle);
+
+			Json::Value updateVal;
+			if (flag)
+			{
+				istringstream jsonContentStream(jsonContent);
+				Json::CharReaderBuilder readerBuilder;
+				string jsonErr;
+
+				if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+				{
+					if (updateVal.isMember("edition") && updateVal["edition"].isString()) tedition = utf8ToUtf16(updateVal["edition"].asString());
+					else flag = false;
+
+					if (updateVal.isMember("path") && updateVal["path"].isString()) path = utf8ToUtf16(updateVal["path"].asString());
+					else flag = false;
+
+					if (updateVal.isMember("hash") && updateVal["hash"].isObject())
+					{
+						if (updateVal["hash"].isMember("md5") && updateVal["hash"]["md5"].isString()) thash_md5 = updateVal["hash"]["md5"].asString();
+						else flag = false;
+						if (updateVal["hash"].isMember("sha256") && updateVal["hash"]["sha256"].isString()) thash_sha256 = updateVal["hash"]["sha256"].asString();
+						else flag = false;
+					}
+					else flag = false;
+
+					if (updateVal.isMember("MandatoryUpdate") && updateVal["MandatoryUpdate"].isBool())
+						mandatoryUpdate = updateVal["MandatoryUpdate"].asBool();
+				}
+				else flag = false;
+			}
+
+			string hash_md5, hash_sha256;
+			if (flag)
+			{
+				{
+					hashwrapper* myWrapper = new md5wrapper();
+					hash_md5 = myWrapper->getHashFromFileW(globalPath + path);
+					delete myWrapper;
+				}
+				{
+					hashwrapper* myWrapper = new sha256wrapper();
+					hash_sha256 = myWrapper->getHashFromFileW(globalPath + path);
+					delete myWrapper;
+				}
+			}
+
+			if (flag && (tedition > editionDate || mandatoryUpdate) && _waccess((globalPath + path).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
+			{
+				//符合条件，开始替换版本
+
+				updateVal["old_name"] = Json::Value(utf16ToUtf8(GetCurrentExeName()));
+				if (mandatoryUpdate) updateVal["MandatoryUpdate"] = Json::Value(false);
+
+				if (!OccupyFileForWrite(&fileHandle, globalPath + L"installer\\update.json")) flag = false;
+				if (flag && SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) flag = false;
+				if (flag && !SetEndOfFile(fileHandle)) flag = false;
+
+				if (flag)
+				{
+					Json::StreamWriterBuilder writerBuilder;
+					string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
+
+					DWORD bytesWritten = 0;
+					if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size()) flag = false;
+				}
+				UnOccupyFile(&fileHandle);
+
+				if (flag)
+				{
+					ShellExecuteW(NULL, NULL, (globalPath + path).c_str(), NULL, NULL, SW_SHOWNORMAL);
+					return 0;
+				}
+			}
+			else flag = false;
+
+			if (!flag)
+			{
+				error_code ec;
+				filesystem::remove_all(globalPath + L"installer", ec);
+			}
+		}
+	}
+
+	// InkeysSuperTop 阶段
+	{
+		/*error_code ec;
+		if (filesystem::exists(globalPath + L"superTop_failed.signal", ec)) filesystem::remove(globalPath + L"superTop_failed.signal", ec);
+
+		HANDLE fileHandle = NULL;
+		OccupyFileForWrite(&fileHandle, globalPath + L"superTop_try.signal");
+		UnOccupyFile(&fileHandle);*/
 	}
 
 	// 用户ID获取
@@ -308,228 +548,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		//logger->error("");
 		//logger->critical("");
 	}
-	// 程序自动更新
-	{
-		if (_waccess((globalPath + L"update.json").c_str(), 4) == 0)
-		{
-			wstring tedition, representation;
-			string thash_md5, thash_sha256;
-			wstring old_name;
-
-			bool flag = true;
-			string jsonContent;
-
-			HANDLE fileHandle = NULL;
-			if (OccupyFileForRead(&fileHandle, globalPath + L"update.json"))
-			{
-				LARGE_INTEGER fileSize;
-				if (flag && !GetFileSizeEx(fileHandle, &fileSize)) flag = false;
-
-				if (flag)
-				{
-					DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
-					jsonContent = string(dwSize, '\0');
-
-					DWORD bytesRead = 0;
-					if (flag && SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) flag = false;
-					if (flag && !ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize) flag = false;
-					if (flag && jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
-				}
-			}
-			else flag = false;
-			UnOccupyFile(&fileHandle);
-
-			Json::Value updateVal;
-			if (flag)
-			{
-				istringstream jsonContentStream(jsonContent);
-				Json::CharReaderBuilder readerBuilder;
-				string jsonErr;
-
-				if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
-				{
-					if (updateVal.isMember("edition") && updateVal["edition"].isString()) tedition = utf8ToUtf16(updateVal["edition"].asString());
-					else flag = false;
-
-					if (updateVal.isMember("representation") && updateVal["representation"].isString()) representation = utf8ToUtf16(updateVal["representation"].asString());
-					else flag = false;
-
-					if (updateVal.isMember("hash") && updateVal["hash"].isObject())
-					{
-						if (updateVal["hash"].isMember("md5") && updateVal["hash"]["md5"].isString()) thash_md5 = updateVal["hash"]["md5"].asString();
-						else flag = false;
-						if (updateVal["hash"].isMember("sha256") && updateVal["hash"]["sha256"].isString()) thash_sha256 = updateVal["hash"]["sha256"].asString();
-						else flag = false;
-					}
-					else flag = false;
-
-					if (updateVal.isMember("old_name") && updateVal["old_name"].isString()) old_name = utf8ToUtf16(updateVal["old_name"].asString());
-				}
-				else flag = false;
-			}
-
-			string hash_md5, hash_sha256;
-			if (flag)
-			{
-				{
-					hashwrapper* myWrapper = new md5wrapper();
-					hash_md5 = myWrapper->getHashFromFileW(GetCurrentExePath());
-					delete myWrapper;
-				}
-				{
-					hashwrapper* myWrapper = new sha256wrapper();
-					hash_sha256 = myWrapper->getHashFromFileW(GetCurrentExePath());
-					delete myWrapper;
-				}
-			}
-
-			if (flag && tedition == editionDate && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
-			{
-				//符合条件，开始替换版本
-				filesystem::path directory(globalPath);
-				wstring main_path = directory.parent_path().parent_path().wstring() + L"\\";
-
-				while (true)
-				{
-					if (!old_name.empty()) if (!isProcessRunning((main_path + old_name).c_str())) break;
-					else if (!isProcessRunning((main_path + L"智绘教.exe").c_str())) break;
-
-					this_thread::sleep_for(chrono::milliseconds(100));
-				}
-
-				error_code ec;
-				if (!old_name.empty()) filesystem::remove(main_path + old_name, ec);
-				else filesystem::remove(main_path + L"智绘教.exe", ec);
-
-				wstring target = main_path + L"Inkeys" + editionDate + L".exe";
-				filesystem::copy_file(globalPath + representation, target, filesystem::copy_options::overwrite_existing, ec);
-
-				ShellExecuteW(NULL, NULL, target.c_str(), NULL, NULL, SW_SHOWNORMAL);
-
-				return 0;
-			}
-			else flag = false;
-
-			if (!flag)
-			{
-				error_code ec;
-				filesystem::remove(globalPath + L"update.json", ec);
-
-				filesystem::path directory(globalPath);
-				wstring main_path = directory.parent_path().parent_path().wstring() + L"\\";
-
-				if (!old_name.empty()) ShellExecuteW(NULL, NULL, (main_path + old_name).c_str(), NULL, NULL, SW_SHOWNORMAL);
-				else ShellExecuteW(NULL, NULL, (main_path + L"智绘教.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
-
-				return 0;
-			}
-		}
-		if (_waccess((globalPath + L"installer\\update.json").c_str(), 4) == 0)
-		{
-			wstring tedition, path;
-			string thash_md5, thash_sha256;
-
-			bool flag = true;
-			string jsonContent;
-
-			HANDLE fileHandle = NULL;
-			if (OccupyFileForRead(&fileHandle, globalPath + L"installer\\update.json"))
-			{
-				LARGE_INTEGER fileSize;
-				if (flag && !GetFileSizeEx(fileHandle, &fileSize)) flag = false;
-
-				if (flag)
-				{
-					DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
-					jsonContent = string(dwSize, '\0');
-
-					DWORD bytesRead = 0;
-					if (flag && SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) flag = false;
-					if (flag && !ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize) flag = false;
-					if (flag && jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
-				}
-			}
-			else flag = false;
-			UnOccupyFile(&fileHandle);
-
-			Json::Value updateVal;
-			if (flag)
-			{
-				istringstream jsonContentStream(jsonContent);
-				Json::CharReaderBuilder readerBuilder;
-				string jsonErr;
-
-				if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
-				{
-					if (updateVal.isMember("edition") && updateVal["edition"].isString()) tedition = utf8ToUtf16(updateVal["edition"].asString());
-					else flag = false;
-
-					if (updateVal.isMember("path") && updateVal["path"].isString()) path = utf8ToUtf16(updateVal["path"].asString());
-					else flag = false;
-
-					if (updateVal.isMember("hash") && updateVal["hash"].isObject())
-					{
-						if (updateVal["hash"].isMember("md5") && updateVal["hash"]["md5"].isString()) thash_md5 = updateVal["hash"]["md5"].asString();
-						else flag = false;
-						if (updateVal["hash"].isMember("sha256") && updateVal["hash"]["sha256"].isString()) thash_sha256 = updateVal["hash"]["sha256"].asString();
-						else flag = false;
-					}
-					else flag = false;
-				}
-				else flag = false;
-			}
-
-			string hash_md5, hash_sha256;
-			if (flag)
-			{
-				{
-					hashwrapper* myWrapper = new md5wrapper();
-					hash_md5 = myWrapper->getHashFromFileW(globalPath + path);
-					delete myWrapper;
-				}
-				{
-					hashwrapper* myWrapper = new sha256wrapper();
-					hash_sha256 = myWrapper->getHashFromFileW(globalPath + path);
-					delete myWrapper;
-				}
-			}
-
-			if (flag && tedition > editionDate && _waccess((globalPath + path).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
-			{
-				//符合条件，开始替换版本
-
-				updateVal["old_name"] = Json::Value(utf16ToUtf8(GetCurrentExeName()));
-
-				if (!OccupyFileForWrite(&fileHandle, globalPath + L"installer\\update.json")) flag = false;
-				if (flag && SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) flag = false;
-				if (flag && !SetEndOfFile(fileHandle)) flag = false;
-
-				if (flag)
-				{
-					Json::StreamWriterBuilder writerBuilder;
-					string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
-
-					DWORD bytesWritten = 0;
-					if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size()) flag = false;
-				}
-				UnOccupyFile(&fileHandle);
-
-				if (flag)
-				{
-					ShellExecuteW(NULL, NULL, (globalPath + path).c_str(), NULL, NULL, SW_SHOWNORMAL);
-					return 0;
-				}
-			}
-			else flag = false;
-
-			if (!flag)
-			{
-				error_code ec;
-				filesystem::remove_all(globalPath + L"installer", ec);
-			}
-		}
-	}
-
 	// DPI初始化
 	{
 		HMODULE hShcore = LoadLibrary(L"Shcore.dll");
@@ -569,38 +587,29 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] DPI初始化完成");
 	}
-	// 界面绘图库初始化
+
+	// I18N初始化
 	{
-		D2DStarup();
+		// 先读取完整性的英语文件，在读取配置指定的语言文件
+		// 这样如果配置文件缺少某项也能用英语补齐
+		loadI18n(1, L"JSON", L"en-US");
+		loadI18n(1, L"JSON", L"zh-CN");
+		// TODO 允许切换到英语
 
-		IDTLogger->info("[主线程][IdtMain] 界面绘图库初始化完成");
+		IDTLogger->info("[主线程][IdtMain] I18N初始化完成");
 	}
-	// 显示器信息初始化
-	{
-		// 显示器检查
-		DisplayManagementMain();
-
-		APPBARDATA abd{};
-		enableAppBarAutoHide = (setlist.compatibleTaskBarAutoHide && (SHAppBarMessage(ABM_GETSTATE, &abd) == ABS_AUTOHIDE));
-
-		shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
-		int DisplaysNumberTemp = DisplaysNumber;
-		DisplaysNumberLock.unlock();
-
-		thread(MagnifierThread).detach();
-
-		if (DisplaysNumberTemp > 1) IDTLogger->warn("[主线程][IdtMain] 拥有多个显示器");
-		IDTLogger->info("[主线程][IdtMain] 显示器信息初始化完成");
-	}
-
 	// 配置信息初始化
 	{
 		// 读取配置文件前初始化操作
 		{
 			// 软件版本
 			{
+				setlist.enableAutoUpdate = true;
 				setlist.UpdateChannel = "LTS";
-				setlist.updateArchitecture = "win32";
+				{
+					setlist.updateArchitecture = utf16ToUtf8(programArchitecture);
+					if (setlist.updateArchitecture == "arm64ec") setlist.updateArchitecture = "arm64";
+				}
 			}
 			// 常规
 			{
@@ -613,8 +622,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				setlist.BrushRecover = true;
 				setlist.RubberRecover = false;
 
-				setlist.compatibleTaskBarAutoHide = true;
-				setlist.forceTop = true;
+				setlist.avoidFullScreen = true;
 			}
 			// 绘制
 			{
@@ -637,8 +645,10 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 			// 插件
 			{
-				setlist.correctLnk = true;
-				setlist.createLnk = false;
+				{
+					setlist.shortcutAssistant.correctLnk = true;
+					setlist.shortcutAssistant.createLnk = false;
+				}
 			}
 
 			{
@@ -726,6 +736,52 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] 配置信息初始化完成");
 	}
+	// 插件配置初始化
+	{
+		// 桌面快捷方式初始化
+		shortcutAssistant.SetShortcut();
+		// 启动 DesktopDrawpadBlocker
+		StartDesktopDrawpadBlocker();
+	}
+
+	// COM初始化
+	HANDLE hActCtx;
+	ULONG_PTR ulCookie;
+	{
+		CoInitializeEx(NULL, COINIT_MULTITHREADED);
+
+		//PptCOM 组件加载
+		{
+			if (!ExtractResource((globalPath + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(222)))
+				IDTLogger->warn("[主线程][IdtMain] 解压PptCOM.dll失败");
+
+			ACTCTX actCtx = { 0 };
+			actCtx.cbSize = sizeof(actCtx);
+			actCtx.dwFlags = ACTCTX_FLAG_RESOURCE_NAME_VALID | ACTCTX_FLAG_HMODULE_VALID;
+			actCtx.lpResourceName = MAKEINTRESOURCE(221);
+			actCtx.hModule = GetModuleHandle(NULL);
+
+			hActCtx = CreateActCtx(&actCtx);
+			ActivateActCtx(hActCtx, &ulCookie);
+
+			HMODULE hModule = LoadLibraryW((globalPath + L"PptCOM.dll").c_str());
+		}
+
+		IDTLogger->info("[主线程][IdtMain] COM初始化完成");
+	}
+	// 自动更新初始化
+	{
+#ifdef IDT_RELEASE
+		thread(AutomaticUpdate).detach();
+#endif
+	}
+
+	// 界面绘图库初始化
+	{
+		D2DStarup();
+
+		IDTLogger->info("[主线程][IdtMain] 界面绘图库初始化完成");
+	}
 	// 字体初始化
 	{
 		INT numFound = 0;
@@ -763,54 +819,19 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] 字体初始化完成");
 	}
-	// I18N初始化
+	// 显示器信息初始化
 	{
-		// 先读取完整性的英语文件，在读取配置指定的语言文件
-		// 这样如果配置文件缺少某项也能用英语补齐
-		loadI18n(1, L"JSON", L"en-US");
-		loadI18n(1, L"JSON", L"zh-CN");
-		// TODO 允许切换到英语
+		// 显示器检查
+		DisplayManagementMain();
 
-		IDTLogger->info("[主线程][IdtMain] I18N初始化完成");
-	}
+		shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
+		int DisplaysNumberTemp = DisplaysNumber;
+		DisplaysNumberLock.unlock();
 
-	// COM初始化
-	HANDLE hActCtx;
-	ULONG_PTR ulCookie;
-	{
-		CoInitializeEx(NULL, COINIT_MULTITHREADED);
+		thread(MagnifierThread).detach();
 
-		//PptCOM 组件加载
-		{
-			if (!ExtractResource((globalPath + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(222)))
-				IDTLogger->warn("[主线程][IdtMain] 解压PptCOM.dll失败");
-
-			ACTCTX actCtx = { 0 };
-			actCtx.cbSize = sizeof(actCtx);
-			actCtx.dwFlags = ACTCTX_FLAG_RESOURCE_NAME_VALID | ACTCTX_FLAG_HMODULE_VALID;
-			actCtx.lpResourceName = MAKEINTRESOURCE(221);
-			actCtx.hModule = GetModuleHandle(NULL);
-
-			hActCtx = CreateActCtx(&actCtx);
-			ActivateActCtx(hActCtx, &ulCookie);
-
-			HMODULE hModule = LoadLibraryW((globalPath + L"PptCOM.dll").c_str());
-		}
-
-		IDTLogger->info("[主线程][IdtMain] COM初始化完成");
-	}
-	// 插件配置初始化
-	{
-		// 桌面快捷方式初始化
-		SetShortcut();
-		// 启动 DesktopDrawpadBlocker
-		thread(StartDesktopDrawpadBlocker).detach();
-	}
-	// 自动更新初始化
-	{
-#ifdef IDT_RELEASE
-		thread(AutomaticUpdate).detach();
-#endif
+		if (DisplaysNumberTemp > 1) IDTLogger->warn("[主线程][IdtMain] 拥有多个显示器");
+		IDTLogger->info("[主线程][IdtMain] 显示器信息初始化完成");
 	}
 
 	// 窗口

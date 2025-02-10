@@ -409,7 +409,7 @@ void IdtRecovery()
 	FreezeRecall = 500;
 
 	IMAGE temp;
-	loadimage(&temp, utf8ToUtf16(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString()).c_str(), drawpad.getwidth(), drawpad.getheight(), true);
+	idtLoadImage(&temp, utf8ToUtf16(record_value["Image_Properties"][current_record_pointer - 1]["drawpad"].asString()).c_str(), drawpad.getwidth(), drawpad.getheight(), true);
 	drawpad = temp, extreme_point = map<pair<int, int>, bool>();
 
 	current_record_pointer++;

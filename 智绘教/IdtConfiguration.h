@@ -10,6 +10,7 @@ struct SetListStruct
 #pragma region 软件版本
 	string UpdateChannel;
 	string updateArchitecture;
+	bool enableAutoUpdate;
 #pragma endregion
 
 #pragma region 常规
@@ -23,9 +24,7 @@ struct SetListStruct
 	bool RightClickClose;
 	bool BrushRecover, RubberRecover;
 
-	// 兼容自动隐藏的任务栏
-	bool compatibleTaskBarAutoHide;
-	bool forceTop;
+	bool avoidFullScreen;
 #pragma endregion
 
 #pragma region 绘制
@@ -51,7 +50,10 @@ struct SetListStruct
 #pragma endregion
 
 #pragma region 插件
-	bool createLnk, correctLnk;
+	struct
+	{
+		bool createLnk, correctLnk;
+	}shortcutAssistant;
 #pragma endregion
 };
 extern SetListStruct setlist;
@@ -124,10 +126,10 @@ struct DdbInteractionSetListStruct
 	DdbInteractionSetListStruct()
 	{
 		DdbEnable = false;
-		DdbEnhance = false;
+		runAsAdmin = false;
 
-		DdbEdition = L"20250113b";
-		DdbSHA256 = "7ac3a52accefee2a109664aaf1c645a6f48b0339229fa601a9219a64822ea9a6";
+		DdbEdition = L"20250205b";
+		DdbSHA256 = "d6e08675d6cea9edf69a501c949c7c99c26b2c3c7a37cee0df27e94b493ddeb8";
 
 		// -----
 
@@ -138,9 +140,13 @@ struct DdbInteractionSetListStruct
 		restartHost = true;
 
 		memset(InterceptWindow, true, sizeof(InterceptWindow));
+		InterceptWindow[3] = false;
+		InterceptWindow[11] = false;
 	}
 
-	bool DdbEnable, DdbEnhance;
+	bool DdbEnable;
+	bool runAsAdmin;
+
 	wstring DdbEdition;
 	string DdbSHA256;
 
@@ -152,7 +158,7 @@ struct DdbInteractionSetListStruct
 	wstring hostPath;
 	bool restartHost; // restartHost：（仅限独立模式）当宿主程序被关闭后，拦截到其他软件的窗口后，重启宿主程序
 
-	bool InterceptWindow[10];
+	bool InterceptWindow[15];
 };
 extern DdbInteractionSetListStruct ddbInteractionSetList;
 bool DdbReadInteraction();

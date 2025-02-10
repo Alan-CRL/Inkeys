@@ -8,6 +8,7 @@
 #include "HiSysGUI/SysControlBase.h"
 
 #include <chrono>
+#include <iostream>
 
 // 预留消息空间
 #define MSG_RESERVE_SIZE		100
@@ -1693,7 +1694,8 @@ namespace HiEasyX
 
 		if (!start_animation)
 		{
-			ShowWindow(wnd.hWnd, isPreShowState ? nPreCmdShow : SW_SHOWNORMAL);
+			ShowWindow(wnd.hWnd, SW_HIDE); // Inkeys ARM64 此处会遇到玄学错误
+			// ShowWindow(wnd.hWnd, isPreShowState ? SW_HIDE : SW_SHOWNORMAL);
 			UpdateWindow(wnd.hWnd);
 		}
 		// 发布模式下渲染开场动画

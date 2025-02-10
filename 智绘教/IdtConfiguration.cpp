@@ -116,10 +116,6 @@ bool ReadSetting()
 			setlist.startUp = updateVal["StartUp"].asBool();
 		if (updateVal.isMember("SettingGlobalScale") && updateVal["SettingGlobalScale"].isDouble())
 			setlist.settingGlobalScale = updateVal["SettingGlobalScale"].asDouble();
-		if (updateVal.isMember("CorrectLnk") && updateVal["CorrectLnk"].isBool())
-			setlist.correctLnk = updateVal["CorrectLnk"].asBool();
-		if (updateVal.isMember("CreateLnk") && updateVal["CreateLnk"].isBool())
-			setlist.createLnk = updateVal["CreateLnk"].asBool();
 
 		if (updateVal.isMember("SetSkinMode") && updateVal["SetSkinMode"].isInt())
 			setlist.SetSkinMode = updateVal["SetSkinMode"].asInt();
@@ -129,10 +125,8 @@ bool ReadSetting()
 			setlist.BrushRecover = updateVal["BrushRecover"].asBool();
 		if (updateVal.isMember("RubberRecover") && updateVal["RubberRecover"].isBool())
 			setlist.RubberRecover = updateVal["RubberRecover"].asBool();
-		if (updateVal.isMember("CompatibleTaskBarAutoHide") && updateVal["CompatibleTaskBarAutoHide"].isBool())
-			setlist.compatibleTaskBarAutoHide = updateVal["CompatibleTaskBarAutoHide"].asBool();
-		if (updateVal.isMember("ForceTop") && updateVal["ForceTop"].isBool())
-			setlist.forceTop = updateVal["ForceTop"].asBool();
+		if (updateVal.isMember("AvoidFullScreen") && updateVal["AvoidFullScreen"].isBool())
+			setlist.avoidFullScreen = updateVal["AvoidFullScreen"].asBool();
 
 		if (updateVal.isMember("PaintDevice") && updateVal["PaintDevice"].isInt())
 			setlist.paintDevice = updateVal["PaintDevice"].asInt();
@@ -158,18 +152,36 @@ bool ReadSetting()
 				setlist.performanceSetting.preparationQuantity = updateVal["Performance"]["PreparationQuantity"].asInt();
 		}
 
-		if (updateVal.isMember("BasicInfo") && updateVal["BasicInfo"].isObject())
+		if (updateVal.isMember("UpdateSetting") && updateVal["UpdateSetting"].isObject())
 		{
-			if (updateVal["BasicInfo"].isMember("UpdateChannel") && updateVal["BasicInfo"]["UpdateChannel"].isString())
-				setlist.UpdateChannel = updateVal["BasicInfo"]["UpdateChannel"].asString();
+			if (updateVal["UpdateSetting"].isMember("EnableAutoUpdate") && updateVal["UpdateSetting"]["EnableAutoUpdate"].isBool())
+				setlist.enableAutoUpdate = updateVal["UpdateSetting"]["EnableAutoUpdate"].asBool();
+			if (updateVal["UpdateSetting"].isMember("UpdateChannel") && updateVal["UpdateSetting"]["UpdateChannel"].isString())
+				setlist.UpdateChannel = updateVal["UpdateSetting"]["UpdateChannel"].asString();
+			if (updateVal["UpdateSetting"].isMember("UpdateArchitecture") && updateVal["UpdateSetting"]["UpdateArchitecture"].isString())
+			{
+				setlist.updateArchitecture = updateVal["UpdateSetting"]["UpdateArchitecture"].asString();
+				if (setlist.updateArchitecture != "win32" && setlist.updateArchitecture != "win64" && setlist.updateArchitecture != "arm64")
+					setlist.updateArchitecture = "win32";
+			}
 		}
 
 		if (updateVal.isMember("PlugIn") && updateVal["PlugIn"].isObject())
 		{
-			if (updateVal["PlugIn"].isMember("DdbEnable") && updateVal["PlugIn"]["DdbEnable"].isBool())
-				ddbInteractionSetList.DdbEnable = updateVal["PlugIn"]["DdbEnable"].asBool();
-			if (updateVal["PlugIn"].isMember("DdbEnhance") && updateVal["PlugIn"]["DdbEnhance"].isBool())
-				ddbInteractionSetList.DdbEnhance = updateVal["PlugIn"]["DdbEnhance"].asBool();
+			if (updateVal["PlugIn"].isMember("DesktopDrawpadBlocker") && updateVal["PlugIn"]["DesktopDrawpadBlocker"].isObject())
+			{
+				if (updateVal["PlugIn"]["DesktopDrawpadBlocker"].isMember("Enable") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Enable"].isBool())
+					ddbInteractionSetList.DdbEnable = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Enable"].asBool();
+				if (updateVal["PlugIn"]["DesktopDrawpadBlocker"].isMember("RunAsAdmin") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["RunAsAdmin"].isBool())
+					ddbInteractionSetList.runAsAdmin = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["RunAsAdmin"].asBool();
+			}
+			if (updateVal["PlugIn"].isMember("ShortcutAssistant") && updateVal["PlugIn"]["ShortcutAssistant"].isObject())
+			{
+				if (updateVal["PlugIn"]["ShortcutAssistant"].isMember("CorrectLnk") && updateVal["PlugIn"]["ShortcutAssistant"]["CorrectLnk"].isBool())
+					setlist.shortcutAssistant.correctLnk = updateVal["PlugIn"]["ShortcutAssistant"]["CorrectLnk"].asBool();
+				if (updateVal["PlugIn"]["ShortcutAssistant"].isMember("CreateLnk") && updateVal["PlugIn"]["ShortcutAssistant"]["CreateLnk"].isBool())
+					setlist.shortcutAssistant.createLnk = updateVal["PlugIn"]["ShortcutAssistant"]["CreateLnk"].asBool();
+			}
 		}
 	}
 	else return false;
@@ -189,15 +201,12 @@ bool WriteSetting()
 		updateVal["SelectLanguage"] = Json::Value(setlist.selectLanguage);
 		updateVal["StartUp"] = Json::Value(setlist.startUp);
 		updateVal["SettingGlobalScale"] = Json::Value(setlist.settingGlobalScale);
-		updateVal["CorrectLnk"] = Json::Value(setlist.correctLnk);
-		updateVal["CreateLnk"] = Json::Value(setlist.createLnk);
 
 		updateVal["SetSkinMode"] = Json::Value(setlist.SetSkinMode);
 		updateVal["RightClickClose"] = Json::Value(setlist.RightClickClose);
 		updateVal["BrushRecover"] = Json::Value(setlist.BrushRecover);
 		updateVal["RubberRecover"] = Json::Value(setlist.RubberRecover);
-		updateVal["CompatibleTaskBarAutoHide"] = Json::Value(setlist.compatibleTaskBarAutoHide);
-		updateVal["ForceTop"] = Json::Value(setlist.forceTop);
+		updateVal["AvoidFullScreen"] = Json::Value(setlist.avoidFullScreen);
 
 		updateVal["PaintDevice"] = Json::Value(setlist.paintDevice);
 		updateVal["LiftStraighten"] = Json::Value(setlist.liftStraighten);
@@ -213,11 +222,23 @@ bool WriteSetting()
 			updateVal["Performance"]["PreparationQuantity"] = Json::Value(setlist.performanceSetting.preparationQuantity);
 		}
 
-		updateVal["BasicInfo"]["UpdateChannel"] = Json::Value(setlist.UpdateChannel);
-		updateVal["BasicInfo"]["edition"] = Json::Value(utf16ToUtf8(editionDate));
+		{
+			updateVal["UpdateSetting"]["EnableAutoUpdate"] = Json::Value(setlist.enableAutoUpdate);
+			updateVal["UpdateSetting"]["UpdateChannel"] = Json::Value(setlist.UpdateChannel);
+			updateVal["UpdateSetting"]["UpdateArchitecture"] = Json::Value(setlist.updateArchitecture);
+		}
+		{
+			updateVal["BasicInfo"]["UserID"] = Json::Value(utf16ToUtf8(userId));
+			updateVal["BasicInfo"]["Edition"] = Json::Value(utf16ToUtf8(editionDate));
+		}
 
-		updateVal["PlugIn"]["DdbEnable"] = Json::Value(ddbInteractionSetList.DdbEnable);
-		updateVal["PlugIn"]["DdbEnhance"] = Json::Value(ddbInteractionSetList.DdbEnhance);
+		{
+			updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Enable"] = Json::Value(ddbInteractionSetList.DdbEnable);
+			updateVal["PlugIn"]["DesktopDrawpadBlocker"]["RunAsAdmin"] = Json::Value(ddbInteractionSetList.runAsAdmin);
+
+			updateVal["PlugIn"]["ShortcutAssistant"]["CorrectLnk"] = Json::Value(setlist.shortcutAssistant.correctLnk);
+			updateVal["PlugIn"]["ShortcutAssistant"]["CreateLnk"] = Json::Value(setlist.shortcutAssistant.createLnk);
+		}
 	}
 
 	HANDLE fileHandle = NULL;
@@ -470,9 +491,13 @@ bool DdbReadInteraction()
 			{
 				ddbInteractionSetList.InterceptWindow[2] = updateVal["Intercept"]["SeewoWhiteboard5CFloating"].asBool();
 			}
-			if (updateVal["Intercept"].isMember("SeewoPincoFloating") && updateVal["Intercept"]["SeewoPincoFloating"].isBool())
+			if (updateVal["Intercept"].isMember("SeewoPincoSideBarFloating") && updateVal["Intercept"]["SeewoPincoSideBarFloating"].isBool())
 			{
-				ddbInteractionSetList.InterceptWindow[3] = ddbInteractionSetList.InterceptWindow[4] = updateVal["Intercept"]["SeewoPincoFloating"].asBool();
+				ddbInteractionSetList.InterceptWindow[3] = updateVal["Intercept"]["SeewoPincoSideBarFloating"].asBool();
+			}
+			if (updateVal["Intercept"].isMember("SeewoPincoDrawingFloating") && updateVal["Intercept"]["SeewoPincoDrawingFloating"].isBool())
+			{
+				ddbInteractionSetList.InterceptWindow[4] = updateVal["Intercept"]["SeewoPincoDrawingFloating"].asBool();
 			}
 			if (updateVal["Intercept"].isMember("SeewoPPTFloating") && updateVal["Intercept"]["SeewoPPTFloating"].isBool())
 			{
@@ -485,6 +510,22 @@ bool DdbReadInteraction()
 			if (updateVal["Intercept"].isMember("HiteAnnotationFloating") && updateVal["Intercept"]["HiteAnnotationFloating"].isBool())
 			{
 				ddbInteractionSetList.InterceptWindow[7] = updateVal["Intercept"]["HiteAnnotationFloating"].asBool();
+			}
+			if (updateVal["Intercept"].isMember("ChangYanFloating") && updateVal["Intercept"]["ChangYanFloating"].isBool())
+			{
+				ddbInteractionSetList.InterceptWindow[8] = updateVal["Intercept"]["ChangYanFloating"].asBool();
+			}
+			if (updateVal["Intercept"].isMember("IntelligentClassFloating") && updateVal["Intercept"]["IntelligentClassFloating"].isBool())
+			{
+				ddbInteractionSetList.InterceptWindow[9] = updateVal["Intercept"]["IntelligentClassFloating"].asBool();
+			}
+			if (updateVal["Intercept"].isMember("SeewoDesktopAnnotationFloating") && updateVal["Intercept"]["SeewoDesktopAnnotationFloating"].isBool())
+			{
+				ddbInteractionSetList.InterceptWindow[10] = updateVal["Intercept"]["SeewoDesktopAnnotationFloating"].asBool();
+			}
+			if (updateVal["Intercept"].isMember("SeewoDesktopSideBarFloating") && updateVal["Intercept"]["SeewoDesktopSideBarFloating"].isBool())
+			{
+				ddbInteractionSetList.InterceptWindow[11] = updateVal["Intercept"]["SeewoDesktopSideBarFloating"].asBool();
 			}
 		}
 	}
@@ -509,6 +550,10 @@ bool DdbWriteInteraction(bool change, bool close)
 		updateVal["Intercept"]["SeewoPPTFloating"] = Json::Value(ddbInteractionSetList.InterceptWindow[5]);
 		updateVal["Intercept"]["AiClassFloating"] = Json::Value(ddbInteractionSetList.InterceptWindow[6]);
 		updateVal["Intercept"]["HiteAnnotationFloating"] = Json::Value(ddbInteractionSetList.InterceptWindow[7]);
+		updateVal["Intercept"]["ChangYanFloating"] = Json::Value(ddbInteractionSetList.InterceptWindow[8]);
+		updateVal["Intercept"]["IntelligentClassFloating"] = Json::Value(ddbInteractionSetList.InterceptWindow[9]);
+		updateVal["Intercept"]["SeewoDesktopAnnotationFloating"] = Json::Value(ddbInteractionSetList.InterceptWindow[10]);
+		updateVal["Intercept"]["SeewoDesktopSideBarFloating"] = Json::Value(ddbInteractionSetList.InterceptWindow[11]);
 
 		updateVal["~ConfigurationChange"] = Json::Value(change);
 		updateVal["~KeepOpen"] = Json::Value(!close);

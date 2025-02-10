@@ -38,6 +38,7 @@ struct IdtWindowsIsVisibleStruct
 };
 extern IdtWindowsIsVisibleStruct IdtWindowsIsVisible;
 extern bool rtsWait;
+extern bool topWindowNow;
 
 //置顶程序窗口
 void TopWindow();

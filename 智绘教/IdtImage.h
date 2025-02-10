@@ -27,3 +27,7 @@ extern Graphics graphics;
 
 Bitmap* IMAGEToBitmap(IMAGE* easyXImage);
 bool ImgCpy(IMAGE* tag, IMAGE* src);
+
+extern shared_mutex loadImageSm;
+void idtLoadImage(IMAGE* pDstImg, LPCTSTR pImgFile, int nWidth = 0, int nHeight = 0, bool bResize = false);
+void idtLoadImage(IMAGE* pDstImg, LPCTSTR pResType, LPCTSTR pResName, int nWidth = 0, int nHeight = 0, bool bResize = false);

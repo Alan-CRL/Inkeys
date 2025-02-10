@@ -82,3 +82,15 @@ bool ImgCpy(IMAGE* tag, IMAGE* src)
 
 	return true;
 }
+
+shared_mutex loadImageSm;
+void idtLoadImage(IMAGE* pDstImg, LPCTSTR pImgFile, int nWidth, int nHeight, bool bResize)
+{
+	lock_guard loadImageLock(loadImageSm);
+	loadimage(pDstImg, pImgFile, nWidth, nHeight, bResize);
+}
+void idtLoadImage(IMAGE* pDstImg, LPCTSTR pResType, LPCTSTR pResName, int nWidth, int nHeight, bool bResize)
+{
+	lock_guard loadImageLock(loadImageSm);
+	loadimage(pDstImg, pResType, pResName, nWidth, nHeight, bResize);
+}

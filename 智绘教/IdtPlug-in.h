@@ -245,3 +245,13 @@ bool IsPowerPointRunAsAdminSet();
 // 其他插件
 
 void StartDesktopDrawpadBlocker();
+
+class ShortcutAssistantClass
+{
+public:
+	void SetShortcut();
+protected:
+	bool IsShortcutPointingToDirectory(const std::wstring& shortcutPath, const std::wstring& targetDirectory);
+	bool CreateShortcut(const std::wstring& shortcutPath, const std::wstring& targetExePath);
+};
+extern ShortcutAssistantClass shortcutAssistant;

@@ -45,6 +45,7 @@ wstring GetWindowText(HWND hWnd)
 
 IdtWindowsIsVisibleStruct IdtWindowsIsVisible;
 bool rtsWait = true;
+bool topWindowNow;
 
 //置顶程序窗口
 void TopWindow()
@@ -217,29 +218,15 @@ void TopWindow()
 				IDTLogger->warn("[窗口置顶线程][TopWindow] 置顶窗口时失败 Error" + to_string(GetLastError()));
 		}
 
-		// 检查置顶情况
-		if (setlist.forceTop && (!(GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_TOPMOST)))
-		{
-			IDTLogger->warn("[窗口置顶线程][TopWindow] 置顶窗口失败");
-			IDTLogger->info("[窗口置顶线程][TopWindow] 强制置顶窗口");
-
-			HWND hForeWnd = GetForegroundWindow();
-			DWORD dwForeID = GetCurrentThreadId();
-			DWORD dwCurID = GetWindowThreadProcessId(hForeWnd, NULL);
-			AttachThreadInput(dwCurID, dwForeID, TRUE);
-			SetWindowPos(freeze_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
-			SetWindowPos(freeze_window, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
-			AttachThreadInput(dwCurID, dwForeID, FALSE);
-
-			SetWindowPos(freeze_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-
-			IDTLogger->info("[窗口置顶线程][TopWindow] 强制置顶窗口完成");
-		}
-
 		// 延迟等待
 		for (int i = 1; i <= 30; i++)
 		{
 			if (offSignal) break;
+			if (topWindowNow)
+			{
+				topWindowNow = false;
+				break;
+			}
 			this_thread::sleep_for(chrono::milliseconds(100));
 		}
 	}

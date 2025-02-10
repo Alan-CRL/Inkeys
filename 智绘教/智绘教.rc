@@ -131,7 +131,7 @@ HOME_FEEDBACK           PNG                     "src\\setting\\Home_Feedback.png
 
 PLUGINFLAG3             PNG                     "src\\PluginFlag3.png"
 
-SettingSponsor          PNG                     "src\\setting\\SettingSponsor.png"
+SETTINGSPONSOR          PNG                     "src\\setting\\SettingSponsor.png"
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -207,9 +207,9 @@ BEGIN
             VALUE "CompanyName", "Alan-CRL(陈润林)工作室"
             VALUE "FileVersion", "1.0.0.0"
             VALUE "InternalName", "智绘教Inkeys"
-            VALUE "LegalCopyright", "Copyright(©) 2023-2024 Alan-CRL(陈润林)工作室"
+            VALUE "LegalCopyright", "Copyright © 2023-2025 AlanCRL(陈润林)工作室"
             VALUE "ProductName", "智绘教Inkeys"
-            VALUE "ProductVersion", "详见软件-选项-关于界面"
+            VALUE "ProductVersion", "详见""软件->选项->软件版本""界面"
         END
     END
     BLOCK "VarFileInfo"

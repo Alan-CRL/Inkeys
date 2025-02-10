@@ -10,6 +10,8 @@
 
 //程序自动更新
 int AutomaticUpdateStep = 0;
+bool mandatoryUpdate;
+bool inconsistentArchitecture;
 wstring get_domain_name(wstring url) {
 	wregex pattern(L"([a-zA-z]+://[^/]+)");
 	wsmatch match;
@@ -52,6 +54,7 @@ EditionInfoClass GetEditionInfo(string channel)
 	if (Json::parseFromStream(readerBuilder, jsonContentStream, &editionInfoValue, &jsonErr))
 	{
 		bool informationCompliance = true;
+		int tryTime = 0;
 
 	getInfoStart:
 		if (editionInfoValue.isMember(channel))
@@ -64,20 +67,39 @@ EditionInfoClass GetEditionInfo(string channel)
 			// else informationCompliance = false;
 			if (editionInfoValue[channel].isMember("hash"))
 			{
-				if (editionInfoValue[channel]["hash"].isMember("md5")) retEditionInfo.hash_md5 = editionInfoValue[channel]["hash"]["md5"].asString();
+				string hash1, hash2;
+				if (setlist.updateArchitecture == "win64") hash1 = "md5 64", hash2 = "sha256 64";
+				else if (setlist.updateArchitecture == "arm64") hash1 = "md5 Arm64", hash2 = "sha256 Arm64";
+				else hash1 = "md5", hash2 = "sha256";
+
+				if (editionInfoValue[channel]["hash"].isMember(hash1)) retEditionInfo.hash_md5 = editionInfoValue[channel]["hash"][hash1].asString();
 				else informationCompliance = false;
-				if (editionInfoValue[channel]["hash"].isMember("sha256")) retEditionInfo.hash_sha256 = editionInfoValue[channel]["hash"]["sha256"].asString();
+				if (editionInfoValue[channel]["hash"].isMember(hash2)) retEditionInfo.hash_sha256 = editionInfoValue[channel]["hash"][hash2].asString();
 				else informationCompliance = false;
 			}
 			else informationCompliance = false;
 
-			if (editionInfoValue[channel].isMember("path"))
 			{
-				retEditionInfo.path_size = editionInfoValue[channel]["path"].size();
-				for (int i = 0; i < min(retEditionInfo.path_size, 10); i++) retEditionInfo.path[i] = editionInfoValue[channel]["path"][i].asString();
-				if (retEditionInfo.path_size <= 0) informationCompliance = false;
+				string path;
+				if (setlist.updateArchitecture == "win64") path = "path64";
+				else if (setlist.updateArchitecture == "arm64") path = "pathArm64";
+				else path = "path";
+
+				if (editionInfoValue[channel].isMember(path) && editionInfoValue[channel][path].isArray())
+				{
+					retEditionInfo.path_size = 0;
+					for (int i = 0; i < min(editionInfoValue[channel][path].size(), 10); i++)
+					{
+						if (editionInfoValue[channel][path][i].isString())
+						{
+							retEditionInfo.path[retEditionInfo.path_size] = editionInfoValue[channel][path][i].asString();
+							retEditionInfo.path_size++;
+						}
+					}
+					if (retEditionInfo.path_size <= 0) informationCompliance = false;
+				}
+				else informationCompliance = false;
 			}
-			else informationCompliance = false;
 
 			if (editionInfoValue[channel].isMember("representation")) retEditionInfo.representation = utf8ToUtf16(editionInfoValue[channel]["representation"].asString());
 			else informationCompliance = false;
@@ -85,17 +107,18 @@ EditionInfoClass GetEditionInfo(string channel)
 		else informationCompliance = false;
 
 		// 失败则尝试其他通道
-		if (!informationCompliance)
+		if (!informationCompliance && tryTime <= 1)
 		{
 			informationCompliance = true;
+			tryTime++;
 
-			// 尝试 LTS 通道
-			if (channel != "LTS")
+			// 尝试 LTS
+			if (tryTime == 1)
 			{
 				channel = "LTS";
 				goto getInfoStart;
 			}
-			// 尝试第一个通道
+			// 尝试一个通道
 			if (editionInfoValue.size() >= 1)
 			{
 				Json::Value::Members members = editionInfoValue.getMemberNames();
@@ -214,6 +237,7 @@ int DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass edi
 			root["hash"]["sha256"] = Json::Value(editionInfo.hash_sha256);
 
 			root["old_name"] = Json::Value(utf16ToUtf8(GetCurrentExeName()));
+			if (mandatoryUpdate) root["MandatoryUpdate"] = Json::Value(mandatoryUpdate);
 
 			Json::StreamWriterBuilder outjson;
 			outjson.settings_["emitUTF8"] = true;
@@ -240,18 +264,18 @@ void AutomaticUpdate()
 {
 	/*
 	AutomaticUpdateStep 含义
-	0 自动更新未启动
+	0 新版本检测未启动
 	1 获取新版本信息中
 	2 下载版本信息失败
 	3 下载版本信息损坏
 	4 下载版本信息不符合规范
 	5 新版本正极速下载中
-	6 下载最新版本程序失败
-	7 下载最新版本程序损坏
-	8 重启更新到最新版本
-	9 程序已经是最新版本
-	10 程序相对最新版本更新
-	11 发现程序新版本
+	6 下载最新版本软件失败
+	7 下载最新版本软件损坏
+	8 重启软件更新到最新版本
+	9 软件已经是最新版本
+	10 软件相对最新版本更新
+	11 发现软件新版本
 	*/
 
 	bool state = true;
@@ -263,12 +287,10 @@ void AutomaticUpdate()
 	EditionInfoClass editionInfo;
 	DownloadNewProgramStateClass downloadNewProgramState;
 
-	string channel = setlist.UpdateChannel;
-
-	for (; !offSignal && updateTimes <= 10; updateTimes++)
+updateStart:
+	for (updateTimes = 0; !offSignal && updateTimes < 3; updateTimes++)
 	{
 		AutomaticUpdateStep = 1;
-		channel = setlist.UpdateChannel;
 
 		state = true;
 		against = false;
@@ -276,27 +298,25 @@ void AutomaticUpdate()
 		//获取最新版本信息
 		if (state)
 		{
-			editionInfo = GetEditionInfo(channel);
+			editionInfo = GetEditionInfo(setlist.UpdateChannel);
 
 			if (editionInfo.errorCode != 200)
 			{
-				state = false;
+				state = false, against = true;
 				if (editionInfo.errorCode == 1) AutomaticUpdateStep = 2;
 				else if (editionInfo.errorCode == 2) AutomaticUpdateStep = 3;
 				else AutomaticUpdateStep = 4;
 			}
-			else if (channel != editionInfo.channel)
+			else if (setlist.UpdateChannel != editionInfo.channel)
 			{
-				setlist.UpdateChannel = channel = editionInfo.channel;
+				setlist.UpdateChannel = editionInfo.channel;
 				WriteSetting();
 			}
 		}
 
 		//下载最新版本
-		if (state && editionInfo.editionDate != L"" && editionInfo.editionDate > editionDate)
+		if (state && editionInfo.editionDate != L"" && ((editionInfo.editionDate > editionDate && setlist.enableAutoUpdate) || mandatoryUpdate))
 		{
-			AutomaticUpdateStep = 11;
-
 			update = true;
 			if (_waccess((globalPath + L"installer\\update.json").c_str(), 4) == 0)
 			{
@@ -343,7 +363,7 @@ void AutomaticUpdate()
 						delete myWrapper;
 					}
 
-					if (tedition >= editionInfo.editionDate && _waccess((globalPath + tpath).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
+					if (tedition == editionInfo.editionDate && _waccess((globalPath + tpath).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
 					{
 						update = false;
 						AutomaticUpdateStep = 8;
@@ -362,6 +382,12 @@ void AutomaticUpdate()
 					if (AutomaticUpdateStep == 8)
 					{
 						against = false;
+
+						if (mandatoryUpdate)
+						{
+							mandatoryUpdate = false;
+							offSignal = 2;
+						}
 						break;
 					}
 				}
@@ -369,30 +395,38 @@ void AutomaticUpdate()
 		}
 		else if (state && editionInfo.editionDate != L"")
 		{
-			if (editionInfo.editionDate < editionDate) AutomaticUpdateStep = 10;
+			if (editionInfo.editionDate > editionDate) AutomaticUpdateStep = 11;
+			else if (editionInfo.editionDate < editionDate) AutomaticUpdateStep = 10;
 			else AutomaticUpdateStep = 9;
 		}
 
-		if (against)
+		if (against && !mandatoryUpdate)
 		{
 			for (int i = 1; i <= 10; i++)
 			{
 				if (offSignal) break;
-				if (channel != setlist.UpdateChannel) break;
+				if (AutomaticUpdateStep == 0 || AutomaticUpdateStep == 1) break;
 
 				this_thread::sleep_for(chrono::seconds(1));
 			}
 		}
 		else
 		{
+			against = mandatoryUpdate = false;
 			for (int i = 1; i <= 1800; i++)
 			{
 				if (offSignal) break;
-				if (channel != setlist.UpdateChannel) break;
+				if (AutomaticUpdateStep == 0 || AutomaticUpdateStep == 1) break;
 
 				this_thread::sleep_for(chrono::seconds(1));
 			}
 			updateTimes = 0;
 		}
+	}
+
+	for (; !offSignal;)
+	{
+		if (AutomaticUpdateStep == 0 || AutomaticUpdateStep == 1) goto updateStart;
+		this_thread::sleep_for(chrono::seconds(1));
 	}
 }

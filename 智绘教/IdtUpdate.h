@@ -46,6 +46,8 @@ int DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass edi
 
 //程序自动更新
 extern int AutomaticUpdateStep;
+extern bool mandatoryUpdate;
+extern bool inconsistentArchitecture;
 wstring get_domain_name(wstring url);
 wstring convertToHttp(const wstring& url);
 void AutomaticUpdate();
