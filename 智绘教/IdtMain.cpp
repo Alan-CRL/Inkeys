@@ -41,8 +41,8 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250209a";				// 程序发布日期
-wstring editionChannel = L"LTS";				// 程序发布通道
+wstring editionDate = L"20250213a";				// 程序发布日期
+wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -283,13 +283,23 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				filesystem::path directory(globalPath);
 				wstring main_path = directory.parent_path().parent_path().wstring() + L"\\";
 
-				while (true)
+				int times;
+				for (times = 0; times <= 20; times++)
 				{
-					if (!old_name.empty()) if (!isProcessRunning((main_path + old_name).c_str())) break;
-					else if (!isProcessRunning((main_path + L"智绘教.exe").c_str())) break;
+					if (!old_name.empty())
+					{
+						if (!isProcessRunning((main_path + old_name).c_str()))
+							break;
+					}
+					else
+					{
+						if (!isProcessRunning((main_path + L"智绘教.exe").c_str()))
+							break;
+					}
 
 					this_thread::sleep_for(chrono::milliseconds(100));
 				}
+				if (times > 20) goto fail;
 
 				error_code ec;
 				if (!old_name.empty()) filesystem::remove(main_path + old_name, ec);
@@ -306,6 +316,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 			if (!flag)
 			{
+			fail:
 				error_code ec;
 				filesystem::remove(globalPath + L"update.json", ec);
 
@@ -635,7 +646,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 					setlist.eraserSetting.eraserMode = 0;
 
 					float drawingScale = GetDrawingScale();
-					setlist.eraserSetting.eraserSize = 60 * drawingScale;
+					setlist.eraserSetting.eraserSize = static_cast<int>(60 * drawingScale);
 				}
 			}
 			// 性能

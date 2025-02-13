@@ -3926,11 +3926,11 @@ bool IsPowerPointRunAsAdminSet()
 // DesktopDrawpadBlocker 插件
 void StartDesktopDrawpadBlocker()
 {
-	if (ddbInteractionSetList.DdbEnable)
+	if (ddbInteractionSetList.enable)
 	{
 		// 配置 json
 		{
-			if (_waccess((dataPath + L"\\DesktopDrawpadBlocker\\interaction_configuration.json").c_str(), 0) == 0) DdbReadInteraction();
+			// if (_waccess((dataPath + L"\\DesktopDrawpadBlocker\\interaction_configuration.json").c_str(), 0) == 0) DdbReadInteraction();
 
 			ddbInteractionSetList.hostPath = GetCurrentExePath();
 

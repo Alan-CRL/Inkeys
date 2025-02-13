@@ -9,9 +9,9 @@
 #include "IdtNet.h"
 
 //程序自动更新
-int AutomaticUpdateStep = 0;
 bool mandatoryUpdate;
 bool inconsistentArchitecture;
+AutomaticUpdateStateEnum AutomaticUpdateState;
 wstring get_domain_name(wstring url) {
 	wregex pattern(L"([a-zA-z]+://[^/]+)");
 	wsmatch match;
@@ -151,6 +151,7 @@ EditionInfoClass GetEditionInfo(string channel)
 
 	return retEditionInfo;
 }
+DownloadNewProgramStateClass downloadNewProgramState;
 
 void splitUrl(string input_url, string& prefix, string& domain, string& path)
 {
@@ -171,8 +172,10 @@ void splitUrl(string input_url, string& prefix, string& domain, string& path)
 		path.clear();
 	}
 }
-int DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass editionInfo, string url)
+AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass editionInfo, string url)
 {
+	using enum AutomaticUpdateStateEnum;
+
 	error_code ec;
 	if (_waccess((globalPath + L"installer").c_str(), 4) == 0)
 	{
@@ -194,7 +197,7 @@ int DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass edi
 		filesystem::remove(globalPath + L"installer\\" + editionInfo.representation, ec);
 
 		filesystem::rename(globalPath + L"installer\\new_procedure_" + timestamp + L".tmp", globalPath + L"installer\\new_procedure_" + timestamp + L".zip", ec);
-		if (ec) return 7;
+		if (ec) return UpdateDownloadDamage;
 
 		HZIP hz = OpenZip((globalPath + L"installer\\new_procedure_" + timestamp + L".zip").c_str(), 0);
 		SetUnzipBaseDir(hz, (globalPath + L"installer").c_str());
@@ -210,7 +213,7 @@ int DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass edi
 
 		filesystem::remove(globalPath + L"installer\\new_procedure_" + timestamp + L".zip", ec);
 		filesystem::rename(globalPath + L"installer\\" + editionInfo.representation, globalPath + L"installer\\new_procedure_" + timestamp + L".exe", ec);
-		if (ec) return 7;
+		if (ec) return UpdateDownloadDamage;
 
 		string hash_md5, hash_sha256;
 		{
@@ -252,32 +255,16 @@ int DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass edi
 			error_code ec;
 			filesystem::remove(globalPath + L"installer\\new_procedure" + timestamp + L".exe", ec);
 
-			return 7;
+			return UpdateDownloadDamage;
 		}
 	}
-	else return 6;
+	else return UpdateDownloadFail;
 
-	return 8;
+	return UpdateRestart;
 }
 
 void AutomaticUpdate()
 {
-	/*
-	AutomaticUpdateStep 含义
-	0 新版本检测未启动
-	1 获取新版本信息中
-	2 下载版本信息失败
-	3 下载版本信息损坏
-	4 下载版本信息不符合规范
-	5 新版本正极速下载中
-	6 下载最新版本软件失败
-	7 下载最新版本软件损坏
-	8 重启软件更新到最新版本
-	9 软件已经是最新版本
-	10 软件相对最新版本更新
-	11 发现软件新版本
-	*/
-
 	bool state = true;
 	bool update = true;
 
@@ -285,12 +272,12 @@ void AutomaticUpdate()
 	int updateTimes = 0;
 
 	EditionInfoClass editionInfo;
-	DownloadNewProgramStateClass downloadNewProgramState;
+	using enum AutomaticUpdateStateEnum;
 
 updateStart:
 	for (updateTimes = 0; !offSignal && updateTimes < 3; updateTimes++)
 	{
-		AutomaticUpdateStep = 1;
+		AutomaticUpdateState = UpdateObtainInformation;
 
 		state = true;
 		against = false;
@@ -303,9 +290,9 @@ updateStart:
 			if (editionInfo.errorCode != 200)
 			{
 				state = false, against = true;
-				if (editionInfo.errorCode == 1) AutomaticUpdateStep = 2;
-				else if (editionInfo.errorCode == 2) AutomaticUpdateStep = 3;
-				else AutomaticUpdateStep = 4;
+				if (editionInfo.errorCode == 1) AutomaticUpdateState = UpdateInformationFail;
+				else if (editionInfo.errorCode == 2) AutomaticUpdateState = UpdateInformationDamage;
+				else AutomaticUpdateState = UpdateInformationUnStandardized;
 			}
 			else if (setlist.UpdateChannel != editionInfo.channel)
 			{
@@ -318,7 +305,7 @@ updateStart:
 		if (state && editionInfo.editionDate != L"" && ((editionInfo.editionDate > editionDate && setlist.enableAutoUpdate) || mandatoryUpdate))
 		{
 			update = true;
-			if (_waccess((globalPath + L"installer\\update.json").c_str(), 4) == 0)
+			if (_waccess((globalPath + L"installer\\update.json").c_str(), 4) == 0 && !mandatoryUpdate)
 			{
 				wstring tedition, tpath;
 				string thash_md5, thash_sha256;
@@ -366,20 +353,19 @@ updateStart:
 					if (tedition == editionInfo.editionDate && _waccess((globalPath + tpath).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
 					{
 						update = false;
-						AutomaticUpdateStep = 8;
+						AutomaticUpdateState = UpdateRestart;
 					}
 				}
 			}
 			if (update)
 			{
-				AutomaticUpdateStep = 5;
+				AutomaticUpdateState = UpdateDownloading;
 
 				against = true;
 				for (int i = 0; i < editionInfo.path_size; i++)
 				{
-					int result = DownloadNewProgram(&downloadNewProgramState, editionInfo, editionInfo.path[i]);
-					AutomaticUpdateStep = result;
-					if (AutomaticUpdateStep == 8)
+					AutomaticUpdateState = DownloadNewProgram(&downloadNewProgramState, editionInfo, editionInfo.path[i]);
+					if (AutomaticUpdateState == UpdateRestart)
 					{
 						against = false;
 
@@ -395,9 +381,9 @@ updateStart:
 		}
 		else if (state && editionInfo.editionDate != L"")
 		{
-			if (editionInfo.editionDate > editionDate) AutomaticUpdateStep = 11;
-			else if (editionInfo.editionDate < editionDate) AutomaticUpdateStep = 10;
-			else AutomaticUpdateStep = 9;
+			if (editionInfo.editionDate > editionDate) AutomaticUpdateState = UpdateNew;
+			else if (editionInfo.editionDate < editionDate) AutomaticUpdateState = UpdateNewer;
+			else AutomaticUpdateState = UpdateLatest;
 		}
 
 		if (against && !mandatoryUpdate)
@@ -405,7 +391,7 @@ updateStart:
 			for (int i = 1; i <= 10; i++)
 			{
 				if (offSignal) break;
-				if (AutomaticUpdateStep == 0 || AutomaticUpdateStep == 1) break;
+				if (AutomaticUpdateState == UpdateNotStarted || AutomaticUpdateState == UpdateObtainInformation) break;
 
 				this_thread::sleep_for(chrono::seconds(1));
 			}
@@ -416,7 +402,7 @@ updateStart:
 			for (int i = 1; i <= 1800; i++)
 			{
 				if (offSignal) break;
-				if (AutomaticUpdateStep == 0 || AutomaticUpdateStep == 1) break;
+				if (AutomaticUpdateState == UpdateNotStarted || AutomaticUpdateState == UpdateObtainInformation) break;
 
 				this_thread::sleep_for(chrono::seconds(1));
 			}
@@ -426,7 +412,7 @@ updateStart:
 
 	for (; !offSignal;)
 	{
-		if (AutomaticUpdateStep == 0 || AutomaticUpdateStep == 1) goto updateStart;
+		if (AutomaticUpdateState == UpdateNotStarted || AutomaticUpdateState == UpdateObtainInformation) goto updateStart;
 		this_thread::sleep_for(chrono::seconds(1));
 	}
 }

@@ -125,7 +125,7 @@ struct DdbInteractionSetListStruct
 {
 	DdbInteractionSetListStruct()
 	{
-		DdbEnable = false;
+		enable = false;
 		runAsAdmin = false;
 
 		DdbEdition = L"20250205b";
@@ -139,12 +139,23 @@ struct DdbInteractionSetListStruct
 		hostPath = L"";
 		restartHost = true;
 
-		memset(InterceptWindow, true, sizeof(InterceptWindow));
-		InterceptWindow[3] = false;
-		InterceptWindow[11] = false;
+		// -----
+
+		intercept.seewoWhiteboard3Floating = true;
+		intercept.seewoWhiteboard5Floating = true;
+		intercept.seewoWhiteboard5CFloating = true;
+		intercept.seewoPincoSideBarFloating = false;
+		intercept.seewoPincoDrawingFloating = true;
+		intercept.seewoPPTFloating = true;
+		intercept.aiClassFloating = true;
+		intercept.hiteAnnotationFloating = true;
+		intercept.changYanFloating = true;
+		intercept.intelligentClassFloating = true;
+		intercept.seewoDesktopAnnotationFloating = true;
+		intercept.seewoDesktopSideBarFloating = false;
 	}
 
-	bool DdbEnable;
+	bool enable;
 	bool runAsAdmin;
 
 	wstring DdbEdition;
@@ -158,8 +169,24 @@ struct DdbInteractionSetListStruct
 	wstring hostPath;
 	bool restartHost; // restartHost：（仅限独立模式）当宿主程序被关闭后，拦截到其他软件的窗口后，重启宿主程序
 
-	bool InterceptWindow[15];
+	// ----
+
+	struct
+	{
+		bool seewoWhiteboard3Floating;
+		bool seewoWhiteboard5Floating;
+		bool seewoWhiteboard5CFloating;
+		bool seewoPincoSideBarFloating;
+		bool seewoPincoDrawingFloating;
+		bool seewoPPTFloating;
+		bool aiClassFloating;
+		bool hiteAnnotationFloating;
+		bool changYanFloating;
+		bool intelligentClassFloating;
+		bool seewoDesktopAnnotationFloating;
+		bool seewoDesktopSideBarFloating;
+	} intercept;
 };
 extern DdbInteractionSetListStruct ddbInteractionSetList;
-bool DdbReadInteraction();
+//bool DdbReadInteraction();
 bool DdbWriteInteraction(bool change, bool close);
