@@ -313,6 +313,28 @@ bool EndPptShow()
 {
 	try
 	{
+		//for (int i = 0; i < 5; i++)
+		//{
+		//	if (stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection) break;
+		//	this_thread::sleep_for(chrono::milliseconds(100));
+		//}
+
+		//POINT cursorPos;
+		//GetCursorPos(&cursorPos);
+		//if (EuclideanDistance(cursorPos, POINT(0, 0)) >= EuclideanDistance(cursorPos, POINT(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight)))
+		//{
+		//	SetForegroundWindow(ppt_show);
+		//	//SetCursorPos(0, 0);
+		//	//SetCursorPos(cursorPos.x, cursorPos.y);
+		//}
+		//else
+		//{
+		//	SetForegroundWindow(ppt_show);
+		//	//SetCursorPos(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight);
+		//	//SetCursorPos(cursorPos.x, cursorPos.y);
+		//}
+
+		SetForegroundWindow(ppt_show);
 		PptCOMPto->EndSlideShow();
 
 		return true;
@@ -3219,11 +3241,10 @@ void PptInteract()
 					int temp_currentpage = PptInfoState.CurrentPage;
 					if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 					{
-						if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+						if (CheckEndShow.Check())
 						{
-							EndPptShow();
-
 							ChangeStateModeToSelection();
+							EndPptShow();
 						}
 					}
 					else if (temp_currentpage == -1)
@@ -3309,9 +3330,10 @@ void PptInteract()
 						int temp_currentpage = PptInfoState.CurrentPage;
 						if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 						{
-							if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+							if (CheckEndShow.Check())
 							{
 								ChangeStateModeToSelection();
+								EndPptShow();
 							}
 						}
 						else if (temp_currentpage == -1)
@@ -3335,11 +3357,10 @@ void PptInteract()
 									temp_currentpage = PptInfoState.CurrentPage;
 									if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 									{
-										if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+										if (CheckEndShow.Check())
 										{
-											EndPptShow();
-
 											ChangeStateModeToSelection();
+											EndPptShow();
 										}
 										break;
 									}
@@ -3433,11 +3454,10 @@ void PptInteract()
 						int temp_currentpage = PptInfoState.CurrentPage;
 						if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 						{
-							if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+							if (CheckEndShow.Check())
 							{
-								EndPptShow();
-
 								ChangeStateModeToSelection();
+								EndPptShow();
 							}
 						}
 						else if (temp_currentpage == -1)
@@ -3461,11 +3481,10 @@ void PptInteract()
 									temp_currentpage = PptInfoState.CurrentPage;
 									if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 									{
-										if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+										if (CheckEndShow.Check())
 										{
-											EndPptShow();
-
 											ChangeStateModeToSelection();
+											EndPptShow();
 										}
 										break;
 									}
@@ -3561,9 +3580,10 @@ void PptInteract()
 						int temp_currentpage = PptInfoState.CurrentPage;
 						if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 						{
-							if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+							if (CheckEndShow.Check())
 							{
 								ChangeStateModeToSelection();
+								EndPptShow();
 							}
 						}
 						else if (temp_currentpage == -1)
@@ -3587,11 +3607,10 @@ void PptInteract()
 									temp_currentpage = PptInfoState.CurrentPage;
 									if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 									{
-										if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+										if (CheckEndShow.Check())
 										{
-											EndPptShow();
-
 											ChangeStateModeToSelection();
+											EndPptShow();
 										}
 										break;
 									}
@@ -3685,9 +3704,10 @@ void PptInteract()
 						int temp_currentpage = PptInfoState.CurrentPage;
 						if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 						{
-							if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+							if (CheckEndShow.Check())
 							{
 								ChangeStateModeToSelection();
+								EndPptShow();
 							}
 						}
 						else if (temp_currentpage == -1)
@@ -3711,11 +3731,10 @@ void PptInteract()
 									temp_currentpage = PptInfoState.CurrentPage;
 									if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 									{
-										if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+										if (CheckEndShow.Check())
 										{
-											EndPptShow();
-
 											ChangeStateModeToSelection();
+											EndPptShow();
 										}
 										break;
 									}
@@ -3778,7 +3797,7 @@ void PptInteract()
 
 									if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 									{
-										if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) != 1) break;
+										if (!CheckEndShow.Check()) break;
 
 										ChangeStateModeToSelection();
 									}
@@ -3850,7 +3869,7 @@ void PPTLinkageMain()
 	threadStatus[L"PptDraw"] = false;
 }
 
-// 附加检测项
+// 附加
 bool IsPowerPointRunAsAdminSet()
 {
 	const std::wstring subKeys[] = {
@@ -3919,6 +3938,18 @@ bool IsPowerPointRunAsAdminSet()
 	}
 	return false;
 }
+
+bool CheckEndShowClass::Check()
+{
+	if (isChecking == true) return false;
+	isChecking = true;
+
+	bool ret = (MessageBox(floating_window, L"Currently in drawing mode, continuing to end will clear the canvas.\nAre you sure you want to end the presentation?\n当前处于绘制模式，继续结束放映将会清空画布内容。\n确定结束放映？", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OKCANCEL) == 1);
+
+	isChecking = false;
+	return ret;
+}
+CheckEndShowClass CheckEndShow;
 
 // --------------------------------------------------
 // 其他插件

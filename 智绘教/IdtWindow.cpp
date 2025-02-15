@@ -3,6 +3,7 @@
 #include "IdtConfiguration.h"
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
+#include "IdtMagnification.h"
 #include "IdtRts.h"
 #include "IdtState.h"
 #include "IdtText.h"
@@ -81,10 +82,10 @@ void TopWindow()
 	IDTLogger->info("[窗口置顶线程][TopWindow] 等待窗口初次绘制完成");
 
 	IDTLogger->info("[窗口置顶线程][TopWindow] 显示窗口");
-	ShowWindow(floating_window, SW_SHOW);
-	ShowWindow(ppt_window, SW_SHOW);
-	ShowWindow(drawpad_window, SW_SHOW);
-	ShowWindow(freeze_window, SW_SHOW);
+	ShowWindow(floating_window, SW_SHOWNOACTIVATE);
+	ShowWindow(ppt_window, SW_SHOWNOACTIVATE);
+	ShowWindow(drawpad_window, SW_SHOWNOACTIVATE);
+	ShowWindow(freeze_window, SW_SHOWNOACTIVATE);
 	IDTLogger->info("[窗口置顶线程][TopWindow] 显示窗口完成");
 
 	// 置顶前缓冲
@@ -98,7 +99,7 @@ void TopWindow()
 			for (int i = 1; i <= 10 && !IsWindowVisible(floating_window); i++)
 			{
 				IDTLogger->warn("[窗口置顶线程][TopWindow] 悬浮窗窗口被隐藏 Try" + to_string(i));
-				ShowWindow(floating_window, SW_SHOW);
+				ShowWindow(floating_window, SW_SHOWNOACTIVATE);
 
 				if (IsWindowVisible(floating_window)) break;
 				this_thread::sleep_for(chrono::milliseconds(10));
@@ -106,7 +107,7 @@ void TopWindow()
 			for (int i = 1; i <= 10 && !IsWindowVisible(ppt_window); i++)
 			{
 				IDTLogger->warn("[窗口置顶线程][TopWindow] PPT控件窗口被隐藏 Try" + to_string(i));
-				ShowWindow(ppt_window, SW_SHOW);
+				ShowWindow(ppt_window, SW_SHOWNOACTIVATE);
 
 				if (IsWindowVisible(ppt_window)) break;
 				this_thread::sleep_for(chrono::milliseconds(10));
@@ -114,7 +115,7 @@ void TopWindow()
 			for (int i = 1; i <= 10 && !IsWindowVisible(drawpad_window); i++)
 			{
 				IDTLogger->warn("[窗口置顶线程][TopWindow] 画板窗口被隐藏 Try" + to_string(i));
-				ShowWindow(drawpad_window, SW_SHOW);
+				ShowWindow(drawpad_window, SW_SHOWNOACTIVATE);
 
 				if (IsWindowVisible(drawpad_window)) break;
 				this_thread::sleep_for(chrono::milliseconds(10));
@@ -122,9 +123,17 @@ void TopWindow()
 			for (int i = 1; i <= 10 && !IsWindowVisible(freeze_window); i++)
 			{
 				IDTLogger->warn("[窗口置顶线程][TopWindow] 定格窗口被隐藏 Try" + to_string(i));
-				ShowWindow(freeze_window, SW_SHOW);
+				ShowWindow(freeze_window, SW_SHOWNOACTIVATE);
 
 				if (IsWindowVisible(freeze_window)) break;
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+			for (int i = 1; i <= 10 && !IsWindowVisible(magnifierWindow); i++)
+			{
+				IDTLogger->warn("[窗口置顶线程][TopWindow] magnifierWindow 被隐藏 Try" + to_string(i));
+				ShowWindow(magnifierWindow, SW_SHOWNOACTIVATE);
+
+				if (IsWindowVisible(magnifierWindow)) break;
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
 		}
@@ -165,6 +174,15 @@ void TopWindow()
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
 
+			for (int i = 1; i <= 10 && !(GetWindowLong(setting_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE); i++)
+			{
+				IDTLogger->warn("[窗口置顶线程][TopWindow] 选项窗口 WS_EX_NOACTIVATE 样式被隐藏 Try" + to_string(i));
+				SetWindowLong(setting_window, GWL_EXSTYLE, GetWindowLong(setting_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+
+				if (GetWindowLong(setting_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+
 			for (int i = 1; i <= 10 && !(GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_LAYERED); i++)
 			{
 				IDTLogger->warn("[窗口置顶线程][TopWindow] 画板窗口 WS_EX_LAYERED 样式被隐藏 Try" + to_string(i));
@@ -198,28 +216,81 @@ void TopWindow()
 				if (GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
+
+			for (int i = 1; i <= 10 && !(GetWindowLong(magnifierWindow, GWL_EXSTYLE) & WS_EX_LAYERED); i++)
+			{
+				IDTLogger->warn("[窗口置顶线程][TopWindow] magnifierWindow WS_EX_LAYERED 样式被隐藏 Try" + to_string(i));
+				SetWindowLong(magnifierWindow, GWL_EXSTYLE, GetWindowLong(magnifierWindow, GWL_EXSTYLE) | WS_EX_LAYERED);
+
+				if (GetWindowLong(magnifierWindow, GWL_EXSTYLE) & WS_EX_LAYERED) break;
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+			for (int i = 1; i <= 10 && !(GetWindowLong(magnifierWindow, GWL_EXSTYLE) & WS_EX_NOACTIVATE); i++)
+			{
+				IDTLogger->warn("[窗口置顶线程][TopWindow] magnifierWindow WS_EX_NOACTIVATE 样式被隐藏 Try" + to_string(i));
+				SetWindowLong(magnifierWindow, GWL_EXSTYLE, GetWindowLong(magnifierWindow, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+
+				if (GetWindowLong(magnifierWindow, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+			for (int i = 1; i <= 10 && !(GetWindowLong(magnifierChild, GWL_EXSTYLE) & WS_EX_NOACTIVATE); i++)
+			{
+				IDTLogger->warn("[窗口置顶线程][TopWindow] magnifierChild WS_EX_NOACTIVATE 样式被隐藏 Try" + to_string(i));
+				SetWindowLong(magnifierChild, GWL_EXSTYLE, GetWindowLong(magnifierChild, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+
+				if (GetWindowLong(magnifierChild, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
 		}
 
 		// 置顶窗口
 		if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && !penetrate.select)
 		{
-			std::shared_lock<std::shared_mutex> lock1(StrokeImageListSm);
+			shared_lock LockStrokeImageListSm(StrokeImageListSm);
 			bool flag = StrokeImageList.empty();
-			lock1.unlock();
+			LockStrokeImageListSm.unlock();
 			if (flag)
 			{
-				if (!SetWindowPos(freeze_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
+				// 设置窗口顺序
+				SetWindowPos(ppt_window, floating_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+				SetWindowPos(setting_window, ppt_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+				SetWindowPos(drawpad_window, setting_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+				SetWindowPos(freeze_window, drawpad_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+				SetWindowPos(magnifierWindow, freeze_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+
+				// 统一置顶
+				if (!SetWindowPos(magnifierWindow, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
 					IDTLogger->warn("[窗口置顶线程][TopWindow] 置顶窗口时失败 Error" + to_string(GetLastError()));
 			}
 		}
 		else
 		{
-			if (!SetWindowPos(freeze_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
+			// 设置窗口顺序
+			SetWindowPos(ppt_window, floating_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+			SetWindowPos(setting_window, ppt_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+			SetWindowPos(drawpad_window, setting_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+			SetWindowPos(freeze_window, drawpad_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+			SetWindowPos(magnifierWindow, freeze_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+
+			// 统一置顶
+			if (!SetWindowPos(magnifierWindow, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
 				IDTLogger->warn("[窗口置顶线程][TopWindow] 置顶窗口时失败 Error" + to_string(GetLastError()));
 		}
 
+		// 延迟等待时间计算
+		int sleepTime = 30;
+		{
+			if (setlist.topSleepTime == 0) sleepTime = 1;
+			else if (setlist.topSleepTime == 1) sleepTime = 5;
+			else if (setlist.topSleepTime == 2) sleepTime = 10;
+			else if (setlist.topSleepTime == 4) sleepTime = 50;
+			else if (setlist.topSleepTime == 5) sleepTime = 100;
+			else if (setlist.topSleepTime == 6) sleepTime = 300;
+			else sleepTime = 30;
+		}
+
 		// 延迟等待
-		for (int i = 1; i <= 30; i++)
+		for (int i = 1; i <= sleepTime; i++)
 		{
 			if (offSignal) break;
 			if (topWindowNow)

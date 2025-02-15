@@ -21,6 +21,7 @@ struct SetListStruct
 	int SetSkinMode, SkinMode;
 	float settingGlobalScale;
 
+	int topSleepTime;
 	bool RightClickClose;
 	bool BrushRecover, RubberRecover;
 

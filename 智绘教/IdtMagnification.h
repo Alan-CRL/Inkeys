@@ -5,7 +5,7 @@
 #pragma comment(lib, "magnification.lib")
 
 extern IMAGE MagnificationBackground;
-extern HWND hwndHost, hwndMag;
+extern HWND magnifierWindow, magnifierChild;
 
 extern bool magnificationReady;
 
@@ -14,5 +14,5 @@ extern RECT hostWindowRect;
 
 extern int RequestUpdateMagWindow;
 
+void CreateMagnifierWindow();
 void MagnifierThread();
-void MagnifierUpdate();

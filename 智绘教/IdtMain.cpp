@@ -41,7 +41,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250213a";				// 程序发布日期
+wstring editionDate = L"20250215a";				// 程序发布日期
 wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -121,10 +121,10 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	// 防止重复启动
 	{
 #ifdef IDT_RELEASE
-		if (filesystem::exists(globalPath + L"force_start.signal"))
+		if (filesystem::exists(globalPath + L"force_start_once.signal"))
 		{
 			error_code ec;
-			filesystem::remove(globalPath + L"force_start.signal", ec);
+			filesystem::remove(globalPath + L"force_start_once.signal", ec);
 		}
 		else if (ProcessRunningCnt(GetCurrentExePath()) > 1)
 		{
@@ -599,16 +599,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		IDTLogger->info("[主线程][IdtMain] DPI初始化完成");
 	}
 
-	// I18N初始化
-	{
-		// 先读取完整性的英语文件，在读取配置指定的语言文件
-		// 这样如果配置文件缺少某项也能用英语补齐
-		loadI18n(1, L"JSON", L"en-US");
-		loadI18n(1, L"JSON", L"zh-CN");
-		// TODO 允许切换到英语
-
-		IDTLogger->info("[主线程][IdtMain] I18N初始化完成");
-	}
 	// 配置信息初始化
 	{
 		// 读取配置文件前初始化操作
@@ -629,6 +619,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				setlist.SetSkinMode = 0;
 				setlist.SkinMode = 1;
 
+				setlist.topSleepTime = 3;
 				setlist.RightClickClose = false;
 				setlist.BrushRecover = true;
 				setlist.RubberRecover = false;
@@ -747,6 +738,16 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] 配置信息初始化完成");
 	}
+	// I18N初始化
+	{
+		// 先读取完整性的英语文件，在读取配置指定的语言文件
+		// 这样如果配置文件缺少某项也能用英语补齐
+		//loadI18n(1, L"JSON", L"en-US");
+		loadI18n(1, L"JSON", L"zh-CN");
+		// TODO 允许切换到英语
+
+		IDTLogger->info("[主线程][IdtMain] I18N初始化完成");
+	}
 	// 插件配置初始化
 	{
 		// 桌面快捷方式初始化
@@ -839,8 +840,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		int DisplaysNumberTemp = DisplaysNumber;
 		DisplaysNumberLock.unlock();
 
-		thread(MagnifierThread).detach();
-
 		if (DisplaysNumberTemp > 1) IDTLogger->warn("[主线程][IdtMain] 拥有多个显示器");
 		IDTLogger->info("[主线程][IdtMain] 显示器信息初始化完成");
 	}
@@ -848,36 +847,27 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	// 窗口
 	{
 		wstring ClassName;
-		if (userId == L"Error") ClassName = L"IdtHiEasyX";
+		if (userId == L"Error") ClassName = L"HiEasyX041";
 		else ClassName = userId;
 
-		hiex::PreSetWindowShowState(SW_HIDE);
-		freeze_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Idt4 FreezeWindow", ClassName.c_str());
+		CreateMagnifierWindow();
 
-		hiex::PreSetWindowShowState(SW_HIDE);
-		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Idt3 DrawpadWindow", ClassName.c_str(), nullptr, freeze_window);
+		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
+		freeze_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys5 FreezeWindow", (L"Inkeys5;" + ClassName).c_str(), nullptr, magnifierWindow);
 
-		hiex::PreSetWindowShowState(SW_HIDE);
-		ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Idt2 PptWindow", ClassName.c_str(), nullptr, drawpad_window);
+		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
+		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys4 DrawpadWindow", (L"Inkeys4;" + ClassName).c_str(), nullptr, freeze_window);
 
-		hiex::PreSetWindowShowState(SW_HIDE);
-		floating_window = hiex::initgraph_win32(background.getwidth(), background.getheight(), 0, L"Idt1 FloatingWindow", ClassName.c_str(), nullptr, ppt_window);
+		SettingWindowBegin();
+
+		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
+		ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys2 PptWindow", (L"Inkeys2;" + ClassName).c_str(), nullptr, setting_window);
+
+		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
+		floating_window = hiex::initgraph_win32(background.getwidth(), background.getheight(), 0, L"Inkeys1 FloatingWindow", (L"Inkeys1;" + ClassName).c_str(), nullptr, ppt_window);
 
 		// 画板窗口在注册 RTS 前必须拥有置顶属性，在显示前先进行一次全局置顶
-		SetWindowPos(freeze_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-
-		// 画板窗口提前配置其不能拥有焦点的样式，再注册 RTS
-		{
-			while (!(GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE))
-			{
-				SetWindowLong(drawpad_window, GWL_EXSTYLE, GetWindowLong(drawpad_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
-				if (GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
-
-				this_thread::sleep_for(chrono::milliseconds(10));
-			}
-
-			SetWindowPos(drawpad_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-		}
+		SetWindowPos(magnifierWindow, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
 		thread TopWindowThread(TopWindow);
 		TopWindowThread.detach();
@@ -971,6 +961,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		thread(FreezeFrameWindow).detach();
 		thread(StateMonitoring).detach();
 
+		// 放大API
+		thread(MagnifierThread).detach();
+
 		// 启动 PPT 联动插件
 		thread(PPTLinkageMain).detach();
 
@@ -1005,7 +998,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	if (offSignal == 2)
 	{
 		HANDLE fileHandle = NULL;
-		OccupyFileForWrite(&fileHandle, globalPath + L"force_start.signal");
+		OccupyFileForWrite(&fileHandle, globalPath + L"force_start_once.signal");
 		UnOccupyFile(&fileHandle);
 
 		ShellExecuteW(NULL, NULL, GetCurrentExePath().c_str(), NULL, NULL, SW_SHOWNORMAL);

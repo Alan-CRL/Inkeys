@@ -119,6 +119,9 @@ bool ReadSetting()
 
 		if (updateVal.isMember("SetSkinMode") && updateVal["SetSkinMode"].isInt())
 			setlist.SetSkinMode = updateVal["SetSkinMode"].asInt();
+
+		if (updateVal.isMember("TopSleepTime") && updateVal["TopSleepTime"].isInt())
+			setlist.topSleepTime = updateVal["TopSleepTime"].asInt();
 		if (updateVal.isMember("RightClickClose") && updateVal["RightClickClose"].isBool())
 			setlist.RightClickClose = updateVal["RightClickClose"].asBool();
 		if (updateVal.isMember("BrushRecover") && updateVal["BrushRecover"].isBool())
@@ -233,6 +236,7 @@ bool WriteSetting()
 		updateVal["SettingGlobalScale"] = Json::Value(setlist.settingGlobalScale);
 
 		updateVal["SetSkinMode"] = Json::Value(setlist.SetSkinMode);
+		updateVal["TopSleepTime"] = Json::Value(setlist.topSleepTime);
 		updateVal["RightClickClose"] = Json::Value(setlist.RightClickClose);
 		updateVal["BrushRecover"] = Json::Value(setlist.BrushRecover);
 		updateVal["RubberRecover"] = Json::Value(setlist.RubberRecover);

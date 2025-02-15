@@ -240,6 +240,18 @@ bool EndPptShow();
 void PPTLinkageMain();
 
 bool IsPowerPointRunAsAdminSet();
+class CheckEndShowClass
+{
+public:
+	CheckEndShowClass()
+	{
+		isChecking = false;
+	}
+public:
+	bool isChecking;
+	bool Check();
+};
+extern CheckEndShowClass CheckEndShow;
 
 // --------------------------------------------------
 // 其他插件
