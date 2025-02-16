@@ -176,8 +176,6 @@ void MagnifierThread()
 
 			if (MagSetWindowFilterList(magnifierChild, MW_FILTERMODE_EXCLUDE, hwndList.size(), hwndList.data()) == FALSE)
 			{
-				Testi(123);
-
 				IDirect3D9* pD3D = Direct3DCreate9(D3D_SDK_VERSION);
 				if (pD3D != nullptr)
 				{
