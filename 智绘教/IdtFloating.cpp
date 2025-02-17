@@ -130,25 +130,20 @@ pair<double, double> GetPointOnCircle(double x, double y, double r, double angle
 	return make_pair(px + 0.5, py + 0.5);
 }
 
-void SeekBar(ExMessage m)
+int SeekBar(ExMessage m)
 {
-	if (!KeyBoradDown[VK_LBUTTON]) return;
+	if (!KeyBoradDown[VK_LBUTTON]) return 0;
 
 	POINT p;
 	GetCursorPos(&p);
 
-	int pop_x = p.x;
-	int pop_y = p.y;
+	int firX = static_cast<int>(p.x);
+	int firY = static_cast<int>(p.y);
 
 	while (1)
 	{
 		if (!KeyBoradDown[VK_LBUTTON]) break;
-
-		POINT p;
 		GetCursorPos(&p);
-
-		pop_x = p.x;
-		pop_y = p.y;
 
 		SetWindowPos(floating_window, NULL,
 			floating_windows.x = min(GetSystemMetrics(SM_CXSCREEN) - floating_windows.width, max(1, p.x - m.x)),
@@ -158,7 +153,7 @@ void SeekBar(ExMessage m)
 			SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE);
 	}
 
-	return;
+	return static_cast<int>(sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY)));
 }
 
 HHOOK FloatingHookCall;
@@ -5171,27 +5166,11 @@ void MouseInteraction()
 					if (m.message == WM_LBUTTONDOWN)
 					{
 						lx = m.x, ly = m.y;
-						while (1)
-						{
-							m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-							if (abs(m.x - lx) <= 20 && abs(m.y - ly) <= 20)
-							{
-								if (!m.lbutton)
-								{
-									target_status = 1;
 
-									break;
-								}
-							}
-							else
-							{
-								SeekBar(m);
+						int moveDis = SeekBar(m);
+						if (moveDis <= 20) target_status = 1;
 
-								hiex::flushmessage_win32(EM_MOUSE, floating_window);
-
-								break;
-							}
-						}
+						hiex::flushmessage_win32(EM_MOUSE, floating_window);
 
 						MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
 					}
@@ -5263,29 +5242,15 @@ void MouseInteraction()
 					if (m.message == WM_LBUTTONDOWN)
 					{
 						lx = m.x, ly = m.y;
-						while (1)
+
+						int moveDis = SeekBar(m);
+						if (moveDis <= 20)
 						{
-							m = hiex::getmessage_win32(EM_MOUSE, floating_window);
-							if (abs(m.x - lx) <= 20 && abs(m.y - ly) <= 20)
-							{
-								if (!m.lbutton)
-								{
-									state = 1;
-
-									target_status = 0;
-
-									break;
-								}
-							}
-							else
-							{
-								SeekBar(m);
-
-								hiex::flushmessage_win32(EM_MOUSE, floating_window);
-
-								break;
-							}
+							state = 1;
+							target_status = 0;
 						}
+
+						hiex::flushmessage_win32(EM_MOUSE, floating_window);
 
 						MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
 					}
