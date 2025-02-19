@@ -200,6 +200,8 @@ bool ReadSetting()
 						ddbInteractionSetList.intercept.hiteAnnotationFloating = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["HiteAnnotationFloating"].asBool();
 					if (updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("ChangYanFloating") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanFloating"].isBool())
 						ddbInteractionSetList.intercept.changYanFloating = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanFloating"].asBool();
+					if (updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("ChangYanPptFloating") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanPptFloating"].isBool())
+						ddbInteractionSetList.intercept.changYanPptFloating = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanPptFloating"].asBool();
 					if (updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("IntelligentClassFloating") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["IntelligentClassFloating"].isBool())
 						ddbInteractionSetList.intercept.intelligentClassFloating = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["IntelligentClassFloating"].asBool();
 					if (updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoDesktopAnnotationFloating") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopAnnotationFloating"].isBool())
@@ -282,6 +284,7 @@ bool WriteSetting()
 					updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["AiClassFloating"] = Json::Value(ddbInteractionSetList.intercept.aiClassFloating);
 					updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["HiteAnnotationFloating"] = Json::Value(ddbInteractionSetList.intercept.hiteAnnotationFloating);
 					updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanFloating"] = Json::Value(ddbInteractionSetList.intercept.changYanFloating);
+					updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanPptFloating"] = Json::Value(ddbInteractionSetList.intercept.changYanPptFloating);
 					updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["IntelligentClassFloating"] = Json::Value(ddbInteractionSetList.intercept.intelligentClassFloating);
 					updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopAnnotationFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoDesktopAnnotationFloating);
 					updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopSideBarFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoDesktopSideBarFloating);
@@ -607,6 +610,7 @@ bool DdbWriteInteraction(bool change, bool close)
 			updateVal["Intercept"]["AiClassFloating"] = Json::Value(ddbInteractionSetList.intercept.aiClassFloating);
 			updateVal["Intercept"]["HiteAnnotationFloating"] = Json::Value(ddbInteractionSetList.intercept.hiteAnnotationFloating);
 			updateVal["Intercept"]["ChangYanFloating"] = Json::Value(ddbInteractionSetList.intercept.changYanFloating);
+			updateVal["Intercept"]["ChangYanPptFloating"] = Json::Value(ddbInteractionSetList.intercept.changYanPptFloating);
 			updateVal["Intercept"]["IntelligentClassFloating"] = Json::Value(ddbInteractionSetList.intercept.intelligentClassFloating);
 			updateVal["Intercept"]["SeewoDesktopAnnotationFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoDesktopAnnotationFloating);
 			updateVal["Intercept"]["SeewoDesktopSideBarFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoDesktopSideBarFloating);
