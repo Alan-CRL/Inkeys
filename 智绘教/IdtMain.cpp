@@ -41,7 +41,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250219a";				// 程序发布日期
+wstring editionDate = L"20250225a";				// 程序发布日期
 wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -598,6 +598,10 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] DPI初始化完成");
 	}
+	// COM初始化
+	HANDLE hActCtx;
+	ULONG_PTR ulCookie;
+	CoInitializeEx(NULL, COINIT_MULTITHREADED);
 
 	// 配置信息初始化
 	{
@@ -748,7 +752,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] I18N初始化完成");
 	}
-	// 插件配置初始化
+	// 插件初始化
 	{
 		// 桌面快捷方式初始化
 		shortcutAssistant.SetShortcut();
@@ -756,12 +760,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		StartDesktopDrawpadBlocker();
 	}
 
-	// COM初始化
-	HANDLE hActCtx;
-	ULONG_PTR ulCookie;
+	// COM 清单加载
 	{
-		CoInitializeEx(NULL, COINIT_MULTITHREADED);
-
 		//PptCOM 组件加载
 		{
 			if (!ExtractResource((globalPath + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(222)))
