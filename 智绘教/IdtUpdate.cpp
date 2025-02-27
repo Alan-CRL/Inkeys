@@ -59,22 +59,20 @@ EditionInfoClass GetEditionInfo(string channel)
 	getInfoStart:
 		if (editionInfoValue.isMember(channel))
 		{
-			if (editionInfoValue[channel].isMember("edition_date")) retEditionInfo.editionDate = utf8ToUtf16(editionInfoValue[channel]["edition_date"].asString());
+			if (editionInfoValue[channel].isMember("edition_date") && editionInfoValue[channel]["edition_date"].isString()) retEditionInfo.editionDate = utf8ToUtf16(editionInfoValue[channel]["edition_date"].asString());
 			else informationCompliance = false;
-			if (editionInfoValue[channel].isMember("edition_code")) retEditionInfo.editionCode = utf8ToUtf16(editionInfoValue[channel]["edition_code"].asString());
-			// else informationCompliance = false;
-			if (editionInfoValue[channel].isMember("explain")) retEditionInfo.explain = utf8ToUtf16(editionInfoValue[channel]["explain"].asString());
-			// else informationCompliance = false;
-			if (editionInfoValue[channel].isMember("hash"))
+			if (editionInfoValue[channel].isMember("edition_code") && editionInfoValue[channel]["edition_code"].isString()) retEditionInfo.editionCode = utf8ToUtf16(editionInfoValue[channel]["edition_code"].asString());
+			if (editionInfoValue[channel].isMember("explain") && editionInfoValue[channel]["explain"].isString()) retEditionInfo.explain = utf8ToUtf16(editionInfoValue[channel]["explain"].asString());
+			if (editionInfoValue[channel].isMember("hash") && editionInfoValue[channel]["hash"].isObject())
 			{
 				string hash1, hash2;
 				if (setlist.updateArchitecture == "win64") hash1 = "md5 64", hash2 = "sha256 64";
 				else if (setlist.updateArchitecture == "arm64") hash1 = "md5 Arm64", hash2 = "sha256 Arm64";
 				else hash1 = "md5", hash2 = "sha256";
 
-				if (editionInfoValue[channel]["hash"].isMember(hash1)) retEditionInfo.hash_md5 = editionInfoValue[channel]["hash"][hash1].asString();
+				if (editionInfoValue[channel]["hash"].isMember(hash1) && editionInfoValue[channel]["hash"][hash1].isString()) retEditionInfo.hash_md5 = editionInfoValue[channel]["hash"][hash1].asString();
 				else informationCompliance = false;
-				if (editionInfoValue[channel]["hash"].isMember(hash2)) retEditionInfo.hash_sha256 = editionInfoValue[channel]["hash"][hash2].asString();
+				if (editionInfoValue[channel]["hash"].isMember(hash2) && editionInfoValue[channel]["hash"][hash2].isString()) retEditionInfo.hash_sha256 = editionInfoValue[channel]["hash"][hash2].asString();
 				else informationCompliance = false;
 			}
 			else informationCompliance = false;
@@ -100,8 +98,18 @@ EditionInfoClass GetEditionInfo(string channel)
 				}
 				else informationCompliance = false;
 			}
+			if (editionInfoValue[channel].isMember("size") && editionInfoValue[channel]["size"].isObject())
+			{
+				string path;
+				if (setlist.updateArchitecture == "win64") path = "file64";
+				else if (setlist.updateArchitecture == "arm64") path = "fileArm64";
+				else path = "file";
 
-			if (editionInfoValue[channel].isMember("representation")) retEditionInfo.representation = utf8ToUtf16(editionInfoValue[channel]["representation"].asString());
+				if (editionInfoValue[channel]["size"].isMember(path) && editionInfoValue[channel]["size"][path].isUInt64())
+					retEditionInfo.fileSize = editionInfoValue[channel]["size"][path].asUInt64();
+			}
+
+			if (editionInfoValue[channel].isMember("representation") && editionInfoValue[channel]["representation"].isString()) retEditionInfo.representation = utf8ToUtf16(editionInfoValue[channel]["representation"].asString());
 			else informationCompliance = false;
 		}
 		else informationCompliance = false;
@@ -187,8 +195,11 @@ AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state,
 	string prefix, domain, path;
 	splitUrl(url, prefix, domain, path);
 
+	state->downloadedSize.store(editionInfo.fileSize.load());
+	Testi(state->downloadedSize);
+
 	wstring timestamp = getTimestamp();
-	bool reslut = DownloadEdition(domain, path, globalPath + L"installer\\", L"new_procedure_" + timestamp + L".tmp", state->fileSize, state->downloadedSize);
+	bool reslut = DownloadEdition(domain, path, globalPath + L"installer\\", L"new_procedure_" + timestamp + L".tmp", state->downloadedSize);
 
 	if (reslut)
 	{
@@ -371,6 +382,8 @@ updateStart:
 
 						if (mandatoryUpdate)
 						{
+							Test();
+
 							mandatoryUpdate = false;
 							offSignal = 2;
 						}

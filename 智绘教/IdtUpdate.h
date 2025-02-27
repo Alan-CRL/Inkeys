@@ -14,9 +14,34 @@ public:
 		explain = L"";
 		representation = L"";
 		path_size = 0;
+		fileSize = 0;
 
 		hash_md5 = "";
 		hash_sha256 = "";
+	}
+
+	EditionInfoClass(const EditionInfoClass& other) { cF(other); }
+	EditionInfoClass& operator=(const EditionInfoClass& other)
+	{
+		if (this != &other) cF(other);
+		return *this;
+	}
+private:
+	void cF(const EditionInfoClass& other)
+	{
+		errorCode = other.errorCode;
+		channel = other.channel;
+
+		editionDate = other.editionDate;
+		editionCode = other.editionCode;
+		explain = other.explain;
+		representation = other.representation;
+		for (int i = 0; i < 10; i++) path[i] = other.path[i];
+		path_size = other.path_size;
+		fileSize.store(other.fileSize.load());
+
+		hash_md5 = other.hash_md5;
+		hash_sha256 = other.hash_sha256;
 	}
 
 public:
@@ -29,6 +54,7 @@ public:
 	wstring representation;
 	string path[10];
 	int path_size;
+	atomic_ullong fileSize;
 
 	string hash_md5;
 	string hash_sha256;
@@ -55,8 +81,28 @@ extern AutomaticUpdateStateEnum AutomaticUpdateState;
 class DownloadNewProgramStateClass
 {
 public:
-	long long downloadedSize;
-	long long fileSize;
+	DownloadNewProgramStateClass()
+	{
+		downloadedSize.store(0);
+		fileSize.store(0);
+	}
+
+	DownloadNewProgramStateClass(const DownloadNewProgramStateClass& other) { cF(other); }
+	DownloadNewProgramStateClass& operator=(const DownloadNewProgramStateClass& other)
+	{
+		if (this != &other) cF(other);
+		return *this;
+	}
+private:
+	void cF(const DownloadNewProgramStateClass& other)
+	{
+		downloadedSize.store(other.downloadedSize.load());
+		fileSize.store(other.fileSize.load());
+	}
+
+public:
+	atomic_ullong downloadedSize;
+	atomic_ullong fileSize;
 };
 extern DownloadNewProgramStateClass downloadNewProgramState;
 

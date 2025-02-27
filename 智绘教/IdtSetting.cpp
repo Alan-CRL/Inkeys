@@ -106,7 +106,7 @@ void SettingWindow(promise<void>& promise)
 			break;
 
 		case WM_LBUTTONDOWN:
-			if (IsInRect(MoushPos.x, MoushPos.y, { 0,0,int(904.0 * settingGlobalScale),int(32.0 * settingGlobalScale) })) SettingSeekBar();
+			if (IsInRect(MoushPos.x, MoushPos.y, { 0,0,int(904.0 * settingGlobalScale),int(40.0 * settingGlobalScale) })) SettingSeekBar();
 			break;
 		}
 	}
@@ -745,7 +745,7 @@ void SettingMain()
 				ImGui::Begin("主窗口", &test.select, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoTitleBar);//开始绘制窗口
 				ImGui::PopStyleColor();
 
-				// 标题栏高 32px
+				// 标题栏高 32px + 8px
 				{
 					ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 					ImGui::SetCursorPos({ 20.0f * settingGlobalScale,14.0f * settingGlobalScale });
@@ -5742,7 +5742,7 @@ void SettingMain()
 				{
 					using enum AutomaticUpdateStateEnum;
 
-					if (AutomaticUpdateState == UpdateNotStarted)
+					if (0 && AutomaticUpdateState == UpdateNotStarted)
 					{
 						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -5887,7 +5887,7 @@ void SettingMain()
 						}
 						ImGui::EndChild();
 					}
-					else if (AutomaticUpdateState == UpdateDownloading)
+					else if (1 || AutomaticUpdateState == UpdateDownloading)
 					{
 						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -5907,6 +5907,19 @@ void SettingMain()
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip5]).c_str());
+						}
+						{
+							double downloadedSize = static_cast<double>(downloadNewProgramState.downloadedSize.load());
+							double fileSize = static_cast<double>(downloadNewProgramState.fileSize.load());
+
+							if (fileSize != 0 && downloadedSize <= fileSize)
+							{
+								ImGui::SetCursorPos({ 665.0f * settingGlobalScale - ImGui::CalcTextSize("100.0%").x, cursosPosY + 8.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+								ImGui::TextUnformatted(format("{:.1f}%", downloadedSize / fileSize * 100).c_str());
+							}
 						}
 
 						{
