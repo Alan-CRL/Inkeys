@@ -126,6 +126,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			error_code ec;
 			filesystem::remove(globalPath + L"force_start_once.signal", ec);
 		}
+		else if (filesystem::exists(globalPath + L"force_start_try.signal")) 0;
 		else if (ProcessRunningCnt(GetCurrentExePath()) > 1)
 		{
 			if (filesystem::exists(globalPath + L"repeatedly_start.signal")) MessageBox(NULL, L"智绘教Inkeys is already running. If not, you need to end the relevant process and reopen the program.\n智绘教Inkeys 已经运行。如果没有则需要结束相关进程后重新打开程序。", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);

@@ -253,7 +253,7 @@ void GetPptState()
 		{
 			try
 			{
-				_com_util::CheckError(PptCOMPto.CreateInstance(_uuidof(PptCOMServer)));
+				//_com_util::CheckError(PptCOMPto.CreateInstance(_uuidof(PptCOMServer)));
 				rel = PptCOMPto->Initialization(&PptInfoState.TotalPage, &PptInfoState.CurrentPage, pptComSetlist.autoKillWpsProcess);
 			}
 			catch (_com_error err)
@@ -279,7 +279,7 @@ void GetPptState()
 
 		if (tmp <= 0)
 		{
-			for (int i = 0; i <= 30 && !offSignal; i++)
+			for (int i = 0; i <= 20 && !offSignal; i++)
 				this_thread::sleep_for(chrono::milliseconds(100));
 		}
 	}

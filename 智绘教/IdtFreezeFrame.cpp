@@ -70,6 +70,8 @@ void FreezeFrameWindow()
 
 		this_thread::sleep_for(chrono::milliseconds(10));
 	}
+	// TODO 临时方案
+	::SetWindowLong(freeze_window, GWL_EXSTYLE, ::GetWindowLong(freeze_window, GWL_EXSTYLE) | WS_EX_TRANSPARENT);
 
 	ulwi.hdcSrc = GetImageHDC(&freeze_background);
 	UpdateLayeredWindowIndirect(freeze_window, &ulwi);
@@ -197,6 +199,8 @@ void FreezeFrameWindow()
 
 				ulwi.hdcSrc = GetImageHDC(&freeze_background);
 				UpdateLayeredWindowIndirect(freeze_window, &ulwi);
+
+				//SetForegroundWindow(ppt_show);
 
 				if (tRecord)
 				{

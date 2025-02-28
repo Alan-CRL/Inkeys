@@ -4,6 +4,7 @@
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
 #include "IdtMagnification.h"
+#include "IdtOther.h"
 #include "IdtRts.h"
 #include "IdtState.h"
 #include "IdtText.h"
@@ -74,10 +75,23 @@ void TopWindow()
 	if (!IdtWindowsIsVisible.allCompleted)
 	{
 		IDTLogger->warn("[窗口置顶线程][TopWindow] 等待窗口初次绘制超时");
-		MessageBox(NULL, L"Program unexpected exit: The program window creation failed or was intercepted. Please restart the software and try again.(#5)\n程序意外退出：程序窗口创建失败或被拦截，请重启软件重试。(#5)", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
 
-		offSignal = true;
-		return;
+		if (filesystem::exists(globalPath + L"force_start_try.signal"))
+		{
+			error_code ec;
+			filesystem::remove(globalPath + L"force_start_try.signal", ec);
+
+			MessageBox(NULL, L"Program unexpected exit: The program window creation failed or was intercepted. Please restart the software and try again.(#5)\n程序意外退出：程序窗口创建失败或被拦截，请重启软件重试。(#5)", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
+		}
+		else
+		{
+			HANDLE fileHandle = NULL;
+			OccupyFileForWrite(&fileHandle, globalPath + L"force_start_try.signal");
+			UnOccupyFile(&fileHandle);
+
+			ShellExecuteW(NULL, NULL, GetCurrentExePath().c_str(), NULL, NULL, SW_SHOWNORMAL);
+		}
+		exit(0);
 	}
 	IDTLogger->info("[窗口置顶线程][TopWindow] 等待窗口初次绘制完成");
 
@@ -134,6 +148,14 @@ void TopWindow()
 				ShowWindow(magnifierWindow, SW_SHOWNOACTIVATE);
 
 				if (IsWindowVisible(magnifierWindow)) break;
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+			for (int i = 1; i <= 10 && !IsWindowVisible(setting_window); i++)
+			{
+				IDTLogger->warn("[窗口置顶线程][TopWindow] 选项被隐藏 Try" + to_string(i));
+				ShowWindow(setting_window, SW_SHOWNOACTIVATE);
+
+				if (IsWindowVisible(setting_window)) break;
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
 		}
@@ -239,6 +261,23 @@ void TopWindow()
 				SetWindowLong(magnifierChild, GWL_EXSTYLE, GetWindowLong(magnifierChild, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
 
 				if (GetWindowLong(magnifierChild, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+
+			for (int i = 1; i <= 10 && !(GetWindowLong(setting_window, GWL_EXSTYLE) & WS_EX_LAYERED); i++)
+			{
+				IDTLogger->warn("[窗口置顶线程][TopWindow] 选项窗口 WS_EX_LAYERED 样式被隐藏 Try" + to_string(i));
+				SetWindowLong(setting_window, GWL_EXSTYLE, GetWindowLong(setting_window, GWL_EXSTYLE) | WS_EX_LAYERED);
+
+				if (GetWindowLong(setting_window, GWL_EXSTYLE) & WS_EX_LAYERED) break;
+				this_thread::sleep_for(chrono::milliseconds(10));
+			}
+			for (int i = 1; i <= 10 && !(GetWindowLong(setting_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE); i++)
+			{
+				IDTLogger->warn("[窗口置顶线程][TopWindow] 选项窗口 WS_EX_NOACTIVATE 样式被隐藏 Try" + to_string(i));
+				SetWindowLong(setting_window, GWL_EXSTYLE, GetWindowLong(setting_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+
+				if (GetWindowLong(setting_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
 		}

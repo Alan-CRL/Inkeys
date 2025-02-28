@@ -81,7 +81,7 @@ void MagnifierWindow(HINSTANCE hinst, promise<void>& promise)
 		else ClassName = L"Inkeys6;" + userId;
 		if (!RegisterHostWindowClass(hinst, ClassName)) IDTLogger->warn("[放大API线程][SetupMagnifier] 注册放大API主机窗口失败");
 
-		magnifierWindow = CreateWindowEx(WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE, ClassName.c_str(), L"Inkeys6 MagnifierHostWindow",
+		magnifierWindow = CreateWindowEx(WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE, ClassName.c_str(), L"Inkeys6 MagnifierHostWindow",
 			WS_SIZEBOX | WS_SYSMENU | WS_CLIPCHILDREN | WS_MAXIMIZEBOX,
 			0, 0, hostWindowRect.right, hostWindowRect.bottom, NULL, NULL, hinst, NULL);
 		if (!magnifierWindow) IDTLogger->error("[放大API线程][SetupMagnifier] 创建放大API主机窗口失败" + to_string(GetLastError()));
