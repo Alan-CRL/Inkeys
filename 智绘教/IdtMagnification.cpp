@@ -170,7 +170,7 @@ void MagnifierThread()
 			hwndList.emplace_back(ppt_window);
 			hwndList.emplace_back(drawpad_window);
 			hwndList.emplace_back(freeze_window);
-			//hwndList.emplace_back(setting_window);
+			hwndList.emplace_back(setting_window);
 
 			IDTLogger->info("[放大API线程][MagnifierThread] 设置穿透窗口列表");
 

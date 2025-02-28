@@ -26,6 +26,10 @@
 #include "imgui/imstb_textedit.h"
 #include "imgui/imstb_truetype.h"
 
+#include <shlobj.h>
+#include <shlwapi.h>
+#pragma comment(lib, "shlwapi.lib")
+
 // 示例
 static void HelpMarker(const char* desc, ImVec4 tmp);
 static void CenteredText(const char* desc, float displacement);
@@ -85,7 +89,9 @@ void SettingWindow(promise<void>& promise)
 
 		ImGuiWc = { sizeof(WNDCLASSEX), CS_CLASSDC, ImGuiWndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, ClassName.c_str(), nullptr };
 		RegisterClassExW(&ImGuiWc);
-		setting_window = CreateWindowEx(WS_EX_NOACTIVATE, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, drawpad_window, nullptr, ImGuiWc.hInstance, nullptr);
+		setting_window = CreateWindowEx(WS_EX_NOACTIVATE | WS_EX_LAYERED, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, drawpad_window, nullptr, ImGuiWc.hInstance, nullptr);
+
+		SetLayeredWindowAttributes(setting_window, 0, 0, LWA_ALPHA);
 	}
 	promise.set_value();
 
@@ -135,7 +141,7 @@ void SettingWindowBegin()
 	SetWindowLongW(setting_window, GWL_STYLE, GetWindowLong(setting_window, GWL_STYLE) & ~(WS_CAPTION | WS_BORDER | WS_THICKFRAME));
 	SetWindowPos(setting_window, NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 
-	ShowWindow(setting_window, SW_HIDE);
+	ShowWindow(setting_window, SW_SHOWNOACTIVATE);
 	UpdateWindow(setting_window);
 }
 
@@ -469,7 +475,7 @@ void SettingMain()
 	bool ShowWindow = false;
 	while (!offSignal)
 	{
-		::ShowWindow(setting_window, SW_HIDE);
+		SetLayeredWindowAttributes(setting_window, 0, 0, LWA_ALPHA);
 		ShowWindow = false;
 
 		while (!test.select && !offSignal) this_thread::sleep_for(chrono::milliseconds(100));
@@ -1941,7 +1947,7 @@ void SettingMain()
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(255, 255, 255, 0));
-						ImGui::BeginChild("常规#2", { 750.0f * settingGlobalScale,100.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("常规#2", { 750.0f * settingGlobalScale,175.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -1994,6 +2000,74 @@ void SettingMain()
 
 									setlist.startUp = StartUp;
 									WriteSetting();
+								}
+							}
+
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+							ImGui::EndChild();
+						}
+						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+							ImGui::BeginChild("创建桌面快捷方式", { 750.0f * settingGlobalScale,70.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+							float cursosPosY = 0;
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+								ImGui::TextUnformatted("创建桌面快捷方式");
+							}
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
+
+								ImGui::TextUnformatted("自带修正和创建快捷方式，请点击“更多选项”。");
+							}
+							{
+								ImGui::SetCursorPos({ 525.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 179));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(249, 249, 249, 128));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
+								if (ImGui::Button("创建", { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+								{
+									wchar_t desktopPath[MAX_PATH];
+									wstring DesktopPath;
+
+									if (SHGetSpecialFolderPathW(0, desktopPath, CSIDL_DESKTOP, FALSE))
+									{
+										DesktopPath = wstring(desktopPath) + L"\\";
+
+										if (_waccess((DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk").c_str(), 0) == -1 ||
+											!shortcutAssistant.IsShortcutPointingToDirectory((DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk"), GetCurrentExePath()))
+										{
+											shortcutAssistant.CreateShortcut(DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk", GetCurrentExePath());
+										}
+									}
+								}
+							}
+							{
+								ImGui::SetCursorPos({ 630.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 179));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(249, 249, 249, 128));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
+								if (ImGui::Button("更多选项", { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+								{
+									settingPlugInTab = settingPlugInTabEnum::tabPlug3;
+									settingTab = settingTabEnum::tab4;
 								}
 							}
 
@@ -5742,7 +5816,7 @@ void SettingMain()
 				{
 					using enum AutomaticUpdateStateEnum;
 
-					if (0 && AutomaticUpdateState == UpdateNotStarted)
+					if (AutomaticUpdateState == UpdateNotStarted)
 					{
 						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -5887,7 +5961,7 @@ void SettingMain()
 						}
 						ImGui::EndChild();
 					}
-					else if (1 || AutomaticUpdateState == UpdateDownloading)
+					else if (AutomaticUpdateState == UpdateDownloading)
 					{
 						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -5914,7 +5988,7 @@ void SettingMain()
 
 							if (fileSize != 0 && downloadedSize <= fileSize)
 							{
-								ImGui::SetCursorPos({ 665.0f * settingGlobalScale - ImGui::CalcTextSize("100.0%").x, cursosPosY + 8.0f * settingGlobalScale });
+								ImGui::SetCursorPos({ 665.0f * settingGlobalScale - ImGui::CalcTextSize(format("{:.1f}%", downloadedSize / fileSize * 100).c_str()).x, cursosPosY + 8.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
@@ -6156,9 +6230,9 @@ void SettingMain()
 			if (result == D3DERR_DEVICELOST) g_DeviceLost = true;
 
 			if (!test.select) break;
-			if (!ShowWindow && !IsWindowVisible(setting_window))
+			if (!ShowWindow)
 			{
-				::ShowWindow(setting_window, SW_SHOWNOACTIVATE);
+				SetLayeredWindowAttributes(setting_window, 0, 255, LWA_ALPHA);
 				//::SetForegroundWindow(setting_window);
 				ShowWindow = true;
 			}

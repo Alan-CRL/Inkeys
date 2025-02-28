@@ -4064,7 +4064,8 @@ void ShortcutAssistantClass::SetShortcut()
 	}
 	if (setlist.shortcutAssistant.createLnk)
 	{
-		if (_waccess((DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk").c_str(), 0) == -1)
+		if (_waccess((DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk").c_str(), 0) == -1 ||
+			!IsShortcutPointingToDirectory((DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk"), GetCurrentExePath()))
 		{
 			CreateShortcut(DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk", GetCurrentExePath());
 		}

@@ -195,8 +195,8 @@ AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state,
 	string prefix, domain, path;
 	splitUrl(url, prefix, domain, path);
 
-	state->downloadedSize.store(editionInfo.fileSize.load());
-	Testi(state->downloadedSize);
+	state->downloadedSize.store(0);
+	state->fileSize.store(editionInfo.fileSize.load());
 
 	wstring timestamp = getTimestamp();
 	bool reslut = DownloadEdition(domain, path, globalPath + L"installer\\", L"new_procedure_" + timestamp + L".tmp", state->downloadedSize);

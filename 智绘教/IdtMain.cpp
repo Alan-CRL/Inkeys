@@ -783,9 +783,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 自动更新初始化
 	{
-		//#ifdef IDT_RELEASE
+#ifdef IDT_RELEASE
 		thread(AutomaticUpdate).detach();
-		//#endif
+#endif
 	}
 
 	// 界面绘图库初始化

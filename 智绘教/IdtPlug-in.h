@@ -262,7 +262,6 @@ class ShortcutAssistantClass
 {
 public:
 	void SetShortcut();
-protected:
 	bool IsShortcutPointingToDirectory(const std::wstring& shortcutPath, const std::wstring& targetDirectory);
 	bool CreateShortcut(const std::wstring& shortcutPath, const std::wstring& targetExePath);
 };
