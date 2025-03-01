@@ -1976,15 +1976,7 @@ void DrawpadDrawing()
 		}
 
 		ulwi.hdcSrc = GetImageHDC(&window_background);
-		if (!UpdateLayeredWindowIndirect(drawpad_window, &ulwi))
-		{
-			MessageBox(floating_window, L"智绘教画板显示出现问题，点击确定以重启智绘教\n此方案可能解决该问题", L"智绘教状态监测助手", MB_OK | MB_SYSTEMMODAL);
-			offSignal = 2;
-
-			// TODO ？
-
-			break;
-		}
+		UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
 
 		tRecord = clock();
 	}

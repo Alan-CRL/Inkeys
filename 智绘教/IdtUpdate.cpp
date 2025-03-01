@@ -382,8 +382,6 @@ updateStart:
 
 						if (mandatoryUpdate)
 						{
-							Test();
-
 							mandatoryUpdate = false;
 							offSignal = 2;
 						}

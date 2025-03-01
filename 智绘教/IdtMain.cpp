@@ -41,8 +41,8 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250226a";				// 程序发布日期
-wstring editionChannel = L"Dev";				// 程序发布通道
+wstring editionDate = L"20250301a";				// 程序发布日期
+wstring editionChannel = L"LTS";				// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -937,15 +937,24 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		if (hasErr)
 		{
-			MessageBox(NULL, L"Program unexpected exit: RealTimeStylus touch library initialization failed.(#4)\n程序意外退出：RealTimeStylus 触控库初始化失败。(#4)", L"Inkeys Error | 智绘教错误", MB_OK | MB_SYSTEMMODAL);
-
-			offSignal = true;
-
-			// 反初始化 COM 环境
-			CoUninitialize();
-
 			IDTLogger->critical("[主线程][IdtMain] 程序意外退出：RealTimeStylus 触控库初始化失败。");
-			return 0;
+
+			if (filesystem::exists(globalPath + L"force_start_try.signal"))
+			{
+				error_code ec;
+				filesystem::remove(globalPath + L"force_start_try.signal", ec);
+
+				MessageBox(NULL, L"Program unexpected exit: RealTimeStylus touch library initialization failed.(#4)\n程序意外退出：RealTimeStylus 触控库初始化失败。(#4)", L"Inkeys Error | 智绘教错误", MB_OK | MB_SYSTEMMODAL);
+			}
+			else
+			{
+				HANDLE fileHandle = NULL;
+				OccupyFileForWrite(&fileHandle, globalPath + L"force_start_try.signal");
+				UnOccupyFile(&fileHandle);
+
+				ShellExecuteW(NULL, NULL, GetCurrentExePath().c_str(), NULL, NULL, SW_SHOWNORMAL);
+			}
+			exit(0);
 		}
 
 		thread RTSSpeed_thread(RTSSpeed);
