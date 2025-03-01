@@ -98,7 +98,7 @@ namespace PptCOM
         }
         public string CheckCOM()
         {
-            string ret = "20250112a";
+            string ret = "20250214a";
 
             try
             {

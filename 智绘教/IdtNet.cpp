@@ -68,7 +68,7 @@ std::string GetEditionInformation()
 
 	return "Error";
 }
-bool DownloadEdition(std::string domain, std::string path, std::wstring directory, std::wstring fileName, long long& fileSize, long long& downloadedSize)
+bool DownloadEdition(std::string domain, std::string path, std::wstring directory, std::wstring fileName, std::atomic_ullong& downloadedSize)
 {
 	httplib::Result res;
 	httplib::Headers headers = { {"Cache-Control", "no-cache"}, {"Pragma", "no-cache"} };

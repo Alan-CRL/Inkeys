@@ -240,6 +240,18 @@ bool EndPptShow();
 void PPTLinkageMain();
 
 bool IsPowerPointRunAsAdminSet();
+class CheckEndShowClass
+{
+public:
+	CheckEndShowClass()
+	{
+		isChecking = false;
+	}
+public:
+	bool isChecking;
+	bool Check();
+};
+extern CheckEndShowClass CheckEndShow;
 
 // --------------------------------------------------
 // 其他插件
@@ -250,7 +262,6 @@ class ShortcutAssistantClass
 {
 public:
 	void SetShortcut();
-protected:
 	bool IsShortcutPointingToDirectory(const std::wstring& shortcutPath, const std::wstring& targetDirectory);
 	bool CreateShortcut(const std::wstring& shortcutPath, const std::wstring& targetExePath);
 };

@@ -1511,6 +1511,8 @@ namespace HiEasyX
 #endif
 		}
 
+		// 注册窗口类
+		RegisterWndClass(lpszClassName);
 		// 第一次创建窗口 --- 初始化各项数据
 		if (nIndexWnd == 0)
 		{
@@ -1520,8 +1522,6 @@ namespace HiEasyX
 			// 默认程序图标
 			g_hIconDefault = GetDefaultAppIcon();
 
-			// 注册窗口类
-			RegisterWndClass(lpszClassName);
 			g_hConsole = GetConsoleWindow();
 
 			// 隐藏控制台
@@ -1611,6 +1611,7 @@ namespace HiEasyX
 				g_hInstance,
 				nullptr
 			);
+
 #else
 			wnd.hWnd = CreateWindowEx(
 				final_style_ex,

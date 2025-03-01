@@ -9,9 +9,9 @@
 #include "IdtNet.h"
 
 //程序自动更新
-int AutomaticUpdateStep = 0;
 bool mandatoryUpdate;
 bool inconsistentArchitecture;
+AutomaticUpdateStateEnum AutomaticUpdateState;
 wstring get_domain_name(wstring url) {
 	wregex pattern(L"([a-zA-z]+://[^/]+)");
 	wsmatch match;
@@ -59,22 +59,20 @@ EditionInfoClass GetEditionInfo(string channel)
 	getInfoStart:
 		if (editionInfoValue.isMember(channel))
 		{
-			if (editionInfoValue[channel].isMember("edition_date")) retEditionInfo.editionDate = utf8ToUtf16(editionInfoValue[channel]["edition_date"].asString());
+			if (editionInfoValue[channel].isMember("edition_date") && editionInfoValue[channel]["edition_date"].isString()) retEditionInfo.editionDate = utf8ToUtf16(editionInfoValue[channel]["edition_date"].asString());
 			else informationCompliance = false;
-			if (editionInfoValue[channel].isMember("edition_code")) retEditionInfo.editionCode = utf8ToUtf16(editionInfoValue[channel]["edition_code"].asString());
-			// else informationCompliance = false;
-			if (editionInfoValue[channel].isMember("explain")) retEditionInfo.explain = utf8ToUtf16(editionInfoValue[channel]["explain"].asString());
-			// else informationCompliance = false;
-			if (editionInfoValue[channel].isMember("hash"))
+			if (editionInfoValue[channel].isMember("edition_code") && editionInfoValue[channel]["edition_code"].isString()) retEditionInfo.editionCode = utf8ToUtf16(editionInfoValue[channel]["edition_code"].asString());
+			if (editionInfoValue[channel].isMember("explain") && editionInfoValue[channel]["explain"].isString()) retEditionInfo.explain = utf8ToUtf16(editionInfoValue[channel]["explain"].asString());
+			if (editionInfoValue[channel].isMember("hash") && editionInfoValue[channel]["hash"].isObject())
 			{
 				string hash1, hash2;
 				if (setlist.updateArchitecture == "win64") hash1 = "md5 64", hash2 = "sha256 64";
 				else if (setlist.updateArchitecture == "arm64") hash1 = "md5 Arm64", hash2 = "sha256 Arm64";
 				else hash1 = "md5", hash2 = "sha256";
 
-				if (editionInfoValue[channel]["hash"].isMember(hash1)) retEditionInfo.hash_md5 = editionInfoValue[channel]["hash"][hash1].asString();
+				if (editionInfoValue[channel]["hash"].isMember(hash1) && editionInfoValue[channel]["hash"][hash1].isString()) retEditionInfo.hash_md5 = editionInfoValue[channel]["hash"][hash1].asString();
 				else informationCompliance = false;
-				if (editionInfoValue[channel]["hash"].isMember(hash2)) retEditionInfo.hash_sha256 = editionInfoValue[channel]["hash"][hash2].asString();
+				if (editionInfoValue[channel]["hash"].isMember(hash2) && editionInfoValue[channel]["hash"][hash2].isString()) retEditionInfo.hash_sha256 = editionInfoValue[channel]["hash"][hash2].asString();
 				else informationCompliance = false;
 			}
 			else informationCompliance = false;
@@ -100,8 +98,18 @@ EditionInfoClass GetEditionInfo(string channel)
 				}
 				else informationCompliance = false;
 			}
+			if (editionInfoValue[channel].isMember("size") && editionInfoValue[channel]["size"].isObject())
+			{
+				string path;
+				if (setlist.updateArchitecture == "win64") path = "file64";
+				else if (setlist.updateArchitecture == "arm64") path = "fileArm64";
+				else path = "file";
 
-			if (editionInfoValue[channel].isMember("representation")) retEditionInfo.representation = utf8ToUtf16(editionInfoValue[channel]["representation"].asString());
+				if (editionInfoValue[channel]["size"].isMember(path) && editionInfoValue[channel]["size"][path].isUInt64())
+					retEditionInfo.fileSize = editionInfoValue[channel]["size"][path].asUInt64();
+			}
+
+			if (editionInfoValue[channel].isMember("representation") && editionInfoValue[channel]["representation"].isString()) retEditionInfo.representation = utf8ToUtf16(editionInfoValue[channel]["representation"].asString());
 			else informationCompliance = false;
 		}
 		else informationCompliance = false;
@@ -151,6 +159,7 @@ EditionInfoClass GetEditionInfo(string channel)
 
 	return retEditionInfo;
 }
+DownloadNewProgramStateClass downloadNewProgramState;
 
 void splitUrl(string input_url, string& prefix, string& domain, string& path)
 {
@@ -171,8 +180,10 @@ void splitUrl(string input_url, string& prefix, string& domain, string& path)
 		path.clear();
 	}
 }
-int DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass editionInfo, string url)
+AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass editionInfo, string url)
 {
+	using enum AutomaticUpdateStateEnum;
+
 	error_code ec;
 	if (_waccess((globalPath + L"installer").c_str(), 4) == 0)
 	{
@@ -184,8 +195,11 @@ int DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass edi
 	string prefix, domain, path;
 	splitUrl(url, prefix, domain, path);
 
+	state->downloadedSize.store(0);
+	state->fileSize.store(editionInfo.fileSize.load());
+
 	wstring timestamp = getTimestamp();
-	bool reslut = DownloadEdition(domain, path, globalPath + L"installer\\", L"new_procedure_" + timestamp + L".tmp", state->fileSize, state->downloadedSize);
+	bool reslut = DownloadEdition(domain, path, globalPath + L"installer\\", L"new_procedure_" + timestamp + L".tmp", state->downloadedSize);
 
 	if (reslut)
 	{
@@ -194,7 +208,7 @@ int DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass edi
 		filesystem::remove(globalPath + L"installer\\" + editionInfo.representation, ec);
 
 		filesystem::rename(globalPath + L"installer\\new_procedure_" + timestamp + L".tmp", globalPath + L"installer\\new_procedure_" + timestamp + L".zip", ec);
-		if (ec) return 7;
+		if (ec) return UpdateDownloadDamage;
 
 		HZIP hz = OpenZip((globalPath + L"installer\\new_procedure_" + timestamp + L".zip").c_str(), 0);
 		SetUnzipBaseDir(hz, (globalPath + L"installer").c_str());
@@ -210,7 +224,7 @@ int DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass edi
 
 		filesystem::remove(globalPath + L"installer\\new_procedure_" + timestamp + L".zip", ec);
 		filesystem::rename(globalPath + L"installer\\" + editionInfo.representation, globalPath + L"installer\\new_procedure_" + timestamp + L".exe", ec);
-		if (ec) return 7;
+		if (ec) return UpdateDownloadDamage;
 
 		string hash_md5, hash_sha256;
 		{
@@ -252,32 +266,16 @@ int DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass edi
 			error_code ec;
 			filesystem::remove(globalPath + L"installer\\new_procedure" + timestamp + L".exe", ec);
 
-			return 7;
+			return UpdateDownloadDamage;
 		}
 	}
-	else return 6;
+	else return UpdateDownloadFail;
 
-	return 8;
+	return UpdateRestart;
 }
 
 void AutomaticUpdate()
 {
-	/*
-	AutomaticUpdateStep 含义
-	0 新版本检测未启动
-	1 获取新版本信息中
-	2 下载版本信息失败
-	3 下载版本信息损坏
-	4 下载版本信息不符合规范
-	5 新版本正极速下载中
-	6 下载最新版本软件失败
-	7 下载最新版本软件损坏
-	8 重启软件更新到最新版本
-	9 软件已经是最新版本
-	10 软件相对最新版本更新
-	11 发现软件新版本
-	*/
-
 	bool state = true;
 	bool update = true;
 
@@ -285,12 +283,12 @@ void AutomaticUpdate()
 	int updateTimes = 0;
 
 	EditionInfoClass editionInfo;
-	DownloadNewProgramStateClass downloadNewProgramState;
+	using enum AutomaticUpdateStateEnum;
 
 updateStart:
 	for (updateTimes = 0; !offSignal && updateTimes < 3; updateTimes++)
 	{
-		AutomaticUpdateStep = 1;
+		AutomaticUpdateState = UpdateObtainInformation;
 
 		state = true;
 		against = false;
@@ -303,9 +301,9 @@ updateStart:
 			if (editionInfo.errorCode != 200)
 			{
 				state = false, against = true;
-				if (editionInfo.errorCode == 1) AutomaticUpdateStep = 2;
-				else if (editionInfo.errorCode == 2) AutomaticUpdateStep = 3;
-				else AutomaticUpdateStep = 4;
+				if (editionInfo.errorCode == 1) AutomaticUpdateState = UpdateInformationFail;
+				else if (editionInfo.errorCode == 2) AutomaticUpdateState = UpdateInformationDamage;
+				else AutomaticUpdateState = UpdateInformationUnStandardized;
 			}
 			else if (setlist.UpdateChannel != editionInfo.channel)
 			{
@@ -318,7 +316,7 @@ updateStart:
 		if (state && editionInfo.editionDate != L"" && ((editionInfo.editionDate > editionDate && setlist.enableAutoUpdate) || mandatoryUpdate))
 		{
 			update = true;
-			if (_waccess((globalPath + L"installer\\update.json").c_str(), 4) == 0)
+			if (_waccess((globalPath + L"installer\\update.json").c_str(), 4) == 0 && !mandatoryUpdate)
 			{
 				wstring tedition, tpath;
 				string thash_md5, thash_sha256;
@@ -366,20 +364,19 @@ updateStart:
 					if (tedition == editionInfo.editionDate && _waccess((globalPath + tpath).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
 					{
 						update = false;
-						AutomaticUpdateStep = 8;
+						AutomaticUpdateState = UpdateRestart;
 					}
 				}
 			}
 			if (update)
 			{
-				AutomaticUpdateStep = 5;
+				AutomaticUpdateState = UpdateDownloading;
 
 				against = true;
 				for (int i = 0; i < editionInfo.path_size; i++)
 				{
-					int result = DownloadNewProgram(&downloadNewProgramState, editionInfo, editionInfo.path[i]);
-					AutomaticUpdateStep = result;
-					if (AutomaticUpdateStep == 8)
+					AutomaticUpdateState = DownloadNewProgram(&downloadNewProgramState, editionInfo, editionInfo.path[i]);
+					if (AutomaticUpdateState == UpdateRestart)
 					{
 						against = false;
 
@@ -395,9 +392,9 @@ updateStart:
 		}
 		else if (state && editionInfo.editionDate != L"")
 		{
-			if (editionInfo.editionDate > editionDate) AutomaticUpdateStep = 11;
-			else if (editionInfo.editionDate < editionDate) AutomaticUpdateStep = 10;
-			else AutomaticUpdateStep = 9;
+			if (editionInfo.editionDate > editionDate) AutomaticUpdateState = UpdateNew;
+			else if (editionInfo.editionDate < editionDate) AutomaticUpdateState = UpdateNewer;
+			else AutomaticUpdateState = UpdateLatest;
 		}
 
 		if (against && !mandatoryUpdate)
@@ -405,7 +402,7 @@ updateStart:
 			for (int i = 1; i <= 10; i++)
 			{
 				if (offSignal) break;
-				if (AutomaticUpdateStep == 0 || AutomaticUpdateStep == 1) break;
+				if (AutomaticUpdateState == UpdateNotStarted || AutomaticUpdateState == UpdateObtainInformation) break;
 
 				this_thread::sleep_for(chrono::seconds(1));
 			}
@@ -416,7 +413,7 @@ updateStart:
 			for (int i = 1; i <= 1800; i++)
 			{
 				if (offSignal) break;
-				if (AutomaticUpdateStep == 0 || AutomaticUpdateStep == 1) break;
+				if (AutomaticUpdateState == UpdateNotStarted || AutomaticUpdateState == UpdateObtainInformation) break;
 
 				this_thread::sleep_for(chrono::seconds(1));
 			}
@@ -426,7 +423,7 @@ updateStart:
 
 	for (; !offSignal;)
 	{
-		if (AutomaticUpdateStep == 0 || AutomaticUpdateStep == 1) goto updateStart;
+		if (AutomaticUpdateState == UpdateNotStarted || AutomaticUpdateState == UpdateObtainInformation) goto updateStart;
 		this_thread::sleep_for(chrono::seconds(1));
 	}
 }

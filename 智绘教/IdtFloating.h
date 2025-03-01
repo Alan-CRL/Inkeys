@@ -45,7 +45,7 @@ pair<double, double> GetPointOnCircle(double x, double y, double r, double angle
 
 //绘制屏幕
 void DrawScreen();
-void SeekBar(ExMessage m);
+int SeekBar(ExMessage m);
 
 void MouseInteraction();
 

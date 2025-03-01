@@ -9,6 +9,7 @@ extern WNDCLASSEXW ImGuiWc;
 extern PDIRECT3DTEXTURE9 TextureSettingSign[10];
 extern int SettingMainMode;
 
+void SettingWindowBegin();
 void SettingMain();
 
 // Data

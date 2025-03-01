@@ -21,6 +21,7 @@ struct SetListStruct
 	int SetSkinMode, SkinMode;
 	float settingGlobalScale;
 
+	int topSleepTime;
 	bool RightClickClose;
 	bool BrushRecover, RubberRecover;
 
@@ -125,11 +126,11 @@ struct DdbInteractionSetListStruct
 {
 	DdbInteractionSetListStruct()
 	{
-		DdbEnable = false;
+		enable = false;
 		runAsAdmin = false;
 
-		DdbEdition = L"20250205b";
-		DdbSHA256 = "d6e08675d6cea9edf69a501c949c7c99c26b2c3c7a37cee0df27e94b493ddeb8";
+		DdbEdition = L"20250219a";
+		DdbSHA256 = "aec9231ae07b9f152f9a36912d842454df3a952d466389a2b9d169e82a5c24f4";
 
 		// -----
 
@@ -139,12 +140,24 @@ struct DdbInteractionSetListStruct
 		hostPath = L"";
 		restartHost = true;
 
-		memset(InterceptWindow, true, sizeof(InterceptWindow));
-		InterceptWindow[3] = false;
-		InterceptWindow[11] = false;
+		// -----
+
+		intercept.seewoWhiteboard3Floating = true;
+		intercept.seewoWhiteboard5Floating = true;
+		intercept.seewoWhiteboard5CFloating = true;
+		intercept.seewoPincoSideBarFloating = false;
+		intercept.seewoPincoDrawingFloating = true;
+		intercept.seewoPPTFloating = true;
+		intercept.aiClassFloating = true;
+		intercept.hiteAnnotationFloating = true;
+		intercept.changYanFloating = true;
+		intercept.changYanPptFloating = true;
+		intercept.intelligentClassFloating = true;
+		intercept.seewoDesktopAnnotationFloating = true;
+		intercept.seewoDesktopSideBarFloating = false;
 	}
 
-	bool DdbEnable;
+	bool enable;
 	bool runAsAdmin;
 
 	wstring DdbEdition;
@@ -158,8 +171,25 @@ struct DdbInteractionSetListStruct
 	wstring hostPath;
 	bool restartHost; // restartHost：（仅限独立模式）当宿主程序被关闭后，拦截到其他软件的窗口后，重启宿主程序
 
-	bool InterceptWindow[15];
+	// ----
+
+	struct
+	{
+		bool seewoWhiteboard3Floating;
+		bool seewoWhiteboard5Floating;
+		bool seewoWhiteboard5CFloating;
+		bool seewoPincoSideBarFloating;
+		bool seewoPincoDrawingFloating;
+		bool seewoPPTFloating;
+		bool aiClassFloating;
+		bool hiteAnnotationFloating;
+		bool changYanFloating;
+		bool changYanPptFloating;
+		bool intelligentClassFloating;
+		bool seewoDesktopAnnotationFloating;
+		bool seewoDesktopSideBarFloating;
+	} intercept;
 };
 extern DdbInteractionSetListStruct ddbInteractionSetList;
-bool DdbReadInteraction();
+//bool DdbReadInteraction();
 bool DdbWriteInteraction(bool change, bool close);

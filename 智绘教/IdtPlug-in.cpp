@@ -253,7 +253,7 @@ void GetPptState()
 		{
 			try
 			{
-				_com_util::CheckError(PptCOMPto.CreateInstance(_uuidof(PptCOMServer)));
+				//_com_util::CheckError(PptCOMPto.CreateInstance(_uuidof(PptCOMServer)));
 				rel = PptCOMPto->Initialization(&PptInfoState.TotalPage, &PptInfoState.CurrentPage, pptComSetlist.autoKillWpsProcess);
 			}
 			catch (_com_error err)
@@ -279,7 +279,7 @@ void GetPptState()
 
 		if (tmp <= 0)
 		{
-			for (int i = 0; i <= 30 && !offSignal; i++)
+			for (int i = 0; i <= 20 && !offSignal; i++)
 				this_thread::sleep_for(chrono::milliseconds(100));
 		}
 	}
@@ -313,6 +313,28 @@ bool EndPptShow()
 {
 	try
 	{
+		//for (int i = 0; i < 5; i++)
+		//{
+		//	if (stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection) break;
+		//	this_thread::sleep_for(chrono::milliseconds(100));
+		//}
+
+		//POINT cursorPos;
+		//GetCursorPos(&cursorPos);
+		//if (EuclideanDistance(cursorPos, POINT(0, 0)) >= EuclideanDistance(cursorPos, POINT(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight)))
+		//{
+		//	SetForegroundWindow(ppt_show);
+		//	//SetCursorPos(0, 0);
+		//	//SetCursorPos(cursorPos.x, cursorPos.y);
+		//}
+		//else
+		//{
+		//	SetForegroundWindow(ppt_show);
+		//	//SetCursorPos(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight);
+		//	//SetCursorPos(cursorPos.x, cursorPos.y);
+		//}
+
+		SetForegroundWindow(ppt_show);
 		PptCOMPto->EndSlideShow();
 
 		return true;
@@ -3219,11 +3241,10 @@ void PptInteract()
 					int temp_currentpage = PptInfoState.CurrentPage;
 					if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 					{
-						if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+						if (CheckEndShow.Check())
 						{
-							EndPptShow();
-
 							ChangeStateModeToSelection();
+							EndPptShow();
 						}
 					}
 					else if (temp_currentpage == -1)
@@ -3309,9 +3330,10 @@ void PptInteract()
 						int temp_currentpage = PptInfoState.CurrentPage;
 						if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 						{
-							if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+							if (CheckEndShow.Check())
 							{
 								ChangeStateModeToSelection();
+								EndPptShow();
 							}
 						}
 						else if (temp_currentpage == -1)
@@ -3335,11 +3357,10 @@ void PptInteract()
 									temp_currentpage = PptInfoState.CurrentPage;
 									if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 									{
-										if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+										if (CheckEndShow.Check())
 										{
-											EndPptShow();
-
 											ChangeStateModeToSelection();
+											EndPptShow();
 										}
 										break;
 									}
@@ -3433,11 +3454,10 @@ void PptInteract()
 						int temp_currentpage = PptInfoState.CurrentPage;
 						if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 						{
-							if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+							if (CheckEndShow.Check())
 							{
-								EndPptShow();
-
 								ChangeStateModeToSelection();
+								EndPptShow();
 							}
 						}
 						else if (temp_currentpage == -1)
@@ -3461,11 +3481,10 @@ void PptInteract()
 									temp_currentpage = PptInfoState.CurrentPage;
 									if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 									{
-										if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+										if (CheckEndShow.Check())
 										{
-											EndPptShow();
-
 											ChangeStateModeToSelection();
+											EndPptShow();
 										}
 										break;
 									}
@@ -3561,9 +3580,10 @@ void PptInteract()
 						int temp_currentpage = PptInfoState.CurrentPage;
 						if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 						{
-							if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+							if (CheckEndShow.Check())
 							{
 								ChangeStateModeToSelection();
+								EndPptShow();
 							}
 						}
 						else if (temp_currentpage == -1)
@@ -3587,11 +3607,10 @@ void PptInteract()
 									temp_currentpage = PptInfoState.CurrentPage;
 									if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 									{
-										if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+										if (CheckEndShow.Check())
 										{
-											EndPptShow();
-
 											ChangeStateModeToSelection();
+											EndPptShow();
 										}
 										break;
 									}
@@ -3685,9 +3704,10 @@ void PptInteract()
 						int temp_currentpage = PptInfoState.CurrentPage;
 						if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 						{
-							if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+							if (CheckEndShow.Check())
 							{
 								ChangeStateModeToSelection();
+								EndPptShow();
 							}
 						}
 						else if (temp_currentpage == -1)
@@ -3711,11 +3731,10 @@ void PptInteract()
 									temp_currentpage = PptInfoState.CurrentPage;
 									if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 									{
-										if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+										if (CheckEndShow.Check())
 										{
-											EndPptShow();
-
 											ChangeStateModeToSelection();
+											EndPptShow();
 										}
 										break;
 									}
@@ -3778,7 +3797,7 @@ void PptInteract()
 
 									if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 									{
-										if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) != 1) break;
+										if (!CheckEndShow.Check()) break;
 
 										ChangeStateModeToSelection();
 									}
@@ -3850,7 +3869,7 @@ void PPTLinkageMain()
 	threadStatus[L"PptDraw"] = false;
 }
 
-// 附加检测项
+// 附加
 bool IsPowerPointRunAsAdminSet()
 {
 	const std::wstring subKeys[] = {
@@ -3920,17 +3939,29 @@ bool IsPowerPointRunAsAdminSet()
 	return false;
 }
 
+bool CheckEndShowClass::Check()
+{
+	if (isChecking == true) return false;
+	isChecking = true;
+
+	bool ret = (MessageBox(floating_window, L"Currently in drawing mode, continuing to end will clear the canvas.\nAre you sure you want to end the presentation?\n当前处于绘制模式，继续结束放映将会清空画布内容。\n确定结束放映？", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OKCANCEL) == 1);
+
+	isChecking = false;
+	return ret;
+}
+CheckEndShowClass CheckEndShow;
+
 // --------------------------------------------------
 // 其他插件
 
 // DesktopDrawpadBlocker 插件
 void StartDesktopDrawpadBlocker()
 {
-	if (ddbInteractionSetList.DdbEnable)
+	if (ddbInteractionSetList.enable)
 	{
 		// 配置 json
 		{
-			if (_waccess((dataPath + L"\\DesktopDrawpadBlocker\\interaction_configuration.json").c_str(), 0) == 0) DdbReadInteraction();
+			// if (_waccess((dataPath + L"\\DesktopDrawpadBlocker\\interaction_configuration.json").c_str(), 0) == 0) DdbReadInteraction();
 
 			ddbInteractionSetList.hostPath = GetCurrentExePath();
 
@@ -4019,7 +4050,7 @@ void ShortcutAssistantClass::SetShortcut()
 			{
 				if (filesystem::is_regular_file(entry) && entry.path().extension() == L".lnk")
 				{
-					if (IsShortcutPointingToDirectory(entry.path().wstring(), GetCurrentExePath()))
+					if (entry.path().wstring() != DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk" && IsShortcutPointingToDirectory(entry.path().wstring(), GetCurrentExePath()))
 					{
 						// 存在指向当前的程序路径的快捷方式，但是其名称并不正确
 						error_code ec;
@@ -4031,10 +4062,10 @@ void ShortcutAssistantClass::SetShortcut()
 			}
 		}
 	}
-
 	if (setlist.shortcutAssistant.createLnk)
 	{
-		if (_waccess((DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk").c_str(), 0) == -1)
+		if (_waccess((DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk").c_str(), 0) == -1 ||
+			!IsShortcutPointingToDirectory((DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk"), GetCurrentExePath()))
 		{
 			CreateShortcut(DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk", GetCurrentExePath());
 		}
@@ -4050,22 +4081,27 @@ bool ShortcutAssistantClass::IsShortcutPointingToDirectory(const std::wstring& s
 
 	// 创建一个IShellLink对象
 	HRESULT hres = CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLink, (LPVOID*)&psl);
-	if (SUCCEEDED(hres)) {
+	if (SUCCEEDED(hres))
+	{
 		IPersistFile* ppf;
 
 		// 获取IShellLink的IPersistFile接口
 		hres = psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf);
-		if (SUCCEEDED(hres)) {
+		if (SUCCEEDED(hres))
+		{
 			// 打开快捷方式文件
 			hres = ppf->Load(shortcutPath.c_str(), STGM_READ);
-			if (SUCCEEDED(hres)) {
+			if (SUCCEEDED(hres))
+			{
 				WIN32_FIND_DATAW wfd;
 				ZeroMemory(&wfd, sizeof(wfd));
 				// 获取快捷方式的目标路径
 				hres = psl->GetPath(wfd.cFileName, MAX_PATH, NULL, SLGP_RAWPATH);
-				if (SUCCEEDED(hres)) {
+				if (SUCCEEDED(hres))
+				{
 					// 检查目标路径是否与指定目录相匹配
-					if (std::wstring(wfd.cFileName).find(targetDirectory) != std::wstring::npos) {
+					if (std::wstring(wfd.cFileName).find(targetDirectory) != std::wstring::npos)
+					{
 						return true;
 					}
 				}
@@ -4086,19 +4122,17 @@ bool ShortcutAssistantClass::CreateShortcut(const std::wstring& shortcutPath, co
 	IShellLink* psl;
 	HRESULT hres = CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLink, (LPVOID*)&psl);
 
-	if (SUCCEEDED(hres)) {
+	if (SUCCEEDED(hres))
+	{
 		// 设置快捷方式的目标路径
 		psl->SetPath(targetExePath.c_str());
-
-		// 获取桌面目录
-		LPITEMIDLIST pidl;
-		SHGetSpecialFolderLocation(NULL, CSIDL_DESKTOP, &pidl);
 
 		// 创建一个IShellLink对象的IPersistFile接口
 		IPersistFile* ppf;
 		hres = psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf);
 
-		if (SUCCEEDED(hres)) {
+		if (SUCCEEDED(hres))
+		{
 			// 保存快捷方式
 			hres = ppf->Save(shortcutPath.c_str(), TRUE);
 			ppf->Release();

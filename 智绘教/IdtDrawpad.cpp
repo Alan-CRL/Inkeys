@@ -55,7 +55,8 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 		}
 		else if (IsHotkeyDown && !(KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]) && !(KeyBoradDown[VK_LWIN] || KeyBoradDown[VK_RWIN]) && !(KeyBoradDown[VK_MENU] || KeyBoradDown[VK_LMENU] || KeyBoradDown[VK_RMENU])) IsHotkeyDown = false;
 
-		if (ppt_show != NULL)
+		// 按键反馈
+		if (ppt_show != NULL && !CheckEndShow.isChecking)
 		{
 			// 检查按下的键
 			switch (pKeyInfo->vkCode)
@@ -97,7 +98,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			}
 			}
 		}
-
+		// 传递拦截
 		if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && !penetrate.select)
 		{
 			ExMessage msgKey = {};
@@ -112,7 +113,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			hiex::g_vecWindows[index].vecMessage.push_back(msgKey);
 			lg_vecWindows_vecMessage_sm.unlock();
 
-			if (ppt_show != NULL)
+			if (ppt_show != NULL && !CheckEndShow.isChecking)
 			{
 				switch (pKeyInfo->vkCode)
 				{
@@ -330,16 +331,15 @@ void KeyboardInteraction()
 					int temp_currentpage = PptInfoState.CurrentPage;
 					if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 					{
-						if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+						if (CheckEndShow.Check())
 						{
+							ChangeStateModeToSelection();
 							EndPptShow();
-
-							//brush.select = false;
-							//rubber.select = false;
-							penetrate.select = false;
-							//choose.select = true;
-							stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
 						}
+					}
+					else if (temp_currentpage == -1)
+					{
+						EndPptShow();
 					}
 					else
 					{
@@ -357,15 +357,10 @@ void KeyboardInteraction()
 								temp_currentpage = PptInfoState.CurrentPage;
 								if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 								{
-									if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+									if (CheckEndShow.Check())
 									{
+										ChangeStateModeToSelection();
 										EndPptShow();
-
-										//brush.select = false;
-										//rubber.select = false;
-										penetrate.select = false;
-										//choose.select = true;
-										stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
 									}
 									break;
 								}
@@ -387,15 +382,10 @@ void KeyboardInteraction()
 
 				if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 				{
-					if (MessageBox(floating_window, L"当前处于画板模式，结束放映将会清空画板内容。\n\n结束放映？", L"智绘教警告", MB_OKCANCEL | MB_ICONWARNING | MB_SYSTEMMODAL) == 1)
+					if (CheckEndShow.Check())
 					{
+						ChangeStateModeToSelection();
 						EndPptShow();
-
-						//brush.select = false;
-						//rubber.select = false;
-						penetrate.select = false;
-						//choose.select = true;
-						stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
 					}
 				}
 				else EndPptShow();
@@ -1986,15 +1976,7 @@ void DrawpadDrawing()
 		}
 
 		ulwi.hdcSrc = GetImageHDC(&window_background);
-		if (!UpdateLayeredWindowIndirect(drawpad_window, &ulwi))
-		{
-			MessageBox(floating_window, L"智绘教画板显示出现问题，点击确定以重启智绘教\n此方案可能解决该问题", L"智绘教状态监测助手", MB_OK | MB_SYSTEMMODAL);
-			offSignal = 2;
-
-			// TODO ？
-
-			break;
-		}
+		UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
 
 		tRecord = clock();
 	}
