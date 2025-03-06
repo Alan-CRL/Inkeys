@@ -3,7 +3,7 @@
 We are sorry to inform you that the internationalization language of the program itself is not yet complete and has not been added to the program.  
 **We will complete it as soon as possible!**  
   
-  
+**Copyright(©) 2023-2025 AlanCRL(Chen YunLam) Studio**  
 [![LOGO](GithubRes/logo.png?raw=true "LOGO")](# "LOGO")
 
 # 智绘教Inkeys
