@@ -1,5 +1,6 @@
 <div align="center">
 
+**Copyright © 2023-2025 AlanCRL(陈润林)工作室**  
 新版 Readme 尚未完善 访问[旧版 Readme 页面](https://github.com/Alan-CRL/IDT/blob/1d63b4ba18e01f7ac45abb0e470d2748380b4407/README.md)  
 
 [![LOGO](GithubRes/logo.png?raw=true "LOGO")](# "LOGO")
