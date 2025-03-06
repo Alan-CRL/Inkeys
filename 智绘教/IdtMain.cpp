@@ -13,6 +13,7 @@
 
 #include "IdtMain.h"
 
+#include "IdtBar.h"
 #include "IdtConfiguration.h"
 #include "IdtD2DPreparation.h"
 #include "IdtDisplayManagement.h"
@@ -41,8 +42,8 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250301a";				// 程序发布日期
-wstring editionChannel = L"LTS";				// 程序发布通道
+wstring editionDate = L"20250306a";				// 程序发布日期
+wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -57,8 +58,8 @@ map <wstring, bool> threadStatus;				// 线程状态管理
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
-// int main()
+// int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
+int main()
 {
 	// 路径预处理
 	{
@@ -966,6 +967,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	// 线程
 	{
 		thread(floating_main).detach();
+		//thread([&]() { barInitialization.Initialization(); }).detach();
 		thread(SettingMain).detach();
 		thread(drawpad_main).detach();
 		thread(FreezeFrameWindow).detach();

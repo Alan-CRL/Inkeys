@@ -108,6 +108,19 @@ void TopWindow()
 
 	while (!offSignal)
 	{
+		if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && !penetrate.select)
+		{
+			shared_lock LockStrokeImageListSm(StrokeImageListSm);
+			bool flag = !StrokeImageList.empty();
+			LockStrokeImageListSm.unlock();
+
+			if (flag)
+			{
+				// 跳过当次置顶
+				goto topWait;
+			}
+		}
+
 		// 检查窗口显示状态
 		{
 			for (int i = 1; i <= 10 && !IsWindowVisible(floating_window); i++)
@@ -283,26 +296,6 @@ void TopWindow()
 		}
 
 		// 置顶窗口
-		if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && !penetrate.select)
-		{
-			shared_lock LockStrokeImageListSm(StrokeImageListSm);
-			bool flag = StrokeImageList.empty();
-			LockStrokeImageListSm.unlock();
-			if (flag)
-			{
-				// 设置窗口顺序
-				SetWindowPos(ppt_window, floating_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-				SetWindowPos(setting_window, ppt_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-				SetWindowPos(drawpad_window, setting_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-				SetWindowPos(freeze_window, drawpad_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-				SetWindowPos(magnifierWindow, freeze_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-
-				// 统一置顶
-				if (!SetWindowPos(magnifierWindow, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
-					IDTLogger->warn("[窗口置顶线程][TopWindow] 置顶窗口时失败 Error" + to_string(GetLastError()));
-			}
-		}
-		else
 		{
 			// 设置窗口顺序
 			SetWindowPos(ppt_window, floating_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
@@ -315,6 +308,8 @@ void TopWindow()
 			if (!SetWindowPos(magnifierWindow, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
 				IDTLogger->warn("[窗口置顶线程][TopWindow] 置顶窗口时失败 Error" + to_string(GetLastError()));
 		}
+
+	topWait:
 
 		// 延迟等待时间计算
 		int sleepTime = 30;

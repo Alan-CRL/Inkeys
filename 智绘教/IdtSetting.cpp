@@ -2029,7 +2029,7 @@ void SettingMain()
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-								ImGui::TextUnformatted("自带修正和创建快捷方式，请点击“更多选项”。");
+								ImGui::TextUnformatted("自动修正名称和创建快捷方式，请点击“更多选项”。");
 							}
 							{
 								ImGui::SetCursorPos({ 525.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });

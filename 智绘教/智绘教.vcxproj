@@ -290,7 +290,7 @@
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
-      <SubSystem>Windows</SubSystem>
+      <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -489,6 +489,7 @@
     <ClInclude Include="HiEasyX\HiSysGUI\SysRadioButton.h" />
     <ClInclude Include="HiEasyX\HiSysGUI\SysStatic.h" />
     <ClInclude Include="HiEasyX\HiWindow.h" />
+    <ClInclude Include="IdtBar.h" />
     <ClInclude Include="IdtConfiguration.h" />
     <ClInclude Include="IdtD2DPreparation.h" />
     <ClInclude Include="IdtDisplayManagement.h" />
@@ -543,6 +544,7 @@
     <ClCompile Include="additional\ziputils\unzip.cpp" />
     <ClCompile Include="additional\ziputils\zip.cpp" />
     <ClCompile Include="ExtraInclude.cpp" />
+    <ClCompile Include="IdtBar.cpp" />
     <ClCompile Include="IdtConfiguration.cpp" />
     <ClCompile Include="IdtD2DPreparation.cpp" />
     <ClCompile Include="IdtDisplayManagement.cpp" />
