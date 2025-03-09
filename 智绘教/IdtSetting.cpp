@@ -1762,6 +1762,21 @@ void SettingMain()
 								{
 									setlist.enableAutoUpdate = EnableAutoUpdate;
 									WriteSetting();
+
+									if (!setlist.enableAutoUpdate && AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
+									{
+										error_code ec;
+										if (_waccess((globalPath + L"installer").c_str(), 4) == 0)
+										{
+											filesystem::remove_all(globalPath + L"installer", ec);
+											filesystem::create_directory(globalPath + L"installer", ec);
+										}
+										AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+									}
+									else if (setlist.enableAutoUpdate && AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNew)
+									{
+										AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+									}
 								}
 							}
 
@@ -2700,7 +2715,7 @@ void SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!WaitStraighten)
+								if (!LiftStraighten)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -2710,11 +2725,11 @@ void SettingMain()
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##抬笔拉直直线", &WaitStraighten, config);
+								ImGui::Toggle("##抬笔拉直直线", &LiftStraighten, config);
 
-								if (setlist.waitStraighten != WaitStraighten)
+								if (setlist.liftStraighten != LiftStraighten)
 								{
-									setlist.waitStraighten = WaitStraighten;
+									setlist.liftStraighten = LiftStraighten;
 									WriteSetting();
 								}
 							}
@@ -3325,7 +3340,7 @@ void SettingMain()
 					case settingPlugInTabEnum::tabPlug2:
 					{
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
-						ImGui::BeginChild("PPT演示助手", { (750.0f + 30.0f) * settingGlobalScale,608.0f * settingGlobalScale }, false);
+						ImGui::BeginChild("PPT演示助手", { (750.0f + 30.0f) * settingGlobalScale,608.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar);
 
 						{
 							ImGui::SetCursorPos({ 0,10.0f * settingGlobalScale });
@@ -3362,7 +3377,7 @@ void SettingMain()
 						{
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
-							ImGui::BeginChild("PPT演示助手主栏", { (750.0f + 30.0f) * settingGlobalScale,556.0f * settingGlobalScale }, false);
+							ImGui::BeginChild("PPT演示助手主栏", { (750.0f + 30.0f) * settingGlobalScale,555.0f * settingGlobalScale }, false);
 
 							{
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -4203,7 +4218,7 @@ void SettingMain()
 					case settingPlugInTabEnum::tabPlug3:
 					{
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
-						ImGui::BeginChild("快捷方式保障助手", { (750.0f + 30.0f) * settingGlobalScale,608.0f * settingGlobalScale }, false);
+						ImGui::BeginChild("快捷方式保障助手", { (750.0f + 30.0f) * settingGlobalScale,608.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar);
 
 						{
 							ImGui::SetCursorPos({ 0,10.0f * settingGlobalScale });
@@ -4237,7 +4252,7 @@ void SettingMain()
 						{
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
-							ImGui::BeginChild("快捷方式保障助手主栏", { (750.0f + 30.0f) * settingGlobalScale,556.0f * settingGlobalScale }, false);
+							ImGui::BeginChild("快捷方式保障助手主栏", { (750.0f + 30.0f) * settingGlobalScale,555.0f * settingGlobalScale }, false);
 
 							{
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -4428,7 +4443,7 @@ void SettingMain()
 					case settingPlugInTabEnum::tabPlugDDB:
 					{
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
-						ImGui::BeginChild("同类软件悬浮窗拦截助手", { (750.0f + 30.0f) * settingGlobalScale,608.0f * settingGlobalScale }, false);
+						ImGui::BeginChild("同类软件悬浮窗拦截助手", { (750.0f + 30.0f) * settingGlobalScale,608.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar);
 
 						{
 							ImGui::SetCursorPos({ 0,10.0f * settingGlobalScale });
@@ -4476,7 +4491,7 @@ void SettingMain()
 						{
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
-							ImGui::BeginChild("同类软件悬浮窗拦截助手主栏", { (750.0f + 30.0f) * settingGlobalScale,556.0f * settingGlobalScale }, false);
+							ImGui::BeginChild("同类软件悬浮窗拦截助手主栏", { (750.0f + 30.0f) * settingGlobalScale,555.0f * settingGlobalScale }, false);
 
 							{
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));

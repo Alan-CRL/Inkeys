@@ -42,8 +42,8 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250306a";				// 程序发布日期
-wstring editionChannel = L"Dev";				// 程序发布通道
+wstring editionDate = L"20250309a";				// 程序发布日期
+wstring editionChannel = L"LTS";				// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -58,8 +58,8 @@ map <wstring, bool> threadStatus;				// 线程状态管理
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-// int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
-int main()
+int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
+// int main()
 {
 	// 路径预处理
 	{
@@ -649,6 +649,7 @@ int main()
 			// 性能
 			{
 				setlist.performanceSetting.preparationQuantity = 2;
+				setlist.performanceSetting.drawpadFps = 72;
 			}
 
 			// 插件
@@ -855,18 +856,18 @@ int main()
 		CreateMagnifierWindow();
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
-		freeze_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys5 FreezeWindow", (L"Inkeys5;" + ClassName).c_str(), nullptr, magnifierWindow);
+		freeze_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys5 FreezeWindow", (L"Inkeys1245;" + ClassName).c_str(), nullptr, magnifierWindow);
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
-		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys4 DrawpadWindow", (L"Inkeys4;" + ClassName).c_str(), nullptr, freeze_window);
+		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys4 DrawpadWindow", (L"Inkeys1245;" + ClassName).c_str(), nullptr, freeze_window);
 
 		SettingWindowBegin();
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
-		ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys2 PptWindow", (L"Inkeys2;" + ClassName).c_str(), nullptr, setting_window);
+		ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys2 PptWindow", (L"Inkeys1245;" + ClassName).c_str(), nullptr, setting_window);
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
-		floating_window = hiex::initgraph_win32(background.getwidth(), background.getheight(), 0, L"Inkeys1 FloatingWindow", (L"Inkeys1;" + ClassName).c_str(), nullptr, ppt_window);
+		floating_window = hiex::initgraph_win32(background.getwidth(), background.getheight(), 0, L"Inkeys1 FloatingWindow", (L"Inkeys1245;" + ClassName).c_str(), nullptr, ppt_window);
 
 		// 画板窗口在注册 RTS 前必须拥有置顶属性，在显示前先进行一次全局置顶
 		SetWindowPos(magnifierWindow, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);

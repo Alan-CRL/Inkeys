@@ -17,7 +17,7 @@
 
 #pragma once
 
-// #define IDT_RELEASE
+#define IDT_RELEASE
 // #pragma comment( linker, "/subsystem:windows /entry:mainCRTStartup" )
 
 // 智绘教最低兼容 Windows 7 sp0
@@ -108,7 +108,46 @@ extern map <wstring, bool> threadStatus; //线程状态管理
 
 extern shared_ptr<spdlog::logger> IDTLogger;
 
-//调测专用
+// 私有模板
+template <typename IdtAtomicT>
+class IdtAtomic
+{
+private:
+	atomic<IdtAtomicT> value;
+
+public:
+	IdtAtomic() noexcept = default;
+	explicit IdtAtomic(IdtAtomicT desired) noexcept : value(desired) {}
+	IdtAtomic(const IdtAtomic& other) noexcept { value.store(other.value.load()); }
+
+	IdtAtomic& operator=(const IdtAtomic& other) noexcept {
+		if (this != &other) value.store(other.value.load());
+		return *this;
+	}
+
+	IdtAtomic(IdtAtomic&& other) noexcept { value.store(other.value.load()); }
+	IdtAtomic& operator=(IdtAtomic&& other) noexcept { value.store(other.value.load()); return *this; }
+
+	IdtAtomicT load(memory_order order = memory_order_seq_cst) const noexcept { return value.load(order); }
+	void store(IdtAtomicT desired, memory_order order = memory_order_seq_cst) noexcept { value.store(desired, order); }
+
+	IdtAtomicT exchange(IdtAtomicT desired, memory_order order = memory_order_seq_cst) noexcept { return value.exchange(desired, order); }
+	bool compare_exchange_weak(IdtAtomicT& expected, IdtAtomicT desired,
+		memory_order success = memory_order_seq_cst,
+		memory_order failure = memory_order_seq_cst) noexcept {
+		return value.compare_exchange_weak(expected, desired, success, failure);
+	}
+	bool compare_exchange_strong(IdtAtomicT& expected, IdtAtomicT desired,
+		memory_order success = memory_order_seq_cst,
+		memory_order failure = memory_order_seq_cst) noexcept {
+		return value.compare_exchange_strong(expected, desired, success, failure);
+	}
+
+	operator IdtAtomicT() const noexcept { return load(); }
+	IdtAtomic& operator=(IdtAtomicT desired) noexcept { store(desired); return *this; }
+};
+
+// 调测专用
 #ifndef IDT_RELEASE
 void Test();
 void Testb(bool t);

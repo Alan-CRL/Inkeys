@@ -612,8 +612,6 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 		clock_t tRecord = clock();
 		while (1)
 		{
-			//auto start = std::chrono::high_resolution_clock::now();
-
 			// 确认触摸点存在
 			{
 				shared_lock<shared_mutex> lockPointPosSm(touchPosSm);
@@ -707,10 +705,6 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 					pointInfo.previousX = pointInfo.x, pointInfo.previousY = pointInfo.y;
 				}
 			}
-
-			//auto end = std::chrono::high_resolution_clock::now();
-			//auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-			//std::cout << duration.count() << "ns" << std::endl;
 		}
 
 		//智能绘图模块
@@ -1976,8 +1970,8 @@ void DrawpadDrawing()
 			clock_t tNow = clock();
 			if (tRecord)
 			{
-				int delay = 1000 / 72 - (tNow - tRecord);
-				if (delay > 0) std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+				double delay = 1000.0 / static_cast<double>(setlist.performanceSetting.drawpadFps) - static_cast<double>(tNow - tRecord);
+				if (delay > 0.0) std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(delay)));
 			}
 		}
 
