@@ -8,8 +8,9 @@
 #include "IdtWindow.h"
 #include "IdtNet.h"
 
-//程序自动更新
-bool mandatoryUpdate;
+// 程序自动更新
+
+bool mandatoryUpdate; // 强制更新符号
 bool inconsistentArchitecture;
 AutomaticUpdateStateEnum AutomaticUpdateState;
 wstring get_domain_name(wstring url) {
@@ -241,25 +242,35 @@ AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state,
 		//创建 update.json 文件，指示更新
 		if (editionInfo.hash_md5 == hash_md5 && editionInfo.hash_sha256 == hash_sha256)
 		{
-			Json::Value root;
+			if (!setlist.enableAutoUpdate && !mandatoryUpdate)
+			{
+				error_code ec;
+				filesystem::remove(globalPath + L"installer\\new_procedure" + timestamp + L".exe", ec);
 
-			root["edition"] = Json::Value(utf16ToUtf8(editionInfo.editionDate));
-			root["path"] = Json::Value("installer\\new_procedure_" + utf16ToUtf8(timestamp) + ".exe");
-			root["representation"] = Json::Value("new_procedure_" + utf16ToUtf8(timestamp) + ".exe");
+				return UpdateNew;
+			}
+			else
+			{
+				Json::Value root;
 
-			root["hash"]["md5"] = Json::Value(editionInfo.hash_md5);
-			root["hash"]["sha256"] = Json::Value(editionInfo.hash_sha256);
+				root["edition"] = Json::Value(utf16ToUtf8(editionInfo.editionDate));
+				root["path"] = Json::Value("installer\\new_procedure_" + utf16ToUtf8(timestamp) + ".exe");
+				root["representation"] = Json::Value("new_procedure_" + utf16ToUtf8(timestamp) + ".exe");
 
-			root["old_name"] = Json::Value(utf16ToUtf8(GetCurrentExeName()));
-			if (mandatoryUpdate) root["MandatoryUpdate"] = Json::Value(mandatoryUpdate);
+				root["hash"]["md5"] = Json::Value(editionInfo.hash_md5);
+				root["hash"]["sha256"] = Json::Value(editionInfo.hash_sha256);
 
-			Json::StreamWriterBuilder outjson;
-			outjson.settings_["emitUTF8"] = true;
-			unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
-			ofstream writejson(globalPath + L"installer\\update.json", ios::binary);
-			writejson << "\xEF\xBB\xBF";
-			writer->write(root, &writejson);
-			writejson.close();
+				root["old_name"] = Json::Value(utf16ToUtf8(GetCurrentExeName()));
+				if (mandatoryUpdate) root["MandatoryUpdate"] = Json::Value(mandatoryUpdate);
+
+				Json::StreamWriterBuilder outjson;
+				outjson.settings_["emitUTF8"] = true;
+				unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
+				ofstream writejson(globalPath + L"installer\\update.json", ios::binary);
+				writejson << "\xEF\xBB\xBF";
+				writer->write(root, &writejson);
+				writejson.close();
+			}
 		}
 		else
 		{
@@ -373,6 +384,7 @@ updateStart:
 				AutomaticUpdateState = UpdateDownloading;
 
 				against = true;
+				bool hasUpdateNew = false;
 				for (int i = 0; i < editionInfo.path_size; i++)
 				{
 					AutomaticUpdateState = DownloadNewProgram(&downloadNewProgramState, editionInfo, editionInfo.path[i]);
@@ -387,7 +399,14 @@ updateStart:
 						}
 						break;
 					}
+					else if (AutomaticUpdateState == UpdateNew && !mandatoryUpdate)
+					{
+						hasUpdateNew = true;
+						break;
+					}
 				}
+
+				if (hasUpdateNew) continue;
 			}
 		}
 		else if (state && editionInfo.editionDate != L"")

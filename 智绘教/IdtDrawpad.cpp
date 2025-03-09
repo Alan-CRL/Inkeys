@@ -1970,8 +1970,8 @@ void DrawpadDrawing()
 			clock_t tNow = clock();
 			if (tRecord)
 			{
-				int delay = 1000 / 72 - (tNow - tRecord);
-				if (delay > 0) std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+				double delay = 1000.0 / static_cast<double>(setlist.performanceSetting.drawpadFps) - static_cast<double>(tNow - tRecord);
+				if (delay > 0.0) std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(delay)));
 			}
 		}
 

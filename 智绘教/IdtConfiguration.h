@@ -47,6 +47,7 @@ struct SetListStruct
 	struct
 	{
 		int preparationQuantity;
+		IdtAtomic<int> drawpadFps;
 	}performanceSetting;
 #pragma endregion
 
