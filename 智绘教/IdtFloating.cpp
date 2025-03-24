@@ -140,10 +140,14 @@ int SeekBar(ExMessage m)
 	int firX = static_cast<int>(p.x);
 	int firY = static_cast<int>(p.y);
 
+	double ret = 0.0;
+
 	while (1)
 	{
 		if (!KeyBoradDown[VK_LBUTTON]) break;
 		GetCursorPos(&p);
+
+		if (firX == p.x && firY == p.y) continue;
 
 		SetWindowPos(floating_window, NULL,
 			floating_windows.x = min(GetSystemMetrics(SM_CXSCREEN) - floating_windows.width, max(1, p.x - m.x)),
@@ -151,9 +155,12 @@ int SeekBar(ExMessage m)
 			0,
 			0,
 			SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE);
+
+		ret += sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY));
+		firX = static_cast<int>(p.x), firY = static_cast<int>(p.y);
 	}
 
-	return static_cast<int>(sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY)));
+	return static_cast<int>(ret);
 }
 
 HHOOK FloatingHookCall;
@@ -5661,8 +5668,16 @@ void MouseInteraction()
 									double length = sqrt(pow(center.x - pt.x, 2) + pow(center.y - pt.y, 2));
 
 									POINT result;
-									result.x = LONG(center.x + len * (pt.x - center.x) / length - UIControl[L"RoundRect/BrushColorChooseWheel/x"].v);
-									result.y = LONG(center.y + len * (pt.y - center.y) / length - UIControl[L"RoundRect/BrushColorChooseWheel/y"].v);
+									if (length == 0)
+									{
+										result.x = LONG(center.x - UIControl[L"RoundRect/BrushColorChooseWheel/x"].v);
+										result.y = LONG(center.y - UIControl[L"RoundRect/BrushColorChooseWheel/y"].v);
+									}
+									else
+									{
+										result.x = LONG(center.x + len * (pt.x - center.x) / length - UIControl[L"RoundRect/BrushColorChooseWheel/x"].v);
+										result.y = LONG(center.y + len * (pt.y - center.y) / length - UIControl[L"RoundRect/BrushColorChooseWheel/y"].v);
+									}
 
 									std::shared_lock<std::shared_mutex> lock(ColorPaletteSm);
 

@@ -89,7 +89,7 @@ void SettingWindow(promise<void>& promise)
 
 		ImGuiWc = { sizeof(WNDCLASSEX), CS_CLASSDC, ImGuiWndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, ClassName.c_str(), nullptr };
 		RegisterClassExW(&ImGuiWc);
-		setting_window = CreateWindowEx(WS_EX_NOACTIVATE | WS_EX_LAYERED, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, drawpad_window, nullptr, ImGuiWc.hInstance, nullptr);
+		setting_window = CreateWindowEx(WS_EX_NOACTIVATE | WS_EX_LAYERED, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, /*nullptr*/drawpad_window, nullptr, ImGuiWc.hInstance, nullptr);
 
 		SetLayeredWindowAttributes(setting_window, 0, 0, LWA_ALPHA);
 	}
@@ -5596,7 +5596,7 @@ void SettingMain()
 
 						std::vector<std::string> lines;
 						std::wstring line, temp;
-						std::wstringstream ss(L"界面还在开发中，敬请期待\n\n致谢名单（未显示匿名捐赠，请联系软件开发者并显示）\n郑子杰 Zijie Zheng ￥151.2\nbin ￥100\n路人甲 ￥100\n启幕￥66\nHettyBig ￥20\n建俊 ￥19.99\nLEON - 小清新 ￥19.99\n2,2,3-三甲基戊烷 ￥10\n凌汛 ￥9.99\nKrouis ￥9.99\n爱发电用户_997e8 ￥9.99\n爱发电用户_55381 ￥9.99\n\n和所有支持智绘教的朋友们~");
+						std::wstringstream ss(L"界面还在开发中，敬请期待\n\n致谢名单（未显示匿名捐赠，请联系软件开发者并显示）\n郑子杰 Zijie Zheng ￥151.2\nbin ￥100\n路人甲 ￥100\n启幕￥66\nB站游大伟 ￥20\nHettyBig ￥20\n建俊 ￥19.99\nLEON - 小清新 ￥19.99\n2,2,3-三甲基戊烷 ￥10\n凌汛 ￥9.99\nKrouis ￥9.99\n爱发电用户_997e8 ￥9.99\n爱发电用户_55381 ￥9.99\n\n和所有支持智绘教的朋友们~");
 
 						while (getline(ss, temp, L'\n'))
 						{
