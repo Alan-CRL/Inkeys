@@ -672,7 +672,6 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 		bool StopTimingDisable = !setlist.waitStraighten;
 		chrono::high_resolution_clock::time_point StopTiming = std::chrono::high_resolution_clock::now();
 
-		chrono::high_resolution_clock::time_point reckon;
 		while (1)
 		{
 			// 确认触摸点存在

@@ -607,6 +607,7 @@
     <Image Include="src\choice.png" />
     <Image Include="src\choose.png" />
     <Image Include="src\choose_clear.png" />
+    <Image Include="src\ClassIsland.png" />
     <Image Include="src\curve.png" />
     <Image Include="src\endshow.png" />
     <Image Include="src\freeze-frame.png" />
@@ -620,6 +621,7 @@
     <Image Include="src\icon.ico" />
     <Image Include="src\icon.png" />
     <Image Include="src\info.png" />
+    <Image Include="src\IslandCaller.png" />
     <Image Include="src\left.png" />
     <Image Include="src\line.png" />
     <Image Include="src\more.png" />

@@ -89,7 +89,7 @@ void SettingWindow(promise<void>& promise)
 
 		ImGuiWc = { sizeof(WNDCLASSEX), CS_CLASSDC, ImGuiWndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, ClassName.c_str(), nullptr };
 		RegisterClassExW(&ImGuiWc);
-		setting_window = CreateWindowEx(WS_EX_NOACTIVATE | WS_EX_LAYERED, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, /*nullptr*/drawpad_window, nullptr, ImGuiWc.hInstance, nullptr);
+		setting_window = CreateWindowEx(WS_EX_NOACTIVATE | WS_EX_LAYERED, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, nullptr/*drawpad_window*/, nullptr, ImGuiWc.hInstance, nullptr);
 
 		SetLayeredWindowAttributes(setting_window, 0, 0, LWA_ALPHA);
 	}
