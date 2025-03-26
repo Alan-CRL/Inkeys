@@ -33,6 +33,7 @@
 // 示例
 static void HelpMarker(const char* desc, ImVec4 tmp);
 static void CenteredText(const char* desc, float displacement);
+void ScrollWhenDraggingOnVoid(const ImVec2& delta, ImGuiMouseButton mouse_button);
 ImFont* ImFontMain;
 
 WNDCLASSEXW ImGuiWc;
@@ -89,32 +90,17 @@ void SettingWindow(promise<void>& promise)
 
 		ImGuiWc = { sizeof(WNDCLASSEX), CS_CLASSDC, ImGuiWndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, ClassName.c_str(), nullptr };
 		RegisterClassExW(&ImGuiWc);
-		setting_window = CreateWindowEx(WS_EX_NOACTIVATE | WS_EX_LAYERED, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, nullptr/*drawpad_window*/, nullptr, ImGuiWc.hInstance, nullptr);
+		setting_window = CreateWindowEx(WS_EX_NOACTIVATE | WS_EX_LAYERED, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, /*nullptr*/drawpad_window, nullptr, ImGuiWc.hInstance, nullptr);
 
 		SetLayeredWindowAttributes(setting_window, 0, 0, LWA_ALPHA);
 	}
 	promise.set_value();
 
 	MSG msg;
-	POINT MoushPos = { 0,0 };
-
 	while (!offSignal && GetMessage(&msg, nullptr, 0, 0))
 	{
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
-
-		switch (msg.message)
-		{
-		case WM_MOUSEMOVE:
-			MoushPos.x = GET_X_LPARAM(msg.lParam);
-			MoushPos.y = GET_Y_LPARAM(msg.lParam);
-
-			break;
-
-		case WM_LBUTTONDOWN:
-			if (IsInRect(MoushPos.x, MoushPos.y, { 0,0,int(904.0 * settingGlobalScale),int(40.0 * settingGlobalScale) })) SettingSeekBar();
-			break;
-		}
 	}
 }
 void SettingWindowBegin()
@@ -1855,6 +1841,10 @@ void SettingMain()
 					}
 
 					{
+						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+					}
+					{
 						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
 						while (PushFontNum) PushFontNum--, ImGui::PopFont();
@@ -2576,7 +2566,15 @@ void SettingMain()
 						ImGui::EndChild();
 					}
 
-					while (PushFontNum) PushFontNum--, ImGui::PopFont();
+					{
+						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+					}
+					{
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
+					}
 					ImGui::EndChild();
 					break;
 				}
@@ -2992,6 +2990,15 @@ void SettingMain()
 						ImGui::EndChild();
 					}
 
+					{
+						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+					}
+					{
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
+					}
 					ImGui::EndChild();
 					break;
 				}
@@ -3106,6 +3113,10 @@ void SettingMain()
 						ImGui::EndChild();
 					}
 
+					{
+						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+					}
 					{
 						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
@@ -3328,6 +3339,10 @@ void SettingMain()
 							ImGui::EndChild();
 						}
 
+						{
+							ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+							ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+						}
 						{
 							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
@@ -4199,6 +4214,10 @@ void SettingMain()
 							}
 
 							{
+								ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+								ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+							}
+							{
 								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
 								while (PushFontNum) PushFontNum--, ImGui::PopFont();
@@ -4423,6 +4442,10 @@ void SettingMain()
 								ImGui::EndChild();
 							}
 
+							{
+								ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+								ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+							}
 							{
 								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
@@ -5501,6 +5524,10 @@ void SettingMain()
 							}
 
 							{
+								ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+								ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+							}
+							{
 								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
 								while (PushFontNum) PushFontNum--, ImGui::PopFont();
@@ -5572,6 +5599,10 @@ void SettingMain()
 					}
 
 					{
+						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+					}
+					{
 						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
 						while (PushFontNum) PushFontNum--, ImGui::PopFont();
@@ -5631,6 +5662,10 @@ void SettingMain()
 						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 					}
 
+					{
+						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+					}
 					{
 						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
@@ -5693,6 +5728,10 @@ void SettingMain()
 						}
 					}
 
+					{
+						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+					}
 					{
 						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
@@ -5817,6 +5856,10 @@ void SettingMain()
 						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 					}
 
+					{
+						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+					}
 					{
 						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
@@ -6371,6 +6414,11 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 	switch (msg)
 	{
+		// 标题栏拖动
+	case WM_LBUTTONDOWN:
+		if (IsInRect(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), { 0,0,int(904.0 * settingGlobalScale),int(40.0 * settingGlobalScale) })) SettingSeekBar();
+		break;
+
 	case WM_SIZE:
 		if (wParam == SIZE_MINIMIZED)
 			return 0;
@@ -6437,4 +6485,22 @@ static void CenteredText(const char* desc, float displacement)
 	ImGui::SetCursorPosY(temp + displacement);
 	ImGui::TextUnformatted(desc);
 	ImGui::SetCursorPosY(temp);
+}
+void ScrollWhenDraggingOnVoid(const ImVec2& delta, ImGuiMouseButton mouse_button)
+{
+	ImGuiContext& g = *ImGui::GetCurrentContext();
+
+	ImGuiWindow* window = g.CurrentWindow;
+	bool hovered = false;
+	bool held = false;
+	ImGuiID id = window->GetID("##scrolldraggingoverlay");
+	ImGui::KeepAliveID(id);
+
+	ImGui::ButtonBehavior(window->Rect(), id, &hovered, &held, mouse_button);
+	if (!held && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && ImGui::IsMouseDown(mouse_button)) held = true;
+
+	if (held && delta.x != 0.0f)
+		ImGui::SetScrollX(window, window->Scroll.x + delta.x);
+	if (held && delta.y != 0.0f)
+		ImGui::SetScrollY(window, window->Scroll.y + delta.y);
 }

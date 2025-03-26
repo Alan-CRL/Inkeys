@@ -102,13 +102,12 @@ void TopWindow()
 	ShowWindow(freeze_window, SW_SHOWNOACTIVATE);
 	IDTLogger->info("[窗口置顶线程][TopWindow] 显示窗口完成");
 
-	// 置顶前缓冲   this
-	while (rtsWait && 0) this_thread::sleep_for(chrono::milliseconds(500));
+	// 置顶前缓冲
+	while (rtsWait) this_thread::sleep_for(chrono::milliseconds(500));
 	this_thread::sleep_for(chrono::milliseconds(1000));
 
 	while (!offSignal)
 	{
-		cerr << 1 << endl;
 		if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && !penetrate.select)
 		{
 			shared_lock LockStrokeImageListSm(StrokeImageListSm);
@@ -298,19 +297,16 @@ void TopWindow()
 
 		// 置顶窗口
 		{
-			// 设置窗口顺序
+			// 设置窗口顺序（非必要：会导致窗口闪烁）
 			//SetWindowPos(ppt_window, floating_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 			//SetWindowPos(setting_window, ppt_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 			//SetWindowPos(drawpad_window, setting_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 			//SetWindowPos(freeze_window, drawpad_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 			//SetWindowPos(magnifierWindow, freeze_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-			// 似乎会引发绘制卡顿问题
 
-			if (!SetWindowPos(freeze_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
+			// 统一置顶
+			if (!SetWindowPos(magnifierWindow, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
 				IDTLogger->warn("[窗口置顶线程][TopWindow] 置顶窗口时失败 Error" + to_string(GetLastError()));
-			//// 统一置顶
-			//if (!SetWindowPos(magnifierWindow, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
-			//	IDTLogger->warn("[窗口置顶线程][TopWindow] 置顶窗口时失败 Error" + to_string(GetLastError()));
 		}
 
 	topWait:
