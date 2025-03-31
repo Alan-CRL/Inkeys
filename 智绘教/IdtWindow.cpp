@@ -163,14 +163,14 @@ void TopWindow()
 				if (IsWindowVisible(magnifierWindow)) break;
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
-			for (int i = 1; i <= 10 && !IsWindowVisible(setting_window); i++)
+			/*for (int i = 1; i <= 10 && !IsWindowVisible(setting_window); i++)
 			{
-				IDTLogger->warn("[窗口置顶线程][TopWindow] 选项被隐藏 Try" + to_string(i));
+				IDTLogger->warn("[窗口置顶线程][TopWindow] 选项窗口被隐藏 Try" + to_string(i));
 				ShowWindow(setting_window, SW_SHOWNOACTIVATE);
 
 				if (IsWindowVisible(setting_window)) break;
 				this_thread::sleep_for(chrono::milliseconds(10));
-			}
+			}*/
 		}
 
 		// 检查窗口扩展样式
@@ -206,15 +206,6 @@ void TopWindow()
 				SetWindowLong(ppt_window, GWL_EXSTYLE, GetWindowLong(ppt_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
 
 				if (GetWindowLong(ppt_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
-				this_thread::sleep_for(chrono::milliseconds(10));
-			}
-
-			for (int i = 1; i <= 10 && !(GetWindowLong(setting_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE); i++)
-			{
-				IDTLogger->warn("[窗口置顶线程][TopWindow] 选项窗口 WS_EX_NOACTIVATE 样式被隐藏 Try" + to_string(i));
-				SetWindowLong(setting_window, GWL_EXSTYLE, GetWindowLong(setting_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
-
-				if (GetWindowLong(setting_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
 
@@ -277,14 +268,6 @@ void TopWindow()
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
 
-			for (int i = 1; i <= 10 && !(GetWindowLong(setting_window, GWL_EXSTYLE) & WS_EX_LAYERED); i++)
-			{
-				IDTLogger->warn("[窗口置顶线程][TopWindow] 选项窗口 WS_EX_LAYERED 样式被隐藏 Try" + to_string(i));
-				SetWindowLong(setting_window, GWL_EXSTYLE, GetWindowLong(setting_window, GWL_EXSTYLE) | WS_EX_LAYERED);
-
-				if (GetWindowLong(setting_window, GWL_EXSTYLE) & WS_EX_LAYERED) break;
-				this_thread::sleep_for(chrono::milliseconds(10));
-			}
 			for (int i = 1; i <= 10 && !(GetWindowLong(setting_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE); i++)
 			{
 				IDTLogger->warn("[窗口置顶线程][TopWindow] 选项窗口 WS_EX_NOACTIVATE 样式被隐藏 Try" + to_string(i));

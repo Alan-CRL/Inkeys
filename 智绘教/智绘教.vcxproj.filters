@@ -944,6 +944,9 @@
     <ClCompile Include="IdtBar.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="IdtDrawpadList.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="智绘教.rc">

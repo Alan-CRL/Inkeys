@@ -672,8 +672,13 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 		bool StopTimingDisable = !setlist.waitStraighten;
 		chrono::high_resolution_clock::time_point StopTiming = std::chrono::high_resolution_clock::now();
 
+		chrono::high_resolution_clock::time_point reckon;
+		reckon = chrono::high_resolution_clock::now();
+
 		while (1)
 		{
+			wstring s;
+
 			// 确认触摸点存在
 			{
 				shared_lock<shared_mutex> lockPointPosSm(touchPosSm);
@@ -692,6 +697,9 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 				lockPointListSm.unlock();
 				if (it == TouchList.end()) break;
 			}
+
+			s += to_wstring(chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count()) + L"ms ---\n";
+
 			// 停留拉直
 			if (!StopTimingDisable && stateInfo.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1 && !actualPoints.empty())
 			{
@@ -719,14 +727,23 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 				}
 			}
 
+			s += to_wstring(chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count()) + L"ms ---\n";
+
 			// 过滤未动触摸点
 			{
 				if (mode.pt.x == pointInfo.previousX && mode.pt.y == pointInfo.previousY)
 				{
-					this_thread::sleep_for(chrono::milliseconds(1));
+					//chrono::high_resolution_clock::time_point reckon;
+					//reckon = chrono::high_resolution_clock::now();
+					if (!setlist.performanceSetting.superDraw) this_thread::sleep_for(chrono::milliseconds(1));
+					//double tmp = chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count();
+					//cerr << tmp << "ms" << endl;
+					reckon = chrono::high_resolution_clock::now();
 					continue;
 				}
 			}
+
+			s += to_wstring(chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count()) + L"ms ---\n";
 
 			// 绘制
 			{
@@ -767,6 +784,13 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 					pointInfo.previousX = pointInfo.x, pointInfo.previousY = pointInfo.y;
 				}
 			}
+
+			double tmp = chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count();
+			cerr << tmp << "ms" << endl;
+
+			if (tmp >= 5.0) wcerr << s;
+
+			reckon = chrono::high_resolution_clock::now();
 		}
 
 		//智能绘图模块
@@ -1115,7 +1139,7 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 			{
 				if (mode.pt.x == pointInfo.previousX && mode.pt.y == pointInfo.previousY)
 				{
-					this_thread::sleep_for(chrono::milliseconds(1));
+					if (!setlist.performanceSetting.superDraw) this_thread::sleep_for(chrono::milliseconds(1));
 					continue;
 				}
 			}
@@ -1554,6 +1578,8 @@ void DrawpadDrawing()
 
 				stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
 
+				timeEndPeriod(1);
+
 				int ppt_switch_count = 0;
 				while (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
 				{
@@ -1564,6 +1590,8 @@ void DrawpadDrawing()
 
 					if (offSignal) goto DrawpadDrawingEnd;
 				}
+
+				if (setlist.performanceSetting.superDraw) timeBeginPeriod(1);
 
 				{
 					if (PptInfoStateBuffer.TotalPage != -1 && ppt_switch_count != 0 && PptImg.IsSaved[PptInfoStateBuffer.CurrentPage])
@@ -1597,9 +1625,11 @@ void DrawpadDrawing()
 				if (setlist.avoidFullScreen) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
 				topWindowNow = true;
 
-				LONG nRet = ::GetWindowLong(drawpad_window, GWL_EXSTYLE);
+				LONG nRet = GetWindowLongPtrW(drawpad_window, GWL_EXSTYLE);
 				nRet |= WS_EX_TRANSPARENT;
-				::SetWindowLong(drawpad_window, GWL_EXSTYLE, nRet);
+				SetWindowLongPtrW(drawpad_window, GWL_EXSTYLE, nRet);
+
+				timeEndPeriod(1);
 
 				while (1)
 				{
@@ -1727,11 +1757,12 @@ void DrawpadDrawing()
 					break;
 				}
 
+				if (setlist.performanceSetting.superDraw) timeBeginPeriod(1);
 				if (setlist.avoidFullScreen) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 
-				nRet = ::GetWindowLong(drawpad_window, GWL_EXSTYLE);
+				nRet = GetWindowLongPtrW(drawpad_window, GWL_EXSTYLE);
 				nRet &= ~WS_EX_TRANSPARENT;
-				::SetWindowLong(drawpad_window, GWL_EXSTYLE, nRet);
+				SetWindowLongPtrW(drawpad_window, GWL_EXSTYLE, nRet);
 
 				TouchTemp.clear();
 			}

@@ -90,9 +90,8 @@ void SettingWindow(promise<void>& promise)
 
 		ImGuiWc = { sizeof(WNDCLASSEX), CS_VREDRAW | CS_HREDRAW, ImGuiWndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, ClassName.c_str(), nullptr };
 		RegisterClassExW(&ImGuiWc);
-		setting_window = CreateWindowEx(WS_EX_NOACTIVATE | WS_EX_LAYERED, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, /*nullptr*/drawpad_window, nullptr, ImGuiWc.hInstance, nullptr);
-
-		SetLayeredWindowAttributes(setting_window, 0, 0, LWA_ALPHA);
+		setting_window = CreateWindowEx(WS_EX_NOACTIVATE, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, drawpad_window, nullptr, ImGuiWc.hInstance, nullptr);
+		//setting_window = CreateWindowEx(WS_EX_NOACTIVATE, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, nullptr, nullptr, ImGuiWc.hInstance, nullptr);
 	}
 	promise.set_value();
 
@@ -124,348 +123,368 @@ void SettingWindowBegin()
 		future.get();
 	}
 
-	SetWindowLongW(setting_window, GWL_STYLE, GetWindowLong(setting_window, GWL_STYLE) & ~(WS_CAPTION | WS_BORDER | WS_THICKFRAME));
+	SetWindowLongPtrW(setting_window, GWL_STYLE, GetWindowLongPtrW(setting_window, GWL_STYLE) & ~(WS_CAPTION | WS_BORDER | WS_THICKFRAME));
 	SetWindowPos(setting_window, NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 
-	ShowWindow(setting_window, SW_SHOWNOACTIVATE);
-	UpdateWindow(setting_window);
+	ShowWindow(setting_window, SW_HIDE);
+	//UpdateWindow(setting_window);
 }
 
 void SettingMain()
 {
 	threadStatus[L"SettingMain"] = true;
 
-	// 初始化部分
-	{
-		CreateDeviceD3D(setting_window);
+	//SettingWindowBegin();
 
-		// 图像加载
-		{
-			IMAGE SettingSign;
-
-			if (i18nIdentifying == L"zh-CN") idtLoadImage(&SettingSign, L"PNG", L"Home1_zh-CN", 700 * settingGlobalScale, 215 * settingGlobalScale, true);
-			else idtLoadImage(&SettingSign, L"PNG", L"Home1_en-US", 700 * settingGlobalScale, 240 * settingGlobalScale, true);
-			{
-				int width = settingSign[1].width = SettingSign.getwidth();
-				int height = settingSign[1].height = SettingSign.getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign);
-
-				unsigned char* data = new unsigned char[width * height * 4];
-				for (int y = 0; y < height; ++y)
-				{
-					for (int x = 0; x < width; ++x)
-					{
-						DWORD color = pMem[y * width + x];
-						unsigned char alpha = (color & 0xFF000000) >> 24;
-						if (alpha != 0)
-						{
-							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						}
-						else
-						{
-							data[(y * width + x) * 4 + 0] = 0;
-							data[(y * width + x) * 4 + 1] = 0;
-							data[(y * width + x) * 4 + 2] = 0;
-						}
-						data[(y * width + x) * 4 + 3] = alpha;
-					}
-				}
-
-				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[1]);
-				delete[] data;
-
-				IM_ASSERT(ret);
-			}
-
-			if (i18nIdentifying == L"zh-CN") idtLoadImage(&SettingSign, L"PNG", L"Home2_zh-CN", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
-			else idtLoadImage(&SettingSign, L"PNG", L"Home2_en-US", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
-			{
-				int width = settingSign[2].width = SettingSign.getwidth();
-				int height = settingSign[2].height = SettingSign.getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign);
-
-				unsigned char* data = new unsigned char[width * height * 4];
-				for (int y = 0; y < height; ++y)
-				{
-					for (int x = 0; x < width; ++x)
-					{
-						DWORD color = pMem[y * width + x];
-						unsigned char alpha = (color & 0xFF000000) >> 24;
-						if (alpha != 0)
-						{
-							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						}
-						else
-						{
-							data[(y * width + x) * 4 + 0] = 0;
-							data[(y * width + x) * 4 + 1] = 0;
-							data[(y * width + x) * 4 + 2] = 0;
-						}
-						data[(y * width + x) * 4 + 3] = alpha;
-					}
-				}
-
-				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[2]);
-				delete[] data;
-
-				IM_ASSERT(ret);
-			}
-
-			idtLoadImage(&SettingSign, L"PNG", L"PluginFlag1", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
-			{
-				int width = settingSign[5].width = SettingSign.getwidth();
-				int height = settingSign[5].height = SettingSign.getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign);
-
-				unsigned char* data = new unsigned char[width * height * 4];
-				for (int y = 0; y < height; ++y)
-				{
-					for (int x = 0; x < width; ++x)
-					{
-						DWORD color = pMem[y * width + x];
-						unsigned char alpha = (color & 0xFF000000) >> 24;
-						if (alpha != 0)
-						{
-							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						}
-						else
-						{
-							data[(y * width + x) * 4 + 0] = 0;
-							data[(y * width + x) * 4 + 1] = 0;
-							data[(y * width + x) * 4 + 2] = 0;
-						}
-						data[(y * width + x) * 4 + 3] = alpha;
-					}
-				}
-
-				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[5]);
-				delete[] data;
-
-				IM_ASSERT(ret);
-			}
-			idtLoadImage(&SettingSign, L"PNG", L"PluginFlag2", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
-			{
-				int width = settingSign[6].width = SettingSign.getwidth();
-				int height = settingSign[6].height = SettingSign.getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign);
-
-				unsigned char* data = new unsigned char[width * height * 4];
-				for (int y = 0; y < height; ++y)
-				{
-					for (int x = 0; x < width; ++x)
-					{
-						DWORD color = pMem[y * width + x];
-						unsigned char alpha = (color & 0xFF000000) >> 24;
-						if (alpha != 0)
-						{
-							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						}
-						else
-						{
-							data[(y * width + x) * 4 + 0] = 0;
-							data[(y * width + x) * 4 + 1] = 0;
-							data[(y * width + x) * 4 + 2] = 0;
-						}
-						data[(y * width + x) * 4 + 3] = alpha;
-					}
-				}
-
-				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[6]);
-				delete[] data;
-
-				IM_ASSERT(ret);
-			}
-			idtLoadImage(&SettingSign, L"PNG", L"PluginFlag3", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
-			{
-				int width = settingSign[8].width = SettingSign.getwidth();
-				int height = settingSign[8].height = SettingSign.getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign);
-
-				unsigned char* data = new unsigned char[width * height * 4];
-				for (int y = 0; y < height; ++y)
-				{
-					for (int x = 0; x < width; ++x)
-					{
-						DWORD color = pMem[y * width + x];
-						unsigned char alpha = (color & 0xFF000000) >> 24;
-						if (alpha != 0)
-						{
-							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						}
-						else
-						{
-							data[(y * width + x) * 4 + 0] = 0;
-							data[(y * width + x) * 4 + 1] = 0;
-							data[(y * width + x) * 4 + 2] = 0;
-						}
-						data[(y * width + x) * 4 + 3] = alpha;
-					}
-				}
-
-				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[8]);
-				delete[] data;
-
-				IM_ASSERT(ret);
-			}
-
-			idtLoadImage(&SettingSign, L"PNG", L"Home_Backgroung", 980 * settingGlobalScale, 768 * settingGlobalScale, true);
-			{
-				int width = settingSign[4].width = SettingSign.getwidth();
-				int height = settingSign[4].height = SettingSign.getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign);
-
-				unsigned char* data = new unsigned char[width * height * 4];
-				for (int y = 0; y < height; ++y)
-				{
-					for (int x = 0; x < width; ++x)
-					{
-						DWORD color = pMem[y * width + x];
-						unsigned char alpha = (color & 0xFF000000) >> 24;
-						if (alpha != 0)
-						{
-							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						}
-						else
-						{
-							data[(y * width + x) * 4 + 0] = 0;
-							data[(y * width + x) * 4 + 1] = 0;
-							data[(y * width + x) * 4 + 2] = 0;
-						}
-						data[(y * width + x) * 4 + 3] = alpha;
-					}
-				}
-
-				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[4]);
-				delete[] data;
-
-				IM_ASSERT(ret);
-			}
-			idtLoadImage(&SettingSign, L"PNG", L"Profile_Picture", 45 * settingGlobalScale, 45 * settingGlobalScale, true);
-			{
-				int width = settingSign[3].width = SettingSign.getwidth();
-				int height = settingSign[3].height = SettingSign.getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign);
-
-				unsigned char* data = new unsigned char[width * height * 4];
-				for (int y = 0; y < height; ++y)
-				{
-					for (int x = 0; x < width; ++x)
-					{
-						DWORD color = pMem[y * width + x];
-						unsigned char alpha = (color & 0xFF000000) >> 24;
-						if (alpha != 0)
-						{
-							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						}
-						else
-						{
-							data[(y * width + x) * 4 + 0] = 0;
-							data[(y * width + x) * 4 + 1] = 0;
-							data[(y * width + x) * 4 + 2] = 0;
-						}
-						data[(y * width + x) * 4 + 3] = alpha;
-					}
-				}
-
-				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[3]);
-				delete[] data;
-
-				IM_ASSERT(ret);
-			}
-			idtLoadImage(&SettingSign, L"PNG", L"Home_Feedback", 100 * settingGlobalScale, 100 * settingGlobalScale, true);
-			{
-				int width = settingSign[7].width = SettingSign.getwidth();
-				int height = settingSign[7].height = SettingSign.getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign);
-
-				unsigned char* data = new unsigned char[width * height * 4];
-				for (int y = 0; y < height; ++y)
-				{
-					for (int x = 0; x < width; ++x)
-					{
-						DWORD color = pMem[y * width + x];
-						unsigned char alpha = (color & 0xFF000000) >> 24;
-						if (alpha != 0)
-						{
-							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						}
-						else
-						{
-							data[(y * width + x) * 4 + 0] = 0;
-							data[(y * width + x) * 4 + 1] = 0;
-							data[(y * width + x) * 4 + 2] = 0;
-						}
-						data[(y * width + x) * 4 + 3] = alpha;
-					}
-				}
-
-				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[7]);
-				delete[] data;
-
-				IM_ASSERT(ret);
-			}
-
-			idtLoadImage(&SettingSign, L"PNG", L"SettingSponsor", 650 * settingGlobalScale, 460 * settingGlobalScale, true);
-			{
-				int width = settingSign[9].width = SettingSign.getwidth();
-				int height = settingSign[9].height = SettingSign.getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign);
-
-				unsigned char* data = new unsigned char[width * height * 4];
-				for (int y = 0; y < height; ++y)
-				{
-					for (int x = 0; x < width; ++x)
-					{
-						DWORD color = pMem[y * width + x];
-						unsigned char alpha = (color & 0xFF000000) >> 24;
-						if (alpha != 0)
-						{
-							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						}
-						else
-						{
-							data[(y * width + x) * 4 + 0] = 0;
-							data[(y * width + x) * 4 + 1] = 0;
-							data[(y * width + x) * 4 + 2] = 0;
-						}
-						data[(y * width + x) * 4 + 3] = alpha;
-					}
-				}
-
-				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[9]);
-				delete[] data;
-
-				IM_ASSERT(ret);
-			}
-		}
-	}
-
-	bool ShowWindow = false;
+	bool showWindow = false;
 	while (!offSignal)
 	{
-		SetLayeredWindowAttributes(setting_window, 0, 0, LWA_ALPHA);
-		ShowWindow = false;
+		if (showWindow)
+		{
+			{
+				for (unsigned int i = 0; i < size(TextureSettingSign); i++)
+				{
+					if (TextureSettingSign[i])
+					{
+						TextureSettingSign[i]->Release();
+						TextureSettingSign[i] = nullptr;
+					}
+				}
+			}
+
+			CleanupDeviceD3D();
+			::ShowWindow(setting_window, SW_HIDE);
+		}
+		showWindow = false;
 
 		while (!test.select && !offSignal) this_thread::sleep_for(chrono::milliseconds(100));
 		if (offSignal) break;
+
+		{
+			::ShowWindow(setting_window, SW_SHOWNOACTIVATE);
+			CreateDeviceD3D(setting_window);
+
+			// 初始化
+			{
+				// 图像加载
+				{
+					IMAGE SettingSign;
+
+					if (i18nIdentifying == L"zh-CN") idtLoadImage(&SettingSign, L"PNG", L"Home1_zh-CN", 700 * settingGlobalScale, 215 * settingGlobalScale, true);
+					else idtLoadImage(&SettingSign, L"PNG", L"Home1_en-US", 700 * settingGlobalScale, 240 * settingGlobalScale, true);
+					{
+						int width = settingSign[1].width = SettingSign.getwidth();
+						int height = settingSign[1].height = SettingSign.getheight();
+						DWORD* pMem = GetImageBuffer(&SettingSign);
+
+						unsigned char* data = new unsigned char[width * height * 4];
+						for (int y = 0; y < height; ++y)
+						{
+							for (int x = 0; x < width; ++x)
+							{
+								DWORD color = pMem[y * width + x];
+								unsigned char alpha = (color & 0xFF000000) >> 24;
+								if (alpha != 0)
+								{
+									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+								}
+								else
+								{
+									data[(y * width + x) * 4 + 0] = 0;
+									data[(y * width + x) * 4 + 1] = 0;
+									data[(y * width + x) * 4 + 2] = 0;
+								}
+								data[(y * width + x) * 4 + 3] = alpha;
+							}
+						}
+
+						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[1]);
+						delete[] data;
+
+						IM_ASSERT(ret);
+					}
+
+					if (i18nIdentifying == L"zh-CN") idtLoadImage(&SettingSign, L"PNG", L"Home2_zh-CN", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
+					else idtLoadImage(&SettingSign, L"PNG", L"Home2_en-US", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
+					{
+						int width = settingSign[2].width = SettingSign.getwidth();
+						int height = settingSign[2].height = SettingSign.getheight();
+						DWORD* pMem = GetImageBuffer(&SettingSign);
+
+						unsigned char* data = new unsigned char[width * height * 4];
+						for (int y = 0; y < height; ++y)
+						{
+							for (int x = 0; x < width; ++x)
+							{
+								DWORD color = pMem[y * width + x];
+								unsigned char alpha = (color & 0xFF000000) >> 24;
+								if (alpha != 0)
+								{
+									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+								}
+								else
+								{
+									data[(y * width + x) * 4 + 0] = 0;
+									data[(y * width + x) * 4 + 1] = 0;
+									data[(y * width + x) * 4 + 2] = 0;
+								}
+								data[(y * width + x) * 4 + 3] = alpha;
+							}
+						}
+
+						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[2]);
+						delete[] data;
+
+						IM_ASSERT(ret);
+					}
+
+					idtLoadImage(&SettingSign, L"PNG", L"PluginFlag1", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
+					{
+						int width = settingSign[5].width = SettingSign.getwidth();
+						int height = settingSign[5].height = SettingSign.getheight();
+						DWORD* pMem = GetImageBuffer(&SettingSign);
+
+						unsigned char* data = new unsigned char[width * height * 4];
+						for (int y = 0; y < height; ++y)
+						{
+							for (int x = 0; x < width; ++x)
+							{
+								DWORD color = pMem[y * width + x];
+								unsigned char alpha = (color & 0xFF000000) >> 24;
+								if (alpha != 0)
+								{
+									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+								}
+								else
+								{
+									data[(y * width + x) * 4 + 0] = 0;
+									data[(y * width + x) * 4 + 1] = 0;
+									data[(y * width + x) * 4 + 2] = 0;
+								}
+								data[(y * width + x) * 4 + 3] = alpha;
+							}
+						}
+
+						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[5]);
+						delete[] data;
+
+						IM_ASSERT(ret);
+					}
+					idtLoadImage(&SettingSign, L"PNG", L"PluginFlag2", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
+					{
+						int width = settingSign[6].width = SettingSign.getwidth();
+						int height = settingSign[6].height = SettingSign.getheight();
+						DWORD* pMem = GetImageBuffer(&SettingSign);
+
+						unsigned char* data = new unsigned char[width * height * 4];
+						for (int y = 0; y < height; ++y)
+						{
+							for (int x = 0; x < width; ++x)
+							{
+								DWORD color = pMem[y * width + x];
+								unsigned char alpha = (color & 0xFF000000) >> 24;
+								if (alpha != 0)
+								{
+									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+								}
+								else
+								{
+									data[(y * width + x) * 4 + 0] = 0;
+									data[(y * width + x) * 4 + 1] = 0;
+									data[(y * width + x) * 4 + 2] = 0;
+								}
+								data[(y * width + x) * 4 + 3] = alpha;
+							}
+						}
+
+						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[6]);
+						delete[] data;
+
+						IM_ASSERT(ret);
+					}
+					idtLoadImage(&SettingSign, L"PNG", L"PluginFlag3", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
+					{
+						int width = settingSign[8].width = SettingSign.getwidth();
+						int height = settingSign[8].height = SettingSign.getheight();
+						DWORD* pMem = GetImageBuffer(&SettingSign);
+
+						unsigned char* data = new unsigned char[width * height * 4];
+						for (int y = 0; y < height; ++y)
+						{
+							for (int x = 0; x < width; ++x)
+							{
+								DWORD color = pMem[y * width + x];
+								unsigned char alpha = (color & 0xFF000000) >> 24;
+								if (alpha != 0)
+								{
+									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+								}
+								else
+								{
+									data[(y * width + x) * 4 + 0] = 0;
+									data[(y * width + x) * 4 + 1] = 0;
+									data[(y * width + x) * 4 + 2] = 0;
+								}
+								data[(y * width + x) * 4 + 3] = alpha;
+							}
+						}
+
+						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[8]);
+						delete[] data;
+
+						IM_ASSERT(ret);
+					}
+
+					idtLoadImage(&SettingSign, L"PNG", L"Home_Backgroung", 980 * settingGlobalScale, 768 * settingGlobalScale, true);
+					{
+						int width = settingSign[4].width = SettingSign.getwidth();
+						int height = settingSign[4].height = SettingSign.getheight();
+						DWORD* pMem = GetImageBuffer(&SettingSign);
+
+						unsigned char* data = new unsigned char[width * height * 4];
+						for (int y = 0; y < height; ++y)
+						{
+							for (int x = 0; x < width; ++x)
+							{
+								DWORD color = pMem[y * width + x];
+								unsigned char alpha = (color & 0xFF000000) >> 24;
+								if (alpha != 0)
+								{
+									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+								}
+								else
+								{
+									data[(y * width + x) * 4 + 0] = 0;
+									data[(y * width + x) * 4 + 1] = 0;
+									data[(y * width + x) * 4 + 2] = 0;
+								}
+								data[(y * width + x) * 4 + 3] = alpha;
+							}
+						}
+
+						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[4]);
+						delete[] data;
+
+						IM_ASSERT(ret);
+					}
+					idtLoadImage(&SettingSign, L"PNG", L"Profile_Picture", 45 * settingGlobalScale, 45 * settingGlobalScale, true);
+					{
+						int width = settingSign[3].width = SettingSign.getwidth();
+						int height = settingSign[3].height = SettingSign.getheight();
+						DWORD* pMem = GetImageBuffer(&SettingSign);
+
+						unsigned char* data = new unsigned char[width * height * 4];
+						for (int y = 0; y < height; ++y)
+						{
+							for (int x = 0; x < width; ++x)
+							{
+								DWORD color = pMem[y * width + x];
+								unsigned char alpha = (color & 0xFF000000) >> 24;
+								if (alpha != 0)
+								{
+									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+								}
+								else
+								{
+									data[(y * width + x) * 4 + 0] = 0;
+									data[(y * width + x) * 4 + 1] = 0;
+									data[(y * width + x) * 4 + 2] = 0;
+								}
+								data[(y * width + x) * 4 + 3] = alpha;
+							}
+						}
+
+						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[3]);
+						delete[] data;
+
+						IM_ASSERT(ret);
+					}
+					idtLoadImage(&SettingSign, L"PNG", L"Home_Feedback", 100 * settingGlobalScale, 100 * settingGlobalScale, true);
+					{
+						int width = settingSign[7].width = SettingSign.getwidth();
+						int height = settingSign[7].height = SettingSign.getheight();
+						DWORD* pMem = GetImageBuffer(&SettingSign);
+
+						unsigned char* data = new unsigned char[width * height * 4];
+						for (int y = 0; y < height; ++y)
+						{
+							for (int x = 0; x < width; ++x)
+							{
+								DWORD color = pMem[y * width + x];
+								unsigned char alpha = (color & 0xFF000000) >> 24;
+								if (alpha != 0)
+								{
+									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+								}
+								else
+								{
+									data[(y * width + x) * 4 + 0] = 0;
+									data[(y * width + x) * 4 + 1] = 0;
+									data[(y * width + x) * 4 + 2] = 0;
+								}
+								data[(y * width + x) * 4 + 3] = alpha;
+							}
+						}
+
+						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[7]);
+						delete[] data;
+
+						IM_ASSERT(ret);
+					}
+
+					idtLoadImage(&SettingSign, L"PNG", L"SettingSponsor", 650 * settingGlobalScale, 460 * settingGlobalScale, true);
+					{
+						int width = settingSign[9].width = SettingSign.getwidth();
+						int height = settingSign[9].height = SettingSign.getheight();
+						DWORD* pMem = GetImageBuffer(&SettingSign);
+
+						unsigned char* data = new unsigned char[width * height * 4];
+						for (int y = 0; y < height; ++y)
+						{
+							for (int x = 0; x < width; ++x)
+							{
+								DWORD color = pMem[y * width + x];
+								unsigned char alpha = (color & 0xFF000000) >> 24;
+								if (alpha != 0)
+								{
+									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+								}
+								else
+								{
+									data[(y * width + x) * 4 + 0] = 0;
+									data[(y * width + x) * 4 + 1] = 0;
+									data[(y * width + x) * 4 + 2] = 0;
+								}
+								data[(y * width + x) * 4 + 3] = alpha;
+							}
+						}
+
+						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[9]);
+						delete[] data;
+
+						IM_ASSERT(ret);
+					}
+				}
+			}
+		}
 
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
@@ -625,6 +644,7 @@ void SettingMain()
 		int EraserMode = setlist.eraserSetting.eraserMode;
 
 		int PreparationQuantity = setlist.performanceSetting.preparationQuantity;
+		bool SuperDraw = setlist.performanceSetting.superDraw;
 
 		// 插件参数
 
@@ -3058,7 +3078,7 @@ void SettingMain()
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(255, 255, 255, 0));
-						ImGui::BeginChild("性能#1", { 750.0f * settingGlobalScale,130.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("性能#1", { 750.0f * settingGlobalScale,235.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -3130,6 +3150,75 @@ void SettingMain()
 									// 落笔预备
 									ResetPrepareCanvas();
 								}
+							}
+
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+							ImGui::EndChild();
+						}
+						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+							ImGui::BeginChild("高性能绘图", { 750.0f * settingGlobalScale,120.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+							float cursosPosY = 0;
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+								ImGui::TextUnformatted("高性能绘图(BETA)");
+							}
+							{
+								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 6));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
+								if (!SuperDraw)
+								{
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
+								}
+								else
+								{
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
+								}
+								ImGui::Toggle("##高性能绘图", &SuperDraw, config);
+
+								if (setlist.performanceSetting.superDraw != SuperDraw)
+								{
+									setlist.performanceSetting.superDraw = SuperDraw;
+									WriteSetting();
+								}
+							}
+
+							cursosPosY = ImGui::GetCursorPosY();
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 10.0f * settingGlobalScale });
+
+								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
+								ImGui::BeginChild("高性能绘图-介绍", { 710.0f * settingGlobalScale,50.0f * settingGlobalScale }, false);
+
+								{
+									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
+
+									ImGui::TextWrapped("在绘制模式下使用更多的系统资源进行绘图, 以及拥有更加精确的渲染间隔。 所有的额外性能开销都仅在绘制中产生（即非选择状态下）。 如果发现绘制延迟高、不跟手, 请关闭此选项。 对于 Windows 10 2004（不含）以下系统, 可能会在绘图时影响其他软件渲染间隔, 并带来更大的全局开销。");
+								}
+
+								{
+									if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+									if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+									while (PushFontNum) PushFontNum--, ImGui::PopFont();
+								}
+								ImGui::EndChild();
 							}
 
 							{
@@ -6521,11 +6610,10 @@ void SettingMain()
 			if (result == D3DERR_DEVICELOST) g_DeviceLost = true;
 
 			if (!test.select) break;
-			if (!ShowWindow)
+			if (!showWindow)
 			{
-				SetLayeredWindowAttributes(setting_window, 0, 255, LWA_ALPHA);
-				//::SetForegroundWindow(setting_window);
-				ShowWindow = true;
+				::ShowWindow(setting_window, SW_SHOW);
+				showWindow = true;
 			}
 		}
 
