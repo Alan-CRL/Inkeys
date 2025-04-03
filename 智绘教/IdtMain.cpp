@@ -35,6 +35,7 @@
 #include "IdtTime.h"
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
+#include "Launch/IdtLaunchState.h"
 
 #include <lm.h>
 #include <shellscalingapi.h>
@@ -42,8 +43,8 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250330b";				// 程序发布日期
-wstring editionChannel = L"Dev";				// 程序发布通道
+wstring editionDate = L"20250403a";				// 程序发布日期
+wstring editionChannel = L"LTS";				// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -58,8 +59,8 @@ map <wstring, bool> threadStatus;				// 线程状态管理
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-// int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/, int /*nCmdShow*/)
-int main()
+int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
+// int main()
 {
 	// 路径预处理
 	{
@@ -121,29 +122,47 @@ int main()
 	}
 	// 防止重复启动
 	{
+		// 检查启动标识
+		// -Restart 强制启动一次
+		// -WarnTry 强制启动一次，表明上一次遇到了错误
+
+		wstring commandLineArgs(lpCmdLine);
+
+		if (commandLineArgs == L"-Restart") launchState = LaunchStateEnum::Restart;
+		else if (commandLineArgs == L"-WarnTry") launchState = LaunchStateEnum::WarnTry;
+		else launchState = LaunchStateEnum::Normal;
+
 #ifdef IDT_RELEASE
-		if (filesystem::exists(globalPath + L"force_start_once.signal"))
+		if (launchState == LaunchStateEnum::Normal)
 		{
-			error_code ec;
-			filesystem::remove(globalPath + L"force_start_once.signal", ec);
-		}
-		else if (filesystem::exists(globalPath + L"force_start_try.signal")) 0;
-		else if (ProcessRunningCnt(GetCurrentExePath()) > 1)
-		{
-			if (filesystem::exists(globalPath + L"repeatedly_start.signal")) MessageBox(NULL, L"智绘教Inkeys is already running. If not, you need to end the relevant process and reopen the program.\n智绘教Inkeys 已经运行。如果没有则需要结束相关进程后重新打开程序。", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
-			else
+			wstring currentExeDirectory = GetCurrentExeDirectory();
 			{
-				HANDLE fileHandle = NULL;
-				OccupyFileForWrite(&fileHandle, globalPath + L"repeatedly_start.signal");
-				UnOccupyFile(&fileHandle);
+				wstringstream result;
+				for (wchar_t ch : currentExeDirectory)
+				{
+					if (ch < 128 && ch != L'\\' && ch != L':' && ch != L';' && ch != L'"') result << ch;
+					else if (ch < 128) result << L'_';
+					else result << L"U" << std::hex << std::uppercase << static_cast<int>(ch);
+				}
+				currentExeDirectory = result.str();
 			}
 
-			return 0;
-		}
-		else if (filesystem::exists(globalPath + L"repeatedly_start.signal"))
-		{
-			error_code ec;
-			filesystem::remove(globalPath + L"repeatedly_start.signal", ec);
+			wstring mutexName = L"Inkeys_" + currentExeDirectory;
+			if (mutexName.length() > 255) mutexName = mutexName.substr(255);
+
+			launchMutex = CreateMutexW(
+				NULL,           // 默认安全属性
+				TRUE,           // 请求立即拥有所有权 (bInitialOwner = TRUE)
+				mutexName.c_str()    // 唯一的互斥体名称
+			);
+
+			DWORD lastError = GetLastError();
+			if (launchMutex != NULL && lastError == ERROR_ALREADY_EXISTS)
+			{
+				MessageBox(NULL, L"智绘教Inkeys is already running. If not, you need to end the relevant process and reopen the program.\n智绘教Inkeys 已经运行。如果没有则需要结束相关进程后重新打开程序。", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
+
+				return 0;
+			}
 		}
 #endif
 	}
@@ -650,7 +669,7 @@ int main()
 			{
 				setlist.performanceSetting.preparationQuantity = 2;
 				setlist.performanceSetting.drawpadFps = 72;
-				setlist.performanceSetting.superDraw = true;
+				setlist.performanceSetting.superDraw = false;
 			}
 
 			// 插件
@@ -945,21 +964,9 @@ int main()
 		{
 			IDTLogger->critical("[主线程][IdtMain] 程序意外退出：RealTimeStylus 触控库初始化失败。");
 
-			if (filesystem::exists(globalPath + L"force_start_try.signal"))
-			{
-				error_code ec;
-				filesystem::remove(globalPath + L"force_start_try.signal", ec);
+			if (launchState == LaunchStateEnum::WarnTry) MessageBox(NULL, L"Program unexpected exit: RealTimeStylus touch library initialization failed.(#4)\n程序意外退出：RealTimeStylus 触控库初始化失败。(#4)", L"Inkeys Error | 智绘教错误", MB_OK | MB_SYSTEMMODAL);
+			else ShellExecuteW(NULL, NULL, GetCurrentExePath().c_str(), L"-WarnTry", NULL, SW_SHOWNORMAL);
 
-				MessageBox(NULL, L"Program unexpected exit: RealTimeStylus touch library initialization failed.(#4)\n程序意外退出：RealTimeStylus 触控库初始化失败。(#4)", L"Inkeys Error | 智绘教错误", MB_OK | MB_SYSTEMMODAL);
-			}
-			else
-			{
-				HANDLE fileHandle = NULL;
-				OccupyFileForWrite(&fileHandle, globalPath + L"force_start_try.signal");
-				UnOccupyFile(&fileHandle);
-
-				ShellExecuteW(NULL, NULL, GetCurrentExePath().c_str(), NULL, NULL, SW_SHOWNORMAL);
-			}
 			exit(0);
 		}
 
@@ -1012,14 +1019,15 @@ int main()
 
 		IDTLogger->info("[主线程][IdtMain] 反初始化 COM 环境完成");
 	}
-	if (offSignal == 2)
+	// 释放互斥体
+	if (launchMutex)
 	{
-		HANDLE fileHandle = NULL;
-		OccupyFileForWrite(&fileHandle, globalPath + L"force_start_once.signal");
-		UnOccupyFile(&fileHandle);
-
-		ShellExecuteW(NULL, NULL, GetCurrentExePath().c_str(), NULL, NULL, SW_SHOWNORMAL);
+		// ReleaseMutex(hMutex); // 调用 CloseHandle 通常就够了，因为我们是创建者且未等待它
+		CloseHandle(launchMutex);
+		launchMutex = NULL;
 	}
+
+	if (offSignal == 2) ShellExecuteW(NULL, NULL, GetCurrentExePath().c_str(), L"-Restart", NULL, SW_SHOWNORMAL);
 
 	IDTLogger->info("[主线程][IdtMain] 已结束智绘教所有线程并关闭程序");
 	return 0;

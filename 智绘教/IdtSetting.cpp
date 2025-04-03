@@ -969,6 +969,7 @@ void SettingMain()
 					}
 
 					// 组件
+					/*
 					{
 						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
 
@@ -996,7 +997,7 @@ void SettingMain()
 						{
 							settingTab = settingTabEnum::tabComponent;
 						}
-					}
+					}*/
 
 					// 快捷键
 					{
@@ -6730,7 +6731,7 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 // 通常，您可以始终将所有输入传递给 dear imgui，并根据这两个标志在应用程序中隐藏它们。
 LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
+	if (test.select && ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
 		return true;
 
 	switch (msg)

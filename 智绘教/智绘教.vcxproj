@@ -258,7 +258,7 @@
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -509,6 +509,7 @@
     <ClInclude Include="IdtStart.h" />
     <ClInclude Include="IdtState.h" />
     <ClInclude Include="IdtSysNotifications.h" />
+    <ClInclude Include="Launch\IdtLaunchState.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="IdtRts.h" />
     <ClInclude Include="IdtText.h" />
@@ -599,6 +600,7 @@
     <ClCompile Include="IdtTime.cpp" />
     <ClCompile Include="IdtUpdate.cpp" />
     <ClCompile Include="IdtWindow.cpp" />
+    <ClCompile Include="Launch\IdtLaunchState.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="智绘教.rc" />

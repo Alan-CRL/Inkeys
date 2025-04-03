@@ -4616,6 +4616,7 @@ void DrawScreen()
 			}
 
 			// Customize1
+			/*
 			{
 				hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[21], UIControl[L"Image/Customize1/transparency"].v);
 
@@ -4629,7 +4630,7 @@ void DrawScreen()
 					words_rect.bottom = LONG(UIControl[L"Words/Customize1/bottom"].v);
 				}
 				graphics.DrawString(L"快速换课", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
-			}
+			}*/
 
 			//插件空位1：随机点名
 			{
@@ -6167,6 +6168,7 @@ void MouseInteraction()
 				}
 
 				// 自定义位置1
+				/*
 				if (IsInRect(m.x, m.y, { 384 + 8, floating_windows.height - 156 + 8, 384 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
@@ -6195,7 +6197,7 @@ void MouseInteraction()
 
 						MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
 					}
-				}
+				}*/
 
 				// 临时插件：随机点名
 				if (plug_in_RandomRollCall.select == 2)

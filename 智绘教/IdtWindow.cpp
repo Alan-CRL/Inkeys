@@ -8,6 +8,7 @@
 #include "IdtRts.h"
 #include "IdtState.h"
 #include "IdtText.h"
+#include "Launch/IdtLaunchState.h"
 
 HWND floating_window = NULL; //悬浮窗窗口
 HWND drawpad_window = NULL; //画板窗口
@@ -76,21 +77,9 @@ void TopWindow()
 	{
 		IDTLogger->warn("[窗口置顶线程][TopWindow] 等待窗口初次绘制超时");
 
-		if (filesystem::exists(globalPath + L"force_start_try.signal"))
-		{
-			error_code ec;
-			filesystem::remove(globalPath + L"force_start_try.signal", ec);
+		if (launchState == LaunchStateEnum::WarnTry) 	MessageBox(NULL, L"Program unexpected exit: The program window creation failed or was intercepted. Please restart the software and try again.(#5)\n程序意外退出：程序窗口创建失败或被拦截，请重启软件重试。(#5)", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
+		else ShellExecuteW(NULL, NULL, GetCurrentExePath().c_str(), L"-WarnTry", NULL, SW_SHOWNORMAL);
 
-			MessageBox(NULL, L"Program unexpected exit: The program window creation failed or was intercepted. Please restart the software and try again.(#5)\n程序意外退出：程序窗口创建失败或被拦截，请重启软件重试。(#5)", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
-		}
-		else
-		{
-			HANDLE fileHandle = NULL;
-			OccupyFileForWrite(&fileHandle, globalPath + L"force_start_try.signal");
-			UnOccupyFile(&fileHandle);
-
-			ShellExecuteW(NULL, NULL, GetCurrentExePath().c_str(), NULL, NULL, SW_SHOWNORMAL);
-		}
 		exit(0);
 	}
 	IDTLogger->info("[窗口置顶线程][TopWindow] 等待窗口初次绘制完成");
