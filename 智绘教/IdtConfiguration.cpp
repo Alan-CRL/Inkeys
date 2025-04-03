@@ -153,6 +153,9 @@ bool ReadSetting()
 		{
 			if (updateVal["Performance"].isMember("PreparationQuantity") && updateVal["Performance"]["PreparationQuantity"].isInt())
 				setlist.performanceSetting.preparationQuantity = updateVal["Performance"]["PreparationQuantity"].asInt();
+
+			if (updateVal["Performance"].isMember("SuperDrawBeta") && updateVal["Performance"]["SuperDrawBeta"].isBool())
+				setlist.performanceSetting.superDraw = updateVal["Performance"]["SuperDrawBeta"].asBool();
 		}
 
 		if (updateVal.isMember("UpdateSetting") && updateVal["UpdateSetting"].isObject())
@@ -256,6 +259,8 @@ bool WriteSetting()
 
 		{
 			updateVal["Performance"]["PreparationQuantity"] = Json::Value(setlist.performanceSetting.preparationQuantity);
+
+			updateVal["Performance"]["SuperDrawBeta"] = Json::Value(setlist.performanceSetting.superDraw);
 		}
 
 		{

@@ -67,6 +67,12 @@
     <Filter Include="头文件\Additional\ZipUtils">
       <UniqueIdentifier>{833e3b3d-58da-4d5c-a694-a98d502b5dc7}</UniqueIdentifier>
     </Filter>
+    <Filter Include="源文件\Launch">
+      <UniqueIdentifier>{eb17f1ab-f1af-451b-84e3-176ee602dfdd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Launch">
+      <UniqueIdentifier>{706bbb49-374e-4c6f-b602-75c6a0116e5c}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HiEasyX.h">
@@ -699,6 +705,9 @@
     <ClInclude Include="IdtBar.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="Launch\IdtLaunchState.h">
+      <Filter>头文件\Launch</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HiEasyX\HiGUI\Button.cpp">
@@ -944,6 +953,12 @@
     <ClCompile Include="IdtBar.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="IdtDrawpadList.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Launch\IdtLaunchState.cpp">
+      <Filter>源文件\Launch</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="智绘教.rc">
@@ -1135,6 +1150,12 @@
       <Filter>资源文件</Filter>
     </Image>
     <Image Include="src\setting\SettingSponsor.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\ClassIsland.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\IslandCaller.png">
       <Filter>资源文件</Filter>
     </Image>
   </ItemGroup>

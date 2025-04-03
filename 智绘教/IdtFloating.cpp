@@ -140,10 +140,14 @@ int SeekBar(ExMessage m)
 	int firX = static_cast<int>(p.x);
 	int firY = static_cast<int>(p.y);
 
+	double ret = 0.0;
+
 	while (1)
 	{
 		if (!KeyBoradDown[VK_LBUTTON]) break;
 		GetCursorPos(&p);
+
+		if (firX == p.x && firY == p.y) continue;
 
 		SetWindowPos(floating_window, NULL,
 			floating_windows.x = min(GetSystemMetrics(SM_CXSCREEN) - floating_windows.width, max(1, p.x - m.x)),
@@ -151,9 +155,12 @@ int SeekBar(ExMessage m)
 			0,
 			0,
 			SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE);
+
+		ret += sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY));
+		firX = static_cast<int>(p.x), firY = static_cast<int>(p.y);
 	}
 
-	return static_cast<int>(sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY)));
+	return static_cast<int>(ret);
 }
 
 HHOOK FloatingHookCall;
@@ -256,6 +263,9 @@ void DrawScreen()
 			idtLoadImage(&floating_icon[18], L"PNG", L"icon18", 20, 20, true);
 			idtLoadImage(&floating_icon[17], L"PNG", L"icon17", 20, 20, true);
 			idtLoadImage(&floating_icon[20], L"PNG", L"icon20", 20, 20, true);
+
+			idtLoadImage(&floating_icon[21], L"PNG", L"CustomizeIco1", 40, 40, true);
+			idtLoadImage(&floating_icon[22], L"PNG", L"CustomizeIco2", 40, 40, true);
 
 			idtLoadImage(&sign, L"PNG", L"sign1", 30, 30, true);
 
@@ -851,6 +861,13 @@ void DrawScreen()
 						UIControl[L"Image/test/y"] = { (float)floating_windows.height - 140, 5, 1 };
 						UIControlColor[L"Image/test/fill"] = { RGBA(130, 130, 130, 0), 5, 1 };
 					}
+
+					// 自定义位置1
+					{
+						UIControl[L"Image/Customize1/x"] = { UIControl[L"Ellipse/Ellipse1/x"].v + 53, 5, 1 };
+						UIControl[L"Image/Customize1/y"] = { (float)floating_windows.height - 140, 5, 1 };
+						UIControl[L"Image/Customize1/transparency"] = { 0, 5, 1 };
+					}
 				}
 				//文字
 				{
@@ -960,6 +977,16 @@ void DrawScreen()
 						UIControl[L"Words/test/right"] = { UIControl[L"Ellipse/Ellipse1/x"].v + 33 + 83, 5, 1 };
 						UIControl[L"Words/test/bottom"] = { (float)floating_windows.height - 155 + 48 + 48, 5, 1 };
 						UIControlColor[L"Words/test/words_color"] = { RGBA(98, 175, 82, 0), 5, 1 };
+					}
+
+					//自定义位置1
+					{
+						UIControl[L"Words/Customize1/height"] = { 18, 5, 1 };
+						UIControl[L"Words/Customize1/left"] = { UIControl[L"Ellipse/Ellipse1/x"].v + 33, 5, 1 };
+						UIControl[L"Words/Customize1/top"] = { (float)floating_windows.height - 155 + 48, 5, 1 };
+						UIControl[L"Words/Customize1/right"] = { UIControl[L"Ellipse/Ellipse1/x"].v + 33 + 83, 5, 1 };
+						UIControl[L"Words/Customize1/bottom"] = { (float)floating_windows.height - 155 + 48 + 48, 5, 1 };
+						UIControlColor[L"Words/Customize1/words_color"] = { RGBA(98, 175, 82, 0), 15, 1 };
 					}
 				}
 			}
@@ -1675,6 +1702,13 @@ void DrawScreen()
 						UIControlTarget[L"Image/test/y"].v = float(floating_windows.height - 140);
 						UIControlColorTarget[L"Image/test/fill"].v = RGBA(130, 130, 130, 0);
 					}
+
+					// Customize1
+					{
+						UIControlTarget[L"Image/Customize1/x"].v = float(UIControl[L"Ellipse/Ellipse1/x"].v + 53);
+						UIControlTarget[L"Image/Customize1/y"].v = float(floating_windows.height - 140);
+						UIControlTarget[L"Image/Customize1/transparency"].v = float(0);
+					}
 				}
 				//文字
 				{
@@ -1808,6 +1842,16 @@ void DrawScreen()
 						UIControlTarget[L"Words/test/right"].v = float(UIControl[L"Ellipse/Ellipse1/x"].v + 33 + 83);
 						UIControlTarget[L"Words/test/bottom"].v = float(floating_windows.height - 155 + 48 + 48);
 						UIControlColorTarget[L"Words/test/words_color"].v = SET_ALPHA(UIControlColorTarget[L"Words/test/words_color"].v, 0);
+					}
+
+					// Customize1
+					{
+						UIControlTarget[L"Words/Customize1/height"].v = float(18);
+						UIControlTarget[L"Words/Customize1/left"].v = float(UIControl[L"Ellipse/Ellipse1/x"].v + 33);
+						UIControlTarget[L"Words/Customize1/top"].v = float(floating_windows.height - 155 + 48);
+						UIControlTarget[L"Words/Customize1/right"].v = float(UIControl[L"Ellipse/Ellipse1/x"].v + 33 + 83);
+						UIControlTarget[L"Words/Customize1/bottom"].v = float(floating_windows.height - 155 + 48 + 48);
+						UIControlColorTarget[L"Words/Customize1/words_color"].v = SET_ALPHA(UIControlColorTarget[L"Words/Customize1/words_color"].v, 0);
 					}
 				}
 			}
@@ -3647,6 +3691,13 @@ void DrawScreen()
 						if (test.select) UIControlColorTarget[L"Image/test/fill"].v = RGBA(98, 175, 82, 255);
 						else UIControlColorTarget[L"Image/test/fill"].v = RGBA(130, 130, 130, 255);
 					}
+
+					// Customize1
+					{
+						UIControlTarget[L"Image/Customize1/x"].v = float(384 + 28);
+						UIControlTarget[L"Image/Customize1/y"].v = float(floating_windows.height - 140);
+						UIControlTarget[L"Image/Customize1/transparency"].v = float(255);
+					}
 				}
 				//文字
 				{
@@ -3912,6 +3963,16 @@ void DrawScreen()
 						UIControlTarget[L"Words/test/bottom"].v = float(floating_windows.height - 155 + 48 + 48);
 						if (test.select) UIControlColorTarget[L"Words/test/words_color"].v = RGBA(98, 175, 82, 255);
 						else UIControlColorTarget[L"Words/test/words_color"].v = RGBA(130, 130, 130, 255);
+					}
+
+					// Customize1
+					{
+						UIControlTarget[L"Words/Customize1/height"].v = float(18);
+						UIControlTarget[L"Words/Customize1/left"].v = float(384 + 7);
+						UIControlTarget[L"Words/Customize1/top"].v = float(floating_windows.height - 155 + 48);
+						UIControlTarget[L"Words/Customize1/right"].v = float(384 + 7 + 83);
+						UIControlTarget[L"Words/Customize1/bottom"].v = float(floating_windows.height - 155 + 48 + 48);
+						UIControlColorTarget[L"Words/Customize1/words_color"].v = RGBA(130, 130, 130, 255);
 					}
 				}
 			}
@@ -4553,6 +4614,23 @@ void DrawScreen()
 				}
 				graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumnOptions]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 			}
+
+			// Customize1
+			/*
+			{
+				hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[21], UIControl[L"Image/Customize1/transparency"].v);
+
+				Gdiplus::Font gp_font(&HarmonyOS_fontFamily, UIControl[L"Words/Customize1/height"].v, FontStyleRegular, UnitPixel);
+				SolidBrush WordBrush(hiex::ConvertToGdiplusColor(UIControlColor[L"Words/Customize1/words_color"].v, true));
+				graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
+				{
+					words_rect.left = LONG(UIControl[L"Words/Customize1/left"].v);
+					words_rect.top = LONG(UIControl[L"Words/Customize1/top"].v);
+					words_rect.right = LONG(UIControl[L"Words/Customize1/right"].v);
+					words_rect.bottom = LONG(UIControl[L"Words/Customize1/bottom"].v);
+				}
+				graphics.DrawString(L"快速换课", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+			}*/
 
 			//插件空位1：随机点名
 			{
@@ -5661,8 +5739,16 @@ void MouseInteraction()
 									double length = sqrt(pow(center.x - pt.x, 2) + pow(center.y - pt.y, 2));
 
 									POINT result;
-									result.x = LONG(center.x + len * (pt.x - center.x) / length - UIControl[L"RoundRect/BrushColorChooseWheel/x"].v);
-									result.y = LONG(center.y + len * (pt.y - center.y) / length - UIControl[L"RoundRect/BrushColorChooseWheel/y"].v);
+									if (length == 0)
+									{
+										result.x = LONG(center.x - UIControl[L"RoundRect/BrushColorChooseWheel/x"].v);
+										result.y = LONG(center.y - UIControl[L"RoundRect/BrushColorChooseWheel/y"].v);
+									}
+									else
+									{
+										result.x = LONG(center.x + len * (pt.x - center.x) / length - UIControl[L"RoundRect/BrushColorChooseWheel/x"].v);
+										result.y = LONG(center.y + len * (pt.y - center.y) / length - UIControl[L"RoundRect/BrushColorChooseWheel/y"].v);
+									}
 
 									std::shared_lock<std::shared_mutex> lock(ColorPaletteSm);
 
@@ -6080,6 +6166,38 @@ void MouseInteraction()
 						MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
 					}
 				}
+
+				// 自定义位置1
+				/*
+				if (IsInRect(m.x, m.y, { 384 + 8, floating_windows.height - 156 + 8, 384 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
+				{
+					if (m.message == WM_LBUTTONDOWN)
+					{
+						lx = m.x, ly = m.y;
+						while (1)
+						{
+							ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
+							if (IsInRect(m.x, m.y, { 384 + 8, floating_windows.height - 156 + 8, 384 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
+							{
+								if (!m.lbutton)
+								{
+									ShellExecute(NULL, L"open", L"classisland://app/class-swap", NULL, NULL, SW_SHOWNORMAL);
+
+									break;
+								}
+							}
+							else
+							{
+								hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+								break;
+							}
+						}
+						hiex::flushmessage_win32(EM_MOUSE, floating_window);
+
+						MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
+					}
+				}*/
 
 				// 临时插件：随机点名
 				if (plug_in_RandomRollCall.select == 2)

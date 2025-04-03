@@ -2,19 +2,19 @@
 
 #include "IdtMain.h"
 
-enum StateModeSelectEnum
+enum class StateModeSelectEnum
 {
 	IdtSelection,
 	IdtPen,
 	IdtEraser,
 	IdtShape
 };
-enum PenModeSelectEnum
+enum class PenModeSelectEnum
 {
 	IdtPenBrush1,
 	IdtPenHighlighter1
 };
-enum ShapeModeSelectEnum
+enum class ShapeModeSelectEnum
 {
 	IdtShapeStraightLine1,
 	IdtShapeDashedLine1,
@@ -31,6 +31,7 @@ public:
 	StateModeClass()
 	{
 		StateModeSelect = StateModeSelectEnum::IdtSelection;
+		StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
 		StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
 
 		{
@@ -51,6 +52,7 @@ public:
 
 public:
 	StateModeSelectEnum StateModeSelect;
+	StateModeSelectEnum StateModeSelectTarget;
 	StateModeSelectEnum StateModeSelectEcho;
 
 	struct

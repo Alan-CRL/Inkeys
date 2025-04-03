@@ -17,6 +17,11 @@
 
 #include <queue>
 
+#include <propsys.h>
+#include <propkey.h>
+#include <propvarutil.h>
+#pragma comment(lib, "propsys.lib")
+
 bool main_open;
 bool FirstDraw = true;
 bool IdtHotkey;
@@ -467,6 +472,64 @@ void KeyboardInteraction()
 	}
 }
 
+LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	switch (msg)
+	{
+	case WM_TABLET_QUERYSYSTEMGESTURESTATUS:
+	{
+		DWORD flags = 0;
+		flags |= (0x00000001);
+		flags |= (0x00000008);
+		flags |= (0x00000100);
+		flags |= (0x00000200);
+		flags |= (0x00010000);
+		return (LRESULT)flags;
+	}
+	default:
+		return HIWINDOW_DEFAULT_PROC;
+	}
+
+	return 0;
+}
+BOOL DisableEdgeGestures(HWND hwnd, BOOL disable)
+{
+	typedef HRESULT(WINAPI* SHGetPropertyStoreForWindowFunc)(HWND, REFIID, void**);
+
+	HMODULE hShcore = LoadLibrary(TEXT("Shell32.dll"));
+	if (!hShcore) return FALSE;
+
+	SHGetPropertyStoreForWindowFunc pSHGetPropertyStoreForWindow = (SHGetPropertyStoreForWindowFunc)GetProcAddress(hShcore, "SHGetPropertyStoreForWindow");
+	if (!pSHGetPropertyStoreForWindow)
+	{
+		FreeLibrary(hShcore);
+		return FALSE;
+	}
+
+	IPropertyStore* pPropStore = NULL;
+	HRESULT hr = pSHGetPropertyStoreForWindow(hwnd, IID_PPV_ARGS(&pPropStore));
+
+	if (SUCCEEDED(hr))
+	{
+		PROPERTYKEY propKey;
+		propKey.fmtid = GUID{ 0x32CE38B2, 0x2C9A, 0x41B1, { 0x9B, 0xC5, 0xB3, 0x78, 0x43, 0x94, 0xAA, 0x44 } };
+		propKey.pid = 2;
+
+		PROPVARIANT propVar;
+		PropVariantInit(&propVar);
+		propVar.vt = VT_BOOL;
+		propVar.boolVal = (disable ? VARIANT_TRUE : VARIANT_FALSE);
+
+		hr = pPropStore->SetValue(propKey, propVar);
+
+		PropVariantClear(&propVar);
+		pPropStore->Release();
+	}
+
+	FreeLibrary(hShcore);
+	return SUCCEEDED(hr);
+}
+
 // 落笔预备
 shared_mutex prepareCanvasQueueSm;
 queue<IMAGE*> prepareCanvasQueue;
@@ -608,8 +671,6 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 		POINT StopTimingPoint = { -1,-1 };
 		bool StopTimingDisable = !setlist.waitStraighten;
 		chrono::high_resolution_clock::time_point StopTiming = std::chrono::high_resolution_clock::now();
-
-		clock_t tRecord = clock();
 		while (1)
 		{
 			// 确认触摸点存在
@@ -630,6 +691,7 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 				lockPointListSm.unlock();
 				if (it == TouchList.end()) break;
 			}
+
 			// 停留拉直
 			if (!StopTimingDisable && stateInfo.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1 && !actualPoints.empty())
 			{
@@ -661,7 +723,15 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 			{
 				if (mode.pt.x == pointInfo.previousX && mode.pt.y == pointInfo.previousY)
 				{
-					this_thread::sleep_for(chrono::milliseconds(1));
+					//chrono::high_resolution_clock::time_point reckon;
+					//reckon = chrono::high_resolution_clock::now();
+					if (!setlist.performanceSetting.superDraw)
+					{
+						//this_thread::sleep_for(chrono::milliseconds(1));
+						this_thread::yield();
+					}
+					//double tmp = chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count();
+					//cerr << tmp << "ms" << endl;
 					continue;
 				}
 			}
@@ -1053,7 +1123,7 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 			{
 				if (mode.pt.x == pointInfo.previousX && mode.pt.y == pointInfo.previousY)
 				{
-					this_thread::sleep_for(chrono::milliseconds(1));
+					if (!setlist.performanceSetting.superDraw) this_thread::sleep_for(chrono::milliseconds(1));
 					continue;
 				}
 			}
@@ -1356,9 +1426,10 @@ void DrawpadDrawing()
 	IdtWindowsIsVisible.drawpadWindow = true;
 
 	chrono::high_resolution_clock::time_point reckon;
-	clock_t tRecord = 0;
 	for (;;)
 	{
+		reckon = chrono::high_resolution_clock::now();
+
 		for (;;)
 		{
 			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
@@ -1491,6 +1562,8 @@ void DrawpadDrawing()
 
 				stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
 
+				timeEndPeriod(1);
+
 				int ppt_switch_count = 0;
 				while (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
 				{
@@ -1501,6 +1574,8 @@ void DrawpadDrawing()
 
 					if (offSignal) goto DrawpadDrawingEnd;
 				}
+
+				if (setlist.performanceSetting.superDraw) timeBeginPeriod(1);
 
 				{
 					if (PptInfoStateBuffer.TotalPage != -1 && ppt_switch_count != 0 && PptImg.IsSaved[PptInfoStateBuffer.CurrentPage])
@@ -1534,9 +1609,11 @@ void DrawpadDrawing()
 				if (setlist.avoidFullScreen) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
 				topWindowNow = true;
 
-				LONG nRet = ::GetWindowLong(drawpad_window, GWL_EXSTYLE);
+				LONG nRet = GetWindowLongPtrW(drawpad_window, GWL_EXSTYLE);
 				nRet |= WS_EX_TRANSPARENT;
-				::SetWindowLong(drawpad_window, GWL_EXSTYLE, nRet);
+				SetWindowLongPtrW(drawpad_window, GWL_EXSTYLE, nRet);
+
+				timeEndPeriod(1);
 
 				while (1)
 				{
@@ -1664,11 +1741,12 @@ void DrawpadDrawing()
 					break;
 				}
 
+				if (setlist.performanceSetting.superDraw) timeBeginPeriod(1);
 				if (setlist.avoidFullScreen) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 
-				nRet = ::GetWindowLong(drawpad_window, GWL_EXSTYLE);
+				nRet = GetWindowLongPtrW(drawpad_window, GWL_EXSTYLE);
 				nRet &= ~WS_EX_TRANSPARENT;
-				::SetWindowLong(drawpad_window, GWL_EXSTYLE, nRet);
+				SetWindowLongPtrW(drawpad_window, GWL_EXSTYLE, nRet);
 
 				TouchTemp.clear();
 			}
@@ -1677,7 +1755,6 @@ void DrawpadDrawing()
 			bool start = !StrokeImageList.empty();
 			lock1.unlock();
 
-			stateMode.StateModeSelectEcho = stateMode.StateModeSelect;
 			if (start) break;
 
 			if (offSignal)
@@ -1814,7 +1891,6 @@ void DrawpadDrawing()
 
 			this_thread::sleep_for(chrono::milliseconds(10));
 		}
-		reckon = std::chrono::high_resolution_clock::now();
 
 		SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
 		std::shared_lock<std::shared_mutex> lock1(StrokeBackImageSm);
@@ -1965,20 +2041,14 @@ void DrawpadDrawing()
 			lock3.unlock();
 		}
 
-		//帧率锁
-		{
-			clock_t tNow = clock();
-			if (tRecord)
-			{
-				double delay = 1000.0 / static_cast<double>(setlist.performanceSetting.drawpadFps) - static_cast<double>(tNow - tRecord);
-				if (delay > 0.0) std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(delay)));
-			}
-		}
-
 		ulwi.hdcSrc = GetImageHDC(&window_background);
 		UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
 
-		tRecord = clock();
+		//帧率锁
+		{
+			double delay = 1000.0 / static_cast<double>(setlist.performanceSetting.drawpadFps) - chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count();
+			if (delay >= 1.0) std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(delay)));
+		}
 	}
 
 DrawpadDrawingEnd:
@@ -1989,7 +2059,7 @@ int drawpad_main()
 {
 	threadStatus[L"drawpad_main"] = true;
 
-	//窗口初始化
+	// 窗口初始化
 	{
 		{
 			/*
@@ -2014,6 +2084,11 @@ int drawpad_main()
 		SetWindowLong(drawpad_window, GWL_EXSTYLE, WS_EX_TOOLWINDOW);//隐藏任务栏
 
 		SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+	}
+	// 禁用手势 初始化
+	{
+		hiex::SetWndProcFunc(drawpad_window, DrawpadMsgCallback);
+		DisableEdgeGestures(drawpad_window, true);
 	}
 
 	//初始化数值

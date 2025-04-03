@@ -509,6 +509,7 @@
     <ClInclude Include="IdtStart.h" />
     <ClInclude Include="IdtState.h" />
     <ClInclude Include="IdtSysNotifications.h" />
+    <ClInclude Include="Launch\IdtLaunchState.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="IdtRts.h" />
     <ClInclude Include="IdtText.h" />
@@ -578,6 +579,7 @@
     <ClCompile Include="HiEasyX\HiSysGUI\SysStatic.cpp" />
     <ClCompile Include="HiEasyX\HiWindow.cpp" />
     <ClCompile Include="IdtDrawpad.cpp" />
+    <ClCompile Include="IdtDrawpadList.cpp" />
     <ClCompile Include="IdtFloating.cpp" />
     <ClCompile Include="IdtFreezeFrame.cpp" />
     <ClCompile Include="IdtGuid.cpp" />
@@ -598,6 +600,7 @@
     <ClCompile Include="IdtTime.cpp" />
     <ClCompile Include="IdtUpdate.cpp" />
     <ClCompile Include="IdtWindow.cpp" />
+    <ClCompile Include="Launch\IdtLaunchState.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="智绘教.rc" />
@@ -607,6 +610,7 @@
     <Image Include="src\choice.png" />
     <Image Include="src\choose.png" />
     <Image Include="src\choose_clear.png" />
+    <Image Include="src\ClassIsland.png" />
     <Image Include="src\curve.png" />
     <Image Include="src\endshow.png" />
     <Image Include="src\freeze-frame.png" />
@@ -620,6 +624,7 @@
     <Image Include="src\icon.ico" />
     <Image Include="src\icon.png" />
     <Image Include="src\info.png" />
+    <Image Include="src\IslandCaller.png" />
     <Image Include="src\left.png" />
     <Image Include="src\line.png" />
     <Image Include="src\more.png" />

@@ -327,7 +327,7 @@ void IdtRecall()
 	{
 		reserve_drawpad = true;
 
-		stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
+		ChangeStateModeToPen();
 	}
 
 	// 取消标识绘制等待
@@ -343,7 +343,7 @@ void IdtRecovery()
 {
 	if (current_record_pointer == total_record_pointer + 1)
 	{
-		stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
+		ChangeStateModeToSelection();
 
 		reference_record_pointer = 1;
 		return;
@@ -448,7 +448,7 @@ void IdtRecovery()
 	{
 		reserve_drawpad = true;
 
-		stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
+		ChangeStateModeToPen();
 	}
 
 	// 取消标识绘制等待

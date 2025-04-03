@@ -50,6 +50,8 @@ bool SetPenColor(COLORREF targetColor)
 }
 bool ChangeStateModeToSelection()
 {
+	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
+
 	// 标识绘制等待
 	{
 		unique_lock<shared_mutex> lockdrawWaitingSm(drawWaitingSm);
@@ -99,6 +101,8 @@ bool ChangeStateModeToSelection()
 }
 bool ChangeStateModeToPen()
 {
+	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtPen;
+
 	// 标识绘制等待
 	{
 		unique_lock<shared_mutex> lockdrawWaitingSm(drawWaitingSm);
@@ -152,10 +156,13 @@ bool ChangeStateModeToPen()
 		drawWaiting = false;
 		lockdrawWaitingSm.unlock();
 	}
+	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtPen;
 	return true;
 }
 bool ChangeStateModeToShape()
 {
+	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtShape;
+
 	// 标识绘制等待
 	{
 		unique_lock<shared_mutex> lockdrawWaitingSm(drawWaitingSm);
@@ -209,10 +216,13 @@ bool ChangeStateModeToShape()
 		drawWaiting = false;
 		lockdrawWaitingSm.unlock();
 	}
+	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtShape;
 	return true;
 }
 bool ChangeStateModeToEraser()
 {
+	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtEraser;
+
 	// 标识绘制等待
 	{
 		unique_lock<shared_mutex> lockdrawWaitingSm(drawWaitingSm);
@@ -253,6 +263,7 @@ bool ChangeStateModeToEraser()
 		drawWaiting = false;
 		lockdrawWaitingSm.unlock();
 	}
+	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtEraser;
 	return true;
 }
 
@@ -270,10 +281,10 @@ void StateMonitoring()
 			StateMonitoringManipulated = chrono::high_resolution_clock::now();
 		}
 
-		if (stateMode.StateModeSelect == stateMode.StateModeSelectEcho) StateMonitoringManipulated = chrono::high_resolution_clock::now();
+		if (stateMode.StateModeSelect == stateMode.StateModeSelectTarget && stateMode.StateModeSelect == stateMode.StateModeSelectEcho) StateMonitoringManipulated = chrono::high_resolution_clock::now();
 		if (chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now() - StateMonitoringManipulated).count() >= 3000 && !offSignal)
 		{
-			MessageBox(floating_window, L"智绘教画板状态出现问题，点击确定以重启智绘教\n此方案可能解决该问题", L"智绘教状态监测助手", MB_OK | MB_SYSTEMMODAL);
+			MessageBox(floating_window, L"There is a problem with the state of the whiteboard, click OK to restart 智绘教Inkeys to try to solve the problem.(#6)\n画板状态出现问题，点击确定重启 智绘教Inkeys 以尝试解决问题。(#6)", L"Inkeys Error | 智绘教错误", MB_OK | MB_SYSTEMMODAL);
 			offSignal = 2;
 
 			return;

@@ -173,15 +173,25 @@ void FreezeFrameWindow()
 				show_freeze_window = true;
 			}
 
-			clock_t tRecord = clock();
-			int for_i = -10;
-			for (for_i = -10; for_i <= 60 && FreezePPT && !offSignal; for_i++)
+			chrono::high_resolution_clock::time_point reckon = chrono::high_resolution_clock::now();
+			chrono::high_resolution_clock::time_point tRecord;
+			for (; FreezePPT && !offSignal; )
 			{
+				tRecord = chrono::high_resolution_clock::now();
+
+				double cost = chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count();
+				if (cost >= 3000.0)
+				{
+					ppt_title_recond[ppt_title] = true;
+					break;
+				}
+				int wy = static_cast<int>(cost * 0.02333 - 10.0);
+
 				SetImageColor(freeze_background, RGBA(0, 0, 0, 140), true);
 				hiex::TransparentImage(&freeze_background, GetSystemMetrics(SM_CXSCREEN) / 2 - 500, GetSystemMetrics(SM_CYSCREEN) / 2 - 150, &PptSign);
 
 				hiex::EasyX_Gdiplus_SolidRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 300, (float)GetSystemMetrics(SM_CYSCREEN) / 2 + 200, 600, 10, 10, 10, RGBA(255, 255, 255, 100), true, SmoothingModeHighQuality, &freeze_background);
-				hiex::EasyX_Gdiplus_SolidRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 300, (float)GetSystemMetrics(SM_CYSCREEN) / 2 + 200, (float)max(0, min(50, for_i)) * 12, 10, 10, 10, RGBA(255, 255, 255, 255), false, SmoothingModeHighQuality, &freeze_background);
+				hiex::EasyX_Gdiplus_SolidRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 300, (float)GetSystemMetrics(SM_CYSCREEN) / 2 + 200, (float)max(0, min(50, wy)) * 12, 10, 10, 10, RGBA(255, 255, 255, 255), false, SmoothingModeHighQuality, &freeze_background);
 
 				{
 					Graphics graphics(GetImageHDC(&freeze_background));
@@ -202,15 +212,11 @@ void FreezeFrameWindow()
 
 				//SetForegroundWindow(ppt_show);
 
-				if (tRecord)
 				{
-					int delay = 1000 / 25 - (clock() - tRecord);
-					if (delay > 0) std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+					double delay = 1000.0 / 24.0 - chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - tRecord).count();
+					if (delay >= 1.0) std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(delay)));
 				}
-				tRecord = clock();
 			}
-
-			if (for_i > 60) ppt_title_recond[ppt_title] = true;
 			FreezePPT = false;
 		}
 		if (FreezeFrame.mode != 1 && FreezeRecall)

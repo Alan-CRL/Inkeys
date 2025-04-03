@@ -33,6 +33,7 @@
 // 示例
 static void HelpMarker(const char* desc, ImVec4 tmp);
 static void CenteredText(const char* desc, float displacement);
+void ScrollWhenDraggingOnVoid(const ImVec2& delta, ImGuiMouseButton mouse_button);
 ImFont* ImFontMain;
 
 WNDCLASSEXW ImGuiWc;
@@ -87,34 +88,18 @@ void SettingWindow(promise<void>& promise)
 		if (userId == L"Error") ClassName = L"Inkeys3;HiEasyX041";
 		else ClassName = L"Inkeys3;" + userId;
 
-		ImGuiWc = { sizeof(WNDCLASSEX), CS_CLASSDC, ImGuiWndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, ClassName.c_str(), nullptr };
+		ImGuiWc = { sizeof(WNDCLASSEX), CS_VREDRAW | CS_HREDRAW, ImGuiWndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, ClassName.c_str(), nullptr };
 		RegisterClassExW(&ImGuiWc);
-		setting_window = CreateWindowEx(WS_EX_NOACTIVATE | WS_EX_LAYERED, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, drawpad_window, nullptr, ImGuiWc.hInstance, nullptr);
-
-		SetLayeredWindowAttributes(setting_window, 0, 0, LWA_ALPHA);
+		setting_window = CreateWindowEx(WS_EX_NOACTIVATE, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, drawpad_window, nullptr, ImGuiWc.hInstance, nullptr);
+		//setting_window = CreateWindowEx(WS_EX_NOACTIVATE, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, nullptr, nullptr, ImGuiWc.hInstance, nullptr);
 	}
 	promise.set_value();
 
 	MSG msg;
-	POINT MoushPos = { 0,0 };
-
 	while (!offSignal && GetMessage(&msg, nullptr, 0, 0))
 	{
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
-
-		switch (msg.message)
-		{
-		case WM_MOUSEMOVE:
-			MoushPos.x = GET_X_LPARAM(msg.lParam);
-			MoushPos.y = GET_Y_LPARAM(msg.lParam);
-
-			break;
-
-		case WM_LBUTTONDOWN:
-			if (IsInRect(MoushPos.x, MoushPos.y, { 0,0,int(904.0 * settingGlobalScale),int(40.0 * settingGlobalScale) })) SettingSeekBar();
-			break;
-		}
 	}
 }
 void SettingWindowBegin()
@@ -138,348 +123,368 @@ void SettingWindowBegin()
 		future.get();
 	}
 
-	SetWindowLongW(setting_window, GWL_STYLE, GetWindowLong(setting_window, GWL_STYLE) & ~(WS_CAPTION | WS_BORDER | WS_THICKFRAME));
+	SetWindowLongPtrW(setting_window, GWL_STYLE, GetWindowLongPtrW(setting_window, GWL_STYLE) & ~(WS_CAPTION | WS_BORDER | WS_THICKFRAME));
 	SetWindowPos(setting_window, NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 
-	ShowWindow(setting_window, SW_SHOWNOACTIVATE);
-	UpdateWindow(setting_window);
+	ShowWindow(setting_window, SW_HIDE);
+	//UpdateWindow(setting_window);
 }
 
 void SettingMain()
 {
 	threadStatus[L"SettingMain"] = true;
 
-	// 初始化部分
-	{
-		CreateDeviceD3D(setting_window);
+	//SettingWindowBegin();
 
-		// 图像加载
-		{
-			IMAGE SettingSign;
-
-			if (i18nIdentifying == L"zh-CN") idtLoadImage(&SettingSign, L"PNG", L"Home1_zh-CN", 700 * settingGlobalScale, 215 * settingGlobalScale, true);
-			else idtLoadImage(&SettingSign, L"PNG", L"Home1_en-US", 700 * settingGlobalScale, 240 * settingGlobalScale, true);
-			{
-				int width = settingSign[1].width = SettingSign.getwidth();
-				int height = settingSign[1].height = SettingSign.getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign);
-
-				unsigned char* data = new unsigned char[width * height * 4];
-				for (int y = 0; y < height; ++y)
-				{
-					for (int x = 0; x < width; ++x)
-					{
-						DWORD color = pMem[y * width + x];
-						unsigned char alpha = (color & 0xFF000000) >> 24;
-						if (alpha != 0)
-						{
-							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						}
-						else
-						{
-							data[(y * width + x) * 4 + 0] = 0;
-							data[(y * width + x) * 4 + 1] = 0;
-							data[(y * width + x) * 4 + 2] = 0;
-						}
-						data[(y * width + x) * 4 + 3] = alpha;
-					}
-				}
-
-				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[1]);
-				delete[] data;
-
-				IM_ASSERT(ret);
-			}
-
-			if (i18nIdentifying == L"zh-CN") idtLoadImage(&SettingSign, L"PNG", L"Home2_zh-CN", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
-			else idtLoadImage(&SettingSign, L"PNG", L"Home2_en-US", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
-			{
-				int width = settingSign[2].width = SettingSign.getwidth();
-				int height = settingSign[2].height = SettingSign.getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign);
-
-				unsigned char* data = new unsigned char[width * height * 4];
-				for (int y = 0; y < height; ++y)
-				{
-					for (int x = 0; x < width; ++x)
-					{
-						DWORD color = pMem[y * width + x];
-						unsigned char alpha = (color & 0xFF000000) >> 24;
-						if (alpha != 0)
-						{
-							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						}
-						else
-						{
-							data[(y * width + x) * 4 + 0] = 0;
-							data[(y * width + x) * 4 + 1] = 0;
-							data[(y * width + x) * 4 + 2] = 0;
-						}
-						data[(y * width + x) * 4 + 3] = alpha;
-					}
-				}
-
-				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[2]);
-				delete[] data;
-
-				IM_ASSERT(ret);
-			}
-
-			idtLoadImage(&SettingSign, L"PNG", L"PluginFlag1", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
-			{
-				int width = settingSign[5].width = SettingSign.getwidth();
-				int height = settingSign[5].height = SettingSign.getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign);
-
-				unsigned char* data = new unsigned char[width * height * 4];
-				for (int y = 0; y < height; ++y)
-				{
-					for (int x = 0; x < width; ++x)
-					{
-						DWORD color = pMem[y * width + x];
-						unsigned char alpha = (color & 0xFF000000) >> 24;
-						if (alpha != 0)
-						{
-							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						}
-						else
-						{
-							data[(y * width + x) * 4 + 0] = 0;
-							data[(y * width + x) * 4 + 1] = 0;
-							data[(y * width + x) * 4 + 2] = 0;
-						}
-						data[(y * width + x) * 4 + 3] = alpha;
-					}
-				}
-
-				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[5]);
-				delete[] data;
-
-				IM_ASSERT(ret);
-			}
-			idtLoadImage(&SettingSign, L"PNG", L"PluginFlag2", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
-			{
-				int width = settingSign[6].width = SettingSign.getwidth();
-				int height = settingSign[6].height = SettingSign.getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign);
-
-				unsigned char* data = new unsigned char[width * height * 4];
-				for (int y = 0; y < height; ++y)
-				{
-					for (int x = 0; x < width; ++x)
-					{
-						DWORD color = pMem[y * width + x];
-						unsigned char alpha = (color & 0xFF000000) >> 24;
-						if (alpha != 0)
-						{
-							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						}
-						else
-						{
-							data[(y * width + x) * 4 + 0] = 0;
-							data[(y * width + x) * 4 + 1] = 0;
-							data[(y * width + x) * 4 + 2] = 0;
-						}
-						data[(y * width + x) * 4 + 3] = alpha;
-					}
-				}
-
-				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[6]);
-				delete[] data;
-
-				IM_ASSERT(ret);
-			}
-			idtLoadImage(&SettingSign, L"PNG", L"PluginFlag3", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
-			{
-				int width = settingSign[8].width = SettingSign.getwidth();
-				int height = settingSign[8].height = SettingSign.getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign);
-
-				unsigned char* data = new unsigned char[width * height * 4];
-				for (int y = 0; y < height; ++y)
-				{
-					for (int x = 0; x < width; ++x)
-					{
-						DWORD color = pMem[y * width + x];
-						unsigned char alpha = (color & 0xFF000000) >> 24;
-						if (alpha != 0)
-						{
-							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						}
-						else
-						{
-							data[(y * width + x) * 4 + 0] = 0;
-							data[(y * width + x) * 4 + 1] = 0;
-							data[(y * width + x) * 4 + 2] = 0;
-						}
-						data[(y * width + x) * 4 + 3] = alpha;
-					}
-				}
-
-				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[8]);
-				delete[] data;
-
-				IM_ASSERT(ret);
-			}
-
-			idtLoadImage(&SettingSign, L"PNG", L"Home_Backgroung", 980 * settingGlobalScale, 768 * settingGlobalScale, true);
-			{
-				int width = settingSign[4].width = SettingSign.getwidth();
-				int height = settingSign[4].height = SettingSign.getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign);
-
-				unsigned char* data = new unsigned char[width * height * 4];
-				for (int y = 0; y < height; ++y)
-				{
-					for (int x = 0; x < width; ++x)
-					{
-						DWORD color = pMem[y * width + x];
-						unsigned char alpha = (color & 0xFF000000) >> 24;
-						if (alpha != 0)
-						{
-							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						}
-						else
-						{
-							data[(y * width + x) * 4 + 0] = 0;
-							data[(y * width + x) * 4 + 1] = 0;
-							data[(y * width + x) * 4 + 2] = 0;
-						}
-						data[(y * width + x) * 4 + 3] = alpha;
-					}
-				}
-
-				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[4]);
-				delete[] data;
-
-				IM_ASSERT(ret);
-			}
-			idtLoadImage(&SettingSign, L"PNG", L"Profile_Picture", 45 * settingGlobalScale, 45 * settingGlobalScale, true);
-			{
-				int width = settingSign[3].width = SettingSign.getwidth();
-				int height = settingSign[3].height = SettingSign.getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign);
-
-				unsigned char* data = new unsigned char[width * height * 4];
-				for (int y = 0; y < height; ++y)
-				{
-					for (int x = 0; x < width; ++x)
-					{
-						DWORD color = pMem[y * width + x];
-						unsigned char alpha = (color & 0xFF000000) >> 24;
-						if (alpha != 0)
-						{
-							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						}
-						else
-						{
-							data[(y * width + x) * 4 + 0] = 0;
-							data[(y * width + x) * 4 + 1] = 0;
-							data[(y * width + x) * 4 + 2] = 0;
-						}
-						data[(y * width + x) * 4 + 3] = alpha;
-					}
-				}
-
-				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[3]);
-				delete[] data;
-
-				IM_ASSERT(ret);
-			}
-			idtLoadImage(&SettingSign, L"PNG", L"Home_Feedback", 100 * settingGlobalScale, 100 * settingGlobalScale, true);
-			{
-				int width = settingSign[7].width = SettingSign.getwidth();
-				int height = settingSign[7].height = SettingSign.getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign);
-
-				unsigned char* data = new unsigned char[width * height * 4];
-				for (int y = 0; y < height; ++y)
-				{
-					for (int x = 0; x < width; ++x)
-					{
-						DWORD color = pMem[y * width + x];
-						unsigned char alpha = (color & 0xFF000000) >> 24;
-						if (alpha != 0)
-						{
-							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						}
-						else
-						{
-							data[(y * width + x) * 4 + 0] = 0;
-							data[(y * width + x) * 4 + 1] = 0;
-							data[(y * width + x) * 4 + 2] = 0;
-						}
-						data[(y * width + x) * 4 + 3] = alpha;
-					}
-				}
-
-				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[7]);
-				delete[] data;
-
-				IM_ASSERT(ret);
-			}
-
-			idtLoadImage(&SettingSign, L"PNG", L"SettingSponsor", 650 * settingGlobalScale, 460 * settingGlobalScale, true);
-			{
-				int width = settingSign[9].width = SettingSign.getwidth();
-				int height = settingSign[9].height = SettingSign.getheight();
-				DWORD* pMem = GetImageBuffer(&SettingSign);
-
-				unsigned char* data = new unsigned char[width * height * 4];
-				for (int y = 0; y < height; ++y)
-				{
-					for (int x = 0; x < width; ++x)
-					{
-						DWORD color = pMem[y * width + x];
-						unsigned char alpha = (color & 0xFF000000) >> 24;
-						if (alpha != 0)
-						{
-							data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-							data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-							data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						}
-						else
-						{
-							data[(y * width + x) * 4 + 0] = 0;
-							data[(y * width + x) * 4 + 1] = 0;
-							data[(y * width + x) * 4 + 2] = 0;
-						}
-						data[(y * width + x) * 4 + 3] = alpha;
-					}
-				}
-
-				bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[9]);
-				delete[] data;
-
-				IM_ASSERT(ret);
-			}
-		}
-	}
-
-	bool ShowWindow = false;
+	bool showWindow = false;
 	while (!offSignal)
 	{
-		SetLayeredWindowAttributes(setting_window, 0, 0, LWA_ALPHA);
-		ShowWindow = false;
+		if (showWindow)
+		{
+			{
+				for (unsigned int i = 0; i < size(TextureSettingSign); i++)
+				{
+					if (TextureSettingSign[i])
+					{
+						TextureSettingSign[i]->Release();
+						TextureSettingSign[i] = nullptr;
+					}
+				}
+			}
+
+			CleanupDeviceD3D();
+			::ShowWindow(setting_window, SW_HIDE);
+		}
+		showWindow = false;
 
 		while (!test.select && !offSignal) this_thread::sleep_for(chrono::milliseconds(100));
 		if (offSignal) break;
+
+		{
+			::ShowWindow(setting_window, SW_SHOWNOACTIVATE);
+			CreateDeviceD3D(setting_window);
+
+			// 初始化
+			{
+				// 图像加载
+				{
+					IMAGE SettingSign;
+
+					if (i18nIdentifying == L"zh-CN") idtLoadImage(&SettingSign, L"PNG", L"Home1_zh-CN", 700 * settingGlobalScale, 215 * settingGlobalScale, true);
+					else idtLoadImage(&SettingSign, L"PNG", L"Home1_en-US", 700 * settingGlobalScale, 240 * settingGlobalScale, true);
+					{
+						int width = settingSign[1].width = SettingSign.getwidth();
+						int height = settingSign[1].height = SettingSign.getheight();
+						DWORD* pMem = GetImageBuffer(&SettingSign);
+
+						unsigned char* data = new unsigned char[width * height * 4];
+						for (int y = 0; y < height; ++y)
+						{
+							for (int x = 0; x < width; ++x)
+							{
+								DWORD color = pMem[y * width + x];
+								unsigned char alpha = (color & 0xFF000000) >> 24;
+								if (alpha != 0)
+								{
+									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+								}
+								else
+								{
+									data[(y * width + x) * 4 + 0] = 0;
+									data[(y * width + x) * 4 + 1] = 0;
+									data[(y * width + x) * 4 + 2] = 0;
+								}
+								data[(y * width + x) * 4 + 3] = alpha;
+							}
+						}
+
+						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[1]);
+						delete[] data;
+
+						IM_ASSERT(ret);
+					}
+
+					if (i18nIdentifying == L"zh-CN") idtLoadImage(&SettingSign, L"PNG", L"Home2_zh-CN", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
+					else idtLoadImage(&SettingSign, L"PNG", L"Home2_en-US", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
+					{
+						int width = settingSign[2].width = SettingSign.getwidth();
+						int height = settingSign[2].height = SettingSign.getheight();
+						DWORD* pMem = GetImageBuffer(&SettingSign);
+
+						unsigned char* data = new unsigned char[width * height * 4];
+						for (int y = 0; y < height; ++y)
+						{
+							for (int x = 0; x < width; ++x)
+							{
+								DWORD color = pMem[y * width + x];
+								unsigned char alpha = (color & 0xFF000000) >> 24;
+								if (alpha != 0)
+								{
+									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+								}
+								else
+								{
+									data[(y * width + x) * 4 + 0] = 0;
+									data[(y * width + x) * 4 + 1] = 0;
+									data[(y * width + x) * 4 + 2] = 0;
+								}
+								data[(y * width + x) * 4 + 3] = alpha;
+							}
+						}
+
+						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[2]);
+						delete[] data;
+
+						IM_ASSERT(ret);
+					}
+
+					idtLoadImage(&SettingSign, L"PNG", L"PluginFlag1", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
+					{
+						int width = settingSign[5].width = SettingSign.getwidth();
+						int height = settingSign[5].height = SettingSign.getheight();
+						DWORD* pMem = GetImageBuffer(&SettingSign);
+
+						unsigned char* data = new unsigned char[width * height * 4];
+						for (int y = 0; y < height; ++y)
+						{
+							for (int x = 0; x < width; ++x)
+							{
+								DWORD color = pMem[y * width + x];
+								unsigned char alpha = (color & 0xFF000000) >> 24;
+								if (alpha != 0)
+								{
+									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+								}
+								else
+								{
+									data[(y * width + x) * 4 + 0] = 0;
+									data[(y * width + x) * 4 + 1] = 0;
+									data[(y * width + x) * 4 + 2] = 0;
+								}
+								data[(y * width + x) * 4 + 3] = alpha;
+							}
+						}
+
+						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[5]);
+						delete[] data;
+
+						IM_ASSERT(ret);
+					}
+					idtLoadImage(&SettingSign, L"PNG", L"PluginFlag2", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
+					{
+						int width = settingSign[6].width = SettingSign.getwidth();
+						int height = settingSign[6].height = SettingSign.getheight();
+						DWORD* pMem = GetImageBuffer(&SettingSign);
+
+						unsigned char* data = new unsigned char[width * height * 4];
+						for (int y = 0; y < height; ++y)
+						{
+							for (int x = 0; x < width; ++x)
+							{
+								DWORD color = pMem[y * width + x];
+								unsigned char alpha = (color & 0xFF000000) >> 24;
+								if (alpha != 0)
+								{
+									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+								}
+								else
+								{
+									data[(y * width + x) * 4 + 0] = 0;
+									data[(y * width + x) * 4 + 1] = 0;
+									data[(y * width + x) * 4 + 2] = 0;
+								}
+								data[(y * width + x) * 4 + 3] = alpha;
+							}
+						}
+
+						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[6]);
+						delete[] data;
+
+						IM_ASSERT(ret);
+					}
+					idtLoadImage(&SettingSign, L"PNG", L"PluginFlag3", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
+					{
+						int width = settingSign[8].width = SettingSign.getwidth();
+						int height = settingSign[8].height = SettingSign.getheight();
+						DWORD* pMem = GetImageBuffer(&SettingSign);
+
+						unsigned char* data = new unsigned char[width * height * 4];
+						for (int y = 0; y < height; ++y)
+						{
+							for (int x = 0; x < width; ++x)
+							{
+								DWORD color = pMem[y * width + x];
+								unsigned char alpha = (color & 0xFF000000) >> 24;
+								if (alpha != 0)
+								{
+									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+								}
+								else
+								{
+									data[(y * width + x) * 4 + 0] = 0;
+									data[(y * width + x) * 4 + 1] = 0;
+									data[(y * width + x) * 4 + 2] = 0;
+								}
+								data[(y * width + x) * 4 + 3] = alpha;
+							}
+						}
+
+						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[8]);
+						delete[] data;
+
+						IM_ASSERT(ret);
+					}
+
+					idtLoadImage(&SettingSign, L"PNG", L"Home_Backgroung", 980 * settingGlobalScale, 768 * settingGlobalScale, true);
+					{
+						int width = settingSign[4].width = SettingSign.getwidth();
+						int height = settingSign[4].height = SettingSign.getheight();
+						DWORD* pMem = GetImageBuffer(&SettingSign);
+
+						unsigned char* data = new unsigned char[width * height * 4];
+						for (int y = 0; y < height; ++y)
+						{
+							for (int x = 0; x < width; ++x)
+							{
+								DWORD color = pMem[y * width + x];
+								unsigned char alpha = (color & 0xFF000000) >> 24;
+								if (alpha != 0)
+								{
+									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+								}
+								else
+								{
+									data[(y * width + x) * 4 + 0] = 0;
+									data[(y * width + x) * 4 + 1] = 0;
+									data[(y * width + x) * 4 + 2] = 0;
+								}
+								data[(y * width + x) * 4 + 3] = alpha;
+							}
+						}
+
+						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[4]);
+						delete[] data;
+
+						IM_ASSERT(ret);
+					}
+					idtLoadImage(&SettingSign, L"PNG", L"Profile_Picture", 45 * settingGlobalScale, 45 * settingGlobalScale, true);
+					{
+						int width = settingSign[3].width = SettingSign.getwidth();
+						int height = settingSign[3].height = SettingSign.getheight();
+						DWORD* pMem = GetImageBuffer(&SettingSign);
+
+						unsigned char* data = new unsigned char[width * height * 4];
+						for (int y = 0; y < height; ++y)
+						{
+							for (int x = 0; x < width; ++x)
+							{
+								DWORD color = pMem[y * width + x];
+								unsigned char alpha = (color & 0xFF000000) >> 24;
+								if (alpha != 0)
+								{
+									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+								}
+								else
+								{
+									data[(y * width + x) * 4 + 0] = 0;
+									data[(y * width + x) * 4 + 1] = 0;
+									data[(y * width + x) * 4 + 2] = 0;
+								}
+								data[(y * width + x) * 4 + 3] = alpha;
+							}
+						}
+
+						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[3]);
+						delete[] data;
+
+						IM_ASSERT(ret);
+					}
+					idtLoadImage(&SettingSign, L"PNG", L"Home_Feedback", 100 * settingGlobalScale, 100 * settingGlobalScale, true);
+					{
+						int width = settingSign[7].width = SettingSign.getwidth();
+						int height = settingSign[7].height = SettingSign.getheight();
+						DWORD* pMem = GetImageBuffer(&SettingSign);
+
+						unsigned char* data = new unsigned char[width * height * 4];
+						for (int y = 0; y < height; ++y)
+						{
+							for (int x = 0; x < width; ++x)
+							{
+								DWORD color = pMem[y * width + x];
+								unsigned char alpha = (color & 0xFF000000) >> 24;
+								if (alpha != 0)
+								{
+									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+								}
+								else
+								{
+									data[(y * width + x) * 4 + 0] = 0;
+									data[(y * width + x) * 4 + 1] = 0;
+									data[(y * width + x) * 4 + 2] = 0;
+								}
+								data[(y * width + x) * 4 + 3] = alpha;
+							}
+						}
+
+						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[7]);
+						delete[] data;
+
+						IM_ASSERT(ret);
+					}
+
+					idtLoadImage(&SettingSign, L"PNG", L"SettingSponsor", 650 * settingGlobalScale, 460 * settingGlobalScale, true);
+					{
+						int width = settingSign[9].width = SettingSign.getwidth();
+						int height = settingSign[9].height = SettingSign.getheight();
+						DWORD* pMem = GetImageBuffer(&SettingSign);
+
+						unsigned char* data = new unsigned char[width * height * 4];
+						for (int y = 0; y < height; ++y)
+						{
+							for (int x = 0; x < width; ++x)
+							{
+								DWORD color = pMem[y * width + x];
+								unsigned char alpha = (color & 0xFF000000) >> 24;
+								if (alpha != 0)
+								{
+									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+								}
+								else
+								{
+									data[(y * width + x) * 4 + 0] = 0;
+									data[(y * width + x) * 4 + 1] = 0;
+									data[(y * width + x) * 4 + 2] = 0;
+								}
+								data[(y * width + x) * 4 + 3] = alpha;
+							}
+						}
+
+						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[9]);
+						delete[] data;
+
+						IM_ASSERT(ret);
+					}
+				}
+			}
+		}
 
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
@@ -525,6 +530,7 @@ void SettingMain()
 				0xe7b8, 0xe7b8, // 常规
 				0xee56, 0xee56, // 绘制
 				0xec4a, 0xec4a, // 性能
+				0xe70b, 0xe70b, // 组件
 				0xe74c, 0xe74c, // 插件
 				0xe765, 0xe765, // 快捷键
 				0xe946, 0xe946, // 软件版本
@@ -638,6 +644,7 @@ void SettingMain()
 		int EraserMode = setlist.eraserSetting.eraserMode;
 
 		int PreparationQuantity = setlist.performanceSetting.preparationQuantity;
+		bool SuperDraw = setlist.performanceSetting.superDraw;
 
 		// 插件参数
 
@@ -645,6 +652,9 @@ void SettingMain()
 		float BottomSideBothWidgetScale = pptComSetlist.bottomSideBothWidgetScale, BottomSideBothWidgetScaleRecord = pptComSetlist.bottomSideBothWidgetScale;
 		float MiddleSideBothWidgetScale = pptComSetlist.middleSideBothWidgetScale, MiddleSideBothWidgetScaleRecord = pptComSetlist.middleSideBothWidgetScale;
 		float BottomSideMiddleWidgetScale = pptComSetlist.bottomSideMiddleWidgetScale, BottomSideMiddleWidgetScaleRecord = pptComSetlist.bottomSideMiddleWidgetScale;
+		bool BottomSideBothWidgetScaleUnifie = true;
+		bool MiddleSideBothWidgetScaleUnifie = true;
+		bool BottomSideMiddleWidgetScaleUnifie = false;
 
 		bool PptComFixedHandWriting = pptComSetlist.fixedHandWriting;
 		bool MemoryWidgetPosition = pptComSetlist.memoryWidgetPosition;
@@ -730,6 +740,7 @@ void SettingMain()
 					tab3,
 					tabPerformance,
 					tab4,
+					tabComponent,
 					tab5,
 					tab6,
 					tab7,
@@ -956,6 +967,37 @@ void SettingMain()
 							settingTab = settingTabEnum::tab4;
 						}
 					}
+
+					// 组件
+					/*
+					{
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
+
+						if (settingTab == settingTabEnum::tabComponent)
+						{
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
+						}
+						else
+						{
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 0));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 0, 0, 6));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
+						}
+
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
+						if (ImGui::Button("   \ue70b   组件", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }))
+						{
+							settingTab = settingTabEnum::tabComponent;
+						}
+					}*/
 
 					// 快捷键
 					{
@@ -1855,6 +1897,10 @@ void SettingMain()
 					}
 
 					{
+						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+					}
+					{
 						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
 						while (PushFontNum) PushFontNum--, ImGui::PopFont();
@@ -1871,10 +1917,10 @@ void SettingMain()
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
 					ImGui::BeginChild("常规", { (750.0f + 30.0f) * settingGlobalScale,608.0f * settingGlobalScale }, false);
 
-					ImGui::SetCursorPosY(20.0f * settingGlobalScale);
+					ImGui::SetCursorPosY(10.0f * settingGlobalScale);
 					{
-						ImFontMain->Scale = 1.0f, PushFontNum++, ImGui::PushFont(ImFontMain);
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+						ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 						ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsRegular]).c_str());
 					}
 
@@ -2576,7 +2622,15 @@ void SettingMain()
 						ImGui::EndChild();
 					}
 
-					while (PushFontNum) PushFontNum--, ImGui::PopFont();
+					{
+						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+					}
+					{
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
+					}
 					ImGui::EndChild();
 					break;
 				}
@@ -2589,10 +2643,10 @@ void SettingMain()
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
 					ImGui::BeginChild("绘制", { (750.0f + 30.0f) * settingGlobalScale,608.0f * settingGlobalScale }, false);
 
-					ImGui::SetCursorPosY(20.0f * settingGlobalScale);
+					ImGui::SetCursorPosY(10.0f * settingGlobalScale);
 					{
-						ImFontMain->Scale = 1.0f, PushFontNum++, ImGui::PushFont(ImFontMain);
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+						ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 						ImGui::TextUnformatted("绘制");
 					}
 
@@ -2992,6 +3046,15 @@ void SettingMain()
 						ImGui::EndChild();
 					}
 
+					{
+						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+					}
+					{
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
+					}
 					ImGui::EndChild();
 					break;
 				}
@@ -3016,7 +3079,7 @@ void SettingMain()
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(255, 255, 255, 0));
-						ImGui::BeginChild("性能#1", { 750.0f * settingGlobalScale,130.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("性能#1", { 750.0f * settingGlobalScale,235.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -3097,6 +3160,75 @@ void SettingMain()
 							}
 							ImGui::EndChild();
 						}
+						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+							ImGui::BeginChild("高性能绘图", { 750.0f * settingGlobalScale,120.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+							float cursosPosY = 0;
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+								ImGui::TextUnformatted("高性能绘图(BETA)");
+							}
+							{
+								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 6));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
+								if (!SuperDraw)
+								{
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
+								}
+								else
+								{
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
+								}
+								ImGui::Toggle("##高性能绘图", &SuperDraw, config);
+
+								if (setlist.performanceSetting.superDraw != SuperDraw)
+								{
+									setlist.performanceSetting.superDraw = SuperDraw;
+									WriteSetting();
+								}
+							}
+
+							cursosPosY = ImGui::GetCursorPosY();
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 10.0f * settingGlobalScale });
+
+								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
+								ImGui::BeginChild("高性能绘图-介绍", { 710.0f * settingGlobalScale,50.0f * settingGlobalScale }, false);
+
+								{
+									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
+
+									ImGui::TextWrapped("在绘制模式下使用更多的系统资源进行绘图, 以及拥有更加精确的渲染间隔。 所有的额外性能开销都仅在绘制中产生（即非选择状态下）。 如果发现绘制延迟高、不跟手, 请关闭此选项。 对于 Windows 10 2004（不含）以下系统, 可能会在绘图时影响其他软件渲染间隔, 并带来更大的全局开销。");
+								}
+
+								{
+									if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+									if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+									while (PushFontNum) PushFontNum--, ImGui::PopFont();
+								}
+								ImGui::EndChild();
+							}
+
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+							ImGui::EndChild();
+						}
 
 						{
 							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
@@ -3106,6 +3238,10 @@ void SettingMain()
 						ImGui::EndChild();
 					}
 
+					{
+						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+					}
 					{
 						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
@@ -3134,7 +3270,7 @@ void SettingMain()
 						}
 
 						{
-							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 40.0f * settingGlobalScale);
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
 							ImGui::BeginChild("PPT演示助手", { 750.0f * settingGlobalScale,115.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
@@ -3328,6 +3464,10 @@ void SettingMain()
 							ImGui::EndChild();
 						}
 
+						{
+							ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+							ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+						}
 						{
 							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
@@ -3855,6 +3995,9 @@ void SettingMain()
 									ImGui::TextUnformatted("控件缩放");
 								}
 
+								// Extra1
+								bool allItemActive = false;
+
 								{
 									ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
 									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -3870,7 +4013,7 @@ void SettingMain()
 										ImGui::TextUnformatted("底部两侧控件缩放");
 									}
 									{
-										ImGui::SetCursorPos({ 325.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
+										ImGui::SetCursorPos({ 220.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
 										ImGui::PushItemWidth(300.0f * settingGlobalScale);
 
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
@@ -3888,6 +4031,7 @@ void SettingMain()
 
 										bool isItemHovered = ImGui::IsItemHovered();
 										bool isItemActive = ImGui::IsItemActive();
+										if (isItemActive) allItemActive = true;
 
 										if (isItemHovered)
 										{
@@ -3905,19 +4049,20 @@ void SettingMain()
 
 											ImGui::EndTooltip();
 										}
-										if (!isItemActive && BottomSideBothWidgetScale != BottomSideBothWidgetScaleRecord)
-										{
-											BottomSideBothWidgetScaleRecord = BottomSideBothWidgetScale;
-											pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale;
-											PptComWriteSetting();
-										}
 										if (BottomSideBothWidgetScale != BottomSideBothWidgetScaleRecord)
 										{
 											pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale;
+											if (BottomSideBothWidgetScaleUnifie)
+											{
+												if (MiddleSideBothWidgetScaleUnifie)
+													pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale = BottomSideBothWidgetScale;
+												if (BottomSideMiddleWidgetScaleUnifie)
+													pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = BottomSideBothWidgetScale;
+											}
 										}
 									}
 									{
-										ImGui::SetCursorPos({ 630.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
+										ImGui::SetCursorPos({ 525.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 179));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(249, 249, 249, 128));
@@ -3927,7 +4072,53 @@ void SettingMain()
 										if (ImGui::Button("重置##1", { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 										{
 											pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale = 1.0f;
-											PptComWriteSetting();
+											if (BottomSideBothWidgetScaleUnifie)
+											{
+												if (MiddleSideBothWidgetScaleUnifie)
+													pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale = BottomSideBothWidgetScale;
+												if (BottomSideMiddleWidgetScaleUnifie)
+													pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = BottomSideBothWidgetScale;
+											}
+										}
+									}
+									{
+										ImGui::SetCursorPos({ 630.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
+										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+										if (BottomSideBothWidgetScaleUnifie)
+										{
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 95, 184, 204));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+										}
+										else
+										{
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 179));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(249, 249, 249, 128));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+										}
+
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
+										if (ImGui::Button("同步调节##1", { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+										{
+											if (BottomSideBothWidgetScaleUnifie) BottomSideBothWidgetScaleUnifie = false;
+											else
+											{
+												BottomSideBothWidgetScaleUnifie = true;
+
+												if (MiddleSideBothWidgetScaleUnifie)
+												{
+													pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale = pptComSetlist.middleSideBothWidgetScale;
+													PptComWriteSetting();
+												}
+												else if (BottomSideMiddleWidgetScaleUnifie)
+												{
+													pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale = pptComSetlist.bottomSideMiddleWidgetScale;
+													PptComWriteSetting();
+												}
+											}
 										}
 									}
 
@@ -3947,7 +4138,7 @@ void SettingMain()
 										ImGui::TextUnformatted("中部两侧控件缩放");
 									}
 									{
-										ImGui::SetCursorPos({ 325.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
+										ImGui::SetCursorPos({ 220.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
 										ImGui::PushItemWidth(300.0f * settingGlobalScale);
 
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
@@ -3965,6 +4156,7 @@ void SettingMain()
 
 										bool isItemHovered = ImGui::IsItemHovered();
 										bool isItemActive = ImGui::IsItemActive();
+										if (isItemActive) allItemActive = true;
 
 										if (isItemHovered)
 										{
@@ -3982,19 +4174,20 @@ void SettingMain()
 
 											ImGui::EndTooltip();
 										}
-										if (!isItemActive && MiddleSideBothWidgetScale != MiddleSideBothWidgetScaleRecord)
-										{
-											MiddleSideBothWidgetScaleRecord = MiddleSideBothWidgetScale;
-											pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale;
-											PptComWriteSetting();
-										}
 										if (MiddleSideBothWidgetScale != MiddleSideBothWidgetScaleRecord)
 										{
 											pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale;
+											if (MiddleSideBothWidgetScaleUnifie)
+											{
+												if (BottomSideBothWidgetScaleUnifie)
+													pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale = MiddleSideBothWidgetScale;
+												if (BottomSideMiddleWidgetScaleUnifie)
+													pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = MiddleSideBothWidgetScale;
+											}
 										}
 									}
 									{
-										ImGui::SetCursorPos({ 630.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
+										ImGui::SetCursorPos({ 525.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 179));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(249, 249, 249, 128));
@@ -4004,7 +4197,53 @@ void SettingMain()
 										if (ImGui::Button("重置##2", { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 										{
 											pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale = 1.0f;
-											PptComWriteSetting();
+											if (MiddleSideBothWidgetScaleUnifie)
+											{
+												if (BottomSideBothWidgetScaleUnifie)
+													pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale = MiddleSideBothWidgetScale;
+												if (BottomSideMiddleWidgetScaleUnifie)
+													pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = MiddleSideBothWidgetScale;
+											}
+										}
+									}
+									{
+										ImGui::SetCursorPos({ 630.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
+										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+										if (MiddleSideBothWidgetScaleUnifie)
+										{
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 95, 184, 204));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+										}
+										else
+										{
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 179));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(249, 249, 249, 128));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+										}
+
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
+										if (ImGui::Button("同步调节##2", { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+										{
+											if (MiddleSideBothWidgetScaleUnifie) MiddleSideBothWidgetScaleUnifie = false;
+											else
+											{
+												MiddleSideBothWidgetScaleUnifie = true;
+
+												if (BottomSideBothWidgetScaleUnifie)
+												{
+													pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale = pptComSetlist.bottomSideBothWidgetScale;
+													PptComWriteSetting();
+												}
+												else if (BottomSideMiddleWidgetScaleUnifie)
+												{
+													pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale = pptComSetlist.bottomSideMiddleWidgetScale;
+													PptComWriteSetting();
+												}
+											}
 										}
 									}
 
@@ -4030,7 +4269,7 @@ void SettingMain()
 										ImGui::TextUnformatted("底部主栏控件缩放");
 									}
 									{
-										ImGui::SetCursorPos({ 325.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
+										ImGui::SetCursorPos({ 220.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
 										ImGui::PushItemWidth(300.0f * settingGlobalScale);
 
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
@@ -4048,6 +4287,7 @@ void SettingMain()
 
 										bool isItemHovered = ImGui::IsItemHovered();
 										bool isItemActive = ImGui::IsItemActive();
+										if (isItemActive) allItemActive = true;
 
 										if (ImGui::IsItemHovered())
 										{
@@ -4065,19 +4305,20 @@ void SettingMain()
 
 											ImGui::EndTooltip();
 										}
-										if (!isItemActive && BottomSideMiddleWidgetScale != BottomSideMiddleWidgetScaleRecord)
-										{
-											BottomSideMiddleWidgetScaleRecord = BottomSideMiddleWidgetScale;
-											pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale;
-											PptComWriteSetting();
-										}
 										if (BottomSideMiddleWidgetScale != BottomSideMiddleWidgetScaleRecord)
 										{
 											pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale;
+											if (BottomSideMiddleWidgetScaleUnifie)
+											{
+												if (BottomSideBothWidgetScaleUnifie)
+													pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale = BottomSideMiddleWidgetScale;
+												if (MiddleSideBothWidgetScaleUnifie)
+													pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale = BottomSideMiddleWidgetScale;
+											}
 										}
 									}
 									{
-										ImGui::SetCursorPos({ 630.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
+										ImGui::SetCursorPos({ 525.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 179));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(249, 249, 249, 128));
@@ -4087,7 +4328,53 @@ void SettingMain()
 										if (ImGui::Button("重置##1", { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 										{
 											pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = 1.0f;
-											PptComWriteSetting();
+											if (BottomSideMiddleWidgetScaleUnifie)
+											{
+												if (BottomSideBothWidgetScaleUnifie)
+													pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale = BottomSideMiddleWidgetScale;
+												if (MiddleSideBothWidgetScaleUnifie)
+													pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale = BottomSideMiddleWidgetScale;
+											}
+										}
+									}
+									{
+										ImGui::SetCursorPos({ 630.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
+										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+										if (BottomSideMiddleWidgetScaleUnifie)
+										{
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 95, 184, 204));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+										}
+										else
+										{
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 179));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(249, 249, 249, 128));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+										}
+
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
+										if (ImGui::Button("同步调节##3", { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+										{
+											if (BottomSideMiddleWidgetScaleUnifie) BottomSideMiddleWidgetScaleUnifie = false;
+											else
+											{
+												BottomSideMiddleWidgetScaleUnifie = true;
+
+												if (BottomSideBothWidgetScaleUnifie)
+												{
+													pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = pptComSetlist.bottomSideBothWidgetScale;
+													PptComWriteSetting();
+												}
+												else if (MiddleSideBothWidgetScaleUnifie)
+												{
+													pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = pptComSetlist.middleSideBothWidgetScale;
+													PptComWriteSetting();
+												}
+											}
 										}
 									}
 
@@ -4097,6 +4384,29 @@ void SettingMain()
 										while (PushFontNum) PushFontNum--, ImGui::PopFont();
 									}
 									ImGui::EndChild();
+								}
+
+								// Extra2
+								if (!allItemActive)
+								{
+									if (BottomSideBothWidgetScale != BottomSideBothWidgetScaleRecord)
+									{
+										BottomSideBothWidgetScaleRecord = BottomSideBothWidgetScale;
+										pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale;
+										PptComWriteSetting();
+									}
+									if (MiddleSideBothWidgetScale != MiddleSideBothWidgetScaleRecord)
+									{
+										MiddleSideBothWidgetScaleRecord = MiddleSideBothWidgetScale;
+										pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale;
+										PptComWriteSetting();
+									}
+									if (BottomSideMiddleWidgetScale != BottomSideMiddleWidgetScaleRecord)
+									{
+										BottomSideMiddleWidgetScaleRecord = BottomSideMiddleWidgetScale;
+										pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale;
+										PptComWriteSetting();
+									}
 								}
 
 								{
@@ -4198,6 +4508,10 @@ void SettingMain()
 								ImGui::EndChild();
 							}
 
+							{
+								ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+								ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+							}
 							{
 								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
@@ -4423,6 +4737,10 @@ void SettingMain()
 								ImGui::EndChild();
 							}
 
+							{
+								ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+								ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+							}
 							{
 								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
@@ -5501,6 +5819,10 @@ void SettingMain()
 							}
 
 							{
+								ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+								ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+							}
+							{
 								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
 								while (PushFontNum) PushFontNum--, ImGui::PopFont();
@@ -5517,6 +5839,34 @@ void SettingMain()
 						break;
 					}
 					}
+					break;
+				}
+
+				// 组件
+				case settingTabEnum::tabComponent:
+				{
+					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
+
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
+					ImGui::BeginChild("组件", { (750.0f + 30.0f) * settingGlobalScale,608.0f * settingGlobalScale }, false);
+
+					ImGui::SetCursorPosY(10.0f * settingGlobalScale);
+					{
+						ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+						ImGui::TextUnformatted("组件");
+					}
+
+					{
+						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+					}
+					{
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
+					}
+					ImGui::EndChild();
 					break;
 				}
 
@@ -5572,6 +5922,10 @@ void SettingMain()
 					}
 
 					{
+						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+					}
+					{
 						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
 						while (PushFontNum) PushFontNum--, ImGui::PopFont();
@@ -5596,7 +5950,7 @@ void SettingMain()
 
 						std::vector<std::string> lines;
 						std::wstring line, temp;
-						std::wstringstream ss(L"界面还在开发中，敬请期待\n\n致谢名单（未显示匿名捐赠，请联系软件开发者并显示）\n郑子杰 Zijie Zheng ￥151.2\nbin ￥100\n路人甲 ￥100\n启幕￥66\nHettyBig ￥20\n建俊 ￥19.99\nLEON - 小清新 ￥19.99\n2,2,3-三甲基戊烷 ￥10\n凌汛 ￥9.99\nKrouis ￥9.99\n爱发电用户_997e8 ￥9.99\n爱发电用户_55381 ￥9.99\n\n和所有支持智绘教的朋友们~");
+						std::wstringstream ss(L"界面还在开发中，敬请期待\n\n致谢名单（未显示匿名捐赠，请联系软件开发者并显示）\n郑子杰 Zijie Zheng ￥151.2\nbin ￥100\n路人甲 ￥100\n启幕￥66\nB站游大伟 ￥20\nHettyBig ￥20\n建俊 ￥19.99\nLEON - 小清新 ￥19.99\n2,2,3-三甲基戊烷 ￥10\n凌汛 ￥9.99\nKrouis ￥9.99\n爱发电用户_997e8 ￥9.99\n爱发电用户_55381 ￥9.99\n\n和所有支持智绘教的朋友们~");
 
 						while (getline(ss, temp, L'\n'))
 						{
@@ -5631,6 +5985,10 @@ void SettingMain()
 						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 					}
 
+					{
+						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+					}
 					{
 						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
@@ -5693,6 +6051,10 @@ void SettingMain()
 						}
 					}
 
+					{
+						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+					}
 					{
 						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
@@ -5817,6 +6179,10 @@ void SettingMain()
 						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 					}
 
+					{
+						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+					}
 					{
 						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
@@ -6245,11 +6611,10 @@ void SettingMain()
 			if (result == D3DERR_DEVICELOST) g_DeviceLost = true;
 
 			if (!test.select) break;
-			if (!ShowWindow)
+			if (!showWindow)
 			{
-				SetLayeredWindowAttributes(setting_window, 0, 255, LWA_ALPHA);
-				//::SetForegroundWindow(setting_window);
-				ShowWindow = true;
+				::ShowWindow(setting_window, SW_SHOW);
+				showWindow = true;
 			}
 		}
 
@@ -6366,11 +6731,16 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 // 通常，您可以始终将所有输入传递给 dear imgui，并根据这两个标志在应用程序中隐藏它们。
 LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
+	if (test.select && ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
 		return true;
 
 	switch (msg)
 	{
+		// 标题栏拖动
+	case WM_LBUTTONDOWN:
+		if (IsInRect(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), { 0,0,int(904.0 * settingGlobalScale),int(40.0 * settingGlobalScale) })) SettingSeekBar();
+		break;
+
 	case WM_SIZE:
 		if (wParam == SIZE_MINIMIZED)
 			return 0;
@@ -6437,4 +6807,22 @@ static void CenteredText(const char* desc, float displacement)
 	ImGui::SetCursorPosY(temp + displacement);
 	ImGui::TextUnformatted(desc);
 	ImGui::SetCursorPosY(temp);
+}
+void ScrollWhenDraggingOnVoid(const ImVec2& delta, ImGuiMouseButton mouse_button)
+{
+	ImGuiContext& g = *ImGui::GetCurrentContext();
+
+	ImGuiWindow* window = g.CurrentWindow;
+	bool hovered = false;
+	bool held = false;
+	ImGuiID id = window->GetID("##scrolldraggingoverlay");
+	ImGui::KeepAliveID(id);
+
+	ImGui::ButtonBehavior(window->Rect(), id, &hovered, &held, mouse_button);
+	if (!held && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && ImGui::IsMouseDown(mouse_button)) held = true;
+
+	if (held && delta.x != 0.0f)
+		ImGui::SetScrollX(window, window->Scroll.x + delta.x);
+	if (held && delta.y != 0.0f)
+		ImGui::SetScrollY(window, window->Scroll.y + delta.y);
 }
