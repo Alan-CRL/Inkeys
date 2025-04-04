@@ -7,7 +7,9 @@ enum class StateModeSelectEnum
 	IdtSelection,
 	IdtPen,
 	IdtEraser,
-	IdtShape
+	IdtShape,
+
+	IdtTouchTest
 };
 enum class PenModeSelectEnum
 {
@@ -94,6 +96,7 @@ bool ChangeStateModeToSelection();
 bool ChangeStateModeToPen();
 bool ChangeStateModeToShape();
 bool ChangeStateModeToEraser();
+bool ChangeStateModeToTouchTest();
 
 void StateMonitoring();
 

@@ -11,6 +11,7 @@
 #include "IdtOther.h"
 #include "IdtPlug-in.h"
 #include "IdtRts.h"
+#include "IdtState.h"
 #include "IdtText.h"
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
@@ -6070,113 +6071,175 @@ void SettingMain()
 				case settingTabEnum::tab9:
 				{
 					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
-					ImGui::BeginChild("程序调测", { (750.0f + 30.0f) * settingGlobalScale,608.0f * settingGlobalScale }, true);
 
-					ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
+					ImGui::BeginChild("程序调测", { (750.0f + 30.0f) * settingGlobalScale,608.0f * settingGlobalScale }, false);
+
 					{
-						ImGui::SetCursorPosY(10.0f);
-						wstring text;
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+						ImGui::BeginChild("启用触摸测试模式", { (750.0f + 30.0f) * settingGlobalScale,70.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+						float cursosPosY = 0;
 						{
-							if (uRealTimeStylus == 2) text += L"\n\n输入设备消息：按下";
-							else if (uRealTimeStylus == 3) text += L"\n\n输入设备消息：抬起";
-							else if (uRealTimeStylus == 4) text += L"\n\n输入设备消息：移动";
-							else text += L"\n\n输入设备消息：就绪";
+							ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+							ImGui::TextUnformatted("启用触摸测试模式");
+						}
+						{
+							ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-							text += L"\n输入设备按下：";
-
-							shared_lock<shared_mutex> locktouchNum(touchNumSm);
-							text += touchDown ? L"是" : L"否";
-							text += L"\n输入设备点：";
-							text += to_wstring(touchNum) + L"\n";
-							locktouchNum.unlock();
-
-							for (int i = 0; i < touchNum; i++)
+							ImGui::TextUnformatted("开启后，使用输入设备在主画布上产生输入，即刻开始测试。");
+						}
+						{
+							ImGui::SetCursorPos({ 660.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 179));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(249, 249, 249, 128));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
+							if (ImGui::Button("开启", { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 							{
-								std::shared_lock<std::shared_mutex> lock1(touchPosSm);
-								TouchMode mode = TouchPos[TouchList[i]];
-								lock1.unlock();
-
-								std::shared_lock<std::shared_mutex> lock2(touchSpeedSm);
-								double speed = TouchSpeed[TouchList[i]];
-								lock2.unlock();
-
-								text += to_wstring(i + 1) + L" pid" + to_wstring(TouchList[i]) + L" 坐标" + to_wstring(mode.pt.x) + L"," + to_wstring(mode.pt.y) + L" 触摸面积" + to_wstring(mode.touchWidth) + L"*" + to_wstring(mode.touchHeight) + L" 速度" + to_wstring(speed) + L" 压力" + to_wstring(mode.pressure) + L"\n";
+								ChangeStateModeToTouchTest();
 							}
-
-							text += L"\n\nTouchList ";
-							for (const auto& val : TouchList)
-							{
-								text += to_wstring(val) + L" ";
-							}
-							text += L"\nTouchTemp ";
-							for (size_t i = 0; i < TouchTemp.size(); ++i)
-							{
-								text += to_wstring(TouchTemp[i].pid) + L" ";
-							}
-
-							text += L"\n\n撤回库当前大小：" + to_wstring(RecallImage.size()) + L"(峰值" + to_wstring(RecallImagePeak) + L")";
-							text += L"\n撤回库 recall_image_recond：" + to_wstring(recall_image_recond);
-							text += L"\n撤回库 reference_record_pointer：" + to_wstring(reference_record_pointer);
-							text += L"\n撤回库 practical_total_record_pointer：" + to_wstring(practical_total_record_pointer);
-							text += L"\n撤回库 total_record_pointer：" + to_wstring(total_record_pointer);
-							text += L"\n撤回库 current_record_pointer：" + to_wstring(current_record_pointer);
-							text += L"\n\n首次绘制状态：", text += (FirstDraw == true) ? L"是" : L"否";
-
-							{
-								wstring ppt_LinkTest;
-								if (pptComVersion.substr(0, 7) == L"Error: ") ppt_LinkTest = L"发生错误 " + pptComVersion;
-								else ppt_LinkTest = L"连接成功，版本 " + pptComVersion;
-
-								text += L"\n\nPPT COM接口 联动组件 状态：";
-								text += ppt_LinkTest;
-							}
-
-							text += L"\n\nPPT 状态：";
-							text += PptInfoState.TotalPage != -1 ? L"正在播放" : L"未播放";
-							text += L"\nPPT 总页面数：";
-							text += to_wstring(PptInfoState.TotalPage);
-							text += L"\nPPT 当前页序号：";
-							text += to_wstring(PptInfoState.CurrentPage);
 						}
 
-						int left_x = 10 * settingGlobalScale, right_x = 760 * settingGlobalScale;
-
-						std::vector<std::string> lines;
-						std::wstring line, temp;
-						std::wstringstream ss(text);
-
-						while (getline(ss, temp, L'\n'))
 						{
-							bool flag = false;
-							line = L"";
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
+						ImGui::EndChild();
+					}
+					{
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 
-							for (wchar_t ch : temp)
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+						ImGui::BeginChild("程序调测-输出", { (750.0f + 30.0f) * settingGlobalScale,533.0f * settingGlobalScale }, true);
+
+						ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						{
+							ImGui::SetCursorPosY(30.0f);
+							wstring text;
 							{
-								flag = false;
+								text += L"输入设备按下：";
+								shared_lock<shared_mutex> locktouchNum(touchNumSm);
+								text += touchDown ? L"是" : L"否";
+								text += L"\n输入设备点：";
+								text += to_wstring(touchNum) + L"\n";
+								locktouchNum.unlock();
 
-								float text_width = ImGui::CalcTextSize(utf16ToUtf8(line + ch).c_str()).x;
-								if (text_width > (right_x - left_x))
+								for (int i = 0; i < touchNum; i++)
 								{
-									lines.emplace_back(utf16ToUtf8(line));
-									line = L"", flag = true;
+									std::shared_lock<std::shared_mutex> lock1(touchPosSm);
+									TouchMode mode = TouchPos[TouchList[i]];
+									lock1.unlock();
+
+									std::shared_lock<std::shared_mutex> lock2(touchSpeedSm);
+									double speed = TouchSpeed[TouchList[i]];
+									lock2.unlock();
+
+									text += to_wstring(i + 1) + L" pid" + to_wstring(TouchList[i]) + L" 坐标" + to_wstring(mode.pt.x) + L"," + to_wstring(mode.pt.y) + L" 触摸面积" + to_wstring(mode.touchWidth) + L"*" + to_wstring(mode.touchHeight) + L" 速度" + to_wstring(speed) + L" 压力" + to_wstring(mode.pressure) + L"\n";
 								}
 
-								line += ch;
+								text += L"\nTouchList ";
+								for (const auto& val : TouchList)
+								{
+									text += to_wstring(val) + L" ";
+								}
+								text += L"\nTouchTemp ";
+								for (size_t i = 0; i < TouchTemp.size(); ++i)
+								{
+									text += to_wstring(TouchTemp[i].pid) + L" ";
+								}
+
+								text += L"\n\n撤回库当前大小：" + to_wstring(RecallImage.size()) + L"(峰值" + to_wstring(RecallImagePeak) + L")";
+								/*text += L"\n撤回库 recall_image_recond：" + to_wstring(recall_image_recond);
+								text += L"\n撤回库 reference_record_pointer：" + to_wstring(reference_record_pointer);
+								text += L"\n撤回库 practical_total_record_pointer：" + to_wstring(practical_total_record_pointer);
+								text += L"\n撤回库 total_record_pointer：" + to_wstring(total_record_pointer);
+								text += L"\n撤回库 current_record_pointer：" + to_wstring(current_record_pointer);*/
+								text += L"\n首次绘制状态：", text += (FirstDraw == true) ? L"是" : L"否";
+
+								{
+									wstring ppt_LinkTest;
+									if (pptComVersion.substr(0, 7) == L"Error: ") ppt_LinkTest = L"发生错误 " + pptComVersion;
+									else ppt_LinkTest = L"连接成功，版本 " + pptComVersion;
+
+									text += L"\n\nPPT COM接口 联动组件 状态：";
+									text += ppt_LinkTest;
+								}
+
+								text += L"\nPPT 状态：";
+								text += PptInfoState.TotalPage != -1 ? L"正在播放" : L"未播放";
+								text += L"\nPPT 总页面数：";
+								text += to_wstring(PptInfoState.TotalPage);
+								text += L"\nPPT 当前页序号：";
+								text += to_wstring(PptInfoState.CurrentPage);
+
+								text += L"\n\n主监视器像素宽度：";
+								text += to_wstring(MainMonitor.MonitorWidth) + L"px";
+								text += L"\n主监视器像素高度：";
+								text += to_wstring(MainMonitor.MonitorHeight) + L"px";
+								text += L"\n主监视器物理宽度：";
+								text += to_wstring(MainMonitor.MonitorPhyWidth) + L"cm";
+								text += L"\n主监视器物理高度：";
+								text += to_wstring(MainMonitor.MonitorPhyHeight) + L"cm";
 							}
 
-							if (!flag) lines.emplace_back(utf16ToUtf8(line));
+							int left_x = 20 * settingGlobalScale, right_x = 750 * settingGlobalScale;
+
+							std::vector<std::string> lines;
+							std::wstring line, temp;
+							std::wstringstream ss(text);
+
+							while (getline(ss, temp, L'\n'))
+							{
+								bool flag = false;
+								line = L"";
+
+								for (wchar_t ch : temp)
+								{
+									flag = false;
+
+									float text_width = ImGui::CalcTextSize(utf16ToUtf8(line + ch).c_str()).x;
+									if (text_width > (right_x - left_x))
+									{
+										lines.emplace_back(utf16ToUtf8(line));
+										line = L"", flag = true;
+									}
+
+									line += ch;
+								}
+
+								if (!flag) lines.emplace_back(utf16ToUtf8(line));
+							}
+							for (const auto& temp : lines)
+							{
+								//float text_width = ImGui::CalcTextSize(temp.c_str()).x;
+								//float text_indentation = ((right_x - left_x) - text_width) * 0.5f;
+								//if (text_indentation < 0)  text_indentation = 0;
+								//ImGui::SetCursorPosX(left_x + text_indentation);
+								ImGui::SetCursorPosX(left_x);
+								ImGui::TextUnformatted(temp.c_str());
+							}
+
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 						}
 
-						for (const auto& temp : lines)
 						{
-							float text_width = ImGui::CalcTextSize(temp.c_str()).x;
-							float text_indentation = ((right_x - left_x) - text_width) * 0.5f;
-							if (text_indentation < 0)  text_indentation = 0;
-							ImGui::SetCursorPosX(left_x + text_indentation);
-							ImGui::TextUnformatted(temp.c_str());
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
 						}
-
-						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						ImGui::EndChild();
 					}
 
 					{

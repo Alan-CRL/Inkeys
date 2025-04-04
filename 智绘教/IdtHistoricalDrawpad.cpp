@@ -153,8 +153,6 @@ void LoadDrawpad()
 // 保存图像到指定目录
 void SaveScreenShot(IMAGE img, bool record_pointer_add)
 {
-	shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
-
 	wstring date = CurrentDate(), time = CurrentTime(), stamp = getTimestamp();
 	if (_waccess((globalPath + L"ScreenShot\\" + date).c_str(), 0 == -1))
 	{

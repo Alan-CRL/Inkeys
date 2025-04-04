@@ -266,6 +266,49 @@ bool ChangeStateModeToEraser()
 	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtEraser;
 	return true;
 }
+bool ChangeStateModeToTouchTest()
+{
+	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtTouchTest;
+
+	// 标识绘制等待
+	{
+		unique_lock<shared_mutex> lockdrawWaitingSm(drawWaitingSm);
+		drawWaiting = true;
+		lockdrawWaitingSm.unlock();
+	}
+	// 防止绘图时冲突
+	{
+		shared_lock lockStrokeImageListSm(StrokeImageListSm);
+		bool start = !StrokeImageList.empty();
+		lockStrokeImageListSm.unlock();
+
+		// 正在绘制则取消操作
+		if (start)
+		{
+			// 取消标识绘制等待
+			{
+				unique_lock lockdrawWaitingSm(drawWaitingSm);
+				drawWaiting = false;
+				lockdrawWaitingSm.unlock();
+			}
+			return false;
+		}
+	}
+
+	// 切换状态
+	{
+		stateMode.StateModeSelect = StateModeSelectEnum::IdtTouchTest;
+	}
+
+	// 取消标识绘制等待
+	{
+		unique_lock lockdrawWaitingSm(drawWaitingSm);
+		drawWaiting = false;
+		lockdrawWaitingSm.unlock();
+	}
+	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtTouchTest;
+	return true;
+}
 
 // 状态监测
 void StateMonitoring()

@@ -2,8 +2,6 @@
 
 #include "IdtDrawpad.h"
 
-int uRealTimeStylus;
-
 bool touchDown = false;										// 表示触摸设备是否被按下
 int touchNum = 0;											// 触摸点的点击个数
 
@@ -148,8 +146,6 @@ IStylusSyncPlugin* CSyncEventHandlerRTS::Create(IRealTimeStylus* pRealTimeStylus
 }
 HRESULT CSyncEventHandlerRTS::StylusDown(IRealTimeStylus* piRtsSrc, const StylusInfo* pStylusInfo, ULONG /*cPktCount*/, LONG* pPacket, LONG** /*ppInOutPkts*/)
 {
-	uRealTimeStylus = 2;
-
 	// 这是一个按下状态
 	TouchMode mode{};
 	TouchInfo info{};
@@ -240,8 +236,6 @@ HRESULT CSyncEventHandlerRTS::StylusDown(IRealTimeStylus* piRtsSrc, const Stylus
 }
 HRESULT CSyncEventHandlerRTS::StylusUp(IRealTimeStylus*, const StylusInfo* pStylusInfo, ULONG /*cPktCount*/, LONG* pPacket, LONG** /*ppInOutPkts*/)
 {
-	uRealTimeStylus = 3;
-
 	// 这是一个抬起状态
 
 	unique_lock<shared_mutex> locktouchNum(touchNumSm);
@@ -273,8 +267,6 @@ HRESULT CSyncEventHandlerRTS::StylusUp(IRealTimeStylus*, const StylusInfo* pStyl
 }
 HRESULT CSyncEventHandlerRTS::Packets(IRealTimeStylus* piRtsSrc, const StylusInfo* pStylusInfo, ULONG /*cPktCount*/, ULONG /*cPktBuffLength*/, LONG* pPacket, ULONG* /*pcInOutPkts*/, LONG** /*ppInOutPkts*/)
 {
-	uRealTimeStylus = 4;
-
 	// 这是一个移动状态
 
 	ULONG ulPacketProperties;

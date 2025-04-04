@@ -43,8 +43,8 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250403a";				// 程序发布日期
-wstring editionChannel = L"LTS";				// 程序发布通道
+wstring editionDate = L"20250404a";				// 程序发布日期
+wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -126,13 +126,13 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		// -Restart 强制启动一次
 		// -WarnTry 强制启动一次，表明上一次遇到了错误
 
+#ifdef IDT_RELEASE
 		wstring commandLineArgs(lpCmdLine);
 
 		if (commandLineArgs == L"-Restart") launchState = LaunchStateEnum::Restart;
 		else if (commandLineArgs == L"-WarnTry") launchState = LaunchStateEnum::WarnTry;
 		else launchState = LaunchStateEnum::Normal;
 
-#ifdef IDT_RELEASE
 		if (launchState == LaunchStateEnum::Normal)
 		{
 			wstring currentExeDirectory = GetCurrentExeDirectory();
@@ -624,6 +624,16 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	ULONG_PTR ulCookie;
 	CoInitializeEx(NULL, COINIT_MULTITHREADED);
 
+	// 显示器信息初始化
+	{
+		// 显示器检查
+		DisplayManagementMain();
+
+		int DisplaysNumberTemp = DisplaysNumber;
+		if (DisplaysNumberTemp > 1) IDTLogger->warn("[主线程][IdtMain] 拥有多个显示器");
+		IDTLogger->info("[主线程][IdtMain] 显示器信息初始化完成");
+	}
+
 	// 配置信息初始化
 	{
 		// 读取配置文件前初始化操作
@@ -853,18 +863,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		stringFormat_left.SetFormatFlags(StringFormatFlagsNoWrap);
 
 		IDTLogger->info("[主线程][IdtMain] 字体初始化完成");
-	}
-	// 显示器信息初始化
-	{
-		// 显示器检查
-		DisplayManagementMain();
-
-		shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
-		int DisplaysNumberTemp = DisplaysNumber;
-		DisplaysNumberLock.unlock();
-
-		if (DisplaysNumberTemp > 1) IDTLogger->warn("[主线程][IdtMain] 拥有多个显示器");
-		IDTLogger->info("[主线程][IdtMain] 显示器信息初始化完成");
 	}
 
 	// 窗口

@@ -1,8 +1,6 @@
 ﻿#pragma once
 #include "IdtMain.h"
 
-extern int uRealTimeStylus;
-
 extern bool touchDown;												// 表示触摸设备是否被按下
 extern int touchNum;												// 触摸点的点击个数
 

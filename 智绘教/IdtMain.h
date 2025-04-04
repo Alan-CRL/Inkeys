@@ -17,7 +17,7 @@
 
 #pragma once
 
-#define IDT_RELEASE
+// #define IDT_RELEASE
 // #pragma comment( linker, "/subsystem:windows /entry:mainCRTStartup" )
 
 // 智绘教最低兼容 Windows 7 sp0
@@ -112,6 +112,9 @@ extern shared_ptr<spdlog::logger> IDTLogger;
 template <typename IdtAtomicT>
 class IdtAtomic
 {
+	static_assert(is_trivially_copyable_v<IdtAtomicT>, "IdtAtomic<IdtAtomicT>: IdtAtomicT 必须是平凡可复制 (TriviallyCopyable) 的类型。");
+	static_assert(atomic<IdtAtomicT>::is_always_lock_free, "IdtAtomic<IdtAtomicT>: IdtAtomicT 对应的 atomic<IdtAtomicT> 必须保证始终无锁 (lock-free)。");
+
 private:
 	atomic<IdtAtomicT> value;
 
