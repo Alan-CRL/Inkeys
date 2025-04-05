@@ -486,11 +486,26 @@ LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 		flags |= (0x00010000);
 		return (LRESULT)flags;
 	}
+	case WM_SETCURSOR:
+	{
+		if (LOWORD(lParam) == HTCLIENT)
+		{
+			if (touchNum > 0 && setlist.hideTouchPointer)
+			{
+				SetCursor(NULL);
+
+				return TRUE;
+			}
+		}
+
+		break;
+	}
+
 	default:
 		return HIWINDOW_DEFAULT_PROC;
 	}
 
-	return 0;
+	return HIWINDOW_DEFAULT_PROC;
 }
 BOOL DisableEdgeGestures(HWND hwnd, BOOL disable)
 {
@@ -2225,7 +2240,7 @@ int drawpad_main()
 					lock1.unlock();
 					if (nextPointMode != StateModeSelectEnum::IdtTouchTest)
 					{
-						if (touchPoint.mode.isInvertedCursor || touchPoint.type == 3) nextPointMode = StateModeSelectEnum::IdtEraser;
+						if (touchPoint.mode.isInvertedCursor || touchPoint.mode.type == 3) nextPointMode = StateModeSelectEnum::IdtEraser;
 					}
 
 					if (int(state) == 1 && nextPointMode == StateModeSelectEnum::IdtEraser && setlist.RubberRecover) target_status = 0;

@@ -36,6 +36,7 @@
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
 #include "Launch/IdtLaunchState.h"
+#include "CrashHandler/CrashHandler.h"
 
 #include <lm.h>
 #include <shellscalingapi.h>
@@ -43,7 +44,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250404a";				// 程序发布日期
+wstring editionDate = L"20250405a";				// 程序发布日期
 wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -57,6 +58,12 @@ int offSignal = false;							// 关闭指令
 map <wstring, bool> threadStatus;				// 线程状态管理
 
 shared_ptr<spdlog::logger> IDTLogger;
+
+void CauseCrash_AV()
+{
+	volatile int* p = nullptr;
+	*p = 123;
+}
 
 // 程序入口点
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
@@ -125,14 +132,16 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		// 检查启动标识
 		// -Restart 强制启动一次
 		// -WarnTry 强制启动一次，表明上一次遇到了错误
+		// -CrashTry 表明上一次遇到了崩溃错误
 
-#ifdef IDT_RELEASE
 		wstring commandLineArgs(lpCmdLine);
 
 		if (commandLineArgs == L"-Restart") launchState = LaunchStateEnum::Restart;
 		else if (commandLineArgs == L"-WarnTry") launchState = LaunchStateEnum::WarnTry;
+		else if (commandLineArgs == L"-CrashTry") launchState = LaunchStateEnum::CrashTry;
 		else launchState = LaunchStateEnum::Normal;
 
+#ifdef IDT_RELEASE
 		if (launchState == LaunchStateEnum::Normal)
 		{
 			wstring currentExeDirectory = GetCurrentExeDirectory();
@@ -165,6 +174,14 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			}
 		}
 #endif
+		if (launchState == LaunchStateEnum::CrashTry) CrashHandler::IsSecond(true);
+	}
+	// 崩溃助手初始化
+	{
+		CrashHandler::Initialize();
+		CrashHandler::SetFlag(3);
+
+		CauseCrash_AV();
 	}
 	// 体系架构识别
 	{
@@ -447,8 +464,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 				if (flag)
 				{
-					ShellExecuteW(NULL, NULL, (globalPath + path).c_str(), NULL, NULL, SW_SHOWNORMAL);
-					return 0;
+					HINSTANCE hInst = ShellExecuteW(NULL, NULL, (globalPath + path).c_str(), NULL, NULL, SW_SHOWNORMAL);
+					if ((INT_PTR)hInst > 32) return 0;
+					flag = false;
 				}
 			}
 			else flag = false;
@@ -575,6 +593,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		IDTLogger->flush_on(spdlog::level::info);
 		IDTLogger->info("[主线程][IdtMain] 日志开始记录 " + utf16ToUtf8(editionDate) + " " + utf16ToUtf8(userId));
 
+		if (launchState == LaunchStateEnum::CrashTry) IDTLogger->warn("[主线程][IdtMain] 发现程序先前发生过崩溃错误");
+
 		//logger->info("");
 		//logger->warn("");
 		//logger->error("");
@@ -674,6 +694,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 					float drawingScale = GetDrawingScale();
 					setlist.eraserSetting.eraserSize = static_cast<int>(60 * drawingScale);
 				}
+
+				setlist.hideTouchPointer = true;
 			}
 			// 性能
 			{
@@ -991,6 +1013,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] 线程初始化完成");
 	}
+	CrashHandler::IsSecond(false);
 
 	IDTLogger->info("[主线程][IdtMain] 开始等待关闭程序信号发出");
 

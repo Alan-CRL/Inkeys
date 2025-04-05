@@ -643,6 +643,7 @@ void SettingMain()
 		bool PointAdsorption = setlist.pointAdsorption;
 		bool SmoothWriting = setlist.smoothWriting;
 		int EraserMode = setlist.eraserSetting.eraserMode;
+		bool HideTouchPointer = setlist.hideTouchPointer;
 
 		int PreparationQuantity = setlist.performanceSetting.preparationQuantity;
 		bool SuperDraw = setlist.performanceSetting.superDraw;
@@ -3029,6 +3030,96 @@ void SettingMain()
 									}
 								}
 								for (char* ptr : vec) free(ptr), ptr = nullptr;
+							}
+
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+							ImGui::EndChild();
+						}
+
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
+						ImGui::EndChild();
+					}
+					{
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(255, 255, 255, 0));
+						ImGui::BeginChild("绘制#5", { 750.0f * settingGlobalScale,130.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						{
+							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+							ImGui::TextUnformatted("实验选项");
+						}
+
+						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+							ImGui::BeginChild("绘制时隐藏触控光标", { 750.0f * settingGlobalScale,100.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+							float cursosPosY = 0;
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+								ImGui::TextUnformatted("绘制时隐藏触控光标");
+							}
+							{
+								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 6));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
+								if (!HideTouchPointer)
+								{
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
+								}
+								else
+								{
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
+								}
+								ImGui::Toggle("##绘制时隐藏触控光标", &HideTouchPointer, config);
+
+								if (setlist.hideTouchPointer != HideTouchPointer)
+								{
+									setlist.hideTouchPointer = HideTouchPointer;
+									WriteSetting();
+								}
+							}
+
+							cursosPosY = ImGui::GetCursorPosY();
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 10.0f * settingGlobalScale });
+
+								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
+								ImGui::BeginChild("绘制时隐藏触控光标-介绍", { 710.0f * settingGlobalScale,30.0f * settingGlobalScale }, false);
+
+								{
+									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
+
+									ImGui::TextWrapped("阻止触控光标（白色圆点）在画布上显示。但是当鼠标和触控笔信号出现时, 则会恢复显示鼠标光标/笔光标。");
+								}
+
+								{
+									if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+									if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+									while (PushFontNum) PushFontNum--, ImGui::PopFont();
+								}
+								ImGui::EndChild();
 							}
 
 							{
@@ -6130,13 +6221,13 @@ void SettingMain()
 							wstring text;
 							{
 								text += L"输入设备按下：";
-								shared_lock<shared_mutex> locktouchNum(touchNumSm);
-								text += touchDown ? L"是" : L"否";
+								text += rtsDown ? L"是" : L"否";
 								text += L"\n输入设备点：";
+								text += to_wstring(rtsNum) + L"\n";
+								text += L"触摸设备点：";
 								text += to_wstring(touchNum) + L"\n";
-								locktouchNum.unlock();
 
-								for (int i = 0; i < touchNum; i++)
+								for (int i = 0; i < rtsNum; i++)
 								{
 									std::shared_lock<std::shared_mutex> lock1(touchPosSm);
 									TouchMode mode = TouchPos[TouchList[i]];
@@ -6146,7 +6237,52 @@ void SettingMain()
 									double speed = TouchSpeed[TouchList[i]];
 									lock2.unlock();
 
-									text += to_wstring(i + 1) + L" pid" + to_wstring(TouchList[i]) + L" 坐标" + to_wstring(mode.pt.x) + L"," + to_wstring(mode.pt.y) + L" 触摸面积" + to_wstring(mode.touchWidth) + L"*" + to_wstring(mode.touchHeight) + L" 速度" + to_wstring(speed) + L" 压力" + to_wstring(mode.pressure) + L"\n";
+									{
+										wstring pid = L"pid" + to_wstring(TouchList[i]);
+										if (pid.length() < 10) pid += wstring(10 - pid.length(), L' ');
+										text += pid + L"|";
+									}
+									{
+										wstring type;
+										if (mode.type == 0) type = L" 触摸点";
+										else if (mode.type == 1)
+										{
+											if (mode.isInvertedCursor) type = L" 触控笔(倒置)";
+											else type = L" 触控笔";
+										}
+										else if (mode.type == 2) type = L" 鼠标(左键)";
+										else if (mode.type == 3) type = L" 鼠标(右键)";
+										if (type.length() < 10) type += wstring(10 - type.length(), L' ');
+										text += type + L"|";
+									}
+									{
+										wstring loc = L" 坐标" + to_wstring(mode.pt.x) + L"," + to_wstring(mode.pt.y);
+										if (loc.length() < 15) loc += wstring(15 - loc.length(), L' ');
+										text += loc + L"|";
+									}
+									{
+										wstring spe = L" 速度" + to_wstring(speed);
+										if (spe.length() < 20) spe += wstring(20 - spe.length(), L' ');
+										text += spe + L"|";
+									}
+									{
+										wstring siz;
+										if (mode.type == 0) siz = L" 面积" + to_wstring(mode.touchWidth) + L"," + to_wstring(mode.touchHeight);
+										else siz = L" 面积(此设备不支持)";
+										if (siz.length() < 15) siz += wstring(15 - siz.length(), L' ');
+										text += siz + L"|";
+									}
+									{
+										wstring pre;
+										if (mode.type == 1 && mode.isInvertedCursor) pre = L" 压力(落笔时)" + to_wstring(mode.pressure);
+										else
+										{
+											if (mode.type == 1) pre = L" 压力" + to_wstring(mode.pressure);
+											else pre = L" 压力(此设备不支持)";
+										}
+										if (pre.length() < 20) pre += wstring(20 - pre.length(), L' ');
+										text += pre + L"\n";
+									}
 								}
 
 								text += L"\nTouchList ";
@@ -6184,7 +6320,9 @@ void SettingMain()
 								text += L"\nPPT 当前页序号：";
 								text += to_wstring(PptInfoState.CurrentPage);
 
-								text += L"\n\n主监视器像素宽度：";
+								text += L"\n\n监视器数量：";
+								text += to_wstring(DisplaysNumber);
+								text += L"\n主监视器像素宽度：";
 								text += to_wstring(MainMonitor.MonitorWidth) + L"px";
 								text += L"\n主监视器像素高度：";
 								text += to_wstring(MainMonitor.MonitorHeight) + L"px";

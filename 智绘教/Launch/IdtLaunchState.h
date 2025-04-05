@@ -6,7 +6,8 @@ enum class LaunchStateEnum : int
 {
 	Normal,
 	Restart,
-	WarnTry
+	WarnTry,
+	CrashTry
 };
 extern LaunchStateEnum launchState;
 extern HANDLE launchMutex;

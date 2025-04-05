@@ -1,8 +1,8 @@
 ﻿#pragma once
 #include "IdtMain.h"
 
-extern bool touchDown;												// 表示触摸设备是否被按下
-extern int touchNum;												// 触摸点的点击个数
+extern IdtAtomic<bool> rtsDown;												// 表示触摸设备是否被按下
+extern IdtAtomic<int> rtsNum, touchNum;										// 触摸点的点击个数
 
 extern unordered_map<LONG, pair<int, int>> PreviousPointPosition;	// 用于速度计算
 
@@ -19,6 +19,9 @@ struct TouchMode
 	FLOAT inkToDeviceScaleY;
 	LONG logicalMin;
 	LONG logicalMax;
+
+	// 信息变量
+	int type; // 触摸0 手写笔1 左键2 右键3
 };
 extern unordered_map<LONG, double> TouchSpeed;
 extern unordered_map<LONG, TouchMode> TouchPos;
@@ -28,13 +31,10 @@ struct TouchInfo
 {
 	LONG pid;
 	TouchMode mode;
-
-	// 信息变量
-	int type; // 触摸0 手写笔1 左键2 右键3
 };
 extern deque<TouchInfo> TouchTemp;
 
-extern shared_mutex touchNumSm, touchPosSm, touchSpeedSm, pointListSm, touchTempSm, touchPointerSm;
+extern shared_mutex touchPosSm, touchSpeedSm, pointListSm, touchTempSm, touchPointerSm;
 
 extern IRealTimeStylus* g_pRealTimeStylus;
 extern IStylusSyncPlugin* g_pSyncEventHandlerRTS;

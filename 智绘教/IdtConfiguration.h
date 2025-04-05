@@ -41,6 +41,8 @@ struct SetListStruct
 		int eraserMode; // 0压感粗细 1笔速粗细 2固定粗细
 		int eraserSize;
 	}eraserSetting;
+
+	IdtAtomic<bool> hideTouchPointer;
 #pragma endregion
 
 #pragma region 性能

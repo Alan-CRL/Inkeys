@@ -120,7 +120,7 @@ private:
 
 public:
 	IdtAtomic() noexcept = default;
-	explicit IdtAtomic(IdtAtomicT desired) noexcept : value(desired) {}
+	IdtAtomic(IdtAtomicT desired) noexcept : value(desired) {}
 	IdtAtomic(const IdtAtomic& other) noexcept { value.store(other.value.load()); }
 
 	IdtAtomic& operator=(const IdtAtomic& other) noexcept {
@@ -146,8 +146,35 @@ public:
 		return value.compare_exchange_strong(expected, desired, success, failure);
 	}
 
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
+	T fetch_add(T arg, std::memory_order order = std::memory_order_seq_cst) noexcept {
+		return value.fetch_add(arg, order);
+	}
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
+	T fetch_sub(T arg, std::memory_order order = std::memory_order_seq_cst) noexcept {
+		return value.fetch_sub(arg, order);
+	}
+
 	operator IdtAtomicT() const noexcept { return load(); }
 	IdtAtomic& operator=(IdtAtomicT desired) noexcept { store(desired); return *this; }
+
+	// Increment/Decrement Operators added
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
+	T operator++() noexcept {
+		return value.fetch_add(1, std::memory_order_seq_cst) + 1;
+	}
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
+	T operator++(int) noexcept {
+		return value.fetch_add(1, std::memory_order_seq_cst);
+	}
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
+	T operator--() noexcept {
+		return value.fetch_sub(1, std::memory_order_seq_cst) - 1;
+	}
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
+	T operator--(int) noexcept {
+		return value.fetch_sub(1, std::memory_order_seq_cst);
+	}
 };
 
 // 调测专用

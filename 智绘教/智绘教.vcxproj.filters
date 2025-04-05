@@ -73,6 +73,12 @@
     <Filter Include="头文件\Launch">
       <UniqueIdentifier>{706bbb49-374e-4c6f-b602-75c6a0116e5c}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\CrashHandler">
+      <UniqueIdentifier>{6a65598e-38bd-4a19-9735-3a1762014fd1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\CrashHandler">
+      <UniqueIdentifier>{d9b1228c-55af-4733-a011-9eebd0ff53ba}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HiEasyX.h">
@@ -708,6 +714,9 @@
     <ClInclude Include="Launch\IdtLaunchState.h">
       <Filter>头文件\Launch</Filter>
     </ClInclude>
+    <ClInclude Include="CrashHandler\CrashHandler.h">
+      <Filter>头文件\CrashHandler</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HiEasyX\HiGUI\Button.cpp">
@@ -958,6 +967,9 @@
     </ClCompile>
     <ClCompile Include="Launch\IdtLaunchState.cpp">
       <Filter>源文件\Launch</Filter>
+    </ClCompile>
+    <ClCompile Include="CrashHandler\CrashHandler.cpp">
+      <Filter>源文件\CrashHandler</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

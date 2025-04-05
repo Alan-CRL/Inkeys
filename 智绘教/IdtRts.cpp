@@ -2,10 +2,10 @@
 
 #include "IdtDrawpad.h"
 
-bool touchDown = false;										// 表示触摸设备是否被按下
-int touchNum = 0;											// 触摸点的点击个数
+IdtAtomic<bool> rtsDown = false;										// 表示触摸设备是否被按下
+IdtAtomic<int> rtsNum = 0, touchNum = 0;								// 触摸点的点击个数
 
-unordered_map<LONG, pair<int, int>> PreviousPointPosition;	//用于速度计算
+unordered_map<LONG, pair<int, int>> PreviousPointPosition;				//用于速度计算
 unordered_map<LONG, double> TouchSpeed;
 
 unordered_map<LONG, TouchMode> TouchPos;
@@ -15,7 +15,7 @@ vector<LONG> TouchList;
 LONG TouchCnt = 0;
 unordered_map<LONG, LONG> TouchPointer;
 
-shared_mutex touchNumSm, touchPosSm, touchSpeedSm, pointListSm, touchTempSm, touchPointerSm;
+shared_mutex touchPosSm, touchSpeedSm, pointListSm, touchTempSm, touchPointerSm;
 
 IRealTimeStylus* g_pRealTimeStylus = NULL;
 IStylusSyncPlugin* g_pSyncEventHandlerRTS = NULL;
@@ -161,6 +161,7 @@ HRESULT CSyncEventHandlerRTS::StylusDown(IRealTimeStylus* piRtsSrc, const Stylus
 	}
 	piRtsSrc->GetPacketDescriptionData(pStylusInfo->tcid, nullptr, nullptr, &ulPacketProperties, &pPacketProperties);
 
+	// 获取数据包信息
 	for (int i = 0; i < ulPacketProperties; i++)
 	{
 		GUID guid = pPacketProperties[i].guid;
@@ -177,11 +178,36 @@ HRESULT CSyncEventHandlerRTS::StylusDown(IRealTimeStylus* piRtsSrc, const Stylus
 		else if (guid == GUID_PACKETPROPERTY_GUID_HEIGHT) mode.touchHeight = LONG(pPacket[i] * mode.inkToDeviceScaleY + 0.5);
 	}
 	CoTaskMemFree(pPacketProperties);
+	// 获取设备类型
+	int deviceType = 0;
+	{
+		IInkTablet* piTablet = NULL;
+		piRtsSrc->GetTabletFromTabletContextId(pStylusInfo->tcid, &piTablet);
+
+		IInkTablet2* piTablet2 = NULL;
+		piTablet->QueryInterface(&piTablet2);
+
+		TabletDeviceKind temp;
+		piTablet2->get_DeviceKind(&temp);
+
+		{
+			if (temp == TabletDeviceKind::TDK_Touch) mode.type = deviceType = 0;
+			else if (temp == TabletDeviceKind::TDK_Pen) mode.type = deviceType = 1;
+			else
+			{
+				if (KeyBoradDown[VK_RBUTTON] && !KeyBoradDown[VK_LBUTTON]) mode.type = deviceType = 3;
+				else mode.type = deviceType = 2;
+			}
+		}
+
+		piTablet2->Release();
+		piTablet->Release();
+	}
+	mode.isInvertedCursor = pStylusInfo->bIsInvertedCursor;
 
 	unique_lock<shared_mutex> lockTouchPointer(touchPointerSm);
 	TouchPointer[pStylusInfo->cid] = ++TouchCnt;
 	info.pid = TouchCnt;
-	TouchCnt %= 100000;
 	lockTouchPointer.unlock();
 
 	std::unique_lock<std::shared_mutex> lock1(touchPosSm);
@@ -197,40 +223,15 @@ HRESULT CSyncEventHandlerRTS::StylusDown(IRealTimeStylus* piRtsSrc, const Stylus
 	TouchList.push_back(TouchCnt);
 	lock3.unlock();
 
-	// 获取设备类型
-	{
-		IInkTablet* piTablet = NULL;
-		piRtsSrc->GetTabletFromTabletContextId(pStylusInfo->tcid, &piTablet);
-
-		IInkTablet2* piTablet2 = NULL;
-		piTablet->QueryInterface(&piTablet2);
-
-		TabletDeviceKind temp;
-		piTablet2->get_DeviceKind(&temp);
-
-		{
-			if (temp == TabletDeviceKind::TDK_Touch) info.type = 0;
-			else if (temp == TabletDeviceKind::TDK_Pen) info.type = 1;
-			else
-			{
-				if (KeyBoradDown[VK_RBUTTON] && !KeyBoradDown[VK_LBUTTON]) info.type = 3;
-				else info.type = 2;
-			}
-		}
-
-		piTablet2->Release();
-		piTablet->Release();
-	}
-	mode.isInvertedCursor = pStylusInfo->bIsInvertedCursor;
 	info.mode = mode;
 
 	std::unique_lock<std::shared_mutex> lock4(touchTempSm);
 	TouchTemp.push_back(info);
 	lock4.unlock();
 
-	unique_lock<shared_mutex> locktouchNum(touchNumSm);
-	touchNum++, touchDown = true;
-	locktouchNum.unlock();
+	rtsNum++, rtsDown = true;
+	if (deviceType == 0) touchNum++;
+	TouchCnt %= 100000;
 
 	return S_OK;
 }
@@ -238,29 +239,37 @@ HRESULT CSyncEventHandlerRTS::StylusUp(IRealTimeStylus*, const StylusInfo* pStyl
 {
 	// 这是一个抬起状态
 
-	unique_lock<shared_mutex> locktouchNum(touchNumSm);
-	touchNum = max(0, touchNum - 1);
-	if (touchNum == 0) touchDown = false;
-	locktouchNum.unlock();
+	rtsNum = max(0, rtsNum - 1);
+	if (rtsNum == 0) rtsDown = false;
 
-	auto it = std::find(TouchList.begin(), TouchList.end(), TouchPointer[pStylusInfo->cid]);
+	int pid = TouchPointer[pStylusInfo->cid];
+
+	auto it = std::find(TouchList.begin(), TouchList.end(), pid);
 	if (it != TouchList.end())
 	{
-		std::unique_lock<std::shared_mutex> lock1(pointListSm);
+		shared_lock<shared_mutex> lockPointPosSm(touchPosSm);
+		{
+			if (TouchPos.find(pid) != TouchPos.end())
+			{
+				if (TouchPos[pid].type == 0)
+					touchNum = max(0, touchNum - 1);
+			}
+		}
+		lockPointPosSm.unlock();
+
+		unique_lock<shared_mutex> lockPointListSm(pointListSm);
 		TouchList.erase(it);
 		TouchPointer.erase(pStylusInfo->cid);
-		lock1.unlock();
+		lockPointListSm.unlock();
 	}
 
-	shared_lock<shared_mutex> locktouchNum2(touchNumSm);
-	int touchNumTemp = touchNum;
-	locktouchNum2.unlock();
-
-	if (touchNumTemp == 0)
+	if (rtsNum == 0)
 	{
-		unique_lock<shared_mutex> lock(touchPosSm);
+		unique_lock<shared_mutex> lockTouchPosSm(touchPosSm);
 		TouchPos.clear();
-		lock.unlock();
+		lockTouchPosSm.unlock();
+
+		touchNum = 0;
 	}
 
 	return S_OK;
@@ -312,7 +321,7 @@ void RTSSpeed()
 	clock_t tRecord = 0;
 	while (!offSignal)
 	{
-		for (int i = 0; i < touchNum; i++)
+		for (int i = 0; i < rtsNum; i++)
 		{
 			std::shared_lock<std::shared_mutex> lock1(touchPosSm);
 			x = TouchPos[TouchList[i]].pt.x;
