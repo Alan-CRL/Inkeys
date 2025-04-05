@@ -20,7 +20,7 @@
 
 floating_windowsStruct floating_windows;
 
-IMAGE floating_icon[25], sign;
+IMAGE floating_icon[30], sign;
 IMAGE skin[5];
 
 double state;
@@ -266,6 +266,9 @@ void DrawScreen()
 
 			idtLoadImage(&floating_icon[21], L"PNG", L"CustomizeIco1", 40, 40, true);
 			idtLoadImage(&floating_icon[22], L"PNG", L"CustomizeIco2", 40, 40, true);
+			idtLoadImage(&floating_icon[23], L"PNG", L"CustomizeIco3", 40, 40, true);
+			idtLoadImage(&floating_icon[24], L"PNG", L"CustomizeIco4", 40, 40, true);
+			idtLoadImage(&floating_icon[25], L"PNG", L"CustomizeIco5", 40, 40, true);
 
 			idtLoadImage(&sign, L"PNG", L"sign1", 30, 30, true);
 

@@ -59,12 +59,6 @@ map <wstring, bool> threadStatus;				// 线程状态管理
 
 shared_ptr<spdlog::logger> IDTLogger;
 
-void CauseCrash_AV()
-{
-	volatile int* p = nullptr;
-	*p = 123;
-}
-
 // 程序入口点
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
 // int main()
@@ -179,9 +173,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	// 崩溃助手初始化
 	{
 		CrashHandler::Initialize();
-		CrashHandler::SetFlag(3);
-
-		CauseCrash_AV();
 	}
 	// 体系架构识别
 	{
@@ -709,6 +700,18 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				{
 					setlist.shortcutAssistant.correctLnk = true;
 					setlist.shortcutAssistant.createLnk = false;
+				}
+			}
+			// 组件
+			{
+				{
+					setlist.component.explorer = false;
+					setlist.component.desktop = false;
+					setlist.component.keyboardesc = false;
+					setlist.component.classislandSettings = false;
+					setlist.component.classislandProfile = false;
+					setlist.component.classislandClassswap = false;
+					setlist.component.classislandIslandCaller = false;
 				}
 			}
 

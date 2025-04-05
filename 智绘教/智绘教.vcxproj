@@ -290,7 +290,7 @@
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -642,6 +642,9 @@
     <Image Include="src\ppt\arrow_right.png" />
     <Image Include="src\ppt\arrow_up.png" />
     <Image Include="src\ppt\end_show.png" />
+    <Image Include="src\quick\desktop.png" />
+    <Image Include="src\quick\explorer.png" />
+    <Image Include="src\quick\keyboardesc.png" />
     <Image Include="src\rectangle.png" />
     <Image Include="src\right.png" />
     <Image Include="src\rubber.png" />

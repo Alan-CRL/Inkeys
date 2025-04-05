@@ -223,6 +223,19 @@ bool ReadSetting()
 					setlist.shortcutAssistant.createLnk = updateVal["PlugIn"]["ShortcutAssistant"]["CreateLnk"].asBool();
 			}
 		}
+		if (updateVal.isMember("Component") && updateVal["Component"].isObject())
+		{
+			if (updateVal["PlugIn"].isMember("explorer") && updateVal["PlugIn"]["explorer"].isBool())
+				ddbInteractionSetList.enable = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Enable"].asBool();
+
+			IdtAtomic<bool> explorer;
+			IdtAtomic<bool> desktop;
+			IdtAtomic<bool> keyboardesc;
+			IdtAtomic<bool> classislandSettings;
+			IdtAtomic<bool> classislandProfile;
+			IdtAtomic<bool> classislandClassswap;
+			IdtAtomic<bool> classislandIslandCaller;
+		}
 	}
 	else return false;
 

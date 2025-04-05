@@ -1170,6 +1170,15 @@
     <Image Include="src\IslandCaller.png">
       <Filter>资源文件</Filter>
     </Image>
+    <Image Include="src\quick\desktop.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\quick\explorer.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\quick\keyboardesc.png">
+      <Filter>资源文件</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />

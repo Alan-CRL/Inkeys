@@ -54,6 +54,19 @@ struct SetListStruct
 	}performanceSetting;
 #pragma endregion
 
+#pragma region 组件
+	struct
+	{
+		IdtAtomic<bool> explorer;
+		IdtAtomic<bool> desktop;
+		IdtAtomic<bool> keyboardesc;
+		IdtAtomic<bool> classislandSettings;
+		IdtAtomic<bool> classislandProfile;
+		IdtAtomic<bool> classislandClassswap;
+		IdtAtomic<bool> classislandIslandCaller;
+	}component;
+#pragma endregion
+
 #pragma region 插件
 	struct
 	{
