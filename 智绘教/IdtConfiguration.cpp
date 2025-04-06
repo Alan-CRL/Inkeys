@@ -225,16 +225,20 @@ bool ReadSetting()
 		}
 		if (updateVal.isMember("Component") && updateVal["Component"].isObject())
 		{
-			if (updateVal["PlugIn"].isMember("explorer") && updateVal["PlugIn"]["explorer"].isBool())
-				ddbInteractionSetList.enable = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Enable"].asBool();
-
-			IdtAtomic<bool> explorer;
-			IdtAtomic<bool> desktop;
-			IdtAtomic<bool> keyboardesc;
-			IdtAtomic<bool> classislandSettings;
-			IdtAtomic<bool> classislandProfile;
-			IdtAtomic<bool> classislandClassswap;
-			IdtAtomic<bool> classislandIslandCaller;
+			if (updateVal["Component"].isMember("Explorer") && updateVal["Component"]["Explorer"].isBool())
+				setlist.component.explorer = updateVal["Component"]["Explorer"].asBool();
+			if (updateVal["Component"].isMember("Desktop") && updateVal["Component"]["Desktop"].isBool())
+				setlist.component.desktop = updateVal["Component"]["Desktop"].asBool();
+			if (updateVal["Component"].isMember("Keyboardesc") && updateVal["Component"]["Keyboardesc"].isBool())
+				setlist.component.keyboardesc = updateVal["Component"]["Keyboardesc"].asBool();
+			if (updateVal["Component"].isMember("ClassislandSettings") && updateVal["Component"]["ClassislandSettings"].isBool())
+				setlist.component.classislandSettings = updateVal["Component"]["ClassislandSettings"].asBool();
+			if (updateVal["Component"].isMember("ClassislandProfile") && updateVal["Component"]["ClassislandProfile"].isBool())
+				setlist.component.classislandProfile = updateVal["Component"]["ClassislandProfile"].asBool();
+			if (updateVal["Component"].isMember("ClassislandClassswap") && updateVal["Component"]["ClassislandClassswap"].isBool())
+				setlist.component.classislandClassswap = updateVal["Component"]["ClassislandClassswap"].asBool();
+			if (updateVal["Component"].isMember("ClassislandIslandCaller") && updateVal["Component"]["ClassislandIslandCaller"].isBool())
+				setlist.component.classislandIslandCaller = updateVal["Component"]["ClassislandIslandCaller"].asBool();
 		}
 	}
 	else return false;
@@ -316,6 +320,15 @@ bool WriteSetting()
 				updateVal["PlugIn"]["ShortcutAssistant"]["CorrectLnk"] = Json::Value(setlist.shortcutAssistant.correctLnk);
 				updateVal["PlugIn"]["ShortcutAssistant"]["CreateLnk"] = Json::Value(setlist.shortcutAssistant.createLnk);
 			}
+		}
+		{
+			updateVal["Component"]["Explorer"] = Json::Value(setlist.component.explorer);
+			updateVal["Component"]["Desktop"] = Json::Value(setlist.component.desktop);
+			updateVal["Component"]["Keyboardesc"] = Json::Value(setlist.component.keyboardesc);
+			updateVal["Component"]["ClassislandSettings"] = Json::Value(setlist.component.classislandSettings);
+			updateVal["Component"]["ClassislandProfile"] = Json::Value(setlist.component.classislandProfile);
+			updateVal["Component"]["ClassislandClassswap"] = Json::Value(setlist.component.classislandClassswap);
+			updateVal["Component"]["ClassislandIslandCaller"] = Json::Value(setlist.component.classislandIslandCaller);
 		}
 	}
 

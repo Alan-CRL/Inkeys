@@ -4618,10 +4618,15 @@ void DrawScreen()
 				graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumnOptions]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 			}
 
-			// Customize1
-			/*
+			// Customize
 			{
-				hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[21], UIControl[L"Image/Customize1/transparency"].v);
+				if (setlist.component.desktop) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[23], UIControl[L"Image/Customize1/transparency"].v);
+				else if (setlist.component.explorer) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[24], UIControl[L"Image/Customize1/transparency"].v);
+				else if (setlist.component.keyboardesc) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[25], UIControl[L"Image/Customize1/transparency"].v);
+				else if (setlist.component.classislandSettings) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[21], UIControl[L"Image/Customize1/transparency"].v);
+				else if (setlist.component.classislandProfile) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[21], UIControl[L"Image/Customize1/transparency"].v);
+				else if (setlist.component.classislandClassswap) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[21], UIControl[L"Image/Customize1/transparency"].v);
+				else if (setlist.component.classislandIslandCaller) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[22], UIControl[L"Image/Customize1/transparency"].v);
 
 				Gdiplus::Font gp_font(&HarmonyOS_fontFamily, UIControl[L"Words/Customize1/height"].v, FontStyleRegular, UnitPixel);
 				SolidBrush WordBrush(hiex::ConvertToGdiplusColor(UIControlColor[L"Words/Customize1/words_color"].v, true));
@@ -4632,8 +4637,15 @@ void DrawScreen()
 					words_rect.right = LONG(UIControl[L"Words/Customize1/right"].v);
 					words_rect.bottom = LONG(UIControl[L"Words/Customize1/bottom"].v);
 				}
-				graphics.DrawString(L"快速换课", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
-			}*/
+
+				if (setlist.component.desktop) graphics.DrawString(L"返回桌面", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else if (setlist.component.explorer) graphics.DrawString(L"打开文件", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else if (setlist.component.keyboardesc) graphics.DrawString(L"ESC键", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else if (setlist.component.classislandSettings) graphics.DrawString(L"CI设置", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else if (setlist.component.classislandProfile) graphics.DrawString(L"档案编辑", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else if (setlist.component.classislandClassswap) graphics.DrawString(L"快速换课", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else if (setlist.component.classislandIslandCaller) graphics.DrawString(L"随机点名", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+			}
 
 			//插件空位1：随机点名
 			{
