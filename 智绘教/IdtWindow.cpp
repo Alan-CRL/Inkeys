@@ -55,7 +55,7 @@ void TopWindow()
 {
 	// 等待窗口绘制
 	IDTLogger->info("[窗口置顶线程][TopWindow] 等待窗口初次绘制");
-	for (int i = 1; i <= 20; i++)
+	for (int i = 1; i <= 2000000; i++)
 	{
 		this_thread::sleep_for(chrono::milliseconds(500));
 

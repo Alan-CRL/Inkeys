@@ -18,6 +18,9 @@
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
 
+#include <shldisp.h>
+#include <exdisp.h>
+
 floating_windowsStruct floating_windows;
 
 IMAGE floating_icon[30], sign;
@@ -1043,12 +1046,13 @@ void DrawScreen()
 	graphics.SetSmoothingMode(SmoothingModeHighQuality);
 
 	//LOG(INFO) << "成功初始化悬浮窗窗口绘制模块";
-	clock_t tRecord = clock();
+	chrono::high_resolution_clock::time_point reckon;
 	for (int for_num = 1; !offSignal; for_num = 2)
 	{
+		reckon = chrono::high_resolution_clock::now();
 		GetStateMode_Discard(&floatingInfo);
 
-		//UI计算部分
+		// UI计算部分
 		{
 			if ((int)state == 0)
 			{
@@ -4638,7 +4642,7 @@ void DrawScreen()
 					words_rect.bottom = LONG(UIControl[L"Words/Customize1/bottom"].v);
 				}
 
-				if (setlist.component.desktop) graphics.DrawString(L"返回桌面", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				if (setlist.component.desktop) graphics.DrawString(L"显示桌面", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 				else if (setlist.component.explorer) graphics.DrawString(L"打开文件", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 				else if (setlist.component.keyboardesc) graphics.DrawString(L"ESC键", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 				else if (setlist.component.classislandSettings) graphics.DrawString(L"CI设置", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
@@ -5223,12 +5227,11 @@ void DrawScreen()
 			IdtWindowsIsVisible.floatingWindow = true;
 		}
 
-		if (tRecord)
+		// 帧率锁
 		{
-			int delay = 1000 / 24 - (clock() - tRecord);
-			if (delay > 0) std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+			double delay = 1000.0 / 24.0 - chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count();
+			if (delay >= 1.0) std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(delay)));
 		}
-		tRecord = clock();
 	}
 
 	threadStatus[L"DrawScreen"] = false;
@@ -6182,8 +6185,7 @@ void MouseInteraction()
 					}
 				}
 
-				// 自定义位置1
-				/*
+				// 自定义位置
 				if (IsInRect(m.x, m.y, { 384 + 8, floating_windows.height - 156 + 8, 384 + 8 + 80, floating_windows.height - 156 + 8 + 80 }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
@@ -6196,7 +6198,45 @@ void MouseInteraction()
 							{
 								if (!m.lbutton)
 								{
-									ShellExecute(NULL, L"open", L"classisland://app/class-swap", NULL, NULL, SW_SHOWNORMAL);
+									if (setlist.component.desktop)
+									{
+										IShellDispatch4* pShellDispatch = NULL;
+										HRESULT hr = E_FAIL;
+
+										hr = CoCreateInstance(CLSID_Shell, NULL, CLSCTX_INPROC_SERVER, IID_IShellDispatch4, (void**)&pShellDispatch);
+										if (SUCCEEDED(hr) && pShellDispatch != NULL)
+										{
+											hr = pShellDispatch->ToggleDesktop();
+
+											pShellDispatch->Release();
+											pShellDispatch = NULL;
+										}
+									}
+									else if (setlist.component.explorer)
+									{
+										ShellExecute(NULL, L"open", L"explorer.exe", NULL, NULL, SW_SHOWNORMAL);
+									}
+									else if (setlist.component.keyboardesc)
+									{
+										keybd_event(VK_ESCAPE, 0, 0, 0);
+										keybd_event(VK_ESCAPE, 0, KEYEVENTF_KEYUP, 0);
+									}
+									else if (setlist.component.classislandSettings)
+									{
+										ShellExecute(NULL, L"open", L"classisland://app/settings/", NULL, NULL, SW_SHOWNORMAL);
+									}
+									else if (setlist.component.classislandProfile)
+									{
+										ShellExecute(NULL, L"open", L"classisland://app/profile/", NULL, NULL, SW_SHOWNORMAL);
+									}
+									else if (setlist.component.classislandClassswap)
+									{
+										ShellExecute(NULL, L"open", L"classisland://app/class-swap", NULL, NULL, SW_SHOWNORMAL);
+									}
+									else if (setlist.component.classislandIslandCaller)
+									{
+										ShellExecute(NULL, L"open", L"classisland://plugins/IslandCaller/Run", NULL, NULL, SW_SHOWNORMAL);
+									}
 
 									break;
 								}
@@ -6212,7 +6252,7 @@ void MouseInteraction()
 
 						MouseInteractionManipulated = std::chrono::high_resolution_clock::now();
 					}
-				}*/
+				}
 
 				// 临时插件：随机点名
 				if (plug_in_RandomRollCall.select == 2)
