@@ -17,7 +17,7 @@
 
 #pragma once
 
-#define IDT_RELEASE
+// #define IDT_RELEASE
 // #pragma comment( linker, "/subsystem:windows /entry:mainCRTStartup" )
 
 // 智绘教最低兼容 Windows 7 sp0
@@ -103,7 +103,10 @@ extern wstring dataPath;
 extern wstring programArchitecture;
 extern wstring targetArchitecture;
 
-extern int offSignal, offSignalReady; //关闭指令
+void CloseProgram();
+void RestartProgram();
+
+extern int offSignal; //关闭指令
 extern map <wstring, bool> threadStatus; //线程状态管理
 
 extern shared_ptr<spdlog::logger> IDTLogger;

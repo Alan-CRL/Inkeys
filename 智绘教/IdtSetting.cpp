@@ -1131,7 +1131,7 @@ void SettingMain()
 						if (ImGui::Button("   \ue72c   重启程序", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }))
 						{
 							test.select = false;
-							offSignal = 2;
+							RestartProgram();
 						}
 					}
 
@@ -1150,7 +1150,7 @@ void SettingMain()
 						if (ImGui::Button("   \ue711   关闭程序", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }))
 						{
 							test.select = false;
-							offSignal = true;
+							CloseProgram();
 						}
 					}
 

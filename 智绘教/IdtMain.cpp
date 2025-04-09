@@ -44,7 +44,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250406a";				// 程序发布日期
+wstring editionDate = L"20250409a";				// 程序发布日期
 wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -56,6 +56,17 @@ wstring targetArchitecture = L"win32";
 
 int offSignal = false;							// 关闭指令
 map <wstring, bool> threadStatus;				// 线程状态管理
+
+void CloseProgram()
+{
+	CrashHandler::Shutdown();
+	offSignal = 1;
+}
+void RestartProgram()
+{
+	CrashHandler::Shutdown();
+	offSignal = 2;
+}
 
 shared_ptr<spdlog::logger> IDTLogger;
 

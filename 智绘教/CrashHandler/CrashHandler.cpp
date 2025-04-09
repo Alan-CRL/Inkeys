@@ -192,7 +192,8 @@ bool CrashHandler::GenerateMiniDump(EXCEPTION_POINTERS* pExceptionInfo, const fs
 		MiniDumpWithDataSegs |
 		MiniDumpWithHandleData |
 		MiniDumpWithUnloadedModules |
-		MiniDumpWithThreadInfo);
+		MiniDumpWithThreadInfo
+		| MiniDumpWithPrivateReadWriteMemory);
 
 	// --- 写入 Dump 文件 ---
 	// MiniDumpWriteDump 函数本身是 ANSI/Unicode 中性的，参数决定行为

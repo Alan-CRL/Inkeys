@@ -328,7 +328,7 @@ void StateMonitoring()
 		if (chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now() - StateMonitoringManipulated).count() >= 3000 && !offSignal)
 		{
 			MessageBox(floating_window, L"There is a problem with the state of the whiteboard, click OK to restart 智绘教Inkeys to try to solve the problem.(#6)\n画板状态出现问题，点击确定重启 智绘教Inkeys 以尝试解决问题。(#6)", L"Inkeys Error | 智绘教错误", MB_OK | MB_SYSTEMMODAL);
-			offSignal = 2;
+			RestartProgram();
 
 			return;
 		}

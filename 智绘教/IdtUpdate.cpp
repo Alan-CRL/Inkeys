@@ -395,7 +395,7 @@ updateStart:
 						if (mandatoryUpdate)
 						{
 							mandatoryUpdate = false;
-							offSignal = 2;
+							RestartProgram();
 						}
 						break;
 					}
