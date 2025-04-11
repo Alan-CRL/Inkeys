@@ -1179,6 +1179,18 @@
     <Image Include="src\quick\keyboardesc.png">
       <Filter>资源文件</Filter>
     </Image>
+    <Image Include="src\quick\altf4.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\quick\control.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\quick\lockworkstation.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\quick\taskmgr.png">
+      <Filter>资源文件</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />

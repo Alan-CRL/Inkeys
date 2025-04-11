@@ -143,6 +143,14 @@ CUSTOMIZEICO4           PNG                     "src\\quick\\explorer.png"
 
 CUSTOMIZEICO5           PNG                     "src\\quick\\keyboardesc.png"
 
+CUSTOMIZEICO6           PNG                     "src\\quick\\altf4.png"
+
+CUSTOMIZEICO7           PNG                     "src\\quick\\control.png"
+
+CUSTOMIZEICO8           PNG                     "src\\quick\\lockworkstation.png"
+
+CUSTOMIZEICO9           PNG                     "src\\quick\\taskmgr.png"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //

@@ -697,7 +697,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 					setlist.eraserSetting.eraserSize = static_cast<int>(60 * drawingScale);
 				}
 
-				setlist.hideTouchPointer = true;
+				setlist.hideTouchPointer = false;
 			}
 			// 性能
 			{

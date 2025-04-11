@@ -642,9 +642,13 @@
     <Image Include="src\ppt\arrow_right.png" />
     <Image Include="src\ppt\arrow_up.png" />
     <Image Include="src\ppt\end_show.png" />
+    <Image Include="src\quick\altf4.png" />
+    <Image Include="src\quick\control.png" />
     <Image Include="src\quick\desktop.png" />
     <Image Include="src\quick\explorer.png" />
     <Image Include="src\quick\keyboardesc.png" />
+    <Image Include="src\quick\lockworkstation.png" />
+    <Image Include="src\quick\taskmgr.png" />
     <Image Include="src\rectangle.png" />
     <Image Include="src\right.png" />
     <Image Include="src\rubber.png" />

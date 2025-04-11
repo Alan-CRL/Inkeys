@@ -57,24 +57,37 @@ struct SetListStruct
 #pragma region 组件
 	struct
 	{
-		// 应用
-		IdtAtomic<bool> explorer;
-		IdtAtomic<bool> taskmgr;
-		IdtAtomic<bool> control;
-
-		// 系统操作
-		IdtAtomic<bool> desktop;
-		IdtAtomic<bool> lockWorkStation;
-
-		// 键盘模拟
-		IdtAtomic<bool> keyboardesc;
-		IdtAtomic<bool> keyboardAltF4;
-
-		// 联动
-		IdtAtomic<bool> classislandSettings;
-		IdtAtomic<bool> classislandProfile;
-		IdtAtomic<bool> classislandClassswap;
-		IdtAtomic<bool> classislandIslandCaller;
+		// 快捷按钮
+		struct
+		{
+			struct
+			{
+				// 应用
+				IdtAtomic<bool> explorer;
+				IdtAtomic<bool> taskmgr;
+				IdtAtomic<bool> control;
+			} appliance;
+			struct
+			{
+				// 系统操作
+				IdtAtomic<bool> desktop;
+				IdtAtomic<bool> lockWorkStation;
+			} system;
+			struct
+			{
+				// 键盘模拟
+				IdtAtomic<bool> keyboardesc;
+				IdtAtomic<bool> keyboardAltF4;
+			} keyboard;
+			struct
+			{
+				// 联动
+				IdtAtomic<bool> classislandSettings;
+				IdtAtomic<bool> classislandProfile;
+				IdtAtomic<bool> classislandClassswap;
+				IdtAtomic<bool> classislandIslandCaller;
+			} linkage;
+		} shortcutButton;
 	}component;
 #pragma endregion
 

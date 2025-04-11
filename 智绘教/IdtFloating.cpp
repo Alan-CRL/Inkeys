@@ -267,11 +267,15 @@ void DrawScreen()
 			idtLoadImage(&floating_icon[17], L"PNG", L"icon17", 20, 20, true);
 			idtLoadImage(&floating_icon[20], L"PNG", L"icon20", 20, 20, true);
 
-			idtLoadImage(&floating_icon[21], L"PNG", L"CustomizeIco1", 40, 40, true);
-			idtLoadImage(&floating_icon[22], L"PNG", L"CustomizeIco2", 40, 40, true);
-			idtLoadImage(&floating_icon[23], L"PNG", L"CustomizeIco3", 40, 40, true);
-			idtLoadImage(&floating_icon[24], L"PNG", L"CustomizeIco4", 40, 40, true);
-			idtLoadImage(&floating_icon[25], L"PNG", L"CustomizeIco5", 40, 40, true);
+			idtLoadImage(&floating_icon[21], L"PNG", L"CustomizeIco1", 40, 40, true); // CI
+			idtLoadImage(&floating_icon[22], L"PNG", L"CustomizeIco2", 40, 40, true); // CI isc
+			idtLoadImage(&floating_icon[23], L"PNG", L"CustomizeIco3", 40, 40, true); // desktop
+			idtLoadImage(&floating_icon[24], L"PNG", L"CustomizeIco4", 40, 40, true); // explorer
+			idtLoadImage(&floating_icon[25], L"PNG", L"CustomizeIco5", 40, 40, true); // esc
+			idtLoadImage(&floating_icon[26], L"PNG", L"CustomizeIco6", 40, 40, true); // altf4
+			idtLoadImage(&floating_icon[27], L"PNG", L"CustomizeIco7", 40, 40, true); // control
+			idtLoadImage(&floating_icon[28], L"PNG", L"CustomizeIco8", 40, 40, true); // lockS
+			idtLoadImage(&floating_icon[29], L"PNG", L"CustomizeIco9", 40, 40, true); // taskmgr
 
 			idtLoadImage(&sign, L"PNG", L"sign1", 30, 30, true);
 
@@ -1627,6 +1631,7 @@ void DrawScreen()
 						UIControlColorTarget[L"RoundRect/BrushInterval/fill"].v = RGBA(150, 150, 150, 0);
 					}
 				}
+
 				//图像
 				{
 					{
@@ -4624,13 +4629,20 @@ void DrawScreen()
 
 			// Customize
 			{
-				if (setlist.component.desktop) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[23], UIControl[L"Image/Customize1/transparency"].v);
-				else if (setlist.component.explorer) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[24], UIControl[L"Image/Customize1/transparency"].v);
-				else if (setlist.component.keyboardesc) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[25], UIControl[L"Image/Customize1/transparency"].v);
-				else if (setlist.component.classislandSettings) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[21], UIControl[L"Image/Customize1/transparency"].v);
-				else if (setlist.component.classislandProfile) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[21], UIControl[L"Image/Customize1/transparency"].v);
-				else if (setlist.component.classislandClassswap) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[21], UIControl[L"Image/Customize1/transparency"].v);
-				else if (setlist.component.classislandIslandCaller) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[22], UIControl[L"Image/Customize1/transparency"].v);
+				if (setlist.component.shortcutButton.appliance.explorer) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[24], UIControl[L"Image/Customize1/transparency"].v);
+				else if (setlist.component.shortcutButton.appliance.taskmgr) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[29], UIControl[L"Image/Customize1/transparency"].v);
+				else if (setlist.component.shortcutButton.appliance.control) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[27], UIControl[L"Image/Customize1/transparency"].v);
+
+				else if (setlist.component.shortcutButton.system.desktop) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[23], UIControl[L"Image/Customize1/transparency"].v);
+				else if (setlist.component.shortcutButton.system.lockWorkStation) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[28], UIControl[L"Image/Customize1/transparency"].v);
+
+				else if (setlist.component.shortcutButton.keyboard.keyboardesc) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[25], UIControl[L"Image/Customize1/transparency"].v);
+				else if (setlist.component.shortcutButton.keyboard.keyboardAltF4) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[26], UIControl[L"Image/Customize1/transparency"].v);
+
+				else if (setlist.component.shortcutButton.linkage.classislandSettings) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[21], UIControl[L"Image/Customize1/transparency"].v);
+				else if (setlist.component.shortcutButton.linkage.classislandProfile) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[21], UIControl[L"Image/Customize1/transparency"].v);
+				else if (setlist.component.shortcutButton.linkage.classislandClassswap) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[21], UIControl[L"Image/Customize1/transparency"].v);
+				else if (setlist.component.shortcutButton.linkage.classislandIslandCaller) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[22], UIControl[L"Image/Customize1/transparency"].v);
 
 				Gdiplus::Font gp_font(&HarmonyOS_fontFamily, UIControl[L"Words/Customize1/height"].v, FontStyleRegular, UnitPixel);
 				SolidBrush WordBrush(hiex::ConvertToGdiplusColor(UIControlColor[L"Words/Customize1/words_color"].v, true));
@@ -4642,13 +4654,20 @@ void DrawScreen()
 					words_rect.bottom = LONG(UIControl[L"Words/Customize1/bottom"].v);
 				}
 
-				if (setlist.component.desktop) graphics.DrawString(L"显示桌面", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
-				else if (setlist.component.explorer) graphics.DrawString(L"打开文件", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
-				else if (setlist.component.keyboardesc) graphics.DrawString(L"ESC键", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
-				else if (setlist.component.classislandSettings) graphics.DrawString(L"CI设置", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
-				else if (setlist.component.classislandProfile) graphics.DrawString(L"档案编辑", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
-				else if (setlist.component.classislandClassswap) graphics.DrawString(L"快速换课", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
-				else if (setlist.component.classislandIslandCaller) graphics.DrawString(L"随机点名", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				if (setlist.component.shortcutButton.appliance.explorer) graphics.DrawString(L"文件管理器", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else if (setlist.component.shortcutButton.appliance.taskmgr) graphics.DrawString(L"任务管理器", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else if (setlist.component.shortcutButton.appliance.control) graphics.DrawString(L"显示桌面", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+
+				else if (setlist.component.shortcutButton.system.desktop) graphics.DrawString(L"显示桌面", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else if (setlist.component.shortcutButton.system.lockWorkStation) graphics.DrawString(L"锁屏", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+
+				else if (setlist.component.shortcutButton.keyboard.keyboardesc) graphics.DrawString(L"ESC键", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else if (setlist.component.shortcutButton.keyboard.keyboardAltF4) graphics.DrawString(L"Alt+F4", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+
+				else if (setlist.component.shortcutButton.linkage.classislandSettings) graphics.DrawString(L"CI设置", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else if (setlist.component.shortcutButton.linkage.classislandProfile) graphics.DrawString(L"档案编辑", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else if (setlist.component.shortcutButton.linkage.classislandClassswap) graphics.DrawString(L"快速换课", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else if (setlist.component.shortcutButton.linkage.classislandIslandCaller) graphics.DrawString(L"随机点名", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 			}
 
 			//插件空位1：随机点名
@@ -6198,7 +6217,11 @@ void MouseInteraction()
 							{
 								if (!m.lbutton)
 								{
-									if (setlist.component.desktop)
+									if (setlist.component.shortcutButton.appliance.explorer) ShellExecute(NULL, L"open", L"explorer.exe", NULL, NULL, SW_SHOWNORMAL);
+									else if (setlist.component.shortcutButton.appliance.taskmgr) ShellExecute(NULL, L"open", L"taskmgr.exe", NULL, NULL, SW_SHOWNORMAL);
+									else if (setlist.component.shortcutButton.appliance.control) ShellExecute(NULL, L"open", L"control.exe", NULL, NULL, SW_SHOWNORMAL);
+
+									else if (setlist.component.shortcutButton.system.desktop)
 									{
 										IShellDispatch4* pShellDispatch = NULL;
 										HRESULT hr = E_FAIL;
@@ -6212,28 +6235,34 @@ void MouseInteraction()
 											pShellDispatch = NULL;
 										}
 									}
-									else if (setlist.component.explorer)
-									{
-										ShellExecute(NULL, L"open", L"explorer.exe", NULL, NULL, SW_SHOWNORMAL);
-									}
-									else if (setlist.component.keyboardesc)
+									else if (setlist.component.shortcutButton.system.lockWorkStation) LockWorkStation();
+
+									else if (setlist.component.shortcutButton.keyboard.keyboardesc)
 									{
 										keybd_event(VK_ESCAPE, 0, 0, 0);
 										keybd_event(VK_ESCAPE, 0, KEYEVENTF_KEYUP, 0);
 									}
-									else if (setlist.component.classislandSettings)
+									else if (setlist.component.shortcutButton.keyboard.keyboardAltF4)
+									{
+										keybd_event(VK_MENU, 0, 0, 0);
+										keybd_event(VK_F4, 0, 0, 0);
+										keybd_event(VK_F4, 0, KEYEVENTF_KEYUP, 0);
+										keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
+									}
+
+									else if (setlist.component.shortcutButton.linkage.classislandSettings)
 									{
 										ShellExecute(NULL, L"open", L"classisland://app/settings/", NULL, NULL, SW_SHOWNORMAL);
 									}
-									else if (setlist.component.classislandProfile)
+									else if (setlist.component.shortcutButton.linkage.classislandProfile)
 									{
 										ShellExecute(NULL, L"open", L"classisland://app/profile/", NULL, NULL, SW_SHOWNORMAL);
 									}
-									else if (setlist.component.classislandClassswap)
+									else if (setlist.component.shortcutButton.linkage.classislandClassswap)
 									{
 										ShellExecute(NULL, L"open", L"classisland://app/class-swap", NULL, NULL, SW_SHOWNORMAL);
 									}
-									else if (setlist.component.classislandIslandCaller)
+									else if (setlist.component.shortcutButton.linkage.classislandIslandCaller)
 									{
 										ShellExecute(NULL, L"open", L"classisland://plugins/IslandCaller/Run", NULL, NULL, SW_SHOWNORMAL);
 									}

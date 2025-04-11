@@ -148,8 +148,8 @@ bool ReadSetting()
 			if (updateVal["EraserSetting"].isMember("EraserSize") && updateVal["EraserSetting"]["EraserSize"].isInt())
 				setlist.eraserSetting.eraserSize = updateVal["EraserSetting"]["EraserSize"].asInt();
 		}
-		if (updateVal.isMember("HideTouchPointer") && updateVal["HideTouchPointer"].isBool())
-			setlist.hideTouchPointer = updateVal["HideTouchPointer"].asBool();
+		if (updateVal.isMember("HideTouchPointerBeta") && updateVal["HideTouchPointerBeta"].isBool())
+			setlist.hideTouchPointer = updateVal["HideTouchPointerBeta"].asBool();
 
 		if (updateVal.isMember("Performance") && updateVal["Performance"].isObject())
 		{
@@ -275,7 +275,7 @@ bool WriteSetting()
 			updateVal["EraserSetting"]["EraserMode"] = Json::Value(setlist.eraserSetting.eraserMode);
 			updateVal["EraserSetting"]["EraserSize"] = Json::Value(setlist.eraserSetting.eraserSize);
 		}
-		updateVal["HideTouchPointer"] = Json::Value(setlist.hideTouchPointer);
+		updateVal["HideTouchPointerBeta"] = Json::Value(setlist.hideTouchPointer);
 
 		{
 			updateVal["Performance"]["PreparationQuantity"] = Json::Value(setlist.performanceSetting.preparationQuantity);
