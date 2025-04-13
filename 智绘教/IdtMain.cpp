@@ -716,13 +716,25 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			// 组件
 			{
 				{
-					setlist.component.explorer = false;
-					setlist.component.desktop = false;
-					setlist.component.keyboardesc = false;
-					setlist.component.classislandSettings = false;
-					setlist.component.classislandProfile = false;
-					setlist.component.classislandClassswap = false;
-					setlist.component.classislandIslandCaller = false;
+					{
+						{
+							setlist.component.shortcutButton.appliance.explorer = false;
+							setlist.component.shortcutButton.appliance.taskmgr = false;
+							setlist.component.shortcutButton.appliance.control = false;
+						}
+						{
+							setlist.component.desktop = false;
+						}
+						{
+							setlist.component.keyboardesc = false;
+						}
+						{
+							setlist.component.classislandSettings = false;
+							setlist.component.classislandProfile = false;
+							setlist.component.classislandClassswap = false;
+							setlist.component.classislandIslandCaller = false;
+						}
+					}
 				}
 			}
 
