@@ -4,6 +4,12 @@ We are sorry to inform you that the internationalization language of the program
 **We will complete it as soon as possible!**  
   
 **Copyright(©) 2023-2025 AlanCRL(Chen YunLam) Studio**  
+
+The default repository is located at [Github](https://github.com/Alan-CRL/Inkeys)(https://github.com/Alan-CRL/Inkeys)  
+The backup repository is located at [GitCode](https://gitcode.com/alan16356/Inkeys)(https://gitcode.com/alan16356/Inkeys)  
+
+---
+
 [![LOGO](GithubRes/logo.png?raw=true "LOGO")](# "LOGO")
 
 # 智绘教Inkeys
@@ -24,7 +30,7 @@ Old name `Intelligent-Drawing-Teaching`（referred to as `IDT`）
 
 </div>
 
-## Collection
+## Collection (Introduction)
 **[Introduction video of 24H2 version on _bilibili.com_ (Chinese)](https://www.bilibili.com/video/BV1Tz421z72e/)**  
 [Introduction video of 24H1 version on _bilibili.com_ (Chinese)(older)](https://www.bilibili.com/video/BV1vJ4m147rN/)  
 [Introduction blog on _codebus.cn_ (Chinese)(VPN required)(older)](https://codebus.cn/alancrl/intelligent-painting-teaching)  
@@ -34,18 +40,11 @@ We will create new UI interface for Inkeys, which will be an epic change.
 We have launched various UI style for large screen touch devices and laptops.  
 Make Inkeys easier and more user-friendly on various devices!  
 
-## Why use Inkeys?
-Under development, please stay tuned ~
-
 ## Download
 [Github Release Assets](https://github.com/Alan-CRL/IDT/releases) | [Official Website Download(Chinese)](https://www.inkeys.top/col.jsp?id=106)   
 
 #### System Requirements
 The minimum support is `Windows 7 (sp0)` and supports `x86 / x64 / arm64` windows.  
-
-## Future Features
-`New style` `Pen tip and pressure sensitivity` `Ink recognition` `Smooth writing ink` `Various plugins` and so on.  
-Can you guess which one will be released first?  
 
 ## Feedback
 Author email: `alan-crl@foxmail.com`  
