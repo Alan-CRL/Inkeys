@@ -723,16 +723,18 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 							setlist.component.shortcutButton.appliance.control = false;
 						}
 						{
-							setlist.component.desktop = false;
+							setlist.component.shortcutButton.system.desktop = false;
+							setlist.component.shortcutButton.system.lockWorkStation = false;
 						}
 						{
-							setlist.component.keyboardesc = false;
+							setlist.component.shortcutButton.keyboard.keyboardesc = false;
+							setlist.component.shortcutButton.keyboard.keyboardAltF4 = false;
 						}
 						{
-							setlist.component.classislandSettings = false;
-							setlist.component.classislandProfile = false;
-							setlist.component.classislandClassswap = false;
-							setlist.component.classislandIslandCaller = false;
+							setlist.component.shortcutButton.linkage.classislandSettings = false;
+							setlist.component.shortcutButton.linkage.classislandProfile = false;
+							setlist.component.shortcutButton.linkage.classislandClassswap = false;
+							setlist.component.shortcutButton.linkage.classislandIslandCaller = false;
 						}
 					}
 				}

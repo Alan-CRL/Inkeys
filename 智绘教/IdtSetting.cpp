@@ -696,13 +696,13 @@ void SettingMain()
 		} Ddb;
 
 		// 组件参数
-		bool ComponentExplorer = setlist.component.explorer;
-		bool ComponentDesktop = setlist.component.desktop;
-		bool ComponentKeyboardesc = setlist.component.keyboardesc;
-		bool ComponentClassislandSettings = setlist.component.classislandSettings;
-		bool ComponentClassislandProfile = setlist.component.classislandProfile;
-		bool ComponentClassislandClassswap = setlist.component.classislandClassswap;
-		bool ComponentClassislandIslandCaller = setlist.component.classislandIslandCaller;
+		//bool ComponentExplorer = setlist.component.explorer;
+		//bool ComponentDesktop = setlist.component.desktop;
+		//bool ComponentKeyboardesc = setlist.component.keyboardesc;
+		//bool ComponentClassislandSettings = setlist.component.classislandSettings;
+		//bool ComponentClassislandProfile = setlist.component.classislandProfile;
+		//bool ComponentClassislandClassswap = setlist.component.classislandClassswap;
+		//bool ComponentClassislandIslandCaller = setlist.component.classislandIslandCaller;
 
 		// ==========
 
@@ -5942,6 +5942,8 @@ void SettingMain()
 					break;
 				}
 
+				/*
+
 				// 组件
 				case settingTabEnum::tabComponent:
 				{
@@ -6442,7 +6444,9 @@ void SettingMain()
 					break;
 				}
 
-				// 快捷键
+*/
+
+// 快捷键
 				case settingTabEnum::tab5:
 				{
 					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });

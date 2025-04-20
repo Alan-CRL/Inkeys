@@ -225,20 +225,48 @@ bool ReadSetting()
 		}
 		if (updateVal.isMember("Component") && updateVal["Component"].isObject())
 		{
-			if (updateVal["Component"].isMember("Explorer") && updateVal["Component"]["Explorer"].isBool())
-				setlist.component.explorer = updateVal["Component"]["Explorer"].asBool();
-			if (updateVal["Component"].isMember("Desktop") && updateVal["Component"]["Desktop"].isBool())
-				setlist.component.desktop = updateVal["Component"]["Desktop"].asBool();
-			if (updateVal["Component"].isMember("Keyboardesc") && updateVal["Component"]["Keyboardesc"].isBool())
-				setlist.component.keyboardesc = updateVal["Component"]["Keyboardesc"].asBool();
-			if (updateVal["Component"].isMember("ClassislandSettings") && updateVal["Component"]["ClassislandSettings"].isBool())
-				setlist.component.classislandSettings = updateVal["Component"]["ClassislandSettings"].asBool();
-			if (updateVal["Component"].isMember("ClassislandProfile") && updateVal["Component"]["ClassislandProfile"].isBool())
-				setlist.component.classislandProfile = updateVal["Component"]["ClassislandProfile"].asBool();
-			if (updateVal["Component"].isMember("ClassislandClassswap") && updateVal["Component"]["ClassislandClassswap"].isBool())
-				setlist.component.classislandClassswap = updateVal["Component"]["ClassislandClassswap"].asBool();
-			if (updateVal["Component"].isMember("ClassislandIslandCaller") && updateVal["Component"]["ClassislandIslandCaller"].isBool())
-				setlist.component.classislandIslandCaller = updateVal["Component"]["ClassislandIslandCaller"].asBool();
+			// shortcutButton
+			if (updateVal["Component"].isMember("ShortcutButton") && updateVal["Component"]["ShortcutButton"].isObject())
+			{
+				// appliance
+				if (updateVal["Component"]["ShortcutButton"].isMember("Appliance") && updateVal["Component"]["ShortcutButton"]["Appliance"].isObject())
+				{
+					if (updateVal["Component"]["ShortcutButton"]["Appliance"].isMember("Explorer") && updateVal["Component"]["ShortcutButton"]["Appliance"]["Explorer"].isBool())
+						setlist.component.shortcutButton.appliance.explorer = updateVal["Component"]["ShortcutButton"]["Appliance"]["Explorer"].asBool();
+					if (updateVal["Component"]["ShortcutButton"]["Appliance"].isMember("Taskmgr") && updateVal["Component"]["ShortcutButton"]["Appliance"]["Taskmgr"].isBool())
+						setlist.component.shortcutButton.appliance.taskmgr = updateVal["Component"]["ShortcutButton"]["Appliance"]["Taskmgr"].asBool();
+					if (updateVal["Component"]["ShortcutButton"]["Appliance"].isMember("Control") && updateVal["Component"]["ShortcutButton"]["Appliance"]["Control"].isBool())
+						setlist.component.shortcutButton.appliance.control = updateVal["Component"]["ShortcutButton"]["Appliance"]["Control"].asBool();
+				}
+				// system
+				if (updateVal["Component"]["ShortcutButton"].isMember("System") && updateVal["Component"]["ShortcutButton"]["System"].isObject())
+				{
+					if (updateVal["Component"]["ShortcutButton"]["System"].isMember("Desktop") && updateVal["Component"]["ShortcutButton"]["System"]["Desktop"].isBool())
+						setlist.component.shortcutButton.system.desktop = updateVal["Component"]["ShortcutButton"]["System"]["Desktop"].asBool();
+					if (updateVal["Component"]["ShortcutButton"]["System"].isMember("LockWorkStation") && updateVal["Component"]["ShortcutButton"]["System"]["LockWorkStation"].isBool())
+						setlist.component.shortcutButton.system.lockWorkStation = updateVal["Component"]["ShortcutButton"]["System"]["LockWorkStation"].asBool();
+				}
+				// keyboard
+				if (updateVal["Component"]["ShortcutButton"].isMember("Keyboard") && updateVal["Component"]["ShortcutButton"]["Keyboard"].isObject())
+				{
+					if (updateVal["Component"]["ShortcutButton"]["Keyboard"].isMember("Keyboardesc") && updateVal["Component"]["ShortcutButton"]["Keyboard"]["Keyboardesc"].isBool())
+						setlist.component.shortcutButton.keyboard.keyboardesc = updateVal["Component"]["ShortcutButton"]["Keyboard"]["Keyboardesc"].asBool();
+					if (updateVal["Component"]["ShortcutButton"]["Keyboard"].isMember("KeyboardAltF4") && updateVal["Component"]["ShortcutButton"]["Keyboard"]["KeyboardAltF4"].isBool())
+						setlist.component.shortcutButton.keyboard.keyboardAltF4 = updateVal["Component"]["ShortcutButton"]["Keyboard"]["KeyboardAltF4"].asBool();
+				}
+				// linkage
+				if (updateVal["Component"]["ShortcutButton"].isMember("Linkage") && updateVal["Component"]["ShortcutButton"]["Linkage"].isObject())
+				{
+					if (updateVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandSettings") && updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandSettings"].isBool())
+						setlist.component.shortcutButton.linkage.classislandSettings = updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandSettings"].asBool();
+					if (updateVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandProfile") && updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandProfile"].isBool())
+						setlist.component.shortcutButton.linkage.classislandProfile = updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandProfile"].asBool();
+					if (updateVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandClassswap") && updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandClassswap"].isBool())
+						setlist.component.shortcutButton.linkage.classislandClassswap = updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandClassswap"].asBool();
+					if (updateVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandIslandCaller") && updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandIslandCaller"].isBool())
+						setlist.component.shortcutButton.linkage.classislandIslandCaller = updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandIslandCaller"].asBool();
+				}
+			}
 		}
 	}
 	else return false;
@@ -322,13 +350,32 @@ bool WriteSetting()
 			}
 		}
 		{
-			updateVal["Component"]["Explorer"] = Json::Value(setlist.component.explorer);
-			updateVal["Component"]["Desktop"] = Json::Value(setlist.component.desktop);
-			updateVal["Component"]["Keyboardesc"] = Json::Value(setlist.component.keyboardesc);
-			updateVal["Component"]["ClassislandSettings"] = Json::Value(setlist.component.classislandSettings);
-			updateVal["Component"]["ClassislandProfile"] = Json::Value(setlist.component.classislandProfile);
-			updateVal["Component"]["ClassislandClassswap"] = Json::Value(setlist.component.classislandClassswap);
-			updateVal["Component"]["ClassislandIslandCaller"] = Json::Value(setlist.component.classislandIslandCaller);
+			// shortcutButton
+			{
+				// appliance
+				{
+					updateVal["Component"]["ShortcutButton"]["Appliance"]["Explorer"] = Json::Value(setlist.component.shortcutButton.appliance.explorer);
+					updateVal["Component"]["ShortcutButton"]["Appliance"]["Taskmgr"] = Json::Value(setlist.component.shortcutButton.appliance.taskmgr);
+					updateVal["Component"]["ShortcutButton"]["Appliance"]["Control"] = Json::Value(setlist.component.shortcutButton.appliance.control);
+				}
+				// system
+				{
+					updateVal["Component"]["ShortcutButton"]["System"]["Desktop"] = Json::Value(setlist.component.shortcutButton.system.desktop);
+					updateVal["Component"]["ShortcutButton"]["System"]["LockWorkStation"] = Json::Value(setlist.component.shortcutButton.system.lockWorkStation);
+				}
+				// keyboard
+				{
+					updateVal["Component"]["ShortcutButton"]["Keyboard"]["Keyboardesc"] = Json::Value(setlist.component.shortcutButton.keyboard.keyboardesc);
+					updateVal["Component"]["ShortcutButton"]["Keyboard"]["KeyboardAltF4"] = Json::Value(setlist.component.shortcutButton.keyboard.keyboardAltF4);
+				}
+				// linkage
+				{
+					updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandSettings"] = Json::Value(setlist.component.shortcutButton.linkage.classislandSettings);
+					updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandProfile"] = Json::Value(setlist.component.shortcutButton.linkage.classislandProfile);
+					updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandClassswap"] = Json::Value(setlist.component.shortcutButton.linkage.classislandClassswap);
+					updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandIslandCaller"] = Json::Value(setlist.component.shortcutButton.linkage.classislandIslandCaller);
+				}
+			}
 		}
 	}
 

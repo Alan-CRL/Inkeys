@@ -486,15 +486,44 @@ LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 		flags |= (0x00010000);
 		return (LRESULT)flags;
 	}
+
+	case WM_LBUTTONDOWN:
 	case WM_SETCURSOR:
 	{
 		if (LOWORD(lParam) == HTCLIENT)
 		{
-			if (touchNum > 0 && setlist.hideTouchPointer)
+			if (setlist.hideTouchPointer)
 			{
-				SetCursor(NULL);
+				if (touchNum > 0)
+				{
+					SetCursor(NULL);
 
-				return TRUE;
+					return TRUE;
+				}
+				else if ((GetMessageExtraInfo() & 0xFFFFFF00) == 0xFF515700 && rtsDownPackets)
+				{
+					bool confirmStylus = false;
+
+					chrono::high_resolution_clock::time_point reckon;
+					for (;;)
+					{
+						if (touchNum > 0)
+						{
+							confirmStylus = true;
+							break;
+						}
+						if (chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count() > 30) break;
+
+						this_thread::yield();
+					}
+
+					if (confirmStylus)
+					{
+						SetCursor(NULL);
+
+						return TRUE;
+					}
+				}
 			}
 		}
 
