@@ -161,9 +161,30 @@ int SeekBar(ExMessage m)
 
 		ret += sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY));
 		firX = static_cast<int>(p.x), firY = static_cast<int>(p.y);
+
+		if (setlist.regularSetting.MoveRecover)
+		{
+			if (ret > 20 && target_status != 0)
+			{
+				target_status = 0;
+			}
+		}
 	}
 
 	return static_cast<int>(ret);
+}
+
+IdtAtomic<bool> ConfirmaNoMouMsgSignal, ConfirmaNoMouFunSignal;
+void MouseClickCollapse()
+{
+	if (!ConfirmaNoMouFunSignal.compare_set_strong(false, true)) return;
+
+	this_thread::sleep_for(chrono::milliseconds(50));
+
+	if (ConfirmaNoMouMsgSignal) target_status = 0;
+	ConfirmaNoMouMsgSignal = false;
+
+	ConfirmaNoMouFunSignal = false;
 }
 
 HHOOK FloatingHookCall;
@@ -209,6 +230,15 @@ LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 
 			return 1;
 		}
+		// 鼠标点按收起主栏操作
+		if (wParam == WM_LBUTTONDOWN || wParam == WM_MBUTTONDOWN || wParam == WM_RBUTTONDOWN)
+		{
+			if (setlist.regularSetting.ClickRecover && (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection || penetrate.select))
+			{
+				ConfirmaNoMouMsgSignal = true;
+				thread(MouseClickCollapse).detach();
+			}
+		}
 	}
 
 	// 继续传递事件给下一个钩子或目标窗口
@@ -229,6 +259,24 @@ void FloatingInstallHook()
 
 	// 卸载钩子
 	UnhookWindowsHookEx(FloatingHookCall);
+}
+
+LRESULT CALLBACK FloatingMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	switch (msg)
+	{
+	case WM_LBUTTONDOWN:
+	case WM_RBUTTONDOWN:
+	case WM_MBUTTONDOWN:
+		if (setlist.regularSetting.ClickRecover && ConfirmaNoMouMsgSignal)
+			ConfirmaNoMouMsgSignal = false;
+		break;
+
+	default:
+		return HIWINDOW_DEFAULT_PROC;
+	}
+
+	return HIWINDOW_DEFAULT_PROC;
 }
 
 //绘制屏幕
@@ -4656,7 +4704,7 @@ void DrawScreen()
 
 				if (setlist.component.shortcutButton.appliance.explorer) graphics.DrawString(L"文件管理器", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 				else if (setlist.component.shortcutButton.appliance.taskmgr) graphics.DrawString(L"任务管理器", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
-				else if (setlist.component.shortcutButton.appliance.control) graphics.DrawString(L"显示桌面", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else if (setlist.component.shortcutButton.appliance.control) graphics.DrawString(L"控制面板", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 
 				else if (setlist.component.shortcutButton.system.desktop) graphics.DrawString(L"显示桌面", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 				else if (setlist.component.shortcutButton.system.lockWorkStation) graphics.DrawString(L"锁屏", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
@@ -5265,12 +5313,12 @@ void MouseInteraction()
 	ExMessage m;
 	int lx, ly;
 
-	std::chrono::high_resolution_clock::time_point MouseInteractionManipulated;
+	chrono::high_resolution_clock::time_point MouseInteractionManipulated;
 	while (!offSignal)
 	{
 		hiex::getmessage_win32(&m, EM_MOUSE, floating_window);
 
-		if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - MouseInteractionManipulated).count() >= 180)
+		if (chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now() - MouseInteractionManipulated).count() >= 180)
 		{
 			GetStateMode_Discard(&floatingInfo);
 
@@ -6329,6 +6377,8 @@ int floating_main()
 {
 	threadStatus[L"floating_main"] = true;
 	GetLocalTime(&sys_time);
+
+	hiex::SetWndProcFunc(floating_window, FloatingMsgCallback);
 
 	thread FloatingInstallHookThread(FloatingInstallHook);
 	FloatingInstallHookThread.detach();

@@ -44,8 +44,8 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250409a";				// 程序发布日期
-wstring editionChannel = L"Dev";				// 程序发布通道
+wstring editionDate = L"20250430a";				// 程序发布日期
+wstring editionChannel = L"Insider";			// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -678,8 +678,11 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 				setlist.topSleepTime = 3;
 				setlist.RightClickClose = false;
+
 				setlist.BrushRecover = true;
 				setlist.RubberRecover = false;
+				setlist.regularSetting.MoveRecover = true;
+				setlist.regularSetting.ClickRecover = false;
 
 				setlist.avoidFullScreen = true;
 			}

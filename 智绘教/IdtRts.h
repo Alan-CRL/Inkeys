@@ -2,9 +2,7 @@
 #include "IdtMain.h"
 
 extern IdtAtomic<bool> rtsDown;												// 表示触摸设备是否被按下
-extern IdtAtomic<int> rtsNum, touchNum;										// 触摸点的点击个数
-
-extern IdtAtomic<bool> rtsDownPackets;
+extern IdtAtomic<int> rtsNum, touchNum, inkNum;								// 触摸点的点击个数
 
 extern unordered_map<LONG, pair<int, int>> PreviousPointPosition;	// 用于速度计算
 

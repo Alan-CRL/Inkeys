@@ -124,10 +124,20 @@ bool ReadSetting()
 			setlist.topSleepTime = updateVal["TopSleepTime"].asInt();
 		if (updateVal.isMember("RightClickClose") && updateVal["RightClickClose"].isBool())
 			setlist.RightClickClose = updateVal["RightClickClose"].asBool();
-		if (updateVal.isMember("BrushRecover") && updateVal["BrushRecover"].isBool())
-			setlist.BrushRecover = updateVal["BrushRecover"].asBool();
-		if (updateVal.isMember("RubberRecover") && updateVal["RubberRecover"].isBool())
-			setlist.RubberRecover = updateVal["RubberRecover"].asBool();
+		{
+			if (updateVal.isMember("BrushRecover") && updateVal["BrushRecover"].isBool())
+				setlist.BrushRecover = updateVal["BrushRecover"].asBool();
+			if (updateVal.isMember("RubberRecover") && updateVal["RubberRecover"].isBool())
+				setlist.RubberRecover = updateVal["RubberRecover"].asBool();
+
+			if (updateVal.isMember("Regular") && updateVal["Regular"].isObject())
+			{
+				if (updateVal["Regular"].isMember("MoveRecover") && updateVal["Regular"]["MoveRecover"].isBool())
+					setlist.regularSetting.MoveRecover = updateVal["Regular"]["MoveRecover"].asBool();
+				if (updateVal["Regular"].isMember("ClickRecover") && updateVal["Regular"]["ClickRecover"].isBool())
+					setlist.regularSetting.ClickRecover = updateVal["Regular"]["ClickRecover"].asBool();
+			}
+		}
 		if (updateVal.isMember("AvoidFullScreen") && updateVal["AvoidFullScreen"].isBool())
 			setlist.avoidFullScreen = updateVal["AvoidFullScreen"].asBool();
 
@@ -290,8 +300,14 @@ bool WriteSetting()
 		updateVal["SetSkinMode"] = Json::Value(setlist.SetSkinMode);
 		updateVal["TopSleepTime"] = Json::Value(setlist.topSleepTime);
 		updateVal["RightClickClose"] = Json::Value(setlist.RightClickClose);
-		updateVal["BrushRecover"] = Json::Value(setlist.BrushRecover);
-		updateVal["RubberRecover"] = Json::Value(setlist.RubberRecover);
+		{
+			updateVal["BrushRecover"] = Json::Value(setlist.BrushRecover);
+			updateVal["RubberRecover"] = Json::Value(setlist.RubberRecover);
+			{
+				updateVal["Regular"]["MoveRecover"] = Json::Value(setlist.regularSetting.MoveRecover);
+				updateVal["Regular"]["ClickRecover"] = Json::Value(setlist.regularSetting.ClickRecover);
+			}
+		}
 		updateVal["AvoidFullScreen"] = Json::Value(setlist.avoidFullScreen);
 
 		updateVal["PaintDevice"] = Json::Value(setlist.paintDevice);

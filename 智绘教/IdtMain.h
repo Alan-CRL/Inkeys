@@ -17,7 +17,7 @@
 
 #pragma once
 
-// #define IDT_RELEASE
+#define IDT_RELEASE
 // #pragma comment( linker, "/subsystem:windows /entry:mainCRTStartup" )
 
 // 智绘教最低兼容 Windows 7 sp0
@@ -147,6 +147,12 @@ public:
 		memory_order success = memory_order_seq_cst,
 		memory_order failure = memory_order_seq_cst) noexcept {
 		return value.compare_exchange_strong(expected, desired, success, failure);
+	}
+	bool compare_set_strong(const IdtAtomicT& expected_val_in, IdtAtomicT desired_val,
+		std::memory_order success = std::memory_order_seq_cst,
+		std::memory_order failure = std::memory_order_seq_cst) noexcept {
+		IdtAtomicT expected_local = expected_val_in;
+		return value.compare_exchange_strong(expected_local, desired_val, success, failure);
 	}
 
 	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>

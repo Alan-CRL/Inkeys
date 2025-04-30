@@ -25,6 +25,11 @@ struct SetListStruct
 	bool RightClickClose;
 	bool BrushRecover, RubberRecover;
 
+	struct
+	{
+		IdtAtomic<bool> MoveRecover, ClickRecover;
+	}regularSetting;
+
 	bool avoidFullScreen;
 #pragma endregion
 

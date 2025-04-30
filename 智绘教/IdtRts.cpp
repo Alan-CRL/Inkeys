@@ -3,9 +3,7 @@
 #include "IdtDrawpad.h"
 
 IdtAtomic<bool> rtsDown;												// 表示触摸设备是否被按下
-IdtAtomic<int> rtsNum = 0, touchNum = 0;								// 触摸点的点击个数
-
-IdtAtomic<bool> rtsDownPackets;											// 表示是否在执行按下过程
+IdtAtomic<int> rtsNum = 0, touchNum = 0, inkNum = 0;					// 触摸点的点击个数
 
 unordered_map<LONG, pair<int, int>> PreviousPointPosition;				//用于速度计算
 unordered_map<LONG, double> TouchSpeed;
@@ -148,8 +146,6 @@ IStylusSyncPlugin* CSyncEventHandlerRTS::Create(IRealTimeStylus* pRealTimeStylus
 }
 HRESULT CSyncEventHandlerRTS::StylusDown(IRealTimeStylus* piRtsSrc, const StylusInfo* pStylusInfo, ULONG /*cPktCount*/, LONG* pPacket, LONG** /*ppInOutPkts*/)
 {
-	rtsDownPackets = true;
-
 	// 这是一个按下状态
 	TouchMode mode{};
 	TouchInfo info{};
@@ -235,9 +231,9 @@ HRESULT CSyncEventHandlerRTS::StylusDown(IRealTimeStylus* piRtsSrc, const Stylus
 
 	rtsNum++, rtsDown = true;
 	if (deviceType == 0) touchNum++;
+	if (deviceType == 1) inkNum++;
 	TouchCnt %= 100000;
 
-	rtsDownPackets = false;
 	return S_OK;
 }
 HRESULT CSyncEventHandlerRTS::StylusUp(IRealTimeStylus*, const StylusInfo* pStylusInfo, ULONG /*cPktCount*/, LONG* pPacket, LONG** /*ppInOutPkts*/)
@@ -258,6 +254,8 @@ HRESULT CSyncEventHandlerRTS::StylusUp(IRealTimeStylus*, const StylusInfo* pStyl
 			{
 				if (TouchPos[pid].type == 0)
 					touchNum = max(0, touchNum - 1);
+				if (TouchPos[pid].type == 1)
+					inkNum = max(0, inkNum - 1);
 			}
 		}
 		lockPointPosSm.unlock();
@@ -275,6 +273,7 @@ HRESULT CSyncEventHandlerRTS::StylusUp(IRealTimeStylus*, const StylusInfo* pStyl
 		lockTouchPosSm.unlock();
 
 		touchNum = 0;
+		inkNum = 0;
 	}
 
 	return S_OK;
