@@ -3,7 +3,7 @@
 #include "IdtDrawpad.h"
 
 IdtAtomic<bool> rtsDown;												// 表示触摸设备是否被按下
-IdtAtomic<int> rtsNum = 0, touchNum = 0, inkNum = 0;					// 触摸点的点击个数
+IdtAtomic<int> rtsNum = 0, touchNum = 0, inkNum = 0;					// 点、触摸点、触控笔的点击个数
 
 unordered_map<LONG, pair<int, int>> PreviousPointPosition;				//用于速度计算
 unordered_map<LONG, double> TouchSpeed;

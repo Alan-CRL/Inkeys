@@ -2076,7 +2076,7 @@ void PptDraw()
 		PPTMainMonitor = MainMonitor;
 		DisplaysInfoLock2.unlock();
 
-		if (setlist.avoidFullScreen)
+		if (setlist.regularSetting.avoidFullScreen)
 		{
 			PptWindowBackground.Resize(PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight - 1);
 			SetWindowPos(ppt_window, NULL, PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
@@ -2331,7 +2331,7 @@ void PptDraw()
 
 			if (MainMonitorDifferent)
 			{
-				if (setlist.avoidFullScreen)
+				if (setlist.regularSetting.avoidFullScreen)
 				{
 					PptWindowBackground.Resize(PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight - 1);
 					SetWindowPos(ppt_window, NULL, PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);

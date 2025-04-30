@@ -75,7 +75,7 @@ void MagnifierWindow(HINSTANCE hinst, promise<void>& promise)
 		hostWindowRect.left = 0;
 		hostWindowRect.top = 0;
 		hostWindowRect.right = GetSystemMetrics(SM_CXSCREEN);
-		if (setlist.avoidFullScreen) hostWindowRect.bottom = GetSystemMetrics(SM_CYSCREEN) - 1;
+		if (setlist.regularSetting.avoidFullScreen) hostWindowRect.bottom = GetSystemMetrics(SM_CYSCREEN) - 1;
 		else hostWindowRect.bottom = GetSystemMetrics(SM_CYSCREEN);
 
 		wstring ClassName;

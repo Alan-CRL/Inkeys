@@ -162,7 +162,7 @@ int SeekBar(ExMessage m)
 		ret += sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY));
 		firX = static_cast<int>(p.x), firY = static_cast<int>(p.y);
 
-		if (setlist.regularSetting.MoveRecover)
+		if (setlist.regularSetting.moveRecover)
 		{
 			if (ret > 20 && target_status != 0)
 			{
@@ -233,7 +233,7 @@ LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 		// 鼠标点按收起主栏操作
 		if (wParam == WM_LBUTTONDOWN || wParam == WM_MBUTTONDOWN || wParam == WM_RBUTTONDOWN)
 		{
-			if (setlist.regularSetting.ClickRecover && (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection || penetrate.select))
+			if (setlist.regularSetting.clickRecover && (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection || penetrate.select))
 			{
 				ConfirmaNoMouMsgSignal = true;
 				thread(MouseClickCollapse).detach();
@@ -268,7 +268,7 @@ LRESULT CALLBACK FloatingMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 	case WM_LBUTTONDOWN:
 	case WM_RBUTTONDOWN:
 	case WM_MBUTTONDOWN:
-		if (setlist.regularSetting.ClickRecover && ConfirmaNoMouMsgSignal)
+		if (setlist.regularSetting.clickRecover && ConfirmaNoMouMsgSignal)
 			ConfirmaNoMouMsgSignal = false;
 		break;
 

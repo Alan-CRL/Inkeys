@@ -18,6 +18,8 @@
 
 namespace HiEasyX
 {
+	bool IdtExSignal1 = false;
+
 	////////////****** 全局变量 ******////////////
 
 	WNDCLASSEX				g_WndClassEx;								///< 窗口类
@@ -1403,7 +1405,44 @@ namespace HiEasyX
 		g_WndClassEx.hInstance = g_hInstance;
 		g_WndClassEx.hIcon = hIcon;
 		g_WndClassEx.hIconSm = hIconSm;
-		g_WndClassEx.hCursor = LoadCursor(nullptr, IDC_ARROW);
+		if (!IdtExSignal1) g_WndClassEx.hCursor = LoadCursor(nullptr, IDC_ARROW);
+		else
+		{
+			IdtExSignal1 = false;
+
+			constexpr int width = 1;
+			constexpr int height = 1;
+			constexpr int hotSpotX = 0; // 1x1 光标的热点只能是 (0,0)
+			constexpr int hotSpotY = 0;
+
+			// 计算掩码大小（对于 1x1，每个掩码需要 1 字节）
+			// 位图数据按字节排列，宽度向上取整到 8 的倍数对应的位数
+			// Stride (bytes per row) = (width + 7) / 8
+			// Total size = Stride * height
+			constexpr int maskSize = ((width + 7) / 8) * height; // (1+7)/8 * 1 = 1 byte
+
+			// AND 掩码数据：第一个像素为 1 (透明)，其他位为 0
+			// 10000000 binary = 0x80 hex
+			BYTE andMaskData[maskSize] = { 0x80 };
+
+			// XOR 掩码数据：第一个像素为 0 (透明)，其他位为 0
+			// 00000000 binary = 0x00 hex
+			BYTE xorMaskData[maskSize] = { 0x00 };
+
+			// 获取当前模块的实例句柄
+			HINSTANCE hInstance = GetModuleHandle(nullptr);
+
+			// 创建光标
+			g_WndClassEx.hCursor = CreateCursor(
+				hInstance,    // 应用程序实例句柄
+				hotSpotX,     // X 坐标热点
+				hotSpotY,     // Y 坐标热点
+				width,        // 光标宽度
+				height,       // 光标高度
+				andMaskData,  // 指向 AND 位掩码数据的指针
+				xorMaskData   // 指向 XOR 位掩码数据的指针
+			);
+		}
 		g_WndClassEx.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
 		g_WndClassEx.lpszMenuName = nullptr;
 		g_WndClassEx.lpszClassName = lpszClassName;

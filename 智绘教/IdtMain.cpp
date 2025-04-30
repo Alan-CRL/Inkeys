@@ -45,7 +45,7 @@
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
 wstring editionDate = L"20250430a";				// 程序发布日期
-wstring editionChannel = L"Insider";			// 程序发布通道
+wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -681,10 +681,11 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 				setlist.BrushRecover = true;
 				setlist.RubberRecover = false;
-				setlist.regularSetting.MoveRecover = true;
-				setlist.regularSetting.ClickRecover = false;
+				setlist.regularSetting.moveRecover = true;
+				setlist.regularSetting.clickRecover = false;
 
-				setlist.avoidFullScreen = true;
+				setlist.regularSetting.avoidFullScreen = true;
+				setlist.regularSetting.teachingSafetyMode = 0;
 			}
 			// 绘制
 			{
@@ -824,6 +825,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				if (setlist.SetSkinMode == 0) setlist.SkinMode = 1;
 				else setlist.SkinMode = setlist.SetSkinMode;
 			}
+			// 崩溃选项设定
+			CrashHandler::SetFlag(setlist.regularSetting.teachingSafetyMode);
 		}
 
 		IDTLogger->info("[主线程][IdtMain] 配置信息初始化完成");
@@ -929,7 +932,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
 		freeze_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys5 FreezeWindow", (L"Inkeys1;" + ClassName).c_str(), nullptr, magnifierWindow);
 
-		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
+		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE); hiex::IdtExSignal1 = true;
 		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys4 DrawpadWindow", (L"Inkeys2;" + ClassName).c_str(), nullptr, freeze_window);
 
 		SettingWindowBegin();

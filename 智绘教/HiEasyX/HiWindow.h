@@ -51,6 +51,8 @@
 
 namespace HiEasyX
 {
+	extern bool IdtExSignal1;
+
 	class Canvas;
 	class SysControlBase;
 

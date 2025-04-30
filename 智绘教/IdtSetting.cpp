@@ -15,6 +15,7 @@
 #include "IdtText.h"
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
+#include "CrashHandler/CrashHandler.h"
 
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_dx9.h"
@@ -637,11 +638,15 @@ void SettingMain()
 		bool RightClickClose = setlist.RightClickClose;
 		bool BrushRecover = setlist.BrushRecover;
 		bool RubberRecover = setlist.RubberRecover;
-		bool MoveRecover = setlist.regularSetting.MoveRecover;
-		bool ClickRecover = setlist.regularSetting.ClickRecover;
-		bool AvoidFullScreen = setlist.avoidFullScreen;
-		int PaintDevice = setlist.paintDevice;
+		struct
+		{
+			bool MoveRecover = setlist.regularSetting.moveRecover;
+			bool ClickRecover = setlist.regularSetting.clickRecover;
+			bool AvoidFullScreen = setlist.regularSetting.avoidFullScreen;
+			int TeachingSafetyMode = setlist.regularSetting.teachingSafetyMode;
+		}RegularSetting;
 
+		int PaintDevice = setlist.paintDevice;
 		bool LiftStraighten = setlist.liftStraighten, WaitStraighten = setlist.waitStraighten;
 		bool PointAdsorption = setlist.pointAdsorption;
 		bool SmoothWriting = setlist.smoothWriting;
@@ -1988,7 +1993,7 @@ void SettingMain()
 								else if (setlist.updateArchitecture == "arm64") UpdateArchitecture = UpdateArchitectureEcho = 2;
 								else UpdateArchitecture = UpdateArchitectureEcho = 1;
 
-								if (ImGui::Combo("##绘图设备", &UpdateArchitecture, vec.data(), vec.size()))
+								if (ImGui::Combo("##目标更新架构", &UpdateArchitecture, vec.data(), vec.size()))
 								{
 									if (UpdateArchitectureEcho != UpdateArchitecture)
 									{
@@ -2659,7 +2664,7 @@ void SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!MoveRecover)
+								if (!RegularSetting.MoveRecover)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -2669,11 +2674,11 @@ void SettingMain()
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##拖动主栏时收起主栏", &MoveRecover, config);
+								ImGui::Toggle("##拖动主栏时收起主栏", &RegularSetting.MoveRecover, config);
 
-								if (setlist.regularSetting.MoveRecover != MoveRecover)
+								if (setlist.regularSetting.moveRecover != RegularSetting.MoveRecover)
 								{
-									setlist.regularSetting.MoveRecover = MoveRecover;
+									setlist.regularSetting.moveRecover = RegularSetting.MoveRecover;
 									WriteSetting();
 								}
 							}
@@ -2705,7 +2710,7 @@ void SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!ClickRecover)
+								if (!RegularSetting.ClickRecover)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -2715,11 +2720,11 @@ void SettingMain()
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##点击时收起主栏", &ClickRecover, config);
+								ImGui::Toggle("##点击时收起主栏", &RegularSetting.ClickRecover, config);
 
-								if (setlist.regularSetting.ClickRecover != ClickRecover)
+								if (setlist.regularSetting.clickRecover != RegularSetting.ClickRecover)
 								{
-									setlist.regularSetting.ClickRecover = ClickRecover;
+									setlist.regularSetting.clickRecover = RegularSetting.ClickRecover;
 									WriteSetting();
 								}
 							}
@@ -2744,7 +2749,7 @@ void SettingMain()
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(255, 255, 255, 0));
-						ImGui::BeginChild("常规#5", { 750.0f * settingGlobalScale,130.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("常规#5", { 750.0f * settingGlobalScale,205.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 						{
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
@@ -2772,7 +2777,7 @@ void SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!AvoidFullScreen)
+								if (!RegularSetting.AvoidFullScreen)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -2782,11 +2787,11 @@ void SettingMain()
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##避免全屏显示", &AvoidFullScreen, config);
+								ImGui::Toggle("##避免全屏显示", &RegularSetting.AvoidFullScreen, config);
 
-								if (setlist.avoidFullScreen != AvoidFullScreen)
+								if (setlist.regularSetting.avoidFullScreen != RegularSetting.AvoidFullScreen)
 								{
-									setlist.avoidFullScreen = AvoidFullScreen;
+									setlist.regularSetting.avoidFullScreen = RegularSetting.AvoidFullScreen;
 									WriteSetting();
 								}
 							}
@@ -2812,6 +2817,64 @@ void SettingMain()
 									while (PushFontNum) PushFontNum--, ImGui::PopFont();
 								}
 								ImGui::EndChild();
+							}
+
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+							ImGui::EndChild();
+						}
+						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+							ImGui::BeginChild("教学安全模式", { 750.0f * settingGlobalScale,70.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+							float cursosPosY = 0;
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+								ImGui::TextUnformatted("教学安全选项");
+							}
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
+								ImGui::TextUnformatted("软件发生崩溃错误时所执行的操作。（启动过程发生错误依旧会引发提示）");
+							}
+							{
+								ImGui::SetCursorPos({ (730.0f - 280.0f) * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
+								ImGui::SetNextItemWidth(280 * settingGlobalScale);
+
+								ImFontMain->Scale = 0.82f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(195 / 255.0f, 195 / 255.0f, 195 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0 / 255.0f, 0 / 255.0f, 0 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(215 / 255.0f, 215 / 255.0f, 215 / 255.0f, 1.0f));
+
+								vector<char*> vec;
+								vec.emplace_back(_strdup(("  " + string("弹窗提示并重启软件")).c_str()));
+								vec.emplace_back(_strdup(("  " + string("静默重启软件")).c_str()));
+								vec.emplace_back(_strdup(("  " + string("交由系统崩溃过滤器处理")).c_str()));
+								vec.emplace_back(_strdup(("  " + string("直接关闭软件")).c_str()));
+
+								if (ImGui::Combo("##教学安全选项", &RegularSetting.TeachingSafetyMode, vec.data(), vec.size()))
+								{
+									if (setlist.regularSetting.teachingSafetyMode != RegularSetting.TeachingSafetyMode)
+									{
+										setlist.regularSetting.teachingSafetyMode = RegularSetting.TeachingSafetyMode;
+										WriteSetting();
+
+										CrashHandler::SetFlag(setlist.regularSetting.teachingSafetyMode);
+									}
+								}
+								for (char* ptr : vec) free(ptr), ptr = nullptr;
 							}
 
 							{

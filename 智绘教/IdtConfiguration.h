@@ -27,10 +27,12 @@ struct SetListStruct
 
 	struct
 	{
-		IdtAtomic<bool> MoveRecover, ClickRecover;
+		IdtAtomic<bool> moveRecover, clickRecover;
+
+		IdtAtomic<bool> avoidFullScreen;
+		IdtAtomic<int> teachingSafetyMode;
 	}regularSetting;
 
-	bool avoidFullScreen;
 #pragma endregion
 
 #pragma region 绘制

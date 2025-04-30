@@ -472,6 +472,7 @@ void KeyboardInteraction()
 	}
 }
 
+HCURSOR hArrowCursor = LoadCursor(nullptr, IDC_ARROW);
 LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	switch (msg)
@@ -498,14 +499,17 @@ LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 		{
 			if (setlist.hideTouchPointer)
 			{
-				if (touchNum > 0)
+				if (touchNum)
 				{
 					SetCursor(NULL);
-
-					//cerr << 1 << endl;
-
 					return TRUE;
 				}
+				else
+				{
+					SetCursor(hArrowCursor);
+					return TRUE;
+				}
+
 				//else
 				//{
 				//	cerr << "wait" << endl;
@@ -1572,7 +1576,7 @@ void DrawpadDrawing()
 					ulwi.hdcSrc = GetImageHDC(&window_background);
 					UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
 
-					if (setlist.avoidFullScreen)
+					if (setlist.regularSetting.avoidFullScreen)
 						SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
 				}
 				bool saveImage = true;
@@ -1719,7 +1723,7 @@ void DrawpadDrawing()
 					SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
 					hiex::TransparentImage(&window_background, 0, 0, &drawpad);
 
-					if (setlist.avoidFullScreen) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+					if (setlist.regularSetting.avoidFullScreen) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 
 					ulwi.hdcSrc = GetImageHDC(&window_background);
 					UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
@@ -1737,7 +1741,7 @@ void DrawpadDrawing()
 			}
 			if (penetrate.select == true)
 			{
-				if (setlist.avoidFullScreen) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
+				if (setlist.regularSetting.avoidFullScreen) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
 				topWindowNow = true;
 
 				LONG nRet = GetWindowLongPtrW(drawpad_window, GWL_EXSTYLE);
@@ -1873,7 +1877,7 @@ void DrawpadDrawing()
 				}
 
 				if (setlist.performanceSetting.superDraw) timeBeginPeriod(1);
-				if (setlist.avoidFullScreen) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+				if (setlist.regularSetting.avoidFullScreen) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 
 				nRet = GetWindowLongPtrW(drawpad_window, GWL_EXSTYLE);
 				nRet &= ~WS_EX_TRANSPARENT;
