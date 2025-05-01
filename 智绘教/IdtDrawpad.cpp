@@ -489,12 +489,7 @@ LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 	}
 
 	case WM_SETCURSOR:
-		//case WM_MOUSEACTIVATE:
-		//case WM_NCHITTEST:
 	{
-		//if (msg != WM_SETCURSOR) cerr << "case in " << msg << endl;
-		//else cerr << "case in" << endl;
-
 		if (LOWORD(lParam) == HTCLIENT)
 		{
 			if (setlist.hideTouchPointer)
@@ -504,44 +499,8 @@ LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 					SetCursor(NULL);
 					return TRUE;
 				}
-				else
-				{
-					SetCursor(hArrowCursor);
-					return TRUE;
-				}
-
-				//else
-				//{
-				//	cerr << "wait" << endl;
-				//	bool confirmStylus = false;
-
-				//	chrono::high_resolution_clock::time_point reckon = chrono::high_resolution_clock::now();
-				//	for (;;)
-				//	{
-				//		if (touchNum > 0)
-				//		{
-				//			confirmStylus = true;
-				//			break;
-				//		}
-				//		if (inkNum > 0) break;
-				//		if (chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count() > 30) break;
-
-				//		this_thread::yield();
-				//	}
-
-				//	if (confirmStylus)
-				//	{
-				//		SetCursor(NULL);
-
-				//		cerr << 11 << endl;
-				//		return TRUE;
-				//	}
-				//	else cerr << "out2 " << chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count() << endl;
-				//}
 			}
 		}
-		//else cerr << "out" << endl;
-
 		break;
 	}
 

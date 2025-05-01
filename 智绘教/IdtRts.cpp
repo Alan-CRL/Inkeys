@@ -1,6 +1,8 @@
 ﻿#include "IdtRts.h"
 
+#include "IdtConfiguration.h"
 #include "IdtDrawpad.h"
+#include "IdtWindow.h"
 
 IdtAtomic<bool> rtsDown;												// 表示触摸设备是否被按下
 IdtAtomic<int> rtsNum = 0, touchNum = 0, inkNum = 0;					// 点、触摸点、触控笔的点击个数
@@ -233,6 +235,10 @@ HRESULT CSyncEventHandlerRTS::StylusDown(IRealTimeStylus* piRtsSrc, const Stylus
 	if (deviceType == 0) touchNum++;
 	if (deviceType == 1) inkNum++;
 	TouchCnt %= 100000;
+
+	// 光标隐藏提前指令
+	if (setlist.hideTouchPointer)
+		SendMessage(drawpad_window, WM_SETCURSOR, (WPARAM)drawpad_window, MAKELPARAM(HTCLIENT, WM_MOUSEMOVE));
 
 	return S_OK;
 }

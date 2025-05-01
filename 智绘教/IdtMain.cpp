@@ -932,7 +932,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
 		freeze_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys5 FreezeWindow", (L"Inkeys1;" + ClassName).c_str(), nullptr, magnifierWindow);
 
-		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE); hiex::IdtExSignal1 = true;
+		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
 		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys4 DrawpadWindow", (L"Inkeys2;" + ClassName).c_str(), nullptr, freeze_window);
 
 		SettingWindowBegin();
