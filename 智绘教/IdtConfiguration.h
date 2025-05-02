@@ -52,6 +52,14 @@ struct SetListStruct
 	IdtAtomic<bool> hideTouchPointer;
 #pragma endregion
 
+#pragma region 保存
+	struct
+	{
+		IdtAtomic<bool> enable;
+		IdtAtomic<int> saveDays;
+	}saveSetting;
+#pragma endregion
+
 #pragma region 性能
 	struct
 	{
@@ -114,6 +122,7 @@ struct PptComSetListStruct
 	PptComSetListStruct()
 	{
 		fixedHandWriting = true;
+		showLoadingScreen = false;
 		memoryWidgetPosition = true;
 
 		showBottomBoth = true;
@@ -139,6 +148,8 @@ struct PptComSetListStruct
 
 	// 墨迹固定在对应页面上
 	bool fixedHandWriting;
+	// 显示加载画面
+	bool showLoadingScreen;
 	// 记忆控件位置
 	bool memoryWidgetPosition;
 

@@ -165,6 +165,13 @@ bool ReadSetting()
 		if (updateVal.isMember("HideTouchPointerBeta") && updateVal["HideTouchPointerBeta"].isBool())
 			setlist.hideTouchPointer = updateVal["HideTouchPointerBeta"].asBool();
 
+		if (updateVal.isMember("Save") && updateVal["Save"].isObject())
+		{
+			if (updateVal["Save"].isMember("Enable") && updateVal["Save"]["Enable"].isBool())
+				setlist.saveSetting.enable = updateVal["Save"]["Enable"].asBool();
+			if (updateVal["Save"].isMember("SaveDays") && updateVal["Save"]["SaveDays"].isInt())
+				setlist.saveSetting.saveDays = updateVal["Save"]["SaveDays"].asInt();
+		}
 		if (updateVal.isMember("Performance") && updateVal["Performance"].isObject())
 		{
 			if (updateVal["Performance"].isMember("PreparationQuantity") && updateVal["Performance"]["PreparationQuantity"].isInt())
@@ -327,6 +334,10 @@ bool WriteSetting()
 		updateVal["HideTouchPointerBeta"] = Json::Value(setlist.hideTouchPointer);
 
 		{
+			updateVal["Save"]["Enable"] = Json::Value(setlist.saveSetting.enable);
+			updateVal["Save"]["SaveDays"] = Json::Value(setlist.saveSetting.saveDays);
+		}
+		{
 			updateVal["Performance"]["PreparationQuantity"] = Json::Value(setlist.performanceSetting.preparationQuantity);
 
 			updateVal["Performance"]["SuperDrawBeta"] = Json::Value(setlist.performanceSetting.superDraw);
@@ -475,6 +486,8 @@ bool PptComReadSetting()
 	{
 		if (updateVal.isMember("FixedHandWriting") && updateVal["FixedHandWriting"].isBool())
 			pptComSetlist.fixedHandWriting = updateVal["FixedHandWriting"].asBool();
+		if (updateVal.isMember("ShowLoadingScreen") && updateVal["ShowLoadingScreen"].isBool())
+			pptComSetlist.showLoadingScreen = updateVal["ShowLoadingScreen"].asBool();
 		if (updateVal.isMember("MemoryWidgetPosition") && updateVal["MemoryWidgetPosition"].isBool())
 			pptComSetlist.memoryWidgetPosition = updateVal["MemoryWidgetPosition"].asBool();
 
@@ -526,6 +539,7 @@ bool PptComWriteSetting()
 	Json::Value updateVal;
 	{
 		updateVal["FixedHandWriting"] = Json::Value(pptComSetlist.fixedHandWriting);
+		updateVal["ShowLoadingScreen"] = Json::Value(pptComSetlist.showLoadingScreen);
 		updateVal["MemoryWidgetPosition"] = Json::Value(pptComSetlist.memoryWidgetPosition);
 
 		updateVal["ShowBottomBoth"] = Json::Value(pptComSetlist.showBottomBoth);
