@@ -517,6 +517,7 @@
     <ClInclude Include="IdtTime.h" />
     <ClInclude Include="IdtUpdate.h" />
     <ClInclude Include="IdtWindow.h" />
+    <ClInclude Include="SuperTop\IdtSuperTop.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="additional\hashlib++\hl_md5.cpp" />
@@ -603,6 +604,7 @@
     <ClCompile Include="IdtUpdate.cpp" />
     <ClCompile Include="IdtWindow.cpp" />
     <ClCompile Include="Launch\IdtLaunchState.cpp" />
+    <ClCompile Include="SuperTop\IdtSuperTop.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="智绘教.rc" />
@@ -637,6 +639,7 @@
     <Image Include="src\PluginFlag1.png" />
     <Image Include="src\PluginFlag2.png" />
     <Image Include="src\PluginFlag3.png" />
+    <Image Include="src\PluginFlag4.png" />
     <Image Include="src\ppt\arrow_down.png" />
     <Image Include="src\ppt\arrow_left.png" />
     <Image Include="src\ppt\arrow_right.png" />

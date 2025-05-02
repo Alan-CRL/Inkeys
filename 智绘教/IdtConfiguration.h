@@ -111,10 +111,12 @@ struct SetListStruct
 	{
 		bool createLnk, correctLnk;
 	}shortcutAssistant;
+	IdtAtomic<bool> superTop;
 #pragma endregion
 };
 extern SetListStruct setlist;
 bool ReadSetting();
+bool ReadSettingMini();
 bool WriteSetting();
 
 struct PptComSetListStruct

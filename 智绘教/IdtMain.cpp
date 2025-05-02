@@ -37,6 +37,7 @@
 #include "IdtWindow.h"
 #include "Launch/IdtLaunchState.h"
 #include "CrashHandler/CrashHandler.h"
+#include "SuperTop/IdtSuperTop.h"
 
 #include <lm.h>
 #include <shellscalingapi.h>
@@ -145,6 +146,13 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		else if (commandLineArgs == L"-WarnTry") launchState = LaunchStateEnum::WarnTry;
 		else if (commandLineArgs == L"-CrashTry") launchState = LaunchStateEnum::CrashTry;
 		else launchState = LaunchStateEnum::Normal;
+
+		if (commandLineArgs.substr(0, 9) == L"-SuperTop")
+		{
+			SurperTopMain(commandLineArgs.substr(10, commandLineArgs.length() - 10));
+			return 0;
+		}
+		//Testw(L"in \"" + commandLineArgs + L"\"");
 
 #ifdef IDT_RELEASE
 		if (launchState == LaunchStateEnum::Normal)
@@ -482,13 +490,34 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 
 	// InkeysSuperTop 阶段
+	if (_waccess((globalPath + L"opt\\deploy.json").c_str(), 4) == 0)
 	{
-		/*error_code ec;
-		if (filesystem::exists(globalPath + L"superTop_failed.signal", ec)) filesystem::remove(globalPath + L"superTop_failed.signal", ec);
+		ReadSettingMini();
 
-		HANDLE fileHandle = NULL;
-		OccupyFileForWrite(&fileHandle, globalPath + L"superTop_try.signal");
-		UnOccupyFile(&fileHandle);*/
+		HANDLE proc_self = GetCurrentProcess();
+		HANDLE tok_self;
+		OpenProcessToken(proc_self, TOKEN_ALL_ACCESS, &tok_self);
+
+		if (setlist.superTop)
+		{
+			if (!hasUiAccess(tok_self))
+			{
+				error_code ec;
+				if (filesystem::exists(globalPath + L"superTop_try.signal", ec));
+				else
+				{
+					HANDLE fileHandle = NULL;
+					OccupyFileForWrite(&fileHandle, globalPath + L"superTop_try.signal");
+					UnOccupyFile(&fileHandle);
+
+					LaunchSurperTop();
+				}
+			}
+		}
+		error_code ec;
+		filesystem::remove(globalPath + L"superTop_try.signal", ec);
+
+		hasSuperTop = hasUiAccess(tok_self);
 	}
 
 	// 用户ID获取

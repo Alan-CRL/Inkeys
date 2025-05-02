@@ -16,6 +16,7 @@
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
 #include "CrashHandler/CrashHandler.h"
+#include "SuperTop/IdtSuperTop.h"
 
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_dx9.h"
@@ -43,8 +44,8 @@ struct
 {
 	int width;
 	int height;
-} settingSign[10];
-PDIRECT3DTEXTURE9 TextureSettingSign[10];
+} settingSign[11];
+PDIRECT3DTEXTURE9 TextureSettingSign[11];
 int SettingMainMode = 1;
 
 int SettingWindowX;
@@ -342,6 +343,40 @@ void SettingMain()
 						}
 
 						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[8]);
+						delete[] data;
+
+						IM_ASSERT(ret);
+					}
+					idtLoadImage(&SettingSign, L"PNG", L"PluginFlag4", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
+					{
+						int width = settingSign[10].width = SettingSign.getwidth();
+						int height = settingSign[10].height = SettingSign.getheight();
+						DWORD* pMem = GetImageBuffer(&SettingSign);
+
+						unsigned char* data = new unsigned char[width * height * 4];
+						for (int y = 0; y < height; ++y)
+						{
+							for (int x = 0; x < width; ++x)
+							{
+								DWORD color = pMem[y * width + x];
+								unsigned char alpha = (color & 0xFF000000) >> 24;
+								if (alpha != 0)
+								{
+									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
+									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
+									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
+								}
+								else
+								{
+									data[(y * width + x) * 4 + 0] = 0;
+									data[(y * width + x) * 4 + 1] = 0;
+									data[(y * width + x) * 4 + 2] = 0;
+								}
+								data[(y * width + x) * 4 + 3] = alpha;
+							}
+						}
+
+						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[10]);
 						delete[] data;
 
 						IM_ASSERT(ret);
@@ -663,6 +698,8 @@ void SettingMain()
 		int PreparationQuantity = setlist.performanceSetting.preparationQuantity;
 		bool SuperDraw = setlist.performanceSetting.superDraw;
 
+		bool SuperTop = setlist.superTop;
+
 		// 插件参数
 
 		float PptUiWidgetScale = 1.0f, PptUiWidgetScaleRecord = 1.0f;
@@ -784,6 +821,7 @@ void SettingMain()
 					tabPlug1,
 					tabPlug2,
 					tabPlug3,
+					tabSuperTop,
 					tabPlugDDB
 				};
 
@@ -3895,6 +3933,69 @@ void SettingMain()
 						{
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+							ImGui::BeginChild("超级置顶", { 750.0f * settingGlobalScale,115.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+							{
+								{
+									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, 20.0f * settingGlobalScale });
+									ImGui::Image((void*)TextureSettingSign[10], ImVec2((float)settingSign[10].width, (float)settingSign[10].height));
+								}
+								{
+									ImGui::SetCursorPos({ 60.0f * settingGlobalScale, 20.0f * settingGlobalScale });
+									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+									ImGui::TextUnformatted("超级置顶(BETA)");
+								}
+								{
+									ImGui::SetCursorPos({ 60.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
+									ImGui::TextUnformatted("20250502a");
+								}
+								{
+									ImGui::SetCursorPos({ 630.0f * settingGlobalScale, 20.0f * settingGlobalScale });
+									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 179));
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(249, 249, 249, 128));
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
+									if (ImGui::Button("插件选项", { 100.0f * settingGlobalScale,30.0f * settingGlobalScale })) settingPlugInTab = settingPlugInTabEnum::tabSuperTop;
+								}
+
+								{
+									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() + 10.0f * settingGlobalScale });
+
+									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
+									ImGui::BeginChild("超级置顶-介绍", { 710.0f * settingGlobalScale,35.0f * settingGlobalScale });
+
+									{
+										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
+
+										ImGui::TextWrapped("使用UiAccess技术在其他常规软件之上显示软件窗口，亦或是在任务栏、Alt+Tab、屏幕键盘、锁屏界面等上方显示软件窗口。仅支持Windows8及以上系统。");
+									}
+
+									{
+										if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+										if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+										while (PushFontNum) PushFontNum--, ImGui::PopFont();
+									}
+									ImGui::EndChild();
+								}
+							}
+
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+							ImGui::EndChild();
+						}
+						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
 							ImGui::BeginChild("同类软件悬浮窗拦截助手", { 750.0f * settingGlobalScale,115.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 							{
@@ -3975,7 +4076,7 @@ void SettingMain()
 									ImGui::SetCursorPos({ 60.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-									ImGui::TextUnformatted("20241123a");
+									ImGui::TextUnformatted("20250223a");
 								}
 								{
 									ImGui::SetCursorPos({ 630.0f * settingGlobalScale, 20.0f * settingGlobalScale });
@@ -5137,6 +5238,158 @@ void SettingMain()
 						break;
 					}
 
+					case settingPlugInTabEnum::tabSuperTop:
+					{
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
+						ImGui::BeginChild("超级置顶", { (750.0f + 30.0f) * settingGlobalScale,608.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar);
+
+						{
+							ImGui::SetCursorPos({ 0,10.0f * settingGlobalScale });
+							{
+								ImFontMain->Scale = 0.3f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 179));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(249, 249, 249, 128));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
+								if (ImGui::Button("\ue72b", { 30.0f * settingGlobalScale,30.0f * settingGlobalScale })) settingPlugInTab = settingPlugInTabEnum::tabPlug1;
+							}
+
+							ImGui::SetCursorPos({ 40.0f * settingGlobalScale ,10.0f * settingGlobalScale });
+							{
+								{
+									ImGui::SetCursorPos({ 40.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+									ImGui::TextUnformatted("超级置顶");
+								}
+								{
+									ImGui::SetCursorPos({ 40.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
+									ImGui::TextUnformatted("20250502a"); // 主界面还有版本号
+								}
+							}
+						}
+
+						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
+							ImGui::BeginChild("超级置顶主栏", { (750.0f + 30.0f) * settingGlobalScale,555.0f * settingGlobalScale }, false);
+
+							{
+								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(255, 255, 255, 0));
+								ImGui::BeginChild("超级置顶#1", { 750.0f * settingGlobalScale,130.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+								{
+									ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
+									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+									ImGui::TextUnformatted("基础能力");
+								}
+
+								{
+									ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
+									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+									ImGui::BeginChild("超级置顶", { 750.0f * settingGlobalScale,100.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+									float cursosPosY = 0;
+									{
+										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
+										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+										ImGui::TextUnformatted("超级置顶");
+									}
+									{
+										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 6));
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
+										if (!SuperTop)
+										{
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
+										}
+										else
+										{
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
+										}
+										ImGui::Toggle("##超级置顶", &SuperTop, config);
+
+										if (setlist.superTop != SuperTop)
+										{
+											setlist.superTop = SuperTop;
+											WriteSetting();
+										}
+									}
+
+									cursosPosY = ImGui::GetCursorPosY();
+									{
+										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 10.0f * settingGlobalScale });
+
+										PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+										PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
+										ImGui::BeginChild("超级置顶-介绍", { 710.0f * settingGlobalScale,30.0f * settingGlobalScale }, false);
+
+										{
+											ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
+
+											if (hasSuperTop) ImGui::TextWrapped("软件将三段式启动进行置顶，小概率出现问题导致置顶失败。重启后生效。\n（当前已经超级置顶）");
+											else ImGui::TextWrapped("软件将三段式启动进行置顶，小概率出现问题导致置顶失败。重启后生效。\n（当前未超级置顶）");
+										}
+
+										{
+											if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+											if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+											while (PushFontNum) PushFontNum--, ImGui::PopFont();
+										}
+										ImGui::EndChild();
+									}
+
+									{
+										if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+										if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+										while (PushFontNum) PushFontNum--, ImGui::PopFont();
+									}
+									ImGui::EndChild();
+								}
+
+								{
+									if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+									if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+									while (PushFontNum) PushFontNum--, ImGui::PopFont();
+								}
+								ImGui::EndChild();
+							}
+
+							{
+								ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+								ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+							}
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+							ImGui::EndChild();
+						}
+
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
+						ImGui::EndChild();
+						break;
+					}
+
 					case settingPlugInTabEnum::tabPlug3:
 					{
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
@@ -5166,7 +5419,7 @@ void SettingMain()
 									ImGui::SetCursorPos({ 40.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-									ImGui::TextUnformatted("20250223a");
+									ImGui::TextUnformatted("20250223a");  // 主界面还有版本号
 								}
 							}
 						}

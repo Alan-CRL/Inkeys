@@ -289,6 +289,57 @@ bool ReadSetting()
 				}
 			}
 		}
+
+		if (updateVal.isMember("SuperTop") && updateVal["SuperTop"].isBool())
+			setlist.superTop = updateVal["SuperTop"].asBool();
+	}
+	else return false;
+
+	return true;
+}
+bool ReadSettingMini()
+{
+	HANDLE fileHandle = NULL;
+	if (!OccupyFileForRead(&fileHandle, globalPath + L"opt\\deploy.json"))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	LARGE_INTEGER fileSize;
+	if (!GetFileSizeEx(fileHandle, &fileSize))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
+	string jsonContent = string(dwSize, '\0');
+
+	DWORD bytesRead = 0;
+	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+	if (!ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	if (jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
+	UnOccupyFile(&fileHandle);
+
+	istringstream jsonContentStream(jsonContent);
+	Json::CharReaderBuilder readerBuilder;
+	Json::Value updateVal;
+	string jsonErr;
+
+	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+	{
+		if (updateVal.isMember("SuperTop") && updateVal["SuperTop"].isBool())
+			setlist.superTop = updateVal["SuperTop"].asBool();
 	}
 	else return false;
 
@@ -409,6 +460,8 @@ bool WriteSetting()
 				}
 			}
 		}
+
+		updateVal["SuperTop"] = Json::Value(setlist.superTop);
 	}
 
 	HANDLE fileHandle = NULL;

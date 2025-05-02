@@ -151,6 +151,8 @@ CUSTOMIZEICO8           PNG                     "src\\quick\\lockworkstation.png
 
 CUSTOMIZEICO9           PNG                     "src\\quick\\taskmgr.png"
 
+PLUGINFLAG4             PNG                     "src\\PluginFlag4.png"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //

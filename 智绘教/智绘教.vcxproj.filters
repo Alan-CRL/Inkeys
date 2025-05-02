@@ -79,6 +79,12 @@
     <Filter Include="源文件\CrashHandler">
       <UniqueIdentifier>{d9b1228c-55af-4733-a011-9eebd0ff53ba}</UniqueIdentifier>
     </Filter>
+    <Filter Include="源文件\SuperTop">
+      <UniqueIdentifier>{5d0ceb29-5557-45eb-953f-72ee3cad19b8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\SuperTop">
+      <UniqueIdentifier>{0f3ba083-e762-42d7-aeef-aa8d13bc8b3a}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HiEasyX.h">
@@ -717,6 +723,9 @@
     <ClInclude Include="CrashHandler\CrashHandler.h">
       <Filter>头文件\CrashHandler</Filter>
     </ClInclude>
+    <ClInclude Include="SuperTop\IdtSuperTop.h">
+      <Filter>头文件\SuperTop</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HiEasyX\HiGUI\Button.cpp">
@@ -971,6 +980,9 @@
     <ClCompile Include="CrashHandler\CrashHandler.cpp">
       <Filter>源文件\CrashHandler</Filter>
     </ClCompile>
+    <ClCompile Include="SuperTop\IdtSuperTop.cpp">
+      <Filter>源文件\SuperTop</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="智绘教.rc">
@@ -1189,6 +1201,9 @@
       <Filter>资源文件</Filter>
     </Image>
     <Image Include="src\quick\taskmgr.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\PluginFlag4.png">
       <Filter>资源文件</Filter>
     </Image>
   </ItemGroup>
