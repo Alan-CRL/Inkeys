@@ -25,7 +25,14 @@ struct SetListStruct
 	bool RightClickClose;
 	bool BrushRecover, RubberRecover;
 
-	bool avoidFullScreen;
+	struct
+	{
+		IdtAtomic<bool> moveRecover, clickRecover;
+
+		IdtAtomic<bool> avoidFullScreen;
+		IdtAtomic<int> teachingSafetyMode;
+	}regularSetting;
+
 #pragma endregion
 
 #pragma region 绘制
@@ -41,6 +48,16 @@ struct SetListStruct
 		int eraserMode; // 0压感粗细 1笔速粗细 2固定粗细
 		int eraserSize;
 	}eraserSetting;
+
+	IdtAtomic<bool> hideTouchPointer;
+#pragma endregion
+
+#pragma region 保存
+	struct
+	{
+		IdtAtomic<bool> enable;
+		IdtAtomic<int> saveDays;
+	}saveSetting;
 #pragma endregion
 
 #pragma region 性能
@@ -52,15 +69,54 @@ struct SetListStruct
 	}performanceSetting;
 #pragma endregion
 
+#pragma region 组件
+	struct
+	{
+		// 快捷按钮
+		struct
+		{
+			struct
+			{
+				// 应用
+				IdtAtomic<bool> explorer;
+				IdtAtomic<bool> taskmgr;
+				IdtAtomic<bool> control;
+			} appliance;
+			struct
+			{
+				// 系统操作
+				IdtAtomic<bool> desktop;
+				IdtAtomic<bool> lockWorkStation;
+			} system;
+			struct
+			{
+				// 键盘模拟
+				IdtAtomic<bool> keyboardesc;
+				IdtAtomic<bool> keyboardAltF4;
+			} keyboard;
+			struct
+			{
+				// 联动
+				IdtAtomic<bool> classislandSettings;
+				IdtAtomic<bool> classislandProfile;
+				IdtAtomic<bool> classislandClassswap;
+				IdtAtomic<bool> classislandIslandCaller;
+			} linkage;
+		} shortcutButton;
+	}component;
+#pragma endregion
+
 #pragma region 插件
 	struct
 	{
 		bool createLnk, correctLnk;
 	}shortcutAssistant;
+	IdtAtomic<bool> superTop;
 #pragma endregion
 };
 extern SetListStruct setlist;
 bool ReadSetting();
+bool ReadSettingMini();
 bool WriteSetting();
 
 struct PptComSetListStruct
@@ -68,6 +124,7 @@ struct PptComSetListStruct
 	PptComSetListStruct()
 	{
 		fixedHandWriting = true;
+		showLoadingScreen = false;
 		memoryWidgetPosition = true;
 
 		showBottomBoth = true;
@@ -93,6 +150,8 @@ struct PptComSetListStruct
 
 	// 墨迹固定在对应页面上
 	bool fixedHandWriting;
+	// 显示加载画面
+	bool showLoadingScreen;
 	// 记忆控件位置
 	bool memoryWidgetPosition;
 
@@ -131,8 +190,8 @@ struct DdbInteractionSetListStruct
 		enable = false;
 		runAsAdmin = false;
 
-		DdbEdition = L"20250219a";
-		DdbSHA256 = "aec9231ae07b9f152f9a36912d842454df3a952d466389a2b9d169e82a5c24f4";
+		DdbEdition = L"20250404a";
+		DdbSHA256 = "e0ce42c45c8287ae34129625cb64e9054b6abedea08dfa1dfccea564ec36da30";
 
 		// -----
 

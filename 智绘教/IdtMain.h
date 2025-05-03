@@ -103,7 +103,10 @@ extern wstring dataPath;
 extern wstring programArchitecture;
 extern wstring targetArchitecture;
 
-extern int offSignal, offSignalReady; //关闭指令
+void CloseProgram();
+void RestartProgram();
+
+extern int offSignal; //关闭指令
 extern map <wstring, bool> threadStatus; //线程状态管理
 
 extern shared_ptr<spdlog::logger> IDTLogger;
@@ -112,12 +115,15 @@ extern shared_ptr<spdlog::logger> IDTLogger;
 template <typename IdtAtomicT>
 class IdtAtomic
 {
+	static_assert(is_trivially_copyable_v<IdtAtomicT>, "IdtAtomic<IdtAtomicT>: IdtAtomicT 必须是平凡可复制 (TriviallyCopyable) 的类型。");
+	static_assert(atomic<IdtAtomicT>::is_always_lock_free, "IdtAtomic<IdtAtomicT>: IdtAtomicT 对应的 atomic<IdtAtomicT> 必须保证始终无锁 (lock-free)。");
+
 private:
 	atomic<IdtAtomicT> value;
 
 public:
 	IdtAtomic() noexcept = default;
-	explicit IdtAtomic(IdtAtomicT desired) noexcept : value(desired) {}
+	IdtAtomic(IdtAtomicT desired) noexcept : value(desired) {}
 	IdtAtomic(const IdtAtomic& other) noexcept { value.store(other.value.load()); }
 
 	IdtAtomic& operator=(const IdtAtomic& other) noexcept {
@@ -142,9 +148,42 @@ public:
 		memory_order failure = memory_order_seq_cst) noexcept {
 		return value.compare_exchange_strong(expected, desired, success, failure);
 	}
+	bool compare_set_strong(const IdtAtomicT& expected_val_in, IdtAtomicT desired_val,
+		std::memory_order success = std::memory_order_seq_cst,
+		std::memory_order failure = std::memory_order_seq_cst) noexcept {
+		IdtAtomicT expected_local = expected_val_in;
+		return value.compare_exchange_strong(expected_local, desired_val, success, failure);
+	}
+
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
+	T fetch_add(T arg, std::memory_order order = std::memory_order_seq_cst) noexcept {
+		return value.fetch_add(arg, order);
+	}
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
+	T fetch_sub(T arg, std::memory_order order = std::memory_order_seq_cst) noexcept {
+		return value.fetch_sub(arg, order);
+	}
 
 	operator IdtAtomicT() const noexcept { return load(); }
 	IdtAtomic& operator=(IdtAtomicT desired) noexcept { store(desired); return *this; }
+
+	// Increment/Decrement Operators added
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
+	T operator++() noexcept {
+		return value.fetch_add(1, std::memory_order_seq_cst) + 1;
+	}
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
+	T operator++(int) noexcept {
+		return value.fetch_add(1, std::memory_order_seq_cst);
+	}
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
+	T operator--() noexcept {
+		return value.fetch_sub(1, std::memory_order_seq_cst) - 1;
+	}
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
+	T operator--(int) noexcept {
+		return value.fetch_sub(1, std::memory_order_seq_cst);
+	}
 };
 
 // 调测专用

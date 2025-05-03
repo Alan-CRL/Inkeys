@@ -266,6 +266,49 @@ bool ChangeStateModeToEraser()
 	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtEraser;
 	return true;
 }
+bool ChangeStateModeToTouchTest()
+{
+	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtTouchTest;
+
+	// 标识绘制等待
+	{
+		unique_lock<shared_mutex> lockdrawWaitingSm(drawWaitingSm);
+		drawWaiting = true;
+		lockdrawWaitingSm.unlock();
+	}
+	// 防止绘图时冲突
+	{
+		shared_lock lockStrokeImageListSm(StrokeImageListSm);
+		bool start = !StrokeImageList.empty();
+		lockStrokeImageListSm.unlock();
+
+		// 正在绘制则取消操作
+		if (start)
+		{
+			// 取消标识绘制等待
+			{
+				unique_lock lockdrawWaitingSm(drawWaitingSm);
+				drawWaiting = false;
+				lockdrawWaitingSm.unlock();
+			}
+			return false;
+		}
+	}
+
+	// 切换状态
+	{
+		stateMode.StateModeSelect = StateModeSelectEnum::IdtTouchTest;
+	}
+
+	// 取消标识绘制等待
+	{
+		unique_lock lockdrawWaitingSm(drawWaitingSm);
+		drawWaiting = false;
+		lockdrawWaitingSm.unlock();
+	}
+	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtTouchTest;
+	return true;
+}
 
 // 状态监测
 void StateMonitoring()
@@ -285,7 +328,7 @@ void StateMonitoring()
 		if (chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now() - StateMonitoringManipulated).count() >= 3000 && !offSignal)
 		{
 			MessageBox(floating_window, L"There is a problem with the state of the whiteboard, click OK to restart 智绘教Inkeys to try to solve the problem.(#6)\n画板状态出现问题，点击确定重启 智绘教Inkeys 以尝试解决问题。(#6)", L"Inkeys Error | 智绘教错误", MB_OK | MB_SYSTEMMODAL);
-			offSignal = 2;
+			RestartProgram();
 
 			return;
 		}

@@ -133,9 +133,25 @@ PLUGINFLAG3             PNG                     "src\\PluginFlag3.png"
 
 SETTINGSPONSOR          PNG                     "src\\setting\\SettingSponsor.png"
 
-CustomizeIco1           PNG                     "src\\ClassIsland.png"
+CUSTOMIZEICO1           PNG                     "src\\ClassIsland.png"
 
-CustomizeIco2           PNG                     "src\\IslandCaller.png"
+CUSTOMIZEICO2           PNG                     "src\\IslandCaller.png"
+
+CUSTOMIZEICO3           PNG                     "src\\quick\\desktop.png"
+
+CUSTOMIZEICO4           PNG                     "src\\quick\\explorer.png"
+
+CUSTOMIZEICO5           PNG                     "src\\quick\\keyboardesc.png"
+
+CUSTOMIZEICO6           PNG                     "src\\quick\\altf4.png"
+
+CUSTOMIZEICO7           PNG                     "src\\quick\\control.png"
+
+CUSTOMIZEICO8           PNG                     "src\\quick\\lockworkstation.png"
+
+CUSTOMIZEICO9           PNG                     "src\\quick\\taskmgr.png"
+
+PLUGINFLAG4             PNG                     "src\\PluginFlag4.png"
 
 
 /////////////////////////////////////////////////////////////////////////////

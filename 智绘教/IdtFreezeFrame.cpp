@@ -22,7 +22,7 @@ void FreezeFrameWindow()
 	SetWindowLong(freeze_window, GWL_EXSTYLE, WS_EX_TOOLWINDOW);//隐藏任务栏
 
 	IMAGE freeze_background, PptSign;
-	if (setlist.avoidFullScreen)
+	if (setlist.regularSetting.avoidFullScreen)
 	{
 		freeze_background.Resize(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight - 1);
 		SetWindowPos(freeze_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);

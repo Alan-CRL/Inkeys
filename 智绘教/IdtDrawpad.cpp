@@ -472,6 +472,7 @@ void KeyboardInteraction()
 	}
 }
 
+HCURSOR hArrowCursor = LoadCursor(nullptr, IDC_ARROW);
 LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	switch (msg)
@@ -486,11 +487,28 @@ LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 		flags |= (0x00010000);
 		return (LRESULT)flags;
 	}
+
+	case WM_SETCURSOR:
+	{
+		if (LOWORD(lParam) == HTCLIENT)
+		{
+			if (setlist.hideTouchPointer)
+			{
+				if (touchNum)
+				{
+					SetCursor(NULL);
+					return TRUE;
+				}
+			}
+		}
+		break;
+	}
+
 	default:
 		return HIWINDOW_DEFAULT_PROC;
 	}
 
-	return 0;
+	return HIWINDOW_DEFAULT_PROC;
 }
 BOOL DisableEdgeGestures(HWND hwnd, BOOL disable)
 {
@@ -552,10 +570,8 @@ void PrepareCanvas(int width, int height)
 }
 void ResetPrepareCanvas()
 {
-	shared_lock<shared_mutex> DisplaysInfoLock(DisplaysInfoSm);
 	int width = MainMonitor.MonitorWidth;
 	int height = MainMonitor.MonitorHeight;
-	DisplaysInfoLock.unlock();
 
 	unique_lock<shared_mutex> lockPrepareCanvasQueue1(prepareCanvasQueueSm);
 	while (prepareCanvasQueue.size() != setlist.performanceSetting.preparationQuantity)
@@ -584,10 +600,8 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 		int height;
 	} screenInfo;
 	{
-		shared_lock<shared_mutex> DisplaysInfoLock(DisplaysInfoSm);
 		screenInfo.width = MainMonitor.MonitorWidth;
 		screenInfo.height = MainMonitor.MonitorHeight;
-		DisplaysInfoLock.unlock();
 	}
 
 	struct
@@ -1359,6 +1373,85 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 			}
 		}
 	}
+	else if (stateModeSelect == StateModeSelectEnum::IdtTouchTest)
+	{
+		// 触摸调测
+
+		// 进入绘制刷新队列
+		{
+			multiStrokeImage->alpha = 255;
+
+			unique_lock lockStrokeImageListSm(StrokeImageListSm);
+			StrokeImageList.emplace_back(multiStrokeImage);
+			lockStrokeImageListSm.unlock();
+		}
+
+		while (1)
+		{
+			// 确认触摸点存在
+			{
+				shared_lock<shared_mutex> lockPointPosSm(touchPosSm);
+				{
+					if (TouchPos.find(pid) == TouchPos.end())
+					{
+						lockPointPosSm.unlock();
+						break;
+					}
+					mode = TouchPos[pid];
+				}
+				lockPointPosSm.unlock();
+
+				shared_lock lockPointListSm(pointListSm);
+				auto it = std::find(TouchList.begin(), TouchList.end(), pid);
+				lockPointListSm.unlock();
+				if (it == TouchList.end()) break;
+			}
+			// 过滤未动触摸点
+			if (mode.pt.x == pointInfo.previousX && mode.pt.y == pointInfo.previousY)
+			{
+				if (!setlist.performanceSetting.superDraw) this_thread::yield();
+				continue;
+			}
+
+			// 绘制
+			{
+				pointInfo.x = mode.pt.x, pointInfo.y = mode.pt.y;
+
+				unique_lock lockMultiStrokeImage(multiStrokeImage->sm);
+
+				SetImageColor(*Canvas, RGBA(0, 0, 0, 0), true);
+
+				if (mode.touchWidth != 0ll && mode.touchHeight != 0ll)
+					hiex::EasyX_Gdiplus_Rectangle(pointInfo.x - static_cast<float>(mode.touchWidth) / 2.0f, pointInfo.y - static_cast<float>(mode.touchHeight) / 2.0f, static_cast<float>(mode.touchWidth) + 1.0f, static_cast<float>(mode.touchHeight) + 1.0f, RGBA(255, 0, 0, 255), 3.0f, true, SmoothingModeHighQuality, Canvas);
+				hiex::EasyX_Gdiplus_Ellipse(pointInfo.x - 15.0f, pointInfo.y - 15.0f, 31.0f, 31.0f, RGBA(0, 255, 0, 255), 2.0f, true, SmoothingModeHighQuality, Canvas);
+				{
+					wstring text = to_wstring(mode.touchWidth) + L"px * " + to_wstring(mode.touchHeight) + L"px";
+
+					Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 24.0f, FontStyleRegular, UnitPixel);
+					SolidBrush WordBrush(Gdiplus::Color(255, 255, 0, 0));
+					graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
+
+					RECT words_rect;
+					{
+						words_rect.left = static_cast<LONG>(pointInfo.x - static_cast<float>(mode.touchWidth) / 2.0f);
+						words_rect.top = static_cast<LONG>(pointInfo.y + static_cast<float>(mode.touchHeight) / 2.0f + 5);
+						words_rect.right = static_cast<LONG>(pointInfo.x + 200);
+						words_rect.bottom = static_cast<LONG>(pointInfo.y + 200);
+					}
+
+					graphics.DrawString(text.c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat_left, &WordBrush);
+				}
+
+				lockMultiStrokeImage.unlock();
+
+				pointInfo.previousX = pointInfo.x, pointInfo.previousY = pointInfo.y;
+			}
+		}
+
+		unique_lock lockMultiStrokeImage(multiStrokeImage->sm);
+		SetImageColor(*Canvas, RGBA(0, 0, 0, 0), true);
+		lockMultiStrokeImage.unlock();
+	}
 
 	// 退出绘制刷新队列
 	unique_lock lockMultiStrokeImage(multiStrokeImage->sm);
@@ -1366,6 +1459,7 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 		if (stateInfo.StateModeSelect == StateModeSelectEnum::IdtPen) multiStrokeImage->endMode = 1;
 		else if (stateInfo.StateModeSelect == StateModeSelectEnum::IdtEraser) multiStrokeImage->endMode = 2;
 		else if (stateInfo.StateModeSelect == StateModeSelectEnum::IdtShape) multiStrokeImage->endMode = 1;
+		else if (stateInfo.StateModeSelect == StateModeSelectEnum::IdtTouchTest) multiStrokeImage->endMode = 2;
 	}
 	lockMultiStrokeImage.unlock();
 
@@ -1441,7 +1535,7 @@ void DrawpadDrawing()
 					ulwi.hdcSrc = GetImageHDC(&window_background);
 					UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
 
-					if (setlist.avoidFullScreen)
+					if (setlist.regularSetting.avoidFullScreen)
 						SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
 				}
 				bool saveImage = true;
@@ -1588,7 +1682,7 @@ void DrawpadDrawing()
 					SetImageColor(window_background, RGBA(0, 0, 0, 1), true);
 					hiex::TransparentImage(&window_background, 0, 0, &drawpad);
 
-					if (setlist.avoidFullScreen) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+					if (setlist.regularSetting.avoidFullScreen) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 
 					ulwi.hdcSrc = GetImageHDC(&window_background);
 					UpdateLayeredWindowIndirect(drawpad_window, &ulwi);
@@ -1606,7 +1700,7 @@ void DrawpadDrawing()
 			}
 			if (penetrate.select == true)
 			{
-				if (setlist.avoidFullScreen) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
+				if (setlist.regularSetting.avoidFullScreen) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
 				topWindowNow = true;
 
 				LONG nRet = GetWindowLongPtrW(drawpad_window, GWL_EXSTYLE);
@@ -1742,7 +1836,7 @@ void DrawpadDrawing()
 				}
 
 				if (setlist.performanceSetting.superDraw) timeBeginPeriod(1);
-				if (setlist.avoidFullScreen) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+				if (setlist.regularSetting.avoidFullScreen) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 
 				nRet = GetWindowLongPtrW(drawpad_window, GWL_EXSTYLE);
 				nRet &= ~WS_EX_TRANSPARENT;
@@ -2147,7 +2241,10 @@ int drawpad_main()
 					shared_lock<shared_mutex> lock1(touchTempSm);
 					TouchInfo touchPoint = TouchTemp.front();
 					lock1.unlock();
-					if (touchPoint.mode.isInvertedCursor || touchPoint.type == 3) nextPointMode = StateModeSelectEnum::IdtEraser;
+					if (nextPointMode != StateModeSelectEnum::IdtTouchTest)
+					{
+						if (touchPoint.mode.isInvertedCursor || touchPoint.mode.type == 3) nextPointMode = StateModeSelectEnum::IdtEraser;
+					}
 
 					if (int(state) == 1 && nextPointMode == StateModeSelectEnum::IdtEraser && setlist.RubberRecover) target_status = 0;
 					else if (int(state) == 1 && nextPointMode == StateModeSelectEnum::IdtPen && setlist.BrushRecover) target_status = 0;

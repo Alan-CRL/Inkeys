@@ -10,7 +10,7 @@ struct floating_windowsStruct
 };
 extern floating_windowsStruct floating_windows;
 
-extern IMAGE floating_icon[25], sign;
+extern IMAGE floating_icon[30], sign;
 extern IMAGE skin[5];
 
 extern double state;

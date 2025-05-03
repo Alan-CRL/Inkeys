@@ -124,12 +124,26 @@ bool ReadSetting()
 			setlist.topSleepTime = updateVal["TopSleepTime"].asInt();
 		if (updateVal.isMember("RightClickClose") && updateVal["RightClickClose"].isBool())
 			setlist.RightClickClose = updateVal["RightClickClose"].asBool();
-		if (updateVal.isMember("BrushRecover") && updateVal["BrushRecover"].isBool())
-			setlist.BrushRecover = updateVal["BrushRecover"].asBool();
-		if (updateVal.isMember("RubberRecover") && updateVal["RubberRecover"].isBool())
-			setlist.RubberRecover = updateVal["RubberRecover"].asBool();
-		if (updateVal.isMember("AvoidFullScreen") && updateVal["AvoidFullScreen"].isBool())
-			setlist.avoidFullScreen = updateVal["AvoidFullScreen"].asBool();
+		{
+			if (updateVal.isMember("BrushRecover") && updateVal["BrushRecover"].isBool())
+				setlist.BrushRecover = updateVal["BrushRecover"].asBool();
+			if (updateVal.isMember("RubberRecover") && updateVal["RubberRecover"].isBool())
+				setlist.RubberRecover = updateVal["RubberRecover"].asBool();
+		}
+		if (updateVal.isMember("Regular") && updateVal["Regular"].isObject())
+		{
+			{
+				if (updateVal["Regular"].isMember("MoveRecover") && updateVal["Regular"]["MoveRecover"].isBool())
+					setlist.regularSetting.moveRecover = updateVal["Regular"]["MoveRecover"].asBool();
+				if (updateVal["Regular"].isMember("ClickRecover") && updateVal["Regular"]["ClickRecover"].isBool())
+					setlist.regularSetting.clickRecover = updateVal["Regular"]["ClickRecover"].asBool();
+			}
+
+			if (updateVal["Regular"].isMember("AvoidFullScreen") && updateVal["Regular"]["AvoidFullScreen"].isBool())
+				setlist.regularSetting.avoidFullScreen = updateVal["Regular"]["AvoidFullScreen"].asBool();
+			if (updateVal["Regular"].isMember("TeachingSafetyMode") && updateVal["Regular"]["TeachingSafetyMode"].isInt())
+				setlist.regularSetting.teachingSafetyMode = updateVal["Regular"]["TeachingSafetyMode"].asInt();
+		}
 
 		if (updateVal.isMember("PaintDevice") && updateVal["PaintDevice"].isInt())
 			setlist.paintDevice = updateVal["PaintDevice"].asInt();
@@ -148,7 +162,16 @@ bool ReadSetting()
 			if (updateVal["EraserSetting"].isMember("EraserSize") && updateVal["EraserSetting"]["EraserSize"].isInt())
 				setlist.eraserSetting.eraserSize = updateVal["EraserSetting"]["EraserSize"].asInt();
 		}
+		if (updateVal.isMember("HideTouchPointerBeta") && updateVal["HideTouchPointerBeta"].isBool())
+			setlist.hideTouchPointer = updateVal["HideTouchPointerBeta"].asBool();
 
+		if (updateVal.isMember("Save") && updateVal["Save"].isObject())
+		{
+			if (updateVal["Save"].isMember("Enable") && updateVal["Save"]["Enable"].isBool())
+				setlist.saveSetting.enable = updateVal["Save"]["Enable"].asBool();
+			if (updateVal["Save"].isMember("SaveDays") && updateVal["Save"]["SaveDays"].isInt())
+				setlist.saveSetting.saveDays = updateVal["Save"]["SaveDays"].asInt();
+		}
 		if (updateVal.isMember("Performance") && updateVal["Performance"].isObject())
 		{
 			if (updateVal["Performance"].isMember("PreparationQuantity") && updateVal["Performance"]["PreparationQuantity"].isInt())
@@ -221,6 +244,102 @@ bool ReadSetting()
 					setlist.shortcutAssistant.createLnk = updateVal["PlugIn"]["ShortcutAssistant"]["CreateLnk"].asBool();
 			}
 		}
+		if (updateVal.isMember("Component") && updateVal["Component"].isObject())
+		{
+			// shortcutButton
+			if (updateVal["Component"].isMember("ShortcutButton") && updateVal["Component"]["ShortcutButton"].isObject())
+			{
+				// appliance
+				if (updateVal["Component"]["ShortcutButton"].isMember("Appliance") && updateVal["Component"]["ShortcutButton"]["Appliance"].isObject())
+				{
+					if (updateVal["Component"]["ShortcutButton"]["Appliance"].isMember("Explorer") && updateVal["Component"]["ShortcutButton"]["Appliance"]["Explorer"].isBool())
+						setlist.component.shortcutButton.appliance.explorer = updateVal["Component"]["ShortcutButton"]["Appliance"]["Explorer"].asBool();
+					if (updateVal["Component"]["ShortcutButton"]["Appliance"].isMember("Taskmgr") && updateVal["Component"]["ShortcutButton"]["Appliance"]["Taskmgr"].isBool())
+						setlist.component.shortcutButton.appliance.taskmgr = updateVal["Component"]["ShortcutButton"]["Appliance"]["Taskmgr"].asBool();
+					if (updateVal["Component"]["ShortcutButton"]["Appliance"].isMember("Control") && updateVal["Component"]["ShortcutButton"]["Appliance"]["Control"].isBool())
+						setlist.component.shortcutButton.appliance.control = updateVal["Component"]["ShortcutButton"]["Appliance"]["Control"].asBool();
+				}
+				// system
+				if (updateVal["Component"]["ShortcutButton"].isMember("System") && updateVal["Component"]["ShortcutButton"]["System"].isObject())
+				{
+					if (updateVal["Component"]["ShortcutButton"]["System"].isMember("Desktop") && updateVal["Component"]["ShortcutButton"]["System"]["Desktop"].isBool())
+						setlist.component.shortcutButton.system.desktop = updateVal["Component"]["ShortcutButton"]["System"]["Desktop"].asBool();
+					if (updateVal["Component"]["ShortcutButton"]["System"].isMember("LockWorkStation") && updateVal["Component"]["ShortcutButton"]["System"]["LockWorkStation"].isBool())
+						setlist.component.shortcutButton.system.lockWorkStation = updateVal["Component"]["ShortcutButton"]["System"]["LockWorkStation"].asBool();
+				}
+				// keyboard
+				if (updateVal["Component"]["ShortcutButton"].isMember("Keyboard") && updateVal["Component"]["ShortcutButton"]["Keyboard"].isObject())
+				{
+					if (updateVal["Component"]["ShortcutButton"]["Keyboard"].isMember("Keyboardesc") && updateVal["Component"]["ShortcutButton"]["Keyboard"]["Keyboardesc"].isBool())
+						setlist.component.shortcutButton.keyboard.keyboardesc = updateVal["Component"]["ShortcutButton"]["Keyboard"]["Keyboardesc"].asBool();
+					if (updateVal["Component"]["ShortcutButton"]["Keyboard"].isMember("KeyboardAltF4") && updateVal["Component"]["ShortcutButton"]["Keyboard"]["KeyboardAltF4"].isBool())
+						setlist.component.shortcutButton.keyboard.keyboardAltF4 = updateVal["Component"]["ShortcutButton"]["Keyboard"]["KeyboardAltF4"].asBool();
+				}
+				// linkage
+				if (updateVal["Component"]["ShortcutButton"].isMember("Linkage") && updateVal["Component"]["ShortcutButton"]["Linkage"].isObject())
+				{
+					if (updateVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandSettings") && updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandSettings"].isBool())
+						setlist.component.shortcutButton.linkage.classislandSettings = updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandSettings"].asBool();
+					if (updateVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandProfile") && updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandProfile"].isBool())
+						setlist.component.shortcutButton.linkage.classislandProfile = updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandProfile"].asBool();
+					if (updateVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandClassswap") && updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandClassswap"].isBool())
+						setlist.component.shortcutButton.linkage.classislandClassswap = updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandClassswap"].asBool();
+					if (updateVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandIslandCaller") && updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandIslandCaller"].isBool())
+						setlist.component.shortcutButton.linkage.classislandIslandCaller = updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandIslandCaller"].asBool();
+				}
+			}
+		}
+
+		if (updateVal.isMember("SuperTop") && updateVal["SuperTop"].isBool())
+			setlist.superTop = updateVal["SuperTop"].asBool();
+	}
+	else return false;
+
+	return true;
+}
+bool ReadSettingMini()
+{
+	HANDLE fileHandle = NULL;
+	if (!OccupyFileForRead(&fileHandle, globalPath + L"opt\\deploy.json"))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	LARGE_INTEGER fileSize;
+	if (!GetFileSizeEx(fileHandle, &fileSize))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
+	string jsonContent = string(dwSize, '\0');
+
+	DWORD bytesRead = 0;
+	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+	if (!ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	if (jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
+	UnOccupyFile(&fileHandle);
+
+	istringstream jsonContentStream(jsonContent);
+	Json::CharReaderBuilder readerBuilder;
+	Json::Value updateVal;
+	string jsonErr;
+
+	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+	{
+		if (updateVal.isMember("SuperTop") && updateVal["SuperTop"].isBool())
+			setlist.superTop = updateVal["SuperTop"].asBool();
 	}
 	else return false;
 
@@ -243,9 +362,16 @@ bool WriteSetting()
 		updateVal["SetSkinMode"] = Json::Value(setlist.SetSkinMode);
 		updateVal["TopSleepTime"] = Json::Value(setlist.topSleepTime);
 		updateVal["RightClickClose"] = Json::Value(setlist.RightClickClose);
-		updateVal["BrushRecover"] = Json::Value(setlist.BrushRecover);
-		updateVal["RubberRecover"] = Json::Value(setlist.RubberRecover);
-		updateVal["AvoidFullScreen"] = Json::Value(setlist.avoidFullScreen);
+		{
+			updateVal["BrushRecover"] = Json::Value(setlist.BrushRecover);
+			updateVal["RubberRecover"] = Json::Value(setlist.RubberRecover);
+		}
+		{
+			updateVal["Regular"]["MoveRecover"] = Json::Value(setlist.regularSetting.moveRecover);
+			updateVal["Regular"]["ClickRecover"] = Json::Value(setlist.regularSetting.clickRecover);
+		}
+		updateVal["Regular"]["AvoidFullScreen"] = Json::Value(setlist.regularSetting.avoidFullScreen);
+		updateVal["Regular"]["TeachingSafetyMode"] = Json::Value(setlist.regularSetting.teachingSafetyMode);
 
 		updateVal["PaintDevice"] = Json::Value(setlist.paintDevice);
 		updateVal["LiftStraighten"] = Json::Value(setlist.liftStraighten);
@@ -256,7 +382,12 @@ bool WriteSetting()
 			updateVal["EraserSetting"]["EraserMode"] = Json::Value(setlist.eraserSetting.eraserMode);
 			updateVal["EraserSetting"]["EraserSize"] = Json::Value(setlist.eraserSetting.eraserSize);
 		}
+		updateVal["HideTouchPointerBeta"] = Json::Value(setlist.hideTouchPointer);
 
+		{
+			updateVal["Save"]["Enable"] = Json::Value(setlist.saveSetting.enable);
+			updateVal["Save"]["SaveDays"] = Json::Value(setlist.saveSetting.saveDays);
+		}
 		{
 			updateVal["Performance"]["PreparationQuantity"] = Json::Value(setlist.performanceSetting.preparationQuantity);
 
@@ -301,6 +432,36 @@ bool WriteSetting()
 				updateVal["PlugIn"]["ShortcutAssistant"]["CreateLnk"] = Json::Value(setlist.shortcutAssistant.createLnk);
 			}
 		}
+		{
+			// shortcutButton
+			{
+				// appliance
+				{
+					updateVal["Component"]["ShortcutButton"]["Appliance"]["Explorer"] = Json::Value(setlist.component.shortcutButton.appliance.explorer);
+					updateVal["Component"]["ShortcutButton"]["Appliance"]["Taskmgr"] = Json::Value(setlist.component.shortcutButton.appliance.taskmgr);
+					updateVal["Component"]["ShortcutButton"]["Appliance"]["Control"] = Json::Value(setlist.component.shortcutButton.appliance.control);
+				}
+				// system
+				{
+					updateVal["Component"]["ShortcutButton"]["System"]["Desktop"] = Json::Value(setlist.component.shortcutButton.system.desktop);
+					updateVal["Component"]["ShortcutButton"]["System"]["LockWorkStation"] = Json::Value(setlist.component.shortcutButton.system.lockWorkStation);
+				}
+				// keyboard
+				{
+					updateVal["Component"]["ShortcutButton"]["Keyboard"]["Keyboardesc"] = Json::Value(setlist.component.shortcutButton.keyboard.keyboardesc);
+					updateVal["Component"]["ShortcutButton"]["Keyboard"]["KeyboardAltF4"] = Json::Value(setlist.component.shortcutButton.keyboard.keyboardAltF4);
+				}
+				// linkage
+				{
+					updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandSettings"] = Json::Value(setlist.component.shortcutButton.linkage.classislandSettings);
+					updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandProfile"] = Json::Value(setlist.component.shortcutButton.linkage.classislandProfile);
+					updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandClassswap"] = Json::Value(setlist.component.shortcutButton.linkage.classislandClassswap);
+					updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandIslandCaller"] = Json::Value(setlist.component.shortcutButton.linkage.classislandIslandCaller);
+				}
+			}
+		}
+
+		updateVal["SuperTop"] = Json::Value(setlist.superTop);
 	}
 
 	HANDLE fileHandle = NULL;
@@ -378,6 +539,8 @@ bool PptComReadSetting()
 	{
 		if (updateVal.isMember("FixedHandWriting") && updateVal["FixedHandWriting"].isBool())
 			pptComSetlist.fixedHandWriting = updateVal["FixedHandWriting"].asBool();
+		if (updateVal.isMember("ShowLoadingScreen") && updateVal["ShowLoadingScreen"].isBool())
+			pptComSetlist.showLoadingScreen = updateVal["ShowLoadingScreen"].asBool();
 		if (updateVal.isMember("MemoryWidgetPosition") && updateVal["MemoryWidgetPosition"].isBool())
 			pptComSetlist.memoryWidgetPosition = updateVal["MemoryWidgetPosition"].asBool();
 
@@ -429,6 +592,7 @@ bool PptComWriteSetting()
 	Json::Value updateVal;
 	{
 		updateVal["FixedHandWriting"] = Json::Value(pptComSetlist.fixedHandWriting);
+		updateVal["ShowLoadingScreen"] = Json::Value(pptComSetlist.showLoadingScreen);
 		updateVal["MemoryWidgetPosition"] = Json::Value(pptComSetlist.memoryWidgetPosition);
 
 		updateVal["ShowBottomBoth"] = Json::Value(pptComSetlist.showBottomBoth);

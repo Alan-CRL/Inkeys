@@ -457,6 +457,7 @@
     <ClInclude Include="additional\wintoastlib\wintoastlib.h" />
     <ClInclude Include="additional\ziputils\unzip.h" />
     <ClInclude Include="additional\ziputils\zip.h" />
+    <ClInclude Include="CrashHandler\CrashHandler.h" />
     <ClInclude Include="HiEasyX.h" />
     <ClInclude Include="HiEasyX\HiCanvas.h" />
     <ClInclude Include="HiEasyX\HiContainer.h" />
@@ -516,6 +517,7 @@
     <ClInclude Include="IdtTime.h" />
     <ClInclude Include="IdtUpdate.h" />
     <ClInclude Include="IdtWindow.h" />
+    <ClInclude Include="SuperTop\IdtSuperTop.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="additional\hashlib++\hl_md5.cpp" />
@@ -544,6 +546,7 @@
     <ClCompile Include="additional\wintoastlib\wintoastlib.cpp" />
     <ClCompile Include="additional\ziputils\unzip.cpp" />
     <ClCompile Include="additional\ziputils\zip.cpp" />
+    <ClCompile Include="CrashHandler\CrashHandler.cpp" />
     <ClCompile Include="ExtraInclude.cpp" />
     <ClCompile Include="IdtBar.cpp" />
     <ClCompile Include="IdtConfiguration.cpp" />
@@ -601,6 +604,7 @@
     <ClCompile Include="IdtUpdate.cpp" />
     <ClCompile Include="IdtWindow.cpp" />
     <ClCompile Include="Launch\IdtLaunchState.cpp" />
+    <ClCompile Include="SuperTop\IdtSuperTop.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="智绘教.rc" />
@@ -635,11 +639,19 @@
     <Image Include="src\PluginFlag1.png" />
     <Image Include="src\PluginFlag2.png" />
     <Image Include="src\PluginFlag3.png" />
+    <Image Include="src\PluginFlag4.png" />
     <Image Include="src\ppt\arrow_down.png" />
     <Image Include="src\ppt\arrow_left.png" />
     <Image Include="src\ppt\arrow_right.png" />
     <Image Include="src\ppt\arrow_up.png" />
     <Image Include="src\ppt\end_show.png" />
+    <Image Include="src\quick\altf4.png" />
+    <Image Include="src\quick\control.png" />
+    <Image Include="src\quick\desktop.png" />
+    <Image Include="src\quick\explorer.png" />
+    <Image Include="src\quick\keyboardesc.png" />
+    <Image Include="src\quick\lockworkstation.png" />
+    <Image Include="src\quick\taskmgr.png" />
     <Image Include="src\rectangle.png" />
     <Image Include="src\right.png" />
     <Image Include="src\rubber.png" />

@@ -2038,7 +2038,7 @@ void PptInfo()
 			if (ppt_software.find(L"WPS") != ppt_software.npos) ppt_software = L"WPS";
 			else ppt_software = L"PowerPoint";
 
-			if (!ppt_title_recond[ppt_title]) FreezePPT = true;
+			if (!ppt_title_recond[ppt_title] && pptComSetlist.showLoadingScreen) FreezePPT = true;
 			Initialization = true;
 		}
 		else if (Initialization && PptInfoState.TotalPage == -1)
@@ -2076,7 +2076,7 @@ void PptDraw()
 		PPTMainMonitor = MainMonitor;
 		DisplaysInfoLock2.unlock();
 
-		if (setlist.avoidFullScreen)
+		if (setlist.regularSetting.avoidFullScreen)
 		{
 			PptWindowBackground.Resize(PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight - 1);
 			SetWindowPos(ppt_window, NULL, PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
@@ -2331,7 +2331,7 @@ void PptDraw()
 
 			if (MainMonitorDifferent)
 			{
-				if (setlist.avoidFullScreen)
+				if (setlist.regularSetting.avoidFullScreen)
 				{
 					PptWindowBackground.Resize(PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight - 1);
 					SetWindowPos(ppt_window, NULL, PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);

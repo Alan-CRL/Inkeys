@@ -14,8 +14,7 @@
 #pragma once
 #include "IdtMain.h"
 
-extern int DisplaysNumber;
-extern shared_mutex DisplaysNumberSm;
+extern IdtAtomic<int> DisplaysNumber;
 
 class EDIDInfoStruct
 {
@@ -50,7 +49,7 @@ class MonitorInfoStruct
 {
 public:
 	MonitorInfoStruct() {};
-	MonitorInfoStruct(HMONITOR MonitorTarget, RECT rcMonitorTarget, int MonitorWidthTarget, int MonitorHeightTarget, EDIDInfoStruct edidInfoTarget, int MonitorPhyWidthTarget, int MonitorPhyHeightTarget, int displayOrientationTarget, bool isMainMonitorTarget)
+	MonitorInfoStruct(HMONITOR MonitorTarget, RECT rcMonitorTarget, int MonitorWidthTarget, int MonitorHeightTarget, EDIDInfoStruct edidInfoTarget, int MonitorPhyWidthTarget, int MonitorPhyHeightTarget, int MonitorPhyRawWidthTarget, int MonitorPhyRawHeightTarget, int displayOrientationTarget, bool isMainMonitorTarget)
 	{
 		Monitor = MonitorTarget;
 		rcMonitor = rcMonitorTarget;
@@ -59,6 +58,8 @@ public:
 		edidInfo = edidInfoTarget;
 		MonitorPhyWidth = MonitorPhyWidthTarget;
 		MonitorPhyHeight = MonitorPhyHeightTarget;
+		MonitorPhyRawWidth = MonitorPhyRawWidthTarget;
+		MonitorPhyRawHeight = MonitorPhyRawHeightTarget;
 		displayOrientation = displayOrientationTarget;
 
 		isMainMonitor = isMainMonitorTarget;
@@ -74,6 +75,8 @@ public:
 			edidInfo == other.edidInfo &&
 			MonitorPhyWidth == other.MonitorPhyWidth &&
 			MonitorPhyHeight == other.MonitorPhyHeight &&
+			MonitorPhyRawWidth == other.MonitorPhyRawWidth &&
+			MonitorPhyRawHeight == other.MonitorPhyRawHeight &&
 			displayOrientation == other.displayOrientation;
 	}
 	bool operator!=(const MonitorInfoStruct& other) const
@@ -84,12 +87,14 @@ public:
 public:
 	HMONITOR Monitor;
 	RECT rcMonitor;
-	int MonitorWidth;
-	int MonitorHeight;
+	IdtAtomic<int> MonitorWidth;
+	IdtAtomic<int> MonitorHeight;
 	EDIDInfoStruct edidInfo;
-	int MonitorPhyWidth;
-	int MonitorPhyHeight;
-	int displayOrientation;
+	IdtAtomic<int> MonitorPhyRawWidth;
+	IdtAtomic<int> MonitorPhyRawHeight;
+	IdtAtomic<int> MonitorPhyWidth;
+	IdtAtomic<int> MonitorPhyHeight;
+	IdtAtomic<int> displayOrientation;
 
 public:
 	bool isMainMonitor;

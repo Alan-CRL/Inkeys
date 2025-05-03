@@ -36,6 +36,8 @@
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
 #include "Launch/IdtLaunchState.h"
+#include "CrashHandler/CrashHandler.h"
+#include "SuperTop/IdtSuperTop.h"
 
 #include <lm.h>
 #include <shellscalingapi.h>
@@ -43,7 +45,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250403a";				// 程序发布日期
+wstring editionDate = L"20250503a";				// 程序发布日期
 wstring editionChannel = L"LTS";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -55,6 +57,17 @@ wstring targetArchitecture = L"win32";
 
 int offSignal = false;							// 关闭指令
 map <wstring, bool> threadStatus;				// 线程状态管理
+
+void CloseProgram()
+{
+	CrashHandler::Shutdown();
+	offSignal = 1;
+}
+void RestartProgram()
+{
+	CrashHandler::Shutdown();
+	offSignal = 2;
+}
 
 shared_ptr<spdlog::logger> IDTLogger;
 
@@ -125,12 +138,21 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		// 检查启动标识
 		// -Restart 强制启动一次
 		// -WarnTry 强制启动一次，表明上一次遇到了错误
+		// -CrashTry 表明上一次遇到了崩溃错误
 
 		wstring commandLineArgs(lpCmdLine);
 
 		if (commandLineArgs == L"-Restart") launchState = LaunchStateEnum::Restart;
 		else if (commandLineArgs == L"-WarnTry") launchState = LaunchStateEnum::WarnTry;
+		else if (commandLineArgs == L"-CrashTry") launchState = LaunchStateEnum::CrashTry;
 		else launchState = LaunchStateEnum::Normal;
+
+		if (commandLineArgs.substr(0, 9) == L"-SuperTop")
+		{
+			SurperTopMain(commandLineArgs.substr(10, commandLineArgs.length() - 10));
+			return 0;
+		}
+		//Testw(L"in \"" + commandLineArgs + L"\"");
 
 #ifdef IDT_RELEASE
 		if (launchState == LaunchStateEnum::Normal)
@@ -165,6 +187,11 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			}
 		}
 #endif
+		if (launchState == LaunchStateEnum::CrashTry) CrashHandler::IsSecond(true);
+	}
+	// 崩溃助手初始化
+	{
+		CrashHandler::Initialize();
 	}
 	// 体系架构识别
 	{
@@ -447,8 +474,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 				if (flag)
 				{
-					ShellExecuteW(NULL, NULL, (globalPath + path).c_str(), NULL, NULL, SW_SHOWNORMAL);
-					return 0;
+					HINSTANCE hInst = ShellExecuteW(NULL, NULL, (globalPath + path).c_str(), NULL, NULL, SW_SHOWNORMAL);
+					if ((INT_PTR)hInst > 32) return 0;
+					flag = false;
 				}
 			}
 			else flag = false;
@@ -462,13 +490,34 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 
 	// InkeysSuperTop 阶段
+	if (_waccess((globalPath + L"opt\\deploy.json").c_str(), 4) == 0)
 	{
-		/*error_code ec;
-		if (filesystem::exists(globalPath + L"superTop_failed.signal", ec)) filesystem::remove(globalPath + L"superTop_failed.signal", ec);
+		ReadSettingMini();
 
-		HANDLE fileHandle = NULL;
-		OccupyFileForWrite(&fileHandle, globalPath + L"superTop_try.signal");
-		UnOccupyFile(&fileHandle);*/
+		HANDLE proc_self = GetCurrentProcess();
+		HANDLE tok_self;
+		OpenProcessToken(proc_self, TOKEN_ALL_ACCESS, &tok_self);
+
+		if (setlist.superTop)
+		{
+			if (!hasUiAccess(tok_self))
+			{
+				error_code ec;
+				if (filesystem::exists(globalPath + L"superTop_try.signal", ec));
+				else
+				{
+					HANDLE fileHandle = NULL;
+					OccupyFileForWrite(&fileHandle, globalPath + L"superTop_try.signal");
+					UnOccupyFile(&fileHandle);
+
+					LaunchSurperTop();
+				}
+			}
+		}
+		error_code ec;
+		filesystem::remove(globalPath + L"superTop_try.signal", ec);
+
+		hasSuperTop = hasUiAccess(tok_self);
 	}
 
 	// 用户ID获取
@@ -575,6 +624,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		IDTLogger->flush_on(spdlog::level::info);
 		IDTLogger->info("[主线程][IdtMain] 日志开始记录 " + utf16ToUtf8(editionDate) + " " + utf16ToUtf8(userId));
 
+		if (launchState == LaunchStateEnum::CrashTry) IDTLogger->warn("[主线程][IdtMain] 发现程序先前发生过崩溃错误");
+
 		//logger->info("");
 		//logger->warn("");
 		//logger->error("");
@@ -624,6 +675,16 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	ULONG_PTR ulCookie;
 	CoInitializeEx(NULL, COINIT_MULTITHREADED);
 
+	// 显示器信息初始化
+	{
+		// 显示器检查
+		DisplayManagementMain();
+
+		int DisplaysNumberTemp = DisplaysNumber;
+		if (DisplaysNumberTemp > 1) IDTLogger->warn("[主线程][IdtMain] 拥有多个显示器");
+		IDTLogger->info("[主线程][IdtMain] 显示器信息初始化完成");
+	}
+
 	// 配置信息初始化
 	{
 		// 读取配置文件前初始化操作
@@ -646,10 +707,14 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 				setlist.topSleepTime = 3;
 				setlist.RightClickClose = false;
+
 				setlist.BrushRecover = true;
 				setlist.RubberRecover = false;
+				setlist.regularSetting.moveRecover = true;
+				setlist.regularSetting.clickRecover = false;
 
-				setlist.avoidFullScreen = true;
+				setlist.regularSetting.avoidFullScreen = true;
+				setlist.regularSetting.teachingSafetyMode = 0;
 			}
 			// 绘制
 			{
@@ -664,6 +729,13 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 					float drawingScale = GetDrawingScale();
 					setlist.eraserSetting.eraserSize = static_cast<int>(60 * drawingScale);
 				}
+
+				setlist.hideTouchPointer = false;
+			}
+			// 保存
+			{
+				setlist.saveSetting.enable = true;
+				setlist.saveSetting.saveDays = 2;
 			}
 			// 性能
 			{
@@ -677,6 +749,32 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				{
 					setlist.shortcutAssistant.correctLnk = true;
 					setlist.shortcutAssistant.createLnk = false;
+				}
+			}
+			// 组件
+			{
+				{
+					{
+						{
+							setlist.component.shortcutButton.appliance.explorer = false;
+							setlist.component.shortcutButton.appliance.taskmgr = false;
+							setlist.component.shortcutButton.appliance.control = false;
+						}
+						{
+							setlist.component.shortcutButton.system.desktop = false;
+							setlist.component.shortcutButton.system.lockWorkStation = false;
+						}
+						{
+							setlist.component.shortcutButton.keyboard.keyboardesc = false;
+							setlist.component.shortcutButton.keyboard.keyboardAltF4 = false;
+						}
+						{
+							setlist.component.shortcutButton.linkage.classislandSettings = false;
+							setlist.component.shortcutButton.linkage.classislandProfile = false;
+							setlist.component.shortcutButton.linkage.classislandClassswap = false;
+							setlist.component.shortcutButton.linkage.classislandIslandCaller = false;
+						}
+					}
 				}
 			}
 
@@ -761,6 +859,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				if (setlist.SetSkinMode == 0) setlist.SkinMode = 1;
 				else setlist.SkinMode = setlist.SetSkinMode;
 			}
+			// 崩溃选项设定
+			CrashHandler::SetFlag(setlist.regularSetting.teachingSafetyMode);
 		}
 
 		IDTLogger->info("[主线程][IdtMain] 配置信息初始化完成");
@@ -853,18 +953,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		stringFormat_left.SetFormatFlags(StringFormatFlagsNoWrap);
 
 		IDTLogger->info("[主线程][IdtMain] 字体初始化完成");
-	}
-	// 显示器信息初始化
-	{
-		// 显示器检查
-		DisplayManagementMain();
-
-		shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
-		int DisplaysNumberTemp = DisplaysNumber;
-		DisplaysNumberLock.unlock();
-
-		if (DisplaysNumberTemp > 1) IDTLogger->warn("[主线程][IdtMain] 拥有多个显示器");
-		IDTLogger->info("[主线程][IdtMain] 显示器信息初始化完成");
 	}
 
 	// 窗口
@@ -993,6 +1081,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] 线程初始化完成");
 	}
+	CrashHandler::IsSecond(false);
 
 	IDTLogger->info("[主线程][IdtMain] 开始等待关闭程序信号发出");
 

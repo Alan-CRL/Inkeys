@@ -19,8 +19,7 @@
 #include <initguid.h>
 #include <ntddvdeo.h>
 
-int DisplaysNumber;
-shared_mutex DisplaysNumberSm;
+IdtAtomic<int> DisplaysNumber;
 
 vector<MonitorInfoStruct> DisplaysInfo;
 shared_mutex DisplaysInfoSm;
@@ -44,13 +43,13 @@ BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMoni
 	if (MonitorEnumProcCount == MonitorEnumProcCountTarget)
 	{
 		unique_lock<shared_mutex> DisplaysInfoLock(DisplaysInfoSm);
-		DisplaysInfo.clear();
-		DisplaysInfoLock.unlock();
 
+		DisplaysInfo.clear();
 		for (const auto& [Monitor, MonitorInfo] : DisplaysInfoTemp)
 		{
 			bool edidValid = false;
 			wstring edidVersion;
+			int phyRawWidth = 0, phyRawHeight = 0;
 			int phyWidth = 0, phyHeight = 0;
 			int displayOrientation = 0;
 			wstring strModel, strDriver;
@@ -78,8 +77,8 @@ BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMoni
 				{
 					edidValid = true;
 					edidVersion = to_wstring(EDIDBuf[18]) + L"." + to_wstring(EDIDBuf[19]);
-					phyWidth = EDIDBuf[21];
-					phyHeight = EDIDBuf[22];
+					phyRawWidth = EDIDBuf[21];
+					phyRawHeight = EDIDBuf[22];
 				}
 			}
 
@@ -88,6 +87,8 @@ BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMoni
 			devMode.dmSize = sizeof(devMode);
 			if (EnumDisplaySettings(MonitorInfo.szDevice, ENUM_CURRENT_SETTINGS, &devMode))
 				displayOrientation = devMode.dmDisplayOrientation;
+			if (displayOrientation == 0 || displayOrientation == 2) phyWidth = phyRawWidth, phyHeight = phyRawHeight;
+			else phyWidth = phyRawHeight, phyHeight = phyRawWidth;
 
 			if (MonitorInfo.dwFlags & MONITORINFOF_PRIMARY)
 			{
@@ -96,26 +97,26 @@ BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMoni
 				MainMonitor.MonitorWidth = MonitorInfo.rcMonitor.right - MonitorInfo.rcMonitor.left;
 				MainMonitor.MonitorHeight = MonitorInfo.rcMonitor.bottom - MonitorInfo.rcMonitor.top;
 				MainMonitor.edidInfo = EDIDInfoStruct(edidValid, edidVersion, deviceId);
-				MainMonitor.MonitorPhyWidth = phyWidth, MainMonitor.MonitorPhyHeight = phyHeight;
+				MainMonitor.MonitorPhyRawWidth = phyRawWidth;
+				MainMonitor.MonitorPhyRawHeight = phyRawHeight;
+				MainMonitor.MonitorPhyWidth = phyWidth;
+				MainMonitor.MonitorPhyHeight = phyHeight;
 				MainMonitor.displayOrientation = displayOrientation;
 			}
 
-			unique_lock<shared_mutex> DisplaysInfoLock(DisplaysInfoSm);
 			DisplaysInfo.push_back(MonitorInfoStruct(Monitor,
 				MonitorInfo.rcMonitor,
 				MonitorInfo.rcMonitor.right - MonitorInfo.rcMonitor.left,
 				MonitorInfo.rcMonitor.bottom - MonitorInfo.rcMonitor.top,
 				EDIDInfoStruct(edidValid, edidVersion, deviceId),
 				phyWidth, phyHeight,
+				phyRawWidth, phyRawHeight,
 				displayOrientation,
 				(monitorInfo.dwFlags & MONITORINFOF_PRIMARY)));
-			DisplaysInfoLock.unlock();
 		}
+		DisplaysInfoLock.unlock();
 
-		unique_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
 		DisplaysNumber = DisplaysInfo.size();
-		DisplaysNumberLock.unlock();
-
 		DisplaysInfoTemp.clear();
 		MonitorEnumProcCount = 0;
 	}
@@ -290,10 +291,5 @@ void DisplayManagementMain()
 		thread DisplayManagementPollingThread(DisplayManagementPolling);
 		DisplayManagementPollingThread.detach();
 	}
-	else
-	{
-		unique_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
-		DisplaysNumber = 1;
-		DisplaysNumberLock.unlock();
-	}
+	else DisplaysNumber = 1;
 }

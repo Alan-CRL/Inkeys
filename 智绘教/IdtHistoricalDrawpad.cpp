@@ -79,10 +79,16 @@ void LoadDrawpad()
 
 			for (int i = 0; i < (int)record_value["Image_Properties"].size(); i++)
 			{
-				deque<wstring> date = getPrevTwoDays(CurrentDate(), 5);
+				int saveDays = 5;
+				if (setlist.saveSetting.saveDays == 0) saveDays = 1;
+				else if (setlist.saveSetting.saveDays == 1) saveDays = 3;
+				else if (setlist.saveSetting.saveDays == 2) saveDays = 5;
+				else if (setlist.saveSetting.saveDays == 3) saveDays = 10;
+				else if (setlist.saveSetting.saveDays == 4) saveDays = 30;
+				deque<wstring> date = getPrevTwoDays(CurrentDate(), saveDays);
 
 				auto it = find(date.begin(), date.end(), utf8ToUtf16(record_value["Image_Properties"][i]["date"].asString()));
-				if (it == date.end())
+				if (it == date.end() && setlist.saveSetting.saveDays != 5)
 				{
 					error_code ec;
 					filesystem::remove(utf8ToUtf16(record_value["Image_Properties"][i]["drawpad"].asString()), ec);
@@ -153,7 +159,7 @@ void LoadDrawpad()
 // 保存图像到指定目录
 void SaveScreenShot(IMAGE img, bool record_pointer_add)
 {
-	shared_lock<shared_mutex> DisplaysNumberLock(DisplaysNumberSm);
+	if (!setlist.saveSetting.enable) return;
 
 	wstring date = CurrentDate(), time = CurrentTime(), stamp = getTimestamp();
 	if (_waccess((globalPath + L"ScreenShot\\" + date).c_str(), 0 == -1))
