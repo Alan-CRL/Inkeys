@@ -5279,6 +5279,48 @@ void SettingMain()
 
 							{
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(255, 244, 206, 255));
+								ImGui::BeginChild("超级置顶#01", { 750.0f * settingGlobalScale,130.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+								float cursosPosY = 0;
+								{
+									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(157, 93, 0, 255));
+									ImGui::TextUnformatted("\ue814");
+								}
+								{
+									ImGui::SetCursorPos({ 60.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+
+									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
+									ImGui::BeginChild("超级置顶-提示1", { 670.0f * settingGlobalScale,90.0f * settingGlobalScale }, false);
+
+									{
+										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+										ImGui::TextWrapped("超级置顶插件处于 BETA 阶段，可能遇到不稳定的问题。\n软件在启动时会通过再运行自身的方式进行提权，提权成功后再运行新的软件实例。\n该过程可能失败，导致错误地启动拥有管理员权限的软件，可能会影响 PPT 联动。\n过程中会弹出 UAC 确认弹窗，请点击确认或关闭 UAC 提示（不推荐）。\n过程中可能被杀毒软件误报，这是正常现象。");
+									}
+
+									{
+										if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+										if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+										while (PushFontNum) PushFontNum--, ImGui::PopFont();
+									}
+									ImGui::EndChild();
+								}
+
+								{
+									if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+									if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+									while (PushFontNum) PushFontNum--, ImGui::PopFont();
+								}
+								ImGui::EndChild();
+							}
+							{
+								ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
+								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(255, 255, 255, 0));
 								ImGui::BeginChild("超级置顶#1", { 750.0f * settingGlobalScale,130.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);

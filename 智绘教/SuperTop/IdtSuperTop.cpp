@@ -13,16 +13,16 @@ void throw_win32_error()
 	DWORD err = GetLastError();  // 获取错误代码
 	LPSTR msg = nullptr;
 
-	// 格式化错误信息
-	FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-		NULL, err, MAKELANGID(LANG_ENGLISH, SUBLANG_DEFAULT), (LPSTR)&msg, 0, NULL);
-	// 显示错误信息
-	MessageBoxA(NULL, msg, NULL, 0);
+	//// 格式化错误信息
+	//FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+	//	NULL, err, MAKELANGID(LANG_ENGLISH, SUBLANG_DEFAULT), (LPSTR)&msg, 0, NULL);
+	//// 显示错误信息
+	//MessageBoxA(NULL, msg, NULL, 0);
 
-	// 抛出运行时异常，包含错误信息
-	throw std::runtime_error(msg);
+	//// 抛出运行时异常，包含错误信息
+	//throw std::runtime_error(msg);
 
-	exit(0);
+	//exit(0);
 }
 
 class Handle {
@@ -59,11 +59,11 @@ bool hasUiAccess(HANDLE tok) {
 
 void SurperTopMain(wstring lpCmdLine)
 {
-	AllocConsole();
+	/*AllocConsole();
 	FILE* fp;
 	freopen_s(&fp, "CONOUT$", "w", stdout);
 	freopen_s(&fp, "CONOUT$", "w", stderr);
-	std::ios::sync_with_stdio();
+	std::ios::sync_with_stdio();*/
 
 	// 基础信息
 	wstring inkeysCmdLine;
@@ -87,7 +87,7 @@ void SurperTopMain(wstring lpCmdLine)
 		//if (inkeysPid == 0) useAdmin = false;
 	}
 
-	cerr << "step1" << endl;
+	//cerr << "step1" << endl;
 
 	// 获取 智绘教 的令牌
 	Handle inkeysToken;
@@ -98,8 +98,8 @@ void SurperTopMain(wstring lpCmdLine)
 		try_win32(OpenProcessToken(proc_ref.handle, TOKEN_DUPLICATE, &tok_parent.handle));
 		try_win32(DuplicateTokenEx(tok_parent.handle, TOKEN_QUERY | TOKEN_ADJUST_DEFAULT | TOKEN_ASSIGN_PRIMARY, NULL, SecurityAnonymous, TokenPrimary, &inkeysToken.handle));
 
-		if (isElevated(inkeysToken.handle)) Testi(999);
-		if (inkeysToken.handle == INVALID_HANDLE_VALUE) Testi(999);
+		//if (isElevated(inkeysToken.handle)) Testi(999);
+		//if (inkeysToken.handle == INVALID_HANDLE_VALUE) Testi(999);
 	}
 	// 目标获取的令牌
 	Handle winlogonToken;
@@ -110,7 +110,7 @@ void SurperTopMain(wstring lpCmdLine)
 	OccupyFileForWrite(&fileHandle, globalPath + L"superTop_wait.signal");
 	UnOccupyFile(&fileHandle);
 
-	cerr << "step2" << endl;
+	//cerr << "step2" << endl;
 	// 获取当前进程的信息
 	HANDLE proc_self = GetCurrentProcess();
 	Handle tok_self;
@@ -118,7 +118,7 @@ void SurperTopMain(wstring lpCmdLine)
 	DWORD ses_self, ret_len;
 	try_win32(GetTokenInformation(tok_self.handle, TokenSessionId, &ses_self, sizeof(ses_self), &ret_len)); // 获取当前会话 ID
 
-	cerr << "step3" << endl;
+	//cerr << "step3" << endl;
 	// 创建进程快照
 	// 目前不涉及降权，暂时不用
 	//bool ctfmonAble = false, explorerAble = false;
@@ -161,7 +161,7 @@ void SurperTopMain(wstring lpCmdLine)
 			try_win32(DuplicateTokenEx(tok.handle, TOKEN_IMPERSONATE | TOKEN_ADJUST_PRIVILEGES, NULL, SecurityImpersonation, TokenImpersonation, &winlogonToken.handle));
 		}
 	}
-	cerr << "step4" << endl;
+	//cerr << "step4" << endl;
 	{
 		//if (!useAdmin && isElevated(inkeysToken.handle))
 		//{
@@ -174,7 +174,7 @@ void SurperTopMain(wstring lpCmdLine)
 		//	else if (ctfmonAble) inkeysToken = ctfmonToken;
 		//}
 	}
-	cerr << "step5" << endl;
+	//cerr << "step5" << endl;
 	{
 		// 设置令牌权限
 		TOKEN_PRIVILEGES tkp = {};
@@ -183,7 +183,7 @@ void SurperTopMain(wstring lpCmdLine)
 		try_win32(LookupPrivilegeValueW(NULL, SE_ASSIGNPRIMARYTOKEN_NAME, &tkp.Privileges[0].Luid));  // 查找权限
 		try_win32(AdjustTokenPrivileges(winlogonToken.handle, FALSE, &tkp, sizeof(tkp), NULL, NULL));  // 调整权限
 	}
-	cerr << "step6" << endl;
+	//cerr << "step6" << endl;
 
 	// 设置线程令牌（好戏开始了）
 	try_win32(SetThreadToken(NULL, winlogonToken.handle));
@@ -194,7 +194,7 @@ void SurperTopMain(wstring lpCmdLine)
 		try_win32(SetTokenInformation(inkeysToken.handle, TokenUIAccess, &ui_access, sizeof(ui_access)));  // 设置 UIAccess 访问权限
 	}
 
-	cerr << "step7" << endl;
+	//cerr << "step7" << endl;
 	// 等待原先 智绘教 退出
 	for (int i = 1; i <= 30; i++)
 	{
@@ -208,7 +208,7 @@ void SurperTopMain(wstring lpCmdLine)
 		vector<wchar_t> buffer(param.begin(), param.end());
 		buffer.push_back(L'\0');
 
-		wcerr << L"open " + param << endl;
+		//wcerr << L"open " + param << endl;
 		//Testw(L"open " + param);
 		//Testb(isElevated(inkeysToken.handle));
 
@@ -245,15 +245,22 @@ void LaunchSurperTop()
 	launchLine += L"-UIACCESS=" + useUiAccess + L" ";
 	launchLine += L"-ADMIN=" + useAdmin;
 
-	ShellExecuteW(NULL, L"runas", GetCurrentExePath().c_str(), launchLine.c_str(), NULL, SW_SHOWNORMAL);
-
-	for (int i = 1; i <= 60; i++)
-	{
-		if (_waccess((globalPath + L"superTop_wait.signal").c_str(), 0) == 0) break;
-		this_thread::sleep_for(chrono::milliseconds(50));
-	}
 	error_code ec;
-	filesystem::remove(globalPath + L"superTop_wait.signal", ec);
+	if (filesystem::exists(globalPath + L"superTop_wait.signal"))
+		filesystem::remove(globalPath + L"superTop_wait.signal", ec);
 
-	exit(0);
+	HINSTANCE hResult = ShellExecuteW(NULL, L"runas", GetCurrentExePath().c_str(), launchLine.c_str(), NULL, SW_SHOWNORMAL);
+
+	if ((INT_PTR)hResult <= 32) return;
+	else
+	{
+		for (int i = 1; i <= 60; i++)
+		{
+			if (filesystem::exists(globalPath + L"superTop_wait.signal"))break;
+			this_thread::sleep_for(chrono::milliseconds(50));
+		}
+		filesystem::remove(globalPath + L"superTop_wait.signal", ec);
+
+		exit(0);
+	}
 }
