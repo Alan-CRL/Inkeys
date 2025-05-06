@@ -636,6 +636,7 @@
     <Image Include="src\option.png" />
     <Image Include="src\paint_brush.png" />
     <Image Include="src\perspective.png" />
+    <Image Include="src\pin.png" />
     <Image Include="src\PluginFlag1.png" />
     <Image Include="src\PluginFlag2.png" />
     <Image Include="src\PluginFlag3.png" />

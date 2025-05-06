@@ -153,6 +153,8 @@ CUSTOMIZEICO9           PNG                     "src\\quick\\taskmgr.png"
 
 PLUGINFLAG4             PNG                     "src\\PluginFlag4.png"
 
+ICON21                  PNG                     "src\\pin.png"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
