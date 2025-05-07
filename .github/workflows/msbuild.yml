@@ -6,10 +6,6 @@
 name: Inkeys Build # 工作流程名称
 
 on:
-  push:
-    branches:
-      - main
-      - insider # 在 main 和 insider 分支 push 时触发
   pull_request:
     branches:
       - main
@@ -36,7 +32,7 @@ jobs:
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
     - name: Build project - ${{ matrix.platform }} | Release
-      run: msbuild "智绘教\智绘教.vcxproj" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /verbosity:normal
+      run: msbuild "智绘教.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /verbosity:normal
       shell: cmd
 
     # 步骤3: 打包并压缩产物
