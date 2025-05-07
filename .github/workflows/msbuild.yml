@@ -1,0 +1,165 @@
+# 这是用于构建混合 C++ (MSVC v143) 和 C# (.NET Framework) 项目的 GitHub Actions 工作流程
+# 项目结构：解决方案 智绘教.sln 包含 智绘教.vcxproj (C++) 和 PptCOM.csproj (C#)
+# 智绘教.vcxproj 依赖 PptCOM.csproj，并有自定义 Target 复制 DLL 和生成 TLB
+# 构建 Release Win32, x64, ARM64 配置，并按要求打包上传 Inkeys.exe
+
+name: Inkeys Build # 工作流程名称
+
+on:
+  push:
+    branches:
+      - main
+      - insider # 在 main 和 insider 分支 push 时触发
+  pull_request:
+    branches:
+      - main
+      - insider # 在 main 和 insider 分支 pull request 时触发
+
+# 定义一个矩阵策略来构建不同的平台
+jobs:
+  build:
+    # 使用矩阵定义需要构建的平台
+    strategy:
+      matrix:
+        platform: [Win32, x64, ARM64] # 定义需要构建的平台列表。这些名称必须与你在 .sln 文件中定义的平台名称一致！
+      # Optional: fail-fast: false 可以让一个平台的构建失败时不立即取消其他平台的构建
+      # fail-fast: false
+
+    runs-on: windows-latest # 在最新的 Windows 运行器上执行。这个环境通常预装了 Visual Studio (含 MSVC v143) 和 .NET Framework 构建工具。
+
+    steps:
+    - name: Checkout code # 步骤1: 拉取代码
+      uses: actions/checkout@v4 # 使用 actions/checkout@v4 Action
+
+    # 步骤2: 设置 MSVC 环境
+    # 对于 MSVC C++ 项目，必须运行 vcvarsall.bat 来设置编译器、库等的路径和环境变量
+    # 这个步骤是依赖于 matrix.platform 的，需要根据不同的平台传递不同的参数给 vcvarsall.bat
+    # Win32 平台对应 vcvarsall.bat 的 x86 参数
+    # x64 平台对应 vcvarsall.bat 的 x64 参数
+    # ARM64 平台对应 vcvarsall.bat 的 arm64 参数
+    # windows-latest 运行器通常预装了 Visual Studio 2022 (对应 MSVC v143)
+    # vcvarsall.bat 的路径可以通过 %VSINSTALLDIR_2022% 环境变量找到
+    - name: Setup MSVC environment for ${{ matrix.platform }}
+      shell: cmd # 使用 cmd shell 来执行批处理脚本 vcvarsall.bat
+      run: |
+        set VS_VCVARS_ARG=
+        if "${{ matrix.platform }}" == "Win32" set VS_VCVARS_ARG=x86
+        if "${{ matrix.platform }}" == "x64" set VS_VCVARS_ARG=x64
+        if "${{ matrix.platform }}" == "ARM64" set VS_VCVARS_ARG=arm64
+        # 可以添加其他平台判断如果你的项目支持的话
+
+        if "%VS_VCVARS_ARG%" == "" (
+          echo "Error: Unsupported platform ${{ matrix.platform }} for vcvarsall.bat"
+          exit 1
+        )
+        echo "Calling vcvarsall.bat %VS_VCVARS_ARG%"
+        # 调用 vcvarsall.bat 设置 MSVC 编译环境
+        call "%VSINSTALLDIR_2022%\VC\Auxiliary\Build\vcvarsall.bat" %VS_VCVARS_ARG%
+        echo "MSVC environment setup complete."
+
+    # 步骤3: 构建解决方案
+    # 使用 msbuild 命令构建你的解决方案文件 (.sln)
+    # 构建解决方案时，MSBuild 会自动识别并处理项目依赖关系。
+    # 它会先构建 PptCOM.csproj 生成 PptCOM.dll，然后再构建依赖于它的 智绘教.vcxproj。
+    # 在构建 智绘教.vcxproj 的过程中，你项目文件中定义的 BeforeTargets / AfterTargets 的自定义 Target 会在合适的时候自动执行，
+    # 并且能够使用刚刚构建成功的 PptCOM.dll 作为输入（生成 TLB，复制 DLL 等）。
+    # /p:Configuration=Release 使用 Release 配置
+    # /p:Platform=${{ matrix.platform }} 使用当前矩阵作业的平台
+    # /verbosity:minimal 让日志更简洁
+    - name: Build solution 智绘教.sln - ${{ matrix.platform }} | Release
+      # 重要的：确保 solution file path 是正确的相对于仓库根目录的路径 (这里假定 智绘教.sln 在根目录)
+      # 并且这个步骤必须在 vcvarsall.bat 设置环境之后，且在同一个 job 中执行
+      run: |
+        msbuild "智绘教.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /verbosity:minimal
+
+    # 步骤4: 打包并压缩产物
+    # 根据平台和触发事件，将 Inkeys.exe 打包到指定文件夹，添加说明文档，然后压缩
+    - name: Package and compress artifact - ${{ matrix.platform }}
+      shell: pwsh # 使用 PowerShell 脚本
+      run: |
+        # 确定打包目录名称和源 EXE 路径
+        $InnerFolderName = ""
+        $SourceExePath = ""
+        if ("${{ matrix.platform }}" -eq "Win32") {
+          $InnerFolderName = "Inkeys"
+          $SourceExePath = ".\Release\Inkeys.exe" # Win32 输出路径
+        } elseif ("${{ matrix.platform }}" -eq "x64") {
+          $InnerFolderName = "Inkeys64"
+          $SourceExePath = ".\x64\Release\Inkeys.exe" # x64 输出路径
+        } elseif ("${{ matrix.platform }}" -eq "ARM64") {
+          $InnerFolderName = "InkeysArm64"
+          $SourceExePath = ".\ARM64\Release\Inkeys.exe" # ARM64 输出路径
+        } else {
+          Write-Error "Unsupported platform: ${{ matrix.platform }}"
+          exit 1
+        }
+
+        # 检查源文件是否存在
+        if (-not (Test-Path -Path $SourceExePath -PathType Leaf)) {
+          Write-Error "Source executable not found at: $SourceExePath"
+          exit 1
+        }
+
+        # 创建打包目录
+        $PackagingDir = "packaging_temp_${{ matrix.platform }}" # 临时打包目录
+        $DestinationFolder = Join-Path $PackagingDir $InnerFolderName
+        New-Item -ItemType Directory -Path $DestinationFolder -Force | Out-Null
+
+        # 复制 Inkeys.exe 到打包目录
+        Copy-Item -Path $SourceExePath -Destination $DestinationFolder -Force
+
+        # 创建说明文档
+        $DocContent = @"
+        这是 Inkeys 项目 ${{ matrix.platform }} 平台 Release 版本的说明文档。
+        构建时间: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+        Commit SHA: ${{ github.sha }}
+        参考事件: ${{ github.event_name }}
+        "@
+        
+        $DocFileName = Join-Path $DestinationFolder "说明文档.txt"
+        $DocContent | Set-Content -Path $DocFileName -Encoding UTF8 # 使用 UTF8 编码确保中文正常显示
+
+        # 确定最终的 zip 文件名称
+        $BaseZipName = $InnerFolderName # 默认名称
+        if ("${{ github.event_name }}" -eq "pull_request") {
+          # 如果是 PR 触发，使用 PR 标题作为基础名称
+          # 需要对标题进行 sanitization，移除或替换文件名不允许的字符
+          $PrTitle = "${{ github.event.pull_request.title }}"
+          # 替换所有非字母数字、非空格、非下划线、非连字符的字符为空
+          $SanitizedTitle = [regex]::Replace($PrTitle, '[^\w\s-]', '')
+          # 替换空格为下划线
+          $SanitizedTitle = $SanitizedTitle -replace '\s', '_'
+          # 移除开头和结尾的下划线/连字符 (可选)
+          $SanitizedTitle = $SanitizedTitle.Trim('_', '-')
+          # 避免空名称
+          if ([string]::IsNullOrEmpty($SanitizedTitle)) {
+              $SanitizedTitle = "PR" # 如果清理后为空，使用默认前缀
+          }
+          # 将平台信息附加到清理后的标题后面
+          $BaseZipName = "${SanitizedTitle}_${InnerFolderName}"
+          # 限制文件名长度，避免过长
+          if ($BaseZipName.Length -gt 100) { # 限制在合理长度，例如100字符
+              $BaseZipName = $BaseZipName.Substring(0, 100)
+          }
+        }
+        # 最终 Zip 文件名 (不含扩展名)
+        $ZipFileNameWithoutExtension = $BaseZipName
+
+        # 压缩打包目录
+        $ZipFilePath = "$ZipFileNameWithoutExtension.zip"
+        Compress-Archive -Path "$PackagingDir\*" -DestinationPath $ZipFilePath -Force
+
+        # 输出生成的 zip 文件路径和名称，供后续步骤使用
+        # 注意: set-output 已弃用，应使用 $GITHUB_OUTPUT
+        echo "zip_file_name=$ZipFilePath" >> $env:GITHUB_OUTPUT
+        echo "zip_file_path=.\$ZipFilePath" >> $env:GITHUB_OUTPUT # 相对于工作目录的路径
+
+    # 步骤5: 上传打包好的 Artifact (zip 文件)
+    # 上一步骤已经确定了 zip 文件的名称和路径，这里直接使用其输出
+    - name: Upload compressed artifact - ${{ matrix.platform }}
+      uses: actions/upload-artifact@v4
+      with:
+        # 使用上一步骤输出的 zip 文件名作为 Artifact 名称
+        name: ${{ steps.package_and_compress.outputs.zip_file_name }}
+        # 使用上一步骤输出的 zip 文件路径作为上传路径
+        path: ${{ steps.package_and_compress.outputs.zip_file_path }}
