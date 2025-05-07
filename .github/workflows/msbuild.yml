@@ -32,11 +32,11 @@ jobs:
     - name: Checkout code 
       uses: actions/checkout@v4 # 使用 actions/checkout@v4 Action
 
-    # 步骤2: 设置 MSVC 环境并构建解决方案
+    # 步骤2: 设置 MSVC 环境并仅构建智绘教.vcxproj
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
-    - name: Build solution - ${{ matrix.platform }} | Release
-      run: msbuild "智绘教.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /verbosity:normal
+    - name: Build project - ${{ matrix.platform }} | Release
+      run: msbuild "智绘教\智绘教.vcxproj" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /verbosity:normal
       shell: cmd
 
     # 步骤3: 打包并压缩产物
