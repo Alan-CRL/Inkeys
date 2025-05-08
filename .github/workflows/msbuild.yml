@@ -27,9 +27,24 @@ jobs:
     - name: Checkout code 
       uses: actions/checkout@v4 # 使用 actions/checkout@v4 Action
 
-    # 步骤2: 设置环境并仅构建智绘教.vcxproj
+    # 步骤2: 设置环境并构建智绘教.vcxproj
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
+
+    - name: Setup .NET Framework 4.0
+      shell: pwsh
+      run: |
+        $zipPath = ".\ActionsRes\v4.0.zip"
+        $tempPath = ".\temp"
+        $targetParent = "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework"
+        # 解压 zip 到临时目录
+        Expand-Archive -Path $zipPath -DestinationPath $tempPath
+        # 创建目标父目录（如果不存在）
+        if (!(Test-Path $targetParent)) {
+          New-Item -Path $targetParent -ItemType Directory | Out-Null
+        }
+        # 拷贝整个 v4.0 文件夹到目标父目录下
+        Copy-Item -Path "$tempPath\v4.0" -Destination $targetParent -Recurse -Force
 
     - name: Build project - ${{ matrix.platform }} | Release
       run: msbuild "智绘教.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /verbosity:minimal
