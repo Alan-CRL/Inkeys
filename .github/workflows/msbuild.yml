@@ -46,7 +46,7 @@ jobs:
         Copy-Item -Path "$tempPath\v4.0" -Destination $targetParent -Recurse -Force
 
     - name: Build PptCOM.csproj
-      run: msbuild "PptCOM\PptCOM.csproj" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /verbosity:minimal
+      run: msbuild "PptCOM\PptCOM.csproj" /p:Configuration=Release /p:Platform="Any CPU" /verbosity:minimal
       shell: cmd
     - name: Build 智绘教.vcxproj
       run: msbuild "智绘教\智绘教.vcxproj" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /verbosity:minimal
