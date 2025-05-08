@@ -1,6 +1,4 @@
-# 这是用于构建混合 C++ (MSVC v143) 和 C# (.NET Framework) 项目的 GitHub Actions 工作流程
-# 项目结构：解决方案 智绘教.sln 包含 智绘教.vcxproj (C++) 和 PptCOM.csproj (C#)
-# 智绘教.vcxproj 依赖 PptCOM.csproj，并有自定义 Target 复制 DLL 和生成 TLB
+# 这是用于构建混合 C++ (MSVC v143) 和 /*C# (.NET Framework)*/ 项目的 GitHub Actions 工作流程
 # 构建 Release Win32, x64, ARM64 配置，并按要求打包上传 Inkeys.exe
 
 name: Inkeys Build # 工作流程名称
@@ -8,8 +6,8 @@ name: Inkeys Build # 工作流程名称
 on:
   push:
     branches:
-      - dev
-     # - insider # 在 main 和 insider 分支 push 时触发
+      - main
+      - insider # 在 main 和 insider 分支 push 时触发
 
 # 定义一个矩阵策略来构建不同的平台
 jobs:
@@ -17,7 +15,7 @@ jobs:
     # 使用矩阵定义需要构建的平台
     strategy:
       matrix:
-        platform: [ARM64] # Win32, x64, 定义需要构建的平台列表。这些名称必须与你在 .sln 文件中定义的平台名称一致！
+        platform: [Win32, x64, ARM64] #  定义需要构建的平台列表。这些名称必须与你在 .sln 文件中定义的平台名称一致！
       # Optional: fail-fast: false 可以让一个平台的构建失败时不立即取消其他平台的构建
       # fail-fast: false
 
@@ -37,10 +35,9 @@ jobs:
       shell: cmd
 
     # 步骤3: 打包并压缩产物
-    - name: Package and compress artifact - ${{ matrix.platform }}
-      shell: pwsh # 使用 PowerShell 脚本
+    - name: Package artifact folder - ${{ matrix.platform }}
+      shell: pwsh
       run: |
-        # 确定打包目录名称和源 EXE 路径
         $InnerFolderName = ""
         $SourceExePath = ""
         if ("${{ matrix.platform }}" -eq "Win32") {
@@ -60,33 +57,25 @@ jobs:
         # 检查源文件是否存在
         if (-not (Test-Path -Path $SourceExePath -PathType Leaf)) {
           Write-Error "Source executable not found at: $SourceExePath"
+          exit 1
         }
 
-        # 创建打包目录
-        $PackagingDir = "packaging_temp_${{ matrix.platform }}"
-        $DestinationFolder = Join-Path $PackagingDir $InnerFolderName
+        # 创建目标文件夹
+        $DestinationFolder = $InnerFolderName
+        if (Test-Path $DestinationFolder) {
+          Remove-Item $DestinationFolder -Recurse -Force
+        }
         New-Item -ItemType Directory -Path $DestinationFolder -Force | Out-Null
 
-        # 复制 Inkeys.exe 到目标文件夹
-        if (Test-Path -Path $SourceExePath -PathType Leaf) {
-            Copy-Item -Path $SourceExePath -Destination $DestinationFolder -Force
-        }
-        else {
-            Write-Warning "Source executable not found, skipping copy: $SourceExePath"
-        }
+        # 拷贝 Inkeys.exe 到目标文件夹（你可以复制其他需要的依赖文件到该目录）
+        Copy-Item -Path $SourceExePath -Destination $DestinationFolder -Force
 
-        # 打包为 zip
-        $ZipName = "$InnerFolderName.zip"
-        $FolderToZip = Join-Path $PackagingDir $InnerFolderName
-
-        if (Test-Path $ZipName) {
-          Remove-Item $ZipName -Force
-        }
-        Compress-Archive -Path $FolderToZip -DestinationPath $ZipName -Force
+        # 传递路径给后续upload steps
+        echo "folder_to_upload=$DestinationFolder" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     # 步骤4: 上传打包好的 Artifact (zip 文件)
     - name: Upload artifact - ${{ matrix.platform }}
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.platform }}-zip
-        path: ${{ matrix.platform == 'Win32' && 'Inkeys.zip' || (matrix.platform == 'x64' && 'Inkeys64.zip' || 'InkeysArm64.zip') }}
+        name: ${{ matrix.platform == 'Win32' && 'Inkeys' || (matrix.platform == 'x64' && 'Inkeys64' || 'InkeysArm64') }}
+        path: ${{ env.folder_to_upload }}
