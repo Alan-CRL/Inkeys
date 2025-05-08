@@ -2,7 +2,11 @@
 #include "IdtMain.h"
 
 #include <d3d9.h>
-#include <C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\Include\D3dx9tex.h>
+
+// D3dx9tex.h 副本位于项目中
+// 如果出现问题也可以选用 SDK 所属的默认路径
+#include "Microsoft DirectX SDK (June 2010)/Include/D3dx9tex.h"
+
 #pragma comment(lib, "d3d9")
 
 extern WNDCLASSEXW ImGuiWc;
