@@ -6,9 +6,8 @@ name: Inkeys Build
 on:
   push:
     branches:
-      - dev
-      # - main
-      # - insider # 在 main 和 insider 分支 push 时触发
+      - main
+      - insider # 在 main 和 insider 分支 push 时触发
 
 # 定义一个矩阵策略来构建不同的平台
 jobs:
