@@ -6,10 +6,10 @@
 name: Inkeys Build # 工作流程名称
 
 on:
-  pull_request:
+  push:
     branches:
-      - main
-      - insider # 在 main 和 insider 分支 pull request 时触发
+      - dev
+     # - insider # 在 main 和 insider 分支 pull request 时触发
 
 # 定义一个矩阵策略来构建不同的平台
 jobs:
@@ -17,7 +17,7 @@ jobs:
     # 使用矩阵定义需要构建的平台
     strategy:
       matrix:
-        platform: [Win32, x64, ARM64] # 定义需要构建的平台列表。这些名称必须与你在 .sln 文件中定义的平台名称一致！
+        platform: [ARM64] # Win32, x64, 定义需要构建的平台列表。这些名称必须与你在 .sln 文件中定义的平台名称一致！
       # Optional: fail-fast: false 可以让一个平台的构建失败时不立即取消其他平台的构建
       # fail-fast: false
 
@@ -28,18 +28,19 @@ jobs:
     - name: Checkout code 
       uses: actions/checkout@v4 # 使用 actions/checkout@v4 Action
 
-    # 步骤2: 设置 MSVC 环境并仅构建智绘教.vcxproj
+    # 步骤2: 设置环境并仅构建智绘教.vcxproj
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
+
     - name: Build project - ${{ matrix.platform }} | Release
-      run: msbuild "智绘教.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /verbosity:normal
+      run: msbuild "智绘教.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /verbosity:minimal
       shell: cmd
 
     # 步骤3: 打包并压缩产物
     - name: Package and compress artifact - ${{ matrix.platform }}
       shell: pwsh # 使用 PowerShell 脚本
       run: |
-        # 确定打包目录名称和源 EXE 路径
+        REM # 确定打包目录名称和源 EXE 路径
         $InnerFolderName = ""
         $SourceExePath = ""
         if ("${{ matrix.platform }}" -eq "Win32") {
@@ -56,17 +57,17 @@ jobs:
           exit 1
         }
 
-        # 检查源文件是否存在
+        REM # 检查源文件是否存在
         if (-not (Test-Path -Path $SourceExePath -PathType Leaf)) {
           Write-Error "Source executable not found at: $SourceExePath"
         }
 
-        # 创建打包目录
+        REM # 创建打包目录
         $PackagingDir = "packaging_temp_${{ matrix.platform }}"
         $DestinationFolder = Join-Path $PackagingDir $InnerFolderName
         New-Item -ItemType Directory -Path $DestinationFolder -Force | Out-Null
 
-        # 复制 Inkeys.exe 到目标文件夹
+        REM # 复制 Inkeys.exe 到目标文件夹
         if (Test-Path -Path $SourceExePath -PathType Leaf) {
             Copy-Item -Path $SourceExePath -Destination $DestinationFolder -Force
         }
@@ -74,7 +75,7 @@ jobs:
             Write-Warning "Source executable not found, skipping copy: $SourceExePath"
         }
 
-        # 打包为 zip
+        REM # 打包为 zip
         $ZipName = "$InnerFolderName.zip"
         $FolderToZip = Join-Path $PackagingDir $InnerFolderName
 
