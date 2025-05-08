@@ -1,7 +1,7 @@
-# 这是用于构建混合 C++ (MSVC v143) 和 /*C# (.NET Framework)*/ 项目的 GitHub Actions 工作流程
+# 这是用于构建混合 C++ (MSVC v143) 和 C# (.NET Framework) 项目的 GitHub Actions 工作流程
 # 构建 Release Win32, x64, ARM64 配置，并按要求打包上传 Inkeys.exe
 
-name: Inkeys Build # 工作流程名称
+name: Inkeys Build
 
 on:
   push:
@@ -12,70 +12,71 @@ on:
 # 定义一个矩阵策略来构建不同的平台
 jobs:
   build:
-    # 使用矩阵定义需要构建的平台
     strategy:
       matrix:
-        platform: [Win32, x64, ARM64] #  定义需要构建的平台列表。这些名称必须与你在 .sln 文件中定义的平台名称一致！
+        platform: [Win32, x64, ARM64]
       # Optional: fail-fast: false 可以让一个平台的构建失败时不立即取消其他平台的构建
       # fail-fast: false
 
-    runs-on: windows-latest # 在最新的 Windows 运行器上执行。这个环境通常预装了 Visual Studio (含 MSVC v143) 和 .NET Framework 构建工具。
+    runs-on: windows-latest
 
     # 步骤1: 拉取代码
     steps:
     - name: Checkout code 
-      uses: actions/checkout@v4 # 使用 actions/checkout@v4 Action
+      uses: actions/checkout@v4
 
-    # 步骤2: 设置环境并仅构建智绘教.vcxproj
+    # 步骤2: 设置环境并构建智绘教.vcxproj
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
 
-    - name: Build project - ${{ matrix.platform }} | Release
+    - name: Setup .NET Framework 4.0
+      shell: pwsh
+      run: |
+        $zipPath = ".\ActionsRes\v4.0.zip"
+        $tempPath = ".\temp"
+        $targetParent = "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework"
+        # 解压 zip 到临时目录
+        Expand-Archive -Path $zipPath -DestinationPath $tempPath
+        # 创建目标父目录（如果不存在）
+        if (!(Test-Path $targetParent)) {
+          New-Item -Path $targetParent -ItemType Directory | Out-Null
+        }
+        # 拷贝整个 v4.0 文件夹到目标父目录下
+        Copy-Item -Path "$tempPath\v4.0" -Destination $targetParent -Recurse -Force
+
+    - name: Build Inkeys
       run: msbuild "智绘教.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /verbosity:minimal
       shell: cmd
 
     # 步骤3: 打包并压缩产物
-    - name: Package artifact folder - ${{ matrix.platform }}
+    - name: Determine exe path and artifact name
+      id: exeinfo
       shell: pwsh
       run: |
-        $InnerFolderName = ""
-        $SourceExePath = ""
-        if ("${{ matrix.platform }}" -eq "Win32") {
-          $InnerFolderName = "Inkeys"
-          $SourceExePath = ".\Release\Inkeys.exe"
-        } elseif ("${{ matrix.platform }}" -eq "x64") {
-          $InnerFolderName = "Inkeys64"
-          $SourceExePath = ".\x64\Release\Inkeys.exe"
-        } elseif ("${{ matrix.platform }}" -eq "ARM64") {
-          $InnerFolderName = "InkeysArm64"
-          $SourceExePath = ".\ARM64\Release\Inkeys.exe"
+        $platform = "${{ matrix.platform }}"
+        if ($platform -eq "Win32") {
+          $exe = ".\Release\Inkeys.exe"
+          $name = "Inkeys"
+        } elseif ($platform -eq "x64") {
+          $exe = ".\x64\Release\Inkeys.exe"
+          $name = "Inkeys64"
+        } elseif ($platform -eq "ARM64") {
+          $exe = ".\ARM64\Release\Inkeys.exe"
+          $name = "InkeysArm64"
         } else {
-          Write-Error "Unsupported platform: ${{ matrix.platform }}"
+          Write-Error "Unsupported platform: $platform"
           exit 1
         }
-
-        # 检查源文件是否存在
-        if (-not (Test-Path -Path $SourceExePath -PathType Leaf)) {
-          Write-Error "Source executable not found at: $SourceExePath"
+        if (-not (Test-Path $exe -PathType Leaf)) {
+          Write-Error "$exe not found"
           exit 1
         }
-
-        # 创建目标文件夹
-        $DestinationFolder = $InnerFolderName
-        if (Test-Path $DestinationFolder) {
-          Remove-Item $DestinationFolder -Recurse -Force
-        }
-        New-Item -ItemType Directory -Path $DestinationFolder -Force | Out-Null
-
-        # 拷贝 Inkeys.exe 到目标文件夹（你可以复制其他需要的依赖文件到该目录）
-        Copy-Item -Path $SourceExePath -Destination $DestinationFolder -Force
-
-        # 传递路径给后续upload steps
-        echo "folder_to_upload=$DestinationFolder" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        echo "exe_path=$exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        echo "artifact_name=$name" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     # 步骤4: 上传打包好的 Artifact (zip 文件)
     - name: Upload artifact - ${{ matrix.platform }}
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.platform == 'Win32' && 'Inkeys' || (matrix.platform == 'x64' && 'Inkeys64' || 'InkeysArm64') }}
-        path: ${{ env.folder_to_upload }}
+        name: ${{ env.artifact_name }}
+        path: ${{ env.exe_path }}
