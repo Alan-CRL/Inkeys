@@ -55,26 +55,12 @@ Windows 屏幕批注工具，拥有高效批注和丰富功能，
 ---
 
 ## 编译说明
-
-### 编译环境
-- Visual Studio 2022 (MSVC v143 编译器)
-> 勾选 `.NET 桌面开发` `使用 C++ 的桌面开发` `Windows 应用程序开发` 等工作负荷
-- C++ 20
-- Windows 11 SDK 10.26100
-- .NET Framework 4.0 SDK
-- Microsoft DirectX SDK (June 2010)（安装于默认路径中）
+[编译流程](.\GithubRes\CompilationProcess_zh-CN.md)
 
 ### 分支说明
-- `main`：主仓库，存储近期较为稳定的可构建的程序源码
+- `main`：主仓库，存储上一发布版本稳定的可构建的程序源码
+- `insider`：分支仓库，存储上一预览版本的源码，可能不稳定有较多代码BUG
 - `dev`：分支仓库，每日及时更新，存储自动保存的源码，可能无法构建
-
-### 编译步骤
-智绘教采用完全开源方式，所有源码和资源全部开源  
-1. 下载 `main` 仓库  
-2. 使用 Visual Studio 2022 打开 `智绘教.sln`  
-3. 选择 `智绘教` 项目
-4. 切换为 `Release` 构建配置
-5. 点击构建即可生成程序
 
 ## 项目引用
 [Dear Imgui](https://github.com/ocornut/imgui)  

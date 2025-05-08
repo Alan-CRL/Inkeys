@@ -9,7 +9,7 @@ on:
   push:
     branches:
       - dev
-     # - insider # 在 main 和 insider 分支 pull request 时触发
+     # - insider # 在 main 和 insider 分支 push 时触发
 
 # 定义一个矩阵策略来构建不同的平台
 jobs:
@@ -40,7 +40,7 @@ jobs:
     - name: Package and compress artifact - ${{ matrix.platform }}
       shell: pwsh # 使用 PowerShell 脚本
       run: |
-        REM # 确定打包目录名称和源 EXE 路径
+        # 确定打包目录名称和源 EXE 路径
         $InnerFolderName = ""
         $SourceExePath = ""
         if ("${{ matrix.platform }}" -eq "Win32") {
@@ -57,17 +57,17 @@ jobs:
           exit 1
         }
 
-        REM # 检查源文件是否存在
+        # 检查源文件是否存在
         if (-not (Test-Path -Path $SourceExePath -PathType Leaf)) {
           Write-Error "Source executable not found at: $SourceExePath"
         }
 
-        REM # 创建打包目录
+        # 创建打包目录
         $PackagingDir = "packaging_temp_${{ matrix.platform }}"
         $DestinationFolder = Join-Path $PackagingDir $InnerFolderName
         New-Item -ItemType Directory -Path $DestinationFolder -Force | Out-Null
 
-        REM # 复制 Inkeys.exe 到目标文件夹
+        # 复制 Inkeys.exe 到目标文件夹
         if (Test-Path -Path $SourceExePath -PathType Leaf) {
             Copy-Item -Path $SourceExePath -Destination $DestinationFolder -Force
         }
@@ -75,7 +75,7 @@ jobs:
             Write-Warning "Source executable not found, skipping copy: $SourceExePath"
         }
 
-        REM # 打包为 zip
+        # 打包为 zip
         $ZipName = "$InnerFolderName.zip"
         $FolderToZip = Join-Path $PackagingDir $InnerFolderName
 
