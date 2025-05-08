@@ -45,11 +45,8 @@ jobs:
         # 拷贝整个 v4.0 文件夹到目标父目录下
         Copy-Item -Path "$tempPath\v4.0" -Destination $targetParent -Recurse -Force
 
-    - name: Build PptCOM.csproj
-      run: msbuild "PptCOM\PptCOM.csproj" /p:Configuration=Release /p:Platform=AnyCPU /verbosity:minimal
-      shell: cmd
-    - name: Build 智绘教.vcxproj
-      run: msbuild "智绘教\智绘教.vcxproj" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /verbosity:minimal
+    - name: Build Inkeys
+      run: msbuild "智绘教.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /verbosity:minimal
       shell: cmd
 
     # 步骤3: 打包并压缩产物

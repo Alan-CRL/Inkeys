@@ -4,6 +4,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 VisualStudioVersion = 17.7.33808.371
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "智绘教", "智绘教\智绘教.vcxproj", "{C74D4D04-F81C-42FE-8D90-7042BA3BB8A0}"
+	ProjectSection(ProjectDependencies) = postProject
+		{A7B02228-179F-4B8E-BA8F-82D50066FB66} = {A7B02228-179F-4B8E-BA8F-82D50066FB66}
+	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PptCOM", "PptCOM\PptCOM.csproj", "{A7B02228-179F-4B8E-BA8F-82D50066FB66}"
 EndProject
