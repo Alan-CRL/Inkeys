@@ -226,10 +226,10 @@ BEGIN
     BEGIN
         BLOCK "080404b0"
         BEGIN
-            VALUE "CompanyName", "Alan-CRL(陈润林)工作室"
-            VALUE "FileVersion", "1.0.0.0"
+            VALUE "CompanyName", "AlanCRL(陈润林) 工作室"
+            VALUE "FileVersion", "1.0.0.1"
             VALUE "InternalName", "智绘教Inkeys"
-            VALUE "LegalCopyright", "Copyright © 2023-2025 AlanCRL(陈润林)工作室"
+            VALUE "LegalCopyright", "Copyright © 2023-2025 AlanCRL(陈润林) 工作室"
             VALUE "ProductName", "智绘教Inkeys"
             VALUE "ProductVersion", "详见""软件->选项->软件版本""界面"
         END
