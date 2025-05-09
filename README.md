@@ -75,7 +75,7 @@ Windows 屏幕批注工具，拥有高效批注和丰富功能，
 ---
 
 ## 编译说明
-[编译流程](.\GithubRes\CompilationProcess_zh-CN.md)
+[编译流程](GithubRes\CompilationProcess_zh-CN.md)
 
 ### 分支说明
 - `main`：主仓库，存储上一发布版本稳定的可构建的程序源码

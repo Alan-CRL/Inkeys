@@ -75,7 +75,7 @@ Author QQ: `2685549821`
 ## Compile Instructions
 
 ### Compile Preparation
-[CompilationProcess](.\GithubRes\CompilationProcess_en-US.md)
+[CompilationProcess](GithubRes\CompilationProcess_en-US.md)
 
 ### Branch Description
 - `main`: Store recently stable and buildable program source code.

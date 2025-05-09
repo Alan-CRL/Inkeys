@@ -6,16 +6,15 @@ name: Inkeys Build
 on:
   push:
     branches:
-      - dev
-      # - main
-      # - insider # 在 main 和 insider 分支 push 时触发
+      - main
+      - insider # 在 main 和 insider 分支 push 时触发
 
 # 定义一个矩阵策略来构建不同的平台
 jobs:
   build:
     strategy:
       matrix:
-        platform: [ARM64] # Win32, x64, 
+        platform: [Win32, x64, ARM64] # 
       # Optional: fail-fast: false 可以让一个平台的构建失败时不立即取消其他平台的构建
       # fail-fast: false
 
