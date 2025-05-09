@@ -50,6 +50,26 @@ The minimum support is `Windows 7 (sp0)` and supports `x86 / x64 / arm64` window
 Author email: `alan-crl@foxmail.com`  
 Author QQ: `2685549821`  
 
+## License
+本项目基于 [GNU General Public License v3.0](LICENSE) 获得许可。
+
+## Code signing policy
+
+<table>
+  <tr>
+    <td>
+      <img alt="SignPath" src="https://signpath.org/assets/favicon-50x50.png" />
+    </td>
+    <td>
+    Free code signing on Windows provided by <a href="https://signpath.io">SignPath.io</a>, certficate by <a href="https://signpath.org/">SignPath Foundation</a>
+    </td>
+  </tr> 
+</table>
+
+- Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+- Committers and reviewers: [Members team](https://github.com/Alan-CRL/Inkeys/graphs/contributors)
+- Approvers: [Alan-CRL](https://github.com/Alan-CRL)
+
 ---
 
 ## Compile Instructions

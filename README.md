@@ -52,6 +52,26 @@ Windows 屏幕批注工具，拥有高效批注和丰富功能，
 作者QQ：`2685549821`  
 作者邮箱：`alan-crl@foxmail.com`
 
+## 许可证
+本项目基于 [GNU General Public License v3.0](LICENSE) 获得许可。
+
+## 代码签名策略
+
+<table>
+  <tr>
+    <td>
+      <img alt="SignPath" src="https://signpath.org/assets/favicon-50x50.png" />
+    </td>
+    <td>
+    Free code signing on Windows provided by <a href="https://signpath.io">SignPath.io</a>, certficate by <a href="https://signpath.org/">SignPath Foundation</a>
+    </td>
+  </tr> 
+</table>
+
+- 由 [SignPath.io](https://about.signpath.io/) 提供免费代码签名，由 [SignPath Foundation](https://signpath.org/) 提供证书。
+- 提交者和审阅者：[团队成员](https://github.com/Alan-CRL/Inkeys/graphs/contributors)
+- 审批人：[Alan-CRL](https://github.com/Alan-CRL)
+
 ---
 
 ## 编译说明

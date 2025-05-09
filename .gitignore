@@ -1,4 +1,5 @@
 /.vs/
+/packages/
 /Release/
 /Debug/
 /x64/
