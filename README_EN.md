@@ -50,29 +50,36 @@ The minimum support is `Windows 7 (sp0)` and supports `x86 / x64 / arm64` window
 Author email: `alan-crl@foxmail.com`  
 Author QQ: `2685549821`  
 
+## License
+本项目基于 [GNU General Public License v3.0](LICENSE) 获得许可。
+
+## Code signing policy
+
+<table>
+  <tr>
+    <td>
+      <img alt="SignPath" src="https://signpath.org/assets/favicon-50x50.png" />
+    </td>
+    <td>
+    Free code signing on Windows provided by <a href="https://signpath.io">SignPath.io</a>, certficate by <a href="https://signpath.org/">SignPath Foundation</a>
+    </td>
+  </tr> 
+</table>
+
+- Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+- Committers and reviewers: [Members team](https://github.com/Alan-CRL/Inkeys/graphs/contributors)
+- Approvers: [Alan-CRL](https://github.com/Alan-CRL)
+
 ---
 
 ## Compile Instructions
 
 ### Compile Preparation
-- Visual Studio 2022 (MSVC v143 Compiler)
-> Check `.NET Desktop Development` `C++ Desktop Development` `Windows Application Development` Workload.
-- C++ 20
-- Windows 11 SDK 10.26100
-- .NET Framework 4.0 SDK
-- Microsoft DirectX SDK (June 2010) (Installed in the default path)
+[CompilationProcess](GithubRes/CompilationProcess_en-US.md)
 
 ### Branch Description
 - `main`: Store recently stable and buildable program source code.
 - `dev`: Daily timely updates, storing automatically saved source code, may not be able to build.
-
-### Compile Step
-Inkeys adopts a completely open source approach, with all source code and resources being open source.  
-1. Download `main` branch.  
-2. Use Visual Studio 2022 open `智绘教.sln`.  
-3. Choose `智绘教` project.
-4. Choose `Release` build configuration.
-5. Click on build to generate the program.
 
 ## Project Reference
 [Dear Imgui](https://github.com/ocornut/imgui)  

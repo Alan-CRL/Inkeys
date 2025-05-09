@@ -69,6 +69,7 @@ bool UnOccupyFile(HANDLE* hFile)
 }
 
 SetListStruct setlist;
+Json::Value setlistVal;
 bool ReadSetting()
 {
 	HANDLE fileHandle = NULL;
@@ -105,193 +106,203 @@ bool ReadSetting()
 
 	istringstream jsonContentStream(jsonContent);
 	Json::CharReaderBuilder readerBuilder;
-	Json::Value updateVal;
 	string jsonErr;
 
-	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+	if (Json::parseFromStream(readerBuilder, jsonContentStream, &setlistVal, &jsonErr))
 	{
-		if (updateVal.isMember("SelectLanguage") && updateVal["SelectLanguage"].isBool())
-			setlist.selectLanguage = updateVal["SelectLanguage"].asBool();
-		if (updateVal.isMember("StartUp") && updateVal["StartUp"].isBool())
-			setlist.startUp = updateVal["StartUp"].asBool();
-		if (updateVal.isMember("SettingGlobalScale") && updateVal["SettingGlobalScale"].isDouble())
-			setlist.settingGlobalScale = updateVal["SettingGlobalScale"].asDouble();
-
-		if (updateVal.isMember("SetSkinMode") && updateVal["SetSkinMode"].isInt())
-			setlist.SetSkinMode = updateVal["SetSkinMode"].asInt();
-
-		if (updateVal.isMember("TopSleepTime") && updateVal["TopSleepTime"].isInt())
-			setlist.topSleepTime = updateVal["TopSleepTime"].asInt();
-		if (updateVal.isMember("RightClickClose") && updateVal["RightClickClose"].isBool())
-			setlist.RightClickClose = updateVal["RightClickClose"].asBool();
+		if (setlistVal.isMember("ConfigurationSetting") && setlistVal["ConfigurationSetting"].isObject())
 		{
-			if (updateVal.isMember("BrushRecover") && updateVal["BrushRecover"].isBool())
-				setlist.BrushRecover = updateVal["BrushRecover"].asBool();
-			if (updateVal.isMember("RubberRecover") && updateVal["RubberRecover"].isBool())
-				setlist.RubberRecover = updateVal["RubberRecover"].asBool();
+			if (setlistVal["ConfigurationSetting"].isMember("Enable") && setlistVal["ConfigurationSetting"]["Enable"].isBool())
+				setlist.configurationSetting.enable = setlistVal["ConfigurationSetting"]["Enable"].asBool();
 		}
-		if (updateVal.isMember("Regular") && updateVal["Regular"].isObject())
+
+		if (setlistVal.isMember("SelectLanguage") && setlistVal["SelectLanguage"].isBool())
+			setlist.selectLanguage = setlistVal["SelectLanguage"].asBool();
+		if (setlistVal.isMember("StartUp") && setlistVal["StartUp"].isBool())
+			setlist.startUp = setlistVal["StartUp"].asBool();
+		if (setlistVal.isMember("SettingGlobalScale") && setlistVal["SettingGlobalScale"].isDouble())
+			setlist.settingGlobalScale = setlistVal["SettingGlobalScale"].asDouble();
+
+		if (setlistVal.isMember("SetSkinMode") && setlistVal["SetSkinMode"].isInt())
+			setlist.SetSkinMode = setlistVal["SetSkinMode"].asInt();
+
+		if (setlistVal.isMember("TopSleepTime") && setlistVal["TopSleepTime"].isInt())
+			setlist.topSleepTime = setlistVal["TopSleepTime"].asInt();
+		if (setlistVal.isMember("RightClickClose") && setlistVal["RightClickClose"].isBool())
+			setlist.RightClickClose = setlistVal["RightClickClose"].asBool();
+		{
+			if (setlistVal.isMember("BrushRecover") && setlistVal["BrushRecover"].isBool())
+				setlist.BrushRecover = setlistVal["BrushRecover"].asBool();
+			if (setlistVal.isMember("RubberRecover") && setlistVal["RubberRecover"].isBool())
+				setlist.RubberRecover = setlistVal["RubberRecover"].asBool();
+		}
+		if (setlistVal.isMember("Regular") && setlistVal["Regular"].isObject())
 		{
 			{
-				if (updateVal["Regular"].isMember("MoveRecover") && updateVal["Regular"]["MoveRecover"].isBool())
-					setlist.regularSetting.moveRecover = updateVal["Regular"]["MoveRecover"].asBool();
-				if (updateVal["Regular"].isMember("ClickRecover") && updateVal["Regular"]["ClickRecover"].isBool())
-					setlist.regularSetting.clickRecover = updateVal["Regular"]["ClickRecover"].asBool();
+				if (setlistVal["Regular"].isMember("MoveRecover") && setlistVal["Regular"]["MoveRecover"].isBool())
+					setlist.regularSetting.moveRecover = setlistVal["Regular"]["MoveRecover"].asBool();
+				if (setlistVal["Regular"].isMember("ClickRecover") && setlistVal["Regular"]["ClickRecover"].isBool())
+					setlist.regularSetting.clickRecover = setlistVal["Regular"]["ClickRecover"].asBool();
 			}
 
-			if (updateVal["Regular"].isMember("AvoidFullScreen") && updateVal["Regular"]["AvoidFullScreen"].isBool())
-				setlist.regularSetting.avoidFullScreen = updateVal["Regular"]["AvoidFullScreen"].asBool();
-			if (updateVal["Regular"].isMember("TeachingSafetyMode") && updateVal["Regular"]["TeachingSafetyMode"].isInt())
-				setlist.regularSetting.teachingSafetyMode = updateVal["Regular"]["TeachingSafetyMode"].asInt();
+			if (setlistVal["Regular"].isMember("AvoidFullScreen") && setlistVal["Regular"]["AvoidFullScreen"].isBool())
+				setlist.regularSetting.avoidFullScreen = setlistVal["Regular"]["AvoidFullScreen"].asBool();
+			if (setlistVal["Regular"].isMember("TeachingSafetyMode") && setlistVal["Regular"]["TeachingSafetyMode"].isInt())
+				setlist.regularSetting.teachingSafetyMode = setlistVal["Regular"]["TeachingSafetyMode"].asInt();
 		}
 
-		if (updateVal.isMember("PaintDevice") && updateVal["PaintDevice"].isInt())
-			setlist.paintDevice = updateVal["PaintDevice"].asInt();
-		if (updateVal.isMember("LiftStraighten") && updateVal["LiftStraighten"].isBool())
-			setlist.liftStraighten = updateVal["LiftStraighten"].asBool();
-		if (updateVal.isMember("WaitStraighten") && updateVal["WaitStraighten"].isBool())
-			setlist.waitStraighten = updateVal["WaitStraighten"].asBool();
-		if (updateVal.isMember("PointAdsorption") && updateVal["PointAdsorption"].isBool())
-			setlist.pointAdsorption = updateVal["PointAdsorption"].asBool();
-		if (updateVal.isMember("SmoothWriting") && updateVal["SmoothWriting"].isBool())
-			setlist.smoothWriting = updateVal["SmoothWriting"].asBool();
-		if (updateVal.isMember("EraserSetting") && updateVal["EraserSetting"].isObject())
+		if (setlistVal.isMember("PaintDevice") && setlistVal["PaintDevice"].isInt())
+			setlist.paintDevice = setlistVal["PaintDevice"].asInt();
+		if (setlistVal.isMember("LiftStraighten") && setlistVal["LiftStraighten"].isBool())
+			setlist.liftStraighten = setlistVal["LiftStraighten"].asBool();
+		if (setlistVal.isMember("WaitStraighten") && setlistVal["WaitStraighten"].isBool())
+			setlist.waitStraighten = setlistVal["WaitStraighten"].asBool();
+		if (setlistVal.isMember("PointAdsorption") && setlistVal["PointAdsorption"].isBool())
+			setlist.pointAdsorption = setlistVal["PointAdsorption"].asBool();
+		if (setlistVal.isMember("SmoothWriting") && setlistVal["SmoothWriting"].isBool())
+			setlist.smoothWriting = setlistVal["SmoothWriting"].asBool();
+		if (setlistVal.isMember("EraserSetting") && setlistVal["EraserSetting"].isObject())
 		{
-			if (updateVal["EraserSetting"].isMember("EraserMode") && updateVal["EraserSetting"]["EraserMode"].isInt())
-				setlist.eraserSetting.eraserMode = updateVal["EraserSetting"]["EraserMode"].asInt();
-			if (updateVal["EraserSetting"].isMember("EraserSize") && updateVal["EraserSetting"]["EraserSize"].isInt())
-				setlist.eraserSetting.eraserSize = updateVal["EraserSetting"]["EraserSize"].asInt();
+			if (setlistVal["EraserSetting"].isMember("EraserMode") && setlistVal["EraserSetting"]["EraserMode"].isInt())
+				setlist.eraserSetting.eraserMode = setlistVal["EraserSetting"]["EraserMode"].asInt();
+			if (setlistVal["EraserSetting"].isMember("EraserSize") && setlistVal["EraserSetting"]["EraserSize"].isInt())
+				setlist.eraserSetting.eraserSize = setlistVal["EraserSetting"]["EraserSize"].asInt();
 		}
-		if (updateVal.isMember("HideTouchPointerBeta") && updateVal["HideTouchPointerBeta"].isBool())
-			setlist.hideTouchPointer = updateVal["HideTouchPointerBeta"].asBool();
+		if (setlistVal.isMember("HideTouchPointerBeta") && setlistVal["HideTouchPointerBeta"].isBool())
+			setlist.hideTouchPointer = setlistVal["HideTouchPointerBeta"].asBool();
 
-		if (updateVal.isMember("Save") && updateVal["Save"].isObject())
+		if (setlistVal.isMember("Save") && setlistVal["Save"].isObject())
 		{
-			if (updateVal["Save"].isMember("Enable") && updateVal["Save"]["Enable"].isBool())
-				setlist.saveSetting.enable = updateVal["Save"]["Enable"].asBool();
-			if (updateVal["Save"].isMember("SaveDays") && updateVal["Save"]["SaveDays"].isInt())
-				setlist.saveSetting.saveDays = updateVal["Save"]["SaveDays"].asInt();
+			if (setlistVal["Save"].isMember("Enable") && setlistVal["Save"]["Enable"].isBool())
+				setlist.saveSetting.enable = setlistVal["Save"]["Enable"].asBool();
+			if (setlistVal["Save"].isMember("SaveDays") && setlistVal["Save"]["SaveDays"].isInt())
+				setlist.saveSetting.saveDays = setlistVal["Save"]["SaveDays"].asInt();
 		}
-		if (updateVal.isMember("Performance") && updateVal["Performance"].isObject())
+		if (setlistVal.isMember("Performance") && setlistVal["Performance"].isObject())
 		{
-			if (updateVal["Performance"].isMember("PreparationQuantity") && updateVal["Performance"]["PreparationQuantity"].isInt())
-				setlist.performanceSetting.preparationQuantity = updateVal["Performance"]["PreparationQuantity"].asInt();
+			if (setlistVal["Performance"].isMember("PreparationQuantity") && setlistVal["Performance"]["PreparationQuantity"].isInt())
+				setlist.performanceSetting.preparationQuantity = setlistVal["Performance"]["PreparationQuantity"].asInt();
 
-			if (updateVal["Performance"].isMember("SuperDrawBeta") && updateVal["Performance"]["SuperDrawBeta"].isBool())
-				setlist.performanceSetting.superDraw = updateVal["Performance"]["SuperDrawBeta"].asBool();
+			if (setlistVal["Performance"].isMember("SuperDrawBeta") && setlistVal["Performance"]["SuperDrawBeta"].isBool())
+				setlist.performanceSetting.superDraw = setlistVal["Performance"]["SuperDrawBeta"].asBool();
 		}
 
-		if (updateVal.isMember("UpdateSetting") && updateVal["UpdateSetting"].isObject())
+		if (setlistVal.isMember("UpdateSetting") && setlistVal["UpdateSetting"].isObject())
 		{
-			if (updateVal["UpdateSetting"].isMember("EnableAutoUpdate") && updateVal["UpdateSetting"]["EnableAutoUpdate"].isBool())
-				setlist.enableAutoUpdate = updateVal["UpdateSetting"]["EnableAutoUpdate"].asBool();
-			if (updateVal["UpdateSetting"].isMember("UpdateChannel") && updateVal["UpdateSetting"]["UpdateChannel"].isString())
-				setlist.UpdateChannel = updateVal["UpdateSetting"]["UpdateChannel"].asString();
-			if (updateVal["UpdateSetting"].isMember("UpdateArchitecture") && updateVal["UpdateSetting"]["UpdateArchitecture"].isString())
+			if (setlistVal["UpdateSetting"].isMember("EnableAutoUpdate") && setlistVal["UpdateSetting"]["EnableAutoUpdate"].isBool())
+				setlist.enableAutoUpdate = setlistVal["UpdateSetting"]["EnableAutoUpdate"].asBool();
+			if (setlistVal["UpdateSetting"].isMember("UpdateChannel") && setlistVal["UpdateSetting"]["UpdateChannel"].isString())
+				setlist.UpdateChannel = setlistVal["UpdateSetting"]["UpdateChannel"].asString();
+			if (setlistVal["UpdateSetting"].isMember("UpdateArchitecture") && setlistVal["UpdateSetting"]["UpdateArchitecture"].isString())
 			{
-				setlist.updateArchitecture = updateVal["UpdateSetting"]["UpdateArchitecture"].asString();
+				setlist.updateArchitecture = setlistVal["UpdateSetting"]["UpdateArchitecture"].asString();
 				if (setlist.updateArchitecture != "win32" && setlist.updateArchitecture != "win64" && setlist.updateArchitecture != "arm64")
 					setlist.updateArchitecture = "win32";
 			}
 		}
 
-		if (updateVal.isMember("PlugIn") && updateVal["PlugIn"].isObject())
+		if (setlistVal.isMember("PlugIn") && setlistVal["PlugIn"].isObject())
 		{
-			if (updateVal["PlugIn"].isMember("DesktopDrawpadBlocker") && updateVal["PlugIn"]["DesktopDrawpadBlocker"].isObject())
+			if (setlistVal["PlugIn"].isMember("DesktopDrawpadBlocker") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"].isObject())
 			{
-				if (updateVal["PlugIn"]["DesktopDrawpadBlocker"].isMember("Enable") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Enable"].isBool())
-					ddbInteractionSetList.enable = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Enable"].asBool();
-				if (updateVal["PlugIn"]["DesktopDrawpadBlocker"].isMember("RunAsAdmin") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["RunAsAdmin"].isBool())
-					ddbInteractionSetList.runAsAdmin = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["RunAsAdmin"].asBool();
-				if (updateVal["PlugIn"]["DesktopDrawpadBlocker"].isMember("SleepTime") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["SleepTime"].isInt())
-					ddbInteractionSetList.sleepTime = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["SleepTime"].asInt();
+				if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"].isMember("Enable") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Enable"].isBool())
+					ddbInteractionSetList.enable = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Enable"].asBool();
+				if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"].isMember("RunAsAdmin") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["RunAsAdmin"].isBool())
+					ddbInteractionSetList.runAsAdmin = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["RunAsAdmin"].asBool();
+				if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"].isMember("SleepTime") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["SleepTime"].isInt())
+					ddbInteractionSetList.sleepTime = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["SleepTime"].asInt();
 
-				if (updateVal["PlugIn"]["DesktopDrawpadBlocker"].isMember("Intercept") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isObject())
+				if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"].isMember("Intercept") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isObject())
 				{
-					if (updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoWhiteboard3Floating") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard3Floating"].isBool())
-						ddbInteractionSetList.intercept.seewoWhiteboard3Floating = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard3Floating"].asBool();
-					if (updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoWhiteboard5Floating") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5Floating"].isBool())
-						ddbInteractionSetList.intercept.seewoWhiteboard5Floating = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5Floating"].asBool();
-					if (updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoWhiteboard5CFloating") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5CFloating"].isBool())
-						ddbInteractionSetList.intercept.seewoWhiteboard5CFloating = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5CFloating"].asBool();
-					if (updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoPincoSideBarFloating") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoSideBarFloating"].isBool())
-						ddbInteractionSetList.intercept.seewoPincoSideBarFloating = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoSideBarFloating"].asBool();
-					if (updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoPincoDrawingFloating") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoDrawingFloating"].isBool())
-						ddbInteractionSetList.intercept.seewoPincoDrawingFloating = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoDrawingFloating"].asBool();
-					if (updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoPPTFloating") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPPTFloating"].isBool())
-						ddbInteractionSetList.intercept.seewoPPTFloating = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPPTFloating"].asBool();
-					if (updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("AiClassFloating") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["AiClassFloating"].isBool())
-						ddbInteractionSetList.intercept.aiClassFloating = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["AiClassFloating"].asBool();
-					if (updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("HiteAnnotationFloating") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["HiteAnnotationFloating"].isBool())
-						ddbInteractionSetList.intercept.hiteAnnotationFloating = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["HiteAnnotationFloating"].asBool();
-					if (updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("ChangYanFloating") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanFloating"].isBool())
-						ddbInteractionSetList.intercept.changYanFloating = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanFloating"].asBool();
-					if (updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("ChangYanPptFloating") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanPptFloating"].isBool())
-						ddbInteractionSetList.intercept.changYanPptFloating = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanPptFloating"].asBool();
-					if (updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("IntelligentClassFloating") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["IntelligentClassFloating"].isBool())
-						ddbInteractionSetList.intercept.intelligentClassFloating = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["IntelligentClassFloating"].asBool();
-					if (updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoDesktopAnnotationFloating") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopAnnotationFloating"].isBool())
-						ddbInteractionSetList.intercept.seewoDesktopAnnotationFloating = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopAnnotationFloating"].asBool();
-					if (updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoDesktopSideBarFloating") && updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopSideBarFloating"].isBool())
-						ddbInteractionSetList.intercept.seewoDesktopSideBarFloating = updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopSideBarFloating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoWhiteboard3Floating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard3Floating"].isBool())
+						ddbInteractionSetList.intercept.seewoWhiteboard3Floating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard3Floating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoWhiteboard5Floating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5Floating"].isBool())
+						ddbInteractionSetList.intercept.seewoWhiteboard5Floating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5Floating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoWhiteboard5CFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5CFloating"].isBool())
+						ddbInteractionSetList.intercept.seewoWhiteboard5CFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5CFloating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoPincoSideBarFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoSideBarFloating"].isBool())
+						ddbInteractionSetList.intercept.seewoPincoSideBarFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoSideBarFloating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoPincoDrawingFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoDrawingFloating"].isBool())
+						ddbInteractionSetList.intercept.seewoPincoDrawingFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoDrawingFloating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoPPTFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPPTFloating"].isBool())
+						ddbInteractionSetList.intercept.seewoPPTFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPPTFloating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("AiClassFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["AiClassFloating"].isBool())
+						ddbInteractionSetList.intercept.aiClassFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["AiClassFloating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("HiteAnnotationFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["HiteAnnotationFloating"].isBool())
+						ddbInteractionSetList.intercept.hiteAnnotationFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["HiteAnnotationFloating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("ChangYanFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanFloating"].isBool())
+						ddbInteractionSetList.intercept.changYanFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanFloating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("ChangYanPptFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanPptFloating"].isBool())
+						ddbInteractionSetList.intercept.changYanPptFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanPptFloating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("IntelligentClassFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["IntelligentClassFloating"].isBool())
+						ddbInteractionSetList.intercept.intelligentClassFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["IntelligentClassFloating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoDesktopAnnotationFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopAnnotationFloating"].isBool())
+						ddbInteractionSetList.intercept.seewoDesktopAnnotationFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopAnnotationFloating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoDesktopSideBarFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopSideBarFloating"].isBool())
+						ddbInteractionSetList.intercept.seewoDesktopSideBarFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopSideBarFloating"].asBool();
 				}
 			}
-			if (updateVal["PlugIn"].isMember("ShortcutAssistant") && updateVal["PlugIn"]["ShortcutAssistant"].isObject())
+			if (setlistVal["PlugIn"].isMember("ShortcutAssistant") && setlistVal["PlugIn"]["ShortcutAssistant"].isObject())
 			{
-				if (updateVal["PlugIn"]["ShortcutAssistant"].isMember("CorrectLnk") && updateVal["PlugIn"]["ShortcutAssistant"]["CorrectLnk"].isBool())
-					setlist.shortcutAssistant.correctLnk = updateVal["PlugIn"]["ShortcutAssistant"]["CorrectLnk"].asBool();
-				if (updateVal["PlugIn"]["ShortcutAssistant"].isMember("CreateLnk") && updateVal["PlugIn"]["ShortcutAssistant"]["CreateLnk"].isBool())
-					setlist.shortcutAssistant.createLnk = updateVal["PlugIn"]["ShortcutAssistant"]["CreateLnk"].asBool();
+				if (setlistVal["PlugIn"]["ShortcutAssistant"].isMember("CorrectLnk") && setlistVal["PlugIn"]["ShortcutAssistant"]["CorrectLnk"].isBool())
+					setlist.shortcutAssistant.correctLnk = setlistVal["PlugIn"]["ShortcutAssistant"]["CorrectLnk"].asBool();
+				if (setlistVal["PlugIn"]["ShortcutAssistant"].isMember("CreateLnk") && setlistVal["PlugIn"]["ShortcutAssistant"]["CreateLnk"].isBool())
+					setlist.shortcutAssistant.createLnk = setlistVal["PlugIn"]["ShortcutAssistant"]["CreateLnk"].asBool();
+			}
+
+			if (setlistVal["PlugIn"].isMember("SuperTop") && setlistVal["PlugIn"]["SuperTop"].isObject())
+			{
+				if (setlistVal["PlugIn"]["SuperTop"].isMember("Enable") && setlistVal["PlugIn"]["SuperTop"]["Enable"].isBool())
+					setlist.plugInSetting.superTop.enable = setlistVal["PlugIn"]["SuperTop"]["Enable"].asBool();
+				if (setlistVal["PlugIn"]["SuperTop"].isMember("Indicator") && setlistVal["PlugIn"]["SuperTop"]["Indicator"].isBool())
+					setlist.plugInSetting.superTop.indicator = setlistVal["PlugIn"]["SuperTop"]["Indicator"].asBool();
 			}
 		}
-		if (updateVal.isMember("Component") && updateVal["Component"].isObject())
+		if (setlistVal.isMember("Component") && setlistVal["Component"].isObject())
 		{
 			// shortcutButton
-			if (updateVal["Component"].isMember("ShortcutButton") && updateVal["Component"]["ShortcutButton"].isObject())
+			if (setlistVal["Component"].isMember("ShortcutButton") && setlistVal["Component"]["ShortcutButton"].isObject())
 			{
 				// appliance
-				if (updateVal["Component"]["ShortcutButton"].isMember("Appliance") && updateVal["Component"]["ShortcutButton"]["Appliance"].isObject())
+				if (setlistVal["Component"]["ShortcutButton"].isMember("Appliance") && setlistVal["Component"]["ShortcutButton"]["Appliance"].isObject())
 				{
-					if (updateVal["Component"]["ShortcutButton"]["Appliance"].isMember("Explorer") && updateVal["Component"]["ShortcutButton"]["Appliance"]["Explorer"].isBool())
-						setlist.component.shortcutButton.appliance.explorer = updateVal["Component"]["ShortcutButton"]["Appliance"]["Explorer"].asBool();
-					if (updateVal["Component"]["ShortcutButton"]["Appliance"].isMember("Taskmgr") && updateVal["Component"]["ShortcutButton"]["Appliance"]["Taskmgr"].isBool())
-						setlist.component.shortcutButton.appliance.taskmgr = updateVal["Component"]["ShortcutButton"]["Appliance"]["Taskmgr"].asBool();
-					if (updateVal["Component"]["ShortcutButton"]["Appliance"].isMember("Control") && updateVal["Component"]["ShortcutButton"]["Appliance"]["Control"].isBool())
-						setlist.component.shortcutButton.appliance.control = updateVal["Component"]["ShortcutButton"]["Appliance"]["Control"].asBool();
+					if (setlistVal["Component"]["ShortcutButton"]["Appliance"].isMember("Explorer") && setlistVal["Component"]["ShortcutButton"]["Appliance"]["Explorer"].isBool())
+						setlist.component.shortcutButton.appliance.explorer = setlistVal["Component"]["ShortcutButton"]["Appliance"]["Explorer"].asBool();
+					if (setlistVal["Component"]["ShortcutButton"]["Appliance"].isMember("Taskmgr") && setlistVal["Component"]["ShortcutButton"]["Appliance"]["Taskmgr"].isBool())
+						setlist.component.shortcutButton.appliance.taskmgr = setlistVal["Component"]["ShortcutButton"]["Appliance"]["Taskmgr"].asBool();
+					if (setlistVal["Component"]["ShortcutButton"]["Appliance"].isMember("Control") && setlistVal["Component"]["ShortcutButton"]["Appliance"]["Control"].isBool())
+						setlist.component.shortcutButton.appliance.control = setlistVal["Component"]["ShortcutButton"]["Appliance"]["Control"].asBool();
 				}
 				// system
-				if (updateVal["Component"]["ShortcutButton"].isMember("System") && updateVal["Component"]["ShortcutButton"]["System"].isObject())
+				if (setlistVal["Component"]["ShortcutButton"].isMember("System") && setlistVal["Component"]["ShortcutButton"]["System"].isObject())
 				{
-					if (updateVal["Component"]["ShortcutButton"]["System"].isMember("Desktop") && updateVal["Component"]["ShortcutButton"]["System"]["Desktop"].isBool())
-						setlist.component.shortcutButton.system.desktop = updateVal["Component"]["ShortcutButton"]["System"]["Desktop"].asBool();
-					if (updateVal["Component"]["ShortcutButton"]["System"].isMember("LockWorkStation") && updateVal["Component"]["ShortcutButton"]["System"]["LockWorkStation"].isBool())
-						setlist.component.shortcutButton.system.lockWorkStation = updateVal["Component"]["ShortcutButton"]["System"]["LockWorkStation"].asBool();
+					if (setlistVal["Component"]["ShortcutButton"]["System"].isMember("Desktop") && setlistVal["Component"]["ShortcutButton"]["System"]["Desktop"].isBool())
+						setlist.component.shortcutButton.system.desktop = setlistVal["Component"]["ShortcutButton"]["System"]["Desktop"].asBool();
+					if (setlistVal["Component"]["ShortcutButton"]["System"].isMember("LockWorkStation") && setlistVal["Component"]["ShortcutButton"]["System"]["LockWorkStation"].isBool())
+						setlist.component.shortcutButton.system.lockWorkStation = setlistVal["Component"]["ShortcutButton"]["System"]["LockWorkStation"].asBool();
 				}
 				// keyboard
-				if (updateVal["Component"]["ShortcutButton"].isMember("Keyboard") && updateVal["Component"]["ShortcutButton"]["Keyboard"].isObject())
+				if (setlistVal["Component"]["ShortcutButton"].isMember("Keyboard") && setlistVal["Component"]["ShortcutButton"]["Keyboard"].isObject())
 				{
-					if (updateVal["Component"]["ShortcutButton"]["Keyboard"].isMember("Keyboardesc") && updateVal["Component"]["ShortcutButton"]["Keyboard"]["Keyboardesc"].isBool())
-						setlist.component.shortcutButton.keyboard.keyboardesc = updateVal["Component"]["ShortcutButton"]["Keyboard"]["Keyboardesc"].asBool();
-					if (updateVal["Component"]["ShortcutButton"]["Keyboard"].isMember("KeyboardAltF4") && updateVal["Component"]["ShortcutButton"]["Keyboard"]["KeyboardAltF4"].isBool())
-						setlist.component.shortcutButton.keyboard.keyboardAltF4 = updateVal["Component"]["ShortcutButton"]["Keyboard"]["KeyboardAltF4"].asBool();
+					if (setlistVal["Component"]["ShortcutButton"]["Keyboard"].isMember("Keyboardesc") && setlistVal["Component"]["ShortcutButton"]["Keyboard"]["Keyboardesc"].isBool())
+						setlist.component.shortcutButton.keyboard.keyboardesc = setlistVal["Component"]["ShortcutButton"]["Keyboard"]["Keyboardesc"].asBool();
+					if (setlistVal["Component"]["ShortcutButton"]["Keyboard"].isMember("KeyboardAltF4") && setlistVal["Component"]["ShortcutButton"]["Keyboard"]["KeyboardAltF4"].isBool())
+						setlist.component.shortcutButton.keyboard.keyboardAltF4 = setlistVal["Component"]["ShortcutButton"]["Keyboard"]["KeyboardAltF4"].asBool();
 				}
 				// linkage
-				if (updateVal["Component"]["ShortcutButton"].isMember("Linkage") && updateVal["Component"]["ShortcutButton"]["Linkage"].isObject())
+				if (setlistVal["Component"]["ShortcutButton"].isMember("Linkage") && setlistVal["Component"]["ShortcutButton"]["Linkage"].isObject())
 				{
-					if (updateVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandSettings") && updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandSettings"].isBool())
-						setlist.component.shortcutButton.linkage.classislandSettings = updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandSettings"].asBool();
-					if (updateVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandProfile") && updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandProfile"].isBool())
-						setlist.component.shortcutButton.linkage.classislandProfile = updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandProfile"].asBool();
-					if (updateVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandClassswap") && updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandClassswap"].isBool())
-						setlist.component.shortcutButton.linkage.classislandClassswap = updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandClassswap"].asBool();
-					if (updateVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandIslandCaller") && updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandIslandCaller"].isBool())
-						setlist.component.shortcutButton.linkage.classislandIslandCaller = updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandIslandCaller"].asBool();
+					if (setlistVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandSettings") && setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandSettings"].isBool())
+						setlist.component.shortcutButton.linkage.classislandSettings = setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandSettings"].asBool();
+					if (setlistVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandProfile") && setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandProfile"].isBool())
+						setlist.component.shortcutButton.linkage.classislandProfile = setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandProfile"].asBool();
+					if (setlistVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandClassswap") && setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandClassswap"].isBool())
+						setlist.component.shortcutButton.linkage.classislandClassswap = setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandClassswap"].asBool();
+					if (setlistVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandIslandCaller") && setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandIslandCaller"].isBool())
+						setlist.component.shortcutButton.linkage.classislandIslandCaller = setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandIslandCaller"].asBool();
 				}
 			}
 		}
-
-		if (updateVal.isMember("SuperTop") && updateVal["SuperTop"].isBool())
-			setlist.superTop = updateVal["SuperTop"].asBool();
 	}
 	else return false;
 
@@ -338,8 +349,14 @@ bool ReadSettingMini()
 
 	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
 	{
-		if (updateVal.isMember("SuperTop") && updateVal["SuperTop"].isBool())
-			setlist.superTop = updateVal["SuperTop"].asBool();
+		if (updateVal.isMember("PlugIn") && updateVal["PlugIn"].isObject())
+		{
+			if (updateVal["PlugIn"].isMember("SuperTop") && updateVal["PlugIn"]["SuperTop"].isObject())
+			{
+				if (updateVal["PlugIn"]["SuperTop"].isMember("Enable") && updateVal["PlugIn"]["SuperTop"]["Enable"].isBool())
+					setlist.plugInSetting.superTop.enable = updateVal["PlugIn"]["SuperTop"]["Enable"].asBool();
+			}
+		}
 	}
 	else return false;
 
@@ -353,83 +370,91 @@ bool WriteSetting()
 		filesystem::create_directory(globalPath + L"opt", ec);
 	}
 
-	Json::Value updateVal;
+	if (setlist.configurationSetting.enable) setlistVal.clear();
 	{
-		updateVal["SelectLanguage"] = Json::Value(setlist.selectLanguage);
-		updateVal["StartUp"] = Json::Value(setlist.startUp);
-		updateVal["SettingGlobalScale"] = Json::Value(setlist.settingGlobalScale);
-
-		updateVal["SetSkinMode"] = Json::Value(setlist.SetSkinMode);
-		updateVal["TopSleepTime"] = Json::Value(setlist.topSleepTime);
-		updateVal["RightClickClose"] = Json::Value(setlist.RightClickClose);
 		{
-			updateVal["BrushRecover"] = Json::Value(setlist.BrushRecover);
-			updateVal["RubberRecover"] = Json::Value(setlist.RubberRecover);
-		}
-		{
-			updateVal["Regular"]["MoveRecover"] = Json::Value(setlist.regularSetting.moveRecover);
-			updateVal["Regular"]["ClickRecover"] = Json::Value(setlist.regularSetting.clickRecover);
-		}
-		updateVal["Regular"]["AvoidFullScreen"] = Json::Value(setlist.regularSetting.avoidFullScreen);
-		updateVal["Regular"]["TeachingSafetyMode"] = Json::Value(setlist.regularSetting.teachingSafetyMode);
-
-		updateVal["PaintDevice"] = Json::Value(setlist.paintDevice);
-		updateVal["LiftStraighten"] = Json::Value(setlist.liftStraighten);
-		updateVal["WaitStraighten"] = Json::Value(setlist.waitStraighten);
-		updateVal["PointAdsorption"] = Json::Value(setlist.pointAdsorption);
-		updateVal["SmoothWriting"] = Json::Value(setlist.smoothWriting);
-		{
-			updateVal["EraserSetting"]["EraserMode"] = Json::Value(setlist.eraserSetting.eraserMode);
-			updateVal["EraserSetting"]["EraserSize"] = Json::Value(setlist.eraserSetting.eraserSize);
-		}
-		updateVal["HideTouchPointerBeta"] = Json::Value(setlist.hideTouchPointer);
-
-		{
-			updateVal["Save"]["Enable"] = Json::Value(setlist.saveSetting.enable);
-			updateVal["Save"]["SaveDays"] = Json::Value(setlist.saveSetting.saveDays);
-		}
-		{
-			updateVal["Performance"]["PreparationQuantity"] = Json::Value(setlist.performanceSetting.preparationQuantity);
-
-			updateVal["Performance"]["SuperDrawBeta"] = Json::Value(setlist.performanceSetting.superDraw);
+			setlistVal["ConfigurationSetting"]["Enable"] = Json::Value(setlist.configurationSetting.enable);
 		}
 
+		setlistVal["SelectLanguage"] = Json::Value(setlist.selectLanguage);
+		setlistVal["StartUp"] = Json::Value(setlist.startUp);
+		setlistVal["SettingGlobalScale"] = Json::Value(setlist.settingGlobalScale);
+
+		setlistVal["SetSkinMode"] = Json::Value(setlist.SetSkinMode);
+		setlistVal["TopSleepTime"] = Json::Value(setlist.topSleepTime);
+		setlistVal["RightClickClose"] = Json::Value(setlist.RightClickClose);
 		{
-			updateVal["UpdateSetting"]["EnableAutoUpdate"] = Json::Value(setlist.enableAutoUpdate);
-			updateVal["UpdateSetting"]["UpdateChannel"] = Json::Value(setlist.UpdateChannel);
-			updateVal["UpdateSetting"]["UpdateArchitecture"] = Json::Value(setlist.updateArchitecture);
+			setlistVal["BrushRecover"] = Json::Value(setlist.BrushRecover);
+			setlistVal["RubberRecover"] = Json::Value(setlist.RubberRecover);
 		}
 		{
-			updateVal["BasicInfo"]["UserID"] = Json::Value(utf16ToUtf8(userId));
-			updateVal["BasicInfo"]["Edition"] = Json::Value(utf16ToUtf8(editionDate));
+			setlistVal["Regular"]["MoveRecover"] = Json::Value(setlist.regularSetting.moveRecover);
+			setlistVal["Regular"]["ClickRecover"] = Json::Value(setlist.regularSetting.clickRecover);
+		}
+		setlistVal["Regular"]["AvoidFullScreen"] = Json::Value(setlist.regularSetting.avoidFullScreen);
+		setlistVal["Regular"]["TeachingSafetyMode"] = Json::Value(setlist.regularSetting.teachingSafetyMode);
+
+		setlistVal["PaintDevice"] = Json::Value(setlist.paintDevice);
+		setlistVal["LiftStraighten"] = Json::Value(setlist.liftStraighten);
+		setlistVal["WaitStraighten"] = Json::Value(setlist.waitStraighten);
+		setlistVal["PointAdsorption"] = Json::Value(setlist.pointAdsorption);
+		setlistVal["SmoothWriting"] = Json::Value(setlist.smoothWriting);
+		{
+			setlistVal["EraserSetting"]["EraserMode"] = Json::Value(setlist.eraserSetting.eraserMode);
+			setlistVal["EraserSetting"]["EraserSize"] = Json::Value(setlist.eraserSetting.eraserSize);
+		}
+		setlistVal["HideTouchPointerBeta"] = Json::Value(setlist.hideTouchPointer);
+
+		{
+			setlistVal["Save"]["Enable"] = Json::Value(setlist.saveSetting.enable);
+			setlistVal["Save"]["SaveDays"] = Json::Value(setlist.saveSetting.saveDays);
+		}
+		{
+			setlistVal["Performance"]["PreparationQuantity"] = Json::Value(setlist.performanceSetting.preparationQuantity);
+
+			setlistVal["Performance"]["SuperDrawBeta"] = Json::Value(setlist.performanceSetting.superDraw);
+		}
+
+		{
+			setlistVal["UpdateSetting"]["EnableAutoUpdate"] = Json::Value(setlist.enableAutoUpdate);
+			setlistVal["UpdateSetting"]["UpdateChannel"] = Json::Value(setlist.UpdateChannel);
+			setlistVal["UpdateSetting"]["UpdateArchitecture"] = Json::Value(setlist.updateArchitecture);
+		}
+		{
+			setlistVal["BasicInfo"]["UserID"] = Json::Value(utf16ToUtf8(userId));
+			setlistVal["BasicInfo"]["Edition"] = Json::Value(utf16ToUtf8(editionDate));
 		}
 
 		{
 			{
-				updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Enable"] = Json::Value(ddbInteractionSetList.enable);
-				updateVal["PlugIn"]["DesktopDrawpadBlocker"]["RunAsAdmin"] = Json::Value(ddbInteractionSetList.runAsAdmin);
-				updateVal["PlugIn"]["DesktopDrawpadBlocker"]["SleepTime"] = Json::Value(ddbInteractionSetList.sleepTime);
+				setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Enable"] = Json::Value(ddbInteractionSetList.enable);
+				setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["RunAsAdmin"] = Json::Value(ddbInteractionSetList.runAsAdmin);
+				setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["SleepTime"] = Json::Value(ddbInteractionSetList.sleepTime);
 
 				{
-					updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard3Floating"] = Json::Value(ddbInteractionSetList.intercept.seewoWhiteboard3Floating);
-					updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5Floating"] = Json::Value(ddbInteractionSetList.intercept.seewoWhiteboard5Floating);
-					updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5CFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoWhiteboard5CFloating);
-					updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoSideBarFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoPincoSideBarFloating);
-					updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoDrawingFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoPincoDrawingFloating);
-					updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPPTFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoPPTFloating);
-					updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["AiClassFloating"] = Json::Value(ddbInteractionSetList.intercept.aiClassFloating);
-					updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["HiteAnnotationFloating"] = Json::Value(ddbInteractionSetList.intercept.hiteAnnotationFloating);
-					updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanFloating"] = Json::Value(ddbInteractionSetList.intercept.changYanFloating);
-					updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanPptFloating"] = Json::Value(ddbInteractionSetList.intercept.changYanPptFloating);
-					updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["IntelligentClassFloating"] = Json::Value(ddbInteractionSetList.intercept.intelligentClassFloating);
-					updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopAnnotationFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoDesktopAnnotationFloating);
-					updateVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopSideBarFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoDesktopSideBarFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard3Floating"] = Json::Value(ddbInteractionSetList.intercept.seewoWhiteboard3Floating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5Floating"] = Json::Value(ddbInteractionSetList.intercept.seewoWhiteboard5Floating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5CFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoWhiteboard5CFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoSideBarFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoPincoSideBarFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoDrawingFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoPincoDrawingFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPPTFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoPPTFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["AiClassFloating"] = Json::Value(ddbInteractionSetList.intercept.aiClassFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["HiteAnnotationFloating"] = Json::Value(ddbInteractionSetList.intercept.hiteAnnotationFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanFloating"] = Json::Value(ddbInteractionSetList.intercept.changYanFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanPptFloating"] = Json::Value(ddbInteractionSetList.intercept.changYanPptFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["IntelligentClassFloating"] = Json::Value(ddbInteractionSetList.intercept.intelligentClassFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopAnnotationFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoDesktopAnnotationFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopSideBarFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoDesktopSideBarFloating);
 				}
+			}
+			{
+				setlistVal["PlugIn"]["ShortcutAssistant"]["CorrectLnk"] = Json::Value(setlist.shortcutAssistant.correctLnk);
+				setlistVal["PlugIn"]["ShortcutAssistant"]["CreateLnk"] = Json::Value(setlist.shortcutAssistant.createLnk);
 			}
 
 			{
-				updateVal["PlugIn"]["ShortcutAssistant"]["CorrectLnk"] = Json::Value(setlist.shortcutAssistant.correctLnk);
-				updateVal["PlugIn"]["ShortcutAssistant"]["CreateLnk"] = Json::Value(setlist.shortcutAssistant.createLnk);
+				setlistVal["PlugIn"]["SuperTop"]["Enable"] = Json::Value(setlist.plugInSetting.superTop.enable);
+				setlistVal["PlugIn"]["SuperTop"]["Indicator"] = Json::Value(setlist.plugInSetting.superTop.indicator);
 			}
 		}
 		{
@@ -437,31 +462,29 @@ bool WriteSetting()
 			{
 				// appliance
 				{
-					updateVal["Component"]["ShortcutButton"]["Appliance"]["Explorer"] = Json::Value(setlist.component.shortcutButton.appliance.explorer);
-					updateVal["Component"]["ShortcutButton"]["Appliance"]["Taskmgr"] = Json::Value(setlist.component.shortcutButton.appliance.taskmgr);
-					updateVal["Component"]["ShortcutButton"]["Appliance"]["Control"] = Json::Value(setlist.component.shortcutButton.appliance.control);
+					setlistVal["Component"]["ShortcutButton"]["Appliance"]["Explorer"] = Json::Value(setlist.component.shortcutButton.appliance.explorer);
+					setlistVal["Component"]["ShortcutButton"]["Appliance"]["Taskmgr"] = Json::Value(setlist.component.shortcutButton.appliance.taskmgr);
+					setlistVal["Component"]["ShortcutButton"]["Appliance"]["Control"] = Json::Value(setlist.component.shortcutButton.appliance.control);
 				}
 				// system
 				{
-					updateVal["Component"]["ShortcutButton"]["System"]["Desktop"] = Json::Value(setlist.component.shortcutButton.system.desktop);
-					updateVal["Component"]["ShortcutButton"]["System"]["LockWorkStation"] = Json::Value(setlist.component.shortcutButton.system.lockWorkStation);
+					setlistVal["Component"]["ShortcutButton"]["System"]["Desktop"] = Json::Value(setlist.component.shortcutButton.system.desktop);
+					setlistVal["Component"]["ShortcutButton"]["System"]["LockWorkStation"] = Json::Value(setlist.component.shortcutButton.system.lockWorkStation);
 				}
 				// keyboard
 				{
-					updateVal["Component"]["ShortcutButton"]["Keyboard"]["Keyboardesc"] = Json::Value(setlist.component.shortcutButton.keyboard.keyboardesc);
-					updateVal["Component"]["ShortcutButton"]["Keyboard"]["KeyboardAltF4"] = Json::Value(setlist.component.shortcutButton.keyboard.keyboardAltF4);
+					setlistVal["Component"]["ShortcutButton"]["Keyboard"]["Keyboardesc"] = Json::Value(setlist.component.shortcutButton.keyboard.keyboardesc);
+					setlistVal["Component"]["ShortcutButton"]["Keyboard"]["KeyboardAltF4"] = Json::Value(setlist.component.shortcutButton.keyboard.keyboardAltF4);
 				}
 				// linkage
 				{
-					updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandSettings"] = Json::Value(setlist.component.shortcutButton.linkage.classislandSettings);
-					updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandProfile"] = Json::Value(setlist.component.shortcutButton.linkage.classislandProfile);
-					updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandClassswap"] = Json::Value(setlist.component.shortcutButton.linkage.classislandClassswap);
-					updateVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandIslandCaller"] = Json::Value(setlist.component.shortcutButton.linkage.classislandIslandCaller);
+					setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandSettings"] = Json::Value(setlist.component.shortcutButton.linkage.classislandSettings);
+					setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandProfile"] = Json::Value(setlist.component.shortcutButton.linkage.classislandProfile);
+					setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandClassswap"] = Json::Value(setlist.component.shortcutButton.linkage.classislandClassswap);
+					setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandIslandCaller"] = Json::Value(setlist.component.shortcutButton.linkage.classislandIslandCaller);
 				}
 			}
 		}
-
-		updateVal["SuperTop"] = Json::Value(setlist.superTop);
 	}
 
 	HANDLE fileHandle = NULL;
@@ -482,7 +505,7 @@ bool WriteSetting()
 	}
 
 	Json::StreamWriterBuilder writerBuilder;
-	string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
+	string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, setlistVal);
 
 	DWORD bytesWritten = 0;
 	if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size())

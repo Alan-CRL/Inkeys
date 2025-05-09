@@ -198,13 +198,13 @@ void SurperTopMain(wstring lpCmdLine)
 	// 等待原先 智绘教 退出
 	for (int i = 1; i <= 30; i++)
 	{
-		if (_waccess((globalPath + L"superTop_wait.signal").c_str(), 0) == -1) break;
 		this_thread::sleep_for(chrono::milliseconds(50));
+		if (!filesystem::exists(globalPath + L"superTop_wait.signal")) break;
 	}
 
 	// 启动智绘教
 	{
-		wstring param = L"\"" + GetCurrentExePath() + L"\" " + inkeysCmdLine;
+		wstring param = L"\"" + GetCurrentExePath() + L"\" -SuperTopC " + inkeysCmdLine;
 		vector<wchar_t> buffer(param.begin(), param.end());
 		buffer.push_back(L'\0');
 

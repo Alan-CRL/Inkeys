@@ -73,4 +73,12 @@
     </COMReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <PropertyGroup>
+    <ZhjOutputDir>$(SolutionDir)智绘教\</ZhjOutputDir>
+  </PropertyGroup>
+  <Target Name="ExportTlbAndCopyDll" AfterTargets="Build">
+    <Exec Command="&quot;$(SDK40ToolsPath)TlbExp.exe&quot; &quot;$(TargetPath)&quot; /out:&quot;$(TargetDir)$(AssemblyName).tlb&quot;" />
+    <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll" DestinationFolder="$(ZhjOutputDir)" />
+    <Copy SourceFiles="$(TargetDir)$(AssemblyName).tlb" DestinationFolder="$(ZhjOutputDir)" />
+  </Target>
 </Project>

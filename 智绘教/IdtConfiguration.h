@@ -7,6 +7,13 @@ bool UnOccupyFile(HANDLE* hFile);
 
 struct SetListStruct
 {
+#pragma region 软件配置
+	struct
+	{
+		IdtAtomic<bool> enable;
+	}configurationSetting;
+#pragma endregion
+
 #pragma region 软件版本
 	string UpdateChannel;
 	string updateArchitecture;
@@ -111,7 +118,15 @@ struct SetListStruct
 	{
 		bool createLnk, correctLnk;
 	}shortcutAssistant;
-	IdtAtomic<bool> superTop;
+
+	struct
+	{
+		struct
+		{
+			IdtAtomic<bool> enable;
+			IdtAtomic<bool> indicator;
+		}superTop;
+	}plugInSetting;
 #pragma endregion
 };
 extern SetListStruct setlist;

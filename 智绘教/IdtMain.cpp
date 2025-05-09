@@ -45,8 +45,8 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250503a";				// 程序发布日期
-wstring editionChannel = L"LTS";				// 程序发布通道
+wstring editionDate = L"20250508b";				// 程序发布日期
+wstring editionChannel = L"Insider";			// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -142,12 +142,20 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		wstring commandLineArgs(lpCmdLine);
 
+		bool superTopC = false;
+		if (commandLineArgs.length() >= 11 && commandLineArgs.substr(0, 11) == L"-SuperTopC ")
+		{
+			superTopC = true;
+			if (commandLineArgs.length() >= 12) commandLineArgs = commandLineArgs.substr(11, commandLineArgs.length() - 11);
+			else commandLineArgs = L"";
+		}
+
 		if (commandLineArgs == L"-Restart") launchState = LaunchStateEnum::Restart;
 		else if (commandLineArgs == L"-WarnTry") launchState = LaunchStateEnum::WarnTry;
 		else if (commandLineArgs == L"-CrashTry") launchState = LaunchStateEnum::CrashTry;
 		else launchState = LaunchStateEnum::Normal;
 
-		if (commandLineArgs.substr(0, 9) == L"-SuperTop")
+		if (commandLineArgs.length() >= 9 && commandLineArgs.substr(0, 9) == L"-SuperTop")
 		{
 			SurperTopMain(commandLineArgs.substr(10, commandLineArgs.length() - 10));
 			return 0;
@@ -155,7 +163,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		//Testw(L"in \"" + commandLineArgs + L"\"");
 
 #ifdef IDT_RELEASE
-		if (launchState == LaunchStateEnum::Normal)
+		if (launchState == LaunchStateEnum::Normal && !superTopC)
 		{
 			wstring currentExeDirectory = GetCurrentExeDirectory();
 			{
@@ -498,22 +506,140 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		HANDLE tok_self;
 		OpenProcessToken(proc_self, TOKEN_ALL_ACCESS, &tok_self);
 
-		if (setlist.superTop)
+		if (setlist.plugInSetting.superTop.enable && !hasUiAccess(tok_self))
 		{
-			if (!hasUiAccess(tok_self))
+			while (true)
 			{
+				bool hasExistsFaild = false;
+
 				error_code ec;
-				if (filesystem::exists(globalPath + L"superTop_try.signal", ec));
-				else
+				if (filesystem::exists(globalPath + L"superTop_try.signal", ec))
 				{
-					HANDLE fileHandle = NULL;
-					OccupyFileForWrite(&fileHandle, globalPath + L"superTop_try.signal");
-					UnOccupyFile(&fileHandle);
+					string dateContent;
+					{
+						HANDLE fileHandle = NULL;
+						if (!OccupyFileForRead(&fileHandle, globalPath + L"superTop_try.signal"))
+						{
+							UnOccupyFile(&fileHandle);
+							break;
+						}
+
+						LARGE_INTEGER fileSize;
+						if (!GetFileSizeEx(fileHandle, &fileSize))
+						{
+							UnOccupyFile(&fileHandle);
+							break;
+						}
+
+						DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
+						dateContent = string(dwSize, '\0');
+
+						DWORD bytesRead = 0;
+						if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+						{
+							UnOccupyFile(&fileHandle);
+							break;
+						}
+						if (!ReadFile(fileHandle, &dateContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize)
+						{
+							UnOccupyFile(&fileHandle);
+							break;
+						}
+
+						if (dateContent.compare(0, 3, "\xEF\xBB\xBF") == 0) dateContent = dateContent.substr(3);
+						UnOccupyFile(&fileHandle);
+					}
+
+					double diff;
+					{
+						tm tm = {};
+						int year, month, day, hour, minute, second;
+						if (sscanf_s(dateContent.c_str(), "%d-%d-%d %d:%d:%d", &year, &month, &day, &hour, &minute, &second) != 6)
+							break;
+
+						tm.tm_year = year - 1900; // 年份从1900开始
+						tm.tm_mon = month - 1;    // 月份0-11
+						tm.tm_mday = day;
+						tm.tm_hour = hour;
+						tm.tm_min = minute;
+						tm.tm_sec = second;
+						tm.tm_isdst = -1;         // 让系统自动判断夏令时
+
+						time_t old_time = mktime(&tm);
+						time_t new_time = time(nullptr);
+
+						diff = difftime(new_time, old_time);
+					}
+
+					// 如果小于 10s 则视为同一次尝试，此时宣告尝试失败
+					if (diff <= 10) break;
+					else hasExistsFaild = true;
+				}
+
+				{
+					if (!filesystem::exists(globalPath + L"superTop_try.signal", ec) || hasExistsFaild)
+					{
+						string date;
+						{
+							auto now = chrono::system_clock::now();
+							time_t t = chrono::system_clock::to_time_t(now);
+							tm tm; localtime_s(&tm, &t);
+
+							ostringstream oss;
+							oss << put_time(&tm, "%Y-%m-%d %H:%M:%S");
+							date = oss.str();
+						}
+
+						bool isSuccess = false;
+						while (true)
+						{
+							HANDLE fileHandle = NULL;
+							if (!OccupyFileForWrite(&fileHandle, globalPath + L"superTop_try.signal"))
+							{
+								UnOccupyFile(&fileHandle);
+								break;
+							}
+							if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+							{
+								UnOccupyFile(&fileHandle);
+								break;
+							}
+							if (!SetEndOfFile(fileHandle))
+							{
+								UnOccupyFile(&fileHandle);
+								break;
+							}
+
+							Json::StreamWriterBuilder writerBuilder;
+							string dateContent = "\xEF\xBB\xBF" + date;
+
+							DWORD bytesWritten = 0;
+							if (!WriteFile(fileHandle, dateContent.data(), static_cast<DWORD>(dateContent.size()), &bytesWritten, NULL) || bytesWritten != dateContent.size())
+							{
+								UnOccupyFile(&fileHandle);
+								break;
+							}
+
+							UnOccupyFile(&fileHandle);
+
+							isSuccess = true;
+							break;
+						}
+
+						if (!isSuccess)
+						{
+							HANDLE fileHandle = NULL;
+							OccupyFileForWrite(&fileHandle, globalPath + L"superTop_try.signal");
+							UnOccupyFile(&fileHandle);
+						}
+					}
 
 					LaunchSurperTop();
 				}
+				break;
 			}
 		}
+
 		error_code ec;
 		filesystem::remove(globalPath + L"superTop_try.signal", ec);
 
@@ -689,6 +815,10 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	{
 		// 读取配置文件前初始化操作
 		{
+			// 软件配置
+			{
+				setlist.configurationSetting.enable = true;
+			}
 			// 软件版本
 			{
 				setlist.enableAutoUpdate = true;
@@ -749,6 +879,10 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				{
 					setlist.shortcutAssistant.correctLnk = true;
 					setlist.shortcutAssistant.createLnk = false;
+				}
+				{
+					setlist.plugInSetting.superTop.enable = false;
+					setlist.plugInSetting.superTop.indicator = true;
 				}
 			}
 			// 组件

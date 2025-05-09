@@ -636,6 +636,7 @@
     <Image Include="src\option.png" />
     <Image Include="src\paint_brush.png" />
     <Image Include="src\perspective.png" />
+    <Image Include="src\pin.png" />
     <Image Include="src\PluginFlag1.png" />
     <Image Include="src\PluginFlag2.png" />
     <Image Include="src\PluginFlag3.png" />
@@ -710,10 +711,6 @@
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
   <ItemGroup>
-    <SrcFile Include="$(SolutionDir)PptCOM\bin\$(Configuration)\PptCOM.dll" />
-    <TlbFile Include="$(IntDir)PptCOM.tlb" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\PptCOM\PptCOM.csproj">
       <Project>{404f6e99-a0ca-45b2-8caa-a2d819da8eff}</Project>
     </ProjectReference>
@@ -739,18 +736,6 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <GenerateManifest>false</GenerateManifest>
   </PropertyGroup>
-  <!-- Create 32-bit or 64-bit type library from .Net Framework assembly for #import directive -->
-  <Target Name="CreatePptCOMTlb" BeforeTargets="ClCompile" Inputs="@(SrcFile)" Outputs="@(SrcFile -> '$(IntDir)%(FileName).tlb')">
-    <Exec Command="%22$(SDK40ToolsPath)TlbExp.exe%22 %22@(SrcFile)%22 /silence:131175 /$(TlbPlatform) /out:@(TlbFile)" />
-  </Target>
-  <!-- Copy .Net Framework assembly to C++ project output directory -->
-  <Target Name="CopyPptCOM" AfterTargets="Build;Rebuild">
-    <Copy SourceFiles="@(SrcFile)" DestinationFiles="@(SrcFile -> '$(TargetDir)%(FileName)%(Extension)')" />
-  </Target>
-  <!-- Copy .Net Framework assembly to C++ project directory -->
-  <Target Name="CopyPptCOM" BeforeTargets="ResourceCompile">
-    <Copy SourceFiles="@(SrcFile)" DestinationFiles="@(SrcFile -> '$(ProjectDir)%(FileName)%(Extension)')" />
-  </Target>
   <!-- Delete .Net Framework assembly from C++ project output directory -->
   <Target Name="CleanPptCOM" AfterTargets="Clean">
     <Delete Files="$(TargetDir)PptCOM.dll" />

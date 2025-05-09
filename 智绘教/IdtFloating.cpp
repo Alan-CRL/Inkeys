@@ -17,13 +17,14 @@
 #include "IdtTime.h"
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
+#include "SuperTop/IdtSuperTop.h"
 
 #include <shldisp.h>
 #include <exdisp.h>
 
 floating_windowsStruct floating_windows;
 
-IMAGE floating_icon[30], sign;
+IMAGE floating_icon[35], sign;
 IMAGE skin[5];
 
 double state;
@@ -314,6 +315,8 @@ void DrawScreen()
 			idtLoadImage(&floating_icon[18], L"PNG", L"icon18", 20, 20, true);
 			idtLoadImage(&floating_icon[17], L"PNG", L"icon17", 20, 20, true);
 			idtLoadImage(&floating_icon[20], L"PNG", L"icon20", 20, 20, true);
+
+			idtLoadImage(&floating_icon[30], L"PNG", L"icon21"); // SuperTop
 
 			idtLoadImage(&floating_icon[21], L"PNG", L"CustomizeIco1", 40, 40, true); // CI
 			idtLoadImage(&floating_icon[22], L"PNG", L"CustomizeIco2", 40, 40, true); // CI isc
@@ -4781,7 +4784,6 @@ void DrawScreen()
 
 						hiex::TransparentImage(&background, int(UIControl[L"Image/Sign1/x"].v), int(UIControl[L"Image/Sign1/y"].v), &sign, int(UIControl[L"Image/Sign1/transparency"].v));
 					}
-
 					//时钟表盘
 					else if (setlist.SkinMode == 2)
 					{
@@ -5012,7 +5014,6 @@ void DrawScreen()
 
 						hiex::TransparentImage(&background, int(UIControl[L"Image/Sign1/x"].v - 18), int(UIControl[L"Image/Sign1/y"].v - 18), &skin[2]);
 					}
-
 					//龙年迎新
 					else if (setlist.SkinMode == 3)
 					{
@@ -5031,6 +5032,13 @@ void DrawScreen()
 						}
 
 						hiex::TransparentImage(&background, int(UIControl[L"Image/Sign1/x"].v - 18), int(UIControl[L"Image/Sign1/y"].v - 18), &skin[2]);
+					}
+
+					// SuperTop 指示器
+					if (setlist.plugInSetting.superTop.indicator)
+					{
+						if (hasSuperTop)
+							hiex::TransparentImage(&background, int(UIControl[L"Ellipse/Ellipse1/x"].v + 70), int(UIControl[L"Ellipse/Ellipse1/y"].v), &floating_icon[30], int(UIControl[L"Image/Sign1/transparency"].v));
 					}
 				}
 
