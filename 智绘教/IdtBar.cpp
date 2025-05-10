@@ -3,6 +3,10 @@
 #include "IdtWindow.h"
 #include "IdtDisplayManagement.h"
 
+#undef max
+#undef min
+#include "libcuckoo/cuckoohash_map.hh"
+
 // 临时
 void FloatingInstallHook();
 
@@ -17,12 +21,6 @@ void BarMediaClass::LoadExImage()
 
 // 界面
 
-void BarUiValueClass::SetBarUiUnit(double valT, double setAccT)
-{
-	//val = valT;
-	//setAcc = setAccT;
-}
-
 void BarUISetClass::Rendering()
 {
 	BLENDFUNCTION blend;
@@ -32,7 +30,7 @@ void BarUISetClass::Rendering()
 		blend.SourceConstantAlpha = 255;
 		blend.AlphaFormat = AC_SRC_ALPHA;
 	}
-	SIZE sizeWnd = { barWindowPos.w,barWindowPos.h };
+	SIZE sizeWnd = { static_cast<LONG>(barWindowPos.w), static_cast<LONG>(barWindowPos.h) };
 	POINT ptSrc = { 0,0 };
 	POINT ptDst = { 0,0 };
 	UPDATELAYEREDWINDOWINFO ulwi = { 0 };
@@ -152,4 +150,5 @@ void BarInitializationClass::InitializeMedia()
 }
 void BarInitializationClass::InitializeUI()
 {
+	//
 }
