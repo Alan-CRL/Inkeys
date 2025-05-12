@@ -14,7 +14,7 @@ jobs:
   build:
     strategy:
       matrix:
-        platform: [Win32, x64, ARM64]
+        platform: [Win32, x64, ARM64] # 
       # Optional: fail-fast: false 可以让一个平台的构建失败时不立即取消其他平台的构建
       # fail-fast: false
 
@@ -28,6 +28,8 @@ jobs:
     # 步骤2: 设置环境并构建智绘教.vcxproj
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
+    - name: Setup NuGet
+      uses: NuGet/setup-nuget@v2
 
     - name: Setup .NET Framework 4.0
       shell: pwsh
@@ -43,6 +45,8 @@ jobs:
         }
         # 拷贝整个 v4.0 文件夹到目标父目录下
         Copy-Item -Path "$tempPath\v4.0" -Destination $targetParent -Recurse -Force
+    - name: Restore NuGet packages
+      run: nuget restore "智绘教.sln"
 
     - name: Build Inkeys
       run: msbuild "智绘教.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /verbosity:minimal

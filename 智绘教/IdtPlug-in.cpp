@@ -2051,6 +2051,9 @@ void PptInfo()
 
 			ppt_show = NULL, ppt_software = L"";
 
+			// 设置控件归位
+			PptComReadSettingPositionOnly();
+
 			FreezePPT = false;
 			Initialization = false;
 		}

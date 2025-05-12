@@ -50,12 +50,32 @@ The minimum support is `Windows 7 (sp0)` and supports `x86 / x64 / arm64` window
 Author email: `alan-crl@foxmail.com`  
 Author QQ: `2685549821`  
 
+## License
+本项目基于 [GNU General Public License v3.0](LICENSE) 获得许可。
+
+## Code signing policy
+
+<table>
+  <tr>
+    <td>
+      <img alt="SignPath" src="https://signpath.org/assets/favicon-50x50.png" />
+    </td>
+    <td>
+    Free code signing on Windows provided by <a href="https://signpath.io">SignPath.io</a>, certficate by <a href="https://signpath.org/">SignPath Foundation</a>
+    </td>
+  </tr> 
+</table>
+
+- Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+- Committers and reviewers: [Members team](https://github.com/Alan-CRL/Inkeys/graphs/contributors)
+- Approvers: [Alan-CRL](https://github.com/Alan-CRL)
+
 ---
 
 ## Compile Instructions
 
 ### Compile Preparation
-[CompilationProcess](.\GithubRes\CompilationProcess_en-US.md)
+[CompilationProcess](GithubRes/CompilationProcess_en-US.md)
 
 ### Branch Description
 - `main`: Store recently stable and buildable program source code.
@@ -67,6 +87,7 @@ Author QQ: `2685549821`
 [Hashlib++](https://github.com/aksalj/hashlibpp)  
 [HiEasyX](https://github.com/zouhuidong/HiEasyX)  
 [JsonCpp](https://github.com/open-source-parsers/jsoncpp)  
+[libcuckoo](https://github.com/efficient/libcuckoo)  
 [Stb](https://github.com/nothings/stb)  
 [WinToast](https://github.com/mohabouje/WinToast)  
 [Zip Utils](https://www.codeproject.com/Articles/7530/Zip-Utils-Clean-Elegant-Simple-Cplusplus-Win)  

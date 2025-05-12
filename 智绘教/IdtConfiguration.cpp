@@ -574,7 +574,6 @@ bool PptComReadSetting()
 		if (updateVal.isMember("ShowBottomMiddle") && updateVal["ShowBottomMiddle"].isBool())
 			pptComSetlist.showBottomMiddle = updateVal["ShowBottomMiddle"].asBool();
 
-		if (pptComSetlist.memoryWidgetPosition)
 		{
 			if (updateVal.isMember("BottomBothWidth") && updateVal["BottomBothWidth"].isDouble())
 				pptComSetlist.bottomBothWidth = (float)updateVal["BottomBothWidth"].asDouble();
@@ -599,6 +598,64 @@ bool PptComReadSetting()
 
 		if (updateVal.isMember("AutoKillWpsProcess") && updateVal["AutoKillWpsProcess"].isBool())
 			pptComSetlist.autoKillWpsProcess = updateVal["AutoKillWpsProcess"].asBool();
+	}
+	else return false;
+
+	return true;
+}
+bool PptComReadSettingPositionOnly()
+{
+	HANDLE fileHandle = NULL;
+	if (!OccupyFileForRead(&fileHandle, globalPath + L"opt\\pptcom_configuration.json"))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	LARGE_INTEGER fileSize;
+	if (!GetFileSizeEx(fileHandle, &fileSize))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
+	string jsonContent = string(dwSize, '\0');
+
+	DWORD bytesRead = 0;
+	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+	if (!ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	if (jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
+	UnOccupyFile(&fileHandle);
+
+	istringstream jsonContentStream(jsonContent);
+	Json::CharReaderBuilder readerBuilder;
+	Json::Value updateVal;
+	string jsonErr;
+
+	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+	{
+		if (updateVal.isMember("BottomBothWidth") && updateVal["BottomBothWidth"].isDouble())
+			pptComSetlist.bottomBothWidth = (float)updateVal["BottomBothWidth"].asDouble();
+		if (updateVal.isMember("BottomBothHeight") && updateVal["BottomBothHeight"].isDouble())
+			pptComSetlist.bottomBothHeight = (float)updateVal["BottomBothHeight"].asDouble();
+		if (updateVal.isMember("MiddleBothWidth") && updateVal["MiddleBothWidth"].isDouble())
+			pptComSetlist.middleBothWidth = (float)updateVal["MiddleBothWidth"].asDouble();
+		if (updateVal.isMember("MiddleBothHeight") && updateVal["MiddleBothHeight"].isDouble())
+			pptComSetlist.middleBothHeight = (float)updateVal["MiddleBothHeight"].asDouble();
+		if (updateVal.isMember("BottomMiddleWidth") && updateVal["BottomMiddleWidth"].isDouble())
+			pptComSetlist.bottomMiddleWidth = (float)updateVal["BottomMiddleWidth"].asDouble();
+		if (updateVal.isMember("BottomMiddleHeight") && updateVal["BottomMiddleHeight"].isDouble())
+			pptComSetlist.bottomMiddleHeight = (float)updateVal["BottomMiddleHeight"].asDouble();
 	}
 	else return false;
 
