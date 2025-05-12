@@ -196,6 +196,7 @@ struct PptComSetListStruct
 };
 extern PptComSetListStruct pptComSetlist;
 bool PptComReadSetting();
+bool PptComReadSettingPositionOnly();
 bool PptComWriteSetting();
 
 struct DdbInteractionSetListStruct
