@@ -18,8 +18,8 @@ jobs:
 
     runs-on: windows-latest
 
-    # step 1
     steps:
+      # step 1
     - name: Checkout code 
       uses: actions/checkout@v4
 
@@ -51,7 +51,7 @@ jobs:
       shell: cmd
 
     # step 3
-    - name: Upload unsigned exe artifact
+    - name: Upload exe[unsigned] artifact
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.platform == 'Win32' && 'Inkeys[Unsigned]' || 
@@ -63,22 +63,22 @@ jobs:
               (matrix.platform == 'ARM64' && './ARM64/Release/Inkeys.exe') }}
 
   signature:
-    name: Package and upload to signpath
+    name: Signature
     runs-on: windows-latest
     needs: build
 
     steps:
-      - name: Download Win32 unsigned
+      - name: Download Inkeys[Unsigned]
         uses: actions/download-artifact@v4
         with:
           name: Inkeys[Unsigned]
           path: tmp/win32
-      - name: Download x64 unsigned
+      - name: Download Inkeys64[Unsigned]
         uses: actions/download-artifact@v4
         with:
           name: Inkeys64[Unsigned]
           path: tmp/x64
-      - name: Download ARM64 unsigned
+      - name: Download InkeysArm64[Unsigned]
         uses: actions/download-artifact@v4
         with:
           name: InkeysArm64[Unsigned]
@@ -94,6 +94,13 @@ jobs:
       - name: Make zip for signpath
         run: Compress-Archive -Path send_zip\* -DestinationPath send_zip.zip
 
+      - name: Upload signpath[unsigned]
+        id: upload-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: signpath[unsigned]
+          path: send_zip.zip
+
       - name: Sign with SignPath
         id: signpath
         uses: signpath/github-action-submit-signing-request@v1.1
@@ -102,7 +109,7 @@ jobs:
           organization-id: '95390269-627b-496d-8127-fc47de793284'
           project-slug: 'Inkeys'
           signing-policy-slug: 'test-signing'
-          artifact-path: 'send_zip.zip'
+          github-artifact-id: '${{ steps.upload-unsigned.outputs.artifact-id }}'
           wait-for-completion: true
           output-artifact-directory: './signed-artifacts'
         env:
@@ -113,7 +120,7 @@ jobs:
           mkdir signed_unzip
           powershell -Command "Expand-Archive -Path signed-artifacts\send_zip.zip -DestinationPath signed_unzip"
 
-      - name: Prepare Update folder
+      - name: Prepare update folder
         run: |
           mkdir update
           mkdir update64
@@ -122,17 +129,17 @@ jobs:
           copy signed_unzip\Inkeys64.exe update64\Inkeys.exe
           copy signed_unzip\InkeysArm64.exe updateArm64\Inkeys.exe
 
-      - name: Upload signed Win32 EXE
+      - name: Upload Inkeys
         uses: actions/upload-artifact@v4
         with:
           name: Inkeys
           path: update\Inkeys.exe
-      - name: Upload signed x64 EXE
+      - name: Upload Inkeys64
         uses: actions/upload-artifact@v4
         with:
           name: Inkeys64
           path: update64\Inkeys.exe
-      - name: Upload signed ARM64 EXE
+      - name: Upload InkeysArm64
         uses: actions/upload-artifact@v4
         with:
           name: InkeysArm64
