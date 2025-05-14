@@ -5,9 +5,8 @@ name: Inkeys Build
 on:
   push:
     branches:
-      - dev
-      # - main
-      # - insider # 在 main 和 insider 分支 push 时触发
+      - main
+      - insider # 在 main 和 insider 分支 push 时触发
 
 jobs:
   build:
