@@ -115,7 +115,7 @@ jobs:
       - name: Unzip signed
         run: |
           mkdir signed_unzip
-          powershell -Command "Expand-Archive -Path signed-artifacts\send_zip.zip -DestinationPath signed_unzip"
+          powershell -Command "Expand-Archive -Path signed-artifacts\signpath[unsigned].zip -DestinationPath signed_unzip"
 
       - name: Prepare update folder
         run: |
