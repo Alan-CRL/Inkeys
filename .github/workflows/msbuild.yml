@@ -111,20 +111,15 @@ jobs:
           output-artifact-directory: './signed-artifacts'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Show current directory structure
-        run: |
-          echo "当前目录: $PWD"
-          dir -Recurse
         
       - name: Prepare update folder
         run: |
           mkdir update
           mkdir update64
           mkdir updateArm64
-          copy signed-artifacts\signpath[unsigned]\Inkeys.exe update\Inkeys.exe
-          copy signed-artifacts\signpath[unsigned]\Inkeys64.exe update64\Inkeys.exe
-          copy signed-artifacts\signpath[unsigned]\nkeysArm64.exe updateArm64\Inkeys.exe
+          copy signed-artifacts\Inkeys.exe update\Inkeys.exe
+          copy signed-artifacts\Inkeys64.exe update64\Inkeys.exe
+          copy signed-artifacts\InkeysArm64.exe updateArm64\Inkeys.exe
 
       - name: Upload Inkeys
         uses: actions/upload-artifact@v4
