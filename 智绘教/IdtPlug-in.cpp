@@ -3844,7 +3844,7 @@ void PptInteract()
 }
 void PPTLinkageMain()
 {
-	threadStatus[L"PptDraw"] = true;
+	threadStatus[L"PPTLinkageMain"] = true;
 
 	// 读取 ppt 配置
 	{
@@ -3869,7 +3869,7 @@ void PPTLinkageMain()
 		this_thread::sleep_for(chrono::milliseconds(500));
 	}
 
-	threadStatus[L"PptDraw"] = false;
+	threadStatus[L"PPTLinkageMain"] = false;
 }
 
 // 附加

@@ -1,5 +1,4 @@
 # 这是用于构建混合 C++ (MSVC v143) 和 C# (.NET Framework) 项目的 GitHub Actions 工作流程
-# 构建 Release Win32, x64, ARM64 配置，并按要求打包上传 Inkeys.exe
 
 name: Inkeys Build
 
@@ -9,23 +8,21 @@ on:
       - main
       - insider # 在 main 和 insider 分支 push 时触发
 
-# 定义一个矩阵策略来构建不同的平台
 jobs:
   build:
     strategy:
       matrix:
         platform: [Win32, x64, ARM64] # 
-      # Optional: fail-fast: false 可以让一个平台的构建失败时不立即取消其他平台的构建
-      # fail-fast: false
+      fail-fast: false
 
     runs-on: windows-latest
 
-    # 步骤1: 拉取代码
     steps:
+      # step 1
     - name: Checkout code 
       uses: actions/checkout@v4
 
-    # 步骤2: 设置环境并构建智绘教.vcxproj
+    # step 2
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
     - name: Setup NuGet
@@ -52,35 +49,89 @@ jobs:
       run: msbuild "智绘教.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /verbosity:minimal
       shell: cmd
 
-    # 步骤3: 打包并压缩产物
-    - name: Determine exe path and artifact name
-      id: exeinfo
-      shell: pwsh
-      run: |
-        $platform = "${{ matrix.platform }}"
-        if ($platform -eq "Win32") {
-          $exe = ".\Release\Inkeys.exe"
-          $name = "Inkeys"
-        } elseif ($platform -eq "x64") {
-          $exe = ".\x64\Release\Inkeys.exe"
-          $name = "Inkeys64"
-        } elseif ($platform -eq "ARM64") {
-          $exe = ".\ARM64\Release\Inkeys.exe"
-          $name = "InkeysArm64"
-        } else {
-          Write-Error "Unsupported platform: $platform"
-          exit 1
-        }
-        if (-not (Test-Path $exe -PathType Leaf)) {
-          Write-Error "$exe not found"
-          exit 1
-        }
-        echo "exe_path=$exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        echo "artifact_name=$name" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-    # 步骤4: 上传打包好的 Artifact (zip 文件)
-    - name: Upload artifact - ${{ matrix.platform }}
+    # step 3
+    - name: Upload exe[unsigned] artifact
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ env.artifact_name }}
-        path: ${{ env.exe_path }}
+        name: ${{ matrix.platform == 'Win32' && 'Inkeys[Unsigned]' || 
+                  matrix.platform == 'x64' && 'Inkeys64[Unsigned]' || 
+                  matrix.platform == 'ARM64' && 'InkeysArm64[Unsigned]' }}
+        path: |
+          ${{ (matrix.platform == 'Win32' && './Release/Inkeys.exe') || 
+              (matrix.platform == 'x64' && './x64/Release/Inkeys.exe') || 
+              (matrix.platform == 'ARM64' && './ARM64/Release/Inkeys.exe') }}
+
+  signature:
+    name: Signature
+    runs-on: windows-latest
+    needs: build
+
+    steps:
+      - name: Download Inkeys[Unsigned]
+        uses: actions/download-artifact@v4
+        with:
+          name: Inkeys[Unsigned]
+          path: tmp/win32
+      - name: Download Inkeys64[Unsigned]
+        uses: actions/download-artifact@v4
+        with:
+          name: Inkeys64[Unsigned]
+          path: tmp/x64
+      - name: Download InkeysArm64[Unsigned]
+        uses: actions/download-artifact@v4
+        with:
+          name: InkeysArm64[Unsigned]
+          path: tmp/arm64
+
+      - name: Prepare signpath zip folder
+        run: |
+          mkdir send_zip
+          copy tmp\win32\Inkeys.exe send_zip\Inkeys.exe
+          copy tmp\x64\Inkeys.exe send_zip\Inkeys64.exe
+          copy tmp\arm64\Inkeys.exe send_zip\InkeysArm64.exe
+          
+      - name: Upload signpath[unsigned]
+        id: upload-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: signpath[unsigned]
+          path: send_zip/
+
+      - name: Sign with SignPath
+        id: signpath
+        uses: signpath/github-action-submit-signing-request@v1.1
+        with:
+          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+          organization-id: '95390269-627b-496d-8127-fc47de793284'
+          project-slug: 'Inkeys'
+          signing-policy-slug: 'release_certificate_2025'
+          github-artifact-id: '${{ steps.upload-unsigned.outputs.artifact-id }}'
+          wait-for-completion: true
+          output-artifact-directory: './signed-artifacts'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+      - name: Prepare update folder
+        run: |
+          mkdir update
+          mkdir update64
+          mkdir updateArm64
+          copy signed-artifacts\Inkeys.exe update\Inkeys.exe
+          copy signed-artifacts\Inkeys64.exe update64\Inkeys.exe
+          copy signed-artifacts\InkeysArm64.exe updateArm64\Inkeys.exe
+
+      - name: Upload Inkeys
+        uses: actions/upload-artifact@v4
+        with:
+          name: Inkeys
+          path: update\Inkeys.exe
+      - name: Upload Inkeys64
+        uses: actions/upload-artifact@v4
+        with:
+          name: Inkeys64
+          path: update64\Inkeys.exe
+      - name: Upload InkeysArm64
+        uses: actions/upload-artifact@v4
+        with:
+          name: InkeysArm64
+          path: updateArm64\Inkeys.exe
