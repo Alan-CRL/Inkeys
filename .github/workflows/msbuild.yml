@@ -104,7 +104,7 @@ jobs:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
           organization-id: '95390269-627b-496d-8127-fc47de793284'
           project-slug: 'Inkeys'
-          signing-policy-slug: 'test-signing'
+          signing-policy-slug: 'release_certificate_2025'
           github-artifact-id: '${{ steps.upload-unsigned.outputs.artifact-id }}'
           wait-for-completion: true
           output-artifact-directory: './signed-artifacts'
