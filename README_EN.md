@@ -51,7 +51,7 @@ Author email: `alan-crl@foxmail.com`
 Author QQ: `2685549821`  
 
 ## License
-本项目基于 [GNU General Public License v3.0](LICENSE) 获得许可。
+This project is licensed under the [GNU General Public License v3.0](LICENSE).
 
 ## Code signing policy
 
