@@ -275,13 +275,13 @@ jobs:
 
       - name: Compressed release package 1
         run: |
-          Compress-Archive -Path .\Inkeys -DestinationPath ".\[版本][32位]Inkeys2025====!.zip" -CompressionLevel Optimal
+          Compress-Archive -Path .\Inkeys -DestinationPath ".\[====][32=]Inkeys2025====!.zip" -CompressionLevel Optimal
       - name: Compressed release package 2
         run: |
-          Compress-Archive -Path .\Inkeys64 -DestinationPath ".\[版本][64位]Inkeys2025====!.zip" -CompressionLevel Optimal
+          Compress-Archive -Path .\Inkeys64 -DestinationPath ".\[====][64=]Inkeys2025====!.zip" -CompressionLevel Optimal
       - name: Compressed release package 3
         run: |
-          Compress-Archive -Path .\InkeysArm64 -DestinationPath ".\[版本][Arm64]Inkeys2025====!.zip" -CompressionLevel Optimal
+          Compress-Archive -Path .\InkeysArm64 -DestinationPath ".\[====][Arm64]Inkeys2025====!.zip" -CompressionLevel Optimal
 
       - name: Print file tree (tree)
         run: tree /F /A
@@ -292,10 +292,10 @@ jobs:
         with:
           name: Package
           path: |
-            "InkeysUpdate2025====!.zip"
-            "InkeysUpdate2025====!64.zip"
-            "InkeysUpdate2025====!Arm64.zip"
-            "[版本][32位]Inkeys2025====!.zip"
-            "[版本][64位]Inkeys2025====!.zip"
-            "[版本][Arm64]Inkeys2025====!.zip"
-            "ci.txt"
+            InkeysUpdate2025====!.zip
+            InkeysUpdate2025====!64.zip
+            InkeysUpdate2025====!Arm64.zip
+            [====][32=]Inkeys2025====!.zip
+            [====][64=]Inkeys2025====!.zip
+            [====][Arm64]Inkeys2025====!.zip
+            ci.txt
