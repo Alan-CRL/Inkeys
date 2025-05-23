@@ -8,6 +8,8 @@ on:
       - dev #
       - main
       - insider # 在 main 和 insider 分支 push 时触发
+permissions:
+  actions: write
 
 jobs:
   build:
@@ -16,7 +18,6 @@ jobs:
       matrix:
         platform: [Win32, x64, ARM64]
       fail-fast: false
-
     runs-on: windows-latest
 
     steps:
