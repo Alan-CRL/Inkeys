@@ -197,17 +197,14 @@ jobs:
           copy tmp\arm64\Inkeys.exe InkeysArm64\Inkeys.exe
 
       - name: Compressed update package 1
-        uses: DuckSoft/7-Zip-Action@v1
-        with:
-          args: a -tzip -mx=9 InkeysUpdate2025====!.zip Inkeys/Inkeys.exe
+        run: |
+          Compress-Archive -Path .\Inkeys\Inkeys.exe -DestinationPath .\InkeysUpdate2025====!.zip -CompressionLevel Optimal
       - name: Compressed update package 2
-        uses: DuckSoft/7-Zip-Action@v1
-        with:
-          args: a -tzip -mx=9 InkeysUpdate2025====!64.zip Inkeys64/Inkeys.exe
+        run: |
+          Compress-Archive -Path .\Inkeys64\Inkeys.exe -DestinationPath .\InkeysUpdate2025====!64.zip -CompressionLevel Optimal
       - name: Compressed update package 3
-        uses: DuckSoft/7-Zip-Action@v1
-        with:
-          args: a -tzip -mx=9 InkeysUpdate2025====!Arm64.zip InkeysArm64/Inkeys.exe
+        run: |
+          Compress-Archive -Path .\InkeysArm64\Inkeys.exe -DestinationPath .\InkeysUpdate2025====!Arm64.zip -CompressionLevel Optimal
 
       - name: Prepare configuration information 1
         shell: pwsh
@@ -220,7 +217,7 @@ jobs:
           $sha256 = (Get-FileHash -Path $exeFile -Algorithm SHA256).Hash
           $size   = (Get-Item $uploadFile).Length
 
-          "[Inkeys]`nMD5: $md5`nSHA256: $sha256`nEXE_SIZE: $size" | Add-Content $out
+          "[Inkeys]`nMD5: $md5`nSHA256: $sha256`nEXE_SIZE: $size" | Add-Content $out -Encoding UTF8
       - name: Prepare configuration information 2
         shell: pwsh
         run: |
@@ -232,7 +229,7 @@ jobs:
           $sha256 = (Get-FileHash -Path $exeFile -Algorithm SHA256).Hash
           $size   = (Get-Item $uploadFile).Length
 
-          "[Inkeys64]`nMD5: $md5`nSHA256: $sha256`nEXE_SIZE: $size" | Add-Content $out
+          "[Inkeys64]`nMD5: $md5`nSHA256: $sha256`nEXE_SIZE: $size" | Add-Content $out -Encoding UTF8
       - name: Prepare configuration information 3
         shell: pwsh
         run: |
@@ -244,8 +241,48 @@ jobs:
           $sha256 = (Get-FileHash -Path $exeFile -Algorithm SHA256).Hash
           $size   = (Get-Item $uploadFile).Length
 
-          "[InkeysArm64]`nMD5: $md5`nSHA256: $sha256`nEXE_SIZE: $size" | Add-Content $out
+          "[InkeysArm64]`nMD5: $md5`nSHA256: $sha256`nEXE_SIZE: $size" | Add-Content $out -Encoding UTF8
       
+      - name: Write Tips
+        shell: pwsh
+        run: |
+          $content = @"
+          软件使用方法：
+          1. Inkeys.exe 运行文件放置于一个空的文件夹内（exe 名称不能包含非英文字符）
+          2. 双击 Inkeys.exe 运行即可
+          
+          提示：
+          设置桌面快捷方式和开机启动可以进软件选项界面中设置。
+          有疑问吐槽建议等等，加Q群618720802一起讨论，或咨询作者QQ2685549821。
+          
+          -----
+          
+          How to use the software:
+          1. Inkeys.exe runtime file is placed in an empty folder (exe name can not contain non-English characters)
+          2. Double-click Inkeys.exe to run.
+          
+          Tips: 
+          Set desktop shortcuts and boot up can be set into the software options interface.
+          If you have any questions, comments, suggestions, etc., through the software feedback channel for feedback, or consult the author alan-crl@foxmail.com.
+          "@
+
+          Set-Content -Path Tips.txt -Value $content -Encoding UTF8
+      - name: Prepare Tips
+        run: |
+          copy Tips.txt Inkeys\Tips.txt
+          copy Tips.txt Inkeys64\Tips.txt
+          copy Tips.txt InkeysArm64\Tips.txt
+
+      - name: Compressed release package 1
+        run: |
+          Compress-Archive -Path .\Inkeys -DestinationPath .\[版本][32位]Inkeys2025====!.zip -CompressionLevel Optimal
+      - name: Compressed release package 2
+        run: |
+          Compress-Archive -Path .\Inkeys64 -DestinationPath .\[版本][64位]Inkeys2025====!.zip -CompressionLevel Optimal
+      - name: Compressed release package 3
+        run: |
+          Compress-Archive -Path .\InkeysArm64 -DestinationPath .\[版本][Arm64]Inkeys2025====!.zip -CompressionLevel Optimal
+
       - name: Upload Package
         uses: actions/upload-artifact@v4
         with:
@@ -255,3 +292,6 @@ jobs:
             InkeysUpdate2025====!64.zip
             InkeysUpdate2025====!Arm64.zip
             ci.txt
+            [版本][32位]Inkeys2025====!.zip
+            [版本][64位]Inkeys2025====!.zip
+            [版本][Arm64]Inkeys2025====!.zip
