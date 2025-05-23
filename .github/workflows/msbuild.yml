@@ -213,11 +213,11 @@ jobs:
           $uploadFile = 'InkeysUpdate2025====!.zip'
           $out = 'ci.txt'
           
-          $md5    = (Get-FileHash -Path $exeFile -Algorithm MD5   ).Hash
-          $sha256 = (Get-FileHash -Path $exeFile -Algorithm SHA256).Hash
+          $md5    = ((Get-FileHash -Path $exeFile -Algorithm MD5   ).Hash).ToLower()
+          $sha256 = ((Get-FileHash -Path $exeFile -Algorithm SHA256).Hash).ToLower()
           $size   = (Get-Item $uploadFile).Length
 
-          "[Inkeys]`nMD5: $md5`nSHA256: $sha256`nEXE_SIZE: $size" | Add-Content $out -Encoding UTF8
+          "[Inkeys]`r`nMD5: $md5`r`nSHA256: $sha256`r`nZIP_SIZE: $size`r`n" | Add-Content $out -Encoding UTF8
       - name: Prepare configuration information 2
         shell: pwsh
         run: |
@@ -225,11 +225,11 @@ jobs:
           $uploadFile = 'InkeysUpdate2025====!64.zip'
           $out = 'ci.txt'
           
-          $md5    = (Get-FileHash -Path $exeFile -Algorithm MD5   ).Hash
-          $sha256 = (Get-FileHash -Path $exeFile -Algorithm SHA256).Hash
+          $md5    = ((Get-FileHash -Path $exeFile -Algorithm MD5   ).Hash).ToLower()
+          $sha256 = ((Get-FileHash -Path $exeFile -Algorithm SHA256).Hash).ToLower()
           $size   = (Get-Item $uploadFile).Length
 
-          "[Inkeys64]`nMD5: $md5`nSHA256: $sha256`nEXE_SIZE: $size" | Add-Content $out -Encoding UTF8
+          "[Inkeys64]`r`nMD5: $md5`r`nSHA256: $sha256`r`nZIP_SIZE: $size`r`n" | Add-Content $out -Encoding UTF8
       - name: Prepare configuration information 3
         shell: pwsh
         run: |
@@ -237,11 +237,11 @@ jobs:
           $uploadFile = 'InkeysUpdate2025====!Arm64.zip'
           $out = 'ci.txt'
           
-          $md5    = (Get-FileHash -Path $exeFile -Algorithm MD5   ).Hash
-          $sha256 = (Get-FileHash -Path $exeFile -Algorithm SHA256).Hash
+          $md5    = ((Get-FileHash -Path $exeFile -Algorithm MD5   ).Hash).ToLower()
+          $sha256 = ((Get-FileHash -Path $exeFile -Algorithm SHA256).Hash).ToLower()
           $size   = (Get-Item $uploadFile).Length
 
-          "[InkeysArm64]`nMD5: $md5`nSHA256: $sha256`nEXE_SIZE: $size" | Add-Content $out -Encoding UTF8
+          "[InkeysArm64]`r`nMD5: $md5`r`nSHA256: $sha256`r`nZIP_SIZE: $size`r`n" | Add-Content $out -Encoding UTF8
       
       - name: Write Tips
         shell: pwsh
@@ -275,23 +275,27 @@ jobs:
 
       - name: Compressed release package 1
         run: |
-          Compress-Archive -Path .\Inkeys -DestinationPath .\[版本][32位]Inkeys2025====!.zip -CompressionLevel Optimal
+          Compress-Archive -Path .\Inkeys -DestinationPath ".\[版本][32位]Inkeys2025====!.zip" -CompressionLevel Optimal
       - name: Compressed release package 2
         run: |
-          Compress-Archive -Path .\Inkeys64 -DestinationPath .\[版本][64位]Inkeys2025====!.zip -CompressionLevel Optimal
+          Compress-Archive -Path .\Inkeys64 -DestinationPath ".\[版本][64位]Inkeys2025====!.zip" -CompressionLevel Optimal
       - name: Compressed release package 3
         run: |
-          Compress-Archive -Path .\InkeysArm64 -DestinationPath .\[版本][Arm64]Inkeys2025====!.zip -CompressionLevel Optimal
+          Compress-Archive -Path .\InkeysArm64 -DestinationPath ".\[版本][Arm64]Inkeys2025====!.zip" -CompressionLevel Optimal
+
+      - name: Print file tree (tree)
+        run: tree /F /A
+        shell: cmd
 
       - name: Upload Package
         uses: actions/upload-artifact@v4
         with:
           name: Package
           path: |
-            InkeysUpdate2025====!.zip
-            InkeysUpdate2025====!64.zip
-            InkeysUpdate2025====!Arm64.zip
-            ci.txt
-            [版本][32位]Inkeys2025====!.zip
-            [版本][64位]Inkeys2025====!.zip
-            [版本][Arm64]Inkeys2025====!.zip
+            "InkeysUpdate2025====!.zip"
+            "InkeysUpdate2025====!64.zip"
+            "InkeysUpdate2025====!Arm64.zip"
+            "[版本][32位]Inkeys2025====!.zip"
+            "[版本][64位]Inkeys2025====!.zip"
+            "[版本][Arm64]Inkeys2025====!.zip"
+            "ci.txt"
