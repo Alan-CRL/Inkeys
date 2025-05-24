@@ -14,7 +14,6 @@ permissions:
 jobs:
   check:
     name: Check
-    needs: check
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -31,6 +30,7 @@ jobs:
 
   build:
     name: Build
+    needs: check
     strategy:
       matrix:
         platform: [Win32, x64, ARM64]
