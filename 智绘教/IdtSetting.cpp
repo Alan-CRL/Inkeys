@@ -65,7 +65,6 @@ struct
 
 	wstring buildOS;
 	wstring buildOSVersion;
-	wstring buildRunnerVersion;
 	wstring buildRunnerImageOS;
 	wstring buildRunnerImageVersion;
 } settingCICD;
@@ -2438,7 +2437,6 @@ void SettingMain()
 								text += L"\n";
 								text += L"构建系统: " + settingCICD.buildOS + L"\n";
 								text += L"构建系统版本: " + settingCICD.buildOSVersion + L"\n";
-								text += L"运行器版本: " + settingCICD.buildRunnerVersion + L"\n";
 								text += L"运行器镜像系统: " + settingCICD.buildRunnerImageOS + L"\n";
 								text += L"运行器镜像版本: " + settingCICD.buildRunnerImageVersion + L"\n";
 							}
