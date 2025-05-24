@@ -12,6 +12,23 @@ permissions:
   actions: write
 
 jobs:
+  check:
+    name: Check
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for '#define IDT_RELEASE'
+        id: check_idt_release
+        run: |
+          FILE="智绘教/IdtMain.h"
+          if ! grep -xq "#define IDT_RELEASE" "$FILE"; then
+            echo "::warning file=$FILE::没有找到'#define IDT_RELEASE'（说明是非发布版本的错误推送），请检查！"
+            exit 1
+          fi
+
   build:
     name: Build
     strategy:
@@ -189,9 +206,9 @@ jobs:
           Compress-Archive -Path .\signedUpload\InkeysArm64\Inkeys.exe -DestinationPath .\packageUpload\InkeysUpdate2025====!Arm64.zip -CompressionLevel Optimal
 
       # TEST
-      - name: Print file tree
-        run: tree /F /A
-        shell: cmd
+      # - name: Print file tree
+      #   run: tree /F /A
+      #   shell: cmd
 
       - name: Prepare configuration information 1
         shell: pwsh
@@ -231,9 +248,9 @@ jobs:
           "[InkeysArm64]`r`nMD5: $md5`r`nSHA256: $sha256`r`nZIP_SIZE: $size`r`n" | Add-Content $out -Encoding UTF8
       
       # TEST
-      - name: Print file tree
-        run: tree /F /A
-        shell: cmd
+      # - name: Print file tree
+      #   run: tree /F /A
+      #   shell: cmd
 
       - name: Write Tips
         shell: pwsh
