@@ -62,14 +62,16 @@ jobs:
             wstring branch = L"${{ github.ref_name }}";
             wstring submitter = L"${{ github.actor }}";
             wstring buildTime = L"{{UTCTIME}}";
-            
+
             wstring buildOS = L"${{ steps.environmentInfo.outputs.OS }}";
             wstring buildOSVersion = L"${{ steps.environmentInfo.outputs.OS_VERSION }}";
-            wstring buildRunnerVersion = L"${{ runner.version }}";
-            wstring buildRunnerImageOS = L"${{ env.ImageOS }}";
-            wstring buildRunnerImageVersion = L"${{ env.ImageVersion }}";
+            wstring buildRunnerVersion = L"${{ runner.os }}";
+            wstring buildRunnerImageOS = L"$Env:ImageOS";
+            wstring buildRunnerImageVersion = L"$Env:ImageVersion";
           } settingCICD;
       run: |
+        Get-ChildItem Env:
+        
         $file = '智绘教\IdtSetting.cpp'
         $content = Get-Content $file
 
