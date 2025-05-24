@@ -90,22 +90,6 @@ jobs:
     needs: build
 
     steps:
-      - name: Download Inkeys[Unsigned]
-        uses: actions/download-artifact@v4
-        with:
-          name: Inkeys[Unsigned]
-          path: download/win32
-      - name: Download Inkeys64[Unsigned]
-        uses: actions/download-artifact@v4
-        with:
-          name: Inkeys64[Unsigned]
-          path: download/x64
-      - name: Download InkeysArm64[Unsigned]
-        uses: actions/download-artifact@v4
-        with:
-          name: InkeysArm64[Unsigned]
-          path: download/arm64
-
       # 获取版本信息
       - name: 拉取代码
         uses: actions/checkout@v4
@@ -161,6 +145,22 @@ jobs:
             }
           }
 
+      # 下载构建后内容
+      - name: Download Inkeys[Unsigned]
+        uses: actions/download-artifact@v4
+        with:
+          name: Inkeys[Unsigned]
+          path: download/win32
+      - name: Download Inkeys64[Unsigned]
+        uses: actions/download-artifact@v4
+        with:
+          name: Inkeys64[Unsigned]
+          path: download/x64
+      - name: Download InkeysArm64[Unsigned]
+        uses: actions/download-artifact@v4
+        with:
+          name: InkeysArm64[Unsigned]
+          path: download/arm64
 
       # TEST
       - name: Print file tree
@@ -168,7 +168,6 @@ jobs:
         shell: cmd
 
       # 打包整理 Package
-
       - name: Prepare signpath zip folder
         run: |
           mkdir signatureUpload
