@@ -194,7 +194,7 @@ jobs:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
           organization-id: '95390269-627b-496d-8127-fc47de793284'
           project-slug: 'Inkeys'
-          signing-policy-slug: 'release-signing'
+          signing-policy-slug: 'test-signing'
           github-artifact-id: '${{ steps.upload-unsigned.outputs.artifact-id }}'
           wait-for-completion: true
           output-artifact-directory: './signed'
@@ -309,16 +309,6 @@ jobs:
 
           "[InkeysArm64]`r`nMD5: $md5`r`nSHA256: $sha256`r`nZIP_SIZE: $size`r`n" | Add-Content $out -Encoding UTF8
       
-      # TEST
-      - name: Print file tree
-        run: tree /F /A
-        shell: cmd
-
-      - name: Print all GitHub env
-        run: |
-          env | grep GITHUB_
-          env | grep RUNNER_
-
       - name: Write Tips
         shell: pwsh
         run: |
@@ -380,29 +370,33 @@ jobs:
           Compress-Archive -Path .\signedUpload\InkeysArm64 -DestinationPath ".\packageUpload\Arm64=Inkeys2025====!.zip" -CompressionLevel Optimal
 
       - name: 重命名为最终命名 1
+        shell: cmd
         run: |
-          rename ".\packageUpload\InkeysUpdate2025====!.zip" ".\packageUpload\InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip"
-          rename ".\packageUpload\InkeysUpdate2025====!64.zip" ".\packageUpload\InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip"
-          rename ".\packageUpload\InkeysUpdate2025====!Arm64.zip" ".\packageUpload\InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip"
+          rename ".\packageUpload\InkeysUpdate2025====!.zip" "InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\InkeysUpdate2025====!64.zip" "InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip"
+          rename ".\packageUpload\InkeysUpdate2025====!Arm64.zip" "InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip"
 
       - name: 重命名为最终命名 2
         if: steps.softwareChannel.outputs.VALUE == 'Dev'
+        shell: cmd
         run: |
-          rename ".\packageUpload\32=Inkeys2025====!.zip" ".\packageUpload\开发版本-32位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
-          rename ".\packageUpload\64=Inkeys2025====!.zip" ".\packageUpload\开发版本-64位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
-          rename ".\packageUpload\Arm64=Inkeys2025====!.zip" ".\packageUpload\开发版本-Arm64-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\32=Inkeys2025====!.zip" "开发版本-32位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\64=Inkeys2025====!.zip" "开发版本-64位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\Arm64=Inkeys2025====!.zip" "开发版本-Arm64-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
       - name: 重命名为最终命名 2
         if: steps.softwareChannel.outputs.VALUE == 'Insider'
+        shell: cmd
         run: |
-          rename ".\packageUpload\32=Inkeys2025====!.zip" ".\packageUpload\预览版本-32位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
-          rename ".\packageUpload\64=Inkeys2025====!.zip" ".\packageUpload\预览版本-64位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
-          rename ".\packageUpload\Arm64=Inkeys2025====!.zip" ".\packageUpload\预览版本-Arm64-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\32=Inkeys2025====!.zip" "预览版本-32位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\64=Inkeys2025====!.zip" "预览版本-64位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\Arm64=Inkeys2025====!.zip" "预览版本-Arm64-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
       - name: 重命名为最终命名 2
         if: steps.softwareChannel.outputs.VALUE == 'LTS' || steps.softwareChannel.outputs.VALUE == 'Main'
+        shell: cmd
         run: |
-          rename ".\packageUpload\32=Inkeys2025====!.zip" ".\packageUpload\正式版本-32位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
-          rename ".\packageUpload\64=Inkeys2025====!.zip" ".\packageUpload\正式版本-64位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
-          rename ".\packageUpload\Arm64=Inkeys2025====!.zip" ".\packageUpload\正式版本-Arm64-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\32=Inkeys2025====!.zip" "正式版本-32位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\64=Inkeys2025====!.zip" "正式版本-64位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\Arm64=Inkeys2025====!.zip" "正式版本-Arm64-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
 
       # TEST
       - name: Print file tree
