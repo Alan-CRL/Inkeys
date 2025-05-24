@@ -362,6 +362,60 @@ jobs:
 
           "[InkeysArm64]`r`nMD5: $md5`r`nSHA256: $sha256`r`nZIP_SIZE: $size`r`n" | Add-Content $out -Encoding UTF8
       
+      - name: 更新信息编写
+        shell: pwsh
+        run: |
+          $exeFile1 = 'signedUpload\Inkeys\Inkeys.exe'
+          $exeFile2 = 'signedUpload\Inkeys64\Inkeys.exe'
+          $exeFile3 = 'signedUpload\InkeysArm\Inkeys.exe'
+          $uploadFile1 = 'packageUpload\InkeysUpdate2025====!.zip'
+          $uploadFile2 = 'packageUpload\InkeysUpdate2025====!64.zip'
+          $uploadFile3 = 'packageUpload\InkeysUpdate2025====!Arm64.zip'
+          
+          $md5_1 = ((Get-FileHash -Path $exeFile1 -Algorithm MD5   ).Hash).ToLower()
+          $md5_2 = ((Get-FileHash -Path $exeFile2 -Algorithm MD5   ).Hash).ToLower()
+          $md5_3 = ((Get-FileHash -Path $exeFile3 -Algorithm MD5   ).Hash).ToLower()
+          $sha256_1 = ((Get-FileHash -Path $exeFile1 -Algorithm SHA256).Hash).ToLower()
+          $sha256_2 = ((Get-FileHash -Path $exeFile2 -Algorithm SHA256).Hash).ToLower()
+          $sha256_3 = ((Get-FileHash -Path $exeFile3 -Algorithm SHA256).Hash).ToLower()
+          $size1 = (Get-Item $uploadFile1).Length
+          $size2 = (Get-Item $uploadFile2).Length
+          $size3 = (Get-Item $uploadFile3).Length
+
+          $content = @"
+            "Insider": {
+            "edition_date": "${{ steps.softwareDate.outputs.VALUE }}",
+            "edition_code": "",
+            "hash": {
+              "md5": "$md5_1",
+              "sha256": "$sha256_1",
+              "md5 64": "$md5_2",
+              "sha256 64": "$sha256_2",
+              "md5 Arm64": "$md5_3",
+              "sha256 Arm64": "$sha256_3"
+            },
+            "path": [
+              "https://vip.123pan.cn/1709404/version_identification/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip",
+              "http://home.alan-crl.top/version_identification/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip"
+            ],
+            "path64": [
+              "https://vip.123pan.cn/1709404/version_identification/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip",
+              "http://home.alan-crl.top/version_identification/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip"
+            ],
+            "pathArm64": [
+              "https://vip.123pan.cn/1709404/version_identification/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip",
+              "http://home.alan-crl.top/version_identification/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip"
+            ],
+            "size": {
+              "file": $size1,
+              "file64": $size2,
+              "fileArm64": $size3 
+            },
+            "representation": "Inkeys.exe"
+          }
+          "@
+          Set-Content -Path "signedUpload\update.txt" -Value $content -Encoding UTF8
+
       - name: Write Tips
         shell: pwsh
         run: |
