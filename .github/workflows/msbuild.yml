@@ -106,6 +106,63 @@ jobs:
           name: InkeysArm64[Unsigned]
           path: download/arm64
 
+      # 获取版本信息
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 拉取版本代号
+        id: softwareDate
+        shell: pwsh
+        run: |
+          $file = '智绘教\IdtMain.cpp'
+
+          # 读取所有行，匹配特定前缀
+          $line = Get-Content $file | Where-Object { $_ -match '^wstring editionDate = L\"([^\"]+)\";' }
+          if (-not $line) 
+          {
+            Write-Host "找不到 editionDate 变量"
+              echo "VALUE='2025====!'" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+          else
+          {
+            # 正则提取 editionDate 内容
+            if ($line -match '^wstring editionDate = L\"([^\"]+)\";') {
+              $date = $matches[1]
+              Write-Host "Found editionDate: $date"
+              echo "VALUE=$date" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            } else {
+              Write-Host "格式未匹配"
+              echo "VALUE='2025====!'" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            }
+          }
+      - name: 拉取通道代号
+        id: softwareChannel
+        shell: pwsh
+        run: |
+          $file = '智绘教\IdtMain.cpp'
+
+          # 读取所有行，匹配特定前缀
+          $line = Get-Content $file | Where-Object { $_ -match '^wstring editionChannel = L\"([^\"]+)\";' }
+          if (-not $line) 
+          {
+            Write-Host "找不到 editionChannel 变量"
+              echo "VALUE='2025====!'" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+          else
+          {
+            # 正则提取 editionChannel 内容
+            if ($line -match '^wstring editionChannel = L\"([^\"]+)\";') {
+              $channel = $matches[1]
+              Write-Host "Found editionChannel: $channel"
+              echo "VALUE=$channel" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            } else {
+              Write-Host "格式未匹配"
+              echo "VALUE='2025====!'" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            }
+          }
+
+      # 打包整理 Package
+
       - name: Prepare signpath zip folder
         run: |
           mkdir signatureUpload
@@ -151,17 +208,17 @@ jobs:
       - name: Upload Inkeys
         uses: actions/upload-artifact@v4
         with:
-          name: Inkeys
+          name: Inkeys${{ steps.softwareDate.outputs.VALUE }}
           path: signedUpload\Inkeys\Inkeys.exe
       - name: Upload Inkeys64
         uses: actions/upload-artifact@v4
         with:
-          name: Inkeys64
+          name: Inkeys${{ steps.softwareDate.outputs.VALUE }}64
           path: signedUpload\Inkeys64\Inkeys.exe
       - name: Upload InkeysArm64
         uses: actions/upload-artifact@v4
         with:
-          name: InkeysArm64
+          name: Inkeys${{ steps.softwareDate.outputs.VALUE }}Arm64
           path: signedUpload\InkeysArm64\Inkeys.exe
 
       # TEST
@@ -248,13 +305,27 @@ jobs:
           "[InkeysArm64]`r`nMD5: $md5`r`nSHA256: $sha256`r`nZIP_SIZE: $size`r`n" | Add-Content $out -Encoding UTF8
       
       # TEST
-      # - name: Print file tree
-      #   run: tree /F /A
-      #   shell: cmd
+      - name: Print file tree
+        run: tree /F /A
+        shell: cmd
+
+      - name: Print all GitHub env
+        run: |
+          env | grep GITHUB_
+          env | grep RUNNER_
 
       - name: Write Tips
         shell: pwsh
         run: |
+          $date = '${{ steps.softwareDate.outputs.VALUE }}'
+          $url  = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          $branch_name = "${{ github.ref_name }}"
+          $actor = "${{ github.actor }}"
+          $os = "${{ runner.os }}"
+          $runner = "${{ runner.name }}"
+          
+          $utc_time = (Get-Date).ToUniversalTime().ToString("yyyy/MM/dd HH:mm:ss")
+
           $content = @"
           软件使用方法：
           1. Inkeys.exe 运行文件放置于一个空的文件夹内（exe 名称不能包含非英文字符）
@@ -273,14 +344,25 @@ jobs:
           Tips: 
           Set desktop shortcuts and boot up can be set into the software options interface.
           If you have any questions, comments, suggestions, etc., through the software feedback channel for feedback, or consult the author alan-crl@foxmail.com.
-          "@
+          
+          -----
+          
+          Inkeys$date
+          CI/CD: $url
 
-          Set-Content -Path "packageUpload\Tips.txt" -Value $content -Encoding UTF8
+          Branch: $branch_name
+          Submitter: $actor
+
+          Build OS: $os
+          Build Runner: $runner
+          "@
+          Set-Content -Path "tips.txt" -Value $content -Encoding UTF8
+
       - name: Prepare Tips
         run: |
-          copy packageUpload\Tips.txt signedUpload\Inkeys\Tips.txt
-          copy packageUpload\Tips.txt signedUpload\Inkeys64\Tips.txt
-          copy packageUpload\Tips.txt signedUpload\InkeysArm64\Tips.txt
+          copy tips.txt signedUpload\Inkeys\Tips.txt
+          copy tips.txt signedUpload\Inkeys64\Tips.txt
+          copy tips.txt signedUpload\InkeysArm64\Tips.txt
 
       - name: Compressed release package 1
         run: |
@@ -291,6 +373,31 @@ jobs:
       - name: Compressed release package 3
         run: |
           Compress-Archive -Path .\signedUpload\InkeysArm64 -DestinationPath ".\packageUpload\Arm64=Inkeys2025====!.zip" -CompressionLevel Optimal
+
+      - name: 重命名为最终命名 1
+        run: |
+          rename ".\packageUpload\InkeysUpdate2025====!.zip" ".\packageUpload\InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\InkeysUpdate2025====!64.zip" ".\packageUpload\InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip"
+          rename ".\packageUpload\InkeysUpdate2025====!Arm64.zip" ".\packageUpload\InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip"
+
+      - name: 重命名为最终命名 2
+        if: steps.softwareChannel.outputs.VALUE == 'Dev'
+        run: |
+          rename ".\packageUpload\32=Inkeys2025====!.zip" ".\packageUpload\开发版本-32位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\64=Inkeys2025====!.zip" ".\packageUpload\开发版本-64位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\Arm64=Inkeys2025====!.zip" ".\packageUpload\开发版本-Arm64-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+      - name: 重命名为最终命名 2
+        if: steps.softwareChannel.outputs.VALUE == 'Insider'
+        run: |
+          rename ".\packageUpload\32=Inkeys2025====!.zip" ".\packageUpload\预览版本-32位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\64=Inkeys2025====!.zip" ".\packageUpload\预览版本-64位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\Arm64=Inkeys2025====!.zip" ".\packageUpload\预览版本-Arm64-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+      - name: 重命名为最终命名 2
+        if: steps.softwareChannel.outputs.VALUE == 'LTS' || steps.softwareChannel.outputs.VALUE == 'Main'
+        run: |
+          rename ".\packageUpload\32=Inkeys2025====!.zip" ".\packageUpload\正式版本-32位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\64=Inkeys2025====!.zip" ".\packageUpload\正式版本-64位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\Arm64=Inkeys2025====!.zip" ".\packageUpload\正式版本-Arm64-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
 
       # TEST
       - name: Print file tree
