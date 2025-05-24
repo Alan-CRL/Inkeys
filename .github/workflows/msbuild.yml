@@ -161,6 +161,12 @@ jobs:
             }
           }
 
+
+      # TEST
+      - name: Print file tree
+        run: tree /F /A
+        shell: cmd
+
       # 打包整理 Package
 
       - name: Prepare signpath zip folder
@@ -263,9 +269,9 @@ jobs:
           Compress-Archive -Path .\signedUpload\InkeysArm64\Inkeys.exe -DestinationPath .\packageUpload\InkeysUpdate2025====!Arm64.zip -CompressionLevel Optimal
 
       # TEST
-      # - name: Print file tree
-      #   run: tree /F /A
-      #   shell: cmd
+      - name: Print file tree
+        run: tree /F /A
+        shell: cmd
 
       - name: Prepare configuration information 1
         shell: pwsh
