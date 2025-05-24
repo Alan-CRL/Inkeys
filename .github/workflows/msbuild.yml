@@ -367,7 +367,7 @@ jobs:
         run: |
           $exeFile1 = 'signedUpload\Inkeys\Inkeys.exe'
           $exeFile2 = 'signedUpload\Inkeys64\Inkeys.exe'
-          $exeFile3 = 'signedUpload\InkeysArm\Inkeys.exe'
+          $exeFile3 = 'signedUpload\InkeysArm64\Inkeys.exe'
           $uploadFile1 = 'packageUpload\InkeysUpdate2025====!.zip'
           $uploadFile2 = 'packageUpload\InkeysUpdate2025====!64.zip'
           $uploadFile3 = 'packageUpload\InkeysUpdate2025====!Arm64.zip'
@@ -414,7 +414,7 @@ jobs:
             "representation": "Inkeys.exe"
           }
           "@
-          Set-Content -Path "signedUpload\update.txt" -Value $content -Encoding UTF8
+          Set-Content -Path "packageUpload\update.txt" -Value $content -Encoding UTF8
 
       - name: Write Tips
         shell: pwsh
