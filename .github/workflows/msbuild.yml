@@ -62,24 +62,25 @@ jobs:
             wstring branch = L"${{ github.ref_name }}";
             wstring submitter = L"${{ github.actor }}";
             wstring buildTime = L"{{UTCTIME}}";
-
+            
             wstring buildOS = L"${{ steps.environmentInfo.outputs.OS }}";
             wstring buildOSVersion = L"${{ steps.environmentInfo.outputs.OS_VERSION }}";
             wstring buildRunnerVersion = L"${{ runner.version }}";
             wstring buildRunnerImageOS = L"${{ env.ImageOS }}";
             wstring buildRunnerImageVersion = L"${{ env.ImageVersion }}";
-
           } settingCICD;
       run: |
         $file = '智绘教\IdtSetting.cpp'
         $content = Get-Content $file
-        $pattern = '(?ms)^struct\s*\{.*?\}\s*settingCICD;'
+
+        $pattern = '(?ms)^\s*// signal1.*?\s*// signal1'
 
         $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
         $structText = $env:STRUCT_BLOCK -replace '\{\{UTCTIME\}\}', $nowUtc
 
         $replacement = $structText -replace "`r*`n", "`r`n"
         $newContent = ($content -join "`r`n") -replace $pattern, $replacement
+
         Set-Content -Path $file -Value $newContent -Encoding utf8
 
         Write-Host $newContent

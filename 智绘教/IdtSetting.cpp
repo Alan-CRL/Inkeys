@@ -54,6 +54,7 @@ int SettingWindowWidth;
 int SettingWindowHeight;
 
 float settingGlobalScale = 1.0f;
+// signal1
 struct
 {
 	wstring url;
@@ -68,6 +69,7 @@ struct
 	wstring buildRunnerImageOS;
 	wstring buildRunnerImageVersion;
 } settingCICD;
+// signal1
 
 void SettingSeekBar()
 {
