@@ -5,6 +5,7 @@ name: Inkeys Build
 on:
   push:
     branches:
+      - dev
       - main
       - insider # 在 main 和 insider 分支 push 时触发
 permissions:
@@ -274,13 +275,13 @@ jobs:
 
       - name: Compressed release package 1
         run: |
-          Compress-Archive -Path .\Inkeys -DestinationPath ".\[====][32=]Inkeys2025====!.zip" -CompressionLevel Optimal
+          Compress-Archive -Path .\Inkeys -DestinationPath ".\32=Inkeys2025====!.zip" -CompressionLevel Optimal
       - name: Compressed release package 2
         run: |
-          Compress-Archive -Path .\Inkeys64 -DestinationPath ".\[====][64=]Inkeys2025====!.zip" -CompressionLevel Optimal
+          Compress-Archive -Path .\Inkeys64 -DestinationPath ".\64=Inkeys2025====!.zip" -CompressionLevel Optimal
       - name: Compressed release package 3
         run: |
-          Compress-Archive -Path .\InkeysArm64 -DestinationPath ".\[====][Arm64]Inkeys2025====!.zip" -CompressionLevel Optimal
+          Compress-Archive -Path .\InkeysArm64 -DestinationPath ".\Arm64=Inkeys2025====!.zip" -CompressionLevel Optimal
 
       - name: Print file tree
         run: tree /F /A
@@ -292,9 +293,9 @@ jobs:
           copy "InkeysUpdate2025====!.zip" "UploadArtifact\InkeysUpdate2025====!.zip"
           copy "InkeysUpdate2025====!64.zip" "UploadArtifact\InkeysUpdate2025====!64.zip"
           copy "InkeysUpdate2025====!Arm64.zip" "UploadArtifact\InkeysUpdate2025====!Arm64.zip"
-          copy "[====][32=]Inkeys2025====!.zip" "UploadArtifact\[====][32=]Inkeys2025====!.zip"
-          copy "[====][64=]Inkeys2025====!.zip" "UploadArtifact\[====][64=]Inkeys2025====!.zip"
-          copy "[====][Arm64]Inkeys2025====!.zip" "UploadArtifact\[====][Arm64]Inkeys2025====!.zip"
+          copy "32=Inkeys2025====!.zip" "UploadArtifact\32=Inkeys2025====!.zip"
+          copy "64=Inkeys2025====!.zip" "UploadArtifact\64=Inkeys2025====!.zip"
+          copy "Arm64=Inkeys2025====!.zip" "UploadArtifact\Arm64=Inkeys2025====!.zip"
           copy "ci.txt" "UploadArtifact\ci.txt"
 
       - name: Print file tree
