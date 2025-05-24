@@ -237,14 +237,27 @@ jobs:
           name: Signpath[unsigned]
           path: signatureUpload/
 
-      - name: Sign with SignPath
+      - name: 选定签名策略
+        id: resolvePolicy
+        shell: pwsh
+        run: |
+          if ('${{ steps.softwareChannel.outputs.VALUE }}' -eq 'LTS' -or '${{ steps.softwareChannel.outputs.VALUE }}' -eq 'Main' -or '${{ steps.softwareChannel.outputs.VALUE }}' -eq 'Insider')
+          {
+            "signing_policy_slug=release-signing" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          } 
+          else 
+          {
+            "signing_policy_slug=test-signing" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+
+      - name: 提交给 SignPath 签名
         id: signpath
         uses: signpath/github-action-submit-signing-request@v1.1
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
           organization-id: '95390269-627b-496d-8127-fc47de793284'
           project-slug: 'Inkeys'
-          signing-policy-slug: 'test-signing'
+          signing-policy-slug: '${{ steps.resolvePolicy.outputs.signing_policy_slug }}'
           github-artifact-id: '${{ steps.upload-unsigned.outputs.artifact-id }}'
           wait-for-completion: true
           output-artifact-directory: './signed'
@@ -352,6 +365,10 @@ jobs:
       - name: Write Tips
         shell: pwsh
         run: |
+          $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          $imageOS = $Env:ImageOS
+          $imageVer = $Env:ImageVersion
+
           $content = @"
           软件使用方法：
           1. Inkeys.exe 运行文件放置于一个空的文件夹内（exe 名称不能包含非英文字符）
@@ -382,9 +399,10 @@ jobs:
 
           Build OS: ${{ steps.environmentInfo.outputs.OS }}
           Build OS Version: ${{ steps.environmentInfo.outputs.OS_VERSION }}
-          Build Runner Version: ${{ runner.version }}
-          Build Runner ImageOS: ${{ env.ImageOS }}
-          Build Runner ImageVersion: ${{ env.ImageVersion }}
+          Runner ImageOS: $imageOS
+          Runner ImageVersion: $imageVer
+
+          Build Time: $nowUtc
           "@
           Set-Content -Path "tips.txt" -Value $content -Encoding UTF8
 
