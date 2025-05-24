@@ -88,8 +88,6 @@ jobs:
 
         Set-Content -Path $file -Value $newContent -Encoding utf8
 
-        Write-Host $newContent
-
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
     - name: Setup NuGet
