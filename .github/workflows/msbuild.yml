@@ -5,6 +5,7 @@ name: Inkeys Build
 on:
   push:
     branches:
+      - dev
       - main
       - insider # 在 main 和 insider 分支 push 时触发
 permissions:
@@ -62,9 +63,12 @@ jobs:
           ${{ (matrix.platform == 'Win32' && './Release/Inkeys.exe') || 
               (matrix.platform == 'x64' && './x64/Release/Inkeys.exe') || 
               (matrix.platform == 'ARM64' && './ARM64/Release/Inkeys.exe') }}
+          ${{ (matrix.platform == 'Win32' && './Release/Inkeys.pdb') ||
+              (matrix.platform == 'x64' && './x64/Release/Inkeys.pdb') ||
+              (matrix.platform == 'ARM64' && './ARM64/Release/Inkeys.pdb') }}
 
-  signature:
-    name: Signature
+  package:
+    name: Package
     runs-on: windows-latest
     needs: build
 
@@ -73,31 +77,36 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: Inkeys[Unsigned]
-          path: tmp/win32
+          path: download/win32
       - name: Download Inkeys64[Unsigned]
         uses: actions/download-artifact@v4
         with:
           name: Inkeys64[Unsigned]
-          path: tmp/x64
+          path: download/x64
       - name: Download InkeysArm64[Unsigned]
         uses: actions/download-artifact@v4
         with:
           name: InkeysArm64[Unsigned]
-          path: tmp/arm64
+          path: download/arm64
 
       - name: Prepare signpath zip folder
         run: |
-          mkdir send_zip
-          copy tmp\win32\Inkeys.exe send_zip\Inkeys.exe
-          copy tmp\x64\Inkeys.exe send_zip\Inkeys64.exe
-          copy tmp\arm64\Inkeys.exe send_zip\InkeysArm64.exe
+          mkdir signatureUpload
+          mkdir signedUpload
+          mkdir packageUpload
+          copy download\win32\Inkeys.exe signatureUpload\Inkeys.exe
+          copy download\x64\Inkeys.exe signatureUpload\Inkeys64.exe
+          copy download\arm64\Inkeys.exe signatureUpload\InkeysArm64.exe
+          copy download\win32\Inkeys.pdb packageUpload\Inkeys.pdb
+          copy download\x64\Inkeys.pdb packageUpload\Inkeys64.pdb
+          copy download\arm64\Inkeys.pdb packageUpload\InkeysArm64.pdb
           
       - name: Upload Signpath[unsigned]
         id: upload-unsigned
         uses: actions/upload-artifact@v4
         with:
           name: Signpath[unsigned]
-          path: send_zip/
+          path: signatureUpload/
 
       - name: Sign with SignPath
         id: signpath
@@ -109,34 +118,39 @@ jobs:
           signing-policy-slug: 'release-signing'
           github-artifact-id: '${{ steps.upload-unsigned.outputs.artifact-id }}'
           wait-for-completion: true
-          output-artifact-directory: './signed-artifacts'
+          output-artifact-directory: './signed'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         
       - name: Prepare update folder
         run: |
-          mkdir update
-          mkdir update64
-          mkdir updateArm64
-          copy signed-artifacts\Inkeys.exe update\Inkeys.exe
-          copy signed-artifacts\Inkeys64.exe update64\Inkeys.exe
-          copy signed-artifacts\InkeysArm64.exe updateArm64\Inkeys.exe
+          mkdir signedUpload\Inkeys
+          mkdir signedUpload\Inkeys64
+          mkdir signedUpload\InkeysArm64
+          copy signed\Inkeys.exe signedUpload\Inkeys\Inkeys.exe
+          copy signed\Inkeys64.exe signedUpload\Inkeys64\Inkeys.exe
+          copy signed\InkeysArm64.exe signedUpload\InkeysArm64\Inkeys.exe
 
       - name: Upload Inkeys
         uses: actions/upload-artifact@v4
         with:
           name: Inkeys
-          path: update\Inkeys.exe
+          path: signedUpload\Inkeys\Inkeys.exe
       - name: Upload Inkeys64
         uses: actions/upload-artifact@v4
         with:
           name: Inkeys64
-          path: update64\Inkeys.exe
+          path: signedUpload\Inkeys64\Inkeys.exe
       - name: Upload InkeysArm64
         uses: actions/upload-artifact@v4
         with:
           name: InkeysArm64
-          path: updateArm64\Inkeys.exe
+          path: signedUpload\InkeysArm64\Inkeys.exe
+
+      # TEST
+      - name: Print file tree
+        run: tree /F /A
+        shell: cmd
 
       - name: Clean Up
         shell: pwsh
@@ -164,53 +178,27 @@ jobs:
             }
           }
 
-  package:
-    name: Package
-    runs-on: windows-latest
-    needs: signature
-
-    steps:
-      - name: Download Inkeys
-        uses: actions/download-artifact@v4
-        with:
-          name: Inkeys
-          path: tmp/win32
-      - name: Download Inkeys64
-        uses: actions/download-artifact@v4
-        with:
-          name: Inkeys64
-          path: tmp/x64
-      - name: Download InkeysArm64
-        uses: actions/download-artifact@v4
-        with:
-          name: InkeysArm64
-          path: tmp/arm64 
-
-      - name: Prepare signpath zip folder
-        run: |
-          mkdir Inkeys
-          mkdir Inkeys64
-          mkdir InkeysArm64
-          copy tmp\win32\Inkeys.exe Inkeys\Inkeys.exe
-          copy tmp\x64\Inkeys.exe Inkeys64\Inkeys.exe
-          copy tmp\arm64\Inkeys.exe InkeysArm64\Inkeys.exe
-
       - name: Compressed update package 1
         run: |
-          Compress-Archive -Path .\Inkeys\Inkeys.exe -DestinationPath .\InkeysUpdate2025====!.zip -CompressionLevel Optimal
+          Compress-Archive -Path .\signedUpload\Inkeys\Inkeys.exe -DestinationPath .\packageUpload\InkeysUpdate2025====!.zip -CompressionLevel Optimal
       - name: Compressed update package 2
         run: |
-          Compress-Archive -Path .\Inkeys64\Inkeys.exe -DestinationPath .\InkeysUpdate2025====!64.zip -CompressionLevel Optimal
+          Compress-Archive -Path .\signedUpload\Inkeys64\Inkeys.exe -DestinationPath .\packageUpload\InkeysUpdate2025====!64.zip -CompressionLevel Optimal
       - name: Compressed update package 3
         run: |
-          Compress-Archive -Path .\InkeysArm64\Inkeys.exe -DestinationPath .\InkeysUpdate2025====!Arm64.zip -CompressionLevel Optimal
+          Compress-Archive -Path .\signedUpload\InkeysArm64\Inkeys.exe -DestinationPath .\packageUpload\InkeysUpdate2025====!Arm64.zip -CompressionLevel Optimal
+
+      # TEST
+      - name: Print file tree
+        run: tree /F /A
+        shell: cmd
 
       - name: Prepare configuration information 1
         shell: pwsh
         run: |
-          $exeFile = 'Inkeys\Inkeys.exe'
-          $uploadFile = 'InkeysUpdate2025====!.zip'
-          $out = 'ci.txt'
+          $exeFile = 'signedUpload\Inkeys\Inkeys.exe'
+          $uploadFile = 'packageUpload\InkeysUpdate2025====!.zip'
+          $out = 'packageUpload\ci.txt'
           
           $md5    = ((Get-FileHash -Path $exeFile -Algorithm MD5   ).Hash).ToLower()
           $sha256 = ((Get-FileHash -Path $exeFile -Algorithm SHA256).Hash).ToLower()
@@ -220,9 +208,9 @@ jobs:
       - name: Prepare configuration information 2
         shell: pwsh
         run: |
-          $exeFile = 'Inkeys64\Inkeys.exe'
-          $uploadFile = 'InkeysUpdate2025====!64.zip'
-          $out = 'ci.txt'
+          $exeFile = 'signedUpload\Inkeys64\Inkeys.exe'
+          $uploadFile = 'packageUpload\InkeysUpdate2025====!64.zip'
+          $out = 'packageUpload\ci.txt'
           
           $md5    = ((Get-FileHash -Path $exeFile -Algorithm MD5   ).Hash).ToLower()
           $sha256 = ((Get-FileHash -Path $exeFile -Algorithm SHA256).Hash).ToLower()
@@ -232,9 +220,9 @@ jobs:
       - name: Prepare configuration information 3
         shell: pwsh
         run: |
-          $exeFile = 'InkeysArm64\Inkeys.exe'
-          $uploadFile = 'InkeysUpdate2025====!Arm64.zip'
-          $out = 'ci.txt'
+          $exeFile = 'signedUpload\InkeysArm64\Inkeys.exe'
+          $uploadFile = 'packageUpload\InkeysUpdate2025====!Arm64.zip'
+          $out = 'packageUpload\ci.txt'
           
           $md5    = ((Get-FileHash -Path $exeFile -Algorithm MD5   ).Hash).ToLower()
           $sha256 = ((Get-FileHash -Path $exeFile -Algorithm SHA256).Hash).ToLower()
@@ -242,6 +230,11 @@ jobs:
 
           "[InkeysArm64]`r`nMD5: $md5`r`nSHA256: $sha256`r`nZIP_SIZE: $size`r`n" | Add-Content $out -Encoding UTF8
       
+      # TEST
+      - name: Print file tree
+        run: tree /F /A
+        shell: cmd
+
       - name: Write Tips
         shell: pwsh
         run: |
@@ -265,38 +258,24 @@ jobs:
           If you have any questions, comments, suggestions, etc., through the software feedback channel for feedback, or consult the author alan-crl@foxmail.com.
           "@
 
-          Set-Content -Path Tips.txt -Value $content -Encoding UTF8
+          Set-Content -Path "packageUpload\Tips.txt" -Value $content -Encoding UTF8
       - name: Prepare Tips
         run: |
-          copy Tips.txt Inkeys\Tips.txt
-          copy Tips.txt Inkeys64\Tips.txt
-          copy Tips.txt InkeysArm64\Tips.txt
+          copy packageUpload\Tips.txt signedUpload\Inkeys\Tips.txt
+          copy packageUpload\Tips.txt signedUpload\Inkeys64\Tips.txt
+          copy packageUpload\Tips.txt signedUpload\InkeysArm64\Tips.txt
 
       - name: Compressed release package 1
         run: |
-          Compress-Archive -Path .\Inkeys -DestinationPath ".\[====][32=]Inkeys2025====!.zip" -CompressionLevel Optimal
+          Compress-Archive -Path .\signedUpload\Inkeys -DestinationPath ".\packageUpload\32=Inkeys2025====!.zip" -CompressionLevel Optimal
       - name: Compressed release package 2
         run: |
-          Compress-Archive -Path .\Inkeys64 -DestinationPath ".\[====][64=]Inkeys2025====!.zip" -CompressionLevel Optimal
+          Compress-Archive -Path .\signedUpload\Inkeys64 -DestinationPath ".\packageUpload\64=Inkeys2025====!.zip" -CompressionLevel Optimal
       - name: Compressed release package 3
         run: |
-          Compress-Archive -Path .\InkeysArm64 -DestinationPath ".\[====][Arm64]Inkeys2025====!.zip" -CompressionLevel Optimal
+          Compress-Archive -Path .\signedUpload\InkeysArm64 -DestinationPath ".\packageUpload\Arm64=Inkeys2025====!.zip" -CompressionLevel Optimal
 
-      - name: Print file tree
-        run: tree /F /A
-        shell: cmd
-
-      - name: Prepare Upload
-        run: |
-          mkdir UploadArtifact
-          copy "InkeysUpdate2025====!.zip" "UploadArtifact\InkeysUpdate2025====!.zip"
-          copy "InkeysUpdate2025====!64.zip" "UploadArtifact\InkeysUpdate2025====!64.zip"
-          copy "InkeysUpdate2025====!Arm64.zip" "UploadArtifact\InkeysUpdate2025====!Arm64.zip"
-          copy "[====][32=]Inkeys2025====!.zip" "UploadArtifact\[====][32=]Inkeys2025====!.zip"
-          copy "[====][64=]Inkeys2025====!.zip" "UploadArtifact\[====][64=]Inkeys2025====!.zip"
-          copy "[====][Arm64]Inkeys2025====!.zip" "UploadArtifact\[====][Arm64]Inkeys2025====!.zip"
-          copy "ci.txt" "UploadArtifact\ci.txt"
-
+      # TEST
       - name: Print file tree
         run: tree /F /A
         shell: cmd
@@ -306,4 +285,4 @@ jobs:
         with:
           name: Package
           compression-level: 9
-          path: UploadArtifact/
+          path: packageUpload/
