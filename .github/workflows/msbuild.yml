@@ -65,8 +65,8 @@ jobs:
 
             wstring buildOS = L"${{ steps.environmentInfo.outputs.OS }}";
             wstring buildOSVersion = L"${{ steps.environmentInfo.outputs.OS_VERSION }}";
-            wstring buildRunnerImageOS = L"${{ Env.ImageOS }}";
-            wstring buildRunnerImageVersion = L"${{ Env.ImageVersion }}";
+            wstring buildRunnerImageOS = L"{{ImageOS}}";
+            wstring buildRunnerImageVersion = L"{{ImageVersion}}";
           } settingCICD;
       run: |
         $file = '智绘教\IdtSetting.cpp'
@@ -75,7 +75,13 @@ jobs:
         $pattern = '(?ms)^\s*// signal1.*?\s*// signal1'
 
         $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-        $structText = $env:STRUCT_BLOCK -replace '\{\{UTCTIME\}\}', $nowUtc
+        $imageOS = $Env:ImageOS
+        $imageVer = $Env:ImageVersion
+
+        $structText = $env:STRUCT_BLOCK `
+          -replace '\{\{UTCTIME\}\}', $nowUtc `
+          -replace '\{\{ImageOS\}\}', $imageOS `
+          -replace '\{\{ImageVersion\}\}', $imageVer
 
         $replacement = $structText -replace "`r*`n", "`r`n"
         $newContent = ($content -join "`r`n") -replace $pattern, $replacement
@@ -271,11 +277,6 @@ jobs:
         with:
           name: Inkeys${{ steps.softwareDate.outputs.VALUE }}Arm64
           path: signedUpload\InkeysArm64\Inkeys.exe
-
-      # TEST
-      - name: Print file tree
-        run: tree /F /A
-        shell: cmd
 
       - name: Clean Up
         shell: pwsh
