@@ -65,12 +65,12 @@ jobs:
 
             wstring buildOS = L"${{ steps.environmentInfo.outputs.OS }}";
             wstring buildOSVersion = L"${{ steps.environmentInfo.outputs.OS_VERSION }}";
-            wstring buildRunnerVersion = L"${{ Runner.os }}";
+            wstring buildRunnerVersion = L"${{ runner.os }}";
             wstring buildRunnerImageOS = L"${{ Env.ImageOS }}";
             wstring buildRunnerImageVersion = L"${{ Env.ImageVersion }}";
           } settingCICD;
       run: |
-        Get-ChildItem Runner:
+        Get-ChildItem runner:
         
         $file = '智绘教\IdtSetting.cpp'
         $content = Get-Content $file
