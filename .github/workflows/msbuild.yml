@@ -127,25 +127,20 @@ jobs:
         $imageVer = $Env:ImageVersion
         $repoUrl = "$Env:GITHUB_SERVER_URL/$Env:GITHUB_REPOSITORY"
 
-        # 获取 MSBuild 版本信息
-        $msbuildVersionLines = msbuild /version
-        $msbuildVersion = ($msbuildVersionLines -join "`n")
-
-        # 获取 MSBuild 路径
-        $msbuildPath = (Get-Command msbuild | Select-Object -ExpandProperty Source)
-
-        # 为 C++ 字符串字面量进行转义
-        # 先转义反斜杠（必须在转义换行符之前）
-        $msbuildVersionEscaped = $msbuildVersion -replace '\\', '\\\\'
-        $msbuildPathEscaped = $msbuildPath -replace '\\', '\\\\'
-
-        # 再转义换行符
-        $msbuildVersionEscaped = $msbuildVersionEscaped -replace "`r?`n", '\\n'
-        $msbuildPathEscaped = $msbuildPathEscaped -replace "`r?`n", '\\n'
-
-        # 转义双引号
-        $msbuildVersionEscaped = $msbuildVersionEscaped -replace '"', '\\"'
-        $msbuildPathEscaped = $msbuildPathEscaped -replace '"', '\\"'
+        # ------ 取版本号 + 路径 -------
+        $msbuildVersion = (msbuild /version) -join "`n"
+        $msbuildPath    = (Get-Command msbuild | Select-Object -Expand Source)
+                
+        # ------ 1. 路径里的 \"\“ 全部换成 ”/“ -------
+        $msbuildPathEscaped = $msbuildPath -replace '\\','/'
+        
+        # ------ 2. 版本号里的真正换行 全部替换成 字面上的 \n -------
+        #      注意这里用单引号 '\\n'，PowerShell 会把它当成反斜杠＋n，而不是换行
+        $msbuildVersionEscaped = $msbuildVersion -replace "`r?`n",'\\n'
+        
+        # ------ 3. 统一逃逸双引号 -------
+        $msbuildVersionEscaped = $msbuildVersionEscaped -replace '"','\"'
+        $msbuildPathEscaped    = $msbuildPathEscaped    -replace '"','\"'
       
         $structText = $env:STRUCT_BLOCK `
           -replace '\{\{UTCTIME\}\}', $nowUtc `
@@ -577,6 +572,7 @@ jobs:
           Compress-Archive -Path .\packageUpload\* -DestinationPath ".\WebDevUpload\PackageHistory-${{ steps.softwareChannel.outputs.VALUE }}-${{ steps.softwareDate.outputs.VALUE }}-$nowUtc.zip" -CompressionLevel Optimal
 
       - name: Install rclone
+        if: ${{ secrets.WEBDAV_API_TOKEN != '' }}
         shell: pwsh
         run: |
           Invoke-WebRequest -Uri "https://downloads.rclone.org/rclone-current-windows-amd64.zip" -OutFile "rclone.zip"
@@ -585,6 +581,7 @@ jobs:
           Copy-Item "$rclonePath\rclone.exe" -Destination "C:\Windows\System32\" -Force
       
       - name: Configure rclone for WebDAV
+        if: ${{ secrets.WEBDAV_API_TOKEN != '' }}
         shell: pwsh
         run: |
           $configDir = "$env:APPDATA\rclone"
@@ -610,6 +607,7 @@ jobs:
           WEBDAV_PASSWORD: ${{ secrets.WEBDAV_API_TOKEN }}
 
       - name: Upload to WebDAV with rclone
+        if: ${{ secrets.WEBDAV_API_TOKEN != '' }}
         id: upload_webdav
         shell: pwsh
         run: |
@@ -673,7 +671,8 @@ jobs:
           WEBDAV_USERNAME: ${{ secrets.WEBDAV_API_USERNAME }}
           WEBDAV_PASSWORD: ${{ secrets.WEBDAV_API_TOKEN }}
 
-      - name: Verify upload (optional)
+      - name: Verify upload
+        if: ${{ secrets.WEBDAV_API_TOKEN != '' }}
         shell: pwsh
         run: |
           Write-Host "验证上传结果..."
