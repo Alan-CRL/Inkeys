@@ -552,19 +552,126 @@ jobs:
           "Package 中包含各架构的 发布包、更新包、校验文件和对应的 pdb" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
       - run: |
-          $nowUtcRaw = (Get-Date).ToUniversalTime().ToString("yyyy_MM_ddTHH_mm_ssZ")
+          $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy_MM_ddTHH_mm_ssZ")
 
           New-Item -ItemType Directory -Path ".\WebDevUpload" | Out-Null
           Compress-Archive -Path .\packageUpload\* -DestinationPath ".\WebDevUpload\PackageHistory-${{ steps.softwareChannel.outputs.VALUE }}-${{ steps.softwareDate.outputs.VALUE }}-$nowUtc.zip" -CompressionLevel Optimal
 
-      - uses: bxb100/action-upload-webdav@v1
-        id: upload_webdav
-        with:
-          webdav_address: ${{ secrets.WEBDAV_API_ADDRESS }}
-          webdav_username: ${{ secrets.WEBDAV_API_USERNAME }}
-          webdav_password: ${{ secrets.WEBDAV_API_TOKEN }}
-          webdav_upload_path: "/Inkeys/PackageHistory"
-          files: "WebDevUpload/*"
+      - name: Install rclone
+        shell: powershell
+        run: |
+          Invoke-WebRequest -Uri "https://downloads.rclone.org/rclone-current-windows-amd64.zip" -OutFile "rclone.zip"
+          Expand-Archive -Path "rclone.zip" -DestinationPath "." -Force
+          $rclonePath = (Get-ChildItem -Path "." -Filter "rclone-*" -Directory | Select-Object -First 1).FullName
+          Copy-Item "$rclonePath\rclone.exe" -Destination "C:\Windows\System32\" -Force
+
+      - name: Configure rclone for WebDAV
+        shell: powershell
+        run: |
+          $configDir = "$env:APPDATA\rclone"
+          if (!(Test-Path $configDir)) {
+            New-Item -ItemType Directory -Path $configDir -Force
+          }
+    
+          $obscuredPassword = & rclone obscure "$env:WEBDAV_PASSWORD"
+          
+          $configContent = @"
+          [webdav]
+          type = webdav
+          url = $env:WEBDAV_ADDRESS
+          vendor = other
+          user = $env:WEBDAV_USERNAME
+          pass = $obscuredPassword
+          "@
+    
+          $configContent | Out-File -FilePath "$configDir\rclone.conf" -Encoding UTF8
+        env:
+          WEBDAV_ADDRESS: ${{ secrets.WEBDAV_API_ADDRESS }}
+          WEBDAV_USERNAME: ${{ secrets.WEBDAV_API_USERNAME }}
+          WEBDAV_PASSWORD: ${{ secrets.WEBDAV_API_TOKEN }}
+
+        - name: Upload to WebDAV with rclone
+          id: upload_webdav
+          shell: powershell
+          run: |
+            if (!(Test-Path "WebDevUpload")) {
+              Write-Host "上传目录 WebDevUpload 不存在"
+              exit 1
+            }
+    
+            Write-Host "发现 $($files.Count) 个文件待上传"
+            $files | ForEach-Object { Write-Host "  - $($_.Name) ($([math]::Round($_.Length/1MB, 2)) MB)" }
+            Write-Host ""
+    
+            # 开始上传
+            Write-Host "开始上传到 WebDAV..."
+            Write-Host "进度将每 10 秒更新一次"
+            Write-Host "超时时间: 5 分钟"
+            Write-Host "目标路径: /Inkeys/PackageHistory"
+            Write-Host ""
+    
+            # 执行 rclone 上传
+            $startTime = Get-Date
+            try {
+              & rclone copy "WebDevUpload/" "webdav:Inkeys/PackageHistory/" `
+                --progress `
+                --transfers 1 `
+                --checkers 1 `
+                --timeout 5m `
+                --contimeout 30s `
+                --retries 3 `
+                --retries-sleep 5s `
+                --low-level-retries 10 `
+                --stats 10s `
+                --stats-one-line `
+                --stats-one-line-date `
+                --use-mmap `
+                --verbose
+        
+              $exitCode = $LASTEXITCODE
+              $endTime = Get-Date
+              $duration = $endTime - $startTime
+        
+              if ($exitCode -eq 0) {
+                Write-Host ""
+                Write-Host "上传成功完成!"
+                Write-Host "总耗时: $($duration.ToString('hh\:mm\:ss'))"
+                Write-Host "平均速度已在上方显示"
+              } else {
+                Write-Host ""
+                Write-Host "上传失败，退出代码: $exitCode"
+                Write-Host "运行时间: $($duration.ToString('hh\:mm\:ss'))"
+                exit $exitCode
+              }
+            }
+            catch {
+              Write-Host ""
+              Write-Host "上传过程中发生异常: $($_.Exception.Message)"
+              exit 1
+            }     
+          env:
+            WEBDAV_ADDRESS: ${{ secrets.WEBDAV_API_ADDRESS }}
+            WEBDAV_USERNAME: ${{ secrets.WEBDAV_API_USERNAME }}
+            WEBDAV_PASSWORD: ${{ secrets.WEBDAV_API_TOKEN }}
+
+        - name: Verify upload (optional)
+          shell: powershell
+          run: |
+            Write-Host "验证上传结果..."
+    
+            # 列出远程目录内容进行验证
+            try {
+              & rclone ls "webdav:Inkeys/PackageHistory/" --human-readable
+        
+              if ($LASTEXITCODE -eq 0) {
+                Write-Host "远程目录列表获取成功"
+              } else {
+                Write-Host "无法获取远程目录列表，但这不影响上传结果"
+              }
+            }
+            catch {
+              Write-Host " 验证步骤失败: $($_.Exception.Message)"
+            }
 
       - if: steps.upload_webdav.outcome == 'success'
         shell: pwsh
