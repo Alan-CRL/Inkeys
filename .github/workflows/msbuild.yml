@@ -114,7 +114,6 @@ jobs:
             wstring buildRunnerImageVersion = L"{{ImageVersion}}";
       
             wstring msBuildVersion = L"{{MSBUILDVER}}";
-            wstring msBuildPath = L"{{MSBUILDPATH}}";
           } settingCICD;
       run: |
         $file = '智绘教\IdtSetting.cpp'
@@ -127,28 +126,16 @@ jobs:
         $imageVer = $Env:ImageVersion
         $repoUrl = "$Env:GITHUB_SERVER_URL/$Env:GITHUB_REPOSITORY"
 
-        # ------ 取版本号 + 路径 -------
         $msbuildVersion = (msbuild /version) -join "`n"
-        $msbuildPath    = (Get-Command msbuild | Select-Object -Expand Source)
-                
-        # ------ 1. 路径里的 \"\“ 全部换成 ”/“ -------
-        $msbuildPathEscaped = $msbuildPath -replace '\\','/'
-        
-        # ------ 2. 版本号里的真正换行 全部替换成 字面上的 \n -------
-        #      注意这里用单引号 '\\n'，PowerShell 会把它当成反斜杠＋n，而不是换行
         $msbuildVersionEscaped = $msbuildVersion -replace "`r?`n",'\\n'
-        
-        # ------ 3. 统一逃逸双引号 -------
         $msbuildVersionEscaped = $msbuildVersionEscaped -replace '"','\"'
-        $msbuildPathEscaped    = $msbuildPathEscaped    -replace '"','\"'
       
         $structText = $env:STRUCT_BLOCK `
           -replace '\{\{UTCTIME\}\}', $nowUtc `
           -replace '\{\{RepoUrl\}\}', $repoUrl `
           -replace '\{\{ImageOS\}\}', $imageOS `
           -replace '\{\{ImageVersion\}\}', $imageVer `
-          -replace '\{\{MSBUILDVER\}\}', $msbuildVersionEscaped `
-          -replace '\{\{MSBUILDPATH\}\}', $msbuildPathEscaped
+          -replace '\{\{MSBUILDVER\}\}', $msbuildVersionEscaped
       
         $replacement = $structText -replace "`r*`n", "`r`n"
         $newContent = ($content -join "`r`n") -replace $pattern, $replacement
@@ -339,8 +326,7 @@ jobs:
           copy download\win32\Inkeys.exe signedUpload\Inkeys\Inkeys.exe
           copy download\x64\Inkeys.exe signedUpload\Inkeys64\Inkeys.exe
           copy download\arm64\Inkeys.exe signedUpload\InkeysArm64\Inkeys.exe
-      - name: Prepare update folder
-        if: steps.signpath.outcome != 'success'
+      - if: steps.signpath.outcome != 'success'
         shell: pwsh
         run: |
           "**无法完成签名！**" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append

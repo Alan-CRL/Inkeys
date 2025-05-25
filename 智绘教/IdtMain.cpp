@@ -45,7 +45,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250525d";				// 程序发布日期
+wstring editionDate = L"20250525e";				// 程序发布日期
 wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID

@@ -70,7 +70,6 @@ struct
 	wstring buildRunnerImageVersion;
 
 	wstring msBuildVersion;
-	wstring msBuildPath;
 } settingCICD;
 // signal1
 
@@ -2461,8 +2460,7 @@ void SettingMain()
 								text += L"运行器镜像系统: " + settingCICD.buildRunnerImageOS + L"\n";
 								text += L"运行器镜像版本: " + settingCICD.buildRunnerImageVersion + L"\n";
 								text += L"\n";
-								text += L"MSBuild 版本: \n" + settingCICD.msBuildVersion + L"\n\n";
-								text += L"MSBuild 路径: \n" + settingCICD.msBuildPath + L"\n\n";
+								text += L"MSBuild 版本: \n" + settingCICD.msBuildVersion + L"\n";
 							}
 
 							int left_x = 20 * settingGlobalScale, right_x = 750 * settingGlobalScale;
