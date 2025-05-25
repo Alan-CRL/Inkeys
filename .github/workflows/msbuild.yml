@@ -85,7 +85,7 @@ jobs:
           {
             wstring url = L"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}";
 
-	          wstring repoUrl = L"{{RepoUrl}}";
+            wstring repoUrl = L"{{RepoUrl}}";
             wstring branch = L"${{ github.ref_name }}";
             wstring submitter = L"${{ github.actor }}";
             wstring buildTime = L"{{UTCTIME}}";
