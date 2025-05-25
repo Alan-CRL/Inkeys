@@ -43,7 +43,7 @@ jobs:
           {
             "**没有找到 ``#define IDT_RELEASE``，说明是非发布版本的错误推送，请检查！**" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
             "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-            exit 0
+            exit 1
           }
           else
           {
