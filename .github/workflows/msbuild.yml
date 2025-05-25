@@ -29,7 +29,6 @@ jobs:
           "构建仓库: $repoUrl" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "构建分支: ${{ github.ref_name }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "构建提交者: ${{ github.actor }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
       - name: Checkout code
         uses: actions/checkout@v4
@@ -38,8 +37,6 @@ jobs:
         id: check_idt_release
         shell: pwsh
         run: |
-          "### Check" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-
           $file = "智绘教/IdtMain.h"
           $found = Select-String -Path $file -Pattern '^#define IDT_RELEASE$'
           if (-not $found) 
@@ -77,45 +74,11 @@ jobs:
         echo "OS=$os" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
         echo "OS_VERSION=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-    - name: 填充 CI/CD 变量
-      shell: pwsh
-      env:
-        STRUCT_BLOCK: |
-          struct
-          {
-            wstring url = L"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}";
-
-            wstring repoUrl = L"{{RepoUrl}}";
-            wstring branch = L"${{ github.ref_name }}";
-            wstring submitter = L"${{ github.actor }}";
-            wstring buildTime = L"{{UTCTIME}}";
-
-            wstring buildOS = L"${{ steps.environmentInfo.outputs.OS }}";
-            wstring buildOSVersion = L"${{ steps.environmentInfo.outputs.OS_VERSION }}";
-            wstring buildRunnerImageOS = L"{{ImageOS}}";
-            wstring buildRunnerImageVersion = L"{{ImageVersion}}";
-          } settingCICD;
+    - shell: pwsh
       run: |
-        $file = '智绘教\IdtSetting.cpp'
-        $content = Get-Content $file
-
-        $pattern = '(?ms)^\s*// signal1.*?\s*// signal1'
-
-        $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-        $imageOS = $Env:ImageOS
-        $imageVer = $Env:ImageVersion
-        $repoUrl = "$Env:GITHUB_SERVER_URL/$Env:GITHUB_REPOSITORY"
-
-        $structText = $env:STRUCT_BLOCK `
-          -replace '\{\{UTCTIME\}\}', $nowUtc `
-          -replace '\{\{RepoUrl\}\}', $repoUrl `
-          -replace '\{\{ImageOS\}\}', $imageOS `
-          -replace '\{\{ImageVersion\}\}', $imageVer
-
-        $replacement = $structText -replace "`r*`n", "`r`n"
-        $newContent = ($content -join "`r`n") -replace $pattern, $replacement
-
-        Set-Content -Path $file -Value $newContent -Encoding utf8
+        "## InkeysBuild ${{ matrix.platform }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+        "构建系统: ${{ steps.environmentInfo.outputs.OS }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+        "构建系统版本: ${{ steps.environmentInfo.outputs.OS_VERSION }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
@@ -138,6 +101,65 @@ jobs:
         Copy-Item -Path "$tempPath\v4.0" -Destination $targetParent -Recurse -Force
     - name: Restore NuGet packages
       run: nuget restore "智绘教.sln"
+
+    - shell: pwsh
+      run: |
+        $msbuildVersion = msbuild /version
+        $msbuildPath = Get-Command msbuild | Select-Object -ExpandProperty Source
+
+        "MSBuild 版本: `n$msbuildVersion`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+        "MSBuild 路径: `n$msbuildPath`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+    - name: 填充 CI/CD 变量
+      shell: pwsh
+      env:
+        STRUCT_BLOCK: |
+          struct
+          {
+            wstring url = L"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}";
+
+            wstring repoUrl = L"{{RepoUrl}}";
+            wstring branch = L"${{ github.ref_name }}";
+            wstring submitter = L"${{ github.actor }}";
+            wstring buildTime = L"{{UTCTIME}}";
+
+            wstring buildOS = L"${{ steps.environmentInfo.outputs.OS }}";
+            wstring buildOSVersion = L"${{ steps.environmentInfo.outputs.OS_VERSION }}";
+            wstring buildRunnerImageOS = L"{{ImageOS}}";
+            wstring buildRunnerImageVersion = L"{{ImageVersion}}";
+
+            wstring msBuildVersion = L"{{MSBUILDVER}}";
+            wstring msBuildPath = L"{{MSBUILDPATH}}";
+          } settingCICD;
+      run: |
+        $file = '智绘教\IdtSetting.cpp'
+        $content = Get-Content $file
+
+        $pattern = '(?ms)^\s*// signal1.*?\s*// signal1'
+
+        $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+        $imageOS = $Env:ImageOS
+        $imageVer = $Env:ImageVersion
+        $repoUrl = "$Env:GITHUB_SERVER_URL/$Env:GITHUB_REPOSITORY"
+        
+        $msbuildVersionLines = msbuild /version
+        $msbuildVersion = ($msbuildVersionLines -join "\n").Replace('"','\"')
+        $msbuildPath = (Get-Command msbuild | Select-Object -ExpandProperty Source).Replace('"','\"')
+        $msbuildVersionEscaped = $msbuildVersion -replace "`r?`n", "\\n"
+        $msbuildPathEscaped = $msbuildPath -replace "`r?`n", "\\n"
+
+        $structText = $env:STRUCT_BLOCK `
+          -replace '\{\{UTCTIME\}\}', $nowUtc `
+          -replace '\{\{RepoUrl\}\}', $repoUrl `
+          -replace '\{\{ImageOS\}\}', $imageOS `
+          -replace '\{\{ImageVersion\}\}', $imageVer `
+          -replace '\{\{MSBUILDVER\}\}', $msbuildVersionEscaped `
+          -replace '\{\{MSBUILDPATH\}\}', $msbuildPathEscaped
+
+        $replacement = $structText -replace "`r*`n", "`r`n"
+        $newContent = ($content -join "`r`n") -replace $pattern, $replacement
+
+        Set-Content -Path $file -Value $newContent -Encoding utf8
 
     - name: Build Inkeys
       run: msbuild "智绘教.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /verbosity:minimal
@@ -163,10 +185,6 @@ jobs:
     needs: build
 
     steps:
-      - shell: pwsh
-        run: |
-          "### Package" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-
       # 获取版本信息
       - name: 拉取代码
         uses: actions/checkout@v4
@@ -545,4 +563,4 @@ jobs:
           "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "### 构建任务已完成" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "Inkeys${{ steps.softwareDate.outputs.VALUE }} 中包含 exe 和对应的 pdb" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-          "Package 中包含各架构的 ``发布包````更新包````校验文件````pdb``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "Package 中包含各架构的 发布包、更新包、校验文件和对应的 pdb" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
