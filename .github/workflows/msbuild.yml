@@ -74,12 +74,6 @@ jobs:
         echo "OS=$os" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
         echo "OS_VERSION=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-    - shell: pwsh
-      run: |
-        "## InkeysBuild ${{ matrix.platform }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-        "构建系统: ${{ steps.environmentInfo.outputs.OS }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-        "构建系统版本: ${{ steps.environmentInfo.outputs.OS_VERSION }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
     - name: Setup NuGet
@@ -101,14 +95,6 @@ jobs:
         Copy-Item -Path "$tempPath\v4.0" -Destination $targetParent -Recurse -Force
     - name: Restore NuGet packages
       run: nuget restore "智绘教.sln"
-
-    - shell: pwsh
-      run: |
-        $msbuildVersion = msbuild /version
-        $msbuildPath = Get-Command msbuild | Select-Object -ExpandProperty Source
-
-        "MSBuild 版本: `n$msbuildVersion`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-        "MSBuild 路径: `n$msbuildPath`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
     - name: 填充 CI/CD 变量
       shell: pwsh
@@ -145,8 +131,8 @@ jobs:
         $msbuildVersionLines = msbuild /version
         $msbuildVersion = ($msbuildVersionLines -join "\n").Replace('"','\"')
         $msbuildPath = (Get-Command msbuild | Select-Object -ExpandProperty Source).Replace('"','\"')
-        $msbuildVersionEscaped = $msbuildVersion -replace "`r?`n", "\\n"
-        $msbuildPathEscaped = $msbuildPath -replace "`r?`n", "\\n"
+        $msbuildVersionEscaped = $msbuildVersion -replace '\\', '\\\\' -replace "`r?`n", '\\n'
+        $msbuildPathEscaped = $msbuildPath -replace '\\', '\\\\' -replace "`r?`n", '\\n'
 
         $structText = $env:STRUCT_BLOCK `
           -replace '\{\{UTCTIME\}\}', $nowUtc `
@@ -564,3 +550,23 @@ jobs:
           "### 构建任务已完成" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "Inkeys${{ steps.softwareDate.outputs.VALUE }} 中包含 exe 和对应的 pdb" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "Package 中包含各架构的 发布包、更新包、校验文件和对应的 pdb" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+      - run: |
+          $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+          New-Item -ItemType Directory -Path ".\WebDevUpload" | Out-Null
+          Compress-Archive -Path .\packageUpload\* -DestinationPath ".\WebDevUpload\PackageHistory-${{ steps.softwareChannel.outputs.VALUE }}-${{ steps.softwareDate.outputs.VALUE }}-$nowUtc.zip" -CompressionLevel Optimal
+
+      - uses: bxb100/action-upload-webdav@v1
+        id: upload_webdav
+        with:
+          webdav_address: ${{ secrets.WEBDAV_API_ADDRESS }}
+          webdav_username: ${{ secrets.WEBDAV_API_USERNAME }}
+          webdav_password: ${{ secrets.WEBDAV_API_TOKEN }}
+          webdav_upload_path: "/Inkeys/PackageHistory"
+          files: "WebDevUpload/*"
+
+      - if: steps.upload_webdav.outcome == 'success'
+        shell: pwsh
+        run: |
+          "Package 已经上传至 [Package History 列表](https://www.123912.com/s/duk9-N7QAd)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
