@@ -103,37 +103,51 @@ jobs:
           struct
           {
             wstring url = L"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}";
-
+      
             wstring repoUrl = L"{{RepoUrl}}";
             wstring branch = L"${{ github.ref_name }}";
             wstring submitter = L"${{ github.actor }}";
             wstring buildTime = L"{{UTCTIME}}";
-
+      
             wstring buildOS = L"${{ steps.environmentInfo.outputs.OS }}";
             wstring buildOSVersion = L"${{ steps.environmentInfo.outputs.OS_VERSION }}";
             wstring buildRunnerImageOS = L"{{ImageOS}}";
             wstring buildRunnerImageVersion = L"{{ImageVersion}}";
-
+      
             wstring msBuildVersion = L"{{MSBUILDVER}}";
             wstring msBuildPath = L"{{MSBUILDPATH}}";
           } settingCICD;
       run: |
         $file = '智绘教\IdtSetting.cpp'
         $content = Get-Content $file
-
+      
         $pattern = '(?ms)^\s*// signal1.*?\s*// signal1'
-
+      
         $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
         $imageOS = $Env:ImageOS
         $imageVer = $Env:ImageVersion
         $repoUrl = "$Env:GITHUB_SERVER_URL/$Env:GITHUB_REPOSITORY"
-        
-        $msbuildVersionLines = msbuild /version
-        $msbuildVersion = ($msbuildVersionLines -join "\n").Replace('"','\"')
-        $msbuildPath = (Get-Command msbuild | Select-Object -ExpandProperty Source).Replace('"','\"')
-        $msbuildVersionEscaped = $msbuildVersion -replace '\\', '\\\\' -replace "`r?`n", '\\n'
-        $msbuildPathEscaped = $msbuildPath -replace '\\', '\\\\' -replace "`r?`n", '\\n'
 
+        # 获取 MSBuild 版本信息
+        $msbuildVersionLines = msbuild /version
+        $msbuildVersion = ($msbuildVersionLines -join "`n")
+
+        # 获取 MSBuild 路径
+        $msbuildPath = (Get-Command msbuild | Select-Object -ExpandProperty Source)
+
+        # 为 C++ 字符串字面量进行转义
+        # 先转义反斜杠（必须在转义换行符之前）
+        $msbuildVersionEscaped = $msbuildVersion -replace '\\', '\\\\'
+        $msbuildPathEscaped = $msbuildPath -replace '\\', '\\\\'
+
+        # 再转义换行符
+        $msbuildVersionEscaped = $msbuildVersionEscaped -replace "`r?`n", '\\n'
+        $msbuildPathEscaped = $msbuildPathEscaped -replace "`r?`n", '\\n'
+
+        # 转义双引号
+        $msbuildVersionEscaped = $msbuildVersionEscaped -replace '"', '\\"'
+        $msbuildPathEscaped = $msbuildPathEscaped -replace '"', '\\"'
+      
         $structText = $env:STRUCT_BLOCK `
           -replace '\{\{UTCTIME\}\}', $nowUtc `
           -replace '\{\{RepoUrl\}\}', $repoUrl `
@@ -141,16 +155,16 @@ jobs:
           -replace '\{\{ImageVersion\}\}', $imageVer `
           -replace '\{\{MSBUILDVER\}\}', $msbuildVersionEscaped `
           -replace '\{\{MSBUILDPATH\}\}', $msbuildPathEscaped
-
+      
         $replacement = $structText -replace "`r*`n", "`r`n"
         $newContent = ($content -join "`r`n") -replace $pattern, $replacement
-
+      
         Set-Content -Path $file -Value $newContent -Encoding utf8
-
+      
     - name: Build Inkeys
       run: msbuild "智绘教.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /verbosity:minimal
       shell: cmd
-
+    
     - name: Upload exe[unsigned] artifact
       uses: actions/upload-artifact@v4
       with:
@@ -164,7 +178,7 @@ jobs:
           ${{ (matrix.platform == 'Win32' && './Release/Inkeys.pdb') ||
               (matrix.platform == 'x64' && './x64/Release/Inkeys.pdb') ||
               (matrix.platform == 'ARM64' && './ARM64/Release/Inkeys.pdb') }}
-
+          
   package:
     name: Package
     runs-on: windows-latest
