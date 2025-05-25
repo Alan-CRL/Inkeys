@@ -54,6 +54,25 @@ int SettingWindowWidth;
 int SettingWindowHeight;
 
 float settingGlobalScale = 1.0f;
+// signal1
+struct
+{
+	wstring url;
+
+	wstring repoUrl;
+	wstring branch;
+	wstring submitter;
+	wstring buildTime;
+
+	wstring buildOS;
+	wstring buildOSVersion;
+	wstring buildRunnerImageOS;
+	wstring buildRunnerImageVersion;
+
+	wstring msBuildVersion;
+	wstring msBuildPath;
+} settingCICD;
+// signal1
 
 void SettingSeekBar()
 {
@@ -818,6 +837,7 @@ void SettingMain()
 				enum settingTabEnum
 				{
 					tab1,
+					tabCICD,
 					tabConfiguration,
 					tab2,
 					tab3,
@@ -1804,15 +1824,13 @@ void SettingMain()
 								wstring text;
 								{
 									text += L"\n程序发布版本 " + editionDate + L"(" + editionChannel + L")";
+									text += L"\n程序构建时间 " + buildTime;
 									text += L"\n程序架构和系统架构 " + programArchitecture + L" | " + targetArchitecture;
 #ifdef IDT_RELEASE
-									text += L"\n程序构建模式为发布版本";
+									text += L"\n程序构建模式为发布版本(RELEASE)";
 #else
-									text += L"\n程序构建模式为非发布调测版本";
+									text += L"\n程序构建模式为非发布调测版本(DEBUG)";
 #endif
-
-									text += L"\n\n程序更新目标架构 " + utf8ToUtf16(setlist.updateArchitecture);
-									text += L"\n程序构建时间 " + buildTime;
 								}
 
 								int left_x = 10 * settingGlobalScale, right_x = 760 * settingGlobalScale;
@@ -1850,6 +1868,38 @@ void SettingMain()
 									if (text_indentation < 0)  text_indentation = 0;
 									ImGui::SetCursorPosX(left_x + text_indentation);
 									ImGui::TextUnformatted(temp.c_str());
+								}
+							}
+							{
+								if (settingCICD.url.empty())
+								{
+									int left_x = 10 * settingGlobalScale, right_x = 760 * settingGlobalScale;
+									string temp = "此版本为手动构建";
+
+									float text_width = ImGui::CalcTextSize(temp.c_str()).x;
+									float text_indentation = ((right_x - left_x) - text_width) * 0.5f;
+									if (text_indentation < 0)  text_indentation = 0;
+									ImGui::SetCursorPosX(left_x + text_indentation);
+									ImGui::TextUnformatted(temp.c_str());
+								}
+								else
+								{
+									int left_x = 10 * settingGlobalScale, right_x = 760 * settingGlobalScale;
+									string temp = "此版本为自动构建(CI/CD): ";
+									string url = "自动构建详情信息";
+
+									float text_width = ImGui::CalcTextSize((temp + url).c_str()).x;
+									float text_indentation = ((right_x - left_x) - text_width) * 0.5f;
+									if (text_indentation < 0)  text_indentation = 0;
+									ImGui::SetCursorPosX(left_x + text_indentation);
+									ImGui::TextUnformatted(temp.c_str());
+
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
+									ImGui::SameLine();
+									if (ImGui::TextLink(url.c_str()))
+									{
+										settingTab = settingTabEnum::tabCICD;
+									}
 								}
 							}
 
@@ -2305,6 +2355,164 @@ void SettingMain()
 						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
 						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
 					}
+					{
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
+					}
+					ImGui::EndChild();
+					break;
+				}
+
+				// CICD
+				case settingTabEnum::tabCICD:
+				{
+					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
+
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
+					ImGui::BeginChild("自动构建详情信息", { (750.0f + 30.0f) * settingGlobalScale,608.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar);
+
+					{
+						ImGui::SetCursorPos({ 0,10.0f * settingGlobalScale });
+						{
+							ImFontMain->Scale = 0.3f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 179));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(249, 249, 249, 128));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
+							if (ImGui::Button("\ue72b", { 30.0f * settingGlobalScale,30.0f * settingGlobalScale })) settingTab = settingTabEnum::tab6;
+						}
+
+						ImGui::SetCursorPos({ 40.0f * settingGlobalScale ,10.0f * settingGlobalScale });
+						{
+							{
+								ImGui::SetCursorPos({ 40.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+								ImGui::TextUnformatted("自动构建详情信息");
+							}
+							{
+								ImGui::SetCursorPos({ 40.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
+								{
+									ImGui::TextUnformatted("CI/CD");
+								}
+							}
+						}
+					}
+
+					{
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+						ImGui::BeginChild("自动构建详情信息-输出", { (750.0f + 30.0f) * settingGlobalScale,533.0f * settingGlobalScale }, true);
+
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+						ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+						{
+							ImGui::SetCursorPosY(30.0f);
+							string temp = "CI/CD: ";
+							string url = utf16ToUtf8(settingCICD.url);
+
+							int left_x = 20 * settingGlobalScale, right_x = 750 * settingGlobalScale;
+
+							ImGui::SetCursorPosX(left_x);
+							ImGui::TextUnformatted(temp.c_str());
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
+							ImGui::SameLine();
+							if (ImGui::TextLink(url.c_str()))
+							{
+								ShellExecuteW(0, 0, settingCICD.url.c_str(), 0, 0, SW_SHOW);
+							}
+						}
+						{
+							ImGui::TextUnformatted("");
+
+							string temp = "构建仓库: ";
+							string url = utf16ToUtf8(settingCICD.repoUrl);
+
+							int left_x = 20 * settingGlobalScale, right_x = 750 * settingGlobalScale;
+
+							ImGui::SetCursorPosX(left_x);
+							ImGui::TextUnformatted(temp.c_str());
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
+							ImGui::SameLine();
+							if (ImGui::TextLink(url.c_str()))
+							{
+								ShellExecuteW(0, 0, settingCICD.repoUrl.c_str(), 0, 0, SW_SHOW);
+							}
+						}
+						{
+							wstring text;
+							{
+								text += L"构建分支: " + settingCICD.branch + L"\n";
+								text += L"构建提交者: " + settingCICD.submitter + L"\n";
+								text += L"构建时间: " + settingCICD.buildTime + L"\n";
+								text += L"\n";
+								text += L"构建系统: " + settingCICD.buildOS + L"\n";
+								text += L"构建系统版本: " + settingCICD.buildOSVersion + L"\n";
+								text += L"运行器镜像系统: " + settingCICD.buildRunnerImageOS + L"\n";
+								text += L"运行器镜像版本: " + settingCICD.buildRunnerImageVersion + L"\n";
+								text += L"\n";
+								text += L"MSBuild 版本: \n" + settingCICD.msBuildVersion + L"\n\n";
+								text += L"MSBuild 路径: \n" + settingCICD.msBuildPath + L"\n\n";
+							}
+
+							int left_x = 20 * settingGlobalScale, right_x = 750 * settingGlobalScale;
+
+							std::vector<std::string> lines;
+							std::wstring line, temp;
+							std::wstringstream ss(text);
+
+							while (getline(ss, temp, L'\n'))
+							{
+								bool flag = false;
+								line = L"";
+
+								for (wchar_t ch : temp)
+								{
+									flag = false;
+
+									float text_width = ImGui::CalcTextSize(utf16ToUtf8(line + ch).c_str()).x;
+									if (text_width > (right_x - left_x))
+									{
+										lines.emplace_back(utf16ToUtf8(line));
+										line = L"", flag = true;
+									}
+
+									line += ch;
+								}
+
+								if (!flag) lines.emplace_back(utf16ToUtf8(line));
+							}
+							for (const auto& temp : lines)
+							{
+								//float text_width = ImGui::CalcTextSize(temp.c_str()).x;
+								//float text_indentation = ((right_x - left_x) - text_width) * 0.5f;
+								//if (text_indentation < 0)  text_indentation = 0;
+								//ImGui::SetCursorPosX(left_x + text_indentation);
+								ImGui::SetCursorPosX(left_x);
+								ImGui::TextUnformatted(temp.c_str());
+							}
+
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						}
+
+						{
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+						}
+						ImGui::EndChild();
+					}
+
 					{
 						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
@@ -7964,6 +8172,7 @@ void SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
 						ImGui::BeginChild("程序调测-输出", { (750.0f + 30.0f) * settingGlobalScale,533.0f * settingGlobalScale }, true);
 
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 						ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 						{
 							ImGui::SetCursorPosY(30.0f);
