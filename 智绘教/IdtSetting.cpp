@@ -59,6 +59,7 @@ struct
 {
 	wstring url;
 
+	wstring repoUrl;
 	wstring branch;
 	wstring submitter;
 	wstring buildTime;
@@ -2428,8 +2429,25 @@ void SettingMain()
 							}
 						}
 						{
-							ImGui::SetCursorPosY(30.0f);
-							wstring text = L"\n-----\n\n";
+							ImGui::TextUnformatted("");
+
+							string temp = "构建仓库: ";
+							string url = utf16ToUtf8(settingCICD.repoUrl);
+
+							int left_x = 20 * settingGlobalScale, right_x = 750 * settingGlobalScale;
+
+							ImGui::SetCursorPosX(left_x);
+							ImGui::TextUnformatted(temp.c_str());
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
+							ImGui::SameLine();
+							if (ImGui::TextLink(url.c_str()))
+							{
+								ShellExecuteW(0, 0, settingCICD.repoUrl.c_str(), 0, 0, SW_SHOW);
+							}
+						}
+						{
+							wstring text;
 							{
 								text += L"构建分支: " + settingCICD.branch + L"\n";
 								text += L"构建提交者: " + settingCICD.submitter + L"\n";

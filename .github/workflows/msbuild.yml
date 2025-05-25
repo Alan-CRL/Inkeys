@@ -7,7 +7,7 @@ on:
     branches:
       - dev
       - main
-      - insider # 在 main 和 insider 分支 push 时触发
+      - insider
 permissions:
   actions: write
 
@@ -16,17 +16,43 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
+      - shell: pwsh
+        run: |
+          $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          $repoUrl = "$Env:GITHUB_SERVER_URL/$Env:GITHUB_REPOSITORY"
+
+          "## Actions 总结" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "$nowUtc" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "构建仓库: $repoUrl" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "构建分支: ${{ github.ref_name }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "构建提交者: ${{ github.actor }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Check for '#define IDT_RELEASE'
         id: check_idt_release
+        shell: pwsh
         run: |
-          FILE="智绘教/IdtMain.h"
-          if ! grep -xq "#define IDT_RELEASE" "$FILE"; then
-            echo "::warning file=$FILE::没有找到'#define IDT_RELEASE'（说明是非发布版本的错误推送），请检查！"
+          "### Check" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+          $file = "智绘教/IdtMain.h"
+          $found = Select-String -Path $file -Pattern '^#define IDT_RELEASE$'
+          if (-not $found) 
+          {
+            "**没有找到 ``#define IDT_RELEASE``，说明是非发布版本的错误推送，请检查！**" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
             exit 1
-          fi
+          }
+          else
+          {
+            "成功核实为标记发布版本" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          }
 
   build:
     name: Build
@@ -59,6 +85,7 @@ jobs:
           {
             wstring url = L"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}";
 
+	          wstring repoUrl = L"{{RepoUrl}}";
             wstring branch = L"${{ github.ref_name }}";
             wstring submitter = L"${{ github.actor }}";
             wstring buildTime = L"{{UTCTIME}}";
@@ -77,9 +104,11 @@ jobs:
         $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
         $imageOS = $Env:ImageOS
         $imageVer = $Env:ImageVersion
+        $repoUrl = "$Env:GITHUB_SERVER_URL/$Env:GITHUB_REPOSITORY"
 
         $structText = $env:STRUCT_BLOCK `
           -replace '\{\{UTCTIME\}\}', $nowUtc `
+          -replace '\{\{RepoUrl\}\}', $repoUrl `
           -replace '\{\{ImageOS\}\}', $imageOS `
           -replace '\{\{ImageVersion\}\}', $imageVer
 
@@ -134,6 +163,10 @@ jobs:
     needs: build
 
     steps:
+      - shell: pwsh
+        run: |
+          "### Package" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
       # 获取版本信息
       - name: 拉取代码
         uses: actions/checkout@v4
@@ -188,6 +221,11 @@ jobs:
               echo "VALUE='2025====!'" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
             }
           }
+
+      - shell: pwsh
+        run: |
+          "软件版本: ${{ steps.softwareDate.outputs.VALUE }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "软件通道: ${{ steps.softwareChannel.outputs.VALUE }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
       # 环境变量获取
       - name: 获取系统信息
@@ -246,10 +284,12 @@ jobs:
           if ($branchName -ieq 'main' -or $branchName -ieq 'insider') 
           {
             "signing_policy_slug=release-signing" | Out-File -FilePath $Env:GITHUB_OUTPUT -Encoding utf8 -Append
+            "**使用正式证书签名**" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           } 
           else 
           {
             "signing_policy_slug=test-signing" | Out-File -FilePath $Env:GITHUB_OUTPUT -Encoding utf8 -Append
+            "**使用测试证书签名**" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           }
 
       - name: 提交给 SignPath 签名
@@ -265,8 +305,10 @@ jobs:
           output-artifact-directory: './signed'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
         
       - name: Prepare update folder
+        if: steps.signpath.outcome == 'success'
         run: |
           mkdir signedUpload\Inkeys
           mkdir signedUpload\Inkeys64
@@ -274,22 +316,38 @@ jobs:
           copy signed\Inkeys.exe signedUpload\Inkeys\Inkeys.exe
           copy signed\Inkeys64.exe signedUpload\Inkeys64\Inkeys.exe
           copy signed\InkeysArm64.exe signedUpload\InkeysArm64\Inkeys.exe
+          
+      - name: Prepare update folder
+        if: steps.signpath.outcome != 'success'
+        run: |
+          mkdir signedUpload\Inkeys
+          mkdir signedUpload\Inkeys64
+          mkdir signedUpload\InkeysArm64
+          copy download\win32\Inkeys.exe signedUpload\Inkeys\Inkeys.exe
+          copy download\x64\Inkeys.exe signedUpload\Inkeys64\Inkeys.exe
+          copy download\arm64\Inkeys.exe signedUpload\InkeysArm64\Inkeys.exe
 
       - name: Upload Inkeys
         uses: actions/upload-artifact@v4
         with:
           name: Inkeys${{ steps.softwareDate.outputs.VALUE }}
-          path: signedUpload\Inkeys\Inkeys.exe
+          path: |
+            signedUpload\Inkeys\Inkeys.exe
+            download\win32\Inkeys.pdb
       - name: Upload Inkeys64
         uses: actions/upload-artifact@v4
         with:
           name: Inkeys${{ steps.softwareDate.outputs.VALUE }}64
-          path: signedUpload\Inkeys64\Inkeys.exe
+          path: |
+            signedUpload\Inkeys64\Inkeys.exe
+            download\x64\Inkeys.pdb
       - name: Upload InkeysArm64
         uses: actions/upload-artifact@v4
         with:
           name: Inkeys${{ steps.softwareDate.outputs.VALUE }}Arm64
-          path: signedUpload\InkeysArm64\Inkeys.exe
+          path: |
+            signedUpload\InkeysArm64\Inkeys.exe
+            download\arm64\Inkeys.pdb
 
       - name: Clean Up
         shell: pwsh
@@ -326,43 +384,6 @@ jobs:
       - name: Compressed update package 3
         run: |
           Compress-Archive -Path .\signedUpload\InkeysArm64\Inkeys.exe -DestinationPath .\packageUpload\InkeysUpdate2025====!Arm64.zip -CompressionLevel Optimal
-
-      - name: Prepare configuration information 1
-        shell: pwsh
-        run: |
-          $exeFile = 'signedUpload\Inkeys\Inkeys.exe'
-          $uploadFile = 'packageUpload\InkeysUpdate2025====!.zip'
-          $out = 'packageUpload\ci.txt'
-          
-          $md5    = ((Get-FileHash -Path $exeFile -Algorithm MD5   ).Hash).ToLower()
-          $sha256 = ((Get-FileHash -Path $exeFile -Algorithm SHA256).Hash).ToLower()
-          $size   = (Get-Item $uploadFile).Length
-
-          "[Inkeys]`r`nMD5: $md5`r`nSHA256: $sha256`r`nZIP_SIZE: $size`r`n" | Add-Content $out -Encoding UTF8
-      - name: Prepare configuration information 2
-        shell: pwsh
-        run: |
-          $exeFile = 'signedUpload\Inkeys64\Inkeys.exe'
-          $uploadFile = 'packageUpload\InkeysUpdate2025====!64.zip'
-          $out = 'packageUpload\ci.txt'
-          
-          $md5    = ((Get-FileHash -Path $exeFile -Algorithm MD5   ).Hash).ToLower()
-          $sha256 = ((Get-FileHash -Path $exeFile -Algorithm SHA256).Hash).ToLower()
-          $size   = (Get-Item $uploadFile).Length
-
-          "[Inkeys64]`r`nMD5: $md5`r`nSHA256: $sha256`r`nZIP_SIZE: $size`r`n" | Add-Content $out -Encoding UTF8
-      - name: Prepare configuration information 3
-        shell: pwsh
-        run: |
-          $exeFile = 'signedUpload\InkeysArm64\Inkeys.exe'
-          $uploadFile = 'packageUpload\InkeysUpdate2025====!Arm64.zip'
-          $out = 'packageUpload\ci.txt'
-          
-          $md5    = ((Get-FileHash -Path $exeFile -Algorithm MD5   ).Hash).ToLower()
-          $sha256 = ((Get-FileHash -Path $exeFile -Algorithm SHA256).Hash).ToLower()
-          $size   = (Get-Item $uploadFile).Length
-
-          "[InkeysArm64]`r`nMD5: $md5`r`nSHA256: $sha256`r`nZIP_SIZE: $size`r`n" | Add-Content $out -Encoding UTF8
       
       - name: 更新信息编写
         shell: pwsh
@@ -518,3 +539,10 @@ jobs:
           name: Package
           compression-level: 9
           path: packageUpload/
+
+      - shell: pwsh
+        run: |
+          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "### 构建任务已完成" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "Inkeys${{ steps.softwareDate.outputs.VALUE }} 中包含 exe 和对应的 pdb" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "Package 中包含各架构的 ``发布包````更新包````校验文件````pdb``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
