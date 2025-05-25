@@ -241,13 +241,15 @@ jobs:
         id: resolvePolicy
         shell: pwsh
         run: |
-          if ('${{ steps.softwareChannel.outputs.VALUE }}' -eq 'LTS' -or '${{ steps.softwareChannel.outputs.VALUE }}' -eq 'Main' -or '${{ steps.softwareChannel.outputs.VALUE }}' -eq 'Insider')
+          $branchName = $Env:GITHUB_REF_NAME
+
+          if ($branchName -ieq 'main' -or $branchName -ieq 'insider') 
           {
-            "signing_policy_slug=release-signing" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            "signing_policy_slug=release-signing" | Out-File -FilePath $Env:GITHUB_OUTPUT -Encoding utf8 -Append
           } 
           else 
           {
-            "signing_policy_slug=test-signing" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            "signing_policy_slug=test-signing" | Out-File -FilePath $Env:GITHUB_OUTPUT -Encoding utf8 -Append
           }
 
       - name: 提交给 SignPath 签名
