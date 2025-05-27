@@ -294,7 +294,7 @@ jobs:
 
       - name: 提交给 SignPath 签名
         id: signpath
-        if: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+        if: ${{ secrets.SIGNPATH_API_TOKEN }} != ''
         uses: signpath/github-action-submit-signing-request@v1.1
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
@@ -559,7 +559,7 @@ jobs:
           Compress-Archive -Path .\packageUpload\* -DestinationPath ".\WebDevUpload\PackageHistory-${{ steps.softwareChannel.outputs.VALUE }}-${{ steps.softwareDate.outputs.VALUE }}-$nowUtc.zip" -CompressionLevel Optimal
 
       - name: Install rclone
-        if: ${{ secrets.WEBDAV_API_TOKEN != '' }}
+        if: ${{ secrets.WEBDAV_API_TOKEN }} != ''
         shell: pwsh
         run: |
           Invoke-WebRequest -Uri "https://downloads.rclone.org/rclone-current-windows-amd64.zip" -OutFile "rclone.zip"
@@ -568,7 +568,7 @@ jobs:
           Copy-Item "$rclonePath\rclone.exe" -Destination "C:\Windows\System32\" -Force
       
       - name: Configure rclone for WebDAV
-        if: ${{ secrets.WEBDAV_API_TOKEN != '' }}
+        if: ${{ secrets.WEBDAV_API_TOKEN }} != ''
         shell: pwsh
         run: |
           $configDir = "$env:APPDATA\rclone"
@@ -594,7 +594,7 @@ jobs:
           WEBDAV_PASSWORD: ${{ secrets.WEBDAV_API_TOKEN }}
 
       - name: Upload to WebDAV with rclone
-        if: ${{ secrets.WEBDAV_API_TOKEN != '' }}
+        if: ${{ secrets.WEBDAV_API_TOKEN }} != ''
         id: upload_webdav
         shell: pwsh
         run: |
@@ -659,7 +659,7 @@ jobs:
           WEBDAV_PASSWORD: ${{ secrets.WEBDAV_API_TOKEN }}
 
       - name: Verify upload
-        if: ${{ secrets.WEBDAV_API_TOKEN != '' }}
+        if: ${{ secrets.WEBDAV_API_TOKEN }} != ''
         shell: pwsh
         run: |
           Write-Host "验证上传结果..."
