@@ -294,7 +294,7 @@ jobs:
 
       - name: 提交给 SignPath 签名
         id: signpath
-        if: secrets.SIGNPATH_API_TOKEN != ''
+        if: ${{ secrets.SIGNPATH_API_TOKEN }}
         uses: signpath/github-action-submit-signing-request@v1.1
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
@@ -559,7 +559,7 @@ jobs:
           Compress-Archive -Path .\packageUpload\* -DestinationPath ".\WebDevUpload\PackageHistory-${{ steps.softwareChannel.outputs.VALUE }}-${{ steps.softwareDate.outputs.VALUE }}-$nowUtc.zip" -CompressionLevel Optimal
 
       - name: Install rclone
-        if: secrets.WEBDAV_API_TOKEN != ''
+        if: ${{ secrets.WEBDAV_API_TOKEN }}
         shell: pwsh
         run: |
           Invoke-WebRequest -Uri "https://downloads.rclone.org/rclone-current-windows-amd64.zip" -OutFile "rclone.zip"
@@ -568,7 +568,7 @@ jobs:
           Copy-Item "$rclonePath\rclone.exe" -Destination "C:\Windows\System32\" -Force
       
       - name: Configure rclone for WebDAV
-        if: secrets.WEBDAV_API_TOKEN != ''
+        if: ${{ secrets.WEBDAV_API_TOKEN }}
         shell: pwsh
         run: |
           $configDir = "$env:APPDATA\rclone"
@@ -594,7 +594,7 @@ jobs:
           WEBDAV_PASSWORD: ${{ secrets.WEBDAV_API_TOKEN }}
 
       - name: Upload to WebDAV with rclone
-        if: secrets.WEBDAV_API_TOKEN != ''
+        if: ${{ secrets.WEBDAV_API_TOKEN }}
         id: upload_webdav
         shell: pwsh
         run: |
@@ -611,13 +611,13 @@ jobs:
           Write-Host "开始上传到 WebDAV..."
           Write-Host "进度将每 10 秒更新一次"
           Write-Host "超时时间: 5 分钟"
-          Write-Host "目标路径: /Inkeys/PackageHistory"
+          Write-Host "目标路径: /Inkeys/PackageHistory/$Env:GITHUB_REF_NAME"
           Write-Host ""
   
           # 执行 rclone 上传
           $startTime = Get-Date
           try {
-            & rclone copy "WebDevUpload/" "webdav:Inkeys/PackageHistory/" `
+            & rclone copy "WebDevUpload/" "webdav:Inkeys/PackageHistory/$Env:GITHUB_REF_NAME/" `
               --progress `
               --transfers 1 `
               --checkers 1 `
@@ -659,14 +659,14 @@ jobs:
           WEBDAV_PASSWORD: ${{ secrets.WEBDAV_API_TOKEN }}
 
       - name: Verify upload
-        if: secrets.WEBDAV_API_TOKEN != ''
+        if: ${{ secrets.WEBDAV_API_TOKEN }}
         shell: pwsh
         run: |
           Write-Host "验证上传结果..."
     
           # 列出远程目录内容进行验证
           try {
-            & rclone ls "webdav:Inkeys/PackageHistory/" --human-readable
+            & rclone ls "webdav:Inkeys/PackageHistory/$Env:GITHUB_REF_NAME/" --human-readable
       
             if ($LASTEXITCODE -eq 0) {
               Write-Host "远程目录列表获取成功"
