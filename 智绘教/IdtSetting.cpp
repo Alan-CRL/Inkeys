@@ -8374,6 +8374,14 @@ void SettingMain()
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip0]).c_str());
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
+							ImGui::SameLine();
+							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
+							if (ImGui::TextLink("手动下载最新版本软件"))
+							{
+								ShellExecuteW(0, 0, L"https://www.inkeys.top/", 0, 0, SW_SHOW);
+							}
 						}
 
 						{
@@ -8432,6 +8440,14 @@ void SettingMain()
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip2]).c_str());
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
+							ImGui::SameLine();
+							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
+							if (ImGui::TextLink("手动下载最新版本软件"))
+							{
+								ShellExecuteW(0, 0, L"https://www.inkeys.top/", 0, 0, SW_SHOW);
+							}
 						}
 
 						{
@@ -8461,6 +8477,14 @@ void SettingMain()
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip3]).c_str());
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
+							ImGui::SameLine();
+							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
+							if (ImGui::TextLink("手动下载最新版本软件"))
+							{
+								ShellExecuteW(0, 0, L"https://www.inkeys.top/", 0, 0, SW_SHOW);
+							}
 						}
 
 						{
@@ -8490,6 +8514,14 @@ void SettingMain()
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip4]).c_str());
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
+							ImGui::SameLine();
+							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
+							if (ImGui::TextLink("手动下载最新版本软件"))
+							{
+								ShellExecuteW(0, 0, L"https://www.inkeys.top/", 0, 0, SW_SHOW);
+							}
 						}
 
 						{
@@ -8561,6 +8593,14 @@ void SettingMain()
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip6]).c_str());
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
+							ImGui::SameLine();
+							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
+							if (ImGui::TextLink("手动下载最新版本软件"))
+							{
+								ShellExecuteW(0, 0, L"https://www.inkeys.top/", 0, 0, SW_SHOW);
+							}
 						}
 
 						{
@@ -8590,6 +8630,14 @@ void SettingMain()
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip7]).c_str());
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
+							ImGui::SameLine();
+							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
+							if (ImGui::TextLink("手动下载最新版本软件"))
+							{
+								ShellExecuteW(0, 0, L"https://www.inkeys.top/", 0, 0, SW_SHOW);
+							}
 						}
 
 						{
@@ -8714,6 +8762,15 @@ void SettingMain()
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 							ImGui::TextUnformatted((get<string>(i18n[i18nEnum::SettingsUpdateTip11])).c_str());
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
+							ImGui::SameLine();
+							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
+							if (ImGui::TextLink("更新到最新版本"))
+							{
+								mandatoryUpdate = true;
+								AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+							}
 						}
 
 						{

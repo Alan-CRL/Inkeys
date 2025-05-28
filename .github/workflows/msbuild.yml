@@ -585,14 +585,14 @@ jobs:
             $obscuredPassword = & rclone obscure "$env:WEBDAV_PASSWORD"
 
             $configContent = @"
-            [webdav]
-            type = webdav
-            url = $env:WEBDAV_ADDRESS
-            vendor = other
-            user = $env:WEBDAV_USERNAME
-            pass = $obscuredPassword
-            "@
-          
+          [webdav]
+          type = webdav
+          url = $env:WEBDAV_ADDRESS
+          vendor = other
+          user = $env:WEBDAV_USERNAME
+          pass = $obscuredPassword
+          "@
+
             $configContent | Out-File -FilePath "$configDir\rclone.conf" -Encoding UTF8
           }
           else
