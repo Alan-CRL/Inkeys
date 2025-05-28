@@ -70,7 +70,6 @@ struct
 	wstring buildRunnerImageVersion;
 
 	wstring msBuildVersion;
-	wstring msBuildPath;
 } settingCICD;
 // signal1
 
@@ -2461,8 +2460,7 @@ void SettingMain()
 								text += L"运行器镜像系统: " + settingCICD.buildRunnerImageOS + L"\n";
 								text += L"运行器镜像版本: " + settingCICD.buildRunnerImageVersion + L"\n";
 								text += L"\n";
-								text += L"MSBuild 版本: \n" + settingCICD.msBuildVersion + L"\n\n";
-								text += L"MSBuild 路径: \n" + settingCICD.msBuildPath + L"\n\n";
+								text += L"MSBuild 版本: \n" + settingCICD.msBuildVersion + L"\n";
 							}
 
 							int left_x = 20 * settingGlobalScale, right_x = 750 * settingGlobalScale;
@@ -8376,6 +8374,14 @@ void SettingMain()
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip0]).c_str());
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
+							ImGui::SameLine();
+							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
+							if (ImGui::TextLink("手动下载最新版本软件"))
+							{
+								ShellExecuteW(0, 0, L"https://www.inkeys.top/", 0, 0, SW_SHOW);
+							}
 						}
 
 						{
@@ -8434,6 +8440,14 @@ void SettingMain()
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip2]).c_str());
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
+							ImGui::SameLine();
+							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
+							if (ImGui::TextLink("手动下载最新版本软件"))
+							{
+								ShellExecuteW(0, 0, L"https://www.inkeys.top/", 0, 0, SW_SHOW);
+							}
 						}
 
 						{
@@ -8463,6 +8477,14 @@ void SettingMain()
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip3]).c_str());
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
+							ImGui::SameLine();
+							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
+							if (ImGui::TextLink("手动下载最新版本软件"))
+							{
+								ShellExecuteW(0, 0, L"https://www.inkeys.top/", 0, 0, SW_SHOW);
+							}
 						}
 
 						{
@@ -8492,6 +8514,14 @@ void SettingMain()
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip4]).c_str());
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
+							ImGui::SameLine();
+							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
+							if (ImGui::TextLink("手动下载最新版本软件"))
+							{
+								ShellExecuteW(0, 0, L"https://www.inkeys.top/", 0, 0, SW_SHOW);
+							}
 						}
 
 						{
@@ -8563,6 +8593,14 @@ void SettingMain()
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip6]).c_str());
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
+							ImGui::SameLine();
+							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
+							if (ImGui::TextLink("手动下载最新版本软件"))
+							{
+								ShellExecuteW(0, 0, L"https://www.inkeys.top/", 0, 0, SW_SHOW);
+							}
 						}
 
 						{
@@ -8592,6 +8630,14 @@ void SettingMain()
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip7]).c_str());
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
+							ImGui::SameLine();
+							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
+							if (ImGui::TextLink("手动下载最新版本软件"))
+							{
+								ShellExecuteW(0, 0, L"https://www.inkeys.top/", 0, 0, SW_SHOW);
+							}
 						}
 
 						{
@@ -8716,6 +8762,15 @@ void SettingMain()
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 							ImGui::TextUnformatted((get<string>(i18n[i18nEnum::SettingsUpdateTip11])).c_str());
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
+							ImGui::SameLine();
+							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
+							if (ImGui::TextLink("更新到最新版本"))
+							{
+								mandatoryUpdate = true;
+								AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+							}
 						}
 
 						{
