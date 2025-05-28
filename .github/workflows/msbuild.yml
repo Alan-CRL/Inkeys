@@ -5,7 +5,6 @@ name: Inkeys Build
 on:
   push:
     branches:
-      - dev
       - main
       - insider
 permissions:
@@ -616,10 +615,6 @@ jobs:
               exit 1
             }
           
-            Write-Host "发现 $($files.Count) 个文件待上传"
-            $files | ForEach-Object { Write-Host "  - $($_.Name) ($([math]::Round($_.Length/1MB, 2)) MB)" }
-            Write-Host ""
-          
             # 开始上传
             Write-Host "开始上传到 WebDAV..."
             Write-Host "进度将每 10 秒更新一次"
@@ -639,9 +634,7 @@ jobs:
                 --retries 3 `
                 --retries-sleep 5s `
                 --low-level-retries 10 `
-                --stats 10s `
-                --stats-one-line `
-                --stats-one-line-date `
+                --stats 3s `
                 --use-mmap `
                 --verbose
           
