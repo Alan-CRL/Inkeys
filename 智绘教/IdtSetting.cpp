@@ -586,6 +586,7 @@ void SettingMain()
 				0xee56, 0xee56, // 绘制
 				0xe74e, 0xe74e, // 保存
 				0xec4a, 0xec4a, // 性能
+				0xf259, 0xf259, // 预设
 				0xe70b, 0xe70b, // 组件
 				0xe74c, 0xe74c, // 插件
 				0xe765, 0xe765, // 快捷键
@@ -842,6 +843,7 @@ void SettingMain()
 					tab3,
 					tabSave,
 					tabPerformance,
+					tabPreset,
 					tab4,
 					tabComponent,
 					tab5,
@@ -1093,6 +1095,33 @@ void SettingMain()
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
 						if (ImGui::Button("   \uec4a   性能", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tabPerformance;
+					}
+
+					// 预设
+					{
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
+
+						if (settingTab == settingTabEnum::tabPreset)
+						{
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
+						}
+						else
+						{
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 0));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 0, 0, 10));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(0, 0, 0, 6));
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
+						}
+
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
+						if (ImGui::Button("   \uf259   预设", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tabPreset;
 					}
 
 					// 插件
@@ -4242,6 +4271,34 @@ void SettingMain()
 							while (PushFontNum) PushFontNum--, ImGui::PopFont();
 						}
 						ImGui::EndChild();
+					}
+
+					{
+						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+					}
+					{
+						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+						while (PushFontNum) PushFontNum--, ImGui::PopFont();
+					}
+					ImGui::EndChild();
+					break;
+				}
+
+				// 预设
+				case settingTabEnum::tabPreset:
+				{
+					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
+
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
+					ImGui::BeginChild("预设", { (750.0f + 30.0f) * settingGlobalScale,608.0f * settingGlobalScale }, false);
+
+					ImGui::SetCursorPosY(10.0f * settingGlobalScale);
+					{
+						ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+						ImGui::TextUnformatted("预设");
 					}
 
 					{
@@ -7922,50 +7979,87 @@ void SettingMain()
 				{
 					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
 
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-					ImGui::BeginChild("快捷键", { (750.0f + 30.0f) * settingGlobalScale,608.0f * settingGlobalScale }, true);
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
+					ImGui::BeginChild("快捷键", { (750.0f + 30.0f) * settingGlobalScale,608.0f * settingGlobalScale }, false);
 
-					ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
+					ImGui::SetCursorPosY(10.0f * settingGlobalScale);
 					{
-						ImGui::SetCursorPosY(10.0f * settingGlobalScale);
+						ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+						ImGui::TextUnformatted("快捷键");
+					}
 
-						int left_x = 10 * settingGlobalScale, right_x = 760 * settingGlobalScale;
+					{
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
 
-						std::vector<std::string> lines;
-						std::wstring line, temp;
-						std::wstringstream ss(L"按下 Ctrl + Win + Alt 切换选择/画笔\n\nCtrl + Q 定格\nCtrl + E 穿透\n\nZ（绘制模式下） 撤回/超级恢复\n\n其余快捷键和自定义正在测试，敬请期待");
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+						ImGui::BeginChild("快捷键-输出", { (750.0f + 30.0f) * settingGlobalScale,565.0f * settingGlobalScale }, true);
 
-						while (getline(ss, temp, L'\n'))
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+						ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 						{
-							bool flag = false;
-							line = L"";
-
-							for (wchar_t ch : temp)
+							ImGui::SetCursorPosY(30.0f);
+							wstring text;
 							{
-								flag = false;
-
-								float text_width = ImGui::CalcTextSize(utf16ToUtf8(line + ch).c_str()).x;
-								if (text_width > (right_x - left_x))
-								{
-									lines.emplace_back(utf16ToUtf8(line));
-									line = L"", flag = true;
-								}
-
-								line += ch;
+								text += L"全局快捷键：\n";
+								text += L"Ctrl + Win + Alt 切换选择 / 绘制模式\n";
+								text += L"\n";
+								text += L"绘制模式下：\n";
+								text += L"Ctrl + Q 定格\n";
+								text += L"Ctrl + E 穿透\n";
+								text += L"Z（Ctrl + Z） 撤回 / 超级恢复\n";
+								text += L"\n";
+								text += L"其余快捷键和自定义快捷键正在测试，敬请期待";
 							}
 
-							if (!flag) lines.emplace_back(utf16ToUtf8(line));
+							int left_x = 20 * settingGlobalScale, right_x = 750 * settingGlobalScale;
+
+							std::vector<std::string> lines;
+							std::wstring line, temp;
+							std::wstringstream ss(text);
+
+							while (getline(ss, temp, L'\n'))
+							{
+								bool flag = false;
+								line = L"";
+
+								for (wchar_t ch : temp)
+								{
+									flag = false;
+
+									float text_width = ImGui::CalcTextSize(utf16ToUtf8(line + ch).c_str()).x;
+									if (text_width > (right_x - left_x))
+									{
+										lines.emplace_back(utf16ToUtf8(line));
+										line = L"", flag = true;
+									}
+
+									line += ch;
+								}
+
+								if (!flag) lines.emplace_back(utf16ToUtf8(line));
+							}
+							for (const auto& temp : lines)
+							{
+								//float text_width = ImGui::CalcTextSize(temp.c_str()).x;
+								//float text_indentation = ((right_x - left_x) - text_width) * 0.5f;
+								//if (text_indentation < 0)  text_indentation = 0;
+								//ImGui::SetCursorPosX(left_x + text_indentation);
+								ImGui::SetCursorPosX(left_x);
+								ImGui::TextUnformatted(temp.c_str());
+							}
+
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 						}
 
-						for (const auto& temp : lines)
 						{
-							float text_width = ImGui::CalcTextSize(temp.c_str()).x;
-							float text_indentation = ((right_x - left_x) - text_width) * 0.5f;
-							if (text_indentation < 0)  text_indentation = 0;
-							ImGui::SetCursorPosX(left_x + text_indentation);
-							ImGui::TextUnformatted(temp.c_str());
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
 						}
-						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						ImGui::EndChild();
 					}
 
 					{
@@ -7986,50 +8080,94 @@ void SettingMain()
 				{
 					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
 
-					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-					ImGui::BeginChild("快捷键", { (750.0f + 30.0f) * settingGlobalScale,608.0f * settingGlobalScale }, true);
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(243, 243, 243, 255));
+					ImGui::BeginChild("社区名片", { (750.0f + 30.0f) * settingGlobalScale,608.0f * settingGlobalScale }, false);
 
-					ImFontMain->Scale = 0.76923076f, PushFontNum++, ImGui::PushFont(ImFontMain);
+					ImGui::SetCursorPosY(10.0f * settingGlobalScale);
 					{
-						ImGui::SetCursorPosY(10.0f * settingGlobalScale);
+						ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+						ImGui::TextUnformatted("社区名片");
+					}
 
-						int left_x = 10 * settingGlobalScale, right_x = 760 * settingGlobalScale;
+					{
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
 
-						std::vector<std::string> lines;
-						std::wstring line, temp;
-						std::wstringstream ss(L"界面还在开发中，敬请期待\n\n致谢名单（未显示匿名捐赠，请联系软件开发者并显示）\n郑子杰 Zijie Zheng ￥151.2\nbin ￥100\n路人甲 ￥100\n启幕￥66\nB站游大伟 ￥20\nHettyBig ￥20\n建俊 ￥19.99\nLEON - 小清新 ￥19.99\n2,2,3-三甲基戊烷 ￥10\n凌汛 ￥9.99\nKrouis ￥9.99\n爱发电用户_997e8 ￥9.99\n爱发电用户_55381 ￥9.99\n\n和所有支持智绘教的朋友们~");
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+						ImGui::BeginChild("社区名片-输出", { (750.0f + 30.0f) * settingGlobalScale,565.0f * settingGlobalScale }, true);
 
-						while (getline(ss, temp, L'\n'))
+						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+						ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 						{
-							bool flag = false;
-							line = L"";
-
-							for (wchar_t ch : temp)
+							ImGui::SetCursorPosY(30.0f);
+							wstring text;
 							{
-								flag = false;
-
-								float text_width = ImGui::CalcTextSize(utf16ToUtf8(line + ch).c_str()).x;
-								if (text_width > (right_x - left_x))
-								{
-									lines.emplace_back(utf16ToUtf8(line));
-									line = L"", flag = true;
-								}
-
-								line += ch;
+								text += L"界面还在开发中，敬请期待\n";
+								text += L"\n";
+								text += L"致谢名单（未显示匿名捐赠，请联系软件开发者并显示）\n";
+								text += L"郑子杰 Zijie Zheng ￥151.2\n";
+								text += L"bin ￥100\n";
+								text += L"路人甲 ￥100\n";
+								text += L"启幕￥66\n";
+								text += L"B站游大伟 ￥20\n";
+								text += L"HettyBig ￥20\n";
+								text += L"建俊 ￥19.99\n";
+								text += L"LEON - 小清新 ￥19.99\n";
+								text += L"2,2,3-三甲基戊烷 ￥10\n";
+								text += L"凌汛 ￥9.99\n";
+								text += L"Krouis ￥9.99\n";
+								text += L"\n";
+								text += L"和所有支持智绘教的朋友们~\n";
 							}
 
-							if (!flag) lines.emplace_back(utf16ToUtf8(line));
+							int left_x = 20 * settingGlobalScale, right_x = 750 * settingGlobalScale;
+
+							std::vector<std::string> lines;
+							std::wstring line, temp;
+							std::wstringstream ss(text);
+
+							while (getline(ss, temp, L'\n'))
+							{
+								bool flag = false;
+								line = L"";
+
+								for (wchar_t ch : temp)
+								{
+									flag = false;
+
+									float text_width = ImGui::CalcTextSize(utf16ToUtf8(line + ch).c_str()).x;
+									if (text_width > (right_x - left_x))
+									{
+										lines.emplace_back(utf16ToUtf8(line));
+										line = L"", flag = true;
+									}
+
+									line += ch;
+								}
+
+								if (!flag) lines.emplace_back(utf16ToUtf8(line));
+							}
+							for (const auto& temp : lines)
+							{
+								//float text_width = ImGui::CalcTextSize(temp.c_str()).x;
+								//float text_indentation = ((right_x - left_x) - text_width) * 0.5f;
+								//if (text_indentation < 0)  text_indentation = 0;
+								//ImGui::SetCursorPosX(left_x + text_indentation);
+								ImGui::SetCursorPosX(left_x);
+								ImGui::TextUnformatted(temp.c_str());
+							}
+
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 						}
 
-						for (const auto& temp : lines)
 						{
-							float text_width = ImGui::CalcTextSize(temp.c_str()).x;
-							float text_indentation = ((right_x - left_x) - text_width) * 0.5f;
-							if (text_indentation < 0)  text_indentation = 0;
-							ImGui::SetCursorPosX(left_x + text_indentation);
-							ImGui::TextUnformatted(temp.c_str());
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
 						}
-						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+						ImGui::EndChild();
 					}
 
 					{
@@ -8374,6 +8512,14 @@ void SettingMain()
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip0]).c_str());
+
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
+							ImGui::SameLine();
+							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
+							if (ImGui::TextLink("尝试修复"))
+							{
+								MessageBox(floating_window, L"The automatic update module has not been activated, which means that you are not using an official release. \nPlease go to the \"version\" page and click \"Fix Software\".\n自动更新模块尚未启动，这意味着您使用的不是官方发布版本。\n请前往“软件版本”页并点击“修复软件”。", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
+							}
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
 							ImGui::SameLine();

@@ -2193,10 +2193,12 @@ int drawpad_main()
 		drawingScale = GetDrawingScale();
 		stopTimingError = GetStopTimingError();
 
-		stateMode.Pen.Brush1.width = 3 * drawingScale;
-		stateMode.Pen.Highlighter1.width = 35 * drawingScale;
+		stateMode.Pen.Brush1.width = stateMode.Pen.Brush1.widthPreset = round(3.0f * drawingScale);
+		stateMode.Pen.Highlighter1.width = stateMode.Pen.Highlighter1.widthPreset = round(35.0f * drawingScale);
 		stateMode.Shape.StraightLine1.width = 3 * drawingScale;
 		stateMode.Shape.Rectangle1.width = 3 * drawingScale;
+
+		GetMemory();
 	}
 
 	thread DrawpadDrawing_thread(DrawpadDrawing);
