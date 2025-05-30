@@ -270,3 +270,6 @@ struct DdbInteractionSetListStruct
 extern DdbInteractionSetListStruct ddbInteractionSetList;
 //bool DdbReadInteraction();
 bool DdbWriteInteraction(bool change, bool close);
+
+bool GetMemory();
+bool SetMemory();

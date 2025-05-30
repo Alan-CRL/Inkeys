@@ -6,9 +6,11 @@
 #include "IdtPlug-in.h"
 #include "IdtWindow.h"
 
+#include "IdtConfiguration.h"
+
 StateModeClass stateMode;
 
-bool SetPenWidth(float targetWidth)
+bool SetPenWidth(float targetWidth, bool setMemory)
 {
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
@@ -24,9 +26,11 @@ bool SetPenWidth(float targetWidth)
 	}
 	else return false;
 
+	if (setMemory) SetMemory();
+
 	return true;
 }
-bool SetPenColor(COLORREF targetColor)
+bool SetPenColor(COLORREF targetColor, bool setMemory)
 {
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
@@ -41,6 +45,8 @@ bool SetPenColor(COLORREF targetColor)
 		else return false;
 	}
 	else return false;
+
+	if (setMemory) SetMemory();
 
 	// 临时方案：改变 UI 背景颜色
 	if (computeContrast(targetColor, RGB(255, 255, 255)) >= 3) BackgroundColorMode = 0;
