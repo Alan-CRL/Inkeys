@@ -2198,7 +2198,7 @@ int drawpad_main()
 		stateMode.Shape.StraightLine1.width = 3 * drawingScale;
 		stateMode.Shape.Rectangle1.width = 3 * drawingScale;
 
-		GetMemory();
+		// GetMemory();
 	}
 
 	thread DrawpadDrawing_thread(DrawpadDrawing);
