@@ -187,6 +187,20 @@ bool ReadSetting()
 			if (setlistVal["Performance"].isMember("SuperDrawBeta") && setlistVal["Performance"]["SuperDrawBeta"].isBool())
 				setlist.performanceSetting.superDraw = setlistVal["Performance"]["SuperDrawBeta"].asBool();
 		}
+		if (setlistVal.isMember("Preset") && setlistVal["Preset"].isObject())
+		{
+			if (setlistVal["Preset"].isMember("MemoryWidth") && setlistVal["Preset"]["MemoryWidth"].isBool())
+				setlist.presetSetting.memoryWidth = setlistVal["Preset"]["MemoryWidth"].asBool();
+			if (setlistVal["Preset"].isMember("MemoryColor") && setlistVal["Preset"]["MemoryColor"].isBool())
+				setlist.presetSetting.memoryColor = setlistVal["Preset"]["MemoryColor"].asBool();
+
+			if (setlistVal["Preset"].isMember("AutoDefaultWidth") && setlistVal["Preset"]["AutoDefaultWidth"].isBool())
+				setlist.presetSetting.autoDefaultWidth = setlistVal["Preset"]["AutoDefaultWidth"].asBool();
+			if (setlistVal["Preset"].isMember("DefaultBrush1Width") && setlistVal["Preset"]["DefaultBrush1Width"].isDouble())
+				setlist.presetSetting.defaultBrush1Width = static_cast<float>(setlistVal["Preset"]["DefaultBrush1Width"].asDouble());
+			if (setlistVal["Preset"].isMember("DefaultHighlighter1Width") && setlistVal["Preset"]["DefaultHighlighter1Width"].isDouble())
+				setlist.presetSetting.defaultHighlighter1Width = static_cast<float>(setlistVal["Preset"]["DefaultHighlighter1Width"].asDouble());
+		}
 
 		if (setlistVal.isMember("UpdateSetting") && setlistVal["UpdateSetting"].isObject())
 		{
@@ -408,6 +422,14 @@ bool WriteSetting()
 			setlistVal["Performance"]["PreparationQuantity"] = Json::Value(setlist.performanceSetting.preparationQuantity);
 
 			setlistVal["Performance"]["SuperDrawBeta"] = Json::Value(setlist.performanceSetting.superDraw);
+		}
+		{
+			setlistVal["Preset"]["MemoryWidth"] = Json::Value(setlist.presetSetting.memoryWidth);
+			setlistVal["Preset"]["MemoryColor"] = Json::Value(setlist.presetSetting.memoryColor);
+
+			setlistVal["Preset"]["AutoDefaultWidth"] = Json::Value(setlist.presetSetting.autoDefaultWidth);
+			setlistVal["Preset"]["DefaultBrush1Width"] = Json::Value(static_cast<double>(setlist.presetSetting.defaultBrush1Width));
+			setlistVal["Preset"]["DefaultHighlighter1Width"] = Json::Value(static_cast<double>(setlist.presetSetting.defaultHighlighter1Width));
 		}
 
 		{
@@ -938,7 +960,8 @@ bool GetMemory()
 			{
 				if (updateVal["Draw"]["Brush1"].isMember("Width") && updateVal["Draw"]["Brush1"]["Width"].isInt())
 				{
-					stateMode.Pen.Brush1.width = updateVal["Draw"]["Brush1"]["Width"].asInt();
+					if (setlist.presetSetting.memoryWidth)
+						stateMode.Pen.Brush1.width = updateVal["Draw"]["Brush1"]["Width"].asInt();
 				}
 
 				if (updateVal["Draw"]["Brush1"].isMember("Color") && updateVal["Draw"]["Brush1"]["Color"].isObject())
@@ -948,7 +971,8 @@ bool GetMemory()
 						updateVal["Draw"]["Brush1"]["Color"].isMember("B") && updateVal["Draw"]["Brush1"]["Color"]["B"].isInt() && \
 						updateVal["Draw"]["Brush1"]["Color"].isMember("A") && updateVal["Draw"]["Brush1"]["Color"]["A"].isInt())
 					{
-						stateMode.Pen.Brush1.color = RGBA(updateVal["Draw"]["Brush1"]["Color"]["R"].asInt(), updateVal["Draw"]["Brush1"]["Color"]["G"].asInt(), updateVal["Draw"]["Brush1"]["Color"]["B"].asInt(), updateVal["Draw"]["Brush1"]["Color"]["A"].asInt());
+						if (setlist.presetSetting.memoryColor)
+							stateMode.Pen.Brush1.color = RGBA(updateVal["Draw"]["Brush1"]["Color"]["R"].asInt(), updateVal["Draw"]["Brush1"]["Color"]["G"].asInt(), updateVal["Draw"]["Brush1"]["Color"]["B"].asInt(), updateVal["Draw"]["Brush1"]["Color"]["A"].asInt());
 					}
 				}
 			}
@@ -957,7 +981,8 @@ bool GetMemory()
 			{
 				if (updateVal["Draw"]["Highlighter1"].isMember("Width") && updateVal["Draw"]["Highlighter1"]["Width"].isInt())
 				{
-					stateMode.Pen.Highlighter1.width = updateVal["Draw"]["Highlighter1"]["Width"].asInt();
+					if (setlist.presetSetting.memoryWidth)
+						stateMode.Pen.Highlighter1.width = updateVal["Draw"]["Highlighter1"]["Width"].asInt();
 				}
 
 				if (updateVal["Draw"]["Highlighter1"].isMember("Color") && updateVal["Draw"]["Highlighter1"]["Color"].isObject())
@@ -967,7 +992,8 @@ bool GetMemory()
 						updateVal["Draw"]["Highlighter1"]["Color"].isMember("B") && updateVal["Draw"]["Highlighter1"]["Color"]["B"].isInt() && \
 						updateVal["Draw"]["Highlighter1"]["Color"].isMember("A") && updateVal["Draw"]["Highlighter1"]["Color"]["A"].isInt())
 					{
-						stateMode.Pen.Highlighter1.color = RGBA(updateVal["Draw"]["Highlighter1"]["Color"]["R"].asInt(), updateVal["Draw"]["Highlighter1"]["Color"]["G"].asInt(), updateVal["Draw"]["Highlighter1"]["Color"]["B"].asInt(), updateVal["Draw"]["Highlighter1"]["Color"]["A"].asInt());
+						if (setlist.presetSetting.memoryColor)
+							stateMode.Pen.Highlighter1.color = RGBA(updateVal["Draw"]["Highlighter1"]["Color"]["R"].asInt(), updateVal["Draw"]["Highlighter1"]["Color"]["G"].asInt(), updateVal["Draw"]["Highlighter1"]["Color"]["B"].asInt(), updateVal["Draw"]["Highlighter1"]["Color"]["A"].asInt());
 					}
 				}
 			}

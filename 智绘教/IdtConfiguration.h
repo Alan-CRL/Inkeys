@@ -76,6 +76,18 @@ struct SetListStruct
 	}performanceSetting;
 #pragma endregion
 
+#pragma region 预设
+	struct
+	{
+		IdtAtomic<bool> memoryWidth;
+		IdtAtomic<bool> memoryColor;
+
+		IdtAtomic<bool> autoDefaultWidth;
+		IdtAtomic<float> defaultBrush1Width;
+		IdtAtomic<float> defaultHighlighter1Width;
+	}presetSetting;
+#pragma endregion
+
 #pragma region 组件
 	struct
 	{
