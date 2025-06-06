@@ -2192,11 +2192,24 @@ int drawpad_main()
 
 		drawingScale = GetDrawingScale();
 		stopTimingError = GetStopTimingError();
+		stateMode.Pen.Brush1.widthPreset = round(3.0f * drawingScale);
+		stateMode.Pen.Highlighter1.widthPreset = round(35.0f * drawingScale);
 
-		stateMode.Pen.Brush1.width = 3 * drawingScale;
-		stateMode.Pen.Highlighter1.width = 35 * drawingScale;
-		stateMode.Shape.StraightLine1.width = 3 * drawingScale;
-		stateMode.Shape.Rectangle1.width = 3 * drawingScale;
+		if (setlist.presetSetting.autoDefaultWidth)
+		{
+			stateMode.Pen.Brush1.width = stateMode.Pen.Brush1.widthPreset;
+			stateMode.Pen.Highlighter1.width = stateMode.Pen.Highlighter1.widthPreset;
+		}
+		else
+		{
+			stateMode.Pen.Brush1.width = round(setlist.presetSetting.defaultBrush1Width);
+			stateMode.Pen.Highlighter1.width = round(setlist.presetSetting.defaultHighlighter1Width);
+		}
+		GetMemory();
+
+		// TODO: 后续独立进形状类
+		stateMode.Shape.StraightLine1.width = stateMode.Pen.Brush1.width;
+		stateMode.Shape.Rectangle1.width = stateMode.Pen.Brush1.width;
 	}
 
 	thread DrawpadDrawing_thread(DrawpadDrawing);

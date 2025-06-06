@@ -76,6 +76,18 @@ struct SetListStruct
 	}performanceSetting;
 #pragma endregion
 
+#pragma region 预设
+	struct
+	{
+		IdtAtomic<bool> memoryWidth;
+		IdtAtomic<bool> memoryColor;
+
+		IdtAtomic<bool> autoDefaultWidth;
+		IdtAtomic<float> defaultBrush1Width;
+		IdtAtomic<float> defaultHighlighter1Width;
+	}presetSetting;
+#pragma endregion
+
 #pragma region 组件
 	struct
 	{
@@ -196,6 +208,7 @@ struct PptComSetListStruct
 };
 extern PptComSetListStruct pptComSetlist;
 bool PptComReadSetting();
+bool PptComReadSettingPositionOnly();
 bool PptComWriteSetting();
 
 struct DdbInteractionSetListStruct
@@ -269,3 +282,6 @@ struct DdbInteractionSetListStruct
 extern DdbInteractionSetListStruct ddbInteractionSetList;
 //bool DdbReadInteraction();
 bool DdbWriteInteraction(bool change, bool close);
+
+bool GetMemory();
+bool SetMemory();

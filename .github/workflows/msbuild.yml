@@ -1,5 +1,4 @@
 # 这是用于构建混合 C++ (MSVC v143) 和 C# (.NET Framework) 项目的 GitHub Actions 工作流程
-# 构建 Release Win32, x64, ARM64 配置，并按要求打包上传 Inkeys.exe
 
 name: Inkeys Build
 
@@ -7,25 +6,73 @@ on:
   push:
     branches:
       - main
-      - insider # 在 main 和 insider 分支 push 时触发
+      - insider
+permissions:
+  actions: write
 
-# 定义一个矩阵策略来构建不同的平台
 jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - shell: pwsh
+        run: |
+          $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          $repoUrl = "$Env:GITHUB_SERVER_URL/$Env:GITHUB_REPOSITORY"
+
+          "## Actions 总结" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "$nowUtc" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "构建仓库: $repoUrl" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "构建分支: ${{ github.ref_name }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "构建提交者: ${{ github.actor }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for '#define IDT_RELEASE'
+        id: check_idt_release
+        shell: pwsh
+        run: |
+          $file = "智绘教/IdtMain.h"
+          $found = Select-String -Path $file -Pattern '^#define IDT_RELEASE$'
+          if (-not $found) 
+          {
+            "**没有找到 ``#define IDT_RELEASE``，说明是非发布版本的错误推送，请检查！**" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            exit 1
+          }
+          else
+          {
+            "成功核实为标记发布版本" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          }
+
   build:
+    name: Build
+    needs: check
     strategy:
       matrix:
-        platform: [Win32, x64, ARM64] # 
-      # Optional: fail-fast: false 可以让一个平台的构建失败时不立即取消其他平台的构建
-      # fail-fast: false
-
+        platform: [Win32, x64, ARM64]
+      fail-fast: false
     runs-on: windows-latest
 
-    # 步骤1: 拉取代码
     steps:
     - name: Checkout code 
       uses: actions/checkout@v4
 
-    # 步骤2: 设置环境并构建智绘教.vcxproj
+    - name: 获取环境信息
+      id: environmentInfo
+      shell: pwsh
+      run: |
+        $os = Get-ComputerInfo | Select-Object -ExpandProperty OsName
+        $ver = Get-ComputerInfo | Select-Object -ExpandProperty OsVersion
+      
+        echo "OS=$os" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        echo "OS_VERSION=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
     - name: Setup NuGet
@@ -48,39 +95,608 @@ jobs:
     - name: Restore NuGet packages
       run: nuget restore "智绘教.sln"
 
+    - name: 填充 CI/CD 变量
+      shell: pwsh
+      env:
+        STRUCT_BLOCK: |
+          struct
+          {
+            wstring url = L"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}";
+      
+            wstring repoUrl = L"{{RepoUrl}}";
+            wstring branch = L"${{ github.ref_name }}";
+            wstring submitter = L"${{ github.actor }}";
+            wstring buildTime = L"{{UTCTIME}}";
+      
+            wstring buildOS = L"${{ steps.environmentInfo.outputs.OS }}";
+            wstring buildOSVersion = L"${{ steps.environmentInfo.outputs.OS_VERSION }}";
+            wstring buildRunnerImageOS = L"{{ImageOS}}";
+            wstring buildRunnerImageVersion = L"{{ImageVersion}}";
+      
+            wstring msBuildVersion = L"{{MSBUILDVER}}";
+          } settingCICD;
+      run: |
+        $file = '智绘教\IdtSetting.cpp'
+        $content = Get-Content $file
+      
+        $pattern = '(?ms)^\s*// signal1.*?\s*// signal1'
+      
+        $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+        $imageOS = $Env:ImageOS
+        $imageVer = $Env:ImageVersion
+        $repoUrl = "$Env:GITHUB_SERVER_URL/$Env:GITHUB_REPOSITORY"
+
+        $msbuildVersion = (msbuild /version) -join "`n"
+        $msbuildVersionEscaped = $msbuildVersion -replace "`r?`n",'\n'
+        $msbuildVersionEscaped = $msbuildVersionEscaped -replace '"','\"'
+      
+        $structText = $env:STRUCT_BLOCK `
+          -replace '\{\{UTCTIME\}\}', $nowUtc `
+          -replace '\{\{RepoUrl\}\}', $repoUrl `
+          -replace '\{\{ImageOS\}\}', $imageOS `
+          -replace '\{\{ImageVersion\}\}', $imageVer `
+          -replace '\{\{MSBUILDVER\}\}', $msbuildVersionEscaped
+      
+        $replacement = $structText -replace "`r*`n", "`r`n"
+        $newContent = ($content -join "`r`n") -replace $pattern, $replacement
+      
+        Set-Content -Path $file -Value $newContent -Encoding utf8
+      
     - name: Build Inkeys
       run: msbuild "智绘教.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /verbosity:minimal
       shell: cmd
-
-    # 步骤3: 打包并压缩产物
-    - name: Determine exe path and artifact name
-      id: exeinfo
-      shell: pwsh
-      run: |
-        $platform = "${{ matrix.platform }}"
-        if ($platform -eq "Win32") {
-          $exe = ".\Release\Inkeys.exe"
-          $name = "Inkeys"
-        } elseif ($platform -eq "x64") {
-          $exe = ".\x64\Release\Inkeys.exe"
-          $name = "Inkeys64"
-        } elseif ($platform -eq "ARM64") {
-          $exe = ".\ARM64\Release\Inkeys.exe"
-          $name = "InkeysArm64"
-        } else {
-          Write-Error "Unsupported platform: $platform"
-          exit 1
-        }
-        if (-not (Test-Path $exe -PathType Leaf)) {
-          Write-Error "$exe not found"
-          exit 1
-        }
-        echo "exe_path=$exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        echo "artifact_name=$name" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-    # 步骤4: 上传打包好的 Artifact (zip 文件)
-    - name: Upload artifact - ${{ matrix.platform }}
+    
+    - name: Upload exe[unsigned] artifact
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ env.artifact_name }}
-        path: ${{ env.exe_path }}
+        name: ${{ matrix.platform == 'Win32' && 'Inkeys[Unsigned]' || 
+                  matrix.platform == 'x64' && 'Inkeys64[Unsigned]' || 
+                  matrix.platform == 'ARM64' && 'InkeysArm64[Unsigned]' }}
+        path: |
+          ${{ (matrix.platform == 'Win32' && './Release/Inkeys.exe') || 
+              (matrix.platform == 'x64' && './x64/Release/Inkeys.exe') || 
+              (matrix.platform == 'ARM64' && './ARM64/Release/Inkeys.exe') }}
+          ${{ (matrix.platform == 'Win32' && './Release/Inkeys.pdb') ||
+              (matrix.platform == 'x64' && './x64/Release/Inkeys.pdb') ||
+              (matrix.platform == 'ARM64' && './ARM64/Release/Inkeys.pdb') }}
+          
+  package:
+    name: Package
+    runs-on: windows-latest
+    needs: build
+
+    steps:
+      # 获取版本信息
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 拉取版本代号
+        id: softwareDate
+        shell: pwsh
+        run: |
+          $file = '智绘教\IdtMain.cpp'
+
+          # 读取所有行，匹配特定前缀
+          $line = Get-Content $file | Where-Object { $_ -match '^wstring editionDate = L\"([^\"]+)\";' }
+          if (-not $line) 
+          {
+            Write-Host "找不到 editionDate 变量"
+              echo "VALUE='2025====!'" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+          else
+          {
+            # 正则提取 editionDate 内容
+            if ($line -match '^wstring editionDate = L\"([^\"]+)\";') {
+              $date = $matches[1]
+              Write-Host "Found editionDate: $date"
+              echo "VALUE=$date" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            } else {
+              Write-Host "格式未匹配"
+              echo "VALUE='2025====!'" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            }
+          }
+      - name: 拉取通道代号
+        id: softwareChannel
+        shell: pwsh
+        run: |
+          $file = '智绘教\IdtMain.cpp'
+
+          # 读取所有行，匹配特定前缀
+          $line = Get-Content $file | Where-Object { $_ -match '^wstring editionChannel = L\"([^\"]+)\";' }
+          if (-not $line) 
+          {
+            Write-Host "找不到 editionChannel 变量"
+              echo "VALUE='2025====!'" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+          else
+          {
+            # 正则提取 editionChannel 内容
+            if ($line -match '^wstring editionChannel = L\"([^\"]+)\";') {
+              $channel = $matches[1]
+              Write-Host "Found editionChannel: $channel"
+              echo "VALUE=$channel" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            } else {
+              Write-Host "格式未匹配"
+              echo "VALUE='2025====!'" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            }
+          }
+
+      - shell: pwsh
+        run: |
+          "软件版本: ${{ steps.softwareDate.outputs.VALUE }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "软件通道: ${{ steps.softwareChannel.outputs.VALUE }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+      # 环境变量获取
+      - name: 获取系统信息
+        id: environmentInfo
+        shell: pwsh
+        run: |
+          $os = Get-ComputerInfo | Select-Object -ExpandProperty OsName
+          $ver = Get-ComputerInfo | Select-Object -ExpandProperty OsVersion
+          
+          echo "OS=$os" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          echo "OS_VERSION=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # 下载构建后内容
+      - name: Download Inkeys[Unsigned]
+        uses: actions/download-artifact@v4
+        with:
+          name: Inkeys[Unsigned]
+          path: download/win32
+      - name: Download Inkeys64[Unsigned]
+        uses: actions/download-artifact@v4
+        with:
+          name: Inkeys64[Unsigned]
+          path: download/x64
+      - name: Download InkeysArm64[Unsigned]
+        uses: actions/download-artifact@v4
+        with:
+          name: InkeysArm64[Unsigned]
+          path: download/arm64
+
+      # 打包整理 Package
+      - name: Prepare signpath zip folder
+        run: |
+          mkdir signatureUpload
+          mkdir signedUpload
+          mkdir packageUpload
+          copy download\win32\Inkeys.exe signatureUpload\Inkeys.exe
+          copy download\x64\Inkeys.exe signatureUpload\Inkeys64.exe
+          copy download\arm64\Inkeys.exe signatureUpload\InkeysArm64.exe
+          copy download\win32\Inkeys.pdb packageUpload\Inkeys.pdb
+          copy download\x64\Inkeys.pdb packageUpload\Inkeys64.pdb
+          copy download\arm64\Inkeys.pdb packageUpload\InkeysArm64.pdb
+          
+      - name: Upload Signpath[unsigned]
+        id: upload-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: Signpath[unsigned]
+          path: signatureUpload/
+
+      - name: 选定签名策略
+        id: resolvePolicy
+        shell: pwsh
+        run: |
+          $branchName = $Env:GITHUB_REF_NAME
+
+          if ($branchName -ieq 'main' -or $branchName -ieq 'insider') 
+          {
+            "signing_policy_slug=release-signing" | Out-File -FilePath $Env:GITHUB_OUTPUT -Encoding utf8 -Append
+            "**使用正式证书签名**" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          } 
+          else 
+          {
+            "signing_policy_slug=test-signing" | Out-File -FilePath $Env:GITHUB_OUTPUT -Encoding utf8 -Append
+            "**使用测试证书签名**" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          }
+
+      - name: 提交给 SignPath 签名
+        id: signpath
+        uses: signpath/github-action-submit-signing-request@v1.1
+        with:
+          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+          organization-id: '95390269-627b-496d-8127-fc47de793284'
+          project-slug: 'Inkeys'
+          signing-policy-slug: '${{ steps.resolvePolicy.outputs.signing_policy_slug }}'
+          github-artifact-id: '${{ steps.upload-unsigned.outputs.artifact-id }}'
+          wait-for-completion: true
+          output-artifact-directory: './signed'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+        
+      - name: Prepare update folder
+        if: steps.signpath.outcome == 'success'
+        run: |
+          mkdir signedUpload\Inkeys
+          mkdir signedUpload\Inkeys64
+          mkdir signedUpload\InkeysArm64
+          copy signed\Inkeys.exe signedUpload\Inkeys\Inkeys.exe
+          copy signed\Inkeys64.exe signedUpload\Inkeys64\Inkeys.exe
+          copy signed\InkeysArm64.exe signedUpload\InkeysArm64\Inkeys.exe
+          
+      - name: Prepare update folder
+        if: steps.signpath.outcome != 'success'
+        run: |
+          mkdir signedUpload\Inkeys
+          mkdir signedUpload\Inkeys64
+          mkdir signedUpload\InkeysArm64
+          copy download\win32\Inkeys.exe signedUpload\Inkeys\Inkeys.exe
+          copy download\x64\Inkeys.exe signedUpload\Inkeys64\Inkeys.exe
+          copy download\arm64\Inkeys.exe signedUpload\InkeysArm64\Inkeys.exe
+      - if: steps.signpath.outcome != 'success'
+        shell: pwsh
+        run: |
+          "**无法完成签名！**" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+      - name: Upload Inkeys
+        uses: actions/upload-artifact@v4
+        with:
+          name: Inkeys${{ steps.softwareDate.outputs.VALUE }}
+          path: |
+            signedUpload\Inkeys\Inkeys.exe
+            download\win32\Inkeys.pdb
+      - name: Upload Inkeys64
+        uses: actions/upload-artifact@v4
+        with:
+          name: Inkeys${{ steps.softwareDate.outputs.VALUE }}64
+          path: |
+            signedUpload\Inkeys64\Inkeys.exe
+            download\x64\Inkeys.pdb
+      - name: Upload InkeysArm64
+        uses: actions/upload-artifact@v4
+        with:
+          name: Inkeys${{ steps.softwareDate.outputs.VALUE }}Arm64
+          path: |
+            signedUpload\InkeysArm64\Inkeys.exe
+            download\arm64\Inkeys.pdb
+
+      - name: Clean Up
+        shell: pwsh
+        env:
+          ARTIFACT_NAMES: 'Inkeys[Unsigned],Inkeys64[Unsigned],InkeysArm64[Unsigned],Signpath[unsigned]'
+        run: |
+          # 拆分目标 artifact 列表
+          $names = "${env:ARTIFACT_NAMES}".Split(',')
+
+          # 获取 artifact 元信息
+          $repo = "${{ github.repository }}"
+          $url = "https://api.github.com/repos/$repo/actions/artifacts?per_page=100"
+          $headers = @{ Authorization = "Bearer ${{ secrets.GITHUB_TOKEN }}" }
+          $response = Invoke-RestMethod -Uri $url -Headers $headers
+
+          # 批量删除
+          foreach ($name in $names) {
+            $artifact = $response.artifacts | Where-Object { $_.name -eq $name }
+            if ($null -ne $artifact) {
+              Write-Host "Deleting artifact: $($artifact.name) $($artifact.id)"
+              $delete_url = "https://api.github.com/repos/$repo/actions/artifacts/$($artifact.id)"
+              Invoke-RestMethod -Uri $delete_url -Headers $headers -Method Delete
+            } else {
+              Write-Host "Not found: $name"
+            }
+          }
+
+      - name: Compressed update package 1
+        run: |
+          Compress-Archive -Path .\signedUpload\Inkeys\Inkeys.exe -DestinationPath .\packageUpload\InkeysUpdate2025====!.zip -CompressionLevel Optimal
+      - name: Compressed update package 2
+        run: |
+          Compress-Archive -Path .\signedUpload\Inkeys64\Inkeys.exe -DestinationPath .\packageUpload\InkeysUpdate2025====!64.zip -CompressionLevel Optimal
+      - name: Compressed update package 3
+        run: |
+          Compress-Archive -Path .\signedUpload\InkeysArm64\Inkeys.exe -DestinationPath .\packageUpload\InkeysUpdate2025====!Arm64.zip -CompressionLevel Optimal
+      
+      - name: 更新信息编写
+        shell: pwsh
+        run: |
+          $exeFile1 = 'signedUpload\Inkeys\Inkeys.exe'
+          $exeFile2 = 'signedUpload\Inkeys64\Inkeys.exe'
+          $exeFile3 = 'signedUpload\InkeysArm64\Inkeys.exe'
+          $uploadFile1 = 'packageUpload\InkeysUpdate2025====!.zip'
+          $uploadFile2 = 'packageUpload\InkeysUpdate2025====!64.zip'
+          $uploadFile3 = 'packageUpload\InkeysUpdate2025====!Arm64.zip'
+          
+          $md5_1 = ((Get-FileHash -Path $exeFile1 -Algorithm MD5   ).Hash).ToLower()
+          $md5_2 = ((Get-FileHash -Path $exeFile2 -Algorithm MD5   ).Hash).ToLower()
+          $md5_3 = ((Get-FileHash -Path $exeFile3 -Algorithm MD5   ).Hash).ToLower()
+          $sha256_1 = ((Get-FileHash -Path $exeFile1 -Algorithm SHA256).Hash).ToLower()
+          $sha256_2 = ((Get-FileHash -Path $exeFile2 -Algorithm SHA256).Hash).ToLower()
+          $sha256_3 = ((Get-FileHash -Path $exeFile3 -Algorithm SHA256).Hash).ToLower()
+          $size1 = (Get-Item $uploadFile1).Length
+          $size2 = (Get-Item $uploadFile2).Length
+          $size3 = (Get-Item $uploadFile3).Length
+
+          $content = @"
+            "Insider": {
+            "edition_date": "${{ steps.softwareDate.outputs.VALUE }}",
+            "edition_code": "",
+            "hash": {
+              "md5": "$md5_1",
+              "sha256": "$sha256_1",
+              "md5 64": "$md5_2",
+              "sha256 64": "$sha256_2",
+              "md5 Arm64": "$md5_3",
+              "sha256 Arm64": "$sha256_3"
+            },
+            "path": [
+              "https://vip.123pan.cn/1709404/version_identification/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip",
+              "http://home.alan-crl.top/version_identification/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip"
+            ],
+            "path64": [
+              "https://vip.123pan.cn/1709404/version_identification/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip",
+              "http://home.alan-crl.top/version_identification/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip"
+            ],
+            "pathArm64": [
+              "https://vip.123pan.cn/1709404/version_identification/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip",
+              "http://home.alan-crl.top/version_identification/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip"
+            ],
+            "size": {
+              "file": $size1,
+              "file64": $size2,
+              "fileArm64": $size3 
+            },
+            "representation": "Inkeys.exe"
+          }
+          "@
+          Set-Content -Path "packageUpload\update.txt" -Value $content -Encoding UTF8
+
+      - name: Write Tips
+        shell: pwsh
+        run: |
+          $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          $imageOS = $Env:ImageOS
+          $imageVer = $Env:ImageVersion
+
+          $content = @"
+          软件使用方法：
+          1. Inkeys.exe 运行文件放置于一个空的文件夹内（exe 名称不能包含非英文字符）
+          2. 双击 Inkeys.exe 运行即可
+          
+          提示：
+          设置桌面快捷方式和开机启动可以进软件选项界面中设置。
+          有疑问吐槽建议等等，加Q群618720802一起讨论，或咨询作者QQ2685549821。
+          
+          -----
+          
+          How to use the software:
+          1. Inkeys.exe runtime file is placed in an empty folder (exe name can not contain non-English characters)
+          2. Double-click Inkeys.exe to run.
+          
+          Tips: 
+          Set desktop shortcuts and boot up can be set into the software options interface.
+          If you have any questions, comments, suggestions, etc., through the software feedback channel for feedback, or consult the author alan-crl@foxmail.com.
+          
+          -----
+          
+          Inkeys${{ steps.softwareDate.outputs.VALUE }}
+          CI/CD: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          Branch: ${{ github.ref_name }}
+          Channel: ${{ steps.softwareChannel.outputs.VALUE }}
+          Submitter: ${{ github.actor }}
+
+          Build OS: ${{ steps.environmentInfo.outputs.OS }}
+          Build OS Version: ${{ steps.environmentInfo.outputs.OS_VERSION }}
+          Runner ImageOS: $imageOS
+          Runner ImageVersion: $imageVer
+
+          Build Time: $nowUtc
+          "@
+          Set-Content -Path "tips.txt" -Value $content -Encoding UTF8
+
+      - name: Prepare Tips
+        run: |
+          copy tips.txt signedUpload\Inkeys\Tips.txt
+          copy tips.txt signedUpload\Inkeys64\Tips.txt
+          copy tips.txt signedUpload\InkeysArm64\Tips.txt
+
+      - name: Compressed release package 1
+        run: |
+          Compress-Archive -Path .\signedUpload\Inkeys -DestinationPath ".\packageUpload\32=Inkeys2025====!.zip" -CompressionLevel Optimal
+      - name: Compressed release package 2
+        run: |
+          Compress-Archive -Path .\signedUpload\Inkeys64 -DestinationPath ".\packageUpload\64=Inkeys2025====!.zip" -CompressionLevel Optimal
+      - name: Compressed release package 3
+        run: |
+          Compress-Archive -Path .\signedUpload\InkeysArm64 -DestinationPath ".\packageUpload\Arm64=Inkeys2025====!.zip" -CompressionLevel Optimal
+
+      - name: 重命名为最终命名 1
+        shell: cmd
+        run: |
+          rename ".\packageUpload\InkeysUpdate2025====!.zip" "InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\InkeysUpdate2025====!64.zip" "InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip"
+          rename ".\packageUpload\InkeysUpdate2025====!Arm64.zip" "InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip"
+
+      - name: 重命名为最终命名 2
+        if: steps.softwareChannel.outputs.VALUE == 'Dev'
+        shell: cmd
+        run: |
+          rename ".\packageUpload\32=Inkeys2025====!.zip" "开发版本-32位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\64=Inkeys2025====!.zip" "开发版本-64位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\Arm64=Inkeys2025====!.zip" "开发版本-Arm64-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+      - name: 重命名为最终命名 2
+        if: steps.softwareChannel.outputs.VALUE == 'Insider'
+        shell: cmd
+        run: |
+          rename ".\packageUpload\32=Inkeys2025====!.zip" "预览版本-32位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\64=Inkeys2025====!.zip" "预览版本-64位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\Arm64=Inkeys2025====!.zip" "预览版本-Arm64-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+      - name: 重命名为最终命名 2
+        if: steps.softwareChannel.outputs.VALUE == 'LTS' || steps.softwareChannel.outputs.VALUE == 'Main'
+        shell: cmd
+        run: |
+          rename ".\packageUpload\32=Inkeys2025====!.zip" "正式版本-32位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\64=Inkeys2025====!.zip" "正式版本-64位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\Arm64=Inkeys2025====!.zip" "正式版本-Arm64-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+
+      # TEST
+      - name: Print file tree
+        run: tree /F /A
+        shell: cmd
+
+      - name: Upload Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Package
+          compression-level: 9
+          path: packageUpload/
+
+      - shell: pwsh
+        run: |
+          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "### 构建任务已完成" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "Inkeys${{ steps.softwareDate.outputs.VALUE }} 中包含 exe 和对应的 pdb" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "Package 中包含各架构的 发布包、更新包、校验文件和对应的 pdb" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+      - run: |
+          $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy_MM_ddTHH_mm_ssZ")
+
+          New-Item -ItemType Directory -Path ".\WebDevUpload" | Out-Null
+          Compress-Archive -Path .\packageUpload\* -DestinationPath ".\WebDevUpload\PackageHistory-${{ steps.softwareDate.outputs.VALUE }}-${{ steps.softwareChannel.outputs.VALUE }}-$nowUtc.zip" -CompressionLevel Optimal
+
+      - name: Install rclone
+        shell: pwsh
+        run: |
+          if ("${{ secrets.WEBDAV_API_TOKEN }}" -ne "")
+          {
+            Invoke-WebRequest -Uri "https://downloads.rclone.org/rclone-current-windows-amd64.zip" -OutFile "rclone.zip"
+            Expand-Archive -Path "rclone.zip" -DestinationPath "." -Force
+            $rclonePath = (Get-ChildItem -Path "." -Filter "rclone-*" -Directory | Select-Object -First 1).FullName
+            Copy-Item "$rclonePath\rclone.exe" -Destination "C:\Windows\System32\" -Force
+          }
+          else
+          {
+            Write-Host "Skip"
+          }
+
+      - name: Configure rclone for WebDAV
+        shell: pwsh
+        run: |
+          if ("${{ secrets.WEBDAV_API_TOKEN }}" -ne "")
+          {
+            $configDir = "$env:APPDATA\rclone"
+            if (!(Test-Path $configDir)) {
+              New-Item -ItemType Directory -Path $configDir -Force
+            }
+          
+            $obscuredPassword = & rclone obscure "$env:WEBDAV_PASSWORD"
+
+            $configContent = @"
+          [webdav]
+          type = webdav
+          url = $env:WEBDAV_ADDRESS
+          vendor = other
+          user = $env:WEBDAV_USERNAME
+          pass = $obscuredPassword
+          "@
+
+            $configContent | Out-File -FilePath "$configDir\rclone.conf" -Encoding UTF8
+          }
+          else
+          {
+            Write-Host "Skip"
+          }
+
+        env:
+          WEBDAV_ADDRESS: ${{ secrets.WEBDAV_API_ADDRESS }}
+          WEBDAV_USERNAME: ${{ secrets.WEBDAV_API_USERNAME }}
+          WEBDAV_PASSWORD: ${{ secrets.WEBDAV_API_TOKEN }}
+
+      - name: Upload to WebDAV with rclone
+        id: upload_webdav
+        shell: pwsh
+        run: |
+          if ("${{ secrets.WEBDAV_API_TOKEN }}" -ne "")
+          {
+            if (!(Test-Path "WebDevUpload")) {
+              Write-Host "上传目录 WebDevUpload 不存在"
+              exit 1
+            }
+          
+            # 开始上传
+            Write-Host "开始上传到 WebDAV..."
+            Write-Host "进度将每 10 秒更新一次"
+            Write-Host "超时时间: 5 分钟"
+            Write-Host "目标路径: /Inkeys/PackageHistory/$Env:GITHUB_REF_NAME"
+            Write-Host ""
+          
+            # 执行 rclone 上传
+            $startTime = Get-Date
+            try {
+              & rclone copy "WebDevUpload/" "webdav:Inkeys/PackageHistory/$Env:GITHUB_REF_NAME/" `
+                --progress `
+                --transfers 1 `
+                --checkers 1 `
+                --timeout 5m `
+                --contimeout 30s `
+                --retries 3 `
+                --retries-sleep 5s `
+                --low-level-retries 10 `
+                --stats 3s `
+                --use-mmap `
+                --verbose
+          
+              $exitCode = $LASTEXITCODE
+              $endTime = Get-Date
+              $duration = $endTime - $startTime
+          
+              if ($exitCode -eq 0) {
+                Write-Host ""
+                Write-Host "上传成功完成!"
+                Write-Host "总耗时: $($duration.ToString('hh\:mm\:ss'))"
+                Write-Host "平均速度已在上方显示"
+              } else {
+                Write-Host ""
+                Write-Host "上传失败，退出代码: $exitCode"
+                Write-Host "运行时间: $($duration.ToString('hh\:mm\:ss'))"
+                exit $exitCode
+              }
+            }
+            catch {
+              Write-Host ""
+              Write-Host "上传过程中发生异常: $($_.Exception.Message)"
+              exit 1
+            } 
+          }
+          else
+          {
+            Write-Host "Skip"
+          }   
+
+        env:
+          WEBDAV_ADDRESS: ${{ secrets.WEBDAV_API_ADDRESS }}
+          WEBDAV_USERNAME: ${{ secrets.WEBDAV_API_USERNAME }}
+          WEBDAV_PASSWORD: ${{ secrets.WEBDAV_API_TOKEN }}
+
+      - name: Verify upload
+        shell: pwsh
+        run: |
+          if ("${{ secrets.WEBDAV_API_TOKEN }}" -ne "")
+          {
+            Write-Host "验证上传结果..."
+          
+            # 列出远程目录内容进行验证
+            try {
+              & rclone ls "webdav:Inkeys/PackageHistory/$Env:GITHUB_REF_NAME/" --human-readable
+          
+              if ($LASTEXITCODE -eq 0) {
+                Write-Host "远程目录列表获取成功"
+              } else {
+                Write-Host "无法获取远程目录列表，但这不影响上传结果"
+              }
+            }
+            catch {
+              Write-Host " 验证步骤失败: $($_.Exception.Message)"
+            }
+          }
+          else
+          {
+            Write-Host "Skip"
+          }  
+
+      - if: steps.upload_webdav.outcome == 'success'
+        shell: pwsh
+        run: |
+          "Package 已经上传至 [Package History 列表](https://www.123912.com/s/duk9-N7QAd)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append

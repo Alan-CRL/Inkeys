@@ -5652,9 +5652,13 @@ void MouseInteraction()
 								if (idx <= 200) widthBuffer = 1 + int(double(idx - 10) / 190.0 * 49.0);
 								else if (idx <= 260) widthBuffer = 51 + int(double(idx - 200) / 60.0 * 49.0);
 								else widthBuffer = 101 + int(double(idx - 260) / 60.0 * 399.0);
-								SetPenWidth((float)widthBuffer);
+								SetPenWidth((float)widthBuffer, false);
 
-								if (!KeyBoradDown[VK_LBUTTON]) break;
+								if (!KeyBoradDown[VK_LBUTTON])
+								{
+									SetPenWidth((float)widthBuffer);
+									break;
+								}
 							}
 							UIControlTarget[L"RoundRect/PaintThicknessSchedule3/width"].v = UIControlTarget[L"RoundRect/PaintThicknessSchedule3/height"].v = 20;
 
@@ -5677,7 +5681,7 @@ void MouseInteraction()
 										{
 											if (!m.lbutton)
 											{
-												SetPenWidth(3 * drawingScale);
+												SetPenWidth(round(3.0f * drawingScale));
 												UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v = 1;
 
 												break;
@@ -5705,7 +5709,7 @@ void MouseInteraction()
 										{
 											if (!m.lbutton)
 											{
-												SetPenWidth(10 * drawingScale);
+												SetPenWidth(round(10.0f * drawingScale));
 												UIControlTarget[L"RoundRect/PaintThicknessSchedule5a/ellipse"].v = 2;
 
 												break;
@@ -5733,7 +5737,7 @@ void MouseInteraction()
 										{
 											if (!m.lbutton)
 											{
-												SetPenWidth(20 * drawingScale);
+												SetPenWidth(round(20.0f * drawingScale));
 												UIControlTarget[L"RoundRect/PaintThicknessSchedule6a/ellipse"].v = 10;
 
 												break;
@@ -5764,7 +5768,7 @@ void MouseInteraction()
 										{
 											if (!m.lbutton)
 											{
-												SetPenWidth(35 * drawingScale);
+												SetPenWidth(round(35.0f * drawingScale));
 												UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v = 20;
 
 												break;
@@ -5792,7 +5796,7 @@ void MouseInteraction()
 										{
 											if (!m.lbutton)
 											{
-												SetPenWidth(50 * drawingScale);
+												SetPenWidth(round(50.0f * drawingScale));
 												UIControlTarget[L"RoundRect/PaintThicknessSchedule6a/ellipse"].v = 20;
 
 												break;
@@ -5854,13 +5858,17 @@ void MouseInteraction()
 
 									lock.unlock();
 
-									SetPenColor(RGBA(red, green, blue, (floatingInfo.brushColor >> 24) & 0xFF));
+									SetPenColor(RGBA(red, green, blue, (floatingInfo.brushColor >> 24) & 0xFF), false);
 
 									BrushColorChoose.x = result.x, BrushColorChoose.y = result.y;
 									UIControlTarget[L"RoundRect/BrushColorChooseMark/x"].v = UIControl[L"RoundRect/BrushColorChooseMark/x"].v = result.x + UIControl[L"RoundRect/BrushColorChooseWheel/x"].v - 7;
 									UIControlTarget[L"RoundRect/BrushColorChooseMark/y"].v = UIControl[L"RoundRect/BrushColorChooseMark/y"].v = result.y + UIControl[L"RoundRect/BrushColorChooseWheel/y"].v - 7;
 
-									if (!KeyBoradDown[VK_LBUTTON]) break;
+									if (!KeyBoradDown[VK_LBUTTON])
+									{
+										SetPenColor(RGBA(red, green, blue, (floatingInfo.brushColor >> 24) & 0xFF));
+										break;
+									}
 								}
 								BrushColorChoose.last_x = BrushColorChoose.x, BrushColorChoose.last_y = BrushColorChoose.y;
 

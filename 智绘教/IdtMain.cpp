@@ -45,8 +45,8 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250508b";				// 程序发布日期
-wstring editionChannel = L"Insider";			// 程序发布通道
+wstring editionDate = L"20250606a";				// 程序发布日期
+wstring editionChannel = L"LTS";				// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -873,6 +873,15 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				setlist.performanceSetting.drawpadFps = 72;
 				setlist.performanceSetting.superDraw = false;
 			}
+			// 预设
+			{
+				setlist.presetSetting.memoryWidth = true;
+				setlist.presetSetting.memoryColor = false;
+
+				setlist.presetSetting.autoDefaultWidth = true;
+				setlist.presetSetting.defaultBrush1Width = 3.0f;
+				setlist.presetSetting.defaultHighlighter1Width = 35.0f;
+			}
 
 			// 插件
 			{
@@ -1227,7 +1236,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		int WaitingCount = 0;
 		for (; WaitingCount < 20; WaitingCount++)
 		{
-			if (!threadStatus[L"floating_main"] && !threadStatus[L"drawpad_main"] && !threadStatus[L"SettingMain"] && !threadStatus[L"FreezeFrameWindow"] && !threadStatus[L"NetUpdate"]) break;
+			if (!threadStatus[L"floating_main"] && !threadStatus[L"drawpad_main"] && !threadStatus[L"SettingMain"] && !threadStatus[L"FreezeFrameWindow"] && !threadStatus[L"NetUpdate"] && !threadStatus[L"PPTLinkageMain"]) break;
 			this_thread::sleep_for(chrono::milliseconds(500));
 		}
 		if (WaitingCount >= 20) IDTLogger->warn("[主线程][IdtMain] 结束函数线程超时并强制结束线程");

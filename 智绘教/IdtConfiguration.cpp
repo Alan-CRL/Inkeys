@@ -1,6 +1,7 @@
 ﻿#include "IdtConfiguration.h"
 
 #include "IdtText.h"
+#include "IdtState.h"
 
 // 占用文件
 bool OccupyFileForRead(HANDLE* hFile, const wstring& filePath)
@@ -186,6 +187,20 @@ bool ReadSetting()
 			if (setlistVal["Performance"].isMember("SuperDrawBeta") && setlistVal["Performance"]["SuperDrawBeta"].isBool())
 				setlist.performanceSetting.superDraw = setlistVal["Performance"]["SuperDrawBeta"].asBool();
 		}
+		if (setlistVal.isMember("Preset") && setlistVal["Preset"].isObject())
+		{
+			if (setlistVal["Preset"].isMember("MemoryWidth") && setlistVal["Preset"]["MemoryWidth"].isBool())
+				setlist.presetSetting.memoryWidth = setlistVal["Preset"]["MemoryWidth"].asBool();
+			if (setlistVal["Preset"].isMember("MemoryColor") && setlistVal["Preset"]["MemoryColor"].isBool())
+				setlist.presetSetting.memoryColor = setlistVal["Preset"]["MemoryColor"].asBool();
+
+			if (setlistVal["Preset"].isMember("AutoDefaultWidth") && setlistVal["Preset"]["AutoDefaultWidth"].isBool())
+				setlist.presetSetting.autoDefaultWidth = setlistVal["Preset"]["AutoDefaultWidth"].asBool();
+			if (setlistVal["Preset"].isMember("DefaultBrush1Width") && setlistVal["Preset"]["DefaultBrush1Width"].isDouble())
+				setlist.presetSetting.defaultBrush1Width = static_cast<float>(setlistVal["Preset"]["DefaultBrush1Width"].asDouble());
+			if (setlistVal["Preset"].isMember("DefaultHighlighter1Width") && setlistVal["Preset"]["DefaultHighlighter1Width"].isDouble())
+				setlist.presetSetting.defaultHighlighter1Width = static_cast<float>(setlistVal["Preset"]["DefaultHighlighter1Width"].asDouble());
+		}
 
 		if (setlistVal.isMember("UpdateSetting") && setlistVal["UpdateSetting"].isObject())
 		{
@@ -364,12 +379,6 @@ bool ReadSettingMini()
 }
 bool WriteSetting()
 {
-	if (_waccess((globalPath + L"opt").c_str(), 0) == -1)
-	{
-		error_code ec;
-		filesystem::create_directory(globalPath + L"opt", ec);
-	}
-
 	if (setlist.configurationSetting.enable) setlistVal.clear();
 	{
 		{
@@ -413,6 +422,14 @@ bool WriteSetting()
 			setlistVal["Performance"]["PreparationQuantity"] = Json::Value(setlist.performanceSetting.preparationQuantity);
 
 			setlistVal["Performance"]["SuperDrawBeta"] = Json::Value(setlist.performanceSetting.superDraw);
+		}
+		{
+			setlistVal["Preset"]["MemoryWidth"] = Json::Value(setlist.presetSetting.memoryWidth);
+			setlistVal["Preset"]["MemoryColor"] = Json::Value(setlist.presetSetting.memoryColor);
+
+			setlistVal["Preset"]["AutoDefaultWidth"] = Json::Value(setlist.presetSetting.autoDefaultWidth);
+			setlistVal["Preset"]["DefaultBrush1Width"] = Json::Value(static_cast<double>(setlist.presetSetting.defaultBrush1Width));
+			setlistVal["Preset"]["DefaultHighlighter1Width"] = Json::Value(static_cast<double>(setlist.presetSetting.defaultHighlighter1Width));
 		}
 
 		{
@@ -574,7 +591,6 @@ bool PptComReadSetting()
 		if (updateVal.isMember("ShowBottomMiddle") && updateVal["ShowBottomMiddle"].isBool())
 			pptComSetlist.showBottomMiddle = updateVal["ShowBottomMiddle"].asBool();
 
-		if (pptComSetlist.memoryWidgetPosition)
 		{
 			if (updateVal.isMember("BottomBothWidth") && updateVal["BottomBothWidth"].isDouble())
 				pptComSetlist.bottomBothWidth = (float)updateVal["BottomBothWidth"].asDouble();
@@ -604,14 +620,66 @@ bool PptComReadSetting()
 
 	return true;
 }
-bool PptComWriteSetting()
+bool PptComReadSettingPositionOnly()
 {
-	if (_waccess((globalPath + L"opt").c_str(), 0) == -1)
+	HANDLE fileHandle = NULL;
+	if (!OccupyFileForRead(&fileHandle, globalPath + L"opt\\pptcom_configuration.json"))
 	{
-		error_code ec;
-		filesystem::create_directory(globalPath + L"opt", ec);
+		UnOccupyFile(&fileHandle);
+		return false;
 	}
 
+	LARGE_INTEGER fileSize;
+	if (!GetFileSizeEx(fileHandle, &fileSize))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
+	string jsonContent = string(dwSize, '\0');
+
+	DWORD bytesRead = 0;
+	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+	if (!ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	if (jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
+	UnOccupyFile(&fileHandle);
+
+	istringstream jsonContentStream(jsonContent);
+	Json::CharReaderBuilder readerBuilder;
+	Json::Value updateVal;
+	string jsonErr;
+
+	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+	{
+		if (updateVal.isMember("BottomBothWidth") && updateVal["BottomBothWidth"].isDouble())
+			pptComSetlist.bottomBothWidth = (float)updateVal["BottomBothWidth"].asDouble();
+		if (updateVal.isMember("BottomBothHeight") && updateVal["BottomBothHeight"].isDouble())
+			pptComSetlist.bottomBothHeight = (float)updateVal["BottomBothHeight"].asDouble();
+		if (updateVal.isMember("MiddleBothWidth") && updateVal["MiddleBothWidth"].isDouble())
+			pptComSetlist.middleBothWidth = (float)updateVal["MiddleBothWidth"].asDouble();
+		if (updateVal.isMember("MiddleBothHeight") && updateVal["MiddleBothHeight"].isDouble())
+			pptComSetlist.middleBothHeight = (float)updateVal["MiddleBothHeight"].asDouble();
+		if (updateVal.isMember("BottomMiddleWidth") && updateVal["BottomMiddleWidth"].isDouble())
+			pptComSetlist.bottomMiddleWidth = (float)updateVal["BottomMiddleWidth"].asDouble();
+		if (updateVal.isMember("BottomMiddleHeight") && updateVal["BottomMiddleHeight"].isDouble())
+			pptComSetlist.bottomMiddleHeight = (float)updateVal["BottomMiddleHeight"].asDouble();
+	}
+	else return false;
+
+	return true;
+}
+bool PptComWriteSetting()
+{
 	Json::Value updateVal;
 	{
 		updateVal["FixedHandWriting"] = Json::Value(pptComSetlist.fixedHandWriting);
@@ -814,6 +882,154 @@ bool DdbWriteInteraction(bool change, bool close)
 
 	HANDLE fileHandle = NULL;
 	if (!OccupyFileForWrite(&fileHandle, dataPath + L"\\DesktopDrawpadBlocker\\interaction_configuration.json"))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+	if (!SetEndOfFile(fileHandle))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	Json::StreamWriterBuilder writerBuilder;
+	string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
+
+	DWORD bytesWritten = 0;
+	if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size())
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	UnOccupyFile(&fileHandle);
+	return true;
+}
+
+bool GetMemory()
+{
+	HANDLE fileHandle = NULL;
+	if (!OccupyFileForRead(&fileHandle, globalPath + L"Inkeys\\Memory\\memory.json"))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	LARGE_INTEGER fileSize;
+	if (!GetFileSizeEx(fileHandle, &fileSize))
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
+	string jsonContent = string(dwSize, '\0');
+
+	DWORD bytesRead = 0;
+	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+	if (!ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize)
+	{
+		UnOccupyFile(&fileHandle);
+		return false;
+	}
+
+	if (jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
+	UnOccupyFile(&fileHandle);
+
+	istringstream jsonContentStream(jsonContent);
+	Json::CharReaderBuilder readerBuilder;
+	Json::Value updateVal;
+	string jsonErr;
+
+	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+	{
+		// Draw
+		if (updateVal.isMember("Draw") && updateVal["Draw"].isObject())
+		{
+			// Brush1
+			if (updateVal["Draw"].isMember("Brush1") && updateVal["Draw"]["Brush1"].isObject())
+			{
+				if (updateVal["Draw"]["Brush1"].isMember("Width") && updateVal["Draw"]["Brush1"]["Width"].isInt())
+				{
+					if (setlist.presetSetting.memoryWidth)
+						stateMode.Pen.Brush1.width = updateVal["Draw"]["Brush1"]["Width"].asInt();
+				}
+
+				if (updateVal["Draw"]["Brush1"].isMember("Color") && updateVal["Draw"]["Brush1"]["Color"].isObject())
+				{
+					if (updateVal["Draw"]["Brush1"]["Color"].isMember("R") && updateVal["Draw"]["Brush1"]["Color"]["R"].isInt() && \
+						updateVal["Draw"]["Brush1"]["Color"].isMember("G") && updateVal["Draw"]["Brush1"]["Color"]["G"].isInt() && \
+						updateVal["Draw"]["Brush1"]["Color"].isMember("B") && updateVal["Draw"]["Brush1"]["Color"]["B"].isInt() && \
+						updateVal["Draw"]["Brush1"]["Color"].isMember("A") && updateVal["Draw"]["Brush1"]["Color"]["A"].isInt())
+					{
+						if (setlist.presetSetting.memoryColor)
+							stateMode.Pen.Brush1.color = RGBA(updateVal["Draw"]["Brush1"]["Color"]["R"].asInt(), updateVal["Draw"]["Brush1"]["Color"]["G"].asInt(), updateVal["Draw"]["Brush1"]["Color"]["B"].asInt(), updateVal["Draw"]["Brush1"]["Color"]["A"].asInt());
+					}
+				}
+			}
+			// Highlighter1
+			if (updateVal["Draw"].isMember("Highlighter1") && updateVal["Draw"]["Highlighter1"].isObject())
+			{
+				if (updateVal["Draw"]["Highlighter1"].isMember("Width") && updateVal["Draw"]["Highlighter1"]["Width"].isInt())
+				{
+					if (setlist.presetSetting.memoryWidth)
+						stateMode.Pen.Highlighter1.width = updateVal["Draw"]["Highlighter1"]["Width"].asInt();
+				}
+
+				if (updateVal["Draw"]["Highlighter1"].isMember("Color") && updateVal["Draw"]["Highlighter1"]["Color"].isObject())
+				{
+					if (updateVal["Draw"]["Highlighter1"]["Color"].isMember("R") && updateVal["Draw"]["Highlighter1"]["Color"]["R"].isInt() && \
+						updateVal["Draw"]["Highlighter1"]["Color"].isMember("G") && updateVal["Draw"]["Highlighter1"]["Color"]["G"].isInt() && \
+						updateVal["Draw"]["Highlighter1"]["Color"].isMember("B") && updateVal["Draw"]["Highlighter1"]["Color"]["B"].isInt() && \
+						updateVal["Draw"]["Highlighter1"]["Color"].isMember("A") && updateVal["Draw"]["Highlighter1"]["Color"]["A"].isInt())
+					{
+						if (setlist.presetSetting.memoryColor)
+							stateMode.Pen.Highlighter1.color = RGBA(updateVal["Draw"]["Highlighter1"]["Color"]["R"].asInt(), updateVal["Draw"]["Highlighter1"]["Color"]["G"].asInt(), updateVal["Draw"]["Highlighter1"]["Color"]["B"].asInt(), updateVal["Draw"]["Highlighter1"]["Color"]["A"].asInt());
+					}
+				}
+			}
+		}
+	}
+	else return false;
+
+	return true;
+}
+bool SetMemory()
+{
+	Json::Value updateVal;
+	{
+		// Draw
+		{
+			// Brush1
+			{
+				updateVal["Draw"]["Brush1"]["Width"] = Json::Value(stateMode.Pen.Brush1.width);
+				updateVal["Draw"]["Brush1"]["Color"]["R"] = Json::Value(static_cast<int>(stateMode.Pen.Brush1.color & 0xFF));
+				updateVal["Draw"]["Brush1"]["Color"]["G"] = Json::Value(static_cast<int>((stateMode.Pen.Brush1.color >> 8) & 0xFF));
+				updateVal["Draw"]["Brush1"]["Color"]["B"] = Json::Value(static_cast<int>((stateMode.Pen.Brush1.color >> 16) & 0xFF));
+				updateVal["Draw"]["Brush1"]["Color"]["A"] = Json::Value(static_cast<int>((stateMode.Pen.Brush1.color >> 24) & 0xFF));
+			}
+			// Highlighter1
+			{
+				updateVal["Draw"]["Highlighter1"]["Width"] = Json::Value(stateMode.Pen.Highlighter1.width);
+				updateVal["Draw"]["Highlighter1"]["Color"]["R"] = Json::Value(static_cast<int>(stateMode.Pen.Highlighter1.color & 0xFF));
+				updateVal["Draw"]["Highlighter1"]["Color"]["G"] = Json::Value(static_cast<int>((stateMode.Pen.Highlighter1.color >> 8) & 0xFF));
+				updateVal["Draw"]["Highlighter1"]["Color"]["B"] = Json::Value(static_cast<int>((stateMode.Pen.Highlighter1.color >> 16) & 0xFF));
+				updateVal["Draw"]["Highlighter1"]["Color"]["A"] = Json::Value(static_cast<int>((stateMode.Pen.Highlighter1.color >> 24) & 0xFF));
+			}
+		}
+	}
+
+	HANDLE fileHandle = NULL;
+	if (!OccupyFileForWrite(&fileHandle, globalPath + L"Inkeys\\Memory\\memory.json"))
 	{
 		UnOccupyFile(&fileHandle);
 		return false;

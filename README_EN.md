@@ -51,7 +51,7 @@ Author email: `alan-crl@foxmail.com`
 Author QQ: `2685549821`  
 
 ## License
-本项目基于 [GNU General Public License v3.0](LICENSE) 获得许可。
+This project is licensed under the [GNU General Public License v3.0](LICENSE).
 
 ## Code signing policy
 
@@ -87,6 +87,7 @@ Author QQ: `2685549821`
 [Hashlib++](https://github.com/aksalj/hashlibpp)  
 [HiEasyX](https://github.com/zouhuidong/HiEasyX)  
 [JsonCpp](https://github.com/open-source-parsers/jsoncpp)  
+[libcuckoo](https://github.com/efficient/libcuckoo)  
 [Stb](https://github.com/nothings/stb)  
 [WinToast](https://github.com/mohabouje/WinToast)  
 [Zip Utils](https://www.codeproject.com/Articles/7530/Zip-Utils-Clean-Elegant-Simple-Cplusplus-Win)  
