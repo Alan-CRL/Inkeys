@@ -4498,7 +4498,7 @@ void SettingMain()
 							ImGui::EndChild();
 						}
 						{
-							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
@@ -4512,8 +4512,8 @@ void SettingMain()
 								ImGui::TextUnformatted("预设画笔粗细");
 							}
 							{
-								ImGui::SetCursorPos({ 220.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
-								ImGui::PushItemWidth(300.0f * settingGlobalScale);
+								ImGui::SetCursorPos({ 225.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
+								ImGui::PushItemWidth(500.0f * settingGlobalScale);
 
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(255, 255, 255, 179));
@@ -4523,8 +4523,8 @@ void SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, IM_COL32(0, 95, 184, 230));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 6.0f * settingGlobalScale));
-								ImGui::SliderFloat("##预设画笔粗细", &BottomSideBothWidgetScale, 0.5f, 3.0f, "");
-								BottomSideBothWidgetScale = round(BottomSideBothWidgetScale * 100) / 100;
+								ImGui::SliderFloat("##预设画笔粗细", &PresetSetting.DefaultBrush1Width, 1.0f, 30.0f, "");
+								PresetSetting.DefaultBrush1Width = round(PresetSetting.DefaultBrush1Width);
 
 								ImGui::PopItemWidth();
 
@@ -4543,13 +4543,25 @@ void SettingMain()
 
 									ImGui::BeginTooltip();
 
-									ImGui::TextUnformatted(format("{} px", BottomSideBothWidgetScale).c_str());
+									ImGui::TextUnformatted(format("{} px", static_cast<int>(PresetSetting.DefaultBrush1Width)).c_str());
 
 									ImGui::EndTooltip();
 								}
-								if (!isItemActive && BottomSideBothWidgetScale != BottomSideBothWidgetScaleRecord)
+								if (!isItemActive && setlist.presetSetting.defaultBrush1Width != PresetSetting.DefaultBrush1Width)
 								{
+									setlist.presetSetting.defaultBrush1Width = PresetSetting.DefaultBrush1Width;
+									WriteSetting();
 								}
+							}
+							{
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+
+								string temp = to_string(static_cast<int>(PresetSetting.DefaultBrush1Width)) + "px";
+								ImVec2 tempVec = ImGui::CalcTextSize(temp.c_str());
+
+								ImGui::SameLine(); ImGui::SetCursorPos({ ImGui::GetCursorPosX() - 15.0f * settingGlobalScale - tempVec.x, cursosPosY + 10.0f * settingGlobalScale + (30.0f * settingGlobalScale - tempVec.y) / 2.0f });
+								ImGui::TextUnformatted(temp.c_str());
 							}
 
 							// Separator
@@ -4568,8 +4580,8 @@ void SettingMain()
 								ImGui::TextUnformatted("预设荧光笔粗细");
 							}
 							{
-								ImGui::SetCursorPos({ 220.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
-								ImGui::PushItemWidth(300.0f * settingGlobalScale);
+								ImGui::SetCursorPos({ 225.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
+								ImGui::PushItemWidth(500.0f * settingGlobalScale);
 
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(255, 255, 255, 179));
@@ -4579,8 +4591,8 @@ void SettingMain()
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, IM_COL32(0, 95, 184, 230));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 6.0f * settingGlobalScale));
-								ImGui::SliderFloat("##预设荧光笔粗细", &MiddleSideBothWidgetScale, 0.5f, 3.0f, "");
-								MiddleSideBothWidgetScale = round(MiddleSideBothWidgetScale * 100) / 100;
+								ImGui::SliderFloat("##预设荧光笔粗细", &PresetSetting.DefaultHighlighter1Width, 10.0f, 100.0f, "");
+								PresetSetting.DefaultHighlighter1Width = round(PresetSetting.DefaultHighlighter1Width);
 
 								ImGui::PopItemWidth();
 
@@ -4599,12 +4611,14 @@ void SettingMain()
 
 									ImGui::BeginTooltip();
 
-									ImGui::TextUnformatted(format("{} px", BottomSideBothWidgetScale).c_str());
+									ImGui::TextUnformatted(format("{} px", static_cast<int>(PresetSetting.DefaultHighlighter1Width)).c_str());
 
 									ImGui::EndTooltip();
 								}
-								if (!isItemActive && BottomSideBothWidgetScale != BottomSideBothWidgetScaleRecord)
+								if (!isItemActive && setlist.presetSetting.defaultHighlighter1Width != PresetSetting.DefaultHighlighter1Width)
 								{
+									setlist.presetSetting.defaultHighlighter1Width = PresetSetting.DefaultHighlighter1Width;
+									WriteSetting();
 								}
 							}
 
