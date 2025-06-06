@@ -45,7 +45,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250530a";				// 程序发布日期
+wstring editionDate = L"20250606b";				// 程序发布日期
 wstring editionChannel = L"Insider";			// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -872,6 +872,15 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				setlist.performanceSetting.preparationQuantity = 2;
 				setlist.performanceSetting.drawpadFps = 72;
 				setlist.performanceSetting.superDraw = false;
+			}
+			// 预设
+			{
+				setlist.presetSetting.memoryWidth = true;
+				setlist.presetSetting.memoryColor = false;
+
+				setlist.presetSetting.autoDefaultWidth = true;
+				setlist.presetSetting.defaultBrush1Width = 3.0f;
+				setlist.presetSetting.defaultHighlighter1Width = 35.0f;
 			}
 
 			// 插件

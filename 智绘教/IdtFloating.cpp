@@ -5681,7 +5681,7 @@ void MouseInteraction()
 										{
 											if (!m.lbutton)
 											{
-												SetPenWidth(3 * drawingScale);
+												SetPenWidth(round(3.0f * drawingScale));
 												UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v = 1;
 
 												break;
@@ -5709,7 +5709,7 @@ void MouseInteraction()
 										{
 											if (!m.lbutton)
 											{
-												SetPenWidth(10 * drawingScale);
+												SetPenWidth(round(10.0f * drawingScale));
 												UIControlTarget[L"RoundRect/PaintThicknessSchedule5a/ellipse"].v = 2;
 
 												break;
@@ -5737,7 +5737,7 @@ void MouseInteraction()
 										{
 											if (!m.lbutton)
 											{
-												SetPenWidth(20 * drawingScale);
+												SetPenWidth(round(20.0f * drawingScale));
 												UIControlTarget[L"RoundRect/PaintThicknessSchedule6a/ellipse"].v = 10;
 
 												break;
@@ -5768,7 +5768,7 @@ void MouseInteraction()
 										{
 											if (!m.lbutton)
 											{
-												SetPenWidth(35 * drawingScale);
+												SetPenWidth(round(35.0f * drawingScale));
 												UIControlTarget[L"RoundRect/PaintThicknessSchedule4a/ellipse"].v = 20;
 
 												break;
@@ -5796,7 +5796,7 @@ void MouseInteraction()
 										{
 											if (!m.lbutton)
 											{
-												SetPenWidth(50 * drawingScale);
+												SetPenWidth(round(50.0f * drawingScale));
 												UIControlTarget[L"RoundRect/PaintThicknessSchedule6a/ellipse"].v = 20;
 
 												break;
