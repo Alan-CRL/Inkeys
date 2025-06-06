@@ -2928,6 +2928,16 @@ void SettingMain()
 									WriteSetting();
 								}
 							}
+							{
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+
+								string temp = format("{:.2f} 倍缩放", SettingGlobalScale);
+								ImVec2 tempVec = ImGui::CalcTextSize(temp.c_str());
+
+								ImGui::SameLine(); ImGui::SetCursorPos({ ImGui::GetCursorPosX() - 15.0f * settingGlobalScale - tempVec.x, cursosPosY + 15.0f * settingGlobalScale + (30.0f * settingGlobalScale - tempVec.y) / 2.0f });
+								ImGui::TextUnformatted(temp.c_str());
+							}
 
 							{
 								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
@@ -4197,6 +4207,16 @@ void SettingMain()
 									ResetPrepareCanvas();
 								}
 							}
+							{
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+
+								string temp = to_string(static_cast<int>(PreparationQuantity)) + " 指";
+								ImVec2 tempVec = ImGui::CalcTextSize(temp.c_str());
+
+								ImGui::SameLine(); ImGui::SetCursorPos({ ImGui::GetCursorPosX() - 15.0f * settingGlobalScale - tempVec.x, cursosPosY + 15.0f * settingGlobalScale + (30.0f * settingGlobalScale - tempVec.y) / 2.0f });
+								ImGui::TextUnformatted(temp.c_str());
+							}
 
 							{
 								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
@@ -4407,7 +4427,7 @@ void SettingMain()
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##记忆绘制粗细", &PresetSetting.MemoryColor, config);
+								ImGui::Toggle("##记忆绘制颜色", &PresetSetting.MemoryColor, config);
 
 								if (setlist.presetSetting.memoryColor != PresetSetting.MemoryColor)
 								{
@@ -4436,7 +4456,7 @@ void SettingMain()
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(255, 255, 255, 0));
-						ImGui::BeginChild("预设#2", { 750.0f * settingGlobalScale,245.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("预设#2", { 750.0f * settingGlobalScale,(PresetSetting.AutoDefaultWidth ? 95.0f : 220.0f) * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -4497,6 +4517,7 @@ void SettingMain()
 							}
 							ImGui::EndChild();
 						}
+						if (!PresetSetting.AutoDefaultWidth)
 						{
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -4620,6 +4641,16 @@ void SettingMain()
 									setlist.presetSetting.defaultHighlighter1Width = PresetSetting.DefaultHighlighter1Width;
 									WriteSetting();
 								}
+							}
+							{
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+
+								string temp = to_string(static_cast<int>(PresetSetting.DefaultHighlighter1Width)) + "px";
+								ImVec2 tempVec = ImGui::CalcTextSize(temp.c_str());
+
+								ImGui::SameLine(); ImGui::SetCursorPos({ ImGui::GetCursorPosX() - 15.0f * settingGlobalScale - tempVec.x, cursosPosY + 10.0f * settingGlobalScale + (30.0f * settingGlobalScale - tempVec.y) / 2.0f });
+								ImGui::TextUnformatted(temp.c_str());
 							}
 
 							{
@@ -5577,6 +5608,16 @@ void SettingMain()
 										}
 									}
 									{
+										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+
+										string temp = format("{:.2f} 倍缩放", BottomSideBothWidgetScale);
+										ImVec2 tempVec = ImGui::CalcTextSize(temp.c_str());
+
+										ImGui::SameLine(); ImGui::SetCursorPos({ ImGui::GetCursorPosX() - 15.0f * settingGlobalScale - tempVec.x, cursosPosY + 10.0f * settingGlobalScale + (30.0f * settingGlobalScale - tempVec.y) / 2.0f });
+										ImGui::TextUnformatted(temp.c_str());
+									}
+									{
 										ImGui::SetCursorPos({ 525.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 179));
@@ -5700,6 +5741,16 @@ void SettingMain()
 													pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = MiddleSideBothWidgetScale;
 											}
 										}
+									}
+									{
+										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+
+										string temp = format("{:.2f} 倍缩放", MiddleSideBothWidgetScale);
+										ImVec2 tempVec = ImGui::CalcTextSize(temp.c_str());
+
+										ImGui::SameLine(); ImGui::SetCursorPos({ ImGui::GetCursorPosX() - 15.0f * settingGlobalScale - tempVec.x, cursosPosY + 10.0f * settingGlobalScale + (30.0f * settingGlobalScale - tempVec.y) / 2.0f });
+										ImGui::TextUnformatted(temp.c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 525.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
@@ -5831,6 +5882,16 @@ void SettingMain()
 													pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale = BottomSideMiddleWidgetScale;
 											}
 										}
+									}
+									{
+										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+
+										string temp = format("{:.2f} 倍缩放", BottomSideMiddleWidgetScale);
+										ImVec2 tempVec = ImGui::CalcTextSize(temp.c_str());
+
+										ImGui::SameLine(); ImGui::SetCursorPos({ ImGui::GetCursorPosX() - 15.0f * settingGlobalScale - tempVec.x, cursosPosY + 10.0f * settingGlobalScale + (30.0f * settingGlobalScale - tempVec.y) / 2.0f });
+										ImGui::TextUnformatted(temp.c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 525.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
