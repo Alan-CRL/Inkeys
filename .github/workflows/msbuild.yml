@@ -410,7 +410,7 @@ jobs:
           $size3 = (Get-Item $uploadFile3).Length
 
           $content = @"
-            "Insider": {
+            "${{ steps.softwareChannel.outputs.VALUE }}": {
             "edition_date": "${{ steps.softwareDate.outputs.VALUE }}",
             "edition_code": "",
             "hash": {
