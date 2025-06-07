@@ -5,7 +5,7 @@ name: Inkeys Build
 on:
   push:
     branches:
-      - dev # test
+      - dev # Test
       - main
       - insider
 permissions:
@@ -294,6 +294,7 @@ jobs:
 
       - name: 提交给 SignPath 签名
         id: signpath
+        timeout-minutes: 30
         uses: signpath/github-action-submit-signing-request@v1.1
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
@@ -607,7 +608,8 @@ jobs:
 
       - name: Upload to WebDAV with rclone
         id: upload_webdav
-        timeout-minutes: 15
+        timeout-minutes: 60
+        continue-on-error: true
         shell: pwsh
         run: |
           if ("${{ secrets.WEBDAV_API_TOKEN }}" -ne "")
