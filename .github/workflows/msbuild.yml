@@ -5,7 +5,6 @@ name: Inkeys Build
 on:
   push:
     branches:
-      - dev # Test
       - main
       - insider
 permissions:
