@@ -1,0 +1,42 @@
+﻿  i18n.cpp
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\i18n.cpp(28,27): warning C4018: “<”: 有符号/无符号不匹配
+  json_reader.cpp
+  json_value.cpp
+  json_writer.cpp
+  TimeoutMain.cpp
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(77,16): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(83,17): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(87,17): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(91,17): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(95,17): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(102,17): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(106,17): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(110,17): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(114,17): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(121,17): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(125,17): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(129,17): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(133,17): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(138,16): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(142,16): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(146,16): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(150,16): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(154,16): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(158,16): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(404,27): warning C4244: “=”: 从“double”转换到“float”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(435,12): warning C4244: “初始化”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(435,35): warning C4244: “初始化”: 从“float”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(452,12): warning C4244: “return”: 从“WPARAM”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(458,101): warning C4244: “return”: 从“_Rep”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(458,101): warning C4244:         with
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(458,101): warning C4244:         [
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(458,101): warning C4244:             _Rep=__int64
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\TimeoutMain.cpp(458,101): warning C4244:         ]
+  Win32FontManager.cpp
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\Win32FontManager.cpp(9,45): warning C4244: “参数”: 从“double”转换到“int”，可能丢失数据
+D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\InkeysTimeout\Win32FontManager.cpp(9,24): warning C4244: “参数”: 从“double”转换到“int”，可能丢失数据
+  正在生成代码
+  Previous IPDB not found, fall back to full compilation.
+  All 1215 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  已完成代码的生成
+  InkeysTimeout.vcxproj -> D:\BaiduSyncdisk\工程项目\智绘教\智绘教\Timeout\x64\Release\InkeysTimeout.exe

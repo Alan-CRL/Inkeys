@@ -60,8 +60,11 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 		}
 		else if (IsHotkeyDown && !(KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]) && !(KeyBoradDown[VK_LWIN] || KeyBoradDown[VK_RWIN]) && !(KeyBoradDown[VK_MENU] || KeyBoradDown[VK_LMENU] || KeyBoradDown[VK_RMENU])) IsHotkeyDown = false;
 
+		// 全局状态变量
+		bool checkEndShowIsChecking = CheckEndShow.isChecking;
+
 		// 按键反馈
-		if (ppt_show != NULL && !CheckEndShow.isChecking)
+		if (ppt_show != NULL && !checkEndShowIsChecking)
 		{
 			// 检查按下的键
 			switch (pKeyInfo->vkCode)
@@ -118,7 +121,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			hiex::g_vecWindows[index].vecMessage.push_back(msgKey);
 			lg_vecWindows_vecMessage_sm.unlock();
 
-			if (ppt_show != NULL && !CheckEndShow.isChecking)
+			if (ppt_show != NULL && !checkEndShowIsChecking)
 			{
 				switch (pKeyInfo->vkCode)
 				{
