@@ -11,7 +11,7 @@ void D2DStarup()
 	// 创建 D2D 工厂
 	D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, &D2DFactory);
 
-	// 创建 DC Render 并指定软件加速（因为比硬件加速快，不知道为啥）
+	// 创建 DC Render 并指定软件加速（因为比硬件加速快，不知道为啥，现在知道了qaq）
 	D2DProperty = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE::D2D1_RENDER_TARGET_TYPE_SOFTWARE,
 		D2D1::PixelFormat(
 			DXGI_FORMAT_B8G8R8A8_UNORM,

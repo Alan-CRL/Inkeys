@@ -291,7 +291,7 @@ void NextPptSlides(int check)
 {
 	try
 	{
-		cout << check << endl;
+		//cout << check << endl;
 		PptCOMPto->NextSlideShow(check);
 	}
 	catch (_com_error)
@@ -786,28 +786,6 @@ void PptBottomMiddleSeekBar(int firstX, int firstY)
 
 	PptUiAllReplaceSignal = -1;
 	return;
-}
-
-LRESULT CALLBACK PPTWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-	switch (msg)
-	{
-	case WM_TABLET_QUERYSYSTEMGESTURESTATUS:
-	{
-		DWORD flags = 0;
-		flags |= (0x00000001);
-		flags |= (0x00000008);
-		flags |= (0x00000100);
-		flags |= (0x00000200);
-		flags |= (0x00010000);
-		return (LRESULT)flags;
-	}
-
-	default:
-		return HIWINDOW_DEFAULT_PROC;
-	}
-
-	return HIWINDOW_DEFAULT_PROC;
 }
 
 void PptUI()
@@ -2112,9 +2090,6 @@ void PptDraw()
 			PptWindowBackground.Resize(PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight);
 			SetWindowPos(ppt_window, NULL, PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 		}
-
-		// 禁用窗口上的触摸屏手势
-		hiex::SetWndProcFunc(ppt_window, PPTWindowMsgCallback);
 	}
 
 	// 创建 EasyX 兼容的 DC Render Target
