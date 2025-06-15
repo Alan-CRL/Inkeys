@@ -293,6 +293,7 @@ jobs:
 
       - name: 提交给 SignPath 签名
         id: signpath
+        timeout-minutes: 30
         uses: signpath/github-action-submit-signing-request@v1.1
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
@@ -409,7 +410,7 @@ jobs:
           $size3 = (Get-Item $uploadFile3).Length
 
           $content = @"
-            "Insider": {
+            "${{ steps.softwareChannel.outputs.VALUE }}": {
             "edition_date": "${{ steps.softwareDate.outputs.VALUE }}",
             "edition_code": "",
             "hash": {
@@ -606,6 +607,8 @@ jobs:
 
       - name: Upload to WebDAV with rclone
         id: upload_webdav
+        timeout-minutes: 60
+        continue-on-error: true
         shell: pwsh
         run: |
           if ("${{ secrets.WEBDAV_API_TOKEN }}" -ne "")
@@ -618,7 +621,7 @@ jobs:
             # 开始上传
             Write-Host "开始上传到 WebDAV..."
             Write-Host "进度将每 10 秒更新一次"
-            Write-Host "超时时间: 5 分钟"
+            Write-Host "超时时间: 15 分钟"
             Write-Host "目标路径: /Inkeys/PackageHistory/$Env:GITHUB_REF_NAME"
             Write-Host ""
           
@@ -629,7 +632,7 @@ jobs:
                 --progress `
                 --transfers 1 `
                 --checkers 1 `
-                --timeout 5m `
+                --timeout 30s `
                 --contimeout 30s `
                 --retries 3 `
                 --retries-sleep 5s `

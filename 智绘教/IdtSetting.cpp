@@ -4230,14 +4230,14 @@ void SettingMain()
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
-							ImGui::BeginChild("高性能绘图", { 750.0f * settingGlobalScale,120.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+							ImGui::BeginChild("极限性能绘图", { 750.0f * settingGlobalScale,120.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 							float cursosPosY = 0;
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted("高性能绘图(BETA)");
+								ImGui::TextUnformatted("极限性能绘图(BETA)");
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -4255,7 +4255,7 @@ void SettingMain()
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##高性能绘图", &SuperDraw, config);
+								ImGui::Toggle("##极限性能绘图", &SuperDraw, config);
 
 								if (setlist.performanceSetting.superDraw != SuperDraw)
 								{
@@ -4270,13 +4270,13 @@ void SettingMain()
 
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
-								ImGui::BeginChild("高性能绘图-介绍", { 710.0f * settingGlobalScale,50.0f * settingGlobalScale }, false);
+								ImGui::BeginChild("极限性能绘图-介绍", { 710.0f * settingGlobalScale,50.0f * settingGlobalScale }, false);
 
 								{
 									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-									ImGui::TextWrapped("在绘制模式下使用更多的系统资源进行绘图, 以及拥有更加精确的渲染间隔。 所有的额外性能开销都仅在绘制中产生（即非选择状态下）。 如果发现绘制延迟高、不跟手, 请关闭此选项。 对于 Windows 10 2004（不含）以下系统, 可能会在绘图时影响其他软件渲染间隔, 并带来更大的全局开销。");
+									ImGui::TextWrapped("仅适用于拥有强大 CPU 的设备（重要！否则将引起卡顿）。 在绘制模式下取消画布渲染间隔，额外性能开销都仅在绘制中产生（即非选择状态下）。 如果发现绘制延迟高、不跟手，请关闭此选项。");
 								}
 
 								{

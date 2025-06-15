@@ -45,7 +45,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250606b";				// 程序发布日期
+wstring editionDate = L"20250615a";				// 程序发布日期
 wstring editionChannel = L"Insider";			// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -141,6 +141,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		// -CrashTry 表明上一次遇到了崩溃错误
 
 		wstring commandLineArgs(lpCmdLine);
+		//wstring commandLineArgs;
 
 		bool superTopC = false;
 		if (commandLineArgs.length() >= 11 && commandLineArgs.substr(0, 11) == L"-SuperTopC ")

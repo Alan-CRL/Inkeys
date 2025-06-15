@@ -291,6 +291,7 @@ void NextPptSlides(int check)
 {
 	try
 	{
+		//cout << check << endl;
 		PptCOMPto->NextSlideShow(check);
 	}
 	catch (_com_error)

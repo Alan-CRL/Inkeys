@@ -71,7 +71,7 @@ namespace PptCOM
         private unsafe int* pptTotalPage;
         private unsafe int* pptCurrentPage;
 
-        private int polling = 0; // 结束界面轮询
+        private int polling = 0; // 结束界面轮询（0正常页 1/2末页或结束放映页）（2设定为运行一次不被检查的翻页，虽然我也不知道当时写这个是为了特判什么情况Hhh）
         private DateTime updateTime; // 更新时间点
         private bool bindingEvents;
 
@@ -98,7 +98,7 @@ namespace PptCOM
         }
         public string CheckCOM()
         {
-            string ret = "20250508a";
+            string ret = "20250612a";
 
             try
             {
@@ -124,10 +124,20 @@ namespace PptCOM
         {
             updateTime = DateTime.Now;
 
-            if (pptActWindow.View.Slide.SlideIndex >= pptActDoc.Slides.Count) polling = 1;
-            else polling = 0;
+            // 后续尝试用原子法确认（有个 50ms 的确认期限，防止长按下一页就退出了的情况）
 
-            *pptCurrentPage = pptActWindow.View.Slide.SlideIndex;
+            try
+            {
+                *pptCurrentPage = pptActWindow.View.Slide.SlideIndex;
+
+                if (pptActWindow.View.Slide.SlideIndex >= pptActDoc.Slides.Count) polling = 1;
+                else polling = 0;
+            }
+            catch
+            {
+                *pptCurrentPage = -1;
+                polling = 1;
+            }
         }
 
         private unsafe void SlideShowBegin(Microsoft.Office.Interop.PowerPoint.SlideShowWindow Wn)
@@ -135,12 +145,20 @@ namespace PptCOM
             updateTime = DateTime.Now;
             pptActWindow = Wn;
 
-            if (pptActWindow.View.Slide.SlideIndex >= pptActDoc.Slides.Count) polling = 1;
-            else polling = 0;
+            try
+            {
+                if (pptActWindow.View.Slide.SlideIndex >= pptActDoc.Slides.Count) polling = 1;
+                else polling = 0;
+            }
+            catch
+            {
+                // Begin 事件定在结束放映页的小丑情况（虽然不可能有这种情况）
+                polling = 1;
+            }
 
             // 获取页数
-            *pptCurrentPage = pptActWindow.View.Slide.SlideIndex;
             *pptTotalPage = pptActDoc.Slides.Count;
+            *pptCurrentPage = pptActWindow.View.Slide.SlideIndex;
         }
 
         private unsafe void SlideShowShowEnd(Microsoft.Office.Interop.PowerPoint.Presentation Wn)

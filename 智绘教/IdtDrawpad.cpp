@@ -60,8 +60,11 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 		}
 		else if (IsHotkeyDown && !(KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]) && !(KeyBoradDown[VK_LWIN] || KeyBoradDown[VK_RWIN]) && !(KeyBoradDown[VK_MENU] || KeyBoradDown[VK_LMENU] || KeyBoradDown[VK_RMENU])) IsHotkeyDown = false;
 
+		// 全局状态变量
+		bool checkEndShowIsChecking = CheckEndShow.isChecking;
+
 		// 按键反馈
-		if (ppt_show != NULL && !CheckEndShow.isChecking)
+		if (ppt_show != NULL && !checkEndShowIsChecking)
 		{
 			// 检查按下的键
 			switch (pKeyInfo->vkCode)
@@ -118,7 +121,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			hiex::g_vecWindows[index].vecMessage.push_back(msgKey);
 			lg_vecWindows_vecMessage_sm.unlock();
 
-			if (ppt_show != NULL && !CheckEndShow.isChecking)
+			if (ppt_show != NULL && !checkEndShowIsChecking)
 			{
 				switch (pKeyInfo->vkCode)
 				{
@@ -739,13 +742,15 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 				{
 					//chrono::high_resolution_clock::time_point reckon;
 					//reckon = chrono::high_resolution_clock::now();
+
 					if (!setlist.performanceSetting.superDraw)
 					{
-						//this_thread::sleep_for(chrono::milliseconds(1));
-						this_thread::yield();
+						this_thread::sleep_for(chrono::milliseconds(1));
 					}
+
 					//double tmp = chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count();
 					//cerr << tmp << "ms" << endl;
+
 					continue;
 				}
 			}
@@ -1137,7 +1142,9 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 			{
 				if (mode.pt.x == pointInfo.previousX && mode.pt.y == pointInfo.previousY)
 				{
-					if (!setlist.performanceSetting.superDraw) this_thread::sleep_for(chrono::milliseconds(1));
+					if (setlist.performanceSetting.superDraw) this_thread::yield();
+					else this_thread::sleep_for(chrono::milliseconds(1));
+
 					continue;
 				}
 			}
@@ -1409,7 +1416,9 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 			// 过滤未动触摸点
 			if (mode.pt.x == pointInfo.previousX && mode.pt.y == pointInfo.previousY)
 			{
-				if (!setlist.performanceSetting.superDraw) this_thread::yield();
+				if (setlist.performanceSetting.superDraw) this_thread::yield();
+				else this_thread::sleep_for(chrono::milliseconds(1));
+
 				continue;
 			}
 
@@ -1669,7 +1678,8 @@ void DrawpadDrawing()
 					if (offSignal) goto DrawpadDrawingEnd;
 				}
 
-				if (setlist.performanceSetting.superDraw) timeBeginPeriod(1);
+				// 设置全局高精度
+				timeBeginPeriod(1);
 
 				{
 					if (PptInfoStateBuffer.TotalPage != -1 && ppt_switch_count != 0 && PptImg.IsSaved[PptInfoStateBuffer.CurrentPage])
