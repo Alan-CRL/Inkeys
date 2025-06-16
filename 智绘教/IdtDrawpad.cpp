@@ -355,9 +355,16 @@ void KeyboardInteraction()
 
 						NextPptSlides(temp_currentpage);
 
-						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
+						// TEST
+						chrono::high_resolution_clock::time_point reckon = chrono::high_resolution_clock::now();
+						chrono::high_resolution_clock::time_point reckon2 = chrono::high_resolution_clock::now();
+
+						chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = chrono::high_resolution_clock::now();
 						while (1)
 						{
+							reckon2 = chrono::high_resolution_clock::now();
+
+							reckon = chrono::high_resolution_clock::now();
 							if (!KeyBoradDown[vkcode]) break;
 
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
@@ -377,7 +384,11 @@ void KeyboardInteraction()
 								NextPptSlides(temp_currentpage);
 							}
 
-							this_thread::sleep_for(chrono::milliseconds(15));
+							int tmp = 15 - chrono::duration_cast<std::chrono::milliseconds>(chrono::high_resolution_clock::now() - reckon).count();
+							if (tmp > 0) this_thread::sleep_for(chrono::milliseconds(tmp));
+
+							//double tmp2 = chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon2).count();
+							//cerr << tmp2 << "ms" << endl;
 						}
 					}
 				}

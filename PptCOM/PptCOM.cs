@@ -72,6 +72,7 @@ namespace PptCOM
         private unsafe int* pptCurrentPage;
 
         private int polling = 0; // 结束界面轮询（0正常页 1/2末页或结束放映页）（2设定为运行一次不被检查的翻页，虽然我也不知道当时写这个是为了特判什么情况Hhh）
+        private int changeCheck = 0;
         private DateTime updateTime; // 更新时间点
         private bool bindingEvents;
 
@@ -124,8 +125,6 @@ namespace PptCOM
         {
             updateTime = DateTime.Now;
 
-            // 后续尝试用原子法确认（有个 50ms 的确认期限，防止长按下一页就退出了的情况）
-
             try
             {
                 *pptCurrentPage = pptActWindow.View.Slide.SlideIndex;
@@ -138,6 +137,8 @@ namespace PptCOM
                 *pptCurrentPage = -1;
                 polling = 1;
             }
+
+            Interlocked.Exchange(ref changeCheck, 0);
         }
 
         private unsafe void SlideShowBegin(Microsoft.Office.Interop.PowerPoint.SlideShowWindow Wn)
@@ -417,6 +418,19 @@ namespace PptCOM
 
         public unsafe void NextSlideShow(int check)
         {
+            // 检测当下是否还拥有正在 SlideShowChange
+            // 10ms 最长确认期限，超过也将继续执行操作
+
+            if (Interlocked.CompareExchange(ref changeCheck, 0, 0) == 1)
+            {
+                Thread.Sleep(50);
+
+                if (Interlocked.CompareExchange(ref changeCheck, 0, 0) == 1)
+                    Console.WriteLine("50ms ---");
+
+                Interlocked.Exchange(ref changeCheck, 0);
+            }
+
             try
             {
                 int temp_SlideIndex = pptActWindow.View.Slide.SlideIndex;
@@ -425,7 +439,11 @@ namespace PptCOM
                 // 下一页
                 if (polling != 0)
                 {
-                    if (polling == 2) pptActWindow.View.Next();
+                    if (polling == 2)
+                    {
+                        Interlocked.Exchange(ref changeCheck, 1);
+                        pptActWindow.View.Next();
+                    }
                     else if (polling == 1)
                     {
                         int currentPageTemp = -1;
@@ -437,11 +455,19 @@ namespace PptCOM
                         {
                             currentPageTemp = -1;
                         }
-                        if (currentPageTemp != -1) pptActWindow.View.Next();
+                        if (currentPageTemp != -1)
+                        {
+                            Interlocked.Exchange(ref changeCheck, 1);
+                            pptActWindow.View.Next();
+                        }
                     }
                     polling = 1;
                 }
-                else pptActWindow.View.Next();
+                else
+                {
+                    Interlocked.Exchange(ref changeCheck, 1);
+                    pptActWindow.View.Next();
+                }
             }
             catch
             {
