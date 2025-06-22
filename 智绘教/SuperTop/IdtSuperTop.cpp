@@ -3,6 +3,7 @@
 #include "../IdtConfiguration.h"
 #include "../IdtOther.h"
 #include "../Launch/IdtLaunchState.h"
+#include "IdtToken.h"
 
 #include <tlhelp32.h>
 #include <stdexcept>
@@ -25,23 +26,6 @@ void throw_win32_error()
 	//exit(0);
 }
 
-class Handle {
-public:
-	HANDLE handle = INVALID_HANDLE_VALUE;  // 默认句柄为无效句柄
-
-	// 默认构造函数
-	Handle() {}
-
-	// 传入句柄的构造函数
-	Handle(HANDLE handle) :handle(handle) {}
-
-	// 析构函数，确保句柄被关闭
-	~Handle() {
-		if (handle != INVALID_HANDLE_VALUE)
-			CloseHandle(handle);
-	}
-};
-
 // 判断当前进程是否具有提升权限（管理员权限）
 bool isElevated(HANDLE tok) {
 	DWORD  ret_len;
@@ -59,11 +43,11 @@ bool hasUiAccess(HANDLE tok) {
 
 void SurperTopMain(wstring lpCmdLine)
 {
-	/*AllocConsole();
+	AllocConsole();
 	FILE* fp;
 	freopen_s(&fp, "CONOUT$", "w", stdout);
 	freopen_s(&fp, "CONOUT$", "w", stderr);
-	std::ios::sync_with_stdio();*/
+	std::ios::sync_with_stdio();
 
 	// 基础信息
 	wstring inkeysCmdLine;
@@ -87,114 +71,39 @@ void SurperTopMain(wstring lpCmdLine)
 		//if (inkeysPid == 0) useAdmin = false;
 	}
 
-	//cerr << "step1" << endl;
-
 	// 获取 智绘教 的令牌
-	Handle inkeysToken;
+	IdtHandle inkeysToken;
 	if (inkeysPid)
 	{
-		Handle proc_ref = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, inkeysPid);
-		Handle tok_parent;
-		try_win32(OpenProcessToken(proc_ref.handle, TOKEN_DUPLICATE, &tok_parent.handle));
-		try_win32(DuplicateTokenEx(tok_parent.handle, TOKEN_QUERY | TOKEN_ADJUST_DEFAULT | TOKEN_ASSIGN_PRIMARY, NULL, SecurityAnonymous, TokenPrimary, &inkeysToken.handle));
+		HANDLE proc_ref = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, inkeysPid);
+		HANDLE tok_parent, tInkeysToken;
+		try_win32(OpenProcessToken(proc_ref, TOKEN_DUPLICATE, &tok_parent));
+		try_win32(DuplicateTokenEx(tok_parent, TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID, NULL, SecurityAnonymous, TokenPrimary, &tInkeysToken));
 
 		//if (isElevated(inkeysToken.handle)) Testi(999);
 		//if (inkeysToken.handle == INVALID_HANDLE_VALUE) Testi(999);
+
+		IdtHandle uDup(tInkeysToken);
+		inkeysToken = std::move(uDup);
 	}
-	// 目标获取的令牌
-	Handle winlogonToken;
 
 	// ---
+
+	Testi(1);
 
 	HANDLE fileHandle = NULL;
 	OccupyFileForWrite(&fileHandle, globalPath + L"superTop_wait.signal");
 	UnOccupyFile(&fileHandle);
 
-	//cerr << "step2" << endl;
-	// 获取当前进程的信息
-	HANDLE proc_self = GetCurrentProcess();
-	Handle tok_self;
-	try_win32(OpenProcessToken(proc_self, TOKEN_ALL_ACCESS, &tok_self.handle));
-	DWORD ses_self, ret_len;
-	try_win32(GetTokenInformation(tok_self.handle, TokenSessionId, &ses_self, sizeof(ses_self), &ret_len)); // 获取当前会话 ID
+	IdtHandle winlogonToken;
+	cout << "1 " << UiAccess::GetToken::GetWinlogonToken(winlogonToken) << endl;
 
-	//cerr << "step3" << endl;
-	// 创建进程快照
-	// 目前不涉及降权，暂时不用
-	//bool ctfmonAble = false, explorerAble = false;
-	//Handle ctfmonToken, explorerToken;
+	cout << "2 " << UiAccess::RunToken::SetUiAccessToken(winlogonToken, inkeysToken) << endl;
 
-	Handle snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-	PROCESSENTRY32 pe = { .dwSize = sizeof(PROCESSENTRY32) };
-	// 遍历进程快照，查找目标进程
-	for (BOOL cont = Process32First(snapshot.handle, &pe); cont; cont = Process32Next(snapshot.handle, &pe))
-	{
-		//if (0 == _tcsicmp(pe.szExeFile, TEXT("explorer.exe")))
-		//{
-		//	Handle proc_ref = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pe.th32ProcessID);
-		//	Handle tok_parent;
-		//	try_win32(OpenProcessToken(proc_ref.handle, TOKEN_DUPLICATE, &tok_parent.handle));
-		//	try_win32(DuplicateTokenEx(tok_parent.handle, TOKEN_QUERY | TOKEN_ADJUST_DEFAULT | TOKEN_ASSIGN_PRIMARY, NULL, SecurityAnonymous, TokenPrimary, &explorerToken.handle));
+	Testi(2);
 
-		//	if (explorerToken.handle != INVALID_HANDLE_VALUE && !isElevated(explorerToken.handle)) explorerAble = true;
-		//}
-		//if (0 == _tcsicmp(pe.szExeFile, TEXT("ctfmon.exe")))
-		//{
-		//	Handle proc_ref = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pe.th32ProcessID);
-		//	Handle tok_parent;
-		//	try_win32(OpenProcessToken(proc_ref.handle, TOKEN_DUPLICATE, &tok_parent.handle));
-		//	try_win32(DuplicateTokenEx(tok_parent.handle, TOKEN_QUERY | TOKEN_ADJUST_DEFAULT | TOKEN_ASSIGN_PRIMARY, NULL, SecurityAnonymous, TokenPrimary, &ctfmonToken.handle));
+	// ---
 
-		//	if (ctfmonToken.handle != INVALID_HANDLE_VALUE && !isElevated(ctfmonToken.handle)) ctfmonAble = true;
-		//}
-
-		if (0 == _tcsicmp(pe.szExeFile, TEXT("winlogon.exe")))
-		{
-			// 打开目标进程，并获取其令牌
-			Handle proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pe.th32ProcessID);
-			Handle tok;
-			try_win32(OpenProcessToken(proc.handle, TOKEN_QUERY | TOKEN_DUPLICATE, &tok.handle));
-			DWORD ses;
-			if (!GetTokenInformation(tok.handle, TokenSessionId, &ses, sizeof(ses), &ret_len) || ses != ses_self) continue;
-
-			// 执行令牌复制
-			try_win32(DuplicateTokenEx(tok.handle, TOKEN_IMPERSONATE | TOKEN_ADJUST_PRIVILEGES, NULL, SecurityImpersonation, TokenImpersonation, &winlogonToken.handle));
-		}
-	}
-	//cerr << "step4" << endl;
-	{
-		//if (!useAdmin && isElevated(inkeysToken.handle))
-		//{
-		//	if (explorerAble) inkeysToken = explorerToken;
-		//	else if (ctfmonAble) inkeysToken = ctfmonToken;
-		//}
-		//if (inkeysToken.handle == INVALID_HANDLE_VALUE)
-		//{
-		//	if (explorerAble) inkeysToken = explorerToken;
-		//	else if (ctfmonAble) inkeysToken = ctfmonToken;
-		//}
-	}
-	//cerr << "step5" << endl;
-	{
-		// 设置令牌权限
-		TOKEN_PRIVILEGES tkp = {};
-		tkp.PrivilegeCount = 1;
-		tkp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-		try_win32(LookupPrivilegeValueW(NULL, SE_ASSIGNPRIMARYTOKEN_NAME, &tkp.Privileges[0].Luid));  // 查找权限
-		try_win32(AdjustTokenPrivileges(winlogonToken.handle, FALSE, &tkp, sizeof(tkp), NULL, NULL));  // 调整权限
-	}
-	//cerr << "step6" << endl;
-
-	// 设置线程令牌（好戏开始了）
-	try_win32(SetThreadToken(NULL, winlogonToken.handle));
-
-	if (useUiAccess && !hasUiAccess(inkeysToken.handle))
-	{
-		BOOL ui_access = TRUE;
-		try_win32(SetTokenInformation(inkeysToken.handle, TokenUIAccess, &ui_access, sizeof(ui_access)));  // 设置 UIAccess 访问权限
-	}
-
-	//cerr << "step7" << endl;
 	// 等待原先 智绘教 退出
 	for (int i = 1; i <= 30; i++)
 	{
@@ -202,26 +111,13 @@ void SurperTopMain(wstring lpCmdLine)
 		if (!filesystem::exists(globalPath + L"superTop_wait.signal")) break;
 	}
 
+	Testi(3);
+
 	// 启动智绘教
-	{
-		wstring param = L"\"" + GetCurrentExePath() + L"\" -SuperTopC " + inkeysCmdLine;
-		vector<wchar_t> buffer(param.begin(), param.end());
-		buffer.push_back(L'\0');
+	wstring param = L"\"" + GetCurrentExePath() + L"\" -SuperTopC " + inkeysCmdLine;
+	cout << "3 " << UiAccess::RunToken::RunTokenProgram(inkeysToken, param) << endl;
 
-		//wcerr << L"open " + param << endl;
-		//Testw(L"open " + param);
-		//Testb(isElevated(inkeysToken.handle));
-
-		STARTUPINFO si;
-		PROCESS_INFORMATION pi;
-		GetStartupInfoW(&si);
-		CreateProcessAsUserW(inkeysToken.handle, NULL, buffer.data(), NULL, NULL, false, DETACHED_PROCESS, NULL, NULL, &si, &pi);
-		CloseHandle(pi.hThread);
-		CloseHandle(pi.hProcess);
-	}
-
-	// 恢复到原始用户上下文
-	try_win32(RevertToSelf());
+	Testi(4);
 }
 
 // ---

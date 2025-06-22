@@ -72,8 +72,8 @@ void RestartProgram()
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-// int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
-int main()
+int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
+// int main()
 {
 	// 路径预处理
 	{
@@ -140,8 +140,8 @@ int main()
 		// -WarnTry 强制启动一次，表明上一次遇到了错误
 		// -CrashTry 表明上一次遇到了崩溃错误
 
-		// wstring commandLineArgs(lpCmdLine);
-		wstring commandLineArgs;
+		wstring commandLineArgs(lpCmdLine);
+		// wstring commandLineArgs;
 
 		bool superTopC = false;
 		if (commandLineArgs.length() >= 11 && commandLineArgs.substr(0, 11) == L"-SuperTopC ")

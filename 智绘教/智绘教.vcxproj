@@ -290,7 +290,7 @@
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -518,6 +518,7 @@
     <ClInclude Include="IdtUpdate.h" />
     <ClInclude Include="IdtWindow.h" />
     <ClInclude Include="SuperTop\IdtSuperTop.h" />
+    <ClInclude Include="SuperTop\IdtToken.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="additional\hashlib++\hl_md5.cpp" />

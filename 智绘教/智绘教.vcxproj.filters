@@ -726,6 +726,9 @@
     <ClInclude Include="SuperTop\IdtSuperTop.h">
       <Filter>头文件\SuperTop</Filter>
     </ClInclude>
+    <ClInclude Include="SuperTop\IdtToken.h">
+      <Filter>头文件\SuperTop</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HiEasyX\HiGUI\Button.cpp">
