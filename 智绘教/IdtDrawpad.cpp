@@ -389,6 +389,8 @@ void KeyboardInteraction()
 
 							//double tmp2 = chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon2).count();
 							//cerr << tmp2 << "ms" << endl;
+
+							// TODO 接下来解决的是平滑的延时翻页（15ms），与防止末页冲出这个问题
 						}
 					}
 				}

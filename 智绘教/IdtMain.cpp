@@ -45,7 +45,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250616a";				// 程序发布日期
+wstring editionDate = L"20250626a";				// 程序发布日期
 wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -135,6 +135,11 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 防止重复启动
 	{
+		// TODO 将为启动标识重写书写逻辑，运行存在多个并行的启动标识
+		// 示例
+		// -restart
+		// -path="..."
+
 		// 检查启动标识
 		// -Restart 强制启动一次
 		// -WarnTry 强制启动一次，表明上一次遇到了错误
