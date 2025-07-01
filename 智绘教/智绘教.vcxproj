@@ -510,6 +510,7 @@
     <ClInclude Include="IdtStart.h" />
     <ClInclude Include="IdtState.h" />
     <ClInclude Include="IdtSysNotifications.h" />
+    <ClInclude Include="Inkeys\Json\IdtJson.h" />
     <ClInclude Include="Launch\IdtLaunchState.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="IdtRts.h" />

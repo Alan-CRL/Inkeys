@@ -85,6 +85,12 @@
     <Filter Include="头文件\SuperTop">
       <UniqueIdentifier>{0f3ba083-e762-42d7-aeef-aa8d13bc8b3a}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\Inkeys">
+      <UniqueIdentifier>{3dca3d99-88e0-429c-8cb3-d5c289d5a08c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Inkeys\Json">
+      <UniqueIdentifier>{a73c31b1-6419-42a0-a606-f17415f934a6}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HiEasyX.h">
@@ -728,6 +734,9 @@
     </ClInclude>
     <ClInclude Include="SuperTop\IdtToken.h">
       <Filter>头文件\SuperTop</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Json\IdtJson.h">
+      <Filter>头文件\Inkeys\Json</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

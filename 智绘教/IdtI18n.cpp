@@ -1,6 +1,7 @@
 ﻿#include "IdtI18n.h"
 
 #include "IdtText.h"
+#include "Inkeys/Json/IdtJson.h"
 
 bool I18n::load(int type, wstring path, wstring lang)
 {
@@ -28,7 +29,7 @@ bool I18n::load(int type, wstring path, wstring lang)
 		if (jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
 	}
 
-	istringstream jsonContentStream(jsonContent);
+	istringstream jsonContentStream(IdtJson::removeJsoncComments(jsonContent));
 	Json::CharReaderBuilder readerBuilder;
 	Json::Value i18nVal;
 	string jsonErr;
