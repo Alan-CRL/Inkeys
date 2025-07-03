@@ -48,6 +48,14 @@ bool I18n::load(int type, wstring path, wstring lang)
 	}
 	return false;
 }
+string I18n::getA(string x)
+{
+	return i18n[x];
+}
+wstring I18n::getW(string x)
+{
+	return utf8ToUtf16(i18n[x]);
+}
 
 void I18n::flattenJson(const Json::Value& node, const string& prefix, unordered_map<string, string>& outMap)
 {

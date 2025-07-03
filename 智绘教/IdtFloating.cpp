@@ -4621,8 +4621,8 @@ void DrawScreen()
 					words_rect.right = LONG(UIControl[L"Words/choose/right"].v);
 					words_rect.bottom = LONG(UIControl[L"Words/choose/bottom"].v);
 				}
-				if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumnSelect]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
-				else graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumnSelectClean]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) graphics.DrawString(IW("UI/Centre/Select").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else graphics.DrawString(IW("UI/Centre/SelectClean").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 			}
 			//画笔
 			{

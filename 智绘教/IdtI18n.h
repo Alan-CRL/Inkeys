@@ -2,7 +2,8 @@
 
 #include "IdtMain.h"
 
-#define TR(x) I18n::get(x)
+#define IA(x) I18n::getA(x)
+#define IW(x) I18n::getW(x)
 
 class I18n
 {
@@ -11,7 +12,8 @@ public:
 	static inline unordered_map<string, string> i18n;
 
 	static bool load(int type, wstring path, wstring lang = L"en-US");
-	static string get(string x) { return i18n[x]; }
+	static string getA(string x);
+	static wstring getW(string x);
 
 private:
 	static inline mutex i18nWriteMutex;

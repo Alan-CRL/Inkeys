@@ -72,8 +72,8 @@ void RestartProgram()
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
-// int main()
+// int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
+int main()
 {
 	// 路径预处理
 	{
@@ -145,8 +145,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		// -WarnTry 强制启动一次，表明上一次遇到了错误
 		// -CrashTry 表明上一次遇到了崩溃错误
 
-		wstring commandLineArgs(lpCmdLine);
-		// wstring commandLineArgs;
+		// wstring commandLineArgs(lpCmdLine);
+		wstring commandLineArgs;
 
 		bool superTopC = false;
 		if (commandLineArgs.length() >= 11 && commandLineArgs.substr(0, 11) == L"-SuperTopC ")
@@ -1018,8 +1018,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	{
 		// 先读取完整性的英语文件，在读取配置指定的语言文件
 		// 这样如果配置文件缺少某项也能用英语补齐
-		// loadI18n(1, L"JSON", L"en-US");
-		loadI18n(1, L"JSON", L"zh-CN");
+		// I18n::load(1, L"JSON", L"en-US");
+		I18n::load(1, L"JSON", L"zh-CN");
 		// TODO 允许切换到英语
 
 		IDTLogger->info("[主线程][IdtMain] I18N初始化完成");

@@ -1,6 +1,6 @@
 {
 	"Language" : "zh-CN",
-	"MainColumn" : 
+	"UI" : 
 	{
 		"Centre" : 
 		{
@@ -12,10 +12,9 @@
 		}
 	},
 	"LnkName" : "智绘教(屏幕批注工具)",
-	"Settings" :
+	"SettingsUI" :
 	{
-		"Settings" : "智绘教Inkeys 选项",
-		
+		"Name" : "智绘教Inkeys 选项",
 		"Operate" :
 		{
 			"Reset" : "重置",
@@ -25,11 +24,11 @@
 		
 		"Home" :
 		{
-			"Home" : "主页",
+			"Name" : "主页",
 			"Prompt" : "推荐使用 1080P 至 1800P 分辨率的显示器，高于此范围可能会影响使用体验。",
-			"#1" : "智绘教Inkeys 创始开发者",
-			"#2" : "QQ 用户群",
-			"#3" : "Bilibili 宣发频道"
+			"Developer" : "智绘教Inkeys 创始开发者",
+			"QQGroup" : "QQ 用户群",
+			"BilibiliChannel" : "Bilibili 宣发频道"
 		},
 		"Regular" :
 		{
@@ -64,19 +63,28 @@
 		
 		"Update" :
 		{
-			"Tip0" : "获取新版本检测未启动",
-			"Tip1" : "获取新版本信息中",
-			"Tip2" : "下载版本信息失败",
-			"Tip3" : "下载版本信息损坏",
-			"Tip4" : "下载版本信息不符合规范",
-			"Tip5" : "新版本正极速下载中",
-			"Tip6" : "下载最新版本软件失败",
-			"Tip7" : "下载最新版本软件损坏",
-			"Tip8" : "重启软件更新到最新版本",
-			"Tip9" : "软件已经是最新版本",
-			"Tip10" : "软件相对最新版本更新",
-			"Tip11" : "发现程序新版本",
-			"#0" : "检查更新"
+			"Check": "检查更新",
+			
+			"Channel" :
+			{
+				"LTS": "正式通道",
+				"Insider": "预览通道",
+				"Dev": "开发通道",
+				"Other": "其他通道"
+			},
+			
+			"NotStarted" : "新版本检测未启动",
+			"ObtainInformation" : "获取新版本信息中",
+			"InformationFail" : "下载版本信息失败",
+			"InformationDamage" : "下载版本信息损坏",
+			"InformationUnStandardized" : "下载版本信息不符合规范",
+			"Downloading" : "新版本正极速下载中",
+			"DownloadFail" : "下载最新版本软件失败",
+			"DownloadDamage" : "下载最新版本软件损坏",
+			"Restart" : "重启软件更新到最新版本",
+			"Latest" : "软件已经是最新版本",
+			"Newer" : "软件相对最新版本更新",
+			"New" : "发现软件新版本"
 		}
 	}
 }
