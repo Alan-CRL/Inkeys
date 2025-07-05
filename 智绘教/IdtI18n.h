@@ -8,7 +8,7 @@
 class I18n
 {
 public:
-	static inline wstring i18nIdentifying;
+	static inline wstring identifying;
 	static inline unordered_map<string, string> i18n;
 
 	static bool load(int type, wstring path, wstring lang = L"en-US");

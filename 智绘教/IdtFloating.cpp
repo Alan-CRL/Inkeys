@@ -4638,7 +4638,7 @@ void DrawScreen()
 					words_rect.right = LONG(UIControl[L"Words/brush/right"].v);
 					words_rect.bottom = LONG(UIControl[L"Words/brush/bottom"].v);
 				}
-				graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumnPen]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				graphics.DrawString(IW("UI/Centre/Pen").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 
 				WordBrush.SetColor(hiex::ConvertToGdiplusColor(UIControlColor[L"Words/brushSize/words_color"].v, true));
 				Gdiplus::Font gp_font_02(&HarmonyOS_fontFamily, 20, FontStyleRegular, UnitPixel);
@@ -4658,7 +4658,7 @@ void DrawScreen()
 					words_rect.right = LONG(UIControl[L"Words/rubber/right"].v);
 					words_rect.bottom = LONG(UIControl[L"Words/rubber/bottom"].v);
 				}
-				graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumnEraser]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				graphics.DrawString(IW("UI/Centre/Eraser").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 			}
 			//选项
 			{
@@ -4675,7 +4675,7 @@ void DrawScreen()
 					words_rect.right = LONG(UIControl[L"Words/test/right"].v);
 					words_rect.bottom = LONG(UIControl[L"Words/test/bottom"].v);
 				}
-				graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumnOptions]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				graphics.DrawString(IW("UI/Centre/Options").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 			}
 
 			// Customize

@@ -191,7 +191,7 @@ void SettingMain()
 				{
 					IMAGE SettingSign;
 
-					if (i18nIdentifying == L"zh-CN") idtLoadImage(&SettingSign, L"PNG", L"Home1_zh-CN", 700 * settingGlobalScale, 215 * settingGlobalScale, true);
+					if (I18n::identifying == L"zh-CN") idtLoadImage(&SettingSign, L"PNG", L"Home1_zh-CN", 700 * settingGlobalScale, 215 * settingGlobalScale, true);
 					else idtLoadImage(&SettingSign, L"PNG", L"Home1_en-US", 700 * settingGlobalScale, 240 * settingGlobalScale, true);
 					{
 						int width = settingSign[1].width = SettingSign.getwidth();
@@ -227,7 +227,7 @@ void SettingMain()
 						IM_ASSERT(ret);
 					}
 
-					if (i18nIdentifying == L"zh-CN") idtLoadImage(&SettingSign, L"PNG", L"Home2_zh-CN", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
+					if (I18n::identifying == L"zh-CN") idtLoadImage(&SettingSign, L"PNG", L"Home2_zh-CN", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
 					else idtLoadImage(&SettingSign, L"PNG", L"Home2_en-US", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
 					{
 						int width = settingSign[2].width = SettingSign.getwidth();
@@ -560,7 +560,7 @@ void SettingMain()
 			font_cfg.FontDataOwnedByAtlas = false;
 
 			HRSRC hRes;
-			if (i18nIdentifying == L"zh-TW") hRes = FindResource(NULL, MAKEINTRESOURCE(258), L"TTF");
+			if (I18n::identifying == L"zh-TW") hRes = FindResource(NULL, MAKEINTRESOURCE(258), L"TTF");
 			else hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
 			HGLOBAL hMem = LoadResource(NULL, hRes);
 			void* pLock = LockResource(hMem);
@@ -883,7 +883,7 @@ void SettingMain()
 					ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 					ImGui::SetCursorPos({ 20.0f * settingGlobalScale,14.0f * settingGlobalScale });
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
-					ImGui::TextUnformatted(("\ue713   " + get<string>(i18n[i18nEnum::Settings])).c_str());
+					ImGui::TextUnformatted(("\ue713   " + IA("SettingsUI/Name")).c_str());
 
 					ImFontMain->Scale = 0.3f, PushFontNum++, ImGui::PushFont(ImFontMain);
 					ImGui::SetCursorPos({ 914 * settingGlobalScale,0.0f * settingGlobalScale });
@@ -929,7 +929,7 @@ void SettingMain()
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(("   \ue80f   " + get<string>(i18n[i18nEnum::SettingsHome])).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab1;
+						if (ImGui::Button(("   \ue80f   " + IA("SettingsUI/Home/Name")).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab1;
 					}
 
 					// 软件配置
@@ -956,7 +956,7 @@ void SettingMain()
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button("   \ue81e   软件配置", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tabConfiguration;
+						if (ImGui::Button(("   \ue81e   " + IA("SettingsUI/Configuration/Name")).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tabConfiguration;
 					}
 
 					// 软件版本
@@ -983,7 +983,7 @@ void SettingMain()
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button("   \ue946   软件版本", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab6;
+						if (ImGui::Button(("   \ue946   " + IA("SettingsUI/Configuration/Version")).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab6;
 					}
 
 					// --------------------
@@ -1023,7 +1023,7 @@ void SettingMain()
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(("   \ue7b8   " + get<string>(i18n[i18nEnum::SettingsRegular])).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab2;
+						if (ImGui::Button(("   \ue7b8   " + IA("SettingsUI/Regular/Name")).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab2;
 					}
 
 					// 绘制
@@ -1050,10 +1050,10 @@ void SettingMain()
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button("   \uee56   绘制", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab3;
+						if (ImGui::Button(("   \uee56   " + IA("SettingsUI/Regular/Name")).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab3;
 					}
 
-					// 性能
+					// 保存
 					{
 						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
 
@@ -1302,7 +1302,7 @@ void SettingMain()
 						draw_list->AddRectFilled(p1, p2, color, 2.0f * settingGlobalScale);
 					}
 
-					// 重启程序
+					// 重启软件
 					{
 						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,574.0f * settingGlobalScale });
 
@@ -1314,14 +1314,14 @@ void SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button("   \ue72c   重启程序", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }))
+						if (ImGui::Button("   \ue72c   重启软件", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }))
 						{
 							test.select = false;
 							RestartProgram();
 						}
 					}
 
-					// 关闭程序
+					// 关闭软件
 					{
 						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,614.0f * settingGlobalScale });
 
@@ -1333,14 +1333,14 @@ void SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button("   \ue711   关闭程序", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }))
+						if (ImGui::Button("   \ue711   关闭软件", { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }))
 						{
 							test.select = false;
 							CloseProgram();
 						}
 					}
 
-					// 程序调测
+					// 调试软件
 					{
 						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,660.0f * settingGlobalScale });
 						ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
@@ -1365,7 +1365,7 @@ void SettingMain()
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.5f, 0.5f));
-						if (ImGui::Button("程序调测", { 150.0f * settingGlobalScale,30.0f * settingGlobalScale })) settingTab = settingTabEnum::tab9;
+						if (ImGui::Button("调试软件", { 150.0f * settingGlobalScale,30.0f * settingGlobalScale })) settingTab = settingTabEnum::tab9;
 					}
 
 					{
@@ -8909,7 +8909,7 @@ void SettingMain()
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip0]).c_str());
+							ImGui::TextUnformatted(IA("SettingsUI/Update/NotStarted").c_str());
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
 							ImGui::SameLine();
@@ -8954,7 +8954,7 @@ void SettingMain()
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip1]).c_str());
+							ImGui::TextUnformatted(IA("SettingsUI/Update/ObtainInformation").c_str());
 						}
 
 						{
@@ -8983,7 +8983,7 @@ void SettingMain()
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip2]).c_str());
+							ImGui::TextUnformatted(IA("SettingsUI/Update/InformationFail").c_str());
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
 							ImGui::SameLine();
@@ -9020,7 +9020,7 @@ void SettingMain()
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip3]).c_str());
+							ImGui::TextUnformatted(IA("SettingsUI/Update/InformationDamage").c_str());
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
 							ImGui::SameLine();
@@ -9057,7 +9057,7 @@ void SettingMain()
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip4]).c_str());
+							ImGui::TextUnformatted(IA("SettingsUI/Update/InformationUnStandardized").c_str());
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
 							ImGui::SameLine();
@@ -9094,7 +9094,7 @@ void SettingMain()
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip5]).c_str());
+							ImGui::TextUnformatted(IA("SettingsUI/Update/Downloading").c_str());
 						}
 						{
 							double downloadedSize = static_cast<double>(downloadNewProgramState.downloadedSize.load());
@@ -9136,7 +9136,7 @@ void SettingMain()
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip6]).c_str());
+							ImGui::TextUnformatted(IA("SettingsUI/Update/DownloadFail").c_str());
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
 							ImGui::SameLine();
@@ -9173,7 +9173,7 @@ void SettingMain()
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip7]).c_str());
+							ImGui::TextUnformatted(IA("SettingsUI/Update/DownloadDamage").c_str());
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
 							ImGui::SameLine();
@@ -9210,7 +9210,7 @@ void SettingMain()
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(get<string>(i18n[i18nEnum::SettingsUpdateTip8]).c_str());
+							ImGui::TextUnformatted(IA("SettingsUI/Update/Restart").c_str());
 						}
 
 						{
@@ -9239,11 +9239,12 @@ void SettingMain()
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
-							string channel = "（其他通道）";
-							if (setlist.UpdateChannel == "LTS") channel = "（正式通道）";
-							else if (setlist.UpdateChannel == "Insider") channel = "（预览通道）";
+							string channel = " (" + IA("SettingsUI/Update/Channel/Other") + ")";
+							if (setlist.UpdateChannel == "LTS") channel = " (" + IA("SettingsUI/Update/Channel/LTS") + ")";
+							else if (setlist.UpdateChannel == "Insider") channel = " (" + IA("SettingsUI/Update/Channel/Insider") + ")";
+							else if (setlist.UpdateChannel == "Dev") channel = " (" + IA("SettingsUI/Update/Channel/Dev") + ")";
 
-							ImGui::TextUnformatted((get<string>(i18n[i18nEnum::SettingsUpdateTip9]) + channel).c_str());
+							ImGui::TextUnformatted((IA("SettingsUI/Update/Latest") + channel).c_str());
 						}
 
 						{
@@ -9272,11 +9273,12 @@ void SettingMain()
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
-							string channel = "（其他通道）";
-							if (setlist.UpdateChannel == "LTS") channel = "（正式通道）";
-							else if (setlist.UpdateChannel == "Insider") channel = "（预览通道）";
+							string channel = " (" + IA("SettingsUI/Update/Channel/Other") + ")";
+							if (setlist.UpdateChannel == "LTS") channel = " (" + IA("SettingsUI/Update/Channel/LTS") + ")";
+							else if (setlist.UpdateChannel == "Insider") channel = " (" + IA("SettingsUI/Update/Channel/Insider") + ")";
+							else if (setlist.UpdateChannel == "Dev") channel = " (" + IA("SettingsUI/Update/Channel/Dev") + ")";
 
-							ImGui::TextUnformatted(((get<string>(i18n[i18nEnum::SettingsUpdateTip10])) + channel).c_str());
+							ImGui::TextUnformatted((IA("SettingsUI/Update/Newer") + channel).c_str());
 						}
 
 						{
@@ -9305,7 +9307,7 @@ void SettingMain()
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted((get<string>(i18n[i18nEnum::SettingsUpdateTip11])).c_str());
+							ImGui::TextUnformatted(IA("UI/Update/New").c_str());
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
 							ImGui::SameLine();
@@ -9333,7 +9335,7 @@ void SettingMain()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
-						if (ImGui::Button((get<string>(i18n[i18nEnum::SettingsUpdate0])).c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+						if (ImGui::Button(IA("SettingsUI/Update/Check").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 						{
 							if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNotStarted)
 							{

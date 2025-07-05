@@ -30,9 +30,21 @@
 			"QQGroup" : "QQ 用户群",
 			"BilibiliChannel" : "Bilibili 宣发频道"
 		},
+		"Configuration" :
+		{
+			"Name" : "软件配置"
+		},
+		"Version" :
+		{
+			"Name" : "软件版本"
+		},
+		
+		// ---
+		
 		"Regular" :
 		{
-			"Regular" : "常规",
+			"Name" : "常规",
+			
 			"#1" : "语言和国际化",
 			"#1_1" : "语言（Language）",
 			"#1_2" : "重启软件生效。 | Restart the software to take effect.",
@@ -60,6 +72,62 @@
 			"#5_3" : "允许尝试窗口强制置顶",
 			"#5_4" : "可能会引发其他程序错误。"
 		},
+		"Draw" :
+		{
+			"Name" : "绘制"
+		},
+		"Save" :
+		{
+			"Name" : "保存"
+		},
+		"Performance" :
+		{
+			"Name" : "性能"
+		},
+		"Preset" :
+		{
+			"Name" : "预设"
+		},
+		"PlugIn" :
+		{
+			"Name" : "插件"
+		},
+		"Component" :
+		{
+			"Name" : "组件"
+		},
+		"HotKey" :
+		{
+			"Name" : "快捷键"
+		},
+		
+		// ---
+		
+		"Community" :
+		{
+			"Name" : "社区名片"
+		},
+		"Sponsor" :
+		{
+			"Name" : "赞助我们"
+		},
+		
+		// ---
+		
+		"RestartSoftware" :
+		{
+			"Name" : "重启软件"
+		},
+		"ExitSoftware" :
+		{
+			"Name" : "关闭软件"
+		},
+		"DebugSoftware" :
+		{
+			"Name" : "调试软件"
+		},
+		
+		// ---
 		
 		"Update" :
 		{
