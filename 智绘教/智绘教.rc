@@ -246,9 +246,9 @@ END
 // JSON
 //
 
-IDR_ZH_CN               JSON                    "src\\i18n\\zh-CN.json"
+IDR_ZH_CN               JSON                    "src\\i18n\\zh-CN.jsonc"
 
-IDR_EN_US               JSON                    "src\\i18n\\en-US.json"
+IDR_EN_US               JSON                    "src\\i18n\\en-US.jsonc"
 
 #endif    // 中文(简体，中国) resources
 /////////////////////////////////////////////////////////////////////////////

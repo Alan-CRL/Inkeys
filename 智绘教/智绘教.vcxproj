@@ -701,8 +701,8 @@
     <None Include="additional\spdlog\fmt\bundled\fmt.license.rst" />
     <None Include="exe\DesktopDrawpadBlocker.exe" />
     <None Include="PptCOM.dll" />
-    <None Include="src\i18n\en-US.json" />
-    <None Include="src\i18n\zh-CN.json" />
+    <None Include="src\i18n\en-US.jsonc" />
+    <None Include="src\i18n\zh-CN.jsonc" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PptCOM\PptCOM.csproj">

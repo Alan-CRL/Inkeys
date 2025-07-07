@@ -1,5 +1,11 @@
+// 你可以在此文件中使用 // 作为行注释，但块注释和尾随逗号等其他 JSONC 功能不受支持。
+// You can use // as line comments in this file, but other JSONC features such as block comments and trailing commas are not supported.
 {
 	"Language" : "zh-CN",
+	"Widget" : 
+	{
+		"LnkName" : "智绘教(屏幕批注工具)"
+	},
 	"UI" : 
 	{
 		"Centre" : 
@@ -11,7 +17,6 @@
 			"Options" : "选项"
 		}
 	},
-	"LnkName" : "智绘教(屏幕批注工具)",
 	"SettingsUI" :
 	{
 		"Name" : "智绘教Inkeys 选项",
@@ -28,7 +33,8 @@
 			"Prompt" : "推荐使用 1080P 至 1800P 分辨率的显示器，高于此范围可能会影响使用体验。",
 			"Developer" : "智绘教Inkeys 创始开发者",
 			"QQGroup" : "QQ 用户群",
-			"BilibiliChannel" : "Bilibili 宣发频道"
+			"BilibiliChannel" : "Bilibili 宣发频道",
+			"FeedBack" : "问题/建议反馈"
 		},
 		"Configuration" :
 		{
@@ -45,12 +51,18 @@
 		{
 			"Name" : "常规",
 			
+			"StartUp" :
+			{
+				"Name" : "开机自启和启动行为",
+				
+				"AutoStart" : "开机自动启动",
+				"AutoStartExplain" : "设置当前用户账户开机时启动 智绘教Inkeys。",
+			},
+			
 			"#1" : "语言和国际化",
 			"#1_1" : "语言（Language）",
 			"#1_2" : "重启软件生效。 | Restart the software to take effect.",
-			"#2" : "开机自启和启动行为",
-			"#2_1" : "开机自动启动",
-			"#2_2" : "设置当前用户账户开机时启动 智绘教Inkeys。",
+			
 			"#3" : "外观样式",
 			"#3_1" : "主题",
 			"#3_2" : "选择“推荐皮肤”将会根据官方推荐皮肤自动更换。",
