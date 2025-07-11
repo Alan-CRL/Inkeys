@@ -44,7 +44,10 @@ bool I18n::load(int type, wstring path, wstring lang)
 
 		lock.unlock();
 
-		return true;
+		{
+			identifying = lang;
+			return true;
+		}
 	}
 	return false;
 }
@@ -69,7 +72,7 @@ void I18n::flattenJson(const Json::Value& node, const string& prefix, unordered_
 		}
 	}
 }
-void IdtTest::printI18nMap()
+void IdtTest::PrintI18nMap()
 {
 	cout << "-------- I18n所有Key-Value --------" << endl;
 

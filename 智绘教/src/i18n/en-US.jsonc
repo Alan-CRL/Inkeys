@@ -1,6 +1,11 @@
+// You can use // as line comments in this file, but other JSONC features such as block comments and trailing commas are not supported.
 {
 	"Language" : "en-US",
-	"MainColumn" : 
+	"Widget" : 
+	{
+		"LnkName" : "智绘教Inkeys (Screen Annotation Tool)"
+	},
+	"UI" : 
 	{
 		"Centre" : 
 		{
@@ -11,64 +16,171 @@
 			"Options" : "Options"
 		}
 	},
-	"Settings" :
+	"SettingsUI" :
 	{
-		"Settings" : "智绘教Inkeys Options",
-		
+		"N" : "智绘教Inkeys Options",
 		"Operate" :
 		{
 			"Reset" : "Reset",
-			"Save" : "Save"
+			"Repair" : "Repair",
+			"Copy" : "Copy"
 		},
 		
 		"Home" :
 		{
-			"Home" : "Home",
-			"Prompt" : "A monitor with a resolution of 1080P to 1800P is recommended, above which the experience may be affected.",
-			"#1" : "智绘教Inkeys Founding Developer",
-			"#2" : "Tencent QQ User Group",
-			"#3" : "Bilibili Video Channel"
+			"N" : "Home",
+			"Prompt" : "It is recommended to use monitors with 1080P to 1800P resolution. Using higher resolutions may affect the user experience.",
+			"Developer" : "智绘教Inkeys Founding Developer",
+			"QQGroup" : "QQ User Group",
+			"BilibiliChannel" : "Bilibili Official Channel",
+			"FeedBack" : "Feedback / Suggestions"
 		},
+		"Configuration" :
+		{
+			"N" : "Software Configuration"
+		},
+		"Version" :
+		{
+			"N" : "Software Version"
+		},
+		
+		// ---
+		
 		"Regular" :
 		{
-			"Regular" : "Regular",
-			"#1" : "Language and Internationalization",
-			"#1_1" : "Language(语言)",
-			"#1_2" : "Restart the software to take effect. | 重启软件生效。",
-			"#2" : "Startup and startup behavior",
-			"#2_1" : "Auto start",
-			"#2_2" : "Set 智绘教Inkeys to start when the current user account is turned on.",
-			"#3" : "Appearance Style",
-			"#3_1" : "Theme",
-			"#3_2" : "Selecting 'Recommended' will automatically replace the skin based on the official recommendation.",
-			"#3_3" : "  Recommended",
-			"#3_4" : "  Default",
-			"#3_5" : "  Tiny Clock",
-			"#3_6" : "  Snake Year",
-			"#4" : "Other Behaviors",
-			"#4_1" : "Right click on the main icon to close the program",
-			"#4_2" : "A confirmation pop-up will appear.",
-			"#4_3" : "Fold up the main bar when drawing with a brush",
-			"#4_4" : "Fold up the main bar when erasing with a eraser",
-			"#5" : "Experimental Options",
-			"#5_1" : "Compatible with 'Auto-hide the taskbar'",
-			"#5_2" : "Restarting 智绘教Inkeys takes effect.",
-			"#5_3" : "Allow attempts to force the window to top",
-			"#5_4" : "May cause other program errors."
+			"N" : "General",
+			
+			"StartUp" :
+			{
+				"N" : "Startup and Launch Behavior",
+				
+				"AutoStart" : "Launch Automatically at Startup",
+				"AutoStartE" : "Set 智绘教Inkeys to launch at startup for the current user account."
+			},
+			"Appearance" :
+			{
+				"N" : "Appearance",
+				
+				"Theme" :
+				{
+					"N" : "Theme",
+					"E" : "Selecting 'Recommended Skin' will automatically switch according to the official recommendation.",
+
+					"Skip1" : "Recommended Skin",
+					"Skip2" : "Default Skin",
+					"Skip3" : "Minimalist Clock",
+					"Skip4" : "Year of the Snake"
+				},
+				"SettingUIScale" :
+				{
+					"N" : "Options UI Scale",
+					"E" : "Effective after restarting the software. High scaling values may use a lot of memory.",
+
+					"Ind" : "{:.2f}× Scale"
+				}
+			},
+			"Behavior" :
+			{
+				"N" : "Other Behaviors",
+
+				"RightClickClose" : "Close Application with Right-click on Main Icon",
+				"RightClickCloseE" : "A confirmation dialog will pop up.",
+				"DrawingRetract" : "Collapse Main Bar when Drawing",
+				"ErasingRetract" : "Collapse Main Bar when Erasing"
+			},
+			"Tentative": 
+			{
+				"N": "Experimental Options",
+
+				"AvoidFulScreen": "Avoid Fullscreen Display",
+				"AvoidFulScreenE": "Need restarting the software. In non-drawing mode or in pen-through mode, the software will not remain fullscreen. This helps the auto-hide familiar taskbar to rise normally, may reduce failures to keep windows on top, and possibly improve issues with the taskbar not being touchable."
+			},
+			
+			"#1" : "Language & Internationalization",
+			"#1_1" : "Language",
+			"#1_2" : "Restart the software to take effect."
 		},
+		"Draw" :
+		{
+			"N" : "Draw"
+		},
+		"Save" :
+		{
+			"N" : "Save"
+		},
+		"Performance" :
+		{
+			"N" : "Performance"
+		},
+		"Preset" :
+		{
+			"N" : "Presets"
+		},
+		"PlugIn" :
+		{
+			"N" : "Plugins"
+		},
+		"Component" :
+		{
+			"N" : "Components"
+		},
+		"HotKey" :
+		{
+			"N" : "Hotkeys"
+		},
+		
+		// ---
+		
+		"Community" :
+		{
+			"N" : "Community Card"
+		},
+		"Sponsor" :
+		{
+			"N" : "Sponsor Us"
+		},
+		
+		// ---
+		
+		"RestartSoftware" :
+		{
+			"N" : "Restart Software"
+		},
+		"ExitSoftware" :
+		{
+			"N" : "Exit Software"
+		},
+		"DebugSoftware" :
+		{
+			"N" : "Debug Software"
+		},
+		
+		// ---
 		
 		"Update" :
 		{
-			"Tip0" : "Automatic update not started",
-			"Tip1" : "Obtain new version information",
-			"Tip2" : "Download version information is failed",
-			"Tip3" : "Download version information is damaged",
-			"Tip4" : "Download version information is invalid",
-			"Tip5" : "Downloading new version",
-			"Tip6" : "Download the latest program is failed",
-			"Tip7" : "Download the latest program is damaged",
-			"Tip8" : "Restart and update to the latest version",
-			"Tip9" : "The program is the latest version"
+			"Check": "Check",
+			
+			"Channel" :
+			{
+				"LTS": "Stable Channel",
+				"Insider": "Preview Channel",
+				"Dev": "Developer Channel",
+				"Other": "Other Channels"
+			},
+			
+			"NotStarted" : "Update Check Not Started",
+			"ObtainInformation" : "Fetching Update Information",
+			"InformationFail" : "Failed to Download Update Information",
+			"InformationDamage" : "Downloaded Update Information is Corrupted",
+			"InformationUnStandardized" : "Downloaded Update Information is Invalid",
+			"Downloading" : "Downloading Latest Version",
+			"DownloadFail" : "Failed to Download Latest Version",
+			"DownloadDamage" : "Downloaded Latest Version is Corrupted",
+			"Restart" : "Restart to Update to Latest Version",
+			"Latest" : "Software is Up to Date",
+			"Newer" : "Software is Ahead of Latest Version",
+			"New" : "New Version Available"
 		}
 	}
 }

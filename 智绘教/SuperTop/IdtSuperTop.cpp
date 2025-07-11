@@ -43,11 +43,11 @@ bool hasUiAccess(HANDLE tok) {
 
 void SurperTopMain(wstring lpCmdLine)
 {
-	AllocConsole();
-	FILE* fp;
-	freopen_s(&fp, "CONOUT$", "w", stdout);
-	freopen_s(&fp, "CONOUT$", "w", stderr);
-	std::ios::sync_with_stdio();
+	//AllocConsole();
+	//FILE* fp;
+	//freopen_s(&fp, "CONOUT$", "w", stdout);
+	//freopen_s(&fp, "CONOUT$", "w", stderr);
+	//std::ios::sync_with_stdio();
 
 	// 基础信息
 	wstring inkeysCmdLine;
@@ -89,8 +89,6 @@ void SurperTopMain(wstring lpCmdLine)
 
 	// ---
 
-	Testi(1);
-
 	HANDLE fileHandle = NULL;
 	OccupyFileForWrite(&fileHandle, globalPath + L"superTop_wait.signal");
 	UnOccupyFile(&fileHandle);
@@ -99,8 +97,6 @@ void SurperTopMain(wstring lpCmdLine)
 	cout << "1 " << UiAccess::GetToken::GetWinlogonToken(winlogonToken) << endl;
 
 	cout << "2 " << UiAccess::RunToken::SetUiAccessToken(winlogonToken, inkeysToken) << endl;
-
-	Testi(2);
 
 	// ---
 
@@ -111,13 +107,9 @@ void SurperTopMain(wstring lpCmdLine)
 		if (!filesystem::exists(globalPath + L"superTop_wait.signal")) break;
 	}
 
-	Testi(3);
-
 	// 启动智绘教
 	wstring param = L"\"" + GetCurrentExePath() + L"\" -SuperTopC " + inkeysCmdLine;
 	cout << "3 " << UiAccess::RunToken::RunTokenProgram(inkeysToken, param) << endl;
-
-	Testi(4);
 }
 
 // ---

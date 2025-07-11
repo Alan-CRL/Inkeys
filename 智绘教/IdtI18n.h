@@ -24,5 +24,5 @@ private:
 
 namespace IdtTest
 {
-	void printI18nMap();
+	void PrintI18nMap();
 }

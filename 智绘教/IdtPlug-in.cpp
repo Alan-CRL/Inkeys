@@ -4037,16 +4037,16 @@ void ShortcutAssistantClass::SetShortcut()
 
 	if (setlist.shortcutAssistant.correctLnk)
 	{
-		if (_waccess((DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk").c_str(), 0) == 0)
+		if (_waccess((DesktopPath + IW("Widget/LnkName") + L".lnk").c_str(), 0) == 0)
 		{
 			// 存在对应名称的 Lnk
-			if (!IsShortcutPointingToDirectory(DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]) + L".lnk", GetCurrentExePath()))
+			if (!IsShortcutPointingToDirectory(DesktopPath + IW("Widget/LnkName") + L".lnk", GetCurrentExePath()))
 			{
 				// 不指向当前的程序路径
 				error_code ec;
-				filesystem::remove(DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]) + L".lnk", ec);
+				filesystem::remove(DesktopPath + IW("Widget/LnkName") + L".lnk", ec);
 
-				CreateShortcut(DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk", GetCurrentExePath());
+				CreateShortcut(DesktopPath + IW("Widget/LnkName").c_str() + L".lnk", GetCurrentExePath());
 			}
 		}
 		{
@@ -4054,13 +4054,13 @@ void ShortcutAssistantClass::SetShortcut()
 			{
 				if (filesystem::is_regular_file(entry) && entry.path().extension() == L".lnk")
 				{
-					if (entry.path().wstring() != DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk" && IsShortcutPointingToDirectory(entry.path().wstring(), GetCurrentExePath()))
+					if (entry.path().wstring() != DesktopPath + IW("Widget/LnkName").c_str() + L".lnk" && IsShortcutPointingToDirectory(entry.path().wstring(), GetCurrentExePath()))
 					{
 						// 存在指向当前的程序路径的快捷方式，但是其名称并不正确
 						error_code ec;
 						filesystem::remove(entry.path().wstring(), ec);
 
-						CreateShortcut(DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]) + L".lnk", GetCurrentExePath());
+						CreateShortcut(DesktopPath + IW("Widget/LnkName") + L".lnk", GetCurrentExePath());
 					}
 				}
 			}
@@ -4068,10 +4068,10 @@ void ShortcutAssistantClass::SetShortcut()
 	}
 	if (setlist.shortcutAssistant.createLnk)
 	{
-		if (_waccess((DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk").c_str(), 0) == -1 ||
-			!IsShortcutPointingToDirectory((DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk"), GetCurrentExePath()))
+		if (_waccess((DesktopPath + IW("Widget/LnkName").c_str() + L".lnk").c_str(), 0) == -1 ||
+			!IsShortcutPointingToDirectory((DesktopPath + IW("Widget/LnkName").c_str() + L".lnk"), GetCurrentExePath()))
 		{
-			CreateShortcut(DesktopPath + get<wstring>(i18n[i18nEnum::LnkName]).c_str() + L".lnk", GetCurrentExePath());
+			CreateShortcut(DesktopPath + IW("Widget/LnkName").c_str() + L".lnk", GetCurrentExePath());
 		}
 	}
 
