@@ -355,16 +355,9 @@ void KeyboardInteraction()
 
 						NextPptSlides(temp_currentpage);
 
-						// TEST
-						chrono::high_resolution_clock::time_point reckon = chrono::high_resolution_clock::now();
-						chrono::high_resolution_clock::time_point reckon2 = chrono::high_resolution_clock::now();
-
-						chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = chrono::high_resolution_clock::now();
+						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 						while (1)
 						{
-							reckon2 = chrono::high_resolution_clock::now();
-
-							reckon = chrono::high_resolution_clock::now();
 							if (!KeyBoradDown[vkcode]) break;
 
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
@@ -384,13 +377,7 @@ void KeyboardInteraction()
 								NextPptSlides(temp_currentpage);
 							}
 
-							int tmp = 15 - chrono::duration_cast<std::chrono::milliseconds>(chrono::high_resolution_clock::now() - reckon).count();
-							if (tmp > 0) this_thread::sleep_for(chrono::milliseconds(tmp));
-
-							//double tmp2 = chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon2).count();
-							//cerr << tmp2 << "ms" << endl;
-
-							// TODO 接下来解决的是平滑的延时翻页（15ms），与防止末页冲出这个问题
+							this_thread::sleep_for(chrono::milliseconds(15));
 						}
 					}
 				}
@@ -1988,12 +1975,7 @@ void DrawpadDrawing()
 				}
 				else if (PptInfoStateBuffer.TotalPage != temp_totalpage && temp_totalpage == -1)
 				{
-					stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
-					//choose.select = true;
-
-					//brush.select = false;
-					//rubber.select = false;
-					penetrate.select = false;
+					ChangeStateModeToSelection();
 				}
 				PptInfoStateBuffer.CurrentPage = temp_currentpage;
 				PptInfoStateBuffer.TotalPage = temp_totalpage;

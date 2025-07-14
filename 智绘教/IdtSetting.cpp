@@ -8769,7 +8769,7 @@ void SettingMain()
 
 					{
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f);
-						wstring text = L"成功赞助后，可以联系作者修改社区名片赞助列表中的头像和昵称。";
+						wstring text = L"成功赞助后，可以联系作者添加社区名片赞助列表中的昵称。";
 
 						int left_x = 10 * settingGlobalScale, right_x = 760 * settingGlobalScale;
 
@@ -9490,7 +9490,7 @@ void SettingMain()
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("UI/Update/New").c_str());
+							ImGui::TextUnformatted(IA("SettingsUI/Update/New").c_str());
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
 							ImGui::SameLine();

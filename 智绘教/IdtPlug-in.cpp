@@ -3946,7 +3946,13 @@ bool IsPowerPointRunAsAdminSet()
 bool CheckEndShowClass::Check()
 {
 	if (isChecking == true) return false;
-	isChecking = true;
+	// isChecking = true;
+
+	// 延迟0.5秒后放开键盘
+	auto delayed = async(launch::async, [&]() {
+		this_thread::sleep_for(std::chrono::milliseconds(500));
+		isChecking = true;
+		});
 
 	bool ret = (MessageBox(floating_window, L"Currently in drawing mode, continuing to end will clear the canvas.\nAre you sure you want to end the presentation?\n当前处于绘制模式，继续结束放映将会清空画布内容。\n确定结束放映？", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OKCANCEL) == 1);
 

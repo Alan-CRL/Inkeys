@@ -110,28 +110,25 @@ void SurperTopMain(wstring lpCmdLine)
 	// 启动智绘教
 	wstring param = L"\"" + GetCurrentExePath() + L"\" -SuperTopC " + inkeysCmdLine;
 	cout << "3 " << UiAccess::RunToken::RunTokenProgram(inkeysToken, param) << endl;
+
+	system("pause");
 }
 
 // ---
 
 IdtAtomic<bool> hasSuperTop;
-void LaunchSurperTop()
+void LaunchSurperTop(wstring cmdLine)
 {
-	wstring cmdLine;
-	{
-		if (launchState == LaunchStateEnum::Restart) cmdLine = L"-Restart";
-		else if (launchState == LaunchStateEnum::WarnTry) cmdLine = L"-WarnTry";
-		else if (launchState == LaunchStateEnum::CrashTry)  cmdLine = L"-CrashTry";
-	}
 	wstring pid = to_wstring(GetCurrentProcessId());
-	wstring useUiAccess = L"1";
-	wstring useAdmin = L"0";
+	wstring useUiAccess = L"1"; // 0/1 是否设置
+	wstring usePermission = L"1"; // 0 使用自身；1 使用 PID；2 降权使用普通用户
 
-	wstring launchLine = L"-SuperTop ";
-	launchLine += L"-PATH=$" + cmdLine + L"$ ";
-	launchLine += L"-PID=" + pid + L" ";
-	launchLine += L"-UIACCESS=" + useUiAccess + L" ";
-	launchLine += L"-ADMIN=" + useAdmin;
+	wstring launchLine = L"-SuperTop=*";
+	launchLine += L"-CmdLine=?" + cmdLine + L"? ";
+	launchLine += L"-UiAccess=" + useUiAccess + L" ";
+	launchLine += L"-Permission=" + usePermission + L" ";
+	launchLine += L"-Pid=" + pid;
+	launchLine += L"*";
 
 	error_code ec;
 	if (filesystem::exists(globalPath + L"superTop_wait.signal"))

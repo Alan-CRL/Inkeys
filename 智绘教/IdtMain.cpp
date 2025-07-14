@@ -72,8 +72,8 @@ void RestartProgram()
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
-// int main()
+// int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
+int main()
 {
 	// 路径预处理
 	{
@@ -140,26 +140,54 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		// -restart
 		// -path="..."
 
+		// 相关标识
+		bool superTopComplete = false;
+		wstring superTopLine = L"";
+
+		{
+			int argc = 0;
+			LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+
+			if (argv)
+			{
+				for (int i = 1; i < argc; i++)
+				{
+					bool addCommandLine = true;
+
+					wstring commandLine = argv[i];
+					if (commandLine == L"-Restart") LaunchState::restart = true;
+					else if (commandLine == L"-WarnTry") LaunchState::warnTry = true;
+					else if (commandLine == L"-CrashTry") LaunchState::crashTry = true;
+					else if (commandLine == L"-SuperTopComplete") superTopComplete = true, addCommandLine = false;
+					else if (commandLine.substr(0, 9) == L"-SuperTop")
+					{
+						addCommandLine = false;
+
+						wregex pattern(LR"(\*(\d+)\*)");
+						wsmatch matches;
+						if (regex_search(commandLine, matches, pattern))
+						{
+							if (matches.size() > 1)
+							{
+								superTopLine = matches[1].str();
+							}
+						}
+					}
+
+					if (addCommandLine) LaunchState::commandLine += commandLine + L" ";
+				}
+
+				// 必须释放 CommandLineToArgvW 分配的内存
+				LocalFree(argv);
+			}
+		}
+
 		// 检查启动标识
 		// -Restart 强制启动一次
 		// -WarnTry 强制启动一次，表明上一次遇到了错误
 		// -CrashTry 表明上一次遇到了崩溃错误
 
-		wstring commandLineArgs(lpCmdLine);
-		// wstring commandLineArgs;
-
-		bool superTopC = false;
-		if (commandLineArgs.length() >= 11 && commandLineArgs.substr(0, 11) == L"-SuperTopC ")
-		{
-			superTopC = true;
-			if (commandLineArgs.length() >= 12) commandLineArgs = commandLineArgs.substr(11, commandLineArgs.length() - 11);
-			else commandLineArgs = L"";
-		}
-
-		if (commandLineArgs == L"-Restart") launchState = LaunchStateEnum::Restart;
-		else if (commandLineArgs == L"-WarnTry") launchState = LaunchStateEnum::WarnTry;
-		else if (commandLineArgs == L"-CrashTry") launchState = LaunchStateEnum::CrashTry;
-		else launchState = LaunchStateEnum::Normal;
+		// wstring commandLineArgs(lpCmdLine);
 
 		if (commandLineArgs.length() >= 9 && commandLineArgs.substr(0, 9) == L"-SuperTop")
 		{
@@ -168,7 +196,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		}
 		//Testw(L"in \"" + commandLineArgs + L"\"");
 
-#ifdef IDT_RELEASE
+//#ifdef IDT_RELEASE
 		if (launchState == LaunchStateEnum::Normal && !superTopC)
 		{
 			wstring currentExeDirectory = GetCurrentExeDirectory();
@@ -200,8 +228,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				return 0;
 			}
 		}
-#endif
-		if (launchState == LaunchStateEnum::CrashTry) CrashHandler::IsSecond(true);
+		//#endif
+		if (LaunchState::crashTry) CrashHandler::IsSecond(true);
 	}
 	// 崩溃助手初始化
 	{
@@ -756,7 +784,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		IDTLogger->flush_on(spdlog::level::info);
 		IDTLogger->info("[主线程][IdtMain] 日志开始记录 " + utf16ToUtf8(editionDate) + " " + utf16ToUtf8(userId));
 
-		if (launchState == LaunchStateEnum::CrashTry) IDTLogger->warn("[主线程][IdtMain] 发现程序先前发生过崩溃错误");
+		if (LaunchState::crashTry) IDTLogger->warn("[主线程][IdtMain] 发现程序先前发生过崩溃错误");
 
 		//logger->info("");
 		//logger->warn("");
@@ -1200,7 +1228,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		{
 			IDTLogger->critical("[主线程][IdtMain] 程序意外退出：RealTimeStylus 触控库初始化失败。");
 
-			if (launchState == LaunchStateEnum::WarnTry) MessageBox(NULL, L"Program unexpected exit: RealTimeStylus touch library initialization failed.(#4)\n程序意外退出：RealTimeStylus 触控库初始化失败。(#4)", L"Inkeys Error | 智绘教错误", MB_OK | MB_SYSTEMMODAL);
+			if (LaunchState::warnTry) MessageBox(NULL, L"Program unexpected exit: RealTimeStylus touch library initialization failed.(#4)\n程序意外退出：RealTimeStylus 触控库初始化失败。(#4)", L"Inkeys Error | 智绘教错误", MB_OK | MB_SYSTEMMODAL);
 			else ShellExecuteW(NULL, NULL, GetCurrentExePath().c_str(), L"-WarnTry", NULL, SW_SHOWNORMAL);
 
 			exit(0);
