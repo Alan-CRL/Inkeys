@@ -43,11 +43,11 @@ bool hasUiAccess(HANDLE tok) {
 
 void SurperTopMain(wstring lpCmdLine)
 {
-	//AllocConsole();
-	//FILE* fp;
-	//freopen_s(&fp, "CONOUT$", "w", stdout);
-	//freopen_s(&fp, "CONOUT$", "w", stderr);
-	//std::ios::sync_with_stdio();
+	AllocConsole();
+	FILE* fp;
+	freopen_s(&fp, "CONOUT$", "w", stdout);
+	freopen_s(&fp, "CONOUT$", "w", stderr);
+	std::ios::sync_with_stdio();
 
 	// 基础信息
 	wstring inkeysCmdLine;
