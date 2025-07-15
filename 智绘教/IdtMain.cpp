@@ -45,7 +45,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250715a";				// 程序发布日期
+wstring editionDate = L"20250715b";				// 程序发布日期
 wstring editionChannel = L"Insider";			// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -935,7 +935,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 			{
 				// 获取系统默认语言标识符
-				LANGID langId = GetSystemDefaultLangID();
+				LANGID langId = GetUserDefaultUILanguage();
 				// 获取主语言标识符
 				WORD primaryLangId = PRIMARYLANGID(langId);
 				// 获取子语言标识符
