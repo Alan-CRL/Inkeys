@@ -187,8 +187,6 @@ void SurperTopMain(wstring lpCmdLine)
 
 	// 启动新进程
 
-	system("pause");
-
 	// 等待原先 智绘教 退出
 	for (int i = 1; i <= 60; i++)
 	{

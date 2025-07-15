@@ -663,8 +663,10 @@
     <Image Include="src\setting\Community-picture.png" />
     <Image Include="src\setting\Home1_en-US.png" />
     <Image Include="src\setting\Home1_zh-CN.png" />
+    <Image Include="src\setting\Home1_zh-TW.png" />
     <Image Include="src\setting\Home2_en-US.png" />
     <Image Include="src\setting\Home2_zh-CN.png" />
+    <Image Include="src\setting\Home2_zh-TW.png" />
     <Image Include="src\setting\Home_Backgroung.png" />
     <Image Include="src\setting\Home_Feedback.png" />
     <Image Include="src\setting\Profile-picture.png" />
@@ -703,6 +705,7 @@
     <None Include="PptCOM.dll" />
     <None Include="src\i18n\en-US.jsonc" />
     <None Include="src\i18n\zh-CN.jsonc" />
+    <None Include="src\i18n\zh-TW.jsonc" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PptCOM\PptCOM.csproj">

@@ -11,7 +11,7 @@ bool I18n::load(int type, wstring path, wstring lang)
 		int resNum = 246;
 		if (lang == L"zh-CN") resNum = 245;
 		if (lang == L"en-US") resNum = 246;
-		//if (lang == L"zh-TW") resNum = ;
+		if (lang == L"zh-TW") resNum = 275;
 
 		HRSRC hRes = FindResourceW(NULL, MAKEINTRESOURCE(resNum), path.c_str());
 		HGLOBAL hMem = LoadResource(NULL, hRes);
@@ -39,7 +39,7 @@ bool I18n::load(int type, wstring path, wstring lang)
 		// 写锁，然后加载 i18n 内容
 		unique_lock<mutex> lock(i18nWriteMutex);
 
-		i18n.clear();
+		//i18n.clear();
 		flattenJson(i18nVal, "", i18n);
 
 		lock.unlock();

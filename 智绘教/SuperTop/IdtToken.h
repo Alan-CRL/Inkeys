@@ -205,7 +205,7 @@ namespace UiAccess
 
 			if (ok)
 			{
-				wcout << L"已降权启动同目录下的 Inkeys.exe！\n"; system("pause");
+				wcout << L"已降权启动同目录下的 Inkeys.exe！\n";// system("pause");
 				CloseHandle(pi.hProcess); // 这些也是WIN句柄
 				CloseHandle(pi.hThread);
 				return true;
@@ -214,7 +214,7 @@ namespace UiAccess
 			{
 				int i = GetLastError();
 				wcerr << L"CreateProcessWithTokenW Error " << i << endl;
-				system("pause");
+				//system("pause");
 				return false;
 			}
 		}

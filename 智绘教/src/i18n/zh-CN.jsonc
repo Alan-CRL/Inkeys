@@ -23,6 +23,25 @@
       "Pen": "画笔",
       "Eraser": "橡皮",
       "Options": "选项"
+    },
+    "Pen":
+    {
+
+      "Pen": "画笔",
+      "Highlighter": "荧光笔",
+
+      "Thinkness": "粗\n细",
+
+      "Write": "书写",
+      "Line": "直线",
+      "Square": "矩形"
+    },
+    "Operate":
+    {
+      "Revoke": "撤回",
+      "Recall": "超级恢复",
+      "Freeze": "定格",
+      "Pierce": "穿透"
     }
   },
   "SettingsUI":
@@ -36,7 +55,6 @@
       "Developer": "智绘教Inkeys 创始开发者",
       "Group": "QQ 用户群",
       "GroupE": "618720802",
-      "GroupLnk": "https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6",
       "BilibiliChannel": "Bilibili 宣发频道",
       "FeedBack": "问题/建议反馈"
     },
@@ -53,10 +71,11 @@
 
         "Language":
         {
-          "en-US": "English",
+          "en-US": "English(Beta)",
           "zh-CN": "简体中文",
-          "zh-TW": "正體中文"
-        }
+          "zh-TW": "正體中文(Beta)"
+        },
+        "Warn": "需要重启软件才能完全生效，是否重启？"
       }
     },
     "Configuration":
@@ -264,19 +283,106 @@
     },
     "Draw":
     {
-      "N": "绘制"
-    },
-    "Save":
-    {
-      "N": "保存"
+      "N": "绘制",
+
+      "Effect":
+      {
+        "N": "绘图效果优化",
+
+        "Device":
+        {
+          "N": "绘图设备",
+          "E": "我们将根据不同设备类型优化使用体验。",
+
+          "Touch": "触控屏幕",
+          "MousePen": "鼠标或手写笔"
+        }
+      },
+      "AIDraw":
+      {
+        "N": "智能绘图",
+
+        "PenUp": "抬笔拉直直线",
+        "PenUpE": "现阶段只推荐在教学一体机上使用。",
+        "PenStay": "停留拉直直线",
+        "PenStayE": "绘制直线完成后按住一秒，直线将被拉直。",
+
+        "EndpointAdsorption": "端点吸附",
+        "EndpointAdsorptionE": "直线和矩形的端点将会在抬笔时吸附。"
+      },
+      "DrawBehavior":
+      {
+        "N": "绘制行为",
+
+        "SoomthWriting": "抬笔平滑笔迹"
+      },
+      "RubberThickness":
+      {
+        "N": "橡皮粗细",
+
+        "Calc":
+        {
+          "N": "橡皮粗细计算方式",
+          "E": "如果特定设备不支持当前选项，软件会继续尝试下一个粗细计算方式。",
+
+          "Mode1": "固定粗细",
+          "Mode2": "笔速粗细",
+          "Mode3": "压感粗细"
+        }
+      },
+      "Tentative":
+      {
+        "N": "实验选项",
+
+        "HideCursor": "绘制时隐藏触控光标(BETA)",
+        "HideCursorE": "阻止触控光标（白色圆点）在画布上显示。但是当鼠标和触控笔信号出现时, 则会恢复显示鼠标光标/笔光标。"
+      }
     },
     "Performance":
     {
-      "N": "性能"
-    },
+      "N": "性能",
+
+      "DrawMode":
+      {
+        "N": "绘图模块",
+
+        "Prepare":
+        {
+          "N": "落笔预备",
+          "E": "越大则越多手指落下时更快开始绘制，但会占用更多内存。",
+
+          "Ind": "{:d} 指"
+        },
+
+        "SuperDraw": "极限性能绘图(BETA)",
+        "SuperDrawE": "仅适用于拥有强大 CPU 的设备（重要！否则将引起卡顿）。 在绘制模式下取消画布渲染间隔，额外性能开销都仅在绘制中产生（即非选择状态下）。 如果发现绘制延迟高、不跟手，请关闭此选项。"
+        }
+     },
     "Preset":
     {
-      "N": "预设"
+      "N": "预设",
+
+      "Memory":
+      {
+        "N": "记忆",
+
+        "Thickness": "记忆绘制粗细",
+        "ThicknessE": "在启动软件时使画笔与荧光笔的粗细和退出时一致。",
+        "Color": "记忆绘制颜色",
+        "ColorE": "在启动软件时使画笔与荧光笔的颜色和退出时一致。"
+      },
+      "Preset":
+      {
+        "N": "预设（仅在未开启对应绘制记忆时生效）",
+
+        "AutoThickness": "自适应绘制粗细",
+        "AutoThicknessE": "在启动时，根据屏幕分辨率和物理尺寸自动设定推荐的绘制粗细。（画笔当前为{}px；荧光笔当前为{}px）",
+
+        "Pen": "预设画笔粗细",
+        "PenInd": "{} px",
+        "Highlighter": "预设荧光笔粗细",
+        "HighlighterInd": "{} px"
+      }
     },
     "PlugIn":
     {
@@ -288,7 +394,8 @@
     },
     "HotKey":
     {
-      "N": "快捷键"
+      "N": "快捷键",
+      "E": "全局快捷键：\nCtrl + Win + Alt 切换选择 / 绘制模式\n\n绘制模式下：\nCtrl + Q 定格\nCtrl + E 穿透\n（Ctrl + Z） 撤回 / 超级恢复\n\n其余快捷键和自定义快捷键正在测试，敬请期待"
     },
 
     // ---

@@ -46,7 +46,7 @@
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
 wstring editionDate = L"20250715a";				// 程序发布日期
-wstring editionChannel = L"Dev";				// 程序发布通道
+wstring editionChannel = L"Insider";			// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -1024,8 +1024,11 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	{
 		// 先读取完整性的英语文件，在读取配置指定的语言文件
 		// 这样如果配置文件缺少某项也能用英语补齐
-		// I18n::load(1, L"JSON", L"en-US");
-		I18n::load(1, L"JSON", L"zh-CN");
+		I18n::load(1, L"JSON", L"en-US");
+
+		if (setlist.selectLanguage == 1) I18n::load(1, L"JSON", L"zh-CN");
+		else if (setlist.selectLanguage == 2) I18n::load(1, L"JSON", L"zh-TW");
+		else I18n::load(1, L"JSON", L"en-US");
 
 		IDTLogger->info("[主线程][IdtMain] I18N初始化完成");
 	}

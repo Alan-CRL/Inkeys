@@ -1221,6 +1221,12 @@
     <Image Include="src\pin.png">
       <Filter>资源文件</Filter>
     </Image>
+    <Image Include="src\setting\Home1_zh-TW.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\setting\Home2_zh-TW.png">
+      <Filter>资源文件</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />
@@ -1239,6 +1245,7 @@
     </None>
     <None Include="src\i18n\zh-CN.jsonc" />
     <None Include="src\i18n\en-US.jsonc" />
+    <None Include="src\i18n\zh-TW.jsonc" />
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="..\PptCOM\PptCOM.manifest" />
