@@ -1,7 +1,4 @@
 <div align="center">
-
-We are sorry to inform you that the internationalization language of the program itself is not yet complete and has not been added to the program.  
-**We will complete it as soon as possible!**  
   
 **Copyright(©) 2023-2025 AlanCRL(Chen YunLam) Studio**  
 
@@ -15,7 +12,7 @@ The backup repository is located at [GitCode](https://gitcode.com/alan16356/Inke
 # 智绘教Inkeys
 [简体中文](README.md) | **English**  
 
-[Download from Github Release Assets](https://github.com/Alan-CRL/IDT/releases) | **[Official Website(Chinese)](https://www.inkeys.top)** | FAQ
+[Download from Github Release Assets](https://github.com/Alan-CRL/IDT/releases) | **[Official Website](https://en.inkeys.top)** | FAQ
 
 [![Communication Group](https://img.shields.io/badge/-QQ%20Group%20618720802-blue?style=flat&logo=TencentQQ)](https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6)  ![GitHub issues](https://img.shields.io/github/issues/Alan-CRL/IDT?logo=github&color=green)  ![GitHub stars](https://img.shields.io/github/stars/Alan-CRL/IDT)
 

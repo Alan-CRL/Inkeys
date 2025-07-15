@@ -98,7 +98,7 @@ namespace PptCOM
         }
         public string CheckCOM()
         {
-            string ret = "20250612a";
+            string ret = "20250714a";
 
             try
             {
@@ -123,8 +123,6 @@ namespace PptCOM
         private unsafe void SlideShowChange(Microsoft.Office.Interop.PowerPoint.SlideShowWindow Wn)
         {
             updateTime = DateTime.Now;
-
-            // 后续尝试用原子法确认（有个 50ms 的确认期限，防止长按下一页就退出了的情况）
 
             try
             {
@@ -425,7 +423,10 @@ namespace PptCOM
                 // 下一页
                 if (polling != 0)
                 {
-                    if (polling == 2) pptActWindow.View.Next();
+                    if (polling == 2)
+                    {
+                        pptActWindow.View.Next();
+                    }
                     else if (polling == 1)
                     {
                         int currentPageTemp = -1;
@@ -437,11 +438,17 @@ namespace PptCOM
                         {
                             currentPageTemp = -1;
                         }
-                        if (currentPageTemp != -1) pptActWindow.View.Next();
+                        if (currentPageTemp != -1)
+                        {
+                            pptActWindow.View.Next();
+                        }
                     }
                     polling = 1;
                 }
-                else pptActWindow.View.Next();
+                else
+                {
+                    pptActWindow.View.Next();
+                }
             }
             catch
             {

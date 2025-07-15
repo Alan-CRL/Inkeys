@@ -1,0 +1,388 @@
+﻿// 你可以在此文件中使用 // 作为行注释，但块注释和尾随逗号等其他 JSONC 功能不受支持。
+// You can use // as line comments in this file, but other JSONC features such as block comments and trailing commas are not supported.
+{
+  "Language": "en-US",
+  "Widget":
+  {
+    "LnkName": "智绘教Inkeys (Screen Annotation Tool)"
+  },
+  "Operate":
+  {
+    "Reset": "Reset",
+    "Repair": "Repair",
+    "Copy": "Copy",
+    "Create": "Create"
+  },
+  "UI":
+  {
+    "Centre":
+    {
+      "Select": "Select",
+      "SelectClean": "Select(Del)",
+      "Pen": "Pen",
+      "Eraser": "Eraser",
+      "Options": "Options"
+    },
+    "Pen":
+    {
+      "Pen": "Pen",
+      "Highlighter": "Highli",
+      "Thinkness": "Tk\nne",
+      "Write": "Write",
+      "Line": "Line",
+      "Square": "Rect"
+    },
+    "Operate":
+    {
+      "Revoke": "Undo",
+      "Recall": "Restore",
+      "Freeze": "Frez",
+      "Pierce": "Pier"
+    }
+  },
+  "SettingsUI":
+  {
+    "N": "智绘教Inkeys Options",
+    "Home":
+    {
+      "N": "Home",
+      "Prompt": "Recommended screen resolution: 1080P to 1800P. Higher resolutions may affect user experience.",
+      "Developer": "智绘教Inkeys Developer",
+      "Group": "Github Discussions",
+      "GroupE": "Inkeys/discussions",
+      "BilibiliChannel": "Bilibili Channel",
+      "FeedBack": "Feedback / Suggestions"
+    },
+    "Language":
+    {
+      "N": "Language",
+      "UI":
+      {
+        "N": "UI Language",
+        "Select": "Select Language",
+        "SelectE": "Choose language | [Restart Required]",
+        "Language":
+        {
+          "en-US": "English(Beta)",
+          "zh-CN": "简体中文",
+          "zh-TW": "正體中文(Beta)"
+        },
+        "Warn": "Need to be restart to fully take effect. Restart now?"
+      }
+    },
+    "Configuration":
+    {
+      "N": "Config & Save",
+      "Clean":
+      {
+        "N": "Config Cleanup",
+        "Enable": "Enable cleanup",
+        "EnableE": "Removes extra config options when saving or launching. May result in loss of some settings after downgrade/upgrade or import. Lost options will reset to defaults."
+      },
+      "CanvasSave":
+      {
+        "N": "Canvas History",
+        "Enable": "Enable canvas history",
+        "EnableE": "Save canvases in the 'ScreenShot' folder for Super Restore.",
+        "SaveTime":
+        {
+          "N": "Keep duration",
+          "E": "Delete expired canvases on startup if they exceed the set duration.",
+          "1d": "1 day",
+          "3d": "3 days",
+          "5d": "5 days",
+          "10d": "10 days",
+          "30d": "30 days",
+          "Never": "Never delete"
+        }
+      }
+    },
+    "Version":
+    {
+      "N": "Software Version",
+      "ManualUpdate":
+      {
+        "N": "New version available",
+        "ManualUpdate": "Manual Update"
+      },
+      "VersionTip": "Incompatible software and system architecture may cause performance issues. It's recommended to repair the software in the 'Software Repair' section below (select 'Fix architecture'), or select the target architecture below and repair.",
+      "Info":
+      {
+        "N": "Version Info",
+        "ReleaseVersion": "Release Version:",
+        "ReleaseDate": "Release Date:",
+        "ReleaseArch": "Software Architecture | System Architecture:",
+        "ReleaseTag": "Release Build (RELEASE)",
+        "DebugTag": "Debug Build (DEBUG)",
+        "ManualBuild": "Manual Build",
+        "AutoBuild": "Auto Build (CI/CD)",
+        "CICDInfo": "Build Details"
+      },
+      "UserInfo":
+      {
+        "N": "User Info",
+        "CopyUserId": "Copy User ID",
+        "UserId": "User ID"
+      },
+      "Repair":
+      {
+        "N": "Software Repair",
+        "RepairSoftware": "Repair",
+        "RepairSoftwareE": "Reinstall to the latest version in the selected channel",
+        "RepairArch": "Fix architecture during repair"
+      },
+      "Update":
+      {
+        "N": "Update Preferences",
+        "AutoUpate": "Auto Update (silent)",
+        "ChannelTip": "Stable Channel (LTS): most stable version (recommended)\nInsider Channel: test versions, may be falsely reported as viruses.",
+        "Channel":
+        {
+          "N": "Update Channel",
+          "LTS": "Stable Channel (LTS)",
+          "Insider": "Insider Channel"
+        },
+        "Arch":
+        {
+          "N": "Target Architecture",
+          "E": "Warning: Architecture mismatches may cause the software to fail or run poorly.",
+          "64": "64-bit",
+          "32": "32-bit",
+          "Arm64": "Arm64"
+        }
+      }
+    },
+    "CICD":
+    {
+      "N": "Build Details",
+      "Repository": "Repository",
+      "Branch": "Branch",
+      "Submitter": "Submitter",
+      "BuildTime": "Build Time",
+      "BuildSystem": "Build System",
+      "BuildSystemVersion": "Build System Version",
+      "RunnerImageSystem": "Runner Image System",
+      "RunnerImageVersion": "Runner Image Version",
+      "MSBuildVersion": "MSBuild Version"
+    },
+    "Regular":
+    {
+      "N": "General",
+      "StartUp":
+      {
+        "N": "Startup",
+        "AutoStart": "Auto start on login",
+        "AutoStartE": "Launch 智绘教Inkeys when the user logs in.",
+        "Link":
+        {
+          "N": "Create Desktop Shortcut",
+          "E": "Auto-correct name and create shortcut, click 'More Options' for details.",
+          "More": "More Options"
+        }
+      },
+      "Appearance":
+      {
+        "N": "Appearance",
+        "Theme":
+        {
+          "N": "Theme",
+          "E": "Recommended skin will use the official setting automatically.",
+          "Skip1": "Recommended Skin",
+          "Skip2": "Default Skin",
+          "Skip3": "Minimal Clock",
+          "Skip4": "Year of Snake"
+        },
+        "SettingUIScale":
+        {
+          "N": "Options UI Scale",
+          "E": "[Restart Required] Higher scale uses more memory.",
+          "Ind": "{:.2f}x scale"
+        }
+      },
+      "Behavior":
+      {
+        "N": "Behavior",
+        "TopWindow":
+        {
+          "N": "Topmost Interval",
+          "E": "How often to keep window on top in non-draw mode. Shorter=more responsive but higher CPU use. Use 'Super Top' plugin if interference persists.",
+          "100ms": "Very Short (100ms)",
+          "500ms": "Short (500ms)",
+          "1s": "Medium-Short (1s)",
+          "3s": "Medium (3s)",
+          "5s": "Medium-Long (5s)",
+          "10s": "Long (10s)",
+          "30s": "Very Long (30s)"
+        },
+        "RightClickClose": "Close on right-click icon",
+        "RightClickCloseE": "Shows a confirmation dialog.",
+        "DrawingRetract": "Hide main bar while drawing",
+        "ErasingRetract": "Hide main bar when erasing",
+        "DraggingRetract": "Hide main bar when dragging",
+        "CheckingRetract": "Hide main bar on click",
+        "CheckingRetractE": "Only in select/penetrate mode, works on non-mainbar areas."
+      },
+      "Tentative":
+      {
+        "N": "Experimental Options",
+        "AvoidFulScreen": "Avoid Fullscreen",
+        "AvoidFulScreenE": "[Restart Required] Prevents fullscreen in non-draw/penetrate modes; may help taskbar issues and reduce topmost failures.",
+        "SafeMode":
+        {
+          "N": "Crash Safe Mode",
+          "E": "Action on crash (startup errors still show dialog)",
+          "Mode1": "Show error dialog and restart",
+          "Mode2": "Silent restart",
+          "Mode3": "Let system handle",
+          "Mode4": "Quit directly"
+        }
+      }
+    },
+    "Draw":
+    {
+      "N": "Drawing",
+      "Effect":
+      {
+        "N": "Drawing Performance",
+        "Device":
+        {
+          "N": "Input Device",
+          "E": "Optimize for selected device.",
+          "Touch": "Touch Screen",
+          "MousePen": "Mouse or Pen"
+        }
+      },
+      "AIDraw":
+      {
+        "N": "Smart Drawing",
+        "PenUp": "Straighten line on pen lift",
+        "PenUpE": "Recommended for classroom all-in-one devices.",
+        "PenStay": "Straighten on hold",
+        "PenStayE": "Hold for 1s after drawing to straighten line.",
+        "EndpointAdsorption": "Endpoint Snapping",
+        "EndpointAdsorptionE": "Line and rectangle ends snap when pen lifts."
+      },
+      "DrawBehavior":
+      {
+        "N": "Drawing Behavior",
+        "SoomthWriting": "Smooth out strokes when pen lifted"
+      },
+      "RubberThickness":
+      {
+        "N": "Eraser Thickness",
+        "Calc":
+        {
+          "N": "Thickness Calculation",
+          "E": "If device doesn't support, will try the next mode.",
+          "Mode1": "Fixed",
+          "Mode2": "By Speed",
+          "Mode3": "By Pressure"
+        }
+      },
+      "Tentative":
+      {
+        "N": "Experimental",
+        "HideCursor": "Hide touch cursor while drawing (BETA)",
+        "HideCursorE": "Hides white touch dot on canvas. Shows mouse/pen cursor again when detected."
+      }
+    },
+    "Performance":
+    {
+      "N": "Performance",
+      "DrawMode":
+      {
+        "N": "Draw Engine",
+        "Prepare":
+        {
+          "N": "Touch Prepare",
+          "E": "More fingers = faster start, but uses more memory.",
+          "Ind": "{:d} fingers"
+        },
+        "SuperDraw": "Extreme Performance Drawing (BETA)",
+        "SuperDrawE": "For powerful CPUs only! Removes canvas render interval in draw mode. Extra resource usage only while drawing. Turn off if lag detected."
+      }
+    },
+    "Preset":
+    {
+      "N": "Presets",
+      "Memory":
+      {
+        "N": "Memory",
+        "Thickness": "Remember last pen width",
+        "ThicknessE": "Pen/highlighter width on startup matches last exit.",
+        "Color": "Remember last pen color",
+        "ColorE": "Pen/highlighter color on startup matches last exit."
+      },
+      "Preset":
+      {
+        "N": "Presets (if memory is off)",
+        "AutoThickness": "Auto adapt width",
+        "AutoThicknessE": "Set recommended pen width based on screen resolution/size at launch. (Current pen: {}px; Highlighter: {}px)",
+        "Pen": "Pen width preset",
+        "PenInd": "{} px",
+        "Highlighter": "Highlighter width preset",
+        "HighlighterInd": "{} px"
+      }
+    },
+    "PlugIn":
+    {
+      "N": "Plugins"
+    },
+    "Component":
+    {
+      "N": "Components"
+    },
+    "HotKey":
+    {
+      "N": "Hotkeys",
+      "E": "Global Hotkeys:\nCtrl + Win + Alt: Switch select/draw mode\n\nIn Draw Mode:\nCtrl + Q: Freeze\nCtrl + E: Penetrate\n(Ctrl + Z): Undo/Super Restore\n\nOther/custom hotkeys coming soon."
+    },
+    "Community":
+    {
+      "N": "Community"
+    },
+    "Sponsor":
+    {
+      "N": "Sponsor Us"
+    },
+    "RestartSoftware":
+    {
+      "N": "Restart"
+    },
+    "ExitSoftware":
+    {
+      "N": "Exit"
+    },
+    "DebugSoftware":
+    {
+      "N": "[Debug]"
+    },
+    "Update":
+    {
+      "Check": "Check",
+      "Channel":
+      {
+        "LTS": "Stable Channel",
+        "Insider": "Insider Channel",
+        "Dev": "Dev Channel",
+        "Other": "Other Channel"
+      },
+      "NotStarted": "Update check not started",
+      "ObtainInformation": "Fetching update info",
+      "InformationFail": "Failed to fetch update info",
+      "InformationDamage": "Downloaded info corrupted",
+      "InformationUnStandardized": "Invalid update info",
+      "Downloading": "Downloading update",
+      "DownloadFail": "Download failed",
+      "DownloadDamage": "File damaged",
+      "Restart": "Restart to update to latest version",
+      "Latest": "Already up-to-date",
+      "Newer": "Newer than official latest",
+      "New": "New version found",
+      "Repair": "Try Repair",
+      "ManualDownload": "Manual Download",
+      "UpdateNow": "Update Now"
+    }
+  }
+}
+

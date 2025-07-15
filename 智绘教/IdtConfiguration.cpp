@@ -117,8 +117,8 @@ bool ReadSetting()
 				setlist.configurationSetting.enable = setlistVal["ConfigurationSetting"]["Enable"].asBool();
 		}
 
-		if (setlistVal.isMember("SelectLanguage") && setlistVal["SelectLanguage"].isBool())
-			setlist.selectLanguage = setlistVal["SelectLanguage"].asBool();
+		if (setlistVal.isMember("SelectLanguage") && setlistVal["SelectLanguage"].isInt())
+			setlist.selectLanguage = setlistVal["SelectLanguage"].asInt();
 		if (setlistVal.isMember("StartUp") && setlistVal["StartUp"].isBool())
 			setlist.startUp = setlistVal["StartUp"].asBool();
 		if (setlistVal.isMember("SettingGlobalScale") && setlistVal["SettingGlobalScale"].isDouble())

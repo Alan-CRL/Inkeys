@@ -248,7 +248,7 @@ public:
 		isChecking = false;
 	}
 public:
-	bool isChecking;
+	IdtAtomic<bool> isChecking;
 	bool Check();
 };
 extern CheckEndShowClass CheckEndShow;

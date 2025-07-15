@@ -32,7 +32,7 @@ void GetEdition()
 {
 	editionState.result = false, editionState.editionDate = L"";
 
-	EditionInfoClass editionInfo = GetEditionInfo("LTS");
+	EditionInfoClass editionInfo = GetEditionInfo("LTS", "");
 	if (editionInfo.errorCode == 200)
 	{
 		editionState.editionDate = editionInfo.editionDate;

@@ -1,0 +1,459 @@
+﻿// 你可以在此文件中使用 // 作为行注释，但块注释和尾随逗号等其他 JSONC 功能不受支持。
+// You can use // as line comments in this file, but other JSONC features such as block comments and trailing commas are not supported.
+{
+  "Language": "zh-CN",
+  "Widget":
+  {
+    "LnkName": "智绘教(屏幕批注工具)"
+  },
+  "Operate":
+  {
+    "Reset": "重置",
+    "Repair": "修复",
+    "Copy": "复制",
+    "Create": "创建"
+  },
+
+  "UI":
+  {
+    "Centre":
+    {
+      "Select": "选择",
+      "SelectClean": "选择(清空)",
+      "Pen": "画笔",
+      "Eraser": "橡皮",
+      "Options": "选项"
+    },
+    "Pen":
+    {
+
+      "Pen": "画笔",
+      "Highlighter": "荧光笔",
+
+      "Thinkness": "粗\n细",
+
+      "Write": "书写",
+      "Line": "直线",
+      "Square": "矩形"
+    },
+    "Operate":
+    {
+      "Revoke": "撤回",
+      "Recall": "超级恢复",
+      "Freeze": "定格",
+      "Pierce": "穿透"
+    }
+  },
+  "SettingsUI":
+  {
+    "N": "智绘教Inkeys 选项",
+
+    "Home":
+    {
+      "N": "主页",
+      "Prompt": "推荐使用 1080P 至 1800P 分辨率的显示器，高于此范围可能会影响使用体验。",
+      "Developer": "智绘教Inkeys 创始开发者",
+      "Group": "QQ 用户群",
+      "GroupE": "618720802",
+      "BilibiliChannel": "Bilibili 宣发频道",
+      "FeedBack": "问题/建议反馈"
+    },
+    "Language":
+    {
+      "N": "语言",
+
+      "UI":
+      {
+        "N": "界面语言",
+
+        "Select": "选择语言",
+        "SelectE": "Choose language | [需要重启软件]",
+
+        "Language":
+        {
+          "en-US": "English(Beta)",
+          "zh-CN": "简体中文",
+          "zh-TW": "正體中文(Beta)"
+        },
+        "Warn": "需要重启软件才能完全生效，是否重启？"
+      }
+    },
+    "Configuration":
+    {
+      "N": "配置保存",
+
+      "Clean":
+      {
+        "N": "配置清理",
+        
+        "Enable": "启用配置清理",
+        "EnableE": "软件将在启动时和保存配置时清理配置表。具体为删去多余配置项（和当前软件版本的配置项模板比较），这可能导致在软件降级再升级后和导入配置时会丢失部分配置项，这些配置项将会变为默认选项。"
+      },
+      "CanvasSave":
+      {
+        "N": "画布保存",
+
+        "Enable": "启用历史画布保存",
+        "EnableE": "存储在程序目录下 ScreenShot 文件夹内，并供“超级恢复”使用历史画布。",
+
+        "SaveTime":
+        {
+          "N": "保存时长",
+          "E": "超过设定时长后，在启动时清理过期的历史画布。",
+
+          "1d": "1天",
+          "3d": "3天",
+          "5d": "5天",
+          "10d": "10天",
+          "30d": "30天",
+          "Never": "从不清理"
+        }
+      }
+    },
+    "Version":
+    {
+      "N": "软件版本",
+
+      "ManualUpdate":
+      {
+        "N": "发现软件新版本",
+
+        "ManualUpdate": "手动更新"
+      },
+      "VersionTip": "检测到软件架构与系统架构不符，与系统架构不适应有可能会导致软件效率降低，并影响体验。建议在本页面下方“软件修复”模块中修复软件（启用“修复时修正软件架构”选项），或在页面底端手动选择目标架构并修复。",
+
+      "Info":
+      {
+        "N": "版本信息",
+
+        "ReleaseVersion": "软件发布版本",
+        "ReleaseDate": "软件发布时间",
+        "ReleaseArch": "软件架构和系统架构",
+
+        "ReleaseTag": "软件构建模式为发布版本(RELEASE)",
+        "DebugTag": "软件构建模式为非发布调测版本(DEBUG)",
+
+        "ManualBuild": "此版本为手动构建",
+        "AutoBuild": "此版本为自动构建(CI/CD) ",
+        "CICDInfo": "自动构建详情信息"
+      },
+      "UserInfo":
+      {
+        "N": "用户信息",
+
+        "CopyUserId": "复制用户ID",
+        "UserId": "用户ID"
+      },
+      "Repair":
+      {
+        "N": "软件修复",
+
+        "RepairSoftware": "修复软件",
+        "RepairSoftwareE": "重新安装软件至所选通道的最新版本",
+
+        "RepairArch": "修复时修正软件架构"
+      },
+      "Update":
+      {
+        "N": "更新偏好",
+
+        "AutoUpate": "自动更新(静默)",
+        "ChannelTip": "正式通道(LTS) 推送最新的稳定版本, 具有较高的稳定性。（推荐）\n预览通道(Insider) 推送稳定性一般的预览版本, 且可能会被杀毒软件误报。",
+
+        "Channel":
+        {
+          "N": "目标更新通道",
+
+          "LTS": "正式通道(LTS)",
+          "Insider": "预览通道(Insider)"
+        },
+        "Arch":
+        {
+          "N": "目标更新架构",
+          "E": "注意：和当前系统不一致的架构可能会导致软件无法启动或严重的性能问题。",
+
+          "64": "64位",
+          "32": "32位",
+          "Arm64": "Arm64"
+        }
+      }
+    },
+    "CICD":
+    {
+      "N": "自动构建详情信息",
+
+      "Repository": "构建仓库",
+      "Branch": "构建分支",
+      "Submitter": "构建提交者",
+      "BuildTime": "构建时间",
+      "BuildSystem": "构建系统",
+      "BuildSystemVersion": "构建系统版本",
+      "RunnerImageSystem": "运行器镜像系统",
+      "RunnerImageVersion": "运行器镜像版本",
+      "MSBuildVersion": "MSBuild 版本"
+    },
+
+    // ---
+
+    "Regular":
+    {
+      "N": "常规",
+
+      "StartUp":
+      {
+        "N": "开机自启和启动行为",
+
+        "AutoStart": "开机自动启动",
+        "AutoStartE": "设置当前用户账户开机时启动 智绘教Inkeys。",
+
+        "Link":
+        {
+          "N": "创建桌面快捷方式",
+          "E": "自动修正名称和创建快捷方式，请点击“更多选项”。",
+
+          "More": "更多选项"
+        }
+      },
+      "Appearance":
+      {
+        "N": "外观样式",
+
+        "Theme":
+        {
+          "N": "主题",
+          "E": "选择“推荐皮肤”将会根据官方推荐皮肤自动更换。",
+
+          "Skip1": "推荐皮肤",
+          "Skip2": "默认皮肤",
+          "Skip3": "极简时钟",
+          "Skip4": "蛇年迎新"
+        },
+        "SettingUIScale":
+        {
+          "N": "选项界面 UI 缩放",
+          "E": "[需要重启软件]缩放比例高将会占用大量内存空间。",
+
+          "Ind": "{:.2f} 倍缩放"
+        }
+      },
+      "Behavior":
+      {
+        "N": "其他行为",
+
+        "TopWindow":
+        {
+          "N": "置顶间隔",
+          "E": "在非绘制模式下将按此间隔置顶窗口，落笔时暂停置顶窗口。更短的间隔可以更少地排除其他软件的窗口的干扰，但会占用更多的CPU资源。如果其他软件其他软件的窗口持续干扰，建议使用插件-超级置顶。",
+
+          "100ms": "非常短(100ms)",
+          "500ms": "短(500ms)",
+          "1s": "较短(1s)",
+          "3s": "中等(3s)",
+          "5s": "较长(5s)",
+          "10s": "长(10s)",
+          "30s": "非常长(30s)"
+        },
+
+        "RightClickClose": "右键点击主图标关闭程序",
+        "RightClickCloseE": "将会弹出一个确认弹框。",
+        "DrawingRetract": "画笔绘制时收起主栏",
+        "ErasingRetract": "橡皮擦除时收起主栏",
+        "DraggingRetract": "拖动主栏时收起主栏",
+        "CheckingRetract": "点击时收起主栏",
+        "CheckingRetractE": "仅在选择模式或穿透下，点击非主栏区域时生效。"
+      },
+      "Tentative":
+      {
+        "N": "实验选项",
+
+        "AvoidFulScreen": "避免全屏显示",
+        "AvoidFulScreenE": "[需要重启软件]软件在非绘制模式下或穿透模式下将不会保持全屏显示。这可以保证拥有自动隐藏熟悉的任务栏可以正常升起，可能可以降低置顶窗口失败的概率，还可能可以改善任务栏无法被触摸的问题。",
+
+        "SafeMode":
+        {
+          "N": "教学安全选项",
+          "E": "软件发生崩溃错误时所执行的操作。（启动过程发生错误依旧会引发提示）",
+
+          "Mode1": "弹窗提示并重启软件",
+          "Mode2": "静默重启软件",
+          "Mode3": "交由系统崩溃过滤器处理",
+          "Mode4": "直接关闭软件"
+        }
+      }
+    },
+    "Draw":
+    {
+      "N": "绘制",
+
+      "Effect":
+      {
+        "N": "绘图效果优化",
+
+        "Device":
+        {
+          "N": "绘图设备",
+          "E": "我们将根据不同设备类型优化使用体验。",
+
+          "Touch": "触控屏幕",
+          "MousePen": "鼠标或手写笔"
+        }
+      },
+      "AIDraw":
+      {
+        "N": "智能绘图",
+
+        "PenUp": "抬笔拉直直线",
+        "PenUpE": "现阶段只推荐在教学一体机上使用。",
+        "PenStay": "停留拉直直线",
+        "PenStayE": "绘制直线完成后按住一秒，直线将被拉直。",
+
+        "EndpointAdsorption": "端点吸附",
+        "EndpointAdsorptionE": "直线和矩形的端点将会在抬笔时吸附。"
+      },
+      "DrawBehavior":
+      {
+        "N": "绘制行为",
+
+        "SoomthWriting": "抬笔平滑笔迹"
+      },
+      "RubberThickness":
+      {
+        "N": "橡皮粗细",
+
+        "Calc":
+        {
+          "N": "橡皮粗细计算方式",
+          "E": "如果特定设备不支持当前选项，软件会继续尝试下一个粗细计算方式。",
+
+          "Mode1": "固定粗细",
+          "Mode2": "笔速粗细",
+          "Mode3": "压感粗细"
+        }
+      },
+      "Tentative":
+      {
+        "N": "实验选项",
+
+        "HideCursor": "绘制时隐藏触控光标(BETA)",
+        "HideCursorE": "阻止触控光标（白色圆点）在画布上显示。但是当鼠标和触控笔信号出现时, 则会恢复显示鼠标光标/笔光标。"
+      }
+    },
+    "Performance":
+    {
+      "N": "性能",
+
+      "DrawMode":
+      {
+        "N": "绘图模块",
+
+        "Prepare":
+        {
+          "N": "落笔预备",
+          "E": "越大则越多手指落下时更快开始绘制，但会占用更多内存。",
+
+          "Ind": "{:d} 指"
+        },
+
+        "SuperDraw": "极限性能绘图(BETA)",
+        "SuperDrawE": "仅适用于拥有强大 CPU 的设备（重要！否则将引起卡顿）。 在绘制模式下取消画布渲染间隔，额外性能开销都仅在绘制中产生（即非选择状态下）。 如果发现绘制延迟高、不跟手，请关闭此选项。"
+        }
+     },
+    "Preset":
+    {
+      "N": "预设",
+
+      "Memory":
+      {
+        "N": "记忆",
+
+        "Thickness": "记忆绘制粗细",
+        "ThicknessE": "在启动软件时使画笔与荧光笔的粗细和退出时一致。",
+        "Color": "记忆绘制颜色",
+        "ColorE": "在启动软件时使画笔与荧光笔的颜色和退出时一致。"
+      },
+      "Preset":
+      {
+        "N": "预设（仅在未开启对应绘制记忆时生效）",
+
+        "AutoThickness": "自适应绘制粗细",
+        "AutoThicknessE": "在启动时，根据屏幕分辨率和物理尺寸自动设定推荐的绘制粗细。（画笔当前为{}px；荧光笔当前为{}px）",
+
+        "Pen": "预设画笔粗细",
+        "PenInd": "{} px",
+        "Highlighter": "预设荧光笔粗细",
+        "HighlighterInd": "{} px"
+      }
+    },
+    "PlugIn":
+    {
+      "N": "插件"
+    },
+    "Component":
+    {
+      "N": "组件"
+    },
+    "HotKey":
+    {
+      "N": "快捷键",
+      "E": "全局快捷键：\nCtrl + Win + Alt 切换选择 / 绘制模式\n\n绘制模式下：\nCtrl + Q 定格\nCtrl + E 穿透\n（Ctrl + Z） 撤回 / 超级恢复\n\n其余快捷键和自定义快捷键正在测试，敬请期待"
+    },
+
+    // ---
+
+    "Community":
+    {
+      "N": "社区名片"
+    },
+    "Sponsor":
+    {
+      "N": "赞助我们"
+    },
+
+    // ---
+
+    "RestartSoftware":
+    {
+      "N": "重启软件"
+    },
+    "ExitSoftware":
+    {
+      "N": "关闭软件"
+    },
+    "DebugSoftware":
+    {
+      "N": "调试软件"
+    },
+
+    // ---
+
+    "Update":
+    {
+      "Check": "检查更新",
+
+      "Channel":
+      {
+        "LTS": "正式通道",
+        "Insider": "预览通道",
+        "Dev": "开发通道",
+        "Other": "其他通道"
+      },
+
+      "NotStarted": "新版本检测未启动",
+      "ObtainInformation": "获取新版本信息中",
+      "InformationFail": "下载版本信息失败",
+      "InformationDamage": "下载版本信息损坏",
+      "InformationUnStandardized": "下载版本信息不符合规范",
+      "Downloading": "新版本正极速下载中",
+      "DownloadFail": "下载最新版本软件失败",
+      "DownloadDamage": "下载最新版本软件损坏",
+      "Restart": "重启软件更新到最新版本",
+      "Latest": "软件已经是最新版本",
+      "Newer": "软件相对最新版本更新",
+      "New": "发现软件新版本",
+
+      "Repair": "尝试修复",
+      "ManualDownload": "手动下载最新版本",
+      "UpdateNow": "更新到最新版本"
+    }
+  }
+} 

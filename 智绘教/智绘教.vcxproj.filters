@@ -85,6 +85,12 @@
     <Filter Include="头文件\SuperTop">
       <UniqueIdentifier>{0f3ba083-e762-42d7-aeef-aa8d13bc8b3a}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\Inkeys">
+      <UniqueIdentifier>{3dca3d99-88e0-429c-8cb3-d5c289d5a08c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Inkeys\Json">
+      <UniqueIdentifier>{a73c31b1-6419-42a0-a606-f17415f934a6}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HiEasyX.h">
@@ -726,6 +732,12 @@
     <ClInclude Include="SuperTop\IdtSuperTop.h">
       <Filter>头文件\SuperTop</Filter>
     </ClInclude>
+    <ClInclude Include="SuperTop\IdtToken.h">
+      <Filter>头文件\SuperTop</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Json\IdtJson.h">
+      <Filter>头文件\Inkeys\Json</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HiEasyX\HiGUI\Button.cpp">
@@ -1209,6 +1221,12 @@
     <Image Include="src\pin.png">
       <Filter>资源文件</Filter>
     </Image>
+    <Image Include="src\setting\Home1_zh-TW.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\setting\Home2_zh-TW.png">
+      <Filter>资源文件</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />
@@ -1219,14 +1237,15 @@
   <ItemGroup>
     <None Include="PptCOM.dll" />
     <None Include="exe\DesktopDrawpadBlocker.exe" />
-    <None Include="src\i18n\zh-CN.json" />
-    <None Include="src\i18n\en-US.json" />
     <None Include="additional\jsoncpp\lib_json\json_valueiterator.inl">
       <Filter>头文件\Additional\JsonCpp\lib_json</Filter>
     </None>
     <None Include="additional\spdlog\fmt\bundled\fmt.license.rst">
       <Filter>头文件\Additional\SpdLog\fmt\bundled</Filter>
     </None>
+    <None Include="src\i18n\zh-CN.jsonc" />
+    <None Include="src\i18n\en-US.jsonc" />
+    <None Include="src\i18n\zh-TW.jsonc" />
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="..\PptCOM\PptCOM.manifest" />

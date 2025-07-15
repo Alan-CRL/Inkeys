@@ -59,7 +59,7 @@ public:
 	string hash_md5;
 	string hash_sha256;
 };
-EditionInfoClass GetEditionInfo(string channel);
+EditionInfoClass GetEditionInfo(string channel, string arch);
 
 enum class AutomaticUpdateStateEnum : int
 {
@@ -107,7 +107,7 @@ public:
 extern DownloadNewProgramStateClass downloadNewProgramState;
 
 void splitUrl(string input_url, string& prefix, string& domain, string& path);
-AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass editionInfo, string url);
+AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass editionInfo, string url, string arch);
 
 //程序自动更新
 extern bool mandatoryUpdate;

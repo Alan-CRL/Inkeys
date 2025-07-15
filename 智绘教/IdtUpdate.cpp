@@ -30,7 +30,7 @@ wstring convertToHttp(const wstring& url)
 	else return httpPrefix + url;
 }
 
-EditionInfoClass GetEditionInfo(string channel)
+EditionInfoClass GetEditionInfo(string channel, string arch)
 {
 	/*
 	* 错误码：
@@ -67,8 +67,8 @@ EditionInfoClass GetEditionInfo(string channel)
 			if (editionInfoValue[channel].isMember("hash") && editionInfoValue[channel]["hash"].isObject())
 			{
 				string hash1, hash2;
-				if (setlist.updateArchitecture == "win64") hash1 = "md5 64", hash2 = "sha256 64";
-				else if (setlist.updateArchitecture == "arm64") hash1 = "md5 Arm64", hash2 = "sha256 Arm64";
+				if (arch == "win64") hash1 = "md5 64", hash2 = "sha256 64";
+				else if (arch == "arm64") hash1 = "md5 Arm64", hash2 = "sha256 Arm64";
 				else hash1 = "md5", hash2 = "sha256";
 
 				if (editionInfoValue[channel]["hash"].isMember(hash1) && editionInfoValue[channel]["hash"][hash1].isString()) retEditionInfo.hash_md5 = editionInfoValue[channel]["hash"][hash1].asString();
@@ -80,8 +80,8 @@ EditionInfoClass GetEditionInfo(string channel)
 
 			{
 				string path;
-				if (setlist.updateArchitecture == "win64") path = "path64";
-				else if (setlist.updateArchitecture == "arm64") path = "pathArm64";
+				if (arch == "win64") path = "path64";
+				else if (arch == "arm64") path = "pathArm64";
 				else path = "path";
 
 				if (editionInfoValue[channel].isMember(path) && editionInfoValue[channel][path].isArray())
@@ -102,8 +102,8 @@ EditionInfoClass GetEditionInfo(string channel)
 			if (editionInfoValue[channel].isMember("size") && editionInfoValue[channel]["size"].isObject())
 			{
 				string path;
-				if (setlist.updateArchitecture == "win64") path = "file64";
-				else if (setlist.updateArchitecture == "arm64") path = "fileArm64";
+				if (arch == "win64") path = "file64";
+				else if (arch == "arm64") path = "fileArm64";
 				else path = "file";
 
 				if (editionInfoValue[channel]["size"].isMember(path) && editionInfoValue[channel]["size"][path].isUInt64())
@@ -181,7 +181,7 @@ void splitUrl(string input_url, string& prefix, string& domain, string& path)
 		path.clear();
 	}
 }
-AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass editionInfo, string url)
+AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass editionInfo, string url, string arch)
 {
 	using enum AutomaticUpdateStateEnum;
 
@@ -260,6 +260,8 @@ AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state,
 				root["hash"]["md5"] = Json::Value(editionInfo.hash_md5);
 				root["hash"]["sha256"] = Json::Value(editionInfo.hash_sha256);
 
+				root["arch"] = Json::Value(arch);
+
 				root["old_name"] = Json::Value(utf16ToUtf8(GetCurrentExeName()));
 				if (mandatoryUpdate) root["MandatoryUpdate"] = Json::Value(mandatoryUpdate);
 
@@ -293,6 +295,8 @@ void AutomaticUpdate()
 	bool against = false;
 	int updateTimes = 0;
 
+	string updateArch = setlist.updateArchitecture;
+
 	EditionInfoClass editionInfo;
 	using enum AutomaticUpdateStateEnum;
 
@@ -304,10 +308,12 @@ updateStart:
 		state = true;
 		against = false;
 
+		updateArch = setlist.updateArchitecture;
+
 		//获取最新版本信息
 		if (state)
 		{
-			editionInfo = GetEditionInfo(setlist.UpdateChannel);
+			editionInfo = GetEditionInfo(setlist.UpdateChannel, updateArch);
 
 			if (editionInfo.errorCode != 200)
 			{
@@ -331,6 +337,7 @@ updateStart:
 			{
 				wstring tedition, tpath;
 				string thash_md5, thash_sha256;
+				string tarch;
 
 				Json::Reader reader;
 				Json::Value root;
@@ -355,6 +362,10 @@ updateStart:
 						else fileDamage = true;
 					}
 					else fileDamage = true;
+
+					// 架构确定
+					if (root.isMember("arch")) tarch = root["arch"].asString();
+					else fileDamage = true;
 				}
 				readjson.close();
 
@@ -372,7 +383,7 @@ updateStart:
 						delete myWrapper;
 					}
 
-					if (tedition == editionInfo.editionDate && _waccess((globalPath + tpath).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256)
+					if (tedition == editionInfo.editionDate && _waccess((globalPath + tpath).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256 && updateArch == tarch)
 					{
 						update = false;
 						AutomaticUpdateState = UpdateRestart;
@@ -387,7 +398,7 @@ updateStart:
 				bool hasUpdateNew = false;
 				for (int i = 0; i < editionInfo.path_size; i++)
 				{
-					AutomaticUpdateState = DownloadNewProgram(&downloadNewProgramState, editionInfo, editionInfo.path[i]);
+					AutomaticUpdateState = DownloadNewProgram(&downloadNewProgramState, editionInfo, editionInfo.path[i], updateArch);
 					if (AutomaticUpdateState == UpdateRestart)
 					{
 						against = false;

@@ -1,0 +1,456 @@
+﻿// 你可以在此文件中使用 // 作為行註釋，但塊註釋和尾隨逗號等其他 JSONC 功能不受支持。
+// You can use // as line comments in this file, but other JSONC features such as block comments and trailing commas are not supported.
+{
+  "Language": "zh-TW",
+  "Widget":
+  {
+    "LnkName": "智繪教(螢幕批註工具)"
+  },
+  "Operate":
+  {
+    "Reset": "重設",
+    "Repair": "修復",
+    "Copy": "複製",
+    "Create": "建立"
+  },
+
+  "UI":
+  {
+    "Centre":
+    {
+      "Select": "選擇",
+      "SelectClean": "選擇(清空)",
+      "Pen": "畫筆",
+      "Eraser": "橡皮擦",
+      "Options": "選項"
+    },
+    "Pen":
+    {
+      "Pen": "畫筆",
+      "Highlighter": "螢光筆",
+      "Thinkness": "粗\n細",
+      "Write": "書寫",
+      "Line": "直線",
+      "Square": "矩形"
+    },
+    "Operate":
+    {
+      "Revoke": "撤回",
+      "Recall": "超級回復",
+      "Freeze": "定格",
+      "Pierce": "穿透"
+    }
+  },
+  "SettingsUI":
+  {
+    "N": "智绘教Inkeys 選項",
+
+    "Home":
+    {
+      "N": "主頁",
+      "Prompt": "建議使用 1080P 至 1800P 解析度的顯示器，高於此範圍可能會影響使用體驗。",
+      "Developer": "智绘教Inkeys 創始開發者",
+      "Group": "Github Discussions",
+      "GroupE": "Inkeys/discussions",
+      "BilibiliChannel": "Bilibili 宣傳頻道",
+      "FeedBack": "問題/建議回饋"
+    },
+    "Language":
+    {
+      "N": "語言",
+
+      "UI":
+      {
+        "N": "介面語言",
+
+        "Select": "選擇語言",
+        "SelectE": "Choose language | [需要重新啟動軟體]",
+
+        "Language":
+        {
+          "en-US": "English(Beta)",
+          "zh-CN": "简体中文",
+          "zh-TW": "正體中文(Beta)"
+        },
+        "Warn": "需要重新啟動軟體才能完全生效，是否重啟？"
+      }
+    },
+    "Configuration":
+    {
+      "N": "設定保存",
+
+      "Clean":
+      {
+        "N": "設定清理",
+
+        "Enable": "啟用設定清理",
+        "EnableE": "軟體在啟動時和保存設定時將清理設定表。具體為刪除多餘設定項（與目前軟體版本的設定項模板比較），這可能導致在軟體降級再升級後及匯入設定時會遺失部分設定項，這些設定項將會變為預設選項。"
+      },
+      "CanvasSave":
+      {
+        "N": "畫布保存",
+
+        "Enable": "啟用歷史畫布保存",
+        "EnableE": "儲存在程式目錄下 ScreenShot 資料夾內，並供「超級回復」使用歷史畫布。",
+
+        "SaveTime":
+        {
+          "N": "保存時長",
+          "E": "超過設定時長後，在啟動時清除過期的歷史畫布。",
+
+          "1d": "1天",
+          "3d": "3天",
+          "5d": "5天",
+          "10d": "10天",
+          "30d": "30天",
+          "Never": "從不清理"
+        }
+      }
+    },
+    "Version":
+    {
+      "N": "軟體版本",
+
+      "ManualUpdate":
+      {
+        "N": "發現軟體新版本",
+
+        "ManualUpdate": "手動更新"
+      },
+      "VersionTip": "檢測到軟體架構與系統架構不符，與系統架構不適應有可能會導致軟體效率降低，並影響體驗。建議在本頁面下方「軟體修復」模組中修復軟體（啟用「修復時修正軟體架構」選項），或在頁面底部手動選擇目標架構並修復。",
+
+      "Info":
+      {
+        "N": "版本資訊",
+
+        "ReleaseVersion": "軟體發布版本",
+        "ReleaseDate": "軟體發布時間",
+        "ReleaseArch": "軟體架構及系統架構",
+
+        "ReleaseTag": "軟體構建模式為發布版本(RELEASE)",
+        "DebugTag": "軟體構建模式為非發布調試版本(DEBUG)",
+
+        "ManualBuild": "此版本為手動構建",
+        "AutoBuild": "此版本為自動構建(CI/CD) ",
+        "CICDInfo": "自動構建詳細資訊"
+      },
+      "UserInfo":
+      {
+        "N": "用戶資訊",
+
+        "CopyUserId": "複製用戶ID",
+        "UserId": "用戶ID"
+      },
+      "Repair":
+      {
+        "N": "軟體修復",
+
+        "RepairSoftware": "修復軟體",
+        "RepairSoftwareE": "重新安裝軟體至所選通道的最新版本",
+
+        "RepairArch": "修復時修正軟體架構"
+      },
+      "Update":
+      {
+        "N": "更新偏好",
+
+        "AutoUpate": "自動更新(靜默)",
+        "ChannelTip": "正式通道(LTS) 推送最新的穩定版本，具備較高之穩定性。（推薦）\n預覽通道(Insider) 推送穩定性一般的預覽版本，且可能會被防毒軟體誤報。",
+
+        "Channel":
+        {
+          "N": "目標更新通道",
+
+          "LTS": "正式通道(LTS)",
+          "Insider": "預覽通道(Insider)"
+        },
+        "Arch":
+        {
+          "N": "目標更新架構",
+          "E": "注意：與現在系統不一致的架構可能會導致軟體無法啟動或嚴重效能問題。",
+
+          "64": "64位",
+          "32": "32位",
+          "Arm64": "Arm64"
+        }
+      }
+    },
+    "CICD":
+    {
+      "N": "自動構建詳細資訊",
+
+      "Repository": "構建倉庫",
+      "Branch": "構建分支",
+      "Submitter": "構建提交者",
+      "BuildTime": "構建時間",
+      "BuildSystem": "構建系統",
+      "BuildSystemVersion": "構建系統版本",
+      "RunnerImageSystem": "執行器映像系統",
+      "RunnerImageVersion": "執行器映像版本",
+      "MSBuildVersion": "MSBuild 版本"
+    },
+
+    // ---
+
+    "Regular":
+    {
+      "N": "常規",
+
+      "StartUp":
+      {
+        "N": "開機自動執行與啟動行為",
+
+        "AutoStart": "開機自動啟動",
+        "AutoStartE": "設為目前用戶帳戶開機時啟動 智绘教Inkeys。",
+
+        "Link":
+        {
+          "N": "建立桌面捷徑",
+          "E": "自動修正名稱並建立捷徑，請點選「更多選項」。",
+
+          "More": "更多選項"
+        }
+      },
+      "Appearance":
+      {
+        "N": "外觀樣式",
+
+        "Theme":
+        {
+          "N": "主題",
+          "E": "選擇「推薦皮膚」將會根據官方推薦皮膚自動替換。",
+
+          "Skip1": "推薦皮膚",
+          "Skip2": "預設皮膚",
+          "Skip3": "極簡時鐘",
+          "Skip4": "蛇年迎新"
+        },
+        "SettingUIScale":
+        {
+          "N": "選項介面 UI 縮放",
+          "E": "[需要重啟軟體]縮放比例過高將會佔用大量記憶體空間。",
+
+          "Ind": "{:.2f} 倍縮放"
+        }
+      },
+      "Behavior":
+      {
+        "N": "其他行為",
+
+        "TopWindow":
+        {
+          "N": "置頂間隔",
+          "E": "在非繪圖模式下將依此間隔將視窗置頂，落筆時暫停置頂視窗。間隔越短越能減少其他軟體視窗幹擾，但會消耗較多CPU資源。如果其他軟體視窗持續幹擾，建議使用插件-超級置頂。",
+
+          "100ms": "極短(100ms)",
+          "500ms": "短(500ms)",
+          "1s": "較短(1s)",
+          "3s": "中等(3s)",
+          "5s": "較長(5s)",
+          "10s": "長(10s)",
+          "30s": "極長(30s)"
+        },
+
+        "RightClickClose": "右鍵點擊主圖標關閉程式",
+        "RightClickCloseE": "將會跳出一個確認提示框。",
+        "DrawingRetract": "使用畫筆時收起主欄",
+        "ErasingRetract": "使用橡皮時收起主欄",
+        "DraggingRetract": "拖動主欄時收起主欄",
+        "CheckingRetract": "點擊時收起主欄",
+        "CheckingRetractE": "僅於選擇模式或穿透下，點擊非主欄區時生效。"
+      },
+      "Tentative":
+      {
+        "N": "實驗選項",
+
+        "AvoidFulScreen": "避免全螢幕顯示",
+        "AvoidFulScreenE": "[需要重啟軟體]軟體在非繪圖模式或穿透模式下不會保持全螢幕顯示。這可確保自動隱藏式任務列可正常升起，可能可降低置頂失敗問題，還可能改善任務列無法被觸控的問題。",
+
+        "SafeMode":
+        {
+          "N": "教學安全選項",
+          "E": "軟體發生崩潰錯誤時執行的操作。（啟動過程錯誤仍會提示）",
+
+          "Mode1": "彈窗提示並重啟軟體",
+          "Mode2": "靜默重啟軟體",
+          "Mode3": "交給系統崩潰過濾器處理",
+          "Mode4": "直接關閉軟體"
+        }
+      }
+    },
+    "Draw":
+    {
+      "N": "繪圖",
+
+      "Effect":
+      {
+        "N": "繪圖效果優化",
+
+        "Device":
+        {
+          "N": "繪圖裝置",
+          "E": "我們會根據不同裝置型別優化使用體驗。",
+
+          "Touch": "觸控螢幕",
+          "MousePen": "滑鼠或手寫筆"
+        }
+      },
+      "AIDraw":
+      {
+        "N": "智慧繪圖",
+
+        "PenUp": "抬筆拉直直線",
+        "PenUpE": "目前僅推薦於教學一體機使用。",
+        "PenStay": "停留拉直直線",
+        "PenStayE": "繪製直線完成後按住一秒，直線將被拉直。",
+
+        "EndpointAdsorption": "端點吸附",
+        "EndpointAdsorptionE": "直線和矩形端點將在抬筆時吸附。"
+      },
+      "DrawBehavior":
+      {
+        "N": "繪圖行為",
+
+        "SoomthWriting": "抬筆平滑筆跡"
+      },
+      "RubberThickness":
+      {
+        "N": "橡皮粗細",
+
+        "Calc":
+        {
+          "N": "橡皮粗細計算方式",
+          "E": "若裝置不支援當前選項，軟體會嘗試下個粗細計算方式。",
+
+          "Mode1": "固定粗細",
+          "Mode2": "筆速粗細",
+          "Mode3": "壓感粗細"
+        }
+      },
+      "Tentative":
+      {
+        "N": "實驗選項",
+
+        "HideCursor": "繪圖時隱藏觸控遊標(BETA)",
+        "HideCursorE": "阻止觸控遊標（白色圓點）在畫布上顯示。但是當滑鼠與手寫筆訊號出現時，會恢復顯示滑鼠／筆遊標。"
+      }
+    },
+    "Performance":
+    {
+      "N": "效能",
+
+      "DrawMode":
+      {
+        "N": "繪圖模組",
+
+        "Prepare":
+        {
+          "N": "落筆預備",
+          "E": "越大時越多手指落下會更快開始繪圖，但會佔用更多記憶體。",
+
+          "Ind": "{:d} 指"
+        },
+
+        "SuperDraw": "極限效能繪圖(BETA)",
+        "SuperDrawE": "僅適用於配備強力 CPU 的裝置（重要！否則將造成延遲卡頓）。繪圖模式下取消畫布渲染間隔，額外效能耗損僅於繪圖產生（即非選擇狀態中）。若發現描繪延遲高、不跟手，請關閉此選項。"
+      }
+    },
+    "Preset":
+    {
+      "N": "預設",
+
+      "Memory":
+      {
+        "N": "記憶",
+
+        "Thickness": "記憶繪圖粗細",
+        "ThicknessE": "啟動軟體時讓畫筆與螢光筆粗細與離開時一致。",
+        "Color": "記憶繪圖顏色",
+        "ColorE": "啟動軟體時讓畫筆與螢光筆顏色與離開時一致。"
+      },
+      "Preset":
+      {
+        "N": "預設（未啟動對應繪圖記憶時生效）",
+
+        "AutoThickness": "自適應繪圖粗細",
+        "AutoThicknessE": "啟動時，根據螢幕解析度和實體尺寸自動設定推薦粗細。（畫筆當前為{}px；螢光筆當前為{}px）",
+
+        "Pen": "預設畫筆粗細",
+        "PenInd": "{} px",
+        "Highlighter": "預設螢光筆粗細",
+        "HighlighterInd": "{} px"
+      }
+    },
+    "PlugIn":
+    {
+      "N": "插件"
+    },
+    "Component":
+    {
+      "N": "元件"
+    },
+    "HotKey":
+    {
+      "N": "快捷鍵",
+      "E": "全域快捷鍵：\nCtrl + Win + Alt 切換選擇 / 繪圖模式\n\n繪圖模式下：\nCtrl + Q 定格\nCtrl + E 穿透\n（Ctrl + Z） 撤回 / 超級回復\n\n其他快捷鍵與自訂快捷鍵功能測試中，敬請期待"
+    },
+
+    // ---
+
+    "Community":
+    {
+      "N": "社區名片"
+    },
+    "Sponsor":
+    {
+      "N": "贊助我們"
+    },
+
+    // ---
+
+    "RestartSoftware":
+    {
+      "N": "重啟軟體"
+    },
+    "ExitSoftware":
+    {
+      "N": "關閉軟體"
+    },
+    "DebugSoftware":
+    {
+      "N": "除錯軟體"
+    },
+
+    // ---
+
+    "Update":
+    {
+      "Check": "檢查更新",
+
+      "Channel":
+      {
+        "LTS": "正式通道",
+        "Insider": "預覽通道",
+        "Dev": "開發通道",
+        "Other": "其他通道"
+      },
+
+      "NotStarted": "新版本檢查未啟動",
+      "ObtainInformation": "取得新版本資訊中",
+      "InformationFail": "下載版本資訊失敗",
+      "InformationDamage": "下載版本資訊損壞",
+      "InformationUnStandardized": "下載版本資訊不符合規範",
+      "Downloading": "新版本正高速下載中",
+      "DownloadFail": "下載最新版軟體失敗",
+      "DownloadDamage": "下載最新版軟體損壞",
+      "Restart": "重啟軟體升級至最新版",
+      "Latest": "軟體已為最新版",
+      "Newer": "軟體相對最新版更新",
+      "New": "發現軟體新版本",
+
+      "Repair": "嘗試修復",
+      "ManualDownload": "手動下載最新版",
+      "UpdateNow": "更新到最新版"
+    }
+  }
+}

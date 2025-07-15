@@ -1845,7 +1845,8 @@ void DrawpadDrawing()
 					break;
 				}
 
-				if (setlist.performanceSetting.superDraw) timeBeginPeriod(1);
+				// 设置全局高精度
+				timeBeginPeriod(1);
 				if (setlist.regularSetting.avoidFullScreen) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 
 				nRet = GetWindowLongPtrW(drawpad_window, GWL_EXSTYLE);
@@ -1974,12 +1975,7 @@ void DrawpadDrawing()
 				}
 				else if (PptInfoStateBuffer.TotalPage != temp_totalpage && temp_totalpage == -1)
 				{
-					stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
-					//choose.select = true;
-
-					//brush.select = false;
-					//rubber.select = false;
-					penetrate.select = false;
+					ChangeStateModeToSelection();
 				}
 				PptInfoStateBuffer.CurrentPage = temp_currentpage;
 				PptInfoStateBuffer.TotalPage = temp_totalpage;
