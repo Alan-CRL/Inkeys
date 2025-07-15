@@ -45,7 +45,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250714a";				// 程序发布日期
+wstring editionDate = L"20250715a";				// 程序发布日期
 wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -72,8 +72,8 @@ void RestartProgram()
 shared_ptr<spdlog::logger> IDTLogger;
 
 // 程序入口点
-// int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
-int main()
+int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
+// int main()
 {
 	// 路径预处理
 	{
@@ -142,62 +142,40 @@ int main()
 
 		// 相关标识
 		bool superTopComplete = false;
-		wstring superTopLine = L"";
 
 		{
-			int argc = 0;
-			LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-
-			if (argv)
+			vector<wstring> args = CustomSplit::Run(GetCommandLineW(), L'*');
+			for (size_t i = 1; i < args.size(); i++)
 			{
-				for (int i = 1; i < argc; i++)
+				bool addCommandLine = true;
+
+				wstring commandLine = args[i];
+
+				cout << utf16ToUtf8(commandLine) << endl;
+
+				if (commandLine == L"-Restart") LaunchState::restart = true;
+				else if (commandLine == L"-WarnTry") LaunchState::warnTry = true;
+				else if (commandLine == L"-CrashTry") LaunchState::crashTry = true;
+				else if (commandLine == L"-SuperTopComplete") superTopComplete = true, addCommandLine = false;
+				else if (commandLine.substr(0, 9) == L"-SuperTop")
 				{
-					bool addCommandLine = true;
+					addCommandLine = false;
 
-					wstring commandLine = argv[i];
-					if (commandLine == L"-Restart") LaunchState::restart = true;
-					else if (commandLine == L"-WarnTry") LaunchState::warnTry = true;
-					else if (commandLine == L"-CrashTry") LaunchState::crashTry = true;
-					else if (commandLine == L"-SuperTopComplete") superTopComplete = true, addCommandLine = false;
-					else if (commandLine.substr(0, 9) == L"-SuperTop")
+					wregex pattern(LR"(^[^*]*\*([^*]+)\*[^*]*$)");
+					wsmatch matches;
+					if (regex_match(commandLine, matches, pattern))
 					{
-						addCommandLine = false;
-
-						wregex pattern(LR"(\*(\d+)\*)");
-						wsmatch matches;
-						if (regex_search(commandLine, matches, pattern))
-						{
-							if (matches.size() > 1)
-							{
-								superTopLine = matches[1].str();
-							}
-						}
+						SurperTopMain(matches[1].str());
+						exit(0);
 					}
-
-					if (addCommandLine) LaunchState::commandLine += commandLine + L" ";
 				}
 
-				// 必须释放 CommandLineToArgvW 分配的内存
-				LocalFree(argv);
+				if (addCommandLine) LaunchState::commandLine += commandLine + L" ";
 			}
 		}
 
-		// 检查启动标识
-		// -Restart 强制启动一次
-		// -WarnTry 强制启动一次，表明上一次遇到了错误
-		// -CrashTry 表明上一次遇到了崩溃错误
-
-		// wstring commandLineArgs(lpCmdLine);
-
-		if (commandLineArgs.length() >= 9 && commandLineArgs.substr(0, 9) == L"-SuperTop")
-		{
-			SurperTopMain(commandLineArgs.substr(10, commandLineArgs.length() - 10));
-			return 0;
-		}
-		//Testw(L"in \"" + commandLineArgs + L"\"");
-
-//#ifdef IDT_RELEASE
-		if (launchState == LaunchStateEnum::Normal && !superTopC)
+#ifdef IDT_RELEASE
+		if (!LaunchState::restart && !LaunchState::warnTry && !LaunchState::crashTry && !superTopComplete)
 		{
 			wstring currentExeDirectory = GetCurrentExeDirectory();
 			{
@@ -228,7 +206,7 @@ int main()
 				return 0;
 			}
 		}
-		//#endif
+#endif
 		if (LaunchState::crashTry) CrashHandler::IsSecond(true);
 	}
 	// 崩溃助手初始化
@@ -668,7 +646,7 @@ int main()
 						}
 					}
 
-					LaunchSurperTop();
+					LaunchSurperTop(LaunchState::commandLine);
 				}
 				break;
 			}
