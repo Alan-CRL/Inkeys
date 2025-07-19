@@ -326,7 +326,112 @@
     },
     "PlugIn":
     {
-      "N": "Plugins"
+      "N": "Plugins",
+
+      "PPTHelper":
+      {
+        "N": "PPT Presentation Helper",
+        "E": "Provides presentation and brush control buttons during a slideshow. Each page has its own independent canvas, allowing ink annotations to remain fixed on the page. Does not affect original functionalities or external devices. Supports Microsoft PowerPoint and KingSoft WPS.",
+
+        "VersionError": "Unknown version (Plugin error)",
+        "Solve": "Solution",
+        "Sync": "Sync ADJ",
+        "Reset": "Reset",
+
+        "Tip": "To use the plugin, please ensure that the permissions for the Inkeys application and the PPT application are the same for proper detection. If issues persist, please refer to the solution.",
+        "Warn": "Detected that your PowerPoint/WPS is set to 'Always run as administrator'. This means our application must also run with administrator privileges to detect the slideshow process and enable PPT integration. If you prefer not to run your presentation software as an administrator, please refer to the solution.",
+
+        "BasicLogic":
+        {
+          "N": "Basic Logic",
+
+          "InkFixation": "Fix ink to its page",
+          "InkFixationE": "Each PPT page will have its own independent canvas, similar to the native pen feature in PowerPoint. Navigating to another page will not clear the ink drawn on previous pages; you can return to a previous page to continue drawing.",
+          "LoadPage": "Show loading page",
+          "LoadPageE": "Includes the plugin logo, tips, etc., and is shown only once per PPT file."
+        },
+        "WidgetDisplay":
+        {
+          "N": "Widget Display",
+
+          "BottomBoth": "Show bottom-side widgets",
+          "MiddleBoth": "Show middle-side widgets",
+          "BottomMiddle": "Show bottom main bar widget"
+        },
+        "WidgetPosition":
+        {
+          "N": "Widget Position",
+
+          "Reset": "Reset widget positions",
+          "Remember": "Remember widget positions"
+        },
+        "WidgetScale":
+        {
+          "N": "Widget Scale",
+          "Ind": "{:.2f}x scale",
+
+          "Page":
+          {
+            "BottomSideBoth": "Bottom-side widgets scale",
+            "MiddleSideBoth": "Middle-side widgets scale"
+          },
+          "State":
+          {
+            "BottomSideMiddle": "Bottom main bar widget scale"
+          }
+        },
+        "Tentative":
+        {
+          "N": "Experimental Options",
+
+          "CloseWpp": "Allow closing of stuck/orphaned WPP presentation processes",
+          "CloseWppE": "Requires a restart to take effect. After exiting a presentation in KingSoft WPS, the original WPP process sometimes doesn't close properly and remains stuck. This prevents the app from detecting new presentations and enabling integration. Enabling this option helps terminate these stuck processes. It is safe for your files and is recommended."
+        }
+      },
+      "SuperTop":
+      {
+        "N": "SuperTop",
+        "E": "Uses UiAccess technology to keep the application window on top of other regular software, and even above system elements like the Taskbar, Alt+Tab switcher, on-screen keyboard, and the lock screen. Requires Windows 8 or newer.",
+
+        "Warn": "The SuperTop feature is in BETA and may be unstable. The application restarts itself upon launch to request elevated privileges, then launches a new instance. This process may fail, resulting in an incorrect launch with administrator rights, which can interfere with PPT integration. A UAC (User Account Control) prompt will appear; please click 'Yes' or disable UAC prompts (not recommended). It might be flagged by antivirus software; this is a false positive and is normal.",
+
+        "Capability":
+        {
+          "N": "Basic Capabilities",
+
+          "SuperTop": "Enable Super SuperTop",
+          "SuperTopE1": "The application uses a three-stage launch to enable this feature, which may occasionally fail. A restart is required.\n(Currently successful)",
+          "SuperTopE2": "The application uses a three-stage launch to enable this feature, which may occasionally fail. A restart is required.\n(Currently failed)",
+
+          "Indicator": "SuperTop Indicator",
+          "IndicatorE": "Displays a pin icon on the top-right corner of the main application icon when successfully enabled."
+        }
+      },
+      "DesktopDrawpadBlocker":
+      {
+        "N": "DesktopDrawpadBlocker",
+        "E": "Blocks floating widgets from competing software (e.g., Seewo Whiteboard) on your screen. Supports blocking various common floating widgets and other PPT control bars or toolkits."
+      },
+      "LnkHelper":
+      {
+        "N": "Shortcut Helper",
+        "E": "Ensures that existing 智绘教Inkeys shortcuts remain valid after application updates, which can change the program's file name. Optionally, it can also create a new desktop shortcut if one does not already exist.",
+
+        "Capability":
+        {
+          "N": "Basic Capabilities",
+
+          "FixLnk": "Fix desktop shortcut target and name",
+          "FixLnkE": "On startup, the app will fix any existing desktop shortcuts. This is recommended, as auto-updates can change the program's file name, breaking the shortcut."
+        },
+        "Expansion":
+        {
+          "N": "Additional Options",
+
+          "CreateLnk": "Create desktop shortcut",
+          "CreateLnkE": "Creates a desktop shortcut if one doesn't already exist."
+        }
+      }
     },
     "Component":
     {
@@ -335,7 +440,7 @@
     "HotKey":
     {
       "N": "Hotkeys",
-      "E": "Global Hotkeys:\nCtrl + Win + Alt: Switch select/draw mode\n\nIn Draw Mode:\nCtrl + Q: Freeze\nCtrl + E: Penetrate\n(Ctrl + Z): Undo/Super Restore\n\nOther/custom hotkeys coming soon."
+      "E": "Global Hotkeys:\nCtrl + Win + Alt: Switch select/draw mode\n\nIn Draw Mode:\nCtrl + Q: Freeze\nCtrl + E: Penetrate\nCtrl + Z: Undo/Super Restore\n\nOther/custom hotkeys coming soon."
     },
     "Community":
     {
