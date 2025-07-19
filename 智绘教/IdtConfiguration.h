@@ -22,6 +22,9 @@ struct SetListStruct
 
 #pragma region 常规
 	int selectLanguage;
+	// en-US 0
+	// zh-CN 1
+	// zh-TW 2
 
 	bool startUp;
 

@@ -4378,7 +4378,7 @@ void DrawScreen()
 								words_rect.right = LONG(words_rect.left + UIControl[L"Words/PaintThickness/width"].v);
 								words_rect.bottom = LONG(words_rect.top + UIControl[L"Words/PaintThickness/height"].v);
 							}
-							graphics.DrawString(L"粗\n细", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+							graphics.DrawString(IW("UI/Pen/Thinkness").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 						}
 
 						hiex::EasyX_Gdiplus_FillRoundRect(UIControl[L"RoundRect/PaintThicknessPrompt/x"].v, UIControl[L"RoundRect/PaintThicknessPrompt/y"].v, min(UIControl[L"RoundRect/PaintThickness/x"].v + 97 - UIControl[L"RoundRect/PaintThicknessPrompt/x"].v, UIControl[L"RoundRect/PaintThicknessPrompt/width"].v), min(UIControl[L"RoundRect/PaintThickness/y"].v + 72 - UIControl[L"RoundRect/PaintThicknessPrompt/y"].v, UIControl[L"RoundRect/PaintThicknessPrompt/height"].v), max(10, UIControl[L"RoundRect/PaintThicknessPrompt/ellipseheight"].v - max(0, UIControl[L"RoundRect/PaintThicknessPrompt/width"].v - 60) * 2), max(10, UIControl[L"RoundRect/PaintThicknessPrompt/ellipseheight"].v - max(0, UIControl[L"RoundRect/PaintThicknessPrompt/height"].v - 60) * 2), UIControlColor[L"RoundRect/PaintThicknessPrompt/frame"].v, UIControlColor[L"RoundRect/PaintThicknessPrompt/fill"].v, 2, true, SmoothingModeHighQuality, &background);
@@ -4459,7 +4459,7 @@ void DrawScreen()
 							words_rect.right = LONG(words_rect.left + UIControl[L"Words/PaintBrush/width"].v);
 							words_rect.bottom = LONG(words_rect.top + UIControl[L"Words/PaintBrush/height"].v);
 						}
-						graphics.DrawString(L"画笔", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+						graphics.DrawString(IW("UI/Pen/Pen").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 					}
 					{
 						ChangeColor(floating_icon[11], UIControlColor[L"Image/FluorescentBrush/words_color"].v);
@@ -4476,7 +4476,7 @@ void DrawScreen()
 							words_rect.right = LONG(words_rect.left + UIControl[L"Words/FluorescentBrush/width"].v);
 							words_rect.bottom = LONG(words_rect.top + UIControl[L"Words/FluorescentBrush/height"].v);
 						}
-						graphics.DrawString(L"荧光笔", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+						graphics.DrawString(IW("UI/Pen/Highlighter").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 					}
 
 					{
@@ -4494,7 +4494,7 @@ void DrawScreen()
 							words_rect.right = LONG(words_rect.left + UIControl[L"Words/WriteBrush/width"].v);
 							words_rect.bottom = LONG(words_rect.top + UIControl[L"Words/WriteBrush/height"].v);
 						}
-						graphics.DrawString(L"书写", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+						graphics.DrawString(IW("UI/Pen/Write").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 					}
 					{
 						ChangeColor(floating_icon[14], UIControlColor[L"Image/LineBrush/words_color"].v);
@@ -4511,7 +4511,7 @@ void DrawScreen()
 							words_rect.right = LONG(words_rect.left + UIControl[L"Words/LineBrush/width"].v);
 							words_rect.bottom = LONG(words_rect.top + UIControl[L"Words/LineBrush/height"].v);
 						}
-						graphics.DrawString(L"直线", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+						graphics.DrawString(IW("UI/Pen/Line").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 					}
 					{
 						ChangeColor(floating_icon[15], UIControlColor[L"Image/RectangleBrush/words_color"].v);
@@ -4528,7 +4528,7 @@ void DrawScreen()
 							words_rect.right = LONG(words_rect.left + UIControl[L"Words/RectangleBrush/width"].v);
 							words_rect.bottom = LONG(words_rect.top + UIControl[L"Words/RectangleBrush/height"].v);
 						}
-						graphics.DrawString(L"矩形", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+						graphics.DrawString(IW("UI/Pen/Square").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 					}
 
 					hiex::EasyX_Gdiplus_RoundRect(max(UIControl[L"RoundRect/BrushChoose/x"].v, UIControl[L"RoundRect/BrushBottom/x"].v + 5), UIControl[L"RoundRect/BrushChoose/y"].v, UIControl[L"RoundRect/BrushChoose/width"].v, UIControl[L"RoundRect/BrushChoose/height"].v, UIControl[L"RoundRect/BrushChoose/ellipseheight"].v, UIControl[L"RoundRect/BrushChoose/ellipsewidth"].v, UIControlColor[L"RoundRect/BrushChoose/frame"].v, 2, true, SmoothingModeHighQuality, &background);
@@ -4621,8 +4621,8 @@ void DrawScreen()
 					words_rect.right = LONG(UIControl[L"Words/choose/right"].v);
 					words_rect.bottom = LONG(UIControl[L"Words/choose/bottom"].v);
 				}
-				if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumnSelect]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
-				else graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumnSelectClean]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) graphics.DrawString(IW("UI/Centre/Select").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else graphics.DrawString(IW("UI/Centre/SelectClean").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 			}
 			//画笔
 			{
@@ -4638,7 +4638,7 @@ void DrawScreen()
 					words_rect.right = LONG(UIControl[L"Words/brush/right"].v);
 					words_rect.bottom = LONG(UIControl[L"Words/brush/bottom"].v);
 				}
-				graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumnPen]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				graphics.DrawString(IW("UI/Centre/Pen").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 
 				WordBrush.SetColor(hiex::ConvertToGdiplusColor(UIControlColor[L"Words/brushSize/words_color"].v, true));
 				Gdiplus::Font gp_font_02(&HarmonyOS_fontFamily, 20, FontStyleRegular, UnitPixel);
@@ -4658,7 +4658,7 @@ void DrawScreen()
 					words_rect.right = LONG(UIControl[L"Words/rubber/right"].v);
 					words_rect.bottom = LONG(UIControl[L"Words/rubber/bottom"].v);
 				}
-				graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumnEraser]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				graphics.DrawString(IW("UI/Centre/Eraser").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 			}
 			//选项
 			{
@@ -4675,7 +4675,7 @@ void DrawScreen()
 					words_rect.right = LONG(UIControl[L"Words/test/right"].v);
 					words_rect.bottom = LONG(UIControl[L"Words/test/bottom"].v);
 				}
-				graphics.DrawString(get<wstring>(i18n[i18nEnum::MainColumnOptions]).c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				graphics.DrawString(IW("UI/Centre/Options").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 			}
 
 			// Customize
@@ -5106,7 +5106,7 @@ void DrawScreen()
 							words_rect.right = floating_windows.width - 96 + 40 + 56;
 							words_rect.bottom = floating_windows.height - 256 + 8 + 40;
 						}
-						graphics.DrawString(L"穿透", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+						graphics.DrawString(IW("UI/Operate/Pierce").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 					}
 					else
 					{
@@ -5123,7 +5123,7 @@ void DrawScreen()
 							words_rect.right = floating_windows.width - 96 + 40 + 56;
 							words_rect.bottom = floating_windows.height - 256 + 8 + 40;
 						}
-						graphics.DrawString(L"穿透", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+						graphics.DrawString(IW("UI/Operate/Pierce").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 					}
 				}
 				if ((int)state == 1)
@@ -5190,7 +5190,7 @@ void DrawScreen()
 								words_rect.right = floating_windows.width - 96 + 40 + 56;
 								words_rect.bottom = floating_windows.height - 256 + 50 + 40;
 							}
-							graphics.DrawString(L"定格", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+							graphics.DrawString(IW("UI/Operate/Freeze").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 						}
 						else
 						{
@@ -5207,7 +5207,7 @@ void DrawScreen()
 								words_rect.right = floating_windows.width - 96 + 40 + 56;
 								words_rect.bottom = floating_windows.height - 256 + 50 + 40;
 							}
-							graphics.DrawString(L"定格", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+							graphics.DrawString(IW("UI/Operate/Freeze").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 						}
 					}
 					else if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection)
@@ -5229,7 +5229,7 @@ void DrawScreen()
 								words_rect.right = floating_windows.width - 96 + 40 + 56;
 								words_rect.bottom = floating_windows.height - 256 + 50 + 40;
 							}
-							graphics.DrawString(L"定格", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+							graphics.DrawString(IW("UI/Operate/Freeze").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 						}
 						else
 						{
@@ -5246,7 +5246,7 @@ void DrawScreen()
 								words_rect.right = floating_windows.width - 96 + 40 + 56;
 								words_rect.bottom = floating_windows.height - 256 + 50 + 40;
 							}
-							graphics.DrawString(L"定格", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+							graphics.DrawString(IW("UI/Operate/Freeze").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 						}
 					}
 				}
@@ -5266,7 +5266,7 @@ void DrawScreen()
 						words_rect.right = (floating_windows.width - 96 + 30) + 66;
 						words_rect.bottom = (floating_windows.height - 55) + 42;
 					}
-					graphics.DrawString(L"撤回", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+					graphics.DrawString(IW("UI/Operate/Revoke").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 				}
 				else if ((stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection || (int)state == 1) && RecallImage.empty() && current_record_pointer <= total_record_pointer + 1 && practical_total_record_pointer)
 				{
@@ -5281,7 +5281,7 @@ void DrawScreen()
 						words_rect.right = (floating_windows.width - 96 + 30) + 66;
 						words_rect.bottom = (floating_windows.height - 55) + 42;
 					}
-					graphics.DrawString(L"超级恢复", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+					graphics.DrawString(IW("UI/Operate/Recall").c_str(), -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 				}
 			}
 

@@ -14,3 +14,12 @@ wstring bstrToWstring(const _bstr_t& bstr);
 _bstr_t wstringToBstr(const wstring& str);
 
 string StringToUrlencode(const string& str);
+
+class CustomSplit
+{
+public:
+	static vector<wstring> Run(const wstring& input, wchar_t custom_sep);
+
+private:
+	CustomSplit() = delete;
+};

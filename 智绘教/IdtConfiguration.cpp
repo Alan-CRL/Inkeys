@@ -117,8 +117,8 @@ bool ReadSetting()
 				setlist.configurationSetting.enable = setlistVal["ConfigurationSetting"]["Enable"].asBool();
 		}
 
-		if (setlistVal.isMember("SelectLanguage") && setlistVal["SelectLanguage"].isBool())
-			setlist.selectLanguage = setlistVal["SelectLanguage"].asBool();
+		if (setlistVal.isMember("SelectLanguage") && setlistVal["SelectLanguage"].isInt())
+			setlist.selectLanguage = setlistVal["SelectLanguage"].asInt();
 		if (setlistVal.isMember("StartUp") && setlistVal["StartUp"].isBool())
 			setlist.startUp = setlistVal["StartUp"].asBool();
 		if (setlistVal.isMember("SettingGlobalScale") && setlistVal["SettingGlobalScale"].isDouble())
@@ -184,8 +184,8 @@ bool ReadSetting()
 			if (setlistVal["Performance"].isMember("PreparationQuantity") && setlistVal["Performance"]["PreparationQuantity"].isInt())
 				setlist.performanceSetting.preparationQuantity = setlistVal["Performance"]["PreparationQuantity"].asInt();
 
-			if (setlistVal["Performance"].isMember("SuperDrawBeta") && setlistVal["Performance"]["SuperDrawBeta"].isBool())
-				setlist.performanceSetting.superDraw = setlistVal["Performance"]["SuperDrawBeta"].asBool();
+			if (setlistVal["Performance"].isMember("SuperDrawBeta2") && setlistVal["Performance"]["SuperDrawBeta2"].isBool())
+				setlist.performanceSetting.superDraw = setlistVal["Performance"]["SuperDrawBeta2"].asBool();
 		}
 		if (setlistVal.isMember("Preset") && setlistVal["Preset"].isObject())
 		{
@@ -421,7 +421,7 @@ bool WriteSetting()
 		{
 			setlistVal["Performance"]["PreparationQuantity"] = Json::Value(setlist.performanceSetting.preparationQuantity);
 
-			setlistVal["Performance"]["SuperDrawBeta"] = Json::Value(setlist.performanceSetting.superDraw);
+			setlistVal["Performance"]["SuperDrawBeta2"] = Json::Value(setlist.performanceSetting.superDraw);
 		}
 		{
 			setlistVal["Preset"]["MemoryWidth"] = Json::Value(setlist.presetSetting.memoryWidth);

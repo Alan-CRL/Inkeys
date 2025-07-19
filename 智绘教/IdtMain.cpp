@@ -45,7 +45,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250606a";				// 程序发布日期
+wstring editionDate = L"20250719a";				// 程序发布日期
 wstring editionChannel = L"LTS";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -135,35 +135,47 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 防止重复启动
 	{
-		// 检查启动标识
-		// -Restart 强制启动一次
-		// -WarnTry 强制启动一次，表明上一次遇到了错误
-		// -CrashTry 表明上一次遇到了崩溃错误
+		// TODO 将为启动标识重写书写逻辑，运行存在多个并行的启动标识
+		// 示例
+		// -restart
+		// -path="..."
 
-		wstring commandLineArgs(lpCmdLine);
+		// 相关标识
+		bool superTopComplete = false;
 
-		bool superTopC = false;
-		if (commandLineArgs.length() >= 11 && commandLineArgs.substr(0, 11) == L"-SuperTopC ")
 		{
-			superTopC = true;
-			if (commandLineArgs.length() >= 12) commandLineArgs = commandLineArgs.substr(11, commandLineArgs.length() - 11);
-			else commandLineArgs = L"";
-		}
+			vector<wstring> args = CustomSplit::Run(GetCommandLineW(), L'*');
+			for (size_t i = 1; i < args.size(); i++)
+			{
+				bool addCommandLine = true;
 
-		if (commandLineArgs == L"-Restart") launchState = LaunchStateEnum::Restart;
-		else if (commandLineArgs == L"-WarnTry") launchState = LaunchStateEnum::WarnTry;
-		else if (commandLineArgs == L"-CrashTry") launchState = LaunchStateEnum::CrashTry;
-		else launchState = LaunchStateEnum::Normal;
+				wstring commandLine = args[i];
 
-		if (commandLineArgs.length() >= 9 && commandLineArgs.substr(0, 9) == L"-SuperTop")
-		{
-			SurperTopMain(commandLineArgs.substr(10, commandLineArgs.length() - 10));
-			return 0;
+				cout << utf16ToUtf8(commandLine) << endl;
+
+				if (commandLine == L"-Restart") LaunchState::restart = true;
+				else if (commandLine == L"-WarnTry") LaunchState::warnTry = true;
+				else if (commandLine == L"-CrashTry") LaunchState::crashTry = true;
+				else if (commandLine == L"-SuperTopComplete") superTopComplete = true, addCommandLine = false;
+				else if (commandLine.substr(0, 9) == L"-SuperTop")
+				{
+					addCommandLine = false;
+
+					wregex pattern(LR"(^[^*]*\*([^*]+)\*[^*]*$)");
+					wsmatch matches;
+					if (regex_match(commandLine, matches, pattern))
+					{
+						SurperTopMain(matches[1].str());
+						exit(0);
+					}
+				}
+
+				if (addCommandLine) LaunchState::commandLine += commandLine + L" ";
+			}
 		}
-		//Testw(L"in \"" + commandLineArgs + L"\"");
 
 #ifdef IDT_RELEASE
-		if (launchState == LaunchStateEnum::Normal && !superTopC)
+		if (!LaunchState::restart && !LaunchState::warnTry && !LaunchState::crashTry && !superTopComplete)
 		{
 			wstring currentExeDirectory = GetCurrentExeDirectory();
 			{
@@ -195,7 +207,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			}
 		}
 #endif
-		if (launchState == LaunchStateEnum::CrashTry) CrashHandler::IsSecond(true);
+		if (LaunchState::crashTry) CrashHandler::IsSecond(true);
 	}
 	// 崩溃助手初始化
 	{
@@ -634,7 +646,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 						}
 					}
 
-					LaunchSurperTop();
+					LaunchSurperTop(LaunchState::commandLine);
 				}
 				break;
 			}
@@ -750,7 +762,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		IDTLogger->flush_on(spdlog::level::info);
 		IDTLogger->info("[主线程][IdtMain] 日志开始记录 " + utf16ToUtf8(editionDate) + " " + utf16ToUtf8(userId));
 
-		if (launchState == LaunchStateEnum::CrashTry) IDTLogger->warn("[主线程][IdtMain] 发现程序先前发生过崩溃错误");
+		if (LaunchState::crashTry) IDTLogger->warn("[主线程][IdtMain] 发现程序先前发生过崩溃错误");
 
 		//logger->info("");
 		//logger->warn("");
@@ -840,7 +852,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 				setlist.BrushRecover = true;
 				setlist.RubberRecover = false;
-				setlist.regularSetting.moveRecover = true;
+				setlist.regularSetting.moveRecover = false;
 				setlist.regularSetting.clickRecover = false;
 
 				setlist.regularSetting.avoidFullScreen = true;
@@ -923,7 +935,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 			{
 				// 获取系统默认语言标识符
-				LANGID langId = GetSystemDefaultLangID();
+				LANGID langId = GetUserDefaultUILanguage();
 				// 获取主语言标识符
 				WORD primaryLangId = PRIMARYLANGID(langId);
 				// 获取子语言标识符
@@ -1012,9 +1024,11 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	{
 		// 先读取完整性的英语文件，在读取配置指定的语言文件
 		// 这样如果配置文件缺少某项也能用英语补齐
-		//loadI18n(1, L"JSON", L"en-US");
-		loadI18n(1, L"JSON", L"zh-CN");
-		// TODO 允许切换到英语
+		I18n::load(1, L"JSON", L"en-US");
+
+		if (setlist.selectLanguage == 1) I18n::load(1, L"JSON", L"zh-CN");
+		else if (setlist.selectLanguage == 2) I18n::load(1, L"JSON", L"zh-TW");
+		else I18n::load(1, L"JSON", L"en-US");
 
 		IDTLogger->info("[主线程][IdtMain] I18N初始化完成");
 	}
@@ -1195,7 +1209,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		{
 			IDTLogger->critical("[主线程][IdtMain] 程序意外退出：RealTimeStylus 触控库初始化失败。");
 
-			if (launchState == LaunchStateEnum::WarnTry) MessageBox(NULL, L"Program unexpected exit: RealTimeStylus touch library initialization failed.(#4)\n程序意外退出：RealTimeStylus 触控库初始化失败。(#4)", L"Inkeys Error | 智绘教错误", MB_OK | MB_SYSTEMMODAL);
+			if (LaunchState::warnTry) MessageBox(NULL, L"Program unexpected exit: RealTimeStylus touch library initialization failed.(#4)\n程序意外退出：RealTimeStylus 触控库初始化失败。(#4)", L"Inkeys Error | 智绘教错误", MB_OK | MB_SYSTEMMODAL);
 			else ShellExecuteW(NULL, NULL, GetCurrentExePath().c_str(), L"-WarnTry", NULL, SW_SHOWNORMAL);
 
 			exit(0);

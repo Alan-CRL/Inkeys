@@ -194,6 +194,7 @@ void Testi(long long t);
 void Testd(double t);
 void Testw(wstring t);
 void Testa(string t);
+#define IdtFalse false
 
 // this_thread::sleep_for(chrono::milliseconds(int))
 #endif

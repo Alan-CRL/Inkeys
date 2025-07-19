@@ -60,8 +60,11 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 		}
 		else if (IsHotkeyDown && !(KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]) && !(KeyBoradDown[VK_LWIN] || KeyBoradDown[VK_RWIN]) && !(KeyBoradDown[VK_MENU] || KeyBoradDown[VK_LMENU] || KeyBoradDown[VK_RMENU])) IsHotkeyDown = false;
 
-		// 按键反馈
-		if (ppt_show != NULL && !CheckEndShow.isChecking)
+		// 全局状态变量
+		bool checkEndShowIsChecking = CheckEndShow.isChecking;
+
+		// PPT模式：按键反馈
+		if (ppt_show != NULL && !checkEndShowIsChecking)
 		{
 			// 检查按下的键
 			switch (pKeyInfo->vkCode)
@@ -103,7 +106,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			}
 			}
 		}
-		// 传递拦截
+		// 传递拦截（主要是快捷键）
 		if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && !penetrate.select)
 		{
 			ExMessage msgKey = {};
@@ -118,7 +121,6 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			hiex::g_vecWindows[index].vecMessage.push_back(msgKey);
 			lg_vecWindows_vecMessage_sm.unlock();
 
-			if (ppt_show != NULL && !CheckEndShow.isChecking)
 			{
 				switch (pKeyInfo->vkCode)
 				{
@@ -168,6 +170,10 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 				case VK_NUMPAD7:
 				case VK_NUMPAD8:
 				case VK_NUMPAD9:
+				{
+					// 为后续单个字母做快捷键做用户体验准备
+					return 1;
+				}
 
 				case VK_NEXT:   // PgDn
 				case VK_PRIOR:  // PgUp
@@ -179,67 +185,13 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 				case VK_BACK:   // Backsapce
 				case VK_RETURN: // Enter
 				case VK_ESCAPE:	// 退出
-
 				{
-					return 1;
-				}
-
-				default:
-					break;
-				}
-			}
-			else
-			{
-				switch (pKeyInfo->vkCode)
-				{
-				case 0x30:
-				case 0x31:
-				case 0x32:
-				case 0x33:
-				case 0x34:
-				case 0x35:
-				case 0x36:
-				case 0x37:
-				case 0x38:
-				case 0x39:
-				case 0x41:
-				case 0x42:
-				case 0x43:
-				case 0x44:
-				case 0x45:
-				case 0x46:
-				case 0x47:
-				case 0x48:
-				case 0x49:
-				case 0x4A:
-				case 0x4B:
-				case 0x4C:
-				case 0x4D:
-				case 0x4E:
-				case 0x4F:
-				case 0x50:
-				case 0x51:
-				case 0x52:
-				case 0x53:
-				case 0x54:
-				case 0x55:
-				case 0x56:
-				case 0x57:
-				case 0x58:
-				case 0x59:
-				case 0x5A:
-				case VK_NUMPAD0:
-				case VK_NUMPAD1:
-				case VK_NUMPAD2:
-				case VK_NUMPAD3:
-				case VK_NUMPAD4:
-				case VK_NUMPAD5:
-				case VK_NUMPAD6:
-				case VK_NUMPAD7:
-				case VK_NUMPAD8:
-				case VK_NUMPAD9:
-				{
-					return 1;
+					// PPT 模式下，拦截按键并进行转译：支持长安翻页
+					if (ppt_show != NULL && !checkEndShowIsChecking)
+					{
+						return 1;
+					}
+					else break;
 				}
 
 				default:
@@ -265,7 +217,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			return 1;
 		}
 		*/
-		// 穿透所需的额外情况
+		// 穿透所需的额外情况（穿透模式下禁用 Ctrl + E，用于关闭穿透）
 		else if (penetrate.select && (KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]) && (BYTE)pKeyInfo->vkCode == (BYTE)0x45)
 		{
 			ExMessage msgKey = {};
@@ -397,7 +349,7 @@ void KeyboardInteraction()
 			}
 		}
 
-		// 定格 Q
+		// 定格 Ctrl + Q
 		if (m.vkcode == (BYTE)0x51 && m.prevdown && m.message == WM_KEYDOWN)
 		{
 			while (1)
@@ -423,7 +375,7 @@ void KeyboardInteraction()
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
 		}
-		// 穿透 E
+		// 穿透 Ctrl + E
 		if (m.vkcode == (BYTE)0x45 && m.prevdown && m.message == WM_KEYDOWN)
 		{
 			while (1)
@@ -451,8 +403,8 @@ void KeyboardInteraction()
 			}
 		}
 
-		// 撤回 Z
-		if (m.vkcode == (BYTE)0x5A && m.message == WM_KEYDOWN)
+		// 撤回 Ctrl + Z
+		if (m.vkcode == (BYTE)0x5A && m.prevdown && m.message == WM_KEYDOWN)
 		{
 			while (1)
 			{
@@ -739,13 +691,15 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 				{
 					//chrono::high_resolution_clock::time_point reckon;
 					//reckon = chrono::high_resolution_clock::now();
+
 					if (!setlist.performanceSetting.superDraw)
 					{
-						//this_thread::sleep_for(chrono::milliseconds(1));
-						this_thread::yield();
+						this_thread::sleep_for(chrono::milliseconds(1));
 					}
+
 					//double tmp = chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count();
 					//cerr << tmp << "ms" << endl;
+
 					continue;
 				}
 			}
@@ -1137,7 +1091,9 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 			{
 				if (mode.pt.x == pointInfo.previousX && mode.pt.y == pointInfo.previousY)
 				{
-					if (!setlist.performanceSetting.superDraw) this_thread::sleep_for(chrono::milliseconds(1));
+					if (setlist.performanceSetting.superDraw) this_thread::yield();
+					else this_thread::sleep_for(chrono::milliseconds(1));
+
 					continue;
 				}
 			}
@@ -1409,7 +1365,9 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 			// 过滤未动触摸点
 			if (mode.pt.x == pointInfo.previousX && mode.pt.y == pointInfo.previousY)
 			{
-				if (!setlist.performanceSetting.superDraw) this_thread::yield();
+				if (setlist.performanceSetting.superDraw) this_thread::yield();
+				else this_thread::sleep_for(chrono::milliseconds(1));
+
 				continue;
 			}
 
@@ -1669,7 +1627,8 @@ void DrawpadDrawing()
 					if (offSignal) goto DrawpadDrawingEnd;
 				}
 
-				if (setlist.performanceSetting.superDraw) timeBeginPeriod(1);
+				// 设置全局高精度
+				timeBeginPeriod(1);
 
 				{
 					if (PptInfoStateBuffer.TotalPage != -1 && ppt_switch_count != 0 && PptImg.IsSaved[PptInfoStateBuffer.CurrentPage])
@@ -1835,7 +1794,8 @@ void DrawpadDrawing()
 					break;
 				}
 
-				if (setlist.performanceSetting.superDraw) timeBeginPeriod(1);
+				// 设置全局高精度
+				timeBeginPeriod(1);
 				if (setlist.regularSetting.avoidFullScreen) SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 
 				nRet = GetWindowLongPtrW(drawpad_window, GWL_EXSTYLE);
@@ -1964,12 +1924,7 @@ void DrawpadDrawing()
 				}
 				else if (PptInfoStateBuffer.TotalPage != temp_totalpage && temp_totalpage == -1)
 				{
-					stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
-					//choose.select = true;
-
-					//brush.select = false;
-					//rubber.select = false;
-					penetrate.select = false;
+					ChangeStateModeToSelection();
 				}
 				PptInfoStateBuffer.CurrentPage = temp_currentpage;
 				PptInfoStateBuffer.TotalPage = temp_totalpage;

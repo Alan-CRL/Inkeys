@@ -3,6 +3,7 @@
 #include "IdtConfiguration.h"
 #include "IdtDisplayManagement.h"
 #include "IdtDraw.h"
+#include "IdtI18n.h"
 #include "IdtImage.h"
 #include "IdtMagnification.h"
 #include "IdtPlug-in.h"
@@ -228,8 +229,8 @@ void FreezeFrameWindow()
 				hiex::EasyX_Gdiplus_FillRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 160, (float)GetSystemMetrics(SM_CYSCREEN) - 200, 320, 50, 20, 20, RGBA(255, 255, 225, min(255, FreezeRecall)), RGBA(0, 0, 0, min(150, FreezeRecall)), 2, true, SmoothingModeHighQuality, &freeze_background);
 
 				wchar_t buffer[100];
-				if (RecallImageTm.tm_mday == 0) swprintf_s(buffer, L"超级恢复");
-				else swprintf_s(buffer, L"超级恢复 %02d月%02d日 %02d:%02d:%02d", RecallImageTm.tm_mon + 1, RecallImageTm.tm_mday, RecallImageTm.tm_hour, RecallImageTm.tm_min, RecallImageTm.tm_sec);
+				if (RecallImageTm.tm_mday == 0) swprintf_s(buffer, IW("UI/Operate/Recall").c_str());
+				else swprintf_s(buffer, (IW("UI/Operate/Recall") + L" %02d%02d %02d:%02d:%02d").c_str(), RecallImageTm.tm_mon + 1, RecallImageTm.tm_mday, RecallImageTm.tm_hour, RecallImageTm.tm_min, RecallImageTm.tm_sec);
 
 				Graphics graphics(GetImageHDC(&freeze_background));
 				Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 22, FontStyleRegular, UnitPixel);
