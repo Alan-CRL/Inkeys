@@ -17,7 +17,7 @@
 
 #pragma once
 
-#define IDT_RELEASE
+// #define IDT_RELEASE
 // #pragma comment( linker, "/subsystem:windows /entry:mainCRTStartup" )
 
 // 智绘教最低兼容 Windows 7 sp0
@@ -72,6 +72,9 @@
 // I18N类
 #include <locale>
 #include <codecvt>
+
+// 哈希
+#include <unordered_dense.h>
 
 //链接库
 #pragma comment(lib, "gdiplus.lib")

@@ -91,6 +91,15 @@
     <Filter Include="头文件\Inkeys\Json">
       <UniqueIdentifier>{a73c31b1-6419-42a0-a606-f17415f934a6}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\Inkeys\UI">
+      <UniqueIdentifier>{83c930ac-eb03-4766-98a6-c2f52bd75428}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Inkeys">
+      <UniqueIdentifier>{9d493b02-2050-44aa-86ae-ef700c65face}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Inkeys\UI">
+      <UniqueIdentifier>{de560809-c33f-4d6d-9635-64531bbcada9}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HiEasyX.h">
@@ -720,9 +729,6 @@
     <ClInclude Include="IdtConfiguration.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="IdtBar.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="Launch\IdtLaunchState.h">
       <Filter>头文件\Launch</Filter>
     </ClInclude>
@@ -737,6 +743,9 @@
     </ClInclude>
     <ClInclude Include="Inkeys\Json\IdtJson.h">
       <Filter>头文件\Inkeys\Json</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\IdtBar.h">
+      <Filter>头文件\Inkeys\UI</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -980,9 +989,6 @@
     <ClCompile Include="ExtraInclude.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="IdtBar.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="IdtDrawpadList.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -994,6 +1000,9 @@
     </ClCompile>
     <ClCompile Include="SuperTop\IdtSuperTop.cpp">
       <Filter>源文件\SuperTop</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\IdtBar.cpp">
+      <Filter>源文件\Inkeys\UI</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

@@ -1,7 +1,7 @@
 ﻿#include "IdtBar.h"
 
-#include "IdtWindow.h"
-#include "IdtDisplayManagement.h"
+#include "../../IdtWindow.h"
+#include "../../IdtDisplayManagement.h"
 
 #undef max
 #undef min
