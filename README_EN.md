@@ -28,7 +28,8 @@ Old name `Intelligent-Drawing-Teaching`（referred to as `IDT`）
 </div>
 
 ## Collection (Introduction)
-**[Introduction video of 24H2 version on _bilibili.com_ (Chinese)](https://www.bilibili.com/video/BV1Tz421z72e/)**  
+**[Introduction video of 25H2 version on _bilibili.com_ (Chinese)](https://www.bilibili.com/video/BV17duZzYEsE/)**  
+[Introduction video of 24H2 version on _bilibili.com_ (Chinese)(older)](https://www.bilibili.com/video/BV1Tz421z72e/)  
 [Introduction video of 24H1 version on _bilibili.com_ (Chinese)(older)](https://www.bilibili.com/video/BV1vJ4m147rN/)  
 [Introduction blog on _codebus.cn_ (Chinese)(VPN required)(older)](https://codebus.cn/alancrl/intelligent-painting-teaching)  
 
