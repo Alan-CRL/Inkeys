@@ -28,7 +28,8 @@ Windows 屏幕批注工具，拥有高效批注和丰富功能，
 </div>
 
 ## 集锦(软件介绍)
-**[Bilibili 上的 24H2 版本介绍视频](https://www.bilibili.com/video/BV1Tz421z72e/)**  
+**[Bilibili 上的 25H2 版本介绍视频](https://www.bilibili.com/video/BV17duZzYEsE/)**  
+[Bilibili 上的 24H2 版本介绍视频（较旧）](https://www.bilibili.com/video/BV1Tz421z72e/)  
 [Bilibili 上的 24H1 版本介绍视频（较旧）](https://www.bilibili.com/video/BV1vJ4m147rN/)  
 [Codebus 上的介绍推文（较旧）](https://codebus.cn/alancrl/intelligent-painting-teaching)  
 
