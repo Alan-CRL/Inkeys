@@ -305,8 +305,8 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="additional\concurrentqueue.h" />
     <ClInclude Include="additional\cpphttplib\httplib.h" />
-    <ClInclude Include="additional\ft2build.h" />
     <ClInclude Include="additional\hashlib++\hashlibpp.h" />
     <ClInclude Include="additional\hashlib++\hl_exception.h" />
     <ClInclude Include="additional\hashlib++\hl_hashwrapper.h" />
@@ -454,6 +454,7 @@
     <ClInclude Include="additional\stbimage\stb_image.h" />
     <ClInclude Include="additional\stbimage\stb_image_resize.h" />
     <ClInclude Include="additional\stbimage\stb_image_write.h" />
+    <ClInclude Include="additional\unordered_dense.h" />
     <ClInclude Include="additional\wintoastlib\wintoastlib.h" />
     <ClInclude Include="additional\ziputils\unzip.h" />
     <ClInclude Include="additional\ziputils\zip.h" />

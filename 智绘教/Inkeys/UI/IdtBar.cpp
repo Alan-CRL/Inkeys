@@ -2,17 +2,21 @@
 
 #include "../../IdtWindow.h"
 #include "../../IdtDisplayManagement.h"
+#include "../../IdtD2DPreparation.h"
 
-#undef max
-#undef min
-#include "libcuckoo/cuckoohash_map.hh"
+//#undef max
+//#undef min
+//#include "libcuckoo/cuckoohash_map.h"
+
+#define LUNASVG_BUILD_STATIC
+#include <lunasvg/lunasvg.h>
+#pragma comment(lib, "lunasvg.lib")
+#pragma comment(lib, "plutovg.lib")
 
 // 临时
 void FloatingInstallHook();
 
 // 窗口
-
-BarWindowPosClass barWindowPos;
 
 // 媒体
 void BarMediaClass::LoadExImage()
@@ -30,7 +34,7 @@ void BarUISetClass::Rendering()
 		blend.SourceConstantAlpha = 255;
 		blend.AlphaFormat = AC_SRC_ALPHA;
 	}
-	SIZE sizeWnd = { static_cast<LONG>(barWindowPos.w), static_cast<LONG>(barWindowPos.h) };
+	SIZE sizeWnd = { static_cast<LONG>(BarWindowPosClass::w), static_cast<LONG>(BarWindowPosClass::h) };
 	POINT ptSrc = { 0,0 };
 	POINT ptDst = { 0,0 };
 	UPDATELAYEREDWINDOWINFO ulwi = { 0 };
@@ -60,14 +64,65 @@ void BarUISetClass::Rendering()
 		this_thread::sleep_for(chrono::milliseconds(10));
 	}
 
-	IMAGE barBackground(barWindowPos.w, barWindowPos.h);
-	Graphics barGraphics(GetImageHDC(&barBackground));
-	barGraphics.SetSmoothingMode(SmoothingModeHighQuality);
+	// 画布
+	IMAGE barBackground(BarWindowPosClass::w, BarWindowPosClass::h);
 
-	clock_t tRecord = clock();
-	for (int for_num = 1; !offSignal; for_num = 2)
+	// 初始化 D2D DC
+	CComPtr<ID2D1DCRenderTarget> DCRenderTarget;
 	{
-		SetImageColor(barBackground, RGBA(0, 0, 0, 0), true);
+		// 创建位图兼容的 DC Render Target
+		ID2D1DCRenderTarget* pDCRenderTarget = nullptr;
+		HRESULT hr = D2DFactory->CreateDCRenderTarget(&D2DProperty, &pDCRenderTarget);
+		DCRenderTarget.Attach(pDCRenderTarget);
+
+		RECT PptBackgroundWindowRect = { 0, 0, barBackground.getwidth(),barBackground.getheight() };
+		DCRenderTarget->BindDC(GetImageHDC(&barBackground), &PptBackgroundWindowRect);
+
+		// 设置抗锯齿
+		DCRenderTarget->SetAntialiasMode(D2D1_ANTIALIAS_MODE::D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+	}
+
+	chrono::high_resolution_clock::time_point reckon = chrono::high_resolution_clock::now();
+	for (int forNum = 1; !offSignal; forNum = 2)
+	{
+		DCRenderTarget->BeginDraw();
+
+		{
+			D2D1_COLOR_F clearColor = ConvertToD2DColor(RGBA(0, 0, 0, 128));
+			DCRenderTarget->Clear(&clearColor);
+		}
+		{
+			int targetWidth = 500;
+			int targetHeight = 500;
+
+			//unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromData(svgText);
+			unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromFile("D:\\Downloads\\Inkeys.svg");
+
+			lunasvg::Bitmap bitmap = document->renderToBitmap(targetWidth, targetHeight);
+
+			CComPtr<ID2D1Bitmap> d2dBitmap;
+			D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(
+				D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+
+			// lunasvg文档声明：数据为BGRA，8bits每通道，正好适配D2D位图
+			DCRenderTarget->CreateBitmap(
+				D2D1::SizeU(bitmap.width(), bitmap.height()),
+				bitmap.data(),
+				bitmap.width() * 4, // stride
+				props,
+				&d2dBitmap);
+
+			D2D1_RECT_F destRect = D2D1::RectF(0, 0, (float)targetWidth, (float)targetHeight);
+			DCRenderTarget->DrawBitmap(
+				d2dBitmap,
+				destRect,        // 目标矩形
+				1.0f,            // 不透明度
+				D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+				nullptr          // 源rect, null表示全部
+			);
+		}
+
+		DCRenderTarget->EndDraw();
 
 		{
 			// 设置窗口位置
@@ -78,16 +133,16 @@ void BarUISetClass::Rendering()
 			UpdateLayeredWindowIndirect(floating_window, &ulwi);
 		}
 
-		if (for_num == 1)
+		if (forNum == 1)
 		{
 			IdtWindowsIsVisible.floatingWindow = true;
 		}
-		if (tRecord)
+		// 帧率锁
 		{
-			int delay = 1000 / 24 - (clock() - tRecord);
-			if (delay > 0) std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+			double delay = 1000.0 / 24.0 - chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count();
+			if (delay >= 10.0) std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(delay)));
 		}
-		tRecord = clock();
+		reckon = chrono::high_resolution_clock::now();
 	}
 
 	return;
@@ -97,7 +152,6 @@ void BarUISetClass::Rendering()
 
 // 初始化
 
-BarInitializationClass barInitialization;
 void BarInitializationClass::Initialization()
 {
 	threadStatus[L"BarInitialization"] = true;
@@ -112,7 +166,7 @@ void BarInitializationClass::Initialization()
 	thread FloatingInstallHookThread(FloatingInstallHook);
 	FloatingInstallHookThread.detach();
 
-	thread([&]() { barUISet.Rendering(); }).detach();
+	thread(BarUISetClass::Rendering).detach();
 
 	// 等待
 
@@ -137,16 +191,16 @@ void BarInitializationClass::InitializeWindow()
 	SetWindowLong(floating_window, GWL_STYLE, GetWindowLong(floating_window, GWL_STYLE) & ~WS_CAPTION); // 隐藏窗口标题栏
 	SetWindowLong(floating_window, GWL_EXSTYLE, WS_EX_TOOLWINDOW); // 隐藏窗口任务栏图标
 
-	barWindowPos.x = 0;
-	barWindowPos.y = 0;
-	barWindowPos.w = MainMonitor.MonitorWidth;
-	barWindowPos.h = MainMonitor.MonitorHeight;
-	barWindowPos.pct = 255;
-	SetWindowPos(floating_window, NULL, barWindowPos.x, barWindowPos.y, barWindowPos.w, barWindowPos.h, SWP_NOACTIVATE | SWP_NOZORDER | SWP_DRAWFRAME); // 设置窗口位置尺寸
+	BarWindowPosClass::x = 0;
+	BarWindowPosClass::y = 0;
+	BarWindowPosClass::w = 1000;// MainMonitor.MonitorWidth;
+	BarWindowPosClass::h = 1000;// MainMonitor.MonitorHeight;
+	BarWindowPosClass::pct = 255;
+	SetWindowPos(floating_window, NULL, BarWindowPosClass::x, BarWindowPosClass::y, BarWindowPosClass::w, BarWindowPosClass::h, SWP_NOACTIVATE | SWP_NOZORDER | SWP_DRAWFRAME); // 设置窗口位置尺寸
 }
 void BarInitializationClass::InitializeMedia()
 {
-	barUISet.barMedia.LoadExImage();
+	BarUISetClass::barMedia.LoadExImage();
 }
 void BarInitializationClass::InitializeUI()
 {

@@ -8,20 +8,14 @@
 // 窗口模态信息
 class BarWindowPosClass
 {
-public:
-	BarWindowPosClass()
-	{
-		x = y = 0;
-		w = h = 0;
-		pct = 0;
-	}
+private:
+	BarWindowPosClass() = delete;
 
 public:
-	IdtAtomic<unsigned int> x, y;
-	IdtAtomic<unsigned int> w, h;
-	IdtAtomic<unsigned int> pct; // 透明度
+	inline static IdtAtomic<unsigned int> x = 0, y = 0;
+	inline static IdtAtomic<unsigned int> w = 0, h = 0;
+	inline static IdtAtomic<unsigned int> pct = 0; // 透明度
 };
-extern BarWindowPosClass barWindowPos;
 
 // ====================
 // 媒体
@@ -45,7 +39,7 @@ public:
 // 界面
 
 // 动效类型
-enum class BarUiValueModeClass : int
+enum class BarUiValueModeEnum : int
 {
 	Once = 0, // 无动画
 	Variable = 1 // 回弹动效模式
@@ -70,7 +64,7 @@ class BarUiValueClass
 public:
 	BarUiValueClass()
 	{
-		mod = BarUiValueModeClass::Once;
+		mod = BarUiValueModeEnum::Once;
 
 		val = 0.0;
 		tar = 0.0;
@@ -83,7 +77,7 @@ public:
 	{
 		BarUiValueClass obj;
 		{
-			obj.mod = BarUiValueModeClass::Once;
+			obj.mod = BarUiValueModeEnum::Once;
 
 			obj.val = obj.tar = valT;
 			obj.ary = aryT;
@@ -94,7 +88,7 @@ public:
 	{
 		BarUiValueClass obj;
 		{
-			obj.mod = BarUiValueModeClass::Variable;
+			obj.mod = BarUiValueModeEnum::Variable;
 
 			obj.val = obj.tar = valT;
 			obj.ary = aryT;
@@ -106,7 +100,7 @@ public:
 	}
 
 public:
-	IdtAtomic<BarUiValueModeClass> mod;
+	IdtAtomic<BarUiValueModeEnum> mod;
 
 	IdtAtomic<double> val; // 直接值（当前位置）
 	IdtAtomic<double> tar; // 目标值（目标位置）
@@ -136,6 +130,21 @@ public:
 	IdtAtomic<double> spe; // 基准速度 1/s
 	IdtAtomic<double> pctSpe; // 基准速度 1/s
 };
+// 文字 UI 值
+class BarUiWordClass
+{
+public:
+	BarUiWordClass()
+	{
+		val = "";
+		tar = "";
+	}
+
+protected:
+	mutex mt;
+	string val; // 直接值（当前位置）
+	string tar; // 目标值（目标位置）
+};
 
 // 单个 UI 控件
 class BarUiWidgetClass
@@ -152,27 +161,27 @@ public:
 	//
 
 	// 控件左上角 x 坐标
-	IdtAtomic<bool> ValXEnable;
+	IdtAtomic<bool> valXEnable;
 	BarUiValueClass x;
 
 	// 控件左上角 y 坐标
-	IdtAtomic<bool> ValYEnable;
+	IdtAtomic<bool> valYEnable;
 	BarUiValueClass y;
 
 	// 控件宽度
-	IdtAtomic<bool> ValWEnable;
+	IdtAtomic<bool> valWEnable;
 	BarUiValueClass w;
 
 	// 控件高度
-	IdtAtomic<bool> ValHEnable;
+	IdtAtomic<bool> valHEnable;
 	BarUiValueClass h;
 
 	// 控件圆角直径
-	IdtAtomic<bool> ValRWEnable;
+	IdtAtomic<bool> valRWEnable;
 	BarUiValueClass rw;
 
 	// 控件圆角直径
-	IdtAtomic<bool> ValRHEnable;
+	IdtAtomic<bool> valRHEnable;
 	BarUiValueClass rh;
 
 	//
@@ -185,22 +194,60 @@ public:
 	IdtAtomic<bool> ColFrameEnable;
 	BarUiColorClass frame;
 };
+// 单个 SVG 控件
+class BarUiSVGClass
+{
+public:
+	BarUiSVGClass() {}
+
+public:
+	// 整体该控件是否显示
+	BarUiStateClass enable;
+
+	//
+
+	// 控件左上角 x 坐标
+	IdtAtomic<bool> valXEnable;
+	BarUiValueClass x;
+
+	// 控件左上角 y 坐标
+	IdtAtomic<bool> valYEnable;
+	BarUiValueClass y;
+
+	// 控件宽度
+	IdtAtomic<bool> valWEnable;
+	BarUiValueClass w;
+
+	// 控件高度
+	IdtAtomic<bool> valHEnable;
+	BarUiValueClass h;
+
+	// 控件圆角直径
+	IdtAtomic<bool> col1Enable;
+	BarUiColorClass color1;
+
+	// 控件圆角直径
+	IdtAtomic<bool> col2Enable;
+	BarUiColorClass color2;
+
+	//
+
+	// SVG 内容
+	BarUiWordClass svg;
+};
 
 class BarUISetClass
 {
+private:
+	BarUISetClass() = delete;
 public:
-	void Rendering();
-
-	constexpr size_t MakeKey(int a, int b) noexcept
-	{
-		assert(0 <= a && a <= 65535); assert(0 <= b && b <= 99);
-		return (static_cast<size_t>(a) << 8) | static_cast<size_t>(b);
-	}
+	static void Rendering();
 
 public:
-	BarMediaClass barMedia;
+	inline static BarMediaClass barMedia;
 
-	ankerl::unordered_dense::map<size_t, BarUiWidgetClass> widgetMap;
+	inline static ankerl::unordered_dense::map<size_t, BarUiWidgetClass*> widgetMap;
+	inline static ankerl::unordered_dense::map<size_t, BarUiWidgetClass*> svgMap;
 };
 
 // ====================
@@ -210,15 +257,13 @@ public:
 
 class BarInitializationClass
 {
+private:
+	BarInitializationClass() = delete;
 public:
-	void Initialization();
+	static void Initialization();
 
 protected:
-	void InitializeWindow();
-	void InitializeMedia();
-	void InitializeUI();
-
-public:
-	BarUISetClass barUISet;
+	static void InitializeWindow();
+	static void InitializeMedia();
+	static void InitializeUI();
 };
-extern BarInitializationClass barInitialization;

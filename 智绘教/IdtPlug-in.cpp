@@ -60,7 +60,7 @@ PptUiRoundRectWidgetClass pptUiRoundRectWidget[15], pptUiRoundRectWidgetTarget[1
 PptUiImageWidgetClass pptUiImageWidget[9], pptUiImageWidgetTarget[9];
 PptUiWordsWidgetClass pptUiWordsWidget[8], pptUiWordsWidgetTarget[8];
 
-ID2D1Bitmap* pptIconBitmap[6];
+CComPtr<ID2D1Bitmap> pptIconBitmap[6];
 
 void PptUiWidgetValueTransformation(float* v, float tv, float s, float e, int num = 1)
 {
@@ -2145,9 +2145,12 @@ void PptDraw()
 				}
 			}
 
+			ID2D1Bitmap* pBitmap = nullptr;
 			D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &pptIconBitmap[1]);
+			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &pBitmap);
 			delete[] data;
+
+			pptIconBitmap[1].Attach(pBitmap);
 		}
 		{
 			int width = PptIcon[2].getwidth();
@@ -2177,9 +2180,12 @@ void PptDraw()
 				}
 			}
 
+			ID2D1Bitmap* pBitmap = nullptr;
 			D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &pptIconBitmap[2]);
+			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &pBitmap);
 			delete[] data;
+
+			pptIconBitmap[2].Attach(pBitmap);
 		}
 		{
 			int width = PptIcon[3].getwidth();
@@ -2209,9 +2215,12 @@ void PptDraw()
 				}
 			}
 
+			ID2D1Bitmap* pBitmap = nullptr;
 			D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &pptIconBitmap[3]);
+			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &pBitmap);
 			delete[] data;
+
+			pptIconBitmap[3].Attach(pBitmap);
 		}
 		{
 			int width = PptIcon[4].getwidth();
@@ -2241,9 +2250,12 @@ void PptDraw()
 				}
 			}
 
+			ID2D1Bitmap* pBitmap = nullptr;
 			D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &pptIconBitmap[4]);
+			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &pBitmap);
 			delete[] data;
+
+			pptIconBitmap[4].Attach(pBitmap);
 		}
 		{
 			int width = PptIcon[5].getwidth();
@@ -2273,9 +2285,12 @@ void PptDraw()
 				}
 			}
 
+			ID2D1Bitmap* pBitmap = nullptr;
 			D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &pptIconBitmap[5]);
+			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &pBitmap);
 			delete[] data;
+
+			pptIconBitmap[5].Attach(pBitmap);
 		}
 	}
 
@@ -3210,8 +3225,8 @@ void PptDraw()
 		}
 	}
 
-	for (int r = 0; r < (int)size(pptIconBitmap); r++) DxObjectSafeRelease(&pptIconBitmap[r]);
-	DxObjectSafeRelease(&DCRenderTarget);
+	for (int r = 0; r < (int)size(pptIconBitmap); r++) pptIconBitmap[r].Release();
+	DCRenderTarget->Release();
 
 	for (int i = 1; i <= 5; i++)
 	{

@@ -45,8 +45,8 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250721a";				// 程序发布日期
-wstring editionChannel = L"LTS";				// 程序发布通道
+wstring editionDate = L"20250721b";				// 程序发布日期
+wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -1096,9 +1096,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			IdtFontCollectionLoader* D2DFontCollectionLoader = new IdtFontCollectionLoader;
 			D2DFontCollectionLoader->AddFont(D2DTextFactory, globalPath + L"ttf\\hmossscr.ttf");
 
+			IDWriteFontCollection* tempCollection = nullptr;
 			D2DTextFactory->RegisterFontCollectionLoader(D2DFontCollectionLoader);
-			D2DTextFactory->CreateCustomFontCollection(D2DFontCollectionLoader, 0, 0, &D2DFontCollection);
+			D2DTextFactory->CreateCustomFontCollection(D2DFontCollectionLoader, 0, 0, &tempCollection);
 			D2DTextFactory->UnregisterFontCollectionLoader(D2DFontCollectionLoader);
+
+			D2DFontCollection.Attach(tempCollection);
 		}
 
 		stringFormat.SetAlignment(StringAlignmentCenter);
@@ -1223,8 +1226,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 线程
 	{
-		thread(floating_main).detach();
-		//thread([&]() { barInitialization.Initialization(); }).detach();
+		//thread(floating_main).detach();
+		thread(BarInitializationClass::Initialization).detach();
 		thread(SettingMain).detach();
 		thread(drawpad_main).detach();
 		thread(FreezeFrameWindow).detach();
@@ -1239,6 +1242,20 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		IDTLogger->info("[主线程][IdtMain] 线程初始化完成");
 	}
 	CrashHandler::IsSecond(false);
+
+	{
+		// 创建测试控制台
+
+#ifndef IDT_RELEASE
+		{
+			AllocConsole();
+			FILE* fp;
+			freopen_s(&fp, "CONOUT$", "w", stdout);
+			freopen_s(&fp, "CONOUT$", "w", stderr);
+			std::ios::sync_with_stdio();
+		}
+#endif
+	}
 
 	IDTLogger->info("[主线程][IdtMain] 开始等待关闭程序信号发出");
 

@@ -17,7 +17,7 @@
 
 #pragma once
 
-#define IDT_RELEASE
+// #define IDT_RELEASE
 // #pragma comment( linker, "/subsystem:windows /entry:mainCRTStartup" )
 
 // 智绘教最低兼容 Windows 7 sp0
@@ -61,6 +61,7 @@
 #include <mutex>
 #include <shared_mutex>
 #include <variant>
+#include <atlbase.h>
 
 // 日志类
 #define SPDLOG_WCHAR_FILENAMES
@@ -187,6 +188,19 @@ public:
 	T operator--(int) noexcept {
 		return value.fetch_sub(1, std::memory_order_seq_cst);
 	}
+
+	void wait(IdtAtomicT expected, std::memory_order order = std::memory_order_seq_cst) const noexcept
+	{
+		value.wait(expected, order);
+	}
+	void notify_one() noexcept
+	{
+		value.notify_one();
+	}
+	void notify_all() noexcept
+	{
+		value.notify_all();
+	}
 };
 
 // 调测专用
@@ -197,7 +211,8 @@ void Testi(long long t);
 void Testd(double t);
 void Testw(wstring t);
 void Testa(string t);
-#define IdtFalse false
+#define TestFalse false
+#define TestCout cout
 
 // this_thread::sleep_for(chrono::milliseconds(int))
 #endif

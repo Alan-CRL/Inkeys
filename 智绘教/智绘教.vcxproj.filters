@@ -714,9 +714,6 @@
     <ClInclude Include="additional\imgui\imgui_toggle_renderer.h">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
-    <ClInclude Include="additional\ft2build.h">
-      <Filter>头文件\Additional</Filter>
-    </ClInclude>
     <ClInclude Include="additional\imgui\imstb_rectpack.h">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
@@ -746,6 +743,12 @@
     </ClInclude>
     <ClInclude Include="Inkeys\UI\IdtBar.h">
       <Filter>头文件\Inkeys\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\concurrentqueue.h">
+      <Filter>头文件\Additional</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\unordered_dense.h">
+      <Filter>头文件\Additional</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

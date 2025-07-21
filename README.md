@@ -84,13 +84,15 @@ Windows 屏幕批注工具，拥有高效批注和丰富功能，
 - `dev`：分支仓库，每日及时更新，存储自动保存的源码，可能无法构建
 
 ## 项目引用
-[martinus/unordered_dense](https://github.com/martinus/unordered_dense)  
-[ocornut/imgui](https://github.com/ocornut/imgui)  
-[Alan-CRL/DesktopDrawpadBlocker](https://github.com/Alan-CRL/DesktopDrawpadBlocker)  
 [aksalj/hashlibpp](https://github.com/aksalj/hashlibpp)  
-[zouhuidong/HiEasyX](https://github.com/zouhuidong/HiEasyX)  
-[open-source-parsers/jsoncpp](https://github.com/open-source-parsers/jsoncpp)  
+[Alan-CRL/DesktopDrawpadBlocker](https://github.com/Alan-CRL/DesktopDrawpadBlocker)  
+[cameron314/concurrentqueue](https://github.com/cameron314/concurrentqueue)  
 [efficient/libcuckoo](https://github.com/efficient/libcuckoo)  
-[nothings/stb](https://github.com/nothings/stb)  
+[martinus/unordered_dense](https://github.com/martinus/unordered_dense)  
 [mohabouje/WinToast](https://github.com/mohabouje/WinToast)  
+[nothings/stb](https://github.com/nothings/stb)  
+[ocornut/imgui](https://github.com/ocornut/imgui)  
+[open-source-parsers/jsoncpp](https://github.com/open-source-parsers/jsoncpp)  
+[sammycage/lunasvg](https://github.com/sammycage/lunasvg)  
 [Zip Utils](https://www.codeproject.com/Articles/7530/Zip-Utils-Clean-Elegant-Simple-Cplusplus-Win)  
+[zouhuidong/HiEasyX](https://github.com/zouhuidong/HiEasyX)  

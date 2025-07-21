@@ -212,6 +212,8 @@ HRESULT CSyncEventHandlerRTS::StylusDown(IRealTimeStylus* piRtsSrc, const Stylus
 	info.pid = TouchCnt;
 	lockTouchPointer.unlock();
 
+	TestCout << "RTS StylusDown CID:" << pStylusInfo->cid << " PID:" << info.pid << " x:" << mode.pt.x << " y:" << mode.pt.y << endl;
+
 	std::unique_lock<std::shared_mutex> lock1(touchPosSm);
 	TouchPos[TouchCnt] = mode;
 	lock1.unlock();
@@ -250,6 +252,8 @@ HRESULT CSyncEventHandlerRTS::StylusUp(IRealTimeStylus*, const StylusInfo* pStyl
 	if (rtsNum == 0) rtsDown = false;
 
 	int pid = TouchPointer[pStylusInfo->cid];
+
+	TestCout << "RTS StylusUp CID:" << pStylusInfo->cid << " PID:" << pid << endl;
 
 	auto it = std::find(TouchList.begin(), TouchList.end(), pid);
 	if (it != TouchList.end())
@@ -309,6 +313,8 @@ HRESULT CSyncEventHandlerRTS::Packets(IRealTimeStylus* piRtsSrc, const StylusInf
 		else if (guid == GUID_PACKETPROPERTY_GUID_HEIGHT) mode.touchHeight = LONG(pPacket[i] * mode.inkToDeviceScaleY + 0.5);
 	}
 	CoTaskMemFree(pPacketProperties);
+
+	TestCout << "RTS Packets CID:" << pStylusInfo->cid << " PID:" << pid << " x:" << mode.pt.x << " y:" << mode.pt.y << endl;
 
 	unique_lock<shared_mutex> lock2(touchPosSm);
 	TouchPos[pid] = mode;

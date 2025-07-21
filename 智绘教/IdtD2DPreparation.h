@@ -7,11 +7,11 @@
 #pragma comment(lib, "d2d1.lib")
 #pragma comment(lib, "dwrite.lib")
 
-extern ID2D1Factory* D2DFactory;
+extern CComPtr<ID2D1Factory> D2DFactory;
 extern D2D1_RENDER_TARGET_PROPERTIES D2DProperty;
 
-extern IDWriteFactory* D2DTextFactory;
-extern IDWriteFontCollection* D2DFontCollection;
+extern CComPtr<IDWriteFactory> D2DTextFactory;
+extern CComPtr<IDWriteFontCollection> D2DFontCollection;
 
 /*
 * Dwrite win7 支持版本不能从内存中加载字体，故只能从本地字体文件加载
