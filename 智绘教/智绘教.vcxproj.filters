@@ -100,6 +100,9 @@
     <Filter Include="源文件\Inkeys\UI">
       <UniqueIdentifier>{de560809-c33f-4d6d-9635-64531bbcada9}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\Inkeys\CONV">
+      <UniqueIdentifier>{da9fe4f5-f08e-4eb0-9616-0ad97f177df0}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HiEasyX.h">
@@ -749,6 +752,9 @@
     </ClInclude>
     <ClInclude Include="additional\unordered_dense.h">
       <Filter>头文件\Additional</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\CONV\IdtColor.h">
+      <Filter>头文件\Inkeys\CONV</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

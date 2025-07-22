@@ -202,6 +202,69 @@ public:
 		value.notify_all();
 	}
 };
+template<typename IdtOptionalT>
+class IdtOptional
+{
+	static_assert(is_default_constructible_v<IdtOptionalT>, "IdtOptional<IdtOptionalT>: IdtOptionalT 必须是默认可构造类型");
+
+private:
+	optional<IdtOptionalT> opt;
+public:
+	IdtOptional() = default;
+	IdtOptional(nullopt_t) : opt(nullopt) {}
+	IdtOptional(const IdtOptionalT& val) : opt(val) {}
+	IdtOptional(IdtOptionalT&& val) : opt(move(val)) {}
+
+	// 判断是否有值
+	bool has_value() const { return opt.has_value(); }
+
+	// 支持直接赋值
+	IdtOptional& operator=(const IdtOptionalT& val) { opt = val; return *this; }
+	IdtOptional& operator=(IdtOptionalT&& val) { opt = move(val); return *this; }
+	IdtOptional& operator=(nullopt_t) { opt = nullopt; return *this; }
+
+	// 只读场景（const对象/const成员）
+	operator const IdtOptionalT& () const { return opt ? *opt : default_value(); }
+	const IdtOptionalT& operator*() const { return opt ? *opt : default_value(); }
+	const IdtOptionalT* operator->() const { return opt ? addressof(*opt) : addressof(default_value()); }
+	// 写场景（非const对象/成员）
+	operator IdtOptionalT& ()
+	{
+		if (!opt) opt = IdtOptionalT{};
+		return *opt;
+	}
+	IdtOptionalT& operator*()
+	{
+		if (!opt) opt = IdtOptionalT{};
+		return *opt;
+	}
+	IdtOptionalT* operator->()
+	{
+		if (!opt) opt = IdtOptionalT{};
+		return addressof(*opt);
+	}
+
+	// 比较操作
+	auto operator<=>(const IdtOptional& other) const
+	{
+		return this->operator const IdtOptionalT & () <=> other.operator const IdtOptionalT & ();
+	}
+	bool operator==(const IdtOptional& other) const
+	{
+		return this->operator const IdtOptionalT & () == other.operator const IdtOptionalT & ();
+	}
+	bool operator!=(const IdtOptional& other) const
+	{
+		return this->operator const IdtOptionalT & () != other.operator const IdtOptionalT & ();
+	}
+
+private:
+	static const IdtOptionalT& default_value()
+	{
+		static IdtOptionalT t{};
+		return t;
+	}
+};
 
 // 调测专用
 #ifndef IDT_RELEASE

@@ -42,37 +42,34 @@ public:
 enum class BarUiValueModeEnum : int
 {
 	Once = 0, // 无动画
-	Variable = 1 // 回弹动效模式
+	Linear = 1, // 线性
+	Variable = 2 // 回弹动效
 };
 
 // 状态 UI 值
 class BarUiStateClass
 {
 public:
-	BarUiStateClass()
+	BarUiStateClass() {}
+	BarUiStateClass(IdtOptional<bool> valT, IdtOptional<bool> tarT = nullopt)
 	{
-		val = false;
-		tar = false;
+		if (valT.has_value()) val = valT;
+		else val = false;
+
+		if (tarT.has_value()) tar = tarT;
+		else tar = val;
 	}
+
 public:
-	IdtAtomic<bool> val;
-	IdtAtomic<bool> tar;
+	IdtAtomic<bool> val = false;
+	IdtAtomic<bool> tar = false;
 };
 // 模态 UI 值
 class BarUiValueClass
 {
 public:
-	BarUiValueClass()
-	{
-		mod = BarUiValueModeEnum::Once;
+	BarUiValueClass() {}
 
-		val = 0.0;
-		tar = 0.0;
-		ary = 0.0;
-
-		spe = 0.0;
-		startV = 0.0;
-	}
 	static BarUiValueClass BarUiValueClassModeOnce(double valT, double aryT)
 	{
 		BarUiValueClass obj;
@@ -81,6 +78,20 @@ public:
 
 			obj.val = obj.tar = valT;
 			obj.ary = aryT;
+		}
+		return obj;
+	}
+	static BarUiValueClass BarUiValueClassModeLinear(double valT, double aryT, double speT)
+	{
+		BarUiValueClass obj;
+		{
+			obj.mod = BarUiValueModeEnum::Linear;
+
+			obj.val = obj.tar = valT;
+			obj.ary = aryT;
+
+			obj.spe = speT;
+			obj.startV = valT;
 		}
 		return obj;
 	}
@@ -100,99 +111,121 @@ public:
 	}
 
 public:
-	IdtAtomic<BarUiValueModeEnum> mod;
+	IdtAtomic<BarUiValueModeEnum> mod = BarUiValueModeEnum::Once;
 
-	IdtAtomic<double> val; // 直接值（当前位置）
-	IdtAtomic<double> tar; // 目标值（目标位置）
-	IdtAtomic<double> ary; // 变换精度（差值绝对值小于精度则认为已经动画完成，则直接赋值等于）
+	IdtAtomic<double> val = 0.0; // 直接值（当前位置）
+	IdtAtomic<double> tar = 0.0; // 目标值（目标位置）
+	IdtAtomic<double> ary = 0.0; // 变换精度（差值绝对值小于精度则认为已经动画完成，则直接赋值等于）
 
 	// 适用于 回弹动效模式
-	IdtAtomic<double> spe; // 基准速度 px/s
-	IdtAtomic<double> startV; // 起始位置（用于计算百分比，在界面设被设置时）
+	IdtAtomic<double> spe = 0.0; // 基准速度 px/s
+	IdtAtomic<double> startV = 0.0; // 起始位置（用于计算百分比，在界面设被设置时）
 };
 // 颜色 UI 值
 class BarUiColorClass
 {
 public:
-	BarUiColorClass()
-	{
-		val = RGBA(0, 0, 0, 0);
-		tar = RGBA(0, 0, 0, 0);
-
-		spe = 0.0;
-		pctSpe = 0.0;
-	}
+	BarUiColorClass() {}
 
 public:
-	IdtAtomic<COLORREF> val; // 直接值（当前位置）
-	IdtAtomic<COLORREF> tar; // 目标值（目标位置）
+	IdtAtomic<COLORREF> val = RGBA(0, 0, 0, 0); // 直接值（当前位置）
+	IdtAtomic<COLORREF> tar = RGBA(0, 0, 0, 0); // 目标值（目标位置）
 
-	IdtAtomic<double> spe; // 基准速度 1/s
-	IdtAtomic<double> pctSpe; // 基准速度 1/s
+	IdtAtomic<double> spe = 0.0; // 基准速度 1/s
+	IdtAtomic<double> pctSpe = 0.0; // 基准速度 1/s
 };
 // 文字 UI 值
 class BarUiWordClass
 {
 public:
-	BarUiWordClass()
+	BarUiWordClass() {}
+
+public:
+	string GetVal() const
 	{
-		val = "";
-		tar = "";
+		shared_lock lock(valmt);
+		return val;
+	}
+	void SetVal(const string& v)
+	{
+		unique_lock lock(valmt);
+		val = v;
+	}
+	string GetTar() const
+	{
+		shared_lock lock(tarmt);
+		return tar;
+	}
+	void SetTar(const string& t)
+	{
+		unique_lock lock(tarmt);
+		tar = t;
+	}
+
+	void ApplyTar()
+	{
+		unique_lock lock_val(valmt);
+		shared_lock lock_tar(tarmt); // 可读锁，防止tar被其它线程突然写掉
+		val = tar;
+	}
+
+public:
+	friend bool operator==(const BarUiWordClass& lhs, const BarUiWordClass& rhs)
+	{
+		if (&lhs == &rhs) return true; // 同一个对象
+
+		// 按指针大小先锁valmt，再锁tarmt，避免死锁
+		const BarUiWordClass* first = &lhs;
+		const BarUiWordClass* second = &rhs;
+		if (first > second) std::swap(first, second);
+
+		// 为了防止死锁，分别锁两个对象的valmt和tarmt
+		// 总是先valmt，再tarmt（重要！避免死锁）
+		shared_lock vlock1(first->valmt);
+		shared_lock vlock2(second->valmt);
+
+		shared_lock tlock1(first->tarmt);
+		shared_lock tlock2(second->tarmt);
+
+		return lhs.val == rhs.val && lhs.tar == rhs.tar;
+	}
+	friend bool operator!=(const BarUiWordClass& lhs, const BarUiWordClass& rhs)
+	{
+		return !(lhs == rhs);
 	}
 
 protected:
-	mutex mt;
-	string val; // 直接值（当前位置）
-	string tar; // 目标值（目标位置）
+	mutable shared_mutex valmt;
+	mutable shared_mutex tarmt;
+	string val = "";
+	string tar = "";
 };
 
-// 单个 UI 控件
-class BarUiWidgetClass
+// 单个形状控件
+class BarUiShapeClass
 {
 public:
-	BarUiWidgetClass() {}
+	BarUiShapeClass() {}
 
 public:
-	// 设计思路：每个项单独加入哈希表，提高单个修改时的性能
-
 	// 整体该控件是否显示
 	BarUiStateClass enable;
 
-	//
+	// 模态
 
-	// 控件左上角 x 坐标
-	IdtAtomic<bool> valXEnable;
-	BarUiValueClass x;
+	IdtOptional<BarUiValueClass> x; // 控件中心 x 坐标
+	IdtOptional<BarUiValueClass> y; // 控件中心 y 坐标
+	IdtOptional<BarUiValueClass> w; // 控件宽度
+	IdtOptional<BarUiValueClass> h; // 控件高度
+	IdtOptional<BarUiValueClass> rw; // 控件圆角直径
+	IdtOptional<BarUiValueClass> rh; // 控件圆角直径
 
-	// 控件左上角 y 坐标
-	IdtAtomic<bool> valYEnable;
-	BarUiValueClass y;
+	// 颜色
 
-	// 控件宽度
-	IdtAtomic<bool> valWEnable;
-	BarUiValueClass w;
+	IdtOptional<BarUiColorClass> fill; // 控件填充颜色
+	IdtOptional<BarUiColorClass> frame; // 控件圆角直径
 
-	// 控件高度
-	IdtAtomic<bool> valHEnable;
-	BarUiValueClass h;
-
-	// 控件圆角直径
-	IdtAtomic<bool> valRWEnable;
-	BarUiValueClass rw;
-
-	// 控件圆角直径
-	IdtAtomic<bool> valRHEnable;
-	BarUiValueClass rh;
-
-	//
-
-	// 控件圆角直径
-	IdtAtomic<bool> ColFillEnable;
-	BarUiColorClass fill;
-
-	// 控件圆角直径
-	IdtAtomic<bool> ColFrameEnable;
-	BarUiColorClass frame;
+	// 继承
 };
 // 单个 SVG 控件
 class BarUiSVGClass
@@ -204,38 +237,33 @@ public:
 	// 整体该控件是否显示
 	BarUiStateClass enable;
 
-	//
+	// 模态
 
-	// 控件左上角 x 坐标
-	IdtAtomic<bool> valXEnable;
-	BarUiValueClass x;
+	IdtOptional<BarUiValueClass> x; // 控件中心 x 坐标
+	IdtOptional<BarUiValueClass> y; // 控件中心 y 坐标
+	IdtOptional<BarUiValueClass> w; // 控件宽度
+	IdtOptional<BarUiValueClass> h; // 控件高度
 
-	// 控件左上角 y 坐标
-	IdtAtomic<bool> valYEnable;
-	BarUiValueClass y;
+	// 颜色
 
-	// 控件宽度
-	IdtAtomic<bool> valWEnable;
-	BarUiValueClass w;
+	IdtOptional<BarUiColorClass> color1; // 控件强调颜色1
+	IdtOptional<BarUiColorClass> color2; // 控件强调颜色2
 
-	// 控件高度
-	IdtAtomic<bool> valHEnable;
-	BarUiValueClass h;
+	// SVG
 
-	// 控件圆角直径
-	IdtAtomic<bool> col1Enable;
-	BarUiColorClass color1;
-
-	// 控件圆角直径
-	IdtAtomic<bool> col2Enable;
-	BarUiColorClass color2;
-
-	//
-
-	// SVG 内容
-	BarUiWordClass svg;
+	IdtOptional<BarUiWordClass> svg; // SVG 内容
 };
 
+// 具体渲染
+class BarUIRendering
+{
+private:
+	BarUIRendering() = delete;
+public:
+	static bool Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClass& svg);
+};
+
+// UI 总集
 class BarUISetClass
 {
 private:
@@ -246,8 +274,18 @@ public:
 public:
 	inline static BarMediaClass barMedia;
 
-	inline static ankerl::unordered_dense::map<size_t, BarUiWidgetClass*> widgetMap;
-	inline static ankerl::unordered_dense::map<size_t, BarUiWidgetClass*> svgMap;
+	inline static ankerl::unordered_dense::map<size_t, BarUiValueClass*> valuetMap;
+	inline static ankerl::unordered_dense::map<size_t, BarUiSVGClass*> svgMap;
+};
+
+// ====================
+// 环境
+
+// LOGO配色方案
+enum class BarLogaColorSchemeEnum : int
+{
+	Default = 0, // 深色
+	Slate = 1 // 浅色
 };
 
 // ====================

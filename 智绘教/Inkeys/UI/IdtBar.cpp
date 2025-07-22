@@ -1,8 +1,9 @@
 ﻿#include "IdtBar.h"
 
-#include "../../IdtWindow.h"
-#include "../../IdtDisplayManagement.h"
 #include "../../IdtD2DPreparation.h"
+#include "../../IdtDisplayManagement.h"
+#include "../../IdtWindow.h"
+#include "../CONV/IdtColor.h"
 
 //#undef max
 //#undef min
@@ -13,18 +14,55 @@
 #pragma comment(lib, "lunasvg.lib")
 #pragma comment(lib, "plutovg.lib")
 
+// ====================
 // 临时
 void FloatingInstallHook();
 
+// ====================
 // 窗口
 
+// ====================
 // 媒体
 void BarMediaClass::LoadExImage()
 {
 }
 
+// ====================
 // 界面
 
+// 具体渲染
+bool BarUIRendering::Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClass& svg)
+{
+	int targetWidth = svg.h->val;
+	int targetHeight = svg.w->val;
+
+	unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromData(svg.svg->GetVal());
+	//unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromFile("D:\\Downloads\\Inkeys.svg");
+
+	lunasvg::Bitmap bitmap = document->renderToBitmap(targetWidth, targetHeight);
+
+	CComPtr<ID2D1Bitmap> d2dBitmap;
+	D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+
+	// lunasvg 文档声明：数据为BGRA，8bits每通道，正好适配D2D位图
+	DCRenderTarget->CreateBitmap(
+		D2D1::SizeU(bitmap.width(), bitmap.height()),
+		bitmap.data(),
+		bitmap.width() * 4, // stride
+		props,
+		&d2dBitmap);
+
+	D2D1_RECT_F destRect = D2D1::RectF(0, 0, (float)targetWidth, (float)targetHeight);
+	DCRenderTarget->DrawBitmap(
+		d2dBitmap,
+		destRect,        // 目标矩形
+		1.0f,            // 不透明度
+		D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+		nullptr          // 源rect, null表示全部
+	);
+}
+
+// UI 总集
 void BarUISetClass::Rendering()
 {
 	BLENDFUNCTION blend;
@@ -148,10 +186,10 @@ void BarUISetClass::Rendering()
 	return;
 }
 
+// ====================
 // 交互
 
 // 初始化
-
 void BarInitializationClass::Initialization()
 {
 	threadStatus[L"BarInitialization"] = true;
@@ -183,7 +221,6 @@ void BarInitializationClass::Initialization()
 	threadStatus[L"BarInitialization"] = false;
 	return;
 }
-
 void BarInitializationClass::InitializeWindow()
 {
 	DisableResizing(floating_window, true); // hiex 禁止窗口拉伸

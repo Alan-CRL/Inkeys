@@ -212,7 +212,7 @@ HRESULT CSyncEventHandlerRTS::StylusDown(IRealTimeStylus* piRtsSrc, const Stylus
 	info.pid = TouchCnt;
 	lockTouchPointer.unlock();
 
-	TestCout << "RTS StylusDown CID:" << pStylusInfo->cid << " PID:" << info.pid << " x:" << mode.pt.x << " y:" << mode.pt.y << endl;
+	//TestCout << "RTS StylusDown CID:" << pStylusInfo->cid << " PID:" << info.pid << " x:" << mode.pt.x << " y:" << mode.pt.y << endl;
 
 	std::unique_lock<std::shared_mutex> lock1(touchPosSm);
 	TouchPos[TouchCnt] = mode;
@@ -253,7 +253,7 @@ HRESULT CSyncEventHandlerRTS::StylusUp(IRealTimeStylus*, const StylusInfo* pStyl
 
 	int pid = TouchPointer[pStylusInfo->cid];
 
-	TestCout << "RTS StylusUp CID:" << pStylusInfo->cid << " PID:" << pid << endl;
+	//TestCout << "RTS StylusUp CID:" << pStylusInfo->cid << " PID:" << pid << endl;
 
 	auto it = std::find(TouchList.begin(), TouchList.end(), pid);
 	if (it != TouchList.end())
@@ -314,7 +314,7 @@ HRESULT CSyncEventHandlerRTS::Packets(IRealTimeStylus* piRtsSrc, const StylusInf
 	}
 	CoTaskMemFree(pPacketProperties);
 
-	TestCout << "RTS Packets CID:" << pStylusInfo->cid << " PID:" << pid << " x:" << mode.pt.x << " y:" << mode.pt.y << endl;
+	//TestCout << "RTS Packets CID:" << pStylusInfo->cid << " PID:" << pid << " x:" << mode.pt.x << " y:" << mode.pt.y << endl;
 
 	unique_lock<shared_mutex> lock2(touchPosSm);
 	TouchPos[pid] = mode;
