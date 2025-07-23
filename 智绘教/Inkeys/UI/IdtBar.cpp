@@ -30,13 +30,52 @@ void BarMediaClass::LoadExImage()
 // ====================
 // 界面
 
+// 位置继承
+// 根据类型计算继承坐标原点
+BarUiInheritClass::BarUiInheritClass(BarUiInheritEnum typeT, const optional<BarUiValueClass>& w, const optional<BarUiValueClass>& h, const optional<BarUiValueClass>& xT, const optional<BarUiValueClass>& yT, const optional<BarUiValueClass>& wT, const optional<BarUiValueClass>& hT)
+{
+	// w/h 为控件自身的宽高
+	type = typeT;
+	// TODO 拓展更多类型组合
+	if (type == BarUiInheritEnum::TopLeft)
+	{
+		if (xT.has_value() && wT.has_value() && w.has_value()) x = xT.value().val - wT.value().val / 2.0 + w.value().val / 2.0;
+		if (yT.has_value() && hT.has_value() && w.has_value()) y = yT.value().val - hT.value().val / 2.0 + h.value().val / 2.0;
+	}
+	if (type == BarUiInheritEnum::Center)
+	{
+		if (xT.has_value()) x = xT.value().val;
+		if (yT.has_value()) y = yT.value().val;
+	}
+}
+
 // 具体渲染
 bool BarUIRendering::Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClass& svg)
 {
+	// 初始化绘制量
+	double tarX = 0.0;
+	double tarY = 0.0;
+	double tarW = 0.0;
+	double tarH = 0.0;
+	// 判断是否合法
+	{
+		if (svg.enable.val == false) return false;
+		if (!svg.svg.has_value()) return false;
+	}
+
+	// 解析SVG
+	unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromData(svg.svg.value().GetVal());
+
+	// 赋值
+	{
+		if (svg.x.has_value()) tarX += svg.x.value().val;
+		if (svg.y.has_value()) tarX += svg.y.value().val;
+	}
+
 	int targetWidth = svg.h->val;
 	int targetHeight = svg.w->val;
 
-	unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromData(svg.svg->GetVal());
+	unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromData(svg.svg.value().GetVal());
 	//unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromFile("D:\\Downloads\\Inkeys.svg");
 
 	lunasvg::Bitmap bitmap = document->renderToBitmap(targetWidth, targetHeight);

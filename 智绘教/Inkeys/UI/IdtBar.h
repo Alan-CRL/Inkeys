@@ -51,12 +51,12 @@ class BarUiStateClass
 {
 public:
 	BarUiStateClass() {}
-	BarUiStateClass(IdtOptional<bool> valT, IdtOptional<bool> tarT = nullopt)
+	BarUiStateClass(optional<bool> valT, optional<bool> tarT = nullopt)
 	{
-		if (valT.has_value()) val = valT;
+		if (valT.has_value()) val = valT.value();
 		else val = false;
 
-		if (tarT.has_value()) tar = tarT;
+		if (tarT.has_value()) tar = tarT.value();
 		else tar = val;
 	}
 
@@ -115,7 +115,7 @@ public:
 
 	IdtAtomic<double> val = 0.0; // 直接值（当前位置）
 	IdtAtomic<double> tar = 0.0; // 目标值（目标位置）
-	IdtAtomic<double> ary = 0.0; // 变换精度（差值绝对值小于精度则认为已经动画完成，则直接赋值等于）
+	IdtAtomic<double> ary = 0.0; // 变换精度（差值绝对值小于等于精度则认为已经动画完成，则直接赋值等于）
 
 	// 适用于 回弹动效模式
 	IdtAtomic<double> spe = 0.0; // 基准速度 px/s
@@ -128,11 +128,13 @@ public:
 	BarUiColorClass() {}
 
 public:
-	IdtAtomic<COLORREF> val = RGBA(0, 0, 0, 0); // 直接值（当前位置）
-	IdtAtomic<COLORREF> tar = RGBA(0, 0, 0, 0); // 目标值（目标位置）
+	IdtAtomic<COLORREF> val = RGB(0, 0, 0); // 直接值（当前位置）
+	IdtAtomic<COLORREF> tar = RGB(0, 0, 0); // 目标值（目标位置）
+	IdtAtomic<double> colVal = 1.0; // 透明度直接值
+	IdtAtomic<double> colTar = 1.0; // 颜色目标值
 
-	IdtAtomic<double> spe = 0.0; // 基准速度 1/s
-	IdtAtomic<double> pctSpe = 0.0; // 基准速度 1/s
+	IdtAtomic<double> spe = 0.0; // RGB基准速度 1/s
+	IdtAtomic<double> pctSpe = 0.0; // 透明度基准速度 1/s
 };
 // 文字 UI 值
 class BarUiWordClass
@@ -177,7 +179,7 @@ public:
 		// 按指针大小先锁valmt，再锁tarmt，避免死锁
 		const BarUiWordClass* first = &lhs;
 		const BarUiWordClass* second = &rhs;
-		if (first > second) std::swap(first, second);
+		if (first > second) swap(first, second);
 
 		// 为了防止死锁，分别锁两个对象的valmt和tarmt
 		// 总是先valmt，再tarmt（重要！避免死锁）
@@ -201,6 +203,35 @@ protected:
 	string tar = "";
 };
 
+// 前向声明
+class BarUiShapeClass;
+class BarUiSVGClass;
+//
+
+// 位置继承
+enum class BarUiInheritEnum
+{
+	TopLeft = 0, // 左上继承
+	Left = 4, // 左中继承
+	Center = 5, // 居中继承
+
+	// 拓展
+
+	LeftToRight = 13, // 父左中，子右中
+	RightToLeft = 15, // 父右中，子左中
+};
+class BarUiInheritClass
+{
+public:
+	BarUiInheritClass() {}
+	BarUiInheritClass(BarUiInheritEnum typeT, const optional<BarUiValueClass>& w, const optional<BarUiValueClass>& h, const optional<BarUiValueClass>& xT, const optional<BarUiValueClass>& yT, const optional<BarUiValueClass>& wT, const optional<BarUiValueClass>& hT);
+
+public:
+	BarUiInheritEnum type = BarUiInheritEnum::Center;
+	IdtAtomic<double> x = 0.0; // 继承坐标原点 x 坐标
+	IdtAtomic<double> y = 0.0; // 继承坐标原点 y 坐标
+};
+
 // 单个形状控件
 class BarUiShapeClass
 {
@@ -208,22 +239,26 @@ public:
 	BarUiShapeClass() {}
 
 public:
+	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape) { return BarUiInheritClass(typeT, w, h, shape.x, shape.y, shape.w, shape.h); }
+	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiSVGClass& svg) { return BarUiInheritClass(typeT, w, h, svg.x, svg.y, svg.w, svg.h); }
+
+public:
 	// 整体该控件是否显示
 	BarUiStateClass enable;
 
 	// 模态
 
-	IdtOptional<BarUiValueClass> x; // 控件中心 x 坐标
-	IdtOptional<BarUiValueClass> y; // 控件中心 y 坐标
-	IdtOptional<BarUiValueClass> w; // 控件宽度
-	IdtOptional<BarUiValueClass> h; // 控件高度
-	IdtOptional<BarUiValueClass> rw; // 控件圆角直径
-	IdtOptional<BarUiValueClass> rh; // 控件圆角直径
+	optional<BarUiValueClass> x; // 控件中心 x 坐标
+	optional<BarUiValueClass> y; // 控件中心 y 坐标
+	optional<BarUiValueClass> w; // 控件宽度
+	optional<BarUiValueClass> h; // 控件高度
+	optional<BarUiValueClass> rw; // 控件圆角直径
+	optional<BarUiValueClass> rh; // 控件圆角直径
 
 	// 颜色
 
-	IdtOptional<BarUiColorClass> fill; // 控件填充颜色
-	IdtOptional<BarUiColorClass> frame; // 控件圆角直径
+	optional<BarUiColorClass> fill; // 控件填充颜色
+	optional<BarUiColorClass> frame; // 控件圆角直径
 
 	// 继承
 };
@@ -234,24 +269,28 @@ public:
 	BarUiSVGClass() {}
 
 public:
+	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape) { return BarUiInheritClass(typeT, w, h, shape.x, shape.y, shape.w, shape.h); }
+	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiSVGClass& svg) { return BarUiInheritClass(typeT, w, h, svg.x, svg.y, svg.w, svg.h); }
+
+public:
 	// 整体该控件是否显示
 	BarUiStateClass enable;
 
 	// 模态
 
-	IdtOptional<BarUiValueClass> x; // 控件中心 x 坐标
-	IdtOptional<BarUiValueClass> y; // 控件中心 y 坐标
-	IdtOptional<BarUiValueClass> w; // 控件宽度
-	IdtOptional<BarUiValueClass> h; // 控件高度
+	optional<BarUiValueClass> x; // 控件中心 x 坐标
+	optional<BarUiValueClass> y; // 控件中心 y 坐标
+	optional<BarUiValueClass> w; // 控件宽度
+	optional<BarUiValueClass> h; // 控件高度
 
 	// 颜色
 
-	IdtOptional<BarUiColorClass> color1; // 控件强调颜色1
-	IdtOptional<BarUiColorClass> color2; // 控件强调颜色2
+	optional<BarUiColorClass> color1; // 控件强调颜色1
+	optional<BarUiColorClass> color2; // 控件强调颜色2
 
 	// SVG
 
-	IdtOptional<BarUiWordClass> svg; // SVG 内容
+	optional<BarUiWordClass> svg; // SVG 内容
 };
 
 // 具体渲染
