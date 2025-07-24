@@ -50,26 +50,116 @@ BarUiInheritClass::BarUiInheritClass(BarUiInheritEnum typeT, const optional<BarU
 }
 
 // 具体渲染
-bool BarUIRendering::Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClass& svg)
+string BarUIRendering::SvgReplaceColor(const string& input, const optional<BarUiColorClass>& color1, const optional<BarUiColorClass>& color2)
 {
-	// 初始化绘制量
-	double tarX = 0.0;
-	double tarY = 0.0;
-	double tarW = 0.0;
-	double tarH = 0.0;
+	auto colorref_to_rgb = [](COLORREF c) -> string
+		{
+			int r = GetRValue(c);
+			int g = GetGValue(c);
+			int b = GetBValue(c);
+
+			return "rgb(" + to_string(r) + "," + to_string(g) + "," + to_string(b) + ")";
+		};
+	COLORREF col1;
+	COLORREF col2;
+
+	string result = input;
+	if (color1.has_value())
+	{
+		col1 = color1.value().colVal;
+
+		size_t pos = 0;
+		const string tag = "#{color1}";
+		const string rgb_str = colorref_to_rgb(col1);
+		while ((pos = result.find(tag, pos)) != string::npos)
+		{
+			result.replace(pos, tag.length(), rgb_str);
+			pos += rgb_str.length();
+		}
+	}
+	if (color2.has_value())
+	{
+		col2 = color2.value().colVal;
+
+		size_t pos = 0;
+		const string tag = "#{color2}";
+		const string rgb_str = colorref_to_rgb(col2);
+		while ((pos = result.find(tag, pos)) != string::npos)
+		{
+			result.replace(pos, tag.length(), rgb_str);
+			pos += rgb_str.length();
+		}
+	}
+
+	return result;
+}
+bool BarUIRendering::Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClass& svg, optional<reference_wrapper<const BarUiInheritClass>> inh = nullopt)
+{
 	// 判断是否合法
 	{
 		if (svg.enable.val == false) return false;
 		if (!svg.svg.has_value()) return false;
 	}
 
-	// 解析SVG
-	unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromData(svg.svg.value().GetVal());
+	// 初始化解析
+	string svgContent;
+	unique_ptr<lunasvg::Document> document;
+	{
+		svgContent = svg.svg.value().GetVal();
+		// 替换颜色，如果有
+		if (svg.color1.has_value() || svg.color2.has_value())
+		{
+			svgContent = SvgReplaceColor(svgContent, svg.color1.value_or(0), svg.color2);
+		}
+
+		// 解析SVG
+		document = lunasvg::Document::loadFromData(svgContent);
+		if (!document) return false; // 解析失败
+	}
+
+	// 初始化绘制量
+	double tarX = 0.0;
+	double tarY = 0.0;
+	double tarW = 0.0;
+	double tarH = 0.0;
+
+	// 设置继承坐标原点
+	if (inh.has_value())
+	{
+		tarX = inh.value().get().x;
+		tarY = inh.value().get().y;
+	}
 
 	// 赋值
 	{
 		if (svg.x.has_value()) tarX += svg.x.value().val;
 		if (svg.y.has_value()) tarX += svg.y.value().val;
+
+		// 宽高计算
+		if (svg.w.has_value() && svg.h.has_value())
+		{
+			// 拉伸
+			tarW = svg.w.value().val;
+			tarH = svg.h.value().val;
+		}
+		else if (svg.w.has_value() && !svg.h.has_value())
+		{
+			// 高度自动
+			tarW = svg.w.value().val;
+			tarH = document->height() * (svg.w.value().val / document->width());
+		}
+		else if (!svg.w.has_value() && svg.h.has_value())
+		{
+			// 宽度自动
+			tarW = document->width() * (svg.h.value().val / document->height());
+			tarH = svg.h.value().val;
+		}
+		else
+		{
+			// 原尺寸
+			tarW = document->width();
+			tarH = document->height();
+		}
 	}
 
 	int targetWidth = svg.h->val;

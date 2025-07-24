@@ -299,7 +299,9 @@ class BarUIRendering
 private:
 	BarUIRendering() = delete;
 public:
-	static bool Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClass& svg);
+	static string SvgReplaceColor(const string& input, const optional<BarUiColorClass>& color1, const optional<BarUiColorClass>& color2);
+
+	static bool Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClass& svg, optional<reference_wrapper<const BarUiInheritClass>> inh = nullopt);
 };
 
 // UI 总集
