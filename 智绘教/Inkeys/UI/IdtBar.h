@@ -70,58 +70,20 @@ class BarUiValueClass
 public:
 	BarUiValueClass() {}
 
-	static BarUiValueClass BarUiValueClassModeOnce(double valT, double aryT)
-	{
-		BarUiValueClass obj;
-		{
-			obj.mod = BarUiValueModeEnum::Once;
-
-			obj.val = obj.tar = valT;
-			obj.ary = aryT;
-		}
-		return obj;
-	}
-	static BarUiValueClass BarUiValueClassModeLinear(double valT, double aryT, double speT)
-	{
-		BarUiValueClass obj;
-		{
-			obj.mod = BarUiValueModeEnum::Linear;
-
-			obj.val = obj.tar = valT;
-			obj.ary = aryT;
-
-			obj.spe = speT;
-			obj.startV = valT;
-		}
-		return obj;
-	}
-	static BarUiValueClass BarUiValueClassModeVariable(double valT, double aryT, double speT)
-	{
-		BarUiValueClass obj;
-		{
-			obj.mod = BarUiValueModeEnum::Variable;
-
-			obj.val = obj.tar = valT;
-			obj.ary = aryT;
-
-			obj.spe = speT;
-			obj.startV = valT;
-		}
-		return obj;
-	}
+	void initialization(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Once) { mod = modT, val = tar = valT, startV = valT; }
 
 public:
 	IdtAtomic<BarUiValueModeEnum> mod = BarUiValueModeEnum::Once;
 
 	IdtAtomic<double> val = 0.0; // 直接值（当前位置）
 	IdtAtomic<double> tar = 0.0; // 目标值（目标位置）
-	IdtAtomic<double> ary = 0.0; // 变换精度（差值绝对值小于等于精度则认为已经动画完成，则直接赋值等于）
+	IdtAtomic<double> ary = 1.0; // 变换精度（差值绝对值小于等于精度则认为已经动画完成，则直接赋值等于）
 
 	// 适用于 回弹动效模式
-	IdtAtomic<double> spe = 0.0; // 基准速度 px/s
+	IdtAtomic<double> spe = 1.0; // 基准速度 px/s
 	IdtAtomic<double> startV = 0.0; // 起始位置（用于计算百分比，在界面设被设置时）
 };
-// 颜色 UI 值
+// 颜色 UI 值（忽略透明度）
 class BarUiColorClass
 {
 public:
@@ -130,17 +92,39 @@ public:
 public:
 	IdtAtomic<COLORREF> val = RGB(0, 0, 0); // 直接值（当前位置）
 	IdtAtomic<COLORREF> tar = RGB(0, 0, 0); // 目标值（目标位置）
-	IdtAtomic<double> colVal = 1.0; // 透明度直接值
-	IdtAtomic<double> colTar = 1.0; // 颜色目标值
 
 	IdtAtomic<double> spe = 0.0; // RGB基准速度 1/s
-	IdtAtomic<double> pctSpe = 0.0; // 透明度基准速度 1/s
+};
+// 透明度 UI 值
+class BarUiPctClass
+{
+public:
+	BarUiPctClass() {}
+
+	void initialization(double valT) { val = tar = valT; }
+
+public:
+	IdtAtomic<double> val = 1.0; // 透明度直接值
+	IdtAtomic<double> tar = 1.0; // 颜色目标值
+
+	IdtAtomic<double> spe = 1.0; // 透明度基准速度 1/s
 };
 // 文字 UI 值
 class BarUiWordClass
 {
 public:
 	BarUiWordClass() {}
+
+	void initialization(string valT)
+	{
+		unique_lock lockValmt(valmt);
+		val = valT;
+		lockValmt.unlock();
+
+		unique_lock lockTarmt(tarmt);
+		tar = valT;
+		lockTarmt.unlock();
+	}
 
 public:
 	string GetVal() const
@@ -206,7 +190,7 @@ protected:
 // 前向声明
 class BarUiShapeClass;
 class BarUiSVGClass;
-//
+// 前向声明
 
 // 位置继承
 enum class BarUiInheritEnum
@@ -223,13 +207,23 @@ enum class BarUiInheritEnum
 class BarUiInheritClass
 {
 public:
-	BarUiInheritClass() {}
-	BarUiInheritClass(BarUiInheritEnum typeT, const optional<BarUiValueClass>& w, const optional<BarUiValueClass>& h, const optional<BarUiValueClass>& xT, const optional<BarUiValueClass>& yT, const optional<BarUiValueClass>& wT, const optional<BarUiValueClass>& hT);
+	BarUiInheritClass(double xT, double yT) { x = xT, y = yT; }
+	BarUiInheritClass(BarUiInheritEnum typeT, double w, double h, double xT, double yT, double wT, double hT);
 
 public:
 	BarUiInheritEnum type = BarUiInheritEnum::Center;
 	IdtAtomic<double> x = 0.0; // 继承坐标原点 x 坐标
 	IdtAtomic<double> y = 0.0; // 继承坐标原点 y 坐标
+};
+// 颜色透明度继承
+class BarUiPctInheritClass
+{
+public:
+	BarUiPctInheritClass() {}
+	BarUiPctInheritClass(double pctT) { pct = pctT; }
+
+public:
+	IdtAtomic<double> pct = 1.0; // 继承的透明度
 };
 
 // 单个形状控件
@@ -239,8 +233,12 @@ public:
 	BarUiShapeClass() {}
 
 public:
-	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape) { return BarUiInheritClass(typeT, w, h, shape.x, shape.y, shape.w, shape.h); }
-	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiSVGClass& svg) { return BarUiInheritClass(typeT, w, h, svg.x, svg.y, svg.w, svg.h); }
+	BarUiInheritClass Inherit() { return UpInh(BarUiInheritClass(x.val, y.val)); } // 继承自己
+	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape) { return UpInh(BarUiInheritClass(typeT, w.val, h.val, shape.x.val, shape.y.val, shape.w.val, shape.h.val)); }
+	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiSVGClass& svg) { return UpInh(BarUiInheritClass(typeT, w.val, h.val, svg.x.val, svg.y.val, svg.w.val, svg.h.val)); }
+
+	BarUiPctInheritClass InheritPct(const BarUiShapeClass& shape) { return UpInhPct(BarUiPctInheritClass(shape.pct.val)); }
+	BarUiPctInheritClass InheritPct(const BarUiSVGClass& svg) { return UpInhPct(BarUiPctInheritClass(svg.pct.val)); }
 
 public:
 	// 整体该控件是否显示
@@ -248,10 +246,10 @@ public:
 
 	// 模态
 
-	optional<BarUiValueClass> x; // 控件中心 x 坐标
-	optional<BarUiValueClass> y; // 控件中心 y 坐标
-	optional<BarUiValueClass> w; // 控件宽度
-	optional<BarUiValueClass> h; // 控件高度
+	BarUiValueClass x; // 控件中心 x 坐标
+	BarUiValueClass y; // 控件中心 y 坐标
+	BarUiValueClass w; // 控件宽度
+	BarUiValueClass h; // 控件高度
 	optional<BarUiValueClass> rw; // 控件圆角直径
 	optional<BarUiValueClass> rh; // 控件圆角直径
 
@@ -260,17 +258,43 @@ public:
 	optional<BarUiColorClass> fill; // 控件填充颜色
 	optional<BarUiColorClass> frame; // 控件圆角直径
 
-	// 继承
+	// 透明度
+	BarUiPctClass pct;
+
+public:
+	// 继承值 -> 也就是实际绘制的位置
+	double inhX; // 控件左上角 x 坐标
+	double inhY; // 控件左上角 y 坐标
+	const BarUiInheritClass& UpInh(const BarUiInheritClass& inh)
+	{
+		inhX = inh.x, inhY = inh.y;
+		return inh;
+	}
+
+	double inhPct;
+	const BarUiPctInheritClass& UpInhPct(const BarUiPctInheritClass& inh)
+	{
+		inhPct = inh.pct;
+		return inh;
+	}
 };
 // 单个 SVG 控件
 class BarUiSVGClass
 {
 public:
-	BarUiSVGClass() {}
+	BarUiSVGClass(double xT, double yT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
+	{
+		x.initialization(xT, type);
+		y.initialization(xT, type);
+	}
 
 public:
-	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape) { return BarUiInheritClass(typeT, w, h, shape.x, shape.y, shape.w, shape.h); }
-	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiSVGClass& svg) { return BarUiInheritClass(typeT, w, h, svg.x, svg.y, svg.w, svg.h); }
+	BarUiInheritClass Inherit() { return UpInh(BarUiInheritClass(x.val, y.val)); } // 继承自己
+	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape) { return UpInh(BarUiInheritClass(typeT, w.val, h.val, shape.x.val, shape.y.val, shape.w.val, shape.h.val)); }
+	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiSVGClass& svg) { return UpInh(BarUiInheritClass(typeT, w.val, h.val, svg.x.val, svg.y.val, svg.w.val, svg.h.val)); }
+
+	BarUiPctInheritClass InheritPct(const BarUiShapeClass& shape) { return UpInhPct(BarUiPctInheritClass(shape.pct.val)); }
+	BarUiPctInheritClass InheritPct(const BarUiSVGClass& svg) { return UpInhPct(BarUiPctInheritClass(svg.pct.val)); }
 
 public:
 	// 整体该控件是否显示
@@ -278,19 +302,77 @@ public:
 
 	// 模态
 
-	optional<BarUiValueClass> x; // 控件中心 x 坐标
-	optional<BarUiValueClass> y; // 控件中心 y 坐标
-	optional<BarUiValueClass> w; // 控件宽度
-	optional<BarUiValueClass> h; // 控件高度
+	BarUiValueClass x; // 控件中心 x 坐标
+	BarUiValueClass y; // 控件中心 y 坐标
+	BarUiValueClass w; // 控件宽度
+	BarUiValueClass h; // 控件高度
 
 	// 颜色
 
-	optional<BarUiColorClass> color1; // 控件强调颜色1
-	optional<BarUiColorClass> color2; // 控件强调颜色2
+	optional<BarUiColorClass> color1; // 控件强调颜色1（忽略透明度)
+	optional<BarUiColorClass> color2; // 控件强调颜色2（忽略透明度)
 
-	// SVG
+	// 透明度
+	BarUiPctClass pct;
 
-	optional<BarUiWordClass> svg; // SVG 内容
+	// SVG 内容
+
+	BarUiWordClass svg;
+
+public:
+	// 继承值 -> 也就是实际绘制的位置
+	double inhX; // 控件左上角 x 坐标
+	double inhY; // 控件左上角 y 坐标
+	const BarUiInheritClass& UpInh(const BarUiInheritClass& inh)
+	{
+		inhX = inh.x, inhY = inh.y;
+		return inh;
+	}
+
+	double inhPct;
+	const BarUiPctInheritClass& UpInhPct(const BarUiPctInheritClass& inh)
+	{
+		inhPct = inh.pct;
+		return inh;
+	}
+
+public:
+	bool SetWH(optional<double> wT, optional<double> hT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
+	{
+		int tarW, tarH;
+
+		if (wT.has_value() && hT.has_value()) { tarW = wT.value(), tarH = hT.value(); }
+		else
+		{
+			// 解析SVG
+			unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromData(svg.GetVal());
+			if (!document) return false; // 解析失败
+
+			if (wT.has_value() && !hT.has_value())
+			{
+				// 高度自动
+				tarW = wT.value();
+				tarH = document->height() * (wT.value() / document->width());
+			}
+			else if (!wT.has_value() && hT.has_value())
+			{
+				// 宽度自动
+				tarW = document->width() * (hT.value() / document->height());
+				tarH = hT.value();
+			}
+			else
+			{
+				// 原尺寸
+				tarW = document->width();
+				tarH = document->height();
+			}
+		}
+
+		w.initialization(tarW, type);
+		h.initialization(tarW, type);
+
+		return true;
+	}
 };
 
 // 具体渲染
@@ -301,7 +383,7 @@ private:
 public:
 	static string SvgReplaceColor(const string& input, const optional<BarUiColorClass>& color1, const optional<BarUiColorClass>& color2);
 
-	static bool Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClass& svg, optional<reference_wrapper<const BarUiInheritClass>> inh = nullopt);
+	static bool Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClass& svg, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct);
 };
 
 // UI 总集
@@ -317,6 +399,11 @@ public:
 
 	inline static ankerl::unordered_dense::map<size_t, BarUiValueClass*> valuetMap;
 	inline static ankerl::unordered_dense::map<size_t, BarUiSVGClass*> svgMap;
+};
+
+enum class BarUISetSvgEnum : size_t
+{
+	logo
 };
 
 // ====================

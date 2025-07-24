@@ -30,23 +30,16 @@ void BarMediaClass::LoadExImage()
 // ====================
 // 界面
 
-// 位置继承
+// 继承
 // 根据类型计算继承坐标原点
-BarUiInheritClass::BarUiInheritClass(BarUiInheritEnum typeT, const optional<BarUiValueClass>& w, const optional<BarUiValueClass>& h, const optional<BarUiValueClass>& xT, const optional<BarUiValueClass>& yT, const optional<BarUiValueClass>& wT, const optional<BarUiValueClass>& hT)
+BarUiInheritClass::BarUiInheritClass(BarUiInheritEnum typeT, double w, double h, double xT, double yT, double wT, double hT)
 {
-	// w/h 为控件自身的宽高
+	// w/h 为控件自身的宽高 -> 最终得出的都是左上角绘制坐标 -> 方便绘制
 	type = typeT;
+
 	// TODO 拓展更多类型组合
-	if (type == BarUiInheritEnum::TopLeft)
-	{
-		if (xT.has_value() && wT.has_value() && w.has_value()) x = xT.value().val - wT.value().val / 2.0 + w.value().val / 2.0;
-		if (yT.has_value() && hT.has_value() && w.has_value()) y = yT.value().val - hT.value().val / 2.0 + h.value().val / 2.0;
-	}
-	if (type == BarUiInheritEnum::Center)
-	{
-		if (xT.has_value()) x = xT.value().val;
-		if (yT.has_value()) y = yT.value().val;
-	}
+	if (type == BarUiInheritEnum::TopLeft) { x = xT, y = yT; }
+	if (type == BarUiInheritEnum::Center) { x = xT + wT / 2.0 - w / 2.0, y = yT + hT / 2.0 - h / 2.0; }
 }
 
 // 具体渲染
@@ -66,7 +59,7 @@ string BarUIRendering::SvgReplaceColor(const string& input, const optional<BarUi
 	string result = input;
 	if (color1.has_value())
 	{
-		col1 = color1.value().colVal;
+		col1 = color1.value().val;
 
 		size_t pos = 0;
 		const string tag = "#{color1}";
@@ -79,7 +72,7 @@ string BarUIRendering::SvgReplaceColor(const string& input, const optional<BarUi
 	}
 	if (color2.has_value())
 	{
-		col2 = color2.value().colVal;
+		col2 = color2.value().val;
 
 		size_t pos = 0;
 		const string tag = "#{color2}";
@@ -93,19 +86,16 @@ string BarUIRendering::SvgReplaceColor(const string& input, const optional<BarUi
 
 	return result;
 }
-bool BarUIRendering::Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClass& svg, optional<reference_wrapper<const BarUiInheritClass>> inh = nullopt)
+bool BarUIRendering::Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClass& svg, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct)
 {
 	// 判断是否合法
-	{
-		if (svg.enable.val == false) return false;
-		if (!svg.svg.has_value()) return false;
-	}
+	if (svg.enable.val == false) return false;
 
 	// 初始化解析
 	string svgContent;
 	unique_ptr<lunasvg::Document> document;
 	{
-		svgContent = svg.svg.value().GetVal();
+		svgContent = svg.svg.GetVal();
 		// 替换颜色，如果有
 		if (svg.color1.has_value() || svg.color2.has_value())
 		{
@@ -118,77 +108,53 @@ bool BarUIRendering::Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClas
 	}
 
 	// 初始化绘制量
-	double tarX = 0.0;
-	double tarY = 0.0;
+	double tarX = inh.x; // 绘制左上角 x
+	double tarY = inh.y; // 绘制左上角 y
 	double tarW = 0.0;
 	double tarH = 0.0;
+	double tarPct = 1.0; // 透明度
 
-	// 设置继承坐标原点
-	if (inh.has_value())
+	// 宽高计算
 	{
-		tarX = inh.value().get().x;
-		tarY = inh.value().get().y;
+	}
+	// 透明度
+	{
+		if (svg.pct.has_value()) tarPct = svg.pct.value().val;
+		// 透明度继承
+		if (pct.has_value()) tarPct *= pct.value().get().pct;
 	}
 
-	// 赋值
-	{
-		if (svg.x.has_value()) tarX += svg.x.value().val;
-		if (svg.y.has_value()) tarX += svg.y.value().val;
-
-		// 宽高计算
-		if (svg.w.has_value() && svg.h.has_value())
-		{
-			// 拉伸
-			tarW = svg.w.value().val;
-			tarH = svg.h.value().val;
-		}
-		else if (svg.w.has_value() && !svg.h.has_value())
-		{
-			// 高度自动
-			tarW = svg.w.value().val;
-			tarH = document->height() * (svg.w.value().val / document->width());
-		}
-		else if (!svg.w.has_value() && svg.h.has_value())
-		{
-			// 宽度自动
-			tarW = document->width() * (svg.h.value().val / document->height());
-			tarH = svg.h.value().val;
-		}
-		else
-		{
-			// 原尺寸
-			tarW = document->width();
-			tarH = document->height();
-		}
-	}
-
-	int targetWidth = svg.h->val;
-	int targetHeight = svg.w->val;
-
-	unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromData(svg.svg.value().GetVal());
-	//unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromFile("D:\\Downloads\\Inkeys.svg");
-
-	lunasvg::Bitmap bitmap = document->renderToBitmap(targetWidth, targetHeight);
-
+	// 绘制到离屏位图
+	lunasvg::Bitmap bitmap = document->renderToBitmap(static_cast<int>(tarW), static_cast<int>(tarH));
 	CComPtr<ID2D1Bitmap> d2dBitmap;
-	D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+	{
+		if (bitmap.width() == 0 || bitmap.height() == 0 || !bitmap.data()) return false;
 
-	// lunasvg 文档声明：数据为BGRA，8bits每通道，正好适配D2D位图
-	DCRenderTarget->CreateBitmap(
-		D2D1::SizeU(bitmap.width(), bitmap.height()),
-		bitmap.data(),
-		bitmap.width() * 4, // stride
-		props,
-		&d2dBitmap);
+		D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+		// lunasvg 文档声明：数据为BGRA，8bits每通道，正好适配D2D位图
+		HRESULT hr = DCRenderTarget->CreateBitmap(
+			D2D1::SizeU(bitmap.width(), bitmap.height()),
+			bitmap.data(),
+			bitmap.width() * 4, // stride
+			props,
+			&d2dBitmap);
 
-	D2D1_RECT_F destRect = D2D1::RectF(0, 0, (float)targetWidth, (float)targetHeight);
-	DCRenderTarget->DrawBitmap(
-		d2dBitmap,
-		destRect,        // 目标矩形
-		1.0f,            // 不透明度
-		D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
-		nullptr          // 源rect, null表示全部
-	);
+		if (FAILED(hr) || !d2dBitmap) return false;
+	}
+
+	// 渲染到 DC
+	{
+		D2D1_RECT_F destRect = D2D1::RectF(static_cast<float>(tarX), static_cast<float>(tarY), static_cast<float>(tarW), static_cast<float>(tarH));
+		DCRenderTarget->DrawBitmap(
+			d2dBitmap,
+			destRect,								// 目标矩形
+			static_cast<FLOAT>(tarPct),				// 不透明度
+			D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+			nullptr									// 源rect, null表示全部
+		);
+	}
+
+	return true;
 }
 
 // UI 总集
@@ -252,52 +218,25 @@ void BarUISetClass::Rendering()
 	chrono::high_resolution_clock::time_point reckon = chrono::high_resolution_clock::now();
 	for (int forNum = 1; !offSignal; forNum = 2)
 	{
-		DCRenderTarget->BeginDraw();
-
+		// 渲染 UI
 		{
-			D2D1_COLOR_F clearColor = ConvertToD2DColor(RGBA(0, 0, 0, 128));
-			DCRenderTarget->Clear(&clearColor);
-		}
-		{
-			int targetWidth = 500;
-			int targetHeight = 500;
+			DCRenderTarget->BeginDraw();
 
-			//unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromData(svgText);
-			unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromFile("D:\\Downloads\\Inkeys.svg");
+			{
+				D2D1_COLOR_F clearColor = ConvertToD2DColor(RGBA(0, 0, 0, 128));
+				DCRenderTarget->Clear(&clearColor);
+			}
 
-			lunasvg::Bitmap bitmap = document->renderToBitmap(targetWidth, targetHeight);
+			DCRenderTarget->EndDraw();
 
-			CComPtr<ID2D1Bitmap> d2dBitmap;
-			D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(
-				D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+			{
+				// 设置窗口位置
+				POINT ptDst = { 0, 0 };
 
-			// lunasvg文档声明：数据为BGRA，8bits每通道，正好适配D2D位图
-			DCRenderTarget->CreateBitmap(
-				D2D1::SizeU(bitmap.width(), bitmap.height()),
-				bitmap.data(),
-				bitmap.width() * 4, // stride
-				props,
-				&d2dBitmap);
-
-			D2D1_RECT_F destRect = D2D1::RectF(0, 0, (float)targetWidth, (float)targetHeight);
-			DCRenderTarget->DrawBitmap(
-				d2dBitmap,
-				destRect,        // 目标矩形
-				1.0f,            // 不透明度
-				D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
-				nullptr          // 源rect, null表示全部
-			);
-		}
-
-		DCRenderTarget->EndDraw();
-
-		{
-			// 设置窗口位置
-			POINT ptDst = { 0, 0 };
-
-			ulwi.pptDst = &ptDst;
-			ulwi.hdcSrc = GetImageHDC(&barBackground);
-			UpdateLayeredWindowIndirect(floating_window, &ulwi);
+				ulwi.pptDst = &ptDst;
+				ulwi.hdcSrc = GetImageHDC(&barBackground);
+				UpdateLayeredWindowIndirect(floating_window, &ulwi);
+			}
 		}
 
 		if (forNum == 1)
@@ -329,15 +268,14 @@ void BarInitializationClass::Initialization()
 	InitializeUI();
 
 	// 线程
-
-	thread FloatingInstallHookThread(FloatingInstallHook);
-	FloatingInstallHookThread.detach();
-
+	thread(FloatingInstallHook).detach();
 	thread(BarUISetClass::Rendering).detach();
 
 	// 等待
 
 	while (!offSignal) this_thread::sleep_for(chrono::milliseconds(500));
+
+	// 反初始化
 
 	unsigned int waitTimes = 1;
 	for (; waitTimes <= 10; waitTimes++)
@@ -370,5 +308,12 @@ void BarInitializationClass::InitializeMedia()
 }
 void BarInitializationClass::InitializeUI()
 {
-	//
+	// 定义 UI 控件
+
+	{
+		BarUiSVGClass* svg = new BarUiSVGClass(0.0, 0.0);
+		svg->svg.initialization()
+			svg->SetWH
+			BarUISetClass::svgMap.insert(make_pair<BarUISetSvgEnum::logo, >)
+	}
 }
