@@ -3,7 +3,8 @@
 #include "../../IdtD2DPreparation.h"
 #include "../../IdtDisplayManagement.h"
 #include "../../IdtWindow.h"
-#include "../CONV/IdtColor.h"
+#include "../Conv/IdtColor.h"
+#include "../Load/IdtLoad.h"
 
 //#undef max
 //#undef min
@@ -30,8 +31,17 @@ void BarMediaClass::LoadExImage()
 // ====================
 // 界面
 
-// 继承
-// 根据类型计算继承坐标原点
+/// 单个 UI 值
+//// 单个 SVG 组件
+void BarUiSVGClass::InitializationFromResource(const wstring& resType, const wstring& resName)
+{
+	string valT;
+	IdtLoad::ExtractResourceString(valT, resType, resName);
+	InitializationFromString(valT);
+}
+
+/// 继承
+//// 根据类型计算继承坐标原点
 BarUiInheritClass::BarUiInheritClass(BarUiInheritEnum typeT, double w, double h, double xT, double yT, double wT, double hT)
 {
 	// w/h 为控件自身的宽高 -> 最终得出的都是左上角绘制坐标 -> 方便绘制
@@ -40,6 +50,59 @@ BarUiInheritClass::BarUiInheritClass(BarUiInheritEnum typeT, double w, double h,
 	// TODO 拓展更多类型组合
 	if (type == BarUiInheritEnum::TopLeft) { x = xT, y = yT; }
 	if (type == BarUiInheritEnum::Center) { x = xT + wT / 2.0 - w / 2.0, y = yT + hT / 2.0 - h / 2.0; }
+}
+
+/// 单个控件值
+//// 单个形状控件
+BarUiInheritClass BarUiShapeClass::Inherit() { return UpInh(BarUiInheritClass(x.val, y.val)); }
+BarUiInheritClass BarUiShapeClass::Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape) { return UpInh(BarUiInheritClass(typeT, w.val, h.val, shape.x.val, shape.y.val, shape.w.val, shape.h.val)); }
+BarUiInheritClass BarUiShapeClass::Inherit(BarUiInheritEnum typeT, const BarUiSVGClass& svg) { return UpInh(BarUiInheritClass(typeT, w.val, h.val, svg.x.val, svg.y.val, svg.w.val, svg.h.val)); }
+BarUiPctInheritClass BarUiShapeClass::InheritPct() { return UpInhPct(BarUiPctInheritClass(pct.val)); }
+BarUiPctInheritClass BarUiShapeClass::InheritPct(const BarUiShapeClass& shape) { return UpInhPct(BarUiPctInheritClass(shape.pct.val)); }
+BarUiPctInheritClass BarUiShapeClass::InheritPct(const BarUiSVGClass& svg) { return UpInhPct(BarUiPctInheritClass(svg.pct.val)); }
+//// 单个 SVG 控件
+BarUiInheritClass BarUiSVGClass::Inherit() { return UpInh(BarUiInheritClass(x.val, y.val)); }
+BarUiInheritClass BarUiSVGClass::Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape) { return UpInh(BarUiInheritClass(typeT, w.val, h.val, shape.x.val, shape.y.val, shape.w.val, shape.h.val)); }
+BarUiInheritClass BarUiSVGClass::Inherit(BarUiInheritEnum typeT, const BarUiSVGClass& svg) { return UpInh(BarUiInheritClass(typeT, w.val, h.val, svg.x.val, svg.y.val, svg.w.val, svg.h.val)); }
+BarUiPctInheritClass BarUiSVGClass::InheritPct() { return UpInhPct(BarUiPctInheritClass(pct.val)); }
+BarUiPctInheritClass BarUiSVGClass::InheritPct(const BarUiShapeClass& shape) { return UpInhPct(BarUiPctInheritClass(shape.pct.val)); }
+BarUiPctInheritClass BarUiSVGClass::InheritPct(const BarUiSVGClass& svg) { return UpInhPct(BarUiPctInheritClass(svg.pct.val)); }
+
+bool BarUiSVGClass::SetWH(optional<double> wT, optional<double> hT, BarUiValueModeEnum type)
+{
+	double tarW, tarH;
+
+	if (wT.has_value() && hT.has_value()) { tarW = wT.value(), tarH = hT.value(); }
+	else
+	{
+		// 解析SVG
+		unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromData(svg.GetVal());
+		if (!document) return false; // 解析失败
+
+		if (wT.has_value() && !hT.has_value())
+		{
+			// 高度自动
+			tarW = wT.value();
+			tarH = document->height() * (wT.value() / document->width());
+		}
+		else if (!wT.has_value() && hT.has_value())
+		{
+			// 宽度自动
+			tarW = document->width() * (hT.value() / document->height());
+			tarH = hT.value();
+		}
+		else
+		{
+			// 原尺寸
+			tarW = document->width();
+			tarH = document->height();
+		}
+	}
+
+	w.Initialization(tarW, type);
+	h.Initialization(tarW, type);
+
+	return true;
 }
 
 // 具体渲染
@@ -86,9 +149,57 @@ string BarUIRendering::SvgReplaceColor(const string& input, const optional<BarUi
 
 	return result;
 }
+bool BarUIRendering::Shape(ID2D1DCRenderTarget* DCRenderTarget, const BarUiShapeClass& shape, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct)
+{
+	// 判断是否启用
+	if (shape.enable.val == false) return false;
+	if (!shape.fill.has_value() && !shape.frame.has_value()) return false;
+
+	// 初始化绘制量
+	double tarX = inh.x; // 绘制左上角 x
+	double tarY = inh.y; // 绘制左上角 y
+	double tarW = shape.w.val;
+	double tarH = shape.h.val;
+	double tarPct = pct.pct; // 透明度
+
+	double tarRw = 0.0;
+	double tarRh = 0.0;
+	if (shape.rw.has_value()) tarRw = shape.rw.value().val;
+	if (shape.rh.has_value()) tarRh = shape.rh.value().val;
+
+	// 渲染到 DC
+	{
+		D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(static_cast<FLOAT>(tarX), static_cast<FLOAT>(tarY), static_cast<FLOAT>(tarX + tarW), static_cast<FLOAT>(tarY + tarH)), static_cast<FLOAT>(tarRw / 2.0), static_cast<FLOAT>(tarRh / 2.0));
+
+		// 渲染填充
+		if (shape.fill.has_value())
+		{
+			COLORREF fill = shape.fill.value().val;
+
+			CComPtr<ID2D1SolidColorBrush> spFillBrush;
+			DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(fill, tarPct), &spFillBrush);
+
+			DCRenderTarget->FillRoundedRectangle(&roundedRect, spFillBrush);
+		}
+		// 渲染边框
+		if (shape.frame.has_value())
+		{
+			COLORREF frame = shape.frame.value().val;
+
+			CComPtr<ID2D1SolidColorBrush> spBorderBrush;
+			DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(frame, tarPct), &spBorderBrush);
+
+			FLOAT strokeWidth = 4.0f; // TODO 需要决定一个默认值
+			if (shape.ft.has_value()) strokeWidth = static_cast<FLOAT>(shape.ft.value().val);
+			DCRenderTarget->DrawRoundedRectangle(&roundedRect, spBorderBrush, strokeWidth);
+		}
+	}
+
+	return true;
+}
 bool BarUIRendering::Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClass& svg, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct)
 {
-	// 判断是否合法
+	// 判断是否启用
 	if (svg.enable.val == false) return false;
 
 	// 初始化解析
@@ -99,7 +210,7 @@ bool BarUIRendering::Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClas
 		// 替换颜色，如果有
 		if (svg.color1.has_value() || svg.color2.has_value())
 		{
-			svgContent = SvgReplaceColor(svgContent, svg.color1.value_or(0), svg.color2);
+			svgContent = SvgReplaceColor(svgContent, svg.color1, svg.color2);
 		}
 
 		// 解析SVG
@@ -110,19 +221,9 @@ bool BarUIRendering::Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClas
 	// 初始化绘制量
 	double tarX = inh.x; // 绘制左上角 x
 	double tarY = inh.y; // 绘制左上角 y
-	double tarW = 0.0;
-	double tarH = 0.0;
-	double tarPct = 1.0; // 透明度
-
-	// 宽高计算
-	{
-	}
-	// 透明度
-	{
-		if (svg.pct.has_value()) tarPct = svg.pct.value().val;
-		// 透明度继承
-		if (pct.has_value()) tarPct *= pct.value().get().pct;
-	}
+	double tarW = svg.w.val;
+	double tarH = svg.h.val;
+	double tarPct = pct.pct; // 透明度
 
 	// 绘制到离屏位图
 	lunasvg::Bitmap bitmap = document->renderToBitmap(static_cast<int>(tarW), static_cast<int>(tarH));
@@ -144,7 +245,7 @@ bool BarUIRendering::Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClas
 
 	// 渲染到 DC
 	{
-		D2D1_RECT_F destRect = D2D1::RectF(static_cast<float>(tarX), static_cast<float>(tarY), static_cast<float>(tarW), static_cast<float>(tarH));
+		D2D1_RECT_F destRect = D2D1::RectF(static_cast<FLOAT>(tarX), static_cast<FLOAT>(tarY), static_cast<FLOAT>(tarX + tarW), static_cast<FLOAT>(tarY + tarH));
 		DCRenderTarget->DrawBitmap(
 			d2dBitmap,
 			destRect,								// 目标矩形
@@ -227,6 +328,16 @@ void BarUISetClass::Rendering()
 				DCRenderTarget->Clear(&clearColor);
 			}
 
+			using enum BarUiInheritEnum;
+			{
+				auto obj = BarUISetShapeEnum::MainButton;
+				BarUIRendering::Shape(DCRenderTarget, *shapeMap[obj], shapeMap[obj]->Inherit(), shapeMap[obj]->InheritPct());
+			}
+			{
+				auto obj = BarUISetSvgEnum::logo1;
+				BarUIRendering::Svg(DCRenderTarget, *svgMap[obj], svgMap[obj]->Inherit(Center, *shapeMap[BarUISetShapeEnum::MainButton]), svgMap[obj]->InheritPct());
+			}
+
 			DCRenderTarget->EndDraw();
 
 			{
@@ -262,14 +373,16 @@ void BarInitializationClass::Initialization()
 {
 	threadStatus[L"BarInitialization"] = true;
 
+	BarUISetClass barUISet;
+
 	// 初始化
 	InitializeWindow();
-	InitializeMedia();
-	InitializeUI();
+	InitializeMedia(barUISet);
+	InitializeUI(barUISet);
 
 	// 线程
 	thread(FloatingInstallHook).detach();
-	thread(BarUISetClass::Rendering).detach();
+	thread([&]() { barUISet.Rendering(); }).detach();
 
 	// 等待
 
@@ -302,18 +415,24 @@ void BarInitializationClass::InitializeWindow()
 	BarWindowPosClass::pct = 255;
 	SetWindowPos(floating_window, NULL, BarWindowPosClass::x, BarWindowPosClass::y, BarWindowPosClass::w, BarWindowPosClass::h, SWP_NOACTIVATE | SWP_NOZORDER | SWP_DRAWFRAME); // 设置窗口位置尺寸
 }
-void BarInitializationClass::InitializeMedia()
+void BarInitializationClass::InitializeMedia(BarUISetClass& barUISet)
 {
-	BarUISetClass::barMedia.LoadExImage();
+	barUISet.barMedia.LoadExImage();
 }
-void BarInitializationClass::InitializeUI()
+void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 {
 	// 定义 UI 控件
-
 	{
-		BarUiSVGClass* svg = new BarUiSVGClass(0.0, 0.0);
-		svg->svg.initialization()
-			svg->SetWH
-			BarUISetClass::svgMap.insert(make_pair<BarUISetSvgEnum::logo, >)
+		auto shape = make_shared<BarUiShapeClass>(100.0, 300.0, 500.0, 500.0, 10.0, 10.0, 4.0, RGB(0, 0, 0), RGB(255, 255, 255));
+		shape->pct.Initialization(0.7);
+		shape->enable.Initialization(true);
+		barUISet.shapeMap[BarUISetShapeEnum::MainButton] = shape;
+	}
+	{
+		auto svg = make_shared<BarUiSVGClass>(0.0, 0.0);
+		svg->InitializationFromResource(L"UI", L"logo1");
+		svg->SetWH(nullopt, 500.0); // 必须在 Initial 后
+		svg->enable.Initialization(true);
+		barUISet.svgMap[BarUISetSvgEnum::logo1] = svg;
 	}
 }

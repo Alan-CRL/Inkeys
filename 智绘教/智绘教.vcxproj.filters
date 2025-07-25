@@ -100,8 +100,11 @@
     <Filter Include="源文件\Inkeys\UI">
       <UniqueIdentifier>{de560809-c33f-4d6d-9635-64531bbcada9}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\Inkeys\CONV">
+    <Filter Include="头文件\Inkeys\Conv">
       <UniqueIdentifier>{da9fe4f5-f08e-4eb0-9616-0ad97f177df0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Inkeys\Load">
+      <UniqueIdentifier>{f9e5d643-b115-4fb6-830b-e349842a8795}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -753,8 +756,11 @@
     <ClInclude Include="additional\unordered_dense.h">
       <Filter>头文件\Additional</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\CONV\IdtColor.h">
-      <Filter>头文件\Inkeys\CONV</Filter>
+    <ClInclude Include="Inkeys\Conv\IdtColor.h">
+      <Filter>头文件\Inkeys\Conv</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Load\IdtLoad.h">
+      <Filter>头文件\Inkeys\Load</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -1264,6 +1270,10 @@
     <None Include="src\i18n\zh-CN.jsonc" />
     <None Include="src\i18n\en-US.jsonc" />
     <None Include="src\i18n\zh-TW.jsonc" />
+    <None Include="src\ui1.bin">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\logo1.svg" />
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="..\PptCOM\PptCOM.manifest" />

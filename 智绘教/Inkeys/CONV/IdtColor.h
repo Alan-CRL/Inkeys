@@ -8,7 +8,7 @@ private:
 	IdtColor() = delete;
 
 public:
-	static BarLogaColorSchemeEnum barLogaColorSchemeCalc(COLORREF color)
+	static BarLogaColorSchemeEnum BarLogaColorSchemeCalc(COLORREF color)
 	{
 		// 内联相对亮度计算
 		auto getLum = [](int r, int g, int b) -> double {
@@ -38,5 +38,15 @@ public:
 		double contrast2 = getContrast(lum_fg, lum_bg2);
 
 		return (contrast1 >= contrast2) ? BarLogaColorSchemeEnum::Slate : BarLogaColorSchemeEnum::Default;
+	}
+
+	static D2D1::ColorF ConvertToD2dColor(COLORREF color, double pct = 1.0)
+	{
+		return D2D1::ColorF(
+			GetRValue(color) / 255.0f,
+			GetGValue(color) / 255.0f,
+			GetBValue(color) / 255.0f,
+			static_cast<FLOAT>(pct)
+		);
 	}
 };
