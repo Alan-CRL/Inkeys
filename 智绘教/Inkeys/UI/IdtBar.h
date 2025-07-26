@@ -195,6 +195,7 @@ protected:
 
 // 前向声明
 class BarUiShapeClass;
+class BarUiSuperellipseClass;
 class BarUiSVGClass;
 // 前向声明
 
@@ -234,10 +235,51 @@ public:
 public:
 	IdtAtomic<double> pct = 1.0; // 继承的透明度
 };
+//// 继承基类
+class BarUiInnheritBaseClass
+{
+protected:
+	BarUiInnheritBaseClass() = default;
 
-///
+public:
+	BarUiValueClass x; // 控件中心 x 坐标
+	BarUiValueClass y; // 控件中心 y 坐标
+	BarUiValueClass w; // 控件宽度
+	BarUiValueClass h; // 控件高度
+	BarUiPctClass pct; // 透明度
+
+public:
+	BarUiInheritClass Inherit() { return UpInh(BarUiInheritClass(x.val, y.val)); }
+	BarUiPctInheritClass InheritPct() { return UpInhPct(BarUiPctInheritClass(pct.val)); }
+
+	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape);
+	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiSuperellipseClass& superellipse);
+	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiSVGClass& svg);
+	BarUiPctInheritClass InheritPct(const BarUiShapeClass& shape);
+	BarUiPctInheritClass InheritPct(const BarUiSuperellipseClass& superellipse);
+	BarUiPctInheritClass InheritPct(const BarUiSVGClass& svg);
+
+public:
+	// 继承值 -> 也就是实际绘制的位置
+	double inhX = 0.0; // 控件左上角 x 坐标
+	double inhY = 0.0; // 控件左上角 y 坐标
+	const BarUiInheritClass& UpInh(const BarUiInheritClass& inh)
+	{
+		inhX = inh.x, inhY = inh.y;
+		return inh;
+	}
+
+	double inhPct = 1.0;
+	const BarUiPctInheritClass& UpInhPct(const BarUiPctInheritClass& inh)
+	{
+		inhPct = inh.pct;
+		return inh;
+	}
+};
+
+/// 控件
 //// 单个形状控件
-class BarUiShapeClass
+class BarUiShapeClass : public BarUiInnheritBaseClass
 {
 public:
 	BarUiShapeClass() {}
@@ -255,24 +297,10 @@ public:
 	}
 
 public:
-	BarUiInheritClass Inherit(); // 继承自己
-	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape);
-	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiSVGClass& svg);
-
-	BarUiPctInheritClass InheritPct(); // 继承自己
-	BarUiPctInheritClass InheritPct(const BarUiShapeClass& shape);
-	BarUiPctInheritClass InheritPct(const BarUiSVGClass& svg);
-
-public:
 	// 整体该控件是否显示
 	BarUiStateClass enable;
 
 	// 模态
-
-	BarUiValueClass x; // 控件中心 x 坐标
-	BarUiValueClass y; // 控件中心 y 坐标
-	BarUiValueClass w; // 控件宽度
-	BarUiValueClass h; // 控件高度
 	optional<BarUiValueClass> rw; // 控件圆角直径
 	optional<BarUiValueClass> rh; // 控件圆角直径
 	optional<BarUiValueClass> ft; // 控件边框宽度
@@ -281,29 +309,40 @@ public:
 
 	optional<BarUiColorClass> fill; // 控件填充颜色
 	optional<BarUiColorClass> frame; // 控件边框颜色
-
-	// 透明度
-	BarUiPctClass pct;
+};
+//// 单个超椭圆控件
+class BarUiSuperellipseClass : public BarUiInnheritBaseClass
+{
+public:
+	BarUiSuperellipseClass() {}
+	BarUiSuperellipseClass(double xT, double yT, double wT, double hT, optional<double> nT, optional<double> ftT, optional<COLORREF>fillT, optional<COLORREF>frameT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
+	{
+		x.Initialization(xT, type);
+		y.Initialization(yT, type);
+		w.Initialization(wT, type);
+		h.Initialization(hT, type);
+		if (nT.has_value()) { n = BarUiValueClass(); n.value().Initialization(nT.value(), type); }
+		if (ftT.has_value()) { ft = BarUiValueClass(); ft.value().Initialization(ftT.value(), type); }
+		if (fillT.has_value()) { fill = BarUiColorClass(); fill.value().Initialization(fillT.value()); }
+		if (frameT.has_value()) { frame = BarUiColorClass(); frame.value().Initialization(frameT.value()); }
+	}
 
 public:
-	// 继承值 -> 也就是实际绘制的位置
-	double inhX = 0.0; // 控件左上角 x 坐标
-	double inhY = 0.0; // 控件左上角 y 坐标
-	const BarUiInheritClass& UpInh(const BarUiInheritClass& inh)
-	{
-		inhX = inh.x, inhY = inh.y;
-		return inh;
-	}
+	// 整体该控件是否显示
+	BarUiStateClass enable;
 
-	double inhPct = 1.0;
-	const BarUiPctInheritClass& UpInhPct(const BarUiPctInheritClass& inh)
-	{
-		inhPct = inh.pct;
-		return inh;
-	}
+	// 模态
+
+	optional<BarUiValueClass> n;
+	optional<BarUiValueClass> ft; // 控件边框宽度
+
+	// 颜色
+
+	optional<BarUiColorClass> fill; // 控件填充颜色
+	optional<BarUiColorClass> frame; // 控件边框颜色
 };
 //// 单个 SVG 控件
-class BarUiSVGClass
+class BarUiSVGClass : public BarUiInnheritBaseClass
 {
 public:
 	BarUiSVGClass(double xT, double yT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
@@ -316,60 +355,28 @@ public:
 	void InitializationFromResource(const wstring& resType, const wstring& resName);
 
 public:
-	BarUiInheritClass Inherit(); // 继承自己
-	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape);
-	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiSVGClass& svg);
-
-	BarUiPctInheritClass InheritPct(); // 继承自己
-	BarUiPctInheritClass InheritPct(const BarUiShapeClass& shape);
-	BarUiPctInheritClass InheritPct(const BarUiSVGClass& svg);
-
-public:
 	// 整体该控件是否显示
 	BarUiStateClass enable;
-
-	// 模态
-
-	BarUiValueClass x; // 控件中心 x 坐标
-	BarUiValueClass y; // 控件中心 y 坐标
-	BarUiValueClass w; // 控件宽度
-	BarUiValueClass h; // 控件高度
 
 	// 颜色
 
 	optional<BarUiColorClass> color1; // 控件强调颜色1（忽略透明度)
 	optional<BarUiColorClass> color2; // 控件强调颜色2（忽略透明度)
 
-	// 透明度
-	BarUiPctClass pct;
-
 	// SVG 内容
 
 	BarUiWordClass svg;
 
 public:
-	// 继承值 -> 也就是实际绘制的位置
-	double inhX = 0.0; // 控件左上角 x 坐标
-	double inhY = 0.0; // 控件左上角 y 坐标
-	const BarUiInheritClass& UpInh(const BarUiInheritClass& inh)
-	{
-		inhX = inh.x, inhY = inh.y;
-		return inh;
-	}
-
-	double inhPct = 1.0;
-	const BarUiPctInheritClass& UpInhPct(const BarUiPctInheritClass& inh)
-	{
-		inhPct = inh.pct;
-		return inh;
-	}
-
-public:
 	bool SetWH(optional<double> wT, optional<double> hT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable);
 };
 
-// Svg 控件枚举
+// 控件枚举
 enum class BarUISetShapeEnum
+{
+	MainButton
+};
+enum class BarUISetSuperellipseEnum
 {
 	MainButton
 };
@@ -386,6 +393,7 @@ private:
 
 public:
 	static bool Shape(ID2D1DCRenderTarget* DCRenderTarget, const BarUiShapeClass& shape, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct);
+	static bool Superellipse(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct);
 	static bool Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClass& svg, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct);
 
 private:
@@ -402,6 +410,7 @@ public:
 	BarMediaClass barMedia;
 
 	ankerl::unordered_dense::map<BarUISetShapeEnum, shared_ptr<BarUiShapeClass>> shapeMap;
+	ankerl::unordered_dense::map<BarUISetSuperellipseEnum, shared_ptr<BarUiSuperellipseClass>> superellipseMap;
 	ankerl::unordered_dense::map<BarUISetSvgEnum, shared_ptr<BarUiSVGClass>> svgMap;
 };
 
