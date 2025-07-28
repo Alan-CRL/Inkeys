@@ -507,7 +507,7 @@ void BarUISetClass::Rendering()
 		}
 		// 帧率锁
 		{
-			double delay = 1000.0 / 24.0 - chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count();
+			double delay = 1000.0 / 60.0 - chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count();
 			if (delay >= 10.0) std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(delay)));
 		}
 
@@ -636,8 +636,8 @@ void BarInitializationClass::InitializeWindow()
 
 	BarWindowPosClass::x = 0;
 	BarWindowPosClass::y = 0;
-	BarWindowPosClass::w = 1000;// MainMonitor.MonitorWidth;
-	BarWindowPosClass::h = 1000;// MainMonitor.MonitorHeight;
+	BarWindowPosClass::w = 2000;// MainMonitor.MonitorWidth;
+	BarWindowPosClass::h = 2000;// MainMonitor.MonitorHeight;
 	BarWindowPosClass::pct = 255;
 	SetWindowPos(floating_window, NULL, BarWindowPosClass::x, BarWindowPosClass::y, BarWindowPosClass::w, BarWindowPosClass::h, SWP_NOACTIVATE | SWP_NOZORDER | SWP_DRAWFRAME); // 设置窗口位置尺寸
 }

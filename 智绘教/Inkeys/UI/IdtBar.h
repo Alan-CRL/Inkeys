@@ -13,7 +13,7 @@ private:
 	BarWindowPosClass() = delete;
 
 public:
-	inline static IdtAtomic<unsigned int> x = 0, y = 0;
+	inline static IdtAtomic<int> x = 0, y = 0;
 	inline static IdtAtomic<unsigned int> w = 0, h = 0;
 	inline static IdtAtomic<unsigned int> pct = 0; // 透明度
 };

@@ -156,8 +156,24 @@ namespace PptCOM
             }
 
             // 获取页数
-            *pptTotalPage = pptActDoc.Slides.Count;
-            *pptCurrentPage = pptActWindow.View.Slide.SlideIndex;
+            try
+            {
+                *pptCurrentPage = pptActWindow.View.Slide.SlideIndex;
+
+                if (pptActWindow.View.Slide.SlideIndex >= pptActDoc.Slides.Count) polling = 1;
+                else polling = 0;
+            }
+            catch
+            {
+                *pptCurrentPage = -1;
+                polling = 1;
+            }
+
+            try
+            {
+                *pptTotalPage = pptActDoc.Slides.Count;
+            }
+            catch { }
         }
 
         private unsafe void SlideShowShowEnd(Microsoft.Office.Interop.PowerPoint.Presentation Wn)
@@ -330,6 +346,25 @@ namespace PptCOM
                         wpsProcess.Kill();
                         hasWpsProcessID = false;
                     }
+
+                    // 测试
+                    if (pptActWindow != null)
+                    {
+                        Marshal.ReleaseComObject(pptActWindow);
+                        pptActWindow = null;
+                    }
+                    if (pptActDoc != null)
+                    {
+                        Marshal.ReleaseComObject(pptActDoc);
+                        pptActDoc = null;
+                    }
+                    if (pptApp != null)
+                    {
+                        Marshal.ReleaseComObject(pptApp);
+                        pptApp = null;
+                    }
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
                 }
                 catch { }
             }
