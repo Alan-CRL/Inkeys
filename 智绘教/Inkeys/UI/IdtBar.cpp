@@ -1,7 +1,9 @@
 ﻿#include "IdtBar.h"
 
+#include "../../IdtConfiguration.h"
 #include "../../IdtD2DPreparation.h"
 #include "../../IdtDisplayManagement.h"
+#include "../../IdtDrawpad.h"
 #include "../../IdtWindow.h"
 #include "../Conv/IdtColor.h"
 #include "../Load/IdtLoad.h"
@@ -162,7 +164,7 @@ bool BarUIRendering::Shape(ID2D1DCRenderTarget* DCRenderTarget, const BarUiShape
 
 	// 渲染到 DC
 	{
-		D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(static_cast<FLOAT>(tarX), static_cast<FLOAT>(tarY), static_cast<FLOAT>(tarX + tarW), static_cast<FLOAT>(tarY + tarH)), static_cast<FLOAT>(tarRw / 2.0), static_cast<FLOAT>(tarRh / 2.0));
+		D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(static_cast<FLOAT>(tarX), static_cast<FLOAT>(tarY), static_cast<FLOAT>(tarX + tarW), static_cast<FLOAT>(tarY + tarH)), static_cast<FLOAT>(tarRw), static_cast<FLOAT>(tarRh));
 
 		// 渲染填充
 		if (shape.fill.has_value())
@@ -271,8 +273,10 @@ bool BarUIRendering::Superellipse(ID2D1DCRenderTarget* DCRenderTarget, const Bar
 	{
 		CComPtr<ID2D1Factory> factory;
 		DCRenderTarget->GetFactory(&factory);
+
 		factory->CreatePathGeometry(&geometry);
 	}
+
 	{
 		CComPtr<ID2D1GeometrySink> sink;
 		geometry->Open(&sink);
@@ -519,6 +523,75 @@ void BarUISetClass::Rendering()
 
 // ====================
 // 交互
+void BarUISetClass::Interact()
+{
+	struct
+	{
+		ExMessage msg;
+		int x, y;
+	}Msg;
+
+	while (!offSignal)
+	{
+		hiex::getmessage_win32(&Msg.msg, EM_MOUSE, floating_window);
+
+		{
+			if (superellipseMap[BarUISetSuperellipseEnum::MainButton]->IsClick(Msg.msg.x, Msg.msg.y))
+			{
+				if (Msg.msg.message == WM_LBUTTONDOWN)
+				{
+					Msg.x = Msg.msg.x, Msg.y = Msg.msg.y;
+					{
+						double moveDis = Seek(Msg.msg);
+					}
+					hiex::flushmessage_win32(EM_MOUSE, floating_window);
+				}
+
+				if (Msg.msg.message == WM_RBUTTONDOWN && setlist.RightClickClose)
+				{
+					if (MessageBox(floating_window, L"Whether to turn off 智绘教Inkeys?\n是否关闭 智绘教Inkeys？", L"Inkeys Tips | 智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) CloseProgram();
+					hiex::flushmessage_win32(EM_MOUSE, floating_window);
+				}
+			}
+		}
+	}
+}
+double BarUISetClass::Seek(const ExMessage& msg)
+{
+	if (!KeyBoradDown[VK_LBUTTON]) return 0;
+
+	POINT p;
+	GetCursorPos(&p);
+
+	double firX = static_cast<double>(p.x);
+	double firY = static_cast<double>(p.y);
+
+	double ret = 0.0;
+
+	while (1)
+	{
+		if (!KeyBoradDown[VK_LBUTTON]) break;
+		GetCursorPos(&p);
+
+		if (firX == p.x && firY == p.y) continue;
+
+		superellipseMap[BarUISetSuperellipseEnum::MainButton]->x.val += static_cast<double>(p.x - firX);
+		superellipseMap[BarUISetSuperellipseEnum::MainButton]->y.val += static_cast<double>(p.y - firY);
+
+		ret += sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY));
+		firX = static_cast<double>(p.x), firY = static_cast<double>(p.y);
+
+		//if (setlist.regularSetting.moveRecover)
+		//{
+		//	if (ret > 20 && target_status != 0)
+		//	{
+		//		target_status = 0;
+		//	}
+		//}
+	}
+
+	return ret;
+}
 
 // 初始化
 void BarInitializationClass::Initialization()
@@ -535,6 +608,7 @@ void BarInitializationClass::Initialization()
 	// 线程
 	thread(FloatingInstallHook).detach();
 	thread([&]() { barUISet.Rendering(); }).detach();
+	thread([&]() { barUISet.Interact(); }).detach();
 
 	// 等待
 

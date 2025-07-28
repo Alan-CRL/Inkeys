@@ -56,6 +56,7 @@ namespace PptCOM
         IntPtr GetPptHwnd();
 
         void EndSlideShow();
+        void ViewSlideShow();
     }
 
     [ComVisible(true)]
@@ -477,6 +478,17 @@ namespace PptCOM
             catch
             {
             }
+        }
+        public void ViewSlideShow()
+        {
+            try
+            {   // 打开 ppt 浏览视图
+                pptActWindow.SlideNavigation.Visible = true;
+            }
+            catch
+            {
+            }
+            return;
         }
     }
 }

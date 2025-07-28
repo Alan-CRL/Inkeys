@@ -295,14 +295,63 @@ public:
 		if (fillT.has_value()) { fill = BarUiColorClass(); fill.value().Initialization(fillT.value()); }
 		if (frameT.has_value()) { frame = BarUiColorClass(); frame.value().Initialization(frameT.value()); }
 	}
+public:
+	bool IsClick(int mx, int my, double epsilon = 1e-6)
+	{
+		// 保证有效参数
+		if (w.val <= 0.0 || h.val <= 0.0 || (rw.has_value() && rw.value().val < 0.0) || (rh.has_value() && rh.value().val < 0.0)) return false;
+
+		// 折算为半径
+		double rx = 0.0;
+		double ry = 0.0;
+		if (rw.has_value()) rx = clamp(rw.value().val / 2.0, 0.0, w.val / 2.0);
+		if (rh.has_value()) ry = clamp(rh.value().val / 2.0, 0.0, h.val / 2.0);
+
+		// 矩形区域内才有可能
+		if (static_cast<double>(mx) < x.val - epsilon || static_cast<double>(mx) > x.val + w.val + epsilon ||
+			static_cast<double>(mx) < y.val - epsilon || static_cast<double>(mx) > y.val + h.val + epsilon)
+			return false;
+
+		// “内矩形”范围
+		double ix0 = x.val + rx;         // 内部矩形左
+		double ix1 = x.val + w.val - rx; // 内部矩形右
+		double iy0 = y.val + ry;         // 上
+		double iy1 = y.val + h.val - ry; // 下
+
+		// 若点在内矩形，直接返回
+		if (static_cast<double>(mx) >= ix0 - epsilon && static_cast<double>(mx) <= ix1 + epsilon &&
+			static_cast<double>(mx) >= iy0 - epsilon && static_cast<double>(mx) <= iy1 + epsilon)
+			return true;
+
+		// 否则一定在四角矩形外或圆角四象限内，枚举距离最近的圆角中心
+		// Clamp到最近的角
+		double cx = (static_cast<double>(mx) < ix0) ? ix0 : ((static_cast<double>(mx) > ix1) ? ix1 : static_cast<double>(mx));
+		double cy = (static_cast<double>(mx) < iy0) ? iy0 : ((static_cast<double>(mx) > iy1) ? iy1 : static_cast<double>(mx));
+
+		// 对应的圆角中心
+		// 只有在圆角四象限判定，否则前面矩形部分已经返回true
+		double dx = static_cast<double>(mx) - cx;
+		double dy = static_cast<double>(mx) - cy;
+
+		// 椭圆(中心0,0, 半径rx,ry)上的判定
+		// (dx/rx)^2 + (dy/ry)^2 <= 1
+
+		if (rx > 0 && ry > 0)
+		{
+			double ellipseVal = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry);
+			return ellipseVal <= 1.0 + epsilon;
+		}
+		// 若rx或ry为0，则为直角矩形，已在前面矩形段判断过
+		return false;
+	}
 
 public:
 	// 整体该控件是否显示
 	BarUiStateClass enable;
 
 	// 模态
-	optional<BarUiValueClass> rw; // 控件圆角直径
-	optional<BarUiValueClass> rh; // 控件圆角直径
+	optional<BarUiValueClass> rw; // 控件圆角半径
+	optional<BarUiValueClass> rh; // 控件圆角半径
 	optional<BarUiValueClass> ft; // 控件边框宽度
 
 	// 颜色
@@ -325,6 +374,31 @@ public:
 		if (ftT.has_value()) { ft = BarUiValueClass(); ft.value().Initialization(ftT.value(), type); }
 		if (fillT.has_value()) { fill = BarUiColorClass(); fill.value().Initialization(fillT.value()); }
 		if (frameT.has_value()) { frame = BarUiColorClass(); frame.value().Initialization(frameT.value()); }
+	}
+
+public:
+	bool IsClick(int mx, int my, double epsilon = 1e-6)
+	{
+		// 计算中心
+		double cx = inhX + w.val / 2.0;
+		double cy = inhY + h.val / 2.0;
+		// 半轴
+		double a = w.val / 2.0;
+		double b = h.val / 2.0;
+
+		// 映射到中心
+		double normx = (static_cast<double>(mx) - cx) / a;
+		double normy = (static_cast<double>(my) - cy) / b;
+
+		// degenerate
+		if (a <= 0 || b <= 0 || (!n.has_value() || n.value().val <= 0)) return false;
+
+		// 超椭圆判定
+		double val = pow(abs(normx), n.value().val) + pow(abs(normy), n.value().val);
+
+		// 内/边判定
+		if (epsilon > 0.0) return val <= 1.0 + epsilon;
+		return val <= 1.0;
 	}
 
 public:
@@ -405,6 +479,7 @@ class BarUISetClass
 {
 public:
 	void Rendering();
+	void Interact();
 
 public:
 	BarMediaClass barMedia;
@@ -412,6 +487,9 @@ public:
 	ankerl::unordered_dense::map<BarUISetShapeEnum, shared_ptr<BarUiShapeClass>> shapeMap;
 	ankerl::unordered_dense::map<BarUISetSuperellipseEnum, shared_ptr<BarUiSuperellipseClass>> superellipseMap;
 	ankerl::unordered_dense::map<BarUISetSvgEnum, shared_ptr<BarUiSVGClass>> svgMap;
+
+protected:
+	double Seek(const ExMessage& msg);
 };
 
 // ====================
@@ -423,9 +501,6 @@ enum class BarLogaColorSchemeEnum : int
 	Default = 0, // 深色
 	Slate = 1 // 浅色
 };
-
-// ====================
-// 交互
 
 // 初始化
 

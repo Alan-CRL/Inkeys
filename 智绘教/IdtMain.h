@@ -159,11 +159,11 @@ public:
 		return value.compare_exchange_strong(expected_local, desired_val, success, failure);
 	}
 
-	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
 	T fetch_add(T arg, std::memory_order order = std::memory_order_seq_cst) noexcept {
 		return value.fetch_add(arg, order);
 	}
-	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
 	T fetch_sub(T arg, std::memory_order order = std::memory_order_seq_cst) noexcept {
 		return value.fetch_sub(arg, order);
 	}
@@ -171,7 +171,6 @@ public:
 	operator IdtAtomicT() const noexcept { return load(); }
 	IdtAtomic& operator=(IdtAtomicT desired) noexcept { store(desired); return *this; }
 
-	// Increment/Decrement Operators added
 	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
 	T operator++() noexcept {
 		return value.fetch_add(1, std::memory_order_seq_cst) + 1;
@@ -189,17 +188,15 @@ public:
 		return value.fetch_sub(1, std::memory_order_seq_cst);
 	}
 
-	void wait(IdtAtomicT expected, std::memory_order order = std::memory_order_seq_cst) const noexcept
-	{
-		value.wait(expected, order);
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
+	IdtAtomic& operator+=(T arg) noexcept {
+		fetch_add(arg, std::memory_order_seq_cst);
+		return *this;
 	}
-	void notify_one() noexcept
-	{
-		value.notify_one();
-	}
-	void notify_all() noexcept
-	{
-		value.notify_all();
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
+	IdtAtomic& operator-=(T arg) noexcept {
+		fetch_sub(arg, std::memory_order_seq_cst);
+		return *this;
 	}
 };
 
