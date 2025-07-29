@@ -1273,7 +1273,6 @@
     <None Include="src\ui1.bin">
       <Filter>资源文件</Filter>
     </None>
-    <None Include="src\UI\logo1.svg" />
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="..\PptCOM\PptCOM.manifest" />

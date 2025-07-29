@@ -172,7 +172,7 @@ struct PptComSetListStruct
 		bottomSideMiddleWidgetScale = 1.0f;
 		middleSideBothWidgetScale = 1.0f;
 
-		autoKillWpsProcess = true;
+		//autoKillWpsProcess = true;
 
 		// 附加信息项
 		setAdmin = false;
@@ -204,7 +204,7 @@ struct PptComSetListStruct
 	float middleSideBothWidgetScale;
 
 	// 自动结束未正确关闭的 WPP 进程
-	bool autoKillWpsProcess;
+	//bool autoKillWpsProcess;
 
 	// 附加信息项
 	bool setAdmin;

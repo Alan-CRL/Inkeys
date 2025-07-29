@@ -286,6 +286,18 @@ bool BarUIRendering::Superellipse(ID2D1DCRenderTarget* DCRenderTarget, const Bar
 		sink->Close();
 	}
 
+	// Clip
+	{
+		DCRenderTarget->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
+
+		// 使用完全透明的画刷填充几何图形，实现擦除效果
+		DCRenderTarget->FillGeometry(pEraserGeometry, m_pTransparentBrush);
+
+		// 极其重要：将混合模式重置为默认值，以免影响后续的绘图！
+		DCRenderTarget->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
+	}
+
+	return true;
 	// 渲染到 DC
 	{
 		// 渲染填充
@@ -385,7 +397,7 @@ void BarUISetClass::Rendering()
 		blend.SourceConstantAlpha = 255;
 		blend.AlphaFormat = AC_SRC_ALPHA;
 	}
-	SIZE sizeWnd = { static_cast<LONG>(BarWindowPosClass::w), static_cast<LONG>(BarWindowPosClass::h) };
+	SIZE sizeWnd = { static_cast<LONG>(barWindow.w), static_cast<LONG>(barWindow.h) };
 	POINT ptSrc = { 0,0 };
 	POINT ptDst = { 0,0 };
 	UPDATELAYEREDWINDOWINFO ulwi = { 0 };
@@ -416,7 +428,7 @@ void BarUISetClass::Rendering()
 	}
 
 	// 画布
-	IMAGE barBackground(BarWindowPosClass::w, BarWindowPosClass::h);
+	IMAGE barBackground(barWindow.w, barWindow.h);
 
 	// 初始化 D2D DC
 	CComPtr<ID2D1DCRenderTarget> DCRenderTarget;
@@ -443,7 +455,7 @@ void BarUISetClass::Rendering()
 			DCRenderTarget->BeginDraw();
 
 			{
-				D2D1_COLOR_F clearColor = ConvertToD2DColor(RGBA(0, 0, 0, 0));
+				D2D1_COLOR_F clearColor = ConvertToD2DColor(RGBA(255, 0, 0, 100));
 				DCRenderTarget->Clear(&clearColor);
 			}
 
@@ -601,7 +613,7 @@ void BarInitializationClass::Initialization()
 	BarUISetClass barUISet;
 
 	// 初始化
-	InitializeWindow();
+	InitializeWindow(barUISet);
 	InitializeMedia(barUISet);
 	InitializeUI(barUISet);
 
@@ -627,19 +639,19 @@ void BarInitializationClass::Initialization()
 	threadStatus[L"BarInitialization"] = false;
 	return;
 }
-void BarInitializationClass::InitializeWindow()
+void BarInitializationClass::InitializeWindow(BarUISetClass& barUISet)
 {
 	DisableResizing(floating_window, true); // hiex 禁止窗口拉伸
 
 	SetWindowLong(floating_window, GWL_STYLE, GetWindowLong(floating_window, GWL_STYLE) & ~WS_CAPTION); // 隐藏窗口标题栏
 	SetWindowLong(floating_window, GWL_EXSTYLE, WS_EX_TOOLWINDOW); // 隐藏窗口任务栏图标
 
-	BarWindowPosClass::x = 0;
-	BarWindowPosClass::y = 0;
-	BarWindowPosClass::w = 2000;// MainMonitor.MonitorWidth;
-	BarWindowPosClass::h = 2000;// MainMonitor.MonitorHeight;
-	BarWindowPosClass::pct = 255;
-	SetWindowPos(floating_window, NULL, BarWindowPosClass::x, BarWindowPosClass::y, BarWindowPosClass::w, BarWindowPosClass::h, SWP_NOACTIVATE | SWP_NOZORDER | SWP_DRAWFRAME); // 设置窗口位置尺寸
+	barUISet.barWindow.x = 0;
+	barUISet.barWindow.y = 0;
+	barUISet.barWindow.w = 2000;// MainMonitor.MonitorWidth;
+	barUISet.barWindow.h = 1800;// MainMonitor.MonitorHeight;
+	barUISet.barWindow.pct = 255;
+	SetWindowPos(floating_window, NULL, barUISet.barWindow.x, barUISet.barWindow.y, barUISet.barWindow.w, barUISet.barWindow.h, SWP_NOACTIVATE | SWP_NOZORDER | SWP_DRAWFRAME); // 设置窗口位置尺寸
 }
 void BarInitializationClass::InitializeMedia(BarUISetClass& barUISet)
 {

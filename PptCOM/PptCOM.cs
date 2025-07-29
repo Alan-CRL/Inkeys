@@ -41,7 +41,7 @@ namespace PptCOM
     [Guid("65F6E9C1-63EC-4003-B89F-8F425A3C2FEA")]
     public interface IPptCOMServer
     {
-        unsafe bool Initialization(int* TotalPage, int* CurrentPage, bool autoCloseWPSTarget);
+        unsafe bool Initialization(int* TotalPage, int* CurrentPage/*, bool autoCloseWPSTarget*/);
         string CheckCOM();
 
         unsafe int IsPptOpen();
@@ -76,18 +76,18 @@ namespace PptCOM
         private DateTime updateTime; // 更新时间点
         private bool bindingEvents;
 
-        private bool autoCloseWPS = false;
-        private bool hasWpsProcessID;
-        private Process wpsProcess;
+        //private bool autoCloseWPS = false;
+        //private bool hasWpsProcessID;
+        //private Process wpsProcess;
 
         // 初始化函数
-        public unsafe bool Initialization(int* TotalPage, int* CurrentPage, bool autoCloseWPSTarget)
+        public unsafe bool Initialization(int* TotalPage, int* CurrentPage/*, bool autoCloseWPSTarget*/)
         {
             try
             {
                 pptTotalPage = TotalPage;
                 pptCurrentPage = CurrentPage;
-                autoCloseWPS = autoCloseWPSTarget;
+                //autoCloseWPS = autoCloseWPSTarget;
 
                 return true;
             }
@@ -99,7 +99,7 @@ namespace PptCOM
         }
         public string CheckCOM()
         {
-            string ret = "20250714a";
+            string ret = "20250729a";
 
             try
             {
@@ -158,20 +158,8 @@ namespace PptCOM
             // 获取页数
             try
             {
-                *pptCurrentPage = pptActWindow.View.Slide.SlideIndex;
-
-                if (pptActWindow.View.Slide.SlideIndex >= pptActDoc.Slides.Count) polling = 1;
-                else polling = 0;
-            }
-            catch
-            {
-                *pptCurrentPage = -1;
-                polling = 1;
-            }
-
-            try
-            {
                 *pptTotalPage = pptActDoc.Slides.Count;
+                *pptCurrentPage = pptActWindow.View.Slide.SlideIndex;
             }
             catch { }
         }
@@ -195,13 +183,13 @@ namespace PptCOM
                 bindingEvents = false;
             }
             // 对于延迟未关闭的 WPP，先记录进程 ID，待所有结束事件处理完毕后强制关闭
-            if (autoCloseWPS && Wn.Application.Path.Contains("Kingsoft\\WPS Office\\") && Wn.Application.Presentations.Count <= 1)
-            {
-                uint processId;
-                GetWindowThreadProcessId((IntPtr)Wn.Application.HWND, out processId);
-                wpsProcess = Process.GetProcessById((int)processId);
-                hasWpsProcessID = true;
-            }
+            //if (autoCloseWPS && Wn.Application.Path.Contains("Kingsoft\\WPS Office\\") && Wn.Application.Presentations.Count <= 1)
+            //{
+            //    uint processId;
+            //    GetWindowThreadProcessId((IntPtr)Wn.Application.HWND, out processId);
+            //    wpsProcess = Process.GetProcessById((int)processId);
+            //    hasWpsProcessID = true;
+            //}
             cancel = false;
         }
 
@@ -210,7 +198,7 @@ namespace PptCOM
         {
             int ret = 0;
             bindingEvents = false;
-            hasWpsProcessID = false;
+            //hasWpsProcessID = false;
 
             // 通用尝试，获取 Active 的 Application 并检测是否正确
             try
@@ -341,13 +329,13 @@ namespace PptCOM
                         bindingEvents = false;
                     }
                     // 关闭未正确关闭的 WPP 进程
-                    if (hasWpsProcessID == true && !wpsProcess.HasExited)
-                    {
-                        wpsProcess.Kill();
-                        hasWpsProcessID = false;
-                    }
+                    //if (hasWpsProcessID == true && !wpsProcess.HasExited)
+                    //{
+                    //    wpsProcess.Kill();
+                    //    hasWpsProcessID = false;
+                    //}
 
-                    // 测试
+                    // 释放 COM
                     if (pptActWindow != null)
                     {
                         Marshal.ReleaseComObject(pptActWindow);

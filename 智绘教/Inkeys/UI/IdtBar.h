@@ -9,13 +9,10 @@
 // 窗口模态信息
 class BarWindowPosClass
 {
-private:
-	BarWindowPosClass() = delete;
-
 public:
-	inline static IdtAtomic<int> x = 0, y = 0;
-	inline static IdtAtomic<unsigned int> w = 0, h = 0;
-	inline static IdtAtomic<unsigned int> pct = 0; // 透明度
+	IdtAtomic<int> x = 0, y = 0;
+	IdtAtomic<unsigned int> w = 0, h = 0;
+	IdtAtomic<unsigned int> pct = 255; // 透明度
 };
 
 // ====================
@@ -482,6 +479,7 @@ public:
 	void Interact();
 
 public:
+	BarWindowPosClass barWindow;
 	BarMediaClass barMedia;
 
 	ankerl::unordered_dense::map<BarUISetShapeEnum, shared_ptr<BarUiShapeClass>> shapeMap;
@@ -512,7 +510,7 @@ public:
 	static void Initialization();
 
 protected:
-	static void InitializeWindow();
+	static void InitializeWindow(BarUISetClass& barUISet);
 	static void InitializeMedia(BarUISetClass& barUISet);
 	static void InitializeUI(BarUISetClass& barUISet);
 };

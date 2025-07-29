@@ -769,7 +769,7 @@ void SettingMain()
 		float BottomMiddleWidth = pptComSetlist.bottomMiddleWidth;
 		float BottomMiddleHeight = pptComSetlist.bottomMiddleHeight;
 
-		bool AutoKillWpsProcess = pptComSetlist.autoKillWpsProcess;
+		//bool AutoKillWpsProcess = pptComSetlist.autoKillWpsProcess;
 
 		struct
 		{
@@ -6224,6 +6224,8 @@ void SettingMain()
 								}
 								ImGui::EndChild();
 							}
+
+							/*
 							{
 								ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -6315,6 +6317,7 @@ void SettingMain()
 								}
 								ImGui::EndChild();
 							}
+							*/
 
 							{
 								ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
