@@ -464,8 +464,8 @@ private:
 
 public:
 	static bool Shape(ID2D1DCRenderTarget* DCRenderTarget, const BarUiShapeClass& shape, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct);
-	static bool Superellipse(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct);
-	static bool Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClass& svg, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct);
+	static bool Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct);
+	static bool Svg(ID2D1DeviceContext* deviceContext, const BarUiSVGClass& svg, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct);
 
 private:
 	static string SvgReplaceColor(const string& input, const optional<BarUiColorClass>& color1, const optional<BarUiColorClass>& color2);

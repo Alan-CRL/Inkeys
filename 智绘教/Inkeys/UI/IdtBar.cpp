@@ -192,7 +192,7 @@ bool BarUIRendering::Shape(ID2D1DCRenderTarget* DCRenderTarget, const BarUiShape
 
 	return true;
 }
-bool BarUIRendering::Superellipse(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct)
+bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct)
 {
 	// 判断是否启用
 	if (superellipse.enable.val == false) return false;
@@ -270,12 +270,7 @@ bool BarUIRendering::Superellipse(ID2D1DCRenderTarget* DCRenderTarget, const Bar
 	if (beziers.empty()) return false;
 
 	CComPtr<ID2D1PathGeometry> geometry;
-	{
-		CComPtr<ID2D1Factory> factory;
-		DCRenderTarget->GetFactory(&factory);
-
-		factory->CreatePathGeometry(&geometry);
-	}
+	D2DFactory->CreatePathGeometry(&geometry);
 
 	{
 		CComPtr<ID2D1GeometrySink> sink;
@@ -288,14 +283,16 @@ bool BarUIRendering::Superellipse(ID2D1DCRenderTarget* DCRenderTarget, const Bar
 
 	// Clip
 	{
-		//DCRenderTarget->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
+		CComPtr<ID2D1SolidColorBrush> spFillBrush;
+		deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(RGB(0, 0, 0), 0.0), &spFillBrush);
+
+		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
 
 		//// 使用完全透明的画刷填充几何图形，实现擦除效果
-		//DCRenderTarget->FillGeometry(pEraserGeometry, m_pTransparentBrush);
+		deviceContext->FillGeometry(geometry, spFillBrush);
 
 		//// 极其重要：将混合模式重置为默认值，以免影响后续的绘图！
-		//DCRenderTarget->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
-		//return true;
+		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
 	}
 
 	// 渲染到 DC
@@ -306,9 +303,9 @@ bool BarUIRendering::Superellipse(ID2D1DCRenderTarget* DCRenderTarget, const Bar
 			COLORREF fill = superellipse.fill.value().val;
 
 			CComPtr<ID2D1SolidColorBrush> spFillBrush;
-			DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(fill, tarPct), &spFillBrush);
+			deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(fill, tarPct), &spFillBrush);
 
-			DCRenderTarget->FillGeometry(geometry, spFillBrush);
+			deviceContext->FillGeometry(geometry, spFillBrush);
 		}
 		// 渲染边框
 		if (superellipse.frame.has_value())
@@ -316,17 +313,17 @@ bool BarUIRendering::Superellipse(ID2D1DCRenderTarget* DCRenderTarget, const Bar
 			COLORREF frame = superellipse.frame.value().val;
 
 			CComPtr<ID2D1SolidColorBrush> spBorderBrush;
-			DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(frame, tarPct), &spBorderBrush);
+			deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(frame, tarPct), &spBorderBrush);
 
 			FLOAT strokeWidth = 4.0f;
 			if (superellipse.ft.has_value()) strokeWidth = static_cast<FLOAT>(superellipse.ft.value().val);
-			DCRenderTarget->DrawGeometry(geometry, spBorderBrush, strokeWidth);
+			deviceContext->DrawGeometry(geometry, spBorderBrush, strokeWidth);
 		}
 	}
 
 	return true;
 }
-bool BarUIRendering::Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClass& svg, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct)
+bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, const BarUiSVGClass& svg, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct)
 {
 	// 判断是否启用
 	if (svg.enable.val == false) return false;
@@ -362,7 +359,7 @@ bool BarUIRendering::Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClas
 
 		D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
 		// lunasvg 文档声明：数据为BGRA，8bits每通道，正好适配D2D位图
-		HRESULT hr = DCRenderTarget->CreateBitmap(
+		HRESULT hr = deviceContext->CreateBitmap(
 			D2D1::SizeU(bitmap.width(), bitmap.height()),
 			bitmap.data(),
 			bitmap.width() * 4, // stride
@@ -375,7 +372,7 @@ bool BarUIRendering::Svg(ID2D1DCRenderTarget* DCRenderTarget, const BarUiSVGClas
 	// 渲染到 DC
 	{
 		D2D1_RECT_F destRect = D2D1::RectF(static_cast<FLOAT>(tarX), static_cast<FLOAT>(tarY), static_cast<FLOAT>(tarX + tarW), static_cast<FLOAT>(tarY + tarH));
-		DCRenderTarget->DrawBitmap(
+		deviceContext->DrawBitmap(
 			d2dBitmap,
 			destRect,								// 目标矩形
 			static_cast<FLOAT>(tarPct),				// 不透明度
@@ -403,7 +400,7 @@ void BarUISetClass::Rendering()
 	UPDATELAYEREDWINDOWINFO ulwi = { 0 };
 	{
 		ulwi.cbSize = sizeof(ulwi);
-		ulwi.hdcDst = GetDC(NULL);
+		ulwi.hdcDst = NULL;
 		ulwi.pptDst = &ptDst;
 		ulwi.psize = &sizeWnd;
 		ulwi.pptSrc = &ptSrc;
@@ -427,23 +424,81 @@ void BarUISetClass::Rendering()
 		this_thread::sleep_for(chrono::milliseconds(10));
 	}
 
-	// 画布
-	IMAGE barBackground(barWindow.w, barWindow.h);
-
 	// 初始化 D2D DC
-	CComPtr<ID2D1DCRenderTarget> DCRenderTarget;
+	CComPtr<ID2D1DeviceContext>				barDeviceContext;
+	CComPtr<ID2D1Bitmap1>					barBackgroundBitmap;
+	CComPtr<ID2D1GdiInteropRenderTarget>	barGdiInterop;
 	{
-		// 创建位图兼容的 DC Render Target
-		ID2D1DCRenderTarget* pDCRenderTarget = nullptr;
-		HRESULT hr = D2DFactory->CreateDCRenderTarget(&D2DProperty, &pDCRenderTarget);
-		DCRenderTarget.Attach(pDCRenderTarget);
+		CComPtr<ID3D11Device>         d3dDevice;
+		CComPtr<ID2D1Device>          d2dDevice;
 
-		RECT PptBackgroundWindowRect = { 0, 0, barBackground.getwidth(),barBackground.getheight() };
-		DCRenderTarget->BindDC(GetImageHDC(&barBackground), &PptBackgroundWindowRect);
+		UINT creationFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+#if !defined(IDT_RELEASE)
+		creationFlags |= D3D11_CREATE_DEVICE_DEBUG;
+#endif
 
-		// 设置抗锯齿
-		DCRenderTarget->SetAntialiasMode(D2D1_ANTIALIAS_MODE::D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+		D3D_FEATURE_LEVEL featureLevels[] = {
+			D3D_FEATURE_LEVEL_11_1,
+			D3D_FEATURE_LEVEL_11_0,
+			D3D_FEATURE_LEVEL_10_1,
+			D3D_FEATURE_LEVEL_10_0
+		};
+
+		D3D11CreateDevice(
+			nullptr,                    // 指定 nullptr 使用默认适配器
+			D3D_DRIVER_TYPE_WARP,       // **关键：使用 WARP 软件渲染器**
+			nullptr,                    // 没有软件模块
+			creationFlags,              // 设置支持 BGRA 格式
+			featureLevels,              // 功能级别数组
+			ARRAYSIZE(featureLevels),   // 数组大小
+			D3D11_SDK_VERSION,          // SDK 版本
+			&d3dDevice,                 // 返回创建的设备
+			nullptr,                    // 返回实际的功能级别
+			nullptr                     // 返回设备上下文 (我们不需要)
+		);
+
+		CComPtr<IDXGIDevice> dxgiDevice;
+		d3dDevice.QueryInterface(&dxgiDevice);
+
+		D2DFactory->CreateDevice(dxgiDevice, &d2dDevice);
+		d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &barDeviceContext);
+
+		D2D1_BITMAP_PROPERTIES1 bitmapProperties =
+			D2D1::BitmapProperties1(
+				D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_GDI_COMPATIBLE,
+				D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)
+			);
+
+		D2D1_SIZE_U size = D2D1::SizeU(static_cast<UINT32>(barWindow.w), static_cast<UINT32>(barWindow.h));
+
+		barDeviceContext->CreateBitmap(
+			size,
+			nullptr,
+			0,
+			&bitmapProperties,
+			&barBackgroundBitmap
+		);
+
+		HRESULT hr = barDeviceContext->QueryInterface(__uuidof(ID2D1GdiInteropRenderTarget), (void**)&barGdiInterop);
+		if (FAILED(hr)) Testi(hr);
+
+		barDeviceContext->SetTarget(barBackgroundBitmap);
+		barDeviceContext->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 	}
+
+	//CComPtr<ID2D1DCRenderTarget> DCRenderTarget;
+	//{
+	//	// 创建位图兼容的 DC Render Target
+	//	ID2D1DCRenderTarget* pDCRenderTarget = nullptr;
+	//	HRESULT hr = D2DFactory->CreateDCRenderTarget(&D2DProperty, &pDCRenderTarget);
+	//	DCRenderTarget.Attach(pDCRenderTarget);
+
+	//	RECT PptBackgroundWindowRect = { 0, 0, barBackground.getwidth(),barBackground.getheight() };
+	//	DCRenderTarget->BindDC(GetImageHDC(&barBackground), &PptBackgroundWindowRect);
+
+	//	// 设置抗锯齿
+	//	DCRenderTarget->SetAntialiasMode(D2D1_ANTIALIAS_MODE::D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+	//}
 
 	chrono::high_resolution_clock::time_point reckon = chrono::high_resolution_clock::now();
 
@@ -452,21 +507,21 @@ void BarUISetClass::Rendering()
 	{
 		// 渲染 UI
 		{
-			DCRenderTarget->BeginDraw();
+			barDeviceContext->BeginDraw();
 
 			{
 				D2D1_COLOR_F clearColor = ConvertToD2DColor(RGBA(255, 0, 0, 100));
-				DCRenderTarget->Clear(&clearColor);
+				barDeviceContext->Clear(&clearColor);
 			}
 
 			using enum BarUiInheritEnum;
 			{
 				auto obj = BarUISetSuperellipseEnum::MainButton;
-				BarUIRendering::Superellipse(DCRenderTarget, *superellipseMap[obj], superellipseMap[obj]->Inherit(), superellipseMap[obj]->InheritPct());
+				BarUIRendering::Superellipse(barDeviceContext, *superellipseMap[obj], superellipseMap[obj]->Inherit(), superellipseMap[obj]->InheritPct());
 			}
 			{
 				auto obj = BarUISetSvgEnum::logo1;
-				BarUIRendering::Svg(DCRenderTarget, *svgMap[obj], svgMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), svgMap[obj]->InheritPct());
+				BarUIRendering::Svg(barDeviceContext, *svgMap[obj], svgMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), svgMap[obj]->InheritPct());
 			}
 
 			{
@@ -483,7 +538,7 @@ void BarUISetClass::Rendering()
 
 				// 3. 创建画刷
 				CComPtr<ID2D1SolidColorBrush> pBrush;
-				DCRenderTarget->CreateSolidColorBrush(
+				barDeviceContext->CreateSolidColorBrush(
 					D2D1::ColorF(D2D1::ColorF(255, 0, 0, 1.0)),
 					&pBrush);
 
@@ -491,7 +546,7 @@ void BarUISetClass::Rendering()
 				D2D1_RECT_F layoutRect = D2D1::RectF(100, 100, 1000, 1000);
 
 				// 5. 绘制文本
-				DCRenderTarget->DrawTextW(
+				barDeviceContext->DrawTextW(
 					fps.c_str(),              // text
 					(UINT32)fps.length(),     // text length
 					pTextFormat,               // format
@@ -501,16 +556,23 @@ void BarUISetClass::Rendering()
 				);
 			}
 
-			DCRenderTarget->EndDraw();
+			barDeviceContext->Flush();
 
 			{
 				// 设置窗口位置
 				POINT ptDst = { 0, 0 };
+				// 获取 DC
+				HDC hdc = nullptr;
+				barGdiInterop->GetDC(D2D1_DC_INITIALIZE_MODE_COPY, &hdc);
 
 				ulwi.pptDst = &ptDst;
-				ulwi.hdcSrc = GetImageHDC(&barBackground);
+				ulwi.hdcSrc = hdc;
 				UpdateLayeredWindowIndirect(floating_window, &ulwi);
+
+				barGdiInterop->ReleaseDC(nullptr);
 			}
+
+			barDeviceContext->EndDraw();
 		}
 
 		if (forNum == 1)

@@ -4,8 +4,12 @@
 
 #include <d2d1_1.h>
 #include <dwrite_1.h>
+#include <d3d11.h>
+#include <dxgi.h>
 #pragma comment(lib, "d2d1.lib")
 #pragma comment(lib, "dwrite.lib")
+#pragma comment(lib, "d3d11.lib")
+#pragma comment(lib, "dxgi.lib")
 
 extern CComPtr<ID2D1Factory1> D2DFactory;
 extern D2D1_RENDER_TARGET_PROPERTIES D2DProperty;
