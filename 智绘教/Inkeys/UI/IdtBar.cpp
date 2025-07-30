@@ -288,16 +288,16 @@ bool BarUIRendering::Superellipse(ID2D1DCRenderTarget* DCRenderTarget, const Bar
 
 	// Clip
 	{
-		DCRenderTarget->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
+		//DCRenderTarget->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
 
-		// 使用完全透明的画刷填充几何图形，实现擦除效果
-		DCRenderTarget->FillGeometry(pEraserGeometry, m_pTransparentBrush);
+		//// 使用完全透明的画刷填充几何图形，实现擦除效果
+		//DCRenderTarget->FillGeometry(pEraserGeometry, m_pTransparentBrush);
 
-		// 极其重要：将混合模式重置为默认值，以免影响后续的绘图！
-		DCRenderTarget->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
+		//// 极其重要：将混合模式重置为默认值，以免影响后续的绘图！
+		//DCRenderTarget->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
+		//return true;
 	}
 
-	return true;
 	// 渲染到 DC
 	{
 		// 渲染填充
@@ -648,8 +648,8 @@ void BarInitializationClass::InitializeWindow(BarUISetClass& barUISet)
 
 	barUISet.barWindow.x = 0;
 	barUISet.barWindow.y = 0;
-	barUISet.barWindow.w = 2000;// MainMonitor.MonitorWidth;
-	barUISet.barWindow.h = 1800;// MainMonitor.MonitorHeight;
+	barUISet.barWindow.w = 1000;// MainMonitor.MonitorWidth;
+	barUISet.barWindow.h = 1000;// MainMonitor.MonitorHeight;
 	barUISet.barWindow.pct = 255;
 	SetWindowPos(floating_window, NULL, barUISet.barWindow.x, barUISet.barWindow.y, barUISet.barWindow.w, barUISet.barWindow.h, SWP_NOACTIVATE | SWP_NOZORDER | SWP_DRAWFRAME); // 设置窗口位置尺寸
 }

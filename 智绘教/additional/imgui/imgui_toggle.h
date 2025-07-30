@@ -117,7 +117,7 @@ namespace ImGuiToggleConstants
 	constexpr float BorderThicknessDefault = 1.0f;
 
 	// The default thickness for shadows drawn under the toggle frame and knob.
-	constexpr float ShadowThicknessDefault = 1.0f;
+	constexpr float ShadowThicknessDefault = 2.0f;
 
 	// The default a11y string used when the toggle is on.
 	const char* const LabelA11yOnDefault = "1";

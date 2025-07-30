@@ -676,6 +676,10 @@ void SettingMain()
 		ImGuiToggleConfig config;
 		config.Size = { 40.0f * settingGlobalScale,20.0f * settingGlobalScale };
 		config.Flags = ImGuiToggleFlags_Animated | ImGuiToggleFlags_ShadowedFrame;
+		config.On.FrameShadowThickness = 1.0f;
+		config.On.KnobShadowThickness = 1.0f;
+		config.Off.FrameShadowThickness = 1.0f;
+		config.Off.KnobShadowThickness = 1.0f;
 
 		int QuestNumbers = 0;
 		int PushStyleColorNum = 0, PushFontNum = 0, PushStyleVarNum = 0;
@@ -2147,7 +2151,7 @@ void SettingMain()
 
 							{
 								ImGui::SetCursorPos({ 35.0f * settingGlobalScale,20.0f * settingGlobalScale });
-								ImGui::Image((void*)TextureSettingSign[1], ImVec2((float)settingSign[1].width, (float)settingSign[1].height));
+								ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[1], ImVec2((float)settingSign[1].width, (float)settingSign[1].height));
 							}
 							{
 								ImGui::SetCursorPosY(ImGui::GetCursorPosY());
@@ -4944,7 +4948,7 @@ void SettingMain()
 							{
 								{
 									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, 20.0f * settingGlobalScale });
-									ImGui::Image((void*)TextureSettingSign[5], ImVec2((float)settingSign[5].width, (float)settingSign[5].height));
+									ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[5], ImVec2((float)settingSign[5].width, (float)settingSign[5].height));
 								}
 								{
 									ImGui::SetCursorPos({ 60.0f * settingGlobalScale, 20.0f * settingGlobalScale });
@@ -5010,7 +5014,7 @@ void SettingMain()
 							{
 								{
 									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, 20.0f * settingGlobalScale });
-									ImGui::Image((void*)TextureSettingSign[10], ImVec2((float)settingSign[10].width, (float)settingSign[10].height));
+									ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[10], ImVec2((float)settingSign[10].width, (float)settingSign[10].height));
 								}
 								{
 									ImGui::SetCursorPos({ 60.0f * settingGlobalScale, 20.0f * settingGlobalScale });
@@ -5073,7 +5077,7 @@ void SettingMain()
 							{
 								{
 									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, 20.0f * settingGlobalScale });
-									ImGui::Image((void*)TextureSettingSign[8], ImVec2((float)settingSign[8].width, (float)settingSign[8].height));
+									ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[8], ImVec2((float)settingSign[8].width, (float)settingSign[8].height));
 								}
 								{
 									ImGui::SetCursorPos({ 60.0f * settingGlobalScale, 20.0f * settingGlobalScale });
@@ -5136,7 +5140,7 @@ void SettingMain()
 							{
 								{
 									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, 20.0f * settingGlobalScale });
-									ImGui::Image((void*)TextureSettingSign[6], ImVec2((float)settingSign[6].width, (float)settingSign[6].height));
+									ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[6], ImVec2((float)settingSign[6].width, (float)settingSign[6].height));
 								}
 								{
 									ImGui::SetCursorPos({ 60.0f * settingGlobalScale, 20.0f * settingGlobalScale });
@@ -8731,7 +8735,7 @@ void SettingMain()
 					ImGui::BeginChild("赞助我们", { (750.0f + 30.0f) * settingGlobalScale,608.0f * settingGlobalScale }, true);
 
 					ImGui::SetCursorPos({ 50.0f * settingGlobalScale,20.0f * settingGlobalScale });
-					ImGui::Image((void*)TextureSettingSign[9], ImVec2((float)settingSign[9].width, (float)settingSign[9].height));
+					ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[9], ImVec2((float)settingSign[9].width, (float)settingSign[9].height));
 
 					{
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f);
