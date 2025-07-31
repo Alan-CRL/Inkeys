@@ -556,22 +556,6 @@ void SettingMain()
 		ImGui_ImplDX9_Init(g_pd3dDevice);
 
 		{
-			ImFontConfig font_cfg;
-			font_cfg.OversampleH = 1;
-			font_cfg.OversampleV = 1;
-			font_cfg.FontDataOwnedByAtlas = false;
-
-			HRSRC hRes;
-			if (I18n::identifying == L"zh-TW" && 0 /*在翻译彻底完成之前还不行*/) hRes = FindResource(NULL, MAKEINTRESOURCE(258), L"TTF");
-			else hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
-			HGLOBAL hMem = LoadResource(NULL, hRes);
-			void* pLock = LockResource(hMem);
-			DWORD dwSize = SizeofResource(NULL, hRes);
-
-			ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 30.0f * settingGlobalScale, &font_cfg/*, io.Fonts->GetGlyphRangesChineseFull()*/);
-			// 字体自身偏小，假设是 28px 字高
-		}
-		{
 			ImWchar icons_ranges[] =
 			{
 				0xe713, 0xe713, // 设置
@@ -608,9 +592,9 @@ void SettingMain()
 			font_cfg.OversampleH = 1;
 			font_cfg.OversampleV = 1;
 			font_cfg.FontDataOwnedByAtlas = false;
-			font_cfg.MergeMode = true;
 			font_cfg.GlyphOffset.y = 10.0f * settingGlobalScale;
 			font_cfg.PixelSnapH = true;
+			// font_cfg.MergeMode = true;
 
 			HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(257), L"TTF");
 			HGLOBAL hMem = LoadResource(NULL, hRes);
@@ -640,6 +624,23 @@ void SettingMain()
 			DWORD dwSize = SizeofResource(NULL, hRes);
 
 			ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 32.0f * settingGlobalScale, &font_cfg, icons_ranges);
+		}
+		{
+			ImFontConfig font_cfg;
+			font_cfg.OversampleH = 1;
+			font_cfg.OversampleV = 1;
+			font_cfg.FontDataOwnedByAtlas = false;
+			font_cfg.MergeMode = true;
+
+			HRSRC hRes;
+			if (I18n::identifying == L"zh-TW" && 0 /*在翻译彻底完成之前还不行*/) hRes = FindResource(NULL, MAKEINTRESOURCE(258), L"TTF");
+			else hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
+			HGLOBAL hMem = LoadResource(NULL, hRes);
+			void* pLock = LockResource(hMem);
+			DWORD dwSize = SizeofResource(NULL, hRes);
+
+			ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 30.0f * settingGlobalScale, &font_cfg, io.Fonts->GetGlyphRangesChineseFull());
+			// 字体自身偏小，假设是 28px 字高
 		}
 
 		io.Fonts->Build();
@@ -676,10 +677,6 @@ void SettingMain()
 		ImGuiToggleConfig config;
 		config.Size = { 40.0f * settingGlobalScale,20.0f * settingGlobalScale };
 		config.Flags = ImGuiToggleFlags_Animated | ImGuiToggleFlags_ShadowedFrame;
-		config.On.FrameShadowThickness = 1.0f;
-		config.On.KnobShadowThickness = 1.0f;
-		config.Off.FrameShadowThickness = 1.0f;
-		config.Off.KnobShadowThickness = 1.0f;
 
 		int QuestNumbers = 0;
 		int PushStyleColorNum = 0, PushFontNum = 0, PushStyleVarNum = 0;

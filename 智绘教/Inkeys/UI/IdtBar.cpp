@@ -101,49 +101,6 @@ bool BarUiSVGClass::SetWH(optional<double> wT, optional<double> hT, BarUiValueMo
 }
 
 // 具体渲染
-string BarUIRendering::SvgReplaceColor(const string& input, const optional<BarUiColorClass>& color1, const optional<BarUiColorClass>& color2)
-{
-	auto colorref_to_rgb = [](COLORREF c) -> string
-		{
-			int r = GetRValue(c);
-			int g = GetGValue(c);
-			int b = GetBValue(c);
-
-			return "rgb(" + to_string(r) + "," + to_string(g) + "," + to_string(b) + ")";
-		};
-	COLORREF col1;
-	COLORREF col2;
-
-	string result = input;
-	if (color1.has_value())
-	{
-		col1 = color1.value().val;
-
-		size_t pos = 0;
-		const string tag = "#{color1}";
-		const string rgb_str = colorref_to_rgb(col1);
-		while ((pos = result.find(tag, pos)) != string::npos)
-		{
-			result.replace(pos, tag.length(), rgb_str);
-			pos += rgb_str.length();
-		}
-	}
-	if (color2.has_value())
-	{
-		col2 = color2.value().val;
-
-		size_t pos = 0;
-		const string tag = "#{color2}";
-		const string rgb_str = colorref_to_rgb(col2);
-		while ((pos = result.find(tag, pos)) != string::npos)
-		{
-			result.replace(pos, tag.length(), rgb_str);
-			pos += rgb_str.length();
-		}
-	}
-
-	return result;
-}
 bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct, bool clip)
 {
 	// 判断是否启用
@@ -343,6 +300,50 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, const BarUiSVGClass&
 		// 替换颜色，如果有
 		if (svg.color1.has_value() || svg.color2.has_value())
 		{
+			auto SvgReplaceColor = [](const string& input, const optional<BarUiColorClass>& color1, const optional<BarUiColorClass>& color2) -> string
+				{
+					auto colorref_to_rgb = [](COLORREF c) -> string
+						{
+							int r = GetRValue(c);
+							int g = GetGValue(c);
+							int b = GetBValue(c);
+
+							return "rgb(" + to_string(r) + "," + to_string(g) + "," + to_string(b) + ")";
+						};
+					COLORREF col1;
+					COLORREF col2;
+
+					string result = input;
+					if (color1.has_value())
+					{
+						col1 = color1.value().val;
+
+						size_t pos = 0;
+						const string tag = "#{color1}";
+						const string rgb_str = colorref_to_rgb(col1);
+						while ((pos = result.find(tag, pos)) != string::npos)
+						{
+							result.replace(pos, tag.length(), rgb_str);
+							pos += rgb_str.length();
+						}
+					}
+					if (color2.has_value())
+					{
+						col2 = color2.value().val;
+
+						size_t pos = 0;
+						const string tag = "#{color2}";
+						const string rgb_str = colorref_to_rgb(col2);
+						while ((pos = result.find(tag, pos)) != string::npos)
+						{
+							result.replace(pos, tag.length(), rgb_str);
+							pos += rgb_str.length();
+						}
+					}
+
+					return result;
+				};
+
 			svgContent = SvgReplaceColor(svgContent, svg.color1, svg.color2);
 		}
 
@@ -500,6 +501,19 @@ void BarUISetClass::Rendering()
 		// 动效 UI
 		bool needRendering = false;
 		{
+			auto ChangeValue = [&](BarUiValueClass& value) -> void
+				{
+					needRendering = true;
+
+					BarUiValueModeEnum mod = value.mod;
+					if (mod == BarUiValueModeEnum::Once) value.val = value.tar;
+				};
+
+			for (const auto& [key, val] : superellipseMap)
+			{
+				if (!val->x.IsSame()) ChangeValue(val->x);
+				if (!val->y.IsSame()) ChangeValue(val->y);
+			}
 		}
 
 		// 渲染 UI
@@ -652,8 +666,8 @@ double BarUISetClass::Seek(const ExMessage& msg)
 
 		if (firX == p.x && firY == p.y) continue;
 
-		superellipseMap[BarUISetSuperellipseEnum::MainButton]->x.val += static_cast<double>(p.x - firX);
-		superellipseMap[BarUISetSuperellipseEnum::MainButton]->y.val += static_cast<double>(p.y - firY);
+		superellipseMap[BarUISetSuperellipseEnum::MainButton]->x.tar += static_cast<double>(p.x - firX);
+		superellipseMap[BarUISetSuperellipseEnum::MainButton]->y.tar += static_cast<double>(p.y - firY);
 
 		ret += sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY));
 		firX = static_cast<double>(p.x), firY = static_cast<double>(p.y);
@@ -734,6 +748,8 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 	{
 		auto superellipse = make_shared<BarUiSuperellipseClass>(500.0, 500.0, 300.0, 300.0, 3.0, 2.0, RGB(0, 0, 0), RGB(255, 255, 255));
 		superellipse->pct.Initialization(0.6);
+		superellipse->x.mod = BarUiValueModeEnum::Once;
+		superellipse->y.mod = BarUiValueModeEnum::Once;
 		superellipse->enable.Initialization(true);
 		barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton] = superellipse;
 	}

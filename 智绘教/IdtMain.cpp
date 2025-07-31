@@ -1226,8 +1226,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 线程
 	{
-		thread(floating_main).detach();
-		// thread(BarInitializationClass::Initialization).detach();
+		// thread(floating_main).detach();
+		thread(BarInitializationClass::Initialization).detach();
 		thread(SettingMain).detach();
 		thread(drawpad_main).detach();
 		thread(FreezeFrameWindow).detach();

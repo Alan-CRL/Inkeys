@@ -74,6 +74,7 @@ public:
 	BarUiValueClass() {}
 
 	void Initialization(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Once) { mod = modT, val = tar = valT, startV = valT; }
+	bool IsSame() { return val == tar; }
 
 public:
 	IdtAtomic<BarUiValueModeEnum> mod = BarUiValueModeEnum::Once;
@@ -468,9 +469,6 @@ public:
 	static bool Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct, bool clip = false);
 	static bool Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct, bool clip = false);
 	static bool Svg(ID2D1DeviceContext* deviceContext, const BarUiSVGClass& svg, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct);
-
-private:
-	static string SvgReplaceColor(const string& input, const optional<BarUiColorClass>& color1, const optional<BarUiColorClass>& color2);
 };
 
 // UI 总集
