@@ -144,7 +144,7 @@ string BarUIRendering::SvgReplaceColor(const string& input, const optional<BarUi
 
 	return result;
 }
-bool BarUIRendering::Shape(ID2D1DCRenderTarget* DCRenderTarget, const BarUiShapeClass& shape, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct)
+bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct, bool clip)
 {
 	// 判断是否启用
 	if (shape.enable.val == false) return false;
@@ -162,19 +162,29 @@ bool BarUIRendering::Shape(ID2D1DCRenderTarget* DCRenderTarget, const BarUiShape
 	if (shape.rw.has_value()) tarRw = shape.rw.value().val;
 	if (shape.rh.has_value()) tarRh = shape.rh.value().val;
 
+	D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(static_cast<FLOAT>(tarX), static_cast<FLOAT>(tarY), static_cast<FLOAT>(tarX + tarW), static_cast<FLOAT>(tarY + tarH)), static_cast<FLOAT>(tarRw), static_cast<FLOAT>(tarRh));
+
+	// Clip
+	if (clip)
+	{
+		CComPtr<ID2D1SolidColorBrush> spFillBrush;
+		deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(RGB(0, 0, 0), 0.0), &spFillBrush);
+
+		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
+		deviceContext->FillRoundedRectangle(&roundedRect, spFillBrush);
+		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
+	}
 	// 渲染到 DC
 	{
-		D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(static_cast<FLOAT>(tarX), static_cast<FLOAT>(tarY), static_cast<FLOAT>(tarX + tarW), static_cast<FLOAT>(tarY + tarH)), static_cast<FLOAT>(tarRw), static_cast<FLOAT>(tarRh));
-
 		// 渲染填充
 		if (shape.fill.has_value())
 		{
 			COLORREF fill = shape.fill.value().val;
 
 			CComPtr<ID2D1SolidColorBrush> spFillBrush;
-			DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(fill, tarPct), &spFillBrush);
+			deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(fill, tarPct), &spFillBrush);
 
-			DCRenderTarget->FillRoundedRectangle(&roundedRect, spFillBrush);
+			deviceContext->FillRoundedRectangle(&roundedRect, spFillBrush);
 		}
 		// 渲染边框
 		if (shape.frame.has_value())
@@ -182,17 +192,17 @@ bool BarUIRendering::Shape(ID2D1DCRenderTarget* DCRenderTarget, const BarUiShape
 			COLORREF frame = shape.frame.value().val;
 
 			CComPtr<ID2D1SolidColorBrush> spBorderBrush;
-			DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(frame, tarPct), &spBorderBrush);
+			deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(frame, tarPct), &spBorderBrush);
 
 			FLOAT strokeWidth = 4.0f;
 			if (shape.ft.has_value()) strokeWidth = static_cast<FLOAT>(shape.ft.value().val);
-			DCRenderTarget->DrawRoundedRectangle(&roundedRect, spBorderBrush, strokeWidth);
+			deviceContext->DrawRoundedRectangle(&roundedRect, spBorderBrush, strokeWidth);
 		}
 	}
 
 	return true;
 }
-bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct)
+bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct, bool clip)
 {
 	// 判断是否启用
 	if (superellipse.enable.val == false) return false;
@@ -282,16 +292,13 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 	}
 
 	// Clip
+	if (clip)
 	{
 		CComPtr<ID2D1SolidColorBrush> spFillBrush;
 		deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(RGB(0, 0, 0), 0.0), &spFillBrush);
 
 		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
-
-		//// 使用完全透明的画刷填充几何图形，实现擦除效果
 		deviceContext->FillGeometry(geometry, spFillBrush);
-
-		//// 极其重要：将混合模式重置为默认值，以免影响后续的绘图！
 		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
 	}
 
@@ -479,32 +486,22 @@ void BarUISetClass::Rendering()
 			&barBackgroundBitmap
 		);
 
-		HRESULT hr = barDeviceContext->QueryInterface(__uuidof(ID2D1GdiInteropRenderTarget), (void**)&barGdiInterop);
-		if (FAILED(hr)) Testi(hr);
+		barDeviceContext->QueryInterface(__uuidof(ID2D1GdiInteropRenderTarget), (void**)&barGdiInterop);
 
 		barDeviceContext->SetTarget(barBackgroundBitmap);
 		barDeviceContext->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 	}
-
-	//CComPtr<ID2D1DCRenderTarget> DCRenderTarget;
-	//{
-	//	// 创建位图兼容的 DC Render Target
-	//	ID2D1DCRenderTarget* pDCRenderTarget = nullptr;
-	//	HRESULT hr = D2DFactory->CreateDCRenderTarget(&D2DProperty, &pDCRenderTarget);
-	//	DCRenderTarget.Attach(pDCRenderTarget);
-
-	//	RECT PptBackgroundWindowRect = { 0, 0, barBackground.getwidth(),barBackground.getheight() };
-	//	DCRenderTarget->BindDC(GetImageHDC(&barBackground), &PptBackgroundWindowRect);
-
-	//	// 设置抗锯齿
-	//	DCRenderTarget->SetAntialiasMode(D2D1_ANTIALIAS_MODE::D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-	//}
 
 	chrono::high_resolution_clock::time_point reckon = chrono::high_resolution_clock::now();
 
 	wstring fps;
 	for (int forNum = 1; !offSignal; forNum = 2)
 	{
+		// 动效 UI
+		bool needRendering = false;
+		{
+		}
+
 		// 渲染 UI
 		{
 			barDeviceContext->BeginDraw();
@@ -517,13 +514,14 @@ void BarUISetClass::Rendering()
 			using enum BarUiInheritEnum;
 			{
 				auto obj = BarUISetSuperellipseEnum::MainButton;
-				BarUIRendering::Superellipse(barDeviceContext, *superellipseMap[obj], superellipseMap[obj]->Inherit(), superellipseMap[obj]->InheritPct());
+				BarUIRendering::Superellipse(barDeviceContext, *superellipseMap[obj], superellipseMap[obj]->Inherit(), superellipseMap[obj]->InheritPct(), true);
 			}
 			{
 				auto obj = BarUISetSvgEnum::logo1;
 				BarUIRendering::Svg(barDeviceContext, *svgMap[obj], svgMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), svgMap[obj]->InheritPct());
 			}
 
+			// FPS
 			{
 				CComPtr<IDWriteTextFormat> pTextFormat;
 				D2DTextFactory->CreateTextFormat(
@@ -559,6 +557,11 @@ void BarUISetClass::Rendering()
 			barDeviceContext->Flush();
 
 			{
+				// TODO 脏区更新
+				// psize 指定窗口本次更新“新内容”宽高
+				// pptDst 指定新内容贴到屏幕上的位置（左上角）
+				// pptSrc 从源内存 DC 的哪个位置起贴内容
+
 				// 设置窗口位置
 				POINT ptDst = { 0, 0 };
 				// 获取 DC

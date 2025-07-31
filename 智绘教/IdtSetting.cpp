@@ -568,7 +568,7 @@ void SettingMain()
 			void* pLock = LockResource(hMem);
 			DWORD dwSize = SizeofResource(NULL, hRes);
 
-			ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 30.0f * settingGlobalScale, &font_cfg, io.Fonts->GetGlyphRangesChineseFull());
+			ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 30.0f * settingGlobalScale, &font_cfg/*, io.Fonts->GetGlyphRangesChineseFull()*/);
 			// 字体自身偏小，假设是 28px 字高
 		}
 		{
