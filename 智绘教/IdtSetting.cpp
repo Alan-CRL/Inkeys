@@ -556,37 +556,57 @@ void SettingMain()
 		ImGui_ImplDX9_Init(g_pd3dDevice);
 
 		{
-			ImWchar icons_ranges[] =
-			{
-				0xe713, 0xe713, // 设置
-				0xe8bb, 0xe8bb, // 关闭
-				0xe72b, 0xe72b, // 返回
+			ImFontConfig font_cfg;
+			font_cfg.OversampleH = 1;
+			font_cfg.OversampleV = 1;
+			font_cfg.FontDataOwnedByAtlas = false;
+			font_cfg.MergeMode = false;
 
-				0xf167, 0xf167, // 信息
-				0xec61, 0xec61, // 完成
-				0xe814, 0xe814, // 警告
-				0xeb90, 0xeb90, // 错误
+			ImWchar exclude_ranges[] = { 0xe81e, 0xe81e, 0 };
+			font_cfg.GlyphExcludeRanges = exclude_ranges;
 
-				0xe80f, 0xe80f, // 主页
-				0xf2b7, 0xf2b7, // 语言
-				0xe7b8, 0xe7b8, // 常规
-				0xee56, 0xee56, // 绘制
-				0xe74e, 0xe74e, // 保存
-				0xec4a, 0xec4a, // 性能
-				0xf259, 0xf259, // 预设
-				0xe70b, 0xe70b, // 组件
-				0xe74c, 0xe74c, // 插件
-				0xe765, 0xe765, // 快捷键
-				0xe81e, 0xe81e, // 软件配置
-				0xe946, 0xe946, // 软件版本
-				0xe716, 0xe716, // 社区名片
-				0xe789, 0xe789, // 赞助我们
+			HRSRC hRes;
+			if (I18n::identifying == L"zh-TW" && 0 /*在翻译彻底完成之前还不行*/) hRes = FindResource(NULL, MAKEINTRESOURCE(258), L"TTF");
+			else hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
+			HGLOBAL hMem = LoadResource(NULL, hRes);
+			void* pLock = LockResource(hMem);
+			DWORD dwSize = SizeofResource(NULL, hRes);
 
-				0xe711,0xe711, // 关闭程序
-				0xe72c,0xe72c, // 重启程序
+			ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 30.0f * settingGlobalScale, &font_cfg);
+			// 字体自身偏小，假设是 28px 字高
+		}
+		{
+			//ImWchar icons_ranges[] =
+			//{
+			//	0xe713, 0xe713, // 设置
+			//	0xe8bb, 0xe8bb, // 关闭
+			//	0xe72b, 0xe72b, // 返回
 
-				0
-			};
+			//	0xf167, 0xf167, // 信息
+			//	0xec61, 0xec61, // 完成
+			//	0xe814, 0xe814, // 警告
+			//	0xeb90, 0xeb90, // 错误
+
+			//	0xe80f, 0xe80f, // 主页
+			//	0xf2b7, 0xf2b7, // 语言
+			//	0xe7b8, 0xe7b8, // 常规
+			//	0xee56, 0xee56, // 绘制
+			//	0xe74e, 0xe74e, // 保存
+			//	0xec4a, 0xec4a, // 性能
+			//	0xf259, 0xf259, // 预设
+			//	0xe70b, 0xe70b, // 组件
+			//	0xe74c, 0xe74c, // 插件
+			//	0xe765, 0xe765, // 快捷键
+			//	0xe81e, 0xe81e, // 软件配置
+			//	0xe946, 0xe946, // 软件版本
+			//	0xe716, 0xe716, // 社区名片
+			//	0xe789, 0xe789, // 赞助我们
+
+			//	0xe711,0xe711, // 关闭程序
+			//	0xe72c,0xe72c, // 重启程序
+
+			//	0
+			//};
 
 			ImFontConfig font_cfg;
 			font_cfg.OversampleH = 1;
@@ -594,21 +614,21 @@ void SettingMain()
 			font_cfg.FontDataOwnedByAtlas = false;
 			font_cfg.GlyphOffset.y = 10.0f * settingGlobalScale;
 			font_cfg.PixelSnapH = true;
-			// font_cfg.MergeMode = true;
+			font_cfg.MergeMode = true;
 
 			HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(257), L"TTF");
 			HGLOBAL hMem = LoadResource(NULL, hRes);
 			void* pLock = LockResource(hMem);
 			DWORD dwSize = SizeofResource(NULL, hRes);
 
-			ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 36.0f * settingGlobalScale, &font_cfg, icons_ranges);
+			ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 36.0f * settingGlobalScale, &font_cfg);
 		}
 		{
-			ImWchar icons_ranges[] =
+			/*ImWchar icons_ranges[] =
 			{
 				0xf900, 0xf907,
 				0
-			};
+			};*/
 
 			ImFontConfig font_cfg;
 			font_cfg.OversampleH = 1;
@@ -623,27 +643,10 @@ void SettingMain()
 			void* pLock = LockResource(hMem);
 			DWORD dwSize = SizeofResource(NULL, hRes);
 
-			ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 32.0f * settingGlobalScale, &font_cfg, icons_ranges);
-		}
-		{
-			ImFontConfig font_cfg;
-			font_cfg.OversampleH = 1;
-			font_cfg.OversampleV = 1;
-			font_cfg.FontDataOwnedByAtlas = false;
-			font_cfg.MergeMode = true;
-
-			HRSRC hRes;
-			if (I18n::identifying == L"zh-TW" && 0 /*在翻译彻底完成之前还不行*/) hRes = FindResource(NULL, MAKEINTRESOURCE(258), L"TTF");
-			else hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
-			HGLOBAL hMem = LoadResource(NULL, hRes);
-			void* pLock = LockResource(hMem);
-			DWORD dwSize = SizeofResource(NULL, hRes);
-
-			ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 30.0f * settingGlobalScale, &font_cfg, io.Fonts->GetGlyphRangesChineseFull());
-			// 字体自身偏小，假设是 28px 字高
+			ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 32.0f * settingGlobalScale, &font_cfg);
 		}
 
-		io.Fonts->Build();
+		// io.Fonts->Build();
 
 		ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 		{

@@ -506,13 +506,19 @@ void BarUISetClass::Rendering()
 					needRendering = true;
 
 					BarUiValueModeEnum mod = value.mod;
-					if (mod == BarUiValueModeEnum::Once) value.val = value.tar;
+					/*else*/ value.val = value.tar;
 				};
 
 			for (const auto& [key, val] : superellipseMap)
 			{
 				if (!val->x.IsSame()) ChangeValue(val->x);
 				if (!val->y.IsSame()) ChangeValue(val->y);
+				if (!val->w.IsSame()) ChangeValue(val->x);
+				if (!val->h.IsSame()) ChangeValue(val->y);
+				//if (val->n.has_value() && !val->n->IsSame())
+				//if (val->ft.has_value() && !val->ft->IsSame())
+				//if (val->fill.has_value() && !val->fill->IsSame())
+				//if (val->frame.has_value() && !val->frame->IsSame())
 			}
 		}
 
