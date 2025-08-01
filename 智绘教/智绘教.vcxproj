@@ -576,6 +576,7 @@
     <ClInclude Include="Inkeys\Json\IdtJson.h" />
     <ClInclude Include="Inkeys\Load\IdtLoad.h" />
     <ClInclude Include="Inkeys\UI\IdtBar.h" />
+    <ClInclude Include="Inkeys\UI\IdtBarState.h" />
     <ClInclude Include="Launch\IdtLaunchState.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="IdtRts.h" />
@@ -670,6 +671,7 @@
     <ClCompile Include="IdtUpdate.cpp" />
     <ClCompile Include="IdtWindow.cpp" />
     <ClCompile Include="Inkeys\UI\IdtBar.cpp" />
+    <ClCompile Include="Inkeys\UI\IdtBarState.cpp" />
     <ClCompile Include="Launch\IdtLaunchState.cpp" />
     <ClCompile Include="SuperTop\IdtSuperTop.cpp" />
   </ItemGroup>

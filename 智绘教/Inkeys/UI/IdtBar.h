@@ -94,6 +94,7 @@ public:
 	BarUiColorClass() {}
 
 	void Initialization(COLORREF valT) { val = tar = valT; }
+	bool IsSame() { return val == tar; }
 
 public:
 	IdtAtomic<COLORREF> val = RGB(0, 0, 0); // 直接值（当前位置）
@@ -108,6 +109,7 @@ public:
 	BarUiPctClass() {}
 
 	void Initialization(double valT) { val = tar = valT; }
+	bool IsSame() { return val == tar; }
 
 public:
 	IdtAtomic<double> val = 1.0; // 透明度直接值
@@ -218,7 +220,7 @@ class BarUiInheritClass
 {
 public:
 	BarUiInheritClass(double xT, double yT) { x = xT, y = yT; }
-	BarUiInheritClass(BarUiInheritEnum typeT, double w, double h, double xT, double yT, double wT, double hT);
+	BarUiInheritClass(BarUiInheritEnum typeT, double xO, double yO, double wO, double hO, double xT, double yT, double wT, double hT);
 
 public:
 	BarUiInheritEnum type = BarUiInheritEnum::Center;
@@ -448,7 +450,7 @@ public:
 // 控件枚举
 enum class BarUISetShapeEnum
 {
-	MainButton
+	MainBar
 };
 enum class BarUISetSuperellipseEnum
 {

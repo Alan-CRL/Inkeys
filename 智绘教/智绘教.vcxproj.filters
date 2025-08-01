@@ -762,6 +762,9 @@
     <ClInclude Include="Inkeys\Load\IdtLoad.h">
       <Filter>头文件\Inkeys\Load</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\UI\IdtBarState.h">
+      <Filter>头文件\Inkeys\UI</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HiEasyX\HiGUI\Button.cpp">
@@ -1017,6 +1020,9 @@
       <Filter>源文件\SuperTop</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\IdtBar.cpp">
+      <Filter>源文件\Inkeys\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\IdtBarState.cpp">
       <Filter>源文件\Inkeys\UI</Filter>
     </ClCompile>
   </ItemGroup>

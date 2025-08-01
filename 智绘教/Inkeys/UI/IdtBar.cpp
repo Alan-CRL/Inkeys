@@ -7,6 +7,7 @@
 #include "../../IdtWindow.h"
 #include "../Conv/IdtColor.h"
 #include "../Load/IdtLoad.h"
+#include "IdtBarState.h"
 
 //#undef max
 //#undef min
@@ -44,19 +45,29 @@ void BarUiSVGClass::InitializationFromResource(const wstring& resType, const wst
 
 /// 继承
 //// 根据类型计算继承坐标原点
-BarUiInheritClass::BarUiInheritClass(BarUiInheritEnum typeT, double w, double h, double xT, double yT, double wT, double hT)
+BarUiInheritClass::BarUiInheritClass(BarUiInheritEnum typeT, double xO, double yO, double wO, double hO, double xT, double yT, double wT, double hT)
 {
 	// w/h 为控件自身的宽高 -> 最终得出的都是左上角绘制坐标 -> 方便绘制
+	// O 为当前项 T 为目标继承项
+
+	// 继承类型
 	type = typeT;
+
+	// 基础位置
+	x = xO;
+	y = yO;
 
 	// TODO 拓展更多类型组合
 	if (type == BarUiInheritEnum::TopLeft) { x = xT, y = yT; }
-	if (type == BarUiInheritEnum::Center) { x = xT + wT / 2.0 - w / 2.0, y = yT + hT / 2.0 - h / 2.0; }
+	else if (type == BarUiInheritEnum::Center) { x = xT + wT / 2.0 - wO / 2.0, y = yT + hT / 2.0 - hO / 2.0; }
+
+	else if (type == BarUiInheritEnum::ToRight) { x = xT + wT, y = yT; }
+	else if (type == BarUiInheritEnum::ToLeft) { x = xT - wO, y = yT; }
 }
 //// 继承基类
-BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape) { return UpInh(BarUiInheritClass(typeT, w.val, h.val, shape.x.val, shape.y.val, shape.w.val, shape.h.val)); }
-BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiSuperellipseClass& superellipse) { return UpInh(BarUiInheritClass(typeT, w.val, h.val, superellipse.x.val, superellipse.y.val, superellipse.w.val, superellipse.h.val)); }
-BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiSVGClass& svg) { return UpInh(BarUiInheritClass(typeT, w.val, h.val, svg.x.val, svg.y.val, svg.w.val, svg.h.val)); }
+BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, shape.x.val, shape.y.val, shape.w.val, shape.h.val)); }
+BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiSuperellipseClass& superellipse) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, superellipse.x.val, superellipse.y.val, superellipse.w.val, superellipse.h.val)); }
+BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiSVGClass& svg) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, svg.x.val, svg.y.val, svg.w.val, svg.h.val)); }
 BarUiPctInheritClass BarUiInnheritBaseClass::InheritPct(const BarUiShapeClass& shape) { return UpInhPct(BarUiPctInheritClass(shape.pct.val)); }
 BarUiPctInheritClass BarUiInnheritBaseClass::InheritPct(const BarUiSuperellipseClass& superellipse) { return UpInhPct(BarUiPctInheritClass(superellipse.pct.val)); }
 BarUiPctInheritClass BarUiInnheritBaseClass::InheritPct(const BarUiSVGClass& svg) { return UpInhPct(BarUiPctInheritClass(svg.pct.val)); }
@@ -106,6 +117,7 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 	// 判断是否启用
 	if (shape.enable.val == false) return false;
 	if (!shape.fill.has_value() && !shape.frame.has_value()) return false;
+	if (shape.pct.val == 0.0) return true;
 
 	// 初始化绘制量
 	double tarX = inh.x; // 绘制左上角 x
@@ -164,6 +176,7 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 	// 判断是否启用
 	if (superellipse.enable.val == false) return false;
 	if (!superellipse.fill.has_value() && !superellipse.frame.has_value()) return false;
+	if (superellipse.pct.val == 0.0) return true;
 
 	// 初始化绘制量
 	double tarX = inh.x; // 绘制左上角 x
@@ -291,6 +304,7 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, const BarUiSVGClass&
 {
 	// 判断是否启用
 	if (svg.enable.val == false) return false;
+	if (svg.pct.val == 0.0) return true;
 
 	// 初始化解析
 	string svgContent;
@@ -498,6 +512,24 @@ void BarUISetClass::Rendering()
 	wstring fps;
 	for (int forNum = 1; !offSignal; forNum = 2)
 	{
+		// 计算
+		{
+			if (barState.fold)
+			{
+				{
+					shapeMap[BarUISetShapeEnum::MainBar]->x.tar = 0;
+					shapeMap[BarUISetShapeEnum::MainBar]->w.tar = 0;
+				}
+			}
+			else
+			{
+				{
+					shapeMap[BarUISetShapeEnum::MainBar]->x.tar = 10;
+					shapeMap[BarUISetShapeEnum::MainBar]->w.tar = 400;
+				}
+			}
+		}
+
 		// 动效 UI
 		bool needRendering = false;
 		{
@@ -508,17 +540,43 @@ void BarUISetClass::Rendering()
 					BarUiValueModeEnum mod = value.mod;
 					/*else*/ value.val = value.tar;
 				};
+			auto ChangeColor = [&](BarUiColorClass& color) -> void
+				{
+					needRendering = true;
 
+					color.val = color.tar;
+				};
+			auto ChangePct = [&](BarUiPctClass& pct) -> void
+				{
+					needRendering = true;
+
+					pct.val = pct.tar;
+				};
+
+			for (const auto& [key, val] : shapeMap)
+			{
+				if (!val->x.IsSame()) ChangeValue(val->x);
+				if (!val->y.IsSame()) ChangeValue(val->y);
+				if (!val->w.IsSame()) ChangeValue(val->w);
+				if (!val->h.IsSame()) ChangeValue(val->h);
+				if (val->rw.has_value() && !val->rw->IsSame()) ChangeValue(val->rw.value());
+				if (val->rh.has_value() && !val->rh->IsSame()) ChangeValue(val->rh.value());
+				if (val->ft.has_value() && !val->ft->IsSame()) ChangeValue(val->ft.value());
+				if (val->fill.has_value() && !val->fill->IsSame()) ChangeColor(val->fill.value());
+				if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value());
+				if (!val->pct.IsSame()) ChangePct(val->pct);
+			}
 			for (const auto& [key, val] : superellipseMap)
 			{
 				if (!val->x.IsSame()) ChangeValue(val->x);
 				if (!val->y.IsSame()) ChangeValue(val->y);
-				if (!val->w.IsSame()) ChangeValue(val->x);
-				if (!val->h.IsSame()) ChangeValue(val->y);
-				//if (val->n.has_value() && !val->n->IsSame())
-				//if (val->ft.has_value() && !val->ft->IsSame())
-				//if (val->fill.has_value() && !val->fill->IsSame())
-				//if (val->frame.has_value() && !val->frame->IsSame())
+				if (!val->w.IsSame()) ChangeValue(val->w);
+				if (!val->h.IsSame()) ChangeValue(val->h);
+				if (val->n.has_value() && !val->n->IsSame()) ChangeValue(val->n.value());
+				if (val->ft.has_value() && !val->ft->IsSame()) ChangeValue(val->ft.value());
+				if (val->fill.has_value() && !val->fill->IsSame()) ChangeColor(val->fill.value());
+				if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value());
+				if (!val->pct.IsSame()) ChangePct(val->pct);
 			}
 		}
 
@@ -527,18 +585,26 @@ void BarUISetClass::Rendering()
 			barDeviceContext->BeginDraw();
 
 			{
-				D2D1_COLOR_F clearColor = ConvertToD2DColor(RGBA(255, 0, 0, 100));
+				D2D1_COLOR_F clearColor = ConvertToD2DColor(RGBA(0, 0, 0, 0));
 				barDeviceContext->Clear(&clearColor);
 			}
 
 			using enum BarUiInheritEnum;
 			{
-				auto obj = BarUISetSuperellipseEnum::MainButton;
-				BarUIRendering::Superellipse(barDeviceContext, *superellipseMap[obj], superellipseMap[obj]->Inherit(), superellipseMap[obj]->InheritPct(), true);
+				auto obj = BarUISetShapeEnum::MainBar;
+				if (barState.fold) BarUIRendering::Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), shapeMap[obj]->InheritPct(), false);
+				else BarUIRendering::Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(ToRight, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), shapeMap[obj]->InheritPct(), false);
 			}
 			{
-				auto obj = BarUISetSvgEnum::logo1;
-				BarUIRendering::Svg(barDeviceContext, *svgMap[obj], svgMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), svgMap[obj]->InheritPct());
+				{
+					auto obj = BarUISetSuperellipseEnum::MainButton;
+					BarUIRendering::Superellipse(barDeviceContext, *superellipseMap[obj], superellipseMap[obj]->Inherit(), superellipseMap[obj]->InheritPct(), false);
+
+					{
+						auto obj = BarUISetSvgEnum::logo1;
+						BarUIRendering::Svg(barDeviceContext, *svgMap[obj], svgMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), svgMap[obj]->InheritPct());
+					}
+				}
 			}
 
 			// FPS
@@ -640,6 +706,12 @@ void BarUISetClass::Interact()
 					Msg.x = Msg.msg.x, Msg.y = Msg.msg.y;
 					{
 						double moveDis = Seek(Msg.msg);
+						if (moveDis <= 20)
+						{
+							// 展开/收起主栏
+							if (barState.fold) barState.fold = false;
+							else barState.fold = true;
+						}
 					}
 					hiex::flushmessage_win32(EM_MOUSE, floating_window);
 				}
@@ -745,25 +817,32 @@ void BarInitializationClass::InitializeMedia(BarUISetClass& barUISet)
 void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 {
 	// 定义 UI 控件
-	/*{
-		auto shape = make_shared<BarUiShapeClass>(500.0, 500.0, 80.0, 80.0, 20.0, 20.0, 2.0, RGB(0, 0, 0), RGB(255, 255, 255));
-		shape->pct.Initialization(0.6);
-		shape->enable.Initialization(true);
-		barUISet.shapeMap[BarUISetShapeEnum::MainButton] = shape;
-	}*/
 	{
-		auto superellipse = make_shared<BarUiSuperellipseClass>(500.0, 500.0, 300.0, 300.0, 3.0, 2.0, RGB(0, 0, 0), RGB(255, 255, 255));
-		superellipse->pct.Initialization(0.6);
-		superellipse->x.mod = BarUiValueModeEnum::Once;
-		superellipse->y.mod = BarUiValueModeEnum::Once;
-		superellipse->enable.Initialization(true);
-		barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton] = superellipse;
-	}
-	{
-		auto svg = make_shared<BarUiSVGClass>(0.0, 0.0);
-		svg->InitializationFromResource(L"UI", L"logo1");
-		svg->SetWH(nullopt, 300.0); // 必须在 Initial 后
-		svg->enable.Initialization(true);
-		barUISet.svgMap[BarUISetSvgEnum::logo1] = svg;
+		// 主按钮
+		{
+			auto superellipse = make_shared<BarUiSuperellipseClass>(500.0, 500.0, 80.0, 80.0, 3.0, 2.0, RGB(0, 0, 0), RGB(255, 255, 255));
+			superellipse->pct.Initialization(0.6);
+			superellipse->x.mod = BarUiValueModeEnum::Once;
+			superellipse->y.mod = BarUiValueModeEnum::Once;
+			superellipse->enable.Initialization(true);
+			barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton] = superellipse;
+
+			{
+				auto svg = make_shared<BarUiSVGClass>(0.0, 0.0);
+				svg->InitializationFromResource(L"UI", L"logo1");
+				svg->SetWH(nullopt, 80.0); // 必须在 Initial 后
+				svg->enable.Initialization(true);
+				barUISet.svgMap[BarUISetSvgEnum::logo1] = svg;
+			}
+			{
+			}
+		}
+		// 主栏
+		{
+			auto shape = make_shared<BarUiShapeClass>(500.0, 500.0, 80.0, 80.0, 16.0, 16.0, 2.0, RGB(255, 255, 255), RGB(200, 200, 200));
+			shape->pct.Initialization(0.5);
+			shape->enable.Initialization(true);
+			barUISet.shapeMap[BarUISetShapeEnum::MainBar] = shape;
+		}
 	}
 }
