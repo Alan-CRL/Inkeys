@@ -2,6 +2,7 @@
 
 #include "../../IdtMain.h"
 #include "../../IdtD2DPreparation.h"
+#include "IdtBarState.h"
 
 // ====================
 // 窗口
@@ -61,7 +62,15 @@ public:
 		else tar = val;
 	}
 
-	void Initialization(bool valT) { val = tar = valT; }
+	bool IsSame() { return val == tar; }
+	void Initialization(optional<bool> valT, optional<bool> tarT = nullopt)
+	{
+		if (valT.has_value()) val = valT.value();
+		else val = false;
+
+		if (tarT.has_value()) tar = tarT.value();
+		else tar = val;
+	}
 
 public:
 	IdtAtomic<bool> val = false;
@@ -72,9 +81,10 @@ class BarUiValueClass
 {
 public:
 	BarUiValueClass() {}
+	BarUiValueClass(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Once) { mod = modT, val = tar = valT, startV = valT; }
 
-	void Initialization(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Once) { mod = modT, val = tar = valT, startV = valT; }
 	bool IsSame() { return val == tar; }
+	void Initialization(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Once) { mod = modT, val = tar = valT, startV = valT; }
 
 public:
 	IdtAtomic<BarUiValueModeEnum> mod = BarUiValueModeEnum::Once;
@@ -92,9 +102,10 @@ class BarUiColorClass
 {
 public:
 	BarUiColorClass() {}
+	BarUiColorClass(COLORREF valT) { val = tar = valT; }
 
-	void Initialization(COLORREF valT) { val = tar = valT; }
 	bool IsSame() { return val == tar; }
+	void Initialization(COLORREF valT) { val = tar = valT; }
 
 public:
 	IdtAtomic<COLORREF> val = RGB(0, 0, 0); // 直接值（当前位置）
@@ -107,9 +118,10 @@ class BarUiPctClass
 {
 public:
 	BarUiPctClass() {}
+	BarUiPctClass(double valT) { val = tar = valT; }
 
-	void Initialization(double valT) { val = tar = valT; }
 	bool IsSame() { return val == tar; }
+	void Initialization(double valT) { val = tar = valT; }
 
 public:
 	IdtAtomic<double> val = 1.0; // 透明度直接值
@@ -118,12 +130,11 @@ public:
 	IdtAtomic<double> spe = 1.0; // 透明度基准速度 1/s
 };
 //// 文字 UI 值
-class BarUiWordClass
+class BarUiStringClass
 {
 public:
-	BarUiWordClass() {}
-
-	void Initialization(string valT)
+	BarUiStringClass() {}
+	BarUiStringClass(string valT)
 	{
 		unique_lock lockValmt(valmt);
 		val = valT;
@@ -162,28 +173,44 @@ public:
 		shared_lock lock_tar(tarmt); // 可读锁，防止tar被其它线程突然写掉
 		val = tar;
 	}
+	bool IsSame()
+	{
+		shared_lock lock_val(valmt);
+		shared_lock lock_tar(tarmt);
+		return val == tar;
+	}
+	void Initialization(string valT)
+	{
+		unique_lock lockValmt(valmt);
+		val = valT;
+		lockValmt.unlock();
+
+		unique_lock lockTarmt(tarmt);
+		tar = valT;
+		lockTarmt.unlock();
+	}
 
 public:
-	friend bool operator==(const BarUiWordClass& lhs, const BarUiWordClass& rhs)
+	friend bool operator==(const BarUiStringClass& lhs, const BarUiStringClass& rhs)
 	{
 		if (&lhs == &rhs) return true; // 同一个对象
 
 		// 按指针大小先锁valmt，再锁tarmt，避免死锁
-		const BarUiWordClass* first = &lhs;
-		const BarUiWordClass* second = &rhs;
+		const BarUiStringClass* first = &lhs;
+		const BarUiStringClass* second = &rhs;
 		if (first > second) swap(first, second);
 
 		// 为了防止死锁，分别锁两个对象的valmt和tarmt
 		// 总是先valmt，再tarmt（重要！避免死锁）
 		shared_lock vlock1(first->valmt);
-		shared_lock vlock2(second->valmt);
-
 		shared_lock tlock1(first->tarmt);
+
+		shared_lock vlock2(second->valmt);
 		shared_lock tlock2(second->tarmt);
 
 		return lhs.val == rhs.val && lhs.tar == rhs.tar;
 	}
-	friend bool operator!=(const BarUiWordClass& lhs, const BarUiWordClass& rhs)
+	friend bool operator!=(const BarUiStringClass& lhs, const BarUiStringClass& rhs)
 	{
 		return !(lhs == rhs);
 	}
@@ -199,6 +226,7 @@ protected:
 class BarUiShapeClass;
 class BarUiSuperellipseClass;
 class BarUiSVGClass;
+class BarUiWordClass;
 // 前向声明
 
 /// 继承
@@ -224,18 +252,8 @@ public:
 
 public:
 	BarUiInheritEnum type = BarUiInheritEnum::Center;
-	IdtAtomic<double> x = 0.0; // 继承坐标左上角 x 坐标
-	IdtAtomic<double> y = 0.0; // 继承坐标左上角 y 坐标
-};
-//// 颜色透明度继承
-class BarUiPctInheritClass
-{
-public:
-	BarUiPctInheritClass() {}
-	BarUiPctInheritClass(double pctT) { pct = pctT; }
-
-public:
-	IdtAtomic<double> pct = 1.0; // 继承的透明度
+	double x = 0.0; // 继承坐标左上角 x 坐标
+	double y = 0.0; // 继承坐标左上角 y 坐标
 };
 //// 继承基类
 class BarUiInnheritBaseClass
@@ -252,31 +270,32 @@ public:
 
 public:
 	BarUiInheritClass Inherit() { return UpInh(BarUiInheritClass(x.val, y.val)); }
-	BarUiPctInheritClass InheritPct() { return UpInhPct(BarUiPctInheritClass(pct.val)); }
 
 	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape);
 	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiSuperellipseClass& superellipse);
 	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiSVGClass& svg);
-	BarUiPctInheritClass InheritPct(const BarUiShapeClass& shape);
-	BarUiPctInheritClass InheritPct(const BarUiSuperellipseClass& superellipse);
-	BarUiPctInheritClass InheritPct(const BarUiSVGClass& svg);
+	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiWordClass& word);
 
 public:
 	// 继承值 -> 也就是实际绘制的位置
-	double inhX = 0.0; // 控件左上角 x 坐标
-	double inhY = 0.0; // 控件左上角 y 坐标
+	IdtAtomic<double> inhX = 0.0; // 控件左上角 x 坐标
+	IdtAtomic<double> inhY = 0.0; // 控件左上角 y 坐标
 	const BarUiInheritClass& UpInh(const BarUiInheritClass& inh)
 	{
 		inhX = inh.x, inhY = inh.y;
 		return inh;
 	}
 
-	double inhPct = 1.0;
-	const BarUiPctInheritClass& UpInhPct(const BarUiPctInheritClass& inh)
-	{
-		inhPct = inh.pct;
-		return inh;
-	}
+public:
+	// 模态方位查询
+	double GetX() { return x.tar; };
+	double GetY() { return y.tar; };
+	double GetW() { return w.tar; };
+	double GetH() { return h.tar; };
+	struct OrientationStruct { double x, y; };
+	OrientationStruct GetCenterX() { return { x.tar,y.tar }; }
+	OrientationStruct GetLeft() { return { x.tar - w.tar / 2.0, y.tar }; }
+	OrientationStruct GetRight() { return { x.tar + w.tar / 2.0, y.tar }; }
 };
 
 /// 控件
@@ -297,28 +316,48 @@ public:
 		if (fillT.has_value()) { fill = BarUiColorClass(); fill.value().Initialization(fillT.value()); }
 		if (frameT.has_value()) { frame = BarUiColorClass(); frame.value().Initialization(frameT.value()); }
 	}
+
+	void Initialization(double xT, double yT, double wT, double hT, optional<double> rwT, optional<double> rhT, optional<double> ftT, optional<COLORREF>fillT, optional<COLORREF>frameT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
+	{
+		x.Initialization(xT, type);
+		y.Initialization(yT, type);
+		w.Initialization(wT, type);
+		h.Initialization(hT, type);
+		if (rwT.has_value()) { rw = BarUiValueClass(); rw.value().Initialization(rwT.value(), type); }
+		if (rhT.has_value()) { rh = BarUiValueClass(); rh.value().Initialization(rhT.value(), type); }
+		if (ftT.has_value()) { ft = BarUiValueClass(); ft.value().Initialization(ftT.value(), type); }
+		if (fillT.has_value()) { fill = BarUiColorClass(); fill.value().Initialization(fillT.value()); }
+		if (frameT.has_value()) { frame = BarUiColorClass(); frame.value().Initialization(frameT.value()); }
+	}
+
 public:
 	bool IsClick(int mx, int my, double epsilon = 1e-6)
 	{
 		// 保证有效参数
 		if (w.val <= 0.0 || h.val <= 0.0 || (rw.has_value() && rw.value().val < 0.0) || (rh.has_value() && rh.value().val < 0.0)) return false;
 
+		double zoom = barStyle.zoom;
+
+		// 初始化值
+		double xO = inhX * zoom;
+		double yO = inhY * zoom;
+
 		// 折算为半径
 		double rx = 0.0;
 		double ry = 0.0;
-		if (rw.has_value()) rx = clamp(rw.value().val / 2.0, 0.0, w.val / 2.0);
-		if (rh.has_value()) ry = clamp(rh.value().val / 2.0, 0.0, h.val / 2.0);
+		if (rw.has_value()) rx = clamp(rw.value().val * zoom / 2.0, 0.0, w.val * zoom / 2.0);
+		if (rh.has_value()) ry = clamp(rh.value().val * zoom / 2.0, 0.0, h.val * zoom / 2.0);
 
 		// 矩形区域内才有可能
-		if (static_cast<double>(mx) < x.val - epsilon || static_cast<double>(mx) > x.val + w.val + epsilon ||
-			static_cast<double>(mx) < y.val - epsilon || static_cast<double>(mx) > y.val + h.val + epsilon)
+		if (static_cast<double>(mx) < xO - epsilon || static_cast<double>(mx) > xO + w.val * zoom + epsilon ||
+			static_cast<double>(mx) < yO - epsilon || static_cast<double>(mx) > yO + h.val * zoom + epsilon)
 			return false;
 
 		// “内矩形”范围
-		double ix0 = x.val + rx;         // 内部矩形左
-		double ix1 = x.val + w.val - rx; // 内部矩形右
-		double iy0 = y.val + ry;         // 上
-		double iy1 = y.val + h.val - ry; // 下
+		double ix0 = xO + rx;         // 内部矩形左
+		double ix1 = xO + w.val * zoom - rx; // 内部矩形右
+		double iy0 = yO + ry;         // 上
+		double iy1 = yO + h.val * zoom - ry; // 下
 
 		// 若点在内矩形，直接返回
 		if (static_cast<double>(mx) >= ix0 - epsilon && static_cast<double>(mx) <= ix1 + epsilon &&
@@ -328,7 +367,7 @@ public:
 		// 否则一定在四角矩形外或圆角四象限内，枚举距离最近的圆角中心
 		// Clamp到最近的角
 		double cx = (static_cast<double>(mx) < ix0) ? ix0 : ((static_cast<double>(mx) > ix1) ? ix1 : static_cast<double>(mx));
-		double cy = (static_cast<double>(mx) < iy0) ? iy0 : ((static_cast<double>(mx) > iy1) ? iy1 : static_cast<double>(mx));
+		double cy = (static_cast<double>(my) < iy0) ? iy0 : ((static_cast<double>(my) > iy1) ? iy1 : static_cast<double>(my));
 
 		// 对应的圆角中心
 		// 只有在圆角四象限判定，否则前面矩形部分已经返回true
@@ -357,9 +396,11 @@ public:
 	optional<BarUiValueClass> ft; // 控件边框宽度
 
 	// 颜色
-
 	optional<BarUiColorClass> fill; // 控件填充颜色
 	optional<BarUiColorClass> frame; // 控件边框颜色
+
+	// 透明度
+	optional<BarUiPctClass> framePct; // 控件边框透明度
 };
 //// 单个超椭圆控件
 class BarUiSuperellipseClass : public BarUiInnheritBaseClass
@@ -378,15 +419,29 @@ public:
 		if (frameT.has_value()) { frame = BarUiColorClass(); frame.value().Initialization(frameT.value()); }
 	}
 
+	void Initialization(double xT, double yT, double wT, double hT, optional<double> nT, optional<double> ftT, optional<COLORREF>fillT, optional<COLORREF>frameT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
+	{
+		x.Initialization(xT, type);
+		y.Initialization(yT, type);
+		w.Initialization(wT, type);
+		h.Initialization(hT, type);
+		if (nT.has_value()) { n = BarUiValueClass(); n.value().Initialization(nT.value(), type); }
+		if (ftT.has_value()) { ft = BarUiValueClass(); ft.value().Initialization(ftT.value(), type); }
+		if (fillT.has_value()) { fill = BarUiColorClass(); fill.value().Initialization(fillT.value()); }
+		if (frameT.has_value()) { frame = BarUiColorClass(); frame.value().Initialization(frameT.value()); }
+	}
+
 public:
 	bool IsClick(int mx, int my, double epsilon = 1e-6)
 	{
+		double tarZoom = barStyle.zoom;
+
 		// 计算中心
-		double cx = inhX + w.val / 2.0;
-		double cy = inhY + h.val / 2.0;
+		double cx = inhX * tarZoom + w.val * tarZoom / 2.0;
+		double cy = inhY * tarZoom + h.val * tarZoom / 2.0;
 		// 半轴
-		double a = w.val / 2.0;
-		double b = h.val / 2.0;
+		double a = w.val * tarZoom / 2.0;
+		double b = h.val * tarZoom / 2.0;
 
 		// 映射到中心
 		double normx = (static_cast<double>(mx) - cx) / a;
@@ -416,12 +471,22 @@ public:
 
 	optional<BarUiColorClass> fill; // 控件填充颜色
 	optional<BarUiColorClass> frame; // 控件边框颜色
+
+	// 透明度
+	optional<BarUiPctClass> framePct; // 控件边框透明度
 };
 //// 单个 SVG 控件
 class BarUiSVGClass : public BarUiInnheritBaseClass
 {
 public:
+	BarUiSVGClass() {}
 	BarUiSVGClass(double xT, double yT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
+	{
+		x.Initialization(xT, type);
+		y.Initialization(yT, type);
+	}
+
+	void Initialization(double xT, double yT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
 	{
 		x.Initialization(xT, type);
 		y.Initialization(yT, type);
@@ -438,13 +503,46 @@ public:
 
 	optional<BarUiColorClass> color1; // 控件强调颜色1（忽略透明度)
 	optional<BarUiColorClass> color2; // 控件强调颜色2（忽略透明度)
+	// 替换标志为
+	// color1 -> rgba(10,0,7,0)
+	// color2 -> rgba(9,0,2,0)
 
 	// SVG 内容
 
-	BarUiWordClass svg;
+	BarUiStringClass svg;
 
 public:
 	bool SetWH(optional<double> wT, optional<double> hT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable);
+};
+//// 单个文字控件
+class BarUiWordClass : public BarUiInnheritBaseClass
+{
+public:
+	BarUiWordClass() {}
+	BarUiWordClass(double xT, double yT, double wT, double hT, string contentT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
+	{
+		x.Initialization(xT, type);
+		y.Initialization(yT, type);
+		w.Initialization(wT, type);
+		h.Initialization(hT, type);
+		content.Initialization(contentT);
+	}
+
+	void Initialization(double xT, double yT, double wT, double hT, string contentT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
+	{
+		x.Initialization(xT, type);
+		y.Initialization(yT, type);
+		w.Initialization(wT, type);
+		h.Initialization(hT, type);
+		content.Initialization(contentT);
+	}
+
+public:
+	// 整体该控件是否显示
+	BarUiStateClass enable;
+
+	// 内容
+	BarUiStringClass content;
 };
 
 // 控件枚举
@@ -468,9 +566,9 @@ private:
 	BarUIRendering() = delete;
 
 public:
-	static bool Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct, bool clip = false);
-	static bool Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct, bool clip = false);
-	static bool Svg(ID2D1DeviceContext* deviceContext, const BarUiSVGClass& svg, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct);
+	static bool Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, bool clip = false);
+	static bool Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, bool clip = false);
+	static bool Svg(ID2D1DeviceContext* deviceContext, const BarUiSVGClass& svg, const BarUiInheritClass& inh);
 };
 
 // UI 总集

@@ -576,6 +576,7 @@
     <ClInclude Include="Inkeys\Json\IdtJson.h" />
     <ClInclude Include="Inkeys\Load\IdtLoad.h" />
     <ClInclude Include="Inkeys\UI\IdtBar.h" />
+    <ClInclude Include="Inkeys\UI\IdtBarBottom.h" />
     <ClInclude Include="Inkeys\UI\IdtBarState.h" />
     <ClInclude Include="Launch\IdtLaunchState.h" />
     <ClInclude Include="resource.h" />
@@ -671,6 +672,7 @@
     <ClCompile Include="IdtUpdate.cpp" />
     <ClCompile Include="IdtWindow.cpp" />
     <ClCompile Include="Inkeys\UI\IdtBar.cpp" />
+    <ClCompile Include="Inkeys\UI\IdtBarBottom.cpp" />
     <ClCompile Include="Inkeys\UI\IdtBarState.cpp" />
     <ClCompile Include="Launch\IdtLaunchState.cpp" />
     <ClCompile Include="SuperTop\IdtSuperTop.cpp" />
@@ -756,19 +758,6 @@
     <Image Include="src\write.png" />
   </ItemGroup>
   <ItemGroup>
-    <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf">
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</DeploymentContent>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</DeploymentContent>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</DeploymentContent>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</DeploymentContent>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</DeploymentContent>
-    </Font>
-    <Font Include="src\ttf\HarmonyOS_Sans_TC_Regular.ttf" />
-    <Font Include="src\ttf\icomoon.ttf" />
-    <Font Include="src\ttf\Segoe Fluent Icons.ttf" />
-  </ItemGroup>
-  <ItemGroup>
     <None Include="additional\jsoncpp\lib_json\json_valueiterator.inl" />
     <None Include="additional\spdlog\fmt\bundled\fmt.license.rst" />
     <None Include="exe\DesktopDrawpadBlocker.exe" />
@@ -777,6 +766,9 @@
     <None Include="src\i18n\zh-CN.jsonc" />
     <None Include="src\i18n\zh-TW.jsonc" />
     <None Include="src\ui1.bin" />
+    <None Include="src\UI\barDivider.svg" />
+    <None Include="src\UI\barSelect.svg" />
+    <None Include="src\UI\logo1.svg" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PptCOM\PptCOM.csproj">
@@ -793,6 +785,12 @@
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="..\PptCOM\PptCOM.manifest" />
+  </ItemGroup>
+  <ItemGroup>
+    <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />
+    <Font Include="src\ttf\HarmonyOS_Sans_TC_Regular.ttf" />
+    <Font Include="src\ttf\icomoon.ttf" />
+    <Font Include="src\ttf\Segoe Fluent Icons.ttf" />
   </ItemGroup>
   <PropertyGroup Condition="'$(Platform)'=='Win32'">
     <TlbPlatform>win32</TlbPlatform>

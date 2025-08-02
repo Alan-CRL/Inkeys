@@ -765,6 +765,9 @@
     <ClInclude Include="Inkeys\UI\IdtBarState.h">
       <Filter>头文件\Inkeys\UI</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\UI\IdtBarBottom.h">
+      <Filter>头文件\Inkeys\UI</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HiEasyX\HiGUI\Button.cpp">
@@ -1025,6 +1028,9 @@
     <ClCompile Include="Inkeys\UI\IdtBarState.cpp">
       <Filter>源文件\Inkeys\UI</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\UI\IdtBarBottom.cpp">
+      <Filter>源文件\Inkeys\UI</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="智绘教.rc">
@@ -1259,14 +1265,7 @@
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />
-    <Font Include="src\ttf\HarmonyOS_Sans_TC_Regular.ttf" />
-    <Font Include="src\ttf\Segoe Fluent Icons.ttf" />
-    <Font Include="src\ttf\icomoon.ttf" />
-  </ItemGroup>
-  <ItemGroup>
     <None Include="PptCOM.dll" />
-    <None Include="exe\DesktopDrawpadBlocker.exe" />
     <None Include="additional\jsoncpp\lib_json\json_valueiterator.inl">
       <Filter>头文件\Additional\JsonCpp\lib_json</Filter>
     </None>
@@ -1279,8 +1278,18 @@
     <None Include="src\ui1.bin">
       <Filter>资源文件</Filter>
     </None>
+    <None Include="exe\DesktopDrawpadBlocker.exe" />
+    <None Include="src\UI\logo1.svg" />
+    <None Include="src\UI\barDivider.svg" />
+    <None Include="src\UI\barSelect.svg" />
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="..\PptCOM\PptCOM.manifest" />
+  </ItemGroup>
+  <ItemGroup>
+    <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />
+    <Font Include="src\ttf\Segoe Fluent Icons.ttf" />
+    <Font Include="src\ttf\HarmonyOS_Sans_TC_Regular.ttf" />
+    <Font Include="src\ttf\icomoon.ttf" />
   </ItemGroup>
 </Project>

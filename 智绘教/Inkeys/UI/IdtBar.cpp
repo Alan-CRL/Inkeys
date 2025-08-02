@@ -58,19 +58,18 @@ BarUiInheritClass::BarUiInheritClass(BarUiInheritEnum typeT, double xO, double y
 	y = yO;
 
 	// TODO 拓展更多类型组合
-	if (type == BarUiInheritEnum::TopLeft) { x = xT, y = yT; }
-	else if (type == BarUiInheritEnum::Center) { x = xT + wT / 2.0 - wO / 2.0, y = yT + hT / 2.0 - hO / 2.0; }
+	if (type == BarUiInheritEnum::TopLeft) { x += xT, y += yT; }
+	else if (type == BarUiInheritEnum::Left) { x += xT, y += yT + hT / 2.0 - hO / 2.0; }
+	else if (type == BarUiInheritEnum::Center) { x += xT + wT / 2.0 - wO / 2.0, y += yT + hT / 2.0 - hO / 2.0; }
 
-	else if (type == BarUiInheritEnum::ToRight) { x = xT + wT, y = yT; }
-	else if (type == BarUiInheritEnum::ToLeft) { x = xT - wO, y = yT; }
+	else if (type == BarUiInheritEnum::ToRight) { x += xT + wT, y += yT; }
+	else if (type == BarUiInheritEnum::ToLeft) { x += xT - wO, y += yT; }
 }
 //// 继承基类
 BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, shape.x.val, shape.y.val, shape.w.val, shape.h.val)); }
 BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiSuperellipseClass& superellipse) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, superellipse.x.val, superellipse.y.val, superellipse.w.val, superellipse.h.val)); }
 BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiSVGClass& svg) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, svg.x.val, svg.y.val, svg.w.val, svg.h.val)); }
-BarUiPctInheritClass BarUiInnheritBaseClass::InheritPct(const BarUiShapeClass& shape) { return UpInhPct(BarUiPctInheritClass(shape.pct.val)); }
-BarUiPctInheritClass BarUiInnheritBaseClass::InheritPct(const BarUiSuperellipseClass& superellipse) { return UpInhPct(BarUiPctInheritClass(superellipse.pct.val)); }
-BarUiPctInheritClass BarUiInnheritBaseClass::InheritPct(const BarUiSVGClass& svg) { return UpInhPct(BarUiPctInheritClass(svg.pct.val)); }
+BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiWordClass& word) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, word.x.val, word.y.val, word.w.val, word.h.val)); }
 
 /// 单个控件值
 //// 单个 SVG 控件
@@ -112,11 +111,12 @@ bool BarUiSVGClass::SetWH(optional<double> wT, optional<double> hT, BarUiValueMo
 }
 
 // 具体渲染
-bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct, bool clip)
+bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, bool clip)
 {
 	// 判断是否启用
 	if (shape.enable.val == false) return false;
 	if (!shape.fill.has_value() && !shape.frame.has_value()) return false;
+	if (barStyle.zoom <= 0.0) return false;
 	if (shape.pct.val == 0.0) return true;
 
 	// 初始化绘制量
@@ -124,14 +124,15 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 	double tarY = inh.y; // 绘制左上角 y
 	double tarW = shape.w.val;
 	double tarH = shape.h.val;
-	double tarPct = pct.pct; // 透明度
+	double tarPct = shape.pct.val; // 透明度
 
 	double tarRw = 0.0;
 	double tarRh = 0.0;
 	if (shape.rw.has_value()) tarRw = shape.rw.value().val;
 	if (shape.rh.has_value()) tarRh = shape.rh.value().val;
 
-	D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(static_cast<FLOAT>(tarX), static_cast<FLOAT>(tarY), static_cast<FLOAT>(tarX + tarW), static_cast<FLOAT>(tarY + tarH)), static_cast<FLOAT>(tarRw), static_cast<FLOAT>(tarRh));
+	FLOAT tarZoom = static_cast<FLOAT>(barStyle.zoom);
+	D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(static_cast<FLOAT>(tarX) * tarZoom, static_cast<FLOAT>(tarY) * tarZoom, static_cast<FLOAT>(tarX + tarW) * tarZoom, static_cast<FLOAT>(tarY + tarH) * tarZoom), static_cast<FLOAT>(tarRw) * tarZoom, static_cast<FLOAT>(tarRh) * tarZoom);
 
 	// Clip
 	if (clip)
@@ -159,9 +160,11 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 		if (shape.frame.has_value())
 		{
 			COLORREF frame = shape.frame.value().val;
+			double tarFramePct = tarPct;
+			if (shape.framePct.has_value()) tarFramePct = shape.framePct.value().val;
 
 			CComPtr<ID2D1SolidColorBrush> spBorderBrush;
-			deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(frame, tarPct), &spBorderBrush);
+			deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(frame, tarFramePct), &spBorderBrush);
 
 			FLOAT strokeWidth = 4.0f;
 			if (shape.ft.has_value()) strokeWidth = static_cast<FLOAT>(shape.ft.value().val);
@@ -171,19 +174,21 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 
 	return true;
 }
-bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct, bool clip)
+bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, bool clip)
 {
 	// 判断是否启用
 	if (superellipse.enable.val == false) return false;
 	if (!superellipse.fill.has_value() && !superellipse.frame.has_value()) return false;
+	if (barStyle.zoom <= 0.0) return false;
 	if (superellipse.pct.val == 0.0) return true;
 
 	// 初始化绘制量
-	double tarX = inh.x; // 绘制左上角 x
-	double tarY = inh.y; // 绘制左上角 y
-	double tarW = superellipse.w.val;
-	double tarH = superellipse.h.val;
-	double tarPct = pct.pct; // 透明度
+	double tarZoom = barStyle.zoom;
+	double tarX = inh.x * tarZoom; // 绘制左上角 x
+	double tarY = inh.y * tarZoom; // 绘制左上角 y
+	double tarW = superellipse.w.val * tarZoom;
+	double tarH = superellipse.h.val * tarZoom;
+	double tarPct = superellipse.pct.val; // 透明度
 
 	double tarN = 4.0;
 	if (superellipse.n.has_value()) tarN = superellipse.n.value().val;
@@ -288,23 +293,26 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 		if (superellipse.frame.has_value())
 		{
 			COLORREF frame = superellipse.frame.value().val;
+			double tarFramePct = tarPct;
+			if (superellipse.framePct.has_value()) tarFramePct = superellipse.framePct.value().val;
 
 			CComPtr<ID2D1SolidColorBrush> spBorderBrush;
-			deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(frame, tarPct), &spBorderBrush);
+			deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(frame, tarFramePct), &spBorderBrush);
 
-			FLOAT strokeWidth = 4.0f;
-			if (superellipse.ft.has_value()) strokeWidth = static_cast<FLOAT>(superellipse.ft.value().val);
+			FLOAT strokeWidth = 4.0f * static_cast<FLOAT>(tarZoom);
+			if (superellipse.ft.has_value()) strokeWidth = static_cast<FLOAT>(superellipse.ft.value().val * tarZoom);
 			deviceContext->DrawGeometry(geometry, spBorderBrush, strokeWidth);
 		}
 	}
 
 	return true;
 }
-bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, const BarUiSVGClass& svg, const BarUiInheritClass& inh, const BarUiPctInheritClass& pct)
+bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, const BarUiSVGClass& svg, const BarUiInheritClass& inh)
 {
 	// 判断是否启用
 	if (svg.enable.val == false) return false;
 	if (svg.pct.val == 0.0) return true;
+	if (barStyle.zoom <= 0.0) return false;
 
 	// 初始化解析
 	string svgContent;
@@ -333,7 +341,7 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, const BarUiSVGClass&
 						col1 = color1.value().val;
 
 						size_t pos = 0;
-						const string tag = "#{color1}";
+						const string tag = "rgba(10,0,7,0)";
 						const string rgb_str = colorref_to_rgb(col1);
 						while ((pos = result.find(tag, pos)) != string::npos)
 						{
@@ -346,7 +354,7 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, const BarUiSVGClass&
 						col2 = color2.value().val;
 
 						size_t pos = 0;
-						const string tag = "#{color2}";
+						const string tag = "rgba(9,0,2,0)";
 						const string rgb_str = colorref_to_rgb(col2);
 						while ((pos = result.find(tag, pos)) != string::npos)
 						{
@@ -367,11 +375,12 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, const BarUiSVGClass&
 	}
 
 	// 初始化绘制量
-	double tarX = inh.x; // 绘制左上角 x
-	double tarY = inh.y; // 绘制左上角 y
-	double tarW = svg.w.val;
-	double tarH = svg.h.val;
-	double tarPct = pct.pct; // 透明度
+	double tarZoom = barStyle.zoom;
+	double tarX = inh.x * tarZoom; // 绘制左上角 x
+	double tarY = inh.y * tarZoom; // 绘制左上角 y
+	double tarW = svg.w.val * tarZoom;
+	double tarH = svg.h.val * tarZoom;
+	double tarPct = svg.pct.val; // 透明度
 
 	// 绘制到离屏位图
 	lunasvg::Bitmap bitmap = document->renderToBitmap(static_cast<int>(tarW), static_cast<int>(tarH));
@@ -518,14 +527,14 @@ void BarUISetClass::Rendering()
 			{
 				{
 					shapeMap[BarUISetShapeEnum::MainBar]->x.tar = 0;
-					shapeMap[BarUISetShapeEnum::MainBar]->w.tar = 0;
+					shapeMap[BarUISetShapeEnum::MainBar]->w.tar = 80;
 				}
 			}
 			else
 			{
 				{
-					shapeMap[BarUISetShapeEnum::MainBar]->x.tar = 10;
 					shapeMap[BarUISetShapeEnum::MainBar]->w.tar = 400;
+					shapeMap[BarUISetShapeEnum::MainBar]->x.tar = superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() + 10;
 				}
 			}
 		}
@@ -533,28 +542,37 @@ void BarUISetClass::Rendering()
 		// 动效 UI
 		bool needRendering = false;
 		{
+			auto ChangeState = [&](BarUiStateClass& state) -> void
+				{
+					needRendering = true;
+					state.val = state.tar;
+				};
 			auto ChangeValue = [&](BarUiValueClass& value) -> void
 				{
 					needRendering = true;
-
 					BarUiValueModeEnum mod = value.mod;
 					/*else*/ value.val = value.tar;
 				};
 			auto ChangeColor = [&](BarUiColorClass& color) -> void
 				{
 					needRendering = true;
-
 					color.val = color.tar;
 				};
 			auto ChangePct = [&](BarUiPctClass& pct) -> void
 				{
 					needRendering = true;
-
 					pct.val = pct.tar;
+				};
+			auto ChangeString = [&](BarUiStringClass& stringO) -> void
+				{
+					needRendering = true;
+					stringO.ApplyTar();
 				};
 
 			for (const auto& [key, val] : shapeMap)
 			{
+				if (!val->enable.IsSame()) ChangeState(val->enable);
+				if (!val->x.IsSame()) ChangeValue(val->x);
 				if (!val->x.IsSame()) ChangeValue(val->x);
 				if (!val->y.IsSame()) ChangeValue(val->y);
 				if (!val->w.IsSame()) ChangeValue(val->w);
@@ -568,6 +586,7 @@ void BarUISetClass::Rendering()
 			}
 			for (const auto& [key, val] : superellipseMap)
 			{
+				if (!val->enable.IsSame()) ChangeState(val->enable);
 				if (!val->x.IsSame()) ChangeValue(val->x);
 				if (!val->y.IsSame()) ChangeValue(val->y);
 				if (!val->w.IsSame()) ChangeValue(val->w);
@@ -592,17 +611,16 @@ void BarUISetClass::Rendering()
 			using enum BarUiInheritEnum;
 			{
 				auto obj = BarUISetShapeEnum::MainBar;
-				if (barState.fold) BarUIRendering::Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), shapeMap[obj]->InheritPct(), false);
-				else BarUIRendering::Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(ToRight, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), shapeMap[obj]->InheritPct(), false);
+				BarUIRendering::Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Left, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), false);
 			}
 			{
 				{
 					auto obj = BarUISetSuperellipseEnum::MainButton;
-					BarUIRendering::Superellipse(barDeviceContext, *superellipseMap[obj], superellipseMap[obj]->Inherit(), superellipseMap[obj]->InheritPct(), false);
+					BarUIRendering::Superellipse(barDeviceContext, *superellipseMap[obj], superellipseMap[obj]->Inherit(), false);
 
 					{
 						auto obj = BarUISetSvgEnum::logo1;
-						BarUIRendering::Svg(barDeviceContext, *svgMap[obj], svgMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), svgMap[obj]->InheritPct());
+						BarUIRendering::Svg(barDeviceContext, *svgMap[obj], svgMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]));
 					}
 				}
 			}
@@ -744,8 +762,9 @@ double BarUISetClass::Seek(const ExMessage& msg)
 
 		if (firX == p.x && firY == p.y) continue;
 
-		superellipseMap[BarUISetSuperellipseEnum::MainButton]->x.tar += static_cast<double>(p.x - firX);
-		superellipseMap[BarUISetSuperellipseEnum::MainButton]->y.tar += static_cast<double>(p.y - firY);
+		double tarZoom = barStyle.zoom;
+		superellipseMap[BarUISetSuperellipseEnum::MainButton]->x.tar += static_cast<double>(p.x - firX) / tarZoom;
+		superellipseMap[BarUISetSuperellipseEnum::MainButton]->y.tar += static_cast<double>(p.y - firY) / tarZoom;
 
 		ret += sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY));
 		firX = static_cast<double>(p.x), firY = static_cast<double>(p.y);
@@ -805,7 +824,7 @@ void BarInitializationClass::InitializeWindow(BarUISetClass& barUISet)
 
 	barUISet.barWindow.x = 0;
 	barUISet.barWindow.y = 0;
-	barUISet.barWindow.w = 1000;// MainMonitor.MonitorWidth;
+	barUISet.barWindow.w = 2000;// MainMonitor.MonitorWidth;
 	barUISet.barWindow.h = 1000;// MainMonitor.MonitorHeight;
 	barUISet.barWindow.pct = 255;
 	SetWindowPos(floating_window, NULL, barUISet.barWindow.x, barUISet.barWindow.y, barUISet.barWindow.w, barUISet.barWindow.h, SWP_NOACTIVATE | SWP_NOZORDER | SWP_DRAWFRAME); // 设置窗口位置尺寸
@@ -820,8 +839,9 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 	{
 		// 主按钮
 		{
-			auto superellipse = make_shared<BarUiSuperellipseClass>(500.0, 500.0, 80.0, 80.0, 3.0, 2.0, RGB(0, 0, 0), RGB(255, 255, 255));
+			auto superellipse = make_shared<BarUiSuperellipseClass>(200.0, 200.0, 80.0, 80.0, 3.0, 1.0, RGB(0, 0, 0), RGB(255, 255, 255));
 			superellipse->pct.Initialization(0.6);
+			superellipse->framePct = BarUiPctClass(1.0);
 			superellipse->x.mod = BarUiValueModeEnum::Once;
 			superellipse->y.mod = BarUiValueModeEnum::Once;
 			superellipse->enable.Initialization(true);
@@ -839,8 +859,9 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 		}
 		// 主栏
 		{
-			auto shape = make_shared<BarUiShapeClass>(500.0, 500.0, 80.0, 80.0, 16.0, 16.0, 2.0, RGB(255, 255, 255), RGB(200, 200, 200));
-			shape->pct.Initialization(0.5);
+			auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 80.0, 80.0, 8.0, 8.0, 1.0, RGB(0, 0, 0), RGB(255, 255, 255));
+			shape->pct.Initialization(0.6);
+			shape->framePct = BarUiPctClass(0.18);
 			shape->enable.Initialization(true);
 			barUISet.shapeMap[BarUISetShapeEnum::MainBar] = shape;
 		}
