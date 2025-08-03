@@ -8,6 +8,7 @@
 #include "../Conv/IdtColor.h"
 #include "../Load/IdtLoad.h"
 #include "IdtBarState.h"
+#include "IdtBarBottom.h"
 
 //#undef max
 //#undef min
@@ -166,9 +167,13 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 			CComPtr<ID2D1SolidColorBrush> spBorderBrush;
 			deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(frame, tarFramePct), &spBorderBrush);
 
-			FLOAT strokeWidth = 4.0f;
-			if (shape.ft.has_value()) strokeWidth = static_cast<FLOAT>(shape.ft.value().val);
-			deviceContext->DrawRoundedRectangle(&roundedRect, spBorderBrush, strokeWidth);
+			FLOAT strokeWidth = 4.0f * static_cast<FLOAT>(tarZoom);
+			if (shape.ft.has_value())
+			{
+				strokeWidth = static_cast<FLOAT>(shape.ft.value().val * tarZoom);
+				if (strokeWidth > 0.0F) deviceContext->DrawRoundedRectangle(&roundedRect, spBorderBrush, strokeWidth);
+			}
+			else deviceContext->DrawRoundedRectangle(&roundedRect, spBorderBrush, strokeWidth);
 		}
 	}
 
@@ -300,8 +305,12 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 			deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(frame, tarFramePct), &spBorderBrush);
 
 			FLOAT strokeWidth = 4.0f * static_cast<FLOAT>(tarZoom);
-			if (superellipse.ft.has_value()) strokeWidth = static_cast<FLOAT>(superellipse.ft.value().val * tarZoom);
-			deviceContext->DrawGeometry(geometry, spBorderBrush, strokeWidth);
+			if (superellipse.ft.has_value())
+			{
+				strokeWidth = static_cast<FLOAT>(superellipse.ft.value().val * tarZoom);
+				if (strokeWidth > 0.0F) deviceContext->DrawGeometry(geometry, spBorderBrush, strokeWidth);
+			}
+			else deviceContext->DrawGeometry(geometry, spBorderBrush, strokeWidth);
 		}
 	}
 
@@ -523,17 +532,62 @@ void BarUISetClass::Rendering()
 	{
 		// 计算
 		{
-			if (barState.fold)
+			// 主栏
 			{
+				// 按钮位置计算（特别操作）
+				int totalWidth = 0;
+				{
+					int xO = 0, yO = 0;
+					BarButtomSizeEnum lastSize;
+					for (int id = 0; id < barButtomSet.tot; id++)
+					{
+						BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
+						if (temp == nullptr) continue;
+
+						if (temp->size == BarButtomSizeEnum::twoTwo)
+						{
+							if (yO != 0) xO = totalWidth;
+
+							{
+								temp->buttom.x.tar = xO + 5.0;
+								temp->buttom.y.tar = yO + 5.0;
+								temp->buttom.w.tar = 70.0;
+								temp->buttom.h.tar = 70.0;
+							}
+
+							xO += 80, yO = 0;
+							totalWidth += 80;
+						}
+
+						// 特殊体质 - 分隔栏
+						if (temp->size == BarButtomSizeEnum::twoTwo)
+						{
+							if (yO != 0) xO = totalWidth;
+
+							{
+								temp->buttom.x.tar = xO + 5.0;
+								temp->buttom.y.tar = yO + 5.0;
+								temp->buttom.w.tar = 30.0;
+								temp->buttom.h.tar = 70.0;
+							}
+
+							xO += 30, yO = 0;
+							totalWidth += 30;
+						}
+
+						lastSize = temp->size;
+					}
+				}
+
+				// 主栏
+				if (barState.fold)
 				{
 					shapeMap[BarUISetShapeEnum::MainBar]->x.tar = 0;
 					shapeMap[BarUISetShapeEnum::MainBar]->w.tar = 80;
 				}
-			}
-			else
-			{
+				else
 				{
-					shapeMap[BarUISetShapeEnum::MainBar]->w.tar = 400;
+					shapeMap[BarUISetShapeEnum::MainBar]->w.tar = static_cast<double>(totalWidth);
 					shapeMap[BarUISetShapeEnum::MainBar]->x.tar = superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() + 10;
 				}
 			}
@@ -612,6 +666,15 @@ void BarUISetClass::Rendering()
 			{
 				auto obj = BarUISetShapeEnum::MainBar;
 				BarUIRendering::Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Left, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), false);
+
+				for (int id = 0; id < barButtomSet.tot; id++)
+				{
+					BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
+					if (temp == nullptr) continue;
+
+					BarUIRendering::Shape(barDeviceContext, temp->buttom, temp->buttom.Inherit(Left, *shapeMap[BarUISetShapeEnum::MainBar]));
+					// TODO
+				}
 			}
 			{
 				{
@@ -839,8 +902,8 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 	{
 		// 主按钮
 		{
-			auto superellipse = make_shared<BarUiSuperellipseClass>(200.0, 200.0, 80.0, 80.0, 3.0, 1.0, RGB(0, 0, 0), RGB(255, 255, 255));
-			superellipse->pct.Initialization(0.6);
+			auto superellipse = make_shared<BarUiSuperellipseClass>(200.0, 200.0, 80.0, 80.0, 3.0, 1.0, RGB(24, 24, 24), RGB(255, 255, 255));
+			superellipse->pct.Initialization(0.73);
 			superellipse->framePct = BarUiPctClass(1.0);
 			superellipse->x.mod = BarUiValueModeEnum::Once;
 			superellipse->y.mod = BarUiValueModeEnum::Once;
@@ -859,8 +922,8 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 		}
 		// 主栏
 		{
-			auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 80.0, 80.0, 8.0, 8.0, 1.0, RGB(0, 0, 0), RGB(255, 255, 255));
-			shape->pct.Initialization(0.6);
+			auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 80.0, 80.0, 8.0, 8.0, 1.0, RGB(24, 24, 24), RGB(255, 255, 255));
+			shape->pct.Initialization(0.73);
 			shape->framePct = BarUiPctClass(0.18);
 			shape->enable.Initialization(true);
 			barUISet.shapeMap[BarUISetShapeEnum::MainBar] = shape;
