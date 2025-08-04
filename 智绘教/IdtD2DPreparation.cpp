@@ -3,7 +3,7 @@
 CComPtr<ID2D1Factory1> D2DFactory;
 D2D1_RENDER_TARGET_PROPERTIES D2DProperty;
 
-CComPtr<IDWriteFactory> D2DTextFactory;
+CComPtr<IDWriteFactory1> D2DTextFactory;
 CComPtr<IDWriteFontCollection> D2DFontCollection;
 
 void D2DStarup()
@@ -27,9 +27,8 @@ void D2DStarup()
 		), 0.0f, 0.0f, D2D1_RENDER_TARGET_USAGE_GDI_COMPATIBLE, D2D1_FEATURE_LEVEL_10
 	);
 
-	// 创建 D2D 文字工厂（后续改用用DWrite 1.1，可用 __uuidof(IDWriteFactory1)）
-	IDWriteFactory* tmpWriteFactory = nullptr;
-	DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(&tmpWriteFactory));
+	IDWriteFactory1* tmpWriteFactory = nullptr;
+	DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory1), reinterpret_cast<IUnknown**>(&tmpWriteFactory));
 	D2DTextFactory.Attach(tmpWriteFactory);
 }
 void D2DShutdown()

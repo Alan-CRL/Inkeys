@@ -264,9 +264,11 @@ IDR_ZH_TW               JSON                    "src\\i18n\\zh-TW.jsonc"
 
 LOGO1                   UI                      "src\\UI\\logo1.svg"
 
-barDivider              UI                      "src\\UI\\barDivider.svg"
+BARDIVIDER              UI                      "src\\UI\\barDivider.svg"
 
-barSelect               UI                      "src\\UI\\barSelect.svg"
+BARSELECT               UI                      "src\\UI\\barSelect.svg"
+
+barBursh1               UI                      "src\\UI\\barBursh1.svg"
 
 #endif    // 中文(简体，中国) resources
 /////////////////////////////////////////////////////////////////////////////

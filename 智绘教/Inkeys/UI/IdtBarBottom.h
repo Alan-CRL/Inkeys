@@ -5,12 +5,19 @@
 
 enum class BarButtomSizeEnum : int
 {
-	twoTwo, // 2*2 -> 70 *780
+	twoTwo, // 2*2 -> 70 * 50
 	twoOne, // 2*1 -> 70 * 32.5
 	oneTwo, // 1*2 -> 10 * 70 仅限分割线（偏窄）
 	oneOne // 1*1 -> 32.5 * 32.5
 };
-enum class BarPresetEnum : int
+enum class BarButtomState : int
+{
+	None,
+	Hover, // 悬停（废弃）
+	Pressed, // 按下
+	Selected // 选中
+};
+enum class BarButtomPresetEnum : int
 {
 	None,
 	Divider,
@@ -26,14 +33,13 @@ public:
 
 public:
 	IdtAtomic<BarButtomSizeEnum> size;
-	IdtAtomic<BarPresetEnum> preset = BarPresetEnum::None;
+	IdtAtomic<BarButtomPresetEnum> preset = BarButtomPresetEnum::None;
 
 	BarUiShapeClass buttom;
 	BarUiWordClass name;
 	BarUiSVGClass icon;
 
-	// TODO
-	// 按钮状态：无、悬停、按下、选中
+	BarButtomState state;
 };
 class BarButtomListClass
 {
@@ -82,4 +88,3 @@ public:
 	// TODO 临时方案，按照默认样式加载，后续改为从配置中加载布局
 	void Load();
 };
-extern BarButtomSetClass barButtomSet;

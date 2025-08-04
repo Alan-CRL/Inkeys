@@ -1,6 +1,6 @@
-﻿//{{NO_DEPENDENCIES}}
-// Microsoft Visual C++ 生成的包含文件。
-// 供 智绘教.rc 使用
+//{{NO_DEPENDENCIES}}
+// Microsoft Visual C++ generated include file.
+// Used by 智绘教.rc
 //
 #define VS_VERSION_INFO                 1
 #define IDB_PNG3                        117
@@ -58,12 +58,13 @@
 #define IDB_PNG42                       277
 #define IDR_UI1                         279
 #define IDR_UI2                         281
+#define IDR_UI3                         282
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        282
+#define _APS_NEXT_RESOURCE_VALUE        283
 #define _APS_NEXT_COMMAND_VALUE         40001
 #define _APS_NEXT_CONTROL_VALUE         1001
 #define _APS_NEXT_SYMED_VALUE           101

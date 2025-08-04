@@ -3,6 +3,7 @@
 #include "../../IdtMain.h"
 #include "../../IdtD2DPreparation.h"
 #include "IdtBarState.h"
+#include "IdtBarBottom.h"
 
 // ====================
 // 窗口
@@ -24,6 +25,8 @@ class BarMediaClass
 {
 public:
 	void LoadExImage();
+	void LoadFontCache();
+	// TODO
 
 public:
 	enum class BarExImageEnum : int
@@ -480,19 +483,29 @@ class BarUiSVGClass : public BarUiInnheritBaseClass
 {
 public:
 	BarUiSVGClass() {}
-	BarUiSVGClass(double xT, double yT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
+	BarUiSVGClass(double xT, double yT, optional<COLORREF> color1T, optional<COLORREF> color2T, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
 	{
 		x.Initialization(xT, type);
 		y.Initialization(yT, type);
+		if (color1T.has_value()) { color1 = BarUiColorClass(); color1.value().Initialization(color1T.value()); }
+		if (color2T.has_value()) { color2 = BarUiColorClass(); color2.value().Initialization(color2T.value()); }
 	}
 
-	void Initialization(double xT, double yT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
+	void Initialization(double xT, double yT, optional<COLORREF> color1T, optional<COLORREF> color2T, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
 	{
 		x.Initialization(xT, type);
 		y.Initialization(yT, type);
+		if (color1T.has_value()) { color1 = BarUiColorClass(); color1.value().Initialization(color1T.value()); }
+		if (color2T.has_value()) { color2 = BarUiColorClass(); color2.value().Initialization(color2T.value()); }
 	}
 
-	void InitializationFromString(string valT) { svg.Initialization(valT); }
+	void InitializationFromString(string valT)
+	{
+		svg.Initialization(valT);
+
+		auto temp = CalcWH();
+		rW = temp.first, rH = temp.second;
+	}
 	void InitializationFromResource(const wstring& resType, const wstring& resName);
 
 public:
@@ -513,28 +526,38 @@ public:
 
 public:
 	bool SetWH(optional<double> wT, optional<double> hT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable);
+protected:
+	pair<double, double> CalcWH();
+
+public:
+	double rW; // 实际宽度
+	double rH; // 实际高度
 };
 //// 单个文字控件
 class BarUiWordClass : public BarUiInnheritBaseClass
 {
 public:
 	BarUiWordClass() {}
-	BarUiWordClass(double xT, double yT, double wT, double hT, string contentT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
+	BarUiWordClass(double xT, double yT, double wT, double hT, string contentT, double sizeT, COLORREF colorT = RGB(0, 0, 0), BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
 	{
 		x.Initialization(xT, type);
 		y.Initialization(yT, type);
 		w.Initialization(wT, type);
 		h.Initialization(hT, type);
 		content.Initialization(contentT);
+		size.Initialization(sizeT);
+		color.Initialization(colorT);
 	}
 
-	void Initialization(double xT, double yT, double wT, double hT, string contentT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
+	void Initialization(double xT, double yT, double wT, double hT, string contentT, double sizeT, COLORREF colorT = RGB(0, 0, 0), BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
 	{
 		x.Initialization(xT, type);
 		y.Initialization(yT, type);
 		w.Initialization(wT, type);
 		h.Initialization(hT, type);
 		content.Initialization(contentT);
+		size.Initialization(sizeT);
+		color.Initialization(colorT);
 	}
 
 public:
@@ -543,6 +566,12 @@ public:
 
 	// 内容
 	BarUiStringClass content;
+
+	// 字号
+	BarUiValueClass size;
+
+	// 颜色
+	BarUiColorClass color;
 };
 
 // 控件枚举
@@ -569,6 +598,7 @@ public:
 	static bool Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, bool clip = false);
 	static bool Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, bool clip = false);
 	static bool Svg(ID2D1DeviceContext* deviceContext, const BarUiSVGClass& svg, const BarUiInheritClass& inh);
+	static bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& shape, const BarUiInheritClass& inh);
 };
 
 // UI 总集
@@ -581,6 +611,7 @@ public:
 public:
 	BarWindowPosClass barWindow;
 	BarMediaClass barMedia;
+	BarButtomSetClass barButtomSet;
 
 	ankerl::unordered_dense::map<BarUISetShapeEnum, shared_ptr<BarUiShapeClass>> shapeMap;
 	ankerl::unordered_dense::map<BarUISetSuperellipseEnum, shared_ptr<BarUiSuperellipseClass>> superellipseMap;

@@ -5,6 +5,7 @@
 #include "../../IdtDisplayManagement.h"
 #include "../../IdtDrawpad.h"
 #include "../../IdtWindow.h"
+#include "../../IdtText.h"
 #include "../Conv/IdtColor.h"
 #include "../Load/IdtLoad.h"
 #include "IdtBarState.h"
@@ -81,34 +82,42 @@ bool BarUiSVGClass::SetWH(optional<double> wT, optional<double> hT, BarUiValueMo
 	if (wT.has_value() && hT.has_value()) { tarW = wT.value(), tarH = hT.value(); }
 	else
 	{
-		// 解析SVG
-		unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromData(svg.GetVal());
-		if (!document) return false; // 解析失败
+		if (rW <= 0 || rH <= 0) return false; // 尺寸失败
 
 		if (wT.has_value() && !hT.has_value())
 		{
 			// 高度自动
 			tarW = wT.value();
-			tarH = document->height() * (wT.value() / document->width());
+			tarH = rH * (wT.value() / rW);
 		}
 		else if (!wT.has_value() && hT.has_value())
 		{
 			// 宽度自动
-			tarW = document->width() * (hT.value() / document->height());
+			tarW = rW * (hT.value() / rH);
 			tarH = hT.value();
 		}
 		else
 		{
 			// 原尺寸
-			tarW = document->width();
-			tarH = document->height();
+			tarW = rW;
+			tarH = rH;
 		}
 	}
 
 	w.Initialization(tarW, type);
-	h.Initialization(tarW, type);
+	h.Initialization(tarH, type);
 
 	return true;
+}
+pair<double, double> BarUiSVGClass::CalcWH()
+{
+	// 解析SVG
+	unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromData(svg.GetVal());
+	if (!document) return make_pair(0, 0); // 解析失败
+
+	double w = static_cast<double>(document->width());
+	double h = static_cast<double>(document->height());
+	return make_pair(w, h);
 }
 
 // 具体渲染
@@ -426,6 +435,73 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, const BarUiSVGClass&
 
 	return true;
 }
+bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh)
+{
+	// 判断是否启用
+	if (word.enable.val == false) return false;
+	if (barStyle.zoom <= 0.0) return false;
+	if (word.size.val <= 0) return false;
+	if (word.w.val <= 0 || word.h.val <= 0) return false;
+	if (word.pct.val <= 0.0) return false;
+
+	// 初始化绘制量
+	double tarZoom = barStyle.zoom;
+	double tarX = inh.x * tarZoom; // 绘制左上角 x
+	double tarY = inh.y * tarZoom; // 绘制左上角 y
+	double tarW = word.w.val * tarZoom;
+	double tarH = word.h.val * tarZoom;
+	double tarSize = word.size.val * tarZoom;
+	double tarPct = word.pct.val; // 透明度
+
+	wstring tarContent = utf8ToUtf16(word.content.GetVal());
+
+	// 设置样式
+	CComPtr<IDWriteTextFormat> textFormat;
+	{
+		IDWriteTextFormat* tmpTextFormat;
+		D2DTextFactory->CreateTextFormat(
+			L"HarmonyOS Sans SC",
+			D2DFontCollection,
+			DWRITE_FONT_WEIGHT_NORMAL,
+			DWRITE_FONT_STYLE_NORMAL,
+			DWRITE_FONT_STRETCH_NORMAL,
+			static_cast<FLOAT>(tarSize),
+			L"zh-cn",
+			&tmpTextFormat
+		);
+		tmpTextFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+		tmpTextFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+
+		textFormat.Attach(tmpTextFormat);
+	}
+	// 计算区域
+	D2D1_RECT_F layoutRect;
+	{
+		layoutRect = D2D1::RectF(
+			static_cast<FLOAT>(tarX),
+			static_cast<FLOAT>(tarY),
+			static_cast<FLOAT>(tarX + tarW),
+			static_cast<FLOAT>(tarY + tarH)
+		);
+	}
+	// 渲染到 DC
+	{
+		COLORREF color = word.color.val;
+
+		CComPtr<ID2D1SolidColorBrush> spFillBrush;
+		deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(color, tarPct), &spFillBrush);
+
+		deviceContext->DrawText(
+			tarContent.c_str(),
+			wcslen(tarContent.c_str()),
+			textFormat,
+			layoutRect,
+			spFillBrush
+		);
+	}
+
+	return true;
+}
 
 // UI 总集
 void BarUISetClass::Rendering()
@@ -533,9 +609,9 @@ void BarUISetClass::Rendering()
 	wstring fps;
 	for (int forNum = 1; !offSignal; forNum = 2)
 	{
-		// 计算
+		// 计算 UI
 		{
-			// TODO 首次计算时，直接设置相等
+			// TODO forNum == 1 时，直接设置相等
 
 			// 主栏
 			{
@@ -548,53 +624,89 @@ void BarUISetClass::Rendering()
 						BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
 						if (temp == nullptr) continue;
 
-							if (temp->size == BarButtomSizeEnum::twoTwo)
+						if (temp->size == BarButtomSizeEnum::twoTwo)
+						{
+							if (yO != 0) xO = totalWidth;
+
 							{
-								if (yO != 0) xO = totalWidth;
-
+								if (barState.fold)
 								{
-									if (barState.fold)
-									{
-										temp->buttom.x.tar = 5.0;
-										temp->buttom.y.tar = 5.0;
-									}
-									else
-									{
-										temp->buttom.x.tar = xO;
-										temp->buttom.y.tar = yO + 5.0;
-									}
-									temp->buttom.w.tar = 70.0;
-									temp->buttom.h.tar = 70.0;
-								}
+									temp->buttom.x.tar = 10.0;
+									temp->buttom.y.tar = 5.0;
 
-								xO += 75, yO = 0;
-								totalWidth += 75;
+									temp->buttom.pct.tar = 0.0;
+								}
+								else
+								{
+									temp->buttom.x.tar = xO;
+									temp->buttom.y.tar = yO + 5.0;
+
+									if (temp->state == BarButtomState::None /*TSTT TODO*/) temp->buttom.pct.tar = 0.2;
+									else temp->buttom.pct.tar = 0.0;
+								}
+								temp->buttom.w.tar = 60.0;
+								temp->buttom.h.tar = 70.0;
+
+								temp->buttom.fill.value().tar = RGB(88, 255, 236);
+							}
+							{
+								temp->icon.SetWH(nullopt, 30.0);
+								temp->icon.y.tar = -10.0;
+								if (barState.fold)
+								{
+									temp->icon.pct.tar = 0.0;
+								}
+								else
+								{
+									temp->icon.pct.tar = 1.0;
+
+									if (temp->state == BarButtomState::None /*TSTT TODO*/) temp->icon.color1.value().tar = RGB(88, 255, 236);
+									else temp->icon.color1.value().tar = RGB(255, 255, 255);
+								}
 							}
 
-							// 特殊体质 - 分隔栏
-							if (temp->size == BarButtomSizeEnum::oneTwo)
+							xO += 65, yO = 0;
+							totalWidth += 65;
+						}
+
+						// 特殊体质 - 分隔栏
+						if (temp->size == BarButtomSizeEnum::oneTwo)
+						{
+							if (yO != 0) xO = totalWidth;
+
 							{
-								if (yO != 0) xO = totalWidth;
-
+								if (barState.fold)
 								{
-									if (barState.fold)
-									{
-										temp->buttom.x.tar = 35.0;
-										temp->buttom.y.tar = 5.0;
-									}
-									else
-									{
-										temp->buttom.x.tar = xO;
-										temp->buttom.y.tar = yO + 5.0;
-									}
-									temp->buttom.w.tar = 10.0;
-									temp->buttom.h.tar = 70.0;
+									temp->buttom.x.tar = 35.0;
+									temp->buttom.y.tar = 5.0;
 								}
+								else
+								{
+									temp->buttom.x.tar = xO;
+									temp->buttom.y.tar = yO + 5.0;
+								}
+								temp->buttom.w.tar = 10.0;
+								temp->buttom.h.tar = 70.0;
 
-								xO += 15, yO = 0;
-								totalWidth += 15;
+								// TODO 后续新增悬停颜色
+								temp->buttom.pct.tar = 0.0;
 							}
-						
+							{
+								temp->icon.SetWH(nullopt, 60.0);
+								if (barState.fold)
+								{
+									temp->icon.pct.tar = 0.0;
+								}
+								else
+								{
+									temp->icon.pct.tar = 0.18;
+									temp->icon.color1.value().tar = RGB(255, 255, 255);
+								}
+							}
+
+							xO += 15, yO = 0;
+							totalWidth += 15;
+						}
 					}
 				}
 
@@ -603,11 +715,17 @@ void BarUISetClass::Rendering()
 				{
 					shapeMap[BarUISetShapeEnum::MainBar]->x.tar = 0;
 					shapeMap[BarUISetShapeEnum::MainBar]->w.tar = 80;
+
+					shapeMap[BarUISetShapeEnum::MainBar]->pct.tar = 0.0;
+					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().tar = 0.0;
 				}
 				else
 				{
 					shapeMap[BarUISetShapeEnum::MainBar]->w.tar = static_cast<double>(totalWidth);
 					shapeMap[BarUISetShapeEnum::MainBar]->x.tar = superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() + 10;
+
+					shapeMap[BarUISetShapeEnum::MainBar]->pct.tar = 0.73;
+					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().tar = 0.18;
 				}
 			}
 		}
@@ -670,6 +788,20 @@ void BarUISetClass::Rendering()
 				if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value());
 				if (!val->pct.IsSame()) ChangePct(val->pct);
 			}
+			for (const auto& [key, val] : svgMap)
+			{
+				if (!val->enable.IsSame()) ChangeState(val->enable);
+				if (!val->x.IsSame()) ChangeValue(val->x);
+				if (!val->x.IsSame()) ChangeValue(val->x);
+				if (!val->y.IsSame()) ChangeValue(val->y);
+				if (!val->w.IsSame()) ChangeValue(val->w);
+				if (!val->h.IsSame()) ChangeValue(val->h);
+				if (val->svg.IsSame()) ChangeString(val->svg);
+				if (val->color1.has_value() && !val->color1->IsSame()) ChangeColor(val->color1.value());
+				if (val->color2.has_value() && !val->color2->IsSame()) ChangeColor(val->color2.value());
+				if (!val->pct.IsSame()) ChangePct(val->pct);
+			}
+			// TODO wordMap
 
 			// 特殊体质：按钮
 			for (int id = 0; id < barButtomSet.tot; id++)
@@ -689,6 +821,17 @@ void BarUISetClass::Rendering()
 				if (temp->buttom.fill.has_value() && !temp->buttom.fill->IsSame()) ChangeColor(temp->buttom.fill.value());
 				if (temp->buttom.frame.has_value() && !temp->buttom.frame->IsSame()) ChangeColor(temp->buttom.frame.value());
 				if (!temp->buttom.pct.IsSame()) ChangePct(temp->buttom.pct);
+
+				if (!temp->icon.enable.IsSame()) ChangeState(temp->icon.enable);
+				if (!temp->icon.x.IsSame()) ChangeValue(temp->icon.x);
+				if (!temp->icon.x.IsSame()) ChangeValue(temp->icon.x);
+				if (!temp->icon.y.IsSame()) ChangeValue(temp->icon.y);
+				if (!temp->icon.w.IsSame()) ChangeValue(temp->icon.w);
+				if (!temp->icon.h.IsSame()) ChangeValue(temp->icon.h);
+				if (temp->icon.svg.IsSame()) ChangeString(temp->icon.svg);
+				if (temp->icon.color1.has_value() && !temp->icon.color1->IsSame()) ChangeColor(temp->icon.color1.value());
+				if (temp->icon.color2.has_value() && !temp->icon.color2->IsSame()) ChangeColor(temp->icon.color2.value());
+				if (!temp->icon.pct.IsSame()) ChangePct(temp->icon.pct);
 			}
 		}
 
@@ -713,6 +856,7 @@ void BarUISetClass::Rendering()
 					if (temp == nullptr) continue;
 
 					BarUIRendering::Shape(barDeviceContext, temp->buttom, temp->buttom.Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::MainBar]));
+					BarUIRendering::Svg(barDeviceContext, temp->icon, temp->icon.Inherit(Center, temp->buttom));
 					// TODO
 
 					/*Testi(temp->buttom.inhX);
@@ -900,8 +1044,9 @@ void BarInitializationClass::Initialization()
 	InitializeWindow(barUISet);
 	InitializeMedia(barUISet);
 	InitializeUI(barUISet);
-	barButtomSet.PresetInitialization();
-	barButtomSet.Load();
+
+	barUISet.barButtomSet.PresetInitialization();
+	barUISet.barButtomSet.Load();
 
 	// 线程
 	thread(FloatingInstallHook).detach();
@@ -951,14 +1096,14 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 		{
 			auto superellipse = make_shared<BarUiSuperellipseClass>(200.0, 200.0, 80.0, 80.0, 3.0, 1.0, RGB(24, 24, 24), RGB(255, 255, 255));
 			superellipse->pct.Initialization(0.73);
-			superellipse->framePct = BarUiPctClass(1.0);
+			superellipse->framePct = BarUiPctClass(0.18);
 			superellipse->x.mod = BarUiValueModeEnum::Once;
 			superellipse->y.mod = BarUiValueModeEnum::Once;
 			superellipse->enable.Initialization(true);
 			barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton] = superellipse;
 
 			{
-				auto svg = make_shared<BarUiSVGClass>(0.0, 0.0);
+				auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, nullopt, nullopt);
 				svg->InitializationFromResource(L"UI", L"logo1");
 				svg->SetWH(nullopt, 80.0); // 必须在 Initial 后
 				svg->enable.Initialization(true);
