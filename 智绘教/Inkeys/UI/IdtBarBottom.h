@@ -7,7 +7,7 @@ enum class BarButtomSizeEnum : int
 {
 	twoTwo, // 2*2 -> 70 *780
 	twoOne, // 2*1 -> 70 * 32.5
-	oneTwo, // 1*2 -> 20 * 70 仅限分割线（偏窄）
+	oneTwo, // 1*2 -> 10 * 70 仅限分割线（偏窄）
 	oneOne // 1*1 -> 32.5 * 32.5
 };
 enum class BarPresetEnum : int

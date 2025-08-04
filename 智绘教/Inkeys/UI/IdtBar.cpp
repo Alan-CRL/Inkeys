@@ -67,10 +67,10 @@ BarUiInheritClass::BarUiInheritClass(BarUiInheritEnum typeT, double xO, double y
 	else if (type == BarUiInheritEnum::ToLeft) { x += xT - wO, y += yT; }
 }
 //// 继承基类
-BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, shape.x.val, shape.y.val, shape.w.val, shape.h.val)); }
-BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiSuperellipseClass& superellipse) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, superellipse.x.val, superellipse.y.val, superellipse.w.val, superellipse.h.val)); }
-BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiSVGClass& svg) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, svg.x.val, svg.y.val, svg.w.val, svg.h.val)); }
-BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiWordClass& word) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, word.x.val, word.y.val, word.w.val, word.h.val)); }
+BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, shape.inhX, shape.inhY, shape.w.val, shape.h.val)); }
+BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiSuperellipseClass& superellipse) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, superellipse.inhX, superellipse.inhY, superellipse.w.val, superellipse.h.val)); }
+BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiSVGClass& svg) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, svg.inhX, svg.inhY, svg.w.val, svg.h.val)); }
+BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiWordClass& word) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, word.inhX, word.inhY, word.w.val, word.h.val)); }
 
 /// 单个控件值
 //// 单个 SVG 控件
@@ -118,7 +118,8 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 	if (shape.enable.val == false) return false;
 	if (!shape.fill.has_value() && !shape.frame.has_value()) return false;
 	if (barStyle.zoom <= 0.0) return false;
-	if (shape.pct.val == 0.0) return true;
+	if (shape.w.val <= 0 || shape.h.val <= 0) return false;
+	if (shape.pct.val <= 0.0) return false;
 
 	// 初始化绘制量
 	double tarX = inh.x; // 绘制左上角 x
@@ -185,7 +186,8 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 	if (superellipse.enable.val == false) return false;
 	if (!superellipse.fill.has_value() && !superellipse.frame.has_value()) return false;
 	if (barStyle.zoom <= 0.0) return false;
-	if (superellipse.pct.val == 0.0) return true;
+	if (superellipse.w.val <= 0 || superellipse.h.val <= 0) return false;
+	if (superellipse.pct.val <= 0.0) return false;
 
 	// 初始化绘制量
 	double tarZoom = barStyle.zoom;
@@ -320,8 +322,9 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, const BarUiSVGClass&
 {
 	// 判断是否启用
 	if (svg.enable.val == false) return false;
-	if (svg.pct.val == 0.0) return true;
 	if (barStyle.zoom <= 0.0) return false;
+	if (svg.w.val <= 0 || svg.h.val <= 0) return false;
+	if (svg.pct.val <= 0.0) return false;
 
 	// 初始化解析
 	string svgContent;
@@ -532,50 +535,66 @@ void BarUISetClass::Rendering()
 	{
 		// 计算
 		{
+			// TODO 首次计算时，直接设置相等
+
 			// 主栏
 			{
 				// 按钮位置计算（特别操作）
-				int totalWidth = 0;
+				int totalWidth = 5;
 				{
-					int xO = 0, yO = 0;
-					BarButtomSizeEnum lastSize;
+					int xO = 5, yO = 0;
 					for (int id = 0; id < barButtomSet.tot; id++)
 					{
 						BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
 						if (temp == nullptr) continue;
 
-						if (temp->size == BarButtomSizeEnum::twoTwo)
-						{
-							if (yO != 0) xO = totalWidth;
-
+							if (temp->size == BarButtomSizeEnum::twoTwo)
 							{
-								temp->buttom.x.tar = xO + 5.0;
-								temp->buttom.y.tar = yO + 5.0;
-								temp->buttom.w.tar = 70.0;
-								temp->buttom.h.tar = 70.0;
+								if (yO != 0) xO = totalWidth;
+
+								{
+									if (barState.fold)
+									{
+										temp->buttom.x.tar = 5.0;
+										temp->buttom.y.tar = 5.0;
+									}
+									else
+									{
+										temp->buttom.x.tar = xO;
+										temp->buttom.y.tar = yO + 5.0;
+									}
+									temp->buttom.w.tar = 70.0;
+									temp->buttom.h.tar = 70.0;
+								}
+
+								xO += 75, yO = 0;
+								totalWidth += 75;
 							}
 
-							xO += 80, yO = 0;
-							totalWidth += 80;
-						}
-
-						// 特殊体质 - 分隔栏
-						if (temp->size == BarButtomSizeEnum::twoTwo)
-						{
-							if (yO != 0) xO = totalWidth;
-
+							// 特殊体质 - 分隔栏
+							if (temp->size == BarButtomSizeEnum::oneTwo)
 							{
-								temp->buttom.x.tar = xO + 5.0;
-								temp->buttom.y.tar = yO + 5.0;
-								temp->buttom.w.tar = 30.0;
-								temp->buttom.h.tar = 70.0;
+								if (yO != 0) xO = totalWidth;
+
+								{
+									if (barState.fold)
+									{
+										temp->buttom.x.tar = 35.0;
+										temp->buttom.y.tar = 5.0;
+									}
+									else
+									{
+										temp->buttom.x.tar = xO;
+										temp->buttom.y.tar = yO + 5.0;
+									}
+									temp->buttom.w.tar = 10.0;
+									temp->buttom.h.tar = 70.0;
+								}
+
+								xO += 15, yO = 0;
+								totalWidth += 15;
 							}
-
-							xO += 30, yO = 0;
-							totalWidth += 30;
-						}
-
-						lastSize = temp->size;
+						
 					}
 				}
 
@@ -651,6 +670,26 @@ void BarUISetClass::Rendering()
 				if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value());
 				if (!val->pct.IsSame()) ChangePct(val->pct);
 			}
+
+			// 特殊体质：按钮
+			for (int id = 0; id < barButtomSet.tot; id++)
+			{
+				BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
+				if (temp == nullptr) continue;
+
+				if (!temp->buttom.enable.IsSame()) ChangeState(temp->buttom.enable);
+				if (!temp->buttom.x.IsSame()) ChangeValue(temp->buttom.x);
+				if (!temp->buttom.x.IsSame()) ChangeValue(temp->buttom.x);
+				if (!temp->buttom.y.IsSame()) ChangeValue(temp->buttom.y);
+				if (!temp->buttom.w.IsSame()) ChangeValue(temp->buttom.w);
+				if (!temp->buttom.h.IsSame()) ChangeValue(temp->buttom.h);
+				if (temp->buttom.rw.has_value() && temp->buttom.rw->IsSame()) ChangeValue(temp->buttom.rw.value());
+				if (temp->buttom.rh.has_value() && temp->buttom.rh->IsSame()) ChangeValue(temp->buttom.rh.value());
+				if (temp->buttom.ft.has_value() && temp->buttom.ft->IsSame()) ChangeValue(temp->buttom.ft.value());
+				if (temp->buttom.fill.has_value() && !temp->buttom.fill->IsSame()) ChangeColor(temp->buttom.fill.value());
+				if (temp->buttom.frame.has_value() && !temp->buttom.frame->IsSame()) ChangeColor(temp->buttom.frame.value());
+				if (!temp->buttom.pct.IsSame()) ChangePct(temp->buttom.pct);
+			}
 		}
 
 		// 渲染 UI
@@ -665,6 +704,7 @@ void BarUISetClass::Rendering()
 			using enum BarUiInheritEnum;
 			{
 				auto obj = BarUISetShapeEnum::MainBar;
+				superellipseMap[BarUISetSuperellipseEnum::MainButton]->Inherit(); // 提前计算依赖
 				BarUIRendering::Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Left, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), false);
 
 				for (int id = 0; id < barButtomSet.tot; id++)
@@ -672,8 +712,13 @@ void BarUISetClass::Rendering()
 					BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
 					if (temp == nullptr) continue;
 
-					BarUIRendering::Shape(barDeviceContext, temp->buttom, temp->buttom.Inherit(Left, *shapeMap[BarUISetShapeEnum::MainBar]));
+					BarUIRendering::Shape(barDeviceContext, temp->buttom, temp->buttom.Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::MainBar]));
 					// TODO
+
+					/*Testi(temp->buttom.inhX);
+					Testi(temp->buttom.inhY);
+					Testi(temp->buttom.w.val);
+					Testi(temp->buttom.h.val);*/
 				}
 			}
 			{
@@ -855,6 +900,8 @@ void BarInitializationClass::Initialization()
 	InitializeWindow(barUISet);
 	InitializeMedia(barUISet);
 	InitializeUI(barUISet);
+	barButtomSet.PresetInitialization();
+	barButtomSet.Load();
 
 	// 线程
 	thread(FloatingInstallHook).detach();
