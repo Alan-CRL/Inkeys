@@ -1681,10 +1681,16 @@ void SettingMain()
 
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f * settingGlobalScale, 8.0f * settingGlobalScale));
 
-								vector<char*> vec;
-								vec.emplace_back(_strdup((IA("SettingsUI/Language/UI/Language/en-US")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Language/UI/Language/zh-CN")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Language/UI/Language/zh-TW")).c_str()));
+								//vector<char*> vec;
+								//vec.emplace_back(_strdup((IA("SettingsUI/Language/UI/Language/en-US")).c_str()));
+								//vec.emplace_back(_strdup((IA("SettingsUI/Language/UI/Language/zh-CN")).c_str()));
+								//vec.emplace_back(_strdup((IA("SettingsUI/Language/UI/Language/zh-TW")).c_str()));
+								// TODO
+
+								vector<string> vec;
+								vec.emplace_back(IA("SettingsUI/Language/UI/Language/en-US"));
+								vec.emplace_back(IA("SettingsUI/Language/UI/Language/zh-CN"));
+								vec.emplace_back(IA("SettingsUI/Language/UI/Language/zh-TW"));
 
 								{
 									int item_count = vec.size();
@@ -1692,14 +1698,14 @@ void SettingMain()
 									float popup_height = item_count * item_height + ImGui::GetStyle().WindowPadding.y * 2 * settingGlobalScale + 16.0f * settingGlobalScale;
 									ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, popup_height));
 								}
-								if (ImGui::BeginCombo("##语言", vec[SelectLanguage]))
+								if (ImGui::BeginCombo("##语言", vec[SelectLanguage].c_str()))
 								{
 									for (int i = 0; i < vec.size(); i++)
 									{
 										ImGui::Dummy(ImVec2(0, 8.0f * settingGlobalScale));
 
 										bool is_selected = (SelectLanguage == i);
-										if (ImGui::Selectable(vec[i], is_selected))
+										if (ImGui::Selectable(vec[i].c_str(), is_selected))
 										{
 											SelectLanguage = i;
 											if (setlist.selectLanguage != SelectLanguage)
@@ -1719,7 +1725,7 @@ void SettingMain()
 									ImGui::Dummy(ImVec2(0, 8.0f * settingGlobalScale));
 									ImGui::EndCombo();
 								}
-								for (char* ptr : vec) free(ptr), ptr = nullptr;
+								//for (char* ptr : vec) free(ptr), ptr = nullptr;
 							}
 
 							{

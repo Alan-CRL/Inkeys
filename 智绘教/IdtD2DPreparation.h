@@ -14,7 +14,7 @@
 extern CComPtr<ID2D1Factory1> D2DFactory;
 extern D2D1_RENDER_TARGET_PROPERTIES D2DProperty;
 
-extern CComPtr<IDWriteFactory> D2DTextFactory;
+extern CComPtr<IDWriteFactory1> D2DTextFactory;
 extern CComPtr<IDWriteFontCollection> D2DFontCollection;
 
 /*

@@ -32,6 +32,10 @@ void FloatingInstallHook();
 void BarMediaClass::LoadExImage()
 {
 }
+void BarMediaClass::LoadFormat()
+{
+	formatCache = make_unique<BarFormatCache>(D2DTextFactory);
+}
 
 // ====================
 // 界面
@@ -455,10 +459,10 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 
 	wstring tarContent = utf8ToUtf16(word.content.GetVal());
 
-	// 设置样式
-	CComPtr<IDWriteTextFormat> textFormat;
+	// 获取样式
+	IDWriteTextFormat* textFormat = nullptr;
 	{
-		IDWriteTextFormat* tmpTextFormat;
+		/*IDWriteTextFormat* tmpTextFormat;
 		D2DTextFactory->CreateTextFormat(
 			L"HarmonyOS Sans SC",
 			D2DFontCollection,
@@ -472,7 +476,19 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 		tmpTextFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
 		tmpTextFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 
-		textFormat.Attach(tmpTextFormat);
+		textFormat.Attach(tmpTextFormat);*/
+
+		textFormat = barUISetClass->barMedia.formatCache->GetFormat(
+			L"HarmonyOS Sans SC",
+			30.0f,
+			nullptr,
+			DWRITE_FONT_WEIGHT_BOLD,
+			DWRITE_FONT_STYLE_NORMAL,
+			DWRITE_FONT_STRETCH_NORMAL,
+			L"zh-cn",
+			DWRITE_TEXT_ALIGNMENT_CENTER,       // 指定居中对齐
+			DWRITE_PARAGRAPH_ALIGNMENT_CENTER   // 指定段落居中
+		);
 	}
 	// 计算区域
 	D2D1_RECT_F layoutRect;
@@ -542,6 +558,11 @@ void BarUISetClass::Rendering()
 
 		this_thread::sleep_for(chrono::milliseconds(10));
 	}
+
+	// 初始化 按钮 们
+	BarButtomSetClass barButtomSet;
+	barButtomSet.PresetInitialization();
+	barButtomSet.Load();
 
 	// 初始化 D2D DC
 	CComPtr<ID2D1DeviceContext>				barDeviceContext;
@@ -663,6 +684,17 @@ void BarUISetClass::Rendering()
 									if (temp->state == BarButtomState::None /*TSTT TODO*/) temp->icon.color1.value().tar = RGB(88, 255, 236);
 									else temp->icon.color1.value().tar = RGB(255, 255, 255);
 								}
+							}
+							{
+								temp->name.x.tar = 0.0;
+								temp->name.y.tar = 20.0;
+								temp->name.w.tar = 60.0;
+								temp->name.h.tar = 25.0;
+								if (barState.fold) temp->name.pct.tar = 0.0;
+								else temp->name.pct.tar = 1.0;
+
+								temp->name.color.tar = RGB(88, 255, 236);
+								temp->name.size.tar = 20.0;
 							}
 
 							xO += 65, yO = 0;
@@ -801,7 +833,19 @@ void BarUISetClass::Rendering()
 				if (val->color2.has_value() && !val->color2->IsSame()) ChangeColor(val->color2.value());
 				if (!val->pct.IsSame()) ChangePct(val->pct);
 			}
-			// TODO wordMap
+			for (const auto& [key, val] : wordMap)
+			{
+				if (!val->enable.IsSame()) ChangeState(val->enable);
+				if (!val->x.IsSame()) ChangeValue(val->x);
+				if (!val->x.IsSame()) ChangeValue(val->x);
+				if (!val->y.IsSame()) ChangeValue(val->y);
+				if (!val->w.IsSame()) ChangeValue(val->w);
+				if (!val->h.IsSame()) ChangeValue(val->h);
+				if (!val->size.IsSame()) ChangeValue(val->size);
+				if (!val->content.IsSame()) ChangeString(val->content);
+				if (!val->color.IsSame()) ChangeColor(val->color);
+				if (!val->pct.IsSame()) ChangePct(val->pct);
+			}
 
 			// 特殊体质：按钮
 			for (int id = 0; id < barButtomSet.tot; id++)
@@ -832,6 +876,17 @@ void BarUISetClass::Rendering()
 				if (temp->icon.color1.has_value() && !temp->icon.color1->IsSame()) ChangeColor(temp->icon.color1.value());
 				if (temp->icon.color2.has_value() && !temp->icon.color2->IsSame()) ChangeColor(temp->icon.color2.value());
 				if (!temp->icon.pct.IsSame()) ChangePct(temp->icon.pct);
+
+				if (!temp->name.enable.IsSame()) ChangeState(temp->name.enable);
+				if (!temp->name.x.IsSame()) ChangeValue(temp->name.x);
+				if (!temp->name.x.IsSame()) ChangeValue(temp->name.x);
+				if (!temp->name.y.IsSame()) ChangeValue(temp->name.y);
+				if (!temp->name.w.IsSame()) ChangeValue(temp->name.w);
+				if (!temp->name.h.IsSame()) ChangeValue(temp->name.h);
+				if (!temp->name.size.IsSame()) ChangeValue(temp->name.size);
+				if (!temp->name.content.IsSame()) ChangeString(temp->name.content);
+				if (!temp->name.color.IsSame()) ChangeColor(temp->name.color);
+				if (!temp->name.pct.IsSame()) ChangePct(temp->name.pct);
 			}
 		}
 
@@ -848,15 +903,18 @@ void BarUISetClass::Rendering()
 			{
 				auto obj = BarUISetShapeEnum::MainBar;
 				superellipseMap[BarUISetSuperellipseEnum::MainButton]->Inherit(); // 提前计算依赖
-				BarUIRendering::Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Left, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), false);
+				spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Left, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), false);
 
 				for (int id = 0; id < barButtomSet.tot; id++)
 				{
 					BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
 					if (temp == nullptr) continue;
 
-					BarUIRendering::Shape(barDeviceContext, temp->buttom, temp->buttom.Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::MainBar]));
-					BarUIRendering::Svg(barDeviceContext, temp->icon, temp->icon.Inherit(Center, temp->buttom));
+					//Testa(temp->name.content.GetTar());
+
+					spec.Shape(barDeviceContext, temp->buttom, temp->buttom.Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::MainBar]));
+					spec.Svg(barDeviceContext, temp->icon, temp->icon.Inherit(Center, temp->buttom));
+					spec.Word(barDeviceContext, temp->name, temp->name.Inherit(Center, temp->buttom));
 					// TODO
 
 					/*Testi(temp->buttom.inhX);
@@ -868,11 +926,11 @@ void BarUISetClass::Rendering()
 			{
 				{
 					auto obj = BarUISetSuperellipseEnum::MainButton;
-					BarUIRendering::Superellipse(barDeviceContext, *superellipseMap[obj], superellipseMap[obj]->Inherit(), false);
+					spec.Superellipse(barDeviceContext, *superellipseMap[obj], superellipseMap[obj]->Inherit(), false);
 
 					{
 						auto obj = BarUISetSvgEnum::logo1;
-						BarUIRendering::Svg(barDeviceContext, *svgMap[obj], svgMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]));
+						spec.Svg(barDeviceContext, *svgMap[obj], svgMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]));
 					}
 				}
 			}
@@ -932,6 +990,7 @@ void BarUISetClass::Rendering()
 			}
 
 			barDeviceContext->EndDraw();
+			barMedia.formatCache->Clean();
 		}
 
 		if (forNum == 1)
@@ -1045,8 +1104,7 @@ void BarInitializationClass::Initialization()
 	InitializeMedia(barUISet);
 	InitializeUI(barUISet);
 
-	barUISet.barButtomSet.PresetInitialization();
-	barUISet.barButtomSet.Load();
+	barUISet.barMedia.LoadFormat();
 
 	// 线程
 	thread(FloatingInstallHook).detach();

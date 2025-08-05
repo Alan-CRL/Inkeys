@@ -8,6 +8,7 @@ void BarButtomSetClass::PresetInitialization()
 
 		divider->size = BarButtomSizeEnum::oneTwo;
 
+		divider->name.Initialization(0.0, 0.0, 0.0, 0.0, "分割线", 0.0);
 		divider->name.enable.Initialization(false);
 
 		divider->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
@@ -26,7 +27,7 @@ void BarButtomSetClass::PresetInitialization()
 
 		select->size = BarButtomSizeEnum::twoTwo;
 
-		select->name.Initialization(0.0, 0.0, 0.0, 0.0, "选择", 20.0);
+		select->name.Initialization(0.0, 0.0, 0.0, 0.0, "选择", 0.0);
 		select->name.enable.Initialization(true);
 
 		select->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
@@ -44,7 +45,7 @@ void BarButtomSetClass::PresetInitialization()
 
 		draw->size = BarButtomSizeEnum::twoTwo;
 
-		draw->name.Initialization(0.0, 0.0, 0.0, 0.0, "绘制", 20.0);
+		draw->name.Initialization(0.0, 0.0, 0.0, 0.0, "绘制", 0.0);
 		draw->name.enable.Initialization(true);
 
 		draw->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);

@@ -23,7 +23,10 @@ enum class BarButtomPresetEnum : int
 	Divider,
 
 	Select,
-	Draw
+	Draw,
+
+	Freeze,
+	Setting
 };
 
 class BarButtomClass
@@ -39,7 +42,7 @@ public:
 	BarUiWordClass name;
 	BarUiSVGClass icon;
 
-	BarButtomState state;
+	BarButtomState state = BarButtomState::None;
 };
 class BarButtomListClass
 {

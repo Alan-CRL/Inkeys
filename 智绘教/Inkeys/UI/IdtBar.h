@@ -3,7 +3,7 @@
 #include "../../IdtMain.h"
 #include "../../IdtD2DPreparation.h"
 #include "IdtBarState.h"
-#include "IdtBarBottom.h"
+#include "IdtBarFormat.h"
 
 // ====================
 // 窗口
@@ -25,8 +25,7 @@ class BarMediaClass
 {
 public:
 	void LoadExImage();
-	void LoadFontCache();
-	// TODO
+	void LoadFormat();
 
 public:
 	enum class BarExImageEnum : int
@@ -37,6 +36,9 @@ public:
 
 public:
 	IMAGE Image[10];
+	unique_ptr<BarFormatCache> formatCache;
+
+protected:
 };
 
 // ====================
@@ -230,6 +232,8 @@ class BarUiShapeClass;
 class BarUiSuperellipseClass;
 class BarUiSVGClass;
 class BarUiWordClass;
+
+class BarUISetClass;
 // 前向声明
 
 /// 继承
@@ -587,35 +591,46 @@ enum class BarUISetSvgEnum
 {
 	logo1
 };
+enum class BarUISetWordEnum
+{
+	MainButton
+};
 
 // 具体渲染
 class BarUIRendering
 {
-private:
-	BarUIRendering() = delete;
+public:
+	BarUIRendering();
+	BarUIRendering(BarUISetClass* barUISetClassT) { barUISetClass = barUISetClassT; }
 
 public:
-	static bool Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, bool clip = false);
-	static bool Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, bool clip = false);
-	static bool Svg(ID2D1DeviceContext* deviceContext, const BarUiSVGClass& svg, const BarUiInheritClass& inh);
-	static bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& shape, const BarUiInheritClass& inh);
+	bool Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, bool clip = false);
+	bool Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, bool clip = false);
+	bool Svg(ID2D1DeviceContext* deviceContext, const BarUiSVGClass& svg, const BarUiInheritClass& inh);
+	bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& shape, const BarUiInheritClass& inh);
+
+public:
+	BarUISetClass* barUISetClass = nullptr;
 };
 
 // UI 总集
 class BarUISetClass
 {
 public:
+	BarUISetClass() : spec(this) {};
+
 	void Rendering();
 	void Interact();
 
 public:
 	BarWindowPosClass barWindow;
 	BarMediaClass barMedia;
-	BarButtomSetClass barButtomSet;
+	BarUIRendering spec;
 
 	ankerl::unordered_dense::map<BarUISetShapeEnum, shared_ptr<BarUiShapeClass>> shapeMap;
 	ankerl::unordered_dense::map<BarUISetSuperellipseEnum, shared_ptr<BarUiSuperellipseClass>> superellipseMap;
 	ankerl::unordered_dense::map<BarUISetSvgEnum, shared_ptr<BarUiSVGClass>> svgMap;
+	ankerl::unordered_dense::map<BarUISetWordEnum, shared_ptr<BarUiWordClass>> wordMap;
 
 protected:
 	double Seek(const ExMessage& msg);
