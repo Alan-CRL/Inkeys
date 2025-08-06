@@ -652,7 +652,7 @@ void BarUISetClass::Rendering()
 							{
 								if (barState.fold)
 								{
-									temp->buttom.x.tar = 10.0;
+									temp->buttom.x.tar = 5.0;
 									temp->buttom.y.tar = 5.0;
 
 									temp->buttom.pct.tar = 0.0;
@@ -662,16 +662,16 @@ void BarUISetClass::Rendering()
 									temp->buttom.x.tar = xO;
 									temp->buttom.y.tar = yO + 5.0;
 
-									if (temp->state == BarButtomState::None /*TSTT TODO*/) temp->buttom.pct.tar = 0.2;
+									if (temp->state == BarButtomState::Selected) temp->buttom.pct.tar = 0.2;
 									else temp->buttom.pct.tar = 0.0;
 								}
-								temp->buttom.w.tar = 60.0;
+								temp->buttom.w.tar = 70.0;
 								temp->buttom.h.tar = 70.0;
 
 								temp->buttom.fill.value().tar = RGB(88, 255, 236);
 							}
 							{
-								temp->icon.SetWH(nullopt, 30.0);
+								temp->icon.SetWH(nullopt, 25.0);
 								temp->icon.y.tar = -10.0;
 								if (barState.fold)
 								{
@@ -681,24 +681,25 @@ void BarUISetClass::Rendering()
 								{
 									temp->icon.pct.tar = 1.0;
 
-									if (temp->state == BarButtomState::None /*TSTT TODO*/) temp->icon.color1.value().tar = RGB(88, 255, 236);
+									if (temp->state == BarButtomState::Selected) temp->icon.color1.value().tar = RGB(88, 255, 236);
 									else temp->icon.color1.value().tar = RGB(255, 255, 255);
 								}
 							}
 							{
 								temp->name.x.tar = 0.0;
 								temp->name.y.tar = 20.0;
-								temp->name.w.tar = 60.0;
+								temp->name.w.tar = 70.0;
 								temp->name.h.tar = 25.0;
 								if (barState.fold) temp->name.pct.tar = 0.0;
 								else temp->name.pct.tar = 1.0;
 
-								temp->name.color.tar = RGB(88, 255, 236);
-								temp->name.size.tar = 20.0;
+								if (temp->state == BarButtomState::Selected) temp->name.color.tar = RGB(88, 255, 236);
+								else temp->name.color.tar = RGB(255, 255, 255);
+								temp->name.size.tar = 18.0;
 							}
 
-							xO += 65, yO = 0;
-							totalWidth += 65;
+							xO += 75, yO = 0;
+							totalWidth += 75;
 						}
 
 						// 特殊体质 - 分隔栏
@@ -756,7 +757,7 @@ void BarUISetClass::Rendering()
 					shapeMap[BarUISetShapeEnum::MainBar]->w.tar = static_cast<double>(totalWidth);
 					shapeMap[BarUISetShapeEnum::MainBar]->x.tar = superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() + 10;
 
-					shapeMap[BarUISetShapeEnum::MainBar]->pct.tar = 0.73;
+					shapeMap[BarUISetShapeEnum::MainBar]->pct.tar = 0.9;
 					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().tar = 0.18;
 				}
 			}
@@ -1173,7 +1174,7 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 		// 主栏
 		{
 			auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 80.0, 80.0, 8.0, 8.0, 1.0, RGB(24, 24, 24), RGB(255, 255, 255));
-			shape->pct.Initialization(0.73);
+			shape->pct.Initialization(0.9);
 			shape->framePct = BarUiPctClass(0.18);
 			shape->enable.Initialization(true);
 			barUISet.shapeMap[BarUISetShapeEnum::MainBar] = shape;

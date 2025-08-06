@@ -57,6 +57,42 @@ void BarButtomSetClass::PresetInitialization()
 
 		preset[(int)BarButtomPresetEnum::Draw] = draw;
 	}
+	{
+		BarButtomClass* select = new BarButtomClass;
+		select->preset = BarButtomPresetEnum::Freeze;
+
+		select->size = BarButtomSizeEnum::twoTwo;
+
+		select->name.Initialization(0.0, 0.0, 0.0, 0.0, "定格", 0.0);
+		select->name.enable.Initialization(true);
+
+		select->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+		select->buttom.enable.Initialization(true);
+
+		select->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+		select->icon.InitializationFromResource(L"UI", L"barFreeze");
+		select->icon.enable.Initialization(true);
+
+		preset[(int)BarButtomPresetEnum::Freeze] = select;
+	}
+	{
+		BarButtomClass* select = new BarButtomClass;
+		select->preset = BarButtomPresetEnum::Setting;
+
+		select->size = BarButtomSizeEnum::twoTwo;
+
+		select->name.Initialization(0.0, 0.0, 0.0, 0.0, "设置", 0.0);
+		select->name.enable.Initialization(true);
+
+		select->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+		select->buttom.enable.Initialization(true);
+
+		select->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+		select->icon.InitializationFromResource(L"UI", L"barSetting");
+		select->icon.enable.Initialization(true);
+
+		preset[(int)BarButtomPresetEnum::Setting] = select;
+	}
 }
 
 void BarButtomSetClass::Load()
@@ -64,4 +100,6 @@ void BarButtomSetClass::Load()
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Select]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Draw]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Divider]);
+	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Freeze]);
+	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Setting]);
 }
