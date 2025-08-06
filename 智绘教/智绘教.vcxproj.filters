@@ -771,6 +771,9 @@
     <ClInclude Include="Inkeys\UI\IdtBarFormat.h">
       <Filter>头文件\Inkeys\UI</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\UI\IdtBarUI.h">
+      <Filter>头文件\Inkeys\UI</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HiEasyX\HiGUI\Button.cpp">
@@ -1035,6 +1038,9 @@
       <Filter>源文件\Inkeys\UI</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\IdtBarFormat.cpp">
+      <Filter>源文件\Inkeys\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\IdtBarUI.cpp">
       <Filter>源文件\Inkeys\UI</Filter>
     </ClCompile>
   </ItemGroup>

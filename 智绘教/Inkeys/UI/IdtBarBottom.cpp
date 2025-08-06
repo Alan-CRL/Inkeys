@@ -18,7 +18,8 @@ void BarButtomSetClass::PresetInitialization()
 		divider->icon.InitializationFromResource(L"UI", L"barDivider");
 		divider->icon.enable.Initialization(true);
 
-		preset[(int)BarButtomPresetEnum::Divider] = divider;
+		divider->state = &barButtomState[(int)divider->preset.load()];
+		preset[(int)divider->preset.load()] = divider;
 	}
 
 	{
@@ -37,7 +38,8 @@ void BarButtomSetClass::PresetInitialization()
 		select->icon.InitializationFromResource(L"UI", L"barSelect");
 		select->icon.enable.Initialization(true);
 
-		preset[(int)BarButtomPresetEnum::Select] = select;
+		select->state = &barButtomState[(int)select->preset.load()];
+		preset[(int)select->preset.load()] = select;
 	}
 	{
 		BarButtomClass* draw = new BarButtomClass;
@@ -55,43 +57,46 @@ void BarButtomSetClass::PresetInitialization()
 		draw->icon.InitializationFromResource(L"UI", L"barBursh1");
 		draw->icon.enable.Initialization(true);
 
-		preset[(int)BarButtomPresetEnum::Draw] = draw;
+		draw->state = &barButtomState[(int)draw->preset.load()];
+		preset[(int)draw->preset.load()] = draw;
 	}
 	{
-		BarButtomClass* select = new BarButtomClass;
-		select->preset = BarButtomPresetEnum::Freeze;
+		BarButtomClass* freeze = new BarButtomClass;
+		freeze->preset = BarButtomPresetEnum::Freeze;
 
-		select->size = BarButtomSizeEnum::twoTwo;
+		freeze->size = BarButtomSizeEnum::twoTwo;
 
-		select->name.Initialization(0.0, 0.0, 0.0, 0.0, "定格", 0.0);
-		select->name.enable.Initialization(true);
+		freeze->name.Initialization(0.0, 0.0, 0.0, 0.0, "定格", 0.0);
+		freeze->name.enable.Initialization(true);
 
-		select->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
-		select->buttom.enable.Initialization(true);
+		freeze->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+		freeze->buttom.enable.Initialization(true);
 
-		select->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
-		select->icon.InitializationFromResource(L"UI", L"barFreeze");
-		select->icon.enable.Initialization(true);
+		freeze->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+		freeze->icon.InitializationFromResource(L"UI", L"barFreeze");
+		freeze->icon.enable.Initialization(true);
 
-		preset[(int)BarButtomPresetEnum::Freeze] = select;
+		freeze->state = &barButtomState[(int)freeze->preset.load()];
+		preset[(int)freeze->preset.load()] = freeze;
 	}
 	{
-		BarButtomClass* select = new BarButtomClass;
-		select->preset = BarButtomPresetEnum::Setting;
+		BarButtomClass* setting = new BarButtomClass;
+		setting->preset = BarButtomPresetEnum::Setting;
 
-		select->size = BarButtomSizeEnum::twoTwo;
+		setting->size = BarButtomSizeEnum::twoTwo;
 
-		select->name.Initialization(0.0, 0.0, 0.0, 0.0, "设置", 0.0);
-		select->name.enable.Initialization(true);
+		setting->name.Initialization(0.0, 0.0, 0.0, 0.0, "设置", 0.0);
+		setting->name.enable.Initialization(true);
 
-		select->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
-		select->buttom.enable.Initialization(true);
+		setting->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+		setting->buttom.enable.Initialization(true);
 
-		select->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
-		select->icon.InitializationFromResource(L"UI", L"barSetting");
-		select->icon.enable.Initialization(true);
+		setting->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+		setting->icon.InitializationFromResource(L"UI", L"barSetting");
+		setting->icon.enable.Initialization(true);
 
-		preset[(int)BarButtomPresetEnum::Setting] = select;
+		setting->state = &barButtomState[(int)setting->preset.load()];
+		preset[(int)setting->preset.load()] = setting;
 	}
 }
 

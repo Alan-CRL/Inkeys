@@ -1,7 +1,8 @@
 ﻿#pragma once
 
 #include "../../IdtMain.h"
-#include "IdtBar.h"
+#include "IdtBarUI.h"
+#include "IdtBarState.h"
 
 enum class BarButtomSizeEnum : int
 {
@@ -9,13 +10,6 @@ enum class BarButtomSizeEnum : int
 	twoOne, // 2*1 -> 70 * 32.5
 	oneTwo, // 1*2 -> 10 * 70 仅限分割线（偏窄）
 	oneOne // 1*1 -> 32.5 * 32.5
-};
-enum class BarButtomState : int
-{
-	None,
-	Hover, // 悬停（废弃）
-	Pressed, // 按下
-	Selected // 选中
 };
 enum class BarButtomPresetEnum : int
 {
@@ -42,7 +36,7 @@ public:
 	BarUiWordClass name;
 	BarUiSVGClass icon;
 
-	BarButtomState state = BarButtomState::None;
+	BarButtomStateClass* state;
 };
 class BarButtomListClass
 {

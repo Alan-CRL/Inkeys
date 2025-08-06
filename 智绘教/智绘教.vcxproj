@@ -579,6 +579,7 @@
     <ClInclude Include="Inkeys\UI\IdtBarBottom.h" />
     <ClInclude Include="Inkeys\UI\IdtBarFormat.h" />
     <ClInclude Include="Inkeys\UI\IdtBarState.h" />
+    <ClInclude Include="Inkeys\UI\IdtBarUI.h" />
     <ClInclude Include="Launch\IdtLaunchState.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="IdtRts.h" />
@@ -676,6 +677,7 @@
     <ClCompile Include="Inkeys\UI\IdtBarBottom.cpp" />
     <ClCompile Include="Inkeys\UI\IdtBarFormat.cpp" />
     <ClCompile Include="Inkeys\UI\IdtBarState.cpp" />
+    <ClCompile Include="Inkeys\UI\IdtBarUI.cpp" />
     <ClCompile Include="Launch\IdtLaunchState.cpp" />
     <ClCompile Include="SuperTop\IdtSuperTop.cpp" />
   </ItemGroup>
