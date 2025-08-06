@@ -1290,6 +1290,7 @@
     <None Include="src\UI\barSelect.svg" />
     <None Include="src\UI\barBursh1.svg" />
     <None Include="src\UI\barFreeze.svg" />
+    <None Include="src\UI\barSetting.svg" />
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="..\PptCOM\PptCOM.manifest" />

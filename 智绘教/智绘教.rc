@@ -268,7 +268,11 @@ BARDIVIDER              UI                      "src\\UI\\barDivider.svg"
 
 BARSELECT               UI                      "src\\UI\\barSelect.svg"
 
-barBursh1               UI                      "src\\UI\\barBursh1.svg"
+BARBURSH1               UI                      "src\\UI\\barBursh1.svg"
+
+barFreeze               UI                      "src\\UI\\barFreeze.svg"
+
+barSetting              UI                      "src\\UI\\barSetting.svg"
 
 #endif    // 中文(简体，中国) resources
 /////////////////////////////////////////////////////////////////////////////

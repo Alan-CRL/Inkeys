@@ -1,6 +1,6 @@
 //{{NO_DEPENDENCIES}}
-// Microsoft Visual C++ generated include file.
-// Used by æ™ºç»˜æ•™.rc
+// Microsoft Visual C++ Éú³ÉµÄ°üº¬ÎÄ¼þ¡£
+// ¹© ÖÇ»æ½Ì.rc Ê¹ÓÃ
 //
 #define VS_VERSION_INFO                 1
 #define IDB_PNG3                        117
@@ -59,12 +59,14 @@
 #define IDR_UI1                         279
 #define IDR_UI2                         281
 #define IDR_UI3                         282
+#define IDR_UI4                         283
+#define IDR_UI5                         284
 
 // Next default values for new objects
-// 
+//
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        283
+#define _APS_NEXT_RESOURCE_VALUE        285
 #define _APS_NEXT_COMMAND_VALUE         40001
 #define _APS_NEXT_CONTROL_VALUE         1001
 #define _APS_NEXT_SYMED_VALUE           101
