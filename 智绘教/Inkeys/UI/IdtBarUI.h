@@ -250,6 +250,8 @@ public:
 		return inh;
 	}
 
+	IdtAtomic<bool> forceReplace = true;
+
 public:
 	// 模态方位查询
 	double GetX() { return x.tar; };
@@ -309,23 +311,23 @@ public:
 		// 折算为半径
 		double rx = 0.0;
 		double ry = 0.0;
-		if (rw.has_value()) rx = clamp(rw.value().val * zoom / 2.0, 0.0, w.val * zoom / 2.0);
-		if (rh.has_value()) ry = clamp(rh.value().val * zoom / 2.0, 0.0, h.val * zoom / 2.0);
+		if (rw.has_value()) rx = clamp(rw.value().val * zoom, 0.0, (w.val * zoom) / 2.0);
+		if (rh.has_value()) ry = clamp(rh.value().val * zoom, 0.0, (h.val * zoom) / 2.0);
 
 		// 矩形区域内才有可能
-		if (static_cast<double>(mx) < xO - epsilon || static_cast<double>(mx) > xO + w.val * zoom + epsilon ||
-			static_cast<double>(mx) < yO - epsilon || static_cast<double>(mx) > yO + h.val * zoom + epsilon)
+		if (static_cast<double>(mx) < xO - epsilon || static_cast<double>(mx) > xO + (w.val * zoom) + epsilon ||
+			static_cast<double>(my) < yO - epsilon || static_cast<double>(my) > yO + (h.val * zoom) + epsilon)
 			return false;
 
 		// “内矩形”范围
 		double ix0 = xO + rx;         // 内部矩形左
-		double ix1 = xO + w.val * zoom - rx; // 内部矩形右
+		double ix1 = xO + (w.val * zoom) - rx; // 内部矩形右
 		double iy0 = yO + ry;         // 上
 		double iy1 = yO + h.val * zoom - ry; // 下
 
 		// 若点在内矩形，直接返回
 		if (static_cast<double>(mx) >= ix0 - epsilon && static_cast<double>(mx) <= ix1 + epsilon &&
-			static_cast<double>(mx) >= iy0 - epsilon && static_cast<double>(mx) <= iy1 + epsilon)
+			static_cast<double>(my) >= iy0 - epsilon && static_cast<double>(my) <= iy1 + epsilon)
 			return true;
 
 		// 否则一定在四角矩形外或圆角四象限内，枚举距离最近的圆角中心
@@ -336,7 +338,7 @@ public:
 		// 对应的圆角中心
 		// 只有在圆角四象限判定，否则前面矩形部分已经返回true
 		double dx = static_cast<double>(mx) - cx;
-		double dy = static_cast<double>(mx) - cy;
+		double dy = static_cast<double>(my) - cy;
 
 		// 椭圆(中心0,0, 半径rx,ry)上的判定
 		// (dx/rx)^2 + (dy/ry)^2 <= 1

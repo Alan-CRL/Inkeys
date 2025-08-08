@@ -31,10 +31,13 @@ public:
 public:
 	IdtAtomic<BarButtomSizeEnum> size;
 	IdtAtomic<BarButtomPresetEnum> preset = BarButtomPresetEnum::None;
+	IdtAtomic<bool> hide = true;
 
 	BarUiShapeClass buttom;
 	BarUiWordClass name;
 	BarUiSVGClass icon;
+
+	function<void()> clickFunc;
 
 	BarButtomStateClass* state;
 };

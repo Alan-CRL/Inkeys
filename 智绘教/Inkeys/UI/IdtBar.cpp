@@ -554,7 +554,7 @@ void BarUISetClass::Rendering()
 					for (int id = 0; id < barButtomSet.tot; id++)
 					{
 						BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
-						if (temp == nullptr) continue;
+						if (temp == nullptr || temp->hide) continue;
 
 						if (temp->size == BarButtomSizeEnum::twoTwo)
 						{
@@ -677,28 +677,28 @@ void BarUISetClass::Rendering()
 		// 动效 UI
 		bool needRendering = false;
 		{
-			auto ChangeState = [&](BarUiStateClass& state) -> void
+			auto ChangeState = [&](BarUiStateClass& state, bool forceReplace) -> void
 				{
 					needRendering = true;
 					state.val = state.tar;
 				};
-			auto ChangeValue = [&](BarUiValueClass& value) -> void
+			auto ChangeValue = [&](BarUiValueClass& value, bool forceReplace) -> void
 				{
 					needRendering = true;
 					BarUiValueModeEnum mod = value.mod;
 					/*else*/ value.val = value.tar;
 				};
-			auto ChangeColor = [&](BarUiColorClass& color) -> void
+			auto ChangeColor = [&](BarUiColorClass& color, bool forceReplace) -> void
 				{
 					needRendering = true;
 					color.val = color.tar;
 				};
-			auto ChangePct = [&](BarUiPctClass& pct) -> void
+			auto ChangePct = [&](BarUiPctClass& pct, bool forceReplace) -> void
 				{
 					needRendering = true;
 					pct.val = pct.tar;
 				};
-			auto ChangeString = [&](BarUiStringClass& stringO) -> void
+			auto ChangeString = [&](BarUiStringClass& stringO, bool forceReplace) -> void
 				{
 					needRendering = true;
 					stringO.ApplyTar();
@@ -706,57 +706,66 @@ void BarUISetClass::Rendering()
 
 			for (const auto& [key, val] : shapeMap)
 			{
-				if (!val->enable.IsSame()) ChangeState(val->enable);
-				if (!val->x.IsSame()) ChangeValue(val->x);
-				if (!val->x.IsSame()) ChangeValue(val->x);
-				if (!val->y.IsSame()) ChangeValue(val->y);
-				if (!val->w.IsSame()) ChangeValue(val->w);
-				if (!val->h.IsSame()) ChangeValue(val->h);
-				if (val->rw.has_value() && !val->rw->IsSame()) ChangeValue(val->rw.value());
-				if (val->rh.has_value() && !val->rh->IsSame()) ChangeValue(val->rh.value());
-				if (val->ft.has_value() && !val->ft->IsSame()) ChangeValue(val->ft.value());
-				if (val->fill.has_value() && !val->fill->IsSame()) ChangeColor(val->fill.value());
-				if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value());
-				if (!val->pct.IsSame()) ChangePct(val->pct);
+				bool forceReplace = false;
+				if (val->forceReplace) val->forceReplace = false, forceReplace = true;
+
+				if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace);
+				if (!val->x.IsSame()) ChangeValue(val->x, forceReplace);
+				if (!val->y.IsSame()) ChangeValue(val->y, forceReplace);
+				if (!val->w.IsSame()) ChangeValue(val->w, forceReplace);
+				if (!val->h.IsSame()) ChangeValue(val->h, forceReplace);
+				if (val->rw.has_value() && !val->rw->IsSame()) ChangeValue(val->rw.value(), forceReplace);
+				if (val->rh.has_value() && !val->rh->IsSame()) ChangeValue(val->rh.value(), forceReplace);
+				if (val->ft.has_value() && !val->ft->IsSame()) ChangeValue(val->ft.value(), forceReplace);
+				if (val->fill.has_value() && !val->fill->IsSame()) ChangeColor(val->fill.value(), forceReplace);
+				if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value(), forceReplace);
+				if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace);
 			}
 			for (const auto& [key, val] : superellipseMap)
 			{
-				if (!val->enable.IsSame()) ChangeState(val->enable);
-				if (!val->x.IsSame()) ChangeValue(val->x);
-				if (!val->y.IsSame()) ChangeValue(val->y);
-				if (!val->w.IsSame()) ChangeValue(val->w);
-				if (!val->h.IsSame()) ChangeValue(val->h);
-				if (val->n.has_value() && !val->n->IsSame()) ChangeValue(val->n.value());
-				if (val->ft.has_value() && !val->ft->IsSame()) ChangeValue(val->ft.value());
-				if (val->fill.has_value() && !val->fill->IsSame()) ChangeColor(val->fill.value());
-				if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value());
-				if (!val->pct.IsSame()) ChangePct(val->pct);
+				bool forceReplace = false;
+				if (val->forceReplace) val->forceReplace = false, forceReplace = true;
+
+				if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace);
+				if (!val->x.IsSame()) ChangeValue(val->x, forceReplace);
+				if (!val->y.IsSame()) ChangeValue(val->y, forceReplace);
+				if (!val->w.IsSame()) ChangeValue(val->w, forceReplace);
+				if (!val->h.IsSame()) ChangeValue(val->h, forceReplace);
+				if (val->n.has_value() && !val->n->IsSame()) ChangeValue(val->n.value(), forceReplace);
+				if (val->ft.has_value() && !val->ft->IsSame()) ChangeValue(val->ft.value(), forceReplace);
+				if (val->fill.has_value() && !val->fill->IsSame()) ChangeColor(val->fill.value(), forceReplace);
+				if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value(), forceReplace);
+				if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace);
 			}
 			for (const auto& [key, val] : svgMap)
 			{
-				if (!val->enable.IsSame()) ChangeState(val->enable);
-				if (!val->x.IsSame()) ChangeValue(val->x);
-				if (!val->x.IsSame()) ChangeValue(val->x);
-				if (!val->y.IsSame()) ChangeValue(val->y);
-				if (!val->w.IsSame()) ChangeValue(val->w);
-				if (!val->h.IsSame()) ChangeValue(val->h);
-				if (val->svg.IsSame()) ChangeString(val->svg);
-				if (val->color1.has_value() && !val->color1->IsSame()) ChangeColor(val->color1.value());
-				if (val->color2.has_value() && !val->color2->IsSame()) ChangeColor(val->color2.value());
-				if (!val->pct.IsSame()) ChangePct(val->pct);
+				bool forceReplace = false;
+				if (val->forceReplace) val->forceReplace = false, forceReplace = true;
+
+				if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace);
+				if (!val->x.IsSame()) ChangeValue(val->x, forceReplace);
+				if (!val->y.IsSame()) ChangeValue(val->y, forceReplace);
+				if (!val->w.IsSame()) ChangeValue(val->w, forceReplace);
+				if (!val->h.IsSame()) ChangeValue(val->h, forceReplace);
+				if (val->svg.IsSame()) ChangeString(val->svg, forceReplace);
+				if (val->color1.has_value() && !val->color1->IsSame()) ChangeColor(val->color1.value(), forceReplace);
+				if (val->color2.has_value() && !val->color2->IsSame()) ChangeColor(val->color2.value(), forceReplace);
+				if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace);
 			}
 			for (const auto& [key, val] : wordMap)
 			{
-				if (!val->enable.IsSame()) ChangeState(val->enable);
-				if (!val->x.IsSame()) ChangeValue(val->x);
-				if (!val->x.IsSame()) ChangeValue(val->x);
-				if (!val->y.IsSame()) ChangeValue(val->y);
-				if (!val->w.IsSame()) ChangeValue(val->w);
-				if (!val->h.IsSame()) ChangeValue(val->h);
-				if (!val->size.IsSame()) ChangeValue(val->size);
-				if (!val->content.IsSame()) ChangeString(val->content);
-				if (!val->color.IsSame()) ChangeColor(val->color);
-				if (!val->pct.IsSame()) ChangePct(val->pct);
+				bool forceReplace = false;
+				if (val->forceReplace) val->forceReplace = false, forceReplace = true;
+
+				if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace);
+				if (!val->x.IsSame()) ChangeValue(val->x, forceReplace);
+				if (!val->y.IsSame()) ChangeValue(val->y, forceReplace);
+				if (!val->w.IsSame()) ChangeValue(val->w, forceReplace);
+				if (!val->h.IsSame()) ChangeValue(val->h, forceReplace);
+				if (!val->size.IsSame()) ChangeValue(val->size, forceReplace);
+				if (!val->content.IsSame()) ChangeString(val->content, forceReplace);
+				if (!val->color.IsSame()) ChangeColor(val->color, forceReplace);
+				if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace);
 			}
 
 			// 特殊体质：按钮
@@ -765,40 +774,52 @@ void BarUISetClass::Rendering()
 				BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
 				if (temp == nullptr) continue;
 
-				if (!temp->buttom.enable.IsSame()) ChangeState(temp->buttom.enable);
-				if (!temp->buttom.x.IsSame()) ChangeValue(temp->buttom.x);
-				if (!temp->buttom.x.IsSame()) ChangeValue(temp->buttom.x);
-				if (!temp->buttom.y.IsSame()) ChangeValue(temp->buttom.y);
-				if (!temp->buttom.w.IsSame()) ChangeValue(temp->buttom.w);
-				if (!temp->buttom.h.IsSame()) ChangeValue(temp->buttom.h);
-				if (temp->buttom.rw.has_value() && temp->buttom.rw->IsSame()) ChangeValue(temp->buttom.rw.value());
-				if (temp->buttom.rh.has_value() && temp->buttom.rh->IsSame()) ChangeValue(temp->buttom.rh.value());
-				if (temp->buttom.ft.has_value() && temp->buttom.ft->IsSame()) ChangeValue(temp->buttom.ft.value());
-				if (temp->buttom.fill.has_value() && !temp->buttom.fill->IsSame()) ChangeColor(temp->buttom.fill.value());
-				if (temp->buttom.frame.has_value() && !temp->buttom.frame->IsSame()) ChangeColor(temp->buttom.frame.value());
-				if (!temp->buttom.pct.IsSame()) ChangePct(temp->buttom.pct);
+				{
+					bool forceReplace = false;
+					if (temp->buttom.forceReplace) temp->buttom.forceReplace = false, forceReplace = true;
 
-				if (!temp->icon.enable.IsSame()) ChangeState(temp->icon.enable);
-				if (!temp->icon.x.IsSame()) ChangeValue(temp->icon.x);
-				if (!temp->icon.x.IsSame()) ChangeValue(temp->icon.x);
-				if (!temp->icon.y.IsSame()) ChangeValue(temp->icon.y);
-				if (!temp->icon.w.IsSame()) ChangeValue(temp->icon.w);
-				if (!temp->icon.h.IsSame()) ChangeValue(temp->icon.h);
-				if (temp->icon.svg.IsSame()) ChangeString(temp->icon.svg);
-				if (temp->icon.color1.has_value() && !temp->icon.color1->IsSame()) ChangeColor(temp->icon.color1.value());
-				if (temp->icon.color2.has_value() && !temp->icon.color2->IsSame()) ChangeColor(temp->icon.color2.value());
-				if (!temp->icon.pct.IsSame()) ChangePct(temp->icon.pct);
+					if (!temp->buttom.enable.IsSame()) ChangeState(temp->buttom.enable, forceReplace);
+					if (!temp->buttom.x.IsSame()) ChangeValue(temp->buttom.x, forceReplace);
+					if (!temp->buttom.y.IsSame()) ChangeValue(temp->buttom.y, forceReplace);
+					if (!temp->buttom.w.IsSame()) ChangeValue(temp->buttom.w, forceReplace);
+					if (!temp->buttom.h.IsSame()) ChangeValue(temp->buttom.h, forceReplace);
+					if (temp->buttom.rw.has_value() && temp->buttom.rw->IsSame()) ChangeValue(temp->buttom.rw.value(), forceReplace);
+					if (temp->buttom.rh.has_value() && temp->buttom.rh->IsSame()) ChangeValue(temp->buttom.rh.value(), forceReplace);
+					if (temp->buttom.ft.has_value() && temp->buttom.ft->IsSame()) ChangeValue(temp->buttom.ft.value(), forceReplace);
+					if (temp->buttom.fill.has_value() && !temp->buttom.fill->IsSame()) ChangeColor(temp->buttom.fill.value(), forceReplace);
+					if (temp->buttom.frame.has_value() && !temp->buttom.frame->IsSame()) ChangeColor(temp->buttom.frame.value(), forceReplace);
+					if (!temp->buttom.pct.IsSame()) ChangePct(temp->buttom.pct, forceReplace);
+				}
 
-				if (!temp->name.enable.IsSame()) ChangeState(temp->name.enable);
-				if (!temp->name.x.IsSame()) ChangeValue(temp->name.x);
-				if (!temp->name.x.IsSame()) ChangeValue(temp->name.x);
-				if (!temp->name.y.IsSame()) ChangeValue(temp->name.y);
-				if (!temp->name.w.IsSame()) ChangeValue(temp->name.w);
-				if (!temp->name.h.IsSame()) ChangeValue(temp->name.h);
-				if (!temp->name.size.IsSame()) ChangeValue(temp->name.size);
-				if (!temp->name.content.IsSame()) ChangeString(temp->name.content);
-				if (!temp->name.color.IsSame()) ChangeColor(temp->name.color);
-				if (!temp->name.pct.IsSame()) ChangePct(temp->name.pct);
+				{
+					bool forceReplace = false;
+					if (temp->icon.forceReplace) temp->icon.forceReplace = false, forceReplace = true;
+
+					if (!temp->icon.enable.IsSame()) ChangeState(temp->icon.enable, forceReplace);
+					if (!temp->icon.x.IsSame()) ChangeValue(temp->icon.x, forceReplace);
+					if (!temp->icon.y.IsSame()) ChangeValue(temp->icon.y, forceReplace);
+					if (!temp->icon.w.IsSame()) ChangeValue(temp->icon.w, forceReplace);
+					if (!temp->icon.h.IsSame()) ChangeValue(temp->icon.h, forceReplace);
+					if (temp->icon.svg.IsSame()) ChangeString(temp->icon.svg, forceReplace);
+					if (temp->icon.color1.has_value() && !temp->icon.color1->IsSame()) ChangeColor(temp->icon.color1.value(), forceReplace);
+					if (temp->icon.color2.has_value() && !temp->icon.color2->IsSame()) ChangeColor(temp->icon.color2.value(), forceReplace);
+					if (!temp->icon.pct.IsSame()) ChangePct(temp->icon.pct, forceReplace);
+				}
+
+				{
+					bool forceReplace = false;
+					if (temp->name.forceReplace) temp->name.forceReplace = false, forceReplace = true;
+
+					if (!temp->name.enable.IsSame()) ChangeState(temp->name.enable, forceReplace);
+					if (!temp->name.x.IsSame()) ChangeValue(temp->name.x, forceReplace);
+					if (!temp->name.y.IsSame()) ChangeValue(temp->name.y, forceReplace);
+					if (!temp->name.w.IsSame()) ChangeValue(temp->name.w, forceReplace);
+					if (!temp->name.h.IsSame()) ChangeValue(temp->name.h, forceReplace);
+					if (!temp->name.size.IsSame()) ChangeValue(temp->name.size, forceReplace);
+					if (!temp->name.content.IsSame()) ChangeString(temp->name.content, forceReplace);
+					if (!temp->name.color.IsSame()) ChangeColor(temp->name.color, forceReplace);
+					if (!temp->name.pct.IsSame()) ChangePct(temp->name.pct, forceReplace);
+				}
 			}
 		}
 
@@ -967,14 +988,10 @@ void BarUISetClass::Interact()
 				for (int id = 0; id < barButtomSet.tot; id++)
 				{
 					BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
-					if (temp == nullptr) continue;
+					if (temp == nullptr || temp->hide) continue;
 
-					TestCout << msg.x << "," << msg.y << endl;
-					TestCout << temp->buttom.inhX << "," << temp->buttom.inhY << " - " << temp->buttom.w.val << "," << temp->buttom.h.val << endl;
-					TestCout << endl;
 					if (temp->buttom.IsClick(msg.x, msg.y))
 					{
-						Testi(1);
 						continueFlag = false;
 						if (msg.message == WM_LBUTTONDOWN /*msg.lbutton*/)
 						{
@@ -985,8 +1002,7 @@ void BarUISetClass::Interact()
 								{
 									if (!msg.lbutton)
 									{
-										Testi(2);
-										// TODO
+										if (temp->clickFunc) temp->clickFunc();
 										barState.CalcButtomState();
 
 										break;

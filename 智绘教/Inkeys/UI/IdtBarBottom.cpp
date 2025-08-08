@@ -1,102 +1,182 @@
 ﻿#include "IdtBarBottom.h"
 
+#include "../../IdtState.h"
+#include "../../IdtDraw.h" // 历史遗留问题
+
 void BarButtomSetClass::PresetInitialization()
 {
 	{
-		BarButtomClass* divider = new BarButtomClass;
-		divider->preset = BarButtomPresetEnum::Divider;
+		BarButtomClass* obj = new BarButtomClass;
+		{
+			obj->size = BarButtomSizeEnum::oneTwo;
+			obj->preset = BarButtomPresetEnum::Divider;
+			obj->hide = false;
+		}
 
-		divider->size = BarButtomSizeEnum::oneTwo;
+		{
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, "分割线", 0.0);
+			obj->name.enable.Initialization(false);
+		}
+		{
+			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+			obj->buttom.enable.Initialization(true);
+		}
+		{
+			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+			obj->icon.InitializationFromResource(L"UI", L"barDivider");
+			obj->icon.enable.Initialization(true);
+		}
 
-		divider->name.Initialization(0.0, 0.0, 0.0, 0.0, "分割线", 0.0);
-		divider->name.enable.Initialization(false);
-
-		divider->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
-		divider->buttom.enable.Initialization(true);
-
-		divider->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
-		divider->icon.InitializationFromResource(L"UI", L"barDivider");
-		divider->icon.enable.Initialization(true);
-
-		divider->state = &barButtomState[(int)divider->preset.load()];
-		preset[(int)divider->preset.load()] = divider;
+		obj->state = &barButtomState[(int)obj->preset.load()];
+		preset[(int)obj->preset.load()] = obj;
 	}
 
 	{
-		BarButtomClass* select = new BarButtomClass;
-		select->preset = BarButtomPresetEnum::Select;
+		BarButtomClass* obj = new BarButtomClass;
+		{
+			obj->size = BarButtomSizeEnum::twoTwo;
+			obj->preset = BarButtomPresetEnum::Select;
+			obj->hide = false;
+		}
 
-		select->size = BarButtomSizeEnum::twoTwo;
+		{
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, "选择", 0.0);
+			obj->name.enable.Initialization(true);
+		}
+		{
+			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+			obj->buttom.enable.Initialization(true);
+		}
+		{
+			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+			obj->icon.InitializationFromResource(L"UI", L"barSelect");
+			obj->icon.enable.Initialization(true);
+		}
 
-		select->name.Initialization(0.0, 0.0, 0.0, 0.0, "选择", 0.0);
-		select->name.enable.Initialization(true);
+		{
+			obj->clickFunc = []() -> void
+				{
+					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection)
+						ChangeStateModeToSelection();
+				};
+		}
 
-		select->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
-		select->buttom.enable.Initialization(true);
-
-		select->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
-		select->icon.InitializationFromResource(L"UI", L"barSelect");
-		select->icon.enable.Initialization(true);
-
-		select->state = &barButtomState[(int)select->preset.load()];
-		preset[(int)select->preset.load()] = select;
+		obj->state = &barButtomState[(int)obj->preset.load()];
+		preset[(int)obj->preset.load()] = obj;
 	}
 	{
-		BarButtomClass* draw = new BarButtomClass;
-		draw->preset = BarButtomPresetEnum::Draw;
+		BarButtomClass* obj = new BarButtomClass;
+		{
+			obj->size = BarButtomSizeEnum::twoTwo;
+			obj->preset = BarButtomPresetEnum::Draw;
+			obj->hide = false;
+		}
 
-		draw->size = BarButtomSizeEnum::twoTwo;
+		{
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, "绘制", 0.0);
+			obj->name.enable.Initialization(true);
+		}
+		{
+			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+			obj->buttom.enable.Initialization(true);
+		}
+		{
+			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+			obj->icon.InitializationFromResource(L"UI", L"barBursh1");
+			obj->icon.enable.Initialization(true);
+		}
 
-		draw->name.Initialization(0.0, 0.0, 0.0, 0.0, "绘制", 0.0);
-		draw->name.enable.Initialization(true);
+		{
+			obj->clickFunc = []() -> void
+				{
+					// TODO 后续记得分离 IdtPen 和 IdtShape
+					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen &&
+						stateMode.StateModeSelect != StateModeSelectEnum::IdtShape)
+					{
+						ChangeStateModeToPen();
+					}
+				};
+		}
 
-		draw->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
-		draw->buttom.enable.Initialization(true);
-
-		draw->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
-		draw->icon.InitializationFromResource(L"UI", L"barBursh1");
-		draw->icon.enable.Initialization(true);
-
-		draw->state = &barButtomState[(int)draw->preset.load()];
-		preset[(int)draw->preset.load()] = draw;
+		obj->state = &barButtomState[(int)obj->preset.load()];
+		preset[(int)obj->preset.load()] = obj;
 	}
 	{
-		BarButtomClass* freeze = new BarButtomClass;
-		freeze->preset = BarButtomPresetEnum::Freeze;
+		BarButtomClass* obj = new BarButtomClass;
+		{
+			obj->size = BarButtomSizeEnum::twoTwo;
+			obj->preset = BarButtomPresetEnum::Freeze;
+			obj->hide = false;
+		}
 
-		freeze->size = BarButtomSizeEnum::twoTwo;
+		{
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, "定格", 0.0);
+			obj->name.enable.Initialization(true);
+		}
+		{
+			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+			obj->buttom.enable.Initialization(true);
+		}
+		{
+			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+			obj->icon.InitializationFromResource(L"UI", L"barFreeze");
+			obj->icon.enable.Initialization(true);
+		}
 
-		freeze->name.Initialization(0.0, 0.0, 0.0, 0.0, "定格", 0.0);
-		freeze->name.enable.Initialization(true);
+		{
+			obj->clickFunc = []() -> void
+				{
+					// TODO 注意 ppt_show == NULL 时需要禁用按钮
+					if (FreezeFrame.mode != 1)
+					{
+						FreezeFrame.mode = 1;
+						penetrate.select = false;
 
-		freeze->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
-		freeze->buttom.enable.Initialization(true);
+						if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) FreezeFrame.select = true;
+					}
+					else
+					{
+						FreezeFrame.mode = 0;
+						FreezeFrame.select = false;
+					}
+				};
+		}
 
-		freeze->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
-		freeze->icon.InitializationFromResource(L"UI", L"barFreeze");
-		freeze->icon.enable.Initialization(true);
-
-		freeze->state = &barButtomState[(int)freeze->preset.load()];
-		preset[(int)freeze->preset.load()] = freeze;
+		obj->state = &barButtomState[(int)obj->preset.load()];
+		preset[(int)obj->preset.load()] = obj;
 	}
 	{
-		BarButtomClass* setting = new BarButtomClass;
-		setting->preset = BarButtomPresetEnum::Setting;
+		BarButtomClass* obj = new BarButtomClass;
+		{
+			obj->size = BarButtomSizeEnum::twoTwo;
+			obj->preset = BarButtomPresetEnum::Setting;
+			obj->hide = false;
+		}
 
-		setting->size = BarButtomSizeEnum::twoTwo;
+		{
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, "设置", 0.0);
+			obj->name.enable.Initialization(true);
+		}
+		{
+			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+			obj->buttom.enable.Initialization(true);
+		}
+		{
+			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+			obj->icon.InitializationFromResource(L"UI", L"barSetting");
+			obj->icon.enable.Initialization(true);
+		}
 
-		setting->name.Initialization(0.0, 0.0, 0.0, 0.0, "设置", 0.0);
-		setting->name.enable.Initialization(true);
+		{
+			obj->clickFunc = []() -> void
+				{
+					if (test.select) test.select = false;
+					else test.select = true;
+				};
+		}
 
-		setting->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
-		setting->buttom.enable.Initialization(true);
-
-		setting->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
-		setting->icon.InitializationFromResource(L"UI", L"barSetting");
-		setting->icon.enable.Initialization(true);
-
-		setting->state = &barButtomState[(int)setting->preset.load()];
-		preset[(int)setting->preset.load()] = setting;
+		obj->state = &barButtomState[(int)obj->preset.load()];
+		preset[(int)obj->preset.load()] = obj;
 	}
 }
 
