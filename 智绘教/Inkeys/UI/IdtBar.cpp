@@ -543,8 +543,6 @@ void BarUISetClass::Rendering()
 	{
 		// 计算 UI
 		{
-			// TODO forNum == 1 时，直接设置相等
-
 			// 主栏
 			{
 				// 按钮位置计算（特别操作）
@@ -670,6 +668,30 @@ void BarUISetClass::Rendering()
 
 					shapeMap[BarUISetShapeEnum::MainBar]->pct.tar = 0.9;
 					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().tar = 0.18;
+				}
+
+				// 绘制属性
+				{
+					if (!barState.drawAttribute)
+					{
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->x.tar = 5;
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.tar = 5;
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->w.tar = 60;
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->h.tar = 60;
+
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->pct.tar = 0.0;
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->framePct.value().tar = 0.0;
+					}
+					else
+					{
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->x.tar = 0;
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.tar = -90;
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->w.tar = 200;
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->h.tar = 80;
+
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->pct.tar = 0.9;
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->framePct.value().tar = 0.18;
+					}
 				}
 			}
 		}
@@ -834,10 +856,14 @@ void BarUISetClass::Rendering()
 
 			using enum BarUiInheritEnum;
 			{
-				auto obj = BarUISetShapeEnum::MainBar;
-				superellipseMap[BarUISetSuperellipseEnum::MainButton]->Inherit(); // 提前计算依赖
-				spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Left, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), false);
+				// 主栏
+				{
+					auto obj = BarUISetShapeEnum::MainBar;
+					superellipseMap[BarUISetSuperellipseEnum::MainButton]->Inherit(); // 提前计算依赖
+					spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Left, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), false);
+				}
 
+				// 主栏按钮
 				for (int id = 0; id < barButtomSet.tot; id++)
 				{
 					BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
@@ -854,6 +880,12 @@ void BarUISetClass::Rendering()
 					Testi(temp->buttom.inhY);
 					Testi(temp->buttom.w.val);
 					Testi(temp->buttom.h.val);*/
+				}
+
+				// 绘制属性
+				{
+					auto obj = BarUISetShapeEnum::DrawAttributeBar;
+					spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(TopLeft, barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->buttom));
 				}
 			}
 			{
@@ -1148,6 +1180,14 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 			shape->framePct = BarUiPctClass(0.18);
 			shape->enable.Initialization(true);
 			barUISet.shapeMap[BarUISetShapeEnum::MainBar] = shape;
+
+			{
+				auto shape = make_shared<BarUiShapeClass>(10.0, 10.0, 60.0, 60.0, 8.0, 8.0, 1.0, RGB(24, 24, 24), RGB(255, 255, 255));
+				shape->pct.Initialization(0.9);
+				shape->framePct = BarUiPctClass(0.18);
+				shape->enable.Initialization(true);
+				barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar] = shape;
+			}
 		}
 	}
 }

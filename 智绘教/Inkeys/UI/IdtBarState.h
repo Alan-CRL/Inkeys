@@ -6,6 +6,7 @@ class BarStateClass
 {
 public:
 	IdtAtomic<bool> fold = true;
+	IdtAtomic<bool> drawAttribute = false;
 
 public:
 	void CalcButtomState();

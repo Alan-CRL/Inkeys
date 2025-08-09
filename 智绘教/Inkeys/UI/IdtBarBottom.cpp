@@ -89,11 +89,15 @@ void BarButtomSetClass::PresetInitialization()
 		{
 			obj->clickFunc = []() -> void
 				{
-					// TODO 后续记得分离 IdtPen 和 IdtShape
-					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen &&
-						stateMode.StateModeSelect != StateModeSelectEnum::IdtShape)
+					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen)
 					{
+						barState.drawAttribute = false;
 						ChangeStateModeToPen();
+					}
+					else
+					{
+						if (barState.drawAttribute) barState.drawAttribute = false;
+						else barState.drawAttribute = true;
 					}
 				};
 		}

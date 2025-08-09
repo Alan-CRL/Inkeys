@@ -53,7 +53,8 @@ class BarUISetClass;
 // 控件枚举
 enum class BarUISetShapeEnum
 {
-	MainBar
+	MainBar,
+	DrawAttributeBar
 };
 enum class BarUISetSuperellipseEnum
 {
