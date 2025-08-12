@@ -13,12 +13,7 @@ void BarStateClass::CalcButtomState()
 	}
 	{
 		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen) barButtomState[(int)BarButtomPresetEnum::Draw].state = BarWidgetState::Selected;
-		else
-		{
-			barButtomState[(int)BarButtomPresetEnum::Draw].state = BarWidgetState::None;
-
-			barState.drawAttribute = false;
-		}
+		else barButtomState[(int)BarButtomPresetEnum::Draw].state = BarWidgetState::None;
 	}
 
 	{

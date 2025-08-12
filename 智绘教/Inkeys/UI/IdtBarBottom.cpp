@@ -5,6 +5,7 @@
 
 void BarButtomSetClass::PresetInitialization()
 {
+	// 分隔线
 	{
 		BarButtomClass* obj = new BarButtomClass;
 		{
@@ -31,6 +32,7 @@ void BarButtomSetClass::PresetInitialization()
 		preset[(int)obj->preset.load()] = obj;
 	}
 
+	// 选择
 	{
 		BarButtomClass* obj = new BarButtomClass;
 		{
@@ -54,7 +56,7 @@ void BarButtomSetClass::PresetInitialization()
 		}
 
 		{
-			obj->clickFunc = []() -> void
+			obj->clickFunc = [&]() -> void
 				{
 					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection)
 						ChangeStateModeToSelection();
@@ -64,6 +66,7 @@ void BarButtomSetClass::PresetInitialization()
 		obj->state = &barButtomState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
+	// 绘制
 	{
 		BarButtomClass* obj = new BarButtomClass;
 		{
@@ -87,7 +90,7 @@ void BarButtomSetClass::PresetInitialization()
 		}
 
 		{
-			obj->clickFunc = []() -> void
+			obj->clickFunc = [&]() -> void
 				{
 					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen)
 					{
@@ -105,6 +108,7 @@ void BarButtomSetClass::PresetInitialization()
 		obj->state = &barButtomState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
+	// 定格
 	{
 		BarButtomClass* obj = new BarButtomClass;
 		{
@@ -128,7 +132,7 @@ void BarButtomSetClass::PresetInitialization()
 		}
 
 		{
-			obj->clickFunc = []() -> void
+			obj->clickFunc = [&]() -> void
 				{
 					// TODO 注意 ppt_show == NULL 时需要禁用按钮
 					if (FreezeFrame.mode != 1)
@@ -149,6 +153,7 @@ void BarButtomSetClass::PresetInitialization()
 		obj->state = &barButtomState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
+	// 设置
 	{
 		BarButtomClass* obj = new BarButtomClass;
 		{
@@ -172,7 +177,7 @@ void BarButtomSetClass::PresetInitialization()
 		}
 
 		{
-			obj->clickFunc = []() -> void
+			obj->clickFunc = [&]() -> void
 				{
 					if (test.select) test.select = false;
 					else test.select = true;
@@ -182,6 +187,10 @@ void BarButtomSetClass::PresetInitialization()
 		obj->state = &barButtomState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
+}
+void BarButtomSetClass::PresetHoming()
+{
+	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen) barState.drawAttribute = false;
 }
 
 void BarButtomSetClass::Load()

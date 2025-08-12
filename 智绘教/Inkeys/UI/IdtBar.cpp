@@ -552,7 +552,7 @@ void BarUISetClass::Rendering()
 					for (int id = 0; id < barButtomSet.tot; id++)
 					{
 						BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
-						if (temp == nullptr || temp->hide) continue;
+						if (temp == nullptr) continue;
 
 						if (temp->size == BarButtomSizeEnum::twoTwo)
 						{
@@ -607,8 +607,17 @@ void BarUISetClass::Rendering()
 								temp->name.size.tar = 18.0;
 							}
 
-							xO += 75, yO = 0;
-							totalWidth += 75;
+							if (temp->hide)
+							{
+								temp->buttom.pct.tar = 0.0;
+								temp->icon.pct.tar = 0.0;
+								temp->name.pct.tar = 0.0;
+							}
+							else
+							{
+								xO += 75, yO = 0;
+								totalWidth += 75;
+							}
 						}
 
 						// 特殊体质 - 分隔栏
@@ -646,8 +655,17 @@ void BarUISetClass::Rendering()
 								}
 							}
 
-							xO += 15, yO = 0;
-							totalWidth += 15;
+							if (temp->hide)
+							{
+								temp->buttom.pct.tar = 0.0;
+								temp->icon.pct.tar = 0.0;
+								temp->name.pct.tar = 0.0;
+							}
+							else
+							{
+								xO += 15, yO = 0;
+								totalWidth += 15;
+							}
 						}
 					}
 				}
@@ -869,17 +887,10 @@ void BarUISetClass::Rendering()
 					BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
 					if (temp == nullptr) continue;
 
-					//Testa(temp->name.content.GetTar());
-
 					spec.Shape(barDeviceContext, temp->buttom, temp->buttom.Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::MainBar]));
 					spec.Svg(barDeviceContext, temp->icon, temp->icon.Inherit(Center, temp->buttom));
 					spec.Word(barDeviceContext, temp->name, temp->name.Inherit(Center, temp->buttom));
 					// TODO
-
-					/*Testi(temp->buttom.inhX);
-					Testi(temp->buttom.inhY);
-					Testi(temp->buttom.w.val);
-					Testi(temp->buttom.h.val);*/
 				}
 
 				// 绘制属性
@@ -1035,6 +1046,7 @@ void BarUISetClass::Interact()
 									if (!msg.lbutton)
 									{
 										if (temp->clickFunc) temp->clickFunc();
+										barButtomSet.PresetHoming();
 										barState.CalcButtomState();
 
 										break;

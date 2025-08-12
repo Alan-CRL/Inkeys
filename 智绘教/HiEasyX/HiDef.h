@@ -8,7 +8,7 @@
 #define _HIEASYX_VER_STR_	_T("Ver 0.4.1")
 
 // 使用原生 EasyX 窗口（默认为 HiWindow）
-//#define _NATIVE_EASYX_
+// #define _NATIVE_EASYX_
 
 // 取消 Release 模式的程序启动动画
 #define _NO_START_ANIMATION_

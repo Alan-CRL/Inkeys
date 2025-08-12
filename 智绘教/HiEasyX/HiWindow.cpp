@@ -1573,17 +1573,11 @@ namespace HiEasyX
 			// 获取系统任务栏自定义的消息代码
 			g_uWM_TASKBARCREATED = RegisterWindowMessage(TEXT("TaskbarCreated"));
 
-#ifndef _DEBUG
-#ifndef __DEBUG__
-#ifndef DEBUG
 #ifndef _NO_START_ANIMATION_
 
 			if (!(isPreShowState && nPreCmdShow == SW_HIDE) && w >= 640 && h >= 480)
 				start_animation = true;
 
-#endif
-#endif
-#endif
 #endif
 		}
 
