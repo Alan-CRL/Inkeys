@@ -5,8 +5,7 @@ name: Inkeys Build
 on:
   push:
     branches:
-      - main
-      - insider
+      - inkeys2-final
 permissions:
   actions: write
 
