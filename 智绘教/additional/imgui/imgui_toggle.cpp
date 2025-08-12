@@ -34,6 +34,7 @@ namespace
 bool ImGui::Toggle(const char* label, bool* v, const ImVec2& size /*= ImVec2()*/)
 {
     ::SetToAliasDefaults(::_internalConfig);
+    ::_internalConfig.Size = size;
     return ::ToggleInternal(label, v, ::_internalConfig);
 }
 

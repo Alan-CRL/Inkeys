@@ -74,7 +74,9 @@ enum class AutomaticUpdateStateEnum : int
 	UpdateRestart = 8, // 重启软件更新到最新版本
 	UpdateLatest = 9, // 软件已经是最新版本
 	UpdateNewer = 10, // 软件相对最新版本更新
-	UpdateNew = 11 // 发现软件新版本
+	UpdateNew = 11, // 发现软件新版本
+
+	UpdateLimit = 12, // 自动更新被阻止
 };
 extern AutomaticUpdateStateEnum AutomaticUpdateState;
 
@@ -115,4 +117,5 @@ extern bool inconsistentArchitecture;
 wstring get_domain_name(wstring url);
 wstring convertToHttp(const wstring& url);
 
+extern bool isWindows8OrGreater;
 void AutomaticUpdate();

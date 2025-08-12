@@ -45,7 +45,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250721a";				// 程序发布日期
+wstring editionDate = L"20250812a";				// 程序发布日期
 wstring editionChannel = L"LTS";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -975,17 +975,20 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				else setlist.paintDevice = 1;
 			}
 			{
-				//// 获取屏幕设备上下文
-				//HDC screen = GetDC(NULL);
+				HDC screenDC = GetDC(nullptr);
+				double scale = 1.0;
 
-				//// 获取屏幕的 DPI 值
-				//int dpiX = GetDeviceCaps(screen, LOGPIXELSX);
-				//int dpiY = GetDeviceCaps(screen, LOGPIXELSY);
+				if (screenDC)
+				{
+					int dpiX = GetDeviceCaps(screenDC, LOGPIXELSX);
+					ReleaseDC(nullptr, screenDC);
 
-				//// 释放设备上下文
-				//ReleaseDC(NULL, screen);
+					// 转换为缩放倍率
+					scale = static_cast<double>(dpiX) / USER_DEFAULT_SCREEN_DPI;
+				}
 
-				setlist.settingGlobalScale = 1.0f;
+				// 限制范围 1.0 ~ 1.5
+				setlist.settingGlobalScale = static_cast<float>(clamp(scale, 1.0, 1.5));
 			}
 		}
 
@@ -1063,6 +1066,14 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 自动更新初始化
 	{
+		// 检查系统版本
+		{
+			IdtSysVersionStruct windowsVersion = GetWindowsVersion();
+
+			if (windowsVersion.majorVersion > 6 || (windowsVersion.majorVersion == 6 && windowsVersion.minorVersion >= 2)) isWindows8OrGreater = true;
+			else isWindows8OrGreater = false;
+		}
+
 #ifdef IDT_RELEASE
 		thread(AutomaticUpdate).detach();
 #endif

@@ -105,6 +105,12 @@
         "N": "New version available",
         "ManualUpdate": "Manual Update"
       },
+      "LimitUpdate":
+      {
+        "N": "Automatic update blocked!\nThe updated version has adjustments to system compatibility. We have blocked your automatic update because the software may fail to start after updating automatically.\nPlease check the details to confirm whether your system meets the requirements, and download and update the software manually.",
+
+        "Info": "Details"
+      },
       "VersionTip": "Incompatible software and system architecture may cause performance issues. It's recommended to repair the software in the 'Software Repair' section below (select 'Fix architecture'), or select the target architecture below and repair.",
       "Info":
       {
@@ -484,6 +490,10 @@
       "Latest": "Already up-to-date",
       "Newer": "Newer than official latest",
       "New": "New version found",
+
+      "Limit": "Automatic updates are blocked",
+      "Info": "Details",
+
       "Repair": "Try Repair",
       "ManualDownload": "Manual Download",
       "UpdateNow": "Update Now"

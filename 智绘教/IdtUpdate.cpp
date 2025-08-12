@@ -287,6 +287,7 @@ AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state,
 	return UpdateRestart;
 }
 
+bool isWindows8OrGreater;
 void AutomaticUpdate()
 {
 	bool state = true;
@@ -309,6 +310,13 @@ updateStart:
 		against = false;
 
 		updateArch = setlist.updateArchitecture;
+
+		// 无法使用自动更新以及自动修复的情况
+		if (!isWindows8OrGreater)
+		{
+			AutomaticUpdateState = UpdateLimit;
+			state = false;
+		}
 
 		//获取最新版本信息
 		if (state)
