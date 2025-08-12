@@ -183,6 +183,8 @@ void SettingMain()
 
 		{
 			::ShowWindow(setting_window, SW_SHOWNOACTIVATE);
+			showWindow = true;
+
 			CreateDeviceD3D(setting_window);
 
 			// 初始化
@@ -3285,7 +3287,7 @@ void SettingMain()
 
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
-								ImGui::BeginChild("置顶间隔-介绍", { 410.0f * settingGlobalScale,50.0f * settingGlobalScale }, false);
+								ImGui::BeginChild("置顶间隔-介绍", { 610.0f * settingGlobalScale,50.0f * settingGlobalScale }, false);
 
 								{
 									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
@@ -9532,7 +9534,7 @@ void SettingMain()
 			if (!test.select) break;
 			if (!showWindow)
 			{
-				::ShowWindow(setting_window, SW_SHOW);
+				::ShowWindow(setting_window, SW_SHOWNOACTIVATE);
 				showWindow = true;
 			}
 		}

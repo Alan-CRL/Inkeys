@@ -108,6 +108,7 @@ void BarButtomSetClass::PresetInitialization()
 		obj->state = &barButtomState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
+
 	// 定格
 	{
 		BarButtomClass* obj = new BarButtomClass;

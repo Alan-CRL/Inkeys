@@ -60,7 +60,7 @@ void StartForInkeys()
 		GlobalMemoryStatusEx(&memoryStatus);
 
 		// 系统是否高于或是 Windows10
-		hardwareInfo.isWindows10OrGreater = (GetWindowsVersion() >= 10);
+		hardwareInfo.isWindows10OrGreater = (GetWindowsVersion().majorVersion >= 10);
 
 		// 是否拥有触摸设备
 		int digitizerStatus = GetSystemMetrics(SM_DIGITIZER);
@@ -68,9 +68,9 @@ void StartForInkeys()
 	}
 }
 
-int GetWindowsVersion()
+IdtSysVersionStruct GetWindowsVersion()
 {
-	int ret = 0;
+	IdtSysVersionStruct ret = { 0,0 };
 
 	// 动态加载 ntdll.dll 并获取 RtlGetVersion 函数地址
 	HMODULE hMod = GetModuleHandleW(L"ntdll.dll");
@@ -84,7 +84,10 @@ int GetWindowsVersion()
 			rovi.dwOSVersionInfoSize = sizeof(rovi);
 			// 调用 RtlGetVersion 获取系统版本信息
 			if (pRtlGetVersion(&rovi) == 0)
-				ret = rovi.dwMajorVersion;
+			{
+				ret.majorVersion = static_cast<int>(rovi.dwMajorVersion);
+				ret.minorVersion = static_cast<int>(rovi.dwMinorVersion);
+			}
 		}
 	}
 
