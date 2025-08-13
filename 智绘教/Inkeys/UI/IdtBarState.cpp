@@ -30,3 +30,4 @@ BarStateClass barState;
 BarStyleClass barStyle;
 
 map<int, BarButtomStateClass> barButtomState;
+BarButtomPositionClass barButtomPosition;

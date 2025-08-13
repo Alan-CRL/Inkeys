@@ -108,7 +108,137 @@ void BarButtomSetClass::PresetInitialization()
 		obj->state = &barButtomState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
+	// 擦除
+	{
+		BarButtomClass* obj = new BarButtomClass;
+		{
+			obj->size = BarButtomSizeEnum::twoTwo;
+			obj->preset = BarButtomPresetEnum::Eraser;
+			obj->hide = false;
+		}
 
+		{
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, "擦除", 0.0);
+			obj->name.enable.Initialization(true);
+		}
+		{
+			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+			obj->buttom.enable.Initialization(true);
+		}
+		{
+			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+			obj->icon.InitializationFromResource(L"UI", L"barEraser");
+			obj->icon.enable.Initialization(true);
+		}
+
+		{
+			obj->clickFunc = [&]() -> void
+				{
+				};
+		}
+
+		obj->state = &barButtomState[(int)obj->preset.load()];
+		preset[(int)obj->preset.load()] = obj;
+	}
+
+	// 撤回
+	{
+		BarButtomClass* obj = new BarButtomClass;
+		{
+			obj->size = BarButtomSizeEnum::twoTwo;
+			obj->preset = BarButtomPresetEnum::Recall;
+			obj->hide = false;
+		}
+
+		{
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, "撤回", 0.0);
+			obj->name.enable.Initialization(true);
+		}
+		{
+			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+			obj->buttom.enable.Initialization(true);
+		}
+		{
+			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+			obj->icon.InitializationFromResource(L"UI", L"barRecall");
+			obj->icon.enable.Initialization(true);
+		}
+
+		{
+			obj->clickFunc = [&]() -> void
+				{
+				};
+		}
+
+		obj->state = &barButtomState[(int)obj->preset.load()];
+		preset[(int)obj->preset.load()] = obj;
+	}
+	// TODO 重做
+	// 清空
+	{
+		BarButtomClass* obj = new BarButtomClass;
+		{
+			obj->size = BarButtomSizeEnum::twoTwo;
+			obj->preset = BarButtomPresetEnum::Clean;
+			obj->hide = false;
+		}
+
+		{
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, "清空", 0.0);
+			obj->name.enable.Initialization(true);
+		}
+		{
+			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+			obj->buttom.enable.Initialization(true);
+		}
+		{
+			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+			obj->icon.InitializationFromResource(L"UI", L"barClean");
+			obj->icon.enable.Initialization(true);
+		}
+
+		{
+			obj->clickFunc = [&]() -> void
+				{
+				};
+		}
+
+		obj->state = &barButtomState[(int)obj->preset.load()];
+		preset[(int)obj->preset.load()] = obj;
+	}
+
+	// 穿透
+	{
+		BarButtomClass* obj = new BarButtomClass;
+		{
+			obj->size = BarButtomSizeEnum::twoTwo;
+			obj->preset = BarButtomPresetEnum::Pierce;
+			obj->hide = false;
+		}
+
+		{
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, "穿透", 0.0);
+			obj->name.enable.Initialization(true);
+		}
+		{
+			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+			obj->buttom.enable.Initialization(true);
+		}
+		{
+			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+			obj->icon.InitializationFromResource(L"UI", L"barPierce");
+			obj->icon.enable.Initialization(true);
+		}
+
+		{
+			obj->clickFunc = [&]() -> void
+				{
+				};
+		}
+
+		obj->state = &barButtomState[(int)obj->preset.load()];
+		preset[(int)obj->preset.load()] = obj;
+	}
 	// 定格
 	{
 		BarButtomClass* obj = new BarButtomClass;
@@ -154,6 +284,7 @@ void BarButtomSetClass::PresetInitialization()
 		obj->state = &barButtomState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
+
 	// 设置
 	{
 		BarButtomClass* obj = new BarButtomClass;
@@ -198,7 +329,11 @@ void BarButtomSetClass::Load()
 {
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Select]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Draw]);
+	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Eraser]);
+	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Recall]);
+	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Clean]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Divider]);
+	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Pierce]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Freeze]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Setting]);
 }

@@ -108,6 +108,10 @@ public:
 		tar = valT;
 		lockTarmt.unlock();
 	}
+	// 拷贝构造函数，只拷贝值，mutex新建
+	BarUiStringClass(const BarUiStringClass& other)
+		: val(other.val), tar(other.tar), valmt(), tarmt() {
+	}
 
 public:
 	string GetVal() const

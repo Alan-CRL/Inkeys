@@ -44,3 +44,13 @@ public:
 	BarWidgetEmphasize emph = BarWidgetEmphasize::None;
 };
 extern map<int, BarButtomStateClass> barButtomState;
+
+class BarButtomPositionClass
+{
+public:
+	BarButtomPositionClass() {}
+
+public:
+	int drawButtomListId = 2;
+};
+extern BarButtomPositionClass barButtomPosition;

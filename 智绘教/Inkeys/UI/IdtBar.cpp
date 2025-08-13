@@ -396,7 +396,7 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 
 		textFormat = barUISetClass->barMedia.formatCache->GetFormat(
 			L"HarmonyOS Sans SC",
-			30.0f,
+			tarSize,
 			nullptr,
 			DWRITE_FONT_WEIGHT_BOLD,
 			DWRITE_FONT_STYLE_NORMAL,
@@ -547,7 +547,6 @@ void BarUISetClass::Rendering()
 			{
 				// 按钮位置计算（特别操作）
 				double totalWidth = 5.0;
-				//double lastLeft = 5.0;
 
 				{
 					double xO = 5.0, yO = 5.0;
@@ -560,6 +559,9 @@ void BarUISetClass::Rendering()
 
 						if (temp->size == BarButtomSizeEnum::oneOne)
 						{
+							// 特殊设定：是否是颜色选择器
+							bool isColorSelector = (temp->name.enable.tar && temp->name.content.GetTar().substr(0, 7) == "__color");
+
 							if (temp->buttom.enable.tar)
 							{
 								if (barState.fold)
@@ -568,18 +570,13 @@ void BarUISetClass::Rendering()
 									temp->buttom.y.tar = 23.75;
 
 									temp->buttom.pct.tar = 0.0;
-									if (temp->buttom.framePct.has_value()) temp->buttom.framePct.value().tar = 0.0; // 只有颜色选择器使用
 								}
 								else
 								{
 									temp->buttom.x.tar = xO;
 									temp->buttom.y.tar = yO;
 
-									if (temp->name.enable.tar && temp->name.content.GetTar().substr(0, 7) == "__color")  // 只有颜色选择器使用
-									{
-										temp->buttom.pct.tar = 1.0;
-										if (temp->buttom.framePct.has_value()) temp->buttom.framePct.value().tar = 1.0;
-									}
+									if (isColorSelector) temp->buttom.pct.tar = 1.0; // 只有颜色选择器使用
 									else
 									{
 										if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.tar = 0.2;
@@ -589,12 +586,11 @@ void BarUISetClass::Rendering()
 								temp->buttom.w.tar = 32.5;
 								temp->buttom.h.tar = 32.5;
 
-								if (temp->buttom.framePct.has_value()); // 只有颜色选择器使用
-								else temp->buttom.fill.value().tar = RGB(88, 255, 236);
+								if (!isColorSelector) temp->buttom.fill.value().tar = RGB(88, 255, 236);
 							}
 							if (temp->icon.enable.tar)
 							{
-								if (temp->buttom.framePct.has_value()) temp->icon.SetWH(nullopt, 10.0); // 只有颜色选择器使用
+								if (isColorSelector) temp->icon.SetWH(nullopt, 10.0); // 颜色选择器中的图标即为标识选中该颜色，所以需要较小尺寸
 								else temp->icon.SetWH(nullopt, 20.0);
 
 								temp->icon.y.tar = 0.0;
@@ -624,14 +620,115 @@ void BarUISetClass::Rendering()
 							}
 							else
 							{
+								// 位于第一行
 								if (yO <= 5.0)
 								{
 									yO += 37.5;
 									totalWidth += 37.5;
+									// 只有在第一行时才增加总宽度，因为第二行没有再加的必要
+									// 如果第二行是 twoOne 或 twoTwo 的按钮，则会自动换行到更右侧
+								}
+								// 位于第二行
+								else
+								{
+									// 如果第一行是 twoOne，现在是第二行应该存在塞下第二个 1*1 的按钮的情况
+
+									if (xO + 37.5 >= totalWidth)
+									{
+										// 如果当前 xO + 37.5 超过了总宽度，则换行到更右侧
+										xO += 37.5;
+										yO = 5.0;
+									}
+									else
+									{
+										// 否则继续在当前行
+										xO += 37.5;
+									}
+								}
+							}
+						}
+						if (temp->size == BarButtomSizeEnum::twoOne)
+						{
+							if (yO > 5.0)
+							{
+								// 如果当前位置处于第二行，且容不下一个 2*1 的按钮，则换行到更右侧
+								if (xO + 75.0 > totalWidth)
+								{
+									xO = totalWidth;
+									yO = 5.0;
+								}
+							}
+
+							if (temp->buttom.enable.tar)
+							{
+								if (barState.fold)
+								{
+									temp->buttom.x.tar = 5.0;
+									temp->buttom.y.tar = 23.75;
+
+									temp->buttom.pct.tar = 0.0;
 								}
 								else
 								{
-									xO += 37.5;
+									temp->buttom.x.tar = xO;
+									temp->buttom.y.tar = yO;
+
+									if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.tar = 0.2;
+									else temp->buttom.pct.tar = 0.0;
+								}
+								temp->buttom.w.tar = 70.0;
+								temp->buttom.h.tar = 32.5;
+
+								temp->buttom.fill.value().tar = RGB(88, 255, 236);
+							}
+							if (temp->icon.enable.tar)
+							{
+								temp->icon.SetWH(nullopt, 20.0);
+
+								temp->icon.x.tar = -18.75; // 靠左对齐（左侧和上下两侧均保持 6.25px 的空隙）
+								if (barState.fold) temp->icon.pct.tar = 0.0;
+								else
+								{
+									temp->icon.pct.tar = 1.0;
+
+									if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().tar = RGB(88, 255, 236);
+									else temp->icon.color1.value().tar = RGB(255, 255, 255);
+								}
+							}
+							if (temp->name.enable.tar)
+							{
+								temp->name.x.tar = 13.125; // 右对齐
+								temp->name.y.tar = 0.0;
+								temp->name.w.tar = 31.25; // 70px 宽度中除去左侧 icon 占用的 20px + 6.25px * 2 的空隙,考虑自身右侧还有 6.25px 的间隙
+								temp->name.h.tar = 32.5;
+								if (barState.fold) temp->name.pct.tar = 0.0;
+								else temp->name.pct.tar = 1.0;
+
+								if (temp->state->state == BarWidgetState::Selected) temp->name.color.tar = RGB(88, 255, 236);
+								else temp->name.color.tar = RGB(255, 255, 255);
+								temp->name.size.tar = 15.0;
+							}
+
+							if (temp->hide)
+							{
+								temp->buttom.pct.tar = 0.0;
+								temp->icon.pct.tar = 0.0;
+								temp->name.pct.tar = 0.0;
+							}
+							else
+							{
+								// 位于第一行
+								if (yO <= 5.0)
+								{
+									yO += 37.5;
+									totalWidth += 75.0;
+									// 只在第一行中增加总宽度，因为第二行没有再加的必要
+									// 第二行如果是 oneOne 的按钮，那么在超过宽度时也会自动换行到更右侧
+								}
+								// 位于第二行
+								else
+								{
+									xO += 75.0;
 									yO = 5.0;
 								}
 							}
@@ -693,7 +790,7 @@ void BarUISetClass::Rendering()
 
 								if (temp->state->state == BarWidgetState::Selected) temp->name.color.tar = RGB(88, 255, 236);
 								else temp->name.color.tar = RGB(255, 255, 255);
-								temp->name.size.tar = 18.0;
+								temp->name.size.tar = 15.0;
 							}
 
 							if (temp->hide)
@@ -756,6 +853,14 @@ void BarUISetClass::Rendering()
 							{
 								xO += 15, yO = 5.0;
 								totalWidth += 15;
+							}
+						}
+
+						// 位置记录
+						{
+							if (temp->preset == BarButtomPresetEnum::Draw)
+							{
+								barButtomPosition.drawButtomListId = id;
 							}
 						}
 					}
@@ -986,8 +1091,10 @@ void BarUISetClass::Rendering()
 
 				// 绘制属性
 				{
+					BarButtomClass* temp = barButtomSet.buttomlist.Get(barButtomPosition.drawButtomListId);
+
 					auto obj = BarUISetShapeEnum::DrawAttributeBar;
-					spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(TopLeft, barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->buttom));
+					spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(TopLeft, temp->buttom));
 				}
 			}
 			{
@@ -1243,7 +1350,7 @@ void BarInitializationClass::InitializeWindow(BarUISetClass& barUISet)
 
 	barUISet.barWindow.x = 0;
 	barUISet.barWindow.y = 0;
-	barUISet.barWindow.w = 2000;// MainMonitor.MonitorWidth;
+	barUISet.barWindow.w = 2880;// MainMonitor.MonitorWidth;
 	barUISet.barWindow.h = 1000;// MainMonitor.MonitorHeight;
 	barUISet.barWindow.pct = 255;
 	SetWindowPos(floating_window, NULL, barUISet.barWindow.x, barUISet.barWindow.y, barUISet.barWindow.w, barUISet.barWindow.h, SWP_NOACTIVATE | SWP_NOZORDER | SWP_DRAWFRAME); // 设置窗口位置尺寸
@@ -1258,7 +1365,7 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 	{
 		// 主按钮
 		{
-			auto superellipse = make_shared<BarUiSuperellipseClass>(200.0, 200.0, 80.0, 80.0, 3.0, 1.0, RGB(24, 24, 24), RGB(255, 255, 255));
+			auto superellipse = make_shared<BarUiSuperellipseClass>(0.0, 0.0, 80.0, 80.0, 3.0, 1.0, RGB(24, 24, 24), RGB(255, 255, 255));
 			superellipse->pct.Initialization(0.73);
 			superellipse->framePct = BarUiPctClass(0.18);
 			superellipse->x.mod = BarUiValueModeEnum::Once;

@@ -16,9 +16,9 @@ The backup repository is located at [GitCode](https://gitcode.com/alan16356/Inke
 
 [![Communication Group](https://img.shields.io/badge/-QQ%20Group%20618720802-blue?style=flat&logo=TencentQQ)](https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6)  ![GitHub issues](https://img.shields.io/github/issues/Alan-CRL/IDT?logo=github&color=green)  ![GitHub stars](https://img.shields.io/github/stars/Alan-CRL/IDT)
 
-Windows screen annotation tool with efficient annotation and rich features,  
-Make screen demonstrations simpler, teaching more efficient,  
-suitable for touch devices and computers.
+Unleash your creativity by writing anywhere on your screen with ease.   
+Inkeys brings you ultra-smooth, high-performance brushes, a powerful array of features, and numerous thoughtful design touches to elevate your efficiency and user experience.   
+Built with C++20, Inkeys is designed exclusively for Windows.  
 
 Old name `Intelligent-Drawing-Teaching`（referred to as `IDT`）
 

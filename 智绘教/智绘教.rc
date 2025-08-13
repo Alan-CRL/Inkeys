@@ -270,9 +270,19 @@ BARSELECT               UI                      "src\\UI\\barSelect.svg"
 
 BARBURSH1               UI                      "src\\UI\\barBursh1.svg"
 
-barFreeze               UI                      "src\\UI\\barFreeze.svg"
+BARFREEZE               UI                      "src\\UI\\barFreeze.svg"
 
-barSetting              UI                      "src\\UI\\barSetting.svg"
+BARSETTING              UI                      "src\\UI\\barSetting.svg"
+
+barEraser               UI                      "src\\UI\\barEraser.svg"
+
+barClean                UI                      "src\\UI\\barClean.svg"
+
+barPierce               UI                      "src\\UI\\barPierce.svg"
+
+barRecall               UI                      "src\\UI\\barRecall.svg"
+
+barRedo                 UI                      "src\\UI\\barRedo.svg"
 
 #endif    // 中文(简体，中国) resources
 /////////////////////////////////////////////////////////////////////////////

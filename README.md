@@ -17,8 +17,9 @@
 
 [![交流群](https://img.shields.io/badge/-%E4%BA%A4%E6%B5%81%E7%BE%A4%20618720802-blue?style=flat&logo=TencentQQ)](https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6)  ![GitHub issues](https://img.shields.io/github/issues/Alan-CRL/IDT?logo=github&color=green)  ![GitHub stars](https://img.shields.io/github/stars/Alan-CRL/IDT)
 
-Windows 屏幕批注工具，拥有高效批注和丰富功能，  
-让屏幕演示变得简单，让教学授课变得高效，适用于触摸设备和PC端。
+将你的创意随心所欲地书写在屏幕的任意角落。  
+智绘教Inkeys 拥有丝滑流畅的高性能画笔、丰富强大的功能，以及众多贴心小设计，全面提升你的效率与使用体验。  
+软件基于 C++20 编写，专为 Windows 平台打造。  
 
 原名 `Intelligent-Drawing-Teaching`（简称 IDT）
 
