@@ -1,7 +1,12 @@
 ﻿#include "IdtBarBottom.h"
 
 #include "../../IdtState.h"
-#include "../../IdtDraw.h" // 历史遗留问题
+
+// 历史遗留问题
+#include "../../IdtDraw.h"
+#include "../../IdtDrawpad.h"
+#include "../../IdtHistoricalDrawpad.h"
+#include "../../IdtImage.h"
 
 void BarButtomSetClass::PresetInitialization()
 {
@@ -12,6 +17,8 @@ void BarButtomSetClass::PresetInitialization()
 			obj->size = BarButtomSizeEnum::oneTwo;
 			obj->preset = BarButtomPresetEnum::Divider;
 			obj->hide = false;
+
+			obj->only = false; // 允许多个分隔线
 		}
 
 		{
@@ -134,6 +141,8 @@ void BarButtomSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
+					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtEraser)
+						ChangeStateModeToEraser();
 				};
 		}
 
@@ -145,7 +154,7 @@ void BarButtomSetClass::PresetInitialization()
 	{
 		BarButtomClass* obj = new BarButtomClass;
 		{
-			obj->size = BarButtomSizeEnum::twoTwo;
+			obj->size = BarButtomSizeEnum::twoOne;
 			obj->preset = BarButtomPresetEnum::Recall;
 			obj->hide = false;
 		}
@@ -167,6 +176,13 @@ void BarButtomSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
+					// 额外的检查
+					if (!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0))
+					{
+						IdtRecall();
+					}
+
+					// TODO 撤回库重做后需要试试检测撤回状态，要支持按键变灰
 				};
 		}
 
@@ -178,7 +194,7 @@ void BarButtomSetClass::PresetInitialization()
 	{
 		BarButtomClass* obj = new BarButtomClass;
 		{
-			obj->size = BarButtomSizeEnum::twoTwo;
+			obj->size = BarButtomSizeEnum::twoOne;
 			obj->preset = BarButtomPresetEnum::Clean;
 			obj->hide = false;
 		}
@@ -211,7 +227,7 @@ void BarButtomSetClass::PresetInitialization()
 	{
 		BarButtomClass* obj = new BarButtomClass;
 		{
-			obj->size = BarButtomSizeEnum::twoTwo;
+			obj->size = BarButtomSizeEnum::twoOne;
 			obj->preset = BarButtomPresetEnum::Pierce;
 			obj->hide = false;
 		}
@@ -233,6 +249,19 @@ void BarButtomSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
+					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection)
+					{
+						if (penetrate.select)
+						{
+							penetrate.select = false;
+							if (FreezeFrame.mode == 2) FreezeFrame.mode = 1;
+						}
+						else
+						{
+							if (FreezeFrame.mode == 1) FreezeFrame.mode = 2;
+							penetrate.select = true;
+						}
+					}
 				};
 		}
 
@@ -243,7 +272,7 @@ void BarButtomSetClass::PresetInitialization()
 	{
 		BarButtomClass* obj = new BarButtomClass;
 		{
-			obj->size = BarButtomSizeEnum::twoTwo;
+			obj->size = BarButtomSizeEnum::twoOne;
 			obj->preset = BarButtomPresetEnum::Freeze;
 			obj->hide = false;
 		}
@@ -336,4 +365,6 @@ void BarButtomSetClass::Load()
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Pierce]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Freeze]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Setting]);
+
+	barState.CalcButtomState();
 }

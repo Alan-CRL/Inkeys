@@ -683,9 +683,9 @@ void BarUISetClass::Rendering()
 							}
 							if (temp->icon.enable.tar)
 							{
-								temp->icon.SetWH(nullopt, 20.0);
+								temp->icon.SetWH(nullopt, 18.0);
 
-								temp->icon.x.tar = -18.75; // 靠左对齐（左侧和上下两侧均保持 6.25px 的空隙）
+								temp->icon.x.tar = -21.0; // 靠左对齐（上下两侧均保持 6.25px 的空隙，而左侧是 5px）
 								if (barState.fold) temp->icon.pct.tar = 0.0;
 								else
 								{
@@ -697,16 +697,16 @@ void BarUISetClass::Rendering()
 							}
 							if (temp->name.enable.tar)
 							{
-								temp->name.x.tar = 13.125; // 右对齐
+								temp->name.x.tar = 11.5; // 右对齐
 								temp->name.y.tar = 0.0;
-								temp->name.w.tar = 31.25; // 70px 宽度中除去左侧 icon 占用的 20px + 6.25px * 2 的空隙,考虑自身右侧还有 6.25px 的间隙
-								temp->name.h.tar = 32.5;
+								temp->name.w.tar = 37; // 70px 宽度中除去左侧 icon 占用的 18px + 5px * 2 的空隙,考虑自身右侧还有 5px 的间隙
+								temp->name.h.tar = 31.5;
 								if (barState.fold) temp->name.pct.tar = 0.0;
 								else temp->name.pct.tar = 1.0;
 
 								if (temp->state->state == BarWidgetState::Selected) temp->name.color.tar = RGB(88, 255, 236);
 								else temp->name.color.tar = RGB(255, 255, 255);
-								temp->name.size.tar = 15.0;
+								temp->name.size.tar = 12.0;
 							}
 
 							if (temp->hide)
@@ -853,14 +853,6 @@ void BarUISetClass::Rendering()
 							{
 								xO += 15, yO = 5.0;
 								totalWidth += 15;
-							}
-						}
-
-						// 位置记录
-						{
-							if (temp->preset == BarButtomPresetEnum::Draw)
-							{
-								barButtomPosition.drawButtomListId = id;
 							}
 						}
 					}
@@ -1091,10 +1083,8 @@ void BarUISetClass::Rendering()
 
 				// 绘制属性
 				{
-					BarButtomClass* temp = barButtomSet.buttomlist.Get(barButtomPosition.drawButtomListId);
-
 					auto obj = BarUISetShapeEnum::DrawAttributeBar;
-					spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(TopLeft, temp->buttom));
+					spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(TopLeft, barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->buttom));
 				}
 			}
 			{

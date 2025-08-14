@@ -37,19 +37,22 @@ public:
 	// 拷贝构造函数，深拷贝所有数据成员，mutex新建
 	BarButtomClass(const BarButtomClass& other)
 		: size(other.size),
-			preset(other.preset),
-			hide(other.hide),
-			buttom(other.buttom),
-			name(other.name),
-			icon(other.icon),
-			clickFunc(other.clickFunc),
-			state(other.state) // 浅拷贝指针
-	{}
+		preset(other.preset),
+		hide(other.hide),
+		only(other.only),
+		buttom(other.buttom),
+		name(other.name),
+		icon(other.icon),
+		clickFunc(other.clickFunc),
+		state(other.state) // 浅拷贝指针
+	{
+	}
 
 public:
 	IdtAtomic<BarButtomSizeEnum> size;
 	IdtAtomic<BarButtomPresetEnum> preset = BarButtomPresetEnum::None;
 	IdtAtomic<bool> hide = true;
+	IdtAtomic<bool> only = true;
 
 	BarUiShapeClass buttom;
 	BarUiWordClass name;
@@ -72,9 +75,20 @@ public:
 	{
 		unique_lock lock(mt);
 		if (!(x >= 0 && x < list.size()) || ptr == nullptr) return false;
-		// 深拷贝 BarButtomClass 对象
-		shared_ptr<BarButtomClass> copy = make_shared<BarButtomClass>(*ptr);
-		list[x] = copy;
+
+		// 如果对象不唯一，则应用深拷贝
+		if (!ptr->only)
+		{
+			// 深拷贝 BarButtomClass 对象
+			shared_ptr<BarButtomClass> copy = make_shared<BarButtomClass>(*ptr);
+			list[x] = copy;
+		}
+		else
+		{
+			// 直接使用传入的指针
+			list[x] = shared_ptr<BarButtomClass>(ptr);
+		}
+
 		return true;
 	}
 
@@ -100,7 +114,7 @@ public:
 	BarButtomListClass buttomlist;
 	IdtAtomic<int> tot; // 顺序列顶，开
 
-protected:
+	// 预设按钮模态
 	BarButtomClass* preset[40];
 
 public:
