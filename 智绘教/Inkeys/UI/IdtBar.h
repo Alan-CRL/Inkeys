@@ -109,6 +109,7 @@ public:
 protected:
 	double Seek(const ExMessage& msg);
 };
+extern BarUISetClass barUISet; // 全局 Bar UI 集合
 
 // ====================
 // 环境

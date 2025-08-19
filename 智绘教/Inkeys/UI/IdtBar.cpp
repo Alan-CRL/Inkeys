@@ -423,12 +423,13 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 		CComPtr<ID2D1SolidColorBrush> spFillBrush;
 		deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(color, tarPct), &spFillBrush);
 
-		deviceContext->DrawText(
+		deviceContext->DrawTextW(
 			tarContent.c_str(),
 			wcslen(tarContent.c_str()),
 			textFormat,
 			layoutRect,
-			spFillBrush
+			spFillBrush,
+			D2D1_DRAW_TEXT_OPTIONS_CLIP
 		);
 	}
 
@@ -436,6 +437,7 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 }
 
 // UI 总集
+BarUISetClass barUISet;
 void BarUISetClass::Rendering()
 {
 	BLENDFUNCTION blend;
@@ -547,7 +549,6 @@ void BarUISetClass::Rendering()
 			{
 				// 按钮位置计算（特别操作）
 				double totalWidth = 5.0;
-
 				{
 					double xO = 5.0, yO = 5.0;
 					// 控件计算的 xO 和 yO 包含自身和 右侧、下册 的空隙值 5px
@@ -566,33 +567,41 @@ void BarUISetClass::Rendering()
 							{
 								if (barState.fold)
 								{
-									temp->buttom.x.tar = 23.75;
-									temp->buttom.y.tar = 23.75;
+									temp->buttom.x.tar = 25.0;
+									temp->buttom.y.tar = 25.0;
 
 									temp->buttom.pct.tar = 0.0;
 								}
 								else
 								{
 									temp->buttom.x.tar = xO;
-									temp->buttom.y.tar = yO;
+									if (yO <= 5.0) temp->buttom.y.tar = yO + 2.5; // 位于第一行
+									else temp->buttom.y.tar = yO; // 位于第二行
 
 									if (isColorSelector) temp->buttom.pct.tar = 1.0; // 只有颜色选择器使用
 									else
 									{
-										if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.tar = 0.2;
+										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.tar = 0.1;
+										else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.tar = 0.2;
 										else temp->buttom.pct.tar = 0.0;
 									}
 								}
-								temp->buttom.w.tar = 32.5;
-								temp->buttom.h.tar = 32.5;
+								temp->buttom.w.tar = 30.0;
+								temp->buttom.h.tar = 30.0;
 
-								if (!isColorSelector) temp->buttom.fill.value().tar = RGB(88, 255, 236);
+								if (!isColorSelector)
+								{
+									if (temp->state->emph == BarWidgetEmphasize::Pressed && temp->state->state != BarWidgetState::Selected)
+										temp->buttom.fill.value().tar = RGB(127, 127, 127);
+									else temp->buttom.fill.value().tar = RGB(88, 255, 236);
+								}
 							}
 							if (temp->icon.enable.tar)
 							{
 								if (isColorSelector) temp->icon.SetWH(nullopt, 10.0); // 颜色选择器中的图标即为标识选中该颜色，所以需要较小尺寸
 								else temp->icon.SetWH(nullopt, 20.0);
 
+								temp->icon.x.tar = 0.0;
 								temp->icon.y.tar = 0.0;
 								if (barState.fold)
 								{
@@ -602,8 +611,16 @@ void BarUISetClass::Rendering()
 								{
 									temp->icon.pct.tar = 1.0;
 
-									if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().tar = RGB(88, 255, 236);
-									else temp->icon.color1.value().tar = RGB(255, 255, 255);
+									if (barStyle.darkStyle)
+									{
+										if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().tar = RGB(88, 255, 236);
+										else temp->icon.color1.value().tar = RGB(255, 255, 255);
+									}
+									else
+									{
+										if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().tar = RGB(88, 255, 236);
+										else temp->icon.color1.value().tar = RGB(0, 0, 0);
+									}
 								}
 							}
 							if (temp->name.enable.tar)
@@ -664,35 +681,48 @@ void BarUISetClass::Rendering()
 								if (barState.fold)
 								{
 									temp->buttom.x.tar = 5.0;
-									temp->buttom.y.tar = 23.75;
+									temp->buttom.y.tar = 25.0;
 
 									temp->buttom.pct.tar = 0.0;
 								}
 								else
 								{
 									temp->buttom.x.tar = xO;
-									temp->buttom.y.tar = yO;
+									if (yO <= 5.0) temp->buttom.y.tar = yO + 2.5; // 位于第一行
+									else temp->buttom.y.tar = yO; // 位于第二行
 
-									if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.tar = 0.2;
+									if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.tar = 0.1;
+									else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.tar = 0.2;
 									else temp->buttom.pct.tar = 0.0;
 								}
 								temp->buttom.w.tar = 70.0;
-								temp->buttom.h.tar = 32.5;
+								temp->buttom.h.tar = 30.0;
 
-								temp->buttom.fill.value().tar = RGB(88, 255, 236);
+								if (temp->state->emph == BarWidgetEmphasize::Pressed && temp->state->state != BarWidgetState::Selected)
+									temp->buttom.fill.value().tar = RGB(127, 127, 127);
+								else temp->buttom.fill.value().tar = RGB(88, 255, 236);
 							}
 							if (temp->icon.enable.tar)
 							{
 								temp->icon.SetWH(nullopt, 18.0);
 
-								temp->icon.x.tar = -21.0; // 靠左对齐（上下两侧均保持 6.25px 的空隙，而左侧是 5px）
+								temp->icon.x.tar = -21.0; // 靠左对齐（上下两侧均保持 6px 的空隙，而左侧是 5px）
+								temp->icon.y.tar = 0.0;
 								if (barState.fold) temp->icon.pct.tar = 0.0;
 								else
 								{
 									temp->icon.pct.tar = 1.0;
 
-									if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().tar = RGB(88, 255, 236);
-									else temp->icon.color1.value().tar = RGB(255, 255, 255);
+									if (barStyle.darkStyle)
+									{
+										if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().tar = RGB(88, 255, 236);
+										else temp->icon.color1.value().tar = RGB(255, 255, 255);
+									}
+									else
+									{
+										if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().tar = RGB(88, 255, 236);
+										else temp->icon.color1.value().tar = RGB(27, 27, 27);
+									}
 								}
 							}
 							if (temp->name.enable.tar)
@@ -700,12 +730,20 @@ void BarUISetClass::Rendering()
 								temp->name.x.tar = 11.5; // 右对齐
 								temp->name.y.tar = 0.0;
 								temp->name.w.tar = 37; // 70px 宽度中除去左侧 icon 占用的 18px + 5px * 2 的空隙,考虑自身右侧还有 5px 的间隙
-								temp->name.h.tar = 31.5;
+								temp->name.h.tar = 30.0;
 								if (barState.fold) temp->name.pct.tar = 0.0;
 								else temp->name.pct.tar = 1.0;
 
-								if (temp->state->state == BarWidgetState::Selected) temp->name.color.tar = RGB(88, 255, 236);
-								else temp->name.color.tar = RGB(255, 255, 255);
+								if (barStyle.darkStyle)
+								{
+									if (temp->state->state == BarWidgetState::Selected) temp->name.color.tar = RGB(88, 255, 236);
+									else temp->name.color.tar = RGB(255, 255, 255);
+								}
+								else
+								{
+									if (temp->state->state == BarWidgetState::Selected) temp->name.color.tar = RGB(88, 255, 236);
+									else temp->name.color.tar = RGB(27, 27, 27);
+								}
 								temp->name.size.tar = 12.0;
 							}
 
@@ -755,17 +793,21 @@ void BarUISetClass::Rendering()
 									temp->buttom.x.tar = xO;
 									temp->buttom.y.tar = yO;
 
-									if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.tar = 0.2;
+									if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.tar = 0.1;
+									else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.tar = 0.2;
 									else temp->buttom.pct.tar = 0.0;
 								}
 								temp->buttom.w.tar = 70.0;
 								temp->buttom.h.tar = 70.0;
 
-								temp->buttom.fill.value().tar = RGB(88, 255, 236);
+								if (temp->state->emph == BarWidgetEmphasize::Pressed && temp->state->state != BarWidgetState::Selected)
+									temp->buttom.fill.value().tar = RGB(127, 127, 127);
+								else temp->buttom.fill.value().tar = RGB(88, 255, 236);
 							}
 							if (temp->icon.enable.tar)
 							{
-								temp->icon.SetWH(nullopt, 25.0);
+								temp->icon.SetWH(nullopt, 28.0);
+								temp->icon.x.tar = 0.0;
 								temp->icon.y.tar = -10.0;
 								if (barState.fold)
 								{
@@ -775,8 +817,16 @@ void BarUISetClass::Rendering()
 								{
 									temp->icon.pct.tar = 1.0;
 
-									if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().tar = RGB(88, 255, 236);
-									else temp->icon.color1.value().tar = RGB(255, 255, 255);
+									if (barStyle.darkStyle)
+									{
+										if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().tar = RGB(88, 255, 236);
+										else temp->icon.color1.value().tar = RGB(255, 255, 255);
+									}
+									else
+									{
+										if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().tar = RGB(88, 255, 236);
+										else temp->icon.color1.value().tar = RGB(27, 27, 27);
+									}
 								}
 							}
 							if (temp->name.enable.tar)
@@ -788,9 +838,19 @@ void BarUISetClass::Rendering()
 								if (barState.fold) temp->name.pct.tar = 0.0;
 								else temp->name.pct.tar = 1.0;
 
-								if (temp->state->state == BarWidgetState::Selected) temp->name.color.tar = RGB(88, 255, 236);
-								else temp->name.color.tar = RGB(255, 255, 255);
-								temp->name.size.tar = 15.0;
+								if (barStyle.darkStyle)
+								{
+									if (temp->state->state == BarWidgetState::Selected) temp->name.color.tar = RGB(88, 255, 236);
+									else temp->name.color.tar = RGB(255, 255, 255);
+								}
+
+								else
+								{
+									if (temp->state->state == BarWidgetState::Selected) temp->name.color.tar = RGB(88, 255, 236);
+									else temp->name.color.tar = RGB(27, 27, 27);
+								}
+
+								temp->name.size.tar = 13.0;
 							}
 
 							if (temp->hide)
@@ -817,17 +877,22 @@ void BarUISetClass::Rendering()
 								{
 									temp->buttom.x.tar = 35.0;
 									temp->buttom.y.tar = 5.0;
+
+									temp->buttom.pct.tar = 0.0;
 								}
 								else
 								{
 									temp->buttom.x.tar = xO;
 									temp->buttom.y.tar = yO;
+
+									if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.tar = 0.2;
+									else temp->buttom.pct.tar = 0.0;
 								}
 								temp->buttom.w.tar = 10.0;
 								temp->buttom.h.tar = 70.0;
 
-								// TODO 后续新增悬停颜色
-								temp->buttom.pct.tar = 0.0;
+								if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.fill.value().tar = RGB(127, 127, 127);
+								else temp->buttom.fill.value().tar = RGB(88, 255, 236);
 							}
 							if (temp->icon.enable.tar)
 							{
@@ -839,7 +904,8 @@ void BarUISetClass::Rendering()
 								else
 								{
 									temp->icon.pct.tar = 0.18;
-									temp->icon.color1.value().tar = RGB(255, 255, 255);
+									if (barStyle.darkStyle) temp->icon.color1.value().tar = RGB(255, 255, 255);
+									else temp->icon.color1.value().tar = RGB(0, 0, 0);
 								}
 							}
 
@@ -859,21 +925,34 @@ void BarUISetClass::Rendering()
 				}
 
 				// 主栏
-				if (barState.fold)
 				{
-					shapeMap[BarUISetShapeEnum::MainBar]->x.tar = 0;
-					shapeMap[BarUISetShapeEnum::MainBar]->w.tar = 80;
+					if (barState.fold)
+					{
+						shapeMap[BarUISetShapeEnum::MainBar]->x.tar = 0;
+						shapeMap[BarUISetShapeEnum::MainBar]->w.tar = 80;
 
-					shapeMap[BarUISetShapeEnum::MainBar]->pct.tar = 0.0;
-					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().tar = 0.0;
-				}
-				else
-				{
-					shapeMap[BarUISetShapeEnum::MainBar]->w.tar = totalWidth;
-					shapeMap[BarUISetShapeEnum::MainBar]->x.tar = superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() + 10;
+						shapeMap[BarUISetShapeEnum::MainBar]->pct.tar = 0.0;
+						shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().tar = 0.0;
+					}
+					else
+					{
+						shapeMap[BarUISetShapeEnum::MainBar]->w.tar = totalWidth;
+						shapeMap[BarUISetShapeEnum::MainBar]->x.tar = superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() + 10;
 
-					shapeMap[BarUISetShapeEnum::MainBar]->pct.tar = 0.9;
-					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().tar = 0.18;
+						shapeMap[BarUISetShapeEnum::MainBar]->pct.tar = 0.9;
+						shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().tar = 0.18;
+					}
+
+					if (barStyle.darkStyle)
+					{
+						shapeMap[BarUISetShapeEnum::MainBar]->fill.value().tar = RGB(24, 24, 24);
+						shapeMap[BarUISetShapeEnum::MainBar]->frame.value().tar = RGB(255, 255, 255);
+					}
+					else
+					{
+						shapeMap[BarUISetShapeEnum::MainBar]->fill.value().tar = RGB(243, 243, 243);
+						shapeMap[BarUISetShapeEnum::MainBar]->frame.value().tar = RGB(0, 0, 0);
+					}
 				}
 
 				// 绘制属性
@@ -897,6 +976,17 @@ void BarUISetClass::Rendering()
 
 						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->pct.tar = 0.9;
 						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->framePct.value().tar = 0.18;
+					}
+
+					if (barStyle.darkStyle)
+					{
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->fill.value().tar = RGB(24, 24, 24);
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->frame.value().tar = RGB(255, 255, 255);
+					}
+					else
+					{
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->fill.value().tar = RGB(243, 243, 243);
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->frame.value().tar = RGB(0, 0, 0);
 					}
 				}
 			}
@@ -1226,6 +1316,7 @@ void BarUISetClass::Interact()
 						continueFlag = false;
 						if (msg.message == WM_LBUTTONDOWN /*msg.lbutton*/)
 						{
+							temp->state->emph = BarWidgetEmphasize::Pressed;
 							while (true)
 							{
 								hiex::getmessage_win32(&msg, EM_MOUSE, floating_window);
@@ -1234,14 +1325,14 @@ void BarUISetClass::Interact()
 									if (!msg.lbutton)
 									{
 										if (temp->clickFunc) temp->clickFunc();
-										barButtomSet.PresetHoming();
-										barState.CalcButtomState();
+										barButtomSet.StateUpdate();
 
 										break;
 									}
 								}
 								else break;
 							}
+							temp->state->emph = BarWidgetEmphasize::None;
 
 							hiex::flushmessage_win32(EM_MOUSE, floating_window);
 						}
@@ -1295,8 +1386,6 @@ void BarInitializationClass::Initialization()
 {
 	threadStatus[L"BarInitialization"] = true;
 
-	BarUISetClass barUISet;
-
 	// 初始化
 	InitializeWindow(barUISet);
 	InitializeMedia(barUISet);
@@ -1306,8 +1395,10 @@ void BarInitializationClass::Initialization()
 
 	// 初始化 按钮 们
 	barUISet.barButtomSet.PresetInitialization();
-	barUISet.barButtomSet.Load();
-	barState.CalcButtomState();
+	{
+		barUISet.barButtomSet.Load();
+		barUISet.barButtomSet.StateUpdate();
+	}
 
 	// 线程
 	thread(FloatingInstallHook).detach();
@@ -1358,8 +1449,8 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 			auto superellipse = make_shared<BarUiSuperellipseClass>(0.0, 0.0, 80.0, 80.0, 3.0, 1.0, RGB(24, 24, 24), RGB(255, 255, 255));
 			superellipse->pct.Initialization(0.73);
 			superellipse->framePct = BarUiPctClass(0.18);
-			superellipse->x.mod = BarUiValueModeEnum::Once;
-			superellipse->y.mod = BarUiValueModeEnum::Once;
+			superellipse->x.mod = BarUiValueModeEnum::Linear; // 当主栏在主按钮左侧的时候，其位置会根据 w 的变化而变化
+			superellipse->y.mod = BarUiValueModeEnum::Linear;	// 所以关闭 x,y 的动画回弹效果
 			superellipse->enable.Initialization(true);
 			barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton] = superellipse;
 
@@ -1376,7 +1467,7 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 		// 主栏
 		{
 			auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 80.0, 80.0, 8.0, 8.0, 1.0, RGB(24, 24, 24), RGB(255, 255, 255));
-			shape->pct.Initialization(0.9);
+			shape->pct.Initialization(0.8);
 			shape->framePct = BarUiPctClass(0.18);
 			shape->enable.Initialization(true);
 			barUISet.shapeMap[BarUISetShapeEnum::MainBar] = shape;

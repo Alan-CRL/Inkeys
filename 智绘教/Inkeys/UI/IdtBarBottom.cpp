@@ -321,6 +321,8 @@ void BarButtomSetClass::PresetInitialization()
 			obj->size = BarButtomSizeEnum::twoTwo;
 			obj->preset = BarButtomPresetEnum::Setting;
 			obj->hide = false;
+
+			obj->only = false;
 		}
 
 		{
@@ -349,9 +351,76 @@ void BarButtomSetClass::PresetInitialization()
 		preset[(int)obj->preset.load()] = obj;
 	}
 }
+
 void BarButtomSetClass::PresetHoming()
 {
 	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen) barState.drawAttribute = false;
+
+	// 进入非绘制模式需要隐藏无用按钮
+	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
+	{
+		// 显示状态变化
+		preset[(int)BarButtomPresetEnum::Eraser]->hide = true;
+		preset[(int)BarButtomPresetEnum::Recall]->hide = true;
+		//preset[(int)BarButtomPresetEnum::Redo]->hide = true;
+		preset[(int)BarButtomPresetEnum::Clean]->hide = true;
+		preset[(int)BarButtomPresetEnum::Pierce]->hide = true;
+
+		// 显示尺寸变化
+		preset[(int)BarButtomPresetEnum::Freeze]->size = BarButtomSizeEnum::twoTwo;
+
+		// 显示名称变化
+		preset[(int)BarButtomPresetEnum::Select]->name.content.SetTar("选择");
+	}
+	else
+	{
+		// 显示状态变化
+		preset[(int)BarButtomPresetEnum::Eraser]->hide = false;
+		preset[(int)BarButtomPresetEnum::Recall]->hide = false;
+		//preset[(int)BarButtomPresetEnum::Redo]->hide = false;
+		preset[(int)BarButtomPresetEnum::Clean]->hide = false;
+		preset[(int)BarButtomPresetEnum::Pierce]->hide = false;
+
+		// 显示尺寸变化
+		preset[(int)BarButtomPresetEnum::Freeze]->size = BarButtomSizeEnum::twoOne;
+
+		// 显示名称变化
+		preset[(int)BarButtomPresetEnum::Select]->name.content.SetTar("选择(清空)");
+	}
+}
+void BarButtomSetClass::CalcButtomState()
+{
+	{
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) barButtomState[(int)BarButtomPresetEnum::Select].state = BarWidgetState::Selected;
+		else barButtomState[(int)BarButtomPresetEnum::Select].state = BarWidgetState::None;
+	}
+	{
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen) barButtomState[(int)BarButtomPresetEnum::Draw].state = BarWidgetState::Selected;
+		else barButtomState[(int)BarButtomPresetEnum::Draw].state = BarWidgetState::None;
+	}
+	{
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser) barButtomState[(int)BarButtomPresetEnum::Eraser].state = BarWidgetState::Selected;
+		else barButtomState[(int)BarButtomPresetEnum::Eraser].state = BarWidgetState::None;
+	}
+
+	{
+		if (penetrate.select) barButtomState[(int)BarButtomPresetEnum::Pierce].state = BarWidgetState::Selected;
+		else barButtomState[(int)BarButtomPresetEnum::Pierce].state = BarWidgetState::None;
+	}
+	{
+		if (FreezeFrame.mode == 1) barButtomState[(int)BarButtomPresetEnum::Freeze].state = BarWidgetState::Selected;
+		else barButtomState[(int)BarButtomPresetEnum::Freeze].state = BarWidgetState::None;
+	}
+
+	{
+		if (test.select) barButtomState[(int)BarButtomPresetEnum::Setting].state = BarWidgetState::Selected;
+		else barButtomState[(int)BarButtomPresetEnum::Setting].state = BarWidgetState::None;
+	}
+}
+void BarButtomSetClass::StateUpdate()
+{
+	CalcButtomState();
+	PresetHoming();
 }
 
 void BarButtomSetClass::Load()
@@ -360,11 +429,10 @@ void BarButtomSetClass::Load()
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Draw]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Eraser]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Recall]);
+	// buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Redo]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Clean]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Divider]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Pierce]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Freeze]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Setting]);
-
-	barState.CalcButtomState();
 }

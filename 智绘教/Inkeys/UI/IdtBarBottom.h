@@ -30,6 +30,15 @@ enum class BarButtomPresetEnum : int
 	Setting
 };
 
+class BarButtomStateClass
+{
+public:
+	BarButtomStateClass() {}
+public:
+	BarWidgetState state = BarWidgetState::None;
+	BarWidgetEmphasize emph = BarWidgetEmphasize::None;
+};
+
 class BarButtomClass
 {
 public:
@@ -114,13 +123,20 @@ public:
 	BarButtomListClass buttomlist;
 	IdtAtomic<int> tot; // 顺序列顶，开
 
+	// 按钮状态
+	unordered_map<int, BarButtomStateClass> barButtomState;
+
 	// 预设按钮模态
 	BarButtomClass* preset[40];
 
 public:
 	void PresetInitialization();
-	void PresetHoming();
+	void StateUpdate();
 
 	// TODO 临时方案，按照默认样式加载，后续改为从配置中加载布局
 	void Load();
+
+protected:
+	void PresetHoming();
+	void CalcButtomState();
 };

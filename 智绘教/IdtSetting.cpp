@@ -17,6 +17,7 @@
 #include "IdtWindow.h"
 #include "CrashHandler/CrashHandler.h"
 #include "SuperTop/IdtSuperTop.h"
+#include "Inkeys/UI/IdtBar.h"
 
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_dx9.h"
@@ -902,7 +903,11 @@ void SettingMain()
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
 					PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
 					if (ImGui::Button("\ue8bb", { 46.0f * settingGlobalScale,32.0f * settingGlobalScale }))
+					{
+						// 关闭
 						test.select = false;
+						barUISet.barButtomSet.StateUpdate();
+					}
 
 					if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 					if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;

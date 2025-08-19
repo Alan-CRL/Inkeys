@@ -45,13 +45,14 @@ class BarUiValueClass
 {
 public:
 	BarUiValueClass() {}
-	BarUiValueClass(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Once) { mod = modT, val = tar = valT, startV = valT; }
+	BarUiValueClass(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Variable) { mod = modT, val = tar = valT, startV = valT; }
 
 	bool IsSame() { return val == tar; }
-	void Initialization(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Once) { mod = modT, val = tar = valT, startV = valT; }
+	void Initialization(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Variable) { mod = modT, val = tar = valT, startV = valT; }
 
 public:
-	IdtAtomic<BarUiValueModeEnum> mod = BarUiValueModeEnum::Once;
+	IdtAtomic<BarUiValueModeEnum> mod = BarUiValueModeEnum::Variable;
+	// 大部分控件需要使用回弹动效，所以默认值为 Variable
 
 	IdtAtomic<double> val = 0.0; // 直接值（当前位置）
 	IdtAtomic<double> tar = 0.0; // 目标值（目标位置）
@@ -76,6 +77,7 @@ public:
 	IdtAtomic<COLORREF> tar = RGB(0, 0, 0); // 目标值（目标位置）
 
 	IdtAtomic<double> spe = 0.0; // RGB基准速度 1/s
+	// 如果 spe == 0 则表示直接变化
 };
 //// 透明度 UI 值
 class BarUiPctClass
@@ -91,7 +93,8 @@ public:
 	IdtAtomic<double> val = 1.0; // 透明度直接值
 	IdtAtomic<double> tar = 1.0; // 颜色目标值
 
-	IdtAtomic<double> spe = 1.0; // 透明度基准速度 1/s
+	IdtAtomic<double> spe = 0.0; // 透明度基准速度 1/s
+	// 如果 spe == 0 则表示直接变化
 };
 //// 文字 UI 值
 class BarUiStringClass
