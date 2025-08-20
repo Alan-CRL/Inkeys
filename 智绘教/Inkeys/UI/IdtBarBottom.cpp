@@ -149,6 +149,38 @@ void BarButtomSetClass::PresetInitialization()
 		obj->state = &barButtomState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
+	// 几何
+	{
+		BarButtomClass* obj = new BarButtomClass;
+		{
+			obj->size = BarButtomSizeEnum::twoTwo;
+			obj->preset = BarButtomPresetEnum::Geometry;
+			obj->hide = false;
+		}
+
+		{
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, "几何", 0.0);
+			obj->name.enable.Initialization(true);
+		}
+		{
+			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+			obj->buttom.enable.Initialization(true);
+		}
+		{
+			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+			obj->icon.InitializationFromResource(L"UI", L"barGeometry");
+			obj->icon.enable.Initialization(true);
+		}
+
+		{
+			obj->clickFunc = [&]() -> void
+				{
+				};
+		}
+
+		obj->state = &barButtomState[(int)obj->preset.load()];
+		preset[(int)obj->preset.load()] = obj;
+	}
 
 	// 撤回
 	{
@@ -361,6 +393,7 @@ void BarButtomSetClass::PresetHoming()
 	{
 		// 显示状态变化
 		preset[(int)BarButtomPresetEnum::Eraser]->hide = true;
+		preset[(int)BarButtomPresetEnum::Geometry]->hide = true;
 		preset[(int)BarButtomPresetEnum::Recall]->hide = true;
 		//preset[(int)BarButtomPresetEnum::Redo]->hide = true;
 		preset[(int)BarButtomPresetEnum::Clean]->hide = true;
@@ -376,6 +409,7 @@ void BarButtomSetClass::PresetHoming()
 	{
 		// 显示状态变化
 		preset[(int)BarButtomPresetEnum::Eraser]->hide = false;
+		preset[(int)BarButtomPresetEnum::Geometry]->hide = false;
 		preset[(int)BarButtomPresetEnum::Recall]->hide = false;
 		//preset[(int)BarButtomPresetEnum::Redo]->hide = false;
 		preset[(int)BarButtomPresetEnum::Clean]->hide = false;
@@ -428,11 +462,16 @@ void BarButtomSetClass::Load()
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Select]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Draw]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Eraser]);
+	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Geometry]);
+
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Recall]);
 	// buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Redo]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Clean]);
+
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Divider]);
+
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Pierce]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Freeze]);
+
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Setting]);
 }

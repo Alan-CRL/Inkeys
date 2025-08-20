@@ -54,6 +54,40 @@ bool SetPenColor(COLORREF targetColor, bool setMemory)
 
 	return true;
 }
+float GetPenWidth()
+{
+	float ret = 0.0f;
+
+	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
+	{
+		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1) ret = stateMode.Pen.Brush1.width;
+		else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) ret = stateMode.Pen.Highlighter1.width;
+	}
+	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
+	{
+		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) ret = stateMode.Pen.Brush1.width;
+		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) ret = stateMode.Pen.Brush1.width;
+	}
+
+	return ret;
+}
+COLORREF GetPenColor()
+{
+	COLORREF ret = RGBA(0, 0, 0, 255);
+
+	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
+	{
+		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1) ret = stateMode.Pen.Brush1.color;
+		else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) ret = stateMode.Pen.Highlighter1.color;
+	}
+	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
+	{
+		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) ret = stateMode.Pen.Brush1.color;
+		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) ret = stateMode.Pen.Brush1.color;
+	}
+	return ret;
+}
+
 bool ChangeStateModeToSelection()
 {
 	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtSelection;

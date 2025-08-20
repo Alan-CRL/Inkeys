@@ -96,6 +96,9 @@ extern StateModeClass stateMode;
 
 bool SetPenWidth(float targetWidth, bool setMemory = true);
 bool SetPenColor(COLORREF targetColor, bool setMemory = true);
+float GetPenWidth();
+COLORREF GetPenColor();
+
 bool ChangeStateModeToSelection();
 bool ChangeStateModeToPen();
 bool ChangeStateModeToShape();

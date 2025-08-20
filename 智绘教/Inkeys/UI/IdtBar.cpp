@@ -4,12 +4,14 @@
 #include "../../IdtD2DPreparation.h"
 #include "../../IdtDisplayManagement.h"
 #include "../../IdtDrawpad.h"
+#include "../../IdtState.h"
 #include "../../IdtWindow.h"
 #include "../../IdtText.h"
 #include "../Conv/IdtColor.h"
 #include "IdtBarUI.h"
 #include "IdtBarState.h"
 #include "IdtBarBottom.h"
+#include "IdtBarColor.h"
 
 //#undef max
 //#undef min
@@ -928,8 +930,8 @@ void BarUISetClass::Rendering()
 				{
 					if (barState.fold)
 					{
-						shapeMap[BarUISetShapeEnum::MainBar]->x.tar = 0;
-						shapeMap[BarUISetShapeEnum::MainBar]->w.tar = 80;
+						shapeMap[BarUISetShapeEnum::MainBar]->x.tar = 0.0;
+						shapeMap[BarUISetShapeEnum::MainBar]->w.tar = 80.0;
 
 						shapeMap[BarUISetShapeEnum::MainBar]->pct.tar = 0.0;
 						shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().tar = 0.0;
@@ -937,12 +939,11 @@ void BarUISetClass::Rendering()
 					else
 					{
 						shapeMap[BarUISetShapeEnum::MainBar]->w.tar = totalWidth;
-						shapeMap[BarUISetShapeEnum::MainBar]->x.tar = superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() + 10;
+						shapeMap[BarUISetShapeEnum::MainBar]->x.tar = superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() + 10.0;
 
-						shapeMap[BarUISetShapeEnum::MainBar]->pct.tar = 0.9;
+						shapeMap[BarUISetShapeEnum::MainBar]->pct.tar = 0.8;
 						shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().tar = 0.18;
 					}
-
 					if (barStyle.darkStyle)
 					{
 						shapeMap[BarUISetShapeEnum::MainBar]->fill.value().tar = RGB(24, 24, 24);
@@ -953,40 +954,354 @@ void BarUISetClass::Rendering()
 						shapeMap[BarUISetShapeEnum::MainBar]->fill.value().tar = RGB(243, 243, 243);
 						shapeMap[BarUISetShapeEnum::MainBar]->frame.value().tar = RGB(0, 0, 0);
 					}
-				}
 
-				// 绘制属性
-				{
-					if (!barState.drawAttribute)
+					// 绘制属性
 					{
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->x.tar = 5;
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.tar = 5;
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->w.tar = 60;
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->h.tar = 60;
+						if (!barState.drawAttribute)
+						{
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->x.tar = 5.0;
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.tar = 5.0;
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->w.tar = 60.0;
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->h.tar = 60.0;
 
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->pct.tar = 0.0;
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->framePct.value().tar = 0.0;
-					}
-					else
-					{
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->x.tar = 0;
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.tar = -90;
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->w.tar = 200;
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->h.tar = 80;
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->pct.tar = 0.0;
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->framePct.value().tar = 0.0;
+						}
+						else
+						{
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->x.tar = 0.0;
+							//shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.tar = -(shapeMap[BarUISetShapeEnum::MainBar]->GetH() / 2.0 + 62.5);
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.tar = (shapeMap[BarUISetShapeEnum::MainBar]->GetH() / 2.0 + 62.5);
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->w.tar = 300.0;
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->h.tar = 110.0;
 
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->pct.tar = 0.9;
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->framePct.value().tar = 0.18;
-					}
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->pct.tar = 0.9;
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->framePct.value().tar = 0.18;
+						}
 
-					if (barStyle.darkStyle)
-					{
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->fill.value().tar = RGB(24, 24, 24);
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->frame.value().tar = RGB(255, 255, 255);
-					}
-					else
-					{
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->fill.value().tar = RGB(243, 243, 243);
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->frame.value().tar = RGB(0, 0, 0);
+						if (barStyle.darkStyle)
+						{
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->fill.value().tar = RGB(24, 24, 24);
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->frame.value().tar = RGB(255, 255, 255);
+						}
+						else
+						{
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->fill.value().tar = RGB(243, 243, 243);
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->frame.value().tar = RGB(0, 0, 0);
+						}
+
+						// Color 区域
+						{
+							// Color 1
+							{
+								if (!barState.drawAttribute)
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect1]->x.tar = 15.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect1]->y.tar = 15.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect1]->pct.tar = 0.0;
+								}
+								else
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect1]->x.tar = 5.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect1]->y.tar = 40.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect1]->pct.tar = 1.0;
+								}
+
+								if (barState.drawAttribute && CompereColorRef(GetPenColor(), superellipseMap[BarUISetSuperellipseEnum::ColorSelect1]->fill.value().tar))
+								{
+									// 说明当前选中的是当前的颜色
+									svgMap[BarUISetSvgEnum::ColorSelect1]->pct.tar = 1.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect1]->ft.value().tar = 2.0;
+								}
+								else
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect1]->pct.tar = 0.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect1]->ft.value().tar = 1.0;
+								}
+							}
+							// Color 2
+							{
+								if (!barState.drawAttribute)
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect2]->x.tar = 15.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect2]->y.tar = 15.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect2]->pct.tar = 0.0;
+								}
+								else
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect2]->x.tar = 5.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect2]->y.tar = 75.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect2]->pct.tar = 1.0;
+								}
+
+								if (barState.drawAttribute && CompereColorRef(GetPenColor(), superellipseMap[BarUISetSuperellipseEnum::ColorSelect2]->fill.value().tar))
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect2]->pct.tar = 1.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect2]->ft.value().tar = 2.0;
+								}
+								else
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect2]->pct.tar = 0.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect2]->ft.value().tar = 1.0;
+								}
+							}
+							// Color 3
+							{
+								if (!barState.drawAttribute)
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect3]->x.tar = 15.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect3]->y.tar = 15.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect3]->pct.tar = 0.0;
+								}
+								else
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect3]->x.tar = 40.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect3]->y.tar = 40.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect3]->pct.tar = 1.0;
+								}
+
+								if (barState.drawAttribute && CompereColorRef(GetPenColor(), superellipseMap[BarUISetSuperellipseEnum::ColorSelect3]->fill.value().tar))
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect3]->pct.tar = 1.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect3]->ft.value().tar = 2.0;
+								}
+								else
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect3]->pct.tar = 0.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect3]->ft.value().tar = 1.0;
+								}
+							}
+							// Color 4
+							{
+								if (!barState.drawAttribute)
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect4]->x.tar = 15.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect4]->y.tar = 15.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect4]->pct.tar = 0.0;
+								}
+								else
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect4]->x.tar = 40.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect4]->y.tar = 75.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect4]->pct.tar = 1.0;
+								}
+
+								if (barState.drawAttribute && CompereColorRef(GetPenColor(), superellipseMap[BarUISetSuperellipseEnum::ColorSelect4]->fill.value().tar))
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect4]->pct.tar = 1.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect4]->ft.value().tar = 2.0;
+								}
+								else
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect4]->pct.tar = 0.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect4]->ft.value().tar = 1.0;
+								}
+							}
+							// Color 5
+							{
+								if (!barState.drawAttribute)
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect5]->x.tar = 15.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect5]->y.tar = 15.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect5]->pct.tar = 0.0;
+								}
+								else
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect5]->x.tar = 75.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect5]->y.tar = 40.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect5]->pct.tar = 1.0;
+								}
+
+								if (barState.drawAttribute && CompereColorRef(GetPenColor(), superellipseMap[BarUISetSuperellipseEnum::ColorSelect5]->fill.value().tar))
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect5]->pct.tar = 1.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect5]->ft.value().tar = 2.0;
+								}
+								else
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect5]->pct.tar = 0.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect5]->ft.value().tar = 1.0;
+								}
+							}
+							// Color 6
+							{
+								if (!barState.drawAttribute)
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect6]->x.tar = 15.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect6]->y.tar = 15.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect6]->pct.tar = 0.0;
+								}
+								else
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect6]->x.tar = 75.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect6]->y.tar = 75.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect6]->pct.tar = 1.0;
+								}
+
+								if (barState.drawAttribute && CompereColorRef(GetPenColor(), superellipseMap[BarUISetSuperellipseEnum::ColorSelect6]->fill.value().tar))
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect6]->pct.tar = 1.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect6]->ft.value().tar = 2.0;
+								}
+								else
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect6]->pct.tar = 0.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect6]->ft.value().tar = 1.0;
+								}
+							}
+							// Color 7
+							{
+								if (!barState.drawAttribute)
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect7]->x.tar = 15.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect7]->y.tar = 15.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect7]->pct.tar = 0.0;
+								}
+								else
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect7]->x.tar = 110.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect7]->y.tar = 40.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect7]->pct.tar = 1.0;
+								}
+
+								if (barState.drawAttribute && CompereColorRef(GetPenColor(), superellipseMap[BarUISetSuperellipseEnum::ColorSelect7]->fill.value().tar))
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect7]->pct.tar = 1.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect7]->ft.value().tar = 2.0;
+								}
+								else
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect7]->pct.tar = 0.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect7]->ft.value().tar = 1.0;
+								}
+							}
+							// Color 8
+							{
+								if (!barState.drawAttribute)
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect8]->x.tar = 15.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect8]->y.tar = 15.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect8]->pct.tar = 0.0;
+								}
+								else
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect8]->x.tar = 110.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect8]->y.tar = 75.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect8]->pct.tar = 1.0;
+								}
+
+								if (barState.drawAttribute && CompereColorRef(GetPenColor(), superellipseMap[BarUISetSuperellipseEnum::ColorSelect8]->fill.value().tar))
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect8]->pct.tar = 1.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect8]->ft.value().tar = 2.0;
+								}
+								else
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect8]->pct.tar = 0.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect8]->ft.value().tar = 1.0;
+								}
+							}
+							// Color 9
+							{
+								if (!barState.drawAttribute)
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect9]->x.tar = 15.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect9]->y.tar = 15.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect9]->pct.tar = 0.0;
+								}
+								else
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect9]->x.tar = 145.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect9]->y.tar = 40.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect9]->pct.tar = 1.0;
+								}
+
+								if (barState.drawAttribute && CompereColorRef(GetPenColor(), superellipseMap[BarUISetSuperellipseEnum::ColorSelect9]->fill.value().tar))
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect9]->pct.tar = 1.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect9]->ft.value().tar = 2.0;
+								}
+								else
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect9]->pct.tar = 0.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect9]->ft.value().tar = 1.0;
+								}
+							}
+							// Color 10
+							{
+								if (!barState.drawAttribute)
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect10]->x.tar = 15.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect10]->y.tar = 15.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect10]->pct.tar = 0.0;
+								}
+								else
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect10]->x.tar = 145.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect10]->y.tar = 75.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect10]->pct.tar = 1.0;
+								}
+
+								if (barState.drawAttribute && CompereColorRef(GetPenColor(), superellipseMap[BarUISetSuperellipseEnum::ColorSelect10]->fill.value().tar))
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect10]->pct.tar = 1.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect10]->ft.value().tar = 2.0;
+								}
+								else
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect10]->pct.tar = 0.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect10]->ft.value().tar = 1.0;
+								}
+							}
+							// Color 11
+							{
+								if (!barState.drawAttribute)
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect11]->x.tar = 15.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect11]->y.tar = 15.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect11]->pct.tar = 0.0;
+								}
+								else
+								{
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect11]->x.tar = 180.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect11]->y.tar = 40.0;
+
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect11]->pct.tar = 1.0;
+								}
+
+								if (barState.drawAttribute && CompereColorRef(GetPenColor(), superellipseMap[BarUISetSuperellipseEnum::ColorSelect11]->fill.value().tar))
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect11]->pct.tar = 1.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect11]->ft.value().tar = 2.0;
+								}
+								else
+								{
+									svgMap[BarUISetSvgEnum::ColorSelect11]->pct.tar = 0.0;
+									superellipseMap[BarUISetSuperellipseEnum::ColorSelect11]->ft.value().tar = 1.0;
+								}
+							}
+						}
 					}
 				}
 			}
@@ -1154,30 +1469,128 @@ void BarUISetClass::Rendering()
 			{
 				// 主栏
 				{
+					// 提前计算依赖
+					{
+						superellipseMap[BarUISetSuperellipseEnum::MainButton]->Inherit();
+						shapeMap[BarUISetShapeEnum::MainBar]->Inherit(Left, *superellipseMap[BarUISetSuperellipseEnum::MainButton]);
+						barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->buttom.Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::MainBar]);
+					}
+
+					// 绘制属性
+					{
+						auto obj = BarUISetShapeEnum::DrawAttributeBar;
+						spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Center, barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->buttom));
+
+						// Color 区域
+						{
+							// Color 1
+							{
+								auto obj1 = BarUISetSuperellipseEnum::ColorSelect1;
+								spec.Superellipse(barDeviceContext, *superellipseMap[obj1], superellipseMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::ColorSelect1;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *superellipseMap[obj1]));
+							}
+							// Color 2
+							{
+								auto obj1 = BarUISetSuperellipseEnum::ColorSelect2;
+								spec.Superellipse(barDeviceContext, *superellipseMap[obj1], superellipseMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::ColorSelect2;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *superellipseMap[obj1]));
+							}
+							// Color 3
+							{
+								auto obj1 = BarUISetSuperellipseEnum::ColorSelect3;
+								spec.Superellipse(barDeviceContext, *superellipseMap[obj1], superellipseMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::ColorSelect3;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *superellipseMap[obj1]));
+							}
+							// Color 4
+							{
+								auto obj1 = BarUISetSuperellipseEnum::ColorSelect4;
+								spec.Superellipse(barDeviceContext, *superellipseMap[obj1], superellipseMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::ColorSelect4;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *superellipseMap[obj1]));
+							}
+							// Color 5
+							{
+								auto obj1 = BarUISetSuperellipseEnum::ColorSelect5;
+								spec.Superellipse(barDeviceContext, *superellipseMap[obj1], superellipseMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::ColorSelect5;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *superellipseMap[obj1]));
+							}
+							// Color 6
+							{
+								auto obj1 = BarUISetSuperellipseEnum::ColorSelect6;
+								spec.Superellipse(barDeviceContext, *superellipseMap[obj1], superellipseMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::ColorSelect6;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *superellipseMap[obj1]));
+							}
+							// Color 7
+							{
+								auto obj1 = BarUISetSuperellipseEnum::ColorSelect7;
+								spec.Superellipse(barDeviceContext, *superellipseMap[obj1], superellipseMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::ColorSelect7;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *superellipseMap[obj1]));
+							}
+							// Color 8
+							{
+								auto obj1 = BarUISetSuperellipseEnum::ColorSelect8;
+								spec.Superellipse(barDeviceContext, *superellipseMap[obj1], superellipseMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::ColorSelect8;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *superellipseMap[obj1]));
+							}
+							// Color 9
+							{
+								auto obj1 = BarUISetSuperellipseEnum::ColorSelect9;
+								spec.Superellipse(barDeviceContext, *superellipseMap[obj1], superellipseMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::ColorSelect9;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *superellipseMap[obj1]));
+							}
+							// Color 10
+							{
+								auto obj1 = BarUISetSuperellipseEnum::ColorSelect10;
+								spec.Superellipse(barDeviceContext, *superellipseMap[obj1], superellipseMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::ColorSelect10;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *superellipseMap[obj1]));
+							}
+							// Color 11
+							{
+								auto obj1 = BarUISetSuperellipseEnum::ColorSelect11;
+								spec.Superellipse(barDeviceContext, *superellipseMap[obj1], superellipseMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::ColorSelect11;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *superellipseMap[obj1]));
+							}
+						}
+					}
+
+					// 主栏
 					auto obj = BarUISetShapeEnum::MainBar;
-					superellipseMap[BarUISetSuperellipseEnum::MainButton]->Inherit(); // 提前计算依赖
 					spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Left, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), false);
+
+					// 主栏按钮
+					for (int id = 0; id < barButtomSet.tot; id++)
+					{
+						BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
+						if (temp == nullptr) continue;
+
+						spec.Shape(barDeviceContext, temp->buttom, temp->buttom.Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::MainBar]));
+						spec.Svg(barDeviceContext, temp->icon, temp->icon.Inherit(Center, temp->buttom));
+						spec.Word(barDeviceContext, temp->name, temp->name.Inherit(Center, temp->buttom));
+					}
 				}
 
-				// 主栏按钮
-				for (int id = 0; id < barButtomSet.tot; id++)
-				{
-					BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
-					if (temp == nullptr) continue;
-
-					spec.Shape(barDeviceContext, temp->buttom, temp->buttom.Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::MainBar]));
-					spec.Svg(barDeviceContext, temp->icon, temp->icon.Inherit(Center, temp->buttom));
-					spec.Word(barDeviceContext, temp->name, temp->name.Inherit(Center, temp->buttom));
-					// TODO
-				}
-
-				// 绘制属性
-				{
-					auto obj = BarUISetShapeEnum::DrawAttributeBar;
-					spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(TopLeft, barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->buttom));
-				}
-			}
-			{
+				// 主按钮
 				{
 					auto obj = BarUISetSuperellipseEnum::MainButton;
 					spec.Superellipse(barDeviceContext, *superellipseMap[obj], superellipseMap[obj]->Inherit(), false);
@@ -1189,18 +1602,20 @@ void BarUISetClass::Rendering()
 				}
 			}
 
-			// FPS
+			// 调试 FPS
 			{
 				CComPtr<IDWriteTextFormat> pTextFormat;
-				D2DTextFactory->CreateTextFormat(
-					L"Microsoft YaHei", // 字体名
+				pTextFormat = barMedia.formatCache->GetFormat(
+					L"HarmonyOS Sans SC",
+					40.0,
 					nullptr,
 					DWRITE_FONT_WEIGHT_NORMAL,
 					DWRITE_FONT_STYLE_NORMAL,
 					DWRITE_FONT_STRETCH_NORMAL,
-					40, // 字号
 					L"zh-cn",
-					&pTextFormat);
+					DWRITE_TEXT_ALIGNMENT_LEADING, // 指定文本左对齐
+					DWRITE_PARAGRAPH_ALIGNMENT_NEAR // 指定段落顶部对齐
+				);
 
 				// 3. 创建画刷
 				CComPtr<ID2D1SolidColorBrush> pBrush;
@@ -1449,19 +1864,18 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 			auto superellipse = make_shared<BarUiSuperellipseClass>(0.0, 0.0, 80.0, 80.0, 3.0, 1.0, RGB(24, 24, 24), RGB(255, 255, 255));
 			superellipse->pct.Initialization(0.73);
 			superellipse->framePct = BarUiPctClass(0.18);
-			superellipse->x.mod = BarUiValueModeEnum::Linear; // 当主栏在主按钮左侧的时候，其位置会根据 w 的变化而变化
-			superellipse->y.mod = BarUiValueModeEnum::Linear;	// 所以关闭 x,y 的动画回弹效果
 			superellipse->enable.Initialization(true);
 			barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton] = superellipse;
 
 			{
 				auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, nullopt, nullopt);
 				svg->InitializationFromResource(L"UI", L"logo1");
-				svg->SetWH(nullopt, 80.0); // 必须在 Initial 后
+				svg->SetWH(nullopt, 80.0);
 				svg->enable.Initialization(true);
 				barUISet.svgMap[BarUISetSvgEnum::logo1] = svg;
 			}
 			{
+				// “收起” 文字标识
 			}
 		}
 		// 主栏
@@ -1469,15 +1883,156 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 			auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 80.0, 80.0, 8.0, 8.0, 1.0, RGB(24, 24, 24), RGB(255, 255, 255));
 			shape->pct.Initialization(0.8);
 			shape->framePct = BarUiPctClass(0.18);
+			shape->w.mod = BarUiValueModeEnum::Variable;
+			shape->h.mod = BarUiValueModeEnum::Variable;
 			shape->enable.Initialization(true);
 			barUISet.shapeMap[BarUISetShapeEnum::MainBar] = shape;
 
+			// 绘制属性
 			{
 				auto shape = make_shared<BarUiShapeClass>(10.0, 10.0, 60.0, 60.0, 8.0, 8.0, 1.0, RGB(24, 24, 24), RGB(255, 255, 255));
-				shape->pct.Initialization(0.9);
+				shape->pct.Initialization(0.8);
 				shape->framePct = BarUiPctClass(0.18);
+				shape->w.mod = BarUiValueModeEnum::Variable;
+				shape->h.mod = BarUiValueModeEnum::Variable;
 				shape->enable.Initialization(true);
 				barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar] = shape;
+
+				// Color 区域
+				{
+					// Color 1
+					{
+						auto superellipse = make_shared<BarUiSuperellipseClass>(0.0, 0.0, 30.0, 30.0, 3.0, 1.0, RGB(255, 255, 255), RGB(127, 127, 127));
+						superellipse->enable.Initialization(true);
+						barUISet.superellipseMap[BarUISetSuperellipseEnum::ColorSelect1] = superellipse;
+
+						auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, nullopt, nullopt);
+						svg->InitializationFromResource(L"UI", L"colorSelect");
+						svg->SetWH(15.0, 15.0);
+						svg->enable.Initialization(true);
+						barUISet.svgMap[BarUISetSvgEnum::ColorSelect1] = svg;
+					}
+					// Color 2
+					{
+						auto superellipse = make_shared<BarUiSuperellipseClass>(0.0, 0.0, 30.0, 30.0, 3.0, 1.0, RGB(0, 0, 0), RGB(127, 127, 127));
+						superellipse->enable.Initialization(true);
+						barUISet.superellipseMap[BarUISetSuperellipseEnum::ColorSelect2] = superellipse;
+
+						auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, nullopt, nullopt);
+						svg->InitializationFromResource(L"UI", L"colorSelect");
+						svg->SetWH(15.0, 15.0);
+						svg->enable.Initialization(true);
+						barUISet.svgMap[BarUISetSvgEnum::ColorSelect2] = svg;
+					}
+					// Color 3
+					{
+						auto superellipse = make_shared<BarUiSuperellipseClass>(0.0, 0.0, 30.0, 30.0, 3.0, 1.0, RGB(255, 139, 0), RGB(127, 127, 127));
+						superellipse->enable.Initialization(true);
+						barUISet.superellipseMap[BarUISetSuperellipseEnum::ColorSelect3] = superellipse;
+
+						auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, nullopt, nullopt);
+						svg->InitializationFromResource(L"UI", L"colorSelect");
+						svg->SetWH(15.0, 15.0);
+						svg->enable.Initialization(true);
+						barUISet.svgMap[BarUISetSvgEnum::ColorSelect3] = svg;
+					}
+					// Color 4
+					{
+						auto superellipse = make_shared<BarUiSuperellipseClass>(0.0, 0.0, 30.0, 30.0, 3.0, 1.0, RGB(50, 30, 181), RGB(127, 127, 127));
+						superellipse->enable.Initialization(true);
+						barUISet.superellipseMap[BarUISetSuperellipseEnum::ColorSelect4] = superellipse;
+
+						auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, nullopt, nullopt);
+						svg->InitializationFromResource(L"UI", L"colorSelect");
+						svg->SetWH(15.0, 15.0);
+						svg->enable.Initialization(true);
+						barUISet.svgMap[BarUISetSvgEnum::ColorSelect4] = svg;
+					}
+					// Color 5
+					{
+						auto superellipse = make_shared<BarUiSuperellipseClass>(0.0, 0.0, 30.0, 30.0, 3.0, 1.0, RGB(255, 197, 16), RGB(127, 127, 127));
+						superellipse->enable.Initialization(true);
+						barUISet.superellipseMap[BarUISetSuperellipseEnum::ColorSelect5] = superellipse;
+
+						auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, nullopt, nullopt);
+						svg->InitializationFromResource(L"UI", L"colorSelect");
+						svg->SetWH(15.0, 15.0);
+						svg->enable.Initialization(true);
+						barUISet.svgMap[BarUISetSvgEnum::ColorSelect5] = svg;
+					}
+					// Color 6
+					{
+						auto superellipse = make_shared<BarUiSuperellipseClass>(0.0, 0.0, 30.0, 30.0, 3.0, 1.0, RGB(255, 16, 0), RGB(127, 127, 127));
+						superellipse->enable.Initialization(true);
+						barUISet.superellipseMap[BarUISetSuperellipseEnum::ColorSelect6] = superellipse;
+
+						auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, nullopt, nullopt);
+						svg->InitializationFromResource(L"UI", L"colorSelect");
+						svg->SetWH(15.0, 15.0);
+						svg->enable.Initialization(true);
+						barUISet.svgMap[BarUISetSvgEnum::ColorSelect6] = svg;
+					}
+					// Color 7
+					{
+						auto superellipse = make_shared<BarUiSuperellipseClass>(0.0, 0.0, 30.0, 30.0, 3.0, 1.0, RGB(78, 161, 183), RGB(127, 127, 127));
+						superellipse->enable.Initialization(true);
+						barUISet.superellipseMap[BarUISetSuperellipseEnum::ColorSelect7] = superellipse;
+
+						auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, nullopt, nullopt);
+						svg->InitializationFromResource(L"UI", L"colorSelect");
+						svg->SetWH(15.0, 15.0);
+						svg->enable.Initialization(true);
+						barUISet.svgMap[BarUISetSvgEnum::ColorSelect7] = svg;
+					}
+					// Color 8
+					{
+						auto superellipse = make_shared<BarUiSuperellipseClass>(0.0, 0.0, 30.0, 30.0, 3.0, 1.0, RGB(50, 110, 217), RGB(127, 127, 127));
+						superellipse->enable.Initialization(true);
+						barUISet.superellipseMap[BarUISetSuperellipseEnum::ColorSelect8] = superellipse;
+
+						auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, nullopt, nullopt);
+						svg->InitializationFromResource(L"UI", L"colorSelect");
+						svg->SetWH(15.0, 15.0);
+						svg->enable.Initialization(true);
+						barUISet.svgMap[BarUISetSvgEnum::ColorSelect8] = svg;
+					}
+					// Color 9
+					{
+						auto superellipse = make_shared<BarUiSuperellipseClass>(0.0, 0.0, 30.0, 30.0, 3.0, 1.0, RGB(102, 213, 82), RGB(127, 127, 127));
+						superellipse->enable.Initialization(true);
+						barUISet.superellipseMap[BarUISetSuperellipseEnum::ColorSelect9] = superellipse;
+
+						auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, nullopt, nullopt);
+						svg->InitializationFromResource(L"UI", L"colorSelect");
+						svg->SetWH(15.0, 15.0);
+						svg->enable.Initialization(true);
+						barUISet.svgMap[BarUISetSvgEnum::ColorSelect9] = svg;
+					}
+					// Color 10
+					{
+						auto superellipse = make_shared<BarUiSuperellipseClass>(0.0, 0.0, 30.0, 30.0, 3.0, 1.0, RGB(48, 108, 0), RGB(127, 127, 127));
+						superellipse->enable.Initialization(true);
+						barUISet.superellipseMap[BarUISetSuperellipseEnum::ColorSelect10] = superellipse;
+
+						auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, nullopt, nullopt);
+						svg->InitializationFromResource(L"UI", L"colorSelect");
+						svg->SetWH(15.0, 15.0);
+						svg->enable.Initialization(true);
+						barUISet.svgMap[BarUISetSvgEnum::ColorSelect10] = svg;
+					}
+					// Color 11
+					{
+						auto superellipse = make_shared<BarUiSuperellipseClass>(0.0, 0.0, 30.0, 30.0, 3.0, 1.0, RGB(255, 30, 207), RGB(127, 127, 127));
+						superellipse->enable.Initialization(true);
+						barUISet.superellipseMap[BarUISetSuperellipseEnum::ColorSelect11] = superellipse;
+
+						auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, nullopt, nullopt);
+						svg->InitializationFromResource(L"UI", L"colorSelect");
+						svg->SetWH(15.0, 15.0);
+						svg->enable.Initialization(true);
+						barUISet.svgMap[BarUISetSvgEnum::ColorSelect11] = svg;
+					}
+				}
 			}
 		}
 	}

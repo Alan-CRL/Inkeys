@@ -274,15 +274,19 @@ BARFREEZE               UI                      "src\\UI\\barFreeze.svg"
 
 BARSETTING              UI                      "src\\UI\\barSetting.svg"
 
-barEraser               UI                      "src\\UI\\barEraser.svg"
+BARERASER               UI                      "src\\UI\\barEraser.svg"
 
-barClean                UI                      "src\\UI\\barClean.svg"
+BARCLEAN                UI                      "src\\UI\\barClean.svg"
 
-barPierce               UI                      "src\\UI\\barPierce.svg"
+BARPIERCE               UI                      "src\\UI\\barPierce.svg"
 
-barRecall               UI                      "src\\UI\\barRecall.svg"
+BARRECALL               UI                      "src\\UI\\barRecall.svg"
 
-barRedo                 UI                      "src\\UI\\barRedo.svg"
+BARREDO                 UI                      "src\\UI\\barRedo.svg"
+
+barGeometry             UI                      "src\\UI\\barGeometry.svg"
+
+colorSelect             UI                      "src\\UI\\color\\colorSelect.svg"
 
 #endif    // 中文(简体，中国) resources
 /////////////////////////////////////////////////////////////////////////////

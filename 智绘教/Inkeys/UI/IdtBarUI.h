@@ -51,8 +51,7 @@ public:
 	void Initialization(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Variable) { mod = modT, val = tar = valT, startV = valT; }
 
 public:
-	IdtAtomic<BarUiValueModeEnum> mod = BarUiValueModeEnum::Variable;
-	// 大部分控件需要使用回弹动效，所以默认值为 Variable
+	IdtAtomic<BarUiValueModeEnum> mod = BarUiValueModeEnum::Linear;
 
 	IdtAtomic<double> val = 0.0; // 直接值（当前位置）
 	IdtAtomic<double> tar = 0.0; // 目标值（目标位置）

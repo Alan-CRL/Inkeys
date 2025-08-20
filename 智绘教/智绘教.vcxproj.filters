@@ -774,6 +774,9 @@
     <ClInclude Include="Inkeys\UI\IdtBarUI.h">
       <Filter>头文件\Inkeys\UI</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\UI\IdtBarColor.h">
+      <Filter>头文件\Inkeys\UI</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HiEasyX\HiGUI\Button.cpp">
@@ -1043,6 +1046,9 @@
     <ClCompile Include="Inkeys\UI\IdtBarUI.cpp">
       <Filter>源文件\Inkeys\UI</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\UI\IdtBarColor.cpp">
+      <Filter>源文件\Inkeys\UI</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="智绘教.rc">
@@ -1302,6 +1308,8 @@
     <None Include="src\UI\barPierce.svg" />
     <None Include="src\UI\barRecall.svg" />
     <None Include="src\UI\barRedo.svg" />
+    <None Include="src\UI\barGeometry.svg" />
+    <None Include="src\UI\color\colorSelect.svg" />
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="..\PptCOM\PptCOM.manifest" />

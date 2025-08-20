@@ -58,11 +58,35 @@ enum class BarUISetShapeEnum
 };
 enum class BarUISetSuperellipseEnum
 {
-	MainButton
+	MainButton,
+
+	ColorSelect1,
+	ColorSelect2,
+	ColorSelect3,
+	ColorSelect4,
+	ColorSelect5,
+	ColorSelect6,
+	ColorSelect7,
+	ColorSelect8,
+	ColorSelect9,
+	ColorSelect10,
+	ColorSelect11
 };
 enum class BarUISetSvgEnum
 {
-	logo1
+	logo1,
+
+	ColorSelect1,
+	ColorSelect2,
+	ColorSelect3,
+	ColorSelect4,
+	ColorSelect5,
+	ColorSelect6,
+	ColorSelect7,
+	ColorSelect8,
+	ColorSelect9,
+	ColorSelect10,
+	ColorSelect11
 };
 enum class BarUISetWordEnum
 {

@@ -19,6 +19,7 @@ enum class BarButtomPresetEnum : int
 	Select,
 	Draw,
 	Eraser,
+	Geometry,
 
 	Recall,
 	Redo,

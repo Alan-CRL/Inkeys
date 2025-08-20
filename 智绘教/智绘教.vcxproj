@@ -577,6 +577,7 @@
     <ClInclude Include="Inkeys\Load\IdtLoad.h" />
     <ClInclude Include="Inkeys\UI\IdtBar.h" />
     <ClInclude Include="Inkeys\UI\IdtBarBottom.h" />
+    <ClInclude Include="Inkeys\UI\IdtBarColor.h" />
     <ClInclude Include="Inkeys\UI\IdtBarFormat.h" />
     <ClInclude Include="Inkeys\UI\IdtBarState.h" />
     <ClInclude Include="Inkeys\UI\IdtBarUI.h" />
@@ -675,6 +676,7 @@
     <ClCompile Include="IdtWindow.cpp" />
     <ClCompile Include="Inkeys\UI\IdtBar.cpp" />
     <ClCompile Include="Inkeys\UI\IdtBarBottom.cpp" />
+    <ClCompile Include="Inkeys\UI\IdtBarColor.cpp" />
     <ClCompile Include="Inkeys\UI\IdtBarFormat.cpp" />
     <ClCompile Include="Inkeys\UI\IdtBarState.cpp" />
     <ClCompile Include="Inkeys\UI\IdtBarUI.cpp" />
@@ -775,11 +777,13 @@
     <None Include="src\UI\barDivider.svg" />
     <None Include="src\UI\barEraser.svg" />
     <None Include="src\UI\barFreeze.svg" />
+    <None Include="src\UI\barGeometry.svg" />
     <None Include="src\UI\barPierce.svg" />
     <None Include="src\UI\barRecall.svg" />
     <None Include="src\UI\barRedo.svg" />
     <None Include="src\UI\barSelect.svg" />
     <None Include="src\UI\barSetting.svg" />
+    <None Include="src\UI\color\colorSelect.svg" />
     <None Include="src\UI\logo1.svg" />
   </ItemGroup>
   <ItemGroup>
