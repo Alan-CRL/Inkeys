@@ -41,7 +41,7 @@ public:
 			Pen.Brush1.width = Pen.Brush1.widthPreset = 3;
 			Pen.Brush1.color = RGBA(255, 16, 0, 255);
 			Pen.Highlighter1.width = Pen.Highlighter1.widthPreset = 35;
-			Pen.Highlighter1.color = RGBA(255, 16, 0, 255); // TODO 后续添加透明度选项
+			Pen.Highlighter1.color = RGBA(255, 30, 207, 255); // TODO 后续添加透明度选项
 		}
 		{
 			Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeStraightLine1;

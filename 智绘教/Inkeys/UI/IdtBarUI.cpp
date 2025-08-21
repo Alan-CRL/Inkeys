@@ -33,19 +33,17 @@ BarUiInheritClass::BarUiInheritClass(BarUiInheritEnum typeT, double xO, double y
 
 	// TODO 拓展更多类型组合
 	if (type == BarUiInheritEnum::TopLeft) { x += xT, y += yT; }
+	else if (type == BarUiInheritEnum::Top) { x += xT + wT / 2.0 - wO / 2.0, y += yT; }
 	else if (type == BarUiInheritEnum::Left) { x += xT, y += yT + hT / 2.0 - hO / 2.0; }
 	else if (type == BarUiInheritEnum::Center) { x += xT + wT / 2.0 - wO / 2.0, y += yT + hT / 2.0 - hO / 2.0; }
 
-	else if (type == BarUiInheritEnum::ToTop) { x += xT + wT / 2.0 - wO / 2.0, y += yT - hT / 2.0 - hO; }
-	else if (type == BarUiInheritEnum::ToLeft) { x += xT - wT / 2.0 - wO, y += yT + hT / 2.0 - hO / 2.0; }
-	else if (type == BarUiInheritEnum::ToRight) { x += xT + wT / 2.0, y += yT + hT / 2.0 - hO / 2.0; }
-	else if (type == BarUiInheritEnum::ToBottom) { x += xT + wT / 2.0 - wO / 2.0, y += yT + hT / 2.0; }
+	else if (type == BarUiInheritEnum::ToTop) { x += xT + wT / 2.0 - wO / 2.0, y += yT - hO; }
+	else if (type == BarUiInheritEnum::ToLeft) { x += xT - wO, y += yT + hT / 2.0 - hO / 2.0; }
+	else if (type == BarUiInheritEnum::ToRight) { x += xT + wT, y += yT + hT / 2.0 - hO / 2.0; }
+	else if (type == BarUiInheritEnum::ToBottom) { x += xT + wT / 2.0 - wO / 2.0, y += yT + hT; }
 }
 //// 继承基类
-BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, shape.inhX, shape.inhY, shape.w.val, shape.h.val)); }
-BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiSuperellipseClass& superellipse) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, superellipse.inhX, superellipse.inhY, superellipse.w.val, superellipse.h.val)); }
-BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiSVGClass& svg) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, svg.inhX, svg.inhY, svg.w.val, svg.h.val)); }
-BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiWordClass& word) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, word.inhX, word.inhY, word.w.val, word.h.val)); }
+BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiInnheritBaseClass& obj) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, obj.inhX, obj.inhY, obj.w.val, obj.h.val)); }
 
 /// 单个控件值
 //// 单个 SVG 控件

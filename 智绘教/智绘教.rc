@@ -268,7 +268,7 @@ BARDIVIDER              UI                      "src\\UI\\barDivider.svg"
 
 BARSELECT               UI                      "src\\UI\\barSelect.svg"
 
-barBrush1               UI                      "src\\UI\\barBrush1.svg"
+BARBRUSH1               UI                      "src\\UI\\barBrush1.svg"
 
 BARFREEZE               UI                      "src\\UI\\barFreeze.svg"
 
@@ -287,6 +287,8 @@ BARREDO                 UI                      "src\\UI\\barRedo.svg"
 BARGEOMETRY             UI                      "src\\UI\\barGeometry.svg"
 
 COLORSELECT             UI                      "src\\UI\\color\\colorSelect.svg"
+
+barHighlight1           UI                      "src\\UI\\barHighlight1.svg"
 
 #endif    // 中文(简体，中国) resources
 /////////////////////////////////////////////////////////////////////////////

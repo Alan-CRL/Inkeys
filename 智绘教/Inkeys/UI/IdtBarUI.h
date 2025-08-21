@@ -206,6 +206,7 @@ enum class BarUiInheritEnum
 	// 相对内部继承
 
 	TopLeft = 0, // 左上继承
+	Top = 1, // 上中继承
 	Left = 4, // 左中继承
 	Center = 5, // 居中继承
 
@@ -242,11 +243,7 @@ public:
 
 public:
 	BarUiInheritClass Inherit() { return UpInh(BarUiInheritClass(x.val - w.tar / 2.0, y.val - h.tar / 2.0)); }
-
-	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape);
-	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiSuperellipseClass& superellipse);
-	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiSVGClass& svg);
-	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiWordClass& word);
+	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiInnheritBaseClass& obj);
 
 public:
 	// 继承值 -> 也就是实际绘制的位置

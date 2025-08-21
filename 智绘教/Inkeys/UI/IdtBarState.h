@@ -7,6 +7,12 @@ class BarStateClass
 public:
 	IdtAtomic<bool> fold = true;
 	IdtAtomic<bool> drawAttribute = false;
+
+	struct
+	{
+		IdtAtomic<bool> brush1Press = false;
+		IdtAtomic<bool> highlight1Press = false;
+	}drawAttributeBar;
 };
 class BarStyleClass
 {

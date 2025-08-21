@@ -777,6 +777,7 @@
     <None Include="src\UI\barEraser.svg" />
     <None Include="src\UI\barFreeze.svg" />
     <None Include="src\UI\barGeometry.svg" />
+    <None Include="src\UI\barHighlight1.svg" />
     <None Include="src\UI\barPierce.svg" />
     <None Include="src\UI\barRecall.svg" />
     <None Include="src\UI\barRedo.svg" />

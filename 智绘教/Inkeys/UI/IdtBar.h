@@ -54,46 +54,52 @@ class BarUISetClass;
 enum class BarUISetShapeEnum
 {
 	MainBar,
+
 	DrawAttributeBar,
+	DrawAttributeBar_Brush1,
+	DrawAttributeBar_Highlight1,
 };
 enum class BarUISetSuperellipseEnum
 {
 	MainButton,
 
-	ColorSelect1,
-	ColorSelect2,
-	ColorSelect3,
-	ColorSelect4,
-	ColorSelect5,
-	ColorSelect6,
-	ColorSelect7,
-	ColorSelect8,
-	ColorSelect9,
-	ColorSelect10,
-	ColorSelect11,
+	DrawAttributeBar_ColorSelect1,
+	DrawAttributeBar_ColorSelect2,
+	DrawAttributeBar_ColorSelect3,
+	DrawAttributeBar_ColorSelect4,
+	DrawAttributeBar_ColorSelect5,
+	DrawAttributeBar_ColorSelect6,
+	DrawAttributeBar_ColorSelect7,
+	DrawAttributeBar_ColorSelect8,
+	DrawAttributeBar_ColorSelect9,
+	DrawAttributeBar_ColorSelect10,
+	DrawAttributeBar_ColorSelect11,
 };
 enum class BarUISetSvgEnum
 {
 	logo1,
 
-	ColorSelect1,
-	ColorSelect2,
-	ColorSelect3,
-	ColorSelect4,
-	ColorSelect5,
-	ColorSelect6,
-	ColorSelect7,
-	ColorSelect8,
-	ColorSelect9,
-	ColorSelect10,
-	ColorSelect11,
+	DrawAttributeBar_ColorSelect1,
+	DrawAttributeBar_ColorSelect2,
+	DrawAttributeBar_ColorSelect3,
+	DrawAttributeBar_ColorSelect4,
+	DrawAttributeBar_ColorSelect5,
+	DrawAttributeBar_ColorSelect6,
+	DrawAttributeBar_ColorSelect7,
+	DrawAttributeBar_ColorSelect8,
+	DrawAttributeBar_ColorSelect9,
+	DrawAttributeBar_ColorSelect10,
+	DrawAttributeBar_ColorSelect11,
 
-	Brush1,
-	Highlight1,
+	DrawAttributeBar_Brush1,
+	DrawAttributeBar_Highlight1,
 };
 enum class BarUISetWordEnum
 {
 	MainButton,
+
+	DrawAttributeBar_Brush1,
+	DrawAttributeBar_Highlight1,
 };
 
 // 具体渲染
@@ -138,7 +144,7 @@ public:
 
 public:
 	// 渲染更新：状态更新 + 通知计算并渲染
-	void UpdateRendering();
+	void UpdateRendering(bool updateButtom = true);
 protected:
 	// 拖动交互
 	double Seek(const ExMessage& msg);
