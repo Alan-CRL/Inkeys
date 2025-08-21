@@ -54,7 +54,7 @@ class BarUISetClass;
 enum class BarUISetShapeEnum
 {
 	MainBar,
-	DrawAttributeBar
+	DrawAttributeBar,
 };
 enum class BarUISetSuperellipseEnum
 {
@@ -70,7 +70,7 @@ enum class BarUISetSuperellipseEnum
 	ColorSelect8,
 	ColorSelect9,
 	ColorSelect10,
-	ColorSelect11
+	ColorSelect11,
 };
 enum class BarUISetSvgEnum
 {
@@ -86,18 +86,21 @@ enum class BarUISetSvgEnum
 	ColorSelect8,
 	ColorSelect9,
 	ColorSelect10,
-	ColorSelect11
+	ColorSelect11,
+
+	Brush1,
+	Highlight1,
 };
 enum class BarUISetWordEnum
 {
-	MainButton
+	MainButton,
 };
 
 // 具体渲染
 class BarUIRendering
 {
 public:
-	BarUIRendering();
+	BarUIRendering() {};
 	BarUIRendering(BarUISetClass* barUISetClassT) { barUISetClass = barUISetClassT; }
 
 public:
@@ -116,8 +119,8 @@ class BarUISetClass
 public:
 	BarUISetClass() : spec(this) {};
 
-	void Rendering();
-	void Interact();
+	void Rendering(); // 渲染
+	void Interact(); // 鼠标交互
 
 public:
 	BarWindowPosClass barWindow;
@@ -125,12 +128,19 @@ public:
 	BarButtomSetClass barButtomSet;
 	BarUIRendering spec;
 
+	BarStateClass barState;
+	BarStyleClass barStyle;
+
 	ankerl::unordered_dense::map<BarUISetShapeEnum, shared_ptr<BarUiShapeClass>> shapeMap;
 	ankerl::unordered_dense::map<BarUISetSuperellipseEnum, shared_ptr<BarUiSuperellipseClass>> superellipseMap;
 	ankerl::unordered_dense::map<BarUISetSvgEnum, shared_ptr<BarUiSVGClass>> svgMap;
 	ankerl::unordered_dense::map<BarUISetWordEnum, shared_ptr<BarUiWordClass>> wordMap;
 
+public:
+	// 渲染更新：状态更新 + 通知计算并渲染
+	void UpdateRendering();
 protected:
+	// 拖动交互
 	double Seek(const ExMessage& msg);
 };
 extern BarUISetClass barUISet; // 全局 Bar UI 集合
@@ -138,11 +148,12 @@ extern BarUISetClass barUISet; // 全局 Bar UI 集合
 // ====================
 // 环境
 
+// 弃用
 // LOGO配色方案
 enum class BarLogaColorSchemeEnum : int
 {
 	Default = 0, // 深色
-	Slate = 1 // 浅色
+	Slate = 1, // 浅色
 };
 
 // 初始化

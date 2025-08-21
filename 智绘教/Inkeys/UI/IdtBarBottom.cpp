@@ -1,5 +1,6 @@
 ﻿#include "IdtBarBottom.h"
 
+#include "IdtBar.h"
 #include "../../IdtState.h"
 
 // 历史遗留问题
@@ -92,7 +93,7 @@ void BarButtomSetClass::PresetInitialization()
 		}
 		{
 			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
-			obj->icon.InitializationFromResource(L"UI", L"barBursh1");
+			obj->icon.InitializationFromResource(L"UI", L"barBrush1");
 			obj->icon.enable.Initialization(true);
 		}
 
@@ -101,13 +102,13 @@ void BarButtomSetClass::PresetInitialization()
 				{
 					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen)
 					{
-						barState.drawAttribute = false;
+						barUISet.barState.drawAttribute = false;
 						ChangeStateModeToPen();
 					}
 					else
 					{
-						if (barState.drawAttribute) barState.drawAttribute = false;
-						else barState.drawAttribute = true;
+						if (barUISet.barState.drawAttribute) barUISet.barState.drawAttribute = false;
+						else barUISet.barState.drawAttribute = true;
 					}
 				};
 		}
@@ -384,9 +385,10 @@ void BarButtomSetClass::PresetInitialization()
 	}
 }
 
+// 预设按钮归位
 void BarButtomSetClass::PresetHoming()
 {
-	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen) barState.drawAttribute = false;
+	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen || barUISet.barState.fold) barUISet.barState.drawAttribute = false;
 
 	// 进入非绘制模式需要隐藏无用按钮
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
@@ -422,7 +424,8 @@ void BarButtomSetClass::PresetHoming()
 		preset[(int)BarButtomPresetEnum::Select]->name.content.SetTar("选择(清空)");
 	}
 }
-void BarButtomSetClass::CalcButtomState()
+// 计算按钮状态
+void BarButtomSetClass::CalcState()
 {
 	{
 		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) barButtomState[(int)BarButtomPresetEnum::Select].state = BarWidgetState::Selected;
@@ -451,9 +454,10 @@ void BarButtomSetClass::CalcButtomState()
 		else barButtomState[(int)BarButtomPresetEnum::Setting].state = BarWidgetState::None;
 	}
 }
+// 更新按钮状态
 void BarButtomSetClass::StateUpdate()
 {
-	CalcButtomState();
+	CalcState();
 	PresetHoming();
 }
 

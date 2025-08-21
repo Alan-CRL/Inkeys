@@ -211,8 +211,10 @@ enum class BarUiInheritEnum
 
 	// 相对外部继承
 
+	ToTop = 11, // 父下中，子上中
 	ToRight = 13, // 父左中，子右中
 	ToLeft = 15, // 父右中，子左中
+	ToBottom = 17, // 父上中，子下中
 };
 class BarUiInheritClass
 {
@@ -239,7 +241,7 @@ public:
 	BarUiPctClass pct; // 透明度
 
 public:
-	BarUiInheritClass Inherit() { return UpInh(BarUiInheritClass(x.val, y.val)); }
+	BarUiInheritClass Inherit() { return UpInh(BarUiInheritClass(x.val - w.tar / 2.0, y.val - h.tar / 2.0)); }
 
 	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape);
 	BarUiInheritClass Inherit(BarUiInheritEnum typeT, const BarUiSuperellipseClass& superellipse);
@@ -276,7 +278,7 @@ class BarUiShapeClass : public BarUiInnheritBaseClass
 {
 public:
 	BarUiShapeClass() {}
-	BarUiShapeClass(double xT, double yT, double wT, double hT, optional<double> rwT, optional<double> rhT, optional<double> ftT, optional<COLORREF>fillT, optional<COLORREF>frameT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
+	BarUiShapeClass(double xT, double yT, double wT, double hT, optional<double> rwT, optional<double> rhT, optional<double> ftT, optional<COLORREF>fillT, optional<COLORREF>frameT, BarUiValueModeEnum type = BarUiValueModeEnum::Linear)
 	{
 		x.Initialization(xT, type);
 		y.Initialization(yT, type);
@@ -289,7 +291,7 @@ public:
 		if (frameT.has_value()) { frame = BarUiColorClass(); frame.value().Initialization(frameT.value()); }
 	}
 
-	void Initialization(double xT, double yT, double wT, double hT, optional<double> rwT, optional<double> rhT, optional<double> ftT, optional<COLORREF>fillT, optional<COLORREF>frameT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
+	void Initialization(double xT, double yT, double wT, double hT, optional<double> rwT, optional<double> rhT, optional<double> ftT, optional<COLORREF>fillT, optional<COLORREF>frameT, BarUiValueModeEnum type = BarUiValueModeEnum::Linear)
 	{
 		x.Initialization(xT, type);
 		y.Initialization(yT, type);
@@ -303,12 +305,10 @@ public:
 	}
 
 public:
-	bool IsClick(int mx, int my, double epsilon = 1e-6)
+	bool IsClick(int mx, int my, double zoom, double epsilon = 1e-6)
 	{
 		// 保证有效参数
 		if (w.val <= 0.0 || h.val <= 0.0 || (rw.has_value() && rw.value().val < 0.0) || (rh.has_value() && rh.value().val < 0.0)) return false;
-
-		double zoom = barStyle.zoom;
 
 		// 初始化值
 		double xO = inhX * zoom;
@@ -379,7 +379,7 @@ class BarUiSuperellipseClass : public BarUiInnheritBaseClass
 {
 public:
 	BarUiSuperellipseClass() {}
-	BarUiSuperellipseClass(double xT, double yT, double wT, double hT, optional<double> nT, optional<double> ftT, optional<COLORREF>fillT, optional<COLORREF>frameT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
+	BarUiSuperellipseClass(double xT, double yT, double wT, double hT, optional<double> nT, optional<double> ftT, optional<COLORREF>fillT, optional<COLORREF>frameT, BarUiValueModeEnum type = BarUiValueModeEnum::Linear)
 	{
 		x.Initialization(xT, type);
 		y.Initialization(yT, type);
@@ -391,7 +391,7 @@ public:
 		if (frameT.has_value()) { frame = BarUiColorClass(); frame.value().Initialization(frameT.value()); }
 	}
 
-	void Initialization(double xT, double yT, double wT, double hT, optional<double> nT, optional<double> ftT, optional<COLORREF>fillT, optional<COLORREF>frameT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
+	void Initialization(double xT, double yT, double wT, double hT, optional<double> nT, optional<double> ftT, optional<COLORREF>fillT, optional<COLORREF>frameT, BarUiValueModeEnum type = BarUiValueModeEnum::Linear)
 	{
 		x.Initialization(xT, type);
 		y.Initialization(yT, type);
@@ -404,16 +404,14 @@ public:
 	}
 
 public:
-	bool IsClick(int mx, int my, double epsilon = 1e-6)
+	bool IsClick(int mx, int my, double zoom, double epsilon = 1e-6)
 	{
-		double tarZoom = barStyle.zoom;
-
 		// 计算中心
-		double cx = inhX * tarZoom + w.val * tarZoom / 2.0;
-		double cy = inhY * tarZoom + h.val * tarZoom / 2.0;
+		double cx = inhX * zoom + w.val * zoom / 2.0;
+		double cy = inhY * zoom + h.val * zoom / 2.0;
 		// 半轴
-		double a = w.val * tarZoom / 2.0;
-		double b = h.val * tarZoom / 2.0;
+		double a = w.val * zoom / 2.0;
+		double b = h.val * zoom / 2.0;
 
 		// 映射到中心
 		double normx = (static_cast<double>(mx) - cx) / a;
@@ -452,7 +450,7 @@ class BarUiSVGClass : public BarUiInnheritBaseClass
 {
 public:
 	BarUiSVGClass() {}
-	BarUiSVGClass(double xT, double yT, optional<COLORREF> color1T, optional<COLORREF> color2T, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
+	BarUiSVGClass(double xT, double yT, optional<COLORREF> color1T, optional<COLORREF> color2T, BarUiValueModeEnum type = BarUiValueModeEnum::Linear)
 	{
 		x.Initialization(xT, type);
 		y.Initialization(yT, type);
@@ -460,7 +458,7 @@ public:
 		if (color2T.has_value()) { color2 = BarUiColorClass(); color2.value().Initialization(color2T.value()); }
 	}
 
-	void Initialization(double xT, double yT, optional<COLORREF> color1T, optional<COLORREF> color2T, BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
+	void Initialization(double xT, double yT, optional<COLORREF> color1T, optional<COLORREF> color2T, BarUiValueModeEnum type = BarUiValueModeEnum::Linear)
 	{
 		x.Initialization(xT, type);
 		y.Initialization(yT, type);
@@ -507,7 +505,7 @@ class BarUiWordClass : public BarUiInnheritBaseClass
 {
 public:
 	BarUiWordClass() {}
-	BarUiWordClass(double xT, double yT, double wT, double hT, string contentT, double sizeT, COLORREF colorT = RGB(0, 0, 0), BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
+	BarUiWordClass(double xT, double yT, double wT, double hT, string contentT, double sizeT, COLORREF colorT = RGB(0, 0, 0), BarUiValueModeEnum type = BarUiValueModeEnum::Linear)
 	{
 		x.Initialization(xT, type);
 		y.Initialization(yT, type);
@@ -518,7 +516,7 @@ public:
 		color.Initialization(colorT);
 	}
 
-	void Initialization(double xT, double yT, double wT, double hT, string contentT, double sizeT, COLORREF colorT = RGB(0, 0, 0), BarUiValueModeEnum type = BarUiValueModeEnum::Variable)
+	void Initialization(double xT, double yT, double wT, double hT, string contentT, double sizeT, COLORREF colorT = RGB(0, 0, 0), BarUiValueModeEnum type = BarUiValueModeEnum::Linear)
 	{
 		x.Initialization(xT, type);
 		y.Initialization(yT, type);

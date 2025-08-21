@@ -577,7 +577,6 @@
     <ClInclude Include="Inkeys\Load\IdtLoad.h" />
     <ClInclude Include="Inkeys\UI\IdtBar.h" />
     <ClInclude Include="Inkeys\UI\IdtBarBottom.h" />
-    <ClInclude Include="Inkeys\UI\IdtBarColor.h" />
     <ClInclude Include="Inkeys\UI\IdtBarFormat.h" />
     <ClInclude Include="Inkeys\UI\IdtBarState.h" />
     <ClInclude Include="Inkeys\UI\IdtBarUI.h" />
@@ -676,7 +675,6 @@
     <ClCompile Include="IdtWindow.cpp" />
     <ClCompile Include="Inkeys\UI\IdtBar.cpp" />
     <ClCompile Include="Inkeys\UI\IdtBarBottom.cpp" />
-    <ClCompile Include="Inkeys\UI\IdtBarColor.cpp" />
     <ClCompile Include="Inkeys\UI\IdtBarFormat.cpp" />
     <ClCompile Include="Inkeys\UI\IdtBarState.cpp" />
     <ClCompile Include="Inkeys\UI\IdtBarUI.cpp" />
@@ -772,6 +770,7 @@
     <None Include="src\i18n\zh-CN.jsonc" />
     <None Include="src\i18n\zh-TW.jsonc" />
     <None Include="src\ui1.bin" />
+    <None Include="src\UI\barBrush1.svg" />
     <None Include="src\UI\barBursh1.svg" />
     <None Include="src\UI\barClean.svg" />
     <None Include="src\UI\barDivider.svg" />

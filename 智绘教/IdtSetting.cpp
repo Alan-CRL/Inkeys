@@ -906,7 +906,7 @@ void SettingMain()
 					{
 						// 关闭
 						test.select = false;
-						barUISet.barButtomSet.StateUpdate();
+						barUISet.UpdateRendering();
 					}
 
 					if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;

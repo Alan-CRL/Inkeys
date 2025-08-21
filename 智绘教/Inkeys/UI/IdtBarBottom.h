@@ -64,6 +64,11 @@ public:
 	IdtAtomic<bool> hide = true;
 	IdtAtomic<bool> only = true;
 
+	// 绘制记录
+	IdtAtomic<double> lastDrawX = 0.0;
+	IdtAtomic<double> lastDrawY = 0.0;
+
+	// 按钮控件
 	BarUiShapeClass buttom;
 	BarUiWordClass name;
 	BarUiSVGClass icon;
@@ -139,5 +144,5 @@ public:
 
 protected:
 	void PresetHoming();
-	void CalcButtomState();
+	void CalcState();
 };

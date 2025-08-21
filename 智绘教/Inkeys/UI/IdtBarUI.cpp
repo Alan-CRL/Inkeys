@@ -28,14 +28,18 @@ BarUiInheritClass::BarUiInheritClass(BarUiInheritEnum typeT, double xO, double y
 	// 基础位置
 	x = xO;
 	y = yO;
+	// 先设置的位置为控件所设置的偏移量（也就是相对于控件中心的偏移量），接下来的计算中，以 Center 为例
+	// (xT + wT / 2.0, yT + hT / 2.0) 是目标控件的中心点位置，然后在减去控件自身的宽高的一半，得到左上角的绘制坐标
 
 	// TODO 拓展更多类型组合
 	if (type == BarUiInheritEnum::TopLeft) { x += xT, y += yT; }
 	else if (type == BarUiInheritEnum::Left) { x += xT, y += yT + hT / 2.0 - hO / 2.0; }
 	else if (type == BarUiInheritEnum::Center) { x += xT + wT / 2.0 - wO / 2.0, y += yT + hT / 2.0 - hO / 2.0; }
 
-	else if (type == BarUiInheritEnum::ToRight) { x += xT + wT, y += yT; }
-	else if (type == BarUiInheritEnum::ToLeft) { x += xT - wO, y += yT; }
+	else if (type == BarUiInheritEnum::ToTop) { x += xT + wT / 2.0 - wO / 2.0, y += yT - hT / 2.0 - hO; }
+	else if (type == BarUiInheritEnum::ToLeft) { x += xT - wT / 2.0 - wO, y += yT + hT / 2.0 - hO / 2.0; }
+	else if (type == BarUiInheritEnum::ToRight) { x += xT + wT / 2.0, y += yT + hT / 2.0 - hO / 2.0; }
+	else if (type == BarUiInheritEnum::ToBottom) { x += xT + wT / 2.0 - wO / 2.0, y += yT + hT / 2.0; }
 }
 //// 继承基类
 BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const BarUiShapeClass& shape) { return UpInh(BarUiInheritClass(typeT, x.val, y.val, w.val, h.val, shape.inhX, shape.inhY, shape.w.val, shape.h.val)); }

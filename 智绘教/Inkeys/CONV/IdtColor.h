@@ -8,6 +8,7 @@ private:
 	IdtColor() = delete;
 
 public:
+	// 弃用
 	static BarLogaColorSchemeEnum BarLogaColorSchemeCalc(COLORREF color)
 	{
 		// 内联相对亮度计算
@@ -48,5 +49,10 @@ public:
 			GetBValue(color) / 255.0f,
 			static_cast<FLOAT>(pct)
 		);
+	}
+	static bool CompereColorRef(COLORREF col1, COLORREF col2, bool alpha = false)
+	{
+		if (alpha) return col1 == col2;
+		return (GetRValue(col1) == GetRValue(col2)) && (GetGValue(col1) == GetGValue(col2)) && (GetBValue(col1) == GetBValue(col2));
 	}
 };

@@ -7,19 +7,13 @@ class BarStateClass
 public:
 	IdtAtomic<bool> fold = true;
 	IdtAtomic<bool> drawAttribute = false;
-
-public:
-	void CalcButtomState();
 };
-extern BarStateClass barState;
-
 class BarStyleClass
 {
 public:
 	IdtAtomic<bool> darkStyle = true;
 	IdtAtomic<double> zoom = 2.0;
 };
-extern BarStyleClass barStyle;
 
 // ---
 
