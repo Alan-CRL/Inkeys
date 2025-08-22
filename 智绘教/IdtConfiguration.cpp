@@ -304,6 +304,16 @@ bool ReadSetting()
 					if (setlistVal["Component"]["ShortcutButton"]["Keyboard"].isMember("KeyboardAltF4") && setlistVal["Component"]["ShortcutButton"]["Keyboard"]["KeyboardAltF4"].isBool())
 						setlist.component.shortcutButton.keyboard.keyboardAltF4 = setlistVal["Component"]["ShortcutButton"]["Keyboard"]["KeyboardAltF4"].asBool();
 				}
+				// rollCall
+				if (setlistVal["Component"]["ShortcutButton"].isMember("RollCall") && setlistVal["Component"]["ShortcutButton"]["RollCall"].isObject())
+				{
+					if (setlistVal["Component"]["ShortcutButton"]["RollCall"].isMember("IslandCaller") && setlistVal["Component"]["ShortcutButton"]["RollCall"]["IslandCaller"].isBool())
+						setlist.component.shortcutButton.rollCall.IslandCaller = setlistVal["Component"]["ShortcutButton"]["RollCall"]["IslandCaller"].asBool();
+					if (setlistVal["Component"]["ShortcutButton"]["RollCall"].isMember("SecRandom") && setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom"].isBool())
+						setlist.component.shortcutButton.rollCall.SecRandom = setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom"].asBool();
+					if (setlistVal["Component"]["ShortcutButton"]["RollCall"].isMember("NamePicker") && setlistVal["Component"]["ShortcutButton"]["RollCall"]["NamePicker"].isBool())
+						setlist.component.shortcutButton.rollCall.NamePicker = setlistVal["Component"]["ShortcutButton"]["RollCall"]["NamePicker"].asBool();
+				}
 				// linkage
 				if (setlistVal["Component"]["ShortcutButton"].isMember("Linkage") && setlistVal["Component"]["ShortcutButton"]["Linkage"].isObject())
 				{
@@ -313,8 +323,6 @@ bool ReadSetting()
 						setlist.component.shortcutButton.linkage.classislandProfile = setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandProfile"].asBool();
 					if (setlistVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandClassswap") && setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandClassswap"].isBool())
 						setlist.component.shortcutButton.linkage.classislandClassswap = setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandClassswap"].asBool();
-					if (setlistVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandIslandCaller") && setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandIslandCaller"].isBool())
-						setlist.component.shortcutButton.linkage.classislandIslandCaller = setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandIslandCaller"].asBool();
 				}
 			}
 		}
@@ -493,12 +501,17 @@ bool WriteSetting()
 					setlistVal["Component"]["ShortcutButton"]["Keyboard"]["Keyboardesc"] = Json::Value(setlist.component.shortcutButton.keyboard.keyboardesc);
 					setlistVal["Component"]["ShortcutButton"]["Keyboard"]["KeyboardAltF4"] = Json::Value(setlist.component.shortcutButton.keyboard.keyboardAltF4);
 				}
+				// rollCall
+				{
+					setlistVal["Component"]["ShortcutButton"]["RollCall"]["IslandCaller"] = Json::Value(setlist.component.shortcutButton.rollCall.IslandCaller);
+					setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom"] = Json::Value(setlist.component.shortcutButton.rollCall.SecRandom);
+					setlistVal["Component"]["ShortcutButton"]["RollCall"]["NamePicker"] = Json::Value(setlist.component.shortcutButton.rollCall.NamePicker);
+				}
 				// linkage
 				{
 					setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandSettings"] = Json::Value(setlist.component.shortcutButton.linkage.classislandSettings);
 					setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandProfile"] = Json::Value(setlist.component.shortcutButton.linkage.classislandProfile);
 					setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandClassswap"] = Json::Value(setlist.component.shortcutButton.linkage.classislandClassswap);
-					setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandIslandCaller"] = Json::Value(setlist.component.shortcutButton.linkage.classislandIslandCaller);
 				}
 			}
 		}
@@ -613,8 +626,8 @@ bool PptComReadSetting()
 		if (updateVal.isMember("MiddleSideBothWidgetScale") && updateVal["MiddleSideBothWidgetScale"].isDouble())
 			pptComSetlist.middleSideBothWidgetScale = (float)updateVal["MiddleSideBothWidgetScale"].asDouble();
 
-		/*if (updateVal.isMember("AutoKillWpsProcess") && updateVal["AutoKillWpsProcess"].isBool())
-			pptComSetlist.autoKillWpsProcess = updateVal["AutoKillWpsProcess"].asBool();*/
+		if (updateVal.isMember("AutoKillWpsProcess") && updateVal["AutoKillWpsProcess"].isBool())
+			pptComSetlist.autoKillWpsProcess = updateVal["AutoKillWpsProcess"].asBool();
 	}
 	else return false;
 
@@ -701,7 +714,7 @@ bool PptComWriteSetting()
 		updateVal["BottomSideMiddleWidgetScale"] = Json::Value(pptComSetlist.bottomSideMiddleWidgetScale);
 		updateVal["MiddleSideBothWidgetScale"] = Json::Value(pptComSetlist.middleSideBothWidgetScale);
 
-		//updateVal["AutoKillWpsProcess"] = Json::Value(pptComSetlist.autoKillWpsProcess);
+		updateVal["AutoKillWpsProcess"] = Json::Value(pptComSetlist.autoKillWpsProcess);
 	}
 
 	HANDLE fileHandle = NULL;

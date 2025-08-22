@@ -159,6 +159,10 @@ HOME1_ZH-TW             PNG                     "src\\setting\\Home1_zh-TW.png"
 
 HOME2_ZH-TW             PNG                     "src\\setting\\Home2_zh-TW.png"
 
+CUSTOMIZEICO11          PNG                     "src\\NamePicker.png"
+
+CUSTOMIZEICO10          PNG                     "src\\SecRandom.png"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -288,7 +292,7 @@ BARGEOMETRY             UI                      "src\\UI\\barGeometry.svg"
 
 COLORSELECT             UI                      "src\\UI\\color\\colorSelect.svg"
 
-barHighlight1           UI                      "src\\UI\\barHighlight1.svg"
+BARHIGHLIGHT1           UI                      "src\\UI\\barHighlight1.svg"
 
 #endif    // 中文(简体，中国) resources
 /////////////////////////////////////////////////////////////////////////////

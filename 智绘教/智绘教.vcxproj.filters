@@ -1275,6 +1275,12 @@
     <Image Include="src\setting\Home2_zh-TW.png">
       <Filter>资源文件</Filter>
     </Image>
+    <Image Include="src\NamePicker.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\SecRandom.png">
+      <Filter>资源文件</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <None Include="PptCOM.dll" />

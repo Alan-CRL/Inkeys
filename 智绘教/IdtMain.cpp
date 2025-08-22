@@ -924,10 +924,14 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 							setlist.component.shortcutButton.keyboard.keyboardAltF4 = false;
 						}
 						{
+							setlist.component.shortcutButton.rollCall.IslandCaller = false;
+							setlist.component.shortcutButton.rollCall.SecRandom = false;
+							setlist.component.shortcutButton.rollCall.NamePicker = false;
+						}
+						{
 							setlist.component.shortcutButton.linkage.classislandSettings = false;
 							setlist.component.shortcutButton.linkage.classislandProfile = false;
 							setlist.component.shortcutButton.linkage.classislandClassswap = false;
-							setlist.component.shortcutButton.linkage.classislandIslandCaller = false;
 						}
 					}
 				}
