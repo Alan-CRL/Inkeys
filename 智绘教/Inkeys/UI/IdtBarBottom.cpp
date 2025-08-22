@@ -460,6 +460,13 @@ void BarButtomSetClass::StateUpdate()
 	CalcState();
 	PresetHoming();
 }
+// 更新绘制按钮中的图标样式
+void BarButtomSetClass::UpdateDrawButtonStyle()
+{
+	if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
+		preset[(int)BarButtomPresetEnum::Draw]->icon.SetTarFromResource(L"UI", L"barHighlighter1");
+	else preset[(int)BarButtomPresetEnum::Draw]->icon.SetTarFromResource(L"UI", L"barBrush1");
+}
 
 void BarButtomSetClass::Load()
 {

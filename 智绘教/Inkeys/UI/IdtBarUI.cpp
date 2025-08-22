@@ -12,7 +12,13 @@ void BarUiSVGClass::InitializationFromResource(const wstring& resType, const wst
 {
 	string valT;
 	IdtLoad::ExtractResourceString(valT, resType, resName);
-	InitializationFromString(valT);
+	if (!valT.empty()) InitializationFromString(valT);
+}
+void BarUiSVGClass::SetTarFromResource(const wstring& resType, const wstring& resName)
+{
+	string valT;
+	IdtLoad::ExtractResourceString(valT, resType, resName);
+	if (!valT.empty()) SetTarFromString(valT);
 }
 
 /// 继承
@@ -47,7 +53,7 @@ BarUiInheritClass BarUiInnheritBaseClass::Inherit(BarUiInheritEnum typeT, const 
 
 /// 单个控件值
 //// 单个 SVG 控件
-bool BarUiSVGClass::SetWH(optional<double> wT, optional<double> hT, BarUiValueModeEnum type)
+bool BarUiSVGClass::SetWH(optional<double> wT, optional<double> hT)
 {
 	double tarW, tarH;
 
@@ -76,15 +82,15 @@ bool BarUiSVGClass::SetWH(optional<double> wT, optional<double> hT, BarUiValueMo
 		}
 	}
 
-	w.Initialization(tarW, type);
-	h.Initialization(tarH, type);
+	w.tar = tarW;
+	h.tar = tarH;
 
 	return true;
 }
 pair<double, double> BarUiSVGClass::CalcWH()
 {
 	// 解析SVG
-	unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromData(svg.GetVal());
+	unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromData(svg.GetTar());
 	if (!document) return make_pair(0, 0); // 解析失败
 
 	double w = static_cast<double>(document->width());

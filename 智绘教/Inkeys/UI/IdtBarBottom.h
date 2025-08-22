@@ -138,6 +138,7 @@ public:
 public:
 	void PresetInitialization();
 	void StateUpdate();
+	void UpdateDrawButtonStyle(); // 更新绘制按钮中的图标样式
 
 	// TODO 临时方案，按照默认样式加载，后续改为从配置中加载布局
 	void Load();

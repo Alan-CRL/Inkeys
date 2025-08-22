@@ -471,6 +471,14 @@ public:
 		rW = temp.first, rH = temp.second;
 	}
 	void InitializationFromResource(const wstring& resType, const wstring& resName);
+	void SetTarFromString(string valT)
+	{
+		svg.SetTar(valT);
+
+		auto temp = CalcWH();
+		rW = temp.first, rH = temp.second;
+	}
+	void SetTarFromResource(const wstring& resType, const wstring& resName);
 
 public:
 	// 整体该控件是否显示
@@ -489,7 +497,7 @@ public:
 	BarUiStringClass svg;
 
 public:
-	bool SetWH(optional<double> wT, optional<double> hT, BarUiValueModeEnum type = BarUiValueModeEnum::Variable);
+	bool SetWH(optional<double> wT, optional<double> hT);
 protected:
 	pair<double, double> CalcWH();
 

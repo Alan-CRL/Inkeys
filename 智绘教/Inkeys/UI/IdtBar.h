@@ -51,18 +51,11 @@ class BarUISetClass;
 // 前向声明
 
 // 控件枚举
-enum class BarUISetShapeEnum
+enum class BarUISetShapeEnum : int
 {
 	MainBar,
 
 	DrawAttributeBar,
-	DrawAttributeBar_Brush1,
-	DrawAttributeBar_Highlight1,
-};
-enum class BarUISetSuperellipseEnum
-{
-	MainButton,
-
 	DrawAttributeBar_ColorSelect1,
 	DrawAttributeBar_ColorSelect2,
 	DrawAttributeBar_ColorSelect3,
@@ -74,8 +67,16 @@ enum class BarUISetSuperellipseEnum
 	DrawAttributeBar_ColorSelect9,
 	DrawAttributeBar_ColorSelect10,
 	DrawAttributeBar_ColorSelect11,
+	DrawAttributeBar_Brush1,
+	DrawAttributeBar_Highlight1,
+	DrawAttributeBar_DrawSelect,
+	DrawAttributeBar_DrawSelectGroove,
 };
-enum class BarUISetSvgEnum
+enum class BarUISetSuperellipseEnum : int
+{
+	MainButton,
+};
+enum class BarUISetSvgEnum : int
 {
 	logo1,
 
@@ -94,7 +95,7 @@ enum class BarUISetSvgEnum
 	DrawAttributeBar_Brush1,
 	DrawAttributeBar_Highlight1,
 };
-enum class BarUISetWordEnum
+enum class BarUISetWordEnum : int
 {
 	MainButton,
 

@@ -1311,7 +1311,6 @@
     <None Include="src\UI\barGeometry.svg" />
     <None Include="src\UI\color\colorSelect.svg" />
     <None Include="src\UI\barBrush1.svg" />
-    <None Include="src\UI\barHighlight1.svg" />
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="..\PptCOM\PptCOM.manifest" />
