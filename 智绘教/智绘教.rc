@@ -159,6 +159,10 @@ HOME1_ZH-TW             PNG                     "src\\setting\\Home1_zh-TW.png"
 
 HOME2_ZH-TW             PNG                     "src\\setting\\Home2_zh-TW.png"
 
+CUSTOMIZEICO11          PNG                     "src\\NamePicker.png"
+
+CUSTOMIZEICO10          PNG                     "src\\SecRandom.png"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //

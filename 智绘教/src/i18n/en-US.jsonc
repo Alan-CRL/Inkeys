@@ -141,12 +141,13 @@
       {
         "N": "Update Preferences",
         "AutoUpate": "Auto Update (silent)",
-        "ChannelTip": "Stable Channel (LTS): most stable version (recommended)\nInsider Channel: test versions, may be falsely reported as viruses.",
+        "ChannelTip": "Stable Channel (LTS): most stable version (recommended)\nInsider Channel: preview versions, may be falsely reported as viruses.\nCanary Channel: pushes an early version of Inkeys3, which is not recommended for use.",
         "Channel":
         {
           "N": "Update Channel",
           "LTS": "Stable Channel (LTS)",
-          "Insider": "Insider Channel"
+          "Insider": "Insider Channel",
+          "Canary": "Canary Channel"
         },
         "Arch":
         {

@@ -328,6 +328,9 @@ void DrawScreen()
 			idtLoadImage(&floating_icon[28], L"PNG", L"CustomizeIco8", 40, 40, true); // lockS
 			idtLoadImage(&floating_icon[29], L"PNG", L"CustomizeIco9", 40, 40, true); // taskmgr
 
+			idtLoadImage(&floating_icon[31], L"PNG", L"CustomizeIco10", 40, 40, true); // SecRandom
+			idtLoadImage(&floating_icon[32], L"PNG", L"CustomizeIco11", 40, 40, true); // NamePicker
+
 			idtLoadImage(&sign, L"PNG", L"sign1", 30, 30, true);
 
 			idtLoadImage(&skin[1], L"PNG", L"skin1");
@@ -4690,10 +4693,13 @@ void DrawScreen()
 				else if (setlist.component.shortcutButton.keyboard.keyboardesc) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[25], UIControl[L"Image/Customize1/transparency"].v);
 				else if (setlist.component.shortcutButton.keyboard.keyboardAltF4) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[26], UIControl[L"Image/Customize1/transparency"].v);
 
+				else if (setlist.component.shortcutButton.rollCall.IslandCaller) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[22], UIControl[L"Image/Customize1/transparency"].v);
+				else if (setlist.component.shortcutButton.rollCall.SecRandom) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[31], UIControl[L"Image/Customize1/transparency"].v);
+				else if (setlist.component.shortcutButton.rollCall.NamePicker) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[32], UIControl[L"Image/Customize1/transparency"].v);
+
 				else if (setlist.component.shortcutButton.linkage.classislandSettings) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[21], UIControl[L"Image/Customize1/transparency"].v);
 				else if (setlist.component.shortcutButton.linkage.classislandProfile) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[21], UIControl[L"Image/Customize1/transparency"].v);
 				else if (setlist.component.shortcutButton.linkage.classislandClassswap) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[21], UIControl[L"Image/Customize1/transparency"].v);
-				else if (setlist.component.shortcutButton.linkage.classislandIslandCaller) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[22], UIControl[L"Image/Customize1/transparency"].v);
 
 				Gdiplus::Font gp_font(&HarmonyOS_fontFamily, UIControl[L"Words/Customize1/height"].v, FontStyleRegular, UnitPixel);
 				SolidBrush WordBrush(hiex::ConvertToGdiplusColor(UIControlColor[L"Words/Customize1/words_color"].v, true));
@@ -4715,10 +4721,13 @@ void DrawScreen()
 				else if (setlist.component.shortcutButton.keyboard.keyboardesc) graphics.DrawString(L"ESC键", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 				else if (setlist.component.shortcutButton.keyboard.keyboardAltF4) graphics.DrawString(L"Alt+F4", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 
+				else if (setlist.component.shortcutButton.rollCall.IslandCaller) graphics.DrawString(L"随机点名", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else if (setlist.component.shortcutButton.rollCall.SecRandom) graphics.DrawString(L"随机点名", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else if (setlist.component.shortcutButton.rollCall.NamePicker) graphics.DrawString(L"随机点名", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+
 				else if (setlist.component.shortcutButton.linkage.classislandSettings) graphics.DrawString(L"CI设置", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 				else if (setlist.component.shortcutButton.linkage.classislandProfile) graphics.DrawString(L"档案编辑", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 				else if (setlist.component.shortcutButton.linkage.classislandClassswap) graphics.DrawString(L"快速换课", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
-				else if (setlist.component.shortcutButton.linkage.classislandIslandCaller) graphics.DrawString(L"随机点名", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 			}
 
 			//插件空位1：随机点名
@@ -6274,6 +6283,7 @@ void MouseInteraction()
 					if (m.message == WM_LBUTTONDOWN)
 					{
 						lx = m.x, ly = m.y;
+
 						while (1)
 						{
 							ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
@@ -6314,6 +6324,19 @@ void MouseInteraction()
 										keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
 									}
 
+									else if (setlist.component.shortcutButton.rollCall.IslandCaller)
+									{
+										ShellExecute(NULL, L"open", L"classisland://plugins/IslandCaller/Run", NULL, NULL, SW_SHOWNORMAL);
+									}
+									else if (setlist.component.shortcutButton.rollCall.SecRandom)
+									{
+										ShellExecute(NULL, L"open", L"secrandom://pumping", NULL, NULL, SW_SHOWNORMAL);
+									}
+									else if (setlist.component.shortcutButton.rollCall.NamePicker)
+									{
+										ShellExecute(NULL, L"open", L"namepicker://", NULL, NULL, SW_SHOWNORMAL);
+									}
+
 									else if (setlist.component.shortcutButton.linkage.classislandSettings)
 									{
 										ShellExecute(NULL, L"open", L"classisland://app/settings/", NULL, NULL, SW_SHOWNORMAL);
@@ -6325,10 +6348,6 @@ void MouseInteraction()
 									else if (setlist.component.shortcutButton.linkage.classislandClassswap)
 									{
 										ShellExecute(NULL, L"open", L"classisland://app/class-swap", NULL, NULL, SW_SHOWNORMAL);
-									}
-									else if (setlist.component.shortcutButton.linkage.classislandIslandCaller)
-									{
-										ShellExecute(NULL, L"open", L"classisland://plugins/IslandCaller/Run", NULL, NULL, SW_SHOWNORMAL);
 									}
 
 									break;

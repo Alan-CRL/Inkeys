@@ -118,11 +118,16 @@ struct SetListStruct
 			} keyboard;
 			struct
 			{
+				IdtAtomic<bool> IslandCaller;
+				IdtAtomic<bool> SecRandom;
+				IdtAtomic<bool> NamePicker;
+			}rollCall;
+			struct
+			{
 				// 联动
 				IdtAtomic<bool> classislandSettings;
 				IdtAtomic<bool> classislandProfile;
 				IdtAtomic<bool> classislandClassswap;
-				IdtAtomic<bool> classislandIslandCaller;
 			} linkage;
 		} shortcutButton;
 	}component;

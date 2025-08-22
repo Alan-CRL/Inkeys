@@ -45,7 +45,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250812a";				// 程序发布日期
+wstring editionDate = L"20250822a";				// 程序发布日期
 wstring editionChannel = L"LTS";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -924,10 +924,14 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 							setlist.component.shortcutButton.keyboard.keyboardAltF4 = false;
 						}
 						{
+							setlist.component.shortcutButton.rollCall.IslandCaller = false;
+							setlist.component.shortcutButton.rollCall.SecRandom = false;
+							setlist.component.shortcutButton.rollCall.NamePicker = false;
+						}
+						{
 							setlist.component.shortcutButton.linkage.classislandSettings = false;
 							setlist.component.shortcutButton.linkage.classislandProfile = false;
 							setlist.component.shortcutButton.linkage.classislandClassswap = false;
-							setlist.component.shortcutButton.linkage.classislandIslandCaller = false;
 						}
 					}
 				}

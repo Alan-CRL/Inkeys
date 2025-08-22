@@ -635,6 +635,7 @@
     <Image Include="src\line.png" />
     <Image Include="src\more.png" />
     <Image Include="src\ms_ppt.png" />
+    <Image Include="src\NamePicker.png" />
     <Image Include="src\option.png" />
     <Image Include="src\paint_brush.png" />
     <Image Include="src\perspective.png" />
@@ -659,6 +660,7 @@
     <Image Include="src\right.png" />
     <Image Include="src\rubber.png" />
     <Image Include="src\scale.png" />
+    <Image Include="src\SecRandom.png" />
     <Image Include="src\seewo_camera.png" />
     <Image Include="src\setting\Community-picture.png" />
     <Image Include="src\setting\Home1_en-US.png" />

@@ -164,14 +164,15 @@
         "N": "更新偏好",
 
         "AutoUpate": "自动更新(静默)",
-        "ChannelTip": "正式通道(LTS) 推送最新的稳定版本, 具有较高的稳定性。（推荐）\n预览通道(Insider) 推送稳定性一般的预览版本, 且可能会被杀毒软件误报。",
+        "ChannelTip": "正式通道(LTS) 推送最新的稳定版本, 具有较高的稳定性。（推荐）\n预览通道(Insider) 推送稳定性一般的预览版本, 且可能会被杀毒软件误报。\n早期通道(Canary) 推送 Inkeys3 早期版本, 不建议使用。",
 
         "Channel":
         {
           "N": "目标更新通道",
 
           "LTS": "正式通道(LTS)",
-          "Insider": "预览通道(Insider)"
+          "Insider": "预览通道(Insider)",
+          "Canary": "早期通道(Canary)"
         },
         "Arch":
         {
