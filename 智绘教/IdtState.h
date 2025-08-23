@@ -32,10 +32,6 @@ class StateModeClass
 public:
 	StateModeClass()
 	{
-		StateModeSelect = StateModeSelectEnum::IdtSelection;
-		StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
-		StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
-
 		{
 			Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
 			Pen.Brush1.width = Pen.Brush1.widthPreset = 3;
@@ -53,9 +49,11 @@ public:
 	}
 
 public:
-	StateModeSelectEnum StateModeSelect;
-	StateModeSelectEnum StateModeSelectTarget;
-	StateModeSelectEnum StateModeSelectEcho;
+	StateModeSelectEnum StateModeSelect = StateModeSelectEnum::IdtSelection;
+	StateModeSelectEnum StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
+	StateModeSelectEnum StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
+
+	IdtAtomic<bool> cleanPageSign = false;
 
 	struct
 	{

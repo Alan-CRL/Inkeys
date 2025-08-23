@@ -280,6 +280,9 @@ LRESULT CALLBACK FloatingMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 	return HIWINDOW_DEFAULT_PROC;
 }
 
+// TODO 触摸消息适配 bar ppt
+//      D2D 内存中加载字体
+
 //绘制屏幕
 void DrawScreen()
 {

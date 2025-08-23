@@ -13,6 +13,14 @@ public:
 		IdtAtomic<bool> brush1Press = false;
 		IdtAtomic<bool> highlight1Press = false;
 	}drawAttributeBar;
+
+	struct
+	{
+		IdtAtomic<bool> mainBar; // false 左侧， true 右侧
+		IdtAtomic<bool> primaryBar; // false 上方， true 下方
+	}widgetPosition;
+
+	void PositionUpdate(double tarZoom);
 };
 class BarStyleClass
 {

@@ -206,6 +206,27 @@ bool CheckPptCom()
 
 	return true;
 }
+LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	switch (msg)
+	{
+	case WM_TABLET_QUERYSYSTEMGESTURESTATUS:
+	{
+		DWORD flags = 0;
+		flags |= (0x00000001);
+		flags |= (0x00000008);
+		flags |= (0x00000100);
+		flags |= (0x00000200);
+		flags |= (0x00010000);
+		return (LRESULT)flags;
+	}
+
+	default:
+		return HIWINDOW_DEFAULT_PROC;
+	}
+
+	return HIWINDOW_DEFAULT_PROC;
+}
 
 wstring GetPptTitle()
 {
@@ -2090,6 +2111,12 @@ void PptDraw()
 			PptWindowBackground.Resize(PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight);
 			SetWindowPos(ppt_window, NULL, PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 		}
+	}
+
+	// 禁用手势 初始化
+	{
+		hiex::SetWndProcFunc(ppt_window, PptWindowMsgCallback);
+		DisableEdgeGestures(ppt_window, true);
 	}
 
 	// 创建 EasyX 兼容的 DC Render Target

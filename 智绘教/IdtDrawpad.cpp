@@ -427,7 +427,6 @@ void KeyboardInteraction()
 	}
 }
 
-HCURSOR hArrowCursor = LoadCursor(nullptr, IDC_ARROW);
 LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	switch (msg)
@@ -1480,6 +1479,8 @@ void DrawpadDrawing()
 	}
 	IdtWindowsIsVisible.drawpadWindow = true;
 
+	stateMode.cleanPageSign = false;
+
 	chrono::high_resolution_clock::time_point reckon;
 	for (;;)
 	{
@@ -1487,7 +1488,7 @@ void DrawpadDrawing()
 
 		for (;;)
 		{
-			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
+			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection || stateMode.cleanPageSign)
 			{
 			ChooseEnd:
 				{
@@ -1615,23 +1616,27 @@ void DrawpadDrawing()
 				current_record_pointer = reference_record_pointer;
 				RecallImageManipulated = std::chrono::high_resolution_clock::time_point();
 
-				stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
-
-				timeEndPeriod(1);
-
 				int ppt_switch_count = 0;
-				while (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
+				if (!stateMode.cleanPageSign)
 				{
-					this_thread::sleep_for(chrono::milliseconds(50));
+					// 不是清空工况则直接返回绘制
+					stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
 
-					if (PptInfoStateBuffer.CurrentPage != PptInfoState.CurrentPage) PptInfoStateBuffer.CurrentPage = PptInfoState.CurrentPage, ppt_switch_count++;
-					PptInfoStateBuffer.TotalPage = PptInfoState.TotalPage;
+					timeEndPeriod(1);
 
-					if (offSignal) goto DrawpadDrawingEnd;
+					while (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
+					{
+						this_thread::sleep_for(chrono::milliseconds(50));
+
+						if (PptInfoStateBuffer.CurrentPage != PptInfoState.CurrentPage) PptInfoStateBuffer.CurrentPage = PptInfoState.CurrentPage, ppt_switch_count++;
+						PptInfoStateBuffer.TotalPage = PptInfoState.TotalPage;
+
+						if (offSignal) goto DrawpadDrawingEnd;
+					}
+
+					// 设置全局高精度
+					timeBeginPeriod(1);
 				}
-
-				// 设置全局高精度
-				timeBeginPeriod(1);
 
 				{
 					if (PptInfoStateBuffer.TotalPage != -1 && ppt_switch_count != 0 && PptImg.IsSaved[PptInfoStateBuffer.CurrentPage])
@@ -1659,6 +1664,8 @@ void DrawpadDrawing()
 				unique_lock<shared_mutex> lockPointTempSm(touchTempSm);
 				TouchTemp.clear();
 				lockPointTempSm.unlock();
+
+				stateMode.cleanPageSign = false;
 			}
 			if (penetrate.select == true)
 			{

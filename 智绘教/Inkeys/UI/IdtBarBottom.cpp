@@ -249,6 +249,7 @@ void BarButtomSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
+					stateMode.cleanPageSign = true;
 				};
 		}
 

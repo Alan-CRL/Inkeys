@@ -965,7 +965,10 @@ void BarUISetClass::Rendering()
 					else
 					{
 						shapeMap[BarUISetShapeEnum::MainBar]->w.tar = totalWidth;
-						shapeMap[BarUISetShapeEnum::MainBar]->x.tar = superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() / 2.0 + shapeMap[BarUISetShapeEnum::MainBar]->w.tar / 2.0 + 10.0;
+						if (barState.widgetPosition.mainBar)
+							shapeMap[BarUISetShapeEnum::MainBar]->x.tar = superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() / 2.0 + shapeMap[BarUISetShapeEnum::MainBar]->w.tar / 2.0 + 10.0;
+						else
+							shapeMap[BarUISetShapeEnum::MainBar]->x.tar = -(superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() / 2.0 + shapeMap[BarUISetShapeEnum::MainBar]->w.tar / 2.0 + 10.0);
 
 						shapeMap[BarUISetShapeEnum::MainBar]->pct.tar = 0.8;
 						shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().tar = 0.18;
@@ -999,8 +1002,10 @@ void BarUISetClass::Rendering()
 							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->h.tar = 110.0;
 
 							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->x.tar = -(barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->lastDrawX);
-							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.tar = -(shapeMap[BarUISetShapeEnum::MainBar]->GetH() / 2.0 + 62.5);
-							//shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.tar = (shapeMap[BarUISetShapeEnum::MainBar]->GetH() / 2.0 + 62.5);
+							if (barState.widgetPosition.primaryBar)
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.tar = (shapeMap[BarUISetShapeEnum::MainBar]->GetH() / 2.0 + 62.5);
+							else
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.tar = -(shapeMap[BarUISetShapeEnum::MainBar]->GetH() / 2.0 + 62.5);
 
 							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->pct.tar = 0.9;
 							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->framePct.value().tar = 0.18;
@@ -1830,12 +1835,15 @@ void BarUISetClass::Rendering()
 			}
 			{ /**/ }
 
-			// 调试 FPS
+			// 调试 + FPS
 			{
+				double tarZoom = barStyle.zoom;
+				wstring content = L"开发版本 " + editionDate + L" | 不代表最终品质 | " + fps;
+
 				CComPtr<IDWriteTextFormat> pTextFormat;
 				pTextFormat = barMedia.formatCache->GetFormat(
 					L"HarmonyOS Sans SC",
-					40.0,
+					12.0 * tarZoom,
 					nullptr,
 					DWRITE_FONT_WEIGHT_NORMAL,
 					DWRITE_FONT_STYLE_NORMAL,
@@ -1848,16 +1856,19 @@ void BarUISetClass::Rendering()
 				// 3. 创建画刷
 				CComPtr<ID2D1SolidColorBrush> pBrush;
 				barDeviceContext->CreateSolidColorBrush(
-					D2D1::ColorF(D2D1::ColorF(255, 0, 0, 1.0)),
+					D2D1::ColorF(D2D1::ColorF(255, 255, 255, 0.5)),
 					&pBrush);
 
+				double tarX = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->inhX;
+				double tarY = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->inhY + barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetH();
+
 				// 4. 设定绘制区域
-				D2D1_RECT_F layoutRect = D2D1::RectF(100, 100, 1000, 1000);
+				D2D1_RECT_F layoutRect = D2D1::RectF(tarX * tarZoom, tarY * tarZoom, (tarX + 500) * tarZoom, (tarY + 20) * tarZoom);
 
 				// 5. 绘制文本
 				barDeviceContext->DrawTextW(
-					fps.c_str(),              // text
-					(UINT32)fps.length(),     // text length
+					content.c_str(),           // text
+					(UINT32)content.length(),  // text length
 					pTextFormat,               // format
 					layoutRect,                // layout rect
 					pBrush,                    // brush
@@ -1896,7 +1907,7 @@ void BarUISetClass::Rendering()
 		}
 		// 帧率锁
 		{
-			double delay = 1000.0 / 60.0 - chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count();
+			double delay = 1000.0 / 24.0 - chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count();
 			if (delay >= 10.0) std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(delay)));
 		}
 
@@ -2009,8 +2020,6 @@ void BarUISetClass::Interact()
 								SetPenColor(IdtColor::SetAlpha(obj->fill.value().tar, 255));
 								UpdateRendering();
 
-								TestCout << 1 << endl;
-
 								while (true)
 								{
 									hiex::getmessage_win32(&msg, EM_MOUSE, floating_window);
@@ -2107,7 +2116,11 @@ double BarUISetClass::Seek(const ExMessage& msg)
 		if (!KeyBoradDown[VK_LBUTTON]) break;
 		GetCursorPos(&p);
 
-		if (firX == p.x && firY == p.y) continue;
+		if (firX == p.x && firY == p.y)
+		{
+			this_thread::sleep_for(chrono::milliseconds(15));
+			continue;
+		}
 
 		double tarZoom = barStyle.zoom;
 		superellipseMap[BarUISetSuperellipseEnum::MainButton]->x.tar += static_cast<double>(p.x - firX) / tarZoom;
@@ -2116,13 +2129,18 @@ double BarUISetClass::Seek(const ExMessage& msg)
 		ret += sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY));
 		firX = static_cast<double>(p.x), firY = static_cast<double>(p.y);
 
-		//if (setlist.regularSetting.moveRecover)
-		//{
-		//	if (ret > 20 && target_status != 0)
-		//	{
-		//		target_status = 0;
-		//	}
-		//}
+		// 更新位置状态
+		barState.PositionUpdate(tarZoom);
+		// 拖动时收起主栏
+		if (setlist.regularSetting.moveRecover)
+		{
+			if (ret > 20 && barState.fold == false)
+			{
+				barState.fold = true;
+			}
+		}
+
+		UpdateRendering();
 	}
 
 	return ret;
@@ -2146,6 +2164,8 @@ void BarInitializationClass::Initialization()
 		barUISet.barButtomSet.Load();
 		barUISet.barButtomSet.StateUpdate();
 	}
+
+	barUISet.barState.PositionUpdate(barUISet.barStyle.zoom);
 
 	// 线程
 	thread(FloatingInstallHook).detach();
@@ -2178,8 +2198,8 @@ void BarInitializationClass::InitializeWindow(BarUISetClass& barUISet)
 
 	barUISet.barWindow.x = 0;
 	barUISet.barWindow.y = 0;
-	barUISet.barWindow.w = 2880;// MainMonitor.MonitorWidth;
-	barUISet.barWindow.h = 1000;// MainMonitor.MonitorHeight;
+	barUISet.barWindow.w = MainMonitor.MonitorWidth;
+	barUISet.barWindow.h = MainMonitor.MonitorHeight;
 	barUISet.barWindow.pct = 255;
 	SetWindowPos(floating_window, NULL, barUISet.barWindow.x, barUISet.barWindow.y, barUISet.barWindow.w, barUISet.barWindow.h, SWP_NOACTIVATE | SWP_NOZORDER | SWP_DRAWFRAME); // 设置窗口位置尺寸
 }
