@@ -2213,7 +2213,7 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 	{
 		// 主按钮
 		{
-			auto superellipse = make_shared<BarUiSuperellipseClass>(200.0, 200.0, 80.0, 80.0, 3.0, 1.0, RGB(24, 24, 24), RGB(255, 255, 255));
+			auto superellipse = make_shared<BarUiSuperellipseClass>(100.0, 100.0, 80.0, 80.0, 3.0, 1.0, RGB(24, 24, 24), RGB(255, 255, 255));
 			superellipse->pct.Initialization(0.73);
 			superellipse->framePct = BarUiPctClass(0.18);
 			superellipse->enable.Initialization(true);
