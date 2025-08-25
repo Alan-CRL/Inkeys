@@ -575,6 +575,7 @@
     <ClInclude Include="Inkeys\Conv\IdtColor.h" />
     <ClInclude Include="Inkeys\Json\IdtJson.h" />
     <ClInclude Include="Inkeys\Load\IdtLoad.h" />
+    <ClInclude Include="Inkeys\Other\IdtGesture.h" />
     <ClInclude Include="Inkeys\UI\IdtBar.h" />
     <ClInclude Include="Inkeys\UI\IdtBarBottom.h" />
     <ClInclude Include="Inkeys\UI\IdtBarFormat.h" />
@@ -673,6 +674,7 @@
     <ClCompile Include="IdtTime.cpp" />
     <ClCompile Include="IdtUpdate.cpp" />
     <ClCompile Include="IdtWindow.cpp" />
+    <ClCompile Include="Inkeys\Other\IdtGesture.cpp" />
     <ClCompile Include="Inkeys\UI\IdtBar.cpp" />
     <ClCompile Include="Inkeys\UI\IdtBarBottom.cpp" />
     <ClCompile Include="Inkeys\UI\IdtBarFormat.cpp" />

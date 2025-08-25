@@ -106,6 +106,12 @@
     <Filter Include="头文件\Inkeys\Load">
       <UniqueIdentifier>{f9e5d643-b115-4fb6-830b-e349842a8795}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\Inkeys\Other">
+      <UniqueIdentifier>{a0403571-7f48-4f5e-a063-d27bc0278624}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Inkeys\Other">
+      <UniqueIdentifier>{e6fe91f5-9907-44c5-8e41-6db1ab4e946d}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HiEasyX.h">
@@ -774,6 +780,9 @@
     <ClInclude Include="Inkeys\UI\IdtBarUI.h">
       <Filter>头文件\Inkeys\UI</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Other\IdtGesture.h">
+      <Filter>头文件\Inkeys\Other</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HiEasyX\HiGUI\Button.cpp">
@@ -1042,6 +1051,9 @@
     </ClCompile>
     <ClCompile Include="Inkeys\UI\IdtBarUI.cpp">
       <Filter>源文件\Inkeys\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Other\IdtGesture.cpp">
+      <Filter>源文件\Inkeys\Other</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

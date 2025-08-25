@@ -221,6 +221,68 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		return (LRESULT)flags;
 	}
 
+	case WM_TOUCH:
+	{
+		UINT cInputs = LOWORD(wParam);
+		TOUCHINPUT inputs[32]; // 绝大多数设备不会同时超16点
+		if (GetTouchInputInfo((HTOUCHINPUT)lParam, cInputs, inputs, sizeof(TOUCHINPUT)))
+		{
+			for (UINT i = 0; i < cInputs; ++i)
+			{
+				const TOUCHINPUT& ti = inputs[i];
+				POINT pt = { ti.x / 100, ti.y / 100 }; // 屏幕坐标
+				ScreenToClient(hWnd, &pt);
+
+				if (ti.dwFlags & TOUCHEVENTF_DOWN)
+				{
+					// 如果当前无activeID，则锁定第一个DOWN点
+					if (!isTouchActive)
+					{
+						activeTouchId = ti.dwID;
+						isTouchActive = true;
+						// 这里处理首指DOWN
+						// 你的 down 操作
+					}
+					else
+					{
+						// 有活动ID，忽略其他点的DOWN
+					}
+				}
+
+				if (ti.dwFlags & TOUCHEVENTF_MOVE)
+				{
+					if (isTouchActive && ti.dwID == activeTouchId)
+					{
+						// 只有首指MOVE会进来
+						// 你的 move 操作
+					}
+					else
+					{
+						// 非活动点MOVE，忽略
+					}
+				}
+
+				if (ti.dwFlags & TOUCHEVENTF_UP)
+				{
+					if (isTouchActive && ti.dwID == activeTouchId)
+					{
+						// 活动ID抬起，释放锁
+						// 你的 up 操作
+						activeTouchId = 0;
+						isTouchActive = false;
+					}
+					else
+					{
+						// 非活动点UP，忽略
+					}
+				}
+			}
+
+			CloseTouchInputHandle((HTOUCHINPUT)lParam);
+		}
+		return 0;
+	}
+
 	default:
 		return HIWINDOW_DEFAULT_PROC;
 	}
@@ -2117,6 +2179,8 @@ void PptDraw()
 	{
 		hiex::SetWndProcFunc(ppt_window, PptWindowMsgCallback);
 		DisableEdgeGestures(ppt_window, true);
+
+		RegisterTouchWindow(ppt_window, TWF_WANTPALM);
 	}
 
 	// 创建 EasyX 兼容的 DC Render Target
