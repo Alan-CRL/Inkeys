@@ -1284,6 +1284,15 @@ namespace HiEasyX
 			break;
 		}
 
+		// 调用用户消息处理函数
+		if (g_vecWindows[indexWnd].funcWndProc)
+		{
+			resultUserProc = g_vecWindows[indexWnd].funcWndProc(hWnd, msg, wParam, lParam);
+
+			// Inkeys 修改：如果返回值为 0，则证明需要立即停止传递。（例如是触控 WM_TOUCH 消息）用户需要阻止消息传递
+			if (resultUserProc == 0) return 0;
+		}
+
 		// 活窗口的一般事件处理
 		if (IsAliveWindow(indexWnd))
 		{
@@ -1295,12 +1304,6 @@ namespace HiEasyX
 			LRESULT lrSysCtrl = SysCtrlProc(indexWnd, msg, wParam, lParam, bRetSysCtrl);
 			if (bRetSysCtrl)
 				return lrSysCtrl;
-		}
-
-		// 调用用户消息处理函数
-		if (g_vecWindows[indexWnd].funcWndProc)
-		{
-			resultUserProc = g_vecWindows[indexWnd].funcWndProc(hWnd, msg, wParam, lParam);
 		}
 
 		// 善后工作
@@ -1492,7 +1495,7 @@ namespace HiEasyX
 	}
 
 	// 真正创建窗口的函数（阻塞）
-	void InitWindow(int w, int h, int flag, LPCTSTR lpszWndTitle, LPCTSTR lpszClassName, WNDPROC WindowProcess, HWND hParent, int* nDoneFlag, bool* nStartAnimation, HWND* hWnd)
+	void InitWindow(int w, int h, int flag, LPCTSTR lpszWndTitle, LPCTSTR lpszClassName, WNDPROC WindowProcess, HWND hParent, int* nDoneFlag, bool* nStartAnimation, HWND* hWnd, std::function<void(HWND)> fuc = nullptr)
 	{
 		static int nWndCount = 0;	// 已创建窗口计数（用于生成窗口标题）
 
@@ -1742,6 +1745,10 @@ namespace HiEasyX
 				}).detach();
 		}
 
+		// Inkeys
+		// 窗口创建完成后可能需要执行自定义操作
+		if (fuc) fuc(wnd.hWnd);
+
 		// 消息派发，阻塞
 		// 窗口销毁后会自动退出
 		MSG Msg;
@@ -1752,7 +1759,7 @@ namespace HiEasyX
 		}
 	}
 
-	HWND initgraph_win32(int w, int h, int flag, LPCTSTR lpszWndTitle, LPCTSTR lpszClassName, WNDPROC WindowProcess, HWND hParent)
+	HWND initgraph_win32(int w, int h, int flag, LPCTSTR lpszWndTitle, LPCTSTR lpszClassName, WNDPROC WindowProcess, HWND hParent, std::function<void(HWND)> fuc)
 	{
 		// 标记是否已经完成窗口创建任务
 		int nDoneFlag = 0;
@@ -1767,7 +1774,7 @@ namespace HiEasyX
 			//EnableWindow(hParent, false);
 		}
 
-		std::thread(InitWindow, w, h, flag, lpszWndTitle, lpszClassName, WindowProcess, hParent, &nDoneFlag, &nStartAnimation, &hWnd).detach();
+		std::thread(InitWindow, w, h, flag, lpszWndTitle, lpszClassName, WindowProcess, hParent, &nDoneFlag, &nStartAnimation, &hWnd, fuc).detach();
 
 		while (nDoneFlag == 0)	Sleep(50);		// 等待窗口创建完成
 		if (nDoneFlag == -1)

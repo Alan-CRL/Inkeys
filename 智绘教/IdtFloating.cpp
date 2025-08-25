@@ -18,6 +18,7 @@
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
 #include "SuperTop/IdtSuperTop.h"
+#include "Inkeys/Other/IdtInputs.h"
 
 #include <shldisp.h>
 #include <exdisp.h>
@@ -136,7 +137,7 @@ pair<double, double> GetPointOnCircle(double x, double y, double r, double angle
 
 int SeekBar(ExMessage m)
 {
-	if (!KeyBoradDown[VK_LBUTTON]) return 0;
+	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return 0;
 
 	POINT p;
 	GetCursorPos(&p);
@@ -148,7 +149,7 @@ int SeekBar(ExMessage m)
 
 	while (1)
 	{
-		if (!KeyBoradDown[VK_LBUTTON]) break;
+		if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 		GetCursorPos(&p);
 
 		if (firX == p.x && firY == p.y) continue;
@@ -193,13 +194,13 @@ LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 {
 	if (nCode >= 0)
 	{
-		if (wParam == WM_LBUTTONDOWN) KeyBoradDown[VK_LBUTTON] = true;
-		else if (wParam == WM_LBUTTONUP) KeyBoradDown[VK_LBUTTON] = false;
-		else if (wParam == WM_MBUTTONDOWN) KeyBoradDown[VK_MBUTTON] = true;
-		else if (wParam == WM_MBUTTONUP) KeyBoradDown[VK_MBUTTON] = false;
+		if (wParam == WM_LBUTTONDOWN) IdtInputs::SetKeyBoardDown(VK_LBUTTON, true);
+		else if (wParam == WM_LBUTTONUP) IdtInputs::SetKeyBoardDown(VK_LBUTTON, false);
+		else if (wParam == WM_MBUTTONDOWN) IdtInputs::SetKeyBoardDown(VK_MBUTTON, true);
+		else if (wParam == WM_MBUTTONUP) IdtInputs::SetKeyBoardDown(VK_MBUTTON, false);
 
-		else if (wParam == WM_RBUTTONDOWN) KeyBoradDown[VK_RBUTTON] = true;
-		else if (wParam == WM_RBUTTONUP) KeyBoradDown[VK_RBUTTON] = false;
+		else if (wParam == WM_RBUTTONDOWN) IdtInputs::SetKeyBoardDown(VK_RBUTTON, true);
+		else if (wParam == WM_RBUTTONUP) IdtInputs::SetKeyBoardDown(VK_RBUTTON, false);
 
 		if (wParam == WM_MOUSEWHEEL && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && !penetrate.select && ppt_show != NULL)
 		{
@@ -279,9 +280,6 @@ LRESULT CALLBACK FloatingMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 
 	return HIWINDOW_DEFAULT_PROC;
 }
-
-// TODO 触摸消息适配 bar ppt
-//      D2D 内存中加载字体
 
 //绘制屏幕
 void DrawScreen()
@@ -5666,7 +5664,7 @@ void MouseInteraction()
 								else widthBuffer = 101 + int(double(idx - 260) / 60.0 * 399.0);
 								SetPenWidth((float)widthBuffer, false);
 
-								if (!KeyBoradDown[VK_LBUTTON])
+								if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON))
 								{
 									SetPenWidth((float)widthBuffer);
 									break;
@@ -5876,7 +5874,7 @@ void MouseInteraction()
 									UIControlTarget[L"RoundRect/BrushColorChooseMark/x"].v = UIControl[L"RoundRect/BrushColorChooseMark/x"].v = result.x + UIControl[L"RoundRect/BrushColorChooseWheel/x"].v - 7;
 									UIControlTarget[L"RoundRect/BrushColorChooseMark/y"].v = UIControl[L"RoundRect/BrushColorChooseMark/y"].v = result.y + UIControl[L"RoundRect/BrushColorChooseWheel/y"].v - 7;
 
-									if (!KeyBoradDown[VK_LBUTTON])
+									if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON))
 									{
 										SetPenColor(RGBA(red, green, blue, (floatingInfo.brushColor >> 24) & 0xFF));
 										break;

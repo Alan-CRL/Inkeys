@@ -11,10 +11,7 @@
 #include "IdtBarUI.h"
 #include "IdtBarState.h"
 #include "IdtBarBottom.h"
-
-//#undef max
-//#undef min
-//#include "libcuckoo/cuckoohash_map.h"
+#include "../Other/IdtInputs.h"
 
 #define LUNASVG_BUILD_STATIC
 #include <lunasvg/lunasvg.h>
@@ -2101,7 +2098,7 @@ void BarUISetClass::Interact()
 }
 double BarUISetClass::Seek(const ExMessage& msg)
 {
-	if (!KeyBoradDown[VK_LBUTTON]) return 0;
+	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return 0;
 
 	POINT p;
 	GetCursorPos(&p);
@@ -2113,7 +2110,7 @@ double BarUISetClass::Seek(const ExMessage& msg)
 
 	while (1)
 	{
-		if (!KeyBoradDown[VK_LBUTTON]) break;
+		if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 		GetCursorPos(&p);
 
 		if (firX == p.x && firY == p.y)
@@ -2199,7 +2196,7 @@ void BarInitializationClass::InitializeWindow(BarUISetClass& barUISet)
 	barUISet.barWindow.x = 0;
 	barUISet.barWindow.y = 0;
 	barUISet.barWindow.w = MainMonitor.MonitorWidth;
-	barUISet.barWindow.h = MainMonitor.MonitorHeight;
+	barUISet.barWindow.h = MainMonitor.MonitorHeight - 1;
 	barUISet.barWindow.pct = 255;
 	SetWindowPos(floating_window, NULL, barUISet.barWindow.x, barUISet.barWindow.y, barUISet.barWindow.w, barUISet.barWindow.h, SWP_NOACTIVATE | SWP_NOZORDER | SWP_DRAWFRAME); // 设置窗口位置尺寸
 }
@@ -2219,6 +2216,8 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 			superellipse->enable.Initialization(true);
 			barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton] = superellipse;
 
+			// TODO 主按钮收起状态下还得更透明
+			// TODO 进入全屏（PPT场景）透明度值变高问题
 			{
 				auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, nullopt, nullopt);
 				svg->InitializationFromResource(L"UI", L"logo1");
@@ -2227,7 +2226,7 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 				barUISet.svgMap[BarUISetSvgEnum::logo1] = svg;
 			}
 			{
-				// “收起” 文字标识
+				// TODO “收起” 文字标识
 			}
 		}
 		// 主栏

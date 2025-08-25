@@ -34,6 +34,7 @@
 #include "IdtImage.h"
 #include "IdtState.h"
 #include "IdtI18n.h"
+#include "Inkeys/Other/IdtInputs.h"
 
 #include <objbase.h>
 #include <psapi.h>
@@ -206,6 +207,7 @@ bool CheckPptCom()
 
 	return true;
 }
+
 LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	switch (msg)
@@ -223,15 +225,24 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 	case WM_TOUCH:
 	{
+		static DWORD activeTouchId = 0;   // 0表示无活动ID
+		static bool isTouchActive = false;
+
 		UINT cInputs = LOWORD(wParam);
-		TOUCHINPUT inputs[32]; // 绝大多数设备不会同时超16点
+		TOUCHINPUT inputs[32];
 		if (GetTouchInputInfo((HTOUCHINPUT)lParam, cInputs, inputs, sizeof(TOUCHINPUT)))
 		{
-			for (UINT i = 0; i < cInputs; ++i)
+			bool touchIdCheck = false; // 检测当前活动ID是否还存在
+			short x = 0, y = 0; // 坐标
+
+			for (UINT i = 0; i < cInputs; i++)
 			{
 				const TOUCHINPUT& ti = inputs[i];
-				POINT pt = { ti.x / 100, ti.y / 100 }; // 屏幕坐标
-				ScreenToClient(hWnd, &pt);
+
+				double xO = static_cast<double>(ti.x) / 100.0;
+				double yO = static_cast<double>(ti.y) / 100.0;
+				x = static_cast<short>(xO + 0.5);
+				y = static_cast<short>(yO + 0.5);
 
 				if (ti.dwFlags & TOUCHEVENTF_DOWN)
 				{
@@ -240,47 +251,102 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 					{
 						activeTouchId = ti.dwID;
 						isTouchActive = true;
-						// 这里处理首指DOWN
-						// 你的 down 操作
-					}
-					else
-					{
-						// 有活动ID，忽略其他点的DOWN
+
+						{
+							ExMessage msgMouse = {};
+							msgMouse.message = WM_LBUTTONDOWN;
+							msgMouse.x = x;
+							msgMouse.y = y;
+							msgMouse.lbutton = true;
+
+							int index = hiex::GetWindowIndex(ppt_window, false);
+							unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
+							hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
+							lg_vecWindows_vecMessage_sm.unlock();
+						}
 					}
 				}
-
 				if (ti.dwFlags & TOUCHEVENTF_MOVE)
 				{
 					if (isTouchActive && ti.dwID == activeTouchId)
 					{
-						// 只有首指MOVE会进来
-						// 你的 move 操作
-					}
-					else
-					{
-						// 非活动点MOVE，忽略
+						ExMessage msgMouse = {};
+						msgMouse.message = WM_MOUSEMOVE;
+						msgMouse.x = x;
+						msgMouse.y = y;
+						msgMouse.lbutton = true;
+
+						int index = hiex::GetWindowIndex(ppt_window, false);
+						unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
+						hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
+						lg_vecWindows_vecMessage_sm.unlock();
 					}
 				}
-
 				if (ti.dwFlags & TOUCHEVENTF_UP)
 				{
 					if (isTouchActive && ti.dwID == activeTouchId)
 					{
-						// 活动ID抬起，释放锁
-						// 你的 up 操作
 						activeTouchId = 0;
 						isTouchActive = false;
+
+						{
+							ExMessage msgMouse = {};
+							msgMouse.message = WM_LBUTTONUP;
+							msgMouse.x = x;
+							msgMouse.y = y;
+							msgMouse.lbutton = false;
+
+							int index = hiex::GetWindowIndex(ppt_window, false);
+							unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
+							hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
+							lg_vecWindows_vecMessage_sm.unlock();
+						}
 					}
-					else
-					{
-						// 非活动点UP，忽略
-					}
+				}
+
+				if (isTouchActive && ti.dwID == activeTouchId) touchIdCheck = true;
+			}
+
+			if (isTouchActive && !touchIdCheck)
+			{
+				activeTouchId = 0;
+				isTouchActive = false;
+
+				{
+					ExMessage msgMouse = {};
+					msgMouse.message = WM_LBUTTONUP;
+					msgMouse.x = x;
+					msgMouse.y = y;
+					msgMouse.lbutton = false;
+
+					int index = hiex::GetWindowIndex(ppt_window, false);
+					unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
+					hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
+					lg_vecWindows_vecMessage_sm.unlock();
 				}
 			}
 
 			CloseTouchInputHandle((HTOUCHINPUT)lParam);
 		}
+
 		return 0;
+	}
+
+	case WM_LBUTTONDOWN:
+	case WM_LBUTTONUP:
+	case WM_LBUTTONDBLCLK:
+	case WM_RBUTTONDOWN:
+	case WM_RBUTTONUP:
+	case WM_RBUTTONDBLCLK:
+	case WM_MOUSEMOVE:
+	{
+		// 如果是触摸模拟出来的鼠标消息，就直接丢掉
+		DWORD extraInfo = GetMessageExtraInfo();
+		if ((extraInfo & 0xFFFFFF00) == 0xFF515700) return 0;
+
+		// 否则当成真正的鼠标消息处理
+		// 您的鼠标处理逻辑
+		break;
 	}
 
 	default:
@@ -432,7 +498,7 @@ bool EndPptShow()
 
 void PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 {
-	if (!KeyBoradDown[VK_LBUTTON]) return;
+	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return;
 	PptUiAllReplaceSignal = 1;
 
 	MonitorInfoStruct PPTMainMonitor;
@@ -478,7 +544,7 @@ void PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 
 	for (;;)
 	{
-		if (!KeyBoradDown[VK_LBUTTON]) break;
+		if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 
 		POINT p;
 		GetCursorPos(&p);
@@ -583,7 +649,7 @@ void PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 }
 void PptMiddlePageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 {
-	if (!KeyBoradDown[VK_LBUTTON]) return;
+	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return;
 	PptUiAllReplaceSignal = 1;
 
 	MonitorInfoStruct PPTMainMonitor;
@@ -629,7 +695,7 @@ void PptMiddlePageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 
 	for (;;)
 	{
-		if (!KeyBoradDown[VK_LBUTTON]) break;
+		if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 
 		POINT p;
 		GetCursorPos(&p);
@@ -734,7 +800,7 @@ void PptMiddlePageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 }
 void PptBottomMiddleSeekBar(int firstX, int firstY)
 {
-	if (!KeyBoradDown[VK_LBUTTON]) return;
+	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return;
 	PptUiAllReplaceSignal = 1;
 
 	MonitorInfoStruct PPTMainMonitor;
@@ -780,7 +846,7 @@ void PptBottomMiddleSeekBar(int firstX, int firstY)
 
 	for (;;)
 	{
-		if (!KeyBoradDown[VK_LBUTTON]) break;
+		if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 
 		POINT p;
 		GetCursorPos(&p);
@@ -2176,12 +2242,7 @@ void PptDraw()
 	}
 
 	// 禁用手势 初始化
-	{
-		hiex::SetWndProcFunc(ppt_window, PptWindowMsgCallback);
-		DisableEdgeGestures(ppt_window, true);
-
-		RegisterTouchWindow(ppt_window, TWF_WANTPALM);
-	}
+	DisableEdgeGestures(ppt_window, true);
 
 	// 创建 EasyX 兼容的 DC Render Target
 	ID2D1DCRenderTarget* DCRenderTarget = nullptr;
@@ -3403,7 +3464,7 @@ void PptInteract()
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 						while (1)
 						{
-							if (!KeyBoradDown[VK_LBUTTON]) break;
+							if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								PreviousPptSlides();
@@ -3460,7 +3521,7 @@ void PptInteract()
 							std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 							while (1)
 							{
-								if (!KeyBoradDown[VK_LBUTTON]) break;
+								if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 
 								if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 								{
@@ -3527,7 +3588,7 @@ void PptInteract()
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 						while (1)
 						{
-							if (!KeyBoradDown[VK_LBUTTON]) break;
+							if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								PreviousPptSlides();
@@ -3584,7 +3645,7 @@ void PptInteract()
 							std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 							while (1)
 							{
-								if (!KeyBoradDown[VK_LBUTTON]) break;
+								if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 
 								if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 								{
@@ -3653,7 +3714,7 @@ void PptInteract()
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 						while (1)
 						{
-							if (!KeyBoradDown[VK_LBUTTON]) break;
+							if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								PreviousPptSlides();
@@ -3710,7 +3771,7 @@ void PptInteract()
 							std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 							while (1)
 							{
-								if (!KeyBoradDown[VK_LBUTTON]) break;
+								if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 
 								if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 								{
@@ -3777,7 +3838,7 @@ void PptInteract()
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 						while (1)
 						{
-							if (!KeyBoradDown[VK_LBUTTON]) break;
+							if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								PreviousPptSlides();
@@ -3834,7 +3895,7 @@ void PptInteract()
 							std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 							while (1)
 							{
-								if (!KeyBoradDown[VK_LBUTTON]) break;
+								if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 
 								if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 								{

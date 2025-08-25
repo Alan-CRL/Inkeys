@@ -3,6 +3,7 @@
 #include "IdtConfiguration.h"
 #include "IdtDrawpad.h"
 #include "IdtWindow.h"
+#include "Inkeys/Other/IdtInputs.h"
 
 IdtAtomic<bool> rtsDown;												// 表示触摸设备是否被按下
 IdtAtomic<int> rtsNum = 0, touchNum = 0, inkNum = 0;					// 点、触摸点、触控笔的点击个数
@@ -197,7 +198,7 @@ HRESULT CSyncEventHandlerRTS::StylusDown(IRealTimeStylus* piRtsSrc, const Stylus
 			else if (temp == TabletDeviceKind::TDK_Pen) mode.type = deviceType = 1;
 			else
 			{
-				if (KeyBoradDown[VK_RBUTTON] && !KeyBoradDown[VK_LBUTTON]) mode.type = deviceType = 3;
+				if (IdtInputs::IsKeyBoardDown(VK_RBUTTON) && !IdtInputs::IsKeyBoardDown(VK_LBUTTON)) mode.type = deviceType = 3;
 				else mode.type = deviceType = 2;
 			}
 		}

@@ -45,7 +45,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250824a";				// 程序发布日期
+wstring editionDate = L"20250826a";				// 程序发布日期
 wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -1128,6 +1128,13 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		if (userId == L"Error") ClassName = L"HiEasyX041";
 		else ClassName = userId;
 
+		// 窗口窗口完成后处理的
+		auto PptWindowFuc = [](HWND hWnd) -> void
+			{
+				hiex::SetWndProcFunc(hWnd, PptWindowMsgCallback);
+				RegisterTouchWindow(hWnd, 0);
+			};
+
 		CreateMagnifierWindow();
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
@@ -1139,7 +1146,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		SettingWindowBegin();
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
-		ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys2 PptWindow", (L"Inkeys4;" + ClassName).c_str(), nullptr, setting_window);
+		ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys2 PptWindow", (L"Inkeys4;" + ClassName).c_str(), nullptr, setting_window, PptWindowFuc);
 		//ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys2 PptWindow", (L"Inkeys4;" + ClassName).c_str(), nullptr, drawpad_window);
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
