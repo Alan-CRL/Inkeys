@@ -786,6 +786,9 @@
     <ClInclude Include="Inkeys\Other\IdtInputs.h">
       <Filter>头文件\Inkeys\Other</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Load\IdtFontLoad.h">
+      <Filter>头文件\Inkeys\Load</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HiEasyX\HiGUI\Button.cpp">

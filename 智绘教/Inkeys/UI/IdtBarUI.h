@@ -3,6 +3,8 @@
 #include "../../IdtMain.h"
 #include "IdtBarState.h"
 
+#include "../../IdtD2DPreparation.h"
+
 // 动效类型
 enum class BarUiValueModeEnum : int
 {
@@ -466,6 +468,10 @@ public:
 	void InitializationFromString(string valT)
 	{
 		svg.Initialization(valT);
+		{
+			cW = cH = 0.0;
+			cColor1 = cColor2 = RGB(0, 0, 0);
+		}
 
 		auto temp = CalcWH();
 		rW = temp.first, rH = temp.second;
@@ -474,6 +480,10 @@ public:
 	void SetTarFromString(string valT)
 	{
 		svg.SetTar(valT);
+		{
+			cW = cH = 0.0;
+			cColor1 = cColor2 = RGB(0, 0, 0);
+		}
 
 		auto temp = CalcWH();
 		rW = temp.first, rH = temp.second;
@@ -492,9 +502,14 @@ public:
 	// color1 -> rgba(10,0,7,0)
 	// color2 -> rgba(9,0,2,0)
 
+public:
 	// SVG 内容
-
 	BarUiStringClass svg;
+	CComPtr<ID2D1Bitmap> cacheBitmap;
+
+	double cW = 0.0, cH = 0.0; // 缓存宽度、高度
+	COLORREF cColor1 = RGB(0, 0, 0), cColor2 = RGB(0, 0, 0);
+	bool CacheBitmap(ID2D1DeviceContext* deviceContext, double tarW, double tarH);
 
 public:
 	bool SetWH(optional<double> wT, optional<double> hT);

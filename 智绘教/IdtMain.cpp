@@ -36,6 +36,8 @@
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
 #include "Inkeys/UI/IdtBar.h"
+#include "Inkeys/Other/IdtGesture.h"
+#include "Inkeys/Load/IdtFontLoad.h"
 #include "Launch/IdtLaunchState.h"
 #include "SuperTop/IdtSuperTop.h"
 
@@ -1075,6 +1077,22 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 #endif
 	}
 
+	{
+		// 创建测试控制台
+
+#ifndef IDT_RELEASE
+		{
+			AllocConsole();
+			FILE* fp;
+			freopen_s(&fp, "CONOUT$", "w", stdout);
+			freopen_s(&fp, "CONOUT$", "w", stderr);
+			std::ios::sync_with_stdio();
+
+			std::wcout.imbue(std::locale("chs"));
+		}
+#endif
+	}
+
 	// 界面绘图库初始化
 	{
 		D2DStarup();
@@ -1093,22 +1111,109 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		fontCollection.GetFamilies(1, &HarmonyOS_fontFamily, &numFound);
 
 		{
-			if (_waccess((globalPath + L"ttf").c_str(), 0) == -1)
+			INT numFound = 0;
+			HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
+			HGLOBAL hMem = LoadResource(NULL, hRes);
+			void* pLock = LockResource(hMem);
+			DWORD dwSize = SizeofResource(NULL, hRes);
+
+			/*if (_waccess((globalPath + L"ttf").c_str(), 0) == -1)
 			{
 				error_code ec;
 				filesystem::create_directory(globalPath + L"ttf", ec);
 			}
 			ExtractResource((globalPath + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
 
-			IdtFontCollectionLoader* D2DFontCollectionLoader = new IdtFontCollectionLoader;
-			D2DFontCollectionLoader->AddFont(D2DTextFactory, globalPath + L"ttf\\hmossscr.ttf");
+						IdtFontCollectionLoader* D2DFontCollectionLoader = new IdtFontCollectionLoader;
+						D2DFontCollectionLoader->AddFont(D2DTextFactory, globalPath + L"ttf\\hmossscr.ttf");
 
-			IDWriteFontCollection* tempCollection = nullptr;
-			D2DTextFactory->RegisterFontCollectionLoader(D2DFontCollectionLoader);
-			D2DTextFactory->CreateCustomFontCollection(D2DFontCollectionLoader, 0, 0, &tempCollection);
-			D2DTextFactory->UnregisterFontCollectionLoader(D2DFontCollectionLoader);
+						IDWriteFontCollection* tempCollection = nullptr;
+						D2DTextFactory->RegisterFontCollectionLoader(D2DFontCollectionLoader);
+						D2DTextFactory->CreateCustomFontCollection(D2DFontCollectionLoader, 0, 0, &tempCollection);
+						D2DTextFactory->UnregisterFontCollectionLoader(D2DFontCollectionLoader);
 
-			D2DFontCollection.Attach(tempCollection);
+						D2DFontCollection.Attach(tempCollection);
+						*/
+
+			CComPtr<IdtFontCollectionLoader> collectionLoader = new IdtFontCollectionLoader();
+			IDWriteFontFileLoader* fileLoader = collectionLoader->GetFileLoader();
+
+			D2DTextFactory->RegisterFontFileLoader(fileLoader);
+			D2DTextFactory->RegisterFontCollectionLoader(collectionLoader);
+
+			IDWriteFontCollection* tempFontCollection;
+			HRESULT hr = D2DTextFactory->CreateCustomFontCollection(
+				collectionLoader, // 我们注册的集合加载器
+				pLock,              // 集合的 Key (这里就是字体数据的指针)
+				dwSize,             // Key 的大小
+				&tempFontCollection
+			);
+
+			if (FAILED(hr))
+			{
+				// 将 HRESULT 转换为十六进制值进行打印
+				wchar_t buffer[256];
+				swprintf_s(buffer, L"CreateCustomFontCollection 失败！HRESULT = 0x%08X\n", static_cast<unsigned int>(hr));
+
+				wcout << buffer << endl;
+			}
+
+			// TODO un
+
+			D2DFontCollection.Attach(tempFontCollection);
+
+			// 在你确认 D2DFontCollection 创建成功之后...
+
+			// 在你成功创建 D2DFontCollection 之后...
+			// HRESULT hr = D2DTextFactory->CreateCustomFontCollection(...);
+			// if (SUCCEEDED(hr)) { D2DFontCollection.Attach(tempFontCollection); }
+
+			// ----- 开始诊断代码 -----
+			if (D2DFontCollection)
+			{
+				UINT32 familyCount = D2DFontCollection->GetFontFamilyCount();
+
+				// 使用 wprintf 或 OutputDebugStringW 来打印信息
+				wchar_t buffer[256];
+				swprintf_s(buffer, L"诊断：找到 %u 个字体家族。\n", familyCount);
+				Testw(buffer);
+
+				for (UINT32 i = 0; i < familyCount; ++i)
+				{
+					CComPtr<IDWriteFontFamily> fontFamily;
+					hr = D2DFontCollection->GetFontFamily(i, &fontFamily);
+					if (SUCCEEDED(hr))
+					{
+						CComPtr<IDWriteLocalizedStrings> familyNames;
+						hr = fontFamily->GetFamilyNames(&familyNames);
+						if (SUCCEEDED(hr))
+						{
+							UINT32 index = 0;
+							BOOL exists = false;
+
+							// 尝试查找 "en-us" 区域的名称
+							hr = familyNames->FindLocaleName(L"en-us", &index, &exists);
+							if (FAILED(hr) || !exists)
+							{
+								// 如果找不到，就用第一个名称
+								index = 0;
+							}
+
+							UINT32 length = 0;
+							hr = familyNames->GetStringLength(index, &length);
+
+							std::wstring name(length + 1, L'\0');
+							hr = familyNames->GetString(index, &name[0], length + 1);
+
+							if (SUCCEEDED(hr))
+							{
+								swprintf_s(buffer, L"字体家族 %u 的名称是: \"%s\"\n", i, name.c_str());
+								Testw(buffer);
+							}
+						}
+					}
+				}
+			}
 		}
 
 		stringFormat.SetAlignment(StringAlignmentCenter);
@@ -1122,17 +1227,23 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		IDTLogger->info("[主线程][IdtMain] 字体初始化完成");
 	}
 
+	Test();
+
 	// 窗口
 	{
 		wstring ClassName;
 		if (userId == L"Error") ClassName = L"HiEasyX041";
 		else ClassName = userId;
 
-		// 窗口窗口完成后处理的
-		auto PptWindowFuc = [](HWND hWnd) -> void
+		// 窗口创建完成后处理的
+		auto disableGestureFuc = [&](HWND hWnd) -> void
 			{
-				hiex::SetWndProcFunc(hWnd, PptWindowMsgCallback);
+				IdtGesture::DisableEdgeGestures(hWnd, true);
+			};
+		auto touchRegisterFuc = [&](HWND hWnd) -> void
+			{
 				RegisterTouchWindow(hWnd, 0);
+				disableGestureFuc(hWnd);
 			};
 
 		CreateMagnifierWindow();
@@ -1141,16 +1252,16 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		freeze_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys5 FreezeWindow", (L"Inkeys1;" + ClassName).c_str(), nullptr, magnifierWindow);
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
-		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys4 DrawpadWindow", (L"Inkeys2;" + ClassName).c_str(), nullptr, freeze_window);
+		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys4 DrawpadWindow", (L"Inkeys2;" + ClassName).c_str(), nullptr, freeze_window, disableGestureFuc);
 
 		SettingWindowBegin();
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
-		ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys2 PptWindow", (L"Inkeys4;" + ClassName).c_str(), nullptr, setting_window, PptWindowFuc);
+		ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys2 PptWindow", (L"Inkeys4;" + ClassName).c_str(), nullptr, setting_window, touchRegisterFuc);
 		//ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys2 PptWindow", (L"Inkeys4;" + ClassName).c_str(), nullptr, drawpad_window);
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
-		floating_window = hiex::initgraph_win32(background.getwidth(), background.getheight(), 0, L"Inkeys1 FloatingWindow", (L"Inkeys5;" + ClassName).c_str(), nullptr, ppt_window);
+		floating_window = hiex::initgraph_win32(background.getwidth(), background.getheight(), 0, L"Inkeys1 FloatingWindow", (L"Inkeys5;" + ClassName).c_str(), nullptr, ppt_window, touchRegisterFuc);
 
 		// 画板窗口在注册 RTS 前必须拥有置顶属性，在显示前先进行一次全局置顶
 		SetWindowPos(magnifierWindow, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
@@ -1256,20 +1367,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		IDTLogger->info("[主线程][IdtMain] 线程初始化完成");
 	}
 	CrashHandler::IsSecond(false);
-
-	{
-		// 创建测试控制台
-
-#ifndef IDT_RELEASE
-		{
-			AllocConsole();
-			FILE* fp;
-			freopen_s(&fp, "CONOUT$", "w", stdout);
-			freopen_s(&fp, "CONOUT$", "w", stderr);
-			std::ios::sync_with_stdio();
-		}
-#endif
-	}
 
 	IDTLogger->info("[主线程][IdtMain] 开始等待关闭程序信号发出");
 

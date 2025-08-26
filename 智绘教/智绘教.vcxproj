@@ -574,6 +574,7 @@
     <ClInclude Include="IdtSysNotifications.h" />
     <ClInclude Include="Inkeys\Conv\IdtColor.h" />
     <ClInclude Include="Inkeys\Json\IdtJson.h" />
+    <ClInclude Include="Inkeys\Load\IdtFontLoad.h" />
     <ClInclude Include="Inkeys\Load\IdtLoad.h" />
     <ClInclude Include="Inkeys\Other\IdtGesture.h" />
     <ClInclude Include="Inkeys\Other\IdtInputs.h" />

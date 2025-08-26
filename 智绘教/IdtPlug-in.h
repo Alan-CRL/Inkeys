@@ -233,8 +233,6 @@ extern PptUiWidgetStateEnum pptUiWidgetState;
 // -------------------------
 // Ppt 主项
 
-LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-
 void NextPptSlides(int check);
 void PreviousPptSlides();
 bool EndPptShow();

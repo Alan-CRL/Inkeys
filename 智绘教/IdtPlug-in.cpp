@@ -2241,8 +2241,8 @@ void PptDraw()
 		}
 	}
 
-	// 禁用手势 初始化
-	DisableEdgeGestures(ppt_window, true);
+	// 设置窗口自定义消息回调
+	hiex::SetWndProcFunc(ppt_window, PptWindowMsgCallback);
 
 	// 创建 EasyX 兼容的 DC Render Target
 	ID2D1DCRenderTarget* DCRenderTarget = nullptr;
@@ -2769,7 +2769,7 @@ void PptDraw()
 				{
 					IDWriteTextFormat* textFormat = NULL;
 
-					D2DTextFactory->CreateTextFormat(
+					HRESULT hr = D2DTextFactory->CreateTextFormat(
 						L"HarmonyOS Sans SC",
 						D2DFontCollection,
 						DWRITE_FONT_WEIGHT_NORMAL,

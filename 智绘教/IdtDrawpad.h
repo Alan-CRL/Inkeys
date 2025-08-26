@@ -46,7 +46,5 @@ extern HHOOK DrawpadHookCall;
 LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam);
 void DrawpadInstallHook();
 
-BOOL DisableEdgeGestures(HWND hwnd, BOOL disable);
-
 void ResetPrepareCanvas();
 int drawpad_main();
