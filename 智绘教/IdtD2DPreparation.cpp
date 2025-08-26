@@ -8,12 +8,15 @@ CComPtr<IDWriteFontCollection> D2DFontCollection;
 
 void D2DStarup()
 {
+	D2D1_DEBUG_LEVEL debugLevel = D2D1_DEBUG_LEVEL_INFORMATION;
+	D2D1_FACTORY_OPTIONS fo = { debugLevel };
+
 	// 创建 D2D1.1 工厂
 	ID2D1Factory1* tmpFactory = nullptr;
 	D2D1CreateFactory(
 		D2D1_FACTORY_TYPE_MULTI_THREADED,
 		__uuidof(ID2D1Factory1),
-		nullptr,
+		&fo,
 		reinterpret_cast<void**>(&tmpFactory)
 	);
 	D2DFactory.Attach(tmpFactory);

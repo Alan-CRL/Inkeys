@@ -11,18 +11,11 @@ class IdtFontCollectionLoader;
 class IdtFontFileStream : public IDWriteFontFileStream
 {
 public:
-	IdtFontFileStream(void const* fontData, UINT32 fontDataSize) :
+	IdtFontFileStream(const BYTE* fontData, UINT32 fontDataSize) :
 		m_cRefCount(1),
-		m_fontData(nullptr),
+		m_fontData(fontData),
 		m_fontDataSize(fontDataSize)
 	{
-		// 1. new[] 返回的内存保证是充分对齐的
-		m_fontData = new (std::nothrow) BYTE[fontDataSize];
-		if (m_fontData)
-		{
-			// 2. 将未对齐的资源数据复制到我们自己管理的、对齐的内存中
-			memcpy(m_fontData, fontData, fontDataSize);
-		}
 	}
 
 	// --- IUnknown methods ---
@@ -82,12 +75,10 @@ public:
 		{
 			cout << "   -> ERROR: Invalid read range!" << endl;
 
-			*fragmentStart = nullptr;
-			*fragmentContext = nullptr;
 			return E_FAIL;
 		}
 
-		*fragmentStart = static_cast<const BYTE*>(m_fontData) + fileOffset;
+		*fragmentStart = m_fontData + fileOffset;
 		*fragmentContext = nullptr;
 
 		return S_OK;
@@ -101,7 +92,7 @@ public:
 
 private:
 	LONG m_cRefCount;
-	BYTE* m_fontData;
+	const BYTE* m_fontData;
 	UINT32 m_fontDataSize;
 };
 class IdtFontFileLoader : public IDWriteFontFileLoader
@@ -111,6 +102,7 @@ public:
 	~IdtFontFileLoader()
 	{
 		cout << "--- ~IdtFontFileLoader() DESTRUCTOR CALLED! ---" << endl;
+		Testi(123);
 	}
 
 	// --- IUnknown methods ---
@@ -151,11 +143,13 @@ public:
 		// *****************************
 
 		*fontFileStream = nullptr; // 初始化
+		const BYTE* bytePtr = reinterpret_cast<const BYTE*>(fontFileReferenceKey);
 
-		IdtFontFileStream* stream = new(std::nothrow) IdtFontFileStream(fontFileReferenceKey, fontFileReferenceKeySize);
+		IdtFontFileStream* stream = new(std::nothrow) IdtFontFileStream(bytePtr, fontFileReferenceKeySize);
 		if (stream == nullptr)
 		{
 			return E_OUTOFMEMORY;
+			Testi(152);
 		}
 
 		// 【核心修复】
@@ -178,196 +172,224 @@ private:
 class IdtFontFileEnumerator : public IDWriteFontFileEnumerator
 {
 public:
-	IdtFontFileEnumerator(IDWriteFactory* factory, IDWriteFontFileLoader* loader) :
-		m_cRefCount(1),
+	// data/size: 指向整块字体二进制（.ttf 或 .ttc）
+	IdtFontFileEnumerator(
+		IDWriteFactory* factory,
+		IDWriteFontFileLoader* loader,
+		const BYTE* data,
+		UINT32                  size
+	) :
+		m_refCount(1),
 		m_factory(factory),
 		m_loader(loader),
-		m_currentFileIndex(0)
+		m_fontData(data),
+		m_fontDataSize(size),
+		m_faceCount(0),
+		m_currentFace(0),
+		m_fontFile(nullptr)
 	{
-		// 保持对 factory 和 loader 的引用
+		// 保持 factory/loader 的引用
 		m_factory->AddRef();
 		m_loader->AddRef();
+
+		// 创建一个文件级别的引用
+		HRESULT hr = m_factory->CreateCustomFontFileReference(
+			m_fontData,
+			m_fontDataSize,
+			m_loader,
+			&m_fontFile
+		);
+
+		if (SUCCEEDED(hr) && m_fontFile)
+		{
+			// 分析出这是 .ttf 还是 .ttc，以及包含多少 face
+			BOOL isSupported = FALSE;
+			DWRITE_FONT_FILE_TYPE fileType;
+			DWRITE_FONT_FACE_TYPE faceType;
+			hr = m_fontFile->Analyze(
+				&isSupported,
+				&fileType,
+				&faceType,
+				&m_faceCount
+			);
+
+			if (!isSupported || m_faceCount == 0)
+			{
+				Testi(18);
+				// 格式不支持或没 face
+				m_fontFile->Release();
+				m_fontFile = nullptr;
+			}
+		}
+		else Testi(222);
 	}
+
 	~IdtFontFileEnumerator()
 	{
-		for (auto& file : m_fontFiles)
-		{
-			if (file) file->Release();
-		}
+		cout << "--- ~IdtFontFileEnumerator() DESTRUCTOR CALLED! ---" << endl;
+
+		if (m_fontFile) m_fontFile->Release();
 		m_loader->Release();
 		m_factory->Release();
 	}
 
-	// --- IUnknown methods ---
-	STDMETHOD_(ULONG, AddRef)() override { return InterlockedIncrement(&m_cRefCount); }
+	// IUnknown
+	STDMETHOD_(ULONG, AddRef)() override
+	{
+		return InterlockedIncrement(&m_refCount);
+	}
 	STDMETHOD_(ULONG, Release)() override
 	{
-		ULONG newCount = InterlockedDecrement(&m_cRefCount);
-		if (newCount == 0)
-		{
-			delete this;
-		}
-		return newCount;
+		ULONG u = InterlockedDecrement(&m_refCount);
+		if (u == 0) delete this;
+		return u;
 	}
-	STDMETHOD(QueryInterface)(REFIID riid, void** ppvObject) override
+	STDMETHOD(QueryInterface)(REFIID riid, void** ppv) override
 	{
-		if (riid == __uuidof(IDWriteFontFileEnumerator) || riid == __uuidof(IUnknown))
+		if (riid == __uuidof(IUnknown) ||
+			riid == __uuidof(IDWriteFontFileEnumerator))
 		{
-			*ppvObject = this;
+			*ppv = static_cast<IDWriteFontFileEnumerator*>(this);
 			AddRef();
 			return S_OK;
 		}
-		*ppvObject = nullptr;
+		*ppv = nullptr;
 		return E_NOINTERFACE;
 	}
 
-	// --- IDWriteFontFileEnumerator methods ---
+	// IDWriteFontFileEnumerator
 	STDMETHOD(MoveNext)(BOOL* hasCurrentFile) override
 	{
-		*hasCurrentFile = FALSE;
-		if (m_currentFileIndex < m_fontFiles.size())
-		{
-			*hasCurrentFile = TRUE;
-			m_currentFileIndex++;
-		}
+		// 对于 .ttf，m_faceCount == 1；对于 .ttc，可能 >1
+		*hasCurrentFile = (m_currentFace < m_faceCount) ? TRUE : FALSE;
+
+		wprintf(
+			L"[MoveNext] idx=%u, hasCurrentFile=%d\n",
+			m_currentFace, *hasCurrentFile
+		);
+
+		if (*hasCurrentFile) m_currentFace++;
 		return S_OK;
 	}
-
 	STDMETHOD(GetCurrentFontFile)(IDWriteFontFile** fontFile) override
 	{
-		if (m_currentFileIndex == 0 || m_currentFileIndex > m_fontFiles.size())
+		UINT32 faceIndex = m_currentFace ? (m_currentFace - 1) : UINT32_MAX;
+		wprintf(
+			L"[GetCurrentFontFile] faceIndex=%u, m_fontFile=%p\n",
+			faceIndex, m_fontFile
+		);
+
+		if (!m_fontFile ||
+			m_currentFace == 0 ||
+			m_currentFace > m_faceCount)
 		{
 			*fontFile = nullptr;
 			return E_FAIL;
+
+			Testi(275);
 		}
-		*fontFile = m_fontFiles[m_currentFileIndex - 1];
-		(*fontFile)->AddRef(); // Caller expects a reference
+
+		// 每次都把同一个文件引用返回给 DirectWrite，
+		// CreateFontFace 时 DirectWrite 会传入当前的 faceIndex
+		*fontFile = m_fontFile;
+		(*fontFile)->AddRef();
 		return S_OK;
 	}
 
-	// 【核心修改】AddFont 方法现在接收内存数据
-	STDMETHOD(AddFontFromMemory)(void const* fontData, UINT32 fontDataSize)
-	{
-		// ******** 添加调试日志 ********
-		wchar_t buffer[256];
-		swprintf_s(buffer, L"AddFontFromMemory: 准备创建引用，fontDataSize = %u\n", fontDataSize);
-		wcout << buffer << endl;
-		if (fontData == nullptr)
-		{
-			cout << "AddFontFromMemory: 错误！fontData 为空！" << endl;
-		}
-		// *****************************
-
-		IDWriteFontFile* fontFile = nullptr;
-		HRESULT hr = S_OK;
-
-		// 使用 CreateCustomFontFileReference 从内存创建字体文件引用
-		// 第一个参数 (fontData) 是“Key”，它会被传递给我们自定义的 IDWriteFontFileLoader::CreateStreamFromKey
-		hr = m_factory->CreateCustomFontFileReference(
-			fontData,       // Key: 字体数据指针
-			fontDataSize,   // Key Size: 字体数据大小
-			m_loader,       // 我们的自定义加载器
-			&fontFile
-		);
-
-		if (SUCCEEDED(hr))
-		{
-			m_fontFiles.push_back(fontFile);
-		}
-
-		return hr;
-	}
-
 private:
-	LONG m_cRefCount;
-	size_t m_currentFileIndex;
-
+	LONG                    m_refCount;
 	IDWriteFactory* m_factory;
-	IDWriteFontFileLoader* m_loader; // 需要一个加载器实例来创建字体文件
-	vector<IDWriteFontFile*> m_fontFiles;
+	IDWriteFontFileLoader* m_loader;
+
+	const BYTE* m_fontData;
+	UINT32                  m_fontDataSize;
+
+	IDWriteFontFile* m_fontFile;     // CreateCustomFontFileReference 的返回值
+	UINT32                  m_faceCount;    // Analyze 得到的 faceCount
+	UINT32                  m_currentFace;  // MoveNext/GetCurrentFontFile 用来枚举
 };
 class IdtFontCollectionLoader : public IDWriteFontCollectionLoader
 {
 public:
-	IdtFontCollectionLoader() : m_cRefCount(1)
+	IdtFontCollectionLoader(
+		IDWriteFactory* factory,
+		IDWriteFontFileLoader* fileLoader
+	) :
+		m_refCount(1),
+		m_factory(factory),
+		m_fileLoader(fileLoader)
 	{
-		// 创建我们自定义的字体文件加载器
-		m_fileLoader = new IdtFontFileLoader();
+		m_factory->AddRef();
+		m_fileLoader->AddRef();
 	}
+
 	~IdtFontCollectionLoader()
 	{
 		cout << "--- ~IdtFontCollectionLoader() DESTRUCTOR CALLED! ---" << endl;
 
-		if (m_fileLoader) m_fileLoader->Release();
+		m_fileLoader->Release();
+		m_factory->Release();
 	}
 
-	// --- IUnknown methods ---
-	STDMETHOD_(ULONG, AddRef)() override { return InterlockedIncrement(&m_cRefCount); }
+	// IUnknown
+	STDMETHOD_(ULONG, AddRef)() override
+	{
+		return InterlockedIncrement(&m_refCount);
+	}
 	STDMETHOD_(ULONG, Release)() override
 	{
-		ULONG newCount = InterlockedDecrement(&m_cRefCount);
-		if (newCount == 0)
-		{
-			delete this;
-		}
-		return newCount;
+		ULONG u = InterlockedDecrement(&m_refCount);
+		if (u == 0) delete this;
+		return u;
 	}
-	STDMETHOD(QueryInterface)(REFIID riid, void** ppvObject) override
+	STDMETHOD(QueryInterface)(REFIID riid, void** ppv) override
 	{
-		if (riid == __uuidof(IDWriteFontCollectionLoader) || riid == __uuidof(IUnknown))
+		if (riid == __uuidof(IUnknown) ||
+			riid == __uuidof(IDWriteFontCollectionLoader))
 		{
-			*ppvObject = this;
+			*ppv = static_cast<IDWriteFontCollectionLoader*>(this);
 			AddRef();
 			return S_OK;
 		}
-		*ppvObject = nullptr;
+		*ppv = nullptr;
 		return E_NOINTERFACE;
 	}
 
-	// --- IDWriteFontCollectionLoader methods ---
+	// IDWriteFontCollectionLoader
 	STDMETHOD(CreateEnumeratorFromKey)(
 		IDWriteFactory* factory,
-		void const* collectionKey,          // 我们将用它来传递字体数据
-		UINT32 collectionKeySize,
+		void const* collectionKey,
+		UINT32                        collectionKeySize,
 		IDWriteFontFileEnumerator** fontFileEnumerator
 		) override
 	{
-		// 创建我们的自定义枚举器
-		IdtFontFileEnumerator* enumerator = new IdtFontFileEnumerator(factory, m_fileLoader);
-		if (enumerator == nullptr)
-		{
+		wprintf(
+			L"[CollectionLoader] CreateEnumeratorFromKey: key=%p, size=%u, factory=%p\n",
+			collectionKey, collectionKeySize, factory
+		);
+
+		// collectionKey 就是 alignedData 指针
+		const BYTE* data = reinterpret_cast<const BYTE*>(collectionKey);
+
+		// 直接用我们的枚举器：它会在内部一次性分析出 faceCount 并准备好 m_fontFile
+		auto enumerator = new (std::nothrow)
+			IdtFontFileEnumerator(
+				factory,
+				m_fileLoader,
+				data,
+				collectionKeySize
+			);
+		if (!enumerator)
 			return E_OUTOFMEMORY;
-		}
 
-		// 将 collectionKey (字体数据) 添加到枚举器中
-		// 这里假设一个 Collection 只包含一个字体，如果需要支持多个，逻辑需要调整
-		HRESULT hr = enumerator->AddFontFromMemory(collectionKey, collectionKeySize);
-
-		if (SUCCEEDED(hr))
-		{
-			// 【核心修复】正确地将所有权转移给调用者
-
-			// 1. 将指针赋给 out 参数
-			*fontFileEnumerator = enumerator;
-
-			// 2. 为调用者增加一个引用
-			(*fontFileEnumerator)->AddRef();
-		}
-
-		// 3. 释放我们自己通过 new 创建的那个引用，
-		// 因为所有权已经安全地转移给了 DirectWrite。
+		*fontFileEnumerator = enumerator;
+		(*fontFileEnumerator)->AddRef();
 		enumerator->Release();
-
-		return hr;
-	}
-
-	// 获取内部的文件加载器，以便注册它
-	IDWriteFontFileLoader* GetFileLoader()
-	{
-		return m_fileLoader;
+		return S_OK;
 	}
 
 private:
-	LONG m_cRefCount;
-	IdtFontFileLoader* m_fileLoader;
+	LONG                    m_refCount;
+	IDWriteFactory* m_factory;
+	IDWriteFontFileLoader* m_fileLoader;
 };

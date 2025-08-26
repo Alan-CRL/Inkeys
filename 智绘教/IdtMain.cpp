@@ -47,7 +47,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250826a";				// 程序发布日期
+wstring editionDate = L"20250827a";				// 程序发布日期
 wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -1111,12 +1111,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		fontCollection.GetFamilies(1, &HarmonyOS_fontFamily, &numFound);
 
 		{
-			INT numFound = 0;
-			HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
-			HGLOBAL hMem = LoadResource(NULL, hRes);
-			void* pLock = LockResource(hMem);
-			DWORD dwSize = SizeofResource(NULL, hRes);
-
 			/*if (_waccess((globalPath + L"ttf").c_str(), 0) == -1)
 			{
 				error_code ec;
@@ -1135,28 +1129,70 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 						D2DFontCollection.Attach(tempCollection);
 						*/
 
-			CComPtr<IdtFontCollectionLoader> collectionLoader = new IdtFontCollectionLoader();
-			IDWriteFontFileLoader* fileLoader = collectionLoader->GetFileLoader();
+			INT numFound = 0;
+			HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
+			HGLOBAL hMem = LoadResource(NULL, hRes);
+			void* pLock = LockResource(hMem);
+			DWORD dwSize = SizeofResource(NULL, hRes);
+
+			// 从资源里拿到的 pLock/dwSize
+			BYTE* alignedData = static_cast<BYTE*>(_aligned_malloc(dwSize, 64));
+			if (!alignedData) Testi(1119);
+			memcpy(alignedData, pLock, dwSize);
+
+			auto fileLoader = new IdtFontFileLoader();
+			auto collectionLoader = new IdtFontCollectionLoader(D2DTextFactory, fileLoader);
 
 			D2DTextFactory->RegisterFontFileLoader(fileLoader);
 			D2DTextFactory->RegisterFontCollectionLoader(collectionLoader);
 
-			IDWriteFontCollection* tempFontCollection;
+			IDWriteFontCollection* tempFontCollection = nullptr;
 			HRESULT hr = D2DTextFactory->CreateCustomFontCollection(
 				collectionLoader, // 我们注册的集合加载器
-				pLock,              // 集合的 Key (这里就是字体数据的指针)
+				alignedData,              // 集合的 Key (这里就是字体数据的指针)
 				dwSize,             // Key 的大小
 				&tempFontCollection
 			);
-
 			if (FAILED(hr))
 			{
 				// 将 HRESULT 转换为十六进制值进行打印
 				wchar_t buffer[256];
 				swprintf_s(buffer, L"CreateCustomFontCollection 失败！HRESULT = 0x%08X\n", static_cast<unsigned int>(hr));
-
-				wcout << buffer << endl;
+				Testw(buffer);
 			}
+
+			wprintf(
+				L"[外部] factory=%p, collectionLoader=%p, alignedData=%p, size=%u\n",
+				D2DTextFactory, collectionLoader, alignedData, dwSize
+			);
+
+			// 直接用你的 fileLoader 在内存上创建一个 FontFileReference
+			IDWriteFontFile* fontFile = nullptr;
+			hr = D2DTextFactory->CreateCustomFontFileReference(
+				pLock, dwSize,
+				fileLoader,
+				&fontFile
+			);
+			// 如果 hr 失败，那说明问题在 CreateStreamFromKey/ReadFileFragment
+			if (FAILED(hr)) { Testi(112); }
+
+			// 再分析一下这个文件是否能被识别
+			BOOL    supported = FALSE;
+			DWRITE_FONT_FILE_TYPE   fileType;
+			DWRITE_FONT_FACE_TYPE   faceType;
+			UINT32  faceCount = 0;
+
+			fontFile->Analyze(
+				&supported,
+				&fileType,
+				&faceType,
+				&faceCount
+			);
+
+			wprintf(
+				L"HarmonyOS Analyze: supported=%d fileType=%u faceType=%u faceCount=%u\n",
+				supported, fileType, faceType, faceCount
+			);
 
 			// TODO un
 
