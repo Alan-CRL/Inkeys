@@ -1455,6 +1455,7 @@ void DrawpadDrawing()
 			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection || stateMode.cleanPageSign)
 			{
 			ChooseEnd:
+				if (!stateMode.cleanPageSign)
 				{
 					SetImageColor(window_background, RGBA(0, 0, 0, 0), true);
 

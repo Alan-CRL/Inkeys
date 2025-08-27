@@ -1077,22 +1077,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 #endif
 	}
 
-	{
-		// 创建测试控制台
-
-#ifndef IDT_RELEASE
-		{
-			AllocConsole();
-			FILE* fp;
-			freopen_s(&fp, "CONOUT$", "w", stdout);
-			freopen_s(&fp, "CONOUT$", "w", stderr);
-			std::ios::sync_with_stdio();
-
-			std::wcout.imbue(std::locale("chs"));
-		}
-#endif
-	}
-
 	// 界面绘图库初始化
 	{
 		D2DStarup();
@@ -1129,127 +1113,128 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 						D2DFontCollection.Attach(tempCollection);
 						*/
 
-			INT numFound = 0;
-			HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
-			HGLOBAL hMem = LoadResource(NULL, hRes);
-			void* pLock = LockResource(hMem);
-			DWORD dwSize = SizeofResource(NULL, hRes);
+						/*
+						INT numFound = 0;
+						HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
+						HGLOBAL hMem = LoadResource(NULL, hRes);
+						void* pLock = LockResource(hMem);
+						DWORD dwSize = SizeofResource(NULL, hRes);
 
-			// 从资源里拿到的 pLock/dwSize
-			BYTE* alignedData = static_cast<BYTE*>(_aligned_malloc(dwSize, 64));
-			if (!alignedData) Testi(1119);
-			memcpy(alignedData, pLock, dwSize);
+						// 从资源里拿到的 pLock/dwSize
+						BYTE* alignedData = static_cast<BYTE*>(_aligned_malloc(dwSize, 16));
+						if (!alignedData) Testi(1119);
+						memcpy(alignedData, pLock, dwSize);
 
-			auto fileLoader = new IdtFontFileLoader();
-			auto collectionLoader = new IdtFontCollectionLoader(D2DTextFactory, fileLoader);
+						auto fileLoader = new IdtFontFileLoader();
+						auto collectionLoader = new IdtFontCollectionLoader(D2DTextFactory, fileLoader);
 
-			D2DTextFactory->RegisterFontFileLoader(fileLoader);
-			D2DTextFactory->RegisterFontCollectionLoader(collectionLoader);
+						D2DTextFactory->RegisterFontFileLoader(fileLoader);
+						D2DTextFactory->RegisterFontCollectionLoader(collectionLoader);
 
-			IDWriteFontCollection* tempFontCollection = nullptr;
-			HRESULT hr = D2DTextFactory->CreateCustomFontCollection(
-				collectionLoader, // 我们注册的集合加载器
-				alignedData,              // 集合的 Key (这里就是字体数据的指针)
-				dwSize,             // Key 的大小
-				&tempFontCollection
-			);
-			if (FAILED(hr))
-			{
-				// 将 HRESULT 转换为十六进制值进行打印
-				wchar_t buffer[256];
-				swprintf_s(buffer, L"CreateCustomFontCollection 失败！HRESULT = 0x%08X\n", static_cast<unsigned int>(hr));
-				Testw(buffer);
-			}
-
-			wprintf(
-				L"[外部] factory=%p, collectionLoader=%p, alignedData=%p, size=%u\n",
-				D2DTextFactory, collectionLoader, alignedData, dwSize
-			);
-
-			// 直接用你的 fileLoader 在内存上创建一个 FontFileReference
-			IDWriteFontFile* fontFile = nullptr;
-			hr = D2DTextFactory->CreateCustomFontFileReference(
-				pLock, dwSize,
-				fileLoader,
-				&fontFile
-			);
-			// 如果 hr 失败，那说明问题在 CreateStreamFromKey/ReadFileFragment
-			if (FAILED(hr)) { Testi(112); }
-
-			// 再分析一下这个文件是否能被识别
-			BOOL    supported = FALSE;
-			DWRITE_FONT_FILE_TYPE   fileType;
-			DWRITE_FONT_FACE_TYPE   faceType;
-			UINT32  faceCount = 0;
-
-			fontFile->Analyze(
-				&supported,
-				&fileType,
-				&faceType,
-				&faceCount
-			);
-
-			wprintf(
-				L"HarmonyOS Analyze: supported=%d fileType=%u faceType=%u faceCount=%u\n",
-				supported, fileType, faceType, faceCount
-			);
-
-			// TODO un
-
-			D2DFontCollection.Attach(tempFontCollection);
-
-			// 在你确认 D2DFontCollection 创建成功之后...
-
-			// 在你成功创建 D2DFontCollection 之后...
-			// HRESULT hr = D2DTextFactory->CreateCustomFontCollection(...);
-			// if (SUCCEEDED(hr)) { D2DFontCollection.Attach(tempFontCollection); }
-
-			// ----- 开始诊断代码 -----
-			if (D2DFontCollection)
-			{
-				UINT32 familyCount = D2DFontCollection->GetFontFamilyCount();
-
-				// 使用 wprintf 或 OutputDebugStringW 来打印信息
-				wchar_t buffer[256];
-				swprintf_s(buffer, L"诊断：找到 %u 个字体家族。\n", familyCount);
-				Testw(buffer);
-
-				for (UINT32 i = 0; i < familyCount; ++i)
-				{
-					CComPtr<IDWriteFontFamily> fontFamily;
-					hr = D2DFontCollection->GetFontFamily(i, &fontFamily);
-					if (SUCCEEDED(hr))
-					{
-						CComPtr<IDWriteLocalizedStrings> familyNames;
-						hr = fontFamily->GetFamilyNames(&familyNames);
-						if (SUCCEEDED(hr))
+						IDWriteFontCollection* tempFontCollection = nullptr;
+						HRESULT hr = D2DTextFactory->CreateCustomFontCollection(
+							collectionLoader, // 我们注册的集合加载器
+							alignedData,              // 集合的 Key (这里就是字体数据的指针)
+							dwSize,             // Key 的大小
+							&tempFontCollection
+						);
+						if (FAILED(hr))
 						{
-							UINT32 index = 0;
-							BOOL exists = false;
-
-							// 尝试查找 "en-us" 区域的名称
-							hr = familyNames->FindLocaleName(L"en-us", &index, &exists);
-							if (FAILED(hr) || !exists)
-							{
-								// 如果找不到，就用第一个名称
-								index = 0;
-							}
-
-							UINT32 length = 0;
-							hr = familyNames->GetStringLength(index, &length);
-
-							std::wstring name(length + 1, L'\0');
-							hr = familyNames->GetString(index, &name[0], length + 1);
-
-							if (SUCCEEDED(hr))
-							{
-								swprintf_s(buffer, L"字体家族 %u 的名称是: \"%s\"\n", i, name.c_str());
-								Testw(buffer);
-							}
+							// 将 HRESULT 转换为十六进制值进行打印
+							wchar_t buffer[256];
+							swprintf_s(buffer, L"CreateCustomFontCollection 失败！HRESULT = 0x%08X\n", static_cast<unsigned int>(hr));
+							Testw(buffer);
 						}
-					}
-				}
-			}
+
+						wprintf(
+							L"[外部] factory=%p, collectionLoader=%p, alignedData=%p, size=%u\n",
+							D2DTextFactory, collectionLoader, alignedData, dwSize
+						);
+
+						// 直接用你的 fileLoader 在内存上创建一个 FontFileReference
+						IDWriteFontFile* fontFile = nullptr;
+						hr = D2DTextFactory->CreateCustomFontFileReference(
+							pLock, dwSize,
+							fileLoader,
+							&fontFile
+						);
+						// 如果 hr 失败，那说明问题在 CreateStreamFromKey/ReadFileFragment
+						if (FAILED(hr)) { Testi(112); }
+
+						// 再分析一下这个文件是否能被识别
+						BOOL    supported = FALSE;
+						DWRITE_FONT_FILE_TYPE   fileType;
+						DWRITE_FONT_FACE_TYPE   faceType;
+						UINT32  faceCount = 0;
+
+						fontFile->Analyze(
+							&supported,
+							&fileType,
+							&faceType,
+							&faceCount
+						);
+
+						wprintf(
+							L"HarmonyOS Analyze: supported=%d fileType=%u faceType=%u faceCount=%u\n",
+							supported, fileType, faceType, faceCount
+						);
+
+						// TODO un
+
+						D2DFontCollection.Attach(tempFontCollection);
+
+						// 在你确认 D2DFontCollection 创建成功之后...
+
+						// 在你成功创建 D2DFontCollection 之后...
+						// HRESULT hr = D2DTextFactory->CreateCustomFontCollection(...);
+						// if (SUCCEEDED(hr)) { D2DFontCollection.Attach(tempFontCollection); }
+
+						// ----- 开始诊断代码 -----
+						if (D2DFontCollection)
+						{
+							UINT32 familyCount = D2DFontCollection->GetFontFamilyCount();
+
+							// 使用 wprintf 或 OutputDebugStringW 来打印信息
+							wchar_t buffer[256];
+							swprintf_s(buffer, L"诊断：找到 %u 个字体家族。\n", familyCount);
+							Testw(buffer);
+
+							for (UINT32 i = 0; i < familyCount; ++i)
+							{
+								CComPtr<IDWriteFontFamily> fontFamily;
+								hr = D2DFontCollection->GetFontFamily(i, &fontFamily);
+								if (SUCCEEDED(hr))
+								{
+									CComPtr<IDWriteLocalizedStrings> familyNames;
+									hr = fontFamily->GetFamilyNames(&familyNames);
+									if (SUCCEEDED(hr))
+									{
+										UINT32 index = 0;
+										BOOL exists = false;
+
+										// 尝试查找 "en-us" 区域的名称
+										hr = familyNames->FindLocaleName(L"en-us", &index, &exists);
+										if (FAILED(hr) || !exists)
+										{
+											// 如果找不到，就用第一个名称
+											index = 0;
+										}
+
+										UINT32 length = 0;
+										hr = familyNames->GetStringLength(index, &length);
+
+										std::wstring name(length + 1, L'\0');
+										hr = familyNames->GetString(index, &name[0], length + 1);
+
+										if (SUCCEEDED(hr))
+										{
+											swprintf_s(buffer, L"字体家族 %u 的名称是: \"%s\"\n", i, name.c_str());
+											Testw(buffer);
+										}
+									}
+								}
+							}
+						}*/
 		}
 
 		stringFormat.SetAlignment(StringAlignmentCenter);
@@ -1262,8 +1247,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] 字体初始化完成");
 	}
-
-	Test();
 
 	// 窗口
 	{
@@ -1403,6 +1386,22 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		IDTLogger->info("[主线程][IdtMain] 线程初始化完成");
 	}
 	CrashHandler::IsSecond(false);
+
+	{
+		// 创建测试控制台
+
+#ifndef IDT_RELEASE
+		{
+			AllocConsole();
+			FILE* fp;
+			freopen_s(&fp, "CONOUT$", "w", stdout);
+			freopen_s(&fp, "CONOUT$", "w", stderr);
+			std::ios::sync_with_stdio();
+
+			std::wcout.imbue(std::locale("chs"));
+		}
+#endif
+	}
 
 	IDTLogger->info("[主线程][IdtMain] 开始等待关闭程序信号发出");
 
