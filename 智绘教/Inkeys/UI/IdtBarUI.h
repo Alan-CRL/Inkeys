@@ -211,6 +211,7 @@ enum class BarUiInheritEnum
 	Top = 1, // 上中继承
 	Left = 4, // 左中继承
 	Center = 5, // 居中继承
+	Right = 6, // 右中继承
 
 	// 相对外部继承
 

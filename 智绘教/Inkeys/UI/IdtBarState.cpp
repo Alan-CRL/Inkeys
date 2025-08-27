@@ -2,6 +2,7 @@
 
 #include "IdtBar.h"
 #include "../../IdtDisplayManagement.h"
+#include "../../IdtState.h"
 
 void BarStateClass::PositionUpdate(double tarZoom)
 {
@@ -20,4 +21,11 @@ void BarStateClass::PositionUpdate(double tarZoom)
 	else widgetPosition.primaryBar = false;
 
 	//Testa(to_string(x) + " " + to_string(monW / 2.0));
+}
+void BarStateClass::ThicknessDisplayUpdate()
+{
+	int penThickness = static_cast<int>(GetPenWidth());
+	string tar = "粗细" + format(" {:>3}", clamp(0, penThickness, 999));
+
+	barUISet.wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->content.SetTar(tar);
 }

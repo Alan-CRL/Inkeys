@@ -21,6 +21,7 @@ public:
 	}widgetPosition;
 
 	void PositionUpdate(double tarZoom);
+	void ThicknessDisplayUpdate();
 };
 class BarStyleClass
 {

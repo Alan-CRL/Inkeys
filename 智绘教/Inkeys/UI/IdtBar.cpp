@@ -447,7 +447,7 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, 
 
 	return true;
 }
-bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh)
+bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight, DWRITE_TEXT_ALIGNMENT textAlign)
 {
 	// 判断是否启用
 	if (word.enable.val == false) return false;
@@ -465,7 +465,8 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 	double tarSize = word.size.val * tarZoom;
 	double tarPct = word.pct.val; // 透明度
 
-	wstring tarContent = utf8ToUtf16(word.content.GetVal());
+	// Word 控件改为存入 wstring
+	string tarContent = /*utf8ToUtf16*/(word.content.GetVal());
 
 	// 获取样式
 	IDWriteTextFormat* textFormat = nullptr;
@@ -490,11 +491,11 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 			L"HarmonyOS Sans SC",
 			tarSize,
 			D2DFontCollection,
-			DWRITE_FONT_WEIGHT_BOLD,
+			fontWeight,
 			DWRITE_FONT_STYLE_NORMAL,
 			DWRITE_FONT_STRETCH_NORMAL,
 			L"zh-cn",
-			DWRITE_TEXT_ALIGNMENT_CENTER,       // 指定居中对齐
+			textAlign,
 			DWRITE_PARAGRAPH_ALIGNMENT_CENTER   // 指定段落居中
 		);
 	}
@@ -515,7 +516,7 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 		CComPtr<ID2D1SolidColorBrush> spFillBrush;
 		deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(color, tarPct), &spFillBrush);
 
-		deviceContext->DrawTextW(
+		deviceContext->DrawTextA(
 			tarContent.c_str(),
 			wcslen(tarContent.c_str()),
 			textFormat,
@@ -1089,14 +1090,14 @@ void BarUISetClass::Rendering()
 						}
 						else
 						{
-							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->w.tar = 340.0;
-							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->h.tar = 110.0;
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->w.tar = 335.0;
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->h.tar = 120.0;
 
 							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->x.tar = -(barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->lastDrawX);
 							if (barState.widgetPosition.primaryBar)
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.tar = (shapeMap[BarUISetShapeEnum::MainBar]->GetH() / 2.0 + 62.5);
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.tar = (shapeMap[BarUISetShapeEnum::MainBar]->GetH() / 2.0 + shapeMap[BarUISetShapeEnum::DrawAttributeBar]->GetH() / 2.0 + 10.0);
 							else
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.tar = -(shapeMap[BarUISetShapeEnum::MainBar]->GetH() / 2.0 + 62.5);
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.tar = -(shapeMap[BarUISetShapeEnum::MainBar]->GetH() / 2.0 + shapeMap[BarUISetShapeEnum::DrawAttributeBar]->GetH() / 2.0 + 10.0);
 
 							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->pct.tar = 0.9;
 							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->framePct.value().tar = 0.18;
@@ -1126,7 +1127,8 @@ void BarUISetClass::Rendering()
 								else
 								{
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->x.tar = 5.0;
-									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->y.tar = 40.0;
+									if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->y.tar = 5.0;
+									else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->y.tar = 50.0;
 
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->pct.tar = 1.0;
 								}
@@ -1155,7 +1157,8 @@ void BarUISetClass::Rendering()
 								else
 								{
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->x.tar = 5.0;
-									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->y.tar = 75.0;
+									if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->y.tar = 40.0;
+									else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->y.tar = 85.0;
 
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->pct.tar = 1.0;
 								}
@@ -1183,7 +1186,8 @@ void BarUISetClass::Rendering()
 								else
 								{
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->x.tar = 40.0;
-									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->y.tar = 40.0;
+									if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->y.tar = 5.0;
+									else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->y.tar = 50.0;
 
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->pct.tar = 1.0;
 								}
@@ -1211,7 +1215,8 @@ void BarUISetClass::Rendering()
 								else
 								{
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->x.tar = 40.0;
-									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->y.tar = 75.0;
+									if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->y.tar = 40.0;
+									else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->y.tar = 85.0;
 
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->pct.tar = 1.0;
 								}
@@ -1239,7 +1244,8 @@ void BarUISetClass::Rendering()
 								else
 								{
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->x.tar = 75.0;
-									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->y.tar = 40.0;
+									if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->y.tar = 5.0;
+									else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->y.tar = 50.0;
 
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->pct.tar = 1.0;
 								}
@@ -1267,7 +1273,8 @@ void BarUISetClass::Rendering()
 								else
 								{
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->x.tar = 75.0;
-									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->y.tar = 75.0;
+									if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->y.tar = 40.0;
+									else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->y.tar = 85.0;
 
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->pct.tar = 1.0;
 								}
@@ -1295,7 +1302,8 @@ void BarUISetClass::Rendering()
 								else
 								{
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->x.tar = 110.0;
-									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->y.tar = 40.0;
+									if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->y.tar = 5.0;
+									else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->y.tar = 50.0;
 
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->pct.tar = 1.0;
 								}
@@ -1323,7 +1331,8 @@ void BarUISetClass::Rendering()
 								else
 								{
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->x.tar = 110.0;
-									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->y.tar = 75.0;
+									if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->y.tar = 40.0;
+									else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->y.tar = 85.0;
 
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->pct.tar = 1.0;
 								}
@@ -1351,7 +1360,8 @@ void BarUISetClass::Rendering()
 								else
 								{
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->x.tar = 145.0;
-									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->y.tar = 40.0;
+									if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->y.tar = 5.0;
+									else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->y.tar = 50.0;
 
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->pct.tar = 1.0;
 								}
@@ -1379,7 +1389,8 @@ void BarUISetClass::Rendering()
 								else
 								{
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->x.tar = 145.0;
-									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->y.tar = 75.0;
+									if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->y.tar = 40.0;
+									else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->y.tar = 85.0;
 
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->pct.tar = 1.0;
 								}
@@ -1407,7 +1418,8 @@ void BarUISetClass::Rendering()
 								else
 								{
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->x.tar = 180.0;
-									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->y.tar = 40.0;
+									if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->y.tar = 5.0;
+									else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->y.tar = 50.0;
 
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->pct.tar = 1.0;
 								}
@@ -1579,13 +1591,47 @@ void BarUISetClass::Rendering()
 								}
 								else
 								{
-									shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->x.tar = 220.0;
-									shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->y.tar = 40.0;
+									shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->x.tar = 215.0;
+									if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->y.tar = 5.0;
+									else shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->y.tar = 50.0;
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->w.tar = 115.0;
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->h.tar = 65.0;
 
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->pct.tar = 0.15;
 								}
+							}
+						}
+						// 粗细调节区域
+						{
+							if (!barState.drawAttribute)
+							{
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->x.tar = 0.0;
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->y.tar = 0.0;
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->w.tar = 60.0;
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->h.tar = 60.0;
+
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->pct.tar = 0.0;
+							}
+							else
+							{
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->x.tar = 5.0;
+								if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->y.tar = 75.0;
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->y.tar = 5.0;
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->w.tar = 205.0;
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->h.tar = 40.0;
+
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->pct.tar = 0.15;
+							}
+
+							if (!barState.drawAttribute)
+							{
+								wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->w.tar = 30.0;
+								wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->pct.tar = 0.0;
+							}
+							else
+							{
+								wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->w.tar = 80.0;
+								wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->pct.tar = 1.0;
 							}
 						}
 					}
@@ -1894,6 +1940,143 @@ void BarUISetClass::Rendering()
 								spec.Word(barDeviceContext, *wordMap[obj3], wordMap[obj3]->Inherit(ToBottom, *svgMap[obj2]));
 							}
 						}
+						// 粗细调节区域
+						{
+							auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect;
+							spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+							auto obj2 = BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay;
+							spec.Word(barDeviceContext, *wordMap[obj2], wordMap[obj2]->Inherit(Right, *shapeMap[obj1]), DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING);
+
+							// 自定义绘制：粗细预览
+							if (wordMap[obj2]->pct.val > 0.0)
+							{
+								FLOAT penThickness = static_cast<FLOAT>(GetPenWidth());
+
+								double tarZoom = barStyle.zoom;
+								double tarX = shapeMap[obj1]->inhX + 10.0;
+								double tarY = shapeMap[obj1]->inhY + 10.0;
+								double tarEndX = wordMap[obj2]->inhX;
+								double tarEndY = shapeMap[obj1]->inhY + shapeMap[obj1]->h.val - 10.0;
+								double tarRw = 0.0;
+								double tarRh = 0.0;
+								if (shapeMap[obj1]->rw.has_value()) tarRw = shapeMap[obj1]->rw.value().val;
+								if (shapeMap[obj1]->rh.has_value()) tarRh = shapeMap[obj1]->rh.value().val;
+
+								COLORREF color = wordMap[obj2]->color.val;
+								double tarPct = wordMap[obj2]->pct.val;
+
+								auto tarRect = D2D1::RectF(
+									static_cast<FLOAT>(tarX) * tarZoom,
+									static_cast<FLOAT>(tarY) * tarZoom,
+									static_cast<FLOAT>(tarEndX) * tarZoom,
+									static_cast<FLOAT>(tarEndY) * tarZoom);
+
+								// ==== 创建圆角矩形几何 ====
+								CComPtr<ID2D1Factory> factory;
+								barDeviceContext->GetFactory(&factory);
+
+								CComPtr<ID2D1RoundedRectangleGeometry> roundedRectGeo;
+								D2D1_ROUNDED_RECT roundedRect = {
+									tarRect,
+									static_cast<FLOAT>(tarRw) * tarZoom,
+									static_cast<FLOAT>(tarRh) * tarZoom
+								};
+								factory->CreateRoundedRectangleGeometry(roundedRect, &roundedRectGeo);
+
+								// ==== 创建 Layer ====
+								CComPtr<ID2D1Layer> layer;
+								barDeviceContext->CreateLayer(&layer);
+
+								// ==== 启用裁切层 ====
+								D2D1_LAYER_PARAMETERS layerParams = D2D1::LayerParameters();
+								layerParams.geometricMask = roundedRectGeo;
+								layerParams.maskAntialiasMode = D2D1_ANTIALIAS_MODE_PER_PRIMITIVE;
+
+								barDeviceContext->PushLayer(&layerParams, layer);
+
+								// ====== 四个经过点（百分比） ======
+								auto w = tarRect.right - tarRect.left;
+								auto h = tarRect.bottom - tarRect.top;
+
+								D2D1_POINT_2F p1 = { tarRect.left + penThickness / 2.0f, tarRect.top + h * 0.50f };
+								D2D1_POINT_2F p4 = { tarRect.left + w - penThickness / 2.0f, tarRect.top + h * 0.50f };
+								D2D1_POINT_2F p2 = { tarRect.left + (p4.x - p1.x) / 3.0f, tarRect.top + penThickness / 2.0f };
+								D2D1_POINT_2F p3 = { tarRect.left + (p4.x - p1.x) * 2.0f / 3.0f, tarRect.top + h - penThickness / 2.0f };
+								vector<D2D1_POINT_2F> pts = { p1,p2,p3,p4 };
+
+								// ====== 内部 lambda：Catmull-Rom 样条到 Bezier 转换 ======
+								auto catmullRomToBeziers = [](const vector<D2D1_POINT_2F>& pts, float tension = 1.0f)
+									{
+										vector<D2D1_BEZIER_SEGMENT> beziers;
+										if (pts.size() < 2) return beziers;
+
+										// 为首尾补点（非闭合）
+										vector<D2D1_POINT_2F> p;
+										p.push_back(pts.front());
+										p.insert(p.end(), pts.begin(), pts.end());
+										p.push_back(pts.back());
+
+										for (int i = 1; i < (int)p.size() - 2; i++)
+										{
+											D2D1_POINT_2F p0 = p[i - 1];
+											D2D1_POINT_2F p1 = p[i];
+											D2D1_POINT_2F p2 = p[i + 1];
+											D2D1_POINT_2F p3 = p[i + 2];
+
+											D2D1_BEZIER_SEGMENT seg;
+											seg.point1 = {
+												p1.x + (p2.x - p0.x) / 6.0f * tension,
+												p1.y + (p2.y - p0.y) / 6.0f * tension
+											};
+											seg.point2 = {
+												p2.x - (p3.x - p1.x) / 6.0f * tension,
+												p2.y - (p3.y - p1.y) / 6.0f * tension
+											};
+											seg.point3 = p2;
+											beziers.push_back(seg);
+										}
+										return beziers;
+									};
+
+								// 生成 Bezier 段
+								auto beziers = catmullRomToBeziers(pts, 1.0f);
+
+								// ====== 创建 PathGeometry ======
+								CComPtr<ID2D1PathGeometry> pathGeometry;
+								factory->CreatePathGeometry(&pathGeometry);
+
+								CComPtr<ID2D1GeometrySink> sink;
+								pathGeometry->Open(&sink);
+
+								sink->BeginFigure(pts.front(), D2D1_FIGURE_BEGIN_HOLLOW);
+								for (auto& bz : beziers) sink->AddBezier(bz);
+								sink->EndFigure(D2D1_FIGURE_END_OPEN);
+
+								sink->Close();
+
+								// ==== 画刷 ====
+								CComPtr<ID2D1SolidColorBrush> brush;
+								barDeviceContext->CreateSolidColorBrush(
+									D2D1::ColorF(IdtColor::ConvertToD2dColor(color, tarPct)),
+									&brush
+								);
+
+								// ==== Stroke Style（圆头、圆角）====
+								CComPtr<ID2D1StrokeStyle> strokeStyle;
+								D2D1_STROKE_STYLE_PROPERTIES props{};
+								props.startCap = D2D1_CAP_STYLE_ROUND;
+								props.endCap = D2D1_CAP_STYLE_ROUND;
+								props.lineJoin = D2D1_LINE_JOIN_ROUND;
+								factory->CreateStrokeStyle(&props, nullptr, 0, &strokeStyle);
+
+								// ==== 绘制贝塞尔曲线（裁切生效）====
+								barDeviceContext->DrawGeometry(pathGeometry, brush, penThickness, strokeStyle);
+
+								// ==== 结束裁切 ====
+								barDeviceContext->PopLayer();
+							}
+						}
 					}
 
 					// 主栏
@@ -2011,10 +2194,14 @@ void BarUISetClass::Rendering()
 
 	return;
 }
-void BarUISetClass::UpdateRendering(bool updateButtom)
+void BarUISetClass::UpdateRendering(bool updateState)
 {
 	// 状态更新
-	if (updateButtom) barButtomSet.StateUpdate();
+	if (updateState)
+	{
+		barButtomSet.StateUpdate();
+		barState.ThicknessDisplayUpdate();
+	}
 	// TODO 通知计算并渲染
 }
 
@@ -2308,13 +2495,11 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 		// 主按钮
 		{
 			auto superellipse = make_shared<BarUiSuperellipseClass>(100.0, 100.0, 80.0, 80.0, 3.0, 1.0, RGB(24, 24, 24), RGB(255, 255, 255));
-			superellipse->pct.Initialization(0.73);
+			superellipse->pct.Initialization(0.6);
 			superellipse->framePct = BarUiPctClass(0.18);
 			superellipse->enable.Initialization(true);
 			barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton] = superellipse;
 
-			// TODO 主按钮收起状态下还得更透明
-			// TODO 进入全屏（PPT场景）透明度值变高问题
 			{
 				auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, nullopt, nullopt);
 				svg->InitializationFromResource(L"UI", L"logo1");
@@ -2481,10 +2666,9 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 						barUISet.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect11] = svg;
 					}
 				}
+				{ /**/ }
 				// 画笔样式区域
 				{
-					{ /**/ }
-
 					// 画笔
 					{
 						auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 50.0, 50.0, 4.0, 4.0, 1.0, RGB(0, 0, 0), nullopt);
@@ -2526,10 +2710,20 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 					}
 					// 选中滑动槽
 					{
-						auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 50.0, 50.0, 4.0, 4.0, 1.0, RGB(127, 127, 127), nullopt);
+						auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 60.0, 60.0, 4.0, 4.0, 1.0, RGB(127, 127, 127), nullopt);
 						shape->enable.Initialization(true);
 						barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove] = shape;
 					}
+				}
+				// 粗细调节区域
+				{
+					auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 60.0, 60.0, 4.0, 4.0, 1.0, RGB(127, 127, 127), nullopt);
+					shape->enable.Initialization(true);
+					barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect] = shape;
+
+					auto word = make_shared<BarUiWordClass>(-10.0, 0.0, 30.0, 30.0, "", 15.0, RGB(255, 255, 255));
+					word->enable.Initialization(true);
+					barUISet.wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay] = word;
 				}
 			}
 		}

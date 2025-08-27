@@ -71,6 +71,9 @@ public:
 			&newFormat
 		);
 
+		// 默认换行策略：禁用自动换行
+		newFormat->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+
 		if (SUCCEEDED(hr))
 		{
 			// 重要：在存入缓存前，设置好所有附加属性！

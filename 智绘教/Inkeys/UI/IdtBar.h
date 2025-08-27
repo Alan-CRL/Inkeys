@@ -71,6 +71,7 @@ enum class BarUISetShapeEnum : int
 	DrawAttributeBar_Highlight1,
 	DrawAttributeBar_DrawSelect,
 	DrawAttributeBar_DrawSelectGroove,
+	DrawAttributeBar_ThicknessSelect,
 };
 enum class BarUISetSuperellipseEnum : int
 {
@@ -101,6 +102,7 @@ enum class BarUISetWordEnum : int
 
 	DrawAttributeBar_Brush1,
 	DrawAttributeBar_Highlight1,
+	DrawAttributeBar_ThicknessDisplay,
 };
 
 // 具体渲染
@@ -114,7 +116,7 @@ public:
 	bool Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, bool clip = false);
 	bool Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, bool clip = false);
 	bool Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, const BarUiInheritClass& inh);
-	bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& shape, const BarUiInheritClass& inh);
+	bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& shape, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT textAlign = DWRITE_TEXT_ALIGNMENT_CENTER);
 
 public:
 	BarUISetClass* barUISetClass = nullptr;
@@ -145,7 +147,7 @@ public:
 
 public:
 	// 渲染更新：状态更新 + 通知计算并渲染
-	void UpdateRendering(bool updateButtom = true);
+	void UpdateRendering(bool updateState = true);
 protected:
 	// 拖动交互
 	double Seek(const ExMessage& msg);
