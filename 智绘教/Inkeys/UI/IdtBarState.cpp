@@ -25,7 +25,7 @@ void BarStateClass::PositionUpdate(double tarZoom)
 void BarStateClass::ThicknessDisplayUpdate()
 {
 	int penThickness = static_cast<int>(GetPenWidth());
-	string tar = "粗细" + format(" {:>3}", clamp(0, penThickness, 999));
+	wstring tar = L"粗细" + format(L" {:>3}", clamp(penThickness, 0, 999));
 
 	barUISet.wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->content.SetTar(tar);
 }

@@ -466,7 +466,7 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 	double tarPct = word.pct.val; // 透明度
 
 	// Word 控件改为存入 wstring
-	string tarContent = /*utf8ToUtf16*/(word.content.GetVal());
+	wstring tarContent = word.content.GetVal();
 
 	// 获取样式
 	IDWriteTextFormat* textFormat = nullptr;
@@ -516,7 +516,7 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 		CComPtr<ID2D1SolidColorBrush> spFillBrush;
 		deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(color, tarPct), &spFillBrush);
 
-		deviceContext->DrawTextA(
+		deviceContext->DrawTextW(
 			tarContent.c_str(),
 			wcslen(tarContent.c_str()),
 			textFormat,
@@ -665,7 +665,7 @@ void BarUISetClass::Rendering()
 						if (temp->size == BarButtomSizeEnum::oneOne)
 						{
 							// 特殊设定：是否是颜色选择器
-							bool isColorSelector = (temp->name.enable.tar && temp->name.content.GetTar().substr(0, 7) == "__color");
+							bool isColorSelector = (temp->name.enable.tar && temp->name.content.GetTar().substr(0, 7) == L"__color");
 
 							if (temp->buttom.enable.tar)
 							{
@@ -1811,7 +1811,7 @@ void BarUISetClass::Rendering()
 					// 绘制属性
 					{
 						auto obj = BarUISetShapeEnum::DrawAttributeBar;
-						spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Left, barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->buttom));
+						spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Left, barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->buttom), true);
 
 						// Color 区域
 						{
@@ -1946,18 +1946,18 @@ void BarUISetClass::Rendering()
 							spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
 
 							auto obj2 = BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay;
-							spec.Word(barDeviceContext, *wordMap[obj2], wordMap[obj2]->Inherit(Right, *shapeMap[obj1]), DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING);
+							wordMap[obj2]->Inherit(Right, *shapeMap[obj1]); // 提前计算依赖
 
 							// 自定义绘制：粗细预览
 							if (wordMap[obj2]->pct.val > 0.0)
 							{
 								FLOAT penThickness = static_cast<FLOAT>(GetPenWidth());
 
-								double tarZoom = barStyle.zoom;
-								double tarX = shapeMap[obj1]->inhX + 10.0;
-								double tarY = shapeMap[obj1]->inhY + 10.0;
+								FLOAT tarZoom = barStyle.zoom;
+								double tarX = shapeMap[obj1]->inhX + 5.0;
+								double tarY = shapeMap[obj1]->inhY + 5.0;
 								double tarEndX = wordMap[obj2]->inhX;
-								double tarEndY = shapeMap[obj1]->inhY + shapeMap[obj1]->h.val - 10.0;
+								double tarEndY = shapeMap[obj1]->inhY + shapeMap[obj1]->h.val - 5.0;
 								double tarRw = 0.0;
 								double tarRh = 0.0;
 								if (shapeMap[obj1]->rw.has_value()) tarRw = shapeMap[obj1]->rw.value().val;
@@ -1999,10 +1999,20 @@ void BarUISetClass::Rendering()
 								auto w = tarRect.right - tarRect.left;
 								auto h = tarRect.bottom - tarRect.top;
 
-								D2D1_POINT_2F p1 = { tarRect.left + penThickness / 2.0f, tarRect.top + h * 0.50f };
-								D2D1_POINT_2F p4 = { tarRect.left + w - penThickness / 2.0f, tarRect.top + h * 0.50f };
-								D2D1_POINT_2F p2 = { tarRect.left + (p4.x - p1.x) / 3.0f, tarRect.top + penThickness / 2.0f };
-								D2D1_POINT_2F p3 = { tarRect.left + (p4.x - p1.x) * 2.0f / 3.0f, tarRect.top + h - penThickness / 2.0f };
+								D2D1_POINT_2F p1 = { clamp(tarRect.left + penThickness / 2.0f,
+													clamp(tarRect.left + 5.0f * tarZoom, 0.0f, tarRect.left + w * 0.5f), tarRect.left + w * 0.5f),
+													tarRect.top + h * 0.50f };
+								D2D1_POINT_2F p4 = { clamp(tarRect.left + w - penThickness / 2.0f,
+														tarRect.left + w * 0.5f, clamp(tarRect.left + w - 5.0f * tarZoom, tarRect.left + w * 0.5f, tarRect.left + w)),
+													tarRect.top + h * 0.50f };
+
+								D2D1_POINT_2F p2 = { tarRect.left + (p4.x - p1.x) / 3.0f,
+													clamp(tarRect.top + penThickness / 2.0f,
+														clamp(0.0f, tarRect.top + 5.0f * tarZoom, tarRect.top + h * 0.5f), tarRect.top + h * 0.5f) };
+								D2D1_POINT_2F p3 = { tarRect.left + (p4.x - p1.x) * 2.0f / 3.0f,
+													clamp(tarRect.top + h - penThickness / 2.0f,
+														tarRect.top + h * 0.5f, clamp(tarRect.top + h - 5.0f * tarZoom, tarRect.top + h * 0.5f, tarRect.top + h)) };
+
 								vector<D2D1_POINT_2F> pts = { p1,p2,p3,p4 };
 
 								// ====== 内部 lambda：Catmull-Rom 样条到 Bezier 转换 ======
@@ -2076,6 +2086,9 @@ void BarUISetClass::Rendering()
 								// ==== 结束裁切 ====
 								barDeviceContext->PopLayer();
 							}
+
+							// obj2
+							spec.Word(barDeviceContext, *wordMap[obj2], wordMap[obj2]->Inherit(Right, *shapeMap[obj1]), DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING);
 						}
 					}
 
@@ -2521,7 +2534,7 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 			shape->enable.Initialization(true);
 			barUISet.shapeMap[BarUISetShapeEnum::MainBar] = shape;
 
-			// 绘制属性
+			// 绘制属性（一级菜单）
 			{
 				auto shape = make_shared<BarUiShapeClass>(10.0, 10.0, 60.0, 60.0, 8.0, 8.0, 1.0, RGB(24, 24, 24), RGB(255, 255, 255));
 				shape->pct.Initialization(0.8);
@@ -2681,7 +2694,7 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 						svg->enable.Initialization(true);
 						barUISet.svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1] = svg;
 
-						auto word = make_shared<BarUiWordClass>(0.0, 5.0, 50.0, 15.0, "画笔", 12.0, RGB(255, 255, 255));
+						auto word = make_shared<BarUiWordClass>(0.0, 5.0, 50.0, 15.0, L"画笔", 12.0, RGB(255, 255, 255));
 						word->enable.Initialization(true);
 						barUISet.wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1] = word;
 					}
@@ -2697,7 +2710,7 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 						svg->enable.Initialization(true);
 						barUISet.svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1] = svg;
 
-						auto word = make_shared<BarUiWordClass>(0.0, 5.0, 50.0, 15.0, "荧光笔", 12.0, RGB(255, 255, 255));
+						auto word = make_shared<BarUiWordClass>(0.0, 5.0, 50.0, 15.0, L"荧光笔", 12.0, RGB(255, 255, 255));
 						word->enable.Initialization(true);
 						barUISet.wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1] = word;
 					}
@@ -2721,7 +2734,7 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 					shape->enable.Initialization(true);
 					barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect] = shape;
 
-					auto word = make_shared<BarUiWordClass>(-10.0, 0.0, 30.0, 30.0, "", 15.0, RGB(255, 255, 255));
+					auto word = make_shared<BarUiWordClass>(-10.0, 0.0, 30.0, 30.0, L"", 15.0, RGB(255, 255, 255));
 					word->enable.Initialization(true);
 					barUISet.wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay] = word;
 				}

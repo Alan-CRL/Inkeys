@@ -102,7 +102,7 @@ class BarUiStringClass
 {
 public:
 	BarUiStringClass() {}
-	BarUiStringClass(string valT)
+	BarUiStringClass(wstring valT)
 	{
 		unique_lock lockValmt(valmt);
 		val = valT;
@@ -118,22 +118,22 @@ public:
 	}
 
 public:
-	string GetVal() const
+	wstring GetVal() const
 	{
 		shared_lock lock(valmt);
 		return val;
 	}
-	void SetVal(const string& v)
+	void SetVal(const wstring& v)
 	{
 		unique_lock lock(valmt);
 		val = v;
 	}
-	string GetTar() const
+	wstring GetTar() const
 	{
 		shared_lock lock(tarmt);
 		return tar;
 	}
-	void SetTar(const string& t)
+	void SetTar(const wstring& t)
 	{
 		unique_lock lock(tarmt);
 		tar = t;
@@ -151,7 +151,7 @@ public:
 		shared_lock lock_tar(tarmt);
 		return val == tar;
 	}
-	void Initialization(string valT)
+	void Initialization(wstring valT)
 	{
 		unique_lock lockValmt(valmt);
 		val = valT;
@@ -190,8 +190,8 @@ public:
 protected:
 	mutable shared_mutex valmt;
 	mutable shared_mutex tarmt;
-	string val = "";
-	string tar = "";
+	wstring val = L"";
+	wstring tar = L"";
 };
 
 // 前向声明
@@ -466,7 +466,7 @@ public:
 		if (color2T.has_value()) { color2 = BarUiColorClass(); color2.value().Initialization(color2T.value()); }
 	}
 
-	void InitializationFromString(string valT)
+	void InitializationFromString(wstring valT)
 	{
 		svg.Initialization(valT);
 		{
@@ -478,7 +478,7 @@ public:
 		rW = temp.first, rH = temp.second;
 	}
 	void InitializationFromResource(const wstring& resType, const wstring& resName);
-	void SetTarFromString(string valT)
+	void SetTarFromString(wstring valT)
 	{
 		svg.SetTar(valT);
 		{
@@ -526,7 +526,7 @@ class BarUiWordClass : public BarUiInnheritBaseClass
 {
 public:
 	BarUiWordClass() {}
-	BarUiWordClass(double xT, double yT, double wT, double hT, string contentT, double sizeT, COLORREF colorT = RGB(0, 0, 0), BarUiValueModeEnum type = BarUiValueModeEnum::Linear)
+	BarUiWordClass(double xT, double yT, double wT, double hT, wstring contentT, double sizeT, COLORREF colorT = RGB(0, 0, 0), BarUiValueModeEnum type = BarUiValueModeEnum::Linear)
 	{
 		x.Initialization(xT, type);
 		y.Initialization(yT, type);
@@ -537,7 +537,7 @@ public:
 		color.Initialization(colorT);
 	}
 
-	void Initialization(double xT, double yT, double wT, double hT, string contentT, double sizeT, COLORREF colorT = RGB(0, 0, 0), BarUiValueModeEnum type = BarUiValueModeEnum::Linear)
+	void Initialization(double xT, double yT, double wT, double hT, wstring contentT, double sizeT, COLORREF colorT = RGB(0, 0, 0), BarUiValueModeEnum type = BarUiValueModeEnum::Linear)
 	{
 		x.Initialization(xT, type);
 		y.Initialization(yT, type);

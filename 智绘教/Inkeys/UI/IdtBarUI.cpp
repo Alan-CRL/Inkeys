@@ -1,5 +1,7 @@
 ﻿#include "IdtBarUI.h"
+
 #include "../Load/IdtLoad.h"
+#include "../../IdtText.h"
 
 #define LUNASVG_BUILD_STATIC
 #include <lunasvg/lunasvg.h>
@@ -12,13 +14,13 @@ void BarUiSVGClass::InitializationFromResource(const wstring& resType, const wst
 {
 	string valT;
 	IdtLoad::ExtractResourceString(valT, resType, resName);
-	if (!valT.empty()) InitializationFromString(valT);
+	if (!valT.empty()) InitializationFromString(utf8ToUtf16(valT));
 }
 void BarUiSVGClass::SetTarFromResource(const wstring& resType, const wstring& resName)
 {
 	string valT;
 	IdtLoad::ExtractResourceString(valT, resType, resName);
-	if (!valT.empty()) SetTarFromString(valT);
+	if (!valT.empty()) SetTarFromString(utf8ToUtf16(valT));
 }
 bool BarUiSVGClass::CacheBitmap(ID2D1DeviceContext* deviceContext, double tarW, double tarH)
 {
@@ -26,7 +28,7 @@ bool BarUiSVGClass::CacheBitmap(ID2D1DeviceContext* deviceContext, double tarW, 
 	string svgContent;
 	unique_ptr<lunasvg::Document> document;
 	{
-		svgContent = svg.GetVal();
+		svgContent = utf16ToUtf8(svg.GetVal());
 		// 替换颜色，如果有
 		if (color1.has_value() || color2.has_value())
 		{
@@ -179,7 +181,7 @@ bool BarUiSVGClass::SetWH(optional<double> wT, optional<double> hT)
 pair<double, double> BarUiSVGClass::CalcWH()
 {
 	// 解析SVG
-	unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromData(svg.GetTar());
+	unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromData(utf16ToUtf8(svg.GetTar()));
 	if (!document) return make_pair(0, 0); // 解析失败
 
 	double w = static_cast<double>(document->width());

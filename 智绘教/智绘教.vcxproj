@@ -676,6 +676,7 @@
     <ClCompile Include="IdtTime.cpp" />
     <ClCompile Include="IdtUpdate.cpp" />
     <ClCompile Include="IdtWindow.cpp" />
+    <ClCompile Include="Inkeys\Load\IdtFontLoad.cpp" />
     <ClCompile Include="Inkeys\Other\IdtGesture.cpp" />
     <ClCompile Include="Inkeys\Other\IdtInputs.cpp" />
     <ClCompile Include="Inkeys\UI\IdtBar.cpp" />
@@ -784,6 +785,7 @@
     <None Include="src\UI\barEraser.svg" />
     <None Include="src\UI\barFreeze.svg" />
     <None Include="src\UI\barGeometry.svg" />
+    <None Include="src\UI\barHighlighter1.svg" />
     <None Include="src\UI\barPierce.svg" />
     <None Include="src\UI\barRecall.svg" />
     <None Include="src\UI\barRedo.svg" />
@@ -809,6 +811,10 @@
     <Manifest Include="..\PptCOM\PptCOM.manifest" />
   </ItemGroup>
   <ItemGroup>
+    <Font Include="src\ttf\HarmonyOS_SansSC_Bold.ttf" />
+    <Font Include="src\ttf\HarmonyOS_SansTC_Bold.ttf" />
+    <Font Include="src\ttf\HarmonyOS_Sans_Condensed_Bold.ttf" />
+    <Font Include="src\ttf\HarmonyOS_Sans_Condensed_Regular.ttf" />
     <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />
     <Font Include="src\ttf\HarmonyOS_Sans_TC_Regular.ttf" />
     <Font Include="src\ttf\icomoon.ttf" />

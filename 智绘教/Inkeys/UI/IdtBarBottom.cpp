@@ -23,7 +23,7 @@ void BarButtomSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, "分割线", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"分割线", 0.0);
 			obj->name.enable.Initialization(false);
 		}
 		{
@@ -50,7 +50,7 @@ void BarButtomSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, "选择", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"选择", 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -84,7 +84,7 @@ void BarButtomSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, "绘制", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"绘制", 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -126,7 +126,7 @@ void BarButtomSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, "擦除", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"擦除", 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -160,7 +160,7 @@ void BarButtomSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, "几何", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"几何", 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -193,7 +193,7 @@ void BarButtomSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, "撤回", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"撤回", 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -233,7 +233,7 @@ void BarButtomSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, "清空", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"清空", 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -267,7 +267,7 @@ void BarButtomSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, "穿透", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"穿透", 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -312,7 +312,7 @@ void BarButtomSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, "定格", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"定格", 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -360,7 +360,7 @@ void BarButtomSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, "设置", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"设置", 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -406,7 +406,7 @@ void BarButtomSetClass::PresetHoming()
 		preset[(int)BarButtomPresetEnum::Freeze]->size = BarButtomSizeEnum::twoTwo;
 
 		// 显示名称变化
-		preset[(int)BarButtomPresetEnum::Select]->name.content.SetTar("选择");
+		preset[(int)BarButtomPresetEnum::Select]->name.content.SetTar(L"选择");
 	}
 	else
 	{
@@ -422,7 +422,7 @@ void BarButtomSetClass::PresetHoming()
 		preset[(int)BarButtomPresetEnum::Freeze]->size = BarButtomSizeEnum::twoOne;
 
 		// 显示名称变化
-		preset[(int)BarButtomPresetEnum::Select]->name.content.SetTar("选择(清空)");
+		preset[(int)BarButtomPresetEnum::Select]->name.content.SetTar(L"选择(清空)");
 	}
 }
 // 计算按钮状态

@@ -112,6 +112,9 @@
     <Filter Include="源文件\Inkeys\Other">
       <UniqueIdentifier>{e6fe91f5-9907-44c5-8e41-6db1ab4e946d}</UniqueIdentifier>
     </Filter>
+    <Filter Include="源文件\Inkeys\Load">
+      <UniqueIdentifier>{08a823c5-f342-4ee4-9c75-b9dc069137b8}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HiEasyX.h">
@@ -1064,6 +1067,9 @@
     <ClCompile Include="Inkeys\Other\IdtInputs.cpp">
       <Filter>源文件\Inkeys\Other</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\Load\IdtFontLoad.cpp">
+      <Filter>源文件\Inkeys\Load</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="智绘教.rc">
@@ -1332,6 +1338,7 @@
     <None Include="src\UI\barGeometry.svg" />
     <None Include="src\UI\color\colorSelect.svg" />
     <None Include="src\UI\barBrush1.svg" />
+    <None Include="src\UI\barHighlighter1.svg" />
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="..\PptCOM\PptCOM.manifest" />
@@ -1341,5 +1348,9 @@
     <Font Include="src\ttf\Segoe Fluent Icons.ttf" />
     <Font Include="src\ttf\HarmonyOS_Sans_TC_Regular.ttf" />
     <Font Include="src\ttf\icomoon.ttf" />
+    <Font Include="src\ttf\HarmonyOS_Sans_Condensed_Bold.ttf" />
+    <Font Include="src\ttf\HarmonyOS_Sans_Condensed_Regular.ttf" />
+    <Font Include="src\ttf\HarmonyOS_SansSC_Bold.ttf" />
+    <Font Include="src\ttf\HarmonyOS_SansTC_Bold.ttf" />
   </ItemGroup>
 </Project>
