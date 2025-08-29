@@ -30,25 +30,24 @@
 
 ## 集锦(软件介绍)
 
-<div style="
-  margin:32px auto;
-  border: 2px solid #eee;
-  border-radius: 12px;
-  box-shadow: 0 8px 40px rgba(0,0,0,0.18);
-  overflow: hidden;
-  background: #fafbfc;
-">
-  <div style="position:relative;width:100%;padding-bottom:56.25%;">
-    <iframe
-      src="//player.bilibili.com/player.html?isOutside=true&aid=114881164481373&bvid=BV17duZzYEsE&cid=25827154050&p=1&high_quality=1&danmaku=1&autoplay=0"
-      style="position:absolute;top:0;left:0;width:100%;height:100%;"
-      frameborder="no"
-      allowfullscreen="true"
-    ></iframe>
-  </div>
-</div>
+<table style="width:100%;">
+  <tr>
+    <td>
+      <a href="https://www.bilibili.com/video/BV17duZzYEsE/" target="_blank">
+        <img alt="封面" src="https://i0.hdslb.com/bfs/archive/8542868871ee67b16f385ae31ad36f52280dfc4b.jpg"
+             height="100" style="width:auto;" />
+      </a>
+    </td>
+    <td>
+      <b>
+        <a href="https://www.bilibili.com/video/BV17duZzYEsE/" target="_blank">
+          Bilibili 上的 25H2 版本介绍视频
+        </a>
+      </b>
+    </td>
+  </tr>
+</table>
 
-**[Bilibili 上的 25H2 版本介绍视频](https://www.bilibili.com/video/BV17duZzYEsE/)**  
 [Bilibili 上的 24H2 版本介绍视频（较旧）](https://www.bilibili.com/video/BV1Tz421z72e/)  
 [Bilibili 上的 24H1 版本介绍视频（较旧）](https://www.bilibili.com/video/BV1vJ4m147rN/)  
 [Codebus 上的介绍推文（较旧）](https://codebus.cn/alancrl/intelligent-painting-teaching)  
