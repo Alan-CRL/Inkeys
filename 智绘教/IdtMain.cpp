@@ -1318,7 +1318,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] 线程初始化完成");
 	}
-	CrashHandler::IsSecond(false);
 
 	{
 		// 创建测试控制台

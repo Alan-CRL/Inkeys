@@ -3,6 +3,12 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LocalDebuggerDebuggerType>NativeOnly</LocalDebuggerDebuggerType>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <RemoteDebuggerServerName>WIN-UG26QSM2O9F:4015</RemoteDebuggerServerName>
+    <RemoteDebuggerConnection>RemoteWithoutAuthentication</RemoteDebuggerConnection>
+    <RemoteDebuggerCommand>C:\Users\AlanCRL\Desktop\Debug\Inkeys.exe</RemoteDebuggerCommand>
+    <RemoteDebuggerWorkingDirectory>C:\Users\AlanCRL\Desktop\Debug\</RemoteDebuggerWorkingDirectory>
+    <RemoteDebuggerDeployDebugCppRuntime>true</RemoteDebuggerDeployDebugCppRuntime>
+    <DeploymentDirectory>C:\Users\AlanCRL\Desktop\Debug\</DeploymentDirectory>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LocalDebuggerDebuggerType>NativeOnly</LocalDebuggerDebuggerType>

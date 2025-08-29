@@ -579,15 +579,10 @@ void BarUISetClass::Rendering()
 		CComPtr<ID2D1Device>          d2dDevice;
 
 		UINT creationFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
-#if !defined(IDT_RELEASE)
-		creationFlags |= D3D11_CREATE_DEVICE_DEBUG;
-#endif
 
 		D3D_FEATURE_LEVEL featureLevels[] = {
 			D3D_FEATURE_LEVEL_11_1,
 			D3D_FEATURE_LEVEL_11_0,
-			D3D_FEATURE_LEVEL_10_1,
-			D3D_FEATURE_LEVEL_10_0
 		};
 
 		D3D11CreateDevice(
