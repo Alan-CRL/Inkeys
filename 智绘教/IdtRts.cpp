@@ -244,33 +244,53 @@ HRESULT CSyncEventHandlerRTS::StylusDown(IRealTimeStylus* piRtsSrc, const Stylus
 
 	return S_OK;
 }
-HRESULT CSyncEventHandlerRTS::StylusUp(IRealTimeStylus*, const StylusInfo* pStylusInfo, ULONG /*cPktCount*/, LONG* pPacket, LONG** /*ppInOutPkts*/)
+HRESULT CSyncEventHandlerRTS::StylusUp(IRealTimeStylus*, const StylusInfo* pStylusInfo, ULONG cPktCount, LONG* pPacket, LONG** /*ppInOutPkts*/)
 {
 	// 这是一个抬起状态
+
+	// 先更新最后的位置
+	shared_lock<shared_mutex> lockTouchPointer(touchPointerSm);
+	int pid = TouchPointer[pStylusInfo->cid];
+	lockTouchPointer.unlock();
+	shared_lock<shared_mutex> lock1(touchPosSm);
+	TouchMode mode = TouchPos[pid];
+	lock1.unlock();
+
+	if (cPktCount != 0)
+	{
+		const ULONG propsPerPacket = mode.packetPropertiesCount; // 单个数据包的属性数量
+		ULONG lastPacketIndex = cPktCount - 1; // 1. 计算最后一个数据包的索引 (cPktCount - 1)
+		LONG* lastPacket = pPacket + (lastPacketIndex * propsPerPacket); // 2. 定位到最后一个数据包在 pPacket 缓冲区中的起始地址
+
+		for (int i = 0; i < mode.packetPropertiesCount; i++)
+		{
+			GUID guid = mode.pPacketProperties[i].guid;
+			if (guid == GUID_PACKETPROPERTY_GUID_X) mode.pt.x = LONG(lastPacket[i] * mode.inkToDeviceScaleX + 0.5);
+			else if (guid == GUID_PACKETPROPERTY_GUID_Y) mode.pt.y = LONG(lastPacket[i] * mode.inkToDeviceScaleY + 0.5);
+			else if (guid == GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE) mode.pressure = double(lastPacket[i] - mode.pressureMin) / double(mode.pressureMax - mode.pressureMin);
+			else if (guid == GUID_PACKETPROPERTY_GUID_WIDTH) mode.touchWidth = LONG(lastPacket[i] * mode.inkToDeviceScaleX + 0.5);
+			else if (guid == GUID_PACKETPROPERTY_GUID_HEIGHT) mode.touchHeight = LONG(lastPacket[i] * mode.inkToDeviceScaleY + 0.5);
+		}
+
+		unique_lock<shared_mutex> lock2(touchPosSm);
+		TouchPos[pid] = mode;
+		lock2.unlock();
+	}
 
 	rtsNum = max(0, rtsNum - 1);
 	if (rtsNum == 0) rtsDown = false;
 
-	int pid = TouchPointer[pStylusInfo->cid];
-
 	auto it = std::find(TouchList.begin(), TouchList.end(), pid);
 	if (it != TouchList.end())
 	{
-		shared_lock<shared_mutex> lockPointPosSm(touchPosSm);
 		{
-			if (TouchPos.find(pid) != TouchPos.end())
-			{
-				if (TouchPos[pid].type == 0)
-					touchNum = max(0, touchNum - 1);
-				if (TouchPos[pid].type == 1)
-					inkNum = max(0, inkNum - 1);
+			if (mode.type == 0)
+				touchNum = max(0, touchNum - 1);
+			if (mode.type == 1)
+				inkNum = max(0, inkNum - 1);
 
-				if (TouchPos[pid].pPacketProperties != nullptr) CoTaskMemFree(TouchPos[pid].pPacketProperties);
-
-				// erase
-			}
+			if (mode.pPacketProperties != nullptr) CoTaskMemFree(mode.pPacketProperties);
 		}
-		lockPointPosSm.unlock();
 
 		unique_lock<shared_mutex> lockPointListSm(pointListSm);
 		TouchList.erase(it);
@@ -290,25 +310,31 @@ HRESULT CSyncEventHandlerRTS::StylusUp(IRealTimeStylus*, const StylusInfo* pStyl
 
 	return S_OK;
 }
-HRESULT CSyncEventHandlerRTS::Packets(IRealTimeStylus* piRtsSrc, const StylusInfo* pStylusInfo, ULONG /*cPktCount*/, ULONG /*cPktBuffLength*/, LONG* pPacket, ULONG* /*pcInOutPkts*/, LONG** /*ppInOutPkts*/)
+HRESULT CSyncEventHandlerRTS::Packets(IRealTimeStylus* piRtsSrc, const StylusInfo* pStylusInfo, ULONG cPktCount, ULONG /*cPktBuffLength*/, LONG* pPacket, ULONG* /*pcInOutPkts*/, LONG** /*ppInOutPkts*/)
 {
 	// 这是一个移动状态
+
+	if (cPktCount == 0) return S_OK;
 
 	shared_lock<shared_mutex> lockTouchPointer(touchPointerSm);
 	int pid = TouchPointer[pStylusInfo->cid];
 	lockTouchPointer.unlock();
-
 	shared_lock<shared_mutex> lock1(touchPosSm);
 	TouchMode mode = TouchPos[pid];
 	lock1.unlock();
+
+	const ULONG propsPerPacket = mode.packetPropertiesCount; // 单个数据包的属性数量
+	ULONG lastPacketIndex = cPktCount - 1; // 1. 计算最后一个数据包的索引 (cPktCount - 1)
+	LONG* lastPacket = pPacket + (lastPacketIndex * propsPerPacket); // 2. 定位到最后一个数据包在 pPacket 缓冲区中的起始地址
+
 	for (int i = 0; i < mode.packetPropertiesCount; i++)
 	{
 		GUID guid = mode.pPacketProperties[i].guid;
-		if (guid == GUID_PACKETPROPERTY_GUID_X) mode.pt.x = LONG(pPacket[i] * mode.inkToDeviceScaleX + 0.5);
-		else if (guid == GUID_PACKETPROPERTY_GUID_Y) mode.pt.y = LONG(pPacket[i] * mode.inkToDeviceScaleY + 0.5);
-		else if (guid == GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE) mode.pressure = double(pPacket[i] - mode.pressureMin) / double(mode.pressureMax - mode.pressureMin);
-		else if (guid == GUID_PACKETPROPERTY_GUID_WIDTH) mode.touchWidth = LONG(pPacket[i] * mode.inkToDeviceScaleX + 0.5);
-		else if (guid == GUID_PACKETPROPERTY_GUID_HEIGHT) mode.touchHeight = LONG(pPacket[i] * mode.inkToDeviceScaleY + 0.5);
+		if (guid == GUID_PACKETPROPERTY_GUID_X) mode.pt.x = LONG(lastPacket[i] * mode.inkToDeviceScaleX + 0.5);
+		else if (guid == GUID_PACKETPROPERTY_GUID_Y) mode.pt.y = LONG(lastPacket[i] * mode.inkToDeviceScaleY + 0.5);
+		else if (guid == GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE) mode.pressure = double(lastPacket[i] - mode.pressureMin) / double(mode.pressureMax - mode.pressureMin);
+		else if (guid == GUID_PACKETPROPERTY_GUID_WIDTH) mode.touchWidth = LONG(lastPacket[i] * mode.inkToDeviceScaleX + 0.5);
+		else if (guid == GUID_PACKETPROPERTY_GUID_HEIGHT) mode.touchHeight = LONG(lastPacket[i] * mode.inkToDeviceScaleY + 0.5);
 	}
 
 	unique_lock<shared_mutex> lock2(touchPosSm);

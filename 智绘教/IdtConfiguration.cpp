@@ -626,8 +626,8 @@ bool PptComReadSetting()
 		if (updateVal.isMember("MiddleSideBothWidgetScale") && updateVal["MiddleSideBothWidgetScale"].isDouble())
 			pptComSetlist.middleSideBothWidgetScale = (float)updateVal["MiddleSideBothWidgetScale"].asDouble();
 
-		//if (updateVal.isMember("AutoKillWpsProcess") && updateVal["AutoKillWpsProcess"].isBool())
-		//	pptComSetlist.autoKillWpsProcess = updateVal["AutoKillWpsProcess"].asBool();
+		// if (updateVal.isMember("AutoKillWpsProcess") && updateVal["AutoKillWpsProcess"].isBool())
+		//		pptComSetlist.autoKillWpsProcess = updateVal["AutoKillWpsProcess"].asBool();
 	}
 	else return false;
 
