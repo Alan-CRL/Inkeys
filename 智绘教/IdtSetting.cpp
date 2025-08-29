@@ -17,6 +17,7 @@
 #include "IdtWindow.h"
 #include "CrashHandler/CrashHandler.h"
 #include "SuperTop/IdtSuperTop.h"
+#include "Inkeys/Other/IdtInputs.h"
 
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_dx9.h"
@@ -75,7 +76,7 @@ struct
 
 void SettingSeekBar()
 {
-	if (!KeyBoradDown[VK_LBUTTON]) return;
+	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return;
 
 	POINT p;
 	GetCursorPos(&p);
@@ -85,7 +86,7 @@ void SettingSeekBar()
 
 	while (1)
 	{
-		if (!KeyBoradDown[VK_LBUTTON]) break;
+		if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 
 		POINT p;
 		GetCursorPos(&p);

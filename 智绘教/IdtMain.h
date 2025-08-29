@@ -17,7 +17,7 @@
 
 #pragma once
 
-#define IDT_RELEASE
+// #define IDT_RELEASE
 // #pragma comment( linker, "/subsystem:windows /entry:mainCRTStartup" )
 
 // 智绘教最低兼容 Windows 7 sp0
@@ -61,6 +61,7 @@
 #include <mutex>
 #include <shared_mutex>
 #include <variant>
+#include <atlbase.h>
 
 // 日志类
 #define SPDLOG_WCHAR_FILENAMES

@@ -626,8 +626,8 @@ bool PptComReadSetting()
 		if (updateVal.isMember("MiddleSideBothWidgetScale") && updateVal["MiddleSideBothWidgetScale"].isDouble())
 			pptComSetlist.middleSideBothWidgetScale = (float)updateVal["MiddleSideBothWidgetScale"].asDouble();
 
-		if (updateVal.isMember("AutoKillWpsProcess") && updateVal["AutoKillWpsProcess"].isBool())
-			pptComSetlist.autoKillWpsProcess = updateVal["AutoKillWpsProcess"].asBool();
+		//if (updateVal.isMember("AutoKillWpsProcess") && updateVal["AutoKillWpsProcess"].isBool())
+		//	pptComSetlist.autoKillWpsProcess = updateVal["AutoKillWpsProcess"].asBool();
 	}
 	else return false;
 
@@ -714,7 +714,7 @@ bool PptComWriteSetting()
 		updateVal["BottomSideMiddleWidgetScale"] = Json::Value(pptComSetlist.bottomSideMiddleWidgetScale);
 		updateVal["MiddleSideBothWidgetScale"] = Json::Value(pptComSetlist.middleSideBothWidgetScale);
 
-		updateVal["AutoKillWpsProcess"] = Json::Value(pptComSetlist.autoKillWpsProcess);
+		//updateVal["AutoKillWpsProcess"] = Json::Value(pptComSetlist.autoKillWpsProcess);
 	}
 
 	HANDLE fileHandle = NULL;

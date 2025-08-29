@@ -490,7 +490,6 @@
     <ClInclude Include="HiEasyX\HiSysGUI\SysRadioButton.h" />
     <ClInclude Include="HiEasyX\HiSysGUI\SysStatic.h" />
     <ClInclude Include="HiEasyX\HiWindow.h" />
-    <ClInclude Include="IdtBar.h" />
     <ClInclude Include="IdtConfiguration.h" />
     <ClInclude Include="IdtD2DPreparation.h" />
     <ClInclude Include="IdtDisplayManagement.h" />
@@ -511,6 +510,9 @@
     <ClInclude Include="IdtState.h" />
     <ClInclude Include="IdtSysNotifications.h" />
     <ClInclude Include="Inkeys\Json\IdtJson.h" />
+    <ClInclude Include="Inkeys\Load\IdtFontLoad.h" />
+    <ClInclude Include="Inkeys\Other\IdtGesture.h" />
+    <ClInclude Include="Inkeys\Other\IdtInputs.h" />
     <ClInclude Include="Launch\IdtLaunchState.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="IdtRts.h" />
@@ -550,7 +552,6 @@
     <ClCompile Include="additional\ziputils\zip.cpp" />
     <ClCompile Include="CrashHandler\CrashHandler.cpp" />
     <ClCompile Include="ExtraInclude.cpp" />
-    <ClCompile Include="IdtBar.cpp" />
     <ClCompile Include="IdtConfiguration.cpp" />
     <ClCompile Include="IdtD2DPreparation.cpp" />
     <ClCompile Include="IdtDisplayManagement.cpp" />
@@ -605,6 +606,9 @@
     <ClCompile Include="IdtTime.cpp" />
     <ClCompile Include="IdtUpdate.cpp" />
     <ClCompile Include="IdtWindow.cpp" />
+    <ClCompile Include="Inkeys\Load\IdtFontLoad.cpp" />
+    <ClCompile Include="Inkeys\Other\IdtGesture.cpp" />
+    <ClCompile Include="Inkeys\Other\IdtInputs.cpp" />
     <ClCompile Include="Launch\IdtLaunchState.cpp" />
     <ClCompile Include="SuperTop\IdtSuperTop.cpp" />
   </ItemGroup>

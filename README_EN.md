@@ -16,9 +16,9 @@ The backup repository is located at [GitCode](https://gitcode.com/alan16356/Inke
 
 [![Communication Group](https://img.shields.io/badge/-QQ%20Group%20618720802-blue?style=flat&logo=TencentQQ)](https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6)  ![GitHub issues](https://img.shields.io/github/issues/Alan-CRL/IDT?logo=github&color=green)  ![GitHub stars](https://img.shields.io/github/stars/Alan-CRL/IDT)
 
-Windows screen annotation tool with efficient annotation and rich features,  
-Make screen demonstrations simpler, teaching more efficient,  
-suitable for touch devices and computers.
+Unleash your creativity by writing anywhere on your screen with ease.   
+Inkeys brings you ultra-smooth, high-performance brushes, a powerful array of features, and numerous thoughtful design touches to elevate your efficiency and user experience.   
+Built with C++20, Inkeys is designed exclusively for Windows.  
 
 Old name `Intelligent-Drawing-Teaching`（referred to as `IDT`）
 
@@ -28,7 +28,8 @@ Old name `Intelligent-Drawing-Teaching`（referred to as `IDT`）
 </div>
 
 ## Collection (Introduction)
-**[Introduction video of 25H2 version on _bilibili.com_ (Chinese)](https://www.bilibili.com/video/BV17duZzYEsE/)**  
+**[Introduction video of 25H2 version on _YouTube_ (Chinese)](https://youtu.be/JHp-EuZ66OU?feature=shared)**  
+[Introduction video of 25H2 version on _bilibili.com_ (Chinese)](https://www.bilibili.com/video/BV17duZzYEsE/)  
 [Introduction video of 24H2 version on _bilibili.com_ (Chinese)(older)](https://www.bilibili.com/video/BV1Tz421z72e/)  
 [Introduction video of 24H1 version on _bilibili.com_ (Chinese)(older)](https://www.bilibili.com/video/BV1vJ4m147rN/)  
 [Introduction blog on _codebus.cn_ (Chinese)(VPN required)(older)](https://codebus.cn/alancrl/intelligent-painting-teaching)  
@@ -39,7 +40,7 @@ We have launched various UI style for large screen touch devices and laptops.
 Make Inkeys easier and more user-friendly on various devices!  
 
 ## Download
-[Github Release Assets](https://github.com/Alan-CRL/IDT/releases) | [Official Website Download(Chinese)](https://www.inkeys.top/col.jsp?id=106)   
+[Github Release Assets](https://github.com/Alan-CRL/Inkeys/releases) | [Official Website Download(Chinese)](https://www.inkeys.top/download)   
 
 #### System Requirements
 The minimum support is `Windows 7 (sp0)` and supports `x86 / x64 / arm64` windows.  
@@ -80,12 +81,15 @@ This project is licensed under the [GNU General Public License v3.0](LICENSE).
 - `dev`: Daily timely updates, storing automatically saved source code, may not be able to build.
 
 ## Project Reference
-[Dear Imgui](https://github.com/ocornut/imgui)  
-[DesktopDrawpadBlocker](https://github.com/Alan-CRL/DesktopDrawpadBlocker)  
-[Hashlib++](https://github.com/aksalj/hashlibpp)  
-[HiEasyX](https://github.com/zouhuidong/HiEasyX)  
-[JsonCpp](https://github.com/open-source-parsers/jsoncpp)  
-[libcuckoo](https://github.com/efficient/libcuckoo)  
-[Stb](https://github.com/nothings/stb)  
-[WinToast](https://github.com/mohabouje/WinToast)  
+[aksalj/hashlibpp](https://github.com/aksalj/hashlibpp)  
+[Alan-CRL/DesktopDrawpadBlocker](https://github.com/Alan-CRL/DesktopDrawpadBlocker)  
+[cameron314/concurrentqueue](https://github.com/cameron314/concurrentqueue)  
+[efficient/libcuckoo](https://github.com/efficient/libcuckoo)  
+[martinus/unordered_dense](https://github.com/martinus/unordered_dense)  
+[mohabouje/WinToast](https://github.com/mohabouje/WinToast)  
+[nothings/stb](https://github.com/nothings/stb)  
+[ocornut/imgui](https://github.com/ocornut/imgui)  
+[open-source-parsers/jsoncpp](https://github.com/open-source-parsers/jsoncpp)  
+[sammycage/lunasvg](https://github.com/sammycage/lunasvg)  
 [Zip Utils](https://www.codeproject.com/Articles/7530/Zip-Utils-Clean-Elegant-Simple-Cplusplus-Win)  
+[zouhuidong/HiEasyX](https://github.com/zouhuidong/HiEasyX)  

@@ -3,6 +3,7 @@
 #include "IdtConfiguration.h"
 #include "IdtDrawpad.h"
 #include "IdtWindow.h"
+#include "Inkeys/Other/IdtInputs.h"
 
 IdtAtomic<bool> rtsDown;												// 表示触摸设备是否被按下
 IdtAtomic<int> rtsNum = 0, touchNum = 0, inkNum = 0;					// 点、触摸点、触控笔的点击个数
@@ -152,34 +153,35 @@ HRESULT CSyncEventHandlerRTS::StylusDown(IRealTimeStylus* piRtsSrc, const Stylus
 	TouchMode mode{};
 	TouchInfo info{};
 
-	ULONG ulPacketProperties;
-	PACKET_PROPERTY* pPacketProperties;
 	{
 		ULONG ulTcidCount;
 		TABLET_CONTEXT_ID* pTcids;
 		piRtsSrc->GetAllTabletContextIds(&ulTcidCount, &pTcids);
-		piRtsSrc->GetPacketDescriptionData(pTcids[0], &mode.inkToDeviceScaleX, &mode.inkToDeviceScaleY, &ulPacketProperties, &pPacketProperties);
+		piRtsSrc->GetPacketDescriptionData(pTcids[0], &mode.inkToDeviceScaleX, &mode.inkToDeviceScaleY, &mode.packetPropertiesCount, &mode.pPacketProperties);
+		CoTaskMemFree(mode.pPacketProperties);
 		CoTaskMemFree(pTcids);
 	}
-	piRtsSrc->GetPacketDescriptionData(pStylusInfo->tcid, nullptr, nullptr, &ulPacketProperties, &pPacketProperties);
+	{
+		piRtsSrc->GetPacketDescriptionData(pStylusInfo->tcid, nullptr, nullptr, &mode.packetPropertiesCount, &mode.pPacketProperties);
+	}
 
 	// 获取数据包信息
-	for (int i = 0; i < ulPacketProperties; i++)
+	for (int i = 0; i < mode.packetPropertiesCount; i++)
 	{
-		GUID guid = pPacketProperties[i].guid;
+		GUID guid = mode.pPacketProperties[i].guid;
 		if (guid == GUID_PACKETPROPERTY_GUID_X) mode.pt.x = LONG(pPacket[i] * mode.inkToDeviceScaleX + 0.5);
 		else if (guid == GUID_PACKETPROPERTY_GUID_Y) mode.pt.y = LONG(pPacket[i] * mode.inkToDeviceScaleY + 0.5);
 		else if (guid == GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE)
 		{
-			mode.logicalMin = pPacketProperties[i].PropertyMetrics.nLogicalMin;
-			mode.logicalMax = pPacketProperties[i].PropertyMetrics.nLogicalMax;
+			mode.pressureMin = mode.pPacketProperties[i].PropertyMetrics.nLogicalMin;
+			mode.pressureMax = mode.pPacketProperties[i].PropertyMetrics.nLogicalMax;
 
-			mode.pressure = double(pPacket[i] - mode.logicalMin) / double(mode.logicalMax - mode.logicalMin);
+			mode.pressure = double(pPacket[i] - mode.pressureMin) / double(mode.pressureMax - mode.pressureMin);
 		}
 		else if (guid == GUID_PACKETPROPERTY_GUID_WIDTH) mode.touchWidth = LONG(pPacket[i] * mode.inkToDeviceScaleX + 0.5);
 		else if (guid == GUID_PACKETPROPERTY_GUID_HEIGHT) mode.touchHeight = LONG(pPacket[i] * mode.inkToDeviceScaleY + 0.5);
 	}
-	CoTaskMemFree(pPacketProperties);
+
 	// 获取设备类型
 	int deviceType = 0;
 	{
@@ -197,7 +199,7 @@ HRESULT CSyncEventHandlerRTS::StylusDown(IRealTimeStylus* piRtsSrc, const Stylus
 			else if (temp == TabletDeviceKind::TDK_Pen) mode.type = deviceType = 1;
 			else
 			{
-				if (KeyBoradDown[VK_RBUTTON] && !KeyBoradDown[VK_LBUTTON]) mode.type = deviceType = 3;
+				if (IdtInputs::IsKeyBoardDown(VK_RBUTTON) && !IdtInputs::IsKeyBoardDown(VK_LBUTTON)) mode.type = deviceType = 3;
 				else mode.type = deviceType = 2;
 			}
 		}
@@ -262,6 +264,10 @@ HRESULT CSyncEventHandlerRTS::StylusUp(IRealTimeStylus*, const StylusInfo* pStyl
 					touchNum = max(0, touchNum - 1);
 				if (TouchPos[pid].type == 1)
 					inkNum = max(0, inkNum - 1);
+
+				if (TouchPos[pid].pPacketProperties != nullptr) CoTaskMemFree(TouchPos[pid].pPacketProperties);
+
+				// erase
 			}
 		}
 		lockPointPosSm.unlock();
@@ -288,10 +294,6 @@ HRESULT CSyncEventHandlerRTS::Packets(IRealTimeStylus* piRtsSrc, const StylusInf
 {
 	// 这是一个移动状态
 
-	ULONG ulPacketProperties;
-	PACKET_PROPERTY* pPacketProperties;
-	piRtsSrc->GetPacketDescriptionData(pStylusInfo->tcid, nullptr, nullptr, &ulPacketProperties, &pPacketProperties);
-
 	shared_lock<shared_mutex> lockTouchPointer(touchPointerSm);
 	int pid = TouchPointer[pStylusInfo->cid];
 	lockTouchPointer.unlock();
@@ -299,16 +301,15 @@ HRESULT CSyncEventHandlerRTS::Packets(IRealTimeStylus* piRtsSrc, const StylusInf
 	shared_lock<shared_mutex> lock1(touchPosSm);
 	TouchMode mode = TouchPos[pid];
 	lock1.unlock();
-	for (int i = 0; i < ulPacketProperties; i++)
+	for (int i = 0; i < mode.packetPropertiesCount; i++)
 	{
-		GUID guid = pPacketProperties[i].guid;
+		GUID guid = mode.pPacketProperties[i].guid;
 		if (guid == GUID_PACKETPROPERTY_GUID_X) mode.pt.x = LONG(pPacket[i] * mode.inkToDeviceScaleX + 0.5);
 		else if (guid == GUID_PACKETPROPERTY_GUID_Y) mode.pt.y = LONG(pPacket[i] * mode.inkToDeviceScaleY + 0.5);
-		else if (guid == GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE) mode.pressure = double(pPacket[i] - mode.logicalMin) / double(mode.logicalMax - mode.logicalMin);
+		else if (guid == GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE) mode.pressure = double(pPacket[i] - mode.pressureMin) / double(mode.pressureMax - mode.pressureMin);
 		else if (guid == GUID_PACKETPROPERTY_GUID_WIDTH) mode.touchWidth = LONG(pPacket[i] * mode.inkToDeviceScaleX + 0.5);
 		else if (guid == GUID_PACKETPROPERTY_GUID_HEIGHT) mode.touchHeight = LONG(pPacket[i] * mode.inkToDeviceScaleY + 0.5);
 	}
-	CoTaskMemFree(pPacketProperties);
 
 	unique_lock<shared_mutex> lock2(touchPosSm);
 	TouchPos[pid] = mode;

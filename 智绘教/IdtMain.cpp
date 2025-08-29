@@ -13,7 +13,7 @@
 
 #include "IdtMain.h"
 
-#include "IdtBar.h"
+#include "CrashHandler/CrashHandler.h"
 #include "IdtConfiguration.h"
 #include "IdtD2DPreparation.h"
 #include "IdtDisplayManagement.h"
@@ -35,8 +35,9 @@
 #include "IdtTime.h"
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
+#include "Inkeys/Other/IdtGesture.h"
+#include "Inkeys/Load/IdtFontLoad.h"
 #include "Launch/IdtLaunchState.h"
-#include "CrashHandler/CrashHandler.h"
 #include "SuperTop/IdtSuperTop.h"
 
 #include <lm.h>
@@ -45,8 +46,8 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250822a";				// 程序发布日期
-wstring editionChannel = L"LTS";				// 程序发布通道
+wstring editionDate = L"20250830a";				// 程序发布日期
+wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -1091,38 +1092,40 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 字体初始化
 	{
-		INT numFound = 0;
-		HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
-		HGLOBAL hMem = LoadResource(NULL, hRes);
-		void* pLock = LockResource(hMem);
-		DWORD dwSize = SizeofResource(NULL, hRes);
-
-		fontCollection.AddMemoryFont(pLock, dwSize);
-		fontCollection.GetFamilies(1, &HarmonyOS_fontFamily, &numFound);
-
 		{
-			if (_waccess((globalPath + L"ttf").c_str(), 0) == -1)
-			{
-				error_code ec;
-				filesystem::create_directory(globalPath + L"ttf", ec);
-			}
-			ExtractResource((globalPath + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
+			INT numFound = 0;
+			HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
+			HGLOBAL hMem = LoadResource(NULL, hRes);
+			void* pLock = LockResource(hMem);
+			DWORD dwSize = SizeofResource(NULL, hRes);
 
-			IdtFontCollectionLoader* D2DFontCollectionLoader = new IdtFontCollectionLoader;
-			D2DFontCollectionLoader->AddFont(D2DTextFactory, globalPath + L"ttf\\hmossscr.ttf");
+			fontCollection.AddMemoryFont(pLock, dwSize);
+			fontCollection.GetFamilies(1, &HarmonyOS_fontFamily, &numFound);
 
-			D2DTextFactory->RegisterFontCollectionLoader(D2DFontCollectionLoader);
-			D2DTextFactory->CreateCustomFontCollection(D2DFontCollectionLoader, 0, 0, &D2DFontCollection);
-			D2DTextFactory->UnregisterFontCollectionLoader(D2DFontCollectionLoader);
+			stringFormat.SetAlignment(StringAlignmentCenter);
+			stringFormat.SetLineAlignment(StringAlignmentCenter);
+			stringFormat.SetFormatFlags(StringFormatFlagsNoWrap);
+
+			stringFormat_left.SetAlignment(StringAlignmentNear);
+			stringFormat_left.SetLineAlignment(StringAlignmentNear);
+			stringFormat_left.SetFormatFlags(StringFormatFlagsNoWrap);
 		}
 
-		stringFormat.SetAlignment(StringAlignmentCenter);
-		stringFormat.SetLineAlignment(StringAlignmentCenter);
-		stringFormat.SetFormatFlags(StringFormatFlagsNoWrap);
+		{
+			vector<UINT> fontResourceIDs;
+			fontResourceIDs.emplace_back(198); // HarmonyOS Sans SC
 
-		stringFormat_left.SetAlignment(StringAlignmentNear);
-		stringFormat_left.SetLineAlignment(StringAlignmentNear);
-		stringFormat_left.SetFormatFlags(StringFormatFlagsNoWrap);
+			IdtFontFileLoader::IsLoaderInitialized();
+			IdtFontCollectionLoader::IsLoaderInitialized();
+
+			D2DTextFactory->RegisterFontFileLoader(IdtFontFileLoader::GetLoader());
+			D2DTextFactory->RegisterFontCollectionLoader(IdtFontCollectionLoader::GetLoader());
+
+			IDWriteFontCollection* tempFontCollection = nullptr;
+			D2DTextFactory->CreateCustomFontCollection(IdtFontCollectionLoader::GetLoader(), fontResourceIDs.data(), static_cast<UINT32>(fontResourceIDs.size() * sizeof(UINT)), &tempFontCollection);
+
+			D2DFontCollection.Attach(tempFontCollection);
+		}
 
 		IDTLogger->info("[主线程][IdtMain] 字体初始化完成");
 	}
@@ -1133,18 +1136,29 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		if (userId == L"Error") ClassName = L"HiEasyX041";
 		else ClassName = userId;
 
+		// 窗口创建完成后处理的
+		auto disableGestureFuc = [&](HWND hWnd) -> void
+			{
+				IdtGesture::DisableEdgeGestures(hWnd, true);
+			};
+		auto touchRegisterFuc = [&](HWND hWnd) -> void
+			{
+				RegisterTouchWindow(hWnd, 0);
+				disableGestureFuc(hWnd);
+			};
+
 		CreateMagnifierWindow();
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
 		freeze_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys5 FreezeWindow", (L"Inkeys1;" + ClassName).c_str(), nullptr, magnifierWindow);
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
-		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys4 DrawpadWindow", (L"Inkeys2;" + ClassName).c_str(), nullptr, freeze_window);
+		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys4 DrawpadWindow", (L"Inkeys2;" + ClassName).c_str(), nullptr, freeze_window, disableGestureFuc);
 
 		SettingWindowBegin();
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
-		ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys2 PptWindow", (L"Inkeys4;" + ClassName).c_str(), nullptr, setting_window);
+		ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys2 PptWindow", (L"Inkeys4;" + ClassName).c_str(), nullptr, setting_window, touchRegisterFuc);
 		//ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys2 PptWindow", (L"Inkeys4;" + ClassName).c_str(), nullptr, drawpad_window);
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
@@ -1253,7 +1267,22 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] 线程初始化完成");
 	}
-	CrashHandler::IsSecond(false);
+
+	{
+		// 创建测试控制台
+
+#ifndef IDT_RELEASE
+		{
+			AllocConsole();
+			FILE* fp;
+			freopen_s(&fp, "CONOUT$", "w", stdout);
+			freopen_s(&fp, "CONOUT$", "w", stderr);
+			std::ios::sync_with_stdio();
+
+			std::wcout.imbue(std::locale("chs"));
+		}
+#endif
+	}
 
 	IDTLogger->info("[主线程][IdtMain] 开始等待关闭程序信号发出");
 

@@ -14,6 +14,7 @@
 #include "IdtTime.h"
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
+#include "Inkeys/Other/IdtInputs.h"
 
 #include <queue>
 
@@ -39,7 +40,6 @@ shared_mutex drawWaitingSm;
 IMAGE drawpad(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)); //主画板
 IMAGE window_background(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 
-unordered_map<BYTE, bool> KeyBoradDown;
 HHOOK DrawpadHookCall;
 bool IsHotkeyDown;
 LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
@@ -48,17 +48,17 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 	{
 		KBDLLHOOKSTRUCT* pKeyInfo = (KBDLLHOOKSTRUCT*)lParam;
 
-		if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) KeyBoradDown[(BYTE)pKeyInfo->vkCode] = true;
-		else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) KeyBoradDown[(BYTE)pKeyInfo->vkCode] = false;
+		if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) IdtInputs::SetKeyBoardDown((BYTE)pKeyInfo->vkCode, true);
+		else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) IdtInputs::SetKeyBoardDown((BYTE)pKeyInfo->vkCode, false);
 
-		if (!IsHotkeyDown && (KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]) && (KeyBoradDown[VK_LWIN] || KeyBoradDown[VK_RWIN]) && (KeyBoradDown[VK_MENU] || KeyBoradDown[VK_LMENU] || KeyBoradDown[VK_RMENU]))
+		if (!IsHotkeyDown && (IdtInputs::IsKeyBoardDown(VK_CONTROL) || IdtInputs::IsKeyBoardDown(VK_LCONTROL) || IdtInputs::IsKeyBoardDown(VK_RCONTROL)) && (IdtInputs::IsKeyBoardDown(VK_LWIN) || IdtInputs::IsKeyBoardDown(VK_RWIN)) && (IdtInputs::IsKeyBoardDown(VK_MENU) || IdtInputs::IsKeyBoardDown(VK_LMENU) || IdtInputs::IsKeyBoardDown(VK_RMENU)))
 		{
 			IsHotkeyDown = true;
 
 			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) ChangeStateModeToPen();
 			else ChangeStateModeToSelection();
 		}
-		else if (IsHotkeyDown && !(KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]) && !(KeyBoradDown[VK_LWIN] || KeyBoradDown[VK_RWIN]) && !(KeyBoradDown[VK_MENU] || KeyBoradDown[VK_LMENU] || KeyBoradDown[VK_RMENU])) IsHotkeyDown = false;
+		else if (IsHotkeyDown && !(IdtInputs::IsKeyBoardDown(VK_CONTROL) || IdtInputs::IsKeyBoardDown(VK_LCONTROL) || IdtInputs::IsKeyBoardDown(VK_RCONTROL)) && !(IdtInputs::IsKeyBoardDown(VK_LWIN) || IdtInputs::IsKeyBoardDown(VK_RWIN)) && !(IdtInputs::IsKeyBoardDown(VK_MENU) || IdtInputs::IsKeyBoardDown(VK_LMENU) || IdtInputs::IsKeyBoardDown(VK_RMENU))) IsHotkeyDown = false;
 
 		// 全局状态变量
 		bool checkEndShowIsChecking = CheckEndShow.isChecking;
@@ -75,7 +75,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			case VK_DOWN:   // 下箭头
 			case VK_RETURN: // Enter
 			{
-				if (KeyBoradDown[(BYTE)pKeyInfo->vkCode])
+				if (IdtInputs::IsKeyBoardDown((BYTE)pKeyInfo->vkCode))
 				{
 					pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
 					pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
@@ -90,7 +90,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			case VK_UP:     // 上箭头
 			case VK_BACK:   // Backsapce
 			{
-				if (KeyBoradDown[(BYTE)pKeyInfo->vkCode])
+				if (IdtInputs::IsKeyBoardDown((BYTE)pKeyInfo->vkCode))
 				{
 					pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
 					pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
@@ -114,7 +114,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			msgKey.vkcode = (BYTE)pKeyInfo->vkCode;
 
 			// 借用结构：是否按下 ctrl
-			msgKey.prevdown = (KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]);
+			msgKey.prevdown = (IdtInputs::IsKeyBoardDown(VK_CONTROL) || IdtInputs::IsKeyBoardDown(VK_LCONTROL) || IdtInputs::IsKeyBoardDown(VK_RCONTROL));
 
 			int index = hiex::GetWindowIndex(drawpad_window, false);
 			unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
@@ -218,7 +218,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 		}
 		*/
 		// 穿透所需的额外情况（穿透模式下禁用 Ctrl + E，用于关闭穿透）
-		else if (penetrate.select && (KeyBoradDown[VK_CONTROL] || KeyBoradDown[VK_LCONTROL] || KeyBoradDown[VK_RCONTROL]) && (BYTE)pKeyInfo->vkCode == (BYTE)0x45)
+		else if (penetrate.select && (IdtInputs::IsKeyBoardDown(VK_CONTROL) || IdtInputs::IsKeyBoardDown(VK_LCONTROL) || IdtInputs::IsKeyBoardDown(VK_RCONTROL)) && (BYTE)pKeyInfo->vkCode == (BYTE)0x45)
 		{
 			ExMessage msgKey = {};
 			msgKey.message = wParam;
@@ -276,7 +276,8 @@ void KeyboardInteraction()
 					std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 					while (1)
 					{
-						if (!KeyBoradDown[vkcode]) break;
+						if (!IdtInputs::IsKeyBoardDown(vkcode)) break;
+
 						if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400) PreviousPptSlides();
 
 						this_thread::sleep_for(chrono::milliseconds(15));
@@ -307,7 +308,7 @@ void KeyboardInteraction()
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 						while (1)
 						{
-							if (!KeyBoradDown[vkcode]) break;
+							if (!IdtInputs::IsKeyBoardDown(vkcode)) break;
 
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
@@ -335,7 +336,7 @@ void KeyboardInteraction()
 			{
 				auto vkcode = m.vkcode;
 
-				while (KeyBoradDown[vkcode]) this_thread::sleep_for(chrono::milliseconds(20));
+				while (IdtInputs::IsKeyBoardDown(vkcode)) this_thread::sleep_for(chrono::milliseconds(20));
 
 				if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 				{
@@ -354,7 +355,7 @@ void KeyboardInteraction()
 		{
 			while (1)
 			{
-				if (!KeyBoradDown[(BYTE)0x51])
+				if (!IdtInputs::IsKeyBoardDown((BYTE)0x51))
 				{
 					if (FreezeFrame.mode != 1)
 					{
@@ -380,7 +381,7 @@ void KeyboardInteraction()
 		{
 			while (1)
 			{
-				if (!KeyBoradDown[(BYTE)0x45])
+				if (!IdtInputs::IsKeyBoardDown((BYTE)0x45))
 				{
 					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection)
 					{
@@ -408,7 +409,7 @@ void KeyboardInteraction()
 		{
 			while (1)
 			{
-				if (!KeyBoradDown[(BYTE)0x5A])
+				if (!IdtInputs::IsKeyBoardDown((BYTE)0x5A))
 				{
 					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && (!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0))) IdtRecall();
 					else if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && RecallImage.empty() && current_record_pointer <= total_record_pointer + 1 && practical_total_record_pointer) IdtRecovery();
@@ -424,7 +425,6 @@ void KeyboardInteraction()
 	}
 }
 
-HCURSOR hArrowCursor = LoadCursor(nullptr, IDC_ARROW);
 LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	switch (msg)
@@ -461,43 +461,6 @@ LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 	}
 
 	return HIWINDOW_DEFAULT_PROC;
-}
-BOOL DisableEdgeGestures(HWND hwnd, BOOL disable)
-{
-	typedef HRESULT(WINAPI* SHGetPropertyStoreForWindowFunc)(HWND, REFIID, void**);
-
-	HMODULE hShcore = LoadLibrary(TEXT("Shell32.dll"));
-	if (!hShcore) return FALSE;
-
-	SHGetPropertyStoreForWindowFunc pSHGetPropertyStoreForWindow = (SHGetPropertyStoreForWindowFunc)GetProcAddress(hShcore, "SHGetPropertyStoreForWindow");
-	if (!pSHGetPropertyStoreForWindow)
-	{
-		FreeLibrary(hShcore);
-		return FALSE;
-	}
-
-	IPropertyStore* pPropStore = NULL;
-	HRESULT hr = pSHGetPropertyStoreForWindow(hwnd, IID_PPV_ARGS(&pPropStore));
-
-	if (SUCCEEDED(hr))
-	{
-		PROPERTYKEY propKey;
-		propKey.fmtid = GUID{ 0x32CE38B2, 0x2C9A, 0x41B1, { 0x9B, 0xC5, 0xB3, 0x78, 0x43, 0x94, 0xAA, 0x44 } };
-		propKey.pid = 2;
-
-		PROPVARIANT propVar;
-		PropVariantInit(&propVar);
-		propVar.vt = VT_BOOL;
-		propVar.boolVal = (disable ? VARIANT_TRUE : VARIANT_FALSE);
-
-		hr = pPropStore->SetValue(propKey, propVar);
-
-		PropVariantClear(&propVar);
-		pPropStore->Release();
-	}
-
-	FreeLibrary(hShcore);
-	return SUCCEEDED(hr);
 }
 
 // 落笔预备
@@ -2134,11 +2097,9 @@ int drawpad_main()
 
 		SetWindowPos(drawpad_window, NULL, MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 	}
-	// 禁用手势 初始化
-	{
-		hiex::SetWndProcFunc(drawpad_window, DrawpadMsgCallback);
-		DisableEdgeGestures(drawpad_window, true);
-	}
+
+	// 设置自定义窗口消息回调
+	hiex::SetWndProcFunc(drawpad_window, DrawpadMsgCallback);
 
 	//初始化数值
 	{

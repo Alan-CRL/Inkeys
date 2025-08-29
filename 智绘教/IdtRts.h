@@ -15,10 +15,12 @@ struct TouchMode
 	bool isInvertedCursor;
 
 	// 辅助变量
-	FLOAT inkToDeviceScaleX;
-	FLOAT inkToDeviceScaleY;
-	LONG logicalMin;
-	LONG logicalMax;
+	FLOAT inkToDeviceScaleX = 1.0f;
+	FLOAT inkToDeviceScaleY = 1.0f;
+	LONG pressureMin = 0;
+	LONG pressureMax = 1;
+	ULONG packetPropertiesCount = 0;
+	PACKET_PROPERTY* pPacketProperties = nullptr;
 
 	// 信息变量
 	int type; // 触摸0 手写笔1 左键2 右键3

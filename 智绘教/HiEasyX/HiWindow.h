@@ -16,6 +16,7 @@
 
 #include <shared_mutex>
 #include <deque>
+#include <functional>
 
 #ifdef _MSC_VER
 #pragma comment (lib, "Msimg32.lib")
@@ -352,7 +353,8 @@ namespace HiEasyX
 		LPCTSTR lpszWndTitle = _T(""),
 		LPCTSTR lpszClassName = _T(""),
 		WNDPROC WindowProcess = nullptr,
-		HWND hParent = nullptr
+		HWND hParent = nullptr,
+		std::function<void(HWND)> fuc = nullptr
 	);
 
 	bool init_console();

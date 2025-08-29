@@ -91,6 +91,21 @@
     <Filter Include="头文件\Inkeys\Json">
       <UniqueIdentifier>{a73c31b1-6419-42a0-a606-f17415f934a6}</UniqueIdentifier>
     </Filter>
+    <Filter Include="源文件\Inkeys">
+      <UniqueIdentifier>{771144f0-3bdf-4e57-ba9b-0016c21287ec}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Inkeys\Load">
+      <UniqueIdentifier>{a27bfd09-a728-4430-b51d-a1f26a4b37e4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Inkeys\Other">
+      <UniqueIdentifier>{3991d6d2-ff04-4376-b628-94262baad76d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Inkeys\Load">
+      <UniqueIdentifier>{fcb88c83-503d-465c-8dee-2fb096808421}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Inkeys\Other">
+      <UniqueIdentifier>{eb6c2d2d-03dd-42b3-bf93-06205242c7f7}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HiEasyX.h">
@@ -720,9 +735,6 @@
     <ClInclude Include="IdtConfiguration.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="IdtBar.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="Launch\IdtLaunchState.h">
       <Filter>头文件\Launch</Filter>
     </ClInclude>
@@ -737,6 +749,15 @@
     </ClInclude>
     <ClInclude Include="Inkeys\Json\IdtJson.h">
       <Filter>头文件\Inkeys\Json</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Other\IdtGesture.h">
+      <Filter>头文件\Inkeys\Other</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Other\IdtInputs.h">
+      <Filter>头文件\Inkeys\Other</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Load\IdtFontLoad.h">
+      <Filter>头文件\Inkeys\Load</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -980,9 +1001,6 @@
     <ClCompile Include="ExtraInclude.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="IdtBar.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="IdtDrawpadList.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -994,6 +1012,15 @@
     </ClCompile>
     <ClCompile Include="SuperTop\IdtSuperTop.cpp">
       <Filter>源文件\SuperTop</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Load\IdtFontLoad.cpp">
+      <Filter>源文件\Inkeys\Load</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Other\IdtGesture.cpp">
+      <Filter>源文件\Inkeys\Other</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Other\IdtInputs.cpp">
+      <Filter>源文件\Inkeys\Other</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
