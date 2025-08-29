@@ -12,7 +12,6 @@
 #pragma comment(lib, "dxgi.lib")
 
 extern CComPtr<ID2D1Factory1> D2DFactory;
-extern D2D1_RENDER_TARGET_PROPERTIES D2DProperty;
 
 extern CComPtr<IDWriteFactory1> D2DTextFactory;
 extern CComPtr<IDWriteFontCollection> D2DFontCollection;
@@ -157,6 +156,3 @@ template <class T> void DxObjectSafeRelease(T** ppT)
 }
 void D2DStarup();
 void D2DShutdown();
-
-D2D1::ColorF ConvertToD2DColor(COLORREF Color, bool ReserveAlpha = true);
-void SetAlpha(COLORREF& Color, int Alpha);

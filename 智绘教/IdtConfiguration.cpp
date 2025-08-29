@@ -140,8 +140,8 @@ bool ReadSetting()
 		if (setlistVal.isMember("Regular") && setlistVal["Regular"].isObject())
 		{
 			{
-				if (setlistVal["Regular"].isMember("MoveRecover") && setlistVal["Regular"]["MoveRecover"].isBool())
-					setlist.regularSetting.moveRecover = setlistVal["Regular"]["MoveRecover"].asBool();
+				if (setlistVal["Regular"].isMember("MoveRecover") && setlistVal["Regular"]["MoveRecover1"].isBool())
+					setlist.regularSetting.moveRecover = setlistVal["Regular"]["MoveRecover1"].asBool();
 				if (setlistVal["Regular"].isMember("ClickRecover") && setlistVal["Regular"]["ClickRecover"].isBool())
 					setlist.regularSetting.clickRecover = setlistVal["Regular"]["ClickRecover"].asBool();
 			}
@@ -405,7 +405,7 @@ bool WriteSetting()
 			setlistVal["RubberRecover"] = Json::Value(setlist.RubberRecover);
 		}
 		{
-			setlistVal["Regular"]["MoveRecover"] = Json::Value(setlist.regularSetting.moveRecover);
+			setlistVal["Regular"]["MoveRecover1"] = Json::Value(setlist.regularSetting.moveRecover);
 			setlistVal["Regular"]["ClickRecover"] = Json::Value(setlist.regularSetting.clickRecover);
 		}
 		setlistVal["Regular"]["AvoidFullScreen"] = Json::Value(setlist.regularSetting.avoidFullScreen);

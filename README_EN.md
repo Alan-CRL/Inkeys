@@ -40,7 +40,7 @@ We have launched various UI style for large screen touch devices and laptops.
 Make Inkeys easier and more user-friendly on various devices!  
 
 ## Download
-[Github Release Assets](https://github.com/Alan-CRL/IDT/releases) | [Official Website Download(Chinese)](https://www.inkeys.top/col.jsp?id=106)   
+[Github Release Assets](https://github.com/Alan-CRL/Inkeys/releases) | [Official Website Download(Chinese)](https://www.inkeys.top/download)   
 
 #### System Requirements
 The minimum support is `Windows 7 (sp0)` and supports `x86 / x64 / arm64` windows.  

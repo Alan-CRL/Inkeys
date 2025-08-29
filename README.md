@@ -55,10 +55,10 @@
 让智绘教在各个设备上，都更易用，更好用！
 
 ## 下载
-[官网下载页](https://www.inkeys.top/col.jsp?id=106) | [免登录云盘](https://www.123pan.com/s/duk9-n4dAd.html) | [Github Release 附件](https://github.com/Alan-CRL/IDT/releases)  
+[官网下载页](https://www.inkeys.top/download) | [免登录云盘](https://www.123pan.com/s/duk9-n4dAd.html) | [Github Release 附件](https://github.com/Alan-CRL/Inkeys/releases)  
 
 #### 要求
-最低支持 Windows 7 (sp0)，支持 32位 / 64位 / Arm64 系统。  
+最低支持 Windows 7 (RTM, sp0)，支持 32位 / 64位 / Arm64 系统。  
 
 #### 提示
 获取 公测版本 请加 [官方用户QQ群](https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6) 下载。
