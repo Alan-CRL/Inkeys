@@ -28,6 +28,25 @@ Windows 屏幕批注工具，拥有高效批注和丰富功能，
 </div>
 
 ## 集锦(软件介绍)
+
+<div style="
+  margin:32px auto;
+  border: 2px solid #eee;
+  border-radius: 12px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.18);
+  overflow: hidden;
+  background: #fafbfc;
+">
+  <div style="position:relative;width:100%;padding-bottom:56.25%;">
+    <iframe
+      src="//player.bilibili.com/player.html?isOutside=true&aid=114881164481373&bvid=BV17duZzYEsE&cid=25827154050&p=1&high_quality=1&danmaku=1&autoplay=0"
+      style="position:absolute;top:0;left:0;width:100%;height:100%;"
+      frameborder="no"
+      allowfullscreen="true"
+    ></iframe>
+  </div>
+</div>
+
 **[Bilibili 上的 25H2 版本介绍视频](https://www.bilibili.com/video/BV17duZzYEsE/)**  
 [Bilibili 上的 24H2 版本介绍视频（较旧）](https://www.bilibili.com/video/BV1Tz421z72e/)  
 [Bilibili 上的 24H1 版本介绍视频（较旧）](https://www.bilibili.com/video/BV1vJ4m147rN/)  
