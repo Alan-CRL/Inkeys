@@ -17,8 +17,9 @@
 
 [![交流群](https://img.shields.io/badge/-%E4%BA%A4%E6%B5%81%E7%BE%A4%20618720802-blue?style=flat&logo=TencentQQ)](https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6)  ![GitHub issues](https://img.shields.io/github/issues/Alan-CRL/IDT?logo=github&color=green)  ![GitHub stars](https://img.shields.io/github/stars/Alan-CRL/IDT)
 
-Windows 屏幕批注工具，拥有高效批注和丰富功能，  
-让屏幕演示变得简单，让教学授课变得高效，适用于触摸设备和PC端。
+将你的创意随心所欲地书写在屏幕的任意角落。  
+智绘教Inkeys 拥有丝滑流畅的高性能画笔、丰富强大的功能，以及众多贴心小设计，全面提升你的效率与使用体验。  
+软件基于 C++20 编写，专为 Windows 平台打造。  
 
 原名 `Intelligent-Drawing-Teaching`（简称 IDT）
 
@@ -29,25 +30,21 @@ Windows 屏幕批注工具，拥有高效批注和丰富功能，
 
 ## 集锦(软件介绍)
 
-<div style="
-  margin:32px auto;
-  border: 2px solid #eee;
-  border-radius: 12px;
-  box-shadow: 0 8px 40px rgba(0,0,0,0.18);
-  overflow: hidden;
-  background: #fafbfc;
-">
-  <div style="position:relative;width:100%;padding-bottom:56.25%;">
-    <iframe
-      src="//player.bilibili.com/player.html?isOutside=true&aid=114881164481373&bvid=BV17duZzYEsE&cid=25827154050&p=1&high_quality=1&danmaku=1&autoplay=0"
-      style="position:absolute;top:0;left:0;width:100%;height:100%;"
-      frameborder="no"
-      allowfullscreen="true"
-    ></iframe>
-  </div>
-</div>
+<table width="100%">
+  <tr>
+    <td>
+      <img alt="封面" src="https://i0.hdslb.com/bfs/archive/8542868871ee67b16f385ae31ad36f52280dfc4b.jpg" height="100" style="width:auto;" />
+    </td>
+    <td>
+      <b>
+        <a href="https://www.bilibili.com/video/BV17duZzYEsE/" target="_blank">
+          Bilibili 上的 25H2 版本介绍视频
+        </a>
+      </b>
+    </td>
+  </tr>
+</table>
 
-**[Bilibili 上的 25H2 版本介绍视频](https://www.bilibili.com/video/BV17duZzYEsE/)**  
 [Bilibili 上的 24H2 版本介绍视频（较旧）](https://www.bilibili.com/video/BV1Tz421z72e/)  
 [Bilibili 上的 24H1 版本介绍视频（较旧）](https://www.bilibili.com/video/BV1vJ4m147rN/)  
 [Codebus 上的介绍推文（较旧）](https://codebus.cn/alancrl/intelligent-painting-teaching)  
@@ -103,12 +100,15 @@ Windows 屏幕批注工具，拥有高效批注和丰富功能，
 - `dev`：分支仓库，每日及时更新，存储自动保存的源码，可能无法构建
 
 ## 项目引用
-[Dear Imgui](https://github.com/ocornut/imgui)  
-[DesktopDrawpadBlocker](https://github.com/Alan-CRL/DesktopDrawpadBlocker)  
-[Hashlib++](https://github.com/aksalj/hashlibpp)  
-[HiEasyX](https://github.com/zouhuidong/HiEasyX)  
-[JsonCpp](https://github.com/open-source-parsers/jsoncpp)  
-[libcuckoo](https://github.com/efficient/libcuckoo)  
-[Stb](https://github.com/nothings/stb)  
-[WinToast](https://github.com/mohabouje/WinToast)  
+[aksalj/hashlibpp](https://github.com/aksalj/hashlibpp)  
+[Alan-CRL/DesktopDrawpadBlocker](https://github.com/Alan-CRL/DesktopDrawpadBlocker)  
+[cameron314/concurrentqueue](https://github.com/cameron314/concurrentqueue)  
+[efficient/libcuckoo](https://github.com/efficient/libcuckoo)  
+[martinus/unordered_dense](https://github.com/martinus/unordered_dense)  
+[mohabouje/WinToast](https://github.com/mohabouje/WinToast)  
+[nothings/stb](https://github.com/nothings/stb)  
+[ocornut/imgui](https://github.com/ocornut/imgui)  
+[open-source-parsers/jsoncpp](https://github.com/open-source-parsers/jsoncpp)  
+[sammycage/lunasvg](https://github.com/sammycage/lunasvg)  
 [Zip Utils](https://www.codeproject.com/Articles/7530/Zip-Utils-Clean-Elegant-Simple-Cplusplus-Win)  
+[zouhuidong/HiEasyX](https://github.com/zouhuidong/HiEasyX)  
