@@ -30,13 +30,10 @@
 
 ## 集锦(软件介绍)
 
-<table style="width:100%;">
+<table width="100%">
   <tr>
     <td>
-      <a href="https://www.bilibili.com/video/BV17duZzYEsE/" target="_blank">
-        <img alt="封面" src="https://i0.hdslb.com/bfs/archive/8542868871ee67b16f385ae31ad36f52280dfc4b.jpg"
-             height="100" style="width:auto;" />
-      </a>
+      <img alt="封面" src="https://i0.hdslb.com/bfs/archive/8542868871ee67b16f385ae31ad36f52280dfc4b.jpg" height="100" style="width:auto;" />
     </td>
     <td>
       <b>
