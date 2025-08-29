@@ -35,6 +35,7 @@
 #include "IdtState.h"
 #include "IdtI18n.h"
 #include "Inkeys/Other/IdtInputs.h"
+#include "Inkeys/Conv/IdtColor.h"
 
 #include <objbase.h>
 #include <psapi.h>
@@ -1392,13 +1393,13 @@ void PptUI()
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FrameThickness.v = (1) * pptComSetlist.bottomSideBothWidgetScale;
 						if (pptUiWidgetState == PptUiWidgetStateEnum::Close)
 						{
-							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FillColor.v, 0);
-							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FrameColor.v, 0);
+							IdtColor::IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FillColor.v, 0);
+							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FrameColor.v, 0);
 						}
 						else
 						{
-							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FillColor.v, 160);
-							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FrameColor.v, 160);
+							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FillColor.v, 160);
+							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FrameColor.v, 160);
 						}
 					}
 					{
@@ -1407,8 +1408,8 @@ void PptUI()
 						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].X2.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v + (5 + 3) * pptComSetlist.bottomSideBothWidgetScale;
 						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Y2.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Height.v + (-15) * pptComSetlist.bottomSideBothWidgetScale;
 						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Thickness.v = 2 * pptComSetlist.bottomSideBothWidgetScale;
-						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Color.v, 0);
-						else SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Color.v, 250);
+						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) IdtColor::SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Color.v, 0);
+						else IdtColor::SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Color.v, 250);
 					}
 
 					{
@@ -1436,8 +1437,8 @@ void PptUI()
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Left.v + (65) * pptComSetlist.bottomSideBothWidgetScale;
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Top.v + (5 + 30) * pptComSetlist.bottomSideBothWidgetScale;
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].WordsHeight.v = (24) * pptComSetlist.bottomSideBothWidgetScale;
-						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].WordsColor.v, 0);
-						else SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].WordsColor.v, 255);
+						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) IdtColor::SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].WordsColor.v, 0);
+						else IdtColor::SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].WordsColor.v, 255);
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].WordsContent = pptCurrentSlides < 0 ? L"-" : to_wstring(min(9999, pptCurrentSlides));
 
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].Left.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].X.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].Width.v + (5) * pptComSetlist.bottomSideBothWidgetScale;
@@ -1445,8 +1446,8 @@ void PptUI()
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Left.v + (65) * pptComSetlist.bottomSideBothWidgetScale;
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Top.v + (55) * pptComSetlist.bottomSideBothWidgetScale;
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].WordsHeight.v = (16) * pptComSetlist.bottomSideBothWidgetScale;
-						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].WordsColor.v, 0);
-						else SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].WordsColor.v, 255);
+						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) IdtColor::SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].WordsColor.v, 0);
+						else IdtColor::SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].WordsColor.v, 255);
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].WordsContent = L"/" + ((pptTotalSlides < 0) ? L"-" : to_wstring(min(9999, pptTotalSlides)));
 					}
 					{
@@ -1483,13 +1484,13 @@ void PptUI()
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FrameThickness.v = (1) * pptComSetlist.bottomSideBothWidgetScale;
 						if (pptUiWidgetState == PptUiWidgetStateEnum::Close)
 						{
-							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FillColor.v, 0);
-							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FrameColor.v, 0);
+							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FillColor.v, 0);
+							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FrameColor.v, 0);
 						}
 						else
 						{
-							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FillColor.v, 160);
-							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FrameColor.v, 160);
+							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FillColor.v, 160);
+							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FrameColor.v, 160);
 						}
 					}
 
@@ -1518,8 +1519,8 @@ void PptUI()
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Left.v + (65) * pptComSetlist.bottomSideBothWidgetScale;
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Top.v + (5 + 30) * pptComSetlist.bottomSideBothWidgetScale;
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].WordsHeight.v = (24) * pptComSetlist.bottomSideBothWidgetScale;
-						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].WordsColor.v, 0);
-						else SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].WordsColor.v, 255);
+						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) IdtColor::SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].WordsColor.v, 0);
+						else IdtColor::SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].WordsColor.v, 255);
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].WordsContent = pptCurrentSlides < 0 ? L"-" : to_wstring(min(9999, pptCurrentSlides));
 
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].Left.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].X.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].Width.v + (5) * pptComSetlist.bottomSideBothWidgetScale;
@@ -1527,8 +1528,8 @@ void PptUI()
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Left.v + (65) * pptComSetlist.bottomSideBothWidgetScale;
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Top.v + (55) * pptComSetlist.bottomSideBothWidgetScale;
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].WordsHeight.v = (16) * pptComSetlist.bottomSideBothWidgetScale;
-						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].WordsColor.v, 0);
-						else SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].WordsColor.v, 255);
+						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) IdtColor::SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].WordsColor.v, 0);
+						else IdtColor::SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].WordsColor.v, 255);
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].WordsContent = L"/" + ((pptTotalSlides < 0) ? L"-" : to_wstring(min(9999, pptTotalSlides)));
 					}
 					{
@@ -1558,8 +1559,8 @@ void PptUI()
 						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].X2.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].X.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].Width.v + (5 + 2) * pptComSetlist.bottomSideBothWidgetScale;
 						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Y2.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Height.v + (-15) * pptComSetlist.bottomSideBothWidgetScale;
 						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Thickness.v = 2 * pptComSetlist.bottomSideBothWidgetScale;
-						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Color.v, 0);
-						else SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Color.v, 250);
+						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) IdtColor::SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Color.v, 0);
+						else IdtColor::SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Color.v, 250);
 					}
 				}
 
@@ -1576,13 +1577,13 @@ void PptUI()
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FrameThickness.v = (1) * pptComSetlist.middleSideBothWidgetScale;
 						if (pptUiWidgetState == PptUiWidgetStateEnum::Close)
 						{
-							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FillColor.v, 0);
-							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FrameColor.v, 0);
+							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FillColor.v, 0);
+							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FrameColor.v, 0);
 						}
 						else
 						{
-							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FillColor.v, 160);
-							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FrameColor.v, 160);
+							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FillColor.v, 160);
+							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FrameColor.v, 160);
 						}
 					}
 					{
@@ -1591,8 +1592,8 @@ void PptUI()
 						pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].X2.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Width.v + (-15) * pptComSetlist.middleSideBothWidgetScale;
 						pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Y2.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Y.v + (5 + 3) * pptComSetlist.middleSideBothWidgetScale;
 						pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Thickness.v = 2 * pptComSetlist.middleSideBothWidgetScale;
-						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Color.v, 0);
-						else SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Color.v, 250);
+						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) IdtColor::SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Color.v, 0);
+						else IdtColor::SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Color.v, 250);
 					}
 
 					{
@@ -1620,8 +1621,8 @@ void PptUI()
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].Left.v + (50) * pptComSetlist.middleSideBothWidgetScale;
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].Top.v + (5 + 35) * pptComSetlist.middleSideBothWidgetScale;
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].WordsHeight.v = (24) * pptComSetlist.middleSideBothWidgetScale;
-						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].WordsColor.v, 0);
-						else SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].WordsColor.v, 255);
+						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) IdtColor::SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].WordsColor.v, 0);
+						else IdtColor::SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].WordsColor.v, 255);
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].WordsContent = pptCurrentSlides < 0 ? L"-" : to_wstring(min(999, pptCurrentSlides));
 
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].Left.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + (5) * pptComSetlist.middleSideBothWidgetScale;
@@ -1629,8 +1630,8 @@ void PptUI()
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].Left.v + (50) * pptComSetlist.middleSideBothWidgetScale;
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].Top.v + (25) * pptComSetlist.middleSideBothWidgetScale;
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].WordsHeight.v = (16) * pptComSetlist.middleSideBothWidgetScale;
-						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].WordsColor.v, 0);
-						else SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].WordsColor.v, 255);
+						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) IdtColor::SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].WordsColor.v, 0);
+						else IdtColor::SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].WordsColor.v, 255);
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].WordsContent = L"/" + ((pptTotalSlides < 0) ? L"-" : to_wstring(min(999, pptTotalSlides)));
 					}
 					{
@@ -1667,13 +1668,13 @@ void PptUI()
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FrameThickness.v = (1) * pptComSetlist.middleSideBothWidgetScale;
 						if (pptUiWidgetState == PptUiWidgetStateEnum::Close)
 						{
-							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FillColor.v, 0);
-							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FrameColor.v, 0);
+							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FillColor.v, 0);
+							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FrameColor.v, 0);
 						}
 						else
 						{
-							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FillColor.v, 160);
-							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FrameColor.v, 160);
+							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FillColor.v, 160);
+							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FrameColor.v, 160);
 						}
 					}
 					{
@@ -1682,8 +1683,8 @@ void PptUI()
 						pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].X2.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Width.v + (-15) * pptComSetlist.middleSideBothWidgetScale;
 						pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Y2.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y.v + (5 + 3) * pptComSetlist.middleSideBothWidgetScale;
 						pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Thickness.v = 2 * pptComSetlist.middleSideBothWidgetScale;
-						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Color.v, 0);
-						else SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Color.v, 250);
+						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) IdtColor::SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Color.v, 0);
+						else IdtColor::SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Color.v, 250);
 					}
 
 					{
@@ -1711,8 +1712,8 @@ void PptUI()
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].Left.v + (50) * pptComSetlist.middleSideBothWidgetScale;
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].Top.v + (5 + 35) * pptComSetlist.middleSideBothWidgetScale;
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].WordsHeight.v = (24) * pptComSetlist.middleSideBothWidgetScale;
-						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].WordsColor.v, 0);
-						else SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].WordsColor.v, 255);
+						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) IdtColor::SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].WordsColor.v, 0);
+						else IdtColor::SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].WordsColor.v, 255);
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].WordsContent = pptCurrentSlides < 0 ? L"-" : to_wstring(min(999, pptCurrentSlides));
 
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].Left.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + (5) * pptComSetlist.middleSideBothWidgetScale;
@@ -1720,8 +1721,8 @@ void PptUI()
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].Right.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].Left.v + (50) * pptComSetlist.middleSideBothWidgetScale;
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].Bottom.v = pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].Top.v + (25) * pptComSetlist.middleSideBothWidgetScale;
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].WordsHeight.v = (16) * pptComSetlist.middleSideBothWidgetScale;
-						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].WordsColor.v, 0);
-						else SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].WordsColor.v, 255);
+						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) IdtColor::SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].WordsColor.v, 0);
+						else IdtColor::SetAlpha(pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].WordsColor.v, 255);
 						pptUiWordsWidgetTarget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].WordsContent = L"/" + ((pptTotalSlides < 0) ? L"-" : to_wstring(min(999, pptTotalSlides)));
 					}
 					{
@@ -1759,13 +1760,13 @@ void PptUI()
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameThickness.v = (1) * pptComSetlist.bottomSideMiddleWidgetScale;
 						if (pptUiWidgetState == PptUiWidgetStateEnum::Close)
 						{
-							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FillColor.v, 0);
-							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameColor.v, 0);
+							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FillColor.v, 0);
+							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameColor.v, 0);
 						}
 						else
 						{
-							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FillColor.v, 160);
-							SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameColor.v, 160);
+							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FillColor.v, 160);
+							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameColor.v, 160);
 						}
 					}
 					{
@@ -1774,8 +1775,8 @@ void PptUI()
 						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].X2.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X.v + (5 + 3) * pptComSetlist.bottomSideMiddleWidgetScale;
 						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Y2.v = pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Y.v + pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].Height.v + (-15) * pptComSetlist.bottomSideMiddleWidgetScale;
 						pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Thickness.v = 2 * pptComSetlist.bottomSideMiddleWidgetScale;
-						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Color.v, 0);
-						else SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Color.v, 250);
+						if (pptUiWidgetState == PptUiWidgetStateEnum::Close) IdtColor::SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Color.v, 0);
+						else IdtColor::SetAlpha(pptUiLineWidgetTarget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Color.v, 250);
 					}
 
 					{
@@ -2244,6 +2245,13 @@ void PptDraw()
 	// 设置窗口自定义消息回调
 	hiex::SetWndProcFunc(ppt_window, PptWindowMsgCallback);
 
+	auto D2DProperty = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE::D2D1_RENDER_TARGET_TYPE_SOFTWARE,
+		D2D1::PixelFormat(
+			DXGI_FORMAT_B8G8R8A8_UNORM,
+			D2D1_ALPHA_MODE_PREMULTIPLIED
+		), 0.0, 0.0, D2D1_RENDER_TARGET_USAGE_GDI_COMPATIBLE, D2D1_FEATURE_LEVEL_DEFAULT
+	);
+
 	// 创建 EasyX 兼容的 DC Render Target
 	ID2D1DCRenderTarget* DCRenderTarget = nullptr;
 	D2DFactory->CreateDCRenderTarget(&D2DProperty, &DCRenderTarget);
@@ -2538,9 +2546,9 @@ void PptDraw()
 				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget]
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FrameColor.v), &pFrameBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FrameColor.v), &pFrameBrush);
 					ID2D1SolidColorBrush* pFillBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FillColor.v), &pFillBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FillColor.v), &pFillBrush);
 
 					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v,
@@ -2560,7 +2568,7 @@ void PptDraw()
 				// pptUiLineWidget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar]
 				{
 					ID2D1SolidColorBrush* pBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiLineWidget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Color.v), &pBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiLineWidget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Color.v), &pBrush);
 
 					ID2D1StrokeStyle* pStrokeStyle = NULL;
 					D2D1_STROKE_STYLE_PROPERTIES strokeStyleProperties = D2D1::StrokeStyleProperties();
@@ -2583,9 +2591,9 @@ void PptDraw()
 				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage]
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].FrameColor.v), &pFrameBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].FrameColor.v), &pFrameBrush);
 					ID2D1SolidColorBrush* pFillBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].FillColor.v), &pFillBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].FillColor.v), &pFillBrush);
 
 					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].X.v,
@@ -2624,7 +2632,7 @@ void PptDraw()
 					);
 
 					ID2D1SolidColorBrush* pBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(D2D1::ColorF(ConvertToD2DColor(pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].WordsColor.v)), &pBrush);
+					DCRenderTarget->CreateSolidColorBrush(D2D1::ColorF(IdtColor::ConvertToD2dColor(pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].WordsColor.v)), &pBrush);
 
 					textFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
 					textFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
@@ -2661,7 +2669,7 @@ void PptDraw()
 					);
 
 					ID2D1SolidColorBrush* pBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(D2D1::ColorF(ConvertToD2DColor(pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].WordsColor.v)), &pBrush);
+					DCRenderTarget->CreateSolidColorBrush(D2D1::ColorF(IdtColor::ConvertToD2dColor(pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Below].WordsColor.v)), &pBrush);
 
 					textFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
 					textFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
@@ -2686,9 +2694,9 @@ void PptDraw()
 				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage]
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].FrameColor.v), &pFrameBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].FrameColor.v), &pFrameBrush);
 					ID2D1SolidColorBrush* pFillBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].FillColor.v), &pFillBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].FillColor.v), &pFillBrush);
 
 					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].X.v,
@@ -2717,9 +2725,9 @@ void PptDraw()
 				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget]
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FrameColor.v), &pFrameBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FrameColor.v), &pFrameBrush);
 					ID2D1SolidColorBrush* pFillBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FillColor.v), &pFillBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].FillColor.v), &pFillBrush);
 
 					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].X.v,
@@ -2740,9 +2748,9 @@ void PptDraw()
 				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage]
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].FrameColor.v), &pFrameBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].FrameColor.v), &pFrameBrush);
 					ID2D1SolidColorBrush* pFillBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].FillColor.v), &pFillBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].FillColor.v), &pFillBrush);
 
 					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].X.v,
@@ -2781,7 +2789,7 @@ void PptDraw()
 					);
 
 					ID2D1SolidColorBrush* pBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(D2D1::ColorF(ConvertToD2DColor(pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].WordsColor.v)), &pBrush);
+					DCRenderTarget->CreateSolidColorBrush(D2D1::ColorF(IdtColor::ConvertToD2dColor(pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].WordsColor.v)), &pBrush);
 
 					textFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
 					textFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
@@ -2818,7 +2826,7 @@ void PptDraw()
 					);
 
 					ID2D1SolidColorBrush* pBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(D2D1::ColorF(ConvertToD2DColor(pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].WordsColor.v)), &pBrush);
+					DCRenderTarget->CreateSolidColorBrush(D2D1::ColorF(IdtColor::ConvertToD2dColor(pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_RightPageNum_Below].WordsColor.v)), &pBrush);
 
 					textFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
 					textFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
@@ -2843,9 +2851,9 @@ void PptDraw()
 				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage]
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].FrameColor.v), &pFrameBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].FrameColor.v), &pFrameBrush);
 					ID2D1SolidColorBrush* pFillBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].FillColor.v), &pFillBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].FillColor.v), &pFillBrush);
 
 					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].X.v,
@@ -2871,7 +2879,7 @@ void PptDraw()
 				// pptUiLineWidget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar]
 				{
 					ID2D1SolidColorBrush* pBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiLineWidget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Color.v), &pBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiLineWidget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Color.v), &pBrush);
 
 					ID2D1StrokeStyle* pStrokeStyle = NULL;
 					D2D1_STROKE_STYLE_PROPERTIES strokeStyleProperties = D2D1::StrokeStyleProperties();
@@ -2898,9 +2906,9 @@ void PptDraw()
 				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget]
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FrameColor.v), &pFrameBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FrameColor.v), &pFrameBrush);
 					ID2D1SolidColorBrush* pFillBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FillColor.v), &pFillBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].FillColor.v), &pFillBrush);
 
 					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v,
@@ -2920,7 +2928,7 @@ void PptDraw()
 				// pptUiLineWidget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar]
 				{
 					ID2D1SolidColorBrush* pBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiLineWidget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Color.v), &pBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiLineWidget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Color.v), &pBrush);
 
 					ID2D1StrokeStyle* pStrokeStyle = NULL;
 					D2D1_STROKE_STYLE_PROPERTIES strokeStyleProperties = D2D1::StrokeStyleProperties();
@@ -2943,9 +2951,9 @@ void PptDraw()
 				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage]
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].FrameColor.v), &pFrameBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].FrameColor.v), &pFrameBrush);
 					ID2D1SolidColorBrush* pFillBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].FillColor.v), &pFillBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].FillColor.v), &pFillBrush);
 
 					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].X.v,
@@ -2989,7 +2997,7 @@ void PptDraw()
 					);
 
 					ID2D1SolidColorBrush* pBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(D2D1::ColorF(ConvertToD2DColor(pptUiWordsWidget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].WordsColor.v)), &pBrush);
+					DCRenderTarget->CreateSolidColorBrush(D2D1::ColorF(IdtColor::ConvertToD2dColor(pptUiWordsWidget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].WordsColor.v)), &pBrush);
 
 					textFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
 					textFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
@@ -3026,7 +3034,7 @@ void PptDraw()
 					);
 
 					ID2D1SolidColorBrush* pBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(D2D1::ColorF(ConvertToD2DColor(pptUiWordsWidget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].WordsColor.v)), &pBrush);
+					DCRenderTarget->CreateSolidColorBrush(D2D1::ColorF(IdtColor::ConvertToD2dColor(pptUiWordsWidget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Below].WordsColor.v)), &pBrush);
 
 					textFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
 					textFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
@@ -3051,9 +3059,9 @@ void PptDraw()
 				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage]
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].FrameColor.v), &pFrameBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].FrameColor.v), &pFrameBrush);
 					ID2D1SolidColorBrush* pFillBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].FillColor.v), &pFillBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].FillColor.v), &pFillBrush);
 
 					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].X.v,
@@ -3087,9 +3095,9 @@ void PptDraw()
 				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget]
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FrameColor.v), &pFrameBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FrameColor.v), &pFrameBrush);
 					ID2D1SolidColorBrush* pFillBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FillColor.v), &pFillBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].FillColor.v), &pFillBrush);
 
 					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v,
@@ -3109,7 +3117,7 @@ void PptDraw()
 				// pptUiLineWidget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar]
 				{
 					ID2D1SolidColorBrush* pBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiLineWidget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Color.v), &pBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiLineWidget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Color.v), &pBrush);
 
 					ID2D1StrokeStyle* pStrokeStyle = NULL;
 					D2D1_STROKE_STYLE_PROPERTIES strokeStyleProperties = D2D1::StrokeStyleProperties();
@@ -3132,9 +3140,9 @@ void PptDraw()
 				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage]
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].FrameColor.v), &pFrameBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].FrameColor.v), &pFrameBrush);
 					ID2D1SolidColorBrush* pFillBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].FillColor.v), &pFillBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].FillColor.v), &pFillBrush);
 
 					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].X.v,
@@ -3178,7 +3186,7 @@ void PptDraw()
 					);
 
 					ID2D1SolidColorBrush* pBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(D2D1::ColorF(ConvertToD2DColor(pptUiWordsWidget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].WordsColor.v)), &pBrush);
+					DCRenderTarget->CreateSolidColorBrush(D2D1::ColorF(IdtColor::ConvertToD2dColor(pptUiWordsWidget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].WordsColor.v)), &pBrush);
 
 					textFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
 					textFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
@@ -3215,7 +3223,7 @@ void PptDraw()
 					);
 
 					ID2D1SolidColorBrush* pBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(D2D1::ColorF(ConvertToD2DColor(pptUiWordsWidget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].WordsColor.v)), &pBrush);
+					DCRenderTarget->CreateSolidColorBrush(D2D1::ColorF(IdtColor::ConvertToD2dColor(pptUiWordsWidget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Below].WordsColor.v)), &pBrush);
 
 					textFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
 					textFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
@@ -3240,9 +3248,9 @@ void PptDraw()
 				// pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage]
 				{
 					ID2D1SolidColorBrush* pFrameBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].FrameColor.v), &pFrameBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].FrameColor.v), &pFrameBrush);
 					ID2D1SolidColorBrush* pFillBrush = NULL;
-					DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].FillColor.v), &pFillBrush);
+					DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].FillColor.v), &pFillBrush);
 
 					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].X.v,
@@ -3278,9 +3286,9 @@ void PptDraw()
 					// pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget]
 					{
 						ID2D1SolidColorBrush* pFrameBrush = NULL;
-						DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameColor.v), &pFrameBrush);
+						DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FrameColor.v), &pFrameBrush);
 						ID2D1SolidColorBrush* pFillBrush = NULL;
-						DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FillColor.v), &pFillBrush);
+						DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].FillColor.v), &pFillBrush);
 
 						D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
 							pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget].X.v,
@@ -3300,7 +3308,7 @@ void PptDraw()
 					// pptUiLineWidget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar]
 					{
 						ID2D1SolidColorBrush* pBrush = NULL;
-						DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiLineWidget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Color.v), &pBrush);
+						DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiLineWidget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Color.v), &pBrush);
 
 						ID2D1StrokeStyle* pStrokeStyle = NULL;
 						D2D1_STROKE_STYLE_PROPERTIES strokeStyleProperties = D2D1::StrokeStyleProperties();
@@ -3323,9 +3331,9 @@ void PptDraw()
 					// pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow]
 					{
 						ID2D1SolidColorBrush* pFrameBrush = NULL;
-						DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FrameColor.v), &pFrameBrush);
+						DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FrameColor.v), &pFrameBrush);
 						ID2D1SolidColorBrush* pFillBrush = NULL;
-						DCRenderTarget->CreateSolidColorBrush(ConvertToD2DColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FillColor.v), &pFillBrush);
+						DCRenderTarget->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].FillColor.v), &pFillBrush);
 
 						D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
 							pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow].X.v,

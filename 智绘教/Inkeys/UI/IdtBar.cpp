@@ -1788,7 +1788,7 @@ void BarUISetClass::Rendering()
 			barDeviceContext->BeginDraw();
 
 			{
-				D2D1_COLOR_F clearColor = ConvertToD2DColor(RGBA(0, 0, 0, 0));
+				D2D1_COLOR_F clearColor = IdtColor::ConvertToD2dColor(RGBA(0, 0, 0, 0));
 				barDeviceContext->Clear(&clearColor);
 			}
 
