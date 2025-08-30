@@ -2066,7 +2066,7 @@ void SettingMain()
 						ImGui::TextUnformatted(IA("SettingsUI/Version/N").c_str());
 					}
 
-					if (!isWindows8OrGreater)
+					if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateLimit)
 					{
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
