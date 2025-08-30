@@ -98,6 +98,8 @@ enum class BarUISetSvgEnum : int
 };
 enum class BarUISetWordEnum : int
 {
+	BackgroundWarning,
+
 	MainButton,
 
 	DrawAttributeBar_Brush1,
@@ -113,8 +115,8 @@ public:
 	BarUIRendering(BarUISetClass* barUISetClassT) { barUISetClass = barUISetClassT; }
 
 public:
-	bool Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, bool clip = false);
-	bool Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, bool clip = false);
+	bool Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, RECT* targetRect = nullptr, bool clip = false);
+	bool Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, RECT* targetRect = nullptr, bool clip = false);
 	bool Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, const BarUiInheritClass& inh);
 	bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& shape, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT textAlign = DWRITE_TEXT_ALIGNMENT_CENTER);
 

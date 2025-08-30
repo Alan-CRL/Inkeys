@@ -48,7 +48,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250828a";				// 程序发布日期
+wstring editionDate = L"20250831a";				// 程序发布日期
 wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -863,6 +863,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			}
 			// 绘制
 			{
+				setlist.disableRTS = false;
+
 				setlist.liftStraighten = false, setlist.waitStraighten = true;
 				setlist.pointAdsorption = true;
 
@@ -1115,18 +1117,18 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			IdtFontFileLoader::IsLoaderInitialized();
 			IdtFontCollectionLoader::IsLoaderInitialized();
 
-			D2DTextFactory->RegisterFontFileLoader(IdtFontFileLoader::GetLoader());
-			D2DTextFactory->RegisterFontCollectionLoader(IdtFontCollectionLoader::GetLoader());
+			dWriteFactory1->RegisterFontFileLoader(IdtFontFileLoader::GetLoader());
+			dWriteFactory1->RegisterFontCollectionLoader(IdtFontCollectionLoader::GetLoader());
 
 			IDWriteFontCollection* tempFontCollection = nullptr;
-			D2DTextFactory->CreateCustomFontCollection(IdtFontCollectionLoader::GetLoader(), fontResourceIDs.data(), static_cast<UINT32>(fontResourceIDs.size() * sizeof(UINT)), &tempFontCollection);
+			dWriteFactory1->CreateCustomFontCollection(IdtFontCollectionLoader::GetLoader(), fontResourceIDs.data(), static_cast<UINT32>(fontResourceIDs.size() * sizeof(UINT)), &tempFontCollection);
 
-			D2DFontCollection.Attach(tempFontCollection);
+			dWriteFontCollection.Attach(tempFontCollection);
 
 			// ----- 开始诊断代码 -----
-			/*if (D2DFontCollection)
+			/*if (dWriteFontCollection)
 			{
-				UINT32 familyCount = D2DFontCollection->GetFontFamilyCount();
+				UINT32 familyCount = dWriteFontCollection->GetFontFamilyCount();
 				wchar_t buffer[256];
 				swprintf_s(buffer, L"诊断：找到 %u 个字体家族。\n", familyCount);
 				Testw(buffer);
@@ -1134,7 +1136,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				for (UINT32 i = 0; i < familyCount; ++i)
 				{
 					CComPtr<IDWriteFontFamily> fontFamily;
-					HRESULT hr = D2DFontCollection->GetFontFamily(i, &fontFamily);
+					HRESULT hr = dWriteFontCollection->GetFontFamily(i, &fontFamily);
 					if (FAILED(hr)) continue;
 
 					// 获取家族名

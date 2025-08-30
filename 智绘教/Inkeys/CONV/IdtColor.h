@@ -41,7 +41,7 @@ public:
 		return (contrast1 >= contrast2) ? BarLogaColorSchemeEnum::Slate : BarLogaColorSchemeEnum::Default;
 	}
 
-	static D2D1::ColorF ConvertToD2dColor(COLORREF color, double pct = 1.0)
+	static D2D1::ColorF ConvertToD2dColor(COLORREF color, double pct)
 	{
 		return D2D1::ColorF(
 			GetRValue(color) / 255.0f,
@@ -50,12 +50,25 @@ public:
 			static_cast<FLOAT>(pct)
 		);
 	}
+	static D2D1::ColorF ConvertToD2dColor(COLORREF color, bool ReserveAlpha = true)
+	{
+		return D2D1::ColorF(
+			GetRValue(color) / 255.0f,
+			GetGValue(color) / 255.0f,
+			GetBValue(color) / 255.0f,
+			(ReserveAlpha ? GetAValue(color) : 255) / 255.0f
+		);
+	}
 	static bool CompereColorRef(COLORREF col1, COLORREF col2, bool alpha = false)
 	{
 		if (alpha) return col1 == col2;
 		return (GetRValue(col1) == GetRValue(col2)) && (GetGValue(col1) == GetGValue(col2)) && (GetBValue(col1) == GetBValue(col2));
 	}
-	static COLORREF SetAlpha(COLORREF color, int alpha)
+	static void SetAlpha(COLORREF& Color, int Alpha)
+	{
+		Color = (COLORREF)(((Color) & 0xFFFFFF) | ((Alpha) << 24));
+	}
+	static COLORREF SetAlphaR(COLORREF color, int alpha)
 	{
 		return RGBA(GetRValue(color), GetGValue(color), GetBValue(color), alpha);
 	}

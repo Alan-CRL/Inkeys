@@ -241,6 +241,172 @@ LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 				thread(MouseClickCollapse).detach();
 			}
 		}
+
+		// TODO 关闭RTS时，靠钩子仅支持鼠标绘制：具体实验位于 inkeys2-final
+		/*struct DrawpadMsgCallbackInfoStruct
+		{
+			IdtAtomic<bool> isLbuttonDown = false;
+			IdtAtomic<bool> isRbuttonDown = false;
+		};
+		extern DrawpadMsgCallbackInfoStruct drawpadMsgCallbackInfo;*/
+		/*// 输入融合感知：鼠标
+	case WM_LBUTTONDOWN:
+	case WM_RBUTTONDOWN:
+	{
+		// 这是一个按下状态
+
+		// 输入融合感知：鼠标
+		TouchMode mode{};
+		TouchInfo info{};
+
+		// 获取坐标
+		mode.pt.x = GET_X_LPARAM(lParam);
+		mode.pt.y = GET_Y_LPARAM(lParam);
+
+		// 获取设备类型
+		int deviceType = 2;
+		LONG touchCnt = -1;
+		// 右键
+		if (msg == WM_RBUTTONDOWN)
+		{
+			mode.type = deviceType = 3;
+			touchCnt = -2;
+			drawpadMsgCallbackInfo.isRbuttonDown = true;
+		}
+		// 左键
+		else
+		{
+			mode.type = deviceType = 2;
+			touchCnt = -1;
+			drawpadMsgCallbackInfo.isLbuttonDown = true;
+		}
+
+		// 设置固定 PID
+		info.pid = touchCnt;
+
+		std::unique_lock<std::shared_mutex> lock1(touchPosSm);
+		TouchPos[touchCnt] = mode;
+		lock1.unlock();
+
+		std::unique_lock<std::shared_mutex> lock2(touchSpeedSm);
+		TouchSpeed[touchCnt] = 0;
+		PreviousPointPosition[touchCnt].first = PreviousPointPosition[touchCnt].second = -1;
+		lock2.unlock();
+
+		std::unique_lock<std::shared_mutex> lock3(pointListSm);
+		TouchList.push_back(touchCnt);
+		lock3.unlock();
+
+		info.mode = mode;
+
+		std::unique_lock<std::shared_mutex> lock4(touchTempSm);
+		TouchTemp.push_back(info);
+		lock4.unlock();
+
+		rtsNum++, rtsDown = true;
+
+		return 0;
+	}
+
+	case WM_MOUSEMOVE:
+	{
+		if (!drawpadMsgCallbackInfo.isLbuttonDown && !drawpadMsgCallbackInfo.isRbuttonDown) break;
+
+		// 这是一个移动状态
+
+		// 获取坐标
+		auto xO = GET_X_LPARAM(lParam);
+		auto yO = GET_Y_LPARAM(lParam);
+
+		if (drawpadMsgCallbackInfo.isLbuttonDown)
+		{
+			int pid = -1;
+
+			shared_lock<shared_mutex> lock1(touchPosSm);
+			TouchMode mode = TouchPos[pid];
+			lock1.unlock();
+
+			mode.pt.x = xO;
+			mode.pt.y = yO;
+
+			unique_lock<shared_mutex> lock2(touchPosSm);
+			TouchPos[pid] = mode;
+			lock2.unlock();
+		}
+		if (drawpadMsgCallbackInfo.isRbuttonDown)
+		{
+			int pid = -2;
+
+			shared_lock<shared_mutex> lock1(touchPosSm);
+			TouchMode mode = TouchPos[pid];
+			lock1.unlock();
+
+			mode.pt.x = xO;
+			mode.pt.y = yO;
+
+			unique_lock<shared_mutex> lock2(touchPosSm);
+			TouchPos[pid] = mode;
+			lock2.unlock();
+		}
+
+		return 0;
+	}
+
+	case WM_LBUTTONUP:
+	case WM_RBUTTONUP:
+	{
+		// 这是一个抬起状态
+
+		// 先更新最后的位置
+		int pid = -1;
+		{
+			if (msg == WM_RBUTTONUP)
+			{
+				pid = -2;
+				drawpadMsgCallbackInfo.isRbuttonDown = false;
+			}
+			// 左键
+			else
+			{
+				pid = -1;
+				drawpadMsgCallbackInfo.isLbuttonDown = false;
+			}
+
+			shared_lock<shared_mutex> lock1(touchPosSm);
+			TouchMode mode = TouchPos[pid];
+			lock1.unlock();
+
+			mode.pt.x = GET_X_LPARAM(lParam);
+			mode.pt.y = GET_Y_LPARAM(lParam);
+
+			unique_lock<shared_mutex> lock2(touchPosSm);
+			TouchPos[pid] = mode;
+			lock2.unlock();
+		}
+
+		rtsNum = max(0, rtsNum - 1);
+		if (rtsNum == 0) rtsDown = false;
+
+		auto it = std::find(TouchList.begin(), TouchList.end(), pid);
+		if (it != TouchList.end())
+		{
+			unique_lock<shared_mutex> lockPointListSm(pointListSm);
+			TouchList.erase(it);
+			lockPointListSm.unlock();
+		}
+
+		if (rtsNum == 0)
+		{
+			unique_lock<shared_mutex> lockTouchPosSm(touchPosSm);
+			TouchPos.clear();
+			lockTouchPosSm.unlock();
+
+			touchNum = 0;
+			inkNum = 0;
+		}
+
+		return 0;
+	}*/
 	}
 
 	// 继续传递事件给下一个钩子或目标窗口

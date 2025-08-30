@@ -1393,7 +1393,7 @@ void PptUI()
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FrameThickness.v = (1) * pptComSetlist.bottomSideBothWidgetScale;
 						if (pptUiWidgetState == PptUiWidgetStateEnum::Close)
 						{
-							IdtColor::IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FillColor.v, 0);
+							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FillColor.v, 0);
 							IdtColor::SetAlpha(pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].FrameColor.v, 0);
 						}
 						else
@@ -2254,7 +2254,7 @@ void PptDraw()
 
 	// 创建 EasyX 兼容的 DC Render Target
 	ID2D1DCRenderTarget* DCRenderTarget = nullptr;
-	D2DFactory->CreateDCRenderTarget(&D2DProperty, &DCRenderTarget);
+	d2dFactory1->CreateDCRenderTarget(&D2DProperty, &DCRenderTarget);
 
 	// 绑定 EasyX DC
 	RECT PptBackgroundWindowRect = { 0, 0, PptWindowBackground.getwidth(), PptWindowBackground.getheight() };
@@ -2574,7 +2574,7 @@ void PptDraw()
 					D2D1_STROKE_STYLE_PROPERTIES strokeStyleProperties = D2D1::StrokeStyleProperties();
 					strokeStyleProperties.startCap = D2D1_CAP_STYLE_ROUND;
 					strokeStyleProperties.endCap = D2D1_CAP_STYLE_ROUND;
-					D2DFactory->CreateStrokeStyle(&strokeStyleProperties, NULL, 0, &pStrokeStyle);
+					d2dFactory1->CreateStrokeStyle(&strokeStyleProperties, NULL, 0, &pStrokeStyle);
 
 					DCRenderTarget->DrawLine(
 						D2D1::Point2F(pptUiLineWidget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].X1.v, pptUiLineWidget[PptUiLineWidgetID::BottomSide_LeftPageWidget_SeekBar].Y1.v),
@@ -2620,9 +2620,9 @@ void PptDraw()
 				{
 					IDWriteTextFormat* textFormat = NULL;
 
-					D2DTextFactory->CreateTextFormat(
+					dWriteFactory1->CreateTextFormat(
 						L"HarmonyOS Sans SC",
-						D2DFontCollection,
+						dWriteFontCollection,
 						DWRITE_FONT_WEIGHT_NORMAL,
 						DWRITE_FONT_STYLE_NORMAL,
 						DWRITE_FONT_STRETCH_NORMAL,
@@ -2657,9 +2657,9 @@ void PptDraw()
 				{
 					IDWriteTextFormat* textFormat = NULL;
 
-					D2DTextFactory->CreateTextFormat(
+					dWriteFactory1->CreateTextFormat(
 						L"HarmonyOS Sans SC",
-						D2DFontCollection,
+						dWriteFontCollection,
 						DWRITE_FONT_WEIGHT_NORMAL,
 						DWRITE_FONT_STYLE_NORMAL,
 						DWRITE_FONT_STRETCH_NORMAL,
@@ -2777,9 +2777,9 @@ void PptDraw()
 				{
 					IDWriteTextFormat* textFormat = NULL;
 
-					HRESULT hr = D2DTextFactory->CreateTextFormat(
+					HRESULT hr = dWriteFactory1->CreateTextFormat(
 						L"HarmonyOS Sans SC",
-						D2DFontCollection,
+						dWriteFontCollection,
 						DWRITE_FONT_WEIGHT_NORMAL,
 						DWRITE_FONT_STYLE_NORMAL,
 						DWRITE_FONT_STRETCH_NORMAL,
@@ -2814,9 +2814,9 @@ void PptDraw()
 				{
 					IDWriteTextFormat* textFormat = NULL;
 
-					D2DTextFactory->CreateTextFormat(
+					dWriteFactory1->CreateTextFormat(
 						L"HarmonyOS Sans SC",
-						D2DFontCollection,
+						dWriteFontCollection,
 						DWRITE_FONT_WEIGHT_NORMAL,
 						DWRITE_FONT_STYLE_NORMAL,
 						DWRITE_FONT_STRETCH_NORMAL,
@@ -2885,7 +2885,7 @@ void PptDraw()
 					D2D1_STROKE_STYLE_PROPERTIES strokeStyleProperties = D2D1::StrokeStyleProperties();
 					strokeStyleProperties.startCap = D2D1_CAP_STYLE_ROUND;
 					strokeStyleProperties.endCap = D2D1_CAP_STYLE_ROUND;
-					D2DFactory->CreateStrokeStyle(&strokeStyleProperties, NULL, 0, &pStrokeStyle);
+					d2dFactory1->CreateStrokeStyle(&strokeStyleProperties, NULL, 0, &pStrokeStyle);
 
 					DCRenderTarget->DrawLine(
 						D2D1::Point2F(pptUiLineWidget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].X1.v, pptUiLineWidget[PptUiLineWidgetID::BottomSide_RightPageWidget_SeekBar].Y1.v),
@@ -2934,7 +2934,7 @@ void PptDraw()
 					D2D1_STROKE_STYLE_PROPERTIES strokeStyleProperties = D2D1::StrokeStyleProperties();
 					strokeStyleProperties.startCap = D2D1_CAP_STYLE_ROUND;
 					strokeStyleProperties.endCap = D2D1_CAP_STYLE_ROUND;
-					D2DFactory->CreateStrokeStyle(&strokeStyleProperties, NULL, 0, &pStrokeStyle);
+					d2dFactory1->CreateStrokeStyle(&strokeStyleProperties, NULL, 0, &pStrokeStyle);
 
 					DCRenderTarget->DrawLine(
 						D2D1::Point2F(pptUiLineWidget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].X1.v, pptUiLineWidget[PptUiLineWidgetID::MiddleSide_LeftPageWidget_SeekBar].Y1.v),
@@ -2985,9 +2985,9 @@ void PptDraw()
 				{
 					IDWriteTextFormat* textFormat = NULL;
 
-					D2DTextFactory->CreateTextFormat(
+					dWriteFactory1->CreateTextFormat(
 						L"HarmonyOS Sans SC",
-						D2DFontCollection,
+						dWriteFontCollection,
 						DWRITE_FONT_WEIGHT_NORMAL,
 						DWRITE_FONT_STYLE_NORMAL,
 						DWRITE_FONT_STRETCH_NORMAL,
@@ -3022,9 +3022,9 @@ void PptDraw()
 				{
 					IDWriteTextFormat* textFormat = NULL;
 
-					D2DTextFactory->CreateTextFormat(
+					dWriteFactory1->CreateTextFormat(
 						L"HarmonyOS Sans SC",
-						D2DFontCollection,
+						dWriteFontCollection,
 						DWRITE_FONT_WEIGHT_NORMAL,
 						DWRITE_FONT_STYLE_NORMAL,
 						DWRITE_FONT_STRETCH_NORMAL,
@@ -3123,7 +3123,7 @@ void PptDraw()
 					D2D1_STROKE_STYLE_PROPERTIES strokeStyleProperties = D2D1::StrokeStyleProperties();
 					strokeStyleProperties.startCap = D2D1_CAP_STYLE_ROUND;
 					strokeStyleProperties.endCap = D2D1_CAP_STYLE_ROUND;
-					D2DFactory->CreateStrokeStyle(&strokeStyleProperties, NULL, 0, &pStrokeStyle);
+					d2dFactory1->CreateStrokeStyle(&strokeStyleProperties, NULL, 0, &pStrokeStyle);
 
 					DCRenderTarget->DrawLine(
 						D2D1::Point2F(pptUiLineWidget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].X1.v, pptUiLineWidget[PptUiLineWidgetID::MiddleSide_RightPageWidget_SeekBar].Y1.v),
@@ -3174,9 +3174,9 @@ void PptDraw()
 				{
 					IDWriteTextFormat* textFormat = NULL;
 
-					D2DTextFactory->CreateTextFormat(
+					dWriteFactory1->CreateTextFormat(
 						L"HarmonyOS Sans SC",
-						D2DFontCollection,
+						dWriteFontCollection,
 						DWRITE_FONT_WEIGHT_NORMAL,
 						DWRITE_FONT_STYLE_NORMAL,
 						DWRITE_FONT_STRETCH_NORMAL,
@@ -3211,9 +3211,9 @@ void PptDraw()
 				{
 					IDWriteTextFormat* textFormat = NULL;
 
-					D2DTextFactory->CreateTextFormat(
+					dWriteFactory1->CreateTextFormat(
 						L"HarmonyOS Sans SC",
-						D2DFontCollection,
+						dWriteFontCollection,
 						DWRITE_FONT_WEIGHT_NORMAL,
 						DWRITE_FONT_STYLE_NORMAL,
 						DWRITE_FONT_STRETCH_NORMAL,
@@ -3314,7 +3314,7 @@ void PptDraw()
 						D2D1_STROKE_STYLE_PROPERTIES strokeStyleProperties = D2D1::StrokeStyleProperties();
 						strokeStyleProperties.startCap = D2D1_CAP_STYLE_ROUND;
 						strokeStyleProperties.endCap = D2D1_CAP_STYLE_ROUND;
-						D2DFactory->CreateStrokeStyle(&strokeStyleProperties, NULL, 0, &pStrokeStyle);
+						d2dFactory1->CreateStrokeStyle(&strokeStyleProperties, NULL, 0, &pStrokeStyle);
 
 						DCRenderTarget->DrawLine(
 							D2D1::Point2F(pptUiLineWidget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].X1.v, pptUiLineWidget[PptUiLineWidgetID::BottomSide_MiddleWidget_SeekBar].Y1.v),

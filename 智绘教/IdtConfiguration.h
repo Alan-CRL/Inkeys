@@ -47,6 +47,7 @@ struct SetListStruct
 
 #pragma region 绘制
 	int paintDevice;
+	IdtAtomic<bool> disableRTS;
 
 	bool liftStraighten, waitStraighten;
 	bool pointAdsorption;

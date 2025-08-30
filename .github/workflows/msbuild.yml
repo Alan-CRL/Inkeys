@@ -415,6 +415,7 @@ jobs:
             "${{ steps.softwareChannel.outputs.VALUE }}": {
             "edition_date": "${{ steps.softwareDate.outputs.VALUE }}",
             "edition_code": "",
+            "inkeys3": false,
             "hash": {
               "md5": "$md5_1",
               "sha256": "$sha256_1",

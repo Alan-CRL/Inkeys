@@ -99,7 +99,7 @@ namespace PptCOM
         }
         public string CheckCOM()
         {
-            string ret = "20250729a";
+            string ret = "20250830a";
 
             try
             {
@@ -441,7 +441,7 @@ namespace PptCOM
         {
             try
             {
-                int temp_SlideIndex = pptActWindow.View.Slide.SlideIndex;
+                int temp_SlideIndex = *pptCurrentPage;
                 if (temp_SlideIndex != check && check != -1) return;
 
                 // 下一页

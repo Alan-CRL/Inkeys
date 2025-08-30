@@ -11,6 +11,7 @@
 #include "IdtBarUI.h"
 #include "IdtBarState.h"
 #include "IdtBarBottom.h"
+#include "IdtBarRenderingAttribute.h"
 #include "../Other/IdtInputs.h"
 
 #define LUNASVG_BUILD_STATIC
@@ -187,14 +188,14 @@ void BarMediaClass::LoadExImage()
 }
 void BarMediaClass::LoadFormat()
 {
-	formatCache = make_unique<BarFormatCache>(D2DTextFactory);
+	formatCache = make_unique<BarFormatCache>(dWriteFactory1);
 }
 
 // ====================
 // 界面
 
 // 具体渲染
-bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, bool clip)
+bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, RECT* targetRect, bool clip)
 {
 	// 判断是否启用
 	if (shape.enable.val == false) return false;
@@ -260,9 +261,10 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 		}
 	}
 
+	if (targetRect) BarRenderingAttribute::UnionRectInPlace(*targetRect, BarRenderingAttribute::GetWeigetRect(shape, tarZoom));
 	return true;
 }
-bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, bool clip)
+bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, RECT* targetRect, bool clip)
 {
 	// 判断是否启用
 	if (superellipse.enable.val == false) return false;
@@ -344,7 +346,7 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 	if (beziers.empty()) return false;
 
 	CComPtr<ID2D1PathGeometry> geometry;
-	D2DFactory->CreatePathGeometry(&geometry);
+	d2dFactory1->CreatePathGeometry(&geometry);
 
 	{
 		CComPtr<ID2D1GeometrySink> sink;
@@ -398,6 +400,7 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 		}
 	}
 
+	if (targetRect) BarRenderingAttribute::UnionRectInPlace(*targetRect, BarRenderingAttribute::GetWeigetRect(superellipse, tarZoom));
 	return true;
 }
 bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, const BarUiInheritClass& inh)
@@ -472,9 +475,9 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 	IDWriteTextFormat* textFormat = nullptr;
 	{
 		/*IDWriteTextFormat* tmpTextFormat;
-		D2DTextFactory->CreateTextFormat(
+		dWriteFactory1->CreateTextFormat(
 			L"HarmonyOS Sans SC",
-			D2DFontCollection,
+			dWriteFontCollection,
 			DWRITE_FONT_WEIGHT_NORMAL,
 			DWRITE_FONT_STYLE_NORMAL,
 			DWRITE_FONT_STRETCH_NORMAL,
@@ -490,7 +493,7 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 		textFormat = barUISetClass->barMedia.formatCache->GetFormat(
 			L"HarmonyOS Sans SC",
 			tarSize,
-			D2DFontCollection,
+			dWriteFontCollection,
 			fontWeight,
 			DWRITE_FONT_STYLE_NORMAL,
 			DWRITE_FONT_STRETCH_NORMAL,
@@ -575,34 +578,7 @@ void BarUISetClass::Rendering()
 	CComPtr<ID2D1Bitmap1>					barBackgroundBitmap;
 	CComPtr<ID2D1GdiInteropRenderTarget>	barGdiInterop;
 	{
-		CComPtr<ID3D11Device>         d3dDevice;
-		CComPtr<ID2D1Device>          d2dDevice;
-
-		UINT creationFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
-
-		D3D_FEATURE_LEVEL featureLevels[] = {
-			D3D_FEATURE_LEVEL_11_1,
-			D3D_FEATURE_LEVEL_11_0,
-		};
-
-		D3D11CreateDevice(
-			nullptr,                    // 指定 nullptr 使用默认适配器
-			D3D_DRIVER_TYPE_WARP,       // **关键：使用 WARP 软件渲染器**
-			nullptr,                    // 没有软件模块
-			creationFlags,              // 设置支持 BGRA 格式
-			featureLevels,              // 功能级别数组
-			ARRAYSIZE(featureLevels),   // 数组大小
-			D3D11_SDK_VERSION,          // SDK 版本
-			&d3dDevice,                 // 返回创建的设备
-			nullptr,                    // 返回实际的功能级别
-			nullptr                     // 返回设备上下文 (我们不需要)
-		);
-
-		CComPtr<IDXGIDevice> dxgiDevice;
-		d3dDevice.QueryInterface(&dxgiDevice);
-
-		D2DFactory->CreateDevice(dxgiDevice, &d2dDevice);
-		d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &barDeviceContext);
+		d2dDevice_WARP->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &barDeviceContext);
 
 		D2D1_BITMAP_PROPERTIES1 bitmapProperties =
 			D2D1::BitmapProperties1(
@@ -627,6 +603,7 @@ void BarUISetClass::Rendering()
 	}
 
 	chrono::high_resolution_clock::time_point reckon = chrono::high_resolution_clock::now();
+	RECT original = RECT(0, 0, barWindow.w, barWindow.h), current = RECT(0, 0, 0, 0);
 
 	wstring fps;
 	for (int forNum = 1; !offSignal; forNum = 2)
@@ -1666,66 +1643,66 @@ void BarUISetClass::Rendering()
 
 			for (const auto& [key, val] : shapeMap)
 			{
-				bool forceReplace = false;
+				bool forceReplace = false, change = false;
 				if (val->forceReplace) val->forceReplace = false, forceReplace = true;
 
-				if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace);
-				if (!val->x.IsSame()) ChangeValue(val->x, forceReplace);
-				if (!val->y.IsSame()) ChangeValue(val->y, forceReplace);
-				if (!val->w.IsSame()) ChangeValue(val->w, forceReplace);
-				if (!val->h.IsSame()) ChangeValue(val->h, forceReplace);
-				if (val->rw.has_value() && !val->rw->IsSame()) ChangeValue(val->rw.value(), forceReplace);
-				if (val->rh.has_value() && !val->rh->IsSame()) ChangeValue(val->rh.value(), forceReplace);
-				if (val->ft.has_value() && !val->ft->IsSame()) ChangeValue(val->ft.value(), forceReplace);
-				if (val->fill.has_value() && !val->fill->IsSame()) ChangeColor(val->fill.value(), forceReplace);
-				if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value(), forceReplace);
-				if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace);
+				if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace), change = true;
+				if (!val->x.IsSame()) ChangeValue(val->x, forceReplace), change = true;
+				if (!val->y.IsSame()) ChangeValue(val->y, forceReplace), change = true;
+				if (!val->w.IsSame()) ChangeValue(val->w, forceReplace), change = true;
+				if (!val->h.IsSame()) ChangeValue(val->h, forceReplace), change = true;
+				if (val->rw.has_value() && !val->rw->IsSame()) ChangeValue(val->rw.value(), forceReplace), change = true;
+				if (val->rh.has_value() && !val->rh->IsSame()) ChangeValue(val->rh.value(), forceReplace), change = true;
+				if (val->ft.has_value() && !val->ft->IsSame()) ChangeValue(val->ft.value(), forceReplace), change = true;
+				if (val->fill.has_value() && !val->fill->IsSame()) ChangeColor(val->fill.value(), forceReplace), change = true;
+				if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value(), forceReplace), change = true;
+				if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace), change = true;
 			}
 			for (const auto& [key, val] : superellipseMap)
 			{
-				bool forceReplace = false;
+				bool forceReplace = false, change = false;
 				if (val->forceReplace) val->forceReplace = false, forceReplace = true;
 
-				if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace);
-				if (!val->x.IsSame()) ChangeValue(val->x, forceReplace);
-				if (!val->y.IsSame()) ChangeValue(val->y, forceReplace);
-				if (!val->w.IsSame()) ChangeValue(val->w, forceReplace);
-				if (!val->h.IsSame()) ChangeValue(val->h, forceReplace);
-				if (val->n.has_value() && !val->n->IsSame()) ChangeValue(val->n.value(), forceReplace);
-				if (val->ft.has_value() && !val->ft->IsSame()) ChangeValue(val->ft.value(), forceReplace);
-				if (val->fill.has_value() && !val->fill->IsSame()) ChangeColor(val->fill.value(), forceReplace);
-				if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value(), forceReplace);
-				if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace);
+				if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace), change = true;
+				if (!val->x.IsSame()) ChangeValue(val->x, forceReplace), change = true;
+				if (!val->y.IsSame()) ChangeValue(val->y, forceReplace), change = true;
+				if (!val->w.IsSame()) ChangeValue(val->w, forceReplace), change = true;
+				if (!val->h.IsSame()) ChangeValue(val->h, forceReplace), change = true;
+				if (val->n.has_value() && !val->n->IsSame()) ChangeValue(val->n.value(), forceReplace), change = true;
+				if (val->ft.has_value() && !val->ft->IsSame()) ChangeValue(val->ft.value(), forceReplace), change = true;
+				if (val->fill.has_value() && !val->fill->IsSame()) ChangeColor(val->fill.value(), forceReplace), change = true;
+				if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value(), forceReplace), change = true;
+				if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace), change = true;
 			}
 			for (const auto& [key, val] : svgMap)
 			{
-				bool forceReplace = false;
+				bool forceReplace = false, change = false;;
 				if (val->forceReplace) val->forceReplace = false, forceReplace = true;
 
-				if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace);
-				if (!val->x.IsSame()) ChangeValue(val->x, forceReplace);
-				if (!val->y.IsSame()) ChangeValue(val->y, forceReplace);
-				if (!val->w.IsSame()) ChangeValue(val->w, forceReplace);
-				if (!val->h.IsSame()) ChangeValue(val->h, forceReplace);
-				if (val->svg.IsSame()) ChangeString(val->svg, forceReplace);
-				if (val->color1.has_value() && !val->color1->IsSame()) ChangeColor(val->color1.value(), forceReplace);
-				if (val->color2.has_value() && !val->color2->IsSame()) ChangeColor(val->color2.value(), forceReplace);
-				if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace);
+				if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace), change = true;
+				if (!val->x.IsSame()) ChangeValue(val->x, forceReplace), change = true;
+				if (!val->y.IsSame()) ChangeValue(val->y, forceReplace), change = true;
+				if (!val->w.IsSame()) ChangeValue(val->w, forceReplace), change = true;
+				if (!val->h.IsSame()) ChangeValue(val->h, forceReplace), change = true;
+				if (val->svg.IsSame()) ChangeString(val->svg, forceReplace), change = true;
+				if (val->color1.has_value() && !val->color1->IsSame()) ChangeColor(val->color1.value(), forceReplace), change = true;
+				if (val->color2.has_value() && !val->color2->IsSame()) ChangeColor(val->color2.value(), forceReplace), change = true;
+				if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace), change = true;
 			}
 			for (const auto& [key, val] : wordMap)
 			{
-				bool forceReplace = false;
+				bool forceReplace = false, change = false;;
 				if (val->forceReplace) val->forceReplace = false, forceReplace = true;
 
-				if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace);
-				if (!val->x.IsSame()) ChangeValue(val->x, forceReplace);
-				if (!val->y.IsSame()) ChangeValue(val->y, forceReplace);
-				if (!val->w.IsSame()) ChangeValue(val->w, forceReplace);
-				if (!val->h.IsSame()) ChangeValue(val->h, forceReplace);
-				if (!val->size.IsSame()) ChangeValue(val->size, forceReplace);
-				if (!val->content.IsSame()) ChangeString(val->content, forceReplace);
-				if (!val->color.IsSame()) ChangeColor(val->color, forceReplace);
-				if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace);
+				if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace), change = true;
+				if (!val->x.IsSame()) ChangeValue(val->x, forceReplace), change = true;
+				if (!val->y.IsSame()) ChangeValue(val->y, forceReplace), change = true;
+				if (!val->w.IsSame()) ChangeValue(val->w, forceReplace), change = true;
+				if (!val->h.IsSame()) ChangeValue(val->h, forceReplace), change = true;
+				if (!val->size.IsSame()) ChangeValue(val->size, forceReplace), change = true;
+				if (!val->content.IsSame()) ChangeString(val->content, forceReplace), change = true;
+				if (!val->color.IsSame()) ChangeColor(val->color, forceReplace), change = true;
+				if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace), change = true;
 			}
 
 			// 特殊体质：按钮
@@ -1735,61 +1712,68 @@ void BarUISetClass::Rendering()
 				if (temp == nullptr) continue;
 
 				{
-					bool forceReplace = false;
+					bool forceReplace = false, change = false;;
 					if (temp->buttom.forceReplace) temp->buttom.forceReplace = false, forceReplace = true;
 
-					if (!temp->buttom.enable.IsSame()) ChangeState(temp->buttom.enable, forceReplace);
-					if (!temp->buttom.x.IsSame()) ChangeValue(temp->buttom.x, forceReplace);
-					if (!temp->buttom.y.IsSame()) ChangeValue(temp->buttom.y, forceReplace);
-					if (!temp->buttom.w.IsSame()) ChangeValue(temp->buttom.w, forceReplace);
-					if (!temp->buttom.h.IsSame()) ChangeValue(temp->buttom.h, forceReplace);
-					if (temp->buttom.rw.has_value() && !temp->buttom.rw->IsSame()) ChangeValue(temp->buttom.rw.value(), forceReplace);
-					if (temp->buttom.rh.has_value() && !temp->buttom.rh->IsSame()) ChangeValue(temp->buttom.rh.value(), forceReplace);
-					if (temp->buttom.ft.has_value() && !temp->buttom.ft->IsSame()) ChangeValue(temp->buttom.ft.value(), forceReplace);
-					if (temp->buttom.fill.has_value() && !temp->buttom.fill->IsSame()) ChangeColor(temp->buttom.fill.value(), forceReplace);
-					if (temp->buttom.frame.has_value() && !temp->buttom.frame->IsSame()) ChangeColor(temp->buttom.frame.value(), forceReplace);
-					if (!temp->buttom.pct.IsSame()) ChangePct(temp->buttom.pct, forceReplace);
+					if (!temp->buttom.enable.IsSame()) ChangeState(temp->buttom.enable, forceReplace), change = true;
+					if (!temp->buttom.x.IsSame()) ChangeValue(temp->buttom.x, forceReplace), change = true;
+					if (!temp->buttom.y.IsSame()) ChangeValue(temp->buttom.y, forceReplace), change = true;
+					if (!temp->buttom.w.IsSame()) ChangeValue(temp->buttom.w, forceReplace), change = true;
+					if (!temp->buttom.h.IsSame()) ChangeValue(temp->buttom.h, forceReplace), change = true;
+					if (temp->buttom.rw.has_value() && !temp->buttom.rw->IsSame()) ChangeValue(temp->buttom.rw.value(), forceReplace), change = true;
+					if (temp->buttom.rh.has_value() && !temp->buttom.rh->IsSame()) ChangeValue(temp->buttom.rh.value(), forceReplace), change = true;
+					if (temp->buttom.ft.has_value() && !temp->buttom.ft->IsSame()) ChangeValue(temp->buttom.ft.value(), forceReplace), change = true;
+					if (temp->buttom.fill.has_value() && !temp->buttom.fill->IsSame()) ChangeColor(temp->buttom.fill.value(), forceReplace), change = true;
+					if (temp->buttom.frame.has_value() && !temp->buttom.frame->IsSame()) ChangeColor(temp->buttom.frame.value(), forceReplace), change = true;
+					if (!temp->buttom.pct.IsSame()) ChangePct(temp->buttom.pct, forceReplace), change = true;
 				}
 
 				{
-					bool forceReplace = false;
+					bool forceReplace = false, change = false;;
 					if (temp->icon.forceReplace) temp->icon.forceReplace = false, forceReplace = true;
 
-					if (!temp->icon.enable.IsSame()) ChangeState(temp->icon.enable, forceReplace);
-					if (!temp->icon.x.IsSame()) ChangeValue(temp->icon.x, forceReplace);
-					if (!temp->icon.y.IsSame()) ChangeValue(temp->icon.y, forceReplace);
-					if (!temp->icon.w.IsSame()) ChangeValue(temp->icon.w, forceReplace);
-					if (!temp->icon.h.IsSame()) ChangeValue(temp->icon.h, forceReplace);
-					if (!temp->icon.svg.IsSame()) ChangeString(temp->icon.svg, forceReplace);
-					if (temp->icon.color1.has_value() && !temp->icon.color1->IsSame()) ChangeColor(temp->icon.color1.value(), forceReplace);
-					if (temp->icon.color2.has_value() && !temp->icon.color2->IsSame()) ChangeColor(temp->icon.color2.value(), forceReplace);
-					if (!temp->icon.pct.IsSame()) ChangePct(temp->icon.pct, forceReplace);
+					if (!temp->icon.enable.IsSame()) ChangeState(temp->icon.enable, forceReplace), change = true;
+					if (!temp->icon.x.IsSame()) ChangeValue(temp->icon.x, forceReplace), change = true;
+					if (!temp->icon.y.IsSame()) ChangeValue(temp->icon.y, forceReplace), change = true;
+					if (!temp->icon.w.IsSame()) ChangeValue(temp->icon.w, forceReplace), change = true;
+					if (!temp->icon.h.IsSame()) ChangeValue(temp->icon.h, forceReplace), change = true;
+					if (!temp->icon.svg.IsSame()) ChangeString(temp->icon.svg, forceReplace), change = true;
+					if (temp->icon.color1.has_value() && !temp->icon.color1->IsSame()) ChangeColor(temp->icon.color1.value(), forceReplace), change = true;
+					if (temp->icon.color2.has_value() && !temp->icon.color2->IsSame()) ChangeColor(temp->icon.color2.value(), forceReplace), change = true;
+					if (!temp->icon.pct.IsSame()) ChangePct(temp->icon.pct, forceReplace), change = true;
 				}
 
 				{
-					bool forceReplace = false;
+					bool forceReplace = false, change = false;;
 					if (temp->name.forceReplace) temp->name.forceReplace = false, forceReplace = true;
 
-					if (!temp->name.enable.IsSame()) ChangeState(temp->name.enable, forceReplace);
-					if (!temp->name.x.IsSame()) ChangeValue(temp->name.x, forceReplace);
-					if (!temp->name.y.IsSame()) ChangeValue(temp->name.y, forceReplace);
-					if (!temp->name.w.IsSame()) ChangeValue(temp->name.w, forceReplace);
-					if (!temp->name.h.IsSame()) ChangeValue(temp->name.h, forceReplace);
-					if (!temp->name.size.IsSame()) ChangeValue(temp->name.size, forceReplace);
-					if (!temp->name.content.IsSame()) ChangeString(temp->name.content, forceReplace);
-					if (!temp->name.color.IsSame()) ChangeColor(temp->name.color, forceReplace);
-					if (!temp->name.pct.IsSame()) ChangePct(temp->name.pct, forceReplace);
+					if (!temp->name.enable.IsSame()) ChangeState(temp->name.enable, forceReplace), change = true;
+					if (!temp->name.x.IsSame()) ChangeValue(temp->name.x, forceReplace), change = true;
+					if (!temp->name.y.IsSame()) ChangeValue(temp->name.y, forceReplace), change = true;
+					if (!temp->name.w.IsSame()) ChangeValue(temp->name.w, forceReplace), change = true;
+					if (!temp->name.h.IsSame()) ChangeValue(temp->name.h, forceReplace), change = true;
+					if (!temp->name.size.IsSame()) ChangeValue(temp->name.size, forceReplace), change = true;
+					if (!temp->name.content.IsSame()) ChangeString(temp->name.content, forceReplace), change = true;
+					if (!temp->name.color.IsSame()) ChangeColor(temp->name.color, forceReplace), change = true;
+					if (!temp->name.pct.IsSame()) ChangePct(temp->name.pct, forceReplace), change = true;
 				}
 			}
 		}
+		{ /**/ }
 
 		// 渲染 UI
 		{
+			current = RECT(0, 0, 0, 0);
 			barDeviceContext->BeginDraw();
 
+			// 清除背景
 			{
 				D2D1_COLOR_F clearColor = IdtColor::ConvertToD2dColor(RGBA(0, 0, 0, 0));
 				barDeviceContext->Clear(&clearColor);
+
+				// TODO 绘制纯白全透明警告用户开启 aero
+				auto obj = BarUISetWordEnum::BackgroundWarning;
+				spec.Word(barDeviceContext, *wordMap[obj], wordMap[obj]->Inherit(), DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_LEADING);
 			}
 
 			using enum BarUiInheritEnum;
@@ -1806,7 +1790,7 @@ void BarUISetClass::Rendering()
 					// 绘制属性
 					{
 						auto obj = BarUISetShapeEnum::DrawAttributeBar;
-						spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Left, barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->buttom), true);
+						spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Left, barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->buttom), &current, true);
 
 						// Color 区域
 						{
@@ -2089,7 +2073,7 @@ void BarUISetClass::Rendering()
 
 					// 主栏
 					auto obj = BarUISetShapeEnum::MainBar;
-					spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), false);
+					spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), &current, true);
 
 					// 主栏按钮
 					for (int id = 0; id < barButtomSet.tot; id++)
@@ -2107,7 +2091,7 @@ void BarUISetClass::Rendering()
 				// 主按钮
 				{
 					auto obj = BarUISetSuperellipseEnum::MainButton;
-					spec.Superellipse(barDeviceContext, *superellipseMap[obj], superellipseMap[obj]->Inherit(), false);
+					spec.Superellipse(barDeviceContext, *superellipseMap[obj], superellipseMap[obj]->Inherit(), &current, true);
 
 					{
 						auto obj = BarUISetSvgEnum::logo1;
@@ -2126,7 +2110,7 @@ void BarUISetClass::Rendering()
 				pTextFormat = barMedia.formatCache->GetFormat(
 					L"HarmonyOS Sans SC",
 					12.0 * tarZoom,
-					D2DFontCollection,
+					dWriteFontCollection,
 					DWRITE_FONT_WEIGHT_NORMAL,
 					DWRITE_FONT_STYLE_NORMAL,
 					DWRITE_FONT_STRETCH_NORMAL,
@@ -2145,7 +2129,10 @@ void BarUISetClass::Rendering()
 				double tarY = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->inhY + barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetH();
 
 				// 4. 设定绘制区域
-				D2D1_RECT_F layoutRect = D2D1::RectF(tarX * tarZoom, tarY * tarZoom, (tarX + 500) * tarZoom, (tarY + 20) * tarZoom);
+				D2D1_RECT_F layoutRect = D2D1::RectF(tarX * tarZoom, tarY * tarZoom, (tarX + 300) * tarZoom, (tarY + 20) * tarZoom);
+
+				RECT tmp = RECT((LONG)(layoutRect.left), (LONG)(layoutRect.top), (LONG)(layoutRect.right), (LONG)(layoutRect.bottom));
+				BarRenderingAttribute::UnionRectInPlace(current, tmp);
 
 				// 5. 绘制文本
 				barDeviceContext->DrawTextW(
@@ -2158,10 +2145,36 @@ void BarUISetClass::Rendering()
 				);
 			}
 
+			// TODO 脏区更新
+			RECT target = original;
+			original = current;
+			BarRenderingAttribute::UnionRectInPlace(target, current);
+			{
+				// 脏区更新限制
+				if (target.left < 0) target.left = 0;
+				if (target.top < 0) target.top = 0;
+				if (target.right > barWindow.w) target.right = barWindow.w;
+				if (target.bottom > barWindow.h) target.bottom = barWindow.h;
+			}
+
+			{
+				COLORREF frame = RGB(255, 0, 0);
+				D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(target.left, target.top, target.right - 1, target.bottom - 1), 0, 0);
+
+				CComPtr<ID2D1SolidColorBrush> spBorderBrush;
+				barDeviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(frame, 1.0), &spBorderBrush);
+
+				barDeviceContext->DrawRoundedRectangle(&roundedRect, spBorderBrush, 1.0f);
+			}
+
 			barDeviceContext->Flush();
 
 			{
 				// TODO 脏区更新
+				/*RECT target = original;
+				original = current;
+				BarRenderingAttribute::UnionRectInPlace(target, current);*/
+
 				// psize 指定窗口本次更新“新内容”宽高
 				// pptDst 指定新内容贴到屏幕上的位置（左上角）
 				// pptSrc 从源内存 DC 的哪个位置起贴内容
@@ -2174,6 +2187,7 @@ void BarUISetClass::Rendering()
 
 				ulwi.pptDst = &ptDst;
 				ulwi.hdcSrc = hdc;
+				ulwi.prcDirty = &target;
 				UpdateLayeredWindowIndirect(floating_window, &ulwi);
 
 				barGdiInterop->ReleaseDC(nullptr);
@@ -2303,7 +2317,7 @@ void BarUISetClass::Interact()
 							continueFlag = false;
 							if (msg.lbutton)
 							{
-								SetPenColor(IdtColor::SetAlpha(obj->fill.value().tar, 255));
+								SetPenColor(IdtColor::SetAlphaR(obj->fill.value().tar, 255));
 								UpdateRendering();
 
 								while (true)
@@ -2412,6 +2426,8 @@ double BarUISetClass::Seek(const ExMessage& msg)
 		superellipseMap[BarUISetSuperellipseEnum::MainButton]->x.tar += static_cast<double>(p.x - firX) / tarZoom;
 		superellipseMap[BarUISetSuperellipseEnum::MainButton]->y.tar += static_cast<double>(p.y - firY) / tarZoom;
 
+		// TODO 没办法跑到窗口外面
+
 		ret += sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY));
 		firX = static_cast<double>(p.x), firY = static_cast<double>(p.y);
 
@@ -2500,6 +2516,15 @@ void BarInitializationClass::InitializeUI(BarUISetClass& barUISet)
 {
 	// 定义 UI 控件
 	{
+		// 背景层
+		{
+			auto word = make_shared<BarUiWordClass>(700.0, 150.0, 1200.0, 300.0, L"", 30.0, RGB(255, 255, 255));
+			word->content.Initialization(L"软件遇到透明背景无法正常显示的故障\n\nexe属性->关闭使用简化的颜色模式\nWindows7用户请开启Aero主题\n\n联系开发者->软件选项主页中\n重启软件试试");
+			word->pct.Initialization(0.0);
+			word->enable.Initialization(true);
+			barUISet.wordMap[BarUISetWordEnum::BackgroundWarning] = word;
+		}
+
 		// 主按钮
 		{
 			auto superellipse = make_shared<BarUiSuperellipseClass>(100.0, 100.0, 80.0, 80.0, 3.0, 1.0, RGB(24, 24, 24), RGB(255, 255, 255));
