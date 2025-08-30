@@ -63,6 +63,7 @@ EditionInfoClass GetEditionInfo(string channel, string arch)
 			if (editionInfoValue[channel].isMember("edition_date") && editionInfoValue[channel]["edition_date"].isString()) retEditionInfo.editionDate = utf8ToUtf16(editionInfoValue[channel]["edition_date"].asString());
 			else informationCompliance = false;
 			if (editionInfoValue[channel].isMember("edition_code") && editionInfoValue[channel]["edition_code"].isString()) retEditionInfo.editionCode = utf8ToUtf16(editionInfoValue[channel]["edition_code"].asString());
+			if (editionInfoValue[channel].isMember("inkeys3") && editionInfoValue[channel]["inkeys3"].isBool()) retEditionInfo.isInkeys3 = editionInfoValue[channel]["inkeys3"].asBool();
 			if (editionInfoValue[channel].isMember("explain") && editionInfoValue[channel]["explain"].isString()) retEditionInfo.explain = utf8ToUtf16(editionInfoValue[channel]["explain"].asString());
 			if (editionInfoValue[channel].isMember("hash") && editionInfoValue[channel]["hash"].isObject())
 			{
@@ -311,13 +312,6 @@ updateStart:
 
 		updateArch = setlist.updateArchitecture;
 
-		// 无法使用自动更新以及自动修复的情况
-		if (!isWindows8OrGreater)
-		{
-			AutomaticUpdateState = UpdateLimit;
-			state = false;
-		}
-
 		//获取最新版本信息
 		if (state)
 		{
@@ -340,92 +334,101 @@ updateStart:
 		//下载最新版本
 		if (state && editionInfo.editionDate != L"" && ((editionInfo.editionDate > editionDate && setlist.enableAutoUpdate) || mandatoryUpdate))
 		{
-			update = true;
-			if (_waccess((globalPath + L"installer\\update.json").c_str(), 4) == 0 && !mandatoryUpdate)
+			// 无法使用自动更新以及自动修复的情况
+			if (!isWindows8OrGreater && editionInfo.isInkeys3)
 			{
-				wstring tedition, tpath;
-				string thash_md5, thash_sha256;
-				string tarch;
-
-				Json::Reader reader;
-				Json::Value root;
-
-				ifstream readjson;
-				readjson.imbue(locale("zh_CN.UTF8"));
-				readjson.open((globalPath + L"installer\\update.json").c_str());
-
-				bool fileDamage = false;
-				if (reader.parse(readjson, root))
-				{
-					if (root.isMember("edition")) tedition = utf8ToUtf16(root["edition"].asString());
-					else fileDamage = true;
-					if (root.isMember("path")) tpath = utf8ToUtf16(root["path"].asString());
-					else fileDamage = true;
-
-					if (root.isMember("hash"))
-					{
-						if (root["hash"].isMember("md5")) thash_md5 = root["hash"]["md5"].asString();
-						else fileDamage = true;
-						if (root["hash"].isMember("sha256")) thash_sha256 = root["hash"]["sha256"].asString();
-						else fileDamage = true;
-					}
-					else fileDamage = true;
-
-					// 架构确定
-					if (root.isMember("arch")) tarch = root["arch"].asString();
-					else fileDamage = true;
-				}
-				readjson.close();
-
-				if (!fileDamage)
-				{
-					string hash_md5, hash_sha256;
-					{
-						hashwrapper* myWrapper = new md5wrapper();
-						hash_md5 = myWrapper->getHashFromFileW(globalPath + tpath);
-						delete myWrapper;
-					}
-					{
-						hashwrapper* myWrapper = new sha256wrapper();
-						hash_sha256 = myWrapper->getHashFromFileW(globalPath + tpath);
-						delete myWrapper;
-					}
-
-					if (tedition == editionInfo.editionDate && _waccess((globalPath + tpath).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256 && updateArch == tarch)
-					{
-						update = false;
-						AutomaticUpdateState = UpdateRestart;
-					}
-				}
+				AutomaticUpdateState = UpdateLimit;
+				state = false;
 			}
-			if (update)
+			else
 			{
-				AutomaticUpdateState = UpdateDownloading;
-
-				against = true;
-				bool hasUpdateNew = false;
-				for (int i = 0; i < editionInfo.path_size; i++)
+				update = true;
+				if (_waccess((globalPath + L"installer\\update.json").c_str(), 4) == 0 && !mandatoryUpdate)
 				{
-					AutomaticUpdateState = DownloadNewProgram(&downloadNewProgramState, editionInfo, editionInfo.path[i], updateArch);
-					if (AutomaticUpdateState == UpdateRestart)
-					{
-						against = false;
+					wstring tedition, tpath;
+					string thash_md5, thash_sha256;
+					string tarch;
 
-						if (mandatoryUpdate)
-						{
-							mandatoryUpdate = false;
-							RestartProgram();
-						}
-						break;
-					}
-					else if (AutomaticUpdateState == UpdateNew && !mandatoryUpdate)
+					Json::Reader reader;
+					Json::Value root;
+
+					ifstream readjson;
+					readjson.imbue(locale("zh_CN.UTF8"));
+					readjson.open((globalPath + L"installer\\update.json").c_str());
+
+					bool fileDamage = false;
+					if (reader.parse(readjson, root))
 					{
-						hasUpdateNew = true;
-						break;
+						if (root.isMember("edition")) tedition = utf8ToUtf16(root["edition"].asString());
+						else fileDamage = true;
+						if (root.isMember("path")) tpath = utf8ToUtf16(root["path"].asString());
+						else fileDamage = true;
+
+						if (root.isMember("hash"))
+						{
+							if (root["hash"].isMember("md5")) thash_md5 = root["hash"]["md5"].asString();
+							else fileDamage = true;
+							if (root["hash"].isMember("sha256")) thash_sha256 = root["hash"]["sha256"].asString();
+							else fileDamage = true;
+						}
+						else fileDamage = true;
+
+						// 架构确定
+						if (root.isMember("arch")) tarch = root["arch"].asString();
+						else fileDamage = true;
+					}
+					readjson.close();
+
+					if (!fileDamage)
+					{
+						string hash_md5, hash_sha256;
+						{
+							hashwrapper* myWrapper = new md5wrapper();
+							hash_md5 = myWrapper->getHashFromFileW(globalPath + tpath);
+							delete myWrapper;
+						}
+						{
+							hashwrapper* myWrapper = new sha256wrapper();
+							hash_sha256 = myWrapper->getHashFromFileW(globalPath + tpath);
+							delete myWrapper;
+						}
+
+						if (tedition == editionInfo.editionDate && _waccess((globalPath + tpath).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256 && updateArch == tarch)
+						{
+							update = false;
+							AutomaticUpdateState = UpdateRestart;
+						}
 					}
 				}
+				if (update)
+				{
+					AutomaticUpdateState = UpdateDownloading;
 
-				if (hasUpdateNew) continue;
+					against = true;
+					bool hasUpdateNew = false;
+					for (int i = 0; i < editionInfo.path_size; i++)
+					{
+						AutomaticUpdateState = DownloadNewProgram(&downloadNewProgramState, editionInfo, editionInfo.path[i], updateArch);
+						if (AutomaticUpdateState == UpdateRestart)
+						{
+							against = false;
+
+							if (mandatoryUpdate)
+							{
+								mandatoryUpdate = false;
+								RestartProgram();
+							}
+							break;
+						}
+						else if (AutomaticUpdateState == UpdateNew && !mandatoryUpdate)
+						{
+							hasUpdateNew = true;
+							break;
+						}
+					}
+
+					if (hasUpdateNew) continue;
+				}
 			}
 		}
 		else if (state && editionInfo.editionDate != L"")

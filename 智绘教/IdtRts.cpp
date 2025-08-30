@@ -15,7 +15,7 @@ unordered_map<LONG, TouchMode> TouchPos;
 deque<TouchInfo> TouchTemp;
 vector<LONG> TouchList;
 
-LONG TouchCnt = 0;
+IdtAtomic<unsigned short> TouchCnt = 0;
 unordered_map<LONG, LONG> TouchPointer;
 
 shared_mutex touchPosSm, touchSpeedSm, pointListSm, touchTempSm, touchPointerSm;
@@ -150,6 +150,8 @@ IStylusSyncPlugin* CSyncEventHandlerRTS::Create(IRealTimeStylus* pRealTimeStylus
 HRESULT CSyncEventHandlerRTS::StylusDown(IRealTimeStylus* piRtsSrc, const StylusInfo* pStylusInfo, ULONG /*cPktCount*/, LONG* pPacket, LONG** /*ppInOutPkts*/)
 {
 	// 这是一个按下状态
+
+	// 输入融合感知：触摸点、手写笔
 	TouchMode mode{};
 	TouchInfo info{};
 
@@ -209,22 +211,27 @@ HRESULT CSyncEventHandlerRTS::StylusDown(IRealTimeStylus* piRtsSrc, const Stylus
 	}
 	mode.isInvertedCursor = pStylusInfo->bIsInvertedCursor;
 
+	// 如果是鼠标则不管 未来选项
+	// if (mode.type == 2) return S_OK;
+
+	LONG touchCnt = static_cast<LONG>(++TouchCnt);
+
 	unique_lock<shared_mutex> lockTouchPointer(touchPointerSm);
-	TouchPointer[pStylusInfo->cid] = ++TouchCnt;
-	info.pid = TouchCnt;
+	TouchPointer[pStylusInfo->cid] = touchCnt;
+	info.pid = touchCnt;
 	lockTouchPointer.unlock();
 
 	std::unique_lock<std::shared_mutex> lock1(touchPosSm);
-	TouchPos[TouchCnt] = mode;
+	TouchPos[touchCnt] = mode;
 	lock1.unlock();
 
 	std::unique_lock<std::shared_mutex> lock2(touchSpeedSm);
-	TouchSpeed[TouchCnt] = 0;
-	PreviousPointPosition[TouchCnt].first = PreviousPointPosition[TouchCnt].second = -1;
+	TouchSpeed[touchCnt] = 0;
+	PreviousPointPosition[touchCnt].first = PreviousPointPosition[touchCnt].second = -1;
 	lock2.unlock();
 
 	std::unique_lock<std::shared_mutex> lock3(pointListSm);
-	TouchList.push_back(TouchCnt);
+	TouchList.push_back(touchCnt);
 	lock3.unlock();
 
 	info.mode = mode;
@@ -236,11 +243,9 @@ HRESULT CSyncEventHandlerRTS::StylusDown(IRealTimeStylus* piRtsSrc, const Stylus
 	rtsNum++, rtsDown = true;
 	if (deviceType == 0) touchNum++;
 	if (deviceType == 1) inkNum++;
-	TouchCnt %= 100000;
 
 	// 光标隐藏提前指令
-	if (setlist.hideTouchPointer)
-		SendMessage(drawpad_window, WM_SETCURSOR, (WPARAM)drawpad_window, MAKELPARAM(HTCLIENT, WM_MOUSEMOVE));
+	if (setlist.hideTouchPointer) SendMessage(drawpad_window, WM_SETCURSOR, (WPARAM)drawpad_window, MAKELPARAM(HTCLIENT, WM_MOUSEMOVE));
 
 	return S_OK;
 }
@@ -248,34 +253,14 @@ HRESULT CSyncEventHandlerRTS::StylusUp(IRealTimeStylus*, const StylusInfo* pStyl
 {
 	// 这是一个抬起状态
 
-	// 先更新最后的位置
 	shared_lock<shared_mutex> lockTouchPointer(touchPointerSm);
-	int pid = TouchPointer[pStylusInfo->cid];
+	auto pIt = TouchPointer.find(pStylusInfo->cid);
+	if (pIt == TouchPointer.end()) return S_OK;
+	int pid = pIt->second;
 	lockTouchPointer.unlock();
 	shared_lock<shared_mutex> lock1(touchPosSm);
-	TouchMode mode = TouchPos[pid];
+	const auto mode = &TouchPos[pid];
 	lock1.unlock();
-
-	if (cPktCount != 0)
-	{
-		const ULONG propsPerPacket = mode.packetPropertiesCount; // 单个数据包的属性数量
-		ULONG lastPacketIndex = cPktCount - 1; // 1. 计算最后一个数据包的索引 (cPktCount - 1)
-		LONG* lastPacket = pPacket + (lastPacketIndex * propsPerPacket); // 2. 定位到最后一个数据包在 pPacket 缓冲区中的起始地址
-
-		for (int i = 0; i < mode.packetPropertiesCount; i++)
-		{
-			GUID guid = mode.pPacketProperties[i].guid;
-			if (guid == GUID_PACKETPROPERTY_GUID_X) mode.pt.x = LONG(lastPacket[i] * mode.inkToDeviceScaleX + 0.5);
-			else if (guid == GUID_PACKETPROPERTY_GUID_Y) mode.pt.y = LONG(lastPacket[i] * mode.inkToDeviceScaleY + 0.5);
-			else if (guid == GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE) mode.pressure = double(lastPacket[i] - mode.pressureMin) / double(mode.pressureMax - mode.pressureMin);
-			else if (guid == GUID_PACKETPROPERTY_GUID_WIDTH) mode.touchWidth = LONG(lastPacket[i] * mode.inkToDeviceScaleX + 0.5);
-			else if (guid == GUID_PACKETPROPERTY_GUID_HEIGHT) mode.touchHeight = LONG(lastPacket[i] * mode.inkToDeviceScaleY + 0.5);
-		}
-
-		unique_lock<shared_mutex> lock2(touchPosSm);
-		TouchPos[pid] = mode;
-		lock2.unlock();
-	}
 
 	rtsNum = max(0, rtsNum - 1);
 	if (rtsNum == 0) rtsDown = false;
@@ -284,12 +269,12 @@ HRESULT CSyncEventHandlerRTS::StylusUp(IRealTimeStylus*, const StylusInfo* pStyl
 	if (it != TouchList.end())
 	{
 		{
-			if (mode.type == 0)
+			if (mode->type == 0)
 				touchNum = max(0, touchNum - 1);
-			if (mode.type == 1)
+			if (mode->type == 1)
 				inkNum = max(0, inkNum - 1);
 
-			if (mode.pPacketProperties != nullptr) CoTaskMemFree(mode.pPacketProperties);
+			if (mode->pPacketProperties != nullptr) CoTaskMemFree(mode->pPacketProperties);
 		}
 
 		unique_lock<shared_mutex> lockPointListSm(pointListSm);
@@ -317,7 +302,9 @@ HRESULT CSyncEventHandlerRTS::Packets(IRealTimeStylus* piRtsSrc, const StylusInf
 	if (cPktCount == 0) return S_OK;
 
 	shared_lock<shared_mutex> lockTouchPointer(touchPointerSm);
-	int pid = TouchPointer[pStylusInfo->cid];
+	auto pIt = TouchPointer.find(pStylusInfo->cid);
+	if (pIt == TouchPointer.end()) return S_OK;
+	int pid = pIt->second;
 	lockTouchPointer.unlock();
 	shared_lock<shared_mutex> lock1(touchPosSm);
 	TouchMode mode = TouchPos[pid];

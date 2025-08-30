@@ -861,6 +861,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			}
 			// 绘制
 			{
+				setlist.disableRTS = false;
+
 				setlist.liftStraighten = false, setlist.waitStraighten = true;
 				setlist.pointAdsorption = true;
 

@@ -154,6 +154,8 @@ bool ReadSetting()
 
 		if (setlistVal.isMember("PaintDevice") && setlistVal["PaintDevice"].isInt())
 			setlist.paintDevice = setlistVal["PaintDevice"].asInt();
+		if (setlistVal.isMember("DisableRTS") && setlistVal["DisableRTS"].isBool())
+			setlist.disableRTS = setlistVal["DisableRTS"].asBool();
 		if (setlistVal.isMember("LiftStraighten") && setlistVal["LiftStraighten"].isBool())
 			setlist.liftStraighten = setlistVal["LiftStraighten"].asBool();
 		if (setlistVal.isMember("WaitStraighten") && setlistVal["WaitStraighten"].isBool())
@@ -412,6 +414,7 @@ bool WriteSetting()
 		setlistVal["Regular"]["TeachingSafetyMode"] = Json::Value(setlist.regularSetting.teachingSafetyMode);
 
 		setlistVal["PaintDevice"] = Json::Value(setlist.paintDevice);
+		setlistVal["DisableRTS"] = Json::Value(setlist.disableRTS);
 		setlistVal["LiftStraighten"] = Json::Value(setlist.liftStraighten);
 		setlistVal["WaitStraighten"] = Json::Value(setlist.waitStraighten);
 		setlistVal["PointAdsorption"] = Json::Value(setlist.pointAdsorption);

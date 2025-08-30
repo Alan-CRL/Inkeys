@@ -26,9 +26,11 @@ struct TouchMode
 	int type; // 触摸0 手写笔1 左键2 右键3
 };
 extern unordered_map<LONG, double> TouchSpeed;
+
 extern unordered_map<LONG, TouchMode> TouchPos;
 extern vector<LONG> TouchList;
 
+extern IdtAtomic<unsigned short> TouchCnt;
 struct TouchInfo
 {
 	LONG pid;

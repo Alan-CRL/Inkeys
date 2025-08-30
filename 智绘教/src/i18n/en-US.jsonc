@@ -256,7 +256,7 @@
           "N": "Input Device",
           "E": "Optimize for selected device.",
           "Touch": "Touch Screen",
-          "MousePen": "Mouse or Pen"
+          "MousePen": "Mouse, Pen, or Graphics Tablet"
         }
       },
       "AIDraw":
@@ -492,8 +492,8 @@
       "Newer": "Newer than official latest",
       "New": "New version found",
 
-      "Limit": "Automatic updates are blocked",
-      "Info": "Details",
+      "Limit": "Updates are blocked while downloading an update or a patch",
+      "Info": "More info and manual update",
 
       "Repair": "Try Repair",
       "ManualDownload": "Manual Download",

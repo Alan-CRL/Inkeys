@@ -439,7 +439,6 @@ LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 		flags |= (0x00010000);
 		return (LRESULT)flags;
 	}
-
 	case WM_SETCURSOR:
 	{
 		if (LOWORD(lParam) == HTCLIENT)

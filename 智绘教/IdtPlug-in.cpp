@@ -342,7 +342,10 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	{
 		// 如果是触摸模拟出来的鼠标消息，就直接丢掉
 		DWORD extraInfo = GetMessageExtraInfo();
-		if ((extraInfo & 0xFFFFFF00) == 0xFF515700) return 0;
+		if ((extraInfo & 0xFFFFFF00) == 0xFF515700)
+		{
+			return 0;
+		}
 
 		// 否则当成真正的鼠标消息处理
 		// 您的鼠标处理逻辑
