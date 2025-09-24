@@ -1,0 +1,13 @@
+{
+  "title": "計時器 - 智绘教Inkeys",
+  "tip": "提示",
+  "exit_tip": "當前正在計時， 離開將無法計時， 是否離開？",
+  "timeout_tip": "時間到了！",
+  "continue": "繼續",
+  "pause": "暫停",
+  "reset": "重啟",
+  "stop": "停止",
+  "start_countdown": "開始 （倒計時）",
+  "start_countup": "開始 （正計時）",
+  "save": "保存"
+}

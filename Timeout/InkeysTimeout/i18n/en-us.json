@@ -1,0 +1,13 @@
+{
+  "title": "Timer - 智绘教Inkeys",
+  "tip": "Tip",
+  "exit_tip": "Currently timed, exit will not be timed, Exit?",
+  "timeout_tip": "Time is out!",
+  "continue": "Coutinue",
+  "pause": "Pause",
+  "reset": "Reset",
+  "stop": "Stop",
+  "start_countdown": "Countdown",
+  "start_countup": "Countup",
+  "save": "Save"
+}

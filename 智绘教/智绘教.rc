@@ -1,0 +1,277 @@
+// Microsoft Visual C++ generated resource script.
+//
+#pragma code_page(65001)
+
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "winres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// 中文(简体，中国) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""winres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// PNG
+//
+
+ICON1                   PNG                     "src\\write.png"
+
+SIGN1                   PNG                     "src\\sign.png"
+
+ICON2                   PNG                     "src\\rubber.png"
+
+ICON0                   PNG                     "src\\choose.png"
+
+ICON3                   PNG                     "src\\undo.png"
+
+ICON4                   PNG                     "src\\scale.png"
+
+ICON5                   PNG                     "src\\more.png"
+
+ICON6                   PNG                     "src\\perspective.png"
+
+ICON10                  PNG                     "src\\choice.png"
+
+ICON11                  PNG                     "src\\highlighter_brush.png"
+
+ICON12                  PNG                     "src\\paint_brush.png"
+
+ICON13                  PNG                     "src\\curve.png"
+
+ICON14                  PNG                     "src\\line.png"
+
+ICON15                  PNG                     "src\\rectangle.png"
+
+ICON16                  PNG                     "src\\ms_ppt.png"
+
+PPT3                    PNG                     "src\\ppt\\end_show.png"
+
+PPT1                    PNG                     "src\\ppt\\arrow_left.png"
+
+PPT2                    PNG                     "src\\ppt\\arrow_right.png"
+
+ICON17                  PNG                     "src\\tick.png"
+
+ICON7                   PNG                     "src\\option.png"
+
+ICON8                   PNG                     "src\\freeze-frame.png"
+
+ICON18                  PNG                     "src\\seewo_camera.png"
+
+SKIN1                   PNG                     "src\\skin\\dragon.png"
+
+SKIN1-2                 PNG                     "src\\skin\\dragon_sign.png"
+
+SKIN1-3                 PNG                     "src\\skin\\dragon_background.png"
+
+ICON19                  PNG                     "src\\choose_clear.png"
+
+ICON20                  PNG                     "src\\wps_wpp.png"
+
+PLUGINFLAG1             PNG                     "src\\PluginFlag1.png"
+
+PLUGINFLAG2             PNG                     "src\\PluginFlag2.png"
+
+PPT5                    PNG                     "src\\ppt\\arrow_down.png"
+
+PPT4                    PNG                     "src\\ppt\\arrow_up.png"
+
+HOME1_EN-US             PNG                     "src\\setting\\Home1_en-US.png"
+
+HOME2_EN-US             PNG                     "src\\setting\\Home2_en-US.png"
+
+HOME1_ZH-CN             PNG                     "src\\setting\\Home1_zh-CN.png"
+
+HOME2_ZH-CN             PNG                     "src\\setting\\Home2_zh-CN.png"
+
+SIGN4                   PNG                     "src\\sign3.png"
+
+PROFILE_PICTURE         PNG                     "src\\setting\\Profile_Picture.png"
+
+HOME_BACKGROUNG         PNG                     "src\\setting\\Home_Backgroung.png"
+
+HOME_FEEDBACK           PNG                     "src\\setting\\Home_Feedback.png"
+
+PLUGINFLAG3             PNG                     "src\\PluginFlag3.png"
+
+SETTINGSPONSOR          PNG                     "src\\setting\\SettingSponsor.png"
+
+CUSTOMIZEICO1           PNG                     "src\\ClassIsland.png"
+
+CUSTOMIZEICO2           PNG                     "src\\IslandCaller.png"
+
+CUSTOMIZEICO3           PNG                     "src\\quick\\desktop.png"
+
+CUSTOMIZEICO4           PNG                     "src\\quick\\explorer.png"
+
+CUSTOMIZEICO5           PNG                     "src\\quick\\keyboardesc.png"
+
+CUSTOMIZEICO6           PNG                     "src\\quick\\altf4.png"
+
+CUSTOMIZEICO7           PNG                     "src\\quick\\control.png"
+
+CUSTOMIZEICO8           PNG                     "src\\quick\\lockworkstation.png"
+
+CUSTOMIZEICO9           PNG                     "src\\quick\\taskmgr.png"
+
+PLUGINFLAG4             PNG                     "src\\PluginFlag4.png"
+
+ICON21                  PNG                     "src\\pin.png"
+
+HOME1_ZH-TW             PNG                     "src\\setting\\Home1_zh-TW.png"
+
+HOME2_ZH-TW             PNG                     "src\\setting\\Home2_zh-TW.png"
+
+CUSTOMIZEICO11          PNG                     "src\\NamePicker.png"
+
+CUSTOMIZEICO10          PNG                     "src\\SecRandom.png"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDI_ICON1               ICON                    "src\\icon.ico"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// TTF
+//
+
+IDR_TTF1                TTF                     "src\\ttf\\HarmonyOS_Sans_SC_Regular.ttf"
+
+IDR_TTF2                TTF                     "src\\ttf\\Segoe Fluent Icons.ttf"
+
+IDR_TTF3                TTF                     "src\\ttf\\HarmonyOS_Sans_TC_Regular.ttf"
+
+IDR_TTF4                TTF                     "src\\ttf\\icomoon.ttf"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// EXE
+//
+
+IDR_EXE4                EXE                     "exe\\DesktopDrawpadBlocker.exe"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// RT_MANIFEST
+//
+
+IDR_RT_MANIFEST1        RT_MANIFEST             "..\\PptCOM\\PptCOM.manifest"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DLL
+//
+
+IDR_DLL1                DLL                     "PptCOM.dll"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,0
+ PRODUCTVERSION 1,0,0,0
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404b0"
+        BEGIN
+            VALUE "CompanyName", "AlanCRL(陈润林) 工作室"
+            VALUE "FileVersion", "1.0.0.1"
+            VALUE "InternalName", "智绘教Inkeys"
+            VALUE "LegalCopyright", "Copyright © 2023-2025 AlanCRL(陈润林) 工作室"
+            VALUE "ProductName", "智绘教Inkeys"
+            VALUE "ProductVersion", "详见""软件->选项->软件版本""界面"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 1200
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// JSON
+//
+
+IDR_ZH_CN               JSON                    "src\\i18n\\zh-CN.jsonc"
+
+IDR_EN_US               JSON                    "src\\i18n\\en-US.jsonc"
+
+IDR_ZH_TW               JSON                    "src\\i18n\\zh-TW.jsonc"
+
+#endif    // 中文(简体，中国) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+
