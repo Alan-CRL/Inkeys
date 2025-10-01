@@ -38,7 +38,7 @@ void D2DStarup()
 			featureLevels,              // 功能级别数组
 			ARRAYSIZE(featureLevels),   // 数组大小
 			D3D11_SDK_VERSION,          // SDK 版本
-			&d3dDevice_WARP,                 // 返回创建的设备
+			&d3dDevice_WARP,            // 返回创建的设备
 			nullptr,                    // 返回实际的功能级别
 			nullptr                     // 返回设备上下文 (我们不需要)
 		);

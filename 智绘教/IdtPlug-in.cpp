@@ -496,6 +496,21 @@ bool EndPptShow()
 
 	return false;
 }
+bool ViewPptShow()
+{
+	try
+	{
+		SetForegroundWindow(ppt_show);
+		PptCOMPto->ViewSlideShow();
+
+		return true;
+	}
+	catch (_com_error)
+	{
+	}
+
+	return false;
+}
 
 void PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 {
@@ -4155,54 +4170,54 @@ void StartDesktopDrawpadBlocker()
 		}
 
 		// 配置 EXE
-		if (_waccess((dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), 0) == -1)
+		if (_waccess((pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), 0) == -1)
 		{
-			if (_waccess((dataPath + L"\\DesktopDrawpadBlocker").c_str(), 0) == -1)
+			if (_waccess((pluginPath + L"\\DesktopDrawpadBlocker").c_str(), 0) == -1)
 			{
 				error_code ec;
-				filesystem::create_directories(dataPath + L"\\DesktopDrawpadBlocker", ec);
+				filesystem::create_directories(pluginPath + L"\\DesktopDrawpadBlocker", ec);
 			}
-			ExtractResource((dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
+			ExtractResource((pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
 		}
 		else
 		{
 			string hash_sha256;
 			{
 				hashwrapper* myWrapper = new sha256wrapper();
-				hash_sha256 = myWrapper->getHashFromFileW(dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe");
+				hash_sha256 = myWrapper->getHashFromFileW(pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe");
 				delete myWrapper;
 			}
 
 			if (hash_sha256 != ddbInteractionSetList.DdbSHA256)
 			{
-				if (isProcessRunning((dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
+				if (isProcessRunning((pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
 				{
 					// 需要关闭旧版 DDB 并更新版本
 
 					DdbWriteInteraction(true, true);
 					for (int i = 1; i <= 20; i++)
 					{
-						if (!isProcessRunning((dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
+						if (!isProcessRunning((pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
 							break;
 						this_thread::sleep_for(chrono::milliseconds(500));
 					}
 				}
-				ExtractResource((dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
+				ExtractResource((pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
 			}
 		}
 
 		// 启动 DDB
-		if (!isProcessRunning((dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
+		if (!isProcessRunning((pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
 		{
 			DdbWriteInteraction(true, false);
-			if (ddbInteractionSetList.runAsAdmin) ShellExecuteW(NULL, L"runas", (dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
-			else ShellExecuteW(NULL, NULL, (dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+			if (ddbInteractionSetList.runAsAdmin) ShellExecuteW(NULL, L"runas", (pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+			else ShellExecuteW(NULL, NULL, (pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
 		}
 	}
-	else if (_waccess((dataPath + L"\\DesktopDrawpadBlocker").c_str(), 0) == 0)
+	else if (_waccess((pluginPath + L"\\DesktopDrawpadBlocker").c_str(), 0) == 0)
 	{
 		error_code ec;
-		filesystem::remove_all(dataPath + L"\\DesktopDrawpadBlocker", ec);
+		filesystem::remove_all(pluginPath + L"\\DesktopDrawpadBlocker", ec);
 	}
 }
 

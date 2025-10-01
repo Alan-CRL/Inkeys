@@ -227,8 +227,8 @@ struct DdbInteractionSetListStruct
 		enable = false;
 		runAsAdmin = false;
 
-		DdbEdition = L"20250404a";
-		DdbSHA256 = "e0ce42c45c8287ae34129625cb64e9054b6abedea08dfa1dfccea564ec36da30";
+		DdbEdition = L"20250927a";
+		DdbSHA256 = "adf03fded144955b5afb8e6ffd9610aec0d4b789462f624b7fc23bbe55023402";
 
 		// -----
 
@@ -253,6 +253,8 @@ struct DdbInteractionSetListStruct
 		intercept.intelligentClassFloating = true;
 		intercept.seewoDesktopAnnotationFloating = true;
 		intercept.seewoDesktopSideBarFloating = false;
+		intercept.iclass30Floating = true;
+		intercept.iclass30SidebarFloating = false;
 	}
 
 	bool enable;
@@ -286,6 +288,8 @@ struct DdbInteractionSetListStruct
 		bool intelligentClassFloating;
 		bool seewoDesktopAnnotationFloating;
 		bool seewoDesktopSideBarFloating;
+		bool iclass30Floating;
+		bool iclass30SidebarFloating;
 	} intercept;
 };
 extern DdbInteractionSetListStruct ddbInteractionSetList;

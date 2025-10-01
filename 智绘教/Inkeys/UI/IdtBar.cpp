@@ -2164,7 +2164,7 @@ void BarUISetClass::Rendering()
 				CComPtr<ID2D1SolidColorBrush> spBorderBrush;
 				barDeviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(frame, 1.0), &spBorderBrush);
 
-				barDeviceContext->DrawRoundedRectangle(&roundedRect, spBorderBrush, 1.0f);
+				// barDeviceContext->DrawRoundedRectangle(&roundedRect, spBorderBrush, 1.0f);
 			}
 
 			barDeviceContext->Flush();
@@ -2203,7 +2203,7 @@ void BarUISetClass::Rendering()
 		}
 		// 帧率锁
 		{
-			double delay = 1000.0 / 24.0 - chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count();
+			double delay = 1000.0 / 24.0 - chrono::duration<double, milli>(chrono::high_resolution_clock::now() - reckon).count();
 			if (delay >= 10.0) std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(delay)));
 		}
 

@@ -53,7 +53,7 @@ wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
-wstring dataPath;								// 数据保存的路径
+wstring pluginPath;								// 数据保存的路径
 
 wstring programArchitecture = L"win32";
 wstring targetArchitecture = L"win32";
@@ -128,12 +128,18 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			return 0;
 		}
 
-		// 获取数据存储路径
+		// 获取目录
 		{
-			wchar_t buffer[MAX_PATH];
-			if (GetEnvironmentVariableW(L"ProgramData", buffer, MAX_PATH) != 0) dataPath = buffer;
-			else dataPath = L"C:\\ProgramData";
-			dataPath += L"\\Inkeys";
+			// 获取插件存储路径
+			{
+				/*
+				wchar_t buffer[MAX_PATH];
+				if (GetEnvironmentVariableW(L"ProgramData", buffer, MAX_PATH) != 0) pluginPath = buffer;
+				else pluginPath = L"C:\\ProgramData";*/
+
+				pluginPath = globalPath;
+				pluginPath += L"\\Inkeys\\Plugin";
+			}
 		}
 	}
 	// 防止重复启动

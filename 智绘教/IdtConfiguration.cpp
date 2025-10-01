@@ -755,7 +755,7 @@ DdbInteractionSetListStruct ddbInteractionSetList;
 //bool DdbReadInteraction()
 //{
 //	HANDLE fileHandle = NULL;
-//	if (!OccupyFileForRead(&fileHandle, dataPath + L"\\DesktopDrawpadBlocker\\interaction_configuration.json"))
+//	if (!OccupyFileForRead(&fileHandle, pluginPath + L"\\DesktopDrawpadBlocker\\interaction_configuration.json"))
 //	{
 //		UnOccupyFile(&fileHandle);
 //		return false;
@@ -890,6 +890,8 @@ bool DdbWriteInteraction(bool change, bool close)
 			updateVal["Intercept"]["IntelligentClassFloating"] = Json::Value(ddbInteractionSetList.intercept.intelligentClassFloating);
 			updateVal["Intercept"]["SeewoDesktopAnnotationFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoDesktopAnnotationFloating);
 			updateVal["Intercept"]["SeewoDesktopSideBarFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoDesktopSideBarFloating);
+			updateVal["Intercept"]["Iclass30Floating"] = Json::Value(ddbInteractionSetList.intercept.iclass30Floating);
+			updateVal["Intercept"]["Iclass30SidebarFloating"] = Json::Value(ddbInteractionSetList.intercept.iclass30SidebarFloating);
 		}
 
 		updateVal["~ConfigurationChange"] = Json::Value(change);
@@ -897,7 +899,7 @@ bool DdbWriteInteraction(bool change, bool close)
 	}
 
 	HANDLE fileHandle = NULL;
-	if (!OccupyFileForWrite(&fileHandle, dataPath + L"\\DesktopDrawpadBlocker\\interaction_configuration.json"))
+	if (!OccupyFileForWrite(&fileHandle, pluginPath + L"\\DesktopDrawpadBlocker\\interaction_configuration.json"))
 	{
 		UnOccupyFile(&fileHandle);
 		return false;
