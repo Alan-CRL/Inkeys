@@ -227,8 +227,8 @@ struct DdbInteractionSetListStruct
 		enable = false;
 		runAsAdmin = false;
 
-		DdbEdition = L"20250927a";
-		DdbSHA256 = "adf03fded144955b5afb8e6ffd9610aec0d4b789462f624b7fc23bbe55023402";
+		DdbEdition = L"20251008a";
+		DdbSHA256 = "26ab4878f2743523f8e91232c04290ad94495358580b18200032678cb970802f";
 
 		// -----
 
