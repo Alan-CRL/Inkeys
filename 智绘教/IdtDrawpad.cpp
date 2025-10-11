@@ -2177,6 +2177,9 @@ int drawpad_main()
 					if (int(state) == 1 && nextPointMode == StateModeSelectEnum::IdtEraser && setlist.RubberRecover) target_status = 0;
 					else if (int(state) == 1 && nextPointMode == StateModeSelectEnum::IdtPen && setlist.BrushRecover) target_status = 0;
 
+					// 颜色和粗细选择等需要缩回
+					else if (int(state) == 1 && nextPointMode == StateModeSelectEnum::IdtPen && state != 1.0) state = 1.0;
+
 					if (current_record_pointer != reference_record_pointer)
 					{
 						current_record_pointer = reference_record_pointer = max(1, reference_record_pointer - 1);
