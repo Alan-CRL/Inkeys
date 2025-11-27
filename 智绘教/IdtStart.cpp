@@ -70,7 +70,7 @@ void StartForInkeys()
 
 IdtSysVersionStruct GetWindowsVersion()
 {
-	IdtSysVersionStruct ret = { 0,0 };
+	IdtSysVersionStruct ret = { 0,0,0 };
 
 	// 动态加载 ntdll.dll 并获取 RtlGetVersion 函数地址
 	HMODULE hMod = GetModuleHandleW(L"ntdll.dll");
@@ -87,6 +87,7 @@ IdtSysVersionStruct GetWindowsVersion()
 			{
 				ret.majorVersion = static_cast<int>(rovi.dwMajorVersion);
 				ret.minorVersion = static_cast<int>(rovi.dwMinorVersion);
+				ret.buildNumber = static_cast<int>(rovi.dwBuildNumber);
 			}
 		}
 	}

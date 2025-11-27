@@ -289,6 +289,7 @@ AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state,
 }
 
 bool isWindows8OrGreater;
+wstring windowsEdition;
 void AutomaticUpdate()
 {
 	bool state = true;
@@ -335,10 +336,18 @@ updateStart:
 		if (state && editionInfo.editionDate != L"" && ((editionInfo.editionDate > editionDate && setlist.enableAutoUpdate) || mandatoryUpdate))
 		{
 			// 无法使用自动更新以及自动修复的情况
-			if (!isWindows8OrGreater && editionInfo.isInkeys3)
+			if (editionInfo.isInkeys3 && !mandatoryUpdate)
 			{
-				AutomaticUpdateState = UpdateLimit;
-				state = false;
+				if (!isWindows8OrGreater)
+				{
+					AutomaticUpdateState = UpdateLimit;
+					state = false;
+				}
+				else
+				{
+					AutomaticUpdateState = UpdateInkeys3;
+					state = false;
+				}
 			}
 			else
 			{

@@ -168,7 +168,6 @@ public:
 	operator IdtAtomicT() const noexcept { return load(); }
 	IdtAtomic& operator=(IdtAtomicT desired) noexcept { store(desired); return *this; }
 
-	// Increment/Decrement Operators added
 	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
 	T operator++() noexcept {
 		return value.fetch_add(1, std::memory_order_seq_cst) + 1;
@@ -185,6 +184,17 @@ public:
 	T operator--(int) noexcept {
 		return value.fetch_sub(1, std::memory_order_seq_cst);
 	}
+
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
+	IdtAtomic& operator+=(T arg) noexcept {
+		fetch_add(arg, std::memory_order_seq_cst);
+		return *this;
+	}
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
+	IdtAtomic& operator-=(T arg) noexcept {
+		fetch_sub(arg, std::memory_order_seq_cst);
+		return *this;
+	}
 };
 
 // 调测专用
@@ -195,7 +205,8 @@ void Testi(long long t);
 void Testd(double t);
 void Testw(wstring t);
 void Testa(string t);
-#define IdtFalse false
+#define TestFalse false
+#define TestCout cout
 
 // this_thread::sleep_for(chrono::milliseconds(int))
 #endif

@@ -415,6 +415,7 @@ jobs:
             "${{ steps.softwareChannel.outputs.VALUE }}": {
             "edition_date": "${{ steps.softwareDate.outputs.VALUE }}",
             "edition_code": "",
+            "inkeys3": false,
             "hash": {
               "md5": "$md5_1",
               "sha256": "$sha256_1",
@@ -609,7 +610,7 @@ jobs:
 
       - name: Upload to WebDAV with rclone
         id: upload_webdav
-        timeout-minutes: 60
+        timeout-minutes: 120
         continue-on-error: true
         shell: pwsh
         run: |
@@ -623,7 +624,7 @@ jobs:
             # 开始上传
             Write-Host "开始上传到 WebDAV..."
             Write-Host "进度将每 10 秒更新一次"
-            Write-Host "超时时间: 15 分钟"
+            Write-Host "超时时间: 120 分钟"
             Write-Host "目标路径: /Inkeys/PackageHistory/$Env:GITHUB_REF_NAME"
             Write-Host ""
           
