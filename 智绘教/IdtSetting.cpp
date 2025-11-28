@@ -3370,7 +3370,7 @@ void SettingMain()
 
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
-								ImGui::BeginChild("置顶间隔-介绍", { 610.0f * settingGlobalScale,50.0f * settingGlobalScale }, false);
+								ImGui::BeginChild("置顶间隔-介绍", { 510.0f * settingGlobalScale,50.0f * settingGlobalScale }, false);
 
 								{
 									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
@@ -5385,7 +5385,7 @@ void SettingMain()
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
 									if (ImGui::Button(IA("SettingsUI/PlugIn/PPTHelper/Solve").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 									{
-										ShellExecuteW(0, 0, L"https://blog.csdn.net/alan16356/article/details/143618256?fromshare=blogdetail&sharetype=blogdetail&sharerId=143618256&sharerefer=PC&sharesource=alan16356&sharefrom=from_link", 0, 0, SW_SHOW);
+										ShellExecuteW(0, 0, L"https://www.inkeys.top/tutorial/ppt-com", 0, 0, SW_SHOW);
 									}
 								}
 
@@ -5441,7 +5441,7 @@ void SettingMain()
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
 									if (ImGui::Button(IA("SettingsUI/PlugIn/PPTHelper/Solve").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 									{
-										ShellExecuteW(0, 0, L"https://blog.csdn.net/alan16356/article/details/143625981?fromshare=blogdetail&sharetype=blogdetail&sharerId=143625981&sharerefer=PC&sharesource=alan16356&sharefrom=from_link", 0, 0, SW_SHOW);
+										ShellExecuteW(0, 0, L"https://www.inkeys.top/tutorial/ppt-admin", 0, 0, SW_SHOW);
 									}
 								}
 
@@ -9717,6 +9717,7 @@ void SettingMain()
 							if (setlist.UpdateChannel == "LTS") channel = " (" + IA("SettingsUI/Update/Channel/LTS") + ")";
 							else if (setlist.UpdateChannel == "Insider") channel = " (" + IA("SettingsUI/Update/Channel/Insider") + ")";
 							else if (setlist.UpdateChannel == "Dev") channel = " (" + IA("SettingsUI/Update/Channel/Dev") + ")";
+							else if (setlist.UpdateChannel == "Canary") channel = " (" + IA("SettingsUI/Update/Channel/Canary") + ")";
 
 							ImGui::TextUnformatted((IA("SettingsUI/Update/Latest") + channel).c_str());
 						}
@@ -9751,6 +9752,7 @@ void SettingMain()
 							if (setlist.UpdateChannel == "LTS") channel = " (" + IA("SettingsUI/Update/Channel/LTS") + ")";
 							else if (setlist.UpdateChannel == "Insider") channel = " (" + IA("SettingsUI/Update/Channel/Insider") + ")";
 							else if (setlist.UpdateChannel == "Dev") channel = " (" + IA("SettingsUI/Update/Channel/Dev") + ")";
+							else if (setlist.UpdateChannel == "Canary") channel = " (" + IA("SettingsUI/Update/Channel/Canary") + ")";
 
 							ImGui::TextUnformatted((IA("SettingsUI/Update/Newer") + channel).c_str());
 						}

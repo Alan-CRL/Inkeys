@@ -2175,6 +2175,8 @@ void BarUISetClass::Rendering()
 				original = current;
 				BarRenderingAttribute::UnionRectInPlace(target, current);*/
 
+				// 上方已经给出了计算脏区 target 的代码，这里直接使用 RECT target 即可
+
 				// psize 指定窗口本次更新“新内容”宽高
 				// pptDst 指定新内容贴到屏幕上的位置（左上角）
 				// pptSrc 从源内存 DC 的哪个位置起贴内容
@@ -2203,7 +2205,7 @@ void BarUISetClass::Rendering()
 		}
 		// 帧率锁
 		{
-			double delay = 1000.0 / 24.0 - chrono::duration<double, milli>(chrono::high_resolution_clock::now() - reckon).count();
+			double delay = 1000.0 / 60.0 - chrono::duration<double, milli>(chrono::high_resolution_clock::now() - reckon).count();
 			if (delay >= 10.0) std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(delay)));
 		}
 

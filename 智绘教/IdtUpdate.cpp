@@ -287,6 +287,7 @@ AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state,
 	return UpdateRestart;
 }
 
+wstring windowsEdition;
 void AutomaticUpdate()
 {
 	bool state = true;

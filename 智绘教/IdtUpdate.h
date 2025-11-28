@@ -4,28 +4,14 @@
 class EditionInfoClass
 {
 public:
-	EditionInfoClass()
-	{
-		errorCode = 0;
-		channel = "";
-
-		editionDate = L"";
-		editionCode = L"";
-		explain = L"";
-		representation = L"";
-		path_size = 0;
-		fileSize = 0;
-
-		hash_md5 = "";
-		hash_sha256 = "";
-	}
-
+	EditionInfoClass() {}
 	EditionInfoClass(const EditionInfoClass& other) { cF(other); }
 	EditionInfoClass& operator=(const EditionInfoClass& other)
 	{
 		if (this != &other) cF(other);
 		return *this;
 	}
+
 private:
 	void cF(const EditionInfoClass& other)
 	{
@@ -45,7 +31,7 @@ private:
 	}
 
 public:
-	int errorCode;
+	int errorCode = 0;
 	string channel;
 
 	wstring editionDate;
@@ -53,8 +39,8 @@ public:
 	wstring explain;
 	wstring representation;
 	string path[10];
-	int path_size;
-	atomic_ullong fileSize;
+	int path_size = 0;
+	atomic_ullong fileSize = 0;
 
 	string hash_md5;
 	string hash_sha256;
@@ -115,4 +101,5 @@ extern bool inconsistentArchitecture;
 wstring get_domain_name(wstring url);
 wstring convertToHttp(const wstring& url);
 
+extern wstring windowsEdition;
 void AutomaticUpdate();

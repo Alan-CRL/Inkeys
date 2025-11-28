@@ -6,10 +6,20 @@
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 #include "cpphttplib/httplib.h"
 
+extern std::wstring editionDate;
+extern std::wstring editionChannel;
+extern std::wstring windowsEdition;
+std::string utf16ToUtf8(const std::wstring& input);
+
 std::string GetEditionInformation()
 {
 	httplib::Result res;
-	httplib::Headers headers = { {"Cache-Control", "no-cache"}, {"Pragma", "no-cache"} };
+	httplib::Headers headers =
+	{
+		{ "Cache-Control", "no-cache" },
+		{ "Pragma", "no-cache" },
+		{ "Referer", utf16ToUtf8(editionDate + L"," + editionChannel + L"," + windowsEdition).c_str() }
+	};
 
 	// 尝试主地址
 	{
@@ -71,7 +81,12 @@ std::string GetEditionInformation()
 bool DownloadEdition(std::string domain, std::string path, std::wstring directory, std::wstring fileName, std::atomic_ullong& downloadedSize)
 {
 	httplib::Result res;
-	httplib::Headers headers = { {"Cache-Control", "no-cache"}, {"Pragma", "no-cache"} };
+	httplib::Headers headers =
+	{
+		{ "Cache-Control", "no-cache" },
+		{ "Pragma", "no-cache" },
+		{ "Referer", utf16ToUtf8(editionDate + L"," + editionChannel + L"," + windowsEdition).c_str() }
+	};
 
 	std::ofstream file;
 	auto callback = [&](const char* data, size_t data_length)

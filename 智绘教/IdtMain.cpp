@@ -1081,6 +1081,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 自动更新初始化
 	{
+		// 检查系统版本
+		{
+			IdtSysVersionStruct windowsVersion = GetWindowsVersion();
+			windowsEdition = to_wstring(windowsVersion.majorVersion) + L"." + to_wstring(windowsVersion.minorVersion) + L"." + to_wstring(windowsVersion.buildNumber);
+		}
+
 #ifdef IDT_RELEASE
 		thread(AutomaticUpdate).detach();
 #endif
@@ -1333,10 +1339,23 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 #ifndef IDT_RELEASE
 		{
 			AllocConsole();
+
 			FILE* fp;
 			freopen_s(&fp, "CONOUT$", "w", stdout);
 			freopen_s(&fp, "CONOUT$", "w", stderr);
-			std::ios::sync_with_stdio();
+			freopen_s(&fp, "CONIN$", "r", stdin);
+
+			// 让 C++ 流重新与 C 的 FILE* 同步
+			// true = 同步；不传参数的重载在 C++11 之后是被弃用的（某些编译器行为不定）
+			std::ios::sync_with_stdio(true);
+
+			// 清空原来的缓冲（保证重新绑定后生效）
+			std::wcout.clear();
+			std::wcin.clear();
+			std::wcerr.clear();
+			std::cout.clear();
+			std::cin.clear();
+			std::cerr.clear();
 
 			std::wcout.imbue(std::locale("chs"));
 		}
