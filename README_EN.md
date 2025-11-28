@@ -106,7 +106,8 @@ We would like to express our gratitude to these open source projects and their c
 | **[nothings/stb](https://github.com/nothings/stb)** | MIT License | Copyright (c) 2017 Sean Barrett |
 | **[ocornut/imgui](https://github.com/ocornut/imgui)** | MIT License | Copyright (c) 2014–2025 Omar Cornut |
 | **[openssl/openssl](https://github.com/openssl/openssl)** | Apache License 2.0 | Copyright (c) 1998–2025 The OpenSSL Project Authors. Copyright (c) 1995–1998 Eric A. Young, Tim J. Hudson. All rights reserved. |
-| **[sammycage/lunasvg](https://github.com/sammycage/lunasvg)** | MIT License | Copyright (c) 2007–2010 Baptiste Lepilleur and The JsonCpp Authors |
+| **[open-source-parsers/jsoncpp](https://github.com/open-source-parsers/jsoncpp)** | MIT License | Copyright (c) 2007–2010 Baptiste Lepilleur and The JsonCpp Authors |
+| **[sammycage/lunasvg](https://github.com/sammycage/lunasvg)** | MIT License | Copyright (c) 2020–2025 Samuel Ugochukwu <sammycageagle@gmail.com> |
 | **[sammycage/plutovg](https://github.com/sammycage/plutovg)** | MIT License | Copyright (c) 2020–2025 Samuel Ugochukwu <sammycageagle@gmail.com> |
 | **[yhirose/cpp-httplib](https://github.com/yhirose/cpp-httplib)** | MIT License | Copyright (c) 2017 yhirose |
 | **[Zip Utils](https://www.codeproject.com/Articles/7530/Zip-Utils-Clean-Elegant-Simple-Cplusplus-Win)** | See project page and accompanying license |  |
