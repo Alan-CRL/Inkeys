@@ -13,7 +13,7 @@
 #include "HiEasyX.h"
 
 #include <ink_stroke_modeler/stroke_modeler.h>
-#pragma comment(lib, "ink_stroke_modeler_combined.lib")
+#pragma comment(lib, "ink_stroke_modeler_merge.lib")
 
 #include <d3d11.h>
 #include <DirectXMath.h>

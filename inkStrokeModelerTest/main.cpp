@@ -169,14 +169,12 @@ int main()
 	ID3D11RenderTargetView* rtvs[] = { renderTargetView.p };
 	context->OMSetRenderTargets(1, rtvs, nullptr);
 
-	// 设置视口（这个也可能需要重新设置）
-	D3D11_VIEWPORT viewport = { 0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f };
-	context->RSSetViewports(1, &viewport);
-
 	// 可选：清空背景（如果你需要的话）
 	// float clearColor[] = { 0.2f, 0.3f, 0.5f, 1.0f };
 	// context->ClearRenderTargetView(renderTargetView.p, clearColor);
 	*/
+
+	goto end;
 
 	cerr << "单次绘制对比测试" << endl;
 	{
@@ -780,6 +778,8 @@ int main()
 		swapChain->Present(0, 0); // 第一个参数为 1 则开启垂直同
 	}
 
+end:
+
 	cerr << "10 万次粗墨迹绘制对比" << endl;
 	{
 		float clearColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -823,36 +823,17 @@ int main()
 			float clearColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
 			d3dDeviceContext->ClearRenderTargetView(inkRenderer.renderTargetView, clearColor);
 
-			inkRenderer.DrawStrokeSegment2(list, 0, list.size());
+			auto ret = inkRenderer.DrawStrokeSegment2(list, 0, list.size());
+			if (ret) Testw(L"DrawStrokeSegment2 执行失败 RET" + to_wstring(ret));
 
-			// 同步本帧完成：目前并非推荐的同步操作，因为我们必须处理超时情况来防止线程卡死
-			d3dDeviceContext->End(inkRenderer.g_frameFinishQuery);
-			BOOL done = FALSE; // 注意：GetData 会在 GPU 还没执行到这个 Query 时返回 S_FALSE
-			while (true)
-			{
-				HRESULT hr = d3dDeviceContext->GetData(inkRenderer.g_frameFinishQuery,
-					&done, sizeof(done),
-					D3D11_ASYNC_GETDATA_DONOTFLUSH);
-
-				if (hr == S_OK) break;
-				if (hr == S_FALSE)
-				{
-					// 未完成，稍微 Sleep/等待一会儿，避免空转
-					this_thread::sleep_for(1ms);
-					continue;
-				}
-
-				// 其它错误：检查设备状态
-				if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
-				{
-					break;
-				}
-				// 其它意外错误，也应该 break 或上报
-				break;
-			}
-
-			cerr << "dx11 着色器使用 " << chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count() << "ms" << endl;
+			swapChain->Present(0, 0);
+			cerr << "绘制任务已经提交，开始等待 GPU 完成" << endl;
 		}
+
+		cerr << "绘制已完成，按任意键关闭……" << endl;
+
+		getmessage(EM_KEY);
+		return 0;
 
 		// 这一部分是测试 CPU 计算路径并绘制大量墨迹
 		{

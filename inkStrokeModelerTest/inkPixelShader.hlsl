@@ -17,7 +17,7 @@ float sdUnevenCapsule_Vertical(float2 p, float r1, float r2, float h)
         return length(p) - max(r1, r2);
     }
     
-    float a = sqrt(1.0 - b2); // a = cos(alpha)
+    float a = sqrt(max(0.0, 1.0 - b2)); // a = cos(alpha)
     
     // 关键点积判断区域
     float k = dot(p, float2(-b, a));

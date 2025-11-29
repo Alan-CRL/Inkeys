@@ -47,6 +47,9 @@ struct InkVertex
 	float    r1;        // VAL_R1
 	float    r2;        // VAL_R2
 	int      shapeType; // VAL_TYPE
+
+	// 【关键修复】增加 12 字节的填充，使总大小达到 64 字节 (16的倍数)
+	float    padding[3];
 };
 
 struct CB_ScreenSize {
@@ -69,6 +72,9 @@ public:
 	CComPtr<ID3D11RasterizerState>  rasterState;
 
 	CComPtr<ID3D11Query> g_frameFinishQuery;
+
+	// 【新增】记录当前 Vertex Buffer 写到了哪个顶点索引
+	UINT m_vbOffset = 0;
 
 	void SetOMTarget()
 	{
@@ -104,8 +110,8 @@ public:
 		blendDesc.RenderTarget[0].RenderTargetWriteMask = 0x0F;
 		device->CreateBlendState(&blendDesc, &alphaBlendState);
 
-		// 3. 创建动态顶点缓冲：固定 64MB
-		const UINT INITIAL_VB_BYTES = 64 * 1024 * 1024; // 64MB
+		// 3. 创建动态顶点缓冲：固定 2MB
+		const UINT INITIAL_VB_BYTES = 2 * 1024 * 1024; // 2MB
 		D3D11_BUFFER_DESC vbDesc = {};
 		vbDesc.ByteWidth = INITIAL_VB_BYTES;
 		vbDesc.Usage = D3D11_USAGE_DYNAMIC;
@@ -118,7 +124,7 @@ public:
 			return false;
 		}
 
-		cerr << "着色器 VB 缓冲上限 " << 64 << " MB。" << endl;
+		cerr << "着色器 VB 缓冲上限 " << 2 << " MB。" << endl;
 
 		// 4. 加载 Shader
 		if (!LoadShaders()) return false;
@@ -135,8 +141,10 @@ public:
 			rasterDesc.FrontCounterClockwise = FALSE;
 			rasterDesc.DepthClipEnable = TRUE;
 			// 如果你想启用多重采样抗锯齿(MSAA)，这里也要设为TRUE，但我们用的是Shader抗锯齿，所以无所谓
-			rasterDesc.MultisampleEnable = TRUE;
-			rasterDesc.AntialiasedLineEnable = TRUE;
+			rasterDesc.MultisampleEnable = FALSE;
+			rasterDesc.AntialiasedLineEnable = FALSE;
+
+			// 后续注意，光栅化已经设置抗锯齿，所以 Shader 抗锯齿是否需要（存疑）
 
 			HRESULT hr = device->CreateRasterizerState(&rasterDesc, &rasterState);
 			if (FAILED(hr)) return false;
@@ -160,12 +168,12 @@ public:
 		// 2. 设置视口 (Viewport)
 		// 如果没有这一步，光栅化器不知道要把 NDC 坐标映射到屏幕的哪个区域
 		D3D11_VIEWPORT vp;
+		vp.TopLeftX = 0;
+		vp.TopLeftY = 0;
 		vp.Width = w;
 		vp.Height = h;
 		vp.MinDepth = 0.0f;
 		vp.MaxDepth = 1.0f;
-		vp.TopLeftX = 0;
-		vp.TopLeftY = 0;
 		context->RSSetViewports(1, &vp);
 	}
 
@@ -176,99 +184,105 @@ public:
 		desc.MiscFlags = 0;
 
 		HRESULT hr = device->CreateQuery(&desc, &g_frameFinishQuery);
-		if (FAILED(hr)) {
-			// 处理错误：记录日志或抛异常
+		if (FAILED(hr))
+		{
+			Testw(L"QUERY EVENT 管线创建失败");
 		}
 	}
 
 	// --- 核心绘制函数 ---
-	void DrawStrokeSegment2(const vector<InkVertex>& capsules, size_t beginIndex, size_t endIndex)
+	int DrawStrokeSegment2(const vector<InkVertex>& capsules, size_t beginIndex, size_t endIndex)
 	{
-		if (!device || !context) return;
-		if (beginIndex >= endIndex) return;
-		if (beginIndex >= capsules.size()) return;
+		if (!device || !context) return 1;
+		if (beginIndex >= endIndex) return 2;
+		if (beginIndex >= capsules.size()) return 3;
 
 		endIndex = min(endIndex, capsules.size());
 		size_t capsuleCountTotal = endIndex - beginIndex;
-		if (capsuleCountTotal == 0) return;
+		if (capsuleCountTotal == 0) return 4;
 
 		// 查询当前 VB 实际能容纳多少胶囊
 		VBCapacity cap = GetVBCapacity();
-		if (cap.maxCapsules == 0) return; // 非法情况（VB 创建失败）
+		if (cap.maxCapsules == 0) return 5;
 
-		// 分批绘制：每次最多绘制 cap.maxCapsules 个胶囊
 		size_t remainingCapsules = capsuleCountTotal;
-		size_t capsuleOffset = 0; // 在 [beginIndex, endIndex) 内的偏移
+		size_t capsuleOffset = 0; // 在输入数组中的偏移
 
-		int i = 0;
+		// 循环处理，直到画完所有胶囊
 		while (remainingCapsules > 0)
 		{
-			cerr << "着色器绘制第 " << ++i << " 批次并行绘制。" << endl;
-
+			// 本次最多能画多少？受限于 VB 总容量
 			size_t capsulesThisDraw = min(remainingCapsules, cap.maxCapsules);
 			size_t vertsThisDraw = capsulesThisDraw * VERTS_PER_CAPSULE;
 
-			// 1. Map 当前批次需要的顶点空间（WRITE_DISCARD）
+			// 【核心逻辑修改 START】
+			D3D11_MAP mapType = D3D11_MAP_WRITE_NO_OVERWRITE;
+
+			// 1. 检查是否有足够空间追加数据
+			if (m_vbOffset + vertsThisDraw > cap.maxVertices)
+			{
+				// 空间不够，或者已经到了 Buffer 末尾 -> 回卷 (Discard)
+				mapType = D3D11_MAP_WRITE_DISCARD;
+				m_vbOffset = 0; // 重置偏移
+			}
+
+			// 首次运行保护（虽然通常 offset=0 时 NO_OVERWRITE 也可以，但 DISCARD 更安全）
+			if (m_vbOffset == 0)
+			{
+				mapType = D3D11_MAP_WRITE_DISCARD;
+			}
+
+			// 2. Map
 			D3D11_MAPPED_SUBRESOURCE map{};
-			HRESULT hr = context->Map(dynamicVB, 0, D3D11_MAP_WRITE_DISCARD, 0, &map);
-			if (FAILED(hr))
-				return; // 失败直接退出或打日志
+			HRESULT hr = context->Map(dynamicVB, 0, mapType, 0, &map);
+			if (FAILED(hr)) return 6;
 
-			InkVertex* vertices = reinterpret_cast<InkVertex*>(map.pData);
+			// 3. 计算写入指针
+			// map.pData 返回的是 Buffer 的首地址（哪怕是 NO_OVERWRITE）
+			// 所以必须加上 m_vbOffset 才能写到正确的位置
+			InkVertex* bufferStart = reinterpret_cast<InkVertex*>(map.pData);
+			InkVertex* currentBatchVertices = bufferStart + m_vbOffset;
 
-			// 2. 填充本批次的所有胶囊
+			// 4. 填充数据
 			for (size_t i = 0; i < capsulesThisDraw; ++i)
 			{
 				const InkVertex& capDesc = capsules[beginIndex + capsuleOffset + i];
 
-				float x1 = capDesc.p1.x;
-				float y1 = capDesc.p1.y;
-				float x2 = capDesc.p2.x;
-				float y2 = capDesc.p2.y;
-				float r1 = capDesc.r1;
-				float r2 = capDesc.r2;
+				// ... 几何计算保持不变 ...
+				float x1 = capDesc.p1.x; float y1 = capDesc.p1.y;
+				float x2 = capDesc.p2.x; float y2 = capDesc.p2.y;
+				float r1 = capDesc.r1;   float r2 = capDesc.r2;
 				DirectX::XMFLOAT4 color = capDesc.color;
 				int shapeType = capDesc.shapeType;
 
-				// 计算单个胶囊的包围盒
 				float minX = min(x1 - r1, x2 - r2);
 				float minY = min(y1 - r1, y2 - r2);
 				float maxX = max(x1 + r1, x2 + r2);
 				float maxY = max(y1 + r1, y2 + r2);
-
 				float padding = 2.0f;
-				minX -= padding; minY -= padding;
-				maxX += padding; maxY += padding;
+				minX -= padding; minY -= padding; maxX += padding; maxY += padding;
 
-				// 当前胶囊的 6 个顶点在 buffer 中的起始位置
-				InkVertex* v = vertices + i * VERTS_PER_CAPSULE;
+				// 指向当前胶囊的6个顶点位置
+				InkVertex* v = currentBatchVertices + i * VERTS_PER_CAPSULE;
 
-				auto SetV = [&](int idx, float px, float py)
-					{
-						v[idx].pos = DirectX::XMFLOAT2(px, py);
-						v[idx].color = color;
-						v[idx].p1 = DirectX::XMFLOAT2(x1, y1);
-						v[idx].p2 = DirectX::XMFLOAT2(x2, y2);
-						v[idx].r1 = r1;
-						v[idx].r2 = r2;
-						v[idx].shapeType = shapeType;
+				auto SetV = [&](int idx, float px, float py) {
+					v[idx].pos = DirectX::XMFLOAT2(px, py);
+					v[idx].color = color;
+					v[idx].p1 = DirectX::XMFLOAT2(x1, y1);
+					v[idx].p2 = DirectX::XMFLOAT2(x2, y2);
+					v[idx].r1 = r1; v[idx].r2 = r2;
+					v[idx].shapeType = shapeType;
+					// padding 不需要赋值，内存里是什么就是什么
 					};
 
-				// Triangle 1
-				SetV(0, minX, minY); // Top-Left
-				SetV(1, maxX, minY); // Top-Right
-				SetV(2, minX, maxY); // Bottom-Left
-
-				// Triangle 2
-				SetV(3, minX, maxY); // Bottom-Left
-				SetV(4, maxX, minY); // Top-Right
-				SetV(5, maxX, maxY); // Bottom-Right
+				SetV(0, minX, minY); SetV(1, maxX, minY); SetV(2, minX, maxY);
+				SetV(3, minX, maxY); SetV(4, maxX, minY); SetV(5, maxX, maxY);
 			}
 
 			context->Unmap(dynamicVB, 0);
 
-			// 3. 设置管线并 Draw 本批次
-			UINT stride = sizeof(InkVertex);
+			// 5. 渲染状态设置
+			UINT stride = sizeof(InkVertex); // 这里已经是 64 了
 			UINT offset = 0;
 			context->IASetInputLayout(inputLayout);
 			context->IASetVertexBuffers(0, 1, &dynamicVB.p, &stride, &offset);
@@ -276,18 +290,23 @@ public:
 
 			context->VSSetShader(vertexShader, nullptr, 0);
 			context->VSSetConstantBuffers(0, 1, &screenCB.p);
-
 			context->PSSetShader(pixelShader, nullptr, 0);
-
 			context->OMSetBlendState(alphaBlendState, nullptr, 0xFFFFFFFF);
 			context->RSSetState(rasterState);
 
-			context->Draw(static_cast<UINT>(vertsThisDraw), 0);
+			// 6. Draw 调用
+			// 参数2 (StartVertexLocation): 告诉 GPU 从 m_vbOffset 处开始读数据
+			context->Draw(static_cast<UINT>(vertsThisDraw), static_cast<UINT>(m_vbOffset));
 
-			// 本批次结束，移动到下一批
+			// 7. 更新状态，为下一批次做准备
+			m_vbOffset += static_cast<UINT>(vertsThisDraw);
+			// 【核心逻辑修改 END】
+
 			capsuleOffset += capsulesThisDraw;
 			remainingCapsules -= capsulesThisDraw;
 		}
+
+		return 0;
 	}
 
 private:
