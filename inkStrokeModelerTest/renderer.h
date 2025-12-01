@@ -1,6 +1,4 @@
-// renderer.h
-
-#pragma once
+ï»¿#pragma once
 
 #include <d3d11.h>
 #include <DirectXMath.h>
@@ -9,12 +7,12 @@
 #include <algorithm>
 
 #include "resource.h"
-
 #include "main.h"
 
 using namespace DirectX;
+using namespace std;
 
-// ¸¨Öú¼ÓÔØº¯Êı (±£³Ö²»±ä)
+// è¾…åŠ©åŠ è½½å‡½æ•°
 struct ShaderBlob { const void* data; size_t size; };
 inline ShaderBlob LoadShaderFromResource(int resourceID) {
 	HMODULE hModule = ::GetModuleHandle(nullptr);
@@ -25,31 +23,60 @@ inline ShaderBlob LoadShaderFromResource(int resourceID) {
 	return { ::LockResource(hMem), static_cast<size_t>(::SizeofResource(hModule, hRes)) };
 }
 
-// °üº¬»æÖÆËùĞèµÄÈ«²¿Âß¼­Êı¾İ£¬²»½ö½öÊÇÎ»ÖÃ
+// è¾…åŠ©ï¼šå°† XMFLOAT4 é¢œè‰²æ‰“åŒ…ä¸º uint32 (RGBA)
+inline uint32_t PackColor(const XMFLOAT4& color)
+{
+	uint8_t r = static_cast<uint8_t>(max(0.0f, min(1.0f, color.x)) * 255.0f);
+	uint8_t g = static_cast<uint8_t>(max(0.0f, min(1.0f, color.y)) * 255.0f);
+	uint8_t b = static_cast<uint8_t>(max(0.0f, min(1.0f, color.z)) * 255.0f);
+	uint8_t a = static_cast<uint8_t>(max(0.0f, min(1.0f, color.w)) * 255.0f);
+
+	// DXGI_FORMAT_R8G8B8A8_UNORM åœ¨å°ç«¯åºå†…å­˜ä¸­æ’åˆ—ä¸º: R(ä½ä½), G, B, A(é«˜ä½)
+	return (static_cast<uint32_t>(a) << 24) |
+		(static_cast<uint32_t>(b) << 16) |
+		(static_cast<uint32_t>(g) << 8) |
+		static_cast<uint32_t>(r);
+}
+
+// --------------------------------------------------------
+// ä¼˜åŒ–åçš„å®ä¾‹æ•°æ®ç»“æ„ (32 å­—èŠ‚ç´§å‡‘ç‰ˆ)
+// --------------------------------------------------------
 struct InkVertex
 {
-	InkVertex() {};
-	InkVertex(float x1Tar, float y1Tar, float r1Tar, float x2Tar, float y2Tar, float r2Tar, XMFLOAT4 colorTar)
+	InkVertex() : colorPacked(0), r1(0), r2(0), shapeType(0) {};
+
+	// æ„é€ å‡½æ•°å…¼å®¹æ—§çš„ä¼ å‚æ–¹å¼ï¼Œä½†åœ¨å†…éƒ¨è¿›è¡Œæ‰“åŒ…
+	InkVertex(float x1, float y1, float r1, float x2, float y2, float r2, XMFLOAT4 c)
 	{
-		pos = XMFLOAT2(x1Tar, y1Tar);
-		color = colorTar;
-		p1 = XMFLOAT2(x1Tar, y1Tar);
-		p2 = XMFLOAT2(x2Tar, y2Tar);
-		r1 = r1Tar;
-		r2 = r2Tar;
-		shapeType = 0;
+		// 1. å‡ ä½•å±æ€§ç›´æ¥èµ‹å€¼
+		this->p1 = XMFLOAT2(x1, y1);
+		this->p2 = XMFLOAT2(x2, y2);
+		this->r1 = r1;
+		this->r2 = r2;
+
+		// 2. é¢œè‰²æ‰“åŒ…ï¼šå°† float4 å‹ç¼©ä¸º uint32
+		this->colorPacked = PackColor(c);
+
+		// 3. ç±»å‹é»˜è®¤ä¸º 0
+		this->shapeType = 0;
 	}
 
-	XMFLOAT2 pos;       // POSITION
-	XMFLOAT4 color;     // COLOR
-	XMFLOAT2 p1;        // VAL_P1
-	XMFLOAT2 p2;        // VAL_P2
-	float    r1;        // VAL_R1
-	float    r2;        // VAL_R2
-	int      shapeType; // VAL_TYPE
+	// --- å†…å­˜å¸ƒå±€ (æ€»è®¡ 32 å­—èŠ‚) ---
+	// 4å­—èŠ‚å¯¹é½ï¼Œæ— éœ€æ˜¾å¼ Padding
 
-	// ¡¾¹Ø¼üĞŞ¸´¡¿Ôö¼Ó 12 ×Ö½ÚµÄÌî³ä£¬Ê¹×Ü´óĞ¡´ïµ½ 64 ×Ö½Ú (16µÄ±¶Êı)
-	float    padding[3];
+	XMFLOAT2 p1;          // Offset: 0  (Size: 8)
+	XMFLOAT2 p2;          // Offset: 8  (Size: 8)
+	float    r1;          // Offset: 16 (Size: 4)
+	float    r2;          // Offset: 20 (Size: 4)
+	uint32_t colorPacked; // Offset: 24 (Size: 4) - RGBA8888
+	int      shapeType;   // Offset: 28 (Size: 4)
+
+	// End at 32. Perfect alignment.
+};
+
+// å•ä½çŸ©å½¢é¡¶ç‚¹ç»“æ„
+struct TemplateVertex {
+	XMFLOAT2 pos; // 0.0 ~ 1.0
 };
 
 struct CB_ScreenSize {
@@ -67,14 +94,15 @@ public:
 	CComPtr<ID3D11PixelShader>      pixelShader;
 	CComPtr<ID3D11InputLayout>      inputLayout;
 	CComPtr<ID3D11Buffer>           screenCB;
-	CComPtr<ID3D11Buffer>           dynamicVB;
+
+	CComPtr<ID3D11Buffer>           instanceVB;
+	CComPtr<ID3D11Buffer>           templateVB;
+
 	CComPtr<ID3D11BlendState>       alphaBlendState;
 	CComPtr<ID3D11RasterizerState>  rasterState;
+	CComPtr<ID3D11Query>            g_frameFinishQuery;
 
-	CComPtr<ID3D11Query> g_frameFinishQuery;
-
-	// ¡¾ĞÂÔö¡¿¼ÇÂ¼µ±Ç° Vertex Buffer Ğ´µ½ÁËÄÄ¸ö¶¥µãË÷Òı
-	UINT m_vbOffset = 0;
+	UINT m_instanceOffset = 0;
 
 	void SetOMTarget()
 	{
@@ -82,115 +110,80 @@ public:
 		context->OMSetRenderTargets(1, rtvs, nullptr);
 	}
 
-	// ³õÊ¼»¯ (±£³Ö´ó²¿·ÖÂß¼­²»±ä£¬Ö»ĞŞ¸Ä InputLayout ºÍ VB ´óĞ¡)
 	bool Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain)
 	{
 		device = inDevice; context = inContext;
 
-		// ... (RTV ´´½¨´úÂëÍ¬Ô­°æ£¬ÂÔ) ...
 		CComPtr<ID3D11Texture2D> backBuffer;
 		swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&backBuffer);
 		device->CreateRenderTargetView(backBuffer, nullptr, &renderTargetView);
-
 		SetOMTarget();
 
-		// 1. ´´½¨³£Á¿»º³å
 		D3D11_BUFFER_DESC cbDesc = { sizeof(CB_ScreenSize), D3D11_USAGE_DYNAMIC, D3D11_BIND_CONSTANT_BUFFER, D3D11_CPU_ACCESS_WRITE, 0, 0 };
 		device->CreateBuffer(&cbDesc, nullptr, &screenCB);
 
-		// 2. ´´½¨»ìºÏ×´Ì¬ (Premultiplied Alpha or Standard)
 		D3D11_BLEND_DESC blendDesc = {};
 		blendDesc.RenderTarget[0].BlendEnable = TRUE;
 		blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
 		blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
 		blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
 		blendDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-		blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO; // or INV_SRC_ALPHA
+		blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
 		blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_MAX;
 		blendDesc.RenderTarget[0].RenderTargetWriteMask = 0x0F;
 		device->CreateBlendState(&blendDesc, &alphaBlendState);
 
-		// 3. ´´½¨¶¯Ì¬¶¥µã»º³å£º¹Ì¶¨ 2MB
-		const UINT INITIAL_VB_BYTES = 2 * 1024 * 1024; // 2MB
-		D3D11_BUFFER_DESC vbDesc = {};
-		vbDesc.ByteWidth = INITIAL_VB_BYTES;
-		vbDesc.Usage = D3D11_USAGE_DYNAMIC;
-		vbDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-		vbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-		HRESULT hr = device->CreateBuffer(&vbDesc, nullptr, &dynamicVB);
-		if (FAILED(hr))
-		{
-			MessageBox(NULL, L"Create Dynamic Vertex Buffer Failed!", L"Error", MB_OK);
-			return false;
-		}
+		// å®ä¾‹ç¼“å†²: 32768 * 32å­—èŠ‚ = 1MB (éå¸¸å°ä¸”é«˜æ•ˆ)
+		const UINT MAX_INSTANCES = 32768;
+		D3D11_BUFFER_DESC instDesc = {};
+		instDesc.ByteWidth = MAX_INSTANCES * sizeof(InkVertex);
+		instDesc.Usage = D3D11_USAGE_DYNAMIC;
+		instDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+		instDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+		if (FAILED(device->CreateBuffer(&instDesc, nullptr, &instanceVB))) return false;
 
-		cerr << "×ÅÉ«Æ÷ VB »º³åÉÏÏŞ " << 2 << " MB¡£" << endl;
+		TemplateVertex quadVerts[] = {
+			{ XMFLOAT2(0.0f, 0.0f) }, { XMFLOAT2(1.0f, 0.0f) }, { XMFLOAT2(0.0f, 1.0f) },
+			{ XMFLOAT2(0.0f, 1.0f) }, { XMFLOAT2(1.0f, 0.0f) }, { XMFLOAT2(1.0f, 1.0f) }
+		};
+		D3D11_BUFFER_DESC tbDesc = {};
+		tbDesc.ByteWidth = sizeof(quadVerts);
+		tbDesc.Usage = D3D11_USAGE_IMMUTABLE;
+		tbDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+		D3D11_SUBRESOURCE_DATA tbData = { quadVerts, 0, 0 };
+		if (FAILED(device->CreateBuffer(&tbDesc, &tbData, &templateVB))) return false;
 
-		// 4. ¼ÓÔØ Shader
 		if (!LoadShaders()) return false;
 
-		// 5. ´´½¨¹âÕ¤»¯×´Ì¬
-		{
-			D3D11_RASTERIZER_DESC rasterDesc = {};
-			rasterDesc.FillMode = D3D11_FILL_SOLID;
-
-			// [¹Ø¼üĞŞ¸Ä] ±ØĞëÉèÖÃÎª D3D11_CULL_NONE£¬ÒòÎªÎÒÃÇµÄ 2D Í¶Ó°·­×ªÁË Y Öá£¬
-			// µ¼ÖÂË³Ê±Õë¶¨ÒåµÄÈı½ÇĞÎ±ä³ÉÁËÄæÊ±Õë£¬Ä¬ÈÏÉèÖÃ»á°ÑËüÃÇÌŞ³ıµô¡£
-			rasterDesc.CullMode = D3D11_CULL_NONE;
-
-			rasterDesc.FrontCounterClockwise = FALSE;
-			rasterDesc.DepthClipEnable = TRUE;
-			// Èç¹ûÄãÏëÆôÓÃ¶àÖØ²ÉÑù¿¹¾â³İ(MSAA)£¬ÕâÀïÒ²ÒªÉèÎªTRUE£¬µ«ÎÒÃÇÓÃµÄÊÇShader¿¹¾â³İ£¬ËùÒÔÎŞËùÎ½
-			rasterDesc.MultisampleEnable = FALSE;
-			rasterDesc.AntialiasedLineEnable = FALSE;
-
-			// ºóĞø×¢Òâ£¬¹âÕ¤»¯ÒÑ¾­ÉèÖÃ¿¹¾â³İ£¬ËùÒÔ Shader ¿¹¾â³İÊÇ·ñĞèÒª£¨´æÒÉ£©
-
-			HRESULT hr = device->CreateRasterizerState(&rasterDesc, &rasterState);
-			if (FAILED(hr)) return false;
-		}
+		D3D11_RASTERIZER_DESC rasterDesc = {};
+		rasterDesc.FillMode = D3D11_FILL_SOLID;
+		rasterDesc.CullMode = D3D11_CULL_NONE;
+		rasterDesc.FrontCounterClockwise = FALSE;
+		rasterDesc.DepthClipEnable = TRUE;
+		device->CreateRasterizerState(&rasterDesc, &rasterState);
 
 		InitFrameSync(inDevice);
-
 		return true;
 	}
 
 	void SetScreenSize(float w, float h)
 	{
-		// 1. ¸üĞÂ³£Á¿»º³å
 		D3D11_MAPPED_SUBRESOURCE map;
 		if (SUCCEEDED(context->Map(screenCB, 0, D3D11_MAP_WRITE_DISCARD, 0, &map))) {
 			CB_ScreenSize* data = (CB_ScreenSize*)map.pData;
 			data->width = w; data->height = h;
 			context->Unmap(screenCB, 0);
 		}
-
-		// 2. ÉèÖÃÊÓ¿Ú (Viewport)
-		// Èç¹ûÃ»ÓĞÕâÒ»²½£¬¹âÕ¤»¯Æ÷²»ÖªµÀÒª°Ñ NDC ×ø±êÓ³Éäµ½ÆÁÄ»µÄÄÄ¸öÇøÓò
-		D3D11_VIEWPORT vp;
-		vp.TopLeftX = 0;
-		vp.TopLeftY = 0;
-		vp.Width = w;
-		vp.Height = h;
-		vp.MinDepth = 0.0f;
-		vp.MaxDepth = 1.0f;
+		D3D11_VIEWPORT vp = { 0, 0, w, h, 0.0f, 1.0f };
 		context->RSSetViewports(1, &vp);
 	}
 
 	void InitFrameSync(ID3D11Device* device)
 	{
-		D3D11_QUERY_DESC desc{};
-		desc.Query = D3D11_QUERY_EVENT;
-		desc.MiscFlags = 0;
-
-		HRESULT hr = device->CreateQuery(&desc, &g_frameFinishQuery);
-		if (FAILED(hr))
-		{
-			Testw(L"QUERY EVENT ¹ÜÏß´´½¨Ê§°Ü");
-		}
+		D3D11_QUERY_DESC desc{ D3D11_QUERY_EVENT, 0 };
+		device->CreateQuery(&desc, &g_frameFinishQuery);
 	}
 
-	// --- ºËĞÄ»æÖÆº¯Êı ---
 	int DrawStrokeSegment2(const vector<InkVertex>& capsules, size_t beginIndex, size_t endIndex)
 	{
 		if (!device || !context) return 1;
@@ -198,94 +191,45 @@ public:
 		if (beginIndex >= capsules.size()) return 3;
 
 		endIndex = min(endIndex, capsules.size());
-		size_t capsuleCountTotal = endIndex - beginIndex;
-		if (capsuleCountTotal == 0) return 4;
+		size_t countTotal = endIndex - beginIndex;
+		if (countTotal == 0) return 4;
 
-		// ²éÑ¯µ±Ç° VB Êµ¼ÊÄÜÈİÄÉ¶àÉÙ½ºÄÒ
-		VBCapacity cap = GetVBCapacity();
-		if (cap.maxCapsules == 0) return 5;
+		D3D11_BUFFER_DESC desc;
+		instanceVB->GetDesc(&desc);
+		size_t maxInstancesInBuf = desc.ByteWidth / sizeof(InkVertex);
 
-		size_t remainingCapsules = capsuleCountTotal;
-		size_t capsuleOffset = 0; // ÔÚÊäÈëÊı×éÖĞµÄÆ«ÒÆ
+		size_t remaining = countTotal;
+		size_t currentInputIndex = beginIndex;
 
-		// Ñ­»·´¦Àí£¬Ö±µ½»­ÍêËùÓĞ½ºÄÒ
-		while (remainingCapsules > 0)
+		while (remaining > 0)
 		{
-			// ±¾´Î×î¶àÄÜ»­¶àÉÙ£¿ÊÜÏŞÓÚ VB ×ÜÈİÁ¿
-			size_t capsulesThisDraw = min(remainingCapsules, cap.maxCapsules);
-			size_t vertsThisDraw = capsulesThisDraw * VERTS_PER_CAPSULE;
+			size_t drawCount = min(remaining, maxInstancesInBuf);
 
-			// ¡¾ºËĞÄÂß¼­ĞŞ¸Ä START¡¿
 			D3D11_MAP mapType = D3D11_MAP_WRITE_NO_OVERWRITE;
-
-			// 1. ¼ì²éÊÇ·ñÓĞ×ã¹»¿Õ¼ä×·¼ÓÊı¾İ
-			if (m_vbOffset + vertsThisDraw > cap.maxVertices)
-			{
-				// ¿Õ¼ä²»¹»£¬»òÕßÒÑ¾­µ½ÁË Buffer Ä©Î² -> »Ø¾í (Discard)
-				mapType = D3D11_MAP_WRITE_DISCARD;
-				m_vbOffset = 0; // ÖØÖÃÆ«ÒÆ
-			}
-
-			// Ê×´ÎÔËĞĞ±£»¤£¨ËäÈ»Í¨³£ offset=0 Ê± NO_OVERWRITE Ò²¿ÉÒÔ£¬µ« DISCARD ¸ü°²È«£©
-			if (m_vbOffset == 0)
+			if (m_instanceOffset + drawCount > maxInstancesInBuf || m_instanceOffset == 0)
 			{
 				mapType = D3D11_MAP_WRITE_DISCARD;
+				m_instanceOffset = 0;
 			}
 
-			// 2. Map
 			D3D11_MAPPED_SUBRESOURCE map{};
-			HRESULT hr = context->Map(dynamicVB, 0, mapType, 0, &map);
+			HRESULT hr = context->Map(instanceVB, 0, mapType, 0, &map);
 			if (FAILED(hr)) return 6;
 
-			// 3. ¼ÆËãĞ´ÈëÖ¸Õë
-			// map.pData ·µ»ØµÄÊÇ Buffer µÄÊ×µØÖ·£¨ÄÄÅÂÊÇ NO_OVERWRITE£©
-			// ËùÒÔ±ØĞë¼ÓÉÏ m_vbOffset ²ÅÄÜĞ´µ½ÕıÈ·µÄÎ»ÖÃ
-			InkVertex* bufferStart = reinterpret_cast<InkVertex*>(map.pData);
-			InkVertex* currentBatchVertices = bufferStart + m_vbOffset;
+			InkVertex* dest = reinterpret_cast<InkVertex*>(map.pData) + m_instanceOffset;
+			const InkVertex* src = &capsules[currentInputIndex];
 
-			// 4. Ìî³äÊı¾İ
-			for (size_t i = 0; i < capsulesThisDraw; ++i)
-			{
-				const InkVertex& capDesc = capsules[beginIndex + capsuleOffset + i];
+			// æé€Ÿæ‹·è´ï¼šç°åœ¨æ¯ä¸ªé¡¶ç‚¹åªæœ‰ 32 å­—èŠ‚
+			memcpy(dest, src, drawCount * sizeof(InkVertex));
 
-				// ... ¼¸ºÎ¼ÆËã±£³Ö²»±ä ...
-				float x1 = capDesc.p1.x; float y1 = capDesc.p1.y;
-				float x2 = capDesc.p2.x; float y2 = capDesc.p2.y;
-				float r1 = capDesc.r1;   float r2 = capDesc.r2;
-				DirectX::XMFLOAT4 color = capDesc.color;
-				int shapeType = capDesc.shapeType;
+			context->Unmap(instanceVB, 0);
 
-				float minX = min(x1 - r1, x2 - r2);
-				float minY = min(y1 - r1, y2 - r2);
-				float maxX = max(x1 + r1, x2 + r2);
-				float maxY = max(y1 + r1, y2 + r2);
-				float padding = 2.0f;
-				minX -= padding; minY -= padding; maxX += padding; maxY += padding;
+			UINT strides[2] = { sizeof(TemplateVertex), sizeof(InkVertex) };
+			UINT offsets[2] = { 0, m_instanceOffset * sizeof(InkVertex) };
+			ID3D11Buffer* vbs[2] = { templateVB.p, instanceVB.p };
 
-				// Ö¸Ïòµ±Ç°½ºÄÒµÄ6¸ö¶¥µãÎ»ÖÃ
-				InkVertex* v = currentBatchVertices + i * VERTS_PER_CAPSULE;
-
-				auto SetV = [&](int idx, float px, float py) {
-					v[idx].pos = DirectX::XMFLOAT2(px, py);
-					v[idx].color = color;
-					v[idx].p1 = DirectX::XMFLOAT2(x1, y1);
-					v[idx].p2 = DirectX::XMFLOAT2(x2, y2);
-					v[idx].r1 = r1; v[idx].r2 = r2;
-					v[idx].shapeType = shapeType;
-					// padding ²»ĞèÒª¸³Öµ£¬ÄÚ´æÀïÊÇÊ²Ã´¾ÍÊÇÊ²Ã´
-					};
-
-				SetV(0, minX, minY); SetV(1, maxX, minY); SetV(2, minX, maxY);
-				SetV(3, minX, maxY); SetV(4, maxX, minY); SetV(5, maxX, maxY);
-			}
-
-			context->Unmap(dynamicVB, 0);
-
-			// 5. äÖÈ¾×´Ì¬ÉèÖÃ
-			UINT stride = sizeof(InkVertex); // ÕâÀïÒÑ¾­ÊÇ 64 ÁË
-			UINT offset = 0;
 			context->IASetInputLayout(inputLayout);
-			context->IASetVertexBuffers(0, 1, &dynamicVB.p, &stride, &offset);
+			context->IASetVertexBuffers(0, 2, vbs, strides, offsets);
 			context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 			context->VSSetShader(vertexShader, nullptr, 0);
@@ -294,16 +238,11 @@ public:
 			context->OMSetBlendState(alphaBlendState, nullptr, 0xFFFFFFFF);
 			context->RSSetState(rasterState);
 
-			// 6. Draw µ÷ÓÃ
-			// ²ÎÊı2 (StartVertexLocation): ¸æËß GPU ´Ó m_vbOffset ´¦¿ªÊ¼¶ÁÊı¾İ
-			context->Draw(static_cast<UINT>(vertsThisDraw), static_cast<UINT>(m_vbOffset));
+			context->DrawInstanced(6, static_cast<UINT>(drawCount), 0, 0);
 
-			// 7. ¸üĞÂ×´Ì¬£¬ÎªÏÂÒ»Åú´Î×ö×¼±¸
-			m_vbOffset += static_cast<UINT>(vertsThisDraw);
-			// ¡¾ºËĞÄÂß¼­ĞŞ¸Ä END¡¿
-
-			capsuleOffset += capsulesThisDraw;
-			remainingCapsules -= capsulesThisDraw;
+			m_instanceOffset += static_cast<UINT>(drawCount);
+			currentInputIndex += drawCount;
+			remaining -= drawCount;
 		}
 
 		return 0;
@@ -311,60 +250,41 @@ public:
 
 private:
 	bool LoadShaders() {
-		// ¼ÙÉè×ÊÔ´ ID Îª IDR_VS_INK ºÍ IDR_PS_INK
-		// ÎªÁËÑİÊ¾£¬ÑØÓÃÄãµÄ IDR_VS1 Ğ´·¨£¬µ«Òª×¢Òâ Shader ´úÂë±ØĞë¸üĞÂ
 		ShaderBlob vsBlob = LoadShaderFromResource(IDR_VS1);
 		ShaderBlob psBlob = LoadShaderFromResource(IDR_PS1);
-
 		if (!vsBlob.data || !psBlob.data) return false;
 
 		device->CreateVertexShader(vsBlob.data, vsBlob.size, nullptr, &vertexShader);
 		device->CreatePixelShader(psBlob.data, psBlob.size, nullptr, &pixelShader);
 
-		// ¸üĞÂ Input Layout ÒÔÆ¥Åä InkVertex
+		// ã€å…³é”®æ›´æ–°ã€‘Input Layout åŒ¹é…æ–°çš„ 32 å­—èŠ‚ç´§å‡‘ç»“æ„
 		D3D11_INPUT_ELEMENT_DESC layout[] = {
-			{ "POSITION",      0, DXGI_FORMAT_R32G32_FLOAT,       0, 0,                                D3D11_INPUT_PER_VERTEX_DATA, 0 },
-			{ "COLOR",         0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT,     D3D11_INPUT_PER_VERTEX_DATA, 0 },
+			// Slot 0: æ¨¡æ¿
+			{ "POSITION",      0, DXGI_FORMAT_R32G32_FLOAT,       0, 0,  D3D11_INPUT_PER_VERTEX_DATA, 0 },
 
-			{ "VAL_START",     0, DXGI_FORMAT_R32G32_FLOAT,       0, D3D11_APPEND_ALIGNED_ELEMENT,     D3D11_INPUT_PER_VERTEX_DATA, 0 },
-			{ "VAL_END",       0, DXGI_FORMAT_R32G32_FLOAT,       0, D3D11_APPEND_ALIGNED_ELEMENT,     D3D11_INPUT_PER_VERTEX_DATA, 0 },
-			{ "VAL_RAD_START", 0, DXGI_FORMAT_R32_FLOAT,          0, D3D11_APPEND_ALIGNED_ELEMENT,     D3D11_INPUT_PER_VERTEX_DATA, 0 },
-			{ "VAL_RAD_END",   0, DXGI_FORMAT_R32_FLOAT,          0, D3D11_APPEND_ALIGNED_ELEMENT,     D3D11_INPUT_PER_VERTEX_DATA, 0 },
-			{ "VAL_TYPE",      0, DXGI_FORMAT_R32_SINT,           0, D3D11_APPEND_ALIGNED_ELEMENT,     D3D11_INPUT_PER_VERTEX_DATA, 0 },
+			// Slot 1: å®ä¾‹æ•°æ® (32å­—èŠ‚)
+			// 1. P1 (offset 0)
+			{ "VAL_START",     0, DXGI_FORMAT_R32G32_FLOAT,       1, 0,  D3D11_INPUT_PER_INSTANCE_DATA, 1 },
+			// 2. P2 (offset 8)
+			{ "VAL_END",       0, DXGI_FORMAT_R32G32_FLOAT,       1, 8,  D3D11_INPUT_PER_INSTANCE_DATA, 1 },
+			// 3. R1 (offset 16)
+			{ "VAL_RAD_START", 0, DXGI_FORMAT_R32_FLOAT,          1, 16, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
+			// 4. R2 (offset 20)
+			{ "VAL_RAD_END",   0, DXGI_FORMAT_R32_FLOAT,          1, 20, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
+
+			// 5. Color (offset 24)
+			// ä½¿ç”¨ DXGI_FORMAT_R8G8B8A8_UNORMï¼ŒGPUä¼šè‡ªåŠ¨æŠŠå®ƒæ ‡å‡†åŒ–ä¸º 0.0-1.0 çš„ float4
+			{ "COLOR",         0, DXGI_FORMAT_R8G8B8A8_UNORM,     1, 24, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
+
+			// 6. Type (offset 28)
+			{ "VAL_TYPE",      0, DXGI_FORMAT_R32_SINT,           1, 28, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
 		};
 
 		HRESULT hr = device->CreateInputLayout(layout, _countof(layout), vsBlob.data, vsBlob.size, &inputLayout);
-		if (FAILED(hr))
-		{
-			MessageBox(NULL, L"CreateInputLayout Failed! Check Output Window for details.", L"Error", MB_OK);
+		if (FAILED(hr)) {
+			MessageBox(NULL, L"CreateInputLayout Failed!", L"Error", MB_OK);
 			return false;
 		}
-
 		return true;
-	}
-
-	// Ã¿¸ö½ºÄÒÓÃ 6 ¸ö¶¥µã£¨Èı½ÇĞÎÁĞ±í£ºÁ½¸öÈı½ÇĞÎ£©
-	static constexpr size_t VERTS_PER_CAPSULE = 6;
-
-	struct VBCapacity
-	{
-		size_t maxVertices;
-		size_t maxCapsules;
-	};
-
-	VBCapacity GetVBCapacity() const
-	{
-		VBCapacity cap{ 0, 0 };
-		if (!dynamicVB) return cap;
-
-		D3D11_BUFFER_DESC desc{};
-		dynamicVB->GetDesc(&desc);
-
-		size_t maxVertices = desc.ByteWidth / sizeof(InkVertex);
-		size_t maxCapsules = maxVertices / VERTS_PER_CAPSULE;
-
-		cap.maxVertices = maxVertices;
-		cap.maxCapsules = maxCapsules;
-		return cap;
 	}
 };

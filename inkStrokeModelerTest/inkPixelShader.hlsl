@@ -40,7 +40,6 @@ float GetInkDist_Convex(float2 p, float2 p1, float2 p2, float r1, float r2)
     // 归一化轴向 (作为局部 Y 轴)
     float2 yAxis = ba / h;
     // 垂直轴向 (作为局部 X 轴)
-    // 实际上 sdUnevenCapsule_Vertical 使用了 abs(p.x)，所以 X 轴正反无所谓。
     float2 xAxis = float2(-yAxis.y, yAxis.x);
     
     // local_x = dot(pa, xAxis)  (点到轴线的垂直距离)
@@ -49,7 +48,6 @@ float GetInkDist_Convex(float2 p, float2 p1, float2 p2, float r1, float r2)
     
     return sdUnevenCapsule_Vertical(p_local, r1, r2, h);
 }
-
 
 float4 main(PS_INPUT input) : SV_Target
 {
