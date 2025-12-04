@@ -34,6 +34,7 @@
 #include "IdtImage.h"
 #include "IdtState.h"
 #include "IdtI18n.h"
+#include "Inkeys/Other/IdtInputs.h"
 
 #include <objbase.h>
 #include <psapi.h>
@@ -207,6 +208,157 @@ bool CheckPptCom()
 	return true;
 }
 
+LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	switch (msg)
+	{
+	case WM_TABLET_QUERYSYSTEMGESTURESTATUS:
+	{
+		DWORD flags = 0;
+		flags |= (0x00000001);
+		flags |= (0x00000008);
+		flags |= (0x00000100);
+		flags |= (0x00000200);
+		flags |= (0x00010000);
+		return (LRESULT)flags;
+	}
+
+	case WM_TOUCH:
+	{
+		static DWORD activeTouchId = 0;   // 0表示无活动ID
+		static bool isTouchActive = false;
+
+		UINT cInputs = LOWORD(wParam);
+		TOUCHINPUT inputs[32];
+		if (GetTouchInputInfo((HTOUCHINPUT)lParam, cInputs, inputs, sizeof(TOUCHINPUT)))
+		{
+			bool touchIdCheck = false; // 检测当前活动ID是否还存在
+			short x = 0, y = 0; // 坐标
+
+			for (UINT i = 0; i < cInputs; i++)
+			{
+				const TOUCHINPUT& ti = inputs[i];
+
+				double xO = static_cast<double>(ti.x) / 100.0;
+				double yO = static_cast<double>(ti.y) / 100.0;
+				x = static_cast<short>(xO + 0.5);
+				y = static_cast<short>(yO + 0.5);
+
+				if (ti.dwFlags & TOUCHEVENTF_DOWN)
+				{
+					// 如果当前无activeID，则锁定第一个DOWN点
+					if (!isTouchActive)
+					{
+						activeTouchId = ti.dwID;
+						isTouchActive = true;
+
+						{
+							ExMessage msgMouse = {};
+							msgMouse.message = WM_LBUTTONDOWN;
+							msgMouse.x = x;
+							msgMouse.y = y;
+							msgMouse.lbutton = true;
+
+							int index = hiex::GetWindowIndex(ppt_window, false);
+							unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
+							hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
+							lg_vecWindows_vecMessage_sm.unlock();
+						}
+					}
+				}
+				if (ti.dwFlags & TOUCHEVENTF_MOVE)
+				{
+					if (isTouchActive && ti.dwID == activeTouchId)
+					{
+						ExMessage msgMouse = {};
+						msgMouse.message = WM_MOUSEMOVE;
+						msgMouse.x = x;
+						msgMouse.y = y;
+						msgMouse.lbutton = true;
+
+						int index = hiex::GetWindowIndex(ppt_window, false);
+						unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
+						hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
+						lg_vecWindows_vecMessage_sm.unlock();
+					}
+				}
+				if (ti.dwFlags & TOUCHEVENTF_UP)
+				{
+					if (isTouchActive && ti.dwID == activeTouchId)
+					{
+						activeTouchId = 0;
+						isTouchActive = false;
+
+						{
+							ExMessage msgMouse = {};
+							msgMouse.message = WM_LBUTTONUP;
+							msgMouse.x = x;
+							msgMouse.y = y;
+							msgMouse.lbutton = false;
+
+							int index = hiex::GetWindowIndex(ppt_window, false);
+							unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
+							hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
+							lg_vecWindows_vecMessage_sm.unlock();
+						}
+					}
+				}
+
+				if (isTouchActive && ti.dwID == activeTouchId) touchIdCheck = true;
+			}
+
+			if (isTouchActive && !touchIdCheck)
+			{
+				activeTouchId = 0;
+				isTouchActive = false;
+
+				{
+					ExMessage msgMouse = {};
+					msgMouse.message = WM_LBUTTONUP;
+					msgMouse.x = x;
+					msgMouse.y = y;
+					msgMouse.lbutton = false;
+
+					int index = hiex::GetWindowIndex(ppt_window, false);
+					unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
+					hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
+					lg_vecWindows_vecMessage_sm.unlock();
+				}
+			}
+
+			CloseTouchInputHandle((HTOUCHINPUT)lParam);
+		}
+
+		return 0;
+	}
+
+	case WM_LBUTTONDOWN:
+	case WM_LBUTTONUP:
+	case WM_LBUTTONDBLCLK:
+	case WM_RBUTTONDOWN:
+	case WM_RBUTTONUP:
+	case WM_RBUTTONDBLCLK:
+	case WM_MOUSEMOVE:
+	{
+		// 如果是触摸模拟出来的鼠标消息，就直接丢掉
+		DWORD extraInfo = GetMessageExtraInfo();
+		if ((extraInfo & 0xFFFFFF00) == 0xFF515700)
+		{
+			return 0;
+		}
+
+		// 否则当成真正的鼠标消息处理
+		// 您的鼠标处理逻辑
+		break;
+	}
+
+	default:
+		return HIWINDOW_DEFAULT_PROC;
+	}
+
+	return HIWINDOW_DEFAULT_PROC;
+}
+
 wstring GetPptTitle()
 {
 	wstring ret = L"";
@@ -254,7 +406,7 @@ void GetPptState()
 			try
 			{
 				//_com_util::CheckError(PptCOMPto.CreateInstance(_uuidof(PptCOMServer)));
-				rel = PptCOMPto->Initialization(&PptInfoState.TotalPage, &PptInfoState.CurrentPage, pptComSetlist.autoKillWpsProcess);
+				rel = PptCOMPto->Initialization(&PptInfoState.TotalPage, &PptInfoState.CurrentPage/*, pptComSetlist.autoKillWpsProcess*/);
 			}
 			catch (_com_error err)
 			{
@@ -346,10 +498,25 @@ bool EndPptShow()
 
 	return false;
 }
-
-void PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
+bool ViewPptShow()
 {
-	if (!KeyBoradDown[VK_LBUTTON]) return;
+	try
+	{
+		SetForegroundWindow(ppt_show);
+		PptCOMPto->ViewSlideShow();
+
+		return true;
+	}
+	catch (_com_error)
+	{
+	}
+
+	return false;
+}
+
+double PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
+{
+	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return 0.0;
 	PptUiAllReplaceSignal = 1;
 
 	MonitorInfoStruct PPTMainMonitor;
@@ -357,8 +524,9 @@ void PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 	PPTMainMonitor = MainMonitor;
 	DisplaysInfoLock.unlock();
 
-	POINT p;
-	GetCursorPos(&p);
+	double ret = 0.0;
+	int firX = static_cast<int>(firstX);
+	int firY = static_cast<int>(firstY);
 
 	// 自身数值记录
 	float widthFirst = pptComSetlist.bottomBothWidth;
@@ -395,7 +563,7 @@ void PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 
 	for (;;)
 	{
-		if (!KeyBoradDown[VK_LBUTTON]) break;
+		if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 
 		POINT p;
 		GetCursorPos(&p);
@@ -489,6 +657,9 @@ void PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 		pptComSetlist.bottomBothWidth = widthTarget;
 		pptComSetlist.bottomBothHeight = heightTarget;
 
+		ret += sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY));
+		firX = static_cast<int>(p.x), firY = static_cast<int>(p.y);
+
 		this_thread::sleep_for(chrono::milliseconds(5));
 	}
 	// 写入文件
@@ -496,11 +667,11 @@ void PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 		PptComWriteSetting();
 
 	PptUiAllReplaceSignal = -1;
-	return;
+	return ret;
 }
-void PptMiddlePageWidgetSeekBar(int firstX, int firstY, bool xReverse)
+double PptMiddlePageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 {
-	if (!KeyBoradDown[VK_LBUTTON]) return;
+	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return 0.0;
 	PptUiAllReplaceSignal = 1;
 
 	MonitorInfoStruct PPTMainMonitor;
@@ -508,8 +679,9 @@ void PptMiddlePageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 	PPTMainMonitor = MainMonitor;
 	DisplaysInfoLock.unlock();
 
-	POINT p;
-	GetCursorPos(&p);
+	double ret = 0.0;
+	int firX = static_cast<int>(firstX);
+	int firY = static_cast<int>(firstY);
 
 	// 自身数值记录
 	float widthFirst = pptComSetlist.middleBothWidth;
@@ -546,7 +718,7 @@ void PptMiddlePageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 
 	for (;;)
 	{
-		if (!KeyBoradDown[VK_LBUTTON]) break;
+		if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 
 		POINT p;
 		GetCursorPos(&p);
@@ -640,18 +812,21 @@ void PptMiddlePageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 		pptComSetlist.middleBothWidth = widthTarget;
 		pptComSetlist.middleBothHeight = heightTarget;
 
+		ret += sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY));
+		firX = static_cast<int>(p.x), firY = static_cast<int>(p.y);
+
 		this_thread::sleep_for(chrono::milliseconds(5));
 	}
 	// 写入文件
-	if (pptComSetlist.memoryWidgetPosition && (pptComSetlist.bottomBothWidth != widthFirst || pptComSetlist.bottomBothHeight != heightFirst))
+	if (pptComSetlist.memoryWidgetPosition && (pptComSetlist.middleBothWidth != widthFirst || pptComSetlist.middleBothHeight != heightFirst))
 		PptComWriteSetting();
 
 	PptUiAllReplaceSignal = -1;
-	return;
+	return ret;
 }
 void PptBottomMiddleSeekBar(int firstX, int firstY)
 {
-	if (!KeyBoradDown[VK_LBUTTON]) return;
+	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return;
 	PptUiAllReplaceSignal = 1;
 
 	MonitorInfoStruct PPTMainMonitor;
@@ -697,7 +872,7 @@ void PptBottomMiddleSeekBar(int firstX, int firstY)
 
 	for (;;)
 	{
-		if (!KeyBoradDown[VK_LBUTTON]) break;
+		if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 
 		POINT p;
 		GetCursorPos(&p);
@@ -2092,6 +2267,9 @@ void PptDraw()
 		}
 	}
 
+	// 设置窗口自定义消息回调
+	hiex::SetWndProcFunc(ppt_window, PptWindowMsgCallback);
+
 	// 创建 EasyX 兼容的 DC Render Target
 	ID2D1DCRenderTarget* DCRenderTarget = nullptr;
 	D2DFactory->CreateDCRenderTarget(&D2DProperty, &DCRenderTarget);
@@ -3297,7 +3475,7 @@ void PptInteract()
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 						while (1)
 						{
-							if (!KeyBoradDown[VK_LBUTTON]) break;
+							if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								PreviousPptSlides();
@@ -3354,7 +3532,7 @@ void PptInteract()
 							std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 							while (1)
 							{
-								if (!KeyBoradDown[VK_LBUTTON]) break;
+								if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 
 								if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 								{
@@ -3388,12 +3566,21 @@ void PptInteract()
 					}
 				}
 				else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
+
 				// 底部左侧全局拖动条
 				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Height.v) }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
-						PptBottomPageWidgetSeekBar(m.x, m.y, false);
+						auto moveDis = PptBottomPageWidgetSeekBar(m.x, m.y, false);
+						if (moveDis <= 20)
+						{
+							if (IsInRect(m.x, m.y, { long(pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Left.v + 5.0f * pptComSetlist.bottomSideBothWidgetScale), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v), long(pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Right.v - 5.0f * pptComSetlist.bottomSideBothWidgetScale), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Height.v) }))
+							{
+								ViewPptShow();
+							}
+						}
+
 						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 					}
 				}
@@ -3421,7 +3608,7 @@ void PptInteract()
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 						while (1)
 						{
-							if (!KeyBoradDown[VK_LBUTTON]) break;
+							if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								PreviousPptSlides();
@@ -3478,7 +3665,7 @@ void PptInteract()
 							std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 							while (1)
 							{
-								if (!KeyBoradDown[VK_LBUTTON]) break;
+								if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 
 								if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 								{
@@ -3512,12 +3699,21 @@ void PptInteract()
 					}
 				}
 				else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
+
 				// 底部右侧全局拖动条
 				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Height.v) }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
-						PptBottomPageWidgetSeekBar(m.x, m.y, true);
+						auto moveDis = PptBottomPageWidgetSeekBar(m.x, m.y, true);
+						if (moveDis <= 20)
+						{
+							if (IsInRect(m.x, m.y, { long(pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Left.v + 5.0f * pptComSetlist.bottomSideBothWidgetScale), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v), long(pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Right.v - 5.0f * pptComSetlist.bottomSideBothWidgetScale), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Height.v) }))
+							{
+								ViewPptShow();
+							}
+						}
+
 						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 					}
 				}
@@ -3547,7 +3743,7 @@ void PptInteract()
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 						while (1)
 						{
-							if (!KeyBoradDown[VK_LBUTTON]) break;
+							if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								PreviousPptSlides();
@@ -3604,7 +3800,7 @@ void PptInteract()
 							std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 							while (1)
 							{
-								if (!KeyBoradDown[VK_LBUTTON]) break;
+								if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 
 								if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 								{
@@ -3638,12 +3834,24 @@ void PptInteract()
 					}
 				}
 				else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
+
 				// 中部左侧全局拖动条
 				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Height.v) }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
-						PptMiddlePageWidgetSeekBar(m.x, m.y, false);
+						auto moveDis = PptMiddlePageWidgetSeekBar(m.x, m.y, false);
+						if (moveDis <= 20)
+						{
+							if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v),
+								long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Height.v + 5.0f * pptComSetlist.middleSideBothWidgetScale),
+								long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Width.v),
+								long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].Y.v - 5.0f * pptComSetlist.middleSideBothWidgetScale) }))
+							{
+								ViewPptShow();
+							}
+						}
+
 						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 					}
 				}
@@ -3671,7 +3879,7 @@ void PptInteract()
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 						while (1)
 						{
-							if (!KeyBoradDown[VK_LBUTTON]) break;
+							if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								PreviousPptSlides();
@@ -3728,7 +3936,7 @@ void PptInteract()
 							std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 							while (1)
 							{
-								if (!KeyBoradDown[VK_LBUTTON]) break;
+								if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 
 								if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 								{
@@ -3762,12 +3970,24 @@ void PptInteract()
 					}
 				}
 				else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
+
 				// 中部右侧全局拖动条
 				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Height.v) }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
-						PptMiddlePageWidgetSeekBar(m.x, m.y, true);
+						auto moveDis = PptMiddlePageWidgetSeekBar(m.x, m.y, true);
+						if (moveDis <= 20)
+						{
+							if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v),
+								long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Height.v + 5.0f * pptComSetlist.middleSideBothWidgetScale),
+								long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Width.v),
+								long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].Y.v - 5.0f * pptComSetlist.middleSideBothWidgetScale) }))
+							{
+								ViewPptShow();
+							}
+						}
+
 						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 					}
 				}
@@ -3971,7 +4191,7 @@ void StartDesktopDrawpadBlocker()
 	{
 		// 配置 json
 		{
-			// if (_waccess((dataPath + L"\\DesktopDrawpadBlocker\\interaction_configuration.json").c_str(), 0) == 0) DdbReadInteraction();
+			// if (_waccess((pluginPath + L"\\DesktopDrawpadBlocker\\interaction_configuration.json").c_str(), 0) == 0) DdbReadInteraction();
 
 			ddbInteractionSetList.hostPath = GetCurrentExePath();
 
@@ -3980,54 +4200,54 @@ void StartDesktopDrawpadBlocker()
 		}
 
 		// 配置 EXE
-		if (_waccess((dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), 0) == -1)
+		if (_waccess((pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), 0) == -1)
 		{
-			if (_waccess((dataPath + L"\\DesktopDrawpadBlocker").c_str(), 0) == -1)
+			if (_waccess((pluginPath + L"\\DesktopDrawpadBlocker").c_str(), 0) == -1)
 			{
 				error_code ec;
-				filesystem::create_directories(dataPath + L"\\DesktopDrawpadBlocker", ec);
+				filesystem::create_directories(pluginPath + L"\\DesktopDrawpadBlocker", ec);
 			}
-			ExtractResource((dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
+			ExtractResource((pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
 		}
 		else
 		{
 			string hash_sha256;
 			{
 				hashwrapper* myWrapper = new sha256wrapper();
-				hash_sha256 = myWrapper->getHashFromFileW(dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe");
+				hash_sha256 = myWrapper->getHashFromFileW(pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe");
 				delete myWrapper;
 			}
 
 			if (hash_sha256 != ddbInteractionSetList.DdbSHA256)
 			{
-				if (isProcessRunning((dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
+				if (isProcessRunning((pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
 				{
 					// 需要关闭旧版 DDB 并更新版本
 
 					DdbWriteInteraction(true, true);
 					for (int i = 1; i <= 20; i++)
 					{
-						if (!isProcessRunning((dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
+						if (!isProcessRunning((pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
 							break;
 						this_thread::sleep_for(chrono::milliseconds(500));
 					}
 				}
-				ExtractResource((dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
+				ExtractResource((pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
 			}
 		}
 
 		// 启动 DDB
-		if (!isProcessRunning((dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
+		if (!isProcessRunning((pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
 		{
 			DdbWriteInteraction(true, false);
-			if (ddbInteractionSetList.runAsAdmin) ShellExecuteW(NULL, L"runas", (dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
-			else ShellExecuteW(NULL, NULL, (dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+			if (ddbInteractionSetList.runAsAdmin) ShellExecuteW(NULL, L"runas", (pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+			else ShellExecuteW(NULL, NULL, (pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
 		}
 	}
-	else if (_waccess((dataPath + L"\\DesktopDrawpadBlocker").c_str(), 0) == 0)
+	else if (_waccess((pluginPath + L"\\DesktopDrawpadBlocker").c_str(), 0) == 0)
 	{
 		error_code ec;
-		filesystem::remove_all(dataPath + L"\\DesktopDrawpadBlocker", ec);
+		filesystem::remove_all(pluginPath + L"\\DesktopDrawpadBlocker", ec);
 	}
 }
 

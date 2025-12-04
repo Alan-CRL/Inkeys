@@ -146,8 +146,8 @@ LONG WINAPI CrashHandler::UnhandledExceptionHandler(EXCEPTION_POINTERS* pExcepti
 
 	if (currentUserStateFlag == 0)
 	{
-		MessageBoxW(NULL, L"There is a problem with 智绘教Inkeys, click OK to restart 智绘教Inkeys to try to resolve the problem.\n智绘教Inkeys 出现问题，点击确定重启 智绘教Inkeys 以尝试解决问题。", L"Inkeys Error | 智绘教错误", MB_OK | MB_ICONERROR);
-		ShellExecuteW(NULL, NULL, exeDir.wstring().c_str(), L"-CrashTry", NULL, SW_SHOWNORMAL);
+		auto id = MessageBoxW(NULL, L"There is a problem with 智绘教Inkeys, click OK to restart 智绘教Inkeys to try to resolve the problem.\n智绘教Inkeys 出现问题，点击确定重启 智绘教Inkeys 以尝试解决问题。", L"Inkeys Error | 智绘教错误", MB_OK | MB_ICONERROR);
+		if (id == IDOK) ShellExecuteW(NULL, NULL, exeDir.wstring().c_str(), L"-CrashTry", NULL, SW_SHOWNORMAL);
 	}
 	else if (currentUserStateFlag == 1) ShellExecuteW(NULL, NULL, exeDir.wstring().c_str(), L"-CrashTry", NULL, SW_SHOWNORMAL);
 

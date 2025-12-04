@@ -150,6 +150,13 @@ void StartForInkeys();
 // --------------------------------------------------
 // 其他杂项
 
+struct IdtSysVersionStruct
+{
+	int majorVersion;
+	int	minorVersion;
+	int buildNumber;
+};
+
 typedef LONG(WINAPI* RtlGetVersionPtr)(RTL_OSVERSIONINFOW*);
-int GetWindowsVersion();
+IdtSysVersionStruct GetWindowsVersion();
 bool hasTouchDevice();

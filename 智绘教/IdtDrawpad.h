@@ -42,7 +42,6 @@ extern shared_mutex drawWaitingSm;
 extern IMAGE drawpad;
 extern IMAGE window_background;
 
-extern unordered_map<BYTE, bool> KeyBoradDown;
 extern HHOOK DrawpadHookCall;
 LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam);
 void DrawpadInstallHook();

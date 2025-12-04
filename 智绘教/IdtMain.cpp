@@ -13,7 +13,7 @@
 
 #include "IdtMain.h"
 
-#include "IdtBar.h"
+#include "CrashHandler/CrashHandler.h"
 #include "IdtConfiguration.h"
 #include "IdtD2DPreparation.h"
 #include "IdtDisplayManagement.h"
@@ -35,8 +35,9 @@
 #include "IdtTime.h"
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
+#include "Inkeys/Other/IdtGesture.h"
+#include "Inkeys/Load/IdtFontLoad.h"
 #include "Launch/IdtLaunchState.h"
-#include "CrashHandler/CrashHandler.h"
 #include "SuperTop/IdtSuperTop.h"
 
 #include <lm.h>
@@ -45,12 +46,12 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250721a";				// 程序发布日期
+wstring editionDate = L"20251204a";				// 程序发布日期
 wstring editionChannel = L"LTS";				// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
-wstring dataPath;								// 数据保存的路径
+wstring pluginPath;								// 数据保存的路径
 
 wstring programArchitecture = L"win32";
 wstring targetArchitecture = L"win32";
@@ -125,12 +126,18 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			return 0;
 		}
 
-		// 获取数据存储路径
+		// 获取目录
 		{
-			wchar_t buffer[MAX_PATH];
-			if (GetEnvironmentVariableW(L"ProgramData", buffer, MAX_PATH) != 0) dataPath = buffer;
-			else dataPath = L"C:\\ProgramData";
-			dataPath += L"\\Inkeys";
+			// 获取插件存储路径
+			{
+				/*
+				wchar_t buffer[MAX_PATH];
+				if (GetEnvironmentVariableW(L"ProgramData", buffer, MAX_PATH) != 0) pluginPath = buffer;
+				else pluginPath = L"C:\\ProgramData";*/
+
+				pluginPath = globalPath;
+				pluginPath += L"\\Inkeys\\Plugin";
+			}
 		}
 	}
 	// 防止重复启动
@@ -860,6 +867,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			}
 			// 绘制
 			{
+				setlist.disableRTS = false;
+
 				setlist.liftStraighten = false, setlist.waitStraighten = true;
 				setlist.pointAdsorption = true;
 
@@ -924,10 +933,14 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 							setlist.component.shortcutButton.keyboard.keyboardAltF4 = false;
 						}
 						{
+							setlist.component.shortcutButton.rollCall.IslandCaller = false;
+							setlist.component.shortcutButton.rollCall.SecRandom = false;
+							setlist.component.shortcutButton.rollCall.NamePicker = false;
+						}
+						{
 							setlist.component.shortcutButton.linkage.classislandSettings = false;
 							setlist.component.shortcutButton.linkage.classislandProfile = false;
 							setlist.component.shortcutButton.linkage.classislandClassswap = false;
-							setlist.component.shortcutButton.linkage.classislandIslandCaller = false;
 						}
 					}
 				}
@@ -975,17 +988,20 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				else setlist.paintDevice = 1;
 			}
 			{
-				//// 获取屏幕设备上下文
-				//HDC screen = GetDC(NULL);
+				HDC screenDC = GetDC(nullptr);
+				double scale = 1.0;
 
-				//// 获取屏幕的 DPI 值
-				//int dpiX = GetDeviceCaps(screen, LOGPIXELSX);
-				//int dpiY = GetDeviceCaps(screen, LOGPIXELSY);
+				if (screenDC)
+				{
+					int dpiX = GetDeviceCaps(screenDC, LOGPIXELSX);
+					ReleaseDC(nullptr, screenDC);
 
-				//// 释放设备上下文
-				//ReleaseDC(NULL, screen);
+					// 转换为缩放倍率
+					scale = static_cast<double>(dpiX) / USER_DEFAULT_SCREEN_DPI;
+				}
 
-				setlist.settingGlobalScale = 1.0f;
+				// 限制范围 1.0 ~ 1.5
+				setlist.settingGlobalScale = static_cast<float>(clamp(scale, 1.0, 1.5));
 			}
 		}
 
@@ -1063,6 +1079,16 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 自动更新初始化
 	{
+		// 检查系统版本
+		{
+			IdtSysVersionStruct windowsVersion = GetWindowsVersion();
+
+			if (windowsVersion.majorVersion > 6 || (windowsVersion.majorVersion == 6 && windowsVersion.minorVersion >= 2)) isWindows8OrGreater = true;
+			else isWindows8OrGreater = false;
+
+			windowsEdition = to_wstring(windowsVersion.majorVersion) + L"." + to_wstring(windowsVersion.minorVersion) + L"." + to_wstring(windowsVersion.buildNumber);
+		}
+
 #ifdef IDT_RELEASE
 		thread(AutomaticUpdate).detach();
 #endif
@@ -1076,38 +1102,40 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 字体初始化
 	{
-		INT numFound = 0;
-		HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
-		HGLOBAL hMem = LoadResource(NULL, hRes);
-		void* pLock = LockResource(hMem);
-		DWORD dwSize = SizeofResource(NULL, hRes);
-
-		fontCollection.AddMemoryFont(pLock, dwSize);
-		fontCollection.GetFamilies(1, &HarmonyOS_fontFamily, &numFound);
-
 		{
-			if (_waccess((globalPath + L"ttf").c_str(), 0) == -1)
-			{
-				error_code ec;
-				filesystem::create_directory(globalPath + L"ttf", ec);
-			}
-			ExtractResource((globalPath + L"ttf\\hmossscr.ttf").c_str(), L"TTF", MAKEINTRESOURCE(198));
+			INT numFound = 0;
+			HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
+			HGLOBAL hMem = LoadResource(NULL, hRes);
+			void* pLock = LockResource(hMem);
+			DWORD dwSize = SizeofResource(NULL, hRes);
 
-			IdtFontCollectionLoader* D2DFontCollectionLoader = new IdtFontCollectionLoader;
-			D2DFontCollectionLoader->AddFont(D2DTextFactory, globalPath + L"ttf\\hmossscr.ttf");
+			fontCollection.AddMemoryFont(pLock, dwSize);
+			fontCollection.GetFamilies(1, &HarmonyOS_fontFamily, &numFound);
 
-			D2DTextFactory->RegisterFontCollectionLoader(D2DFontCollectionLoader);
-			D2DTextFactory->CreateCustomFontCollection(D2DFontCollectionLoader, 0, 0, &D2DFontCollection);
-			D2DTextFactory->UnregisterFontCollectionLoader(D2DFontCollectionLoader);
+			stringFormat.SetAlignment(StringAlignmentCenter);
+			stringFormat.SetLineAlignment(StringAlignmentCenter);
+			stringFormat.SetFormatFlags(StringFormatFlagsNoWrap);
+
+			stringFormat_left.SetAlignment(StringAlignmentNear);
+			stringFormat_left.SetLineAlignment(StringAlignmentNear);
+			stringFormat_left.SetFormatFlags(StringFormatFlagsNoWrap);
 		}
 
-		stringFormat.SetAlignment(StringAlignmentCenter);
-		stringFormat.SetLineAlignment(StringAlignmentCenter);
-		stringFormat.SetFormatFlags(StringFormatFlagsNoWrap);
+		{
+			vector<UINT> fontResourceIDs;
+			fontResourceIDs.emplace_back(198); // HarmonyOS Sans SC
 
-		stringFormat_left.SetAlignment(StringAlignmentNear);
-		stringFormat_left.SetLineAlignment(StringAlignmentNear);
-		stringFormat_left.SetFormatFlags(StringFormatFlagsNoWrap);
+			IdtFontFileLoader::IsLoaderInitialized();
+			IdtFontCollectionLoader::IsLoaderInitialized();
+
+			D2DTextFactory->RegisterFontFileLoader(IdtFontFileLoader::GetLoader());
+			D2DTextFactory->RegisterFontCollectionLoader(IdtFontCollectionLoader::GetLoader());
+
+			IDWriteFontCollection* tempFontCollection = nullptr;
+			D2DTextFactory->CreateCustomFontCollection(IdtFontCollectionLoader::GetLoader(), fontResourceIDs.data(), static_cast<UINT32>(fontResourceIDs.size() * sizeof(UINT)), &tempFontCollection);
+
+			D2DFontCollection.Attach(tempFontCollection);
+		}
 
 		IDTLogger->info("[主线程][IdtMain] 字体初始化完成");
 	}
@@ -1118,18 +1146,29 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		if (userId == L"Error") ClassName = L"HiEasyX041";
 		else ClassName = userId;
 
+		// 窗口创建完成后处理的
+		auto disableGestureFuc = [&](HWND hWnd) -> void
+			{
+				IdtGesture::DisableEdgeGestures(hWnd, true);
+			};
+		auto touchRegisterFuc = [&](HWND hWnd) -> void
+			{
+				RegisterTouchWindow(hWnd, 0);
+				disableGestureFuc(hWnd);
+			};
+
 		CreateMagnifierWindow();
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
 		freeze_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys5 FreezeWindow", (L"Inkeys1;" + ClassName).c_str(), nullptr, magnifierWindow);
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
-		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys4 DrawpadWindow", (L"Inkeys2;" + ClassName).c_str(), nullptr, freeze_window);
+		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys4 DrawpadWindow", (L"Inkeys2;" + ClassName).c_str(), nullptr, freeze_window, disableGestureFuc);
 
 		SettingWindowBegin();
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
-		ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys2 PptWindow", (L"Inkeys4;" + ClassName).c_str(), nullptr, setting_window);
+		ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys2 PptWindow", (L"Inkeys4;" + ClassName).c_str(), nullptr, setting_window, touchRegisterFuc);
 		//ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys2 PptWindow", (L"Inkeys4;" + ClassName).c_str(), nullptr, drawpad_window);
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
@@ -1238,7 +1277,35 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] 线程初始化完成");
 	}
-	CrashHandler::IsSecond(false);
+
+	{
+		// 创建测试控制台
+
+#ifndef IDT_RELEASE
+		{
+			AllocConsole();
+
+			FILE* fp;
+			freopen_s(&fp, "CONOUT$", "w", stdout);
+			freopen_s(&fp, "CONOUT$", "w", stderr);
+			freopen_s(&fp, "CONIN$", "r", stdin);
+
+			// 让 C++ 流重新与 C 的 FILE* 同步
+			// true = 同步；不传参数的重载在 C++11 之后是被弃用的（某些编译器行为不定）
+			std::ios::sync_with_stdio(true);
+
+			// 清空原来的缓冲（保证重新绑定后生效）
+			std::wcout.clear();
+			std::wcin.clear();
+			std::wcerr.clear();
+			std::cout.clear();
+			std::cin.clear();
+			std::cerr.clear();
+
+			std::wcout.imbue(std::locale("chs"));
+		}
+#endif
+	}
 
 	IDTLogger->info("[主线程][IdtMain] 开始等待关闭程序信号发出");
 

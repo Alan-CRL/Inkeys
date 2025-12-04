@@ -6,10 +6,15 @@
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 #include "cpphttplib/httplib.h"
 
-std::string GetEditionInformation()
+std::string GetEditionInformation(std::string referer)
 {
 	httplib::Result res;
-	httplib::Headers headers = { {"Cache-Control", "no-cache"}, {"Pragma", "no-cache"} };
+	httplib::Headers headers =
+	{
+		{ "Cache-Control", "no-cache" },
+		{ "Pragma", "no-cache" },
+		{ "Referer", referer.c_str() }
+	};
 
 	// 尝试主地址
 	{
@@ -19,7 +24,7 @@ std::string GetEditionInformation()
 		scli.set_read_timeout(10);
 
 		// 尝试 Https 连接
-		res = scli.Get("/1709404/version_identification/official_version.json", headers);
+		res = scli.Get("/1709404/Inkeys/Version/version.json", headers);
 		if (!res || res->status != 200)
 		{
 			// 失败后尝试使用 Http 连接
@@ -28,7 +33,7 @@ std::string GetEditionInformation()
 			scli.set_connection_timeout(5);
 			scli.set_read_timeout(10);
 
-			res = cli.Get("/1709404/version_identification/official_version.json", headers);
+			res = cli.Get("/1709404/Inkeys/Version/version.json", headers);
 		}
 
 		if (res && res->status == 200)
@@ -46,7 +51,7 @@ std::string GetEditionInformation()
 		scli.set_read_timeout(10);
 
 		// 尝试 Https 连接
-		res = scli.Get("/version_identification/official_version.json", headers);
+		res = scli.Get("/Inkeys/Version/version.json", headers);
 		if (!res || res->status != 200)
 		{
 			// 失败后尝试使用 Http 连接
@@ -55,7 +60,7 @@ std::string GetEditionInformation()
 			scli.set_connection_timeout(5);
 			scli.set_read_timeout(10);
 
-			res = cli.Get("/version_identification/official_version.json", headers);
+			res = cli.Get("/Inkeys/Version/version.json", headers);
 		}
 
 		if (res && res->status == 200)
@@ -68,10 +73,15 @@ std::string GetEditionInformation()
 
 	return "Error";
 }
-bool DownloadEdition(std::string domain, std::string path, std::wstring directory, std::wstring fileName, std::atomic_ullong& downloadedSize)
+bool DownloadEdition(std::string domain, std::string path, std::wstring directory, std::wstring fileName, std::atomic_ullong& downloadedSize, std::string referer)
 {
 	httplib::Result res;
-	httplib::Headers headers = { {"Cache-Control", "no-cache"}, {"Pragma", "no-cache"} };
+	httplib::Headers headers =
+	{
+		{ "Cache-Control", "no-cache" },
+		{ "Pragma", "no-cache" },
+		{ "Referer", referer.c_str() }
+	};
 
 	std::ofstream file;
 	auto callback = [&](const char* data, size_t data_length)

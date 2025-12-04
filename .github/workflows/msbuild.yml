@@ -7,6 +7,8 @@ on:
     branches:
       - main
       - insider
+      - canary
+      - inkeys2-final
 permissions:
   actions: write
 
@@ -57,7 +59,7 @@ jobs:
       matrix:
         platform: [Win32, x64, ARM64]
       fail-fast: false
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
     - name: Checkout code 
@@ -162,7 +164,7 @@ jobs:
           
   package:
     name: Package
-    runs-on: windows-latest
+    runs-on: windows-2022
     needs: build
 
     steps:
@@ -280,15 +282,15 @@ jobs:
         run: |
           $branchName = $Env:GITHUB_REF_NAME
 
-          if ($branchName -ieq 'main' -or $branchName -ieq 'insider') 
-          {
-            "signing_policy_slug=release-signing" | Out-File -FilePath $Env:GITHUB_OUTPUT -Encoding utf8 -Append
-            "**使用正式证书签名**" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-          } 
-          else 
+          if ($branchName -ieq 'dev') 
           {
             "signing_policy_slug=test-signing" | Out-File -FilePath $Env:GITHUB_OUTPUT -Encoding utf8 -Append
             "**使用测试证书签名**" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          } 
+          else 
+          {
+            "signing_policy_slug=release-signing" | Out-File -FilePath $Env:GITHUB_OUTPUT -Encoding utf8 -Append
+            "**使用正式证书签名**" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           }
 
       - name: 提交给 SignPath 签名
@@ -413,6 +415,7 @@ jobs:
             "${{ steps.softwareChannel.outputs.VALUE }}": {
             "edition_date": "${{ steps.softwareDate.outputs.VALUE }}",
             "edition_code": "",
+            "inkeys3": false,
             "hash": {
               "md5": "$md5_1",
               "sha256": "$sha256_1",
@@ -422,16 +425,16 @@ jobs:
               "sha256 Arm64": "$sha256_3"
             },
             "path": [
-              "https://vip.123pan.cn/1709404/version_identification/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip",
-              "http://home.alan-crl.top/version_identification/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip"
+              "https://vip.123pan.cn/1709404/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip",
+              "http://home.alan-crl.top/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip"
             ],
             "path64": [
-              "https://vip.123pan.cn/1709404/version_identification/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip",
-              "http://home.alan-crl.top/version_identification/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip"
+              "https://vip.123pan.cn/1709404/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip",
+              "http://home.alan-crl.top/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip"
             ],
             "pathArm64": [
-              "https://vip.123pan.cn/1709404/version_identification/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip",
-              "http://home.alan-crl.top/version_identification/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip"
+              "https://vip.123pan.cn/1709404/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip",
+              "http://home.alan-crl.top/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip"
             ],
             "size": {
               "file": $size1,
@@ -607,7 +610,7 @@ jobs:
 
       - name: Upload to WebDAV with rclone
         id: upload_webdav
-        timeout-minutes: 60
+        timeout-minutes: 120
         continue-on-error: true
         shell: pwsh
         run: |
@@ -621,7 +624,7 @@ jobs:
             # 开始上传
             Write-Host "开始上传到 WebDAV..."
             Write-Host "进度将每 10 秒更新一次"
-            Write-Host "超时时间: 15 分钟"
+            Write-Host "超时时间: 120 分钟"
             Write-Host "目标路径: /Inkeys/PackageHistory/$Env:GITHUB_REF_NAME"
             Write-Host ""
           
@@ -675,6 +678,7 @@ jobs:
 
       - name: Verify upload
         shell: pwsh
+        continue-on-error: true
         run: |
           if ("${{ secrets.WEBDAV_API_TOKEN }}" -ne "")
           {

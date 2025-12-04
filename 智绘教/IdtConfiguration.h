@@ -47,6 +47,7 @@ struct SetListStruct
 
 #pragma region 绘制
 	int paintDevice;
+	IdtAtomic<bool> disableRTS;
 
 	bool liftStraighten, waitStraighten;
 	bool pointAdsorption;
@@ -118,11 +119,16 @@ struct SetListStruct
 			} keyboard;
 			struct
 			{
+				IdtAtomic<bool> IslandCaller;
+				IdtAtomic<bool> SecRandom;
+				IdtAtomic<bool> NamePicker;
+			}rollCall;
+			struct
+			{
 				// 联动
 				IdtAtomic<bool> classislandSettings;
 				IdtAtomic<bool> classislandProfile;
 				IdtAtomic<bool> classislandClassswap;
-				IdtAtomic<bool> classislandIslandCaller;
 			} linkage;
 		} shortcutButton;
 	}component;
@@ -172,7 +178,7 @@ struct PptComSetListStruct
 		bottomSideMiddleWidgetScale = 1.0f;
 		middleSideBothWidgetScale = 1.0f;
 
-		autoKillWpsProcess = true;
+		// autoKillWpsProcess = true;
 
 		// 附加信息项
 		setAdmin = false;
@@ -204,7 +210,7 @@ struct PptComSetListStruct
 	float middleSideBothWidgetScale;
 
 	// 自动结束未正确关闭的 WPP 进程
-	bool autoKillWpsProcess;
+	// bool autoKillWpsProcess;
 
 	// 附加信息项
 	bool setAdmin;
@@ -221,8 +227,8 @@ struct DdbInteractionSetListStruct
 		enable = false;
 		runAsAdmin = false;
 
-		DdbEdition = L"20250404a";
-		DdbSHA256 = "e0ce42c45c8287ae34129625cb64e9054b6abedea08dfa1dfccea564ec36da30";
+		DdbEdition = L"20251128a";
+		DdbSHA256 = "ffbfdb4ffb6f720ba19f7f042e7e3eb274b234764ad2e78247367ee470c65d05";
 
 		// -----
 
@@ -247,6 +253,8 @@ struct DdbInteractionSetListStruct
 		intercept.intelligentClassFloating = true;
 		intercept.seewoDesktopAnnotationFloating = true;
 		intercept.seewoDesktopSideBarFloating = false;
+		intercept.iclass30Floating = true;
+		intercept.iclass30SidebarFloating = false;
 	}
 
 	bool enable;
@@ -280,6 +288,8 @@ struct DdbInteractionSetListStruct
 		bool intelligentClassFloating;
 		bool seewoDesktopAnnotationFloating;
 		bool seewoDesktopSideBarFloating;
+		bool iclass30Floating;
+		bool iclass30SidebarFloating;
 	} intercept;
 };
 extern DdbInteractionSetListStruct ddbInteractionSetList;

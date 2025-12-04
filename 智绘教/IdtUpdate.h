@@ -4,28 +4,14 @@
 class EditionInfoClass
 {
 public:
-	EditionInfoClass()
-	{
-		errorCode = 0;
-		channel = "";
-
-		editionDate = L"";
-		editionCode = L"";
-		explain = L"";
-		representation = L"";
-		path_size = 0;
-		fileSize = 0;
-
-		hash_md5 = "";
-		hash_sha256 = "";
-	}
-
+	EditionInfoClass() {}
 	EditionInfoClass(const EditionInfoClass& other) { cF(other); }
 	EditionInfoClass& operator=(const EditionInfoClass& other)
 	{
 		if (this != &other) cF(other);
 		return *this;
 	}
+
 private:
 	void cF(const EditionInfoClass& other)
 	{
@@ -42,10 +28,12 @@ private:
 
 		hash_md5 = other.hash_md5;
 		hash_sha256 = other.hash_sha256;
+
+		isInkeys3 = other.isInkeys3;
 	}
 
 public:
-	int errorCode;
+	int errorCode = 0;
 	string channel;
 
 	wstring editionDate;
@@ -53,11 +41,14 @@ public:
 	wstring explain;
 	wstring representation;
 	string path[10];
-	int path_size;
-	atomic_ullong fileSize;
+	int path_size = 0;
+	atomic_ullong fileSize = 0;
 
 	string hash_md5;
 	string hash_sha256;
+
+	// extra
+	bool isInkeys3 = false;
 };
 EditionInfoClass GetEditionInfo(string channel, string arch);
 
@@ -74,7 +65,10 @@ enum class AutomaticUpdateStateEnum : int
 	UpdateRestart = 8, // 重启软件更新到最新版本
 	UpdateLatest = 9, // 软件已经是最新版本
 	UpdateNewer = 10, // 软件相对最新版本更新
-	UpdateNew = 11 // 发现软件新版本
+	UpdateNew = 11, // 发现软件新版本
+
+	UpdateLimit = 12, // 自动更新被阻止
+	UpdateInkeys3 = 13,
 };
 extern AutomaticUpdateStateEnum AutomaticUpdateState;
 
@@ -115,4 +109,6 @@ extern bool inconsistentArchitecture;
 wstring get_domain_name(wstring url);
 wstring convertToHttp(const wstring& url);
 
+extern bool isWindows8OrGreater;
+extern wstring windowsEdition;
 void AutomaticUpdate();

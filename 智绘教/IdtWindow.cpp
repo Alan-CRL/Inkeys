@@ -9,6 +9,7 @@
 #include "IdtState.h"
 #include "IdtText.h"
 #include "Launch/IdtLaunchState.h"
+#include "CrashHandler/CrashHandler.h"
 
 HWND floating_window = NULL; //悬浮窗窗口
 HWND drawpad_window = NULL; //画板窗口
@@ -94,6 +95,9 @@ void TopWindow()
 	// 置顶前缓冲
 	while (rtsWait) this_thread::sleep_for(chrono::milliseconds(500));
 	this_thread::sleep_for(chrono::milliseconds(1000));
+
+	// 启动操作彻底完成：关闭启动时崩溃标识
+	CrashHandler::IsSecond(false);
 
 	while (!offSignal)
 	{
