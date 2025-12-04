@@ -1,10 +1,77 @@
-This product includes software developed by the OpenSSL Project for use in the OpenSSL Toolkit (https://www.openssl.org/)
-and licensed under the Apache License 2.0.
+The development of this software makes use of a number of excellent third-party open source libraries. We would like to express our sincere gratitude to the contributors of these open source projects. Below is a non-exhaustive list of third-party components included in this software and their license information:
 
-Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
+Component: abseil/abseil-cpp (https://github.com/abseil/abseil-cpp)
+License: Apache License 2.0
+Copyright / Notes: 
 
------
+Component: aksalj/hashlibpp (https://github.com/aksalj/hashlibpp)
+License: See accompanying file(s)
+Copyright / Notes: Copyright (c) 2007-2011 Benjamin Gr¸delbach
 
-This product includes software developed by Carnegie Mellon University and Intel Corporation as part of the libcuckoo project (https://github.com/efficient/libcuckoo), and licensed under the Apache License, Version 2.0.
+Component: Alan-CRL/DesktopDrawpadBlocker (https://github.com/Alan-CRL/DesktopDrawpadBlocker)
+License: GNU General Public License v3.0
+Copyright / Notes: 
 
-Copyright 2013, Carnegie Mellon University and Intel Corporation.
+Component: cameron314/concurrentqueue (https://github.com/cameron314/concurrentqueue)
+License: See accompanying file(s)
+Copyright / Notes: Copyright (c) 2013-2016, Cameron Desrochers. All rights reserved.
+
+Component: efficient/libcuckoo (https://github.com/efficient/libcuckoo)
+License: See accompanying file(s)
+Copyright / Notes: Copyright (C) 2013, Carnegie Mellon University and Intel Corporation
+
+Component: gabime/spdlog (https://github.com/gabime/spdlog)
+License: MIT License
+Copyright / Notes: Copyright (c) 2016 Gabi Melman.
+
+Component: google/ink-stroke-modeler (https://github.com/google/ink-stroke-modeler)
+License: Apache License 2.0
+Copyright / Notes: 
+
+Component: martinus/unordered_dense (https://github.com/martinus/unordered_dense)
+License: MIT License
+Copyright / Notes: Copyright (c) 2022 Martin Leitner-Ankerl
+
+Component: mohabouje/WinToast (https://github.com/mohabouje/WinToast)
+License: MIT License
+Copyright / Notes: Copyright (C) 2016-2023 WinToast v1.3.0 - Mohammed Boujemaoui <mohabouje@gmail.com>
+
+Component: nothings/stb (https://github.com/nothings/stb)
+License: MIT License
+Copyright / Notes: Copyright (c) 2017 Sean Barrett
+
+Component: ocornut/imgui (https://github.com/ocornut/imgui)
+License: MIT License
+Copyright / Notes: Copyright (c) 2014-2025 Omar Cornut
+
+Component: openssl/openssl (https://github.com/openssl/openssl)
+License: Apache License 2.0
+Copyright / Notes: Copyright (c) 1998-2025 The OpenSSL Project Authors. Copyright (c) 1995-1998 Eric A. Young, Tim J. Hudson. All rights reserved.
+
+Component: sammycage/lunasvg (https://github.com/sammycage/lunasvg)
+License: MIT License
+Copyright / Notes: Copyright (c) 2007-2010 Baptiste Lepilleur and The JsonCpp Authors
+
+Component: sammycage/plutovg (https://github.com/sammycage/plutovg)
+License: MIT License
+Copyright / Notes: Copyright (c) 2020-2025 Samuel Ugochukwu <sammycageagle@gmail.com>
+
+Component: yhirose/cpp-httplib (https://github.com/yhirose/cpp-httplib)
+License: MIT License
+Copyright / Notes: Copyright (c) 2017 yhirose
+
+Component: Zip Utils (https://www.codeproject.com/Articles/7530/Zip-Utils-Clean-Elegant-Simple-Cplusplus-Win)
+License: 
+Copyright / Notes: 
+
+Component: zouhuidong/HiEasyX (https://github.com/zouhuidong/HiEasyX)
+License: MIT License
+Copyright / Notes: Copyright (c) 2022 zouhuidong
+
+For the complete list of all third-party libraries used by this software and their corresponding license files, please refer to the following links:
+
+Main component notices (NOTICE):
+./NOTICE
+
+Third-party license files:
+./ThirdpartyLicenses/

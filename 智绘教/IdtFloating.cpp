@@ -18,6 +18,7 @@
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
 #include "SuperTop/IdtSuperTop.h"
+#include "Inkeys/Other/IdtInputs.h"
 
 #include <shldisp.h>
 #include <exdisp.h>
@@ -136,7 +137,7 @@ pair<double, double> GetPointOnCircle(double x, double y, double r, double angle
 
 int SeekBar(ExMessage m)
 {
-	if (!KeyBoradDown[VK_LBUTTON]) return 0;
+	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return 0;
 
 	POINT p;
 	GetCursorPos(&p);
@@ -148,7 +149,7 @@ int SeekBar(ExMessage m)
 
 	while (1)
 	{
-		if (!KeyBoradDown[VK_LBUTTON]) break;
+		if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
 		GetCursorPos(&p);
 
 		if (firX == p.x && firY == p.y) continue;
@@ -193,13 +194,13 @@ LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 {
 	if (nCode >= 0)
 	{
-		if (wParam == WM_LBUTTONDOWN) KeyBoradDown[VK_LBUTTON] = true;
-		else if (wParam == WM_LBUTTONUP) KeyBoradDown[VK_LBUTTON] = false;
-		else if (wParam == WM_MBUTTONDOWN) KeyBoradDown[VK_MBUTTON] = true;
-		else if (wParam == WM_MBUTTONUP) KeyBoradDown[VK_MBUTTON] = false;
+		if (wParam == WM_LBUTTONDOWN) IdtInputs::SetKeyBoardDown(VK_LBUTTON, true);
+		else if (wParam == WM_LBUTTONUP) IdtInputs::SetKeyBoardDown(VK_LBUTTON, false);
+		else if (wParam == WM_MBUTTONDOWN) IdtInputs::SetKeyBoardDown(VK_MBUTTON, true);
+		else if (wParam == WM_MBUTTONUP) IdtInputs::SetKeyBoardDown(VK_MBUTTON, false);
 
-		else if (wParam == WM_RBUTTONDOWN) KeyBoradDown[VK_RBUTTON] = true;
-		else if (wParam == WM_RBUTTONUP) KeyBoradDown[VK_RBUTTON] = false;
+		else if (wParam == WM_RBUTTONDOWN) IdtInputs::SetKeyBoardDown(VK_RBUTTON, true);
+		else if (wParam == WM_RBUTTONUP) IdtInputs::SetKeyBoardDown(VK_RBUTTON, false);
 
 		if (wParam == WM_MOUSEWHEEL && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && !penetrate.select && ppt_show != NULL)
 		{
@@ -240,6 +241,172 @@ LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 				thread(MouseClickCollapse).detach();
 			}
 		}
+
+		// TODO 关闭RTS时，靠钩子仅支持鼠标绘制：具体实验位于 inkeys2-final
+		/*struct DrawpadMsgCallbackInfoStruct
+		{
+			IdtAtomic<bool> isLbuttonDown = false;
+			IdtAtomic<bool> isRbuttonDown = false;
+		};
+		extern DrawpadMsgCallbackInfoStruct drawpadMsgCallbackInfo;*/
+		/*// 输入融合感知：鼠标
+	case WM_LBUTTONDOWN:
+	case WM_RBUTTONDOWN:
+	{
+		// 这是一个按下状态
+
+		// 输入融合感知：鼠标
+		TouchMode mode{};
+		TouchInfo info{};
+
+		// 获取坐标
+		mode.pt.x = GET_X_LPARAM(lParam);
+		mode.pt.y = GET_Y_LPARAM(lParam);
+
+		// 获取设备类型
+		int deviceType = 2;
+		LONG touchCnt = -1;
+		// 右键
+		if (msg == WM_RBUTTONDOWN)
+		{
+			mode.type = deviceType = 3;
+			touchCnt = -2;
+			drawpadMsgCallbackInfo.isRbuttonDown = true;
+		}
+		// 左键
+		else
+		{
+			mode.type = deviceType = 2;
+			touchCnt = -1;
+			drawpadMsgCallbackInfo.isLbuttonDown = true;
+		}
+
+		// 设置固定 PID
+		info.pid = touchCnt;
+
+		std::unique_lock<std::shared_mutex> lock1(touchPosSm);
+		TouchPos[touchCnt] = mode;
+		lock1.unlock();
+
+		std::unique_lock<std::shared_mutex> lock2(touchSpeedSm);
+		TouchSpeed[touchCnt] = 0;
+		PreviousPointPosition[touchCnt].first = PreviousPointPosition[touchCnt].second = -1;
+		lock2.unlock();
+
+		std::unique_lock<std::shared_mutex> lock3(pointListSm);
+		TouchList.push_back(touchCnt);
+		lock3.unlock();
+
+		info.mode = mode;
+
+		std::unique_lock<std::shared_mutex> lock4(touchTempSm);
+		TouchTemp.push_back(info);
+		lock4.unlock();
+
+		rtsNum++, rtsDown = true;
+
+		return 0;
+	}
+
+	case WM_MOUSEMOVE:
+	{
+		if (!drawpadMsgCallbackInfo.isLbuttonDown && !drawpadMsgCallbackInfo.isRbuttonDown) break;
+
+		// 这是一个移动状态
+
+		// 获取坐标
+		auto xO = GET_X_LPARAM(lParam);
+		auto yO = GET_Y_LPARAM(lParam);
+
+		if (drawpadMsgCallbackInfo.isLbuttonDown)
+		{
+			int pid = -1;
+
+			shared_lock<shared_mutex> lock1(touchPosSm);
+			TouchMode mode = TouchPos[pid];
+			lock1.unlock();
+
+			mode.pt.x = xO;
+			mode.pt.y = yO;
+
+			unique_lock<shared_mutex> lock2(touchPosSm);
+			TouchPos[pid] = mode;
+			lock2.unlock();
+		}
+		if (drawpadMsgCallbackInfo.isRbuttonDown)
+		{
+			int pid = -2;
+
+			shared_lock<shared_mutex> lock1(touchPosSm);
+			TouchMode mode = TouchPos[pid];
+			lock1.unlock();
+
+			mode.pt.x = xO;
+			mode.pt.y = yO;
+
+			unique_lock<shared_mutex> lock2(touchPosSm);
+			TouchPos[pid] = mode;
+			lock2.unlock();
+		}
+
+		return 0;
+	}
+
+	case WM_LBUTTONUP:
+	case WM_RBUTTONUP:
+	{
+		// 这是一个抬起状态
+
+		// 先更新最后的位置
+		int pid = -1;
+		{
+			if (msg == WM_RBUTTONUP)
+			{
+				pid = -2;
+				drawpadMsgCallbackInfo.isRbuttonDown = false;
+			}
+			// 左键
+			else
+			{
+				pid = -1;
+				drawpadMsgCallbackInfo.isLbuttonDown = false;
+			}
+
+			shared_lock<shared_mutex> lock1(touchPosSm);
+			TouchMode mode = TouchPos[pid];
+			lock1.unlock();
+
+			mode.pt.x = GET_X_LPARAM(lParam);
+			mode.pt.y = GET_Y_LPARAM(lParam);
+
+			unique_lock<shared_mutex> lock2(touchPosSm);
+			TouchPos[pid] = mode;
+			lock2.unlock();
+		}
+
+		rtsNum = max(0, rtsNum - 1);
+		if (rtsNum == 0) rtsDown = false;
+
+		auto it = std::find(TouchList.begin(), TouchList.end(), pid);
+		if (it != TouchList.end())
+		{
+			unique_lock<shared_mutex> lockPointListSm(pointListSm);
+			TouchList.erase(it);
+			lockPointListSm.unlock();
+		}
+
+		if (rtsNum == 0)
+		{
+			unique_lock<shared_mutex> lockTouchPosSm(touchPosSm);
+			TouchPos.clear();
+			lockTouchPosSm.unlock();
+
+			touchNum = 0;
+			inkNum = 0;
+		}
+
+		return 0;
+	}*/
 	}
 
 	// 继续传递事件给下一个钩子或目标窗口
@@ -327,6 +494,9 @@ void DrawScreen()
 			idtLoadImage(&floating_icon[27], L"PNG", L"CustomizeIco7", 40, 40, true); // control
 			idtLoadImage(&floating_icon[28], L"PNG", L"CustomizeIco8", 40, 40, true); // lockS
 			idtLoadImage(&floating_icon[29], L"PNG", L"CustomizeIco9", 40, 40, true); // taskmgr
+
+			idtLoadImage(&floating_icon[31], L"PNG", L"CustomizeIco10", 40, 40, true); // SecRandom
+			idtLoadImage(&floating_icon[32], L"PNG", L"CustomizeIco11", 40, 40, true); // NamePicker
 
 			idtLoadImage(&sign, L"PNG", L"sign1", 30, 30, true);
 
@@ -4664,7 +4834,10 @@ void DrawScreen()
 			{
 				ChangeColor(floating_icon[7], UIControlColor[L"Image/test/fill"].v);
 				hiex::TransparentImage(&background, int(UIControl[L"Image/test/x"].v), int(UIControl[L"Image/test/y"].v), &floating_icon[7], int((UIControlColor[L"Image/test/fill"].v >> 24) & 0xff));
-				if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart) hiex::EasyX_Gdiplus_SolidEllipse(UIControl[L"Image/test/x"].v + 30, UIControl[L"Image/test/y"].v, 10, 10, RGBA(228, 55, 66, 255), false, SmoothingModeHighQuality, &background);
+				if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart ||
+					AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateLimit ||
+					AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateInkeys3)
+					hiex::EasyX_Gdiplus_SolidEllipse(UIControl[L"Image/test/x"].v + 30, UIControl[L"Image/test/y"].v, 10, 10, RGBA(228, 55, 66, 255), false, SmoothingModeHighQuality, &background);
 
 				Gdiplus::Font gp_font(&HarmonyOS_fontFamily, UIControl[L"Words/test/height"].v, FontStyleRegular, UnitPixel);
 				SolidBrush WordBrush(hiex::ConvertToGdiplusColor(UIControlColor[L"Words/test/words_color"].v, true));
@@ -4690,10 +4863,13 @@ void DrawScreen()
 				else if (setlist.component.shortcutButton.keyboard.keyboardesc) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[25], UIControl[L"Image/Customize1/transparency"].v);
 				else if (setlist.component.shortcutButton.keyboard.keyboardAltF4) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[26], UIControl[L"Image/Customize1/transparency"].v);
 
+				else if (setlist.component.shortcutButton.rollCall.IslandCaller) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[22], UIControl[L"Image/Customize1/transparency"].v);
+				else if (setlist.component.shortcutButton.rollCall.SecRandom) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[31], UIControl[L"Image/Customize1/transparency"].v);
+				else if (setlist.component.shortcutButton.rollCall.NamePicker) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[32], UIControl[L"Image/Customize1/transparency"].v);
+
 				else if (setlist.component.shortcutButton.linkage.classislandSettings) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[21], UIControl[L"Image/Customize1/transparency"].v);
 				else if (setlist.component.shortcutButton.linkage.classislandProfile) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[21], UIControl[L"Image/Customize1/transparency"].v);
 				else if (setlist.component.shortcutButton.linkage.classislandClassswap) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[21], UIControl[L"Image/Customize1/transparency"].v);
-				else if (setlist.component.shortcutButton.linkage.classislandIslandCaller) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[22], UIControl[L"Image/Customize1/transparency"].v);
 
 				Gdiplus::Font gp_font(&HarmonyOS_fontFamily, UIControl[L"Words/Customize1/height"].v, FontStyleRegular, UnitPixel);
 				SolidBrush WordBrush(hiex::ConvertToGdiplusColor(UIControlColor[L"Words/Customize1/words_color"].v, true));
@@ -4715,10 +4891,13 @@ void DrawScreen()
 				else if (setlist.component.shortcutButton.keyboard.keyboardesc) graphics.DrawString(L"ESC键", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 				else if (setlist.component.shortcutButton.keyboard.keyboardAltF4) graphics.DrawString(L"Alt+F4", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 
+				else if (setlist.component.shortcutButton.rollCall.IslandCaller) graphics.DrawString(L"随机点名", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else if (setlist.component.shortcutButton.rollCall.SecRandom) graphics.DrawString(L"随机点名", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else if (setlist.component.shortcutButton.rollCall.NamePicker) graphics.DrawString(L"随机点名", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+
 				else if (setlist.component.shortcutButton.linkage.classislandSettings) graphics.DrawString(L"CI设置", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 				else if (setlist.component.shortcutButton.linkage.classislandProfile) graphics.DrawString(L"档案编辑", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 				else if (setlist.component.shortcutButton.linkage.classislandClassswap) graphics.DrawString(L"快速换课", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
-				else if (setlist.component.shortcutButton.linkage.classislandIslandCaller) graphics.DrawString(L"随机点名", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 			}
 
 			//插件空位1：随机点名
@@ -5654,7 +5833,7 @@ void MouseInteraction()
 								else widthBuffer = 101 + int(double(idx - 260) / 60.0 * 399.0);
 								SetPenWidth((float)widthBuffer, false);
 
-								if (!KeyBoradDown[VK_LBUTTON])
+								if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON))
 								{
 									SetPenWidth((float)widthBuffer);
 									break;
@@ -5864,7 +6043,7 @@ void MouseInteraction()
 									UIControlTarget[L"RoundRect/BrushColorChooseMark/x"].v = UIControl[L"RoundRect/BrushColorChooseMark/x"].v = result.x + UIControl[L"RoundRect/BrushColorChooseWheel/x"].v - 7;
 									UIControlTarget[L"RoundRect/BrushColorChooseMark/y"].v = UIControl[L"RoundRect/BrushColorChooseMark/y"].v = result.y + UIControl[L"RoundRect/BrushColorChooseWheel/y"].v - 7;
 
-									if (!KeyBoradDown[VK_LBUTTON])
+									if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON))
 									{
 										SetPenColor(RGBA(red, green, blue, (floatingInfo.brushColor >> 24) & 0xFF));
 										break;
@@ -6274,6 +6453,7 @@ void MouseInteraction()
 					if (m.message == WM_LBUTTONDOWN)
 					{
 						lx = m.x, ly = m.y;
+
 						while (1)
 						{
 							ExMessage m = hiex::getmessage_win32(EM_MOUSE, floating_window);
@@ -6314,6 +6494,46 @@ void MouseInteraction()
 										keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
 									}
 
+									else if (setlist.component.shortcutButton.rollCall.IslandCaller)
+									{
+										/*ShellExecute(NULL, L"open", L"classisland://plugins/IslandCaller/Run", NULL, NULL, SW_SHOWNORMAL);*/
+
+										SHELLEXECUTEINFO sei = { sizeof(sei) };
+										sei.fMask = SEE_MASK_NOASYNC;
+										sei.hwnd = NULL;
+										sei.lpVerb = L"open";
+										sei.lpFile = L"classisland://plugins/IslandCaller/Run";
+										sei.nShow = SW_SHOWNORMAL;
+
+										ShellExecuteEx(&sei);
+									}
+									else if (setlist.component.shortcutButton.rollCall.SecRandom)
+									{
+										/*ShellExecute(NULL, L"open", L"secrandom://direct_extraction", NULL, NULL, SW_SHOWNORMAL);*/
+
+										SHELLEXECUTEINFO sei = { sizeof(sei) };
+										sei.fMask = SEE_MASK_NOASYNC;
+										sei.hwnd = NULL;
+										sei.lpVerb = L"open";
+										sei.lpFile = L"secrandom://direct_extraction";
+										sei.nShow = SW_SHOWNORMAL;
+
+										ShellExecuteEx(&sei);
+									}
+									else if (setlist.component.shortcutButton.rollCall.NamePicker)
+									{
+										/*ShellExecute(NULL, L"open", L"namepicker://", NULL, NULL, SW_SHOWNORMAL);*/
+
+										SHELLEXECUTEINFO sei = { sizeof(sei) };
+										sei.fMask = SEE_MASK_NOASYNC;
+										sei.hwnd = NULL;
+										sei.lpVerb = L"open";
+										sei.lpFile = L"namepicker://";
+										sei.nShow = SW_SHOWNORMAL;
+
+										ShellExecuteEx(&sei);
+									}
+
 									else if (setlist.component.shortcutButton.linkage.classislandSettings)
 									{
 										ShellExecute(NULL, L"open", L"classisland://app/settings/", NULL, NULL, SW_SHOWNORMAL);
@@ -6325,10 +6545,6 @@ void MouseInteraction()
 									else if (setlist.component.shortcutButton.linkage.classislandClassswap)
 									{
 										ShellExecute(NULL, L"open", L"classisland://app/class-swap", NULL, NULL, SW_SHOWNORMAL);
-									}
-									else if (setlist.component.shortcutButton.linkage.classislandIslandCaller)
-									{
-										ShellExecute(NULL, L"open", L"classisland://plugins/IslandCaller/Run", NULL, NULL, SW_SHOWNORMAL);
 									}
 
 									break;

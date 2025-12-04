@@ -54,22 +54,41 @@ BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMoni
 			int displayOrientation = 0;
 			wstring strModel, strDriver;
 
-			DISPLAY_DEVICE ddMonitorTmp;
-			ddMonitorTmp.cb = sizeof(DISPLAY_DEVICE);
-			DWORD devIndex = 0;
+			// 通过下面的代码获取到显示器的 PnP ID
 			wstring deviceId;
-			while (EnumDisplayDevices(MonitorInfo.szDevice, devIndex, &ddMonitorTmp, 0))
 			{
-				if ((ddMonitorTmp.StateFlags & DISPLAY_DEVICE_ACTIVE) == DISPLAY_DEVICE_ACTIVE &&
-					(ddMonitorTmp.StateFlags & DISPLAY_DEVICE_ATTACHED) == DISPLAY_DEVICE_ATTACHED)
+				DISPLAY_DEVICEW ddAdapter;
+				ddAdapter.cb = sizeof(DISPLAY_DEVICEW);
+				for (DWORD adapIdx = 0; EnumDisplayDevicesW(nullptr, adapIdx, &ddAdapter, 0); adapIdx++)
 				{
-					deviceId = ddMonitorTmp.DeviceID;
-					break;
+					//Testw(L"cmp1 " + wstring(ddAdapter.DeviceName) + L" : " + wstring(MonitorInfo.szDevice));
+					//Testw(L"cmp1t " + wstring(ddAdapter.DeviceID));
+
+					DISPLAY_DEVICEW ddMonitor;
+					ddMonitor.cb = sizeof(DISPLAY_DEVICEW);
+
+					for (DWORD monIdx = 0; EnumDisplayDevicesW(ddAdapter.DeviceName, monIdx, &ddMonitor, 0); monIdx++)
+					{
+						//Testw(L"cmp2 " + wstring(ddMonitor.DeviceName) + L" : " + wstring(MonitorInfo.szDevice));
+						//Testw(L"cmp2t " + wstring(ddMonitor.DeviceID));
+
+						if ((ddMonitor.StateFlags & DISPLAY_DEVICE_ACTIVE) == DISPLAY_DEVICE_ACTIVE &&
+							(ddMonitor.StateFlags & DISPLAY_DEVICE_ATTACHED) == DISPLAY_DEVICE_ATTACHED &&
+							_wcsnicmp(ddMonitor.DeviceName, MonitorInfo.szDevice, wcslen(MonitorInfo.szDevice)) == 0)
+						{
+							deviceId = ddMonitor.DeviceID;
+						}
+
+						if (!deviceId.empty()) break;
+					}
+					if (!deviceId.empty()) break;
 				}
 			}
 
 			if (!deviceId.empty() && IdtGetModelDriverFromDeviceID(deviceId.c_str(), strModel, strDriver))
 			{
+				//Testw(deviceId + L": " + strModel + L" " + strDriver);
+
 				// 获取 EDID 数据
 				BYTE EDIDBuf[32]; // 我们只需要获取 18~22 的值，后面的可以截断
 				DWORD dwRealGetBytes = 0;

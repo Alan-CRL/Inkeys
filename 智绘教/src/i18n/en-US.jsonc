@@ -26,8 +26,8 @@
     "Pen":
     {
       "Pen": "Pen",
-      "Highlighter": "Highli",
-      "Thinkness": "Tk\nne",
+      "Highlighter": "Hlight",
+      "Thinkness": "Si\nze",
       "Write": "Write",
       "Line": "Line",
       "Square": "Rect"
@@ -36,8 +36,8 @@
     {
       "Revoke": "Undo",
       "Recall": "Restore",
-      "Freeze": "Frez",
-      "Pierce": "Pier"
+      "Freeze": "Hold",
+      "Pierce": "Pass"
     }
   },
   "SettingsUI":
@@ -105,6 +105,18 @@
         "N": "New version available",
         "ManualUpdate": "Manual Update"
       },
+      "LimitUpdate":
+      {
+        "N": "Automatic update blocked!\n\nThe system compatibility requirements have changed for the new version. We’ve blocked automatic updates because the software might fail to start after updating automatically. Please check the detailed information to confirm that your system meets the new requirements, then manually download and update the software. Note that the repair feature in the current channel will be temporarily unavailable.",
+
+        "Info": "Details"
+      },
+      "Inkeys3Update":
+      {
+        "N": "Inkeys3 has been officially released!\n\nYou can use the button below to learn more about Inkeys3. Note that the repair feature in the current channel will be temporarily unavailable.",
+
+        "Download": "Update now"
+      },
       "VersionTip": "Incompatible software and system architecture may cause performance issues. It's recommended to repair the software in the 'Software Repair' section below (select 'Fix architecture'), or select the target architecture below and repair.",
       "Info":
       {
@@ -135,12 +147,13 @@
       {
         "N": "Update Preferences",
         "AutoUpate": "Auto Update (silent)",
-        "ChannelTip": "Stable Channel (LTS): most stable version (recommended)\nInsider Channel: test versions, may be falsely reported as viruses.",
+        "ChannelTip": "Stable Channel (LTS): most stable version (recommended)\nInsider Channel: preview versions, may be falsely reported as viruses.\nCanary Channel: pushes an early version of Inkeys3, which is not recommended for use.",
         "Channel":
         {
           "N": "Update Channel",
           "LTS": "Stable Channel (LTS)",
-          "Insider": "Insider Channel"
+          "Insider": "Insider Channel",
+          "Canary": "Canary Channel"
         },
         "Arch":
         {
@@ -249,7 +262,7 @@
           "N": "Input Device",
           "E": "Optimize for selected device.",
           "Touch": "Touch Screen",
-          "MousePen": "Mouse or Pen"
+          "MousePen": "Mouse, Pen, or Graphics Tablet"
         }
       },
       "AIDraw":
@@ -470,6 +483,7 @@
         "LTS": "Stable Channel",
         "Insider": "Insider Channel",
         "Dev": "Dev Channel",
+        "Canary": "Canary Channel",
         "Other": "Other Channel"
       },
       "NotStarted": "Update check not started",
@@ -484,6 +498,13 @@
       "Latest": "Already up-to-date",
       "Newer": "Newer than official latest",
       "New": "New version found",
+
+      "Limit": "Inkeys3 has been officially released! but the update is blocked",
+      "Limit2": "Inkeys3 has been officially released! and requires a manual update",
+      "Info": "View details and update manually",
+      "Info2": "Update now",
+      "Info3": "Learn more",
+
       "Repair": "Try Repair",
       "ManualDownload": "Manual Download",
       "UpdateNow": "Update Now"

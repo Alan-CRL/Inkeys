@@ -1,15 +1,17 @@
 ﻿#include "IdtD2DPreparation.h"
 
-ID2D1Factory* D2DFactory = nullptr;
+CComPtr<ID2D1Factory> D2DFactory;
 D2D1_RENDER_TARGET_PROPERTIES D2DProperty;
 
-IDWriteFactory* D2DTextFactory = nullptr;
-IDWriteFontCollection* D2DFontCollection = nullptr;
+CComPtr<IDWriteFactory> D2DTextFactory;
+CComPtr<IDWriteFontCollection> D2DFontCollection;
 
 void D2DStarup()
 {
 	// 创建 D2D 工厂
-	D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, &D2DFactory);
+	ID2D1Factory* tmpFactory = nullptr;
+	D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, &tmpFactory);
+	D2DFactory.Attach(tmpFactory);
 
 	// 创建 DC Render 并指定软件加速（因为比硬件加速快，不知道为啥，现在知道了qaq）
 	D2DProperty = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE::D2D1_RENDER_TARGET_TYPE_SOFTWARE,
@@ -20,7 +22,9 @@ void D2DStarup()
 	);
 
 	// 创建 D2D 文字工厂
-	DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(&D2DTextFactory));
+	IDWriteFactory* tmpWriteFactory = nullptr;
+	DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(&tmpWriteFactory));
+	D2DTextFactory.Attach(tmpWriteFactory);
 }
 void D2DShutdown()
 {
