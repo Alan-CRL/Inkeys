@@ -378,6 +378,306 @@ int main()
 		cerr << chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count() << "ms" << endl;
 	}*/
 
+	cerr << "10000 次粗墨迹绘制对比" << endl;
+	{
+		float clearColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+		d3dDeviceContext->ClearRenderTargetView(inkRenderer.renderTargetView, clearColor);
+
+		// 这一部分是测试 GPU 并行绘制大量胶囊
+		{
+			vector<InkVertex> list;
+			{
+				float x1 = 100.0f;
+				float y1 = 100.0f;
+				float r1 = 25.0f;
+
+				float x2 = 500.0f;
+				float y2 = 500.0f;
+				float r2 = 150.0f;
+
+				float x3 = 900.0f;
+				float y3 = 900.0f;
+				float r3 = 50.0f;
+
+				for (int i = 1; i <= 5000; i++)
+				{
+					list.emplace_back(InkVertex(x1, y1, r1, x2, y2, r2, XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f)));
+					list.emplace_back(InkVertex(x2, y2, r2, x3, y3, r3, XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f)));
+				}
+			}
+
+			/*
+			Testi(1);
+			{
+				float clearColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+				d3dDeviceContext->ClearRenderTargetView(inkRenderer.renderTargetView, clearColor);
+				swapChain->Present(0, 0);
+			}*/
+
+			chrono::high_resolution_clock::time_point reckon = chrono::high_resolution_clock::now();
+
+			// 开始绘制
+			inkRenderer.SetOMTarget();
+			float clearColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+			d3dDeviceContext->ClearRenderTargetView(inkRenderer.renderTargetView, clearColor);
+
+			auto ret = inkRenderer.DrawStrokeSegment2(list, 0, list.size());
+			if (ret) Testw(L"DrawStrokeSegment2 执行失败 RET" + to_wstring(ret));
+
+			swapChain->Present(0, 0);
+			cerr << "绘制任务已经提交，开始等待 GPU 完成" << endl;
+		}
+
+		cerr << "绘制已完成，按任意键关闭……" << endl;
+
+		getmessage(EM_KEY);
+		return 0;
+
+		// 这一部分是测试 CPU 计算路径并绘制大量墨迹
+		{
+			chrono::high_resolution_clock::time_point reckon = chrono::high_resolution_clock::now();
+
+			for (int i = 1; i <= 100000; i++)
+			{
+				// 绘制一段墨迹（测试）
+				// 样式为两端粗细不同的线段，起始端是凸出，而终点端是凹入的，结合切线计算和路径闭合
+				// 需要注意的是：当前代码设计之初就没有考虑过内涵的情况，并且不应该会出现这种粗细变化case，需要在后面模拟压感阶段避免
+
+				// 首先需要准备 (x1,y1,r1) (x2,y2,r2) 两个端点位置和半径
+
+				float x1 = 500.0f;
+				float y1 = 100.0f;
+				float r1 = 25.0f;
+
+				float x2 = 900.0f;
+				float y2 = 500.0f;
+				float r2 = 150.0f;
+
+				d2dDeviceContext->BeginDraw();
+				{
+					// 圆心间距离
+					double dist = std::hypot(x2 - x1, y2 - y1);
+
+					// 保证不是内涵的情况
+					if (dist > abs(r1 - r2))
+					{
+						// 基准角度
+						double base_angle = std::atan2(y2 - y1, x2 - x1);
+
+						// 偏移角 alpha
+						// cos(alpha) = (r1 - r2) / d
+						// 这里的参数必须在 [-1, 1] 之间，前面的 if 检查保证了这一点
+						double alpha = acos((r1 - r2) / dist);
+
+						// 切线角度
+						double angle1 = base_angle + alpha;
+						double angle2 = base_angle - alpha;
+
+						float tp1x = x1 + r1 * cos(angle1);
+						float tp1y = y1 + r1 * sin(angle1);
+						float tp2x = x1 + r1 * cos(angle2);
+						float tp2y = y1 + r1 * sin(angle2);
+
+						float ep1x = x2 + r2 * cos(angle1);
+						float ep1y = y2 + r2 * sin(angle1);
+						float ep2x = x2 + r2 * cos(angle2);
+						float ep2y = y2 + r2 * sin(angle2);
+
+						// 计算路径
+
+						CComPtr<ID2D1PathGeometry> path;
+						CComPtr<ID2D1GeometrySink> sink;
+						d2dFactory1->CreatePathGeometry(&path);
+						path->Open(&sink);
+
+						sink->BeginFigure(D2D1::Point2F(tp1x, tp1y), D2D1_FIGURE_BEGIN_FILLED);
+
+						// 起始端圆弧
+						{
+							// 计算绘制的为优弧/劣弧
+							D2D1_ARC_SIZE arcSize = (r1 > r2) ? D2D1_ARC_SIZE_LARGE : D2D1_ARC_SIZE_SMALL;
+
+							// 推算绘制线顺/逆时针
+
+							// 2. 判断方向 (SweepDirection)
+							// 计算 向量Start(u) 和 向量End(v) 的叉积 (CP)
+							// u = start - center, v = end - center
+							float ux = tp1x - x1;
+							float uy = tp1y - y1;
+							float vx = tp2x - x1;
+							float vy = tp2y - y1;
+
+							// 叉积 CP = x1*y2 - x2*y1
+							float cp = ux * vy - uy * vx;
+
+							// 在 Direct2D 屏幕坐标系中 (Y轴向下)：
+							// CP > 0 表示 从 Start 到 End 是 "顺时针" (Clockwise) 的最短路径
+							// CP < 0 表示 从 Start 到 End 是 "逆时针" (Counter-Clockwise) 的最短路径
+
+							D2D1_SWEEP_DIRECTION direction;
+							if (arcSize == D2D1_ARC_SIZE_SMALL)
+							{
+								// 如果是小弧，直接走最短路径
+								direction = (cp > 0) ? D2D1_SWEEP_DIRECTION_CLOCKWISE
+									: D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE;
+							}
+							else
+							{
+								// 如果是大弧，我们要走长的那条路，所以取反
+								direction = (cp > 0) ? D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE
+									: D2D1_SWEEP_DIRECTION_CLOCKWISE;
+							}
+
+							sink->AddArc(D2D1::ArcSegment(
+								D2D1::Point2F(tp2x, tp2y),
+								D2D1::SizeF(r1, r1),
+								0.0f,
+								direction,
+								arcSize
+							));
+						}
+
+						sink->AddLine(D2D1::Point2F(ep2x, ep2y));
+
+						// 终点端圆弧
+						{
+							// 计算绘制的为优弧/劣弧
+							D2D1_ARC_SIZE arcSize = (r2 > r1) ? D2D1_ARC_SIZE_LARGE : D2D1_ARC_SIZE_SMALL;
+
+							// 推算绘制线顺/逆时针
+
+							// 2. 判断方向 (SweepDirection)
+							// 计算 向量Start(u) 和 向量End(v) 的叉积 (CP)
+							// u = start - center, v = end - center
+							float ux = ep2x - x2;
+							float uy = ep2y - y2;
+							float vx = ep1x - x2;
+							float vy = ep1y - y2;
+
+							// 叉积 CP = x1*y2 - x2*y1
+							float cp = ux * vy - uy * vx;
+
+							// 在 Direct2D 屏幕坐标系中 (Y轴向下)：
+							// CP > 0 表示 从 Start 到 End 是 "顺时针" (Clockwise) 的最短路径
+							// CP < 0 表示 从 Start 到 End 是 "逆时针" (Counter-Clockwise) 的最短路径
+							// 我们需要取反
+
+							D2D1_SWEEP_DIRECTION direction;
+							if (arcSize == D2D1_ARC_SIZE_SMALL)
+							{
+								// 如果是小弧，直接走最短路径
+								direction = (cp > 0) ? D2D1_SWEEP_DIRECTION_CLOCKWISE
+									: D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE;
+							}
+							else
+							{
+								// 如果是大弧，我们要走长的那条路，所以取反
+								direction = (cp > 0) ? D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE
+									: D2D1_SWEEP_DIRECTION_CLOCKWISE;
+							}
+
+							sink->AddArc(D2D1::ArcSegment(
+								D2D1::Point2F(ep1x, ep1y),
+								D2D1::SizeF(r2, r2),
+								0.0f,
+								direction,
+								arcSize
+							));
+						}
+
+						sink->AddLine(D2D1::Point2F(tp1x, tp1y));
+
+						sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+						sink->Close();
+
+						// 绘制
+
+						CComPtr<ID2D1SolidColorBrush> strokeBrush;
+						d2dDeviceContext->CreateSolidColorBrush(
+							D2D1::ColorF(D2D1::ColorF::Red),
+							&strokeBrush
+						);
+
+						d2dDeviceContext->FillGeometry(path, strokeBrush);
+					}
+				}
+				d2dDeviceContext->EndDraw();
+			}
+
+			cerr << "d2d1.1 使用 " << chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count() << "ms" << endl;
+		}
+
+		// 这一部分是测试 GDI+ 绘制大量墨迹
+		{
+			chrono::high_resolution_clock::time_point reckon = chrono::high_resolution_clock::now();
+
+			for (int i = 1; i <= 100000; i++)
+			{
+				float x1 = 1000.0f, y1 = 100.0f;
+				float x2 = 1400.0f, y2 = 500.0f;
+				float w1 = 50.0f, w2 = 300.0f;
+				Gdiplus::Color color = hiex::ConvertToGdiplusColor(RGB(255, 0, 0), false);
+
+				// 方向向量
+				float dx = x2 - x1;
+				float dy = y2 - y1;
+				float len = hypot(dx, dy);
+
+				if (len < 1e-6f);
+				else
+				{
+					// 单位法向量
+					float nx = -dy / len;
+					float ny = dx / len;
+
+					// 半径
+					float r1 = w1 / 2.0f;
+					float r2 = w2 / 2.0f;
+
+					// 主体梯形四个顶点
+					Gdiplus::PointF p1(x1 + nx * r1, y1 + ny * r1); // 起点左
+					Gdiplus::PointF p2(x2 + nx * r2, y2 + ny * r2); // 终点左
+					Gdiplus::PointF p3(x2 - nx * r2, y2 - ny * r2); // 终点右
+					Gdiplus::PointF p4(x1 - nx * r1, y1 - ny * r1); // 起点右
+
+					Gdiplus::GraphicsPath mainPath(Gdiplus::FillModeWinding);
+					Gdiplus::PointF trapezoid[] = { p1, p2, p3, p4 };
+					mainPath.AddPolygon(trapezoid, 4);
+
+					// 起点凸帽
+					{
+						Gdiplus::RectF arcRect(x1 - r1, y1 - r1, w1, w1);
+						float angle = atan2(dy, dx) * 180.0f / 3.14159265f;
+						mainPath.AddArc(arcRect, angle + 90, 180);
+						mainPath.CloseFigure();
+					}
+
+					// 构造成 Region
+					Gdiplus::Region region(&mainPath);
+
+					// 终点凹帽（挖洞）
+					{
+						Gdiplus::GraphicsPath hole;
+						Gdiplus::RectF arcRect(x2 - r2, y2 - r2, w2, w2);
+						float angle = atan2(dy, dx) * 180.0f / 3.14159265f;
+						hole.AddArc(arcRect, angle - 90, 360); // 顺着线段方向的半圆
+						hole.AddArc(arcRect, angle + 90, -180); // 回到起点闭合
+						hole.CloseFigure();
+
+						//region.Exclude(&hole); // 从主体中挖掉这个半圆
+					}
+
+					Gdiplus::SolidBrush brush(color);
+					graphics.FillRegion(&brush, &region);
+				}
+			}
+
+			cerr << "gdi+ 使用 " << chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count() << "ms" << endl;
+		}
+
+		swapChain->Present(0, 0); // 第一个参数为 1 则开启垂直同
+	}
+
 	getmessage(EM_KEY);
 	return 0;
 }

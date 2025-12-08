@@ -51,9 +51,15 @@ float GetInkDist_Convex(float2 p, float2 p1, float2 p2, float r1, float r2)
 
 float4 main(PS_INPUT input) : SV_Target
 {
+    int type = (int) (input.shapeType + 0.5);
+
+    // 【修改 2】增加 NaN 保护 (防止 Intel 显卡画黑块)
+    if (any(isnan(input.p1)) || any(isnan(input.p2)))
+        discard;
+
     float d = 0.0;
     
-    if (input.shapeType == 1)
+    if (type == 1)
     {
         // 这里的 d 还是凸包 (没有挖空)
         d = GetInkDist_Convex(input.pixPos, input.p1, input.p2, input.r1, input.r2);
@@ -62,7 +68,7 @@ float4 main(PS_INPUT input) : SV_Target
         float d_bite = (input.r2 + test) - length(input.pixPos - input.p2);
         d = max(d, d_bite); 
     }
-    else if(input.shapeType == 0)
+    else
     {
         // 凸包胶囊（这个不挖空 - 需要保留）
         d = GetInkDist_Convex(input.pixPos, input.p1, input.p2, input.r1, input.r2);
@@ -70,6 +76,7 @@ float4 main(PS_INPUT input) : SV_Target
 
     // 抗锯齿
     float aa = fwidth(d);
+    aa = max(aa, 0.0001);
     float alpha = 1.0 - smoothstep(-aa, aa, d);
     
     if (alpha <= 0.0) discard;

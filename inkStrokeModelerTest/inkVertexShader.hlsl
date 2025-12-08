@@ -1,42 +1,43 @@
-// inkVertexShader.hlsl
-
 #include "ink.hlsli"
 
 PS_INPUT main(VS_INPUT input)
 {
     PS_INPUT output;
     
-    // --- 1. 动态计算包围盒 (Bounding Box) ---
-    // 根据实例数据 (P1, P2, R1, R2) 计算覆盖范围
-    // 以前这步在 CPU 做，现在由 GPU 的每个实例做
+    // --- OBB (Oriented Bounding Box) 计算 ---
     
-    float paddingVal = 2.0; // 扩展边距，防止抗锯齿边缘被裁切
+    float2 dir = input.p2 - input.p1;
+    float len = length(dir);
     
-    float minX = min(input.p1.x - input.r1, input.p2.x - input.r2) - paddingVal;
-    float minY = min(input.p1.y - input.r1, input.p2.y - input.r2) - paddingVal;
-    float maxX = max(input.p1.x + input.r1, input.p2.x + input.r2) + paddingVal;
-    float maxY = max(input.p1.y + input.r1, input.p2.y + input.r2) + paddingVal;
+    // 防止两点重合导致除零
+    float2 tangent = (len > 0.001) ? (dir / len) : float2(1.0, 0.0);
+    // 法线：将切线旋转90度 (-y, x)
+    float2 normal = float2(-tangent.y, tangent.x);
     
-    float width = maxX - minX;
-    float height = maxY - minY;
+    // 扩展边距，防止SDF抗锯齿被切掉
+    float paddingVal = 2.0;
     
-    // --- 2. 顶点位置插值 ---
-    // input.templatePos 来自 Slot 0，是标准的单位矩形 (0,0) -> (1,1)
-    // 我们将其“拉伸”并“平移”到包围盒的位置
-    float2 worldPos;
-    worldPos.x = minX + width * input.templatePos.x;
-    worldPos.y = minY + height * input.templatePos.y;
+    // 我们将 TemplatePos (0~1, 0~1) 映射到胶囊的局部坐标系
+    // Local X (沿轴向): 从 -r1 到 len + r2
+    // Local Y (垂直轴向): 从 -maxR 到 +maxR
     
-    // --- 3. 坐标空间转换 ---
-    // 屏幕空间 (Pixels) -> NDC空间 (-1 ~ 1)
-    // 注意 Y 轴翻转：屏幕坐标 Y 向下，NDC Y 向上
+    float maxR = max(input.r1, input.r2);
+    
+    // 计算局部坐标
+    float localX = lerp(-input.r1 - paddingVal, len + input.r2 + paddingVal, input.templatePos.x);
+    float localY = lerp(-maxR - paddingVal, maxR + paddingVal, input.templatePos.y);
+    
+    // 变换回世界坐标: P1 + Tangent*x + Normal*y
+    float2 worldPos = input.p1 + tangent * localX + normal * localY;
+    
+    // --- 坐标系转换 (World -> NDC) ---
     float x = (worldPos.x / screenWidth) * 2.0 - 1.0;
-    float y = -((worldPos.y / screenHeight) * 2.0 - 1.0);
+    float y = -((worldPos.y / screenHeight) * 2.0 - 1.0); // Y轴翻转
     
     output.pos = float4(x, y, 0.0, 1.0);
     
-    // --- 4. 传递数据给 Pixel Shader ---
-    output.pixPos = worldPos; // 用于 SDF 距离计算
+    // --- 传递数据 ---
+    output.pixPos = worldPos;
     output.color = input.color;
     output.p1 = input.p1;
     output.p2 = input.p2;
