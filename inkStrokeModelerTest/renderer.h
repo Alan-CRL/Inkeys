@@ -7,7 +7,7 @@
 #include <algorithm>
 
 #include "resource.h"
-#include "main.h"
+// #include "main.h" // 如果你不需要 main.h 里的东西，建议注释掉以解耦
 
 using namespace DirectX;
 using namespace std;
@@ -31,7 +31,6 @@ inline uint32_t PackColor(const XMFLOAT4& color)
 	uint8_t b = static_cast<uint8_t>(max(0.0f, min(1.0f, color.z)) * 255.0f);
 	uint8_t a = static_cast<uint8_t>(max(0.0f, min(1.0f, color.w)) * 255.0f);
 
-	// DXGI_FORMAT_R8G8B8A8_UNORM 在小端序内存中排列为: R(低位), G, B, A(高位)
 	return (static_cast<uint32_t>(a) << 24) |
 		(static_cast<uint32_t>(b) << 16) |
 		(static_cast<uint32_t>(g) << 8) |
@@ -44,27 +43,17 @@ struct InkVertex
 	XMFLOAT2 p2;          // 8-16
 	float    r1;          // 16-20
 	float    r2;          // 20-24
-	uint32_t colorPacked; // 24-28 (RGBA8 -> float4 in shader)
-	float    shapeType;   // 28-32 【修改这里：int -> float】
+	uint32_t colorPacked; // 24-28
+	float    shapeType;   // 28-32
 
-	InkVertex() : colorPacked(0), r1(0), r2(0), shapeType(0.0f) {};
-
-	InkVertex(float x1, float y1, float r1, float x2, float y2, float r2, XMFLOAT4 c)
-	{
-		this->p1 = XMFLOAT2(x1, y1);
-		this->p2 = XMFLOAT2(x2, y2);
-		this->r1 = r1;
-		this->r2 = r2;
-		this->colorPacked = PackColor(c);
-		this->shapeType = 0.0f; // 默认为0.0
-	}
+	// 移除构造函数，保持为纯 POD 结构，方便直接内存操作
 };
+
 struct InkPoint
 {
 	float x, y, r;
 };
 
-// 单位矩形顶点结构
 struct TemplateVertex {
 	XMFLOAT2 pos; // 0.0 ~ 1.0
 };
@@ -91,28 +80,26 @@ public:
 	CComPtr<ID3D11BlendState>       alphaBlendState;
 	CComPtr<ID3D11RasterizerState>  rasterState;
 	CComPtr<ID3D11Query>            g_frameFinishQuery;
-	CComPtr<ID3D11DepthStencilState> dsState;
 
-	// 只需要额外保存一个 DepthStencilView 用于 Clear 操作
-	CComPtr<ID3D11DepthStencilView> dsView;
+	// 【修改】因为彻底关闭了 Stencil，这两个可以去掉了，或者保留为空
+	CComPtr<ID3D11DepthStencilState> dsState;
+	// CComPtr<ID3D11DepthStencilView> dsView; // 不需要 DSV 了
 
 	UINT m_instanceOffset = 0;
 
 	void SetOMTarget()
 	{
-		// 设置模版引用值为 1
-		context->OMSetDepthStencilState(dsState, 1);
+		// 【修改】不需要绑定 DSV，只绑定 RenderTarget
+		// 这样可以节省显存带宽，提高像素填充率
 		ID3D11RenderTargetView* rtvs[] = { renderTargetView.p };
-		// 绑定 DSV 以启用模版测试
-		context->OMSetRenderTargets(1, rtvs, dsView);
+		context->OMSetRenderTargets(1, rtvs, nullptr);
+
+		// 如果之前设置过 DepthStencilState，最好重置一下，虽然绑定 nullptr 已经足够
+		if (dsState) context->OMSetDepthStencilState(dsState, 0);
 	}
-	void ClearStencil()
-	{
-		if (context && dsView)
-		{
-			context->ClearDepthStencilView(dsView, D3D11_CLEAR_STENCIL, 1.0f, 0);
-		}
-	}
+
+	// 【修改】ClearStencil 不再需要，函数留空防止外部调用报错
+	void ClearStencil() {}
 
 	bool Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain)
 	{
@@ -122,20 +109,9 @@ public:
 		swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&backBuffer);
 		device->CreateRenderTargetView(backBuffer, nullptr, &renderTargetView);
 
-		// --- 【修改】创建带模版的 DepthStencilBuffer ---
-		D3D11_TEXTURE2D_DESC descDepth = {};
-		backBuffer->GetDesc(&descDepth); // 获取屏幕尺寸
-		descDepth.MipLevels = 1;
-		descDepth.ArraySize = 1;
-		descDepth.Format = DXGI_FORMAT_D24_UNORM_S8_UINT; // 24位深度，8位模版
-		descDepth.SampleDesc.Count = 1;
-		descDepth.SampleDesc.Quality = 0;
-		descDepth.Usage = D3D11_USAGE_DEFAULT;
-		descDepth.BindFlags = D3D11_BIND_DEPTH_STENCIL;
-
-		CComPtr<ID3D11Texture2D> depthStencilTexture;
-		if (FAILED(device->CreateTexture2D(&descDepth, nullptr, &depthStencilTexture))) return false;
-		if (FAILED(device->CreateDepthStencilView(depthStencilTexture, nullptr, &dsView))) return false;
+		// --- 【修改】不再创建 DepthStencil Texture 和 View ---
+		// 既然为了性能要关闭 Stencil，就不要分配这部分显存
+		// 原始代码中的 CreateTexture2D(descDepth) 被移除
 
 		D3D11_BUFFER_DESC cbDesc = { sizeof(CB_ScreenSize), D3D11_USAGE_DYNAMIC, D3D11_BIND_CONSTANT_BUFFER, D3D11_CPU_ACCESS_WRITE, 0, 0 };
 		device->CreateBuffer(&cbDesc, nullptr, &screenCB);
@@ -150,31 +126,18 @@ public:
 		blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_MAX;
 		blendDesc.RenderTarget[0].RenderTargetWriteMask = 0x0F;
 		device->CreateBlendState(&blendDesc, &alphaBlendState);
-		// --- 【修改】模版状态 (优化：重复区域检测) ---
+
+		// --- 【修改】创建一个禁用 Stencil 的状态 ---
 		D3D11_DEPTH_STENCIL_DESC dsDesc = {};
-		dsDesc.DepthEnable = FALSE; // 关闭深度测试（墨迹通常不需要ZBuffer）
+		dsDesc.DepthEnable = FALSE;
 		dsDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
-
-		dsDesc.StencilEnable = TRUE; // 开启模版
-		dsDesc.StencilReadMask = 0xFF;
-		dsDesc.StencilWriteMask = 0xFF;
-
-		// 正面渲染逻辑：
-		// COMPARISON_NOT_EQUAL: 如果当前像素模版值 != Ref(1)，则通过测试（即没画过的地方画）
-		// STENCIL_OP_REPLACE: 通过测试后，将模版值设为 Ref(1)
-		dsDesc.FrontFace.StencilFailOp = D3D11_STENCIL_OP_KEEP;
-		dsDesc.FrontFace.StencilDepthFailOp = D3D11_STENCIL_OP_KEEP;
-		dsDesc.FrontFace.StencilPassOp = D3D11_STENCIL_OP_REPLACE;
-		dsDesc.FrontFace.StencilFunc = D3D11_COMPARISON_NOT_EQUAL;
-
-		// 背面同理（虽然我们通常只画正面）
-		dsDesc.BackFace = dsDesc.FrontFace;
+		dsDesc.StencilEnable = FALSE; // 【关键】显式关闭 Stencil
 
 		device->CreateDepthStencilState(&dsDesc, &dsState);
 
 		SetOMTarget();
 
-		// 实例缓冲: 32768 * 32字节 = 1MB (非常小且高效)
+		// 实例缓冲
 		const UINT MAX_INSTANCES = 32768;
 		D3D11_BUFFER_DESC instDesc = {};
 		instDesc.ByteWidth = MAX_INSTANCES * sizeof(InkVertex);
@@ -225,38 +188,70 @@ public:
 		device->CreateQuery(&desc, &g_frameFinishQuery);
 	}
 
-	// --- 【修改】新的绘制函数 ---
-	// 传入点集 vector<InkPoint> 和 统一颜色
+	// --- 【修改】高度优化的 DrawStroke ---
+	// 包含 CPU 稀疏化逻辑，且去除了循环内的对象构造和颜色打包
 	int DrawStroke(const vector<InkPoint>& points, XMFLOAT4 color)
 	{
-		if (points.size() < 2) return 0;
+		// 至少需要两个点
+		size_t count = points.size();
+		if (count < 2) return 0;
 
-		// 将连续的点转换为线段胶囊实例
-		// 建议在外部做这个转换以复用 buffer，但为了接口简单，这里演示在内部转换
-		// 如果点非常多，建议用 vector::reserve 优化
+		// 静态缓存，避免每次调用都重新分配内存
+		// 注意：多线程调用时需改为成员变量或加锁，单线程渲染无问题
 		static vector<InkVertex> batchCache;
 		batchCache.clear();
-		batchCache.reserve(points.size() - 1);
-
-		for (size_t i = 0; i < points.size() - 1; ++i)
-		{
-			const InkPoint& pA = points[i];
-			const InkPoint& pB = points[i + 1];
-
-			InkVertex v;
-			v.p1 = XMFLOAT2(pA.x, pA.y);
-			v.p2 = XMFLOAT2(pB.x, pB.y);
-			v.r1 = pA.r;
-			v.r2 = pB.r;
-			v.colorPacked = PackColor(color); // 所有段使用相同颜色
-			v.shapeType = 0.0f; // 0: 普通胶囊
-
-			batchCache.push_back(v);
+		// 预估最大容量，避免 push_back 时的 realloc
+		if (batchCache.capacity() < count) {
+			batchCache.reserve(count);
 		}
 
-		// 调用底层的绘制 (复用你之前的 DrawStrokeSegment2 逻辑，只需要传入转换后的数据)
+		// 1. 颜色打包提取到循环外
+		uint32_t packedColor = PackColor(color);
+
+		// 2. 稀疏化逻辑
+		size_t lastValidIdx = 0;
+
+		for (size_t i = 1; i < count; ++i)
+		{
+			const InkPoint& pA = points[lastValidIdx];
+			const InkPoint& pB = points[i];
+
+			// 距离计算 (使用平方距离避免 sqrt)
+			float dx = pA.x - pB.x;
+			float dy = pA.y - pB.y;
+			float distSq = dx * dx + dy * dy;
+
+			// 3. 阈值计算：半径的 1/5
+			// 限制最小阈值 (例如 1.0f)，防止半径极小时除以5导致阈值过小，或者点完全重合
+			float threshold = max(1.0f, pA.r * 0.2f);
+			float thresholdSq = threshold * threshold;
+
+			// 4. 判断逻辑：
+			// 如果距离太近 且 不是最后一个点，则跳过
+			if (distSq < thresholdSq && i != count - 1)
+			{
+				continue;
+			}
+
+			// 5. 直接构造数据，避免 InkVertex 临时对象的拷贝构造
+			// 使用 emplace_back 或直接 push_back 构造好的对象
+			InkVertex& v = batchCache.emplace_back();
+			v.p1.x = pA.x; v.p1.y = pA.y;
+			v.p2.x = pB.x; v.p2.y = pB.y;
+			v.r1 = pA.r;
+			v.r2 = pB.r;
+			v.colorPacked = packedColor;
+			v.shapeType = 0.0f;
+
+			// 更新基准点
+			lastValidIdx = i;
+		}
+
+		// 6. 提交绘制
+		if (batchCache.empty()) return 0;
 		return DrawStrokeSegment2(batchCache, 0, batchCache.size());
 	}
+
 	int DrawStrokeSegment2(const vector<InkVertex>& capsules, size_t beginIndex, size_t endIndex)
 	{
 		if (!device || !context) return 1;
@@ -292,7 +287,7 @@ public:
 			InkVertex* dest = reinterpret_cast<InkVertex*>(map.pData) + m_instanceOffset;
 			const InkVertex* src = &capsules[currentInputIndex];
 
-			// 极速拷贝：现在每个顶点只有 32 字节
+			// 极速拷贝
 			memcpy(dest, src, drawCount * sizeof(InkVertex));
 
 			context->Unmap(instanceVB, 0);
@@ -331,7 +326,7 @@ private:
 		device->CreatePixelShader(psBlob.data, psBlob.size, nullptr, &pixelShader);
 
 		D3D11_INPUT_ELEMENT_DESC layout[] = {
-			// Slot 0: 模板
+			// Slot 0: 模板 (矩形)
 			{ "POSITION",      0, DXGI_FORMAT_R32G32_FLOAT,       0, 0,  D3D11_INPUT_PER_VERTEX_DATA, 0 },
 
 			// Slot 1: 实例数据
@@ -340,8 +335,6 @@ private:
 			{ "VAL_RAD_START", 0, DXGI_FORMAT_R32_FLOAT,          1, 16, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
 			{ "VAL_RAD_END",   0, DXGI_FORMAT_R32_FLOAT,          1, 20, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
 			{ "COLOR",         0, DXGI_FORMAT_R8G8B8A8_UNORM,     1, 24, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
-
-			// 【关键修改】这里必须是 FLOAT，否则 Intel HD 4600 会发生 Input Assembler 数据错位
 			{ "VAL_TYPE",      0, DXGI_FORMAT_R32_FLOAT,          1, 28, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
 		};
 

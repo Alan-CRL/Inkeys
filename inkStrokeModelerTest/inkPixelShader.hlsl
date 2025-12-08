@@ -75,9 +75,18 @@ float4 main(PS_INPUT input) : SV_Target
     }
 
     // 抗锯齿
+    //float aa = fwidth(d);
+    //aa = max(aa, 0.0001);
+    //float alpha = 1.0 - smoothstep(-0.5 * aa, 0.5 * aa, d);
+    
+    // 计算 1 个物理像素对应的距离变化量
     float aa = fwidth(d);
-    aa = max(aa, 0.0001);
-    float alpha = 1.0 - smoothstep(-aa, aa, d);
+
+    // 核心公式：0.5 - d / aa
+    // d=0 (边缘) -> alpha=0.5
+    // d=0.5*aa (外侧半像素) -> alpha=0.0
+    // d=-0.5*aa (内侧半像素) -> alpha=1.0
+    float alpha = saturate(0.5 - d / aa);
     
     if (alpha <= 0.0) discard;
     return float4(input.color.rgb, input.color.a * alpha);
