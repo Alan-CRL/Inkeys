@@ -9,13 +9,6 @@ int main()
 {
 	timeBeginPeriod(1); // 全局高精度计时器
 
-	// D2D 工厂
-	{
-		ID2D1Factory1* tmpFactory = nullptr;
-		D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, __uuidof(ID2D1Factory1), NULL, (IID_PPV_ARGS(&tmpFactory)));
-		d2dFactory1.Attach(tmpFactory);
-	}
-
 	// 初始化 D3D 设备
 	CComPtr<ID3D11DeviceContext> d3dDeviceContext; // DC
 	{
@@ -26,8 +19,6 @@ int main()
 		D3D_FEATURE_LEVEL featureLevels[] = {
 			D3D_FEATURE_LEVEL_11_1,
 			D3D_FEATURE_LEVEL_11_0,
-			D3D_FEATURE_LEVEL_10_1,
-			D3D_FEATURE_LEVEL_10_0,
 		};
 
 		D3D_FEATURE_LEVEL actualFeatureLevel;
@@ -51,18 +42,6 @@ int main()
 		}
 
 		d3dDevice_HARDWARE->QueryInterface(__uuidof(IDXGIDevice1), reinterpret_cast<void**>(&dxgiDevice1));
-
-		// D2D
-		d2dFactory1->CreateDevice(dxgiDevice1, &d2dDevice_HARDWARE);
-	}
-
-	// D2D 设备
-	CComPtr<ID2D1DeviceContext> d2dDeviceContext;
-	{
-		d2dDevice_HARDWARE->CreateDeviceContext(
-			D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
-			&d2dDeviceContext
-		);
 	}
 
 	// 窗口创建
@@ -75,7 +54,7 @@ int main()
 	// 常规场景下的墨迹输入应使用 dxgiDevice1::SetMaximumFrameLatency(1) 来确保有一帧的间隙 CPU 处理时间留给 GPU 并行渲染来提高性能
 	dxgiDevice1->SetMaximumFrameLatency(1);
 
-	// 后续性能选项卡中可以提供一个 GPU 高优先级 的选项，调用 SetGPUThreadPriority(2) 来提升 GPU 调度优先级
+	// 后续性能选项卡中可以提供一个 GPU 高优先级 的选项
 	// dxgiDevice1->SetGPUThreadPriority(2);
 
 	// SwapChain
@@ -112,25 +91,6 @@ int main()
 		// win7 上 SetBackgroundColor 会因 E_NOTIMPL 失败
 		DXGI_RGBA color = { 1.0f, 1.0f, 1.0f, 1.0f };
 		swapChain->SetBackgroundColor(&color);
-	}
-	// D2D Bitmap
-	{
-		CComPtr<IDXGISurface> dxgiBackBuffer;
-		swapChain->GetBuffer(0, __uuidof(IDXGISurface), (void**)&dxgiBackBuffer);
-
-		D2D1_BITMAP_PROPERTIES1 bitmapProperties = D2D1::BitmapProperties1(
-			D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
-			D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)
-		);
-
-		CComPtr<ID2D1Bitmap1> d2dTargetBitmap;
-		d2dDeviceContext->CreateBitmapFromDxgiSurface(
-			dxgiBackBuffer,
-			&bitmapProperties,
-			&d2dTargetBitmap
-		);
-
-		d2dDeviceContext->SetTarget(d2dTargetBitmap);
 	}
 
 	// 交换链应该保证指定脏区，而不是全部重绘
@@ -169,49 +129,215 @@ int main()
 	}
 	*/
 
-	IMAGE temp = CreateImageColor(windowInfo.w, windowInfo.h, RGBA(255, 255, 255, 255), false);
-	Gdiplus::Graphics graphics(GetImageHDC(&temp));
-
 	// 每帧绘制前应该
 	/*
-	// 关键：重新设置渲染目标
-	ID3D11RenderTargetView* rtvs[] = { renderTargetView.p };
-	context->OMSetRenderTargets(1, rtvs, nullptr);
-
-	// 可选：清空背景（如果你需要的话）
-	// float clearColor[] = { 0.2f, 0.3f, 0.5f, 1.0f };
-	// context->ClearRenderTargetView(renderTargetView.p, clearColor);
-	*/
-
-	{
-		float clearColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-		d3dDeviceContext->ClearRenderTargetView(inkRenderer.renderTargetView, clearColor);
-
-		// 这一部分是测试 GPU 并行绘制大量胶囊
-		{
-			std::vector<InkPoint> strokePoints;
-			strokePoints.push_back({ 100.0f, 100.0f, 50.0f }); // 起点，半径10
-			strokePoints.push_back({ 850.0f, 320.0f, 75.0f });
-			strokePoints.push_back({ 800.0f, 680.0f, 40.0f });
-			strokePoints.push_back({ 220.0f, 850.0f, 60.0f });  // 终点，变细
-
-			XMFLOAT4 inkColor = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f); // 黑色
-
-			// 开始绘制
-
 			inkRenderer.SetOMTarget();
-			inkRenderer.ClearStencil();
 			float clearColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
 			d3dDeviceContext->ClearRenderTargetView(inkRenderer.renderTargetView, clearColor);
+	*/
 
-			auto ret = inkRenderer.DrawStroke(strokePoints, inkColor);
-			if (ret) Testw(L"DrawStrokeSegment2 执行失败 RET" + to_wstring(ret));
+	// 简单的 DPI 初始化
+	int dpiX;
+	{
+		HDC screen = GetDC(nullptr);
+		dpiX = GetDeviceCaps(screen, LOGPIXELSX);
+		ReleaseDC(nullptr, screen);
+	}
+	// 初始调测参数
+	const bool debug = true;
+	const float sampling_rate_hz = 60.0f; // Hz
+	const float expected_speed = 500.0f * (static_cast<float>(dpiX) / 96.0f); // DPI 期望速度
+	const float limited_speed = expected_speed * 3.0f; // 最高允许速度
+	const int strokes_num = static_cast<int>(sampling_rate_hz / 6.0f); // 笔锋点个数
+	// 模型初始化
+	KalmanPredictorParams kalman_predictor_params;
+	{
+		kalman_predictor_params.process_noise = 0.05;
+		kalman_predictor_params.measurement_noise = 0.01;
+		kalman_predictor_params.min_stable_iteration = 4;
+		kalman_predictor_params.max_time_samples = 20;
+		kalman_predictor_params.min_catchup_velocity = expected_speed / 1000.0f;
+		kalman_predictor_params.acceleration_weight = 0.5f;
+		kalman_predictor_params.jerk_weight = 0.1f;
+		kalman_predictor_params.prediction_interval = Duration(0.2);
+		kalman_predictor_params.confidence_params = {
+			.desired_number_of_samples = 10,
+			.max_estimation_distance = 1.5f * static_cast<float>(kalman_predictor_params.measurement_noise),
+			.min_travel_speed = 0.05f * expected_speed,
+			.max_travel_speed = 0.25f * expected_speed,
+			.max_linear_deviation = 10.0f * static_cast<float>(kalman_predictor_params.measurement_noise),
+			.baseline_linearity_confidence = 0.4f
+		};
+	}
+	StrokeModelParams params{
+		.wobble_smoother_params{
+			.is_enabled = false,
+			.timeout = Duration(2.5 / sampling_rate_hz),
+			.speed_floor = 0.02f * expected_speed,
+			.speed_ceiling = 0.03f * expected_speed
+		},
+		.position_modeler_params{
+			.spring_mass_constant = 11.f / 32400,
+			.drag_constant = 72.f
+		},
+		.sampling_params{
+			.min_output_rate = 3.0f * sampling_rate_hz,
+			.end_of_stroke_stopping_distance = .001,
+			.end_of_stroke_max_iterations = 20,
+			.max_outputs_per_call = 2000
+		},
+	};
+	StrokeModeler modeler;
 
-			swapChain->Present(0, 0);
+	ExMessage m{};
+	while (true)
+	{
+		hiex::getmessage_win32(&m, EM_MOUSE, windowHWND);
+
+		if (m.message == WM_LBUTTONDOWN)
+		{
+			params.prediction_params = kalman_predictor_params;
+			//params.prediction_params = StrokeEndPredictorParams();
+
+			if (absl::Status status = modeler.Reset(params); !status.ok())
+			{
+				cout << "Error: " << status.message() << endl;
+			}
+
+			vector<Result> smoothed_stroke;
+			vector<Result> predicted_stroke;
+			size_t tot = 0;
+
+			float xO = m.x;
+			float yO = m.y;
+
+			float xT = m.x;
+			float yT = m.y;
+
+			chrono::high_resolution_clock::time_point start = chrono::high_resolution_clock::now();
+
+			Input input
+			{
+				.event_type = Input::EventType::kDown,
+				.position = ink::stroke_model::Vec2(xO,yO),
+				.time = Time(0.0)
+			};
+			modeler.Update(input, smoothed_stroke);
+
+			double baseThickness = 5.0;
+			double minThickness = baseThickness * 0.8; // 0.6/2.4 或 0.4/2.0
+			double maxThickness = baseThickness * 1.4;
+			double prevThickness = baseThickness;
+			double smoothingFactor = 0.2;
+
+			// 清空画布
+			inkRenderer.ClearRTV(inkRenderer.offScreenTexture1RTV, XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f));
+
+			// 帧率保持
+			chrono::high_resolution_clock::time_point rekon;
+			while (1)
+			{
+				rekon = chrono::high_resolution_clock::now();
+
+				inkRenderer.SetOMTarget(inkRenderer.offScreenTexture1RTV);
+
+				POINT pt;
+				GetCursorPos(&pt);
+				ScreenToClient(windowHWND, &pt);
+
+				Input input
+				{
+					.event_type = Input::EventType::kMove,
+					.position = ink::stroke_model::Vec2(pt.x, pt.y),
+					.time = Time(chrono::duration<double>(chrono::high_resolution_clock::now() - start).count()) // 秒单位
+				};
+				vector<InkPoint> dryStroke;
+
+				modeler.Update(input, smoothed_stroke);
+				modeler.Predict(predicted_stroke);
+				if (!smoothed_stroke.empty() && (xO != smoothed_stroke.back().position.x || yO != smoothed_stroke.back().position.y))
+				{
+					// 用于粗细平滑
+					float xI = xO;
+					float yI = yO;
+
+					for (size_t i = tot; i < smoothed_stroke.size(); i++)
+					{
+						bool isStroke = false;
+						if (smoothed_stroke.size() - tot <= strokes_num) isStroke = true;
+
+						if (!isStroke) tot = i;
+
+						/*graphics.DrawLine(&pen,
+							smoothed_stroke[i].position.x,
+							smoothed_stroke[i].position.y,
+							smoothed_stroke[i + 1].position.x,
+							smoothed_stroke[i + 1].position.y);*/
+
+						auto rawSpeed = hypot(smoothed_stroke[i].velocity.x, smoothed_stroke[i].velocity.y);
+						double ratio = clamp(static_cast<double>(rawSpeed / expected_speed), 0.0, 1.0);
+						double targetThickness = minThickness + (1.0 - ratio) * (maxThickness - minThickness);
+						double thickness = prevThickness;
+
+						if (hypot(smoothed_stroke[i].position.x - xI, smoothed_stroke[i].position.y - yI) >= baseThickness)
+						{
+							thickness = std::lerp(prevThickness, targetThickness, smoothingFactor);
+							xI = smoothed_stroke[i].position.x;
+							yI = smoothed_stroke[i].position.y;
+						}
+
+						// cout << "= " << rawSpeed << ":" << ratio << ", " << thickness << endl;
+
+						{
+							float x1 = smoothed_stroke[i].position.x, y1 = smoothed_stroke[i].position.y;
+							float w1 = static_cast<float>(prevThickness);
+
+							dryStroke.emplace_back(x1, y1, w1 / 2.0f);
+						}
+
+						prevThickness = thickness;
+					}
+				}
+				inkRenderer.DrawStroke(dryStroke, XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f));
+
+				if (!predicted_stroke.empty())
+				{
+					// TODO
+				}
+
+				// 拷贝2D目标至窗口婚宠
+				{
+					inkRenderer.SetOMTarget(inkRenderer.renderTargetView);
+
+					inkRenderer.context->CopyResource(inkRenderer.screenTexture, inkRenderer.offScreenTexture1);
+				}
+
+				// 帧结束
+				{
+					swapChain->Present(0, 0);
+				}
+
+				if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) break;
+				hiex::flushmessage_win32(EM_MOUSE, windowHWND);
+
+				// 帧率锁
+				{
+					auto tmp = chrono::duration<double, milli>(chrono::high_resolution_clock::now() - rekon).count();
+
+					// 60Hz
+					double delay = 1000.0 / static_cast<double>(sampling_rate_hz) - tmp;
+					if (delay >= 0.0) this_thread::sleep_for(chrono::milliseconds(static_cast<long long>(delay)));
+
+					cout << tot << " " << tmp << "ms " << static_cast<int>(1000.0 / tmp) << "fps" << endl;
+				}
+			}
+
+			{
+			}
+
+			hiex::flushmessage_win32(EM_MOUSE, windowHWND);
 		}
 	}
-
-	cerr << "绘制已完成，按任意键关闭……" << endl;
 
 	getmessage(EM_KEY);
 	return 0;
