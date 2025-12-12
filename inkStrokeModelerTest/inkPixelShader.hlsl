@@ -39,18 +39,32 @@ float4 main(PS_INPUT input) : SV_Target
 
     float d = 0.0;
     
-    if (type == 1)
-    {
-        d = GetInkDist_Convex(input.pixPos, input.p1, input.p2, input.r1, input.r2);
-    }
-    else
+    if (type == 0)
     {
         d = GetInkDist_Convex(input.pixPos, input.p1, input.p2, input.r1, input.r2);
     }
 
-    float aaWidth = fwidth(d);
-    aaWidth = max(aaWidth, 1e-5);
-    float alpha = saturate(0.5 - d / aaWidth);
+    //float aaWidth = fwidth(d);
+    //aaWidth = max(aaWidth, 1e-5);
+    //float alpha = saturate(0.5 - d / aaWidth);
+    
+    // 1. 获取屏幕空间的导数（基础像素宽度）
+    float baseAaWidth = fwidth(d);
+    
+    // 2. 调节柔和度系数 (Softness Factor)
+    // 1.0 = 标准锐利
+    // 1.5 = 平滑且清晰 (推荐用于 Ink 风格)
+    // 2.0+ = 开始变糊
+    float softness = 1.5;
+    
+    float aaWidth = max(baseAaWidth * softness, 1e-5);
+    
+    // 3. 使用 smoothstep 进行 S 曲线过渡
+    // 这里的逻辑是：
+    // 当 d < -aaWidth/2 (形状内部) -> smoothstep 输出 0 -> alpha 为 1
+    // 当 d >  aaWidth/2 (形状外部) -> smoothstep 输出 1 -> alpha 为 0
+    // 中间区域平滑插值
+    float alpha = 1.0 - smoothstep(-aaWidth * 0.5, aaWidth * 0.5, d);
     
     if (alpha <= 0.0)
         discard;

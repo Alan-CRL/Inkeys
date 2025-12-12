@@ -5,6 +5,70 @@
 WindowInfoClass windowInfo;
 InkRenderer inkRenderer;
 
+void HighPrecisionWait(double frameTimeSpentMs, double targetFPS)
+{
+	// 1. 计算目标帧时间 (毫秒)
+	// 例如: 60FPS -> 16.666... ms
+	double targetFrameTimeMs = 1000.0 / targetFPS;
+
+	// 2. 计算还需要等待的时间 (毫秒)
+	double waitTimeMs = targetFrameTimeMs - frameTimeSpentMs;
+
+	// 如果已经超时（掉帧），直接返回，不等待
+	if (waitTimeMs <= 0.0)
+	{
+		return;
+	}
+
+	// 获取高精度计时器的频率 (Ticks Per Second)
+	static LARGE_INTEGER freq = { 0 };
+	if (freq.QuadPart == 0) QueryPerformanceFrequency(&freq);
+
+	// 记录开始等待时刻的 QPC
+	LARGE_INTEGER startCounter, currentCounter;
+	QueryPerformanceCounter(&startCounter);
+
+	// 将等待时间 (ms) 转换为 QPC 的 Ticks 单位
+	// 公式: (ms * freq) / 1000
+	long long waitTicks = (long long)((waitTimeMs * (double)freq.QuadPart) / 1000.0);
+	long long targetEndTick = startCounter.QuadPart + waitTicks;
+
+	// === 阶段一：Sleep (粗略等待) ===
+	// 只有当剩余时间大于 2ms 时才启用 Sleep，留出 1.5ms 的安全余量给 Spin
+	if (waitTimeMs > 2.0)
+	{
+		// 预留约 1.5ms 的时间给最后的忙等待，其余时间睡觉
+		// 注意这里显式使用 std::milli
+		double sleepMs = waitTimeMs - 1.5;
+		std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(sleepMs));
+	}
+
+	// === 阶段二：Spin (高精度忙等待) ===
+	// 死循环直到 QPC 达到目标 Tick
+	do
+	{
+		QueryPerformanceCounter(&currentCounter);
+
+		YieldProcessor();
+	} while (currentCounter.QuadPart < targetEndTick);
+}
+void UnionRectInPlace(RECT& target, const RECT& add)
+{
+	// 新增矩形无效，直接返回
+	if (add.left >= add.right || add.top >= add.bottom) return;
+	// target 是空矩形，直接替换
+	if (target.left >= target.right || target.top >= target.bottom)
+	{
+		target = add;
+		return;
+	}
+
+	target.left = min(target.left, add.left);
+	target.top = min(target.top, add.top);
+	target.right = max(target.right, add.right);
+	target.bottom = max(target.bottom, add.bottom);
+}
+
 int main()
 {
 	timeBeginPeriod(1); // 全局高精度计时器
@@ -52,10 +116,10 @@ int main()
 	// 从 windows8 开始可以考虑 SwapChain2 的 DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT 更适合墨迹输入
 
 	// 常规场景下的墨迹输入应使用 dxgiDevice1::SetMaximumFrameLatency(1) 来确保有一帧的间隙 CPU 处理时间留给 GPU 并行渲染来提高性能
-	dxgiDevice1->SetMaximumFrameLatency(1);
+	// dxgiDevice1->SetMaximumFrameLatency(1);
 
 	// 后续性能选项卡中可以提供一个 GPU 高优先级 的选项
-	// dxgiDevice1->SetGPUThreadPriority(2);
+	dxgiDevice1->SetGPUThreadPriority(2);
 
 	// SwapChain
 	CComPtr<IDXGISwapChain1> swapChain;
@@ -145,7 +209,7 @@ int main()
 	}
 	// 初始调测参数
 	const bool debug = true;
-	const float sampling_rate_hz = 60.0f; // Hz
+	const float sampling_rate_hz = 30.0f; // Hz
 	const float expected_speed = 500.0f * (static_cast<float>(dpiX) / 96.0f); // DPI 期望速度
 	const float limited_speed = expected_speed * 3.0f; // 最高允许速度
 	const int strokes_num = static_cast<int>(sampling_rate_hz / 6.0f); // 笔锋点个数
@@ -196,6 +260,12 @@ int main()
 
 		if (m.message == WM_LBUTTONDOWN)
 		{
+			// 检查设备是否丢失，并重建
+			// TODO
+
+			RECT current = RECT(0, 0, 0, 0);
+			bool isFirstFrame = true;
+
 			params.prediction_params = kalman_predictor_params;
 			//params.prediction_params = StrokeEndPredictorParams();
 
@@ -292,7 +362,9 @@ int main()
 							float x1 = smoothed_stroke[i].position.x, y1 = smoothed_stroke[i].position.y;
 							float w1 = static_cast<float>(prevThickness);
 
-							dryStroke.emplace_back(x1, y1, w1 / 2.0f);
+							dryStroke.emplace_back(x1, y1, w1 / 2.0f, 0.0f);
+
+							UnionRectInPlace(current, RECT(x1 - w1, y1 - w1, x1 + w1, y1 + w1));
 						}
 
 						prevThickness = thickness;
@@ -309,26 +381,71 @@ int main()
 				{
 					inkRenderer.SetOMTarget(inkRenderer.renderTargetView);
 
-					inkRenderer.context->CopyResource(inkRenderer.screenTexture, inkRenderer.offScreenTexture1);
+					if (!isFirstFrame)
+					{
+						//inkRenderer.ClearRTV(inkRenderer.renderTargetView, XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f)); // DEBUG
+
+						inkRenderer.CopyResource(inkRenderer.screenTexture, inkRenderer.offScreenTexture1, current);
+					}
+					else
+					{
+						inkRenderer.context->CopyResource(inkRenderer.screenTexture, inkRenderer.offScreenTexture1);
+					}
 				}
 
 				// 帧结束
 				{
-					swapChain->Present(0, 0);
+					RECT dirtyRect = current;
+
+					dirtyRect.left = max(0L, dirtyRect.left);
+					dirtyRect.top = max(0L, dirtyRect.top);
+					dirtyRect.right = min((long)windowInfo.w, dirtyRect.right);
+					dirtyRect.bottom = min((long)windowInfo.h, dirtyRect.bottom);
+
+					if (!isFirstFrame && dirtyRect.right > dirtyRect.left && dirtyRect.bottom > dirtyRect.top)
+					{
+						DXGI_PRESENT_PARAMETERS parameters = {};
+						parameters.DirtyRectsCount = 1;
+						parameters.pDirtyRects = &dirtyRect;
+						parameters.pScrollRect = nullptr;
+						parameters.pScrollOffset = nullptr;
+
+						swapChain->Present1(0, 0, &parameters);
+					}
+					else
+					{
+						swapChain->Present(0, 0);
+					}
 				}
 
 				if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) break;
 				hiex::flushmessage_win32(EM_MOUSE, windowHWND);
 
+				isFirstFrame = true;
+				// 脏区逻辑暂时禁用
+
+				// 同步锁
+				{
+					inkRenderer.SyncFrameLatency(50.0);
+				}
 				// 帧率锁
 				{
-					auto tmp = chrono::duration<double, milli>(chrono::high_resolution_clock::now() - rekon).count();
+					double costMs = chrono::duration<double, milli>(chrono::high_resolution_clock::now() - rekon).count();
 
-					// 60Hz
-					double delay = 1000.0 / static_cast<double>(sampling_rate_hz) - tmp;
-					if (delay >= 0.0) this_thread::sleep_for(chrono::milliseconds(static_cast<long long>(delay)));
+					// 直接传入 ms，无需转换
+					HighPrecisionWait(costMs, sampling_rate_hz);
 
-					cout << tot << " " << tmp << "ms " << static_cast<int>(1000.0 / tmp) << "fps" << endl;
+					// 计算总帧时间用于显示实际 FPS
+					double totalMs = chrono::duration<double, milli>(chrono::high_resolution_clock::now() - rekon).count();
+
+					// 防止除以0
+					int logicFPS = (costMs > 0.001) ? static_cast<int>(1000.0 / costMs) : 9999;
+					int actualFPS = (totalMs > 0.001) ? static_cast<int>(1000.0 / totalMs) : 9999;
+
+					cout << tot
+						<< " logic: " << logicFPS << " FPS (" << costMs << "ms)"
+						<< " real: " << actualFPS << " FPS"
+						<< endl;
 				}
 			}
 

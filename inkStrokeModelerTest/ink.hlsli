@@ -18,6 +18,7 @@ struct InkPoint
 {
     float2 pos;
     float r;
+    float time;
 };
 
 // 3. 结构化缓冲区
