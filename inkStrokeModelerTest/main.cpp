@@ -116,7 +116,7 @@ int main()
 	// 从 windows8 开始可以考虑 SwapChain2 的 DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT 更适合墨迹输入
 
 	// 常规场景下的墨迹输入应使用 dxgiDevice1::SetMaximumFrameLatency(1) 来确保有一帧的间隙 CPU 处理时间留给 GPU 并行渲染来提高性能
-	// dxgiDevice1->SetMaximumFrameLatency(1);
+	dxgiDevice1->SetMaximumFrameLatency(1);
 
 	// 后续性能选项卡中可以提供一个 GPU 高优先级 的选项
 	dxgiDevice1->SetGPUThreadPriority(2);
@@ -162,36 +162,6 @@ int main()
 
 	inkRenderer.Init(d3dDevice_HARDWARE, d3dDeviceContext, swapChain);
 	inkRenderer.SetScreenSize((float)windowInfo.w, (float)windowInfo.h);
-
-	/*
-	vector<InkVertex> list;
-	{
-		float x1 = 100.0f;
-		float y1 = 100.0f;
-		float r1 = 25.0f;
-
-		float x2 = 500.0f;
-		float y2 = 500.0f;
-		float r2 = 150.0f;
-
-		list.emplace_back(InkVertex(x1, y1, r1, x2, y2, r2, XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f)));
-	}
-
-	// 开始绘制
-	float clearColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	d3dDeviceContext->ClearRenderTargetView(inkRenderer.renderTargetView, clearColor);
-
-	inkRenderer.DrawStrokeSegment2(list, 0, list.size());
-
-	// 同步本帧完成
-	d3dDeviceContext->End(inkRenderer.g_frameFinishQuery);
-	BOOL done = FALSE;
-	// 注意：GetData 会在 GPU 还没执行到这个 Query 时返回 S_FALSE
-	while (S_OK != d3dDeviceContext->GetData(inkRenderer.g_frameFinishQuery, &done, sizeof(done), 0))
-	{
-		this_thread::yield();
-	}
-	*/
 
 	// 每帧绘制前应该
 	/*
@@ -424,10 +394,6 @@ int main()
 				isFirstFrame = true;
 				// 脏区逻辑暂时禁用
 
-				// 同步锁
-				{
-					inkRenderer.SyncFrameLatency(50.0);
-				}
 				// 帧率锁
 				{
 					double costMs = chrono::duration<double, milli>(chrono::high_resolution_clock::now() - rekon).count();

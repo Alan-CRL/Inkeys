@@ -71,12 +71,6 @@ public:
 	CComPtr<ID3D11RasterizerState> rasterState;
 	CComPtr<ID3D11DepthStencilState> dsState;
 
-	// Query 缓冲同步
-	static const int MAX_FRAME_LATENCY = 1;
-	static const int QUERY_COUNT = MAX_FRAME_LATENCY + 1; // 2
-	CComPtr<ID3D11Query> m_queries[QUERY_COUNT]; // 查询对象池
-	uint64_t m_frameIndex = 0; // 总帧数计数
-
 	// 缓冲区管理
 	size_t m_bufferHead = 0; // 当前写入位置
 	const size_t MAX_BUFFER_CAPACITY = 200000; // 固定大容量 (约2.4MB)，通常足够一帧使用
@@ -314,61 +308,7 @@ public:
 		srvDesc.Buffer.NumElements = static_cast<UINT>(MAX_BUFFER_CAPACITY);
 		if (FAILED(device->CreateShaderResourceView(inkDataBuffer, &srvDesc, &inkDataSRV))) return false;
 
-		D3D11_QUERY_DESC queryDesc = { D3D11_QUERY_EVENT, 0 };
-		for (int i = 0; i < QUERY_COUNT; i++)
-		{
-			if (FAILED(device->CreateQuery(&queryDesc, &m_queries[i]))) return false;
-		}
-		m_frameIndex = 0;
-
 		return LoadShaders();
-	}
-	void SyncFrameLatency(double timeoutMs = 50.0)
-	{
-		// 1. 获取当前帧对应的 Query 槽位 (0 或 1)
-		int currentSlot = m_frameIndex % QUERY_COUNT;
-
-		// 2. 在当前指令流末尾插入标记 (标记本帧结束)
-		// 这相当于告诉 GPU: "画完这帧后，请把这个 Query 置为 Complete"
-		context->End(m_queries[currentSlot]);
-		context->Flush(); // 必须 Flush，把指令推给 GPU
-
-		// 3. 计算我们要等待的旧帧槽位
-		// 如果我们要保持 1 帧延迟，我们就要等待 (Current - 1) 的 Query
-		if (m_frameIndex >= MAX_FRAME_LATENCY)
-		{
-			int waitSlot = (m_frameIndex - MAX_FRAME_LATENCY) % QUERY_COUNT;
-			ID3D11Query* queryToWait = m_queries[waitSlot];
-
-			// 开始等待
-			LARGE_INTEGER freq, start, current;
-			QueryPerformanceFrequency(&freq);
-			QueryPerformanceCounter(&start);
-
-			BOOL data = FALSE;
-			// 循环查询直到 GPU 完成那一帧
-			while (context->GetData(queryToWait, &data, sizeof(BOOL), 0) == S_FALSE)
-			{
-				QueryPerformanceCounter(&current);
-				double elapsedMs = (double)(current.QuadPart - start.QuadPart) * 1000.0 / freq.QuadPart;
-
-				if (elapsedMs > timeoutMs)
-				{
-					// 超时：GPU 可能卡住或负载过高，强制放弃等待，避免程序死锁
-					// 这里可以输出个 Log 警告
-					break;
-				}
-
-				// 自旋优化：Intel CPU 推荐使用 _mm_pause() 减少流水线争用，比 yield 更适合极短等待
-				// 如果没有 <emmintrin.h>，可以用 Sleep(0) 或 std::this_thread::yield()
-				// _mm_pause();
-
-				YieldProcessor();
-			}
-		}
-
-		// 4. 帧数递增
-		m_frameIndex++;
 	}
 
 private:
