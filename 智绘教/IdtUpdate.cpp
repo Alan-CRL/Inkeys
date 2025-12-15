@@ -30,6 +30,17 @@ wstring convertToHttp(const wstring& url)
 	else return httpPrefix + url;
 }
 
+string GetRefererInfo()
+{
+	string ret;
+	ret += utf16ToUtf8(editionDate) + ",";
+	ret += utf16ToUtf8(programArchitecture) + ",";
+	ret += setlist.UpdateChannel + ",";
+	ret += setlist.enableAutoUpdate ? "true," : "false,";
+	ret += utf16ToUtf8(windowsEdition);
+	return ret;
+}
+
 EditionInfoClass GetEditionInfo(string channel, string arch)
 {
 	/*
@@ -41,7 +52,7 @@ EditionInfoClass GetEditionInfo(string channel, string arch)
 	*/
 	EditionInfoClass retEditionInfo;
 
-	string editionInformation = GetEditionInformation();
+	string editionInformation = GetEditionInformation(GetRefererInfo());
 	if (editionInformation == "Error")
 	{
 		retEditionInfo.errorCode = 1;
@@ -200,7 +211,7 @@ AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state,
 	state->fileSize.store(editionInfo.fileSize.load());
 
 	wstring timestamp = getTimestamp();
-	bool reslut = DownloadEdition(domain, path, globalPath + L"installer\\", L"new_procedure_" + timestamp + L".tmp", state->downloadedSize);
+	bool reslut = DownloadEdition(domain, path, globalPath + L"installer\\", L"new_procedure_" + timestamp + L".tmp", state->downloadedSize, GetRefererInfo());
 
 	if (reslut)
 	{

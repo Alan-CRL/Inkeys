@@ -194,6 +194,53 @@ void BarMediaClass::LoadFormat()
 // ====================
 // 界面
 
+void HighPrecisionWait(double frameTimeSpentMs, double targetFPS)
+{
+	// 1. 计算目标帧时间 (毫秒)
+	// 例如: 60FPS -> 16.666... ms
+	double targetFrameTimeMs = 1000.0 / targetFPS;
+
+	// 2. 计算还需要等待的时间 (毫秒)
+	double waitTimeMs = targetFrameTimeMs - frameTimeSpentMs;
+
+	// 如果已经超时（掉帧），直接返回，不等待
+	if (waitTimeMs <= 0.0)
+	{
+		return;
+	}
+
+	// 获取高精度计时器的频率 (Ticks Per Second)
+	static LARGE_INTEGER freq = { 0 };
+	if (freq.QuadPart == 0) QueryPerformanceFrequency(&freq);
+
+	// 记录开始等待时刻的 QPC
+	LARGE_INTEGER startCounter, currentCounter;
+	QueryPerformanceCounter(&startCounter);
+
+	// 将等待时间 (ms) 转换为 QPC 的 Ticks 单位
+	// 公式: (ms * freq) / 1000
+	long long waitTicks = (long long)((waitTimeMs * (double)freq.QuadPart) / 1000.0);
+	long long targetEndTick = startCounter.QuadPart + waitTicks;
+
+	// === 阶段一：Sleep (粗略等待) ===
+	// 只有当剩余时间大于 2ms 时才启用 Sleep，留出 1.5ms 的安全余量给 Spin
+	if (waitTimeMs > 2.0)
+	{
+		// 预留约 1.5ms 的时间给最后的忙等待，其余时间睡觉
+		// 注意这里显式使用 std::milli
+		double sleepMs = waitTimeMs - 1.5;
+		std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(sleepMs));
+	}
+
+	// === 阶段二：Spin (高精度忙等待) ===
+	// 死循环直到 QPC 达到目标 Tick
+	do
+	{
+		QueryPerformanceCounter(&currentCounter);
+
+		YieldProcessor();
+	} while (currentCounter.QuadPart < targetEndTick);
+}
 // 具体渲染
 bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, RECT* targetRect, bool clip)
 {
@@ -2205,8 +2252,10 @@ void BarUISetClass::Rendering()
 		}
 		// 帧率锁
 		{
-			double delay = 1000.0 / 60.0 - chrono::duration<double, milli>(chrono::high_resolution_clock::now() - reckon).count();
-			if (delay >= 10.0) std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(delay)));
+			HighPrecisionWait(chrono::duration<double, milli>(chrono::high_resolution_clock::now() - reckon).count(), 60.0);
+
+			//double delay = 1000.0 / 60.0 - chrono::duration<double, milli>(chrono::high_resolution_clock::now() - reckon).count();
+			//if (delay >= 10.0) std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(delay)));
 		}
 
 		{
