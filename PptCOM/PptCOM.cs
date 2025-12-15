@@ -24,15 +24,15 @@
 // 其余疑问请咨询作者 QQ2685549821
 /////////////////////////////////////////////////////////////////////////////
 
-using System;
-using System.Threading;
-using System.Runtime.InteropServices;
-using System.Diagnostics;
-
-using System.Windows.Forms;
-
 using Microsoft.Office.Core;
 using Microsoft.Office.Interop.PowerPoint;
+using System;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+using System.Threading;
+using System.Windows.Forms;
+using System.Reflection;
 
 namespace PptCOM
 {
@@ -117,8 +117,15 @@ namespace PptCOM
         }
 
         // 外部引用函数
+
         [DllImport("user32.dll")]
         private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+        [DllImport("ole32.dll")]
+        private static extern int GetRunningObjectTable(int reserved, out IRunningObjectTable prot);
+
+        [DllImport("ole32.dll")]
+        private static extern int CreateBindCtx(int reserved, out IBindCtx ppbc);
 
         // 事件查询函数
         private unsafe void SlideShowChange(Microsoft.Office.Interop.PowerPoint.SlideShowWindow Wn)
@@ -193,6 +200,138 @@ namespace PptCOM
             cancel = false;
         }
 
+        // 备用检测方案
+        public static Microsoft.Office.Interop.PowerPoint.Application GetAnyActivePowerPoint()
+        {
+            // MS Office 的标准 GUID (WPS 兼容模式也是这个)
+            // 这是一个常量，不需要读注册表，绝对安全
+            string msGuid = "91493441-5A91-11CF-8700-00AA0060263B";
+
+            IRunningObjectTable rot = null;
+            IEnumMoniker enumMoniker = null;
+
+            try
+            {
+                // 1. 获取 ROT
+                int hr = GetRunningObjectTable(0, out rot);
+                if (hr != 0 || rot == null) return null;
+
+                rot.EnumRunning(out enumMoniker);
+                if (enumMoniker == null) return null;
+
+                IMoniker[] moniker = new IMoniker[1];
+                IntPtr fetched = IntPtr.Zero;
+
+                // 2. 遍历所有对象
+                while (enumMoniker.Next(1, moniker, fetched) == 0)
+                {
+                    IBindCtx bindCtx = null;
+                    object comObject = null;
+                    try
+                    {
+                        CreateBindCtx(0, out bindCtx);
+                        string displayName;
+                        moniker[0].GetDisplayName(bindCtx, null, out displayName);
+
+                        bool needsCheck = false;
+                        bool isDoc = false;
+
+                        // --- 判定策略 ---
+
+                        // A. 是不是 MS 标准 ID?
+                        if (displayName.IndexOf(msGuid, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            needsCheck = true;
+                        }
+                        // B. 是不是 PPT 文件? (.pptx / .ppt)
+                        // 无论 WPS 注册表怎么坏，打开文件时 ROT 里总会有文件路径
+                        else if (displayName.EndsWith(".pptx", StringComparison.OrdinalIgnoreCase) ||
+                                 displayName.EndsWith(".ppt", StringComparison.OrdinalIgnoreCase))
+                        {
+                            needsCheck = true;
+                            isDoc = true;
+                        }
+                        // C. [绝招] 甚至可以匹配 "演示文稿" 字样 (针对未保存的新建文档)
+                        // WPS 新建文档在 ROT 里有时显示为 "演示文稿1" 之类
+                        else if (displayName.Contains("Presentation") || displayName.Contains("演示文稿"))
+                        {
+                            needsCheck = true;
+                            isDoc = true; // 假设它是文档
+                        }
+
+                        if (needsCheck)
+                        {
+                            // 获取 COM 对象
+                            rot.GetObject(moniker[0], out comObject);
+                            if (comObject == null) continue;
+
+                            Microsoft.Office.Interop.PowerPoint.Application resultApp = null;
+
+                            if (isDoc)
+                            {
+                                // 如果我们抓到的是个文档 (Presentation)，我们需要它的爸爸 (Application)
+                                try
+                                {
+                                    // 使用反射获取 "Application" 属性，代替 dynamic
+                                    object appObj = comObject.GetType().InvokeMember("Application",
+                                        BindingFlags.GetProperty,
+                                        null,
+                                        comObject,
+                                        null);
+
+                                    if (appObj is Microsoft.Office.Interop.PowerPoint.Application app)
+                                    {
+                                        resultApp = app;
+                                    }
+                                }
+                                catch
+                                {
+                                    // 这个对象虽然叫 .pptx 但可能没有 Application 属性，或者是残留项
+                                }
+                            }
+                            else
+                            {
+                                // 如果它是直接匹配 GUID 抓到的，它应该直接就是 Application
+                                if (comObject is Microsoft.Office.Interop.PowerPoint.Application app)
+                                {
+                                    resultApp = app;
+                                }
+                            }
+
+                            // --- 最终验证 ---
+                            if (resultApp != null)
+                            {
+                                try
+                                {
+                                    // 尝试访问一个属性确保它活着
+                                    string ver = resultApp.Version;
+                                    return resultApp; // 成功！
+                                }
+                                catch { /* 僵死对象 */ }
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // 忽略单个对象的错误
+                    }
+                    finally
+                    {
+                        if (comObject != null && Marshal.IsComObject(comObject)) Marshal.ReleaseComObject(comObject);
+                        if (bindCtx != null) Marshal.ReleaseComObject(bindCtx);
+                        if (moniker[0] != null) Marshal.ReleaseComObject(moniker[0]);
+                    }
+                }
+            }
+            finally
+            {
+                if (enumMoniker != null) Marshal.ReleaseComObject(enumMoniker);
+                if (rot != null) Marshal.ReleaseComObject(rot);
+            }
+
+            return null;
+        }
+
         // 判断是否有 Ppt 文件被打开（并注册事件）
         public unsafe int IsPptOpen()
         {
@@ -204,7 +343,10 @@ namespace PptCOM
             try
             {
                 // 获取活动的 Application 示例
-                pptApp = (Microsoft.Office.Interop.PowerPoint.Application)Marshal.GetActiveObject("PowerPoint.Application");
+                // pptApp = (Microsoft.Office.Interop.PowerPoint.Application)Marshal.GetActiveObject("PowerPoint.Application");
+                // pptApp = (Microsoft.Office.Interop.PowerPoint.Application)Marshal.GetActiveObject("KWpp.Application");
+
+                pptApp = GetAnyActivePowerPoint();
 
                 // 获取 PPT 文档实例个数（如果为 0 则是没有打开文件的 Application 实例，或是游离状态的 WPP）
                 ret = pptApp.Presentations.Count;
