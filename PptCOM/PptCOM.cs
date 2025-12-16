@@ -241,6 +241,7 @@ namespace PptCOM
                         // A. 是不是 MS 标准 ID?
                         if (displayName.IndexOf(msGuid, StringComparison.OrdinalIgnoreCase) >= 0)
                         {
+                            Console.WriteLine("find TypeA");
                             needsCheck = true;
                         }
                         // B. 是不是 PPT 文件? (.pptx / .ppt)
@@ -248,6 +249,7 @@ namespace PptCOM
                         else if (displayName.EndsWith(".pptx", StringComparison.OrdinalIgnoreCase) ||
                                  displayName.EndsWith(".ppt", StringComparison.OrdinalIgnoreCase))
                         {
+                            Console.WriteLine("find TypeB");
                             needsCheck = true;
                             isDoc = true;
                         }
@@ -255,6 +257,7 @@ namespace PptCOM
                         // WPS 新建文档在 ROT 里有时显示为 "演示文稿1" 之类
                         else if (displayName.Contains("Presentation") || displayName.Contains("演示文稿"))
                         {
+                            Console.WriteLine("find TypeC");
                             needsCheck = true;
                             isDoc = true; // 假设它是文档
                         }
@@ -339,14 +342,16 @@ namespace PptCOM
             bindingEvents = false;
             //hasWpsProcessID = false;
 
+            Console.WriteLine("check PPT");
+
             // 通用尝试，获取 Active 的 Application 并检测是否正确
             try
             {
                 // 获取活动的 Application 示例
-                // pptApp = (Microsoft.Office.Interop.PowerPoint.Application)Marshal.GetActiveObject("PowerPoint.Application");
+                pptApp = (Microsoft.Office.Interop.PowerPoint.Application)Marshal.GetActiveObject("PowerPoint.Application");
                 // pptApp = (Microsoft.Office.Interop.PowerPoint.Application)Marshal.GetActiveObject("KWpp.Application");
 
-                pptApp = GetAnyActivePowerPoint();
+                //pptApp = GetAnyActivePowerPoint();
 
                 // 获取 PPT 文档实例个数（如果为 0 则是没有打开文件的 Application 实例，或是游离状态的 WPP）
                 ret = pptApp.Presentations.Count;
