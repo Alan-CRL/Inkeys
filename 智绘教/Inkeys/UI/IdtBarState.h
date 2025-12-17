@@ -26,8 +26,8 @@ public:
 class BarStyleClass
 {
 public:
-	IdtAtomic<bool> darkStyle = false;
-	IdtAtomic<double> zoom = 2.0;
+	IdtAtomic<bool> darkStyle = true;
+	IdtAtomic<double> zoom = 1.0;
 };
 
 // ---
