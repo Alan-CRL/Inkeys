@@ -286,13 +286,10 @@ namespace PptCOM
                                     Console.WriteLine($"  !!! PERFECT MATCH FOUND (Return Immediately) !!! App HWND: {appHwnd}");
 
                                     if (bestApp != null) Marshal.ReleaseComObject(bestApp);
+                                    bestApp = candidateApp;
+                                    candidateApp = null; // 移交所有权
 
-                                    // 清理并返回
-                                    CleanUpLoopObjects(bindCtx, moniker[0], comObject);
-                                    // 注意：这里 comObject 不能释放太早，因为 candidateApp 来自它，但在你的原始代码逻辑里是这么写的，为了保持原有逻辑复现 bug，我先不动
-                                    if (comObject != null && Marshal.IsComObject(comObject)) Marshal.ReleaseComObject(comObject);
-
-                                    return candidateApp;
+                                    return bestApp;
                                 }
 
                                 if (currentPriority > highestPriority)
@@ -431,6 +428,8 @@ namespace PptCOM
 
             *pptCurrentPage = -1;
             *pptTotalPage = -1;
+
+            Console.WriteLine("END2");
         }
 
         private void PresentationBeforeClose(Microsoft.Office.Interop.PowerPoint.Presentation Wn, ref bool cancel)
@@ -478,6 +477,8 @@ namespace PptCOM
         // 彻底清理当前绑定的对象
         private unsafe void FullCleanup()
         {
+            Console.WriteLine("CLEAN!");
+
             UnbindEvents();
 
             if (pptActWindow != null) { Marshal.ReleaseComObject(pptActWindow); pptActWindow = null; }
@@ -526,17 +527,16 @@ namespace PptCOM
                         if (pptApp == null && bestApp != null)
                         {
                             needRebind = true;
+                            Console.WriteLine("first band");
                         }
                         // 情况 B: 之前绑了，但现在找到了不一样的 (例如 PPT <-> WPS) -> 换
                         else if (pptApp != null && bestApp != null)
                         {
-                            Console.WriteLine($"now is {pptApp.HWND}, find new {bestApp.HWND}");
+                            Console.WriteLine($"find new {bestApp.HWND}");
 
                             // 发现了完全不同的 Application 实例，必须切换
-                            if (IsSlideShowInconsistent(pptApp, bestApp))
+                            if (!AreComObjectsEqual(pptApp, bestApp) && IsSlideShowInconsistent(pptApp, bestApp))
                             {
-                                // !AreComObjectsEqual(pptApp, bestApp)
-
                                 needRebind = true;
                                 Console.WriteLine("Detected Application Switch");
                             }
@@ -547,6 +547,7 @@ namespace PptCOM
                         // --- 执行绑定 ---
                         if (needRebind)
                         {
+                            Console.WriteLine("Try Rebind");
                             FullCleanup(); // 包含 GC 和 指针重置
 
                             // 如果 bestApp 在上面被释放了(情况C)，或者我们需要重新绑定
@@ -612,8 +613,9 @@ namespace PptCOM
                     // ============================================================
                     // 2. 状态监测与 3000ms 心跳轮询 (Watchdog)
                     // ============================================================
-                    if (false && pptApp != null && pptActDoc != null)
+                    if (pptApp != null && pptActDoc != null)
                     {
+                        Console.WriteLine($"Enter Part 2 {pptApp.HWND}");
                         // 检查是否同进程切换文档
                         if (pptActDoc != pptApp.ActivePresentation) break;
 
@@ -697,12 +699,22 @@ namespace PptCOM
                         // 没有绑定对象
                         *pptCurrentPage = -1;
                         *pptTotalPage = -1;
+
+                        break;
                     }
 
                     Thread.Sleep(500);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"");
+                Console.WriteLine($"Fail 710");
+                Console.WriteLine($"异常类型: {ex.GetType().FullName}");
+                Console.WriteLine($"异常信息: {ex.Message}");
+                Console.WriteLine($"堆栈: {ex.StackTrace}");
+                Console.WriteLine($"");
+            }
             finally
             {
                 FullCleanup();
