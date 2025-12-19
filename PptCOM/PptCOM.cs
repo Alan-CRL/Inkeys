@@ -158,12 +158,18 @@ namespace PptCOM
         }
 
         // --- 核心获取函数：获取最佳 PPT 实例 ---
-        public static Microsoft.Office.Interop.PowerPoint.Application GetAnyActivePowerPoint()
+        private static Microsoft.Office.Interop.PowerPoint.Application GetAnyActivePowerPoint(
+            Microsoft.Office.Interop.PowerPoint.Application targetApp,
+            out int bestPriority,
+            out int targetPriority)
         {
             IRunningObjectTable rot = null;
             IEnumMoniker enumMoniker = null;
 
             Microsoft.Office.Interop.PowerPoint.Application bestApp = null;
+            bestPriority = 0;
+            targetPriority = 0;
+
             int highestPriority = 0;
 
             try
@@ -249,7 +255,7 @@ namespace PptCOM
                                                 {
                                                     currentPriority = 3;
 
-                                                    Console.WriteLine($"ret: matched!!");
+                                                    Console.WriteLine($"ret: matched 3!!");
 
                                                     break;
                                                 }
@@ -270,11 +276,16 @@ namespace PptCOM
 
                             Console.WriteLine($"  -> Calculated Priority: {currentPriority}");
 
+                            if (AreComObjectsEqual(candidateApp, targetApp))
+                            {
+                                targetPriority = currentPriority;
+                            }
                             if (currentPriority > 0)
                             {
                                 if (currentPriority == 3)
                                 {
                                     Console.WriteLine($"  !!! PERFECT MATCH FOUND (Return Immediately) !!! App HWND: {appHwnd}");
+                                    bestPriority = currentPriority;
 
                                     if (bestApp != null) Marshal.ReleaseComObject(bestApp);
                                     bestApp = candidateApp;
@@ -286,6 +297,8 @@ namespace PptCOM
                                 if (currentPriority > highestPriority)
                                 {
                                     Console.WriteLine($"  New Best Candidate (Priority {currentPriority})");
+                                    bestPriority = currentPriority;
+
                                     if (bestApp != null) Marshal.ReleaseComObject(bestApp);
                                     bestApp = candidateApp;
                                     highestPriority = currentPriority;
@@ -499,6 +512,9 @@ namespace PptCOM
             int tempTotalPage = -1;
             DateTime lastCheckRotTime = DateTime.MinValue;
 
+            int bestPriority = 0;
+            int targetPriority = 0;
+
             try
             {
                 while (true)
@@ -510,23 +526,23 @@ namespace PptCOM
                     {
                         lastCheckRotTime = DateTime.Now;
 
-                        Microsoft.Office.Interop.PowerPoint.Application bestApp = GetAnyActivePowerPoint();
+                        Microsoft.Office.Interop.PowerPoint.Application bestApp = GetAnyActivePowerPoint(pptApp, out bestPriority, out targetPriority);
 
                         bool needRebind = false;
 
-                        // 情况 A: 之前没绑，现在找到了 -> 绑
+                        // 之前没绑，现在找到了
                         if (pptApp == null && bestApp != null)
                         {
                             needRebind = true;
                             Console.WriteLine("first band");
                         }
-                        // 情况 B: 之前绑了，但现在找到了不一样的 (例如 PPT <-> WPS) -> 换
-                        else if (pptApp != null && bestApp != null)
+                        // 之前绑了，但现在找到了不一样的
+                        else if (pptApp != null && bestApp != null && bestPriority > targetPriority)
                         {
                             Console.WriteLine($"find new {bestApp.HWND}");
 
-                            Console.WriteLine($"check1 {!AreComObjectsEqual(pptApp, bestApp)}");
-                            Console.WriteLine($"check2 {IsSlideShowInconsistent(pptApp, bestApp)}");
+                            Console.WriteLine($"check1 {bestPriority}");
+                            Console.WriteLine($"check2 {targetPriority}");
 
                             // 发现了完全不同的 Application 实例，必须切换
                             if (!AreComObjectsEqual(pptApp, bestApp) && IsSlideShowInconsistent(pptApp, bestApp))
@@ -536,18 +552,11 @@ namespace PptCOM
                                 Console.WriteLine("Detected Application Switch");
                             }
                         }
-                        // 情况 D: 之前绑了，现在找不到任何 PPT 了 -> 不急着在这里 FullCleanup
-                        // 让 Watchdog 去发现死活，避免 ROT 瞬时列表为空造成的闪烁
 
-                        // --- 执行绑定 ---
                         if (needRebind)
                         {
                             Console.WriteLine("Try Rebind");
-                            FullCleanup(); // 包含 GC 和 指针重置
-
-                            // 如果 bestApp 在上面被释放了(情况C)，或者我们需要重新绑定
-                            // 为了逻辑简单和安全，我们重新获取一次当前最佳（确保它是活的）
-                            if (bestApp == null) bestApp = GetAnyActivePowerPoint();
+                            FullCleanup();
 
                             if (bestApp != null)
                             {
