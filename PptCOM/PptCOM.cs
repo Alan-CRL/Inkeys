@@ -177,10 +177,6 @@ namespace PptCOM
                 IMoniker[] moniker = new IMoniker[1];
                 IntPtr fetched = IntPtr.Zero;
 
-                // [调试] 获取当前前台窗口
-                IntPtr foregroundHwnd = GetForegroundWindow();
-                Console.WriteLine($"\n--- [ROT SCAN START] Foreground Window: {foregroundHwnd} ---");
-
                 while (enumMoniker.Next(1, moniker, fetched) == 0)
                 {
                     IBindCtx bindCtx = null;
@@ -247,17 +243,13 @@ namespace PptCOM
                                         {
                                             foreach (Microsoft.Office.Interop.PowerPoint.SlideShowWindow window in candidateApp.SlideShowWindows)
                                             {
-                                                IntPtr slideHwnd = (IntPtr)window.HWND;
-
-                                                // [调试] 打印放映窗口句柄对比
-                                                bool match = (slideHwnd == foregroundHwnd);
-                                                Console.WriteLine($"    > SlideWindow HWND: {slideHwnd} | Match Foreground? {match}");
+                                                bool match = (window.Active == MsoTriState.msoTrue);
 
                                                 if (match)
                                                 {
                                                     currentPriority = 3;
 
-                                                    Console.WriteLine($"ret: match's HWND is: {match}");
+                                                    Console.WriteLine($"ret: matched!!");
 
                                                     break;
                                                 }
@@ -280,7 +272,6 @@ namespace PptCOM
 
                             if (currentPriority > 0)
                             {
-                                // [疑似问题点]：这里如果直接返回，且这个 App 是死掉的那个（但它的 SlideWindow 属性因为 WPS 共享内存机制返回了活的句柄），就会导致错误绑定
                                 if (currentPriority == 3)
                                 {
                                     Console.WriteLine($"  !!! PERFECT MATCH FOUND (Return Immediately) !!! App HWND: {appHwnd}");
@@ -347,10 +338,10 @@ namespace PptCOM
         private static bool IsSlideShowInconsistent(Microsoft.Office.Interop.PowerPoint.Application app1, Microsoft.Office.Interop.PowerPoint.Application app2)
         {
             int hwnd1 = GetSlideShowHwndSafe(app1);
-            if (hwnd1 == 0) return false;
+            if (hwnd1 == 0) return true;
 
             int hwnd2 = GetSlideShowHwndSafe(app2);
-            if (hwnd2 == 0) return false;
+            if (hwnd2 == 0) return true;
 
             return hwnd1 != hwnd2;
         }
@@ -534,10 +525,14 @@ namespace PptCOM
                         {
                             Console.WriteLine($"find new {bestApp.HWND}");
 
+                            Console.WriteLine($"check1 {!AreComObjectsEqual(pptApp, bestApp)}");
+                            Console.WriteLine($"check2 {IsSlideShowInconsistent(pptApp, bestApp)}");
+
                             // 发现了完全不同的 Application 实例，必须切换
                             if (!AreComObjectsEqual(pptApp, bestApp) && IsSlideShowInconsistent(pptApp, bestApp))
                             {
                                 needRebind = true;
+
                                 Console.WriteLine("Detected Application Switch");
                             }
                         }
@@ -557,6 +552,7 @@ namespace PptCOM
                             if (bestApp != null)
                             {
                                 pptApp = bestApp;
+                                if (pptApp != null) Console.WriteLine($"Enter Part 2 {pptApp.HWND} 2");
                                 try
                                 {
                                     pptActDoc = pptApp.ActivePresentation;
@@ -615,7 +611,7 @@ namespace PptCOM
                     // ============================================================
                     if (pptApp != null && pptActDoc != null)
                     {
-                        Console.WriteLine($"Enter Part 2 {pptApp.HWND}");
+                        if (pptApp != null) Console.WriteLine($"Enter Part 2 {pptApp.HWND} 1");
                         // 检查是否同进程切换文档
                         if (pptActDoc != pptApp.ActivePresentation) break;
 
@@ -747,15 +743,8 @@ namespace PptCOM
             IntPtr hWnd = IntPtr.Zero;
             try
             {
-                // 获取正在播放的PPT应用程序对象
-                pptApp = (Microsoft.Office.Interop.PowerPoint.Application)Marshal.GetActiveObject("PowerPoint.Application");
-                // 获取当前播放的PPT文档对象
-                pptActDoc = pptApp.ActivePresentation;
-                // 获取当前播放的PPT幻灯片窗口对象
-                pptActWindow = pptActDoc.SlideShowWindow;
-
                 // 获取PPT窗口句柄
-                hWnd = new IntPtr(pptActWindow.HWND);
+                hWnd = new IntPtr(pptActDoc.SlideShowWindow.HWND);
             }
             catch
             {
