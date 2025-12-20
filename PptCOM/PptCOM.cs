@@ -205,24 +205,35 @@ namespace PptCOM
                         CreateBindCtx(0, out bindCtx);
                         moniker[0].GetDisplayName(bindCtx, null, out displayName);
 
-                        if (LooksLikePresentationFile(displayName))
+                        if (true || LooksLikePresentationFile(displayName))
                         {
+                            Console.WriteLine($"{displayName}");
+
                             rot.GetObject(moniker[0], out comObject);
                             if (comObject != null)
                             {
                                 // 尝试通过 Presentation 对象获取 Application
                                 try
                                 {
-                                    object appObj = comObject.GetType().InvokeMember("Application",
-                                        BindingFlags.GetProperty, null, comObject, null);
+                                    object appObj = comObject.GetType().InvokeMember("Application", BindingFlags.GetProperty, null, comObject, null);
                                     candidateApp = appObj as Microsoft.Office.Interop.PowerPoint.Application;
                                 }
-                                catch { /* 忽略获取 Application 失败 */ }
+                                catch (InvalidCastException castEx)
+                                {
+                                    Console.WriteLine("  -> 强制转换失败! (这就是原因)");
+                                    Console.WriteLine($"  -> 错误详情: {castEx.Message}");
+                                }
+                            }
+                            else
+                            {
+                                Console.WriteLine($"not com object");
                             }
                         }
 
                         if (candidateApp != null)
                         {
+                            Console.WriteLine($"Yes999!");
+
                             int currentPriority = 0;
                             bool isTarget = false;
 
@@ -241,7 +252,15 @@ namespace PptCOM
                                 {
                                     activePres = candidateApp.ActivePresentation;
                                 }
-                                catch { }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine($"");
+                                    Console.WriteLine($"Fail 267");
+                                    Console.WriteLine($"异常类型: {ex.GetType().FullName}");
+                                    Console.WriteLine($"异常信息: {ex.Message}");
+                                    Console.WriteLine($"堆栈: {ex.StackTrace}");
+                                    Console.WriteLine($"");
+                                }
 
                                 if (activePres != null)
                                 {
@@ -409,27 +428,56 @@ namespace PptCOM
         {
             try
             {
-                int appHwnd = app.HWND; // 获取 PPT/WPP 主窗口句柄
-                if (appHwnd == 0) return false;
-
+                // 1. 获取前台窗口 (用户当前正在操作的窗口)
                 IntPtr foregroundHwnd = GetForegroundWindow();
                 if (foregroundHwnd == IntPtr.Zero) return false;
 
-                // 1. 直接比对句柄 (命中率低，但效率高)
-                if (foregroundHwnd == (IntPtr)appHwnd) return true;
-
-                // 2. 比对进程 ID (核心逻辑)
-                // 获取 PPT/WPP 主窗口的进程 ID
-                uint appPid;
-                GetWindowThreadProcessId((IntPtr)appHwnd, out appPid);
-
-                // 获取当前前台窗口的进程 ID
+                // 获取前台窗口的 PID
                 uint fgPid;
                 GetWindowThreadProcessId(foregroundHwnd, out fgPid);
 
-                // 如果前台窗口属于同一个进程，说明该 App 是激活状态
-                // WPP 的阅读视图焦点在框架上，框架和 PPT 窗口属于同一进程
-                return appPid == fgPid;
+                // 2. 获取 COM App 对象的 PID
+                // 注意：WPS 的 app.HWND 可能指向 wpp.exe 进程
+                int appHwnd = 0;
+                try { appHwnd = app.HWND; } catch { return false; }
+                if (appHwnd == 0) return false;
+
+                uint appPid;
+                GetWindowThreadProcessId((IntPtr)appHwnd, out appPid);
+
+                // --- 判定逻辑 ---
+
+                // 情况 A: 完美匹配 (适用于 PowerPoint)
+                if (fgPid == appPid) return true;
+
+                // 情况 B: WPS 跨进程判定 (wps.exe 包含 wpp.exe)
+                // 获取进程名称进行模糊匹配
+                try
+                {
+                    // 性能提示：Process.GetProcessById 略微耗时，但在 ROT 循环次数很少的情况下可接受
+                    using (Process fgProc = Process.GetProcessById((int)fgPid))
+                    using (Process appProc = Process.GetProcessById((int)appPid))
+                    {
+                        string fgName = fgProc.ProcessName.ToLower();   // 例如 "wps"
+                        string appName = appProc.ProcessName.ToLower(); // 例如 "wpp"
+
+                        // [WPS 特殊规则]
+                        // 如果前台是 wps (主框架)，而后台 COM 是 wpp (演示核心)，则视为激活
+                        if (fgName.StartsWith("wps") && appName.StartsWith("wpp"))
+                        {
+                            // 进一步验证：如果你想确保万无一失，可以检查 fgProc 的开始时间等
+                            // 但通常只要名字对上，且 ROT 里有这个对象，就说明用户正在操作 WPS
+                            return true;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // 进程可能已经退出，无法获取名称
+                    Console.WriteLine($"  Process Name Check Failed: {ex.Message}");
+                }
+
+                return false;
             }
             catch
             {
@@ -534,6 +582,7 @@ namespace PptCOM
                         pptApp.PresentationBeforeClose -= new Microsoft.Office.Interop.PowerPoint.EApplication_PresentationBeforeCloseEventHandler(PresentationBeforeClose);
                     }
                     catch { }
+
                     bindingEvents = false;
                 }
             }
@@ -547,13 +596,21 @@ namespace PptCOM
 
             UnbindEvents();
 
-            if (pptActWindow != null) { Marshal.ReleaseComObject(pptActWindow); pptActWindow = null; }
-            if (pptActDoc != null) { Marshal.ReleaseComObject(pptActDoc); pptActDoc = null; }
-            if (pptApp != null) { Marshal.ReleaseComObject(pptApp); pptApp = null; }
+            try
+            {
+                if (pptActWindow != null) { Marshal.ReleaseComObject(pptActWindow); pptActWindow = null; }
+                if (pptActDoc != null) { Marshal.ReleaseComObject(pptActDoc); pptActDoc = null; }
+                if (pptApp != null) { Marshal.ReleaseComObject(pptApp); pptApp = null; }
+            }
+            catch { }
 
             // 重置指针为 -1 (外部程序约定的结束标志)
-            *pptCurrentPage = -1;
-            *pptTotalPage = -1;
+            try
+            {
+                *pptTotalPage = -1;
+                *pptCurrentPage = -1;
+            }
+            catch { }
 
             // 强制 GC，这对 WPS 的资源释放至关重要
             GC.Collect();
@@ -572,7 +629,6 @@ namespace PptCOM
             polling = 0;
 
             int tempTotalPage = -1;
-            DateTime lastCheckRotTime = DateTime.MinValue;
 
             int bestPriority = 0;
             int targetPriority = 0;
@@ -584,10 +640,7 @@ namespace PptCOM
                     // ============================================================
                     // 1. 动态绑定/切换逻辑 (每 1000ms 检查一次)
                     // ============================================================
-                    if ((DateTime.Now - lastCheckRotTime).TotalMilliseconds > 3000)
                     {
-                        lastCheckRotTime = DateTime.Now;
-
                         Microsoft.Office.Interop.PowerPoint.Application bestApp = GetAnyActivePowerPoint(pptApp, out bestPriority, out targetPriority);
 
                         bool needRebind = false;
@@ -622,11 +675,15 @@ namespace PptCOM
 
                         if (needRebind)
                         {
+                            bool wait = (pptApp != null);
+
                             Console.WriteLine("Try Rebind");
                             FullCleanup();
 
                             if (bestApp != null)
                             {
+                                if (wait) Thread.Sleep(1000);
+
                                 pptApp = bestApp;
                                 if (pptApp != null) Console.WriteLine($"Enter Part 2 {pptApp.HWND} 2");
                                 try
