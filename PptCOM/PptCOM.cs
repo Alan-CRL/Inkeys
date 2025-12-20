@@ -156,6 +156,13 @@ namespace PptCOM
             if (moniker != null) Marshal.ReleaseComObject(moniker);
             if (bindCtx != null) Marshal.ReleaseComObject(bindCtx);
         }
+        private static void SafeRelease(object obj)
+        {
+            if (obj != null && Marshal.IsComObject(obj))
+            {
+                try { Marshal.ReleaseComObject(obj); } catch { }
+            }
+        }
 
         // --- 核心获取函数：获取最佳 PPT 实例 ---
         private static Microsoft.Office.Interop.PowerPoint.Application GetAnyActivePowerPoint(
@@ -165,11 +172,10 @@ namespace PptCOM
         {
             IRunningObjectTable rot = null;
             IEnumMoniker enumMoniker = null;
-
             Microsoft.Office.Interop.PowerPoint.Application bestApp = null;
+
             bestPriority = 0;
             targetPriority = 0;
-
             int highestPriority = 0;
 
             try
@@ -190,6 +196,10 @@ namespace PptCOM
                     Microsoft.Office.Interop.PowerPoint.Application candidateApp = null;
                     string displayName = "Unknown";
 
+                    // 临时变量，用于显式释放
+                    Microsoft.Office.Interop.PowerPoint.Presentation activePres = null;
+                    Microsoft.Office.Interop.PowerPoint.SlideShowWindows ssWindows = null;
+
                     try
                     {
                         CreateBindCtx(0, out bindCtx);
@@ -197,129 +207,150 @@ namespace PptCOM
 
                         if (LooksLikePresentationFile(displayName))
                         {
-                            // [调试] 发现疑似 PPT 文件
-                            Console.WriteLine($"Found Candidate: {displayName}");
-
                             rot.GetObject(moniker[0], out comObject);
                             if (comObject != null)
                             {
+                                // 尝试通过 Presentation 对象获取 Application
                                 try
                                 {
                                     object appObj = comObject.GetType().InvokeMember("Application",
                                         BindingFlags.GetProperty, null, comObject, null);
                                     candidateApp = appObj as Microsoft.Office.Interop.PowerPoint.Application;
                                 }
-                                catch (Exception ex)
-                                {
-                                    Console.WriteLine($"  Get Application Failed: {ex.Message}");
-                                }
+                                catch { /* 忽略获取 Application 失败 */ }
                             }
                         }
 
                         if (candidateApp != null)
                         {
                             int currentPriority = 0;
-                            int appHwnd = 0;
+                            bool isTarget = false;
 
+                            // 1. 检查是否是 Target (先检查，确保即使后续出错也能标记)
+                            if (targetApp != null && AreComObjectsEqual(candidateApp, targetApp))
+                            {
+                                isTarget = true;
+                            }
+
+                            // 2. 计算优先级
                             try
                             {
-                                // [调试] 获取 App 主窗口句柄
-                                try { appHwnd = candidateApp.HWND; } catch { }
-                                Console.WriteLine($"  App HWND: {appHwnd}");
+                                // 尝试获取 ActivePresentation
+                                // 注意：这里必须捕获 COM 异常，因为如果没有打开的窗口，访问此属性会抛出异常
+                                try
+                                {
+                                    activePres = candidateApp.ActivePresentation;
+                                }
+                                catch { }
 
-                                if (candidateApp.ActivePresentation != null)
+                                if (activePres != null)
                                 {
                                     currentPriority = 1;
 
-                                    bool hasSlideShows = false;
-                                    try
-                                    {
-                                        if (candidateApp.SlideShowWindows != null && candidateApp.SlideShowWindows.Count > 0)
-                                        {
-                                            hasSlideShows = true;
-                                            currentPriority = 2;
-                                            Console.WriteLine($"  Has SlideShowWindows (Count: {candidateApp.SlideShowWindows.Count})");
-                                        }
-                                    }
-                                    catch { }
+                                    // 检查 SlideShowWindows
+                                    try { ssWindows = candidateApp.SlideShowWindows; } catch { }
 
-                                    if (hasSlideShows)
+                                    if (ssWindows != null && ssWindows.Count > 0)
                                     {
-                                        try
+                                        currentPriority = 2;
+                                        bool foundActiveViaCom = false;
+
+                                        // 不要使用 foreach，使用 for 循环并显式释放单个 Window 对象
+                                        int count = ssWindows.Count;
+                                        for (int i = 1; i <= count; i++)
                                         {
-                                            foreach (Microsoft.Office.Interop.PowerPoint.SlideShowWindow window in candidateApp.SlideShowWindows)
+                                            Microsoft.Office.Interop.PowerPoint.SlideShowWindow ssWin = null;
+                                            try
                                             {
-                                                bool match = (window.Active == MsoTriState.msoTrue);
-
-                                                if (match)
+                                                ssWin = ssWindows[i];
+                                                if (ssWin.Active == MsoTriState.msoTrue)
                                                 {
                                                     currentPriority = 3;
+                                                    foundActiveViaCom = true;
 
-                                                    Console.WriteLine($"ret: matched 3!!");
-
+                                                    SafeRelease(ssWin);
                                                     break;
                                                 }
                                             }
+                                            catch { }
+                                            finally
+                                            {
+                                                SafeRelease(ssWin);
+                                            }
                                         }
-                                        catch (Exception ex)
+
+                                        // 针对 WPP 的 Active 不一定生效的情况
+                                        if (!foundActiveViaCom)
                                         {
-                                            Console.WriteLine($"    Check SlideWindow Error: {ex.Message}");
+                                            // 检查整个 App 进程是否拥有焦点
+                                            if (IsApplicationActive(candidateApp))
+                                            {
+                                                Console.WriteLine("  [Fix] App process has focus via PID check. Upgrading priority to 3.");
+                                                currentPriority = 3;
+                                            }
                                         }
                                     }
                                 }
                             }
                             catch (Exception ex)
                             {
-                                Console.WriteLine($"  Check ActivePresentation Error: {ex.Message}");
-                                currentPriority = 0;
+                                Console.WriteLine($"Check Priority Error: {ex.Message}");
                             }
 
-                            Console.WriteLine($"  -> Calculated Priority: {currentPriority}");
-
-                            if (AreComObjectsEqual(candidateApp, targetApp))
+                            // 3. 更新 Target Priority
+                            if (isTarget)
                             {
                                 targetPriority = currentPriority;
                             }
+
+                            // 4. 更新 Best App
                             if (currentPriority > 0)
                             {
-                                if (currentPriority == 3)
-                                {
-                                    Console.WriteLine($"  !!! PERFECT MATCH FOUND (Return Immediately) !!! App HWND: {appHwnd}");
-                                    bestPriority = currentPriority;
-
-                                    if (bestApp != null) Marshal.ReleaseComObject(bestApp);
-                                    bestApp = candidateApp;
-                                    candidateApp = null; // 移交所有权
-
-                                    return bestApp;
-                                }
-
+                                // 逻辑修改：只有当优先级确实更高时才替换，
+                                // 或者优先级相等但我们还没有 bestApp 时。
                                 if (currentPriority > highestPriority)
                                 {
-                                    Console.WriteLine($"  New Best Candidate (Priority {currentPriority})");
-                                    bestPriority = currentPriority;
-
-                                    if (bestApp != null) Marshal.ReleaseComObject(bestApp);
-                                    bestApp = candidateApp;
                                     highestPriority = currentPriority;
-                                    candidateApp = null; // 移交所有权
+
+                                    // 释放旧的 bestApp
+                                    SafeRelease(bestApp);
+
+                                    bestApp = candidateApp;
+                                    candidateApp = null; // 转移所有权，防止 finally 中被释放
                                 }
                             }
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Loop Error: {ex.Message}");
+                    }
                     finally
                     {
-                        if (candidateApp != null && Marshal.IsComObject(candidateApp))
-                            Marshal.ReleaseComObject(candidateApp);
+                        // 显式释放所有中间产生的 COM 对象
+                        SafeRelease(activePres);
+                        SafeRelease(ssWindows);
+
+                        // 如果 candidateApp 没有转移给 bestApp，则释放它
+                        SafeRelease(candidateApp);
 
                         CleanUpLoopObjects(bindCtx, moniker[0], comObject);
                     }
+
+                    // 逻辑修改：如果我们要确保 targetPriority 被正确计算，
+                    // 这里不能简单的 return。除非你确定只要找到优先级3的就无所谓 targetPriority 了。
+                    // 建议：如果不需要立刻退出，就让它跑完循环。ROT 遍历通常很快。
+                    // 如果必须优化性能，可以加个标识位： bool foundBestAndTargetCalculated ...
                 }
+
+                bestPriority = highestPriority;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"ROT Scan Critical Error: {ex.Message}");
             }
             finally
             {
-                Console.WriteLine("--- [ROT SCAN END] ---\n");
                 if (enumMoniker != null) Marshal.ReleaseComObject(enumMoniker);
                 if (rot != null) Marshal.ReleaseComObject(rot);
             }
@@ -373,6 +404,37 @@ namespace PptCOM
             catch { }
 
             return 0;
+        }
+        private static bool IsApplicationActive(Microsoft.Office.Interop.PowerPoint.Application app)
+        {
+            try
+            {
+                int appHwnd = app.HWND; // 获取 PPT/WPP 主窗口句柄
+                if (appHwnd == 0) return false;
+
+                IntPtr foregroundHwnd = GetForegroundWindow();
+                if (foregroundHwnd == IntPtr.Zero) return false;
+
+                // 1. 直接比对句柄 (命中率低，但效率高)
+                if (foregroundHwnd == (IntPtr)appHwnd) return true;
+
+                // 2. 比对进程 ID (核心逻辑)
+                // 获取 PPT/WPP 主窗口的进程 ID
+                uint appPid;
+                GetWindowThreadProcessId((IntPtr)appHwnd, out appPid);
+
+                // 获取当前前台窗口的进程 ID
+                uint fgPid;
+                GetWindowThreadProcessId(foregroundHwnd, out fgPid);
+
+                // 如果前台窗口属于同一个进程，说明该 App 是激活状态
+                // WPP 的阅读视图焦点在框架上，框架和 PPT 窗口属于同一进程
+                return appPid == fgPid;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         // 事件查询函数
@@ -529,6 +591,11 @@ namespace PptCOM
                         Microsoft.Office.Interop.PowerPoint.Application bestApp = GetAnyActivePowerPoint(pptApp, out bestPriority, out targetPriority);
 
                         bool needRebind = false;
+
+                        if (pptApp != null && bestApp != null)
+                        {
+                            Console.WriteLine($"bestP: {bestPriority}; targetP {targetPriority}");
+                        }
 
                         // 之前没绑，现在找到了
                         if (pptApp == null && bestApp != null)
