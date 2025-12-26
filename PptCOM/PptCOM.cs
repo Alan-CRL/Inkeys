@@ -972,6 +972,9 @@ namespace PptCOM
             IntPtr hwnd = IntPtr.Zero;
             if (pptSlideShowWindow == null) return IntPtr.Zero;
 
+            object pptSlideShowWindowObj = pptSlideShowWindow;
+
+            /*
             Microsoft.Office.Interop.PowerPoint.SlideShowWindow slideShowWindow = (Microsoft.Office.Interop.PowerPoint.SlideShowWindow)pptSlideShowWindow;
 
             try
@@ -979,11 +982,243 @@ namespace PptCOM
                 var tmp = slideShowWindow.HWND;
                 Console.WriteLine($"获取 HWND 绑定成功 !!!");
             }
-            catch { }
+            catch { }*/
+
+            IDispatch disp;
+            try
+            {
+                disp = (IDispatch)pptSlideShowWindowObj;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[HWND-Check] 无法转换为 IDispatch: " + ex);
+                return IntPtr.Zero;
+            }
+
+            int hr;
+            uint typeInfoCount;
+            hr = disp.GetTypeInfoCount(out typeInfoCount);
+            Console.WriteLine("[HWND-Check] GetTypeInfoCount hr=0x{0:X}, count={1}", hr, typeInfoCount);
+            if (hr != 0 || typeInfoCount == 0)
+                return IntPtr.Zero;
+
+            ITypeInfo typeInfo;
+            disp.GetTypeInfo(0, 0, out typeInfo);
+            if (typeInfo == null)
+            {
+                Console.WriteLine("[HWND-Check] GetTypeInfo 返回 null");
+                return IntPtr.Zero;
+            }
+
+            IntPtr typeAttrPtr = IntPtr.Zero;
+            try
+            {
+                typeInfo.GetTypeAttr(out typeAttrPtr);
+                var attr = (System.Runtime.InteropServices.ComTypes.TYPEATTR)Marshal.PtrToStructure(typeAttrPtr, typeof(System.Runtime.InteropServices.ComTypes.TYPEATTR));
+
+                Console.WriteLine("[HWND-Check] TYPEATTR: cFuncs={0}, guid={1}", attr.cFuncs, attr.guid);
+
+                int indexFound = -1;
+                IntPtr funcDescPtr = IntPtr.Zero;
+
+                for (int i = 0; i < attr.cFuncs; i++)
+                {
+                    typeInfo.GetFuncDesc(i, out funcDescPtr);
+                    var funcDesc = (System.Runtime.InteropServices.ComTypes.FUNCDESC)Marshal.PtrToStructure(funcDescPtr, typeof(System.Runtime.InteropServices.ComTypes.FUNCDESC));
+
+                    // 打印一下每个函数的 memid 和名字，方便你自己再对一下
+                    string name;
+                    int cNames;
+                    {
+                        var names = new string[1];
+                        typeInfo.GetNames(funcDesc.memid, names, 1, out cNames);
+                        name = cNames > 0 ? names[0] : "<no name>";
+                    }
+
+                    Console.WriteLine("[HWND-Check] Func index={0}, memid={1}, name={2}, invkind={3}",
+                        i, funcDesc.memid, name, funcDesc.invkind);
+
+                    if (funcDesc.memid == 2010)
+                    {
+                        indexFound = i;
+                        Console.WriteLine("[HWND-Check] ==> 找到 memid=2010 的 FUNCDESC, index={0}, name={1}", i, name);
+                        typeInfo.ReleaseFuncDesc(funcDescPtr);
+                        funcDescPtr = IntPtr.Zero;
+                        break;
+                    }
+
+                    typeInfo.ReleaseFuncDesc(funcDescPtr);
+                    funcDescPtr = IntPtr.Zero;
+                }
+
+                if (indexFound == -1)
+                    Console.WriteLine("[HWND-Check] 没找到 memid=2010 的 FUNCDESC（和之前 dump 不一致？）");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[HWND-Check] 枚举 FUNCDESC 失败: " + ex);
+            }
+            finally
+            {
+                if (typeAttrPtr != IntPtr.Zero)
+                    typeInfo.ReleaseTypeAttr(typeAttrPtr);
+            }
 
             if (hwnd == IntPtr.Zero) Console.WriteLine("啥都没有 983");
 
             return hwnd;
+        }
+
+        public static IntPtr TryGetHwndViaDispId2010(object pptSlideShowWindow)
+        {
+            if (pptSlideShowWindow == null)
+            {
+                Console.WriteLine("[HWND-2010] pptSlideShowWindow == null");
+                return IntPtr.Zero;
+            }
+
+            Console.WriteLine("[HWND-2010] 尝试通过 DispId=2010 的 IDispatch.Invoke 读取 SlideShowWindow.HWND ...");
+
+            IDispatch disp;
+            try
+            {
+                disp = (IDispatch)pptSlideShowWindow;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[HWND-2010] 无法转换为 IDispatch: " + ex);
+                return IntPtr.Zero;
+            }
+
+            Guid iidNull = Guid.Empty;
+
+            var dp = new DISPPARAMS
+            {
+                rgvarg = IntPtr.Zero,
+                rgdispidNamedArgs = IntPtr.Zero,
+                cArgs = 0,
+                cNamedArgs = 0
+            };
+
+            object result;
+            var exInfo = new EXCEPINFO();
+
+            try
+            {
+                const ushort DISPATCH_PROPERTYGET = 0x2;
+                const int DISP_ID_HWND = 2010;
+
+                int hr = disp.Invoke(
+                    DISP_ID_HWND,
+                    ref iidNull,
+                    0,
+                    DISPATCH_PROPERTYGET,
+                    ref dp,
+                    out result,
+                    ref exInfo,
+                    null
+                );
+
+                Console.WriteLine("[HWND-2010] Invoke(hr=0x{0:X}), DispId={1}", hr, DISP_ID_HWND);
+
+                if (hr != 0)
+                {
+                    Console.WriteLine("[HWND-2010] Invoke 返回错误 hr=0x{0:X}", hr);
+                    if (!string.IsNullOrEmpty(exInfo.bstrSource))
+                        Console.WriteLine("[HWND-2010] Source: " + exInfo.bstrSource);
+                    if (!string.IsNullOrEmpty(exInfo.bstrDescription))
+                        Console.WriteLine("[HWND-2010] Description: " + exInfo.bstrDescription);
+                    return IntPtr.Zero;
+                }
+
+                if (result == null)
+                {
+                    Console.WriteLine("[HWND-2010] Invoke 成功，但 result == null");
+                    return IntPtr.Zero;
+                }
+
+                Console.WriteLine("[HWND-2010] Invoke 返回类型: {0}, 值: {1}",
+                    result.GetType().FullName, result);
+
+                IntPtr hwnd;
+
+                if (result is int i32)
+                    hwnd = new IntPtr(i32);
+                else if (result is long i64)
+                    hwnd = new IntPtr(i64);
+                else if (result is short i16)
+                    hwnd = new IntPtr(i16);
+                else if (result is uint ui32)
+                    hwnd = new IntPtr(unchecked((int)ui32));
+                else if (result is ulong ui64)
+                    hwnd = new IntPtr(unchecked((long)ui64));
+                else
+                    throw new InvalidCastException("HWND 返回了无法识别的类型: " + result.GetType().FullName);
+
+                Console.WriteLine("[HWND-2010] 成功获取 HWND: " + hwnd);
+                return hwnd;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[HWND-2010] 调用 IDispatch.Invoke 失败: " + ex);
+                return IntPtr.Zero;
+            }
+        }
+
+        [ComImport]
+        [Guid("00020400-0000-0000-C000-000000000046")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        public interface IDispatch
+        {
+            int GetTypeInfoCount(out uint pctinfo);
+
+            void GetTypeInfo(
+                uint iTInfo,
+                uint lcid,
+                out ITypeInfo ppTInfo
+            );
+
+            int GetIDsOfNames(
+                ref Guid riid,
+                [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.LPWStr)] string[] rgszNames,
+                uint cNames,
+                uint lcid,
+                [MarshalAs(UnmanagedType.LPArray)] int[] rgDispId
+            );
+
+            int Invoke(
+                int dispIdMember,
+                ref Guid riid,
+                uint lcid,
+                ushort wFlags,
+                ref DISPPARAMS pDispParams,
+                out object pVarResult,
+                ref EXCEPINFO pExcepInfo,
+                IntPtr[] pArgErr
+            );
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct DISPPARAMS
+        {
+            public IntPtr rgvarg;
+            public IntPtr rgdispidNamedArgs;
+            public uint cArgs;
+            public uint cNamedArgs;
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        public struct EXCEPINFO
+        {
+            public ushort wCode;
+            public ushort wReserved;
+            public string bstrSource;
+            public string bstrDescription;
+            public string bstrHelpFile;
+            public uint dwHelpContext;
+            public IntPtr pvReserved;
+            public IntPtr pfnDeferredFillIn;
+            public int scode;
         }
 
         // 操控函数
