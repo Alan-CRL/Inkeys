@@ -27,7 +27,10 @@
 using Microsoft.Office.Core;
 using Microsoft.Office.Interop.PowerPoint;
 using System;
+using System.CodeDom;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -43,22 +46,23 @@ namespace PptCOM
     [Guid("65F6E9C1-63EC-4003-B89F-8F425A3C2FEA")]
     public interface IPptCOMServer
     {
-        unsafe bool Initialization(int* TotalPage, int* CurrentPage/*, bool autoCloseWPSTarget*/);
+        // 初始化函数
+        unsafe bool Initialization(int* TotalPage, int* CurrentPage);
         string CheckCOM();
 
+        // 获取函数
         unsafe int IsPptOpen();
 
-        //
+        // 信息获取函数
         string slideNameIndex();
-
-        unsafe void NextSlideShow(int check);
-
-        unsafe void PreviousSlideShow();
-
         IntPtr GetPptHwnd();
 
+        // 操控函数
+        unsafe void NextSlideShow(int check);
+        unsafe void PreviousSlideShow();
         void EndSlideShow();
         void ViewSlideShow();
+        void ActivateSildeShowWindow();
     }
 
     [ComVisible(true)]
@@ -237,7 +241,7 @@ namespace PptCOM
                 IntPtr sswHwnd = IntPtr.Zero;
                 try
                 {
-                    sswHwnd = GetSlideShowWindowHwnd(ssw);
+                    // sswHwnd = GetSlideShowWindowHwnd(ssw);
                 }
                 catch { return false; }
                 if (sswHwnd == IntPtr.Zero) return false;
@@ -317,6 +321,8 @@ namespace PptCOM
 
             try
             {
+                // TODO 通过宽高判断有效性
+
                 var tmp = pptSlideShowWindow.Active;
                 ret = true;
             }
@@ -484,7 +490,24 @@ namespace PptCOM
 
                         if (candidateApp != null)
                         {
-                            Console.WriteLine($"Yes999!");
+                            Console.WriteLine($"找到 application!");
+
+                            /*
+                            if (candidateApp is Microsoft.Office.Interop.PowerPoint.Application)
+                            {
+                                try
+                                {
+                                    Microsoft.Office.Interop.PowerPoint.Application app = (Microsoft.Office.Interop.PowerPoint.Application)candidateApp;
+
+                                    candidateApp = app;
+
+                                    Console.WriteLine($"找到正版 application!");
+                                }
+                                catch
+                                {
+                                    Console.WriteLine($"转换为正版 application 失败!");
+                                }
+                            }*/
 
                             int currentPriority = 0;
                             bool isTarget = false;
@@ -555,7 +578,7 @@ namespace PptCOM
                                                 else
                                                 {
                                                     // 针对 WPP 的 Active 在非全屏播放下不一定生效的情况
-                                                    if (IsSlideShowWindowActive((object)ssWin))
+                                                    if (false && IsSlideShowWindowActive((object)ssWin))
                                                     {
                                                         Console.WriteLine("  [Fix] App process has focus via PID check. Upgrading priority to 3.");
 
@@ -672,7 +695,7 @@ namespace PptCOM
                         else if (pptApplication != null && bestApp != null && bestPriority > targetPriority)
                         {
                             // 【说明】dynamic 下访问 HWND 属性是安全的
-                            Console.WriteLine($"find new {pptApplication.HWND}");
+                            // Console.WriteLine($"find new {pptApplication.HWND}");
 
                             Console.WriteLine($"check1 {bestPriority}");
                             Console.WriteLine($"check2 {targetPriority}");
@@ -758,6 +781,15 @@ namespace PptCOM
 
                                         bindingEvents = true;
                                         forcePolling = false;
+
+                                        Console.WriteLine($"事件绑定成功 !!!");
+
+                                        try
+                                        {
+                                            var tmp = pptApplication.HWND;
+                                            Console.WriteLine($"获取 HWND 绑定成功 !!!");
+                                        }
+                                        catch { }
                                     }
                                     catch (Exception bindEx)
                                     {
@@ -802,11 +834,14 @@ namespace PptCOM
                             {
                                 isSlideShowActive = true;
 
-                                if (pptActivePresentation.SlideShowWindow != null && !IsValidSlideShowWindow(pptSlideShowWindow))
+                                if (pptActivePresentation.SlideShowWindow == null || (pptActivePresentation.SlideShowWindow != null && !IsValidSlideShowWindow(pptSlideShowWindow)))
                                 {
-                                    pptSlideShowWindow = pptActivePresentation.SlideShowWindow;
+                                    if (pptSlideShowWindow != pptActivePresentation.SlideShowWindow)
+                                    {
+                                        pptSlideShowWindow = pptActivePresentation.SlideShowWindow;
 
-                                    Console.WriteLine($"发现窗口，成功设置 slideshowwindow");
+                                        Console.WriteLine($"发现窗口，成功设置 slideshowwindow");
+                                    }
                                 }
                                 else if (pptActivePresentation.SlideShowWindow != null)
                                 {
@@ -934,22 +969,21 @@ namespace PptCOM
         }
         public IntPtr GetPptHwnd()
         {
-            IntPtr hWnd = IntPtr.Zero;
-            if (pptSlideShowWindow != null) return IntPtr.Zero;
+            IntPtr hwnd = IntPtr.Zero;
+            if (pptSlideShowWindow == null) return IntPtr.Zero;
+
+            Microsoft.Office.Interop.PowerPoint.SlideShowWindow slideShowWindow = (Microsoft.Office.Interop.PowerPoint.SlideShowWindow)pptSlideShowWindow;
 
             try
             {
-                Console.WriteLine("try pptSlideShowWindow is 983");
-                hWnd = GetHwndByNativeOM(pptActivePresentation.FullName);
-                Console.WriteLine("get pptSlideShowWindow is 983");
+                var tmp = slideShowWindow.HWND;
+                Console.WriteLine($"获取 HWND 绑定成功 !!!");
             }
-            catch
-            {
-            }
+            catch { }
 
-            if (hWnd == IntPtr.Zero) Console.WriteLine("啥都没有 983");
+            if (hwnd == IntPtr.Zero) Console.WriteLine("啥都没有 983");
 
-            return hWnd;
+            return hwnd;
         }
 
         // 操控函数
@@ -1027,10 +1061,25 @@ namespace PptCOM
             }
             return;
         }
+        public void ActivateSildeShowWindow()
+        {
+            if (pptSlideShowWindow == null) return;
+
+            try
+            {
+                pptSlideShowWindow.Activate();
+
+                Console.WriteLine("ActivateSildeShowWindow called");
+            }
+            catch
+            {
+            }
+        }
 
         // 外部引用函数
         [DllImport("user32.dll")]
         private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
         [DllImport("ole32.dll")]
@@ -1038,148 +1087,301 @@ namespace PptCOM
         [DllImport("ole32.dll")]
         private static extern int CreateBindCtx(int reserved, out IBindCtx ppbc);
 
+        // Test
+
         private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
         [DllImport("user32.dll")]
         private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
-        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-        private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+        [DllImport("user32.dll")]
+        private static extern bool EnumChildWindows(IntPtr hWndParent, EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
-        // NativeOM 核心：从 HWND 获取 COM 对象
-        [DllImport("oleacc.dll")]
-        private static extern int AccessibleObjectFromWindow(
-            IntPtr hwnd,
-            uint dwId,
-            ref Guid riid,
-            [MarshalAs(UnmanagedType.IDispatch)] out object ppvObject);
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
 
-        private const uint OBJID_NATIVEOM = 0xFFFFFFF0; // -16
-        private static Guid IID_IDispatch = new Guid("00020400-0000-0000-C000-000000000046");
+        [DllImport("user32.dll")]
+        private static extern bool GetWindowRect(IntPtr hWnd, out pptRECT lpRect);
 
-        public static IntPtr GetHwndByNativeOM(string expectedFullName)
+        [DllImport("gdi32.dll")]
+        private static extern int GetDeviceCaps(IntPtr hdc, int nIndex);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetDC(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct pptRECT
         {
-            Console.WriteLine($"========== [NativeOM] 开始匹配 HWND (Target: {expectedFullName}) ==========");
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+            public int Width => Right - Left;
+            public int Height => Bottom - Top;
+        }
 
-            if (string.IsNullOrEmpty(expectedFullName))
+        private const int LOGPIXELSX = 88;
+        private const int LOGPIXELSY = 90;
+
+        // =========================================================
+        // 2. 候选窗口结构
+        // =========================================================
+        private class WindowCandidate
+        {
+            public IntPtr Hwnd { get; set; }
+            public string Title { get; set; }
+            public int Priority { get; set; }
+            public string DebugInfo { get; set; }
+        }
+
+        private static void GetSystemDpi(out float dpiX, out float dpiY)
+        {
+            IntPtr hdc = GetDC(IntPtr.Zero);
+            try
             {
-                Console.WriteLine("[NativeOM] 传入的 expectedFullName 为空，无法匹配。返回 Zero。");
+                // 获取屏幕逻辑 DPI
+                dpiX = GetDeviceCaps(hdc, LOGPIXELSX);
+                dpiY = GetDeviceCaps(hdc, LOGPIXELSY);
+            }
+            finally
+            {
+                ReleaseDC(IntPtr.Zero, hdc);
+            }
+        }
+
+        private static int PointsToPixels(float points, float dpi)
+        {
+            // 公式: Pixels = Points * (DPI / 72)
+            return (int)Math.Round(points * (dpi / 72.0f));
+        }
+
+        // =========================================================
+        // 3. 核心逻辑
+        // =========================================================
+
+        /// <summary>
+        /// 利用 COM 对象的几何数据和元数据，暴力扫描系统窗口获取 HWND。
+        /// 支持枚举子窗口以解决 WPS 嵌入放映的问题。
+        /// </summary>
+
+        public static IntPtr FindWindowByDetailedMatch(string pptFullName, string comAppName, dynamic ssw)
+        {
+            Console.WriteLine("========== [PptPreciseFinder] 开始扫描 (单位修正版) ==========");
+
+            // -----------------------------------------------------
+            // A. 参数与环境预检
+            // -----------------------------------------------------
+            if (ssw == null || string.IsNullOrEmpty(pptFullName) || string.IsNullOrEmpty(comAppName))
+            {
+                Console.WriteLine("[Error] 参数无效，返回 Zero。");
                 return IntPtr.Zero;
             }
 
-            IntPtr foundHwnd = IntPtr.Zero;
+            string requiredAppKeyword = "";
+            if (comAppName.IndexOf("PowerPoint", StringComparison.OrdinalIgnoreCase) >= 0) requiredAppKeyword = "PowerPoint";
+            else if (comAppName.IndexOf("WPS", StringComparison.OrdinalIgnoreCase) >= 0) requiredAppKeyword = "WPS";
 
+            if (string.IsNullOrEmpty(requiredAppKeyword))
+            {
+                Console.WriteLine($"[Error] 未知 AppName: '{comAppName}'");
+                return IntPtr.Zero;
+            }
+
+            string requiredFileName = "";
+            try { requiredFileName = Path.GetFileNameWithoutExtension(pptFullName); } catch { }
+            if (string.IsNullOrEmpty(requiredFileName)) return IntPtr.Zero;
+
+            // -----------------------------------------------------
+            // B. 几何数据提取与转换 (Points -> Pixels)
+            // -----------------------------------------------------
+            float ptLeft = 0, ptTop = 0, ptWidth = 0, ptHeight = 0;
             try
             {
-                // 2. 遍历所有窗口
-                EnumWindows(delegate (IntPtr hWnd, IntPtr lParam)
-                {
-                    try
-                    {
-                        // B. 过滤类名 (只关心放映窗口)
-                        StringBuilder sbClass = new StringBuilder(256);
-                        GetClassName(hWnd, sbClass, sbClass.Capacity);
-                        string className = sbClass.ToString();
-
-                        // screenClass = PPT, SlideShow = WPS
-                        if (IsSlideShowClass(className))
-                        {
-                            // Console.WriteLine($"[NativeOM] 检查候选窗口 HWND: {hWnd} (Class: {className})");
-
-                            // C. 核心：通过 NativeOM 获取该窗口背后的“健康”COM 对象
-                            object freshComObj = null;
-                            int hr = AccessibleObjectFromWindow(hWnd, OBJID_NATIVEOM, ref IID_IDispatch, out freshComObj);
-
-                            if (hr == 0 && freshComObj != null)
-                            {
-                                try
-                                {
-                                    // D. 提取指纹并比对
-                                    string identity = ExtractFullName(freshComObj);
-
-                                    if (!string.IsNullOrEmpty(identity) &&
-                                        string.Equals(identity, expectedFullName, StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        Console.WriteLine($"[NativeOM] >>> 匹配成功! HWND: {hWnd}");
-                                        foundHwnd = hWnd;
-                                        return false; // 停止遍历 (return false to stop EnumWindows)
-                                    }
-                                }
-                                finally
-                                {
-                                    // 必须释放，防止内存泄漏
-                                    Marshal.ReleaseComObject(freshComObj);
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception loopEx)
-                    {
-                        // 循环内部容错，防止因单个窗口权限问题打断整个扫描
-                        Console.WriteLine($"[NativeOM-Loop] 警告: {loopEx.Message}");
-                    }
-
-                    return true; // 继续找下一个
-                }, IntPtr.Zero);
+                // 先拿 float 类型的 Points
+                ptLeft = (float)ssw.Left;
+                ptTop = (float)ssw.Top;
+                ptWidth = (float)ssw.Width;
+                ptHeight = (float)ssw.Height;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[NativeOM] 全局异常 (已捕获): {ex.Message}");
+                Console.WriteLine($"[Error] 读取 COM 失败: {ex.Message}");
+                return IntPtr.Zero;
             }
 
-            if (foundHwnd == IntPtr.Zero)
+            // 获取 DPI
+            float dpiX, dpiY;
+            GetSystemDpi(out dpiX, out dpiY);
+            Console.WriteLine($"[DPI 检测] System DPI: X={dpiX}, Y={dpiY}");
+
+            // 执行转换
+            int pxLeft = PointsToPixels(ptLeft, dpiX);
+            int pxTop = PointsToPixels(ptTop, dpiY);
+            int pxWidth = PointsToPixels(ptWidth, dpiX);
+            int pxHeight = PointsToPixels(ptHeight, dpiY);
+
+            Console.WriteLine("[几何变换] COM(Points) -> Win32(Pixels):");
+            Console.WriteLine($"  Left:   {ptLeft,8:F2} -> {pxLeft}");
+            Console.WriteLine($"  Top:    {ptTop,8:F2} -> {pxTop}");
+            Console.WriteLine($"  Width:  {ptWidth,8:F2} -> {pxWidth}");
+            Console.WriteLine($"  Height: {ptHeight,8:F2} -> {pxHeight}");
+
+            if (pxWidth <= 0 || pxHeight <= 0)
             {
-                Console.WriteLine("[NativeOM] 扫描结束，未找到匹配窗口。");
+                Console.WriteLine("[Error] 转换后宽高无效，停止。");
+                return IntPtr.Zero;
             }
-            else
+
+            // -----------------------------------------------------
+            // C. 准备扫描
+            // -----------------------------------------------------
+            IntPtr fgHwnd = GetForegroundWindow();
+            uint fgPid;
+            GetWindowThreadProcessId(fgHwnd, out fgPid);
+
+            List<WindowCandidate> candidates = new List<WindowCandidate>();
+            int scannedCount = 0;
+
+            bool ScanCallback(IntPtr hWnd)
             {
-                Console.WriteLine("========== [NativeOM] 成功结束 ==========");
-            }
-
-            return foundHwnd;
-        }
-
-        private static bool IsSlideShowClass(string className)
-        {
-            if (string.IsNullOrEmpty(className)) return false;
-            // 匹配 MS Office (screenClass) 和 WPS (SlideShow / screenClass)
-            return className.IndexOf("screenClass", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   className.IndexOf("SlideShow", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        private static string ExtractFullName(object comObj)
-        {
-            // 从未知的 COM 对象中提取 FullName
-            // NativeOM 返回的对象可能是 SlideShowWindow，也可能是 Presentation，视具体版本而定
-            try
-            {
-                dynamic dyn = comObj;
-
-                // 尝试 1: 直接是 Presentation 对象
+                scannedCount++;
                 try
                 {
-                    string fn = dyn.FullName;
-                    if (!string.IsNullOrEmpty(fn)) return fn;
-                }
-                catch { }
+                    // [第一道关卡] 标题匹配
+                    StringBuilder sbTitle = new StringBuilder(512);
+                    GetWindowText(hWnd, sbTitle, sbTitle.Capacity);
+                    string title = sbTitle.ToString();
 
-                // 尝试 2: SlideShowWindow.Presentation
-                try
-                {
-                    return dyn.Presentation.FullName;
-                }
-                catch { }
+                    if (string.IsNullOrEmpty(title)) return true;
 
-                // 尝试 3: SlideShowWindow.View.Presentation (WPS 常见路径)
-                try
-                {
-                    return dyn.View.Presentation.FullName;
+                    bool matchApp = title.IndexOf(requiredAppKeyword, StringComparison.OrdinalIgnoreCase) >= 0;
+                    bool matchFile = title.IndexOf(requiredFileName, StringComparison.OrdinalIgnoreCase) >= 0;
+
+                    if (matchApp && matchFile)
+                    {
+                        Console.WriteLine("--------------------------------------------------");
+                        Console.WriteLine($"[发现潜在目标] HWND: {hWnd}");
+                        Console.WriteLine($"  -> 标题: '{title}'");
+                    }
+                    else
+                    {
+                        return true;
+                    }
+
+                    // [第二道关卡] 几何匹配 (使用转换后的 Pixels)
+                    pptRECT winRect;
+                    if (!GetWindowRect(hWnd, out winRect)) return true;
+
+                    // 容差设定: 20px (覆盖 Win10 阴影和四舍五入误差)
+                    int tolerance = 20;
+
+                    int dLeft = Math.Abs(winRect.Left - pxLeft);
+                    int dTop = Math.Abs(winRect.Top - pxTop);
+                    int dWidth = Math.Abs(winRect.Width - pxWidth);
+                    int dHeight = Math.Abs(winRect.Height - pxHeight);
+
+                    Console.WriteLine($"  -> 几何对比 (目标 Pixels vs 实际 Pixels):");
+                    Console.WriteLine($"     目标: L={pxLeft}, T={pxTop}, W={pxWidth}, H={pxHeight}");
+                    Console.WriteLine($"     实际: L={winRect.Left}, T={winRect.Top}, W={winRect.Width}, H={winRect.Height}");
+                    Console.WriteLine($"     偏差: dL={dLeft}, dT={dTop}, dW={dWidth}, dH={dHeight}");
+
+                    bool matchGeo =
+                        dLeft <= tolerance &&
+                        dTop <= tolerance &&
+                        dWidth <= tolerance &&
+                        dHeight <= tolerance;
+
+                    if (!matchGeo)
+                    {
+                        Console.WriteLine("  -> [结果] 偏差过大，不匹配。");
+                        return true;
+                    }
+
+                    Console.WriteLine("  -> [结果] 几何匹配成功！");
+
+                    // [第三道关卡] 优先级计算
+                    int priority = 100;
+
+                    bool isFocusRelated = false;
+                    if (hWnd == fgHwnd)
+                    {
+                        isFocusRelated = true;
+                    }
+                    else
+                    {
+                        uint targetPid;
+                        GetWindowThreadProcessId(hWnd, out targetPid);
+                        if (fgPid > 0 && targetPid > 0)
+                        {
+                            try
+                            {
+                                using (Process fgProc = Process.GetProcessById((int)fgPid))
+                                using (Process appProc = Process.GetProcessById((int)targetPid))
+                                {
+                                    string fgName = fgProc.ProcessName.ToLower();
+                                    string appName = appProc.ProcessName.ToLower();
+                                    if (fgName.StartsWith("wps") && appName.StartsWith("wpp")) isFocusRelated = true;
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+
+                    if (isFocusRelated)
+                    {
+                        priority += 100;
+                        Console.WriteLine("  -> 焦点/进程判定: +100");
+                    }
+
+                    candidates.Add(new WindowCandidate
+                    {
+                        Hwnd = hWnd,
+                        Title = title,
+                        Priority = priority,
+                        DebugInfo = $"Matched Px[{winRect.Width}x{winRect.Height}]"
+                    });
                 }
                 catch { }
+                return true;
             }
-            catch { }
 
-            return null;
+            // -----------------------------------------------------
+            // D. 执行枚举
+            // -----------------------------------------------------
+            EnumWindows((h, p) =>
+            {
+                ScanCallback(h);
+                EnumChildWindows(h, (hChild, pChild) =>
+                {
+                    ScanCallback(hChild);
+                    return true;
+                }, IntPtr.Zero);
+                return true;
+            }, IntPtr.Zero);
+
+            // -----------------------------------------------------
+            // E. 结果返回
+            // -----------------------------------------------------
+            if (candidates.Count == 0)
+            {
+                Console.WriteLine("[结果] 未找到匹配窗口。");
+                return IntPtr.Zero;
+            }
+
+            int maxPriority = candidates.Max(c => c.Priority);
+            var bestMatches = candidates.Where(c => c.Priority == maxPriority).ToList();
+
+            if (bestMatches.Count > 1)
+            {
+                Console.WriteLine($"[警告] 发现 {bestMatches.Count} 个相同优先级的窗口，返回第一个。");
+            }
+
+            var finalMatch = bestMatches.First();
+            Console.WriteLine($"========== [PptPreciseFinder] 锁定目标: {finalMatch.Hwnd} ==========");
+            return finalMatch.Hwnd;
         }
     }
 }
