@@ -32,6 +32,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
+using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -846,56 +847,10 @@ namespace PptCOM
                                 {
                                     try
                                     {
-                                        // *pptCurrentPage = pptSlideShowWindow.View.Slide.SlideIndex;
+                                        *pptCurrentPage = pptSlideShowWindow.View.Slide.SlideIndex;
 
-                                        //if (pptSlideShowWindow.View.Slide.SlideIndex >= pptActivePresentation.Slides.Count) polling = 1;
-                                        //else polling = 0;
-
-                                        try
-                                        {
-                                            // 2. 检查 .View 属性
-                                            dynamic tempView = null;
-                                            try
-                                            {
-                                                tempView = pptSlideShowWindow.View;
-                                                // Console.WriteLine("  Debug: View OK");
-                                            }
-                                            catch (Exception ex)
-                                            {
-                                                Console.WriteLine($"[DEBUG定位] .View 属性获取失败! (可能是窗口正处于黑屏/切换状态) 错误: {ex.Message}");
-                                                throw;
-                                            }
-
-                                            // 3. 检查 .Slide 对象
-                                            dynamic tempSlide = null;
-                                            try
-                                            {
-                                                tempSlide = tempView.Slide;
-                                                // Console.WriteLine("  Debug: Slide OK");
-                                            }
-                                            catch (Exception ex)
-                                            {
-                                                Console.WriteLine($"[DEBUG定位] .View.Slide 获取失败! (可能处于放映结束页或过渡动画中) 错误: {ex.Message}");
-                                                throw;
-                                            }
-
-                                            // 4. 最后获取 Index
-                                            try
-                                            {
-                                                int finalIndex = tempSlide.SlideIndex;
-                                                *pptCurrentPage = finalIndex;
-
-                                                // 判定逻辑
-                                                if (finalIndex >= pptActivePresentation.Slides.Count) polling = 1;
-                                                else polling = 0;
-                                            }
-                                            catch (Exception ex)
-                                            {
-                                                Console.WriteLine($"[DEBUG定位] .SlideIndex 读取失败! 错误: {ex.Message}");
-                                                throw;
-                                            }
-                                        }
-                                        catch { }
+                                        if (pptSlideShowWindow.View.Slide.SlideIndex >= pptActivePresentation.Slides.Count) polling = 1;
+                                        else polling = 0;
                                     }
                                     catch (Exception ex)
                                     {
@@ -980,15 +935,13 @@ namespace PptCOM
         public IntPtr GetPptHwnd()
         {
             IntPtr hWnd = IntPtr.Zero;
+            if (pptSlideShowWindow != null) return IntPtr.Zero;
+
             try
             {
-                // 获取PPT窗口句柄
-                if (pptSlideShowWindow != null)
-                {
-                    hWnd = GetSlideShowWindowHwnd(pptSlideShowWindow);
-                    Console.WriteLine("get pptSlideShowWindow is 983");
-                }
-                else Console.WriteLine("pptSlideShowWindow is null 983");
+                Console.WriteLine("try pptSlideShowWindow is 983");
+                hWnd = GetHwndByNativeOM(pptActivePresentation.FullName);
+                Console.WriteLine("get pptSlideShowWindow is 983");
             }
             catch
             {
@@ -1085,261 +1038,148 @@ namespace PptCOM
         [DllImport("ole32.dll")]
         private static extern int CreateBindCtx(int reserved, out IBindCtx ppbc);
 
-        // IDispatch
-        [ComImport, Guid("00020400-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-        private interface IDispatch
-        {
-            int GetTypeInfoCount();
-            [PreserveSig]
-            int GetTypeInfo(int iTInfo, int lcid, out ITypeInfo typeInfo);
-            [PreserveSig]
-            int GetIDsOfNames(ref Guid iid,
-                [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.LPWStr)] string[] names,
-                int cNames, int lcid, [Out] int[] rgDispId);
-            [PreserveSig]
-            int Invoke(int dispIdMember, ref Guid riid, int lcid, short wFlags,
-                ref System.Runtime.InteropServices.ComTypes.DISPPARAMS pDispParams,
-                out object pVarResult,
-                out System.Runtime.InteropServices.ComTypes.EXCEPINFO pExcepInfo,
-                out uint puArgErr);
-        }
+        private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
-        [Flags]
-        private enum InvokeFlags : short
-        {
-            DISPATCH_METHOD = 0x1,
-            DISPATCH_PROPERTYGET = 0x2,
-            DISPATCH_PROPERTYPUT = 0x4,
-            DISPATCH_PROPERTYPUTREF = 0x8
-        }
+        [DllImport("user32.dll")]
+        private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
-        // IDispatch 方法
-        public static IntPtr GetSlideShowWindowHwnd(object slideShowWindowComObj)
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+        // NativeOM 核心：从 HWND 获取 COM 对象
+        [DllImport("oleacc.dll")]
+        private static extern int AccessibleObjectFromWindow(
+            IntPtr hwnd,
+            uint dwId,
+            ref Guid riid,
+            [MarshalAs(UnmanagedType.IDispatch)] out object ppvObject);
+
+        private const uint OBJID_NATIVEOM = 0xFFFFFFF0; // -16
+        private static Guid IID_IDispatch = new Guid("00020400-0000-0000-C000-000000000046");
+
+        public static IntPtr GetHwndByNativeOM(string expectedFullName)
         {
-            try
+            Console.WriteLine($"========== [NativeOM] 开始匹配 HWND (Target: {expectedFullName}) ==========");
+
+            if (string.IsNullOrEmpty(expectedFullName))
             {
-                if (slideShowWindowComObj == null)
-                {
-                    Console.WriteLine("[PptInteropHelper] slideShowWindowComObj 为 null。");
-                    return IntPtr.Zero;
-                }
-
-                IntPtr pDisp = IntPtr.Zero;
-
-                try
-                {
-                    try
-                    {
-                        pDisp = Marshal.GetIDispatchForObject(slideShowWindowComObj);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine("[PptInteropHelper] GetIDispatchForObject 失败: " + ex);
-                        return IntPtr.Zero;
-                    }
-
-                    IDispatch dispatch;
-                    try
-                    {
-                        dispatch = (IDispatch)Marshal.GetObjectForIUnknown(pDisp);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine("[PptInteropHelper] GetObjectForIUnknown / IDispatch 转换失败: " + ex);
-                        return IntPtr.Zero;
-                    }
-
-                    Guid riid = Guid.Empty;
-                    string[] names = new[] { "HWND" };
-                    int[] dispIds = new int[1];
-
-                    int hr;
-                    try
-                    {
-                        hr = dispatch.GetIDsOfNames(ref riid, names, 1, 0, dispIds);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine("[PptInteropHelper] GetIDsOfNames(HWND) 调用异常: " + ex);
-                        return IntPtr.Zero;
-                    }
-
-                    if (hr != 0)
-                    {
-                        Console.WriteLine("[PptInteropHelper] GetIDsOfNames(HWND) 失败，hr = 0x" + hr.ToString("X8"));
-                        return IntPtr.Zero;
-                    }
-
-                    int dispId = dispIds[0]; // 正常情况下这就是 2010
-
-                    System.Runtime.InteropServices.ComTypes.DISPPARAMS dispParams =
-                        new System.Runtime.InteropServices.ComTypes.DISPPARAMS();
-
-                    object result;
-                    System.Runtime.InteropServices.ComTypes.EXCEPINFO excepInfo;
-                    uint argErr;
-
-                    try
-                    {
-                        hr = dispatch.Invoke(
-                            dispId,
-                            ref riid,
-                            0,
-                            (short)InvokeFlags.DISPATCH_PROPERTYGET,
-                            ref dispParams,
-                            out result,
-                            out excepInfo,
-                            out argErr);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine("[PptInteropHelper] Invoke(HWND) 调用异常: " + ex);
-                        return IntPtr.Zero;
-                    }
-
-                    if (hr != 0)
-                    {
-                        Console.WriteLine("[PptInteropHelper] Invoke(HWND) 失败，hr = 0x" + hr.ToString("X8"));
-                        return IntPtr.Zero;
-                    }
-
-                    // 转成 IntPtr
-                    try
-                    {
-                        if (result is int)
-                            return new IntPtr((int)result);
-                        if (result is long)
-                            return new IntPtr((long)result);
-
-                        Console.WriteLine("[PptInteropHelper] HWND 返回值不是 int/long，实际类型：" +
-                                          (result == null ? "null" : result.GetType().FullName));
-                        return IntPtr.Zero;
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine("[PptInteropHelper] 转换 HWND 返回值为 IntPtr 时异常: " + ex);
-                        return IntPtr.Zero;
-                    }
-                }
-                finally
-                {
-                    if (pDisp != IntPtr.Zero)
-                    {
-                        try
-                        {
-                            Marshal.Release(pDisp);
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine("[PptInteropHelper] 释放 IDispatch 指针时异常: " + ex);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                // 兜底：即便内部哪里没想到的地方抛异常，也不让上层崩溃
-                Console.WriteLine("[PptInteropHelper] GetSlideShowWindowHwnd 未处理异常: " + ex);
+                Console.WriteLine("[NativeOM] 传入的 expectedFullName 为空，无法匹配。返回 Zero。");
                 return IntPtr.Zero;
             }
-        }
 
-        // Test
-        public static void DumpComMembers(object comObj)
-        {
-            if (comObj == null)
-            {
-                Console.WriteLine("Object is null.");
-                return;
-            }
-
-            IntPtr pDisp = IntPtr.Zero;
-            ITypeInfo typeInfo = null;
-            IntPtr pTypeAttr = IntPtr.Zero;
+            IntPtr foundHwnd = IntPtr.Zero;
 
             try
             {
-                // 获取 IDispatch
-                pDisp = Marshal.GetIDispatchForObject(comObj);
-                var dispatch = (IDispatch)Marshal.GetObjectForIUnknown(pDisp);
-
-                int hr = dispatch.GetTypeInfo(0, 0, out typeInfo);
-                if (hr != 0 || typeInfo == null)
+                // 2. 遍历所有窗口
+                EnumWindows(delegate (IntPtr hWnd, IntPtr lParam)
                 {
-                    Console.WriteLine(string.Format("GetTypeInfo 失败，hr = 0x{0:X8}", hr));
-                    return;
-                }
-
-                typeInfo.GetTypeAttr(out pTypeAttr);
-                var attr = (System.Runtime.InteropServices.ComTypes.TYPEATTR)Marshal.PtrToStructure(pTypeAttr, typeof(System.Runtime.InteropServices.ComTypes.TYPEATTR));
-
-                Console.WriteLine("=== COM members (from ITypeInfo) ===");
-                Console.WriteLine("cFuncs = " + attr.cFuncs + ", cVars = " + attr.cVars);
-                Console.WriteLine();
-
-                // 枚举函数（方法 + 属性 getter/setter）
-                for (int i = 0; i < attr.cFuncs; i++)
-                {
-                    IntPtr pFuncDesc = IntPtr.Zero;
-                    typeInfo.GetFuncDesc(i, out pFuncDesc);
                     try
                     {
-                        var funcDesc = (System.Runtime.InteropServices.ComTypes.FUNCDESC)Marshal.PtrToStructure(pFuncDesc, typeof(System.Runtime.InteropServices.ComTypes.FUNCDESC));
+                        // B. 过滤类名 (只关心放映窗口)
+                        StringBuilder sbClass = new StringBuilder(256);
+                        GetClassName(hWnd, sbClass, sbClass.Capacity);
+                        string className = sbClass.ToString();
 
-                        string[] names = new string[1];
-                        int cNames;
-                        typeInfo.GetNames(funcDesc.memid, names, 1, out cNames);
-                        string name = cNames > 0 ? names[0] : ("MEMBER_" + funcDesc.memid);
+                        // screenClass = PPT, SlideShow = WPS
+                        if (IsSlideShowClass(className))
+                        {
+                            // Console.WriteLine($"[NativeOM] 检查候选窗口 HWND: {hWnd} (Class: {className})");
 
-                        Console.WriteLine(string.Format(
-                            "FUNC[{0}] DISPID={1}, Name={2}, invkind={3}",
-                            i, funcDesc.memid, name, funcDesc.invkind));
+                            // C. 核心：通过 NativeOM 获取该窗口背后的“健康”COM 对象
+                            object freshComObj = null;
+                            int hr = AccessibleObjectFromWindow(hWnd, OBJID_NATIVEOM, ref IID_IDispatch, out freshComObj);
+
+                            if (hr == 0 && freshComObj != null)
+                            {
+                                try
+                                {
+                                    // D. 提取指纹并比对
+                                    string identity = ExtractFullName(freshComObj);
+
+                                    if (!string.IsNullOrEmpty(identity) &&
+                                        string.Equals(identity, expectedFullName, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        Console.WriteLine($"[NativeOM] >>> 匹配成功! HWND: {hWnd}");
+                                        foundHwnd = hWnd;
+                                        return false; // 停止遍历 (return false to stop EnumWindows)
+                                    }
+                                }
+                                finally
+                                {
+                                    // 必须释放，防止内存泄漏
+                                    Marshal.ReleaseComObject(freshComObj);
+                                }
+                            }
+                        }
                     }
-                    finally
+                    catch (Exception loopEx)
                     {
-                        if (pFuncDesc != IntPtr.Zero)
-                            typeInfo.ReleaseFuncDesc(pFuncDesc);
+                        // 循环内部容错，防止因单个窗口权限问题打断整个扫描
+                        Console.WriteLine($"[NativeOM-Loop] 警告: {loopEx.Message}");
                     }
-                }
 
-                Console.WriteLine();
-
-                // 枚举变量（字段/常量）
-                for (int i = 0; i < attr.cVars; i++)
-                {
-                    IntPtr pVarDesc = IntPtr.Zero;
-                    typeInfo.GetVarDesc(i, out pVarDesc);
-                    try
-                    {
-                        var varDesc = (System.Runtime.InteropServices.ComTypes.VARDESC)Marshal.PtrToStructure(pVarDesc, typeof(System.Runtime.InteropServices.ComTypes.VARDESC));
-                        string[] names = new string[1];
-                        int cNames;
-                        typeInfo.GetNames(varDesc.memid, names, 1, out cNames);
-                        string name = cNames > 0 ? names[0] : ("VAR_" + varDesc.memid);
-
-                        Console.WriteLine(string.Format(
-                            "VAR[{0}] DISPID={1}, Name={2}",
-                            i, varDesc.memid, name));
-                    }
-                    finally
-                    {
-                        if (pVarDesc != IntPtr.Zero)
-                            typeInfo.ReleaseVarDesc(pVarDesc);
-                    }
-                }
+                    return true; // 继续找下一个
+                }, IntPtr.Zero);
             }
             catch (Exception ex)
             {
-                Console.WriteLine("DumpComMembers 异常: " + ex);
+                Console.WriteLine($"[NativeOM] 全局异常 (已捕获): {ex.Message}");
             }
-            finally
-            {
-                if (typeInfo != null && pTypeAttr != IntPtr.Zero)
-                    typeInfo.ReleaseTypeAttr(pTypeAttr);
 
-                if (pDisp != IntPtr.Zero)
-                    Marshal.Release(pDisp);
+            if (foundHwnd == IntPtr.Zero)
+            {
+                Console.WriteLine("[NativeOM] 扫描结束，未找到匹配窗口。");
             }
+            else
+            {
+                Console.WriteLine("========== [NativeOM] 成功结束 ==========");
+            }
+
+            return foundHwnd;
+        }
+
+        private static bool IsSlideShowClass(string className)
+        {
+            if (string.IsNullOrEmpty(className)) return false;
+            // 匹配 MS Office (screenClass) 和 WPS (SlideShow / screenClass)
+            return className.IndexOf("screenClass", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   className.IndexOf("SlideShow", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static string ExtractFullName(object comObj)
+        {
+            // 从未知的 COM 对象中提取 FullName
+            // NativeOM 返回的对象可能是 SlideShowWindow，也可能是 Presentation，视具体版本而定
+            try
+            {
+                dynamic dyn = comObj;
+
+                // 尝试 1: 直接是 Presentation 对象
+                try
+                {
+                    string fn = dyn.FullName;
+                    if (!string.IsNullOrEmpty(fn)) return fn;
+                }
+                catch { }
+
+                // 尝试 2: SlideShowWindow.Presentation
+                try
+                {
+                    return dyn.Presentation.FullName;
+                }
+                catch { }
+
+                // 尝试 3: SlideShowWindow.View.Presentation (WPS 常见路径)
+                try
+                {
+                    return dyn.View.Presentation.FullName;
+                }
+                catch { }
+            }
+            catch { }
+
+            return null;
         }
     }
 }
