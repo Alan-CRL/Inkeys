@@ -28,11 +28,13 @@ using Microsoft.Office.Core;
 using Microsoft.Office.Interop.PowerPoint;
 using System;
 using System.CodeDom;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Reflection.Emit;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Text;
@@ -970,43 +972,444 @@ namespace PptCOM
         public IntPtr GetPptHwnd()
         {
             IntPtr hwnd = IntPtr.Zero;
-
-            Console.WriteLine("983-1");
-
             if (pptSlideShowWindow == null) return IntPtr.Zero;
 
-            Console.WriteLine("983-2");
-
             object pptSlideShowWindowObj = pptSlideShowWindow;
+            // object pptSlideShowWindowObj = pptApplication;
 
             /*
-            Microsoft.Office.Interop.PowerPoint.SlideShowWindow slideShowWindow = (Microsoft.Office.Interop.PowerPoint.SlideShowWindow)pptSlideShowWindow;
+            IDispatch disp;
+            try
+            {
+                disp = (IDispatch)pptSlideShowWindowObj;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[HWND-Check] 无法转换为 IDispatch: " + ex);
+                return IntPtr.Zero;
+            }
+
+            int hr;
+            uint typeInfoCount;
+            hr = disp.GetTypeInfoCount(out typeInfoCount);
+            Console.WriteLine("[HWND-Check] GetTypeInfoCount hr=0x{0:X}, count={1}", hr, typeInfoCount);
+            if (hr != 0 || typeInfoCount == 0)
+                return IntPtr.Zero;
+
+            ITypeInfo typeInfo;
+            disp.GetTypeInfo(0, 0, out typeInfo);
+            if (typeInfo == null)
+            {
+                Console.WriteLine("[HWND-Check] GetTypeInfo 返回 null");
+                return IntPtr.Zero;
+            }
+
+            IntPtr typeAttrPtr = IntPtr.Zero;
+            try
+            {
+                typeInfo.GetTypeAttr(out typeAttrPtr);
+                var attr = (System.Runtime.InteropServices.ComTypes.TYPEATTR)Marshal.PtrToStructure(typeAttrPtr, typeof(System.Runtime.InteropServices.ComTypes.TYPEATTR));
+
+                Console.WriteLine("[HWND-Check] TYPEATTR: cFuncs={0}, guid={1}", attr.cFuncs, attr.guid);
+
+                int indexFound = -1;
+                IntPtr funcDescPtr = IntPtr.Zero;
+
+                for (int i = 0; i < attr.cFuncs; i++)
+                {
+                    typeInfo.GetFuncDesc(i, out funcDescPtr);
+                    var funcDesc = (System.Runtime.InteropServices.ComTypes.FUNCDESC)Marshal.PtrToStructure(funcDescPtr, typeof(System.Runtime.InteropServices.ComTypes.FUNCDESC));
+
+                    // 打印一下每个函数的 memid 和名字，方便你自己再对一下
+                    string name;
+                    int cNames;
+                    {
+                        var names = new string[1];
+                        typeInfo.GetNames(funcDesc.memid, names, 1, out cNames);
+                        name = cNames > 0 ? names[0] : "<no name>";
+                    }
+
+                    Console.WriteLine("[HWND-Check] Func index={0}, memid={1}, name={2}, invkind={3}",
+                        i, funcDesc.memid, name, funcDesc.invkind);
+
+                    typeInfo.ReleaseFuncDesc(funcDescPtr);
+                    funcDescPtr = IntPtr.Zero;
+                }
+
+                if (indexFound == -1)
+                    Console.WriteLine("[HWND-Check] 没找到 memid=2010 的 FUNCDESC（和之前 dump 不一致？）");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[HWND-Check] 枚举 FUNCDESC 失败: " + ex);
+            }
+            finally
+            {
+                if (typeAttrPtr != IntPtr.Zero)
+                    typeInfo.ReleaseTypeAttr(typeAttrPtr);
+            }
+
+            hwnd = TryGetHwndViaDispId2010(pptSlideShowWindowObj);*/
+
+            hwnd = GetSlideShowWindowHwnd(pptSlideShowWindow);
+
+            if (hwnd == IntPtr.Zero) Console.WriteLine("啥都没有 983");
+
+            return hwnd;
+        }
+
+        /*
+
+        public static IntPtr TryGetHwndViaDispId2010(object pptSlideShowWindow)
+        {
+            if (pptSlideShowWindow == null)
+            {
+                Console.WriteLine("[HWND-2010] pptSlideShowWindow == null");
+                return IntPtr.Zero;
+            }
+
+            Console.WriteLine("[HWND-2010] 尝试通过 DispId=2010 的 IDispatch.Invoke 读取 SlideShowWindow.HWND ...");
+
+            IDispatch disp;
+            try
+            {
+                disp = (IDispatch)pptSlideShowWindow;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[HWND-2010] 无法转换为 IDispatch: " + ex);
+                return IntPtr.Zero;
+            }
+
+            Guid iidNull = Guid.Empty;
+
+            var dp = new DISPPARAMS
+            {
+                rgvarg = IntPtr.Zero,
+                rgdispidNamedArgs = IntPtr.Zero,
+                cArgs = 0,
+                cNamedArgs = 0
+            };
+
+            object result;
+            var exInfo = new EXCEPINFO();
 
             try
             {
-                var tmp = slideShowWindow.HWND;
-                Console.WriteLine($"获取 HWND 绑定成功 !!!");
+                const ushort DISPATCH_PROPERTYGET = 0x2;
+                const int DISP_ID_HWND = 2010;
+
+                int hr = disp.Invoke(
+                    DISP_ID_HWND,
+                    ref iidNull,
+                    0,
+                    DISPATCH_PROPERTYGET,
+                    ref dp,
+                    out result,
+                    ref exInfo,
+                    null
+                );
+
+                Console.WriteLine("[HWND-2010] Invoke(hr=0x{0:X}), DispId={1}", hr, DISP_ID_HWND);
+
+                if (hr != 0)
+                {
+                    Console.WriteLine("[HWND-2010] Invoke 返回错误 hr=0x{0:X}", hr);
+                    if (!string.IsNullOrEmpty(exInfo.bstrSource))
+                        Console.WriteLine("[HWND-2010] Source: " + exInfo.bstrSource);
+                    if (!string.IsNullOrEmpty(exInfo.bstrDescription))
+                        Console.WriteLine("[HWND-2010] Description: " + exInfo.bstrDescription);
+                    return IntPtr.Zero;
+                }
+
+                if (result == null)
+                {
+                    Console.WriteLine("[HWND-2010] Invoke 成功，但 result == null");
+                    return IntPtr.Zero;
+                }
+
+                Console.WriteLine("[HWND-2010] Invoke 返回类型: {0}, 值: {1}",
+                    result.GetType().FullName, result);
+
+                IntPtr hwnd;
+
+                if (result is int i32)
+                    hwnd = new IntPtr(i32);
+                else if (result is long i64)
+                    hwnd = new IntPtr(i64);
+                else if (result is short i16)
+                    hwnd = new IntPtr(i16);
+                else if (result is uint ui32)
+                    hwnd = new IntPtr(unchecked((int)ui32));
+                else if (result is ulong ui64)
+                    hwnd = new IntPtr(unchecked((long)ui64));
+                else
+                    throw new InvalidCastException("HWND 返回了无法识别的类型: " + result.GetType().FullName);
+
+                Console.WriteLine("[HWND-2010] 成功获取 HWND: " + hwnd);
+                return hwnd;
             }
-            catch { }*/
-
-            // 使用新方法获取 HWND
-            hwnd = GetHwndViaQueryInterface(pptSlideShowWindowObj);
-
-            if (hwnd != IntPtr.Zero)
+            catch (Exception ex)
             {
-                Console.WriteLine($"获取 HWND 成功: 0x{hwnd:X}");
-                // 现在可以使用 hwnd 进行后续操作
-                // 例如：SetForegroundWindow(hwnd) 等
+                Console.WriteLine("[HWND-2010] 调用 IDispatch.Invoke 失败: " + ex);
+                return IntPtr.Zero;
             }
-            else
+        }
+
+        [ComImport]
+        [Guid("91493453-5A91-11CF-8700-00AA0060263B")]   // _SlideShowWindow
+        [InterfaceType(ComInterfaceType.InterfaceIsIDispatch)]
+        private interface ISlideShowWindow
+        {
+            [DispId(2010)]            // HWND
+            int HWND { get; }
+        }
+
+        [ComImport]
+        [Guid("00020400-0000-0000-C000-000000000046")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        public interface IDispatch
+        {
+            int GetTypeInfoCount(out uint pctinfo);
+
+            void GetTypeInfo(
+                uint iTInfo,
+                uint lcid,
+                out ITypeInfo ppTInfo
+            );
+
+            int GetIDsOfNames(
+                ref Guid riid,
+                [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.LPWStr)] string[] rgszNames,
+                uint cNames,
+                uint lcid,
+                [MarshalAs(UnmanagedType.LPArray)] int[] rgDispId
+            );
+
+            int Invoke(
+                int dispIdMember,
+                ref Guid riid,
+                uint lcid,
+                ushort wFlags,
+                ref DISPPARAMS pDispParams,
+                out object pVarResult,
+                ref EXCEPINFO pExcepInfo,
+                IntPtr[] pArgErr
+            );
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct DISPPARAMS
+        {
+            public IntPtr rgvarg;
+            public IntPtr rgdispidNamedArgs;
+            public uint cArgs;
+            public uint cNamedArgs;
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        public struct EXCEPINFO
+        {
+            public ushort wCode;
+            public ushort wReserved;
+            public string bstrSource;
+            public string bstrDescription;
+            public string bstrHelpFile;
+            public uint dwHelpContext;
+            public IntPtr pvReserved;
+            public IntPtr pfnDeferredFillIn;
+            public int scode;
+        }
+
+        */
+
+        private static readonly ConcurrentDictionary<Guid, Type> _ifaceCache =
+        new ConcurrentDictionary<Guid, Type>();
+
+        private static void Log(string msg) => Console.WriteLine(msg);
+
+        public static IntPtr GetSlideShowWindowHwnd(object slideShowWindowObj)
+        {
+            if (slideShowWindowObj == null)
+                return IntPtr.Zero;
+
+            Log($"[PPT] .NET 类型 = {slideShowWindowObj.GetType().FullName}");
+
+            /*=================== 路线 A：v-table / 早期绑定 ===================*/
+            try
             {
-                Console.WriteLine("获取 HWND 失败");
+                IntPtr pUnk = Marshal.GetIUnknownForObject(slideShowWindowObj);
+                Log($"[PPT] IUnknown* = 0x{pUnk.ToInt64():X}");
+
+                Guid iid = GetRealIid(slideShowWindowObj);
+                Log($"[PPT] 真实 IID = {iid}");
+
+                Type ifaceType = _ifaceCache.GetOrAdd(iid, BuildRuntimeInterface);   // ← 生成/缓存接口
+                if (ifaceType == null)
+                    throw new Exception("动态接口生成失败");
+
+                object strong = Marshal.GetTypedObjectForIUnknown(pUnk, ifaceType);
+
+                object raw = ifaceType.InvokeMember("get_HWND",
+                                                    BindingFlags.InvokeMethod,
+                                                    null,
+                                                    strong,
+                                                    null);
+
+                long hwndVal = Convert.ToInt64(raw);
+                Log($"[PPT] 早期绑定获得 HWND = 0x{hwndVal:X}");
+                return new IntPtr(hwndVal);
+            }
+            catch (Exception ex)
+            {
+                Log($"[PPT] 早期绑定失败：{ex.Message}");
             }
 
-            if (hwnd == IntPtr.Zero) Console.WriteLine("啥都没有 983");
-            else Console.WriteLine($"得到 HWND: {hwnd}");
+            /*=================== 路线 B：IDispatch.Invoke ===================*/
+            Log("[PPT] 尝试改用 IDispatch.Invoke…");
+            IntPtr h = TryInvokeDispGet(slideShowWindowObj);
+            if (h != IntPtr.Zero)
+            {
+                Log($"[PPT] IDispatch.Invoke 获得 HWND = 0x{h.ToInt64():X}");
+                return h;
+            }
 
-            return hwnd;
+            Log("[PPT] 仍然失败，返回 0。");
+            return IntPtr.Zero;
+        }
+
+        /*------------------- BuildRuntimeInterface (方案 A) ------------------*/
+        private static Type BuildRuntimeInterface(Guid iid)
+        {
+            try
+            {
+                string asmName = "DynPptIfaceAsm_" + iid.ToString("N");
+                string typeName = "SlideShowWindow_" + iid.ToString("N");
+
+                var an = new AssemblyName(asmName);
+                AssemblyBuilder ab = AppDomain.CurrentDomain
+                                              .DefineDynamicAssembly(an, AssemblyBuilderAccess.Run);
+                ModuleBuilder mb = ab.DefineDynamicModule(asmName);
+
+                TypeBuilder tb = mb.DefineType(typeName,
+                                               TypeAttributes.Public |
+                                               TypeAttributes.Interface |
+                                               TypeAttributes.Abstract |
+                                               TypeAttributes.Import,
+                                               typeof(object));
+
+                tb.SetCustomAttribute(new CustomAttributeBuilder(
+                    typeof(ComImportAttribute).GetConstructor(Type.EmptyTypes),
+                    new object[0]));
+                tb.SetCustomAttribute(new CustomAttributeBuilder(
+                    typeof(InterfaceTypeAttribute).GetConstructor(new[] { typeof(ComInterfaceType) }),
+                    new object[] { ComInterfaceType.InterfaceIsIUnknown }));
+                tb.SetCustomAttribute(new CustomAttributeBuilder(
+                    typeof(GuidAttribute).GetConstructor(new[] { typeof(string) }),
+                    new object[] { iid.ToString() }));
+
+                // ---- 只声明一个 PreserveSig 方法 get_HWND() ----
+                MethodBuilder mbGet = tb.DefineMethod("get_HWND",
+                                                      MethodAttributes.Public |
+                                                      MethodAttributes.Abstract |
+                                                      MethodAttributes.Virtual |
+                                                      MethodAttributes.NewSlot,
+                                                      typeof(IntPtr),            // 直接 IntPtr
+                                                      Type.EmptyTypes);
+                mbGet.SetCustomAttribute(new CustomAttributeBuilder(
+                    typeof(PreserveSigAttribute).GetConstructor(Type.EmptyTypes),
+                    new object[0]));
+
+                // 如果你乐意，也可以再加 DispId，但 v-table 调用其实用不到
+                // mbGet.SetCustomAttribute(new CustomAttributeBuilder(
+                //     typeof(DispIdAttribute).GetConstructor(new[] { typeof(int) }),
+                //     new object[] { 2010 }));
+
+                return tb.CreateType();          // 不再报 TypeLoadException
+            }
+            catch (Exception ex)
+            {
+                Log($"[PPT] BuildRuntimeInterface() 异常：{ex}");
+                return null;
+            }
+        }
+
+        /*------------------- 其余辅助函数保持不变 ------------------*/
+
+        private static Guid GetRealIid(object comObj)
+        {
+            try
+            {
+                var disp = (IDispatch)comObj;
+                disp.GetTypeInfo(0, 0, out ITypeInfo ti);
+                ti.GetTypeAttr(out IntPtr pAttr);
+
+                var attr = (System.Runtime.InteropServices.ComTypes.TYPEATTR)
+                            Marshal.PtrToStructure(pAttr,
+                                typeof(System.Runtime.InteropServices.ComTypes.TYPEATTR));
+
+                Guid iid = attr.guid;
+
+                ti.ReleaseTypeAttr(pAttr);
+                Marshal.ReleaseComObject(ti);
+                return iid;
+            }
+            catch
+            {
+                return Guid.Empty;
+            }
+        }
+
+        private static IntPtr TryInvokeDispGet(object comObj)
+        {
+            try
+            {
+                var disp = (IDispatch)comObj;
+                Guid riid = Guid.Empty;
+
+                int[] dispIds = new int[1];
+                disp.GetIDsOfNames(ref riid, new[] { "HWND" }, 1, 0, dispIds);
+                int dispidHwnd = dispIds[0];
+                Log($"[PPT] GetIDsOfNames 得到 dispid = {dispidHwnd}");
+
+                const ushort DISPATCH_PROPERTYGET = 0x0002;
+                var dp = new System.Runtime.InteropServices.ComTypes.DISPPARAMS();
+
+                object result;
+                var exInfo = new System.Runtime.InteropServices.ComTypes.EXCEPINFO();
+
+                int hr = disp.Invoke(dispidHwnd, ref riid, 0, DISPATCH_PROPERTYGET,
+                                     ref dp, out result, ref exInfo, null);
+
+                if (hr != 0 || result == null)
+                    return IntPtr.Zero;
+
+                return new IntPtr(Convert.ToInt64(result));
+            }
+            catch (Exception ex)
+            {
+                Log($"[PPT] TryInvokeDispGet() 异常：{ex.Message}");
+                return IntPtr.Zero;
+            }
+        }
+
+        [ComImport]
+        [Guid("00020400-0000-0000-C000-000000000046")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface IDispatch
+        {
+            int GetTypeInfoCount(out uint pctinfo);
+            void GetTypeInfo(uint iTInfo, uint lcid, out ITypeInfo ppTInfo);
+            void GetIDsOfNames(
+                ref Guid riid,
+                [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.LPWStr)]
+        string[] rgszNames,
+                uint cNames,
+                uint lcid,
+                [Out, MarshalAs(UnmanagedType.LPArray)] int[] rgDispId);
+            int Invoke(int dispIdMember, ref Guid riid, uint lcid, ushort wFlags,
+                       ref System.Runtime.InteropServices.ComTypes.DISPPARAMS pDispParams, out object pVarResult,
+                       ref System.Runtime.InteropServices.ComTypes.EXCEPINFO pExcepInfo, IntPtr[] pArgErr);
         }
 
         // 操控函数
@@ -1112,271 +1515,299 @@ namespace PptCOM
 
         // Test
 
-        /// <summary>
-        /// _SlideShowWindow 接口的 IID
-        /// 这是 PowerPoint 类型库中定义的特定接口
-        /// </summary>
-        private static Guid _SlideShowWindowIID =
-            new Guid("91493453-5A91-11CF-8700-00aa0060263b");
+        private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
-        /// <summary>
-        /// HWND 属性的 DispId
-        /// 在 _SlideShowWindow 接口上，HWND 属性的 DispId 为 2010
-        /// </summary>
-        private const int HWND_DISPID = 2010;
+        [DllImport("user32.dll")]
+        private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
-        /// <summary>
-        /// 通过 QueryInterface 获取 PowerPoint SlideShowWindow 的 HWND
-        /// </summary>
-        /// <param name="pptSlideShowWindow">PowerPoint SlideShowWindow COM 对象</param>
-        /// <returns>窗口句柄，如果获取失败返回 IntPtr.Zero</returns>
-        public static IntPtr GetHwndViaQueryInterface(object pptSlideShowWindow)
+        [DllImport("user32.dll")]
+        private static extern bool EnumChildWindows(IntPtr hWndParent, EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetWindowRect(IntPtr hWnd, out pptRECT lpRect);
+
+        [DllImport("gdi32.dll")]
+        private static extern int GetDeviceCaps(IntPtr hdc, int nIndex);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetDC(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct pptRECT
         {
-            // 参数验证
-            if (pptSlideShowWindow == null)
-            {
-                Console.WriteLine("[GetHwndViaQueryInterface] 输入对象为 null");
-                return IntPtr.Zero;
-            }
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+            public int Width => Right - Left;
+            public int Height => Bottom - Top;
+        }
 
-            IntPtr pSlideShowWindowPtr = IntPtr.Zero;
-            IntPtr pUnknownPtr = IntPtr.Zero;
+        private const int LOGPIXELSX = 88;
+        private const int LOGPIXELSY = 90;
 
+        // =========================================================
+        // 2. 候选窗口结构
+        // =========================================================
+        private class WindowCandidate
+        {
+            public IntPtr Hwnd { get; set; }
+            public string Title { get; set; }
+            public int Priority { get; set; }
+            public string DebugInfo { get; set; }
+        }
+
+        private static void GetSystemDpi(out float dpiX, out float dpiY)
+        {
+            IntPtr hdc = GetDC(IntPtr.Zero);
             try
             {
-                // 步骤 1: 将托管对象转换为非托管 IUnknown 指针
-                // Marshal.GetIUnknownForObject 获取对象的 IUnknown 接口指针
-                pUnknownPtr = Marshal.GetIUnknownForObject(pptSlideShowWindow);
-                Console.WriteLine("[GetHwndViaQueryInterface] 成功获取 IUnknown 指针: 0x" +
-                    pUnknownPtr.ToString("X"));
-
-                // 步骤 2: 使用 QueryInterface 查询 _SlideShowWindow 接口
-                // 这是关键步骤：我们告诉 COM 我们想要具体的 _SlideShowWindow 接口，
-                // 而不是默认的 IDispatch 或其他接口
-                int hr = Marshal.QueryInterface(pUnknownPtr, ref _SlideShowWindowIID,
-                    out pSlideShowWindowPtr);
-
-                if (hr != 0 || pSlideShowWindowPtr == IntPtr.Zero)
-                {
-                    Console.WriteLine($"[GetHwndViaQueryInterface] QueryInterface 失败" +
-                        $"，HRESULT: 0x{hr:X8}");
-                    return IntPtr.Zero;
-                }
-
-                Console.WriteLine("[GetHwndViaQueryInterface] 成功获取 _SlideShowWindow " +
-                    $"接口指针: 0x{pSlideShowWindowPtr.ToString("X")}");
-
-                // 步骤 3: 从接口指针创建一个新的 RCW
-                // Marshal.GetObjectForIUnknown 将非托管指针包装回托管对象
-                object pSlideShowWindowObj = Marshal.GetObjectForIUnknown(pSlideShowWindowPtr);
-                Console.WriteLine("[GetHwndViaQueryInterface] 成功创建 RCW 对象");
-
-                // 步骤 4: 获取 IDispatch 接口
-                IDispatch disp = (IDispatch)pSlideShowWindowObj;
-                if (disp == null)
-                {
-                    Console.WriteLine("[GetHwndViaQueryInterface] 无法获取 IDispatch 接口");
-                    return IntPtr.Zero;
-                }
-                Console.WriteLine("[GetHwndViaQueryInterface] 成功获取 IDispatch 接口");
-
-                // 步骤 5: 通过 IDispatch.Invoke 获取 HWND 属性
-                // 注意：这次调用应该会成功，因为我们现在拥有正确的接口
-                IntPtr hwnd = InvokeGetHwndProperty(disp);
-
-                if (hwnd != IntPtr.Zero)
-                {
-                    Console.WriteLine($"[GetHwndViaQueryInterface] 成功获取 HWND: 0x{hwnd:X}");
-                    return hwnd;
-                }
-                else
-                {
-                    Console.WriteLine("[GetHwndViaQueryInterface] InvokeGetHwndProperty 返回零值");
-                    return IntPtr.Zero;
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[GetHwndViaQueryInterface] 异常: {ex.GetType().Name} - " +
-                    $"{ex.Message}");
-                return IntPtr.Zero;
+                // 获取屏幕逻辑 DPI
+                dpiX = GetDeviceCaps(hdc, LOGPIXELSX);
+                dpiY = GetDeviceCaps(hdc, LOGPIXELSY);
             }
             finally
             {
-                // 步骤 6: 释放 COM 对象引用，维护正确的引用计数
-                // QueryInterface 会增加对象的引用计数，我们需要调用 Release 来递减
-                if (pSlideShowWindowPtr != IntPtr.Zero)
-                {
-                    Marshal.Release(pSlideShowWindowPtr);
-                    Console.WriteLine("[GetHwndViaQueryInterface] 已释放 _SlideShowWindow " +
-                        "接口指针");
-                }
-
-                // IUnknown 指针也需要释放
-                if (pUnknownPtr != IntPtr.Zero)
-                {
-                    Marshal.Release(pUnknownPtr);
-                    Console.WriteLine("[GetHwndViaQueryInterface] 已释放 IUnknown 指针");
-                }
+                ReleaseDC(IntPtr.Zero, hdc);
             }
         }
 
-        /// <summary>
-        /// 通过 IDispatch.Invoke 获取 HWND 属性值
-        /// </summary>
-        /// <param name="disp">IDispatch 接口指针</param>
-        /// <returns>HWND 值，失败返回 IntPtr.Zero</returns>
-        private static IntPtr InvokeGetHwndProperty(IDispatch disp)
+        private static int PointsToPixels(float points, float dpi)
         {
+            // 公式: Pixels = Points * (DPI / 72)
+            return (int)Math.Round(points * (dpi / 72.0f));
+        }
+
+        // =========================================================
+        // 3. 核心逻辑
+        // =========================================================
+
+        /// <summary>
+        /// 利用 COM 对象的几何数据和元数据，暴力扫描系统窗口获取 HWND。
+        /// 支持枚举子窗口以解决 WPS 嵌入放映的问题。
+        /// </summary>
+
+        public static IntPtr FindWindowByDetailedMatch(string pptFullName, string comAppName, dynamic ssw)
+        {
+            Console.WriteLine("========== [PptPreciseFinder] 开始扫描 (单位修正版) ==========");
+
+            // -----------------------------------------------------
+            // A. 参数与环境预检
+            // -----------------------------------------------------
+            if (ssw == null || string.IsNullOrEmpty(pptFullName) || string.IsNullOrEmpty(comAppName))
+            {
+                Console.WriteLine("[Error] 参数无效，返回 Zero。");
+                return IntPtr.Zero;
+            }
+
+            string requiredAppKeyword = "";
+            if (comAppName.IndexOf("PowerPoint", StringComparison.OrdinalIgnoreCase) >= 0) requiredAppKeyword = "PowerPoint";
+            else if (comAppName.IndexOf("WPS", StringComparison.OrdinalIgnoreCase) >= 0) requiredAppKeyword = "WPS";
+
+            if (string.IsNullOrEmpty(requiredAppKeyword))
+            {
+                Console.WriteLine($"[Error] 未知 AppName: '{comAppName}'");
+                return IntPtr.Zero;
+            }
+
+            string requiredFileName = "";
+            try { requiredFileName = Path.GetFileNameWithoutExtension(pptFullName); } catch { }
+            if (string.IsNullOrEmpty(requiredFileName)) return IntPtr.Zero;
+
+            // -----------------------------------------------------
+            // B. 几何数据提取与转换 (Points -> Pixels)
+            // -----------------------------------------------------
+            float ptLeft = 0, ptTop = 0, ptWidth = 0, ptHeight = 0;
             try
             {
-                // 调用 IDispatch.Invoke 获取属性值
-                // HWND_DISPID = 2010
-                // INVOKE_PROPERTYGET = 2（获取属性值）
-                // LOCALE_USER_DEFAULT = 0
-                object result = null;
-                int hr = disp.Invoke(
-                    HWND_DISPID,                          // DispId
-                    ref IDispatchConstants.IID_NULL,      // riid (always IID_NULL for Invoke)
-                    0,                                    // lcid (LOCALE_USER_DEFAULT)
-                    IDispatchConstants.IDispatchInvokeFlags.INVOKE_PROPERTYGET,
-                    ref IDispatchConstants.DISPPARAMS_EMPTY,  // pDispParams
-                    out result,                           // pVarResult
-                    ref IDispatchConstants.EXCEPINFO_EMPTY,   // pExcepInfo
-                    out uint errorArg                     // puArgErr
-                );
-
-                if (hr != 0)
-                {
-                    Console.WriteLine($"[InvokeGetHwndProperty] Invoke 失败" +
-                        $"，HRESULT: 0x{hr:X8}");
-                    return IntPtr.Zero;
-                }
-
-                // 将结果转换为 IntPtr
-                if (result == null)
-                {
-                    Console.WriteLine("[InvokeGetHwndProperty] 返回值为 null");
-                    return IntPtr.Zero;
-                }
-
-                // 根据返回值类型进行转换
-                if (result is IntPtr)
-                    return (IntPtr)result;
-                else if (result is int)
-                    return (IntPtr)(int)result;
-                else if (result is long)
-                    return (IntPtr)(long)result;
-                else
-                {
-                    Console.WriteLine($"[InvokeGetHwndProperty] 无法转换结果类型: " +
-                        result.GetType().Name);
-                    return IntPtr.Zero;
-                }
+                // 先拿 float 类型的 Points
+                ptLeft = (float)ssw.Left;
+                ptTop = (float)ssw.Top;
+                ptWidth = (float)ssw.Width;
+                ptHeight = (float)ssw.Height;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[InvokeGetHwndProperty] 异常: {ex.GetType().Name} - " +
-                    $"{ex.Message}");
+                Console.WriteLine($"[Error] 读取 COM 失败: {ex.Message}");
                 return IntPtr.Zero;
             }
-        }
-    }
 
-    /// <summary>
-    /// IDispatch 接口定义
-    /// </summary>
-    [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown),
-     Guid("00020400-0000-0000-C000-000000000046")]
-    public interface IDispatch
-    {
-        [PreserveSig]
-        int GetTypeInfoCount(out uint pcTInfo);
+            // 获取 DPI
+            float dpiX, dpiY;
+            GetSystemDpi(out dpiX, out dpiY);
+            Console.WriteLine($"[DPI 检测] System DPI: X={dpiX}, Y={dpiY}");
 
-        [PreserveSig]
-        int GetTypeInfo(uint iTInfo, uint lcid,
-            [MarshalAs(UnmanagedType.Interface)] out object ppTInfo);
+            // 执行转换
+            int pxLeft = PointsToPixels(ptLeft, dpiX);
+            int pxTop = PointsToPixels(ptTop, dpiY);
+            int pxWidth = PointsToPixels(ptWidth, dpiX);
+            int pxHeight = PointsToPixels(ptHeight, dpiY);
 
-        [PreserveSig]
-        int GetIDsOfNames(
-            ref Guid riid,
-            [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 2)] string[] rgszNames,
-            uint cNames,
-            uint lcid,
-            [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 2)] int[] rgDispId);
+            Console.WriteLine("[几何变换] COM(Points) -> Win32(Pixels):");
+            Console.WriteLine($"  Left:   {ptLeft,8:F2} -> {pxLeft}");
+            Console.WriteLine($"  Top:    {ptTop,8:F2} -> {pxTop}");
+            Console.WriteLine($"  Width:  {ptWidth,8:F2} -> {pxWidth}");
+            Console.WriteLine($"  Height: {ptHeight,8:F2} -> {pxHeight}");
 
-        [PreserveSig]
-        int Invoke(
-            int dispIdMember,
-            ref Guid riid,
-            uint lcid,
-            ushort wFlags,
-            ref IDispatchConstants.DISPPARAMS pDispParams,
-            out object pVarResult,
-            ref IDispatchConstants.EXCEPINFO pExcepInfo,
-            out uint puArgErr);
-    }
+            if (pxWidth <= 0 || pxHeight <= 0)
+            {
+                Console.WriteLine("[Error] 转换后宽高无效，停止。");
+                return IntPtr.Zero;
+            }
 
-    /// <summary>
-    /// IDispatch 相关常量和结构体
-    /// </summary>
-    public static class IDispatchConstants
-    {
-        /// <summary>
-        /// IDispatch.Invoke 的 wFlags 参数选项
-        /// </summary>
-        public static class IDispatchInvokeFlags
-        {
-            public const ushort INVOKE_FUNC = 1;           // 调用方法
-            public const ushort INVOKE_PROPERTYGET = 2;    // 获取属性
-            public const ushort INVOKE_PROPERTYPUT = 4;    // 设置属性
-            public const ushort INVOKE_PROPERTYPUTREF = 8; // 设置属性（引用）
-        }
+            // -----------------------------------------------------
+            // C. 准备扫描
+            // -----------------------------------------------------
+            IntPtr fgHwnd = GetForegroundWindow();
+            uint fgPid;
+            GetWindowThreadProcessId(fgHwnd, out fgPid);
 
-        public static Guid IID_NULL = Guid.Empty;
+            List<WindowCandidate> candidates = new List<WindowCandidate>();
+            int scannedCount = 0;
 
-        public static DISPPARAMS DISPPARAMS_EMPTY = new DISPPARAMS
-        {
-            cArgs = 0,
-            cNamedArgs = 0,
-            rgvarg = IntPtr.Zero,
-            rgdispidNamedArgs = IntPtr.Zero
-        };
+            bool ScanCallback(IntPtr hWnd)
+            {
+                scannedCount++;
+                try
+                {
+                    // [第一道关卡] 标题匹配
+                    StringBuilder sbTitle = new StringBuilder(512);
+                    GetWindowText(hWnd, sbTitle, sbTitle.Capacity);
+                    string title = sbTitle.ToString();
 
-        public static EXCEPINFO EXCEPINFO_EMPTY = new EXCEPINFO
-        {
-            wCode = 0,
-            wReserved = 0,
-            bstrSource = null,
-            bstrDescription = null,
-            bstrHelpFile = null,
-            dwHelpContext = 0,
-            pvReserved = IntPtr.Zero,
-            pfnDeferredFillIn = IntPtr.Zero,
-            scode = 0
-        };
+                    if (string.IsNullOrEmpty(title)) return true;
 
-        [StructLayout(LayoutKind.Sequential)]
-        public struct DISPPARAMS
-        {
-            public IntPtr rgvarg;
-            public IntPtr rgdispidNamedArgs;
-            public uint cArgs;
-            public uint cNamedArgs;
-        }
+                    bool matchApp = title.IndexOf(requiredAppKeyword, StringComparison.OrdinalIgnoreCase) >= 0;
+                    bool matchFile = title.IndexOf(requiredFileName, StringComparison.OrdinalIgnoreCase) >= 0;
 
-        [StructLayout(LayoutKind.Sequential)]
-        public struct EXCEPINFO
-        {
-            public ushort wCode;
-            public ushort wReserved;
-            public string bstrSource;
-            public string bstrDescription;
-            public string bstrHelpFile;
-            public uint dwHelpContext;
-            public IntPtr pvReserved;
-            public IntPtr pfnDeferredFillIn;
-            public int scode;
+                    if (matchApp && matchFile)
+                    {
+                        Console.WriteLine("--------------------------------------------------");
+                        Console.WriteLine($"[发现潜在目标] HWND: {hWnd}");
+                        Console.WriteLine($"  -> 标题: '{title}'");
+                    }
+                    else
+                    {
+                        return true;
+                    }
+
+                    // [第二道关卡] 几何匹配 (使用转换后的 Pixels)
+                    pptRECT winRect;
+                    if (!GetWindowRect(hWnd, out winRect)) return true;
+
+                    // 容差设定: 20px (覆盖 Win10 阴影和四舍五入误差)
+                    int tolerance = 20;
+
+                    int dLeft = Math.Abs(winRect.Left - pxLeft);
+                    int dTop = Math.Abs(winRect.Top - pxTop);
+                    int dWidth = Math.Abs(winRect.Width - pxWidth);
+                    int dHeight = Math.Abs(winRect.Height - pxHeight);
+
+                    Console.WriteLine($"  -> 几何对比 (目标 Pixels vs 实际 Pixels):");
+                    Console.WriteLine($"     目标: L={pxLeft}, T={pxTop}, W={pxWidth}, H={pxHeight}");
+                    Console.WriteLine($"     实际: L={winRect.Left}, T={winRect.Top}, W={winRect.Width}, H={winRect.Height}");
+                    Console.WriteLine($"     偏差: dL={dLeft}, dT={dTop}, dW={dWidth}, dH={dHeight}");
+
+                    bool matchGeo =
+                        dLeft <= tolerance &&
+                        dTop <= tolerance &&
+                        dWidth <= tolerance &&
+                        dHeight <= tolerance;
+
+                    if (!matchGeo)
+                    {
+                        Console.WriteLine("  -> [结果] 偏差过大，不匹配。");
+                        return true;
+                    }
+
+                    Console.WriteLine("  -> [结果] 几何匹配成功！");
+
+                    // [第三道关卡] 优先级计算
+                    int priority = 100;
+
+                    bool isFocusRelated = false;
+                    if (hWnd == fgHwnd)
+                    {
+                        isFocusRelated = true;
+                    }
+                    else
+                    {
+                        uint targetPid;
+                        GetWindowThreadProcessId(hWnd, out targetPid);
+                        if (fgPid > 0 && targetPid > 0)
+                        {
+                            try
+                            {
+                                using (Process fgProc = Process.GetProcessById((int)fgPid))
+                                using (Process appProc = Process.GetProcessById((int)targetPid))
+                                {
+                                    string fgName = fgProc.ProcessName.ToLower();
+                                    string appName = appProc.ProcessName.ToLower();
+                                    if (fgName.StartsWith("wps") && appName.StartsWith("wpp")) isFocusRelated = true;
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+
+                    if (isFocusRelated)
+                    {
+                        priority += 100;
+                        Console.WriteLine("  -> 焦点/进程判定: +100");
+                    }
+
+                    candidates.Add(new WindowCandidate
+                    {
+                        Hwnd = hWnd,
+                        Title = title,
+                        Priority = priority,
+                        DebugInfo = $"Matched Px[{winRect.Width}x{winRect.Height}]"
+                    });
+                }
+                catch { }
+                return true;
+            }
+
+            // -----------------------------------------------------
+            // D. 执行枚举
+            // -----------------------------------------------------
+            EnumWindows((h, p) =>
+            {
+                ScanCallback(h);
+                EnumChildWindows(h, (hChild, pChild) =>
+                {
+                    ScanCallback(hChild);
+                    return true;
+                }, IntPtr.Zero);
+                return true;
+            }, IntPtr.Zero);
+
+            // -----------------------------------------------------
+            // E. 结果返回
+            // -----------------------------------------------------
+            if (candidates.Count == 0)
+            {
+                Console.WriteLine("[结果] 未找到匹配窗口。");
+                return IntPtr.Zero;
+            }
+
+            int maxPriority = candidates.Max(c => c.Priority);
+            var bestMatches = candidates.Where(c => c.Priority == maxPriority).ToList();
+
+            if (bestMatches.Count > 1)
+            {
+                Console.WriteLine($"[警告] 发现 {bestMatches.Count} 个相同优先级的窗口，返回第一个。");
+            }
+
+            var finalMatch = bestMatches.First();
+            Console.WriteLine($"========== [PptPreciseFinder] 锁定目标: {finalMatch.Hwnd} ==========");
+            return finalMatch.Hwnd;
         }
     }
 }
