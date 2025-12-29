@@ -363,7 +363,7 @@ wstring GetPptTitle()
 
 	try
 	{
-		ret = bstrToWstring(PptCOMPto->slideNameIndex());
+		ret = bstrToWstring(PptCOMPto->SlideNameIndex());
 
 		return ret;
 	}
@@ -421,7 +421,7 @@ void GetPptState()
 
 		try
 		{
-			tmp = PptCOMPto->IsPptOpen();
+			tmp = PptCOMPto->PptComService();
 		}
 		catch (_com_error)
 		{

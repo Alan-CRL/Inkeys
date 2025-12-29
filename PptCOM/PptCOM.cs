@@ -53,10 +53,10 @@ namespace PptCOM
         string CheckCOM();
 
         // 获取函数
-        unsafe int IsPptOpen();
+        unsafe int PptComService();
 
         // 信息获取函数
-        string slideNameIndex();
+        string SlideNameIndex();
         IntPtr GetPptHwnd();
 
         // 操控函数
@@ -225,7 +225,7 @@ namespace PptCOM
                 if (pUnk2 != IntPtr.Zero) Marshal.Release(pUnk2);
             }
         }
-        private static bool IsSlideShowWindowActive(object sswObj)
+        private bool IsSlideShowWindowActive(object sswObj)
         {
             try
             {
@@ -243,6 +243,7 @@ namespace PptCOM
                 IntPtr sswHwnd = IntPtr.Zero;
                 try
                 {
+                    sswHwnd = GetPptHwndFromSlideShowWindow(sswObj);
                     // sswHwnd = GetSlideShowWindowHwnd(ssw);
                 }
                 catch { return false; }
@@ -302,31 +303,15 @@ namespace PptCOM
             }
             return false;
         }
-        private static bool IsValidSlideShowWindow(object pptSlideShowWindowObj)
+        private static bool IsValidSlideShowWindow(dynamic pptSlideShowWindow)
         {
-            dynamic pptSlideShowWindow;
-            try
-            {
-                pptSlideShowWindow = pptSlideShowWindowObj;
-            }
-            catch
-            {
-                return false;
-            }
-
-            if (pptSlideShowWindow == null)
-                return false;
-            if (pptSlideShowWindow is IntPtr ptr && ptr == IntPtr.Zero)
-                return false;
+            if (pptSlideShowWindow == null) return false;
 
             bool ret = false;
 
             try
             {
-                // TODO 通过宽高判断有效性
-
-                var tmp = pptSlideShowWindow.Active;
-                ret = true;
+                if (pptSlideShowWindow.Width > 0 && pptSlideShowWindow.Height > 0) ret = true;
             }
             catch
             {
@@ -420,17 +405,18 @@ namespace PptCOM
         }
 
         // 获取函数
-        private static object GetAnyActivePowerPoint(object targetApp, out int bestPriority, out int targetPriority)
+        private object GetAnyActivePowerPoint(object targetApp, out int bestPriority, out int targetPriority)
         {
             IRunningObjectTable rot = null;
             IEnumMoniker enumMoniker = null;
 
-            // bestApp 改为 object
             object bestApp = null;
 
             bestPriority = 0;
             targetPriority = 0;
             int highestPriority = 0;
+
+            System.Collections.Generic.List<object> foundAppObjects = new System.Collections.Generic.List<object>();
 
             try
             {
@@ -448,73 +434,67 @@ namespace PptCOM
                     IBindCtx bindCtx = null;
                     object comObject = null;
 
-                    // 【修改点1】改为 dynamic
                     dynamic candidateApp = null;
-
                     string displayName = "Unknown";
 
-                    // 【修改点2】改为 dynamic，用于释放
                     dynamic activePres = null;
                     dynamic ssWindows = null;
+
+                    // 标记当前 candidateApp 是否需要“保活”供后续去重对比
+                    bool keepAlive = false;
 
                     try
                     {
                         CreateBindCtx(0, out bindCtx);
                         moniker[0].GetDisplayName(bindCtx, null, out displayName);
 
-                        if (LooksLikePresentationFile(displayName)) // 保持你的逻辑
+                        if (LooksLikePresentationFile(displayName) || displayName == "!{91493441-5A91-11CF-8700-00AA0060263B}")
                         {
-                            Console.WriteLine($"{displayName}");
-
                             rot.GetObject(moniker[0], out comObject);
                             if (comObject != null)
                             {
                                 // 尝试通过 Presentation 对象获取 Application
                                 try
                                 {
-                                    // 使用反射获取 Application 属性 (这对 WPS 和 PPT 都通用)
-                                    object appObj = comObject.GetType().InvokeMember("Application",
-                                        BindingFlags.GetProperty, null, comObject, null);
-
-                                    // 【修改点3】直接赋值，不要使用 'as' 强转
+                                    // 使用反射获取 Application 属性
+                                    object appObj = comObject.GetType().InvokeMember("Application", BindingFlags.GetProperty, null, comObject, null);
                                     candidateApp = appObj;
                                 }
-                                catch (Exception ex)
+                                catch { }
+                            }
+                            else { }
+                        }
+
+                        // COM 对象去重检查
+                        bool isDuplicate = false;
+                        if (candidateApp != null)
+                        {
+                            foreach (var processedApp in foundAppObjects)
+                            {
+                                if (AreComObjectsEqual((object)candidateApp, processedApp))
                                 {
-                                    Console.WriteLine($"  -> 获取 Application 属性失败: {ex.Message}");
+                                    isDuplicate = true;
+
+                                    Console.WriteLine("  -> [Deduplication] Skip: This COM instance was already scanned.");
+                                    break;
                                 }
                             }
-                            else
+
+                            if (!isDuplicate)
                             {
-                                Console.WriteLine($"not com object");
+                                // 如果不是重复项，加入列表并标记保活
+                                // 注意：必须保持此引用有效，后续循环才能进行对比
+                                foundAppObjects.Add(candidateApp);
+                                keepAlive = true;
                             }
                         }
 
-                        if (candidateApp != null)
+                        if (candidateApp != null && !isDuplicate)
                         {
-                            Console.WriteLine($"找到 application!");
-
-                            /*
-                            if (candidateApp is Microsoft.Office.Interop.PowerPoint.Application)
-                            {
-                                try
-                                {
-                                    Microsoft.Office.Interop.PowerPoint.Application app = (Microsoft.Office.Interop.PowerPoint.Application)candidateApp;
-
-                                    candidateApp = app;
-
-                                    Console.WriteLine($"找到正版 application!");
-                                }
-                                catch
-                                {
-                                    Console.WriteLine($"转换为正版 application 失败!");
-                                }
-                            }*/
-
                             int currentPriority = 0;
                             bool isTarget = false;
 
-                            // 1. 检查是否是 Target (使用 object 比较)
+                            // 1. 检查是否是 Target
                             if (targetApp != null && AreComObjectsEqual((object)candidateApp, targetApp))
                             {
                                 isTarget = true;
@@ -526,19 +506,9 @@ namespace PptCOM
                                 // 尝试获取 ActivePresentation
                                 try
                                 {
-                                    // dynamic 调用
                                     activePres = candidateApp.ActivePresentation;
                                 }
-                                catch (Exception ex)
-                                {
-                                    // 保持你的日志逻辑
-                                    Console.WriteLine($"");
-                                    Console.WriteLine($"Fail 267");
-                                    Console.WriteLine($"异常类型: {ex.GetType().FullName}");
-                                    Console.WriteLine($"异常信息: {ex.Message}");
-                                    Console.WriteLine($"堆栈: {ex.StackTrace}");
-                                    Console.WriteLine($"");
-                                }
+                                catch { }
 
                                 if (activePres != null)
                                 {
@@ -560,7 +530,7 @@ namespace PptCOM
                                             {
                                                 ssWin = ssWindows[i];
 
-                                                // 【修改点4】兼容性判定 Active
+                                                // 判定 Active
                                                 // MS PPT 返回 int (-1), WPS 可能返回 bool (true)
                                                 bool isActive = false;
                                                 try
@@ -580,7 +550,7 @@ namespace PptCOM
                                                 else
                                                 {
                                                     // 针对 WPP 的 Active 在非全屏播放下不一定生效的情况
-                                                    if (false && IsSlideShowWindowActive((object)ssWin))
+                                                    if (IsSlideShowWindowActive((object)ssWin))
                                                     {
                                                         Console.WriteLine("  [Fix] App process has focus via PID check. Upgrading priority to 3.");
 
@@ -621,7 +591,9 @@ namespace PptCOM
 
                                     // 这里不需要转换，直接赋值 object
                                     bestApp = candidateApp;
-                                    candidateApp = null; // 转移所有权
+                                    candidateApp = null; // 转移所有权，candidateApp 置空防止后续被错误释放
+
+                                    // 注意：虽然 candidateApp 变量置空了，但该对象引用仍存在于 foundAppObjects 中
                                 }
                             }
                         }
@@ -636,7 +608,13 @@ namespace PptCOM
                         SafeRelease((object)activePres);
                         SafeRelease((object)ssWindows);
 
-                        SafeRelease((object)candidateApp);
+                        // 如果是为了去重而暂存在列表中的新对象，不要在这里释放
+                        // 如果是重复对象(keepAlive=false)，或者出现异常没加入列表，则正常释放
+                        // 如果 candidateApp 已经转移给 bestApp，它已经是 null，SafeRelease 安全
+                        if (!keepAlive)
+                        {
+                            SafeRelease((object)candidateApp);
+                        }
 
                         CleanUpLoopObjects(bindCtx, moniker[0], comObject);
                     }
@@ -650,13 +628,27 @@ namespace PptCOM
             }
             finally
             {
+                // 清理去重列表中的 COM 对象
+                if (foundAppObjects != null)
+                {
+                    foreach (var cachedApp in foundAppObjects)
+                    {
+                        // 关键：如果这个对象最终成为了 bestApp，千万不能释放，因为我们要返回它
+                        if (bestApp != null && ReferenceEquals(cachedApp, bestApp))
+                            continue;
+
+                        SafeRelease(cachedApp);
+                    }
+                    foundAppObjects.Clear();
+                }
+
                 if (enumMoniker != null) Marshal.ReleaseComObject(enumMoniker);
                 if (rot != null) Marshal.ReleaseComObject(rot);
             }
 
             return bestApp;
         }
-        public unsafe int IsPptOpen()
+        public unsafe int PptComService()
         {
             Console.WriteLine("PPT Monitor ReStarted");
 
@@ -677,54 +669,30 @@ namespace PptCOM
                 {
                     // 动态绑定/切换逻辑
                     {
-                        // 【修改】类型改为 object，因为 GetAnyActivePowerPoint 现在返回 object
                         object bestApp = GetAnyActivePowerPoint(pptApplication, out bestPriority, out targetPriority);
 
                         bool needRebind = false;
 
-                        if (pptApplication != null && bestApp != null)
-                        {
-                            Console.WriteLine($"bestP: {bestPriority}; targetP {targetPriority}");
-                        }
-
-                        // 之前没绑，现在找到了
-                        if (pptApplication == null && bestApp != null)
-                        {
-                            needRebind = true;
-                            Console.WriteLine("first band");
-                        }
-                        // 之前绑了，但现在找到了不一样的
+                        if (pptApplication == null && bestApp != null) needRebind = true;
                         else if (pptApplication != null && bestApp != null && bestPriority > targetPriority)
                         {
-                            // 【说明】dynamic 下访问 HWND 属性是安全的
-                            // Console.WriteLine($"find new {pptApplication.HWND}");
-
-                            Console.WriteLine($"check1 {bestPriority}");
-                            Console.WriteLine($"check2 {targetPriority}");
-
-                            // 发现了完全不同的 Application 实例，必须切换
+                            // 完全不同
                             if (!AreComObjectsEqual((object)pptApplication, bestApp))
                             {
                                 needRebind = true;
-
-                                Console.WriteLine("Detected Application Switch");
                             }
                         }
 
                         if (needRebind)
                         {
                             bool wait = (pptApplication != null);
-
-                            Console.WriteLine("Try Rebind !!!!!!!!!!!!!!!!!!!!!!!!!!!");
                             FullCleanup();
 
                             if (bestApp != null)
                             {
                                 if (wait) Thread.Sleep(1000);
 
-                                pptApplication = bestApp; // dynamic = object
-
-                                if (pptApplication != null) Console.WriteLine($"Enter Part 2 {pptApplication.Name} = 2");
+                                pptApplication = bestApp;
 
                                 try
                                 {
@@ -737,11 +705,9 @@ namespace PptCOM
                                         pptSlideShowWindow = pptActivePresentation.SlideShowWindow;
                                         *pptTotalPage = tempTotalPage = pptActivePresentation.Slides.Count;
                                     }
-                                    catch (Exception bindEx)
+                                    catch
                                     {
                                         *pptTotalPage = tempTotalPage = -1;
-
-                                        Console.WriteLine($"pptSlideShowWindow 设置失败 {bindEx.Message}");
                                     }
 
                                     if (tempTotalPage == -1)
@@ -765,7 +731,6 @@ namespace PptCOM
                                         }
                                     }
 
-                                    // 【修改】尝试绑定事件 (包含错误输出)
                                     try
                                     {
                                         pptApplication.SlideShowNextSlide += new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowNextSlideEventHandler(SlideShowChange);
@@ -777,34 +742,24 @@ namespace PptCOM
                                         {
                                             pptApplication.PresentationBeforeClose += new Microsoft.Office.Interop.PowerPoint.EApplication_PresentationBeforeCloseEventHandler(PresentationBeforeClose);
                                         }
-                                        catch { /* 忽略这个特殊的 Ref 参数事件失败 */ }
-
-                                        // Console.WriteLine($"Bind Success to {pptApplication.HWND}");
+                                        catch
+                                        {
+                                            Console.WriteLine($"无法注册事件 2!");
+                                        }
 
                                         bindingEvents = true;
                                         forcePolling = false;
-
-                                        Console.WriteLine($"事件绑定成功 !!!");
-
-                                        try
-                                        {
-                                            var tmp = pptApplication.HWND;
-                                            Console.WriteLine($"获取 HWND 绑定成功 !!!");
-                                        }
-                                        catch { }
                                     }
-                                    catch (Exception bindEx)
+                                    catch
                                     {
-                                        // 【新增】专门捕获事件绑定失败
-                                        Console.WriteLine("--------------------------------------------------");
-                                        Console.WriteLine($"[警告] 事件绑定失败: {bindEx.Message}");
-                                        Console.WriteLine("如果是 'Type library' 错误，说明不支持事件，将自动使用轮询。");
-                                        Console.WriteLine("--------------------------------------------------");
-
                                         bindingEvents = false;
                                         forcePolling = false;
+
+                                        Console.WriteLine($"无法注册事件 1!");
                                         // 不抛出异常，继续执行，允许进入下方的轮询逻辑
                                     }
+
+                                    Console.WriteLine($"成功绑定!");
                                 }
                                 catch
                                 {
@@ -817,13 +772,12 @@ namespace PptCOM
                     // 状态监测与轮询
                     if (pptApplication != null && pptActivePresentation != null)
                     {
-                        //if (pptApplication != null) Console.WriteLine($"Enter Part 2 {pptApplication.HWND} 1");
-
                         // 检查是否同进程切换文档 (dynamic 比较引用)
                         // 注意：如果报错 RuntimeBinderException 说明对象可能已失效
                         try
                         {
-                            if (!AreComObjectsEqual((object)pptActivePresentation, (object)pptApplication.ActivePresentation)) break;
+                            if (!AreComObjectsEqual((object)pptActivePresentation, (object)pptApplication.ActivePresentation))
+                                break;
                         }
                         catch { break; }
 
@@ -872,7 +826,6 @@ namespace PptCOM
                                 catch
                                 {
                                     *pptTotalPage = tempTotalPage = -1;
-                                    Console.WriteLine($"error 1");
                                 }
 
                                 if (tempTotalPage == -1)
@@ -889,16 +842,10 @@ namespace PptCOM
                                         if (pptSlideShowWindow.View.Slide.SlideIndex >= pptActivePresentation.Slides.Count) polling = 1;
                                         else polling = 0;
                                     }
-                                    catch (Exception ex)
+                                    catch
                                     {
                                         *pptCurrentPage = -1;
                                         polling = 1;
-
-                                        Console.WriteLine($"error 2");
-                                        Console.WriteLine($"异常类型: {ex.GetType().FullName}");
-                                        Console.WriteLine($"异常信息: {ex.Message}");
-                                        Console.WriteLine($"堆栈: {ex.StackTrace}");
-                                        Console.WriteLine($"");
                                     }
                                 }
 
@@ -939,7 +886,7 @@ namespace PptCOM
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Fail 960");
+                Console.WriteLine($"Fail 912");
                 Console.WriteLine($"异常信息: {ex.Message}");
             }
             finally
@@ -951,7 +898,7 @@ namespace PptCOM
         }
 
         // 信息获取函数
-        public string slideNameIndex()
+        public string SlideNameIndex()
         {
             string slidesName = "";
 
@@ -971,12 +918,141 @@ namespace PptCOM
         }
         public IntPtr GetPptHwnd()
         {
+            IntPtr ret = IntPtr.Zero;
+
+            // 尝试默认方法
+            ret = GetPptHwndFromSlideShowWindow(pptSlideShowWindow);
+
+            if (ret == IntPtr.Zero)
+            {
+                // 尝试备用方法
+                ret = GetPptHwndWin32(pptActivePresentation.FullName, pptApplication.Name);
+            }
+
+            return ret;
+        }
+        private IntPtr GetPptHwndFromSlideShowWindow(object pptSlideShowWindowObj)
+        {
             IntPtr hwnd = IntPtr.Zero;
             if (pptSlideShowWindow == null) return IntPtr.Zero;
 
-            if (hwnd == IntPtr.Zero) Console.WriteLine("啥都没有 983");
+            try
+            {
+                Microsoft.Office.Interop.PowerPoint.SlideShowWindow slideWindow = (Microsoft.Office.Interop.PowerPoint.SlideShowWindow)pptSlideShowWindowObj;
+
+                int hwndVal = slideWindow.HWND;
+
+                // 成功返回
+                hwnd = new IntPtr(hwndVal);
+            }
+            catch { }
+
+            if (hwnd == IntPtr.Zero) Console.WriteLine("啥都没有 GetPptHwndFromSSW");
+            else Console.WriteLine("Got Hwnd GetPptHwndFromSSW");
 
             return hwnd;
+        }
+        private IntPtr GetPptHwndWin32(string presFullName, string appName)
+        {
+            // 全局 try-catch 保证异常安全，失败一律返回 Zero
+            try
+            {
+                // -------------------------------------------------
+                // 步骤 A: 基础参数校验
+                // -------------------------------------------------
+                if (string.IsNullOrWhiteSpace(presFullName) || string.IsNullOrWhiteSpace(appName))
+                {
+                    return IntPtr.Zero;
+                }
+
+                // -------------------------------------------------
+                // 步骤 B: 提取关键信息 (应用类型 & 文件名)
+                // -------------------------------------------------
+                string targetAppKeyword;
+                // 使用 OrdinalIgnoreCase 忽略大小写进行匹配，更安全
+                if (appName.IndexOf("WPS", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    targetAppKeyword = "WPS";
+                }
+                else if (appName.IndexOf("PowerPoint", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    targetAppKeyword = "PowerPoint";
+                }
+                else
+                {
+                    // 既不是 WPS 也不是 PowerPoint，视为不支持
+                    return IntPtr.Zero;
+                }
+
+                // 从路径中安全提取文件名（包含扩展名），如 "myppt.pptx"
+                string targetFileName = Path.GetFileName(presFullName);
+                if (string.IsNullOrWhiteSpace(targetFileName))
+                {
+                    return IntPtr.Zero;
+                }
+
+                // -------------------------------------------------
+                // 步骤 C: 枚举窗口并查找匹配项
+                // -------------------------------------------------
+                // 使用 List 暂存所有符合条件的句柄，用于后续判断是否唯一
+                List<IntPtr> candidates = new List<IntPtr>();
+
+                // 调用 EnumWindows，使用 Lambda 表达式直接嵌入回调逻辑
+                EnumWindows((hWnd, lParam) =>
+                {
+                    try
+                    {
+                        // [安全过滤] 1. 忽略不可见窗口 (避免匹配到后台挂起的进程或隐藏窗口)
+                        if (!IsWindowVisible(hWnd)) return true;
+
+                        // [安全获取] 2. 获取窗口标题长度
+                        int length = GetWindowTextLength(hWnd);
+                        if (length == 0) return true;
+
+                        // [安全获取] 3. 获取窗口标题文本
+                        StringBuilder sb = new StringBuilder(length + 1);
+                        GetWindowText(hWnd, sb, sb.Capacity);
+                        string title = sb.ToString();
+
+                        if (string.IsNullOrWhiteSpace(title)) return true;
+
+                        // [核心匹配] 4. 判断标题是否同时包含 "文件名" 和 "应用关键字"
+                        bool hasFileName = title.IndexOf(targetFileName, StringComparison.OrdinalIgnoreCase) >= 0;
+                        bool hasAppKey = title.IndexOf(targetAppKeyword, StringComparison.OrdinalIgnoreCase) >= 0;
+
+                        if (hasFileName && hasAppKey)
+                        {
+                            candidates.Add(hWnd);
+                        }
+
+                        // 继续枚举其他窗口
+                        return true;
+                    }
+                    catch
+                    {
+                        // 回调内部容错，忽略单个窗口获取信息的错误，继续枚举
+                        return true;
+                    }
+                }, IntPtr.Zero);
+
+                // -------------------------------------------------
+                // 步骤 D: 结果判定
+                // -------------------------------------------------
+                // 只有当匹配到的窗口数量 唯一 (Count == 1) 时才返回句柄
+                // 0 个表示没找到，>1 个表示有歧义（无法确定是哪一个），均视为失败
+                if (candidates.Count == 1)
+                {
+                    Console.WriteLine($"Got Hwnd GetPptHwndWin32 {candidates[0]}");
+                    return candidates[0];
+                }
+
+                return IntPtr.Zero;
+            }
+            catch
+            {
+                // 发生任何不可预知的异常（如Path解析错误等），返回安全值
+                return IntPtr.Zero;
+            }
         }
 
         // 操控函数
@@ -1070,15 +1146,26 @@ namespace PptCOM
         }
 
         // 外部引用函数
+        private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
         [DllImport("user32.dll")]
         private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
         [DllImport("ole32.dll")]
         private static extern int GetRunningObjectTable(int reserved, out IRunningObjectTable prot);
         [DllImport("ole32.dll")]
         private static extern int CreateBindCtx(int reserved, out IBindCtx ppbc);
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetWindowTextLength(IntPtr hWnd);
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
 
         // Test
     }
