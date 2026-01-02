@@ -202,7 +202,7 @@ LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 		else if (wParam == WM_RBUTTONDOWN) IdtInputs::SetKeyBoardDown(VK_RBUTTON, true);
 		else if (wParam == WM_RBUTTONUP) IdtInputs::SetKeyBoardDown(VK_RBUTTON, false);
 
-		if (wParam == WM_MOUSEWHEEL && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && !penetrate.select && ppt_show != NULL)
+		if (wParam == WM_MOUSEWHEEL && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && !penetrate.select && PptInfoState.TotalPage != -1)
 		{
 			MSLLHOOKSTRUCT* pMouseStruct = (MSLLHOOKSTRUCT*)lParam;
 
@@ -5307,7 +5307,7 @@ void DrawScreen()
 				}
 				if ((int)state == 1)
 				{
-					if (ppt_show == NULL && stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
+					if (PptInfoState.TotalPage == -1 && stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
 					{
 						if (setlist.SkinMode == 1 || setlist.SkinMode == 2) hiex::EasyX_Gdiplus_FillRoundRect((float)floating_windows.width - 96, (float)floating_windows.height - 256 + 44, 96, 51, 25, 25, RGB(150, 150, 150), BackgroundColorMode == 0 ? RGB(255, 255, 255) : RGB(30, 33, 41), 2, false, SmoothingModeHighQuality, &background);
 						else if (setlist.SkinMode == 3)
@@ -5655,7 +5655,7 @@ void MouseInteraction()
 					}
 				}
 				// 窗口定格
-				if (ppt_show == NULL && IsInRect(m.x, m.y, { floating_windows.width - 96 + 4, floating_windows.height - 256 + 50, floating_windows.width - 96 + 4 + 88, floating_windows.height - 256 + 50 + 40 }))
+				if (PptInfoState.TotalPage == -1 && IsInRect(m.x, m.y, { floating_windows.width - 96 + 4, floating_windows.height - 256 + 50, floating_windows.width - 96 + 4 + 88, floating_windows.height - 256 + 50 + 40 }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{

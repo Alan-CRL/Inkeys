@@ -12,6 +12,7 @@
 #include "IdtMain.h"
 
 #include "IdtD2DPreparation.h"
+#include "SuperTop/IdtToken.h"
 
 // All function and variable descriptions should be in the corresponding cpp file.
 // 所有的函数和变量说明应该在对应的 cpp 文件中。
@@ -208,7 +209,7 @@ struct PptImgStruct
 extern PptImgStruct PptImg;
 struct PptInfoStateStruct
 {
-	long CurrentPage, TotalPage;
+	int CurrentPage, TotalPage;
 };
 extern PptInfoStateStruct PptInfoStateBuffer;
 extern PptInfoStateStruct PptInfoState;
@@ -235,7 +236,8 @@ extern PptUiWidgetStateEnum pptUiWidgetState;
 
 void NextPptSlides(int check);
 void PreviousPptSlides();
-bool EndPptShow();
+void EndPptShow();
+void FocusPptShow();
 
 void PPTLinkageMain();
 

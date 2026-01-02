@@ -64,7 +64,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 		bool checkEndShowIsChecking = CheckEndShow.isChecking;
 
 		// PPT模式：按键反馈
-		if (ppt_show != NULL && !checkEndShowIsChecking)
+		if (PptInfoState.TotalPage != -1 && !checkEndShowIsChecking)
 		{
 			// 检查按下的键
 			switch (pKeyInfo->vkCode)
@@ -187,7 +187,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 				case VK_ESCAPE:	// 退出
 				{
 					// PPT 模式下，拦截按键并进行转译：支持长安翻页
-					if (ppt_show != NULL && !checkEndShowIsChecking)
+					if (PptInfoState.TotalPage != -1 && !checkEndShowIsChecking)
 					{
 						return 1;
 					}
@@ -269,7 +269,7 @@ void KeyboardInteraction()
 				if (vkcode == VK_UP || vkcode == VK_LEFT || vkcode == VK_PRIOR || vkcode == VK_BACK)
 				{
 					// 上一页
-					SetForegroundWindow(ppt_show);
+					FocusPptShow();
 
 					PreviousPptSlides();
 
@@ -301,7 +301,7 @@ void KeyboardInteraction()
 					}
 					else
 					{
-						SetForegroundWindow(ppt_show);
+						FocusPptShow();
 
 						NextPptSlides(temp_currentpage);
 
@@ -439,6 +439,7 @@ LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 		flags |= (0x00010000);
 		return (LRESULT)flags;
 	}
+
 	case WM_SETCURSOR:
 	{
 		if (LOWORD(lParam) == HTCLIENT)
@@ -917,14 +918,14 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 					if (setlist.paintDevice == 1)
 					{
 						// 鼠标和手写笔
-						if (speed <= 30) trubbersize = max(25, speed * 2.33 + 2.33) * drawingScale;
-						else trubbersize = min(200, speed + 30) * drawingScale;
+						if (speed <= 30) trubbersize = max(25.0, speed * 2.33 + 2.33) * drawingScale;
+						else trubbersize = min(200.0, speed + 30) * drawingScale;
 					}
 					else
 					{
 						// 触摸设备
-						if (speed <= 20) trubbersize = max(25, speed * 2.33 + 13.33) * drawingScale;
-						else trubbersize = min(200, 3 * speed) * drawingScale;
+						if (speed <= 20) trubbersize = max(25.0, speed * 2.33 + 13.33) * drawingScale;
+						else trubbersize = min(200.0, 3.0 * speed) * drawingScale;
 					}
 				}
 				else rubbersize = setlist.eraserSetting.eraserSize;

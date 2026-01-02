@@ -3,8 +3,8 @@
  * @brief		智绘教项目中心头文件
  * @note		用于声明中心头文件以及相关中心变量
  *
- * @envir		Visual Studio 2022 | MSVC v143 | .NET Framework 3.5 | EasyX_20240601
- * @site		https://github.com/Alan-CRL/Intelligent-Drawing-Teaching
+ * @envir		MSVC v143 | Windows SDK 10.0.26100
+ * @site		https://github.com/Alan-CRL/Inkeys
  *
  * @author		Alan-CRL
  * @qq			2685549821
@@ -12,7 +12,7 @@
 */
 
 // 程序入口点位于 IdtMain.cpp，各个文件的解释将于稍后编写，目前其名称对应作用
-// 编译提示：.NET 版本默认为 .NET Framework 4.0 ，最低要求 .NET Framework 3.5（如需更改请查看 PptCOM.cs）
+// 编译提示：.NET 版本默认为 .NET Framework 4.0 ，最低要求 .NET Framework 4.0（如需更改请查看 PptCOM.cs）
 // 首次编译需要确认 .NET Framework 版本为 4.0，如果不一致请执行 位于 PptCOM.cs 的 <切换 .NET Framework 指南>
 
 #pragma once
@@ -156,11 +156,11 @@ public:
 		return value.compare_exchange_strong(expected_local, desired_val, success, failure);
 	}
 
-	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
 	T fetch_add(T arg, std::memory_order order = std::memory_order_seq_cst) noexcept {
 		return value.fetch_add(arg, order);
 	}
-	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
 	T fetch_sub(T arg, std::memory_order order = std::memory_order_seq_cst) noexcept {
 		return value.fetch_sub(arg, order);
 	}

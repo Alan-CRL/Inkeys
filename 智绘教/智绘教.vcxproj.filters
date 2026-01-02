@@ -1277,8 +1277,10 @@
       <Filter>头文件\Additional\SpdLog\fmt\bundled</Filter>
     </None>
     <None Include="src\i18n\zh-CN.jsonc" />
-    <None Include="src\i18n\en-US.jsonc" />
     <None Include="src\i18n\zh-TW.jsonc" />
+    <None Include="src\i18n\en-US.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="..\PptCOM\PptCOM.manifest" />
