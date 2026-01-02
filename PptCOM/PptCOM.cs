@@ -3,8 +3,8 @@
  * @brief		智绘教项目 PPT 联动插件
  * @note		PPT 联动插件 相关模块
  *
- * @envir		VisualStudio 2022 | .NET Framework 3.5 | Windows 11
- * @site		https://github.com/Alan-CRL/Intelligent-Drawing-Teaching
+ * @envir		.NET Framework 4.0
+ * @site		https://github.com/Alan-CRL/Inkeys
  *
  * @author		Alan-CRL
  * @qq			2685549821
@@ -14,11 +14,11 @@
 // 首次编译需要确认 .NET Framework 版本为 4.0，如果不一致请执行 <切换 .NET Framework 指南>
 /////////////////////////////////////////////////////////////////////////////
 // 切换 .NET Framework 指南
-// .NET 版本默认为 .NET Framework 4.0 ，最低要求 .NET Framework 3.5
+// .NET 版本默认为 .NET Framework 4.0 ，最低要求 .NET Framework 4.0
 //
 // 修改属性页中的指定框架
 //
-// 确认 PptCOM.manifest 中的 runtimeVersion 是你设置的版本全称（C:\Windows\Microsoft.NET\Framework），如 4.0.30319, 3.5
+// 确认 PptCOM.manifest 中的 runtimeVersion 是你设置的版本全称（C:\Windows\Microsoft.NET\Framework），如 4.0.30319
 // 生成 -> 清理 PptCOM，然后点击重新生成解决方案
 //
 // 其余疑问请咨询作者 QQ2685549821
@@ -49,7 +49,7 @@ namespace PptCOM
     public interface IPptCOMServer
     {
         // 初始化函数
-        unsafe bool Initialization(int* TotalPage, int* CurrentPage);
+        unsafe bool Initialization(int* TotalPage, int* CurrentPage, int* OffSignal);
         string CheckCOM();
 
         // 获取函数
@@ -60,8 +60,8 @@ namespace PptCOM
         IntPtr GetPptHwnd();
 
         // 操控函数
-        unsafe void NextSlideShow(int check);
-        unsafe void PreviousSlideShow();
+        void NextSlideShow(bool check);
+        void PreviousSlideShow();
         void EndSlideShow();
         void ViewSlideShow();
         void ActivateSildeShowWindow();
@@ -78,6 +78,7 @@ namespace PptCOM
 
         private unsafe int* pptTotalPage;
         private unsafe int* pptCurrentPage;
+        private unsafe int* offSignal;
 
         // 结束界面轮询（0正常页 1/2末页或结束放映页）
         //（2设定为运行一次不被检查的翻页，虽然我也不知道当时写这个是为了特判什么情况 hhh）
@@ -89,12 +90,13 @@ namespace PptCOM
         private DateTime updateTime; // 更新时间点
 
         // 初始化函数
-        public unsafe bool Initialization(int* TotalPage, int* CurrentPage)
+        public unsafe bool Initialization(int* TotalPage, int* CurrentPage, int* OffSignal)
         {
             try
             {
                 pptTotalPage = TotalPage;
                 pptCurrentPage = CurrentPage;
+                offSignal = OffSignal;
 
                 return true;
             }
@@ -117,11 +119,30 @@ namespace PptCOM
             if (moniker != null) Marshal.ReleaseComObject(moniker);
             if (bindCtx != null) Marshal.ReleaseComObject(bindCtx);
         }
-        private static void SafeRelease(object obj)
+        private void SafeRelease(object comObj)
         {
-            if (obj != null && Marshal.IsComObject(obj))
+            if (comObj == null) return;
+
+            if (Marshal.IsComObject(comObj))
             {
-                try { Marshal.ReleaseComObject(obj); } catch { }
+                try
+                {
+                    Marshal.ReleaseComObject(comObj);
+                }
+                catch { }
+            }
+        }
+        private void SafeFinalRelease(object comObj)
+        {
+            if (comObj == null) return;
+
+            if (Marshal.IsComObject(comObj))
+            {
+                try
+                {
+                    Marshal.FinalReleaseComObject(comObj);
+                }
+                catch { }
             }
         }
         private void UnbindEvents()
@@ -132,64 +153,52 @@ namespace PptCOM
                 {
                     try
                     {
-                        // 【重要修改】同上，移除 new ...EventHandler(...) 包装
-                        // 改为直接 -= 方法名，适配 dynamic
-                        pptApplication.SlideShowNextSlide -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowNextSlideEventHandler(SlideShowChange);
-                        pptApplication.SlideShowBegin -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowBeginEventHandler(SlideShowBegin);
-                        pptApplication.SlideShowEnd -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowEndEventHandler(SlideShowShowEnd);
-                        pptApplication.PresentationBeforeClose -= new Microsoft.Office.Interop.PowerPoint.EApplication_PresentationBeforeCloseEventHandler(PresentationBeforeClose);
+                        Microsoft.Office.Interop.PowerPoint.Application app = pptApplication as Microsoft.Office.Interop.PowerPoint.Application;
+
+                        if (app != null)
+                        {
+                            app.SlideShowNextSlide -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowNextSlideEventHandler(SlideShowChange);
+                            app.SlideShowBegin -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowBeginEventHandler(SlideShowBegin);
+                            app.SlideShowEnd -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowEndEventHandler(SlideShowShowEnd);
+                            app.PresentationBeforeClose -= new Microsoft.Office.Interop.PowerPoint.EApplication_PresentationBeforeCloseEventHandler(PresentationBeforeClose);
+                        }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        // 忽略 COM 对象已分离的错误
+                        Console.WriteLine($"Unbind Error: {ex.Message}");
+                    }
 
                     bindingEvents = false;
+                    forcePolling = false;
                 }
             }
             catch { }
-        }
-        private unsafe void FullCleanup()
-        {
-            Console.WriteLine("CLEAN!");
 
+            Console.WriteLine("UnbindEventsCalled");
+        }
+        private unsafe void FullCleanup(bool final = false)
+        {
             UnbindEvents();
 
-            try
+            Console.WriteLine("try CLEAN");
+
+            if (final)
             {
-                if (pptSlideShowWindow != null) { Marshal.ReleaseComObject((object)pptSlideShowWindow); pptSlideShowWindow = null; }
+                SafeFinalRelease(pptSlideShowWindow);
+                SafeFinalRelease(pptActivePresentation);
+                SafeFinalRelease(pptApplication);
             }
-            catch (Exception bindEx)
+            else
             {
-                Console.WriteLine($"CLEAN1 设置失败 {bindEx.Message}");
-            }
-            finally
-            {
-                pptSlideShowWindow = null;
+                SafeRelease(pptSlideShowWindow);
+                SafeRelease(pptActivePresentation);
+                SafeRelease(pptApplication);
             }
 
-            try
-            {
-                if (pptActivePresentation != null) { Marshal.ReleaseComObject((object)pptActivePresentation); pptActivePresentation = null; }
-            }
-            catch (Exception bindEx)
-            {
-                Console.WriteLine($"CLEAN2 设置失败 {bindEx.Message}");
-            }
-            finally
-            {
-                pptActivePresentation = null;
-            }
-
-            try
-            {
-                if (pptApplication != null) { Marshal.ReleaseComObject((object)pptApplication); pptApplication = null; }
-            }
-            catch (Exception bindEx)
-            {
-                Console.WriteLine($"CLEAN3 设置失败 {bindEx.Message}");
-            }
-            finally
-            {
-                pptApplication = null;
-            }
+            pptSlideShowWindow = null;
+            pptActivePresentation = null;
+            pptApplication = null;
 
             // 重置指针为 -1 (外部程序约定的结束标志)
             try
@@ -202,6 +211,9 @@ namespace PptCOM
             // 强制 GC，这对 WPS 的资源释放至关重要
             GC.Collect();
             GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            Console.WriteLine("CLEAN!");
         }
 
         // 判断函数
@@ -311,11 +323,13 @@ namespace PptCOM
 
             try
             {
-                if (pptSlideShowWindow.Width > 0 && pptSlideShowWindow.Height > 0) ret = true;
+                int temp = pptSlideShowWindow.Active;
+                ret = true;
             }
-            catch
+            catch (Exception ex)
             {
                 ret = false;
+                Console.WriteLine($"不是ssw {ex.Message}");
             }
 
             return ret;
@@ -324,14 +338,16 @@ namespace PptCOM
         // 事件函数
         private unsafe void SlideShowChange(object WnObj)
         {
+            Console.WriteLine("Change1");
+
             updateTime = DateTime.Now;
 
             try
             {
                 // 假设全局变量 pptSlideShowWindow 已经是 dynamic 类型，这里的调用会自动进行后期绑定
-                *pptCurrentPage = pptSlideShowWindow.View.Slide.SlideIndex;
+                *pptCurrentPage = GetCurrentSlideIndex(pptSlideShowWindow);
 
-                if (pptSlideShowWindow.View.Slide.SlideIndex >= pptActivePresentation.Slides.Count) polling = 1;
+                if (GetCurrentSlideIndex(pptSlideShowWindow) >= GetTotalSlideIndex(pptActivePresentation)) polling = 1;
                 else polling = 0;
             }
             catch
@@ -339,6 +355,8 @@ namespace PptCOM
                 *pptCurrentPage = -1;
                 polling = 1;
             }
+
+            Console.WriteLine("Change2");
         }
         private unsafe void SlideShowBegin(object WnObj)
         {
@@ -351,7 +369,7 @@ namespace PptCOM
 
             try
             {
-                if (pptSlideShowWindow.View.Slide.SlideIndex >= pptActivePresentation.Slides.Count) polling = 1;
+                if (GetCurrentSlideIndex(pptSlideShowWindow) >= GetTotalSlideIndex(pptActivePresentation)) polling = 1;
                 else polling = 0;
             }
             catch
@@ -364,8 +382,8 @@ namespace PptCOM
             // 获取页数
             try
             {
-                *pptTotalPage = pptActivePresentation.Slides.Count;
-                *pptCurrentPage = pptSlideShowWindow.View.Slide.SlideIndex;
+                *pptTotalPage = GetTotalSlideIndex(pptActivePresentation);
+                *pptCurrentPage = GetCurrentSlideIndex(pptSlideShowWindow);
             }
             catch
             {
@@ -375,6 +393,8 @@ namespace PptCOM
         }
         private unsafe void SlideShowShowEnd(object WnObj)
         {
+            Console.WriteLine("END1");
+
             updateTime = DateTime.Now;
 
             *pptCurrentPage = -1;
@@ -384,24 +404,41 @@ namespace PptCOM
         }
         private void PresentationBeforeClose(object WnObj, ref bool cancel)
         {
+            Console.WriteLine("PBCalled1");
+
             dynamic Wn = WnObj;
 
-            if (bindingEvents && Wn == pptActivePresentation)
+            try
             {
-                try
+                if (bindingEvents && pptApplication != null)
                 {
-                    // 这里不知道怎么改
-                    pptApplication.SlideShowNextSlide -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowNextSlideEventHandler(SlideShowChange);
-                    pptApplication.SlideShowBegin -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowBeginEventHandler(SlideShowBegin);
-                    pptApplication.SlideShowEnd -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowEndEventHandler(SlideShowShowEnd);
-                    pptApplication.PresentationBeforeClose -= new Microsoft.Office.Interop.PowerPoint.EApplication_PresentationBeforeCloseEventHandler(PresentationBeforeClose);
-                }
-                catch { }
+                    try
+                    {
+                        Microsoft.Office.Interop.PowerPoint.Application app = pptApplication as Microsoft.Office.Interop.PowerPoint.Application;
 
-                bindingEvents = false;
+                        if (app != null)
+                        {
+                            app.SlideShowNextSlide -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowNextSlideEventHandler(SlideShowChange);
+                            app.SlideShowBegin -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowBeginEventHandler(SlideShowBegin);
+                            app.SlideShowEnd -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowEndEventHandler(SlideShowShowEnd);
+                            app.PresentationBeforeClose -= new Microsoft.Office.Interop.PowerPoint.EApplication_PresentationBeforeCloseEventHandler(PresentationBeforeClose);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // 忽略 COM 对象已分离的错误
+                        Console.WriteLine($"Unbind Error: {ex.Message}");
+                    }
+
+                    bindingEvents = false;
+                    forcePolling = false;
+                }
             }
+            catch { }
 
             cancel = false;
+
+            Console.WriteLine("PBCalled2");
         }
 
         // 获取函数
@@ -438,7 +475,7 @@ namespace PptCOM
                     string displayName = "Unknown";
 
                     dynamic activePres = null;
-                    dynamic ssWindows = null;
+                    dynamic ssWindow = null;
 
                     // 标记当前 candidateApp 是否需要“保活”供后续去重对比
                     bool keepAlive = false;
@@ -515,57 +552,47 @@ namespace PptCOM
                                     currentPriority = 1;
 
                                     // 检查 SlideShowWindows
-                                    try { ssWindows = candidateApp.SlideShowWindows; } catch { }
+                                    try
+                                    {
+                                        ssWindow = activePres.SlideShowWindow;
+                                    }
+                                    catch
+                                    {
+                                    }
 
-                                    // dynamic 集合也能访问 Count
-                                    if (ssWindows != null && ssWindows.Count > 0)
+                                    if (ssWindow != null)
                                     {
                                         currentPriority = 2;
 
-                                        int count = ssWindows.Count;
-                                        for (int i = 1; i <= count; i++)
+                                        try
                                         {
-                                            dynamic ssWin = null;
+                                            // 判定 Active
+                                            // MS PPT 返回 int (-1), WPS 可能返回 bool (true)
+                                            bool isActive = false;
                                             try
                                             {
-                                                ssWin = ssWindows[i];
-
-                                                // 判定 Active
-                                                // MS PPT 返回 int (-1), WPS 可能返回 bool (true)
-                                                bool isActive = false;
-                                                try
-                                                {
-                                                    object val = ssWin.Active;
-                                                    if (val is int && (int)val == -1) isActive = true; // MsoTriState.msoTrue
-                                                    else if (val is bool && (bool)val == true) isActive = true;
-                                                }
-                                                catch { }
-
-                                                if (isActive)
-                                                {
-                                                    currentPriority = 3;
-                                                    SafeRelease((object)ssWin);
-                                                    break;
-                                                }
-                                                else
-                                                {
-                                                    // 针对 WPP 的 Active 在非全屏播放下不一定生效的情况
-                                                    if (IsSlideShowWindowActive((object)ssWin))
-                                                    {
-                                                        Console.WriteLine("  [Fix] App process has focus via PID check. Upgrading priority to 3.");
-
-                                                        currentPriority = 3;
-                                                        SafeRelease((object)ssWin);
-                                                        break;
-                                                    }
-                                                }
+                                                object val = ssWindow.Active;
+                                                if (val is int && (int)val == -1) isActive = true; // MsoTriState.msoTrue
+                                                else if (val is bool && (bool)val == true) isActive = true;
                                             }
                                             catch { }
-                                            finally
+
+                                            if (isActive)
                                             {
-                                                SafeRelease((object)ssWin);
+                                                currentPriority = 3;
+                                            }
+                                            else
+                                            {
+                                                // 针对 WPP 的 Active 在非全屏播放下不一定生效的情况
+                                                if (IsSlideShowWindowActive(ssWindow))
+                                                {
+                                                    Console.WriteLine("  [Fix] App process has focus via PID check. Upgrading priority to 3.");
+
+                                                    currentPriority = 3;
+                                                }
                                             }
                                         }
+                                        catch { }
                                     }
                                 }
                             }
@@ -596,6 +623,8 @@ namespace PptCOM
                                     // 注意：虽然 candidateApp 变量置空了，但该对象引用仍存在于 foundAppObjects 中
                                 }
                             }
+
+                            Console.WriteLine($"{displayName}: {currentPriority}");
                         }
                     }
                     catch (Exception ex)
@@ -604,16 +633,15 @@ namespace PptCOM
                     }
                     finally
                     {
-                        // 显式释放所有中间产生的 COM 对象
-                        SafeRelease((object)activePres);
-                        SafeRelease((object)ssWindows);
+                        SafeRelease(ssWindow);
+                        SafeRelease(activePres);
 
                         // 如果是为了去重而暂存在列表中的新对象，不要在这里释放
                         // 如果是重复对象(keepAlive=false)，或者出现异常没加入列表，则正常释放
                         // 如果 candidateApp 已经转移给 bestApp，它已经是 null，SafeRelease 安全
                         if (!keepAlive)
                         {
-                            SafeRelease((object)candidateApp);
+                            SafeRelease(candidateApp);
                         }
 
                         CleanUpLoopObjects(bindCtx, moniker[0], comObject);
@@ -670,8 +698,9 @@ namespace PptCOM
                     // 动态绑定/切换逻辑
                     {
                         object bestApp = GetAnyActivePowerPoint(pptApplication, out bestPriority, out targetPriority);
-
                         bool needRebind = false;
+
+                        Console.WriteLine($"now: {targetPriority}, best: {bestPriority}");
 
                         if (pptApplication == null && bestApp != null) needRebind = true;
                         else if (pptApplication != null && bestApp != null && bestPriority > targetPriority)
@@ -683,7 +712,7 @@ namespace PptCOM
                             }
                         }
 
-                        if (needRebind)
+                        if (needRebind == true)
                         {
                             bool wait = (pptApplication != null);
                             FullCleanup();
@@ -703,7 +732,7 @@ namespace PptCOM
                                     try
                                     {
                                         pptSlideShowWindow = pptActivePresentation.SlideShowWindow;
-                                        *pptTotalPage = tempTotalPage = pptActivePresentation.Slides.Count;
+                                        *pptTotalPage = tempTotalPage = GetTotalSlideIndex(pptActivePresentation);
                                     }
                                     catch
                                     {
@@ -719,9 +748,9 @@ namespace PptCOM
                                     {
                                         try
                                         {
-                                            *pptCurrentPage = pptSlideShowWindow.View.Slide.SlideIndex;
+                                            *pptCurrentPage = GetCurrentSlideIndex(pptSlideShowWindow);
 
-                                            if (pptSlideShowWindow.View.Slide.SlideIndex >= pptActivePresentation.Slides.Count) polling = 1;
+                                            if (GetCurrentSlideIndex(pptSlideShowWindow) >= GetTotalSlideIndex(pptActivePresentation)) polling = 1;
                                             else polling = 0;
                                         }
                                         catch
@@ -733,38 +762,62 @@ namespace PptCOM
 
                                     try
                                     {
-                                        pptApplication.SlideShowNextSlide += new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowNextSlideEventHandler(SlideShowChange);
-                                        pptApplication.SlideShowBegin += new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowBeginEventHandler(SlideShowBegin);
-                                        pptApplication.SlideShowEnd += new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowEndEventHandler(SlideShowShowEnd);
+                                        // 关键修改：这里不要直接用 pptApplication +=，而是先强转
+                                        Microsoft.Office.Interop.PowerPoint.Application app = pptApplication as Microsoft.Office.Interop.PowerPoint.Application;
 
-                                        // PresentationBeforeClose 带有 ref 参数，可能比较敏感，建议单独包裹 try-catch 或者保留在最后
-                                        try
+                                        if (app != null)
                                         {
-                                            pptApplication.PresentationBeforeClose += new Microsoft.Office.Interop.PowerPoint.EApplication_PresentationBeforeCloseEventHandler(PresentationBeforeClose);
-                                        }
-                                        catch
-                                        {
-                                            Console.WriteLine($"无法注册事件 2!");
-                                        }
+                                            app.SlideShowNextSlide += new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowNextSlideEventHandler(SlideShowChange);
+                                            app.SlideShowBegin += new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowBeginEventHandler(SlideShowBegin);
+                                            app.SlideShowEnd += new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowEndEventHandler(SlideShowShowEnd);
 
-                                        bindingEvents = true;
-                                        forcePolling = false;
+                                            try
+                                            {
+                                                app.PresentationBeforeClose += new Microsoft.Office.Interop.PowerPoint.EApplication_PresentationBeforeCloseEventHandler(PresentationBeforeClose);
+                                            }
+                                            catch
+                                            {
+                                                Console.WriteLine($"无法注册事件 2!");
+                                            }
+
+                                            bindingEvents = true;
+                                            forcePolling = false;
+
+                                            Console.WriteLine($"事件注册成功!");
+                                        }
+                                        else
+                                        {
+                                            bindingEvents = false;
+                                            forcePolling = true;
+
+                                            Console.WriteLine($"转换 Application 接口失败，无法注册事件");
+                                        }
                                     }
-                                    catch
+                                    catch (Exception ex)
                                     {
                                         bindingEvents = false;
-                                        forcePolling = false;
+                                        forcePolling = true;
 
-                                        Console.WriteLine($"无法注册事件 1!");
-                                        // 不抛出异常，继续执行，允许进入下方的轮询逻辑
+                                        Console.WriteLine($"无法注册事件 1! {ex.Message}");
                                     }
 
-                                    Console.WriteLine($"成功绑定!");
+                                    bindingEvents = false;
+                                    forcePolling = true;
+
+                                    Console.WriteLine($"成功绑定! {pptApplication.Name}");
                                 }
                                 catch
                                 {
                                     FullCleanup();
                                 }
+                            }
+                        }
+                        else
+                        {
+                            if (bestApp != null && (pptApplication == null || !AreComObjectsEqual((object)pptApplication, bestApp)))
+                            {
+                                SafeRelease(bestApp);
+                                bestApp = null;
                             }
                         }
                     }
@@ -774,41 +827,87 @@ namespace PptCOM
                     {
                         // 检查是否同进程切换文档 (dynamic 比较引用)
                         // 注意：如果报错 RuntimeBinderException 说明对象可能已失效
+                        dynamic activePersentation = null;
+                        dynamic slideShowWindow = null;
+
                         try
                         {
-                            if (!AreComObjectsEqual((object)pptActivePresentation, (object)pptApplication.ActivePresentation))
-                                break;
-                        }
-                        catch { break; }
+                            activePersentation = pptApplication.ActivePresentation;
 
+                            if (!AreComObjectsEqual((object)pptActivePresentation, (object)activePersentation))
+                            {
+                                Console.WriteLine("End in 1");
+                                break;
+                            }
+                        }
+                        catch (COMException ex) when ((uint)ex.ErrorCode == 0x8001010A)
+                        {
+                            Console.WriteLine($"PowerPoint 忙，稍后重试");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"End in 2 {ex.ToString()}");
+                            break;
+                        }
+                        finally
+                        {
+                            SafeRelease(activePersentation);
+                            activePersentation = null;
+                        }
+
+                        // ----------
                         // 检测是否处于放映模式
                         bool isSlideShowActive = false;
                         try
                         {
+                            activePersentation = pptApplication.ActivePresentation;
+
                             // 检查 SlideShowWindows 集合
-                            if (pptApplication.SlideShowWindows != null && pptApplication.SlideShowWindows.Count > 0)
+                            if (activePersentation != null && GetSlideShowWindowsCount(pptApplication) > 0)
                             {
                                 isSlideShowActive = true;
 
-                                if (pptActivePresentation.SlideShowWindow == null || (pptActivePresentation.SlideShowWindow != null && !IsValidSlideShowWindow(pptSlideShowWindow)))
+                                slideShowWindow = activePersentation.SlideShowWindow;
+                                if (pptSlideShowWindow == null || (pptSlideShowWindow != null && !IsValidSlideShowWindow(pptSlideShowWindow)))
                                 {
-                                    if (pptSlideShowWindow != pptActivePresentation.SlideShowWindow)
+                                    if (!AreComObjectsEqual((object)pptSlideShowWindow, (object)slideShowWindow))
                                     {
-                                        pptSlideShowWindow = pptActivePresentation.SlideShowWindow;
+                                        SafeRelease(pptSlideShowWindow);
+
+                                        pptSlideShowWindow = slideShowWindow;
 
                                         Console.WriteLine($"发现窗口，成功设置 slideshowwindow");
                                     }
-                                }
-                                else if (pptActivePresentation.SlideShowWindow != null)
-                                {
-                                    Console.WriteLine($"发现窗口，但无须设置");
+                                    else
+                                    {
+                                        Console.WriteLine($"发现窗口，但无须设置 1");
+                                    }
                                 }
                             }
                         }
-                        catch
+                        catch (COMException ex) when ((uint)ex.ErrorCode == 0x8001010A)
                         {
+                            Console.WriteLine($"PowerPoint 忙，稍后重试");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"发现窗口失败 1: {ex.ToString()}");
+
                             // 如果这里报错，说明 App 可能挂了，或者 WPS 上下文丢失
                             // 标记为非放映状态，后续逻辑会处理
+                        }
+                        finally
+                        {
+                            SafeRelease(activePersentation);
+                            activePersentation = null;
+
+                            if (!AreComObjectsEqual((object)pptSlideShowWindow, (object)slideShowWindow))
+                            {
+                                SafeRelease(slideShowWindow);
+                                slideShowWindow = null;
+
+                                Console.WriteLine($"slideShowWindow 被清理");
+                            }
                         }
 
                         if (isSlideShowActive)
@@ -819,13 +918,22 @@ namespace PptCOM
 
                                 try
                                 {
+                                    slideShowWindow = pptActivePresentation.SlideShowWindow;
+
                                     // 获取当前播放的PPT幻灯片窗口对象（保证当前处于放映状态）
-                                    if (pptActivePresentation.SlideShowWindow != null) *pptTotalPage = tempTotalPage = pptActivePresentation.Slides.Count;
+                                    if (slideShowWindow != null) *pptTotalPage = tempTotalPage = GetTotalSlideIndex(pptActivePresentation);
                                     else *pptTotalPage = tempTotalPage = -1;
                                 }
-                                catch
+                                catch (Exception ex)
                                 {
                                     *pptTotalPage = tempTotalPage = -1;
+
+                                    Console.WriteLine($"获取总页数失败 {ex.Message}");
+                                }
+                                finally
+                                {
+                                    SafeRelease(slideShowWindow);
+                                    slideShowWindow = null;
                                 }
 
                                 if (tempTotalPage == -1)
@@ -837,15 +945,18 @@ namespace PptCOM
                                 {
                                     try
                                     {
-                                        *pptCurrentPage = pptSlideShowWindow.View.Slide.SlideIndex;
+                                        int currentPage = GetCurrentSlideIndex(pptSlideShowWindow);
+                                        *pptCurrentPage = currentPage;
 
-                                        if (pptSlideShowWindow.View.Slide.SlideIndex >= pptActivePresentation.Slides.Count) polling = 1;
+                                        if (currentPage >= GetTotalSlideIndex(pptActivePresentation)) polling = 1;
                                         else polling = 0;
                                     }
-                                    catch
+                                    catch (Exception ex)
                                     {
                                         *pptCurrentPage = -1;
                                         polling = 1;
+
+                                        Console.WriteLine($"获取当前页数失败 {ex.ToString()}");
                                     }
                                 }
 
@@ -855,7 +966,7 @@ namespace PptCOM
                             {
                                 try
                                 {
-                                    *pptCurrentPage = pptSlideShowWindow.View.Slide.SlideIndex;
+                                    *pptCurrentPage = GetCurrentSlideIndex(pptSlideShowWindow);
                                     polling = 2;
                                 }
                                 catch
@@ -881,18 +992,27 @@ namespace PptCOM
                         break;
                     }
 
+                    // 关闭信号检测
+                    if (*offSignal != 0)
+                    {
+                        Console.WriteLine("offSignal Close");
+                        break;
+                    }
+
                     Thread.Sleep(500);
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Fail 912");
+                Console.WriteLine($"Fail 991");
                 Console.WriteLine($"异常信息: {ex.Message}");
             }
             finally
             {
-                FullCleanup();
+                FullCleanup(true);
             }
+
+            Console.WriteLine("PPT Monitor End");
 
             return 0;
         }
@@ -934,7 +1054,7 @@ namespace PptCOM
         private IntPtr GetPptHwndFromSlideShowWindow(object pptSlideShowWindowObj)
         {
             IntPtr hwnd = IntPtr.Zero;
-            if (pptSlideShowWindow == null) return IntPtr.Zero;
+            if (pptSlideShowWindowObj == null) return IntPtr.Zero;
 
             try
             {
@@ -1055,13 +1175,80 @@ namespace PptCOM
             }
         }
 
-        // 操控函数
-        public unsafe void NextSlideShow(int check)
+        private int GetCurrentSlideIndex(dynamic slideShowWindow)
         {
+            dynamic view = null;
+            dynamic slide = null;
+
             try
             {
-                int temp_SlideIndex = *pptCurrentPage;
-                if (temp_SlideIndex != check && check != -1) return;
+                view = slideShowWindow.View;
+                slide = view.Slide;
+                return (int)slide.SlideIndex;
+            }
+            finally
+            {
+                SafeRelease(slide);
+                SafeRelease(view);
+
+                slide = null;
+                view = null;
+            }
+        }
+        private int GetTotalSlideIndex(dynamic presentation)
+        {
+            dynamic slides = null;
+            try
+            {
+                slides = presentation.Slides;
+                return (int)slides.Count;
+            }
+            finally
+            {
+                SafeRelease(slides);
+                slides = null;
+            }
+        }
+        private int GetSlideShowWindowsCount(dynamic application)
+        {
+            dynamic slideShowWindows = null;
+
+            try
+            {
+                slideShowWindows = application.SlideShowWindows;
+                return (int)slideShowWindows.Count;
+            }
+            finally
+            {
+                SafeRelease(slideShowWindows);
+                slideShowWindows = null;
+            }
+        }
+
+        // 操控函数
+        public void NextSlideShow(bool check)
+        {
+            // 如果为末页情况，则需要传入 check = true 才能继续下一页
+            // TODO：还需要考虑没有结束放映页的情况
+            // TODO：对于没有结束放映页的 PPT，我们还没有办法判定并拦截（其实是不好写 hhh）
+
+            bool endPage = false;
+            try
+            {
+                var currentPage = GetCurrentSlideIndex(pptSlideShowWindow);
+            }
+            catch
+            {
+                Console.WriteLine("enter End page");
+                endPage = true;
+            }
+
+            try
+            {
+                if (endPage == true && check != true)
+                {
+                    return;
+                }
 
                 // 下一页
                 if (polling != 0)
@@ -1075,12 +1262,13 @@ namespace PptCOM
                         int currentPageTemp = -1;
                         try
                         {
-                            currentPageTemp = pptSlideShowWindow.View.Slide.SlideIndex;
+                            currentPageTemp = GetCurrentSlideIndex(pptSlideShowWindow);
                         }
                         catch
                         {
                             currentPageTemp = -1;
                         }
+
                         if (currentPageTemp != -1)
                         {
                             pptSlideShowWindow.View.Next();
@@ -1097,7 +1285,7 @@ namespace PptCOM
             {
             }
         }
-        public unsafe void PreviousSlideShow()
+        public void PreviousSlideShow()
         {
             try
             {   // 上一页
@@ -1168,6 +1356,69 @@ namespace PptCOM
         private static extern bool IsWindowVisible(IntPtr hWnd);
 
         // Test
+        private void DiagnoseComStatus()
+        {
+            Console.WriteLine("============== COM 对象存活诊断开始 ==============");
+
+            // 1. 检查 Application
+            try
+            {
+                if (pptApplication == null)
+                {
+                    Console.WriteLine("❌ pptApplication: NULL (空引用)");
+                }
+                else
+                {
+                    // 尝试访问一个简单属性，如 Caption 或 Version
+                    string temp = pptApplication.Caption;
+                    Console.WriteLine("✅ pptApplication: ALIVE (存活)");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ pptApplication: DEAD (已失效) -> {ex.GetType().Name}");
+            }
+
+            // 2. 检查 ActivePresentation
+            try
+            {
+                if (pptActivePresentation == null)
+                {
+                    Console.WriteLine("❌ pptActivePresentation: NULL (空引用)");
+                }
+                else
+                {
+                    // 尝试访问 Name
+                    string temp = pptActivePresentation.Name;
+                    Console.WriteLine("✅ pptActivePresentation: ALIVE (存活)");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ pptActivePresentation: DEAD (已失效) -> {ex.GetType().Name}");
+            }
+
+            // 3. 检查 SlideShowWindow
+            try
+            {
+                if (pptSlideShowWindow == null)
+                {
+                    Console.WriteLine("⚠️ pptSlideShowWindow: NULL (当前无窗口)");
+                }
+                else
+                {
+                    // 尝试访问 Height
+                    int temp = pptSlideShowWindow.Active;
+                    Console.WriteLine("✅ pptSlideShowWindow: ALIVE (存活)");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ pptSlideShowWindow: DEAD (已失效) -> {ex.GetType().Name}");
+            }
+
+            Console.WriteLine("==================================================");
+        }
     }
 }
 

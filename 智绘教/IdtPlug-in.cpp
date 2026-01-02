@@ -364,8 +364,6 @@ wstring GetPptTitle()
 	try
 	{
 		ret = bstrToWstring(PptCOMPto->SlideNameIndex());
-
-		return ret;
 	}
 	catch (_com_error)
 	{
@@ -381,14 +379,12 @@ HWND GetPptShow()
 	{
 		_variant_t result = PptCOMPto->GetPptHwnd();
 		hWnd = (HWND)result.llVal;
-
-		return hWnd;
 	}
 	catch (_com_error)
 	{
 	}
 
-	return NULL;
+	return hWnd;
 }
 void GetPptState()
 {
@@ -403,8 +399,9 @@ void GetPptState()
 		{
 			try
 			{
-				//_com_util::CheckError(PptCOMPto.CreateInstance(_uuidof(PptCOMServer)));
-				rel = PptCOMPto->Initialization(&PptInfoState.TotalPage, &PptInfoState.CurrentPage/*, pptComSetlist.autoKillWpsProcess*/);
+				rel = PptCOMPto->Initialization(reinterpret_cast<long*>(&PptInfoState.TotalPage),
+					reinterpret_cast<long*>(&PptInfoState.CurrentPage),
+					reinterpret_cast<long*>(&offSignal));
 			}
 			catch (_com_error err)
 			{
@@ -427,6 +424,8 @@ void GetPptState()
 		{
 		}
 
+		PptInfoState.TotalPage = PptInfoState.CurrentPage = -1;
+
 		if (tmp <= 0)
 		{
 			for (int i = 0; i <= 20 && !offSignal; i++)
@@ -441,12 +440,12 @@ void NextPptSlides(int check)
 {
 	try
 	{
-		//cout << check << endl;
-		PptCOMPto->NextSlideShow(check);
+		PptCOMPto->NextSlideShow((bool)(check == -1));
 	}
 	catch (_com_error)
 	{
 	}
+
 	return;
 }
 void PreviousPptSlides()
@@ -458,58 +457,54 @@ void PreviousPptSlides()
 	catch (_com_error)
 	{
 	}
+
 	return;
 }
-bool EndPptShow()
+void EndPptShow()
 {
 	try
 	{
-		//for (int i = 0; i < 5; i++)
-		//{
-		//	if (stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection) break;
-		//	this_thread::sleep_for(chrono::milliseconds(100));
-		//}
-
-		//POINT cursorPos;
-		//GetCursorPos(&cursorPos);
-		//if (EuclideanDistance(cursorPos, POINT(0, 0)) >= EuclideanDistance(cursorPos, POINT(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight)))
-		//{
-		//	SetForegroundWindow(ppt_show);
-		//	//SetCursorPos(0, 0);
-		//	//SetCursorPos(cursorPos.x, cursorPos.y);
-		//}
-		//else
-		//{
-		//	SetForegroundWindow(ppt_show);
-		//	//SetCursorPos(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight);
-		//	//SetCursorPos(cursorPos.x, cursorPos.y);
-		//}
-
-		SetForegroundWindow(ppt_show);
+		FocusPptShow();
 		PptCOMPto->EndSlideShow();
-
-		return true;
 	}
 	catch (_com_error)
 	{
 	}
 
-	return false;
+	return;
 }
-bool ViewPptShow()
+void ViewPptShow()
 {
 	try
 	{
-		SetForegroundWindow(ppt_show);
+		FocusPptShow();
 		PptCOMPto->ViewSlideShow();
-
-		return true;
 	}
 	catch (_com_error)
 	{
 	}
 
-	return false;
+	return;
+}
+void FocusPptShow()
+{
+	if (ppt_show != NULL)
+	{
+		SetForegroundWindow(ppt_show);
+	}
+
+	// 都需要保证激活
+	{
+		try
+		{
+			PptCOMPto->ActivateSildeShowWindow();
+		}
+		catch (_com_error)
+		{
+		}
+	}
+
+	return;
 }
 
 void PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
@@ -3447,7 +3442,7 @@ void PptInteract()
 					}
 					else
 					{
-						SetForegroundWindow(ppt_show);
+						FocusPptShow();
 						NextPptSlides(temp_currentpage);
 					}
 					hiex::flushmessage_win32(EM_MOUSE, ppt_window);
@@ -3455,7 +3450,7 @@ void PptInteract()
 				// 上一页
 				else
 				{
-					SetForegroundWindow(ppt_show);
+					FocusPptShow();
 					PreviousPptSlides();
 
 					hiex::flushmessage_win32(EM_MOUSE, ppt_window);
@@ -3479,7 +3474,7 @@ void PptInteract()
 
 					if (m.message == WM_LBUTTONDOWN)
 					{
-						SetForegroundWindow(ppt_show);
+						FocusPptShow();
 
 						PreviousPptSlides();
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
@@ -3536,7 +3531,7 @@ void PptInteract()
 						}
 						else
 						{
-							SetForegroundWindow(ppt_show);
+							FocusPptShow();
 
 							NextPptSlides(temp_currentpage);
 							pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
@@ -3603,7 +3598,7 @@ void PptInteract()
 
 					if (m.message == WM_LBUTTONDOWN)
 					{
-						SetForegroundWindow(ppt_show);
+						FocusPptShow();
 
 						PreviousPptSlides();
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
@@ -3660,7 +3655,7 @@ void PptInteract()
 						}
 						else
 						{
-							SetForegroundWindow(ppt_show);
+							FocusPptShow();
 
 							NextPptSlides(temp_currentpage);
 							pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
@@ -3729,7 +3724,7 @@ void PptInteract()
 
 					if (m.message == WM_LBUTTONDOWN)
 					{
-						SetForegroundWindow(ppt_show);
+						FocusPptShow();
 
 						PreviousPptSlides();
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
@@ -3786,7 +3781,7 @@ void PptInteract()
 						}
 						else
 						{
-							SetForegroundWindow(ppt_show);
+							FocusPptShow();
 
 							NextPptSlides(temp_currentpage);
 							pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
@@ -3853,7 +3848,7 @@ void PptInteract()
 
 					if (m.message == WM_LBUTTONDOWN)
 					{
-						SetForegroundWindow(ppt_show);
+						FocusPptShow();
 
 						PreviousPptSlides();
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
@@ -3910,7 +3905,7 @@ void PptInteract()
 						}
 						else
 						{
-							SetForegroundWindow(ppt_show);
+							FocusPptShow();
 
 							NextPptSlides(temp_currentpage);
 							pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);

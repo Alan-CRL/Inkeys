@@ -67,7 +67,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 		bool checkEndShowIsChecking = CheckEndShow.isChecking;
 
 		// PPT模式：按键反馈
-		if (ppt_show != NULL && !checkEndShowIsChecking)
+		if (PptInfoState.TotalPage != -1 && !checkEndShowIsChecking)
 		{
 			// 检查按下的键
 			switch (pKeyInfo->vkCode)
@@ -190,7 +190,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 				case VK_ESCAPE:	// 退出
 				{
 					// PPT 模式下，拦截按键并进行转译：支持长安翻页
-					if (ppt_show != NULL && !checkEndShowIsChecking)
+					if (PptInfoState.TotalPage != -1 && !checkEndShowIsChecking)
 					{
 						return 1;
 					}
@@ -272,7 +272,7 @@ void KeyboardInteraction()
 				if (vkcode == VK_UP || vkcode == VK_LEFT || vkcode == VK_PRIOR || vkcode == VK_BACK)
 				{
 					// 上一页
-					SetForegroundWindow(ppt_show);
+					FocusPptShow();
 
 					PreviousPptSlides();
 
@@ -304,7 +304,7 @@ void KeyboardInteraction()
 					}
 					else
 					{
-						SetForegroundWindow(ppt_show);
+						FocusPptShow();
 
 						NextPptSlides(temp_currentpage);
 

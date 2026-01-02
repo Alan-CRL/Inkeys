@@ -62,7 +62,7 @@ namespace UiAccess
 			ret.reset(hRetToken);
 			return true;
 		}
-		static bool GetUserToken(IdtHandle& ret)
+		static bool GetUserToken(IdtHandle& ret, bool forSimulate = false)
 		{
 			const wchar_t* candidateNames[] = { L"explorer.exe", L"ctfmon.exe" };
 			HANDLE hDupToken = nullptr;
@@ -85,13 +85,29 @@ namespace UiAccess
 						IdtHandle hProc(hProcRaw);
 
 						HANDLE hTokenRaw = nullptr;
-						if (!OpenProcessToken(hProc.get(), TOKEN_DUPLICATE, &hTokenRaw)) continue;
+						bool success = false;
+						if (forSimulate == false) success = OpenProcessToken(hProc.get(), TOKEN_DUPLICATE, &hTokenRaw);
+						else success = OpenProcessToken(hProc.get(), TOKEN_QUERY | TOKEN_DUPLICATE, &hTokenRaw);
+						if (!success) continue;
 						IdtHandle hToken(hTokenRaw);
 
-						if (DuplicateTokenEx(
-							hToken.get(),
-							TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID,
-							NULL, SecurityAnonymous, TokenPrimary, &hDupToken))
+						success = false;
+						if (forSimulate == false)
+						{
+							success = DuplicateTokenEx(
+								hToken.get(),
+								TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID,
+								NULL, SecurityAnonymous, TokenPrimary, &hDupToken);
+						}
+						else
+						{
+							success = DuplicateTokenEx(
+								hToken.get(),
+								TOKEN_IMPERSONATE | TOKEN_ADJUST_PRIVILEGES,
+								NULL, SecurityImpersonation, TokenImpersonation, &hDupToken);
+						}
+
+						if (success)
 						{
 							wcout << L"已获取到句柄：" << name << endl;
 							IdtHandle uDup(hDupToken);
@@ -114,6 +130,8 @@ namespace UiAccess
 		}
 		static bool GetWinlogonToken(IdtHandle& ret)
 		{
+			// 目前只为 ForSimulate 而设计
+
 			HANDLE hOpenToken = nullptr, hTargetToken = nullptr;
 			if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, &hOpenToken)) return false;
 			IdtHandle openToken(hOpenToken);

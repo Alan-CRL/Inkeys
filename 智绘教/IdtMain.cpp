@@ -3,8 +3,8 @@
  * @brief		智绘教项目中心源文件
  * @note		用于初始化智绘教并调用相关模块
  *
- * @envir		Visual Studio 2022 | MSVC v143 | .NET Framework 4.0 | EasyX_20240601
- * @site		https://github.com/Alan-CRL/Intelligent-Drawing-Teaching
+ * @envir		MSVC v143 | Windows SDK 10.0.26100
+ * @site		https://github.com/Alan-CRL/Inkeys
  *
  * @author		Alan-CRL
  * @qq			2685549821
@@ -48,7 +48,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250831a";				// 程序发布日期
+wstring editionDate = L"20260102a";				// 程序发布日期
 wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -58,7 +58,7 @@ wstring pluginPath;								// 数据保存的路径
 wstring programArchitecture = L"win32";
 wstring targetArchitecture = L"win32";
 
-int offSignal = false;							// 关闭指令
+int offSignal;									// 关闭指令
 map <wstring, bool> threadStatus;				// 线程状态管理
 
 void CloseProgram()

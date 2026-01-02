@@ -328,7 +328,7 @@ void BarButtomSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
-					// TODO 注意 ppt_show == NULL 时需要禁用按钮
+					// TODO 注意 PptInfoState.TotalPage == -1 时需要禁用按钮
 					if (FreezeFrame.mode != 1)
 					{
 						FreezeFrame.mode = 1;
