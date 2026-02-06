@@ -68,6 +68,7 @@ enum class AutomaticUpdateStateEnum : int
 	UpdateNew = 11, // 发现软件新版本
 
 	UpdateLimit = 12, // 自动更新被阻止
+	UpdateInkeys3 = 13,
 };
 extern AutomaticUpdateStateEnum AutomaticUpdateState;
 
@@ -109,4 +110,7 @@ wstring get_domain_name(wstring url);
 wstring convertToHttp(const wstring& url);
 
 extern bool isWindows8OrGreater;
+extern wstring windowsEdition;
+extern IdtAtomic<int> downloadLine;
+
 void AutomaticUpdate();

@@ -47,6 +47,8 @@ pair<double, double> GetPointOnCircle(double x, double y, double r, double angle
 void DrawScreen();
 int SeekBar(ExMessage m);
 
+extern IdtAtomic<bool> confirmaNoMouUpSignal;
+
 void MouseInteraction();
 
 int floating_main();

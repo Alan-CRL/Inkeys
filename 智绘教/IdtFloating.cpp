@@ -181,28 +181,66 @@ void MouseClickCollapse()
 {
 	if (!ConfirmaNoMouFunSignal.compare_set_strong(false, true)) return;
 
-	this_thread::sleep_for(chrono::milliseconds(50));
+	this_thread::sleep_for(chrono::milliseconds(100));
 
 	if (ConfirmaNoMouMsgSignal) target_status = 0;
 	ConfirmaNoMouMsgSignal = false;
 
 	ConfirmaNoMouFunSignal = false;
 }
+IdtAtomic<bool> confirmaNoMouUpSignal;
+void MouseUpCollapse(UINT msg)
+{
+	this_thread::sleep_for(chrono::milliseconds(500));
+
+	if (confirmaNoMouUpSignal)
+	{
+		IDTLogger->info("[鼠标钩子][MouseUpCollapse] 修正错误的抬起");
+
+		// 手动触发通知
+		HandleMouseInput(drawpad_window, msg, 0, 0);
+	}
+	confirmaNoMouUpSignal = false;
+}
 
 HHOOK FloatingHookCall;
 LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 {
-	if (nCode >= 0)
+	if (nCode < 0 || wParam == WM_MOUSEMOVE)
+	{
+		return CallNextHookEx(FloatingHookCall, nCode, wParam, lParam);
+	}
+
 	{
 		if (wParam == WM_LBUTTONDOWN) IdtInputs::SetKeyBoardDown(VK_LBUTTON, true);
-		else if (wParam == WM_LBUTTONUP) IdtInputs::SetKeyBoardDown(VK_LBUTTON, false);
+		else if (wParam == WM_LBUTTONUP)
+		{
+			IdtInputs::SetKeyBoardDown(VK_LBUTTON, false);
+
+			// 通知鼠标抬起
+			if (useMouseInput && leftButtonPid != 0)
+			{
+				confirmaNoMouUpSignal = true;
+				thread(MouseUpCollapse, WM_LBUTTONUP).detach();
+			}
+		}
 		else if (wParam == WM_MBUTTONDOWN) IdtInputs::SetKeyBoardDown(VK_MBUTTON, true);
 		else if (wParam == WM_MBUTTONUP) IdtInputs::SetKeyBoardDown(VK_MBUTTON, false);
 
 		else if (wParam == WM_RBUTTONDOWN) IdtInputs::SetKeyBoardDown(VK_RBUTTON, true);
-		else if (wParam == WM_RBUTTONUP) IdtInputs::SetKeyBoardDown(VK_RBUTTON, false);
+		else if (wParam == WM_RBUTTONUP)
+		{
+			IdtInputs::SetKeyBoardDown(VK_RBUTTON, false);
 
-		if (wParam == WM_MOUSEWHEEL && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && !penetrate.select && ppt_show != NULL)
+			// 通知鼠标抬起
+			if (useMouseInput && rightButtonPid != 0)
+			{
+				confirmaNoMouUpSignal = true;
+				thread(MouseUpCollapse, WM_RBUTTONUP).detach();
+			}
+		}
+
+		if (wParam == WM_MOUSEWHEEL && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && !penetrate.select && PptInfoState.TotalPage != -1)
 		{
 			MSLLHOOKSTRUCT* pMouseStruct = (MSLLHOOKSTRUCT*)lParam;
 
@@ -4834,7 +4872,10 @@ void DrawScreen()
 			{
 				ChangeColor(floating_icon[7], UIControlColor[L"Image/test/fill"].v);
 				hiex::TransparentImage(&background, int(UIControl[L"Image/test/x"].v), int(UIControl[L"Image/test/y"].v), &floating_icon[7], int((UIControlColor[L"Image/test/fill"].v >> 24) & 0xff));
-				if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart) hiex::EasyX_Gdiplus_SolidEllipse(UIControl[L"Image/test/x"].v + 30, UIControl[L"Image/test/y"].v, 10, 10, RGBA(228, 55, 66, 255), false, SmoothingModeHighQuality, &background);
+				if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart ||
+					AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateLimit ||
+					AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateInkeys3)
+					hiex::EasyX_Gdiplus_SolidEllipse(UIControl[L"Image/test/x"].v + 30, UIControl[L"Image/test/y"].v, 10, 10, RGBA(228, 55, 66, 255), false, SmoothingModeHighQuality, &background);
 
 				Gdiplus::Font gp_font(&HarmonyOS_fontFamily, UIControl[L"Words/test/height"].v, FontStyleRegular, UnitPixel);
 				SolidBrush WordBrush(hiex::ConvertToGdiplusColor(UIControlColor[L"Words/test/words_color"].v, true));
@@ -5304,7 +5345,7 @@ void DrawScreen()
 				}
 				if ((int)state == 1)
 				{
-					if (ppt_show == NULL && stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
+					if (PptInfoState.TotalPage == -1 && stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
 					{
 						if (setlist.SkinMode == 1 || setlist.SkinMode == 2) hiex::EasyX_Gdiplus_FillRoundRect((float)floating_windows.width - 96, (float)floating_windows.height - 256 + 44, 96, 51, 25, 25, RGB(150, 150, 150), BackgroundColorMode == 0 ? RGB(255, 255, 255) : RGB(30, 33, 41), 2, false, SmoothingModeHighQuality, &background);
 						else if (setlist.SkinMode == 3)
@@ -5652,7 +5693,7 @@ void MouseInteraction()
 					}
 				}
 				// 窗口定格
-				if (ppt_show == NULL && IsInRect(m.x, m.y, { floating_windows.width - 96 + 4, floating_windows.height - 256 + 50, floating_windows.width - 96 + 4 + 88, floating_windows.height - 256 + 50 + 40 }))
+				if (PptInfoState.TotalPage == -1 && IsInRect(m.x, m.y, { floating_windows.width - 96 + 4, floating_windows.height - 256 + 50, floating_windows.width - 96 + 4 + 88, floating_windows.height - 256 + 50 + 40 }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
@@ -6493,15 +6534,42 @@ void MouseInteraction()
 
 									else if (setlist.component.shortcutButton.rollCall.IslandCaller)
 									{
-										ShellExecute(NULL, L"open", L"classisland://plugins/IslandCaller/Run", NULL, NULL, SW_SHOWNORMAL);
+										/*ShellExecute(NULL, L"open", L"classisland://plugins/IslandCaller/Run", NULL, NULL, SW_SHOWNORMAL);*/
+
+										SHELLEXECUTEINFO sei = { sizeof(sei) };
+										sei.fMask = SEE_MASK_NOASYNC;
+										sei.hwnd = NULL;
+										sei.lpVerb = L"open";
+										sei.lpFile = L"classisland://plugins/IslandCaller/Run";
+										sei.nShow = SW_SHOWNORMAL;
+
+										ShellExecuteEx(&sei);
 									}
 									else if (setlist.component.shortcutButton.rollCall.SecRandom)
 									{
-										ShellExecute(NULL, L"open", L"secrandom://pumping", NULL, NULL, SW_SHOWNORMAL);
+										/*ShellExecute(NULL, L"open", L"secrandom://direct_extraction", NULL, NULL, SW_SHOWNORMAL);*/
+
+										SHELLEXECUTEINFO sei = { sizeof(sei) };
+										sei.fMask = SEE_MASK_NOASYNC;
+										sei.hwnd = NULL;
+										sei.lpVerb = L"open";
+										sei.lpFile = L"secrandom://direct_extraction";
+										sei.nShow = SW_SHOWNORMAL;
+
+										ShellExecuteEx(&sei);
 									}
 									else if (setlist.component.shortcutButton.rollCall.NamePicker)
 									{
-										ShellExecute(NULL, L"open", L"namepicker://", NULL, NULL, SW_SHOWNORMAL);
+										/*ShellExecute(NULL, L"open", L"namepicker://", NULL, NULL, SW_SHOWNORMAL);*/
+
+										SHELLEXECUTEINFO sei = { sizeof(sei) };
+										sei.fMask = SEE_MASK_NOASYNC;
+										sei.hwnd = NULL;
+										sei.lpVerb = L"open";
+										sei.lpFile = L"namepicker://";
+										sei.nShow = SW_SHOWNORMAL;
+
+										ShellExecuteEx(&sei);
 									}
 
 									else if (setlist.component.shortcutButton.linkage.classislandSettings)

@@ -6,10 +6,15 @@
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 #include "cpphttplib/httplib.h"
 
-std::string GetEditionInformation()
+std::string GetEditionInformation(std::string referer)
 {
 	httplib::Result res;
-	httplib::Headers headers = { {"Cache-Control", "no-cache"}, {"Pragma", "no-cache"} };
+	httplib::Headers headers =
+	{
+		{ "Cache-Control", "no-cache" },
+		{ "Pragma", "no-cache" },
+		{ "Referer", referer.c_str() }
+	};
 
 	// 尝试主地址
 	{
@@ -68,10 +73,15 @@ std::string GetEditionInformation()
 
 	return "Error";
 }
-bool DownloadEdition(std::string domain, std::string path, std::wstring directory, std::wstring fileName, std::atomic_ullong& downloadedSize)
+bool DownloadEdition(std::string domain, std::string path, std::wstring directory, std::wstring fileName, std::atomic_ullong& downloadedSize, std::string referer)
 {
 	httplib::Result res;
-	httplib::Headers headers = { {"Cache-Control", "no-cache"}, {"Pragma", "no-cache"} };
+	httplib::Headers headers =
+	{
+		{ "Cache-Control", "no-cache" },
+		{ "Pragma", "no-cache" },
+		{ "Referer", referer.c_str() }
+	};
 
 	std::ofstream file;
 	auto callback = [&](const char* data, size_t data_length)

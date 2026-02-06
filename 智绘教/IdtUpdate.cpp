@@ -30,6 +30,17 @@ wstring convertToHttp(const wstring& url)
 	else return httpPrefix + url;
 }
 
+string GetRefererInfo()
+{
+	string ret;
+	ret += utf16ToUtf8(editionDate) + ",";
+	ret += utf16ToUtf8(programArchitecture) + ",";
+	ret += setlist.UpdateChannel + ",";
+	ret += setlist.enableAutoUpdate ? "true," : "false,";
+	ret += utf16ToUtf8(windowsEdition);
+	return ret;
+}
+
 EditionInfoClass GetEditionInfo(string channel, string arch)
 {
 	/*
@@ -41,7 +52,7 @@ EditionInfoClass GetEditionInfo(string channel, string arch)
 	*/
 	EditionInfoClass retEditionInfo;
 
-	string editionInformation = GetEditionInformation();
+	string editionInformation = GetEditionInformation(GetRefererInfo());
 	if (editionInformation == "Error")
 	{
 		retEditionInfo.errorCode = 1;
@@ -201,7 +212,7 @@ AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state,
 	state->fileSize.store(editionInfo.fileSize.load());
 
 	wstring timestamp = getTimestamp();
-	bool reslut = DownloadEdition(domain, path, globalPath + L"installer\\", L"new_procedure_" + timestamp + L".tmp", state->downloadedSize);
+	bool reslut = DownloadEdition(domain, path, globalPath + L"installer\\", L"new_procedure_" + timestamp + L".tmp", state->downloadedSize, GetRefererInfo());
 
 	if (reslut)
 	{
@@ -289,6 +300,9 @@ AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state,
 }
 
 bool isWindows8OrGreater;
+wstring windowsEdition;
+IdtAtomic<int> downloadLine = 1;
+
 void AutomaticUpdate()
 {
 	bool state = true;
@@ -335,10 +349,18 @@ updateStart:
 		if (state && editionInfo.editionDate != L"" && ((editionInfo.editionDate > editionDate && setlist.enableAutoUpdate) || mandatoryUpdate))
 		{
 			// 无法使用自动更新以及自动修复的情况
-			if (!isWindows8OrGreater && editionInfo.isInkeys3)
+			if (editionInfo.isInkeys3 && !mandatoryUpdate)
 			{
-				AutomaticUpdateState = UpdateLimit;
-				state = false;
+				if (!isWindows8OrGreater)
+				{
+					AutomaticUpdateState = UpdateLimit;
+					state = false;
+				}
+				else
+				{
+					AutomaticUpdateState = UpdateInkeys3;
+					state = false;
+				}
 			}
 			else
 			{
@@ -395,20 +417,37 @@ updateStart:
 
 						if (tedition == editionInfo.editionDate && _waccess((globalPath + tpath).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256 && updateArch == tarch)
 						{
-							update = false;
-							AutomaticUpdateState = UpdateRestart;
+							if (!setlist.enableAutoUpdate)
+							{
+								if (_waccess((globalPath + L"installer").c_str(), 0) == 0)
+								{
+									error_code ec;
+									filesystem::remove_all(globalPath + L"installer", ec);
+								}
+							}
+							else
+							{
+								update = false;
+								AutomaticUpdateState = UpdateRestart;
+							}
 						}
 					}
 				}
+
 				if (update)
 				{
+					downloadLine = 1;
 					AutomaticUpdateState = UpdateDownloading;
 
 					against = true;
 					bool hasUpdateNew = false;
 					for (int i = 0; i < editionInfo.path_size; i++)
 					{
+						downloadLine = i + 1;
+						AutomaticUpdateState = UpdateDownloading;
+
 						AutomaticUpdateState = DownloadNewProgram(&downloadNewProgramState, editionInfo, editionInfo.path[i], updateArch);
+
 						if (AutomaticUpdateState == UpdateRestart)
 						{
 							against = false;
@@ -422,6 +461,12 @@ updateStart:
 						}
 						else if (AutomaticUpdateState == UpdateNew && !mandatoryUpdate)
 						{
+							if (_waccess((globalPath + L"installer").c_str(), 0) == 0)
+							{
+								error_code ec;
+								filesystem::remove_all(globalPath + L"installer", ec);
+							}
+
 							hasUpdateNew = true;
 							break;
 						}

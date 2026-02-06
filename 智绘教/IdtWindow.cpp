@@ -148,13 +148,16 @@ void TopWindow()
 				if (IsWindowVisible(freeze_window)) break;
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
-			for (int i = 1; i <= 10 && !IsWindowVisible(magnifierWindow); i++)
+			if (magnificationCreateReady)
 			{
-				IDTLogger->warn("[窗口置顶线程][TopWindow] magnifierWindow 被隐藏 Try" + to_string(i));
-				ShowWindow(magnifierWindow, SW_SHOWNOACTIVATE);
+				for (int i = 1; i <= 10 && !IsWindowVisible(magnifierWindow); i++)
+				{
+					IDTLogger->warn("[窗口置顶线程][TopWindow] magnifierWindow 被隐藏 Try" + to_string(i));
+					ShowWindow(magnifierWindow, SW_SHOWNOACTIVATE);
 
-				if (IsWindowVisible(magnifierWindow)) break;
-				this_thread::sleep_for(chrono::milliseconds(10));
+					if (IsWindowVisible(magnifierWindow)) break;
+					this_thread::sleep_for(chrono::milliseconds(10));
+				}
 			}
 			/*for (int i = 1; i <= 10 && !IsWindowVisible(setting_window); i++)
 			{
@@ -236,29 +239,32 @@ void TopWindow()
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
 
-			for (int i = 1; i <= 10 && !(GetWindowLong(magnifierWindow, GWL_EXSTYLE) & WS_EX_LAYERED); i++)
+			if (magnificationCreateReady)
 			{
-				IDTLogger->warn("[窗口置顶线程][TopWindow] magnifierWindow WS_EX_LAYERED 样式被隐藏 Try" + to_string(i));
-				SetWindowLong(magnifierWindow, GWL_EXSTYLE, GetWindowLong(magnifierWindow, GWL_EXSTYLE) | WS_EX_LAYERED);
+				for (int i = 1; i <= 10 && !(GetWindowLong(magnifierWindow, GWL_EXSTYLE) & WS_EX_LAYERED); i++)
+				{
+					IDTLogger->warn("[窗口置顶线程][TopWindow] magnifierWindow WS_EX_LAYERED 样式被隐藏 Try" + to_string(i));
+					SetWindowLong(magnifierWindow, GWL_EXSTYLE, GetWindowLong(magnifierWindow, GWL_EXSTYLE) | WS_EX_LAYERED);
 
-				if (GetWindowLong(magnifierWindow, GWL_EXSTYLE) & WS_EX_LAYERED) break;
-				this_thread::sleep_for(chrono::milliseconds(10));
-			}
-			for (int i = 1; i <= 10 && !(GetWindowLong(magnifierWindow, GWL_EXSTYLE) & WS_EX_NOACTIVATE); i++)
-			{
-				IDTLogger->warn("[窗口置顶线程][TopWindow] magnifierWindow WS_EX_NOACTIVATE 样式被隐藏 Try" + to_string(i));
-				SetWindowLong(magnifierWindow, GWL_EXSTYLE, GetWindowLong(magnifierWindow, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+					if (GetWindowLong(magnifierWindow, GWL_EXSTYLE) & WS_EX_LAYERED) break;
+					this_thread::sleep_for(chrono::milliseconds(10));
+				}
+				for (int i = 1; i <= 10 && !(GetWindowLong(magnifierWindow, GWL_EXSTYLE) & WS_EX_NOACTIVATE); i++)
+				{
+					IDTLogger->warn("[窗口置顶线程][TopWindow] magnifierWindow WS_EX_NOACTIVATE 样式被隐藏 Try" + to_string(i));
+					SetWindowLong(magnifierWindow, GWL_EXSTYLE, GetWindowLong(magnifierWindow, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
 
-				if (GetWindowLong(magnifierWindow, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
-				this_thread::sleep_for(chrono::milliseconds(10));
-			}
-			for (int i = 1; i <= 10 && !(GetWindowLong(magnifierChild, GWL_EXSTYLE) & WS_EX_NOACTIVATE); i++)
-			{
-				IDTLogger->warn("[窗口置顶线程][TopWindow] magnifierChild WS_EX_NOACTIVATE 样式被隐藏 Try" + to_string(i));
-				SetWindowLong(magnifierChild, GWL_EXSTYLE, GetWindowLong(magnifierChild, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+					if (GetWindowLong(magnifierWindow, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
+					this_thread::sleep_for(chrono::milliseconds(10));
+				}
+				for (int i = 1; i <= 10 && !(GetWindowLong(magnifierChild, GWL_EXSTYLE) & WS_EX_NOACTIVATE); i++)
+				{
+					IDTLogger->warn("[窗口置顶线程][TopWindow] magnifierChild WS_EX_NOACTIVATE 样式被隐藏 Try" + to_string(i));
+					SetWindowLong(magnifierChild, GWL_EXSTYLE, GetWindowLong(magnifierChild, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
 
-				if (GetWindowLong(magnifierChild, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
-				this_thread::sleep_for(chrono::milliseconds(10));
+					if (GetWindowLong(magnifierChild, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
+					this_thread::sleep_for(chrono::milliseconds(10));
+				}
 			}
 
 			for (int i = 1; i <= 10 && !(GetWindowLong(setting_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE); i++)
@@ -281,8 +287,20 @@ void TopWindow()
 			//SetWindowPos(magnifierWindow, freeze_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
 			// 统一置顶
-			if (!SetWindowPos(magnifierWindow, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
-				IDTLogger->warn("[窗口置顶线程][TopWindow] 置顶窗口时失败 Error" + to_string(GetLastError()));
+			if (magnificationCreateReady)
+			{
+				if (!SetWindowPos(magnifierWindow, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
+				{
+					IDTLogger->warn("[窗口置顶线程][TopWindow] 置顶窗口时失败1 Error" + to_string(GetLastError()));
+				}
+			}
+			else
+			{
+				if (!SetWindowPos(freeze_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
+				{
+					IDTLogger->warn("[窗口置顶线程][TopWindow] 置顶窗口时失败2 Error" + to_string(GetLastError()));
+				}
+			}
 		}
 
 	topWait:

@@ -3,8 +3,8 @@
  * @brief		智绘教项目中心源文件
  * @note		用于初始化智绘教并调用相关模块
  *
- * @envir		Visual Studio 2022 | MSVC v143 | .NET Framework 4.0 | EasyX_20240601
- * @site		https://github.com/Alan-CRL/Intelligent-Drawing-Teaching
+ * @envir		MSVC v143 | Windows SDK 10.0.26100
+ * @site		https://github.com/Alan-CRL/Inkeys
  *
  * @author		Alan-CRL
  * @qq			2685549821
@@ -46,17 +46,17 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20250830a";				// 程序发布日期
+wstring editionDate = L"20260206a";				// 程序发布日期
 wstring editionChannel = L"LTS";				// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
-wstring dataPath;								// 数据保存的路径
+wstring pluginPath;								// 数据保存的路径
 
 wstring programArchitecture = L"win32";
 wstring targetArchitecture = L"win32";
 
-int offSignal = false;							// 关闭指令
+IdtAtomic<int> offSignal;						// 关闭指令
 map <wstring, bool> threadStatus;				// 线程状态管理
 
 void CloseProgram()
@@ -71,6 +71,7 @@ void RestartProgram()
 }
 
 shared_ptr<spdlog::logger> IDTLogger;
+IdtAtomic<bool> useMouseInput;
 
 // 程序入口点
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
@@ -126,21 +127,22 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			return 0;
 		}
 
-		// 获取数据存储路径
+		// 获取目录
 		{
-			wchar_t buffer[MAX_PATH];
-			if (GetEnvironmentVariableW(L"ProgramData", buffer, MAX_PATH) != 0) dataPath = buffer;
-			else dataPath = L"C:\\ProgramData";
-			dataPath += L"\\Inkeys";
+			// 获取插件存储路径
+			{
+				/*
+				wchar_t buffer[MAX_PATH];
+				if (GetEnvironmentVariableW(L"ProgramData", buffer, MAX_PATH) != 0) pluginPath = buffer;
+				else pluginPath = L"C:\\ProgramData";*/
+
+				pluginPath = globalPath;
+				pluginPath += L"Inkeys\\Plugin\\";
+			}
 		}
 	}
 	// 防止重复启动
 	{
-		// TODO 将为启动标识重写书写逻辑，运行存在多个并行的启动标识
-		// 示例
-		// -restart
-		// -path="..."
-
 		// 相关标识
 		bool superTopComplete = false;
 
@@ -511,6 +513,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 
 	// InkeysSuperTop 阶段
+	bool SuperTopFailSignal = false;
 	if (_waccess((globalPath + L"opt\\deploy.json").c_str(), 4) == 0)
 	{
 		ReadSettingMini();
@@ -584,8 +587,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 						diff = difftime(new_time, old_time);
 					}
 
-					// 如果小于 10s 则视为同一次尝试，此时宣告尝试失败
-					if (diff <= 10) break;
+					// 如果小于 30s 则视为同一次尝试，此时宣告尝试失败
+					if (diff <= 30)
+					{
+						SuperTopFailSignal = true;
+						break;
+					}
 					else hasExistsFaild = true;
 				}
 
@@ -1027,6 +1034,14 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			// 崩溃选项设定
 			CrashHandler::SetFlag(setlist.regularSetting.teachingSafetyMode);
 		}
+		// 配置修正
+		{
+			if (SuperTopFailSignal)
+			{
+				setlist.plugInSetting.superTop.enable = false;
+				WriteSetting();
+			}
+		}
 
 		IDTLogger->info("[主线程][IdtMain] 配置信息初始化完成");
 	}
@@ -1079,6 +1094,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 			if (windowsVersion.majorVersion > 6 || (windowsVersion.majorVersion == 6 && windowsVersion.minorVersion >= 2)) isWindows8OrGreater = true;
 			else isWindows8OrGreater = false;
+
+			windowsEdition = to_wstring(windowsVersion.majorVersion) + L"." + to_wstring(windowsVersion.minorVersion) + L"." + to_wstring(windowsVersion.buildNumber);
 		}
 
 #ifdef IDT_RELEASE
@@ -1152,7 +1169,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		CreateMagnifierWindow();
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
-		freeze_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys5 FreezeWindow", (L"Inkeys1;" + ClassName).c_str(), nullptr, magnifierWindow);
+		if (magnificationCreateReady) freeze_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys5 FreezeWindow", (L"Inkeys1;" + ClassName).c_str(), nullptr, magnifierWindow);
+		else freeze_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys5 FreezeWindow", (L"Inkeys1;" + ClassName).c_str());
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
 		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys4 DrawpadWindow", (L"Inkeys2;" + ClassName).c_str(), nullptr, freeze_window, disableGestureFuc);
@@ -1167,7 +1185,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		floating_window = hiex::initgraph_win32(background.getwidth(), background.getheight(), 0, L"Inkeys1 FloatingWindow", (L"Inkeys5;" + ClassName).c_str(), nullptr, ppt_window);
 
 		// 画板窗口在注册 RTS 前必须拥有置顶属性，在显示前先进行一次全局置顶
-		SetWindowPos(magnifierWindow, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+		if (magnificationCreateReady) SetWindowPos(magnifierWindow, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+		else SetWindowPos(freeze_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
 		thread TopWindowThread(TopWindow);
 		TopWindowThread.detach();
@@ -1178,79 +1197,10 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// RealTimeStylus触控库
 	{
-		bool hasErr = false;
+		if (useMouseInput == false) InitRTSLogic();
 
-		HRESULT hr;
-		GUID desiredPacketProperties[] = { GUID_PACKETPROPERTY_GUID_X, GUID_PACKETPROPERTY_GUID_Y, GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE,GUID_PACKETPROPERTY_GUID_WIDTH, GUID_PACKETPROPERTY_GUID_HEIGHT };
-
-		// Create RTS object
-		g_pRealTimeStylus = CreateRealTimeStylus(drawpad_window);
-		if (g_pRealTimeStylus == NULL)
-		{
-			IDTLogger->warn("[主线程][IdtMain] RealTimeStylus 为 NULL");
-
-			hasErr = true;
-			goto RealTimeStylusEnd;
-		}
-
-		// 设置属性包
-		hr = g_pRealTimeStylus->SetDesiredPacketDescription(5, desiredPacketProperties);
-		if (FAILED(hr))
-		{
-			IDTLogger->warn("[主线程][IdtMain] SetDesiredPacketDescription 为 失败");
-
-			g_pRealTimeStylus->Release();
-			g_pRealTimeStylus = NULL;
-
-			hasErr = true;
-			goto RealTimeStylusEnd;
-		}
-
-		// Create EventHandler object
-		g_pSyncEventHandlerRTS = CSyncEventHandlerRTS::Create(g_pRealTimeStylus);
-		if (g_pSyncEventHandlerRTS == NULL)
-		{
-			IDTLogger->warn("[主线程][IdtMain] SyncEventHandlerRTS 为 NULL");
-
-			g_pRealTimeStylus->Release();
-			g_pRealTimeStylus = NULL;
-
-			hasErr = true;
-			goto RealTimeStylusEnd;
-		}
-
-		// Enable RTS
-		if (!EnableRealTimeStylus(g_pRealTimeStylus))
-		{
-			IDTLogger->warn("[主线程][IdtMain] 启用 RTS 失败");
-
-			g_pSyncEventHandlerRTS->Release();
-			g_pSyncEventHandlerRTS = NULL;
-
-			g_pRealTimeStylus->Release();
-			g_pRealTimeStylus = NULL;
-
-			hasErr = true;
-			goto RealTimeStylusEnd;
-		}
-
-	RealTimeStylusEnd:
-
-		if (hasErr)
-		{
-			IDTLogger->critical("[主线程][IdtMain] 程序意外退出：RealTimeStylus 触控库初始化失败。");
-
-			if (LaunchState::warnTry) MessageBox(NULL, L"Program unexpected exit: RealTimeStylus touch library initialization failed.(#4)\n程序意外退出：RealTimeStylus 触控库初始化失败。(#4)", L"Inkeys Error | 智绘教错误", MB_OK | MB_SYSTEMMODAL);
-			else ShellExecuteW(NULL, NULL, GetCurrentExePath().c_str(), L"-WarnTry", NULL, SW_SHOWNORMAL);
-
-			exit(0);
-		}
-
-		thread RTSSpeed_thread(RTSSpeed);
-		RTSSpeed_thread.detach();
-
+		thread(RTSSpeed).detach();
 		rtsWait = false;
-		IDTLogger->info("[主线程][IdtMain] RealTimeStylus触控库初始化完成");
 	}
 	// 线程
 	{
@@ -1262,7 +1212,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		thread(StateMonitoring).detach();
 
 		// 放大API
-		thread(MagnifierThread).detach();
+		if (magnificationCreateReady) thread(MagnifierThread).detach();
 
 		// 启动 PPT 联动插件
 		thread(PPTLinkageMain).detach();
@@ -1276,10 +1226,23 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 #ifndef IDT_RELEASE
 		{
 			AllocConsole();
+
 			FILE* fp;
 			freopen_s(&fp, "CONOUT$", "w", stdout);
 			freopen_s(&fp, "CONOUT$", "w", stderr);
-			std::ios::sync_with_stdio();
+			freopen_s(&fp, "CONIN$", "r", stdin);
+
+			// 让 C++ 流重新与 C 的 FILE* 同步
+			// true = 同步；不传参数的重载在 C++11 之后是被弃用的（某些编译器行为不定）
+			std::ios::sync_with_stdio(true);
+
+			// 清空原来的缓冲（保证重新绑定后生效）
+			std::wcout.clear();
+			std::wcin.clear();
+			std::wcerr.clear();
+			std::cout.clear();
+			std::cin.clear();
+			std::cerr.clear();
 
 			std::wcout.imbue(std::locale("chs"));
 		}

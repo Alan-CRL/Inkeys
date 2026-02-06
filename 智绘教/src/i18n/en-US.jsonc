@@ -26,8 +26,8 @@
     "Pen":
     {
       "Pen": "Pen",
-      "Highlighter": "Highli",
-      "Thinkness": "Tk\nne",
+      "Highlighter": "Hlight",
+      "Thinkness": "Si\nze",
       "Write": "Write",
       "Line": "Line",
       "Square": "Rect"
@@ -36,8 +36,8 @@
     {
       "Revoke": "Undo",
       "Recall": "Restore",
-      "Freeze": "Frez",
-      "Pierce": "Pier"
+      "Freeze": "Hold",
+      "Pierce": "Pass"
     }
   },
   "SettingsUI":
@@ -107,9 +107,15 @@
       },
       "LimitUpdate":
       {
-        "N": "Automatic update blocked!\nThe updated version has adjustments to system compatibility. We have blocked your automatic update because the software may fail to start after updating automatically.\nPlease check the details to confirm whether your system meets the requirements, and download and update the software manually.",
+        "N": "Automatic update blocked!\n\nThe system compatibility requirements have changed for the new version. We’ve blocked automatic updates because the software might fail to start after updating automatically. Please check the detailed information to confirm that your system meets the new requirements, then manually download and update the software. Note that the repair feature in the current channel will be temporarily unavailable.",
 
         "Info": "Details"
+      },
+      "Inkeys3Update":
+      {
+        "N": "Inkeys3 has been officially released!\n\nYou can use the button below to learn more about Inkeys3. Note that the repair feature in the current channel will be temporarily unavailable.",
+
+        "Download": "Update now"
       },
       "VersionTip": "Incompatible software and system architecture may cause performance issues. It's recommended to repair the software in the 'Software Repair' section below (select 'Fix architecture'), or select the target architecture below and repair.",
       "Info":
@@ -197,7 +203,7 @@
           "Skip1": "Recommended Skin",
           "Skip2": "Default Skin",
           "Skip3": "Minimal Clock",
-          "Skip4": "Year of Snake"
+          "Skip4": "Year of Horse"
         },
         "SettingUIScale":
         {
@@ -337,8 +343,8 @@
 
       "PPTHelper":
       {
-        "N": "PPT Presentation Helper",
-        "E": "Provides presentation and brush control buttons during a slideshow. Each page has its own independent canvas, allowing ink annotations to remain fixed on the page. Does not affect original functionalities or external devices. Supports Microsoft PowerPoint and KingSoft WPS.",
+        "N": "PPT Presentation Helper 3 Lite",
+        "E": "Provides presentation and brush control buttons during a slideshow. Each page has its own independent canvas, allowing ink annotations to remain fixed on the page. Does not affect original functionalities or external devices. Supports Microsoft PowerPoint 2007, Kingsoft WPS 2013, and later versions.",
 
         "VersionError": "Unknown version (Plugin error)",
         "Solve": "Solution",
@@ -347,6 +353,7 @@
 
         "Tip": "To use the plugin, please ensure that the permissions for the Inkeys application and the PPT application are the same for proper detection. If issues persist, please refer to the solution.",
         "Warn": "Detected that your PowerPoint/WPS is set to 'Always run as administrator'. This means our application must also run with administrator privileges to detect the slideshow process and enable PPT integration. If you prefer not to run your presentation software as an administrator, please refer to the solution.",
+        "Error": "An error occurred during plugin loading. This may be because .NET Framework 4.x is not installed or an exception occurred in the global COM environment.\nCode ",
 
         "BasicLogic":
         {
@@ -416,8 +423,8 @@
       },
       "DesktopDrawpadBlocker":
       {
-        "N": "DesktopDrawpadBlocker",
-        "E": "Blocks floating widgets from competing software (e.g., Seewo Whiteboard) on your screen. Supports blocking various common floating widgets and other PPT control bars or toolkits."
+        "N": "DesktopDrawpadBlocker 3 Lite",
+        "E": "On all-in-one educational machines, some whiteboard software's floating window toolbar cannot be turned off directly, leading to multiple drawing tools appearing on the desktop. This often causes teachers to mix up different tools, making it impossible to continue annotations and severely impacting teaching efficiency. Thus, DesktopDrawpadBlocker was created."
       },
       "LnkHelper":
       {
@@ -477,6 +484,7 @@
         "LTS": "Stable Channel",
         "Insider": "Insider Channel",
         "Dev": "Dev Channel",
+        "Canary": "Canary Channel",
         "Other": "Other Channel"
       },
       "NotStarted": "Update check not started",
@@ -484,7 +492,7 @@
       "InformationFail": "Failed to fetch update info",
       "InformationDamage": "Downloaded info corrupted",
       "InformationUnStandardized": "Invalid update info",
-      "Downloading": "Downloading update",
+      "Downloading": "Downloading update (Line {})",
       "DownloadFail": "Download failed",
       "DownloadDamage": "File damaged",
       "Restart": "Restart to update to latest version",
@@ -492,8 +500,11 @@
       "Newer": "Newer than official latest",
       "New": "New version found",
 
-      "Limit": "Updates are blocked while downloading an update or a patch",
-      "Info": "More info and manual update",
+      "Limit": "Inkeys3 has been officially released! but the update is blocked",
+      "Limit2": "Inkeys3 has been officially released! and requires a manual update",
+      "Info": "View details and update manually",
+      "Info2": "Update now",
+      "Info3": "Learn more",
 
       "Repair": "Try Repair",
       "ManualDownload": "Manual Download",

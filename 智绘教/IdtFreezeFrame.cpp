@@ -101,7 +101,7 @@ void FreezeFrameWindow()
 
 				while (!offSignal)
 				{
-					if (FreezeFrame.mode != 1 || ppt_show != NULL) break;
+					if (FreezeFrame.mode != 1 || PptInfoState.TotalPage != -1) break;
 
 					if (FreezeRecall > 0)
 					{
@@ -144,7 +144,7 @@ void FreezeFrameWindow()
 					this_thread::sleep_for(chrono::milliseconds(20));
 				}
 
-				if (ppt_show != NULL) FreezeFrame.mode = 0;
+				if (PptInfoState.TotalPage != -1) FreezeFrame.mode = 0;
 				FreezeFrame.update = true;
 			}
 			else if (show_freeze_window)
@@ -211,7 +211,7 @@ void FreezeFrameWindow()
 				ulwi.hdcSrc = GetImageHDC(&freeze_background);
 				UpdateLayeredWindowIndirect(freeze_window, &ulwi);
 
-				//SetForegroundWindow(ppt_show);
+				//FocusPptShow();
 
 				{
 					double delay = 1000.0 / 24.0 - chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - tRecord).count();

@@ -3,8 +3,8 @@
  * @brief		智绘教项目中心头文件
  * @note		用于声明中心头文件以及相关中心变量
  *
- * @envir		Visual Studio 2022 | MSVC v143 | .NET Framework 3.5 | EasyX_20240601
- * @site		https://github.com/Alan-CRL/Intelligent-Drawing-Teaching
+ * @envir		MSVC v143 | Windows SDK 10.0.26100
+ * @site		https://github.com/Alan-CRL/Inkeys
  *
  * @author		Alan-CRL
  * @qq			2685549821
@@ -12,7 +12,7 @@
 */
 
 // 程序入口点位于 IdtMain.cpp，各个文件的解释将于稍后编写，目前其名称对应作用
-// 编译提示：.NET 版本默认为 .NET Framework 4.0 ，最低要求 .NET Framework 3.5（如需更改请查看 PptCOM.cs）
+// 编译提示：.NET 版本默认为 .NET Framework 4.0 ，最低要求 .NET Framework 4.0（如需更改请查看 PptCOM.cs）
 // 首次编译需要确认 .NET Framework 版本为 4.0，如果不一致请执行 位于 PptCOM.cs 的 <切换 .NET Framework 指南>
 
 #pragma once
@@ -93,25 +93,6 @@ using namespace Gdiplus;
 #define HiBeginDraw() BEGIN_TASK()
 #define HiEndDraw() END_TASK(); REDRAW_WINDOW()
 
-extern wstring buildTime;
-extern wstring editionDate;
-extern wstring editionChannel;
-
-extern wstring userId;
-extern wstring globalPath;
-extern wstring dataPath;
-
-extern wstring programArchitecture;
-extern wstring targetArchitecture;
-
-void CloseProgram();
-void RestartProgram();
-
-extern int offSignal; //关闭指令
-extern map <wstring, bool> threadStatus; //线程状态管理
-
-extern shared_ptr<spdlog::logger> IDTLogger;
-
 // 私有模板
 template <typename IdtAtomicT>
 class IdtAtomic
@@ -156,11 +137,11 @@ public:
 		return value.compare_exchange_strong(expected_local, desired_val, success, failure);
 	}
 
-	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
 	T fetch_add(T arg, std::memory_order order = std::memory_order_seq_cst) noexcept {
 		return value.fetch_add(arg, order);
 	}
-	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
 	T fetch_sub(T arg, std::memory_order order = std::memory_order_seq_cst) noexcept {
 		return value.fetch_sub(arg, order);
 	}
@@ -168,7 +149,6 @@ public:
 	operator IdtAtomicT() const noexcept { return load(); }
 	IdtAtomic& operator=(IdtAtomicT desired) noexcept { store(desired); return *this; }
 
-	// Increment/Decrement Operators added
 	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_integral_v<T>>>
 	T operator++() noexcept {
 		return value.fetch_add(1, std::memory_order_seq_cst) + 1;
@@ -185,7 +165,47 @@ public:
 	T operator--(int) noexcept {
 		return value.fetch_sub(1, std::memory_order_seq_cst);
 	}
+
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
+	IdtAtomic& operator+=(T arg) noexcept {
+		fetch_add(arg, std::memory_order_seq_cst);
+		return *this;
+	}
+	template <typename T = IdtAtomicT, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
+	IdtAtomic& operator-=(T arg) noexcept {
+		fetch_sub(arg, std::memory_order_seq_cst);
+		return *this;
+	}
 };
+
+template <typename IdtAtomicT, typename CharT>
+struct formatter<IdtAtomic<IdtAtomicT>, CharT> : formatter<IdtAtomicT, CharT>
+{
+	auto format(const IdtAtomic<IdtAtomicT>& obj, format_context& ctx) const
+	{
+		return formatter<IdtAtomicT, CharT>::format(obj.load(), ctx);
+	}
+};
+
+extern wstring buildTime;
+extern wstring editionDate;
+extern wstring editionChannel;
+
+extern wstring userId;
+extern wstring globalPath;
+extern wstring pluginPath;
+
+extern wstring programArchitecture;
+extern wstring targetArchitecture;
+
+void CloseProgram();
+void RestartProgram();
+
+extern IdtAtomic<int> offSignal; //关闭指令
+extern map <wstring, bool> threadStatus; //线程状态管理
+
+extern shared_ptr<spdlog::logger> IDTLogger;
+extern IdtAtomic<bool> useMouseInput;
 
 // 调测专用
 #ifndef IDT_RELEASE
@@ -195,7 +215,8 @@ void Testi(long long t);
 void Testd(double t);
 void Testw(wstring t);
 void Testa(string t);
-#define IdtFalse false
+#define TestFalse false
+#define TestCout cout
 
 // this_thread::sleep_for(chrono::milliseconds(int))
 #endif

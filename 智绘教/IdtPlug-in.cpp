@@ -180,7 +180,10 @@ bool CheckPptCom()
 	}
 	catch (_com_error err)
 	{
-		pptComVersion = L"Error: C++端初始化异常：" + wstring(err.ErrorMessage());
+		pptComVersion = L"Error: 初始化异常1(C++) " + std::wstring(err.ErrorMessage()) +
+			L" (0x" + std::to_wstring(err.Error()) + L") " +
+			std::wstring((wchar_t*)err.Description() ? (wchar_t*)err.Description() : L"");
+
 		return false;
 	}
 
@@ -190,7 +193,10 @@ bool CheckPptCom()
 	}
 	catch (_com_error err)
 	{
-		pptComVersion = L"Error：C++ 端 COM 初始化异常：" + wstring(err.ErrorMessage());
+		pptComVersion = L"Error: 初始化异常2(C++) " + std::wstring(err.ErrorMessage()) +
+			L" (0x" + std::to_wstring(err.Error()) + L") " +
+			std::wstring((wchar_t*)err.Description() ? (wchar_t*)err.Description() : L"");
+
 		return false;
 	}
 
@@ -342,10 +348,7 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	{
 		// 如果是触摸模拟出来的鼠标消息，就直接丢掉
 		DWORD extraInfo = GetMessageExtraInfo();
-		if ((extraInfo & 0xFFFFFF00) == 0xFF515700)
-		{
-			return 0;
-		}
+		if ((extraInfo & 0xFFFFFF00) == 0xFF515700) return 0;
 
 		// 否则当成真正的鼠标消息处理
 		// 您的鼠标处理逻辑
@@ -365,9 +368,7 @@ wstring GetPptTitle()
 
 	try
 	{
-		ret = bstrToWstring(PptCOMPto->slideNameIndex());
-
-		return ret;
+		ret = bstrToWstring(PptCOMPto->SlideNameIndex());
 	}
 	catch (_com_error)
 	{
@@ -390,7 +391,7 @@ HWND GetPptShow()
 	{
 	}
 
-	return NULL;
+	return hWnd;
 }
 void GetPptState()
 {
@@ -405,12 +406,16 @@ void GetPptState()
 		{
 			try
 			{
-				//_com_util::CheckError(PptCOMPto.CreateInstance(_uuidof(PptCOMServer)));
-				rel = PptCOMPto->Initialization(&PptInfoState.TotalPage, &PptInfoState.CurrentPage/*, pptComSetlist.autoKillWpsProcess*/);
+				rel = PptCOMPto->Initialization(reinterpret_cast<long*>(&PptInfoState.TotalPage),
+					reinterpret_cast<long*>(&PptInfoState.CurrentPage),
+					reinterpret_cast<long*>(&offSignal));
 			}
 			catch (_com_error err)
 			{
-				pptComVersion = L"Error: C++端初始化异常：" + wstring(err.ErrorMessage());
+				pptComVersion = L"Error: 初始化异常3(C++) " + std::wstring(err.ErrorMessage()) +
+					L" (0x" + std::to_wstring(err.Error()) + L") " +
+					std::wstring((wchar_t*)err.Description() ? (wchar_t*)err.Description() : L"");
+
 				rel = false;
 			}
 		}
@@ -423,11 +428,13 @@ void GetPptState()
 
 		try
 		{
-			tmp = PptCOMPto->IsPptOpen();
+			tmp = PptCOMPto->PptComService();
 		}
 		catch (_com_error)
 		{
 		}
+
+		PptInfoState.TotalPage = PptInfoState.CurrentPage = -1;
 
 		if (tmp <= 0)
 		{
@@ -443,12 +450,12 @@ void NextPptSlides(int check)
 {
 	try
 	{
-		//cout << check << endl;
-		PptCOMPto->NextSlideShow(check);
+		PptCOMPto->NextSlideShow((bool)(check == -1));
 	}
 	catch (_com_error)
 	{
 	}
+
 	return;
 }
 void PreviousPptSlides()
@@ -460,48 +467,59 @@ void PreviousPptSlides()
 	catch (_com_error)
 	{
 	}
+
 	return;
 }
-bool EndPptShow()
+void EndPptShow()
 {
 	try
 	{
-		//for (int i = 0; i < 5; i++)
-		//{
-		//	if (stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection) break;
-		//	this_thread::sleep_for(chrono::milliseconds(100));
-		//}
-
-		//POINT cursorPos;
-		//GetCursorPos(&cursorPos);
-		//if (EuclideanDistance(cursorPos, POINT(0, 0)) >= EuclideanDistance(cursorPos, POINT(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight)))
-		//{
-		//	SetForegroundWindow(ppt_show);
-		//	//SetCursorPos(0, 0);
-		//	//SetCursorPos(cursorPos.x, cursorPos.y);
-		//}
-		//else
-		//{
-		//	SetForegroundWindow(ppt_show);
-		//	//SetCursorPos(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight);
-		//	//SetCursorPos(cursorPos.x, cursorPos.y);
-		//}
-
-		SetForegroundWindow(ppt_show);
+		FocusPptShow();
 		PptCOMPto->EndSlideShow();
-
-		return true;
 	}
 	catch (_com_error)
 	{
 	}
 
-	return false;
+	return;
+}
+void ViewPptShow()
+{
+	try
+	{
+		FocusPptShow();
+		PptCOMPto->ViewSlideShow();
+	}
+	catch (_com_error)
+	{
+	}
+
+	return;
+}
+void FocusPptShow()
+{
+	if (ppt_show != NULL)
+	{
+		SetForegroundWindow(ppt_show);
+	}
+
+	// 都需要保证激活
+	{
+		try
+		{
+			PptCOMPto->ActivateSildeShowWindow();
+		}
+		catch (_com_error)
+		{
+		}
+	}
+
+	return;
 }
 
-void PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
+double PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 {
-	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return;
+	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return 0.0;
 	PptUiAllReplaceSignal = 1;
 
 	MonitorInfoStruct PPTMainMonitor;
@@ -509,8 +527,9 @@ void PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 	PPTMainMonitor = MainMonitor;
 	DisplaysInfoLock.unlock();
 
-	POINT p;
-	GetCursorPos(&p);
+	double ret = 0.0;
+	int firX = static_cast<int>(firstX);
+	int firY = static_cast<int>(firstY);
 
 	// 自身数值记录
 	float widthFirst = pptComSetlist.bottomBothWidth;
@@ -641,6 +660,9 @@ void PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 		pptComSetlist.bottomBothWidth = widthTarget;
 		pptComSetlist.bottomBothHeight = heightTarget;
 
+		ret += sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY));
+		firX = static_cast<int>(p.x), firY = static_cast<int>(p.y);
+
 		this_thread::sleep_for(chrono::milliseconds(5));
 	}
 	// 写入文件
@@ -648,11 +670,11 @@ void PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 		PptComWriteSetting();
 
 	PptUiAllReplaceSignal = -1;
-	return;
+	return ret;
 }
-void PptMiddlePageWidgetSeekBar(int firstX, int firstY, bool xReverse)
+double PptMiddlePageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 {
-	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return;
+	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return 0.0;
 	PptUiAllReplaceSignal = 1;
 
 	MonitorInfoStruct PPTMainMonitor;
@@ -660,8 +682,9 @@ void PptMiddlePageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 	PPTMainMonitor = MainMonitor;
 	DisplaysInfoLock.unlock();
 
-	POINT p;
-	GetCursorPos(&p);
+	double ret = 0.0;
+	int firX = static_cast<int>(firstX);
+	int firY = static_cast<int>(firstY);
 
 	// 自身数值记录
 	float widthFirst = pptComSetlist.middleBothWidth;
@@ -792,14 +815,17 @@ void PptMiddlePageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 		pptComSetlist.middleBothWidth = widthTarget;
 		pptComSetlist.middleBothHeight = heightTarget;
 
+		ret += sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY));
+		firX = static_cast<int>(p.x), firY = static_cast<int>(p.y);
+
 		this_thread::sleep_for(chrono::milliseconds(5));
 	}
 	// 写入文件
-	if (pptComSetlist.memoryWidgetPosition && (pptComSetlist.bottomBothWidth != widthFirst || pptComSetlist.bottomBothHeight != heightFirst))
+	if (pptComSetlist.memoryWidgetPosition && (pptComSetlist.middleBothWidth != widthFirst || pptComSetlist.middleBothHeight != heightFirst))
 		PptComWriteSetting();
 
 	PptUiAllReplaceSignal = -1;
-	return;
+	return ret;
 }
 void PptBottomMiddleSeekBar(int firstX, int firstY)
 {
@@ -3412,7 +3438,7 @@ void PptInteract()
 					}
 					else
 					{
-						SetForegroundWindow(ppt_show);
+						FocusPptShow();
 						NextPptSlides(temp_currentpage);
 					}
 					hiex::flushmessage_win32(EM_MOUSE, ppt_window);
@@ -3420,7 +3446,7 @@ void PptInteract()
 				// 上一页
 				else
 				{
-					SetForegroundWindow(ppt_show);
+					FocusPptShow();
 					PreviousPptSlides();
 
 					hiex::flushmessage_win32(EM_MOUSE, ppt_window);
@@ -3444,7 +3470,7 @@ void PptInteract()
 
 					if (m.message == WM_LBUTTONDOWN)
 					{
-						SetForegroundWindow(ppt_show);
+						FocusPptShow();
 
 						PreviousPptSlides();
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
@@ -3501,7 +3527,7 @@ void PptInteract()
 						}
 						else
 						{
-							SetForegroundWindow(ppt_show);
+							FocusPptShow();
 
 							NextPptSlides(temp_currentpage);
 							pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
@@ -3543,12 +3569,21 @@ void PptInteract()
 					}
 				}
 				else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
+
 				// 底部左侧全局拖动条
 				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Height.v) }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
-						PptBottomPageWidgetSeekBar(m.x, m.y, false);
+						auto moveDis = PptBottomPageWidgetSeekBar(m.x, m.y, false);
+						if (moveDis <= 20)
+						{
+							if (IsInRect(m.x, m.y, { long(pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Left.v + 5.0f * pptComSetlist.bottomSideBothWidgetScale), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v), long(pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Right.v - 5.0f * pptComSetlist.bottomSideBothWidgetScale), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Height.v) }))
+							{
+								ViewPptShow();
+							}
+						}
+
 						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 					}
 				}
@@ -3568,7 +3603,7 @@ void PptInteract()
 
 					if (m.message == WM_LBUTTONDOWN)
 					{
-						SetForegroundWindow(ppt_show);
+						FocusPptShow();
 
 						PreviousPptSlides();
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
@@ -3625,7 +3660,7 @@ void PptInteract()
 						}
 						else
 						{
-							SetForegroundWindow(ppt_show);
+							FocusPptShow();
 
 							NextPptSlides(temp_currentpage);
 							pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
@@ -3667,12 +3702,21 @@ void PptInteract()
 					}
 				}
 				else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
+
 				// 底部右侧全局拖动条
 				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Height.v) }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
-						PptBottomPageWidgetSeekBar(m.x, m.y, true);
+						auto moveDis = PptBottomPageWidgetSeekBar(m.x, m.y, true);
+						if (moveDis <= 20)
+						{
+							if (IsInRect(m.x, m.y, { long(pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Left.v + 5.0f * pptComSetlist.bottomSideBothWidgetScale), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v), long(pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Right.v - 5.0f * pptComSetlist.bottomSideBothWidgetScale), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Height.v) }))
+							{
+								ViewPptShow();
+							}
+						}
+
 						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 					}
 				}
@@ -3694,7 +3738,7 @@ void PptInteract()
 
 					if (m.message == WM_LBUTTONDOWN)
 					{
-						SetForegroundWindow(ppt_show);
+						FocusPptShow();
 
 						PreviousPptSlides();
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
@@ -3751,7 +3795,7 @@ void PptInteract()
 						}
 						else
 						{
-							SetForegroundWindow(ppt_show);
+							FocusPptShow();
 
 							NextPptSlides(temp_currentpage);
 							pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
@@ -3793,12 +3837,24 @@ void PptInteract()
 					}
 				}
 				else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
+
 				// 中部左侧全局拖动条
 				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Height.v) }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
-						PptMiddlePageWidgetSeekBar(m.x, m.y, false);
+						auto moveDis = PptMiddlePageWidgetSeekBar(m.x, m.y, false);
+						if (moveDis <= 20)
+						{
+							if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v),
+								long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Height.v + 5.0f * pptComSetlist.middleSideBothWidgetScale),
+								long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Width.v),
+								long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].Y.v - 5.0f * pptComSetlist.middleSideBothWidgetScale) }))
+							{
+								ViewPptShow();
+							}
+						}
+
 						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 					}
 				}
@@ -3818,7 +3874,7 @@ void PptInteract()
 
 					if (m.message == WM_LBUTTONDOWN)
 					{
-						SetForegroundWindow(ppt_show);
+						FocusPptShow();
 
 						PreviousPptSlides();
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
@@ -3875,7 +3931,7 @@ void PptInteract()
 						}
 						else
 						{
-							SetForegroundWindow(ppt_show);
+							FocusPptShow();
 
 							NextPptSlides(temp_currentpage);
 							pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
@@ -3917,12 +3973,24 @@ void PptInteract()
 					}
 				}
 				else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
+
 				// 中部右侧全局拖动条
 				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Height.v) }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
-						PptMiddlePageWidgetSeekBar(m.x, m.y, true);
+						auto moveDis = PptMiddlePageWidgetSeekBar(m.x, m.y, true);
+						if (moveDis <= 20)
+						{
+							if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v),
+								long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Height.v + 5.0f * pptComSetlist.middleSideBothWidgetScale),
+								long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Width.v),
+								long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].Y.v - 5.0f * pptComSetlist.middleSideBothWidgetScale) }))
+							{
+								ViewPptShow();
+							}
+						}
+
 						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 					}
 				}
@@ -4126,7 +4194,7 @@ void StartDesktopDrawpadBlocker()
 	{
 		// 配置 json
 		{
-			// if (_waccess((dataPath + L"\\DesktopDrawpadBlocker\\interaction_configuration.json").c_str(), 0) == 0) DdbReadInteraction();
+			// if (_waccess((pluginPath + L"\\DesktopDrawpadBlocker\\interaction_configuration.json").c_str(), 0) == 0) DdbReadInteraction();
 
 			ddbInteractionSetList.hostPath = GetCurrentExePath();
 
@@ -4135,54 +4203,54 @@ void StartDesktopDrawpadBlocker()
 		}
 
 		// 配置 EXE
-		if (_waccess((dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), 0) == -1)
+		if (_waccess((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), 0) == -1)
 		{
-			if (_waccess((dataPath + L"\\DesktopDrawpadBlocker").c_str(), 0) == -1)
+			if (_waccess((pluginPath + L"DesktopDrawpadBlocker").c_str(), 0) == -1)
 			{
 				error_code ec;
-				filesystem::create_directories(dataPath + L"\\DesktopDrawpadBlocker", ec);
+				filesystem::create_directories(pluginPath + L"DesktopDrawpadBlocker", ec);
 			}
-			ExtractResource((dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
+			ExtractResource((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
 		}
 		else
 		{
 			string hash_sha256;
 			{
 				hashwrapper* myWrapper = new sha256wrapper();
-				hash_sha256 = myWrapper->getHashFromFileW(dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe");
+				hash_sha256 = myWrapper->getHashFromFileW(pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe");
 				delete myWrapper;
 			}
 
 			if (hash_sha256 != ddbInteractionSetList.DdbSHA256)
 			{
-				if (isProcessRunning((dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
+				if (isProcessRunning((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
 				{
 					// 需要关闭旧版 DDB 并更新版本
 
 					DdbWriteInteraction(true, true);
 					for (int i = 1; i <= 20; i++)
 					{
-						if (!isProcessRunning((dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
+						if (!isProcessRunning((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
 							break;
 						this_thread::sleep_for(chrono::milliseconds(500));
 					}
 				}
-				ExtractResource((dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
+				ExtractResource((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
 			}
 		}
 
 		// 启动 DDB
-		if (!isProcessRunning((dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
+		if (!isProcessRunning((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
 		{
 			DdbWriteInteraction(true, false);
-			if (ddbInteractionSetList.runAsAdmin) ShellExecuteW(NULL, L"runas", (dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
-			else ShellExecuteW(NULL, NULL, (dataPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+			if (ddbInteractionSetList.runAsAdmin) ShellExecuteW(NULL, L"runas", (pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+			else ShellExecuteW(NULL, NULL, (pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
 		}
 	}
-	else if (_waccess((dataPath + L"\\DesktopDrawpadBlocker").c_str(), 0) == 0)
+	else if (_waccess((pluginPath + L"DesktopDrawpadBlocker").c_str(), 0) == 0)
 	{
 		error_code ec;
-		filesystem::remove_all(dataPath + L"\\DesktopDrawpadBlocker", ec);
+		filesystem::remove_all(pluginPath + L"DesktopDrawpadBlocker", ec);
 	}
 }
 
