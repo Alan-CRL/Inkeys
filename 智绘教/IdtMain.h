@@ -93,25 +93,6 @@ using namespace Gdiplus;
 #define HiBeginDraw() BEGIN_TASK()
 #define HiEndDraw() END_TASK(); REDRAW_WINDOW()
 
-extern wstring buildTime;
-extern wstring editionDate;
-extern wstring editionChannel;
-
-extern wstring userId;
-extern wstring globalPath;
-extern wstring pluginPath;
-
-extern wstring programArchitecture;
-extern wstring targetArchitecture;
-
-void CloseProgram();
-void RestartProgram();
-
-extern int offSignal; //关闭指令
-extern map <wstring, bool> threadStatus; //线程状态管理
-
-extern shared_ptr<spdlog::logger> IDTLogger;
-
 // 私有模板
 template <typename IdtAtomicT>
 class IdtAtomic
@@ -196,6 +177,35 @@ public:
 		return *this;
 	}
 };
+
+template <typename IdtAtomicT, typename CharT>
+struct formatter<IdtAtomic<IdtAtomicT>, CharT> : formatter<IdtAtomicT, CharT>
+{
+	auto format(const IdtAtomic<IdtAtomicT>& obj, format_context& ctx) const
+	{
+		return formatter<IdtAtomicT, CharT>::format(obj.load(), ctx);
+	}
+};
+
+extern wstring buildTime;
+extern wstring editionDate;
+extern wstring editionChannel;
+
+extern wstring userId;
+extern wstring globalPath;
+extern wstring pluginPath;
+
+extern wstring programArchitecture;
+extern wstring targetArchitecture;
+
+void CloseProgram();
+void RestartProgram();
+
+extern IdtAtomic<int> offSignal; //关闭指令
+extern map <wstring, bool> threadStatus; //线程状态管理
+
+extern shared_ptr<spdlog::logger> IDTLogger;
+extern IdtAtomic<bool> useMouseInput;
 
 // 调测专用
 #ifndef IDT_RELEASE

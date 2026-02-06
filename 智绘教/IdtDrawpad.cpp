@@ -429,6 +429,7 @@ LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 {
 	switch (msg)
 	{
+		// 禁用系统手势
 	case WM_TABLET_QUERYSYSTEMGESTURESTATUS:
 	{
 		DWORD flags = 0;
@@ -440,6 +441,7 @@ LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 		return (LRESULT)flags;
 	}
 
+	// 隐藏触控指针
 	case WM_SETCURSOR:
 	{
 		if (LOWORD(lParam) == HTCLIENT)
@@ -454,6 +456,20 @@ LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 			}
 		}
 		break;
+	}
+
+	// 兼容鼠标消息
+	case WM_LBUTTONDOWN:
+	case WM_RBUTTONDOWN:
+	case WM_MOUSEMOVE:
+	case WM_LBUTTONUP:
+	case WM_RBUTTONUP:
+	{
+		if (useMouseInput)
+		{
+			HandleMouseInput(hWnd, msg, wParam, lParam);
+			break;
+		}
 	}
 
 	default:

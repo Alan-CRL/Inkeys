@@ -8,7 +8,6 @@ on:
       - main
       - insider
       - canary
-      - inkeys2-final
 permissions:
   actions: write
 
@@ -413,37 +412,40 @@ jobs:
 
           $content = @"
             "${{ steps.softwareChannel.outputs.VALUE }}": {
-            "edition_date": "${{ steps.softwareDate.outputs.VALUE }}",
-            "edition_code": "",
-            "inkeys3": false,
-            "hash": {
-              "md5": "$md5_1",
-              "sha256": "$sha256_1",
-              "md5 64": "$md5_2",
-              "sha256 64": "$sha256_2",
-              "md5 Arm64": "$md5_3",
-              "sha256 Arm64": "$sha256_3"
-            },
-            "path": [
-              "https://vip.123pan.cn/1709404/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip",
-              "http://home.alan-crl.top/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip"
-            ],
-            "path64": [
-              "https://vip.123pan.cn/1709404/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip",
-              "http://home.alan-crl.top/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip"
-            ],
-            "pathArm64": [
-              "https://vip.123pan.cn/1709404/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip",
-              "http://home.alan-crl.top/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip"
-            ],
-            "size": {
-              "file": $size1,
-              "file64": $size2,
-              "fileArm64": $size3 
-            },
-            "representation": "Inkeys.exe"
-          }
-          "@
+              "edition_date": "${{ steps.softwareDate.outputs.VALUE }}",
+              "edition_code": "",
+              "inkeys3": false,
+              "hash": {
+                "md5": "$md5_1",
+                "sha256": "$sha256_1",
+                "md5 64": "$md5_2",
+                "sha256 64": "$sha256_2",
+                "md5 Arm64": "$md5_3",
+                "sha256 Arm64": "$sha256_3"
+              },
+              "path": [
+                "https://get.smart-teach.cn/d/Ningbo-S3/shared/AlanCRL/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip",
+                "http://home.alan-crl.top/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip",
+                "https://vip.123pan.cn/1709404/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip"
+              ],
+              "path64": [
+                "https://get.smart-teach.cn/d/Ningbo-S3/shared/AlanCRL/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip",
+                "http://home.alan-crl.top/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip",
+                "https://vip.123pan.cn/1709404/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip"
+              ],
+              "pathArm64": [
+                "https://get.smart-teach.cn/d/Ningbo-S3/shared/AlanCRL/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip",
+                "http://home.alan-crl.top/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip",
+                "https://vip.123pan.cn/1709404/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip"
+              ],
+              "size": {
+                "file": $size1,
+                "file64": $size2,
+                "fileArm64": $size3 
+              },
+              "representation": "Inkeys.exe"
+            }
+            "@
           Set-Content -Path "packageUpload\update.txt" -Value $content -Encoding UTF8
 
       - name: Write Tips

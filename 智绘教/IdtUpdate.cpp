@@ -301,6 +301,8 @@ AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state,
 
 bool isWindows8OrGreater;
 wstring windowsEdition;
+IdtAtomic<int> downloadLine = 1;
+
 void AutomaticUpdate()
 {
 	bool state = true;
@@ -415,20 +417,37 @@ updateStart:
 
 						if (tedition == editionInfo.editionDate && _waccess((globalPath + tpath).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256 && updateArch == tarch)
 						{
-							update = false;
-							AutomaticUpdateState = UpdateRestart;
+							if (!setlist.enableAutoUpdate)
+							{
+								if (_waccess((globalPath + L"installer").c_str(), 0) == 0)
+								{
+									error_code ec;
+									filesystem::remove_all(globalPath + L"installer", ec);
+								}
+							}
+							else
+							{
+								update = false;
+								AutomaticUpdateState = UpdateRestart;
+							}
 						}
 					}
 				}
+
 				if (update)
 				{
+					downloadLine = 1;
 					AutomaticUpdateState = UpdateDownloading;
 
 					against = true;
 					bool hasUpdateNew = false;
 					for (int i = 0; i < editionInfo.path_size; i++)
 					{
+						downloadLine = i + 1;
+						AutomaticUpdateState = UpdateDownloading;
+
 						AutomaticUpdateState = DownloadNewProgram(&downloadNewProgramState, editionInfo, editionInfo.path[i], updateArch);
+
 						if (AutomaticUpdateState == UpdateRestart)
 						{
 							against = false;
@@ -442,6 +461,12 @@ updateStart:
 						}
 						else if (AutomaticUpdateState == UpdateNew && !mandatoryUpdate)
 						{
+							if (_waccess((globalPath + L"installer").c_str(), 0) == 0)
+							{
+								error_code ec;
+								filesystem::remove_all(globalPath + L"installer", ec);
+							}
+
 							hasUpdateNew = true;
 							break;
 						}

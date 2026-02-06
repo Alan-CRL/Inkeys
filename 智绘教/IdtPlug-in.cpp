@@ -180,7 +180,10 @@ bool CheckPptCom()
 	}
 	catch (_com_error err)
 	{
-		pptComVersion = L"Error: C++端初始化异常：" + wstring(err.ErrorMessage());
+		pptComVersion = L"Error: 初始化异常1(C++) " + std::wstring(err.ErrorMessage()) +
+			L" (0x" + std::to_wstring(err.Error()) + L") " +
+			std::wstring((wchar_t*)err.Description() ? (wchar_t*)err.Description() : L"");
+
 		return false;
 	}
 
@@ -190,7 +193,10 @@ bool CheckPptCom()
 	}
 	catch (_com_error err)
 	{
-		pptComVersion = L"Error：C++ 端 COM 初始化异常：" + wstring(err.ErrorMessage());
+		pptComVersion = L"Error: 初始化异常2(C++) " + std::wstring(err.ErrorMessage()) +
+			L" (0x" + std::to_wstring(err.Error()) + L") " +
+			std::wstring((wchar_t*)err.Description() ? (wchar_t*)err.Description() : L"");
+
 		return false;
 	}
 
@@ -406,7 +412,10 @@ void GetPptState()
 			}
 			catch (_com_error err)
 			{
-				pptComVersion = L"Error: C++端初始化异常：" + wstring(err.ErrorMessage());
+				pptComVersion = L"Error: 初始化异常3(C++) " + std::wstring(err.ErrorMessage()) +
+					L" (0x" + std::to_wstring(err.Error()) + L") " +
+					std::wstring((wchar_t*)err.Description() ? (wchar_t*)err.Description() : L"");
+
 				rel = false;
 			}
 		}
@@ -4194,54 +4203,54 @@ void StartDesktopDrawpadBlocker()
 		}
 
 		// 配置 EXE
-		if (_waccess((pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), 0) == -1)
+		if (_waccess((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), 0) == -1)
 		{
-			if (_waccess((pluginPath + L"\\DesktopDrawpadBlocker").c_str(), 0) == -1)
+			if (_waccess((pluginPath + L"DesktopDrawpadBlocker").c_str(), 0) == -1)
 			{
 				error_code ec;
-				filesystem::create_directories(pluginPath + L"\\DesktopDrawpadBlocker", ec);
+				filesystem::create_directories(pluginPath + L"DesktopDrawpadBlocker", ec);
 			}
-			ExtractResource((pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
+			ExtractResource((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
 		}
 		else
 		{
 			string hash_sha256;
 			{
 				hashwrapper* myWrapper = new sha256wrapper();
-				hash_sha256 = myWrapper->getHashFromFileW(pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe");
+				hash_sha256 = myWrapper->getHashFromFileW(pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe");
 				delete myWrapper;
 			}
 
 			if (hash_sha256 != ddbInteractionSetList.DdbSHA256)
 			{
-				if (isProcessRunning((pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
+				if (isProcessRunning((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
 				{
 					// 需要关闭旧版 DDB 并更新版本
 
 					DdbWriteInteraction(true, true);
 					for (int i = 1; i <= 20; i++)
 					{
-						if (!isProcessRunning((pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
+						if (!isProcessRunning((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
 							break;
 						this_thread::sleep_for(chrono::milliseconds(500));
 					}
 				}
-				ExtractResource((pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
+				ExtractResource((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
 			}
 		}
 
 		// 启动 DDB
-		if (!isProcessRunning((pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
+		if (!isProcessRunning((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
 		{
 			DdbWriteInteraction(true, false);
-			if (ddbInteractionSetList.runAsAdmin) ShellExecuteW(NULL, L"runas", (pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
-			else ShellExecuteW(NULL, NULL, (pluginPath + L"\\DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+			if (ddbInteractionSetList.runAsAdmin) ShellExecuteW(NULL, L"runas", (pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+			else ShellExecuteW(NULL, NULL, (pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
 		}
 	}
-	else if (_waccess((pluginPath + L"\\DesktopDrawpadBlocker").c_str(), 0) == 0)
+	else if (_waccess((pluginPath + L"DesktopDrawpadBlocker").c_str(), 0) == 0)
 	{
 		error_code ec;
-		filesystem::remove_all(pluginPath + L"\\DesktopDrawpadBlocker", ec);
+		filesystem::remove_all(pluginPath + L"DesktopDrawpadBlocker", ec);
 	}
 }
 

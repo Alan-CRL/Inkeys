@@ -232,31 +232,39 @@ bool ReadSetting()
 				if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"].isMember("Intercept") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isObject())
 				{
 					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoWhiteboard3Floating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard3Floating"].isBool())
-						ddbInteractionSetList.intercept.seewoWhiteboard3Floating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard3Floating"].asBool();
+						ddbInteractionSetList.intercept.SeewoWhiteboard3Floating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard3Floating"].asBool();
 					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoWhiteboard5Floating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5Floating"].isBool())
-						ddbInteractionSetList.intercept.seewoWhiteboard5Floating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5Floating"].asBool();
+						ddbInteractionSetList.intercept.SeewoWhiteboard5Floating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5Floating"].asBool();
 					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoWhiteboard5CFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5CFloating"].isBool())
-						ddbInteractionSetList.intercept.seewoWhiteboard5CFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5CFloating"].asBool();
+						ddbInteractionSetList.intercept.SeewoWhiteboard5CFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5CFloating"].asBool();
 					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoPincoSideBarFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoSideBarFloating"].isBool())
-						ddbInteractionSetList.intercept.seewoPincoSideBarFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoSideBarFloating"].asBool();
+						ddbInteractionSetList.intercept.SeewoPincoSideBarFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoSideBarFloating"].asBool();
 					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoPincoDrawingFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoDrawingFloating"].isBool())
-						ddbInteractionSetList.intercept.seewoPincoDrawingFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoDrawingFloating"].asBool();
+						ddbInteractionSetList.intercept.SeewoPincoDrawingFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoDrawingFloating"].asBool();
 					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoPPTFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPPTFloating"].isBool())
-						ddbInteractionSetList.intercept.seewoPPTFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPPTFloating"].asBool();
+						ddbInteractionSetList.intercept.SeewoPPTFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPPTFloating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoIwbAssistantFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoIwbAssistantFloating"].isBool())
+						ddbInteractionSetList.intercept.SeewoIwbAssistantFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoIwbAssistantFloating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("YiouBoardFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["YiouBoardFloating"].isBool())
+						ddbInteractionSetList.intercept.YiouBoardFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["YiouBoardFloating"].asBool();
 					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("AiClassFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["AiClassFloating"].isBool())
-						ddbInteractionSetList.intercept.aiClassFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["AiClassFloating"].asBool();
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("HiteAnnotationFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["HiteAnnotationFloating"].isBool())
-						ddbInteractionSetList.intercept.hiteAnnotationFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["HiteAnnotationFloating"].asBool();
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("ChangYanFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanFloating"].isBool())
-						ddbInteractionSetList.intercept.changYanFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanFloating"].asBool();
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("ChangYanPptFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanPptFloating"].isBool())
-						ddbInteractionSetList.intercept.changYanPptFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanPptFloating"].asBool();
+						ddbInteractionSetList.intercept.AiClassFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["AiClassFloating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("ClassInXFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ClassInXFloating"].isBool())
+						ddbInteractionSetList.intercept.ClassInXFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ClassInXFloating"].asBool();
 					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("IntelligentClassFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["IntelligentClassFloating"].isBool())
-						ddbInteractionSetList.intercept.intelligentClassFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["IntelligentClassFloating"].asBool();
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoDesktopAnnotationFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopAnnotationFloating"].isBool())
-						ddbInteractionSetList.intercept.seewoDesktopAnnotationFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopAnnotationFloating"].asBool();
+						ddbInteractionSetList.intercept.IntelligentClassFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["IntelligentClassFloating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("ChangYanFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanFloating"].isBool())
+						ddbInteractionSetList.intercept.ChangYanFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanFloating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("ChangYan5Floating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYan5Floating"].isBool())
+						ddbInteractionSetList.intercept.ChangYan5Floating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYan5Floating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("Iclass30SidebarFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["Iclass30SidebarFloating"].isBool())
+						ddbInteractionSetList.intercept.Iclass30SidebarFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["Iclass30SidebarFloating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("Iclass30Floating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["Iclass30Floating"].isBool())
+						ddbInteractionSetList.intercept.Iclass30Floating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["Iclass30Floating"].asBool();
 					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoDesktopSideBarFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopSideBarFloating"].isBool())
-						ddbInteractionSetList.intercept.seewoDesktopSideBarFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopSideBarFloating"].asBool();
+						ddbInteractionSetList.intercept.SeewoDesktopSideBarFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopSideBarFloating"].asBool();
+					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoDesktopDrawingFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopDrawingFloating"].isBool())
+						ddbInteractionSetList.intercept.SeewoDesktopDrawingFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopDrawingFloating"].asBool();
 				}
 			}
 			if (setlistVal["PlugIn"].isMember("ShortcutAssistant") && setlistVal["PlugIn"]["ShortcutAssistant"].isObject())
@@ -460,19 +468,23 @@ bool WriteSetting()
 				setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["SleepTime"] = Json::Value(ddbInteractionSetList.sleepTime);
 
 				{
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard3Floating"] = Json::Value(ddbInteractionSetList.intercept.seewoWhiteboard3Floating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5Floating"] = Json::Value(ddbInteractionSetList.intercept.seewoWhiteboard5Floating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5CFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoWhiteboard5CFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoSideBarFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoPincoSideBarFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoDrawingFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoPincoDrawingFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPPTFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoPPTFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["AiClassFloating"] = Json::Value(ddbInteractionSetList.intercept.aiClassFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["HiteAnnotationFloating"] = Json::Value(ddbInteractionSetList.intercept.hiteAnnotationFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanFloating"] = Json::Value(ddbInteractionSetList.intercept.changYanFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanPptFloating"] = Json::Value(ddbInteractionSetList.intercept.changYanPptFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["IntelligentClassFloating"] = Json::Value(ddbInteractionSetList.intercept.intelligentClassFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopAnnotationFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoDesktopAnnotationFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopSideBarFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoDesktopSideBarFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard3Floating"] = Json::Value(ddbInteractionSetList.intercept.SeewoWhiteboard3Floating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5Floating"] = Json::Value(ddbInteractionSetList.intercept.SeewoWhiteboard5Floating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5CFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoWhiteboard5CFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoSideBarFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoPincoSideBarFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoDrawingFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoPincoDrawingFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPPTFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoPPTFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoIwbAssistantFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoIwbAssistantFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["YiouBoardFloating"] = Json::Value(ddbInteractionSetList.intercept.YiouBoardFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["AiClassFloating"] = Json::Value(ddbInteractionSetList.intercept.AiClassFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ClassInXFloating"] = Json::Value(ddbInteractionSetList.intercept.ClassInXFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["IntelligentClassFloating"] = Json::Value(ddbInteractionSetList.intercept.IntelligentClassFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanFloating"] = Json::Value(ddbInteractionSetList.intercept.ChangYanFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYan5Floating"] = Json::Value(ddbInteractionSetList.intercept.ChangYan5Floating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["Iclass30SidebarFloating"] = Json::Value(ddbInteractionSetList.intercept.Iclass30SidebarFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["Iclass30Floating"] = Json::Value(ddbInteractionSetList.intercept.Iclass30Floating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopSideBarFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoDesktopSideBarFloating);
+					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopDrawingFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoDesktopDrawingFloating);
 				}
 			}
 			{
@@ -877,21 +889,23 @@ bool DdbWriteInteraction(bool change, bool close)
 		updateVal["Mode"]["RestartHost"] = Json::Value(ddbInteractionSetList.restartHost);
 
 		{
-			updateVal["Intercept"]["SeewoWhiteboard3Floating"] = Json::Value(ddbInteractionSetList.intercept.seewoWhiteboard3Floating);
-			updateVal["Intercept"]["SeewoWhiteboard5Floating"] = Json::Value(ddbInteractionSetList.intercept.seewoWhiteboard5Floating);
-			updateVal["Intercept"]["SeewoWhiteboard5CFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoWhiteboard5CFloating);
-			updateVal["Intercept"]["SeewoPincoSideBarFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoPincoSideBarFloating);
-			updateVal["Intercept"]["SeewoPincoDrawingFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoPincoDrawingFloating);
-			updateVal["Intercept"]["SeewoPPTFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoPPTFloating);
-			updateVal["Intercept"]["AiClassFloating"] = Json::Value(ddbInteractionSetList.intercept.aiClassFloating);
-			updateVal["Intercept"]["HiteAnnotationFloating"] = Json::Value(ddbInteractionSetList.intercept.hiteAnnotationFloating);
-			updateVal["Intercept"]["ChangYanFloating"] = Json::Value(ddbInteractionSetList.intercept.changYanFloating);
-			updateVal["Intercept"]["ChangYanPptFloating"] = Json::Value(ddbInteractionSetList.intercept.changYanPptFloating);
-			updateVal["Intercept"]["IntelligentClassFloating"] = Json::Value(ddbInteractionSetList.intercept.intelligentClassFloating);
-			updateVal["Intercept"]["SeewoDesktopAnnotationFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoDesktopAnnotationFloating);
-			updateVal["Intercept"]["SeewoDesktopSideBarFloating"] = Json::Value(ddbInteractionSetList.intercept.seewoDesktopSideBarFloating);
-			updateVal["Intercept"]["Iclass30Floating"] = Json::Value(ddbInteractionSetList.intercept.iclass30Floating);
-			updateVal["Intercept"]["Iclass30SidebarFloating"] = Json::Value(ddbInteractionSetList.intercept.iclass30SidebarFloating);
+			updateVal["Intercept"]["SeewoWhiteboard3Floating"] = Json::Value(ddbInteractionSetList.intercept.SeewoWhiteboard3Floating);
+			updateVal["Intercept"]["SeewoWhiteboard5Floating"] = Json::Value(ddbInteractionSetList.intercept.SeewoWhiteboard5Floating);
+			updateVal["Intercept"]["SeewoWhiteboard5CFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoWhiteboard5CFloating);
+			updateVal["Intercept"]["SeewoPincoSideBarFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoPincoSideBarFloating);
+			updateVal["Intercept"]["SeewoPincoDrawingFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoPincoDrawingFloating);
+			updateVal["Intercept"]["SeewoPPTFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoPPTFloating);
+			updateVal["Intercept"]["SeewoIwbAssistantFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoIwbAssistantFloating);
+			updateVal["Intercept"]["YiouBoardFloating"] = Json::Value(ddbInteractionSetList.intercept.YiouBoardFloating);
+			updateVal["Intercept"]["AiClassFloating"] = Json::Value(ddbInteractionSetList.intercept.AiClassFloating);
+			updateVal["Intercept"]["ClassInXFloating"] = Json::Value(ddbInteractionSetList.intercept.ClassInXFloating);
+			updateVal["Intercept"]["IntelligentClassFloating"] = Json::Value(ddbInteractionSetList.intercept.IntelligentClassFloating);
+			updateVal["Intercept"]["ChangYanFloating"] = Json::Value(ddbInteractionSetList.intercept.ChangYanFloating);
+			updateVal["Intercept"]["ChangYan5Floating"] = Json::Value(ddbInteractionSetList.intercept.ChangYan5Floating);
+			updateVal["Intercept"]["Iclass30SidebarFloating"] = Json::Value(ddbInteractionSetList.intercept.Iclass30SidebarFloating);
+			updateVal["Intercept"]["Iclass30Floating"] = Json::Value(ddbInteractionSetList.intercept.Iclass30Floating);
+			updateVal["Intercept"]["SeewoDesktopSideBarFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoDesktopSideBarFloating);
+			updateVal["Intercept"]["SeewoDesktopDrawingFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoDesktopDrawingFloating);
 		}
 
 		updateVal["~ConfigurationChange"] = Json::Value(change);
@@ -899,7 +913,7 @@ bool DdbWriteInteraction(bool change, bool close)
 	}
 
 	HANDLE fileHandle = NULL;
-	if (!OccupyFileForWrite(&fileHandle, pluginPath + L"\\DesktopDrawpadBlocker\\interaction_configuration.json"))
+	if (!OccupyFileForWrite(&fileHandle, pluginPath + L"DesktopDrawpadBlocker\\interaction_configuration.json"))
 	{
 		UnOccupyFile(&fileHandle);
 		return false;

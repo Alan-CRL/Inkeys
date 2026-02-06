@@ -1262,14 +1262,20 @@
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf" />
-    <Font Include="src\ttf\HarmonyOS_Sans_TC_Regular.ttf" />
-    <Font Include="src\ttf\Segoe Fluent Icons.ttf" />
-    <Font Include="src\ttf\icomoon.ttf" />
+    <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\HarmonyOS_Sans_TC_Regular.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\icomoon.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\Segoe Fluent Icons.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
   </ItemGroup>
   <ItemGroup>
-    <None Include="PptCOM.dll" />
-    <None Include="exe\DesktopDrawpadBlocker.exe" />
     <None Include="additional\jsoncpp\lib_json\json_valueiterator.inl">
       <Filter>头文件\Additional\JsonCpp\lib_json</Filter>
     </None>
@@ -1278,11 +1284,17 @@
     </None>
     <None Include="src\i18n\zh-CN.jsonc" />
     <None Include="src\i18n\zh-TW.jsonc" />
-    <None Include="src\i18n\en-US.jsonc">
+    <None Include="src\i18n\en-US.jsonc" />
+    <None Include="exe\DesktopDrawpadBlocker.exe">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="PptCOM.dll">
       <Filter>资源文件</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
-    <Manifest Include="..\PptCOM\PptCOM.manifest" />
+    <Manifest Include="..\PptCOM\PptCOM.manifest">
+      <Filter>资源文件</Filter>
+    </Manifest>
   </ItemGroup>
 </Project>

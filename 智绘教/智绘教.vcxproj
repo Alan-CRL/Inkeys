@@ -234,6 +234,7 @@
       <AdditionalLibraryDirectories>.\additional;.\binarypackage\OpenSSL-Win32\lib;.\binarypackage\lib\X86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <UACExecutionLevel>AsInvoker</UACExecutionLevel>
+      <DelayLoadDLLs>Magnification.dll</DelayLoadDLLs>
     </Link>
     <Manifest>
       <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
@@ -267,6 +268,7 @@
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>.\additional;.\binarypackage\OpenSSL-Win64\lib;.\binarypackage\lib\X64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
+      <DelayLoadDLLs>Magnification.dll</DelayLoadDLLs>
     </Link>
     <Manifest>
       <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
@@ -299,6 +301,7 @@
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>.\additional;.\binarypackage\OpenSSL-Arm64\lib;.\binarypackage\lib\ARM64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
+      <DelayLoadDLLs>Magnification.dll</DelayLoadDLLs>
     </Link>
     <Manifest>
       <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>

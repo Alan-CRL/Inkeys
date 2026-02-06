@@ -111,4 +111,6 @@ wstring convertToHttp(const wstring& url);
 
 extern bool isWindows8OrGreater;
 extern wstring windowsEdition;
+extern IdtAtomic<int> downloadLine;
+
 void AutomaticUpdate();

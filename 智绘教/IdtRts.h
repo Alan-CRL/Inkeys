@@ -124,3 +124,8 @@ private:
 };
 
 void RTSSpeed();
+
+extern IdtAtomic<LONG> leftButtonPid, rightButtonPid;
+void HandleMouseInput(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+void InitRTSLogic();
