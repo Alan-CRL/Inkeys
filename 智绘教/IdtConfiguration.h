@@ -227,8 +227,8 @@ struct DdbInteractionSetListStruct
 		enable = false;
 		runAsAdmin = false;
 
-		DdbEdition = L"20251128a";
-		DdbSHA256 = "ffbfdb4ffb6f720ba19f7f042e7e3eb274b234764ad2e78247367ee470c65d05";
+		DdbEdition = L"20260205a";
+		DdbSHA256 = "7bf7c660379f52d739c44e794c2e0bd0455a0a1fa0aa2c114546cb3f433e2f41";
 
 		// -----
 
@@ -240,21 +240,23 @@ struct DdbInteractionSetListStruct
 
 		// -----
 
-		intercept.seewoWhiteboard3Floating = true;
-		intercept.seewoWhiteboard5Floating = true;
-		intercept.seewoWhiteboard5CFloating = true;
-		intercept.seewoPincoSideBarFloating = false;
-		intercept.seewoPincoDrawingFloating = true;
-		intercept.seewoPPTFloating = true;
-		intercept.aiClassFloating = true;
-		intercept.hiteAnnotationFloating = true;
-		intercept.changYanFloating = true;
-		intercept.changYanPptFloating = true;
-		intercept.intelligentClassFloating = true;
-		intercept.seewoDesktopAnnotationFloating = true;
-		intercept.seewoDesktopSideBarFloating = false;
-		intercept.iclass30Floating = true;
-		intercept.iclass30SidebarFloating = false;
+		intercept.SeewoWhiteboard3Floating = true;
+		intercept.SeewoWhiteboard5Floating = true;
+		intercept.SeewoWhiteboard5CFloating = true;
+		intercept.SeewoPincoSideBarFloating = false;
+		intercept.SeewoPincoDrawingFloating = true;
+		intercept.SeewoPPTFloating = true;
+		intercept.SeewoIwbAssistantFloating = true;
+		intercept.YiouBoardFloating = true;
+		intercept.AiClassFloating = true;
+		intercept.ClassInXFloating = true;
+		intercept.IntelligentClassFloating = true;
+		intercept.ChangYanFloating = true;
+		intercept.ChangYan5Floating = true;
+		intercept.Iclass30SidebarFloating = false;
+		intercept.Iclass30Floating = true;
+		intercept.SeewoDesktopSideBarFloating = false;
+		intercept.SeewoDesktopDrawingFloating = true;
 	}
 
 	bool enable;
@@ -275,21 +277,23 @@ struct DdbInteractionSetListStruct
 
 	struct
 	{
-		bool seewoWhiteboard3Floating;
-		bool seewoWhiteboard5Floating;
-		bool seewoWhiteboard5CFloating;
-		bool seewoPincoSideBarFloating;
-		bool seewoPincoDrawingFloating;
-		bool seewoPPTFloating;
-		bool aiClassFloating;
-		bool hiteAnnotationFloating;
-		bool changYanFloating;
-		bool changYanPptFloating;
-		bool intelligentClassFloating;
-		bool seewoDesktopAnnotationFloating;
-		bool seewoDesktopSideBarFloating;
-		bool iclass30Floating;
-		bool iclass30SidebarFloating;
+		bool SeewoWhiteboard3Floating;
+		bool SeewoWhiteboard5Floating;
+		bool SeewoWhiteboard5CFloating;
+		bool SeewoPincoSideBarFloating;
+		bool SeewoPincoDrawingFloating;
+		bool SeewoPPTFloating;
+		bool SeewoIwbAssistantFloating;
+		bool YiouBoardFloating;
+		bool AiClassFloating;
+		bool ClassInXFloating;
+		bool IntelligentClassFloating;
+		bool ChangYanFloating;
+		bool ChangYan5Floating;
+		bool Iclass30SidebarFloating;
+		bool Iclass30Floating;
+		bool SeewoDesktopSideBarFloating;
+		bool SeewoDesktopDrawingFloating;
 	} intercept;
 };
 extern DdbInteractionSetListStruct ddbInteractionSetList;

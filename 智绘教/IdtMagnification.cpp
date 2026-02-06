@@ -9,11 +9,10 @@
 #include <d3d9.h>
 #pragma comment(lib, "d3d9")
 
-// IDT 定格功能的完整体验需要 Windows 8.1
-
 HWND magnifierWindow, magnifierChild;
 IMAGE MagnificationBackground;
 
+bool magnificationCreateReady;
 bool magnificationReady;
 
 shared_mutex MagnificationBackgroundSm;
@@ -62,7 +61,20 @@ ATOM RegisterHostWindowClass(HINSTANCE hInstance, wstring className)
 
 void MagnifierWindow(HINSTANCE hinst, promise<void>& promise)
 {
-	if (!MagInitialize()) // 一系列操作必须在同一线程中完成
+	// 一系列操作必须在同一线程中完成
+
+	// 尝试加载
+	HMODULE hMagDll = LoadLibrary(TEXT("Magnification.dll"));
+	if (hMagDll == NULL)
+	{
+		IDTLogger->warn("[放大API线程][MagnifierThread] 本机缺少 Magnification.dll，定格等相关功能将被禁用。");
+		promise.set_value(); // 通知主线程继续，不要卡死
+
+		return;
+	}
+
+	// 初始化放大API
+	if (!MagInitialize())
 	{
 		promise.set_value();
 
@@ -134,6 +146,7 @@ void MagnifierWindow(HINSTANCE hinst, promise<void>& promise)
 		UpdateWindow(magnifierWindow);
 	}
 
+	magnificationCreateReady = true;
 	promise.set_value();
 
 	MSG msg;

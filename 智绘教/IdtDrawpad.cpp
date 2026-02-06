@@ -59,7 +59,11 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) ChangeStateModeToPen();
 			else ChangeStateModeToSelection();
 
-			barUISet.UpdateRendering();
+			// Sign
+			if (useInkeys3UI)
+			{
+				barUISet.UpdateRendering();
+			}
 		}
 		else if (IsHotkeyDown && !(IdtInputs::IsKeyBoardDown(VK_CONTROL) || IdtInputs::IsKeyBoardDown(VK_LCONTROL) || IdtInputs::IsKeyBoardDown(VK_RCONTROL)) && !(IdtInputs::IsKeyBoardDown(VK_LWIN) || IdtInputs::IsKeyBoardDown(VK_RWIN)) && !(IdtInputs::IsKeyBoardDown(VK_MENU) || IdtInputs::IsKeyBoardDown(VK_LMENU) || IdtInputs::IsKeyBoardDown(VK_RMENU))) IsHotkeyDown = false;
 
@@ -432,6 +436,7 @@ LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 {
 	switch (msg)
 	{
+		// 禁用系统手势
 	case WM_TABLET_QUERYSYSTEMGESTURESTATUS:
 	{
 		DWORD flags = 0;
@@ -443,6 +448,7 @@ LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 		return (LRESULT)flags;
 	}
 
+	// 隐藏触控指针
 	case WM_SETCURSOR:
 	{
 		if (LOWORD(lParam) == HTCLIENT)
@@ -457,6 +463,20 @@ LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 			}
 		}
 		break;
+	}
+
+	// 兼容鼠标消息
+	case WM_LBUTTONDOWN:
+	case WM_RBUTTONDOWN:
+	case WM_MOUSEMOVE:
+	case WM_LBUTTONUP:
+	case WM_RBUTTONUP:
+	{
+		if (useMouseInput)
+		{
+			HandleMouseInput(hWnd, msg, wParam, lParam);
+			break;
+		}
 	}
 
 	default:
@@ -1443,7 +1463,11 @@ void DrawpadDrawing()
 	}
 	IdtWindowsIsVisible.drawpadWindow = true;
 
-	stateMode.cleanPageSign = false;
+	// Sign
+	if (useInkeys3UI)
+	{
+		stateMode.cleanPageSign = false;
+	}
 
 	chrono::high_resolution_clock::time_point reckon;
 	for (;;)
@@ -1455,7 +1479,8 @@ void DrawpadDrawing()
 			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection || stateMode.cleanPageSign)
 			{
 			ChooseEnd:
-				if (!stateMode.cleanPageSign)
+				// Sign
+				if (!useInkeys3UI || !stateMode.cleanPageSign)
 				{
 					SetImageColor(window_background, RGBA(0, 0, 0, 0), true);
 
@@ -1581,10 +1606,36 @@ void DrawpadDrawing()
 				current_record_pointer = reference_record_pointer;
 				RecallImageManipulated = std::chrono::high_resolution_clock::time_point();
 
+				// Inkeys3
+
 				int ppt_switch_count = 0;
-				if (!stateMode.cleanPageSign)
+
+				if (useInkeys3UI)
 				{
-					// 不是清空工况则直接返回绘制
+					if (!stateMode.cleanPageSign)
+					{
+						// 不是清空工况则直接返回绘制
+						stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
+
+						timeEndPeriod(1);
+
+						while (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
+						{
+							this_thread::sleep_for(chrono::milliseconds(50));
+
+							if (PptInfoStateBuffer.CurrentPage != PptInfoState.CurrentPage) PptInfoStateBuffer.CurrentPage = PptInfoState.CurrentPage, ppt_switch_count++;
+							PptInfoStateBuffer.TotalPage = PptInfoState.TotalPage;
+
+							if (offSignal) goto DrawpadDrawingEnd;
+						}
+
+						// 设置全局高精度
+						timeBeginPeriod(1);
+					}
+				}
+				else
+				{
+					// Inkeys2 // Sign
 					stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
 
 					timeEndPeriod(1);
@@ -1630,7 +1681,11 @@ void DrawpadDrawing()
 				TouchTemp.clear();
 				lockPointTempSm.unlock();
 
-				stateMode.cleanPageSign = false;
+				// Sign
+				if (useInkeys3UI)
+				{
+					stateMode.cleanPageSign = false;
+				}
 			}
 			if (penetrate.select == true)
 			{
@@ -2189,6 +2244,9 @@ int drawpad_main()
 
 					if (int(state) == 1 && nextPointMode == StateModeSelectEnum::IdtEraser && setlist.RubberRecover) target_status = 0;
 					else if (int(state) == 1 && nextPointMode == StateModeSelectEnum::IdtPen && setlist.BrushRecover) target_status = 0;
+
+					// 颜色和粗细选择等需要缩回
+					else if (int(state) == 1 && nextPointMode == StateModeSelectEnum::IdtPen && state != 1.0) state = 1.0;
 
 					if (current_record_pointer != reference_record_pointer)
 					{

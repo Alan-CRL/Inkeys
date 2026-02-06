@@ -203,7 +203,7 @@
           "Skip1": "Recommended Skin",
           "Skip2": "Default Skin",
           "Skip3": "Minimal Clock",
-          "Skip4": "Year of Snake"
+          "Skip4": "Year of Horse"
         },
         "SettingUIScale":
         {
@@ -353,6 +353,7 @@
 
         "Tip": "To use the plugin, please ensure that the permissions for the Inkeys application and the PPT application are the same for proper detection. If issues persist, please refer to the solution.",
         "Warn": "Detected that your PowerPoint/WPS is set to 'Always run as administrator'. This means our application must also run with administrator privileges to detect the slideshow process and enable PPT integration. If you prefer not to run your presentation software as an administrator, please refer to the solution.",
+        "Error": "An error occurred during plugin loading. This may be because .NET Framework 4.x is not installed or an exception occurred in the global COM environment.\nCode ",
 
         "BasicLogic":
         {
@@ -422,8 +423,8 @@
       },
       "DesktopDrawpadBlocker":
       {
-        "N": "DesktopDrawpadBlocker",
-        "E": "Blocks floating widgets from competing software (e.g., Seewo Whiteboard) on your screen. Supports blocking various common floating widgets and other PPT control bars or toolkits."
+        "N": "DesktopDrawpadBlocker 3 Lite",
+        "E": "On all-in-one educational machines, some whiteboard software's floating window toolbar cannot be turned off directly, leading to multiple drawing tools appearing on the desktop. This often causes teachers to mix up different tools, making it impossible to continue annotations and severely impacting teaching efficiency. Thus, DesktopDrawpadBlocker was created."
       },
       "LnkHelper":
       {
@@ -491,7 +492,7 @@
       "InformationFail": "Failed to fetch update info",
       "InformationDamage": "Downloaded info corrupted",
       "InformationUnStandardized": "Invalid update info",
-      "Downloading": "Downloading update",
+      "Downloading": "Downloading update (Line {})",
       "DownloadFail": "Download failed",
       "DownloadDamage": "File damaged",
       "Restart": "Restart to update to latest version",

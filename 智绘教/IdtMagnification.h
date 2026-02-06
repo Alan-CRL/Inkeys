@@ -7,6 +7,7 @@
 extern IMAGE MagnificationBackground;
 extern HWND magnifierWindow, magnifierChild;
 
+extern bool magnificationCreateReady;
 extern bool magnificationReady;
 
 extern shared_mutex MagnificationBackgroundSm;

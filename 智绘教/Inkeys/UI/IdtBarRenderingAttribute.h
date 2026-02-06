@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "../../IdtMain.h"
 
@@ -9,9 +9,9 @@ class BarRenderingAttribute
 public:
 	static void UnionRectInPlace(RECT& target, const RECT& add)
 	{
-		// ĞÂÔö¾ØĞÎÎŞĞ§£¬Ö±½Ó·µ»Ø
+		// æ–°å¢çŸ©å½¢æ— æ•ˆï¼Œç›´æ¥è¿”å›
 		if (add.left >= add.right || add.top >= add.bottom) return;
-		// target ÊÇ¿Õ¾ØĞÎ£¬Ö±½ÓÌæ»»
+		// target æ˜¯ç©ºçŸ©å½¢ï¼Œç›´æ¥æ›¿æ¢
 		if (target.left >= target.right || target.top >= target.bottom)
 		{
 			target = add;

@@ -2,6 +2,7 @@
 
 #include "IdtConfiguration.h"
 #include "IdtDrawpad.h"
+#include "IdtFloating.h"
 #include "IdtWindow.h"
 #include "Inkeys/Other/IdtInputs.h"
 
@@ -53,38 +54,38 @@ IRealTimeStylus* CreateRealTimeStylus(HWND hWnd)
 	// 禁用 win7 轻拂手势
 	IRealTimeStylus2* pRealTimeStylus2 = NULL;
 	hr = pRealTimeStylus->QueryInterface(&pRealTimeStylus2);
-	if (FAILED(hr))
+	if (SUCCEEDED(hr))
 	{
-		pRealTimeStylus->Release();
-		return NULL;
+		hr = pRealTimeStylus2->put_FlicksEnabled(FALSE);
+		if (FAILED(hr))
+		{
+			IDTLogger->warn("[CreateRealTimeStylus] 无法禁用轻拂手势 (put_FlicksEnabled 失败)，将保持默认设置。");
+		}
+		pRealTimeStylus2->Release(); // 用完必须释放接口
 	}
-	hr = pRealTimeStylus2->put_FlicksEnabled(FALSE);
-	if (FAILED(hr))
+	else
 	{
-		pRealTimeStylus->Release();
-		pRealTimeStylus2->Release();
-		return NULL;
+		// 获取接口失败（可能系统版本过低），不影响核心功能，仅日志
+		IDTLogger->info("[CreateRealTimeStylus] 当前系统不支持 IRealTimeStylus2 (轻拂控制)，已跳过。");
 	}
-	pRealTimeStylus2->Release();
 
 	// 注册RTS对象以接收多点触摸输入。
 	IRealTimeStylus3* pRealTimeStylus3 = NULL;
 	hr = pRealTimeStylus->QueryInterface(&pRealTimeStylus3);
-	if (FAILED(hr))
+	if (SUCCEEDED(hr))
 	{
-		//ASSERT(SUCCEEDED(hr) && L"CreateRealTimeStylus: cannot access IRealTimeStylus3");
-		pRealTimeStylus->Release();
-		return NULL;
+		hr = pRealTimeStylus3->put_MultiTouchEnabled(TRUE);
+		if (FAILED(hr))
+		{
+			IDTLogger->warn("[CreateRealTimeStylus] 无法启用多点触控 (put_MultiTouchEnabled 失败)，将回退为单点模式。");
+		}
+		pRealTimeStylus3->Release(); // 用完必须释放接口
 	}
-	hr = pRealTimeStylus3->put_MultiTouchEnabled(TRUE);
-	if (FAILED(hr))
+	else
 	{
-		//ASSERT(SUCCEEDED(hr) && L"CreateRealTimeStylus: failed to enable multi-touch");
-		pRealTimeStylus->Release();
-		pRealTimeStylus3->Release();
-		return NULL;
+		// 获取接口失败，不影响核心功能，仅日志
+		IDTLogger->info("[CreateRealTimeStylus] 当前系统不支持 IRealTimeStylus3 (多点触控)，已跳过。");
 	}
-	pRealTimeStylus3->Release();
 
 	return pRealTimeStylus;
 }
@@ -347,21 +348,42 @@ void RTSSpeed()
 	{
 		for (int i = 0; i < rtsNum; i++)
 		{
+			LONG pid = -1;
+			bool idExists = false;
+
+			shared_lock<shared_mutex> lockPointListSm(pointListSm);
+			if (i < rtsNum) pid = TouchList[i];
+			else
+			{
+				lockPointListSm.unlock();
+				continue;
+			}
+			lockPointListSm.unlock();
+
+			if (pid < 0) continue;
+
 			std::shared_lock<std::shared_mutex> lock1(touchPosSm);
-			x = TouchPos[TouchList[i]].pt.x;
-			y = TouchPos[TouchList[i]].pt.y;
+			auto it = TouchPos.find(pid);
+			if (it != TouchPos.end())
+			{
+				x = it->second.pt.x;
+				y = it->second.pt.y;
+				idExists = true;
+			}
 			lock1.unlock();
 
+			if (!idExists) continue;
+
 			std::shared_lock<std::shared_mutex> lock2(touchSpeedSm);
-			if (PreviousPointPosition[TouchList[i]].first == -1 && PreviousPointPosition[TouchList[i]].second == -1) PreviousPointPosition[TouchList[i]].first = x, PreviousPointPosition[TouchList[i]].second = y, speed = 1;
-			else speed = (TouchSpeed[TouchList[i]] + sqrt(pow(x - PreviousPointPosition[TouchList[i]].first, 2) + pow(y - PreviousPointPosition[TouchList[i]].second, 2))) / 2;
+			if (PreviousPointPosition[pid].first == -1 && PreviousPointPosition[pid].second == -1) PreviousPointPosition[pid].first = x, PreviousPointPosition[pid].second = y, speed = 1;
+			else speed = (TouchSpeed[pid] + sqrt(pow(x - PreviousPointPosition[pid].first, 2) + pow(y - PreviousPointPosition[pid].second, 2))) / 2;
 			lock2.unlock();
 
 			std::unique_lock<std::shared_mutex> lock3(touchSpeedSm);
-			TouchSpeed[TouchList[i]] = speed;
+			TouchSpeed[pid] = speed;
 			lock3.unlock();
 
-			PreviousPointPosition[TouchList[i]].first = x, PreviousPointPosition[TouchList[i]].second = y;
+			PreviousPointPosition[pid].first = x, PreviousPointPosition[pid].second = y;
 		}
 
 		if (tRecord)
@@ -370,5 +392,296 @@ void RTSSpeed()
 			if (delay > 0) std::this_thread::sleep_for(std::chrono::milliseconds(delay));
 		}
 		tRecord = clock();
+	}
+}
+
+// 鼠标输入兼容
+IdtAtomic<LONG> leftButtonPid = 0, rightButtonPid = 0;
+void HandleMouseInput(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	if (msg == WM_LBUTTONUP || msg == WM_RBUTTONUP) confirmaNoMouUpSignal = false;
+
+	bool leftButtonNUp = false;
+	bool rightButtonNUp = false;
+
+	if (msg == WM_LBUTTONDOWN)
+	{
+		// 这是一个按下状态 (左键)
+		// 相当于 StylusDown
+
+		// 如果左键已经按下，则忽略
+		if (leftButtonPid == 0)
+		{
+			if (rightButtonPid != 0)
+			{
+				cerr << 123 << endl;
+				rightButtonNUp = true;
+			}
+
+			TouchMode mode{};
+			TouchInfo info{};
+
+			// 1. 获取数据包信息 (对于鼠标)
+			mode.pt.x = GET_X_LPARAM(lParam);
+			mode.pt.y = GET_Y_LPARAM(lParam);
+			mode.pressure = 0.0;
+			mode.touchWidth = 0;
+			mode.touchHeight = 0;
+			mode.isInvertedCursor = false;
+
+			// 2. 获取设备类型 (左键为2)
+			mode.type = 2;
+
+			// 3. 分配并存储新的触摸点信息
+			LONG touchCnt = static_cast<LONG>(++TouchCnt);
+			leftButtonPid = touchCnt; // 记录左键的ID
+			info.pid = touchCnt;
+
+			std::unique_lock<std::shared_mutex> lock1(touchPosSm);
+			TouchPos[touchCnt] = mode;
+			lock1.unlock();
+
+			std::unique_lock<std::shared_mutex> lock2(touchSpeedSm);
+			TouchSpeed[touchCnt] = 0;
+			PreviousPointPosition[touchCnt] = { -1, -1 };
+			lock2.unlock();
+
+			std::unique_lock<std::shared_mutex> lock3(pointListSm);
+			TouchList.push_back(touchCnt);
+			lock3.unlock();
+
+			info.mode = mode;
+
+			std::unique_lock<std::shared_mutex> lock4(touchTempSm);
+			TouchTemp.push_back(info);
+			lock4.unlock();
+
+			// 4. 更新全局状态
+			rtsNum++;
+			rtsDown = true;
+
+			// 光标隐藏提前指令（因为有可能是由触摸引起的鼠标消息）
+			if (setlist.hideTouchPointer) SendMessage(drawpad_window, WM_SETCURSOR, (WPARAM)drawpad_window, MAKELPARAM(HTCLIENT, WM_MOUSEMOVE));
+		}
+	}
+	if (msg == WM_RBUTTONDOWN)
+	{
+		// 这是一个按下状态 (右键)
+		// 相当于 StylusDown
+
+		// 如果右键已经按下，则忽略
+		if (rightButtonPid == 0)
+		{
+			if (leftButtonPid != 0)
+			{
+				leftButtonNUp = true;
+			}
+
+			TouchMode mode{};
+			TouchInfo info{};
+
+			// 1. 获取数据包信息 (对于鼠标)
+			mode.pt.x = GET_X_LPARAM(lParam);
+			mode.pt.y = GET_Y_LPARAM(lParam);
+			mode.pressure = 0.0;
+			mode.touchWidth = 0;
+			mode.touchHeight = 0;
+			mode.isInvertedCursor = false;
+
+			// 2. 获取设备类型 (右键为3)
+			mode.type = 3;
+
+			// 3. 分配并存储新的触摸点信息
+			LONG touchCnt = static_cast<LONG>(++TouchCnt);
+			rightButtonPid = touchCnt; // 记录右键的ID
+			info.pid = touchCnt;
+
+			std::unique_lock<std::shared_mutex> lock1(touchPosSm);
+			TouchPos[touchCnt] = mode;
+			lock1.unlock();
+
+			std::unique_lock<std::shared_mutex> lock2(touchSpeedSm);
+			TouchSpeed[touchCnt] = 0;
+			PreviousPointPosition[touchCnt] = { -1, -1 };
+			lock2.unlock();
+
+			std::unique_lock<std::shared_mutex> lock3(pointListSm);
+			TouchList.push_back(touchCnt);
+			lock3.unlock();
+
+			info.mode = mode;
+
+			std::unique_lock<std::shared_mutex> lock4(touchTempSm);
+			TouchTemp.push_back(info);
+			lock4.unlock();
+
+			// 4. 更新全局状态
+			rtsNum++;
+			rtsDown = true;
+		}
+	}
+
+	if (msg == WM_MOUSEMOVE)
+	{
+		// 这是一个移动状态
+		// 相当于 Packets
+
+		// 检查左键是否按下并移动
+		if (wParam & MK_LBUTTON)
+		{
+			if (leftButtonPid != 0)
+			{
+				unique_lock<shared_mutex> lock(touchPosSm);
+				// 检查 TouchPos 中是否还存在该点 (以防万一)
+				if (TouchPos.count(leftButtonPid)) {
+					TouchPos[leftButtonPid].pt.x = GET_X_LPARAM(lParam);
+					TouchPos[leftButtonPid].pt.y = GET_Y_LPARAM(lParam);
+				}
+			}
+		}
+		else if (leftButtonPid != 0) leftButtonNUp = true;
+
+		// 检查右键是否按下并移动
+		if (wParam & MK_RBUTTON)
+		{
+			if (rightButtonPid != 0)
+			{
+				unique_lock<shared_mutex> lock(touchPosSm);
+				if (TouchPos.count(rightButtonPid)) {
+					TouchPos[rightButtonPid].pt.x = GET_X_LPARAM(lParam);
+					TouchPos[rightButtonPid].pt.y = GET_Y_LPARAM(lParam);
+				}
+				lock.unlock();
+			}
+		}
+		else if (rightButtonPid != 0) rightButtonNUp = true;
+	}
+
+	if (msg == WM_LBUTTONUP || leftButtonNUp)
+	{
+		// 这是一个抬起状态 (左键)
+		// 相当于 StylusUp
+
+		// 如果左键没有被记录为按下，则忽略
+		if (leftButtonPid != 0)
+		{
+			LONG pid = leftButtonPid;
+			leftButtonPid = 0; // 重置ID
+			leftButtonNUp = false;
+
+			// 1. 更新全局计数器
+			rtsNum = max(0, rtsNum - 1);
+			if (rtsNum == 0) rtsDown = false;
+
+			// 2. 从列表中移除触摸点
+			unique_lock<shared_mutex> lockPointListSm(pointListSm);
+			auto it = std::find(TouchList.begin(), TouchList.end(), pid);
+			if (it != TouchList.end())
+			{
+				TouchList.erase(it);
+			}
+			lockPointListSm.unlock();
+
+			// 3. 如果没有活动的触摸/输入点，则清空所有数据
+			if (rtsNum == 0)
+			{
+				unique_lock<shared_mutex> lockTouchPosSm(touchPosSm);
+				TouchPos.clear();
+				lockTouchPosSm.unlock();
+
+				touchNum = 0;
+				inkNum = 0;
+			}
+		}
+	}
+	if (msg == WM_RBUTTONUP || rightButtonNUp)
+	{
+		// 这是一个抬起状态 (右键)
+		// 相当于 StylusUp
+
+		cerr << 3 << endl;
+		// 如果右键没有被记录为按下，则忽略
+		if (rightButtonPid != 0)
+		{
+			cerr << 456 << endl;
+
+			LONG pid = rightButtonPid;
+			rightButtonPid = 0; // 重置ID
+			rightButtonNUp = false;
+
+			// 1. 更新全局计数器
+			rtsNum = max(0, rtsNum - 1);
+			if (rtsNum == 0) rtsDown = false;
+
+			// 2. 从列表中移除触摸点
+			unique_lock<shared_mutex> lockPointListSm(pointListSm);
+			auto it = std::find(TouchList.begin(), TouchList.end(), pid);
+			if (it != TouchList.end())
+			{
+				TouchList.erase(it);
+			}
+			lockPointListSm.unlock();
+
+			// 3. 如果没有活动的触摸/输入点，则清空所有数据
+			if (rtsNum == 0)
+			{
+				unique_lock<shared_mutex> lockTouchPosSm(touchPosSm);
+				TouchPos.clear();
+				lockTouchPosSm.unlock();
+
+				touchNum = 0;
+				inkNum = 0;
+			}
+		}
+	}
+}
+
+HRESULT SafeRTSInit(HWND drawpad_window, IRealTimeStylus** ppRTS, IStylusSyncPlugin** ppPlugin)
+{
+	HRESULT hr = S_OK;
+	__try {
+		*ppRTS = CreateRealTimeStylus(drawpad_window);
+		if (*ppRTS == NULL) return E_FAIL;
+
+		GUID props[] = { GUID_PACKETPROPERTY_GUID_X, GUID_PACKETPROPERTY_GUID_Y,
+						 GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE, GUID_PACKETPROPERTY_GUID_WIDTH,
+						 GUID_PACKETPROPERTY_GUID_HEIGHT };
+
+		hr = (*ppRTS)->SetDesiredPacketDescription(5, props);
+		if (FAILED(hr)) return hr;
+
+		*ppPlugin = CSyncEventHandlerRTS::Create(*ppRTS);
+		if (*ppPlugin == NULL) return E_FAIL;
+
+		if (!EnableRealTimeStylus(*ppRTS)) return E_FAIL;
+
+		return S_OK;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		return E_UNEXPECTED; // 捕获到硬件/底层崩溃
+	}
+}
+void InitRTSLogic()
+{
+	IRealTimeStylus* pRTS = NULL;
+	IStylusSyncPlugin* pPlugin = NULL;
+
+	// 调用包装函数，这里可以安全使用 try/catch 或其他 C++ 对象
+	HRESULT hr = SafeRTSInit(drawpad_window, &pRTS, &pPlugin);
+
+	if (FAILED(hr))
+	{
+		g_pRealTimeStylus = NULL;
+		g_pSyncEventHandlerRTS = NULL;
+
+		IDTLogger->warn("[主线程] RTS 初始化失败，错误码: {}", hr);
+		useMouseInput = true;
+	}
+	else
+	{
+		g_pRealTimeStylus = pRTS;
+		g_pSyncEventHandlerRTS = pPlugin;
+
+		IDTLogger->info("[主线程] RTS 初始化完成");
 	}
 }

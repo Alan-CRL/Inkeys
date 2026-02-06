@@ -1,6 +1,6 @@
-//{{NO_DEPENDENCIES}}
-// Microsoft Visual C++ Éú³ÉµÄ°üº¬ÎÄ¼ş¡£
-// ¹© ÖÇ»æ½Ì.rc Ê¹ÓÃ
+ï»¿//{{NO_DEPENDENCIES}}
+// Microsoft Visual C++ ç”Ÿæˆçš„åŒ…å«æ–‡ä»¶ã€‚
+// ä¾› æ™ºç»˜æ•™.rc ä½¿ç”¨
 //
 #define VS_VERSION_INFO                 1
 #define IDB_PNG3                        117
@@ -72,7 +72,7 @@
 #define IDR_TTF8                        298
 
 // Next default values for new objects
-// 
+//
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        299

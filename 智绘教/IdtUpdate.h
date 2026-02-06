@@ -102,4 +102,6 @@ wstring get_domain_name(wstring url);
 wstring convertToHttp(const wstring& url);
 
 extern wstring windowsEdition;
+extern IdtAtomic<int> downloadLine;
+
 void AutomaticUpdate();

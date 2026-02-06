@@ -160,35 +160,51 @@ bool isAsciiPrintable(const wstring& input)
 // 程序进程状态获取
 bool isProcessRunning(const std::wstring& processPath)
 {
-	PROCESSENTRY32 entry;
-	entry.dwSize = sizeof(PROCESSENTRY32);
+	// 使用 try-catch 保护，防止非法路径字符导致 filesystem 崩溃
+	try {
+		// 预处理目标路径：自动处理双斜杠、相对路径等规范化问题
+		filesystem::path targetPath = filesystem::weakly_canonical(processPath);
 
-	HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
+		PROCESSENTRY32W entry;
+		entry.dwSize = sizeof(PROCESSENTRY32W);
 
-	if (Process32First(snapshot, &entry)) {
-		do {
-			// 打开进程句柄
-			HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, entry.th32ProcessID);
-			if (process == NULL) {
-				continue;
-			}
+		HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
+		if (snapshot == INVALID_HANDLE_VALUE) return false;
 
-			// 获取进程完整路径
-			wchar_t path[MAX_PATH];
-			DWORD size = MAX_PATH;
-			if (QueryFullProcessImageName(process, 0, path, &size)) {
-				if (processPath == path) {
-					CloseHandle(process);
-					CloseHandle(snapshot);
-					return true;
+		if (Process32FirstW(snapshot, &entry)) {
+			do {
+				// 打开进程句柄
+				HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, entry.th32ProcessID);
+				if (process == NULL) {
+					continue;
 				}
-			}
 
-			CloseHandle(process);
-		} while (Process32Next(snapshot, &entry));
+				// 获取进程完整路径
+				wchar_t pathBuf[MAX_PATH];
+				DWORD size = MAX_PATH;
+				if (QueryFullProcessImageNameW(process, 0, pathBuf, &size)) {
+					// 规范化当前遍历到的进程路径
+					filesystem::path currentPath = filesystem::weakly_canonical(pathBuf);
+
+					// 比较规范化后的路径（fs::path 的 == 在 Windows 下通常不区分大小写且理解路径结构）
+					if (targetPath == currentPath) {
+						CloseHandle(process);
+						CloseHandle(snapshot);
+						return true;
+					}
+				}
+
+				CloseHandle(process);
+			} while (Process32NextW(snapshot, &entry));
+		}
+
+		CloseHandle(snapshot);
+	}
+	catch (...) {
+		// 如果发生任何路径转换异常，回退到安全状态
+		return false;
 	}
 
-	CloseHandle(snapshot);
 	return false;
 }
 // 进程程序路径查询

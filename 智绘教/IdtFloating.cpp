@@ -181,26 +181,64 @@ void MouseClickCollapse()
 {
 	if (!ConfirmaNoMouFunSignal.compare_set_strong(false, true)) return;
 
-	this_thread::sleep_for(chrono::milliseconds(50));
+	this_thread::sleep_for(chrono::milliseconds(100));
 
 	if (ConfirmaNoMouMsgSignal) target_status = 0;
 	ConfirmaNoMouMsgSignal = false;
 
 	ConfirmaNoMouFunSignal = false;
 }
+IdtAtomic<bool> confirmaNoMouUpSignal;
+void MouseUpCollapse(UINT msg)
+{
+	this_thread::sleep_for(chrono::milliseconds(500));
+
+	if (confirmaNoMouUpSignal)
+	{
+		IDTLogger->info("[鼠标钩子][MouseUpCollapse] 修正错误的抬起");
+
+		// 手动触发通知
+		HandleMouseInput(drawpad_window, msg, 0, 0);
+	}
+	confirmaNoMouUpSignal = false;
+}
 
 HHOOK FloatingHookCall;
 LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 {
-	if (nCode >= 0)
+	if (nCode < 0 || wParam == WM_MOUSEMOVE)
+	{
+		return CallNextHookEx(FloatingHookCall, nCode, wParam, lParam);
+	}
+
 	{
 		if (wParam == WM_LBUTTONDOWN) IdtInputs::SetKeyBoardDown(VK_LBUTTON, true);
-		else if (wParam == WM_LBUTTONUP) IdtInputs::SetKeyBoardDown(VK_LBUTTON, false);
+		else if (wParam == WM_LBUTTONUP)
+		{
+			IdtInputs::SetKeyBoardDown(VK_LBUTTON, false);
+
+			// 通知鼠标抬起
+			if (useMouseInput && leftButtonPid != 0)
+			{
+				confirmaNoMouUpSignal = true;
+				thread(MouseUpCollapse, WM_LBUTTONUP).detach();
+			}
+		}
 		else if (wParam == WM_MBUTTONDOWN) IdtInputs::SetKeyBoardDown(VK_MBUTTON, true);
 		else if (wParam == WM_MBUTTONUP) IdtInputs::SetKeyBoardDown(VK_MBUTTON, false);
 
 		else if (wParam == WM_RBUTTONDOWN) IdtInputs::SetKeyBoardDown(VK_RBUTTON, true);
-		else if (wParam == WM_RBUTTONUP) IdtInputs::SetKeyBoardDown(VK_RBUTTON, false);
+		else if (wParam == WM_RBUTTONUP)
+		{
+			IdtInputs::SetKeyBoardDown(VK_RBUTTON, false);
+
+			// 通知鼠标抬起
+			if (useMouseInput && rightButtonPid != 0)
+			{
+				confirmaNoMouUpSignal = true;
+				thread(MouseUpCollapse, WM_RBUTTONUP).detach();
+			}
+		}
 
 		if (wParam == WM_MOUSEWHEEL && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && !penetrate.select && PptInfoState.TotalPage != -1)
 		{
