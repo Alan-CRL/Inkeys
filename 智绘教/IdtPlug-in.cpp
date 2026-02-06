@@ -507,9 +507,9 @@ void FocusPptShow()
 	return;
 }
 
-void PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
+double PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 {
-	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return;
+	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return 0.0;
 	PptUiAllReplaceSignal = 1;
 
 	MonitorInfoStruct PPTMainMonitor;
@@ -517,8 +517,9 @@ void PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 	PPTMainMonitor = MainMonitor;
 	DisplaysInfoLock.unlock();
 
-	POINT p;
-	GetCursorPos(&p);
+	double ret = 0.0;
+	int firX = static_cast<int>(firstX);
+	int firY = static_cast<int>(firstY);
 
 	// 自身数值记录
 	float widthFirst = pptComSetlist.bottomBothWidth;
@@ -649,6 +650,9 @@ void PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 		pptComSetlist.bottomBothWidth = widthTarget;
 		pptComSetlist.bottomBothHeight = heightTarget;
 
+		ret += sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY));
+		firX = static_cast<int>(p.x), firY = static_cast<int>(p.y);
+
 		this_thread::sleep_for(chrono::milliseconds(5));
 	}
 	// 写入文件
@@ -656,11 +660,11 @@ void PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 		PptComWriteSetting();
 
 	PptUiAllReplaceSignal = -1;
-	return;
+	return ret;
 }
-void PptMiddlePageWidgetSeekBar(int firstX, int firstY, bool xReverse)
+double PptMiddlePageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 {
-	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return;
+	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return 0.0;
 	PptUiAllReplaceSignal = 1;
 
 	MonitorInfoStruct PPTMainMonitor;
@@ -668,8 +672,9 @@ void PptMiddlePageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 	PPTMainMonitor = MainMonitor;
 	DisplaysInfoLock.unlock();
 
-	POINT p;
-	GetCursorPos(&p);
+	double ret = 0.0;
+	int firX = static_cast<int>(firstX);
+	int firY = static_cast<int>(firstY);
 
 	// 自身数值记录
 	float widthFirst = pptComSetlist.middleBothWidth;
@@ -800,14 +805,17 @@ void PptMiddlePageWidgetSeekBar(int firstX, int firstY, bool xReverse)
 		pptComSetlist.middleBothWidth = widthTarget;
 		pptComSetlist.middleBothHeight = heightTarget;
 
+		ret += sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY));
+		firX = static_cast<int>(p.x), firY = static_cast<int>(p.y);
+
 		this_thread::sleep_for(chrono::milliseconds(5));
 	}
 	// 写入文件
-	if (pptComSetlist.memoryWidgetPosition && (pptComSetlist.bottomBothWidth != widthFirst || pptComSetlist.bottomBothHeight != heightFirst))
+	if (pptComSetlist.memoryWidgetPosition && (pptComSetlist.middleBothWidth != widthFirst || pptComSetlist.middleBothHeight != heightFirst))
 		PptComWriteSetting();
 
 	PptUiAllReplaceSignal = -1;
-	return;
+	return ret;
 }
 void PptBottomMiddleSeekBar(int firstX, int firstY)
 {
@@ -3573,12 +3581,21 @@ void PptInteract()
 					}
 				}
 				else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
+
 				// 底部左侧全局拖动条
 				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Height.v) }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
-						PptBottomPageWidgetSeekBar(m.x, m.y, false);
+						auto moveDis = PptBottomPageWidgetSeekBar(m.x, m.y, false);
+						if (moveDis <= 20)
+						{
+							if (IsInRect(m.x, m.y, { long(pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Left.v + 5.0f * pptComSetlist.bottomSideBothWidgetScale), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v), long(pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Right.v - 5.0f * pptComSetlist.bottomSideBothWidgetScale), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Height.v) }))
+							{
+								ViewPptShow();
+							}
+						}
+
 						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 					}
 				}
@@ -3697,12 +3714,21 @@ void PptInteract()
 					}
 				}
 				else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
+
 				// 底部右侧全局拖动条
 				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Height.v) }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
-						PptBottomPageWidgetSeekBar(m.x, m.y, true);
+						auto moveDis = PptBottomPageWidgetSeekBar(m.x, m.y, true);
+						if (moveDis <= 20)
+						{
+							if (IsInRect(m.x, m.y, { long(pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Left.v + 5.0f * pptComSetlist.bottomSideBothWidgetScale), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v), long(pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Right.v - 5.0f * pptComSetlist.bottomSideBothWidgetScale), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget].Height.v) }))
+							{
+								ViewPptShow();
+							}
+						}
+
 						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 					}
 				}
@@ -3823,12 +3849,24 @@ void PptInteract()
 					}
 				}
 				else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
+
 				// 中部左侧全局拖动条
 				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Height.v) }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
-						PptMiddlePageWidgetSeekBar(m.x, m.y, false);
+						auto moveDis = PptMiddlePageWidgetSeekBar(m.x, m.y, false);
+						if (moveDis <= 20)
+						{
+							if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v),
+								long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].Height.v + 5.0f * pptComSetlist.middleSideBothWidgetScale),
+								long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget].Width.v),
+								long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].Y.v - 5.0f * pptComSetlist.middleSideBothWidgetScale) }))
+							{
+								ViewPptShow();
+							}
+						}
+
 						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 					}
 				}
@@ -3947,12 +3985,24 @@ void PptInteract()
 					}
 				}
 				else if (PptInfoStateBuffer.TotalPage != -1) pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
+
 				// 中部右侧全局拖动条
 				if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Width.v), long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Height.v) }))
 				{
 					if (m.message == WM_LBUTTONDOWN)
 					{
-						PptMiddlePageWidgetSeekBar(m.x, m.y, true);
+						auto moveDis = PptMiddlePageWidgetSeekBar(m.x, m.y, true);
+						if (moveDis <= 20)
+						{
+							if (IsInRect(m.x, m.y, { long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v),
+								long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Y.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].Height.v + 5.0f * pptComSetlist.middleSideBothWidgetScale),
+								long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].X.v + pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget].Width.v),
+								long(pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].Y.v - 5.0f * pptComSetlist.middleSideBothWidgetScale) }))
+							{
+								ViewPptShow();
+							}
+						}
+
 						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
 					}
 				}

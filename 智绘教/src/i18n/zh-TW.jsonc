@@ -400,8 +400,8 @@
 
       "PPTHelper":
       {
-        "N": "PPT簡報小幫手",
-        "E": "在投影片簡報時提供簡報控制按鈕和畫筆控制按鈕。每頁擁有獨立畫板，可以讓筆跡固定在頁面上。不影響原有功能和外接裝置的使用，支援 Microsoft PowerPoint 和 KingSoft WPS。",
+        "N": "PPT簡報小幫手 3 Lite",
+        "E": "在投影片演示時提供控製按鈕與畫筆功能。每頁擁有獨立畫板，可將筆跡固定在頁面上。不影響原有功能及外接裝置使用，支援 Microsoft PowerPoint 2007 與 Kingsoft WPS 2013 及以上版本。",
 
         "VersionError": "版本號未知（插件發生錯誤）",
         "Solve": "解決方案",

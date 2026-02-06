@@ -1101,7 +1101,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	// 字体初始化
 	{
 		// 加载字体到 GDI[废弃]
-		if (false)
+		if (true)
 		{
 			INT numFound = 0;
 			HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");

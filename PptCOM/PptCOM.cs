@@ -108,7 +108,7 @@ namespace PptCOM
         }
         public string CheckCOM()
         {
-            string ret = "20251220a";
+            string ret = "20260201a";
             return ret;
         }
 
@@ -800,9 +800,6 @@ namespace PptCOM
 
                                         Console.WriteLine($"无法注册事件 1! {ex.Message}");
                                     }
-
-                                    bindingEvents = false;
-                                    forcePolling = true;
 
                                     Console.WriteLine($"成功绑定! {pptApplication.Name}");
                                 }
