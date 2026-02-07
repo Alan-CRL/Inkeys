@@ -48,8 +48,8 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20260206b";				// 程序发布日期
-wstring editionChannel = L"Dev";				// 程序发布通道
+wstring editionDate = L"20260207a";				// 程序发布日期
+wstring editionChannel = L"Canary";				// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -1111,7 +1111,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	// 字体初始化
 	{
 		// 加载字体到 GDI[废弃]
-		if (true)
+		if (!useInkeys3UI)
 		{
 			INT numFound = 0;
 			HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
@@ -1253,79 +1253,10 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// RealTimeStylus触控库
 	{
-		bool hasErr = false;
+		if (useMouseInput == false) InitRTSLogic();
 
-		HRESULT hr;
-		GUID desiredPacketProperties[] = { GUID_PACKETPROPERTY_GUID_X, GUID_PACKETPROPERTY_GUID_Y, GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE,GUID_PACKETPROPERTY_GUID_WIDTH, GUID_PACKETPROPERTY_GUID_HEIGHT };
-
-		// Create RTS object
-		g_pRealTimeStylus = CreateRealTimeStylus(drawpad_window);
-		if (g_pRealTimeStylus == NULL)
-		{
-			IDTLogger->warn("[主线程][IdtMain] RealTimeStylus 为 NULL");
-
-			hasErr = true;
-			goto RealTimeStylusEnd;
-		}
-
-		// 设置属性包
-		hr = g_pRealTimeStylus->SetDesiredPacketDescription(5, desiredPacketProperties);
-		if (FAILED(hr))
-		{
-			IDTLogger->warn("[主线程][IdtMain] SetDesiredPacketDescription 为 失败");
-
-			g_pRealTimeStylus->Release();
-			g_pRealTimeStylus = NULL;
-
-			hasErr = true;
-			goto RealTimeStylusEnd;
-		}
-
-		// Create EventHandler object
-		g_pSyncEventHandlerRTS = CSyncEventHandlerRTS::Create(g_pRealTimeStylus);
-		if (g_pSyncEventHandlerRTS == NULL)
-		{
-			IDTLogger->warn("[主线程][IdtMain] SyncEventHandlerRTS 为 NULL");
-
-			g_pRealTimeStylus->Release();
-			g_pRealTimeStylus = NULL;
-
-			hasErr = true;
-			goto RealTimeStylusEnd;
-		}
-
-		// Enable RTS
-		if (!EnableRealTimeStylus(g_pRealTimeStylus))
-		{
-			IDTLogger->warn("[主线程][IdtMain] 启用 RTS 失败");
-
-			g_pSyncEventHandlerRTS->Release();
-			g_pSyncEventHandlerRTS = NULL;
-
-			g_pRealTimeStylus->Release();
-			g_pRealTimeStylus = NULL;
-
-			hasErr = true;
-			goto RealTimeStylusEnd;
-		}
-
-	RealTimeStylusEnd:
-
-		if (hasErr)
-		{
-			IDTLogger->critical("[主线程][IdtMain] 程序意外退出：RealTimeStylus 触控库初始化失败。");
-
-			if (LaunchState::warnTry) MessageBox(NULL, L"Program unexpected exit: RealTimeStylus touch library initialization failed.(#4)\n程序意外退出：RealTimeStylus 触控库初始化失败。(#4)", L"Inkeys Error | 智绘教错误", MB_OK | MB_SYSTEMMODAL);
-			else ShellExecuteW(NULL, NULL, GetCurrentExePath().c_str(), L"-WarnTry", NULL, SW_SHOWNORMAL);
-
-			exit(0);
-		}
-
-		thread RTSSpeed_thread(RTSSpeed);
-		RTSSpeed_thread.detach();
-
+		thread(RTSSpeed).detach();
 		rtsWait = false;
-		IDTLogger->info("[主线程][IdtMain] RealTimeStylus触控库初始化完成");
 	}
 	// 线程
 	{
@@ -1337,7 +1268,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		thread(StateMonitoring).detach();
 
 		// 放大API
-		thread(MagnifierThread).detach();
+		if (magnificationCreateReady) thread(MagnifierThread).detach();
 
 		// 启动 PPT 联动插件
 		thread(PPTLinkageMain).detach();

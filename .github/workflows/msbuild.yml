@@ -8,7 +8,6 @@ on:
       - main
       - insider
       - canary
-      - inkeys2-final
 permissions:
   actions: write
 
@@ -412,7 +411,7 @@ jobs:
           $size3 = (Get-Item $uploadFile3).Length
 
           $content = @"
-            "${{ steps.softwareChannel.outputs.VALUE }}": {
+          "${{ steps.softwareChannel.outputs.VALUE }}": {
             "edition_date": "${{ steps.softwareDate.outputs.VALUE }}",
             "edition_code": "",
             "inkeys3": false,
@@ -425,16 +424,19 @@ jobs:
               "sha256 Arm64": "$sha256_3"
             },
             "path": [
-              "https://vip.123pan.cn/1709404/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip",
-              "http://home.alan-crl.top/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip"
+              "https://get.smart-teach.cn/d/Ningbo-S3/shared/AlanCRL/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip",
+              "http://home.alan-crl.top/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip",
+              "https://vip.123pan.cn/1709404/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}.zip"
             ],
             "path64": [
-              "https://vip.123pan.cn/1709404/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip",
-              "http://home.alan-crl.top/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip"
+              "https://get.smart-teach.cn/d/Ningbo-S3/shared/AlanCRL/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip",
+              "http://home.alan-crl.top/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip",
+              "https://vip.123pan.cn/1709404/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}64.zip"
             ],
             "pathArm64": [
-              "https://vip.123pan.cn/1709404/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip",
-              "http://home.alan-crl.top/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip"
+              "https://get.smart-teach.cn/d/Ningbo-S3/shared/AlanCRL/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip",
+              "http://home.alan-crl.top/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip",
+              "https://vip.123pan.cn/1709404/Inkeys/Version/InkeysUpdate${{ steps.softwareDate.outputs.VALUE }}Arm64.zip"
             ],
             "size": {
               "file": $size1,
@@ -520,6 +522,13 @@ jobs:
           rename ".\packageUpload\32=Inkeys2025====!.zip" "开发版本-32位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
           rename ".\packageUpload\64=Inkeys2025====!.zip" "开发版本-64位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
           rename ".\packageUpload\Arm64=Inkeys2025====!.zip" "开发版本-Arm64-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+      - name: 重命名为最终命名 2
+        if: steps.softwareChannel.outputs.VALUE == 'Canary'
+        shell: cmd
+        run: |
+          rename ".\packageUpload\32=Inkeys2025====!.zip" "公测版本-32位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\64=Inkeys2025====!.zip" "公测版本-64位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\Arm64=Inkeys2025====!.zip" "公测版本-Arm64-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
       - name: 重命名为最终命名 2
         if: steps.softwareChannel.outputs.VALUE == 'Insider'
         shell: cmd

@@ -60,7 +60,7 @@ enum class AutomaticUpdateStateEnum : int
 	UpdateRestart = 8, // 重启软件更新到最新版本
 	UpdateLatest = 9, // 软件已经是最新版本
 	UpdateNewer = 10, // 软件相对最新版本更新
-	UpdateNew = 11 // 发现软件新版本
+	UpdateNew = 11, // 发现软件新版本
 };
 extern AutomaticUpdateStateEnum AutomaticUpdateState;
 
