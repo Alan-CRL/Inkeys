@@ -153,8 +153,8 @@ int main()
 		);
 
 		// win7 上 SetBackgroundColor 会因 E_NOTIMPL 失败
-		DXGI_RGBA color = { 1.0f, 1.0f, 1.0f, 1.0f };
-		swapChain->SetBackgroundColor(&color);
+		//DXGI_RGBA color = { 1.0f, 1.0f, 1.0f, 1.0f };
+		//swapChain->SetBackgroundColor(&color);
 	}
 
 	// 交换链应该保证指定脏区，而不是全部重绘
@@ -179,7 +179,7 @@ int main()
 	}
 	// 初始调测参数
 	const bool debug = true;
-	const float sampling_rate_hz = 30.0f; // Hz
+	const float sampling_rate_hz = 120.0f; // Hz
 	const float expected_speed = 500.0f * (static_cast<float>(dpiX) / 96.0f); // DPI 期望速度
 	const float limited_speed = expected_speed * 3.0f; // 最高允许速度
 	const int strokes_num = static_cast<int>(sampling_rate_hz / 6.0f); // 笔锋点个数
@@ -271,6 +271,7 @@ int main()
 			double smoothingFactor = 0.2;
 
 			// 清空画布
+			inkRenderer.ClearRTV(inkRenderer.renderTargetView, XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f));
 			inkRenderer.ClearRTV(inkRenderer.offScreenTexture1RTV, XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f));
 
 			// 帧率保持
@@ -278,6 +279,7 @@ int main()
 			while (1)
 			{
 				rekon = chrono::high_resolution_clock::now();
+				current = RECT(0, 0, 0, 0);
 
 				inkRenderer.SetOMTarget(inkRenderer.offScreenTexture1RTV);
 
@@ -347,52 +349,58 @@ int main()
 					// TODO
 				}
 
-				// 拷贝2D目标至窗口婚宠
+				// 处理脏区到屏幕范围
 				{
-					inkRenderer.SetOMTarget(inkRenderer.renderTargetView);
+					current.left = max(0L, current.left);
+					current.top = max(0L, current.top);
+					current.right = min((long)windowInfo.w, current.right);
+					current.bottom = min((long)windowInfo.h, current.bottom);
 
-					if (!isFirstFrame)
+					if (current.right < current.left || current.bottom < current.top)
 					{
-						//inkRenderer.ClearRTV(inkRenderer.renderTargetView, XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f)); // DEBUG
-
-						inkRenderer.CopyResource(inkRenderer.screenTexture, inkRenderer.offScreenTexture1, current);
-					}
-					else
-					{
-						inkRenderer.context->CopyResource(inkRenderer.screenTexture, inkRenderer.offScreenTexture1);
+						current = RECT(0, 0, 0, 0);
 					}
 				}
 
-				// 帧结束
+				if (current.left != 0 || current.top != 0 || current.right != 0 || current.bottom != 0)
 				{
-					RECT dirtyRect = current;
-
-					dirtyRect.left = max(0L, dirtyRect.left);
-					dirtyRect.top = max(0L, dirtyRect.top);
-					dirtyRect.right = min((long)windowInfo.w, dirtyRect.right);
-					dirtyRect.bottom = min((long)windowInfo.h, dirtyRect.bottom);
-
-					if (!isFirstFrame && dirtyRect.right > dirtyRect.left && dirtyRect.bottom > dirtyRect.top)
+					// 拷贝2D目标至窗口婚宠
 					{
-						DXGI_PRESENT_PARAMETERS parameters = {};
-						parameters.DirtyRectsCount = 1;
-						parameters.pDirtyRects = &dirtyRect;
-						parameters.pScrollRect = nullptr;
-						parameters.pScrollOffset = nullptr;
+						inkRenderer.SetOMTarget(inkRenderer.renderTargetView);
 
-						swapChain->Present1(0, 0, &parameters);
+						if (!isFirstFrame)
+						{
+							//inkRenderer.ClearRTV(inkRenderer.renderTargetView, XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f)); // DEBUG
+							inkRenderer.CopyResource(inkRenderer.screenTexture, inkRenderer.offScreenTexture1, current);
+						}
+						else
+						{
+							inkRenderer.context->CopyResource(inkRenderer.screenTexture, inkRenderer.offScreenTexture1);
+						}
 					}
-					else
+
+					// 帧结束
 					{
-						swapChain->Present(0, 0);
+						if (!isFirstFrame)
+						{
+							DXGI_PRESENT_PARAMETERS parameters = {};
+							parameters.DirtyRectsCount = 1;
+							parameters.pDirtyRects = &current;
+							parameters.pScrollRect = nullptr;
+							parameters.pScrollOffset = nullptr;
+
+							swapChain->Present1(0, 0, &parameters);
+						}
+						else
+						{
+							swapChain->Present(0, 0);
+						}
 					}
+					isFirstFrame = false;
 				}
 
 				if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) break;
 				hiex::flushmessage_win32(EM_MOUSE, windowHWND);
-
-				isFirstFrame = true;
-				// 脏区逻辑暂时禁用
 
 				// 帧率锁
 				{
