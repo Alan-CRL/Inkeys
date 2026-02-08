@@ -1,7 +1,7 @@
 ﻿#pragma once
 
-#include "../../IdtMain.h"
-#include "../../IdtD2DPreparation.h"
+#include "../../../IdtMain.h"
+#include "../../../IdtD2DPreparation.h"
 #include "IdtBarUI.h"
 #include "IdtBarState.h"
 #include "IdtBarBottom.h"

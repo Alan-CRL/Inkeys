@@ -1,9 +1,9 @@
 ﻿#pragma once
 
-#include "../../IdtMain.h"
+#include "../../../IdtMain.h"
 #include "IdtBarState.h"
 
-#include "../../IdtD2DPreparation.h"
+#include "../../../IdtD2DPreparation.h"
 
 // 动效类型
 enum class BarUiValueModeEnum : int

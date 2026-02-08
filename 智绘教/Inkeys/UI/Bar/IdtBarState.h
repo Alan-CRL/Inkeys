@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include "../../IdtMain.h"
+#include "../../../IdtMain.h"
 
 class BarStateClass
 {

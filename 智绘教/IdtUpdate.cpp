@@ -2,7 +2,7 @@
 
 #include "IdtConfiguration.h"
 #include "IdtOther.h"
-#include "IdtSetting.h"
+#include "Inkeys/UI/Setting/IdtSettingUI.h"
 #include "IdtText.h"
 #include "IdtTime.h"
 #include "IdtWindow.h"

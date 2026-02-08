@@ -1,13 +1,13 @@
 ﻿#include "IdtBarBottom.h"
 
 #include "IdtBar.h"
-#include "../../IdtState.h"
+#include "../../../IdtState.h"
 
 // 历史遗留问题
-#include "../../IdtDraw.h"
-#include "../../IdtDrawpad.h"
-#include "../../IdtHistoricalDrawpad.h"
-#include "../../IdtImage.h"
+#include "../../../IdtDraw.h"
+#include "../../../IdtDrawpad.h"
+#include "../../../IdtHistoricalDrawpad.h"
+#include "../../../IdtImage.h"
 
 void BarButtomSetClass::PresetInitialization()
 {

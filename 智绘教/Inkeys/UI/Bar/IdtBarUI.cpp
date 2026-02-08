@@ -1,7 +1,7 @@
 ﻿#include "IdtBarUI.h"
 
-#include "../Load/IdtLoad.h"
-#include "../../IdtText.h"
+#include "../../Load/IdtLoad.h"
+#include "../../../IdtText.h"
 
 #define LUNASVG_BUILD_STATIC
 #include <lunasvg/lunasvg.h>

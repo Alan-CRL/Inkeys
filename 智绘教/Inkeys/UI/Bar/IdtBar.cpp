@@ -1,18 +1,18 @@
 ﻿#include "IdtBar.h"
 
-#include "../../IdtConfiguration.h"
-#include "../../IdtD2DPreparation.h"
-#include "../../IdtDisplayManagement.h"
-#include "../../IdtDrawpad.h"
-#include "../../IdtState.h"
-#include "../../IdtWindow.h"
-#include "../../IdtText.h"
-#include "../Conv/IdtColor.h"
+#include "../../../IdtConfiguration.h"
+#include "../../../IdtD2DPreparation.h"
+#include "../../../IdtDisplayManagement.h"
+#include "../../../IdtDrawpad.h"
+#include "../../../IdtState.h"
+#include "../../../IdtWindow.h"
+#include "../../../IdtText.h"
+#include "../../Conv/IdtColor.h"
 #include "IdtBarUI.h"
 #include "IdtBarState.h"
 #include "IdtBarBottom.h"
 #include "IdtBarRenderingAttribute.h"
-#include "../Other/IdtInputs.h"
+#include "../../Other/IdtInputs.h"
 
 #define LUNASVG_BUILD_STATIC
 #include <lunasvg/lunasvg.h>

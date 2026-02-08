@@ -14,7 +14,7 @@
 #include "IdtTime.h"
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
-#include "Inkeys/UI/IdtBar.h"
+#include "Inkeys/UI/Bar/IdtBar.h"
 #include "Inkeys/Other/IdtInputs.h"
 
 #include <queue>

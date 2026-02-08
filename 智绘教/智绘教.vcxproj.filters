@@ -115,6 +115,18 @@
     <Filter Include="源文件\Inkeys\Load">
       <UniqueIdentifier>{08a823c5-f342-4ee4-9c75-b9dc069137b8}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\Inkeys\UI\Bar">
+      <UniqueIdentifier>{2eb2cd88-9038-4359-96ac-9095f241fa98}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Inkeys\UI\Setting">
+      <UniqueIdentifier>{b0c08fa8-2c0f-4997-a508-12654410ac8d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Inkeys\UI\Bar">
+      <UniqueIdentifier>{13847c24-e0ee-40df-b191-0f9ec986d84d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Inkeys\UI\Setting">
+      <UniqueIdentifier>{fcba1c2b-65dd-4b4a-ac3d-1c233746efef}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HiEasyX.h">
@@ -259,9 +271,6 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="IdtDisplayManagement.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="IdtSetting.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="IdtSysNotifications.h">
@@ -756,9 +765,6 @@
     <ClInclude Include="Inkeys\Json\IdtJson.h">
       <Filter>头文件\Inkeys\Json</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\UI\IdtBar.h">
-      <Filter>头文件\Inkeys\UI</Filter>
-    </ClInclude>
     <ClInclude Include="additional\concurrentqueue.h">
       <Filter>头文件\Additional</Filter>
     </ClInclude>
@@ -771,18 +777,6 @@
     <ClInclude Include="Inkeys\Load\IdtLoad.h">
       <Filter>头文件\Inkeys\Load</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\UI\IdtBarState.h">
-      <Filter>头文件\Inkeys\UI</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\IdtBarBottom.h">
-      <Filter>头文件\Inkeys\UI</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\IdtBarFormat.h">
-      <Filter>头文件\Inkeys\UI</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\IdtBarUI.h">
-      <Filter>头文件\Inkeys\UI</Filter>
-    </ClInclude>
     <ClInclude Include="Inkeys\Other\IdtGesture.h">
       <Filter>头文件\Inkeys\Other</Filter>
     </ClInclude>
@@ -792,8 +786,32 @@
     <ClInclude Include="Inkeys\Load\IdtFontLoad.h">
       <Filter>头文件\Inkeys\Load</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\UI\IdtBarRenderingAttribute.h">
-      <Filter>头文件\Inkeys\UI</Filter>
+    <ClInclude Include="Inkeys\UI\Bar\IdtBarUI.h">
+      <Filter>头文件\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\IdtBarState.h">
+      <Filter>头文件\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\IdtBarRenderingAttribute.h">
+      <Filter>头文件\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\IdtBarFormat.h">
+      <Filter>头文件\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\IdtBarBottom.h">
+      <Filter>头文件\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\IdtBar.h">
+      <Filter>头文件\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\IdtSettingWidgets.h">
+      <Filter>头文件\Inkeys\UI\Setting</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\IdtSetting.h">
+      <Filter>头文件\Inkeys\UI\Setting</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\IdtSettingUI.h">
+      <Filter>头文件\Inkeys\UI\Setting</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -929,9 +947,6 @@
     <ClCompile Include="IdtDisplayManagement.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="IdtSetting.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="IdtConfiguration.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -1049,21 +1064,6 @@
     <ClCompile Include="SuperTop\IdtSuperTop.cpp">
       <Filter>源文件\SuperTop</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\IdtBar.cpp">
-      <Filter>源文件\Inkeys\UI</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\IdtBarState.cpp">
-      <Filter>源文件\Inkeys\UI</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\IdtBarBottom.cpp">
-      <Filter>源文件\Inkeys\UI</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\IdtBarFormat.cpp">
-      <Filter>源文件\Inkeys\UI</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\IdtBarUI.cpp">
-      <Filter>源文件\Inkeys\UI</Filter>
-    </ClCompile>
     <ClCompile Include="Inkeys\Other\IdtGesture.cpp">
       <Filter>源文件\Inkeys\Other</Filter>
     </ClCompile>
@@ -1073,8 +1073,32 @@
     <ClCompile Include="Inkeys\Load\IdtFontLoad.cpp">
       <Filter>源文件\Inkeys\Load</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\IdtBarRenderingAttribute.cpp">
-      <Filter>源文件\Inkeys\UI</Filter>
+    <ClCompile Include="Inkeys\UI\Bar\IdtBarUI.cpp">
+      <Filter>源文件\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\IdtBarState.cpp">
+      <Filter>源文件\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\IdtBarRenderingAttribute.cpp">
+      <Filter>源文件\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\IdtBarFormat.cpp">
+      <Filter>源文件\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\IdtBarBottom.cpp">
+      <Filter>源文件\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\IdtBar.cpp">
+      <Filter>源文件\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Setting\IdtSettingWidgets.cpp">
+      <Filter>源文件\Inkeys\UI\Setting</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Setting\IdtSetting.cpp">
+      <Filter>源文件\Inkeys\UI\Setting</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Setting\IdtSettingUI.cpp">
+      <Filter>源文件\Inkeys\UI\Setting</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

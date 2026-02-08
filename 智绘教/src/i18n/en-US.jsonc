@@ -304,7 +304,7 @@
       "N": "Performance",
       "DrawMode":
       {
-        "N": "Draw Engine",
+        "N": "Draw Performance",
         "Prepare":
         {
           "N": "Touch Prepare",

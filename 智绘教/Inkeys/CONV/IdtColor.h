@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include "../UI/IdtBar.h"
+#include "../UI/Bar/IdtBar.h"
 
 class IdtColor
 {

@@ -29,14 +29,14 @@
 #include "IdtOther.h"
 #include "IdtPlug-in.h"
 #include "IdtRts.h"
-#include "IdtSetting.h"
+#include "Inkeys/UI/Setting/IdtSettingUI.h"
 #include "IdtStart.h"
 #include "IdtState.h"
 #include "IdtText.h"
 #include "IdtTime.h"
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
-#include "Inkeys/UI/IdtBar.h"
+#include "Inkeys/UI/Bar/IdtBar.h"
 #include "Inkeys/Other/IdtGesture.h"
 #include "Inkeys/Load/IdtFontLoad.h"
 #include "Launch/IdtLaunchState.h"
@@ -48,8 +48,8 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20260207a";				// 程序发布日期
-wstring editionChannel = L"Canary";				// 程序发布通道
+wstring editionDate = L"20260208a";				// 程序发布日期
+wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径

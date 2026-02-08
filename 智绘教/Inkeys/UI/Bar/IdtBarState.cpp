@@ -1,8 +1,8 @@
 ﻿#include "IdtBarState.h"
 
 #include "IdtBar.h"
-#include "../../IdtDisplayManagement.h"
-#include "../../IdtState.h"
+#include "../../../IdtDisplayManagement.h"
+#include "../../../IdtState.h"
 
 void BarStateClass::PositionUpdate(double tarZoom)
 {
