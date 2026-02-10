@@ -7,7 +7,6 @@
 #include "IdtImage.h"
 #include "IdtMagnification.h"
 #include "IdtPlug-in.h"
-#include "Inkeys/UI/Setting/IdtSettingUI.h"
 #include "IdtText.h"
 #include "IdtWindow.h"
 

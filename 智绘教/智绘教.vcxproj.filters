@@ -118,14 +118,23 @@
     <Filter Include="头文件\Inkeys\UI\Bar">
       <UniqueIdentifier>{2eb2cd88-9038-4359-96ac-9095f241fa98}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\Inkeys\UI\Setting">
-      <UniqueIdentifier>{b0c08fa8-2c0f-4997-a508-12654410ac8d}</UniqueIdentifier>
-    </Filter>
     <Filter Include="源文件\Inkeys\UI\Bar">
       <UniqueIdentifier>{13847c24-e0ee-40df-b191-0f9ec986d84d}</UniqueIdentifier>
     </Filter>
     <Filter Include="源文件\Inkeys\UI\Setting">
       <UniqueIdentifier>{fcba1c2b-65dd-4b4a-ac3d-1c233746efef}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules">
+      <UniqueIdentifier>{cf700d31-2954-4c48-810f-647b41db223a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys">
+      <UniqueIdentifier>{90a3e015-5496-4a2c-a21e-23e9b685747e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\UI">
+      <UniqueIdentifier>{fb6f7af3-1399-42ca-b45f-d1f0256ecf17}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\UI\Setting">
+      <UniqueIdentifier>{1b63320d-15d7-481e-b05e-f5d09c8795bc}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -804,14 +813,8 @@
     <ClInclude Include="Inkeys\UI\Bar\IdtBar.h">
       <Filter>头文件\Inkeys\UI\Bar</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\UI\Setting\IdtSettingWidgets.h">
-      <Filter>头文件\Inkeys\UI\Setting</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Setting\IdtSetting.h">
-      <Filter>头文件\Inkeys\UI\Setting</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Setting\IdtSettingUI.h">
-      <Filter>头文件\Inkeys\UI\Setting</Filter>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Wrap.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -1091,14 +1094,14 @@
     <ClCompile Include="Inkeys\UI\Bar\IdtBar.cpp">
       <Filter>源文件\Inkeys\UI\Bar</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\Setting\IdtSettingWidgets.cpp">
-      <Filter>源文件\Inkeys\UI\Setting</Filter>
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cppm">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\Setting\IdtSetting.cpp">
-      <Filter>源文件\Inkeys\UI\Setting</Filter>
+    <ClCompile Include="Inkeys\UI\Setting\Setting.cppm">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\Setting\IdtSettingUI.cpp">
-      <Filter>源文件\Inkeys\UI\Setting</Filter>
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Main.cppm">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

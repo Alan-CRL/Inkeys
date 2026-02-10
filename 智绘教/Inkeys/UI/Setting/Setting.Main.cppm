@@ -1,7 +1,6 @@
-﻿#include "IdtSettingUI.h"
+﻿module;
 
-#include "IdtSetting.h"
-#include "IdtSettingWidgets.h"
+#include "Setting.Wrap.h"
 
 #include "../../../IdtConfiguration.h"
 #include "../../../IdtDisplayManagement.h"
@@ -26,6 +25,11 @@
 #include <shlobj.h>
 #include <shlwapi.h>
 #pragma comment(lib, "shlwapi.lib")
+
+export module Inkeys.UI.Setting.Main;
+
+import Inkeys.UI.Setting;
+import Inkeys.UI.Setting.Widgets;
 
 // 软件构建信息
 // signal1
@@ -80,6 +84,62 @@ void SettingSeekBar()
 
 	return;
 }
+
+// 从 imgui_impl_win32.cpp 中前向声明消息处理器
+extern "C++" {
+	extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+}
+// Win32 消息处理器
+// 您可以阅读 io.WantCaptureMouse、io.WantCaptureKeyboard 标志，以了解 dear imgui 是否想使用您的输入。
+// - 当 io.WantCaptureMouse 为 true 时，请勿将鼠标输入数据发送到主应用程序，或者清除/覆盖鼠标数据的副本。
+// - 当 io.WantCaptureKeyboard 为 true 时，请勿将键盘输入数据发送到主应用程序，或者清除/覆盖键盘数据的副本。
+// 通常，您可以始终将所有输入传递给 dear imgui，并根据这两个标志在应用程序中隐藏它们。
+LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	if (test.select && ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
+		return true;
+
+	switch (msg)
+	{
+		// 标题栏拖动
+	case WM_LBUTTONDOWN:
+		if (IsInRect(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), { 0,0,int(904.0 * settingGlobalScale),int(40.0 * settingGlobalScale) })) SettingSeekBar();
+		break;
+
+	case WM_SIZE:
+		if (wParam == SIZE_MINIMIZED)
+			return 0;
+		g_ResizeWidth = (UINT)LOWORD(lParam); // Queue resize
+		g_ResizeHeight = (UINT)HIWORD(lParam);
+		return 0;
+	case WM_SYSCOMMAND:
+		if ((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu
+			return 0;
+
+		// 拦截任务栏关闭指令
+		if ((wParam & 0xFFF0) == SC_CLOSE)
+		{
+			test.select = false;
+			return 0;
+		}
+
+		break;
+	case WM_DESTROY:
+		::PostQuitMessage(0);
+		return 0;
+	case WM_MOVE:
+		RECT rect;
+		GetWindowRect(hWnd, &rect);
+
+		SettingWindowX = rect.left;
+		SettingWindowY = rect.top;
+
+		break;
+	}
+
+	return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+}
+
 void SettingWindow(promise<void>& promise)
 {
 	// 创建窗口
@@ -102,7 +162,7 @@ void SettingWindow(promise<void>& promise)
 		DispatchMessage(&msg);
 	}
 }
-void SettingWindowBegin()
+export void SettingWindowBegin()
 {
 	// 尺寸计算
 	{
@@ -130,7 +190,7 @@ void SettingWindowBegin()
 	//UpdateWindow(setting_window);
 }
 
-void SettingMain()
+export void SettingMain()
 {
 	threadStatus[L"SettingMain"] = true;
 
@@ -9973,57 +10033,4 @@ void SettingMain()
 
 	threadStatus[L"SettingMain"] = false;
 	return;
-}
-
-// 从 imgui_impl_win32.cpp 中前向声明消息处理器
-extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-// Win32 消息处理器
-// 您可以阅读 io.WantCaptureMouse、io.WantCaptureKeyboard 标志，以了解 dear imgui 是否想使用您的输入。
-// - 当 io.WantCaptureMouse 为 true 时，请勿将鼠标输入数据发送到主应用程序，或者清除/覆盖鼠标数据的副本。
-// - 当 io.WantCaptureKeyboard 为 true 时，请勿将键盘输入数据发送到主应用程序，或者清除/覆盖键盘数据的副本。
-// 通常，您可以始终将所有输入传递给 dear imgui，并根据这两个标志在应用程序中隐藏它们。
-LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-	if (test.select && ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
-		return true;
-
-	switch (msg)
-	{
-		// 标题栏拖动
-	case WM_LBUTTONDOWN:
-		if (IsInRect(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), { 0,0,int(904.0 * settingGlobalScale),int(40.0 * settingGlobalScale) })) SettingSeekBar();
-		break;
-
-	case WM_SIZE:
-		if (wParam == SIZE_MINIMIZED)
-			return 0;
-		g_ResizeWidth = (UINT)LOWORD(lParam); // Queue resize
-		g_ResizeHeight = (UINT)HIWORD(lParam);
-		return 0;
-	case WM_SYSCOMMAND:
-		if ((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu
-			return 0;
-
-		// 拦截任务栏关闭指令
-		if ((wParam & 0xFFF0) == SC_CLOSE)
-		{
-			test.select = false;
-			return 0;
-		}
-
-		break;
-	case WM_DESTROY:
-		::PostQuitMessage(0);
-		return 0;
-	case WM_MOVE:
-		RECT rect;
-		GetWindowRect(hWnd, &rect);
-
-		SettingWindowX = rect.left;
-		SettingWindowY = rect.top;
-
-		break;
-	}
-
-	return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 }

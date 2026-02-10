@@ -11,6 +11,8 @@
  * @email		alan-crl@foxmail.com
 */
 
+import Inkeys.UI.Setting.Main;
+
 #include "IdtMain.h"
 #include "resource.h"
 
@@ -29,7 +31,6 @@
 #include "IdtOther.h"
 #include "IdtPlug-in.h"
 #include "IdtRts.h"
-#include "Inkeys/UI/Setting/IdtSettingUI.h"
 #include "IdtStart.h"
 #include "IdtState.h"
 #include "IdtText.h"

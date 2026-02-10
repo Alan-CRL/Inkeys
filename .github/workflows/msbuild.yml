@@ -117,7 +117,7 @@ jobs:
             wstring msBuildVersion = L"{{MSBUILDVER}}";
           } settingCICD;
       run: |
-        $file = '智绘教\Inkeys\UI\Setting\IdtSettingUI.cpp'
+        $file = '智绘教\Inkeys\UI\Setting\Setting.Main.cppm'
         $content = Get-Content $file
       
         $pattern = '(?ms)^\s*// signal1.*?\s*// signal1'
