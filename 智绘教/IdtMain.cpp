@@ -46,7 +46,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20260206a";				// 程序发布日期
+wstring editionDate = L"20260212a";				// 程序发布日期
 wstring editionChannel = L"LTS";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -193,7 +193,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			}
 
 			wstring mutexName = L"Inkeys_" + currentExeDirectory;
-			if (mutexName.length() > 255) mutexName = mutexName.substr(255);
+			if (mutexName.length() > 255) mutexName = mutexName.substr(0, 255);
 
 			launchMutex = CreateMutexW(
 				NULL,           // 默认安全属性

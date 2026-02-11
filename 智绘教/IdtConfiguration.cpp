@@ -61,7 +61,7 @@ bool OccupyFileForWrite(HANDLE* hFile, const wstring& filePath)
 // 释放文件
 bool UnOccupyFile(HANDLE* hFile)
 {
-	if (*hFile != NULL)
+	if (*hFile != NULL && *hFile != INVALID_HANDLE_VALUE)
 	{
 		CloseHandle(*hFile);
 		return true;
