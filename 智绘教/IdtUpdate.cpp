@@ -257,7 +257,7 @@ AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state,
 			if (!setlist.enableAutoUpdate && !mandatoryUpdate)
 			{
 				error_code ec;
-				filesystem::remove(globalPath + L"installer\\new_procedure" + timestamp + L".exe", ec);
+				filesystem::remove(globalPath + L"installer\\new_procedure_" + timestamp + L".exe", ec);
 
 				return UpdateNew;
 			}
@@ -289,7 +289,7 @@ AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state,
 		else
 		{
 			error_code ec;
-			filesystem::remove(globalPath + L"installer\\new_procedure" + timestamp + L".exe", ec);
+			filesystem::remove(globalPath + L"installer\\new_procedure_" + timestamp + L".exe", ec);
 
 			return UpdateDownloadDamage;
 		}
