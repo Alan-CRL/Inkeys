@@ -1,4 +1,6 @@
-﻿#include "IdtDrawpad.h"
+﻿import Inkeys.UI.Bar.Main;
+
+#include "IdtDrawpad.h"
 
 #include "IdtConfiguration.h"
 #include "IdtDisplayManagement.h"
@@ -14,7 +16,6 @@
 #include "IdtTime.h"
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
-#include "Inkeys/UI/Bar/IdtBar.h"
 #include "Inkeys/Other/IdtInputs.h"
 
 #include <queue>

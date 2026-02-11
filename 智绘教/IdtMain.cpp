@@ -12,6 +12,7 @@
 */
 
 import Inkeys.UI.Setting.Main;
+import Inkeys.UI.Bar.Main;
 
 #include "IdtMain.h"
 #include "resource.h"
@@ -37,7 +38,6 @@ import Inkeys.UI.Setting.Main;
 #include "IdtTime.h"
 #include "IdtUpdate.h"
 #include "IdtWindow.h"
-#include "Inkeys/UI/Bar/IdtBar.h"
 #include "Inkeys/Other/IdtGesture.h"
 #include "Inkeys/Load/IdtFontLoad.h"
 #include "Launch/IdtLaunchState.h"
@@ -49,7 +49,7 @@ import Inkeys.UI.Setting.Main;
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20260208a";				// 程序发布日期
+wstring editionDate = L"20260210a";				// 程序发布日期
 wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -75,7 +75,7 @@ void RestartProgram()
 
 shared_ptr<spdlog::logger> IDTLogger;
 IdtAtomic<bool> useMouseInput;
-IdtAtomic<bool> useInkeys3UI = false;
+IdtAtomic<bool> useInkeys3UI = true;
 
 // 程序入口点
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)

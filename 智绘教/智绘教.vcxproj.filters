@@ -91,14 +91,8 @@
     <Filter Include="头文件\Inkeys\Json">
       <UniqueIdentifier>{a73c31b1-6419-42a0-a606-f17415f934a6}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\Inkeys\UI">
-      <UniqueIdentifier>{83c930ac-eb03-4766-98a6-c2f52bd75428}</UniqueIdentifier>
-    </Filter>
     <Filter Include="源文件\Inkeys">
       <UniqueIdentifier>{9d493b02-2050-44aa-86ae-ef700c65face}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="源文件\Inkeys\UI">
-      <UniqueIdentifier>{de560809-c33f-4d6d-9635-64531bbcada9}</UniqueIdentifier>
     </Filter>
     <Filter Include="头文件\Inkeys\Conv">
       <UniqueIdentifier>{da9fe4f5-f08e-4eb0-9616-0ad97f177df0}</UniqueIdentifier>
@@ -115,15 +109,6 @@
     <Filter Include="源文件\Inkeys\Load">
       <UniqueIdentifier>{08a823c5-f342-4ee4-9c75-b9dc069137b8}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\Inkeys\UI\Bar">
-      <UniqueIdentifier>{2eb2cd88-9038-4359-96ac-9095f241fa98}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="源文件\Inkeys\UI\Bar">
-      <UniqueIdentifier>{13847c24-e0ee-40df-b191-0f9ec986d84d}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="源文件\Inkeys\UI\Setting">
-      <UniqueIdentifier>{fcba1c2b-65dd-4b4a-ac3d-1c233746efef}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Modules">
       <UniqueIdentifier>{cf700d31-2954-4c48-810f-647b41db223a}</UniqueIdentifier>
     </Filter>
@@ -135,6 +120,9 @@
     </Filter>
     <Filter Include="Modules\Inkeys\UI\Setting">
       <UniqueIdentifier>{1b63320d-15d7-481e-b05e-f5d09c8795bc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\UI\Bar">
+      <UniqueIdentifier>{56be2dfa-0003-4904-8ed4-aac871d769c8}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -795,24 +783,6 @@
     <ClInclude Include="Inkeys\Load\IdtFontLoad.h">
       <Filter>头文件\Inkeys\Load</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\IdtBarUI.h">
-      <Filter>头文件\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\IdtBarState.h">
-      <Filter>头文件\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\IdtBarRenderingAttribute.h">
-      <Filter>头文件\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\IdtBarFormat.h">
-      <Filter>头文件\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\IdtBarBottom.h">
-      <Filter>头文件\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\IdtBar.h">
-      <Filter>头文件\Inkeys\UI\Bar</Filter>
-    </ClInclude>
     <ClInclude Include="Inkeys\UI\Setting\Setting.Wrap.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
@@ -1076,24 +1046,6 @@
     <ClCompile Include="Inkeys\Load\IdtFontLoad.cpp">
       <Filter>源文件\Inkeys\Load</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\IdtBarUI.cpp">
-      <Filter>源文件\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\IdtBarState.cpp">
-      <Filter>源文件\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\IdtBarRenderingAttribute.cpp">
-      <Filter>源文件\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\IdtBarFormat.cpp">
-      <Filter>源文件\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\IdtBarBottom.cpp">
-      <Filter>源文件\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\IdtBar.cpp">
-      <Filter>源文件\Inkeys\UI\Bar</Filter>
-    </ClCompile>
     <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cppm">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClCompile>
@@ -1102,6 +1054,33 @@
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Setting\Setting.Main.cppm">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RenderingAttribute.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.State.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Format.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Bottom.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.State.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Buttom.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

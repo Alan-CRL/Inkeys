@@ -19,17 +19,20 @@
 #include "../../../IdtWindow.h"
 #include "../../../CrashHandler/CrashHandler.h"
 #include "../../../SuperTop/IdtSuperTop.h"
-#include "../../UI/Bar/IdtBar.h"
 #include "../../Other/IdtInputs.h"
 
 #include <shlobj.h>
 #include <shlwapi.h>
 #pragma comment(lib, "shlwapi.lib")
 
+// 从 imgui_impl_win32.cpp 中前向声明消息处理器
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
 export module Inkeys.UI.Setting.Main;
 
 import Inkeys.UI.Setting;
 import Inkeys.UI.Setting.Widgets;
+import Inkeys.UI.Bar.Main;
 
 // 软件构建信息
 // signal1
@@ -85,10 +88,6 @@ void SettingSeekBar()
 	return;
 }
 
-// 从 imgui_impl_win32.cpp 中前向声明消息处理器
-extern "C++" {
-	extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-}
 // Win32 消息处理器
 // 您可以阅读 io.WantCaptureMouse、io.WantCaptureKeyboard 标志，以了解 dear imgui 是否想使用您的输入。
 // - 当 io.WantCaptureMouse 为 true 时，请勿将鼠标输入数据发送到主应用程序，或者清除/覆盖鼠标数据的副本。

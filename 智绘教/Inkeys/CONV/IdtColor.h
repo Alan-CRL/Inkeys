@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include "../UI/Bar/IdtBar.h"
+// #include "../UI/Bar/IdtBar.h"
 
 class IdtColor
 {
@@ -9,7 +9,8 @@ private:
 
 public:
 	// 弃用
-	static BarLogaColorSchemeEnum BarLogaColorSchemeCalc(COLORREF color)
+	/*
+	static BarLogoColorSchemeEnum BarLogaColorSchemeCalc(COLORREF color)
 	{
 		// 内联相对亮度计算
 		auto getLum = [](int r, int g, int b) -> double {
@@ -38,8 +39,8 @@ public:
 		double contrast1 = getContrast(lum_fg, lum_bg1);
 		double contrast2 = getContrast(lum_fg, lum_bg2);
 
-		return (contrast1 >= contrast2) ? BarLogaColorSchemeEnum::Slate : BarLogaColorSchemeEnum::Default;
-	}
+		return (contrast1 >= contrast2) ? BarLogoColorSchemeEnum::Slate : BarLogoColorSchemeEnum::Default;
+	}*/
 
 	static D2D1::ColorF ConvertToD2dColor(COLORREF color, double pct)
 	{
