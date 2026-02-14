@@ -1,4 +1,6 @@
-﻿#include "IdtSetting.h"
+﻿import Inkeys.Thread.Status;
+
+#include "IdtSetting.h"
 
 #include "IdtConfiguration.h"
 #include "IdtDisplayManagement.h"
@@ -154,7 +156,7 @@ void SettingWindowBegin()
 
 void SettingMain()
 {
-	threadStatus[L"SettingMain"] = true;
+	Inkeys::Thread::StatusGuard guard("SettingMain");
 
 	//SettingWindowBegin();
 
@@ -9265,7 +9267,7 @@ void SettingMain()
 
 					{
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f);
-						wstring text = L"成功赞助后，可以联系作者添加社区名片赞助列表中的昵称。";
+						wstring text = L"成功赞助后，可以联系作者将您的昵称和赞助的金额添加到社区名片中以表示感谢。";
 
 						int left_x = 10 * settingGlobalScale, right_x = 760 * settingGlobalScale;
 
@@ -10160,7 +10162,6 @@ void SettingMain()
 		ImGui::DestroyContext();
 	}
 
-	threadStatus[L"SettingMain"] = false;
 	return;
 }
 

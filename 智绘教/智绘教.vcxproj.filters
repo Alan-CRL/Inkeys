@@ -106,6 +106,15 @@
     <Filter Include="头文件\Inkeys\Other">
       <UniqueIdentifier>{eb6c2d2d-03dd-42b3-bf93-06205242c7f7}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Modules">
+      <UniqueIdentifier>{2922a591-51db-4f8e-b04a-ea7a871c5995}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys">
+      <UniqueIdentifier>{1d262009-35ea-4ece-af29-1acbb2dca4b6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Thread">
+      <UniqueIdentifier>{d579e1ef-9406-4bb1-a2a6-60e1635497bd}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HiEasyX.h">
@@ -1021,6 +1030,9 @@
     </ClCompile>
     <ClCompile Include="Inkeys\Other\IdtInputs.cpp">
       <Filter>源文件\Inkeys\Other</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Thread\Thread.Status.cppm">
+      <Filter>Modules\Inkeys\Thread</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

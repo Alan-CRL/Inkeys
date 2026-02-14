@@ -1,4 +1,5 @@
-﻿#pragma once
+﻿import Inkeys.Thread.Status;
+
 #include "IdtFloating.h"
 
 #include "IdtConfiguration.h"
@@ -488,9 +489,10 @@ LRESULT CALLBACK FloatingMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 //绘制屏幕
 void DrawScreen()
 {
+	Inkeys::Thread::StatusGuard guard("DrawScreen");
+
 	Bitmap* bskin3;
 
-	threadStatus[L"DrawScreen"] = true;
 	//初始化
 	{
 		//媒体资源读取
@@ -5525,12 +5527,10 @@ void DrawScreen()
 			if (delay >= 1.0) std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(delay)));
 		}
 	}
-
-	threadStatus[L"DrawScreen"] = false;
 }
 void MouseInteraction()
 {
-	threadStatus[L"MouseInteraction"] = true;
+	Inkeys::Thread::StatusGuard guard("MouseInteraction");
 
 	StateModeStruct_Discard floatingInfo;
 	int brush_connect = -1;
@@ -6639,22 +6639,17 @@ void MouseInteraction()
 		}
 		else hiex::flushmessage_win32(EM_MOUSE, floating_window);
 	}
-
-	threadStatus[L"MouseInteraction"] = false;
 }
 
 int floating_main()
 {
-	threadStatus[L"floating_main"] = true;
-	GetLocalTime(&sys_time);
+	Inkeys::Thread::StatusGuard guard("floating_main");
 
 	hiex::SetWndProcFunc(floating_window, FloatingMsgCallback);
 
 	thread FloatingInstallHookThread(FloatingInstallHook);
 	FloatingInstallHookThread.detach();
 
-	//thread GetTime_thread(GetTime);
-	//GetTime_thread.detach();
 	//LOG(INFO) << "尝试启动悬浮窗窗口绘制线程";
 	thread DrawScreen_thread(DrawScreen);
 	DrawScreen_thread.detach();
@@ -6669,10 +6664,11 @@ int floating_main()
 	int i = 1;
 	for (; i <= 10; i++)
 	{
-		if (!threadStatus[L"PPTLinkageMain"]/*&& !threadStatus[L"GetPptState"] && !threadStatus[L"PptInteract"] */ && !threadStatus[L"GetTime"] && !threadStatus[L"DrawScreen"] && !threadStatus[L"api_read_pipe"] && !threadStatus[L"BlackBlock"]) break;
+		using namespace Inkeys::Thread;
+
+		if (!GetStatus("PPTLinkageMain") && !GetStatus("DrawScreen")) break;
 		this_thread::sleep_for(chrono::milliseconds(500));
 	}
 
-	threadStatus[L"floating_main"] = false;
 	return 0;
 }

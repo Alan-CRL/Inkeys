@@ -245,49 +245,58 @@ int ProcessRunningCnt(const std::wstring& processPath)
 }
 
 // 设置开机自启状态
-bool SetStartupState(bool bAutoRun, wstring path, wstring nameclass)
+bool SetStartupState(bool bAutoRun, wstring path, const wstring& nameclass)
 {
-	path = L"\"" + path + L"\"";
-
-	wchar_t pFileName[MAX_PATH] = { 0 };
-	wcscpy_s(pFileName, path.c_str());
+	// 确保路径带有引号，处理带空格的路径
+	if (path.empty() || path.front() != L'\"') {
+		path = L"\"" + path + L"\"";
+	}
 
 	HKEY hKey;
-	LPCTSTR lpRun = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-	long lRet = RegOpenKeyEx(HKEY_CURRENT_USER, lpRun, 0, KEY_WRITE, &hKey);
+	LPCWSTR lpRun = L"Software\\Microsoft\\Version\\Run"; // 注意：建议使用宏定义或常量
+
+	// 打开注册表项
+	long lRet = RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_WRITE, &hKey);
 	if (lRet != ERROR_SUCCESS) return false;
 
-	if (bAutoRun) RegSetValueEx(hKey, nameclass.c_str(), 0, REG_SZ, (const BYTE*)(LPCSTR)pFileName, MAX_PATH);
-	else RegDeleteValue(hKey, nameclass.c_str());
-
-	RegCloseKey(hKey);
-	return true;
-}
-// 查询开机自启状态
-bool QueryStartupState(wstring path, wstring nameclass)
-{
-	wchar_t pFileName[MAX_PATH] = { 0 };
-	wcscpy_s(pFileName, path.c_str());
-
-	path = L"\"" + path + L"\"";
-	wchar_t pFileName2[MAX_PATH] = { 0 };
-	wcscpy_s(pFileName2, path.c_str());
-
-	HKEY hKey;
-	LPCTSTR lpRun = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-	long lRet = RegOpenKeyEx(HKEY_CURRENT_USER, lpRun, 0, KEY_READ, &hKey); // 修改此处为KEY_READ
-	if (lRet != ERROR_SUCCESS) return false;
-
-	wchar_t regValue[MAX_PATH] = { 0 };
-	DWORD dwType;
-	DWORD dwSize = sizeof(regValue);
-	lRet = RegQueryValueEx(hKey, nameclass.c_str(), 0, &dwType, (LPBYTE)regValue, &dwSize);
-	if (lRet != ERROR_SUCCESS || dwType != REG_SZ || (wcscmp(regValue, pFileName) != 0 && wcscmp(regValue, pFileName2) != 0)) // 如果查询不到值或者值不是字符串或者值不等于指定路径，则返回false
-	{
-		RegCloseKey(hKey);
-		return false;
+	bool bResult = false;
+	if (bAutoRun) {
+		// 计算字节数：字符数 + 结束符，再乘以 sizeof(wchar_t)
+		DWORD cbData = (DWORD)((path.length() + 1) * sizeof(wchar_t));
+		lRet = RegSetValueExW(hKey, nameclass.c_str(), 0, REG_SZ, (const BYTE*)path.c_str(), cbData);
+		bResult = (lRet == ERROR_SUCCESS);
+	}
+	else {
+		lRet = RegDeleteValueW(hKey, nameclass.c_str());
+		// 如果值本来就不存在，也可以视作成功
+		bResult = (lRet == ERROR_SUCCESS || lRet == ERROR_FILE_NOT_FOUND);
 	}
 
 	RegCloseKey(hKey);
-	return true;
+	return bResult;
+}
+// 查询开机自启状态
+bool QueryStartupState(wstring path, const wstring& nameclass)
+{
+	HKEY hKey;
+	long lRet = RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_READ, &hKey);
+	if (lRet != ERROR_SUCCESS) return false;
+
+	wchar_t regValue[MAX_PATH] = { 0 };
+	DWORD dwType = 0;
+	DWORD dwSize = sizeof(regValue); // 这里是字节数
+
+	lRet = RegQueryValueExW(hKey, nameclass.c_str(), NULL, &dwType, (LPBYTE)regValue, &dwSize);
+	RegCloseKey(hKey);
+
+	if (lRet != ERROR_SUCCESS || dwType != REG_SZ) {
+		return false;
+	}
+
+	// 处理带引号和不带引号的对比逻辑
+	wstring strReg(regValue);
+	wstring strPathWithQuotes = L"\"" + path + L"\"";
+
+	// 只要注册表里的值包含我们的路径，或者完全相等
+	return (_wcsicmp(regValue, path.c_str()) == 0 || _wcsicmp(regValue, strPathWithQuotes.c_str()) == 0);
 }

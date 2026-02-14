@@ -202,7 +202,6 @@ void CloseProgram();
 void RestartProgram();
 
 extern IdtAtomic<int> offSignal; //关闭指令
-extern map <wstring, bool> threadStatus; //线程状态管理
 
 extern shared_ptr<spdlog::logger> IDTLogger;
 extern IdtAtomic<bool> useMouseInput;

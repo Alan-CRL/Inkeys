@@ -59,7 +59,7 @@ void ChangeColor(IMAGE& img, COLORREF color)
 		// 如果源图像颜色与修改颜色相同则不修改（直接跳过）
 		if (alpha != 0)
 		{
-			if (pixel == BGR(color)) return;
+			if (pixel == BGR(color)) continue;
 		}
 		else continue;
 
@@ -350,7 +350,7 @@ bool isLine(vector<Point> points, double tolerance, double drawingScale, std::ch
 int stopTimingError = 5;
 int GetStopTimingError()
 {
-	if (setlist.paintDevice == 1 || MainMonitor.MonitorPhyHeight == 0 || MainMonitor.MonitorPhyWidth) return 5;
+	if (setlist.paintDevice == 1 || MainMonitor.MonitorPhyHeight == 0 || MainMonitor.MonitorPhyWidth == 0) return 5;
 	else return min(0.3f * (float)MainMonitor.MonitorWidth / (float)MainMonitor.MonitorPhyHeight, 0.5f * (float)MainMonitor.MonitorHeight / (float)MainMonitor.MonitorPhyHeight);
 }
 float drawingScale = 1.0f;

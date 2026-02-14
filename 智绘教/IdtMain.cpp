@@ -11,6 +11,8 @@
  * @email		alan-crl@foxmail.com
 */
 
+import Inkeys.Thread.Status;
+
 #include "IdtMain.h"
 
 #include "CrashHandler/CrashHandler.h"
@@ -46,7 +48,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20260212a";				// 程序发布日期
+wstring editionDate = L"20260214a";				// 程序发布日期
 wstring editionChannel = L"LTS";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -57,7 +59,6 @@ wstring programArchitecture = L"win32";
 wstring targetArchitecture = L"win32";
 
 IdtAtomic<int> offSignal;						// 关闭指令
-map <wstring, bool> threadStatus;				// 线程状态管理
 
 void CloseProgram()
 {
@@ -75,8 +76,36 @@ IdtAtomic<bool> useMouseInput;
 
 // 程序入口点
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
-// int main()
 {
+	{
+		// 创建测试控制台
+
+#ifndef IDT_RELEASE
+		{
+			AllocConsole();
+
+			FILE* fp;
+			freopen_s(&fp, "CONOUT$", "w", stdout);
+			freopen_s(&fp, "CONOUT$", "w", stderr);
+			freopen_s(&fp, "CONIN$", "r", stdin);
+
+			// 让 C++ 流重新与 C 的 FILE* 同步
+			// true = 同步；不传参数的重载在 C++11 之后是被弃用的（某些编译器行为不定）
+			std::ios::sync_with_stdio(true);
+
+			// 清空原来的缓冲（保证重新绑定后生效）
+			std::wcout.clear();
+			std::wcin.clear();
+			std::wcerr.clear();
+			std::cout.clear();
+			std::cin.clear();
+			std::cerr.clear();
+
+			std::wcout.imbue(std::locale("chs"));
+		}
+#endif
+	}
+
 	// 路径预处理
 	{
 		globalPath = GetCurrentExeDirectory() + L"\\";
@@ -297,7 +326,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 					DWORD bytesRead = 0;
 					if (flag && SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) flag = false;
-					if (flag && !ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize) flag = false;
+					if (flag && (!ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize)) flag = false;
 					if (flag && jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
 				}
 			}
@@ -422,7 +451,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 					DWORD bytesRead = 0;
 					if (flag && SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) flag = false;
-					if (flag && !ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize) flag = false;
+					if (flag && (!ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize)) flag = false;
 					if (flag && jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
 				}
 			}
@@ -1220,35 +1249,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		IDTLogger->info("[主线程][IdtMain] 线程初始化完成");
 	}
 
-	{
-		// 创建测试控制台
-
-#ifndef IDT_RELEASE
-		{
-			AllocConsole();
-
-			FILE* fp;
-			freopen_s(&fp, "CONOUT$", "w", stdout);
-			freopen_s(&fp, "CONOUT$", "w", stderr);
-			freopen_s(&fp, "CONIN$", "r", stdin);
-
-			// 让 C++ 流重新与 C 的 FILE* 同步
-			// true = 同步；不传参数的重载在 C++11 之后是被弃用的（某些编译器行为不定）
-			std::ios::sync_with_stdio(true);
-
-			// 清空原来的缓冲（保证重新绑定后生效）
-			std::wcout.clear();
-			std::wcin.clear();
-			std::wcerr.clear();
-			std::cout.clear();
-			std::cin.clear();
-			std::cerr.clear();
-
-			std::wcout.imbue(std::locale("chs"));
-		}
-#endif
-	}
-
 	IDTLogger->info("[主线程][IdtMain] 开始等待关闭程序信号发出");
 
 	while (!offSignal) this_thread::sleep_for(chrono::milliseconds(500));
@@ -1256,10 +1256,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	IDTLogger->info("[主线程][IdtMain] 等待各函数线程结束");
 
 	{
+		using namespace Inkeys::Thread;
+
 		int WaitingCount = 0;
 		for (; WaitingCount < 20; WaitingCount++)
 		{
-			if (!threadStatus[L"floating_main"] && !threadStatus[L"drawpad_main"] && !threadStatus[L"SettingMain"] && !threadStatus[L"FreezeFrameWindow"] && !threadStatus[L"NetUpdate"] && !threadStatus[L"PPTLinkageMain"]) break;
+			if (!GetStatus("floating_main") && !GetStatus("drawpad_main") && !GetStatus("SettingMain") && !GetStatus("FreezeFrameWindow") && !GetStatus("NetUpdate") && !GetStatus("PPTLinkageMain")) break;
 			this_thread::sleep_for(chrono::milliseconds(500));
 		}
 		if (WaitingCount >= 20) IDTLogger->warn("[主线程][IdtMain] 结束函数线程超时并强制结束线程");

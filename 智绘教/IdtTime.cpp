@@ -1,6 +1,5 @@
 ﻿#include "IdtTime.h"
 
-SYSTEMTIME sys_time;
 //时间戳
 wstring getTimestamp()
 {
@@ -38,16 +37,6 @@ wstring CurrentTime()
 	return woss.str();
 }
 
-void GetTime()
-{
-	threadStatus[L"GetTime"] = true;
-	while (!offSignal)
-	{
-		GetLocalTime(&sys_time);
-		this_thread::sleep_for(chrono::milliseconds(1000));
-	}
-	threadStatus[L"GetTime"] = false;
-}
 string GetCurrentTimeAll()
 {
 	auto now = std::chrono::system_clock::now(); // 获取当前时间点

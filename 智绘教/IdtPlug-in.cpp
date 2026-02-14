@@ -18,6 +18,8 @@
 // PptInfoStateBuffer 变量是 PptInfoState 变量的缓冲，当 DrawpadDrawing 函数加载完成 PPT 的画板后，缓冲变量中的值才会变为和 PptInfoState 一致。
 // 一些函数获取 PptInfoStateBuffer 的值，必须要等到 PPT 画板初始化完毕后才会有所改变，并再做出反应。
 
+import Inkeys.Thread.Status;
+
 #include "IdtPlug-in.h"
 
 #include "IdtConfiguration.h"
@@ -395,7 +397,7 @@ HWND GetPptShow()
 }
 void GetPptState()
 {
-	threadStatus[L"GetPptState"] = true;
+	Inkeys::Thread::StatusGuard guard("GetPptState");
 
 	// 初始化
 	{
@@ -442,8 +444,6 @@ void GetPptState()
 				this_thread::sleep_for(chrono::milliseconds(100));
 		}
 	}
-
-	threadStatus[L"GetPptState"] = false;
 }
 
 void NextPptSlides(int check)
@@ -968,7 +968,7 @@ void PptBottomMiddleSeekBar(int firstX, int firstY)
 
 void PptUI()
 {
-	threadStatus[L"PptUI"] = true;
+	Inkeys::Thread::StatusGuard guard("PptUI");
 
 	// 监视器信息初始化
 	MonitorInfoStruct PPTMainMonitor;
@@ -2193,12 +2193,10 @@ void PptUI()
 		}
 		tRecord = clock();
 	}
-
-	threadStatus[L"PptUI"] = false;
 }
 void PptInfo()
 {
-	threadStatus[L"PptInfo"] = true;
+	Inkeys::Thread::StatusGuard guard("PptInfo");
 
 	bool Initialization = false; // 控件初始化完毕
 	for (; !offSignal;)
@@ -2239,12 +2237,10 @@ void PptInfo()
 
 		this_thread::sleep_for(chrono::milliseconds(500));
 	}
-
-	threadStatus[L"PptInfo"] = false;
 }
 void PptDraw()
 {
-	threadStatus[L"PptDraw"] = true;
+	Inkeys::Thread::StatusGuard guard("PptDraw");
 
 	//ppt窗口初始化
 	MonitorInfoStruct PPTMainMonitor;
@@ -3396,10 +3392,11 @@ void PptDraw()
 
 	for (int i = 1; i <= 5; i++)
 	{
-		if (!threadStatus[L"PptUI"]) break;
+		using namespace Inkeys::Thread;
+
+		if (!GetStatus("PptUI")) break;
 		this_thread::sleep_for(chrono::milliseconds(500));
 	}
-	threadStatus[L"PptDraw"] = false;
 }
 void PptInteract()
 {
@@ -4068,7 +4065,7 @@ void PptInteract()
 }
 void PPTLinkageMain()
 {
-	threadStatus[L"PPTLinkageMain"] = true;
+	Inkeys::Thread::StatusGuard guard("PPTLinkageMain");
 
 	// 读取 ppt 配置
 	{
@@ -4089,11 +4086,11 @@ void PPTLinkageMain()
 	int i = 1;
 	for (; i <= 5; i++)
 	{
-		if (!threadStatus[L"GetPptState"] && !threadStatus[L"PptDraw"] && !threadStatus[L"PptInfo"]) break;
+		using namespace Inkeys::Thread;
+
+		if (!GetStatus("GetPptState") && !GetStatus("PptDraw") && !GetStatus("PptInfo")) break;
 		this_thread::sleep_for(chrono::milliseconds(500));
 	}
-
-	threadStatus[L"PPTLinkageMain"] = false;
 }
 
 // 附加

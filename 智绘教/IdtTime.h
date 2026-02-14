@@ -2,7 +2,6 @@
 #include "IdtMain.h"
 #include <ctime>
 
-extern SYSTEMTIME sys_time;
 //时间戳
 wstring getTimestamp();
 wstring getCurrentDate();
@@ -11,7 +10,6 @@ wstring CurrentDate();
 //获取时间
 wstring CurrentTime();
 
-void GetTime();
 string GetCurrentTimeAll();
 
 tm GetCurrentLocalTime();

@@ -1,4 +1,6 @@
-﻿#include "IdtFreezeFrame.h"
+﻿import Inkeys.Thread.Status;
+
+#include "IdtFreezeFrame.h"
 
 #include "IdtConfiguration.h"
 #include "IdtDisplayManagement.h"
@@ -15,7 +17,7 @@ int FreezeRecall;
 
 void FreezeFrameWindow()
 {
-	threadStatus[L"FreezeFrameWindow"] = true;
+	Inkeys::Thread::StatusGuard guard("FreezeFrameWindow");
 
 	DisableResizing(freeze_window, true);//禁止窗口拉伸
 	SetWindowLong(freeze_window, GWL_STYLE, GetWindowLong(freeze_window, GWL_STYLE) & ~WS_CAPTION);//隐藏标题栏
@@ -263,5 +265,4 @@ void FreezeFrameWindow()
 			}
 		}
 	}
-	threadStatus[L"FreezeFrameWindow"] = false;
 }

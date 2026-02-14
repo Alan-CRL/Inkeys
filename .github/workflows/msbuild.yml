@@ -58,7 +58,7 @@ jobs:
       matrix:
         platform: [Win32, x64, ARM64]
       fail-fast: false
-    runs-on: windows-2022
+    runs-on: windows-2025
 
     steps:
     - name: Checkout code 
@@ -163,7 +163,7 @@ jobs:
           
   package:
     name: Package
-    runs-on: windows-2022
+    runs-on: windows-2025
     needs: build
 
     steps:
@@ -556,11 +556,29 @@ jobs:
           "Inkeys${{ steps.softwareDate.outputs.VALUE }} 中包含 exe 和对应的 pdb" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "Package 中包含各架构的 发布包、更新包、校验文件和对应的 pdb" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
-      - run: |
-          $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy_MM_ddTHH_mm_ssZ")
+  upload:
+    name: Upload
+    runs-on: windows-2025
+    needs: package
+    
+    if: always() && needs.package.result == 'success'
+    
+    steps:
+      - name: Download Package Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Package
+          path: packageUpload
 
+      - name: Prepare History Zip
+        shell: pwsh
+        run: |
+          # 重新生成带时间戳的压缩包
+          $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy_MM_ddTHH_mm_ssZ")
+          # 从 update.txt 或之前的 artifact 中获取版本和通道（这里简单处理，你可以通过 output 传递）
+          # 为简化，我们直接从 packageUpload 中寻找信息或使用环境变量
           New-Item -ItemType Directory -Path ".\WebDevUpload" | Out-Null
-          Compress-Archive -Path .\packageUpload\* -DestinationPath ".\WebDevUpload\PackageHistory-${{ steps.softwareDate.outputs.VALUE }}-${{ steps.softwareChannel.outputs.VALUE }}-$nowUtc.zip" -CompressionLevel Optimal
+          Compress-Archive -Path .\packageUpload\* -DestinationPath ".\WebDevUpload\PackageHistory-$nowUtc.zip" -CompressionLevel Optimal
 
       - name: Install rclone
         shell: pwsh
@@ -612,7 +630,7 @@ jobs:
 
       - name: Upload to WebDAV with rclone
         id: upload_webdav
-        timeout-minutes: 120
+        timeout-minutes: 300
         continue-on-error: true
         shell: pwsh
         run: |
@@ -626,7 +644,7 @@ jobs:
             # 开始上传
             Write-Host "开始上传到 WebDAV..."
             Write-Host "进度将每 10 秒更新一次"
-            Write-Host "超时时间: 120 分钟"
+            Write-Host "超时时间: 300 分钟"
             Write-Host "目标路径: /Inkeys/PackageHistory/$Env:GITHUB_REF_NAME"
             Write-Host ""
           
