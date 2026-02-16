@@ -14,7 +14,6 @@ module;
 #include "../../../IdtDisplayManagement.h"
 #include "../../../IdtWindow.h"
 #include "../../../IdtText.h"
-#include "../../Other/IdtInputs.h"
 
 export module Inkeys.UI.Bar:Bottom;
 

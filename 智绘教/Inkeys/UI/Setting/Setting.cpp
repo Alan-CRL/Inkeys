@@ -18,7 +18,6 @@ module;
 #include "../../../IdtWindow.h"
 #include "../../../CrashHandler/CrashHandler.h"
 #include "../../../SuperTop/IdtSuperTop.h"
-#include "../../Other/IdtInputs.h"
 
 #include <shlobj.h>
 #include <shlwapi.h>
@@ -32,6 +31,8 @@ module Inkeys.UI.Setting;
 import Inkeys.UI.Bar;
 import Inkeys.Thread.Status;
 import Inkeys.Net.Update;
+import Inkeys.Load;
+import Inkeys.Other.Inputs;
 
 // 软件构建信息
 // signal1
@@ -55,7 +56,7 @@ struct
 
 void SettingSeekBar()
 {
-	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return;
+	if (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)) return;
 
 	POINT p;
 	GetCursorPos(&p);
@@ -65,7 +66,7 @@ void SettingSeekBar()
 
 	while (1)
 	{
-		if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
+		if (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)) break;
 
 		POINT p;
 		GetCursorPos(&p);
@@ -7075,7 +7076,7 @@ void SettingMain()
 														error_code ec;
 														filesystem::create_directories(pluginPath + L"DesktopDrawpadBlocker", ec);
 													}
-													ExtractResource((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
+													Inkeys::Load::ExtractResourceFile((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
 												}
 												else
 												{
@@ -7100,7 +7101,7 @@ void SettingMain()
 																this_thread::sleep_for(chrono::milliseconds(500));
 															}
 														}
-														ExtractResource((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
+														Inkeys::Load::ExtractResourceFile((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
 													}
 												}
 

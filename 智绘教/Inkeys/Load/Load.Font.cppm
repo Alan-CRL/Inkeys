@@ -1,8 +1,10 @@
-﻿#pragma once
+module;
 
 #include "../../IdtMain.h"
 
 #include "../../IdtD2DPreparation.h"
+
+export module Inkeys.Load.Font;
 
 template <typename InterfaceType>
 inline void SafeRelease(InterfaceType** currentObject)
@@ -45,7 +47,7 @@ inline HRESULT ExceptionToHResult() throw()
 	}
 }
 
-class IdtFontFileStream : public IDWriteFontFileStream
+export class IdtFontFileStream : public IDWriteFontFileStream
 {
 public:
 	explicit IdtFontFileStream(UINT resourceID);
@@ -120,7 +122,7 @@ private:
 	static HMODULE const moduleHandle_;
 	static HMODULE GetCurrentModule();
 };
-class IdtFontFileLoader : public IDWriteFontFileLoader
+export class IdtFontFileLoader : public IDWriteFontFileLoader
 {
 public:
 	IdtFontFileLoader() : refCount_(0) {}
@@ -197,7 +199,7 @@ private:
 	static IDWriteFontFileLoader* instance_;
 };
 
-class IdtFontFileEnumerator : public IDWriteFontFileEnumerator
+export class IdtFontFileEnumerator : public IDWriteFontFileEnumerator
 {
 public:
 	IdtFontFileEnumerator(IDWriteFactory* factory);
@@ -291,7 +293,7 @@ private:
 	std::vector<UINT> resourceIDs_;
 	size_t nextIndex_;
 };
-class IdtFontCollectionLoader : public IDWriteFontCollectionLoader
+export class IdtFontCollectionLoader : public IDWriteFontCollectionLoader
 {
 public:
 	IdtFontCollectionLoader() : refCount_(0) {}

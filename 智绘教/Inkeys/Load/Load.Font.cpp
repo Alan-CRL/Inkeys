@@ -1,4 +1,10 @@
-﻿#include "IdtFontLoad.h"
+﻿module;
+
+#include "../../IdtMain.h"
+
+#include "../../IdtD2DPreparation.h"
+
+module Inkeys.Load.Font;
 
 IDWriteFontCollectionLoader* IdtFontCollectionLoader::instance_(new(std::nothrow) IdtFontCollectionLoader());
 
@@ -7,8 +13,7 @@ IdtFontFileEnumerator::IdtFontFileEnumerator(IDWriteFactory* factory) :
 	factory_(SafeAcquire(factory)),
 	currentFile_(),
 	nextIndex_(0)
-{
-}
+{}
 
 IDWriteFontFileLoader* IdtFontFileLoader::instance_(new(std::nothrow) IdtFontFileLoader());
 

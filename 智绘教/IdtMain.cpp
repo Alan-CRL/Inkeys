@@ -15,6 +15,9 @@ import Inkeys.UI.Setting;
 import Inkeys.UI.Bar;
 import Inkeys.Thread.Status;
 import Inkeys.Net.Update;
+import Inkeys.Load;
+import Inkeys.Load.Font;
+import Inkeys.Other.Gesture;
 
 #include "IdtMain.h"
 #include "resource.h"
@@ -39,8 +42,6 @@ import Inkeys.Net.Update;
 #include "IdtText.h"
 #include "IdtTime.h"
 #include "IdtWindow.h"
-#include "Inkeys/Other/IdtGesture.h"
-#include "Inkeys/Load/IdtFontLoad.h"
 #include "Launch/IdtLaunchState.h"
 #include "SuperTop/IdtSuperTop.h"
 
@@ -75,7 +76,7 @@ void RestartProgram()
 
 shared_ptr<spdlog::logger> IDTLogger;
 IdtAtomic<bool> useMouseInput;
-IdtAtomic<bool> useInkeys3UI = false;
+IdtAtomic<bool> useInkeys3UI = true;
 
 // 程序入口点
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
@@ -1101,7 +1102,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	{
 		//PptCOM 组件加载
 		{
-			if (!ExtractResource((globalPath + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(222)))
+			if (!Inkeys::Load::ExtractResourceFile((globalPath + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(222)))
 				IDTLogger->warn("[主线程][IdtMain] 解压PptCOM.dll失败");
 
 			ACTCTX actCtx = { 0 };
@@ -1243,7 +1244,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		// 窗口创建完成后处理的
 		auto disableGestureFuc = [&](HWND hWnd) -> void
 			{
-				IdtGesture::DisableEdgeGestures(hWnd, true);
+				Inkeys::Gesture::DisableEdgeGestures(hWnd, true);
 			};
 		auto touchRegisterFuc = [&](HWND hWnd) -> void
 			{

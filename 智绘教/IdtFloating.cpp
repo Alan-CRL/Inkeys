@@ -1,5 +1,6 @@
 ﻿import Inkeys.Thread.Status;
 import Inkeys.Net.Update;
+import Inkeys.Other.Inputs;
 
 #include "IdtFloating.h"
 
@@ -19,7 +20,6 @@ import Inkeys.Net.Update;
 #include "IdtTime.h"
 #include "IdtWindow.h"
 #include "SuperTop/IdtSuperTop.h"
-#include "Inkeys/Other/IdtInputs.h"
 
 #include <shldisp.h>
 #include <exdisp.h>
@@ -138,7 +138,7 @@ pair<double, double> GetPointOnCircle(double x, double y, double r, double angle
 
 int SeekBar(ExMessage m)
 {
-	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return 0;
+	if (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)) return 0;
 
 	POINT p;
 	GetCursorPos(&p);
@@ -150,7 +150,7 @@ int SeekBar(ExMessage m)
 
 	while (1)
 	{
-		if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
+		if (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)) break;
 		GetCursorPos(&p);
 
 		if (firX == p.x && firY == p.y) continue;
@@ -213,10 +213,10 @@ LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 	}
 
 	{
-		if (wParam == WM_LBUTTONDOWN) IdtInputs::SetKeyBoardDown(VK_LBUTTON, true);
+		if (wParam == WM_LBUTTONDOWN) Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, true);
 		else if (wParam == WM_LBUTTONUP)
 		{
-			IdtInputs::SetKeyBoardDown(VK_LBUTTON, false);
+			Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, false);
 
 			// 通知鼠标抬起
 			if (useMouseInput && leftButtonPid != 0)
@@ -225,13 +225,13 @@ LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 				thread(MouseUpCollapse, WM_LBUTTONUP).detach();
 			}
 		}
-		else if (wParam == WM_MBUTTONDOWN) IdtInputs::SetKeyBoardDown(VK_MBUTTON, true);
-		else if (wParam == WM_MBUTTONUP) IdtInputs::SetKeyBoardDown(VK_MBUTTON, false);
+		else if (wParam == WM_MBUTTONDOWN) Inkeys::Inputs::SetKeyBoardDown(VK_MBUTTON, true);
+		else if (wParam == WM_MBUTTONUP) Inkeys::Inputs::SetKeyBoardDown(VK_MBUTTON, false);
 
-		else if (wParam == WM_RBUTTONDOWN) IdtInputs::SetKeyBoardDown(VK_RBUTTON, true);
+		else if (wParam == WM_RBUTTONDOWN) Inkeys::Inputs::SetKeyBoardDown(VK_RBUTTON, true);
 		else if (wParam == WM_RBUTTONUP)
 		{
-			IdtInputs::SetKeyBoardDown(VK_RBUTTON, false);
+			Inkeys::Inputs::SetKeyBoardDown(VK_RBUTTON, false);
 
 			// 通知鼠标抬起
 			if (useMouseInput && rightButtonPid != 0)
@@ -5869,7 +5869,7 @@ void MouseInteraction()
 								else widthBuffer = 101 + int(double(idx - 260) / 60.0 * 399.0);
 								SetPenWidth((float)widthBuffer, false);
 
-								if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON))
+								if (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON))
 								{
 									SetPenWidth((float)widthBuffer);
 									break;
@@ -6079,7 +6079,7 @@ void MouseInteraction()
 									UIControlTarget[L"RoundRect/BrushColorChooseMark/x"].v = UIControl[L"RoundRect/BrushColorChooseMark/x"].v = result.x + UIControl[L"RoundRect/BrushColorChooseWheel/x"].v - 7;
 									UIControlTarget[L"RoundRect/BrushColorChooseMark/y"].v = UIControl[L"RoundRect/BrushColorChooseMark/y"].v = result.y + UIControl[L"RoundRect/BrushColorChooseWheel/y"].v - 7;
 
-									if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON))
+									if (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON))
 									{
 										SetPenColor(RGBA(red, green, blue, (floatingInfo.brushColor >> 24) & 0xFF));
 										break;

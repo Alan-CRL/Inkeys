@@ -117,26 +117,6 @@ bool checkIsNetwork()
 
 	return bOnline;
 }
-// 提取指定模块中的资源文件
-bool ExtractResource(LPCTSTR strDstFile, LPCTSTR strResType, LPCTSTR strResName)
-{
-	// 创建文件
-	HANDLE hFile = ::CreateFile(strDstFile, GENERIC_WRITE, NULL, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY, NULL);
-	if (hFile == INVALID_HANDLE_VALUE)
-		return false;
-
-	// 查找资源文件、加载资源到内存、得到资源大小
-	HRSRC	hRes = ::FindResource(NULL, strResName, strResType);
-	HGLOBAL	hMem = ::LoadResource(NULL, hRes);
-	DWORD	dwSize = ::SizeofResource(NULL, hRes);
-
-	// 写入文件
-	DWORD dwWrite = 0;		// 返回写入字节
-	::WriteFile(hFile, hMem, dwSize, &dwWrite, NULL);
-	::CloseHandle(hFile);
-
-	return true;
-}
 
 //判断id是否错乱
 bool isValidString(const wstring& str)

@@ -1,12 +1,11 @@
-﻿#pragma once
+export module Inkeys.Load;
 
-#include <windows.h>
-#include <string>
+import <windows.h>;
+import <string>;
 
-class IdtLoad
+export namespace Inkeys::Load
 {
-public:
-	static bool ExtractResourceFile(const std::wstring& dstFile, const std::wstring& resType, const std::wstring& resName)
+	bool ExtractResourceFile(const std::wstring& dstFile, const std::wstring& resType, const std::wstring& resName)
 	{
 		// 查找和加载资源
 		HRSRC hRes = ::FindResourceW(NULL, resName.c_str(), resType.c_str());
@@ -33,7 +32,7 @@ public:
 
 		return bRet && (dwWritten == dwSize);
 	}
-	static bool ExtractResourceString(std::string& outData, const std::wstring& resType, const std::wstring& resName)
+	bool ExtractResourceString(std::string& outData, const std::wstring& resType, const std::wstring& resName)
 	{
 		// 查找和加载资源
 		HRSRC hRes = ::FindResourceW(NULL, resName.c_str(), resType.c_str());
@@ -53,7 +52,7 @@ public:
 
 		return true;
 	}
-	static bool ExtractResourcePtr(void*& pLock, DWORD& dwSize, const std::wstring& resType, const std::wstring& resName)
+	bool ExtractResourcePtr(void*& pLock, DWORD& dwSize, const std::wstring& resType, const std::wstring& resName)
 	{
 		pLock = nullptr;
 		dwSize = 0;
@@ -73,7 +72,4 @@ public:
 
 		return true;
 	}
-
-private:
-	IdtLoad() = delete;
-};
+}

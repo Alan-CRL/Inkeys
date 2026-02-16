@@ -1,13 +1,12 @@
-﻿#pragma once
+export module Inkeys.Other.Json;
 
-#include <iostream>
-#include <string>
-#include <sstream>
+import <iostream>;
+import <string>;
+import <sstream>;
 
-class IdtJson
+namespace Inkeys::Json
 {
-public:
-	static std::string removeJsoncComments(const std::string& input)
+	export std::string removeJsoncComments(const std::string& input)
 	{
 		std::istringstream iss(input);
 		std::ostringstream oss;
@@ -49,6 +48,4 @@ public:
 		}
 		return oss.str();
 	}
-private:
-	IdtJson() = delete;
-};
+}

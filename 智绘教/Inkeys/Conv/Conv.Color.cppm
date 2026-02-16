@@ -5,7 +5,7 @@ module;
 
 export module Inkeys.Conv.Color;
 
-namespace Inkeys::Conv
+namespace Inkeys::Color
 {
 	// 弃用
 	/*

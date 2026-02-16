@@ -9,7 +9,6 @@ module;
 #include "../../../IdtState.h"
 #include "../../../IdtWindow.h"
 #include "../../../IdtText.h"
-#include "../../Other/IdtInputs.h"
 
 // ====================
 // 临时
@@ -20,6 +19,7 @@ module Inkeys.UI.Bar;
 import :Main;
 
 import Inkeys.Conv.Color;
+import Inkeys.Other.Inputs;
 
 // ====================
 // 窗口
@@ -270,7 +270,7 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 	if (clip)
 	{
 		CComPtr<ID2D1SolidColorBrush> spFillBrush;
-		deviceContext->CreateSolidColorBrush(Inkeys::Conv::ConvertToD2dColor(RGB(0, 0, 0), 0.0), &spFillBrush);
+		deviceContext->CreateSolidColorBrush(Inkeys::Color::ConvertToD2dColor(RGB(0, 0, 0), 0.0), &spFillBrush);
 
 		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
 		deviceContext->FillRoundedRectangle(&roundedRect, spFillBrush);
@@ -284,7 +284,7 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 			COLORREF fill = shape.fill.value().val;
 
 			CComPtr<ID2D1SolidColorBrush> spFillBrush;
-			deviceContext->CreateSolidColorBrush(Inkeys::Conv::ConvertToD2dColor(fill, tarPct), &spFillBrush);
+			deviceContext->CreateSolidColorBrush(Inkeys::Color::ConvertToD2dColor(fill, tarPct), &spFillBrush);
 
 			deviceContext->FillRoundedRectangle(&roundedRect, spFillBrush);
 		}
@@ -296,7 +296,7 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 			if (shape.framePct.has_value()) tarFramePct = shape.framePct.value().val;
 
 			CComPtr<ID2D1SolidColorBrush> spBorderBrush;
-			deviceContext->CreateSolidColorBrush(Inkeys::Conv::ConvertToD2dColor(frame, tarFramePct), &spBorderBrush);
+			deviceContext->CreateSolidColorBrush(Inkeys::Color::ConvertToD2dColor(frame, tarFramePct), &spBorderBrush);
 
 			FLOAT strokeWidth = 4.0f * static_cast<FLOAT>(tarZoom);
 			if (shape.ft.has_value())
@@ -408,7 +408,7 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 	if (clip)
 	{
 		CComPtr<ID2D1SolidColorBrush> spFillBrush;
-		deviceContext->CreateSolidColorBrush(Inkeys::Conv::ConvertToD2dColor(RGB(0, 0, 0), 0.0), &spFillBrush);
+		deviceContext->CreateSolidColorBrush(Inkeys::Color::ConvertToD2dColor(RGB(0, 0, 0), 0.0), &spFillBrush);
 
 		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
 		deviceContext->FillGeometry(geometry, spFillBrush);
@@ -423,7 +423,7 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 			COLORREF fill = superellipse.fill.value().val;
 
 			CComPtr<ID2D1SolidColorBrush> spFillBrush;
-			deviceContext->CreateSolidColorBrush(Inkeys::Conv::ConvertToD2dColor(fill, tarPct), &spFillBrush);
+			deviceContext->CreateSolidColorBrush(Inkeys::Color::ConvertToD2dColor(fill, tarPct), &spFillBrush);
 
 			deviceContext->FillGeometry(geometry, spFillBrush);
 		}
@@ -435,7 +435,7 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 			if (superellipse.framePct.has_value()) tarFramePct = superellipse.framePct.value().val;
 
 			CComPtr<ID2D1SolidColorBrush> spBorderBrush;
-			deviceContext->CreateSolidColorBrush(Inkeys::Conv::ConvertToD2dColor(frame, tarFramePct), &spBorderBrush);
+			deviceContext->CreateSolidColorBrush(Inkeys::Color::ConvertToD2dColor(frame, tarFramePct), &spBorderBrush);
 
 			FLOAT strokeWidth = 4.0f * static_cast<FLOAT>(tarZoom);
 			if (superellipse.ft.has_value())
@@ -564,7 +564,7 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 		COLORREF color = word.color.val;
 
 		CComPtr<ID2D1SolidColorBrush> spFillBrush;
-		deviceContext->CreateSolidColorBrush(Inkeys::Conv::ConvertToD2dColor(color, tarPct), &spFillBrush);
+		deviceContext->CreateSolidColorBrush(Inkeys::Color::ConvertToD2dColor(color, tarPct), &spFillBrush);
 
 		deviceContext->DrawTextW(
 			tarContent.c_str(),
@@ -1155,7 +1155,7 @@ void BarUISetClass::Rendering()
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->pct.tar = 1.0;
 								}
 
-								if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->fill.value().tar))
+								if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->fill.value().tar))
 								{
 									// 说明当前选中的是当前的颜色
 									svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect1]->pct.tar = 1.0;
@@ -1185,7 +1185,7 @@ void BarUISetClass::Rendering()
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->pct.tar = 1.0;
 								}
 
-								if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->fill.value().tar))
+								if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->fill.value().tar))
 								{
 									svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect2]->pct.tar = 1.0;
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->ft.value().tar = 2.0;
@@ -1214,7 +1214,7 @@ void BarUISetClass::Rendering()
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->pct.tar = 1.0;
 								}
 
-								if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->fill.value().tar))
+								if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->fill.value().tar))
 								{
 									svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect3]->pct.tar = 1.0;
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->ft.value().tar = 2.0;
@@ -1243,7 +1243,7 @@ void BarUISetClass::Rendering()
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->pct.tar = 1.0;
 								}
 
-								if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->fill.value().tar))
+								if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->fill.value().tar))
 								{
 									svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect4]->pct.tar = 1.0;
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->ft.value().tar = 2.0;
@@ -1272,7 +1272,7 @@ void BarUISetClass::Rendering()
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->pct.tar = 1.0;
 								}
 
-								if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->fill.value().tar))
+								if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->fill.value().tar))
 								{
 									svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect5]->pct.tar = 1.0;
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->ft.value().tar = 2.0;
@@ -1301,7 +1301,7 @@ void BarUISetClass::Rendering()
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->pct.tar = 1.0;
 								}
 
-								if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->fill.value().tar))
+								if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->fill.value().tar))
 								{
 									svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect6]->pct.tar = 1.0;
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->ft.value().tar = 2.0;
@@ -1330,7 +1330,7 @@ void BarUISetClass::Rendering()
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->pct.tar = 1.0;
 								}
 
-								if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->fill.value().tar))
+								if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->fill.value().tar))
 								{
 									svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect7]->pct.tar = 1.0;
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->ft.value().tar = 2.0;
@@ -1359,7 +1359,7 @@ void BarUISetClass::Rendering()
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->pct.tar = 1.0;
 								}
 
-								if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->fill.value().tar))
+								if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->fill.value().tar))
 								{
 									svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect8]->pct.tar = 1.0;
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->ft.value().tar = 2.0;
@@ -1388,7 +1388,7 @@ void BarUISetClass::Rendering()
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->pct.tar = 1.0;
 								}
 
-								if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->fill.value().tar))
+								if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->fill.value().tar))
 								{
 									svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect9]->pct.tar = 1.0;
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->ft.value().tar = 2.0;
@@ -1417,7 +1417,7 @@ void BarUISetClass::Rendering()
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->pct.tar = 1.0;
 								}
 
-								if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->fill.value().tar))
+								if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->fill.value().tar))
 								{
 									svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect10]->pct.tar = 1.0;
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->ft.value().tar = 2.0;
@@ -1446,7 +1446,7 @@ void BarUISetClass::Rendering()
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->pct.tar = 1.0;
 								}
 
-								if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->fill.value().tar))
+								if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->fill.value().tar))
 								{
 									svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect11]->pct.tar = 1.0;
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->ft.value().tar = 2.0;
@@ -1818,7 +1818,7 @@ void BarUISetClass::Rendering()
 
 			// 清除背景
 			{
-				D2D1_COLOR_F clearColor = Inkeys::Conv::ConvertToD2dColor(RGBA(0, 0, 0, 0));
+				D2D1_COLOR_F clearColor = Inkeys::Color::ConvertToD2dColor(RGBA(0, 0, 0, 0));
 				barDeviceContext->Clear(&clearColor);
 
 				// TODO 绘制纯白全透明警告用户开启 aero
@@ -2097,7 +2097,7 @@ void BarUISetClass::Rendering()
 								// ==== 画刷 ====
 								CComPtr<ID2D1SolidColorBrush> brush;
 								barDeviceContext->CreateSolidColorBrush(
-									Inkeys::Conv::ConvertToD2dColor(color, tarPct),
+									Inkeys::Color::ConvertToD2dColor(color, tarPct),
 									&brush
 								);
 
@@ -2152,6 +2152,7 @@ void BarUISetClass::Rendering()
 			{ /**/ }
 
 			// 调试 + FPS
+			/*
 			{
 				double tarZoom = barStyle.zoom;
 				wstring content = L"开发版本 " + editionDate + L" | 不代表最终品质 | " + fps;
@@ -2194,8 +2195,10 @@ void BarUISetClass::Rendering()
 					D2D1_DRAW_TEXT_OPTIONS_NONE
 				);
 			}
+			*/
 
-			// TODO 脏区更新
+			// 如果你需要测试脏区更新的区域，则可以取消注释下面的代码，并注释下方的脏区更新代码
+			/*
 			RECT target = original;
 			original = current;
 			BarRenderingAttribute::UnionRectInPlace(target, current);
@@ -2212,20 +2215,26 @@ void BarUISetClass::Rendering()
 				D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(target.left, target.top, target.right - 1, target.bottom - 1), 0, 0);
 
 				CComPtr<ID2D1SolidColorBrush> spBorderBrush;
-				barDeviceContext->CreateSolidColorBrush(Inkeys::Conv::ConvertToD2dColor(frame, 1.0), &spBorderBrush);
+				barDeviceContext->CreateSolidColorBrush(Inkeys::Color::ConvertToD2dColor(frame, 1.0), &spBorderBrush);
 
-				// barDeviceContext->DrawRoundedRectangle(&roundedRect, spBorderBrush, 1.0f);
+				barDeviceContext->DrawRoundedRectangle(&roundedRect, spBorderBrush, 1.0f);
 			}
+			*/
 
 			barDeviceContext->Flush();
 
 			{
-				// TODO 脏区更新
-				/*RECT target = original;
+				// 脏区更新
+				RECT target = original;
 				original = current;
-				BarRenderingAttribute::UnionRectInPlace(target, current);*/
-
-				// 上方已经给出了计算脏区 target 的代码，这里直接使用 RECT target 即可
+				BarRenderingAttribute::UnionRectInPlace(target, current);
+				{
+					// 脏区更新限制
+					if (target.left < 0) target.left = 0;
+					if (target.top < 0) target.top = 0;
+					if (target.right > barWindow.w) target.right = barWindow.w;
+					if (target.bottom > barWindow.h) target.bottom = barWindow.h;
+				}
 
 				// psize 指定窗口本次更新“新内容”宽高
 				// pptDst 指定新内容贴到屏幕上的位置（左上角）
@@ -2359,7 +2368,7 @@ void BarUISetClass::Interact()
 							continueFlag = false;
 							if (msg.lbutton)
 							{
-								SetPenColor(Inkeys::Conv::SetAlphaR(obj->fill.value().tar, 255));
+								SetPenColor(Inkeys::Color::SetAlphaR(obj->fill.value().tar, 255));
 								UpdateRendering();
 
 								while (true)
@@ -2455,7 +2464,7 @@ void BarUISetClass::UpdateRendering(bool updateState)
 // 拖动交互
 double BarUISetClass::Seek(const ExMessage& msg)
 {
-	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return 0;
+	if (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)) return 0;
 
 	POINT p;
 	GetCursorPos(&p);
@@ -2467,7 +2476,7 @@ double BarUISetClass::Seek(const ExMessage& msg)
 
 	while (1)
 	{
-		if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
+		if (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)) break;
 		GetCursorPos(&p);
 
 		if (firX == p.x && firY == p.y)

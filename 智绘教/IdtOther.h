@@ -7,7 +7,6 @@ wstring GetCurrentExePath();
 wstring GetCurrentExeName();
 
 bool checkIsNetwork();
-bool ExtractResource(LPCTSTR strDstFile, LPCTSTR strResType, LPCTSTR strResName);
 
 bool isValidString(const wstring& str);
 bool isAsciiPrintable(const wstring& input);

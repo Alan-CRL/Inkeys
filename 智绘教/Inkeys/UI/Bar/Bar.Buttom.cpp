@@ -14,7 +14,6 @@ module;
 #include "../../../IdtDisplayManagement.h"
 #include "../../../IdtWindow.h"
 #include "../../../IdtText.h"
-#include "../../Other/IdtInputs.h"
 
 module Inkeys.UI.Bar;
 import :Bottom;
@@ -22,6 +21,7 @@ import :Bottom;
 import :Main;
 
 import Inkeys.Conv.Color;
+import Inkeys.Other.Inputs;
 
 void BarButtomSetClass::PresetInitialization()
 {
