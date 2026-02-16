@@ -1,4 +1,4 @@
-﻿import Inkeys.UI.Bar.Main;
+﻿import Inkeys.UI.Bar;
 import Inkeys.Thread.Status;
 
 #include "IdtDrawpad.h"
@@ -15,7 +15,6 @@ import Inkeys.Thread.Status;
 #include "IdtState.h"
 #include "IdtText.h"
 #include "IdtTime.h"
-#include "IdtUpdate.h"
 #include "IdtWindow.h"
 #include "Inkeys/Other/IdtInputs.h"
 

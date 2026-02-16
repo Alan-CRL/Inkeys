@@ -16,9 +16,11 @@ module;
 #include "../../../IdtText.h"
 #include "../../Other/IdtInputs.h"
 
-module Inkeys.UI.Bar.Bottom;
+module Inkeys.UI.Bar;
+import :Bottom;
 
-import Inkeys.UI.Bar.Main;
+import :Main;
+
 import Inkeys.Conv.Color;
 
 void BarButtomSetClass::PresetInitialization()
@@ -397,6 +399,38 @@ void BarButtomSetClass::PresetInitialization()
 		preset[(int)obj->preset.load()] = obj;
 	}
 }
+void BarButtomSetClass::StateUpdate()
+{
+	CalcState();
+	PresetHoming();
+}
+void BarButtomSetClass::UpdateDrawButtonStyle()
+{
+	// 更新绘制按钮中的图标样式
+	if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
+		preset[(int)BarButtomPresetEnum::Draw]->icon.SetTarFromResource(L"UI", L"barHighlighter1");
+	else preset[(int)BarButtomPresetEnum::Draw]->icon.SetTarFromResource(L"UI", L"barBrush1");
+}
+
+// TODO 临时方案，按照默认样式加载，后续改为从配置中加载布局
+void BarButtomSetClass::Load()
+{
+	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Select]);
+	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Draw]);
+	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Eraser]);
+	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Geometry]);
+
+	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Recall]);
+	// buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Redo]);
+	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Clean]);
+
+	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Divider]);
+
+	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Pierce]);
+	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Freeze]);
+
+	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Setting]);
+}
 
 void BarButtomSetClass::PresetHoming()
 {
@@ -434,5 +468,34 @@ void BarButtomSetClass::PresetHoming()
 
 		// 显示名称变化
 		preset[(int)BarButtomPresetEnum::Select]->name.content.SetTar(L"选择(清空)");
+	}
+}
+void BarButtomSetClass::CalcState()
+{
+	{
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) barButtomState[(int)BarButtomPresetEnum::Select].state = BarWidgetState::Selected;
+		else barButtomState[(int)BarButtomPresetEnum::Select].state = BarWidgetState::None;
+	}
+	{
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen) barButtomState[(int)BarButtomPresetEnum::Draw].state = BarWidgetState::Selected;
+		else barButtomState[(int)BarButtomPresetEnum::Draw].state = BarWidgetState::None;
+	}
+	{
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser) barButtomState[(int)BarButtomPresetEnum::Eraser].state = BarWidgetState::Selected;
+		else barButtomState[(int)BarButtomPresetEnum::Eraser].state = BarWidgetState::None;
+	}
+
+	{
+		if (penetrate.select) barButtomState[(int)BarButtomPresetEnum::Pierce].state = BarWidgetState::Selected;
+		else barButtomState[(int)BarButtomPresetEnum::Pierce].state = BarWidgetState::None;
+	}
+	{
+		if (FreezeFrame.mode == 1) barButtomState[(int)BarButtomPresetEnum::Freeze].state = BarWidgetState::Selected;
+		else barButtomState[(int)BarButtomPresetEnum::Freeze].state = BarWidgetState::None;
+	}
+
+	{
+		if (test.select) barButtomState[(int)BarButtomPresetEnum::Setting].state = BarWidgetState::Selected;
+		else barButtomState[(int)BarButtomPresetEnum::Setting].state = BarWidgetState::None;
 	}
 }

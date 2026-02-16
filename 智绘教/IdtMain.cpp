@@ -12,8 +12,9 @@
 */
 
 import Inkeys.UI.Setting;
-import Inkeys.UI.Bar.Main;
+import Inkeys.UI.Bar;
 import Inkeys.Thread.Status;
+import Inkeys.Net.Update;
 
 #include "IdtMain.h"
 #include "resource.h"
@@ -37,7 +38,6 @@ import Inkeys.Thread.Status;
 #include "IdtState.h"
 #include "IdtText.h"
 #include "IdtTime.h"
-#include "IdtUpdate.h"
 #include "IdtWindow.h"
 #include "Inkeys/Other/IdtGesture.h"
 #include "Inkeys/Load/IdtFontLoad.h"
@@ -1289,7 +1289,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 线程
 	{
-		if (useInkeys3UI) thread(BarInitializationClass::Initialization).detach();
+		if (useInkeys3UI) thread(Inkeys::UI::Bar::Initialization).detach();
 		else thread(floating_main).detach();
 		thread(SettingMain).detach();
 		thread(drawpad_main).detach();

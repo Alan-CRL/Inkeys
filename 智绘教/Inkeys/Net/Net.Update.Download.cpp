@@ -1,10 +1,13 @@
-﻿#include "IdtNet.h"
+module;
 
 #pragma comment(lib, "libssl_static.lib")
 #pragma comment(lib, "libcrypto_static.lib")
 
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 #include "cpphttplib/httplib.h"
+
+module Inkeys.Net.Update;
+import :Download;
 
 std::string GetEditionInformation(std::string referer)
 {

@@ -1,4 +1,5 @@
 ﻿import Inkeys.Thread.Status;
+import Inkeys.Net.Update;
 
 #include "IdtFloating.h"
 
@@ -16,7 +17,6 @@
 #include "IdtState.h"
 #include "IdtText.h"
 #include "IdtTime.h"
-#include "IdtUpdate.h"
 #include "IdtWindow.h"
 #include "SuperTop/IdtSuperTop.h"
 #include "Inkeys/Other/IdtInputs.h"

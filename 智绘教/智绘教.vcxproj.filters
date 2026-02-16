@@ -127,6 +127,9 @@
     <Filter Include="Modules\Inkeys\Thread">
       <UniqueIdentifier>{fb47f763-ac2c-4357-8cda-ac7a50599b00}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Modules\Inkeys\Net">
+      <UniqueIdentifier>{5f5718c8-20fd-405f-8e19-31c9d3625667}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HiEasyX.h">
@@ -253,9 +256,6 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="IdtOther.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="IdtUpdate.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="IdtFloating.h">
@@ -702,9 +702,6 @@
     <ClInclude Include="additional\ziputils\zip.h">
       <Filter>头文件\Additional\ZipUtils</Filter>
     </ClInclude>
-    <ClInclude Include="IdtNet.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="additional\imgui\imconfig.h">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
@@ -893,9 +890,6 @@
     <ClCompile Include="IdtOther.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="IdtUpdate.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="IdtMain.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -988,9 +982,6 @@
     </ClCompile>
     <ClCompile Include="additional\ziputils\zip.cpp">
       <Filter>头文件\Additional\ZipUtils</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtNet.cpp">
-      <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="additional\imgui\imgui.cpp">
       <Filter>头文件\Additional\Imgui</Filter>
@@ -1093,6 +1084,24 @@
     </ClCompile>
     <ClCompile Include="Inkeys\Thread\Thread.Status.cppm">
       <Filter>Modules\Inkeys\Thread</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Net\Net.Update.cpp">
+      <Filter>Modules\Inkeys\Net</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Net\Net.Update.cppm">
+      <Filter>Modules\Inkeys\Net</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Net\Net.Update.Download.cppm">
+      <Filter>Modules\Inkeys\Net</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Net\Net.Update.Download.cpp">
+      <Filter>Modules\Inkeys\Net</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

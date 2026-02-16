@@ -5,9 +5,10 @@ module;
 #include "../../../IdtDisplayManagement.h"
 #include "../../../IdtState.h"
 
-module Inkeys.UI.Bar.State;
+module Inkeys.UI.Bar;
+import :State;
 
-import Inkeys.UI.Bar.Main;
+import :Main;
 
 void BarStateClass::PositionUpdate(double tarZoom)
 {

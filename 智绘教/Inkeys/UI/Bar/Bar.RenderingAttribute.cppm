@@ -2,12 +2,12 @@ module;
 
 #include "../../../IdtMain.h"
 
-export module Inkeys.UI.Bar.RenderingAttribute;
+export module Inkeys.UI.Bar:RenderingAttribute;
 
-import Inkeys.UI.Bar.UI;
-import Inkeys.UI.Bar.State;
+import :UI;
+import :State;
 
-export class BarRenderingAttribute
+class BarRenderingAttribute
 {
 public:
 	static void UnionRectInPlace(RECT& target, const RECT& add)

@@ -1,4 +1,5 @@
 ﻿#pragma once
+
 #include "IdtMain.h"
 
 // -------------------------
@@ -43,8 +44,7 @@ public:
 };
 
 enum StartUiLineWidgetID
-{
-};
+{};
 enum StartUiRoundRectWidgetID
 {
 	StartUI_Page1_Button_Next

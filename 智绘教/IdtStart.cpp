@@ -1,7 +1,8 @@
-﻿#include "IdtStart.h"
+﻿import Inkeys.Net.Update;
+
+#include "IdtStart.h"
 
 #include "IdtDisplayManagement.h"
-#include "IdtUpdate.h"
 
 struct
 {

@@ -15,7 +15,6 @@ module;
 #include "../../../IdtRts.h"
 #include "../../../IdtState.h"
 #include "../../../IdtText.h"
-#include "../../../IdtUpdate.h"
 #include "../../../IdtWindow.h"
 #include "../../../CrashHandler/CrashHandler.h"
 #include "../../../SuperTop/IdtSuperTop.h"
@@ -30,8 +29,9 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 
 module Inkeys.UI.Setting;
 
-import Inkeys.UI.Bar.Main;
+import Inkeys.UI.Bar;
 import Inkeys.Thread.Status;
+import Inkeys.Net.Update;
 
 // 软件构建信息
 // signal1

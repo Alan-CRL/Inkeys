@@ -553,7 +553,6 @@
     <ClInclude Include="IdtImage.h" />
     <ClInclude Include="IdtMagnification.h" />
     <ClInclude Include="IdtMain.h" />
-    <ClInclude Include="IdtNet.h" />
     <ClInclude Include="IdtOther.h" />
     <ClInclude Include="IdtPlug-in.h" />
     <ClInclude Include="IdtStart.h" />
@@ -570,7 +569,6 @@
     <ClInclude Include="IdtRts.h" />
     <ClInclude Include="IdtText.h" />
     <ClInclude Include="IdtTime.h" />
-    <ClInclude Include="IdtUpdate.h" />
     <ClInclude Include="IdtWindow.h" />
     <ClInclude Include="SuperTop\IdtSuperTop.h" />
     <ClInclude Include="SuperTop\IdtToken.h" />
@@ -644,7 +642,6 @@
     <ClCompile Include="IdtHistoricalDrawpad.cpp" />
     <ClCompile Include="IdtI18n.cpp" />
     <ClCompile Include="IdtImage.cpp" />
-    <ClCompile Include="IdtNet.cpp" />
     <ClCompile Include="IdtRts.cpp" />
     <ClCompile Include="IdtStart.cpp" />
     <ClCompile Include="IdtState.cpp" />
@@ -655,15 +652,20 @@
     <ClCompile Include="IdtPlug-in.cpp" />
     <ClCompile Include="IdtText.cpp" />
     <ClCompile Include="IdtTime.cpp" />
-    <ClCompile Include="IdtUpdate.cpp" />
     <ClCompile Include="IdtWindow.cpp" />
     <ClCompile Include="Inkeys\Conv\Conv.Color.cppm" />
     <ClCompile Include="Inkeys\Load\IdtFontLoad.cpp" />
+    <ClCompile Include="Inkeys\Net\Net.Update.cpp" />
+    <ClCompile Include="Inkeys\Net\Net.Update.cppm" />
+    <ClCompile Include="Inkeys\Net\Net.Update.Download.cpp" />
+    <ClCompile Include="Inkeys\Net\Net.Update.Download.cppm" />
     <ClCompile Include="Inkeys\Other\IdtGesture.cpp" />
     <ClCompile Include="Inkeys\Other\IdtInputs.cpp" />
     <ClCompile Include="Inkeys\Thread\Thread.Status.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Bottom.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Buttom.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Format.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cppm" />

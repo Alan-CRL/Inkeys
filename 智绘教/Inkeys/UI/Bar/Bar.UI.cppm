@@ -11,12 +11,12 @@ module;
 #pragma comment(lib, "lunasvg.lib")
 #pragma comment(lib, "plutovg.lib")
 
-export module Inkeys.UI.Bar.UI;
+export module Inkeys.UI.Bar:UI;
 
-import Inkeys.UI.Bar.State;
+import :State;
 
 // 动效类型
-export enum class BarUiValueModeEnum : int
+enum class BarUiValueModeEnum : int
 {
 	Once = 0, // 无动画
 	Linear = 1, // 线性
@@ -25,7 +25,7 @@ export enum class BarUiValueModeEnum : int
 
 /// 单个 UI 值
 //// 状态 UI 值
-export class BarUiStateClass
+class BarUiStateClass
 {
 public:
 	BarUiStateClass() {}
@@ -53,7 +53,7 @@ public:
 	IdtAtomic<bool> tar = false;
 };
 //// 模态 UI 值
-export class BarUiValueClass
+class BarUiValueClass
 {
 public:
 	BarUiValueClass() {}
@@ -74,7 +74,7 @@ public:
 	IdtAtomic<double> startV = 0.0; // 起始位置（用于计算百分比，在界面设被设置时）
 };
 //// 颜色 UI 值（忽略透明度）
-export class BarUiColorClass
+class BarUiColorClass
 {
 public:
 	BarUiColorClass() {}
@@ -91,7 +91,7 @@ public:
 	// 如果 spe == 0 则表示直接变化
 };
 //// 透明度 UI 值
-export class BarUiPctClass
+class BarUiPctClass
 {
 public:
 	BarUiPctClass() {}
@@ -108,7 +108,7 @@ public:
 	// 如果 spe == 0 则表示直接变化
 };
 //// 文字 UI 值
-export class BarUiStringClass
+class BarUiStringClass
 {
 public:
 	BarUiStringClass() {}
@@ -124,8 +124,7 @@ public:
 	}
 	// 拷贝构造函数，只拷贝值，mutex新建
 	BarUiStringClass(const BarUiStringClass& other)
-		: val(other.val), tar(other.tar), valmt(), tarmt() {
-	}
+		: val(other.val), tar(other.tar), valmt(), tarmt() {}
 
 public:
 	wstring GetVal() const
@@ -213,7 +212,7 @@ class BarUiWordClass;
 
 /// 继承
 //// 位置继承
-export enum class BarUiInheritEnum
+enum class BarUiInheritEnum
 {
 	// 相对内部继承
 
@@ -230,7 +229,7 @@ export enum class BarUiInheritEnum
 	ToLeft = 15, // 父右中，子左中
 	ToBottom = 17, // 父上中，子下中
 };
-export class BarUiInheritClass
+class BarUiInheritClass
 {
 public:
 	BarUiInheritClass(double xT, double yT) { x = xT, y = yT; }
@@ -267,7 +266,7 @@ public:
 	double y = 0.0; // 继承坐标左上角 y 坐标
 };
 //// 继承基类
-export class BarUiInnheritBaseClass
+class BarUiInnheritBaseClass
 {
 protected:
 	BarUiInnheritBaseClass() = default;
@@ -309,7 +308,7 @@ public:
 
 /// 控件
 //// 单个形状控件
-export class BarUiShapeClass : public BarUiInnheritBaseClass
+class BarUiShapeClass : public BarUiInnheritBaseClass
 {
 public:
 	BarUiShapeClass() {}
@@ -410,7 +409,7 @@ public:
 	optional<BarUiPctClass> framePct; // 控件边框透明度
 };
 //// 单个超椭圆控件
-export class BarUiSuperellipseClass : public BarUiInnheritBaseClass
+class BarUiSuperellipseClass : public BarUiInnheritBaseClass
 {
 public:
 	BarUiSuperellipseClass() {}
@@ -481,7 +480,7 @@ public:
 	optional<BarUiPctClass> framePct; // 控件边框透明度
 };
 //// 单个 SVG 控件
-export class BarUiSVGClass : public BarUiInnheritBaseClass
+class BarUiSVGClass : public BarUiInnheritBaseClass
 {
 public:
 	BarUiSVGClass() {}
@@ -696,7 +695,7 @@ public:
 	double rH; // 实际高度
 };
 //// 单个文字控件
-export class BarUiWordClass : public BarUiInnheritBaseClass
+class BarUiWordClass : public BarUiInnheritBaseClass
 {
 public:
 	BarUiWordClass() {}

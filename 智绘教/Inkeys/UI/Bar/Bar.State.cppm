@@ -5,9 +5,9 @@ module;
 #include "../../../IdtDisplayManagement.h"
 #include "../../../IdtState.h"
 
-export module Inkeys.UI.Bar.State;
+export module Inkeys.UI.Bar:State;
 
-export class BarStateClass
+class BarStateClass
 {
 public:
 	IdtAtomic<bool> fold = true;
@@ -28,7 +28,7 @@ public:
 	void PositionUpdate(double tarZoom);
 	void ThicknessDisplayUpdate();
 };
-export class BarStyleClass
+class BarStyleClass
 {
 public:
 	IdtAtomic<bool> darkStyle = true;
@@ -37,13 +37,13 @@ public:
 
 // ---
 
-export enum class BarWidgetState : int
+enum class BarWidgetState : int
 {
 	None,
 	Disable, // 禁用
 	Selected // 选中
 };
-export enum class BarWidgetEmphasize : int
+enum class BarWidgetEmphasize : int
 {
 	None,
 	Hover, // 悬停（废弃）

@@ -4,7 +4,7 @@ module;
 
 #include <dwrite.h>
 
-export module Inkeys.UI.Bar.Format;
+export module Inkeys.UI.Bar:Format;
 
 struct BarFormatKey
 {
@@ -30,7 +30,7 @@ struct CacheValue
 	unsigned int usageCountThisFrame = 0; // 用于记录本帧的使用次数
 };
 
-export class BarFormatCache
+class BarFormatCache
 {
 public:
 	// 构造函数，接收一个 IDWriteFactory 指针

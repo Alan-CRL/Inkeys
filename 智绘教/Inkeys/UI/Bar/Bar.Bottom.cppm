@@ -16,19 +16,19 @@ module;
 #include "../../../IdtText.h"
 #include "../../Other/IdtInputs.h"
 
-export module Inkeys.UI.Bar.Bottom;
+export module Inkeys.UI.Bar:Bottom;
 
-import Inkeys.UI.Bar.UI;
-import Inkeys.UI.Bar.State;
+import :UI;
+import :State;
 
-export enum class BarButtomSizeEnum : int
+enum class BarButtomSizeEnum : int
 {
 	twoTwo, // 2*2 -> 70 * 50
 	twoOne, // 2*1 -> 70 * 32.5
 	oneTwo, // 1*2 -> 10 * 70 仅限分割线（偏窄）
 	oneOne // 1*1 -> 32.5 * 32.5
 };
-export enum class BarButtomPresetEnum : int
+enum class BarButtomPresetEnum : int
 {
 	None,
 	Divider,
@@ -48,7 +48,7 @@ export enum class BarButtomPresetEnum : int
 	Setting
 };
 
-export class BarButtomStateClass
+class BarButtomStateClass
 {
 public:
 	BarButtomStateClass() {}
@@ -57,7 +57,7 @@ public:
 	BarWidgetEmphasize emph = BarWidgetEmphasize::None;
 };
 
-export class BarButtomClass
+class BarButtomClass
 {
 public:
 	BarButtomClass() {}
@@ -93,7 +93,7 @@ public:
 
 	BarButtomStateClass* state;
 };
-export class BarButtomListClass
+class BarButtomListClass
 {
 public:
 	BarButtomClass* Get(int x)
@@ -139,7 +139,7 @@ protected:
 	vector<shared_ptr<BarButtomClass>> list{ 40 };
 };
 
-export class BarButtomSetClass
+class BarButtomSetClass
 {
 public:
 	BarButtomListClass buttomlist;
@@ -153,68 +153,13 @@ public:
 
 public:
 	void PresetInitialization();
-	void StateUpdate()
-	{
-		CalcState();
-		PresetHoming();
-	}
-	void UpdateDrawButtonStyle()
-	{
-		// 更新绘制按钮中的图标样式
-		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
-			preset[(int)BarButtomPresetEnum::Draw]->icon.SetTarFromResource(L"UI", L"barHighlighter1");
-		else preset[(int)BarButtomPresetEnum::Draw]->icon.SetTarFromResource(L"UI", L"barBrush1");
-	}
+	void StateUpdate();
+	void UpdateDrawButtonStyle();
 
 	// TODO 临时方案，按照默认样式加载，后续改为从配置中加载布局
-	void Load()
-	{
-		buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Select]);
-		buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Draw]);
-		buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Eraser]);
-		buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Geometry]);
-
-		buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Recall]);
-		// buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Redo]);
-		buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Clean]);
-
-		buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Divider]);
-
-		buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Pierce]);
-		buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Freeze]);
-
-		buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Setting]);
-	}
+	void Load();
 
 protected:
 	void PresetHoming();
-	void CalcState()
-	{
-		{
-			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) barButtomState[(int)BarButtomPresetEnum::Select].state = BarWidgetState::Selected;
-			else barButtomState[(int)BarButtomPresetEnum::Select].state = BarWidgetState::None;
-		}
-		{
-			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen) barButtomState[(int)BarButtomPresetEnum::Draw].state = BarWidgetState::Selected;
-			else barButtomState[(int)BarButtomPresetEnum::Draw].state = BarWidgetState::None;
-		}
-		{
-			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser) barButtomState[(int)BarButtomPresetEnum::Eraser].state = BarWidgetState::Selected;
-			else barButtomState[(int)BarButtomPresetEnum::Eraser].state = BarWidgetState::None;
-		}
-
-		{
-			if (penetrate.select) barButtomState[(int)BarButtomPresetEnum::Pierce].state = BarWidgetState::Selected;
-			else barButtomState[(int)BarButtomPresetEnum::Pierce].state = BarWidgetState::None;
-		}
-		{
-			if (FreezeFrame.mode == 1) barButtomState[(int)BarButtomPresetEnum::Freeze].state = BarWidgetState::Selected;
-			else barButtomState[(int)BarButtomPresetEnum::Freeze].state = BarWidgetState::None;
-		}
-
-		{
-			if (test.select) barButtomState[(int)BarButtomPresetEnum::Setting].state = BarWidgetState::Selected;
-			else barButtomState[(int)BarButtomPresetEnum::Setting].state = BarWidgetState::None;
-		}
-	}
+	void CalcState();
 };
