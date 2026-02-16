@@ -29,9 +29,9 @@ std::string GetEditionInformation(std::string referer)
 		{
 			// 失败后尝试使用 Http 连接
 			httplib::Client cli("vip.123pan.cn");
-			scli.set_follow_location(true);
-			scli.set_connection_timeout(5);
-			scli.set_read_timeout(10);
+			cli.set_follow_location(true);
+			cli.set_connection_timeout(5);
+			cli.set_read_timeout(10);
 
 			res = cli.Get("/1709404/Inkeys/Version/version.json", headers);
 		}
@@ -56,9 +56,9 @@ std::string GetEditionInformation(std::string referer)
 		{
 			// 失败后尝试使用 Http 连接
 			httplib::Client cli("home.alan-crl.top");
-			scli.set_follow_location(true);
-			scli.set_connection_timeout(5);
-			scli.set_read_timeout(10);
+			cli.set_follow_location(true);
+			cli.set_connection_timeout(5);
+			cli.set_read_timeout(10);
 
 			res = cli.Get("/Inkeys/Version/version.json", headers);
 		}

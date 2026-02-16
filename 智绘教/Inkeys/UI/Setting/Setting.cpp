@@ -1,4 +1,4 @@
-﻿module;
+module;
 
 #include "Setting.Wrap.h"
 
@@ -28,11 +28,10 @@
 // 从 imgui_impl_win32.cpp 中前向声明消息处理器
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-export module Inkeys.UI.Setting.Main;
+module Inkeys.UI.Setting;
 
-import Inkeys.UI.Setting;
-import Inkeys.UI.Setting.Widgets;
 import Inkeys.UI.Bar.Main;
+import Inkeys.Thread.Status;
 
 // 软件构建信息
 // signal1
@@ -53,11 +52,6 @@ struct
 	wstring msBuildVersion;
 } settingCICD;
 // signal1
-
-int SettingWindowX;
-int SettingWindowY;
-int SettingWindowWidth;
-int SettingWindowHeight;
 
 void SettingSeekBar()
 {
@@ -161,7 +155,7 @@ void SettingWindow(promise<void>& promise)
 		DispatchMessage(&msg);
 	}
 }
-export void SettingWindowBegin()
+void SettingWindowBegin()
 {
 	// 尺寸计算
 	{
@@ -189,9 +183,9 @@ export void SettingWindowBegin()
 	//UpdateWindow(setting_window);
 }
 
-export void SettingMain()
+void SettingMain()
 {
-	threadStatus[L"SettingMain"] = true;
+	Inkeys::Thread::StatusGuard guard("SettingMain");
 
 	//SettingWindowBegin();
 
@@ -9220,7 +9214,7 @@ export void SettingMain()
 
 					{
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f);
-						wstring text = L"成功赞助后，可以联系作者添加社区名片赞助列表中的昵称。";
+						wstring text = L"成功赞助后，可以联系作者将您的昵称和赞助的金额添加到社区名片中以表示感谢。";
 
 						int left_x = 10 * settingGlobalScale, right_x = 760 * settingGlobalScale;
 
@@ -10030,6 +10024,5 @@ export void SettingMain()
 		ImGui::DestroyContext();
 	}
 
-	threadStatus[L"SettingMain"] = false;
 	return;
 }

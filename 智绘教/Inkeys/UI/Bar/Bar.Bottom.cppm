@@ -14,7 +14,6 @@ module;
 #include "../../../IdtDisplayManagement.h"
 #include "../../../IdtWindow.h"
 #include "../../../IdtText.h"
-#include "../../Conv/IdtColor.h"
 #include "../../Other/IdtInputs.h"
 
 export module Inkeys.UI.Bar.Bottom;
@@ -73,8 +72,7 @@ public:
 		icon(other.icon),
 		clickFunc(other.clickFunc),
 		state(other.state) // 浅拷贝指针
-	{
-	}
+	{}
 
 public:
 	IdtAtomic<BarButtomSizeEnum> size;

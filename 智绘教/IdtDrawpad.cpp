@@ -1,4 +1,5 @@
 ﻿import Inkeys.UI.Bar.Main;
+import Inkeys.Thread.Status;
 
 #include "IdtDrawpad.h"
 
@@ -39,8 +40,8 @@ shared_mutex StrokeBackImageSm;
 bool drawWaiting; // 绘制等待：启用标识时暂时停止绘制
 shared_mutex drawWaitingSm;
 
-IMAGE drawpad(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)); //主画板
-IMAGE window_background(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+IMAGE drawpad; //主画板
+IMAGE window_background;
 
 HHOOK DrawpadHookCall;
 bool IsHotkeyDown;
@@ -1415,7 +1416,7 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 }
 void DrawpadDrawing()
 {
-	threadStatus[L"DrawpadDrawing"] = true;
+	Inkeys::Thread::StatusGuard guard("DrawpadDrawing");
 
 	// 设置BLENDFUNCTION结构体
 	BLENDFUNCTION blend;
@@ -2132,12 +2133,12 @@ void DrawpadDrawing()
 	}
 
 DrawpadDrawingEnd:
-	threadStatus[L"DrawpadDrawing"] = false;
+
 	return;
 }
 int drawpad_main()
 {
-	threadStatus[L"drawpad_main"] = true;
+	Inkeys::Thread::StatusGuard guard("drawpad_main");
 
 	// 窗口初始化
 	{
@@ -2280,9 +2281,11 @@ int drawpad_main()
 	int i = 1;
 	for (; i <= 10; i++)
 	{
-		if (!threadStatus[L"DrawpadDrawing"]) break;
+		using namespace Inkeys::Thread;
+
+		if (!GetStatus("DrawpadDrawing")) break;
 		this_thread::sleep_for(chrono::milliseconds(500));
 	}
-	threadStatus[L"drawpad_main"] = false;
+
 	return 0;
 }

@@ -9,7 +9,6 @@ module;
 #include "../../../IdtState.h"
 #include "../../../IdtWindow.h"
 #include "../../../IdtText.h"
-#include "../../Conv/IdtColor.h"
 #include "../../Other/IdtInputs.h"
 
 // ====================
@@ -24,6 +23,9 @@ import Inkeys.UI.Bar.State;
 import Inkeys.UI.Bar.Bottom;
 import Inkeys.UI.Bar.Format;
 import Inkeys.UI.Bar.RenderingAttribute;
+
+import Inkeys.Conv.Color;
+import Inkeys.Thread.Status;
 
 // ====================
 // 窗口
@@ -199,8 +201,7 @@ export class BarMediaClass
 {
 public:
 	void LoadExImage()
-	{
-	}
+	{}
 	void LoadFormat()
 	{
 		formatCache = make_unique<BarFormatCache>(dWriteFactory1);
@@ -208,8 +209,7 @@ public:
 
 public:
 	enum class BarExImageEnum : int
-	{
-	};
+	{};
 
 	// 似乎被废弃了，新版较多地使用的是 svg
 
@@ -358,6 +358,8 @@ public:
 	// 渲染
 	void Rendering()
 	{
+		Inkeys::Thread::StatusGuard guard("BarUISetClass::Rendering");
+
 		BLENDFUNCTION blend;
 		{
 			blend.BlendOp = AC_SRC_OVER;
@@ -927,7 +929,7 @@ public:
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->pct.tar = 1.0;
 									}
 
-									if (barState.drawAttribute && IdtColor::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->fill.value().tar))
+									if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->fill.value().tar))
 									{
 										// 说明当前选中的是当前的颜色
 										svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect1]->pct.tar = 1.0;
@@ -957,7 +959,7 @@ public:
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->pct.tar = 1.0;
 									}
 
-									if (barState.drawAttribute && IdtColor::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->fill.value().tar))
+									if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->fill.value().tar))
 									{
 										svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect2]->pct.tar = 1.0;
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->ft.value().tar = 2.0;
@@ -986,7 +988,7 @@ public:
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->pct.tar = 1.0;
 									}
 
-									if (barState.drawAttribute && IdtColor::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->fill.value().tar))
+									if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->fill.value().tar))
 									{
 										svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect3]->pct.tar = 1.0;
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->ft.value().tar = 2.0;
@@ -1015,7 +1017,7 @@ public:
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->pct.tar = 1.0;
 									}
 
-									if (barState.drawAttribute && IdtColor::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->fill.value().tar))
+									if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->fill.value().tar))
 									{
 										svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect4]->pct.tar = 1.0;
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->ft.value().tar = 2.0;
@@ -1044,7 +1046,7 @@ public:
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->pct.tar = 1.0;
 									}
 
-									if (barState.drawAttribute && IdtColor::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->fill.value().tar))
+									if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->fill.value().tar))
 									{
 										svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect5]->pct.tar = 1.0;
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->ft.value().tar = 2.0;
@@ -1073,7 +1075,7 @@ public:
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->pct.tar = 1.0;
 									}
 
-									if (barState.drawAttribute && IdtColor::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->fill.value().tar))
+									if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->fill.value().tar))
 									{
 										svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect6]->pct.tar = 1.0;
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->ft.value().tar = 2.0;
@@ -1102,7 +1104,7 @@ public:
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->pct.tar = 1.0;
 									}
 
-									if (barState.drawAttribute && IdtColor::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->fill.value().tar))
+									if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->fill.value().tar))
 									{
 										svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect7]->pct.tar = 1.0;
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->ft.value().tar = 2.0;
@@ -1131,7 +1133,7 @@ public:
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->pct.tar = 1.0;
 									}
 
-									if (barState.drawAttribute && IdtColor::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->fill.value().tar))
+									if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->fill.value().tar))
 									{
 										svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect8]->pct.tar = 1.0;
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->ft.value().tar = 2.0;
@@ -1160,7 +1162,7 @@ public:
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->pct.tar = 1.0;
 									}
 
-									if (barState.drawAttribute && IdtColor::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->fill.value().tar))
+									if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->fill.value().tar))
 									{
 										svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect9]->pct.tar = 1.0;
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->ft.value().tar = 2.0;
@@ -1189,7 +1191,7 @@ public:
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->pct.tar = 1.0;
 									}
 
-									if (barState.drawAttribute && IdtColor::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->fill.value().tar))
+									if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->fill.value().tar))
 									{
 										svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect10]->pct.tar = 1.0;
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->ft.value().tar = 2.0;
@@ -1218,7 +1220,7 @@ public:
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->pct.tar = 1.0;
 									}
 
-									if (barState.drawAttribute && IdtColor::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->fill.value().tar))
+									if (barState.drawAttribute && Inkeys::Conv::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->fill.value().tar))
 									{
 										svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect11]->pct.tar = 1.0;
 										shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->ft.value().tar = 2.0;
@@ -1590,7 +1592,7 @@ public:
 
 				// 清除背景
 				{
-					D2D1_COLOR_F clearColor = IdtColor::ConvertToD2dColor(RGBA(0, 0, 0, 0));
+					D2D1_COLOR_F clearColor = Inkeys::Conv::ConvertToD2dColor(RGBA(0, 0, 0, 0));
 					barDeviceContext->Clear(&clearColor);
 
 					// TODO 绘制纯白全透明警告用户开启 aero
@@ -1869,7 +1871,7 @@ public:
 									// ==== 画刷 ====
 									CComPtr<ID2D1SolidColorBrush> brush;
 									barDeviceContext->CreateSolidColorBrush(
-										D2D1::ColorF(IdtColor::ConvertToD2dColor(color, tarPct)),
+										Inkeys::Conv::ConvertToD2dColor(color, tarPct),
 										&brush
 									);
 
@@ -1944,7 +1946,7 @@ public:
 					// 3. 创建画刷
 					CComPtr<ID2D1SolidColorBrush> pBrush;
 					barDeviceContext->CreateSolidColorBrush(
-						D2D1::ColorF(D2D1::ColorF(255, 255, 255, 0.5)),
+						D2D1::ColorF(255, 255, 255, 0.5),
 						&pBrush);
 
 					double tarX = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->inhX;
@@ -1984,7 +1986,7 @@ public:
 					D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(target.left, target.top, target.right - 1, target.bottom - 1), 0, 0);
 
 					CComPtr<ID2D1SolidColorBrush> spBorderBrush;
-					barDeviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(frame, 1.0), &spBorderBrush);
+					barDeviceContext->CreateSolidColorBrush(Inkeys::Conv::ConvertToD2dColor(frame, 1.0), &spBorderBrush);
 
 					// barDeviceContext->DrawRoundedRectangle(&roundedRect, spBorderBrush, 1.0f);
 				}
@@ -2131,7 +2133,7 @@ public:
 								continueFlag = false;
 								if (msg.lbutton)
 								{
-									SetPenColor(IdtColor::SetAlphaR(obj->fill.value().tar, 255));
+									SetPenColor(Inkeys::Conv::SetAlphaR(obj->fill.value().tar, 255));
 									UpdateRendering();
 
 									while (true)
@@ -2313,7 +2315,7 @@ private:
 public:
 	static void Initialization()
 	{
-		threadStatus[L"BarInitialization"] = true;
+		Inkeys::Thread::StatusGuard guard("BarInitializationClass::BarInitialization");
 
 		// 初始化
 		InitializeWindow(barUISet);
@@ -2345,12 +2347,12 @@ public:
 		unsigned int waitTimes = 1;
 		for (; waitTimes <= 10; waitTimes++)
 		{
-			if (!threadStatus[L"BarUI"] &&
-				!threadStatus[L"BarDraw"]) break;
+			using namespace Inkeys::Thread;
+
+			if (!GetStatus("BarUISetClass::Rendering")) break;
 			this_thread::sleep_for(chrono::milliseconds(500));
 		}
 
-		threadStatus[L"BarInitialization"] = false;
 		return;
 	}
 

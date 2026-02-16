@@ -1,16 +1,15 @@
-﻿#pragma once
+module;
 
-// #include "../UI/Bar/IdtBar.h"
+#include "../../IdtMain.h"
+#include "../../IdtD2DPreparation.h"
 
-class IdtColor
+export module Inkeys.Conv.Color;
+
+namespace Inkeys::Conv
 {
-private:
-	IdtColor() = delete;
-
-public:
 	// 弃用
 	/*
-	static BarLogoColorSchemeEnum BarLogaColorSchemeCalc(COLORREF color)
+	export BarLogoColorSchemeEnum BarLogaColorSchemeCalc(COLORREF color)
 	{
 		// 内联相对亮度计算
 		auto getLum = [](int r, int g, int b) -> double {
@@ -42,7 +41,7 @@ public:
 		return (contrast1 >= contrast2) ? BarLogoColorSchemeEnum::Slate : BarLogoColorSchemeEnum::Default;
 	}*/
 
-	static D2D1::ColorF ConvertToD2dColor(COLORREF color, double pct)
+	export D2D1::ColorF ConvertToD2dColor(COLORREF color, double pct)
 	{
 		return D2D1::ColorF(
 			GetRValue(color) / 255.0f,
@@ -51,7 +50,7 @@ public:
 			static_cast<FLOAT>(pct)
 		);
 	}
-	static D2D1::ColorF ConvertToD2dColor(COLORREF color, bool ReserveAlpha = true)
+	export D2D1::ColorF ConvertToD2dColor(COLORREF color, bool ReserveAlpha = true)
 	{
 		return D2D1::ColorF(
 			GetRValue(color) / 255.0f,
@@ -60,16 +59,16 @@ public:
 			(ReserveAlpha ? GetAValue(color) : 255) / 255.0f
 		);
 	}
-	static bool CompereColorRef(COLORREF col1, COLORREF col2, bool alpha = false)
+	export bool CompereColorRef(COLORREF col1, COLORREF col2, bool alpha = false)
 	{
 		if (alpha) return col1 == col2;
 		return (GetRValue(col1) == GetRValue(col2)) && (GetGValue(col1) == GetGValue(col2)) && (GetBValue(col1) == GetBValue(col2));
 	}
-	static void SetAlpha(COLORREF& Color, int Alpha)
+	export void SetAlpha(COLORREF& Color, int Alpha)
 	{
 		Color = (COLORREF)(((Color) & 0xFFFFFF) | ((Alpha) << 24));
 	}
-	static COLORREF SetAlphaR(COLORREF color, int alpha)
+	export COLORREF SetAlphaR(COLORREF color, int alpha)
 	{
 		return RGBA(GetRValue(color), GetGValue(color), GetBValue(color), alpha);
 	}

@@ -94,9 +94,6 @@
     <Filter Include="源文件\Inkeys">
       <UniqueIdentifier>{9d493b02-2050-44aa-86ae-ef700c65face}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\Inkeys\Conv">
-      <UniqueIdentifier>{da9fe4f5-f08e-4eb0-9616-0ad97f177df0}</UniqueIdentifier>
-    </Filter>
     <Filter Include="头文件\Inkeys\Load">
       <UniqueIdentifier>{f9e5d643-b115-4fb6-830b-e349842a8795}</UniqueIdentifier>
     </Filter>
@@ -123,6 +120,12 @@
     </Filter>
     <Filter Include="Modules\Inkeys\UI\Bar">
       <UniqueIdentifier>{56be2dfa-0003-4904-8ed4-aac871d769c8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Conv">
+      <UniqueIdentifier>{1522c836-7846-41b3-bbd8-93034e6b9495}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Thread">
+      <UniqueIdentifier>{fb47f763-ac2c-4357-8cda-ac7a50599b00}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -768,9 +771,6 @@
     <ClInclude Include="additional\unordered_dense.h">
       <Filter>头文件\Additional</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\Conv\IdtColor.h">
-      <Filter>头文件\Inkeys\Conv</Filter>
-    </ClInclude>
     <ClInclude Include="Inkeys\Load\IdtLoad.h">
       <Filter>头文件\Inkeys\Load</Filter>
     </ClInclude>
@@ -1049,10 +1049,10 @@
     <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cppm">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\Setting\Setting.cppm">
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Base.cppm">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\Setting\Setting.Main.cppm">
+    <ClCompile Include="Inkeys\UI\Setting\Setting.cppm">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.RenderingAttribute.cppm">
@@ -1081,6 +1081,18 @@
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cpp">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Setting\Setting.cpp">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cpp">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Conv\Conv.Color.cppm">
+      <Filter>Modules\Inkeys\Conv</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Thread\Thread.Status.cppm">
+      <Filter>Modules\Inkeys\Thread</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

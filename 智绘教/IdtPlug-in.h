@@ -216,7 +216,6 @@ extern PptInfoStateStruct PptInfoState;
 extern bool PptWindowBackgroundUiChange;
 
 extern wstring pptComVersion;
-extern wstring pptComVersion;
 
 // -------------------------
 // Ppt 状态

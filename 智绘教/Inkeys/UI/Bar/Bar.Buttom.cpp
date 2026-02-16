@@ -14,12 +14,12 @@ module;
 #include "../../../IdtDisplayManagement.h"
 #include "../../../IdtWindow.h"
 #include "../../../IdtText.h"
-#include "../../Conv/IdtColor.h"
 #include "../../Other/IdtInputs.h"
 
 module Inkeys.UI.Bar.Bottom;
 
 import Inkeys.UI.Bar.Main;
+import Inkeys.Conv.Color;
 
 void BarButtomSetClass::PresetInitialization()
 {

@@ -9,10 +9,11 @@ module;
 #include "../../../IdtState.h"
 #include "../../../IdtWindow.h"
 #include "../../../IdtText.h"
-#include "../../Conv/IdtColor.h"
 #include "../../Other/IdtInputs.h"
 
 module Inkeys.UI.Bar.Main;
+
+import Inkeys.Conv.Color;
 
 BarUIRendering::BarUIRendering(BarUISetClass* barUISetClassT) { barUISetClass = barUISetClassT; }
 
@@ -44,7 +45,7 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 	if (clip)
 	{
 		CComPtr<ID2D1SolidColorBrush> spFillBrush;
-		deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(RGB(0, 0, 0), 0.0), &spFillBrush);
+		deviceContext->CreateSolidColorBrush(Inkeys::Conv::ConvertToD2dColor(RGB(0, 0, 0), 0.0), &spFillBrush);
 
 		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
 		deviceContext->FillRoundedRectangle(&roundedRect, spFillBrush);
@@ -58,7 +59,7 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 			COLORREF fill = shape.fill.value().val;
 
 			CComPtr<ID2D1SolidColorBrush> spFillBrush;
-			deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(fill, tarPct), &spFillBrush);
+			deviceContext->CreateSolidColorBrush(Inkeys::Conv::ConvertToD2dColor(fill, tarPct), &spFillBrush);
 
 			deviceContext->FillRoundedRectangle(&roundedRect, spFillBrush);
 		}
@@ -70,7 +71,7 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 			if (shape.framePct.has_value()) tarFramePct = shape.framePct.value().val;
 
 			CComPtr<ID2D1SolidColorBrush> spBorderBrush;
-			deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(frame, tarFramePct), &spBorderBrush);
+			deviceContext->CreateSolidColorBrush(Inkeys::Conv::ConvertToD2dColor(frame, tarFramePct), &spBorderBrush);
 
 			FLOAT strokeWidth = 4.0f * static_cast<FLOAT>(tarZoom);
 			if (shape.ft.has_value())
@@ -182,7 +183,7 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 	if (clip)
 	{
 		CComPtr<ID2D1SolidColorBrush> spFillBrush;
-		deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(RGB(0, 0, 0), 0.0), &spFillBrush);
+		deviceContext->CreateSolidColorBrush(Inkeys::Conv::ConvertToD2dColor(RGB(0, 0, 0), 0.0), &spFillBrush);
 
 		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
 		deviceContext->FillGeometry(geometry, spFillBrush);
@@ -197,7 +198,7 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 			COLORREF fill = superellipse.fill.value().val;
 
 			CComPtr<ID2D1SolidColorBrush> spFillBrush;
-			deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(fill, tarPct), &spFillBrush);
+			deviceContext->CreateSolidColorBrush(Inkeys::Conv::ConvertToD2dColor(fill, tarPct), &spFillBrush);
 
 			deviceContext->FillGeometry(geometry, spFillBrush);
 		}
@@ -209,7 +210,7 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 			if (superellipse.framePct.has_value()) tarFramePct = superellipse.framePct.value().val;
 
 			CComPtr<ID2D1SolidColorBrush> spBorderBrush;
-			deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(frame, tarFramePct), &spBorderBrush);
+			deviceContext->CreateSolidColorBrush(Inkeys::Conv::ConvertToD2dColor(frame, tarFramePct), &spBorderBrush);
 
 			FLOAT strokeWidth = 4.0f * static_cast<FLOAT>(tarZoom);
 			if (superellipse.ft.has_value())
@@ -338,7 +339,7 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 		COLORREF color = word.color.val;
 
 		CComPtr<ID2D1SolidColorBrush> spFillBrush;
-		deviceContext->CreateSolidColorBrush(IdtColor::ConvertToD2dColor(color, tarPct), &spFillBrush);
+		deviceContext->CreateSolidColorBrush(Inkeys::Conv::ConvertToD2dColor(color, tarPct), &spFillBrush);
 
 		deviceContext->DrawTextW(
 			tarContent.c_str(),

@@ -128,11 +128,11 @@ namespace UiAccess
 			wcerr << L"获取用户token失败，无法降权启动Inkeys.exe。\n";
 			return false;
 		}
-		static bool GetWinlogonToken(IdtHandle& ret)
+		static bool GetWinlogonToken(IdtHandle& ret, bool forSimulate = true)
 		{
 			// 目前只为 ForSimulate 而设计
 
-			HANDLE hOpenToken = nullptr, hTargetToken = nullptr;
+			HANDLE hOpenToken = nullptr, hDupToken = nullptr;
 			if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, &hOpenToken)) return false;
 			IdtHandle openToken(hOpenToken);
 
@@ -159,16 +159,35 @@ namespace UiAccess
 						IdtHandle hProc(hProcRaw);
 
 						HANDLE hTokenRaw = nullptr;
-						if (!OpenProcessToken(hProc.get(), TOKEN_QUERY | TOKEN_DUPLICATE, &hTokenRaw)) continue;
+						bool success = false;
+						if (forSimulate == false) success = OpenProcessToken(hProc.get(), TOKEN_QUERY | TOKEN_DUPLICATE, &hTokenRaw);
+						else success = OpenProcessToken(hProc.get(), TOKEN_QUERY | TOKEN_DUPLICATE, &hTokenRaw);
+						if (!success) continue;
 						IdtHandle hToken(hTokenRaw);
 
 						DWORD ses = 0;
 						if (!GetTokenInformation(hToken.get(), TokenSessionId, &ses, sizeof(ses), &ret_len) || ses != ses_self) continue;
 
-						if (DuplicateTokenEx(hToken.get(), TOKEN_IMPERSONATE | TOKEN_ADJUST_PRIVILEGES, NULL, SecurityImpersonation, TokenImpersonation, &hTargetToken))
+						success = false;
+						if (forSimulate == false)
+						{
+							success = DuplicateTokenEx(
+								hToken.get(),
+								TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID,
+								NULL, SecurityAnonymous, TokenPrimary, &hDupToken);
+						}
+						else
+						{
+							success = DuplicateTokenEx(
+								hToken.get(),
+								TOKEN_IMPERSONATE | TOKEN_ADJUST_PRIVILEGES,
+								NULL, SecurityImpersonation, TokenImpersonation, &hDupToken);
+						}
+
+						if (success)
 						{
 							// 获取成功
-							ret.reset(hTargetToken);
+							ret.reset(hDupToken);
 							success = true;
 
 							wcout << L"已获取到句柄：" << name << endl;
@@ -181,11 +200,14 @@ namespace UiAccess
 			if (!ret) return false;
 
 			// 设置令牌权限
-			TOKEN_PRIVILEGES tkp = {};
-			tkp.PrivilegeCount = 1;
-			tkp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-			if (!LookupPrivilegeValueW(NULL, SE_ASSIGNPRIMARYTOKEN_NAME, &tkp.Privileges[0].Luid)) return false;
-			if (!AdjustTokenPrivileges(ret.get(), FALSE, &tkp, sizeof(tkp), NULL, NULL)) return false;
+			if (forSimulate == true)
+			{
+				TOKEN_PRIVILEGES tkp = {};
+				tkp.PrivilegeCount = 1;
+				tkp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+				if (!LookupPrivilegeValueW(NULL, SE_ASSIGNPRIMARYTOKEN_NAME, &tkp.Privileges[0].Luid)) return false;
+				if (!AdjustTokenPrivileges(ret.get(), FALSE, &tkp, sizeof(tkp), NULL, NULL)) return false;
+			}
 
 			return true;
 		}

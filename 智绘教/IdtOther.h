@@ -15,5 +15,5 @@ bool isAsciiPrintable(const wstring& input);
 bool isProcessRunning(const std::wstring& processPath);
 int ProcessRunningCnt(const std::wstring& processPath);
 
-bool SetStartupState(bool bAutoRun, wstring path, wstring nameclass);
-bool QueryStartupState(wstring path, wstring nameclass);
+bool SetStartupState(bool bAutoRun, wstring path, const wstring& nameclass);
+bool QueryStartupState(wstring path, const wstring& nameclass);

@@ -1,5 +1,3 @@
-#pragma once
-
 #include "IdtInputs.h"
 
 #undef max
@@ -16,7 +14,7 @@ void* IdtInputs::downMap = new DownMapType;
 
 void IdtInputs::SetKeyBoardDown(BYTE key, bool down)
 {
-	getDownMap()->upsert(key, [&](bool& v) { v = down; }, down);
+	getDownMap()->insert_or_assign(key, down);
 }
 bool IdtInputs::IsKeyBoardDown(BYTE key)
 {
