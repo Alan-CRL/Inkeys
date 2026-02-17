@@ -22,7 +22,10 @@ public:
 	struct
 	{
 		IdtAtomic<bool> mainBar; // false 左侧， true 右侧
+		// 特别的，左侧和右侧上时，主栏上的控件块会反向
+
 		IdtAtomic<bool> primaryBar; // false 上方， true 下方
+		// 特别的，左侧和右侧上时，绘制属性上的控件块会上下反向
 	}widgetPosition;
 
 	void PositionUpdate(double tarZoom);
@@ -32,7 +35,7 @@ class BarStyleClass
 {
 public:
 	IdtAtomic<bool> darkStyle = true;
-	IdtAtomic<double> zoom = 2.0;
+	IdtAtomic<double> zoom = 1.0;
 };
 
 // ---

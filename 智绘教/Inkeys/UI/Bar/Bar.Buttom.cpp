@@ -201,7 +201,7 @@ void BarButtomSetClass::PresetInitialization()
 	{
 		BarButtomClass* obj = new BarButtomClass;
 		{
-			obj->size = BarButtomSizeEnum::twoOne;
+			obj->size = BarButtomSizeEnum::twoTwo;
 			obj->preset = BarButtomPresetEnum::Recall;
 			obj->hide = false;
 		}
@@ -241,7 +241,7 @@ void BarButtomSetClass::PresetInitialization()
 	{
 		BarButtomClass* obj = new BarButtomClass;
 		{
-			obj->size = BarButtomSizeEnum::twoOne;
+			obj->size = BarButtomSizeEnum::twoTwo;
 			obj->preset = BarButtomPresetEnum::Clean;
 			obj->hide = false;
 		}
@@ -418,7 +418,7 @@ void BarButtomSetClass::Load()
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Select]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Draw]);
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Eraser]);
-	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Geometry]);
+	// buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Geometry]);
 
 	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Recall]);
 	// buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Redo]);
@@ -444,7 +444,7 @@ void BarButtomSetClass::PresetHoming()
 		preset[(int)BarButtomPresetEnum::Geometry]->hide = true;
 		preset[(int)BarButtomPresetEnum::Recall]->hide = true;
 		//preset[(int)BarButtomPresetEnum::Redo]->hide = true;
-		preset[(int)BarButtomPresetEnum::Clean]->hide = true;
+		// preset[(int)BarButtomPresetEnum::Clean]->hide = true;
 		preset[(int)BarButtomPresetEnum::Pierce]->hide = true;
 
 		// 显示尺寸变化
@@ -460,7 +460,7 @@ void BarButtomSetClass::PresetHoming()
 		preset[(int)BarButtomPresetEnum::Geometry]->hide = false;
 		preset[(int)BarButtomPresetEnum::Recall]->hide = false;
 		//preset[(int)BarButtomPresetEnum::Redo]->hide = false;
-		preset[(int)BarButtomPresetEnum::Clean]->hide = false;
+		// preset[(int)BarButtomPresetEnum::Clean]->hide = false;
 		preset[(int)BarButtomPresetEnum::Pierce]->hide = false;
 
 		// 显示尺寸变化

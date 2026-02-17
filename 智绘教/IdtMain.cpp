@@ -51,8 +51,8 @@ import Inkeys.Other.Gesture;
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20260216a";				// 程序发布日期
-wstring editionChannel = L"Dev";				// 程序发布通道
+wstring editionDate = L"20260217a";				// 程序发布日期
+wstring editionChannel = L"Canary";				// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -76,7 +76,7 @@ void RestartProgram()
 
 shared_ptr<spdlog::logger> IDTLogger;
 IdtAtomic<bool> useMouseInput;
-IdtAtomic<bool> useInkeys3UI = true;
+IdtAtomic<bool> useInkeys3UI = false;
 
 // 程序入口点
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
@@ -1073,6 +1073,16 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			{
 				setlist.plugInSetting.superTop.enable = false;
 				WriteSetting();
+			}
+		}
+
+		// 需要重启生效的配置
+		{
+			useInkeys3UI = setlist.Experimental.Inkeys3.UI3;
+
+			if (useInkeys3UI)
+			{
+				setlist.selectLanguage = 1;
 			}
 		}
 

@@ -149,6 +149,14 @@ struct SetListStruct
 		}superTop;
 	}plugInSetting;
 #pragma endregion
+
+	struct
+	{
+		struct
+		{
+			IdtAtomic<bool> UI3 = false;
+		} Inkeys3;
+	} Experimental;
 };
 extern SetListStruct setlist;
 bool ReadSetting();

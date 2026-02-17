@@ -5,10 +5,12 @@ import <string>;
 
 export namespace Inkeys::Load
 {
-	bool ExtractResourceFile(const std::wstring& dstFile, const std::wstring& resType, const std::wstring& resName)
+	bool ExtractResourceFile(const std::wstring& dstFile, const std::wstring& resType, LPCWSTR resName)
 	{
 		// 查找和加载资源
-		HRSRC hRes = ::FindResourceW(NULL, resName.c_str(), resType.c_str());
+		// 注意：resName 可能是字符串指针，也可能是像 0x00DE (222) 这样的数值
+
+		HRSRC hRes = ::FindResourceW(NULL, resName, resType.c_str());
 		if (!hRes) return false;
 
 		DWORD dwSize = ::SizeofResource(NULL, hRes);
@@ -21,7 +23,8 @@ export namespace Inkeys::Load
 		if (!pData) return false;
 
 		// 创建/打开目标文件
-		HANDLE hFile = ::CreateFileW(dstFile.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY, NULL);
+		HANDLE hFile = ::CreateFileW(dstFile.c_str(), GENERIC_WRITE, 0, NULL,
+			CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY, NULL);
 
 		if (hFile == INVALID_HANDLE_VALUE) return false;
 
