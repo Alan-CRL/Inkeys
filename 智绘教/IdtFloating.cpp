@@ -1,6 +1,8 @@
 ﻿import Inkeys.Thread.Status;
 import Inkeys.Net.Update;
 import Inkeys.Other.Inputs;
+import Inkeys.Conv.Text;
+import Inkeys.Text.Font;
 
 #include "IdtFloating.h"
 
@@ -16,7 +18,6 @@ import Inkeys.Other.Inputs;
 #include "IdtPlug-in.h"
 #include "IdtRts.h"
 #include "IdtState.h"
-#include "IdtText.h"
 #include "IdtTime.h"
 #include "IdtWindow.h"
 #include "SuperTop/IdtSuperTop.h"

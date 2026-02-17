@@ -2,13 +2,7 @@ module;
 
 #include "../../../IdtMain.h"
 
-#include "../../../IdtConfiguration.h"
 #include "../../../IdtD2DPreparation.h"
-#include "../../../IdtDisplayManagement.h"
-#include "../../../IdtDrawpad.h"
-#include "../../../IdtState.h"
-#include "../../../IdtWindow.h"
-#include "../../../IdtText.h"
 
 export module Inkeys.UI.Bar:Main;
 

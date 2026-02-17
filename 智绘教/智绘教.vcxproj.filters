@@ -73,12 +73,6 @@
     <Filter Include="头文件\Launch">
       <UniqueIdentifier>{706bbb49-374e-4c6f-b602-75c6a0116e5c}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\CrashHandler">
-      <UniqueIdentifier>{6a65598e-38bd-4a19-9735-3a1762014fd1}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="源文件\CrashHandler">
-      <UniqueIdentifier>{d9b1228c-55af-4733-a011-9eebd0ff53ba}</UniqueIdentifier>
-    </Filter>
     <Filter Include="源文件\SuperTop">
       <UniqueIdentifier>{5d0ceb29-5557-45eb-953f-72ee3cad19b8}</UniqueIdentifier>
     </Filter>
@@ -114,6 +108,12 @@
     </Filter>
     <Filter Include="Modules\Inkeys\Other">
       <UniqueIdentifier>{b1e29c86-3898-43df-93bf-62bcab0f41b4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Text">
+      <UniqueIdentifier>{66cfc94e-72df-48b5-a59f-8860832d0012}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Helper">
+      <UniqueIdentifier>{27615d57-79cc-4874-bfe3-3d8915419a1e}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -223,9 +223,6 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="IdtImage.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="IdtText.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="IdtWindow.h">
@@ -735,9 +732,6 @@
     <ClInclude Include="Launch\IdtLaunchState.h">
       <Filter>头文件\Launch</Filter>
     </ClInclude>
-    <ClInclude Include="CrashHandler\CrashHandler.h">
-      <Filter>头文件\CrashHandler</Filter>
-    </ClInclude>
     <ClInclude Include="SuperTop\IdtSuperTop.h">
       <Filter>头文件\SuperTop</Filter>
     </ClInclude>
@@ -835,9 +829,6 @@
     </ClCompile>
     <ClCompile Include="HiEasyX\HiWindow.cpp">
       <Filter>头文件\HiEasyX</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtText.cpp">
-      <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="IdtWindow.cpp">
       <Filter>源文件</Filter>
@@ -992,9 +983,6 @@
     <ClCompile Include="Launch\IdtLaunchState.cpp">
       <Filter>源文件\Launch</Filter>
     </ClCompile>
-    <ClCompile Include="CrashHandler\CrashHandler.cpp">
-      <Filter>源文件\CrashHandler</Filter>
-    </ClCompile>
     <ClCompile Include="SuperTop\IdtSuperTop.cpp">
       <Filter>源文件\SuperTop</Filter>
     </ClCompile>
@@ -1067,12 +1055,6 @@
     <ClCompile Include="Inkeys\Load\Load.cppm">
       <Filter>Modules\Inkeys\Load</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\Load\Load.Font.cppm">
-      <Filter>Modules\Inkeys\Load</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Load\Load.Font.cpp">
-      <Filter>Modules\Inkeys\Load</Filter>
-    </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cpp">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
@@ -1084,6 +1066,24 @@
     </ClCompile>
     <ClCompile Include="Inkeys\Other\Other.Gesture.cppm">
       <Filter>Modules\Inkeys\Other</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Conv\Conv.Text.cppm">
+      <Filter>Modules\Inkeys\Conv</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Text\Text.Split.cppm">
+      <Filter>Modules\Inkeys\Text</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Text\Text.Font.cpp">
+      <Filter>Modules\Inkeys\Text</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Text\Text.Font.cppm">
+      <Filter>Modules\Inkeys\Text</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cppm">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cpp">
+      <Filter>Modules\Inkeys\Helper</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

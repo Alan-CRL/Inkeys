@@ -2,9 +2,6 @@ module;
 
 #include "../../../IdtMain.h"
 
-#include "../../../IdtDisplayManagement.h"
-#include "../../../IdtState.h"
-
 export module Inkeys.UI.Bar:State;
 
 class BarStateClass

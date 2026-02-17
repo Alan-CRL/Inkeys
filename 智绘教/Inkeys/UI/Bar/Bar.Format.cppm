@@ -2,9 +2,9 @@ module;
 
 #include "../../../IdtMain.h"
 
-#include <dwrite.h>
-
 export module Inkeys.UI.Bar:Format;
+
+import <dwrite.h>;
 
 struct BarFormatKey
 {

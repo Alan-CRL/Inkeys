@@ -22,6 +22,7 @@ import Inkeys.Conv.Color;
 import Inkeys.Thread.Status;
 import Inkeys.Load;
 import Inkeys.Other.Inputs;
+import Inkeys.Conv.Text;
 
 #include "IdtPlug-in.h"
 
@@ -32,7 +33,6 @@ import Inkeys.Other.Inputs;
 #include "IdtFloating.h"
 #include "IdtMagnification.h"
 #include "IdtRts.h"
-#include "IdtText.h"
 #include "IdtWindow.h"
 #include "IdtOther.h"
 #include "IdtHistoricalDrawpad.h"
@@ -224,6 +224,7 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	{
 	case WM_TABLET_QUERYSYSTEMGESTURESTATUS:
 	{
+		cerr << 111 << endl;
 		DWORD flags = 0;
 		flags |= (0x00000001);
 		flags |= (0x00000008);
@@ -235,15 +236,19 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 	case WM_TOUCH:
 	{
+		// 由于是专门使用 static 来存储当前窗口的触摸信息，所以该过程函数仅能给 ppt_window 使用。
+
 		static DWORD activeTouchId = 0;   // 0表示无活动ID
 		static bool isTouchActive = false;
+		static short activeTouchX = 0;
+		static short activeTouchY = 0;
 
 		UINT cInputs = LOWORD(wParam);
 		TOUCHINPUT inputs[32];
 		if (GetTouchInputInfo((HTOUCHINPUT)lParam, cInputs, inputs, sizeof(TOUCHINPUT)))
 		{
 			bool touchIdCheck = false; // 检测当前活动ID是否还存在
-			short x = 0, y = 0; // 坐标
+			POINT pt;
 
 			for (UINT i = 0; i < cInputs; i++)
 			{
@@ -251,8 +256,10 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 				double xO = static_cast<double>(ti.x) / 100.0;
 				double yO = static_cast<double>(ti.y) / 100.0;
-				x = static_cast<short>(xO + 0.5);
-				y = static_cast<short>(yO + 0.5);
+
+				pt.x = static_cast<LONG>(xO + 0.5);
+				pt.y = static_cast<LONG>(yO + 0.5);
+				ScreenToClient(hWnd, &pt);
 
 				if (ti.dwFlags & TOUCHEVENTF_DOWN)
 				{
@@ -262,14 +269,17 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 						activeTouchId = ti.dwID;
 						isTouchActive = true;
 
+						activeTouchX = pt.x;
+						activeTouchY = pt.y;
+
 						{
 							ExMessage msgMouse = {};
 							msgMouse.message = WM_LBUTTONDOWN;
-							msgMouse.x = x;
-							msgMouse.y = y;
+							msgMouse.x = pt.x;
+							msgMouse.y = pt.y;
 							msgMouse.lbutton = true;
 
-							int index = hiex::GetWindowIndex(ppt_window, false);
+							int index = hiex::GetWindowIndex(hWnd, false);
 							unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
 							hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
 							lg_vecWindows_vecMessage_sm.unlock();
@@ -280,16 +290,21 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 				{
 					if (isTouchActive && ti.dwID == activeTouchId)
 					{
-						ExMessage msgMouse = {};
-						msgMouse.message = WM_MOUSEMOVE;
-						msgMouse.x = x;
-						msgMouse.y = y;
-						msgMouse.lbutton = true;
+						activeTouchX = pt.x;
+						activeTouchY = pt.y;
 
-						int index = hiex::GetWindowIndex(ppt_window, false);
-						unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
-						hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
-						lg_vecWindows_vecMessage_sm.unlock();
+						{
+							ExMessage msgMouse = {};
+							msgMouse.message = WM_MOUSEMOVE;
+							msgMouse.x = pt.x;
+							msgMouse.y = pt.y;
+							msgMouse.lbutton = true;
+
+							int index = hiex::GetWindowIndex(hWnd, false);
+							unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
+							hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
+							lg_vecWindows_vecMessage_sm.unlock();
+						}
 					}
 				}
 				if (ti.dwFlags & TOUCHEVENTF_UP)
@@ -299,14 +314,17 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 						activeTouchId = 0;
 						isTouchActive = false;
 
+						activeTouchX = pt.x;
+						activeTouchY = pt.y;
+
 						{
 							ExMessage msgMouse = {};
 							msgMouse.message = WM_LBUTTONUP;
-							msgMouse.x = x;
-							msgMouse.y = y;
+							msgMouse.x = pt.x;
+							msgMouse.y = pt.y;
 							msgMouse.lbutton = false;
 
-							int index = hiex::GetWindowIndex(ppt_window, false);
+							int index = hiex::GetWindowIndex(hWnd, false);
 							unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
 							hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
 							lg_vecWindows_vecMessage_sm.unlock();
@@ -325,11 +343,11 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 				{
 					ExMessage msgMouse = {};
 					msgMouse.message = WM_LBUTTONUP;
-					msgMouse.x = x;
-					msgMouse.y = y;
+					msgMouse.x = activeTouchX;
+					msgMouse.y = activeTouchY;
 					msgMouse.lbutton = false;
 
-					int index = hiex::GetWindowIndex(ppt_window, false);
+					int index = hiex::GetWindowIndex(hWnd, false);
 					unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
 					hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
 					lg_vecWindows_vecMessage_sm.unlock();
@@ -355,7 +373,7 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		if ((extraInfo & 0xFFFFFF00) == 0xFF515700) return 0;
 
 		// 否则当成真正的鼠标消息处理
-		// 您的鼠标处理逻辑
+
 		break;
 	}
 

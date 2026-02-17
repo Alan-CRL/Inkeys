@@ -4,7 +4,7 @@
 
 #include "../../IdtD2DPreparation.h"
 
-module Inkeys.Load.Font;
+module Inkeys.Text.Font;
 
 IDWriteFontCollectionLoader* IdtFontCollectionLoader::instance_(new(std::nothrow) IdtFontCollectionLoader());
 
@@ -49,3 +49,10 @@ IdtFontFileStream::IdtFontFileStream(UINT resourceID) :
 		}
 	}
 }
+
+// 过时字体资源
+PrivateFontCollection fontCollection;
+FontFamily HarmonyOS_fontFamily;
+StringFormat stringFormat;
+StringFormat stringFormat_left;
+RECT words_rect, dwords_rect, pptwords_rect;

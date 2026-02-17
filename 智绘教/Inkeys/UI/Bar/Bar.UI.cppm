@@ -3,7 +3,6 @@ module;
 #include "../../../IdtMain.h"
 
 #include "../../../IdtD2DPreparation.h"
-#include "../../../IdtText.h"
 
 export module Inkeys.UI.Bar:UI;
 

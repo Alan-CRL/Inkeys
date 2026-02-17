@@ -1,4 +1,7 @@
-﻿#include "IdtSuperTop.h"
+﻿import Inkeys.Conv.Text;
+import Inkeys.Text.Split;
+
+#include "IdtSuperTop.h"
 
 #include "../IdtConfiguration.h"
 #include "../IdtOther.h"
@@ -58,7 +61,7 @@ void SurperTopMain(wstring lpCmdLine)
 	cout << utf16ToUtf8(lpCmdLine) << endl;
 
 	{
-		vector<wstring> args = CustomSplit::Run(lpCmdLine, L'?');
+		vector<wstring> args = Inkeys::Split::Run(lpCmdLine, L'?');
 		for (size_t i = 0; i < args.size(); i++)
 		{
 			wstring commandLine = args[i];

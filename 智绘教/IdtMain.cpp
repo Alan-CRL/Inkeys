@@ -11,18 +11,20 @@
  * @email		alan-crl@foxmail.com
 */
 
+import Inkeys.Helper.CrashHandler;
 import Inkeys.UI.Setting;
 import Inkeys.UI.Bar;
 import Inkeys.Thread.Status;
 import Inkeys.Net.Update;
 import Inkeys.Load;
-import Inkeys.Load.Font;
 import Inkeys.Other.Gesture;
+import Inkeys.Conv.Text;
+import Inkeys.Text.Split;
+import Inkeys.Text.Font;
 
 #include "IdtMain.h"
 #include "resource.h"
 
-#include "CrashHandler/CrashHandler.h"
 #include "IdtConfiguration.h"
 #include "IdtD2DPreparation.h"
 #include "IdtDisplayManagement.h"
@@ -39,7 +41,6 @@ import Inkeys.Other.Gesture;
 #include "IdtRts.h"
 #include "IdtStart.h"
 #include "IdtState.h"
-#include "IdtText.h"
 #include "IdtTime.h"
 #include "IdtWindow.h"
 #include "Launch/IdtLaunchState.h"
@@ -51,7 +52,7 @@ import Inkeys.Other.Gesture;
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20260217b";				// 程序发布日期
+wstring editionDate = L"20260217c";				// 程序发布日期
 wstring editionChannel = L"Canary";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -63,17 +64,6 @@ wstring targetArchitecture = L"win32";
 
 IdtAtomic<int> offSignal;						// 关闭指令
 
-void CloseProgram()
-{
-	CrashHandler::Shutdown();
-	offSignal = 1;
-}
-void RestartProgram()
-{
-	CrashHandler::Shutdown();
-	offSignal = 2;
-}
-
 shared_ptr<spdlog::logger> IDTLogger;
 IdtAtomic<bool> useMouseInput;
 IdtAtomic<bool> useInkeys3UI = false;
@@ -81,35 +71,6 @@ IdtAtomic<bool> useInkeys3UI = false;
 // 程序入口点
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
 {
-	{
-		// 创建测试控制台
-
-#ifndef IDT_RELEASE
-		{
-			AllocConsole();
-
-			FILE* fp;
-			freopen_s(&fp, "CONOUT$", "w", stdout);
-			freopen_s(&fp, "CONOUT$", "w", stderr);
-			freopen_s(&fp, "CONIN$", "r", stdin);
-
-			// 让 C++ 流重新与 C 的 FILE* 同步
-			// true = 同步；不传参数的重载在 C++11 之后是被弃用的（某些编译器行为不定）
-			std::ios::sync_with_stdio(true);
-
-			// 清空原来的缓冲（保证重新绑定后生效）
-			std::wcout.clear();
-			std::wcin.clear();
-			std::wcerr.clear();
-			std::cout.clear();
-			std::cin.clear();
-			std::cerr.clear();
-
-			std::wcout.imbue(std::locale("chs"));
-		}
-#endif
-	}
-
 	// 路径预处理
 	{
 		globalPath = GetCurrentExeDirectory() + L"\\";
@@ -180,7 +141,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		bool superTopComplete = false;
 
 		{
-			vector<wstring> args = CustomSplit::Run(GetCommandLineW(), L'*');
+			vector<wstring> args = Inkeys::Split::Run(GetCommandLineW(), L'*');
 			for (size_t i = 1; i < args.size(); i++)
 			{
 				bool addCommandLine = true;
@@ -1278,7 +1239,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		//ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys2 PptWindow", (L"Inkeys4;" + ClassName).c_str(), nullptr, drawpad_window);
 
 		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
-		floating_window = hiex::initgraph_win32(background.getwidth(), background.getheight(), 0, L"Inkeys1 FloatingWindow", (L"Inkeys5;" + ClassName).c_str(), nullptr, ppt_window);
+		if (!useInkeys3UI) floating_window = hiex::initgraph_win32(background.getwidth(), background.getheight(), 0, L"Inkeys1 FloatingWindow", (L"Inkeys5;" + ClassName).c_str(), nullptr, ppt_window);
+		else floating_window = hiex::initgraph_win32(background.getwidth(), background.getheight(), 0, L"Inkeys1 FloatingWindow", (L"Inkeys5;" + ClassName).c_str(), nullptr, ppt_window, touchRegisterFuc);
 
 		// 画板窗口在注册 RTS 前必须拥有置顶属性，在显示前先进行一次全局置顶
 		if (magnificationCreateReady) SetWindowPos(magnifierWindow, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
@@ -1314,6 +1276,34 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		thread(PPTLinkageMain).detach();
 
 		IDTLogger->info("[主线程][IdtMain] 线程初始化完成");
+	}
+
+	// 创建测试控制台
+	{
+#ifndef IDT_RELEASE
+		{
+			AllocConsole();
+
+			FILE* fp;
+			freopen_s(&fp, "CONOUT$", "w", stdout);
+			freopen_s(&fp, "CONOUT$", "w", stderr);
+			freopen_s(&fp, "CONIN$", "r", stdin);
+
+			// 让 C++ 流重新与 C 的 FILE* 同步
+			// true = 同步；不传参数的重载在 C++11 之后是被弃用的（某些编译器行为不定）
+			std::ios::sync_with_stdio(true);
+
+			// 清空原来的缓冲（保证重新绑定后生效）
+			std::wcout.clear();
+			std::wcin.clear();
+			std::wcerr.clear();
+			std::cout.clear();
+			std::cin.clear();
+			std::cerr.clear();
+
+			std::wcout.imbue(std::locale("chs"));
+		}
+#endif
 	}
 
 	IDTLogger->info("[主线程][IdtMain] 开始等待关闭程序信号发出");

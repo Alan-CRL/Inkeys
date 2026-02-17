@@ -1,8 +1,7 @@
 ﻿import Inkeys.Other.Json;
+import Inkeys.Conv.Text;
 
 #include "IdtI18n.h"
-
-#include "IdtText.h"
 
 bool I18n::load(int type, wstring path, wstring lang)
 {
