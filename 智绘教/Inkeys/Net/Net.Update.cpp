@@ -4,12 +4,13 @@ module;
 
 #include "../../IdtConfiguration.h"
 #include "../../IdtOther.h"
-#include "../../IdtText.h"
 #include "../../IdtTime.h"
 #include "../../IdtWindow.h"
 
 module Inkeys.Net.Update;
 import :Download;
+
+import Inkeys.Conv.Text;
 
 // 程序自动更新
 

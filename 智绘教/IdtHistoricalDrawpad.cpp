@@ -1,4 +1,6 @@
-﻿#include "IdtHistoricalDrawpad.h"
+﻿import Inkeys.Conv.Text;
+
+#include "IdtHistoricalDrawpad.h"
 
 #include "IdtConfiguration.h"
 #include "IdtDisplayManagement.h"
@@ -9,7 +11,6 @@
 #include "IdtImage.h"
 #include "IdtMagnification.h"
 #include "IdtState.h"
-#include "IdtText.h"
 #include "IdtTime.h"
 #include "IdtWindow.h"
 

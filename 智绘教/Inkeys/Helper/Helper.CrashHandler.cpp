@@ -1,14 +1,13 @@
-﻿#include "CrashHandler.h"
-#include <tchar.h>
-#include <cstdio>
-#include <ctime>
-#include <cstdlib>
-#include <atomic>
-#include <string>
-#include <vector>
-#include <system_error>
+module;
+
+#include "../../IdtMain.h"
+
+#include <dbghelp.h>
+#pragma comment(lib, "DbgHelp.lib")
 
 namespace fs = std::filesystem;
+
+module Inkeys.Helper.CrashHandler;
 
 // 静态成员初始化
 LPTOP_LEVEL_EXCEPTION_FILTER CrashHandler::PreviousFilter = nullptr;

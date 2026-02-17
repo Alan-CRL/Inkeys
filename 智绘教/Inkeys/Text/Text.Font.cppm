@@ -4,7 +4,7 @@ module;
 
 #include "../../IdtD2DPreparation.h"
 
-export module Inkeys.Load.Font;
+export module Inkeys.Text.Font;
 
 template <typename InterfaceType>
 inline void SafeRelease(InterfaceType** currentObject)
@@ -377,3 +377,10 @@ private:
 
 	static IDWriteFontCollectionLoader* instance_;
 };
+
+// 过时字体资源
+export extern PrivateFontCollection fontCollection;
+export extern FontFamily HarmonyOS_fontFamily;
+export extern StringFormat stringFormat;
+export extern StringFormat stringFormat_left;
+export extern RECT words_rect, dwords_rect, pptwords_rect;

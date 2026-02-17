@@ -1,12 +1,13 @@
-﻿#pragma once
+module;
 
-#include <windows.h>
+#include "../../IdtMain.h"
+
 #include <dbghelp.h>
-#include <filesystem>
-
 #pragma comment(lib, "DbgHelp.lib")
 
-class CrashHandler {
+export module Inkeys.Helper.CrashHandler;
+
+export class CrashHandler {
 public:
 	// 禁用构造函数和赋值操作
 	CrashHandler() = delete;
@@ -49,3 +50,15 @@ private:
 	static std::atomic<int> currentUserStateFlag;
 	static std::atomic<bool> currentUserIsSecond;
 };
+
+// Helper
+export void CloseProgram()
+{
+	CrashHandler::Shutdown();
+	offSignal = 1;
+}
+export void RestartProgram()
+{
+	CrashHandler::Shutdown();
+	offSignal = 2;
+}

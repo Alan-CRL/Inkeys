@@ -14,9 +14,7 @@ module;
 #include "../../../IdtPlug-in.h"
 #include "../../../IdtRts.h"
 #include "../../../IdtState.h"
-#include "../../../IdtText.h"
 #include "../../../IdtWindow.h"
-#include "../../../CrashHandler/CrashHandler.h"
 #include "../../../SuperTop/IdtSuperTop.h"
 
 #include <shlobj.h>
@@ -33,6 +31,8 @@ import Inkeys.Thread.Status;
 import Inkeys.Net.Update;
 import Inkeys.Load;
 import Inkeys.Other.Inputs;
+import Inkeys.Conv.Text;
+import Inkeys.Helper.CrashHandler;
 
 // 软件构建信息
 // signal1

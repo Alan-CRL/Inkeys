@@ -1,6 +1,5 @@
 ﻿#pragma once
 #include "IdtMain.h"
-#include "IdtText.h"
 
 wstring GetCurrentExeDirectory();
 wstring GetCurrentExePath();

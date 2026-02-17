@@ -3,7 +3,6 @@ module;
 #include "../../../IdtMain.h"
 
 #include "../../../IdtD2DPreparation.h"
-#include "../../../IdtText.h"
 
 #define LUNASVG_BUILD_STATIC
 #include <lunasvg/lunasvg.h>
@@ -14,6 +13,7 @@ module Inkeys.UI.Bar;
 import :UI;
 
 import Inkeys.Load;
+import Inkeys.Conv.Text;
 
 /// 继承
 //// 位置继承

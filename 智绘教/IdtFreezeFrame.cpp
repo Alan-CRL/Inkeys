@@ -1,4 +1,5 @@
 ﻿import Inkeys.Thread.Status;
+import Inkeys.Text.Font;
 
 #include "IdtFreezeFrame.h"
 
@@ -9,7 +10,6 @@
 #include "IdtImage.h"
 #include "IdtMagnification.h"
 #include "IdtPlug-in.h"
-#include "IdtText.h"
 #include "IdtWindow.h"
 
 int FreezeRecall;

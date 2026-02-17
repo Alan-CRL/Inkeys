@@ -2,19 +2,6 @@ module;
 
 #include "../../../IdtMain.h"
 
-// 历史遗留问题
-#include "../../../IdtDraw.h"
-#include "../../../IdtDrawpad.h"
-#include "../../../IdtHistoricalDrawpad.h"
-#include "../../../IdtImage.h"
-#include "../../../IdtState.h"
-
-#include "../../../IdtConfiguration.h"
-#include "../../../IdtD2DPreparation.h"
-#include "../../../IdtDisplayManagement.h"
-#include "../../../IdtWindow.h"
-#include "../../../IdtText.h"
-
 export module Inkeys.UI.Bar:Bottom;
 
 import :UI;

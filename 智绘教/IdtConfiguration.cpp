@@ -1,6 +1,7 @@
-﻿#include "IdtConfiguration.h"
+﻿import Inkeys.Conv.Text;
 
-#include "IdtText.h"
+#include "IdtConfiguration.h"
+
 #include "IdtState.h"
 
 // 占用文件

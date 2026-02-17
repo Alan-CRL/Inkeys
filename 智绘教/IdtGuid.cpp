@@ -1,6 +1,6 @@
-﻿#include "IdtGuid.h"
+﻿import Inkeys.Conv.Text;
 
-#include "IdtText.h"
+#include "IdtGuid.h"
 
 struct
 {

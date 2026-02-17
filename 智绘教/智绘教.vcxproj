@@ -511,7 +511,6 @@
     <ClInclude Include="additional\wintoastlib\wintoastlib.h" />
     <ClInclude Include="additional\ziputils\unzip.h" />
     <ClInclude Include="additional\ziputils\zip.h" />
-    <ClInclude Include="CrashHandler\CrashHandler.h" />
     <ClInclude Include="HiEasyX.h" />
     <ClInclude Include="HiEasyX\HiCanvas.h" />
     <ClInclude Include="HiEasyX\HiContainer.h" />
@@ -565,7 +564,6 @@
     <ClInclude Include="Launch\IdtLaunchState.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="IdtRts.h" />
-    <ClInclude Include="IdtText.h" />
     <ClInclude Include="IdtTime.h" />
     <ClInclude Include="IdtWindow.h" />
     <ClInclude Include="SuperTop\IdtSuperTop.h" />
@@ -598,7 +596,6 @@
     <ClCompile Include="additional\wintoastlib\wintoastlib.cpp" />
     <ClCompile Include="additional\ziputils\unzip.cpp" />
     <ClCompile Include="additional\ziputils\zip.cpp" />
-    <ClCompile Include="CrashHandler\CrashHandler.cpp" />
     <ClCompile Include="ExtraInclude.cpp" />
     <ClCompile Include="IdtConfiguration.cpp" />
     <ClCompile Include="IdtD2DPreparation.cpp" />
@@ -648,13 +645,13 @@
     <ClCompile Include="IdtMain.cpp" />
     <ClCompile Include="IdtOther.cpp" />
     <ClCompile Include="IdtPlug-in.cpp" />
-    <ClCompile Include="IdtText.cpp" />
     <ClCompile Include="IdtTime.cpp" />
     <ClCompile Include="IdtWindow.cpp" />
     <ClCompile Include="Inkeys\Conv\Conv.Color.cppm" />
-    <ClCompile Include="Inkeys\Load\Load.Font.cpp" />
+    <ClCompile Include="Inkeys\Conv\Conv.Text.cppm" />
+    <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cpp" />
+    <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cppm" />
     <ClCompile Include="Inkeys\Load\Load.cppm" />
-    <ClCompile Include="Inkeys\Load\Load.Font.cppm" />
     <ClCompile Include="Inkeys\Net\Net.Update.cpp" />
     <ClCompile Include="Inkeys\Net\Net.Update.cppm" />
     <ClCompile Include="Inkeys\Net\Net.Update.Download.cpp" />
@@ -662,6 +659,9 @@
     <ClCompile Include="Inkeys\Other\Other.Gesture.cppm" />
     <ClCompile Include="Inkeys\Other\Other.Inputs.cppm" />
     <ClCompile Include="Inkeys\Other\Other.Json.cppm" />
+    <ClCompile Include="Inkeys\Text\Text.Font.cpp" />
+    <ClCompile Include="Inkeys\Text\Text.Font.cppm" />
+    <ClCompile Include="Inkeys\Text\Text.Split.cppm" />
     <ClCompile Include="Inkeys\Thread\Thread.Status.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Bottom.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Buttom.cpp" />
