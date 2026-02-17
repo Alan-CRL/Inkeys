@@ -61,7 +61,7 @@ bool OccupyFileForWrite(HANDLE* hFile, const wstring& filePath)
 // 释放文件
 bool UnOccupyFile(HANDLE* hFile)
 {
-	if (*hFile != NULL)
+	if (*hFile != NULL && *hFile != INVALID_HANDLE_VALUE)
 	{
 		CloseHandle(*hFile);
 		return true;
@@ -336,6 +336,15 @@ bool ReadSetting()
 				}
 			}
 		}
+
+		if (setlistVal.isMember("Experimental") && setlistVal["Experimental"].isObject())
+		{
+			if (setlistVal["Experimental"].isMember("Inkeys3") && setlistVal["Experimental"]["Inkeys3"].isObject())
+			{
+				if (setlistVal["Experimental"]["Inkeys3"].isMember("UI3") && setlistVal["Experimental"]["Inkeys3"]["UI3"].isBool())
+					setlist.Experimental.Inkeys3.UI3 = setlistVal["Experimental"]["Inkeys3"]["UI3"].asBool();
+			}
+		}
 	}
 	else return false;
 
@@ -528,6 +537,12 @@ bool WriteSetting()
 					setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandProfile"] = Json::Value(setlist.component.shortcutButton.linkage.classislandProfile);
 					setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandClassswap"] = Json::Value(setlist.component.shortcutButton.linkage.classislandClassswap);
 				}
+			}
+		}
+
+		{
+			{
+				setlistVal["Experimental"]["Inkeys3"]["UI3"] = Json::Value(setlist.Experimental.Inkeys3.UI3);
 			}
 		}
 	}

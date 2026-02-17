@@ -11,6 +11,14 @@
  * @email		alan-crl@foxmail.com
 */
 
+import Inkeys.UI.Setting;
+import Inkeys.UI.Bar;
+import Inkeys.Thread.Status;
+import Inkeys.Net.Update;
+import Inkeys.Load;
+import Inkeys.Load.Font;
+import Inkeys.Other.Gesture;
+
 #include "IdtMain.h"
 #include "resource.h"
 
@@ -29,16 +37,11 @@
 #include "IdtOther.h"
 #include "IdtPlug-in.h"
 #include "IdtRts.h"
-#include "IdtSetting.h"
 #include "IdtStart.h"
 #include "IdtState.h"
 #include "IdtText.h"
 #include "IdtTime.h"
-#include "IdtUpdate.h"
 #include "IdtWindow.h"
-#include "Inkeys/UI/IdtBar.h"
-#include "Inkeys/Other/IdtGesture.h"
-#include "Inkeys/Load/IdtFontLoad.h"
 #include "Launch/IdtLaunchState.h"
 #include "SuperTop/IdtSuperTop.h"
 
@@ -48,7 +51,7 @@
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20260207a";				// 程序发布日期
+wstring editionDate = L"20260217a";				// 程序发布日期
 wstring editionChannel = L"Canary";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -59,7 +62,6 @@ wstring programArchitecture = L"win32";
 wstring targetArchitecture = L"win32";
 
 IdtAtomic<int> offSignal;						// 关闭指令
-map <wstring, bool> threadStatus;				// 线程状态管理
 
 void CloseProgram()
 {
@@ -78,8 +80,36 @@ IdtAtomic<bool> useInkeys3UI = false;
 
 // 程序入口点
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
-// int main()
 {
+	{
+		// 创建测试控制台
+
+#ifndef IDT_RELEASE
+		{
+			AllocConsole();
+
+			FILE* fp;
+			freopen_s(&fp, "CONOUT$", "w", stdout);
+			freopen_s(&fp, "CONOUT$", "w", stderr);
+			freopen_s(&fp, "CONIN$", "r", stdin);
+
+			// 让 C++ 流重新与 C 的 FILE* 同步
+			// true = 同步；不传参数的重载在 C++11 之后是被弃用的（某些编译器行为不定）
+			std::ios::sync_with_stdio(true);
+
+			// 清空原来的缓冲（保证重新绑定后生效）
+			std::wcout.clear();
+			std::wcin.clear();
+			std::wcerr.clear();
+			std::cout.clear();
+			std::cin.clear();
+			std::cerr.clear();
+
+			std::wcout.imbue(std::locale("chs"));
+		}
+#endif
+	}
+
 	// 路径预处理
 	{
 		globalPath = GetCurrentExeDirectory() + L"\\";
@@ -196,7 +226,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			}
 
 			wstring mutexName = L"Inkeys_" + currentExeDirectory;
-			if (mutexName.length() > 255) mutexName = mutexName.substr(255);
+			if (mutexName.length() > 255) mutexName = mutexName.substr(0, 255);
 
 			launchMutex = CreateMutexW(
 				NULL,           // 默认安全属性
@@ -300,7 +330,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 					DWORD bytesRead = 0;
 					if (flag && SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) flag = false;
-					if (flag && !ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize) flag = false;
+					if (flag && (!ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize)) flag = false;
 					if (flag && jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
 				}
 			}
@@ -425,7 +455,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 					DWORD bytesRead = 0;
 					if (flag && SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) flag = false;
-					if (flag && !ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize) flag = false;
+					if (flag && (!ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize)) flag = false;
 					if (flag && jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
 				}
 			}
@@ -1046,6 +1076,16 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			}
 		}
 
+		// 需要重启生效的配置
+		{
+			useInkeys3UI = setlist.Experimental.Inkeys3.UI3;
+
+			if (useInkeys3UI)
+			{
+				setlist.selectLanguage = 1;
+			}
+		}
+
 		IDTLogger->info("[主线程][IdtMain] 配置信息初始化完成");
 	}
 	// I18N初始化
@@ -1072,7 +1112,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	{
 		//PptCOM 组件加载
 		{
-			if (!ExtractResource((globalPath + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(222)))
+			if (!Inkeys::Load::ExtractResourceFile((globalPath + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(222)))
 				IDTLogger->warn("[主线程][IdtMain] 解压PptCOM.dll失败");
 
 			ACTCTX actCtx = { 0 };
@@ -1214,7 +1254,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		// 窗口创建完成后处理的
 		auto disableGestureFuc = [&](HWND hWnd) -> void
 			{
-				IdtGesture::DisableEdgeGestures(hWnd, true);
+				Inkeys::Gesture::DisableEdgeGestures(hWnd, true);
 			};
 		auto touchRegisterFuc = [&](HWND hWnd) -> void
 			{
@@ -1260,7 +1300,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 线程
 	{
-		if (useInkeys3UI) thread(BarInitializationClass::Initialization).detach();
+		if (useInkeys3UI) thread(Inkeys::UI::Bar::Initialization).detach();
 		else thread(floating_main).detach();
 		thread(SettingMain).detach();
 		thread(drawpad_main).detach();
@@ -1276,35 +1316,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		IDTLogger->info("[主线程][IdtMain] 线程初始化完成");
 	}
 
-	{
-		// 创建测试控制台
-
-#ifndef IDT_RELEASE
-		{
-			AllocConsole();
-
-			FILE* fp;
-			freopen_s(&fp, "CONOUT$", "w", stdout);
-			freopen_s(&fp, "CONOUT$", "w", stderr);
-			freopen_s(&fp, "CONIN$", "r", stdin);
-
-			// 让 C++ 流重新与 C 的 FILE* 同步
-			// true = 同步；不传参数的重载在 C++11 之后是被弃用的（某些编译器行为不定）
-			std::ios::sync_with_stdio(true);
-
-			// 清空原来的缓冲（保证重新绑定后生效）
-			std::wcout.clear();
-			std::wcin.clear();
-			std::wcerr.clear();
-			std::cout.clear();
-			std::cin.clear();
-			std::cerr.clear();
-
-			std::wcout.imbue(std::locale("chs"));
-		}
-#endif
-	}
-
 	IDTLogger->info("[主线程][IdtMain] 开始等待关闭程序信号发出");
 
 	while (!offSignal) this_thread::sleep_for(chrono::milliseconds(500));
@@ -1312,10 +1323,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	IDTLogger->info("[主线程][IdtMain] 等待各函数线程结束");
 
 	{
+		using namespace Inkeys::Thread;
+
 		int WaitingCount = 0;
 		for (; WaitingCount < 20; WaitingCount++)
 		{
-			if (!threadStatus[L"floating_main"] && !threadStatus[L"drawpad_main"] && !threadStatus[L"SettingMain"] && !threadStatus[L"FreezeFrameWindow"] && !threadStatus[L"NetUpdate"] && !threadStatus[L"PPTLinkageMain"]) break;
+			if (!GetStatus("floating_main") && !GetStatus("drawpad_main") && !GetStatus("SettingMain") && !GetStatus("FreezeFrameWindow") && !GetStatus("NetUpdate") && !GetStatus("PPTLinkageMain")) break;
 			this_thread::sleep_for(chrono::milliseconds(500));
 		}
 		if (WaitingCount >= 20) IDTLogger->warn("[主线程][IdtMain] 结束函数线程超时并强制结束线程");

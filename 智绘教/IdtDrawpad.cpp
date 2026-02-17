@@ -1,4 +1,8 @@
-﻿#include "IdtDrawpad.h"
+﻿import Inkeys.UI.Bar;
+import Inkeys.Thread.Status;
+import Inkeys.Other.Inputs;
+
+#include "IdtDrawpad.h"
 
 #include "IdtConfiguration.h"
 #include "IdtDisplayManagement.h"
@@ -12,10 +16,7 @@
 #include "IdtState.h"
 #include "IdtText.h"
 #include "IdtTime.h"
-#include "IdtUpdate.h"
 #include "IdtWindow.h"
-#include "Inkeys/UI/IdtBar.h"
-#include "Inkeys/Other/IdtInputs.h"
 
 #include <queue>
 
@@ -38,8 +39,8 @@ shared_mutex StrokeBackImageSm;
 bool drawWaiting; // 绘制等待：启用标识时暂时停止绘制
 shared_mutex drawWaitingSm;
 
-IMAGE drawpad(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)); //主画板
-IMAGE window_background(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+IMAGE drawpad; //主画板
+IMAGE window_background;
 
 HHOOK DrawpadHookCall;
 bool IsHotkeyDown;
@@ -49,10 +50,10 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 	{
 		KBDLLHOOKSTRUCT* pKeyInfo = (KBDLLHOOKSTRUCT*)lParam;
 
-		if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) IdtInputs::SetKeyBoardDown((BYTE)pKeyInfo->vkCode, true);
-		else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) IdtInputs::SetKeyBoardDown((BYTE)pKeyInfo->vkCode, false);
+		if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) Inkeys::Inputs::SetKeyBoardDown((BYTE)pKeyInfo->vkCode, true);
+		else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) Inkeys::Inputs::SetKeyBoardDown((BYTE)pKeyInfo->vkCode, false);
 
-		if (!IsHotkeyDown && (IdtInputs::IsKeyBoardDown(VK_CONTROL) || IdtInputs::IsKeyBoardDown(VK_LCONTROL) || IdtInputs::IsKeyBoardDown(VK_RCONTROL)) && (IdtInputs::IsKeyBoardDown(VK_LWIN) || IdtInputs::IsKeyBoardDown(VK_RWIN)) && (IdtInputs::IsKeyBoardDown(VK_MENU) || IdtInputs::IsKeyBoardDown(VK_LMENU) || IdtInputs::IsKeyBoardDown(VK_RMENU)))
+		if (!IsHotkeyDown && (Inkeys::Inputs::IsKeyBoardDown(VK_CONTROL) || Inkeys::Inputs::IsKeyBoardDown(VK_LCONTROL) || Inkeys::Inputs::IsKeyBoardDown(VK_RCONTROL)) && (Inkeys::Inputs::IsKeyBoardDown(VK_LWIN) || Inkeys::Inputs::IsKeyBoardDown(VK_RWIN)) && (Inkeys::Inputs::IsKeyBoardDown(VK_MENU) || Inkeys::Inputs::IsKeyBoardDown(VK_LMENU) || Inkeys::Inputs::IsKeyBoardDown(VK_RMENU)))
 		{
 			IsHotkeyDown = true;
 
@@ -65,7 +66,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 				barUISet.UpdateRendering();
 			}
 		}
-		else if (IsHotkeyDown && !(IdtInputs::IsKeyBoardDown(VK_CONTROL) || IdtInputs::IsKeyBoardDown(VK_LCONTROL) || IdtInputs::IsKeyBoardDown(VK_RCONTROL)) && !(IdtInputs::IsKeyBoardDown(VK_LWIN) || IdtInputs::IsKeyBoardDown(VK_RWIN)) && !(IdtInputs::IsKeyBoardDown(VK_MENU) || IdtInputs::IsKeyBoardDown(VK_LMENU) || IdtInputs::IsKeyBoardDown(VK_RMENU))) IsHotkeyDown = false;
+		else if (IsHotkeyDown && !(Inkeys::Inputs::IsKeyBoardDown(VK_CONTROL) || Inkeys::Inputs::IsKeyBoardDown(VK_LCONTROL) || Inkeys::Inputs::IsKeyBoardDown(VK_RCONTROL)) && !(Inkeys::Inputs::IsKeyBoardDown(VK_LWIN) || Inkeys::Inputs::IsKeyBoardDown(VK_RWIN)) && !(Inkeys::Inputs::IsKeyBoardDown(VK_MENU) || Inkeys::Inputs::IsKeyBoardDown(VK_LMENU) || Inkeys::Inputs::IsKeyBoardDown(VK_RMENU))) IsHotkeyDown = false;
 
 		// 全局状态变量
 		bool checkEndShowIsChecking = CheckEndShow.isChecking;
@@ -82,7 +83,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			case VK_DOWN:   // 下箭头
 			case VK_RETURN: // Enter
 			{
-				if (IdtInputs::IsKeyBoardDown((BYTE)pKeyInfo->vkCode))
+				if (Inkeys::Inputs::IsKeyBoardDown((BYTE)pKeyInfo->vkCode))
 				{
 					pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
 					pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
@@ -97,7 +98,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			case VK_UP:     // 上箭头
 			case VK_BACK:   // Backsapce
 			{
-				if (IdtInputs::IsKeyBoardDown((BYTE)pKeyInfo->vkCode))
+				if (Inkeys::Inputs::IsKeyBoardDown((BYTE)pKeyInfo->vkCode))
 				{
 					pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
 					pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
@@ -121,7 +122,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			msgKey.vkcode = (BYTE)pKeyInfo->vkCode;
 
 			// 借用结构：是否按下 ctrl
-			msgKey.prevdown = (IdtInputs::IsKeyBoardDown(VK_CONTROL) || IdtInputs::IsKeyBoardDown(VK_LCONTROL) || IdtInputs::IsKeyBoardDown(VK_RCONTROL));
+			msgKey.prevdown = (Inkeys::Inputs::IsKeyBoardDown(VK_CONTROL) || Inkeys::Inputs::IsKeyBoardDown(VK_LCONTROL) || Inkeys::Inputs::IsKeyBoardDown(VK_RCONTROL));
 
 			int index = hiex::GetWindowIndex(drawpad_window, false);
 			unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
@@ -225,7 +226,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 		}
 		*/
 		// 穿透所需的额外情况（穿透模式下禁用 Ctrl + E，用于关闭穿透）
-		else if (penetrate.select && (IdtInputs::IsKeyBoardDown(VK_CONTROL) || IdtInputs::IsKeyBoardDown(VK_LCONTROL) || IdtInputs::IsKeyBoardDown(VK_RCONTROL)) && (BYTE)pKeyInfo->vkCode == (BYTE)0x45)
+		else if (penetrate.select && (Inkeys::Inputs::IsKeyBoardDown(VK_CONTROL) || Inkeys::Inputs::IsKeyBoardDown(VK_LCONTROL) || Inkeys::Inputs::IsKeyBoardDown(VK_RCONTROL)) && (BYTE)pKeyInfo->vkCode == (BYTE)0x45)
 		{
 			ExMessage msgKey = {};
 			msgKey.message = wParam;
@@ -283,7 +284,7 @@ void KeyboardInteraction()
 					std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 					while (1)
 					{
-						if (!IdtInputs::IsKeyBoardDown(vkcode)) break;
+						if (!Inkeys::Inputs::IsKeyBoardDown(vkcode)) break;
 
 						if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400) PreviousPptSlides();
 
@@ -315,7 +316,7 @@ void KeyboardInteraction()
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 						while (1)
 						{
-							if (!IdtInputs::IsKeyBoardDown(vkcode)) break;
+							if (!Inkeys::Inputs::IsKeyBoardDown(vkcode)) break;
 
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
@@ -343,7 +344,7 @@ void KeyboardInteraction()
 			{
 				auto vkcode = m.vkcode;
 
-				while (IdtInputs::IsKeyBoardDown(vkcode)) this_thread::sleep_for(chrono::milliseconds(20));
+				while (Inkeys::Inputs::IsKeyBoardDown(vkcode)) this_thread::sleep_for(chrono::milliseconds(20));
 
 				if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 				{
@@ -362,7 +363,7 @@ void KeyboardInteraction()
 		{
 			while (1)
 			{
-				if (!IdtInputs::IsKeyBoardDown((BYTE)0x51))
+				if (!Inkeys::Inputs::IsKeyBoardDown((BYTE)0x51))
 				{
 					if (FreezeFrame.mode != 1)
 					{
@@ -388,7 +389,7 @@ void KeyboardInteraction()
 		{
 			while (1)
 			{
-				if (!IdtInputs::IsKeyBoardDown((BYTE)0x45))
+				if (!Inkeys::Inputs::IsKeyBoardDown((BYTE)0x45))
 				{
 					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection)
 					{
@@ -416,7 +417,7 @@ void KeyboardInteraction()
 		{
 			while (1)
 			{
-				if (!IdtInputs::IsKeyBoardDown((BYTE)0x5A))
+				if (!Inkeys::Inputs::IsKeyBoardDown((BYTE)0x5A))
 				{
 					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && (!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0))) IdtRecall();
 					else if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && RecallImage.empty() && current_record_pointer <= total_record_pointer + 1 && practical_total_record_pointer) IdtRecovery();
@@ -1414,7 +1415,7 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 }
 void DrawpadDrawing()
 {
-	threadStatus[L"DrawpadDrawing"] = true;
+	Inkeys::Thread::StatusGuard guard("DrawpadDrawing");
 
 	// 设置BLENDFUNCTION结构体
 	BLENDFUNCTION blend;
@@ -2131,12 +2132,12 @@ void DrawpadDrawing()
 	}
 
 DrawpadDrawingEnd:
-	threadStatus[L"DrawpadDrawing"] = false;
+
 	return;
 }
 int drawpad_main()
 {
-	threadStatus[L"drawpad_main"] = true;
+	Inkeys::Thread::StatusGuard guard("drawpad_main");
 
 	// 窗口初始化
 	{
@@ -2279,9 +2280,11 @@ int drawpad_main()
 	int i = 1;
 	for (; i <= 10; i++)
 	{
-		if (!threadStatus[L"DrawpadDrawing"]) break;
+		using namespace Inkeys::Thread;
+
+		if (!GetStatus("DrawpadDrawing")) break;
 		this_thread::sleep_for(chrono::milliseconds(500));
 	}
-	threadStatus[L"drawpad_main"] = false;
+
 	return 0;
 }

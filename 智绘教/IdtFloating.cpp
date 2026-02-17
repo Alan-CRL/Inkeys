@@ -1,4 +1,7 @@
-﻿#pragma once
+﻿import Inkeys.Thread.Status;
+import Inkeys.Net.Update;
+import Inkeys.Other.Inputs;
+
 #include "IdtFloating.h"
 
 #include "IdtConfiguration.h"
@@ -15,10 +18,8 @@
 #include "IdtState.h"
 #include "IdtText.h"
 #include "IdtTime.h"
-#include "IdtUpdate.h"
 #include "IdtWindow.h"
 #include "SuperTop/IdtSuperTop.h"
-#include "Inkeys/Other/IdtInputs.h"
 
 #include <shldisp.h>
 #include <exdisp.h>
@@ -137,7 +138,7 @@ pair<double, double> GetPointOnCircle(double x, double y, double r, double angle
 
 int SeekBar(ExMessage m)
 {
-	if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) return 0;
+	if (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)) return 0;
 
 	POINT p;
 	GetCursorPos(&p);
@@ -149,7 +150,7 @@ int SeekBar(ExMessage m)
 
 	while (1)
 	{
-		if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON)) break;
+		if (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)) break;
 		GetCursorPos(&p);
 
 		if (firX == p.x && firY == p.y) continue;
@@ -212,10 +213,10 @@ LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 	}
 
 	{
-		if (wParam == WM_LBUTTONDOWN) IdtInputs::SetKeyBoardDown(VK_LBUTTON, true);
+		if (wParam == WM_LBUTTONDOWN) Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, true);
 		else if (wParam == WM_LBUTTONUP)
 		{
-			IdtInputs::SetKeyBoardDown(VK_LBUTTON, false);
+			Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, false);
 
 			// 通知鼠标抬起
 			if (useMouseInput && leftButtonPid != 0)
@@ -224,13 +225,13 @@ LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 				thread(MouseUpCollapse, WM_LBUTTONUP).detach();
 			}
 		}
-		else if (wParam == WM_MBUTTONDOWN) IdtInputs::SetKeyBoardDown(VK_MBUTTON, true);
-		else if (wParam == WM_MBUTTONUP) IdtInputs::SetKeyBoardDown(VK_MBUTTON, false);
+		else if (wParam == WM_MBUTTONDOWN) Inkeys::Inputs::SetKeyBoardDown(VK_MBUTTON, true);
+		else if (wParam == WM_MBUTTONUP) Inkeys::Inputs::SetKeyBoardDown(VK_MBUTTON, false);
 
-		else if (wParam == WM_RBUTTONDOWN) IdtInputs::SetKeyBoardDown(VK_RBUTTON, true);
+		else if (wParam == WM_RBUTTONDOWN) Inkeys::Inputs::SetKeyBoardDown(VK_RBUTTON, true);
 		else if (wParam == WM_RBUTTONUP)
 		{
-			IdtInputs::SetKeyBoardDown(VK_RBUTTON, false);
+			Inkeys::Inputs::SetKeyBoardDown(VK_RBUTTON, false);
 
 			// 通知鼠标抬起
 			if (useMouseInput && rightButtonPid != 0)
@@ -488,9 +489,10 @@ LRESULT CALLBACK FloatingMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
 //绘制屏幕
 void DrawScreen()
 {
+	Inkeys::Thread::StatusGuard guard("DrawScreen");
+
 	Bitmap* bskin3;
 
-	threadStatus[L"DrawScreen"] = true;
 	//初始化
 	{
 		//媒体资源读取
@@ -5523,12 +5525,10 @@ void DrawScreen()
 			if (delay >= 1.0) std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(delay)));
 		}
 	}
-
-	threadStatus[L"DrawScreen"] = false;
 }
 void MouseInteraction()
 {
-	threadStatus[L"MouseInteraction"] = true;
+	Inkeys::Thread::StatusGuard guard("MouseInteraction");
 
 	StateModeStruct_Discard floatingInfo;
 	int brush_connect = -1;
@@ -5869,7 +5869,7 @@ void MouseInteraction()
 								else widthBuffer = 101 + int(double(idx - 260) / 60.0 * 399.0);
 								SetPenWidth((float)widthBuffer, false);
 
-								if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON))
+								if (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON))
 								{
 									SetPenWidth((float)widthBuffer);
 									break;
@@ -6079,7 +6079,7 @@ void MouseInteraction()
 									UIControlTarget[L"RoundRect/BrushColorChooseMark/x"].v = UIControl[L"RoundRect/BrushColorChooseMark/x"].v = result.x + UIControl[L"RoundRect/BrushColorChooseWheel/x"].v - 7;
 									UIControlTarget[L"RoundRect/BrushColorChooseMark/y"].v = UIControl[L"RoundRect/BrushColorChooseMark/y"].v = result.y + UIControl[L"RoundRect/BrushColorChooseWheel/y"].v - 7;
 
-									if (!IdtInputs::IsKeyBoardDown(VK_LBUTTON))
+									if (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON))
 									{
 										SetPenColor(RGBA(red, green, blue, (floatingInfo.brushColor >> 24) & 0xFF));
 										break;
@@ -6637,22 +6637,17 @@ void MouseInteraction()
 		}
 		else hiex::flushmessage_win32(EM_MOUSE, floating_window);
 	}
-
-	threadStatus[L"MouseInteraction"] = false;
 }
 
 int floating_main()
 {
-	threadStatus[L"floating_main"] = true;
-	GetLocalTime(&sys_time);
+	Inkeys::Thread::StatusGuard guard("floating_main");
 
 	hiex::SetWndProcFunc(floating_window, FloatingMsgCallback);
 
 	thread FloatingInstallHookThread(FloatingInstallHook);
 	FloatingInstallHookThread.detach();
 
-	//thread GetTime_thread(GetTime);
-	//GetTime_thread.detach();
 	//LOG(INFO) << "尝试启动悬浮窗窗口绘制线程";
 	thread DrawScreen_thread(DrawScreen);
 	DrawScreen_thread.detach();
@@ -6667,10 +6662,11 @@ int floating_main()
 	int i = 1;
 	for (; i <= 10; i++)
 	{
-		if (!threadStatus[L"PPTLinkageMain"]/*&& !threadStatus[L"GetPptState"] && !threadStatus[L"PptInteract"] */ && !threadStatus[L"GetTime"] && !threadStatus[L"DrawScreen"] && !threadStatus[L"api_read_pipe"] && !threadStatus[L"BlackBlock"]) break;
+		using namespace Inkeys::Thread;
+
+		if (!GetStatus("PPTLinkageMain") && !GetStatus("DrawScreen")) break;
 		this_thread::sleep_for(chrono::milliseconds(500));
 	}
 
-	threadStatus[L"floating_main"] = false;
 	return 0;
 }

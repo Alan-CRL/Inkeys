@@ -45,7 +45,7 @@
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
-    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
@@ -59,7 +59,7 @@
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
-    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'" Label="Configuration">
@@ -194,6 +194,7 @@
       </CompileAsManaged>
       <GenerateSourceDependencies>true</GenerateSourceDependencies>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <ScanSourceForModuleDependencies>true</ScanSourceForModuleDependencies>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -262,6 +263,7 @@
       </CompileAsManaged>
       <GenerateSourceDependencies>true</GenerateSourceDependencies>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <ScanSourceForModuleDependencies>true</ScanSourceForModuleDependencies>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -322,7 +324,7 @@
       <SDLCheck>
       </SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;IMGUI_DISABLE_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>Default</ConformanceMode>
+      <ConformanceMode>true</ConformanceMode>
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <AdditionalIncludeDirectories>.\additional;.\binarypackage\OpenSSL-Arm64\include;$(IntDir)</AdditionalIncludeDirectories>
@@ -332,6 +334,7 @@
       <GenerateSourceDependencies>true</GenerateSourceDependencies>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
+      <ScanSourceForModuleDependencies>true</ScanSourceForModuleDependencies>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -550,31 +553,17 @@
     <ClInclude Include="IdtImage.h" />
     <ClInclude Include="IdtMagnification.h" />
     <ClInclude Include="IdtMain.h" />
-    <ClInclude Include="IdtNet.h" />
     <ClInclude Include="IdtOther.h" />
     <ClInclude Include="IdtPlug-in.h" />
-    <ClInclude Include="IdtSetting.h" />
     <ClInclude Include="IdtStart.h" />
     <ClInclude Include="IdtState.h" />
     <ClInclude Include="IdtSysNotifications.h" />
-    <ClInclude Include="Inkeys\Conv\IdtColor.h" />
-    <ClInclude Include="Inkeys\Json\IdtJson.h" />
-    <ClInclude Include="Inkeys\Load\IdtFontLoad.h" />
-    <ClInclude Include="Inkeys\Load\IdtLoad.h" />
-    <ClInclude Include="Inkeys\Other\IdtGesture.h" />
-    <ClInclude Include="Inkeys\Other\IdtInputs.h" />
-    <ClInclude Include="Inkeys\UI\IdtBar.h" />
-    <ClInclude Include="Inkeys\UI\IdtBarBottom.h" />
-    <ClInclude Include="Inkeys\UI\IdtBarFormat.h" />
-    <ClInclude Include="Inkeys\UI\IdtBarRenderingAttribute.h" />
-    <ClInclude Include="Inkeys\UI\IdtBarState.h" />
-    <ClInclude Include="Inkeys\UI\IdtBarUI.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Wrap.h" />
     <ClInclude Include="Launch\IdtLaunchState.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="IdtRts.h" />
     <ClInclude Include="IdtText.h" />
     <ClInclude Include="IdtTime.h" />
-    <ClInclude Include="IdtUpdate.h" />
     <ClInclude Include="IdtWindow.h" />
     <ClInclude Include="SuperTop\IdtSuperTop.h" />
     <ClInclude Include="SuperTop\IdtToken.h" />
@@ -648,9 +637,7 @@
     <ClCompile Include="IdtHistoricalDrawpad.cpp" />
     <ClCompile Include="IdtI18n.cpp" />
     <ClCompile Include="IdtImage.cpp" />
-    <ClCompile Include="IdtNet.cpp" />
     <ClCompile Include="IdtRts.cpp" />
-    <ClCompile Include="IdtSetting.cpp" />
     <ClCompile Include="IdtStart.cpp" />
     <ClCompile Include="IdtState.cpp" />
     <ClCompile Include="IdtSysNotifications.cpp" />
@@ -660,17 +647,36 @@
     <ClCompile Include="IdtPlug-in.cpp" />
     <ClCompile Include="IdtText.cpp" />
     <ClCompile Include="IdtTime.cpp" />
-    <ClCompile Include="IdtUpdate.cpp" />
     <ClCompile Include="IdtWindow.cpp" />
-    <ClCompile Include="Inkeys\Load\IdtFontLoad.cpp" />
-    <ClCompile Include="Inkeys\Other\IdtGesture.cpp" />
-    <ClCompile Include="Inkeys\Other\IdtInputs.cpp" />
-    <ClCompile Include="Inkeys\UI\IdtBar.cpp" />
-    <ClCompile Include="Inkeys\UI\IdtBarBottom.cpp" />
-    <ClCompile Include="Inkeys\UI\IdtBarFormat.cpp" />
-    <ClCompile Include="Inkeys\UI\IdtBarRenderingAttribute.cpp" />
-    <ClCompile Include="Inkeys\UI\IdtBarState.cpp" />
-    <ClCompile Include="Inkeys\UI\IdtBarUI.cpp" />
+    <ClCompile Include="Inkeys\Conv\Conv.Color.cppm" />
+    <ClCompile Include="Inkeys\Load\Load.Font.cpp" />
+    <ClCompile Include="Inkeys\Load\Load.cppm" />
+    <ClCompile Include="Inkeys\Load\Load.Font.cppm" />
+    <ClCompile Include="Inkeys\Net\Net.Update.cpp" />
+    <ClCompile Include="Inkeys\Net\Net.Update.cppm" />
+    <ClCompile Include="Inkeys\Net\Net.Update.Download.cpp" />
+    <ClCompile Include="Inkeys\Net\Net.Update.Download.cppm" />
+    <ClCompile Include="Inkeys\Other\Other.Gesture.cppm" />
+    <ClCompile Include="Inkeys\Other\Other.Inputs.cppm" />
+    <ClCompile Include="Inkeys\Other\Other.Json.cppm" />
+    <ClCompile Include="Inkeys\Thread\Thread.Status.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Bottom.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Buttom.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Format.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RenderingAttribute.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.State.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.State.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cppm" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Base.cppm" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.cpp" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.cppm" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cpp" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cppm" />
     <ClCompile Include="Launch\IdtLaunchState.cpp" />
     <ClCompile Include="SuperTop\IdtSuperTop.cpp" />
   </ItemGroup>
