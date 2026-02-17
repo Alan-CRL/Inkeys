@@ -51,7 +51,7 @@ import Inkeys.Other.Gesture;
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20260217a";				// 程序发布日期
+wstring editionDate = L"20260217b";				// 程序发布日期
 wstring editionChannel = L"Canary";				// 程序发布通道
 
 wstring userId;									// 用户GUID
