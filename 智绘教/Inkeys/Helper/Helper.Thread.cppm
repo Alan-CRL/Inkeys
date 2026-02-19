@@ -6,8 +6,9 @@ module;
 #undef min
 #include "libcuckoo/cuckoohash_map.hh"
 
-export module Inkeys.Thread.Status;
+export module Inkeys.Helper.Thread;
 
+// 将来废弃，将来将会使用 jthread 严格管理线程状态
 namespace Inkeys::Thread
 {
 	//线程状态管理
@@ -46,4 +47,24 @@ namespace Inkeys::Thread
 	private:
 		string key;
 	};
+
+	// 自定义消息
+	export constexpr unsigned int WM_USER_STOP_Win32Msg = WM_USER + 1; // Win32 消息循环退出标志
+
+	// 常量 jthread 对象，用于大模块拥有独立初始化流程而设计
+	export class ConstantThreadClass
+	{
+	public:
+		jthread settingInitializationJthread;
+
+	public:
+		void RequestStop(jthread& thread)
+		{
+			if (thread.joinable())
+			{
+				thread.request_stop();
+				thread.join();
+			}
+		}
+	} constantThread;
 }

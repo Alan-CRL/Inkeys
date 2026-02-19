@@ -97,9 +97,6 @@
     <Filter Include="Modules\Inkeys\Conv">
       <UniqueIdentifier>{1522c836-7846-41b3-bbd8-93034e6b9495}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Modules\Inkeys\Thread">
-      <UniqueIdentifier>{fb47f763-ac2c-4357-8cda-ac7a50599b00}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Modules\Inkeys\Net">
       <UniqueIdentifier>{5f5718c8-20fd-405f-8e19-31c9d3625667}</UniqueIdentifier>
     </Filter>
@@ -1031,9 +1028,6 @@
     <ClCompile Include="Inkeys\Conv\Conv.Color.cppm">
       <Filter>Modules\Inkeys\Conv</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\Thread\Thread.Status.cppm">
-      <Filter>Modules\Inkeys\Thread</Filter>
-    </ClCompile>
     <ClCompile Include="Inkeys\Net\Net.Update.cpp">
       <Filter>Modules\Inkeys\Net</Filter>
     </ClCompile>
@@ -1083,6 +1077,9 @@
       <Filter>Modules\Inkeys\Helper</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cpp">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Helper\Helper.Thread.cppm">
       <Filter>Modules\Inkeys\Helper</Filter>
     </ClCompile>
   </ItemGroup>

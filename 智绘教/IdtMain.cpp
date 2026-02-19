@@ -14,7 +14,7 @@
 import Inkeys.Helper.CrashHandler;
 import Inkeys.UI.Setting;
 import Inkeys.UI.Bar;
-import Inkeys.Thread.Status;
+import Inkeys.Helper.Thread;
 import Inkeys.Net.Update;
 import Inkeys.Load;
 import Inkeys.Other.Gesture;
@@ -52,8 +52,8 @@ import Inkeys.Text.Font;
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20260217c";				// 程序发布日期
-wstring editionChannel = L"Canary";				// 程序发布通道
+wstring editionDate = L"20260218a";				// 程序发布日期
+wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -171,7 +171,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			}
 		}
 
-#ifdef IDT_RELEASE
+		#ifdef IDT_RELEASE
 		if (!LaunchState::restart && !LaunchState::warnTry && !LaunchState::crashTry && !superTopComplete)
 		{
 			wstring currentExeDirectory = GetCurrentExeDirectory();
@@ -203,7 +203,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				return 0;
 			}
 		}
-#endif
+		#endif
 		if (LaunchState::crashTry) CrashHandler::IsSecond(true);
 	}
 	// 崩溃助手初始化
@@ -212,15 +212,15 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 体系架构识别
 	{
-#if defined(_M_ARM64)
+		#if defined(_M_ARM64)
 		programArchitecture = L"arm64";
-#elif defined(_M_ARM64EC)
+		#elif defined(_M_ARM64EC)
 		programArchitecture = L"arm64ec";
-#elif defined(_WIN64)
+		#elif defined(_WIN64)
 		programArchitecture = L"win64";
-#else
+		#else
 		programArchitecture = L"win32";
-#endif
+		#endif
 
 		USHORT processMachine = 0, nativeMachine = 0;
 		bool successFlg = false;
@@ -1098,9 +1098,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			windowsEdition = to_wstring(windowsVersion.majorVersion) + L"." + to_wstring(windowsVersion.minorVersion) + L"." + to_wstring(windowsVersion.buildNumber);
 		}
 
-#ifdef IDT_RELEASE
+		#ifdef IDT_RELEASE
 		thread(AutomaticUpdate).detach();
-#endif
+		#endif
 	}
 
 	// 界面绘图库初始化
@@ -1260,27 +1260,28 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		thread(RTSSpeed).detach();
 		rtsWait = false;
 	}
-	// 线程
-	{
-		if (useInkeys3UI) thread(Inkeys::UI::Bar::Initialization).detach();
-		else thread(floating_main).detach();
-		thread(SettingMain).detach();
-		thread(drawpad_main).detach();
-		thread(FreezeFrameWindow).detach();
-		thread(StateMonitoring).detach();
+	#pragma region 线程
 
-		// 放大API
-		if (magnificationCreateReady) thread(MagnifierThread).detach();
+	if (useInkeys3UI) thread(Inkeys::UI::Bar::Initialization).detach();
+	else thread(floating_main).detach();
+	auto settingMainThread = jthread(SettingMain);
+	thread(drawpad_main).detach();
+	thread(FreezeFrameWindow).detach();
+	thread(StateMonitoring).detach();
 
-		// 启动 PPT 联动插件
-		thread(PPTLinkageMain).detach();
+	// 放大API
+	if (magnificationCreateReady) thread(MagnifierThread).detach();
 
-		IDTLogger->info("[主线程][IdtMain] 线程初始化完成");
-	}
+	// 启动 PPT 联动插件
+	thread(PPTLinkageMain).detach();
+
+	IDTLogger->info("[主线程][IdtMain] 线程初始化完成");
+
+	#pragma endregion
 
 	// 创建测试控制台
 	{
-#ifndef IDT_RELEASE
+		#ifndef IDT_RELEASE
 		{
 			AllocConsole();
 
@@ -1303,7 +1304,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 			std::wcout.imbue(std::locale("chs"));
 		}
-#endif
+		#endif
 	}
 
 	IDTLogger->info("[主线程][IdtMain] 开始等待关闭程序信号发出");
@@ -1318,7 +1319,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		int WaitingCount = 0;
 		for (; WaitingCount < 20; WaitingCount++)
 		{
-			if (!GetStatus("floating_main") && !GetStatus("drawpad_main") && !GetStatus("SettingMain") && !GetStatus("FreezeFrameWindow") && !GetStatus("NetUpdate") && !GetStatus("PPTLinkageMain")) break;
+			if (!GetStatus("floating_main") && !GetStatus("drawpad_main") && !GetStatus("FreezeFrameWindow") && !GetStatus("NetUpdate") && !GetStatus("PPTLinkageMain")) break;
 			this_thread::sleep_for(chrono::milliseconds(500));
 		}
 		if (WaitingCount >= 20) IDTLogger->warn("[主线程][IdtMain] 结束函数线程超时并强制结束线程");
@@ -1344,6 +1345,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	if (offSignal == 2) ShellExecuteW(NULL, NULL, GetCurrentExePath().c_str(), L"-Restart", NULL, SW_SHOWNORMAL);
 
 	IDTLogger->info("[主线程][IdtMain] 已结束智绘教所有线程并关闭程序");
+
+	// 后续外层还需要进行封装，当前函数返回时则会使 jthread 构析来结束线程
 	return 0;
 }
 

@@ -1,5 +1,5 @@
 ﻿import Inkeys.UI.Bar;
-import Inkeys.Thread.Status;
+import Inkeys.Helper.Thread;
 import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
 import Inkeys.Text.Font;

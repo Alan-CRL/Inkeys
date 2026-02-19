@@ -1,4 +1,4 @@
-﻿import Inkeys.Thread.Status;
+﻿import Inkeys.Helper.Thread;
 import Inkeys.Net.Update;
 import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;

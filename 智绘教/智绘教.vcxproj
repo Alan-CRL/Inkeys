@@ -651,6 +651,7 @@
     <ClCompile Include="Inkeys\Conv\Conv.Text.cppm" />
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cpp" />
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cppm" />
+    <ClCompile Include="Inkeys\Helper\Helper.Thread.cppm" />
     <ClCompile Include="Inkeys\Load\Load.cppm" />
     <ClCompile Include="Inkeys\Net\Net.Update.cpp" />
     <ClCompile Include="Inkeys\Net\Net.Update.cppm" />
@@ -662,7 +663,6 @@
     <ClCompile Include="Inkeys\Text\Text.Font.cpp" />
     <ClCompile Include="Inkeys\Text\Text.Font.cppm" />
     <ClCompile Include="Inkeys\Text\Text.Split.cppm" />
-    <ClCompile Include="Inkeys\Thread\Thread.Status.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Bottom.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Buttom.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.cpp" />

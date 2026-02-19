@@ -13,7 +13,7 @@ import :Format;
 import :RenderingAttribute;
 
 import Inkeys.Conv.Color;
-import Inkeys.Thread.Status;
+import Inkeys.Helper.Thread;
 
 // ====================
 // 窗口
