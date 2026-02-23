@@ -52,7 +52,7 @@ import Inkeys.Text.Font;
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionDate = L"20260218a";				// 程序发布日期
+wstring editionDate = L"20260223a";				// 程序发布日期
 wstring editionChannel = L"Dev";				// 程序发布通道
 
 wstring userId;									// 用户GUID
@@ -171,7 +171,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			}
 		}
 
-		#ifdef IDT_RELEASE
+	#ifdef IDT_RELEASE
 		if (!LaunchState::restart && !LaunchState::warnTry && !LaunchState::crashTry && !superTopComplete)
 		{
 			wstring currentExeDirectory = GetCurrentExeDirectory();
@@ -203,7 +203,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				return 0;
 			}
 		}
-		#endif
+	#endif
 		if (LaunchState::crashTry) CrashHandler::IsSecond(true);
 	}
 	// 崩溃助手初始化
@@ -212,15 +212,15 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 体系架构识别
 	{
-		#if defined(_M_ARM64)
+	#if defined(_M_ARM64)
 		programArchitecture = L"arm64";
-		#elif defined(_M_ARM64EC)
+	#elif defined(_M_ARM64EC)
 		programArchitecture = L"arm64ec";
-		#elif defined(_WIN64)
+	#elif defined(_WIN64)
 		programArchitecture = L"win64";
-		#else
+	#else
 		programArchitecture = L"win32";
-		#endif
+	#endif
 
 		USHORT processMachine = 0, nativeMachine = 0;
 		bool successFlg = false;
@@ -1098,9 +1098,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			windowsEdition = to_wstring(windowsVersion.majorVersion) + L"." + to_wstring(windowsVersion.minorVersion) + L"." + to_wstring(windowsVersion.buildNumber);
 		}
 
-		#ifdef IDT_RELEASE
+	#ifdef IDT_RELEASE
 		thread(AutomaticUpdate).detach();
-		#endif
+	#endif
 	}
 
 	// 界面绘图库初始化
@@ -1260,7 +1260,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		thread(RTSSpeed).detach();
 		rtsWait = false;
 	}
-	#pragma region 线程
+#pragma region 线程
 
 	if (useInkeys3UI) thread(Inkeys::UI::Bar::Initialization).detach();
 	else thread(floating_main).detach();
@@ -1277,11 +1277,11 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 	IDTLogger->info("[主线程][IdtMain] 线程初始化完成");
 
-	#pragma endregion
+#pragma endregion
 
 	// 创建测试控制台
 	{
-		#ifndef IDT_RELEASE
+	#ifndef IDT_RELEASE
 		{
 			AllocConsole();
 
@@ -1304,7 +1304,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 			std::wcout.imbue(std::locale("chs"));
 		}
-		#endif
+	#endif
 	}
 
 	IDTLogger->info("[主线程][IdtMain] 开始等待关闭程序信号发出");

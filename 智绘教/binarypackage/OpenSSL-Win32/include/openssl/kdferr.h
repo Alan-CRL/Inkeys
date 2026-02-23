@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright 2020-2021 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
@@ -8,8 +8,8 @@
  */
 
 #ifndef OPENSSL_KDFERR_H
-# define OPENSSL_KDFERR_H
-# pragma once
+#define OPENSSL_KDFERR_H
+#pragma once
 
 #include <openssl/cryptoerr_legacy.h>
 

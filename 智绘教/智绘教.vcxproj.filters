@@ -112,6 +112,21 @@
     <Filter Include="Modules\Inkeys\Helper">
       <UniqueIdentifier>{27615d57-79cc-4874-bfe3-3d8915419a1e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Modules\Inkeys3Temp">
+      <UniqueIdentifier>{044aa458-472c-460b-87d1-33cd548fccb9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys3Temp\Rendering">
+      <UniqueIdentifier>{2eb257ad-d9da-48c0-97cf-3942f6fce468}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys3Temp\UI">
+      <UniqueIdentifier>{f9757343-bc73-4e18-9870-96f2116624ab}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys3Temp\UI\Setting">
+      <UniqueIdentifier>{e0a90257-b851-4dca-9396-daa6bded23cb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\Imgui\CustomShaders">
+      <UniqueIdentifier>{db9757aa-b695-415a-8971-7e820af31043}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HiEasyX.h">
@@ -1082,6 +1097,15 @@
     <ClCompile Include="Inkeys\Helper\Helper.Thread.cppm">
       <Filter>Modules\Inkeys\Helper</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\Helper\Helper.Enum.cppm">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtD2DPreparation.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtHistoricalDrawpad.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="智绘教.rc">
@@ -1322,12 +1346,6 @@
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <None Include="additional\jsoncpp\lib_json\json_valueiterator.inl">
-      <Filter>头文件\Additional\JsonCpp\lib_json</Filter>
-    </None>
-    <None Include="additional\spdlog\fmt\bundled\fmt.license.rst">
-      <Filter>头文件\Additional\SpdLog\fmt\bundled</Filter>
-    </None>
     <None Include="src\i18n\zh-CN.jsonc" />
     <None Include="src\i18n\en-US.jsonc" />
     <None Include="src\i18n\zh-TW.jsonc" />
@@ -1385,6 +1403,15 @@
     <None Include="src\UI\barBrush1.svg">
       <Filter>资源文件</Filter>
     </None>
+    <None Include="additional\imgui\CustomShaders\imgui_common.hlsli">
+      <Filter>头文件\Additional\Imgui\CustomShaders</Filter>
+    </None>
+    <None Include="additional\imgui\CustomShaders\imgui_vs.cso">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="additional\imgui\CustomShaders\imgui_ps.cso">
+      <Filter>资源文件</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Font Include="src\ttf\Segoe Fluent Icons.ttf">
@@ -1416,5 +1443,13 @@
     <Manifest Include="..\PptCOM\PptCOM.manifest">
       <Filter>资源文件</Filter>
     </Manifest>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="additional\imgui\CustomShaders\imgui_ps.hlsl">
+      <Filter>头文件\Additional\Imgui\CustomShaders</Filter>
+    </FxCompile>
+    <FxCompile Include="additional\imgui\CustomShaders\imgui_vs.hlsl">
+      <Filter>头文件\Additional\Imgui\CustomShaders</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright 2019-2021 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
@@ -8,10 +8,10 @@
  */
 
 #ifndef OPENSSL_OPENSSLCONF_H
-# define OPENSSL_OPENSSLCONF_H
-# pragma once
+#define OPENSSL_OPENSSLCONF_H
+#pragma once
 
-# include <openssl/configuration.h>
-# include <openssl/macros.h>
+#include <openssl/configuration.h>
+#include <openssl/macros.h>
 
-#endif  /* OPENSSL_OPENSSLCONF_H */
+#endif /* OPENSSL_OPENSSLCONF_H */

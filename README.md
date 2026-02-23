@@ -106,6 +106,7 @@
 | **[google/ink-stroke-modeler](https://github.com/google/ink-stroke-modeler)** | Apache License 2.0 |  |
 | **[martinus/unordered_dense](https://github.com/martinus/unordered_dense)** | MIT License | Copyright (c) 2022 Martin Leitner-Ankerl |
 | **[mohabouje/WinToast](https://github.com/mohabouje/WinToast)** | MIT License | Copyright (C) 2016–2023 WinToast v1.3.0 - Mohammed Boujemaoui <mohabouje@gmail.com> |
+| **[Neargye/magic_enum](https://github.com/Neargye/magic_enum)** | MIT License | Copyright (c) 2019 - 2024 Daniil Goncharov |
 | **[nothings/stb](https://github.com/nothings/stb)** | MIT License | Copyright (c) 2017 Sean Barrett |
 | **[ocornut/imgui](https://github.com/ocornut/imgui)** | MIT License | Copyright (c) 2014–2025 Omar Cornut |
 | **[openssl/openssl](https://github.com/openssl/openssl)** | Apache License 2.0 | Copyright (c) 1998–2025 The OpenSSL Project Authors. Copyright (c) 1995–1998 Eric A. Young, Tim J. Hudson. All rights reserved. |

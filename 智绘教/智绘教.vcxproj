@@ -651,6 +651,7 @@
     <ClCompile Include="Inkeys\Conv\Conv.Text.cppm" />
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cpp" />
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cppm" />
+    <ClCompile Include="Inkeys\Helper\Helper.Enum.cppm" />
     <ClCompile Include="Inkeys\Helper\Helper.Thread.cppm" />
     <ClCompile Include="Inkeys\Load\Load.cppm" />
     <ClCompile Include="Inkeys\Net\Net.Update.cpp" />
@@ -766,8 +767,9 @@
     <Image Include="src\write.png" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="additional\jsoncpp\lib_json\json_valueiterator.inl" />
-    <None Include="additional\spdlog\fmt\bundled\fmt.license.rst" />
+    <None Include="additional\imgui\CustomShaders\imgui_common.hlsli" />
+    <None Include="additional\imgui\CustomShaders\imgui_ps.cso" />
+    <None Include="additional\imgui\CustomShaders\imgui_vs.cso" />
     <None Include="exe\DesktopDrawpadBlocker.exe" />
     <None Include="PptCOM.dll" />
     <None Include="src\i18n\en-US.jsonc" />
@@ -815,6 +817,36 @@
     <Font Include="src\ttf\HarmonyOS_Sans_TC_Regular.ttf" />
     <Font Include="src\ttf\icomoon.ttf" />
     <Font Include="src\ttf\Segoe Fluent Icons.ttf" />
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="additional\imgui\CustomShaders\imgui_ps.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.0</ShaderModel>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+    </FxCompile>
+    <FxCompile Include="additional\imgui\CustomShaders\imgui_vs.hlsl">
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+    </FxCompile>
   </ItemGroup>
   <PropertyGroup Condition="'$(Platform)'=='Win32'">
     <TlbPlatform>win32</TlbPlatform>
