@@ -216,9 +216,7 @@ void SettingWindowBegin()
 	//UpdateWindow(setting_window);
 }
 
-#pragma region 持久化参数（简直是一坨）
-
-// 自己都看不下去了，必须重构
+#pragma region 持久化参数
 
 ImGuiToggleConfig config{
 	.Size = { 40.0f * settingGlobalScale, 20.0f * settingGlobalScale },
@@ -229,146 +227,14 @@ int QuestNumbers = 0;
 int PushStyleColorNum = 0, PushFontNum = 0, PushStyleVarNum = 0;
 int QueryWaitingTime = 5;
 
-// 设置参数
+// 设置界面专用的配置副本
+SetListStruct settingListUI = setlist;
 
-struct
-{
-	bool Enable = setlist.configurationSetting.enable;
-}ConfigurationSetting;
+// PPT COM 配置副本
+PptComSetListStruct pptComSetlistUI = pptComSetlist;
 
-bool EnableFixWithChangeArchitecture = true;
-bool EnableAutoUpdate = setlist.enableAutoUpdate;
-
-int SelectLanguage = setlist.selectLanguage;
-bool StartUp = setlist.startUp;
-bool CreateLnk = setlist.shortcutAssistant.createLnk;
-bool CorrectLnk = setlist.shortcutAssistant.correctLnk;
-
-int SetSkinMode = setlist.SetSkinMode;
-float SettingGlobalScale = settingGlobalScale;
-
-int TopSleepTime = setlist.topSleepTime;
-bool RightClickClose = setlist.RightClickClose;
-bool BrushRecover = setlist.BrushRecover;
-bool RubberRecover = setlist.RubberRecover;
-struct
-{
-	bool MoveRecover = setlist.regularSetting.moveRecover;
-	bool ClickRecover = setlist.regularSetting.clickRecover;
-	bool AvoidFullScreen = setlist.regularSetting.avoidFullScreen;
-	int TeachingSafetyMode = setlist.regularSetting.teachingSafetyMode;
-}RegularSetting;
-
-struct
-{
-	bool Enable = setlist.saveSetting.enable;
-	int SaveDays = setlist.saveSetting.saveDays;
-}SaveSetting;
-
-int PaintDevice = setlist.paintDevice;
-bool LiftStraighten = setlist.liftStraighten, WaitStraighten = setlist.waitStraighten;
-bool PointAdsorption = setlist.pointAdsorption;
-bool SmoothWriting = setlist.smoothWriting;
-int EraserMode = setlist.eraserSetting.eraserMode;
-bool HideTouchPointer = setlist.hideTouchPointer;
-
-int PreparationQuantity = setlist.performanceSetting.preparationQuantity;
-bool SuperDraw = setlist.performanceSetting.superDraw;
-
-struct
-{
-	bool MemoryWidth = setlist.presetSetting.memoryWidth;
-	bool MemoryColor = setlist.presetSetting.memoryColor;
-
-	bool AutoDefaultWidth = setlist.presetSetting.autoDefaultWidth;
-	float DefaultBrush1Width = setlist.presetSetting.defaultBrush1Width;
-	float DefaultHighlighter1Width = setlist.presetSetting.defaultHighlighter1Width;
-}PresetSetting;
-
-struct
-{
-	struct
-	{
-		bool Enable = setlist.plugInSetting.superTop.enable;
-		bool Indicator = setlist.plugInSetting.superTop.indicator;
-	}SuperTop;
-}PlugInSetting;
-
-// 插件参数
-
-float PptUiWidgetScale = 1.0f, PptUiWidgetScaleRecord = 1.0f;
-float BottomSideBothWidgetScale = pptComSetlist.bottomSideBothWidgetScale, BottomSideBothWidgetScaleRecord = pptComSetlist.bottomSideBothWidgetScale;
-float MiddleSideBothWidgetScale = pptComSetlist.middleSideBothWidgetScale, MiddleSideBothWidgetScaleRecord = pptComSetlist.middleSideBothWidgetScale;
-float BottomSideMiddleWidgetScale = pptComSetlist.bottomSideMiddleWidgetScale, BottomSideMiddleWidgetScaleRecord = pptComSetlist.bottomSideMiddleWidgetScale;
-bool BottomSideBothWidgetScaleUnifie = true;
-bool MiddleSideBothWidgetScaleUnifie = true;
-bool BottomSideMiddleWidgetScaleUnifie = false;
-
-bool PptComFixedHandWriting = pptComSetlist.fixedHandWriting;
-bool PptComShowLoadingScreen = pptComSetlist.showLoadingScreen;
-bool MemoryWidgetPosition = pptComSetlist.memoryWidgetPosition;
-bool ShowBottomBoth = pptComSetlist.showBottomBoth;
-bool ShowMiddleBoth = pptComSetlist.showMiddleBoth;
-bool ShowBottomMiddle = pptComSetlist.showBottomMiddle;
-float BottomBothWidth = pptComSetlist.bottomBothWidth;
-float BottomBothHeight = pptComSetlist.bottomBothHeight;
-float MiddleBothWidth = pptComSetlist.middleBothWidth;
-float MiddleBothHeight = pptComSetlist.middleBothHeight;
-float BottomMiddleWidth = pptComSetlist.bottomMiddleWidth;
-float BottomMiddleHeight = pptComSetlist.bottomMiddleHeight;
-
-//bool AutoKillWpsProcess = pptComSetlist.autoKillWpsProcess;
-
-struct
-{
-	bool Enable = ddbInteractionSetList.enable;
-	bool RunAsAdmin = ddbInteractionSetList.runAsAdmin;
-
-	struct
-	{
-		bool SeewoWhiteboard3Floating = ddbInteractionSetList.intercept.SeewoWhiteboard3Floating;
-		bool SeewoWhiteboard5Floating = ddbInteractionSetList.intercept.SeewoWhiteboard5Floating;
-		bool SeewoWhiteboard5CFloating = ddbInteractionSetList.intercept.SeewoWhiteboard5CFloating;
-		bool SeewoPincoSideBarFloating = ddbInteractionSetList.intercept.SeewoPincoSideBarFloating;
-		bool SeewoPincoDrawingFloating = ddbInteractionSetList.intercept.SeewoPincoDrawingFloating;
-		bool SeewoPPTFloating = ddbInteractionSetList.intercept.SeewoPPTFloating;
-		bool SeewoIwbAssistantFloating = ddbInteractionSetList.intercept.SeewoIwbAssistantFloating;
-		bool YiouBoardFloating = ddbInteractionSetList.intercept.YiouBoardFloating;
-		bool AiClassFloating = ddbInteractionSetList.intercept.AiClassFloating;
-		bool ClassInXFloating = ddbInteractionSetList.intercept.ClassInXFloating;
-		bool IntelligentClassFloating = ddbInteractionSetList.intercept.IntelligentClassFloating;
-		bool ChangYanFloating = ddbInteractionSetList.intercept.ChangYanFloating;
-		bool ChangYan5Floating = ddbInteractionSetList.intercept.ChangYan5Floating;
-		bool Iclass30SidebarFloating = ddbInteractionSetList.intercept.Iclass30SidebarFloating;
-		bool Iclass30Floating = ddbInteractionSetList.intercept.Iclass30Floating;
-		bool SeewoDesktopSideBarFloating = ddbInteractionSetList.intercept.SeewoDesktopSideBarFloating;
-		bool SeewoDesktopDrawingFloating = ddbInteractionSetList.intercept.SeewoDesktopDrawingFloating;
-	}intercept;
-} Ddb;
-
-// 组件参数
-bool ComponentShortcutButtonApplianceExplorer = setlist.component.shortcutButton.appliance.explorer;
-bool ComponentShortcutButtonApplianceTaskmgr = setlist.component.shortcutButton.appliance.taskmgr;
-bool ComponentShortcutButtonApplianceControl = setlist.component.shortcutButton.appliance.control;
-bool ComponentShortcutButtonSystemDesktop = setlist.component.shortcutButton.system.desktop;
-bool ComponentShortcutButtonSystemLockWorkStation = setlist.component.shortcutButton.system.lockWorkStation;
-bool ComponentShortcutButtonKeyboardKeyboardesc = setlist.component.shortcutButton.keyboard.keyboardesc;
-bool ComponentShortcutButtonKeyboardKeyboardAltF4 = setlist.component.shortcutButton.keyboard.keyboardAltF4;
-bool ComponentShortcutButtonRollCallIslandCaller = setlist.component.shortcutButton.rollCall.IslandCaller;
-bool ComponentShortcutButtonRollCallSecRandom = setlist.component.shortcutButton.rollCall.SecRandom;
-bool ComponentShortcutButtonRollCallNamePicker = setlist.component.shortcutButton.rollCall.NamePicker;
-bool ComponentShortcutButtonLinkageClassislandSettings = setlist.component.shortcutButton.linkage.classislandSettings;
-bool ComponentShortcutButtonLinkageClassislandProfile = setlist.component.shortcutButton.linkage.classislandProfile;
-bool ComponentShortcutButtonLinkageClassislandClassswap = setlist.component.shortcutButton.linkage.classislandClassswap;
-
-// 实验选项
-struct
-{
-	struct
-	{
-		bool UI3 = setlist.Experimental.Inkeys3.UI3;
-	}Inkeys3;
-}Experimental;
+// DDB 交互配置副本
+DdbInteractionSetListStruct ddbInteractionSetlistUI = ddbInteractionSetList;
 
 // ==========
 
@@ -1779,19 +1645,19 @@ void SettingMain(stop_token sT)
 									float popup_height = item_count * item_height + ImGui::GetStyle().WindowPadding.y * 2 * settingGlobalScale + 16.0f * settingGlobalScale;
 									ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, popup_height));
 								}
-								if (ImGui::BeginCombo("##语言", vec[SelectLanguage].c_str()))
+								if (ImGui::BeginCombo("##语言", vec[settingListUI.selectLanguage].c_str()))
 								{
 									for (int i = 0; i < vec.size(); i++)
 									{
 										ImGui::Dummy(ImVec2(0, 8.0f * settingGlobalScale));
 
-										bool is_selected = (SelectLanguage == i);
+										bool is_selected = (settingListUI.selectLanguage == i);
 										if (ImGui::Selectable(vec[i].c_str(), is_selected))
 										{
-											SelectLanguage = i;
-											if (setlist.selectLanguage != SelectLanguage)
+											settingListUI.selectLanguage = i;
+											if (setlist.selectLanguage != settingListUI.selectLanguage)
 											{
-												setlist.selectLanguage = SelectLanguage;
+												setlist.selectLanguage = settingListUI.selectLanguage;
 												WriteSetting();
 
 												if (setlist.selectLanguage == 1) I18n::load(1, L"JSON", L"zh-CN");
@@ -1887,7 +1753,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!ConfigurationSetting.Enable)
+								if (!settingListUI.configurationSetting.enable)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -1897,11 +1763,11 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##启用配置清理", &ConfigurationSetting.Enable, config);
+								ImGui::Toggle("##启用配置清理", &settingListUI.configurationSetting.enable, config);
 
-								if (setlist.configurationSetting.enable != ConfigurationSetting.Enable)
+								if (setlist.configurationSetting.enable != settingListUI.configurationSetting.enable)
 								{
-									setlist.configurationSetting.enable = ConfigurationSetting.Enable;
+									setlist.configurationSetting.enable = settingListUI.configurationSetting.enable;
 									WriteSetting();
 								}
 							}
@@ -1984,7 +1850,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!SaveSetting.Enable)
+								if (!settingListUI.saveSetting.enable)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -1994,11 +1860,11 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##启用历史画布保存", &SaveSetting.Enable, config);
+								ImGui::Toggle("##启用历史画布保存", &settingListUI.saveSetting.enable, config);
 
-								if (setlist.saveSetting.enable != SaveSetting.Enable)
+								if (setlist.saveSetting.enable != settingListUI.saveSetting.enable)
 								{
-									setlist.saveSetting.enable = SaveSetting.Enable;
+									setlist.saveSetting.enable = settingListUI.saveSetting.enable;
 									WriteSetting();
 								}
 							}
@@ -2062,19 +1928,19 @@ void SettingMain(stop_token sT)
 									float popup_height = item_count * item_height + ImGui::GetStyle().WindowPadding.y * 2 * settingGlobalScale + 16.0f * settingGlobalScale;
 									ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, popup_height));
 								}
-								if (ImGui::BeginCombo("##保存时长", vec[SaveSetting.SaveDays]))
+								if (ImGui::BeginCombo("##保存时长", vec[settingListUI.saveSetting.saveDays]))
 								{
 									for (int i = 0; i < vec.size(); i++)
 									{
 										ImGui::Dummy(ImVec2(0, 8.0f * settingGlobalScale));
 
-										bool is_selected = (SaveSetting.SaveDays == i);
+										bool is_selected = (settingListUI.saveSetting.saveDays == i);
 										if (ImGui::Selectable(vec[i], is_selected))
 										{
-											SaveSetting.SaveDays = i;
-											if (setlist.saveSetting.saveDays != SaveSetting.SaveDays)
+											settingListUI.saveSetting.saveDays = i;
+											if (setlist.saveSetting.saveDays != settingListUI.saveSetting.saveDays)
 											{
-												setlist.saveSetting.saveDays = SaveSetting.SaveDays;
+												setlist.saveSetting.saveDays = settingListUI.saveSetting.saveDays;
 												WriteSetting();
 											}
 										}
@@ -2559,7 +2425,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!EnableAutoUpdate)
+								if (!settingListUI.enableAutoUpdate)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -2569,11 +2435,11 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##自动更新（静默）", &EnableAutoUpdate, config);
+								ImGui::Toggle("##自动更新（静默）", &settingListUI.enableAutoUpdate, config);
 
-								if (setlist.enableAutoUpdate != EnableAutoUpdate)
+								if (setlist.enableAutoUpdate != settingListUI.enableAutoUpdate)
 								{
-									setlist.enableAutoUpdate = EnableAutoUpdate;
+									setlist.enableAutoUpdate = settingListUI.enableAutoUpdate;
 									WriteSetting();
 
 									if (!setlist.enableAutoUpdate && AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
@@ -2586,7 +2452,7 @@ void SettingMain(stop_token sT)
 										}
 										AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
 									}
-									else if (setlist.enableAutoUpdate && AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNew)
+									else if (settingListUI.enableAutoUpdate && AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNew)
 									{
 										AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
 									}
@@ -3068,13 +2934,13 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##开机自动启动", &StartUp, config);
+								ImGui::Toggle("##开机自动启动", &settingListUI.startUp, config);
 
-								if (setlist.startUp != StartUp)
+								if (setlist.startUp != settingListUI.startUp)
 								{
-									SetStartupState(StartUp, GetCurrentExePath(), L"$Inkeys");
+									SetStartupState(settingListUI.startUp, GetCurrentExePath(), L"$Inkeys");
 
-									setlist.startUp = StartUp;
+									setlist.startUp = settingListUI.startUp;
 									WriteSetting();
 								}
 							}
@@ -3220,23 +3086,23 @@ void SettingMain(stop_token sT)
 									float popup_height = item_count * item_height + ImGui::GetStyle().WindowPadding.y * 2 * settingGlobalScale + 16.0f * settingGlobalScale;
 									ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, popup_height));
 								}
-								if (ImGui::BeginCombo("##主题", vec[SetSkinMode]))
+								if (ImGui::BeginCombo("##主题", vec[settingListUI.SetSkinMode]))
 								{
 									for (int i = 0; i < vec.size(); i++)
 									{
 										ImGui::Dummy(ImVec2(0, 8.0f * settingGlobalScale));
 
-										bool is_selected = (SetSkinMode == i);
+										bool is_selected = (settingListUI.SetSkinMode == i);
 										if (ImGui::Selectable(vec[i], is_selected))
 										{
-											SetSkinMode = i;
-											if (setlist.SetSkinMode != SetSkinMode)
+											settingListUI.SetSkinMode = i;
+											if (setlist.SetSkinMode != settingListUI.SetSkinMode)
 											{
-												setlist.SetSkinMode = SetSkinMode;
+												setlist.SetSkinMode = settingListUI.SetSkinMode;
 												WriteSetting();
 
-												if (SetSkinMode == 0) setlist.SkinMode = 1;
-												else setlist.SkinMode = SetSkinMode;
+												if (settingListUI.SetSkinMode == 0) setlist.SkinMode = 1;
+												else setlist.SkinMode = settingListUI.SetSkinMode;
 											}
 										}
 										if (is_selected) ImGui::SetItemDefaultFocus();
@@ -3427,19 +3293,19 @@ void SettingMain(stop_token sT)
 									float popup_height = item_count * item_height + ImGui::GetStyle().WindowPadding.y * 2 * settingGlobalScale + 16.0f * settingGlobalScale;
 									ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, popup_height));
 								}
-								if (ImGui::BeginCombo("##置顶间隔", vec[TopSleepTime]))
+								if (ImGui::BeginCombo("##置顶间隔", vec[settingListUI.topSleepTime]))
 								{
 									for (int i = 0; i < vec.size(); i++)
 									{
 										ImGui::Dummy(ImVec2(0, 8.0f * settingGlobalScale));
 
-										bool is_selected = (TopSleepTime == i);
+										bool is_selected = (settingListUI.topSleepTime == i);
 										if (ImGui::Selectable(vec[i], is_selected))
 										{
-											TopSleepTime = i;
-											if (setlist.topSleepTime != TopSleepTime)
+											settingListUI.topSleepTime = i;
+											if (setlist.topSleepTime != settingListUI.topSleepTime)
 											{
-												setlist.topSleepTime = TopSleepTime;
+												setlist.topSleepTime = settingListUI.topSleepTime;
 												WriteSetting();
 
 												topWindowNow = true;
@@ -3486,7 +3352,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!RightClickClose)
+								if (!settingListUI.RightClickClose)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -3496,11 +3362,11 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##右键点击主图标关闭程序", &RightClickClose, config);
+								ImGui::Toggle("##右键点击主图标关闭程序", &settingListUI.RightClickClose, config);
 
-								if (setlist.RightClickClose != RightClickClose)
+								if (setlist.RightClickClose != settingListUI.RightClickClose)
 								{
-									setlist.RightClickClose = RightClickClose;
+									setlist.RightClickClose = settingListUI.RightClickClose;
 									WriteSetting();
 								}
 							}
@@ -3544,9 +3410,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##画笔绘制时收起主栏", &BrushRecover, config);
 
-								if (setlist.BrushRecover != BrushRecover)
+								if (setlist.BrushRecover != settingListUI.BrushRecover)
 								{
-									setlist.BrushRecover = BrushRecover;
+									setlist.BrushRecover = settingListUI.BrushRecover;
 									WriteSetting();
 								}
 							}
@@ -3584,9 +3450,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##橡皮擦除时收起主栏", &RubberRecover, config);
 
-								if (setlist.RubberRecover != RubberRecover)
+								if (setlist.RubberRecover != settingListUI.RubberRecover)
 								{
-									setlist.RubberRecover = RubberRecover;
+									setlist.RubberRecover = settingListUI.RubberRecover;
 									WriteSetting();
 								}
 							}
@@ -3624,9 +3490,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##拖动主栏时收起主栏", &RegularSetting.MoveRecover, config);
 
-								if (setlist.regularSetting.moveRecover != RegularSetting.MoveRecover)
+								if (setlist.regularSetting.moveRecover != settingListUI.regularSetting.moveRecover)
 								{
-									setlist.regularSetting.moveRecover = RegularSetting.MoveRecover;
+									setlist.regularSetting.moveRecover = settingListUI.regularSetting.moveRecover;
 									WriteSetting();
 								}
 							}
@@ -3670,9 +3536,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##点击时收起主栏", &RegularSetting.ClickRecover, config);
 
-								if (setlist.regularSetting.clickRecover != RegularSetting.ClickRecover)
+								if (setlist.regularSetting.clickRecover != settingListUI.regularSetting.clickRecover)
 								{
-									setlist.regularSetting.clickRecover = RegularSetting.ClickRecover;
+									setlist.regularSetting.clickRecover = settingListUI.regularSetting.clickRecover;
 									WriteSetting();
 								}
 							}
@@ -3737,9 +3603,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##避免全屏显示", &RegularSetting.AvoidFullScreen, config);
 
-								if (setlist.regularSetting.avoidFullScreen != RegularSetting.AvoidFullScreen)
+								if (setlist.regularSetting.avoidFullScreen != settingListUI.regularSetting.avoidFullScreen)
 								{
-									setlist.regularSetting.avoidFullScreen = RegularSetting.AvoidFullScreen;
+									setlist.regularSetting.avoidFullScreen = settingListUI.regularSetting.avoidFullScreen;
 									WriteSetting();
 								}
 							}
@@ -3834,9 +3700,9 @@ void SettingMain(stop_token sT)
 										if (ImGui::Selectable(vec[i], is_selected))
 										{
 											RegularSetting.TeachingSafetyMode = i;
-											if (setlist.regularSetting.teachingSafetyMode != RegularSetting.TeachingSafetyMode)
+											if (setlist.regularSetting.teachingSafetyMode != settingListUI.regularSetting.teachingSafetyMode)
 											{
-												setlist.regularSetting.teachingSafetyMode = RegularSetting.TeachingSafetyMode;
+												setlist.regularSetting.teachingSafetyMode = settingListUI.regularSetting.teachingSafetyMode;
 												WriteSetting();
 
 												CrashHandler::SetFlag(setlist.regularSetting.teachingSafetyMode);
@@ -3966,9 +3832,9 @@ void SettingMain(stop_token sT)
 										if (ImGui::Selectable(vec[i], is_selected))
 										{
 											PaintDevice = i;
-											if (setlist.paintDevice != PaintDevice)
+											if (setlist.paintDevice != settingListUI.paintDevice)
 											{
-												setlist.paintDevice = PaintDevice;
+												setlist.paintDevice = settingListUI.paintDevice;
 												WriteSetting();
 
 												drawingScale = GetDrawingScale();
@@ -4050,9 +3916,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##抬笔拉直直线", &LiftStraighten, config);
 
-								if (setlist.liftStraighten != LiftStraighten)
+								if (setlist.liftStraighten != settingListUI.liftStraighten)
 								{
-									setlist.liftStraighten = LiftStraighten;
+									setlist.liftStraighten = settingListUI.liftStraighten;
 									WriteSetting();
 								}
 							}
@@ -4096,9 +3962,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##停留拉直直线", &WaitStraighten, config);
 
-								if (setlist.waitStraighten != WaitStraighten)
+								if (setlist.waitStraighten != settingListUI.waitStraighten)
 								{
-									setlist.waitStraighten = WaitStraighten;
+									setlist.waitStraighten = settingListUI.waitStraighten;
 									WriteSetting();
 								}
 							}
@@ -4148,9 +4014,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##端点吸附", &PointAdsorption, config);
 
-								if (setlist.pointAdsorption != PointAdsorption)
+								if (setlist.pointAdsorption != settingListUI.pointAdsorption)
 								{
-									setlist.pointAdsorption = PointAdsorption;
+									setlist.pointAdsorption = settingListUI.pointAdsorption;
 									WriteSetting();
 								}
 							}
@@ -4215,9 +4081,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##抬笔平滑笔迹", &SmoothWriting, config);
 
-								if (setlist.smoothWriting != SmoothWriting)
+								if (setlist.smoothWriting != settingListUI.smoothWriting)
 								{
-									setlist.smoothWriting = SmoothWriting;
+									setlist.smoothWriting = settingListUI.smoothWriting;
 									WriteSetting();
 								}
 							}
@@ -4310,9 +4176,9 @@ void SettingMain(stop_token sT)
 										if (ImGui::Selectable(vec[i], is_selected))
 										{
 											EraserMode = i;
-											if (setlist.eraserSetting.eraserMode != EraserMode)
+											if (setlist.eraserSetting.eraserMode != settingListUI.eraserSetting.eraserMode)
 											{
-												setlist.eraserSetting.eraserMode = EraserMode;
+												setlist.eraserSetting.eraserMode = settingListUI.eraserSetting.eraserMode;
 												WriteSetting();
 											}
 										}
@@ -4467,9 +4333,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##极限性能绘图", &SuperDraw, config);
 
-								if (setlist.performanceSetting.superDraw != SuperDraw)
+								if (setlist.performanceSetting.superDraw != settingListUI.performanceSetting.superDraw)
 								{
-									setlist.performanceSetting.superDraw = SuperDraw;
+									setlist.performanceSetting.superDraw = settingListUI.performanceSetting.superDraw;
 									WriteSetting();
 								}
 							}
@@ -4557,9 +4423,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##绘制时隐藏触控光标", &HideTouchPointer, config);
 
-								if (setlist.hideTouchPointer != HideTouchPointer)
+								if (setlist.hideTouchPointer != settingListUI.hideTouchPointer)
 								{
-									setlist.hideTouchPointer = HideTouchPointer;
+									setlist.hideTouchPointer = settingListUI.hideTouchPointer;
 									WriteSetting();
 								}
 							}
@@ -4683,9 +4549,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##记忆绘制粗细", &PresetSetting.MemoryWidth, config);
 
-								if (setlist.presetSetting.memoryWidth != PresetSetting.MemoryWidth)
+								if (setlist.presetSetting.memoryWidth != settingListUI.presetSetting.memoryWidth)
 								{
-									setlist.presetSetting.memoryWidth = PresetSetting.MemoryWidth;
+									setlist.presetSetting.memoryWidth = settingListUI.presetSetting.memoryWidth;
 									WriteSetting();
 								}
 							}
@@ -4729,9 +4595,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##记忆绘制颜色", &PresetSetting.MemoryColor, config);
 
-								if (setlist.presetSetting.memoryColor != PresetSetting.MemoryColor)
+								if (setlist.presetSetting.memoryColor != settingListUI.presetSetting.memoryColor)
 								{
-									setlist.presetSetting.memoryColor = PresetSetting.MemoryColor;
+									setlist.presetSetting.memoryColor = settingListUI.presetSetting.memoryColor;
 									WriteSetting();
 								}
 							}
@@ -4807,9 +4673,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##自适应绘制粗细", &PresetSetting.AutoDefaultWidth, config);
 
-								if (setlist.presetSetting.autoDefaultWidth != PresetSetting.AutoDefaultWidth)
+								if (setlist.presetSetting.autoDefaultWidth != settingListUI.presetSetting.autoDefaultWidth)
 								{
-									setlist.presetSetting.autoDefaultWidth = PresetSetting.AutoDefaultWidth;
+									setlist.presetSetting.autoDefaultWidth = settingListUI.presetSetting.autoDefaultWidth;
 									WriteSetting();
 								}
 							}
@@ -5508,7 +5374,7 @@ void SettingMain(stop_token sT)
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-										if (!PptComFixedHandWriting)
+										if (!pptComSetlistUI.fixedHandWriting)
 										{
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -5518,11 +5384,11 @@ void SettingMain(stop_token sT)
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 										}
-										ImGui::Toggle("##墨迹固定在对应页面上", &PptComFixedHandWriting, config);
+										ImGui::Toggle("##墨迹固定在对应页面上", &pptComSetlistUI.fixedHandWriting, config);
 
-										if (pptComSetlist.fixedHandWriting != PptComFixedHandWriting)
+										if (pptComSetlist.fixedHandWriting != pptComSetlistUI.fixedHandWriting)
 										{
-											pptComSetlist.fixedHandWriting = PptComFixedHandWriting;
+											pptComSetlist.fixedHandWriting = pptComSetlistUI.fixedHandWriting;
 											PptComWriteSetting();
 										}
 									}
@@ -5583,7 +5449,7 @@ void SettingMain(stop_token sT)
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-										if (!PptComShowLoadingScreen)
+										if (!pptComSetlistUI.showLoadingScreen)
 										{
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -5593,11 +5459,11 @@ void SettingMain(stop_token sT)
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 										}
-										ImGui::Toggle("##显示加载页面", &PptComShowLoadingScreen, config);
+										ImGui::Toggle("##显示加载页面", &pptComSetlistUI.showLoadingScreen, config);
 
-										if (pptComSetlist.showLoadingScreen != PptComShowLoadingScreen)
+										if (pptComSetlist.showLoadingScreen != pptComSetlistUI.showLoadingScreen)
 										{
-											pptComSetlist.showLoadingScreen = PptComShowLoadingScreen;
+											pptComSetlist.showLoadingScreen = pptComSetlistUI.showLoadingScreen;
 											PptComWriteSetting();
 										}
 									}
@@ -5651,7 +5517,7 @@ void SettingMain(stop_token sT)
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-										if (!ShowBottomBoth)
+										if (!pptComSetlistUI.showBottomBoth)
 										{
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -5661,11 +5527,11 @@ void SettingMain(stop_token sT)
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 										}
-										ImGui::Toggle("##显示底部两侧控件", &ShowBottomBoth, config);
+										ImGui::Toggle("##显示底部两侧控件", &pptComSetlistUI.showBottomBoth, config);
 
-										if (pptComSetlist.showBottomBoth != ShowBottomBoth)
+										if (pptComSetlist.showBottomBoth != pptComSetlistUI.showBottomBoth)
 										{
-											pptComSetlist.showBottomBoth = ShowBottomBoth;
+											pptComSetlist.showBottomBoth = pptComSetlistUI.showBottomBoth;
 											PptComWriteSetting();
 										}
 									}
@@ -5691,7 +5557,7 @@ void SettingMain(stop_token sT)
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-										if (!ShowMiddleBoth)
+										if (!pptComSetlistUI.showMiddleBoth)
 										{
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -5701,11 +5567,11 @@ void SettingMain(stop_token sT)
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 										}
-										ImGui::Toggle("##显示中部两侧控件", &ShowMiddleBoth, config);
+										ImGui::Toggle("##显示中部两侧控件", &pptComSetlistUI.showMiddleBoth, config);
 
-										if (pptComSetlist.showMiddleBoth != ShowMiddleBoth)
+										if (pptComSetlist.showMiddleBoth != pptComSetlistUI.showMiddleBoth)
 										{
-											pptComSetlist.showMiddleBoth = ShowMiddleBoth;
+											pptComSetlist.showMiddleBoth = pptComSetlistUI.showMiddleBoth;
 											PptComWriteSetting();
 										}
 									}
@@ -5731,7 +5597,7 @@ void SettingMain(stop_token sT)
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-										if (!ShowBottomMiddle)
+										if (!pptComSetlistUI.showBottomMiddle)
 										{
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -5741,11 +5607,11 @@ void SettingMain(stop_token sT)
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 										}
-										ImGui::Toggle("##显示底部主栏控件", &ShowBottomMiddle, config);
+										ImGui::Toggle("##显示底部主栏控件", &pptComSetlistUI.showBottomMiddle, config);
 
-										if (pptComSetlist.showBottomMiddle != ShowBottomMiddle)
+										if (pptComSetlist.showBottomMiddle != pptComSetlistUI.showBottomMiddle)
 										{
-											pptComSetlist.showBottomMiddle = ShowBottomMiddle;
+											pptComSetlist.showBottomMiddle = pptComSetlistUI.showBottomMiddle;
 											PptComWriteSetting();
 										}
 									}
@@ -5803,12 +5669,12 @@ void SettingMain(stop_token sT)
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
 										if (ImGui::Button(IA("SettingsUI/PlugIn/PPTHelper/Reset").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 										{
-											pptComSetlist.bottomBothWidth = BottomBothWidth = 0;
-											pptComSetlist.bottomBothHeight = BottomBothHeight = 0;
-											pptComSetlist.middleBothWidth = MiddleBothWidth = 0;
-											pptComSetlist.middleBothHeight = MiddleBothHeight = 0;
-											pptComSetlist.bottomMiddleWidth = BottomMiddleWidth = 0;
-											pptComSetlist.bottomMiddleHeight = BottomMiddleHeight = 0;
+											pptComSetlist.bottomBothWidth = pptComSetlistUI.bottomBothWidth = 0;
+											pptComSetlist.bottomBothHeight = pptComSetlistUI.bottomBothHeight = 0;
+											pptComSetlist.middleBothWidth = pptComSetlistUI.middleBothWidth = 0;
+											pptComSetlist.middleBothHeight = pptComSetlistUI.middleBothHeight = 0;
+											pptComSetlist.bottomMiddleWidth = pptComSetlistUI.bottomMiddleWidth = 0;
+											pptComSetlist.bottomMiddleHeight = pptComSetlistUI.bottomMiddleHeight = 0;
 
 											PptComWriteSetting();
 										}
@@ -6582,9 +6448,9 @@ void SettingMain(stop_token sT)
 										}
 										ImGui::Toggle("##超级置顶", &PlugInSetting.SuperTop.Enable, config);
 
-										if (setlist.plugInSetting.superTop.enable != PlugInSetting.SuperTop.Enable)
+										if (setlist.plugInSetting.superTop.enable != settingListUI.plugInSetting.superTop.enable)
 										{
-											setlist.plugInSetting.superTop.enable = PlugInSetting.SuperTop.Enable;
+											setlist.plugInSetting.superTop.enable = settingListUI.plugInSetting.superTop.enable;
 											WriteSetting();
 										}
 									}
@@ -6658,9 +6524,9 @@ void SettingMain(stop_token sT)
 										}
 										ImGui::Toggle("##超级置顶指示器", &PlugInSetting.SuperTop.Indicator, config);
 
-										if (setlist.plugInSetting.superTop.indicator != PlugInSetting.SuperTop.Indicator)
+										if (setlist.plugInSetting.superTop.indicator != settingListUI.plugInSetting.superTop.indicator)
 										{
-											setlist.plugInSetting.superTop.indicator = PlugInSetting.SuperTop.Indicator;
+											setlist.plugInSetting.superTop.indicator = settingListUI.plugInSetting.superTop.indicator;
 											WriteSetting();
 										}
 									}
@@ -6786,9 +6652,9 @@ void SettingMain(stop_token sT)
 										}
 										ImGui::Toggle("##修正桌面快捷方式指向和名称", &CorrectLnk, config);
 
-										if (setlist.shortcutAssistant.correctLnk != CorrectLnk)
+										if (setlist.shortcutAssistant.correctLnk != settingListUI.shortcutAssistant.correctLnk)
 										{
-											setlist.shortcutAssistant.correctLnk = CorrectLnk;
+											setlist.shortcutAssistant.correctLnk = settingListUI.shortcutAssistant.correctLnk;
 											WriteSetting();
 
 											if (setlist.shortcutAssistant.correctLnk) shortcutAssistant.SetShortcut();
@@ -6885,9 +6751,9 @@ void SettingMain(stop_token sT)
 										}
 										ImGui::Toggle("##创建桌面快捷方式", &CreateLnk, config);
 
-										if (setlist.shortcutAssistant.createLnk != CreateLnk)
+										if (setlist.shortcutAssistant.createLnk != settingListUI.shortcutAssistant.createLnk)
 										{
-											setlist.shortcutAssistant.createLnk = CreateLnk;
+											setlist.shortcutAssistant.createLnk = settingListUI.shortcutAssistant.createLnk;
 											WriteSetting();
 
 											if (setlist.shortcutAssistant.correctLnk) shortcutAssistant.SetShortcut();
@@ -7066,7 +6932,7 @@ void SettingMain(stop_token sT)
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-										if (!Ddb.Enable)
+										if (!ddbInteractionSetlistUI.enable)
 										{
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -7076,11 +6942,11 @@ void SettingMain(stop_token sT)
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 										}
-										ImGui::Toggle("##启用插件", &Ddb.Enable, config);
+										ImGui::Toggle("##启用插件", &ddbInteractionSetlistUI.enable, config);
 
-										if (ddbInteractionSetList.enable != Ddb.Enable)
+										if (ddbInteractionSetList.enable != ddbInteractionSetlistUI.enable)
 										{
-											ddbInteractionSetList.enable = Ddb.Enable;
+											ddbInteractionSetList.enable = ddbInteractionSetlistUI.enable;
 
 											WriteSetting();
 
@@ -7205,7 +7071,7 @@ void SettingMain(stop_token sT)
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-										if (!Ddb.RunAsAdmin)
+										if (!ddbInteractionSetlistUI.runAsAdmin)
 										{
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -7215,11 +7081,11 @@ void SettingMain(stop_token sT)
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 										}
-										ImGui::Toggle("##以管理员身份启动插件", &Ddb.RunAsAdmin, config);
+										ImGui::Toggle("##以管理员身份启动插件", &ddbInteractionSetlistUI.runAsAdmin, config);
 
-										if (ddbInteractionSetList.runAsAdmin != Ddb.RunAsAdmin)
+										if (ddbInteractionSetList.runAsAdmin != ddbInteractionSetlistUI.runAsAdmin)
 										{
-											ddbInteractionSetList.runAsAdmin = Ddb.RunAsAdmin;
+											ddbInteractionSetList.runAsAdmin = ddbInteractionSetlistUI.runAsAdmin;
 											WriteSetting();
 
 											if (isProcessRunning((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
@@ -8347,9 +8213,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##启动 文件资源管理器", &ComponentShortcutButtonApplianceExplorer, config);
 
-								if (setlist.component.shortcutButton.appliance.explorer != ComponentShortcutButtonApplianceExplorer)
+								if (setlist.component.shortcutButton.appliance.explorer != settingListUI.component.shortcutButton.appliance.explorer)
 								{
-									setlist.component.shortcutButton.appliance.explorer = ComponentShortcutButtonApplianceExplorer;
+									setlist.component.shortcutButton.appliance.explorer = settingListUI.component.shortcutButton.appliance.explorer;
 									WriteSetting();
 								}
 							}
@@ -8393,9 +8259,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##启动 任务管理器", &ComponentShortcutButtonApplianceTaskmgr, config);
 
-								if (setlist.component.shortcutButton.appliance.taskmgr != ComponentShortcutButtonApplianceTaskmgr)
+								if (setlist.component.shortcutButton.appliance.taskmgr != settingListUI.component.shortcutButton.appliance.taskmgr)
 								{
-									setlist.component.shortcutButton.appliance.taskmgr = ComponentShortcutButtonApplianceTaskmgr;
+									setlist.component.shortcutButton.appliance.taskmgr = settingListUI.component.shortcutButton.appliance.taskmgr;
 									WriteSetting();
 								}
 							}
@@ -8439,9 +8305,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##启动 控制面板", &ComponentShortcutButtonApplianceControl, config);
 
-								if (setlist.component.shortcutButton.appliance.control != ComponentShortcutButtonApplianceControl)
+								if (setlist.component.shortcutButton.appliance.control != settingListUI.component.shortcutButton.appliance.control)
 								{
-									setlist.component.shortcutButton.appliance.control = ComponentShortcutButtonApplianceControl;
+									setlist.component.shortcutButton.appliance.control = settingListUI.component.shortcutButton.appliance.control;
 									WriteSetting();
 								}
 							}
@@ -8507,9 +8373,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##显示 桌面", &ComponentShortcutButtonSystemDesktop, config);
 
-								if (setlist.component.shortcutButton.system.desktop != ComponentShortcutButtonSystemDesktop)
+								if (setlist.component.shortcutButton.system.desktop != settingListUI.component.shortcutButton.system.desktop)
 								{
-									setlist.component.shortcutButton.system.desktop = ComponentShortcutButtonSystemDesktop;
+									setlist.component.shortcutButton.system.desktop = settingListUI.component.shortcutButton.system.desktop;
 									WriteSetting();
 								}
 							}
@@ -8553,9 +8419,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##锁屏", &ComponentShortcutButtonSystemLockWorkStation, config);
 
-								if (setlist.component.shortcutButton.system.lockWorkStation != ComponentShortcutButtonSystemLockWorkStation)
+								if (setlist.component.shortcutButton.system.lockWorkStation != settingListUI.component.shortcutButton.system.lockWorkStation)
 								{
-									setlist.component.shortcutButton.system.lockWorkStation = ComponentShortcutButtonSystemLockWorkStation;
+									setlist.component.shortcutButton.system.lockWorkStation = settingListUI.component.shortcutButton.system.lockWorkStation;
 									WriteSetting();
 								}
 							}
@@ -8621,9 +8487,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##按下 ESC", &ComponentShortcutButtonKeyboardKeyboardesc, config);
 
-								if (setlist.component.shortcutButton.keyboard.keyboardesc != ComponentShortcutButtonKeyboardKeyboardesc)
+								if (setlist.component.shortcutButton.keyboard.keyboardesc != settingListUI.component.shortcutButton.keyboard.keyboardesc)
 								{
-									setlist.component.shortcutButton.keyboard.keyboardesc = ComponentShortcutButtonKeyboardKeyboardesc;
+									setlist.component.shortcutButton.keyboard.keyboardesc = settingListUI.component.shortcutButton.keyboard.keyboardesc;
 									WriteSetting();
 								}
 							}
@@ -8667,9 +8533,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##按下 Alt+F4", &ComponentShortcutButtonKeyboardKeyboardAltF4, config);
 
-								if (setlist.component.shortcutButton.keyboard.keyboardAltF4 != ComponentShortcutButtonKeyboardKeyboardAltF4)
+								if (setlist.component.shortcutButton.keyboard.keyboardAltF4 != settingListUI.component.shortcutButton.keyboard.keyboardAltF4)
 								{
-									setlist.component.shortcutButton.keyboard.keyboardAltF4 = ComponentShortcutButtonKeyboardKeyboardAltF4;
+									setlist.component.shortcutButton.keyboard.keyboardAltF4 = settingListUI.component.shortcutButton.keyboard.keyboardAltF4;
 									WriteSetting();
 								}
 							}
@@ -8741,9 +8607,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##IslandCaller 随机点名", &ComponentShortcutButtonRollCallIslandCaller, config);
 
-								if (setlist.component.shortcutButton.rollCall.IslandCaller != ComponentShortcutButtonRollCallIslandCaller)
+								if (setlist.component.shortcutButton.rollCall.IslandCaller != settingListUI.component.shortcutButton.rollCall.IslandCaller)
 								{
-									setlist.component.shortcutButton.rollCall.IslandCaller = ComponentShortcutButtonRollCallIslandCaller;
+									setlist.component.shortcutButton.rollCall.IslandCaller = settingListUI.component.shortcutButton.rollCall.IslandCaller;
 									WriteSetting();
 								}
 							}
@@ -8793,9 +8659,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##SecRandom 随机点名", &ComponentShortcutButtonRollCallSecRandom, config);
 
-								if (setlist.component.shortcutButton.rollCall.SecRandom != ComponentShortcutButtonRollCallSecRandom)
+								if (setlist.component.shortcutButton.rollCall.SecRandom != settingListUI.component.shortcutButton.rollCall.SecRandom)
 								{
-									setlist.component.shortcutButton.rollCall.SecRandom = ComponentShortcutButtonRollCallSecRandom;
+									setlist.component.shortcutButton.rollCall.SecRandom = settingListUI.component.shortcutButton.rollCall.SecRandom;
 									WriteSetting();
 								}
 							}
@@ -8845,9 +8711,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##NamePicker 随机点名", &ComponentShortcutButtonRollCallNamePicker, config);
 
-								if (setlist.component.shortcutButton.rollCall.NamePicker != ComponentShortcutButtonRollCallNamePicker)
+								if (setlist.component.shortcutButton.rollCall.NamePicker != settingListUI.component.shortcutButton.rollCall.NamePicker)
 								{
-									setlist.component.shortcutButton.rollCall.NamePicker = ComponentShortcutButtonRollCallNamePicker;
+									setlist.component.shortcutButton.rollCall.NamePicker = settingListUI.component.shortcutButton.rollCall.NamePicker;
 									WriteSetting();
 								}
 							}
@@ -8956,9 +8822,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##ClassIsland 应用设置", &ComponentShortcutButtonLinkageClassislandSettings, config);
 
-								if (setlist.component.shortcutButton.linkage.classislandSettings != ComponentShortcutButtonLinkageClassislandSettings)
+								if (setlist.component.shortcutButton.linkage.classislandSettings != settingListUI.component.shortcutButton.linkage.classislandSettings)
 								{
-									setlist.component.shortcutButton.linkage.classislandSettings = ComponentShortcutButtonLinkageClassislandSettings;
+									setlist.component.shortcutButton.linkage.classislandSettings = settingListUI.component.shortcutButton.linkage.classislandSettings;
 									WriteSetting();
 								}
 							}
@@ -8996,9 +8862,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##ClassIsland 档案编辑", &ComponentShortcutButtonLinkageClassislandProfile, config);
 
-								if (setlist.component.shortcutButton.linkage.classislandProfile != ComponentShortcutButtonLinkageClassislandProfile)
+								if (setlist.component.shortcutButton.linkage.classislandProfile != settingListUI.component.shortcutButton.linkage.classislandProfile)
 								{
-									setlist.component.shortcutButton.linkage.classislandProfile = ComponentShortcutButtonLinkageClassislandProfile;
+									setlist.component.shortcutButton.linkage.classislandProfile = settingListUI.component.shortcutButton.linkage.classislandProfile;
 									WriteSetting();
 								}
 							}
@@ -9042,9 +8908,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##ClassIsland 快速换课", &ComponentShortcutButtonLinkageClassislandClassswap, config);
 
-								if (setlist.component.shortcutButton.linkage.classislandClassswap != ComponentShortcutButtonLinkageClassislandClassswap)
+								if (setlist.component.shortcutButton.linkage.classislandClassswap != settingListUI.component.shortcutButton.linkage.classislandClassswap)
 								{
-									setlist.component.shortcutButton.linkage.classislandClassswap = ComponentShortcutButtonLinkageClassislandClassswap;
+									setlist.component.shortcutButton.linkage.classislandClassswap = settingListUI.component.shortcutButton.linkage.classislandClassswap;
 									WriteSetting();
 								}
 							}
@@ -9235,9 +9101,9 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##启用 UI3", &Experimental.Inkeys3.UI3, config);
 
-								if (setlist.Experimental.Inkeys3.UI3 != Experimental.Inkeys3.UI3)
+								if (setlist.Experimental.Inkeys3.UI3 != settingListUI.Experimental.Inkeys3.UI3)
 								{
-									setlist.Experimental.Inkeys3.UI3 = Experimental.Inkeys3.UI3;
+									setlist.Experimental.Inkeys3.UI3 = settingListUI.Experimental.Inkeys3.UI3;
 									WriteSetting();
 								}
 							}
