@@ -142,19 +142,20 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 void SettingWindow(stop_token sT, promise<void>& promise)
 {
-	// 创建窗口
-	{
-		wstring ClassName;
-		if (userId == L"Error") ClassName = L"Inkeys3;HiEasyX041";
-		else ClassName = L"Inkeys3;" + userId;
+#pragma region 创建窗口
 
-		ImGuiWc = { sizeof(WNDCLASSEX), CS_VREDRAW | CS_HREDRAW, ImGuiWndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, ClassName.c_str(), nullptr };
-		RegisterClassExW(&ImGuiWc);
-		setting_window = CreateWindowEx(WS_EX_NOACTIVATE, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, drawpad_window, nullptr, ImGuiWc.hInstance, nullptr);
-		//setting_window = CreateWindowEx(WS_EX_NOACTIVATE, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, nullptr, nullptr, ImGuiWc.hInstance, nullptr);
-	}
+	wstring ClassName;
+	if (userId == L"Error") ClassName = L"Inkeys3;HiEasyX041";
+	else ClassName = L"Inkeys3;" + userId;
 
-	// 设置终止时回调
+	ImGuiWc = { sizeof(WNDCLASSEX), CS_VREDRAW | CS_HREDRAW, ImGuiWndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, ClassName.c_str(), nullptr };
+	RegisterClassExW(&ImGuiWc);
+	setting_window = CreateWindowEx(WS_EX_NOACTIVATE, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, drawpad_window, nullptr, ImGuiWc.hInstance, nullptr);
+	//setting_window = CreateWindowEx(WS_EX_NOACTIVATE, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, nullptr, nullptr, ImGuiWc.hInstance, nullptr);
+
+#pragma endregion
+
+// 设置终止时回调
 	auto tid = GetCurrentThreadId();
 	stop_callback sc(sT, [tid]
 		{
@@ -3398,7 +3399,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!BrushRecover)
+								if (!settingListUI.BrushRecover)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -3408,7 +3409,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##画笔绘制时收起主栏", &BrushRecover, config);
+								ImGui::Toggle("##画笔绘制时收起主栏", &settingListUI.BrushRecover, config);
 
 								if (setlist.BrushRecover != settingListUI.BrushRecover)
 								{
@@ -3438,7 +3439,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!RubberRecover)
+								if (!settingListUI.RubberRecover)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -3448,7 +3449,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##橡皮擦除时收起主栏", &RubberRecover, config);
+								ImGui::Toggle("##橡皮擦除时收起主栏", &settingListUI.RubberRecover, config);
 
 								if (setlist.RubberRecover != settingListUI.RubberRecover)
 								{
@@ -3478,7 +3479,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!RegularSetting.MoveRecover)
+								if (!settingListUI.regularSetting.moveRecover)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -3488,7 +3489,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##拖动主栏时收起主栏", &RegularSetting.MoveRecover, config);
+								ImGui::Toggle("##拖动主栏时收起主栏", &settingListUI.regularSetting.moveRecover, config);
 
 								if (setlist.regularSetting.moveRecover != settingListUI.regularSetting.moveRecover)
 								{
@@ -3524,7 +3525,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!RegularSetting.ClickRecover)
+								if (!settingListUI.regularSetting.clickRecover)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -3534,7 +3535,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##点击时收起主栏", &RegularSetting.ClickRecover, config);
+								ImGui::Toggle("##点击时收起主栏", &settingListUI.regularSetting.clickRecover, config);
 
 								if (setlist.regularSetting.clickRecover != settingListUI.regularSetting.clickRecover)
 								{
@@ -3591,7 +3592,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!RegularSetting.AvoidFullScreen)
+								if (!settingListUI.regularSetting.avoidFullScreen)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -3601,7 +3602,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##避免全屏显示", &RegularSetting.AvoidFullScreen, config);
+								ImGui::Toggle("##避免全屏显示", &settingListUI.regularSetting.avoidFullScreen, config);
 
 								if (setlist.regularSetting.avoidFullScreen != settingListUI.regularSetting.avoidFullScreen)
 								{
@@ -3690,16 +3691,16 @@ void SettingMain(stop_token sT)
 									float popup_height = item_count * item_height + ImGui::GetStyle().WindowPadding.y * 2 * settingGlobalScale + 16.0f * settingGlobalScale;
 									ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, popup_height));
 								}
-								if (ImGui::BeginCombo("##教学安全选项", vec[RegularSetting.TeachingSafetyMode]))
+								if (ImGui::BeginCombo("##教学安全选项", vec[settingListUI.regularSetting.teachingSafetyMode]))
 								{
 									for (int i = 0; i < vec.size(); i++)
 									{
 										ImGui::Dummy(ImVec2(0, 8.0f * settingGlobalScale));
 
-										bool is_selected = (RegularSetting.TeachingSafetyMode == i);
+										bool is_selected = (settingListUI.regularSetting.teachingSafetyMode == i);
 										if (ImGui::Selectable(vec[i], is_selected))
 										{
-											RegularSetting.TeachingSafetyMode = i;
+											settingListUI.regularSetting.teachingSafetyMode = i;
 											if (setlist.regularSetting.teachingSafetyMode != settingListUI.regularSetting.teachingSafetyMode)
 											{
 												setlist.regularSetting.teachingSafetyMode = settingListUI.regularSetting.teachingSafetyMode;
@@ -3822,16 +3823,16 @@ void SettingMain(stop_token sT)
 									float popup_height = item_count * item_height + ImGui::GetStyle().WindowPadding.y * 2 * settingGlobalScale + 16.0f * settingGlobalScale;
 									ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, popup_height));
 								}
-								if (ImGui::BeginCombo("##绘图设备", vec[PaintDevice]))
+								if (ImGui::BeginCombo("##绘图设备", vec[settingListUI.paintDevice]))
 								{
 									for (int i = 0; i < vec.size(); i++)
 									{
 										ImGui::Dummy(ImVec2(0, 8.0f * settingGlobalScale));
 
-										bool is_selected = (PaintDevice == i);
+										bool is_selected = (settingListUI.paintDevice == i);
 										if (ImGui::Selectable(vec[i], is_selected))
 										{
-											PaintDevice = i;
+											settingListUI.paintDevice = i;
 											if (setlist.paintDevice != settingListUI.paintDevice)
 											{
 												setlist.paintDevice = settingListUI.paintDevice;
@@ -3904,7 +3905,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!LiftStraighten)
+								if (!settingListUI.liftStraighten)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -3914,7 +3915,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##抬笔拉直直线", &LiftStraighten, config);
+								ImGui::Toggle("##抬笔拉直直线", &settingListUI.liftStraighten, config);
 
 								if (setlist.liftStraighten != settingListUI.liftStraighten)
 								{
@@ -3950,7 +3951,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!WaitStraighten)
+								if (!settingListUI.waitStraighten)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -3960,7 +3961,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##停留拉直直线", &WaitStraighten, config);
+								ImGui::Toggle("##停留拉直直线", &settingListUI.waitStraighten, config);
 
 								if (setlist.waitStraighten != settingListUI.waitStraighten)
 								{
@@ -4002,7 +4003,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!PointAdsorption)
+								if (!settingListUI.pointAdsorption)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -4012,7 +4013,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##端点吸附", &PointAdsorption, config);
+								ImGui::Toggle("##端点吸附", &settingListUI.pointAdsorption, config);
 
 								if (setlist.pointAdsorption != settingListUI.pointAdsorption)
 								{
@@ -4069,7 +4070,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!SmoothWriting)
+								if (!settingListUI.smoothWriting)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -4079,7 +4080,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##抬笔平滑笔迹", &SmoothWriting, config);
+								ImGui::Toggle("##抬笔平滑笔迹", &settingListUI.smoothWriting, config);
 
 								if (setlist.smoothWriting != settingListUI.smoothWriting)
 								{
@@ -4166,16 +4167,16 @@ void SettingMain(stop_token sT)
 									float popup_height = item_count * item_height + ImGui::GetStyle().WindowPadding.y * 2 * settingGlobalScale + 16.0f * settingGlobalScale;
 									ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, popup_height));
 								}
-								if (ImGui::BeginCombo("##橡皮粗细计算方式", vec[EraserMode]))
+								if (ImGui::BeginCombo("##橡皮粗细计算方式", vec[settingListUI.eraserSetting.eraserMode]))
 								{
 									for (int i = 0; i < vec.size(); i++)
 									{
 										ImGui::Dummy(ImVec2(0, 8.0f * settingGlobalScale));
 
-										bool is_selected = (EraserMode == i);
+										bool is_selected = (settingListUI.eraserSetting.eraserMode == i);
 										if (ImGui::Selectable(vec[i], is_selected))
 										{
-											EraserMode = i;
+											settingListUI.eraserSetting.eraserMode = i;
 											if (setlist.eraserSetting.eraserMode != settingListUI.eraserSetting.eraserMode)
 											{
 												setlist.eraserSetting.eraserMode = settingListUI.eraserSetting.eraserMode;
@@ -4313,7 +4314,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Performance/DrawMode/SuperDraw").c_str());
+								ImGui::TextUnformatted(IA("SettingsUI/Performance/DrawMode/settingListUI.performanceSetting.superDraw").c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -4321,7 +4322,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!SuperDraw)
+								if (!settingListUI.performanceSetting.superDraw)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -4331,7 +4332,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##极限性能绘图", &SuperDraw, config);
+								ImGui::Toggle("##极限性能绘图", &settingListUI.performanceSetting.superDraw, config);
 
 								if (setlist.performanceSetting.superDraw != settingListUI.performanceSetting.superDraw)
 								{
@@ -4352,7 +4353,7 @@ void SettingMain(stop_token sT)
 									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-									ImGui::TextWrapped(IA("SettingsUI/Performance/DrawMode/SuperDrawE").c_str());
+									ImGui::TextWrapped(IA("SettingsUI/Performance/DrawMode/settingListUI.performanceSetting.superDrawE").c_str());
 								}
 
 								{
@@ -4411,7 +4412,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!HideTouchPointer)
+								if (!settingListUI.hideTouchPointer)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -4421,7 +4422,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##绘制时隐藏触控光标", &HideTouchPointer, config);
+								ImGui::Toggle("##绘制时隐藏触控光标", &settingListUI.hideTouchPointer, config);
 
 								if (setlist.hideTouchPointer != settingListUI.hideTouchPointer)
 								{
@@ -4537,7 +4538,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!PresetSetting.MemoryWidth)
+								if (!settingListUI.presetSetting.memoryWidth)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -4547,7 +4548,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##记忆绘制粗细", &PresetSetting.MemoryWidth, config);
+								ImGui::Toggle("##记忆绘制粗细", &settingListUI.presetSetting.memoryWidth, config);
 
 								if (setlist.presetSetting.memoryWidth != settingListUI.presetSetting.memoryWidth)
 								{
@@ -4583,7 +4584,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!PresetSetting.MemoryColor)
+								if (!settingListUI.presetSetting.memoryColor)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -4593,7 +4594,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##记忆绘制颜色", &PresetSetting.MemoryColor, config);
+								ImGui::Toggle("##记忆绘制颜色", &settingListUI.presetSetting.memoryColor, config);
 
 								if (setlist.presetSetting.memoryColor != settingListUI.presetSetting.memoryColor)
 								{
@@ -4622,7 +4623,7 @@ void SettingMain(stop_token sT)
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(255, 255, 255, 0));
-						ImGui::BeginChild("预设#2", { 750.0f * settingGlobalScale,(PresetSetting.AutoDefaultWidth ? 95.0f : 220.0f) * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("预设#2", { 750.0f * settingGlobalScale,(settingListUI.presetSetting.autoDefaultWidth ? 95.0f : 220.0f) * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -4661,7 +4662,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!PresetSetting.AutoDefaultWidth)
+								if (!settingListUI.presetSetting.autoDefaultWidth)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -4671,7 +4672,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##自适应绘制粗细", &PresetSetting.AutoDefaultWidth, config);
+								ImGui::Toggle("##自适应绘制粗细", &settingListUI.presetSetting.autoDefaultWidth, config);
 
 								if (setlist.presetSetting.autoDefaultWidth != settingListUI.presetSetting.autoDefaultWidth)
 								{
@@ -4687,7 +4688,7 @@ void SettingMain(stop_token sT)
 							}
 							ImGui::EndChild();
 						}
-						if (!PresetSetting.AutoDefaultWidth)
+						if (!settingListUI.presetSetting.autoDefaultWidth)
 						{
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -4714,8 +4715,8 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, IM_COL32(0, 95, 184, 230));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 6.0f * settingGlobalScale));
-								ImGui::SliderFloat("##预设画笔粗细", &PresetSetting.DefaultBrush1Width, 1.0f, 30.0f, "");
-								PresetSetting.DefaultBrush1Width = round(PresetSetting.DefaultBrush1Width);
+								ImGui::SliderFloat("##预设画笔粗细", &settingListUI.presetSetting.DefaultBrush1Width, 1.0f, 30.0f, "");
+								settingListUI.presetSetting.DefaultBrush1Width = round(settingListUI.presetSetting.DefaultBrush1Width);
 
 								ImGui::PopItemWidth();
 
@@ -4734,14 +4735,14 @@ void SettingMain(stop_token sT)
 
 									ImGui::BeginTooltip();
 
-									int x = static_cast<int>(PresetSetting.DefaultBrush1Width);
+									int x = static_cast<int>(settingListUI.presetSetting.DefaultBrush1Width);
 									ImGui::TextUnformatted(vformat(IA("SettingsUI/Preset/Preset/PenInd"), make_format_args(x)).c_str());
 
 									ImGui::EndTooltip();
 								}
-								if (!isItemActive && setlist.presetSetting.defaultBrush1Width != PresetSetting.DefaultBrush1Width)
+								if (!isItemActive && setlist.presetSetting.defaultBrush1Width != settingListUI.presetSetting.DefaultBrush1Width)
 								{
-									setlist.presetSetting.defaultBrush1Width = PresetSetting.DefaultBrush1Width;
+									setlist.presetSetting.defaultBrush1Width = settingListUI.presetSetting.DefaultBrush1Width;
 									WriteSetting();
 								}
 							}
@@ -4749,7 +4750,7 @@ void SettingMain(stop_token sT)
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
-								int x = static_cast<int>(PresetSetting.DefaultBrush1Width);
+								int x = static_cast<int>(settingListUI.presetSetting.DefaultBrush1Width);
 								string temp = vformat(IA("SettingsUI/Preset/Preset/PenInd"), make_format_args(x));
 								ImVec2 tempVec = ImGui::CalcTextSize(temp.c_str());
 
@@ -4784,8 +4785,8 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, IM_COL32(0, 95, 184, 230));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 6.0f * settingGlobalScale));
-								ImGui::SliderFloat("##预设荧光笔粗细", &PresetSetting.DefaultHighlighter1Width, 10.0f, 100.0f, "");
-								PresetSetting.DefaultHighlighter1Width = round(PresetSetting.DefaultHighlighter1Width);
+								ImGui::SliderFloat("##预设荧光笔粗细", &settingListUI.presetSetting.DefaultHighlighter1Width, 10.0f, 100.0f, "");
+								settingListUI.presetSetting.DefaultHighlighter1Width = round(settingListUI.presetSetting.DefaultHighlighter1Width);
 
 								ImGui::PopItemWidth();
 
@@ -4804,14 +4805,14 @@ void SettingMain(stop_token sT)
 
 									ImGui::BeginTooltip();
 
-									int x = static_cast<int>(PresetSetting.DefaultHighlighter1Width);
+									int x = static_cast<int>(settingListUI.presetSetting.DefaultHighlighter1Width);
 									ImGui::TextUnformatted(vformat(IA("SettingsUI/Preset/Preset/HighlighterInd"), make_format_args(x)).c_str());
 
 									ImGui::EndTooltip();
 								}
-								if (!isItemActive && setlist.presetSetting.defaultHighlighter1Width != PresetSetting.DefaultHighlighter1Width)
+								if (!isItemActive && setlist.presetSetting.defaultHighlighter1Width != settingListUI.presetSetting.DefaultHighlighter1Width)
 								{
-									setlist.presetSetting.defaultHighlighter1Width = PresetSetting.DefaultHighlighter1Width;
+									setlist.presetSetting.defaultHighlighter1Width = settingListUI.presetSetting.DefaultHighlighter1Width;
 									WriteSetting();
 								}
 							}
@@ -4819,7 +4820,7 @@ void SettingMain(stop_token sT)
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
-								int x = static_cast<int>(PresetSetting.DefaultHighlighter1Width);
+								int x = static_cast<int>(settingListUI.presetSetting.DefaultHighlighter1Width);
 								string temp = vformat(IA("SettingsUI/Preset/Preset/HighlighterInd"), make_format_args(x));
 								ImVec2 tempVec = ImGui::CalcTextSize(temp.c_str());
 
@@ -6436,7 +6437,7 @@ void SettingMain(stop_token sT)
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-										if (!PlugInSetting.SuperTop.Enable)
+										if (!settingListUI.plugInSetting.superTop.enable)
 										{
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -6446,7 +6447,7 @@ void SettingMain(stop_token sT)
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 										}
-										ImGui::Toggle("##超级置顶", &PlugInSetting.SuperTop.Enable, config);
+										ImGui::Toggle("##超级置顶", &settingListUI.plugInSetting.superTop.enable, config);
 
 										if (setlist.plugInSetting.superTop.enable != settingListUI.plugInSetting.superTop.enable)
 										{
@@ -6512,7 +6513,7 @@ void SettingMain(stop_token sT)
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-										if (!PlugInSetting.SuperTop.Indicator)
+										if (!settingListUI.plugInSetting.superTop.indicator)
 										{
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -6522,7 +6523,7 @@ void SettingMain(stop_token sT)
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 										}
-										ImGui::Toggle("##超级置顶指示器", &PlugInSetting.SuperTop.Indicator, config);
+										ImGui::Toggle("##超级置顶指示器", &settingListUI.plugInSetting.superTop.indicator, config);
 
 										if (setlist.plugInSetting.superTop.indicator != settingListUI.plugInSetting.superTop.indicator)
 										{
@@ -6640,7 +6641,7 @@ void SettingMain(stop_token sT)
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-										if (!CorrectLnk)
+										if (!settingListUI.shortcutAssistant.correctLnk)
 										{
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -6650,7 +6651,7 @@ void SettingMain(stop_token sT)
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 										}
-										ImGui::Toggle("##修正桌面快捷方式指向和名称", &CorrectLnk, config);
+										ImGui::Toggle("##修正桌面快捷方式指向和名称", &settingListUI.shortcutAssistant.correctLnk, config);
 
 										if (setlist.shortcutAssistant.correctLnk != settingListUI.shortcutAssistant.correctLnk)
 										{
@@ -6725,13 +6726,13 @@ void SettingMain(stop_token sT)
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/LnkHelper/Expansion/CreateLnk").c_str());
+										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/LnkHelper/Expansion/settingListUI.shortcutAssistant.createLnk").c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/LnkHelper/Expansion/CreateLnkE").c_str());
+										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/LnkHelper/Expansion/settingListUI.shortcutAssistant.createLnkE").c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
@@ -6739,7 +6740,7 @@ void SettingMain(stop_token sT)
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-										if (!CreateLnk)
+										if (!settingListUI.shortcutAssistant.createLnk)
 										{
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -6749,7 +6750,7 @@ void SettingMain(stop_token sT)
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 										}
-										ImGui::Toggle("##创建桌面快捷方式", &CreateLnk, config);
+										ImGui::Toggle("##创建桌面快捷方式", &settingListUI.shortcutAssistant.createLnk, config);
 
 										if (setlist.shortcutAssistant.createLnk != settingListUI.shortcutAssistant.createLnk)
 										{
@@ -8201,7 +8202,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!ComponentShortcutButtonApplianceExplorer)
+								if (!settingListUI.component.shortcutButton.appliance.explorer)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -8211,7 +8212,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##启动 文件资源管理器", &ComponentShortcutButtonApplianceExplorer, config);
+								ImGui::Toggle("##启动 文件资源管理器", &settingListUI.component.shortcutButton.appliance.explorer, config);
 
 								if (setlist.component.shortcutButton.appliance.explorer != settingListUI.component.shortcutButton.appliance.explorer)
 								{
@@ -8247,7 +8248,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!ComponentShortcutButtonApplianceTaskmgr)
+								if (!settingListUI.component.shortcutButton.appliance.taskmgr)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -8257,7 +8258,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##启动 任务管理器", &ComponentShortcutButtonApplianceTaskmgr, config);
+								ImGui::Toggle("##启动 任务管理器", &settingListUI.component.shortcutButton.appliance.taskmgr, config);
 
 								if (setlist.component.shortcutButton.appliance.taskmgr != settingListUI.component.shortcutButton.appliance.taskmgr)
 								{
@@ -8293,7 +8294,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!ComponentShortcutButtonApplianceControl)
+								if (!settingListUI.component.shortcutButton.appliance.control)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -8303,7 +8304,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##启动 控制面板", &ComponentShortcutButtonApplianceControl, config);
+								ImGui::Toggle("##启动 控制面板", &settingListUI.component.shortcutButton.appliance.control, config);
 
 								if (setlist.component.shortcutButton.appliance.control != settingListUI.component.shortcutButton.appliance.control)
 								{
@@ -8361,7 +8362,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!ComponentShortcutButtonSystemDesktop)
+								if (!settingListUI.component.shortcutButton.system.desktop)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -8371,7 +8372,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##显示 桌面", &ComponentShortcutButtonSystemDesktop, config);
+								ImGui::Toggle("##显示 桌面", &settingListUI.component.shortcutButton.system.desktop, config);
 
 								if (setlist.component.shortcutButton.system.desktop != settingListUI.component.shortcutButton.system.desktop)
 								{
@@ -8407,7 +8408,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!ComponentShortcutButtonSystemLockWorkStation)
+								if (!settingListUI.component.shortcutButton.system.lockWorkStation)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -8417,7 +8418,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##锁屏", &ComponentShortcutButtonSystemLockWorkStation, config);
+								ImGui::Toggle("##锁屏", &settingListUI.component.shortcutButton.system.lockWorkStation, config);
 
 								if (setlist.component.shortcutButton.system.lockWorkStation != settingListUI.component.shortcutButton.system.lockWorkStation)
 								{
@@ -8475,7 +8476,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!ComponentShortcutButtonKeyboardKeyboardesc)
+								if (!settingListUI.component.shortcutButton.keyboard.keyboardesc)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -8485,7 +8486,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##按下 ESC", &ComponentShortcutButtonKeyboardKeyboardesc, config);
+								ImGui::Toggle("##按下 ESC", &settingListUI.component.shortcutButton.keyboard.keyboardesc, config);
 
 								if (setlist.component.shortcutButton.keyboard.keyboardesc != settingListUI.component.shortcutButton.keyboard.keyboardesc)
 								{
@@ -8521,7 +8522,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!ComponentShortcutButtonKeyboardKeyboardAltF4)
+								if (!settingListUI.component.shortcutButton.keyboard.keyboardAltF4)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -8531,7 +8532,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##按下 Alt+F4", &ComponentShortcutButtonKeyboardKeyboardAltF4, config);
+								ImGui::Toggle("##按下 Alt+F4", &settingListUI.component.shortcutButton.keyboard.keyboardAltF4, config);
 
 								if (setlist.component.shortcutButton.keyboard.keyboardAltF4 != settingListUI.component.shortcutButton.keyboard.keyboardAltF4)
 								{
@@ -8595,7 +8596,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!ComponentShortcutButtonRollCallIslandCaller)
+								if (!settingListUI.component.shortcutButton.rollCall.IslandCaller)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -8605,7 +8606,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##IslandCaller 随机点名", &ComponentShortcutButtonRollCallIslandCaller, config);
+								ImGui::Toggle("##IslandCaller 随机点名", &settingListUI.component.shortcutButton.rollCall.IslandCaller, config);
 
 								if (setlist.component.shortcutButton.rollCall.IslandCaller != settingListUI.component.shortcutButton.rollCall.IslandCaller)
 								{
@@ -8647,7 +8648,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!ComponentShortcutButtonRollCallSecRandom)
+								if (!settingListUI.component.shortcutButton.rollCall.SecRandom)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -8657,7 +8658,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##SecRandom 随机点名", &ComponentShortcutButtonRollCallSecRandom, config);
+								ImGui::Toggle("##SecRandom 随机点名", &settingListUI.component.shortcutButton.rollCall.SecRandom, config);
 
 								if (setlist.component.shortcutButton.rollCall.SecRandom != settingListUI.component.shortcutButton.rollCall.SecRandom)
 								{
@@ -8699,7 +8700,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!ComponentShortcutButtonRollCallNamePicker)
+								if (!settingListUI.component.shortcutButton.rollCall.NamePicker)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -8709,7 +8710,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##NamePicker 随机点名", &ComponentShortcutButtonRollCallNamePicker, config);
+								ImGui::Toggle("##NamePicker 随机点名", &settingListUI.component.shortcutButton.rollCall.NamePicker, config);
 
 								if (setlist.component.shortcutButton.rollCall.NamePicker != settingListUI.component.shortcutButton.rollCall.NamePicker)
 								{
@@ -8810,7 +8811,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!ComponentShortcutButtonLinkageClassislandSettings)
+								if (!settingListUI.component.shortcutButton.linkage.classislandSettings)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -8820,7 +8821,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##ClassIsland 应用设置", &ComponentShortcutButtonLinkageClassislandSettings, config);
+								ImGui::Toggle("##ClassIsland 应用设置", &settingListUI.component.shortcutButton.linkage.classislandSettings, config);
 
 								if (setlist.component.shortcutButton.linkage.classislandSettings != settingListUI.component.shortcutButton.linkage.classislandSettings)
 								{
@@ -8850,7 +8851,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!ComponentShortcutButtonLinkageClassislandProfile)
+								if (!settingListUI.component.shortcutButton.linkage.classislandProfile)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -8860,7 +8861,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##ClassIsland 档案编辑", &ComponentShortcutButtonLinkageClassislandProfile, config);
+								ImGui::Toggle("##ClassIsland 档案编辑", &settingListUI.component.shortcutButton.linkage.classislandProfile, config);
 
 								if (setlist.component.shortcutButton.linkage.classislandProfile != settingListUI.component.shortcutButton.linkage.classislandProfile)
 								{
@@ -8896,7 +8897,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!ComponentShortcutButtonLinkageClassislandClassswap)
+								if (!settingListUI.component.shortcutButton.linkage.classislandClassswap)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -8906,7 +8907,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##ClassIsland 快速换课", &ComponentShortcutButtonLinkageClassislandClassswap, config);
+								ImGui::Toggle("##ClassIsland 快速换课", &settingListUI.component.shortcutButton.linkage.classislandClassswap, config);
 
 								if (setlist.component.shortcutButton.linkage.classislandClassswap != settingListUI.component.shortcutButton.linkage.classislandClassswap)
 								{
@@ -9089,7 +9090,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!Experimental.Inkeys3.UI3)
+								if (!settingListUI.Experimental.Inkeys3.UI3)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -9099,7 +9100,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##启用 UI3", &Experimental.Inkeys3.UI3, config);
+								ImGui::Toggle("##启用 UI3", &settingListUI.Experimental.Inkeys3.UI3, config);
 
 								if (setlist.Experimental.Inkeys3.UI3 != settingListUI.Experimental.Inkeys3.UI3)
 								{
