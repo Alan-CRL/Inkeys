@@ -1,0 +1,16 @@
+{
+  "name": "inkeys",
+  "version-string": "0.0.0",
+  "dependencies": [
+    {
+      "name": "openssl"
+    }
+  ],
+  "overrides": [
+    {
+      "name": "openssl",
+      "version": "3.0.8#2"
+    }
+  ],
+  "builtin-baseline": "b2f068faf45a3f04145bec0f52a66526ad590227"
+}

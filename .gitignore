@@ -11,4 +11,6 @@
 /智绘教/Debug/
 /智绘教/x64/
 /智绘教/ARM64/
-/auto upload.bat
+vcpkg_installed_x86/
+vcpkg_installed_x64/
+vcpkg_installed_arm64/
