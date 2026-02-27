@@ -9,7 +9,9 @@ on:
       - insider
       - canary
 permissions:
+  contents: read
   actions: write
+  packages: write
 
 jobs:
   check:
@@ -31,7 +33,7 @@ jobs:
           "构建提交者: ${{ github.actor }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Check for '#define IDT_RELEASE'
         id: check_idt_release
@@ -59,10 +61,16 @@ jobs:
         platform: [Win32, x64, ARM64]
       fail-fast: false
     runs-on: windows-2025
+    env:
+      USERNAME: ${{ github.repository_owner }}
+      FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+      VCPKG_BINARY_SOURCES: "clear;nuget,https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json,readwrite"
 
     steps:
     - name: Checkout code 
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
+      with:
+        submodules: recursive
 
     - name: 获取环境信息
       id: environmentInfo
@@ -142,9 +150,38 @@ jobs:
         $newContent = ($content -join "`r`n") -replace $pattern, $replacement
       
         Set-Content -Path $file -Value $newContent -Encoding utf8
+    
+    - name: Bootstrap vcpkg
+      shell: pwsh
+      run: .\vcpkg\bootstrap-vcpkg.bat
       
+    - name: Configure NuGet source for vcpkg binary cache
+      shell: pwsh
+      run: |
+        # Fetch vcpkg-provided nuget.exe (prints path)
+        $nugetPath = .\vcpkg\vcpkg.exe fetch nuget | Select-Object -Last 1
+        if (-not (Test-Path $nugetPath)) {
+          throw "nuget.exe not found at: $nugetPath"
+        }
+
+        $sourceName = "GitHubPackages"
+        $feedUrl    = "${{ env.FEED_URL }}"
+        $userName   = "${{ env.USERNAME }}"
+        $token      = "${{ secrets.GITHUB_TOKEN }}"
+
+        # Add or update the NuGet source (idempotent)
+        $existing = & $nugetPath sources list | Out-String
+        if ($existing -match [regex]::Escape($sourceName)) {
+          & $nugetPath sources update -Name $sourceName -Source $feedUrl -UserName $userName -Password $token
+        } else {
+          & $nugetPath sources add    -Name $sourceName -Source $feedUrl -UserName $userName -Password $token
+        }
+
+        # Set API key for pushing packages (required for readwrite feeds)
+        & $nugetPath setapikey $token -Source $feedUrl
+        
     - name: Build Inkeys
-      run: msbuild "智绘教.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /verbosity:minimal
+      run: msbuild "智绘教.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /p:PlatformToolset=v143 /verbosity:minimal
       shell: cmd
     
     - name: Upload exe[unsigned] artifact

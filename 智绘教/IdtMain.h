@@ -29,6 +29,8 @@
 #include <thread>
 #include <unordered_map>
 #include <utility>
+#include <future>
+
 #include <windows.h>
 
 // 图形类
@@ -44,7 +46,7 @@
 
 // 文件类
 #include <filesystem>
-#include "jsoncpp/json.h"
+#include "json/json.h"
 #include "hashlib++/hashlibpp.h"
 #include "ziputils/unzip.h"
 
@@ -75,7 +77,7 @@
 #include <codecvt>
 
 // 哈希
-#include <unordered_dense.h>
+#include "ankerl/unordered_dense.h"
 
 //链接库
 #pragma comment(lib, "gdiplus.lib")

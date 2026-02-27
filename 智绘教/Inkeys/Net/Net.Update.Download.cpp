@@ -1,13 +1,18 @@
 module;
 
-#pragma comment(lib, "libssl_static.lib")
-#pragma comment(lib, "libcrypto_static.lib")
-
 #define CPPHTTPLIB_OPENSSL_SUPPORT
-#include "cpphttplib/httplib.h"
+#pragma warning(push)
+#pragma warning(disable: 4996)
+#include "httplib.h"
+#pragma warning(pop)
+
+#pragma comment(lib, "libssl.lib")
+#pragma comment(lib, "libcrypto.lib")
 
 module Inkeys.Net.Update;
 import :Download;
+
+import <fstream>;
 
 std::string GetEditionInformation(std::string referer)
 {
