@@ -302,6 +302,16 @@ COLORSELECT             UI                      "src\\UI\\color\\colorSelect.svg
 
 BARHIGHLIGHTER1         UI                      "src\\UI\\barHighlighter1.svg"
 
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// SHADERS
+//
+
+IDR_SHADERS1            SHADERS                 "additional\\imgui\\CustomShaders\\imgui_ps.cso"
+
+IDR_SHADERS2            SHADERS                 "additional\\imgui\\CustomShaders\\imgui_vs.cso"
+
 #endif    // 中文(简体，中国) resources
 /////////////////////////////////////////////////////////////////////////////
 

@@ -17,7 +17,7 @@ void SettingSeekBar();
 
 LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-void SettingWindow(promise<void>& promise);
+void SettingWindow(stop_token sT, promise<void>& promise);
 export void SettingWindowBegin();
 
-export void SettingMain();
+export void SettingMain(stop_token sT);

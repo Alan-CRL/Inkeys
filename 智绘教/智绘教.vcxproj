@@ -153,7 +153,7 @@
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;.\binarypackage\OpenSSL-Win32\include;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <CompileAsManaged>
       </CompileAsManaged>
@@ -169,7 +169,7 @@
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;.\binarypackage\OpenSSL-Win32\lib;.\binarypackage\lib\X86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>.\additional;.\binarypackage\lib\X86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <UACExecutionLevel>AsInvoker</UACExecutionLevel>
       <MinimumRequiredVersion>6.01</MinimumRequiredVersion>
@@ -189,7 +189,7 @@
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;.\binarypackage\OpenSSL-Win32\include;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <CompileAsManaged>
       </CompileAsManaged>
@@ -205,7 +205,7 @@
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;.\binarypackage\OpenSSL-Win32\lib;.\binarypackage\lib\X86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>.\additional;.\binarypackage\lib\X86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <UACExecutionLevel>AsInvoker</UACExecutionLevel>
       <DelayLoadDLLs>Magnification.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
@@ -225,7 +225,7 @@
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;.\binarypackage\OpenSSL-Win64\include;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <CompileAsManaged>
       </CompileAsManaged>
@@ -241,7 +241,7 @@
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;.\binarypackage\OpenSSL-Win64\lib;.\binarypackage\lib\X64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>.\additional;.\binarypackage\lib\X64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <MinimumRequiredVersion>6.01</MinimumRequiredVersion>
     </Link>
@@ -259,7 +259,7 @@
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;.\binarypackage\OpenSSL-Win64\include;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <CompileAsManaged>
       </CompileAsManaged>
@@ -275,7 +275,7 @@
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;.\binarypackage\OpenSSL-Win64\lib;.\binarypackage\lib\X64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>.\additional;.\binarypackage\lib\X64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <DelayLoadDLLs>Magnification.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
@@ -293,7 +293,7 @@
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;.\binarypackage\OpenSSL-Arm64\include;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <CompileAsManaged>
       </CompileAsManaged>
@@ -311,7 +311,7 @@
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;.\binarypackage\OpenSSL-Arm64\lib;.\binarypackage\lib\ARM64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>.\additional;.\binarypackage\lib\ARM64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <MinimumRequiredVersion>6.02</MinimumRequiredVersion>
     </Link>
@@ -330,7 +330,7 @@
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;.\binarypackage\OpenSSL-Arm64\include;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <CompileAsManaged>
       </CompileAsManaged>
@@ -349,7 +349,7 @@
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;.\binarypackage\OpenSSL-Arm64\lib;.\binarypackage\lib\ARM64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>.\additional;.\binarypackage\lib\ARM64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <DelayLoadDLLs>Magnification.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
@@ -358,8 +358,6 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="additional\concurrentqueue.h" />
-    <ClInclude Include="additional\cpphttplib\httplib.h" />
     <ClInclude Include="additional\hashlib++\hashlibpp.h" />
     <ClInclude Include="additional\hashlib++\hl_exception.h" />
     <ClInclude Include="additional\hashlib++\hl_hashwrapper.h" />
@@ -389,125 +387,9 @@
     <ClInclude Include="additional\imgui\imstb_rectpack.h" />
     <ClInclude Include="additional\imgui\imstb_textedit.h" />
     <ClInclude Include="additional\imgui\imstb_truetype.h" />
-    <ClInclude Include="additional\jsoncpp\allocator.h" />
-    <ClInclude Include="additional\jsoncpp\assertions.h" />
-    <ClInclude Include="additional\jsoncpp\config.h" />
-    <ClInclude Include="additional\jsoncpp\forwards.h" />
-    <ClInclude Include="additional\jsoncpp\json.h" />
-    <ClInclude Include="additional\jsoncpp\json_features.h" />
-    <ClInclude Include="additional\jsoncpp\lib_json\json_tool.h" />
-    <ClInclude Include="additional\jsoncpp\reader.h" />
-    <ClInclude Include="additional\jsoncpp\value.h" />
-    <ClInclude Include="additional\jsoncpp\version.h" />
-    <ClInclude Include="additional\jsoncpp\writer.h" />
-    <ClInclude Include="additional\spdlog\async.h" />
-    <ClInclude Include="additional\spdlog\async_logger-inl.h" />
-    <ClInclude Include="additional\spdlog\async_logger.h" />
-    <ClInclude Include="additional\spdlog\cfg\argv.h" />
-    <ClInclude Include="additional\spdlog\cfg\env.h" />
-    <ClInclude Include="additional\spdlog\cfg\helpers-inl.h" />
-    <ClInclude Include="additional\spdlog\cfg\helpers.h" />
-    <ClInclude Include="additional\spdlog\common-inl.h" />
-    <ClInclude Include="additional\spdlog\common.h" />
-    <ClInclude Include="additional\spdlog\details\backtracer-inl.h" />
-    <ClInclude Include="additional\spdlog\details\backtracer.h" />
-    <ClInclude Include="additional\spdlog\details\circular_q.h" />
-    <ClInclude Include="additional\spdlog\details\console_globals.h" />
-    <ClInclude Include="additional\spdlog\details\file_helper-inl.h" />
-    <ClInclude Include="additional\spdlog\details\file_helper.h" />
-    <ClInclude Include="additional\spdlog\details\fmt_helper.h" />
-    <ClInclude Include="additional\spdlog\details\log_msg-inl.h" />
-    <ClInclude Include="additional\spdlog\details\log_msg.h" />
-    <ClInclude Include="additional\spdlog\details\log_msg_buffer-inl.h" />
-    <ClInclude Include="additional\spdlog\details\log_msg_buffer.h" />
-    <ClInclude Include="additional\spdlog\details\mpmc_blocking_q.h" />
-    <ClInclude Include="additional\spdlog\details\null_mutex.h" />
-    <ClInclude Include="additional\spdlog\details\os-inl.h" />
-    <ClInclude Include="additional\spdlog\details\os.h" />
-    <ClInclude Include="additional\spdlog\details\periodic_worker-inl.h" />
-    <ClInclude Include="additional\spdlog\details\periodic_worker.h" />
-    <ClInclude Include="additional\spdlog\details\registry-inl.h" />
-    <ClInclude Include="additional\spdlog\details\registry.h" />
-    <ClInclude Include="additional\spdlog\details\synchronous_factory.h" />
-    <ClInclude Include="additional\spdlog\details\tcp_client-windows.h" />
-    <ClInclude Include="additional\spdlog\details\tcp_client.h" />
-    <ClInclude Include="additional\spdlog\details\thread_pool-inl.h" />
-    <ClInclude Include="additional\spdlog\details\thread_pool.h" />
-    <ClInclude Include="additional\spdlog\details\udp_client-windows.h" />
-    <ClInclude Include="additional\spdlog\details\udp_client.h" />
-    <ClInclude Include="additional\spdlog\details\windows_include.h" />
-    <ClInclude Include="additional\spdlog\fmt\bin_to_hex.h" />
-    <ClInclude Include="additional\spdlog\fmt\bundled\args.h" />
-    <ClInclude Include="additional\spdlog\fmt\bundled\chrono.h" />
-    <ClInclude Include="additional\spdlog\fmt\bundled\color.h" />
-    <ClInclude Include="additional\spdlog\fmt\bundled\compile.h" />
-    <ClInclude Include="additional\spdlog\fmt\bundled\core.h" />
-    <ClInclude Include="additional\spdlog\fmt\bundled\format-inl.h" />
-    <ClInclude Include="additional\spdlog\fmt\bundled\format.h" />
-    <ClInclude Include="additional\spdlog\fmt\bundled\locale.h" />
-    <ClInclude Include="additional\spdlog\fmt\bundled\os.h" />
-    <ClInclude Include="additional\spdlog\fmt\bundled\ostream.h" />
-    <ClInclude Include="additional\spdlog\fmt\bundled\printf.h" />
-    <ClInclude Include="additional\spdlog\fmt\bundled\ranges.h" />
-    <ClInclude Include="additional\spdlog\fmt\bundled\std.h" />
-    <ClInclude Include="additional\spdlog\fmt\bundled\xchar.h" />
-    <ClInclude Include="additional\spdlog\fmt\chrono.h" />
-    <ClInclude Include="additional\spdlog\fmt\compile.h" />
-    <ClInclude Include="additional\spdlog\fmt\fmt.h" />
-    <ClInclude Include="additional\spdlog\fmt\ostr.h" />
-    <ClInclude Include="additional\spdlog\fmt\ranges.h" />
-    <ClInclude Include="additional\spdlog\fmt\std.h" />
-    <ClInclude Include="additional\spdlog\fmt\xchar.h" />
-    <ClInclude Include="additional\spdlog\formatter.h" />
-    <ClInclude Include="additional\spdlog\fwd.h" />
-    <ClInclude Include="additional\spdlog\logger-inl.h" />
-    <ClInclude Include="additional\spdlog\logger.h" />
-    <ClInclude Include="additional\spdlog\mdc.h" />
-    <ClInclude Include="additional\spdlog\pattern_formatter-inl.h" />
-    <ClInclude Include="additional\spdlog\pattern_formatter.h" />
-    <ClInclude Include="additional\spdlog\sinks\android_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\ansicolor_sink-inl.h" />
-    <ClInclude Include="additional\spdlog\sinks\ansicolor_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\base_sink-inl.h" />
-    <ClInclude Include="additional\spdlog\sinks\base_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\basic_file_sink-inl.h" />
-    <ClInclude Include="additional\spdlog\sinks\basic_file_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\callback_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\daily_file_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\dist_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\dup_filter_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\hourly_file_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\kafka_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\mongo_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\msvc_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\null_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\ostream_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\qt_sinks.h" />
-    <ClInclude Include="additional\spdlog\sinks\ringbuffer_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\rotating_file_sink-inl.h" />
-    <ClInclude Include="additional\spdlog\sinks\rotating_file_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\sink-inl.h" />
-    <ClInclude Include="additional\spdlog\sinks\sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\stdout_color_sinks-inl.h" />
-    <ClInclude Include="additional\spdlog\sinks\stdout_color_sinks.h" />
-    <ClInclude Include="additional\spdlog\sinks\stdout_sinks-inl.h" />
-    <ClInclude Include="additional\spdlog\sinks\stdout_sinks.h" />
-    <ClInclude Include="additional\spdlog\sinks\syslog_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\systemd_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\tcp_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\udp_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\wincolor_sink-inl.h" />
-    <ClInclude Include="additional\spdlog\sinks\wincolor_sink.h" />
-    <ClInclude Include="additional\spdlog\sinks\win_eventlog_sink.h" />
-    <ClInclude Include="additional\spdlog\spdlog-inl.h" />
-    <ClInclude Include="additional\spdlog\spdlog.h" />
-    <ClInclude Include="additional\spdlog\stopwatch.h" />
-    <ClInclude Include="additional\spdlog\tweakme.h" />
-    <ClInclude Include="additional\spdlog\version.h" />
     <ClInclude Include="additional\stbimage\stb_image.h" />
     <ClInclude Include="additional\stbimage\stb_image_resize.h" />
     <ClInclude Include="additional\stbimage\stb_image_write.h" />
-    <ClInclude Include="additional\unordered_dense.h" />
     <ClInclude Include="additional\wintoastlib\wintoastlib.h" />
     <ClInclude Include="additional\ziputils\unzip.h" />
     <ClInclude Include="additional\ziputils\zip.h" />
@@ -590,9 +472,6 @@
     <ClCompile Include="additional\imgui\imgui_toggle_presets.cpp" />
     <ClCompile Include="additional\imgui\imgui_toggle_renderer.cpp" />
     <ClCompile Include="additional\imgui\imgui_widgets.cpp" />
-    <ClCompile Include="additional\jsoncpp\lib_json\json_reader.cpp" />
-    <ClCompile Include="additional\jsoncpp\lib_json\json_value.cpp" />
-    <ClCompile Include="additional\jsoncpp\lib_json\json_writer.cpp" />
     <ClCompile Include="additional\wintoastlib\wintoastlib.cpp" />
     <ClCompile Include="additional\ziputils\unzip.cpp" />
     <ClCompile Include="additional\ziputils\zip.cpp" />
@@ -651,6 +530,8 @@
     <ClCompile Include="Inkeys\Conv\Conv.Text.cppm" />
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cpp" />
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cppm" />
+    <ClCompile Include="Inkeys\Helper\Helper.Enum.cppm" />
+    <ClCompile Include="Inkeys\Helper\Helper.Thread.cppm" />
     <ClCompile Include="Inkeys\Load\Load.cppm" />
     <ClCompile Include="Inkeys\Net\Net.Update.cpp" />
     <ClCompile Include="Inkeys\Net\Net.Update.cppm" />
@@ -662,7 +543,6 @@
     <ClCompile Include="Inkeys\Text\Text.Font.cpp" />
     <ClCompile Include="Inkeys\Text\Text.Font.cppm" />
     <ClCompile Include="Inkeys\Text\Text.Split.cppm" />
-    <ClCompile Include="Inkeys\Thread\Thread.Status.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Bottom.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Buttom.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.cpp" />
@@ -766,8 +646,9 @@
     <Image Include="src\write.png" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="additional\jsoncpp\lib_json\json_valueiterator.inl" />
-    <None Include="additional\spdlog\fmt\bundled\fmt.license.rst" />
+    <None Include="additional\imgui\CustomShaders\imgui_common.hlsli" />
+    <None Include="additional\imgui\CustomShaders\imgui_ps.cso" />
+    <None Include="additional\imgui\CustomShaders\imgui_vs.cso" />
     <None Include="exe\DesktopDrawpadBlocker.exe" />
     <None Include="PptCOM.dll" />
     <None Include="src\i18n\en-US.jsonc" />
@@ -816,6 +697,36 @@
     <Font Include="src\ttf\icomoon.ttf" />
     <Font Include="src\ttf\Segoe Fluent Icons.ttf" />
   </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="additional\imgui\CustomShaders\imgui_ps.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.0</ShaderModel>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+    </FxCompile>
+    <FxCompile Include="additional\imgui\CustomShaders\imgui_vs.hlsl">
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+    </FxCompile>
+  </ItemGroup>
   <PropertyGroup Condition="'$(Platform)'=='Win32'">
     <TlbPlatform>win32</TlbPlatform>
   </PropertyGroup>
@@ -826,6 +737,12 @@
     <TlbPlatform>win32</TlbPlatform>
   </PropertyGroup>
   <!-- Delete .Net Framework assembly from C++ project output directory -->
+  <PropertyGroup Label="Vcpkg" Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'" />
+  <PropertyGroup Label="Vcpkg" Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'" />
+  <PropertyGroup Label="Vcpkg" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" />
+  <PropertyGroup Label="Vcpkg" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" />
+  <PropertyGroup Label="Vcpkg" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" />
+  <PropertyGroup Label="Vcpkg" Condition="'$(Configuration)|$(Platform)'=='Release|x64'" />
   <Target Name="CleanPptCOM" AfterTargets="Clean">
     <Delete Files="$(TargetDir)PptCOM.dll" />
   </Target>

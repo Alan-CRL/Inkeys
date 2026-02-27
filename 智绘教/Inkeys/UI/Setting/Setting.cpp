@@ -27,7 +27,7 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 module Inkeys.UI.Setting;
 
 import Inkeys.UI.Bar;
-import Inkeys.Thread.Status;
+import Inkeys.Helper.Thread;
 import Inkeys.Net.Update;
 import Inkeys.Load;
 import Inkeys.Other.Inputs;
@@ -118,9 +118,14 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		}
 
 		break;
+
+	case WM_CLOSE:
 	case WM_DESTROY:
-		::PostQuitMessage(0);
+	{
+		// 防御其他流氓软件关闭我的窗口
 		return 0;
+	}
+
 	case WM_MOVE:
 		RECT rect;
 		GetWindowRect(hWnd, &rect);
@@ -134,7 +139,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
-void SettingWindow(promise<void>& promise)
+void SettingWindow(stop_token sT, promise<void>& promise)
 {
 	// 创建窗口
 	{
@@ -147,14 +152,40 @@ void SettingWindow(promise<void>& promise)
 		setting_window = CreateWindowEx(WS_EX_NOACTIVATE, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, drawpad_window, nullptr, ImGuiWc.hInstance, nullptr);
 		//setting_window = CreateWindowEx(WS_EX_NOACTIVATE, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, nullptr, nullptr, ImGuiWc.hInstance, nullptr);
 	}
+
+	// 设置终止时回调
+	auto tid = GetCurrentThreadId();
+	stop_callback sc(sT, [tid]
+		{
+			PostThreadMessage(tid, Inkeys::Thread::WM_USER_STOP_Win32Msg, 0, 0);
+		});
+
+	// 窗口创建完成
 	promise.set_value();
 
 	MSG msg;
-	while (!offSignal && GetMessage(&msg, nullptr, 0, 0))
+	while (GetMessage(&msg, nullptr, 0, 0))
 	{
+		if (sT.stop_requested()) break;
+
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
 	}
+
+	// 构析窗口相关
+	{
+		// 销毁窗口
+		if (setting_window)
+		{
+			DestroyWindow(setting_window);
+			setting_window = nullptr;
+		}
+
+		UnregisterClassW(ImGuiWc.lpszClassName, ImGuiWc.hInstance);
+	}
+
+	// 窗口负责函数结束
+	return;
 }
 void SettingWindowBegin()
 {
@@ -173,7 +204,7 @@ void SettingWindowBegin()
 		promise<void> promise;
 		future<void> future = promise.get_future();
 
-		thread(SettingWindow, ref(promise)).detach();
+		Inkeys::Thread::constantThread.settingInitializationJthread = jthread(SettingWindow, ref(promise));
 		future.get();
 	}
 
@@ -184,14 +215,10 @@ void SettingWindowBegin()
 	//UpdateWindow(setting_window);
 }
 
-void SettingMain()
+void SettingMain(stop_token sT)
 {
-	Inkeys::Thread::StatusGuard guard("SettingMain");
-
-	//SettingWindowBegin();
-
 	bool showWindow = false;
-	while (!offSignal)
+	while (!sT.stop_requested())
 	{
 		if (showWindow)
 		{
@@ -211,8 +238,8 @@ void SettingMain()
 		}
 		showWindow = false;
 
-		while (!test.select && !offSignal) this_thread::sleep_for(chrono::milliseconds(100));
-		if (offSignal) break;
+		while (!test.select && !sT.stop_requested()) this_thread::sleep_for(chrono::milliseconds(100));
+		if (sT.stop_requested()) break;
 
 		{
 			::ShowWindow(setting_window, SW_SHOWNOACTIVATE);
@@ -880,7 +907,7 @@ void SettingMain()
 		int settingTab = 0;
 		int settingPlugInTab = 0;
 
-		while (!offSignal)
+		while (!sT.stop_requested())
 		{
 			// Handle lost D3D9 device
 			if (g_DeviceLost)
@@ -10087,6 +10114,11 @@ void SettingMain()
 		ImGui_ImplDX9_Shutdown();
 		ImGui_ImplWin32_Shutdown();
 		ImGui::DestroyContext();
+	}
+
+	// 通知相关线程下班
+	{
+		Inkeys::Thread::constantThread.RequestStop(Inkeys::Thread::constantThread.settingInitializationJthread);
 	}
 
 	return;

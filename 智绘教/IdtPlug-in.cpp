@@ -19,7 +19,7 @@
 // 一些函数获取 PptInfoStateBuffer 的值，必须要等到 PPT 画板初始化完毕后才会有所改变，并再做出反应。
 
 import Inkeys.Conv.Color;
-import Inkeys.Thread.Status;
+import Inkeys.Helper.Thread;
 import Inkeys.Load;
 import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;

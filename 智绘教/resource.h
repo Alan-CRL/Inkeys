@@ -70,12 +70,14 @@
 #define IDR_TTF6                        296
 #define IDR_TTF7                        297
 #define IDR_TTF8                        298
+#define IDR_SHADERS1                    299
+#define IDR_SHADERS2                    300
 
 // Next default values for new objects
-//
+// 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        299
+#define _APS_NEXT_RESOURCE_VALUE        301
 #define _APS_NEXT_COMMAND_VALUE         40001
 #define _APS_NEXT_CONTROL_VALUE         1001
 #define _APS_NEXT_SYMED_VALUE           101

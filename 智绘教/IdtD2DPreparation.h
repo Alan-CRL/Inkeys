@@ -149,7 +149,8 @@ extern CComPtr<ID2D1Device> d2dDevice_WARP;
 //	IUnknown* m_punkFTMarshaller;
 //};
 
-template <class T> void DxObjectSafeRelease(T** ppT)
+template <class T>
+void DxObjectSafeRelease(T** ppT)
 {
 	if (*ppT)
 	{

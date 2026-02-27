@@ -1,4 +1,4 @@
-﻿import Inkeys.Thread.Status;
+﻿import Inkeys.Helper.Thread;
 import Inkeys.Text.Font;
 
 #include "IdtFreezeFrame.h"
