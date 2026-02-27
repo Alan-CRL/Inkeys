@@ -11,7 +11,6 @@ on:
 permissions:
   contents: read
   actions: write
-  packages: write
 
 jobs:
   check:
@@ -62,9 +61,8 @@ jobs:
       fail-fast: false
     runs-on: windows-2025
     env:
-      USERNAME: ${{ github.repository_owner }}
-      FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
-      VCPKG_BINARY_SOURCES: "clear;nuget,https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json,readwrite"
+      VCPKG_BINARY_SOURCES: 'clear;files,${{ github.workspace }}\.vcpkg-bincache\${{ matrix.platform }},readwrite'
+
 
     steps:
     - name: Checkout code 
@@ -83,6 +81,30 @@ jobs:
         echo "OS=$os" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
         echo "OS_VERSION=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
+    - name: Prepare vcpkg cache dirs
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force -Path ".\.vcpkg-bincache\${{ matrix.platform }}" | Out-Null
+        New-Item -ItemType Directory -Force -Path ".\vcpkg\downloads" | Out-Null
+
+    - name: Get vcpkg submodule SHA
+      id: vcpkg_sha
+      shell: pwsh
+      run: |
+        $sha = (git -C vcpkg rev-parse HEAD).Trim()
+        "sha=$sha" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+    - name: Restore vcpkg binary cache (per-arch)
+      uses: actions/cache@v4
+      with:
+        path: |
+          .\.vcpkg-bincache\${{ matrix.platform }}
+          .\vcpkg\downloads
+        key: vcpkg-${{ runner.os }}-${{ matrix.platform }}-${{ env.ImageVersion }}-${{ steps.vcpkg_sha.outputs.sha }}-${{ hashFiles('vcpkg.json', 'Directory.Build.props', 'Directory.Build.targets') }}
+        restore-keys: |
+          vcpkg-${{ runner.os }}-${{ matrix.platform }}-${{ env.ImageVersion }}-${{ steps.vcpkg_sha.outputs.sha }}-
+          vcpkg-${{ runner.os }}-${{ matrix.platform }}-${{ env.ImageVersion }}-
+          vcpkg-${{ runner.os }}-${{ matrix.platform }}-
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
     - name: Setup NuGet
@@ -155,32 +177,6 @@ jobs:
     - name: Bootstrap vcpkg
       shell: pwsh
       run: .\vcpkg\bootstrap-vcpkg.bat
-      
-    - name: Configure NuGet source for vcpkg binary cache
-      shell: pwsh
-      run: |
-        # Fetch vcpkg-provided nuget.exe (prints path)
-        $nugetPath = .\vcpkg\vcpkg.exe fetch nuget | Select-Object -Last 1
-        if (-not (Test-Path $nugetPath)) {
-          throw "nuget.exe not found at: $nugetPath"
-        }
-
-        $sourceName = "GitHubPackages"
-        $feedUrl    = "${{ env.FEED_URL }}"
-        $userName   = "${{ env.USERNAME }}"
-        $token      = "${{ secrets.GITHUB_TOKEN }}"
-
-        # Add or update the NuGet source (idempotent)
-        $existing = & $nugetPath sources list | Out-String
-        if ($existing -match [regex]::Escape($sourceName)) {
-          & $nugetPath sources update -Name $sourceName -Source $feedUrl -UserName $userName -Password $token
-        } else {
-          & $nugetPath sources add    -Name $sourceName -Source $feedUrl -UserName $userName -Password $token
-        }
-
-        # Set API key for pushing packages (required for readwrite feeds)
-        & $nugetPath setapikey $token -Source $feedUrl
-        
     - name: Build Inkeys
       run: msbuild "智绘教.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /p:PlatformToolset=v143 /verbosity:minimal
       shell: cmd
