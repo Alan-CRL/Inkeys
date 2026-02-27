@@ -3,7 +3,7 @@ module;
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 #pragma warning(push)
 #pragma warning(disable: 4996)
-#include "cpphttplib/httplib.h"
+#include "httplib.h"
 #pragma warning(pop)
 
 #pragma comment(lib, "libssl.lib")

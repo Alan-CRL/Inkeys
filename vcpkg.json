@@ -1,16 +1,54 @@
 {
   "name": "inkeys",
   "version-string": "0.0.0",
+  "builtin-baseline": "b2f068faf45a3f04145bec0f52a66526ad590227",
   "dependencies": [
-    {
-      "name": "openssl"
-    }
+    "openssl",
+    "cpp-httplib",
+    "jsoncpp",
+    "libcuckoo",
+    "lunasvg",
+    "magic-enum",
+    "concurrentqueue",
+    "unordered-dense",
+    "spdlog"
   ],
   "overrides": [
     {
       "name": "openssl",
       "version": "3.0.8#2"
+    },
+    {
+      "name": "cpp-httplib",
+      "version": "0.22.0"
+    },
+    {
+      "name": "jsoncpp",
+      "version": "1.9.6"
+    },
+    {
+      "name": "libcuckoo",
+      "version": "0.3.1"
+    },
+    {
+      "name": "lunasvg",
+      "version": "3.5.0"
+    },
+    {
+      "name": "magic-enum",
+      "version": "0.9.7#1"
+    },
+    {
+      "name": "concurrentqueue",
+      "version": "1.0.4#1"
+    },
+    {
+      "name": "unordered-dense",
+      "version": "4.5.0"
+    },
+    {
+      "name": "spdlog",
+      "version": "1.17.0"
     }
-  ],
-  "builtin-baseline": "b2f068faf45a3f04145bec0f52a66526ad590227"
+  ]
 }
