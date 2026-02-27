@@ -172,9 +172,9 @@ jobs:
         # Add or update the NuGet source (idempotent)
         $existing = & $nugetPath sources list | Out-String
         if ($existing -match [regex]::Escape($sourceName)) {
-          & $nugetPath sources update -Name $sourceName -Source $feedUrl -UserName $userName -Password $token -StorePasswordInClearText
+          & $nugetPath sources update -Name $sourceName -Source $feedUrl -UserName $userName -Password $token
         } else {
-          & $nugetPath sources add    -Name $sourceName -Source $feedUrl -UserName $userName -Password $token -StorePasswordInClearText
+          & $nugetPath sources add    -Name $sourceName -Source $feedUrl -UserName $userName -Password $token
         }
 
         # Set API key for pushing packages (required for readwrite feeds)
