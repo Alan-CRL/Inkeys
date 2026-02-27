@@ -70,6 +70,7 @@ jobs:
     - name: Checkout code 
       uses: actions/checkout@v6
       with:
+        fetch-depth: 0
         submodules: recursive
 
     - name: 获取环境信息
@@ -206,7 +207,7 @@ jobs:
     steps:
       # 获取版本信息
       - name: 拉取代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 拉取版本代号
         id: softwareDate
