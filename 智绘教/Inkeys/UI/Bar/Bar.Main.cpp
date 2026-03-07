@@ -57,8 +57,8 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		static short activeTouchY = 0;
 
 		UINT cInputs = LOWORD(wParam);
-		TOUCHINPUT inputs[32];
-		if (GetTouchInputInfo((HTOUCHINPUT)lParam, cInputs, inputs, sizeof(TOUCHINPUT)))
+		vector<TOUCHINPUT> inputs(cInputs);
+		if (GetTouchInputInfo((HTOUCHINPUT)lParam, cInputs, inputs.data(), sizeof(TOUCHINPUT)))
 		{
 			bool touchIdCheck = false; // 检测当前活动ID是否还存在
 			POINT pt;
@@ -81,6 +81,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 					{
 						activeTouchId = ti.dwID;
 						isTouchActive = true;
+						Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, true);
 
 						activeTouchX = pt.x;
 						activeTouchY = pt.y;
@@ -126,6 +127,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 					{
 						activeTouchId = 0;
 						isTouchActive = false;
+						Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, false);
 
 						activeTouchX = pt.x;
 						activeTouchY = pt.y;
@@ -152,6 +154,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 			{
 				activeTouchId = 0;
 				isTouchActive = false;
+				Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, false);
 
 				{
 					ExMessage msgMouse = {};
@@ -167,8 +170,9 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 				}
 			}
 
-			CloseTouchInputHandle((HTOUCHINPUT)lParam);
 		}
+
+		CloseTouchInputHandle((HTOUCHINPUT)lParam);
 
 		return 0;
 	}
@@ -184,6 +188,8 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		// 如果是触摸模拟出来的鼠标消息，就直接丢掉
 		DWORD extraInfo = GetMessageExtraInfo();
 		if ((extraInfo & 0xFFFFFF00) == 0xFF515700) return 0;
+		if (msg == WM_LBUTTONDOWN || msg == WM_LBUTTONDBLCLK) Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, true);
+		if (msg == WM_LBUTTONUP) Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, false);
 
 		// 否则当成真正的鼠标消息处理
 
@@ -2501,7 +2507,11 @@ void BarUISetClass::UpdateRendering(bool updateState)
 // 拖动交互
 double BarUISetClass::Seek(const ExMessage& msg)
 {
-	if (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)) return 0;
+	auto IsLeftButtonDown = []() -> bool
+		{
+			return Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON) || ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
+		};
+	if (!IsLeftButtonDown()) return 0;
 
 	POINT p;
 	GetCursorPos(&p);
@@ -2513,7 +2523,7 @@ double BarUISetClass::Seek(const ExMessage& msg)
 
 	while (1)
 	{
-		if (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)) break;
+		if (!IsLeftButtonDown()) break;
 		GetCursorPos(&p);
 
 		if (firX == p.x && firY == p.y)
