@@ -287,12 +287,15 @@ bool IdtGetDeviceEDID(LPCWSTR lpModel, LPCWSTR lpDriver, BYTE* pDataBuf, DWORD d
 
 void DisplayManagementPolling()
 {
+	HINSTANCE hInst = GetModuleHandleW(NULL);
+
 	WNDCLASS wc = { 0 };
 	wc.lpfnWndProc = IdtDisplayManagementWindowProc;
-	wc.hInstance = GetModuleHandle(NULL);
+	wc.hInstance = hInst;
 	wc.lpszClassName = L"IdtDisplayManagementClass";
 	RegisterClass(&wc);
-	HWND hwnd = CreateWindowEx(0, L"IdtDisplayManagementClass", NULL, 0, 0, 0, 0, 0, NULL, NULL, NULL, NULL);
+	HWND hwnd = CreateWindowEx(0, L"IdtDisplayManagementClass", NULL, 0, 0, 0, 0, 0, NULL, NULL, hInst, NULL);
+	if (!hwnd) return;
 
 	MSG msg;
 	while (!offSignal && GetMessage(&msg, NULL, 0, 0))
