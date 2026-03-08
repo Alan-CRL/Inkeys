@@ -6535,27 +6535,51 @@ void MouseInteraction()
 									{
 										/*ShellExecute(NULL, L"open", L"classisland://plugins/IslandCaller/Run", NULL, NULL, SW_SHOWNORMAL);*/
 
-										SHELLEXECUTEINFO sei = { sizeof(sei) };
-										sei.fMask = SEE_MASK_NOASYNC;
-										sei.hwnd = NULL;
-										sei.lpVerb = L"open";
-										sei.lpFile = L"classisland://plugins/IslandCaller/Run";
-										sei.nShow = SW_SHOWNORMAL;
+										{
+											SHELLEXECUTEINFO sei = { sizeof(sei) };
+											sei.fMask = SEE_MASK_NOASYNC;
+											sei.hwnd = NULL;
+											sei.lpVerb = L"open";
+											sei.lpFile = L"classisland://plugins/IslandCaller/Run";
+											sei.nShow = SW_SHOWNORMAL;
 
-										ShellExecuteEx(&sei);
+											ShellExecuteEx(&sei);
+										}
+										{
+											SHELLEXECUTEINFO sei = { sizeof(sei) };
+											sei.fMask = SEE_MASK_NOASYNC;
+											sei.hwnd = NULL;
+											sei.lpVerb = L"open";
+											sei.lpFile = L"classisland://plugins/IslandCaller/Simple/1";
+											sei.nShow = SW_SHOWNORMAL;
+
+											ShellExecuteEx(&sei);
+										}
 									}
 									else if (setlist.component.shortcutButton.rollCall.SecRandom)
 									{
 										/*ShellExecute(NULL, L"open", L"secrandom://direct_extraction", NULL, NULL, SW_SHOWNORMAL);*/
 
-										SHELLEXECUTEINFO sei = { sizeof(sei) };
-										sei.fMask = SEE_MASK_NOASYNC;
-										sei.hwnd = NULL;
-										sei.lpVerb = L"open";
-										sei.lpFile = L"secrandom://direct_extraction";
-										sei.nShow = SW_SHOWNORMAL;
+										{
+											SHELLEXECUTEINFO sei = { sizeof(sei) };
+											sei.fMask = SEE_MASK_NOASYNC;
+											sei.hwnd = NULL;
+											sei.lpVerb = L"open";
+											sei.lpFile = L"secrandom://direct_extraction";
+											sei.nShow = SW_SHOWNORMAL;
 
-										ShellExecuteEx(&sei);
+											ShellExecuteEx(&sei);
+										}
+										{
+											SHELLEXECUTEINFO sei = { sizeof(sei) };
+											sei.fMask = SEE_MASK_NOASYNC;
+											sei.hwnd = NULL;
+											sei.lpVerb = L"open";
+											sei.lpFile = L"secrandom://roll_call/quick_draw";
+											sei.nShow = SW_SHOWNORMAL;
+
+											ShellExecuteEx(&sei);
+										}
 									}
 									else if (setlist.component.shortcutButton.rollCall.NamePicker)
 									{

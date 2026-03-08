@@ -3,6 +3,9 @@ module;
 #include "../../IdtMain.h"
 
 #include <dbghelp.h>
+
+#include <sstream>
+#include <algorithm>
 #pragma comment(lib, "DbgHelp.lib")
 
 namespace fs = std::filesystem;
@@ -60,6 +63,260 @@ fs::path CrashHandler::GetExeDirectory()
 		OutputDebugStringW(L"CrashHandler: 无法获取模块文件名以确定根目录。\n");
 		return fs::path(); // 返回空路径表示失败
 	}
+}
+
+static bool IsDiskFullError(DWORD err)
+{
+	return err == ERROR_DISK_FULL || err == ERROR_HANDLE_DISK_FULL;
+}
+
+static void CleanupOldCrashFiles(const fs::path& crashDir, size_t keepPairs)
+{
+	try {
+		if (!fs::exists(crashDir) || !fs::is_directory(crashDir)) return;
+
+		struct CrashPair {
+			fs::path dmp;
+			fs::path txt;
+			fs::file_time_type t;
+		};
+		std::vector<CrashPair> pairs;
+		std::map<std::wstring, fs::path> txtByStem;
+
+		for (const auto& entry : fs::directory_iterator(crashDir)) {
+			if (!entry.is_regular_file()) continue;
+			auto p = entry.path();
+			auto ext = p.extension().wstring();
+			std::wstring stem = p.stem().wstring();
+			std::transform(ext.begin(), ext.end(), ext.begin(), ::towlower);
+			if (ext == L".txt") {
+				txtByStem[stem] = p;
+			}
+		}
+
+		for (const auto& entry : fs::directory_iterator(crashDir)) {
+			if (!entry.is_regular_file()) continue;
+			auto p = entry.path();
+			auto ext = p.extension().wstring();
+			std::transform(ext.begin(), ext.end(), ext.begin(), ::towlower);
+			if (ext != L".dmp") continue;
+
+			CrashPair cp;
+			cp.dmp = p;
+			cp.t = fs::last_write_time(p);
+
+			std::wstring stem = p.stem().wstring();
+			auto it = txtByStem.find(stem);
+			if (it != txtByStem.end()) cp.txt = it->second;
+
+			pairs.push_back(cp);
+		}
+
+		if (pairs.size() <= keepPairs) return;
+
+		std::sort(pairs.begin(), pairs.end(), [](const CrashPair& a, const CrashPair& b) {
+			return a.t < b.t;
+			});
+
+		size_t needDelete = pairs.size() - keepPairs;
+		for (size_t i = 0; i < needDelete; i++) {
+			std::error_code ec;
+			if (!pairs[i].dmp.empty()) fs::remove(pairs[i].dmp, ec);
+			if (!pairs[i].txt.empty()) fs::remove(pairs[i].txt, ec);
+		}
+	}
+	catch (...) {
+		// best-effort cleanup only
+	}
+}
+
+static std::string WideToUtf8(const std::wstring& ws)
+{
+	if (ws.empty()) return std::string();
+	int len = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), (int)ws.size(), nullptr, 0, nullptr, nullptr);
+	if (len <= 0) return std::string();
+	std::string out;
+	out.resize((size_t)len);
+	WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), (int)ws.size(), out.data(), len, nullptr, nullptr);
+	return out;
+}
+
+static void AppendLine(std::ostringstream& oss, const std::string& s)
+{
+	oss << s << "\r\n";
+}
+
+static bool WriteCrashReportTxt(EXCEPTION_POINTERS* pExceptionInfo, const fs::path& txtFilePath, const fs::path& dumpFilePath, bool dumpGenerated, DWORD dumpLastError)
+{
+	std::ostringstream oss;
+
+	AppendLine(oss, "Inkeys Crash Report");
+	AppendLine(oss, "==================");
+
+	// Timestamp
+	time_t now = time(nullptr);
+	struct tm timeinfo;
+	localtime_s(&timeinfo, &now);
+	char timebuf[64] = { 0 };
+	strftime(timebuf, sizeof(timebuf), "%Y-%m-%d %H:%M:%S", &timeinfo);
+	AppendLine(oss, std::string("Time: ") + timebuf);
+
+	AppendLine(oss, "ProcessId: " + std::to_string(GetCurrentProcessId()));
+	AppendLine(oss, "ThreadId: " + std::to_string(GetCurrentThreadId()));
+
+	// Dump status
+	AppendLine(oss, "DumpPath: " + WideToUtf8(dumpFilePath.wstring()));
+	AppendLine(oss, std::string("DumpGenerated: ") + (dumpGenerated ? "true" : "false"));
+	if (!dumpGenerated) {
+		AppendLine(oss, "DumpLastError: " + std::to_string(dumpLastError));
+	}
+
+	if (!pExceptionInfo || !pExceptionInfo->ExceptionRecord) {
+		AppendLine(oss, "Exception: (no exception record)");
+	}
+	else {
+		auto* er = pExceptionInfo->ExceptionRecord;
+		char buf[128];
+
+		sprintf_s(buf, "ExceptionCode: 0x%08lX", er->ExceptionCode);
+		AppendLine(oss, buf);
+
+		sprintf_s(buf, "ExceptionFlags: 0x%08lX", er->ExceptionFlags);
+		AppendLine(oss, buf);
+
+		sprintf_s(buf, "ExceptionAddress: 0x%p", er->ExceptionAddress);
+		AppendLine(oss, buf);
+
+		AppendLine(oss, "NumberParameters: " + std::to_string((unsigned)er->NumberParameters));
+		for (ULONG i = 0; i < er->NumberParameters; i++) {
+			sprintf_s(buf, "  Param[%lu]: 0x%p", i, (void*)er->ExceptionInformation[i]);
+			AppendLine(oss, buf);
+		}
+	}
+
+	AppendLine(oss, "");
+	AppendLine(oss, "StackTrace");
+	AppendLine(oss, "----------");
+
+	// Initialize symbol handler in best-effort mode (no PDB required)
+	HANDLE hProcess = GetCurrentProcess();
+	SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_FAIL_CRITICAL_ERRORS | SYMOPT_NO_PROMPTS | SYMOPT_PUBLICS_ONLY);
+
+	SymInitialize(hProcess, NULL, TRUE);
+
+	CONTEXT ctx = {};
+	if (pExceptionInfo && pExceptionInfo->ContextRecord) {
+		ctx = *pExceptionInfo->ContextRecord;
+	}
+	else {
+		RtlCaptureContext(&ctx);
+	}
+
+	STACKFRAME64 frame = {};
+	DWORD machineType = 0;
+
+#if defined(_M_X64)
+	machineType = IMAGE_FILE_MACHINE_AMD64;
+	frame.AddrPC.Offset = ctx.Rip;
+	frame.AddrPC.Mode = AddrModeFlat;
+	frame.AddrFrame.Offset = ctx.Rbp;
+	frame.AddrFrame.Mode = AddrModeFlat;
+	frame.AddrStack.Offset = ctx.Rsp;
+	frame.AddrStack.Mode = AddrModeFlat;
+#elif defined(_M_IX86)
+	machineType = IMAGE_FILE_MACHINE_I386;
+	frame.AddrPC.Offset = ctx.Eip;
+	frame.AddrPC.Mode = AddrModeFlat;
+	frame.AddrFrame.Offset = ctx.Ebp;
+	frame.AddrFrame.Mode = AddrModeFlat;
+	frame.AddrStack.Offset = ctx.Esp;
+	frame.AddrStack.Mode = AddrModeFlat;
+#elif defined(_M_ARM64)
+	machineType = IMAGE_FILE_MACHINE_ARM64;
+	frame.AddrPC.Offset = ctx.Pc;
+	frame.AddrPC.Mode = AddrModeFlat;
+	frame.AddrFrame.Offset = ctx.Fp;
+	frame.AddrFrame.Mode = AddrModeFlat;
+	frame.AddrStack.Offset = ctx.Sp;
+	frame.AddrStack.Mode = AddrModeFlat;
+#else
+	machineType = 0;
+#endif
+
+	const int kMaxFrames = 64;
+	for (int i = 0; i < kMaxFrames && machineType != 0; i++) {
+		BOOL ok = StackWalk64(
+			machineType,
+			hProcess,
+			GetCurrentThread(),
+			&frame,
+			&ctx,
+			NULL,
+			SymFunctionTableAccess64,
+			SymGetModuleBase64,
+			NULL
+		);
+
+		if (!ok || frame.AddrPC.Offset == 0) break;
+
+		DWORD64 addr = frame.AddrPC.Offset;
+
+		// Module + RVA
+		std::string modName = "unknown";
+		DWORD64 base = SymGetModuleBase64(hProcess, addr);
+		if (base) {
+			HMODULE hMod = NULL;
+			wchar_t modPath[MAX_PATH] = { 0 };
+			if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+				(LPCWSTR)addr, &hMod) && hMod) {
+				GetModuleFileNameW(hMod, modPath, _countof(modPath));
+				fs::path mp(modPath);
+				modName = WideToUtf8(mp.filename().wstring());
+			}
+		}
+
+		std::ostringstream line;
+		line << "#" << i << " ";
+		line << "0x" << std::hex << addr;
+
+		if (base) {
+			line << " " << modName << "+0x" << std::hex << (addr - base);
+		}
+
+		// Symbol name (best-effort; may come from exports even without PDB)
+		char symBuffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(char)] = { 0 };
+		auto* sym = (SYMBOL_INFO*)symBuffer;
+		sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+		sym->MaxNameLen = MAX_SYM_NAME;
+
+		DWORD64 disp = 0;
+		if (SymFromAddr(hProcess, addr, &disp, sym)) {
+			line << " " << sym->Name;
+			if (disp) line << "+0x" << std::hex << disp;
+		}
+
+		AppendLine(oss, line.str());
+	}
+
+	SymCleanup(hProcess);
+
+	// Write file (UTF-8 with BOM)
+	HANDLE hFile = CreateFileW(txtFilePath.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH, NULL);
+	if (hFile == INVALID_HANDLE_VALUE) {
+		return false;
+	}
+
+	const unsigned char bom[] = { 0xEF,0xBB,0xBF };
+	DWORD written = 0;
+	WriteFile(hFile, bom, (DWORD)sizeof(bom), &written, NULL);
+
+	std::string content = oss.str();
+	WriteFile(hFile, content.data(), (DWORD)content.size(), &written, NULL);
+
+	FlushFileBuffers(hFile);
+	CloseHandle(hFile);
+
+	return true;
 }
 
 // 核心：Windows 回调的异常处理函数
@@ -129,16 +386,46 @@ LONG WINAPI CrashHandler::UnhandledExceptionHandler(EXCEPTION_POINTERS* pExcepti
 	// --- 生成 Minidump 文件 (.dmp) ---
 	fs::path dumpFilePath = baseFilePath;
 	dumpFilePath.replace_extension(L".dmp");
+	// --- 生成 Crash Report 文件 (.txt) ---
+	fs::path txtFilePath = baseFilePath;
+	txtFilePath.replace_extension(L".txt");
 
 	OutputDebugStringW((L"CrashHandler: 准备生成 Minidump 文件: " + dumpFilePath.wstring() + L"\n").c_str());
 
 	bool dumpGenerated = GenerateMiniDump(pExceptionInfo, dumpFilePath);
+	DWORD dumpLastError = dumpGenerated ? 0 : GetLastError();
+
+	if (!dumpGenerated && IsDiskFullError(dumpLastError)) {
+		CleanupOldCrashFiles(crashDir, 0);
+		dumpGenerated = GenerateMiniDump(pExceptionInfo, dumpFilePath);
+		dumpLastError = dumpGenerated ? 0 : GetLastError();
+	}
 
 	if (dumpGenerated) {
 		OutputDebugStringW((L"CrashHandler: Minidump 已成功生成: " + dumpFilePath.wstring() + L"\n").c_str());
 	}
 	else {
 		OutputDebugStringW((L"CrashHandler: 生成 Minidump 文件失败: " + dumpFilePath.wstring() + L"\n").c_str());
+	}
+
+	OutputDebugStringW((L"CrashHandler: 准备生成 Crash Report 文件: " + txtFilePath.wstring() + L"\n").c_str());
+
+	bool txtGenerated = WriteCrashReportTxt(pExceptionInfo, txtFilePath, dumpFilePath, dumpGenerated, dumpLastError);
+	DWORD txtLastError = txtGenerated ? 0 : GetLastError();
+
+	if (!txtGenerated && IsDiskFullError(txtLastError)) {
+		CleanupOldCrashFiles(crashDir, 0);
+		txtGenerated = WriteCrashReportTxt(pExceptionInfo, txtFilePath, dumpFilePath, dumpGenerated, dumpLastError);
+		txtLastError = txtGenerated ? 0 : GetLastError();
+	}
+
+	if (txtGenerated) {
+		OutputDebugStringW((L"CrashHandler: Crash Report 已成功生成: " + txtFilePath.wstring() + L"\n").c_str());
+	}
+	else {
+		wchar_t errorMsg[MAX_PATH + 100];
+		_snwprintf_s(errorMsg, _countof(errorMsg), _TRUNCATE, L"CrashHandler: 生成 Crash Report 文件失败: %s (错误 %lu)\n", txtFilePath.wstring().c_str(), txtLastError);
+		OutputDebugStringW(errorMsg);
 	}
 
 	OutputDebugStringW(L"--- CrashHandler: 处理结束 ---\n");
@@ -211,8 +498,9 @@ bool CrashHandler::GenerateMiniDump(EXCEPTION_POINTERS* pExceptionInfo, const fs
 	CloseHandle(hFile);
 
 	if (!success) {
+		DWORD lastErr = GetLastError();
 		wchar_t errorMsg[100];
-		_snwprintf_s(errorMsg, _countof(errorMsg), _TRUNCATE, L"CrashHandler: MiniDumpWriteDump 失败 (错误 %lu)\n", GetLastError());
+		_snwprintf_s(errorMsg, _countof(errorMsg), _TRUNCATE, L"CrashHandler: MiniDumpWriteDump 失败 (错误 %lu)\n", lastErr);
 		OutputDebugStringW(errorMsg);
 		// 尝试删除可能不完整的 dump 文件
 		try {
@@ -223,6 +511,7 @@ bool CrashHandler::GenerateMiniDump(EXCEPTION_POINTERS* pExceptionInfo, const fs
 			_snwprintf_s(deleteErrorMsg, _countof(deleteErrorMsg), _TRUNCATE, L"CrashHandler: 删除失败的 dump 文件 '%s' 时出错: %hs\n", dumpFilePath.wstring().c_str(), e.what());
 			OutputDebugStringW(deleteErrorMsg);
 		}
+		SetLastError(lastErr);
 		return false;
 	}
 

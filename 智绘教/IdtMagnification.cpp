@@ -73,6 +73,21 @@ void MagnifierWindow(HINSTANCE hinst, promise<void>& promise)
 		return;
 	}
 
+	// 检测是否是 Wine
+	{
+		HMODULE hNtdll = ::GetModuleHandleW(L"ntdll.dll");
+		if (hNtdll)
+		{
+			if (GetProcAddress(hNtdll, "wine_get_version") != nullptr)
+			{
+				IDTLogger->warn("[放大API线程][MagnifierThread] 本机为 Wine 环境，不支持 Magnification.dll 相关功能，定格等相关功能将被禁用。");
+				promise.set_value(); // 通知主线程继续，不要卡死
+
+				return;
+			}
+		}
+	}
+
 	// 初始化放大API
 	if (!MagInitialize())
 	{
