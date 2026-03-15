@@ -16,6 +16,7 @@ void FloatingInstallHook();
 
 module Inkeys.UI.Bar;
 import :Main;
+import :Atomic;
 
 import <ranges>;
 
@@ -169,7 +170,6 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 					lg_vecWindows_vecMessage_sm.unlock();
 				}
 			}
-
 		}
 
 		CloseTouchInputHandle((HTOUCHINPUT)lParam);
@@ -683,7 +683,7 @@ void BarUISetClass::Rendering()
 	wstring fps;
 	for (int forNum = 1; !offSignal; forNum = 2)
 	{
-		#pragma region 计算UI
+	#pragma region 计算UI
 
 		// 主按钮
 		{
@@ -1700,9 +1700,9 @@ void BarUISetClass::Rendering()
 			}
 		}
 
-		#pragma endregion
+	#pragma endregion
 
-		#pragma region 动效UI
+	#pragma region 动效UI
 
 		bool needRendering = false;
 
@@ -1776,7 +1776,7 @@ void BarUISetClass::Rendering()
 			if (!val->y.IsSame()) ChangeValue(val->y, forceReplace), change = true;
 			if (!val->w.IsSame()) ChangeValue(val->w, forceReplace), change = true;
 			if (!val->h.IsSame()) ChangeValue(val->h, forceReplace), change = true;
-			if (val->svg.IsSame()) ChangeString(val->svg, forceReplace), change = true;
+			if (!val->svg.IsSame()) ChangeString(val->svg, forceReplace), change = true;
 			if (val->color1.has_value() && !val->color1->IsSame()) ChangeColor(val->color1.value(), forceReplace), change = true;
 			if (val->color2.has_value() && !val->color2->IsSame()) ChangeColor(val->color2.value(), forceReplace), change = true;
 			if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace), change = true;
@@ -1851,422 +1851,396 @@ void BarUISetClass::Rendering()
 			}
 		}
 
-		#pragma endregion
+	#pragma endregion
 
+		if (needRendering)
+		{
 		#pragma region 渲染UI
 
-		current = RECT(0, 0, 0, 0);
-		barDeviceContext->BeginDraw();
+			current = RECT(0, 0, 0, 0);
+			barDeviceContext->BeginDraw();
 
-		// 清除背景
-		{
-			D2D1_COLOR_F clearColor = Inkeys::Color::ConvertToD2dColor(RGBA(0, 0, 0, 0));
-			barDeviceContext->Clear(&clearColor);
-
-			// TODO 绘制纯白全透明警告用户开启 aero
-			auto obj = BarUISetWordEnum::BackgroundWarning;
-			spec.Word(barDeviceContext, *wordMap[obj], wordMap[obj]->Inherit(), DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_LEADING);
-		}
-
-		using enum BarUiInheritEnum;
-		{
-			// 主栏
+			// 清除背景
 			{
-				// 提前计算依赖
-				{
-					superellipseMap[BarUISetSuperellipseEnum::MainButton]->Inherit();
-					shapeMap[BarUISetShapeEnum::MainBar]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]);
-					barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->buttom.Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::MainBar]);
-				}
+				D2D1_COLOR_F clearColor = Inkeys::Color::ConvertToD2dColor(RGBA(0, 0, 0, 0));
+				barDeviceContext->Clear(&clearColor);
 
-				// 绘制属性
-				{
-					auto obj = BarUISetShapeEnum::DrawAttributeBar;
-					spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Center, barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->buttom), &current, true);
+				// TODO 绘制纯白全透明警告用户开启 aero
+				auto obj = BarUISetWordEnum::BackgroundWarning;
+				spec.Word(barDeviceContext, *wordMap[obj], wordMap[obj]->Inherit(), DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_LEADING);
+			}
 
-					// Color 区域
-					{
-						// Color 1
-						{
-							auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect1;
-							spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
-
-							auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect1;
-							spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
-						}
-						// Color 2
-						{
-							auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect2;
-							spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
-
-							auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect2;
-							spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
-						}
-						// Color 3
-						{
-							auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect3;
-							spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
-
-							auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect3;
-							spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
-						}
-						// Color 4
-						{
-							auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect4;
-							spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
-
-							auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect4;
-							spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
-						}
-						// Color 5
-						{
-							auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect5;
-							spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
-
-							auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect5;
-							spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
-						}
-						// Color 6
-						{
-							auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect6;
-							spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
-
-							auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect6;
-							spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
-						}
-						// Color 7
-						{
-							auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect7;
-							spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
-
-							auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect7;
-							spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
-						}
-						// Color 8
-						{
-							auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect8;
-							spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
-
-							auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect8;
-							spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
-						}
-						// Color 9
-						{
-							auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect9;
-							spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
-
-							auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect9;
-							spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
-						}
-						// Color 10
-						{
-							auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect10;
-							spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
-
-							auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect10;
-							spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
-						}
-						// Color 11
-						{
-							auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect11;
-							spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
-
-							auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect11;
-							spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
-						}
-					}
-					// 画笔样式区域
-					{
-						// 选中滑动槽
-						{
-							auto obj = BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove;
-							spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
-						}
-						// 选中
-						{
-							auto obj = BarUISetShapeEnum::DrawAttributeBar_DrawSelect;
-							spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Left, *shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]));
-						}
-
-						// 画笔
-						{
-							auto obj1 = BarUISetShapeEnum::DrawAttributeBar_Brush1;
-							spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(Left, *shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]));
-
-							auto obj2 = BarUISetSvgEnum::DrawAttributeBar_Brush1;
-							spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Top, *shapeMap[obj1]));
-
-							auto obj3 = BarUISetWordEnum::DrawAttributeBar_Brush1;
-							spec.Word(barDeviceContext, *wordMap[obj3], wordMap[obj3]->Inherit(ToBottom, *svgMap[obj2]));
-						}
-						// 荧光笔
-						{
-							auto obj1 = BarUISetShapeEnum::DrawAttributeBar_Highlight1;
-							spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(Left, *shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]));
-
-							auto obj2 = BarUISetSvgEnum::DrawAttributeBar_Highlight1;
-							spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Top, *shapeMap[obj1]));
-
-							auto obj3 = BarUISetWordEnum::DrawAttributeBar_Highlight1;
-							spec.Word(barDeviceContext, *wordMap[obj3], wordMap[obj3]->Inherit(ToBottom, *svgMap[obj2]));
-						}
-					}
-					// 粗细调节区域
-					{
-						auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect;
-						spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
-
-						auto obj2 = BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay;
-						wordMap[obj2]->Inherit(Right, *shapeMap[obj1]); // 提前计算依赖
-
-						// 自定义绘制：粗细预览
-						if (wordMap[obj2]->pct.val > 0.0)
-						{
-							FLOAT penThickness = static_cast<FLOAT>(GetPenWidth());
-
-							FLOAT tarZoom = barStyle.zoom;
-							double tarX = shapeMap[obj1]->inhX + 5.0;
-							double tarY = shapeMap[obj1]->inhY + 5.0;
-							double tarEndX = wordMap[obj2]->inhX;
-							double tarEndY = shapeMap[obj1]->inhY + shapeMap[obj1]->h.val - 5.0;
-							double tarRw = 0.0;
-							double tarRh = 0.0;
-							if (shapeMap[obj1]->rw.has_value()) tarRw = shapeMap[obj1]->rw.value().val;
-							if (shapeMap[obj1]->rh.has_value()) tarRh = shapeMap[obj1]->rh.value().val;
-
-							COLORREF color = wordMap[obj2]->color.val;
-							double tarPct = wordMap[obj2]->pct.val;
-
-							auto tarRect = D2D1::RectF(
-								static_cast<FLOAT>(tarX) * tarZoom,
-								static_cast<FLOAT>(tarY) * tarZoom,
-								static_cast<FLOAT>(tarEndX) * tarZoom,
-								static_cast<FLOAT>(tarEndY) * tarZoom);
-
-							// ==== 创建圆角矩形几何 ====
-							CComPtr<ID2D1Factory> factory;
-							barDeviceContext->GetFactory(&factory);
-
-							CComPtr<ID2D1RoundedRectangleGeometry> roundedRectGeo;
-							D2D1_ROUNDED_RECT roundedRect = {
-								tarRect,
-								static_cast<FLOAT>(tarRw) * tarZoom,
-								static_cast<FLOAT>(tarRh) * tarZoom
-							};
-							factory->CreateRoundedRectangleGeometry(roundedRect, &roundedRectGeo);
-
-							// ==== 创建 Layer ====
-							CComPtr<ID2D1Layer> layer;
-							barDeviceContext->CreateLayer(&layer);
-
-							// ==== 启用裁切层 ====
-							D2D1_LAYER_PARAMETERS layerParams = D2D1::LayerParameters();
-							layerParams.geometricMask = roundedRectGeo;
-							layerParams.maskAntialiasMode = D2D1_ANTIALIAS_MODE_PER_PRIMITIVE;
-
-							barDeviceContext->PushLayer(&layerParams, layer);
-
-							// ====== 四个经过点（百分比） ======
-							auto w = tarRect.right - tarRect.left;
-							auto h = tarRect.bottom - tarRect.top;
-
-							D2D1_POINT_2F p1 = { clamp(tarRect.left + penThickness / 2.0f,
-												clamp(tarRect.left + 5.0f * tarZoom, 0.0f, tarRect.left + w * 0.5f), tarRect.left + w * 0.5f),
-												tarRect.top + h * 0.50f };
-							D2D1_POINT_2F p4 = { clamp(tarRect.left + w - penThickness / 2.0f,
-													tarRect.left + w * 0.5f, clamp(tarRect.left + w - 5.0f * tarZoom, tarRect.left + w * 0.5f, tarRect.left + w)),
-												tarRect.top + h * 0.50f };
-
-							D2D1_POINT_2F p2 = { tarRect.left + (p4.x - p1.x) / 3.0f,
-												clamp(tarRect.top + penThickness / 2.0f,
-													clamp(0.0f, tarRect.top + 5.0f * tarZoom, tarRect.top + h * 0.5f), tarRect.top + h * 0.5f) };
-							D2D1_POINT_2F p3 = { tarRect.left + (p4.x - p1.x) * 2.0f / 3.0f,
-												clamp(tarRect.top + h - penThickness / 2.0f,
-													tarRect.top + h * 0.5f, clamp(tarRect.top + h - 5.0f * tarZoom, tarRect.top + h * 0.5f, tarRect.top + h)) };
-
-							vector<D2D1_POINT_2F> pts = { p1,p2,p3,p4 };
-
-							// ====== 内部 lambda：Catmull-Rom 样条到 Bezier 转换 ======
-							auto catmullRomToBeziers = [](const vector<D2D1_POINT_2F>& pts, float tension = 1.0f)
-								{
-									vector<D2D1_BEZIER_SEGMENT> beziers;
-									if (pts.size() < 2) return beziers;
-
-									// 为首尾补点（非闭合）
-									vector<D2D1_POINT_2F> p;
-									p.push_back(pts.front());
-									p.insert(p.end(), pts.begin(), pts.end());
-									p.push_back(pts.back());
-
-									for (int i = 1; i < (int)p.size() - 2; i++)
-									{
-										D2D1_POINT_2F p0 = p[i - 1];
-										D2D1_POINT_2F p1 = p[i];
-										D2D1_POINT_2F p2 = p[i + 1];
-										D2D1_POINT_2F p3 = p[i + 2];
-
-										D2D1_BEZIER_SEGMENT seg;
-										seg.point1 = {
-											p1.x + (p2.x - p0.x) / 6.0f * tension,
-											p1.y + (p2.y - p0.y) / 6.0f * tension
-										};
-										seg.point2 = {
-											p2.x - (p3.x - p1.x) / 6.0f * tension,
-											p2.y - (p3.y - p1.y) / 6.0f * tension
-										};
-										seg.point3 = p2;
-										beziers.push_back(seg);
-									}
-									return beziers;
-								};
-
-							// 生成 Bezier 段
-							auto beziers = catmullRomToBeziers(pts, 1.0f);
-
-							// ====== 创建 PathGeometry ======
-							CComPtr<ID2D1PathGeometry> pathGeometry;
-							factory->CreatePathGeometry(&pathGeometry);
-
-							CComPtr<ID2D1GeometrySink> sink;
-							pathGeometry->Open(&sink);
-
-							sink->BeginFigure(pts.front(), D2D1_FIGURE_BEGIN_HOLLOW);
-							for (auto& bz : beziers) sink->AddBezier(bz);
-							sink->EndFigure(D2D1_FIGURE_END_OPEN);
-
-							sink->Close();
-
-							// ==== 画刷 ====
-							CComPtr<ID2D1SolidColorBrush> brush;
-							barDeviceContext->CreateSolidColorBrush(
-								Inkeys::Color::ConvertToD2dColor(color, tarPct),
-								&brush
-							);
-
-							// ==== Stroke Style（圆头、圆角）====
-							CComPtr<ID2D1StrokeStyle> strokeStyle;
-							D2D1_STROKE_STYLE_PROPERTIES props{};
-							props.startCap = D2D1_CAP_STYLE_ROUND;
-							props.endCap = D2D1_CAP_STYLE_ROUND;
-							props.lineJoin = D2D1_LINE_JOIN_ROUND;
-							factory->CreateStrokeStyle(&props, nullptr, 0, &strokeStyle);
-
-							// ==== 绘制贝塞尔曲线（裁切生效）====
-							barDeviceContext->DrawGeometry(pathGeometry, brush, penThickness, strokeStyle);
-
-							// ==== 结束裁切 ====
-							barDeviceContext->PopLayer();
-						}
-
-						// obj2
-						spec.Word(barDeviceContext, *wordMap[obj2], wordMap[obj2]->Inherit(Right, *shapeMap[obj1]), DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING);
-					}
-				}
-
+			using enum BarUiInheritEnum;
+			{
 				// 主栏
-				auto obj = BarUISetShapeEnum::MainBar;
-				spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), &current, true);
-
-				// 主栏按钮
-				for (int id = 0; id < barButtomSet.tot; id++)
 				{
-					BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
-					if (temp == nullptr) continue;
+					// 提前计算依赖
+					{
+						superellipseMap[BarUISetSuperellipseEnum::MainButton]->Inherit();
+						shapeMap[BarUISetShapeEnum::MainBar]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]);
+						barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->buttom.Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::MainBar]);
+					}
 
-					spec.Shape(barDeviceContext, temp->buttom, temp->buttom.Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::MainBar]));
-					spec.Svg(barDeviceContext, temp->icon, temp->icon.Inherit(Center, temp->buttom));
-					spec.Word(barDeviceContext, temp->name, temp->name.Inherit(Center, temp->buttom));
+					// 绘制属性
+					{
+						auto obj = BarUISetShapeEnum::DrawAttributeBar;
+						spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Center, barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->buttom), &current, true);
+
+						// Color 区域
+						{
+							// Color 1
+							{
+								auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect1;
+								spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect1;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
+							}
+							// Color 2
+							{
+								auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect2;
+								spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect2;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
+							}
+							// Color 3
+							{
+								auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect3;
+								spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect3;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
+							}
+							// Color 4
+							{
+								auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect4;
+								spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect4;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
+							}
+							// Color 5
+							{
+								auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect5;
+								spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect5;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
+							}
+							// Color 6
+							{
+								auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect6;
+								spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect6;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
+							}
+							// Color 7
+							{
+								auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect7;
+								spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect7;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
+							}
+							// Color 8
+							{
+								auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect8;
+								spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect8;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
+							}
+							// Color 9
+							{
+								auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect9;
+								spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect9;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
+							}
+							// Color 10
+							{
+								auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect10;
+								spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect10;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
+							}
+							// Color 11
+							{
+								auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ColorSelect11;
+								spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+								auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect11;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
+							}
+						}
+						// 画笔样式区域
+						{
+							// 选中滑动槽
+							{
+								auto obj = BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove;
+								spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+							}
+							// 选中
+							{
+								auto obj = BarUISetShapeEnum::DrawAttributeBar_DrawSelect;
+								spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Left, *shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]));
+							}
+
+							// 画笔
+							{
+								auto obj1 = BarUISetShapeEnum::DrawAttributeBar_Brush1;
+								spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(Left, *shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]));
+
+								auto obj2 = BarUISetSvgEnum::DrawAttributeBar_Brush1;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Top, *shapeMap[obj1]));
+
+								auto obj3 = BarUISetWordEnum::DrawAttributeBar_Brush1;
+								spec.Word(barDeviceContext, *wordMap[obj3], wordMap[obj3]->Inherit(ToBottom, *svgMap[obj2]));
+							}
+							// 荧光笔
+							{
+								auto obj1 = BarUISetShapeEnum::DrawAttributeBar_Highlight1;
+								spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(Left, *shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]));
+
+								auto obj2 = BarUISetSvgEnum::DrawAttributeBar_Highlight1;
+								spec.Svg(barDeviceContext, *svgMap[obj2], svgMap[obj2]->Inherit(Top, *shapeMap[obj1]));
+
+								auto obj3 = BarUISetWordEnum::DrawAttributeBar_Highlight1;
+								spec.Word(barDeviceContext, *wordMap[obj3], wordMap[obj3]->Inherit(ToBottom, *svgMap[obj2]));
+							}
+						}
+						// 粗细调节区域
+						{
+							auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect;
+							spec.Shape(barDeviceContext, *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+
+							auto obj2 = BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay;
+							wordMap[obj2]->Inherit(Right, *shapeMap[obj1]); // 提前计算依赖
+
+							// 自定义绘制：粗细预览
+							if (wordMap[obj2]->pct.val > 0.0)
+							{
+								FLOAT penThickness = static_cast<FLOAT>(GetPenWidth());
+
+								FLOAT tarZoom = barStyle.zoom;
+								double tarX = shapeMap[obj1]->inhX + 5.0;
+								double tarY = shapeMap[obj1]->inhY + 5.0;
+								double tarEndX = wordMap[obj2]->inhX;
+								double tarEndY = shapeMap[obj1]->inhY + shapeMap[obj1]->h.val - 5.0;
+								double tarRw = 0.0;
+								double tarRh = 0.0;
+								if (shapeMap[obj1]->rw.has_value()) tarRw = shapeMap[obj1]->rw.value().val;
+								if (shapeMap[obj1]->rh.has_value()) tarRh = shapeMap[obj1]->rh.value().val;
+
+								COLORREF color = wordMap[obj2]->color.val;
+								double tarPct = wordMap[obj2]->pct.val;
+
+								auto tarRect = D2D1::RectF(
+									static_cast<FLOAT>(tarX) * tarZoom,
+									static_cast<FLOAT>(tarY) * tarZoom,
+									static_cast<FLOAT>(tarEndX) * tarZoom,
+									static_cast<FLOAT>(tarEndY) * tarZoom);
+
+								// ==== 创建圆角矩形几何 ====
+								CComPtr<ID2D1Factory> factory;
+								barDeviceContext->GetFactory(&factory);
+
+								CComPtr<ID2D1RoundedRectangleGeometry> roundedRectGeo;
+								D2D1_ROUNDED_RECT roundedRect = {
+									tarRect,
+									static_cast<FLOAT>(tarRw) * tarZoom,
+									static_cast<FLOAT>(tarRh) * tarZoom
+								};
+								factory->CreateRoundedRectangleGeometry(roundedRect, &roundedRectGeo);
+
+								// ==== 创建 Layer ====
+								CComPtr<ID2D1Layer> layer;
+								barDeviceContext->CreateLayer(&layer);
+
+								// ==== 启用裁切层 ====
+								D2D1_LAYER_PARAMETERS layerParams = D2D1::LayerParameters();
+								layerParams.geometricMask = roundedRectGeo;
+								layerParams.maskAntialiasMode = D2D1_ANTIALIAS_MODE_PER_PRIMITIVE;
+
+								barDeviceContext->PushLayer(&layerParams, layer);
+
+								// ====== 四个经过点（百分比） ======
+								auto w = tarRect.right - tarRect.left;
+								auto h = tarRect.bottom - tarRect.top;
+
+								D2D1_POINT_2F p1 = { clamp(tarRect.left + penThickness / 2.0f,
+													clamp(tarRect.left + 5.0f * tarZoom, 0.0f, tarRect.left + w * 0.5f), tarRect.left + w * 0.5f),
+													tarRect.top + h * 0.50f };
+								D2D1_POINT_2F p4 = { clamp(tarRect.left + w - penThickness / 2.0f,
+														tarRect.left + w * 0.5f, clamp(tarRect.left + w - 5.0f * tarZoom, tarRect.left + w * 0.5f, tarRect.left + w)),
+													tarRect.top + h * 0.50f };
+
+								D2D1_POINT_2F p2 = { tarRect.left + (p4.x - p1.x) / 3.0f,
+													clamp(tarRect.top + penThickness / 2.0f,
+														clamp(0.0f, tarRect.top + 5.0f * tarZoom, tarRect.top + h * 0.5f), tarRect.top + h * 0.5f) };
+								D2D1_POINT_2F p3 = { tarRect.left + (p4.x - p1.x) * 2.0f / 3.0f,
+													clamp(tarRect.top + h - penThickness / 2.0f,
+														tarRect.top + h * 0.5f, clamp(tarRect.top + h - 5.0f * tarZoom, tarRect.top + h * 0.5f, tarRect.top + h)) };
+
+								vector<D2D1_POINT_2F> pts = { p1,p2,p3,p4 };
+
+								// ====== 内部 lambda：Catmull-Rom 样条到 Bezier 转换 ======
+								auto catmullRomToBeziers = [](const vector<D2D1_POINT_2F>& pts, float tension = 1.0f)
+									{
+										vector<D2D1_BEZIER_SEGMENT> beziers;
+										if (pts.size() < 2) return beziers;
+
+										// 为首尾补点（非闭合）
+										vector<D2D1_POINT_2F> p;
+										p.push_back(pts.front());
+										p.insert(p.end(), pts.begin(), pts.end());
+										p.push_back(pts.back());
+
+										for (int i = 1; i < (int)p.size() - 2; i++)
+										{
+											D2D1_POINT_2F p0 = p[i - 1];
+											D2D1_POINT_2F p1 = p[i];
+											D2D1_POINT_2F p2 = p[i + 1];
+											D2D1_POINT_2F p3 = p[i + 2];
+
+											D2D1_BEZIER_SEGMENT seg;
+											seg.point1 = {
+												p1.x + (p2.x - p0.x) / 6.0f * tension,
+												p1.y + (p2.y - p0.y) / 6.0f * tension
+											};
+											seg.point2 = {
+												p2.x - (p3.x - p1.x) / 6.0f * tension,
+												p2.y - (p3.y - p1.y) / 6.0f * tension
+											};
+											seg.point3 = p2;
+											beziers.push_back(seg);
+										}
+										return beziers;
+									};
+
+								// 生成 Bezier 段
+								auto beziers = catmullRomToBeziers(pts, 1.0f);
+
+								// ====== 创建 PathGeometry ======
+								CComPtr<ID2D1PathGeometry> pathGeometry;
+								factory->CreatePathGeometry(&pathGeometry);
+
+								CComPtr<ID2D1GeometrySink> sink;
+								pathGeometry->Open(&sink);
+
+								sink->BeginFigure(pts.front(), D2D1_FIGURE_BEGIN_HOLLOW);
+								for (auto& bz : beziers) sink->AddBezier(bz);
+								sink->EndFigure(D2D1_FIGURE_END_OPEN);
+
+								sink->Close();
+
+								// ==== 画刷 ====
+								CComPtr<ID2D1SolidColorBrush> brush;
+								barDeviceContext->CreateSolidColorBrush(
+									Inkeys::Color::ConvertToD2dColor(color, tarPct),
+									&brush
+								);
+
+								// ==== Stroke Style（圆头、圆角）====
+								CComPtr<ID2D1StrokeStyle> strokeStyle;
+								D2D1_STROKE_STYLE_PROPERTIES props{};
+								props.startCap = D2D1_CAP_STYLE_ROUND;
+								props.endCap = D2D1_CAP_STYLE_ROUND;
+								props.lineJoin = D2D1_LINE_JOIN_ROUND;
+								factory->CreateStrokeStyle(&props, nullptr, 0, &strokeStyle);
+
+								// ==== 绘制贝塞尔曲线（裁切生效）====
+								barDeviceContext->DrawGeometry(pathGeometry, brush, penThickness, strokeStyle);
+
+								// ==== 结束裁切 ====
+								barDeviceContext->PopLayer();
+							}
+
+							// obj2
+							spec.Word(barDeviceContext, *wordMap[obj2], wordMap[obj2]->Inherit(Right, *shapeMap[obj1]), DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING);
+						}
+					}
+
+					// 主栏
+					auto obj = BarUISetShapeEnum::MainBar;
+					spec.Shape(barDeviceContext, *shapeMap[obj], shapeMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), &current, true);
+
+					// 主栏按钮
+					for (int id = 0; id < barButtomSet.tot; id++)
+					{
+						BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
+						if (temp == nullptr) continue;
+
+						spec.Shape(barDeviceContext, temp->buttom, temp->buttom.Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::MainBar]));
+						spec.Svg(barDeviceContext, temp->icon, temp->icon.Inherit(Center, temp->buttom));
+						spec.Word(barDeviceContext, temp->name, temp->name.Inherit(Center, temp->buttom));
+					}
+				}
+				{ /**/ }
+
+				// 主按钮
+				{
+					auto obj = BarUISetSuperellipseEnum::MainButton;
+					spec.Superellipse(barDeviceContext, *superellipseMap[obj], superellipseMap[obj]->Inherit(), &current, true);
+
+					{
+						auto obj = BarUISetSvgEnum::logo1;
+						spec.Svg(barDeviceContext, *svgMap[obj], svgMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]));
+					}
 				}
 			}
 			{ /**/ }
 
-			// 主按钮
+			// 调试 + FPS
 			{
-				auto obj = BarUISetSuperellipseEnum::MainButton;
-				spec.Superellipse(barDeviceContext, *superellipseMap[obj], superellipseMap[obj]->Inherit(), &current, true);
+				double tarZoom = barStyle.zoom;
+				wstring content = L"开发版本 " + editionDate + L" | 不代表最终品质 | " + fps;
 
-				{
-					auto obj = BarUISetSvgEnum::logo1;
-					spec.Svg(barDeviceContext, *svgMap[obj], svgMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]));
-				}
+				CComPtr<IDWriteTextFormat> pTextFormat;
+				pTextFormat = barMedia.formatCache->GetFormat(
+					L"HarmonyOS Sans SC",
+					12.0 * tarZoom,
+					dWriteFontCollection,
+					DWRITE_FONT_WEIGHT_NORMAL,
+					DWRITE_FONT_STYLE_NORMAL,
+					DWRITE_FONT_STRETCH_NORMAL,
+					L"zh-cn",
+					DWRITE_TEXT_ALIGNMENT_LEADING, // 指定文本左对齐
+					DWRITE_PARAGRAPH_ALIGNMENT_NEAR // 指定段落顶部对齐
+				);
+
+				// 3. 创建画刷
+				CComPtr<ID2D1SolidColorBrush> pBrush;
+				barDeviceContext->CreateSolidColorBrush(
+					D2D1::ColorF(255, 255, 255, 0.5),
+					&pBrush);
+
+				double tarX = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->inhX;
+				double tarY = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->inhY + barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetH();
+
+				// 4. 设定绘制区域
+				D2D1_RECT_F layoutRect = D2D1::RectF(tarX * tarZoom, tarY * tarZoom, (tarX + 300) * tarZoom, (tarY + 20) * tarZoom);
+
+				RECT tmp = RECT((LONG)(layoutRect.left), (LONG)(layoutRect.top), (LONG)(layoutRect.right), (LONG)(layoutRect.bottom));
+				BarRenderingAttribute::UnionRectInPlace(current, tmp);
+
+				// 5. 绘制文本
+				barDeviceContext->DrawTextW(
+					content.c_str(),           // text
+					(UINT32)content.length(),  // text length
+					pTextFormat,               // format
+					layoutRect,                // layout rect
+					pBrush,                    // brush
+					D2D1_DRAW_TEXT_OPTIONS_NONE
+				);
 			}
-		}
-		{ /**/ }
 
-		// 调试 + FPS
-		/*
-		{
-			double tarZoom = barStyle.zoom;
-			wstring content = L"开发版本 " + editionDate + L" | 不代表最终品质 | " + fps;
-
-			CComPtr<IDWriteTextFormat> pTextFormat;
-			pTextFormat = barMedia.formatCache->GetFormat(
-				L"HarmonyOS Sans SC",
-				12.0 * tarZoom,
-				dWriteFontCollection,
-				DWRITE_FONT_WEIGHT_NORMAL,
-				DWRITE_FONT_STYLE_NORMAL,
-				DWRITE_FONT_STRETCH_NORMAL,
-				L"zh-cn",
-				DWRITE_TEXT_ALIGNMENT_LEADING, // 指定文本左对齐
-				DWRITE_PARAGRAPH_ALIGNMENT_NEAR // 指定段落顶部对齐
-			);
-
-			// 3. 创建画刷
-			CComPtr<ID2D1SolidColorBrush> pBrush;
-			barDeviceContext->CreateSolidColorBrush(
-				D2D1::ColorF(255, 255, 255, 0.5),
-				&pBrush);
-
-			double tarX = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->inhX;
-			double tarY = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->inhY + barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetH();
-
-			// 4. 设定绘制区域
-			D2D1_RECT_F layoutRect = D2D1::RectF(tarX * tarZoom, tarY * tarZoom, (tarX + 300) * tarZoom, (tarY + 20) * tarZoom);
-
-			RECT tmp = RECT((LONG)(layoutRect.left), (LONG)(layoutRect.top), (LONG)(layoutRect.right), (LONG)(layoutRect.bottom));
-			BarRenderingAttribute::UnionRectInPlace(current, tmp);
-
-			// 5. 绘制文本
-			barDeviceContext->DrawTextW(
-				content.c_str(),           // text
-				(UINT32)content.length(),  // text length
-				pTextFormat,               // format
-				layoutRect,                // layout rect
-				pBrush,                    // brush
-				D2D1_DRAW_TEXT_OPTIONS_NONE
-			);
-		}
-		*/
-
-		// 如果你需要测试脏区更新的区域，则可以取消注释下面的代码，并注释下方的脏区更新代码
-		/*
-		RECT target = original;
-		original = current;
-		BarRenderingAttribute::UnionRectInPlace(target, current);
-		{
-			// 脏区更新限制
-			if (target.left < 0) target.left = 0;
-			if (target.top < 0) target.top = 0;
-			if (target.right > barWindow.w) target.right = barWindow.w;
-			if (target.bottom > barWindow.h) target.bottom = barWindow.h;
-		}
-
-		{
-			COLORREF frame = RGB(255, 0, 0);
-			D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(target.left, target.top, target.right - 1, target.bottom - 1), 0, 0);
-
-			CComPtr<ID2D1SolidColorBrush> spBorderBrush;
-			barDeviceContext->CreateSolidColorBrush(Inkeys::Color::ConvertToD2dColor(frame, 1.0), &spBorderBrush);
-
-			barDeviceContext->DrawRoundedRectangle(&roundedRect, spBorderBrush, 1.0f);
-		}
-		*/
-
-		barDeviceContext->Flush();
-
-		{
-			// 脏区更新
+			// 如果你需要测试脏区更新的区域，则可以取消注释下面的代码，并注释下方的脏区更新代码
+			/*
 			RECT target = original;
 			original = current;
 			BarRenderingAttribute::UnionRectInPlace(target, current);
@@ -2278,28 +2252,62 @@ void BarUISetClass::Rendering()
 				if (target.bottom > barWindow.h) target.bottom = barWindow.h;
 			}
 
-			// psize 指定窗口本次更新“新内容”宽高
-			// pptDst 指定新内容贴到屏幕上的位置（左上角）
-			// pptSrc 从源内存 DC 的哪个位置起贴内容
+			{
+				COLORREF frame = RGB(255, 0, 0);
+				D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(target.left, target.top, target.right - 1, target.bottom - 1), 0, 0);
 
-			// 设置窗口位置
-			POINT ptDst = { 0, 0 };
-			// 获取 DC
-			HDC hdc = nullptr;
-			barGdiInterop->GetDC(D2D1_DC_INITIALIZE_MODE_COPY, &hdc);
+				CComPtr<ID2D1SolidColorBrush> spBorderBrush;
+				barDeviceContext->CreateSolidColorBrush(Inkeys::Color::ConvertToD2dColor(frame, 1.0), &spBorderBrush);
 
-			ulwi.pptDst = &ptDst;
-			ulwi.hdcSrc = hdc;
-			ulwi.prcDirty = &target;
-			UpdateLayeredWindowIndirect(floating_window, &ulwi);
+				barDeviceContext->DrawRoundedRectangle(&roundedRect, spBorderBrush, 1.0f);
+			}
+			*/
 
-			barGdiInterop->ReleaseDC(nullptr);
-		}
+			barDeviceContext->Flush();
 
-		barDeviceContext->EndDraw();
-		barMedia.formatCache->Clean();
+			{
+				// 脏区更新
+				RECT target = original;
+				original = current;
+				BarRenderingAttribute::UnionRectInPlace(target, current);
+				{
+					// 脏区更新限制
+					if (target.left < 0) target.left = 0;
+					if (target.top < 0) target.top = 0;
+					if (target.right > barWindow.w) target.right = barWindow.w;
+					if (target.bottom > barWindow.h) target.bottom = barWindow.h;
+				}
+
+				// psize 指定窗口本次更新“新内容”宽高
+				// pptDst 指定新内容贴到屏幕上的位置（左上角）
+				// pptSrc 从源内存 DC 的哪个位置起贴内容
+
+				// 设置窗口位置
+				POINT ptDst = { 0, 0 };
+				// 获取 DC
+				HDC hdc = nullptr;
+				barGdiInterop->GetDC(D2D1_DC_INITIALIZE_MODE_COPY, &hdc);
+
+				ulwi.pptDst = &ptDst;
+				ulwi.hdcSrc = hdc;
+				ulwi.prcDirty = &target;
+				UpdateLayeredWindowIndirect(floating_window, &ulwi);
+
+				barGdiInterop->ReleaseDC(nullptr);
+			}
+
+			barDeviceContext->EndDraw();
+			barMedia.formatCache->Clean();
 
 		#pragma endregion
+		}
+		else
+		{
+			this_thread::sleep_for(std::chrono::milliseconds(100));
+
+			BarAtomic::wait.WaitFalse();
+			BarAtomic::wait.Store(false);
+		}
 
 		if (forNum == 1)
 		{
@@ -2502,7 +2510,9 @@ void BarUISetClass::UpdateRendering(bool updateState)
 		barButtomSet.StateUpdate();
 		barState.ThicknessDisplayUpdate();
 	}
-	// TODO 通知计算并渲染
+
+	// 通知计算并渲染
+	BarAtomic::wait.Store(true);
 }
 // 拖动交互
 double BarUISetClass::Seek(const ExMessage& msg)
