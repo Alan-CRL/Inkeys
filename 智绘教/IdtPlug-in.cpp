@@ -40,6 +40,7 @@ import Inkeys.Conv.Text;
 #include "IdtState.h"
 #include "IdtI18n.h"
 
+#include <atomic>
 #include <objbase.h>
 #include <psapi.h>
 #include <shlobj.h>
@@ -54,6 +55,81 @@ import Inkeys.Conv.Text;
 #import "PptCOM.tlb" // C# 类库 PptCOM 项目库 (PptCOM. cs)
 using namespace PptCOM;
 IPptCOMServerPtr PptCOMPto;
+
+extern PptInfoStateStruct PptInfoState;
+extern std::wstring pptComVersion;
+extern std::wstring pptComExtraWarning;
+
+namespace
+{
+	std::atomic_bool pptComResetRequested = true;
+
+	constexpr WORD kPptComManifestResourceId = 221;
+	constexpr int kPptComNormalRestartDelayMs = 250;
+	constexpr int kPptComErrorRestartDelayMs = 500;
+
+	class ScopedPptComActCtx
+	{
+	public:
+		ScopedPptComActCtx()
+		{
+			ACTCTXW actCtx = {};
+			actCtx.cbSize = sizeof(actCtx);
+			actCtx.dwFlags = ACTCTX_FLAG_RESOURCE_NAME_VALID | ACTCTX_FLAG_HMODULE_VALID;
+			actCtx.lpResourceName = MAKEINTRESOURCEW(kPptComManifestResourceId);
+			actCtx.hModule = GetModuleHandleW(nullptr);
+
+			hActCtx = CreateActCtxW(&actCtx);
+			if (hActCtx == INVALID_HANDLE_VALUE) hActCtx = nullptr;
+			else active = (ActivateActCtx(hActCtx, &cookie) == TRUE);
+		}
+
+		~ScopedPptComActCtx()
+		{
+			if (active) DeactivateActCtx(0, cookie);
+			if (hActCtx != nullptr) ReleaseActCtx(hActCtx);
+		}
+
+		bool IsActive() const
+		{
+			return active;
+		}
+
+	private:
+		HANDLE hActCtx = nullptr;
+		ULONG_PTR cookie = 0;
+		bool active = false;
+	};
+
+	std::wstring BuildPptComErrorMessage(const wchar_t* stage, const _com_error& err)
+	{
+		std::wstring desc = (wchar_t*)err.Description() ? (wchar_t*)err.Description() : L"";
+		return std::wstring(L"Error: ") + stage + L" " + std::wstring(err.ErrorMessage()) +
+			L" (0x" + std::to_wstring(err.Error()) + L") " + desc;
+	}
+
+	void ParsePptComVersionString()
+	{
+		pptComExtraWarning.clear();
+
+		if (pptComVersion.find(L"\n") != pptComVersion.npos)
+		{
+			pptComExtraWarning = pptComVersion.substr(pptComVersion.find(L'\n') + 1);
+			pptComVersion = pptComVersion.substr(0, pptComVersion.find(L'\n'));
+		}
+	}
+
+	void RequestPptComReset()
+	{
+		pptComResetRequested.store(true, std::memory_order_relaxed);
+	}
+
+	void RequestPptComReset(const wchar_t* stage, const _com_error& err)
+	{
+		pptComVersion = BuildPptComErrorMessage(stage, err);
+		RequestPptComReset();
+	}
+}
 
 // -------------------------
 // UI 对象
@@ -176,45 +252,71 @@ PptUiWidgetStateEnum pptUiWidgetState = PptUiWidgetStateEnum::Close;
 // -------------------------
 // Ppt 主项
 
-bool CheckPptCom()
+void ResetPptComBridge()
 {
 	try
 	{
-		_com_util::CheckError(PptCOMPto.CreateInstance(_uuidof(PptCOMServer)));
+		PptCOMPto = nullptr;
+	}
+	catch (...)
+	{
+	}
+
+	PptInfoState.TotalPage = -1;
+	PptInfoState.CurrentPage = -1;
+}
+
+bool EnsurePptComBridge()
+{
+	ScopedPptComActCtx actCtxScope;
+	if (!actCtxScope.IsActive())
+	{
+		pptComVersion = L"Error: 初始化异常0(C++) 激活 PptCOM 清单失败";
+		return false;
+	}
+
+	IPptCOMServerPtr bridge;
+
+	try
+	{
+		_com_util::CheckError(bridge.CreateInstance(_uuidof(PptCOMServer)));
 	}
 	catch (_com_error err)
 	{
-		pptComVersion = L"Error: 初始化异常1(C++) " + std::wstring(err.ErrorMessage()) +
-			L" (0x" + std::to_wstring(err.Error()) + L") " +
-			std::wstring((wchar_t*)err.Description() ? (wchar_t*)err.Description() : L"");
-
+		pptComVersion = BuildPptComErrorMessage(L"初始化异常1(C++)", err);
 		return false;
 	}
 
 	try
 	{
-		pptComVersion = PptCOMPto->CheckCOM();
+		pptComVersion = bridge->CheckCOM();
 	}
 	catch (_com_error err)
 	{
-		pptComVersion = L"Error: 初始化异常2(C++) " + std::wstring(err.ErrorMessage()) +
-			L" (0x" + std::to_wstring(err.Error()) + L") " +
-			std::wstring((wchar_t*)err.Description() ? (wchar_t*)err.Description() : L"");
-
+		pptComVersion = BuildPptComErrorMessage(L"初始化异常2(C++)", err);
 		return false;
 	}
 
-	if (pptComVersion.find(L"\n") != pptComVersion.npos)
+	ParsePptComVersionString();
+
+	try
 	{
-		pptComExtraWarning = pptComVersion.substr(pptComVersion.find('\n') + 1);
-		pptComVersion = pptComVersion.substr(0, pptComVersion.find('\n'));
-
-		//Testw(pptComExtraWarning);
-		//Testw(pptComVersion);
-
-		// TODO ？
+		if (!bridge->Initialization(reinterpret_cast<long*>(&PptInfoState.TotalPage),
+			reinterpret_cast<long*>(&PptInfoState.CurrentPage),
+			reinterpret_cast<long*>(&offSignal)))
+		{
+			pptComVersion = L"Error: 初始化异常3(C++) PptCOM 初始化失败";
+			return false;
+		}
+	}
+	catch (_com_error err)
+	{
+		pptComVersion = BuildPptComErrorMessage(L"初始化异常3(C++)", err);
+		return false;
 	}
 
+	PptCOMPto = bridge;
+	pptComResetRequested.store(false, std::memory_order_relaxed);
 	return true;
 }
 
@@ -387,13 +489,15 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 wstring GetPptTitle()
 {
 	wstring ret = L"";
+	if (PptCOMPto == nullptr) return ret;
 
 	try
 	{
 		ret = bstrToWstring(PptCOMPto->SlideNameIndex());
 	}
-	catch (_com_error)
+	catch (_com_error err)
 	{
+		RequestPptComReset(L"PPT 信息异常1(C++)", err);
 	}
 
 	return ret;
@@ -401,14 +505,16 @@ wstring GetPptTitle()
 HWND GetPptShow()
 {
 	HWND hWnd = NULL;
+	if (PptCOMPto == nullptr) return hWnd;
 
 	try
 	{
 		_variant_t result = PptCOMPto->GetPptHwnd();
 		hWnd = (HWND)result.llVal;
 	}
-	catch (_com_error)
+	catch (_com_error err)
 	{
+		RequestPptComReset(L"PPT 信息异常2(C++)", err);
 	}
 
 	return hWnd;
@@ -416,100 +522,118 @@ HWND GetPptShow()
 void GetPptState()
 {
 	Inkeys::Thread::StatusGuard guard("GetPptState");
+	HRESULT oleHr = OleInitialize(nullptr);
+	const bool shouldOleUninitialize = SUCCEEDED(oleHr);
 
-	// 初始化
+	if (FAILED(oleHr) && oleHr != RPC_E_CHANGED_MODE)
 	{
-		bool rel = false;
-		rel = CheckPptCom();
-
-		if (rel)
-		{
-			try
-			{
-				rel = PptCOMPto->Initialization(reinterpret_cast<long*>(&PptInfoState.TotalPage),
-					reinterpret_cast<long*>(&PptInfoState.CurrentPage),
-					reinterpret_cast<long*>(&offSignal));
-			}
-			catch (_com_error err)
-			{
-				pptComVersion = L"Error: 初始化异常3(C++) " + std::wstring(err.ErrorMessage()) +
-					L" (0x" + std::to_wstring(err.Error()) + L") " +
-					std::wstring((wchar_t*)err.Description() ? (wchar_t*)err.Description() : L"");
-
-				rel = false;
-			}
-		}
-		if (!rel) return;
+		pptComVersion = L"Error: 初始化异常4(C++) OleInitialize 失败 (0x" + std::to_wstring(oleHr) + L")";
+		return;
 	}
 
 	while (!offSignal)
 	{
-		int tmp = -1;
+		if (pptComResetRequested.exchange(false, std::memory_order_relaxed)) ResetPptComBridge();
+		if (PptCOMPto == nullptr)
+		{
+			if (!EnsurePptComBridge())
+			{
+				for (int i = 0; i < kPptComErrorRestartDelayMs / 50 && !offSignal; i++)
+					this_thread::sleep_for(chrono::milliseconds(50));
+				continue;
+			}
+		}
+
+		int tmp = 0;
+		bool fatalBridgeFailure = false;
 
 		try
 		{
 			tmp = PptCOMPto->PptComService();
 		}
-		catch (_com_error)
+		catch (_com_error err)
 		{
+			RequestPptComReset(L"PPT 服务异常1(C++)", err);
+			fatalBridgeFailure = true;
 		}
 
 		PptInfoState.TotalPage = PptInfoState.CurrentPage = -1;
 
-		if (tmp <= 0)
+		if (fatalBridgeFailure || tmp < 0)
 		{
-			for (int i = 0; i <= 20 && !offSignal; i++)
-				this_thread::sleep_for(chrono::milliseconds(100));
+			ResetPptComBridge();
+
+			for (int i = 0; i < kPptComErrorRestartDelayMs / 50 && !offSignal; i++)
+				this_thread::sleep_for(chrono::milliseconds(50));
+			continue;
 		}
+
+		for (int i = 0; i < kPptComNormalRestartDelayMs / 50 && !offSignal; i++)
+			this_thread::sleep_for(chrono::milliseconds(50));
 	}
+
+	ResetPptComBridge();
+	if (shouldOleUninitialize) OleUninitialize();
 }
 
 void NextPptSlides(int check)
 {
+	if (PptCOMPto == nullptr) return;
+
 	try
 	{
 		PptCOMPto->NextSlideShow((bool)(check == -1));
 	}
-	catch (_com_error)
+	catch (_com_error err)
 	{
+		RequestPptComReset(L"PPT 操作异常1(C++)", err);
 	}
 
 	return;
 }
 void PreviousPptSlides()
 {
+	if (PptCOMPto == nullptr) return;
+
 	try
 	{
 		PptCOMPto->PreviousSlideShow();
 	}
-	catch (_com_error)
+	catch (_com_error err)
 	{
+		RequestPptComReset(L"PPT 操作异常2(C++)", err);
 	}
 
 	return;
 }
 void EndPptShow()
 {
+	if (PptCOMPto == nullptr) return;
+
 	try
 	{
 		FocusPptShow();
 		PptCOMPto->EndSlideShow();
 	}
-	catch (_com_error)
+	catch (_com_error err)
 	{
+		RequestPptComReset(L"PPT 操作异常3(C++)", err);
 	}
 
 	return;
 }
 void ViewPptShow()
 {
+	if (PptCOMPto == nullptr) return;
+
 	try
 	{
 		FocusPptShow();
 		PptCOMPto->ViewSlideShow();
 	}
-	catch (_com_error)
+	catch (_com_error err)
 	{
+		RequestPptComReset(L"PPT 操作异常4(C++)", err);
 	}
 
 	return;
@@ -523,12 +647,15 @@ void FocusPptShow()
 
 	// 都需要保证激活
 	{
+		if (PptCOMPto == nullptr) return;
+
 		try
 		{
 			PptCOMPto->ActivateSildeShowWindow();
 		}
-		catch (_com_error)
+		catch (_com_error err)
 		{
+			RequestPptComReset(L"PPT 操作异常5(C++)", err);
 		}
 	}
 
