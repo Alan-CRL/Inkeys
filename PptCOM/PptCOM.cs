@@ -215,6 +215,37 @@ namespace PptCOM
 
             Console.WriteLine("CLEAN!");
         }
+        private static bool IsBusyComErrorCode(int errorCode)
+        {
+            uint hr = unchecked((uint)errorCode);
+            return hr == 0x8001010A || hr == 0x800AC472 || hr == 0x80010001;
+        }
+        private static bool TryGetBusyComErrorCode(Exception ex, out uint errorCode)
+        {
+            while (ex != null)
+            {
+                COMException comEx = ex as COMException;
+                if (comEx != null && IsBusyComErrorCode(comEx.ErrorCode))
+                {
+                    errorCode = unchecked((uint)comEx.ErrorCode);
+                    return true;
+                }
+
+                ex = ex.InnerException;
+            }
+
+            errorCode = 0;
+            return false;
+        }
+        private static bool HandleBusyException(Exception ex, string stage)
+        {
+            uint errorCode;
+            if (!TryGetBusyComErrorCode(ex, out errorCode)) return false;
+
+            Console.WriteLine(stage + " PowerPoint 忙，稍后重试 0x" + errorCode.ToString("X8"));
+            Thread.Sleep(200);
+            return true;
+        }
 
         // 判断函数
         private static bool AreComObjectsEqual(object o1, object o2)
@@ -695,6 +726,8 @@ namespace PptCOM
             {
                 while (true)
                 {
+                    bool busyRetry = false;
+
                     // 动态绑定/切换逻辑
                     {
                         object bestApp = GetAnyActivePowerPoint(pptApplication, out bestPriority, out targetPriority);
@@ -702,7 +735,7 @@ namespace PptCOM
 
                         Console.WriteLine($"now: {targetPriority}, best: {bestPriority}");
 
-                        if (pptApplication == null && bestApp != null) needRebind = true;
+                        if ((pptApplication == null || pptActivePresentation == null) && bestApp != null) needRebind = true;
                         else if (pptApplication != null && bestApp != null && bestPriority > targetPriority)
                         {
                             // 完全不同
@@ -734,17 +767,24 @@ namespace PptCOM
                                         pptSlideShowWindow = pptActivePresentation.SlideShowWindow;
                                         *pptTotalPage = tempTotalPage = GetTotalSlideIndex(pptActivePresentation);
                                     }
-                                    catch
+                                    catch (Exception ex)
                                     {
-                                        *pptTotalPage = tempTotalPage = -1;
+                                        if (HandleBusyException(ex, "绑定总页数"))
+                                        {
+                                            busyRetry = true;
+                                        }
+                                        else
+                                        {
+                                            *pptTotalPage = tempTotalPage = -1;
+                                        }
                                     }
 
-                                    if (tempTotalPage == -1)
+                                    if (!busyRetry && tempTotalPage == -1)
                                     {
                                         *pptCurrentPage = -1;
                                         polling = 0;
                                     }
-                                    else
+                                    else if (!busyRetry)
                                     {
                                         try
                                         {
@@ -753,59 +793,73 @@ namespace PptCOM
                                             if (GetCurrentSlideIndex(pptSlideShowWindow) >= GetTotalSlideIndex(pptActivePresentation)) polling = 1;
                                             else polling = 0;
                                         }
-                                        catch
+                                        catch (Exception ex)
                                         {
-                                            *pptCurrentPage = -1;
-                                            polling = 1;
+                                            if (HandleBusyException(ex, "绑定当前页"))
+                                            {
+                                                busyRetry = true;
+                                            }
+                                            else
+                                            {
+                                                *pptCurrentPage = -1;
+                                                polling = 1;
+                                            }
                                         }
                                     }
 
-                                    try
-                                    {
-                                        // 关键修改：这里不要直接用 pptApplication +=，而是先强转
-                                        Microsoft.Office.Interop.PowerPoint.Application app = pptApplication as Microsoft.Office.Interop.PowerPoint.Application;
-
-                                        if (app != null)
+                                    if (!busyRetry) try
                                         {
-                                            app.SlideShowNextSlide += new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowNextSlideEventHandler(SlideShowChange);
-                                            app.SlideShowBegin += new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowBeginEventHandler(SlideShowBegin);
-                                            app.SlideShowEnd += new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowEndEventHandler(SlideShowShowEnd);
+                                            // 关键修改：这里不要直接用 pptApplication +=，而是先强转
+                                            Microsoft.Office.Interop.PowerPoint.Application app = pptApplication as Microsoft.Office.Interop.PowerPoint.Application;
 
-                                            try
+                                            if (app != null)
                                             {
-                                                app.PresentationBeforeClose += new Microsoft.Office.Interop.PowerPoint.EApplication_PresentationBeforeCloseEventHandler(PresentationBeforeClose);
+                                                app.SlideShowNextSlide += new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowNextSlideEventHandler(SlideShowChange);
+                                                app.SlideShowBegin += new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowBeginEventHandler(SlideShowBegin);
+                                                app.SlideShowEnd += new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowEndEventHandler(SlideShowShowEnd);
+
+                                                try
+                                                {
+                                                    app.PresentationBeforeClose += new Microsoft.Office.Interop.PowerPoint.EApplication_PresentationBeforeCloseEventHandler(PresentationBeforeClose);
+                                                }
+                                                catch
+                                                {
+                                                    Console.WriteLine($"无法注册事件 2!");
+                                                }
+
+                                                bindingEvents = true;
+                                                forcePolling = false;
+
+                                                Console.WriteLine($"事件注册成功!");
                                             }
-                                            catch
+                                            else
                                             {
-                                                Console.WriteLine($"无法注册事件 2!");
+                                                bindingEvents = false;
+                                                forcePolling = true;
+
+                                                Console.WriteLine($"转换 Application 接口失败，无法注册事件");
                                             }
-
-                                            bindingEvents = true;
-                                            forcePolling = false;
-
-                                            Console.WriteLine($"事件注册成功!");
                                         }
-                                        else
+                                        catch (Exception ex)
                                         {
                                             bindingEvents = false;
                                             forcePolling = true;
 
-                                            Console.WriteLine($"转换 Application 接口失败，无法注册事件");
+                                            Console.WriteLine($"无法注册事件 1! {ex.Message}");
                                         }
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        bindingEvents = false;
-                                        forcePolling = true;
 
-                                        Console.WriteLine($"无法注册事件 1! {ex.Message}");
-                                    }
-
-                                    Console.WriteLine($"成功绑定! {pptApplication.Name}");
+                                    if (!busyRetry) Console.WriteLine($"成功绑定! {pptApplication.Name}");
                                 }
-                                catch
+                                catch (Exception ex)
                                 {
-                                    FullCleanup();
+                                    if (HandleBusyException(ex, "绑定演示文稿"))
+                                    {
+                                        busyRetry = true;
+                                    }
+                                    else
+                                    {
+                                        FullCleanup();
+                                    }
                                 }
                             }
                         }
@@ -818,6 +872,7 @@ namespace PptCOM
                             }
                         }
                     }
+                    if (busyRetry) continue;
 
                     // 状态监测与轮询
                     if (pptApplication != null && pptActivePresentation != null)
@@ -837,20 +892,24 @@ namespace PptCOM
                                 break;
                             }
                         }
-                        catch (COMException ex) when ((uint)ex.ErrorCode == 0x8001010A)
-                        {
-                            Console.WriteLine($"PowerPoint 忙，稍后重试");
-                        }
                         catch (Exception ex)
                         {
-                            Console.WriteLine($"End in 2 {ex.ToString()}");
-                            break;
+                            if (HandleBusyException(ex, "检查活动演示文稿"))
+                            {
+                                busyRetry = true;
+                            }
+                            else
+                            {
+                                Console.WriteLine($"End in 2 {ex.ToString()}");
+                                break;
+                            }
                         }
                         finally
                         {
                             SafeRelease(activePersentation);
                             activePersentation = null;
                         }
+                        if (busyRetry) continue;
 
                         // ----------
                         // 检测是否处于放映模式
@@ -882,16 +941,19 @@ namespace PptCOM
                                 }
                             }
                         }
-                        catch (COMException ex) when ((uint)ex.ErrorCode == 0x8001010A)
-                        {
-                            Console.WriteLine($"PowerPoint 忙，稍后重试");
-                        }
                         catch (Exception ex)
                         {
-                            Console.WriteLine($"发现窗口失败 1: {ex.ToString()}");
+                            if (HandleBusyException(ex, "检查放映窗口"))
+                            {
+                                busyRetry = true;
+                            }
+                            else
+                            {
+                                Console.WriteLine($"发现窗口失败 1: {ex.ToString()}");
 
-                            // 如果这里报错，说明 App 可能挂了，或者 WPS 上下文丢失
-                            // 标记为非放映状态，后续逻辑会处理
+                                // 如果这里报错，说明 App 可能挂了，或者 WPS 上下文丢失
+                                // 标记为非放映状态，后续逻辑会处理
+                            }
                         }
                         finally
                         {
@@ -906,6 +968,7 @@ namespace PptCOM
                                 Console.WriteLine($"slideShowWindow 被清理");
                             }
                         }
+                        if (busyRetry) continue;
 
                         if (isSlideShowActive)
                         {
@@ -923,15 +986,23 @@ namespace PptCOM
                                 }
                                 catch (Exception ex)
                                 {
-                                    *pptTotalPage = tempTotalPage = -1;
+                                    if (HandleBusyException(ex, "轮询总页数"))
+                                    {
+                                        busyRetry = true;
+                                    }
+                                    else
+                                    {
+                                        *pptTotalPage = tempTotalPage = -1;
 
-                                    Console.WriteLine($"获取总页数失败 {ex.Message}");
+                                        Console.WriteLine($"获取总页数失败 {ex.Message}");
+                                    }
                                 }
                                 finally
                                 {
                                     SafeRelease(slideShowWindow);
                                     slideShowWindow = null;
                                 }
+                                if (busyRetry) continue;
 
                                 if (tempTotalPage == -1)
                                 {
@@ -950,12 +1021,20 @@ namespace PptCOM
                                     }
                                     catch (Exception ex)
                                     {
-                                        *pptCurrentPage = -1;
-                                        polling = 1;
+                                        if (HandleBusyException(ex, "轮询当前页"))
+                                        {
+                                            busyRetry = true;
+                                        }
+                                        else
+                                        {
+                                            *pptCurrentPage = -1;
+                                            polling = 1;
 
-                                        Console.WriteLine($"获取当前页数失败 {ex.ToString()}");
+                                            Console.WriteLine($"获取当前页数失败 {ex.ToString()}");
+                                        }
                                     }
                                 }
+                                if (busyRetry) continue;
 
                                 updateTime = DateTime.Now;
                             }
@@ -966,8 +1045,13 @@ namespace PptCOM
                                     *pptCurrentPage = GetCurrentSlideIndex(pptSlideShowWindow);
                                     polling = 2;
                                 }
-                                catch
+                                catch (Exception ex)
                                 {
+                                    if (HandleBusyException(ex, "校验当前页"))
+                                    {
+                                        continue;
+                                    }
+
                                     *pptCurrentPage = -1;
                                 }
                             }
