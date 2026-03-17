@@ -194,6 +194,7 @@ void BarUiSVGClass::InitializationFromString(wstring valT)
 {
 	svg.Initialization(valT);
 	{
+		cacheBitmap.Reset();
 		cW = cH = 0.0;
 		cColor1 = cColor2 = RGB(0, 0, 0);
 	}
@@ -211,6 +212,7 @@ void BarUiSVGClass::SetTarFromString(wstring valT)
 {
 	svg.SetTar(valT);
 	{
+		cacheBitmap.Reset();
 		cW = cH = 0.0;
 		cColor1 = cColor2 = RGB(0, 0, 0);
 	}
@@ -292,15 +294,18 @@ bool BarUiSVGClass::CacheBitmap(ID2D1DeviceContext* deviceContext, double tarW, 
 		if (bitmap.width() == 0 || bitmap.height() == 0 || !bitmap.data()) return false;
 
 		D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+		Microsoft::WRL::ComPtr<ID2D1Bitmap> newBitmap;
 		// lunasvg 文档声明：数据为BGRA，8bits每通道，正好适配D2D位图
 		HRESULT hr = deviceContext->CreateBitmap(
 			D2D1::SizeU(bitmap.width(), bitmap.height()),
 			bitmap.data(),
 			bitmap.width() * 4, // stride
 			props,
-			&cacheBitmap);
+			newBitmap.GetAddressOf());
 
-		if (FAILED(hr) || !cacheBitmap) return false;
+		if (FAILED(hr) || !newBitmap) return false;
+
+		cacheBitmap = newBitmap;
 	}
 
 	// 记录缓存值

@@ -505,7 +505,7 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, 
 			if (!svg.CacheBitmap(deviceContext, tarW, tarH))
 				return false;
 		}
-		d2dBitmap = svg.cacheBitmap;
+		d2dBitmap = svg.cacheBitmap.Get();
 	}
 
 	// 渲染到 DC
@@ -2196,6 +2196,7 @@ void BarUISetClass::Rendering()
 			{ /**/ }
 
 			// 调试 + FPS
+			/*
 			{
 				double tarZoom = barStyle.zoom;
 				wstring content = L"开发版本 " + editionDate + L" | 不代表最终品质 | " + fps;
@@ -2237,7 +2238,7 @@ void BarUISetClass::Rendering()
 					pBrush,                    // brush
 					D2D1_DRAW_TEXT_OPTIONS_NONE
 				);
-			}
+			}*/
 
 			// 如果你需要测试脏区更新的区域，则可以取消注释下面的代码，并注释下方的脏区更新代码
 			/*
@@ -2303,8 +2304,6 @@ void BarUISetClass::Rendering()
 		}
 		else
 		{
-			this_thread::sleep_for(std::chrono::milliseconds(100));
-
 			BarAtomic::wait.WaitFalse();
 			BarAtomic::wait.Store(false);
 		}
