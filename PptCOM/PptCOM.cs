@@ -79,7 +79,6 @@ namespace PptCOM
         private unsafe int* pptTotalPage;
         private unsafe int* pptCurrentPage;
         private unsafe int* offSignal;
-        private int pptProcessId;
 
         // 结束界面轮询（0正常页 1/2末页或结束放映页）
         //（2设定为运行一次不被检查的翻页，虽然我也不知道当时写这个是为了特判什么情况 hhh）
@@ -89,204 +88,6 @@ namespace PptCOM
         private bool bindingEvents; // 是否已绑定事件
 
         private DateTime updateTime; // 更新时间点
-
-        private const int ServiceResultCompleted = 0;
-        private const int ServiceResultFatal = -1;
-        private const int DefaultComRetryDelayMs = 80;
-        private const int DefaultComRetryTimeoutMs = 1600;
-        private const int MessageFilterRetryTimeoutMs = 5000;
-        private const int OrphanedProcessGracePeriodMs = 2000;
-        private const int OrphanedProcessKillWaitMs = 3000;
-        private const uint RpcEServerCallRetryLater = 0x8001010A;
-        private const uint RpcECallRejected = 0x80010001;
-
-        [ComImport]
-        [Guid("00000016-0000-0000-C000-000000000046")]
-        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-        private interface IOleMessageFilter
-        {
-            [PreserveSig]
-            int HandleInComingCall(int dwCallType, IntPtr hTaskCaller, int dwTickCount, IntPtr lpInterfaceInfo);
-
-            [PreserveSig]
-            int RetryRejectedCall(IntPtr hTaskCallee, int dwTickCount, int dwRejectType);
-
-            [PreserveSig]
-            int MessagePending(IntPtr hTaskCallee, int dwTickCount, int dwPendingType);
-        }
-
-        private sealed class OleMessageFilter : IOleMessageFilter
-        {
-            public static bool Register()
-            {
-                try
-                {
-                    IOleMessageFilter oldFilter;
-                    return CoRegisterMessageFilter(new OleMessageFilter(), out oldFilter) >= 0;
-                }
-                catch
-                {
-                    return false;
-                }
-            }
-
-            public static void Revoke()
-            {
-                try
-                {
-                    IOleMessageFilter oldFilter;
-                    CoRegisterMessageFilter(null, out oldFilter);
-                }
-                catch
-                {
-                }
-            }
-
-            int IOleMessageFilter.HandleInComingCall(int dwCallType, IntPtr hTaskCaller, int dwTickCount, IntPtr lpInterfaceInfo)
-            {
-                return 0;
-            }
-
-            int IOleMessageFilter.RetryRejectedCall(IntPtr hTaskCallee, int dwTickCount, int dwRejectType)
-            {
-                if (dwRejectType == 2)
-                {
-                    if (dwTickCount >= MessageFilterRetryTimeoutMs)
-                    {
-                        return -1;
-                    }
-
-                    return DefaultComRetryDelayMs;
-                }
-
-                return -1;
-            }
-
-            int IOleMessageFilter.MessagePending(IntPtr hTaskCallee, int dwTickCount, int dwPendingType)
-            {
-                return 2;
-            }
-        }
-
-        private static bool IsRetryableComException(COMException ex)
-        {
-            if (ex == null)
-            {
-                return false;
-            }
-
-            uint errorCode = unchecked((uint)ex.ErrorCode);
-            return errorCode == RpcEServerCallRetryLater || errorCode == RpcECallRejected;
-        }
-
-        private static COMException GetRetryableComException(Exception ex)
-        {
-            COMException comException = ex as COMException;
-            if (IsRetryableComException(comException))
-            {
-                return comException;
-            }
-
-            TargetInvocationException invocationException = ex as TargetInvocationException;
-            if (invocationException != null)
-            {
-                COMException innerComException = invocationException.InnerException as COMException;
-                if (IsRetryableComException(innerComException))
-                {
-                    return innerComException;
-                }
-            }
-
-            return null;
-        }
-
-        private static bool IsRetryableComException(Exception ex)
-        {
-            return GetRetryableComException(ex) != null;
-        }
-
-        private static T InvokeCom<T>(Func<T> action, string operation, int timeoutMs = DefaultComRetryTimeoutMs, int retryDelayMs = DefaultComRetryDelayMs)
-        {
-            if (action == null)
-            {
-                throw new ArgumentNullException("action");
-            }
-
-            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
-
-            while (true)
-            {
-                try
-                {
-                    return action();
-                }
-                catch (Exception ex)
-                {
-                    COMException retryableComException = GetRetryableComException(ex);
-                    if (retryableComException == null)
-                    {
-                        throw;
-                    }
-
-                    if (DateTime.UtcNow >= deadline)
-                    {
-                        Console.WriteLine(string.Format("{0} busy timeout: 0x{1:X8} {2}",
-                            operation,
-                            unchecked((uint)retryableComException.ErrorCode),
-                            retryableComException.Message));
-                        throw;
-                    }
-
-                    Thread.Sleep(retryDelayMs);
-                }
-            }
-        }
-
-        private static void InvokeCom(Action action, string operation, int timeoutMs = DefaultComRetryTimeoutMs, int retryDelayMs = DefaultComRetryDelayMs)
-        {
-            InvokeCom<object>(delegate
-            {
-                action();
-                return null;
-            }, operation, timeoutMs, retryDelayMs);
-        }
-
-        private static bool TryInvokeCom<T>(Func<T> action, string operation, out T result, int timeoutMs = DefaultComRetryTimeoutMs, int retryDelayMs = DefaultComRetryDelayMs)
-        {
-            try
-            {
-                result = InvokeCom(action, operation, timeoutMs, retryDelayMs);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                if (!IsRetryableComException(ex))
-                {
-                    throw;
-                }
-
-                result = default(T);
-                return false;
-            }
-        }
-
-        private static bool TryInvokeCom(Action action, string operation, int timeoutMs = DefaultComRetryTimeoutMs, int retryDelayMs = DefaultComRetryDelayMs)
-        {
-            try
-            {
-                InvokeCom(action, operation, timeoutMs, retryDelayMs);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                if (!IsRetryableComException(ex))
-                {
-                    throw;
-                }
-
-                return false;
-            }
-        }
 
         // 初始化函数
         public unsafe bool Initialization(int* TotalPage, int* CurrentPage, int* OffSignal)
@@ -307,7 +108,7 @@ namespace PptCOM
         }
         public string CheckCOM()
         {
-            string ret = "20260315a";
+            string ret = "20260201a";
             return ret;
         }
 
@@ -318,7 +119,7 @@ namespace PptCOM
             if (moniker != null) Marshal.ReleaseComObject(moniker);
             if (bindCtx != null) Marshal.ReleaseComObject(bindCtx);
         }
-        private void SafeRelease(object comObj, string name = "COM")
+        private void SafeRelease(object comObj)
         {
             if (comObj == null) return;
 
@@ -328,13 +129,10 @@ namespace PptCOM
                 {
                     Marshal.ReleaseComObject(comObj);
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine(string.Format("{0} ReleaseComObject skipped: {1}", name, ex.Message));
-                }
+                catch { }
             }
         }
-        private void SafeFinalRelease(object comObj, string name = "COM")
+        private void SafeFinalRelease(object comObj)
         {
             if (comObj == null) return;
 
@@ -344,22 +142,18 @@ namespace PptCOM
                 {
                     Marshal.FinalReleaseComObject(comObj);
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine(string.Format("{0} FinalReleaseComObject skipped: {1}", name, ex.Message));
-                }
+                catch { }
             }
         }
-        private void UnbindEvents(object applicationObj = null)
+        private void UnbindEvents()
         {
             try
             {
-                object targetApplication = applicationObj ?? pptApplication;
-                if (bindingEvents && targetApplication != null)
+                if (bindingEvents && pptApplication != null)
                 {
                     try
                     {
-                        Microsoft.Office.Interop.PowerPoint.Application app = targetApplication as Microsoft.Office.Interop.PowerPoint.Application;
+                        Microsoft.Office.Interop.PowerPoint.Application app = pptApplication as Microsoft.Office.Interop.PowerPoint.Application;
 
                         if (app != null)
                         {
@@ -383,169 +177,28 @@ namespace PptCOM
 
             Console.WriteLine("UnbindEventsCalled");
         }
-        private int GetProcessIdFromWindowHandle(IntPtr hwnd)
-        {
-            if (hwnd == IntPtr.Zero)
-            {
-                return 0;
-            }
-
-            uint processId;
-            GetWindowThreadProcessId(hwnd, out processId);
-            return unchecked((int)processId);
-        }
-        private int TryGetBoundPowerPointProcessId()
-        {
-            IntPtr hwnd = IntPtr.Zero;
-
-            try
-            {
-                hwnd = GetPptHwndFromSlideShowWindow(pptSlideShowWindow);
-            }
-            catch
-            {
-            }
-
-            if (hwnd == IntPtr.Zero && pptApplication != null)
-            {
-                try
-                {
-                    object rawHwnd = pptApplication.HWND;
-                    if (rawHwnd is int)
-                    {
-                        hwnd = new IntPtr((int)rawHwnd);
-                    }
-                    else if (rawHwnd is IntPtr)
-                    {
-                        hwnd = (IntPtr)rawHwnd;
-                    }
-                }
-                catch
-                {
-                }
-            }
-
-            if (hwnd == IntPtr.Zero && pptActivePresentation != null && pptApplication != null)
-            {
-                try
-                {
-                    string presentationFullName = null;
-                    string applicationName = null;
-
-                    if (TryInvokeCom<string>(delegate { return (string)pptActivePresentation.FullName; }, "ProcessId.FullName", out presentationFullName) &&
-                        TryInvokeCom<string>(delegate { return (string)pptApplication.Name; }, "ProcessId.ApplicationName", out applicationName))
-                    {
-                        hwnd = GetPptHwndWin32(presentationFullName, applicationName);
-                    }
-                }
-                catch
-                {
-                }
-            }
-
-            return GetProcessIdFromWindowHandle(hwnd);
-        }
-        private static bool HasVisibleTopLevelWindow(int processId)
-        {
-            if (processId <= 0)
-            {
-                return false;
-            }
-
-            bool hasVisibleWindow = false;
-            EnumWindows(delegate (IntPtr hWnd, IntPtr lParam)
-            {
-                uint currentProcessId;
-                GetWindowThreadProcessId(hWnd, out currentProcessId);
-
-                if ((int)currentProcessId == processId && IsWindowVisible(hWnd))
-                {
-                    hasVisibleWindow = true;
-                    return false;
-                }
-
-                return true;
-            }, IntPtr.Zero);
-
-            return hasVisibleWindow;
-        }
-        private void EnsureBoundProcessExitIfOrphaned(int processId)
-        {
-            if (processId <= 0)
-            {
-                return;
-            }
-
-            try
-            {
-                using (Process process = Process.GetProcessById(processId))
-                {
-                    int waitStepMs = 100;
-                    int waitLoops = OrphanedProcessGracePeriodMs / waitStepMs;
-
-                    for (int i = 0; i < waitLoops; i++)
-                    {
-                        if (process.HasExited)
-                        {
-                            return;
-                        }
-
-                        process.Refresh();
-                        if (HasVisibleTopLevelWindow(processId))
-                        {
-                            return;
-                        }
-
-                        Thread.Sleep(waitStepMs);
-                    }
-
-                    process.Refresh();
-                    if (process.HasExited || HasVisibleTopLevelWindow(processId))
-                    {
-                        return;
-                    }
-
-                    Console.WriteLine(string.Format("Force killing orphaned PPT/WPS process: {0}", processId));
-                    process.Kill();
-                    process.WaitForExit(OrphanedProcessKillWaitMs);
-                }
-            }
-            catch (ArgumentException)
-            {
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(string.Format("Failed to cleanup orphaned PPT/WPS process {0}: {1}", processId, ex.Message));
-            }
-        }
         private unsafe void FullCleanup(bool final = false)
         {
-            object slideShowWindow = pptSlideShowWindow;
-            object activePresentation = pptActivePresentation;
-            object application = pptApplication;
-            int processId = pptProcessId;
-
-            UnbindEvents(application);
-
-            pptSlideShowWindow = null;
-            pptActivePresentation = null;
-            pptApplication = null;
-            pptProcessId = 0;
+            UnbindEvents();
 
             Console.WriteLine("try CLEAN");
 
             if (final)
             {
-                SafeFinalRelease(slideShowWindow, "pptSlideShowWindow");
-                SafeFinalRelease(activePresentation, "pptActivePresentation");
-                SafeFinalRelease(application, "pptApplication");
+                SafeFinalRelease(pptSlideShowWindow);
+                SafeFinalRelease(pptActivePresentation);
+                SafeFinalRelease(pptApplication);
             }
             else
             {
-                SafeRelease(slideShowWindow, "pptSlideShowWindow");
-                SafeRelease(activePresentation, "pptActivePresentation");
-                SafeRelease(application, "pptApplication");
+                SafeRelease(pptSlideShowWindow);
+                SafeRelease(pptActivePresentation);
+                SafeRelease(pptApplication);
             }
+
+            pptSlideShowWindow = null;
+            pptActivePresentation = null;
+            pptApplication = null;
 
             // 重置指针为 -1 (外部程序约定的结束标志)
             try
@@ -559,13 +212,6 @@ namespace PptCOM
             GC.Collect();
             GC.WaitForPendingFinalizers();
             GC.Collect();
-
-            // 动态重绑时只需要释放当前桥持有的 RCW，不能回收旧进程；
-            // 否则会破坏原有“多个放映并存，仅切换绑定目标”的行为。
-            if (final)
-            {
-                EnsureBoundProcessExitIfOrphaned(processId);
-            }
 
             Console.WriteLine("CLEAN!");
         }
@@ -612,10 +258,6 @@ namespace PptCOM
                     sswHwnd = GetPptHwndFromSlideShowWindow(sswObj);
                     // sswHwnd = GetSlideShowWindowHwnd(ssw);
                 }
-                catch (Exception ex) when (IsRetryableComException(ex))
-                {
-                    throw;
-                }
                 catch { return false; }
                 if (sswHwnd == IntPtr.Zero) return false;
 
@@ -646,10 +288,6 @@ namespace PptCOM
                 }
 
                 return false;
-            }
-            catch (Exception ex) when (IsRetryableComException(ex))
-            {
-                throw;
             }
             catch
             {
@@ -688,10 +326,6 @@ namespace PptCOM
                 int temp = pptSlideShowWindow.Active;
                 ret = true;
             }
-            catch (Exception ex) when (IsRetryableComException(ex))
-            {
-                throw;
-            }
             catch (Exception ex)
             {
                 ret = false;
@@ -710,20 +344,11 @@ namespace PptCOM
 
             try
             {
-                int currentPage;
-                if (!TryInvokeCom<int>(delegate { return GetCurrentSlideIndex(pptSlideShowWindow); }, "SlideShowChange.GetCurrentSlideIndex", out currentPage))
-                {
-                    return;
-                }
+                // 假设全局变量 pptSlideShowWindow 已经是 dynamic 类型，这里的调用会自动进行后期绑定
+                *pptCurrentPage = GetCurrentSlideIndex(pptSlideShowWindow);
 
-                int totalPage;
-                if (!TryInvokeCom<int>(delegate { return GetTotalSlideIndex(pptActivePresentation); }, "SlideShowChange.GetTotalSlideIndex", out totalPage))
-                {
-                    return;
-                }
-
-                *pptCurrentPage = currentPage;
-                polling = currentPage >= totalPage ? 1 : 0;
+                if (GetCurrentSlideIndex(pptSlideShowWindow) >= GetTotalSlideIndex(pptActivePresentation)) polling = 1;
+                else polling = 0;
             }
             catch
             {
@@ -744,29 +369,25 @@ namespace PptCOM
 
             try
             {
-                int totalPage;
-                if (!TryInvokeCom<int>(delegate { return GetTotalSlideIndex(pptActivePresentation); }, "SlideShowBegin.GetTotalSlideIndex", out totalPage))
-                {
-                    Console.WriteLine("Begin Busy 1");
-                    return;
-                }
-
-                int currentPage;
-                if (!TryInvokeCom<int>(delegate { return GetCurrentSlideIndex(pptSlideShowWindow); }, "SlideShowBegin.GetCurrentSlideIndex", out currentPage))
-                {
-                    Console.WriteLine("Begin Busy 2");
-                    return;
-                }
-
-                *pptTotalPage = totalPage;
-                *pptCurrentPage = currentPage;
-                polling = currentPage >= totalPage ? 1 : 0;
+                if (GetCurrentSlideIndex(pptSlideShowWindow) >= GetTotalSlideIndex(pptActivePresentation)) polling = 1;
+                else polling = 0;
             }
             catch
             {
                 // Begin 事件定在结束放映页的小丑情况（虽然不可能有这种情况）
                 polling = 1;
                 Console.WriteLine("Begin4");
+            }
+
+            // 获取页数
+            try
+            {
+                *pptTotalPage = GetTotalSlideIndex(pptActivePresentation);
+                *pptCurrentPage = GetCurrentSlideIndex(pptSlideShowWindow);
+            }
+            catch
+            {
+                Console.WriteLine("Begin3");
             }
             Console.WriteLine("Begin2");
         }
@@ -785,28 +406,42 @@ namespace PptCOM
         {
             Console.WriteLine("PBCalled1");
 
-            UnbindEvents();
+            dynamic Wn = WnObj;
+
+            try
+            {
+                if (bindingEvents && pptApplication != null)
+                {
+                    try
+                    {
+                        Microsoft.Office.Interop.PowerPoint.Application app = pptApplication as Microsoft.Office.Interop.PowerPoint.Application;
+
+                        if (app != null)
+                        {
+                            app.SlideShowNextSlide -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowNextSlideEventHandler(SlideShowChange);
+                            app.SlideShowBegin -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowBeginEventHandler(SlideShowBegin);
+                            app.SlideShowEnd -= new Microsoft.Office.Interop.PowerPoint.EApplication_SlideShowEndEventHandler(SlideShowShowEnd);
+                            app.PresentationBeforeClose -= new Microsoft.Office.Interop.PowerPoint.EApplication_PresentationBeforeCloseEventHandler(PresentationBeforeClose);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // 忽略 COM 对象已分离的错误
+                        Console.WriteLine($"Unbind Error: {ex.Message}");
+                    }
+
+                    bindingEvents = false;
+                    forcePolling = false;
+                }
+            }
+            catch { }
+
             cancel = false;
 
             Console.WriteLine("PBCalled2");
         }
 
         // 获取函数
-        private object GetAnyActivePowerPointSafe(object targetApp, out int bestPriority, out int targetPriority)
-        {
-            int bestPriorityTemp = 0;
-            int targetPriorityTemp = 0;
-
-            object bestApp = InvokeCom<object>(delegate
-            {
-                return GetAnyActivePowerPoint(targetApp, out bestPriorityTemp, out targetPriorityTemp);
-            }, "ROT Scan");
-
-            bestPriority = bestPriorityTemp;
-            targetPriority = targetPriorityTemp;
-            return bestApp;
-        }
-
         private object GetAnyActivePowerPoint(object targetApp, out int bestPriority, out int targetPriority)
         {
             IRunningObjectTable rot = null;
@@ -862,10 +497,6 @@ namespace PptCOM
                                     object appObj = comObject.GetType().InvokeMember("Application", BindingFlags.GetProperty, null, comObject, null);
                                     candidateApp = appObj;
                                 }
-                                catch (Exception ex) when (IsRetryableComException(ex))
-                                {
-                                    throw;
-                                }
                                 catch { }
                             }
                             else { }
@@ -914,10 +545,6 @@ namespace PptCOM
                                 {
                                     activePres = candidateApp.ActivePresentation;
                                 }
-                                catch (Exception ex) when (IsRetryableComException(ex))
-                                {
-                                    throw;
-                                }
                                 catch { }
 
                                 if (activePres != null)
@@ -928,10 +555,6 @@ namespace PptCOM
                                     try
                                     {
                                         ssWindow = activePres.SlideShowWindow;
-                                    }
-                                    catch (Exception ex) when (IsRetryableComException(ex))
-                                    {
-                                        throw;
                                     }
                                     catch
                                     {
@@ -951,10 +574,6 @@ namespace PptCOM
                                                 object val = ssWindow.Active;
                                                 if (val is int && (int)val == -1) isActive = true; // MsoTriState.msoTrue
                                                 else if (val is bool && (bool)val == true) isActive = true;
-                                            }
-                                            catch (Exception ex) when (IsRetryableComException(ex))
-                                            {
-                                                throw;
                                             }
                                             catch { }
 
@@ -976,10 +595,6 @@ namespace PptCOM
                                         catch { }
                                     }
                                 }
-                            }
-                            catch (Exception ex) when (IsRetryableComException(ex))
-                            {
-                                throw;
                             }
                             catch (Exception ex)
                             {
@@ -1012,10 +627,6 @@ namespace PptCOM
                             Console.WriteLine($"{displayName}: {currentPriority}");
                         }
                     }
-                    catch (Exception ex) when (IsRetryableComException(ex))
-                    {
-                        throw;
-                    }
                     catch (Exception ex)
                     {
                         Console.WriteLine($"Loop Error: {ex.Message}");
@@ -1038,10 +649,6 @@ namespace PptCOM
                 }
 
                 bestPriority = highestPriority;
-            }
-            catch (Exception ex) when (IsRetryableComException(ex))
-            {
-                throw;
             }
             catch (Exception ex)
             {
@@ -1083,8 +690,6 @@ namespace PptCOM
 
             int bestPriority = 0;
             int targetPriority = 0;
-            int serviceResult = ServiceResultCompleted;
-            bool messageFilterRegistered = OleMessageFilter.Register();
 
             try
             {
@@ -1092,22 +697,10 @@ namespace PptCOM
                 {
                     // 动态绑定/切换逻辑
                     {
-                        object bestApp = null;
-
-                        try
-                        {
-                            bestApp = GetAnyActivePowerPointSafe(pptApplication, out bestPriority, out targetPriority);
-                        }
-                        catch (Exception ex) when (IsRetryableComException(ex))
-                        {
-                            Console.WriteLine("ROT scan busy, keep current binding");
-                            Thread.Sleep(100);
-                            continue;
-                        }
-
+                        object bestApp = GetAnyActivePowerPoint(pptApplication, out bestPriority, out targetPriority);
                         bool needRebind = false;
 
-                        Console.WriteLine(string.Format("now: {0}, best: {1}", targetPriority, bestPriority));
+                        Console.WriteLine($"now: {targetPriority}, best: {bestPriority}");
 
                         if (pptApplication == null && bestApp != null) needRebind = true;
                         else if (pptApplication != null && bestApp != null && bestPriority > targetPriority)
@@ -1129,30 +722,19 @@ namespace PptCOM
                                 if (wait) Thread.Sleep(1000);
 
                                 pptApplication = bestApp;
-                                bestApp = null;
 
                                 try
                                 {
-                                    pptActivePresentation = InvokeCom<object>(delegate { return pptApplication.ActivePresentation; }, "Bind.ActivePresentation");
+                                    // dynamic 后期绑定
+                                    pptActivePresentation = pptApplication.ActivePresentation;
                                     updateTime = DateTime.Now;
 
-                                    object boundSlideShowWindow;
-                                    if (TryInvokeCom<object>(delegate { return pptActivePresentation.SlideShowWindow; }, "Bind.SlideShowWindow", out boundSlideShowWindow) &&
-                                        boundSlideShowWindow != null)
+                                    try
                                     {
-                                        pptSlideShowWindow = boundSlideShowWindow;
-
-                                        int totalSlideCount;
-                                        if (TryInvokeCom<int>(delegate { return GetTotalSlideIndex(pptActivePresentation); }, "Bind.GetTotalSlideIndex", out totalSlideCount))
-                                        {
-                                            *pptTotalPage = tempTotalPage = totalSlideCount;
-                                        }
-                                        else
-                                        {
-                                            *pptTotalPage = tempTotalPage = -1;
-                                        }
+                                        pptSlideShowWindow = pptActivePresentation.SlideShowWindow;
+                                        *pptTotalPage = tempTotalPage = GetTotalSlideIndex(pptActivePresentation);
                                     }
-                                    else
+                                    catch
                                     {
                                         *pptTotalPage = tempTotalPage = -1;
                                     }
@@ -1164,13 +746,14 @@ namespace PptCOM
                                     }
                                     else
                                     {
-                                        int currentPage;
-                                        if (TryInvokeCom<int>(delegate { return GetCurrentSlideIndex(pptSlideShowWindow); }, "Bind.GetCurrentSlideIndex", out currentPage))
+                                        try
                                         {
-                                            *pptCurrentPage = currentPage;
-                                            polling = currentPage >= tempTotalPage ? 1 : 0;
+                                            *pptCurrentPage = GetCurrentSlideIndex(pptSlideShowWindow);
+
+                                            if (GetCurrentSlideIndex(pptSlideShowWindow) >= GetTotalSlideIndex(pptActivePresentation)) polling = 1;
+                                            else polling = 0;
                                         }
-                                        else
+                                        catch
                                         {
                                             *pptCurrentPage = -1;
                                             polling = 1;
@@ -1181,7 +764,6 @@ namespace PptCOM
                                     {
                                         // 关键修改：这里不要直接用 pptApplication +=，而是先强转
                                         Microsoft.Office.Interop.PowerPoint.Application app = pptApplication as Microsoft.Office.Interop.PowerPoint.Application;
-                                        pptProcessId = TryGetBoundPowerPointProcessId();
 
                                         if (app != null)
                                         {
@@ -1195,20 +777,20 @@ namespace PptCOM
                                             }
                                             catch
                                             {
-                                                Console.WriteLine("无法注册事件 2!");
+                                                Console.WriteLine($"无法注册事件 2!");
                                             }
 
                                             bindingEvents = true;
                                             forcePolling = false;
 
-                                            Console.WriteLine("事件注册成功!");
+                                            Console.WriteLine($"事件注册成功!");
                                         }
                                         else
                                         {
                                             bindingEvents = false;
                                             forcePolling = true;
 
-                                            Console.WriteLine("转换 Application 接口失败，无法注册事件");
+                                            Console.WriteLine($"转换 Application 接口失败，无法注册事件");
                                         }
                                     }
                                     catch (Exception ex)
@@ -1216,17 +798,10 @@ namespace PptCOM
                                         bindingEvents = false;
                                         forcePolling = true;
 
-                                        Console.WriteLine(string.Format("无法注册事件 1! {0}", ex.Message));
+                                        Console.WriteLine($"无法注册事件 1! {ex.Message}");
                                     }
 
-                                    Console.WriteLine("成功绑定!");
-                                }
-                                catch (Exception ex) when (IsRetryableComException(ex))
-                                {
-                                    Console.WriteLine("Bind busy, retry later");
-                                    FullCleanup();
-                                    Thread.Sleep(100);
-                                    continue;
+                                    Console.WriteLine($"成功绑定! {pptApplication.Name}");
                                 }
                                 catch
                                 {
@@ -1254,7 +829,7 @@ namespace PptCOM
 
                         try
                         {
-                            activePersentation = InvokeCom<object>(delegate { return pptApplication.ActivePresentation; }, "Monitor.ActivePresentation");
+                            activePersentation = pptApplication.ActivePresentation;
 
                             if (!AreComObjectsEqual((object)pptActivePresentation, (object)activePersentation))
                             {
@@ -1262,15 +837,13 @@ namespace PptCOM
                                 break;
                             }
                         }
-                        catch (Exception ex) when (IsRetryableComException(ex))
+                        catch (COMException ex) when ((uint)ex.ErrorCode == 0x8001010A)
                         {
-                            Console.WriteLine("PowerPoint busy, keep current presentation");
-                            Thread.Sleep(100);
-                            continue;
+                            Console.WriteLine($"PowerPoint 忙，稍后重试");
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine(string.Format("End in 2 {0}", ex));
+                            Console.WriteLine($"End in 2 {ex.ToString()}");
                             break;
                         }
                         finally
@@ -1284,24 +857,14 @@ namespace PptCOM
                         bool isSlideShowActive = false;
                         try
                         {
-                            activePersentation = InvokeCom<object>(delegate { return pptApplication.ActivePresentation; }, "Monitor.ActivePresentation.2");
+                            activePersentation = pptApplication.ActivePresentation;
 
                             // 检查 SlideShowWindows 集合
-                            int slideShowWindowCount = 0;
-                            if (activePersentation != null &&
-                                TryInvokeCom<int>(delegate { return GetSlideShowWindowsCount(pptApplication); }, "Monitor.GetSlideShowWindowsCount", out slideShowWindowCount) &&
-                                slideShowWindowCount > 0)
+                            if (activePersentation != null && GetSlideShowWindowsCount(pptApplication) > 0)
                             {
                                 isSlideShowActive = true;
 
-                                object currentSlideShowWindow;
-                                if (!TryInvokeCom<object>(delegate { return activePersentation.SlideShowWindow; }, "Monitor.ActivePresentation.SlideShowWindow", out currentSlideShowWindow))
-                                {
-                                    Thread.Sleep(100);
-                                    continue;
-                                }
-
-                                slideShowWindow = currentSlideShowWindow;
+                                slideShowWindow = activePersentation.SlideShowWindow;
                                 if (pptSlideShowWindow == null || (pptSlideShowWindow != null && !IsValidSlideShowWindow(pptSlideShowWindow)))
                                 {
                                     if (!AreComObjectsEqual((object)pptSlideShowWindow, (object)slideShowWindow))
@@ -1310,24 +873,22 @@ namespace PptCOM
 
                                         pptSlideShowWindow = slideShowWindow;
 
-                                        Console.WriteLine("发现窗口，成功设置 slideshowwindow");
+                                        Console.WriteLine($"发现窗口，成功设置 slideshowwindow");
                                     }
                                     else
                                     {
-                                        Console.WriteLine("发现窗口，但无须设置 1");
+                                        Console.WriteLine($"发现窗口，但无须设置 1");
                                     }
                                 }
                             }
                         }
-                        catch (Exception ex) when (IsRetryableComException(ex))
+                        catch (COMException ex) when ((uint)ex.ErrorCode == 0x8001010A)
                         {
-                            Console.WriteLine("PowerPoint busy while checking slideshow state");
-                            Thread.Sleep(100);
-                            continue;
+                            Console.WriteLine($"PowerPoint 忙，稍后重试");
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine(string.Format("发现窗口失败 1: {0}", ex));
+                            Console.WriteLine($"发现窗口失败 1: {ex.ToString()}");
 
                             // 如果这里报错，说明 App 可能挂了，或者 WPS 上下文丢失
                             // 标记为非放映状态，后续逻辑会处理
@@ -1342,7 +903,7 @@ namespace PptCOM
                                 SafeRelease(slideShowWindow);
                                 slideShowWindow = null;
 
-                                Console.WriteLine("slideShowWindow 被清理");
+                                Console.WriteLine($"slideShowWindow 被清理");
                             }
                         }
 
@@ -1350,40 +911,21 @@ namespace PptCOM
                         {
                             if ((DateTime.Now - updateTime).TotalMilliseconds > 3000 || forcePolling)
                             {
-                                Console.WriteLine("轮询");
+                                Console.WriteLine($"轮询");
 
                                 try
                                 {
-                                    object currentSlideShowWindow;
-                                    if (!TryInvokeCom<object>(delegate { return pptActivePresentation.SlideShowWindow; }, "Poll.ActivePresentation.SlideShowWindow", out currentSlideShowWindow))
-                                    {
-                                        Thread.Sleep(100);
-                                        continue;
-                                    }
+                                    slideShowWindow = pptActivePresentation.SlideShowWindow;
 
-                                    slideShowWindow = currentSlideShowWindow;
                                     // 获取当前播放的PPT幻灯片窗口对象（保证当前处于放映状态）
-                                    if (slideShowWindow != null)
-                                    {
-                                        int totalSlideCount;
-                                        if (!TryInvokeCom<int>(delegate { return GetTotalSlideIndex(pptActivePresentation); }, "Poll.GetTotalSlideIndex", out totalSlideCount))
-                                        {
-                                            Thread.Sleep(100);
-                                            continue;
-                                        }
-
-                                        *pptTotalPage = tempTotalPage = totalSlideCount;
-                                    }
-                                    else
-                                    {
-                                        *pptTotalPage = tempTotalPage = -1;
-                                    }
+                                    if (slideShowWindow != null) *pptTotalPage = tempTotalPage = GetTotalSlideIndex(pptActivePresentation);
+                                    else *pptTotalPage = tempTotalPage = -1;
                                 }
                                 catch (Exception ex)
                                 {
                                     *pptTotalPage = tempTotalPage = -1;
 
-                                    Console.WriteLine(string.Format("获取总页数失败 {0}", ex.Message));
+                                    Console.WriteLine($"获取总页数失败 {ex.Message}");
                                 }
                                 finally
                                 {
@@ -1400,16 +942,10 @@ namespace PptCOM
                                 {
                                     try
                                     {
-                                        int currentPage;
-                                        if (!TryInvokeCom<int>(delegate { return GetCurrentSlideIndex(pptSlideShowWindow); }, "Poll.GetCurrentSlideIndex", out currentPage))
-                                        {
-                                            Thread.Sleep(100);
-                                            continue;
-                                        }
-
+                                        int currentPage = GetCurrentSlideIndex(pptSlideShowWindow);
                                         *pptCurrentPage = currentPage;
 
-                                        if (currentPage >= tempTotalPage) polling = 1;
+                                        if (currentPage >= GetTotalSlideIndex(pptActivePresentation)) polling = 1;
                                         else polling = 0;
                                     }
                                     catch (Exception ex)
@@ -1417,7 +953,7 @@ namespace PptCOM
                                         *pptCurrentPage = -1;
                                         polling = 1;
 
-                                        Console.WriteLine(string.Format("获取当前页数失败 {0}", ex));
+                                        Console.WriteLine($"获取当前页数失败 {ex.ToString()}");
                                     }
                                 }
 
@@ -1427,12 +963,8 @@ namespace PptCOM
                             {
                                 try
                                 {
-                                    int currentPage;
-                                    if (TryInvokeCom<int>(delegate { return GetCurrentSlideIndex(pptSlideShowWindow); }, "Poll.PendingGetCurrentSlideIndex", out currentPage))
-                                    {
-                                        *pptCurrentPage = currentPage;
-                                        polling = 2;
-                                    }
+                                    *pptCurrentPage = GetCurrentSlideIndex(pptSlideShowWindow);
+                                    polling = 2;
                                 }
                                 catch
                                 {
@@ -1469,22 +1001,17 @@ namespace PptCOM
             }
             catch (Exception ex)
             {
-                serviceResult = ServiceResultFatal;
-                Console.WriteLine("Fail 991");
-                Console.WriteLine(string.Format("异常信息: {0}", ex.Message));
+                Console.WriteLine($"Fail 991");
+                Console.WriteLine($"异常信息: {ex.Message}");
             }
             finally
             {
                 FullCleanup(true);
-                if (messageFilterRegistered)
-                {
-                    OleMessageFilter.Revoke();
-                }
             }
 
             Console.WriteLine("PPT Monitor End");
 
-            return serviceResult;
+            return 0;
         }
 
         // 信息获取函数
@@ -1494,20 +1021,9 @@ namespace PptCOM
 
             try
             {
-                string fullName;
-                string caption;
-
-                if (!TryInvokeCom<string>(delegate { return (string)pptActivePresentation.FullName; }, "SlideNameIndex.FullName", out fullName))
-                {
-                    return "";
-                }
-
-                if (!TryInvokeCom<string>(delegate { return (string)pptApplication.Caption; }, "SlideNameIndex.Caption", out caption))
-                {
-                    return "";
-                }
-
-                slidesName = fullName + "\n" + caption;
+                // 获取正在播放的PPT的名称
+                slidesName += pptActivePresentation.FullName + "\n";
+                slidesName += pptApplication.Caption;
             }
             catch
             {
@@ -1522,27 +1038,12 @@ namespace PptCOM
             IntPtr ret = IntPtr.Zero;
 
             // 尝试默认方法
-            if (!TryInvokeCom<IntPtr>(delegate { return GetPptHwndFromSlideShowWindow(pptSlideShowWindow); }, "GetPptHwnd.FromSlideShowWindow", out ret))
-            {
-                return IntPtr.Zero;
-            }
+            ret = GetPptHwndFromSlideShowWindow(pptSlideShowWindow);
 
             if (ret == IntPtr.Zero)
             {
-                string presentationFullName;
-                string applicationName;
-
-                if (!TryInvokeCom<string>(delegate { return (string)pptActivePresentation.FullName; }, "GetPptHwnd.FullName", out presentationFullName))
-                {
-                    return IntPtr.Zero;
-                }
-
-                if (!TryInvokeCom<string>(delegate { return (string)pptApplication.Name; }, "GetPptHwnd.ApplicationName", out applicationName))
-                {
-                    return IntPtr.Zero;
-                }
-
-                ret = GetPptHwndWin32(presentationFullName, applicationName);
+                // 尝试备用方法
+                ret = GetPptHwndWin32(pptActivePresentation.FullName, pptApplication.Name);
             }
 
             return ret;
@@ -1560,10 +1061,6 @@ namespace PptCOM
 
                 // 成功返回
                 hwnd = new IntPtr(hwndVal);
-            }
-            catch (Exception ex) when (IsRetryableComException(ex))
-            {
-                throw;
             }
             catch { }
 
@@ -1735,11 +1232,7 @@ namespace PptCOM
             bool endPage = false;
             try
             {
-                int currentPage;
-                if (!TryInvokeCom<int>(delegate { return GetCurrentSlideIndex(pptSlideShowWindow); }, "NextSlideShow.GetCurrentSlideIndex", out currentPage))
-                {
-                    return;
-                }
+                var currentPage = GetCurrentSlideIndex(pptSlideShowWindow);
             }
             catch
             {
@@ -1759,20 +1252,14 @@ namespace PptCOM
                 {
                     if (polling == 2)
                     {
-                        if (!TryInvokeCom(delegate { pptSlideShowWindow.View.Next(); }, "NextSlideShow.View.Next"))
-                        {
-                            return;
-                        }
+                        pptSlideShowWindow.View.Next();
                     }
                     else if (polling == 1)
                     {
                         int currentPageTemp = -1;
                         try
                         {
-                            if (!TryInvokeCom<int>(delegate { return GetCurrentSlideIndex(pptSlideShowWindow); }, "NextSlideShow.GetCurrentSlideIndex.Pending", out currentPageTemp))
-                            {
-                                return;
-                            }
+                            currentPageTemp = GetCurrentSlideIndex(pptSlideShowWindow);
                         }
                         catch
                         {
@@ -1781,17 +1268,14 @@ namespace PptCOM
 
                         if (currentPageTemp != -1)
                         {
-                            if (!TryInvokeCom(delegate { pptSlideShowWindow.View.Next(); }, "NextSlideShow.View.Next.Pending"))
-                            {
-                                return;
-                            }
+                            pptSlideShowWindow.View.Next();
                         }
                     }
                     polling = 1;
                 }
                 else
                 {
-                    TryInvokeCom(delegate { pptSlideShowWindow.View.Next(); }, "NextSlideShow.View.Next.Direct");
+                    pptSlideShowWindow.View.Next();
                 }
             }
             catch
@@ -1802,7 +1286,7 @@ namespace PptCOM
         {
             try
             {   // 上一页
-                TryInvokeCom(delegate { pptSlideShowWindow.View.Previous(); }, "PreviousSlideShow.View.Previous");
+                pptSlideShowWindow.View.Previous();
             }
             catch
             {
@@ -1814,7 +1298,7 @@ namespace PptCOM
             try
             {
                 // 结束放映
-                TryInvokeCom(delegate { pptSlideShowWindow.View.Exit(); }, "EndSlideShow.View.Exit");
+                pptSlideShowWindow.View.Exit();
             }
             catch
             {
@@ -1824,7 +1308,7 @@ namespace PptCOM
         {
             try
             {   // 打开 ppt 浏览视图
-                TryInvokeCom(delegate { pptSlideShowWindow.SlideNavigation.Visible = true; }, "ViewSlideShow.SlideNavigation.Visible");
+                pptSlideShowWindow.SlideNavigation.Visible = true;
             }
             catch
             {
@@ -1837,10 +1321,7 @@ namespace PptCOM
 
             try
             {
-                if (!TryInvokeCom(delegate { pptSlideShowWindow.Activate(); }, "ActivateSildeShowWindow.Activate"))
-                {
-                    return;
-                }
+                pptSlideShowWindow.Activate();
 
                 Console.WriteLine("ActivateSildeShowWindow called");
             }
@@ -1860,8 +1341,6 @@ namespace PptCOM
         private static extern int GetRunningObjectTable(int reserved, out IRunningObjectTable prot);
         [DllImport("ole32.dll")]
         private static extern int CreateBindCtx(int reserved, out IBindCtx ppbc);
-        [DllImport("ole32.dll")]
-        private static extern int CoRegisterMessageFilter(IOleMessageFilter newFilter, out IOleMessageFilter oldFilter);
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
