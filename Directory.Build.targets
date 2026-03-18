@@ -1,25 +1,19 @@
 <Project>
 
-  <!-- 1) 先导入 vcpkg 的 MSBuild 集成（提供 VcpkgInstallManifestDependencies 目标等） -->
-  <Import Project="$(MSBuildThisFileDirectory)vcpkg\scripts\buildsystems\msbuild\vcpkg.targets" />
+	<!-- 1) 只为 VC++ 项目导入 vcpkg 的 MSBuild 集成。 -->
+	<Import Project="$(MSBuildThisFileDirectory)Vcpkg\scripts\buildsystems\msbuild\vcpkg.targets"
+	        Condition="'$(MSBuildProjectExtension)'=='.vcxproj'" />
 
-  <!-- 2) 推荐做法：把 vcpkg 的 manifest 安装，显式加入模块依赖扫描目标的 DependsOn 链 -->
-  <PropertyGroup>
-    <!--
-      说明：
-      - SetModuleDependencies 是 VS/MSBuild 在“扫描源以查找模块依赖项”时会走到的目标（内部实现细节）。
-      - 这里把 VcpkgInstallManifestDependencies 追加进去，确保扫描前已经安装并写好 include/lib 路径。
-      - 这招来自 vcpkg 讨论/issue 的经验做法（属于“非公开但可用”的扩展点）。
-    -->
-    <SetModuleDependenciesDependsOn>
-      $(SetModuleDependenciesDependsOn);VcpkgInstallManifestDependencies
-    </SetModuleDependenciesDependsOn>
-  </PropertyGroup>
+	<!-- 2) 将 vcpkg manifest 安装加入模块依赖扫描链。 -->
+	<PropertyGroup Condition="'$(MSBuildProjectExtension)'=='.vcxproj'">
+		<SetModuleDependenciesDependsOn>
+			$(SetModuleDependenciesDependsOn);VcpkgInstallManifestDependencies
+		</SetModuleDependenciesDependsOn>
+	</PropertyGroup>
 
-  <!-- 3) 兜底：即使上面的扩展点在某些版本里不生效，也强制在扫描相关目标之前先跑 vcpkg 安装 -->
-  <Target Name="ForceVcpkgBeforeModuleScan"
-          BeforeTargets="SetModuleDependencies;ScanDependenciesPerFile;ScanDependencies"
-          DependsOnTargets="VcpkgInstallManifestDependencies"
-          Condition="'$(VcpkgEnabled)' == 'true' and '$(VcpkgEnableManifest)' == 'true' and '$(VcpkgManifestInstall)' != 'false'" />
-
+	<!-- 3) 兜底：确保模块扫描前已完成 vcpkg 安装。 -->
+	<Target Name="ForceVcpkgBeforeModuleScan"
+			BeforeTargets="SetModuleDependencies;ScanDependenciesPerFile;ScanDependencies"
+			DependsOnTargets="VcpkgInstallManifestDependencies"
+			Condition="'$(MSBuildProjectExtension)'=='.vcxproj' and '$(VcpkgEnabled)' == 'true' and '$(VcpkgEnableManifest)' == 'true' and '$(VcpkgManifestInstall)' != 'false'" />
 </Project>

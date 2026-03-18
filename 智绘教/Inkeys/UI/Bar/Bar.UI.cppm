@@ -3,6 +3,7 @@ module;
 #include "../../../IdtMain.h"
 
 #include "../../../IdtD2DPreparation.h"
+#include <wrl/client.h>
 
 export module Inkeys.UI.Bar:UI;
 
@@ -361,7 +362,7 @@ public:
 public:
 	// SVG 内容
 	BarUiStringClass svg;
-	CComPtr<ID2D1Bitmap> cacheBitmap;
+	Microsoft::WRL::ComPtr<ID2D1Bitmap> cacheBitmap;
 
 	double cW = 0.0, cH = 0.0; // 缓存宽度、高度
 	COLORREF cColor1 = RGB(0, 0, 0), cColor2 = RGB(0, 0, 0);

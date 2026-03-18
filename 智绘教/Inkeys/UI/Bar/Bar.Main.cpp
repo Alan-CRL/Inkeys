@@ -505,7 +505,7 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, 
 			if (!svg.CacheBitmap(deviceContext, tarW, tarH))
 				return false;
 		}
-		d2dBitmap = svg.cacheBitmap;
+		d2dBitmap = svg.cacheBitmap.Get();
 	}
 
 	// 渲染到 DC
@@ -1853,7 +1853,7 @@ void BarUISetClass::Rendering()
 
 	#pragma endregion
 
-		if (needRendering)
+		if (needRendering || true == BarAtomic::sustainFlag)
 		{
 		#pragma region 渲染UI
 
@@ -2196,6 +2196,7 @@ void BarUISetClass::Rendering()
 			{ /**/ }
 
 			// 调试 + FPS
+			/*
 			{
 				double tarZoom = barStyle.zoom;
 				wstring content = L"开发版本 " + editionDate + L" | 不代表最终品质 | " + fps;
@@ -2238,6 +2239,7 @@ void BarUISetClass::Rendering()
 					D2D1_DRAW_TEXT_OPTIONS_NONE
 				);
 			}
+			*/
 
 			// 如果你需要测试脏区更新的区域，则可以取消注释下面的代码，并注释下方的脏区更新代码
 			/*
@@ -2303,8 +2305,6 @@ void BarUISetClass::Rendering()
 		}
 		else
 		{
-			this_thread::sleep_for(std::chrono::milliseconds(100));
-
 			BarAtomic::wait.WaitFalse();
 			BarAtomic::wait.Store(false);
 		}
@@ -2523,6 +2523,9 @@ double BarUISetClass::Seek(const ExMessage& msg)
 		};
 	if (!IsLeftButtonDown()) return 0;
 
+	auto mainButton = superellipseMap[BarUISetSuperellipseEnum::MainButton];
+	if (!mainButton) return 0;
+
 	POINT p;
 	GetCursorPos(&p);
 
@@ -2530,6 +2533,9 @@ double BarUISetClass::Seek(const ExMessage& msg)
 	double firY = static_cast<double>(p.y);
 
 	double ret = 0.0;
+
+	BarAtomic::sustainFlag = true;
+	UpdateRendering();
 
 	while (1)
 	{
@@ -2543,10 +2549,23 @@ double BarUISetClass::Seek(const ExMessage& msg)
 		}
 
 		double tarZoom = barStyle.zoom;
-		superellipseMap[BarUISetSuperellipseEnum::MainButton]->x.tar += static_cast<double>(p.x - firX) / tarZoom;
-		superellipseMap[BarUISetSuperellipseEnum::MainButton]->y.tar += static_cast<double>(p.y - firY) / tarZoom;
+		double nextX = mainButton->x.tar + static_cast<double>(p.x - firX) / tarZoom;
+		double nextY = mainButton->y.tar + static_cast<double>(p.y - firY) / tarZoom;
 
-		// TODO 没办法跑到窗口外面
+		// 临时限制主按钮整体始终留在主屏幕内，先不处理贴边隐藏和多显示器。
+		double frameHalf = 0.0;
+		if (mainButton->ft.has_value()) frameHalf = max(0.0, mainButton->ft.value().tar / 2.0);
+
+		double minX = mainButton->GetW() / 2.0 + frameHalf;
+		double minY = mainButton->GetH() / 2.0 + frameHalf;
+		double maxX = static_cast<double>(barWindow.w) / tarZoom - mainButton->GetW() / 2.0 - frameHalf;
+		double maxY = static_cast<double>(barWindow.h) / tarZoom - mainButton->GetH() / 2.0 - frameHalf;
+
+		if (maxX < minX) maxX = minX;
+		if (maxY < minY) maxY = minY;
+
+		mainButton->x.tar = clamp(nextX, minX, maxX);
+		mainButton->y.tar = clamp(nextY, minY, maxY);
 
 		ret += sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY));
 		firX = static_cast<double>(p.x), firY = static_cast<double>(p.y);
@@ -2561,10 +2580,9 @@ double BarUISetClass::Seek(const ExMessage& msg)
 				barState.fold = true;
 			}
 		}
-
-		UpdateRendering();
 	}
 
+	BarAtomic::sustainFlag = false;
 	return ret;
 }
 
