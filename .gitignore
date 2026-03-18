@@ -1,16 +1,23 @@
+# Visual Studio
 /.vs/
-/packages/
-/Release/
-/Debug/
-/x64/
-/ARM64/
+/智绘教/智绘教/
+/智绘教/.vs/
+/PptCOM/PptCOM/
 /PptCOM/bin/
 /PptCOM/obj/
 /PptCOM/.vs/
-/智绘教/Release/
-/智绘教/Debug/
-/智绘教/x64/
-/智绘教/ARM64/
-vcpkg_installed_x86/
-vcpkg_installed_x64/
-vcpkg_installed_arm64/
+
+# Vcpkg
+/VcpkgInstalled/
+/智绘教/Vcpkg/
+/PptCOM/Vcpkg/
+
+# Build output
+/Build/
+/智绘教/Build/
+/PptCOM/Build/
+
+# Project-local cache
+/packages/
+/智绘教/Cache/
+/PptCOM/Cache/

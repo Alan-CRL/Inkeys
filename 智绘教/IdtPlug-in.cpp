@@ -54,6 +54,23 @@ import Inkeys.Conv.Text;
 #import "PptCOM.tlb" // C# 类库 PptCOM 项目库 (PptCOM. cs)
 using namespace PptCOM;
 IPptCOMServerPtr PptCOMPto;
+mutex pptComSlotSm;
+
+IPptCOMServerPtr GetPptComSnapshot()
+{
+	lock_guard<mutex> lg(pptComSlotSm);
+	return PptCOMPto;
+}
+void SetPptComSnapshot(IPptCOMServerPtr pptCom)
+{
+	lock_guard<mutex> lg(pptComSlotSm);
+	PptCOMPto = pptCom;
+}
+void ResetPptComSnapshot()
+{
+	lock_guard<mutex> lg(pptComSlotSm);
+	PptCOMPto = nullptr;
+}
 
 // -------------------------
 // UI 对象
@@ -178,9 +195,14 @@ PptUiWidgetStateEnum pptUiWidgetState = PptUiWidgetStateEnum::Close;
 
 bool CheckPptCom()
 {
+	IPptCOMServerPtr pptCom;
+	wstring version;
+	wstring extraWarning;
+	bool rel = false;
+
 	try
 	{
-		_com_util::CheckError(PptCOMPto.CreateInstance(_uuidof(PptCOMServer)));
+		_com_util::CheckError(pptCom.CreateInstance(_uuidof(PptCOMServer)));
 	}
 	catch (_com_error err)
 	{
@@ -193,7 +215,7 @@ bool CheckPptCom()
 
 	try
 	{
-		pptComVersion = PptCOMPto->CheckCOM();
+		version = pptCom->CheckCOM();
 	}
 	catch (_com_error err)
 	{
@@ -204,16 +226,41 @@ bool CheckPptCom()
 		return false;
 	}
 
-	if (pptComVersion.find(L"\n") != pptComVersion.npos)
+	if (version.find(L"\n") != version.npos)
 	{
-		pptComExtraWarning = pptComVersion.substr(pptComVersion.find('\n') + 1);
-		pptComVersion = pptComVersion.substr(0, pptComVersion.find('\n'));
+		extraWarning = version.substr(version.find('\n') + 1);
+		version = version.substr(0, version.find('\n'));
 
 		//Testw(pptComExtraWarning);
 		//Testw(pptComVersion);
 
 		// TODO ？
 	}
+
+	try
+	{
+		rel = pptCom->Initialization(reinterpret_cast<long*>(&PptInfoState.TotalPage),
+			reinterpret_cast<long*>(&PptInfoState.CurrentPage),
+			reinterpret_cast<long*>(&offSignal));
+	}
+	catch (_com_error err)
+	{
+		pptComVersion = L"Error: 初始化异常3(C++) " + std::wstring(err.ErrorMessage()) +
+			L" (0x" + std::to_wstring(err.Error()) + L") " +
+			std::wstring((wchar_t*)err.Description() ? (wchar_t*)err.Description() : L"");
+
+		return false;
+	}
+
+	if (!rel)
+	{
+		pptComVersion = L"Error: 初始化异常3(C++) Initialization returned false";
+		return false;
+	}
+
+	pptComVersion = version;
+	pptComExtraWarning = extraWarning;
+	SetPptComSnapshot(pptCom);
 
 	return true;
 }
@@ -387,10 +434,12 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 wstring GetPptTitle()
 {
 	wstring ret = L"";
+	auto pptCom = GetPptComSnapshot();
+	if (pptCom == nullptr) return ret;
 
 	try
 	{
-		ret = bstrToWstring(PptCOMPto->SlideNameIndex());
+		ret = bstrToWstring(pptCom->SlideNameIndex());
 	}
 	catch (_com_error)
 	{
@@ -401,10 +450,12 @@ wstring GetPptTitle()
 HWND GetPptShow()
 {
 	HWND hWnd = NULL;
+	auto pptCom = GetPptComSnapshot();
+	if (pptCom == nullptr) return hWnd;
 
 	try
 	{
-		_variant_t result = PptCOMPto->GetPptHwnd();
+		_variant_t result = pptCom->GetPptHwnd();
 		hWnd = (HWND)result.llVal;
 	}
 	catch (_com_error)
@@ -417,44 +468,35 @@ void GetPptState()
 {
 	Inkeys::Thread::StatusGuard guard("GetPptState");
 
-	// 初始化
-	{
-		bool rel = false;
-		rel = CheckPptCom();
-
-		if (rel)
-		{
-			try
-			{
-				rel = PptCOMPto->Initialization(reinterpret_cast<long*>(&PptInfoState.TotalPage),
-					reinterpret_cast<long*>(&PptInfoState.CurrentPage),
-					reinterpret_cast<long*>(&offSignal));
-			}
-			catch (_com_error err)
-			{
-				pptComVersion = L"Error: 初始化异常3(C++) " + std::wstring(err.ErrorMessage()) +
-					L" (0x" + std::to_wstring(err.Error()) + L") " +
-					std::wstring((wchar_t*)err.Description() ? (wchar_t*)err.Description() : L"");
-
-				rel = false;
-			}
-		}
-		if (!rel) return;
-	}
-
 	while (!offSignal)
 	{
+		if (!CheckPptCom())
+		{
+			ResetPptComSnapshot();
+			PptInfoState.TotalPage = PptInfoState.CurrentPage = -1;
+
+			for (int i = 0; i <= 20 && !offSignal; i++)
+				this_thread::sleep_for(chrono::milliseconds(100));
+
+			continue;
+		}
+
 		int tmp = -1;
+		auto pptCom = GetPptComSnapshot();
 
 		try
 		{
-			tmp = PptCOMPto->PptComService();
+			if (pptCom != nullptr) tmp = pptCom->PptComService();
 		}
-		catch (_com_error)
+		catch (_com_error err)
 		{
+			pptComVersion = L"Error: 监测异常(C++) " + std::wstring(err.ErrorMessage()) +
+				L" (0x" + std::to_wstring(err.Error()) + L") " +
+				std::wstring((wchar_t*)err.Description() ? (wchar_t*)err.Description() : L"");
 		}
 
 		PptInfoState.TotalPage = PptInfoState.CurrentPage = -1;
+		ResetPptComSnapshot();
 
 		if (tmp <= 0)
 		{
@@ -466,9 +508,12 @@ void GetPptState()
 
 void NextPptSlides(int check)
 {
+	auto pptCom = GetPptComSnapshot();
+	if (pptCom == nullptr) return;
+
 	try
 	{
-		PptCOMPto->NextSlideShow((bool)(check == -1));
+		pptCom->NextSlideShow((bool)(check == -1));
 	}
 	catch (_com_error)
 	{
@@ -478,9 +523,12 @@ void NextPptSlides(int check)
 }
 void PreviousPptSlides()
 {
+	auto pptCom = GetPptComSnapshot();
+	if (pptCom == nullptr) return;
+
 	try
 	{
-		PptCOMPto->PreviousSlideShow();
+		pptCom->PreviousSlideShow();
 	}
 	catch (_com_error)
 	{
@@ -490,10 +538,13 @@ void PreviousPptSlides()
 }
 void EndPptShow()
 {
+	auto pptCom = GetPptComSnapshot();
+	if (pptCom == nullptr) return;
+
 	try
 	{
 		FocusPptShow();
-		PptCOMPto->EndSlideShow();
+		pptCom->EndSlideShow();
 	}
 	catch (_com_error)
 	{
@@ -503,10 +554,13 @@ void EndPptShow()
 }
 void ViewPptShow()
 {
+	auto pptCom = GetPptComSnapshot();
+	if (pptCom == nullptr) return;
+
 	try
 	{
 		FocusPptShow();
-		PptCOMPto->ViewSlideShow();
+		pptCom->ViewSlideShow();
 	}
 	catch (_com_error)
 	{
@@ -523,9 +577,12 @@ void FocusPptShow()
 
 	// 都需要保证激活
 	{
+		auto pptCom = GetPptComSnapshot();
+		if (pptCom == nullptr) return;
+
 		try
 		{
-			PptCOMPto->ActivateSildeShowWindow();
+			pptCom->ActivateSildeShowWindow();
 		}
 		catch (_com_error)
 		{
