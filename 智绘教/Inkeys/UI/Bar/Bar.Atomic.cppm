@@ -1,7 +1,6 @@
 ﻿module;
 
-#include <atomic>
-#include <mutex>
+#include "../../../IdtMain.h"
 #include <condition_variable>
 
 export module Inkeys.UI.Bar:Atomic;
@@ -47,4 +46,7 @@ export namespace BarAtomic
 		std::mutex mtx;
 		std::condition_variable cv;
 	} wait;
+
+	// 此标识表示 UI 将不检查是否变动，而持续渲染
+	IdtAtomic<bool> sustainFlag = false;
 }

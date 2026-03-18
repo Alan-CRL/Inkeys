@@ -1853,7 +1853,7 @@ void BarUISetClass::Rendering()
 
 	#pragma endregion
 
-		if (needRendering)
+		if (needRendering || true == BarAtomic::sustainFlag)
 		{
 		#pragma region 渲染UI
 
@@ -2238,7 +2238,8 @@ void BarUISetClass::Rendering()
 					pBrush,                    // brush
 					D2D1_DRAW_TEXT_OPTIONS_NONE
 				);
-			}*/
+			}
+			*/
 
 			// 如果你需要测试脏区更新的区域，则可以取消注释下面的代码，并注释下方的脏区更新代码
 			/*
@@ -2533,6 +2534,9 @@ double BarUISetClass::Seek(const ExMessage& msg)
 
 	double ret = 0.0;
 
+	BarAtomic::sustainFlag = true;
+	UpdateRendering();
+
 	while (1)
 	{
 		if (!IsLeftButtonDown()) break;
@@ -2576,10 +2580,9 @@ double BarUISetClass::Seek(const ExMessage& msg)
 				barState.fold = true;
 			}
 		}
-
-		UpdateRendering();
 	}
 
+	BarAtomic::sustainFlag = false;
 	return ret;
 }
 
