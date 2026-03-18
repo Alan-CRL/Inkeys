@@ -163,12 +163,12 @@ jobs:
                   matrix.platform == 'x64' && 'Inkeys64[Unsigned]' || 
                   matrix.platform == 'ARM64' && 'InkeysArm64[Unsigned]' }}
         path: |
-          ${{ (matrix.platform == 'Win32' && './Release/Inkeys.exe') || 
-              (matrix.platform == 'x64' && './x64/Release/Inkeys.exe') || 
-              (matrix.platform == 'ARM64' && './ARM64/Release/Inkeys.exe') }}
-          ${{ (matrix.platform == 'Win32' && './Release/Inkeys.pdb') ||
-              (matrix.platform == 'x64' && './x64/Release/Inkeys.pdb') ||
-              (matrix.platform == 'ARM64' && './ARM64/Release/Inkeys.pdb') }}
+          ${{ (matrix.platform == 'Win32' && './Build/Win32/Release/Inkeys.exe') || 
+              (matrix.platform == 'x64' && './Build/x64/Release/Inkeys.exe') || 
+              (matrix.platform == 'ARM64' && './Build/ARM64/Release/Inkeys.exe') }}
+          ${{ (matrix.platform == 'Win32' && './Build/Win32/Release/Inkeys.pdb') ||
+              (matrix.platform == 'x64' && './Build/x64/Release/Inkeys.pdb') ||
+              (matrix.platform == 'ARM64' && './Build/ARM64/Release/Inkeys.pdb') }}
           
   package:
     name: Package
