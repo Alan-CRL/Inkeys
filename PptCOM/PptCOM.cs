@@ -88,6 +88,9 @@ namespace PptCOM
         private bool bindingEvents; // 是否已绑定事件
 
         private DateTime updateTime; // 更新时间点
+        private static readonly TimeSpan BusyRetryTimeout = TimeSpan.FromSeconds(10);
+        private DateTime busyRetryStartTime = DateTime.MinValue;
+        private DateTime busyRetryLastSeenTime = DateTime.MinValue;
 
         // 初始化函数
         public unsafe bool Initialization(int* TotalPage, int* CurrentPage, int* OffSignal)
@@ -237,10 +240,42 @@ namespace PptCOM
             errorCode = 0;
             return false;
         }
-        private static bool HandleBusyException(Exception ex, string stage)
+        private void ResetBusyRetryState()
+        {
+            busyRetryStartTime = DateTime.MinValue;
+            busyRetryLastSeenTime = DateTime.MinValue;
+        }
+        private unsafe bool HandleBusyException(Exception ex, string stage)
         {
             uint errorCode;
-            if (!TryGetBusyComErrorCode(ex, out errorCode)) return false;
+            if (!TryGetBusyComErrorCode(ex, out errorCode))
+            {
+                ResetBusyRetryState();
+                return false;
+            }
+
+            DateTime now = DateTime.Now;
+            if (busyRetryStartTime == DateTime.MinValue || (busyRetryLastSeenTime != DateTime.MinValue && (now - busyRetryLastSeenTime).TotalMilliseconds > 500))
+            {
+                busyRetryStartTime = now;
+            }
+
+            busyRetryLastSeenTime = now;
+
+            if ((now - busyRetryStartTime) >= BusyRetryTimeout)
+            {
+                Console.WriteLine(stage + " PowerPoint 忙超时，发送结束信号");
+                ResetBusyRetryState();
+
+                try
+                {
+                    *pptTotalPage = -1;
+                    *pptCurrentPage = -1;
+                }
+                catch { }
+
+                return false;
+            }
 
             Console.WriteLine(stage + " PowerPoint 忙，稍后重试 0x" + errorCode.ToString("X8"));
             Thread.Sleep(200);
