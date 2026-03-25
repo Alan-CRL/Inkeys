@@ -1,9 +1,16 @@
 ﻿#include "main.h"
 
 #include "renderer.h"
+#include <atomic>
 
 WindowInfoClass windowInfo;
 InkRenderer inkRenderer;
+
+namespace
+{
+	std::atomic<bool> g_clearCanvasRequested = false;
+	std::atomic<int> g_brushShapeType = 0; // 0: 原来的画笔
+}
 
 void HighPrecisionWait(double frameTimeSpentMs, double targetFPS)
 {
@@ -69,6 +76,29 @@ void UnionRectInPlace(RECT& target, const RECT& add)
 	target.bottom = max(target.bottom, add.bottom);
 }
 
+LRESULT CALLBACK Draw3WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	switch (msg)
+	{
+	case WM_KEYDOWN:
+		switch (wParam)
+		{
+		case '0':
+		case VK_NUMPAD0:
+			g_clearCanvasRequested.store(true, std::memory_order_relaxed);
+			return 0;
+
+		case '1':
+		case VK_NUMPAD1:
+			g_brushShapeType.store(0, std::memory_order_relaxed);
+			return 0;
+		}
+		break;
+	}
+
+	return HIWINDOW_DEFAULT_PROC;
+}
+
 int main()
 {
 	timeBeginPeriod(1); // 全局高精度计时器
@@ -110,7 +140,7 @@ int main()
 
 	// 窗口创建
 	{
-		windowHWND = hiex::initgraph_win32(windowInfo.w, windowInfo.h, EW_SHOWCONSOLE);
+		windowHWND = hiex::initgraph_win32(windowInfo.w, windowInfo.h, EW_SHOWCONSOLE, _T(""), Draw3WndProc);
 	}
 
 	// 从 windows8 开始可以考虑 SwapChain2 的 DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT 更适合墨迹输入
@@ -223,13 +253,35 @@ int main()
 	};
 	StrokeModeler modeler;
 
+	auto clearCanvas = [&swapChain]()
+		{
+			const XMFLOAT4 clearColor(1.0f, 1.0f, 1.0f, 0.0f);
+			inkRenderer.ClearRTV(inkRenderer.offScreenTexture1RTV, clearColor);
+			inkRenderer.ClearRTV(inkRenderer.renderTargetView, clearColor);
+			swapChain->Present(0, 0);
+		};
+
+	clearCanvas();
+
 	ExMessage m{};
 	while (true)
 	{
-		hiex::getmessage_win32(&m, EM_MOUSE, windowHWND);
-
-		if (m.message == WM_LBUTTONDOWN)
+		if (g_clearCanvasRequested.exchange(false, std::memory_order_relaxed))
 		{
+			clearCanvas();
+		}
+
+		if (!hiex::peekmessage_win32(&m, EM_MOUSE, true, windowHWND))
+		{
+			Sleep(1);
+			continue;
+		}
+
+		if (m.message == WM_LBUTTONDOWN || m.message == WM_RBUTTONDOWN)
+		{
+			bool eraser = (m.message == WM_RBUTTONDOWN) ? true : false;
+			eraser = false;
+
 			// 检查设备是否丢失，并重建
 			// TODO
 
@@ -265,19 +317,22 @@ int main()
 			modeler.Update(input, smoothed_stroke);
 
 			double baseThickness = 5.0;
+			if (eraser) baseThickness = 50.0;
+
 			double minThickness = baseThickness * 0.8; // 0.6/2.4 或 0.4/2.0
 			double maxThickness = baseThickness * 1.4;
 			double prevThickness = baseThickness;
 			double smoothingFactor = 0.2;
 
-			// 清空画布
-			inkRenderer.ClearRTV(inkRenderer.renderTargetView, XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f));
-			inkRenderer.ClearRTV(inkRenderer.offScreenTexture1RTV, XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f));
-
 			// 帧率保持
 			chrono::high_resolution_clock::time_point rekon;
 			while (1)
 			{
+				if (g_clearCanvasRequested.exchange(false, std::memory_order_relaxed))
+				{
+					clearCanvas();
+				}
+
 				rekon = chrono::high_resolution_clock::now();
 				current = RECT(0, 0, 0, 0);
 
@@ -342,7 +397,12 @@ int main()
 						prevThickness = thickness;
 					}
 				}
-				inkRenderer.DrawStroke(dryStroke, XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f));
+				inkRenderer.DrawStroke(
+					dryStroke,
+					XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f),
+					static_cast<float>(g_brushShapeType.load(std::memory_order_relaxed)),
+					eraser
+				);
 
 				if (!predicted_stroke.empty())
 				{
@@ -364,7 +424,7 @@ int main()
 
 				if (current.left != 0 || current.top != 0 || current.right != 0 || current.bottom != 0)
 				{
-					// 拷贝2D目标至窗口婚宠
+					// 拷贝2D目标至窗口缓冲
 					{
 						inkRenderer.SetOMTarget(inkRenderer.renderTargetView);
 
@@ -399,7 +459,7 @@ int main()
 					isFirstFrame = false;
 				}
 
-				if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) break;
+				if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000) && !(GetAsyncKeyState(VK_RBUTTON) & 0x8000)) break;
 				hiex::flushmessage_win32(EM_MOUSE, windowHWND);
 
 				// 帧率锁

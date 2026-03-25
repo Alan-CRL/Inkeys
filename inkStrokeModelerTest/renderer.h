@@ -67,7 +67,10 @@ public:
 	CComPtr<ID3D11ShaderResourceView> inkDataSRV;
 
 	// 渲染属性
+	CComPtr<ID3D11BlendState> penBlendState;
+	CComPtr<ID3D11BlendState> eraserBlendState;
 	CComPtr<ID3D11BlendState> alphaBlendState;
+
 	CComPtr<ID3D11RasterizerState> rasterState;
 	CComPtr<ID3D11DepthStencilState> dsState;
 
@@ -81,7 +84,7 @@ public:
 
 	// 绘制函数部分
 public:
-	int DrawStroke(const vector<InkPoint>& points, XMFLOAT4 color, float shapeType = 0.0f)
+	int DrawStroke(const vector<InkPoint>& points, XMFLOAT4 color, float shapeType = 0.0f, bool eraser = false)
 	{
 		size_t totalPoints = points.size();
 		if (totalPoints < 2) return 0;
@@ -143,7 +146,14 @@ public:
 			context->VSSetConstantBuffers(0, 1, &globalCB.p);
 
 			context->PSSetShader(pixelShader, nullptr, 0);
-			context->OMSetBlendState(alphaBlendState, nullptr, 0xFFFFFFFF);
+
+			if (eraser)
+			{
+				float blendFactor[4] = { 0,0,0,0 };
+				context->OMSetBlendState(eraserBlendState, blendFactor, 0xFFFFFFFF);
+			}
+			else context->OMSetBlendState(penBlendState, nullptr, 0xFFFFFFFF);
+
 			context->RSSetState(rasterState);
 
 			// 6. 绘制当前批次
@@ -197,6 +207,9 @@ public:
 			0,                              // SrcSubresource
 			&sourceRegion                   // pSrcBox
 		);
+	}
+	void BlendResourceGlobal(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* srcSRV)
+	{
 	}
 
 	// 属性设置部分
@@ -265,16 +278,37 @@ public:
 		}
 
 		// 2. 混合状态
-		D3D11_BLEND_DESC blendDesc = {};
-		blendDesc.RenderTarget[0].BlendEnable = TRUE;
-		blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
-		blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
-		blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-		blendDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-		blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
-		blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_MAX;
-		blendDesc.RenderTarget[0].RenderTargetWriteMask = 0x0F;
-		device->CreateBlendState(&blendDesc, &alphaBlendState);
+		{
+			// 画笔混合模式
+			{
+				D3D11_BLEND_DESC blendDesc = {};
+				blendDesc.RenderTarget[0].BlendEnable = TRUE;
+				blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+				blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+				blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+				blendDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+				blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+				blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_MAX;
+				blendDesc.RenderTarget[0].RenderTargetWriteMask = 0x0F;
+				device->CreateBlendState(&blendDesc, &penBlendState);
+			}
+			// 橡皮混合模式
+			{
+			}
+			// Alpha 拷贝混合模式
+			{
+				D3D11_BLEND_DESC blendDesc = {};
+				blendDesc.RenderTarget[0].BlendEnable = TRUE;
+				blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+				blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+				blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+				blendDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+				blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+				blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+				blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+				device->CreateBlendState(&blendDesc, &alphaBlendState);
+			}
+		}
 
 		// 3. 关闭 Stencil
 		D3D11_DEPTH_STENCIL_DESC dsDesc = {};
