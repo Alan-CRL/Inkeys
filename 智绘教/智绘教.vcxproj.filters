@@ -719,6 +719,12 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Atomic.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\Other\Other.Config.cppm">
+      <Filter>Modules\Inkeys\Other</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Other\Other.Config.cpp">
+      <Filter>Modules\Inkeys\Other</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="智绘教.rc">
