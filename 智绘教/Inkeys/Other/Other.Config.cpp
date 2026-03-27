@@ -509,6 +509,12 @@ namespace Inkeys
 			return false;
 		}
 
+		if (fileSize.QuadPart > static_cast<LONGLONG>(MAXDWORD))
+		{
+			UnOccupyConfigFile(&fileHandle);
+			return false; // 文件过大
+		}
+
 		const DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
 		std::string jsonContent(dwSize, '\0');
 
