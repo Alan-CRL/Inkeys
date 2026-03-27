@@ -23,6 +23,7 @@ import Inkeys.Helper.Thread;
 import Inkeys.Load;
 import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
+import Inkeys.UI.Bar;
 
 #include "IdtPlug-in.h"
 
@@ -37,6 +38,7 @@ import Inkeys.Conv.Text;
 #include "IdtOther.h"
 #include "IdtHistoricalDrawpad.h"
 #include "IdtImage.h"
+#include "IdtStart.h"
 #include "IdtState.h"
 #include "IdtI18n.h"
 
@@ -189,6 +191,8 @@ wstring pptComExtraWarning;
 // Ppt 状态
 
 PptUiWidgetStateEnum pptUiWidgetState = PptUiWidgetStateEnum::Close;
+bool pptTakeoverHostInk = true;
+bool pptTakeoverConsumedInCurrentShow = false;
 
 // -------------------------
 // Ppt 主项
@@ -464,6 +468,38 @@ HWND GetPptShow()
 
 	return hWnd;
 }
+int GetPptSlideShowAnnotationTool()
+{
+	int toolType = 0;
+	auto pptCom = GetPptComSnapshot();
+	if (pptCom == nullptr) return toolType;
+
+	try
+	{
+		toolType = pptCom->GetSlideShowAnnotationTool();
+	}
+	catch (_com_error)
+	{
+	}
+
+	return toolType;
+}
+bool ExitPptSlideShowAnnotationTool()
+{
+	bool ret = false;
+	auto pptCom = GetPptComSnapshot();
+	if (pptCom == nullptr) return ret;
+
+	try
+	{
+		ret = pptCom->ExitSlideShowAnnotationTool();
+	}
+	catch (_com_error)
+	{
+	}
+
+	return ret;
+}
 void GetPptState()
 {
 	Inkeys::Thread::StatusGuard guard("GetPptState");
@@ -590,6 +626,30 @@ void FocusPptShow()
 	}
 
 	return;
+}
+
+bool StartPptTakeoverAnnotation(int toolType)
+{
+	if (toolType != 1) return false;
+
+	if (penetrate.select)
+	{
+		penetrate.select = false;
+		if (FreezeFrame.mode == 2) FreezeFrame.mode = 1;
+	}
+
+	bool res = true;
+	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen)
+		res = ChangeStateModeToPen();
+	if (res) stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
+
+	if (useInkeys3UI)
+	{
+		barUISet.barButtomSet.UpdateDrawButtonStyle();
+		barUISet.UpdateRendering();
+	}
+
+	return res;
 }
 
 double PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
@@ -2280,6 +2340,7 @@ void PptInfo()
 		if (!Initialization && PptInfoState.TotalPage != -1)
 		{
 			pptUiWidgetState = PptUiWidgetStateEnum::Expand;
+			pptTakeoverConsumedInCurrentShow = false;
 
 			ppt_show = GetPptShow();
 
@@ -2290,12 +2351,20 @@ void PptInfo()
 			if (ppt_software.find(L"WPS") != ppt_software.npos) ppt_software = L"WPS";
 			else ppt_software = L"PowerPoint";
 
+			// 刷新 UI
+			if (useInkeys3UI)
+			{
+				barUISet.barButtomSet.UpdateDrawButtonStyle();
+				barUISet.UpdateRendering();
+			}
+
 			if (!ppt_title_recond[ppt_title] && pptComSetlist.showLoadingScreen) FreezePPT = true;
 			Initialization = true;
 		}
 		else if (Initialization && PptInfoState.TotalPage == -1)
 		{
 			pptUiWidgetState = PptUiWidgetStateEnum::Close;
+			pptTakeoverConsumedInCurrentShow = false;
 
 			PptImg.IsSave = false;
 			PptImg.IsSaved.clear();
@@ -2305,9 +2374,40 @@ void PptInfo()
 
 			// 设置控件归位
 			PptComReadSettingPositionOnly();
+			// 刷新 UI
+			if (useInkeys3UI)
+			{
+				barUISet.barButtomSet.UpdateDrawButtonStyle();
+				barUISet.UpdateRendering();
+			}
 
 			FreezePPT = false;
 			Initialization = false;
+		}
+		else if (Initialization && PptInfoState.TotalPage != -1 && pptTakeoverHostInk && !pptTakeoverConsumedInCurrentShow)
+		{
+			int toolType = GetPptSlideShowAnnotationTool();
+			if (toolType == 1 && StartPptTakeoverAnnotation(toolType))
+			{
+				ExitPptSlideShowAnnotationTool();
+				pptTakeoverConsumedInCurrentShow = true;
+
+				if (true)
+				{
+					if (useInkeys3UI)
+					{
+						if (barUISet.barState.fold)
+						{
+							barUISet.barState.fold = false;
+							barUISet.UpdateRendering();
+						}
+					}
+					else
+					{
+						if ((int)state == 0) target_status = 1;
+					}
+				}
+			}
 		}
 
 		this_thread::sleep_for(chrono::milliseconds(500));

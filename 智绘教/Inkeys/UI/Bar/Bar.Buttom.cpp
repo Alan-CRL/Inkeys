@@ -406,6 +406,9 @@ void BarButtomSetClass::StateUpdate()
 }
 void BarButtomSetClass::UpdateDrawButtonStyle()
 {
+	static mutex mtx;
+	lock_guard<mutex> lock(mtx);
+
 	// 更新绘制按钮中的图标样式
 	if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
 		preset[(int)BarButtomPresetEnum::Draw]->icon.SetTarFromResource(L"UI", L"barHighlighter1");

@@ -3,6 +3,8 @@
 #include "IdtStart.h"
 
 #include "IdtDisplayManagement.h"
+#include "IdtDraw.h"
+#include "IdtState.h"
 
 struct
 {
