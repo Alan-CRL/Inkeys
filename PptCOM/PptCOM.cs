@@ -96,14 +96,12 @@ namespace PptCOM
 
         private const int SlideShowAnnotationToolNone = 0;
         private const int SlideShowAnnotationToolPen = 1;
-        private const int SlideShowAnnotationToolHighlighter = 2;
-        private const int SlideShowAnnotationToolEraser = 3;
 
         private const int SlideShowPointerNone = 0;
         private const int SlideShowPointerArrow = 1;
         private const int SlideShowPointerPen = 2;
+        private const int SlideShowPointerAlwaysHidden = 3;
         private const int SlideShowPointerAutoArrow = 4;
-        private const int SlideShowPointerEraser = 5;
 
         // 初始化函数
         public unsafe bool Initialization(int* TotalPage, int* CurrentPage, int* OffSignal)
@@ -301,19 +299,6 @@ namespace PptCOM
                 return fallbackValue;
             }
         }
-        private static bool CoerceToBool(object value)
-        {
-            if (value == null) return false;
-
-            try
-            {
-                return Convert.ToBoolean(value);
-            }
-            catch
-            {
-                return false;
-            }
-        }
         private static string CoerceToText(object value)
         {
             if (value == null) return string.Empty;
@@ -327,63 +312,21 @@ namespace PptCOM
                 return string.Empty;
             }
         }
-        private static bool ContainsHighlighterHint(string value)
+        private static bool HasOfficialSlideShowPointerName(object value, params string[] names)
         {
-            if (string.IsNullOrWhiteSpace(value)) return false;
+            string text = CoerceToText(value);
+            if (string.IsNullOrWhiteSpace(text)) return false;
 
-            string lower = value.ToLowerInvariant();
-            return lower.Contains("highlighter") ||
-                lower.Contains("highlight") ||
-                lower.Contains("marker") ||
-                lower.Contains("荧光");
-        }
-        private static bool LooksLikeHighlighterObject(object target)
-        {
-            if (target == null) return false;
-
-            object value;
-            string[] booleanPropertyNames = new[]
+            foreach (string name in names)
             {
-                "IsHighlighter",
-                "Highlighter",
-                "HighlighterMode",
-                "HighlighterEnabled",
-                "MarkerMode",
-                "MarkerEnabled"
-            };
-            foreach (string propertyName in booleanPropertyNames)
-            {
-                if (TryGetDynamicProperty(target, propertyName, out value) && CoerceToBool(value))
-                {
-                    return true;
-                }
-            }
-
-            string[] textPropertyNames = new[]
-            {
-                "CurrentTool",
-                "InkType",
-                "PointerSubType",
-                "PointerMode",
-                "PointerStyle",
-                "PenType",
-                "ToolType",
-                "AnnotationType",
-                "DrawToolType"
-            };
-            foreach (string propertyName in textPropertyNames)
-            {
-                if (TryGetDynamicProperty(target, propertyName, out value) && ContainsHighlighterHint(CoerceToText(value)))
+                if (string.Equals(text, name, StringComparison.OrdinalIgnoreCase) ||
+                    text.EndsWith("." + name, StringComparison.OrdinalIgnoreCase))
                 {
                     return true;
                 }
             }
 
             return false;
-        }
-        private bool LooksLikeHighlighter(object slideShowView)
-        {
-            return LooksLikeHighlighterObject(slideShowView) || LooksLikeHighlighterObject(pptSlideShowWindow);
         }
         private unsafe bool HandleBusyException(Exception ex, string stage)
         {
@@ -1321,27 +1264,29 @@ namespace PptCOM
                 {
                     return SlideShowAnnotationToolNone;
                 }
-                if (ContainsHighlighterHint(CoerceToText(pointerTypeValue)))
-                {
-                    return SlideShowAnnotationToolHighlighter;
-                }
 
-                int pointerType = CoerceToInt(pointerTypeValue, SlideShowPointerNone);
-                if (pointerType == SlideShowPointerEraser) return SlideShowAnnotationToolEraser;
-                if (pointerType == SlideShowPointerPen)
+                if (HasOfficialSlideShowPointerName(pointerTypeValue, "ppSlideShowPointerPen"))
                 {
-                    if (LooksLikeHighlighter((object)view)) return SlideShowAnnotationToolHighlighter;
                     return SlideShowAnnotationToolPen;
                 }
-
-                if (pointerType == SlideShowPointerNone ||
-                    pointerType == SlideShowPointerArrow ||
-                    pointerType == SlideShowPointerAutoArrow)
+                if (HasOfficialSlideShowPointerName(pointerTypeValue,
+                    "ppSlideShowPointerNone",
+                    "ppSlideShowPointerArrow",
+                    "ppSlideShowPointerAlwaysHidden",
+                    "ppSlideShowPointerAutoArrow"))
                 {
                     return SlideShowAnnotationToolNone;
                 }
 
-                if (LooksLikeHighlighter((object)view)) return SlideShowAnnotationToolHighlighter;
+                int pointerType = CoerceToInt(pointerTypeValue, SlideShowPointerNone);
+                if (pointerType == SlideShowPointerPen) return SlideShowAnnotationToolPen;
+                if (pointerType == SlideShowPointerNone ||
+                    pointerType == SlideShowPointerArrow ||
+                    pointerType == SlideShowPointerAlwaysHidden ||
+                    pointerType == SlideShowPointerAutoArrow)
+                {
+                    return SlideShowAnnotationToolNone;
+                }
             }
             catch
             {

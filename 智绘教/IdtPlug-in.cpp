@@ -498,7 +498,7 @@ bool ExitPptSlideShowAnnotationTool()
 	{
 	}
 
-	return ret; return ret;
+	return ret;
 }
 void GetPptState()
 {
@@ -630,7 +630,7 @@ void FocusPptShow()
 
 bool StartPptTakeoverAnnotation(int toolType)
 {
-	if (toolType < 1 || toolType > 2) return false;
+	if (toolType != 1) return false;
 
 	if (penetrate.select)
 	{
@@ -638,43 +638,18 @@ bool StartPptTakeoverAnnotation(int toolType)
 		if (FreezeFrame.mode == 2) FreezeFrame.mode = 1;
 	}
 
-	switch (toolType)
-	{
-	case 1:
-	{
-		bool res = true;
-		if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen)
-			res = ChangeStateModeToPen();
-		if (res) stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
+	bool res = true;
+	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen)
+		res = ChangeStateModeToPen();
+	if (res) stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
 
-		if (useInkeys3UI)
-		{
-			barUISet.barButtomSet.UpdateDrawButtonStyle();
-			barUISet.UpdateRendering();
-		}
-
-		return res;
+	if (useInkeys3UI)
+	{
+		barUISet.barButtomSet.UpdateDrawButtonStyle();
+		barUISet.UpdateRendering();
 	}
 
-	case 2:
-	{
-		bool res = true;
-		if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen)
-			res = ChangeStateModeToPen();
-		if (res) stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenHighlighter1;
-
-		if (useInkeys3UI)
-		{
-			barUISet.barButtomSet.UpdateDrawButtonStyle();
-			barUISet.UpdateRendering();
-		}
-
-		return res;
-	}
-
-	default:
-		return false;
-	}
+	return res;
 }
 
 double PptBottomPageWidgetSeekBar(int firstX, int firstY, bool xReverse)
@@ -2412,7 +2387,7 @@ void PptInfo()
 		else if (Initialization && PptInfoState.TotalPage != -1 && pptTakeoverHostInk && !pptTakeoverConsumedInCurrentShow)
 		{
 			int toolType = GetPptSlideShowAnnotationTool();
-			if (toolType != 0 && StartPptTakeoverAnnotation(toolType))
+			if (toolType == 1 && StartPptTakeoverAnnotation(toolType))
 			{
 				ExitPptSlideShowAnnotationTool();
 				pptTakeoverConsumedInCurrentShow = true;
