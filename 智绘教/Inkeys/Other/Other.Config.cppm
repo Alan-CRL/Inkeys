@@ -76,8 +76,7 @@ export namespace Inkeys
 		void ResetToDefaults();
 
 	private:
-		shared_mutex readLock;
-		shared_mutex writeLock;
+		shared_mutex rwMutex;
 
 	private:
 		Json::Value loadedDocument = Json::Value(Json::objectValue);

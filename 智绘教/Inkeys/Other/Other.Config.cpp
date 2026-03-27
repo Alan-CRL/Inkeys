@@ -391,19 +391,19 @@ namespace Inkeys
 {
 	bool Config::ReadAll()
 	{
-		shared_lock<shared_mutex> lock(readLock);
+		unique_lock<shared_mutex> lock(rwMutex);
 		return ReadImpl(std::vector<std::string>{});
 	}
 
 	bool Config::ReadMini(std::initializer_list<std::string_view> paths)
 	{
-		shared_lock<shared_mutex> lock(readLock);
+		unique_lock<shared_mutex> lock(rwMutex);
 		return ReadImpl(NormalizePaths(paths));
 	}
 
 	bool Config::Write()
 	{
-		unique_lock<shared_mutex> lock(writeLock);
+		unique_lock<shared_mutex> lock(rwMutex);
 		Json::Value baseRoot = Json::Value(Json::objectValue);
 		if (hasLoadedDocument)
 		{
