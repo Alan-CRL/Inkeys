@@ -58,6 +58,8 @@ namespace PptCOM
         // 信息获取函数
         string SlideNameIndex();
         IntPtr GetPptHwnd();
+        int GetSlideShowAnnotationTool();
+        bool ExitSlideShowAnnotationTool();
 
         // 操控函数
         void NextSlideShow(bool check);
@@ -92,6 +94,17 @@ namespace PptCOM
         private DateTime busyRetryStartTime = DateTime.MinValue;
         private DateTime busyRetryLastSeenTime = DateTime.MinValue;
 
+        private const int SlideShowAnnotationToolNone = 0;
+        private const int SlideShowAnnotationToolPen = 1;
+        private const int SlideShowAnnotationToolHighlighter = 2;
+        private const int SlideShowAnnotationToolEraser = 3;
+
+        private const int SlideShowPointerNone = 0;
+        private const int SlideShowPointerArrow = 1;
+        private const int SlideShowPointerPen = 2;
+        private const int SlideShowPointerAutoArrow = 4;
+        private const int SlideShowPointerEraser = 5;
+
         // 初始化函数
         public unsafe bool Initialization(int* TotalPage, int* CurrentPage, int* OffSignal)
         {
@@ -111,7 +124,7 @@ namespace PptCOM
         }
         public string CheckCOM()
         {
-            string ret = "20260201a";
+            string ret = "20260327a";
             return ret;
         }
 
@@ -244,6 +257,133 @@ namespace PptCOM
         {
             busyRetryStartTime = DateTime.MinValue;
             busyRetryLastSeenTime = DateTime.MinValue;
+        }
+        private static bool TryGetDynamicProperty(object target, string propertyName, out object value)
+        {
+            value = null;
+            if (target == null || string.IsNullOrEmpty(propertyName)) return false;
+
+            try
+            {
+                value = target.GetType().InvokeMember(propertyName, BindingFlags.GetProperty, null, target, null);
+                return true;
+            }
+            catch
+            {
+                value = null;
+                return false;
+            }
+        }
+        private static bool TrySetDynamicProperty(object target, string propertyName, object value)
+        {
+            if (target == null || string.IsNullOrEmpty(propertyName)) return false;
+
+            try
+            {
+                target.GetType().InvokeMember(propertyName, BindingFlags.SetProperty, null, target, new object[] { value });
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+        private static int CoerceToInt(object value, int fallbackValue = int.MinValue)
+        {
+            if (value == null) return fallbackValue;
+
+            try
+            {
+                return Convert.ToInt32(value);
+            }
+            catch
+            {
+                return fallbackValue;
+            }
+        }
+        private static bool CoerceToBool(object value)
+        {
+            if (value == null) return false;
+
+            try
+            {
+                return Convert.ToBoolean(value);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+        private static string CoerceToText(object value)
+        {
+            if (value == null) return string.Empty;
+
+            try
+            {
+                return Convert.ToString(value) ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+        private static bool ContainsHighlighterHint(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return false;
+
+            string lower = value.ToLowerInvariant();
+            return lower.Contains("highlighter") ||
+                lower.Contains("highlight") ||
+                lower.Contains("marker") ||
+                lower.Contains("荧光");
+        }
+        private static bool LooksLikeHighlighterObject(object target)
+        {
+            if (target == null) return false;
+
+            object value;
+            string[] booleanPropertyNames = new[]
+            {
+                "IsHighlighter",
+                "Highlighter",
+                "HighlighterMode",
+                "HighlighterEnabled",
+                "MarkerMode",
+                "MarkerEnabled"
+            };
+            foreach (string propertyName in booleanPropertyNames)
+            {
+                if (TryGetDynamicProperty(target, propertyName, out value) && CoerceToBool(value))
+                {
+                    return true;
+                }
+            }
+
+            string[] textPropertyNames = new[]
+            {
+                "CurrentTool",
+                "InkType",
+                "PointerSubType",
+                "PointerMode",
+                "PointerStyle",
+                "PenType",
+                "ToolType",
+                "AnnotationType",
+                "DrawToolType"
+            };
+            foreach (string propertyName in textPropertyNames)
+            {
+                if (TryGetDynamicProperty(target, propertyName, out value) && ContainsHighlighterHint(CoerceToText(value)))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        private bool LooksLikeHighlighter(object slideShowView)
+        {
+            return LooksLikeHighlighterObject(slideShowView) || LooksLikeHighlighterObject(pptSlideShowWindow);
         }
         private unsafe bool HandleBusyException(Exception ex, string stage)
         {
@@ -1166,6 +1306,76 @@ namespace PptCOM
             }
 
             return ret;
+        }
+        public int GetSlideShowAnnotationTool()
+        {
+            dynamic view = null;
+
+            try
+            {
+                if (pptSlideShowWindow == null) return SlideShowAnnotationToolNone;
+
+                view = pptSlideShowWindow.View;
+                object pointerTypeValue;
+                if (!TryGetDynamicProperty((object)view, "PointerType", out pointerTypeValue))
+                {
+                    return SlideShowAnnotationToolNone;
+                }
+                if (ContainsHighlighterHint(CoerceToText(pointerTypeValue)))
+                {
+                    return SlideShowAnnotationToolHighlighter;
+                }
+
+                int pointerType = CoerceToInt(pointerTypeValue, SlideShowPointerNone);
+                if (pointerType == SlideShowPointerEraser) return SlideShowAnnotationToolEraser;
+                if (pointerType == SlideShowPointerPen)
+                {
+                    if (LooksLikeHighlighter((object)view)) return SlideShowAnnotationToolHighlighter;
+                    return SlideShowAnnotationToolPen;
+                }
+
+                if (pointerType == SlideShowPointerNone ||
+                    pointerType == SlideShowPointerArrow ||
+                    pointerType == SlideShowPointerAutoArrow)
+                {
+                    return SlideShowAnnotationToolNone;
+                }
+
+                if (LooksLikeHighlighter((object)view)) return SlideShowAnnotationToolHighlighter;
+            }
+            catch
+            {
+            }
+            finally
+            {
+                SafeRelease(view);
+                view = null;
+            }
+
+            return SlideShowAnnotationToolNone;
+        }
+        public bool ExitSlideShowAnnotationTool()
+        {
+            dynamic view = null;
+
+            try
+            {
+                if (pptSlideShowWindow == null) return false;
+
+                view = pptSlideShowWindow.View;
+                if (TrySetDynamicProperty((object)view, "PointerType", SlideShowPointerAutoArrow)) return true;
+                if (TrySetDynamicProperty((object)view, "PointerType", SlideShowPointerArrow)) return true;
+            }
+            catch
+            {
+            }
+            finally
+            {
+                SafeRelease(view);
+                view = null;
+            }
+
+            return false;
         }
         private IntPtr GetPptHwndFromSlideShowWindow(object pptSlideShowWindowObj)
         {

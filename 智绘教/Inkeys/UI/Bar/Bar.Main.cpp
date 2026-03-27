@@ -2504,6 +2504,9 @@ void BarUISetClass::Interact()
 // 渲染更新：状态更新 + 通知计算并渲染
 void BarUISetClass::UpdateRendering(bool updateState)
 {
+	static mutex mtx;
+	lock_guard<mutex> lock(mtx);
+
 	// 状态更新
 	if (updateState)
 	{
