@@ -2264,7 +2264,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPosY(ImGui::GetCursorPosY());
 								wstring text;
 								{
-									text += L"\n" + IW("SettingsUI/Version/Info/ReleaseVersion") + L" " + editionDate + L"(" + editionChannel + L")";
+									text += L"\n" + IW("SettingsUI/Version/Info/ReleaseVersion") + L" " + editionVersion + L"(" + editionDate + L")";
 									text += L"\n" + IW("SettingsUI/Version/Info/ReleaseDate") + L" " + buildTime;
 									text += L"\n" + IW("SettingsUI/Version/Info/ReleaseArch") + L" " + programArchitecture + L" | " + targetArchitecture;
 #ifdef IDT_RELEASE
