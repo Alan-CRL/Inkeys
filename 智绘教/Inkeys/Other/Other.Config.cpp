@@ -400,7 +400,18 @@ namespace Inkeys
 	bool Config::ReadAll()
 	{
 		unique_lock<shared_mutex> lock(rwMutex);
-		return ReadImpl(std::vector<std::string>{});
+		const bool readOk = ReadImpl(std::vector<std::string>{});
+		if (readOk && hasLoadedDocument)
+		{
+			readAllDocument = loadedDocument;
+			hasReadAllDocument = true;
+		}
+		else
+		{
+			readAllDocument = Json::Value(Json::objectValue);
+			hasReadAllDocument = false;
+		}
+		return readOk;
 	}
 
 	bool Config::ReadMini(std::initializer_list<std::string_view> paths)
@@ -412,31 +423,44 @@ namespace Inkeys
 	bool Config::Write()
 	{
 		unique_lock<shared_mutex> lock(rwMutex);
+		const bool autoCleanEnabled = LoadConfigValue(this->Config.autoClean);
+
 		Json::Value baseRoot = Json::Value(Json::objectValue);
-		if (hasLoadedDocument)
+		if (!autoCleanEnabled)
 		{
-			baseRoot = loadedDocument;
-		}
-		else
-		{
-			Json::Value loadedRoot;
-			if (LoadDocumentOnly(loadedRoot))
+			if (hasReadAllDocument)
 			{
-				baseRoot = loadedRoot;
-				loadedDocument = loadedRoot;
-				hasLoadedDocument = true;
+				baseRoot = readAllDocument;
 			}
+			else if (hasLoadedDocument)
+			{
+				baseRoot = loadedDocument;
+			}
+			else
+			{
+				Json::Value loadedRoot;
+				if (LoadDocumentOnly(loadedRoot))
+				{
+					baseRoot = loadedRoot;
+					loadedDocument = loadedRoot;
+					hasLoadedDocument = true;
+					readAllDocument = loadedRoot;
+					hasReadAllDocument = true;
+				}
+			}
+
+			if (!baseRoot.isObject()) baseRoot = Json::Value(Json::objectValue);
 		}
 
-		if (!baseRoot.isObject()) baseRoot = Json::Value(Json::objectValue);
-
-		Json::Value outputRoot = LoadConfigValue(this->Config.autoClean) ? Json::Value(Json::objectValue) : baseRoot;
+		Json::Value outputRoot = autoCleanEnabled ? Json::Value(Json::objectValue) : baseRoot;
 		OverlayDocument(outputRoot);
 
 		if (!WriteDocumentToFile(GetFilePath(), outputRoot)) return false;
 
 		loadedDocument = outputRoot;
 		hasLoadedDocument = true;
+		readAllDocument = outputRoot;
+		hasReadAllDocument = true;
 		return true;
 	}
 

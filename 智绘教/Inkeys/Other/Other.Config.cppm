@@ -91,6 +91,8 @@ namespace Inkeys
 	private:
 		Json::Value loadedDocument = Json::Value(Json::objectValue);
 		bool hasLoadedDocument = false;
+		Json::Value readAllDocument = Json::Value(Json::objectValue);
+		bool hasReadAllDocument = false;
 
 		template <typename HandlerT>
 		void TraverseSchema(HandlerT&& handler)
@@ -129,6 +131,8 @@ namespace Inkeys
 		ApplyDocument(snapshot, std::vector<std::string>{}, true);
 		loadedDocument = other.loadedDocument;
 		hasLoadedDocument = other.hasLoadedDocument;
+		readAllDocument = other.readAllDocument;
+		hasReadAllDocument = other.hasReadAllDocument;
 		return *this;
 	}
 
