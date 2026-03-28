@@ -552,6 +552,8 @@
     <ClCompile Include="Inkeys\Net\Net.Update.cppm" />
     <ClCompile Include="Inkeys\Net\Net.Update.Download.cpp" />
     <ClCompile Include="Inkeys\Net\Net.Update.Download.cppm" />
+    <ClCompile Include="Inkeys\Other\Other.Config.cpp" />
+    <ClCompile Include="Inkeys\Other\Other.Config.cppm" />
     <ClCompile Include="Inkeys\Other\Other.Gesture.cppm" />
     <ClCompile Include="Inkeys\Other\Other.Inputs.cppm" />
     <ClCompile Include="Inkeys\Other\Other.Json.cppm" />

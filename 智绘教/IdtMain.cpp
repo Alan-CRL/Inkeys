@@ -21,6 +21,7 @@ import Inkeys.Other.Gesture;
 import Inkeys.Conv.Text;
 import Inkeys.Text.Split;
 import Inkeys.Text.Font;
+import Inkeys.Other.Config;
 
 #include "IdtMain.h"
 #include "resource.h"
@@ -52,8 +53,8 @@ import Inkeys.Text.Font;
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionVersion = L"3.0.0-dev.1";		// 程序发布版本
-wstring editionDate = L"20260319a";				// 程序发布日期
+wstring editionVersion = L"3.0.0-dev.6";		// 程序发布版本
+wstring editionDate = L"20260328a";				// 程序发布日期
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -67,6 +68,8 @@ IdtAtomic<int> offSignal;						// 关闭指令
 shared_ptr<spdlog::logger> IDTLogger;
 IdtAtomic<bool> useMouseInput;
 IdtAtomic<bool> useInkeys3UI = false;
+
+using namespace Inkeys;
 
 // 程序入口点
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
@@ -1011,6 +1014,15 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			}
 			else ReadSetting();
 			WriteSetting();
+
+		#pragma region 新配置 Test
+
+			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
+			config.Write();
+
+			configOnce = Inkeys::config;
+
+		#pragma endregion
 		}
 
 		// 初次读取配置后的操作
