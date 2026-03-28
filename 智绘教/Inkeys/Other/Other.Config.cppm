@@ -3,6 +3,7 @@
 #include "../../IdtMain.h"
 
 #include <initializer_list>
+#include <mutex>
 #include <string_view>
 #include <vector>
 
@@ -37,7 +38,7 @@ namespace Inkeys::ConfigDetail
 
 #define INKEYS_CONFIG_SCHEMA(GROUP, X) \
 	GROUP(Config, \
-		X(IdtAtomic<int>, autoClean, 0) \
+		X(IdtAtomic<bool>, autoClean, false) \
 	) \
 	GROUP(PlugIn, \
 		GROUP(PPTHelper, \
@@ -46,7 +47,7 @@ namespace Inkeys::ConfigDetail
 		) \
 	)
 
-export namespace Inkeys
+namespace Inkeys
 {
 	/*
 	示例：
@@ -69,6 +70,8 @@ export namespace Inkeys
 		#undef INKEYS_CONFIG_DECLARE_VALUE
 
 	public:
+		Inkeys::Config& operator=(const Inkeys::Config& other);
+
 		bool ReadAll();
 		bool ReadMini(std::initializer_list<std::string_view> paths);
 		bool Write();
@@ -76,7 +79,7 @@ export namespace Inkeys
 		void ResetToDefaults();
 
 	private:
-		shared_mutex rwMutex;
+		mutable shared_mutex rwMutex;
 
 	private:
 		Json::Value loadedDocument = Json::Value(Json::objectValue);
@@ -104,7 +107,26 @@ export namespace Inkeys
 		static bool WriteDocumentToFile(const std::wstring& filePath, const Json::Value& root);
 	};
 
-	export inline Config config{};
+	inline Inkeys::Config& Config::operator=(const Inkeys::Config& other)
+	{
+		if (this == &other) return *this;
+
+		unique_lock<shared_mutex> thisLock(rwMutex, defer_lock);
+		shared_lock<shared_mutex> otherLock(other.rwMutex, defer_lock);
+		std::lock(thisLock, otherLock);
+
+		Json::Value snapshot(Json::objectValue);
+		const_cast<Inkeys::Config&>(other).OverlayDocument(snapshot);
+
+		ApplyDocument(snapshot, std::vector<std::string>{});
+		loadedDocument = other.loadedDocument;
+		hasLoadedDocument = other.hasLoadedDocument;
+		return *this;
+	}
+
+	// 全局配置集合
+	export inline Config config{}; // 实时配置集
+	export inline Config configOnce{}; // 首次启动配置集
 }
 
 #undef INKEYS_CONFIG_SCHEMA
