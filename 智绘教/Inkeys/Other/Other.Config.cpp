@@ -133,6 +133,12 @@ namespace
 		return result;
 	}
 
+	std::string ResolveJsonGroupName(std::string_view schemaGroupName)
+	{
+		if (schemaGroupName == "Info") return "$Info";
+		return std::string(schemaGroupName);
+	}
+
 	Json::Value& EnsureObjectPath(Json::Value& root, const std::vector<std::string>& groupPath)
 	{
 		if (!root.isObject()) root = Json::Value(Json::objectValue);
@@ -311,7 +317,7 @@ namespace
 		}
 
 		template <typename T>
-		void HandleValue(const char* name, T& value, const T& defaultValue)
+		void HandleValue(const char* name, T& value, const T& defaultValue, bool)
 		{
 			if (!IsSelectedValuePath(JoinPath(groupPath, name), selectedPaths)) return;
 			AssignConfigValue(value, defaultValue);
@@ -325,12 +331,12 @@ namespace
 	class ReadDocumentHandler
 	{
 	public:
-		ReadDocumentHandler(const Json::Value& rootIn, const std::vector<std::string>& selectedPathsIn)
-			: root(rootIn), selectedPaths(selectedPathsIn) {}
+		ReadDocumentHandler(const Json::Value& rootIn, const std::vector<std::string>& selectedPathsIn, bool includeWriteOnlyIn)
+			: root(rootIn), selectedPaths(selectedPathsIn), includeWriteOnly(includeWriteOnlyIn) {}
 
 		void EnterGroup(const char* name)
 		{
-			groupPath.emplace_back(name);
+			groupPath.emplace_back(ResolveJsonGroupName(name));
 		}
 
 		void LeaveGroup()
@@ -339,8 +345,9 @@ namespace
 		}
 
 		template <typename T>
-		void HandleValue(const char* name, T& value, const T&)
+		void HandleValue(const char* name, T& value, const T&, bool canReadFromDocument)
 		{
+			if (!canReadFromDocument && !includeWriteOnly) return;
 			if (!IsSelectedValuePath(JoinPath(groupPath, name), selectedPaths)) return;
 
 			const Json::Value* jsonValue = TryGetValueAtPath(root, groupPath, name);
@@ -355,6 +362,7 @@ namespace
 	private:
 		const Json::Value& root;
 		const std::vector<std::string>& selectedPaths;
+		bool includeWriteOnly = false;
 		std::vector<std::string> groupPath;
 	};
 
@@ -365,7 +373,7 @@ namespace
 
 		void EnterGroup(const char* name)
 		{
-			groupPath.emplace_back(name);
+			groupPath.emplace_back(ResolveJsonGroupName(name));
 			(void)EnsureObjectPath(root, groupPath);
 		}
 
@@ -375,7 +383,7 @@ namespace
 		}
 
 		template <typename T>
-		void HandleValue(const char* name, T& value, const T&)
+		void HandleValue(const char* name, T& value, const T&, bool)
 		{
 			Json::Value& parent = EnsureObjectPath(root, groupPath);
 			parent[name] = JsonScalarTraits<T>::ToJson(value);
@@ -424,7 +432,6 @@ namespace Inkeys
 
 		Json::Value outputRoot = LoadConfigValue(this->Config.autoClean) ? Json::Value(Json::objectValue) : baseRoot;
 		OverlayDocument(outputRoot);
-		WriteInfoBlock(outputRoot);
 
 		if (!WriteDocumentToFile(GetFilePath(), outputRoot)) return false;
 
@@ -467,9 +474,9 @@ namespace Inkeys
 		TraverseSchema(handler);
 	}
 
-	void Config::ApplyDocument(const Json::Value& root, const std::vector<std::string>& paths)
+	void Config::ApplyDocument(const Json::Value& root, const std::vector<std::string>& paths, bool includeWriteOnly)
 	{
-		ReadDocumentHandler handler(root, paths);
+		ReadDocumentHandler handler(root, paths, includeWriteOnly);
 		TraverseSchema(handler);
 	}
 
@@ -477,21 +484,6 @@ namespace Inkeys
 	{
 		WriteDocumentHandler handler(root);
 		TraverseSchema(handler);
-	}
-
-	void Config::WriteInfoBlock(Json::Value& root) const
-	{
-		if (!root.isObject()) root = Json::Value(Json::objectValue);
-
-		root.removeMember("$Info");
-
-		Json::Value info(Json::objectValue);
-		info["userId"] = Json::Value(utf16ToUtf8(userId));
-		info["editionVersion"] = Json::Value(utf16ToUtf8(editionVersion));
-		info["editionDate"] = Json::Value(utf16ToUtf8(editionDate));
-		info["programArchitecture"] = Json::Value(utf16ToUtf8(programArchitecture));
-		info["targetArchitecture"] = Json::Value(utf16ToUtf8(targetArchitecture));
-		root["$Info"] = std::move(info);
 	}
 
 	bool Config::LoadDocumentOnly(Json::Value& outRoot) const

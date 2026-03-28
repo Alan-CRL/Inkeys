@@ -26,9 +26,9 @@ namespace Inkeys::ConfigDetail
 		}
 
 		template <typename ValueT>
-		void Value(const char* name, ValueT& value, const ValueT& defaultValue)
+		void Value(const char* name, ValueT& value, const ValueT& defaultValue, bool canReadFromDocument)
 		{
-			handler.HandleValue(name, value, defaultValue);
+			handler.HandleValue(name, value, defaultValue, canReadFromDocument);
 		}
 
 	private:
@@ -36,9 +36,16 @@ namespace Inkeys::ConfigDetail
 	};
 }
 
-#define INKEYS_CONFIG_SCHEMA(GROUP, X) \
+#define INKEYS_CONFIG_SCHEMA(GROUP, X, H) \
 	GROUP(Config, \
 		X(IdtAtomic<bool>, autoClean, false) \
+	) \
+	GROUP(Info, \
+		H(std::wstring, userId, ::userId) \
+		H(std::wstring, editionVersion, ::editionVersion) \
+		H(std::wstring, editionDate, ::editionDate) \
+		H(std::wstring, programArchitecture, ::programArchitecture) \
+		H(std::wstring, targetArchitecture, ::targetArchitecture) \
 	) \
 	GROUP(PlugIn, \
 		GROUP(PPTHelper, \
@@ -65,7 +72,7 @@ namespace Inkeys
 	public:
 	#define INKEYS_CONFIG_DECLARE_GROUP(groupName, ...) struct groupName##_Node { __VA_ARGS__ } groupName;
 	#define INKEYS_CONFIG_DECLARE_VALUE(valueType, valueName, defaultValue) valueType valueName{ defaultValue };
-		INKEYS_CONFIG_SCHEMA(INKEYS_CONFIG_DECLARE_GROUP, INKEYS_CONFIG_DECLARE_VALUE)
+		INKEYS_CONFIG_SCHEMA(INKEYS_CONFIG_DECLARE_GROUP, INKEYS_CONFIG_DECLARE_VALUE, INKEYS_CONFIG_DECLARE_VALUE)
 		#undef INKEYS_CONFIG_DECLARE_GROUP
 		#undef INKEYS_CONFIG_DECLARE_VALUE
 
@@ -92,17 +99,18 @@ namespace Inkeys
 			Inkeys::ConfigDetail::SchemaWalker<HandlerT> walker(handler);
 
 		#define INKEYS_CONFIG_TRAVERSE_GROUP(groupName, ...) walker.BeginGroup(#groupName, group.groupName, [&](auto& group) { __VA_ARGS__ });
-		#define INKEYS_CONFIG_TRAVERSE_VALUE(valueType, valueName, defaultValue) walker.Value(#valueName, group.valueName, valueType{ defaultValue });
-			INKEYS_CONFIG_SCHEMA(INKEYS_CONFIG_TRAVERSE_GROUP, INKEYS_CONFIG_TRAVERSE_VALUE)
+		#define INKEYS_CONFIG_TRAVERSE_X_VALUE(valueType, valueName, defaultValue) walker.Value(#valueName, group.valueName, valueType{ defaultValue }, true);
+		#define INKEYS_CONFIG_TRAVERSE_H_VALUE(valueType, valueName, defaultValue) walker.Value(#valueName, group.valueName, valueType{ defaultValue }, false);
+			INKEYS_CONFIG_SCHEMA(INKEYS_CONFIG_TRAVERSE_GROUP, INKEYS_CONFIG_TRAVERSE_X_VALUE, INKEYS_CONFIG_TRAVERSE_H_VALUE)
 			#undef INKEYS_CONFIG_TRAVERSE_GROUP
-			#undef INKEYS_CONFIG_TRAVERSE_VALUE
+			#undef INKEYS_CONFIG_TRAVERSE_X_VALUE
+			#undef INKEYS_CONFIG_TRAVERSE_H_VALUE
 		}
 
 		bool ReadImpl(const std::vector<std::string>& paths);
 		void ApplyDefaults(const std::vector<std::string>& paths);
-		void ApplyDocument(const Json::Value& root, const std::vector<std::string>& paths);
+		void ApplyDocument(const Json::Value& root, const std::vector<std::string>& paths, bool includeWriteOnly = false);
 		void OverlayDocument(Json::Value& root);
-		void WriteInfoBlock(Json::Value& root) const;
 		bool LoadDocumentOnly(Json::Value& outRoot) const;
 		static bool WriteDocumentToFile(const std::wstring& filePath, const Json::Value& root);
 	};
@@ -118,7 +126,7 @@ namespace Inkeys
 		Json::Value snapshot(Json::objectValue);
 		const_cast<Inkeys::Config&>(other).OverlayDocument(snapshot);
 
-		ApplyDocument(snapshot, std::vector<std::string>{});
+		ApplyDocument(snapshot, std::vector<std::string>{}, true);
 		loadedDocument = other.loadedDocument;
 		hasLoadedDocument = other.hasLoadedDocument;
 		return *this;
