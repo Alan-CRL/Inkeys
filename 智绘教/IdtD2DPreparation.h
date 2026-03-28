@@ -11,13 +11,13 @@
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
 
-extern CComPtr<ID2D1Factory1> d2dFactory1;
+extern ComPtr<ID2D1Factory1> d2dFactory1;
 
-extern CComPtr<IDWriteFactory1> dWriteFactory1;
-extern CComPtr<IDWriteFontCollection> dWriteFontCollection;
+extern ComPtr<IDWriteFactory1> dWriteFactory1;
+extern ComPtr<IDWriteFontCollection> dWriteFontCollection;
 
-extern CComPtr<ID3D11Device> d3dDevice_WARP;
-extern CComPtr<ID2D1Device> d2dDevice_WARP;
+extern ComPtr<ID3D11Device> d3dDevice_WARP;
+extern ComPtr<ID2D1Device> d2dDevice_WARP;
 
 //class IdtFontFileEnumerator : public IDWriteFontFileEnumerator
 //{

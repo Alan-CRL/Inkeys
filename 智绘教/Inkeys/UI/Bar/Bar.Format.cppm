@@ -26,7 +26,7 @@ struct BarFormatKey
 };
 struct CacheValue
 {
-	CComPtr<IDWriteTextFormat> pFormat;
+	ComPtr<IDWriteTextFormat> pFormat;
 	unsigned int usageCountThisFrame = 0; // 用于记录本帧的使用次数
 };
 
@@ -58,7 +58,7 @@ public:
 		{
 			// 找到了！增加本帧使用计数，并返回缓存的对象。
 			it->second.usageCountThisFrame++;
-			return it->second.pFormat;
+			return it->second.pFormat.Get();
 		}
 
 		// 3. 没找到，创建一个新的
@@ -89,7 +89,7 @@ public:
 			newValue.usageCountThisFrame = 1;
 
 			auto [inserted_it, success] = m_cache.emplace(key, newValue);
-			return inserted_it->second.pFormat;
+			return inserted_it->second.pFormat.Get();
 		}
 
 		// 创建失败，返回空指针
@@ -103,7 +103,7 @@ public:
 		{
 			if (it->second.usageCountThisFrame == 0)
 			{
-				// 本帧未使用，从 map 中擦除。CComPtr 会自动 Release。
+				// 本帧未使用，从 map 中擦除。ComPtr 会自动 Release。
 				// map::erase(iterator) 会返回下一个有效的迭代器。
 				it = m_cache.erase(it);
 			}
@@ -118,6 +118,6 @@ public:
 	void CleanAll() { m_cache.clear(); };
 
 private:
-	CComPtr<IDWriteFactory> m_pDWriteFactory;
+	ComPtr<IDWriteFactory> m_pDWriteFactory;
 	map<BarFormatKey, CacheValue> m_cache;
 };

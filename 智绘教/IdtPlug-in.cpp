@@ -84,7 +84,7 @@ PptUiRoundRectWidgetClass pptUiRoundRectWidget[15], pptUiRoundRectWidgetTarget[1
 PptUiImageWidgetClass pptUiImageWidget[9], pptUiImageWidgetTarget[9];
 PptUiWordsWidgetClass pptUiWordsWidget[8], pptUiWordsWidgetTarget[8];
 
-CComPtr<ID2D1Bitmap> pptIconBitmap[6];
+ComPtr<ID2D1Bitmap> pptIconBitmap[6];
 
 void PptUiWidgetValueTransformation(float* v, float tv, float s, float e, int num = 1)
 {
@@ -1154,7 +1154,7 @@ void PptUI()
 				pptUiImageWidget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].Width = PptUiWidgetValue(15, 0.1f);
 				pptUiImageWidget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].Height = PptUiWidgetValue(15, 0.1f);
 				pptUiImageWidget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].Transparency = PptUiWidgetValue(25, 1);
-				pptUiImageWidget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].Img = pptIconBitmap[1];
+				pptUiImageWidget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].Img = pptIconBitmap[1].Get();
 			}
 			{
 				pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_LeftPageNum_Above].Left = PptUiWidgetValue(15, 0.1f);
@@ -1189,7 +1189,7 @@ void PptUI()
 				pptUiImageWidget[PptUiImageWidgetID::BottomSide_LeftNextPage].Width = PptUiWidgetValue(15, 0.1f);
 				pptUiImageWidget[PptUiImageWidgetID::BottomSide_LeftNextPage].Height = PptUiWidgetValue(15, 0.1f);
 				pptUiImageWidget[PptUiImageWidgetID::BottomSide_LeftNextPage].Transparency = PptUiWidgetValue(20, 1);
-				pptUiImageWidget[PptUiImageWidgetID::BottomSide_LeftNextPage].Img = pptIconBitmap[2];
+				pptUiImageWidget[PptUiImageWidgetID::BottomSide_LeftNextPage].Img = pptIconBitmap[2].Get();
 			}
 		}
 		// 底部右侧控件
@@ -1230,7 +1230,7 @@ void PptUI()
 				pptUiImageWidget[PptUiImageWidgetID::BottomSide_RightPreviousPage].Width = PptUiWidgetValue(15, 0.1f);
 				pptUiImageWidget[PptUiImageWidgetID::BottomSide_RightPreviousPage].Height = PptUiWidgetValue(15, 0.1f);
 				pptUiImageWidget[PptUiImageWidgetID::BottomSide_RightPreviousPage].Transparency = PptUiWidgetValue(25, 1);
-				pptUiImageWidget[PptUiImageWidgetID::BottomSide_RightPreviousPage].Img = pptIconBitmap[1];
+				pptUiImageWidget[PptUiImageWidgetID::BottomSide_RightPreviousPage].Img = pptIconBitmap[1].Get();
 			}
 			{
 				pptUiWordsWidget[PptUiWordsWidgetID::BottomSide_RightPageNum_Above].Left = PptUiWidgetValue(15, 0.1f);
@@ -1265,7 +1265,7 @@ void PptUI()
 				pptUiImageWidget[PptUiImageWidgetID::BottomSide_RightNextPage].Width = PptUiWidgetValue(15, 0.1f);
 				pptUiImageWidget[PptUiImageWidgetID::BottomSide_RightNextPage].Height = PptUiWidgetValue(15, 0.1f);
 				pptUiImageWidget[PptUiImageWidgetID::BottomSide_RightNextPage].Transparency = PptUiWidgetValue(25, 1);
-				pptUiImageWidget[PptUiImageWidgetID::BottomSide_RightNextPage].Img = pptIconBitmap[2];
+				pptUiImageWidget[PptUiImageWidgetID::BottomSide_RightNextPage].Img = pptIconBitmap[2].Get();
 			}
 		}
 
@@ -1307,7 +1307,7 @@ void PptUI()
 				pptUiImageWidget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].Width = PptUiWidgetValue(15, 0.1f);
 				pptUiImageWidget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].Height = PptUiWidgetValue(15, 0.1f);
 				pptUiImageWidget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].Transparency = PptUiWidgetValue(25, 1);
-				pptUiImageWidget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].Img = pptIconBitmap[1];
+				pptUiImageWidget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].Img = pptIconBitmap[1].Get();
 			}
 			{
 				pptUiWordsWidget[PptUiWordsWidgetID::MiddleSide_LeftPageNum_Above].Left = PptUiWidgetValue(15, 0.1f);
@@ -1342,7 +1342,7 @@ void PptUI()
 				pptUiImageWidget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Width = PptUiWidgetValue(15, 0.1f);
 				pptUiImageWidget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Height = PptUiWidgetValue(15, 0.1f);
 				pptUiImageWidget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Transparency = PptUiWidgetValue(20, 1);
-				pptUiImageWidget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Img = pptIconBitmap[2];
+				pptUiImageWidget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Img = pptIconBitmap[2].Get();
 			}
 		}
 		// 中部右侧控件
@@ -1383,7 +1383,7 @@ void PptUI()
 				pptUiImageWidget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].Width = PptUiWidgetValue(15, 0.1f);
 				pptUiImageWidget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].Height = PptUiWidgetValue(15, 0.1f);
 				pptUiImageWidget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].Transparency = PptUiWidgetValue(25, 1);
-				pptUiImageWidget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].Img = pptIconBitmap[1];
+				pptUiImageWidget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].Img = pptIconBitmap[1].Get();
 			}
 			{
 				pptUiWordsWidget[PptUiWordsWidgetID::MiddleSide_RightPageNum_Above].Left = PptUiWidgetValue(15, 0.1f);
@@ -1418,7 +1418,7 @@ void PptUI()
 				pptUiImageWidget[PptUiImageWidgetID::MiddleSide_RightNextPage].Width = PptUiWidgetValue(15, 0.1f);
 				pptUiImageWidget[PptUiImageWidgetID::MiddleSide_RightNextPage].Height = PptUiWidgetValue(15, 0.1f);
 				pptUiImageWidget[PptUiImageWidgetID::MiddleSide_RightNextPage].Transparency = PptUiWidgetValue(20, 1);
-				pptUiImageWidget[PptUiImageWidgetID::MiddleSide_RightNextPage].Img = pptIconBitmap[2];
+				pptUiImageWidget[PptUiImageWidgetID::MiddleSide_RightNextPage].Img = pptIconBitmap[2].Get();
 			}
 		}
 
@@ -1460,7 +1460,7 @@ void PptUI()
 				pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Width = PptUiWidgetValue(15, 0.1f);
 				pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Height = PptUiWidgetValue(15, 0.1f);
 				pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Transparency = PptUiWidgetValue(25, 1);
-				pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Img = pptIconBitmap[3];
+				pptUiImageWidget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Img = pptIconBitmap[3].Get();
 			}
 		}
 
@@ -1591,7 +1591,7 @@ void PptUI()
 							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].Height.v = (40) * pptComSetlist.bottomSideBothWidgetScale;
 							if (pptUiWidgetState == PptUiWidgetStateEnum::Close) pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].Transparency.v = 0;
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].Transparency.v = 255;
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].Img = pptIconBitmap[1];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftPreviousPage].Img = pptIconBitmap[1].Get();
 						}
 					}
 					{
@@ -1629,8 +1629,8 @@ void PptUI()
 							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Height.v = (40) * pptComSetlist.bottomSideBothWidgetScale;
 							if (pptUiWidgetState == PptUiWidgetStateEnum::Close) pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Transparency.v = 0;
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Transparency.v = 255;
-							if (pptCurrentSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Img = pptIconBitmap[3];
-							else pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Img = pptIconBitmap[2];
+							if (pptCurrentSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Img = pptIconBitmap[3].Get();
+							else pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_LeftNextPage].Img = pptIconBitmap[2].Get();
 						}
 					}
 				}
@@ -1673,7 +1673,7 @@ void PptUI()
 							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightPreviousPage].Height.v = (40) * pptComSetlist.bottomSideBothWidgetScale;
 							if (pptUiWidgetState == PptUiWidgetStateEnum::Close) pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightPreviousPage].Transparency.v = 0;
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightPreviousPage].Transparency.v = 255;
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightPreviousPage].Img = pptIconBitmap[1];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightPreviousPage].Img = pptIconBitmap[1].Get();
 						}
 					}
 					{
@@ -1711,8 +1711,8 @@ void PptUI()
 							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightNextPage].Height.v = (40) * pptComSetlist.bottomSideBothWidgetScale;
 							if (pptUiWidgetState == PptUiWidgetStateEnum::Close) pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightNextPage].Transparency.v = 0;
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightNextPage].Transparency.v = 255;
-							if (pptCurrentSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightNextPage].Img = pptIconBitmap[3];
-							else pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightNextPage].Img = pptIconBitmap[2];
+							if (pptCurrentSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightNextPage].Img = pptIconBitmap[3].Get();
+							else pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_RightNextPage].Img = pptIconBitmap[2].Get();
 						}
 					}
 
@@ -1775,7 +1775,7 @@ void PptUI()
 							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].Height.v = (40) * pptComSetlist.middleSideBothWidgetScale;
 							if (pptUiWidgetState == PptUiWidgetStateEnum::Close) pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].Transparency.v = 0;
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].Transparency.v = 255;
-							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].Img = pptIconBitmap[4];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftPreviousPage].Img = pptIconBitmap[4].Get();
 						}
 					}
 					{
@@ -1813,8 +1813,8 @@ void PptUI()
 							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Height.v = (40) * pptComSetlist.middleSideBothWidgetScale;
 							if (pptUiWidgetState == PptUiWidgetStateEnum::Close) pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Transparency.v = 0;
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Transparency.v = 255;
-							if (pptCurrentSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Img = pptIconBitmap[3];
-							else pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Img = pptIconBitmap[5];
+							if (pptCurrentSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Img = pptIconBitmap[3].Get();
+							else pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_LeftNextPage].Img = pptIconBitmap[5].Get();
 						}
 					}
 				}
@@ -1866,7 +1866,7 @@ void PptUI()
 							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].Height.v = (40) * pptComSetlist.middleSideBothWidgetScale;
 							if (pptUiWidgetState == PptUiWidgetStateEnum::Close) pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].Transparency.v = 0;
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].Transparency.v = 255;
-							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].Img = pptIconBitmap[4];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightPreviousPage].Img = pptIconBitmap[4].Get();
 						}
 					}
 					{
@@ -1904,8 +1904,8 @@ void PptUI()
 							pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightNextPage].Height.v = (40) * pptComSetlist.middleSideBothWidgetScale;
 							if (pptUiWidgetState == PptUiWidgetStateEnum::Close) pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightNextPage].Transparency.v = 0;
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightNextPage].Transparency.v = 255;
-							if (pptCurrentSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightNextPage].Img = pptIconBitmap[3];
-							else pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightNextPage].Img = pptIconBitmap[5];
+							if (pptCurrentSlides == -1) pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightNextPage].Img = pptIconBitmap[3].Get();
+							else pptUiImageWidgetTarget[PptUiImageWidgetID::MiddleSide_RightNextPage].Img = pptIconBitmap[5].Get();
 						}
 					}
 				}
@@ -1958,7 +1958,7 @@ void PptUI()
 							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Height.v = (40) * pptComSetlist.bottomSideMiddleWidgetScale;
 							if (pptUiWidgetState == PptUiWidgetStateEnum::Close) pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Transparency.v = 0;
 							else pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Transparency.v = 255;
-							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Img = pptIconBitmap[3];
+							pptUiImageWidgetTarget[PptUiImageWidgetID::BottomSide_MiddleEndShow].Img = pptIconBitmap[3].Get();
 						}
 					}
 				}
@@ -2821,7 +2821,7 @@ void PptDraw()
 
 					dWriteFactory1->CreateTextFormat(
 						L"HarmonyOS Sans SC",
-						dWriteFontCollection,
+						dWriteFontCollection.Get(),
 						DWRITE_FONT_WEIGHT_NORMAL,
 						DWRITE_FONT_STYLE_NORMAL,
 						DWRITE_FONT_STRETCH_NORMAL,
@@ -2858,7 +2858,7 @@ void PptDraw()
 
 					dWriteFactory1->CreateTextFormat(
 						L"HarmonyOS Sans SC",
-						dWriteFontCollection,
+						dWriteFontCollection.Get(),
 						DWRITE_FONT_WEIGHT_NORMAL,
 						DWRITE_FONT_STYLE_NORMAL,
 						DWRITE_FONT_STRETCH_NORMAL,
@@ -2978,7 +2978,7 @@ void PptDraw()
 
 					HRESULT hr = dWriteFactory1->CreateTextFormat(
 						L"HarmonyOS Sans SC",
-						dWriteFontCollection,
+						dWriteFontCollection.Get(),
 						DWRITE_FONT_WEIGHT_NORMAL,
 						DWRITE_FONT_STYLE_NORMAL,
 						DWRITE_FONT_STRETCH_NORMAL,
@@ -3015,7 +3015,7 @@ void PptDraw()
 
 					dWriteFactory1->CreateTextFormat(
 						L"HarmonyOS Sans SC",
-						dWriteFontCollection,
+						dWriteFontCollection.Get(),
 						DWRITE_FONT_WEIGHT_NORMAL,
 						DWRITE_FONT_STYLE_NORMAL,
 						DWRITE_FONT_STRETCH_NORMAL,
@@ -3186,7 +3186,7 @@ void PptDraw()
 
 					dWriteFactory1->CreateTextFormat(
 						L"HarmonyOS Sans SC",
-						dWriteFontCollection,
+						dWriteFontCollection.Get(),
 						DWRITE_FONT_WEIGHT_NORMAL,
 						DWRITE_FONT_STYLE_NORMAL,
 						DWRITE_FONT_STRETCH_NORMAL,
@@ -3223,7 +3223,7 @@ void PptDraw()
 
 					dWriteFactory1->CreateTextFormat(
 						L"HarmonyOS Sans SC",
-						dWriteFontCollection,
+						dWriteFontCollection.Get(),
 						DWRITE_FONT_WEIGHT_NORMAL,
 						DWRITE_FONT_STYLE_NORMAL,
 						DWRITE_FONT_STRETCH_NORMAL,
@@ -3375,7 +3375,7 @@ void PptDraw()
 
 					dWriteFactory1->CreateTextFormat(
 						L"HarmonyOS Sans SC",
-						dWriteFontCollection,
+						dWriteFontCollection.Get(),
 						DWRITE_FONT_WEIGHT_NORMAL,
 						DWRITE_FONT_STYLE_NORMAL,
 						DWRITE_FONT_STRETCH_NORMAL,
@@ -3412,7 +3412,7 @@ void PptDraw()
 
 					dWriteFactory1->CreateTextFormat(
 						L"HarmonyOS Sans SC",
-						dWriteFontCollection,
+						dWriteFontCollection.Get(),
 						DWRITE_FONT_WEIGHT_NORMAL,
 						DWRITE_FONT_STYLE_NORMAL,
 						DWRITE_FONT_STRETCH_NORMAL,
@@ -3584,7 +3584,7 @@ void PptDraw()
 		}
 	}
 
-	for (int r = 0; r < (int)size(pptIconBitmap); r++) pptIconBitmap[r].Release();
+	for (int r = 0; r < (int)size(pptIconBitmap); r++) pptIconBitmap[r].Reset();
 	DCRenderTarget->Release();
 
 	for (int i = 1; i <= 5; i++)
@@ -4572,3 +4572,4 @@ bool ShortcutAssistantClass::CreateShortcut(const std::wstring& shortcutPath, co
 
 	return SUCCEEDED(hres);
 }
+

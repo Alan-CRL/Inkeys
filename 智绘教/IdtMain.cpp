@@ -1170,12 +1170,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 				for (UINT32 i = 0; i < familyCount; ++i)
 				{
-					CComPtr<IDWriteFontFamily> fontFamily;
+					ComPtr<IDWriteFontFamily> fontFamily;
 					HRESULT hr = dWriteFontCollection->GetFontFamily(i, &fontFamily);
 					if (FAILED(hr)) continue;
 
 					// 获取家族名
-					CComPtr<IDWriteLocalizedStrings> familyNames;
+					ComPtr<IDWriteLocalizedStrings> familyNames;
 					hr = fontFamily->GetFamilyNames(&familyNames);
 					if (FAILED(hr)) continue;
 
@@ -1199,7 +1199,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 					UINT32 fontCount = fontFamily->GetFontCount();
 					for (UINT32 j = 0; j < fontCount; ++j)
 					{
-						CComPtr<IDWriteFont> font;
+						ComPtr<IDWriteFont> font;
 						hr = fontFamily->GetFont(j, &font);
 						if (FAILED(hr)) continue;
 
