@@ -30,7 +30,7 @@
     <VCProjectVersion>16.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{c74d4d04-f81c-42fe-8d90-7042ba3bb8a0}</ProjectGuid>
-    <RootNamespace>智绘教</RootNamespace>
+    <RootNamespace>Inkeys</RootNamespace>
     <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -166,6 +166,9 @@
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
+      <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
+      <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <CompileAsManaged>
       </CompileAsManaged>
@@ -202,6 +205,9 @@
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
+      <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
+      <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <CompileAsManaged>
       </CompileAsManaged>
@@ -239,6 +245,9 @@
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
+      <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
+      <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <CompileAsManaged>
       </CompileAsManaged>
@@ -273,6 +282,9 @@
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
+      <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
+      <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <CompileAsManaged>
       </CompileAsManaged>
@@ -309,6 +321,9 @@
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
+      <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
+      <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <CompileAsManaged>
       </CompileAsManaged>
@@ -346,6 +361,9 @@
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
+      <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
+      <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <CompileAsManaged>
       </CompileAsManaged>
@@ -582,7 +600,7 @@
     <ClCompile Include="SuperTop\IdtSuperTop.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="智绘教.rc" />
+    <ResourceCompile Include="Inkeys.rc" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="src\bug.png" />
