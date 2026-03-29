@@ -170,10 +170,10 @@ jobs:
         $versionNumber = "{0},{1},{2},0" -f $semverMatch.Groups['major'].Value, $semverMatch.Groups['minor'].Value, $semverMatch.Groups['patch'].Value
 
         $rcContent = Get-Content $rcFile -Raw
-        $rcContent = $rcContent -replace '(?m)^(\s*FILEVERSION\s+).+$', "`$1$versionNumber"
-        $rcContent = $rcContent -replace '(?m)^(\s*PRODUCTVERSION\s+).+$', "`$1$versionNumber"
-        $rcContent = $rcContent -replace '(?m)^(\s*VALUE\s+"FileVersion",\s*").*(")$', "`$1$editionVersion`$2"
-        $rcContent = $rcContent -replace '(?m)^(\s*VALUE\s+"ProductVersion",\s*").*(")$', "`$1$editionVersion`$2"
+        $rcContent = $rcContent -replace '(?m)^(\s*FILEVERSION\s+).+$', ('${1}' + $versionNumber)
+        $rcContent = $rcContent -replace '(?m)^(\s*PRODUCTVERSION\s+).+$', ('${1}' + $versionNumber)
+        $rcContent = $rcContent -replace '(?m)^(\s*VALUE\s+"FileVersion",\s*").*("\r?)$', ('${1}' + $editionVersion + '${2}')
+        $rcContent = $rcContent -replace '(?m)^(\s*VALUE\s+"ProductVersion",\s*").*("\r?)$', ('${1}' + $editionVersion + '${2}')
 
         Set-Content -Path $rcFile -Value $rcContent -Encoding utf8
     
