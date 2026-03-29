@@ -158,5 +158,5 @@ void DxObjectSafeRelease(T** ppT)
 		*ppT = NULL;
 	}
 }
-void D2DStarup();
+HRESULT D2DStarup();
 void D2DShutdown();

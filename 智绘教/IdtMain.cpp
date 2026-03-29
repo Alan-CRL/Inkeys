@@ -1117,7 +1117,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 	// 界面绘图库初始化
 	{
-		D2DStarup();
+		HRESULT hr = D2DStarup();
+		if (FAILED(hr))
+		{
+			if (IDTLogger) IDTLogger->error("[主线程][IdtMain] 界面绘图库初始化失败, hr=0x{:08X}", static_cast<unsigned int>(hr));
+			return 0;
+		}
 
 		IDTLogger->info("[主线程][IdtMain] 界面绘图库初始化完成");
 	}

@@ -653,7 +653,12 @@ void BarUISetClass::Rendering()
 	ComPtr<ID2D1Bitmap1>					barBackgroundBitmap;
 	ComPtr<ID2D1GdiInteropRenderTarget>	barGdiInterop;
 	{
-		d2dDevice_WARP->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &barDeviceContext);
+		HRESULT hr = d2dDevice_WARP->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &barDeviceContext);
+		if (FAILED(hr))
+		{
+			if (IDTLogger) IDTLogger->error("[BarUISetClass::Rendering] CreateDeviceContext 失败, hr=0x{:08X}", static_cast<unsigned int>(hr));
+			return;
+		}
 
 		D2D1_BITMAP_PROPERTIES1 bitmapProperties =
 			D2D1::BitmapProperties1(
@@ -663,15 +668,25 @@ void BarUISetClass::Rendering()
 
 		D2D1_SIZE_U size = D2D1::SizeU(static_cast<UINT32>(barWindow.w), static_cast<UINT32>(barWindow.h));
 
-		barDeviceContext->CreateBitmap(
+		hr = barDeviceContext->CreateBitmap(
 			size,
 			nullptr,
 			0,
 			&bitmapProperties,
 			&barBackgroundBitmap
 		);
+		if (FAILED(hr))
+		{
+			if (IDTLogger) IDTLogger->error("[BarUISetClass::Rendering] CreateBitmap 失败, hr=0x{:08X}", static_cast<unsigned int>(hr));
+			return;
+		}
 
-		barDeviceContext.As(&barGdiInterop);
+		hr = barDeviceContext.As(&barGdiInterop);
+		if (FAILED(hr))
+		{
+			if (IDTLogger) IDTLogger->error("[BarUISetClass::Rendering] 获取 ID2D1GdiInteropRenderTarget 失败, hr=0x{:08X}", static_cast<unsigned int>(hr));
+			return;
+		}
 
 		barDeviceContext->SetTarget(barBackgroundBitmap.Get());
 		barDeviceContext->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
@@ -2286,16 +2301,29 @@ void BarUISetClass::Rendering()
 
 				// 设置窗口位置
 				POINT ptDst = { 0, 0 };
-				// 获取 DC
-				HDC hdc = nullptr;
-				barGdiInterop->GetDC(D2D1_DC_INITIALIZE_MODE_COPY, &hdc);
+				if (!barGdiInterop)
+				{
+					if (IDTLogger) IDTLogger->error("[BarUISetClass::Rendering] barGdiInterop 为空，跳过 GetDC");
+				}
+				else
+				{
+					// 获取 DC
+					HDC hdc = nullptr;
+					HRESULT hr = barGdiInterop->GetDC(D2D1_DC_INITIALIZE_MODE_COPY, &hdc);
+					if (FAILED(hr))
+					{
+						if (IDTLogger) IDTLogger->error("[BarUISetClass::Rendering] GetDC 失败, hr=0x{:08X}", static_cast<unsigned int>(hr));
+					}
+					else
+					{
+						ulwi.pptDst = &ptDst;
+						ulwi.hdcSrc = hdc;
+						ulwi.prcDirty = &target;
+						UpdateLayeredWindowIndirect(floating_window, &ulwi);
 
-				ulwi.pptDst = &ptDst;
-				ulwi.hdcSrc = hdc;
-				ulwi.prcDirty = &target;
-				UpdateLayeredWindowIndirect(floating_window, &ulwi);
-
-				barGdiInterop->ReleaseDC(nullptr);
+						barGdiInterop->ReleaseDC(nullptr);
+					}
+				}
 			}
 
 			barDeviceContext->EndDraw();
