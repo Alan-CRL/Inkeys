@@ -1,23 +1,47 @@
 ﻿#include "IdtD2DPreparation.h"
 
-CComPtr<ID2D1Factory1> d2dFactory1;
+ComPtr<ID2D1Factory1> d2dFactory1;
 
-CComPtr<IDWriteFactory1> dWriteFactory1;
-CComPtr<IDWriteFontCollection> dWriteFontCollection;
+ComPtr<IDWriteFactory1> dWriteFactory1;
+ComPtr<IDWriteFontCollection> dWriteFontCollection;
 
-CComPtr<ID3D11Device> d3dDevice_WARP;
-CComPtr<ID2D1Device> d2dDevice_WARP;
+ComPtr<ID3D11Device> d3dDevice_WARP;
+ComPtr<ID2D1Device> d2dDevice_WARP;
 
-void D2DStarup()
+HRESULT D2DStarup()
 {
-	// 创建 D2D1.1 工厂
-	ID2D1Factory1* tmpFactory = nullptr;
-	D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, __uuidof(ID2D1Factory1), NULL, (IID_PPV_ARGS(&tmpFactory)));
-	d2dFactory1.Attach(tmpFactory);
+	auto resetState = []()
+		{
+			d2dDevice_WARP.Reset();
+			d3dDevice_WARP.Reset();
+			dWriteFontCollection.Reset();
+			dWriteFactory1.Reset();
+			d2dFactory1.Reset();
+		};
 
-	IDWriteFactory1* tmpWriteFactory = nullptr;
-	DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory1), reinterpret_cast<IUnknown**>(&tmpWriteFactory));
-	dWriteFactory1.Attach(tmpWriteFactory);
+	HRESULT hr = D2D1CreateFactory(
+		D2D1_FACTORY_TYPE_MULTI_THREADED,
+		__uuidof(ID2D1Factory1),
+		NULL,
+		reinterpret_cast<void**>(d2dFactory1.ReleaseAndGetAddressOf())
+	);
+	if (FAILED(hr))
+	{
+		resetState();
+		return hr;
+	}
+
+	// 创建 D2D1.1 工厂
+	hr = DWriteCreateFactory(
+		DWRITE_FACTORY_TYPE_SHARED,
+		__uuidof(IDWriteFactory1),
+		reinterpret_cast<IUnknown**>(dWriteFactory1.ReleaseAndGetAddressOf())
+	);
+	if (FAILED(hr))
+	{
+		resetState();
+		return hr;
+	}
 
 	// 初始化 DC
 	{
@@ -30,7 +54,7 @@ void D2DStarup()
 			D3D_FEATURE_LEVEL_11_0,
 		};
 
-		D3D11CreateDevice(
+		hr = D3D11CreateDevice(
 			nullptr,                    // 指定 nullptr 使用默认适配器
 			D3D_DRIVER_TYPE_WARP,       // **关键：使用 WARP 软件渲染器**
 			nullptr,                    // 没有软件模块
@@ -38,20 +62,39 @@ void D2DStarup()
 			featureLevels,              // 功能级别数组
 			ARRAYSIZE(featureLevels),   // 数组大小
 			D3D11_SDK_VERSION,          // SDK 版本
-			&d3dDevice_WARP,            // 返回创建的设备
+			d3dDevice_WARP.ReleaseAndGetAddressOf(),            // 返回创建的设备
 			nullptr,                    // 返回实际的功能级别
 			nullptr                     // 返回设备上下文 (我们不需要)
 		);
+		if (FAILED(hr))
+		{
+			resetState();
+			return hr;
+		}
 
-		CComPtr<IDXGIDevice> dxgiDevice;
-		d3dDevice_WARP.QueryInterface(&dxgiDevice);
+		ComPtr<IDXGIDevice> dxgiDevice;
+		hr = d3dDevice_WARP.As(&dxgiDevice);
+		if (FAILED(hr))
+		{
+			resetState();
+			return hr;
+		}
 
-		d2dFactory1->CreateDevice(dxgiDevice, &d2dDevice_WARP);
+		hr = d2dFactory1->CreateDevice(dxgiDevice.Get(), d2dDevice_WARP.ReleaseAndGetAddressOf());
+		if (FAILED(hr))
+		{
+			resetState();
+			return hr;
+		}
 	}
+
+	return S_OK;
 }
 void D2DShutdown()
 {
-	dWriteFontCollection.Release();
-	dWriteFactory1.Release();
-	d2dFactory1.Release();
+	d2dDevice_WARP.Reset();
+	d3dDevice_WARP.Reset();
+	dWriteFontCollection.Reset();
+	dWriteFactory1.Reset();
+	d2dFactory1.Reset();
 }

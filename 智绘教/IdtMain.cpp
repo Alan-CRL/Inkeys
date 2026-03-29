@@ -1117,7 +1117,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 	// 界面绘图库初始化
 	{
-		D2DStarup();
+		HRESULT hr = D2DStarup();
+		if (FAILED(hr))
+		{
+			if (IDTLogger) IDTLogger->error("[主线程][IdtMain] 界面绘图库初始化失败, hr=0x{:08X}", static_cast<unsigned int>(hr));
+			return 0;
+		}
 
 		IDTLogger->info("[主线程][IdtMain] 界面绘图库初始化完成");
 	}
@@ -1170,12 +1175,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 				for (UINT32 i = 0; i < familyCount; ++i)
 				{
-					CComPtr<IDWriteFontFamily> fontFamily;
+					ComPtr<IDWriteFontFamily> fontFamily;
 					HRESULT hr = dWriteFontCollection->GetFontFamily(i, &fontFamily);
 					if (FAILED(hr)) continue;
 
 					// 获取家族名
-					CComPtr<IDWriteLocalizedStrings> familyNames;
+					ComPtr<IDWriteLocalizedStrings> familyNames;
 					hr = fontFamily->GetFamilyNames(&familyNames);
 					if (FAILED(hr)) continue;
 
@@ -1199,7 +1204,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 					UINT32 fontCount = fontFamily->GetFontCount();
 					for (UINT32 j = 0; j < fontCount; ++j)
 					{
-						CComPtr<IDWriteFont> font;
+						ComPtr<IDWriteFont> font;
 						hr = fontFamily->GetFont(j, &font);
 						if (FAILED(hr)) continue;
 

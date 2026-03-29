@@ -63,7 +63,7 @@
 #include <mutex>
 #include <shared_mutex>
 #include <variant>
-#include <atlbase.h>
+#include <wrl/client.h>
 
 // 日志类
 #define SPDLOG_WCHAR_FILENAMES
@@ -94,6 +94,7 @@
 
 using namespace std;
 using namespace Gdiplus;
+using Microsoft::WRL::ComPtr;
 
 #define HiBeginDraw() BEGIN_TASK()
 #define HiEndDraw() END_TASK(); REDRAW_WINDOW()
