@@ -19,5 +19,6 @@
 
 # Project-local cache
 /packages/
+/Package/
 /智绘教/Cache/
 /PptCOM/Cache/

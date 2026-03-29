@@ -1063,10 +1063,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// I18N初始化
 	{
-		// 先读取完整性的英语文件，在读取配置指定的语言文件
-		// 这样如果配置文件缺少某项也能用英语补齐
-		I18n::load(1, L"JSON", L"en-US");
-
+		// 默认以 zh-CN 作为完整兜底语言，再叠加配置指定的语言
 		if (setlist.selectLanguage == 1) I18n::load(1, L"JSON", L"zh-CN");
 		else if (setlist.selectLanguage == 2) I18n::load(1, L"JSON", L"zh-TW");
 		else I18n::load(1, L"JSON", L"en-US");

@@ -1,4 +1,4 @@
-﻿// 你可以在此文件中使用 // 作为行注释，但块注释和尾随逗号等其他 JSONC 功能不受支持。
+// 你可以在此文件中使用 // 作为行注释，但块注释和尾随逗号等其他 JSONC 功能不受支持。
 // You can use // as line comments in this file, but other JSONC features such as block comments and trailing commas are not supported.
 {
   "Language": "zh-CN",
@@ -576,4 +576,4 @@
       "UpdateNow": "更新到最新版本"
     }
   }
-} 
+}

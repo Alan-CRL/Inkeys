@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
-VisualStudioVersion = 18.3.11218.70 d18.3
+VisualStudioVersion = 18.3.11218.70
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "智绘教", "智绘教\智绘教.vcxproj", "{C74D4D04-F81C-42FE-8D90-7042BA3BB8A0}"
 	ProjectSection(ProjectDependencies) = postProject
@@ -9,6 +9,15 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "智绘教", "智绘教\智�
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PptCOM", "PptCOM\PptCOM.csproj", "{A7B02228-179F-4B8E-BA8F-82D50066FB66}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "I18n", "I18n", "{01FF294F-FEED-47F7-8DAC-2E1108D7E8F6}"
+	ProjectSection(SolutionItems) = preProject
+		智绘教\src\i18n\en-US.jsonc = 智绘教\src\i18n\en-US.jsonc
+		Scripts\i18n.ps1 = Scripts\i18n.ps1
+		智绘教\IdtI18nKeys.g.h = 智绘教\IdtI18nKeys.g.h
+		智绘教\src\i18n\zh-CN.jsonc = 智绘教\src\i18n\zh-CN.jsonc
+		智绘教\src\i18n\zh-TW.jsonc = 智绘教\src\i18n\zh-TW.jsonc
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

@@ -669,9 +669,6 @@
     <None Include="additional\imgui\CustomShaders\imgui_vs.cso" />
     <None Include="exe\DesktopDrawpadBlocker.exe" />
     <None Include="PptCOM.dll" />
-    <None Include="src\i18n\en-US.jsonc" />
-    <None Include="src\i18n\zh-CN.jsonc" />
-    <None Include="src\i18n\zh-TW.jsonc" />
     <None Include="src\ui1.bin" />
     <None Include="src\UI\barBrush1.svg" />
     <None Include="src\UI\barBursh1.svg" />

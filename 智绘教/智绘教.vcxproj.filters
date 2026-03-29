@@ -965,9 +965,6 @@
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <None Include="src\i18n\zh-CN.jsonc" />
-    <None Include="src\i18n\en-US.jsonc" />
-    <None Include="src\i18n\zh-TW.jsonc" />
     <None Include="src\ui1.bin">
       <Filter>资源文件</Filter>
     </None>
