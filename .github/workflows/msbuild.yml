@@ -37,7 +37,7 @@ jobs:
         id: check_idt_release
         shell: pwsh
         run: |
-          $file = "智绘教/IdtMain.h"
+          $file = "Inkeys/IdtMain.h"
           $found = Select-String -Path $file -Pattern '^#define IDT_RELEASE$'
           if (-not $found) 
           {
@@ -98,7 +98,7 @@ jobs:
         Copy-Item -Path "$tempPath\v4.0" -Destination $targetParent -Recurse -Force
 
     - name: Restore NuGet packages
-      run: nuget restore "智绘教.sln"
+      run: nuget restore "InkeysRepo.sln"
 
     - name: 填充 CI/CD 变量
       shell: pwsh
@@ -121,7 +121,7 @@ jobs:
             wstring msBuildVersion = L"{{MSBUILDVER}}";
           } settingCICD;
       run: |
-        $file = '智绘教\Inkeys\UI\Setting\Setting.cpp'
+        $file = 'Inkeys\Inkeys\UI\Setting\Setting.cpp'
         $content = Get-Content $file
       
         $pattern = '(?ms)^\s*// signal1.*?\s*// signal1'
@@ -150,8 +150,8 @@ jobs:
     - name: 写入 RC 版本号
       shell: pwsh
       run: |
-        $sourceFile = '智绘教\IdtMain.cpp'
-        $rcFile = '智绘教\智绘教.rc'
+        $sourceFile = 'Inkeys\IdtMain.cpp'
+        $rcFile = 'Inkeys\Inkeys.rc'
 
         $sourceContent = Get-Content $sourceFile -Raw
         $versionMatch = [regex]::Match($sourceContent, '(?m)^wstring editionVersion = L"([^"]+)";')
@@ -182,7 +182,7 @@ jobs:
       run: .\vcpkg\bootstrap-vcpkg.bat
       
     - name: Build Inkeys
-      run: msbuild "智绘教.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /p:PlatformToolset=v143 /verbosity:minimal
+      run: msbuild "InkeysRepo.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /p:PlatformToolset=v143 /verbosity:minimal
       shell: cmd
     
     - name: Upload exe[unsigned] artifact
@@ -213,7 +213,7 @@ jobs:
         id: softwareDate
         shell: pwsh
         run: |
-          $file = '智绘教\IdtMain.cpp'
+          $file = 'Inkeys\IdtMain.cpp'
 
           # 读取所有行，匹配特定前缀
           $line = Get-Content $file | Where-Object { $_ -match '^wstring editionDate = L\"([^\"]+)\";' }
@@ -238,7 +238,7 @@ jobs:
         id: softwareVersion
         shell: pwsh
         run: |
-          $file = '智绘教\IdtMain.cpp'
+          $file = 'Inkeys\IdtMain.cpp'
           $content = Get-Content $file -Raw
           $match = [regex]::Match($content, '(?m)^wstring editionVersion = L"([^"]+)";')
 

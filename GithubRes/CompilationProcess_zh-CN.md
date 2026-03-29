@@ -1,10 +1,10 @@
 # 编译流程
 
-对于一般的构建需求来说，你只需要构建 `智绘教.vcxproj` 即可，而该项目有一个附属项目 `PptCOM.csproj` 是 智绘教Inkeys 的 PPT 联动模块。  
-`智绘教.vcxproj` 依赖于 `PptCOM.csproj` 生成的类库（dll/tlb），但 `PptCOM.csproj` 已经被编译好了，可以直接构建 `智绘教.vcxproj`。这意味着只需要 C++ 桌面环境，而不用准备 C# 环境。
-**注意：如果只需要编译 `智绘教.vcxproj` 你需要在 `解决方案配置->项目依赖项->智绘教` 中取勾 `PptCOM`！**
+对于一般的构建需求来说，你只需要构建 `Inkeys.vcxproj` 即可，而该项目有一个附属项目 `PptCOM.csproj` 是 智绘教Inkeys 的 PPT 联动模块。
+`Inkeys.vcxproj` 依赖于 `PptCOM.csproj` 生成的类库（dll/tlb），但 `PptCOM.csproj` 已经被编译好了，可以直接构建 `Inkeys.vcxproj`。这意味着只需要 C++ 桌面环境，而不用准备 C# 环境。
+**注意：如果只需要编译 `Inkeys.vcxproj` 你需要在 `解决方案配置->项目依赖项->Inkeys` 中取勾 `PptCOM`！**
 
-### 编译主项目 `智绘教.vcxproj`
+### 编译主项目 `Inkeys.vcxproj`
 智绘教Inkeys 采用完全开源方式，所有源码和资源全部开源
 
 #### 准备环境
@@ -41,13 +41,13 @@ git submodule update --init --recursive
 ```
 **不需要** `vcpkg integrate install`  
 
-4. 使用 Visual Studio 2022/2026 打开 `智绘教.sln`
+4. 使用 Visual Studio 2022/2026 打开 `InkeysRepo.sln`
 
 > 在 Visual Studio 2026 中编译 Inkeys，务必保持 MSVC v143 编译配置集，而不是升级到 MSVC v145。
 
-5. 选择 `智绘教` 项目
+5. 选择 `Inkeys` 项目
 6. 切换为 `Release | Win32` 构建配置（按需调整生成架构，如 `x64` 和 `Arm64`）
-7. 点击 `生成->Build 智绘教` 即可
+7. 点击 `生成->Build Inkeys` 即可
 
 > 首次切到某个平台构建时，vcpkg 会自动下载/编译依赖，第一次可能较久；之后会复用缓存。
 

@@ -727,7 +727,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="智绘教.rc">
+    <ResourceCompile Include="Inkeys.rc">
       <Filter>资源文件</Filter>
     </ResourceCompile>
   </ItemGroup>

@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
 	[Parameter(Position = 0)]
 	[ValidateSet('check', 'sync')]
@@ -9,8 +9,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$I18nDir = Join-Path $RepoRoot '智绘教/src/i18n'
-$HeaderPath = Join-Path $RepoRoot '智绘教/IdtI18nKeys.g.h'
+$I18nDir = Join-Path $RepoRoot 'Inkeys/src/i18n'
+$HeaderPath = Join-Path $RepoRoot 'Inkeys/IdtI18nKeys.g.h'
 $BaseLanguage = 'zh-CN'
 $BasePath = Join-Path $I18nDir "$BaseLanguage.jsonc"
 
@@ -589,3 +589,4 @@ switch ($Command) {
 	'sync' { Invoke-I18nSync }
 	default { throw "Unsupported command: $Command" }
 }
+
