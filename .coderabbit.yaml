@@ -1,0 +1,19 @@
+# .coderabbit.yaml
+language: "zh-CN"
+
+reviews:
+  review_status: true
+
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 20
+    fail_commit_status: true
+    review_details: true
+    base_branches:
+      - "main"
+      - "inkeys1-final"
+      - "inkeys2-final"
+      - "canary"
+      - "staging"
