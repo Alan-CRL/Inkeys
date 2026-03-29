@@ -8,6 +8,7 @@ module;
 #include "../../../IdtDrawpad.h"
 #include "../../../IdtHistoricalDrawpad.h"
 #include "../../../IdtI18n.h"
+#include "../../../IdtI18nKeys.g.h"
 #include "../../../IdtImage.h"
 #include "../../../IdtMagnification.h"
 #include "../../../IdtOther.h"
@@ -979,7 +980,7 @@ void SettingMain(stop_token sT)
 					ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 					ImGui::SetCursorPos({ 20.0f * settingGlobalScale,14.0f * settingGlobalScale });
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
-					ImGui::TextUnformatted(("\ue713   " + IA("SettingsUI/N")).c_str());
+					ImGui::TextUnformatted(("\ue713   " + IA(I18nKey.SettingsUI.N)).c_str());
 
 					ImFontMain->Scale = 0.3f, PushFontNum++, ImGui::PushFont(ImFontMain);
 					ImGui::SetCursorPos({ 914 * settingGlobalScale,0.0f * settingGlobalScale });
@@ -1034,7 +1035,7 @@ void SettingMain(stop_token sT)
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(("   \ue80f   " + IA("SettingsUI/Home/N")).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab1;
+						if (ImGui::Button(("   \ue80f   " + IA(I18nKey.SettingsUI.Home.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab1;
 					}
 
 					// 语言
@@ -1062,7 +1063,7 @@ void SettingMain(stop_token sT)
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(("   \uf2b7   " + IA("SettingsUI/Language/N")).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::Language;
+						if (ImGui::Button(("   \uf2b7   " + IA(I18nKey.SettingsUI.Language.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::Language;
 					}
 
 					// 软件配置
@@ -1089,7 +1090,7 @@ void SettingMain(stop_token sT)
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(("   \ue81e   " + IA("SettingsUI/Configuration/N")).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tabConfiguration;
+						if (ImGui::Button(("   \ue81e   " + IA(I18nKey.SettingsUI.Configuration.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tabConfiguration;
 					}
 
 					// 软件版本
@@ -1116,7 +1117,7 @@ void SettingMain(stop_token sT)
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(("   \ue946   " + IA("SettingsUI/Version/N")).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab6;
+						if (ImGui::Button(("   \ue946   " + IA(I18nKey.SettingsUI.Version.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab6;
 					}
 
 					// --------------------
@@ -1156,7 +1157,7 @@ void SettingMain(stop_token sT)
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(("   \ue7b8   " + IA("SettingsUI/Regular/N")).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab2;
+						if (ImGui::Button(("   \ue7b8   " + IA(I18nKey.SettingsUI.Regular.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab2;
 					}
 
 					// 绘制
@@ -1183,7 +1184,7 @@ void SettingMain(stop_token sT)
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(("   \uee56   " + IA("SettingsUI/Draw/N")).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab3;
+						if (ImGui::Button(("   \uee56   " + IA(I18nKey.SettingsUI.Draw.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab3;
 					}
 
 					// 预设
@@ -1210,7 +1211,7 @@ void SettingMain(stop_token sT)
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(("   \uf259   " + IA("SettingsUI/Preset/N")).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tabPreset;
+						if (ImGui::Button(("   \uf259   " + IA(I18nKey.SettingsUI.Preset.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tabPreset;
 					}
 
 					// 插件
@@ -1237,7 +1238,7 @@ void SettingMain(stop_token sT)
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(("   \ue74c   " + IA("SettingsUI/PlugIn/N")).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }))
+						if (ImGui::Button(("   \ue74c   " + IA(I18nKey.SettingsUI.PlugIn.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }))
 						{
 							settingPlugInTab = settingPlugInTabEnum::tabPlug1;
 							settingTab = settingTabEnum::tab4;
@@ -1269,7 +1270,7 @@ void SettingMain(stop_token sT)
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(("   \ue70b   " + IA("SettingsUI/Component/N")).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }))
+						if (ImGui::Button(("   \ue70b   " + IA(I18nKey.SettingsUI.Component.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }))
 						{
 							settingTab = settingTabEnum::tabComponent;
 						}
@@ -1299,7 +1300,7 @@ void SettingMain(stop_token sT)
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(("   \ue765   " + IA("SettingsUI/HotKey/N")).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab5;
+						if (ImGui::Button(("   \ue765   " + IA(I18nKey.SettingsUI.HotKey.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab5;
 					}
 
 					// 实验选项
@@ -1356,7 +1357,7 @@ void SettingMain(stop_token sT)
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(("   \ue716   " + IA("SettingsUI/Community/N")).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }))
+						if (ImGui::Button(("   \ue716   " + IA(I18nKey.SettingsUI.Community.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }))
 						{
 							if (I18n::identifying == L"zh-CN") ShellExecuteW(0, 0, L"https://www.inkeys.top/community.html", 0, 0, SW_SHOW);
 							else ShellExecuteW(0, 0, L"https://en.inkeys.top/community.html", 0, 0, SW_SHOW);
@@ -1387,7 +1388,7 @@ void SettingMain(stop_token sT)
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(("   \ue789   " + IA("SettingsUI/Sponsor/N")).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab8;
+						if (ImGui::Button(("   \ue789   " + IA(I18nKey.SettingsUI.Sponsor.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale })) settingTab = settingTabEnum::tab8;
 					}
 
 					// --------------------
@@ -1415,7 +1416,7 @@ void SettingMain(stop_token sT)
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(("   \ue72c   " + IA("SettingsUI/RestartSoftware/N")).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }))
+						if (ImGui::Button(("   \ue72c   " + IA(I18nKey.SettingsUI.RestartSoftware.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }))
 						{
 							test.select = false;
 							RestartProgram();
@@ -1434,7 +1435,7 @@ void SettingMain(stop_token sT)
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-						if (ImGui::Button(("   \ue711   " + IA("SettingsUI/ExitSoftware/N")).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }))
+						if (ImGui::Button(("   \ue711   " + IA(I18nKey.SettingsUI.ExitSoftware.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }))
 						{
 							test.select = false;
 							CloseProgram();
@@ -1466,7 +1467,7 @@ void SettingMain(stop_token sT)
 						}
 
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.5f, 0.5f));
-						if (ImGui::Button(IA("SettingsUI/DebugSoftware/N").c_str(), { 150.0f * settingGlobalScale,30.0f * settingGlobalScale })) settingTab = settingTabEnum::tab9;
+						if (ImGui::Button(IA(I18nKey.SettingsUI.DebugSoftware.N).c_str(), { 150.0f * settingGlobalScale,30.0f * settingGlobalScale })) settingTab = settingTabEnum::tab9;
 					}
 
 					{
@@ -1500,7 +1501,7 @@ void SettingMain(stop_token sT)
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Home/Prompt").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Home.Prompt).c_str());
 						}
 
 						{
@@ -1611,7 +1612,7 @@ void SettingMain(stop_token sT)
 							{
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 0.7f));
-								ImGui::TextUnformatted(IA("SettingsUI/Home/Developer").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Home.Developer).c_str());
 							}
 
 							{
@@ -1648,12 +1649,12 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ Cx + 500.0f * settingGlobalScale,Cy + 393.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-								ImGui::TextUnformatted(IA("SettingsUI/Home/Group").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Home.Group).c_str());
 
 								ImGui::SetCursorPos({ Cx + 500.0f * settingGlobalScale,Cy + 418.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 0.7f));
-								if (ImGui::TextLink(IA("SettingsUI/Home/GroupE").c_str()))
+								if (ImGui::TextLink(IA(I18nKey.SettingsUI.Home.GroupE).c_str()))
 								{
 									if (I18n::identifying == L"zh-CN") ShellExecuteW(0, 0, L"https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6", 0, 0, SW_SHOW);
 									else ShellExecuteW(0, 0, L"https://github.com/Alan-CRL/Inkeys/discussions", 0, 0, SW_SHOW);
@@ -1668,7 +1669,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ Cx + 500.0f * settingGlobalScale,Cy + 462.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-								if (ImGui::TextLink(IA("SettingsUI/Home/BilibiliChannel").c_str()))
+								if (ImGui::TextLink(IA(I18nKey.SettingsUI.Home.BilibiliChannel).c_str()))
 								{
 									ShellExecuteW(0, 0, L"https://space.bilibili.com/1330313497", 0, 0, SW_SHOW);
 								}
@@ -1682,7 +1683,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ Cx + 500.0f * settingGlobalScale,Cy + 515.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-								if (ImGui::TextLink(IA("SettingsUI/Home/FeedBack").c_str()))
+								if (ImGui::TextLink(IA(I18nKey.SettingsUI.Home.FeedBack).c_str()))
 								{
 									ShellExecuteW(0, 0, L"https://www.wjx.cn/vm/mqNTTRL.aspx#", 0, 0, SW_SHOW);
 								}
@@ -1727,7 +1728,7 @@ void SettingMain(stop_token sT)
 					{
 						ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-						ImGui::TextUnformatted(IA("SettingsUI/Language/N").c_str());
+						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Language.N).c_str());
 					}
 
 					{
@@ -1741,7 +1742,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Language/UI/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Language.UI.N).c_str());
 						}
 
 						{
@@ -1756,13 +1757,13 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Language/UI/Select").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Language.UI.Select).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Language/UI/SelectE").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ (730.0f - 200.0f) * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -1783,15 +1784,15 @@ void SettingMain(stop_token sT)
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f * settingGlobalScale, 8.0f * settingGlobalScale));
 
 								//vector<char*> vec;
-								//vec.emplace_back(_strdup((IA("SettingsUI/Language/UI/Language/en-US")).c_str()));
-								//vec.emplace_back(_strdup((IA("SettingsUI/Language/UI/Language/zh-CN")).c_str()));
-								//vec.emplace_back(_strdup((IA("SettingsUI/Language/UI/Language/zh-TW")).c_str()));
+								//vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Language.UI.Language.en_US)).c_str()));
+								//vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Language.UI.Language.zh_CN)).c_str()));
+								//vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Language.UI.Language.zh_TW)).c_str()));
 								// TODO
 
 								vector<string> vec;
-								vec.emplace_back(IA("SettingsUI/Language/UI/Language/en-US"));
-								vec.emplace_back(IA("SettingsUI/Language/UI/Language/zh-CN"));
-								vec.emplace_back(IA("SettingsUI/Language/UI/Language/zh-TW"));
+								vec.emplace_back(IA(I18nKey.SettingsUI.Language.UI.Language.en_US));
+								vec.emplace_back(IA(I18nKey.SettingsUI.Language.UI.Language.zh_CN));
+								vec.emplace_back(IA(I18nKey.SettingsUI.Language.UI.Language.zh_TW));
 
 								{
 									int item_count = vec.size();
@@ -1818,7 +1819,7 @@ void SettingMain(stop_token sT)
 												else if (setlist.selectLanguage == 2) I18n::load(1, L"JSON", L"zh-TW");
 												else I18n::load(1, L"JSON", L"en-US");
 
-												if (MessageBox(setting_window, IW("SettingsUI/Language/UI/Warn").c_str(), L"Inkeys Tips | 智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) RestartProgram();
+												if (MessageBox(setting_window, IW(I18nKey.SettingsUI.Language.UI.Warn).c_str(), L"Inkeys Tips | 智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) RestartProgram();
 											}
 										}
 										if (is_selected) ImGui::SetItemDefaultFocus();
@@ -1870,7 +1871,7 @@ void SettingMain(stop_token sT)
 					{
 						ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-						ImGui::TextUnformatted(IA("SettingsUI/Configuration/N").c_str());
+						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Configuration.N).c_str());
 					}
 
 					{
@@ -1884,7 +1885,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Configuration/Clean/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Configuration.Clean.N).c_str());
 						}
 
 						{
@@ -1899,7 +1900,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Configuration/Clean/Enable").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Configuration.Clean.Enable).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -1938,7 +1939,7 @@ void SettingMain(stop_token sT)
 									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-									ImGui::TextWrapped(IA("SettingsUI/Configuration/Clean/EnableE").c_str());
+									ImGui::TextWrapped(IA(I18nKey.SettingsUI.Configuration.Clean.EnableE).c_str());
 								}
 
 								{
@@ -1975,7 +1976,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Configuration/CanvasSave/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Configuration.CanvasSave.N).c_str());
 						}
 
 						{
@@ -1990,13 +1991,13 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Configuration/CanvasSave/Enable").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Configuration.CanvasSave.Enable).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Configuration/CanvasSave/EnableE").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Configuration.CanvasSave.EnableE).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
@@ -2042,13 +2043,13 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Configuration/CanvasSave/SaveTime/N").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Configuration.CanvasSave.SaveTime.N).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Configuration/CanvasSave/SaveTime/E").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Configuration.CanvasSave.SaveTime.E).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ (730.0f - 200.0f) * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -2069,12 +2070,12 @@ void SettingMain(stop_token sT)
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f * settingGlobalScale, 8.0f * settingGlobalScale));
 
 								vector<char*> vec;
-								vec.emplace_back(_strdup((IA("SettingsUI/Configuration/CanvasSave/SaveTime/1d")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Configuration/CanvasSave/SaveTime/3d")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Configuration/CanvasSave/SaveTime/5d")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Configuration/CanvasSave/SaveTime/10d")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Configuration/CanvasSave/SaveTime/30d")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Configuration/CanvasSave/SaveTime/Never")).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Configuration.CanvasSave.SaveTime.K_1d)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Configuration.CanvasSave.SaveTime.K_3d)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Configuration.CanvasSave.SaveTime.K_5d)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Configuration.CanvasSave.SaveTime.K_10d)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Configuration.CanvasSave.SaveTime.K_30d)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Configuration.CanvasSave.SaveTime.Never)).c_str()));
 
 								{
 									int item_count = vec.size();
@@ -2147,7 +2148,7 @@ void SettingMain(stop_token sT)
 					{
 						ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-						ImGui::TextUnformatted(IA("SettingsUI/Version/N").c_str());
+						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Version.N).c_str());
 					}
 
 					if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNew)
@@ -2168,7 +2169,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPos({ 60.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Version/ManualUpdate/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Version.ManualUpdate.N).c_str());
 						}
 						{
 							ImGui::SetCursorPos({ 630.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
@@ -2178,7 +2179,7 @@ void SettingMain(stop_token sT)
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
-							if (ImGui::Button(IA("SettingsUI/Version/ManualUpdate/ManualUpdate").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+							if (ImGui::Button(IA(I18nKey.SettingsUI.Version.ManualUpdate.ManualUpdate).c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 							{
 								mandatoryUpdate = true;
 								AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
@@ -2217,7 +2218,7 @@ void SettingMain(stop_token sT)
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextWrapped(IA("SettingsUI/Version/VersionTip").c_str());
+								ImGui::TextWrapped(IA(I18nKey.SettingsUI.Version.VersionTip).c_str());
 							}
 
 							{
@@ -2246,7 +2247,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Version/Info/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Version.Info.N).c_str());
 						}
 
 						{
@@ -2264,13 +2265,13 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPosY(ImGui::GetCursorPosY());
 								wstring text;
 								{
-									text += L"\n" + IW("SettingsUI/Version/Info/ReleaseVersion") + L" " + editionVersion + L"(" + editionDate + L")";
-									text += L"\n" + IW("SettingsUI/Version/Info/ReleaseDate") + L" " + buildTime;
-									text += L"\n" + IW("SettingsUI/Version/Info/ReleaseArch") + L" " + programArchitecture + L" | " + targetArchitecture;
+									text += L"\n" + IW(I18nKey.SettingsUI.Version.Info.ReleaseVersion) + L" " + editionVersion + L"(" + editionDate + L")";
+									text += L"\n" + IW(I18nKey.SettingsUI.Version.Info.ReleaseDate) + L" " + buildTime;
+									text += L"\n" + IW(I18nKey.SettingsUI.Version.Info.ReleaseArch) + L" " + programArchitecture + L" | " + targetArchitecture;
 #ifdef IDT_RELEASE
-									text += L"\n" + IW("SettingsUI/Version/Info/ReleaseTag");
+									text += L"\n" + IW(I18nKey.SettingsUI.Version.Info.ReleaseTag);
 #else
-									text += L"\n" + IW("SettingsUI/Version/Info/DebugTag");
+									text += L"\n" + IW(I18nKey.SettingsUI.Version.Info.DebugTag);
 #endif
 								}
 
@@ -2315,7 +2316,7 @@ void SettingMain(stop_token sT)
 								if (settingCICD.url.empty())
 								{
 									int left_x = 10 * settingGlobalScale, right_x = 760 * settingGlobalScale;
-									string temp = IA("SettingsUI/Version/Info/ManualBuild");
+									string temp = IA(I18nKey.SettingsUI.Version.Info.ManualBuild);
 
 									float text_width = ImGui::CalcTextSize(temp.c_str()).x;
 									float text_indentation = ((right_x - left_x) - text_width) * 0.5f;
@@ -2326,8 +2327,8 @@ void SettingMain(stop_token sT)
 								else
 								{
 									int left_x = 10 * settingGlobalScale, right_x = 760 * settingGlobalScale;
-									string temp = IA("SettingsUI/Version/Info/AutoBuild");
-									string url = IA("SettingsUI/Version/Info/CICDInfo");
+									string temp = IA(I18nKey.SettingsUI.Version.Info.AutoBuild);
+									string url = IA(I18nKey.SettingsUI.Version.Info.CICDInfo);
 
 									float text_width = ImGui::CalcTextSize((temp + url).c_str()).x;
 									float text_indentation = ((right_x - left_x) - text_width) * 0.5f;
@@ -2370,7 +2371,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Version/UserInfo/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Version.UserInfo.N).c_str());
 						}
 
 						{
@@ -2385,14 +2386,14 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Version/UserInfo/CopyUserId").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Version.UserInfo.CopyUserId).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-								ImGui::TextUnformatted((IA("SettingsUI/Version/UserInfo/UserId") + " " + utf16ToUtf8(userId)).c_str());
+								ImGui::TextUnformatted((IA(I18nKey.SettingsUI.Version.UserInfo.UserId) + " " + utf16ToUtf8(userId)).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 630.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -2402,7 +2403,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
-								if (ImGui::Button(IA("Operate/Copy").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+								if (ImGui::Button(IA(I18nKey.Operate.Copy).c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 								{
 									OpenClipboard(NULL); // 打开剪切板
 									EmptyClipboard(); // 清空剪切板
@@ -2442,7 +2443,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Version/Repair/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Version.Repair.N).c_str());
 						}
 
 						{
@@ -2457,14 +2458,14 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Version/Repair/RepairSoftware").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Version.Repair.RepairSoftware).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-								ImGui::TextUnformatted(IA("SettingsUI/Version/Repair/RepairSoftwareE").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Version.Repair.RepairSoftwareE).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 630.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -2474,7 +2475,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
-								if (ImGui::Button(IA("Operate/Repair").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+								if (ImGui::Button(IA(I18nKey.Operate.Repair).c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 								{
 									if (EnableFixWithChangeArchitecture)
 									{
@@ -2509,7 +2510,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Version/Repair/RepairArch").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Version.Repair.RepairArch).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -2556,7 +2557,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Version/Update/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Version.Update.N).c_str());
 						}
 
 						{
@@ -2571,7 +2572,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Version/Update/AutoUpate").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Version.Update.AutoUpate).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -2644,7 +2645,7 @@ void SettingMain(stop_token sT)
 									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-									ImGui::TextWrapped(IA("SettingsUI/Version/Update/ChannelTip").c_str());
+									ImGui::TextWrapped(IA(I18nKey.SettingsUI.Version.Update.ChannelTip).c_str());
 								}
 
 								{
@@ -2674,7 +2675,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Version/Update/Channel/N").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Version.Update.Channel.N).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ (730.0f - 200.0f) * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
@@ -2697,9 +2698,9 @@ void SettingMain(stop_token sT)
 								int UpdateChannelMode;
 
 								vector<char*> vec;
-								vec.emplace_back(_strdup((IA("SettingsUI/Version/Update/Channel/LTS")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Version/Update/Channel/Insider")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Version/Update/Channel/Canary")).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Version.Update.Channel.LTS)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Version.Update.Channel.Insider)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Version.Update.Channel.Canary)).c_str()));
 
 								if (setlist.UpdateChannel == "Insider") UpdateChannelMode = 1;
 								else if (setlist.UpdateChannel == "Canary") UpdateChannelMode = 2;
@@ -2761,13 +2762,13 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Version/Update/Arch/N").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Version.Update.Arch.N).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Version/Update/Arch/E").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Version.Update.Arch.E).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ (730.0f - 200.0f) * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -2788,9 +2789,9 @@ void SettingMain(stop_token sT)
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f * settingGlobalScale, 8.0f * settingGlobalScale));
 
 								vector<char*> vec;
-								vec.emplace_back(_strdup((IA("SettingsUI/Version/Update/Arch/64")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Version/Update/Arch/32")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Version/Update/Arch/Arm64")).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Version.Update.Arch.K_64)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Version.Update.Arch.K_32)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Version.Update.Arch.Arm64)).c_str()));
 
 								int UpdateArchitecture, UpdateArchitectureEcho;
 								if (setlist.updateArchitecture == "win64") UpdateArchitecture = UpdateArchitectureEcho = 0;
@@ -2890,7 +2891,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 40.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/CICD/N").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.CICD.N).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 40.0f * settingGlobalScale, ImGui::GetCursorPosY() });
@@ -2934,7 +2935,7 @@ void SettingMain(stop_token sT)
 						{
 							ImGui::TextUnformatted("");
 
-							string temp = IA("SettingsUI/CICD/Repository") + ": ";
+							string temp = IA(I18nKey.SettingsUI.CICD.Repository) + ": ";
 							string url = utf16ToUtf8(settingCICD.repoUrl);
 
 							int left_x = 20 * settingGlobalScale, right_x = 750 * settingGlobalScale;
@@ -2952,16 +2953,16 @@ void SettingMain(stop_token sT)
 						{
 							wstring text;
 							{
-								text += IW("SettingsUI/CICD/Branch") + L": " + settingCICD.branch + L"\n";
-								text += IW("SettingsUI/CICD/Submitter") + L": " + settingCICD.submitter + L"\n";
-								text += IW("SettingsUI/CICD/BuildTime") + L": " + settingCICD.buildTime + L"\n";
+								text += IW(I18nKey.SettingsUI.CICD.Branch) + L": " + settingCICD.branch + L"\n";
+								text += IW(I18nKey.SettingsUI.CICD.Submitter) + L": " + settingCICD.submitter + L"\n";
+								text += IW(I18nKey.SettingsUI.CICD.BuildTime) + L": " + settingCICD.buildTime + L"\n";
 								text += L"\n";
-								text += IW("SettingsUI/CICD/BuildSystem") + L": " + settingCICD.buildOS + L"\n";
-								text += IW("SettingsUI/CICD/BuildSystemVersion") + L": " + settingCICD.buildOSVersion + L"\n";
-								text += IW("SettingsUI/CICD/RunnerImageSystem") + L": " + settingCICD.buildRunnerImageOS + L"\n";
-								text += IW("SettingsUI/CICD/RunnerImageVersion") + L": " + settingCICD.buildRunnerImageVersion + L"\n";
+								text += IW(I18nKey.SettingsUI.CICD.BuildSystem) + L": " + settingCICD.buildOS + L"\n";
+								text += IW(I18nKey.SettingsUI.CICD.BuildSystemVersion) + L": " + settingCICD.buildOSVersion + L"\n";
+								text += IW(I18nKey.SettingsUI.CICD.RunnerImageSystem) + L": " + settingCICD.buildRunnerImageOS + L"\n";
+								text += IW(I18nKey.SettingsUI.CICD.RunnerImageVersion) + L": " + settingCICD.buildRunnerImageVersion + L"\n";
 								text += L"\n";
-								text += IW("SettingsUI/CICD/MSBuildVersion") + L"\n" + settingCICD.msBuildVersion + L"\n";
+								text += IW(I18nKey.SettingsUI.CICD.MSBuildVersion) + L"\n" + settingCICD.msBuildVersion + L"\n";
 							}
 
 							int left_x = 20 * settingGlobalScale, right_x = 750 * settingGlobalScale;
@@ -3035,7 +3036,7 @@ void SettingMain(stop_token sT)
 					{
 						ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-						ImGui::TextUnformatted(IA("SettingsUI/Regular/N").c_str());
+						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.N).c_str());
 					}
 
 					{
@@ -3049,7 +3050,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Regular/StartUp/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.StartUp.N).c_str());
 						}
 
 						{
@@ -3064,13 +3065,13 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Regular/StartUp/AutoStart").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.StartUp.AutoStart).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Regular/StartUp/AutoStartE").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.StartUp.AutoStartE).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
@@ -3118,14 +3119,14 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Regular/StartUp/Link/N").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.StartUp.Link.N).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-								ImGui::TextUnformatted(IA("SettingsUI/Regular/StartUp/Link/E").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.StartUp.Link.E).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 525.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -3135,7 +3136,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
-								if (ImGui::Button(IA("Operate/Create").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+								if (ImGui::Button(IA(I18nKey.Operate.Create).c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 								{
 									wchar_t desktopPath[MAX_PATH];
 									wstring DesktopPath;
@@ -3144,10 +3145,10 @@ void SettingMain(stop_token sT)
 									{
 										DesktopPath = wstring(desktopPath) + L"\\";
 
-										if (_waccess((DesktopPath + IW("Widget/LnkName") + L".lnk").c_str(), 0) == -1 ||
-											!shortcutAssistant.IsShortcutPointingToDirectory(DesktopPath + IW("Widget/LnkName") + L".lnk", GetCurrentExePath()))
+										if (_waccess((DesktopPath + IW(I18nKey.Widget.LnkName) + L".lnk").c_str(), 0) == -1 ||
+											!shortcutAssistant.IsShortcutPointingToDirectory(DesktopPath + IW(I18nKey.Widget.LnkName) + L".lnk", GetCurrentExePath()))
 										{
-											shortcutAssistant.CreateShortcut(DesktopPath + IW("Widget/LnkName") + L".lnk", GetCurrentExePath());
+											shortcutAssistant.CreateShortcut(DesktopPath + IW(I18nKey.Widget.LnkName) + L".lnk", GetCurrentExePath());
 										}
 									}
 								}
@@ -3160,7 +3161,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
-								if (ImGui::Button(IA("SettingsUI/Regular/StartUp/Link/More").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+								if (ImGui::Button(IA(I18nKey.SettingsUI.Regular.StartUp.Link.More).c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 								{
 									settingPlugInTab = settingPlugInTabEnum::tabPlug3;
 									settingTab = settingTabEnum::tab4;
@@ -3193,7 +3194,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Regular/Appearance/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Appearance.N).c_str());
 						}
 
 						{
@@ -3208,7 +3209,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Regular/Appearance/Theme/N").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Appearance.Theme.N).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ (730.0f - 200.0f) * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
@@ -3229,10 +3230,10 @@ void SettingMain(stop_token sT)
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f * settingGlobalScale, 8.0f * settingGlobalScale));
 
 								vector<char*> vec;
-								vec.emplace_back(_strdup((IA("SettingsUI/Regular/Appearance/Theme/Skip1")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Regular/Appearance/Theme/Skip2")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Regular/Appearance/Theme/Skip3")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Regular/Appearance/Theme/Skip4")).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Regular.Appearance.Theme.Skip1)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Regular.Appearance.Theme.Skip2)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Regular.Appearance.Theme.Skip3)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Regular.Appearance.Theme.Skip4)).c_str()));
 
 								{
 									int item_count = vec.size();
@@ -3286,13 +3287,13 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Regular/Appearance/SettingUIScale/N").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Appearance.SettingUIScale.N).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Regular/Appearance/SettingUIScale/E").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Appearance.SettingUIScale.E).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 435.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -3326,7 +3327,7 @@ void SettingMain(stop_token sT)
 
 									ImGui::BeginTooltip();
 
-									ImGui::TextUnformatted(vformat(IA("SettingsUI/Regular/Appearance/SettingUIScale/Ind"), make_format_args(SettingGlobalScale)).c_str());
+									ImGui::TextUnformatted(vformat(IA(I18nKey.SettingsUI.Regular.Appearance.SettingUIScale.Ind), make_format_args(SettingGlobalScale)).c_str());
 
 									ImGui::EndTooltip();
 								}
@@ -3340,7 +3341,7 @@ void SettingMain(stop_token sT)
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
-								string temp = vformat(IA("SettingsUI/Regular/Appearance/SettingUIScale/Ind"), make_format_args(SettingGlobalScale));
+								string temp = vformat(IA(I18nKey.SettingsUI.Regular.Appearance.SettingUIScale.Ind), make_format_args(SettingGlobalScale));
 								ImVec2 tempVec = ImGui::CalcTextSize(temp.c_str());
 
 								ImGui::SameLine(); ImGui::SetCursorPos({ ImGui::GetCursorPosX() - 15.0f * settingGlobalScale - tempVec.x, cursosPosY + 15.0f * settingGlobalScale + (30.0f * settingGlobalScale - tempVec.y) / 2.0f });
@@ -3373,7 +3374,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Regular/Behavior/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Behavior.N).c_str());
 						}
 
 						{
@@ -3388,7 +3389,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Regular/Behavior/TopWindow/N").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.N).c_str());
 							}
 							cursosPosY = ImGui::GetCursorPosY();
 							{
@@ -3402,7 +3403,7 @@ void SettingMain(stop_token sT)
 									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-									ImGui::TextWrapped(IA("SettingsUI/Regular/Behavior/TopWindow/E").c_str());
+									ImGui::TextWrapped(IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.E).c_str());
 								}
 
 								{
@@ -3433,13 +3434,13 @@ void SettingMain(stop_token sT)
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f * settingGlobalScale, 8.0f * settingGlobalScale));
 
 								vector<char*> vec;
-								vec.emplace_back(_strdup((IA("SettingsUI/Regular/Behavior/TopWindow/100ms")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Regular/Behavior/TopWindow/500ms")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Regular/Behavior/TopWindow/1s")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Regular/Behavior/TopWindow/3s")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Regular/Behavior/TopWindow/5s")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Regular/Behavior/TopWindow/10s")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Regular/Behavior/TopWindow/30s")).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_100ms)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_500ms)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_1s)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_3s)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_5s)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_10s)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_30s)).c_str()));
 
 								{
 									int item_count = vec.size();
@@ -3492,13 +3493,13 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Regular/Behavior/RightClickClose").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Behavior.RightClickClose).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Regular/Behavior/RightClickCloseE").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Behavior.RightClickCloseE).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
@@ -3544,7 +3545,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Regular/Behavior/DrawingRetract").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Behavior.DrawingRetract).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -3584,7 +3585,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Regular/Behavior/ErasingRetract").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Behavior.ErasingRetract).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -3624,7 +3625,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Regular/Behavior/DraggingRetract").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Behavior.DraggingRetract).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -3664,13 +3665,13 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Regular/Behavior/CheckingRetract").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Behavior.CheckingRetract).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Regular/Behavior/CheckingRetractE").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Behavior.CheckingRetractE).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
@@ -3722,7 +3723,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Regular/Tentative/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Tentative.N).c_str());
 						}
 
 						{
@@ -3737,7 +3738,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Regular/Tentative/AvoidFulScreen").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Tentative.AvoidFulScreen).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -3776,7 +3777,7 @@ void SettingMain(stop_token sT)
 									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-									ImGui::TextWrapped(IA("SettingsUI/Regular/Tentative/AvoidFulScreenE").c_str());
+									ImGui::TextWrapped(IA(I18nKey.SettingsUI.Regular.Tentative.AvoidFulScreenE).c_str());
 								}
 
 								{
@@ -3806,13 +3807,13 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Regular/Tentative/SafeMode/N").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.N).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Regular/Tentative/SafeMode/E").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.E).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ (730.0f - 200.0f) * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -3833,10 +3834,10 @@ void SettingMain(stop_token sT)
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f * settingGlobalScale, 8.0f * settingGlobalScale));
 
 								vector<char*> vec;
-								vec.emplace_back(_strdup((IA("SettingsUI/Regular/Tentative/SafeMode/Mode1")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Regular/Tentative/SafeMode/Mode2")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Regular/Tentative/SafeMode/Mode3")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Regular/Tentative/SafeMode/Mode4")).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode1)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode2)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode3)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode4)).c_str()));
 
 								{
 									int item_count = vec.size();
@@ -3911,7 +3912,7 @@ void SettingMain(stop_token sT)
 					{
 						ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-						ImGui::TextUnformatted(IA("SettingsUI/Draw/N").c_str());
+						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.N).c_str());
 					}
 
 					{
@@ -3925,7 +3926,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Draw/Effect/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.Effect.N).c_str());
 						}
 
 						{
@@ -3940,13 +3941,13 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Draw/Effect/Device/N").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.Effect.Device.N).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Draw/Effect/Device/E").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.Effect.Device.E).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ (730.0f - 200.0f) * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -3967,8 +3968,8 @@ void SettingMain(stop_token sT)
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f * settingGlobalScale, 8.0f * settingGlobalScale));
 
 								vector<char*> vec;
-								vec.emplace_back(_strdup((IA("SettingsUI/Draw/Effect/Device/Touch")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Draw/Effect/Device/MousePen")).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Draw.Effect.Device.Touch)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Draw.Effect.Device.MousePen)).c_str()));
 
 								{
 									int item_count = vec.size();
@@ -4029,7 +4030,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Draw/AIDraw/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.AIDraw.N).c_str());
 						}
 
 						{
@@ -4044,13 +4045,13 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Draw/AIDraw/PenUp").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.AIDraw.PenUp).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Draw/AIDraw/PenUpE").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.AIDraw.PenUpE).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
@@ -4090,13 +4091,13 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Draw/AIDraw/PenStay").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.AIDraw.PenStay).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Draw/AIDraw/PenStayE").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.AIDraw.PenStayE).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
@@ -4142,13 +4143,13 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Draw/AIDraw/EndpointAdsorption").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.AIDraw.EndpointAdsorption).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Draw/AIDraw/EndpointAdsorptionE").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.AIDraw.EndpointAdsorptionE).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
@@ -4200,7 +4201,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Draw/DrawBehavior/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.DrawBehavior.N).c_str());
 						}
 
 						{
@@ -4215,7 +4216,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Draw/DrawBehavior/SoomthWriting").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.DrawBehavior.SoomthWriting).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -4268,7 +4269,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Draw/RubberThickness/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.RubberThickness.N).c_str());
 						}
 
 						{
@@ -4283,13 +4284,13 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Draw/RubberThickness/Calc/N").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.RubberThickness.Calc.N).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Draw/RubberThickness/Calc/E").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.RubberThickness.Calc.E).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ (730.0f - 200.0f) * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -4310,9 +4311,9 @@ void SettingMain(stop_token sT)
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f * settingGlobalScale, 8.0f * settingGlobalScale));
 
 								vector<char*> vec;
-								vec.emplace_back(_strdup((IA("SettingsUI/Draw/RubberThickness/Calc/Mode3")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Draw/RubberThickness/Calc/Mode2")).c_str()));
-								vec.emplace_back(_strdup((IA("SettingsUI/Draw/RubberThickness/Calc/Mode1")).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Draw.RubberThickness.Calc.Mode3)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Draw.RubberThickness.Calc.Mode2)).c_str()));
+								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Draw.RubberThickness.Calc.Mode1)).c_str()));
 
 								{
 									int item_count = vec.size();
@@ -4370,7 +4371,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Performance/DrawMode/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Performance.DrawMode.N).c_str());
 						}
 
 						{
@@ -4385,13 +4386,13 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Performance/DrawMode/Prepare/N").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Performance.DrawMode.Prepare.N).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Performance/DrawMode/Prepare/E").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Performance.DrawMode.Prepare.E).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 435.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -4424,7 +4425,7 @@ void SettingMain(stop_token sT)
 
 									ImGui::BeginTooltip();
 
-									ImGui::TextUnformatted(vformat(IA("SettingsUI/Performance/DrawMode/Prepare/Ind"), make_format_args(PreparationQuantity)).c_str());
+									ImGui::TextUnformatted(vformat(IA(I18nKey.SettingsUI.Performance.DrawMode.Prepare.Ind), make_format_args(PreparationQuantity)).c_str());
 
 									ImGui::EndTooltip();
 								}
@@ -4441,7 +4442,7 @@ void SettingMain(stop_token sT)
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
-								string temp = vformat(IA("SettingsUI/Performance/DrawMode/Prepare/Ind"), make_format_args(PreparationQuantity));
+								string temp = vformat(IA(I18nKey.SettingsUI.Performance.DrawMode.Prepare.Ind), make_format_args(PreparationQuantity));
 								ImVec2 tempVec = ImGui::CalcTextSize(temp.c_str());
 
 								ImGui::SameLine(); ImGui::SetCursorPos({ ImGui::GetCursorPosX() - 15.0f * settingGlobalScale - tempVec.x, cursosPosY + 15.0f * settingGlobalScale + (30.0f * settingGlobalScale - tempVec.y) / 2.0f });
@@ -4467,7 +4468,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Performance/DrawMode/SuperDraw").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Performance.DrawMode.SuperDraw).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -4506,7 +4507,7 @@ void SettingMain(stop_token sT)
 									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-									ImGui::TextWrapped(IA("SettingsUI/Performance/DrawMode/SuperDrawE").c_str());
+									ImGui::TextWrapped(IA(I18nKey.SettingsUI.Performance.DrawMode.SuperDrawE).c_str());
 								}
 
 								{
@@ -4542,7 +4543,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Draw/Tentative/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.Tentative.N).c_str());
 						}
 
 						{
@@ -4557,7 +4558,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Draw/Tentative/HideCursor").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.Tentative.HideCursor).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -4596,7 +4597,7 @@ void SettingMain(stop_token sT)
 									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-									ImGui::TextWrapped(IA("SettingsUI/Draw/Tentative/HideCursorE").c_str());
+									ImGui::TextWrapped(IA(I18nKey.SettingsUI.Draw.Tentative.HideCursorE).c_str());
 								}
 
 								{
@@ -4648,7 +4649,7 @@ void SettingMain(stop_token sT)
 					{
 						ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-						ImGui::TextUnformatted(IA("SettingsUI/Preset/N").c_str());
+						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Preset.N).c_str());
 					}
 
 					{
@@ -4662,7 +4663,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Preset/Memory/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Preset.Memory.N).c_str());
 						}
 
 						{
@@ -4677,13 +4678,13 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Preset/Memory/Thickness").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Preset.Memory.Thickness).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Preset/Memory/ThicknessE").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Preset.Memory.ThicknessE).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
@@ -4723,13 +4724,13 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Preset/Memory/Color").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Preset.Memory.Color).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Preset/Memory/ColorE").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Preset.Memory.ColorE).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
@@ -4782,7 +4783,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Preset/Preset/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Preset.Preset.N).c_str());
 						}
 
 						{
@@ -4797,7 +4798,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Preset/Preset/AutoThickness").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Preset.Preset.AutoThickness).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
@@ -4807,7 +4808,7 @@ void SettingMain(stop_token sT)
 								int x = static_cast<int>(stateMode.Pen.Brush1.widthPreset);
 								int y = static_cast<int>(stateMode.Pen.Highlighter1.widthPreset);
 
-								ImGui::TextUnformatted(vformat(IA("SettingsUI/Preset/Preset/AutoThicknessE"), make_format_args(x, y)).c_str());
+								ImGui::TextUnformatted(vformat(IA(I18nKey.SettingsUI.Preset.Preset.AutoThicknessE), make_format_args(x, y)).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
@@ -4854,7 +4855,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Preset/Preset/Pen").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Preset.Preset.Pen).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 225.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
@@ -4889,7 +4890,7 @@ void SettingMain(stop_token sT)
 									ImGui::BeginTooltip();
 
 									int x = static_cast<int>(PresetSetting.DefaultBrush1Width);
-									ImGui::TextUnformatted(vformat(IA("SettingsUI/Preset/Preset/PenInd"), make_format_args(x)).c_str());
+									ImGui::TextUnformatted(vformat(IA(I18nKey.SettingsUI.Preset.Preset.PenInd), make_format_args(x)).c_str());
 
 									ImGui::EndTooltip();
 								}
@@ -4904,7 +4905,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
 								int x = static_cast<int>(PresetSetting.DefaultBrush1Width);
-								string temp = vformat(IA("SettingsUI/Preset/Preset/PenInd"), make_format_args(x));
+								string temp = vformat(IA(I18nKey.SettingsUI.Preset.Preset.PenInd), make_format_args(x));
 								ImVec2 tempVec = ImGui::CalcTextSize(temp.c_str());
 
 								ImGui::SameLine(); ImGui::SetCursorPos({ ImGui::GetCursorPosX() - 15.0f * settingGlobalScale - tempVec.x, cursosPosY + 10.0f * settingGlobalScale + (30.0f * settingGlobalScale - tempVec.y) / 2.0f });
@@ -4924,7 +4925,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted(IA("SettingsUI/Preset/Preset/Highlighter").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Preset.Preset.Highlighter).c_str());
 							}
 							{
 								ImGui::SetCursorPos({ 225.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
@@ -4959,7 +4960,7 @@ void SettingMain(stop_token sT)
 									ImGui::BeginTooltip();
 
 									int x = static_cast<int>(PresetSetting.DefaultHighlighter1Width);
-									ImGui::TextUnformatted(vformat(IA("SettingsUI/Preset/Preset/HighlighterInd"), make_format_args(x)).c_str());
+									ImGui::TextUnformatted(vformat(IA(I18nKey.SettingsUI.Preset.Preset.HighlighterInd), make_format_args(x)).c_str());
 
 									ImGui::EndTooltip();
 								}
@@ -4974,7 +4975,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
 								int x = static_cast<int>(PresetSetting.DefaultHighlighter1Width);
-								string temp = vformat(IA("SettingsUI/Preset/Preset/HighlighterInd"), make_format_args(x));
+								string temp = vformat(IA(I18nKey.SettingsUI.Preset.Preset.HighlighterInd), make_format_args(x));
 								ImVec2 tempVec = ImGui::CalcTextSize(temp.c_str());
 
 								ImGui::SameLine(); ImGui::SetCursorPos({ ImGui::GetCursorPosX() - 15.0f * settingGlobalScale - tempVec.x, cursosPosY + 10.0f * settingGlobalScale + (30.0f * settingGlobalScale - tempVec.y) / 2.0f });
@@ -5025,7 +5026,7 @@ void SettingMain(stop_token sT)
 						{
 							ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/PlugIn/N").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.N).c_str());
 						}
 
 						{
@@ -5042,14 +5043,14 @@ void SettingMain(stop_token sT)
 									ImGui::SetCursorPos({ 60.0f * settingGlobalScale, 20.0f * settingGlobalScale });
 									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-									ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/N").c_str());
+									ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.N).c_str());
 								}
 								{
 									ImGui::SetCursorPos({ 60.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 									{
-										if (pptComVersion.substr(0, 7) == L"Error: ") ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/VersionError").c_str());
+										if (pptComVersion.substr(0, 7) == L"Error: ") ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.VersionError).c_str());
 										else ImGui::TextUnformatted(utf16ToUtf8(pptComVersion).c_str());
 									}
 								}
@@ -5075,7 +5076,7 @@ void SettingMain(stop_token sT)
 										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-										ImGui::TextWrapped(IA("SettingsUI/PlugIn/PPTHelper/E").c_str());
+										ImGui::TextWrapped(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.E).c_str());
 									}
 
 									{
@@ -5108,7 +5109,7 @@ void SettingMain(stop_token sT)
 									ImGui::SetCursorPos({ 60.0f * settingGlobalScale, 20.0f * settingGlobalScale });
 									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-									ImGui::TextUnformatted(IA("SettingsUI/PlugIn/SuperTop/N").c_str());
+									ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.SuperTop.N).c_str());
 								}
 								{
 									ImGui::SetCursorPos({ 60.0f * settingGlobalScale, ImGui::GetCursorPosY() });
@@ -5138,7 +5139,7 @@ void SettingMain(stop_token sT)
 										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-										ImGui::TextWrapped(IA("SettingsUI/PlugIn/SuperTop/E").c_str());
+										ImGui::TextWrapped(IA(I18nKey.SettingsUI.PlugIn.SuperTop.E).c_str());
 									}
 
 									{
@@ -5171,7 +5172,7 @@ void SettingMain(stop_token sT)
 									ImGui::SetCursorPos({ 60.0f * settingGlobalScale, 20.0f * settingGlobalScale });
 									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-									ImGui::TextUnformatted(IA("SettingsUI/PlugIn/DesktopDrawpadBlocker/N").c_str());
+									ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.DesktopDrawpadBlocker.N).c_str());
 								}
 								{
 									ImGui::SetCursorPos({ 60.0f * settingGlobalScale, ImGui::GetCursorPosY() });
@@ -5201,7 +5202,7 @@ void SettingMain(stop_token sT)
 										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-										ImGui::TextWrapped(IA("SettingsUI/PlugIn/DesktopDrawpadBlocker/E").c_str());
+										ImGui::TextWrapped(IA(I18nKey.SettingsUI.PlugIn.DesktopDrawpadBlocker.E).c_str());
 									}
 
 									{
@@ -5234,7 +5235,7 @@ void SettingMain(stop_token sT)
 									ImGui::SetCursorPos({ 60.0f * settingGlobalScale, 20.0f * settingGlobalScale });
 									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-									ImGui::TextUnformatted(IA("SettingsUI/PlugIn/LnkHelper/N").c_str());
+									ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.LnkHelper.N).c_str());
 								}
 								{
 									ImGui::SetCursorPos({ 60.0f * settingGlobalScale, ImGui::GetCursorPosY() });
@@ -5264,7 +5265,7 @@ void SettingMain(stop_token sT)
 										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-										ImGui::TextWrapped(IA("SettingsUI/PlugIn/LnkHelper/E").c_str());
+										ImGui::TextWrapped(IA(I18nKey.SettingsUI.PlugIn.LnkHelper.E).c_str());
 									}
 
 									{
@@ -5320,14 +5321,14 @@ void SettingMain(stop_token sT)
 									ImGui::SetCursorPos({ 40.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-									ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/N").c_str());
+									ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.N).c_str());
 								}
 								{
 									ImGui::SetCursorPos({ 40.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 									{
-										if (pptComVersion.substr(0, 7) == L"Error: ") ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/VersionError").c_str());
+										if (pptComVersion.substr(0, 7) == L"Error: ") ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.VersionError).c_str());
 										else ImGui::TextUnformatted(utf16ToUtf8(pptComVersion).c_str());
 									}
 								}
@@ -5364,7 +5365,7 @@ void SettingMain(stop_token sT)
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-										ImGui::TextWrapped((IA("SettingsUI/PlugIn/PPTHelper/Error") + utf16ToUtf8(pptComVersion)).c_str());
+										ImGui::TextWrapped((IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Error) + utf16ToUtf8(pptComVersion)).c_str());
 									}
 
 									{
@@ -5406,7 +5407,7 @@ void SettingMain(stop_token sT)
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-										ImGui::TextWrapped(IA("SettingsUI/PlugIn/PPTHelper/Tip").c_str());
+										ImGui::TextWrapped(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tip).c_str());
 									}
 
 									{
@@ -5424,7 +5425,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
-									if (ImGui::Button(IA("SettingsUI/PlugIn/PPTHelper/Solve").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+									if (ImGui::Button(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Solve).c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 									{
 										ShellExecuteW(0, 0, L"https://www.inkeys.top/tutorial/ppt-com", 0, 0, SW_SHOW);
 									}
@@ -5462,7 +5463,7 @@ void SettingMain(stop_token sT)
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-										ImGui::TextWrapped(IA("SettingsUI/PlugIn/PPTHelper/Warn").c_str());
+										ImGui::TextWrapped(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Warn).c_str());
 									}
 
 									{
@@ -5480,7 +5481,7 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
-									if (ImGui::Button(IA("SettingsUI/PlugIn/PPTHelper/Solve").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+									if (ImGui::Button(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Solve).c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 									{
 										ShellExecuteW(0, 0, L"https://www.inkeys.top/tutorial/ppt-admin", 0, 0, SW_SHOW);
 									}
@@ -5505,7 +5506,7 @@ void SettingMain(stop_token sT)
 									ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-									ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/BasicLogic/N").c_str());
+									ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.BasicLogic.N).c_str());
 								}
 
 								{
@@ -5520,7 +5521,7 @@ void SettingMain(stop_token sT)
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/BasicLogic/InkFixation").c_str());
+										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.BasicLogic.InkFixation).c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -5559,7 +5560,7 @@ void SettingMain(stop_token sT)
 											ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-											ImGui::TextWrapped(IA("SettingsUI/PlugIn/PPTHelper/BasicLogic/InkFixationE").c_str());
+											ImGui::TextWrapped(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.BasicLogic.InkFixationE).c_str());
 										}
 
 										{
@@ -5589,13 +5590,13 @@ void SettingMain(stop_token sT)
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/BasicLogic/LoadPage").c_str());
+										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.BasicLogic.LoadPage).c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/BasicLogic/LoadPageE").c_str());
+										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.BasicLogic.LoadPageE).c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
@@ -5648,7 +5649,7 @@ void SettingMain(stop_token sT)
 									ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-									ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/WidgetDisplay/N").c_str());
+									ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.N).c_str());
 								}
 
 								{
@@ -5663,7 +5664,7 @@ void SettingMain(stop_token sT)
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/WidgetDisplay/BottomBoth").c_str());
+										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.BottomBoth).c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -5703,7 +5704,7 @@ void SettingMain(stop_token sT)
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/WidgetDisplay/MiddleBoth").c_str());
+										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.MiddleBoth).c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -5743,7 +5744,7 @@ void SettingMain(stop_token sT)
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/WidgetDisplay/BottomMiddle").c_str());
+										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.BottomMiddle).c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -5796,7 +5797,7 @@ void SettingMain(stop_token sT)
 									ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-									ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/WidgetPosition/N").c_str());
+									ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetPosition.N).c_str());
 								}
 
 								{
@@ -5811,7 +5812,7 @@ void SettingMain(stop_token sT)
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/WidgetPosition/Reset").c_str());
+										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetPosition.Reset).c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 630.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
@@ -5821,7 +5822,7 @@ void SettingMain(stop_token sT)
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
-										if (ImGui::Button(IA("SettingsUI/PlugIn/PPTHelper/Reset").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+										if (ImGui::Button(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Reset).c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 										{
 											pptComSetlist.bottomBothWidth = BottomBothWidth = 0;
 											pptComSetlist.bottomBothHeight = BottomBothHeight = 0;
@@ -5853,7 +5854,7 @@ void SettingMain(stop_token sT)
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/WidgetPosition/Remember").c_str());
+										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetPosition.Remember).c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -5906,7 +5907,7 @@ void SettingMain(stop_token sT)
 									ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-									ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/WidgetScale/N").c_str());
+									ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.N).c_str());
 								}
 
 								// Extra1
@@ -5924,7 +5925,7 @@ void SettingMain(stop_token sT)
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/WidgetScale/Page/BottomSideBoth").c_str());
+										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.Page.BottomSideBoth).c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 220.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
@@ -5959,7 +5960,7 @@ void SettingMain(stop_token sT)
 
 											ImGui::BeginTooltip();
 
-											ImGui::TextUnformatted(vformat(IA("SettingsUI/PlugIn/PPTHelper/WidgetScale/Ind"), make_format_args(BottomSideBothWidgetScale)).c_str());
+											ImGui::TextUnformatted(vformat(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind), make_format_args(BottomSideBothWidgetScale)).c_str());
 
 											ImGui::EndTooltip();
 										}
@@ -5979,7 +5980,7 @@ void SettingMain(stop_token sT)
 										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
-										string temp = vformat(IA("SettingsUI/PlugIn/PPTHelper/WidgetScale/Ind"), make_format_args(BottomSideBothWidgetScale)).c_str();
+										string temp = vformat(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind), make_format_args(BottomSideBothWidgetScale)).c_str();
 										ImVec2 tempVec = ImGui::CalcTextSize(temp.c_str());
 
 										ImGui::SameLine(); ImGui::SetCursorPos({ ImGui::GetCursorPosX() - 15.0f * settingGlobalScale - tempVec.x, cursosPosY + 10.0f * settingGlobalScale + (30.0f * settingGlobalScale - tempVec.y) / 2.0f });
@@ -5993,7 +5994,7 @@ void SettingMain(stop_token sT)
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
-										if (ImGui::Button((IA("SettingsUI/PlugIn/PPTHelper/Reset") + "##1").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+										if (ImGui::Button((IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Reset) + "##1").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 										{
 											pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale = 1.0f;
 											if (BottomSideBothWidgetScaleUnifie)
@@ -6025,7 +6026,7 @@ void SettingMain(stop_token sT)
 										}
 
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
-										if (ImGui::Button((IA("SettingsUI/PlugIn/PPTHelper/Sync") + "##1").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+										if (ImGui::Button((IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Sync) + "##1").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 										{
 											if (BottomSideBothWidgetScaleUnifie) BottomSideBothWidgetScaleUnifie = false;
 											else
@@ -6059,7 +6060,7 @@ void SettingMain(stop_token sT)
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/WidgetScale/Page/MiddleSideBoth").c_str());
+										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.Page.MiddleSideBoth).c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 220.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
@@ -6094,7 +6095,7 @@ void SettingMain(stop_token sT)
 
 											ImGui::BeginTooltip();
 
-											ImGui::TextUnformatted(vformat(IA("SettingsUI/PlugIn/PPTHelper/WidgetScale/Ind"), make_format_args(MiddleSideBothWidgetScale)).c_str());
+											ImGui::TextUnformatted(vformat(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind), make_format_args(MiddleSideBothWidgetScale)).c_str());
 
 											ImGui::EndTooltip();
 										}
@@ -6114,7 +6115,7 @@ void SettingMain(stop_token sT)
 										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
-										string temp = vformat(IA("SettingsUI/PlugIn/PPTHelper/WidgetScale/Ind"), make_format_args(MiddleSideBothWidgetScale)).c_str();
+										string temp = vformat(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind), make_format_args(MiddleSideBothWidgetScale)).c_str();
 										ImVec2 tempVec = ImGui::CalcTextSize(temp.c_str());
 
 										ImGui::SameLine(); ImGui::SetCursorPos({ ImGui::GetCursorPosX() - 15.0f * settingGlobalScale - tempVec.x, cursosPosY + 10.0f * settingGlobalScale + (30.0f * settingGlobalScale - tempVec.y) / 2.0f });
@@ -6128,7 +6129,7 @@ void SettingMain(stop_token sT)
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
-										if (ImGui::Button((IA("SettingsUI/PlugIn/PPTHelper/Reset") + "##2").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+										if (ImGui::Button((IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Reset) + "##2").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 										{
 											pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale = 1.0f;
 											if (MiddleSideBothWidgetScaleUnifie)
@@ -6160,7 +6161,7 @@ void SettingMain(stop_token sT)
 										}
 
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
-										if (ImGui::Button((IA("SettingsUI/PlugIn/PPTHelper/Sync") + "##2").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+										if (ImGui::Button((IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Sync) + "##2").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 										{
 											if (MiddleSideBothWidgetScaleUnifie) MiddleSideBothWidgetScaleUnifie = false;
 											else
@@ -6200,7 +6201,7 @@ void SettingMain(stop_token sT)
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/WidgetScale/State/BottomSideMiddle").c_str());
+										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.State.BottomSideMiddle).c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 220.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
@@ -6235,7 +6236,7 @@ void SettingMain(stop_token sT)
 
 											ImGui::BeginTooltip();
 
-											ImGui::TextUnformatted(vformat(IA("SettingsUI/PlugIn/PPTHelper/WidgetScale/Ind"), make_format_args(BottomSideMiddleWidgetScale)).c_str());
+											ImGui::TextUnformatted(vformat(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind), make_format_args(BottomSideMiddleWidgetScale)).c_str());
 
 											ImGui::EndTooltip();
 										}
@@ -6255,7 +6256,7 @@ void SettingMain(stop_token sT)
 										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
-										string temp = vformat(IA("SettingsUI/PlugIn/PPTHelper/WidgetScale/Ind"), make_format_args(BottomSideMiddleWidgetScale)).c_str();
+										string temp = vformat(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind), make_format_args(BottomSideMiddleWidgetScale)).c_str();
 										ImVec2 tempVec = ImGui::CalcTextSize(temp.c_str());
 
 										ImGui::SameLine(); ImGui::SetCursorPos({ ImGui::GetCursorPosX() - 15.0f * settingGlobalScale - tempVec.x, cursosPosY + 10.0f * settingGlobalScale + (30.0f * settingGlobalScale - tempVec.y) / 2.0f });
@@ -6269,7 +6270,7 @@ void SettingMain(stop_token sT)
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
-										if (ImGui::Button((IA("SettingsUI/PlugIn/PPTHelper/Reset") + "##3").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+										if (ImGui::Button((IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Reset) + "##3").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 										{
 											pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = 1.0f;
 											if (BottomSideMiddleWidgetScaleUnifie)
@@ -6301,7 +6302,7 @@ void SettingMain(stop_token sT)
 										}
 
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
-										if (ImGui::Button((IA("SettingsUI/PlugIn/PPTHelper/Sync") + "##3").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+										if (ImGui::Button((IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Sync) + "##3").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 										{
 											if (BottomSideMiddleWidgetScaleUnifie) BottomSideMiddleWidgetScaleUnifie = false;
 											else
@@ -6373,7 +6374,7 @@ void SettingMain(stop_token sT)
 									ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-									ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/Tentative/N").c_str());
+									ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.N).c_str());
 								}
 
 								{
@@ -6388,7 +6389,7 @@ void SettingMain(stop_token sT)
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/PPTHelper/Tentative/CloseWpp").c_str());
+										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.CloseWpp).c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -6427,7 +6428,7 @@ void SettingMain(stop_token sT)
 											ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-											ImGui::TextWrapped(IA("SettingsUI/PlugIn/PPTHelper/Tentative/CloseWppE").c_str());
+											ImGui::TextWrapped(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.CloseWppE).c_str());
 										}
 
 										{
@@ -6499,7 +6500,7 @@ void SettingMain(stop_token sT)
 									ImGui::SetCursorPos({ 40.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-									ImGui::TextUnformatted(IA("SettingsUI/PlugIn/SuperTop/N").c_str());
+									ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.SuperTop.N).c_str());
 								}
 								{
 									ImGui::SetCursorPos({ 40.0f * settingGlobalScale, ImGui::GetCursorPosY() });
@@ -6538,7 +6539,7 @@ void SettingMain(stop_token sT)
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-										ImGui::TextWrapped(IA("SettingsUI/PlugIn/SuperTop/Warn").c_str());
+										ImGui::TextWrapped(IA(I18nKey.SettingsUI.PlugIn.SuperTop.Warn).c_str());
 									}
 
 									{
@@ -6567,7 +6568,7 @@ void SettingMain(stop_token sT)
 									ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-									ImGui::TextUnformatted(IA("SettingsUI/PlugIn/SuperTop/Capability/N").c_str());
+									ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.N).c_str());
 								}
 
 								{
@@ -6582,7 +6583,7 @@ void SettingMain(stop_token sT)
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/SuperTop/Capability/SuperTop").c_str());
+										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTop).c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -6621,8 +6622,8 @@ void SettingMain(stop_token sT)
 											ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-											if (hasSuperTop) ImGui::TextWrapped(IA("SettingsUI/PlugIn/SuperTop/Capability/SuperTopE1").c_str());
-											else ImGui::TextWrapped(IA("SettingsUI/PlugIn/SuperTop/Capability/SuperTopE2").c_str());
+											if (hasSuperTop) ImGui::TextWrapped(IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTopE1).c_str());
+											else ImGui::TextWrapped(IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTopE2).c_str());
 										}
 
 										{
@@ -6652,13 +6653,13 @@ void SettingMain(stop_token sT)
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/SuperTop/Capability/Indicator").c_str());
+										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.Indicator).c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/SuperTop/Capability/IndicatorE").c_str());
+										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.IndicatorE).c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
@@ -6745,7 +6746,7 @@ void SettingMain(stop_token sT)
 									ImGui::SetCursorPos({ 40.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-									ImGui::TextUnformatted(IA("SettingsUI/PlugIn/LnkHelper/N").c_str());
+									ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.LnkHelper.N).c_str());
 								}
 								{
 									ImGui::SetCursorPos({ 40.0f * settingGlobalScale, ImGui::GetCursorPosY() });
@@ -6771,7 +6772,7 @@ void SettingMain(stop_token sT)
 									ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-									ImGui::TextUnformatted(IA("SettingsUI/PlugIn/LnkHelper/Capability/N").c_str());
+									ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Capability.N).c_str());
 								}
 
 								{
@@ -6786,7 +6787,7 @@ void SettingMain(stop_token sT)
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/LnkHelper/Capability/FixLnk").c_str());
+										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Capability.FixLnk).c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
@@ -6827,7 +6828,7 @@ void SettingMain(stop_token sT)
 											ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
 
-											ImGui::TextWrapped(IA("SettingsUI/PlugIn/LnkHelper/Capability/FixLnkE").c_str());
+											ImGui::TextWrapped(IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Capability.FixLnkE).c_str());
 										}
 
 										{
@@ -6864,7 +6865,7 @@ void SettingMain(stop_token sT)
 									ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
 									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-									ImGui::TextUnformatted(IA("SettingsUI/PlugIn/LnkHelper/Expansion/N").c_str());
+									ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Expansion.N).c_str());
 								}
 
 								{
@@ -6879,13 +6880,13 @@ void SettingMain(stop_token sT)
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/LnkHelper/Expansion/CreateLnk").c_str());
+										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnk).c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-										ImGui::TextUnformatted(IA("SettingsUI/PlugIn/LnkHelper/Expansion/CreateLnkE").c_str());
+										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnkE).c_str());
 									}
 									{
 										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
@@ -6974,7 +6975,7 @@ void SettingMain(stop_token sT)
 									ImGui::SetCursorPos({ 40.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-									ImGui::TextUnformatted(IA("SettingsUI/PlugIn/DesktopDrawpadBlocker/N").c_str());
+									ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.DesktopDrawpadBlocker.N).c_str());
 								}
 								{
 									ImGui::SetCursorPos({ 40.0f * settingGlobalScale, ImGui::GetCursorPosY() });
@@ -9110,7 +9111,7 @@ void SettingMain(stop_token sT)
 					{
 						ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-						ImGui::TextUnformatted(IA("SettingsUI/HotKey/N").c_str());
+						ImGui::TextUnformatted(IA(I18nKey.SettingsUI.HotKey.N).c_str());
 					}
 
 					{
@@ -9125,7 +9126,7 @@ void SettingMain(stop_token sT)
 						ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 						{
 							ImGui::SetCursorPosY(30.0f);
-							wstring text = IW("SettingsUI/HotKey/E");
+							wstring text = IW(I18nKey.SettingsUI.HotKey.E);
 
 							int left_x = 20 * settingGlobalScale, right_x = 750 * settingGlobalScale;
 
@@ -9621,12 +9622,12 @@ void SettingMain(stop_token sT)
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Update/NotStarted").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Update.NotStarted).c_str());
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
 							ImGui::SameLine();
 							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
-							if (ImGui::TextLink(IA("SettingsUI/Update/Repair").c_str()))
+							if (ImGui::TextLink(IA(I18nKey.SettingsUI.Update.Repair).c_str()))
 							{
 								MessageBox(floating_window, L"The automatic update module has not been activated, which means that you are not using an official release. \nPlease go to the \"version\" page and click \"Fix Software\".\n自动更新模块尚未启动，这意味着您使用的不是官方发布版本。\n请前往“软件版本”页并点击“修复软件”。", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
 							}
@@ -9634,7 +9635,7 @@ void SettingMain(stop_token sT)
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
 							ImGui::SameLine();
 							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
-							if (ImGui::TextLink(IA("SettingsUI/Update/ManualDownload").c_str()))
+							if (ImGui::TextLink(IA(I18nKey.SettingsUI.Update.ManualDownload).c_str()))
 							{
 								ShellExecuteW(0, 0, L"https://www.inkeys.top/", 0, 0, SW_SHOW);
 							}
@@ -9666,12 +9667,12 @@ void SettingMain(stop_token sT)
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Update/ObtainInformation").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Update.ObtainInformation).c_str());
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
 							ImGui::SameLine();
 							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
-							if (ImGui::TextLink(IA("SettingsUI/Update/ManualDownload").c_str()))
+							if (ImGui::TextLink(IA(I18nKey.SettingsUI.Update.ManualDownload).c_str()))
 							{
 								ShellExecuteW(0, 0, L"https://www.inkeys.top/", 0, 0, SW_SHOW);
 							}
@@ -9703,12 +9704,12 @@ void SettingMain(stop_token sT)
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Update/InformationFail").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Update.InformationFail).c_str());
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
 							ImGui::SameLine();
 							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
-							if (ImGui::TextLink(IA("SettingsUI/Update/ManualDownload").c_str()))
+							if (ImGui::TextLink(IA(I18nKey.SettingsUI.Update.ManualDownload).c_str()))
 							{
 								ShellExecuteW(0, 0, L"https://www.inkeys.top/", 0, 0, SW_SHOW);
 							}
@@ -9740,12 +9741,12 @@ void SettingMain(stop_token sT)
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Update/InformationDamage").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Update.InformationDamage).c_str());
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
 							ImGui::SameLine();
 							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
-							if (ImGui::TextLink(IA("SettingsUI/Update/ManualDownload").c_str()))
+							if (ImGui::TextLink(IA(I18nKey.SettingsUI.Update.ManualDownload).c_str()))
 							{
 								ShellExecuteW(0, 0, L"https://www.inkeys.top/", 0, 0, SW_SHOW);
 							}
@@ -9777,12 +9778,12 @@ void SettingMain(stop_token sT)
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Update/InformationUnStandardized").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Update.InformationUnStandardized).c_str());
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
 							ImGui::SameLine();
 							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
-							if (ImGui::TextLink(IA("SettingsUI/Update/ManualDownload").c_str()))
+							if (ImGui::TextLink(IA(I18nKey.SettingsUI.Update.ManualDownload).c_str()))
 							{
 								ShellExecuteW(0, 0, L"https://www.inkeys.top/", 0, 0, SW_SHOW);
 							}
@@ -9816,11 +9817,11 @@ void SettingMain(stop_token sT)
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 							try
 							{
-								ImGui::TextUnformatted(vformat(IA("SettingsUI/Update/Downloading"), make_format_args(downloadLine)).c_str());
+								ImGui::TextUnformatted(vformat(IA(I18nKey.SettingsUI.Update.Downloading), make_format_args(downloadLine)).c_str());
 							}
 							catch (...)
 							{
-								ImGui::TextUnformatted(IA("SettingsUI/Update/Downloading").c_str());
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Update.Downloading).c_str());
 							}
 						}
 						{
@@ -9863,12 +9864,12 @@ void SettingMain(stop_token sT)
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Update/DownloadFail").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Update.DownloadFail).c_str());
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
 							ImGui::SameLine();
 							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
-							if (ImGui::TextLink(IA("SettingsUI/Update/ManualDownload").c_str()))
+							if (ImGui::TextLink(IA(I18nKey.SettingsUI.Update.ManualDownload).c_str()))
 							{
 								ShellExecuteW(0, 0, L"https://www.inkeys.top/", 0, 0, SW_SHOW);
 							}
@@ -9900,12 +9901,12 @@ void SettingMain(stop_token sT)
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Update/DownloadDamage").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Update.DownloadDamage).c_str());
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
 							ImGui::SameLine();
 							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
-							if (ImGui::TextLink(IA("SettingsUI/Update/ManualDownload").c_str()))
+							if (ImGui::TextLink(IA(I18nKey.SettingsUI.Update.ManualDownload).c_str()))
 							{
 								ShellExecuteW(0, 0, L"https://www.inkeys.top/", 0, 0, SW_SHOW);
 							}
@@ -9937,7 +9938,7 @@ void SettingMain(stop_token sT)
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Update/Restart").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Update.Restart).c_str());
 						}
 
 						{
@@ -9966,13 +9967,13 @@ void SettingMain(stop_token sT)
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
-							string channel = " (" + IA("SettingsUI/Update/Channel/Other") + ")";
-							if (setlist.UpdateChannel == "LTS") channel = " (" + IA("SettingsUI/Update/Channel/LTS") + ")";
-							else if (setlist.UpdateChannel == "Insider") channel = " (" + IA("SettingsUI/Update/Channel/Insider") + ")";
-							else if (setlist.UpdateChannel == "Dev") channel = " (" + IA("SettingsUI/Update/Channel/Dev") + ")";
-							else if (setlist.UpdateChannel == "Canary") channel = " (" + IA("SettingsUI/Update/Channel/Canary") + ")";
+							string channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Other) + ")";
+							if (setlist.UpdateChannel == "LTS") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.LTS) + ")";
+							else if (setlist.UpdateChannel == "Insider") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Insider) + ")";
+							else if (setlist.UpdateChannel == "Dev") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Dev) + ")";
+							else if (setlist.UpdateChannel == "Canary") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Canary) + ")";
 
-							ImGui::TextUnformatted((IA("SettingsUI/Update/Latest") + channel).c_str());
+							ImGui::TextUnformatted((IA(I18nKey.SettingsUI.Update.Latest) + channel).c_str());
 						}
 
 						{
@@ -10001,13 +10002,13 @@ void SettingMain(stop_token sT)
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
-							string channel = " (" + IA("SettingsUI/Update/Channel/Other") + ")";
-							if (setlist.UpdateChannel == "LTS") channel = " (" + IA("SettingsUI/Update/Channel/LTS") + ")";
-							else if (setlist.UpdateChannel == "Insider") channel = " (" + IA("SettingsUI/Update/Channel/Insider") + ")";
-							else if (setlist.UpdateChannel == "Dev") channel = " (" + IA("SettingsUI/Update/Channel/Dev") + ")";
-							else if (setlist.UpdateChannel == "Canary") channel = " (" + IA("SettingsUI/Update/Channel/Canary") + ")";
+							string channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Other) + ")";
+							if (setlist.UpdateChannel == "LTS") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.LTS) + ")";
+							else if (setlist.UpdateChannel == "Insider") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Insider) + ")";
+							else if (setlist.UpdateChannel == "Dev") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Dev) + ")";
+							else if (setlist.UpdateChannel == "Canary") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Canary) + ")";
 
-							ImGui::TextUnformatted((IA("SettingsUI/Update/Newer") + channel).c_str());
+							ImGui::TextUnformatted((IA(I18nKey.SettingsUI.Update.Newer) + channel).c_str());
 						}
 
 						{
@@ -10036,12 +10037,12 @@ void SettingMain(stop_token sT)
 							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-							ImGui::TextUnformatted(IA("SettingsUI/Update/New").c_str());
+							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Update.New).c_str());
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, IM_COL32(0, 95, 183, 255));
 							ImGui::SameLine();
 							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
-							if (ImGui::TextLink(IA("SettingsUI/Update/UpdateNow").c_str()))
+							if (ImGui::TextLink(IA(I18nKey.SettingsUI.Update.UpdateNow).c_str()))
 							{
 								mandatoryUpdate = true;
 								AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
@@ -10064,7 +10065,7 @@ void SettingMain(stop_token sT)
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(249, 249, 249, 77));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
-						if (ImGui::Button(IA("SettingsUI/Update/Check").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
+						if (ImGui::Button(IA(I18nKey.SettingsUI.Update.Check).c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 						{
 							if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNotStarted)
 							{
