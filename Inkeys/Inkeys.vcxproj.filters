@@ -1028,6 +1028,15 @@
     <None Include="additional\imgui\CustomShaders\imgui_ps.cso">
       <Filter>资源文件</Filter>
     </None>
+    <None Include="src\i18n\en-US.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\zh-CN.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\i18n\zh-TW.jsonc">
+      <Filter>资源文件</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Font Include="src\ttf\Segoe Fluent Icons.ttf">

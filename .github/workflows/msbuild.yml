@@ -170,10 +170,41 @@ jobs:
         $versionNumber = "{0},{1},{2},0" -f $semverMatch.Groups['major'].Value, $semverMatch.Groups['minor'].Value, $semverMatch.Groups['patch'].Value
 
         $rcContent = Get-Content $rcFile -Raw
-        $rcContent = $rcContent -replace '(?m)^(\s*FILEVERSION\s+).+$', ('${1}' + $versionNumber)
-        $rcContent = $rcContent -replace '(?m)^(\s*PRODUCTVERSION\s+).+$', ('${1}' + $versionNumber)
-        $rcContent = $rcContent -replace '(?m)^(\s*VALUE\s+"FileVersion",\s*").*("\r?)$', ('${1}' + $editionVersion + '${2}')
-        $rcContent = $rcContent -replace '(?m)^(\s*VALUE\s+"ProductVersion",\s*").*("\r?)$', ('${1}' + $editionVersion + '${2}')
+        if ($rcContent -match '(?m)^\s*FILEVERSION\s+')
+        {
+          $rcContent = $rcContent -replace '(?m)^(\s*FILEVERSION\s+).+$', ('${1}' + $versionNumber)
+        }
+        else
+        {
+          $rcContent = $rcContent -replace '(?m)^(VS_VERSION_INFO VERSIONINFO\r?\n)', ('${1} FILEVERSION ' + $versionNumber + "`r`n")
+        }
+
+        if ($rcContent -match '(?m)^\s*PRODUCTVERSION\s+')
+        {
+          $rcContent = $rcContent -replace '(?m)^(\s*PRODUCTVERSION\s+).+$', ('${1}' + $versionNumber)
+        }
+        else
+        {
+          $rcContent = $rcContent -replace '(?m)^(\s*FILEVERSION\s+.+\r?\n)', ('${1} PRODUCTVERSION ' + $versionNumber + "`r`n")
+        }
+
+        if ($rcContent -match '(?m)^\s*VALUE\s+"FileVersion",')
+        {
+          $rcContent = $rcContent -replace '(?m)^(\s*VALUE\s+"FileVersion",\s*").*("\r?)$', ('${1}' + $editionVersion + '${2}')
+        }
+        else
+        {
+          $rcContent = $rcContent -replace '(?m)^(\s*VALUE\s+"CompanyName",.*\r?\n)', ('${1}            VALUE "FileVersion", "' + $editionVersion + '"' + "`r`n")
+        }
+
+        if ($rcContent -match '(?m)^\s*VALUE\s+"ProductVersion",')
+        {
+          $rcContent = $rcContent -replace '(?m)^(\s*VALUE\s+"ProductVersion",\s*").*("\r?)$', ('${1}' + $editionVersion + '${2}')
+        }
+        else
+        {
+          $rcContent = $rcContent -replace '(?m)^(\s*VALUE\s+"ProductName",.*\r?\n)', ('${1}            VALUE "ProductVersion", "' + $editionVersion + '"' + "`r`n")
+        }
 
         Set-Content -Path $rcFile -Value $rcContent -Encoding utf8
     
