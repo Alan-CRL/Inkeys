@@ -1,0 +1,75 @@
+module;
+
+#include "../../IdtMain.h"
+#include "../../IdtD2DPreparation.h"
+
+export module Inkeys.Conv.Color;
+
+namespace Inkeys::Color
+{
+	// 弃用
+	/*
+	export BarLogoColorSchemeEnum BarLogaColorSchemeCalc(COLORREF color)
+	{
+		// 内联相对亮度计算
+		auto getLum = [](int r, int g, int b) -> double {
+			auto comp = [](int x) -> double {
+				double v = x / 255.0;
+				return (v <= 0.03928) ? (v / 12.92) : pow((v + 0.055) / 1.055, 2.4);
+				};
+			return 0.2126 * comp(r) + 0.7152 * comp(g) + 0.0722 * comp(b);
+			};
+
+		// 获取输入颜色的RGB
+		int r = GetRValue(color);
+		int g = GetGValue(color);
+		int b = GetBValue(color);
+
+		double lum_fg = getLum(r, g, b);
+		double lum_bg1 = getLum(120, 120, 120);
+		double lum_bg2 = getLum(160, 160, 160);
+
+		// 内联对比度计算
+		auto getContrast = [](double l1, double l2) -> double {
+			if (l1 < l2) std::swap(l1, l2);
+			return (l1 + 0.05) / (l2 + 0.05);
+			};
+
+		double contrast1 = getContrast(lum_fg, lum_bg1);
+		double contrast2 = getContrast(lum_fg, lum_bg2);
+
+		return (contrast1 >= contrast2) ? BarLogoColorSchemeEnum::Slate : BarLogoColorSchemeEnum::Default;
+	}*/
+
+	export D2D1::ColorF ConvertToD2dColor(COLORREF color, double pct)
+	{
+		return D2D1::ColorF(
+			GetRValue(color) / 255.0f,
+			GetGValue(color) / 255.0f,
+			GetBValue(color) / 255.0f,
+			static_cast<FLOAT>(pct)
+		);
+	}
+	export D2D1::ColorF ConvertToD2dColor(COLORREF color, bool ReserveAlpha = true)
+	{
+		return D2D1::ColorF(
+			GetRValue(color) / 255.0f,
+			GetGValue(color) / 255.0f,
+			GetBValue(color) / 255.0f,
+			(ReserveAlpha ? GetAValue(color) : 255) / 255.0f
+		);
+	}
+	export bool CompereColorRef(COLORREF col1, COLORREF col2, bool alpha = false)
+	{
+		if (alpha) return col1 == col2;
+		return (GetRValue(col1) == GetRValue(col2)) && (GetGValue(col1) == GetGValue(col2)) && (GetBValue(col1) == GetBValue(col2));
+	}
+	export void SetAlpha(COLORREF& Color, int Alpha)
+	{
+		Color = (COLORREF)(((Color) & 0xFFFFFF) | ((Alpha) << 24));
+	}
+	export COLORREF SetAlphaR(COLORREF color, int alpha)
+	{
+		return RGBA(GetRValue(color), GetGValue(color), GetBValue(color), alpha);
+	}
+};

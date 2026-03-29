@@ -58,6 +58,8 @@ namespace PptCOM
         // 信息获取函数
         string SlideNameIndex();
         IntPtr GetPptHwnd();
+        int GetSlideShowAnnotationTool();
+        bool ExitSlideShowAnnotationTool();
 
         // 操控函数
         void NextSlideShow(bool check);
@@ -92,6 +94,15 @@ namespace PptCOM
         private DateTime busyRetryStartTime = DateTime.MinValue;
         private DateTime busyRetryLastSeenTime = DateTime.MinValue;
 
+        private const int SlideShowAnnotationToolNone = 0;
+        private const int SlideShowAnnotationToolPen = 1;
+
+        private const int SlideShowPointerNone = 0;
+        private const int SlideShowPointerArrow = 1;
+        private const int SlideShowPointerPen = 2;
+        private const int SlideShowPointerAlwaysHidden = 3;
+        private const int SlideShowPointerAutoArrow = 4;
+
         // 初始化函数
         public unsafe bool Initialization(int* TotalPage, int* CurrentPage, int* OffSignal)
         {
@@ -111,7 +122,7 @@ namespace PptCOM
         }
         public string CheckCOM()
         {
-            string ret = "20260201a";
+            string ret = "20260327a";
             return ret;
         }
 
@@ -244,6 +255,78 @@ namespace PptCOM
         {
             busyRetryStartTime = DateTime.MinValue;
             busyRetryLastSeenTime = DateTime.MinValue;
+        }
+        private static bool TryGetDynamicProperty(object target, string propertyName, out object value)
+        {
+            value = null;
+            if (target == null || string.IsNullOrEmpty(propertyName)) return false;
+
+            try
+            {
+                value = target.GetType().InvokeMember(propertyName, BindingFlags.GetProperty, null, target, null);
+                return true;
+            }
+            catch
+            {
+                value = null;
+                return false;
+            }
+        }
+        private static bool TrySetDynamicProperty(object target, string propertyName, object value)
+        {
+            if (target == null || string.IsNullOrEmpty(propertyName)) return false;
+
+            try
+            {
+                target.GetType().InvokeMember(propertyName, BindingFlags.SetProperty, null, target, new object[] { value });
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+        private static int CoerceToInt(object value, int fallbackValue = int.MinValue)
+        {
+            if (value == null) return fallbackValue;
+
+            try
+            {
+                return Convert.ToInt32(value);
+            }
+            catch
+            {
+                return fallbackValue;
+            }
+        }
+        private static string CoerceToText(object value)
+        {
+            if (value == null) return string.Empty;
+
+            try
+            {
+                return Convert.ToString(value) ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+        private static bool HasOfficialSlideShowPointerName(object value, params string[] names)
+        {
+            string text = CoerceToText(value);
+            if (string.IsNullOrWhiteSpace(text)) return false;
+
+            foreach (string name in names)
+            {
+                if (string.Equals(text, name, StringComparison.OrdinalIgnoreCase) ||
+                    text.EndsWith("." + name, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
         private unsafe bool HandleBusyException(Exception ex, string stage)
         {
@@ -1166,6 +1249,78 @@ namespace PptCOM
             }
 
             return ret;
+        }
+        public int GetSlideShowAnnotationTool()
+        {
+            dynamic view = null;
+
+            try
+            {
+                if (pptSlideShowWindow == null) return SlideShowAnnotationToolNone;
+
+                view = pptSlideShowWindow.View;
+                object pointerTypeValue;
+                if (!TryGetDynamicProperty((object)view, "PointerType", out pointerTypeValue))
+                {
+                    return SlideShowAnnotationToolNone;
+                }
+
+                if (HasOfficialSlideShowPointerName(pointerTypeValue, "ppSlideShowPointerPen"))
+                {
+                    return SlideShowAnnotationToolPen;
+                }
+                if (HasOfficialSlideShowPointerName(pointerTypeValue,
+                    "ppSlideShowPointerNone",
+                    "ppSlideShowPointerArrow",
+                    "ppSlideShowPointerAlwaysHidden",
+                    "ppSlideShowPointerAutoArrow"))
+                {
+                    return SlideShowAnnotationToolNone;
+                }
+
+                int pointerType = CoerceToInt(pointerTypeValue, SlideShowPointerNone);
+                if (pointerType == SlideShowPointerPen) return SlideShowAnnotationToolPen;
+                if (pointerType == SlideShowPointerNone ||
+                    pointerType == SlideShowPointerArrow ||
+                    pointerType == SlideShowPointerAlwaysHidden ||
+                    pointerType == SlideShowPointerAutoArrow)
+                {
+                    return SlideShowAnnotationToolNone;
+                }
+            }
+            catch
+            {
+            }
+            finally
+            {
+                SafeRelease(view);
+                view = null;
+            }
+
+            return SlideShowAnnotationToolNone;
+        }
+        public bool ExitSlideShowAnnotationTool()
+        {
+            dynamic view = null;
+
+            try
+            {
+                if (pptSlideShowWindow == null) return false;
+
+                view = pptSlideShowWindow.View;
+                if (TrySetDynamicProperty((object)view, "PointerType", SlideShowPointerAutoArrow)) return true;
+                if (TrySetDynamicProperty((object)view, "PointerType", SlideShowPointerArrow)) return true;
+            }
+            catch
+            {
+            }
+            finally
+            {
+                SafeRelease(view);
+                view = null;
+            }
+
+            return false;
         }
         private IntPtr GetPptHwndFromSlideShowWindow(object pptSlideShowWindowObj)
         {

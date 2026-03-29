@@ -6,7 +6,6 @@ on:
   push:
     branches:
       - main
-      - insider
       - canary
 permissions:
   contents: read
@@ -38,7 +37,7 @@ jobs:
         id: check_idt_release
         shell: pwsh
         run: |
-          $file = "智绘教/IdtMain.h"
+          $file = "Inkeys/IdtMain.h"
           $found = Select-String -Path $file -Pattern '^#define IDT_RELEASE$'
           if (-not $found) 
           {
@@ -99,7 +98,7 @@ jobs:
         Copy-Item -Path "$tempPath\v4.0" -Destination $targetParent -Recurse -Force
 
     - name: Restore NuGet packages
-      run: nuget restore "智绘教.sln"
+      run: nuget restore "InkeysRepo.sln"
 
     - name: 填充 CI/CD 变量
       shell: pwsh
@@ -122,7 +121,7 @@ jobs:
             wstring msBuildVersion = L"{{MSBUILDVER}}";
           } settingCICD;
       run: |
-        $file = '智绘教\Inkeys\UI\Setting\Setting.cpp'
+        $file = 'Inkeys\Inkeys\UI\Setting\Setting.cpp'
         $content = Get-Content $file
       
         $pattern = '(?ms)^\s*// signal1.*?\s*// signal1'
@@ -147,13 +146,43 @@ jobs:
         $newContent = ($content -join "`r`n") -replace $pattern, $replacement
       
         Set-Content -Path $file -Value $newContent -Encoding utf8
+
+    - name: 写入 RC 版本号
+      shell: pwsh
+      run: |
+        $sourceFile = 'Inkeys\IdtMain.cpp'
+        $rcFile = 'Inkeys\Inkeys.rc'
+
+        $sourceContent = Get-Content $sourceFile -Raw
+        $versionMatch = [regex]::Match($sourceContent, '(?m)^wstring editionVersion = L"([^"]+)";')
+        if (-not $versionMatch.Success)
+        {
+          throw "找不到 editionVersion 变量"
+        }
+
+        $editionVersion = $versionMatch.Groups[1].Value
+        $semverMatch = [regex]::Match($editionVersion, '^(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$')
+        if (-not $semverMatch.Success)
+        {
+          throw "editionVersion 不符合 SemVer 2.0.0: $editionVersion"
+        }
+
+        $versionNumber = "{0},{1},{2},0" -f $semverMatch.Groups['major'].Value, $semverMatch.Groups['minor'].Value, $semverMatch.Groups['patch'].Value
+
+        $rcContent = Get-Content $rcFile -Raw
+        $rcContent = $rcContent -replace '(?m)^(\s*FILEVERSION\s+).+$', "`$1$versionNumber"
+        $rcContent = $rcContent -replace '(?m)^(\s*PRODUCTVERSION\s+).+$', "`$1$versionNumber"
+        $rcContent = $rcContent -replace '(?m)^(\s*VALUE\s+"FileVersion",\s*").*(")$', "`$1$editionVersion`$2"
+        $rcContent = $rcContent -replace '(?m)^(\s*VALUE\s+"ProductVersion",\s*").*(")$', "`$1$editionVersion`$2"
+
+        Set-Content -Path $rcFile -Value $rcContent -Encoding utf8
     
     - name: Bootstrap vcpkg
       shell: pwsh
       run: .\vcpkg\bootstrap-vcpkg.bat
       
     - name: Build Inkeys
-      run: msbuild "智绘教.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /p:PlatformToolset=v143 /verbosity:minimal
+      run: msbuild "InkeysRepo.sln" /p:Configuration=Release /p:Platform=${{ matrix.platform }} /p:PlatformToolset=v143 /verbosity:minimal
       shell: cmd
     
     - name: Upload exe[unsigned] artifact
@@ -184,7 +213,7 @@ jobs:
         id: softwareDate
         shell: pwsh
         run: |
-          $file = '智绘教\IdtMain.cpp'
+          $file = 'Inkeys\IdtMain.cpp'
 
           # 读取所有行，匹配特定前缀
           $line = Get-Content $file | Where-Object { $_ -match '^wstring editionDate = L\"([^\"]+)\";' }
@@ -205,36 +234,48 @@ jobs:
               echo "VALUE='2025====!'" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
             }
           }
-      - name: 拉取通道代号
-        id: softwareChannel
+      - name: 拉取展示版本号
+        id: softwareVersion
         shell: pwsh
         run: |
-          $file = '智绘教\IdtMain.cpp'
+          $file = 'Inkeys\IdtMain.cpp'
+          $content = Get-Content $file -Raw
+          $match = [regex]::Match($content, '(?m)^wstring editionVersion = L"([^"]+)";')
 
-          # 读取所有行，匹配特定前缀
-          $line = Get-Content $file | Where-Object { $_ -match '^wstring editionChannel = L\"([^\"]+)\";' }
-          if (-not $line) 
+          if (-not $match.Success)
           {
-            Write-Host "找不到 editionChannel 变量"
-              echo "VALUE='2025====!'" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            Write-Host "找不到 editionVersion 变量"
+            echo "VALUE=0.0.0" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           }
           else
           {
-            # 正则提取 editionChannel 内容
-            if ($line -match '^wstring editionChannel = L\"([^\"]+)\";') {
-              $channel = $matches[1]
-              Write-Host "Found editionChannel: $channel"
-              echo "VALUE=$channel" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-            } else {
-              Write-Host "格式未匹配"
-              echo "VALUE='2025====!'" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-            }
+            $version = $match.Groups[1].Value
+            Write-Host "Found editionVersion: $version"
+            echo "VALUE=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           }
+      - name: 解析通道代号
+        id: softwareChannel
+        shell: pwsh
+        run: |
+          $branchName = $Env:GITHUB_REF_NAME
+          $channel = $branchName
+
+          if ($branchName -ieq 'main')
+          {
+            $channel = 'LTS'
+          }
+          elseif ($branchName -ieq 'canary')
+          {
+            $channel = 'Canary'
+          }
+
+          Write-Host "Resolved channel: $channel"
+          echo "VALUE=$channel" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - shell: pwsh
         run: |
+          "软件展示版本: ${{ steps.softwareVersion.outputs.VALUE }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "软件版本: ${{ steps.softwareDate.outputs.VALUE }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-          "软件通道: ${{ steps.softwareChannel.outputs.VALUE }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
       # 环境变量获取
       - name: 获取系统信息
@@ -290,7 +331,7 @@ jobs:
         run: |
           $branchName = $Env:GITHUB_REF_NAME
 
-          if ($branchName -ieq 'dev') 
+          if ($branchName -ieq 'dev' -or $branchName -ieq 'staging')
           {
             "signing_policy_slug=test-signing" | Out-File -FilePath $Env:GITHUB_OUTPUT -Encoding utf8 -Append
             "**使用测试证书签名**" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
@@ -457,6 +498,30 @@ jobs:
           "@
           Set-Content -Path "packageUpload\update.txt" -Value $content -Encoding UTF8
 
+      - name: Write CI
+        shell: pwsh
+        run: |
+          $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          $imageOS = $Env:ImageOS
+          $imageVer = $Env:ImageVersion
+
+          $content = @"
+          Version: ${{ steps.softwareVersion.outputs.VALUE }}
+          Date: ${{ steps.softwareDate.outputs.VALUE }}
+          CI/CD: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          Branch: ${{ github.ref_name }}
+          Submitter: ${{ github.actor }}
+
+          Build OS: ${{ steps.environmentInfo.outputs.OS }}
+          Build OS Version: ${{ steps.environmentInfo.outputs.OS_VERSION }}
+          Runner ImageOS: $imageOS
+          Runner ImageVersion: $imageVer
+
+          Build Time: $nowUtc
+          "@
+          Set-Content -Path "packageUpload\ci.txt" -Value $content -Encoding UTF8
+
       - name: Write Tips
         shell: pwsh
         run: |
@@ -489,7 +554,6 @@ jobs:
           CI/CD: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
           Branch: ${{ github.ref_name }}
-          Channel: ${{ steps.softwareChannel.outputs.VALUE }}
           Submitter: ${{ github.actor }}
 
           Build OS: ${{ steps.environmentInfo.outputs.OS }}
@@ -549,9 +613,9 @@ jobs:
         if: steps.softwareChannel.outputs.VALUE == 'LTS' || steps.softwareChannel.outputs.VALUE == 'Main'
         shell: cmd
         run: |
-          rename ".\packageUpload\32=Inkeys2025====!.zip" "正式版本-32位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
-          rename ".\packageUpload\64=Inkeys2025====!.zip" "正式版本-64位-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
-          rename ".\packageUpload\Arm64=Inkeys2025====!.zip" "正式版本-Arm64-Inkeys${{ steps.softwareDate.outputs.VALUE }}.zip"
+          rename ".\packageUpload\32=Inkeys2025====!.zip" "正式版本-32位-Inkeys${{ steps.softwareVersion.outputs.VALUE }}.zip"
+          rename ".\packageUpload\64=Inkeys2025====!.zip" "正式版本-64位-Inkeys${{ steps.softwareVersion.outputs.VALUE }}.zip"
+          rename ".\packageUpload\Arm64=Inkeys2025====!.zip" "正式版本-Arm64-Inkeys${{ steps.softwareVersion.outputs.VALUE }}.zip"
 
       # TEST
       - name: Print file tree
@@ -570,7 +634,7 @@ jobs:
           "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "### 构建任务已完成" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "Inkeys${{ steps.softwareDate.outputs.VALUE }} 中包含 exe 和对应的 pdb" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-          "Package 中包含各架构的 发布包、更新包、校验文件和对应的 pdb" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "Package 中包含各架构的 发布包、更新包、校验文件、ci.txt 和对应的 pdb" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
   upload:
     name: Upload
@@ -591,10 +655,14 @@ jobs:
         run: |
           # 重新生成带时间戳的压缩包
           $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy_MM_ddTHH_mm_ssZ")
-          # 从 update.txt 或之前的 artifact 中获取版本和通道（这里简单处理，你可以通过 output 传递）
-          # 为简化，我们直接从 packageUpload 中寻找信息或使用环境变量
+          $version = "0.0.0"
+          $versionLine = Get-Content ".\packageUpload\ci.txt" | Where-Object { $_ -match '^Version:\s*(.+)$' } | Select-Object -First 1
+          if ($versionLine -and $versionLine -match '^Version:\s*(.+)$')
+          {
+            $version = $matches[1].Trim()
+          }
           New-Item -ItemType Directory -Path ".\WebDevUpload" | Out-Null
-          Compress-Archive -Path .\packageUpload\* -DestinationPath ".\WebDevUpload\PackageHistory-$nowUtc.zip" -CompressionLevel Optimal
+          Compress-Archive -Path .\packageUpload\* -DestinationPath ".\WebDevUpload\PackageHistory-$version-$nowUtc.zip" -CompressionLevel Optimal
 
       - name: Install rclone
         shell: pwsh

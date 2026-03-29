@@ -1,7 +1,6 @@
 # Visual Studio
 /.vs/
-/智绘教/智绘教/
-/智绘教/.vs/
+/Inkeys/.vs/
 /PptCOM/PptCOM/
 /PptCOM/bin/
 /PptCOM/obj/
@@ -9,15 +8,16 @@
 
 # Vcpkg
 /VcpkgInstalled/
-/智绘教/Vcpkg/
+/Inkeys/Vcpkg/
 /PptCOM/Vcpkg/
 
 # Build output
 /Build/
-/智绘教/Build/
+/Inkeys/Build/
 /PptCOM/Build/
 
 # Project-local cache
 /packages/
-/智绘教/Cache/
+/Package/
+/Inkeys/Cache/
 /PptCOM/Cache/
