@@ -254,8 +254,8 @@ void SettingMain(stop_token sT)
 				{
 					IMAGE SettingSign;
 
-					if (I18n::identifying == L"zh-CN") idtLoadImage(&SettingSign, L"PNG", L"Home1_zh-CN", 700 * settingGlobalScale, 215 * settingGlobalScale, true);
-					else if (I18n::identifying == L"zh-TW") idtLoadImage(&SettingSign, L"PNG", L"Home1_zh-TW", 700 * settingGlobalScale, 215 * settingGlobalScale, true);
+					if (I18n::isIdentifying(L"zh-CN")) idtLoadImage(&SettingSign, L"PNG", L"Home1_zh-CN", 700 * settingGlobalScale, 215 * settingGlobalScale, true);
+					else if (I18n::isIdentifying(L"zh-TW")) idtLoadImage(&SettingSign, L"PNG", L"Home1_zh-TW", 700 * settingGlobalScale, 215 * settingGlobalScale, true);
 					else idtLoadImage(&SettingSign, L"PNG", L"Home1_en-US", 700 * settingGlobalScale, 215 * settingGlobalScale, true);
 					{
 						int width = settingSign[1].width = SettingSign.getwidth();
@@ -291,8 +291,8 @@ void SettingMain(stop_token sT)
 						IM_ASSERT(ret);
 					}
 
-					if (I18n::identifying == L"zh-CN") idtLoadImage(&SettingSign, L"PNG", L"Home2_zh-CN", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
-					else if (I18n::identifying == L"zh-TW") idtLoadImage(&SettingSign, L"PNG", L"Home2_zh-TW", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
+					if (I18n::isIdentifying(L"zh-CN")) idtLoadImage(&SettingSign, L"PNG", L"Home2_zh-CN", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
+					else if (I18n::isIdentifying(L"zh-TW")) idtLoadImage(&SettingSign, L"PNG", L"Home2_zh-TW", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
 					else idtLoadImage(&SettingSign, L"PNG", L"Home2_en-US", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
 					{
 						int width = settingSign[2].width = SettingSign.getwidth();
@@ -630,7 +630,7 @@ void SettingMain(stop_token sT)
 
 			{
 				HRSRC hRes;
-				if (I18n::identifying == L"zh-TW") hRes = FindResource(NULL, MAKEINTRESOURCE(258), L"TTF");
+				if (I18n::isIdentifying(L"zh-TW")) hRes = FindResource(NULL, MAKEINTRESOURCE(258), L"TTF");
 				else hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
 				HGLOBAL hMem = LoadResource(NULL, hRes);
 				void* pLock = LockResource(hMem);
@@ -638,7 +638,7 @@ void SettingMain(stop_token sT)
 
 				ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 30.0f * settingGlobalScale, &font_cfg);
 			}
-			if (I18n::identifying == L"zh-TW")
+			if (I18n::isIdentifying(L"zh-TW"))
 			{
 				// 补充简化字
 				HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
@@ -1359,7 +1359,7 @@ void SettingMain(stop_token sT)
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
 						if (ImGui::Button(("   \ue716   " + IA(I18nKey.SettingsUI.Community.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }))
 						{
-							if (I18n::identifying == L"zh-CN") ShellExecuteW(0, 0, L"https://www.inkeys.top/community.html", 0, 0, SW_SHOW);
+							if (I18n::isIdentifying(L"zh-CN")) ShellExecuteW(0, 0, L"https://www.inkeys.top/community.html", 0, 0, SW_SHOW);
 							else ShellExecuteW(0, 0, L"https://en.inkeys.top/community.html", 0, 0, SW_SHOW);
 						}
 					}
@@ -1576,7 +1576,7 @@ void SettingMain(stop_token sT)
 							}
 							if (ImGui::Button("\uf900", { 50.0f * settingGlobalScale,50.0f * settingGlobalScale }))
 							{
-								if (I18n::identifying == L"zh-CN") ShellExecuteW(0, 0, L"https://www.inkeys.top", 0, 0, SW_SHOW);
+								if (I18n::isIdentifying(L"zh-CN")) ShellExecuteW(0, 0, L"https://www.inkeys.top", 0, 0, SW_SHOW);
 								else ShellExecuteW(0, 0, L"https://en.inkeys.top", 0, 0, SW_SHOW);
 							}
 						}
@@ -1656,7 +1656,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 0.7f));
 								if (ImGui::TextLink(IA(I18nKey.SettingsUI.Home.GroupE).c_str()))
 								{
-									if (I18n::identifying == L"zh-CN") ShellExecuteW(0, 0, L"https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6", 0, 0, SW_SHOW);
+									if (I18n::isIdentifying(L"zh-CN")) ShellExecuteW(0, 0, L"https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6", 0, 0, SW_SHOW);
 									else ShellExecuteW(0, 0, L"https://github.com/Alan-CRL/Inkeys/discussions", 0, 0, SW_SHOW);
 								}
 							}

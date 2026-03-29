@@ -1,4 +1,4 @@
-import Inkeys.Other.Json;
+﻿import Inkeys.Other.Json;
 import Inkeys.Conv.Text;
 
 #include "IdtI18n.h"
@@ -90,22 +90,34 @@ bool I18n::load(int type, wstring path, wstring lang)
 		}
 	}
 
-	unique_lock<mutex> lock(i18nWriteMutex);
+	unique_lock<shared_mutex> lock(i18nMutex);
 	i18n = move(nextI18n);
 	identifying = lang;
 	return true;
 }
 string I18n::getA(string x)
 {
+	shared_lock<shared_mutex> lock(i18nMutex);
 	auto it = i18n.find(x);
 	if (it == i18n.end()) return {};
 	return it->second;
 }
 wstring I18n::getW(string x)
 {
-	auto it = i18n.find(x);
-	if (it == i18n.end()) return {};
-	return utf8ToUtf16(it->second);
+	string value;
+	{
+		shared_lock<shared_mutex> lock(i18nMutex);
+		auto it = i18n.find(x);
+		if (it == i18n.end()) return {};
+		value = it->second;
+	}
+	return utf8ToUtf16(value);
+}
+
+bool I18n::isIdentifying(const wchar_t* lang)
+{
+	shared_lock<shared_mutex> lock(i18nMutex);
+	return identifying == lang;
 }
 
 void I18n::flattenJson(const Json::Value& node, const string& prefix, unordered_map<string, string>& outMap)
@@ -122,6 +134,7 @@ void I18n::flattenJson(const Json::Value& node, const string& prefix, unordered_
 }
 void IdtTest::PrintI18nMap()
 {
+	shared_lock<shared_mutex> lock(I18n::i18nMutex);
 	cout << "-------- I18n所有Key-Value --------" << endl;
 
 	for (const auto& [key, val] : I18n::i18n)
