@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
 	[Parameter(Position = 0)]
 	[ValidateSet('check', 'sync')]
@@ -83,23 +83,78 @@ function Get-JsonLiteral {
 	return ($Value | ConvertTo-Json -Compress)
 }
 
+function Write-Utf8File {
+	param(
+		[string]$Path,
+		[string]$Content,
+		[bool]$WithBom = $false
+	)
+
+	$encoding = New-Object System.Text.UTF8Encoding -ArgumentList $WithBom
+	[System.IO.File]::WriteAllText($Path, $Content, $encoding)
+}
+
+function ConvertTo-OrderedNode {
+	param($Node)
+
+	if ($Node -is [string]) {
+		return $Node
+	}
+
+	if ($Node -is [System.Collections.IDictionary]) {
+		$result = [ordered]@{}
+		foreach ($key in $Node.Keys) {
+			$result[[string]$key] = ConvertTo-OrderedNode -Node $Node[$key]
+		}
+		return $result
+	}
+
+	if ($Node -is [System.Management.Automation.PSCustomObject]) {
+		$result = [ordered]@{}
+		foreach ($property in $Node.PSObject.Properties) {
+			$result[$property.Name] = ConvertTo-OrderedNode -Node $property.Value
+		}
+		return $result
+	}
+
+	if ($Node -is [System.Collections.IEnumerable] -and -not ($Node -is [string])) {
+		throw '仅支持字符串叶子节点和对象节点。'
+	}
+
+	throw '仅支持字符串叶子节点和对象节点。'
+}
+
 function Load-JsoncOrdered {
-	param([string]$Path)
+	param(
+		[string]$Path,
+		[bool]$AllowEmpty = $false
+	)
 
 	$rawText = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
 	$cleanText = Remove-JsoncComments $rawText
-	$parsed = $cleanText | ConvertFrom-Json -AsHashtable
+	if ([string]::IsNullOrWhiteSpace($cleanText)) {
+		if (-not $AllowEmpty) {
+			throw "JSON 内容不能为空：$Path"
+		}
 
-	if (-not ($parsed -is [System.Collections.IDictionary])) {
+		return @{
+			RawText = $rawText
+			Root = [ordered]@{}
+		}
+	}
+
+	$parsed = $cleanText | ConvertFrom-Json
+	$root = ConvertTo-OrderedNode -Node $parsed
+
+	if (-not ($root -is [System.Collections.IDictionary])) {
 		throw "JSON 根节点必须是对象：$Path"
 	}
 
 	return @{
 		RawText = $rawText
-		Root = $parsed
+		Root = $root
 	}
 }
-
 function Get-FlattenedEntries {
 	param(
 		[Parameter(Mandatory = $true)]$Node,
@@ -244,7 +299,7 @@ function Write-JsoncFile {
 
 
 	$content = ($allLines -join "`r`n") + "`r`n"
-	Set-Content -LiteralPath $Path -Value $content -Encoding utf8NoBOM -NoNewline
+	Write-Utf8File -Path $Path -Content $content
 }
 
 function Convert-SegmentToIdentifier {
@@ -342,7 +397,7 @@ function Write-KeyHeader {
 	$lines.Add('')
 
 	$content = $lines -join "`r`n"
-	Set-Content -LiteralPath $HeaderPath -Value $content -Encoding utf8NoBOM -NoNewline
+	Write-Utf8File -Path $HeaderPath -Content $content
 }
 function Compare-Language {
 	param(
@@ -376,8 +431,13 @@ function Compare-Language {
 	$placeholderMismatch = [System.Collections.Generic.List[object]]::new()
 	$newlineMismatch = [System.Collections.Generic.List[object]]::new()
 	foreach ($key in $commonKeys) {
+		$targetValue = [string]$targetMap[$key]
+		if ([string]::IsNullOrEmpty($targetValue)) {
+			continue
+		}
+
 		$baseTokens = @(Get-PlaceholderTokens -Value $baseMap[$key])
-		$targetTokens = @(Get-PlaceholderTokens -Value $targetMap[$key])
+		$targetTokens = @(Get-PlaceholderTokens -Value $targetValue)
 		$hasPlaceholderMismatch = $baseTokens.Count -ne $targetTokens.Count
 
 		if (-not $hasPlaceholderMismatch) {
@@ -398,7 +458,7 @@ function Compare-Language {
 		}
 
 		$baseNewlineCount = Get-NewlineCount -Value $baseMap[$key]
-		$targetNewlineCount = Get-NewlineCount -Value $targetMap[$key]
+		$targetNewlineCount = Get-NewlineCount -Value $targetValue
 		if ($baseNewlineCount -ne $targetNewlineCount) {
 			$newlineMismatch.Add([pscustomobject]@{
 					Key = $key
@@ -407,7 +467,6 @@ function Compare-Language {
 				})
 		}
 	}
-
 	$hasOrderMismatch = $false
 	if ($missing.Count -eq 0 -and $extra.Count -eq 0 -and $baseKeys.Count -eq $targetKeys.Count) {
 		for ($index = 0; $index -lt $baseKeys.Count; $index++) {
@@ -429,11 +488,10 @@ function Compare-Language {
 }
 
 function Get-TargetLanguageFiles {
-	return Get-ChildItem -LiteralPath $I18nDir -Filter '*.jsonc' |
-		Where-Object { $_.BaseName -ne $BaseLanguage } |
+	return Get-ChildItem -LiteralPath $I18nDir |
+		Where-Object { -not $_.PSIsContainer -and $_.Extension -ieq '.jsonc' -and $_.BaseName -ne $BaseLanguage } |
 		Sort-Object Name
 }
-
 function Write-CheckResult {
 	param($Result)
 
@@ -486,7 +544,7 @@ function Invoke-I18nCheck {
 	$hasFailure = $false
 
 	foreach ($file in (Get-TargetLanguageFiles)) {
-		$target = Load-JsoncOrdered -Path $file.FullName
+		$target = Load-JsoncOrdered -Path $file.FullName -AllowEmpty $true
 		$result = Compare-Language -BaseRoot $base.Root -TargetRoot $target.Root -LanguageName $file.BaseName
 		Write-CheckResult -Result $result
 
@@ -509,7 +567,7 @@ function Invoke-I18nSync {
 	$baseHeaderLines = @(Get-HeaderCommentLines -RawText $base.RawText)
 
 	foreach ($file in (Get-TargetLanguageFiles)) {
-		$target = Load-JsoncOrdered -Path $file.FullName
+		$target = Load-JsoncOrdered -Path $file.FullName -AllowEmpty $true
 		$headerLines = @(Get-HeaderCommentLines -RawText $target.RawText)
 		if ($headerLines.Count -eq 0) {
 			$headerLines = $baseHeaderLines
