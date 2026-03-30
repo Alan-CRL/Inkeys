@@ -423,7 +423,7 @@ namespace Inkeys
 	bool Config::Write()
 	{
 		unique_lock<shared_mutex> lock(rwMutex);
-		const bool autoCleanEnabled = LoadConfigValue(this->Config.autoClean);
+		const bool autoCleanEnabled = LoadConfigValue(this->Config.AutoClean);
 
 		Json::Value baseRoot = Json::Value(Json::objectValue);
 		if (!autoCleanEnabled)

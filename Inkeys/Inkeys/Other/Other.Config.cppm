@@ -38,7 +38,7 @@ namespace Inkeys::ConfigDetail
 
 #define INKEYS_CONFIG_SCHEMA(GROUP, X, H) \
 	GROUP(Config, \
-		X(IdtAtomic<bool>, autoClean, false) \
+		X(IdtAtomic<bool>, AutoClean, false) \
 	) \
 	GROUP(Info, \
 		H(std::wstring, userId, ::userId) \
@@ -49,8 +49,8 @@ namespace Inkeys::ConfigDetail
 	) \
 	GROUP(PlugIn, \
 		GROUP(PPTHelper, \
-			X(IdtAtomic<bool>, autoTakeOver, false) \
-			X(IdtAtomic<bool>, autoTakeOverExpand, false) \
+			X(IdtAtomic<bool>, AutoTakeOver, false) \
+			X(IdtAtomic<bool>, AutoTakeOverExpand, false) \
 		) \
 	)
 
