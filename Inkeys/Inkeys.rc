@@ -243,7 +243,7 @@ BEGIN
         BLOCK "080404b0"
         BEGIN
             VALUE "CompanyName", "AlanCRL(陈润林) 工作室"
-            VALUE "FileVersion", "3.0.0.0"
+            VALUE "FileVersion", "1.0.0.0"
             VALUE "InternalName", "Inkeys"
             VALUE "LegalCopyright", "Copyright © 2023-2026 AlanCRL(陈润林) 工作室"
             VALUE "ProductName", "Inkeys"
