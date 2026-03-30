@@ -6478,14 +6478,20 @@ void SettingMain(stop_token sT)
 									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
-									ImGui::BeginChild("接管放映批注", { 750.0f * settingGlobalScale,100.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+									ImGui::BeginChild("接管放映批注", { 750.0f * settingGlobalScale,70.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 									float cursosPosY = 0;
 									{
-										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
+										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOver).c_str());
+									}
+									{
+										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
+										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverE).c_str());
 									}
 									{
 										bool value = Inkeys::config.PlugIn.PPTHelper.AutoTakeOver;
@@ -6512,29 +6518,6 @@ void SettingMain(stop_token sT)
 											Inkeys::config.PlugIn.PPTHelper.AutoTakeOver = value;
 											Inkeys::config.Write();
 										}
-									}
-
-									cursosPosY = ImGui::GetCursorPosY();
-									{
-										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 10.0f * settingGlobalScale });
-
-										PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-										PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
-										ImGui::BeginChild("接管放映批注-介绍", { 710.0f * settingGlobalScale,30.0f * settingGlobalScale }, false);
-
-										{
-											ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
-											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-
-											ImGui::TextWrapped(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.AutoTakeOverE).c_str());
-										}
-
-										{
-											if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-											if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-											while (PushFontNum) PushFontNum--, ImGui::PopFont();
-										}
-										ImGui::EndChild();
 									}
 
 									{
