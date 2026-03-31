@@ -388,7 +388,10 @@
         {
           "N": "Experimental Options",
           "CloseWpp": "Allow closing of stuck/orphaned WPP presentation processes",
-          "CloseWppE": "Requires a restart to take effect. After exiting a presentation in KingSoft WPS, the original WPP process sometimes doesn't close properly and remains stuck. This prevents the app from detecting new presentations and enabling integration. Enabling this option helps terminate these stuck processes. It is safe for your files and is recommended."
+          "CloseWppE": "Requires a restart to take effect. After exiting a presentation in KingSoft WPS, the original WPP process sometimes doesn't close properly and remains stuck. This prevents the app from detecting new presentations and enabling integration. Enabling this option helps terminate these stuck processes. It is safe for your files and is recommended.",
+          "AutoTakeOver": "",
+          "AutoTakeOverE": "",
+          "AutoTakeOverExpand": ""
         }
       },
       "SuperTop":
