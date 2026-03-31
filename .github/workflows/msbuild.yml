@@ -147,7 +147,7 @@ jobs:
       
         Set-Content -Path $file -Value $newContent -Encoding utf8
 
-    - name: 写入 RC 版本号
+    - name: 写入 RC 产品版本号
       shell: pwsh
       run: |
         $sourceFile = 'Inkeys\IdtMain.cpp'
@@ -161,19 +161,18 @@ jobs:
         }
 
         $editionVersion = $versionMatch.Groups[1].Value
-        $semverMatch = [regex]::Match($editionVersion, '^(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$')
-        if (-not $semverMatch.Success)
-        {
-          throw "editionVersion 不符合 SemVer 2.0.0: $editionVersion"
-        }
-
-        $versionNumber = "{0},{1},{2},0" -f $semverMatch.Groups['major'].Value, $semverMatch.Groups['minor'].Value, $semverMatch.Groups['patch'].Value
+        $buildUtcTime = [DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')
+        $productVersionDisplay = "$editionVersion $buildUtcTime UTC"
 
         $rcContent = Get-Content $rcFile -Raw
-        $rcContent = $rcContent -replace '(?m)^(\s*FILEVERSION\s+).+$', ('${1}' + $versionNumber)
-        $rcContent = $rcContent -replace '(?m)^(\s*PRODUCTVERSION\s+).+$', ('${1}' + $versionNumber)
-        $rcContent = $rcContent -replace '(?m)^(\s*VALUE\s+"FileVersion",\s*").*("\r?)$', ('${1}' + $editionVersion + '${2}')
-        $rcContent = $rcContent -replace '(?m)^(\s*VALUE\s+"ProductVersion",\s*").*("\r?)$', ('${1}' + $editionVersion + '${2}')
+        if ($rcContent -match '(?m)^\s*VALUE\s+"ProductVersion",')
+        {
+          $rcContent = $rcContent -replace '(?m)^(\s*VALUE\s+"ProductVersion",\s*").*("\r?)$', ('${1}' + $productVersionDisplay + '${2}')
+        }
+        else
+        {
+          $rcContent = $rcContent -replace '(?m)^(\s*VALUE\s+"ProductName",.*\r?\n)', ('${1}            VALUE "ProductVersion", "' + $productVersionDisplay + '"' + "`r`n")
+        }
 
         Set-Content -Path $rcFile -Value $rcContent -Encoding utf8
     

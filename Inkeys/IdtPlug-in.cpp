@@ -24,6 +24,7 @@ import Inkeys.Load;
 import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
 import Inkeys.UI.Bar;
+import Inkeys.Other.Config;
 
 #include "IdtPlug-in.h"
 
@@ -49,6 +50,8 @@ import Inkeys.UI.Bar;
 #include <tlhelp32.h>
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "shell32.lib")
+
+using namespace Inkeys;
 
 // --------------------------------------------------
 // PPT 联动插件
@@ -191,7 +194,6 @@ wstring pptComExtraWarning;
 // Ppt 状态
 
 PptUiWidgetStateEnum pptUiWidgetState = PptUiWidgetStateEnum::Close;
-bool pptTakeoverHostInk = true;
 bool pptTakeoverConsumedInCurrentShow = false;
 
 // -------------------------
@@ -2384,7 +2386,7 @@ void PptInfo()
 			FreezePPT = false;
 			Initialization = false;
 		}
-		else if (Initialization && PptInfoState.TotalPage != -1 && pptTakeoverHostInk && !pptTakeoverConsumedInCurrentShow)
+		else if (Initialization && PptInfoState.TotalPage != -1 && config.PlugIn.PPTHelper.AutoTakeOver && !pptTakeoverConsumedInCurrentShow)
 		{
 			int toolType = GetPptSlideShowAnnotationTool();
 			if (toolType == 1 && StartPptTakeoverAnnotation(toolType))
@@ -2392,7 +2394,7 @@ void PptInfo()
 				ExitPptSlideShowAnnotationTool();
 				pptTakeoverConsumedInCurrentShow = true;
 
-				if (true)
+				if (config.PlugIn.PPTHelper.AutoTakeOverExpand)
 				{
 					if (useInkeys3UI)
 					{
