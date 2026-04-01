@@ -50,6 +50,7 @@ namespace Inkeys::ConfigDetail
 	GROUP(PlugIn, \
 		GROUP(PPTHelper, \
 			X(IdtAtomic<bool>, AutoTakeOver, false) \
+			X(IdtAtomic<bool>, AutoTakeOverOnce, true) \
 			X(IdtAtomic<bool>, AutoTakeOverExpand, true) \
 		) \
 	)
