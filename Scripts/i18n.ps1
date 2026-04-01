@@ -391,6 +391,9 @@ function Get-SyncHeaderLines {
         return $BaseHeaderLines
     }
 
+    if (($HeaderLines -join "`n") -ne ($BaseHeaderLines -join "`n")) {
+        return $BaseHeaderLines
+    }
     return $HeaderLines
 }
 
