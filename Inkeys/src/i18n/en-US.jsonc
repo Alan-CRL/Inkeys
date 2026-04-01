@@ -389,9 +389,9 @@
           "N": "Experimental Options",
           "CloseWpp": "Allow closing of stuck/orphaned WPP presentation processes",
           "CloseWppE": "Requires a restart to take effect. After exiting a presentation in KingSoft WPS, the original WPP process sometimes doesn't close properly and remains stuck. This prevents the app from detecting new presentations and enabling integration. Enabling this option helps terminate these stuck processes. It is safe for your files and is recommended.",
-          "AutoTakeOver": "",
-          "AutoTakeOverE": "",
-          "AutoTakeOverExpand": ""
+          "AutoTakeOver": "[[Need translation: 接管放映批注]]",
+          "AutoTakeOverE": "[[Need translation: 在识别到开启了 PPT 原生批注后，将打开软件内绘制模式，并关闭 PPT 原生批注。（每次放映至多接管一次）]]",
+          "AutoTakeOverExpand": "[[Need translation: 接管成功时展开主栏]]"
         }
       },
       "SuperTop":
