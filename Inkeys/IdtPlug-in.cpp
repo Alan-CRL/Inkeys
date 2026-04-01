@@ -2392,7 +2392,7 @@ void PptInfo()
 			if (toolType == 1 && StartPptTakeoverAnnotation(toolType))
 			{
 				ExitPptSlideShowAnnotationTool();
-				pptTakeoverConsumedInCurrentShow = true;
+				if(config.PlugIn.PPTHelper.AutoTakeOverOnce) pptTakeoverConsumedInCurrentShow = true;
 
 				if (config.PlugIn.PPTHelper.AutoTakeOverExpand)
 				{
