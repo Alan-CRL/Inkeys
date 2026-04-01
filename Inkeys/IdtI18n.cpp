@@ -8,6 +8,11 @@ namespace
 {
 	constexpr const wchar_t* DefaultI18nLanguage = L"zh-CN";
 
+    bool isPendingTranslationValue(const string& value)
+    {
+        return value.empty() || value.find("[[Need translation: ") == 0;
+    }
+
 	void stripUtf8Bom(string& jsonContent)
 	{
 		if (jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
@@ -86,7 +91,7 @@ bool I18n::load(int type, wstring path, wstring lang)
 
 		for (auto& [key, value] : overlayI18n)
 		{
-			if (!value.empty()) nextI18n[key] = move(value);
+            if (!isPendingTranslationValue(value)) nextI18n[key] = move(value);
 		}
 	}
 

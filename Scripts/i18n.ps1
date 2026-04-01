@@ -13,6 +13,9 @@ $I18nDir = Join-Path $RepoRoot 'Inkeys/src/i18n'
 $HeaderPath = Join-Path $RepoRoot 'Inkeys/IdtI18nKeys.g.h'
 $BaseLanguage = 'zh-CN'
 $BasePath = Join-Path $I18nDir "$BaseLanguage.jsonc"
+$BaseSnapshotPath = Join-Path $PSScriptRoot 'i18n.zh-CN.snapshot.jsonc'
+$NeedTranslationPrefix = '[[Need translation: '
+$NeedTranslationRegex = [regex]::new('^\[\[Need translation: (?<source>(?:\\.|(?!\]\]).)*)\]\]', [System.Text.RegularExpressions.RegexOptions]::Singleline)
 
 function Remove-JsoncComments {
 	param([string]$InputText)
@@ -206,18 +209,79 @@ function Test-MapContainsKey {
 	return ($Map -is [System.Collections.IDictionary]) -and $Map.Contains($Key)
 }
 
+function Escape-NeedTranslationSource {
+	param([AllowNull()][string]$Value)
+
+	if ($null -eq $Value) {
+		return ''
+	}
+
+	$escaped = $Value.Replace('\', '\\')
+	$escaped = $escaped.Replace(']]', '\]\]')
+	return $escaped
+}
+
+function Get-NeedTranslationPrefixText {
+	param([string]$BaseValue)
+
+    return "$NeedTranslationPrefix$(Escape-NeedTranslationSource -Value $BaseValue)]]"
+}
+
+function Get-NeedTranslationValue {
+	param(
+		[string]$BaseValue,
+		[string]$ExistingValue = ''
+	)
+
+	$prefixText = Get-NeedTranslationPrefixText -BaseValue $BaseValue
+	if ([string]::IsNullOrEmpty($ExistingValue)) {
+		return $prefixText
+	}
+
+	$markerMatch = $NeedTranslationRegex.Match($ExistingValue)
+	if ($markerMatch.Success) {
+		return $prefixText + $ExistingValue.Substring($markerMatch.Length)
+	}
+
+	return $prefixText + $ExistingValue
+}
+
+function Test-NeedTranslationValue {
+	param([AllowNull()][string]$Value)
+
+	if ($null -eq $Value) {
+		return $false
+	}
+
+	return $NeedTranslationRegex.IsMatch($Value)
+}
+
+function Test-CompletedTranslationValue {
+	param([AllowNull()][string]$Value)
+
+	return (-not [string]::IsNullOrEmpty($Value)) -and (-not (Test-NeedTranslationValue -Value $Value))
+}
+
 function Sync-Node {
 	param(
 		[Parameter(Mandatory = $true)]$BaseNode,
-		$TargetNode
+		$TargetNode,
+		$PreviousBaseNode = $null,
+		[bool]$HasPreviousBaseNode = $false
 	)
 
 	if ($BaseNode -is [string]) {
-		if ($TargetNode -is [string]) {
-			return $TargetNode
+		$targetValue = if ($TargetNode -is [string]) { [string]$TargetNode } else { $null }
+		if (-not ($TargetNode -is [string]) -or [string]::IsNullOrEmpty($targetValue)) {
+			return Get-NeedTranslationValue -BaseValue $BaseNode
 		}
 
-		return ''
+		$baseValueChanged = $HasPreviousBaseNode -and ($PreviousBaseNode -is [string]) -and ($PreviousBaseNode -ne $BaseNode)
+		if ($baseValueChanged) {
+			return Get-NeedTranslationValue -BaseValue $BaseNode -ExistingValue $targetValue
+		}
+
+		return $targetValue
 	}
 
 	if (-not ($BaseNode -is [System.Collections.IDictionary])) {
@@ -231,7 +295,14 @@ function Sync-Node {
 			$targetChild = $TargetNode[$key]
 		}
 
-		$result[$key] = Sync-Node -BaseNode $BaseNode[$key] -TargetNode $targetChild
+		$previousBaseChild = $null
+		$hasPreviousBaseChild = $false
+		if (Test-MapContainsKey -Map $PreviousBaseNode -Key $key) {
+			$previousBaseChild = $PreviousBaseNode[$key]
+			$hasPreviousBaseChild = $true
+		}
+
+		$result[$key] = Sync-Node -BaseNode $BaseNode[$key] -TargetNode $targetChild -PreviousBaseNode $previousBaseChild -HasPreviousBaseNode $hasPreviousBaseChild
 	}
 
 	return $result
@@ -416,6 +487,7 @@ function Compare-Language {
 
 	$missing = @($baseKeys | Where-Object { -not $targetKeySet.Contains($_) })
 	$extra = @($targetKeys | Where-Object { -not $baseKeySet.Contains($_) })
+	$unfinished = [System.Collections.Generic.List[object]]::new()
 
 	$commonKeys = @($baseKeys | Where-Object { $targetKeySet.Contains($_) })
 	$baseMap = @{}
@@ -428,11 +500,41 @@ function Compare-Language {
 		$targetMap[$entry.Key] = $entry.Value
 	}
 
+	$completedCount = 0
+	foreach ($key in $baseKeys) {
+		if (-not $targetKeySet.Contains($key)) {
+			$unfinished.Add([pscustomobject]@{
+					Key = $key
+					Reason = 'Missing'
+				})
+			continue
+		}
+
+		$targetValue = [string]$targetMap[$key]
+		if ([string]::IsNullOrEmpty($targetValue)) {
+			$unfinished.Add([pscustomobject]@{
+					Key = $key
+					Reason = 'Empty'
+				})
+			continue
+		}
+
+		if (Test-NeedTranslationValue -Value $targetValue) {
+			$unfinished.Add([pscustomobject]@{
+					Key = $key
+					Reason = 'Need translation'
+				})
+			continue
+		}
+
+		$completedCount++
+	}
+
 	$placeholderMismatch = [System.Collections.Generic.List[object]]::new()
 	$newlineMismatch = [System.Collections.Generic.List[object]]::new()
 	foreach ($key in $commonKeys) {
 		$targetValue = [string]$targetMap[$key]
-		if ([string]::IsNullOrEmpty($targetValue)) {
+		if (-not (Test-CompletedTranslationValue -Value $targetValue)) {
 			continue
 		}
 
@@ -481,9 +583,13 @@ function Compare-Language {
 		Language = $LanguageName
 		Missing = @($missing)
 		Extra = @($extra)
+		Unfinished = @($unfinished)
 		PlaceholderMismatch = @($placeholderMismatch)
 		NewlineMismatch = @($newlineMismatch)
 		OrderMismatch = $hasOrderMismatch
+		CompletedKeys = $completedCount
+		TotalKeys = $baseKeys.Count
+		CompletionRatio = if ($baseKeys.Count -eq 0) { 1.0 } else { $completedCount / $baseKeys.Count }
 	}
 }
 
@@ -496,8 +602,10 @@ function Write-CheckResult {
 	param($Result)
 
 	Write-Host "[check] $($Result.Language)"
+	Write-Host ("  Progress: {0}/{1} translated ({2:P2})" -f $Result.CompletedKeys, $Result.TotalKeys, $Result.CompletionRatio)
 
-	if ($Result.Missing.Count -eq 0 -and
+	if ($Result.Unfinished.Count -eq 0 -and
+		$Result.Missing.Count -eq 0 -and
 		$Result.Extra.Count -eq 0 -and
 		$Result.PlaceholderMismatch.Count -eq 0 -and
 		$Result.NewlineMismatch.Count -eq 0 -and
@@ -506,10 +614,10 @@ function Write-CheckResult {
 		return
 	}
 
-	if ($Result.Missing.Count -gt 0) {
-		Write-Host '  Missing keys:'
-		foreach ($key in $Result.Missing) {
-			Write-Host "    $key"
+	if ($Result.Unfinished.Count -gt 0) {
+		Write-Host '  Unfinished translations:'
+		foreach ($item in $Result.Unfinished) {
+			Write-Host "    [$($item.Reason)] $($item.Key)"
 		}
 	}
 
@@ -548,7 +656,8 @@ function Invoke-I18nCheck {
 		$result = Compare-Language -BaseRoot $base.Root -TargetRoot $target.Root -LanguageName $file.BaseName
 		Write-CheckResult -Result $result
 
-		if ($result.Missing.Count -gt 0 -or
+		if ($result.Unfinished.Count -gt 0 -or
+			$result.Missing.Count -gt 0 -or
 			$result.Extra.Count -gt 0 -or
 			$result.PlaceholderMismatch.Count -gt 0 -or
 			$result.NewlineMismatch.Count -gt 0 -or
@@ -565,6 +674,13 @@ function Invoke-I18nCheck {
 function Invoke-I18nSync {
 	$base = Load-JsoncOrdered -Path $BasePath
 	$baseHeaderLines = @(Get-HeaderCommentLines -RawText $base.RawText)
+	$previousBase = $null
+	$hasBaseSnapshot = Test-Path -LiteralPath $BaseSnapshotPath
+	if ($hasBaseSnapshot) {
+		$previousBase = Load-JsoncOrdered -Path $BaseSnapshotPath -AllowEmpty $true
+	}
+
+    $previousBaseRoot = if ($hasBaseSnapshot) { $previousBase.Root } else { $null }
 
 	foreach ($file in (Get-TargetLanguageFiles)) {
 		$target = Load-JsoncOrdered -Path $file.FullName -AllowEmpty $true
@@ -573,13 +689,15 @@ function Invoke-I18nSync {
 			$headerLines = $baseHeaderLines
 		}
 
-		$syncedRoot = Sync-Node -BaseNode $base.Root -TargetNode $target.Root
+        $syncedRoot = Sync-Node -BaseNode $base.Root -TargetNode $target.Root -PreviousBaseNode $previousBaseRoot -HasPreviousBaseNode $hasBaseSnapshot
 		Write-JsoncFile -Path $file.FullName -HeaderLines $headerLines -Root $syncedRoot
 		Write-Host "[sync] Updated $($file.Name)"
 	}
 
 	Write-KeyHeader -BaseRoot $base.Root
 	Write-Host "[sync] Updated $(Split-Path -Leaf $HeaderPath)"
+	Write-Utf8File -Path $BaseSnapshotPath -Content $base.RawText
+	Write-Host "[sync] Updated $(Split-Path -Leaf $BaseSnapshotPath)"
 
 	Invoke-I18nCheck
 }
