@@ -394,6 +394,8 @@ inline constexpr struct I18nKeyRoot
                     const char* CloseWppE = "SettingsUI/PlugIn/PPTHelper/Tentative/CloseWppE";
                     const char* AutoTakeOver = "SettingsUI/PlugIn/PPTHelper/Tentative/AutoTakeOver";
                     const char* AutoTakeOverE = "SettingsUI/PlugIn/PPTHelper/Tentative/AutoTakeOverE";
+                    const char* AutoTakeOverOnce = "SettingsUI/PlugIn/PPTHelper/Tentative/AutoTakeOverOnce";
+                    const char* AutoTakeOverOnceE = "SettingsUI/PlugIn/PPTHelper/Tentative/AutoTakeOverOnceE";
                     const char* AutoTakeOverExpand = "SettingsUI/PlugIn/PPTHelper/Tentative/AutoTakeOverExpand";
                 } Tentative{};
             } PPTHelper{};

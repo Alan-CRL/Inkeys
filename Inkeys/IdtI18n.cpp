@@ -10,7 +10,7 @@ namespace
 
     bool isPendingTranslationValue(const string& value)
     {
-        return value.empty() || value.find("[[Need translation: ") != string::npos;
+        return value.empty() || value.find("[[Need translation: ") == 0;
     }
 
 	void stripUtf8Bom(string& jsonContent)

@@ -454,15 +454,16 @@
             "BottomSideMiddle": "底部主栏控件缩放"
           }
         },
-        "Tentative":
-        {
+        "Tentative": {
           "N": "实验选项",
 
           "CloseWpp": "允许关闭游离卡死的 WPP 演示进程",
           "CloseWppE": "重启软件生效。在WPS退出放映后原来的WPP演示进程并不会立即关闭，而是保持游离卡死状态。此时再次开始放映PPT则无法立即识别到放映进程并开启PPT联动。开启此选项将帮助关闭游离卡死的WPP放映进程，这不会对您的文件造成影响，推荐开启。",
 
           "AutoTakeOver": "接管放映批注",
-          "AutoTakeOverE": "在识别到开启了 PPT 原生批注后，将打开软件内绘制模式，并关闭 PPT 原生批注。（每次放映至多接管一次）",
+          "AutoTakeOverE": "在识别到开启了 PPT 原生批注后，将打开软件内绘制模式，并关闭 PPT 原生批注。",
+          "AutoTakeOverOnce": "每次放映至多接管一次",
+          "AutoTakeOverOnceE": "防止的确需要使用 PPT 原生批注的场景。",
           "AutoTakeOverExpand": "接管成功时展开主栏"
         }
       },
