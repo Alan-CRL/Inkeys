@@ -353,24 +353,45 @@ function Get-JsonNodeLines {
 	return $lines
 }
 
+function Get-JsoncFileContent {
+    param(
+        [string[]]$HeaderLines,
+        $Root
+    )
+
+    $allLines = [System.Collections.Generic.List[string]]::new()
+    foreach ($line in $HeaderLines) {
+        $allLines.Add($line)
+    }
+    foreach ($line in (Get-JsonNodeLines -Node $Root -Indent 0)) {
+        $allLines.Add($line)
+    }
+
+    return ($allLines -join "`r`n") + "`r`n"
+}
+
 function Write-JsoncFile {
-	param(
-		[string]$Path,
-		[string[]]$HeaderLines,
-		$Root
-	)
+    param(
+        [string]$Path,
+        [string[]]$HeaderLines,
+        $Root
+    )
 
-	$allLines = [System.Collections.Generic.List[string]]::new()
-	foreach ($line in $HeaderLines) {
-		$allLines.Add($line)
-	}
-	foreach ($line in (Get-JsonNodeLines -Node $Root -Indent 0)) {
-		$allLines.Add($line)
-	}
+    $content = Get-JsoncFileContent -HeaderLines $HeaderLines -Root $Root
+    Write-Utf8File -Path $Path -Content $content
+}
 
+function Get-SyncHeaderLines {
+    param(
+        [string[]]$BaseHeaderLines,
+        [string[]]$HeaderLines
+    )
 
-	$content = ($allLines -join "`r`n") + "`r`n"
-	Write-Utf8File -Path $Path -Content $content
+    if ($HeaderLines.Count -eq 0 -or $HeaderLines.Count -ne $BaseHeaderLines.Count) {
+        return $BaseHeaderLines
+    }
+
+    return $HeaderLines
 }
 
 function Convert-SegmentToIdentifier {
@@ -670,36 +691,35 @@ function Invoke-I18nCheck {
 		throw 'i18n check failed.'
 	}
 }
-
 function Invoke-I18nSync {
-	$base = Load-JsoncOrdered -Path $BasePath
-	$baseHeaderLines = @(Get-HeaderCommentLines -RawText $base.RawText)
-	$previousBase = $null
-	$hasBaseSnapshot = Test-Path -LiteralPath $BaseSnapshotPath
-	if ($hasBaseSnapshot) {
-		$previousBase = Load-JsoncOrdered -Path $BaseSnapshotPath -AllowEmpty $true
-	}
+    $base = Load-JsoncOrdered -Path $BasePath
+    $baseHeaderLines = @(Get-HeaderCommentLines -RawText $base.RawText)
+    $previousBase = $null
+    $hasBaseSnapshot = Test-Path -LiteralPath $BaseSnapshotPath
+    if ($hasBaseSnapshot) {
+        $previousBase = Load-JsoncOrdered -Path $BaseSnapshotPath -AllowEmpty $true
+    }
 
     $previousBaseRoot = if ($hasBaseSnapshot) { $previousBase.Root } else { $null }
+    $baseSyncHeaderLines = @(Get-SyncHeaderLines -BaseHeaderLines $baseHeaderLines -HeaderLines $baseHeaderLines)
+    Write-JsoncFile -Path $BasePath -HeaderLines $baseSyncHeaderLines -Root $base.Root
+    Write-Host "[sync] Updated $(Split-Path -Leaf $BasePath)"
 
-	foreach ($file in (Get-TargetLanguageFiles)) {
-		$target = Load-JsoncOrdered -Path $file.FullName -AllowEmpty $true
-		$headerLines = @(Get-HeaderCommentLines -RawText $target.RawText)
-		if ($headerLines.Count -eq 0) {
-			$headerLines = $baseHeaderLines
-		}
+    foreach ($file in (Get-TargetLanguageFiles)) {
+        $target = Load-JsoncOrdered -Path $file.FullName -AllowEmpty $true
+        $headerLines = @(Get-SyncHeaderLines -BaseHeaderLines $baseHeaderLines -HeaderLines @(Get-HeaderCommentLines -RawText $target.RawText))
 
         $syncedRoot = Sync-Node -BaseNode $base.Root -TargetNode $target.Root -PreviousBaseNode $previousBaseRoot -HasPreviousBaseNode $hasBaseSnapshot
-		Write-JsoncFile -Path $file.FullName -HeaderLines $headerLines -Root $syncedRoot
-		Write-Host "[sync] Updated $($file.Name)"
-	}
+        Write-JsoncFile -Path $file.FullName -HeaderLines $headerLines -Root $syncedRoot
+        Write-Host "[sync] Updated $($file.Name)"
+    }
 
-	Write-KeyHeader -BaseRoot $base.Root
-	Write-Host "[sync] Updated $(Split-Path -Leaf $HeaderPath)"
-	Write-Utf8File -Path $BaseSnapshotPath -Content $base.RawText
-	Write-Host "[sync] Updated $(Split-Path -Leaf $BaseSnapshotPath)"
+    Write-KeyHeader -BaseRoot $base.Root
+    Write-Host "[sync] Updated $(Split-Path -Leaf $HeaderPath)"
+    Write-JsoncFile -Path $BaseSnapshotPath -HeaderLines $baseSyncHeaderLines -Root $base.Root
+    Write-Host "[sync] Updated $(Split-Path -Leaf $BaseSnapshotPath)"
 
-	Invoke-I18nCheck
+    Invoke-I18nCheck
 }
 
 switch ($Command) {
