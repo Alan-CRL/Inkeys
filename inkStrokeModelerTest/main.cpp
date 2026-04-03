@@ -253,7 +253,7 @@ int main()
 	dxgiDevice1->SetMaximumFrameLatency(1);
 
 	// 后续性能选项卡中可以提供一个 GPU 高优先级 的选项
-	dxgiDevice1->SetGPUThreadPriority(2);
+	// dxgiDevice1->SetGPUThreadPriority(2);
 
 	// SwapChain
 	CComPtr<IDXGISwapChain1> swapChain;
