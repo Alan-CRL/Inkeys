@@ -6558,18 +6558,6 @@ void MouseInteraction()
 									}
 									else if (setlist.component.shortcutButton.rollCall.SecRandom)
 									{
-										/*ShellExecute(NULL, L"open", L"secrandom://direct_extraction", NULL, NULL, SW_SHOWNORMAL);*/
-
-										{
-											SHELLEXECUTEINFO sei = { sizeof(sei) };
-											sei.fMask = SEE_MASK_NOASYNC;
-											sei.hwnd = NULL;
-											sei.lpVerb = L"open";
-											sei.lpFile = L"secrandom://direct_extraction";
-											sei.nShow = SW_SHOWNORMAL;
-
-											ShellExecuteEx(&sei);
-										}
 										{
 											SHELLEXECUTEINFO sei = { sizeof(sei) };
 											sei.fMask = SEE_MASK_NOASYNC;
