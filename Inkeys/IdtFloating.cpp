@@ -1,4 +1,5 @@
 ﻿import Inkeys.Helper.Thread;
+import Inkeys.Helper.SecRandom;
 import Inkeys.Net.Update;
 import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
@@ -6558,7 +6559,7 @@ void MouseInteraction()
 									}
 									else if (setlist.component.shortcutButton.rollCall.SecRandom)
 									{
-										{
+										/*{
 											SHELLEXECUTEINFO sei = { sizeof(sei) };
 											sei.fMask = SEE_MASK_NOASYNC;
 											sei.hwnd = NULL;
@@ -6567,7 +6568,9 @@ void MouseInteraction()
 											sei.nShow = SW_SHOWNORMAL;
 
 											ShellExecuteEx(&sei);
-										}
+										}*/
+
+										Inkeys::SecRandom::OpenQuickDraw();
 									}
 									else if (setlist.component.shortcutButton.rollCall.NamePicker)
 									{

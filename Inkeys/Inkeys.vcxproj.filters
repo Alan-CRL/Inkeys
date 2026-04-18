@@ -710,6 +710,9 @@
     <ClCompile Include="Inkeys\Helper\Helper.Enum.cppm">
       <Filter>Modules\Inkeys\Helper</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\Helper\Helper.SecRandom.cppm">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClCompile>
     <ClCompile Include="IdtD2DPreparation.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
