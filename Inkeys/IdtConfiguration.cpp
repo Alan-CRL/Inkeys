@@ -318,10 +318,16 @@ bool ReadSetting()
 				// rollCall
 				if (setlistVal["Component"]["ShortcutButton"].isMember("RollCall") && setlistVal["Component"]["ShortcutButton"]["RollCall"].isObject())
 				{
-					if (setlistVal["Component"]["ShortcutButton"]["RollCall"].isMember("IslandCaller") && setlistVal["Component"]["ShortcutButton"]["RollCall"]["IslandCaller"].isBool())
-						setlist.component.shortcutButton.rollCall.IslandCaller = setlistVal["Component"]["ShortcutButton"]["RollCall"]["IslandCaller"].asBool();
-					if (setlistVal["Component"]["ShortcutButton"]["RollCall"].isMember("SecRandom") && setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom"].isBool())
-						setlist.component.shortcutButton.rollCall.SecRandom = setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom"].asBool();
+					if (setlistVal["Component"]["ShortcutButton"]["RollCall"].isMember("IslandCaller1") && setlistVal["Component"]["ShortcutButton"]["RollCall"]["IslandCaller1"].isBool())
+						setlist.component.shortcutButton.rollCall.IslandCaller1 = setlistVal["Component"]["ShortcutButton"]["RollCall"]["IslandCaller1"].asBool();
+					if (setlistVal["Component"]["ShortcutButton"]["RollCall"].isMember("IslandCaller2") && setlistVal["Component"]["ShortcutButton"]["RollCall"]["IslandCaller2"].isBool())
+						setlist.component.shortcutButton.rollCall.IslandCaller2 = setlistVal["Component"]["ShortcutButton"]["RollCall"]["IslandCaller2"].asBool();
+					if (setlistVal["Component"]["ShortcutButton"]["RollCall"].isMember("SecRandom1") && setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom1"].isBool())
+						setlist.component.shortcutButton.rollCall.SecRandom1 = setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom1"].asBool();
+					if (setlistVal["Component"]["ShortcutButton"]["RollCall"].isMember("SecRandom2") && setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom2"].isBool())
+						setlist.component.shortcutButton.rollCall.SecRandom2 = setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom2"].asBool();
+					if (setlistVal["Component"]["ShortcutButton"]["RollCall"].isMember("SecRandom2Compat") && setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom2Compat"].isBool())
+						setlist.component.shortcutButton.rollCall.SecRandom2Compat = setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom2Compat"].asBool();
 					if (setlistVal["Component"]["ShortcutButton"]["RollCall"].isMember("NamePicker") && setlistVal["Component"]["ShortcutButton"]["RollCall"]["NamePicker"].isBool())
 						setlist.component.shortcutButton.rollCall.NamePicker = setlistVal["Component"]["ShortcutButton"]["RollCall"]["NamePicker"].asBool();
 				}
@@ -528,8 +534,11 @@ bool WriteSetting()
 				}
 				// rollCall
 				{
-					setlistVal["Component"]["ShortcutButton"]["RollCall"]["IslandCaller"] = Json::Value(setlist.component.shortcutButton.rollCall.IslandCaller);
-					setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom"] = Json::Value(setlist.component.shortcutButton.rollCall.SecRandom);
+					setlistVal["Component"]["ShortcutButton"]["RollCall"]["IslandCaller1"] = Json::Value(setlist.component.shortcutButton.rollCall.IslandCaller1);
+					setlistVal["Component"]["ShortcutButton"]["RollCall"]["IslandCaller2"] = Json::Value(setlist.component.shortcutButton.rollCall.IslandCaller2);
+					setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom1"] = Json::Value(setlist.component.shortcutButton.rollCall.SecRandom1);
+					setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom2"] = Json::Value(setlist.component.shortcutButton.rollCall.SecRandom2);
+					setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom2Compat"] = Json::Value(setlist.component.shortcutButton.rollCall.SecRandom2Compat);
 					setlistVal["Component"]["ShortcutButton"]["RollCall"]["NamePicker"] = Json::Value(setlist.component.shortcutButton.rollCall.NamePicker);
 				}
 				// linkage

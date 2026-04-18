@@ -119,8 +119,11 @@ struct SetListStruct
 			} keyboard;
 			struct
 			{
-				IdtAtomic<bool> IslandCaller;
-				IdtAtomic<bool> SecRandom;
+				IdtAtomic<bool> IslandCaller1;
+				IdtAtomic<bool> IslandCaller2;
+				IdtAtomic<bool> SecRandom1;
+				IdtAtomic<bool> SecRandom2;
+				IdtAtomic<bool> SecRandom2Compat;
 				IdtAtomic<bool> NamePicker;
 			}rollCall;
 			struct

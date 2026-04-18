@@ -931,8 +931,11 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 							setlist.component.shortcutButton.keyboard.keyboardAltF4 = false;
 						}
 						{
-							setlist.component.shortcutButton.rollCall.IslandCaller = false;
-							setlist.component.shortcutButton.rollCall.SecRandom = false;
+							setlist.component.shortcutButton.rollCall.IslandCaller1 = false;
+							setlist.component.shortcutButton.rollCall.IslandCaller2 = false;
+							setlist.component.shortcutButton.rollCall.SecRandom1 = false;
+							setlist.component.shortcutButton.rollCall.SecRandom2 = false;
+							setlist.component.shortcutButton.rollCall.SecRandom2Compat = false;
 							setlist.component.shortcutButton.rollCall.NamePicker = false;
 						}
 						{
