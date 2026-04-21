@@ -151,16 +151,17 @@ namespace
 			}
 
 			DWORD lastError = GetLastError();
+			if (lastError == ERROR_ACCESS_DENIED)
+			{
+				AssignError(errorMessage, L"连接 SecRandom IPC 通道被拒绝: " + FormatWindowsErrorDetail(lastError) + L"。");
+				return false;
+			}
+
 			if (std::chrono::steady_clock::now() >= deadline)
 			{
 				if (lastError == ERROR_FILE_NOT_FOUND)
 				{
 					AssignError(errorMessage, L"SecRandom IPC 通道不存在，请确认 SecRandom 已运行并启用了 URL IPC。");
-				}
-				else if (lastError == ERROR_ACCESS_DENIED)
-				{
-					AssignError(errorMessage, L"连接 SecRandom IPC 通道被拒绝: " + FormatWindowsErrorDetail(lastError)
-						+ L"。这通常意味着 Inkeys 与 SecRandom 不在同一用户/会话，或两者权限级别不一致。");
 				}
 				else
 				{
@@ -169,7 +170,7 @@ namespace
 				return false;
 			}
 
-			if (lastError != ERROR_FILE_NOT_FOUND && lastError != ERROR_PIPE_BUSY && lastError != ERROR_ACCESS_DENIED)
+			if (lastError != ERROR_FILE_NOT_FOUND && lastError != ERROR_PIPE_BUSY)
 			{
 				AssignError(errorMessage, L"连接 SecRandom IPC 通道失败: " + FormatWindowsErrorDetail(lastError) + L"。");
 				return false;
