@@ -181,6 +181,12 @@ namespace
 			DWORD waitSlice = static_cast<DWORD>(remainingMs > 1000 ? 1000 : remainingMs);
 			if (waitSlice == 0) waitSlice = 1;
 
+			if (lastError == ERROR_FILE_NOT_FOUND)
+			{
+				Sleep(waitSlice);
+				continue;
+			}
+
 			if (!WaitNamedPipeW(pipePath.c_str(), waitSlice))
 			{
 				DWORD waitError = GetLastError();
