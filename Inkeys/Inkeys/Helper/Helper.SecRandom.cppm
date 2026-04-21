@@ -4,7 +4,6 @@ module;
 
 #include <algorithm>
 #include <chrono>
-#include <cwctype>
 #include <limits>
 #include <sstream>
 #include <string_view>
@@ -76,13 +75,6 @@ namespace
 	void LogFailure(const std::wstring& message)
 	{
 		if (IDTLogger) IDTLogger->warn("[SecRandom] {}", utf16ToUtf8(message));
-		OutputDebugStringW((L"[SecRandom] " + message + L"\n").c_str());
-	}
-
-	void LogInfo(const std::wstring& message)
-	{
-		if (IDTLogger) IDTLogger->info("[SecRandom] {}", utf16ToUtf8(message));
-		OutputDebugStringW((L"[SecRandom] " + message + L"\n").c_str());
 	}
 
 	void AssignError(std::wstring* errorMessage, const std::wstring& message, bool log = true)
@@ -120,28 +112,6 @@ namespace
 		return LR"(\\.\pipe\)" + std::wstring(ipcName);
 	}
 
-	std::wstring ToLowerCopy(std::wstring value)
-	{
-		std::transform(value.begin(), value.end(), value.begin(), [](wchar_t ch)
-			{
-				return static_cast<wchar_t>(std::towlower(ch));
-			});
-		return value;
-	}
-
-	std::wstring JoinStrings(const std::vector<std::wstring>& values, std::wstring_view separator)
-	{
-		if (values.empty()) return {};
-
-		std::wstring joined = values.front();
-		for (size_t i = 1; i < values.size(); ++i)
-		{
-			joined += separator;
-			joined += values[i];
-		}
-		return joined;
-	}
-
 	std::wstring FormatErrorCode(DWORD errorCode)
 	{
 		std::wstringstream stream;
@@ -157,48 +127,6 @@ namespace
 		return FormatErrorCode(errorCode) + L" (" + FormatWindowsErrorMessage(errorCode) + L")";
 	}
 
-	std::vector<std::wstring> CollectRelatedPipeNames()
-	{
-		std::vector<std::wstring> relatedNames;
-		WIN32_FIND_DATAW findData{};
-		HANDLE findHandle = FindFirstFileW(LR"(\\.\pipe\*)", &findData);
-		if (findHandle == INVALID_HANDLE_VALUE) return relatedNames;
-
-		do
-		{
-			const std::wstring name = findData.cFileName;
-			const std::wstring lowered = ToLowerCopy(name);
-			if (lowered.find(L"secrandom") != std::wstring::npos) relatedNames.push_back(name);
-		} while (FindNextFileW(findHandle, &findData));
-
-		FindClose(findHandle);
-		std::sort(relatedNames.begin(), relatedNames.end());
-		relatedNames.erase(std::unique(relatedNames.begin(), relatedNames.end()), relatedNames.end());
-		return relatedNames;
-	}
-
-	std::wstring DescribeCurrentProcessContext()
-	{
-		DWORD sessionId = 0;
-		const bool hasSessionId = ProcessIdToSessionId(GetCurrentProcessId(), &sessionId) != FALSE;
-		std::wstring description = L"pid=" + std::to_wstring(GetCurrentProcessId());
-		if (hasSessionId)
-		{
-			description += L", session=" + std::to_wstring(sessionId);
-		}
-		return description;
-	}
-
-	std::wstring BuildPipeSnapshotMessage(const std::vector<std::wstring>& relatedPipes)
-	{
-		if (relatedPipes.empty())
-		{
-			return L"当前未发现任何名称包含 \"SecRandom\" 的命名管道。";
-		}
-
-		return L"当前可见相关管道: " + JoinStrings(relatedPipes, L", ") + L"。";
-	}
-
 	std::string TrimAsciiWhitespace(std::string text)
 	{
 		auto isSpace = [](unsigned char ch) { return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n'; };
@@ -212,15 +140,6 @@ namespace
 	{
 		const std::wstring pipePath = BuildPipePath(ipcName);
 		const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
-		const std::vector<std::wstring> relatedPipes = CollectRelatedPipeNames();
-		const std::wstring pipeSnapshot = BuildPipeSnapshotMessage(relatedPipes);
-		LogInfo(L"准备连接 SecRandom IPC: target=" + pipePath + L", timeout=" + std::to_wstring(timeoutMs) + L"ms, " + DescribeCurrentProcessContext());
-		LogInfo(pipeSnapshot);
-
-		DWORD previousCreateError = ERROR_SUCCESS;
-		bool hasPreviousCreateError = false;
-		DWORD previousWaitError = ERROR_SUCCESS;
-		bool hasPreviousWaitError = false;
 
 		while (true)
 		{
@@ -228,43 +147,31 @@ namespace
 			if (rawHandle != INVALID_HANDLE_VALUE)
 			{
 				pipeHandle.Reset(rawHandle);
-				LogInfo(L"已连接到 SecRandom IPC: " + pipePath);
 				return true;
 			}
 
 			DWORD lastError = GetLastError();
-			if (!hasPreviousCreateError || previousCreateError != lastError)
-			{
-				LogInfo(L"CreateFileW 连接 SecRandom IPC 失败: target=" + pipePath + L", error=" + FormatWindowsErrorDetail(lastError));
-				previousCreateError = lastError;
-				hasPreviousCreateError = true;
-			}
 			if (std::chrono::steady_clock::now() >= deadline)
 			{
 				if (lastError == ERROR_FILE_NOT_FOUND)
 				{
-					AssignError(errorMessage, L"SecRandom IPC 通道不存在，请确认 SecRandom 已运行并启用了 URL IPC。"
-						+ std::wstring(L" 目标管道: ") + pipePath + L"。"
-						+ pipeSnapshot);
+					AssignError(errorMessage, L"SecRandom IPC 通道不存在，请确认 SecRandom 已运行并启用了 URL IPC。");
 				}
 				else if (lastError == ERROR_ACCESS_DENIED)
 				{
 					AssignError(errorMessage, L"连接 SecRandom IPC 通道被拒绝: " + FormatWindowsErrorDetail(lastError)
-						+ L"。目标管道: " + pipePath
 						+ L"。这通常意味着 Inkeys 与 SecRandom 不在同一用户/会话，或两者权限级别不一致。");
 				}
 				else
 				{
-					AssignError(errorMessage, L"连接 SecRandom IPC 通道失败: " + FormatWindowsErrorDetail(lastError)
-						+ L"。目标管道: " + pipePath + L"。");
+					AssignError(errorMessage, L"连接 SecRandom IPC 通道失败: " + FormatWindowsErrorDetail(lastError) + L"。");
 				}
 				return false;
 			}
 
 			if (lastError != ERROR_FILE_NOT_FOUND && lastError != ERROR_PIPE_BUSY && lastError != ERROR_ACCESS_DENIED)
 			{
-				AssignError(errorMessage, L"连接 SecRandom IPC 通道失败: " + FormatWindowsErrorDetail(lastError)
-					+ L"。目标管道: " + pipePath + L"。");
+				AssignError(errorMessage, L"连接 SecRandom IPC 通道失败: " + FormatWindowsErrorDetail(lastError) + L"。");
 				return false;
 			}
 
@@ -276,16 +183,9 @@ namespace
 			if (!WaitNamedPipeW(pipePath.c_str(), waitSlice))
 			{
 				DWORD waitError = GetLastError();
-				if (!hasPreviousWaitError || previousWaitError != waitError)
-				{
-					LogInfo(L"WaitNamedPipeW 等待 SecRandom IPC 失败: target=" + pipePath + L", wait=" + std::to_wstring(waitSlice) + L"ms, error=" + FormatWindowsErrorDetail(waitError));
-					previousWaitError = waitError;
-					hasPreviousWaitError = true;
-				}
 				if (waitError != ERROR_FILE_NOT_FOUND && waitError != ERROR_SEM_TIMEOUT)
 				{
-					AssignError(errorMessage, L"等待 SecRandom IPC 管道就绪失败: " + FormatWindowsErrorDetail(waitError)
-						+ L"。目标管道: " + pipePath + L"。");
+					AssignError(errorMessage, L"等待 SecRandom IPC 管道就绪失败: " + FormatWindowsErrorDetail(waitError) + L"。");
 					return false;
 				}
 			}
@@ -373,8 +273,6 @@ export namespace Inkeys::SecRandom
 {
 	bool SendUrl(std::wstring_view url, std::wstring* errorMessage = nullptr, DWORD timeoutMs = 5000)
 	{
-		LogInfo(L"准备发送 SecRandom URL IPC: " + std::wstring(url));
-
 		UniqueHandle pipeHandle;
 		if (!ConnectPipe(kDefaultIpcName, timeoutMs, pipeHandle, errorMessage)) return false;
 
@@ -386,13 +284,11 @@ export namespace Inkeys::SecRandom
 		writer["indentation"] = "";
 		std::string requestJson = Json::writeString(writer, request);
 		requestJson.push_back('\n');
-		LogInfo(L"SecRandom IPC 请求体: " + utf8ToUtf16(requestJson));
 
 		if (!WriteAll(pipeHandle.Get(), requestJson.data(), requestJson.size(), errorMessage)) return false;
 
 		std::string responseJson;
 		if (!ReadResponseLine(pipeHandle.Get(), responseJson, errorMessage)) return false;
-		LogInfo(L"SecRandom IPC 原始响应: " + utf8ToUtf16(responseJson));
 
 		Json::CharReaderBuilder reader;
 		reader["collectComments"] = false;
@@ -402,7 +298,7 @@ export namespace Inkeys::SecRandom
 		std::string parseErrors;
 		if (!Json::parseFromStream(reader, responseStream, &response, &parseErrors))
 		{
-			AssignError(errorMessage, L"SecRandom IPC 返回了无法解析的 JSON: " + utf8ToUtf16(parseErrors));
+			AssignError(errorMessage, L"SecRandom IPC 返回了无法解析的响应。");
 			return false;
 		}
 
@@ -414,24 +310,10 @@ export namespace Inkeys::SecRandom
 
 		if (!response["success"].asBool())
 		{
-			if (response.isMember("message") && response["message"].isString())
-			{
-				AssignError(errorMessage, L"SecRandom IPC 调用失败: " + utf8ToUtf16(response["message"].asString()));
-			}
-			else if (response.isMember("error") && response["error"].isString())
-			{
-				AssignError(errorMessage, L"SecRandom IPC 调用失败: " + utf8ToUtf16(response["error"].asString()));
-			}
-			else
-			{
-				Json::StreamWriterBuilder errorWriter;
-				errorWriter["indentation"] = "";
-				AssignError(errorMessage, L"SecRandom IPC 调用失败: " + utf8ToUtf16(Json::writeString(errorWriter, response)));
-			}
+			AssignError(errorMessage, L"SecRandom IPC 调用失败。");
 			return false;
 		}
 
-		LogInfo(L"SecRandom IPC 调用成功。");
 		if (errorMessage) errorMessage->clear();
 		return true;
 	}

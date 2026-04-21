@@ -25,6 +25,7 @@ import Inkeys.Text.Font;
 
 #include <shldisp.h>
 #include <exdisp.h>
+#include <mutex>
 
 floating_windowsStruct floating_windows;
 
@@ -36,6 +37,19 @@ double target_status;
 
 bool reserve_drawpad = false;
 bool smallcard_refresh = true;
+
+static std::mutex secRandomQuickDrawMutex;
+
+static void OpenSecRandomQuickDrawAsync()
+{
+	thread([]()
+		{
+			std::unique_lock<std::mutex> lock(secRandomQuickDrawMutex, std::try_to_lock);
+			if (!lock.owns_lock()) return;
+
+			Inkeys::SecRandom::OpenQuickDraw();
+		}).detach();
+}
 
 //UI 控件
 
@@ -6567,7 +6581,7 @@ void MouseInteraction()
 									}
 									else if (setlist.component.shortcutButton.rollCall.SecRandom2)
 									{
-										Inkeys::SecRandom::OpenQuickDraw();
+										OpenSecRandomQuickDrawAsync();
 									}
 									else if (setlist.component.shortcutButton.rollCall.SecRandom2Compat)
 									{
