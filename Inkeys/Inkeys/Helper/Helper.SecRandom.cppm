@@ -140,10 +140,11 @@ namespace
 	{
 		const std::wstring pipePath = BuildPipePath(ipcName);
 		const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+		const DWORD pipeClientFlags = SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION;
 
 		while (true)
 		{
-			HANDLE rawHandle = CreateFileW(pipePath.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+			HANDLE rawHandle = CreateFileW(pipePath.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, pipeClientFlags, nullptr);
 			if (rawHandle != INVALID_HANDLE_VALUE)
 			{
 				pipeHandle.Reset(rawHandle);
