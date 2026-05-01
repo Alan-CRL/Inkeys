@@ -17,3 +17,7 @@ reviews:
       - "inkeys2-final"
       - "canary"
       - "dev"
+
+  tools:
+    clang:
+      enabled: false
