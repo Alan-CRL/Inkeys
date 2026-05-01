@@ -52,6 +52,9 @@ namespace Inkeys::ConfigDetail
 			X(IdtAtomic<bool>, AutoTakeOver, false) \
 			X(IdtAtomic<bool>, AutoTakeOverOnce, true) \
 			X(IdtAtomic<bool>, AutoTakeOverExpand, true) \
+			GROUP(Tentative, \
+				X(IdtAtomic<bool>, EnablePageButtonLongPress, false) \
+			) \
 		) \
 	)
 

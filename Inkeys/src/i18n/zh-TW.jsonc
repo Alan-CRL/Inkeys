@@ -156,7 +156,7 @@
         "Arch":
         {
           "N": "目標更新架構",
-          "E": "注意：與現在系統不一致的架構可能會導致軟體無法啟動或嚴重效能問題。",
+          "E": "註意：與現在系統不一致的架構可能會導致軟體無法啟動或嚴重效能問題。",
           "64": "64位",
           "32": "32位",
           "Arm64": "Arm64"
@@ -266,17 +266,17 @@
       "AIDraw":
       {
         "N": "智慧繪圖",
-        "PenUp": "抬筆拉直直線",
+        "PenUp": "擡筆拉直直線",
         "PenUpE": "目前僅推薦於教學一體機使用。",
         "PenStay": "停留拉直直線",
         "PenStayE": "繪製直線完成後按住一秒，直線將被拉直。",
         "EndpointAdsorption": "端點吸附",
-        "EndpointAdsorptionE": "直線和矩形端點將在抬筆時吸附。"
+        "EndpointAdsorptionE": "直線和矩形端點將在擡筆時吸附。"
       },
       "DrawBehavior":
       {
         "N": "繪圖行為",
-        "SoomthWriting": "抬筆平滑筆跡"
+        "SoomthWriting": "擡筆平滑筆跡"
       },
       "RubberThickness":
       {
@@ -346,7 +346,7 @@
         "Solve": "解決方案",
         "Sync": "同步調節",
         "Reset": "重設",
-        "Tip": "使用插件時需要確保智繪教Inkeys的程式權限和PPT程式是一致的才能正確識別。如果依然存在問題，可以參考解決方案。",
+        "Tip": "使用插件時需要確保智绘教Inkeys的程式權限和PPT程式是一致的才能正確識別。如果依然存在問題，可以參考解決方案。",
         "Warn": "偵測到您的PowerPoint/WPS已經設定為一律以系統管理員身分開啟，這意味著程式需要以系統管理員身分執行才能識別到放映處理序並開啟PPT連動。如果您不希望放映軟體一律以系統管理員身分執行，可以參考解決方案。",
         "Error": "外掛程式載入發生錯誤，可能是因為未安裝 .NET Framework 4.x 或全域 COM 環境發生異常。\n錯誤代碼",
         "BasicLogic":
@@ -359,29 +359,29 @@
         },
         "WidgetDisplay":
         {
-          "N": "控制項顯示",
-          "BottomBoth": "顯示底部兩側控制項",
-          "MiddleBoth": "顯示中部兩側控制項",
-          "BottomMiddle": "顯示底部主欄控制項"
+          "N": "控製項顯示",
+          "BottomBoth": "顯示底部兩側控製項",
+          "MiddleBoth": "顯示中部兩側控製項",
+          "BottomMiddle": "顯示底部主欄控製項"
         },
         "WidgetPosition":
         {
-          "N": "控制項位置",
-          "Reset": "重設控制項位置",
-          "Remember": "記憶控制項位置"
+          "N": "控製項位置",
+          "Reset": "重設控製項位置",
+          "Remember": "記憶控製項位置"
         },
         "WidgetScale":
         {
-          "N": "控制項縮放",
+          "N": "控製項縮放",
           "Ind": "{:.2f} 倍縮放",
           "Page":
           {
-            "BottomSideBoth": "底部兩側控制項縮放",
-            "MiddleSideBoth": "中部兩側控制項縮放"
+            "BottomSideBoth": "底部兩側控製項縮放",
+            "MiddleSideBoth": "中部兩側控製項縮放"
           },
           "State":
           {
-            "BottomSideMiddle": "底部主欄控制項縮放"
+            "BottomSideMiddle": "底部主欄控製項縮放"
           }
         },
         "Tentative":
@@ -389,11 +389,12 @@
           "N": "實驗性選項",
           "CloseWpp": "允許關閉遊離卡死的 WPP 簡報處理序",
           "CloseWppE": "重啟軟體生效。在WPS退出放映後，原來的WPP簡報處理序並不會立卽關閉，而是保持遊離卡死狀態。此時再次開始放映PPT則無法立卽識別到放映處理序並開啟PPT連動。開啟此選項將幫助關閉遊離卡死的WPP放映處理序，這不會對您的檔案造成影響，推薦開啟。",
-          "AutoTakeOver": "[[Need translation: 接管放映批注]]",
-          "AutoTakeOverE": "[[Need translation: 在识别到开启了 PPT 原生批注后，将打开软件内绘制模式，并关闭 PPT 原生批注。]]",
-          "AutoTakeOverOnce": "[[Need translation: 每次放映至多接管一次]]",
-          "AutoTakeOverOnceE": "[[Need translation: 防止的确需要使用 PPT 原生批注的场景。]]",
-          "AutoTakeOverExpand": "[[Need translation: 接管成功时展开主栏]]"
+          "AutoTakeOver": "接管放映批註",
+          "AutoTakeOverE": "在識別到開啟了 PPT 原生批註後，將開啟軟體內繪製模式，並關閉 PPT 原生批註。",
+          "AutoTakeOverOnce": "每次放映至多接管一次",
+          "AutoTakeOverOnceE": "避免確實需要使用 PPT 原生批註的情境。",
+          "AutoTakeOverExpand": "接管成功時展開主欄",
+          "EnablePageButtonLongPress": "啟用翻頁按鈕長按翻頁"
         }
       },
       "SuperTop":
@@ -414,7 +415,7 @@
       "DesktopDrawpadBlocker":
       {
         "N": "同類軟體懸浮視窗攔截小幫手 3 Lite",
-        "E": "在教學一體機上，一些白板軟體的桌面懸浮窗畫筆功能不能直接關閉，桌面會出現多家畫筆工具的懸浮窗。這容易導致老師混用不同的工具而無法繼續批注，嚴重影響了教學效率，於是 DesktopDrawpadBlocker 應運而生。"
+        "E": "在教學一體機上，一些白板軟體的桌面懸浮窗畫筆功能不能直接關閉，桌面會出現多家畫筆工具的懸浮窗。這容易導致老師混用不同的工具而無法繼續批註，嚴重影響了教學效率，於是 DesktopDrawpadBlocker 應運而生。"
       },
       "LnkHelper":
       {
