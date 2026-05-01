@@ -177,7 +177,7 @@ bool PptUiIsInRoundRect(float x, float y, PptUiRoundRectWidgetClass pptUiRoundRe
 IMAGE PptIcon[6]; // PPT 控件的按键图标
 IMAGE PptWindowBackground; // PPT 窗口背景画布
 
-bool PptUiChangeSignal;
+IdtAtomic<bool> PptUiChangeSignal;
 int PptUiAllReplaceSignal;
 
 // -------------------------
