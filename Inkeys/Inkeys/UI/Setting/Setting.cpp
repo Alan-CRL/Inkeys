@@ -2738,6 +2738,15 @@ void SettingMain(stop_token sT)
 
 												WriteSetting();
 
+												if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
+												{
+													error_code ec;
+													if (_waccess((globalPath + L"installer").c_str(), 4) == 0)
+													{
+														filesystem::remove_all(globalPath + L"installer", ec);
+														filesystem::create_directory(globalPath + L"installer", ec);
+													}
+												}
 												AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
 											}
 										}
@@ -2828,6 +2837,15 @@ void SettingMain(stop_token sT)
 
 												WriteSetting();
 
+												if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
+												{
+													error_code ec;
+													if (_waccess((globalPath + L"installer").c_str(), 4) == 0)
+													{
+														filesystem::remove_all(globalPath + L"installer", ec);
+														filesystem::create_directory(globalPath + L"installer", ec);
+													}
+												}
 												if (AutomaticUpdateState != AutomaticUpdateStateEnum::UpdateNotStarted)
 												{
 													AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
