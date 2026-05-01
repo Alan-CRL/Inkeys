@@ -182,6 +182,16 @@ bool PptUiIsLeftButtonPressed(ExMessage& m)
 
 	return (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
 }
+bool PptUiIsLeftButtonPressedInRoundRect(ExMessage& m, PptUiRoundRectWidgetClass pptUiRoundRectWidget)
+{
+	if (!PptUiIsLeftButtonPressed(m)) return false;
+
+	POINT pt;
+	GetCursorPos(&pt);
+	if (!ScreenToClient(ppt_window, &pt)) return false;
+
+	return PptUiIsInRoundRect((float)pt.x, (float)pt.y, pptUiRoundRectWidget);
+}
 void PptUiReleaseMouseCapture()
 {
 	if (GetCapture() == ppt_window) ReleaseCapture();
@@ -3688,7 +3698,7 @@ void PptInteract()
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 						while (1)
 						{
-							if (!PptUiIsLeftButtonPressed(m)) break;
+							if (!PptUiIsLeftButtonPressedInRoundRect(m, pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage])) break;
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								PreviousPptSlides();
@@ -3747,7 +3757,7 @@ void PptInteract()
 							std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 							while (1)
 							{
-								if (!PptUiIsLeftButtonPressed(m)) break;
+								if (!PptUiIsLeftButtonPressedInRoundRect(m, pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage])) break;
 
 								if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 								{
@@ -3826,7 +3836,7 @@ void PptInteract()
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 						while (1)
 						{
-							if (!PptUiIsLeftButtonPressed(m)) break;
+							if (!PptUiIsLeftButtonPressedInRoundRect(m, pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage])) break;
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								PreviousPptSlides();
@@ -3885,7 +3895,7 @@ void PptInteract()
 							std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 							while (1)
 							{
-								if (!PptUiIsLeftButtonPressed(m)) break;
+								if (!PptUiIsLeftButtonPressedInRoundRect(m, pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage])) break;
 
 								if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 								{
@@ -3966,7 +3976,7 @@ void PptInteract()
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 						while (1)
 						{
-							if (!PptUiIsLeftButtonPressed(m)) break;
+							if (!PptUiIsLeftButtonPressedInRoundRect(m, pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage])) break;
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								PreviousPptSlides();
@@ -4025,7 +4035,7 @@ void PptInteract()
 							std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 							while (1)
 							{
-								if (!PptUiIsLeftButtonPressed(m)) break;
+								if (!PptUiIsLeftButtonPressedInRoundRect(m, pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage])) break;
 
 								if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 								{
@@ -4107,7 +4117,7 @@ void PptInteract()
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 						while (1)
 						{
-							if (!PptUiIsLeftButtonPressed(m)) break;
+							if (!PptUiIsLeftButtonPressedInRoundRect(m, pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage])) break;
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								PreviousPptSlides();
@@ -4166,7 +4176,7 @@ void PptInteract()
 							std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
 							while (1)
 							{
-								if (!PptUiIsLeftButtonPressed(m)) break;
+								if (!PptUiIsLeftButtonPressedInRoundRect(m, pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage])) break;
 
 								if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 								{
