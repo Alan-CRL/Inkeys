@@ -6473,7 +6473,7 @@ void SettingMain(stop_token sT)
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(255, 255, 255, 0));
-								ImGui::BeginChild("PPT演示助手#7", { 750.0f * settingGlobalScale,240.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+								ImGui::BeginChild("PPT演示助手#7", { 750.0f * settingGlobalScale,230.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 								{
 									ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -6505,7 +6505,7 @@ void SettingMain(stop_token sT)
 									{
 										bool value = Inkeys::config.PlugIn.PPTHelper.AutoTakeOver;
 
-										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 6));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
@@ -6530,14 +6530,14 @@ void SettingMain(stop_token sT)
 									}
 
 									// Separator
-									cursosPosY = ImGui::GetCursorPosY();
+									cursosPosY = 70.0f * settingGlobalScale;
 									{
-										ImGui::SetCursorPosY(cursosPosY + 25.0f * settingGlobalScale);
+										ImGui::SetCursorPosY(cursosPosY);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Separator, IM_COL32(229, 229, 229, 255));
 										ImGui::Separator();
 									}
 
-									cursosPosY = ImGui::GetCursorPosY();
+									cursosPosY = 70.0f * settingGlobalScale;
 									{
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
@@ -6553,7 +6553,7 @@ void SettingMain(stop_token sT)
 									{
 										bool value = Inkeys::config.PlugIn.PPTHelper.AutoTakeOverOnce;
 
-										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 6));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
@@ -6578,14 +6578,14 @@ void SettingMain(stop_token sT)
 									}
 
 									// Separator
-									cursosPosY = ImGui::GetCursorPosY();
+									cursosPosY = 140.0f * settingGlobalScale;
 									{
-										ImGui::SetCursorPosY(cursosPosY + 25.0f * settingGlobalScale);
+										ImGui::SetCursorPosY(cursosPosY);
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Separator, IM_COL32(229, 229, 229, 255));
 										ImGui::Separator();
 									}
 
-									cursosPosY = ImGui::GetCursorPosY();
+									cursosPosY = 140.0f * settingGlobalScale;
 									{
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
