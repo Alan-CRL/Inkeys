@@ -2392,7 +2392,7 @@ void PptInfo()
 			if (toolType == 1 && StartPptTakeoverAnnotation(toolType))
 			{
 				ExitPptSlideShowAnnotationTool();
-				if(config.PlugIn.PPTHelper.AutoTakeOverOnce) pptTakeoverConsumedInCurrentShow = true;
+				if (config.PlugIn.PPTHelper.AutoTakeOverOnce) pptTakeoverConsumedInCurrentShow = true;
 
 				if (config.PlugIn.PPTHelper.AutoTakeOverExpand)
 				{
@@ -3672,9 +3672,18 @@ void PptInteract()
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
 
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
+						bool isLeftButtonDown = true;
 						while (1)
 						{
-							if (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)) break;
+							while (hiex::peekmessage_win32(&m, EM_MOUSE, true, ppt_window))
+							{
+								if (m.message == WM_LBUTTONUP || (m.message == WM_MOUSEMOVE && !m.lbutton))
+								{
+									isLeftButtonDown = false;
+									break;
+								}
+							}
+							if (!isLeftButtonDown) break;
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								PreviousPptSlides();
@@ -4574,4 +4583,3 @@ bool ShortcutAssistantClass::CreateShortcut(const std::wstring& shortcutPath, co
 
 	return SUCCEEDED(hres);
 }
-
