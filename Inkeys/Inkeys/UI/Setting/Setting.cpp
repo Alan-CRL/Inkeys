@@ -221,6 +221,28 @@ void SettingWindowBegin()
 
 void SettingMain(stop_token sT)
 {
+	auto ClearUpdateRestartInstaller = []()
+		{
+			error_code ec;
+			if (_waccess((globalPath + L"installer").c_str(), 4) != 0) return true;
+
+			filesystem::remove_all(globalPath + L"installer", ec);
+			if (ec)
+			{
+				if (IDTLogger) IDTLogger->error("[SettingMain] 删除更新安装目录失败: {}", ec.message());
+				return false;
+			}
+
+			filesystem::create_directory(globalPath + L"installer", ec);
+			if (ec)
+			{
+				if (IDTLogger) IDTLogger->error("[SettingMain] 重建更新安装目录失败: {}", ec.message());
+				return false;
+			}
+
+			return true;
+		};
+
 	bool showWindow = false;
 	while (!sT.stop_requested())
 	{
@@ -2605,13 +2627,8 @@ void SettingMain(stop_token sT)
 
 									if (!setlist.enableAutoUpdate && AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
 									{
-										error_code ec;
-										if (_waccess((globalPath + L"installer").c_str(), 4) == 0)
-										{
-											filesystem::remove_all(globalPath + L"installer", ec);
-											filesystem::create_directory(globalPath + L"installer", ec);
-										}
-										AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+										if (ClearUpdateRestartInstaller()) AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+										else AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateNotStarted;
 									}
 									else if (setlist.enableAutoUpdate && AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNew)
 									{
@@ -2740,14 +2757,10 @@ void SettingMain(stop_token sT)
 
 												if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
 												{
-													error_code ec;
-													if (_waccess((globalPath + L"installer").c_str(), 4) == 0)
-													{
-														filesystem::remove_all(globalPath + L"installer", ec);
-														filesystem::create_directory(globalPath + L"installer", ec);
-													}
+													if (ClearUpdateRestartInstaller()) AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+													else AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateNotStarted;
 												}
-												AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+												else AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
 											}
 										}
 										if (is_selected) ImGui::SetItemDefaultFocus();
@@ -2839,14 +2852,10 @@ void SettingMain(stop_token sT)
 
 												if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
 												{
-													error_code ec;
-													if (_waccess((globalPath + L"installer").c_str(), 4) == 0)
-													{
-														filesystem::remove_all(globalPath + L"installer", ec);
-														filesystem::create_directory(globalPath + L"installer", ec);
-													}
+													if (ClearUpdateRestartInstaller()) AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+													else AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateNotStarted;
 												}
-												if (AutomaticUpdateState != AutomaticUpdateStateEnum::UpdateNotStarted)
+												else if (AutomaticUpdateState != AutomaticUpdateStateEnum::UpdateNotStarted)
 												{
 													AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
 												}
