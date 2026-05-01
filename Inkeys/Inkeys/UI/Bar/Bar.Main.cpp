@@ -54,6 +54,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 		static DWORD activeTouchId = 0;   // 0表示无活动ID
 		static bool isTouchActive = false;
+		static bool activeTouchIsPrimary = false;
 		static short activeTouchX = 0;
 		static short activeTouchY = 0;
 
@@ -61,12 +62,24 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		vector<TOUCHINPUT> inputs(cInputs);
 		if (GetTouchInputInfo((HTOUCHINPUT)lParam, cInputs, inputs.data(), sizeof(TOUCHINPUT)))
 		{
-			bool touchIdCheck = false; // 检测当前活动ID是否还存在
 			POINT pt;
+			bool hasPrimaryTouch = false;
+			bool fallbackTouchLocked = false;
+
+			for (UINT i = 0; i < cInputs; i++)
+			{
+				if (inputs[i].dwFlags & TOUCHEVENTF_PRIMARY)
+				{
+					hasPrimaryTouch = true;
+					break;
+				}
+			}
 
 			for (UINT i = 0; i < cInputs; i++)
 			{
 				const TOUCHINPUT& ti = inputs[i];
+				bool isPrimaryTouch = (ti.dwFlags & TOUCHEVENTF_PRIMARY) != 0;
+				bool canLockFallbackTouch = !hasPrimaryTouch && !isTouchActive && !fallbackTouchLocked;
 
 				double xO = static_cast<double>(ti.x) / 100.0;
 				double yO = static_cast<double>(ti.y) / 100.0;
@@ -75,13 +88,36 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 				pt.y = static_cast<LONG>(yO + 0.5);
 				ScreenToClient(hWnd, &pt);
 
-				if (ti.dwFlags & TOUCHEVENTF_DOWN)
+				if ((ti.dwFlags & TOUCHEVENTF_DOWN) && (isPrimaryTouch || canLockFallbackTouch))
 				{
-					// 如果当前无activeID，则锁定第一个DOWN点
+					if (isTouchActive && activeTouchId != ti.dwID)
+					{
+						activeTouchId = 0;
+						isTouchActive = false;
+						activeTouchIsPrimary = false;
+						Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, false);
+
+						{
+							ExMessage msgMouse = {};
+							msgMouse.message = WM_LBUTTONUP;
+							msgMouse.x = activeTouchX;
+							msgMouse.y = activeTouchY;
+							msgMouse.lbutton = false;
+
+							int index = hiex::GetWindowIndex(hWnd, false);
+							unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
+							hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
+							lg_vecWindows_vecMessage_sm.unlock();
+						}
+					}
+
+					// 如果当前无 activeID，则锁定 primary touch；没有 primary 标志时兜底第一个 DOWN 点
 					if (!isTouchActive)
 					{
 						activeTouchId = ti.dwID;
 						isTouchActive = true;
+						activeTouchIsPrimary = isPrimaryTouch;
+						fallbackTouchLocked = !isPrimaryTouch;
 						Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, true);
 
 						activeTouchX = pt.x;
@@ -101,10 +137,13 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 						}
 					}
 				}
-				if (ti.dwFlags & TOUCHEVENTF_MOVE)
+				bool canTranslateActiveTouch = isTouchActive && ti.dwID == activeTouchId && (isPrimaryTouch || !activeTouchIsPrimary || !hasPrimaryTouch);
+
+				if ((ti.dwFlags & TOUCHEVENTF_MOVE) && canTranslateActiveTouch)
 				{
 					if (isTouchActive && ti.dwID == activeTouchId)
 					{
+						if (isPrimaryTouch) activeTouchIsPrimary = true;
 						activeTouchX = pt.x;
 						activeTouchY = pt.y;
 
@@ -122,12 +161,13 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 						}
 					}
 				}
-				if (ti.dwFlags & TOUCHEVENTF_UP)
+				if ((ti.dwFlags & TOUCHEVENTF_UP) && canTranslateActiveTouch)
 				{
 					if (isTouchActive && ti.dwID == activeTouchId)
 					{
 						activeTouchId = 0;
 						isTouchActive = false;
+						activeTouchIsPrimary = false;
 						Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, false);
 
 						activeTouchX = pt.x;
@@ -148,27 +188,6 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 					}
 				}
 
-				if (isTouchActive && ti.dwID == activeTouchId) touchIdCheck = true;
-			}
-
-			if (isTouchActive && !touchIdCheck)
-			{
-				activeTouchId = 0;
-				isTouchActive = false;
-				Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, false);
-
-				{
-					ExMessage msgMouse = {};
-					msgMouse.message = WM_LBUTTONUP;
-					msgMouse.x = activeTouchX;
-					msgMouse.y = activeTouchY;
-					msgMouse.lbutton = false;
-
-					int index = hiex::GetWindowIndex(hWnd, false);
-					unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
-					hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
-					lg_vecWindows_vecMessage_sm.unlock();
-				}
 			}
 		}
 

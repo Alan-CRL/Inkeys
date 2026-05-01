@@ -16,4 +16,4 @@ reviews:
       - "inkeys1-final"
       - "inkeys2-final"
       - "canary"
-      - "staging"
+      - "dev"
