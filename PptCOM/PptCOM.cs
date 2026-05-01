@@ -634,19 +634,28 @@ namespace PptCOM
                         CreateBindCtx(0, out bindCtx);
                         moniker[0].GetDisplayName(bindCtx, null, out displayName);
 
-                        if (LooksLikePresentationFile(displayName) || displayName == "!{91493441-5A91-11CF-8700-00AA0060263B}")
+                        bool isPowerPointApplicationMoniker = string.Equals(displayName, "!{91493441-5A91-11CF-8700-00AA0060263B}", StringComparison.OrdinalIgnoreCase);
+                        if (LooksLikePresentationFile(displayName) || isPowerPointApplicationMoniker)
                         {
                             rot.GetObject(moniker[0], out comObject);
                             if (comObject != null)
                             {
-                                // 尝试通过 Presentation 对象获取 Application
-                                try
+                                if (isPowerPointApplicationMoniker)
                                 {
-                                    // 使用反射获取 Application 属性
-                                    object appObj = comObject.GetType().InvokeMember("Application", BindingFlags.GetProperty, null, comObject, null);
-                                    candidateApp = appObj;
+                                    candidateApp = comObject;
+                                    comObject = null;
                                 }
-                                catch { }
+                                else
+                                {
+                                    // 尝试通过 Presentation 对象获取 Application
+                                    try
+                                    {
+                                        // 使用反射获取 Application 属性
+                                        object appObj = comObject.GetType().InvokeMember("Application", BindingFlags.GetProperty, null, comObject, null);
+                                        candidateApp = appObj;
+                                    }
+                                    catch { }
+                                }
                             }
                             else { }
                         }
