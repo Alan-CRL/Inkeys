@@ -173,6 +173,19 @@ bool PptUiIsInRoundRect(float x, float y, PptUiRoundRectWidgetClass pptUiRoundRe
 
 	return false;
 }
+bool PptUiIsLeftButtonPressed(ExMessage& m)
+{
+	while (hiex::peekmessage_win32(&m, EM_MOUSE, true, ppt_window))
+	{
+		if (m.message == WM_LBUTTONUP || (m.message == WM_MOUSEMOVE && !m.lbutton)) return false;
+	}
+
+	return (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+}
+void PptUiReleaseMouseCapture()
+{
+	if (GetCapture() == ppt_window) ReleaseCapture();
+}
 
 IMAGE PptIcon[6]; // PPT 控件的按键图标
 IMAGE PptWindowBackground; // PPT 窗口背景画布
@@ -3671,19 +3684,11 @@ void PptInteract()
 						PreviousPptSlides();
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
 
+						SetCapture(ppt_window);
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
-						bool isLeftButtonDown = true;
 						while (1)
 						{
-							while (hiex::peekmessage_win32(&m, EM_MOUSE, true, ppt_window))
-							{
-								if (m.message == WM_LBUTTONUP || (m.message == WM_MOUSEMOVE && !m.lbutton))
-								{
-									isLeftButtonDown = false;
-									break;
-								}
-							}
-							if (!isLeftButtonDown) break;
+							if (!PptUiIsLeftButtonPressed(m)) break;
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								PreviousPptSlides();
@@ -3692,6 +3697,7 @@ void PptInteract()
 
 							this_thread::sleep_for(chrono::milliseconds(15));
 						}
+						PptUiReleaseMouseCapture();
 
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].FillColor.v = RGBA(250, 250, 250, 160);
 						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
@@ -3737,25 +3743,18 @@ void PptInteract()
 							NextPptSlides(temp_currentpage);
 							pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
 
+							SetCapture(ppt_window);
 							std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
-							bool isLeftButtonDown = true;
 							while (1)
 							{
-								while (hiex::peekmessage_win32(&m, EM_MOUSE, true, ppt_window))
-								{
-									if (m.message == WM_LBUTTONUP || (m.message == WM_MOUSEMOVE && !m.lbutton))
-									{
-										isLeftButtonDown = false;
-										break;
-									}
-								}
-								if (!isLeftButtonDown) break;
+								if (!PptUiIsLeftButtonPressed(m)) break;
 
 								if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 								{
 									temp_currentpage = PptInfoState.CurrentPage;
 									if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 									{
+										PptUiReleaseMouseCapture();
 										if (CheckEndShow.Check())
 										{
 											ChangeStateModeToSelection();
@@ -3772,6 +3771,7 @@ void PptInteract()
 
 								this_thread::sleep_for(chrono::milliseconds(15));
 							}
+							PptUiReleaseMouseCapture();
 						}
 
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
@@ -3822,19 +3822,11 @@ void PptInteract()
 						PreviousPptSlides();
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
 
+						SetCapture(ppt_window);
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
-						bool isLeftButtonDown = true;
 						while (1)
 						{
-							while (hiex::peekmessage_win32(&m, EM_MOUSE, true, ppt_window))
-							{
-								if (m.message == WM_LBUTTONUP || (m.message == WM_MOUSEMOVE && !m.lbutton))
-								{
-									isLeftButtonDown = false;
-									break;
-								}
-							}
-							if (!isLeftButtonDown) break;
+							if (!PptUiIsLeftButtonPressed(m)) break;
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								PreviousPptSlides();
@@ -3843,6 +3835,7 @@ void PptInteract()
 
 							this_thread::sleep_for(chrono::milliseconds(15));
 						}
+						PptUiReleaseMouseCapture();
 
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].FillColor.v = RGBA(250, 250, 250, 160);
 						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
@@ -3888,25 +3881,18 @@ void PptInteract()
 							NextPptSlides(temp_currentpage);
 							pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
 
+							SetCapture(ppt_window);
 							std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
-							bool isLeftButtonDown = true;
 							while (1)
 							{
-								while (hiex::peekmessage_win32(&m, EM_MOUSE, true, ppt_window))
-								{
-									if (m.message == WM_LBUTTONUP || (m.message == WM_MOUSEMOVE && !m.lbutton))
-									{
-										isLeftButtonDown = false;
-										break;
-									}
-								}
-								if (!isLeftButtonDown) break;
+								if (!PptUiIsLeftButtonPressed(m)) break;
 
 								if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 								{
 									temp_currentpage = PptInfoState.CurrentPage;
 									if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 									{
+										PptUiReleaseMouseCapture();
 										if (CheckEndShow.Check())
 										{
 											ChangeStateModeToSelection();
@@ -3923,6 +3909,7 @@ void PptInteract()
 
 								this_thread::sleep_for(chrono::milliseconds(15));
 							}
+							PptUiReleaseMouseCapture();
 						}
 
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
@@ -3975,19 +3962,11 @@ void PptInteract()
 						PreviousPptSlides();
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
 
+						SetCapture(ppt_window);
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
-						bool isLeftButtonDown = true;
 						while (1)
 						{
-							while (hiex::peekmessage_win32(&m, EM_MOUSE, true, ppt_window))
-							{
-								if (m.message == WM_LBUTTONUP || (m.message == WM_MOUSEMOVE && !m.lbutton))
-								{
-									isLeftButtonDown = false;
-									break;
-								}
-							}
-							if (!isLeftButtonDown) break;
+							if (!PptUiIsLeftButtonPressed(m)) break;
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								PreviousPptSlides();
@@ -3996,6 +3975,7 @@ void PptInteract()
 
 							this_thread::sleep_for(chrono::milliseconds(15));
 						}
+						PptUiReleaseMouseCapture();
 
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].FillColor.v = RGBA(250, 250, 250, 160);
 						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
@@ -4041,25 +4021,18 @@ void PptInteract()
 							NextPptSlides(temp_currentpage);
 							pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
 
+							SetCapture(ppt_window);
 							std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
-							bool isLeftButtonDown = true;
 							while (1)
 							{
-								while (hiex::peekmessage_win32(&m, EM_MOUSE, true, ppt_window))
-								{
-									if (m.message == WM_LBUTTONUP || (m.message == WM_MOUSEMOVE && !m.lbutton))
-									{
-										isLeftButtonDown = false;
-										break;
-									}
-								}
-								if (!isLeftButtonDown) break;
+								if (!PptUiIsLeftButtonPressed(m)) break;
 
 								if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 								{
 									temp_currentpage = PptInfoState.CurrentPage;
 									if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 									{
+										PptUiReleaseMouseCapture();
 										if (CheckEndShow.Check())
 										{
 											ChangeStateModeToSelection();
@@ -4076,6 +4049,7 @@ void PptInteract()
 
 								this_thread::sleep_for(chrono::milliseconds(15));
 							}
+							PptUiReleaseMouseCapture();
 						}
 
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
@@ -4129,19 +4103,11 @@ void PptInteract()
 						PreviousPptSlides();
 						pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
 
+						SetCapture(ppt_window);
 						std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
-						bool isLeftButtonDown = true;
 						while (1)
 						{
-							while (hiex::peekmessage_win32(&m, EM_MOUSE, true, ppt_window))
-							{
-								if (m.message == WM_LBUTTONUP || (m.message == WM_MOUSEMOVE && !m.lbutton))
-								{
-									isLeftButtonDown = false;
-									break;
-								}
-							}
-							if (!isLeftButtonDown) break;
+							if (!PptUiIsLeftButtonPressed(m)) break;
 							if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 							{
 								PreviousPptSlides();
@@ -4150,6 +4116,7 @@ void PptInteract()
 
 							this_thread::sleep_for(chrono::milliseconds(15));
 						}
+						PptUiReleaseMouseCapture();
 
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].FillColor.v = RGBA(250, 250, 250, 160);
 						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
@@ -4195,25 +4162,18 @@ void PptInteract()
 							NextPptSlides(temp_currentpage);
 							pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
 
+							SetCapture(ppt_window);
 							std::chrono::high_resolution_clock::time_point KeyboardInteractionManipulated = std::chrono::high_resolution_clock::now();
-							bool isLeftButtonDown = true;
 							while (1)
 							{
-								while (hiex::peekmessage_win32(&m, EM_MOUSE, true, ppt_window))
-								{
-									if (m.message == WM_LBUTTONUP || (m.message == WM_MOUSEMOVE && !m.lbutton))
-									{
-										isLeftButtonDown = false;
-										break;
-									}
-								}
-								if (!isLeftButtonDown) break;
+								if (!PptUiIsLeftButtonPressed(m)) break;
 
 								if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - KeyboardInteractionManipulated).count() >= 400)
 								{
 									temp_currentpage = PptInfoState.CurrentPage;
 									if (temp_currentpage == -1 && stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && penetrate.select == false)
 									{
+										PptUiReleaseMouseCapture();
 										if (CheckEndShow.Check())
 										{
 											ChangeStateModeToSelection();
@@ -4230,6 +4190,7 @@ void PptInteract()
 
 								this_thread::sleep_for(chrono::milliseconds(15));
 							}
+							PptUiReleaseMouseCapture();
 						}
 
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
