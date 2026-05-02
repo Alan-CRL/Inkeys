@@ -838,10 +838,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	{
 		// 读取配置文件前初始化操作
 		{
-			// 软件配置
-			{
-				setlist.configurationSetting.enable = true;
-			}
 			// 软件版本
 			{
 				setlist.enableAutoUpdate = true;
@@ -1014,6 +1010,15 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		// 读取配置
 		{
+		#pragma region 新配置 Test
+
+			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
+			config.Write();
+
+			configOnce = Inkeys::config;
+
+		#pragma endregion
+
 			if (_waccess((globalPath + L"opt\\deploy.json").c_str(), 4) == -1)
 			{
 				IDTLogger->warn("[主线程][IdtMain] 配置信息不存在");
@@ -1023,15 +1028,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			}
 			else ReadSetting();
 			WriteSetting();
-
-		#pragma region 新配置 Test
-
-			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
-			config.Write();
-
-			configOnce = Inkeys::config;
-
-		#pragma endregion
 		}
 
 		// 初次读取配置后的操作
