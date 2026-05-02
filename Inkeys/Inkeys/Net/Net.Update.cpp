@@ -11,6 +11,7 @@ module Inkeys.Net.Update;
 import :Download;
 
 import Inkeys.Conv.Text;
+import Inkeys.Other.Config;
 
 // 程序自动更新
 
@@ -56,14 +57,7 @@ wstring convertToHttp(const wstring& url)
 
 string GetRefererInfo()
 {
-	string ret;
-	UpdateTargetSnapshot updateTarget = GetUpdateTargetSnapshot();
-	ret += utf16ToUtf8(editionDate) + ",";
-	ret += utf16ToUtf8(programArchitecture) + ",";
-	ret += updateTarget.channel + ",";
-	ret += setlist.enableAutoUpdate ? "true," : "false,";
-	ret += utf16ToUtf8(windowsEdition);
-	return ret;
+	return Inkeys::config.GetUploadInfo();
 }
 
 EditionInfoClass GetEditionInfo(string channel, string arch)
