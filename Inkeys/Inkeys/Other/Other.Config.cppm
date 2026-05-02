@@ -50,11 +50,12 @@ namespace Inkeys::ConfigDetail
 		X(ConfigUploadMode::NoUpload, IdtAtomic<bool>, AutoClean, false) \
 	) \
 	GROUP(Info, \
-		H(ConfigUploadMode::Upload, std::wstring, userId, ::userId) \
-		H(ConfigUploadMode::Upload, std::wstring, editionVersion, ::editionVersion) \
-		H(ConfigUploadMode::Upload, std::wstring, editionDate, ::editionDate) \
-		H(ConfigUploadMode::Upload, std::wstring, programArchitecture, ::programArchitecture) \
-		H(ConfigUploadMode::Upload, std::wstring, targetArchitecture, ::targetArchitecture) \
+		H(ConfigUploadMode::Upload, std::wstring, UserId, ::userId) \
+		H(ConfigUploadMode::Upload, std::wstring, EditionVersion, ::editionVersion) \
+		H(ConfigUploadMode::Upload, std::wstring, EditionDate, ::editionDate) \
+		H(ConfigUploadMode::Upload, std::wstring, ProgramArchitecture, ::programArchitecture) \
+		H(ConfigUploadMode::Upload, std::wstring, TargetArchitecture, ::targetArchitecture) \
+		H(ConfigUploadMode::Upload, std::wstring, WindowsEdition, ::windowsEdition) \
 	) \
 	GROUP(PlugIn, \
 		GROUP(PPTHelper, \

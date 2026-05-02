@@ -104,7 +104,6 @@ export extern bool inconsistentArchitecture;
 wstring get_domain_name(wstring url);
 wstring convertToHttp(const wstring& url);
 
-export extern wstring windowsEdition;
 export extern IdtAtomic<int> downloadLine;
 
 export void AutomaticUpdate();

@@ -318,7 +318,6 @@ AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state,
 	return UpdateRestart;
 }
 
-wstring windowsEdition;
 IdtAtomic<int> downloadLine = 1;
 
 void AutomaticUpdate()
