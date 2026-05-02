@@ -203,6 +203,7 @@ extern wstring pluginPath;
 
 extern wstring programArchitecture;
 extern wstring targetArchitecture;
+extern wstring windowsEdition;
 
 void CloseProgram();
 void RestartProgram();

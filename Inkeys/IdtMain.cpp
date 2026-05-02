@@ -53,8 +53,8 @@ import Inkeys.Other.Config;
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionVersion = L"3.0.0-dev.39";		// 程序发布版本
-wstring editionDate = L"20260501a";				// 程序发布日期
+wstring editionVersion = L"3.0.0-dev.47";		// 程序发布版本
+wstring editionDate = L"20260502a";				// 程序发布日期
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -62,6 +62,7 @@ wstring pluginPath;								// 数据保存的路径
 
 wstring programArchitecture = L"win32";
 wstring targetArchitecture = L"win32";
+wstring windowsEdition;
 
 IdtAtomic<int> offSignal;						// 关闭指令
 
