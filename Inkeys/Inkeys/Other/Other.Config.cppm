@@ -47,7 +47,7 @@ namespace Inkeys::ConfigDetail
 
 #define INKEYS_CONFIG_SCHEMA(GROUP, X, H) \
 	GROUP(Config, \
-		X(ConfigUploadMode::NoUpload, IdtAtomic<bool>, AutoClean, true) \
+		X(ConfigUploadMode::NoUpload, IdtAtomic<bool>, AutoClean, false) \
 	) \
 	GROUP(Info, \
 		H(ConfigUploadMode::Upload, std::wstring, UserId, ::userId) \
