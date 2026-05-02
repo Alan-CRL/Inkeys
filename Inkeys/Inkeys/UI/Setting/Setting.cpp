@@ -221,6 +221,48 @@ void SettingWindowBegin()
 
 void SettingMain(stop_token sT)
 {
+	auto GetUpdateChannel = []()
+		{
+			shared_lock<shared_mutex> lock(setlistUpdateMutex);
+			return setlist.UpdateChannel;
+		};
+	auto SetUpdateChannel = [](const string& channel)
+		{
+			unique_lock<shared_mutex> lock(setlistUpdateMutex);
+			setlist.UpdateChannel = channel;
+		};
+	auto GetUpdateArchitecture = []()
+		{
+			shared_lock<shared_mutex> lock(setlistUpdateMutex);
+			return setlist.updateArchitecture;
+		};
+	auto SetUpdateArchitecture = [](const string& architecture)
+		{
+			unique_lock<shared_mutex> lock(setlistUpdateMutex);
+			setlist.updateArchitecture = architecture;
+		};
+	auto ClearUpdateRestartInstaller = []()
+		{
+			error_code ec;
+			if (_waccess((globalPath + L"installer").c_str(), 4) != 0) return true;
+
+			filesystem::remove_all(globalPath + L"installer", ec);
+			if (ec)
+			{
+				if (IDTLogger) IDTLogger->error("[SettingMain] 删除更新安装目录失败: {}", ec.message());
+				return false;
+			}
+
+			filesystem::create_directory(globalPath + L"installer", ec);
+			if (ec)
+			{
+				if (IDTLogger) IDTLogger->error("[SettingMain] 重建更新安装目录失败: {}", ec.message());
+				return false;
+			}
+
+			return true;
+		};
+
 	bool showWindow = false;
 	while (!sT.stop_requested())
 	{
@@ -2485,9 +2527,9 @@ void SettingMain(stop_token sT)
 								{
 									if (EnableFixWithChangeArchitecture)
 									{
-										if (targetArchitecture == L"win64") setlist.updateArchitecture = "win64";
-										else if (targetArchitecture == L"arm64") setlist.updateArchitecture = "arm64";
-										else setlist.updateArchitecture = "win32";
+										if (targetArchitecture == L"win64") SetUpdateArchitecture("win64");
+										else if (targetArchitecture == L"arm64") SetUpdateArchitecture("arm64");
+										else SetUpdateArchitecture("win32");
 										WriteSetting();
 									}
 
@@ -2605,13 +2647,8 @@ void SettingMain(stop_token sT)
 
 									if (!setlist.enableAutoUpdate && AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
 									{
-										error_code ec;
-										if (_waccess((globalPath + L"installer").c_str(), 4) == 0)
-										{
-											filesystem::remove_all(globalPath + L"installer", ec);
-											filesystem::create_directory(globalPath + L"installer", ec);
-										}
-										AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+										if (ClearUpdateRestartInstaller()) AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+										else AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateNotStarted;
 									}
 									else if (setlist.enableAutoUpdate && AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNew)
 									{
@@ -2708,8 +2745,9 @@ void SettingMain(stop_token sT)
 								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Version.Update.Channel.Insider)).c_str()));
 								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Version.Update.Channel.Canary)).c_str()));
 
-								if (setlist.UpdateChannel == "Insider") UpdateChannelMode = 1;
-								else if (setlist.UpdateChannel == "Canary") UpdateChannelMode = 2;
+								string updateChannel = GetUpdateChannel();
+								if (updateChannel == "Insider") UpdateChannelMode = 1;
+								else if (updateChannel == "Canary") UpdateChannelMode = 2;
 								else UpdateChannelMode = 0;
 
 								{
@@ -2728,17 +2766,24 @@ void SettingMain(stop_token sT)
 										if (ImGui::Selectable(vec[i], is_selected))
 										{
 											UpdateChannelMode = i;
-											if ((UpdateChannelMode == 0 && setlist.UpdateChannel != "LTS") ||
-												(UpdateChannelMode == 1 && setlist.UpdateChannel != "Insider") ||
-												(UpdateChannelMode == 2 && setlist.UpdateChannel != "Canary"))
+											if ((UpdateChannelMode == 0 && updateChannel != "LTS") ||
+												(UpdateChannelMode == 1 && updateChannel != "Insider") ||
+												(UpdateChannelMode == 2 && updateChannel != "Canary"))
 											{
-												if (UpdateChannelMode == 1) setlist.UpdateChannel = "Insider";
-												else if (UpdateChannelMode == 2) setlist.UpdateChannel = "Canary";
-												else setlist.UpdateChannel = "LTS";
+												string selectedUpdateChannel;
+												if (UpdateChannelMode == 1) selectedUpdateChannel = "Insider";
+												else if (UpdateChannelMode == 2) selectedUpdateChannel = "Canary";
+												else selectedUpdateChannel = "LTS";
+												SetUpdateChannel(selectedUpdateChannel);
 
 												WriteSetting();
 
-												AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+												if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
+												{
+													if (ClearUpdateRestartInstaller()) AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+													else AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateNotStarted;
+												}
+												else AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
 											}
 										}
 										if (is_selected) ImGui::SetItemDefaultFocus();
@@ -2800,8 +2845,9 @@ void SettingMain(stop_token sT)
 								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Version.Update.Arch.Arm64)).c_str()));
 
 								int UpdateArchitecture, UpdateArchitectureEcho;
-								if (setlist.updateArchitecture == "win64") UpdateArchitecture = UpdateArchitectureEcho = 0;
-								else if (setlist.updateArchitecture == "arm64") UpdateArchitecture = UpdateArchitectureEcho = 2;
+								string updateArchitecture = GetUpdateArchitecture();
+								if (updateArchitecture == "win64") UpdateArchitecture = UpdateArchitectureEcho = 0;
+								else if (updateArchitecture == "arm64") UpdateArchitecture = UpdateArchitectureEcho = 2;
 								else UpdateArchitecture = UpdateArchitectureEcho = 1;
 
 								{
@@ -2822,13 +2868,18 @@ void SettingMain(stop_token sT)
 											UpdateArchitecture = i;
 											if (UpdateArchitectureEcho != UpdateArchitecture)
 											{
-												if (UpdateArchitecture == 0) setlist.updateArchitecture = "win64";
-												else if (UpdateArchitecture == 2) setlist.updateArchitecture = "arm64";
-												else setlist.updateArchitecture = "win32";
+												if (UpdateArchitecture == 0) SetUpdateArchitecture("win64");
+												else if (UpdateArchitecture == 2) SetUpdateArchitecture("arm64");
+												else SetUpdateArchitecture("win32");
 
 												WriteSetting();
 
-												if (AutomaticUpdateState != AutomaticUpdateStateEnum::UpdateNotStarted)
+												if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
+												{
+													if (ClearUpdateRestartInstaller()) AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+													else AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateNotStarted;
+												}
+												else if (AutomaticUpdateState != AutomaticUpdateStateEnum::UpdateNotStarted)
 												{
 													AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
 												}
@@ -10352,10 +10403,11 @@ void SettingMain(stop_token sT)
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
 							string channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Other) + ")";
-							if (setlist.UpdateChannel == "LTS") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.LTS) + ")";
-							else if (setlist.UpdateChannel == "Insider") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Insider) + ")";
-							else if (setlist.UpdateChannel == "Dev") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Dev) + ")";
-							else if (setlist.UpdateChannel == "Canary") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Canary) + ")";
+							string updateChannel = GetUpdateChannel();
+							if (updateChannel == "LTS") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.LTS) + ")";
+							else if (updateChannel == "Insider") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Insider) + ")";
+							else if (updateChannel == "Dev") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Dev) + ")";
+							else if (updateChannel == "Canary") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Canary) + ")";
 
 							ImGui::TextUnformatted((IA(I18nKey.SettingsUI.Update.Latest) + channel).c_str());
 						}
@@ -10387,10 +10439,11 @@ void SettingMain(stop_token sT)
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
 							string channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Other) + ")";
-							if (setlist.UpdateChannel == "LTS") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.LTS) + ")";
-							else if (setlist.UpdateChannel == "Insider") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Insider) + ")";
-							else if (setlist.UpdateChannel == "Dev") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Dev) + ")";
-							else if (setlist.UpdateChannel == "Canary") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Canary) + ")";
+							string updateChannel = GetUpdateChannel();
+							if (updateChannel == "LTS") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.LTS) + ")";
+							else if (updateChannel == "Insider") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Insider) + ")";
+							else if (updateChannel == "Dev") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Dev) + ")";
+							else if (updateChannel == "Canary") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Canary) + ")";
 
 							ImGui::TextUnformatted((IA(I18nKey.SettingsUI.Update.Newer) + channel).c_str());
 						}
