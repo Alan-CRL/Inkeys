@@ -17,6 +17,26 @@ import Inkeys.Conv.Text;
 bool mandatoryUpdate; // 强制更新符号
 bool inconsistentArchitecture;
 AutomaticUpdateStateEnum AutomaticUpdateState;
+namespace
+{
+	struct UpdateTargetSnapshot
+	{
+		string channel;
+		string architecture;
+	};
+
+	UpdateTargetSnapshot GetUpdateTargetSnapshot()
+	{
+		shared_lock<shared_mutex> lock(setlistUpdateMutex);
+		return { setlist.UpdateChannel, setlist.updateArchitecture };
+	}
+
+	void SetUpdateChannelSnapshot(const string& channel)
+	{
+		unique_lock<shared_mutex> lock(setlistUpdateMutex);
+		setlist.UpdateChannel = channel;
+	}
+}
 wstring get_domain_name(wstring url) {
 	wregex pattern(L"([a-zA-z]+://[^/]+)");
 	wsmatch match;
@@ -37,9 +57,10 @@ wstring convertToHttp(const wstring& url)
 string GetRefererInfo()
 {
 	string ret;
+	UpdateTargetSnapshot updateTarget = GetUpdateTargetSnapshot();
 	ret += utf16ToUtf8(editionDate) + ",";
 	ret += utf16ToUtf8(programArchitecture) + ",";
-	ret += setlist.UpdateChannel + ",";
+	ret += updateTarget.channel + ",";
 	ret += setlist.enableAutoUpdate ? "true," : "false,";
 	ret += utf16ToUtf8(windowsEdition);
 	return ret;
@@ -314,7 +335,8 @@ void AutomaticUpdate()
 	bool against = false;
 	int updateTimes = 0;
 
-	string updateArch = setlist.updateArchitecture;
+	UpdateTargetSnapshot updateTarget = GetUpdateTargetSnapshot();
+	string updateArch = updateTarget.architecture;
 
 	EditionInfoClass editionInfo;
 	using enum AutomaticUpdateStateEnum;
@@ -327,12 +349,13 @@ updateStart:
 		state = true;
 		against = false;
 
-		updateArch = setlist.updateArchitecture;
+		updateTarget = GetUpdateTargetSnapshot();
+		updateArch = updateTarget.architecture;
 
 		//获取最新版本信息
 		if (state)
 		{
-			editionInfo = GetEditionInfo(setlist.UpdateChannel, updateArch);
+			editionInfo = GetEditionInfo(updateTarget.channel, updateArch);
 
 			if (editionInfo.errorCode != 200)
 			{
@@ -341,9 +364,9 @@ updateStart:
 				else if (editionInfo.errorCode == 2) AutomaticUpdateState = UpdateInformationDamage;
 				else AutomaticUpdateState = UpdateInformationUnStandardized;
 			}
-			else if (setlist.UpdateChannel != editionInfo.channel)
+			else if (updateTarget.channel != editionInfo.channel)
 			{
-				setlist.UpdateChannel = editionInfo.channel;
+				SetUpdateChannelSnapshot(editionInfo.channel);
 				WriteSetting();
 			}
 		}
@@ -440,7 +463,8 @@ updateStart:
 
 					if (AutomaticUpdateState == UpdateRestart)
 					{
-						if (setlist.UpdateChannel != editionInfo.channel || setlist.updateArchitecture != updateArch)
+						UpdateTargetSnapshot currentUpdateTarget = GetUpdateTargetSnapshot();
+						if (currentUpdateTarget.channel != editionInfo.channel || currentUpdateTarget.architecture != updateArch)
 						{
 							if (_waccess((globalPath + L"installer").c_str(), 0) == 0)
 							{
