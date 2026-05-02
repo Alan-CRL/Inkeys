@@ -162,6 +162,7 @@ struct SetListStruct
 	} Experimental;
 };
 extern SetListStruct setlist;
+extern shared_mutex setlistUpdateMutex;
 bool ReadSetting();
 bool ReadSettingMini();
 bool WriteSetting();
