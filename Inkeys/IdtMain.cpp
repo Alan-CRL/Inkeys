@@ -270,6 +270,11 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		if (targetArchitecture == L"win64" && programArchitecture != L"win64") inconsistentArchitecture = true;
 		if (targetArchitecture == L"win32" && programArchitecture != L"win32") inconsistentArchitecture = true;
 	}
+	// 检查系统版本
+	{
+		IdtSysVersionStruct windowsVersion = GetWindowsVersion();
+		windowsEdition = to_wstring(windowsVersion.majorVersion) + L"." + to_wstring(windowsVersion.minorVersion) + L"." + to_wstring(windowsVersion.buildNumber);
+	}
 	// 程序自动更新
 	{
 		if (_waccess((globalPath + L"update.json").c_str(), 4) == 0)
@@ -1104,12 +1109,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 自动更新初始化
 	{
-		// 检查系统版本
-		{
-			IdtSysVersionStruct windowsVersion = GetWindowsVersion();
-			windowsEdition = to_wstring(windowsVersion.majorVersion) + L"." + to_wstring(windowsVersion.minorVersion) + L"." + to_wstring(windowsVersion.buildNumber);
-		}
-
 	#ifdef IDT_RELEASE
 		thread(AutomaticUpdate).detach();
 	#endif
