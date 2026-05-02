@@ -7,13 +7,6 @@ bool UnOccupyFile(HANDLE* hFile);
 
 struct SetListStruct
 {
-#pragma region 软件配置
-	struct
-	{
-		IdtAtomic<bool> enable;
-	}configurationSetting;
-#pragma endregion
-
 #pragma region 软件版本
 	string UpdateChannel;
 	string updateArchitecture;

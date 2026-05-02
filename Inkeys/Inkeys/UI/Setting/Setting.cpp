@@ -809,7 +809,7 @@ void SettingMain(stop_token sT)
 
 		struct
 		{
-			bool Enable = setlist.configurationSetting.enable;
+			bool Enable = Inkeys::config.Config.AutoClean;
 		}ConfigurationSetting;
 
 		bool EnableFixWithChangeArchitecture = true;
@@ -1968,9 +1968,10 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##启用配置清理", &ConfigurationSetting.Enable, config);
 
-								if (setlist.configurationSetting.enable != ConfigurationSetting.Enable)
+								if (Inkeys::config.Config.AutoClean != ConfigurationSetting.Enable)
 								{
-									setlist.configurationSetting.enable = ConfigurationSetting.Enable;
+									Inkeys::config.Config.AutoClean = ConfigurationSetting.Enable;
+									Inkeys::config.Write();
 									WriteSetting();
 								}
 							}

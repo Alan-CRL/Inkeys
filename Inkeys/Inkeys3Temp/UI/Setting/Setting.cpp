@@ -34,6 +34,7 @@ import Inkeys.Load;
 import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
 import Inkeys.Helper.CrashHandler;
+import Inkeys.Other.Config;
 
 // 软件构建信息
 // signal1
@@ -230,6 +231,7 @@ int QueryWaitingTime = 5;
 
 // 设置界面专用的配置副本
 SetListStruct settingListUI = setlist;
+bool configurationAutoCleanUI = Inkeys::config.Config.AutoClean;
 
 // PPT COM 配置副本
 PptComSetListStruct pptComSetlistUI = pptComSetlist;
@@ -1754,7 +1756,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!settingListUI.configurationSetting.enable)
+								if (!configurationAutoCleanUI)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -1764,11 +1766,12 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##启用配置清理", &settingListUI.configurationSetting.enable, config);
+								ImGui::Toggle("##启用配置清理", &configurationAutoCleanUI, config);
 
-								if (setlist.configurationSetting.enable != settingListUI.configurationSetting.enable)
+								if (Inkeys::config.Config.AutoClean != configurationAutoCleanUI)
 								{
-									setlist.configurationSetting.enable = settingListUI.configurationSetting.enable;
+									Inkeys::config.Config.AutoClean = configurationAutoCleanUI;
+									Inkeys::config.Write();
 									WriteSetting();
 								}
 							}

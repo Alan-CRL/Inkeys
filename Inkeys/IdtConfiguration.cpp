@@ -1,5 +1,7 @@
 ﻿import Inkeys.Conv.Text;
 
+import Inkeys.Other.Config;
+
 #include "IdtConfiguration.h"
 
 #include "IdtState.h"
@@ -113,12 +115,6 @@ bool ReadSetting()
 
 	if (Json::parseFromStream(readerBuilder, jsonContentStream, &setlistVal, &jsonErr))
 	{
-		if (setlistVal.isMember("ConfigurationSetting") && setlistVal["ConfigurationSetting"].isObject())
-		{
-			if (setlistVal["ConfigurationSetting"].isMember("Enable") && setlistVal["ConfigurationSetting"]["Enable"].isBool())
-				setlist.configurationSetting.enable = setlistVal["ConfigurationSetting"]["Enable"].asBool();
-		}
-
 		if (setlistVal.isMember("SelectLanguage") && setlistVal["SelectLanguage"].isInt())
 			setlist.selectLanguage = setlistVal["SelectLanguage"].asInt();
 		if (setlistVal.isMember("StartUp") && setlistVal["StartUp"].isBool())
@@ -417,7 +413,8 @@ bool ReadSettingMini()
 }
 bool WriteSetting()
 {
-	if (setlist.configurationSetting.enable) setlistVal.clear();
+	if (Inkeys::config.Config.AutoClean) setlistVal.clear();
+
 	string updateChannel;
 	string updateArchitecture;
 	{
@@ -426,10 +423,6 @@ bool WriteSetting()
 		updateArchitecture = setlist.updateArchitecture;
 	}
 	{
-		{
-			setlistVal["ConfigurationSetting"]["Enable"] = Json::Value(setlist.configurationSetting.enable);
-		}
-
 		setlistVal["SelectLanguage"] = Json::Value(setlist.selectLanguage);
 		setlistVal["StartUp"] = Json::Value(setlist.startUp);
 		setlistVal["SettingGlobalScale"] = Json::Value(setlist.settingGlobalScale);
