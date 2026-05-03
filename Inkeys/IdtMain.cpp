@@ -53,8 +53,8 @@ import Inkeys.Other.Config;
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionVersion = L"3.0.0-dev.66";		// 程序发布版本
-wstring editionDate = L"20260502a";				// 程序发布日期
+wstring editionVersion = L"3.0.0-dev.74";		// 程序发布版本
+wstring editionDate = L"20260502b";				// 程序发布日期
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
