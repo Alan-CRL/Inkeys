@@ -241,26 +241,58 @@ void SettingMain(stop_token sT)
 			unique_lock<shared_mutex> lock(setlistUpdateMutex);
 			setlist.updateArchitecture = architecture;
 		};
-	auto ClearUpdateRestartInstaller = []()
+	auto GetEnableAutoUpdate = []()
 		{
+			shared_lock<shared_mutex> lock(setlistUpdateMutex);
+			return setlist.enableAutoUpdate;
+		};
+	auto SetEnableAutoUpdate = [](bool enable)
+		{
+			unique_lock<shared_mutex> lock(setlistUpdateMutex);
+			setlist.enableAutoUpdate = enable;
+		};
+	enum class ClearInstallerResult
+	{
+		Missing,
+		Cleared,
+		Failed
+	};
+	auto ClearUpdateRestartInstaller = []() -> ClearInstallerResult
+		{
+			const auto installerDir = globalPath + L"installer";
 			error_code ec;
-			if (_waccess((globalPath + L"installer").c_str(), 4) != 0) return true;
+			const bool exists = filesystem::exists(installerDir, ec);
+			if (ec)
+			{
+				if (IDTLogger) IDTLogger->error("[SettingMain] 检查更新安装目录失败: {}", ec.message());
+				return ClearInstallerResult::Failed;
+			}
+			if (!exists)
+			{
+				filesystem::create_directory(installerDir, ec);
+				if (ec)
+				{
+					if (IDTLogger) IDTLogger->error("[SettingMain] 创建更新安装目录失败: {}", ec.message());
+					return ClearInstallerResult::Failed;
+				}
+				return ClearInstallerResult::Missing;
+			}
 
-			filesystem::remove_all(globalPath + L"installer", ec);
+			filesystem::remove_all(installerDir, ec);
 			if (ec)
 			{
 				if (IDTLogger) IDTLogger->error("[SettingMain] 删除更新安装目录失败: {}", ec.message());
-				return false;
+				return ClearInstallerResult::Failed;
 			}
 
-			filesystem::create_directory(globalPath + L"installer", ec);
+			filesystem::create_directory(installerDir, ec);
 			if (ec)
 			{
 				if (IDTLogger) IDTLogger->error("[SettingMain] 重建更新安装目录失败: {}", ec.message());
-				return false;
+				return ClearInstallerResult::Failed;
 			}
 
-			return true;
+			return ClearInstallerResult::Cleared;
 		};
 
 	bool showWindow = false;
@@ -813,7 +845,7 @@ void SettingMain(stop_token sT)
 		}ConfigurationSetting;
 
 		bool EnableFixWithChangeArchitecture = true;
-		bool EnableAutoUpdate = setlist.enableAutoUpdate;
+		bool EnableAutoUpdate = false;
 
 		int SelectLanguage = setlist.selectLanguage;
 		bool StartUp = setlist.startUp;
@@ -986,6 +1018,7 @@ void SettingMain(stop_token sT)
 			ImGui_ImplDX9_NewFrame();
 			ImGui_ImplWin32_NewFrame();
 			ImGui::NewFrame();
+			EnableAutoUpdate = GetEnableAutoUpdate();
 
 			{
 				//定义栏操作
@@ -2629,6 +2662,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
+								const bool enableAutoUpdateSnapshot = EnableAutoUpdate;
 								if (!EnableAutoUpdate)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
@@ -2639,21 +2673,28 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##自动更新（静默）", &EnableAutoUpdate, config);
+								const bool enableAutoUpdateChanged = ImGui::Toggle("##自动更新（静默）", &EnableAutoUpdate, config);
 
-								if (setlist.enableAutoUpdate != EnableAutoUpdate)
+								if (enableAutoUpdateChanged && enableAutoUpdateSnapshot != EnableAutoUpdate)
 								{
-									setlist.enableAutoUpdate = EnableAutoUpdate;
-									WriteSetting();
-
-									if (!setlist.enableAutoUpdate && AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
+									if (!EnableAutoUpdate && AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
 									{
-										if (ClearUpdateRestartInstaller()) AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
-										else AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateNotStarted;
+										if (ClearUpdateRestartInstaller() != ClearInstallerResult::Failed)
+										{
+											SetEnableAutoUpdate(EnableAutoUpdate);
+											WriteSetting();
+											AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+										}
+										else EnableAutoUpdate = enableAutoUpdateSnapshot;
 									}
-									else if (setlist.enableAutoUpdate && AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNew)
+									else
 									{
-										AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+										SetEnableAutoUpdate(EnableAutoUpdate);
+										WriteSetting();
+										if (EnableAutoUpdate && AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNew)
+										{
+											AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+										}
 									}
 								}
 							}
@@ -2775,16 +2816,22 @@ void SettingMain(stop_token sT)
 												if (UpdateChannelMode == 1) selectedUpdateChannel = "Insider";
 												else if (UpdateChannelMode == 2) selectedUpdateChannel = "Canary";
 												else selectedUpdateChannel = "LTS";
-												SetUpdateChannel(selectedUpdateChannel);
-
-												WriteSetting();
 
 												if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
 												{
-													if (ClearUpdateRestartInstaller()) AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
-													else AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateNotStarted;
+													if (ClearUpdateRestartInstaller() != ClearInstallerResult::Failed)
+													{
+														SetUpdateChannel(selectedUpdateChannel);
+														WriteSetting();
+														AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+													}
 												}
-												else AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+												else
+												{
+													SetUpdateChannel(selectedUpdateChannel);
+													WriteSetting();
+													AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+												}
 											}
 										}
 										if (is_selected) ImGui::SetItemDefaultFocus();
@@ -2869,20 +2916,28 @@ void SettingMain(stop_token sT)
 											UpdateArchitecture = i;
 											if (UpdateArchitectureEcho != UpdateArchitecture)
 											{
-												if (UpdateArchitecture == 0) SetUpdateArchitecture("win64");
-												else if (UpdateArchitecture == 2) SetUpdateArchitecture("arm64");
-												else SetUpdateArchitecture("win32");
-
-												WriteSetting();
+												string selectedUpdateArchitecture;
+												if (UpdateArchitecture == 0) selectedUpdateArchitecture = "win64";
+												else if (UpdateArchitecture == 2) selectedUpdateArchitecture = "arm64";
+												else selectedUpdateArchitecture = "win32";
 
 												if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
 												{
-													if (ClearUpdateRestartInstaller()) AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
-													else AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateNotStarted;
+													if (ClearUpdateRestartInstaller() != ClearInstallerResult::Failed)
+													{
+														SetUpdateArchitecture(selectedUpdateArchitecture);
+														WriteSetting();
+														AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+													}
 												}
-												else if (AutomaticUpdateState != AutomaticUpdateStateEnum::UpdateNotStarted)
+												else
 												{
-													AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+													SetUpdateArchitecture(selectedUpdateArchitecture);
+													WriteSetting();
+													if (AutomaticUpdateState != AutomaticUpdateStateEnum::UpdateNotStarted)
+													{
+														AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+													}
 												}
 											}
 										}
