@@ -2830,7 +2830,10 @@ void SettingMain(stop_token sT)
 												{
 													SetUpdateChannel(selectedUpdateChannel);
 													WriteSetting();
-													AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+													if (AutomaticUpdateState != AutomaticUpdateStateEnum::UpdateNotStarted)
+													{
+														AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+													}
 												}
 											}
 										}
