@@ -136,17 +136,62 @@ namespace
 		return text;
 	}
 
-	bool ConnectPipe(std::wstring_view ipcName, DWORD timeoutMs, UniqueHandle& pipeHandle, std::wstring* errorMessage)
+	DWORD GetRemainingTimeoutMs(const std::chrono::steady_clock::time_point& deadline)
+	{
+		const auto now = std::chrono::steady_clock::now();
+		if (now >= deadline) return 0;
+
+		const auto remainingMs = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+		if (remainingMs <= 0) return 1;
+		if (remainingMs > static_cast<long long>(numeric_limits<DWORD>::max())) return numeric_limits<DWORD>::max();
+		return static_cast<DWORD>(remainingMs);
+	}
+
+	bool WaitForPipeOperation(HANDLE pipeHandle, OVERLAPPED& overlapped, DWORD& transferred, const std::chrono::steady_clock::time_point& deadline, const std::wstring& timeoutMessage, const std::wstring& failurePrefix, std::wstring* errorMessage)
+	{
+		const DWORD waitMs = GetRemainingTimeoutMs(deadline);
+		const DWORD waitResult = WaitForSingleObject(overlapped.hEvent, waitMs);
+		if (waitResult == WAIT_OBJECT_0)
+		{
+			if (GetOverlappedResult(pipeHandle, &overlapped, &transferred, FALSE)) return true;
+
+			const DWORD lastError = GetLastError();
+			AssignError(errorMessage, failurePrefix + FormatWindowsErrorDetail(lastError));
+			return false;
+		}
+		if (waitResult == WAIT_TIMEOUT)
+		{
+			CancelIo(pipeHandle);
+			DWORD ignored = 0;
+			GetOverlappedResult(pipeHandle, &overlapped, &ignored, TRUE);
+			AssignError(errorMessage, timeoutMessage);
+			return false;
+		}
+
+		const DWORD lastError = GetLastError();
+		AssignError(errorMessage, failurePrefix + FormatWindowsErrorDetail(lastError));
+		return false;
+	}
+
+	bool ConnectPipe(std::wstring_view ipcName, const std::chrono::steady_clock::time_point& deadline, UniqueHandle& pipeHandle, std::wstring* errorMessage)
 	{
 		const std::wstring pipePath = BuildPipePath(ipcName);
-		const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
-		const DWORD pipeClientFlags = SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION;
+		const DWORD pipeClientFlags = FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION;
 
 		while (true)
 		{
 			HANDLE rawHandle = CreateFileW(pipePath.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, pipeClientFlags, nullptr);
 			if (rawHandle != INVALID_HANDLE_VALUE)
 			{
+				DWORD pipeMode = PIPE_READMODE_BYTE;
+				if (!SetNamedPipeHandleState(rawHandle, &pipeMode, nullptr, nullptr))
+				{
+					DWORD modeError = GetLastError();
+					CloseHandle(rawHandle);
+					AssignError(errorMessage, L"设置 SecRandom IPC 管道读取模式失败: " + FormatWindowsErrorDetail(modeError));
+					return false;
+				}
+
 				pipeHandle.Reset(rawHandle);
 				return true;
 			}
@@ -177,9 +222,8 @@ namespace
 				return false;
 			}
 
-			const auto now = std::chrono::steady_clock::now();
-			const auto remainingMs = deadline > now ? std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count() : 0;
-			DWORD waitSlice = static_cast<DWORD>(remainingMs > 1000 ? 1000 : remainingMs);
+			const DWORD remainingMs = GetRemainingTimeoutMs(deadline);
+			DWORD waitSlice = remainingMs > 1000 ? 1000 : remainingMs;
 			if (waitSlice == 0) waitSlice = 1;
 
 			if (lastError == ERROR_FILE_NOT_FOUND)
@@ -200,16 +244,45 @@ namespace
 		}
 	}
 
-	bool WriteAll(HANDLE pipeHandle, const char* buffer, size_t length, std::wstring* errorMessage)
+	bool WriteAll(HANDLE pipeHandle, const char* buffer, size_t length, const std::chrono::steady_clock::time_point& deadline, std::wstring* errorMessage)
 	{
 		size_t offset = 0;
 		while (offset < length)
 		{
+			if (GetRemainingTimeoutMs(deadline) == 0)
+			{
+				AssignError(errorMessage, L"写入 SecRandom IPC 管道超时。");
+				return false;
+			}
+
+			UniqueHandle eventHandle(CreateEventW(nullptr, TRUE, FALSE, nullptr));
+			if (!eventHandle)
+			{
+				AssignError(errorMessage, L"创建 SecRandom IPC 写入事件失败: " + FormatWindowsErrorDetail(GetLastError()));
+				return false;
+			}
+
+			OVERLAPPED overlapped = {};
+			overlapped.hEvent = eventHandle.Get();
+
 			DWORD written = 0;
 			DWORD chunkLength = static_cast<DWORD>(min<size_t>(length - offset, numeric_limits<DWORD>::max()));
-			if (!WriteFile(pipeHandle, buffer + offset, chunkLength, &written, nullptr))
+			if (!WriteFile(pipeHandle, buffer + offset, chunkLength, nullptr, &overlapped))
 			{
-				AssignError(errorMessage, L"写入 SecRandom IPC 管道失败: " + FormatWindowsErrorMessage(GetLastError()));
+				const DWORD lastError = GetLastError();
+				if (lastError == ERROR_IO_PENDING)
+				{
+					if (!WaitForPipeOperation(pipeHandle, overlapped, written, deadline, L"写入 SecRandom IPC 管道超时。", L"写入 SecRandom IPC 管道失败: ", errorMessage)) return false;
+				}
+				else
+				{
+					AssignError(errorMessage, L"写入 SecRandom IPC 管道失败: " + FormatWindowsErrorDetail(lastError));
+					return false;
+				}
+			}
+			else if (!GetOverlappedResult(pipeHandle, &overlapped, &written, FALSE))
+			{
+				AssignError(errorMessage, L"写入 SecRandom IPC 管道失败: " + FormatWindowsErrorDetail(GetLastError()));
 				return false;
 			}
 			if (written == 0)
@@ -222,16 +295,47 @@ namespace
 		return true;
 	}
 
-	bool ReadResponseLine(HANDLE pipeHandle, std::string& responseLine, std::wstring* errorMessage)
+	bool ReadResponseLine(HANDLE pipeHandle, std::string& responseLine, const std::chrono::steady_clock::time_point& deadline, std::wstring* errorMessage)
 	{
 		responseLine.clear();
 		vector<char> chunk(512);
 
 		while (true)
 		{
+			if (GetRemainingTimeoutMs(deadline) == 0)
+			{
+				AssignError(errorMessage, L"读取 SecRandom IPC 响应超时。");
+				return false;
+			}
+
+			UniqueHandle eventHandle(CreateEventW(nullptr, TRUE, FALSE, nullptr));
+			if (!eventHandle)
+			{
+				AssignError(errorMessage, L"创建 SecRandom IPC 读取事件失败: " + FormatWindowsErrorDetail(GetLastError()));
+				return false;
+			}
+
+			OVERLAPPED overlapped = {};
+			overlapped.hEvent = eventHandle.Get();
+
 			DWORD readBytes = 0;
-			BOOL readOk = ReadFile(pipeHandle, chunk.data(), static_cast<DWORD>(chunk.size()), &readBytes, nullptr);
+			BOOL readOk = ReadFile(pipeHandle, chunk.data(), static_cast<DWORD>(chunk.size()), nullptr, &overlapped);
 			DWORD lastError = readOk ? ERROR_SUCCESS : GetLastError();
+
+			if (!readOk && lastError == ERROR_IO_PENDING)
+			{
+				if (!WaitForPipeOperation(pipeHandle, overlapped, readBytes, deadline, L"读取 SecRandom IPC 响应超时。", L"读取 SecRandom IPC 响应失败: ", errorMessage)) return false;
+				lastError = ERROR_SUCCESS;
+				readOk = TRUE;
+			}
+			else if (readOk)
+			{
+				if (!GetOverlappedResult(pipeHandle, &overlapped, &readBytes, FALSE))
+				{
+					lastError = GetLastError();
+					readOk = FALSE;
+				}
+			}
 
 			if (readBytes != 0)
 			{
@@ -254,7 +358,7 @@ namespace
 				break;
 			}
 
-			AssignError(errorMessage, L"读取 SecRandom IPC 响应失败: " + FormatWindowsErrorMessage(lastError));
+			AssignError(errorMessage, L"读取 SecRandom IPC 响应失败: " + FormatWindowsErrorDetail(lastError));
 			return false;
 		}
 
@@ -282,7 +386,8 @@ export namespace Inkeys::SecRandom
 	bool SendUrl(std::wstring_view url, std::wstring* errorMessage = nullptr, DWORD timeoutMs = 5000)
 	{
 		UniqueHandle pipeHandle;
-		if (!ConnectPipe(kDefaultIpcName, timeoutMs, pipeHandle, errorMessage)) return false;
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+		if (!ConnectPipe(kDefaultIpcName, deadline, pipeHandle, errorMessage)) return false;
 
 		Json::Value request(Json::objectValue);
 		request["type"] = Json::Value("url");
@@ -293,10 +398,10 @@ export namespace Inkeys::SecRandom
 		std::string requestJson = Json::writeString(writer, request);
 		requestJson.push_back('\n');
 
-		if (!WriteAll(pipeHandle.Get(), requestJson.data(), requestJson.size(), errorMessage)) return false;
+		if (!WriteAll(pipeHandle.Get(), requestJson.data(), requestJson.size(), deadline, errorMessage)) return false;
 
 		std::string responseJson;
-		if (!ReadResponseLine(pipeHandle.Get(), responseJson, errorMessage)) return false;
+		if (!ReadResponseLine(pipeHandle.Get(), responseJson, deadline, errorMessage)) return false;
 
 		Json::CharReaderBuilder reader;
 		reader["collectComments"] = false;
