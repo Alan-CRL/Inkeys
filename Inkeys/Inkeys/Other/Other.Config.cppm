@@ -35,9 +35,9 @@ namespace Inkeys::ConfigDetail
 		}
 
 		template <typename ValueT>
-		void Value(const char* name, ValueT& value, const ValueT& defaultValue, bool canReadFromDocument, Inkeys::ConfigUploadMode uploadMode)
+		void Value(const char* name, ValueT& value, const ValueT& defaultValue, bool canReadFromDocument, Inkeys::ConfigUploadMode uploadMode, const char* uploadName)
 		{
-			handler.HandleValue(name, value, defaultValue, canReadFromDocument, uploadMode);
+			handler.HandleValue(name, value, defaultValue, canReadFromDocument, uploadMode, uploadName);
 		}
 
 	private:
@@ -47,23 +47,23 @@ namespace Inkeys::ConfigDetail
 
 #define INKEYS_CONFIG_SCHEMA(GROUP, X, H) \
 	GROUP(Config, \
-		X(ConfigUploadMode::NoUpload, IdtAtomic<bool>, AutoClean, false) \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AutoClean, false) \
 	) \
 	GROUP(Info, \
-		H(ConfigUploadMode::Upload, std::wstring, UserId, ::userId) \
-		H(ConfigUploadMode::Upload, std::wstring, EditionVersion, ::editionVersion) \
-		H(ConfigUploadMode::Upload, std::wstring, EditionDate, ::editionDate) \
-		H(ConfigUploadMode::Upload, std::wstring, ProgramArchitecture, ::programArchitecture) \
-		H(ConfigUploadMode::Upload, std::wstring, TargetArchitecture, ::targetArchitecture) \
-		H(ConfigUploadMode::Upload, std::wstring, WindowsEdition, ::windowsEdition) \
+		H(ConfigUploadMode::NoUpload, "NaN", std::wstring, UserId, ::userId) \
+		H(ConfigUploadMode::Upload, "ev", std::wstring, EditionVersion, ::editionVersion) \
+		H(ConfigUploadMode::Upload, "ed", std::wstring, EditionDate, ::editionDate) \
+		H(ConfigUploadMode::Upload, "pa", std::wstring, ProgramArchitecture, ::programArchitecture) \
+		H(ConfigUploadMode::NoUpload, "NaN", std::wstring, TargetArchitecture, ::targetArchitecture) \
+		H(ConfigUploadMode::Upload, "we", std::wstring, WindowsEdition, ::windowsEdition) \
 	) \
 	GROUP(PlugIn, \
 		GROUP(PPTHelper, \
-			X(ConfigUploadMode::NoUpload, IdtAtomic<bool>, AutoTakeOver, false) \
-			X(ConfigUploadMode::NoUpload, IdtAtomic<bool>, AutoTakeOverOnce, true) \
-			X(ConfigUploadMode::NoUpload, IdtAtomic<bool>, AutoTakeOverExpand, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AutoTakeOver, false) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AutoTakeOverOnce, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AutoTakeOverExpand, true) \
 			GROUP(Tentative, \
-				X(ConfigUploadMode::NoUpload, IdtAtomic<bool>, EnablePageButtonLongPress, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnablePageButtonLongPress, false) \
 			) \
 		) \
 	)
@@ -85,7 +85,7 @@ namespace Inkeys
 	{
 	public:
 	#define INKEYS_CONFIG_DECLARE_GROUP(groupName, ...) struct groupName##_Node { __VA_ARGS__ } groupName;
-	#define INKEYS_CONFIG_DECLARE_VALUE(uploadMode, valueType, valueName, defaultValue) valueType valueName{ defaultValue };
+	#define INKEYS_CONFIG_DECLARE_VALUE(uploadMode, uploadName, valueType, valueName, defaultValue) valueType valueName{ defaultValue };
 		INKEYS_CONFIG_SCHEMA(INKEYS_CONFIG_DECLARE_GROUP, INKEYS_CONFIG_DECLARE_VALUE, INKEYS_CONFIG_DECLARE_VALUE)
 		#undef INKEYS_CONFIG_DECLARE_GROUP
 		#undef INKEYS_CONFIG_DECLARE_VALUE
@@ -116,8 +116,8 @@ namespace Inkeys
 			Inkeys::ConfigDetail::SchemaWalker<HandlerT> walker(handler);
 
 		#define INKEYS_CONFIG_TRAVERSE_GROUP(groupName, ...) walker.BeginGroup(#groupName, group.groupName, [&](auto& group) { __VA_ARGS__ });
-		#define INKEYS_CONFIG_TRAVERSE_X_VALUE(uploadMode, valueType, valueName, defaultValue) walker.Value(#valueName, group.valueName, valueType{ defaultValue }, true, uploadMode);
-		#define INKEYS_CONFIG_TRAVERSE_H_VALUE(uploadMode, valueType, valueName, defaultValue) walker.Value(#valueName, group.valueName, valueType{ defaultValue }, false, uploadMode);
+		#define INKEYS_CONFIG_TRAVERSE_X_VALUE(uploadMode, uploadName, valueType, valueName, defaultValue) walker.Value(#valueName, group.valueName, valueType{ defaultValue }, true, uploadMode, uploadName);
+		#define INKEYS_CONFIG_TRAVERSE_H_VALUE(uploadMode, uploadName, valueType, valueName, defaultValue) walker.Value(#valueName, group.valueName, valueType{ defaultValue }, false, uploadMode, uploadName);
 			INKEYS_CONFIG_SCHEMA(INKEYS_CONFIG_TRAVERSE_GROUP, INKEYS_CONFIG_TRAVERSE_X_VALUE, INKEYS_CONFIG_TRAVERSE_H_VALUE)
 			#undef INKEYS_CONFIG_TRAVERSE_GROUP
 			#undef INKEYS_CONFIG_TRAVERSE_X_VALUE
@@ -165,12 +165,12 @@ namespace Inkeys
 不再手动修改其他结构体、反射表、读写逻辑。
 
 一、添加一个配置项
-直接在目标 GROUP 内新增一行 X(ConfigUploadMode::NoUpload, type, name, defaultValue)。
+直接在目标 GROUP 内新增一行 X(ConfigUploadMode::NoUpload, "NaN", type, name, defaultValue)。
 
 示例：
 GROUP(Config, \
-	X(ConfigUploadMode::NoUpload, IdtAtomic<bool>, autoClean, false) \
-	X(ConfigUploadMode::NoUpload, int, saveVersion, 1) \
+	X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, autoClean, false) \
+	X(ConfigUploadMode::NoUpload, "NaN", int, saveVersion, 1) \
 )
 
 添加后即可自动获得：
@@ -183,14 +183,14 @@ GROUP(Config, \
 直接修改对应的 X(...) 即可。
 
 示例：
-X(ConfigUploadMode::NoUpload, bool, autoClean, false)
+X(ConfigUploadMode::NoUpload, "NaN", bool, autoClean, false)
 改成
-X(ConfigUploadMode::NoUpload, IdtAtomic<bool>, autoClean, false)
+X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, autoClean, false)
 
 或者：
-X(ConfigUploadMode::NoUpload, int, saveVersion, 1)
+X(ConfigUploadMode::NoUpload, "NaN", int, saveVersion, 1)
 改成
-X(ConfigUploadMode::NoUpload, int, saveVersion, 2)
+X(ConfigUploadMode::NoUpload, "NaN", int, saveVersion, 2)
 
 说明：
 1. 改类型：只改这一处即可。
@@ -205,7 +205,7 @@ X(ConfigUploadMode::NoUpload, int, saveVersion, 2)
 
 示例：
 删除
-X(ConfigUploadMode::NoUpload, IdtAtomic<bool>, autoTakeOverExpand, false)
+X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, autoTakeOverExpand, false)
 
 说明：
 1. 代码里的成员访问路径会同步消失。
@@ -219,7 +219,7 @@ X(ConfigUploadMode::NoUpload, IdtAtomic<bool>, autoTakeOverExpand, false)
 GROUP(Experimental, \
 	GROUP(Inkeys3, \
 		GROUP(UI3, \
-			X(ConfigUploadMode::NoUpload, IdtAtomic<bool>, enable, false) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, enable, false) \
 		) \
 	) \
 )

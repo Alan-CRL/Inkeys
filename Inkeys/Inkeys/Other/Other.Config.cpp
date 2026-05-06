@@ -327,6 +327,11 @@ namespace
 		}
 	}
 
+	bool UsesFullUploadPath(const char* uploadName)
+	{
+		return uploadName == nullptr || std::string_view(uploadName) == "NaN";
+	}
+
 	class DefaultValueHandler
 	{
 	public:
@@ -344,7 +349,7 @@ namespace
 		}
 
 		template <typename T>
-		void HandleValue(const char* name, T& value, const T& defaultValue, bool, Inkeys::ConfigUploadMode)
+		void HandleValue(const char* name, T& value, const T& defaultValue, bool, Inkeys::ConfigUploadMode, const char*)
 		{
 			if (!IsSelectedValuePath(JoinPath(groupPath, name), selectedPaths)) return;
 			AssignConfigValue(value, defaultValue);
@@ -372,7 +377,7 @@ namespace
 		}
 
 		template <typename T>
-		void HandleValue(const char* name, T& value, const T&, bool canReadFromDocument, Inkeys::ConfigUploadMode)
+		void HandleValue(const char* name, T& value, const T&, bool canReadFromDocument, Inkeys::ConfigUploadMode, const char*)
 		{
 			if (!canReadFromDocument && !includeWriteOnly) return;
 			if (!IsSelectedValuePath(JoinPath(groupPath, name), selectedPaths)) return;
@@ -410,7 +415,7 @@ namespace
 		}
 
 		template <typename T>
-		void HandleValue(const char* name, T& value, const T&, bool, Inkeys::ConfigUploadMode)
+		void HandleValue(const char* name, T& value, const T&, bool, Inkeys::ConfigUploadMode, const char*)
 		{
 			Json::Value& parent = EnsureObjectPath(root, groupPath);
 			parent[name] = JsonScalarTraits<T>::ToJson(value);
@@ -435,16 +440,17 @@ namespace
 		}
 
 		template <typename T>
-		void HandleValue(const char* name, T& value, const T&, bool, Inkeys::ConfigUploadMode uploadMode)
+		void HandleValue(const char* name, T& value, const T&, bool, Inkeys::ConfigUploadMode uploadMode, const char* uploadName)
 		{
 			if (uploadMode != Inkeys::ConfigUploadMode::Upload) return;
 
 			std::string valueText = JsonValueToUploadText(JsonScalarTraits<T>::ToJson(value));
 			MakeUploadTextSingleLine(valueText);
+			const std::string keyText = UsesFullUploadPath(uploadName) ? JoinPath(groupPath, name) : std::string(uploadName);
 
-			result += JoinPath(groupPath, name);
+			result += StringToUrlencode(keyText);
 			result += '=';
-			result += valueText;
+			result += StringToUrlencode(valueText);
 			result += ';';
 		}
 
