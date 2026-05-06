@@ -53,8 +53,8 @@ import Inkeys.Other.Config;
 #pragma comment(lib, "netapi32.lib")
 
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
-wstring editionVersion = L"3.0.0-dev.23";		// 程序发布版本
-wstring editionDate = L"20260401a";				// 程序发布日期
+wstring editionVersion = L"3.0.0-dev.87";		// 程序发布版本
+wstring editionDate = L"20260506a";				// 程序发布日期
 
 wstring userId;									// 用户GUID
 wstring globalPath;								// 程序当前路径
@@ -62,6 +62,7 @@ wstring pluginPath;								// 数据保存的路径
 
 wstring programArchitecture = L"win32";
 wstring targetArchitecture = L"win32";
+wstring windowsEdition;
 
 IdtAtomic<int> offSignal;						// 关闭指令
 
@@ -269,6 +270,11 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		if (targetArchitecture == L"arm64" && programArchitecture != L"arm64" && programArchitecture != L"arm64ec") inconsistentArchitecture = true;
 		if (targetArchitecture == L"win64" && programArchitecture != L"win64") inconsistentArchitecture = true;
 		if (targetArchitecture == L"win32" && programArchitecture != L"win32") inconsistentArchitecture = true;
+	}
+	// 检查系统版本
+	{
+		IdtSysVersionStruct windowsVersion = GetWindowsVersion();
+		windowsEdition = to_wstring(windowsVersion.majorVersion) + L"." + to_wstring(windowsVersion.minorVersion) + L"." + to_wstring(windowsVersion.buildNumber);
 	}
 	// 程序自动更新
 	{
@@ -832,12 +838,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	{
 		// 读取配置文件前初始化操作
 		{
-			// 软件配置
-			{
-				setlist.configurationSetting.enable = true;
-			}
 			// 软件版本
 			{
+				unique_lock<shared_mutex> lock(setlistUpdateMutex);
 				setlist.enableAutoUpdate = true;
 				setlist.UpdateChannel = "LTS";
 				{
@@ -931,8 +934,11 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 							setlist.component.shortcutButton.keyboard.keyboardAltF4 = false;
 						}
 						{
-							setlist.component.shortcutButton.rollCall.IslandCaller = false;
-							setlist.component.shortcutButton.rollCall.SecRandom = false;
+							setlist.component.shortcutButton.rollCall.IslandCaller1 = false;
+							setlist.component.shortcutButton.rollCall.IslandCaller2 = false;
+							setlist.component.shortcutButton.rollCall.SecRandom1 = false;
+							setlist.component.shortcutButton.rollCall.SecRandom2 = false;
+							setlist.component.shortcutButton.rollCall.SecRandom2Compat = false;
 							setlist.component.shortcutButton.rollCall.NamePicker = false;
 						}
 						{
@@ -1005,6 +1011,15 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		// 读取配置
 		{
+		#pragma region 新配置 Test
+
+			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
+			config.Write();
+
+			configOnce = Inkeys::config;
+
+		#pragma endregion
+
 			if (_waccess((globalPath + L"opt\\deploy.json").c_str(), 4) == -1)
 			{
 				IDTLogger->warn("[主线程][IdtMain] 配置信息不存在");
@@ -1014,15 +1029,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			}
 			else ReadSetting();
 			WriteSetting();
-
-		#pragma region 新配置 Test
-
-			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
-			config.Write();
-
-			configOnce = Inkeys::config;
-
-		#pragma endregion
 		}
 
 		// 初次读取配置后的操作
@@ -1101,12 +1107,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 自动更新初始化
 	{
-		// 检查系统版本
-		{
-			IdtSysVersionStruct windowsVersion = GetWindowsVersion();
-			windowsEdition = to_wstring(windowsVersion.majorVersion) + L"." + to_wstring(windowsVersion.minorVersion) + L"." + to_wstring(windowsVersion.buildNumber);
-		}
-
 	#ifdef IDT_RELEASE
 		thread(AutomaticUpdate).detach();
 	#endif

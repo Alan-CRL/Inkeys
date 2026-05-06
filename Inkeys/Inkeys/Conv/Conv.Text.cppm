@@ -38,7 +38,8 @@ export string StringToUrlencode(const string& str)
 
 	for (unsigned char c : str)
 	{
-		if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') escaped << c;
+		const bool isUnreserved = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~';
+		if (isUnreserved) escaped << c;
 		else
 		{
 			escaped << '%' << uppercase << setw(2) << int(c);

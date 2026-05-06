@@ -7,13 +7,6 @@ bool UnOccupyFile(HANDLE* hFile);
 
 struct SetListStruct
 {
-#pragma region 软件配置
-	struct
-	{
-		IdtAtomic<bool> enable;
-	}configurationSetting;
-#pragma endregion
-
 #pragma region 软件版本
 	string UpdateChannel;
 	string updateArchitecture;
@@ -119,8 +112,11 @@ struct SetListStruct
 			} keyboard;
 			struct
 			{
-				IdtAtomic<bool> IslandCaller;
-				IdtAtomic<bool> SecRandom;
+				IdtAtomic<bool> IslandCaller1;
+				IdtAtomic<bool> IslandCaller2;
+				IdtAtomic<bool> SecRandom1;
+				IdtAtomic<bool> SecRandom2;
+				IdtAtomic<bool> SecRandom2Compat;
 				IdtAtomic<bool> NamePicker;
 			}rollCall;
 			struct
@@ -159,6 +155,7 @@ struct SetListStruct
 	} Experimental;
 };
 extern SetListStruct setlist;
+extern shared_mutex setlistUpdateMutex;
 bool ReadSetting();
 bool ReadSettingMini();
 bool WriteSetting();
@@ -235,8 +232,8 @@ struct DdbInteractionSetListStruct
 		enable = false;
 		runAsAdmin = false;
 
-		DdbEdition = L"20260205a";
-		DdbSHA256 = "7bf7c660379f52d739c44e794c2e0bd0455a0a1fa0aa2c114546cb3f433e2f41";
+		DdbEdition = L"20260502a";
+		DdbSHA256 = "24de028e1a429fd12c82ce8f807ba67ecfe8ce8f68086e284ea8d731951f1a4e";
 
 		// -----
 

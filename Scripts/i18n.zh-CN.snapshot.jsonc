@@ -393,7 +393,8 @@
           "AutoTakeOverE": "在识别到开启了 PPT 原生批注后，将打开软件内绘制模式，并关闭 PPT 原生批注。",
           "AutoTakeOverOnce": "每次放映至多接管一次",
           "AutoTakeOverOnceE": "防止的确需要使用 PPT 原生批注的场景。",
-          "AutoTakeOverExpand": "接管成功时展开主栏"
+          "AutoTakeOverExpand": "接管成功时展开主栏",
+          "EnablePageButtonLongPress": "启用翻页按钮长按翻页"
         }
       },
       "SuperTop":

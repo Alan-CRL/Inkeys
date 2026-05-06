@@ -11,12 +11,34 @@ module Inkeys.Net.Update;
 import :Download;
 
 import Inkeys.Conv.Text;
+import Inkeys.Other.Config;
 
 // 程序自动更新
 
 bool mandatoryUpdate; // 强制更新符号
 bool inconsistentArchitecture;
 AutomaticUpdateStateEnum AutomaticUpdateState;
+namespace
+{
+	struct UpdateTargetSnapshot
+	{
+		string channel;
+		string architecture;
+		bool enableAutoUpdate;
+	};
+
+	UpdateTargetSnapshot GetUpdateTargetSnapshot()
+	{
+		shared_lock<shared_mutex> lock(setlistUpdateMutex);
+		return { setlist.UpdateChannel, setlist.updateArchitecture, setlist.enableAutoUpdate };
+	}
+
+	void SetUpdateChannelSnapshot(const string& channel)
+	{
+		unique_lock<shared_mutex> lock(setlistUpdateMutex);
+		setlist.UpdateChannel = channel;
+	}
+}
 wstring get_domain_name(wstring url) {
 	wregex pattern(L"([a-zA-z]+://[^/]+)");
 	wsmatch match;
@@ -36,13 +58,7 @@ wstring convertToHttp(const wstring& url)
 
 string GetRefererInfo()
 {
-	string ret;
-	ret += utf16ToUtf8(editionDate) + ",";
-	ret += utf16ToUtf8(programArchitecture) + ",";
-	ret += setlist.UpdateChannel + ",";
-	ret += setlist.enableAutoUpdate ? "true," : "false,";
-	ret += utf16ToUtf8(windowsEdition);
-	return ret;
+	return Inkeys::config.GetUploadInfo();
 }
 
 EditionInfoClass GetEditionInfo(string channel, string arch)
@@ -257,7 +273,7 @@ AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state,
 		//创建 update.json 文件，指示更新
 		if (editionInfo.hash_md5 == hash_md5 && editionInfo.hash_sha256 == hash_sha256)
 		{
-			if (!setlist.enableAutoUpdate && !mandatoryUpdate)
+			if (!GetUpdateTargetSnapshot().enableAutoUpdate && !mandatoryUpdate)
 			{
 				error_code ec;
 				filesystem::remove(globalPath + L"installer\\new_procedure_" + timestamp + L".exe", ec);
@@ -271,6 +287,7 @@ AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state,
 				root["edition"] = Json::Value(utf16ToUtf8(editionInfo.editionDate));
 				root["path"] = Json::Value("installer\\new_procedure_" + utf16ToUtf8(timestamp) + ".exe");
 				root["representation"] = Json::Value("new_procedure_" + utf16ToUtf8(timestamp) + ".exe");
+				root["channel"] = Json::Value(editionInfo.channel);
 
 				root["hash"]["md5"] = Json::Value(editionInfo.hash_md5);
 				root["hash"]["sha256"] = Json::Value(editionInfo.hash_sha256);
@@ -302,7 +319,6 @@ AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state,
 	return UpdateRestart;
 }
 
-wstring windowsEdition;
 IdtAtomic<int> downloadLine = 1;
 
 void AutomaticUpdate()
@@ -313,7 +329,8 @@ void AutomaticUpdate()
 	bool against = false;
 	int updateTimes = 0;
 
-	string updateArch = setlist.updateArchitecture;
+	UpdateTargetSnapshot updateTarget = GetUpdateTargetSnapshot();
+	string updateArch = updateTarget.architecture;
 
 	EditionInfoClass editionInfo;
 	using enum AutomaticUpdateStateEnum;
@@ -326,12 +343,13 @@ updateStart:
 		state = true;
 		against = false;
 
-		updateArch = setlist.updateArchitecture;
+		updateTarget = GetUpdateTargetSnapshot();
+		updateArch = updateTarget.architecture;
 
 		//获取最新版本信息
 		if (state)
 		{
-			editionInfo = GetEditionInfo(setlist.UpdateChannel, updateArch);
+			editionInfo = GetEditionInfo(updateTarget.channel, updateArch);
 
 			if (editionInfo.errorCode != 200)
 			{
@@ -340,22 +358,22 @@ updateStart:
 				else if (editionInfo.errorCode == 2) AutomaticUpdateState = UpdateInformationDamage;
 				else AutomaticUpdateState = UpdateInformationUnStandardized;
 			}
-			else if (setlist.UpdateChannel != editionInfo.channel)
+			else if (updateTarget.channel != editionInfo.channel)
 			{
-				setlist.UpdateChannel = editionInfo.channel;
+				SetUpdateChannelSnapshot(editionInfo.channel);
 				WriteSetting();
 			}
 		}
 
 		//下载最新版本
-		if (state && editionInfo.editionDate != L"" && ((editionInfo.editionDate > editionDate && setlist.enableAutoUpdate) || mandatoryUpdate))
+		if (state && editionInfo.editionDate != L"" && ((editionInfo.editionDate > editionDate && GetUpdateTargetSnapshot().enableAutoUpdate) || mandatoryUpdate))
 		{
 			update = true;
 			if (_waccess((globalPath + L"installer\\update.json").c_str(), 4) == 0 && !mandatoryUpdate)
 			{
 				wstring tedition, tpath;
 				string thash_md5, thash_sha256;
-				string tarch;
+				string tchannel, tarch;
 
 				Json::Reader reader;
 				Json::Value root;
@@ -381,7 +399,9 @@ updateStart:
 					}
 					else fileDamage = true;
 
-					// 架构确定
+					// 通道和架构确定
+					if (root.isMember("channel")) tchannel = root["channel"].asString();
+					else fileDamage = true;
 					if (root.isMember("arch")) tarch = root["arch"].asString();
 					else fileDamage = true;
 				}
@@ -401,9 +421,9 @@ updateStart:
 						delete myWrapper;
 					}
 
-					if (tedition == editionInfo.editionDate && _waccess((globalPath + tpath).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256 && updateArch == tarch)
+					if (tedition == editionInfo.editionDate && _waccess((globalPath + tpath).c_str(), 0) == 0 && hash_md5 == thash_md5 && hash_sha256 == thash_sha256 && editionInfo.channel == tchannel && updateArch == tarch)
 					{
-						if (!setlist.enableAutoUpdate)
+						if (!GetUpdateTargetSnapshot().enableAutoUpdate)
 						{
 							if (_waccess((globalPath + L"installer").c_str(), 0) == 0)
 							{
@@ -427,6 +447,7 @@ updateStart:
 
 				against = true;
 				bool hasUpdateNew = false;
+				bool updateTargetChanged = false;
 				for (int i = 0; i < editionInfo.path_size; i++)
 				{
 					downloadLine = i + 1;
@@ -436,6 +457,19 @@ updateStart:
 
 					if (AutomaticUpdateState == UpdateRestart)
 					{
+						UpdateTargetSnapshot currentUpdateTarget = GetUpdateTargetSnapshot();
+						if (currentUpdateTarget.channel != editionInfo.channel || currentUpdateTarget.architecture != updateArch)
+						{
+							if (_waccess((globalPath + L"installer").c_str(), 0) == 0)
+							{
+								error_code ec;
+								filesystem::remove_all(globalPath + L"installer", ec);
+							}
+
+							updateTargetChanged = true;
+							break;
+						}
+
 						against = false;
 
 						if (mandatoryUpdate)
@@ -458,6 +492,11 @@ updateStart:
 					}
 				}
 
+				if (updateTargetChanged)
+				{
+					AutomaticUpdateState = UpdateObtainInformation;
+					continue;
+				}
 				if (hasUpdateNew) continue;
 			}
 		}

@@ -215,6 +215,8 @@ extern PptInfoStateStruct PptInfoStateBuffer;
 extern PptInfoStateStruct PptInfoState;
 extern bool PptWindowBackgroundUiChange;
 
+extern IdtAtomic<bool> PptUiChangeSignal;
+
 extern wstring pptComVersion;
 
 // -------------------------

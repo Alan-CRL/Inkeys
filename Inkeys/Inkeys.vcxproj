@@ -564,6 +564,7 @@
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cpp" />
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cppm" />
     <ClCompile Include="Inkeys\Helper\Helper.Enum.cppm" />
+    <ClCompile Include="Inkeys\Helper\Helper.SecRandom.cppm" />
     <ClCompile Include="Inkeys\Helper\Helper.Thread.cppm" />
     <ClCompile Include="Inkeys\Load\Load.cppm" />
     <ClCompile Include="Inkeys\Net\Net.Update.cpp" />

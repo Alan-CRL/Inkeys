@@ -221,6 +221,80 @@ void SettingWindowBegin()
 
 void SettingMain(stop_token sT)
 {
+	auto GetUpdateChannel = []()
+		{
+			shared_lock<shared_mutex> lock(setlistUpdateMutex);
+			return setlist.UpdateChannel;
+		};
+	auto SetUpdateChannel = [](const string& channel)
+		{
+			unique_lock<shared_mutex> lock(setlistUpdateMutex);
+			setlist.UpdateChannel = channel;
+		};
+	auto GetUpdateArchitecture = []()
+		{
+			shared_lock<shared_mutex> lock(setlistUpdateMutex);
+			return setlist.updateArchitecture;
+		};
+	auto SetUpdateArchitecture = [](const string& architecture)
+		{
+			unique_lock<shared_mutex> lock(setlistUpdateMutex);
+			setlist.updateArchitecture = architecture;
+		};
+	auto GetEnableAutoUpdate = []()
+		{
+			shared_lock<shared_mutex> lock(setlistUpdateMutex);
+			return setlist.enableAutoUpdate;
+		};
+	auto SetEnableAutoUpdate = [](bool enable)
+		{
+			unique_lock<shared_mutex> lock(setlistUpdateMutex);
+			setlist.enableAutoUpdate = enable;
+		};
+	enum class ClearInstallerResult
+	{
+		Missing,
+		Cleared,
+		Failed
+	};
+	auto ClearUpdateRestartInstaller = []() -> ClearInstallerResult
+		{
+			const auto installerDir = globalPath + L"installer";
+			error_code ec;
+			const bool exists = filesystem::exists(installerDir, ec);
+			if (ec)
+			{
+				if (IDTLogger) IDTLogger->error("[SettingMain] 检查更新安装目录失败: {}", ec.message());
+				return ClearInstallerResult::Failed;
+			}
+			if (!exists)
+			{
+				filesystem::create_directory(installerDir, ec);
+				if (ec)
+				{
+					if (IDTLogger) IDTLogger->error("[SettingMain] 创建更新安装目录失败: {}", ec.message());
+					return ClearInstallerResult::Failed;
+				}
+				return ClearInstallerResult::Missing;
+			}
+
+			filesystem::remove_all(installerDir, ec);
+			if (ec)
+			{
+				if (IDTLogger) IDTLogger->error("[SettingMain] 删除更新安装目录失败: {}", ec.message());
+				return ClearInstallerResult::Failed;
+			}
+
+			filesystem::create_directory(installerDir, ec);
+			if (ec)
+			{
+				if (IDTLogger) IDTLogger->error("[SettingMain] 重建更新安装目录失败: {}", ec.message());
+				return ClearInstallerResult::Failed;
+			}
+
+			return ClearInstallerResult::Cleared;
+		};
+
 	bool showWindow = false;
 	while (!sT.stop_requested())
 	{
@@ -767,11 +841,11 @@ void SettingMain(stop_token sT)
 
 		struct
 		{
-			bool Enable = setlist.configurationSetting.enable;
+			bool Enable = Inkeys::config.Config.AutoClean;
 		}ConfigurationSetting;
 
 		bool EnableFixWithChangeArchitecture = true;
-		bool EnableAutoUpdate = setlist.enableAutoUpdate;
+		bool EnableAutoUpdate = false;
 
 		int SelectLanguage = setlist.selectLanguage;
 		bool StartUp = setlist.startUp;
@@ -888,8 +962,11 @@ void SettingMain(stop_token sT)
 		bool ComponentShortcutButtonSystemLockWorkStation = setlist.component.shortcutButton.system.lockWorkStation;
 		bool ComponentShortcutButtonKeyboardKeyboardesc = setlist.component.shortcutButton.keyboard.keyboardesc;
 		bool ComponentShortcutButtonKeyboardKeyboardAltF4 = setlist.component.shortcutButton.keyboard.keyboardAltF4;
-		bool ComponentShortcutButtonRollCallIslandCaller = setlist.component.shortcutButton.rollCall.IslandCaller;
-		bool ComponentShortcutButtonRollCallSecRandom = setlist.component.shortcutButton.rollCall.SecRandom;
+		bool ComponentShortcutButtonRollCallIslandCaller1 = setlist.component.shortcutButton.rollCall.IslandCaller1;
+		bool ComponentShortcutButtonRollCallIslandCaller2 = setlist.component.shortcutButton.rollCall.IslandCaller2;
+		bool ComponentShortcutButtonRollCallSecRandom1 = setlist.component.shortcutButton.rollCall.SecRandom1;
+		bool ComponentShortcutButtonRollCallSecRandom2 = setlist.component.shortcutButton.rollCall.SecRandom2;
+		bool ComponentShortcutButtonRollCallSecRandom2Compat = setlist.component.shortcutButton.rollCall.SecRandom2Compat;
 		bool ComponentShortcutButtonRollCallNamePicker = setlist.component.shortcutButton.rollCall.NamePicker;
 		bool ComponentShortcutButtonLinkageClassislandSettings = setlist.component.shortcutButton.linkage.classislandSettings;
 		bool ComponentShortcutButtonLinkageClassislandProfile = setlist.component.shortcutButton.linkage.classislandProfile;
@@ -941,6 +1018,7 @@ void SettingMain(stop_token sT)
 			ImGui_ImplDX9_NewFrame();
 			ImGui_ImplWin32_NewFrame();
 			ImGui::NewFrame();
+			EnableAutoUpdate = GetEnableAutoUpdate();
 
 			{
 				//定义栏操作
@@ -1923,9 +2001,10 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::Toggle("##启用配置清理", &ConfigurationSetting.Enable, config);
 
-								if (setlist.configurationSetting.enable != ConfigurationSetting.Enable)
+								if (Inkeys::config.Config.AutoClean != ConfigurationSetting.Enable)
 								{
-									setlist.configurationSetting.enable = ConfigurationSetting.Enable;
+									Inkeys::config.Config.AutoClean = ConfigurationSetting.Enable;
+									Inkeys::config.Write();
 									WriteSetting();
 								}
 							}
@@ -2482,9 +2561,9 @@ void SettingMain(stop_token sT)
 								{
 									if (EnableFixWithChangeArchitecture)
 									{
-										if (targetArchitecture == L"win64") setlist.updateArchitecture = "win64";
-										else if (targetArchitecture == L"arm64") setlist.updateArchitecture = "arm64";
-										else setlist.updateArchitecture = "win32";
+										if (targetArchitecture == L"win64") SetUpdateArchitecture("win64");
+										else if (targetArchitecture == L"arm64") SetUpdateArchitecture("arm64");
+										else SetUpdateArchitecture("win32");
 										WriteSetting();
 									}
 
@@ -2583,6 +2662,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
+								const bool enableAutoUpdateSnapshot = EnableAutoUpdate;
 								if (!EnableAutoUpdate)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
@@ -2593,26 +2673,28 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##自动更新（静默）", &EnableAutoUpdate, config);
+								const bool enableAutoUpdateChanged = ImGui::Toggle("##自动更新（静默）", &EnableAutoUpdate, config);
 
-								if (setlist.enableAutoUpdate != EnableAutoUpdate)
+								if (enableAutoUpdateChanged && enableAutoUpdateSnapshot != EnableAutoUpdate)
 								{
-									setlist.enableAutoUpdate = EnableAutoUpdate;
-									WriteSetting();
-
-									if (!setlist.enableAutoUpdate && AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
+									if (!EnableAutoUpdate && AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
 									{
-										error_code ec;
-										if (_waccess((globalPath + L"installer").c_str(), 4) == 0)
+										if (ClearUpdateRestartInstaller() != ClearInstallerResult::Failed)
 										{
-											filesystem::remove_all(globalPath + L"installer", ec);
-											filesystem::create_directory(globalPath + L"installer", ec);
+											SetEnableAutoUpdate(EnableAutoUpdate);
+											WriteSetting();
+											AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
 										}
-										AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+										else EnableAutoUpdate = enableAutoUpdateSnapshot;
 									}
-									else if (setlist.enableAutoUpdate && AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNew)
+									else
 									{
-										AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+										SetEnableAutoUpdate(EnableAutoUpdate);
+										WriteSetting();
+										if (EnableAutoUpdate && AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNew)
+										{
+											AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+										}
 									}
 								}
 							}
@@ -2705,8 +2787,9 @@ void SettingMain(stop_token sT)
 								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Version.Update.Channel.Insider)).c_str()));
 								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Version.Update.Channel.Canary)).c_str()));
 
-								if (setlist.UpdateChannel == "Insider") UpdateChannelMode = 1;
-								else if (setlist.UpdateChannel == "Canary") UpdateChannelMode = 2;
+								string updateChannel = GetUpdateChannel();
+								if (updateChannel == "Insider") UpdateChannelMode = 1;
+								else if (updateChannel == "Canary") UpdateChannelMode = 2;
 								else UpdateChannelMode = 0;
 
 								{
@@ -2725,17 +2808,33 @@ void SettingMain(stop_token sT)
 										if (ImGui::Selectable(vec[i], is_selected))
 										{
 											UpdateChannelMode = i;
-											if ((UpdateChannelMode == 0 && setlist.UpdateChannel != "LTS") ||
-												(UpdateChannelMode == 1 && setlist.UpdateChannel != "Insider") ||
-												(UpdateChannelMode == 2 && setlist.UpdateChannel != "Canary"))
+											if ((UpdateChannelMode == 0 && updateChannel != "LTS") ||
+												(UpdateChannelMode == 1 && updateChannel != "Insider") ||
+												(UpdateChannelMode == 2 && updateChannel != "Canary"))
 											{
-												if (UpdateChannelMode == 1) setlist.UpdateChannel = "Insider";
-												else if (UpdateChannelMode == 2) setlist.UpdateChannel = "Canary";
-												else setlist.UpdateChannel = "LTS";
+												string selectedUpdateChannel;
+												if (UpdateChannelMode == 1) selectedUpdateChannel = "Insider";
+												else if (UpdateChannelMode == 2) selectedUpdateChannel = "Canary";
+												else selectedUpdateChannel = "LTS";
 
-												WriteSetting();
-
-												AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+												if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
+												{
+													if (ClearUpdateRestartInstaller() != ClearInstallerResult::Failed)
+													{
+														SetUpdateChannel(selectedUpdateChannel);
+														WriteSetting();
+														AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+													}
+												}
+												else
+												{
+													SetUpdateChannel(selectedUpdateChannel);
+													WriteSetting();
+													if (AutomaticUpdateState != AutomaticUpdateStateEnum::UpdateNotStarted)
+													{
+														AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+													}
+												}
 											}
 										}
 										if (is_selected) ImGui::SetItemDefaultFocus();
@@ -2797,8 +2896,9 @@ void SettingMain(stop_token sT)
 								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Version.Update.Arch.Arm64)).c_str()));
 
 								int UpdateArchitecture, UpdateArchitectureEcho;
-								if (setlist.updateArchitecture == "win64") UpdateArchitecture = UpdateArchitectureEcho = 0;
-								else if (setlist.updateArchitecture == "arm64") UpdateArchitecture = UpdateArchitectureEcho = 2;
+								string updateArchitecture = GetUpdateArchitecture();
+								if (updateArchitecture == "win64") UpdateArchitecture = UpdateArchitectureEcho = 0;
+								else if (updateArchitecture == "arm64") UpdateArchitecture = UpdateArchitectureEcho = 2;
 								else UpdateArchitecture = UpdateArchitectureEcho = 1;
 
 								{
@@ -2819,15 +2919,28 @@ void SettingMain(stop_token sT)
 											UpdateArchitecture = i;
 											if (UpdateArchitectureEcho != UpdateArchitecture)
 											{
-												if (UpdateArchitecture == 0) setlist.updateArchitecture = "win64";
-												else if (UpdateArchitecture == 2) setlist.updateArchitecture = "arm64";
-												else setlist.updateArchitecture = "win32";
+												string selectedUpdateArchitecture;
+												if (UpdateArchitecture == 0) selectedUpdateArchitecture = "win64";
+												else if (UpdateArchitecture == 2) selectedUpdateArchitecture = "arm64";
+												else selectedUpdateArchitecture = "win32";
 
-												WriteSetting();
-
-												if (AutomaticUpdateState != AutomaticUpdateStateEnum::UpdateNotStarted)
+												if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
 												{
-													AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+													if (ClearUpdateRestartInstaller() != ClearInstallerResult::Failed)
+													{
+														SetUpdateArchitecture(selectedUpdateArchitecture);
+														WriteSetting();
+														AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+													}
+												}
+												else
+												{
+													SetUpdateArchitecture(selectedUpdateArchitecture);
+													WriteSetting();
+													if (AutomaticUpdateState != AutomaticUpdateStateEnum::UpdateNotStarted)
+													{
+														AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
+													}
 												}
 											}
 										}
@@ -5691,6 +5804,8 @@ void SettingMain(stop_token sT)
 										{
 											pptComSetlist.showBottomBoth = ShowBottomBoth;
 											PptComWriteSetting();
+
+											PptUiChangeSignal = true;
 										}
 									}
 
@@ -5731,6 +5846,8 @@ void SettingMain(stop_token sT)
 										{
 											pptComSetlist.showMiddleBoth = ShowMiddleBoth;
 											PptComWriteSetting();
+
+											PptUiChangeSignal = true;
 										}
 									}
 
@@ -5771,6 +5888,8 @@ void SettingMain(stop_token sT)
 										{
 											pptComSetlist.showBottomMiddle = ShowBottomMiddle;
 											PptComWriteSetting();
+
+											PptUiChangeSignal = true;
 										}
 									}
 
@@ -6464,7 +6583,7 @@ void SettingMain(stop_token sT)
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(255, 255, 255, 0));
-								ImGui::BeginChild("PPT演示助手#7", { 750.0f * settingGlobalScale,240.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+								ImGui::BeginChild("PPT演示助手#7", { 750.0f * settingGlobalScale,300.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 								{
 									ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -6478,7 +6597,7 @@ void SettingMain(stop_token sT)
 									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
-									ImGui::BeginChild("接管放映批注", { 750.0f * settingGlobalScale,70.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+									ImGui::BeginChild("接管放映批注", { 750.0f * settingGlobalScale,200.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 									float cursosPosY = 0;
 									{
@@ -6496,7 +6615,7 @@ void SettingMain(stop_token sT)
 									{
 										bool value = Inkeys::config.PlugIn.PPTHelper.AutoTakeOver;
 
-										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 6));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
@@ -6520,21 +6639,15 @@ void SettingMain(stop_token sT)
 										}
 									}
 
+									// Separator
+									cursosPosY = 70.0f * settingGlobalScale;
 									{
-										if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-										if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-										while (PushFontNum) PushFontNum--, ImGui::PopFont();
+										ImGui::SetCursorPosY(cursosPosY);
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Separator, IM_COL32(229, 229, 229, 255));
+										ImGui::Separator();
 									}
-									ImGui::EndChild();
-								}
-								{
-									ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
-									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
-									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
-									ImGui::BeginChild("AutoTakeOverOnce", { 750.0f * settingGlobalScale,70.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-									float cursosPosY = 0;
+									cursosPosY = 70.0f * settingGlobalScale;
 									{
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
@@ -6550,7 +6663,7 @@ void SettingMain(stop_token sT)
 									{
 										bool value = Inkeys::config.PlugIn.PPTHelper.AutoTakeOverOnce;
 
-										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 6));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
@@ -6574,21 +6687,15 @@ void SettingMain(stop_token sT)
 										}
 									}
 
+									// Separator
+									cursosPosY = 140.0f * settingGlobalScale;
 									{
-										if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-										if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-										while (PushFontNum) PushFontNum--, ImGui::PopFont();
+										ImGui::SetCursorPosY(cursosPosY);
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Separator, IM_COL32(229, 229, 229, 255));
+										ImGui::Separator();
 									}
-									ImGui::EndChild();
-								}
-								{
-									ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
-									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
-									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
-									ImGui::BeginChild("接管放映批注拓展", { 750.0f * settingGlobalScale,60.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-									float cursosPosY = 0;
+									cursosPosY = 140.0f * settingGlobalScale;
 									{
 										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
 										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
@@ -6618,6 +6725,55 @@ void SettingMain(stop_token sT)
 										if (Inkeys::config.PlugIn.PPTHelper.AutoTakeOverExpand != value)
 										{
 											Inkeys::config.PlugIn.PPTHelper.AutoTakeOverExpand = value;
+											Inkeys::config.Write();
+										}
+									}
+
+									{
+										if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+										if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+										while (PushFontNum) PushFontNum--, ImGui::PopFont();
+									}
+									ImGui::EndChild();
+								}
+
+								{
+									ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+									ImGui::BeginChild("启用翻页按钮长按翻页", { 750.0f * settingGlobalScale,60.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+									float cursosPosY = 0;
+									{
+										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
+										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress).c_str());
+									}
+									{
+										bool value = Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress;
+
+										ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 6));
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
+										if (!value)
+										{
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
+										}
+										else
+										{
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
+										}
+										ImGui::Toggle("##启用翻页按钮长按翻页", &value, config);
+
+										if (Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress != value)
+										{
+											Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress = value;
 											Inkeys::config.Write();
 										}
 									}
@@ -8897,7 +9053,7 @@ void SettingMain(stop_token sT)
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(255, 255, 255, 0));
-						ImGui::BeginChild("组件#4", { 750.0f * settingGlobalScale,250.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("组件#4", { 750.0f * settingGlobalScale,470.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -8918,7 +9074,7 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted("IslandCaller 随机点名");
+								ImGui::TextUnformatted("IslandCaller 1 随机点名");
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
@@ -8932,7 +9088,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!ComponentShortcutButtonRollCallIslandCaller)
+								if (!ComponentShortcutButtonRollCallIslandCaller1)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -8942,11 +9098,11 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##IslandCaller 随机点名", &ComponentShortcutButtonRollCallIslandCaller, config);
+								ImGui::Toggle("##IslandCaller 1 随机点名", &ComponentShortcutButtonRollCallIslandCaller1, config);
 
-								if (setlist.component.shortcutButton.rollCall.IslandCaller != ComponentShortcutButtonRollCallIslandCaller)
+								if (setlist.component.shortcutButton.rollCall.IslandCaller1 != ComponentShortcutButtonRollCallIslandCaller1)
 								{
-									setlist.component.shortcutButton.rollCall.IslandCaller = ComponentShortcutButtonRollCallIslandCaller;
+									setlist.component.shortcutButton.rollCall.IslandCaller1 = ComponentShortcutButtonRollCallIslandCaller1;
 									WriteSetting();
 								}
 							}
@@ -8970,13 +9126,13 @@ void SettingMain(stop_token sT)
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-								ImGui::TextUnformatted("SecRandom 随机点名");
+								ImGui::TextUnformatted("IslandCaller 2 单人点名");
 							}
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-								ImGui::TextUnformatted("需要 SecRandom 注册 Url 协议。");
+								ImGui::TextUnformatted("需要安装 ClassIsland 插件 IslandCaller，并需要 ClassIsland 注册 Url 协议。");
 							}
 							{
 								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
@@ -8984,7 +9140,7 @@ void SettingMain(stop_token sT)
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
-								if (!ComponentShortcutButtonRollCallSecRandom)
+								if (!ComponentShortcutButtonRollCallIslandCaller2)
 								{
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
@@ -8994,11 +9150,11 @@ void SettingMain(stop_token sT)
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
 								}
-								ImGui::Toggle("##SecRandom 随机点名", &ComponentShortcutButtonRollCallSecRandom, config);
+								ImGui::Toggle("##IslandCaller 2 单人点名", &ComponentShortcutButtonRollCallIslandCaller2, config);
 
-								if (setlist.component.shortcutButton.rollCall.SecRandom != ComponentShortcutButtonRollCallSecRandom)
+								if (setlist.component.shortcutButton.rollCall.IslandCaller2 != ComponentShortcutButtonRollCallIslandCaller2)
 								{
-									setlist.component.shortcutButton.rollCall.SecRandom = ComponentShortcutButtonRollCallSecRandom;
+									setlist.component.shortcutButton.rollCall.IslandCaller2 = ComponentShortcutButtonRollCallIslandCaller2;
 									WriteSetting();
 								}
 							}
@@ -9016,6 +9172,162 @@ void SettingMain(stop_token sT)
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
 							ImGui::BeginChild("点名器#3", { 750.0f * settingGlobalScale,70.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+							float cursosPosY = 0;
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+								ImGui::TextUnformatted("SecRandom 1 闪抽");
+							}
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
+								ImGui::TextUnformatted("需要 SecRandom 注册 Url 协议。");
+							}
+							{
+								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 6));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
+								if (!ComponentShortcutButtonRollCallSecRandom1)
+								{
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
+								}
+								else
+								{
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
+								}
+								ImGui::Toggle("##SecRandom 1 闪抽", &ComponentShortcutButtonRollCallSecRandom1, config);
+
+								if (setlist.component.shortcutButton.rollCall.SecRandom1 != ComponentShortcutButtonRollCallSecRandom1)
+								{
+									setlist.component.shortcutButton.rollCall.SecRandom1 = ComponentShortcutButtonRollCallSecRandom1;
+									WriteSetting();
+								}
+							}
+
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+							ImGui::EndChild();
+						}
+						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+							ImGui::BeginChild("点名器#4", { 750.0f * settingGlobalScale,70.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+							float cursosPosY = 0;
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+								ImGui::TextUnformatted("SecRandom 2 闪抽");
+							}
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
+								ImGui::TextUnformatted("需要 SecRandom 注册 Ipc 协议。");
+							}
+							{
+								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 6));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
+								if (!ComponentShortcutButtonRollCallSecRandom2)
+								{
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
+								}
+								else
+								{
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
+								}
+								ImGui::Toggle("##SecRandom 2 闪抽", &ComponentShortcutButtonRollCallSecRandom2, config);
+
+								if (setlist.component.shortcutButton.rollCall.SecRandom2 != ComponentShortcutButtonRollCallSecRandom2)
+								{
+									setlist.component.shortcutButton.rollCall.SecRandom2 = ComponentShortcutButtonRollCallSecRandom2;
+									WriteSetting();
+								}
+							}
+
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+							ImGui::EndChild();
+						}
+						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+							ImGui::BeginChild("点名器#5", { 750.0f * settingGlobalScale,70.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+							float cursosPosY = 0;
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+								ImGui::TextUnformatted("SecRandom 2 闪抽（兼容）");
+							}
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
+								ImGui::TextUnformatted("需要 SecRandom 注册 Url 协议。");
+							}
+							{
+								ImGui::SetCursorPos({ 690.0f * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 6));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 15));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 95, 184, 255));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(0, 95, 184, 230));
+								if (!ComponentShortcutButtonRollCallSecRandom2Compat)
+								{
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 155));
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 155));
+								}
+								else
+								{
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 95, 184, 255));
+								}
+								ImGui::Toggle("##SecRandom 2 闪抽（兼容）", &ComponentShortcutButtonRollCallSecRandom2Compat, config);
+
+								if (setlist.component.shortcutButton.rollCall.SecRandom2Compat != ComponentShortcutButtonRollCallSecRandom2Compat)
+								{
+									setlist.component.shortcutButton.rollCall.SecRandom2Compat = ComponentShortcutButtonRollCallSecRandom2Compat;
+									WriteSetting();
+								}
+							}
+
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+							ImGui::EndChild();
+						}
+						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+							ImGui::BeginChild("点名器#6", { 750.0f * settingGlobalScale,70.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 							float cursosPosY = 0;
 							{
@@ -10150,10 +10462,11 @@ void SettingMain(stop_token sT)
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
 							string channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Other) + ")";
-							if (setlist.UpdateChannel == "LTS") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.LTS) + ")";
-							else if (setlist.UpdateChannel == "Insider") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Insider) + ")";
-							else if (setlist.UpdateChannel == "Dev") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Dev) + ")";
-							else if (setlist.UpdateChannel == "Canary") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Canary) + ")";
+							string updateChannel = GetUpdateChannel();
+							if (updateChannel == "LTS") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.LTS) + ")";
+							else if (updateChannel == "Insider") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Insider) + ")";
+							else if (updateChannel == "Dev") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Dev) + ")";
+							else if (updateChannel == "Canary") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Canary) + ")";
 
 							ImGui::TextUnformatted((IA(I18nKey.SettingsUI.Update.Latest) + channel).c_str());
 						}
@@ -10185,10 +10498,11 @@ void SettingMain(stop_token sT)
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
 
 							string channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Other) + ")";
-							if (setlist.UpdateChannel == "LTS") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.LTS) + ")";
-							else if (setlist.UpdateChannel == "Insider") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Insider) + ")";
-							else if (setlist.UpdateChannel == "Dev") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Dev) + ")";
-							else if (setlist.UpdateChannel == "Canary") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Canary) + ")";
+							string updateChannel = GetUpdateChannel();
+							if (updateChannel == "LTS") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.LTS) + ")";
+							else if (updateChannel == "Insider") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Insider) + ")";
+							else if (updateChannel == "Dev") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Dev) + ")";
+							else if (updateChannel == "Canary") channel = " (" + IA(I18nKey.SettingsUI.Update.Channel.Canary) + ")";
 
 							ImGui::TextUnformatted((IA(I18nKey.SettingsUI.Update.Newer) + channel).c_str());
 						}

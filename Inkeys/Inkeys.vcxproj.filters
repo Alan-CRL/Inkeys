@@ -85,18 +85,6 @@
     <Filter Include="Modules\Inkeys\Helper">
       <UniqueIdentifier>{27615d57-79cc-4874-bfe3-3d8915419a1e}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Modules\Inkeys3Temp">
-      <UniqueIdentifier>{044aa458-472c-460b-87d1-33cd548fccb9}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys3Temp\Rendering">
-      <UniqueIdentifier>{2eb257ad-d9da-48c0-97cf-3942f6fce468}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys3Temp\UI">
-      <UniqueIdentifier>{f9757343-bc73-4e18-9870-96f2116624ab}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys3Temp\UI\Setting">
-      <UniqueIdentifier>{e0a90257-b851-4dca-9396-daa6bded23cb}</UniqueIdentifier>
-    </Filter>
     <Filter Include="头文件\Additional\Imgui\CustomShaders">
       <UniqueIdentifier>{db9757aa-b695-415a-8971-7e820af31043}</UniqueIdentifier>
     </Filter>
@@ -708,6 +696,9 @@
       <Filter>Modules\Inkeys\Helper</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Helper\Helper.Enum.cppm">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Helper\Helper.SecRandom.cppm">
       <Filter>Modules\Inkeys\Helper</Filter>
     </ClCompile>
     <ClCompile Include="IdtD2DPreparation.cpp">

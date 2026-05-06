@@ -1,4 +1,5 @@
 ﻿import Inkeys.Helper.Thread;
+import Inkeys.Helper.SecRandom;
 import Inkeys.Net.Update;
 import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
@@ -24,6 +25,7 @@ import Inkeys.Text.Font;
 
 #include <shldisp.h>
 #include <exdisp.h>
+#include <mutex>
 
 floating_windowsStruct floating_windows;
 
@@ -35,6 +37,19 @@ double target_status;
 
 bool reserve_drawpad = false;
 bool smallcard_refresh = true;
+
+static std::mutex secRandomQuickDrawMutex;
+
+static void OpenSecRandomQuickDrawAsync()
+{
+	thread([]()
+		{
+			std::unique_lock<std::mutex> lock(secRandomQuickDrawMutex, std::try_to_lock);
+			if (!lock.owns_lock()) return;
+
+			Inkeys::SecRandom::OpenQuickDraw();
+		}).detach();
+}
 
 //UI 控件
 
@@ -4902,8 +4917,8 @@ void DrawScreen()
 				else if (setlist.component.shortcutButton.keyboard.keyboardesc) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[25], UIControl[L"Image/Customize1/transparency"].v);
 				else if (setlist.component.shortcutButton.keyboard.keyboardAltF4) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[26], UIControl[L"Image/Customize1/transparency"].v);
 
-				else if (setlist.component.shortcutButton.rollCall.IslandCaller) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[22], UIControl[L"Image/Customize1/transparency"].v);
-				else if (setlist.component.shortcutButton.rollCall.SecRandom) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[31], UIControl[L"Image/Customize1/transparency"].v);
+				else if (setlist.component.shortcutButton.rollCall.IslandCaller1 || setlist.component.shortcutButton.rollCall.IslandCaller2) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[22], UIControl[L"Image/Customize1/transparency"].v);
+				else if (setlist.component.shortcutButton.rollCall.SecRandom1 || setlist.component.shortcutButton.rollCall.SecRandom2 || setlist.component.shortcutButton.rollCall.SecRandom2Compat) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[31], UIControl[L"Image/Customize1/transparency"].v);
 				else if (setlist.component.shortcutButton.rollCall.NamePicker) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[32], UIControl[L"Image/Customize1/transparency"].v);
 
 				else if (setlist.component.shortcutButton.linkage.classislandSettings) hiex::TransparentImage(&background, int(UIControl[L"Image/Customize1/x"].v), int(UIControl[L"Image/Customize1/y"].v), &floating_icon[21], UIControl[L"Image/Customize1/transparency"].v);
@@ -4930,8 +4945,8 @@ void DrawScreen()
 				else if (setlist.component.shortcutButton.keyboard.keyboardesc) graphics.DrawString(L"ESC键", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 				else if (setlist.component.shortcutButton.keyboard.keyboardAltF4) graphics.DrawString(L"Alt+F4", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 
-				else if (setlist.component.shortcutButton.rollCall.IslandCaller) graphics.DrawString(L"随机点名", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
-				else if (setlist.component.shortcutButton.rollCall.SecRandom) graphics.DrawString(L"随机点名", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else if (setlist.component.shortcutButton.rollCall.IslandCaller1 || setlist.component.shortcutButton.rollCall.IslandCaller2) graphics.DrawString(L"随机点名", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
+				else if (setlist.component.shortcutButton.rollCall.SecRandom1 || setlist.component.shortcutButton.rollCall.SecRandom2 || setlist.component.shortcutButton.rollCall.SecRandom2Compat) graphics.DrawString(L"随机点名", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 				else if (setlist.component.shortcutButton.rollCall.NamePicker) graphics.DrawString(L"随机点名", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
 
 				else if (setlist.component.shortcutButton.linkage.classislandSettings) graphics.DrawString(L"CI设置", -1, &gp_font, hiex::RECTToRectF(words_rect), &stringFormat, &WordBrush);
@@ -6531,55 +6546,53 @@ void MouseInteraction()
 										keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
 									}
 
-									else if (setlist.component.shortcutButton.rollCall.IslandCaller)
+									else if (setlist.component.shortcutButton.rollCall.IslandCaller1)
 									{
-										/*ShellExecute(NULL, L"open", L"classisland://plugins/IslandCaller/Run", NULL, NULL, SW_SHOWNORMAL);*/
+										SHELLEXECUTEINFO sei = { sizeof(sei) };
+										sei.fMask = SEE_MASK_NOASYNC;
+										sei.hwnd = NULL;
+										sei.lpVerb = L"open";
+										sei.lpFile = L"classisland://plugins/IslandCaller/Run";
+										sei.nShow = SW_SHOWNORMAL;
 
-										{
-											SHELLEXECUTEINFO sei = { sizeof(sei) };
-											sei.fMask = SEE_MASK_NOASYNC;
-											sei.hwnd = NULL;
-											sei.lpVerb = L"open";
-											sei.lpFile = L"classisland://plugins/IslandCaller/Run";
-											sei.nShow = SW_SHOWNORMAL;
-
-											ShellExecuteEx(&sei);
-										}
-										{
-											SHELLEXECUTEINFO sei = { sizeof(sei) };
-											sei.fMask = SEE_MASK_NOASYNC;
-											sei.hwnd = NULL;
-											sei.lpVerb = L"open";
-											sei.lpFile = L"classisland://plugins/IslandCaller/Simple/1";
-											sei.nShow = SW_SHOWNORMAL;
-
-											ShellExecuteEx(&sei);
-										}
+										ShellExecuteEx(&sei);
 									}
-									else if (setlist.component.shortcutButton.rollCall.SecRandom)
+									else if (setlist.component.shortcutButton.rollCall.IslandCaller2)
 									{
-										/*ShellExecute(NULL, L"open", L"secrandom://direct_extraction", NULL, NULL, SW_SHOWNORMAL);*/
+										SHELLEXECUTEINFO sei = { sizeof(sei) };
+										sei.fMask = SEE_MASK_NOASYNC;
+										sei.hwnd = NULL;
+										sei.lpVerb = L"open";
+										sei.lpFile = L"classisland://plugins/IslandCaller/Simple/1";
+										sei.nShow = SW_SHOWNORMAL;
 
-										{
-											SHELLEXECUTEINFO sei = { sizeof(sei) };
-											sei.fMask = SEE_MASK_NOASYNC;
-											sei.hwnd = NULL;
-											sei.lpVerb = L"open";
-											sei.lpFile = L"secrandom://direct_extraction";
-											sei.nShow = SW_SHOWNORMAL;
+										ShellExecuteEx(&sei);
+									}
+									else if (setlist.component.shortcutButton.rollCall.SecRandom1)
+									{
+										SHELLEXECUTEINFO sei = { sizeof(sei) };
+										sei.fMask = SEE_MASK_NOASYNC;
+										sei.hwnd = NULL;
+										sei.lpVerb = L"open";
+										sei.lpFile = L"secrandom://direct_extraction";
+										sei.nShow = SW_SHOWNORMAL;
 
-											ShellExecuteEx(&sei);
-										}
-										{
-											SHELLEXECUTEINFO sei = { sizeof(sei) };
-											sei.fMask = SEE_MASK_NOASYNC;
-											sei.hwnd = NULL;
-											sei.lpVerb = L"open";
-											sei.lpFile = L"secrandom://roll_call/quick_draw";
-											sei.nShow = SW_SHOWNORMAL;
+										ShellExecuteEx(&sei);
+									}
+									else if (setlist.component.shortcutButton.rollCall.SecRandom2)
+									{
+										OpenSecRandomQuickDrawAsync();
+									}
+									else if (setlist.component.shortcutButton.rollCall.SecRandom2Compat)
+									{
+										SHELLEXECUTEINFO sei = { sizeof(sei) };
+										sei.fMask = SEE_MASK_NOASYNC;
+										sei.hwnd = NULL;
+										sei.lpVerb = L"open";
+										sei.lpFile = L"secrandom://roll_call/quick_draw";
+										sei.nShow = SW_SHOWNORMAL;
 
-											ShellExecuteEx(&sei);
-										}
+										ShellExecuteEx(&sei);
 									}
 									else if (setlist.component.shortcutButton.rollCall.NamePicker)
 									{

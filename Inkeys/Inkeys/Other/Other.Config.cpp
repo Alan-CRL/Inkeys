@@ -3,6 +3,7 @@ module;
 #include "../../IdtMain.h"
 
 #include <initializer_list>
+#include <sstream>
 #include <string_view>
 #include <vector>
 
@@ -300,6 +301,37 @@ namespace
 		return value.load();
 	}
 
+	std::string JsonValueToUploadText(const Json::Value& jsonValue)
+	{
+		if (jsonValue.isString()) return jsonValue.asString();
+		if (jsonValue.isBool()) return jsonValue.asBool() ? "true" : "false";
+		if (jsonValue.isInt64()) return std::to_string(jsonValue.asInt64());
+		if (jsonValue.isUInt64()) return std::to_string(jsonValue.asUInt64());
+		if (jsonValue.isDouble())
+		{
+			std::ostringstream stream;
+			stream << jsonValue.asDouble();
+			return stream.str();
+		}
+
+		Json::StreamWriterBuilder writerBuilder;
+		writerBuilder["indentation"] = "";
+		return Json::writeString(writerBuilder, jsonValue);
+	}
+
+	void MakeUploadTextSingleLine(std::string& text)
+	{
+		for (char& ch : text)
+		{
+			if (ch == '\r' || ch == '\n') ch = ' ';
+		}
+	}
+
+	bool UsesFullUploadPath(const char* uploadName)
+	{
+		return uploadName == nullptr || std::string_view(uploadName) == "NaN";
+	}
+
 	class DefaultValueHandler
 	{
 	public:
@@ -317,7 +349,7 @@ namespace
 		}
 
 		template <typename T>
-		void HandleValue(const char* name, T& value, const T& defaultValue, bool)
+		void HandleValue(const char* name, T& value, const T& defaultValue, bool, Inkeys::ConfigUploadMode, const char*)
 		{
 			if (!IsSelectedValuePath(JoinPath(groupPath, name), selectedPaths)) return;
 			AssignConfigValue(value, defaultValue);
@@ -345,7 +377,7 @@ namespace
 		}
 
 		template <typename T>
-		void HandleValue(const char* name, T& value, const T&, bool canReadFromDocument)
+		void HandleValue(const char* name, T& value, const T&, bool canReadFromDocument, Inkeys::ConfigUploadMode, const char*)
 		{
 			if (!canReadFromDocument && !includeWriteOnly) return;
 			if (!IsSelectedValuePath(JoinPath(groupPath, name), selectedPaths)) return;
@@ -383,7 +415,7 @@ namespace
 		}
 
 		template <typename T>
-		void HandleValue(const char* name, T& value, const T&, bool)
+		void HandleValue(const char* name, T& value, const T&, bool, Inkeys::ConfigUploadMode, const char*)
 		{
 			Json::Value& parent = EnsureObjectPath(root, groupPath);
 			parent[name] = JsonScalarTraits<T>::ToJson(value);
@@ -391,6 +423,44 @@ namespace
 
 	private:
 		Json::Value& root;
+		std::vector<std::string> groupPath;
+	};
+
+	class UploadInfoHandler
+	{
+	public:
+		void EnterGroup(const char* name)
+		{
+			groupPath.emplace_back(name);
+		}
+
+		void LeaveGroup()
+		{
+			if (!groupPath.empty()) groupPath.pop_back();
+		}
+
+		template <typename T>
+		void HandleValue(const char* name, T& value, const T&, bool, Inkeys::ConfigUploadMode uploadMode, const char* uploadName)
+		{
+			if (uploadMode != Inkeys::ConfigUploadMode::Upload) return;
+
+			std::string valueText = JsonValueToUploadText(JsonScalarTraits<T>::ToJson(value));
+			MakeUploadTextSingleLine(valueText);
+			const std::string keyText = UsesFullUploadPath(uploadName) ? JoinPath(groupPath, name) : std::string(uploadName);
+
+			result += StringToUrlencode(keyText);
+			result += '=';
+			result += StringToUrlencode(valueText);
+			result += ';';
+		}
+
+		const std::string& GetResult() const
+		{
+			return result;
+		}
+
+	private:
+		std::string result;
 		std::vector<std::string> groupPath;
 	};
 }
@@ -462,6 +532,14 @@ namespace Inkeys
 		readAllDocument = outputRoot;
 		hasReadAllDocument = true;
 		return true;
+	}
+
+	std::string Config::GetUploadInfo()
+	{
+		shared_lock<shared_mutex> lock(rwMutex);
+		UploadInfoHandler handler;
+		TraverseSchema(handler);
+		return handler.GetResult();
 	}
 
 	std::wstring Config::GetFilePath() const
