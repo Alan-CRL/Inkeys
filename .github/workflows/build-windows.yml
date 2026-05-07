@@ -3,10 +3,23 @@
 name: Inkeys Build
 
 on:
-  push:
-    branches:
-      - main
-      - canary
+  workflow_dispatch:
+    inputs:
+      validate_release:
+        description: 验证 Inkeys/IdtMain.h 中的 #define IDT_RELEASE
+        required: false
+        type: boolean
+        default: true
+      sign:
+        description: 提交 SignPath 签名（dev 使用测试签名，其他分支使用正式签名）
+        required: false
+        type: boolean
+        default: true
+      upload:
+        description: 上传 PackageHistory 到 WebDAV
+        required: false
+        type: boolean
+        default: true
 permissions:
   contents: read
   actions: write
@@ -29,11 +42,15 @@ jobs:
           "构建仓库: $repoUrl" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "构建分支: ${{ github.ref_name }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "构建提交者: ${{ github.actor }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "验证发布标记: ${{ inputs.validate_release }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "提交签名: ${{ inputs.sign }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "上传 PackageHistory: ${{ inputs.upload }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
       - name: Checkout code
         uses: actions/checkout@v6
 
       - name: Check for '#define IDT_RELEASE'
+        if: ${{ inputs.validate_release }}
         id: check_idt_release
         shell: pwsh
         run: |
@@ -50,6 +67,13 @@ jobs:
             "成功核实为标记发布版本" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
             "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           }
+
+      - name: Skip '#define IDT_RELEASE' check
+        if: ${{ !inputs.validate_release }}
+        shell: pwsh
+        run: |
+          "已按手动输入跳过发布标记验证" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
   build:
     name: Build
@@ -78,9 +102,56 @@ jobs:
         echo "OS_VERSION=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
         
     - name: Setup MSBuild
-      uses: microsoft/setup-msbuild@v2
+      id: setup_msbuild
+      shell: pwsh
+      run: |
+        $vswhere = "${Env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        if (!(Test-Path $vswhere))
+        {
+          throw "找不到 vswhere.exe"
+        }
+
+        $msbuild = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find 'MSBuild\Current\Bin\amd64\MSBuild.exe' | Select-Object -First 1
+        if (-not $msbuild)
+        {
+          $msbuild = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find 'MSBuild\Current\Bin\MSBuild.exe' | Select-Object -First 1
+        }
+        if (-not $msbuild)
+        {
+          throw "找不到 MSBuild.exe"
+        }
+
+        Split-Path $msbuild -Parent | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        "MSBUILD_PATH=$msbuild" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        & $msbuild /version
+
     - name: Setup NuGet
-      uses: NuGet/setup-nuget@v2
+      shell: pwsh
+      run: |
+        $nuget = Get-Command nuget.exe -ErrorAction SilentlyContinue
+        $nugetPath = $null
+        if ($nuget)
+        {
+          $nugetPath = $nuget.Source
+        }
+        if (-not $nuget)
+        {
+          $vswhere = "${Env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vswhere)
+          {
+            $nugetPath = & $vswhere -latest -products * -find 'Common7\IDE\CommonExtensions\Microsoft\NuGet\NuGet.exe' | Select-Object -First 1
+            if ($nugetPath)
+            {
+              Split-Path $nugetPath -Parent | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            }
+          }
+        }
+        if (-not $nugetPath)
+        {
+          throw "找不到 nuget.exe"
+        }
+
+        & $nugetPath help | Select-Object -First 1
 
     - name: Setup .NET Framework 4.0
       shell: pwsh
@@ -185,7 +256,7 @@ jobs:
       shell: cmd
     
     - name: Upload exe[unsigned] artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: ${{ matrix.platform == 'Win32' && 'Inkeys[Unsigned]' || 
                   matrix.platform == 'x64' && 'Inkeys64[Unsigned]' || 
@@ -289,17 +360,17 @@ jobs:
 
       # 下载构建后内容
       - name: Download Inkeys[Unsigned]
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: Inkeys[Unsigned]
           path: download/win32
       - name: Download Inkeys64[Unsigned]
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: Inkeys64[Unsigned]
           path: download/x64
       - name: Download InkeysArm64[Unsigned]
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: InkeysArm64[Unsigned]
           path: download/arm64
@@ -318,19 +389,21 @@ jobs:
           copy download\arm64\Inkeys.pdb packageUpload\InkeysArm64.pdb
           
       - name: Upload Signpath[unsigned]
+        if: ${{ inputs.sign }}
         id: upload-unsigned
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Signpath[unsigned]
           path: signatureUpload/
 
       - name: 选定签名策略
+        if: ${{ inputs.sign }}
         id: resolvePolicy
         shell: pwsh
         run: |
           $branchName = $Env:GITHUB_REF_NAME
 
-          if ($branchName -ieq 'dev' -or $branchName -ieq 'staging')
+          if ($branchName -ieq 'dev')
           {
             "signing_policy_slug=test-signing" | Out-File -FilePath $Env:GITHUB_OUTPUT -Encoding utf8 -Append
             "**使用测试证书签名**" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
@@ -342,6 +415,7 @@ jobs:
           }
 
       - name: 提交给 SignPath 签名
+        if: ${{ inputs.sign }}
         id: signpath
         timeout-minutes: 30
         uses: signpath/github-action-submit-signing-request@v1.1
@@ -358,7 +432,7 @@ jobs:
         continue-on-error: true
         
       - name: Prepare update folder
-        if: steps.signpath.outcome == 'success'
+        if: ${{ inputs.sign && steps.signpath.outcome == 'success' }}
         run: |
           mkdir signedUpload\Inkeys
           mkdir signedUpload\Inkeys64
@@ -368,7 +442,7 @@ jobs:
           copy signed\InkeysArm64.exe signedUpload\InkeysArm64\Inkeys.exe
           
       - name: Prepare update folder
-        if: steps.signpath.outcome != 'success'
+        if: ${{ !inputs.sign || steps.signpath.outcome != 'success' }}
         run: |
           mkdir signedUpload\Inkeys
           mkdir signedUpload\Inkeys64
@@ -376,27 +450,31 @@ jobs:
           copy download\win32\Inkeys.exe signedUpload\Inkeys\Inkeys.exe
           copy download\x64\Inkeys.exe signedUpload\Inkeys64\Inkeys.exe
           copy download\arm64\Inkeys.exe signedUpload\InkeysArm64\Inkeys.exe
-      - if: steps.signpath.outcome != 'success'
+      - if: ${{ inputs.sign && steps.signpath.outcome != 'success' }}
         shell: pwsh
         run: |
           "**无法完成签名！**" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+      - if: ${{ !inputs.sign }}
+        shell: pwsh
+        run: |
+          "**已按手动输入跳过签名，后续包使用未签名 exe。**" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
       - name: Upload Inkeys
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Inkeys${{ steps.softwareDate.outputs.VALUE }}
           path: |
             signedUpload\Inkeys\Inkeys.exe
             download\win32\Inkeys.pdb
       - name: Upload Inkeys64
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Inkeys${{ steps.softwareDate.outputs.VALUE }}64
           path: |
             signedUpload\Inkeys64\Inkeys.exe
             download\x64\Inkeys.pdb
       - name: Upload InkeysArm64
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Inkeys${{ steps.softwareDate.outputs.VALUE }}Arm64
           path: |
@@ -622,7 +700,7 @@ jobs:
         shell: cmd
 
       - name: Upload Package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Package
           compression-level: 9
@@ -640,11 +718,11 @@ jobs:
     runs-on: windows-2025
     needs: package
     
-    if: always() && needs.package.result == 'success'
+    if: ${{ inputs.upload && always() && needs.package.result == 'success' }}
     
     steps:
       - name: Download Package Artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: Package
           path: packageUpload
