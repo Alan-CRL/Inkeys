@@ -1,6 +1,6 @@
 # 这是用于构建混合 C++ (MSVC v143) 和 C# (.NET Framework) 项目的 GitHub Actions 工作流程
 
-name: Inkeys Build
+name: Inkeys 3 Build
 
 on:
   workflow_dispatch:
