@@ -203,6 +203,12 @@
           "Skip3": "Minimal Clock",
           "Skip4": "Year of Horse"
         },
+        "BarZoom":
+        {
+          "N": "Bar UI Scale",
+          "E": "Adjust the main bar and button scale in real time.",
+          "Ind": "{:.2f}x scale"
+        },
         "SettingUIScale":
         {
           "N": "Options UI Scale",

@@ -187,6 +187,7 @@ enum class BarLogoColorSchemeEnum : int
 namespace Inkeys::UI::Bar
 {
 	export void Initialization();
+	export void SetConfigZoom(double configZoom);
 
 	void InitializeWindow(BarUISetClass& barUISet);
 	void InitializeMedia(BarUISetClass& barUISet);
