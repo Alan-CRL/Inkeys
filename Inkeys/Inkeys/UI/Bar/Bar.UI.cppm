@@ -399,3 +399,46 @@ public:
 	// 颜色
 	BarUiColorClass color;
 };
+
+/*
+动效实现备忘：
+
+当前现状：
+1. BarUiValueClass 已有 val/tar/mod/ary/spe/startV，可表达“当前值、目标值、动画类型、精度、速度、动画段起点”。
+2. Bar.Main.cpp 的 ChangeValue/ChangeColor/ChangePct 目前仍是直接把 val 赋为 tar，Linear/Variable 还没有真正参与逐帧推进。
+3. MainBar、DrawAttributeBar 的部分 w/h 已设置为 Variable，但 x、pct、framePct 等还需要按实际视觉效果选择线性或回弹；framePct 目前也需要加入动效同步处理。
+
+建议模型：
+1. 目标变化时记录动画段起点，而不是每帧重置：
+   if (newTar != value.tar) {
+       value.startV = value.val;
+       value.progress = 0.0;
+       value.tar = newTar;
+   }
+   因为计算 UI 阶段会每帧重复写相同目标，所以只有 newTar != oldTar 时才应重启动画。
+
+2. 额外状态建议优先增加 progress，而不是固定 duration：
+   progress 表示曲线横轴 x，始终按真实时间线性从 0 -> 1。
+   duration 可由距离和当前 spe 推导：duration = abs(tar - startV) / spe。
+   如果 spe 动画中途变化，则每帧用当前 spe 推进：
+       progress += dt * spe / abs(tar - startV);
+   这样不会让 val 跳变，只会从下一帧开始加速或减速。
+
+3. 每帧推进：
+   double x = clamp(progress, 0.0, 1.0);
+   double y = Curve(x);
+   value.val = value.startV + (value.tar - value.startV) * y;
+
+   Linear:   Curve(x) = x。
+   Variable: 可先使用 EaseOutBack 这类回弹曲线，y 允许超过 1 后回到 1。
+
+4. 动画完成：
+   当 progress >= 1.0，或 abs(value.tar - value.val) <= ary 时，收尾：
+       value.val = value.tar;
+       value.startV = value.tar;
+       value.progress = 0.0;
+
+注意：
+1. 回弹曲线下 val 可能非单调，不能从 val 反推 progress；progress/startV/tar 必须作为动画状态保存。
+2. 若之后希望打断时速度也完全连续，需要改成带 velocity 的弹簧积分模型；当前备忘先按曲线模型实现。
+*/
