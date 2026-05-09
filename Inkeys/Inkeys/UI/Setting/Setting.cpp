@@ -854,6 +854,8 @@ void SettingMain(stop_token sT)
 
 		int SetSkinMode = setlist.SetSkinMode;
 		float SettingGlobalScale = settingGlobalScale;
+		float BarZoom = static_cast<float>(Inkeys::config.UI.Bar.Zoom.load());
+		bool BarZoomSavePending = false;
 
 		int TopSleepTime = setlist.topSleepTime;
 		bool RightClickClose = setlist.RightClickClose;
@@ -3304,7 +3306,7 @@ void SettingMain(stop_token sT)
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(255, 255, 255, 0));
-						ImGui::BeginChild("常规#3", { 750.0f * settingGlobalScale,165.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("常规#3", { 750.0f * settingGlobalScale,(useInkeys3UI ? 240.0f : 165.0f) * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -3382,6 +3384,93 @@ void SettingMain(stop_token sT)
 									ImGui::EndCombo();
 								}
 								for (char* ptr : vec) free(ptr), ptr = nullptr;
+							}
+
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+							ImGui::EndChild();
+						}
+						if (useInkeys3UI)
+						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(251, 251, 251, 255));
+							ImGui::BeginChild("主栏 UI 缩放", { 750.0f * settingGlobalScale,70.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+							float cursosPosY = 0;
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.N).c_str());
+							}
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.E).c_str());
+							}
+							{
+								ImGui::SetCursorPos({ 435.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+								ImGui::PushItemWidth(300.0f * settingGlobalScale);
+
+								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(255, 255, 255, 179));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(249, 249, 249, 128));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_FrameBgActive, IM_COL32(249, 249, 249, 77));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrab, IM_COL32(0, 95, 184, 255));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, IM_COL32(0, 95, 184, 230));
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
+								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 6.0f * settingGlobalScale));
+								ImGui::SliderFloat("##主栏 UI 缩放", &BarZoom, 0.50f, 2.00f, "");
+								BarZoom = round(BarZoom * 100) / 100;
+
+								ImGui::PopItemWidth();
+
+								bool isItemActive = ImGui::IsItemActive();
+
+								if (fabs(BarZoom - static_cast<float>(Inkeys::config.UI.Bar.Zoom.load())) > 0.0001f)
+								{
+									Inkeys::config.UI.Bar.Zoom = static_cast<double>(BarZoom);
+									Inkeys::UI::Bar::SetConfigZoom(static_cast<double>(BarZoom));
+									BarZoomSavePending = true;
+								}
+
+								if (ImGui::IsItemHovered())
+								{
+									PushFontNum++, ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
+
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_PopupBg, IM_COL32(255, 255, 255, 255));
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 15));
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 228));
+									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f * settingGlobalScale);
+									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f * settingGlobalScale, 8.0f * settingGlobalScale));
+
+									ImGui::BeginTooltip();
+
+									ImGui::TextUnformatted(vformat(IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.Ind), make_format_args(BarZoom)).c_str());
+
+									ImGui::EndTooltip();
+								}
+								if (!isItemActive && BarZoomSavePending)
+								{
+									Inkeys::config.Write();
+									BarZoomSavePending = false;
+								}
+							}
+							{
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+
+								string temp = vformat(IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.Ind), make_format_args(BarZoom));
+								ImVec2 tempVec = ImGui::CalcTextSize(temp.c_str());
+
+								ImGui::SameLine(); ImGui::SetCursorPos({ ImGui::GetCursorPosX() - 15.0f * settingGlobalScale - tempVec.x, cursosPosY + 15.0f * settingGlobalScale + (30.0f * settingGlobalScale - tempVec.y) / 2.0f });
+								ImGui::TextUnformatted(temp.c_str());
 							}
 
 							{

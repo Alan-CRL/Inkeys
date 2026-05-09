@@ -57,6 +57,11 @@ namespace Inkeys::ConfigDetail
 		H(ConfigUploadMode::NoUpload, "NaN", std::wstring, TargetArchitecture, ::targetArchitecture) \
 		H(ConfigUploadMode::Upload, "we", std::wstring, WindowsEdition, ::windowsEdition) \
 	) \
+	GROUP(UI, \
+		GROUP(Bar, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, Zoom, 1.0) \
+		) \
+	) \
 	GROUP(PlugIn, \
 		GROUP(PPTHelper, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AutoTakeOver, false) \

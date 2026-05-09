@@ -32,7 +32,10 @@ class BarStyleClass
 {
 public:
 	IdtAtomic<bool> darkStyle = true;
+	IdtAtomic<double> dpiZoom = 1.0;
+	IdtAtomic<double> configZoom = 1.0;
 	IdtAtomic<double> zoom = 1.0;
+	IdtAtomic<bool> initialZoomFitPending = false;
 };
 
 // ---
