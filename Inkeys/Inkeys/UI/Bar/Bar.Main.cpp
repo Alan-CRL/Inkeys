@@ -159,6 +159,7 @@ namespace
 
 		ClampMainButtonToScreen(barUISet);
 		barUISet.barState.PositionUpdate(newZoom);
+		BarAtomic::renderOnceFlag = true;
 		barUISet.UpdateRendering();
 	}
 
@@ -2057,7 +2058,8 @@ void BarUISetClass::Rendering()
 
 	#pragma endregion
 
-		if (needRendering || true == BarAtomic::sustainFlag)
+		bool needRenderOnce = BarAtomic::renderOnceFlag.exchange(false);
+		if (needRendering || true == BarAtomic::sustainFlag || true == needRenderOnce)
 		{
 		#pragma region 渲染UI
 
