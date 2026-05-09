@@ -88,6 +88,7 @@ bool DownloadEdition(std::string domain, std::string path, std::wstring director
 	{
 		{ "Cache-Control", "no-cache" },
 		{ "Pragma", "no-cache" },
+		{ "User-Agent", "Inkeys-Updater/3.0" },
 		{ "Referer", referer.c_str() }
 	};
 
@@ -109,7 +110,7 @@ bool DownloadEdition(std::string domain, std::string path, std::wstring director
 			httplib::SSLClient scli(domain);
 			scli.set_follow_location(true);
 			scli.set_connection_timeout(5);
-			res = scli.Get(path.c_str(), callback);
+			res = scli.Get(path.c_str(), headers, callback);
 		}
 		file.close();
 	}
@@ -124,7 +125,7 @@ bool DownloadEdition(std::string domain, std::string path, std::wstring director
 			httplib::Client cli(domain);
 			cli.set_follow_location(true);
 			cli.set_connection_timeout(5);
-			res = cli.Get(path.c_str(), callback);
+			res = cli.Get(path.c_str(), headers, callback);
 		}
 		file.close();
 	}
