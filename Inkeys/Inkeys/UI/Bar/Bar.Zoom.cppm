@@ -90,13 +90,13 @@ namespace
 		SetMainButtonPosition(*mainButton, mainX, mainY);
 	}
 
-	void ClampMainButtonToScreen(BarUISetClass& barUISet)
+	bool ClampMainButtonToScreen(BarUISetClass& barUISet)
 	{
 		auto mainButton = GetMainButton(barUISet);
-		if (!mainButton) return;
+		if (!mainButton) return false;
 
 		double zoom = barUISet.barStyle.zoom;
-		if (!isfinite(zoom) || zoom <= 0.0) return;
+		if (!isfinite(zoom) || zoom <= 0.0) return false;
 
 		double frameHalf = 0.0;
 		if (mainButton->ft.has_value()) frameHalf = max(0.0, mainButton->ft.value().tar / 2.0);
@@ -109,9 +109,13 @@ namespace
 		if (maxX < minX) maxX = minX;
 		if (maxY < minY) maxY = minY;
 
-		SetMainButtonPosition(*mainButton,
-			clamp(static_cast<double>(mainButton->x.tar), minX, maxX),
-			clamp(static_cast<double>(mainButton->y.tar), minY, maxY));
+		double nextX = clamp(static_cast<double>(mainButton->x.tar), minX, maxX);
+		double nextY = clamp(static_cast<double>(mainButton->y.tar), minY, maxY);
+		bool changed = abs(nextX - static_cast<double>(mainButton->x.tar)) > 0.000001
+			|| abs(nextY - static_cast<double>(mainButton->y.tar)) > 0.000001;
+
+		SetMainButtonPosition(*mainButton, nextX, nextY);
+		return changed;
 	}
 
 	void ApplyConfigZoom(BarUISetClass& barUISet, double configZoom, bool keepCurrentScreenPosition)
@@ -155,13 +159,12 @@ export namespace Inkeys::UI::Bar::Zoom
 		barUISet.barStyle.dpiZoom = GetStartupDpiZoom();
 		barUISet.barStyle.configZoom = configZoom;
 		RefreshZoom(barUISet);
-		barUISet.barStyle.initialZoomFitPending = abs(configZoom - 1.0) <= 0.000001;
+		barUISet.barStyle.initialZoomFitPending = true;
 	}
 
 	void FitInitialAfterMainBarLayout(BarUISetClass& barUISet, double mainBarWidth)
 	{
 		if (!barUISet.barStyle.initialZoomFitPending.exchange(false)) return;
-		if (abs(barUISet.barStyle.configZoom.load() - 1.0) > 0.000001) return;
 
 		auto mainButton = GetMainButton(barUISet);
 		auto mainBar = GetMainBar(barUISet);
@@ -171,6 +174,14 @@ export namespace Inkeys::UI::Bar::Zoom
 		double currentZoom = barUISet.barStyle.zoom;
 		if (!isfinite(dpiZoom) || dpiZoom <= 0.0 || !isfinite(currentZoom) || currentZoom <= 0.0) return;
 		if (!isfinite(mainBarWidth) || mainBarWidth <= 0.0) return;
+
+		if (ClampMainButtonToScreen(barUISet))
+		{
+			barUISet.barState.PositionUpdate(currentZoom);
+			BarAtomic::renderOnceFlag = true;
+		}
+
+		if (abs(barUISet.barStyle.configZoom.load() - 1.0) > 0.000001) return;
 
 		double requiredWidth = mainButton->GetW() + 10.0 + mainBarWidth;
 		double requiredHeight = max(mainButton->GetH(), mainBar->GetH());
@@ -197,10 +208,14 @@ export namespace Inkeys::UI::Bar
 	void SetConfigZoom(double configZoom)
 	{
 		configZoom = RoundConfigZoom(configZoom);
-		barUISet.barStyle.configZoom = configZoom;
-		RefreshZoom(barUISet);
 
-		if (!useInkeys3UI) return;
+		if (!useInkeys3UI)
+		{
+			barUISet.barStyle.configZoom = configZoom;
+			RefreshZoom(barUISet);
+			return;
+		}
+
 		ApplyConfigZoom(barUISet, configZoom, true);
 	}
 }
