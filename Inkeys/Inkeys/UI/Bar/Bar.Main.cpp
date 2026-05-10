@@ -2204,7 +2204,7 @@ void BarUISetClass::Rendering()
 
 					// 主栏
 					auto obj = BarUISetShapeEnum::MainBar;
-					spec.Shape(barDeviceContext.Get(), *shapeMap[obj], shapeMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]), &current, true);
+					spec.Shape(barDeviceContext.Get(), *shapeMap[obj], BarUiInheritClass(shapeMap[obj]->inhX, shapeMap[obj]->inhY), &current, true);
 
 					// 主栏按钮
 					for (int id = 0; id < barButtomSet.tot; id++)
@@ -2222,7 +2222,7 @@ void BarUISetClass::Rendering()
 				// 主按钮
 				{
 					auto obj = BarUISetSuperellipseEnum::MainButton;
-					spec.Superellipse(barDeviceContext.Get(), *superellipseMap[obj], superellipseMap[obj]->Inherit(), &current, true);
+					spec.Superellipse(barDeviceContext.Get(), *superellipseMap[obj], BarUiInheritClass(superellipseMap[obj]->inhX, superellipseMap[obj]->inhY), &current, true);
 
 					{
 						auto obj = BarUISetSvgEnum::logo1;
