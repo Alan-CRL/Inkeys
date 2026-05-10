@@ -346,8 +346,8 @@ bool BarUiSVGClass::SetWH(optional<double> wT, optional<double> hT)
 		}
 	}
 
-	w.tar = tarW;
-	h.tar = tarH;
+	w.SetTar(tarW);
+	h.SetTar(tarH);
 
 	return true;
 }

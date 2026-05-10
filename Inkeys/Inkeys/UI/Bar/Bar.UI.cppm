@@ -33,6 +33,13 @@ public:
 	}
 
 	bool IsSame() { return val == tar; }
+	bool SetTar(bool tarT)
+	{
+		if (tar == tarT) return false;
+
+		tar = tarT;
+		return true;
+	}
 	void Initialization(optional<bool> valT, optional<bool> tarT = nullopt)
 	{
 		if (valT.has_value()) val = valT.value();
@@ -51,10 +58,26 @@ class BarUiValueClass
 {
 public:
 	BarUiValueClass() {}
-	BarUiValueClass(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Variable) { mod = modT, val = tar = valT, startV = valT; }
+	BarUiValueClass(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Variable) { mod = modT, SetDirect(valT); }
 
 	bool IsSame() { return val == tar; }
-	void Initialization(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Variable) { mod = modT, val = tar = valT, startV = valT; }
+	bool SetTar(double tarT)
+	{
+		if (tar == tarT) return false;
+
+		startV = val;
+		progress = 0.0;
+		tar = tarT;
+		return true;
+	}
+	void SetDirect(double valueT)
+	{
+		val = valueT;
+		tar = valueT;
+		startV = valueT;
+		progress = 0.0;
+	}
+	void Initialization(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Variable) { mod = modT, SetDirect(valT); }
 
 public:
 	IdtAtomic<BarUiValueModeEnum> mod = BarUiValueModeEnum::Linear;
@@ -66,20 +89,39 @@ public:
 	// 适用于 回弹动效模式
 	IdtAtomic<double> spe = 1.0; // 基准速度 px/s
 	IdtAtomic<double> startV = 0.0; // 起始位置（用于计算百分比，在界面设被设置时）
+	IdtAtomic<double> progress = 0.0; // 当前动画段的线性进度（曲线 x，0->1）
 };
 //// 颜色 UI 值（忽略透明度）
 class BarUiColorClass
 {
 public:
 	BarUiColorClass() {}
-	BarUiColorClass(COLORREF valT) { val = tar = valT; }
+	BarUiColorClass(COLORREF valT) { SetDirect(valT); }
 
 	bool IsSame() { return val == tar; }
-	void Initialization(COLORREF valT) { val = tar = valT; }
+	bool SetTar(COLORREF tarT)
+	{
+		if (tar == tarT) return false;
+
+		startColor = val;
+		progress = 0.0;
+		tar = tarT;
+		return true;
+	}
+	void SetDirect(COLORREF valueT)
+	{
+		val = valueT;
+		tar = valueT;
+		startColor = valueT;
+		progress = 0.0;
+	}
+	void Initialization(COLORREF valT) { SetDirect(valT); }
 
 public:
 	IdtAtomic<COLORREF> val = RGB(0, 0, 0); // 直接值（当前位置）
 	IdtAtomic<COLORREF> tar = RGB(0, 0, 0); // 目标值（目标位置）
+	IdtAtomic<COLORREF> startColor = RGB(0, 0, 0); // 起始颜色（用于计算百分比，在界面被设置时）
+	IdtAtomic<double> progress = 0.0; // 当前动画段的线性进度（曲线 x，0->1）
 
 	IdtAtomic<double> spe = 0.0; // RGB基准速度 1/s
 	// 如果 spe == 0 则表示直接变化
@@ -89,14 +131,32 @@ class BarUiPctClass
 {
 public:
 	BarUiPctClass() {}
-	BarUiPctClass(double valT) { val = tar = valT; }
+	BarUiPctClass(double valT) { SetDirect(valT); }
 
 	bool IsSame() { return val == tar; }
-	void Initialization(double valT) { val = tar = valT; }
+	bool SetTar(double tarT)
+	{
+		if (tar == tarT) return false;
+
+		startV = val;
+		progress = 0.0;
+		tar = tarT;
+		return true;
+	}
+	void SetDirect(double valueT)
+	{
+		val = valueT;
+		tar = valueT;
+		startV = valueT;
+		progress = 0.0;
+	}
+	void Initialization(double valT) { SetDirect(valT); }
 
 public:
 	IdtAtomic<double> val = 1.0; // 透明度直接值
 	IdtAtomic<double> tar = 1.0; // 颜色目标值
+	IdtAtomic<double> startV = 1.0; // 起始透明度（用于计算百分比，在界面被设置时）
+	IdtAtomic<double> progress = 0.0; // 当前动画段的线性进度（曲线 x，0->1）
 
 	IdtAtomic<double> spe = 0.0; // 透明度基准速度 1/s
 	// 如果 spe == 0 则表示直接变化
@@ -409,13 +469,10 @@ public:
 3. MainBar、DrawAttributeBar 的部分 w/h 已设置为 Variable，但 x、pct、framePct 等还需要按实际视觉效果选择线性或回弹；framePct 目前也需要加入动效同步处理。
 
 建议模型：
-1. 目标变化时记录动画段起点，而不是每帧重置：
-   if (newTar != value.tar) {
-       value.startV = value.val;
-       value.progress = 0.0;
-       value.tar = newTar;
-   }
-   因为计算 UI 阶段会每帧重复写相同目标，所以只有 newTar != oldTar 时才应重启动画。
+1. 目标变化时通过 SetTar 记录动画段起点，而不是每帧重置：
+   value.SetTar(newTar);
+   SetTar 内部只有在 newTar != oldTar 时才会 startV = val、progress = 0.0，并更新 tar。
+   因为计算 UI 阶段会每帧重复写相同目标，所以重复 SetTar 同一个目标不应重启动画。
 
 2. 额外状态建议优先增加 progress，而不是固定 duration：
    progress 表示曲线横轴 x，始终按真实时间线性从 0 -> 1。
