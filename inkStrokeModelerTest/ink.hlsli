@@ -23,12 +23,15 @@ struct InkPoint
 
 // 3. 结构化缓冲区
 StructuredBuffer<InkPoint> InkData : register(t0);
+Texture2D AlphaBlendSource : register(t1);
+SamplerState AlphaBlendSampler : register(s0);
 
 // 4. VS -> PS
 struct PS_INPUT
 {
     float4 pos : SV_POSITION;
     float2 pixPos : TEXCOORD0;
+    float2 uv : TEXCOORD1;
     
     nointerpolation float4 color : COLOR;
     

@@ -37,6 +37,11 @@ float4 main(PS_INPUT input) : SV_Target
     if (any(isnan(input.p1)) || any(isnan(input.p2)))
         discard;
 
+    if (type == 1)
+    {
+        return AlphaBlendSource.Sample(AlphaBlendSampler, input.uv);
+    }
+
     float d = 0.0;
     
     if (type == 0)
