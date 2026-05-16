@@ -11,6 +11,92 @@ namespace
 	std::atomic<bool> g_clearCanvasRequested = false;
 	std::atomic<int> g_brushShapeType = 0; // 0: 原来的画笔
 
+	enum class StrokeTimingProfileId
+	{
+		Fps30,  // 30 FPS: 老 Win7/低功耗档；补齐 180 点/秒，每帧约 6 点，防抖窗口约 83ms。
+		Fps60,  // 60 FPS: 默认兼容档；补齐 240 点/秒，每帧约 4 点，防抖窗口约 42ms。
+		Fps120, // 120 FPS: 当前高质量测试档；补齐 360 点/秒，每帧约 3 点，防抖窗口约 21ms。
+		Fps240  // 240 FPS: 高刷/高端档；补齐 480 点/秒，每帧约 2 点，防抖窗口约 10ms。
+	};
+
+	struct StrokeTimingProfile
+	{
+		double target_fps; // 主循环目标 FPS，传给 HighPrecisionWait。
+		double min_output_rate; // 模型最少输出点数/秒，低于输入频率时用于补齐点密度。
+		double live_tail_duration_seconds; // 实时笔锋保留的尾部时间，当前先换算成尾部点数。
+		double prediction_interval_seconds; // Kalman 预测最大前瞻时间；实际预测长度还会乘置信度。
+		int kalman_desired_number_of_samples; // Kalman 样本数置信度达到 1.0 所需的输入点数。
+		int kalman_max_time_samples; // Kalman 保存的最近时间戳数量，用于修正非均匀输入间隔。
+		double wobble_timeout_seconds; // 防抖移动平均窗口，按约 2.5 个输入间隔设置。
+		float wobble_speed_floor_ratio; // 低于 expected_speed 的该比例时防抖最强。
+		float wobble_speed_ceiling_ratio; // 高于 expected_speed 的该比例时基本不防抖。
+		int max_outputs_per_call; // 单次 Update/Predict 最多输出点数，防止长时间卡顿后爆量补点。
+	};
+
+	constexpr StrokeTimingProfileId kDefaultStrokeTimingProfileId = StrokeTimingProfileId::Fps60;
+	constexpr StrokeTimingProfileId kActiveStrokeTimingProfileId = StrokeTimingProfileId::Fps120; // 当前测试先使用 120 FPS。
+
+	StrokeTimingProfile GetStrokeTimingProfile(StrokeTimingProfileId profileId = kDefaultStrokeTimingProfileId)
+	{
+		switch (profileId)
+		{
+		case StrokeTimingProfileId::Fps30:
+			return {
+				.target_fps = 30.0,
+				.min_output_rate = 180.0,
+				.live_tail_duration_seconds = 0.055,
+				.prediction_interval_seconds = 1.0 / 30.0,
+				.kalman_desired_number_of_samples = 4,
+				.kalman_max_time_samples = 5,
+				.wobble_timeout_seconds = 2.5 / 30.0,
+				.wobble_speed_floor_ratio = 0.02f,
+				.wobble_speed_ceiling_ratio = 0.03f,
+				.max_outputs_per_call = 2000
+			};
+		case StrokeTimingProfileId::Fps60:
+			return {
+				.target_fps = 60.0,
+				.min_output_rate = 240.0,
+				.live_tail_duration_seconds = 0.055,
+				.prediction_interval_seconds = 1.0 / 45.0,
+				.kalman_desired_number_of_samples = 5,
+				.kalman_max_time_samples = 10,
+				.wobble_timeout_seconds = 2.5 / 60.0,
+				.wobble_speed_floor_ratio = 0.02f,
+				.wobble_speed_ceiling_ratio = 0.03f,
+				.max_outputs_per_call = 2000
+			};
+		case StrokeTimingProfileId::Fps120:
+			return {
+				.target_fps = 120.0,
+				.min_output_rate = 360.0,
+				.live_tail_duration_seconds = 0.055,
+				.prediction_interval_seconds = 1.0 / 60.0,
+				.kalman_desired_number_of_samples = 10,
+				.kalman_max_time_samples = 20,
+				.wobble_timeout_seconds = 2.5 / 120.0,
+				.wobble_speed_floor_ratio = 0.02f,
+				.wobble_speed_ceiling_ratio = 0.03f,
+				.max_outputs_per_call = 2000
+			};
+		case StrokeTimingProfileId::Fps240:
+			return {
+				.target_fps = 240.0,
+				.min_output_rate = 480.0,
+				.live_tail_duration_seconds = 0.055,
+				.prediction_interval_seconds = 1.0 / 120.0,
+				.kalman_desired_number_of_samples = 20,
+				.kalman_max_time_samples = 40,
+				.wobble_timeout_seconds = 2.5 / 240.0,
+				.wobble_speed_floor_ratio = 0.02f,
+				.wobble_speed_ceiling_ratio = 0.03f,
+				.max_outputs_per_call = 2000
+			};
+		default:
+			return GetStrokeTimingProfile();
+		}
+	}
+
 	const char* GetDriverTypeName(D3D_DRIVER_TYPE driverType)
 	{
 		switch (driverType)
@@ -313,23 +399,23 @@ int main()
 	}
 	// 初始调测参数
 	const bool debug = true;
-	const float sampling_rate_hz = 120.0f; // Hz
+	const StrokeTimingProfile timingProfile = GetStrokeTimingProfile(kActiveStrokeTimingProfileId);
 	const float expected_speed = 500.0f * (static_cast<float>(dpiX) / 96.0f); // DPI 期望速度
 	const float limited_speed = expected_speed * 3.0f; // 最高允许速度
-	const int strokes_num = static_cast<int>(sampling_rate_hz / 6.0f); // 笔锋点个数
+	const int strokes_num = static_cast<int>(timingProfile.live_tail_duration_seconds * timingProfile.min_output_rate + 0.5); // 笔锋尾部点数，对应 live_tail_duration_seconds
 	// 模型初始化
 	KalmanPredictorParams kalman_predictor_params;
 	{
 		kalman_predictor_params.process_noise = 0.05;
 		kalman_predictor_params.measurement_noise = 0.01;
 		kalman_predictor_params.min_stable_iteration = 4;
-		kalman_predictor_params.max_time_samples = 20;
+		kalman_predictor_params.max_time_samples = timingProfile.kalman_max_time_samples;
 		kalman_predictor_params.min_catchup_velocity = expected_speed / 1000.0f;
 		kalman_predictor_params.acceleration_weight = 0.5f;
 		kalman_predictor_params.jerk_weight = 0.1f;
-		kalman_predictor_params.prediction_interval = Duration(0.2);
+		kalman_predictor_params.prediction_interval = Duration(timingProfile.prediction_interval_seconds);
 		kalman_predictor_params.confidence_params = {
-			.desired_number_of_samples = 10,
+			.desired_number_of_samples = timingProfile.kalman_desired_number_of_samples,
 			.max_estimation_distance = 1.5f * static_cast<float>(kalman_predictor_params.measurement_noise),
 			.min_travel_speed = 0.05f * expected_speed,
 			.max_travel_speed = 0.25f * expected_speed,
@@ -339,20 +425,20 @@ int main()
 	}
 	StrokeModelParams params{
 		.wobble_smoother_params{
-			.is_enabled = false,
-			.timeout = Duration(2.5 / sampling_rate_hz),
-			.speed_floor = 0.02f * expected_speed,
-			.speed_ceiling = 0.03f * expected_speed
+			.is_enabled = true,
+			.timeout = Duration(timingProfile.wobble_timeout_seconds),
+			.speed_floor = timingProfile.wobble_speed_floor_ratio * expected_speed,
+			.speed_ceiling = timingProfile.wobble_speed_ceiling_ratio * expected_speed
 		},
 		.position_modeler_params{
 			.spring_mass_constant = 11.f / 32400,
 			.drag_constant = 72.f
 		},
 		.sampling_params{
-			.min_output_rate = 3.0f * sampling_rate_hz,
-			.end_of_stroke_stopping_distance = .001,
+			.min_output_rate = timingProfile.min_output_rate,
+			.end_of_stroke_stopping_distance = .001f,
 			.end_of_stroke_max_iterations = 20,
-			.max_outputs_per_call = 2000
+			.max_outputs_per_call = timingProfile.max_outputs_per_call
 		},
 	};
 	StrokeModeler modeler;
@@ -576,7 +662,7 @@ int main()
 					double costMs = chrono::duration<double, milli>(chrono::high_resolution_clock::now() - rekon).count();
 
 					// 直接传入 ms，无需转换
-					HighPrecisionWait(costMs, sampling_rate_hz);
+					HighPrecisionWait(costMs, timingProfile.target_fps);
 
 					// 计算总帧时间用于显示实际 FPS
 					double totalMs = chrono::duration<double, milli>(chrono::high_resolution_clock::now() - rekon).count();
