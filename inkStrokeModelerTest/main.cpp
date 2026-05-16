@@ -359,9 +359,11 @@ int main()
 
 	auto clearCanvas = [&swapChain]()
 		{
-			const XMFLOAT4 clearColor(1.0f, 1.0f, 1.0f, 0.0f);
-			inkRenderer.ClearRTV(inkRenderer.offScreenTexture1RTV, clearColor);
-			inkRenderer.ClearRTV(inkRenderer.renderTargetView, clearColor);
+			const XMFLOAT4 finalCanvasClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+			const XMFLOAT4 activeDryClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+			inkRenderer.ClearRTV(inkRenderer.finalCanvasRTV, finalCanvasClearColor);
+			inkRenderer.ClearRTV(inkRenderer.offScreenTexture1RTV, activeDryClearColor);
+			inkRenderer.ClearRTV(inkRenderer.renderTargetView, finalCanvasClearColor);
 			swapChain->Present(0, 0);
 		};
 
@@ -390,6 +392,7 @@ int main()
 			// TODO
 
 			RECT current = RECT(0, 0, 0, 0);
+			RECT strokeDirty = RECT(0, 0, 0, 0);
 			bool isFirstFrame = true;
 
 			params.prediction_params = kalman_predictor_params;
@@ -525,6 +528,7 @@ int main()
 						current = RECT(0, 0, 0, 0);
 					}
 				}
+				UnionRectInPlace(strokeDirty, current);
 
 				if (current.left != 0 || current.top != 0 || current.right != 0 || current.bottom != 0)
 				{
@@ -535,12 +539,13 @@ int main()
 						if (!isFirstFrame)
 						{
 							//inkRenderer.ClearRTV(inkRenderer.renderTargetView, XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f)); // DEBUG
-							inkRenderer.CopyResource(inkRenderer.screenTexture, inkRenderer.offScreenTexture1, current);
+							inkRenderer.CopyResource(inkRenderer.screenTexture, inkRenderer.finalCanvasTexture, current);
 						}
 						else
 						{
-							inkRenderer.context->CopyResource(inkRenderer.screenTexture, inkRenderer.offScreenTexture1);
+							inkRenderer.context->CopyResource(inkRenderer.screenTexture, inkRenderer.finalCanvasTexture);
 						}
+						inkRenderer.AlphaBlendResource(inkRenderer.renderTargetView, inkRenderer.offScreenTexture1SRV, current);
 					}
 
 					// 帧结束
@@ -588,6 +593,11 @@ int main()
 			}
 
 			{
+				if (strokeDirty.left < strokeDirty.right && strokeDirty.top < strokeDirty.bottom)
+				{
+					inkRenderer.AlphaBlendResource(inkRenderer.finalCanvasRTV, inkRenderer.offScreenTexture1SRV, strokeDirty);
+					inkRenderer.ClearRTV(inkRenderer.offScreenTexture1RTV, XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f));
+				}
 			}
 
 			hiex::flushmessage_win32(EM_MOUSE, windowHWND);

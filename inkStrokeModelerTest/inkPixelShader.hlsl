@@ -74,5 +74,6 @@ float4 main(PS_INPUT input) : SV_Target
     if (alpha <= 0.0)
         discard;
 
-    return float4(input.color.rgb, input.color.a * alpha);
+    float outAlpha = input.color.a * alpha;
+    return float4(input.color.rgb * outAlpha, outAlpha);
 }

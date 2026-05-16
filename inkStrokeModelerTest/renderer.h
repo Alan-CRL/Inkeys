@@ -51,11 +51,14 @@ public:
 
 	// 缓冲
 	CComPtr<ID3D11Texture2D> screenTexture;
-	CComPtr<ID3D11Texture2D> offScreenTexture1 = nullptr; // 1级缓冲 -> 烘干墨迹层
+	CComPtr<ID3D11Texture2D> finalCanvasTexture = nullptr; // L2_FinalCanvas: 最终白底画布
+	CComPtr<ID3D11Texture2D> offScreenTexture1 = nullptr; // L1_ActiveDry: 透明活动烘干层
 
 	// RTV
 	CComPtr<ID3D11RenderTargetView> renderTargetView; // 窗口中的 RTV
+	CComPtr<ID3D11RenderTargetView> finalCanvasRTV;
 	CComPtr<ID3D11RenderTargetView> offScreenTexture1RTV;
+	CComPtr<ID3D11ShaderResourceView> offScreenTexture1SRV;
 
 	// 着色器
 	CComPtr<ID3D11VertexShader> vertexShader;
@@ -65,6 +68,7 @@ public:
 	CComPtr<ID3D11Buffer> globalCB;
 	CComPtr<ID3D11Buffer> inkDataBuffer;
 	CComPtr<ID3D11ShaderResourceView> inkDataSRV;
+	CComPtr<ID3D11SamplerState> alphaBlendSampler;
 
 	// 渲染属性
 	CComPtr<ID3D11BlendState> penBlendState;
@@ -210,6 +214,66 @@ public:
 	}
 	void BlendResourceGlobal(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* srcSRV)
 	{
+		RECT rect =
+		{
+			0,
+			0,
+			static_cast<LONG>(viewportWidth),
+			static_cast<LONG>(viewportHeight)
+		};
+		AlphaBlendResource(dstRTV, srcSRV, rect);
+	}
+	void AlphaBlendResource(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* srcSRV, RECT rect)
+	{
+		if (!dstRTV || !srcSRV) return;
+
+		rect.left = max(0L, rect.left);
+		rect.top = max(0L, rect.top);
+		rect.right = min(static_cast<LONG>(viewportWidth), rect.right);
+		rect.bottom = min(static_cast<LONG>(viewportHeight), rect.bottom);
+		if (rect.left >= rect.right || rect.top >= rect.bottom) return;
+
+		InkPoint rectPoints[2] =
+		{
+			{ static_cast<float>(rect.left), static_cast<float>(rect.top), 0.0f, 0.0f },
+			{ static_cast<float>(rect.right), static_cast<float>(rect.bottom), 0.0f, 0.0f }
+		};
+
+		D3D11_MAPPED_SUBRESOURCE map;
+		if (FAILED(context->Map(inkDataBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &map))) return;
+		memcpy(map.pData, rectPoints, sizeof(rectPoints));
+		context->Unmap(inkDataBuffer, 0);
+		m_bufferHead = 2;
+
+		if (FAILED(context->Map(globalCB, 0, D3D11_MAP_WRITE_DISCARD, 0, &map))) return;
+		CB_Global* cb = reinterpret_cast<CB_Global*>(map.pData);
+		cb->width = viewportWidth;
+		cb->height = viewportHeight;
+		cb->color = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+		cb->shapeType = 1.0f;
+		cb->bufferOffset = 0;
+		context->Unmap(globalCB, 0);
+
+		SetOMTarget(dstRTV);
+
+		context->IASetInputLayout(nullptr);
+		context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		context->VSSetShader(vertexShader, nullptr, 0);
+		ID3D11ShaderResourceView* vsSrvs[] = { inkDataSRV.p };
+		context->VSSetShaderResources(0, 1, vsSrvs);
+		context->VSSetConstantBuffers(0, 1, &globalCB.p);
+		context->PSSetShader(pixelShader, nullptr, 0);
+		context->PSSetShaderResources(1, 1, &srcSRV);
+		context->PSSetSamplers(0, 1, &alphaBlendSampler.p);
+		context->OMSetBlendState(alphaBlendState, nullptr, 0xFFFFFFFF);
+		context->RSSetState(rasterState);
+		context->Draw(6, 0);
+
+		ID3D11ShaderResourceView* nullSRV[] = { nullptr };
+		ID3D11SamplerState* nullSampler[] = { nullptr };
+		context->VSSetShaderResources(0, 1, nullSRV);
+		context->PSSetShaderResources(1, 1, nullSRV);
+		context->PSSetSamplers(0, 1, nullSampler);
 	}
 
 	// 属性设置部分
@@ -266,6 +330,7 @@ public:
 			textureDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
 			textureDesc.CPUAccessFlags = 0;
 			textureDesc.MiscFlags = 0;
+			device->CreateTexture2D(&textureDesc, nullptr, &finalCanvasTexture);
 			device->CreateTexture2D(&textureDesc, nullptr, &offScreenTexture1);
 
 			// 创建画布渲染目标
@@ -274,7 +339,9 @@ public:
 			rtvDesc.Format = textureDesc.Format;
 			rtvDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
 			rtvDesc.Texture2D.MipSlice = 0;
+			device->CreateRenderTargetView(finalCanvasTexture, &rtvDesc, &finalCanvasRTV);
 			device->CreateRenderTargetView(offScreenTexture1, &rtvDesc, &offScreenTexture1RTV);
+			device->CreateShaderResourceView(offScreenTexture1, nullptr, &offScreenTexture1SRV);
 		}
 
 		// 2. 混合状态
@@ -283,12 +350,12 @@ public:
 			{
 				D3D11_BLEND_DESC blendDesc = {};
 				blendDesc.RenderTarget[0].BlendEnable = TRUE;
-				blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+				blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
 				blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
 				blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
 				blendDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-				blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
-				blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_MAX;
+				blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+				blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
 				blendDesc.RenderTarget[0].RenderTargetWriteMask = 0x0F;
 				device->CreateBlendState(&blendDesc, &penBlendState);
 			}
@@ -299,11 +366,11 @@ public:
 			{
 				D3D11_BLEND_DESC blendDesc = {};
 				blendDesc.RenderTarget[0].BlendEnable = TRUE;
-				blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+				blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
 				blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
 				blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
 				blendDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-				blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+				blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
 				blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
 				blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
 				device->CreateBlendState(&blendDesc, &alphaBlendState);
@@ -341,6 +408,16 @@ public:
 		srvDesc.Buffer.FirstElement = 0;
 		srvDesc.Buffer.NumElements = static_cast<UINT>(MAX_BUFFER_CAPACITY);
 		if (FAILED(device->CreateShaderResourceView(inkDataBuffer, &srvDesc, &inkDataSRV))) return false;
+
+		D3D11_SAMPLER_DESC samplerDesc = {};
+		samplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+		samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+		samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+		samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+		samplerDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+		samplerDesc.MinLOD = 0;
+		samplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
+		if (FAILED(device->CreateSamplerState(&samplerDesc, &alphaBlendSampler))) return false;
 
 		return LoadShaders();
 	}
