@@ -10,6 +10,94 @@ namespace
 {
 	std::atomic<bool> g_clearCanvasRequested = false;
 	std::atomic<int> g_brushShapeType = 0; // 0: 原来的画笔
+
+	const char* GetDriverTypeName(D3D_DRIVER_TYPE driverType)
+	{
+		switch (driverType)
+		{
+		case D3D_DRIVER_TYPE_HARDWARE:
+			return "Hardware";
+		case D3D_DRIVER_TYPE_WARP:
+			return "WARP";
+		default:
+			return "Unknown";
+		}
+	}
+
+	const char* GetFeatureLevelName(D3D_FEATURE_LEVEL featureLevel)
+	{
+		switch (featureLevel)
+		{
+		case D3D_FEATURE_LEVEL_11_1:
+			return "11_1";
+		case D3D_FEATURE_LEVEL_11_0:
+			return "11_0";
+		case D3D_FEATURE_LEVEL_10_1:
+			return "10_1";
+		case D3D_FEATURE_LEVEL_10_0:
+			return "10_0";
+		case D3D_FEATURE_LEVEL_9_3:
+			return "9_3";
+		case D3D_FEATURE_LEVEL_9_2:
+			return "9_2";
+		case D3D_FEATURE_LEVEL_9_1:
+			return "9_1";
+		default:
+			return "Unknown";
+		}
+	}
+
+	HRESULT CreateD3D11DeviceWithCompatibleFeatureLevels(
+		D3D_DRIVER_TYPE driverType,
+		UINT creationFlags,
+		CComPtr<ID3D11Device>& device,
+		D3D_FEATURE_LEVEL& actualFeatureLevel,
+		CComPtr<ID3D11DeviceContext>& deviceContext)
+	{
+		static const D3D_FEATURE_LEVEL preferredFeatureLevels[] = {
+			D3D_FEATURE_LEVEL_11_1,
+			D3D_FEATURE_LEVEL_11_0,
+		};
+		static const D3D_FEATURE_LEVEL fallbackFeatureLevels[] = {
+			D3D_FEATURE_LEVEL_11_0,
+		};
+
+		device.Release();
+		deviceContext.Release();
+
+		HRESULT hr = D3D11CreateDevice(
+			nullptr,
+			driverType,
+			nullptr,
+			creationFlags,
+			preferredFeatureLevels,
+			ARRAYSIZE(preferredFeatureLevels),
+			D3D11_SDK_VERSION,
+			&device,
+			&actualFeatureLevel,
+			&deviceContext
+		);
+		if (hr == E_INVALIDARG)
+		{
+			device.Release();
+			deviceContext.Release();
+
+			hr = D3D11CreateDevice(
+				nullptr,
+				driverType,
+				nullptr,
+				creationFlags,
+				fallbackFeatureLevels,
+				ARRAYSIZE(fallbackFeatureLevels),
+				D3D11_SDK_VERSION,
+				&device,
+				&actualFeatureLevel,
+				&deviceContext
+			);
+		}
+
+		return hr;
+	}
 }
 
 void HighPrecisionWait(double frameTimeSpentMs, double targetFPS)
@@ -103,44 +191,60 @@ int main()
 {
 	timeBeginPeriod(1); // 全局高精度计时器
 
-	// 初始化 D3D 设备
-	CComPtr<ID3D11DeviceContext> d3dDeviceContext; // DC
-	{
-		// 创建 HARDWARE 设备
-
-		UINT creationFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
-
-		D3D_FEATURE_LEVEL featureLevels[] = {
-			D3D_FEATURE_LEVEL_11_1,
-			D3D_FEATURE_LEVEL_11_0,
-		};
-
-		D3D_FEATURE_LEVEL actualFeatureLevel;
-		HRESULT hr = S_OK;
-
-		hr = D3D11CreateDevice(
-			nullptr,                    // 指定 nullptr 使用默认适配器
-			D3D_DRIVER_TYPE_HARDWARE,   // 使用 HARDWARE 硬件加速渲染器
-			nullptr,                    // 没有软件模块
-			creationFlags,              // 设置支持 BGRA 格式
-			featureLevels,              // 功能级别数组
-			ARRAYSIZE(featureLevels),   // 数组大小
-			D3D11_SDK_VERSION,          // SDK 版本
-			&d3dDevice_HARDWARE,        // 返回创建的设备
-			&actualFeatureLevel,        // 返回实际的功能级别
-			&d3dDeviceContext           // 返回设备上下文
-		);
-		if (FAILED(hr))
-		{
-			// DirectX 设备初始化异常
-		}
-
-		d3dDevice_HARDWARE->QueryInterface(__uuidof(IDXGIDevice1), reinterpret_cast<void**>(&dxgiDevice1));
-	}
-
 	// 窗口创建
 	{
 		windowHWND = hiex::initgraph_win32(windowInfo.w, windowInfo.h, EW_SHOWCONSOLE, _T(""), Draw3WndProc);
+	}
+
+	// 初始化 D3D 设备
+	CComPtr<ID3D11DeviceContext> d3dDeviceContext; // DC
+	{
+		UINT creationFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+		D3D_FEATURE_LEVEL actualFeatureLevel = D3D_FEATURE_LEVEL_11_0;
+		D3D_DRIVER_TYPE activeDriverType = D3D_DRIVER_TYPE_UNKNOWN;
+		HRESULT hr = S_OK;
+
+		hr = CreateD3D11DeviceWithCompatibleFeatureLevels(
+			D3D_DRIVER_TYPE_HARDWARE,
+			creationFlags,
+			d3dDevice_HARDWARE,
+			actualFeatureLevel,
+			d3dDeviceContext
+		);
+		if (FAILED(hr))
+		{
+			cout << "Hardware device initialization failed. Falling back to WARP." << endl;
+
+			hr = CreateD3D11DeviceWithCompatibleFeatureLevels(
+				D3D_DRIVER_TYPE_WARP,
+				creationFlags,
+				d3dDevice_HARDWARE,
+				actualFeatureLevel,
+				d3dDeviceContext
+			);
+
+			if (FAILED(hr))
+			{
+				cout << "Failed to initialize a D3D11 device with both Hardware and WARP." << endl;
+				return -1;
+			}
+
+			activeDriverType = D3D_DRIVER_TYPE_WARP;
+		}
+		else
+		{
+			activeDriverType = D3D_DRIVER_TYPE_HARDWARE;
+		}
+
+		cout << "Current D3D device: " << GetDriverTypeName(activeDriverType) << endl;
+		cout << "D3D feature level: " << GetFeatureLevelName(actualFeatureLevel) << endl;
+
+		hr = d3dDevice_HARDWARE->QueryInterface(__uuidof(IDXGIDevice1), reinterpret_cast<void**>(&dxgiDevice1));
+		if (FAILED(hr))
+		{
+			cout << "Failed to query IDXGIDevice1 from the D3D11 device." << endl;
+			return -1;
+		}
 	}
 
 	// 从 windows8 开始可以考虑 SwapChain2 的 DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT 更适合墨迹输入
@@ -149,7 +253,7 @@ int main()
 	dxgiDevice1->SetMaximumFrameLatency(1);
 
 	// 后续性能选项卡中可以提供一个 GPU 高优先级 的选项
-	dxgiDevice1->SetGPUThreadPriority(2);
+	// dxgiDevice1->SetGPUThreadPriority(2);
 
 	// SwapChain
 	CComPtr<IDXGISwapChain1> swapChain;
@@ -163,7 +267,7 @@ int main()
 		swapChainDesc.SampleDesc.Quality = 0;
 		swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 		swapChainDesc.BufferCount = 2;
-		swapChainDesc.Scaling = DXGI_SCALING_NONE;
+		swapChainDesc.Scaling = DXGI_SCALING_STRETCH;
 		swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
 		swapChainDesc.Flags = 0;
 

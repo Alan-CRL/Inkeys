@@ -29,8 +29,8 @@ using namespace ink::stroke_model;
 class WindowInfoClass
 {
 public:
-	int w = 2000;
-	int h = 1000;
+	int w = 1600;
+	int h = 900;
 };
 extern WindowInfoClass windowInfo;
 
