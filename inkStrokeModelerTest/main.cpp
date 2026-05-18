@@ -12,6 +12,9 @@ InkRenderer inkRenderer;
 namespace
 {
 	std::atomic<bool> g_clearCanvasRequested = false;
+	std::atomic<bool> g_resizeRequested = false;
+	std::atomic<int> g_pendingResizeWidth = 0;
+	std::atomic<int> g_pendingResizeHeight = 0;
 	std::atomic<int> g_brushShapeType = 0; // 0: 原来的画笔
 
 	enum class InkPredictionMode
@@ -36,7 +39,7 @@ namespace
 
 	constexpr InkPredictionMode kActivePredictionMode = InkPredictionMode::Kalman;
 	constexpr LiveTipLengthMode kActiveLiveTipLengthMode = LiveTipLengthMode::Normal;
-	constexpr DebugLayerColorMode kActiveDebugLayerColorMode = DebugLayerColorMode::ColorizeLiveLayer;
+	constexpr DebugLayerColorMode kActiveDebugLayerColorMode = DebugLayerColorMode::NormalInkColor;
 
 	enum class StrokeTimingProfileId
 	{
@@ -576,6 +579,21 @@ LRESULT CALLBACK Draw3WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	switch (msg)
 	{
+	case WM_SIZE:
+		if (wParam != SIZE_MINIMIZED)
+		{
+			const int width = static_cast<int>(LOWORD(lParam));
+			const int height = static_cast<int>(HIWORD(lParam));
+			if (width > 0 && height > 0)
+			{
+				// WndProc 只记录尺寸变化，D3D 资源释放和重建放回主绘制线程处理。
+				g_pendingResizeWidth.store(width, std::memory_order_relaxed);
+				g_pendingResizeHeight.store(height, std::memory_order_relaxed);
+				g_resizeRequested.store(true, std::memory_order_release);
+			}
+		}
+		break;
+
 	case WM_KEYDOWN:
 		switch (wParam)
 		{
@@ -702,8 +720,7 @@ int main()
 	// 交换链应该保证指定脏区，而不是全部重绘
 	// 后续修改，非 flip_discard
 
-	inkRenderer.Init(d3dDevice_HARDWARE, d3dDeviceContext, swapChain);
-	inkRenderer.SetScreenSize((float)windowInfo.w, (float)windowInfo.h);
+	inkRenderer.Init(d3dDevice_HARDWARE, d3dDeviceContext, swapChain, static_cast<UINT>(windowInfo.w), static_cast<UINT>(windowInfo.h));
 
 	// 每帧绘制前应该
 	/*
@@ -774,6 +791,39 @@ int main()
 			swapChain->Present(0, 0);
 		};
 
+	auto presentFullCanvas = [&swapChain]()
+		{
+			const RECT fullCanvasRect = GetFullCanvasRect();
+			CompositeLayersToBackBuffer(fullCanvasRect);
+			PresentFrame(swapChain, fullCanvasRect, true);
+		};
+
+	auto processPendingResize = [&swapChain, &presentFullCanvas](bool presentAfterResize)
+		{
+			if (!g_resizeRequested.exchange(false, std::memory_order_acquire)) return false;
+
+			const int width = g_pendingResizeWidth.load(std::memory_order_relaxed);
+			const int height = g_pendingResizeHeight.load(std::memory_order_relaxed);
+			if (width <= 0 || height <= 0) return false;
+			if (width == windowInfo.w && height == windowInfo.h) return false;
+
+			const int oldWidth = windowInfo.w;
+			const int oldHeight = windowInfo.h;
+			if (!inkRenderer.Resize(swapChain, static_cast<UINT>(width), static_cast<UINT>(height)))
+			{
+				cout << "Failed to resize D3D resources to " << width << "x" << height << endl;
+				windowInfo.w = oldWidth;
+				windowInfo.h = oldHeight;
+				return false;
+			}
+
+			// resize 后窗口逻辑尺寸立即跟随，新区域由 L2 白底和透明 L1/L0 重新合成。
+			windowInfo.w = width;
+			windowInfo.h = height;
+			if (presentAfterResize) presentFullCanvas();
+			return true;
+		};
+
 	clearCanvas();
 
 	ExMessage m{};
@@ -783,6 +833,7 @@ int main()
 		{
 			clearCanvas();
 		}
+		processPendingResize(true);
 
 		if (!hiex::peekmessage_win32(&m, EM_MOUSE, true, windowHWND))
 		{
@@ -838,6 +889,13 @@ int main()
 			while (1)
 			{
 				rekon = chrono::high_resolution_clock::now();
+				if (processPendingResize(false))
+				{
+					stroke.lastL0Rect = RECT(0, 0, 0, 0);
+					stroke.currentL0Rect = RECT(0, 0, 0, 0);
+					strokeDirty = ClampRectToCanvas(strokeDirty);
+					isFirstFrame = true;
+				}
 
 				POINT pt;
 				GetCursorPos(&pt);
@@ -921,6 +979,14 @@ int main()
 				}
 			}
 
+			if (processPendingResize(false))
+			{
+				stroke.lastL0Rect = RECT(0, 0, 0, 0);
+				stroke.currentL0Rect = RectFromStrokePoints(stroke.l0DrawPoints);
+				strokeDirty = ClampRectToCanvas(strokeDirty);
+				isFirstFrame = true;
+			}
+
 			// 抬笔时把最后一帧用户看到的 L0 原样落到 L1，再整体烘干到 L2。
 			if (stroke.l0DrawPoints.size() >= 2)
 			{
@@ -935,12 +1001,14 @@ int main()
 				inkRenderer.AlphaBlendResource(inkRenderer.layerL2RTV, inkRenderer.layerL1SRV, strokeDirty);
 				inkRenderer.ClearRTV(inkRenderer.layerL1RTV, XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f));
 				inkRenderer.ClearRTV(inkRenderer.layerL0RTV, XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f));
-				inkRenderer.CopyResource(inkRenderer.backBufferTexture, inkRenderer.layerL2Texture, strokeDirty);
-				PresentFrame(swapChain, strokeDirty, false);
+				const RECT finalPresentRect = isFirstFrame ? GetFullCanvasRect() : strokeDirty;
+				inkRenderer.CopyResource(inkRenderer.backBufferTexture, inkRenderer.layerL2Texture, finalPresentRect);
+				PresentFrame(swapChain, strokeDirty, isFirstFrame);
 			}
 			else
 			{
 				inkRenderer.ClearRTV(inkRenderer.layerL0RTV, XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f));
+				if (isFirstFrame) presentFullCanvas();
 			}
 
 			hiex::flushmessage_win32(EM_MOUSE, windowHWND);

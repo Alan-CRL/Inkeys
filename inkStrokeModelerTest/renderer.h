@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <d3d11.h>
+#include <dxgi1_2.h>
 #include <DirectXMath.h>
 #include <atlbase.h>
 #include <vector>
@@ -306,49 +307,115 @@ public:
 		context->ClearRenderTargetView(renderTargetView, clearColor);
 	}
 
-	bool Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain)
+	bool CreateSizeDependentResources(IDXGISwapChain1* swapChain, UINT width, UINT height)
+	{
+		if (!device || !context || !swapChain || width == 0 || height == 0) return false;
+
+		if (FAILED(swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&backBufferTexture))) return false;
+		if (FAILED(device->CreateRenderTargetView(backBufferTexture, nullptr, &backBufferRTV))) return false;
+
+		// 三层画布尺寸跟随 swapchain；resize 时只按左上角交集拷贝，不做拉伸。
+		D3D11_TEXTURE2D_DESC textureDesc;
+		ZeroMemory(&textureDesc, sizeof(textureDesc));
+		textureDesc.Width = width;
+		textureDesc.Height = height;
+		textureDesc.MipLevels = 1;
+		textureDesc.ArraySize = 1;
+		textureDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+		textureDesc.SampleDesc.Count = 1;
+		textureDesc.SampleDesc.Quality = 0;
+		textureDesc.Usage = D3D11_USAGE_DEFAULT;
+		textureDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+		textureDesc.CPUAccessFlags = 0;
+		textureDesc.MiscFlags = 0;
+
+		if (FAILED(device->CreateTexture2D(&textureDesc, nullptr, &layerL2Texture))) return false;
+		if (FAILED(device->CreateTexture2D(&textureDesc, nullptr, &layerL1Texture))) return false;
+		if (FAILED(device->CreateTexture2D(&textureDesc, nullptr, &layerL0Texture))) return false;
+
+		D3D11_RENDER_TARGET_VIEW_DESC rtvDesc;
+		ZeroMemory(&rtvDesc, sizeof(rtvDesc));
+		rtvDesc.Format = textureDesc.Format;
+		rtvDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+		rtvDesc.Texture2D.MipSlice = 0;
+
+		if (FAILED(device->CreateRenderTargetView(layerL2Texture, &rtvDesc, &layerL2RTV))) return false;
+		if (FAILED(device->CreateRenderTargetView(layerL1Texture, &rtvDesc, &layerL1RTV))) return false;
+		if (FAILED(device->CreateShaderResourceView(layerL1Texture, nullptr, &layerL1SRV))) return false;
+		if (FAILED(device->CreateRenderTargetView(layerL0Texture, &rtvDesc, &layerL0RTV))) return false;
+		if (FAILED(device->CreateShaderResourceView(layerL0Texture, nullptr, &layerL0SRV))) return false;
+
+		SetScreenSize(static_cast<float>(width), static_cast<float>(height));
+		return true;
+	}
+
+	void ReleaseSizeDependentResources()
+	{
+		if (context)
+		{
+			ID3D11ShaderResourceView* nullSRVs[] = { nullptr, nullptr };
+			context->OMSetRenderTargets(0, nullptr, nullptr);
+			context->VSSetShaderResources(0, 2, nullSRVs);
+			context->PSSetShaderResources(0, 2, nullSRVs);
+			context->Flush();
+		}
+
+		backBufferRTV.Release();
+		backBufferTexture.Release();
+		layerL2RTV.Release();
+		layerL2Texture.Release();
+		layerL1RTV.Release();
+		layerL1SRV.Release();
+		layerL1Texture.Release();
+		layerL0RTV.Release();
+		layerL0SRV.Release();
+		layerL0Texture.Release();
+	}
+
+	bool Resize(IDXGISwapChain1* swapChain, UINT width, UINT height)
+	{
+		if (!swapChain || width == 0 || height == 0) return false;
+
+		const UINT oldWidth = static_cast<UINT>(viewportWidth);
+		const UINT oldHeight = static_cast<UINT>(viewportHeight);
+		CComPtr<ID3D11Texture2D> oldL2Texture = layerL2Texture;
+		CComPtr<ID3D11Texture2D> oldL1Texture = layerL1Texture;
+
+		ReleaseSizeDependentResources();
+
+		HRESULT hr = swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0);
+		if (FAILED(hr)) return false;
+
+		if (!CreateSizeDependentResources(swapChain, width, height)) return false;
+
+		const XMFLOAT4 finalCanvasClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+		const XMFLOAT4 transparentClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+		ClearRTV(layerL2RTV, finalCanvasClearColor);
+		ClearRTV(layerL1RTV, transparentClearColor);
+		ClearRTV(layerL0RTV, transparentClearColor);
+		ClearRTV(backBufferRTV, finalCanvasClearColor);
+
+		const UINT copyWidth = min(oldWidth, width);
+		const UINT copyHeight = min(oldHeight, height);
+		if (copyWidth > 0 && copyHeight > 0)
+		{
+			RECT keepRect = RECT(0, 0, static_cast<LONG>(copyWidth), static_cast<LONG>(copyHeight));
+			if (oldL2Texture) CopyResource(layerL2Texture, oldL2Texture, keepRect);
+			if (oldL1Texture) CopyResource(layerL1Texture, oldL1Texture, keepRect);
+		}
+
+		return true;
+	}
+
+	bool Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height)
 	{
 		device = inDevice; context = inContext;
 
-		swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&backBufferTexture);
-		device->CreateRenderTargetView(backBufferTexture, nullptr, &backBufferRTV);
+		if (!CreateSizeDependentResources(swapChain, width, height)) return false;
 
 		// 1. 创建常量缓冲区
 		D3D11_BUFFER_DESC cbDesc = { sizeof(CB_Global), D3D11_USAGE_DYNAMIC, D3D11_BIND_CONSTANT_BUFFER, D3D11_CPU_ACCESS_WRITE, 0, 0 };
 		device->CreateBuffer(&cbDesc, nullptr, &globalCB);
-
-		// 创建其他缓冲
-		{
-			// 创建画布
-			D3D11_TEXTURE2D_DESC textureDesc;
-			ZeroMemory(&textureDesc, sizeof(textureDesc));
-			textureDesc.Width = (float)windowInfo.w;
-			textureDesc.Height = (float)windowInfo.h;
-			textureDesc.MipLevels = 1;
-			textureDesc.ArraySize = 1;
-			textureDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-			textureDesc.SampleDesc.Count = 1;
-			textureDesc.SampleDesc.Quality = 0;
-			textureDesc.Usage = D3D11_USAGE_DEFAULT;
-			textureDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-			textureDesc.CPUAccessFlags = 0;
-			textureDesc.MiscFlags = 0;
-			device->CreateTexture2D(&textureDesc, nullptr, &layerL2Texture);
-			device->CreateTexture2D(&textureDesc, nullptr, &layerL1Texture);
-			device->CreateTexture2D(&textureDesc, nullptr, &layerL0Texture);
-
-			// 创建画布渲染目标
-			D3D11_RENDER_TARGET_VIEW_DESC rtvDesc;
-			ZeroMemory(&rtvDesc, sizeof(rtvDesc));
-			rtvDesc.Format = textureDesc.Format;
-			rtvDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
-			rtvDesc.Texture2D.MipSlice = 0;
-			device->CreateRenderTargetView(layerL2Texture, &rtvDesc, &layerL2RTV);
-			device->CreateRenderTargetView(layerL1Texture, &rtvDesc, &layerL1RTV);
-			device->CreateShaderResourceView(layerL1Texture, nullptr, &layerL1SRV);
-			device->CreateRenderTargetView(layerL0Texture, &rtvDesc, &layerL0RTV);
-			device->CreateShaderResourceView(layerL0Texture, nullptr, &layerL0SRV);
-		}
 
 		// 2. 混合状态
 		{
