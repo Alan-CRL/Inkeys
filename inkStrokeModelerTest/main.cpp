@@ -403,6 +403,11 @@ RECT ClampRectToCanvas(RECT rect)
 	return rect;
 }
 
+RECT GetFullCanvasRect()
+{
+	return RECT(0, 0, static_cast<LONG>(windowInfo.w), static_cast<LONG>(windowInfo.h));
+}
+
 RECT RectFromStrokePoints(
 	const vector<InkPoint>& points,
 	size_t firstIndex = 0,
@@ -547,16 +552,16 @@ void CompositeLayersToBackBuffer(RECT dirty)
 	inkRenderer.AlphaBlendResource(inkRenderer.backBufferRTV, inkRenderer.layerL0SRV, dirty);
 }
 
-void PresentDirty(IDXGISwapChain1* swapChain, RECT dirty, bool isFirstFrame)
+void PresentFrame(IDXGISwapChain1* swapChain, RECT dirty, bool presentFull)
 {
-	dirty = ClampRectToCanvas(dirty);
-	if (IsEmptyRect(dirty)) return;
-
-	if (isFirstFrame)
+	if (presentFull)
 	{
 		swapChain->Present(0, 0);
 		return;
 	}
+
+	dirty = ClampRectToCanvas(dirty);
+	if (IsEmptyRect(dirty)) return;
 
 	DXGI_PRESENT_PARAMETERS parameters = {};
 	parameters.DirtyRectsCount = 1;
@@ -832,15 +837,6 @@ int main()
 			chrono::high_resolution_clock::time_point rekon;
 			while (1)
 			{
-				if (g_clearCanvasRequested.exchange(false, std::memory_order_relaxed))
-				{
-					clearCanvas();
-					strokeDirty = RECT(0, 0, 0, 0);
-					stroke.committedIndex = 0;
-					stroke.lastL0Rect = RECT(0, 0, 0, 0);
-					stroke.currentL0Rect = RECT(0, 0, 0, 0);
-				}
-
 				rekon = chrono::high_resolution_clock::now();
 
 				POINT pt;
@@ -892,8 +888,10 @@ int main()
 
 				if (!IsEmptyRect(frameDirty))
 				{
-					CompositeLayersToBackBuffer(frameDirty);
-					PresentDirty(swapChain, frameDirty, isFirstFrame);
+					// 首帧会全屏 Present，必须先把整张画布合成到当前 backbuffer。
+					const RECT compositeRect = isFirstFrame ? GetFullCanvasRect() : frameDirty;
+					CompositeLayersToBackBuffer(compositeRect);
+					PresentFrame(swapChain, frameDirty, isFirstFrame);
 					isFirstFrame = false;
 				}
 
@@ -938,7 +936,7 @@ int main()
 				inkRenderer.ClearRTV(inkRenderer.layerL1RTV, XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f));
 				inkRenderer.ClearRTV(inkRenderer.layerL0RTV, XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f));
 				inkRenderer.CopyResource(inkRenderer.backBufferTexture, inkRenderer.layerL2Texture, strokeDirty);
-				PresentDirty(swapChain, strokeDirty, false);
+				PresentFrame(swapChain, strokeDirty, false);
 			}
 			else
 			{
