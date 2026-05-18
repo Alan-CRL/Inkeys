@@ -1,7 +1,10 @@
 ﻿#include "main.h"
 
 #include "renderer.h"
+#include <algorithm>
 #include <atomic>
+#include <cmath>
+#include <limits>
 
 WindowInfoClass windowInfo;
 InkRenderer inkRenderer;
@@ -10,6 +13,30 @@ namespace
 {
 	std::atomic<bool> g_clearCanvasRequested = false;
 	std::atomic<int> g_brushShapeType = 0; // 0: 原来的画笔
+
+	enum class InkPredictionMode
+	{
+		Disabled,
+		StrokeEnd,
+		Kalman
+	};
+
+	enum class LiveTipLengthMode
+	{
+		Short,
+		Normal,
+		Long
+	};
+
+	enum class DebugLayerColorMode
+	{
+		NormalInkColor,
+		ColorizeLiveLayer
+	};
+
+	constexpr InkPredictionMode kActivePredictionMode = InkPredictionMode::Kalman;
+	constexpr LiveTipLengthMode kActiveLiveTipLengthMode = LiveTipLengthMode::Normal;
+	constexpr DebugLayerColorMode kActiveDebugLayerColorMode = DebugLayerColorMode::ColorizeLiveLayer;
 
 	enum class StrokeTimingProfileId
 	{
@@ -96,6 +123,117 @@ namespace
 			return GetStrokeTimingProfile();
 		}
 	}
+
+	float LerpFloat(float from, float to, float ratio)
+	{
+		return from + (to - from) * ratio;
+	}
+
+	float SmoothStep01(float value)
+	{
+		value = std::clamp(value, 0.0f, 1.0f);
+		return value * value * (3.0f - 2.0f * value);
+	}
+
+	double GetLiveTipDurationSeconds(const StrokeTimingProfile& timingProfile)
+	{
+		switch (kActiveLiveTipLengthMode)
+		{
+		case LiveTipLengthMode::Short:
+			return timingProfile.live_tail_duration_seconds * 0.65;
+		case LiveTipLengthMode::Long:
+			return timingProfile.live_tail_duration_seconds * 1.6;
+		case LiveTipLengthMode::Normal:
+		default:
+			return timingProfile.live_tail_duration_seconds;
+		}
+	}
+
+	void ApplyPredictionMode(StrokeModelParams& params, const KalmanPredictorParams& kalmanPredictorParams)
+	{
+		switch (kActivePredictionMode)
+		{
+		case InkPredictionMode::Disabled:
+			params.prediction_params = DisabledPredictorParams{};
+			break;
+		case InkPredictionMode::StrokeEnd:
+			params.prediction_params = StrokeEndPredictorParams{};
+			break;
+		case InkPredictionMode::Kalman:
+		default:
+			params.prediction_params = kalmanPredictorParams;
+			break;
+		}
+	}
+
+	struct StrokeWidthEstimator
+	{
+		float baseDiameter = 5.0f;
+		float minDiameter = 4.0f;
+		float maxDiameter = 7.0f;
+		float expectedSpeed = 500.0f;
+		float currentDiameter = 5.0f;
+		double lastTime = 0.0;
+		bool hasSample = false;
+
+		StrokeWidthEstimator() = default;
+		StrokeWidthEstimator(float baseDiameterValue, float expectedSpeedValue)
+			: baseDiameter(baseDiameterValue),
+			minDiameter(baseDiameterValue * 0.8f),
+			maxDiameter(baseDiameterValue * 1.4f),
+			expectedSpeed(max(1.0f, expectedSpeedValue)),
+			currentDiameter(baseDiameterValue)
+		{
+		}
+
+		InkPoint Append(const Result& result)
+		{
+			const double pointTime = result.time.Value();
+			const float rawSpeed = std::hypot(result.velocity.x, result.velocity.y);
+			const float speedRatio = SmoothStep01(rawSpeed / expectedSpeed);
+			const float targetDiameter = LerpFloat(maxDiameter, minDiameter, speedRatio);
+
+			if (!hasSample)
+			{
+				currentDiameter = targetDiameter;
+				hasSample = true;
+			}
+			else
+			{
+				const double dt = max(0.0, pointTime - lastTime);
+				const float alpha = std::clamp(static_cast<float>(1.0 - std::exp(-dt / 0.035)), 0.05f, 0.65f);
+				currentDiameter = LerpFloat(currentDiameter, targetDiameter, alpha);
+			}
+
+			lastTime = pointTime;
+			return InkPoint{
+				result.position.x,
+				result.position.y,
+				currentDiameter * 0.5f,
+				static_cast<float>(pointTime)
+			};
+		}
+	};
+
+	struct ActiveMouseStroke
+	{
+		StrokeModeler modeler;
+		std::vector<Result> modeledResults;
+		std::vector<Result> predictedResults;
+		std::vector<InkPoint> realPoints;
+		std::vector<InkPoint> predictedPoints;
+		std::vector<InkPoint> l0DrawPoints;
+		size_t convertedResultCount = 0;
+		size_t committedIndex = 0;
+		RECT lastL0Rect = RECT(0, 0, 0, 0);
+		RECT currentL0Rect = RECT(0, 0, 0, 0);
+		StrokeWidthEstimator widthEstimator;
+
+		ActiveMouseStroke(float baseDiameter, float expectedSpeed)
+			: widthEstimator(baseDiameter, expectedSpeed)
+		{
+		}
+	};
 
 	const char* GetDriverTypeName(D3D_DRIVER_TYPE driverType)
 	{
@@ -250,6 +388,185 @@ void UnionRectInPlace(RECT& target, const RECT& add)
 	target.bottom = max(target.bottom, add.bottom);
 }
 
+bool IsEmptyRect(const RECT& rect)
+{
+	return rect.left >= rect.right || rect.top >= rect.bottom;
+}
+
+RECT ClampRectToCanvas(RECT rect)
+{
+	rect.left = max(0L, rect.left);
+	rect.top = max(0L, rect.top);
+	rect.right = min((long)windowInfo.w, rect.right);
+	rect.bottom = min((long)windowInfo.h, rect.bottom);
+	if (IsEmptyRect(rect)) return RECT(0, 0, 0, 0);
+	return rect;
+}
+
+RECT RectFromStrokePoints(
+	const vector<InkPoint>& points,
+	size_t firstIndex = 0,
+	size_t lastIndex = (std::numeric_limits<size_t>::max)())
+{
+	if (points.empty() || firstIndex >= points.size()) return RECT(0, 0, 0, 0);
+	lastIndex = min(lastIndex, points.size());
+	if (firstIndex >= lastIndex) return RECT(0, 0, 0, 0);
+
+	RECT rect = RECT(0, 0, 0, 0);
+	for (size_t i = firstIndex; i < lastIndex; ++i)
+	{
+		const InkPoint& point = points[i];
+		const float padding = point.r + 3.0f;
+		const RECT pointRect = RECT(
+			static_cast<LONG>(std::floor(point.x - padding)),
+			static_cast<LONG>(std::floor(point.y - padding)),
+			static_cast<LONG>(std::ceil(point.x + padding)),
+			static_cast<LONG>(std::ceil(point.y + padding))
+		);
+		UnionRectInPlace(rect, pointRect);
+	}
+	return ClampRectToCanvas(rect);
+}
+
+void AppendNewModeledPoints(ActiveMouseStroke& stroke)
+{
+	for (size_t i = stroke.convertedResultCount; i < stroke.modeledResults.size(); ++i)
+	{
+		stroke.realPoints.push_back(stroke.widthEstimator.Append(stroke.modeledResults[i]));
+	}
+	stroke.convertedResultCount = stroke.modeledResults.size();
+}
+
+void RebuildPredictedPoints(ActiveMouseStroke& stroke)
+{
+	stroke.predictedPoints.clear();
+
+	// 预测点只用于本帧 L0，使用粗细估算器副本，不能污染真实笔画状态。
+	StrokeWidthEstimator predictionWidth = stroke.widthEstimator;
+	for (const Result& result : stroke.predictedResults)
+	{
+		stroke.predictedPoints.push_back(predictionWidth.Append(result));
+	}
+}
+
+double GetPredictionDurationSeconds(const ActiveMouseStroke& stroke)
+{
+	if (stroke.realPoints.empty() || stroke.predictedPoints.empty()) return 0.0;
+	return max(0.0, static_cast<double>(stroke.predictedPoints.back().time - stroke.realPoints.back().time));
+}
+
+size_t FindProtectedStartIndex(const vector<InkPoint>& points, double protectedDurationSeconds)
+{
+	if (points.size() < 2) return 0;
+
+	const double startTime = static_cast<double>(points.back().time) - max(0.0, protectedDurationSeconds);
+	size_t startIndex = 0;
+
+	// 保留前一个连接点，避免 L1 和 L0 的交界处断开。
+	while (startIndex + 1 < points.size() && points[startIndex + 1].time < startTime)
+	{
+		++startIndex;
+	}
+	return startIndex;
+}
+
+void ApplyLiveTipTaper(vector<InkPoint>& points, double liveTipDurationSeconds)
+{
+	if (points.empty() || liveTipDurationSeconds <= 0.0) return;
+
+	const double endTime = points.back().time;
+	const double tipStartTime = endTime - liveTipDurationSeconds;
+
+	for (InkPoint& point : points)
+	{
+		if (point.time < tipStartTime) continue;
+
+		const float ageRatio = static_cast<float>((endTime - point.time) / liveTipDurationSeconds);
+		const float tipRatio = SmoothStep01(ageRatio);
+		const float scale = LerpFloat(0.28f, 1.0f, tipRatio);
+		point.r *= scale;
+	}
+}
+
+void RebuildL0DrawPoints(ActiveMouseStroke& stroke, double liveTipDurationSeconds)
+{
+	stroke.l0DrawPoints.clear();
+
+	if (!stroke.realPoints.empty())
+	{
+		const size_t startIndex = min(stroke.committedIndex, stroke.realPoints.size() - 1);
+		stroke.l0DrawPoints.insert(stroke.l0DrawPoints.end(), stroke.realPoints.begin() + startIndex, stroke.realPoints.end());
+	}
+
+	stroke.l0DrawPoints.insert(stroke.l0DrawPoints.end(), stroke.predictedPoints.begin(), stroke.predictedPoints.end());
+	ApplyLiveTipTaper(stroke.l0DrawPoints, liveTipDurationSeconds);
+	stroke.currentL0Rect = RectFromStrokePoints(stroke.l0DrawPoints);
+}
+
+RECT CommitStablePrefixToL1(
+	ActiveMouseStroke& stroke,
+	double liveTipDurationSeconds,
+	double predictionDurationSeconds,
+	XMFLOAT4 color,
+	float shapeType,
+	bool eraser)
+{
+	if (stroke.realPoints.size() < 2) return RECT(0, 0, 0, 0);
+
+	const double protectedDuration = liveTipDurationSeconds + predictionDurationSeconds;
+	const size_t protectedStartIndex = FindProtectedStartIndex(stroke.realPoints, protectedDuration);
+	if (protectedStartIndex <= stroke.committedIndex) return RECT(0, 0, 0, 0);
+
+	vector<InkPoint> stablePoints(
+		stroke.realPoints.begin() + stroke.committedIndex,
+		stroke.realPoints.begin() + protectedStartIndex + 1
+	);
+
+	inkRenderer.SetOMTarget(inkRenderer.layerL1RTV);
+	inkRenderer.DrawStroke(stablePoints, color, shapeType, eraser);
+	stroke.committedIndex = protectedStartIndex;
+	return RectFromStrokePoints(stablePoints);
+}
+
+void DrawL0LiveComposite(ActiveMouseStroke& stroke, XMFLOAT4 color, float shapeType, bool eraser)
+{
+	inkRenderer.ClearRTV(inkRenderer.layerL0RTV, XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f));
+	if (stroke.l0DrawPoints.size() < 2) return;
+
+	inkRenderer.SetOMTarget(inkRenderer.layerL0RTV);
+	inkRenderer.DrawStroke(stroke.l0DrawPoints, color, shapeType, eraser);
+}
+
+void CompositeLayersToBackBuffer(RECT dirty)
+{
+	dirty = ClampRectToCanvas(dirty);
+	if (IsEmptyRect(dirty)) return;
+
+	inkRenderer.CopyResource(inkRenderer.backBufferTexture, inkRenderer.layerL2Texture, dirty);
+	inkRenderer.AlphaBlendResource(inkRenderer.backBufferRTV, inkRenderer.layerL1SRV, dirty);
+	inkRenderer.AlphaBlendResource(inkRenderer.backBufferRTV, inkRenderer.layerL0SRV, dirty);
+}
+
+void PresentDirty(IDXGISwapChain1* swapChain, RECT dirty, bool isFirstFrame)
+{
+	dirty = ClampRectToCanvas(dirty);
+	if (IsEmptyRect(dirty)) return;
+
+	if (isFirstFrame)
+	{
+		swapChain->Present(0, 0);
+		return;
+	}
+
+	DXGI_PRESENT_PARAMETERS parameters = {};
+	parameters.DirtyRectsCount = 1;
+	parameters.pDirtyRects = &dirty;
+	parameters.pScrollRect = nullptr;
+	parameters.pScrollOffset = nullptr;
+
+	swapChain->Present1(0, 0, &parameters);
+}
+
 LRESULT CALLBACK Draw3WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	switch (msg)
@@ -387,7 +704,7 @@ int main()
 	/*
 			inkRenderer.SetOMTarget();
 			float clearColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-			d3dDeviceContext->ClearRenderTargetView(inkRenderer.renderTargetView, clearColor);
+			d3dDeviceContext->ClearRenderTargetView(inkRenderer.backBufferRTV, clearColor);
 	*/
 
 	// 简单的 DPI 初始化
@@ -402,7 +719,7 @@ int main()
 	const StrokeTimingProfile timingProfile = GetStrokeTimingProfile(kActiveStrokeTimingProfileId);
 	const float expected_speed = 500.0f * (static_cast<float>(dpiX) / 96.0f); // DPI 期望速度
 	const float limited_speed = expected_speed * 3.0f; // 最高允许速度
-	const int strokes_num = static_cast<int>(timingProfile.live_tail_duration_seconds * timingProfile.min_output_rate + 0.5); // 笔锋尾部点数，对应 live_tail_duration_seconds
+	const double liveTipDurationSeconds = GetLiveTipDurationSeconds(timingProfile); // L0 笔锋可见时长
 	// 模型初始化
 	KalmanPredictorParams kalman_predictor_params;
 	{
@@ -441,15 +758,14 @@ int main()
 			.max_outputs_per_call = timingProfile.max_outputs_per_call
 		},
 	};
-	StrokeModeler modeler;
-
 	auto clearCanvas = [&swapChain]()
 		{
 			const XMFLOAT4 finalCanvasClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-			const XMFLOAT4 activeDryClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-			inkRenderer.ClearRTV(inkRenderer.finalCanvasRTV, finalCanvasClearColor);
-			inkRenderer.ClearRTV(inkRenderer.offScreenTexture1RTV, activeDryClearColor);
-			inkRenderer.ClearRTV(inkRenderer.renderTargetView, finalCanvasClearColor);
+			const XMFLOAT4 transparentClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+			inkRenderer.ClearRTV(inkRenderer.layerL2RTV, finalCanvasClearColor);
+			inkRenderer.ClearRTV(inkRenderer.layerL1RTV, transparentClearColor);
+			inkRenderer.ClearRTV(inkRenderer.layerL0RTV, transparentClearColor);
+			inkRenderer.ClearRTV(inkRenderer.backBufferRTV, finalCanvasClearColor);
 			swapChain->Present(0, 0);
 		};
 
@@ -477,27 +793,26 @@ int main()
 			// 检查设备是否丢失，并重建
 			// TODO
 
-			RECT current = RECT(0, 0, 0, 0);
 			RECT strokeDirty = RECT(0, 0, 0, 0);
 			bool isFirstFrame = true;
 
-			params.prediction_params = kalman_predictor_params;
-			//params.prediction_params = StrokeEndPredictorParams();
+			ApplyPredictionMode(params, kalman_predictor_params);
 
-			if (absl::Status status = modeler.Reset(params); !status.ok())
+			const float baseDiameter = eraser ? 50.0f : 5.0f;
+			const float shapeType = static_cast<float>(g_brushShapeType.load(std::memory_order_relaxed));
+			const XMFLOAT4 stableInkColor(1.0f, 0.0f, 0.0f, 1.0f);
+			const XMFLOAT4 liveInkColor = (kActiveDebugLayerColorMode == DebugLayerColorMode::ColorizeLiveLayer)
+				? XMFLOAT4(0.0f, 0.35f, 1.0f, 1.0f)
+				: stableInkColor;
+
+			ActiveMouseStroke stroke(baseDiameter, expected_speed);
+			if (absl::Status status = stroke.modeler.Reset(params); !status.ok())
 			{
 				cout << "Error: " << status.message() << endl;
 			}
 
-			vector<Result> smoothed_stroke;
-			vector<Result> predicted_stroke;
-			size_t tot = 0;
-
 			float xO = m.x;
 			float yO = m.y;
-
-			float xT = m.x;
-			float yT = m.y;
 
 			chrono::high_resolution_clock::time_point start = chrono::high_resolution_clock::now();
 
@@ -507,15 +822,11 @@ int main()
 				.position = ink::stroke_model::Vec2(xO,yO),
 				.time = Time(0.0)
 			};
-			modeler.Update(input, smoothed_stroke);
-
-			double baseThickness = 5.0;
-			if (eraser) baseThickness = 50.0;
-
-			double minThickness = baseThickness * 0.8; // 0.6/2.4 或 0.4/2.0
-			double maxThickness = baseThickness * 1.4;
-			double prevThickness = baseThickness;
-			double smoothingFactor = 0.2;
+			if (absl::Status status = stroke.modeler.Update(input, stroke.modeledResults); !status.ok())
+			{
+				cout << "Error: " << status.message() << endl;
+			}
+			AppendNewModeledPoints(stroke);
 
 			// 帧率保持
 			chrono::high_resolution_clock::time_point rekon;
@@ -524,12 +835,13 @@ int main()
 				if (g_clearCanvasRequested.exchange(false, std::memory_order_relaxed))
 				{
 					clearCanvas();
+					strokeDirty = RECT(0, 0, 0, 0);
+					stroke.committedIndex = 0;
+					stroke.lastL0Rect = RECT(0, 0, 0, 0);
+					stroke.currentL0Rect = RECT(0, 0, 0, 0);
 				}
 
 				rekon = chrono::high_resolution_clock::now();
-				current = RECT(0, 0, 0, 0);
-
-				inkRenderer.SetOMTarget(inkRenderer.offScreenTexture1RTV);
 
 				POINT pt;
 				GetCursorPos(&pt);
@@ -538,121 +850,54 @@ int main()
 				Input input
 				{
 					.event_type = Input::EventType::kMove,
-					.position = ink::stroke_model::Vec2(pt.x, pt.y),
+					.position = ink::stroke_model::Vec2(static_cast<float>(pt.x), static_cast<float>(pt.y)),
 					.time = Time(chrono::duration<double>(chrono::high_resolution_clock::now() - start).count()) // 秒单位
 				};
-				vector<InkPoint> dryStroke;
 
-				modeler.Update(input, smoothed_stroke);
-				modeler.Predict(predicted_stroke);
-				if (!smoothed_stroke.empty() && (xO != smoothed_stroke.back().position.x || yO != smoothed_stroke.back().position.y))
+				if (absl::Status status = stroke.modeler.Update(input, stroke.modeledResults); !status.ok())
 				{
-					// 用于粗细平滑
-					float xI = xO;
-					float yI = yO;
+					cout << "Error: " << status.message() << endl;
+				}
+				AppendNewModeledPoints(stroke);
 
-					for (size_t i = tot; i < smoothed_stroke.size(); i++)
+				stroke.predictedResults.clear();
+				if (kActivePredictionMode != InkPredictionMode::Disabled)
+				{
+					if (absl::Status status = stroke.modeler.Predict(stroke.predictedResults); !status.ok())
 					{
-						bool isStroke = false;
-						if (smoothed_stroke.size() - tot <= strokes_num) isStroke = true;
-
-						if (!isStroke) tot = i;
-
-						/*graphics.DrawLine(&pen,
-							smoothed_stroke[i].position.x,
-							smoothed_stroke[i].position.y,
-							smoothed_stroke[i + 1].position.x,
-							smoothed_stroke[i + 1].position.y);*/
-
-						auto rawSpeed = hypot(smoothed_stroke[i].velocity.x, smoothed_stroke[i].velocity.y);
-						double ratio = clamp(static_cast<double>(rawSpeed / expected_speed), 0.0, 1.0);
-						double targetThickness = minThickness + (1.0 - ratio) * (maxThickness - minThickness);
-						double thickness = prevThickness;
-
-						if (hypot(smoothed_stroke[i].position.x - xI, smoothed_stroke[i].position.y - yI) >= baseThickness)
-						{
-							thickness = std::lerp(prevThickness, targetThickness, smoothingFactor);
-							xI = smoothed_stroke[i].position.x;
-							yI = smoothed_stroke[i].position.y;
-						}
-
-						// cout << "= " << rawSpeed << ":" << ratio << ", " << thickness << endl;
-
-						{
-							float x1 = smoothed_stroke[i].position.x, y1 = smoothed_stroke[i].position.y;
-							float w1 = static_cast<float>(prevThickness);
-
-							dryStroke.emplace_back(x1, y1, w1 / 2.0f, 0.0f);
-
-							UnionRectInPlace(current, RECT(x1 - w1, y1 - w1, x1 + w1, y1 + w1));
-						}
-
-						prevThickness = thickness;
+						stroke.predictedResults.clear();
 					}
 				}
-				inkRenderer.DrawStroke(
-					dryStroke,
-					XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f),
-					static_cast<float>(g_brushShapeType.load(std::memory_order_relaxed)),
+				RebuildPredictedPoints(stroke);
+
+				const double predictionDurationSeconds = GetPredictionDurationSeconds(stroke);
+				RECT stableDirty = CommitStablePrefixToL1(
+					stroke,
+					liveTipDurationSeconds,
+					predictionDurationSeconds,
+					stableInkColor,
+					shapeType,
 					eraser
 				);
 
-				if (!predicted_stroke.empty())
+				stroke.lastL0Rect = stroke.currentL0Rect;
+				RebuildL0DrawPoints(stroke, liveTipDurationSeconds);
+				DrawL0LiveComposite(stroke, liveInkColor, shapeType, eraser);
+
+				RECT frameDirty = RECT(0, 0, 0, 0);
+				UnionRectInPlace(frameDirty, stableDirty);
+				UnionRectInPlace(frameDirty, stroke.lastL0Rect);
+				UnionRectInPlace(frameDirty, stroke.currentL0Rect);
+				frameDirty = ClampRectToCanvas(frameDirty);
+
+				if (!IsEmptyRect(frameDirty))
 				{
-					// TODO
-				}
-
-				// 处理脏区到屏幕范围
-				{
-					current.left = max(0L, current.left);
-					current.top = max(0L, current.top);
-					current.right = min((long)windowInfo.w, current.right);
-					current.bottom = min((long)windowInfo.h, current.bottom);
-
-					if (current.right < current.left || current.bottom < current.top)
-					{
-						current = RECT(0, 0, 0, 0);
-					}
-				}
-				UnionRectInPlace(strokeDirty, current);
-
-				if (current.left != 0 || current.top != 0 || current.right != 0 || current.bottom != 0)
-				{
-					// 拷贝2D目标至窗口缓冲
-					{
-						inkRenderer.SetOMTarget(inkRenderer.renderTargetView);
-
-						if (!isFirstFrame)
-						{
-							//inkRenderer.ClearRTV(inkRenderer.renderTargetView, XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f)); // DEBUG
-							inkRenderer.CopyResource(inkRenderer.screenTexture, inkRenderer.finalCanvasTexture, current);
-						}
-						else
-						{
-							inkRenderer.context->CopyResource(inkRenderer.screenTexture, inkRenderer.finalCanvasTexture);
-						}
-						inkRenderer.AlphaBlendResource(inkRenderer.renderTargetView, inkRenderer.offScreenTexture1SRV, current);
-					}
-
-					// 帧结束
-					{
-						if (!isFirstFrame)
-						{
-							DXGI_PRESENT_PARAMETERS parameters = {};
-							parameters.DirtyRectsCount = 1;
-							parameters.pDirtyRects = &current;
-							parameters.pScrollRect = nullptr;
-							parameters.pScrollOffset = nullptr;
-
-							swapChain->Present1(0, 0, &parameters);
-						}
-						else
-						{
-							swapChain->Present(0, 0);
-						}
-					}
+					CompositeLayersToBackBuffer(frameDirty);
+					PresentDirty(swapChain, frameDirty, isFirstFrame);
 					isFirstFrame = false;
 				}
+
+				UnionRectInPlace(strokeDirty, stableDirty);
 
 				if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000) && !(GetAsyncKeyState(VK_RBUTTON) & 0x8000)) break;
 				hiex::flushmessage_win32(EM_MOUSE, windowHWND);
@@ -671,19 +916,33 @@ int main()
 					int logicFPS = (costMs > 0.001) ? static_cast<int>(1000.0 / costMs) : 9999;
 					int actualFPS = (totalMs > 0.001) ? static_cast<int>(1000.0 / totalMs) : 9999;
 
-					cout << tot
+					cout << stroke.committedIndex
 						<< " logic: " << logicFPS << " FPS (" << costMs << "ms)"
 						<< " real: " << actualFPS << " FPS"
 						<< endl;
 				}
 			}
 
+			// 抬笔时把最后一帧用户看到的 L0 原样落到 L1，再整体烘干到 L2。
+			if (stroke.l0DrawPoints.size() >= 2)
 			{
-				if (strokeDirty.left < strokeDirty.right && strokeDirty.top < strokeDirty.bottom)
-				{
-					inkRenderer.AlphaBlendResource(inkRenderer.finalCanvasRTV, inkRenderer.offScreenTexture1SRV, strokeDirty);
-					inkRenderer.ClearRTV(inkRenderer.offScreenTexture1RTV, XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f));
-				}
+				inkRenderer.SetOMTarget(inkRenderer.layerL1RTV);
+				inkRenderer.DrawStroke(stroke.l0DrawPoints, liveInkColor, shapeType, eraser);
+				UnionRectInPlace(strokeDirty, stroke.currentL0Rect);
+			}
+
+			strokeDirty = ClampRectToCanvas(strokeDirty);
+			if (!IsEmptyRect(strokeDirty))
+			{
+				inkRenderer.AlphaBlendResource(inkRenderer.layerL2RTV, inkRenderer.layerL1SRV, strokeDirty);
+				inkRenderer.ClearRTV(inkRenderer.layerL1RTV, XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f));
+				inkRenderer.ClearRTV(inkRenderer.layerL0RTV, XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f));
+				inkRenderer.CopyResource(inkRenderer.backBufferTexture, inkRenderer.layerL2Texture, strokeDirty);
+				PresentDirty(swapChain, strokeDirty, false);
+			}
+			else
+			{
+				inkRenderer.ClearRTV(inkRenderer.layerL0RTV, XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f));
 			}
 
 			hiex::flushmessage_win32(EM_MOUSE, windowHWND);

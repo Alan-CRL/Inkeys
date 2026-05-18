@@ -50,15 +50,18 @@ public:
 	CComPtr<ID3D11DeviceContext> context;
 
 	// 缓冲
-	CComPtr<ID3D11Texture2D> screenTexture;
-	CComPtr<ID3D11Texture2D> finalCanvasTexture = nullptr; // L2_FinalCanvas: 最终白底画布
-	CComPtr<ID3D11Texture2D> offScreenTexture1 = nullptr; // L1_ActiveDry: 透明活动烘干层
+	CComPtr<ID3D11Texture2D> backBufferTexture;
+	CComPtr<ID3D11Texture2D> layerL2Texture = nullptr; // L2_FinalCanvas: 最终白底画布
+	CComPtr<ID3D11Texture2D> layerL1Texture = nullptr; // L1_ActiveDry: 透明活动烘干层
+	CComPtr<ID3D11Texture2D> layerL0Texture = nullptr; // L0_LiveComposite: 实时笔锋和预测层
 
 	// RTV
-	CComPtr<ID3D11RenderTargetView> renderTargetView; // 窗口中的 RTV
-	CComPtr<ID3D11RenderTargetView> finalCanvasRTV;
-	CComPtr<ID3D11RenderTargetView> offScreenTexture1RTV;
-	CComPtr<ID3D11ShaderResourceView> offScreenTexture1SRV;
+	CComPtr<ID3D11RenderTargetView> backBufferRTV; // 窗口中的 RTV
+	CComPtr<ID3D11RenderTargetView> layerL2RTV;
+	CComPtr<ID3D11RenderTargetView> layerL1RTV;
+	CComPtr<ID3D11ShaderResourceView> layerL1SRV;
+	CComPtr<ID3D11RenderTargetView> layerL0RTV;
+	CComPtr<ID3D11ShaderResourceView> layerL0SRV;
 
 	// 着色器
 	CComPtr<ID3D11VertexShader> vertexShader;
@@ -195,10 +198,10 @@ public:
 
 		// 2. 执行局部拷贝
 		// 参数说明：
-		// - 目标资源 (screenTexture)
+		// - 目标资源 (backBufferTexture)
 		// - 目标子资源索引 (通常为0，除非有Mipmap)
 		// - 目标位置 X, Y, Z (将源矩形粘贴到目标的哪个坐标开始)
-		// - 源资源 (offScreenTexture1)
+		// - 源资源 (L0/L1/L2 图层)
 		// - 源子资源索引 (通常为0)
 		// - 源区域定义 (&sourceRegion)
 		context->CopySubresourceRegion(
@@ -307,8 +310,8 @@ public:
 	{
 		device = inDevice; context = inContext;
 
-		swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&screenTexture);
-		device->CreateRenderTargetView(screenTexture, nullptr, &renderTargetView);
+		swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&backBufferTexture);
+		device->CreateRenderTargetView(backBufferTexture, nullptr, &backBufferRTV);
 
 		// 1. 创建常量缓冲区
 		D3D11_BUFFER_DESC cbDesc = { sizeof(CB_Global), D3D11_USAGE_DYNAMIC, D3D11_BIND_CONSTANT_BUFFER, D3D11_CPU_ACCESS_WRITE, 0, 0 };
@@ -330,8 +333,9 @@ public:
 			textureDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
 			textureDesc.CPUAccessFlags = 0;
 			textureDesc.MiscFlags = 0;
-			device->CreateTexture2D(&textureDesc, nullptr, &finalCanvasTexture);
-			device->CreateTexture2D(&textureDesc, nullptr, &offScreenTexture1);
+			device->CreateTexture2D(&textureDesc, nullptr, &layerL2Texture);
+			device->CreateTexture2D(&textureDesc, nullptr, &layerL1Texture);
+			device->CreateTexture2D(&textureDesc, nullptr, &layerL0Texture);
 
 			// 创建画布渲染目标
 			D3D11_RENDER_TARGET_VIEW_DESC rtvDesc;
@@ -339,9 +343,11 @@ public:
 			rtvDesc.Format = textureDesc.Format;
 			rtvDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
 			rtvDesc.Texture2D.MipSlice = 0;
-			device->CreateRenderTargetView(finalCanvasTexture, &rtvDesc, &finalCanvasRTV);
-			device->CreateRenderTargetView(offScreenTexture1, &rtvDesc, &offScreenTexture1RTV);
-			device->CreateShaderResourceView(offScreenTexture1, nullptr, &offScreenTexture1SRV);
+			device->CreateRenderTargetView(layerL2Texture, &rtvDesc, &layerL2RTV);
+			device->CreateRenderTargetView(layerL1Texture, &rtvDesc, &layerL1RTV);
+			device->CreateShaderResourceView(layerL1Texture, nullptr, &layerL1SRV);
+			device->CreateRenderTargetView(layerL0Texture, &rtvDesc, &layerL0RTV);
+			device->CreateShaderResourceView(layerL0Texture, nullptr, &layerL0SRV);
 		}
 
 		// 2. 混合状态
