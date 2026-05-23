@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 
 WindowInfoClass windowInfo;
@@ -79,8 +80,9 @@ namespace
 				.kalman_desired_number_of_samples = 4,
 				.kalman_max_time_samples = 5,
 				.wobble_timeout_seconds = 2.5 / 30.0,
-				.wobble_speed_floor_ratio = 0.02f,
-				.wobble_speed_ceiling_ratio = 0.03f,
+				// 慢速插值过渡带放宽，避免某个低速区间在强/弱防抖之间来回跳。
+				.wobble_speed_floor_ratio = 0.015f,
+				.wobble_speed_ceiling_ratio = 0.08f,
 				.max_outputs_per_call = 2000
 			};
 		case StrokeTimingProfileId::Fps60:
@@ -92,8 +94,9 @@ namespace
 				.kalman_desired_number_of_samples = 5,
 				.kalman_max_time_samples = 10,
 				.wobble_timeout_seconds = 2.5 / 60.0,
-				.wobble_speed_floor_ratio = 0.02f,
-				.wobble_speed_ceiling_ratio = 0.03f,
+				// 慢速插值过渡带放宽，避免某个低速区间在强/弱防抖之间来回跳。
+				.wobble_speed_floor_ratio = 0.015f,
+				.wobble_speed_ceiling_ratio = 0.08f,
 				.max_outputs_per_call = 2000
 			};
 		case StrokeTimingProfileId::Fps120:
@@ -105,8 +108,9 @@ namespace
 				.kalman_desired_number_of_samples = 10,
 				.kalman_max_time_samples = 20,
 				.wobble_timeout_seconds = 2.5 / 120.0,
-				.wobble_speed_floor_ratio = 0.02f,
-				.wobble_speed_ceiling_ratio = 0.03f,
+				// 慢速插值过渡带放宽，避免某个低速区间在强/弱防抖之间来回跳。
+				.wobble_speed_floor_ratio = 0.015f,
+				.wobble_speed_ceiling_ratio = 0.08f,
 				.max_outputs_per_call = 2000
 			};
 		case StrokeTimingProfileId::Fps240:
@@ -118,8 +122,9 @@ namespace
 				.kalman_desired_number_of_samples = 20,
 				.kalman_max_time_samples = 40,
 				.wobble_timeout_seconds = 2.5 / 240.0,
-				.wobble_speed_floor_ratio = 0.02f,
-				.wobble_speed_ceiling_ratio = 0.03f,
+				// 慢速插值过渡带放宽，避免某个低速区间在强/弱防抖之间来回跳。
+				.wobble_speed_floor_ratio = 0.015f,
+				.wobble_speed_ceiling_ratio = 0.08f,
 				.max_outputs_per_call = 2000
 			};
 		default:
@@ -136,6 +141,33 @@ namespace
 	{
 		value = std::clamp(value, 0.0f, 1.0f);
 		return value * value * (3.0f - 2.0f * value);
+	}
+
+	constexpr float kIdleMoveThresholdPx = 0.25f;
+	constexpr float kVisualStablePositionEpsilonPx = 0.05f;
+	constexpr float kVisualStableRadiusEpsilonPx = 0.02f;
+	constexpr int kVisualStableRequiredFrames = 3;
+
+	double GetQpcTimeMilliseconds()
+	{
+		static LARGE_INTEGER freq = { 0 };
+		if (freq.QuadPart == 0) QueryPerformanceFrequency(&freq);
+
+		LARGE_INTEGER counter;
+		QueryPerformanceCounter(&counter);
+		return static_cast<double>(counter.QuadPart) * 1000.0 / static_cast<double>(freq.QuadPart);
+	}
+
+	void WriteFastConsoleLine(const char* text, DWORD length)
+	{
+		static HANDLE consoleHandle = GetStdHandle(STD_OUTPUT_HANDLE);
+		if (!consoleHandle || consoleHandle == INVALID_HANDLE_VALUE || length == 0) return;
+
+		DWORD written = 0;
+		if (!WriteConsoleA(consoleHandle, text, length, &written, nullptr))
+		{
+			WriteFile(consoleHandle, text, length, &written, nullptr);
+		}
 	}
 
 	double GetLiveTipDurationSeconds(const StrokeTimingProfile& timingProfile)
@@ -226,11 +258,19 @@ namespace
 		std::vector<InkPoint> realPoints;
 		std::vector<InkPoint> predictedPoints;
 		std::vector<InkPoint> l0DrawPoints;
+		std::vector<InkPoint> previousL0DrawPoints;
 		size_t convertedResultCount = 0;
 		size_t committedIndex = 0;
 		RECT lastL0Rect = RECT(0, 0, 0, 0);
 		RECT currentL0Rect = RECT(0, 0, 0, 0);
 		StrokeWidthEstimator widthEstimator;
+		POINT lastRawPosition = POINT{ 0, 0 };
+		bool hasLastRawPosition = false;
+		bool idleFrozen = false;
+		int visualStableFrameCount = 0;
+		double lastMovementInputTime = 0.0;
+		double lastFrameWallTime = 0.0;
+		double logicalInputTime = 0.0;
 
 		ActiveMouseStroke(float baseDiameter, float expectedSpeed)
 			: widthEstimator(baseDiameter, expectedSpeed)
@@ -436,6 +476,101 @@ RECT RectFromStrokePoints(
 	return ClampRectToCanvas(rect);
 }
 
+bool UpdateRawPositionAndDetectMovement(ActiveMouseStroke& stroke, const POINT& rawPosition)
+{
+	if (!stroke.hasLastRawPosition)
+	{
+		stroke.lastRawPosition = rawPosition;
+		stroke.hasLastRawPosition = true;
+		return false;
+	}
+
+	const float dx = static_cast<float>(rawPosition.x - stroke.lastRawPosition.x);
+	const float dy = static_cast<float>(rawPosition.y - stroke.lastRawPosition.y);
+	if (dx * dx + dy * dy <= kIdleMoveThresholdPx * kIdleMoveThresholdPx) return false;
+
+	stroke.lastRawPosition = rawPosition;
+	return true;
+}
+
+bool AreL0VisualsClose(const vector<InkPoint>& current, const vector<InkPoint>& previous)
+{
+	if (current.size() != previous.size()) return false;
+
+	const float positionEpsilonSq = kVisualStablePositionEpsilonPx * kVisualStablePositionEpsilonPx;
+	for (size_t i = 0; i < current.size(); ++i)
+	{
+		const float dx = current[i].x - previous[i].x;
+		const float dy = current[i].y - previous[i].y;
+		if (dx * dx + dy * dy > positionEpsilonSq) return false;
+		if (std::abs(current[i].r - previous[i].r) > kVisualStableRadiusEpsilonPx) return false;
+	}
+
+	return true;
+}
+
+void UpdateIdleFreezeState(ActiveMouseStroke& stroke, bool rawMoved, double liveTipDurationSeconds)
+{
+	if (rawMoved)
+	{
+		stroke.visualStableFrameCount = 0;
+		stroke.previousL0DrawPoints = stroke.l0DrawPoints;
+		return;
+	}
+
+	// 停笔后等笔锋和模拟粗细真正稳定，再冻结模型输入，避免继续生成无视觉变化的点。
+	const bool stoppedLongEnough =
+		(stroke.logicalInputTime - stroke.lastMovementInputTime) >= liveTipDurationSeconds;
+	if (stoppedLongEnough && AreL0VisualsClose(stroke.l0DrawPoints, stroke.previousL0DrawPoints))
+	{
+		++stroke.visualStableFrameCount;
+	}
+	else
+	{
+		stroke.visualStableFrameCount = 0;
+	}
+
+	stroke.previousL0DrawPoints = stroke.l0DrawPoints;
+	if (stroke.visualStableFrameCount >= kVisualStableRequiredFrames)
+	{
+		stroke.idleFrozen = true;
+	}
+}
+
+void LogFrameTiming(
+	size_t committedIndex,
+	size_t realPointCount,
+	size_t predictedPointCount,
+	size_t l0PointCount,
+	double workMs,
+	double previousFrameMs,
+	bool idleFrozen)
+{
+	const int realFps = (previousFrameMs > 0.001) ? static_cast<int>(1000.0 / previousFrameMs) : 0;
+	char buffer[256];
+	// 输出含义：
+	// commit 已烘干到 L1 的真实点索引；work 当前帧绘制/模型耗时；
+	// prev-real 上一整帧真实 FPS/耗时，包含等待和控制台输出；
+	// realPts/predPts/l0Pts 分别是真实点、预测点、当前 L0 绘制点数；frozen 表示停笔稳定后是否冻结输入。
+	const int lineLength = std::snprintf(
+		buffer,
+		sizeof(buffer),
+		"commit:%zu work:%.3fms prev-real:%d FPS(%.3fms) realPts:%zu predPts:%zu l0Pts:%zu frozen:%d\r\n",
+		committedIndex,
+		workMs,
+		realFps,
+		previousFrameMs,
+		realPointCount,
+		predictedPointCount,
+		l0PointCount,
+		idleFrozen ? 1 : 0
+	);
+	if (lineLength <= 0) return;
+
+	const DWORD writeLength = static_cast<DWORD>(min(lineLength, static_cast<int>(sizeof(buffer) - 1)));
+	WriteFastConsoleLine(buffer, writeLength);
+}
+
 void AppendNewModeledPoints(ActiveMouseStroke& stroke)
 {
 	for (size_t i = stroke.convertedResultCount; i < stroke.modeledResults.size(); ++i)
@@ -484,14 +619,26 @@ void ApplyLiveTipTaper(vector<InkPoint>& points, double liveTipDurationSeconds)
 
 	const double endTime = points.back().time;
 	const double tipStartTime = endTime - liveTipDurationSeconds;
-
-	for (InkPoint& point : points)
+	size_t firstTipIndex = points.size() - 1;
+	while (firstTipIndex > 0 && static_cast<double>(points[firstTipIndex - 1].time) >= tipStartTime)
 	{
-		if (point.time < tipStartTime) continue;
+		--firstTipIndex;
+	}
 
-		const float ageRatio = static_cast<float>((endTime - point.time) / liveTipDurationSeconds);
+	// 笔锋长度不够时不直接收成最尖，等尾部时长长起来后再逐步变细。
+	const double actualTipSpan = max(0.0, endTime - static_cast<double>(points[firstTipIndex].time));
+	const float spanRatio = SmoothStep01(static_cast<float>(actualTipSpan / liveTipDurationSeconds));
+	const float newestScale = LerpFloat(1.0f, 0.28f, spanRatio);
+
+	for (size_t i = firstTipIndex; i < points.size(); ++i)
+	{
+		InkPoint& point = points[i];
+
+		const float ageRatio = (actualTipSpan > 0.000001)
+			? static_cast<float>((endTime - static_cast<double>(point.time)) / actualTipSpan)
+			: 0.0f;
 		const float tipRatio = SmoothStep01(ageRatio);
-		const float scale = LerpFloat(0.28f, 1.0f, tipRatio);
+		const float scale = LerpFloat(newestScale, 1.0f, tipRatio);
 		point.r *= scale;
 	}
 }
@@ -531,7 +678,7 @@ RECT CommitStablePrefixToL1(
 	);
 
 	inkRenderer.SetOMTarget(inkRenderer.layerL1RTV);
-	inkRenderer.DrawStroke(stablePoints, color, shapeType, eraser);
+	inkRenderer.DrawStrokeOrDot(stablePoints, color, shapeType, eraser);
 	stroke.committedIndex = protectedStartIndex;
 	return RectFromStrokePoints(stablePoints);
 }
@@ -539,10 +686,10 @@ RECT CommitStablePrefixToL1(
 void DrawL0LiveComposite(ActiveMouseStroke& stroke, XMFLOAT4 color, float shapeType, bool eraser)
 {
 	inkRenderer.ClearRTV(inkRenderer.layerL0RTV, XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f));
-	if (stroke.l0DrawPoints.size() < 2) return;
+	if (stroke.l0DrawPoints.empty()) return;
 
 	inkRenderer.SetOMTarget(inkRenderer.layerL0RTV);
-	inkRenderer.DrawStroke(stroke.l0DrawPoints, color, shapeType, eraser);
+	inkRenderer.DrawStrokeOrDot(stroke.l0DrawPoints, color, shapeType, eraser);
 }
 
 void CompositeLayersToBackBuffer(RECT dirty)
@@ -883,65 +1030,103 @@ int main()
 				cout << "Error: " << status.message() << endl;
 			}
 			AppendNewModeledPoints(stroke);
+			stroke.lastRawPosition = POINT{ static_cast<LONG>(xO), static_cast<LONG>(yO) };
+			stroke.hasLastRawPosition = true;
 
 			// 帧率保持
-			chrono::high_resolution_clock::time_point rekon;
+			double lastFrameStartMs = GetQpcTimeMilliseconds();
+			bool hasFrameTiming = false;
 			while (1)
 			{
-				rekon = chrono::high_resolution_clock::now();
+				const double frameStartMs = GetQpcTimeMilliseconds();
+				const double previousFrameMs = hasFrameTiming ? (frameStartMs - lastFrameStartMs) : 0.0;
+				lastFrameStartMs = frameStartMs;
+				hasFrameTiming = true;
+
+				bool forceL0Redraw = false;
 				if (processPendingResize(false))
 				{
 					stroke.lastL0Rect = RECT(0, 0, 0, 0);
-					stroke.currentL0Rect = RECT(0, 0, 0, 0);
+					stroke.currentL0Rect = RectFromStrokePoints(stroke.l0DrawPoints);
 					strokeDirty = ClampRectToCanvas(strokeDirty);
 					isFirstFrame = true;
+					forceL0Redraw = true;
 				}
 
 				POINT pt;
 				GetCursorPos(&pt);
 				ScreenToClient(windowHWND, &pt);
 
-				Input input
-				{
-					.event_type = Input::EventType::kMove,
-					.position = ink::stroke_model::Vec2(static_cast<float>(pt.x), static_cast<float>(pt.y)),
-					.time = Time(chrono::duration<double>(chrono::high_resolution_clock::now() - start).count()) // 秒单位
-				};
+				const double wallElapsedSeconds =
+					chrono::duration<double>(chrono::high_resolution_clock::now() - start).count();
+				const double wallDeltaSeconds = max(0.0, wallElapsedSeconds - stroke.lastFrameWallTime);
+				stroke.lastFrameWallTime = wallElapsedSeconds;
 
-				if (absl::Status status = stroke.modeler.Update(input, stroke.modeledResults); !status.ok())
+				const bool rawMoved = UpdateRawPositionAndDetectMovement(stroke, pt);
+				if (rawMoved)
 				{
-					cout << "Error: " << status.message() << endl;
+					stroke.idleFrozen = false;
+					stroke.visualStableFrameCount = 0;
 				}
-				AppendNewModeledPoints(stroke);
 
-				stroke.predictedResults.clear();
-				if (kActivePredictionMode != InkPredictionMode::Disabled)
+				RECT stableDirty = RECT(0, 0, 0, 0);
+				RECT l0FrameDirty = RECT(0, 0, 0, 0);
+				if (!stroke.idleFrozen)
 				{
-					if (absl::Status status = stroke.modeler.Predict(stroke.predictedResults); !status.ok())
+					stroke.logicalInputTime += wallDeltaSeconds;
+					if (rawMoved) stroke.lastMovementInputTime = stroke.logicalInputTime;
+
+					Input input
 					{
-						stroke.predictedResults.clear();
+						.event_type = Input::EventType::kMove,
+						.position = ink::stroke_model::Vec2(static_cast<float>(pt.x), static_cast<float>(pt.y)),
+						.time = Time(stroke.logicalInputTime) // 冻结时不推进逻辑时间，恢复后不会一次性补点。
+					};
+
+					if (absl::Status status = stroke.modeler.Update(input, stroke.modeledResults); !status.ok())
+					{
+						cout << "Error: " << status.message() << endl;
 					}
+					AppendNewModeledPoints(stroke);
+
+					stroke.predictedResults.clear();
+					if (kActivePredictionMode != InkPredictionMode::Disabled)
+					{
+						if (absl::Status status = stroke.modeler.Predict(stroke.predictedResults); !status.ok())
+						{
+							stroke.predictedResults.clear();
+						}
+					}
+					RebuildPredictedPoints(stroke);
+
+					const double predictionDurationSeconds = GetPredictionDurationSeconds(stroke);
+					stableDirty = CommitStablePrefixToL1(
+						stroke,
+						liveTipDurationSeconds,
+						predictionDurationSeconds,
+						stableInkColor,
+						shapeType,
+						eraser
+					);
+
+					stroke.lastL0Rect = stroke.currentL0Rect;
+					RebuildL0DrawPoints(stroke, liveTipDurationSeconds);
+					UpdateIdleFreezeState(stroke, rawMoved, liveTipDurationSeconds);
+					DrawL0LiveComposite(stroke, liveInkColor, shapeType, eraser);
+					UnionRectInPlace(l0FrameDirty, stroke.lastL0Rect);
+					UnionRectInPlace(l0FrameDirty, stroke.currentL0Rect);
 				}
-				RebuildPredictedPoints(stroke);
-
-				const double predictionDurationSeconds = GetPredictionDurationSeconds(stroke);
-				RECT stableDirty = CommitStablePrefixToL1(
-					stroke,
-					liveTipDurationSeconds,
-					predictionDurationSeconds,
-					stableInkColor,
-					shapeType,
-					eraser
-				);
-
-				stroke.lastL0Rect = stroke.currentL0Rect;
-				RebuildL0DrawPoints(stroke, liveTipDurationSeconds);
-				DrawL0LiveComposite(stroke, liveInkColor, shapeType, eraser);
+				else if (forceL0Redraw)
+				{
+					stroke.lastL0Rect = RECT(0, 0, 0, 0);
+					stroke.currentL0Rect = RectFromStrokePoints(stroke.l0DrawPoints);
+					DrawL0LiveComposite(stroke, liveInkColor, shapeType, eraser);
+					UnionRectInPlace(l0FrameDirty, stroke.currentL0Rect);
+				}
 
 				RECT frameDirty = RECT(0, 0, 0, 0);
 				UnionRectInPlace(frameDirty, stableDirty);
-				UnionRectInPlace(frameDirty, stroke.lastL0Rect);
-				UnionRectInPlace(frameDirty, stroke.currentL0Rect);
+				UnionRectInPlace(frameDirty, l0FrameDirty);
 				frameDirty = ClampRectToCanvas(frameDirty);
 
 				if (!IsEmptyRect(frameDirty))
@@ -960,22 +1145,17 @@ int main()
 
 				// 帧率锁
 				{
-					double costMs = chrono::duration<double, milli>(chrono::high_resolution_clock::now() - rekon).count();
-
-					// 直接传入 ms，无需转换
-					HighPrecisionWait(costMs, timingProfile.target_fps);
-
-					// 计算总帧时间用于显示实际 FPS
-					double totalMs = chrono::duration<double, milli>(chrono::high_resolution_clock::now() - rekon).count();
-
-					// 防止除以0
-					int logicFPS = (costMs > 0.001) ? static_cast<int>(1000.0 / costMs) : 9999;
-					int actualFPS = (totalMs > 0.001) ? static_cast<int>(1000.0 / totalMs) : 9999;
-
-					cout << stroke.committedIndex
-						<< " logic: " << logicFPS << " FPS (" << costMs << "ms)"
-						<< " real: " << actualFPS << " FPS"
-						<< endl;
+					const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
+					HighPrecisionWait(workMs, timingProfile.target_fps);
+					LogFrameTiming(
+						stroke.committedIndex,
+						stroke.realPoints.size(),
+						stroke.predictedPoints.size(),
+						stroke.l0DrawPoints.size(),
+						workMs,
+						previousFrameMs,
+						stroke.idleFrozen
+					);
 				}
 			}
 
@@ -988,10 +1168,10 @@ int main()
 			}
 
 			// 抬笔时把最后一帧用户看到的 L0 原样落到 L1，再整体烘干到 L2。
-			if (stroke.l0DrawPoints.size() >= 2)
+			if (!stroke.l0DrawPoints.empty())
 			{
 				inkRenderer.SetOMTarget(inkRenderer.layerL1RTV);
-				inkRenderer.DrawStroke(stroke.l0DrawPoints, liveInkColor, shapeType, eraser);
+				inkRenderer.DrawStrokeOrDot(stroke.l0DrawPoints, liveInkColor, shapeType, eraser);
 				UnionRectInPlace(strokeDirty, stroke.currentL0Rect);
 			}
 

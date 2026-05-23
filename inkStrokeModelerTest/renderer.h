@@ -92,6 +92,23 @@ public:
 
 	// 绘制函数部分
 public:
+	int DrawStrokeOrDot(const vector<InkPoint>& points, XMFLOAT4 color, float shapeType = 0.0f, bool eraser = false)
+	{
+		if (points.empty()) return 0;
+		if (points.size() >= 2) return DrawStroke(points, color, shapeType, eraser);
+
+		// 单点也要显示：用极短胶囊段复用现有笔刷 shader。
+		vector<InkPoint> dotPoints;
+		dotPoints.reserve(2);
+		dotPoints.push_back(points.front());
+
+		InkPoint dotEnd = points.front();
+		dotEnd.x += max(0.25f, dotEnd.r * 0.05f);
+		dotPoints.push_back(dotEnd);
+
+		return DrawStroke(dotPoints, color, shapeType, eraser);
+	}
+
 	int DrawStroke(const vector<InkPoint>& points, XMFLOAT4 color, float shapeType = 0.0f, bool eraser = false)
 	{
 		size_t totalPoints = points.size();
