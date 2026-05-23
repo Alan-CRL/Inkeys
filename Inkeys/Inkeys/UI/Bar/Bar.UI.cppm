@@ -87,7 +87,7 @@ public:
 	IdtAtomic<double> ary = 1.0; // 变换精度（差值绝对值小于等于精度则认为已经动画完成，则直接赋值等于）
 
 	// 适用于 回弹动效模式
-	IdtAtomic<double> spe = 1.0; // 基准速度 px/s
+	IdtAtomic<double> spe = 1200.0; // 基准速度 px/s
 	IdtAtomic<double> startV = 0.0; // 起始位置（用于计算百分比，在界面设被设置时）
 	IdtAtomic<double> progress = 0.0; // 当前动画段的线性进度（曲线 x，0->1）
 };
@@ -123,8 +123,8 @@ public:
 	IdtAtomic<COLORREF> startColor = RGB(0, 0, 0); // 起始颜色（用于计算百分比，在界面被设置时）
 	IdtAtomic<double> progress = 0.0; // 当前动画段的线性进度（曲线 x，0->1）
 
-	IdtAtomic<double> spe = 0.0; // RGB基准速度 1/s
-	// 如果 spe == 0 则表示直接变化
+	IdtAtomic<double> spe = 6.0; // RGB基准速度 1/s
+	// 如果 spe <= 0 则表示直接变化
 };
 //// 透明度 UI 值
 class BarUiPctClass
@@ -158,8 +158,8 @@ public:
 	IdtAtomic<double> startV = 1.0; // 起始透明度（用于计算百分比，在界面被设置时）
 	IdtAtomic<double> progress = 0.0; // 当前动画段的线性进度（曲线 x，0->1）
 
-	IdtAtomic<double> spe = 0.0; // 透明度基准速度 1/s
-	// 如果 spe == 0 则表示直接变化
+	IdtAtomic<double> spe = 6.0; // 透明度基准速度 1/s
+	// 如果 spe <= 0 则表示直接变化
 };
 //// 文字 UI 值
 class BarUiStringClass
@@ -465,8 +465,8 @@ public:
 
 当前现状：
 1. BarUiValueClass 已有 val/tar/mod/ary/spe/startV，可表达“当前值、目标值、动画类型、精度、速度、动画段起点”。
-2. Bar.Main.cpp 的 ChangeValue/ChangeColor/ChangePct 目前仍是直接把 val 赋为 tar，Linear/Variable 还没有真正参与逐帧推进。
-3. MainBar、DrawAttributeBar 的部分 w/h 已设置为 Variable，但 x、pct、framePct 等还需要按实际视觉效果选择线性或回弹；framePct 目前也需要加入动效同步处理。
+2. Bar.Main.cpp 的 ChangeValue/ChangeColor/ChangePct 已接入匀速逐帧推进；Linear/Variable 暂时同为线性曲线。
+3. MainBar、DrawAttributeBar 的部分 w/h 已设置为 Variable，framePct 已加入动效同步；后续还需要按实际视觉效果细化 x、pct、framePct 等模式。
 
 建议模型：
 1. 目标变化时通过 SetTar 记录动画段起点，而不是每帧重置：
@@ -487,7 +487,7 @@ public:
    value.val = value.startV + (value.tar - value.startV) * y;
 
    Linear:   Curve(x) = x。
-   Variable: 可先使用 EaseOutBack 这类回弹曲线，y 允许超过 1 后回到 1。
+   Variable: 后续可使用 EaseOutBack 这类回弹曲线，y 允许超过 1 后回到 1。
 
 4. 动画完成：
    当 progress >= 1.0，或 abs(value.tar - value.val) <= ary 时，收尾：

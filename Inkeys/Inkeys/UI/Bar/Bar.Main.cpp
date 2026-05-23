@@ -713,12 +713,19 @@ void BarUISetClass::Rendering()
 	}
 
 	chrono::high_resolution_clock::time_point reckon = chrono::high_resolution_clock::now();
+	chrono::high_resolution_clock::time_point animationReckon = reckon;
 	RECT original = RECT(0, 0, barWindow.w, barWindow.h), current = RECT(0, 0, 0, 0);
 
 	wstring fps;
 	for (int forNum = 1; !offSignal; forNum = 2)
 	{
 	#pragma region 计算UI
+
+		auto animationNow = chrono::high_resolution_clock::now();
+		double animationDtSeconds = chrono::duration<double>(animationNow - animationReckon).count();
+		animationReckon = animationNow;
+		if (!isfinite(animationDtSeconds) || animationDtSeconds < 0.0) animationDtSeconds = 0.0;
+		animationDtSeconds = clamp(animationDtSeconds, 0.0, 0.05); // 防止调试或休眠恢复后一帧跳太远
 
 		// 主按钮
 		{
@@ -1742,6 +1749,37 @@ void BarUISetClass::Rendering()
 
 		bool needRendering = false;
 
+		auto FinishValue = [](BarUiValueClass& value, double targetValue) -> void
+			{
+				value.val = targetValue;
+				value.startV = targetValue;
+				value.progress = 0.0;
+			};
+		auto FinishColor = [](BarUiColorClass& color, COLORREF targetColor) -> void
+			{
+				color.val = targetColor;
+				color.startColor = targetColor;
+				color.progress = 0.0;
+			};
+		auto FinishPct = [](BarUiPctClass& pct, double targetPct) -> void
+			{
+				pct.val = targetPct;
+				pct.startV = targetPct;
+				pct.progress = 0.0;
+			};
+		auto MixColorChannel = [](int start, int target, double progress) -> int
+			{
+				double val = static_cast<double>(start) + static_cast<double>(target - start) * progress;
+				return static_cast<int>(clamp(val, 0.0, 255.0) + 0.5);
+			};
+		auto MixColor = [&](COLORREF startColor, COLORREF targetColor, double progress) -> COLORREF
+			{
+				// 颜色按 RGB 三通道做同一进度的匀速插值。
+				return RGB(
+					MixColorChannel(GetRValue(startColor), GetRValue(targetColor), progress),
+					MixColorChannel(GetGValue(startColor), GetGValue(targetColor), progress),
+					MixColorChannel(GetBValue(startColor), GetBValue(targetColor), progress));
+			};
 		auto ChangeState = [&](BarUiStateClass& state, bool forceReplace) -> void
 			{
 				needRendering = true;
@@ -1751,17 +1789,79 @@ void BarUISetClass::Rendering()
 			{
 				needRendering = true;
 				BarUiValueModeEnum mod = value.mod;
-				/*else*/ value.val = value.tar;
+				double targetValue = value.tar;
+				double startValue = value.startV;
+				double distance = abs(targetValue - startValue);
+				double precision = value.ary;
+				double speed = value.spe;
+				if (!isfinite(precision) || precision < 0.0) precision = 0.0;
+
+				// 第一阶段：Linear 和 Variable 都走匀速，Once 或异常速度仍直接到目标。
+				if (forceReplace || mod == BarUiValueModeEnum::Once || !isfinite(distance) || distance <= precision
+					|| !isfinite(speed) || speed <= 0.0 || animationDtSeconds <= 0.0)
+				{
+					FinishValue(value, targetValue);
+					return;
+				}
+
+				double progress = clamp(static_cast<double>(value.progress) + animationDtSeconds * speed / distance, 0.0, 1.0);
+				double nextValue = startValue + (targetValue - startValue) * progress;
+				if (!isfinite(nextValue) || progress >= 1.0 || abs(targetValue - nextValue) <= precision)
+				{
+					FinishValue(value, targetValue);
+					return;
+				}
+
+				value.val = nextValue;
+				value.progress = progress;
 			};
 		auto ChangeColor = [&](BarUiColorClass& color, bool forceReplace) -> void
 			{
 				needRendering = true;
-				color.val = color.tar;
+				COLORREF targetColor = color.tar;
+				COLORREF startColor = color.startColor;
+				double speed = color.spe;
+				if (forceReplace || startColor == targetColor || !isfinite(speed) || speed <= 0.0 || animationDtSeconds <= 0.0)
+				{
+					FinishColor(color, targetColor);
+					return;
+				}
+
+				double progress = clamp(static_cast<double>(color.progress) + animationDtSeconds * speed, 0.0, 1.0);
+				COLORREF nextColor = MixColor(startColor, targetColor, progress);
+				if (progress >= 1.0 || nextColor == targetColor)
+				{
+					FinishColor(color, targetColor);
+					return;
+				}
+
+				color.val = nextColor;
+				color.progress = progress;
 			};
 		auto ChangePct = [&](BarUiPctClass& pct, bool forceReplace) -> void
 			{
 				needRendering = true;
-				pct.val = pct.tar;
+				constexpr double pctEpsilon = 0.000001;
+				double targetPct = pct.tar;
+				double startPct = pct.startV;
+				double speed = pct.spe;
+				if (forceReplace || !isfinite(targetPct) || !isfinite(startPct) || abs(targetPct - startPct) <= pctEpsilon
+					|| !isfinite(speed) || speed <= 0.0 || animationDtSeconds <= 0.0)
+				{
+					FinishPct(pct, targetPct);
+					return;
+				}
+
+				double progress = clamp(static_cast<double>(pct.progress) + animationDtSeconds * speed, 0.0, 1.0);
+				double nextPct = startPct + (targetPct - startPct) * progress;
+				if (!isfinite(nextPct) || progress >= 1.0 || abs(targetPct - nextPct) <= pctEpsilon)
+				{
+					FinishPct(pct, targetPct);
+					return;
+				}
+
+				pct.val = nextPct;
+				pct.progress = progress;
 			};
 		auto ChangeString = [&](BarUiStringClass& stringO, bool forceReplace) -> void
 			{
@@ -1784,6 +1884,7 @@ void BarUISetClass::Rendering()
 			if (val->ft.has_value() && !val->ft->IsSame()) ChangeValue(val->ft.value(), forceReplace), change = true;
 			if (val->fill.has_value() && !val->fill->IsSame()) ChangeColor(val->fill.value(), forceReplace), change = true;
 			if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value(), forceReplace), change = true;
+			if (val->framePct.has_value() && !val->framePct->IsSame()) ChangePct(val->framePct.value(), forceReplace), change = true;
 			if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace), change = true;
 		}
 		for (const auto& [key, val] : superellipseMap)
@@ -1800,6 +1901,7 @@ void BarUISetClass::Rendering()
 			if (val->ft.has_value() && !val->ft->IsSame()) ChangeValue(val->ft.value(), forceReplace), change = true;
 			if (val->fill.has_value() && !val->fill->IsSame()) ChangeColor(val->fill.value(), forceReplace), change = true;
 			if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value(), forceReplace), change = true;
+			if (val->framePct.has_value() && !val->framePct->IsSame()) ChangePct(val->framePct.value(), forceReplace), change = true;
 			if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace), change = true;
 		}
 		for (const auto& [key, val] : svgMap)
@@ -1853,6 +1955,7 @@ void BarUISetClass::Rendering()
 				if (temp->buttom.ft.has_value() && !temp->buttom.ft->IsSame()) ChangeValue(temp->buttom.ft.value(), forceReplace), change = true;
 				if (temp->buttom.fill.has_value() && !temp->buttom.fill->IsSame()) ChangeColor(temp->buttom.fill.value(), forceReplace), change = true;
 				if (temp->buttom.frame.has_value() && !temp->buttom.frame->IsSame()) ChangeColor(temp->buttom.frame.value(), forceReplace), change = true;
+				if (temp->buttom.framePct.has_value() && !temp->buttom.framePct->IsSame()) ChangePct(temp->buttom.framePct.value(), forceReplace), change = true;
 				if (!temp->buttom.pct.IsSame()) ChangePct(temp->buttom.pct, forceReplace), change = true;
 			}
 
