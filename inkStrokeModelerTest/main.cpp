@@ -375,6 +375,95 @@ namespace
 		return hr;
 	}
 
+	struct WindowChromeMetrics
+	{
+		RECT windowRect = RECT(0, 0, 0, 0);
+		int windowWidth = 0;
+		int windowHeight = 0;
+		int clientOffsetX = 0;
+		int clientOffsetY = 0;
+		int clientWidth = 0;
+		int clientHeight = 0;
+		int rightBorder = 0;
+		int bottomBorder = 0;
+		int resizeBorder = 6;
+		RECT closeButtonRect = RECT(0, 0, 0, 0);
+	};
+
+	bool BuildWindowChromeMetrics(HWND hwnd, WindowChromeMetrics& metrics)
+	{
+		if (!hwnd) return false;
+
+		RECT windowRect = {};
+		RECT clientRect = {};
+		if (!GetWindowRect(hwnd, &windowRect)) return false;
+		if (!GetClientRect(hwnd, &clientRect)) return false;
+
+		POINT clientOrigin = { 0, 0 };
+		if (!ClientToScreen(hwnd, &clientOrigin)) return false;
+
+		metrics.windowRect = windowRect;
+		metrics.windowWidth = static_cast<int>(windowRect.right - windowRect.left);
+		metrics.windowHeight = static_cast<int>(windowRect.bottom - windowRect.top);
+		metrics.clientOffsetX = clientOrigin.x - windowRect.left;
+		metrics.clientOffsetY = clientOrigin.y - windowRect.top;
+		metrics.clientWidth = static_cast<int>(clientRect.right - clientRect.left);
+		metrics.clientHeight = static_cast<int>(clientRect.bottom - clientRect.top);
+		metrics.rightBorder = max(0, metrics.windowWidth - metrics.clientOffsetX - metrics.clientWidth);
+		metrics.bottomBorder = max(0, metrics.windowHeight - metrics.clientOffsetY - metrics.clientHeight);
+		metrics.resizeBorder = max(6, min(12, max(metrics.clientOffsetX, metrics.bottomBorder)));
+
+		const int closeButtonWidth = 46;
+		const int closeRight = max(metrics.clientOffsetX, metrics.windowWidth - metrics.rightBorder);
+		const int closeTop = metrics.resizeBorder;
+		const int closeBottom = max(metrics.clientOffsetY, closeTop + 26);
+		metrics.closeButtonRect = RECT(
+			max(metrics.clientOffsetX, closeRight - closeButtonWidth),
+			closeTop,
+			closeRight,
+			min(metrics.windowHeight, closeBottom)
+		);
+
+		return metrics.windowWidth > 0 && metrics.windowHeight > 0 &&
+			metrics.clientWidth > 0 && metrics.clientHeight > 0;
+	}
+
+	bool PointInRectInclusive(const RECT& rect, int x, int y)
+	{
+		return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
+	}
+
+	LRESULT HitTestWindowChrome(HWND hwnd, LPARAM lParam)
+	{
+		WindowChromeMetrics metrics;
+		if (!BuildWindowChromeMetrics(hwnd, metrics)) return HTCLIENT;
+
+		const int screenX = GET_X_LPARAM(lParam);
+		const int screenY = GET_Y_LPARAM(lParam);
+		const int x = screenX - metrics.windowRect.left;
+		const int y = screenY - metrics.windowRect.top;
+		if (x < 0 || y < 0 || x >= metrics.windowWidth || y >= metrics.windowHeight) return HTNOWHERE;
+
+		const bool onLeft = x < metrics.resizeBorder;
+		const bool onRight = x >= metrics.windowWidth - metrics.resizeBorder;
+		const bool onTop = y < metrics.resizeBorder;
+		const bool onBottom = y >= metrics.windowHeight - metrics.resizeBorder;
+
+		if (onTop && onLeft) return HTTOPLEFT;
+		if (onTop && onRight) return HTTOPRIGHT;
+		if (onBottom && onLeft) return HTBOTTOMLEFT;
+		if (onBottom && onRight) return HTBOTTOMRIGHT;
+		if (onLeft) return HTLEFT;
+		if (onRight) return HTRIGHT;
+		if (onTop) return HTTOP;
+		if (onBottom) return HTBOTTOM;
+
+		if (PointInRectInclusive(metrics.closeButtonRect, x, y)) return HTCLOSE;
+		if (y < metrics.clientOffsetY) return HTCAPTION;
+
+		return HTCLIENT;
+	}
+
 	struct UlwDirtyRectPresenter
 	{
 		HWND hwnd = nullptr;
@@ -391,6 +480,142 @@ namespace
 		int dibHeight = 0;
 		int clientOffsetX = 0;
 		int clientOffsetY = 0;
+
+		DWORD MakePremultipliedBgra(BYTE r, BYTE g, BYTE b, BYTE a)
+		{
+			const BYTE pr = static_cast<BYTE>((static_cast<UINT>(r) * a + 127) / 255);
+			const BYTE pg = static_cast<BYTE>((static_cast<UINT>(g) * a + 127) / 255);
+			const BYTE pb = static_cast<BYTE>((static_cast<UINT>(b) * a + 127) / 255);
+			return (static_cast<DWORD>(a) << 24) |
+				(static_cast<DWORD>(pr) << 16) |
+				(static_cast<DWORD>(pg) << 8) |
+				static_cast<DWORD>(pb);
+		}
+
+		void FillDibRect(const RECT& rect, DWORD color)
+		{
+			if (!dibBits || dibWidth <= 0 || dibHeight <= 0) return;
+
+			const LONG left = max(0L, rect.left);
+			const LONG top = max(0L, rect.top);
+			const LONG right = min(static_cast<LONG>(dibWidth), rect.right);
+			const LONG bottom = min(static_cast<LONG>(dibHeight), rect.bottom);
+			if (left >= right || top >= bottom) return;
+
+			DWORD* pixels = static_cast<DWORD*>(dibBits);
+			const size_t rowWidth = static_cast<size_t>(dibWidth);
+			for (LONG y = top; y < bottom; ++y)
+			{
+				std::fill(
+					pixels + static_cast<size_t>(y) * rowWidth + static_cast<size_t>(left),
+					pixels + static_cast<size_t>(y) * rowWidth + static_cast<size_t>(right),
+					color
+				);
+			}
+		}
+
+		void ForceAlphaRect(const RECT& rect, BYTE alpha)
+		{
+			if (!dibBits || dibWidth <= 0 || dibHeight <= 0) return;
+
+			const LONG left = max(0L, rect.left);
+			const LONG top = max(0L, rect.top);
+			const LONG right = min(static_cast<LONG>(dibWidth), rect.right);
+			const LONG bottom = min(static_cast<LONG>(dibHeight), rect.bottom);
+			if (left >= right || top >= bottom) return;
+
+			DWORD* pixels = static_cast<DWORD*>(dibBits);
+			const size_t rowWidth = static_cast<size_t>(dibWidth);
+			const DWORD alphaMask = static_cast<DWORD>(alpha) << 24;
+			for (LONG y = top; y < bottom; ++y)
+			{
+				DWORD* row = pixels + static_cast<size_t>(y) * rowWidth;
+				for (LONG x = left; x < right; ++x)
+				{
+					row[x] = (row[x] & 0x00FFFFFF) | alphaMask;
+				}
+			}
+		}
+
+		void DrawDibLine(int x0, int y0, int x1, int y1, DWORD color)
+		{
+			if (!dibBits || dibWidth <= 0 || dibHeight <= 0) return;
+
+			const int dx = abs(x1 - x0);
+			const int sx = x0 < x1 ? 1 : -1;
+			const int dy = -abs(y1 - y0);
+			const int sy = y0 < y1 ? 1 : -1;
+			int error = dx + dy;
+			while (true)
+			{
+				FillDibRect(RECT(x0 - 1, y0 - 1, x0 + 2, y0 + 2), color);
+				if (x0 == x1 && y0 == y1) break;
+
+				const int doubledError = 2 * error;
+				if (doubledError >= dy)
+				{
+					error += dy;
+					x0 += sx;
+				}
+				if (doubledError <= dx)
+				{
+					error += dx;
+					y0 += sy;
+				}
+			}
+		}
+
+		void ForceChromeAlpha(const WindowChromeMetrics& metrics)
+		{
+			ForceAlphaRect(RECT(0, 0, metrics.windowWidth, metrics.clientOffsetY), 255);
+			ForceAlphaRect(RECT(0, metrics.clientOffsetY, metrics.clientOffsetX, metrics.windowHeight), 255);
+			ForceAlphaRect(RECT(metrics.windowWidth - metrics.rightBorder, metrics.clientOffsetY, metrics.windowWidth, metrics.windowHeight), 255);
+			ForceAlphaRect(RECT(0, metrics.windowHeight - metrics.bottomBorder, metrics.windowWidth, metrics.windowHeight), 255);
+		}
+
+		void DrawWindowChrome(const WindowChromeMetrics& metrics)
+		{
+			const DWORD titleColor = MakePremultipliedBgra(35, 43, 54, 255);
+			const DWORD borderColor = MakePremultipliedBgra(74, 85, 104, 255);
+			const DWORD closeColor = MakePremultipliedBgra(185, 28, 28, 255);
+			const DWORD closeGlyphColor = MakePremultipliedBgra(255, 255, 255, 255);
+
+			FillDibRect(RECT(0, 0, metrics.windowWidth, metrics.clientOffsetY), titleColor);
+			FillDibRect(RECT(0, 0, metrics.windowWidth, metrics.resizeBorder), borderColor);
+			FillDibRect(RECT(0, metrics.clientOffsetY, metrics.clientOffsetX, metrics.windowHeight), borderColor);
+			FillDibRect(RECT(metrics.windowWidth - metrics.rightBorder, metrics.clientOffsetY, metrics.windowWidth, metrics.windowHeight), borderColor);
+			FillDibRect(RECT(0, metrics.windowHeight - metrics.bottomBorder, metrics.windowWidth, metrics.windowHeight), borderColor);
+			FillDibRect(metrics.closeButtonRect, closeColor);
+
+			WCHAR title[128] = {};
+			if (!GetWindowTextW(hwnd, title, ARRAYSIZE(title)) || title[0] == L'\0')
+			{
+				wcscpy_s(title, L"Ink Stroke Modeler Test");
+			}
+
+			if (memoryDC)
+			{
+				HGDIOBJ oldFont = SelectObject(memoryDC, GetStockObject(DEFAULT_GUI_FONT));
+				SetBkMode(memoryDC, TRANSPARENT);
+				SetTextColor(memoryDC, RGB(226, 232, 240));
+
+				RECT textRect = RECT(
+					metrics.clientOffsetX + 12,
+					metrics.resizeBorder,
+					max(metrics.clientOffsetX + 12, metrics.closeButtonRect.left - 8),
+					max(metrics.clientOffsetY, metrics.resizeBorder + 24)
+				);
+				DrawTextW(memoryDC, title, -1, &textRect, DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS);
+				if (oldFont && oldFont != HGDI_ERROR) SelectObject(memoryDC, oldFont);
+			}
+
+			const int cx = (metrics.closeButtonRect.left + metrics.closeButtonRect.right) / 2;
+			const int cy = (metrics.closeButtonRect.top + metrics.closeButtonRect.bottom) / 2;
+			const int glyphRadius = 6;
+			DrawDibLine(cx - glyphRadius, cy - glyphRadius, cx + glyphRadius, cy + glyphRadius, closeGlyphColor);
+			DrawDibLine(cx + glyphRadius, cy - glyphRadius, cx - glyphRadius, cy + glyphRadius, closeGlyphColor);
+			ForceChromeAlpha(metrics);
+		}
 
 		void ReleaseDib()
 		{
@@ -450,23 +675,12 @@ namespace
 
 		bool EnsureWindowDib()
 		{
-			if (!hwnd) return false;
-
-			RECT windowRect = {};
-			if (!GetWindowRect(hwnd, &windowRect)) return false;
-
-			POINT clientOrigin = { 0, 0 };
-			if (!ClientToScreen(hwnd, &clientOrigin)) return false;
-
-			const int width = static_cast<int>(windowRect.right - windowRect.left);
-			const int height = static_cast<int>(windowRect.bottom - windowRect.top);
-			const int offsetX = clientOrigin.x - windowRect.left;
-			const int offsetY = clientOrigin.y - windowRect.top;
-			if (width <= 0 || height <= 0) return false;
+			WindowChromeMetrics metrics;
+			if (!BuildWindowChromeMetrics(hwnd, metrics)) return false;
 
 			if (memoryDC && dibBitmap && dibBits &&
-				dibWidth == width && dibHeight == height &&
-				clientOffsetX == offsetX && clientOffsetY == offsetY)
+				dibWidth == metrics.windowWidth && dibHeight == metrics.windowHeight &&
+				clientOffsetX == metrics.clientOffsetX && clientOffsetY == metrics.clientOffsetY)
 			{
 				return true;
 			}
@@ -478,8 +692,8 @@ namespace
 
 			BITMAPINFO bitmapInfo = {};
 			bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-			bitmapInfo.bmiHeader.biWidth = width;
-			bitmapInfo.bmiHeader.biHeight = -height; // top-down，坐标直接和窗口一致。
+			bitmapInfo.bmiHeader.biWidth = metrics.windowWidth;
+			bitmapInfo.bmiHeader.biHeight = -metrics.windowHeight; // top-down，坐标直接和窗口一致。
 			bitmapInfo.bmiHeader.biPlanes = 1;
 			bitmapInfo.bmiHeader.biBitCount = 32;
 			bitmapInfo.bmiHeader.biCompression = BI_RGB;
@@ -498,14 +712,15 @@ namespace
 				return false;
 			}
 
-			dibWidth = width;
-			dibHeight = height;
-			clientOffsetX = offsetX;
-			clientOffsetY = offsetY;
+			dibWidth = metrics.windowWidth;
+			dibHeight = metrics.windowHeight;
+			clientOffsetX = metrics.clientOffsetX;
+			clientOffsetY = metrics.clientOffsetY;
 
 			// ULW 的全透明像素会穿透鼠标，背景保留 alpha=1 的近透明值。
 			const DWORD backgroundPixel = 0x01000000;
 			std::fill_n(static_cast<DWORD*>(dibBits), static_cast<size_t>(dibWidth) * static_cast<size_t>(dibHeight), backgroundPixel);
+			DrawWindowChrome(metrics);
 			return true;
 		}
 
@@ -1008,6 +1223,32 @@ LRESULT CALLBACK Draw3WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	switch (msg)
 	{
+	case WM_NCHITTEST:
+		return HitTestWindowChrome(hWnd, lParam);
+
+	case WM_NCLBUTTONDOWN:
+		if (wParam == HTCLOSE) return 0;
+		break;
+
+	case WM_NCLBUTTONUP:
+		if (wParam == HTCLOSE)
+		{
+			DestroyWindow(hWnd);
+			return 0;
+		}
+		break;
+
+	case WM_GETMINMAXINFO:
+	{
+		MINMAXINFO* minMaxInfo = reinterpret_cast<MINMAXINFO*>(lParam);
+		if (minMaxInfo)
+		{
+			minMaxInfo->ptMinTrackSize.x = 360;
+			minMaxInfo->ptMinTrackSize.y = 240;
+		}
+		return 0;
+	}
+
 	case WM_SIZE:
 		if (wParam != SIZE_MINIMIZED)
 		{
