@@ -12,6 +12,9 @@
 using namespace DirectX;
 using namespace std;
 
+inline const XMFLOAT4 kTransparentWindowBackgroundColor(0.0f, 0.0f, 0.0f, 1.0f / 255.0f);
+inline const XMFLOAT4 kTransparentLayerClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+
 // 辅助加载函数
 struct ShaderBlob { const void* data; size_t size; };
 inline ShaderBlob LoadShaderFromResource(int resourceID)
@@ -405,12 +408,10 @@ public:
 
 		if (!CreateSizeDependentResources(swapChain, width, height)) return false;
 
-		const XMFLOAT4 finalCanvasClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-		const XMFLOAT4 transparentClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-		ClearRTV(layerL2RTV, finalCanvasClearColor);
-		ClearRTV(layerL1RTV, transparentClearColor);
-		ClearRTV(layerL0RTV, transparentClearColor);
-		ClearRTV(backBufferRTV, finalCanvasClearColor);
+		ClearRTV(layerL2RTV, kTransparentWindowBackgroundColor);
+		ClearRTV(layerL1RTV, kTransparentLayerClearColor);
+		ClearRTV(layerL0RTV, kTransparentLayerClearColor);
+		ClearRTV(backBufferRTV, kTransparentWindowBackgroundColor);
 
 		const UINT copyWidth = min(oldWidth, width);
 		const UINT copyHeight = min(oldHeight, height);

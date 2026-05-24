@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <limits>
 
 WindowInfoClass windowInfo;
@@ -38,9 +39,17 @@ namespace
 		ColorizeLiveLayer
 	};
 
+	enum class TransparentPresentMode
+	{
+		UlwDirtyRect, // 当前只实现 ULW + dirty rect。
+		DirectCompositionVisualTree, // 后续预留 DComp 视觉树路径。
+		DwmBlurBehindWin7 // 后续预留 DirectInkPresenter 的 Win7 DWM blur-behind 思路。
+	};
+
 	constexpr InkPredictionMode kActivePredictionMode = InkPredictionMode::Kalman;
 	constexpr LiveTipLengthMode kActiveLiveTipLengthMode = LiveTipLengthMode::Normal;
 	constexpr DebugLayerColorMode kActiveDebugLayerColorMode = DebugLayerColorMode::NormalInkColor;
+	constexpr TransparentPresentMode kActiveTransparentPresentMode = TransparentPresentMode::UlwDirtyRect;
 
 	enum class StrokeTimingProfileId
 	{
@@ -364,6 +373,299 @@ namespace
 		}
 
 		return hr;
+	}
+
+	struct UlwDirtyRectPresenter
+	{
+		HWND hwnd = nullptr;
+		CComPtr<ID3D11Device> device;
+		CComPtr<ID3D11DeviceContext> context;
+		CComPtr<ID3D11Texture2D> stagingTexture;
+		UINT stagingWidth = 0;
+		UINT stagingHeight = 0;
+		HDC memoryDC = nullptr;
+		HBITMAP dibBitmap = nullptr;
+		HGDIOBJ oldBitmap = nullptr;
+		void* dibBits = nullptr;
+		int dibWidth = 0;
+		int dibHeight = 0;
+		int clientOffsetX = 0;
+		int clientOffsetY = 0;
+
+		void ReleaseDib()
+		{
+			if (memoryDC && oldBitmap)
+			{
+				SelectObject(memoryDC, oldBitmap);
+				oldBitmap = nullptr;
+			}
+			if (dibBitmap)
+			{
+				DeleteObject(dibBitmap);
+				dibBitmap = nullptr;
+			}
+			if (memoryDC)
+			{
+				DeleteDC(memoryDC);
+				memoryDC = nullptr;
+			}
+			dibBits = nullptr;
+			dibWidth = 0;
+			dibHeight = 0;
+			clientOffsetX = 0;
+			clientOffsetY = 0;
+		}
+
+		bool CreateStagingTexture(UINT width, UINT height)
+		{
+			if (!device || width == 0 || height == 0) return false;
+			if (stagingTexture && stagingWidth == width && stagingHeight == height) return true;
+
+			stagingTexture.Release();
+
+			D3D11_TEXTURE2D_DESC desc = {};
+			desc.Width = width;
+			desc.Height = height;
+			desc.MipLevels = 1;
+			desc.ArraySize = 1;
+			desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+			desc.SampleDesc.Count = 1;
+			desc.SampleDesc.Quality = 0;
+			desc.Usage = D3D11_USAGE_STAGING;
+			desc.BindFlags = 0;
+			desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+			desc.MiscFlags = 0;
+
+			if (FAILED(device->CreateTexture2D(&desc, nullptr, &stagingTexture)))
+			{
+				stagingWidth = 0;
+				stagingHeight = 0;
+				return false;
+			}
+
+			stagingWidth = width;
+			stagingHeight = height;
+			return true;
+		}
+
+		bool EnsureWindowDib()
+		{
+			if (!hwnd) return false;
+
+			RECT windowRect = {};
+			if (!GetWindowRect(hwnd, &windowRect)) return false;
+
+			POINT clientOrigin = { 0, 0 };
+			if (!ClientToScreen(hwnd, &clientOrigin)) return false;
+
+			const int width = static_cast<int>(windowRect.right - windowRect.left);
+			const int height = static_cast<int>(windowRect.bottom - windowRect.top);
+			const int offsetX = clientOrigin.x - windowRect.left;
+			const int offsetY = clientOrigin.y - windowRect.top;
+			if (width <= 0 || height <= 0) return false;
+
+			if (memoryDC && dibBitmap && dibBits &&
+				dibWidth == width && dibHeight == height &&
+				clientOffsetX == offsetX && clientOffsetY == offsetY)
+			{
+				return true;
+			}
+
+			ReleaseDib();
+
+			memoryDC = CreateCompatibleDC(nullptr);
+			if (!memoryDC) return false;
+
+			BITMAPINFO bitmapInfo = {};
+			bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+			bitmapInfo.bmiHeader.biWidth = width;
+			bitmapInfo.bmiHeader.biHeight = -height; // top-down，坐标直接和窗口一致。
+			bitmapInfo.bmiHeader.biPlanes = 1;
+			bitmapInfo.bmiHeader.biBitCount = 32;
+			bitmapInfo.bmiHeader.biCompression = BI_RGB;
+
+			dibBitmap = CreateDIBSection(memoryDC, &bitmapInfo, DIB_RGB_COLORS, &dibBits, nullptr, 0);
+			if (!dibBitmap || !dibBits)
+			{
+				ReleaseDib();
+				return false;
+			}
+
+			oldBitmap = SelectObject(memoryDC, dibBitmap);
+			if (!oldBitmap || oldBitmap == HGDI_ERROR)
+			{
+				ReleaseDib();
+				return false;
+			}
+
+			dibWidth = width;
+			dibHeight = height;
+			clientOffsetX = offsetX;
+			clientOffsetY = offsetY;
+
+			// ULW 的全透明像素会穿透鼠标，背景保留 alpha=1 的近透明值。
+			const DWORD backgroundPixel = 0x01000000;
+			std::fill_n(static_cast<DWORD*>(dibBits), static_cast<size_t>(dibWidth) * static_cast<size_t>(dibHeight), backgroundPixel);
+			return true;
+		}
+
+		bool Initialize(HWND inHwnd, ID3D11Device* inDevice, ID3D11DeviceContext* inContext, UINT width, UINT height)
+		{
+			hwnd = inHwnd;
+			device = inDevice;
+			context = inContext;
+			if (!hwnd || !device || !context) return false;
+
+			// 只启用 layered window；不能加 WS_EX_TRANSPARENT，否则鼠标会直接穿透。
+			LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+			SetWindowLongPtr(hwnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
+			SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+				SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+
+			return Resize(width, height);
+		}
+
+		bool Resize(UINT width, UINT height)
+		{
+			return CreateStagingTexture(width, height) && EnsureWindowDib();
+		}
+
+		bool Present(ID3D11Texture2D* finalTexture, RECT dirty, bool presentFull)
+		{
+			if (!context || !stagingTexture || !finalTexture) return false;
+			if (!EnsureWindowDib()) return false;
+
+			if (presentFull)
+			{
+				dirty = RECT(0, 0, static_cast<LONG>(stagingWidth), static_cast<LONG>(stagingHeight));
+			}
+			dirty.left = max(0L, dirty.left);
+			dirty.top = max(0L, dirty.top);
+			dirty.right = min(static_cast<LONG>(stagingWidth), dirty.right);
+			dirty.bottom = min(static_cast<LONG>(stagingHeight), dirty.bottom);
+			if (dirty.left >= dirty.right || dirty.top >= dirty.bottom) return true;
+
+			const int windowDirtyLeft = clientOffsetX + static_cast<int>(dirty.left);
+			const int windowDirtyTop = clientOffsetY + static_cast<int>(dirty.top);
+			const int windowDirtyRight = clientOffsetX + static_cast<int>(dirty.right);
+			const int windowDirtyBottom = clientOffsetY + static_cast<int>(dirty.bottom);
+			if (windowDirtyLeft < 0 || windowDirtyTop < 0 ||
+				windowDirtyRight > dibWidth || windowDirtyBottom > dibHeight)
+			{
+				return false;
+			}
+
+			D3D11_BOX sourceRegion = {};
+			sourceRegion.left = static_cast<UINT>(dirty.left);
+			sourceRegion.top = static_cast<UINT>(dirty.top);
+			sourceRegion.front = 0;
+			sourceRegion.right = static_cast<UINT>(dirty.right);
+			sourceRegion.bottom = static_cast<UINT>(dirty.bottom);
+			sourceRegion.back = 1;
+			context->CopySubresourceRegion(
+				stagingTexture,
+				0,
+				static_cast<UINT>(dirty.left),
+				static_cast<UINT>(dirty.top),
+				0,
+				finalTexture,
+				0,
+				&sourceRegion
+			);
+
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
+			if (FAILED(context->Map(stagingTexture, 0, D3D11_MAP_READ, 0, &mapped))) return false;
+
+			const size_t copyBytes = static_cast<size_t>(dirty.right - dirty.left) * 4;
+			const BYTE* srcBase = static_cast<const BYTE*>(mapped.pData) +
+				static_cast<size_t>(dirty.top) * mapped.RowPitch +
+				static_cast<size_t>(dirty.left) * 4;
+			BYTE* dstBase = static_cast<BYTE*>(dibBits) +
+				static_cast<size_t>(windowDirtyTop) * static_cast<size_t>(dibWidth) * 4 +
+				static_cast<size_t>(windowDirtyLeft) * 4;
+			for (LONG y = dirty.top; y < dirty.bottom; ++y)
+			{
+				const size_t rowIndex = static_cast<size_t>(y - dirty.top);
+				std::memcpy(
+					dstBase + rowIndex * static_cast<size_t>(dibWidth) * 4,
+					srcBase + rowIndex * mapped.RowPitch,
+					copyBytes
+				);
+			}
+			context->Unmap(stagingTexture, 0);
+
+			RECT windowRect = {};
+			if (!GetWindowRect(hwnd, &windowRect)) return false;
+
+			POINT dstPoint = { windowRect.left, windowRect.top };
+			SIZE dstSize = { dibWidth, dibHeight };
+			POINT srcPoint = { 0, 0 };
+			RECT windowDirty = {
+				static_cast<LONG>(windowDirtyLeft),
+				static_cast<LONG>(windowDirtyTop),
+				static_cast<LONG>(windowDirtyRight),
+				static_cast<LONG>(windowDirtyBottom)
+			};
+			BLENDFUNCTION blend = {};
+			blend.BlendOp = AC_SRC_OVER;
+			blend.SourceConstantAlpha = 255;
+			blend.AlphaFormat = AC_SRC_ALPHA;
+
+			UPDATELAYEREDWINDOWINFO ulwInfo = {};
+			ulwInfo.cbSize = sizeof(ulwInfo);
+			ulwInfo.hdcDst = nullptr;
+			ulwInfo.pptDst = &dstPoint;
+			ulwInfo.psize = &dstSize;
+			ulwInfo.hdcSrc = memoryDC;
+			ulwInfo.pptSrc = &srcPoint;
+			ulwInfo.pblend = &blend;
+			ulwInfo.dwFlags = ULW_ALPHA;
+			ulwInfo.prcDirty = presentFull ? nullptr : &windowDirty;
+
+			return UpdateLayeredWindowIndirect(hwnd, &ulwInfo) != FALSE;
+		}
+	};
+
+	UlwDirtyRectPresenter g_ulwDirtyRectPresenter;
+
+	bool InitializeTransparentPresenter(HWND hwnd, ID3D11Device* device, ID3D11DeviceContext* context, UINT width, UINT height)
+	{
+		switch (kActiveTransparentPresentMode)
+		{
+		case TransparentPresentMode::UlwDirtyRect:
+			return g_ulwDirtyRectPresenter.Initialize(hwnd, device, context, width, height);
+		case TransparentPresentMode::DirectCompositionVisualTree:
+		case TransparentPresentMode::DwmBlurBehindWin7:
+		default:
+			return false;
+		}
+	}
+
+	bool ResizeTransparentPresenter(UINT width, UINT height)
+	{
+		switch (kActiveTransparentPresentMode)
+		{
+		case TransparentPresentMode::UlwDirtyRect:
+			return g_ulwDirtyRectPresenter.Resize(width, height);
+		case TransparentPresentMode::DirectCompositionVisualTree:
+		case TransparentPresentMode::DwmBlurBehindWin7:
+		default:
+			return false;
+		}
+	}
+
+	bool PresentTransparentFrame(IDXGISwapChain1* swapChain, RECT dirty, bool presentFull)
+	{
+		(void)swapChain;
+		switch (kActiveTransparentPresentMode)
+		{
+		case TransparentPresentMode::UlwDirtyRect:
+			return g_ulwDirtyRectPresenter.Present(inkRenderer.backBufferTexture, dirty, presentFull);
+		case TransparentPresentMode::DirectCompositionVisualTree:
+		case TransparentPresentMode::DwmBlurBehindWin7:
+		default:
+			return false;
+		}
 	}
 }
 
@@ -702,26 +1004,6 @@ void CompositeLayersToBackBuffer(RECT dirty)
 	inkRenderer.AlphaBlendResource(inkRenderer.backBufferRTV, inkRenderer.layerL0SRV, dirty);
 }
 
-void PresentFrame(IDXGISwapChain1* swapChain, RECT dirty, bool presentFull)
-{
-	if (presentFull)
-	{
-		swapChain->Present(0, 0);
-		return;
-	}
-
-	dirty = ClampRectToCanvas(dirty);
-	if (IsEmptyRect(dirty)) return;
-
-	DXGI_PRESENT_PARAMETERS parameters = {};
-	parameters.DirtyRectsCount = 1;
-	parameters.pDirtyRects = &dirty;
-	parameters.pScrollRect = nullptr;
-	parameters.pScrollOffset = nullptr;
-
-	swapChain->Present1(0, 0, &parameters);
-}
-
 LRESULT CALLBACK Draw3WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	switch (msg)
@@ -868,6 +1150,11 @@ int main()
 	// 后续修改，非 flip_discard
 
 	inkRenderer.Init(d3dDevice_HARDWARE, d3dDeviceContext, swapChain, static_cast<UINT>(windowInfo.w), static_cast<UINT>(windowInfo.h));
+	if (!InitializeTransparentPresenter(windowHWND, d3dDevice_HARDWARE, d3dDeviceContext, static_cast<UINT>(windowInfo.w), static_cast<UINT>(windowInfo.h)))
+	{
+		cout << "Failed to initialize transparent presenter." << endl;
+		return -1;
+	}
 
 	// 每帧绘制前应该
 	/*
@@ -929,20 +1216,20 @@ int main()
 	};
 	auto clearCanvas = [&swapChain]()
 		{
-			const XMFLOAT4 finalCanvasClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-			const XMFLOAT4 transparentClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-			inkRenderer.ClearRTV(inkRenderer.layerL2RTV, finalCanvasClearColor);
-			inkRenderer.ClearRTV(inkRenderer.layerL1RTV, transparentClearColor);
-			inkRenderer.ClearRTV(inkRenderer.layerL0RTV, transparentClearColor);
-			inkRenderer.ClearRTV(inkRenderer.backBufferRTV, finalCanvasClearColor);
-			swapChain->Present(0, 0);
+			const RECT fullCanvasRect = GetFullCanvasRect();
+			inkRenderer.ClearRTV(inkRenderer.layerL2RTV, kTransparentWindowBackgroundColor);
+			inkRenderer.ClearRTV(inkRenderer.layerL1RTV, kTransparentLayerClearColor);
+			inkRenderer.ClearRTV(inkRenderer.layerL0RTV, kTransparentLayerClearColor);
+			inkRenderer.ClearRTV(inkRenderer.backBufferRTV, kTransparentWindowBackgroundColor);
+			CompositeLayersToBackBuffer(fullCanvasRect);
+			PresentTransparentFrame(swapChain, fullCanvasRect, true);
 		};
 
 	auto presentFullCanvas = [&swapChain]()
 		{
 			const RECT fullCanvasRect = GetFullCanvasRect();
 			CompositeLayersToBackBuffer(fullCanvasRect);
-			PresentFrame(swapChain, fullCanvasRect, true);
+			PresentTransparentFrame(swapChain, fullCanvasRect, true);
 		};
 
 	auto processPendingResize = [&swapChain, &presentFullCanvas](bool presentAfterResize)
@@ -959,6 +1246,13 @@ int main()
 			if (!inkRenderer.Resize(swapChain, static_cast<UINT>(width), static_cast<UINT>(height)))
 			{
 				cout << "Failed to resize D3D resources to " << width << "x" << height << endl;
+				windowInfo.w = oldWidth;
+				windowInfo.h = oldHeight;
+				return false;
+			}
+			if (!ResizeTransparentPresenter(static_cast<UINT>(width), static_cast<UINT>(height)))
+			{
+				cout << "Failed to resize transparent presenter to " << width << "x" << height << endl;
 				windowInfo.w = oldWidth;
 				windowInfo.h = oldHeight;
 				return false;
@@ -1134,7 +1428,7 @@ int main()
 					// 首帧会全屏 Present，必须先把整张画布合成到当前 backbuffer。
 					const RECT compositeRect = isFirstFrame ? GetFullCanvasRect() : frameDirty;
 					CompositeLayersToBackBuffer(compositeRect);
-					PresentFrame(swapChain, frameDirty, isFirstFrame);
+					PresentTransparentFrame(swapChain, compositeRect, isFirstFrame);
 					isFirstFrame = false;
 				}
 
@@ -1183,7 +1477,7 @@ int main()
 				inkRenderer.ClearRTV(inkRenderer.layerL0RTV, XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f));
 				const RECT finalPresentRect = isFirstFrame ? GetFullCanvasRect() : strokeDirty;
 				inkRenderer.CopyResource(inkRenderer.backBufferTexture, inkRenderer.layerL2Texture, finalPresentRect);
-				PresentFrame(swapChain, strokeDirty, isFirstFrame);
+				PresentTransparentFrame(swapChain, finalPresentRect, isFirstFrame);
 			}
 			else
 			{
