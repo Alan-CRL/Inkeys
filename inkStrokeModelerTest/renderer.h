@@ -440,12 +440,13 @@ public:
 			{
 				D3D11_BLEND_DESC blendDesc = {};
 				blendDesc.RenderTarget[0].BlendEnable = TRUE;
+				// 同一条墨迹由很多胶囊段组成，这里取最大覆盖率，避免抗锯齿边缘反复 alpha 叠加变厚。
 				blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
-				blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
-				blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+				blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;
+				blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_MAX;
 				blendDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-				blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
-				blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+				blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
+				blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_MAX;
 				blendDesc.RenderTarget[0].RenderTargetWriteMask = 0x0F;
 				device->CreateBlendState(&blendDesc, &penBlendState);
 			}
