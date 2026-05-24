@@ -7,6 +7,9 @@
 #include <cstdio>
 #include <cstring>
 #include <limits>
+#include <dwmapi.h>
+
+#pragma comment(lib, "dwmapi.lib")
 
 WindowInfoClass windowInfo;
 InkRenderer inkRenderer;
@@ -41,15 +44,29 @@ namespace
 
 	enum class TransparentPresentMode
 	{
-		UlwDirtyRect, // 当前只实现 ULW + dirty rect。
+		UlwDirtyRect, // ULW + dirty rect，保留近透明背景避免鼠标穿透。
 		DirectCompositionVisualTree, // 后续预留 DComp 视觉树路径。
-		DwmBlurBehindWin7 // 后续预留 DirectInkPresenter 的 Win7 DWM blur-behind 思路。
+		DwmBlurBehindWin7 // 参考 DirectInkPresenter 的 Win7 DWM blur-behind 思路。
 	};
 
 	constexpr InkPredictionMode kActivePredictionMode = InkPredictionMode::Kalman;
 	constexpr LiveTipLengthMode kActiveLiveTipLengthMode = LiveTipLengthMode::Normal;
 	constexpr DebugLayerColorMode kActiveDebugLayerColorMode = DebugLayerColorMode::NormalInkColor;
-	constexpr TransparentPresentMode kActiveTransparentPresentMode = TransparentPresentMode::UlwDirtyRect;
+	constexpr TransparentPresentMode kActiveTransparentPresentMode = TransparentPresentMode::DwmBlurBehindWin7;
+
+	constexpr bool IsUlwDirtyRectMode()
+	{
+		return kActiveTransparentPresentMode == TransparentPresentMode::UlwDirtyRect;
+	}
+
+	XMFLOAT4 GetActiveWindowBackgroundColor()
+	{
+		if (kActiveTransparentPresentMode == TransparentPresentMode::DwmBlurBehindWin7)
+		{
+			return kTransparentLayerClearColor;
+		}
+		return kTransparentWindowBackgroundColor;
+	}
 
 	enum class StrokeTimingProfileId
 	{
@@ -843,6 +860,108 @@ namespace
 
 	UlwDirtyRectPresenter g_ulwDirtyRectPresenter;
 
+	struct DwmBlurBehindPresenter
+	{
+		HWND hwnd = nullptr;
+
+		bool EnsureSystemChrome()
+		{
+			if (!hwnd) return false;
+
+			WCHAR title[128] = {};
+			if (!GetWindowTextW(hwnd, title, ARRAYSIZE(title)) || title[0] == L'\0')
+			{
+				SetWindowTextW(hwnd, L"Ink Stroke Modeler Test");
+			}
+
+			bool changed = false;
+			const LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
+			const LONG_PTR desiredStyle = style | WS_OVERLAPPEDWINDOW;
+			if (desiredStyle != style)
+			{
+				SetWindowLongPtr(hwnd, GWL_STYLE, desiredStyle);
+				changed = true;
+			}
+
+			const LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+			const LONG_PTR desiredExStyle = (exStyle & ~(WS_EX_LAYERED | WS_EX_TRANSPARENT)) | WS_EX_WINDOWEDGE;
+			if (desiredExStyle != exStyle)
+			{
+				SetWindowLongPtr(hwnd, GWL_EXSTYLE, desiredExStyle);
+				changed = true;
+			}
+
+			if (changed)
+			{
+				SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+					SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+			}
+			return true;
+		}
+
+		bool UpdateDwmBlurBehind()
+		{
+			if (!hwnd) return false;
+
+			BOOL compositionEnabled = FALSE;
+			HRESULT hr = DwmIsCompositionEnabled(&compositionEnabled);
+			if (FAILED(hr) || !compositionEnabled)
+			{
+				return true;
+			}
+
+			// 参考 DirectInkPresenter：整窗 blur region 让 premultiplied BGRA 背景透出。
+			HRGN blurRegion = CreateRectRgn(0, 0, -1, -1);
+			if (!blurRegion) return false;
+
+			DWM_BLURBEHIND blurBehind = {};
+			blurBehind.dwFlags = DWM_BB_ENABLE | DWM_BB_BLURREGION | DWM_BB_TRANSITIONONMAXIMIZED;
+			blurBehind.fEnable = TRUE;
+			blurBehind.hRgnBlur = blurRegion;
+			blurBehind.fTransitionOnMaximized = TRUE;
+			hr = DwmEnableBlurBehindWindow(hwnd, &blurBehind);
+			DeleteObject(blurRegion);
+			return SUCCEEDED(hr);
+		}
+
+		bool Initialize(HWND inHwnd, UINT width, UINT height)
+		{
+			(void)width;
+			(void)height;
+			hwnd = inHwnd;
+			return EnsureSystemChrome() && UpdateDwmBlurBehind();
+		}
+
+		bool Resize(UINT width, UINT height)
+		{
+			(void)width;
+			(void)height;
+			return UpdateDwmBlurBehind();
+		}
+
+		bool Present(IDXGISwapChain1* swapChain, RECT dirty, bool presentFull)
+		{
+			if (!swapChain) return false;
+
+			DXGI_PRESENT_PARAMETERS presentParameters = {};
+			if (!presentFull)
+			{
+				dirty.left = max(0L, dirty.left);
+				dirty.top = max(0L, dirty.top);
+				dirty.right = min(static_cast<LONG>(windowInfo.w), dirty.right);
+				dirty.bottom = min(static_cast<LONG>(windowInfo.h), dirty.bottom);
+				if (dirty.left >= dirty.right || dirty.top >= dirty.bottom) return true;
+
+				presentParameters.DirtyRectsCount = 1;
+				presentParameters.pDirtyRects = &dirty;
+			}
+
+			return SUCCEEDED(swapChain->Present1(0, 0, &presentParameters));
+		}
+	};
+
+	DwmBlurBehindPresenter g_dwmBlurBehindPresenter;
+
 	bool InitializeTransparentPresenter(HWND hwnd, ID3D11Device* device, ID3D11DeviceContext* context, UINT width, UINT height)
 	{
 		switch (kActiveTransparentPresentMode)
@@ -850,7 +969,11 @@ namespace
 		case TransparentPresentMode::UlwDirtyRect:
 			return g_ulwDirtyRectPresenter.Initialize(hwnd, device, context, width, height);
 		case TransparentPresentMode::DirectCompositionVisualTree:
+			return false;
 		case TransparentPresentMode::DwmBlurBehindWin7:
+			(void)device;
+			(void)context;
+			return g_dwmBlurBehindPresenter.Initialize(hwnd, width, height);
 		default:
 			return false;
 		}
@@ -863,7 +986,9 @@ namespace
 		case TransparentPresentMode::UlwDirtyRect:
 			return g_ulwDirtyRectPresenter.Resize(width, height);
 		case TransparentPresentMode::DirectCompositionVisualTree:
+			return false;
 		case TransparentPresentMode::DwmBlurBehindWin7:
+			return g_dwmBlurBehindPresenter.Resize(width, height);
 		default:
 			return false;
 		}
@@ -871,15 +996,24 @@ namespace
 
 	bool PresentTransparentFrame(IDXGISwapChain1* swapChain, RECT dirty, bool presentFull)
 	{
-		(void)swapChain;
 		switch (kActiveTransparentPresentMode)
 		{
 		case TransparentPresentMode::UlwDirtyRect:
 			return g_ulwDirtyRectPresenter.Present(inkRenderer.backBufferTexture, dirty, presentFull);
 		case TransparentPresentMode::DirectCompositionVisualTree:
+			return false;
 		case TransparentPresentMode::DwmBlurBehindWin7:
+			return g_dwmBlurBehindPresenter.Present(swapChain, dirty, presentFull);
 		default:
 			return false;
+		}
+	}
+
+	void RefreshDwmBlurBehindAfterCompositionChanged()
+	{
+		if (kActiveTransparentPresentMode == TransparentPresentMode::DwmBlurBehindWin7)
+		{
+			g_dwmBlurBehindPresenter.UpdateDwmBlurBehind();
 		}
 	}
 }
@@ -1224,14 +1358,15 @@ LRESULT CALLBACK Draw3WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	switch (msg)
 	{
 	case WM_NCHITTEST:
-		return HitTestWindowChrome(hWnd, lParam);
+		if (IsUlwDirtyRectMode()) return HitTestWindowChrome(hWnd, lParam);
+		break;
 
 	case WM_NCLBUTTONDOWN:
-		if (wParam == HTCLOSE) return 0;
+		if (IsUlwDirtyRectMode() && wParam == HTCLOSE) return 0;
 		break;
 
 	case WM_NCLBUTTONUP:
-		if (wParam == HTCLOSE)
+		if (IsUlwDirtyRectMode() && wParam == HTCLOSE)
 		{
 			DestroyWindow(hWnd);
 			return 0;
@@ -1240,6 +1375,7 @@ LRESULT CALLBACK Draw3WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 	case WM_GETMINMAXINFO:
 	{
+		if (!IsUlwDirtyRectMode()) break;
 		MINMAXINFO* minMaxInfo = reinterpret_cast<MINMAXINFO*>(lParam);
 		if (minMaxInfo)
 		{
@@ -1248,6 +1384,10 @@ LRESULT CALLBACK Draw3WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		}
 		return 0;
 	}
+
+	case WM_DWMCOMPOSITIONCHANGED:
+		RefreshDwmBlurBehindAfterCompositionChanged();
+		return 0;
 
 	case WM_SIZE:
 		if (wParam != SIZE_MINIMIZED)
@@ -1390,6 +1530,7 @@ int main()
 	// 交换链应该保证指定脏区，而不是全部重绘
 	// 后续修改，非 flip_discard
 
+	inkRenderer.SetWindowBackgroundColor(GetActiveWindowBackgroundColor());
 	inkRenderer.Init(d3dDevice_HARDWARE, d3dDeviceContext, swapChain, static_cast<UINT>(windowInfo.w), static_cast<UINT>(windowInfo.h));
 	if (!InitializeTransparentPresenter(windowHWND, d3dDevice_HARDWARE, d3dDeviceContext, static_cast<UINT>(windowInfo.w), static_cast<UINT>(windowInfo.h)))
 	{
@@ -1458,10 +1599,10 @@ int main()
 	auto clearCanvas = [&swapChain]()
 		{
 			const RECT fullCanvasRect = GetFullCanvasRect();
-			inkRenderer.ClearRTV(inkRenderer.layerL2RTV, kTransparentWindowBackgroundColor);
+			inkRenderer.ClearRTV(inkRenderer.layerL2RTV, GetActiveWindowBackgroundColor());
 			inkRenderer.ClearRTV(inkRenderer.layerL1RTV, kTransparentLayerClearColor);
 			inkRenderer.ClearRTV(inkRenderer.layerL0RTV, kTransparentLayerClearColor);
-			inkRenderer.ClearRTV(inkRenderer.backBufferRTV, kTransparentWindowBackgroundColor);
+			inkRenderer.ClearRTV(inkRenderer.backBufferRTV, GetActiveWindowBackgroundColor());
 			CompositeLayersToBackBuffer(fullCanvasRect);
 			PresentTransparentFrame(swapChain, fullCanvasRect, true);
 		};

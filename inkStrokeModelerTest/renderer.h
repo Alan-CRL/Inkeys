@@ -92,6 +92,7 @@ public:
 	// 视口属性
 	float viewportWidth = 0.0f;
 	float viewportHeight = 0.0f;
+	XMFLOAT4 windowBackgroundColor = kTransparentWindowBackgroundColor;
 
 	// 绘制函数部分
 public:
@@ -326,6 +327,10 @@ public:
 		};
 		context->ClearRenderTargetView(renderTargetView, clearColor);
 	}
+	void SetWindowBackgroundColor(XMFLOAT4 color)
+	{
+		windowBackgroundColor = color;
+	}
 
 	bool CreateSizeDependentResources(IDXGISwapChain1* swapChain, UINT width, UINT height)
 	{
@@ -408,10 +413,10 @@ public:
 
 		if (!CreateSizeDependentResources(swapChain, width, height)) return false;
 
-		ClearRTV(layerL2RTV, kTransparentWindowBackgroundColor);
+		ClearRTV(layerL2RTV, windowBackgroundColor);
 		ClearRTV(layerL1RTV, kTransparentLayerClearColor);
 		ClearRTV(layerL0RTV, kTransparentLayerClearColor);
-		ClearRTV(backBufferRTV, kTransparentWindowBackgroundColor);
+		ClearRTV(backBufferRTV, windowBackgroundColor);
 
 		const UINT copyWidth = min(oldWidth, width);
 		const UINT copyHeight = min(oldHeight, height);
