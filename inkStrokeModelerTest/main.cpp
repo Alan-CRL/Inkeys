@@ -18,6 +18,7 @@ namespace
 {
 	std::atomic<bool> g_clearCanvasRequested = false;
 	std::atomic<bool> g_resizeRequested = false;
+	std::atomic<bool> g_fullPresentRequested = false;
 	std::atomic<int> g_pendingResizeWidth = 0;
 	std::atomic<int> g_pendingResizeHeight = 0;
 	std::atomic<int> g_brushShapeType = 0; // 0: 原来的画笔
@@ -59,9 +60,14 @@ namespace
 		return kActiveTransparentPresentMode == TransparentPresentMode::UlwDirtyRect;
 	}
 
+	constexpr bool IsDwmBlurBehindMode()
+	{
+		return kActiveTransparentPresentMode == TransparentPresentMode::DwmBlurBehindWin7;
+	}
+
 	XMFLOAT4 GetActiveWindowBackgroundColor()
 	{
-		if (kActiveTransparentPresentMode == TransparentPresentMode::DwmBlurBehindWin7)
+		if (IsDwmBlurBehindMode())
 		{
 			return kTransparentLayerClearColor;
 		}
@@ -956,6 +962,7 @@ namespace
 				presentParameters.pDirtyRects = &dirty;
 			}
 
+			// DWM 路径仍由原 D3D swapchain Present1 输出，透明只来自 blur-behind 初始化和 backbuffer alpha。
 			return SUCCEEDED(swapChain->Present1(0, 0, &presentParameters));
 		}
 	};
@@ -1011,9 +1018,10 @@ namespace
 
 	void RefreshDwmBlurBehindAfterCompositionChanged()
 	{
-		if (kActiveTransparentPresentMode == TransparentPresentMode::DwmBlurBehindWin7)
+		if (IsDwmBlurBehindMode())
 		{
 			g_dwmBlurBehindPresenter.UpdateDwmBlurBehind();
+			g_fullPresentRequested.store(true, std::memory_order_release);
 		}
 	}
 }
@@ -1389,6 +1397,39 @@ LRESULT CALLBACK Draw3WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		RefreshDwmBlurBehindAfterCompositionChanged();
 		return 0;
 
+	case WM_ERASEBKGND:
+		if (IsDwmBlurBehindMode()) return 1;
+		break;
+
+	case WM_PAINT:
+		if (IsDwmBlurBehindMode())
+		{
+			// 新暴露区域可能没有 redirection surface 内容，交给主循环全量重提交一次。
+			g_fullPresentRequested.store(true, std::memory_order_release);
+			ValidateRect(hWnd, nullptr);
+			return 0;
+		}
+		break;
+
+	case WM_SHOWWINDOW:
+	case WM_ACTIVATE:
+		if (IsDwmBlurBehindMode())
+		{
+			g_fullPresentRequested.store(true, std::memory_order_release);
+		}
+		break;
+
+	case WM_WINDOWPOSCHANGED:
+		if (IsDwmBlurBehindMode())
+		{
+			const WINDOWPOS* windowPos = reinterpret_cast<const WINDOWPOS*>(lParam);
+			if (!windowPos || ((windowPos->flags & SWP_NOMOVE) == 0) || ((windowPos->flags & SWP_NOSIZE) == 0))
+			{
+				g_fullPresentRequested.store(true, std::memory_order_release);
+			}
+		}
+		break;
+
 	case WM_SIZE:
 		if (wParam != SIZE_MINIMIZED)
 		{
@@ -1400,6 +1441,10 @@ LRESULT CALLBACK Draw3WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				g_pendingResizeWidth.store(width, std::memory_order_relaxed);
 				g_pendingResizeHeight.store(height, std::memory_order_relaxed);
 				g_resizeRequested.store(true, std::memory_order_release);
+			}
+			if (IsDwmBlurBehindMode())
+			{
+				g_fullPresentRequested.store(true, std::memory_order_release);
 			}
 		}
 		break;
@@ -1502,9 +1547,11 @@ int main()
 		swapChainDesc.SampleDesc.Count = 1;
 		swapChainDesc.SampleDesc.Quality = 0;
 		swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-		swapChainDesc.BufferCount = 2;
+		swapChainDesc.BufferCount = IsDwmBlurBehindMode() ? 1 : 2;
 		swapChainDesc.Scaling = DXGI_SCALING_STRETCH;
-		swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+		// DWM blur-behind 的透明 alpha 需要走旧式 redirection surface；flip HWND swapchain 会把 alpha 当不透明黑处理。
+		swapChainDesc.SwapEffect = IsDwmBlurBehindMode() ? DXGI_SWAP_EFFECT_SEQUENTIAL : DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+		swapChainDesc.AlphaMode = IsDwmBlurBehindMode() ? DXGI_ALPHA_MODE_PREMULTIPLIED : DXGI_ALPHA_MODE_UNSPECIFIED;
 		swapChainDesc.Flags = 0;
 
 		CComPtr<IDXGIAdapter> dxgiAdapter;
@@ -1513,7 +1560,7 @@ int main()
 		CComPtr<IDXGIFactory2> dxgiFactory;
 		dxgiAdapter->GetParent(__uuidof(IDXGIFactory2), (void**)&dxgiFactory);
 
-		dxgiFactory->CreateSwapChainForHwnd(
+		HRESULT hr = dxgiFactory->CreateSwapChainForHwnd(
 			d3dDevice_HARDWARE,
 			windowHWND,
 			&swapChainDesc,
@@ -1521,6 +1568,24 @@ int main()
 			nullptr,
 			&swapChain
 		);
+		if (FAILED(hr) && IsDwmBlurBehindMode())
+		{
+			// 部分 HWND swapchain 不接受显式 alpha mode；保留 sequential，再退回默认 alpha mode 让 DWM blur 读取重定向面。
+			swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
+			hr = dxgiFactory->CreateSwapChainForHwnd(
+				d3dDevice_HARDWARE,
+				windowHWND,
+				&swapChainDesc,
+				nullptr,
+				nullptr,
+				&swapChain
+			);
+		}
+		if (FAILED(hr) || !swapChain)
+		{
+			cout << "Failed to create swap chain. HRESULT=0x" << hex << hr << dec << endl;
+			return -1;
+		}
 
 		// win7 上 SetBackgroundColor 会因 E_NOTIMPL 失败
 		//DXGI_RGBA color = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -1531,7 +1596,11 @@ int main()
 	// 后续修改，非 flip_discard
 
 	inkRenderer.SetWindowBackgroundColor(GetActiveWindowBackgroundColor());
-	inkRenderer.Init(d3dDevice_HARDWARE, d3dDeviceContext, swapChain, static_cast<UINT>(windowInfo.w), static_cast<UINT>(windowInfo.h));
+	if (!inkRenderer.Init(d3dDevice_HARDWARE, d3dDeviceContext, swapChain, static_cast<UINT>(windowInfo.w), static_cast<UINT>(windowInfo.h)))
+	{
+		cout << "Failed to initialize ink renderer." << endl;
+		return -1;
+	}
 	if (!InitializeTransparentPresenter(windowHWND, d3dDevice_HARDWARE, d3dDeviceContext, static_cast<UINT>(windowInfo.w), static_cast<UINT>(windowInfo.h)))
 	{
 		cout << "Failed to initialize transparent presenter." << endl;
@@ -1657,6 +1726,10 @@ int main()
 			clearCanvas();
 		}
 		processPendingResize(true);
+		if (g_fullPresentRequested.exchange(false, std::memory_order_acquire))
+		{
+			presentFullCanvas();
+		}
 
 		if (!hiex::peekmessage_win32(&m, EM_MOUSE, true, windowHWND))
 		{
