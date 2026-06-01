@@ -1205,18 +1205,21 @@ void LogFrameTiming(
 	double previousFrameMs,
 	bool idleFrozen)
 {
+	const int logicFps = (workMs > 0.001) ? static_cast<int>(1000.0 / workMs) : 0;
 	const int realFps = (previousFrameMs > 0.001) ? static_cast<int>(1000.0 / previousFrameMs) : 0;
 	char buffer[256];
 	// 输出含义：
 	// commit 已烘干到 L1 的真实点索引；work 当前帧绘制/模型耗时；
+	// logic 当前帧性能 FPS，不包含 HighPrecisionWait 等待时间；
 	// prev-real 上一整帧真实 FPS/耗时，包含等待和控制台输出；
 	// realPts/predPts/l0Pts 分别是真实点、预测点、当前 L0 绘制点数；frozen 表示停笔稳定后是否冻结输入。
 	const int lineLength = std::snprintf(
 		buffer,
 		sizeof(buffer),
-		"commit:%zu work:%.3fms prev-real:%d FPS(%.3fms) realPts:%zu predPts:%zu l0Pts:%zu frozen:%d\r\n",
+		"commit:%zu work:%.3fms logic:%d FPS prev-real:%d FPS(%.3fms) realPts:%zu predPts:%zu l0Pts:%zu frozen:%d\r\n",
 		committedIndex,
 		workMs,
+		logicFps,
 		realFps,
 		previousFrameMs,
 		realPointCount,
