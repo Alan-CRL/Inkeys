@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 #include <limits>
+#include <dcomp.h>
 #include <dwmapi.h>
 
 #pragma comment(lib, "dwmapi.lib")
@@ -46,18 +47,23 @@ namespace
 	enum class TransparentPresentMode
 	{
 		UlwDirtyRect, // ULW + dirty rect，保留近透明背景避免鼠标穿透。
-		DirectCompositionVisualTree, // 后续预留 DComp 视觉树路径。
+		DirectCompositionVisualTree, // DComp 单 visual + composition swapchain 路径。
 		DwmBlurBehindWin7 // 参考 DirectInkPresenter 的 Win7 DWM blur-behind 思路。
 	};
 
 	constexpr InkPredictionMode kActivePredictionMode = InkPredictionMode::Kalman;
 	constexpr LiveTipLengthMode kActiveLiveTipLengthMode = LiveTipLengthMode::Normal;
 	constexpr DebugLayerColorMode kActiveDebugLayerColorMode = DebugLayerColorMode::NormalInkColor;
-	constexpr TransparentPresentMode kActiveTransparentPresentMode = TransparentPresentMode::DwmBlurBehindWin7;
+	constexpr TransparentPresentMode kActiveTransparentPresentMode = TransparentPresentMode::DirectCompositionVisualTree;
 
 	constexpr bool IsUlwDirtyRectMode()
 	{
 		return kActiveTransparentPresentMode == TransparentPresentMode::UlwDirtyRect;
+	}
+
+	constexpr bool IsDirectCompositionMode()
+	{
+		return kActiveTransparentPresentMode == TransparentPresentMode::DirectCompositionVisualTree;
 	}
 
 	constexpr bool IsDwmBlurBehindMode()
@@ -65,9 +71,14 @@ namespace
 		return kActiveTransparentPresentMode == TransparentPresentMode::DwmBlurBehindWin7;
 	}
 
+	constexpr bool IsGpuTransparentCompositionMode()
+	{
+		return IsDirectCompositionMode() || IsDwmBlurBehindMode();
+	}
+
 	XMFLOAT4 GetActiveWindowBackgroundColor()
 	{
-		if (IsDwmBlurBehindMode())
+		if (IsGpuTransparentCompositionMode())
 		{
 			return kTransparentLayerClearColor;
 		}
@@ -866,43 +877,190 @@ namespace
 
 	UlwDirtyRectPresenter g_ulwDirtyRectPresenter;
 
+	bool PresentSwapChainWithDirtyRects(IDXGISwapChain1* swapChain, RECT dirty, bool presentFull)
+	{
+		if (!swapChain) return false;
+
+		DXGI_PRESENT_PARAMETERS presentParameters = {};
+		if (!presentFull)
+		{
+			dirty.left = max(0L, dirty.left);
+			dirty.top = max(0L, dirty.top);
+			dirty.right = min(static_cast<LONG>(windowInfo.w), dirty.right);
+			dirty.bottom = min(static_cast<LONG>(windowInfo.h), dirty.bottom);
+			if (dirty.left >= dirty.right || dirty.top >= dirty.bottom) return true;
+
+			presentParameters.DirtyRectsCount = 1;
+			presentParameters.pDirtyRects = &dirty;
+		}
+
+		return SUCCEEDED(swapChain->Present1(0, 0, &presentParameters));
+	}
+
+	void LogHresult(const char* step, HRESULT hr)
+	{
+		cout << step << " failed. HRESULT=0x" << hex << static_cast<unsigned long>(hr) << dec << endl;
+	}
+
+	bool EnsureSystemChromeForGpuComposition(HWND hwnd, bool noRedirectionBitmap)
+	{
+		if (!hwnd) return false;
+
+		WCHAR title[128] = {};
+		if (!GetWindowTextW(hwnd, title, ARRAYSIZE(title)) || title[0] == L'\0')
+		{
+			SetWindowTextW(hwnd, L"Ink Stroke Modeler Test");
+		}
+
+		bool changed = false;
+		const LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
+		const LONG_PTR desiredStyle = style | WS_OVERLAPPEDWINDOW;
+		if (desiredStyle != style)
+		{
+			SetWindowLongPtr(hwnd, GWL_STYLE, desiredStyle);
+			changed = true;
+		}
+
+		const LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+		LONG_PTR desiredExStyle = (exStyle & ~(WS_EX_LAYERED | WS_EX_TRANSPARENT)) | WS_EX_WINDOWEDGE;
+		if (noRedirectionBitmap)
+		{
+			// DComp 内容由 visual tree 进入 DWM，避免 HWND 自身重定向位图盖住透明客户区。
+			desiredExStyle |= WS_EX_NOREDIRECTIONBITMAP;
+		}
+		else
+		{
+			desiredExStyle &= ~WS_EX_NOREDIRECTIONBITMAP;
+		}
+		if (desiredExStyle != exStyle)
+		{
+			SetWindowLongPtr(hwnd, GWL_EXSTYLE, desiredExStyle);
+			changed = true;
+		}
+
+		if (changed)
+		{
+			SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+				SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+		}
+		return true;
+	}
+
+	struct DirectCompositionVisualTreePresenter
+	{
+		HWND hwnd = nullptr;
+		HMODULE dcompModule = nullptr;
+		CComPtr<IDCompositionDevice> compositionDevice;
+		CComPtr<IDCompositionTarget> compositionTarget;
+		CComPtr<IDCompositionVisual> rootVisual;
+
+		using DCompositionCreateDeviceFn = HRESULT(WINAPI*)(IDXGIDevice*, REFIID, void**);
+
+		bool LoadDCompCreateDevice(DCompositionCreateDeviceFn& createDevice)
+		{
+			createDevice = nullptr;
+			if (!dcompModule)
+			{
+				dcompModule = LoadLibraryW(L"dcomp.dll");
+				if (!dcompModule)
+				{
+					cout << "DirectComposition unavailable. LoadLibrary(dcomp.dll) GetLastError="
+						<< GetLastError() << endl;
+					return false;
+				}
+			}
+
+			createDevice = reinterpret_cast<DCompositionCreateDeviceFn>(
+				GetProcAddress(dcompModule, "DCompositionCreateDevice")
+			);
+			if (!createDevice)
+			{
+				cout << "DirectComposition unavailable. GetProcAddress(DCompositionCreateDevice) GetLastError="
+					<< GetLastError() << endl;
+				return false;
+			}
+			return true;
+		}
+
+		bool Initialize(HWND inHwnd, IDXGIDevice* dxgiDevice, IDXGISwapChain1* swapChain, UINT width, UINT height)
+		{
+			(void)width;
+			(void)height;
+			hwnd = inHwnd;
+			if (!hwnd || !dxgiDevice || !swapChain) return false;
+			if (!EnsureSystemChromeForGpuComposition(hwnd, true)) return false;
+
+			DCompositionCreateDeviceFn createDevice = nullptr;
+			if (!LoadDCompCreateDevice(createDevice)) return false;
+
+			IDCompositionDevice* rawDevice = nullptr;
+			HRESULT hr = createDevice(dxgiDevice, __uuidof(IDCompositionDevice), reinterpret_cast<void**>(&rawDevice));
+			if (FAILED(hr) || !rawDevice)
+			{
+				LogHresult("DCompositionCreateDevice", hr);
+				return false;
+			}
+			compositionDevice.Attach(rawDevice);
+
+			hr = compositionDevice->CreateTargetForHwnd(hwnd, TRUE, &compositionTarget);
+			if (FAILED(hr) || !compositionTarget)
+			{
+				LogHresult("IDCompositionDevice::CreateTargetForHwnd", hr);
+				return false;
+			}
+
+			hr = compositionDevice->CreateVisual(&rootVisual);
+			if (FAILED(hr) || !rootVisual)
+			{
+				LogHresult("IDCompositionDevice::CreateVisual", hr);
+				return false;
+			}
+
+			hr = rootVisual->SetContent(swapChain);
+			if (FAILED(hr))
+			{
+				LogHresult("IDCompositionVisual::SetContent", hr);
+				return false;
+			}
+
+			hr = compositionTarget->SetRoot(rootVisual);
+			if (FAILED(hr))
+			{
+				LogHresult("IDCompositionTarget::SetRoot", hr);
+				return false;
+			}
+
+			hr = compositionDevice->Commit();
+			if (FAILED(hr))
+			{
+				LogHresult("IDCompositionDevice::Commit", hr);
+				return false;
+			}
+			return true;
+		}
+
+		bool Resize(UINT width, UINT height)
+		{
+			(void)width;
+			(void)height;
+			return true;
+		}
+
+		bool Present(IDXGISwapChain1* swapChain, RECT dirty, bool presentFull)
+		{
+			return PresentSwapChainWithDirtyRects(swapChain, dirty, presentFull);
+		}
+	};
+
+	DirectCompositionVisualTreePresenter g_directCompositionPresenter;
+
 	struct DwmBlurBehindPresenter
 	{
 		HWND hwnd = nullptr;
 
 		bool EnsureSystemChrome()
 		{
-			if (!hwnd) return false;
-
-			WCHAR title[128] = {};
-			if (!GetWindowTextW(hwnd, title, ARRAYSIZE(title)) || title[0] == L'\0')
-			{
-				SetWindowTextW(hwnd, L"Ink Stroke Modeler Test");
-			}
-
-			bool changed = false;
-			const LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
-			const LONG_PTR desiredStyle = style | WS_OVERLAPPEDWINDOW;
-			if (desiredStyle != style)
-			{
-				SetWindowLongPtr(hwnd, GWL_STYLE, desiredStyle);
-				changed = true;
-			}
-
-			const LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
-			const LONG_PTR desiredExStyle = (exStyle & ~(WS_EX_LAYERED | WS_EX_TRANSPARENT)) | WS_EX_WINDOWEDGE;
-			if (desiredExStyle != exStyle)
-			{
-				SetWindowLongPtr(hwnd, GWL_EXSTYLE, desiredExStyle);
-				changed = true;
-			}
-
-			if (changed)
-			{
-				SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
-					SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-			}
-			return true;
+			return EnsureSystemChromeForGpuComposition(hwnd, false);
 		}
 
 		bool UpdateDwmBlurBehind()
@@ -947,39 +1105,35 @@ namespace
 
 		bool Present(IDXGISwapChain1* swapChain, RECT dirty, bool presentFull)
 		{
-			if (!swapChain) return false;
-
-			DXGI_PRESENT_PARAMETERS presentParameters = {};
-			if (!presentFull)
-			{
-				dirty.left = max(0L, dirty.left);
-				dirty.top = max(0L, dirty.top);
-				dirty.right = min(static_cast<LONG>(windowInfo.w), dirty.right);
-				dirty.bottom = min(static_cast<LONG>(windowInfo.h), dirty.bottom);
-				if (dirty.left >= dirty.right || dirty.top >= dirty.bottom) return true;
-
-				presentParameters.DirtyRectsCount = 1;
-				presentParameters.pDirtyRects = &dirty;
-			}
-
 			// DWM 路径仍由原 D3D swapchain Present1 输出，透明只来自 blur-behind 初始化和 backbuffer alpha。
-			return SUCCEEDED(swapChain->Present1(0, 0, &presentParameters));
+			return PresentSwapChainWithDirtyRects(swapChain, dirty, presentFull);
 		}
 	};
 
 	DwmBlurBehindPresenter g_dwmBlurBehindPresenter;
 
-	bool InitializeTransparentPresenter(HWND hwnd, ID3D11Device* device, ID3D11DeviceContext* context, UINT width, UINT height)
+	bool InitializeTransparentPresenter(
+		HWND hwnd,
+		ID3D11Device* device,
+		ID3D11DeviceContext* context,
+		IDXGIDevice* dxgiDevice,
+		IDXGISwapChain1* swapChain,
+		UINT width,
+		UINT height)
 	{
 		switch (kActiveTransparentPresentMode)
 		{
 		case TransparentPresentMode::UlwDirtyRect:
 			return g_ulwDirtyRectPresenter.Initialize(hwnd, device, context, width, height);
 		case TransparentPresentMode::DirectCompositionVisualTree:
-			return false;
+			(void)device;
+			(void)context;
+			return g_directCompositionPresenter.Initialize(hwnd, dxgiDevice, swapChain, width, height);
 		case TransparentPresentMode::DwmBlurBehindWin7:
 			(void)device;
 			(void)context;
+			(void)dxgiDevice;
+			(void)swapChain;
 			return g_dwmBlurBehindPresenter.Initialize(hwnd, width, height);
 		default:
 			return false;
@@ -993,7 +1147,7 @@ namespace
 		case TransparentPresentMode::UlwDirtyRect:
 			return g_ulwDirtyRectPresenter.Resize(width, height);
 		case TransparentPresentMode::DirectCompositionVisualTree:
-			return false;
+			return g_directCompositionPresenter.Resize(width, height);
 		case TransparentPresentMode::DwmBlurBehindWin7:
 			return g_dwmBlurBehindPresenter.Resize(width, height);
 		default:
@@ -1008,7 +1162,7 @@ namespace
 		case TransparentPresentMode::UlwDirtyRect:
 			return g_ulwDirtyRectPresenter.Present(inkRenderer.backBufferTexture, dirty, presentFull);
 		case TransparentPresentMode::DirectCompositionVisualTree:
-			return false;
+			return g_directCompositionPresenter.Present(swapChain, dirty, presentFull);
 		case TransparentPresentMode::DwmBlurBehindWin7:
 			return g_dwmBlurBehindPresenter.Present(swapChain, dirty, presentFull);
 		default:
@@ -1401,11 +1555,11 @@ LRESULT CALLBACK Draw3WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		return 0;
 
 	case WM_ERASEBKGND:
-		if (IsDwmBlurBehindMode()) return 1;
+		if (IsGpuTransparentCompositionMode()) return 1;
 		break;
 
 	case WM_PAINT:
-		if (IsDwmBlurBehindMode())
+		if (IsGpuTransparentCompositionMode())
 		{
 			// 新暴露区域可能没有 redirection surface 内容，交给主循环全量重提交一次。
 			g_fullPresentRequested.store(true, std::memory_order_release);
@@ -1416,14 +1570,14 @@ LRESULT CALLBACK Draw3WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 	case WM_SHOWWINDOW:
 	case WM_ACTIVATE:
-		if (IsDwmBlurBehindMode())
+		if (IsGpuTransparentCompositionMode())
 		{
 			g_fullPresentRequested.store(true, std::memory_order_release);
 		}
 		break;
 
 	case WM_WINDOWPOSCHANGED:
-		if (IsDwmBlurBehindMode())
+		if (IsGpuTransparentCompositionMode())
 		{
 			const WINDOWPOS* windowPos = reinterpret_cast<const WINDOWPOS*>(lParam);
 			if (!windowPos || ((windowPos->flags & SWP_NOMOVE) == 0) || ((windowPos->flags & SWP_NOSIZE) == 0))
@@ -1445,7 +1599,7 @@ LRESULT CALLBACK Draw3WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				g_pendingResizeHeight.store(height, std::memory_order_relaxed);
 				g_resizeRequested.store(true, std::memory_order_release);
 			}
-			if (IsDwmBlurBehindMode())
+			if (IsGpuTransparentCompositionMode())
 			{
 				g_fullPresentRequested.store(true, std::memory_order_release);
 			}
@@ -1477,6 +1631,11 @@ int main()
 
 	// 窗口创建
 	{
+		if (IsDirectCompositionMode())
+		{
+			// DComp 仍走原 D3D composition swapchain；这里仅在创建 HWND 前避免重定向位图垫住透明客户区。
+			hiex::PreSetWindowStyleEx(WS_EX_WINDOWEDGE | WS_EX_NOREDIRECTIONBITMAP);
+		}
 		windowHWND = hiex::initgraph_win32(windowInfo.w, windowInfo.h, EW_SHOWCONSOLE, _T(""), Draw3WndProc);
 	}
 
@@ -1552,9 +1711,9 @@ int main()
 		swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 		swapChainDesc.BufferCount = IsDwmBlurBehindMode() ? 1 : 2;
 		swapChainDesc.Scaling = DXGI_SCALING_STRETCH;
-		// DWM blur-behind 的透明 alpha 需要走旧式 redirection surface；flip HWND swapchain 会把 alpha 当不透明黑处理。
+		// DComp 使用 composition swapchain 的 premultiplied alpha；DWM blur-behind 保留旧式 redirection surface。
 		swapChainDesc.SwapEffect = IsDwmBlurBehindMode() ? DXGI_SWAP_EFFECT_SEQUENTIAL : DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-		swapChainDesc.AlphaMode = IsDwmBlurBehindMode() ? DXGI_ALPHA_MODE_PREMULTIPLIED : DXGI_ALPHA_MODE_UNSPECIFIED;
+		swapChainDesc.AlphaMode = IsGpuTransparentCompositionMode() ? DXGI_ALPHA_MODE_PREMULTIPLIED : DXGI_ALPHA_MODE_UNSPECIFIED;
 		swapChainDesc.Flags = 0;
 
 		CComPtr<IDXGIAdapter> dxgiAdapter;
@@ -1563,18 +1722,22 @@ int main()
 		CComPtr<IDXGIFactory2> dxgiFactory;
 		dxgiAdapter->GetParent(__uuidof(IDXGIFactory2), (void**)&dxgiFactory);
 
-		HRESULT hr = dxgiFactory->CreateSwapChainForHwnd(
-			d3dDevice_HARDWARE,
-			windowHWND,
-			&swapChainDesc,
-			nullptr,
-			nullptr,
-			&swapChain
-		);
-		if (FAILED(hr) && IsDwmBlurBehindMode())
+		HRESULT hr = S_OK;
+		if (IsDirectCompositionMode())
 		{
-			// 部分 HWND swapchain 不接受显式 alpha mode；保留 sequential，再退回默认 alpha mode 让 DWM blur 读取重定向面。
-			swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
+			hr = dxgiFactory->CreateSwapChainForComposition(
+				d3dDevice_HARDWARE,
+				&swapChainDesc,
+				nullptr,
+				&swapChain
+			);
+			if (FAILED(hr))
+			{
+				LogHresult("IDXGIFactory2::CreateSwapChainForComposition", hr);
+			}
+		}
+		else
+		{
 			hr = dxgiFactory->CreateSwapChainForHwnd(
 				d3dDevice_HARDWARE,
 				windowHWND,
@@ -1583,6 +1746,19 @@ int main()
 				nullptr,
 				&swapChain
 			);
+			if (FAILED(hr) && IsDwmBlurBehindMode())
+			{
+				// 部分 HWND swapchain 不接受显式 alpha mode；保留 sequential，再退回默认 alpha mode 让 DWM blur 读取重定向面。
+				swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
+				hr = dxgiFactory->CreateSwapChainForHwnd(
+					d3dDevice_HARDWARE,
+					windowHWND,
+					&swapChainDesc,
+					nullptr,
+					nullptr,
+					&swapChain
+				);
+			}
 		}
 		if (FAILED(hr) || !swapChain)
 		{
@@ -1604,7 +1780,14 @@ int main()
 		cout << "Failed to initialize ink renderer." << endl;
 		return -1;
 	}
-	if (!InitializeTransparentPresenter(windowHWND, d3dDevice_HARDWARE, d3dDeviceContext, static_cast<UINT>(windowInfo.w), static_cast<UINT>(windowInfo.h)))
+	if (!InitializeTransparentPresenter(
+		windowHWND,
+		d3dDevice_HARDWARE,
+		d3dDeviceContext,
+		dxgiDevice1,
+		swapChain,
+		static_cast<UINT>(windowInfo.w),
+		static_cast<UINT>(windowInfo.h)))
 	{
 		cout << "Failed to initialize transparent presenter." << endl;
 		return -1;
@@ -1712,7 +1895,7 @@ int main()
 				return false;
 			}
 
-			// resize 后窗口逻辑尺寸立即跟随，新区域由 L2 白底和透明 L1/L0 重新合成。
+			// resize 后窗口逻辑尺寸立即跟随，新区域由 L2 的当前模式背景色和透明 L1/L0 重新合成。
 			windowInfo.w = width;
 			windowInfo.h = height;
 			if (presentAfterResize) presentFullCanvas();
