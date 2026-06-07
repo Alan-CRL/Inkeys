@@ -1355,17 +1355,9 @@ namespace
 		if (FAILED(hr) && IsDwmBlurBehindMode(mode))
 		{
 			LogHresult("DwmBlurBehind CreateSwapChainForHwnd premultiplied alpha", hr);
-			cout << "[DwmBlurBehind] Retry CreateSwapChainForHwnd with unspecified alpha mode." << endl;
+			cout << "[DwmBlurBehind] Premultiplied alpha is required for this transparent path; fallback to next mode." << endl;
 			outSwapChain.Release();
-			swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
-			hr = dxgiFactory->CreateSwapChainForHwnd(
-				device,
-				hwnd,
-				&swapChainDesc,
-				nullptr,
-				nullptr,
-				&outSwapChain
-			);
+			return false;
 		}
 		if (FAILED(hr) || !outSwapChain)
 		{
