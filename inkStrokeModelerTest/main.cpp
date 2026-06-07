@@ -48,41 +48,83 @@ namespace
 	{
 		UlwDirtyRect, // ULW + dirty rect，保留近透明背景避免鼠标穿透。
 		DirectCompositionVisualTree, // DComp 单 visual + composition swapchain 路径。
-		DwmBlurBehindWin7 // 参考 DirectInkPresenter 的 Win7 DWM blur-behind 思路。
+		DwmBlurBehind // 参考 DirectInkPresenter 的 DWM blur-behind 思路。
 	};
 
 	constexpr InkPredictionMode kActivePredictionMode = InkPredictionMode::Kalman;
 	constexpr LiveTipLengthMode kActiveLiveTipLengthMode = LiveTipLengthMode::Normal;
 	constexpr DebugLayerColorMode kActiveDebugLayerColorMode = DebugLayerColorMode::NormalInkColor;
-	constexpr TransparentPresentMode kActiveTransparentPresentMode = TransparentPresentMode::DirectCompositionVisualTree;
+	constexpr TransparentPresentMode kPreferredTransparentPresentMode = TransparentPresentMode::DirectCompositionVisualTree;
+	TransparentPresentMode g_activeTransparentPresentMode = kPreferredTransparentPresentMode;
+	bool g_presentFailureLogged = false;
 
-	constexpr bool IsUlwDirtyRectMode()
+	const char* TransparentPresentModeName(TransparentPresentMode mode)
 	{
-		return kActiveTransparentPresentMode == TransparentPresentMode::UlwDirtyRect;
+		switch (mode)
+		{
+		case TransparentPresentMode::UlwDirtyRect:
+			return "UlwDirtyRect";
+		case TransparentPresentMode::DirectCompositionVisualTree:
+			return "DirectCompositionVisualTree";
+		case TransparentPresentMode::DwmBlurBehind:
+			return "DwmBlurBehind";
+		default:
+			return "Unknown";
+		}
 	}
 
-	constexpr bool IsDirectCompositionMode()
+	bool IsUlwDirtyRectMode(TransparentPresentMode mode)
 	{
-		return kActiveTransparentPresentMode == TransparentPresentMode::DirectCompositionVisualTree;
+		return mode == TransparentPresentMode::UlwDirtyRect;
 	}
 
-	constexpr bool IsDwmBlurBehindMode()
+	bool IsUlwDirtyRectMode()
 	{
-		return kActiveTransparentPresentMode == TransparentPresentMode::DwmBlurBehindWin7;
+		return IsUlwDirtyRectMode(g_activeTransparentPresentMode);
 	}
 
-	constexpr bool IsGpuTransparentCompositionMode()
+	bool IsDirectCompositionMode(TransparentPresentMode mode)
 	{
-		return IsDirectCompositionMode() || IsDwmBlurBehindMode();
+		return mode == TransparentPresentMode::DirectCompositionVisualTree;
 	}
 
-	XMFLOAT4 GetActiveWindowBackgroundColor()
+	bool IsDirectCompositionMode()
 	{
-		if (IsGpuTransparentCompositionMode())
+		return IsDirectCompositionMode(g_activeTransparentPresentMode);
+	}
+
+	bool IsDwmBlurBehindMode(TransparentPresentMode mode)
+	{
+		return mode == TransparentPresentMode::DwmBlurBehind;
+	}
+
+	bool IsDwmBlurBehindMode()
+	{
+		return IsDwmBlurBehindMode(g_activeTransparentPresentMode);
+	}
+
+	bool IsGpuTransparentCompositionMode(TransparentPresentMode mode)
+	{
+		return IsDirectCompositionMode(mode) || IsDwmBlurBehindMode(mode);
+	}
+
+	bool IsGpuTransparentCompositionMode()
+	{
+		return IsGpuTransparentCompositionMode(g_activeTransparentPresentMode);
+	}
+
+	XMFLOAT4 GetWindowBackgroundColorForMode(TransparentPresentMode mode)
+	{
+		if (IsGpuTransparentCompositionMode(mode))
 		{
 			return kTransparentLayerClearColor;
 		}
 		return kTransparentWindowBackgroundColor;
+	}
+
+	XMFLOAT4 GetActiveWindowBackgroundColor()
+	{
+		return GetWindowBackgroundColorForMode(g_activeTransparentPresentMode);
 	}
 
 	enum class StrokeTimingProfileId
@@ -675,6 +717,17 @@ namespace
 			clientOffsetY = 0;
 		}
 
+		void Reset()
+		{
+			ReleaseDib();
+			stagingTexture.Release();
+			device.Release();
+			context.Release();
+			stagingWidth = 0;
+			stagingHeight = 0;
+			hwnd = nullptr;
+		}
+
 		bool CreateStagingTexture(UINT width, UINT height)
 		{
 			if (!device || width == 0 || height == 0) return false;
@@ -760,6 +813,7 @@ namespace
 
 		bool Initialize(HWND inHwnd, ID3D11Device* inDevice, ID3D11DeviceContext* inContext, UINT width, UINT height)
 		{
+			Reset();
 			hwnd = inHwnd;
 			device = inDevice;
 			context = inContext;
@@ -902,6 +956,24 @@ namespace
 		cout << step << " failed. HRESULT=0x" << hex << static_cast<unsigned long>(hr) << dec << endl;
 	}
 
+	void LogWin32Error(const char* step, DWORD error)
+	{
+		cout << step << " failed. GetLastError=" << error << endl;
+	}
+
+	bool TrySetWindowLongPtr(HWND hwnd, int index, LONG_PTR value, const char* step)
+	{
+		SetLastError(ERROR_SUCCESS);
+		const LONG_PTR previousValue = SetWindowLongPtr(hwnd, index, value);
+		const DWORD error = GetLastError();
+		if (previousValue == 0 && error != ERROR_SUCCESS)
+		{
+			LogWin32Error(step, error);
+			return false;
+		}
+		return true;
+	}
+
 	bool EnsureSystemChromeForGpuComposition(HWND hwnd, bool noRedirectionBitmap)
 	{
 		if (!hwnd) return false;
@@ -917,7 +989,10 @@ namespace
 		const LONG_PTR desiredStyle = style | WS_OVERLAPPEDWINDOW;
 		if (desiredStyle != style)
 		{
-			SetWindowLongPtr(hwnd, GWL_STYLE, desiredStyle);
+			if (!TrySetWindowLongPtr(hwnd, GWL_STYLE, desiredStyle, "SetWindowLongPtr(GWL_STYLE)"))
+			{
+				return false;
+			}
 			changed = true;
 		}
 
@@ -934,12 +1009,41 @@ namespace
 		}
 		if (desiredExStyle != exStyle)
 		{
-			SetWindowLongPtr(hwnd, GWL_EXSTYLE, desiredExStyle);
+			if (!TrySetWindowLongPtr(hwnd, GWL_EXSTYLE, desiredExStyle, "SetWindowLongPtr(GWL_EXSTYLE)"))
+			{
+				return false;
+			}
 			changed = true;
 		}
 
 		if (changed)
 		{
+			SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+				SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+		}
+		return true;
+	}
+
+	bool EnsureUlwWindowStyle(HWND hwnd)
+	{
+		if (!hwnd) return false;
+
+		WCHAR title[128] = {};
+		if (!GetWindowTextW(hwnd, title, ARRAYSIZE(title)) || title[0] == L'\0')
+		{
+			SetWindowTextW(hwnd, L"Ink Stroke Modeler Test");
+		}
+
+		const LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+		const LONG_PTR desiredExStyle =
+			(exStyle & ~(WS_EX_TRANSPARENT | WS_EX_NOREDIRECTIONBITMAP)) | WS_EX_LAYERED;
+		if (desiredExStyle != exStyle)
+		{
+			// ULW 只启用 layered window，不设置 WS_EX_TRANSPARENT，避免鼠标穿透。
+			if (!TrySetWindowLongPtr(hwnd, GWL_EXSTYLE, desiredExStyle, "SetWindowLongPtr(ULW GWL_EXSTYLE)"))
+			{
+				return false;
+			}
 			SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
 				SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 		}
@@ -955,6 +1059,14 @@ namespace
 		CComPtr<IDCompositionVisual> rootVisual;
 
 		using DCompositionCreateDeviceFn = HRESULT(WINAPI*)(IDXGIDevice*, REFIID, void**);
+
+		void Reset()
+		{
+			rootVisual.Release();
+			compositionTarget.Release();
+			compositionDevice.Release();
+			hwnd = nullptr;
+		}
 
 		bool LoadDCompCreateDevice(DCompositionCreateDeviceFn& createDevice)
 		{
@@ -986,6 +1098,7 @@ namespace
 		{
 			(void)width;
 			(void)height;
+			Reset();
 			hwnd = inHwnd;
 			if (!hwnd || !dxgiDevice || !swapChain) return false;
 			if (!EnsureSystemChromeForGpuComposition(hwnd, true)) return false;
@@ -1058,6 +1171,11 @@ namespace
 	{
 		HWND hwnd = nullptr;
 
+		void Reset()
+		{
+			hwnd = nullptr;
+		}
+
 		bool EnsureSystemChrome()
 		{
 			return EnsureSystemChromeForGpuComposition(hwnd, false);
@@ -1069,9 +1187,15 @@ namespace
 
 			BOOL compositionEnabled = FALSE;
 			HRESULT hr = DwmIsCompositionEnabled(&compositionEnabled);
-			if (FAILED(hr) || !compositionEnabled)
+			if (FAILED(hr))
 			{
-				return true;
+				LogHresult("DwmBlurBehind DwmIsCompositionEnabled", hr);
+				return false;
+			}
+			if (!compositionEnabled)
+			{
+				cout << "[DwmBlurBehind] DWM composition is disabled." << endl;
+				return false;
 			}
 
 			// 参考 DirectInkPresenter：整窗 blur region 让 premultiplied BGRA 背景透出。
@@ -1085,6 +1209,10 @@ namespace
 			blurBehind.fTransitionOnMaximized = TRUE;
 			hr = DwmEnableBlurBehindWindow(hwnd, &blurBehind);
 			DeleteObject(blurRegion);
+			if (FAILED(hr))
+			{
+				LogHresult("DwmBlurBehind DwmEnableBlurBehindWindow", hr);
+			}
 			return SUCCEEDED(hr);
 		}
 
@@ -1092,6 +1220,7 @@ namespace
 		{
 			(void)width;
 			(void)height;
+			Reset();
 			hwnd = inHwnd;
 			return EnsureSystemChrome() && UpdateDwmBlurBehind();
 		}
@@ -1112,6 +1241,137 @@ namespace
 
 	DwmBlurBehindPresenter g_dwmBlurBehindPresenter;
 
+	void ResetTransparentPresenters()
+	{
+		g_ulwDirtyRectPresenter.Reset();
+		g_directCompositionPresenter.Reset();
+		g_dwmBlurBehindPresenter.Reset();
+		g_presentFailureLogged = false;
+	}
+
+	void ReleaseTransparentPipelineAttempt(CComPtr<IDXGISwapChain1>& swapChain)
+	{
+		ResetTransparentPresenters();
+		inkRenderer.ReleaseResources();
+		swapChain.Release();
+	}
+
+	bool ConfigureWindowForTransparentMode(TransparentPresentMode mode, HWND hwnd)
+	{
+		switch (mode)
+		{
+		case TransparentPresentMode::UlwDirtyRect:
+			return EnsureUlwWindowStyle(hwnd);
+		case TransparentPresentMode::DirectCompositionVisualTree:
+			return EnsureSystemChromeForGpuComposition(hwnd, true);
+		case TransparentPresentMode::DwmBlurBehind:
+			return EnsureSystemChromeForGpuComposition(hwnd, false);
+		default:
+			return false;
+		}
+	}
+
+	int BuildTransparentPresentFallbackModes(TransparentPresentMode preferredMode, TransparentPresentMode modes[3])
+	{
+		switch (preferredMode)
+		{
+		case TransparentPresentMode::UlwDirtyRect:
+			modes[0] = TransparentPresentMode::UlwDirtyRect;
+			return 1;
+		case TransparentPresentMode::DwmBlurBehind:
+			modes[0] = TransparentPresentMode::DwmBlurBehind;
+			modes[1] = TransparentPresentMode::UlwDirtyRect;
+			return 2;
+		case TransparentPresentMode::DirectCompositionVisualTree:
+		default:
+			modes[0] = TransparentPresentMode::DirectCompositionVisualTree;
+			modes[1] = TransparentPresentMode::DwmBlurBehind;
+			modes[2] = TransparentPresentMode::UlwDirtyRect;
+			return 3;
+		}
+	}
+
+	bool CreateSwapChainForTransparentMode(
+		TransparentPresentMode mode,
+		IDXGIFactory2* dxgiFactory,
+		ID3D11Device* device,
+		HWND hwnd,
+		UINT width,
+		UINT height,
+		CComPtr<IDXGISwapChain1>& outSwapChain)
+	{
+		outSwapChain.Release();
+		if (!dxgiFactory || !device || !hwnd || width == 0 || height == 0) return false;
+
+		DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
+		swapChainDesc.Width = width;
+		swapChainDesc.Height = height;
+		swapChainDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+		swapChainDesc.Stereo = FALSE;
+		swapChainDesc.SampleDesc.Count = 1;
+		swapChainDesc.SampleDesc.Quality = 0;
+		swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+		swapChainDesc.BufferCount = IsDwmBlurBehindMode(mode) ? 1 : 2;
+		swapChainDesc.Scaling = DXGI_SCALING_STRETCH;
+		swapChainDesc.SwapEffect = IsDwmBlurBehindMode(mode) ? DXGI_SWAP_EFFECT_SEQUENTIAL : DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+		swapChainDesc.AlphaMode = IsGpuTransparentCompositionMode(mode) ? DXGI_ALPHA_MODE_PREMULTIPLIED : DXGI_ALPHA_MODE_UNSPECIFIED;
+		swapChainDesc.Flags = 0;
+
+		HRESULT hr = S_OK;
+		if (IsDirectCompositionMode(mode))
+		{
+			hr = dxgiFactory->CreateSwapChainForComposition(
+				device,
+				&swapChainDesc,
+				nullptr,
+				&outSwapChain
+			);
+			if (FAILED(hr) || !outSwapChain)
+			{
+				LogHresult("DirectCompositionVisualTree CreateSwapChainForComposition", hr);
+				return false;
+			}
+			return true;
+		}
+
+		hr = dxgiFactory->CreateSwapChainForHwnd(
+			device,
+			hwnd,
+			&swapChainDesc,
+			nullptr,
+			nullptr,
+			&outSwapChain
+		);
+		if (FAILED(hr) && IsDwmBlurBehindMode(mode))
+		{
+			LogHresult("DwmBlurBehind CreateSwapChainForHwnd premultiplied alpha", hr);
+			cout << "[DwmBlurBehind] Retry CreateSwapChainForHwnd with unspecified alpha mode." << endl;
+			outSwapChain.Release();
+			swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
+			hr = dxgiFactory->CreateSwapChainForHwnd(
+				device,
+				hwnd,
+				&swapChainDesc,
+				nullptr,
+				nullptr,
+				&outSwapChain
+			);
+		}
+		if (FAILED(hr) || !outSwapChain)
+		{
+			if (IsDwmBlurBehindMode(mode))
+			{
+				LogHresult("DwmBlurBehind CreateSwapChainForHwnd", hr);
+			}
+			else
+			{
+				LogHresult("UlwDirtyRect CreateSwapChainForHwnd", hr);
+			}
+			return false;
+		}
+		return true;
+	}
+
 	bool InitializeTransparentPresenter(
 		HWND hwnd,
 		ID3D11Device* device,
@@ -1121,7 +1381,7 @@ namespace
 		UINT width,
 		UINT height)
 	{
-		switch (kActiveTransparentPresentMode)
+		switch (g_activeTransparentPresentMode)
 		{
 		case TransparentPresentMode::UlwDirtyRect:
 			return g_ulwDirtyRectPresenter.Initialize(hwnd, device, context, width, height);
@@ -1129,7 +1389,7 @@ namespace
 			(void)device;
 			(void)context;
 			return g_directCompositionPresenter.Initialize(hwnd, dxgiDevice, swapChain, width, height);
-		case TransparentPresentMode::DwmBlurBehindWin7:
+		case TransparentPresentMode::DwmBlurBehind:
 			(void)device;
 			(void)context;
 			(void)dxgiDevice;
@@ -1140,34 +1400,150 @@ namespace
 		}
 	}
 
-	bool ResizeTransparentPresenter(UINT width, UINT height)
+	bool TryInitializeTransparentPipeline(
+		TransparentPresentMode mode,
+		HWND hwnd,
+		ID3D11Device* device,
+		ID3D11DeviceContext* context,
+		IDXGIDevice* dxgiDevice,
+		IDXGIFactory2* dxgiFactory,
+		UINT width,
+		UINT height,
+		CComPtr<IDXGISwapChain1>& swapChain)
 	{
-		switch (kActiveTransparentPresentMode)
+		ReleaseTransparentPipelineAttempt(swapChain);
+		g_activeTransparentPresentMode = mode;
+		cout << "Trying transparent present mode: " << TransparentPresentModeName(mode) << endl;
+
+		if (!ConfigureWindowForTransparentMode(mode, hwnd))
 		{
-		case TransparentPresentMode::UlwDirtyRect:
-			return g_ulwDirtyRectPresenter.Resize(width, height);
-		case TransparentPresentMode::DirectCompositionVisualTree:
-			return g_directCompositionPresenter.Resize(width, height);
-		case TransparentPresentMode::DwmBlurBehindWin7:
-			return g_dwmBlurBehindPresenter.Resize(width, height);
-		default:
+			cout << "[" << TransparentPresentModeName(mode) << "] Configure window style failed." << endl;
 			return false;
 		}
+
+		if (!CreateSwapChainForTransparentMode(mode, dxgiFactory, device, hwnd, width, height, swapChain))
+		{
+			cout << "[" << TransparentPresentModeName(mode) << "] Create swapchain failed." << endl;
+			return false;
+		}
+
+		inkRenderer.SetWindowBackgroundColor(GetWindowBackgroundColorForMode(mode));
+		if (!inkRenderer.Init(device, context, swapChain, width, height))
+		{
+			cout << "[" << TransparentPresentModeName(mode) << "] InkRenderer::Init failed." << endl;
+			return false;
+		}
+
+		if (!InitializeTransparentPresenter(hwnd, device, context, dxgiDevice, swapChain, width, height))
+		{
+			cout << "[" << TransparentPresentModeName(mode) << "] Initialize transparent presenter failed." << endl;
+			return false;
+		}
+
+		cout << "Active transparent present mode: " << TransparentPresentModeName(mode) << endl;
+		return true;
+	}
+
+	bool InitializeTransparentPipelineWithFallback(
+		HWND hwnd,
+		ID3D11Device* device,
+		ID3D11DeviceContext* context,
+		IDXGIDevice* dxgiDevice,
+		IDXGIFactory2* dxgiFactory,
+		UINT width,
+		UINT height,
+		CComPtr<IDXGISwapChain1>& swapChain)
+	{
+		TransparentPresentMode modes[3] = {};
+		const int modeCount = BuildTransparentPresentFallbackModes(kPreferredTransparentPresentMode, modes);
+		for (int i = 0; i < modeCount; ++i)
+		{
+			if (TryInitializeTransparentPipeline(
+				modes[i],
+				hwnd,
+				device,
+				context,
+				dxgiDevice,
+				dxgiFactory,
+				width,
+				height,
+				swapChain))
+			{
+				return true;
+			}
+
+			ReleaseTransparentPipelineAttempt(swapChain);
+			if (i + 1 < modeCount)
+			{
+				cout << "Transparent present mode " << TransparentPresentModeName(modes[i])
+					<< " failed; fallback to " << TransparentPresentModeName(modes[i + 1]) << "." << endl;
+			}
+		}
+
+		cout << "All transparent present modes failed." << endl;
+		return false;
+	}
+
+	bool ResizeTransparentPresenter(UINT width, UINT height)
+	{
+		bool result = false;
+		switch (g_activeTransparentPresentMode)
+		{
+		case TransparentPresentMode::UlwDirtyRect:
+			result = g_ulwDirtyRectPresenter.Resize(width, height);
+			break;
+		case TransparentPresentMode::DirectCompositionVisualTree:
+			result = g_directCompositionPresenter.Resize(width, height);
+			break;
+		case TransparentPresentMode::DwmBlurBehind:
+			result = g_dwmBlurBehindPresenter.Resize(width, height);
+			break;
+		default:
+			result = false;
+			break;
+		}
+		if (!result)
+		{
+			cout << "ResizeTransparentPresenter failed in mode "
+				<< TransparentPresentModeName(g_activeTransparentPresentMode) << endl;
+		}
+		return result;
 	}
 
 	bool PresentTransparentFrame(IDXGISwapChain1* swapChain, RECT dirty, bool presentFull)
 	{
-		switch (kActiveTransparentPresentMode)
+		bool result = false;
+		switch (g_activeTransparentPresentMode)
 		{
 		case TransparentPresentMode::UlwDirtyRect:
-			return g_ulwDirtyRectPresenter.Present(inkRenderer.backBufferTexture, dirty, presentFull);
+			result = g_ulwDirtyRectPresenter.Present(inkRenderer.backBufferTexture, dirty, presentFull);
+			break;
 		case TransparentPresentMode::DirectCompositionVisualTree:
-			return g_directCompositionPresenter.Present(swapChain, dirty, presentFull);
-		case TransparentPresentMode::DwmBlurBehindWin7:
-			return g_dwmBlurBehindPresenter.Present(swapChain, dirty, presentFull);
+			result = g_directCompositionPresenter.Present(swapChain, dirty, presentFull);
+			break;
+		case TransparentPresentMode::DwmBlurBehind:
+			result = g_dwmBlurBehindPresenter.Present(swapChain, dirty, presentFull);
+			break;
 		default:
-			return false;
+			result = false;
+			break;
 		}
+		if (!result)
+		{
+			if (!g_presentFailureLogged)
+			{
+				cout << "PresentTransparentFrame failed in mode "
+					<< TransparentPresentModeName(g_activeTransparentPresentMode)
+					<< "; request full present on next frame." << endl;
+				g_presentFailureLogged = true;
+			}
+			g_fullPresentRequested.store(true, std::memory_order_release);
+		}
+		else
+		{
+			g_presentFailureLogged = false;
+		}
+		return result;
 	}
 
 	void RefreshDwmBlurBehindAfterCompositionChanged()
@@ -1631,7 +2007,7 @@ int main()
 
 	// 窗口创建
 	{
-		if (IsDirectCompositionMode())
+		if (IsDirectCompositionMode(kPreferredTransparentPresentMode))
 		{
 			// DComp 仍走原 D3D composition swapchain；这里仅在创建 HWND 前避免重定向位图垫住透明客户区。
 			hiex::PreSetWindowStyleEx(WS_EX_WINDOWEDGE | WS_EX_NOREDIRECTIONBITMAP);
@@ -1698,98 +2074,34 @@ int main()
 	// 后续性能选项卡中可以提供一个 GPU 高优先级 的选项
 	// dxgiDevice1->SetGPUThreadPriority(2);
 
-	// SwapChain
-	CComPtr<IDXGISwapChain1> swapChain;
+	CComPtr<IDXGIAdapter> dxgiAdapter;
+	HRESULT hr = dxgiDevice1->GetAdapter(&dxgiAdapter);
+	if (FAILED(hr) || !dxgiAdapter)
 	{
-		DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
-		swapChainDesc.Width = windowInfo.w;
-		swapChainDesc.Height = windowInfo.h;
-		swapChainDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-		swapChainDesc.Stereo = FALSE;
-		swapChainDesc.SampleDesc.Count = 1;
-		swapChainDesc.SampleDesc.Quality = 0;
-		swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-		swapChainDesc.BufferCount = IsDwmBlurBehindMode() ? 1 : 2;
-		swapChainDesc.Scaling = DXGI_SCALING_STRETCH;
-		// DComp 使用 composition swapchain 的 premultiplied alpha；DWM blur-behind 保留旧式 redirection surface。
-		swapChainDesc.SwapEffect = IsDwmBlurBehindMode() ? DXGI_SWAP_EFFECT_SEQUENTIAL : DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-		swapChainDesc.AlphaMode = IsGpuTransparentCompositionMode() ? DXGI_ALPHA_MODE_PREMULTIPLIED : DXGI_ALPHA_MODE_UNSPECIFIED;
-		swapChainDesc.Flags = 0;
-
-		CComPtr<IDXGIAdapter> dxgiAdapter;
-		dxgiDevice1->GetAdapter(&dxgiAdapter);
-
-		CComPtr<IDXGIFactory2> dxgiFactory;
-		dxgiAdapter->GetParent(__uuidof(IDXGIFactory2), (void**)&dxgiFactory);
-
-		HRESULT hr = S_OK;
-		if (IsDirectCompositionMode())
-		{
-			hr = dxgiFactory->CreateSwapChainForComposition(
-				d3dDevice_HARDWARE,
-				&swapChainDesc,
-				nullptr,
-				&swapChain
-			);
-			if (FAILED(hr))
-			{
-				LogHresult("IDXGIFactory2::CreateSwapChainForComposition", hr);
-			}
-		}
-		else
-		{
-			hr = dxgiFactory->CreateSwapChainForHwnd(
-				d3dDevice_HARDWARE,
-				windowHWND,
-				&swapChainDesc,
-				nullptr,
-				nullptr,
-				&swapChain
-			);
-			if (FAILED(hr) && IsDwmBlurBehindMode())
-			{
-				// 部分 HWND swapchain 不接受显式 alpha mode；保留 sequential，再退回默认 alpha mode 让 DWM blur 读取重定向面。
-				swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
-				hr = dxgiFactory->CreateSwapChainForHwnd(
-					d3dDevice_HARDWARE,
-					windowHWND,
-					&swapChainDesc,
-					nullptr,
-					nullptr,
-					&swapChain
-				);
-			}
-		}
-		if (FAILED(hr) || !swapChain)
-		{
-			cout << "Failed to create swap chain. HRESULT=0x" << hex << hr << dec << endl;
-			return -1;
-		}
-
-		// win7 上 SetBackgroundColor 会因 E_NOTIMPL 失败
-		//DXGI_RGBA color = { 1.0f, 1.0f, 1.0f, 1.0f };
-		//swapChain->SetBackgroundColor(&color);
-	}
-
-	// 交换链应该保证指定脏区，而不是全部重绘
-	// 后续修改，非 flip_discard
-
-	inkRenderer.SetWindowBackgroundColor(GetActiveWindowBackgroundColor());
-	if (!inkRenderer.Init(d3dDevice_HARDWARE, d3dDeviceContext, swapChain, static_cast<UINT>(windowInfo.w), static_cast<UINT>(windowInfo.h)))
-	{
-		cout << "Failed to initialize ink renderer." << endl;
+		LogHresult("IDXGIDevice1::GetAdapter", hr);
 		return -1;
 	}
-	if (!InitializeTransparentPresenter(
+
+	CComPtr<IDXGIFactory2> dxgiFactory;
+	hr = dxgiAdapter->GetParent(__uuidof(IDXGIFactory2), reinterpret_cast<void**>(&dxgiFactory));
+	if (FAILED(hr) || !dxgiFactory)
+	{
+		LogHresult("IDXGIAdapter::GetParent(IDXGIFactory2)", hr);
+		return -1;
+	}
+
+	CComPtr<IDXGISwapChain1> swapChain;
+	if (!InitializeTransparentPipelineWithFallback(
 		windowHWND,
 		d3dDevice_HARDWARE,
 		d3dDeviceContext,
 		dxgiDevice1,
-		swapChain,
+		dxgiFactory,
 		static_cast<UINT>(windowInfo.w),
-		static_cast<UINT>(windowInfo.h)))
+		static_cast<UINT>(windowInfo.h),
+		swapChain))
 	{
-		cout << "Failed to initialize transparent presenter." << endl;
+		cout << "Failed to initialize any transparent present pipeline." << endl;
 		return -1;
 	}
 

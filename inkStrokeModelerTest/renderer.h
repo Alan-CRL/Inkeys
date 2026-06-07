@@ -397,6 +397,28 @@ public:
 		layerL0Texture.Release();
 	}
 
+	void ReleaseResources()
+	{
+		// 启动期透明模式回退会重新 Init，一定要先释放旧 swapchain 绑定的 D3D 资源。
+		ReleaseSizeDependentResources();
+		vertexShader.Release();
+		pixelShader.Release();
+		globalCB.Release();
+		inkDataBuffer.Release();
+		inkDataSRV.Release();
+		alphaBlendSampler.Release();
+		penBlendState.Release();
+		eraserBlendState.Release();
+		alphaBlendState.Release();
+		rasterState.Release();
+		dsState.Release();
+		device.Release();
+		context.Release();
+		m_bufferHead = 0;
+		viewportWidth = 0.0f;
+		viewportHeight = 0.0f;
+	}
+
 	bool Resize(IDXGISwapChain1* swapChain, UINT width, UINT height)
 	{
 		if (!swapChain || width == 0 || height == 0) return false;
