@@ -974,6 +974,16 @@ namespace
 		return true;
 	}
 
+	bool IsDirectCompositionApiAvailable()
+	{
+		HMODULE dcompModule = LoadLibraryW(L"dcomp.dll");
+		if (!dcompModule) return false;
+
+		const FARPROC createDevice = GetProcAddress(dcompModule, "DCompositionCreateDevice");
+		FreeLibrary(dcompModule);
+		return createDevice != nullptr;
+	}
+
 	bool EnsureSystemChromeForGpuComposition(HWND hwnd, bool noRedirectionBitmap)
 	{
 		if (!hwnd) return false;
@@ -2007,9 +2017,9 @@ int main()
 
 	// 窗口创建
 	{
-		if (IsDirectCompositionMode(kPreferredTransparentPresentMode))
+		if (IsDirectCompositionMode(kPreferredTransparentPresentMode) && IsDirectCompositionApiAvailable())
 		{
-			// DComp 仍走原 D3D composition swapchain；这里仅在创建 HWND 前避免重定向位图垫住透明客户区。
+			// 只有确认 DComp API 存在才预置此样式；Win7 会在 CreateWindowEx 阶段因该样式返回 87。
 			hiex::PreSetWindowStyleEx(WS_EX_WINDOWEDGE | WS_EX_NOREDIRECTIONBITMAP);
 		}
 		windowHWND = hiex::initgraph_win32(windowInfo.w, windowInfo.h, EW_SHOWCONSOLE, _T(""), Draw3WndProc);
