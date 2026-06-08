@@ -50,13 +50,13 @@ namespace
 		UlwDirtyRect, // ULW + dirty rect，保留近透明背景避免鼠标穿透。
 		DirectCompositionVisualTree, // DComp 单 visual + composition swapchain 路径。
 		DwmBlurBehind, // 一代 DWM blur-behind，对照保留，默认回退链不再自动使用。
-		DwmBlur2 // Win7 Aero glass 实验：无边框 + DwmExtendFrameIntoClientArea。
+		DwmBlurBehind2 // 正式 DWM extend-frame 方案：无边框 + DwmExtendFrameIntoClientArea。
 	};
 
 	constexpr InkPredictionMode kActivePredictionMode = InkPredictionMode::Kalman;
 	constexpr LiveTipLengthMode kActiveLiveTipLengthMode = LiveTipLengthMode::Normal;
 	constexpr DebugLayerColorMode kActiveDebugLayerColorMode = DebugLayerColorMode::NormalInkColor;
-	constexpr TransparentPresentMode kPreferredTransparentPresentMode = TransparentPresentMode::DirectCompositionVisualTree;
+	constexpr TransparentPresentMode kPreferredTransparentPresentMode = TransparentPresentMode::DwmBlurBehind2;
 	TransparentPresentMode g_activeTransparentPresentMode = kPreferredTransparentPresentMode;
 	bool g_presentFailureLogged = false;
 
@@ -70,8 +70,8 @@ namespace
 			return "DirectCompositionVisualTree";
 		case TransparentPresentMode::DwmBlurBehind:
 			return "DwmBlurBehind";
-		case TransparentPresentMode::DwmBlur2:
-			return "DwmBlur2";
+		case TransparentPresentMode::DwmBlurBehind2:
+			return "DwmBlurBehind2";
 		default:
 			return "Unknown";
 		}
@@ -107,19 +107,19 @@ namespace
 		return IsDwmBlurBehindMode(g_activeTransparentPresentMode);
 	}
 
-	bool IsDwmBlur2Mode(TransparentPresentMode mode)
+	bool IsDwmBlurBehind2Mode(TransparentPresentMode mode)
 	{
-		return mode == TransparentPresentMode::DwmBlur2;
+		return mode == TransparentPresentMode::DwmBlurBehind2;
 	}
 
-	bool IsDwmBlur2Mode()
+	bool IsDwmBlurBehind2Mode()
 	{
-		return IsDwmBlur2Mode(g_activeTransparentPresentMode);
+		return IsDwmBlurBehind2Mode(g_activeTransparentPresentMode);
 	}
 
 	bool IsDwmGlassMode(TransparentPresentMode mode)
 	{
-		return IsDwmBlurBehindMode(mode) || IsDwmBlur2Mode(mode);
+		return IsDwmBlurBehindMode(mode) || IsDwmBlurBehind2Mode(mode);
 	}
 
 	bool IsDwmGlassMode()
@@ -1032,9 +1032,8 @@ namespace
 		}
 		if (opaqueBlend)
 		{
-			// Home Basic/非透明主题可能开启 DWM，但 glass 区域是 opaque，不能安全走 UNSPECIFIED 实验路径。
-			cout << "[" << TransparentPresentModeName(mode) << "] DWM glass is opaque; fallback to next transparent mode." << endl;
-			return false;
+			// DWM extend-frame 路径下 opaque blend 只记录，不阻止 UNSPECIFIED 继续测试。
+			cout << "[" << TransparentPresentModeName(mode) << "] DWM glass is opaque; continue unspecified alpha path." << endl;
 		}
 		return true;
 	}
@@ -1295,7 +1294,7 @@ namespace
 
 	DwmBlurBehindPresenter g_dwmBlurBehindPresenter;
 
-	struct DwmBlur2Presenter
+	struct DwmBlurBehind2Presenter
 	{
 		HWND hwnd = nullptr;
 
@@ -1312,21 +1311,21 @@ namespace
 			HRESULT hr = DwmIsCompositionEnabled(&compositionEnabled);
 			if (FAILED(hr))
 			{
-				LogHresult("DwmBlur2 DwmIsCompositionEnabled", hr);
+				LogHresult("DwmBlurBehind2 DwmIsCompositionEnabled", hr);
 				return false;
 			}
 			if (!compositionEnabled)
 			{
-				cout << "[DwmBlur2] DWM composition is disabled." << endl;
+				cout << "[DwmBlurBehind2] DWM composition is disabled." << endl;
 				return false;
 			}
 
-			// DwmBlur2 使用整窗 glass frame，让 Win7 Aero 按 frame alpha 处理客户区。
+			// DwmBlurBehind2 使用整窗 glass frame，让 Win7 Aero 按 frame alpha 处理客户区。
 			MARGINS margins = { -1, -1, -1, -1 };
 			hr = DwmExtendFrameIntoClientArea(hwnd, &margins);
 			if (FAILED(hr))
 			{
-				LogHresult("DwmBlur2 DwmExtendFrameIntoClientArea", hr);
+				LogHresult("DwmBlurBehind2 DwmExtendFrameIntoClientArea", hr);
 			}
 			return SUCCEEDED(hr);
 		}
@@ -1353,14 +1352,14 @@ namespace
 		}
 	};
 
-	DwmBlur2Presenter g_dwmBlur2Presenter;
+	DwmBlurBehind2Presenter g_dwmBlurBehind2Presenter;
 
 	void ResetTransparentPresenters()
 	{
 		g_ulwDirtyRectPresenter.Reset();
 		g_directCompositionPresenter.Reset();
 		g_dwmBlurBehindPresenter.Reset();
-		g_dwmBlur2Presenter.Reset();
+		g_dwmBlurBehind2Presenter.Reset();
 		g_presentFailureLogged = false;
 	}
 
@@ -1381,7 +1380,7 @@ namespace
 			return EnsureBorderlessTransparentWindowStyle(hwnd, true, false);
 		case TransparentPresentMode::DwmBlurBehind:
 			return EnsureBorderlessTransparentWindowStyle(hwnd, false, false);
-		case TransparentPresentMode::DwmBlur2:
+		case TransparentPresentMode::DwmBlurBehind2:
 			return EnsureBorderlessTransparentWindowStyle(hwnd, false, false);
 		default:
 			return false;
@@ -1399,14 +1398,14 @@ namespace
 			modes[0] = TransparentPresentMode::DwmBlurBehind;
 			modes[1] = TransparentPresentMode::UlwDirtyRect;
 			return 2;
-		case TransparentPresentMode::DwmBlur2:
-			modes[0] = TransparentPresentMode::DwmBlur2;
+		case TransparentPresentMode::DwmBlurBehind2:
+			modes[0] = TransparentPresentMode::DwmBlurBehind2;
 			modes[1] = TransparentPresentMode::UlwDirtyRect;
 			return 2;
 		case TransparentPresentMode::DirectCompositionVisualTree:
 		default:
 			modes[0] = TransparentPresentMode::DirectCompositionVisualTree;
-			modes[1] = TransparentPresentMode::DwmBlur2;
+			modes[1] = TransparentPresentMode::DwmBlurBehind2;
 			modes[2] = TransparentPresentMode::UlwDirtyRect;
 			return 3;
 		}
@@ -1474,7 +1473,7 @@ namespace
 				return false;
 			}
 			cout << "[" << TransparentPresentModeName(mode)
-				<< "] Retry CreateSwapChainForHwnd with unspecified alpha mode for Win7 Aero glass experiment." << endl;
+				<< "] Retry CreateSwapChainForHwnd with unspecified alpha mode for Win7 Aero glass path." << endl;
 			outSwapChain.Release();
 			swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
 			hr = dxgiFactory->CreateSwapChainForHwnd(
@@ -1525,12 +1524,12 @@ namespace
 			(void)dxgiDevice;
 			(void)swapChain;
 			return g_dwmBlurBehindPresenter.Initialize(hwnd, width, height);
-		case TransparentPresentMode::DwmBlur2:
+		case TransparentPresentMode::DwmBlurBehind2:
 			(void)device;
 			(void)context;
 			(void)dxgiDevice;
 			(void)swapChain;
-			return g_dwmBlur2Presenter.Initialize(hwnd, width, height);
+			return g_dwmBlurBehind2Presenter.Initialize(hwnd, width, height);
 		default:
 			return false;
 		}
@@ -1634,8 +1633,8 @@ namespace
 		case TransparentPresentMode::DwmBlurBehind:
 			result = g_dwmBlurBehindPresenter.Resize(width, height);
 			break;
-		case TransparentPresentMode::DwmBlur2:
-			result = g_dwmBlur2Presenter.Resize(width, height);
+		case TransparentPresentMode::DwmBlurBehind2:
+			result = g_dwmBlurBehind2Presenter.Resize(width, height);
 			break;
 		default:
 			result = false;
@@ -1663,8 +1662,8 @@ namespace
 		case TransparentPresentMode::DwmBlurBehind:
 			result = g_dwmBlurBehindPresenter.Present(swapChain, dirty, presentFull);
 			break;
-		case TransparentPresentMode::DwmBlur2:
-			result = g_dwmBlur2Presenter.Present(swapChain, dirty, presentFull);
+		case TransparentPresentMode::DwmBlurBehind2:
+			result = g_dwmBlurBehind2Presenter.Present(swapChain, dirty, presentFull);
 			break;
 		default:
 			result = false;
@@ -1695,9 +1694,9 @@ namespace
 			g_dwmBlurBehindPresenter.UpdateDwmBlurBehind();
 			g_fullPresentRequested.store(true, std::memory_order_release);
 		}
-		if (IsDwmBlur2Mode())
+		if (IsDwmBlurBehind2Mode())
 		{
-			g_dwmBlur2Presenter.UpdateExtendedGlassFrame();
+			g_dwmBlurBehind2Presenter.UpdateExtendedGlassFrame();
 			g_fullPresentRequested.store(true, std::memory_order_release);
 		}
 	}
