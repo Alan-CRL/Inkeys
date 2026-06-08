@@ -117,6 +117,7 @@ namespace
 	{
 		if (IsGpuTransparentCompositionMode(mode))
 		{
+			// GPU 合成路径交给 DComp/DWM 读取 alpha，背景保持全透明。
 			return kTransparentLayerClearColor;
 		}
 		return kTransparentWindowBackgroundColor;
@@ -1321,9 +1322,9 @@ namespace
 		swapChainDesc.SampleDesc.Count = 1;
 		swapChainDesc.SampleDesc.Quality = 0;
 		swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-		swapChainDesc.BufferCount = IsDwmBlurBehindMode(mode) ? 1 : 2;
+		swapChainDesc.BufferCount = 2;
 		swapChainDesc.Scaling = DXGI_SCALING_STRETCH;
-		swapChainDesc.SwapEffect = IsDwmBlurBehindMode(mode) ? DXGI_SWAP_EFFECT_SEQUENTIAL : DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+		swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
 		swapChainDesc.AlphaMode = IsGpuTransparentCompositionMode(mode) ? DXGI_ALPHA_MODE_PREMULTIPLIED : DXGI_ALPHA_MODE_UNSPECIFIED;
 		swapChainDesc.Flags = 0;
 
@@ -1355,9 +1356,17 @@ namespace
 		if (FAILED(hr) && IsDwmBlurBehindMode(mode))
 		{
 			LogHresult("DwmBlurBehind CreateSwapChainForHwnd premultiplied alpha", hr);
-			cout << "[DwmBlurBehind] Premultiplied alpha is required for this transparent path; fallback to next mode." << endl;
+			cout << "[DwmBlurBehind] Retry CreateSwapChainForHwnd with unspecified alpha mode for Win7 Aero glass experiment." << endl;
 			outSwapChain.Release();
-			return false;
+			swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
+			hr = dxgiFactory->CreateSwapChainForHwnd(
+				device,
+				hwnd,
+				&swapChainDesc,
+				nullptr,
+				nullptr,
+				&outSwapChain
+			);
 		}
 		if (FAILED(hr) || !outSwapChain)
 		{
