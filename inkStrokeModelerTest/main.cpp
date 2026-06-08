@@ -56,7 +56,8 @@ namespace
 	constexpr InkPredictionMode kActivePredictionMode = InkPredictionMode::Kalman;
 	constexpr LiveTipLengthMode kActiveLiveTipLengthMode = LiveTipLengthMode::Normal;
 	constexpr DebugLayerColorMode kActiveDebugLayerColorMode = DebugLayerColorMode::NormalInkColor;
-	constexpr TransparentPresentMode kPreferredTransparentPresentMode = TransparentPresentMode::DwmBlurBehind2;
+	constexpr TransparentPresentMode kPreferredTransparentPresentMode = TransparentPresentMode::DirectCompositionVisualTree;
+	constexpr bool kUseCenteredHalfSizeBorderlessWindowTest = true;
 	TransparentPresentMode g_activeTransparentPresentMode = kPreferredTransparentPresentMode;
 	bool g_presentFailureLogged = false;
 
@@ -1017,6 +1018,28 @@ namespace
 			return monitorInfo.rcMonitor;
 		}
 		return RECT(0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+	}
+
+	RECT GetInitialBorderlessWindowRect()
+	{
+		const RECT monitorRect = GetPrimaryMonitorRect();
+		if (!kUseCenteredHalfSizeBorderlessWindowTest)
+		{
+			return monitorRect;
+		}
+
+		const int monitorWidth = static_cast<int>(monitorRect.right - monitorRect.left);
+		const int monitorHeight = static_cast<int>(monitorRect.bottom - monitorRect.top);
+		const int windowWidth = max(1, monitorWidth / 2);
+		const int windowHeight = max(1, monitorHeight / 2);
+
+		// 半屏居中测试：仍然是无边框普通窗口，不进入独占全屏。
+		return RECT(
+			monitorRect.left + (monitorWidth - windowWidth) / 2,
+			monitorRect.top + (monitorHeight - windowHeight) / 2,
+			monitorRect.left + (monitorWidth + windowWidth) / 2,
+			monitorRect.top + (monitorHeight + windowHeight) / 2
+		);
 	}
 
 	bool IsDwmGlassTransparencyAvailable(TransparentPresentMode mode)
@@ -2134,11 +2157,11 @@ int main()
 
 	// 窗口创建
 	{
-		const RECT monitorRect = GetPrimaryMonitorRect();
-		windowInfo.w = static_cast<int>(monitorRect.right - monitorRect.left);
-		windowInfo.h = static_cast<int>(monitorRect.bottom - monitorRect.top);
+		const RECT windowRect = GetInitialBorderlessWindowRect();
+		windowInfo.w = static_cast<int>(windowRect.right - windowRect.left);
+		windowInfo.h = static_cast<int>(windowRect.bottom - windowRect.top);
 		hiex::PreSetWindowStyle(WS_POPUP);
-		hiex::PreSetWindowPos(monitorRect.left, monitorRect.top);
+		hiex::PreSetWindowPos(windowRect.left, windowRect.top);
 		if (IsDirectCompositionMode(kPreferredTransparentPresentMode) && IsDirectCompositionApiAvailable())
 		{
 			// 只有确认 DComp API 存在才预置此样式；Win7 会在 CreateWindowEx 阶段因该样式返回 87。
