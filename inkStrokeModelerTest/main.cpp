@@ -56,7 +56,7 @@ namespace
 	constexpr InkPredictionMode kActivePredictionMode = InkPredictionMode::Kalman;
 	constexpr LiveTipLengthMode kActiveLiveTipLengthMode = LiveTipLengthMode::Normal;
 	constexpr DebugLayerColorMode kActiveDebugLayerColorMode = DebugLayerColorMode::NormalInkColor;
-	constexpr TransparentPresentMode kPreferredTransparentPresentMode = TransparentPresentMode::DwmBlurBehind2;
+	constexpr TransparentPresentMode kPreferredTransparentPresentMode = TransparentPresentMode::DirectCompositionVisualTree;
 	TransparentPresentMode g_activeTransparentPresentMode = kPreferredTransparentPresentMode;
 	bool g_presentFailureLogged = false;
 
@@ -957,6 +957,7 @@ namespace
 	{
 		if (!swapChain) return false;
 
+		const RECT originalDirty = dirty;
 		DXGI_PRESENT_PARAMETERS presentParameters = {};
 		if (!presentFull)
 		{
@@ -970,7 +971,19 @@ namespace
 			presentParameters.pDirtyRects = &dirty;
 		}
 
-		return SUCCEEDED(swapChain->Present1(0, 0, &presentParameters));
+		const HRESULT hr = swapChain->Present1(0, 0, &presentParameters);
+		if (FAILED(hr) && !g_presentFailureLogged)
+		{
+			cout << "[" << TransparentPresentModeName(g_activeTransparentPresentMode)
+				<< "] Present1 failed. HRESULT=0x"
+				<< hex << static_cast<unsigned long>(hr) << dec
+				<< " presentFull=" << (presentFull ? "true" : "false")
+				<< " dirty=(" << originalDirty.left << "," << originalDirty.top << ","
+				<< originalDirty.right << "," << originalDirty.bottom << ")"
+				<< " clipped=(" << dirty.left << "," << dirty.top << ","
+				<< dirty.right << "," << dirty.bottom << ")" << endl;
+		}
+		return SUCCEEDED(hr);
 	}
 
 	void LogHresult(const char* step, HRESULT hr)
@@ -981,6 +994,204 @@ namespace
 	void LogWin32Error(const char* step, DWORD error)
 	{
 		cout << step << " failed. GetLastError=" << error << endl;
+	}
+
+	const char* BoolText(BOOL value)
+	{
+		return value ? "true" : "false";
+	}
+
+	const char* DxgiAlphaModeName(DXGI_ALPHA_MODE mode)
+	{
+		switch (mode)
+		{
+		case DXGI_ALPHA_MODE_UNSPECIFIED:
+			return "UNSPECIFIED";
+		case DXGI_ALPHA_MODE_PREMULTIPLIED:
+			return "PREMULTIPLIED";
+		case DXGI_ALPHA_MODE_STRAIGHT:
+			return "STRAIGHT";
+		case DXGI_ALPHA_MODE_IGNORE:
+			return "IGNORE";
+		default:
+			return "UNKNOWN";
+		}
+	}
+
+	const char* DxgiSwapEffectName(DXGI_SWAP_EFFECT effect)
+	{
+		switch (effect)
+		{
+		case DXGI_SWAP_EFFECT_DISCARD:
+			return "DISCARD";
+		case DXGI_SWAP_EFFECT_SEQUENTIAL:
+			return "SEQUENTIAL";
+		case DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL:
+			return "FLIP_SEQUENTIAL";
+		case DXGI_SWAP_EFFECT_FLIP_DISCARD:
+			return "FLIP_DISCARD";
+		default:
+			return "UNKNOWN";
+		}
+	}
+
+	const char* DxgiFormatName(DXGI_FORMAT format)
+	{
+		switch (format)
+		{
+		case DXGI_FORMAT_B8G8R8A8_UNORM:
+			return "B8G8R8A8_UNORM";
+		case DXGI_FORMAT_R8G8B8A8_UNORM:
+			return "R8G8B8A8_UNORM";
+		default:
+			return "OTHER";
+		}
+	}
+
+	string WideToUtf8(const WCHAR* text)
+	{
+		if (!text || text[0] == L'\0') return string();
+		const int requiredSize = WideCharToMultiByte(CP_UTF8, 0, text, -1, nullptr, 0, nullptr, nullptr);
+		if (requiredSize <= 1) return string();
+
+		string result(static_cast<size_t>(requiredSize - 1), '\0');
+		WideCharToMultiByte(CP_UTF8, 0, text, -1, &result[0], requiredSize, nullptr, nullptr);
+		return result;
+	}
+
+	void LogDwmCompositionState(TransparentPresentMode mode, const char* stage)
+	{
+		BOOL compositionEnabled = FALSE;
+		const HRESULT hr = DwmIsCompositionEnabled(&compositionEnabled);
+		if (FAILED(hr))
+		{
+			cout << "[" << TransparentPresentModeName(mode) << "] " << stage
+				<< " DwmIsCompositionEnabled failed. HRESULT=0x"
+				<< hex << static_cast<unsigned long>(hr) << dec << endl;
+			return;
+		}
+		cout << "[" << TransparentPresentModeName(mode) << "] " << stage
+			<< " DwmIsCompositionEnabled=" << BoolText(compositionEnabled) << endl;
+	}
+
+	bool LogDwmColorizationState(TransparentPresentMode mode, const char* stage, BOOL* outOpaqueBlend = nullptr)
+	{
+		DWORD colorizationColor = 0;
+		BOOL opaqueBlend = TRUE;
+		const HRESULT hr = DwmGetColorizationColor(&colorizationColor, &opaqueBlend);
+		if (FAILED(hr))
+		{
+			cout << "[" << TransparentPresentModeName(mode) << "] " << stage
+				<< " DwmGetColorizationColor failed. HRESULT=0x"
+				<< hex << static_cast<unsigned long>(hr) << dec << endl;
+			return false;
+		}
+
+		cout << "[" << TransparentPresentModeName(mode) << "] " << stage
+			<< " DwmColorizationColor=0x"
+			<< hex << static_cast<unsigned long>(colorizationColor) << dec
+			<< " opaqueBlend=" << BoolText(opaqueBlend) << endl;
+		if (outOpaqueBlend)
+		{
+			*outOpaqueBlend = opaqueBlend;
+		}
+		return true;
+	}
+
+	void LogWindowDiagnostics(TransparentPresentMode mode, HWND hwnd, const char* stage)
+	{
+		if (!hwnd) return;
+
+		RECT windowRect = {};
+		RECT clientRect = {};
+		GetWindowRect(hwnd, &windowRect);
+		GetClientRect(hwnd, &clientRect);
+
+		cout << "[" << TransparentPresentModeName(mode) << "] " << stage
+			<< " hwnd=0x" << hex << reinterpret_cast<UINT_PTR>(hwnd)
+			<< " style=0x" << static_cast<unsigned long>(GetWindowLongPtr(hwnd, GWL_STYLE))
+			<< " exStyle=0x" << static_cast<unsigned long>(GetWindowLongPtr(hwnd, GWL_EXSTYLE))
+			<< dec
+			<< " window=(" << windowRect.left << "," << windowRect.top << ","
+			<< windowRect.right << "," << windowRect.bottom << ")"
+			<< " client=(" << clientRect.left << "," << clientRect.top << ","
+			<< clientRect.right << "," << clientRect.bottom << ")" << endl;
+	}
+
+	void LogDwmModeDiagnostics(TransparentPresentMode mode, HWND hwnd, const char* stage)
+	{
+		// DWM 透明路径依赖系统 glass 状态；初始化和重试时把关键状态集中打出来。
+		LogWindowDiagnostics(mode, hwnd, stage);
+		LogDwmCompositionState(mode, stage);
+		LogDwmColorizationState(mode, stage);
+	}
+
+	void LogSwapChainDesc(TransparentPresentMode mode, const char* stage, const DXGI_SWAP_CHAIN_DESC1& desc)
+	{
+		cout << "[" << TransparentPresentModeName(mode) << "] " << stage
+			<< " swapchain desc: "
+			<< "size=" << desc.Width << "x" << desc.Height
+			<< " format=" << DxgiFormatName(desc.Format) << "(" << static_cast<unsigned int>(desc.Format) << ")"
+			<< " bufferCount=" << desc.BufferCount
+			<< " swapEffect=" << DxgiSwapEffectName(desc.SwapEffect)
+			<< " alphaMode=" << DxgiAlphaModeName(desc.AlphaMode)
+			<< " scaling=" << static_cast<unsigned int>(desc.Scaling)
+			<< " flags=0x" << hex << static_cast<unsigned int>(desc.Flags) << dec << endl;
+	}
+
+	void LogSwapChainRuntimeDesc(TransparentPresentMode mode, IDXGISwapChain1* swapChain, const char* stage)
+	{
+		if (!swapChain) return;
+
+		DXGI_SWAP_CHAIN_DESC1 desc = {};
+		const HRESULT hr = swapChain->GetDesc1(&desc);
+		if (FAILED(hr))
+		{
+			cout << "[" << TransparentPresentModeName(mode) << "] " << stage
+				<< " IDXGISwapChain1::GetDesc1 failed. HRESULT=0x"
+				<< hex << static_cast<unsigned long>(hr) << dec << endl;
+			return;
+		}
+		LogSwapChainDesc(mode, stage, desc);
+	}
+
+	void LogAdapterDiagnostics(IDXGIAdapter* adapter)
+	{
+		if (!adapter) return;
+
+		DXGI_ADAPTER_DESC desc = {};
+		HRESULT hr = adapter->GetDesc(&desc);
+		if (SUCCEEDED(hr))
+		{
+			cout << "DXGI adapter: " << WideToUtf8(desc.Description).c_str()
+				<< " VendorId=0x" << hex << desc.VendorId
+				<< " DeviceId=0x" << desc.DeviceId
+				<< " SubSysId=0x" << desc.SubSysId
+				<< " Revision=0x" << desc.Revision << dec
+				<< " DedicatedVideoMemory=" << static_cast<unsigned long long>(desc.DedicatedVideoMemory)
+				<< " DedicatedSystemMemory=" << static_cast<unsigned long long>(desc.DedicatedSystemMemory)
+				<< " SharedSystemMemory=" << static_cast<unsigned long long>(desc.SharedSystemMemory)
+				<< endl;
+		}
+		else
+		{
+			LogHresult("IDXGIAdapter::GetDesc", hr);
+		}
+
+		LARGE_INTEGER driverVersion = {};
+		hr = adapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &driverVersion);
+		if (SUCCEEDED(hr))
+		{
+			cout << "DXGI adapter UMD driver version raw: high=0x"
+				<< hex << static_cast<unsigned long>(driverVersion.HighPart)
+				<< " low=0x" << static_cast<unsigned long>(driverVersion.LowPart)
+				<< dec << endl;
+		}
+		else
+		{
+			cout << "IDXGIAdapter::CheckInterfaceSupport(IDXGIDevice) failed. HRESULT=0x"
+				<< hex << static_cast<unsigned long>(hr) << dec << endl;
+		}
 	}
 
 	bool TrySetWindowLongPtr(HWND hwnd, int index, LONG_PTR value, const char* step)
@@ -1021,15 +1232,8 @@ namespace
 
 	bool IsDwmGlassTransparencyAvailable(TransparentPresentMode mode)
 	{
-		DWORD colorizationColor = 0;
 		BOOL opaqueBlend = TRUE;
-		const HRESULT hr = DwmGetColorizationColor(&colorizationColor, &opaqueBlend);
-		if (FAILED(hr))
-		{
-			cout << TransparentPresentModeName(mode) << " DwmGetColorizationColor failed. HRESULT=0x"
-				<< hex << static_cast<unsigned long>(hr) << dec << endl;
-			return false;
-		}
+		if (!LogDwmColorizationState(mode, "Before unspecified alpha retry", &opaqueBlend)) return false;
 		if (opaqueBlend)
 		{
 			// DWM extend-frame 路径下 opaque blend 只记录，不阻止 UNSPECIFIED 继续测试。
@@ -1250,10 +1454,15 @@ namespace
 				cout << "[DwmBlurBehind] DWM composition is disabled." << endl;
 				return false;
 			}
+			cout << "[DwmBlurBehind] DwmIsCompositionEnabled=true" << endl;
 
 			// 参考 DirectInkPresenter：整窗 blur region 让 premultiplied BGRA 背景透出。
 			HRGN blurRegion = CreateRectRgn(0, 0, -1, -1);
-			if (!blurRegion) return false;
+			if (!blurRegion)
+			{
+				LogWin32Error("DwmBlurBehind CreateRectRgn", GetLastError());
+				return false;
+			}
 
 			DWM_BLURBEHIND blurBehind = {};
 			blurBehind.dwFlags = DWM_BB_ENABLE | DWM_BB_BLURREGION | DWM_BB_TRANSITIONONMAXIMIZED;
@@ -1266,6 +1475,12 @@ namespace
 			{
 				LogHresult("DwmBlurBehind DwmEnableBlurBehindWindow", hr);
 			}
+			else
+			{
+				cout << "[DwmBlurBehind] DwmEnableBlurBehindWindow succeeded. flags=0x"
+					<< hex << blurBehind.dwFlags << dec
+					<< " transitionOnMaximized=" << BoolText(blurBehind.fTransitionOnMaximized) << endl;
+			}
 			return SUCCEEDED(hr);
 		}
 
@@ -1275,13 +1490,16 @@ namespace
 			(void)height;
 			Reset();
 			hwnd = inHwnd;
-			return EnsureSystemChrome() && UpdateDwmBlurBehind();
+			if (!EnsureSystemChrome()) return false;
+			LogDwmModeDiagnostics(TransparentPresentMode::DwmBlurBehind, hwnd, "Initialize");
+			return UpdateDwmBlurBehind();
 		}
 
 		bool Resize(UINT width, UINT height)
 		{
 			(void)width;
 			(void)height;
+			LogDwmModeDiagnostics(TransparentPresentMode::DwmBlurBehind, hwnd, "Resize");
 			return UpdateDwmBlurBehind();
 		}
 
@@ -1319,6 +1537,7 @@ namespace
 				cout << "[DwmBlurBehind2] DWM composition is disabled." << endl;
 				return false;
 			}
+			cout << "[DwmBlurBehind2] DwmIsCompositionEnabled=true" << endl;
 
 			// DwmBlurBehind2 使用整窗 glass frame，让 Win7 Aero 按 frame alpha 处理客户区。
 			MARGINS margins = { -1, -1, -1, -1 };
@@ -1326,6 +1545,12 @@ namespace
 			if (FAILED(hr))
 			{
 				LogHresult("DwmBlurBehind2 DwmExtendFrameIntoClientArea", hr);
+			}
+			else
+			{
+				cout << "[DwmBlurBehind2] DwmExtendFrameIntoClientArea succeeded. margins=("
+					<< margins.cxLeftWidth << "," << margins.cxRightWidth << ","
+					<< margins.cyTopHeight << "," << margins.cyBottomHeight << ")" << endl;
 			}
 			return SUCCEEDED(hr);
 		}
@@ -1336,13 +1561,16 @@ namespace
 			(void)height;
 			Reset();
 			hwnd = inHwnd;
-			return EnsureBorderlessTransparentWindowStyle(hwnd, false, false) && UpdateExtendedGlassFrame();
+			if (!EnsureBorderlessTransparentWindowStyle(hwnd, false, false)) return false;
+			LogDwmModeDiagnostics(TransparentPresentMode::DwmBlurBehind2, hwnd, "Initialize");
+			return UpdateExtendedGlassFrame();
 		}
 
 		bool Resize(UINT width, UINT height)
 		{
 			(void)width;
 			(void)height;
+			LogDwmModeDiagnostics(TransparentPresentMode::DwmBlurBehind2, hwnd, "Resize");
 			return UpdateExtendedGlassFrame();
 		}
 
@@ -1437,6 +1665,12 @@ namespace
 		swapChainDesc.AlphaMode = IsGpuTransparentCompositionMode(mode) ? DXGI_ALPHA_MODE_PREMULTIPLIED : DXGI_ALPHA_MODE_UNSPECIFIED;
 		swapChainDesc.Flags = 0;
 
+		if (IsDwmGlassMode(mode))
+		{
+			LogDwmModeDiagnostics(mode, hwnd, "Before CreateSwapChainForHwnd");
+			LogSwapChainDesc(mode, "Trying premultiplied alpha", swapChainDesc);
+		}
+
 		HRESULT hr = S_OK;
 		if (IsDirectCompositionMode(mode))
 		{
@@ -1476,6 +1710,7 @@ namespace
 				<< "] Retry CreateSwapChainForHwnd with unspecified alpha mode for Win7 Aero glass path." << endl;
 			outSwapChain.Release();
 			swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
+			LogSwapChainDesc(mode, "Trying unspecified alpha", swapChainDesc);
 			hr = dxgiFactory->CreateSwapChainForHwnd(
 				device,
 				hwnd,
@@ -1497,6 +1732,10 @@ namespace
 				LogHresult("UlwDirtyRect CreateSwapChainForHwnd", hr);
 			}
 			return false;
+		}
+		if (IsDwmGlassMode(mode))
+		{
+			LogSwapChainRuntimeDesc(mode, outSwapChain, "Created");
 		}
 		return true;
 	}
@@ -2213,6 +2452,7 @@ int main()
 		LogHresult("IDXGIDevice1::GetAdapter", hr);
 		return -1;
 	}
+	LogAdapterDiagnostics(dxgiAdapter);
 
 	CComPtr<IDXGIFactory2> dxgiFactory;
 	hr = dxgiAdapter->GetParent(__uuidof(IDXGIFactory2), reinterpret_cast<void**>(&dxgiFactory));
