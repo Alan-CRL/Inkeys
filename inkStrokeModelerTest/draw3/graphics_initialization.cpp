@@ -1,0 +1,126 @@
+﻿module;
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
+#include <atlbase.h>
+#include <d3d11.h>
+#include <dxgi1_2.h>
+#include <iostream>
+#include <windows.h>
+
+#pragma comment(lib, "d3d11.lib")
+#pragma comment(lib, "dxgi.lib")
+
+module draw3.graphics_initialization;
+
+import draw3.diagnostics;
+
+namespace draw3
+{
+	namespace
+	{
+		const char* DriverTypeName(D3D_DRIVER_TYPE driverType)
+		{
+			switch (driverType)
+			{
+			case D3D_DRIVER_TYPE_HARDWARE: return "Hardware";
+			case D3D_DRIVER_TYPE_WARP: return "WARP";
+			default: return "Unknown";
+			}
+		}
+
+		const char* FeatureLevelName(D3D_FEATURE_LEVEL featureLevel)
+		{
+			switch (featureLevel)
+			{
+			case D3D_FEATURE_LEVEL_11_1: return "11_1";
+			case D3D_FEATURE_LEVEL_11_0: return "11_0";
+			case D3D_FEATURE_LEVEL_10_1: return "10_1";
+			case D3D_FEATURE_LEVEL_10_0: return "10_0";
+			case D3D_FEATURE_LEVEL_9_3: return "9_3";
+			case D3D_FEATURE_LEVEL_9_2: return "9_2";
+			case D3D_FEATURE_LEVEL_9_1: return "9_1";
+			default: return "Unknown";
+			}
+		}
+
+		HRESULT CreateCompatibleDevice(D3D_DRIVER_TYPE driverType, UINT creationFlags,
+			ATL::CComPtr<ID3D11Device>& device, D3D_FEATURE_LEVEL& actualFeatureLevel,
+			ATL::CComPtr<ID3D11DeviceContext>& context)
+		{
+			static constexpr D3D_FEATURE_LEVEL preferredLevels[] = {
+				D3D_FEATURE_LEVEL_11_1,
+				D3D_FEATURE_LEVEL_11_0
+			};
+			static constexpr D3D_FEATURE_LEVEL fallbackLevels[] = { D3D_FEATURE_LEVEL_11_0 };
+
+			device.Release();
+			context.Release();
+			HRESULT result = D3D11CreateDevice(nullptr, driverType, nullptr, creationFlags,
+				preferredLevels, ARRAYSIZE(preferredLevels), D3D11_SDK_VERSION,
+				&device, &actualFeatureLevel, &context);
+			if (result == E_INVALIDARG)
+			{
+				// Windows 7 不识别 11_1 枚举，使用只含 11_0 的列表重试。
+				device.Release();
+				context.Release();
+				result = D3D11CreateDevice(nullptr, driverType, nullptr, creationFlags,
+					fallbackLevels, ARRAYSIZE(fallbackLevels), D3D11_SDK_VERSION,
+					&device, &actualFeatureLevel, &context);
+			}
+			return result;
+		}
+	}
+
+	bool InitializeGraphicsDevice(GraphicsDeviceResources& resources)
+	{
+		const UINT creationFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+		HRESULT result = CreateCompatibleDevice(D3D_DRIVER_TYPE_HARDWARE, creationFlags,
+			resources.device, resources.featureLevel, resources.context);
+		if (FAILED(result))
+		{
+			std::cout << "Hardware device initialization failed. Falling back to WARP." << std::endl;
+			result = CreateCompatibleDevice(D3D_DRIVER_TYPE_WARP, creationFlags,
+				resources.device, resources.featureLevel, resources.context);
+			if (FAILED(result))
+			{
+				std::cout << "Failed to initialize a D3D11 device with both Hardware and WARP." << std::endl;
+				return false;
+			}
+			resources.driverType = D3D_DRIVER_TYPE_WARP;
+		}
+		else
+		{
+			resources.driverType = D3D_DRIVER_TYPE_HARDWARE;
+		}
+
+		std::cout << "Current D3D device: " << DriverTypeName(resources.driverType) << std::endl;
+		std::cout << "D3D feature level: " << FeatureLevelName(resources.featureLevel) << std::endl;
+
+		result = resources.device->QueryInterface(__uuidof(IDXGIDevice1), reinterpret_cast<void**>(&resources.dxgiDevice));
+		if (FAILED(result))
+		{
+			LogHResult("ID3D11Device::QueryInterface(IDXGIDevice1)", result);
+			return false;
+		}
+		resources.dxgiDevice->SetMaximumFrameLatency(1);
+
+		result = resources.dxgiDevice->GetAdapter(&resources.adapter);
+		if (FAILED(result) || !resources.adapter)
+		{
+			LogHResult("IDXGIDevice1::GetAdapter", result);
+			return false;
+		}
+		LogAdapterDiagnostics(resources.adapter);
+
+		result = resources.adapter->GetParent(__uuidof(IDXGIFactory2), reinterpret_cast<void**>(&resources.factory));
+		if (FAILED(result) || !resources.factory)
+		{
+			LogHResult("IDXGIAdapter::GetParent(IDXGIFactory2)", result);
+			return false;
+		}
+		return true;
+	}
+}

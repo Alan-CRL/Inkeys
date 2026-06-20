@@ -269,6 +269,34 @@
     <ClCompile Include="HiEasyX\HiSysGUI\SysRadioButton.cpp" />
     <ClCompile Include="HiEasyX\HiSysGUI\SysStatic.cpp" />
     <ClCompile Include="HiEasyX\HiWindow.cpp" />
+    <ClCompile Include="draw3\diagnostics.cpp" />
+    <ClCompile Include="draw3\diagnostics.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="draw3\drawing_controller.cpp" />
+    <ClCompile Include="draw3\drawing_controller.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="draw3\graphics_initialization.cpp" />
+    <ClCompile Include="draw3\graphics_initialization.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="draw3\ink_prediction.cpp" />
+    <ClCompile Include="draw3\ink_prediction.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="draw3\renderer.cpp" />
+    <ClCompile Include="draw3\renderer.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="draw3\transparent_presentation.cpp" />
+    <ClCompile Include="draw3\transparent_presentation.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="draw3\window_control.cpp" />
+    <ClCompile Include="draw3\window_control.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
     <ClCompile Include="main.cpp" />
     <None Include="main3.cpp" />
     <None Include="ink.hlsli" />
@@ -309,8 +337,6 @@
     <ClInclude Include="HiEasyX\HiSysGUI\SysRadioButton.h" />
     <ClInclude Include="HiEasyX\HiSysGUI\SysStatic.h" />
     <ClInclude Include="HiEasyX\HiWindow.h" />
-    <ClInclude Include="main.h" />
-    <ClInclude Include="renderer.h" />
     <None Include="renderer2.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>
