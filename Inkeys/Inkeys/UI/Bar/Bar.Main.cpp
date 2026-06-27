@@ -17,6 +17,7 @@ void FloatingInstallHook();
 module Inkeys.UI.Bar;
 import :Main;
 import :Atomic;
+import :Zoom;
 
 import <ranges>;
 
@@ -1137,6 +1138,7 @@ void BarUISetClass::Rendering()
 						}
 					}, viewVariant);
 			}
+			Inkeys::UI::Bar::Zoom::FitInitialAfterMainBarLayout(*this, totalWidth);
 			{ /**/ }
 
 			// 主栏
@@ -1887,7 +1889,8 @@ void BarUISetClass::Rendering()
 
 	#pragma endregion
 
-		if (needRendering || true == BarAtomic::sustainFlag)
+		bool needRenderOnce = BarAtomic::renderOnceFlag.exchange(false);
+		if (needRendering || true == BarAtomic::sustainFlag || true == needRenderOnce)
 		{
 		#pragma region 渲染UI
 
@@ -2712,23 +2715,7 @@ namespace Inkeys::UI::Bar
 	}
 	void InitializeUI(BarUISetClass& barUISet)
 	{
-		// UI DPI 缩放（Inkeys2 兼容模式）
-		{
-			HDC screenDC = GetDC(nullptr);
-			double scale = 1.0;
-
-			if (screenDC)
-			{
-				int dpiX = GetDeviceCaps(screenDC, LOGPIXELSX);
-				ReleaseDC(nullptr, screenDC);
-
-				// 转换为缩放倍率
-				scale = static_cast<double>(dpiX) / USER_DEFAULT_SCREEN_DPI;
-			}
-
-			// 限制范围 1.0 ~ 2.0
-			barUISet.barStyle.zoom = clamp(scale, 1.0, 2.0);
-		}
+		Inkeys::UI::Bar::Zoom::Initialize(barUISet);
 
 		// 定义主按钮的位置（Inkeys2 兼容模式）
 		double mainX, mainY;
