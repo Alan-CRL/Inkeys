@@ -46,13 +46,13 @@ int main()
 	draw3::InkRenderer renderer;
 	draw3::TransparentPresentationController presentation;
 	const draw3::WindowSize initialSize = window.Size();
-	if (!presentation.Initialize(window.Handle(), graphics, renderer,
+	if (!presentation.Initialize(window.Handle(), graphics, renderer, // 初始化透明呈现链，同时会初始化 renderer 的尺寸资源。
 		static_cast<UINT>(initialSize.width), static_cast<UINT>(initialSize.height)))
 	{
 		std::cout << "Failed to initialize any transparent present pipeline." << std::endl;
 		return -1;
 	}
-	window.SetGpuTransparentComposition(presentation.IsGpuTransparentComposition());
+	window.SetGpuTransparentComposition(presentation.IsGpuTransparentComposition()); // 让窗口过程按当前透明模式处理背景和重绘。
 
 	// 绘制控制器封装单笔帧循环，入口只保留应用级消息编排。
 	draw3::DrawingController drawing(
@@ -64,19 +64,19 @@ int main()
 
 	while (!window.ExitRequested())
 	{
-		if (window.ConsumeClearCanvasRequest()) drawing.ClearCanvas();
+		if (window.ConsumeClearCanvasRequest()) drawing.ClearCanvas(); // 键盘清屏请求在主绘制线程执行。
 		if (window.ConsumeCompositionChangedRequest())
 		{
-			presentation.RefreshAfterCompositionChanged();
-			window.RequestFullPresent();
+			presentation.RefreshAfterCompositionChanged(); // DWM 状态变化后重新启用玻璃/扩展帧。
+			window.RequestFullPresent(); // 透明模式刷新后补一帧完整画布。
 		}
-		drawing.ProcessPendingResize(true);
-		if (window.ConsumeFullPresentRequest()) drawing.PresentFullCanvas();
+		drawing.ProcessPendingResize(true); // Resize 请求会重建交换链和图层资源。
+		if (window.ConsumeFullPresentRequest()) drawing.PresentFullCanvas(); // 处理窗口暴露或移动后的全量刷新。
 
 		draw3::MouseMessage message = {};
 		if (!window.TryGetMouseMessage(message))
 		{
-			Sleep(1);
+			Sleep(1); // 没有输入时让出时间片，避免主循环空转。
 			continue;
 		}
 		if (message.message == WM_LBUTTONDOWN || message.message == WM_RBUTTONDOWN)

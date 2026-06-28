@@ -31,10 +31,10 @@ namespace draw3
 
 	bool WindowController::Initialize(bool preconfigureNoRedirectionBitmap)
 	{
-		const RECT monitorRect = GetPrimaryMonitorRectangle();
+		const RECT monitorRect = GetPrimaryMonitorRectangle(); // 以主显示器区域作为初始全屏画布。
 		size_.width = static_cast<int>(monitorRect.right - monitorRect.left);
 		size_.height = static_cast<int>(monitorRect.bottom - monitorRect.top);
-		activeController_ = this;
+		activeController_ = this; // HiEasyX 只能接静态回调，这里转回当前实例。
 
 		hiex::PreSetWindowStyle(WS_POPUP);
 		hiex::PreSetWindowPos(monitorRect.left, monitorRect.top);
@@ -85,7 +85,7 @@ namespace draw3
 
 	bool WindowController::ConsumeResizeRequest(WindowSize& size)
 	{
-		if (!resizeRequested_.exchange(false, std::memory_order_acquire)) return false;
+		if (!resizeRequested_.exchange(false, std::memory_order_acquire)) return false; // 消费一次跨线程尺寸请求。
 		size.width = pendingResizeWidth_.load(std::memory_order_relaxed);
 		size.height = pendingResizeHeight_.load(std::memory_order_relaxed);
 		return true;
@@ -124,24 +124,24 @@ namespace draw3
 	LRESULT CALLBACK WindowController::WindowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		if (!activeController_) return HIWINDOW_DEFAULT_PROC;
-		return activeController_->HandleWindowMessage(window, message, wParam, lParam);
+		return activeController_->HandleWindowMessage(window, message, wParam, lParam); // 静态窗口过程转发到当前控制器实例。
 	}
 
 	LRESULT WindowController::HandleWindowMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
-		const bool gpuTransparent = gpuTransparentComposition_.load(std::memory_order_acquire);
+		const bool gpuTransparent = gpuTransparentComposition_.load(std::memory_order_acquire); // GPU 透明模式下由 backbuffer 负责背景。
 		switch (message)
 		{
 		case WM_DESTROY:
-			exitRequested_.store(true, std::memory_order_release);
+			exitRequested_.store(true, std::memory_order_release); // 通知主循环退出。
 			break;
 
 		case WM_DWMCOMPOSITIONCHANGED:
-			compositionChangedRequested_.store(true, std::memory_order_release);
+			compositionChangedRequested_.store(true, std::memory_order_release); // DWM 状态变化交给主循环刷新 presenter。
 			return 0;
 
 		case WM_ERASEBKGND:
-			if (gpuTransparent) return 1;
+			if (gpuTransparent) return 1; // 阻止 GDI 擦背景，避免透明区域闪烁。
 			break;
 
 		case WM_PAINT:
@@ -156,14 +156,14 @@ namespace draw3
 
 		case WM_SHOWWINDOW:
 		case WM_ACTIVATE:
-			if (gpuTransparent) RequestFullPresent();
+			if (gpuTransparent) RequestFullPresent(); // 窗口可见性变化后重新提交完整画布。
 			break;
 
 		case WM_WINDOWPOSCHANGED:
 			if (gpuTransparent)
 			{
 				const auto* position = reinterpret_cast<const WINDOWPOS*>(lParam);
-				if (!position || !(position->flags & SWP_NOMOVE) || !(position->flags & SWP_NOSIZE)) RequestFullPresent();
+				if (!position || !(position->flags & SWP_NOMOVE) || !(position->flags & SWP_NOSIZE)) RequestFullPresent(); // 移动或尺寸变化后刷新 DWM 读取内容。
 			}
 			break;
 

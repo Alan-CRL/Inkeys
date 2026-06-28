@@ -30,7 +30,7 @@ namespace draw3
 		float SmoothStep01(float value)
 		{
 			value = std::clamp(value, 0.0f, 1.0f);
-			return value * value * (3.0f - 2.0f * value);
+			return value * value * (3.0f - 2.0f * value); // 比线性插值更平滑，避免笔宽突变。
 		}
 
 		StrokeTimingProfile GetStrokeTimingProfile(StrokeTimingProfileId id)
@@ -68,8 +68,8 @@ namespace draw3
 			{
 				const float deltaX = current[index].x - previous[index].x;
 				const float deltaY = current[index].y - previous[index].y;
-				if (deltaX * deltaX + deltaY * deltaY > positionEpsilonSquared) return false;
-				if (std::abs(current[index].r - previous[index].r) > kVisualStableRadiusEpsilonPx) return false;
+				if (deltaX * deltaX + deltaY * deltaY > positionEpsilonSquared) return false; // 位置仍变化时不能冻结。
+				if (std::abs(current[index].r - previous[index].r) > kVisualStableRadiusEpsilonPx) return false; // 半径还在收敛时也继续刷新。
 			}
 			return true;
 		}
@@ -90,17 +90,17 @@ namespace draw3
 			const double endTime = points.back().time;
 			const double tipStartTime = endTime - liveTipDurationSeconds;
 			size_t firstTipIndex = points.size() - 1;
-			while (firstTipIndex > 0 && static_cast<double>(points[firstTipIndex - 1].time) >= tipStartTime) --firstTipIndex;
+			while (firstTipIndex > 0 && static_cast<double>(points[firstTipIndex - 1].time) >= tipStartTime) --firstTipIndex; // 找到需要渐细的实时尾部起点。
 
 			const double actualTipSpan = std::max(0.0, endTime - static_cast<double>(points[firstTipIndex].time));
 			const float spanRatio = SmoothStep01(static_cast<float>(actualTipSpan / liveTipDurationSeconds));
-			const float newestScale = LerpFloat(1.0f, 0.28f, spanRatio);
+			const float newestScale = LerpFloat(1.0f, 0.28f, spanRatio); // 尾部越完整，最新端点越细。
 			for (size_t index = firstTipIndex; index < points.size(); ++index)
 			{
 				const float ageRatio = actualTipSpan > 0.000001
 					? static_cast<float>((endTime - static_cast<double>(points[index].time)) / actualTipSpan)
 					: 0.0f;
-				points[index].r *= LerpFloat(newestScale, 1.0f, SmoothStep01(ageRatio));
+				points[index].r *= LerpFloat(newestScale, 1.0f, SmoothStep01(ageRatio)); // 从最新端点向旧点逐步恢复正常半径。
 			}
 		}
 	}
@@ -108,13 +108,13 @@ namespace draw3
 	StrokeModelConfiguration CreateStrokeModelConfiguration(int dpiX)
 	{
 		const StrokeTimingProfile timingProfile = GetStrokeTimingProfile(kActiveStrokeTimingProfileId);
-		const float expectedSpeed = 500.0f * (static_cast<float>(dpiX) / 96.0f);
+		const float expectedSpeed = 500.0f * (static_cast<float>(dpiX) / 96.0f); // DPI 越高，像素速度按比例放大。
 		ink::stroke_model::KalmanPredictorParams kalmanParams;
 		kalmanParams.process_noise = 0.05;
 		kalmanParams.measurement_noise = 0.01;
 		kalmanParams.min_stable_iteration = 4;
 		kalmanParams.max_time_samples = timingProfile.kalman_max_time_samples;
-		kalmanParams.min_catchup_velocity = expectedSpeed / 1000.0f;
+		kalmanParams.min_catchup_velocity = expectedSpeed / 1000.0f; // 保证预测点追上真实点时不会过慢。
 		kalmanParams.acceleration_weight = 0.5f;
 		kalmanParams.jerk_weight = 0.1f;
 		kalmanParams.prediction_interval = ink::stroke_model::Duration(timingProfile.prediction_interval_seconds);
@@ -131,7 +131,7 @@ namespace draw3
 			.wobble_smoother_params{
 				.is_enabled = true,
 				.timeout = ink::stroke_model::Duration(timingProfile.wobble_timeout_seconds),
-				.speed_floor = timingProfile.wobble_speed_floor_ratio * expectedSpeed,
+				.speed_floor = timingProfile.wobble_speed_floor_ratio * expectedSpeed, // 低速时启用更强防抖。
 				.speed_ceiling = timingProfile.wobble_speed_ceiling_ratio * expectedSpeed
 			},
 			.position_modeler_params{ .spring_mass_constant = 11.f / 32400, .drag_constant = 72.f },
@@ -151,13 +151,13 @@ namespace draw3
 		switch (kActivePredictionMode)
 		{
 		case InkPredictionMode::Disabled:
-			params.prediction_params = ink::stroke_model::DisabledPredictorParams{};
+			params.prediction_params = ink::stroke_model::DisabledPredictorParams{}; // 完全不输出预测点，便于对比延迟。
 			break;
 		case InkPredictionMode::StrokeEnd:
-			params.prediction_params = ink::stroke_model::StrokeEndPredictorParams{};
+			params.prediction_params = ink::stroke_model::StrokeEndPredictorParams{}; // 只使用库内置的笔尾预测。
 			break;
 		default:
-			params.prediction_params = kalmanPredictorParams;
+			params.prediction_params = kalmanPredictorParams; // 默认使用调过参的 Kalman 预测。
 			break;
 		}
 	}
@@ -173,7 +173,7 @@ namespace draw3
 	{
 		const double pointTime = result.time.Value();
 		const float rawSpeed = std::hypot(result.velocity.x, result.velocity.y);
-		const float targetDiameter = LerpFloat(maxDiameter, minDiameter, SmoothStep01(rawSpeed / expectedSpeed));
+		const float targetDiameter = LerpFloat(maxDiameter, minDiameter, SmoothStep01(rawSpeed / expectedSpeed)); // 速度越快笔迹越细。
 		if (!hasSample)
 		{
 			currentDiameter = targetDiameter;
@@ -182,8 +182,8 @@ namespace draw3
 		else
 		{
 			const double deltaTime = std::max(0.0, pointTime - lastTime);
-			const float alpha = std::clamp(static_cast<float>(1.0 - std::exp(-deltaTime / 0.035)), 0.05f, 0.65f);
-			currentDiameter = LerpFloat(currentDiameter, targetDiameter, alpha);
+			const float alpha = std::clamp(static_cast<float>(1.0 - std::exp(-deltaTime / 0.035)), 0.05f, 0.65f); // 时间间隔越大，笔宽追随越快。
+			currentDiameter = LerpFloat(currentDiameter, targetDiameter, alpha); // 平滑半径，减少速度噪声造成的闪动。
 		}
 		lastTime = pointTime;
 		return { result.position.x, result.position.y, currentDiameter * 0.5f, static_cast<float>(pointTime) };
@@ -236,7 +236,7 @@ namespace draw3
 		RECT rect = {};
 		for (size_t index = firstIndex; index < lastIndex; ++index)
 		{
-			const float padding = points[index].r + 3.0f;
+			const float padding = points[index].r + 3.0f; // 额外 3px 覆盖抗锯齿和胶囊端点。
 			UnionRectInPlace(rect, RECT{
 				static_cast<LONG>(std::floor(points[index].x - padding)),
 				static_cast<LONG>(std::floor(points[index].y - padding)),
@@ -256,7 +256,7 @@ namespace draw3
 		}
 		const float deltaX = static_cast<float>(rawPosition.x - stroke.lastRawPosition.x);
 		const float deltaY = static_cast<float>(rawPosition.y - stroke.lastRawPosition.y);
-		if (deltaX * deltaX + deltaY * deltaY <= kIdleMoveThresholdPx * kIdleMoveThresholdPx) return false;
+		if (deltaX * deltaX + deltaY * deltaY <= kIdleMoveThresholdPx * kIdleMoveThresholdPx) return false; // 忽略小于阈值的鼠标抖动。
 		stroke.lastRawPosition = rawPosition;
 		return true;
 	}
@@ -271,24 +271,24 @@ namespace draw3
 		}
 		const bool stoppedLongEnough = stroke.logicalInputTime - stroke.lastMovementInputTime >= liveTipDurationSeconds;
 		if (stoppedLongEnough && AreL0VisualsClose(stroke.l0DrawPoints, stroke.previousL0DrawPoints))
-			++stroke.visualStableFrameCount;
+			++stroke.visualStableFrameCount; // 连续多帧几乎不变才认为视觉已经稳定。
 		else
 			stroke.visualStableFrameCount = 0;
 		stroke.previousL0DrawPoints = stroke.l0DrawPoints;
-		if (stroke.visualStableFrameCount >= kVisualStableRequiredFrames) stroke.idleFrozen = true;
+		if (stroke.visualStableFrameCount >= kVisualStableRequiredFrames) stroke.idleFrozen = true; // 冻结后不再持续喂入相同坐标。
 	}
 
 	void AppendNewModeledPoints(ActiveMouseStroke& stroke)
 	{
 		for (size_t index = stroke.convertedResultCount; index < stroke.modeledResults.size(); ++index)
 			stroke.realPoints.push_back(stroke.widthEstimator.Append(stroke.modeledResults[index]));
-		stroke.convertedResultCount = stroke.modeledResults.size();
+		stroke.convertedResultCount = stroke.modeledResults.size(); // 记录已转换位置，下一帧只处理增量。
 	}
 
 	void RebuildPredictedPoints(ActiveMouseStroke& stroke)
 	{
 		stroke.predictedPoints.clear();
-		StrokeWidthEstimator predictionWidth = stroke.widthEstimator;
+		StrokeWidthEstimator predictionWidth = stroke.widthEstimator; // 用副本计算预测宽度，避免污染真实点笔宽状态。
 		for (const auto& result : stroke.predictedResults) stroke.predictedPoints.push_back(predictionWidth.Append(result));
 	}
 
@@ -303,10 +303,10 @@ namespace draw3
 		stroke.l0DrawPoints.clear();
 		if (!stroke.realPoints.empty())
 		{
-			const size_t startIndex = std::min(stroke.committedIndex, stroke.realPoints.size() - 1);
+			const size_t startIndex = std::min(stroke.committedIndex, stroke.realPoints.size() - 1); // 从最后已提交点开始保留连接。
 			stroke.l0DrawPoints.insert(stroke.l0DrawPoints.end(), stroke.realPoints.begin() + startIndex, stroke.realPoints.end());
 		}
-		stroke.l0DrawPoints.insert(stroke.l0DrawPoints.end(), stroke.predictedPoints.begin(), stroke.predictedPoints.end());
+		stroke.l0DrawPoints.insert(stroke.l0DrawPoints.end(), stroke.predictedPoints.begin(), stroke.predictedPoints.end()); // 预测点只放在 L0，便于下一帧擦除重画。
 		ApplyLiveTipTaper(stroke.l0DrawPoints, liveTipDurationSeconds);
 		stroke.currentL0Rect = RectFromStrokePoints(stroke.l0DrawPoints, width, height);
 	}
@@ -317,21 +317,21 @@ namespace draw3
 	{
 		if (stroke.realPoints.size() < 2) return {};
 		const size_t protectedStartIndex = FindProtectedStartIndex(
-			stroke.realPoints, liveTipDurationSeconds + predictionDurationSeconds);
+			stroke.realPoints, liveTipDurationSeconds + predictionDurationSeconds); // 尾部和预测窗口内的点暂不落到 L1。
 		if (protectedStartIndex <= stroke.committedIndex) return {};
 
 		std::vector<InkPoint> stablePoints(stroke.realPoints.begin() + stroke.committedIndex,
 			stroke.realPoints.begin() + protectedStartIndex + 1);
 		renderer.SetOMTarget(renderer.layerL1RTV);
 		renderer.DrawStrokeOrDot(stablePoints, color, shapeType, eraser);
-		stroke.committedIndex = protectedStartIndex;
+		stroke.committedIndex = protectedStartIndex; // 推进提交游标，后续帧不重复提交稳定前缀。
 		return RectFromStrokePoints(stablePoints, width, height);
 	}
 
 	void DrawL0LiveComposite(ActiveMouseStroke& stroke, DirectX::XMFLOAT4 color,
 		float shapeType, bool eraser, InkRenderer& renderer)
 	{
-		renderer.ClearRTV(renderer.layerL0RTV, kTransparentLayerClearColor);
+		renderer.ClearRTV(renderer.layerL0RTV, kTransparentLayerClearColor); // L0 每帧从零重画，才能移除旧预测。
 		if (stroke.l0DrawPoints.empty()) return;
 		renderer.SetOMTarget(renderer.layerL0RTV);
 		renderer.DrawStrokeOrDot(stroke.l0DrawPoints, color, shapeType, eraser);

@@ -25,17 +25,17 @@ namespace draw3
 	void DrawingController::CompositeLayersToBackBuffer(RECT dirty)
 	{
 		const WindowSize size = window_.Size();
-		dirty = ClampRectToCanvas(dirty, size.width, size.height);
+		dirty = ClampRectToCanvas(dirty, size.width, size.height); // 限制脏区，避免纹理复制越界。
 		if (IsEmptyRect(dirty)) return;
-		renderer_.CopyResource(renderer_.backBufferTexture, renderer_.layerL2Texture, dirty);
-		renderer_.AlphaBlendResource(renderer_.backBufferRTV, renderer_.layerL1SRV, dirty);
-		renderer_.AlphaBlendResource(renderer_.backBufferRTV, renderer_.layerL0SRV, dirty);
+		renderer_.CopyResource(renderer_.backBufferTexture, renderer_.layerL2Texture, dirty); // L2 是已经稳定的底层画布。
+		renderer_.AlphaBlendResource(renderer_.backBufferRTV, renderer_.layerL1SRV, dirty); // L1 叠加当前笔画已确认部分。
+		renderer_.AlphaBlendResource(renderer_.backBufferRTV, renderer_.layerL0SRV, dirty); // L0 叠加实时笔锋和预测部分。
 	}
 
 	bool DrawingController::PresentFrame(RECT dirty, bool presentFull)
 	{
 		const bool succeeded = presentation_.Present(dirty, presentFull);
-		if (!succeeded) window_.RequestFullPresent();
+		if (!succeeded) window_.RequestFullPresent(); // 呈现失败时下一轮强制全量刷新兜底。
 		return succeeded;
 	}
 
@@ -43,10 +43,10 @@ namespace draw3
 	{
 		const WindowSize size = window_.Size();
 		const RECT fullCanvas = GetFullCanvasRect(size.width, size.height);
-		renderer_.ClearRTV(renderer_.layerL2RTV, presentation_.WindowBackgroundColor());
-		renderer_.ClearRTV(renderer_.layerL1RTV, kTransparentLayerClearColor);
-		renderer_.ClearRTV(renderer_.layerL0RTV, kTransparentLayerClearColor);
-		renderer_.ClearRTV(renderer_.backBufferRTV, presentation_.WindowBackgroundColor());
+		renderer_.ClearRTV(renderer_.layerL2RTV, presentation_.WindowBackgroundColor()); // 清掉长期保存的稳定画布。
+		renderer_.ClearRTV(renderer_.layerL1RTV, kTransparentLayerClearColor); // 清掉当前笔画已确认层。
+		renderer_.ClearRTV(renderer_.layerL0RTV, kTransparentLayerClearColor); // 清掉当前帧实时层。
+		renderer_.ClearRTV(renderer_.backBufferRTV, presentation_.WindowBackgroundColor()); // 先把最终缓冲区也恢复到背景。
 		CompositeLayersToBackBuffer(fullCanvas);
 		PresentFrame(fullCanvas, true);
 	}
@@ -62,17 +62,17 @@ namespace draw3
 	bool DrawingController::ProcessPendingResize(bool presentAfterResize)
 	{
 		WindowSize requestedSize = {};
-		if (!window_.ConsumeResizeRequest(requestedSize)) return false;
+		if (!window_.ConsumeResizeRequest(requestedSize)) return false; // 只有窗口过程投递过尺寸变化才处理。
 		const WindowSize oldSize = window_.Size();
 		if (requestedSize.width <= 0 || requestedSize.height <= 0 ||
 			(requestedSize.width == oldSize.width && requestedSize.height == oldSize.height)) return false;
 
-		if (!renderer_.Resize(presentation_.SwapChain(), requestedSize.width, requestedSize.height))
+		if (!renderer_.Resize(presentation_.SwapChain(), requestedSize.width, requestedSize.height)) // 先重建所有尺寸相关 D3D 资源。
 		{
 			std::cout << "Failed to resize D3D resources to " << requestedSize.width << "x" << requestedSize.height << std::endl;
 			return false;
 		}
-		if (!presentation_.Resize(requestedSize.width, requestedSize.height))
+		if (!presentation_.Resize(requestedSize.width, requestedSize.height)) // 再通知当前透明呈现器更新外部资源。
 		{
 			std::cout << "Failed to resize transparent presenter to " << requestedSize.width << "x" << requestedSize.height << std::endl;
 			return false;
@@ -92,7 +92,7 @@ namespace draw3
 		RECT strokeDirty = {};
 		bool isFirstFrame = true;
 
-		ApplyPredictionMode(configuration_.modelParams, configuration_.kalmanPredictorParams);
+		ApplyPredictionMode(configuration_.modelParams, configuration_.kalmanPredictorParams); // 将当前全局预测模式写入本次笔画配置。
 		const float baseDiameter = eraser ? 50.0f : 5.0f;
 		const float shapeType = static_cast<float>(window_.BrushShapeType());
 		const DirectX::XMFLOAT4 stableInkColor(1.0f, 0.0f, 0.0f, 1.0f);
@@ -101,7 +101,7 @@ namespace draw3
 			: stableInkColor;
 
 		ActiveMouseStroke stroke(baseDiameter, configuration_.expectedSpeed);
-		if (absl::Status status = stroke.modeler.Reset(configuration_.modelParams); !status.ok())
+		if (absl::Status status = stroke.modeler.Reset(configuration_.modelParams); !status.ok()) // 每一笔都用干净的模型状态开始。
 		{
 			std::cout << "Error: " << status.message() << std::endl;
 		}
@@ -113,7 +113,7 @@ namespace draw3
 		{
 			std::cout << "Error: " << status.message() << std::endl;
 		}
-		AppendNewModeledPoints(stroke);
+		AppendNewModeledPoints(stroke); // 把模型输出转换成渲染器可直接消费的 InkPoint。
 		stroke.lastRawPosition = POINT{ static_cast<LONG>(originX), static_cast<LONG>(originY) };
 		stroke.hasLastRawPosition = true;
 
@@ -130,7 +130,7 @@ namespace draw3
 			if (ProcessPendingResize(false))
 			{
 				const WindowSize size = window_.Size();
-				stroke.lastL0Rect = {};
+				stroke.lastL0Rect = {}; // Resize 后旧 L0 脏区已无意义，改用重算后的当前区域。
 				stroke.currentL0Rect = RectFromStrokePoints(stroke.l0DrawPoints, size.width, size.height);
 				strokeDirty = ClampRectToCanvas(strokeDirty, size.width, size.height);
 				isFirstFrame = true;
@@ -143,8 +143,8 @@ namespace draw3
 			const double wallElapsedSeconds = std::chrono::duration<double>(
 				std::chrono::high_resolution_clock::now() - startTime).count();
 			const double wallDeltaSeconds = std::max(0.0, wallElapsedSeconds - stroke.lastFrameWallTime);
-			stroke.lastFrameWallTime = wallElapsedSeconds;
-			const bool rawMoved = UpdateRawPositionAndDetectMovement(stroke, cursorPosition);
+			stroke.lastFrameWallTime = wallElapsedSeconds; // 用墙钟时间推进模型，避免 Sleep 抖动导致输入时间倒退。
+			const bool rawMoved = UpdateRawPositionAndDetectMovement(stroke, cursorPosition); // 过滤极小抖动，只保留有效移动。
 			if (rawMoved)
 			{
 				stroke.idleFrozen = false;
@@ -167,7 +167,7 @@ namespace draw3
 				{
 					std::cout << "Error: " << status.message() << std::endl;
 				}
-				AppendNewModeledPoints(stroke);
+				AppendNewModeledPoints(stroke); // 只追加本帧新增的模型输出，避免重复绘制点。
 
 				stroke.predictedResults.clear();
 				if (kActivePredictionMode != InkPredictionMode::Disabled)
@@ -175,17 +175,17 @@ namespace draw3
 					if (absl::Status status = stroke.modeler.Predict(stroke.predictedResults); !status.ok())
 						stroke.predictedResults.clear();
 				}
-				RebuildPredictedPoints(stroke);
+				RebuildPredictedPoints(stroke); // 用当前笔宽状态推导预测点半径。
 				stableDirty = CommitStablePrefixToL1(stroke, configuration_.liveTipDurationSeconds,
 					GetPredictionDurationSeconds(stroke), stableInkColor, shapeType, eraser,
 					renderer_, size.width, size.height);
 
 				stroke.lastL0Rect = stroke.currentL0Rect;
-				RebuildL0DrawPoints(stroke, configuration_.liveTipDurationSeconds, size.width, size.height);
-				UpdateIdleFreezeState(stroke, rawMoved, configuration_.liveTipDurationSeconds);
+				RebuildL0DrawPoints(stroke, configuration_.liveTipDurationSeconds, size.width, size.height); // L0 保留可变化尾部和预测点。
+				UpdateIdleFreezeState(stroke, rawMoved, configuration_.liveTipDurationSeconds); // 停笔后视觉稳定则冻结 L0，减少空转。
 				DrawL0LiveComposite(stroke, liveInkColor, shapeType, eraser, renderer_);
-				UnionRectInPlace(l0FrameDirty, stroke.lastL0Rect);
-				UnionRectInPlace(l0FrameDirty, stroke.currentL0Rect);
+				UnionRectInPlace(l0FrameDirty, stroke.lastL0Rect); // 旧 L0 区域也要刷新，清掉上一帧预测残影。
+				UnionRectInPlace(l0FrameDirty, stroke.currentL0Rect); // 新 L0 区域需要显示最新笔锋。
 			}
 			else if (forceL0Redraw)
 			{
@@ -201,15 +201,15 @@ namespace draw3
 			frameDirty = ClampRectToCanvas(frameDirty, size.width, size.height);
 			if (!IsEmptyRect(frameDirty))
 			{
-				const RECT compositeRect = isFirstFrame ? GetFullCanvasRect(size.width, size.height) : frameDirty;
+				const RECT compositeRect = isFirstFrame ? GetFullCanvasRect(size.width, size.height) : frameDirty; // 第一帧强制全量，避免旧 backbuffer 残留。
 				CompositeLayersToBackBuffer(compositeRect);
 				PresentFrame(compositeRect, isFirstFrame);
 				isFirstFrame = false;
 			}
-			UnionRectInPlace(strokeDirty, stableDirty);
+			UnionRectInPlace(strokeDirty, stableDirty); // 记录最终需要落盘到 L2 的真实笔迹范围。
 
 			if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000) && !(GetAsyncKeyState(VK_RBUTTON) & 0x8000)) break;
-			window_.FlushMouseMessages();
+			window_.FlushMouseMessages(); // 循环直接读当前鼠标位置，清掉积压消息降低延迟。
 			const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
 			HighPrecisionWait(workMs, configuration_.timingProfile.target_fps);
 			LogFrameTiming(stroke.committedIndex, stroke.realPoints.size(), stroke.predictedPoints.size(),
@@ -236,8 +236,8 @@ namespace draw3
 		strokeDirty = ClampRectToCanvas(strokeDirty, finalSize.width, finalSize.height);
 		if (!IsEmptyRect(strokeDirty))
 		{
-			renderer_.AlphaBlendResource(renderer_.layerL2RTV, renderer_.layerL1SRV, strokeDirty);
-			renderer_.ClearRTV(renderer_.layerL1RTV, kTransparentLayerClearColor);
+			renderer_.AlphaBlendResource(renderer_.layerL2RTV, renderer_.layerL1SRV, strokeDirty); // 抬笔后把本笔真实内容并入稳定画布。
+			renderer_.ClearRTV(renderer_.layerL1RTV, kTransparentLayerClearColor); // L1/L0 都是本笔临时层，结束后清空。
 			renderer_.ClearRTV(renderer_.layerL0RTV, kTransparentLayerClearColor);
 			const RECT finalPresentRect = isFirstFrame ? GetFullCanvasRect(finalSize.width, finalSize.height) : strokeDirty;
 			renderer_.CopyResource(renderer_.backBufferTexture, renderer_.layerL2Texture, finalPresentRect);

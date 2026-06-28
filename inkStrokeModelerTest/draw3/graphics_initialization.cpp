@@ -54,7 +54,7 @@ namespace draw3
 				D3D_FEATURE_LEVEL_11_1,
 				D3D_FEATURE_LEVEL_11_0
 			};
-			static constexpr D3D_FEATURE_LEVEL fallbackLevels[] = { D3D_FEATURE_LEVEL_11_0 };
+			static constexpr D3D_FEATURE_LEVEL fallbackLevels[] = { D3D_FEATURE_LEVEL_11_0 }; // 旧系统只接受 11_0 列表。
 
 			device.Release();
 			context.Release();
@@ -76,13 +76,13 @@ namespace draw3
 
 	bool InitializeGraphicsDevice(GraphicsDeviceResources& resources)
 	{
-		const UINT creationFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+		const UINT creationFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT; // 透明窗口路径需要 BGRA backbuffer。
 		HRESULT result = CreateCompatibleDevice(D3D_DRIVER_TYPE_HARDWARE, creationFlags,
 			resources.device, resources.featureLevel, resources.context);
 		if (FAILED(result))
 		{
 			std::cout << "Hardware device initialization failed. Falling back to WARP." << std::endl;
-			result = CreateCompatibleDevice(D3D_DRIVER_TYPE_WARP, creationFlags,
+			result = CreateCompatibleDevice(D3D_DRIVER_TYPE_WARP, creationFlags, // 硬件失败时退到软件光栅，方便诊断和兼容。
 				resources.device, resources.featureLevel, resources.context);
 			if (FAILED(result))
 			{
@@ -99,15 +99,15 @@ namespace draw3
 		std::cout << "Current D3D device: " << DriverTypeName(resources.driverType) << std::endl;
 		std::cout << "D3D feature level: " << FeatureLevelName(resources.featureLevel) << std::endl;
 
-		result = resources.device->QueryInterface(__uuidof(IDXGIDevice1), reinterpret_cast<void**>(&resources.dxgiDevice));
+		result = resources.device->QueryInterface(__uuidof(IDXGIDevice1), reinterpret_cast<void**>(&resources.dxgiDevice)); // 后续需要 DXGI 设备创建交换链。
 		if (FAILED(result))
 		{
 			LogHResult("ID3D11Device::QueryInterface(IDXGIDevice1)", result);
 			return false;
 		}
-		resources.dxgiDevice->SetMaximumFrameLatency(1);
+		resources.dxgiDevice->SetMaximumFrameLatency(1); // 限制排队帧数，降低笔迹显示延迟。
 
-		result = resources.dxgiDevice->GetAdapter(&resources.adapter);
+		result = resources.dxgiDevice->GetAdapter(&resources.adapter); // 取得适配器用于日志和 factory 查询。
 		if (FAILED(result) || !resources.adapter)
 		{
 			LogHResult("IDXGIDevice1::GetAdapter", result);
@@ -115,7 +115,7 @@ namespace draw3
 		}
 		LogAdapterDiagnostics(resources.adapter);
 
-		result = resources.adapter->GetParent(__uuidof(IDXGIFactory2), reinterpret_cast<void**>(&resources.factory));
+		result = resources.adapter->GetParent(__uuidof(IDXGIFactory2), reinterpret_cast<void**>(&resources.factory)); // 交换链必须由同一适配器的 factory 创建。
 		if (FAILED(result) || !resources.factory)
 		{
 			LogHResult("IDXGIAdapter::GetParent(IDXGIFactory2)", result);

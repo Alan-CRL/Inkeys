@@ -12,6 +12,7 @@
 #include <DirectXMath.h>
 #include <dwmapi.h>
 #include <dxgi1_2.h>
+#include <dxgi1_3.h>
 #include <iostream>
 #include <vector>
 #include <windows.h>
@@ -68,9 +69,16 @@ namespace draw3
 			return IsDirectCompositionMode(mode) || IsDwmGlassMode(mode);
 		}
 
+		const char* SwapChainCreationStepName(TransparentPresentMode mode, bool waitable)
+		{
+			if (IsDirectCompositionMode(mode))
+				return waitable ? "CreateWaitableSwapChainForComposition" : "CreateSwapChainForComposition";
+			return waitable ? "CreateWaitableSwapChainForHwnd" : "CreateSwapChainForHwnd";
+		}
+
 		bool IsDirectCompositionApiAvailable()
 		{
-			HMODULE module = LoadLibraryW(L"dcomp.dll");
+			HMODULE module = LoadLibraryW(L"dcomp.dll"); // 运行时探测，避免旧系统缺少 DComp 时直接失败。
 			if (!module) return false;
 			const FARPROC createDevice = GetProcAddress(module, "DCompositionCreateDevice");
 			FreeLibrary(module);
@@ -96,14 +104,14 @@ namespace draw3
 			WCHAR title[128] = {};
 			if (!GetWindowTextW(window, title, ARRAYSIZE(title)) || title[0] == L'\0')
 			{
-				SetWindowTextW(window, L"Ink Stroke Modeler Test");
+				SetWindowTextW(window, L"Ink Stroke Modeler Test"); // 保证调试工具里能识别该窗口。
 			}
 
 			bool changed = false;
 			const LONG_PTR style = GetWindowLongPtr(window, GWL_STYLE);
 			const LONG_PTR desiredStyle =
 				(style & ~(WS_OVERLAPPEDWINDOW | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) |
-				WS_POPUP | WS_CLIPCHILDREN;
+				WS_POPUP | WS_CLIPCHILDREN; // 去掉标准边框，保持全屏透明绘图窗口。
 			if (desiredStyle != style)
 			{
 				if (!TrySetWindowLong(window, GWL_STYLE, desiredStyle, "SetWindowLongPtr(GWL_STYLE)")) return false;
@@ -114,8 +122,8 @@ namespace draw3
 			LONG_PTR desiredExtendedStyle = extendedStyle & ~(
 				WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE |
 				WS_EX_DLGMODALFRAME | WS_EX_STATICEDGE | WS_EX_NOREDIRECTIONBITMAP);
-			if (layered) desiredExtendedStyle |= WS_EX_LAYERED;
-			if (noRedirectionBitmap) desiredExtendedStyle |= WS_EX_NOREDIRECTIONBITMAP;
+			if (layered) desiredExtendedStyle |= WS_EX_LAYERED; // ULW 路径需要 layered window。
+			if (noRedirectionBitmap) desiredExtendedStyle |= WS_EX_NOREDIRECTIONBITMAP; // DComp 路径避免 DWM 额外重定向位图。
 			if (desiredExtendedStyle != extendedStyle)
 			{
 				if (!TrySetWindowLong(window, GWL_EXSTYLE, desiredExtendedStyle, "SetWindowLongPtr(GWL_EXSTYLE)")) return false;
@@ -180,7 +188,7 @@ namespace draw3
 				description.ArraySize = 1;
 				description.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
 				description.SampleDesc.Count = 1;
-				description.Usage = D3D11_USAGE_STAGING;
+				description.Usage = D3D11_USAGE_STAGING; // ULW 需要 CPU 读回像素。
 				description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 				if (FAILED(device->CreateTexture2D(&description, nullptr, &stagingTexture))) return false;
 				stagingWidth = width;
@@ -203,7 +211,7 @@ namespace draw3
 				BITMAPINFO bitmapInfo = {};
 				bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
 				bitmapInfo.bmiHeader.biWidth = width;
-				bitmapInfo.bmiHeader.biHeight = -height;
+				bitmapInfo.bmiHeader.biHeight = -height; // 负高度表示 top-down DIB，坐标方向与 D3D 一致。
 				bitmapInfo.bmiHeader.biPlanes = 1;
 				bitmapInfo.bmiHeader.biBitCount = 32;
 				bitmapInfo.bmiHeader.biCompression = BI_RGB;
@@ -243,7 +251,7 @@ namespace draw3
 			bool Present(ID3D11Texture2D* finalTexture, RECT dirty, bool presentFull)
 			{
 				if (!context || !stagingTexture || !finalTexture || !EnsureWindowDib()) return false;
-				if (presentFull) dirty = RECT{ 0, 0, static_cast<LONG>(stagingWidth), static_cast<LONG>(stagingHeight) };
+				if (presentFull) dirty = RECT{ 0, 0, static_cast<LONG>(stagingWidth), static_cast<LONG>(stagingHeight) }; // 全量呈现时忽略传入脏区。
 				dirty.left = std::max(0L, dirty.left);
 				dirty.top = std::max(0L, dirty.top);
 				dirty.right = std::min(static_cast<LONG>(stagingWidth), dirty.right);
@@ -255,7 +263,7 @@ namespace draw3
 					static_cast<UINT>(dirty.right), static_cast<UINT>(dirty.bottom), 1
 				};
 				context->CopySubresourceRegion(stagingTexture, 0, static_cast<UINT>(dirty.left),
-					static_cast<UINT>(dirty.top), 0, finalTexture, 0, &sourceRegion);
+					static_cast<UINT>(dirty.top), 0, finalTexture, 0, &sourceRegion); // 只把脏区从 GPU backbuffer 拷到可读纹理。
 				D3D11_MAPPED_SUBRESOURCE mapped = {};
 				if (FAILED(context->Map(stagingTexture, 0, D3D11_MAP_READ, 0, &mapped))) return false;
 
@@ -268,7 +276,7 @@ namespace draw3
 				{
 					const size_t row = static_cast<size_t>(y - dirty.top);
 					std::memcpy(destination + row * static_cast<size_t>(dibWidth) * 4,
-						source + row * mapped.RowPitch, copyBytes);
+						source + row * mapped.RowPitch, copyBytes); // 逐行处理 RowPitch 和 DIB stride 不同的情况。
 				}
 				context->Unmap(stagingTexture, 0);
 
@@ -286,7 +294,7 @@ namespace draw3
 				update.pptSrc = &sourcePoint;
 				update.pblend = &blend;
 				update.dwFlags = ULW_ALPHA;
-				update.prcDirty = presentFull ? nullptr : &dirty;
+				update.prcDirty = presentFull ? nullptr : &dirty; // 非全量时让 USER32 只更新改变区域。
 				return UpdateLayeredWindowIndirect(window, &update) != FALSE;
 			}
 		};
@@ -320,7 +328,7 @@ namespace draw3
 				window = inputWindow;
 				if (!window || !dxgiDevice || !swapChain) return false;
 				if (!EnsureBorderlessTransparentWindowStyle(window, true, false)) return false;
-				if (!dcompModule) dcompModule = LoadLibraryW(L"dcomp.dll");
+				if (!dcompModule) dcompModule = LoadLibraryW(L"dcomp.dll"); // 延迟加载，保持旧系统可运行到 fallback。
 				if (!dcompModule) return false;
 				auto createDevice = reinterpret_cast<CreateDeviceFunction>(GetProcAddress(dcompModule, "DCompositionCreateDevice"));
 				if (!createDevice) return false;
@@ -331,9 +339,9 @@ namespace draw3
 				compositionDevice.Attach(rawDevice);
 				if (FAILED(result = compositionDevice->CreateTargetForHwnd(window, TRUE, &compositionTarget))) return false;
 				if (FAILED(result = compositionDevice->CreateVisual(&rootVisual))) return false;
-				if (FAILED(result = rootVisual->SetContent(swapChain))) return false;
+				if (FAILED(result = rootVisual->SetContent(swapChain))) return false; // 将交换链作为视觉树内容。
 				if (FAILED(result = compositionTarget->SetRoot(rootVisual))) return false;
-				if (FAILED(result = compositionDevice->Commit())) return false;
+				if (FAILED(result = compositionDevice->Commit())) return false; // 提交后 DWM 才开始读取该 visual。
 				return true;
 			}
 		};
@@ -350,7 +358,7 @@ namespace draw3
 				BOOL enabled = FALSE;
 				HRESULT result = DwmIsCompositionEnabled(&enabled);
 				if (FAILED(result) || !enabled) return false;
-				HRGN region = CreateRectRgn(0, 0, -1, -1);
+				HRGN region = CreateRectRgn(0, 0, -1, -1); // 特殊区域表示整个窗口启用玻璃。
 				if (!region) return false;
 				DWM_BLURBEHIND blur = {};
 				blur.dwFlags = DWM_BB_ENABLE | DWM_BB_BLURREGION | DWM_BB_TRANSITIONONMAXIMIZED;
@@ -384,7 +392,7 @@ namespace draw3
 				BOOL enabled = FALSE;
 				HRESULT result = DwmIsCompositionEnabled(&enabled);
 				if (FAILED(result) || !enabled) return false;
-				MARGINS margins = { -1, -1, -1, -1 };
+				MARGINS margins = { -1, -1, -1, -1 }; // -1 将玻璃扩展到整个客户区。
 				result = DwmExtendFrameIntoClientArea(window, &margins);
 				if (FAILED(result)) LogHResult("DwmExtendFrameIntoClientArea", result);
 				return SUCCEEDED(result);
@@ -402,7 +410,7 @@ namespace draw3
 
 	bool ShouldPreconfigureNoRedirectionBitmap()
 	{
-		return IsDirectCompositionMode(kPreferredTransparentPresentMode) && IsDirectCompositionApiAvailable();
+		return IsDirectCompositionMode(kPreferredTransparentPresentMode) && IsDirectCompositionApiAvailable(); // 只有首选 DComp 且 API 存在时才预置扩展样式。
 	}
 
 	struct TransparentPresentationController::Impl
@@ -442,9 +450,82 @@ namespace draw3
 				IsDirectCompositionMode(mode), IsUlwMode(mode));
 		}
 
-		bool CreateSwapChain(TransparentPresentMode mode)
+		HRESULT CreateSwapChainForMode(TransparentPresentMode mode, DXGI_SWAP_CHAIN_DESC1 description)
 		{
 			swapChain.Release();
+			HRESULT result = S_OK;
+			if (IsDirectCompositionMode(mode))
+			{
+				result = graphics->factory->CreateSwapChainForComposition(graphics->device, &description, nullptr, &swapChain); // DComp 使用无 HWND 的 composition swapchain。
+				return SUCCEEDED(result) && swapChain ? S_OK : (FAILED(result) ? result : E_FAIL);
+			}
+
+			if (IsDwmGlassMode(mode))
+			{
+				const bool waitable = (description.Flags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT) != 0;
+				LogDwmModeDiagnostics(TransparentPresentModeName(mode), window, "Before CreateSwapChainForHwnd");
+				LogSwapChainDescription(TransparentPresentModeName(mode),
+					waitable ? "Trying waitable premultiplied alpha" : "Trying premultiplied alpha", description);
+			}
+			result = graphics->factory->CreateSwapChainForHwnd(graphics->device, window, &description, nullptr, nullptr, &swapChain); // DWM/ULW 路径绑定到实际 HWND。
+			if (FAILED(result) && IsDwmGlassMode(mode))
+			{
+				BOOL opaqueBlend = TRUE;
+				if (!LogDwmColorizationState(TransparentPresentModeName(mode), "Before unspecified alpha retry", &opaqueBlend)) return result;
+				// Win7 Aero 对 HWND swapchain 使用 UNSPECIFIED alpha，保留原有兼容重试。
+				swapChain.Release();
+				description.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
+				LogSwapChainDescription(TransparentPresentModeName(mode),
+					(description.Flags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT) != 0
+					? "Trying waitable unspecified alpha" : "Trying unspecified alpha", description);
+				result = graphics->factory->CreateSwapChainForHwnd(graphics->device, window, &description, nullptr, nullptr, &swapChain);
+			}
+			return SUCCEEDED(result) && swapChain ? S_OK : (FAILED(result) ? result : E_FAIL);
+		}
+
+		bool TryCreateWaitableSwapChain(TransparentPresentMode mode, const DXGI_SWAP_CHAIN_DESC1& baseDescription)
+		{
+			DXGI_SWAP_CHAIN_DESC1 waitableDescription = baseDescription;
+			waitableDescription.Flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+			std::cout << "Trying waitable swapchain in mode " << TransparentPresentModeName(mode) << "." << std::endl;
+			HRESULT result = CreateSwapChainForMode(mode, waitableDescription);
+			if (FAILED(result) || !swapChain)
+			{
+				LogHResult(SwapChainCreationStepName(mode, true), result);
+				std::cout << "Waitable swapchain creation failed; fallback to ordinary swapchain." << std::endl;
+				swapChain.Release();
+				return false;
+			}
+
+			CComPtr<IDXGISwapChain2> swapChain2;
+			result = swapChain->QueryInterface(__uuidof(IDXGISwapChain2), reinterpret_cast<void**>(&swapChain2));
+			if (FAILED(result) || !swapChain2)
+			{
+				LogHResult("IDXGISwapChain1::QueryInterface(IDXGISwapChain2)", result);
+				std::cout << "Waitable swapchain is not usable; fallback to ordinary swapchain." << std::endl;
+				swapChain.Release();
+				return false;
+			}
+
+			result = swapChain2->SetMaximumFrameLatency(1);
+			if (FAILED(result))
+			{
+				LogHResult("IDXGISwapChain2::SetMaximumFrameLatency(1)", result);
+				std::cout << "Waitable frame latency setup failed; fallback to ordinary swapchain." << std::endl;
+				swapChain.Release();
+				return false;
+			}
+
+			std::cout << "Waitable swapchain enabled in mode " << TransparentPresentModeName(mode) << "." << std::endl;
+			if (IsDwmGlassMode(mode))
+			{
+				LogSwapChainRuntimeDescription(TransparentPresentModeName(mode), swapChain, "Waitable created");
+			}
+			return true;
+		}
+
+		bool CreateSwapChain(TransparentPresentMode mode)
+		{
 			DXGI_SWAP_CHAIN_DESC1 description = {};
 			description.Width = width;
 			description.Height = height;
@@ -454,37 +535,18 @@ namespace draw3
 			description.BufferCount = 2;
 			description.Scaling = DXGI_SCALING_STRETCH;
 			description.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-			description.AlphaMode = IsGpuMode(mode) ? DXGI_ALPHA_MODE_PREMULTIPLIED : DXGI_ALPHA_MODE_UNSPECIFIED;
+			description.AlphaMode = IsGpuMode(mode) ? DXGI_ALPHA_MODE_PREMULTIPLIED : DXGI_ALPHA_MODE_UNSPECIFIED; // GPU 透明路径需要保留 premultiplied alpha。
 
-			HRESULT result = S_OK;
-			if (IsDirectCompositionMode(mode))
-			{
-				result = graphics->factory->CreateSwapChainForComposition(graphics->device, &description, nullptr, &swapChain);
-				if (FAILED(result)) LogHResult("CreateSwapChainForComposition", result);
-				return SUCCEEDED(result) && swapChain;
-			}
+			// 先试 Win8.1+ 的 waitable swapchain；失败后不判断系统版本，直接回退普通路径。
+			if (TryCreateWaitableSwapChain(mode, description)) return true;
 
-			if (IsDwmGlassMode(mode))
-			{
-				LogDwmModeDiagnostics(TransparentPresentModeName(mode), window, "Before CreateSwapChainForHwnd");
-				LogSwapChainDescription(TransparentPresentModeName(mode), "Trying premultiplied alpha", description);
-			}
-			result = graphics->factory->CreateSwapChainForHwnd(graphics->device, window, &description, nullptr, nullptr, &swapChain);
-			if (FAILED(result) && IsDwmGlassMode(mode))
-			{
-				BOOL opaqueBlend = TRUE;
-				if (!LogDwmColorizationState(TransparentPresentModeName(mode), "Before unspecified alpha retry", &opaqueBlend)) return false;
-				// Win7 Aero 对 HWND swapchain 使用 UNSPECIFIED alpha，保留原有兼容重试。
-				swapChain.Release();
-				description.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
-				LogSwapChainDescription(TransparentPresentModeName(mode), "Trying unspecified alpha", description);
-				result = graphics->factory->CreateSwapChainForHwnd(graphics->device, window, &description, nullptr, nullptr, &swapChain);
-			}
+			HRESULT result = CreateSwapChainForMode(mode, description);
 			if (FAILED(result) || !swapChain)
 			{
-				LogHResult("CreateSwapChainForHwnd", result);
+				LogHResult(SwapChainCreationStepName(mode, false), result);
 				return false;
 			}
+			std::cout << "Ordinary swapchain enabled in mode " << TransparentPresentModeName(mode) << "." << std::endl;
 			if (IsDwmGlassMode(mode))
 			{
 				LogSwapChainRuntimeDescription(TransparentPresentModeName(mode), swapChain, "Created");
@@ -511,12 +573,12 @@ namespace draw3
 
 		bool TryInitialize(TransparentPresentMode mode)
 		{
-			ReleaseAttempt();
+			ReleaseAttempt(); // 每次尝试前清掉上一条路径留下的交换链和 presenter。
 			activeMode = mode;
 			std::cout << "Trying transparent present mode: " << TransparentPresentModeName(mode) << std::endl;
 			if (!ConfigureWindow(mode) || !CreateSwapChain(mode)) return false;
 
-			renderer->SetWindowBackgroundColor(IsGpuMode(mode) ? kTransparentLayerClearColor : kTransparentWindowBackgroundColor);
+			renderer->SetWindowBackgroundColor(IsGpuMode(mode) ? kTransparentLayerClearColor : kTransparentWindowBackgroundColor); // GPU 透明用真透明，ULW 用近透明背景接收鼠标。
 			if (!renderer->Init(graphics->device, graphics->context, swapChain, width, height)) return false;
 			if (!InitializePresenter()) return false;
 			std::cout << "Active transparent present mode: " << TransparentPresentModeName(mode) << std::endl;
@@ -562,7 +624,7 @@ namespace draw3
 		};
 		for (size_t index = 0; index < ARRAYSIZE(modes); ++index)
 		{
-			if (impl_->TryInitialize(modes[index])) return true;
+			if (impl_->TryInitialize(modes[index])) return true; // 按优先级选第一个可用透明呈现路径。
 			impl_->ReleaseAttempt();
 			if (index + 1 < ARRAYSIZE(modes))
 			{
@@ -597,11 +659,11 @@ namespace draw3
 		bool succeeded = false;
 		if (IsUlwMode(impl_->activeMode))
 		{
-			succeeded = impl_->ulwPresenter.Present(impl_->renderer->backBufferTexture, dirty, presentFull);
+			succeeded = impl_->ulwPresenter.Present(impl_->renderer->backBufferTexture, dirty, presentFull); // ULW 需要 CPU 读回并调用 UpdateLayeredWindow。
 		}
 		else
 		{
-			succeeded = impl_->PresentSwapChain(dirty, presentFull);
+			succeeded = impl_->PresentSwapChain(dirty, presentFull); // GPU 路径直接 Present1，DWM 读取 alpha。
 		}
 		if (!succeeded && !impl_->presentFailureLogged)
 		{

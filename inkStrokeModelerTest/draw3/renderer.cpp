@@ -80,7 +80,7 @@ namespace draw3
 			D3D11_MAP mapType = D3D11_MAP_WRITE_NO_OVERWRITE;
 			if (m_bufferHead + batchCount > kMaxBufferCapacity)
 			{
-				mapType = D3D11_MAP_WRITE_DISCARD;
+				mapType = D3D11_MAP_WRITE_DISCARD; // 环形缓冲区写满后丢弃旧内容从头写。
 				m_bufferHead = 0;
 			}
 
@@ -88,7 +88,7 @@ namespace draw3
 			if (SUCCEEDED(context->Map(inkDataBuffer, 0, mapType, 0, &mapped)))
 			{
 				auto* destination = static_cast<InkPoint*>(mapped.pData);
-				std::memcpy(destination + m_bufferHead, points.data() + startIndex, batchCount * sizeof(InkPoint));
+				std::memcpy(destination + m_bufferHead, points.data() + startIndex, batchCount * sizeof(InkPoint)); // 把本批点写入结构化缓冲区。
 				context->Unmap(inkDataBuffer, 0);
 			}
 
@@ -99,7 +99,7 @@ namespace draw3
 				constants->height = viewportHeight;
 				constants->color = color;
 				constants->shapeType = shapeType;
-				constants->bufferOffset = static_cast<uint32_t>(m_bufferHead);
+				constants->bufferOffset = static_cast<uint32_t>(m_bufferHead); // 着色器用偏移定位当前批次的起点。
 				context->Unmap(globalCB, 0);
 			}
 
@@ -113,14 +113,14 @@ namespace draw3
 			if (eraser)
 			{
 				float blendFactor[4] = { 0, 0, 0, 0 };
-				context->OMSetBlendState(eraserBlendState, blendFactor, 0xFFFFFFFF);
+				context->OMSetBlendState(eraserBlendState, blendFactor, 0xFFFFFFFF); // 橡皮使用独立混合状态处理透明度。
 			}
 			else
 			{
-				context->OMSetBlendState(penBlendState, nullptr, 0xFFFFFFFF);
+				context->OMSetBlendState(penBlendState, nullptr, 0xFFFFFFFF); // 画笔用 MAX 混合避免重叠边缘变厚。
 			}
 			context->RSSetState(rasterState);
-			context->Draw((static_cast<UINT>(batchCount) - 1) * 6, 0);
+			context->Draw((static_cast<UINT>(batchCount) - 1) * 6, 0); // 每两个相邻点生成一个胶囊段，段数乘 6 个顶点。
 
 			ID3D11ShaderResourceView* nullResources[] = { nullptr };
 			context->VSSetShaderResources(0, 1, nullResources);
@@ -140,7 +140,7 @@ namespace draw3
 		sourceRegion.right = rect.right;
 		sourceRegion.bottom = rect.bottom;
 		sourceRegion.back = 1;
-		context->CopySubresourceRegion(dst, 0, rect.left, rect.top, 0, src, 0, &sourceRegion);
+		context->CopySubresourceRegion(dst, 0, rect.left, rect.top, 0, src, 0, &sourceRegion); // 只复制脏矩形，减少 backbuffer 更新量。
 	}
 
 	void InkRenderer::BlendResourceGlobal(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* srcSRV)
@@ -163,7 +163,7 @@ namespace draw3
 		};
 		D3D11_MAPPED_SUBRESOURCE mapped = {};
 		if (FAILED(context->Map(inkDataBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
-		std::memcpy(mapped.pData, rectPoints, sizeof(rectPoints));
+		std::memcpy(mapped.pData, rectPoints, sizeof(rectPoints)); // 复用墨迹缓冲区传入要混合的矩形范围。
 		context->Unmap(inkDataBuffer, 0);
 		m_bufferHead = 2;
 
@@ -172,7 +172,7 @@ namespace draw3
 		constants->width = viewportWidth;
 		constants->height = viewportHeight;
 		constants->color = DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-		constants->shapeType = 1.0f;
+		constants->shapeType = 1.0f; // 这里走矩形混合路径，不使用实际画笔形状。
 		constants->bufferOffset = 0;
 		context->Unmap(globalCB, 0);
 
@@ -188,12 +188,12 @@ namespace draw3
 		context->PSSetSamplers(0, 1, &alphaBlendSampler.p);
 		context->OMSetBlendState(alphaBlendState, nullptr, 0xFFFFFFFF);
 		context->RSSetState(rasterState);
-		context->Draw(6, 0);
+		context->Draw(6, 0); // 一个矩形由两个三角形组成。
 
 		ID3D11ShaderResourceView* nullResource[] = { nullptr };
 		ID3D11SamplerState* nullSampler[] = { nullptr };
 		context->VSSetShaderResources(0, 1, nullResource);
-		context->PSSetShaderResources(1, 1, nullResource);
+		context->PSSetShaderResources(1, 1, nullResource); // 解除 SRV 绑定，避免后续作为 RTV 时冲突。
 		context->PSSetSamplers(0, 1, nullSampler);
 	}
 
@@ -226,7 +226,7 @@ namespace draw3
 	bool InkRenderer::CreateSizeDependentResources(IDXGISwapChain1* swapChain, UINT width, UINT height)
 	{
 		if (!device || !context || !swapChain || width == 0 || height == 0) return false;
-		if (FAILED(swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&backBufferTexture)))) return false;
+		if (FAILED(swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&backBufferTexture)))) return false; // 取得最终呈现缓冲区。
 		if (FAILED(device->CreateRenderTargetView(backBufferTexture, nullptr, &backBufferRTV))) return false;
 
 		D3D11_TEXTURE2D_DESC textureDescription = {};
@@ -239,9 +239,9 @@ namespace draw3
 		textureDescription.Usage = D3D11_USAGE_DEFAULT;
 		textureDescription.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
 
-		if (FAILED(device->CreateTexture2D(&textureDescription, nullptr, &layerL2Texture))) return false;
-		if (FAILED(device->CreateTexture2D(&textureDescription, nullptr, &layerL1Texture))) return false;
-		if (FAILED(device->CreateTexture2D(&textureDescription, nullptr, &layerL0Texture))) return false;
+		if (FAILED(device->CreateTexture2D(&textureDescription, nullptr, &layerL2Texture))) return false; // L2 保存已经落定的完整画布。
+		if (FAILED(device->CreateTexture2D(&textureDescription, nullptr, &layerL1Texture))) return false; // L1 保存当前笔画已确认前缀。
+		if (FAILED(device->CreateTexture2D(&textureDescription, nullptr, &layerL0Texture))) return false; // L0 保存每帧变化的笔锋和预测。
 
 		D3D11_RENDER_TARGET_VIEW_DESC renderTargetDescription = {};
 		renderTargetDescription.Format = textureDescription.Format;
@@ -263,7 +263,7 @@ namespace draw3
 			ID3D11ShaderResourceView* nullResources[] = { nullptr, nullptr };
 			context->OMSetRenderTargets(0, nullptr, nullptr);
 			context->VSSetShaderResources(0, 2, nullResources);
-			context->PSSetShaderResources(0, 2, nullResources);
+			context->PSSetShaderResources(0, 2, nullResources); // 释放前先解绑，避免 D3D 仍持有引用。
 			context->Flush();
 		}
 		backBufferRTV.Release();
@@ -304,11 +304,11 @@ namespace draw3
 		if (!swapChain || width == 0 || height == 0) return false;
 		const UINT oldWidth = static_cast<UINT>(viewportWidth);
 		const UINT oldHeight = static_cast<UINT>(viewportHeight);
-		CComPtr<ID3D11Texture2D> oldL2Texture = layerL2Texture;
-		CComPtr<ID3D11Texture2D> oldL1Texture = layerL1Texture;
+		CComPtr<ID3D11Texture2D> oldL2Texture = layerL2Texture; // 临时保留旧稳定层用于拷贝。
+		CComPtr<ID3D11Texture2D> oldL1Texture = layerL1Texture; // 当前笔画层也保留，Resize 后继续显示。
 		ReleaseSizeDependentResources();
 
-		if (FAILED(swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0))) return false;
+		if (FAILED(swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0))) return false; // 先让交换链获得新尺寸的 backbuffer。
 		if (!CreateSizeDependentResources(swapChain, width, height)) return false;
 
 		ClearRTV(layerL2RTV, windowBackgroundColor);
@@ -322,15 +322,15 @@ namespace draw3
 		if (copyWidth > 0 && copyHeight > 0)
 		{
 			RECT keepRect = { 0, 0, static_cast<LONG>(copyWidth), static_cast<LONG>(copyHeight) };
-			if (oldL2Texture) CopyResource(layerL2Texture, oldL2Texture, keepRect);
-			if (oldL1Texture) CopyResource(layerL1Texture, oldL1Texture, keepRect);
+			if (oldL2Texture) CopyResource(layerL2Texture, oldL2Texture, keepRect); // 保留已完成笔迹。
+			if (oldL1Texture) CopyResource(layerL1Texture, oldL1Texture, keepRect); // 保留正在绘制的稳定前缀。
 		}
 		return true;
 	}
 
 	bool InkRenderer::Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height)
 	{
-		device = inDevice;
+		device = inDevice; // 渲染器只借用外部统一创建的 D3D 设备。
 		context = inContext;
 		if (!CreateSizeDependentResources(swapChain, width, height)) return false;
 
@@ -379,7 +379,7 @@ namespace draw3
 		inkBufferDescription.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 		inkBufferDescription.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
 		inkBufferDescription.StructureByteStride = sizeof(InkPoint);
-		if (FAILED(device->CreateBuffer(&inkBufferDescription, nullptr, &inkDataBuffer))) return false;
+		if (FAILED(device->CreateBuffer(&inkBufferDescription, nullptr, &inkDataBuffer))) return false; // CPU 每帧写点，GPU 着色器按结构化缓冲区读取。
 
 		D3D11_SHADER_RESOURCE_VIEW_DESC shaderResourceDescription = {};
 		shaderResourceDescription.Format = DXGI_FORMAT_UNKNOWN;
@@ -388,7 +388,7 @@ namespace draw3
 		if (FAILED(device->CreateShaderResourceView(inkDataBuffer, &shaderResourceDescription, &inkDataSRV))) return false;
 
 		D3D11_SAMPLER_DESC samplerDescription = {};
-		samplerDescription.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+		samplerDescription.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT; // 混合图层按像素采样，不做线性模糊。
 		samplerDescription.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
 		samplerDescription.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
 		samplerDescription.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;

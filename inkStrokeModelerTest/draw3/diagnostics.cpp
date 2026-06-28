@@ -23,12 +23,12 @@ namespace draw3
 	{
 		void WriteFastConsoleLine(const char* text, DWORD length)
 		{
-			static HANDLE consoleHandle = GetStdHandle(STD_OUTPUT_HANDLE);
+			static HANDLE consoleHandle = GetStdHandle(STD_OUTPUT_HANDLE); // 缓存控制台句柄，减少每帧日志开销。
 			if (!consoleHandle || consoleHandle == INVALID_HANDLE_VALUE || length == 0) return;
 			DWORD written = 0;
 			if (!WriteConsoleA(consoleHandle, text, length, &written, nullptr))
 			{
-				WriteFile(consoleHandle, text, length, &written, nullptr);
+				WriteFile(consoleHandle, text, length, &written, nullptr); // 输出被重定向时 WriteConsoleA 会失败，改用 WriteFile。
 			}
 		}
 
@@ -70,7 +70,7 @@ namespace draw3
 	double GetQpcTimeMilliseconds()
 	{
 		static LARGE_INTEGER frequency = {};
-		if (frequency.QuadPart == 0) QueryPerformanceFrequency(&frequency);
+		if (frequency.QuadPart == 0) QueryPerformanceFrequency(&frequency); // 频率固定，初始化一次即可。
 		LARGE_INTEGER counter = {};
 		QueryPerformanceCounter(&counter);
 		return static_cast<double>(counter.QuadPart) * 1000.0 / static_cast<double>(frequency.QuadPart);
@@ -78,7 +78,7 @@ namespace draw3
 
 	void HighPrecisionWait(double frameTimeSpentMs, double targetFPS)
 	{
-		const double waitTimeMs = 1000.0 / targetFPS - frameTimeSpentMs;
+		const double waitTimeMs = 1000.0 / targetFPS - frameTimeSpentMs; // 扣除本帧工作耗时后再补足目标帧间隔。
 		if (waitTimeMs <= 0.0) return;
 
 		static LARGE_INTEGER frequency = {};
@@ -87,7 +87,7 @@ namespace draw3
 		LARGE_INTEGER currentCounter = {};
 		QueryPerformanceCounter(&startCounter);
 		const long long waitTicks = static_cast<long long>(waitTimeMs * static_cast<double>(frequency.QuadPart) / 1000.0);
-		const long long targetEndTick = startCounter.QuadPart + waitTicks;
+		const long long targetEndTick = startCounter.QuadPart + waitTicks; // 转成 QPC tick，最后用忙等对齐。
 
 		// 先粗略睡眠，最后约 1.5ms 使用忙等待收紧帧间隔。
 		if (waitTimeMs > 2.0)
@@ -97,15 +97,15 @@ namespace draw3
 		do
 		{
 			QueryPerformanceCounter(&currentCounter);
-			YieldProcessor();
+			YieldProcessor(); // 短忙等阶段降低自旋对 CPU 的压力。
 		} while (currentCounter.QuadPart < targetEndTick);
 	}
 
 	void LogFrameTiming(size_t committedIndex, size_t realPointCount, size_t predictedPointCount,
 		size_t l0PointCount, double workMs, double previousFrameMs, bool idleFrozen)
 	{
-		const int logicFps = workMs > 0.001 ? static_cast<int>(1000.0 / workMs) : 0;
-		const int realFps = previousFrameMs > 0.001 ? static_cast<int>(1000.0 / previousFrameMs) : 0;
+		const int logicFps = workMs > 0.001 ? static_cast<int>(1000.0 / workMs) : 0; // 只看本帧代码实际工作耗时。
+		const int realFps = previousFrameMs > 0.001 ? static_cast<int>(1000.0 / previousFrameMs) : 0; // 包含等待后的真实帧间隔。
 		char buffer[256] = {};
 		const int length = std::snprintf(buffer, sizeof(buffer),
 			"commit:%zu work:%.3fms logic:%d FPS prev-real:%d FPS(%.3fms) realPts:%zu predPts:%zu l0Pts:%zu frozen:%d\r\n",
@@ -134,10 +134,10 @@ namespace draw3
 	std::string WideToUtf8(const WCHAR* text)
 	{
 		if (!text || text[0] == L'\0') return {};
-		const int requiredSize = WideCharToMultiByte(CP_UTF8, 0, text, -1, nullptr, 0, nullptr, nullptr);
+		const int requiredSize = WideCharToMultiByte(CP_UTF8, 0, text, -1, nullptr, 0, nullptr, nullptr); // 先查询 UTF-8 缓冲区大小。
 		if (requiredSize <= 1) return {};
 		std::string result(static_cast<size_t>(requiredSize - 1), '\0');
-		WideCharToMultiByte(CP_UTF8, 0, text, -1, result.data(), requiredSize, nullptr, nullptr);
+		WideCharToMultiByte(CP_UTF8, 0, text, -1, result.data(), requiredSize, nullptr, nullptr); // 去掉末尾 NUL 后返回 std::string。
 		return result;
 	}
 
@@ -165,7 +165,7 @@ namespace draw3
 		if (!window) return;
 		RECT windowRect = {};
 		RECT clientRect = {};
-		GetWindowRect(window, &windowRect);
+		GetWindowRect(window, &windowRect); // 同时记录窗口和客户区，排查边框样式导致的尺寸偏差。
 		GetClientRect(window, &clientRect);
 		std::cout << "[" << modeName << "] " << stage
 			<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(window)
