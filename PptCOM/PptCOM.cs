@@ -123,7 +123,7 @@ namespace PptCOM
         }
         public string CheckCOM()
         {
-            string ret = "20260501a";
+            string ret = "20260627a";
             return ret;
         }
 
