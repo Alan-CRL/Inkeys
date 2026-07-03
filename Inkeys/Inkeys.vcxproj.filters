@@ -626,6 +626,9 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Zoom.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Theme.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.State.cpp">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>

@@ -590,6 +590,7 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.RenderingAttribute.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.State.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.State.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Theme.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Zoom.cppm" />
