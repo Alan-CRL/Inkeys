@@ -971,6 +971,12 @@
     <None Include="src\UI\logo1.svg">
       <Filter>资源文件</Filter>
     </None>
+    <None Include="src\UI\logo2.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\Frame 94.svg">
+      <Filter>资源文件</Filter>
+    </None>
     <None Include="src\UI\color\colorSelect.svg">
       <Filter>资源文件</Filter>
     </None>

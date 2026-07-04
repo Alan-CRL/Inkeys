@@ -736,6 +736,22 @@ void BarUISetClass::Rendering()
 			}
 			superellipseMap[BarUISetSuperellipseEnum::MainButton]->fill.value().tar = GetThemeColor(BarThemeColorEnum::Surface);
 			superellipseMap[BarUISetSuperellipseEnum::MainButton]->frame.value().tar = GetThemeColor(BarThemeColorEnum::SurfaceFrame);
+
+			// 主按钮底图随深浅色切换，着色层跟随当前画笔颜色。
+			{
+				static optional<bool> lastMainLogoDarkStyle;
+				bool currentMainLogoDarkStyle = barStyle.darkStyle;
+				if (!lastMainLogoDarkStyle.has_value() || lastMainLogoDarkStyle.value() != currentMainLogoDarkStyle)
+				{
+					svgMap[BarUISetSvgEnum::logo1]->SetTarFromResource(L"UI", currentMainLogoDarkStyle ? L"logo1" : L"logo2");
+					lastMainLogoDarkStyle = currentMainLogoDarkStyle;
+				}
+				svgMap[BarUISetSvgEnum::logoInk]->color1.value().tar = GetPenColor();
+				// 着色层和底图同尺寸，贴合修正交给 SVG 路径本身处理。
+				bool showLogoInk = stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
+				showLogoInk = showLogoInk || barButtomSet.barButtomState[(int)BarButtomPresetEnum::Pierce].state == BarWidgetState::Selected;
+				svgMap[BarUISetSvgEnum::logoInk]->pct.tar = showLogoInk ? 1.0 : 0.0;
+			}
 		}
 		// 主栏
 		{
@@ -2135,6 +2151,10 @@ void BarUISetClass::Rendering()
 						auto obj = BarUISetSvgEnum::logo1;
 						spec.Svg(barDeviceContext.Get(), *svgMap[obj], svgMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]));
 					}
+					{
+						auto obj = BarUISetSvgEnum::logoInk;
+						spec.Svg(barDeviceContext.Get(), *svgMap[obj], svgMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]));
+					}
 				}
 			}
 			{ /**/ }
@@ -2652,10 +2672,17 @@ namespace Inkeys::UI::Bar
 
 				{
 					auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, nullopt, nullopt);
-					svg->InitializationFromResource(L"UI", L"logo1");
+					svg->InitializationFromResource(L"UI", barUISet.barStyle.darkStyle ? L"logo1" : L"logo2");
 					svg->SetWH(nullopt, 80.0);
 					svg->enable.Initialization(true);
 					barUISet.svgMap[BarUISetSvgEnum::logo1] = svg;
+				}
+				{
+					auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, GetPenColor(), nullopt);
+					svg->InitializationFromResource(L"UI", L"Frame94");
+					svg->SetWH(nullopt, 80.0);
+					svg->enable.Initialization(true);
+					barUISet.svgMap[BarUISetSvgEnum::logoInk] = svg;
 				}
 				{
 					// TODO “收起” 文字标识
