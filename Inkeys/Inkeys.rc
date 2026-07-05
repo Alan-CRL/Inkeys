@@ -275,6 +275,10 @@ IDR_ZH_TW               JSON                    "src\\i18n\\zh-TW.jsonc"
 
 LOGO1                   UI                      "src\\UI\\logo1.svg"
 
+LOGO2                   UI                      "src\\UI\\logo2.svg"
+
+FRAME94                 UI                      "src\\UI\\Frame 94.svg"
+
 BARDIVIDER              UI                      "src\\UI\\barDivider.svg"
 
 BARSELECT               UI                      "src\\UI\\barSelect.svg"

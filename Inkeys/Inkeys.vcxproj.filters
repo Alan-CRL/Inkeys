@@ -626,6 +626,9 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Zoom.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Theme.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.State.cpp">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
@@ -966,6 +969,12 @@
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\logo1.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\logo2.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\Frame 94.svg">
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\color\colorSelect.svg">
