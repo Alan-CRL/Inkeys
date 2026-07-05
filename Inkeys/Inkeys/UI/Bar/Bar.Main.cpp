@@ -18,6 +18,7 @@ module Inkeys.UI.Bar;
 import :Main;
 import :Atomic;
 import :Zoom;
+import :Theme;
 
 import <ranges>;
 
@@ -719,7 +720,6 @@ void BarUISetClass::Rendering()
 	for (int forNum = 1; !offSignal; forNum = 2)
 	{
 	#pragma region 计算UI
-
 		// 主按钮
 		{
 			if (barState.fold)
@@ -733,6 +733,24 @@ void BarUISetClass::Rendering()
 				superellipseMap[BarUISetSuperellipseEnum::MainButton]->n.value().tar = 10.0;
 
 				superellipseMap[BarUISetSuperellipseEnum::MainButton]->pct.tar = 0.8;
+			}
+			superellipseMap[BarUISetSuperellipseEnum::MainButton]->fill.value().tar = GetThemeColor(BarThemeColorEnum::Surface);
+			superellipseMap[BarUISetSuperellipseEnum::MainButton]->frame.value().tar = GetThemeColor(BarThemeColorEnum::SurfaceFrame);
+
+			// 主按钮底图随深浅色切换，着色层跟随当前画笔颜色。
+			{
+				static optional<bool> lastMainLogoDarkStyle;
+				bool currentMainLogoDarkStyle = barStyle.darkStyle;
+				if (!lastMainLogoDarkStyle.has_value() || lastMainLogoDarkStyle.value() != currentMainLogoDarkStyle)
+				{
+					svgMap[BarUISetSvgEnum::logo1]->SetTarFromResource(L"UI", currentMainLogoDarkStyle ? L"logo1" : L"logo2");
+					lastMainLogoDarkStyle = currentMainLogoDarkStyle;
+				}
+				svgMap[BarUISetSvgEnum::logoInk]->color1.value().tar = GetPenColor();
+				// 着色层和底图同尺寸，贴合修正交给 SVG 路径本身处理。
+				bool showLogoInk = stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
+				showLogoInk = showLogoInk || barButtomSet.barButtomState[(int)BarButtomPresetEnum::Pierce].state == BarWidgetState::Selected;
+				svgMap[BarUISetSvgEnum::logoInk]->pct.tar = showLogoInk ? 1.0 : 0.0;
 			}
 		}
 		// 主栏
@@ -790,8 +808,8 @@ void BarUISetClass::Rendering()
 									if (!isColorSelector)
 									{
 										if (temp->state->emph == BarWidgetEmphasize::Pressed && temp->state->state != BarWidgetState::Selected)
-											temp->buttom.fill.value().tar = RGB(127, 127, 127);
-										else temp->buttom.fill.value().tar = RGB(88, 255, 236);
+											temp->buttom.fill.value().tar = GetThemeColor(BarThemeColorEnum::PressedFill);
+										else temp->buttom.fill.value().tar = GetThemeColor(BarThemeColorEnum::Accent);
 									}
 								}
 								if (temp->icon.enable.tar)
@@ -809,16 +827,8 @@ void BarUISetClass::Rendering()
 									{
 										temp->icon.pct.tar = 1.0;
 
-										if (barStyle.darkStyle)
-										{
-											if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().tar = RGB(88, 255, 236);
-											else temp->icon.color1.value().tar = RGB(255, 255, 255);
-										}
-										else
-										{
-											if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().tar = RGB(88, 255, 236);
-											else temp->icon.color1.value().tar = RGB(0, 0, 0);
-										}
+										if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().tar = GetThemeColor(BarThemeColorEnum::Accent);
+										else temp->icon.color1.value().tar = GetThemeColor(BarThemeColorEnum::TextPrimary);
 									}
 								}
 								if (temp->name.enable.tar)
@@ -901,8 +911,8 @@ void BarUISetClass::Rendering()
 									temp->buttom.h.tar = 30.0;
 
 									if (temp->state->emph == BarWidgetEmphasize::Pressed && temp->state->state != BarWidgetState::Selected)
-										temp->buttom.fill.value().tar = RGB(127, 127, 127);
-									else temp->buttom.fill.value().tar = RGB(88, 255, 236);
+										temp->buttom.fill.value().tar = GetThemeColor(BarThemeColorEnum::PressedFill);
+									else temp->buttom.fill.value().tar = GetThemeColor(BarThemeColorEnum::Accent);
 								}
 								if (temp->icon.enable.tar)
 								{
@@ -915,16 +925,8 @@ void BarUISetClass::Rendering()
 									{
 										temp->icon.pct.tar = 1.0;
 
-										if (barStyle.darkStyle)
-										{
-											if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().tar = RGB(88, 255, 236);
-											else temp->icon.color1.value().tar = RGB(255, 255, 255);
-										}
-										else
-										{
-											if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().tar = RGB(88, 255, 236);
-											else temp->icon.color1.value().tar = RGB(27, 27, 27);
-										}
+										if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().tar = GetThemeColor(BarThemeColorEnum::Accent);
+										else temp->icon.color1.value().tar = GetThemeColor(BarThemeColorEnum::TextPrimary);
 									}
 								}
 								if (temp->name.enable.tar)
@@ -936,16 +938,8 @@ void BarUISetClass::Rendering()
 									if (barState.fold) temp->name.pct.tar = 0.0;
 									else temp->name.pct.tar = 1.0;
 
-									if (barStyle.darkStyle)
-									{
-										if (temp->state->state == BarWidgetState::Selected) temp->name.color.tar = RGB(88, 255, 236);
-										else temp->name.color.tar = RGB(255, 255, 255);
-									}
-									else
-									{
-										if (temp->state->state == BarWidgetState::Selected) temp->name.color.tar = RGB(88, 255, 236);
-										else temp->name.color.tar = RGB(27, 27, 27);
-									}
+									if (temp->state->state == BarWidgetState::Selected) temp->name.color.tar = GetThemeColor(BarThemeColorEnum::Accent);
+									else temp->name.color.tar = GetThemeColor(BarThemeColorEnum::TextPrimary);
 									temp->name.size.tar = 12.0;
 								}
 
@@ -1007,8 +1001,8 @@ void BarUISetClass::Rendering()
 									temp->buttom.h.tar = 70.0;
 
 									if (temp->state->emph == BarWidgetEmphasize::Pressed && temp->state->state != BarWidgetState::Selected)
-										temp->buttom.fill.value().tar = RGB(127, 127, 127);
-									else temp->buttom.fill.value().tar = RGB(88, 255, 236);
+										temp->buttom.fill.value().tar = GetThemeColor(BarThemeColorEnum::PressedFill);
+									else temp->buttom.fill.value().tar = GetThemeColor(BarThemeColorEnum::Accent);
 								}
 								if (temp->icon.enable.tar)
 								{
@@ -1023,16 +1017,8 @@ void BarUISetClass::Rendering()
 									{
 										temp->icon.pct.tar = 1.0;
 
-										if (barStyle.darkStyle)
-										{
-											if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().tar = RGB(88, 255, 236);
-											else temp->icon.color1.value().tar = RGB(255, 255, 255);
-										}
-										else
-										{
-											if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().tar = RGB(88, 255, 236);
-											else temp->icon.color1.value().tar = RGB(27, 27, 27);
-										}
+										if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().tar = GetThemeColor(BarThemeColorEnum::Accent);
+										else temp->icon.color1.value().tar = GetThemeColor(BarThemeColorEnum::TextPrimary);
 									}
 								}
 								if (temp->name.enable.tar)
@@ -1044,17 +1030,8 @@ void BarUISetClass::Rendering()
 									if (barState.fold) temp->name.pct.tar = 0.0;
 									else temp->name.pct.tar = 1.0;
 
-									if (barStyle.darkStyle)
-									{
-										if (temp->state->state == BarWidgetState::Selected) temp->name.color.tar = RGB(88, 255, 236);
-										else temp->name.color.tar = RGB(255, 255, 255);
-									}
-
-									else
-									{
-										if (temp->state->state == BarWidgetState::Selected) temp->name.color.tar = RGB(88, 255, 236);
-										else temp->name.color.tar = RGB(27, 27, 27);
-									}
+									if (temp->state->state == BarWidgetState::Selected) temp->name.color.tar = GetThemeColor(BarThemeColorEnum::Accent);
+									else temp->name.color.tar = GetThemeColor(BarThemeColorEnum::TextPrimary);
 
 									temp->name.size.tar = 13.0;
 								}
@@ -1101,8 +1078,8 @@ void BarUISetClass::Rendering()
 									temp->buttom.w.tar = 10.0;
 									temp->buttom.h.tar = 70.0;
 
-									if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.fill.value().tar = RGB(127, 127, 127);
-									else temp->buttom.fill.value().tar = RGB(88, 255, 236);
+									if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.fill.value().tar = GetThemeColor(BarThemeColorEnum::PressedFill);
+									else temp->buttom.fill.value().tar = GetThemeColor(BarThemeColorEnum::Accent);
 								}
 								if (temp->icon.enable.tar)
 								{
@@ -1114,8 +1091,7 @@ void BarUISetClass::Rendering()
 									else
 									{
 										temp->icon.pct.tar = 0.18;
-										if (barStyle.darkStyle) temp->icon.color1.value().tar = RGB(255, 255, 255);
-										else temp->icon.color1.value().tar = RGB(0, 0, 0);
+										temp->icon.color1.value().tar = GetThemeColor(BarThemeColorEnum::TextPrimary);
 									}
 								}
 
@@ -1162,16 +1138,8 @@ void BarUISetClass::Rendering()
 					shapeMap[BarUISetShapeEnum::MainBar]->pct.tar = 0.8;
 					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().tar = 0.18;
 				}
-				if (barStyle.darkStyle)
-				{
-					shapeMap[BarUISetShapeEnum::MainBar]->fill.value().tar = RGB(24, 24, 24);
-					shapeMap[BarUISetShapeEnum::MainBar]->frame.value().tar = RGB(255, 255, 255);
-				}
-				else
-				{
-					shapeMap[BarUISetShapeEnum::MainBar]->fill.value().tar = RGB(243, 243, 243);
-					shapeMap[BarUISetShapeEnum::MainBar]->frame.value().tar = RGB(0, 0, 0);
-				}
+				shapeMap[BarUISetShapeEnum::MainBar]->fill.value().tar = GetThemeColor(BarThemeColorEnum::Surface);
+				shapeMap[BarUISetShapeEnum::MainBar]->frame.value().tar = GetThemeColor(BarThemeColorEnum::SurfaceFrame);
 
 				// 绘制属性
 				{
@@ -1199,16 +1167,8 @@ void BarUISetClass::Rendering()
 						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->pct.tar = 0.9;
 						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->framePct.value().tar = 0.18;
 					}
-					if (barStyle.darkStyle)
-					{
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->fill.value().tar = RGB(24, 24, 24);
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->frame.value().tar = RGB(255, 255, 255);
-					}
-					else
-					{
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->fill.value().tar = RGB(243, 243, 243);
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->frame.value().tar = RGB(0, 0, 0);
-					}
+					shapeMap[BarUISetShapeEnum::DrawAttributeBar]->fill.value().tar = GetThemeColor(BarThemeColorEnum::Surface);
+					shapeMap[BarUISetShapeEnum::DrawAttributeBar]->frame.value().tar = GetThemeColor(BarThemeColorEnum::SurfaceFrame);
 
 					// Color 区域
 					{
@@ -1561,36 +1521,20 @@ void BarUISetClass::Rendering()
 								svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1]->pct.tar = 1.0;
 								wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->pct.tar = 1.0;
 							}
-							if (barStyle.darkStyle)
+							if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1)
 							{
-								if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1)
-								{
-									wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->color.tar = RGB(88, 255, 236);
-									svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1]->color1.value().tar = RGB(88, 255, 236);
-								}
-								else
-								{
-									wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->color.tar = RGB(255, 255, 255);
-									svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1]->color1.value().tar = RGB(255, 255, 255);
-								}
+								wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->color.tar = GetThemeColor(BarThemeColorEnum::Accent);
+								svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1]->color1.value().tar = GetThemeColor(BarThemeColorEnum::Accent);
 							}
 							else
 							{
-								if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1)
-								{
-									wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->color.tar = RGB(88, 255, 236);
-									svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1]->color1.value().tar = RGB(88, 255, 236);
-								}
-								else
-								{
-									wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->color.tar = RGB(24, 24, 24);
-									svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1]->color1.value().tar = RGB(24, 24, 24);
-								}
+								wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->color.tar = GetThemeColor(BarThemeColorEnum::TextPrimary);
+								svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1]->color1.value().tar = GetThemeColor(BarThemeColorEnum::TextPrimary);
 							}
 
 							if (barState.drawAttributeBar.brush1Press && stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenBrush1)
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->fill.value().tar = RGB(127, 127, 127);
-							else shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->fill.value().tar = RGB(88, 255, 236);
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->fill.value().tar = GetThemeColor(BarThemeColorEnum::PressedFill);
+							else shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->fill.value().tar = GetThemeColor(BarThemeColorEnum::Accent);
 						}
 						// 荧光笔
 						{
@@ -1617,36 +1561,20 @@ void BarUISetClass::Rendering()
 								svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1]->pct.tar = 1.0;
 								wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->pct.tar = 1.0;
 							}
-							if (barStyle.darkStyle)
+							if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
 							{
-								if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
-								{
-									wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->color.tar = RGB(88, 255, 236);
-									svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1]->color1.value().tar = RGB(88, 255, 236);
-								}
-								else
-								{
-									wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->color.tar = RGB(255, 255, 255);
-									svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1]->color1.value().tar = RGB(255, 255, 255);
-								}
+								wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->color.tar = GetThemeColor(BarThemeColorEnum::Accent);
+								svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1]->color1.value().tar = GetThemeColor(BarThemeColorEnum::Accent);
 							}
 							else
 							{
-								if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
-								{
-									wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->color.tar = RGB(88, 255, 236);
-									svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1]->color1.value().tar = RGB(88, 255, 236);
-								}
-								else
-								{
-									wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->color.tar = RGB(24, 24, 24);
-									svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1]->color1.value().tar = RGB(24, 24, 24);
-								}
+								wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->color.tar = GetThemeColor(BarThemeColorEnum::TextPrimary);
+								svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1]->color1.value().tar = GetThemeColor(BarThemeColorEnum::TextPrimary);
 							}
 
 							if (barState.drawAttributeBar.highlight1Press && stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHighlighter1)
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->fill.value().tar = RGB(127, 127, 127);
-							else shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->fill.value().tar = RGB(88, 255, 236);
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->fill.value().tar = GetThemeColor(BarThemeColorEnum::PressedFill);
+							else shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->fill.value().tar = GetThemeColor(BarThemeColorEnum::Accent);
 						}
 
 						// 选中
@@ -1665,15 +1593,7 @@ void BarUISetClass::Rendering()
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect]->pct.tar = 0.2;
 							}
-							if (barStyle.darkStyle)
-							{
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect]->fill.value().tar = RGB(88, 255, 236);
-							}
-							else
-							{
-								// TODO
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect]->fill.value().tar = RGB(88, 255, 236);
-							}
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect]->fill.value().tar = GetThemeColor(BarThemeColorEnum::Accent);
 						}
 						// 选中滑动槽
 						{
@@ -1696,6 +1616,7 @@ void BarUISetClass::Rendering()
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->pct.tar = 0.15;
 							}
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->fill.value().tar = GetThemeColor(BarThemeColorEnum::SubtleFill);
 						}
 					}
 					{ /**/ }
@@ -1720,6 +1641,7 @@ void BarUISetClass::Rendering()
 
 							shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->pct.tar = 0.15;
 						}
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->fill.value().tar = GetThemeColor(BarThemeColorEnum::SubtleFill);
 
 						if (!barState.drawAttribute)
 						{
@@ -1731,6 +1653,7 @@ void BarUISetClass::Rendering()
 							wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->w.tar = 80.0;
 							wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->pct.tar = 1.0;
 						}
+						wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->color.tar = GetThemeColor(BarThemeColorEnum::TextPrimary);
 					}
 				}
 			}
@@ -2228,6 +2151,10 @@ void BarUISetClass::Rendering()
 						auto obj = BarUISetSvgEnum::logo1;
 						spec.Svg(barDeviceContext.Get(), *svgMap[obj], svgMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]));
 					}
+					{
+						auto obj = BarUISetSvgEnum::logoInk;
+						spec.Svg(barDeviceContext.Get(), *svgMap[obj], svgMap[obj]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]));
+					}
 				}
 			}
 			{ /**/ }
@@ -2716,6 +2643,7 @@ namespace Inkeys::UI::Bar
 	void InitializeUI(BarUISetClass& barUISet)
 	{
 		Inkeys::UI::Bar::Zoom::Initialize(barUISet);
+		SetThemeStyleSource(&barUISet.barStyle);
 
 		// 定义主按钮的位置（Inkeys2 兼容模式）
 		double mainX, mainY;
@@ -2723,12 +2651,11 @@ namespace Inkeys::UI::Bar
 			mainX = static_cast<double>(barUISet.barWindow.x + barUISet.barWindow.w - 80 - 50) / barUISet.barStyle.zoom;
 			mainY = static_cast<double>(barUISet.barWindow.y + barUISet.barWindow.h - 80 - 200) / barUISet.barStyle.zoom;
 		}
-
 		// 定义 UI 控件
 		{
 			// 背景层
 			{
-				auto word = make_shared<BarUiWordClass>(700.0, 150.0, 1200.0, 300.0, L"", 30.0, RGB(255, 255, 255));
+				auto word = make_shared<BarUiWordClass>(700.0, 150.0, 1200.0, 300.0, L"", 30.0, GetThemeColor(BarThemeColorEnum::TextPrimary));
 				word->content.Initialization(L"软件遇到透明背景无法正常显示的故障\n\nexe属性->关闭使用简化的颜色模式\nWindows7用户请开启Aero主题\n\n联系开发者->软件选项主页中\n重启软件试试");
 				word->pct.Initialization(0.0);
 				word->enable.Initialization(true);
@@ -2737,7 +2664,7 @@ namespace Inkeys::UI::Bar
 
 			// 主按钮
 			{
-				auto superellipse = make_shared<BarUiSuperellipseClass>(mainX, mainY, 80.0, 80.0, 3.0, 1.0, RGB(24, 24, 24), RGB(255, 255, 255));
+				auto superellipse = make_shared<BarUiSuperellipseClass>(mainX, mainY, 80.0, 80.0, 3.0, 1.0, GetThemeColor(BarThemeColorEnum::Surface), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 				superellipse->pct.Initialization(0.6);
 				superellipse->framePct = BarUiPctClass(0.18);
 				superellipse->enable.Initialization(true);
@@ -2745,10 +2672,17 @@ namespace Inkeys::UI::Bar
 
 				{
 					auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, nullopt, nullopt);
-					svg->InitializationFromResource(L"UI", L"logo1");
+					svg->InitializationFromResource(L"UI", barUISet.barStyle.darkStyle ? L"logo1" : L"logo2");
 					svg->SetWH(nullopt, 80.0);
 					svg->enable.Initialization(true);
 					barUISet.svgMap[BarUISetSvgEnum::logo1] = svg;
+				}
+				{
+					auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, GetPenColor(), nullopt);
+					svg->InitializationFromResource(L"UI", L"Frame94");
+					svg->SetWH(nullopt, 80.0);
+					svg->enable.Initialization(true);
+					barUISet.svgMap[BarUISetSvgEnum::logoInk] = svg;
 				}
 				{
 					// TODO “收起” 文字标识
@@ -2756,7 +2690,7 @@ namespace Inkeys::UI::Bar
 			}
 			// 主栏
 			{
-				auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 80.0, 80.0, 8.0, 8.0, 1.0, RGB(24, 24, 24), RGB(255, 255, 255));
+				auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 80.0, 80.0, 8.0, 8.0, 1.0, GetThemeColor(BarThemeColorEnum::Surface), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 				shape->pct.Initialization(0.8);
 				shape->framePct = BarUiPctClass(0.18);
 				shape->w.mod = BarUiValueModeEnum::Variable;
@@ -2766,7 +2700,7 @@ namespace Inkeys::UI::Bar
 
 				// 绘制属性（一级菜单）
 				{
-					auto shape = make_shared<BarUiShapeClass>(10.0, 10.0, 60.0, 60.0, 8.0, 8.0, 1.0, RGB(24, 24, 24), RGB(255, 255, 255));
+					auto shape = make_shared<BarUiShapeClass>(10.0, 10.0, 60.0, 60.0, 8.0, 8.0, 1.0, GetThemeColor(BarThemeColorEnum::Surface), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 					shape->pct.Initialization(0.8);
 					shape->framePct = BarUiPctClass(0.18);
 					shape->w.mod = BarUiValueModeEnum::Variable;
@@ -2778,7 +2712,7 @@ namespace Inkeys::UI::Bar
 					{
 						// Color 1
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, RGB(255, 255, 255), RGB(127, 127, 127));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect1), GetThemeColor(BarThemeColorEnum::SwatchFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1] = shape;
 
@@ -2790,7 +2724,7 @@ namespace Inkeys::UI::Bar
 						}
 						// Color 2
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, RGB(0, 0, 0), RGB(127, 127, 127));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect2), GetThemeColor(BarThemeColorEnum::SwatchFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2] = shape;
 
@@ -2802,7 +2736,7 @@ namespace Inkeys::UI::Bar
 						}
 						// Color 3
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, RGB(255, 139, 0), RGB(127, 127, 127));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect3), GetThemeColor(BarThemeColorEnum::SwatchFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3] = shape;
 
@@ -2814,7 +2748,7 @@ namespace Inkeys::UI::Bar
 						}
 						// Color 4
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, RGB(50, 30, 181), RGB(127, 127, 127));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect4), GetThemeColor(BarThemeColorEnum::SwatchFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4] = shape;
 
@@ -2826,7 +2760,7 @@ namespace Inkeys::UI::Bar
 						}
 						// Color 5
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, RGB(255, 197, 16), RGB(127, 127, 127));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect5), GetThemeColor(BarThemeColorEnum::SwatchFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5] = shape;
 
@@ -2838,7 +2772,7 @@ namespace Inkeys::UI::Bar
 						}
 						// Color 6
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, RGB(255, 16, 0), RGB(127, 127, 127));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect6), GetThemeColor(BarThemeColorEnum::SwatchFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6] = shape;
 
@@ -2850,7 +2784,7 @@ namespace Inkeys::UI::Bar
 						}
 						// Color 7
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, RGB(78, 161, 183), RGB(127, 127, 127));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect7), GetThemeColor(BarThemeColorEnum::SwatchFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7] = shape;
 
@@ -2862,7 +2796,7 @@ namespace Inkeys::UI::Bar
 						}
 						// Color 8
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, RGB(50, 110, 217), RGB(127, 127, 127));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect8), GetThemeColor(BarThemeColorEnum::SwatchFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8] = shape;
 
@@ -2874,7 +2808,7 @@ namespace Inkeys::UI::Bar
 						}
 						// Color 9
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, RGB(102, 213, 82), RGB(127, 127, 127));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect9), GetThemeColor(BarThemeColorEnum::SwatchFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9] = shape;
 
@@ -2886,7 +2820,7 @@ namespace Inkeys::UI::Bar
 						}
 						// Color 10
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, RGB(48, 108, 0), RGB(127, 127, 127));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect10), GetThemeColor(BarThemeColorEnum::SwatchFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10] = shape;
 
@@ -2898,7 +2832,7 @@ namespace Inkeys::UI::Bar
 						}
 						// Color 11
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, RGB(255, 30, 207), RGB(127, 127, 127));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect11), GetThemeColor(BarThemeColorEnum::SwatchFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11] = shape;
 
@@ -2914,57 +2848,57 @@ namespace Inkeys::UI::Bar
 					{
 						// 画笔
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 50.0, 50.0, 4.0, 4.0, 1.0, RGB(0, 0, 0), nullopt);
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 50.0, 50.0, 4.0, 4.0, 1.0, GetThemeColor(BarThemeColorEnum::Accent), nullopt);
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1] = shape;
 
-							auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, RGB(0, 0, 0), nullopt);
+							auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, GetThemeColor(BarThemeColorEnum::TextPrimary), nullopt);
 							svg->InitializationFromResource(L"UI", L"barBrush1");
 							svg->SetWH(nullopt, 20.0);
 							svg->enable.Initialization(true);
 							barUISet.svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1] = svg;
 
-							auto word = make_shared<BarUiWordClass>(0.0, 5.0, 50.0, 15.0, L"画笔", 12.0, RGB(255, 255, 255));
+							auto word = make_shared<BarUiWordClass>(0.0, 5.0, 50.0, 15.0, L"画笔", 12.0, GetThemeColor(BarThemeColorEnum::TextPrimary));
 							word->enable.Initialization(true);
 							barUISet.wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1] = word;
 						}
 						// 荧光笔
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 50.0, 50.0, 4.0, 4.0, 1.0, RGB(0, 0, 0), nullopt);
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 50.0, 50.0, 4.0, 4.0, 1.0, GetThemeColor(BarThemeColorEnum::Accent), nullopt);
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1] = shape;
 
-							auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, RGB(0, 0, 0), nullopt);
+							auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, GetThemeColor(BarThemeColorEnum::TextPrimary), nullopt);
 							svg->InitializationFromResource(L"UI", L"barHighlighter1");
 							svg->SetWH(nullopt, 20.0);
 							svg->enable.Initialization(true);
 							barUISet.svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1] = svg;
 
-							auto word = make_shared<BarUiWordClass>(0.0, 5.0, 50.0, 15.0, L"荧光笔", 12.0, RGB(255, 255, 255));
+							auto word = make_shared<BarUiWordClass>(0.0, 5.0, 50.0, 15.0, L"荧光笔", 12.0, GetThemeColor(BarThemeColorEnum::TextPrimary));
 							word->enable.Initialization(true);
 							barUISet.wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1] = word;
 						}
 
 						// 选中
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 50.0, 50.0, 4.0, 4.0, 1.0, RGB(0, 0, 0), nullopt);
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 50.0, 50.0, 4.0, 4.0, 1.0, GetThemeColor(BarThemeColorEnum::Accent), nullopt);
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect] = shape;
 						}
 						// 选中滑动槽
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 60.0, 60.0, 4.0, 4.0, 1.0, RGB(127, 127, 127), nullopt);
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 60.0, 60.0, 4.0, 4.0, 1.0, GetThemeColor(BarThemeColorEnum::SubtleFill), nullopt);
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove] = shape;
 						}
 					}
 					// 粗细调节区域
 					{
-						auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 60.0, 60.0, 4.0, 4.0, 1.0, RGB(127, 127, 127), nullopt);
+						auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 60.0, 60.0, 4.0, 4.0, 1.0, GetThemeColor(BarThemeColorEnum::SubtleFill), nullopt);
 						shape->enable.Initialization(true);
 						barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect] = shape;
 
-						auto word = make_shared<BarUiWordClass>(-10.0, 0.0, 30.0, 30.0, L"", 15.0, RGB(255, 255, 255));
+						auto word = make_shared<BarUiWordClass>(-10.0, 0.0, 30.0, 30.0, L"", 15.0, GetThemeColor(BarThemeColorEnum::TextPrimary));
 						word->enable.Initialization(true);
 						barUISet.wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay] = word;
 					}
