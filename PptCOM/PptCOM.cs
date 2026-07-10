@@ -348,30 +348,57 @@ namespace PptCOM
                 }
             }
         }
-        private bool IsCurrentBindingReadableForRebindGuard()
+        private bool TryGetActiveSlideShowHwndForCompare(object applicationObj, out IntPtr hwnd)
         {
-            if (pptActivePresentation == null || pptSlideShowWindow == null) return false;
+            hwnd = IntPtr.Zero;
+            if (applicationObj == null) return false;
+
+            object activePresentation = null;
+            object slideShowWindow = null;
 
             try
             {
-                int totalPage = GetTotalSlideIndex(pptActivePresentation);
-                int currentPage = GetCurrentSlideIndex(pptSlideShowWindow);
-                return totalPage > 0 && currentPage > 0;
+                activePresentation = applicationObj.GetType().InvokeMember("ActivePresentation", BindingFlags.GetProperty, null, applicationObj, null);
+                if (activePresentation == null) return false;
+
+                slideShowWindow = activePresentation.GetType().InvokeMember("SlideShowWindow", BindingFlags.GetProperty, null, activePresentation, null);
+                hwnd = GetPptHwndFromSlideShowWindow(slideShowWindow);
+                return hwnd != IntPtr.Zero;
             }
             catch
             {
                 return false;
             }
+            finally
+            {
+                if (slideShowWindow != null)
+                {
+                    bool isCurrentSlideShowWindow = AreComObjectsEqual(slideShowWindow, (object)pptSlideShowWindow);
+                    if (!isCurrentSlideShowWindow) SafeRelease(slideShowWindow);
+                }
+
+                if (activePresentation != null)
+                {
+                    bool isCurrentPresentation = AreComObjectsEqual(activePresentation, (object)pptActivePresentation);
+                    if (!isCurrentPresentation) SafeRelease(activePresentation);
+                }
+            }
         }
         private bool ShouldKeepCurrentBindingForSamePresentation(object bestApp)
         {
+            IntPtr currentHwnd = GetPptHwndFromSlideShowWindow((object)pptSlideShowWindow);
+            IntPtr bestHwnd;
+
+            if (currentHwnd != IntPtr.Zero && TryGetActiveSlideShowHwndForCompare(bestApp, out bestHwnd))
+            {
+                return currentHwnd == bestHwnd;
+            }
+
             string currentFullName = TryGetPresentationFullNameForCompare((object)pptActivePresentation);
             string bestFullName = TryGetActivePresentationFullNameForCompare(bestApp);
 
             if (currentFullName.Length == 0 || bestFullName.Length == 0) return false;
-            if (!string.Equals(currentFullName, bestFullName, StringComparison.OrdinalIgnoreCase)) return false;
-
-            return IsCurrentBindingReadableForRebindGuard();
+            return string.Equals(currentFullName, bestFullName, StringComparison.OrdinalIgnoreCase);
         }
         private bool IsSlideShowWindowActive(object sswObj)
         {
