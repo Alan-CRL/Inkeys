@@ -31,6 +31,7 @@ using System.CodeDom;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -302,6 +303,75 @@ namespace PptCOM
                 if (pUnk1 != IntPtr.Zero) Marshal.Release(pUnk1);
                 if (pUnk2 != IntPtr.Zero) Marshal.Release(pUnk2);
             }
+        }
+        private static string NormalizePresentationFullNameForCompare(string fullName)
+        {
+            if (string.IsNullOrWhiteSpace(fullName)) return "";
+            return fullName.Trim();
+        }
+        private static string TryGetPresentationFullNameForCompare(object presentationObj)
+        {
+            if (presentationObj == null) return "";
+
+            try
+            {
+                object value = presentationObj.GetType().InvokeMember("FullName", BindingFlags.GetProperty, null, presentationObj, null);
+                return NormalizePresentationFullNameForCompare(Convert.ToString(value, CultureInfo.InvariantCulture));
+            }
+            catch
+            {
+                return "";
+            }
+        }
+        private string TryGetActivePresentationFullNameForCompare(object applicationObj)
+        {
+            if (applicationObj == null) return "";
+
+            object activePresentation = null;
+
+            try
+            {
+                activePresentation = applicationObj.GetType().InvokeMember("ActivePresentation", BindingFlags.GetProperty, null, applicationObj, null);
+                return TryGetPresentationFullNameForCompare(activePresentation);
+            }
+            catch
+            {
+                return "";
+            }
+            finally
+            {
+                if (activePresentation != null)
+                {
+                    // 只释放临时拿到的 Presentation，避免误释放当前绑定字段。
+                    bool isCurrentPresentation = AreComObjectsEqual(activePresentation, (object)pptActivePresentation);
+                    if (!isCurrentPresentation) SafeRelease(activePresentation);
+                }
+            }
+        }
+        private bool IsCurrentBindingReadableForRebindGuard()
+        {
+            if (pptActivePresentation == null || pptSlideShowWindow == null) return false;
+
+            try
+            {
+                int totalPage = GetTotalSlideIndex(pptActivePresentation);
+                int currentPage = GetCurrentSlideIndex(pptSlideShowWindow);
+                return totalPage > 0 && currentPage > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+        private bool ShouldKeepCurrentBindingForSamePresentation(object bestApp)
+        {
+            string currentFullName = TryGetPresentationFullNameForCompare((object)pptActivePresentation);
+            string bestFullName = TryGetActivePresentationFullNameForCompare(bestApp);
+
+            if (currentFullName.Length == 0 || bestFullName.Length == 0) return false;
+            if (!string.Equals(currentFullName, bestFullName, StringComparison.OrdinalIgnoreCase)) return false;
+
+            return IsCurrentBindingReadableForRebindGuard();
         }
         private bool IsSlideShowWindowActive(object sswObj)
         {
@@ -842,7 +912,11 @@ namespace PptCOM
                             // 完全不同
                             if (!AreComObjectsEqual((object)pptApplication, bestApp))
                             {
-                                needRebind = true;
+                                // 同一演示文稿可能有多个 ROT/COM wrapper，当前绑定仍可读时不重绑。
+                                if (!ShouldKeepCurrentBindingForSamePresentation(bestApp))
+                                {
+                                    needRebind = true;
+                                }
                             }
                         }
 
