@@ -187,14 +187,21 @@ public:
 		SetDirect(valT);
 	}
 
-	bool IsSame() { return val == tar; }
-	bool SetTar(double tarT, optional<double> durT = nullopt)
+	bool IsSame() { return val == tar && !hasMiddleV; }
+	bool SetTar(double tarT, optional<double> durT = nullopt, optional<double> middleVT = nullopt, bool forceRestart = false)
 	{
-		if (tar == tarT) return false;
+		if (!forceRestart && tar == tarT)
+		{
+			// UI 每帧会重复提交普通目标，此时保留已经启动的中间关键帧过程。
+			if (!middleVT.has_value()) return false;
+			if (hasMiddleV && middleV == middleVT.value()) return false;
+		}
 
 		startV = val;
 		progress = 0.0;
 		tar = tarT;
+		hasMiddleV = middleVT.has_value();
+		if (middleVT.has_value()) middleV = middleVT.value();
 
 		double defaultSpeed = des;
 		if (durT.has_value()) dur = durT.value();
@@ -209,6 +216,7 @@ public:
 		startV = valueT;
 		progress = 0.0;
 		dur = 0.0;
+		hasMiddleV = false;
 	}
 	void Initialization(double valT, optional<double> desT = nullopt)
 	{
@@ -224,6 +232,8 @@ public:
 
 	IdtAtomic<double> des = 0.60; // 默认速度 1/s；未提交过程时长时用于推导 dur
 	IdtAtomic<double> dur = 0.0; // 当前动画段的基础时长 s，不包含全局速度倍率
+	IdtAtomic<bool> hasMiddleV = false; // 是否经过位于时间 0.5 的单个透明度关键帧
+	IdtAtomic<double> middleV = 0.0; // 中间透明度；tar 始终保留最终目标
 };
 //// 文字 UI 值
 class BarUiStringClass

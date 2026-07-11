@@ -1167,6 +1167,14 @@ void BarUISetClass::Rendering()
 									totalWidth += 15;
 								}
 							}
+
+							if (mainBarSideSwitch)
+							{
+								// 换边中点将整个按钮组合隐藏，再从主按钮下方展开到新位置。
+								temp->buttom.pct.SetTar(temp->buttom.pct.tar, operationDur, 0.0, true);
+								temp->icon.pct.SetTar(temp->icon.pct.tar, operationDur, 0.0, true);
+								temp->name.pct.SetTar(temp->name.pct.tar, operationDur, 0.0, true);
+							}
 						}
 					}, viewVariant);
 			}
@@ -1199,6 +1207,12 @@ void BarUISetClass::Rendering()
 
 					shapeMap[BarUISetShapeEnum::MainBar]->pct.SetTar(0.8);
 					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().SetTar(0.18);
+				}
+				if (mainBarSideSwitch)
+				{
+					// 主栏填充和边框在换边关键帧同步变为全透明。
+					mainBar->pct.SetTar(mainBar->pct.tar, operationDur, 0.0, true);
+					mainBar->framePct.value().SetTar(mainBar->framePct.value().tar, operationDur, 0.0, true);
 				}
 				if (barStyle.darkStyle)
 				{
@@ -1801,6 +1815,7 @@ void BarUISetClass::Rendering()
 				pct.startV = targetPct;
 				pct.progress = 0.0;
 				pct.dur = 0.0;
+				pct.hasMiddleV = false;
 			};
 		auto MixColorChannel = [](int start, int target, double progress) -> int
 			{
@@ -1897,7 +1912,8 @@ void BarUISetClass::Rendering()
 				double startPct = pct.startV;
 				double duration = pct.dur;
 				double speedRate = BarUiAnimationSpeedRate;
-				if (forceReplace || !isfinite(targetPct) || !isfinite(startPct) || abs(targetPct - startPct) <= pctEpsilon
+				if (forceReplace || !isfinite(targetPct) || !isfinite(startPct)
+					|| (!pct.hasMiddleV && abs(targetPct - startPct) <= pctEpsilon)
 					|| !isfinite(duration) || duration <= 0.0 || !isfinite(speedRate) || speedRate <= 0.0 || animationDtSeconds <= 0.0)
 				{
 					FinishPct(pct, targetPct);
@@ -1905,7 +1921,22 @@ void BarUISetClass::Rendering()
 				}
 
 				double progress = clamp(static_cast<double>(pct.progress) + animationDtSeconds * speedRate / duration, 0.0, 1.0);
-				double nextPct = startPct + (targetPct - startPct) * progress;
+				double nextPct = 0.0;
+				if (pct.hasMiddleV)
+				{
+					double middlePct = pct.middleV;
+					if (progress < 0.5)
+					{
+						double localProgress = progress * 2.0;
+						nextPct = startPct + (middlePct - startPct) * localProgress;
+					}
+					else
+					{
+						double localProgress = (progress - 0.5) * 2.0;
+						nextPct = middlePct + (targetPct - middlePct) * localProgress;
+					}
+				}
+				else nextPct = startPct + (targetPct - startPct) * progress;
 				if (!isfinite(nextPct) || progress >= 1.0)
 				{
 					FinishPct(pct, targetPct);
