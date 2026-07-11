@@ -726,6 +726,8 @@ void BarUISetClass::Rendering()
 	chrono::high_resolution_clock::time_point reckon = chrono::high_resolution_clock::now();
 	chrono::high_resolution_clock::time_point animationReckon = reckon;
 	RECT original = RECT(0, 0, barWindow.w, barWindow.h), current = RECT(0, 0, 0, 0);
+	// 独立记录渲染侧已经处理的主栏方向，不能使用动画 tar 的符号代替布局状态。
+	bool mainBarLayoutSide = barState.widgetPosition.mainBar;
 
 	wstring fps;
 	for (int forNum = 1; !offSignal; forNum = 2)
@@ -758,9 +760,10 @@ void BarUISetClass::Rendering()
 		{
 			double operationDur = BarUiDefaultOperationDur;
 			auto mainBar = shapeMap[BarUISetShapeEnum::MainBar];
-			bool mainBarSideSwitch = !barState.fold
-				&& ((barState.widgetPosition.mainBar && mainBar->x.tar < 0.0)
-					|| (!barState.widgetPosition.mainBar && mainBar->x.tar > 0.0));
+			bool currentMainBarSide = barState.widgetPosition.mainBar;
+			bool mainBarSideSwitch = !barState.fold && currentMainBarSide != mainBarLayoutSide;
+			// 换边动画被打断时，新一侧仍会在下一帧与这里记录的旧侧产生一次明确变化。
+			mainBarLayoutSide = currentMainBarSide;
 			bool mainBarFoldChange = (barState.fold && mainBar->x.tar != 0.0)
 				|| (!barState.fold && mainBar->x.tar == 0.0);
 			auto SetButtonPositionTar = [&](BarUiValueClass& value, double target, double middle)
@@ -2819,8 +2822,10 @@ double BarUISetClass::Seek(const ExMessage& msg)
 		}
 	}
 
-	// 更新位置状态
+	// 左右侧只在松手时提交；若动画尚未结束，新提交会从当前 val 重建关键帧过程。
+	bool previousMainBarSide = barState.widgetPosition.mainBar;
 	barState.PositionUpdate(tarZoom);
+	if (previousMainBarSide != barState.widgetPosition.mainBar) UpdateRendering(false);
 
 	BarAtomic::sustainFlag = false;
 	return ret;
