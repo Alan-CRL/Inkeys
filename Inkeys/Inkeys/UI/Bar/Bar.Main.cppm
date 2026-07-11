@@ -16,6 +16,13 @@ import Inkeys.Conv.Color;
 import Inkeys.Helper.Thread;
 
 // ====================
+// 动画
+
+IdtAtomic<double> BarUiDefaultDes = 120.0; // 全局默认速度 px/s；当前为正常速度的十分之一，便于观察动画细节
+IdtAtomic<double> BarUiDefaultOperationDur = 2.0; // 默认操作过程时长 s；正常预期约 0.2s，当前放慢十倍
+IdtAtomic<double> BarUiAnimationSpeedRate = 1.00; // 全局动画速度倍率，运行时作用于过程进度，不改变基础 dur
+
+// ====================
 // 窗口
 
 LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);

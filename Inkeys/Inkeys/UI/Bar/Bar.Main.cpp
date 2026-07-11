@@ -744,6 +744,8 @@ void BarUISetClass::Rendering()
 		}
 		// 主栏
 		{
+			double operationDur = BarUiDefaultOperationDur;
+
 			// 按钮位置计算（特别操作）
 			double totalWidth = 5.0;
 			{
@@ -772,16 +774,16 @@ void BarUISetClass::Rendering()
 								{
 									if (barState.fold)
 									{
-										temp->buttom.x.SetTar(25.0);
-										temp->buttom.y.SetTar(25.0);
+									temp->buttom.x.SetTar(25.0, operationDur);
+									temp->buttom.y.SetTar(25.0, operationDur);
 
 										temp->buttom.pct.SetTar(0.0);
 									}
 									else
 									{
-										temp->buttom.x.SetTar(xO);
-										if (yO <= 5.0) temp->buttom.y.SetTar(yO + 2.5); // 位于第一行
-										else temp->buttom.y.SetTar(yO); // 位于第二行
+									temp->buttom.x.SetTar(xO, operationDur);
+									if (yO <= 5.0) temp->buttom.y.SetTar(yO + 2.5, operationDur); // 位于第一行
+									else temp->buttom.y.SetTar(yO, operationDur); // 位于第二行
 
 										if (isColorSelector) temp->buttom.pct.SetTar(1.0); // 只有颜色选择器使用
 										else
@@ -791,8 +793,8 @@ void BarUISetClass::Rendering()
 											else temp->buttom.pct.SetTar(0.0);
 										}
 									}
-									temp->buttom.w.SetTar(30.0);
-									temp->buttom.h.SetTar(30.0);
+								temp->buttom.w.SetTar(30.0, operationDur);
+								temp->buttom.h.SetTar(30.0, operationDur);
 
 									if (!isColorSelector)
 									{
@@ -889,23 +891,23 @@ void BarUISetClass::Rendering()
 								{
 									if (barState.fold)
 									{
-										temp->buttom.x.SetTar(5.0);
-										temp->buttom.y.SetTar(25.0);
+									temp->buttom.x.SetTar(5.0, operationDur);
+									temp->buttom.y.SetTar(25.0, operationDur);
 
 										temp->buttom.pct.SetTar(0.0);
 									}
 									else
 									{
-										temp->buttom.x.SetTar(xO);
-										if (yO <= 5.0) temp->buttom.y.SetTar(yO + 2.5); // 位于第一行
-										else temp->buttom.y.SetTar(yO); // 位于第二行
+									temp->buttom.x.SetTar(xO, operationDur);
+									if (yO <= 5.0) temp->buttom.y.SetTar(yO + 2.5, operationDur); // 位于第一行
+									else temp->buttom.y.SetTar(yO, operationDur); // 位于第二行
 
 										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1);
 										else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2);
 										else temp->buttom.pct.SetTar(0.0);
 									}
-									temp->buttom.w.SetTar(70.0);
-									temp->buttom.h.SetTar(30.0);
+								temp->buttom.w.SetTar(70.0, operationDur);
+								temp->buttom.h.SetTar(30.0, operationDur);
 
 									if (temp->state->emph == BarWidgetEmphasize::Pressed && temp->state->state != BarWidgetState::Selected)
 										temp->buttom.fill.value().SetTar(RGB(127, 127, 127));
@@ -996,22 +998,22 @@ void BarUISetClass::Rendering()
 								{
 									if (barState.fold)
 									{
-										temp->buttom.x.SetTar(5.0);
-										temp->buttom.y.SetTar(5.0);
+									temp->buttom.x.SetTar(5.0, operationDur);
+									temp->buttom.y.SetTar(5.0, operationDur);
 
 										temp->buttom.pct.SetTar(0.0);
 									}
 									else
 									{
-										temp->buttom.x.SetTar(xO);
-										temp->buttom.y.SetTar(yO);
+									temp->buttom.x.SetTar(xO, operationDur);
+									temp->buttom.y.SetTar(yO, operationDur);
 
 										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1);
 										else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2);
 										else temp->buttom.pct.SetTar(0.0);
 									}
-									temp->buttom.w.SetTar(70.0);
-									temp->buttom.h.SetTar(70.0);
+								temp->buttom.w.SetTar(70.0, operationDur);
+								temp->buttom.h.SetTar(70.0, operationDur);
 
 									if (temp->state->emph == BarWidgetEmphasize::Pressed && temp->state->state != BarWidgetState::Selected)
 										temp->buttom.fill.value().SetTar(RGB(127, 127, 127));
@@ -1092,21 +1094,21 @@ void BarUISetClass::Rendering()
 								{
 									if (barState.fold)
 									{
-										temp->buttom.x.SetTar(35.0);
-										temp->buttom.y.SetTar(5.0);
+									temp->buttom.x.SetTar(35.0, operationDur);
+									temp->buttom.y.SetTar(5.0, operationDur);
 
 										temp->buttom.pct.SetTar(0.0);
 									}
 									else
 									{
-										temp->buttom.x.SetTar(xO);
-										temp->buttom.y.SetTar(yO);
+									temp->buttom.x.SetTar(xO, operationDur);
+									temp->buttom.y.SetTar(yO, operationDur);
 
 										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.2);
 										else temp->buttom.pct.SetTar(0.0);
 									}
-									temp->buttom.w.SetTar(10.0);
-									temp->buttom.h.SetTar(70.0);
+								temp->buttom.w.SetTar(10.0, operationDur);
+								temp->buttom.h.SetTar(70.0, operationDur);
 
 									if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.fill.value().SetTar(RGB(127, 127, 127));
 									else temp->buttom.fill.value().SetTar(RGB(88, 255, 236));
@@ -1152,19 +1154,19 @@ void BarUISetClass::Rendering()
 			{
 				if (barState.fold)
 				{
-					shapeMap[BarUISetShapeEnum::MainBar]->x.SetTar(0.0);
-					shapeMap[BarUISetShapeEnum::MainBar]->w.SetTar(80.0);
+					shapeMap[BarUISetShapeEnum::MainBar]->x.SetTar(0.0, operationDur);
+					shapeMap[BarUISetShapeEnum::MainBar]->w.SetTar(80.0, operationDur);
 
 					shapeMap[BarUISetShapeEnum::MainBar]->pct.SetTar(0.0);
 					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().SetTar(0.0);
 				}
 				else
 				{
-					shapeMap[BarUISetShapeEnum::MainBar]->w.SetTar(totalWidth);
+					shapeMap[BarUISetShapeEnum::MainBar]->w.SetTar(totalWidth, operationDur);
 					if (barState.widgetPosition.mainBar)
-						shapeMap[BarUISetShapeEnum::MainBar]->x.SetTar(superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() / 2.0 + shapeMap[BarUISetShapeEnum::MainBar]->w.tar / 2.0 + 10.0);
+						shapeMap[BarUISetShapeEnum::MainBar]->x.SetTar(superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() / 2.0 + shapeMap[BarUISetShapeEnum::MainBar]->w.tar / 2.0 + 10.0, operationDur);
 					else
-						shapeMap[BarUISetShapeEnum::MainBar]->x.SetTar(-(superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() / 2.0 + shapeMap[BarUISetShapeEnum::MainBar]->w.tar / 2.0 + 10.0));
+						shapeMap[BarUISetShapeEnum::MainBar]->x.SetTar(-(superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() / 2.0 + shapeMap[BarUISetShapeEnum::MainBar]->w.tar / 2.0 + 10.0), operationDur);
 
 					shapeMap[BarUISetShapeEnum::MainBar]->pct.SetTar(0.8);
 					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().SetTar(0.18);
@@ -1754,18 +1756,21 @@ void BarUISetClass::Rendering()
 				value.val = targetValue;
 				value.startV = targetValue;
 				value.progress = 0.0;
+				value.dur = 0.0;
 			};
 		auto FinishColor = [](BarUiColorClass& color, COLORREF targetColor) -> void
 			{
 				color.val = targetColor;
 				color.startColor = targetColor;
 				color.progress = 0.0;
+				color.dur = 0.0;
 			};
 		auto FinishPct = [](BarUiPctClass& pct, double targetPct) -> void
 			{
 				pct.val = targetPct;
 				pct.startV = targetPct;
 				pct.progress = 0.0;
+				pct.dur = 0.0;
 			};
 		auto MixColorChannel = [](int start, int target, double progress) -> int
 			{
@@ -1791,22 +1796,20 @@ void BarUISetClass::Rendering()
 				BarUiValueModeEnum mod = value.mod;
 				double targetValue = value.tar;
 				double startValue = value.startV;
-				double distance = abs(targetValue - startValue);
-				double precision = value.ary;
-				double speed = value.spe;
-				if (!isfinite(precision) || precision < 0.0) precision = 0.0;
+				double duration = value.dur;
+				double speedRate = BarUiAnimationSpeedRate;
 
-				// 第一阶段：Linear 和 Variable 都走匀速，Once 或异常速度仍直接到目标。
-				if (forceReplace || mod == BarUiValueModeEnum::Once || !isfinite(distance) || distance <= precision
-					|| !isfinite(speed) || speed <= 0.0 || animationDtSeconds <= 0.0)
+				// 第一阶段：Linear 和 Variable 共用时间进度；Once 或异常时长仍直接到目标。
+				if (forceReplace || mod == BarUiValueModeEnum::Once || !isfinite(duration) || duration <= 0.0
+					|| !isfinite(speedRate) || speedRate <= 0.0 || animationDtSeconds <= 0.0)
 				{
 					FinishValue(value, targetValue);
 					return;
 				}
 
-				double progress = clamp(static_cast<double>(value.progress) + animationDtSeconds * speed / distance, 0.0, 1.0);
+				double progress = clamp(static_cast<double>(value.progress) + animationDtSeconds * speedRate / duration, 0.0, 1.0);
 				double nextValue = startValue + (targetValue - startValue) * progress;
-				if (!isfinite(nextValue) || progress >= 1.0 || abs(targetValue - nextValue) <= precision)
+				if (!isfinite(nextValue) || progress >= 1.0)
 				{
 					FinishValue(value, targetValue);
 					return;
@@ -1820,14 +1823,16 @@ void BarUISetClass::Rendering()
 				needRendering = true;
 				COLORREF targetColor = color.tar;
 				COLORREF startColor = color.startColor;
-				double speed = color.spe;
-				if (forceReplace || startColor == targetColor || !isfinite(speed) || speed <= 0.0 || animationDtSeconds <= 0.0)
+				double duration = color.dur;
+				double speedRate = BarUiAnimationSpeedRate;
+				if (forceReplace || startColor == targetColor || !isfinite(duration) || duration <= 0.0
+					|| !isfinite(speedRate) || speedRate <= 0.0 || animationDtSeconds <= 0.0)
 				{
 					FinishColor(color, targetColor);
 					return;
 				}
 
-				double progress = clamp(static_cast<double>(color.progress) + animationDtSeconds * speed, 0.0, 1.0);
+				double progress = clamp(static_cast<double>(color.progress) + animationDtSeconds * speedRate / duration, 0.0, 1.0);
 				COLORREF nextColor = MixColor(startColor, targetColor, progress);
 				if (progress >= 1.0 || nextColor == targetColor)
 				{
@@ -1844,17 +1849,18 @@ void BarUISetClass::Rendering()
 				constexpr double pctEpsilon = 0.000001;
 				double targetPct = pct.tar;
 				double startPct = pct.startV;
-				double speed = pct.spe;
+				double duration = pct.dur;
+				double speedRate = BarUiAnimationSpeedRate;
 				if (forceReplace || !isfinite(targetPct) || !isfinite(startPct) || abs(targetPct - startPct) <= pctEpsilon
-					|| !isfinite(speed) || speed <= 0.0 || animationDtSeconds <= 0.0)
+					|| !isfinite(duration) || duration <= 0.0 || !isfinite(speedRate) || speedRate <= 0.0 || animationDtSeconds <= 0.0)
 				{
 					FinishPct(pct, targetPct);
 					return;
 				}
 
-				double progress = clamp(static_cast<double>(pct.progress) + animationDtSeconds * speed, 0.0, 1.0);
+				double progress = clamp(static_cast<double>(pct.progress) + animationDtSeconds * speedRate / duration, 0.0, 1.0);
 				double nextPct = startPct + (targetPct - startPct) * progress;
-				if (!isfinite(nextPct) || progress >= 1.0 || abs(targetPct - nextPct) <= pctEpsilon)
+				if (!isfinite(nextPct) || progress >= 1.0)
 				{
 					FinishPct(pct, targetPct);
 					return;

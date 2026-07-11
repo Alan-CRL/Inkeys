@@ -9,6 +9,11 @@ export module Inkeys.UI.Bar:UI;
 
 import :State;
 
+// 动画全局默认参数在 Bar.Main.cppm 中统一定义。
+extern IdtAtomic<double> BarUiDefaultDes;
+extern IdtAtomic<double> BarUiDefaultOperationDur;
+extern IdtAtomic<double> BarUiAnimationSpeedRate;
+
 // 动效类型
 enum class BarUiValueModeEnum : int
 {
@@ -58,16 +63,27 @@ class BarUiValueClass
 {
 public:
 	BarUiValueClass() {}
-	BarUiValueClass(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Variable) { mod = modT, SetDirect(valT); }
+	BarUiValueClass(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Variable, optional<double> desT = nullopt)
+	{
+		mod = modT;
+		if (desT.has_value()) des = desT.value();
+		SetDirect(valT);
+	}
 
 	bool IsSame() { return val == tar; }
-	bool SetTar(double tarT)
+	bool SetTar(double tarT, optional<double> durT = nullopt)
 	{
 		if (tar == tarT) return false;
 
 		startV = val;
 		progress = 0.0;
 		tar = tarT;
+
+		double distance = abs(static_cast<double>(tar) - static_cast<double>(startV));
+		double defaultSpeed = des;
+		if (durT.has_value()) dur = durT.value();
+		else if (isfinite(distance) && isfinite(defaultSpeed) && defaultSpeed > 0.0) dur = distance / defaultSpeed;
+		else dur = 0.0;
 		return true;
 	}
 	void SetDirect(double valueT)
@@ -76,18 +92,23 @@ public:
 		tar = valueT;
 		startV = valueT;
 		progress = 0.0;
+		dur = 0.0;
 	}
-	void Initialization(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Variable) { mod = modT, SetDirect(valT); }
+	void Initialization(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Variable, optional<double> desT = nullopt)
+	{
+		mod = modT;
+		if (desT.has_value()) des = desT.value();
+		SetDirect(valT);
+	}
 
 public:
 	IdtAtomic<BarUiValueModeEnum> mod = BarUiValueModeEnum::Linear;
 
 	IdtAtomic<double> val = 0.0; // 直接值（当前位置）
 	IdtAtomic<double> tar = 0.0; // 目标值（目标位置）
-	IdtAtomic<double> ary = 1.0; // 变换精度（差值绝对值小于等于精度则认为已经动画完成，则直接赋值等于）
 
-	// 适用于 回弹动效模式
-	IdtAtomic<double> spe = 120.0; // 基准速度 px/s（此时用于动画细节的测试，故意调慢速度）
+	IdtAtomic<double> des = BarUiDefaultDes; // 默认速度 px/s；未提交过程时长时用于推导 dur
+	IdtAtomic<double> dur = 0.0; // 当前动画段的基础时长 s，不包含全局速度倍率
 	IdtAtomic<double> startV = 0.0; // 起始位置（用于计算百分比，在界面设被设置时）
 	IdtAtomic<double> progress = 0.0; // 当前动画段的线性进度（曲线 x，0->1）
 };
@@ -96,16 +117,25 @@ class BarUiColorClass
 {
 public:
 	BarUiColorClass() {}
-	BarUiColorClass(COLORREF valT) { SetDirect(valT); }
+	BarUiColorClass(COLORREF valT, optional<double> desT = nullopt)
+	{
+		if (desT.has_value()) des = desT.value();
+		SetDirect(valT);
+	}
 
 	bool IsSame() { return val == tar; }
-	bool SetTar(COLORREF tarT)
+	bool SetTar(COLORREF tarT, optional<double> durT = nullopt)
 	{
 		if (tar == tarT) return false;
 
 		startColor = val;
 		progress = 0.0;
 		tar = tarT;
+
+		double defaultSpeed = des;
+		if (durT.has_value()) dur = durT.value();
+		else if (isfinite(defaultSpeed) && defaultSpeed > 0.0) dur = 1.0 / defaultSpeed;
+		else dur = 0.0;
 		return true;
 	}
 	void SetDirect(COLORREF valueT)
@@ -114,8 +144,13 @@ public:
 		tar = valueT;
 		startColor = valueT;
 		progress = 0.0;
+		dur = 0.0;
 	}
-	void Initialization(COLORREF valT) { SetDirect(valT); }
+	void Initialization(COLORREF valT, optional<double> desT = nullopt)
+	{
+		if (desT.has_value()) des = desT.value();
+		SetDirect(valT);
+	}
 
 public:
 	IdtAtomic<COLORREF> val = RGB(0, 0, 0); // 直接值（当前位置）
@@ -123,24 +158,33 @@ public:
 	IdtAtomic<COLORREF> startColor = RGB(0, 0, 0); // 起始颜色（用于计算百分比，在界面被设置时）
 	IdtAtomic<double> progress = 0.0; // 当前动画段的线性进度（曲线 x，0->1）
 
-	IdtAtomic<double> spe = 0.60; // RGB基准速度 1/s（此时用于动画细节的测试，故意调慢速度）
-	// 如果 spe <= 0 则表示直接变化
+	IdtAtomic<double> des = 0.60; // 默认速度 1/s；未提交过程时长时用于推导 dur
+	IdtAtomic<double> dur = 0.0; // 当前动画段的基础时长 s，不包含全局速度倍率
 };
 //// 透明度 UI 值
 class BarUiPctClass
 {
 public:
 	BarUiPctClass() {}
-	BarUiPctClass(double valT) { SetDirect(valT); }
+	BarUiPctClass(double valT, optional<double> desT = nullopt)
+	{
+		if (desT.has_value()) des = desT.value();
+		SetDirect(valT);
+	}
 
 	bool IsSame() { return val == tar; }
-	bool SetTar(double tarT)
+	bool SetTar(double tarT, optional<double> durT = nullopt)
 	{
 		if (tar == tarT) return false;
 
 		startV = val;
 		progress = 0.0;
 		tar = tarT;
+
+		double defaultSpeed = des;
+		if (durT.has_value()) dur = durT.value();
+		else if (isfinite(defaultSpeed) && defaultSpeed > 0.0) dur = 1.0 / defaultSpeed;
+		else dur = 0.0;
 		return true;
 	}
 	void SetDirect(double valueT)
@@ -149,8 +193,13 @@ public:
 		tar = valueT;
 		startV = valueT;
 		progress = 0.0;
+		dur = 0.0;
 	}
-	void Initialization(double valT) { SetDirect(valT); }
+	void Initialization(double valT, optional<double> desT = nullopt)
+	{
+		if (desT.has_value()) des = desT.value();
+		SetDirect(valT);
+	}
 
 public:
 	IdtAtomic<double> val = 1.0; // 透明度直接值
@@ -158,8 +207,8 @@ public:
 	IdtAtomic<double> startV = 1.0; // 起始透明度（用于计算百分比，在界面被设置时）
 	IdtAtomic<double> progress = 0.0; // 当前动画段的线性进度（曲线 x，0->1）
 
-	IdtAtomic<double> spe = 0.60; // 透明度基准速度 1/s（此时用于动画细节的测试，故意调慢速度）
-	// 如果 spe <= 0 则表示直接变化
+	IdtAtomic<double> des = 0.60; // 默认速度 1/s；未提交过程时长时用于推导 dur
+	IdtAtomic<double> dur = 0.0; // 当前动画段的基础时长 s，不包含全局速度倍率
 };
 //// 文字 UI 值
 class BarUiStringClass
@@ -464,7 +513,7 @@ public:
 动效实现备忘：
 
 当前现状：
-1. BarUiValueClass 已有 val/tar/mod/ary/spe/startV，可表达“当前值、目标值、动画类型、精度、速度、动画段起点”。
+1. BarUiValueClass 已有 val/tar/mod/des/dur/startV，可表达“当前值、目标值、动画类型、默认速度、过程时长、动画段起点”。
 2. Bar.Main.cpp 的 ChangeValue/ChangeColor/ChangePct 已接入匀速逐帧推进；Linear/Variable 暂时同为线性曲线。
 3. MainBar、DrawAttributeBar 的部分 w/h 已设置为 Variable，framePct 已加入动效同步；后续还需要按实际视觉效果细化 x、pct、framePct 等模式。
 
@@ -474,12 +523,10 @@ public:
    SetTar 内部只有在 newTar != oldTar 时才会 startV = val、progress = 0.0，并更新 tar。
    因为计算 UI 阶段会每帧重复写相同目标，所以重复 SetTar 同一个目标不应重启动画。
 
-2. 额外状态建议优先增加 progress，而不是固定 duration：
-   progress 表示曲线横轴 x，始终按真实时间线性从 0 -> 1。
-   duration 可由距离和当前 spe 推导：duration = abs(tar - startV) / spe。
-   如果 spe 动画中途变化，则每帧用当前 spe 推进：
-       progress += dt * spe / abs(tar - startV);
-   这样不会让 val 跳变，只会从下一帧开始加速或减速。
+2. progress 表示曲线横轴 x，始终按真实时间线性从 0 -> 1。
+	调用方提交 dur 时直接使用；未提交时由距离和默认 des 推导：dur = abs(tar - startV) / des。
+	每帧叠加全局速度倍率推进，但不修改动画段保存的基础 dur：
+		progress += dt * speedRate / dur;
 
 3. 每帧推进：
    double x = clamp(progress, 0.0, 1.0);
@@ -490,7 +537,7 @@ public:
    Variable: 后续可使用 EaseOutBack 这类回弹曲线，y 允许超过 1 后回到 1。
 
 4. 动画完成：
-   当 progress >= 1.0，或 abs(value.tar - value.val) <= ary 时，收尾：
+	当 progress >= 1.0 时收尾，保证同 dur 的组合属性在同一帧到达：
        value.val = value.tar;
        value.startV = value.tar;
        value.progress = 0.0;
