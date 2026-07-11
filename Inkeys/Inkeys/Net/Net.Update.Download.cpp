@@ -26,7 +26,7 @@ std::string GetEditionInformation(std::string referer)
 
 	// 尝试主地址
 	{
-		httplib::SSLClient scli("vip.123pan.cn");
+		httplib::SSLClient scli("1709404.cdn.123clouddisk.com");
 		scli.set_follow_location(true);
 		scli.set_connection_timeout(5);
 		scli.set_read_timeout(10);
@@ -36,7 +36,7 @@ std::string GetEditionInformation(std::string referer)
 		if (!res || res->status != 200)
 		{
 			// 失败后尝试使用 Http 连接
-			httplib::Client cli("vip.123pan.cn");
+			httplib::Client cli("1709404.cdn.123clouddisk.com");
 			cli.set_follow_location(true);
 			cli.set_connection_timeout(5);
 			cli.set_read_timeout(10);
