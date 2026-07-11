@@ -39,6 +39,7 @@ BarUiInheritClass::BarUiInheritClass(BarUiInheritEnum typeT, double xO, double y
 	// TODO 拓展更多类型组合
 	if (type == BarUiInheritEnum::TopLeft) { x += xT, y += yT; }
 	else if (type == BarUiInheritEnum::Top) { x += xT + wT / 2.0 - wO / 2.0, y += yT; }
+	else if (type == BarUiInheritEnum::CenterFromTopLeft) { x += xT - wO / 2.0, y += yT - hO / 2.0; }
 	else if (type == BarUiInheritEnum::Left) { x += xT, y += yT + hT / 2.0 - hO / 2.0; }
 	else if (type == BarUiInheritEnum::Center) { x += xT + wT / 2.0 - wO / 2.0, y += yT + hT / 2.0 - hO / 2.0; }
 	else if (type == BarUiInheritEnum::Right) { x += xT + wT - wO, y += yT + hT / 2.0 - hO / 2.0; }

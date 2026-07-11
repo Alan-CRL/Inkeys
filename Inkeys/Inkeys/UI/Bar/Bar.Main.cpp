@@ -797,16 +797,16 @@ void BarUISetClass::Rendering()
 								{
 									if (barState.fold)
 									{
-									SetButtonPositionTar(temp->buttom.x, 25.0, 25.0);
-									SetButtonPositionTar(temp->buttom.y, 25.0, 25.0);
+									SetButtonPositionTar(temp->buttom.x, 40.0, 40.0);
+									SetButtonPositionTar(temp->buttom.y, 40.0, 40.0);
 
 										temp->buttom.pct.SetTar(0.0);
 									}
 									else
 									{
-									SetButtonPositionTar(temp->buttom.x, xO, 25.0);
-									if (yO <= 5.0) SetButtonPositionTar(temp->buttom.y, yO + 2.5, 25.0); // 位于第一行
-									else SetButtonPositionTar(temp->buttom.y, yO, 25.0); // 位于第二行
+									SetButtonPositionTar(temp->buttom.x, xO + 15.0, 40.0);
+									if (yO <= 5.0) SetButtonPositionTar(temp->buttom.y, yO + 17.5, 40.0); // 位于第一行
+									else SetButtonPositionTar(temp->buttom.y, yO + 15.0, 40.0); // 位于第二行
 
 										if (isColorSelector) temp->buttom.pct.SetTar(1.0); // 只有颜色选择器使用
 										else
@@ -914,16 +914,16 @@ void BarUISetClass::Rendering()
 								{
 									if (barState.fold)
 									{
-									SetButtonPositionTar(temp->buttom.x, 5.0, 5.0);
-									SetButtonPositionTar(temp->buttom.y, 25.0, 25.0);
+									SetButtonPositionTar(temp->buttom.x, 40.0, 40.0);
+									SetButtonPositionTar(temp->buttom.y, 40.0, 40.0);
 
 										temp->buttom.pct.SetTar(0.0);
 									}
 									else
 									{
-									SetButtonPositionTar(temp->buttom.x, xO, 5.0);
-									if (yO <= 5.0) SetButtonPositionTar(temp->buttom.y, yO + 2.5, 25.0); // 位于第一行
-									else SetButtonPositionTar(temp->buttom.y, yO, 25.0); // 位于第二行
+									SetButtonPositionTar(temp->buttom.x, xO + 35.0, 40.0);
+									if (yO <= 5.0) SetButtonPositionTar(temp->buttom.y, yO + 17.5, 40.0); // 位于第一行
+									else SetButtonPositionTar(temp->buttom.y, yO + 15.0, 40.0); // 位于第二行
 
 										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1);
 										else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2);
@@ -1021,15 +1021,15 @@ void BarUISetClass::Rendering()
 								{
 									if (barState.fold)
 									{
-									SetButtonPositionTar(temp->buttom.x, 5.0, 5.0);
-									SetButtonPositionTar(temp->buttom.y, 5.0, 5.0);
+									SetButtonPositionTar(temp->buttom.x, 40.0, 40.0);
+									SetButtonPositionTar(temp->buttom.y, 40.0, 40.0);
 
 										temp->buttom.pct.SetTar(0.0);
 									}
 									else
 									{
-									SetButtonPositionTar(temp->buttom.x, xO, 5.0);
-									SetButtonPositionTar(temp->buttom.y, yO, 5.0);
+									SetButtonPositionTar(temp->buttom.x, xO + 35.0, 40.0);
+									SetButtonPositionTar(temp->buttom.y, yO + 35.0, 40.0);
 
 										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1);
 										else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2);
@@ -1117,15 +1117,15 @@ void BarUISetClass::Rendering()
 								{
 									if (barState.fold)
 									{
-									SetButtonPositionTar(temp->buttom.x, 35.0, 35.0);
-									SetButtonPositionTar(temp->buttom.y, 5.0, 5.0);
+									SetButtonPositionTar(temp->buttom.x, 40.0, 40.0);
+									SetButtonPositionTar(temp->buttom.y, 40.0, 40.0);
 
 										temp->buttom.pct.SetTar(0.0);
 									}
 									else
 									{
-									SetButtonPositionTar(temp->buttom.x, xO, 35.0);
-									SetButtonPositionTar(temp->buttom.y, yO, 5.0);
+									SetButtonPositionTar(temp->buttom.x, xO + 5.0, 40.0);
+									SetButtonPositionTar(temp->buttom.y, yO + 35.0, 40.0);
 
 										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.2);
 										else temp->buttom.pct.SetTar(0.0);
@@ -2070,7 +2070,7 @@ void BarUISetClass::Rendering()
 					{
 						superellipseMap[BarUISetSuperellipseEnum::MainButton]->Inherit();
 						shapeMap[BarUISetShapeEnum::MainBar]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]);
-						barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->buttom.Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::MainBar]);
+						barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->buttom.Inherit(CenterFromTopLeft, *shapeMap[BarUISetShapeEnum::MainBar]);
 					}
 
 					// 绘制属性
@@ -2367,7 +2367,7 @@ void BarUISetClass::Rendering()
 						BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
 						if (temp == nullptr) continue;
 
-						spec.Shape(barDeviceContext.Get(), temp->buttom, temp->buttom.Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::MainBar]));
+						spec.Shape(barDeviceContext.Get(), temp->buttom, temp->buttom.Inherit(CenterFromTopLeft, *shapeMap[BarUISetShapeEnum::MainBar]));
 						spec.Svg(barDeviceContext.Get(), temp->icon, temp->icon.Inherit(Center, temp->buttom));
 						spec.Word(barDeviceContext.Get(), temp->name, temp->name.Inherit(Center, temp->buttom));
 					}
