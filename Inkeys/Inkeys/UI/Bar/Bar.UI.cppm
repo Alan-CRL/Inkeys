@@ -70,16 +70,28 @@ public:
 		SetDirect(valT);
 	}
 
-	bool IsSame() { return val == tar; }
-	bool SetTar(double tarT, optional<double> durT = nullopt)
+	bool IsSame() { return val == tar && !hasMiddleV; }
+	bool SetTar(double tarT, optional<double> durT = nullopt, optional<double> middleVT = nullopt, bool forceRestart = false)
 	{
-		if (tar == tarT) return false;
+		if (!forceRestart && tar == tarT)
+		{
+			// UI 每帧会重复提交普通目标，此时保留已经启动的中间关键帧过程。
+			if (!middleVT.has_value()) return false;
+			if (hasMiddleV && middleV == middleVT.value()) return false;
+		}
 
 		startV = val;
 		progress = 0.0;
 		tar = tarT;
+		hasMiddleV = middleVT.has_value();
+		if (middleVT.has_value()) middleV = middleVT.value();
 
 		double distance = abs(static_cast<double>(tar) - static_cast<double>(startV));
+		if (middleVT.has_value())
+		{
+			distance = abs(middleVT.value() - static_cast<double>(startV))
+				+ abs(static_cast<double>(tar) - middleVT.value());
+		}
 		double defaultSpeed = des;
 		if (durT.has_value()) dur = durT.value();
 		else if (isfinite(distance) && isfinite(defaultSpeed) && defaultSpeed > 0.0) dur = distance / defaultSpeed;
@@ -93,6 +105,7 @@ public:
 		startV = valueT;
 		progress = 0.0;
 		dur = 0.0;
+		hasMiddleV = false;
 	}
 	void Initialization(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Variable, optional<double> desT = nullopt)
 	{
@@ -111,6 +124,8 @@ public:
 	IdtAtomic<double> dur = 0.0; // 当前动画段的基础时长 s，不包含全局速度倍率
 	IdtAtomic<double> startV = 0.0; // 起始位置（用于计算百分比，在界面设被设置时）
 	IdtAtomic<double> progress = 0.0; // 当前动画段的线性进度（曲线 x，0->1）
+	IdtAtomic<bool> hasMiddleV = false; // 是否经过位于时间 0.5 的单个中间关键帧
+	IdtAtomic<double> middleV = 0.0; // 中间关键帧值；tar 始终保留最终目标
 };
 //// 颜色 UI 值（忽略透明度）
 class BarUiColorClass

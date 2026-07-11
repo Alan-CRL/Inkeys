@@ -153,21 +153,22 @@ void BarUiSuperellipseClass::Initialization(double xT, double yT, double wT, dou
 }
 bool BarUiSuperellipseClass::IsClick(int mx, int my, double zoom, double epsilon)
 {
-	// 计算中心
-	double cx = inhX * zoom + w.val * zoom / 2.0;
-	double cy = inhY * zoom + h.val * zoom / 2.0;
-	// 半轴
-	double a = w.val * zoom / 2.0;
-	double b = h.val * zoom / 2.0;
+	double left = inhX * zoom;
+	double top = inhY * zoom;
+	double right = left + w.val * zoom;
+	double bottom = top + h.val * zoom;
+	double radius = min(right - left, bottom - top) / 2.0;
+	if (radius <= 0.0 || (!n.has_value() || n.value().val <= 0.0)) return false;
 
-	// 映射到中心
-	double normx = (static_cast<double>(mx) - cx) / a;
-	double normy = (static_cast<double>(my) - cy) / b;
+	double px = static_cast<double>(mx);
+	double py = static_cast<double>(my);
+	if (px < left - epsilon || px > right + epsilon || py < top - epsilon || py > bottom + epsilon) return false;
 
-	// degenerate
-	if (a <= 0 || b <= 0 || (!n.has_value() || n.value().val <= 0)) return false;
-
-	// 超椭圆判定
+	// 与绘制一致：非正方形只延长直边，命中区域的四角仍按等宽高超椭圆计算。
+	double cx = clamp(px, left + radius, right - radius);
+	double cy = clamp(py, top + radius, bottom - radius);
+	double normx = (px - cx) / radius;
+	double normy = (py - cy) / radius;
 	double val = pow(abs(normx), n.value().val) + pow(abs(normy), n.value().val);
 
 	// 内/边判定

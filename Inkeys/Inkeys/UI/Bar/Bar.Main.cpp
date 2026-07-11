@@ -376,25 +376,36 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 	double tarN = 4.0;
 	if (superellipse.n.has_value()) tarN = superellipse.n.value().val;
 
-	auto genPoints = [&](float left, float top, float width, float height, float n, int segs)
-		{
-			const float Pi = 3.14159265359f;
-			float a = width / 2.0f;
-			float b = height / 2.0f;
-			float cx = left + a;
-			float cy = top + b;
-
-			vector<D2D1_POINT_2F> pts;
-			for (int i = 0; i < segs; i++)
+		auto genPoints = [&](float left, float top, float width, float height, float n, int segs)
 			{
-				float theta = 2.0f * Pi * i / segs;
-				float cosT = cosf(theta);
-				float sinT = sinf(theta);
-				float x0 = a * (cosT >= 0 ? powf(cosT, 2.0f / n) : -powf(-cosT, 2.0f / n));
-				float y0 = b * (sinT >= 0 ? powf(sinT, 2.0f / n) : -powf(-sinT, 2.0f / n));
-				pts.emplace_back(D2D1::Point2F(cx + x0, cy + y0));
-			}
-			pts.emplace_back(pts[0]); // 闭合
+				const float Pi = 3.14159265359f;
+				float radius = min(width, height) / 2.0f;
+				float right = left + width;
+				float bottom = top + height;
+				int cornerSegs = max(6, segs / 4);
+
+				vector<D2D1_POINT_2F> pts;
+				pts.reserve(static_cast<size_t>(cornerSegs + 1) * 4 + 1);
+
+				auto appendCorner = [&](float cx, float cy, float begin, float end)
+				{
+					for (int i = 0; i <= cornerSegs; i++)
+					{
+						float theta = begin + (end - begin) * static_cast<float>(i) / static_cast<float>(cornerSegs);
+						float cosT = cosf(theta);
+						float sinT = sinf(theta);
+						float x0 = radius * copysignf(powf(abs(cosT), 2.0f / n), cosT);
+						float y0 = radius * copysignf(powf(abs(sinT), 2.0f / n), sinT);
+						pts.emplace_back(D2D1::Point2F(cx + x0, cy + y0));
+					}
+				};
+
+				// 非正方形只延长四角之间的直边，圆角始终使用相同的宽高，避免整体拉伸。
+				appendCorner(right - radius, top + radius, -Pi / 2.0f, 0.0f);
+				appendCorner(right - radius, bottom - radius, 0.0f, Pi / 2.0f);
+				appendCorner(left + radius, bottom - radius, Pi / 2.0f, Pi);
+				appendCorner(left + radius, top + radius, Pi, Pi * 3.0f / 2.0f);
+				pts.emplace_back(pts[0]); // 闭合
 
 			return pts;
 		};
@@ -729,22 +740,34 @@ void BarUISetClass::Rendering()
 
 		// 主按钮
 		{
+			double operationDur = BarUiDefaultOperationDur;
 			if (barState.fold)
 			{
-				superellipseMap[BarUISetSuperellipseEnum::MainButton]->n.value().SetTar(3.0);
+				superellipseMap[BarUISetSuperellipseEnum::MainButton]->n.value().SetTar(3.0, operationDur);
 
-				superellipseMap[BarUISetSuperellipseEnum::MainButton]->pct.SetTar(0.6);
+				superellipseMap[BarUISetSuperellipseEnum::MainButton]->pct.SetTar(0.6, operationDur);
 			}
 			else
 			{
-				superellipseMap[BarUISetSuperellipseEnum::MainButton]->n.value().SetTar(10.0);
+				superellipseMap[BarUISetSuperellipseEnum::MainButton]->n.value().SetTar(10.0, operationDur);
 
-				superellipseMap[BarUISetSuperellipseEnum::MainButton]->pct.SetTar(0.8);
+				superellipseMap[BarUISetSuperellipseEnum::MainButton]->pct.SetTar(0.8, operationDur);
 			}
 		}
 		// 主栏
 		{
 			double operationDur = BarUiDefaultOperationDur;
+			auto mainBar = shapeMap[BarUISetShapeEnum::MainBar];
+			bool mainBarSideSwitch = !barState.fold
+				&& ((barState.widgetPosition.mainBar && mainBar->x.tar < 0.0)
+					|| (!barState.widgetPosition.mainBar && mainBar->x.tar > 0.0));
+			bool mainBarFoldChange = (barState.fold && mainBar->x.tar != 0.0)
+				|| (!barState.fold && mainBar->x.tar == 0.0);
+			auto SetButtonPositionTar = [&](BarUiValueClass& value, double target, double middle)
+				{
+					if (mainBarSideSwitch) value.SetTar(target, operationDur, middle, true);
+					else value.SetTar(target, operationDur, nullopt, mainBarFoldChange);
+				};
 
 			// 按钮位置计算（特别操作）
 			double totalWidth = 5.0;
@@ -774,16 +797,16 @@ void BarUISetClass::Rendering()
 								{
 									if (barState.fold)
 									{
-									temp->buttom.x.SetTar(25.0, operationDur);
-									temp->buttom.y.SetTar(25.0, operationDur);
+									SetButtonPositionTar(temp->buttom.x, 25.0, 25.0);
+									SetButtonPositionTar(temp->buttom.y, 25.0, 25.0);
 
 										temp->buttom.pct.SetTar(0.0);
 									}
 									else
 									{
-									temp->buttom.x.SetTar(xO, operationDur);
-									if (yO <= 5.0) temp->buttom.y.SetTar(yO + 2.5, operationDur); // 位于第一行
-									else temp->buttom.y.SetTar(yO, operationDur); // 位于第二行
+									SetButtonPositionTar(temp->buttom.x, xO, 25.0);
+									if (yO <= 5.0) SetButtonPositionTar(temp->buttom.y, yO + 2.5, 25.0); // 位于第一行
+									else SetButtonPositionTar(temp->buttom.y, yO, 25.0); // 位于第二行
 
 										if (isColorSelector) temp->buttom.pct.SetTar(1.0); // 只有颜色选择器使用
 										else
@@ -891,16 +914,16 @@ void BarUISetClass::Rendering()
 								{
 									if (barState.fold)
 									{
-									temp->buttom.x.SetTar(5.0, operationDur);
-									temp->buttom.y.SetTar(25.0, operationDur);
+									SetButtonPositionTar(temp->buttom.x, 5.0, 5.0);
+									SetButtonPositionTar(temp->buttom.y, 25.0, 25.0);
 
 										temp->buttom.pct.SetTar(0.0);
 									}
 									else
 									{
-									temp->buttom.x.SetTar(xO, operationDur);
-									if (yO <= 5.0) temp->buttom.y.SetTar(yO + 2.5, operationDur); // 位于第一行
-									else temp->buttom.y.SetTar(yO, operationDur); // 位于第二行
+									SetButtonPositionTar(temp->buttom.x, xO, 5.0);
+									if (yO <= 5.0) SetButtonPositionTar(temp->buttom.y, yO + 2.5, 25.0); // 位于第一行
+									else SetButtonPositionTar(temp->buttom.y, yO, 25.0); // 位于第二行
 
 										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1);
 										else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2);
@@ -998,15 +1021,15 @@ void BarUISetClass::Rendering()
 								{
 									if (barState.fold)
 									{
-									temp->buttom.x.SetTar(5.0, operationDur);
-									temp->buttom.y.SetTar(5.0, operationDur);
+									SetButtonPositionTar(temp->buttom.x, 5.0, 5.0);
+									SetButtonPositionTar(temp->buttom.y, 5.0, 5.0);
 
 										temp->buttom.pct.SetTar(0.0);
 									}
 									else
 									{
-									temp->buttom.x.SetTar(xO, operationDur);
-									temp->buttom.y.SetTar(yO, operationDur);
+									SetButtonPositionTar(temp->buttom.x, xO, 5.0);
+									SetButtonPositionTar(temp->buttom.y, yO, 5.0);
 
 										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1);
 										else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2);
@@ -1094,15 +1117,15 @@ void BarUISetClass::Rendering()
 								{
 									if (barState.fold)
 									{
-									temp->buttom.x.SetTar(35.0, operationDur);
-									temp->buttom.y.SetTar(5.0, operationDur);
+									SetButtonPositionTar(temp->buttom.x, 35.0, 35.0);
+									SetButtonPositionTar(temp->buttom.y, 5.0, 5.0);
 
 										temp->buttom.pct.SetTar(0.0);
 									}
 									else
 									{
-									temp->buttom.x.SetTar(xO, operationDur);
-									temp->buttom.y.SetTar(yO, operationDur);
+									SetButtonPositionTar(temp->buttom.x, xO, 35.0);
+									SetButtonPositionTar(temp->buttom.y, yO, 5.0);
 
 										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.2);
 										else temp->buttom.pct.SetTar(0.0);
@@ -1154,19 +1177,25 @@ void BarUISetClass::Rendering()
 			{
 				if (barState.fold)
 				{
-					shapeMap[BarUISetShapeEnum::MainBar]->x.SetTar(0.0, operationDur);
-					shapeMap[BarUISetShapeEnum::MainBar]->w.SetTar(80.0, operationDur);
+					mainBar->x.SetTar(0.0, operationDur, nullopt, mainBarFoldChange);
+					mainBar->w.SetTar(80.0, operationDur, nullopt, mainBarFoldChange);
 
 					shapeMap[BarUISetShapeEnum::MainBar]->pct.SetTar(0.0);
 					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().SetTar(0.0);
 				}
 				else
 				{
-					shapeMap[BarUISetShapeEnum::MainBar]->w.SetTar(totalWidth, operationDur);
+					if (mainBarSideSwitch) mainBar->w.SetTar(totalWidth, operationDur, 80.0, true);
+					else mainBar->w.SetTar(totalWidth, operationDur, nullopt, mainBarFoldChange);
+
+					double targetX = 0.0;
 					if (barState.widgetPosition.mainBar)
-						shapeMap[BarUISetShapeEnum::MainBar]->x.SetTar(superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() / 2.0 + shapeMap[BarUISetShapeEnum::MainBar]->w.tar / 2.0 + 10.0, operationDur);
+						targetX = superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() / 2.0 + mainBar->w.tar / 2.0 + 10.0;
 					else
-						shapeMap[BarUISetShapeEnum::MainBar]->x.SetTar(-(superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() / 2.0 + shapeMap[BarUISetShapeEnum::MainBar]->w.tar / 2.0 + 10.0), operationDur);
+						targetX = -(superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() / 2.0 + mainBar->w.tar / 2.0 + 10.0);
+
+					if (mainBarSideSwitch) mainBar->x.SetTar(targetX, operationDur, 0.0, true);
+					else mainBar->x.SetTar(targetX, operationDur, nullopt, mainBarFoldChange);
 
 					shapeMap[BarUISetShapeEnum::MainBar]->pct.SetTar(0.8);
 					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().SetTar(0.18);
@@ -1757,6 +1786,7 @@ void BarUISetClass::Rendering()
 				value.startV = targetValue;
 				value.progress = 0.0;
 				value.dur = 0.0;
+				value.hasMiddleV = false;
 			};
 		auto FinishColor = [](BarUiColorClass& color, COLORREF targetColor) -> void
 			{
@@ -1808,7 +1838,23 @@ void BarUISetClass::Rendering()
 				}
 
 				double progress = clamp(static_cast<double>(value.progress) + animationDtSeconds * speedRate / duration, 0.0, 1.0);
-				double nextValue = startValue + (targetValue - startValue) * progress;
+				double nextValue = 0.0;
+				if (value.hasMiddleV)
+				{
+					// 单个关键帧固定在总时间 0.5；两段暂时都使用线性插值。
+					double middleValue = value.middleV;
+					if (progress < 0.5)
+					{
+						double localProgress = progress * 2.0;
+						nextValue = startValue + (middleValue - startValue) * localProgress;
+					}
+					else
+					{
+						double localProgress = (progress - 0.5) * 2.0;
+						nextValue = middleValue + (targetValue - middleValue) * localProgress;
+					}
+				}
+				else nextValue = startValue + (targetValue - startValue) * progress;
 				if (!isfinite(nextValue) || progress >= 1.0)
 				{
 					FinishValue(value, targetValue);
