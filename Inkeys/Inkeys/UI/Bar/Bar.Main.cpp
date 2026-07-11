@@ -728,6 +728,7 @@ void BarUISetClass::Rendering()
 	RECT original = RECT(0, 0, barWindow.w, barWindow.h), current = RECT(0, 0, 0, 0);
 	// 独立记录渲染侧已经处理的主栏方向，不能使用动画 tar 的符号代替布局状态。
 	bool mainBarLayoutSide = barState.widgetPosition.mainBar;
+	bool drawAttributeLayoutSide = barState.widgetPosition.primaryBar;
 
 	wstring fps;
 	for (int forNum = 1; !offSignal; forNum = 2)
@@ -760,10 +761,22 @@ void BarUISetClass::Rendering()
 		{
 			double operationDur = BarUiDefaultOperationDur;
 			auto mainBar = shapeMap[BarUISetShapeEnum::MainBar];
+			auto SyncValueDuration = [&](BarUiValueClass& value)
+				{
+					if (!value.IsSame()) value.dur = operationDur;
+				};
+			auto SyncPctDuration = [&](BarUiPctClass& pct)
+				{
+					if (!pct.IsSame()) pct.dur = operationDur;
+				};
 			bool currentMainBarSide = barState.widgetPosition.mainBar;
 			bool mainBarSideSwitch = !barState.fold && currentMainBarSide != mainBarLayoutSide;
 			// 换边动画被打断时，新一侧仍会在下一帧与这里记录的旧侧产生一次明确变化。
 			mainBarLayoutSide = currentMainBarSide;
+			bool currentDrawAttributeSide = barState.widgetPosition.primaryBar;
+			bool drawAttributeSideSwitch = barState.drawAttribute
+				&& currentDrawAttributeSide != drawAttributeLayoutSide;
+			drawAttributeLayoutSide = currentDrawAttributeSide;
 			bool mainBarFoldChange = (barState.fold && mainBar->x.tar != 0.0)
 				|| (!barState.fold && mainBar->x.tar == 0.0);
 			auto SetButtonPositionTar = [&](BarUiValueClass& value, double target, double middle)
@@ -803,7 +816,7 @@ void BarUISetClass::Rendering()
 									SetButtonPositionTar(temp->buttom.x, 40.0, 40.0);
 									SetButtonPositionTar(temp->buttom.y, 40.0, 40.0);
 
-										temp->buttom.pct.SetTar(0.0);
+										temp->buttom.pct.SetTar(0.0, operationDur);
 									}
 									else
 									{
@@ -811,12 +824,12 @@ void BarUISetClass::Rendering()
 									if (yO <= 5.0) SetButtonPositionTar(temp->buttom.y, yO + 17.5, 40.0); // 位于第一行
 									else SetButtonPositionTar(temp->buttom.y, yO + 15.0, 40.0); // 位于第二行
 
-										if (isColorSelector) temp->buttom.pct.SetTar(1.0); // 只有颜色选择器使用
+										if (isColorSelector) temp->buttom.pct.SetTar(1.0, operationDur); // 只有颜色选择器使用
 										else
 										{
-											if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1);
-											else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2);
-											else temp->buttom.pct.SetTar(0.0);
+											if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1, operationDur);
+											else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2, operationDur);
+											else temp->buttom.pct.SetTar(0.0, operationDur);
 										}
 									}
 								temp->buttom.w.SetTar(30.0, operationDur);
@@ -838,11 +851,11 @@ void BarUISetClass::Rendering()
 									temp->icon.y.SetTar(0.0);
 									if (barState.fold)
 									{
-										temp->icon.pct.SetTar(0.0);
+										temp->icon.pct.SetTar(0.0, operationDur);
 									}
 									else
 									{
-										temp->icon.pct.SetTar(1.0);
+										temp->icon.pct.SetTar(1.0, operationDur);
 
 										if (barStyle.darkStyle)
 										{
@@ -859,7 +872,7 @@ void BarUISetClass::Rendering()
 								if (temp->name.enable.tar)
 								{
 									// 无法容下文字的位置
-									temp->name.pct.SetTar(0.0);
+									temp->name.pct.SetTar(0.0, operationDur);
 								}
 
 								// 记录目标绘制位置
@@ -868,9 +881,9 @@ void BarUISetClass::Rendering()
 
 								if (temp->hide)
 								{
-									temp->buttom.pct.SetTar(0.0);
-									temp->icon.pct.SetTar(0.0);
-									temp->name.pct.SetTar(0.0);
+									temp->buttom.pct.SetTar(0.0, operationDur);
+									temp->icon.pct.SetTar(0.0, operationDur);
+									temp->name.pct.SetTar(0.0, operationDur);
 								}
 								else
 								{
@@ -920,7 +933,7 @@ void BarUISetClass::Rendering()
 									SetButtonPositionTar(temp->buttom.x, 40.0, 40.0);
 									SetButtonPositionTar(temp->buttom.y, 40.0, 40.0);
 
-										temp->buttom.pct.SetTar(0.0);
+										temp->buttom.pct.SetTar(0.0, operationDur);
 									}
 									else
 									{
@@ -928,9 +941,9 @@ void BarUISetClass::Rendering()
 									if (yO <= 5.0) SetButtonPositionTar(temp->buttom.y, yO + 17.5, 40.0); // 位于第一行
 									else SetButtonPositionTar(temp->buttom.y, yO + 15.0, 40.0); // 位于第二行
 
-										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1);
-										else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2);
-										else temp->buttom.pct.SetTar(0.0);
+										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1, operationDur);
+										else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2, operationDur);
+										else temp->buttom.pct.SetTar(0.0, operationDur);
 									}
 								temp->buttom.w.SetTar(70.0, operationDur);
 								temp->buttom.h.SetTar(30.0, operationDur);
@@ -945,10 +958,10 @@ void BarUISetClass::Rendering()
 
 									temp->icon.x.SetTar(-21.0); // 靠左对齐（上下两侧均保持 6px 的空隙，而左侧是 5px）
 									temp->icon.y.SetTar(0.0);
-									if (barState.fold) temp->icon.pct.SetTar(0.0);
+									if (barState.fold) temp->icon.pct.SetTar(0.0, operationDur);
 									else
 									{
-										temp->icon.pct.SetTar(1.0);
+										temp->icon.pct.SetTar(1.0, operationDur);
 
 										if (barStyle.darkStyle)
 										{
@@ -968,8 +981,8 @@ void BarUISetClass::Rendering()
 									temp->name.y.SetTar(0.0);
 									temp->name.w.SetTar(37); // 70px 宽度中除去左侧 icon 占用的 18px + 5px * 2 的空隙,考虑自身右侧还有 5px 的间隙
 									temp->name.h.SetTar(30.0);
-									if (barState.fold) temp->name.pct.SetTar(0.0);
-									else temp->name.pct.SetTar(1.0);
+									if (barState.fold) temp->name.pct.SetTar(0.0, operationDur);
+									else temp->name.pct.SetTar(1.0, operationDur);
 
 									if (barStyle.darkStyle)
 									{
@@ -990,9 +1003,9 @@ void BarUISetClass::Rendering()
 
 								if (temp->hide)
 								{
-									temp->buttom.pct.SetTar(0.0);
-									temp->icon.pct.SetTar(0.0);
-									temp->name.pct.SetTar(0.0);
+									temp->buttom.pct.SetTar(0.0, operationDur);
+									temp->icon.pct.SetTar(0.0, operationDur);
+									temp->name.pct.SetTar(0.0, operationDur);
 								}
 								else
 								{
@@ -1027,16 +1040,16 @@ void BarUISetClass::Rendering()
 									SetButtonPositionTar(temp->buttom.x, 40.0, 40.0);
 									SetButtonPositionTar(temp->buttom.y, 40.0, 40.0);
 
-										temp->buttom.pct.SetTar(0.0);
+										temp->buttom.pct.SetTar(0.0, operationDur);
 									}
 									else
 									{
 									SetButtonPositionTar(temp->buttom.x, xO + 35.0, 40.0);
 									SetButtonPositionTar(temp->buttom.y, yO + 35.0, 40.0);
 
-										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1);
-										else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2);
-										else temp->buttom.pct.SetTar(0.0);
+										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1, operationDur);
+										else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2, operationDur);
+										else temp->buttom.pct.SetTar(0.0, operationDur);
 									}
 								temp->buttom.w.SetTar(70.0, operationDur);
 								temp->buttom.h.SetTar(70.0, operationDur);
@@ -1052,11 +1065,11 @@ void BarUISetClass::Rendering()
 									temp->icon.y.SetTar(-10.0);
 									if (barState.fold)
 									{
-										temp->icon.pct.SetTar(0.0);
+										temp->icon.pct.SetTar(0.0, operationDur);
 									}
 									else
 									{
-										temp->icon.pct.SetTar(1.0);
+										temp->icon.pct.SetTar(1.0, operationDur);
 
 										if (barStyle.darkStyle)
 										{
@@ -1076,8 +1089,8 @@ void BarUISetClass::Rendering()
 									temp->name.y.SetTar(20.0);
 									temp->name.w.SetTar(70.0);
 									temp->name.h.SetTar(25.0);
-									if (barState.fold) temp->name.pct.SetTar(0.0);
-									else temp->name.pct.SetTar(1.0);
+									if (barState.fold) temp->name.pct.SetTar(0.0, operationDur);
+									else temp->name.pct.SetTar(1.0, operationDur);
 
 									if (barStyle.darkStyle)
 									{
@@ -1100,9 +1113,9 @@ void BarUISetClass::Rendering()
 
 								if (temp->hide)
 								{
-									temp->buttom.pct.SetTar(0.0);
-									temp->icon.pct.SetTar(0.0);
-									temp->name.pct.SetTar(0.0);
+									temp->buttom.pct.SetTar(0.0, operationDur);
+									temp->icon.pct.SetTar(0.0, operationDur);
+									temp->name.pct.SetTar(0.0, operationDur);
 								}
 								else
 								{
@@ -1123,15 +1136,15 @@ void BarUISetClass::Rendering()
 									SetButtonPositionTar(temp->buttom.x, 40.0, 40.0);
 									SetButtonPositionTar(temp->buttom.y, 40.0, 40.0);
 
-										temp->buttom.pct.SetTar(0.0);
+										temp->buttom.pct.SetTar(0.0, operationDur);
 									}
 									else
 									{
 									SetButtonPositionTar(temp->buttom.x, xO + 5.0, 40.0);
 									SetButtonPositionTar(temp->buttom.y, yO + 35.0, 40.0);
 
-										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.2);
-										else temp->buttom.pct.SetTar(0.0);
+										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.2, operationDur);
+										else temp->buttom.pct.SetTar(0.0, operationDur);
 									}
 								temp->buttom.w.SetTar(10.0, operationDur);
 								temp->buttom.h.SetTar(70.0, operationDur);
@@ -1144,11 +1157,11 @@ void BarUISetClass::Rendering()
 									temp->icon.SetWH(nullopt, 60.0);
 									if (barState.fold)
 									{
-										temp->icon.pct.SetTar(0.0);
+										temp->icon.pct.SetTar(0.0, operationDur);
 									}
 									else
 									{
-										temp->icon.pct.SetTar(0.18);
+										temp->icon.pct.SetTar(0.18, operationDur);
 										if (barStyle.darkStyle) temp->icon.color1.value().SetTar(RGB(255, 255, 255));
 										else temp->icon.color1.value().SetTar(RGB(0, 0, 0));
 									}
@@ -1160,9 +1173,9 @@ void BarUISetClass::Rendering()
 
 								if (temp->hide)
 								{
-									temp->buttom.pct.SetTar(0.0);
-									temp->icon.pct.SetTar(0.0);
-									temp->name.pct.SetTar(0.0);
+									temp->buttom.pct.SetTar(0.0, operationDur);
+									temp->icon.pct.SetTar(0.0, operationDur);
+									temp->name.pct.SetTar(0.0, operationDur);
 								}
 								else
 								{
@@ -1170,6 +1183,24 @@ void BarUISetClass::Rendering()
 									totalWidth += 15;
 								}
 							}
+
+							// 尺寸枚举只负责选择布局，按钮及其内容统一在同一过程时间内到达新布局。
+							SyncValueDuration(temp->buttom.x);
+							SyncValueDuration(temp->buttom.y);
+							SyncValueDuration(temp->buttom.w);
+							SyncValueDuration(temp->buttom.h);
+							SyncPctDuration(temp->buttom.pct);
+							SyncValueDuration(temp->icon.x);
+							SyncValueDuration(temp->icon.y);
+							SyncValueDuration(temp->icon.w);
+							SyncValueDuration(temp->icon.h);
+							SyncPctDuration(temp->icon.pct);
+							SyncValueDuration(temp->name.x);
+							SyncValueDuration(temp->name.y);
+							SyncValueDuration(temp->name.w);
+							SyncValueDuration(temp->name.h);
+							SyncValueDuration(temp->name.size);
+							SyncPctDuration(temp->name.pct);
 
 							if (mainBarSideSwitch)
 							{
@@ -1191,8 +1222,8 @@ void BarUISetClass::Rendering()
 					mainBar->x.SetTar(0.0, operationDur, nullopt, mainBarFoldChange);
 					mainBar->w.SetTar(80.0, operationDur, nullopt, mainBarFoldChange);
 
-					shapeMap[BarUISetShapeEnum::MainBar]->pct.SetTar(0.0);
-					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().SetTar(0.0);
+					shapeMap[BarUISetShapeEnum::MainBar]->pct.SetTar(0.0, operationDur);
+					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().SetTar(0.0, operationDur);
 				}
 				else
 				{
@@ -1208,8 +1239,8 @@ void BarUISetClass::Rendering()
 					if (mainBarSideSwitch) mainBar->x.SetTar(targetX, operationDur, 0.0, true);
 					else mainBar->x.SetTar(targetX, operationDur, nullopt, mainBarFoldChange);
 
-					shapeMap[BarUISetShapeEnum::MainBar]->pct.SetTar(0.8);
-					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().SetTar(0.18);
+					shapeMap[BarUISetShapeEnum::MainBar]->pct.SetTar(0.8, operationDur);
+					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().SetTar(0.18, operationDur);
 				}
 				if (mainBarSideSwitch)
 				{
@@ -1785,6 +1816,81 @@ void BarUISetClass::Rendering()
 						{
 							wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->w.SetTar(80.0);
 							wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->pct.SetTar(1.0);
+						}
+					}
+
+					// 展开、收起时，属性栏及全部内部控件共用同一个完成时刻。
+					for (int i = static_cast<int>(BarUISetShapeEnum::DrawAttributeBar);
+						i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect); i++)
+					{
+						auto obj = shapeMap[static_cast<BarUISetShapeEnum>(i)];
+						if (!obj) continue;
+						SyncValueDuration(obj->x);
+						SyncValueDuration(obj->y);
+						SyncValueDuration(obj->w);
+						SyncValueDuration(obj->h);
+						if (obj->rw.has_value()) SyncValueDuration(obj->rw.value());
+						if (obj->rh.has_value()) SyncValueDuration(obj->rh.value());
+						if (obj->ft.has_value()) SyncValueDuration(obj->ft.value());
+						SyncPctDuration(obj->pct);
+						if (obj->framePct.has_value()) SyncPctDuration(obj->framePct.value());
+					}
+					for (int i = static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_ColorSelect1);
+						i <= static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_Highlight1); i++)
+					{
+						auto obj = svgMap[static_cast<BarUISetSvgEnum>(i)];
+						if (!obj) continue;
+						SyncValueDuration(obj->x);
+						SyncValueDuration(obj->y);
+						SyncValueDuration(obj->w);
+						SyncValueDuration(obj->h);
+						SyncPctDuration(obj->pct);
+					}
+					for (int i = static_cast<int>(BarUISetWordEnum::DrawAttributeBar_Brush1);
+						i <= static_cast<int>(BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay); i++)
+					{
+						auto obj = wordMap[static_cast<BarUISetWordEnum>(i)];
+						if (!obj) continue;
+						SyncValueDuration(obj->x);
+						SyncValueDuration(obj->y);
+						SyncValueDuration(obj->w);
+						SyncValueDuration(obj->h);
+						SyncValueDuration(obj->size);
+						SyncPctDuration(obj->pct);
+					}
+
+					if (drawAttributeSideSwitch)
+					{
+						// 上下换边与主栏一致：先收拢到绘制按钮位置并隐藏，再向另一侧展开。
+						auto drawAttributeBar = shapeMap[BarUISetShapeEnum::DrawAttributeBar];
+						drawAttributeBar->x.SetTar(drawAttributeBar->x.tar, operationDur, 0.0, true);
+						drawAttributeBar->y.SetTar(drawAttributeBar->y.tar, operationDur, 0.0, true);
+						drawAttributeBar->w.SetTar(drawAttributeBar->w.tar, operationDur, 60.0, true);
+						drawAttributeBar->h.SetTar(drawAttributeBar->h.tar, operationDur, 60.0, true);
+						drawAttributeBar->pct.SetTar(drawAttributeBar->pct.tar, operationDur, 0.0, true);
+						drawAttributeBar->framePct.value().SetTar(
+							drawAttributeBar->framePct.value().tar, operationDur, 0.0, true);
+
+						for (int i = static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ColorSelect1);
+							i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect); i++)
+						{
+							auto obj = shapeMap[static_cast<BarUISetShapeEnum>(i)];
+							if (!obj) continue;
+							obj->pct.SetTar(obj->pct.tar, operationDur, 0.0, true);
+							if (obj->framePct.has_value())
+								obj->framePct.value().SetTar(obj->framePct.value().tar, operationDur, 0.0, true);
+						}
+						for (int i = static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_ColorSelect1);
+							i <= static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_Highlight1); i++)
+						{
+							auto obj = svgMap[static_cast<BarUISetSvgEnum>(i)];
+							if (obj) obj->pct.SetTar(obj->pct.tar, operationDur, 0.0, true);
+						}
+						for (int i = static_cast<int>(BarUISetWordEnum::DrawAttributeBar_Brush1);
+							i <= static_cast<int>(BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay); i++)
+						{
+							auto obj = wordMap[static_cast<BarUISetWordEnum>(i)];
+							if (obj) obj->pct.SetTar(obj->pct.tar, operationDur, 0.0, true);
 						}
 					}
 				}
