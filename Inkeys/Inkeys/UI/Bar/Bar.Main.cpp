@@ -2693,6 +2693,7 @@ double BarUISetClass::Seek(const ExMessage& msg)
 	BarAtomic::sustainFlag = true;
 	UpdateRendering();
 
+	double tarZoom = barStyle.zoom;
 	while (1)
 	{
 		if (!IsLeftButtonDown()) break;
@@ -2704,7 +2705,6 @@ double BarUISetClass::Seek(const ExMessage& msg)
 			continue;
 		}
 
-		double tarZoom = barStyle.zoom;
 		double nextX = mainButton->x.tar + static_cast<double>(p.x - firX) / tarZoom;
 		double nextY = mainButton->y.tar + static_cast<double>(p.y - firY) / tarZoom;
 
@@ -2726,8 +2726,6 @@ double BarUISetClass::Seek(const ExMessage& msg)
 		ret += sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY));
 		firX = static_cast<double>(p.x), firY = static_cast<double>(p.y);
 
-		// 更新位置状态
-		barState.PositionUpdate(tarZoom);
 		// 拖动时收起主栏
 		if (setlist.regularSetting.moveRecover)
 		{
@@ -2737,6 +2735,9 @@ double BarUISetClass::Seek(const ExMessage& msg)
 			}
 		}
 	}
+
+	// 更新位置状态
+	barState.PositionUpdate(tarZoom);
 
 	BarAtomic::sustainFlag = false;
 	return ret;
@@ -3076,4 +3077,3 @@ namespace Inkeys::UI::Bar
 		}
 	}
 }
-

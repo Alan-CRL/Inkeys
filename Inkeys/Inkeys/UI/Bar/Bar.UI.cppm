@@ -87,7 +87,7 @@ public:
 	IdtAtomic<double> ary = 1.0; // 变换精度（差值绝对值小于等于精度则认为已经动画完成，则直接赋值等于）
 
 	// 适用于 回弹动效模式
-	IdtAtomic<double> spe = 1200.0; // 基准速度 px/s
+	IdtAtomic<double> spe = 120.0; // 基准速度 px/s（此时用于动画细节的测试，故意调慢速度）
 	IdtAtomic<double> startV = 0.0; // 起始位置（用于计算百分比，在界面设被设置时）
 	IdtAtomic<double> progress = 0.0; // 当前动画段的线性进度（曲线 x，0->1）
 };
@@ -123,7 +123,7 @@ public:
 	IdtAtomic<COLORREF> startColor = RGB(0, 0, 0); // 起始颜色（用于计算百分比，在界面被设置时）
 	IdtAtomic<double> progress = 0.0; // 当前动画段的线性进度（曲线 x，0->1）
 
-	IdtAtomic<double> spe = 6.0; // RGB基准速度 1/s
+	IdtAtomic<double> spe = 0.60; // RGB基准速度 1/s（此时用于动画细节的测试，故意调慢速度）
 	// 如果 spe <= 0 则表示直接变化
 };
 //// 透明度 UI 值
@@ -158,7 +158,7 @@ public:
 	IdtAtomic<double> startV = 1.0; // 起始透明度（用于计算百分比，在界面被设置时）
 	IdtAtomic<double> progress = 0.0; // 当前动画段的线性进度（曲线 x，0->1）
 
-	IdtAtomic<double> spe = 6.0; // 透明度基准速度 1/s
+	IdtAtomic<double> spe = 0.60; // 透明度基准速度 1/s（此时用于动画细节的测试，故意调慢速度）
 	// 如果 spe <= 0 则表示直接变化
 };
 //// 文字 UI 值
