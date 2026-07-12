@@ -22,6 +22,48 @@ enum class BarUiValueModeEnum : int
 	Variable = 2 // 回弹动效
 };
 
+// 动画曲线只负责将线性时间进度映射为数值进度；后续非线性在此扩充。
+enum class BarUiCurveEnum : int
+{
+	Linear = 0,
+};
+
+// 一组关联动画共用的线性时间轴。中途修改目标时读取剩余时长，不延后原完成时刻。
+class BarUiTimelineClass
+{
+public:
+	void Restart(double durationT)
+	{
+		duration = isfinite(durationT) && durationT > 0.0 ? durationT : 0.0;
+		progress = duration > 0.0 ? 0.0 : 1.0;
+	}
+	void Advance(double dt, double speedRate)
+	{
+		if (!IsActive() || !isfinite(dt) || dt <= 0.0
+			|| !isfinite(speedRate) || speedRate <= 0.0) return;
+
+		progress = clamp(progress + dt * speedRate / duration, 0.0, 1.0);
+	}
+	bool IsActive() const
+	{
+		return isfinite(duration) && duration > 0.0
+			&& isfinite(progress) && progress < 1.0;
+	}
+	double GetRemainingDuration() const
+	{
+		if (!IsActive()) return 0.0;
+		return duration * (1.0 - progress);
+	}
+	double GetProgress() const
+	{
+		return clamp(progress, 0.0, 1.0);
+	}
+
+private:
+	double duration = 0.0; // 基础总时长，不包含全局速度倍率
+	double progress = 1.0; // 始终按真实时间线性推进，曲线不能反向修改它
+};
+
 /// 单个 UI 值
 //// 状态 UI 值
 class BarUiStateClass
@@ -116,6 +158,7 @@ public:
 
 public:
 	IdtAtomic<BarUiValueModeEnum> mod = BarUiValueModeEnum::Linear;
+	IdtAtomic<BarUiCurveEnum> curve = BarUiCurveEnum::Linear;
 
 	IdtAtomic<double> val = 0.0; // 直接值（当前位置）
 	IdtAtomic<double> tar = 0.0; // 目标值（目标位置）
@@ -168,6 +211,7 @@ public:
 	}
 
 public:
+	IdtAtomic<BarUiCurveEnum> curve = BarUiCurveEnum::Linear;
 	IdtAtomic<COLORREF> val = RGB(0, 0, 0); // 直接值（当前位置）
 	IdtAtomic<COLORREF> tar = RGB(0, 0, 0); // 目标值（目标位置）
 	IdtAtomic<COLORREF> startColor = RGB(0, 0, 0); // 起始颜色（用于计算百分比，在界面被设置时）
@@ -225,6 +269,7 @@ public:
 	}
 
 public:
+	IdtAtomic<BarUiCurveEnum> curve = BarUiCurveEnum::Linear;
 	IdtAtomic<double> val = 1.0; // 透明度直接值
 	IdtAtomic<double> tar = 1.0; // 颜色目标值
 	IdtAtomic<double> startV = 1.0; // 起始透明度（用于计算百分比，在界面被设置时）

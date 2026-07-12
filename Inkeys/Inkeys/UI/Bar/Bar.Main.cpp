@@ -729,6 +729,8 @@ void BarUISetClass::Rendering()
 	// 独立记录渲染侧已经处理的主栏方向，不能使用动画 tar 的符号代替布局状态。
 	bool mainBarLayoutSide = barState.widgetPosition.mainBar;
 	bool drawAttributeLayoutSide = barState.widgetPosition.primaryBar;
+	BarUiTimelineClass mainBarTimeline;
+	optional<double> mainBarLayoutWidth;
 	// 粗细预览使用独立动画值；切换画笔类型时曲线与数字共用同一进度。
 	BarUiValueClass drawAttributePenThickness(max(0.0f, GetPenWidth()));
 
@@ -742,6 +744,7 @@ void BarUISetClass::Rendering()
 		animationReckon = animationNow;
 		if (!isfinite(animationDtSeconds) || animationDtSeconds < 0.0) animationDtSeconds = 0.0;
 		animationDtSeconds = clamp(animationDtSeconds, 0.0, 0.05); // 防止调试或休眠恢复后一帧跳太远
+		mainBarTimeline.Advance(animationDtSeconds, BarUiAnimationSpeedRate);
 
 		// 主按钮
 		{
@@ -765,11 +768,12 @@ void BarUISetClass::Rendering()
 			auto mainBar = shapeMap[BarUISetShapeEnum::MainBar];
 			auto SyncValueDuration = [&](BarUiValueClass& value)
 				{
-					if (!value.IsSame()) value.dur = operationDur;
+					// 只在新目标刚建立时提交批次剩余时长，不能每帧改写正在推进的动画段。
+					if (!value.IsSame() && value.progress == 0.0) value.dur = operationDur;
 				};
 			auto SyncPctDuration = [&](BarUiPctClass& pct)
 				{
-					if (!pct.IsSame()) pct.dur = operationDur;
+					if (!pct.IsSame() && pct.progress == 0.0) pct.dur = operationDur;
 				};
 			bool currentMainBarSide = barState.widgetPosition.mainBar;
 			bool mainBarSideSwitch = !barState.fold && currentMainBarSide != mainBarLayoutSide;
@@ -818,6 +822,14 @@ void BarUISetClass::Rendering()
 					return width;
 				};
 			double layoutTotalWidth = CalculateButtonLayoutWidth();
+			bool mainBarLayoutChange = mainBarLayoutWidth.has_value()
+				&& abs(layoutTotalWidth - mainBarLayoutWidth.value()) > 0.000001;
+			// 新操作创建完整批次；已有批次中的布局重算只继承剩余时间，不延后结束时刻。
+			if (mainBarFoldChange || mainBarSideSwitch
+				|| (!barState.fold && !mainBarTimeline.IsActive() && mainBarLayoutChange))
+				mainBarTimeline.Restart(operationDur);
+			mainBarLayoutWidth = layoutTotalWidth;
+			if (mainBarTimeline.IsActive()) operationDur = mainBarTimeline.GetRemainingDuration();
 			auto SetButtonPositionTar = [&](BarUiValueClass& value, double target, double middle, bool mirrorX = false)
 				{
 					// 左侧展开仍按正序布局，只将最终横坐标按主栏宽度镜像。
@@ -1330,6 +1342,8 @@ void BarUISetClass::Rendering()
 
 				// 绘制属性
 				{
+					// 绘制属性属于独立操作，不继承主栏批次的剩余时间。
+					operationDur = BarUiDefaultOperationDur;
 					constexpr double drawAttributeCompactWidth = 60.0;
 					constexpr double drawAttributeCompactScale = drawAttributeCompactWidth / 335.0;
 					constexpr double drawAttributeCompactHeight = 120.0 * drawAttributeCompactScale;
@@ -2131,6 +2145,16 @@ void BarUISetClass::Rendering()
 					MixColorChannel(GetGValue(startColor), GetGValue(targetColor), progress),
 					MixColorChannel(GetBValue(startColor), GetBValue(targetColor), progress));
 			};
+		auto ApplyCurve = [](BarUiCurveEnum curve, double progress) -> double
+			{
+				progress = clamp(progress, 0.0, 1.0);
+				switch (curve)
+				{
+				case BarUiCurveEnum::Linear:
+				default:
+					return progress;
+				}
+			};
 		auto ChangeState = [&](BarUiStateClass& state, bool forceReplace) -> void
 			{
 				needRendering = true;
@@ -2140,6 +2164,7 @@ void BarUISetClass::Rendering()
 			{
 				needRendering = true;
 				BarUiValueModeEnum mod = value.mod;
+				BarUiCurveEnum curve = value.curve;
 				double targetValue = value.tar;
 				double startValue = value.startV;
 				double duration = value.dur;
@@ -2161,16 +2186,16 @@ void BarUISetClass::Rendering()
 					double middleValue = value.middleV;
 					if (progress < 0.5)
 					{
-						double localProgress = progress * 2.0;
+						double localProgress = ApplyCurve(curve, progress * 2.0);
 						nextValue = startValue + (middleValue - startValue) * localProgress;
 					}
 					else
 					{
-						double localProgress = (progress - 0.5) * 2.0;
+						double localProgress = ApplyCurve(curve, (progress - 0.5) * 2.0);
 						nextValue = middleValue + (targetValue - middleValue) * localProgress;
 					}
 				}
-				else nextValue = startValue + (targetValue - startValue) * progress;
+				else nextValue = startValue + (targetValue - startValue) * ApplyCurve(curve, progress);
 				if (!isfinite(nextValue) || progress >= 1.0)
 				{
 					FinishValue(value, targetValue);
@@ -2195,7 +2220,7 @@ void BarUISetClass::Rendering()
 				}
 
 				double progress = clamp(static_cast<double>(color.progress) + animationDtSeconds * speedRate / duration, 0.0, 1.0);
-				COLORREF nextColor = MixColor(startColor, targetColor, progress);
+				COLORREF nextColor = MixColor(startColor, targetColor, ApplyCurve(color.curve, progress));
 				if (progress >= 1.0 || nextColor == targetColor)
 				{
 					FinishColor(color, targetColor);
@@ -2228,16 +2253,16 @@ void BarUISetClass::Rendering()
 					double middlePct = pct.middleV;
 					if (progress < 0.5)
 					{
-						double localProgress = progress * 2.0;
+						double localProgress = ApplyCurve(pct.curve, progress * 2.0);
 						nextPct = startPct + (middlePct - startPct) * localProgress;
 					}
 					else
 					{
-						double localProgress = (progress - 0.5) * 2.0;
+						double localProgress = ApplyCurve(pct.curve, (progress - 0.5) * 2.0);
 						nextPct = middlePct + (targetPct - middlePct) * localProgress;
 					}
 				}
-				else nextPct = startPct + (targetPct - startPct) * progress;
+				else nextPct = startPct + (targetPct - startPct) * ApplyCurve(pct.curve, progress);
 				if (!isfinite(nextPct) || progress >= 1.0)
 				{
 					FinishPct(pct, targetPct);
