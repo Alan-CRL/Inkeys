@@ -2960,6 +2960,7 @@ void BarUISetClass::Rendering()
 void BarUISetClass::Interact()
 {
 	ExMessage msg;
+	BarButtomClass* lastClickedMainBarButton = nullptr;
 	while (!offSignal)
 	{
 		hiex::getmessage_win32(&msg, EM_MOUSE, floating_window);
@@ -3001,20 +3002,26 @@ void BarUISetClass::Interact()
 					BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
 					if (temp == nullptr || temp->hide) continue;
 
-					if (temp->buttom.IsClick(msg.x, msg.y, barStyle.zoom))
+					// 双击第二击仍归属于第一击按钮，避免动画中按钮位移导致命中丢失。
+					bool doubleClickContinuation = msg.message == WM_LBUTTONDBLCLK
+						&& temp == lastClickedMainBarButton;
+					if (temp->buttom.IsClick(msg.x, msg.y, barStyle.zoom) || doubleClickContinuation)
 					{
 						continueFlag = false;
-						if (msg.message == WM_LBUTTONDOWN /*msg.lbutton*/)
+						if (msg.message == WM_LBUTTONDOWN || msg.message == WM_LBUTTONDBLCLK)
 						{
+							bool clickCompleted = false;
 							temp->state->emph = BarWidgetEmphasize::Pressed; UpdateRendering(false);
 							while (true)
 							{
 								hiex::getmessage_win32(&msg, EM_MOUSE, floating_window);
-								if (temp->buttom.IsClick(msg.x, msg.y, barStyle.zoom))
+								if (doubleClickContinuation || temp->buttom.IsClick(msg.x, msg.y, barStyle.zoom))
 								{
 									if (!msg.lbutton)
 									{
 										if (temp->clickFunc) temp->clickFunc();
+										lastClickedMainBarButton = temp;
+										clickCompleted = true;
 										UpdateRendering();
 
 										break;
@@ -3024,7 +3031,8 @@ void BarUISetClass::Interact()
 							}
 							temp->state->emph = BarWidgetEmphasize::None; UpdateRendering(false);
 
-							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+							// 成功点击后保留队列中的下一击；拖出取消时仍清理本轮残留消息。
+							if (!clickCompleted) hiex::flushmessage_win32(EM_MOUSE, floating_window);
 						}
 						break;
 					}
