@@ -2611,9 +2611,15 @@ void BarUISetClass::Rendering()
 		auto UpdateHoverAnimation = [&](BarUiPctClass& hoverPct,
 			IdtAtomic<BarButtomHoverStageEnum>& hoverStage, bool visible, bool hoverAllowed)
 			{
-				if (!visible || !hoverAllowed)
+				if (!visible)
 				{
-					// 背景层还承载按下和选中状态，此处只取消悬停，透明度交由状态动画接管。
+					// 隐藏时清除仍在运行的独立悬停过程，避免下次显示继承 50 秒渐隐的灰色。
+					if (hoverStage != BarButtomHoverStageEnum::None) hoverPct.SetDirect(0.0);
+					hoverStage = BarButtomHoverStageEnum::None;
+				}
+				else if (!hoverAllowed)
+				{
+					// 选中状态继续复用同一背景层，透明度由选中动画接管。
 					hoverStage = BarButtomHoverStageEnum::None;
 				}
 				else if (hoverStage == BarButtomHoverStageEnum::Showing
@@ -3289,6 +3295,8 @@ void BarUISetClass::Interact()
 	ExMessage msg;
 	BarButtomClass* lastClickedMainBarButton = nullptr;
 	BarButtomClass* hoveredMainBarButton = nullptr;
+	bool suppressHoverUntilPointerMove = false;
+	POINT hoverSuppressionScreenPoint{};
 	enum class IndependentHoverTargetEnum
 	{
 		None,
@@ -3334,7 +3342,12 @@ void BarUISetClass::Interact()
 		IdtAtomic<BarButtomHoverStageEnum>* hoverStage, bool immediate)
 		{
 			if (!hoverPct || !hoverStage) return;
-			if (immediate) *hoverStage = BarButtomHoverStageEnum::None;
+			if (immediate)
+			{
+				*hoverStage = BarButtomHoverStageEnum::None;
+				// 立即停止用于按下、隐藏和触摸抬起，不能遗留旧的灰色当前值。
+				hoverPct->SetDirect(0.0);
+			}
 			else
 			{
 				// 离开后仍保持灰色背景，直到同一层透明度自然降为零。
@@ -3364,6 +3377,15 @@ void BarUISetClass::Interact()
 			auto hover = GetIndependentHoverVisual(target);
 			StopHover(hover.pct, hover.stage, immediate);
 		};
+	auto SuppressHoverUntilPointerMove = [&]()
+		{
+			POINT point{};
+			if (GetCursorPos(&point))
+			{
+				hoverSuppressionScreenPoint = point;
+				suppressHoverUntilPointerMove = true;
+			}
+		};
 	while (!offSignal)
 	{
 		hiex::getmessage_win32(&msg, EM_MOUSE, floating_window);
@@ -3384,6 +3406,19 @@ void BarUISetClass::Interact()
 		}
 		if (msg.message == WM_MOUSEMOVE)
 		{
+			if (suppressHoverUntilPointerMove)
+			{
+				POINT currentPoint{};
+				if (GetCursorPos(&currentPoint)
+					&& currentPoint.x == hoverSuppressionScreenPoint.x
+					&& currentPoint.y == hoverSuppressionScreenPoint.y)
+				{
+					// 窗口伸缩会产生相对坐标变化，但屏幕坐标未变时不算重新进入按钮。
+					continue;
+				}
+				suppressHoverUntilPointerMove = false;
+			}
+
 			BarButtomClass* currentHoveredButton = nullptr;
 			if (!barState.fold)
 			{
@@ -3450,6 +3485,7 @@ void BarUISetClass::Interact()
 						else barState.fold = true;
 						UpdateRendering();
 					}
+					SuppressHoverUntilPointerMove();
 
 					hiex::flushmessage_win32(EM_MOUSE, floating_window);
 				}
@@ -3502,6 +3538,7 @@ void BarUISetClass::Interact()
 								else break;
 							}
 							temp->state->emph = BarWidgetEmphasize::None; UpdateRendering(false);
+							SuppressHoverUntilPointerMove();
 
 							// 成功点击后保留队列中的下一击；拖出取消时仍清理本轮残留消息。
 							if (!clickCompleted) hiex::flushmessage_win32(EM_MOUSE, floating_window);
@@ -3539,6 +3576,7 @@ void BarUISetClass::Interact()
 									else break;
 								}
 
+								SuppressHoverUntilPointerMove();
 								hiex::flushmessage_win32(EM_MOUSE, floating_window);
 							}
 						}
@@ -3574,6 +3612,7 @@ void BarUISetClass::Interact()
 							else break;
 						}
 						barState.drawAttributeBar.brush1Press = false; UpdateRendering(false);
+						SuppressHoverUntilPointerMove();
 
 						hiex::flushmessage_win32(EM_MOUSE, floating_window);
 					}
@@ -3605,6 +3644,7 @@ void BarUISetClass::Interact()
 							else break;
 						}
 						barState.drawAttributeBar.highlight1Press = false; UpdateRendering(false);
+						SuppressHoverUntilPointerMove();
 
 						hiex::flushmessage_win32(EM_MOUSE, floating_window);
 					}
