@@ -54,7 +54,10 @@ class BarButtomClass
 {
 public:
 	BarButtomClass()
-	{}
+	{
+		// 按钮背景只承载选中、按下和悬停效果，首次显示前必须保持完全透明。
+		buttom.pct.Initialization(0.0);
+	}
 	// 拷贝构造函数，深拷贝所有数据成员，mutex新建
 	BarButtomClass(const BarButtomClass& other)
 		: size(other.size),
