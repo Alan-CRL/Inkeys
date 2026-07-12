@@ -729,8 +729,8 @@ void BarUISetClass::Rendering()
 	// 独立记录渲染侧已经处理的主栏方向，不能使用动画 tar 的符号代替布局状态。
 	bool mainBarLayoutSide = barState.widgetPosition.mainBar;
 	bool drawAttributeLayoutSide = barState.widgetPosition.primaryBar;
-	// 离开画笔模式后 GetPenWidth 会立即归零，缓存最后有效粗细供属性栏收起动画继续绘制。
-	float drawAttributePenThickness = max(0.0f, GetPenWidth());
+	// 粗细预览使用独立动画值；切换画笔类型时曲线与数字共用同一进度。
+	BarUiValueClass drawAttributePenThickness(max(0.0f, GetPenWidth()));
 
 	wstring fps;
 	for (int forNum = 1; !offSignal; forNum = 2)
@@ -780,7 +780,7 @@ void BarUISetClass::Rendering()
 				&& currentDrawAttributeSide != drawAttributeLayoutSide;
 			drawAttributeLayoutSide = currentDrawAttributeSide;
 			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
-				drawAttributePenThickness = max(0.0f, GetPenWidth());
+				drawAttributePenThickness.SetTar(max(0.0f, GetPenWidth()), operationDur);
 			bool mainBarFoldChange = (barState.fold && mainBar->x.tar != 0.0)
 				|| (!barState.fold && mainBar->x.tar == 0.0);
 			auto CalculateButtonLayoutWidth = [&]()
@@ -2252,6 +2252,8 @@ void BarUISetClass::Rendering()
 				needRendering = true;
 				stringO.ApplyTar();
 			};
+		// 独立的粗细值也进入统一动画时钟，方便后续直接替换为非线性或回弹曲线。
+		if (!drawAttributePenThickness.IsSame()) ChangeValue(drawAttributePenThickness, false);
 
 		for (const auto& [key, val] : shapeMap)
 		{
@@ -2549,7 +2551,7 @@ void BarUISetClass::Rendering()
 							// 收起后继续按当前透明度绘制，直至与其他属性控件同步淡出。
 							if (wordMap[obj2]->pct.val > 0.000001)
 							{
-								FLOAT penThickness = drawAttributePenThickness;
+								FLOAT penThickness = static_cast<FLOAT>(drawAttributePenThickness.val);
 
 								FLOAT tarZoom = barStyle.zoom;
 								double tarX = shapeMap[obj1]->inhX + 5.0;
@@ -2703,6 +2705,13 @@ void BarUISetClass::Rendering()
 								// ==== 结束裁切 ====
 								barDeviceContext->PopLayer();
 							}
+
+							// 数字直接取曲线的同一个动画值，保证切换画笔类型时同步连续变化。
+							int displayedThickness = static_cast<int>(lround(clamp(
+								static_cast<double>(drawAttributePenThickness.val), 0.0, 999.0)));
+							wstring thicknessText = L"粗细" + format(L" {:>3}", displayedThickness);
+							wordMap[obj2]->content.SetVal(thicknessText);
+							wordMap[obj2]->content.SetTar(thicknessText);
 
 							// obj2
 							spec.Word(barDeviceContext.Get(), *wordMap[obj2], wordMap[obj2]->Inherit(Right, *shapeMap[obj1]), DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING);
