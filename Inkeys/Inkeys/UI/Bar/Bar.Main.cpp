@@ -779,8 +779,45 @@ void BarUISetClass::Rendering()
 			drawAttributeLayoutSide = currentDrawAttributeSide;
 			bool mainBarFoldChange = (barState.fold && mainBar->x.tar != 0.0)
 				|| (!barState.fold && mainBar->x.tar == 0.0);
-			auto SetButtonPositionTar = [&](BarUiValueClass& value, double target, double middle)
+			auto CalculateButtonLayoutWidth = [&]()
 				{
+					double width = 5.0, xO = 5.0, yO = 5.0;
+					for (int id = 0; id < barButtomSet.tot; id++)
+					{
+						BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
+						if (!temp) continue;
+						if (temp->size == BarButtomSizeEnum::oneOne)
+						{
+							if (temp->hide) continue;
+							if (yO <= 5.0) yO += 37.5, width += 37.5;
+							else if (xO + 37.5 >= width) xO += 37.5, yO = 5.0;
+							else xO += 37.5;
+						}
+						else if (temp->size == BarButtomSizeEnum::twoOne)
+						{
+							if (yO > 5.0 && xO + 75.0 > width) xO = width, yO = 5.0;
+							if (temp->hide) continue;
+							if (yO <= 5.0) yO += 37.5, width += 75.0;
+							else xO += 75.0, yO = 5.0;
+						}
+						else if (temp->size == BarButtomSizeEnum::twoTwo)
+						{
+							if (yO > 5.0) yO = 5.0, xO = width;
+							if (!temp->hide) xO += 75.0, width += 75.0;
+						}
+						else if (temp->size == BarButtomSizeEnum::oneTwo)
+						{
+							if (yO > 5.0) xO = width;
+							if (!temp->hide) xO += 15.0, yO = 5.0, width += 15.0;
+						}
+					}
+					return width;
+				};
+			double layoutTotalWidth = CalculateButtonLayoutWidth();
+			auto SetButtonPositionTar = [&](BarUiValueClass& value, double target, double middle, bool mirrorX = false)
+				{
+					// 左侧展开仍按正序布局，只将最终横坐标按主栏宽度镜像。
+					if (mirrorX && !barState.widgetPosition.mainBar) target = layoutTotalWidth - target;
 					if (mainBarSideSwitch) value.SetTar(target, operationDur, middle, true);
 					else value.SetTar(target, operationDur, nullopt, mainBarFoldChange);
 				};
@@ -791,11 +828,10 @@ void BarUISetClass::Rendering()
 				double xO = 5.0, yO = 5.0;
 				// 控件计算的 xO 和 yO 包含自身和 右侧、下册 的空隙值 5px
 
-				// 针对 mainBar 的值不同，按钮会发生左右反向，需要改变枚举顺序
+				// 两侧始终按正序计算；向左展开时由横坐标镜像实现从右向左填充。
 				auto baseRange = views::iota(0, barButtomSet.tot);
 				variant<decltype(baseRange), decltype(baseRange | views::reverse)> viewVariant;
-				if (barState.widgetPosition.mainBar == false)  viewVariant = baseRange | views::reverse;
-				else viewVariant = baseRange;
+				viewVariant = baseRange;
 
 				visit([&](auto&& forRange)
 					{
@@ -813,14 +849,17 @@ void BarUISetClass::Rendering()
 								{
 									if (barState.fold || temp->hide)
 									{
-									SetButtonPositionTar(temp->buttom.x, 40.0, 40.0);
-									SetButtonPositionTar(temp->buttom.y, 40.0, 40.0);
+										if (barState.fold)
+										{
+											SetButtonPositionTar(temp->buttom.x, 40.0, 40.0);
+											SetButtonPositionTar(temp->buttom.y, 40.0, 40.0);
+										}
 
 										temp->buttom.pct.SetTar(0.0, operationDur);
 									}
 									else
 									{
-									SetButtonPositionTar(temp->buttom.x, xO + 15.0, 40.0);
+									SetButtonPositionTar(temp->buttom.x, xO + 15.0, 40.0, true);
 									if (yO <= 5.0) SetButtonPositionTar(temp->buttom.y, yO + 17.5, 40.0); // 位于第一行
 									else SetButtonPositionTar(temp->buttom.y, yO + 15.0, 40.0); // 位于第二行
 
@@ -930,14 +969,17 @@ void BarUISetClass::Rendering()
 								{
 									if (barState.fold || temp->hide)
 									{
-									SetButtonPositionTar(temp->buttom.x, 40.0, 40.0);
-									SetButtonPositionTar(temp->buttom.y, 40.0, 40.0);
+										if (barState.fold)
+										{
+											SetButtonPositionTar(temp->buttom.x, 40.0, 40.0);
+											SetButtonPositionTar(temp->buttom.y, 40.0, 40.0);
+										}
 
 										temp->buttom.pct.SetTar(0.0, operationDur);
 									}
 									else
 									{
-									SetButtonPositionTar(temp->buttom.x, xO + 35.0, 40.0);
+									SetButtonPositionTar(temp->buttom.x, xO + 35.0, 40.0, true);
 									if (yO <= 5.0) SetButtonPositionTar(temp->buttom.y, yO + 17.5, 40.0); // 位于第一行
 									else SetButtonPositionTar(temp->buttom.y, yO + 15.0, 40.0); // 位于第二行
 
@@ -1037,14 +1079,17 @@ void BarUISetClass::Rendering()
 								{
 									if (barState.fold || temp->hide)
 									{
-									SetButtonPositionTar(temp->buttom.x, 40.0, 40.0);
-									SetButtonPositionTar(temp->buttom.y, 40.0, 40.0);
+										if (barState.fold)
+										{
+											SetButtonPositionTar(temp->buttom.x, 40.0, 40.0);
+											SetButtonPositionTar(temp->buttom.y, 40.0, 40.0);
+										}
 
 										temp->buttom.pct.SetTar(0.0, operationDur);
 									}
 									else
 									{
-									SetButtonPositionTar(temp->buttom.x, xO + 35.0, 40.0);
+									SetButtonPositionTar(temp->buttom.x, xO + 35.0, 40.0, true);
 									SetButtonPositionTar(temp->buttom.y, yO + 35.0, 40.0);
 
 										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1, operationDur);
@@ -1133,14 +1178,17 @@ void BarUISetClass::Rendering()
 								{
 									if (barState.fold || temp->hide)
 									{
-									SetButtonPositionTar(temp->buttom.x, 40.0, 40.0);
-									SetButtonPositionTar(temp->buttom.y, 40.0, 40.0);
+										if (barState.fold)
+										{
+											SetButtonPositionTar(temp->buttom.x, 40.0, 40.0);
+											SetButtonPositionTar(temp->buttom.y, 40.0, 40.0);
+										}
 
 										temp->buttom.pct.SetTar(0.0, operationDur);
 									}
 									else
 									{
-									SetButtonPositionTar(temp->buttom.x, xO + 5.0, 40.0);
+									SetButtonPositionTar(temp->buttom.x, xO + 5.0, 40.0, true);
 									SetButtonPositionTar(temp->buttom.y, yO + 35.0, 40.0);
 
 										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.2, operationDur);
@@ -1211,7 +1259,24 @@ void BarUISetClass::Rendering()
 							}
 						}
 					}, viewVariant);
+
+				auto AnchorHiddenButton = [&](BarButtomPresetEnum hiddenPreset, BarButtomPresetEnum anchorPreset)
+					{
+						BarButtomClass* hidden = barButtomSet.preset[static_cast<int>(hiddenPreset)];
+						BarButtomClass* anchor = barButtomSet.preset[static_cast<int>(anchorPreset)];
+						if (barState.fold || !hidden || !anchor || !hidden->hide) return;
+
+						// 隐藏控件停在来源按钮中心，显示时从该位置展开。
+						SetButtonPositionTar(hidden->buttom.x, anchor->buttom.x.tar, 40.0);
+						SetButtonPositionTar(hidden->buttom.y, anchor->buttom.y.tar, 40.0);
+						hidden->lastDrawX = anchor->buttom.x.tar;
+						hidden->lastDrawY = anchor->buttom.y.tar;
+					};
+				AnchorHiddenButton(BarButtomPresetEnum::Eraser, BarButtomPresetEnum::Draw);
+				AnchorHiddenButton(BarButtomPresetEnum::Recall, BarButtomPresetEnum::Draw);
+				AnchorHiddenButton(BarButtomPresetEnum::Pierce, BarButtomPresetEnum::Freeze);
 			}
+			totalWidth = layoutTotalWidth;
 			Inkeys::UI::Bar::Zoom::FitInitialAfterMainBarLayout(*this, totalWidth);
 			{ /**/ }
 
