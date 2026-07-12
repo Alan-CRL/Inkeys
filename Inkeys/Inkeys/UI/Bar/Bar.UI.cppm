@@ -407,7 +407,7 @@ public:
 	IdtAtomic<COLORREF> startColor = RGB(0, 0, 0); // 起始颜色（用于计算百分比，在界面被设置时）
 	IdtAtomic<double> progress = 0.0; // 当前动画段的线性进度（曲线 x，0->1）
 
-	IdtAtomic<double> des = 0.60; // 默认速度 1/s；未提交过程时长时用于推导 dur
+	IdtAtomic<double> des = 2.5; // 默认颜色速度 1/s；对应 0.4s 的标准操作时长
 	IdtAtomic<double> dur = 0.0; // 当前动画段的基础时长 s，不包含全局速度倍率
 };
 //// 透明度 UI 值
@@ -494,7 +494,7 @@ public:
 	IdtAtomic<double> startV = 1.0; // 起始透明度（用于计算百分比，在界面被设置时）
 	IdtAtomic<double> progress = 0.0; // 当前动画段的线性进度（曲线 x，0->1）
 
-	IdtAtomic<double> des = 0.60; // 默认速度 1/s；未提交过程时长时用于推导 dur
+	IdtAtomic<double> des = 2.5; // 默认透明度速度 1/s；对应 0.4s 的标准操作时长
 	IdtAtomic<double> dur = 0.0; // 当前动画段的基础时长 s，不包含全局速度倍率
 	IdtAtomic<bool> hasMiddleV = false; // 是否经过位于时间 0.5 的单个透明度关键帧
 	IdtAtomic<double> middleV = 0.0; // 中间透明度；tar 始终保留最终目标
