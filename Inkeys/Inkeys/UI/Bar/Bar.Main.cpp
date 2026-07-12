@@ -27,9 +27,9 @@ import Inkeys.Conv.Text;
 
 constexpr double BarButtonHoverOpacity = 0.18;
 constexpr double BarButtonPressScale = 0.95;
-constexpr double BarButtonHoverShowDur = 0.12;
-constexpr double BarButtonHoverExitDur = 0.12;
-constexpr double BarButtonHoverFadeDur = 5.0;
+constexpr double BarButtonHoverShowDur = 0.24;
+constexpr double BarButtonHoverExitDur = 0.24;
+constexpr double BarButtonHoverFadeDur = 10.0;
 
 // ====================
 // 窗口
