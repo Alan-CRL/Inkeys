@@ -194,15 +194,9 @@ void BarUiSVGClass::Initialization(double xT, double yT, optional<COLORREF> colo
 }
 void BarUiSVGClass::InitializationFromString(wstring valT)
 {
-	svg.Initialization(valT);
-	{
-		cacheBitmap.Reset();
-		cW = cH = 0.0;
-		cColor1 = cColor2 = RGB(0, 0, 0);
-	}
-
-	auto temp = CalcWH();
-	rW = temp.first, rH = temp.second;
+	CancelContentTransition();
+	transitionSvg.Initialization(valT);
+	ApplyContentDirect(valT);
 }
 void BarUiSVGClass::InitializationFromResource(const wstring& resType, const wstring& resName)
 {
@@ -212,12 +206,10 @@ void BarUiSVGClass::InitializationFromResource(const wstring& resType, const wst
 }
 void BarUiSVGClass::SetTarFromString(wstring valT)
 {
+	CancelContentTransition();
+	transitionSvg.Initialization(valT);
 	svg.SetTar(valT);
-	{
-		cacheBitmap.Reset();
-		cW = cH = 0.0;
-		cColor1 = cColor2 = RGB(0, 0, 0);
-	}
+	ResetCache();
 
 	auto temp = CalcWH();
 	rW = temp.first, rH = temp.second;
@@ -227,6 +219,103 @@ void BarUiSVGClass::SetTarFromResource(const wstring& resType, const wstring& re
 	string valT;
 	Inkeys::Load::ExtractResourceString(valT, resType, resName);
 	if (!valT.empty()) SetTarFromString(utf8ToUtf16(valT));
+}
+bool BarUiSVGClass::TransitionToString(const wstring& valT, optional<double> durT,
+	double keyframeProgressT, double middleScaleT)
+{
+	if (valT.empty()) return false;
+	if (contentTransitionTimeline.IsActive() && transitionSvg.GetTar() == valT) return false;
+	if (!contentTransitionTimeline.IsActive() && svg.GetVal() == valT && svg.GetTar() == valT)
+	{
+		transitionSvg.Initialization(valT);
+		return false;
+	}
+
+	// 新请求只保留最新资源，并从当前视觉倍率连续重建关键帧过程。
+	transitionSvg.SetTar(valT);
+	contentTransitionStartScale = max(0.0, static_cast<double>(contentScale));
+	contentTransitionStartPct = clamp(static_cast<double>(contentPct), 0.0, 1.0);
+	contentTransitionMiddleScale = isfinite(middleScaleT) ? max(0.0, middleScaleT) : 0.8;
+	contentTransitionKeyframeProgress = isfinite(keyframeProgressT)
+		? clamp(keyframeProgressT, 0.0, 1.0) : 0.5;
+	double duration = durT.has_value() ? durT.value() : static_cast<double>(BarUiDefaultOperationDur);
+	contentTransitionTimeline.Start(duration, contentTransitionKeyframeProgress);
+	return true;
+}
+bool BarUiSVGClass::TransitionToResource(const wstring& resType, const wstring& resName,
+	optional<double> durT, double keyframeProgressT, double middleScaleT)
+{
+	string valT;
+	Inkeys::Load::ExtractResourceString(valT, resType, resName);
+	if (valT.empty()) return false;
+	return TransitionToString(utf8ToUtf16(valT), durT, keyframeProgressT, middleScaleT);
+}
+bool BarUiSVGClass::AdvanceContentTransition(double dt, double speedRate)
+{
+	if (!contentTransitionTimeline.IsActive()) return false;
+	BarUiKeyframeTimelineResultClass result = contentTransitionTimeline.Advance(dt, speedRate);
+	double keyframe = clamp(static_cast<double>(contentTransitionKeyframeProgress), 0.0, 1.0);
+	double middleScale = max(0.0, static_cast<double>(contentTransitionMiddleScale));
+	double progress = clamp(result.progress, 0.0, 1.0);
+	double nextScale = 1.0;
+	double nextPct = 1.0;
+	if (progress <= keyframe)
+	{
+		double localProgress = keyframe > 0.000001 ? progress / keyframe : 1.0;
+		nextScale = static_cast<double>(contentTransitionStartScale)
+			+ (middleScale - static_cast<double>(contentTransitionStartScale))
+			* BarUiApplyCurve(BarUiCurveEnum::EaseInCubic, localProgress);
+		nextPct = static_cast<double>(contentTransitionStartPct)
+			* (1.0 - BarUiApplyCurve(BarUiCurveEnum::EaseInSine, localProgress));
+	}
+	else
+	{
+		double localProgress = 1.0 - keyframe > 0.000001
+			? (progress - keyframe) / (1.0 - keyframe) : 1.0;
+		nextScale = middleScale + (1.0 - middleScale)
+			* BarUiApplyCurve(BarUiCurveEnum::EaseOutBack, localProgress);
+		nextPct = BarUiApplyCurve(BarUiCurveEnum::EaseOutSine, localProgress);
+	}
+	contentScale = isfinite(nextScale) ? max(0.0, nextScale) : 1.0;
+	contentPct = isfinite(nextPct) ? clamp(nextPct, 0.0, 1.0) : 1.0;
+
+	if (result.reachedKeyframe)
+	{
+		// 中点完全透明时才替换离散内容；缓存只在这里失效一次。
+		contentScale = middleScale;
+		contentPct = 0.0;
+		ApplyContentDirect(transitionSvg.GetTar());
+	}
+	if (result.finished)
+	{
+		// 极短时长也必须提交最终内容，并直接收尾到标准倍率。
+		wstring target = transitionSvg.GetTar();
+		if (svg.GetVal() != target || svg.GetTar() != target) ApplyContentDirect(target);
+		contentScale = 1.0;
+		contentPct = 1.0;
+	}
+	return true;
+}
+void BarUiSVGClass::CancelContentTransition()
+{
+	contentTransitionTimeline.Cancel();
+	contentScale = 1.0;
+	contentPct = 1.0;
+	contentTransitionStartScale = 1.0;
+	contentTransitionStartPct = 1.0;
+}
+void BarUiSVGClass::ResetCache()
+{
+	cacheBitmap.Reset();
+	cW = cH = 0.0;
+	cColor1 = cColor2 = RGB(0, 0, 0);
+}
+void BarUiSVGClass::ApplyContentDirect(const wstring& valT)
+{
+	svg.Initialization(valT);
+	ResetCache();
+	auto temp = CalcWH();
+	rW = temp.first, rH = temp.second;
 }
 bool BarUiSVGClass::CacheBitmap(ID2D1DeviceContext* deviceContext, double tarW, double tarH)
 {

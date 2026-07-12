@@ -518,28 +518,36 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, 
 	if (svg.enable.val == false) return false;
 	if (barUISetClass->barStyle.zoom <= 0.0) return false;
 	if (svg.w.val <= 0 || svg.h.val <= 0) return false;
-	if (svg.pct.val <= 0.0) return false;
+	double contentScale = svg.contentScale;
+	double contentPct = svg.contentPct;
+	if (!isfinite(contentScale) || contentScale <= 0.0) return false;
+	if (!isfinite(contentPct) || svg.pct.val * contentPct <= 0.0) return false;
 
 	// 初始化绘制量
 	double tarZoom = barUISetClass->barStyle.zoom;
-	double tarX = inh.x * tarZoom; // 绘制左上角 x
-	double tarY = inh.y * tarZoom; // 绘制左上角 y
-	double tarW = svg.w.val * tarZoom;
-	double tarH = svg.h.val * tarZoom;
-	double tarPct = svg.pct.val; // 透明度
+	double baseX = inh.x * tarZoom;
+	double baseY = inh.y * tarZoom;
+	double baseW = svg.w.val * tarZoom;
+	double baseH = svg.h.val * tarZoom;
+	// 内容倍率只改变目标矩形，并围绕原中心缩放；缓存继续使用基础尺寸。
+	double tarW = baseW * contentScale;
+	double tarH = baseH * contentScale;
+	double tarX = baseX + (baseW - tarW) / 2.0;
+	double tarY = baseY + (baseH - tarH) / 2.0;
+	double tarPct = clamp(static_cast<double>(svg.pct.val) * contentPct, 0.0, 1.0);
 
 	// 获取绘制缓存
 	ComPtr<ID2D1Bitmap> d2dBitmap;
 	{
 		bool needUpdate = false;
-		if (svg.cW != tarW || svg.cH != tarH) needUpdate = true;
+		if (svg.cW != baseW || svg.cH != baseH) needUpdate = true;
 		if (svg.color1.has_value() && svg.cColor1 != svg.color1.value().val) needUpdate = true;
 		if (svg.color2.has_value() && svg.cColor2 != svg.color2.value().val) needUpdate = true;
 
 		// TODO 优化：可选动画过程中不更新缓存
 		if (needUpdate || !svg.cacheBitmap)
 		{
-			if (!svg.CacheBitmap(deviceContext, tarW, tarH))
+			if (!svg.CacheBitmap(deviceContext, baseW, baseH))
 				return false;
 		}
 		d2dBitmap = svg.cacheBitmap.Get();
@@ -742,6 +750,10 @@ void BarUISetClass::Rendering()
 	optional<double> mainBarLayoutWidth;
 	// 粗细预览使用独立动画值；切换画笔类型时曲线与数字共用同一进度。
 	BarUiValueClass drawAttributePenThickness(max(0.0f, GetPenWidth()));
+	// 画笔/荧光笔选择块使用独立的 0~1 横向进度，不加入属性面板的几何批次。
+	BarUiValueClass drawAttributePenSelectProgress(
+		stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1 ? 1.0 : 0.0);
+	drawAttributePenSelectProgress.curve = BarUiCurveEnum::EaseOutBack;
 	constexpr double mainButtonScale = 1.05;
 	constexpr double mainButtonBaseSize = 80.0;
 	auto mainButtonLogo = svgMap[BarUISetSvgEnum::logo1];
@@ -864,6 +876,12 @@ void BarUISetClass::Rendering()
 			drawAttributeLayoutOpen = currentDrawAttributeOpen;
 			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 				drawAttributePenThickness.SetTar(max(0.0f, GetPenWidth()), operationDur);
+			double drawAttributePenSelectTarget =
+				stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1 ? 1.0 : 0.0;
+			if (!barState.drawAttribute && !drawAttributeVisibilityChange && !drawAttributeTimeline.IsActive())
+				drawAttributePenSelectProgress.SetDirect(drawAttributePenSelectTarget);
+			else drawAttributePenSelectProgress.SetTar(
+				drawAttributePenSelectTarget, BarUiDefaultOperationDur);
 			bool mainBarFoldChange = (barState.fold && mainBar->x.tar != 0.0)
 				|| (!barState.fold && mainBar->x.tar == 0.0);
 			auto CalculateButtonLayoutWidth = [&]()
@@ -2022,25 +2040,13 @@ void BarUISetClass::Rendering()
 
 						// 选中
 						{
-							if (!barState.drawAttribute)
-							{
-								if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
-									shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect]->x.SetTar(CompactDrawAttributeSize(60.0));
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect]->x.SetTar(CompactDrawAttributeSize(5.0));
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect]->w.SetTar(CompactDrawAttributeSize(50.0));
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect]->h.SetTar(CompactDrawAttributeSize(50.0));
-
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect]->pct.SetTar(0.0);
-							}
-							else
-							{
-								if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
-									shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect]->x.SetTar(60.0);
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect]->x.SetTar(5.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect]->w.SetTar(50.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect]->h.SetTar(50.0);
-
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect]->pct.SetTar(0.2);
+						if (!barState.drawAttribute)
+						{
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect]->pct.SetTar(0.0);
+						}
+						else
+						{
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect]->pct.SetTar(0.2);
 							}
 							if (barStyle.darkStyle)
 							{
@@ -2141,10 +2147,14 @@ void BarUISetClass::Rendering()
 					{
 						auto obj = shapeMap[static_cast<BarUISetShapeEnum>(i)];
 						if (!obj) continue;
-						SyncValueDuration(obj->x);
-						SyncValueDuration(obj->y);
-						SyncValueDuration(obj->w);
-						SyncValueDuration(obj->h);
+						bool isDrawSelect = i == static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_DrawSelect);
+						if (!isDrawSelect)
+						{
+							SyncValueDuration(obj->x);
+							SyncValueDuration(obj->y);
+							SyncValueDuration(obj->w);
+							SyncValueDuration(obj->h);
+						}
 						if (obj->rw.has_value()) SyncValueDuration(obj->rw.value());
 						if (obj->rh.has_value()) SyncValueDuration(obj->rh.value());
 						if (obj->ft.has_value()) SyncValueDuration(obj->ft.value());
@@ -2183,10 +2193,14 @@ void BarUISetClass::Rendering()
 						{
 							auto obj = shapeMap[static_cast<BarUISetShapeEnum>(i)];
 							if (!obj) continue;
-							obj->x.SetTar(obj->x.tar, operationDur, nullopt, true, syncedValueCurve);
-							obj->y.SetTar(obj->y.tar, operationDur, nullopt, true, syncedValueCurve);
-							obj->w.SetTar(obj->w.tar, operationDur, nullopt, true, syncedValueCurve);
-							obj->h.SetTar(obj->h.tar, operationDur, nullopt, true, syncedValueCurve);
+							bool isDrawSelect = i == static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_DrawSelect);
+							if (!isDrawSelect)
+							{
+								obj->x.SetTar(obj->x.tar, operationDur, nullopt, true, syncedValueCurve);
+								obj->y.SetTar(obj->y.tar, operationDur, nullopt, true, syncedValueCurve);
+								obj->w.SetTar(obj->w.tar, operationDur, nullopt, true, syncedValueCurve);
+								obj->h.SetTar(obj->h.tar, operationDur, nullopt, true, syncedValueCurve);
+							}
 							if (obj->rw.has_value()) obj->rw.value().SetTar(obj->rw.value().tar, operationDur, nullopt, true, syncedValueCurve);
 							if (obj->rh.has_value()) obj->rh.value().SetTar(obj->rh.value().tar, operationDur, nullopt, true, syncedValueCurve);
 							if (obj->ft.has_value()) obj->ft.value().SetTar(obj->ft.value().tar, operationDur, nullopt, true, syncedValueCurve);
@@ -2244,17 +2258,21 @@ void BarUISetClass::Rendering()
 						{
 							auto obj = shapeMap[static_cast<BarUISetShapeEnum>(i)];
 							if (!obj) continue;
-							double middleW = max(1.0, CompactDrawAttributeSize(obj->w.tar));
-							double middleH = max(1.0, CompactDrawAttributeSize(obj->h.tar));
-							bool directChild = i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ColorSelect11)
-								|| i == static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove)
-								|| i == static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect);
-							double middleX = directChild ? drawAttributeCompactWidth / 2.0 - middleW / 2.0 : 0.0;
-							double middleY = directChild ? drawAttributeCompactHeight / 2.0 - middleH / 2.0 : 0.0;
-							obj->x.SetTar(obj->x.tar, operationDur, middleX, true, drawAttributeKeyframeValueCurve);
-							obj->y.SetTar(obj->y.tar, operationDur, middleY, true, drawAttributeKeyframeValueCurve);
-							obj->w.SetTar(obj->w.tar, operationDur, middleW, true, drawAttributeKeyframeValueCurve);
-							obj->h.SetTar(obj->h.tar, operationDur, middleH, true, drawAttributeKeyframeValueCurve);
+							bool isDrawSelect = i == static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_DrawSelect);
+							if (!isDrawSelect)
+							{
+								double middleW = max(1.0, CompactDrawAttributeSize(obj->w.tar));
+								double middleH = max(1.0, CompactDrawAttributeSize(obj->h.tar));
+								bool directChild = i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ColorSelect11)
+									|| i == static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove)
+									|| i == static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect);
+								double middleX = directChild ? drawAttributeCompactWidth / 2.0 - middleW / 2.0 : 0.0;
+								double middleY = directChild ? drawAttributeCompactHeight / 2.0 - middleH / 2.0 : 0.0;
+								obj->x.SetTar(obj->x.tar, operationDur, middleX, true, drawAttributeKeyframeValueCurve);
+								obj->y.SetTar(obj->y.tar, operationDur, middleY, true, drawAttributeKeyframeValueCurve);
+								obj->w.SetTar(obj->w.tar, operationDur, middleW, true, drawAttributeKeyframeValueCurve);
+								obj->h.SetTar(obj->h.tar, operationDur, middleH, true, drawAttributeKeyframeValueCurve);
+							}
 							obj->pct.SetTar(obj->pct.tar, operationDur, 0.0, true, drawAttributeKeyframePctCurve);
 							if (obj->framePct.has_value())
 								obj->framePct.value().SetTar(obj->framePct.value().tar, operationDur, 0.0, true,
@@ -2493,6 +2511,7 @@ void BarUISetClass::Rendering()
 			};
 		// 独立的粗细值也进入统一动画时钟，方便后续直接替换为非线性或回弹曲线。
 		if (!drawAttributePenThickness.IsSame()) ChangeValue(drawAttributePenThickness, false);
+		if (!drawAttributePenSelectProgress.IsSame()) ChangeValue(drawAttributePenSelectProgress, false);
 
 		for (const auto& [key, val] : shapeMap)
 		{
@@ -2511,6 +2530,18 @@ void BarUISetClass::Rendering()
 			if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value(), forceReplace), change = true;
 			if (val->framePct.has_value() && !val->framePct->IsSame()) ChangePct(val->framePct.value(), forceReplace), change = true;
 			if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace), change = true;
+		}
+		{
+			// 青色选择块的左右进度独立推进，实际几何只跟随灰色槽当前缩放比例。
+			auto drawSelect = shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect];
+			auto drawSelectGroove = shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove];
+			double grooveScale = drawSelectGroove->w.val / 115.0;
+			if (!isfinite(grooveScale)) grooveScale = 0.0;
+			grooveScale = max(0.0, grooveScale);
+			double selectX = 5.0 + 55.0 * static_cast<double>(drawAttributePenSelectProgress.val);
+			drawSelect->x.SetDirect(selectX * grooveScale);
+			drawSelect->w.SetDirect(50.0 * grooveScale);
+			drawSelect->h.SetDirect(50.0 * grooveScale);
 		}
 		for (const auto& [key, val] : superellipseMap)
 		{
@@ -2533,6 +2564,8 @@ void BarUISetClass::Rendering()
 		{
 			bool forceReplace = false, change = false;;
 			if (val->forceReplace) val->forceReplace = false, forceReplace = true;
+			if (val->AdvanceContentTransition(animationDtSeconds, BarUiAnimationSpeedRate))
+				needRendering = true;
 
 			if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace), change = true;
 			if (!val->x.IsSame()) ChangeValue(val->x, forceReplace), change = true;
@@ -2619,6 +2652,8 @@ void BarUISetClass::Rendering()
 			{
 				bool forceReplace = false, change = false;;
 				if (temp->icon.forceReplace) temp->icon.forceReplace = false, forceReplace = true;
+				if (temp->icon.AdvanceContentTransition(animationDtSeconds, BarUiAnimationSpeedRate))
+					needRendering = true;
 
 				if (!temp->icon.enable.IsSame()) ChangeState(temp->icon.enable, forceReplace), change = true;
 				if (!temp->icon.x.IsSame()) ChangeValue(temp->icon.x, forceReplace), change = true;
@@ -3941,7 +3976,6 @@ namespace Inkeys::UI::Bar
 						// 选中
 						{
 							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 50.0, 50.0, 4.0, 4.0, 1.0, RGB(0, 0, 0), nullopt);
-							shape->x.curve = BarUiCurveEnum::EaseOutBack; // 仅画笔类型的背景指示横移使用回弹
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect] = shape;
 						}

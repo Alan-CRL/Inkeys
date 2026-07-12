@@ -138,6 +138,77 @@ private:
 	double progress = 1.0; // 始终按真实时间线性推进，曲线不能反向修改它
 };
 
+// 关键帧时间轴只报告“经过关键帧”事件，具体的离散变化由使用方在渲染线程执行。
+struct BarUiKeyframeTimelineResultClass
+{
+	double progress = 0.0; // 本帧用于取值的线性进度；跨越关键帧时固定为关键帧位置
+	bool reachedKeyframe = false;
+	bool finished = false;
+};
+class BarUiKeyframeTimelineClass
+{
+public:
+	void Start(double durationT, double keyframeProgressT = 0.5)
+	{
+		duration = isfinite(durationT) && durationT > 0.0 ? durationT : 0.0;
+		keyframeProgress = isfinite(keyframeProgressT)
+			? clamp(keyframeProgressT, 0.0, 1.0) : 0.5;
+		progress = 0.0;
+		keyframeTriggered = false;
+		active = true;
+	}
+	BarUiKeyframeTimelineResultClass Advance(double dt, double speedRate)
+	{
+		BarUiKeyframeTimelineResultClass result;
+		double currentProgress = clamp(static_cast<double>(progress), 0.0, 1.0);
+		result.progress = currentProgress;
+		if (!active) return result;
+
+		double currentDuration = duration;
+		if (!isfinite(currentDuration) || currentDuration <= 0.0)
+		{
+			result.progress = 1.0;
+			result.reachedKeyframe = !keyframeTriggered;
+			result.finished = true;
+			progress = 1.0;
+			keyframeTriggered = true;
+			active = false;
+			return result;
+		}
+		if (!isfinite(dt) || dt <= 0.0 || !isfinite(speedRate) || speedRate <= 0.0)
+			return result;
+
+		double nextProgress = clamp(currentProgress + dt * speedRate / currentDuration, 0.0, 1.0);
+		double currentKeyframe = clamp(static_cast<double>(keyframeProgress), 0.0, 1.0);
+		result.reachedKeyframe = !keyframeTriggered && nextProgress >= currentKeyframe;
+		// 跨越中点的这一帧精确取关键帧值，但内部时间仍推进到真实位置，不延长总时长。
+		result.progress = result.reachedKeyframe ? currentKeyframe : nextProgress;
+		if (result.reachedKeyframe) keyframeTriggered = true;
+		progress = nextProgress;
+		if (nextProgress >= 1.0)
+		{
+			result.finished = true;
+			active = false;
+		}
+		return result;
+	}
+	void Cancel()
+	{
+		duration = 0.0;
+		progress = 1.0;
+		keyframeTriggered = false;
+		active = false;
+	}
+	bool IsActive() const { return active; }
+
+private:
+	IdtAtomic<double> duration = 0.0;
+	IdtAtomic<double> progress = 1.0;
+	IdtAtomic<double> keyframeProgress = 0.5;
+	IdtAtomic<bool> keyframeTriggered = false;
+	IdtAtomic<bool> active = false;
+};
+
 /// 单个 UI 值
 //// 状态 UI 值
 class BarUiStateClass
@@ -671,6 +742,12 @@ public:
 	void InitializationFromResource(const wstring& resType, const wstring& resName);
 	void SetTarFromString(wstring valT);
 	void SetTarFromResource(const wstring& resType, const wstring& resName);
+	bool TransitionToString(const wstring& valT, optional<double> durT = nullopt,
+		double keyframeProgressT = 0.5, double middleScaleT = 0.8);
+	bool TransitionToResource(const wstring& resType, const wstring& resName,
+		optional<double> durT = nullopt, double keyframeProgressT = 0.5, double middleScaleT = 0.8);
+	bool AdvanceContentTransition(double dt, double speedRate);
+	void CancelContentTransition();
 
 public:
 	// 整体该控件是否显示
@@ -688,6 +765,9 @@ public:
 	// SVG 内容
 	BarUiStringClass svg;
 	Microsoft::WRL::ComPtr<ID2D1Bitmap> cacheBitmap;
+	// 内容切换倍率不参与 SVG 栅格化尺寸，只在最终绘制时叠乘。
+	IdtAtomic<double> contentScale = 1.0;
+	IdtAtomic<double> contentPct = 1.0;
 
 	double cW = 0.0, cH = 0.0; // 缓存宽度、高度
 	COLORREF cColor1 = RGB(0, 0, 0), cColor2 = RGB(0, 0, 0);
@@ -696,7 +776,15 @@ public:
 public:
 	bool SetWH(optional<double> wT, optional<double> hT);
 protected:
+	void ResetCache();
+	void ApplyContentDirect(const wstring& valT);
 	pair<double, double> CalcWH();
+	BarUiStringClass transitionSvg;
+	BarUiKeyframeTimelineClass contentTransitionTimeline;
+	IdtAtomic<double> contentTransitionStartScale = 1.0;
+	IdtAtomic<double> contentTransitionStartPct = 1.0;
+	IdtAtomic<double> contentTransitionMiddleScale = 0.8;
+	IdtAtomic<double> contentTransitionKeyframeProgress = 0.5;
 
 public:
 	double rW; // 实际宽度
