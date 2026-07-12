@@ -18,14 +18,88 @@ extern IdtAtomic<double> BarUiAnimationSpeedRate;
 enum class BarUiValueModeEnum : int
 {
 	Once = 0, // 无动画
-	Linear = 1, // 线性
-	Variable = 2 // 回弹动效
+	Linear = 1, // 兼容旧类型；实际插值由 curve 决定
+	Variable = 2 // 兼容旧类型；需要回弹时使用 Back 曲线
 };
 
-// 动画曲线只负责将线性时间进度映射为数值进度；后续非线性在此扩充。
+// 动画曲线只负责将线性时间进度映射为数值进度，不改变统一批次的结束时刻。
 enum class BarUiCurveEnum : int
 {
 	Linear = 0,
+	EaseInSine,
+	EaseOutSine,
+	EaseInOutSine,
+	EaseInCubic,
+	EaseOutCubic,
+	EaseInOutCubic,
+	EaseInBack,
+	EaseOutBack,
+	EaseInOutBack,
+};
+
+inline bool BarUiIsBackCurve(BarUiCurveEnum curve)
+{
+	return curve == BarUiCurveEnum::EaseInBack
+		|| curve == BarUiCurveEnum::EaseOutBack
+		|| curve == BarUiCurveEnum::EaseInOutBack;
+}
+inline double BarUiApplyCurve(BarUiCurveEnum curve, double progress)
+{
+	constexpr double pi = 3.14159265358979323846;
+	constexpr double back = 1.1; // 克制的 UI 回弹强度
+	progress = clamp(progress, 0.0, 1.0);
+	switch (curve)
+	{
+	case BarUiCurveEnum::EaseInSine: return 1.0 - cos(progress * pi / 2.0);
+	case BarUiCurveEnum::EaseOutSine: return sin(progress * pi / 2.0);
+	case BarUiCurveEnum::EaseInOutSine: return -(cos(pi * progress) - 1.0) / 2.0;
+	case BarUiCurveEnum::EaseInCubic: return progress * progress * progress;
+	case BarUiCurveEnum::EaseOutCubic: return 1.0 - pow(1.0 - progress, 3.0);
+	case BarUiCurveEnum::EaseInOutCubic:
+		return progress < 0.5
+			? 4.0 * progress * progress * progress
+			: 1.0 - pow(-2.0 * progress + 2.0, 3.0) / 2.0;
+	case BarUiCurveEnum::EaseInBack:
+		return (back + 1.0) * progress * progress * progress - back * progress * progress;
+	case BarUiCurveEnum::EaseOutBack:
+		return 1.0 + (back + 1.0) * pow(progress - 1.0, 3.0) + back * pow(progress - 1.0, 2.0);
+	case BarUiCurveEnum::EaseInOutBack:
+	{
+		double c2 = back * 1.525;
+		return progress < 0.5
+			? pow(2.0 * progress, 2.0) * ((c2 + 1.0) * 2.0 * progress - c2) / 2.0
+			: (pow(2.0 * progress - 2.0, 2.0)
+				* ((c2 + 1.0) * (progress * 2.0 - 2.0) + c2) + 2.0) / 2.0;
+	}
+	case BarUiCurveEnum::Linear:
+	default: return progress;
+	}
+}
+
+// 从曲线中途续接时，单调曲线截取并归一化尾段；Back 为避免非单调除法而重建剩余段。
+inline double BarUiApplyCurveRange(BarUiCurveEnum curve, double startProgress, double progress)
+{
+	constexpr double epsilon = 0.000001;
+	startProgress = clamp(startProgress, 0.0, 1.0);
+	progress = clamp(progress, startProgress, 1.0);
+	double localProgress = 1.0 - startProgress <= epsilon
+		? 1.0 : (progress - startProgress) / (1.0 - startProgress);
+	if (BarUiIsBackCurve(curve)) return BarUiApplyCurve(curve, localProgress);
+
+	double startValue = BarUiApplyCurve(curve, startProgress);
+	double endValue = BarUiApplyCurve(curve, 1.0);
+	double denominator = endValue - startValue;
+	if (!isfinite(denominator) || abs(denominator) <= epsilon)
+		return BarUiApplyCurve(curve, localProgress);
+	return (BarUiApplyCurve(curve, progress) - startValue) / denominator;
+}
+
+struct BarUiCurveSpecClass
+{
+	BarUiCurveEnum first = BarUiCurveEnum::EaseInOutCubic; // 普通过程或关键帧前半段
+	BarUiCurveEnum second = BarUiCurveEnum::EaseInOutCubic; // 关键帧后半段
+	double timelineStartProgress = 0.0; // 加入批次时的绝对线性进度
+	bool continueTimelinePhase = false; // 是否从上述绝对相位截取剩余曲线
 };
 
 // 一组关联动画共用的线性时间轴。中途修改目标时读取剩余时长，不延后原完成时刻。
@@ -115,6 +189,12 @@ public:
 	bool IsSame() { return val == tar && !hasMiddleV; }
 	bool SetTar(double tarT, optional<double> durT = nullopt, optional<double> middleVT = nullopt, bool forceRestart = false)
 	{
+		BarUiCurveSpecClass spec{ curve, curve, 0.0, false };
+		return SetTar(tarT, durT, middleVT, forceRestart, spec);
+	}
+	bool SetTar(double tarT, optional<double> durT, optional<double> middleVT,
+		bool forceRestart, const BarUiCurveSpecClass& curveSpec)
+	{
 		if (!forceRestart && tar == tarT)
 		{
 			// UI 每帧会重复提交普通目标，此时保留已经启动的中间关键帧过程。
@@ -125,8 +205,20 @@ public:
 		startV = val;
 		progress = 0.0;
 		tar = tarT;
+		double phaseStart = clamp(curveSpec.timelineStartProgress, 0.0, 1.0);
 		hasMiddleV = middleVT.has_value();
+		activeCurve = curveSpec.first;
+		activeMiddleCurve = curveSpec.second;
+		timelineStartProgress = phaseStart;
+		continueTimelinePhase = curveSpec.continueTimelinePhase;
 		if (middleVT.has_value()) middleV = middleVT.value();
+		if (hasMiddleV && continueTimelinePhase && phaseStart >= 0.5)
+		{
+			// 中点已经过去时不能倒退重走关键帧，直接续接第二段尾部。
+			hasMiddleV = false;
+			activeCurve = activeMiddleCurve;
+			timelineStartProgress = clamp((phaseStart - 0.5) * 2.0, 0.0, 1.0);
+		}
 
 		double distance = abs(static_cast<double>(tar) - static_cast<double>(startV));
 		if (middleVT.has_value())
@@ -148,6 +240,10 @@ public:
 		progress = 0.0;
 		dur = 0.0;
 		hasMiddleV = false;
+		activeCurve = curve;
+		activeMiddleCurve = curve;
+		timelineStartProgress = 0.0;
+		continueTimelinePhase = false;
 	}
 	void Initialization(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Variable, optional<double> desT = nullopt)
 	{
@@ -158,7 +254,11 @@ public:
 
 public:
 	IdtAtomic<BarUiValueModeEnum> mod = BarUiValueModeEnum::Linear;
-	IdtAtomic<BarUiCurveEnum> curve = BarUiCurveEnum::Linear;
+	IdtAtomic<BarUiCurveEnum> curve = BarUiCurveEnum::EaseInOutCubic; // 未显式提交时的默认曲线
+	IdtAtomic<BarUiCurveEnum> activeCurve = BarUiCurveEnum::EaseInOutCubic;
+	IdtAtomic<BarUiCurveEnum> activeMiddleCurve = BarUiCurveEnum::EaseInOutCubic;
+	IdtAtomic<double> timelineStartProgress = 0.0;
+	IdtAtomic<bool> continueTimelinePhase = false;
 
 	IdtAtomic<double> val = 0.0; // 直接值（当前位置）
 	IdtAtomic<double> tar = 0.0; // 目标值（目标位置）
@@ -184,11 +284,19 @@ public:
 	bool IsSame() { return val == tar; }
 	bool SetTar(COLORREF tarT, optional<double> durT = nullopt)
 	{
+		BarUiCurveSpecClass spec{ curve, curve, 0.0, false };
+		return SetTar(tarT, durT, spec);
+	}
+	bool SetTar(COLORREF tarT, optional<double> durT, const BarUiCurveSpecClass& curveSpec)
+	{
 		if (tar == tarT) return false;
 
 		startColor = val;
 		progress = 0.0;
 		tar = tarT;
+		activeCurve = curveSpec.first;
+		timelineStartProgress = clamp(curveSpec.timelineStartProgress, 0.0, 1.0);
+		continueTimelinePhase = curveSpec.continueTimelinePhase;
 
 		double defaultSpeed = des;
 		if (durT.has_value()) dur = durT.value();
@@ -203,6 +311,9 @@ public:
 		startColor = valueT;
 		progress = 0.0;
 		dur = 0.0;
+		activeCurve = curve;
+		timelineStartProgress = 0.0;
+		continueTimelinePhase = false;
 	}
 	void Initialization(COLORREF valT, optional<double> desT = nullopt)
 	{
@@ -211,7 +322,10 @@ public:
 	}
 
 public:
-	IdtAtomic<BarUiCurveEnum> curve = BarUiCurveEnum::Linear;
+	IdtAtomic<BarUiCurveEnum> curve = BarUiCurveEnum::EaseInOutCubic;
+	IdtAtomic<BarUiCurveEnum> activeCurve = BarUiCurveEnum::EaseInOutCubic;
+	IdtAtomic<double> timelineStartProgress = 0.0;
+	IdtAtomic<bool> continueTimelinePhase = false;
 	IdtAtomic<COLORREF> val = RGB(0, 0, 0); // 直接值（当前位置）
 	IdtAtomic<COLORREF> tar = RGB(0, 0, 0); // 目标值（目标位置）
 	IdtAtomic<COLORREF> startColor = RGB(0, 0, 0); // 起始颜色（用于计算百分比，在界面被设置时）
@@ -234,6 +348,15 @@ public:
 	bool IsSame() { return val == tar && !hasMiddleV; }
 	bool SetTar(double tarT, optional<double> durT = nullopt, optional<double> middleVT = nullopt, bool forceRestart = false)
 	{
+		BarUiCurveSpecClass spec{ curve, curve, 0.0, false };
+		return SetTar(tarT, durT, middleVT, forceRestart, spec);
+	}
+	bool SetTar(double tarT, optional<double> durT, optional<double> middleVT,
+		bool forceRestart, const BarUiCurveSpecClass& curveSpec)
+	{
+		tarT = isfinite(tarT) ? clamp(tarT, 0.0, 1.0) : 0.0;
+		if (middleVT.has_value())
+			middleVT = isfinite(middleVT.value()) ? clamp(middleVT.value(), 0.0, 1.0) : 0.0;
 		if (!forceRestart && tar == tarT)
 		{
 			// UI 每帧会重复提交普通目标，此时保留已经启动的中间关键帧过程。
@@ -244,8 +367,19 @@ public:
 		startV = val;
 		progress = 0.0;
 		tar = tarT;
+		double phaseStart = clamp(curveSpec.timelineStartProgress, 0.0, 1.0);
 		hasMiddleV = middleVT.has_value();
+		activeCurve = curveSpec.first;
+		activeMiddleCurve = curveSpec.second;
+		timelineStartProgress = phaseStart;
+		continueTimelinePhase = curveSpec.continueTimelinePhase;
 		if (middleVT.has_value()) middleV = middleVT.value();
+		if (hasMiddleV && continueTimelinePhase && phaseStart >= 0.5)
+		{
+			hasMiddleV = false;
+			activeCurve = activeMiddleCurve;
+			timelineStartProgress = clamp((phaseStart - 0.5) * 2.0, 0.0, 1.0);
+		}
 
 		double defaultSpeed = des;
 		if (durT.has_value()) dur = durT.value();
@@ -255,12 +389,17 @@ public:
 	}
 	void SetDirect(double valueT)
 	{
+		valueT = isfinite(valueT) ? clamp(valueT, 0.0, 1.0) : 0.0;
 		val = valueT;
 		tar = valueT;
 		startV = valueT;
 		progress = 0.0;
 		dur = 0.0;
 		hasMiddleV = false;
+		activeCurve = curve;
+		activeMiddleCurve = curve;
+		timelineStartProgress = 0.0;
+		continueTimelinePhase = false;
 	}
 	void Initialization(double valT, optional<double> desT = nullopt)
 	{
@@ -269,7 +408,11 @@ public:
 	}
 
 public:
-	IdtAtomic<BarUiCurveEnum> curve = BarUiCurveEnum::Linear;
+	IdtAtomic<BarUiCurveEnum> curve = BarUiCurveEnum::EaseOutSine;
+	IdtAtomic<BarUiCurveEnum> activeCurve = BarUiCurveEnum::EaseOutSine;
+	IdtAtomic<BarUiCurveEnum> activeMiddleCurve = BarUiCurveEnum::EaseOutSine;
+	IdtAtomic<double> timelineStartProgress = 0.0;
+	IdtAtomic<bool> continueTimelinePhase = false;
 	IdtAtomic<double> val = 1.0; // 透明度直接值
 	IdtAtomic<double> tar = 1.0; // 颜色目标值
 	IdtAtomic<double> startV = 1.0; // 起始透明度（用于计算百分比，在界面被设置时）

@@ -732,9 +732,11 @@ void BarUISetClass::Rendering()
 	bool drawAttributeLayoutOpen = barState.drawAttribute;
 	BarUiTimelineClass mainBarTimeline;
 	BarUiTimelineClass drawAttributeTimeline;
+	BarUiCurveEnum mainBarBatchCurve = BarUiCurveEnum::EaseInOutCubic;
 	optional<double> mainBarLayoutWidth;
 	// 粗细预览使用独立动画值；切换画笔类型时曲线与数字共用同一进度。
 	BarUiValueClass drawAttributePenThickness(max(0.0f, GetPenWidth()));
+	drawAttributePenThickness.curve = BarUiCurveEnum::EaseOutBack;
 
 	wstring fps;
 	for (int forNum = 1; !offSignal; forNum = 2)
@@ -767,14 +769,35 @@ void BarUISetClass::Rendering()
 		{
 			double operationDur = BarUiDefaultOperationDur;
 			auto mainBar = shapeMap[BarUISetShapeEnum::MainBar];
+			BarUiCurveSpecClass syncedValueCurve;
+			BarUiCurveSpecClass syncedPctCurve{
+				BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine, 0.0, false };
+			const BarUiCurveSpecClass keyframeValueCurve{
+				BarUiCurveEnum::EaseInCubic, BarUiCurveEnum::EaseOutBack, 0.0, false };
+			const BarUiCurveSpecClass keyframePctCurve{
+				BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine, 0.0, false };
 			auto SyncValueDuration = [&](BarUiValueClass& value)
 				{
 					// 只在新目标刚建立时提交批次剩余时长，不能每帧改写正在推进的动画段。
-					if (!value.IsSame() && value.progress == 0.0) value.dur = operationDur;
+					if (!value.IsSame() && value.progress == 0.0)
+					{
+						value.dur = operationDur;
+						value.activeCurve = syncedValueCurve.first;
+						value.activeMiddleCurve = syncedValueCurve.second;
+						value.timelineStartProgress = syncedValueCurve.timelineStartProgress;
+						value.continueTimelinePhase = syncedValueCurve.continueTimelinePhase;
+					}
 				};
 			auto SyncPctDuration = [&](BarUiPctClass& pct)
 				{
-					if (!pct.IsSame() && pct.progress == 0.0) pct.dur = operationDur;
+					if (!pct.IsSame() && pct.progress == 0.0)
+					{
+						pct.dur = operationDur;
+						pct.activeCurve = syncedPctCurve.first;
+						pct.activeMiddleCurve = syncedPctCurve.second;
+						pct.timelineStartProgress = syncedPctCurve.timelineStartProgress;
+						pct.continueTimelinePhase = syncedPctCurve.continueTimelinePhase;
+					}
 				};
 			bool currentMainBarSide = barState.widgetPosition.mainBar;
 			bool mainBarSideSwitch = !barState.fold && currentMainBarSide != mainBarLayoutSide;
@@ -829,17 +852,36 @@ void BarUISetClass::Rendering()
 			bool mainBarLayoutChange = mainBarLayoutWidth.has_value()
 				&& abs(layoutTotalWidth - mainBarLayoutWidth.value()) > 0.000001;
 			// 新操作创建完整批次；已有批次中的布局重算只继承剩余时间，不延后结束时刻。
-			if (mainBarFoldChange || mainBarSideSwitch
-				|| (!barState.fold && !mainBarTimeline.IsActive() && mainBarLayoutChange))
+			bool restartMainBarTimeline = mainBarFoldChange || mainBarSideSwitch
+				|| (!barState.fold && !mainBarTimeline.IsActive() && mainBarLayoutChange);
+			if (restartMainBarTimeline)
+			{
+				if (mainBarSideSwitch) mainBarBatchCurve = BarUiCurveEnum::EaseInOutCubic;
+				else if (mainBarFoldChange)
+					mainBarBatchCurve = barState.fold
+					? BarUiCurveEnum::EaseInCubic : BarUiCurveEnum::EaseOutCubic;
+				else mainBarBatchCurve = BarUiCurveEnum::EaseInOutCubic;
 				mainBarTimeline.Restart(operationDur);
+			}
 			mainBarLayoutWidth = layoutTotalWidth;
 			if (mainBarTimeline.IsActive()) operationDur = mainBarTimeline.GetRemainingDuration();
+			double mainBarPhase = mainBarTimeline.IsActive() ? mainBarTimeline.GetProgress() : 0.0;
+			bool continueMainBarPhase = mainBarTimeline.IsActive() && mainBarPhase > 0.0;
+			BarUiCurveEnum syncedMainBarCurve = mainBarTimeline.IsActive()
+				? mainBarBatchCurve : BarUiCurveEnum::EaseInOutCubic;
+			syncedValueCurve = { syncedMainBarCurve, syncedMainBarCurve,
+				mainBarPhase, continueMainBarPhase };
+			syncedPctCurve = { BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine,
+				mainBarPhase, continueMainBarPhase };
 			auto SetButtonPositionTar = [&](BarUiValueClass& value, double target, double middle, bool mirrorX = false)
 				{
 					// 左侧展开仍按正序布局，只将最终横坐标按主栏宽度镜像。
 					if (mirrorX && !barState.widgetPosition.mainBar) target = layoutTotalWidth - target;
-					if (mainBarSideSwitch) value.SetTar(target, operationDur, middle, true);
-					else value.SetTar(target, operationDur, nullopt, mainBarFoldChange);
+					if (mainBarSideSwitch)
+					{
+						value.SetTar(target, operationDur, middle, true, keyframeValueCurve);
+					}
+					else value.SetTar(target, operationDur, nullopt, mainBarFoldChange, syncedValueCurve);
 				};
 
 			// 按钮位置计算（特别操作）
@@ -1273,9 +1315,9 @@ void BarUISetClass::Rendering()
 							if (mainBarSideSwitch)
 							{
 								// 换边中点将整个按钮组合隐藏，再从主按钮下方展开到新位置。
-								temp->buttom.pct.SetTar(temp->buttom.pct.tar, operationDur, 0.0, true);
-								temp->icon.pct.SetTar(temp->icon.pct.tar, operationDur, 0.0, true);
-								temp->name.pct.SetTar(temp->name.pct.tar, operationDur, 0.0, true);
+								temp->buttom.pct.SetTar(temp->buttom.pct.tar, operationDur, 0.0, true, keyframePctCurve);
+								temp->icon.pct.SetTar(temp->icon.pct.tar, operationDur, 0.0, true, keyframePctCurve);
+								temp->name.pct.SetTar(temp->name.pct.tar, operationDur, 0.0, true, keyframePctCurve);
 							}
 						}
 					}, viewVariant);
@@ -1304,16 +1346,16 @@ void BarUISetClass::Rendering()
 			{
 				if (barState.fold)
 				{
-					mainBar->x.SetTar(0.0, operationDur, nullopt, mainBarFoldChange);
-					mainBar->w.SetTar(80.0, operationDur, nullopt, mainBarFoldChange);
+					mainBar->x.SetTar(0.0, operationDur, nullopt, mainBarFoldChange, syncedValueCurve);
+					mainBar->w.SetTar(80.0, operationDur, nullopt, mainBarFoldChange, syncedValueCurve);
 
-					shapeMap[BarUISetShapeEnum::MainBar]->pct.SetTar(0.0, operationDur);
-					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().SetTar(0.0, operationDur);
+					shapeMap[BarUISetShapeEnum::MainBar]->pct.SetTar(0.0, operationDur, nullopt, false, syncedPctCurve);
+					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().SetTar(0.0, operationDur, nullopt, false, syncedPctCurve);
 				}
 				else
 				{
-					if (mainBarSideSwitch) mainBar->w.SetTar(totalWidth, operationDur, 80.0, true);
-					else mainBar->w.SetTar(totalWidth, operationDur, nullopt, mainBarFoldChange);
+					if (mainBarSideSwitch) mainBar->w.SetTar(totalWidth, operationDur, 80.0, true, keyframeValueCurve);
+					else mainBar->w.SetTar(totalWidth, operationDur, nullopt, mainBarFoldChange, syncedValueCurve);
 
 					double targetX = 0.0;
 					if (barState.widgetPosition.mainBar)
@@ -1321,17 +1363,17 @@ void BarUISetClass::Rendering()
 					else
 						targetX = -(superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() / 2.0 + mainBar->w.tar / 2.0 + 10.0);
 
-					if (mainBarSideSwitch) mainBar->x.SetTar(targetX, operationDur, 0.0, true);
-					else mainBar->x.SetTar(targetX, operationDur, nullopt, mainBarFoldChange);
+					if (mainBarSideSwitch) mainBar->x.SetTar(targetX, operationDur, 0.0, true, keyframeValueCurve);
+					else mainBar->x.SetTar(targetX, operationDur, nullopt, mainBarFoldChange, syncedValueCurve);
 
-					shapeMap[BarUISetShapeEnum::MainBar]->pct.SetTar(0.8, operationDur);
-					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().SetTar(0.18, operationDur);
+					shapeMap[BarUISetShapeEnum::MainBar]->pct.SetTar(0.8, operationDur, nullopt, false, syncedPctCurve);
+					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().SetTar(0.18, operationDur, nullopt, false, syncedPctCurve);
 				}
 				if (mainBarSideSwitch)
 				{
 					// 主栏填充和边框在换边关键帧同步变为全透明。
-					mainBar->pct.SetTar(mainBar->pct.tar, operationDur, 0.0, true);
-					mainBar->framePct.value().SetTar(mainBar->framePct.value().tar, operationDur, 0.0, true);
+					mainBar->pct.SetTar(mainBar->pct.tar, operationDur, 0.0, true, keyframePctCurve);
+					mainBar->framePct.value().SetTar(mainBar->framePct.value().tar, operationDur, 0.0, true, keyframePctCurve);
 				}
 				if (barStyle.darkStyle)
 				{
@@ -1348,16 +1390,39 @@ void BarUISetClass::Rendering()
 				{
 					bool drawAttributeBatchChange = drawAttributeVisibilityChange || drawAttributeSideSwitch;
 					operationDur = BarUiDefaultOperationDur;
+					double drawAttributePhase = 0.0;
+					bool continueDrawAttributePhase = false;
 					if (drawAttributeBatchChange)
 					{
 						// 主栏批次仍活跃时直接加入其剩余过程，不重启也不延后主栏结束时刻。
-						if (mainBarTimeline.IsActive()) operationDur = mainBarTimeline.GetRemainingDuration();
+						if (mainBarTimeline.IsActive())
+						{
+							operationDur = mainBarTimeline.GetRemainingDuration();
+							drawAttributePhase = mainBarTimeline.GetProgress();
+							continueDrawAttributePhase = drawAttributePhase > 0.0;
+						}
 						drawAttributeTimeline.Restart(operationDur);
 					}
 					else if (drawAttributeTimeline.IsActive())
 					{
 						operationDur = drawAttributeTimeline.GetRemainingDuration();
+						drawAttributePhase = drawAttributeTimeline.GetProgress();
+						continueDrawAttributePhase = drawAttributePhase > 0.0;
 					}
+					BarUiCurveEnum drawAttributeCurve = drawAttributeTimeline.IsActive()
+						? (barState.drawAttribute ? BarUiCurveEnum::EaseOutCubic : BarUiCurveEnum::EaseInCubic)
+						: BarUiCurveEnum::EaseInOutCubic;
+					syncedValueCurve = {
+						drawAttributeCurve, drawAttributeCurve,
+						drawAttributePhase, continueDrawAttributePhase };
+					syncedPctCurve = { BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine,
+						drawAttributePhase, continueDrawAttributePhase };
+					const BarUiCurveSpecClass drawAttributeKeyframeValueCurve{
+						BarUiCurveEnum::EaseInCubic, BarUiCurveEnum::EaseOutBack,
+						drawAttributePhase, continueDrawAttributePhase };
+					const BarUiCurveSpecClass drawAttributeKeyframePctCurve{
+						BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine,
+						drawAttributePhase, continueDrawAttributePhase };
 					constexpr double drawAttributeCompactWidth = 60.0;
 					constexpr double drawAttributeCompactScale = drawAttributeCompactWidth / 335.0;
 					constexpr double drawAttributeCompactHeight = 120.0 * drawAttributeCompactScale;
@@ -2058,39 +2123,39 @@ void BarUISetClass::Rendering()
 						{
 							auto obj = shapeMap[static_cast<BarUISetShapeEnum>(i)];
 							if (!obj) continue;
-							obj->x.SetTar(obj->x.tar, operationDur, nullopt, true);
-							obj->y.SetTar(obj->y.tar, operationDur, nullopt, true);
-							obj->w.SetTar(obj->w.tar, operationDur, nullopt, true);
-							obj->h.SetTar(obj->h.tar, operationDur, nullopt, true);
-							if (obj->rw.has_value()) obj->rw.value().SetTar(obj->rw.value().tar, operationDur, nullopt, true);
-							if (obj->rh.has_value()) obj->rh.value().SetTar(obj->rh.value().tar, operationDur, nullopt, true);
-							if (obj->ft.has_value()) obj->ft.value().SetTar(obj->ft.value().tar, operationDur, nullopt, true);
-							obj->pct.SetTar(obj->pct.tar, operationDur, nullopt, true);
+							obj->x.SetTar(obj->x.tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->y.SetTar(obj->y.tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->w.SetTar(obj->w.tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->h.SetTar(obj->h.tar, operationDur, nullopt, true, syncedValueCurve);
+							if (obj->rw.has_value()) obj->rw.value().SetTar(obj->rw.value().tar, operationDur, nullopt, true, syncedValueCurve);
+							if (obj->rh.has_value()) obj->rh.value().SetTar(obj->rh.value().tar, operationDur, nullopt, true, syncedValueCurve);
+							if (obj->ft.has_value()) obj->ft.value().SetTar(obj->ft.value().tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->pct.SetTar(obj->pct.tar, operationDur, nullopt, true, syncedPctCurve);
 							if (obj->framePct.has_value())
-								obj->framePct.value().SetTar(obj->framePct.value().tar, operationDur, nullopt, true);
+								obj->framePct.value().SetTar(obj->framePct.value().tar, operationDur, nullopt, true, syncedPctCurve);
 						}
 						for (int i = static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_ColorSelect1);
 							i <= static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_Highlight1); i++)
 						{
 							auto obj = svgMap[static_cast<BarUISetSvgEnum>(i)];
 							if (!obj) continue;
-							obj->x.SetTar(obj->x.tar, operationDur, nullopt, true);
-							obj->y.SetTar(obj->y.tar, operationDur, nullopt, true);
-							obj->w.SetTar(obj->w.tar, operationDur, nullopt, true);
-							obj->h.SetTar(obj->h.tar, operationDur, nullopt, true);
-							obj->pct.SetTar(obj->pct.tar, operationDur, nullopt, true);
+							obj->x.SetTar(obj->x.tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->y.SetTar(obj->y.tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->w.SetTar(obj->w.tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->h.SetTar(obj->h.tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->pct.SetTar(obj->pct.tar, operationDur, nullopt, true, syncedPctCurve);
 						}
 						for (int i = static_cast<int>(BarUISetWordEnum::DrawAttributeBar_Brush1);
 							i <= static_cast<int>(BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay); i++)
 						{
 							auto obj = wordMap[static_cast<BarUISetWordEnum>(i)];
 							if (!obj) continue;
-							obj->x.SetTar(obj->x.tar, operationDur, nullopt, true);
-							obj->y.SetTar(obj->y.tar, operationDur, nullopt, true);
-							obj->w.SetTar(obj->w.tar, operationDur, nullopt, true);
-							obj->h.SetTar(obj->h.tar, operationDur, nullopt, true);
-							obj->size.SetTar(obj->size.tar, operationDur, nullopt, true);
-							obj->pct.SetTar(obj->pct.tar, operationDur, nullopt, true);
+							obj->x.SetTar(obj->x.tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->y.SetTar(obj->y.tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->w.SetTar(obj->w.tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->h.SetTar(obj->h.tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->size.SetTar(obj->size.tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->pct.SetTar(obj->pct.tar, operationDur, nullopt, true, syncedPctCurve);
 						}
 					}
 
@@ -2098,15 +2163,21 @@ void BarUISetClass::Rendering()
 					{
 						// 上下换边与主栏一致：先收拢到绘制按钮位置并隐藏，再向另一侧展开。
 						auto drawAttributeBar = shapeMap[BarUISetShapeEnum::DrawAttributeBar];
-						drawAttributeBar->x.SetTar(drawAttributeBar->x.tar, operationDur, 0.0, true);
-						drawAttributeBar->y.SetTar(drawAttributeBar->y.tar, operationDur, 0.0, true);
+						drawAttributeBar->x.SetTar(
+							drawAttributeBar->x.tar, operationDur, 0.0, true, drawAttributeKeyframeValueCurve);
+						drawAttributeBar->y.SetTar(
+							drawAttributeBar->y.tar, operationDur, 0.0, true, drawAttributeKeyframeValueCurve);
 						drawAttributeBar->w.SetTar(
-							drawAttributeBar->w.tar, operationDur, drawAttributeCompactWidth, true);
+							drawAttributeBar->w.tar, operationDur, drawAttributeCompactWidth, true,
+							drawAttributeKeyframeValueCurve);
 						drawAttributeBar->h.SetTar(
-							drawAttributeBar->h.tar, operationDur, drawAttributeCompactHeight, true);
-						drawAttributeBar->pct.SetTar(drawAttributeBar->pct.tar, operationDur, 0.0, true);
+							drawAttributeBar->h.tar, operationDur, drawAttributeCompactHeight, true,
+							drawAttributeKeyframeValueCurve);
+						drawAttributeBar->pct.SetTar(
+							drawAttributeBar->pct.tar, operationDur, 0.0, true, drawAttributeKeyframePctCurve);
 						drawAttributeBar->framePct.value().SetTar(
-							drawAttributeBar->framePct.value().tar, operationDur, 0.0, true);
+							drawAttributeBar->framePct.value().tar, operationDur, 0.0, true,
+							drawAttributeKeyframePctCurve);
 
 						for (int i = static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ColorSelect1);
 							i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect); i++)
@@ -2120,41 +2191,42 @@ void BarUISetClass::Rendering()
 								|| i == static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect);
 							double middleX = directChild ? drawAttributeCompactWidth / 2.0 - middleW / 2.0 : 0.0;
 							double middleY = directChild ? drawAttributeCompactHeight / 2.0 - middleH / 2.0 : 0.0;
-							obj->x.SetTar(obj->x.tar, operationDur, middleX, true);
-							obj->y.SetTar(obj->y.tar, operationDur, middleY, true);
-							obj->w.SetTar(obj->w.tar, operationDur, middleW, true);
-							obj->h.SetTar(obj->h.tar, operationDur, middleH, true);
-							obj->pct.SetTar(obj->pct.tar, operationDur, 0.0, true);
+							obj->x.SetTar(obj->x.tar, operationDur, middleX, true, drawAttributeKeyframeValueCurve);
+							obj->y.SetTar(obj->y.tar, operationDur, middleY, true, drawAttributeKeyframeValueCurve);
+							obj->w.SetTar(obj->w.tar, operationDur, middleW, true, drawAttributeKeyframeValueCurve);
+							obj->h.SetTar(obj->h.tar, operationDur, middleH, true, drawAttributeKeyframeValueCurve);
+							obj->pct.SetTar(obj->pct.tar, operationDur, 0.0, true, drawAttributeKeyframePctCurve);
 							if (obj->framePct.has_value())
-								obj->framePct.value().SetTar(obj->framePct.value().tar, operationDur, 0.0, true);
+								obj->framePct.value().SetTar(obj->framePct.value().tar, operationDur, 0.0, true,
+									drawAttributeKeyframePctCurve);
 						}
 						for (int i = static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_ColorSelect1);
 							i <= static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_Highlight1); i++)
 						{
 							auto obj = svgMap[static_cast<BarUISetSvgEnum>(i)];
 							if (!obj) continue;
-							obj->x.SetTar(obj->x.tar, operationDur, 0.0, true);
-							obj->y.SetTar(obj->y.tar, operationDur, 0.0, true);
+							obj->x.SetTar(obj->x.tar, operationDur, 0.0, true, drawAttributeKeyframeValueCurve);
+							obj->y.SetTar(obj->y.tar, operationDur, 0.0, true, drawAttributeKeyframeValueCurve);
 							obj->w.SetTar(obj->w.tar, operationDur,
-								max(1.0, CompactDrawAttributeSize(obj->w.tar)), true);
+								max(1.0, CompactDrawAttributeSize(obj->w.tar)), true, drawAttributeKeyframeValueCurve);
 							obj->h.SetTar(obj->h.tar, operationDur,
-								max(1.0, CompactDrawAttributeSize(obj->h.tar)), true);
-							obj->pct.SetTar(obj->pct.tar, operationDur, 0.0, true);
+								max(1.0, CompactDrawAttributeSize(obj->h.tar)), true, drawAttributeKeyframeValueCurve);
+							obj->pct.SetTar(obj->pct.tar, operationDur, 0.0, true, drawAttributeKeyframePctCurve);
 						}
 						for (int i = static_cast<int>(BarUISetWordEnum::DrawAttributeBar_Brush1);
 							i <= static_cast<int>(BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay); i++)
 						{
 							auto obj = wordMap[static_cast<BarUISetWordEnum>(i)];
 							if (!obj) continue;
-							obj->x.SetTar(obj->x.tar, operationDur, 0.0, true);
-							obj->y.SetTar(obj->y.tar, operationDur, 0.0, true);
+							obj->x.SetTar(obj->x.tar, operationDur, 0.0, true, drawAttributeKeyframeValueCurve);
+							obj->y.SetTar(obj->y.tar, operationDur, 0.0, true, drawAttributeKeyframeValueCurve);
 							obj->w.SetTar(obj->w.tar, operationDur,
-								max(1.0, CompactDrawAttributeSize(obj->w.tar)), true);
+								max(1.0, CompactDrawAttributeSize(obj->w.tar)), true, drawAttributeKeyframeValueCurve);
 							obj->h.SetTar(obj->h.tar, operationDur,
-								max(1.0, CompactDrawAttributeSize(obj->h.tar)), true);
+								max(1.0, CompactDrawAttributeSize(obj->h.tar)), true, drawAttributeKeyframeValueCurve);
 							obj->size.SetTar(obj->size.tar, operationDur,
-								max(1.0, CompactDrawAttributeSize(obj->size.tar)), true);
-							obj->pct.SetTar(obj->pct.tar, operationDur, 0.0, true);
+								max(1.0, CompactDrawAttributeSize(obj->size.tar)), true, drawAttributeKeyframeValueCurve);
+							obj->pct.SetTar(obj->pct.tar, operationDur, 0.0, true, drawAttributeKeyframePctCurve);
 						}
 					}
 				}
@@ -2174,6 +2246,8 @@ void BarUISetClass::Rendering()
 				value.progress = 0.0;
 				value.dur = 0.0;
 				value.hasMiddleV = false;
+				value.timelineStartProgress = 0.0;
+				value.continueTimelinePhase = false;
 			};
 		auto FinishColor = [](BarUiColorClass& color, COLORREF targetColor) -> void
 			{
@@ -2181,14 +2255,20 @@ void BarUISetClass::Rendering()
 				color.startColor = targetColor;
 				color.progress = 0.0;
 				color.dur = 0.0;
+				color.timelineStartProgress = 0.0;
+				color.continueTimelinePhase = false;
 			};
 		auto FinishPct = [](BarUiPctClass& pct, double targetPct) -> void
 			{
+				targetPct = isfinite(targetPct) ? clamp(targetPct, 0.0, 1.0) : 0.0;
+				pct.tar = targetPct;
 				pct.val = targetPct;
 				pct.startV = targetPct;
 				pct.progress = 0.0;
 				pct.dur = 0.0;
 				pct.hasMiddleV = false;
+				pct.timelineStartProgress = 0.0;
+				pct.continueTimelinePhase = false;
 			};
 		auto MixColorChannel = [](int start, int target, double progress) -> int
 			{
@@ -2197,21 +2277,19 @@ void BarUISetClass::Rendering()
 			};
 		auto MixColor = [&](COLORREF startColor, COLORREF targetColor, double progress) -> COLORREF
 			{
-				// 颜色按 RGB 三通道做同一进度的匀速插值。
+				// 颜色按 RGB 三通道共享同一条曲线进度。
 				return RGB(
 					MixColorChannel(GetRValue(startColor), GetRValue(targetColor), progress),
 					MixColorChannel(GetGValue(startColor), GetGValue(targetColor), progress),
 					MixColorChannel(GetBValue(startColor), GetBValue(targetColor), progress));
 			};
-		auto ApplyCurve = [](BarUiCurveEnum curve, double progress) -> double
+		auto ApplyAnimationCurve = [](BarUiCurveEnum curve, double progress,
+			double timelineStartProgress, bool continueTimelinePhase) -> double
 			{
-				progress = clamp(progress, 0.0, 1.0);
-				switch (curve)
-				{
-				case BarUiCurveEnum::Linear:
-				default:
-					return progress;
-				}
+				if (!continueTimelinePhase) return BarUiApplyCurve(curve, progress);
+				double startProgress = clamp(timelineStartProgress, 0.0, 1.0);
+				double absoluteProgress = startProgress + (1.0 - startProgress) * clamp(progress, 0.0, 1.0);
+				return BarUiApplyCurveRange(curve, startProgress, absoluteProgress);
 			};
 		auto ChangeState = [&](BarUiStateClass& state, bool forceReplace) -> void
 			{
@@ -2222,7 +2300,7 @@ void BarUISetClass::Rendering()
 			{
 				needRendering = true;
 				BarUiValueModeEnum mod = value.mod;
-				BarUiCurveEnum curve = value.curve;
+				BarUiCurveEnum curve = value.activeCurve;
 				double targetValue = value.tar;
 				double startValue = value.startV;
 				double duration = value.dur;
@@ -2240,20 +2318,27 @@ void BarUISetClass::Rendering()
 				double nextValue = 0.0;
 				if (value.hasMiddleV)
 				{
-					// 单个关键帧固定在总时间 0.5；两段暂时都使用线性插值。
+					// 关键帧固定在批次绝对时间 0.5，前后两段使用独立曲线。
 					double middleValue = value.middleV;
-					if (progress < 0.5)
+					double phaseStart = value.continueTimelinePhase
+						? clamp(static_cast<double>(value.timelineStartProgress), 0.0, 1.0) : 0.0;
+					double absoluteProgress = phaseStart + (1.0 - phaseStart) * progress;
+					if (absoluteProgress < 0.5)
 					{
-						double localProgress = ApplyCurve(curve, progress * 2.0);
+						double segmentStart = clamp(phaseStart * 2.0, 0.0, 1.0);
+						double segmentProgress = clamp(absoluteProgress * 2.0, segmentStart, 1.0);
+						double localProgress = BarUiApplyCurveRange(curve, segmentStart, segmentProgress);
 						nextValue = startValue + (middleValue - startValue) * localProgress;
 					}
 					else
 					{
-						double localProgress = ApplyCurve(curve, (progress - 0.5) * 2.0);
+						double localProgress = BarUiApplyCurve(
+							value.activeMiddleCurve, (absoluteProgress - 0.5) * 2.0);
 						nextValue = middleValue + (targetValue - middleValue) * localProgress;
 					}
 				}
-				else nextValue = startValue + (targetValue - startValue) * ApplyCurve(curve, progress);
+				else nextValue = startValue + (targetValue - startValue) * ApplyAnimationCurve(
+					curve, progress, value.timelineStartProgress, value.continueTimelinePhase);
 				if (!isfinite(nextValue) || progress >= 1.0)
 				{
 					FinishValue(value, targetValue);
@@ -2278,8 +2363,10 @@ void BarUISetClass::Rendering()
 				}
 
 				double progress = clamp(static_cast<double>(color.progress) + animationDtSeconds * speedRate / duration, 0.0, 1.0);
-				COLORREF nextColor = MixColor(startColor, targetColor, ApplyCurve(color.curve, progress));
-				if (progress >= 1.0 || nextColor == targetColor)
+				double curveProgress = ApplyAnimationCurve(color.activeCurve, progress,
+					color.timelineStartProgress, color.continueTimelinePhase);
+				COLORREF nextColor = MixColor(startColor, targetColor, clamp(curveProgress, 0.0, 1.0));
+				if (progress >= 1.0)
 				{
 					FinishColor(color, targetColor);
 					return;
@@ -2309,18 +2396,27 @@ void BarUISetClass::Rendering()
 				if (pct.hasMiddleV)
 				{
 					double middlePct = pct.middleV;
-					if (progress < 0.5)
+					double phaseStart = pct.continueTimelinePhase
+						? clamp(static_cast<double>(pct.timelineStartProgress), 0.0, 1.0) : 0.0;
+					double absoluteProgress = phaseStart + (1.0 - phaseStart) * progress;
+					if (absoluteProgress < 0.5)
 					{
-						double localProgress = ApplyCurve(pct.curve, progress * 2.0);
+						double segmentStart = clamp(phaseStart * 2.0, 0.0, 1.0);
+						double segmentProgress = clamp(absoluteProgress * 2.0, segmentStart, 1.0);
+						double localProgress = BarUiApplyCurveRange(
+							pct.activeCurve, segmentStart, segmentProgress);
 						nextPct = startPct + (middlePct - startPct) * localProgress;
 					}
 					else
 					{
-						double localProgress = ApplyCurve(pct.curve, (progress - 0.5) * 2.0);
+						double localProgress = BarUiApplyCurve(
+							pct.activeMiddleCurve, (absoluteProgress - 0.5) * 2.0);
 						nextPct = middlePct + (targetPct - middlePct) * localProgress;
 					}
 				}
-				else nextPct = startPct + (targetPct - startPct) * ApplyCurve(pct.curve, progress);
+				else nextPct = startPct + (targetPct - startPct) * ApplyAnimationCurve(
+					pct.activeCurve, progress, pct.timelineStartProgress, pct.continueTimelinePhase);
+				nextPct = clamp(nextPct, 0.0, 1.0);
 				if (!isfinite(nextPct) || progress >= 1.0)
 				{
 					FinishPct(pct, targetPct);
@@ -2638,7 +2734,8 @@ void BarUISetClass::Rendering()
 							// 收起后继续按当前透明度绘制，直至与其他属性控件同步淡出。
 							if (wordMap[obj2]->pct.val > 0.000001)
 							{
-								FLOAT penThickness = static_cast<FLOAT>(drawAttributePenThickness.val);
+								FLOAT penThickness = max(0.0f,
+									static_cast<FLOAT>(drawAttributePenThickness.val));
 
 								FLOAT tarZoom = barStyle.zoom;
 								double tarX = shapeMap[obj1]->inhX + 5.0;
