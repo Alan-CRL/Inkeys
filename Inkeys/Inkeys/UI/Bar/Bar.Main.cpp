@@ -751,17 +751,23 @@ void BarUISetClass::Rendering()
 		// 主按钮
 		{
 			double operationDur = BarUiDefaultOperationDur;
+			BarUiCurveEnum mainButtonPctCurve = barState.fold
+				? BarUiCurveEnum::EaseInSine : BarUiCurveEnum::EaseOutSine;
+			BarUiCurveSpecClass mainButtonPctCurveSpec{
+				mainButtonPctCurve, mainButtonPctCurve, 0.0, false };
 			if (barState.fold)
 			{
 				superellipseMap[BarUISetSuperellipseEnum::MainButton]->n.value().SetTar(3.0, operationDur);
 
-				superellipseMap[BarUISetSuperellipseEnum::MainButton]->pct.SetTar(0.6, operationDur);
+				superellipseMap[BarUISetSuperellipseEnum::MainButton]->pct.SetTar(
+					0.6, operationDur, nullopt, false, mainButtonPctCurveSpec);
 			}
 			else
 			{
 				superellipseMap[BarUISetSuperellipseEnum::MainButton]->n.value().SetTar(10.0, operationDur);
 
-				superellipseMap[BarUISetSuperellipseEnum::MainButton]->pct.SetTar(0.8, operationDur);
+				superellipseMap[BarUISetSuperellipseEnum::MainButton]->pct.SetTar(
+					0.8, operationDur, nullopt, false, mainButtonPctCurveSpec);
 			}
 		}
 		// 主栏
@@ -868,16 +874,16 @@ void BarUISetClass::Rendering()
 				if (mainBarSideSwitch) mainBarBatchCurve = BarUiCurveEnum::EaseInOutCubic;
 				else if (mainBarFoldChange)
 					mainBarBatchCurve = barState.fold
-					? BarUiCurveEnum::EaseInCubic : BarUiCurveEnum::EaseOutBack;
+					? BarUiCurveEnum::EaseInBack : BarUiCurveEnum::EaseOutBack;
 				else mainBarBatchCurve = mainBarLayoutExpands
-					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInCubic;
+					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack;
 				mainBarTimeline.Restart(operationDur);
 			}
 			else if (mainBarTimeline.IsActive() && mainBarLayoutChange)
 			{
 				// 批次中途反向改变布局时只更换新目标曲线，仍沿用原截止时间。
 				mainBarBatchCurve = mainBarLayoutExpands
-					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInCubic;
+					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack;
 			}
 			mainBarLayoutWidth = layoutTotalWidth;
 			if (mainBarTimeline.IsActive()) operationDur = mainBarTimeline.GetRemainingDuration();
@@ -886,9 +892,12 @@ void BarUISetClass::Rendering()
 			syncValueCurveFromBatch = mainBarTimeline.IsActive();
 			BarUiCurveEnum syncedMainBarCurve = mainBarTimeline.IsActive()
 				? mainBarBatchCurve : BarUiCurveEnum::EaseInOutCubic;
+			BarUiCurveEnum syncedMainBarPctCurve = mainBarTimeline.IsActive()
+				&& mainBarBatchCurve == BarUiCurveEnum::EaseInBack
+				? BarUiCurveEnum::EaseInSine : BarUiCurveEnum::EaseOutSine;
 			syncedValueCurve = { syncedMainBarCurve, syncedMainBarCurve,
 				mainBarPhase, continueMainBarPhase };
-			syncedPctCurve = { BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine,
+			syncedPctCurve = { syncedMainBarPctCurve, syncedMainBarPctCurve,
 				mainBarPhase, continueMainBarPhase };
 			auto SetButtonPositionTar = [&](BarUiValueClass& value, double target, double middle, bool mirrorX = false)
 				{
@@ -1406,12 +1415,15 @@ void BarUISetClass::Rendering()
 					}
 					syncValueCurveFromBatch = drawAttributeTimeline.IsActive();
 					BarUiCurveEnum drawAttributeCurve = drawAttributeTimeline.IsActive()
-						? (barState.drawAttribute ? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInCubic)
+						? (barState.drawAttribute ? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack)
 						: BarUiCurveEnum::EaseInOutCubic;
+					BarUiCurveEnum drawAttributePctCurve = drawAttributeTimeline.IsActive()
+						&& !barState.drawAttribute
+						? BarUiCurveEnum::EaseInSine : BarUiCurveEnum::EaseOutSine;
 					syncedValueCurve = {
 						drawAttributeCurve, drawAttributeCurve,
 						drawAttributePhase, continueDrawAttributePhase };
-					syncedPctCurve = { BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine,
+					syncedPctCurve = { drawAttributePctCurve, drawAttributePctCurve,
 						drawAttributePhase, continueDrawAttributePhase };
 					const BarUiCurveSpecClass drawAttributeKeyframeValueCurve{
 						BarUiCurveEnum::EaseInCubic, BarUiCurveEnum::EaseOutBack,
