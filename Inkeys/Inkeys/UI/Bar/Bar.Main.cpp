@@ -26,9 +26,10 @@ import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
 
 constexpr double BarButtonHoverOpacity = 0.18;
-constexpr double BarButtonHoverShowDur = 0.12;
-constexpr double BarButtonHoverExitDur = 0.12;
-constexpr double BarButtonHoverFadeDur = 5.0;
+// 悬停动画暂时与其他 UI 一同慢放十倍，便于观察显现和渐隐细节。
+constexpr double BarButtonHoverShowDur = 1.2;
+constexpr double BarButtonHoverExitDur = 1.2;
+constexpr double BarButtonHoverFadeDur = 50.0;
 
 // ====================
 // 窗口
@@ -2553,30 +2554,43 @@ void BarUISetClass::Rendering()
 			if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace), change = true;
 		}
 
+		auto UpdateHoverAnimation = [&](BarUiPctClass& hoverPct,
+			IdtAtomic<BarButtomHoverStageEnum>& hoverStage, bool visible)
+			{
+				if (!visible)
+				{
+					hoverStage = BarButtomHoverStageEnum::None;
+					hoverPct.SetDirect(0.0);
+				}
+				else if (hoverStage == BarButtomHoverStageEnum::Showing
+					&& hoverPct.IsSame())
+				{
+					// 快速显现完成后立即进入独立的 5 秒渐隐阶段，同一次进入不会重新计时。
+					hoverStage = BarButtomHoverStageEnum::Fading;
+					const BarUiCurveSpecClass hoverFadeCurve{
+						BarUiCurveEnum::EaseInSine, BarUiCurveEnum::EaseInSine, 0.0, false };
+					hoverPct.SetTar(0.0, BarButtonHoverFadeDur, nullopt, true, hoverFadeCurve);
+				}
+				else if (hoverStage == BarButtomHoverStageEnum::Fading
+					&& hoverPct.IsSame())
+				{
+					hoverStage = BarButtomHoverStageEnum::None;
+				}
+
+				if (!hoverPct.IsSame()) ChangePct(hoverPct, false);
+			};
+
+		UpdateHoverAnimation(drawAttributeBrushHover.pct,
+			drawAttributeBrushHoverStage, barState.drawAttribute);
+		UpdateHoverAnimation(drawAttributeHighlightHover.pct,
+			drawAttributeHighlightHoverStage, barState.drawAttribute);
+
 		// 特殊体质：按钮
 		for (int id = 0; id < barButtomSet.tot; id++)
 		{
 			BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
 			if (temp == nullptr) continue;
-			if (barState.fold || temp->hide)
-			{
-				temp->hoverStage = BarButtomHoverStageEnum::None;
-				temp->hover.pct.SetDirect(0.0);
-			}
-			else if (temp->hoverStage == BarButtomHoverStageEnum::Showing
-				&& temp->hover.pct.IsSame())
-			{
-				// 快速显现完成后立即进入独立的 5 秒渐隐阶段，同一次进入不会重新计时。
-				temp->hoverStage = BarButtomHoverStageEnum::Fading;
-				const BarUiCurveSpecClass hoverFadeCurve{
-					BarUiCurveEnum::EaseInSine, BarUiCurveEnum::EaseInSine, 0.0, false };
-				temp->hover.pct.SetTar(0.0, BarButtonHoverFadeDur, nullopt, true, hoverFadeCurve);
-			}
-			else if (temp->hoverStage == BarButtomHoverStageEnum::Fading
-				&& temp->hover.pct.IsSame())
-			{
-				temp->hoverStage = BarButtomHoverStageEnum::None;
-			}
+			UpdateHoverAnimation(temp->hover.pct, temp->hoverStage, !barState.fold && !temp->hide);
 
 			{
 				bool forceReplace = false, change = false;;
@@ -2595,8 +2609,6 @@ void BarUISetClass::Rendering()
 				if (temp->buttom.framePct.has_value() && !temp->buttom.framePct->IsSame()) ChangePct(temp->buttom.framePct.value(), forceReplace), change = true;
 				if (!temp->buttom.pct.IsSame()) ChangePct(temp->buttom.pct, forceReplace), change = true;
 			}
-			if (!temp->hover.pct.IsSame()) ChangePct(temp->hover.pct, false);
-
 			{
 				bool forceReplace = false, change = false;;
 				if (temp->icon.forceReplace) temp->icon.forceReplace = false, forceReplace = true;
@@ -2780,6 +2792,14 @@ void BarUISetClass::Rendering()
 							{
 								auto obj1 = BarUISetShapeEnum::DrawAttributeBar_Brush1;
 								spec.Shape(barDeviceContext.Get(), *shapeMap[obj1], shapeMap[obj1]->Inherit(Left, *shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]));
+								drawAttributeBrushHover.w.SetDirect(shapeMap[obj1]->w.val);
+								drawAttributeBrushHover.h.SetDirect(shapeMap[obj1]->h.val);
+								if (drawAttributeBrushHover.rw.has_value() && shapeMap[obj1]->rw.has_value())
+									drawAttributeBrushHover.rw.value().SetDirect(shapeMap[obj1]->rw.value().val);
+								if (drawAttributeBrushHover.rh.has_value() && shapeMap[obj1]->rh.has_value())
+									drawAttributeBrushHover.rh.value().SetDirect(shapeMap[obj1]->rh.value().val);
+								spec.Shape(barDeviceContext.Get(), drawAttributeBrushHover,
+									drawAttributeBrushHover.Inherit(Center, *shapeMap[obj1]));
 
 								auto obj2 = BarUISetSvgEnum::DrawAttributeBar_Brush1;
 								spec.Svg(barDeviceContext.Get(), *svgMap[obj2], svgMap[obj2]->Inherit(Top, *shapeMap[obj1]));
@@ -2791,6 +2811,14 @@ void BarUISetClass::Rendering()
 							{
 								auto obj1 = BarUISetShapeEnum::DrawAttributeBar_Highlight1;
 								spec.Shape(barDeviceContext.Get(), *shapeMap[obj1], shapeMap[obj1]->Inherit(Left, *shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]));
+								drawAttributeHighlightHover.w.SetDirect(shapeMap[obj1]->w.val);
+								drawAttributeHighlightHover.h.SetDirect(shapeMap[obj1]->h.val);
+								if (drawAttributeHighlightHover.rw.has_value() && shapeMap[obj1]->rw.has_value())
+									drawAttributeHighlightHover.rw.value().SetDirect(shapeMap[obj1]->rw.value().val);
+								if (drawAttributeHighlightHover.rh.has_value() && shapeMap[obj1]->rh.has_value())
+									drawAttributeHighlightHover.rh.value().SetDirect(shapeMap[obj1]->rh.value().val);
+								spec.Shape(barDeviceContext.Get(), drawAttributeHighlightHover,
+									drawAttributeHighlightHover.Inherit(Center, *shapeMap[obj1]));
 
 								auto obj2 = BarUISetSvgEnum::DrawAttributeBar_Highlight1;
 								spec.Svg(barDeviceContext.Get(), *svgMap[obj2], svgMap[obj2]->Inherit(Top, *shapeMap[obj1]));
@@ -3050,6 +3078,10 @@ void BarUISetClass::Rendering()
 						BarRenderingAttribute::UnionRectInPlace(
 							current, BarRenderingAttribute::GetWeigetRect(temp->name, dirtyZoom));
 					}
+					BarRenderingAttribute::UnionRectInPlace(
+						current, BarRenderingAttribute::GetWeigetRect(drawAttributeBrushHover, dirtyZoom));
+					BarRenderingAttribute::UnionRectInPlace(
+						current, BarRenderingAttribute::GetWeigetRect(drawAttributeHighlightHover, dirtyZoom));
 				}
 			{ /**/ }
 
@@ -3207,28 +3239,72 @@ void BarUISetClass::Interact()
 	ExMessage msg;
 	BarButtomClass* lastClickedMainBarButton = nullptr;
 	BarButtomClass* hoveredMainBarButton = nullptr;
-	auto StartMainBarButtonHover = [&](BarButtomClass* button)
+	enum class IndependentHoverTargetEnum
+	{
+		None,
+		DrawAttributeBrush,
+		DrawAttributeHighlight,
+	};
+	IndependentHoverTargetEnum hoveredIndependentButton = IndependentHoverTargetEnum::None;
+	struct HoverVisualRef
+	{
+		BarUiPctClass* pct = nullptr;
+		IdtAtomic<BarButtomHoverStageEnum>* stage = nullptr;
+	};
+	auto GetIndependentHoverVisual = [&](IndependentHoverTargetEnum target) -> HoverVisualRef
 		{
-			if (!button) return;
+			switch (target)
+			{
+			case IndependentHoverTargetEnum::DrawAttributeBrush:
+				return { &drawAttributeBrushHover.pct, &drawAttributeBrushHoverStage };
+			case IndependentHoverTargetEnum::DrawAttributeHighlight:
+				return { &drawAttributeHighlightHover.pct, &drawAttributeHighlightHoverStage };
+			default:
+				return {};
+			}
+		};
+	auto StartHover = [&](BarUiPctClass* hoverPct,
+		IdtAtomic<BarButtomHoverStageEnum>* hoverStage)
+		{
+			if (!hoverPct || !hoverStage) return;
 			const BarUiCurveSpecClass hoverShowCurve{
 				BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine, 0.0, false };
-			button->hover.pct.SetTar(
+			hoverPct->SetTar(
 				BarButtonHoverOpacity, BarButtonHoverShowDur, nullopt, true, hoverShowCurve);
-			button->hoverStage = BarButtomHoverStageEnum::Showing;
+			*hoverStage = BarButtomHoverStageEnum::Showing;
 			UpdateRendering(false);
 		};
-	auto StopMainBarButtonHover = [&](BarButtomClass* button, bool immediate)
+	auto StopHover = [&](BarUiPctClass* hoverPct,
+		IdtAtomic<BarButtomHoverStageEnum>* hoverStage, bool immediate)
 		{
-			if (!button) return;
-			button->hoverStage = BarButtomHoverStageEnum::None;
-			if (immediate) button->hover.pct.SetDirect(0.0);
+			if (!hoverPct || !hoverStage) return;
+			*hoverStage = BarButtomHoverStageEnum::None;
+			if (immediate) hoverPct->SetDirect(0.0);
 			else
 			{
 				const BarUiCurveSpecClass hoverExitCurve{
 					BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine, 0.0, false };
-				button->hover.pct.SetTar(0.0, BarButtonHoverExitDur, nullopt, true, hoverExitCurve);
+				hoverPct->SetTar(0.0, BarButtonHoverExitDur, nullopt, true, hoverExitCurve);
 			}
 			UpdateRendering(false);
+		};
+	auto StartMainBarButtonHover = [&](BarButtomClass* button)
+		{
+			if (button) StartHover(&button->hover.pct, &button->hoverStage);
+		};
+	auto StopMainBarButtonHover = [&](BarButtomClass* button, bool immediate)
+		{
+			if (button) StopHover(&button->hover.pct, &button->hoverStage, immediate);
+		};
+	auto StartIndependentHover = [&](IndependentHoverTargetEnum target)
+		{
+			auto hover = GetIndependentHoverVisual(target);
+			StartHover(hover.pct, hover.stage);
+		};
+	auto StopIndependentHover = [&](IndependentHoverTargetEnum target, bool immediate)
+		{
+			auto hover = GetIndependentHoverVisual(target);
+			StopHover(hover.pct, hover.stage, immediate);
 		};
 	while (!offSignal)
 	{
@@ -3238,6 +3314,15 @@ void BarUISetClass::Interact()
 		{
 			StopMainBarButtonHover(hoveredMainBarButton, true);
 			hoveredMainBarButton = nullptr;
+		}
+		if (hoveredIndependentButton == IndependentHoverTargetEnum::DrawAttributeBrush
+			|| hoveredIndependentButton == IndependentHoverTargetEnum::DrawAttributeHighlight)
+		{
+			if (!barState.drawAttribute)
+			{
+				StopIndependentHover(hoveredIndependentButton, true);
+				hoveredIndependentButton = IndependentHoverTargetEnum::None;
+			}
 		}
 		if (msg.message == WM_MOUSEMOVE)
 		{
@@ -3260,6 +3345,27 @@ void BarUISetClass::Interact()
 				StopMainBarButtonHover(hoveredMainBarButton, false);
 				hoveredMainBarButton = currentHoveredButton;
 				StartMainBarButtonHover(hoveredMainBarButton);
+			}
+
+			IndependentHoverTargetEnum currentIndependentButton = IndependentHoverTargetEnum::None;
+			if (barState.drawAttribute)
+			{
+				if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1];
+					obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+				{
+					currentIndependentButton = IndependentHoverTargetEnum::DrawAttributeBrush;
+				}
+				else if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1];
+					obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+				{
+					currentIndependentButton = IndependentHoverTargetEnum::DrawAttributeHighlight;
+				}
+			}
+			if (currentIndependentButton != hoveredIndependentButton)
+			{
+				StopIndependentHover(hoveredIndependentButton, false);
+				hoveredIndependentButton = currentIndependentButton;
+				StartIndependentHover(hoveredIndependentButton);
 			}
 		}
 
@@ -3383,6 +3489,8 @@ void BarUISetClass::Interact()
 					continueFlag = false;
 					if (msg.message == WM_LBUTTONDOWN)
 					{
+						StopIndependentHover(hoveredIndependentButton, true);
+						hoveredIndependentButton = IndependentHoverTargetEnum::None;
 						barState.drawAttributeBar.brush1Press = true; UpdateRendering(false);
 						while (true)
 						{
@@ -3411,6 +3519,8 @@ void BarUISetClass::Interact()
 					continueFlag = false;
 					if (msg.message == WM_LBUTTONDOWN)
 					{
+						StopIndependentHover(hoveredIndependentButton, true);
+						hoveredIndependentButton = IndependentHoverTargetEnum::None;
 						barState.drawAttributeBar.highlight1Press = true; UpdateRendering(false);
 						while (true)
 						{
@@ -3807,6 +3917,12 @@ namespace Inkeys::UI::Bar
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1] = shape;
 
+							barUISet.drawAttributeBrushHover.Initialization(
+								0.0, 0.0, 50.0, 50.0, 4.0, 4.0, nullopt, RGB(127, 127, 127), nullopt);
+							barUISet.drawAttributeBrushHover.pct.Initialization(0.0);
+							barUISet.drawAttributeBrushHover.enable.Initialization(true);
+							barUISet.drawAttributeBrushHover.forceReplace = false;
+
 							auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, RGB(0, 0, 0), nullopt);
 							svg->InitializationFromResource(L"UI", L"barBrush1");
 							svg->SetWH(nullopt, 20.0);
@@ -3822,6 +3938,12 @@ namespace Inkeys::UI::Bar
 							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 50.0, 50.0, 4.0, 4.0, 1.0, RGB(0, 0, 0), nullopt);
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1] = shape;
+
+							barUISet.drawAttributeHighlightHover.Initialization(
+								0.0, 0.0, 50.0, 50.0, 4.0, 4.0, nullopt, RGB(127, 127, 127), nullopt);
+							barUISet.drawAttributeHighlightHover.pct.Initialization(0.0);
+							barUISet.drawAttributeHighlightHover.enable.Initialization(true);
+							barUISet.drawAttributeHighlightHover.forceReplace = false;
 
 							auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, RGB(0, 0, 0), nullopt);
 							svg->InitializationFromResource(L"UI", L"barHighlighter1");

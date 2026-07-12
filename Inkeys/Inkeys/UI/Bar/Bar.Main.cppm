@@ -167,6 +167,12 @@ public:
 	ankerl::unordered_dense::map<BarUISetSvgEnum, shared_ptr<BarUiSVGClass>> svgMap;
 	ankerl::unordered_dense::map<BarUISetWordEnum, shared_ptr<BarUiWordClass>> wordMap;
 
+	// 独立悬停层不复用按钮原背景，避免影响按压和选中状态。
+	BarUiShapeClass drawAttributeBrushHover;
+	BarUiShapeClass drawAttributeHighlightHover;
+	IdtAtomic<BarButtomHoverStageEnum> drawAttributeBrushHoverStage = BarButtomHoverStageEnum::None;
+	IdtAtomic<BarButtomHoverStageEnum> drawAttributeHighlightHoverStage = BarButtomHoverStageEnum::None;
+
 public:
 	// 渲染更新：状态更新 + 通知计算并渲染
 	void UpdateRendering(bool updateState = true);
