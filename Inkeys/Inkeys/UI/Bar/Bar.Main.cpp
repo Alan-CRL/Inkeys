@@ -729,7 +729,9 @@ void BarUISetClass::Rendering()
 	// 独立记录渲染侧已经处理的主栏方向，不能使用动画 tar 的符号代替布局状态。
 	bool mainBarLayoutSide = barState.widgetPosition.mainBar;
 	bool drawAttributeLayoutSide = barState.widgetPosition.primaryBar;
+	bool drawAttributeLayoutOpen = barState.drawAttribute;
 	BarUiTimelineClass mainBarTimeline;
+	BarUiTimelineClass drawAttributeTimeline;
 	optional<double> mainBarLayoutWidth;
 	// 粗细预览使用独立动画值；切换画笔类型时曲线与数字共用同一进度。
 	BarUiValueClass drawAttributePenThickness(max(0.0f, GetPenWidth()));
@@ -744,7 +746,6 @@ void BarUISetClass::Rendering()
 		animationReckon = animationNow;
 		if (!isfinite(animationDtSeconds) || animationDtSeconds < 0.0) animationDtSeconds = 0.0;
 		animationDtSeconds = clamp(animationDtSeconds, 0.0, 0.05); // 防止调试或休眠恢复后一帧跳太远
-		mainBarTimeline.Advance(animationDtSeconds, BarUiAnimationSpeedRate);
 
 		// 主按钮
 		{
@@ -783,6 +784,9 @@ void BarUISetClass::Rendering()
 			bool drawAttributeSideSwitch = barState.drawAttribute
 				&& currentDrawAttributeSide != drawAttributeLayoutSide;
 			drawAttributeLayoutSide = currentDrawAttributeSide;
+			bool currentDrawAttributeOpen = barState.drawAttribute;
+			bool drawAttributeVisibilityChange = currentDrawAttributeOpen != drawAttributeLayoutOpen;
+			drawAttributeLayoutOpen = currentDrawAttributeOpen;
 			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 				drawAttributePenThickness.SetTar(max(0.0f, GetPenWidth()), operationDur);
 			bool mainBarFoldChange = (barState.fold && mainBar->x.tar != 0.0)
@@ -1342,8 +1346,18 @@ void BarUISetClass::Rendering()
 
 				// 绘制属性
 				{
-					// 绘制属性属于独立操作，不继承主栏批次的剩余时间。
+					bool drawAttributeBatchChange = drawAttributeVisibilityChange || drawAttributeSideSwitch;
 					operationDur = BarUiDefaultOperationDur;
+					if (drawAttributeBatchChange)
+					{
+						// 主栏批次仍活跃时直接加入其剩余过程，不重启也不延后主栏结束时刻。
+						if (mainBarTimeline.IsActive()) operationDur = mainBarTimeline.GetRemainingDuration();
+						drawAttributeTimeline.Restart(operationDur);
+					}
+					else if (drawAttributeTimeline.IsActive())
+					{
+						operationDur = drawAttributeTimeline.GetRemainingDuration();
+					}
 					constexpr double drawAttributeCompactWidth = 60.0;
 					constexpr double drawAttributeCompactScale = drawAttributeCompactWidth / 335.0;
 					constexpr double drawAttributeCompactHeight = 120.0 * drawAttributeCompactScale;
@@ -2036,6 +2050,50 @@ void BarUISetClass::Rendering()
 						SyncPctDuration(obj->pct);
 					}
 
+					if (drawAttributeVisibilityChange)
+					{
+						// 每次展开或收起都从当前值重建，所有子控件共用本批次的同一结束时刻。
+						for (int i = static_cast<int>(BarUISetShapeEnum::DrawAttributeBar);
+							i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect); i++)
+						{
+							auto obj = shapeMap[static_cast<BarUISetShapeEnum>(i)];
+							if (!obj) continue;
+							obj->x.SetTar(obj->x.tar, operationDur, nullopt, true);
+							obj->y.SetTar(obj->y.tar, operationDur, nullopt, true);
+							obj->w.SetTar(obj->w.tar, operationDur, nullopt, true);
+							obj->h.SetTar(obj->h.tar, operationDur, nullopt, true);
+							if (obj->rw.has_value()) obj->rw.value().SetTar(obj->rw.value().tar, operationDur, nullopt, true);
+							if (obj->rh.has_value()) obj->rh.value().SetTar(obj->rh.value().tar, operationDur, nullopt, true);
+							if (obj->ft.has_value()) obj->ft.value().SetTar(obj->ft.value().tar, operationDur, nullopt, true);
+							obj->pct.SetTar(obj->pct.tar, operationDur, nullopt, true);
+							if (obj->framePct.has_value())
+								obj->framePct.value().SetTar(obj->framePct.value().tar, operationDur, nullopt, true);
+						}
+						for (int i = static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_ColorSelect1);
+							i <= static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_Highlight1); i++)
+						{
+							auto obj = svgMap[static_cast<BarUISetSvgEnum>(i)];
+							if (!obj) continue;
+							obj->x.SetTar(obj->x.tar, operationDur, nullopt, true);
+							obj->y.SetTar(obj->y.tar, operationDur, nullopt, true);
+							obj->w.SetTar(obj->w.tar, operationDur, nullopt, true);
+							obj->h.SetTar(obj->h.tar, operationDur, nullopt, true);
+							obj->pct.SetTar(obj->pct.tar, operationDur, nullopt, true);
+						}
+						for (int i = static_cast<int>(BarUISetWordEnum::DrawAttributeBar_Brush1);
+							i <= static_cast<int>(BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay); i++)
+						{
+							auto obj = wordMap[static_cast<BarUISetWordEnum>(i)];
+							if (!obj) continue;
+							obj->x.SetTar(obj->x.tar, operationDur, nullopt, true);
+							obj->y.SetTar(obj->y.tar, operationDur, nullopt, true);
+							obj->w.SetTar(obj->w.tar, operationDur, nullopt, true);
+							obj->h.SetTar(obj->h.tar, operationDur, nullopt, true);
+							obj->size.SetTar(obj->size.tar, operationDur, nullopt, true);
+							obj->pct.SetTar(obj->pct.tar, operationDur, nullopt, true);
+						}
+					}
+
 					if (drawAttributeSideSwitch)
 					{
 						// 上下换边与主栏一致：先收拢到绘制按钮位置并隐藏，再向另一侧展开。
@@ -2400,6 +2458,10 @@ void BarUISetClass::Rendering()
 				if (!temp->name.pct.IsSame()) ChangePct(temp->name.pct, forceReplace), change = true;
 			}
 		}
+
+		// 时间轴与属性值在同一帧末尾推进，避免批次剩余时间和实际动画相差一帧。
+		mainBarTimeline.Advance(animationDtSeconds, BarUiAnimationSpeedRate);
+		drawAttributeTimeline.Advance(animationDtSeconds, BarUiAnimationSpeedRate);
 
 	#pragma endregion
 
