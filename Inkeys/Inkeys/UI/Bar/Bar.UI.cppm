@@ -132,6 +132,11 @@ public:
 	{
 		return clamp(progress, 0.0, 1.0);
 	}
+	bool CanJoin(double maxProgress = 0.8) const
+	{
+		maxProgress = isfinite(maxProgress) ? clamp(maxProgress, 0.0, 1.0) : 0.8;
+		return IsActive() && GetProgress() <= maxProgress;
+	}
 
 private:
 	double duration = 0.0; // 基础总时长，不包含全局速度倍率

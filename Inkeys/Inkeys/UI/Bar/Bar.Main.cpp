@@ -928,8 +928,11 @@ void BarUISetClass::Rendering()
 				&& abs(layoutTotalWidth - mainBarLayoutWidth.value()) > 0.000001;
 			bool mainBarLayoutExpands = mainBarLayoutChange
 				&& layoutTotalWidth > mainBarLayoutWidth.value();
-			// 新操作创建完整批次；已有批次中的布局重算只继承剩余时间，不延后结束时刻。
+			// 新操作创建完整批次；批次进入最后 20% 后，新布局不再压缩到旧截止时间。
+			bool lateMainBarLayoutChange = !barState.fold && mainBarTimeline.IsActive()
+				&& mainBarLayoutChange && !mainBarTimeline.CanJoin();
 			bool restartMainBarTimeline = mainBarFoldChange || mainBarSideSwitch
+				|| lateMainBarLayoutChange
 				|| (!barState.fold && !mainBarTimeline.IsActive() && mainBarLayoutChange);
 			if (restartMainBarTimeline)
 			{
@@ -943,7 +946,7 @@ void BarUISetClass::Rendering()
 			}
 			else if (mainBarTimeline.IsActive() && mainBarLayoutChange)
 			{
-				// 批次中途反向改变布局时只更换新目标曲线，仍沿用原截止时间。
+				// 前 80% 内反向改变布局时只更换新目标曲线，仍沿用原截止时间。
 				mainBarBatchCurve = mainBarLayoutExpands
 					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack;
 			}
@@ -1471,8 +1474,8 @@ void BarUISetClass::Rendering()
 					bool continueDrawAttributePhase = false;
 					if (drawAttributeBatchChange)
 					{
-						// 主栏批次仍活跃时直接加入其剩余过程，不重启也不延后主栏结束时刻。
-						if (mainBarTimeline.IsActive())
+						// 只在主栏批次前 80% 内加入；太晚则使用完整时长创建独立新批次。
+						if (mainBarTimeline.CanJoin())
 						{
 							operationDur = mainBarTimeline.GetRemainingDuration();
 							drawAttributePhase = mainBarTimeline.GetProgress();
