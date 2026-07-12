@@ -54,12 +54,7 @@ class BarButtomClass
 {
 public:
 	BarButtomClass()
-	{
-		hover.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(127, 127, 127), nullopt);
-		hover.pct.Initialization(0.0);
-		hover.enable.Initialization(true);
-		hover.forceReplace = false;
-	}
+	{}
 	// 拷贝构造函数，深拷贝所有数据成员，mutex新建
 	BarButtomClass(const BarButtomClass& other)
 		: size(other.size),
@@ -67,7 +62,6 @@ public:
 		hide(other.hide),
 		only(other.only),
 		buttom(other.buttom),
-		hover(other.hover),
 		hoverStage(other.hoverStage),
 		name(other.name),
 		icon(other.icon),
@@ -87,7 +81,7 @@ public:
 
 	// 按钮控件
 	BarUiShapeClass buttom;
-	BarUiShapeClass hover; // 独立灰色悬停覆盖层，不影响选中和按压背景
+	// 悬停、按下和选中共用按钮原背景层，避免多层透明色叠加时发生闪变。
 	IdtAtomic<BarButtomHoverStageEnum> hoverStage = BarButtomHoverStageEnum::None;
 	BarUiWordClass name;
 	BarUiSVGClass icon;

@@ -1008,7 +1008,8 @@ void BarUISetClass::Rendering()
 										{
 											if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1, operationDur);
 											else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2, operationDur);
-											else temp->buttom.pct.SetTar(0.0, operationDur);
+											else if (temp->hoverStage == BarButtomHoverStageEnum::None)
+												temp->buttom.pct.SetTar(0.0, operationDur);
 										}
 									}
 								temp->buttom.w.SetTar(30.0, operationDur);
@@ -1016,9 +1017,9 @@ void BarUISetClass::Rendering()
 
 									if (!isColorSelector)
 									{
-										if (temp->state->emph == BarWidgetEmphasize::Pressed && temp->state->state != BarWidgetState::Selected)
-											temp->buttom.fill.value().SetTar(RGB(127, 127, 127));
-										else temp->buttom.fill.value().SetTar(RGB(88, 255, 236));
+										if (temp->state->state == BarWidgetState::Selected)
+											temp->buttom.fill.value().SetTar(RGB(88, 255, 236));
+										else temp->buttom.fill.value().SetTar(RGB(127, 127, 127));
 									}
 								}
 								if (temp->icon.enable.tar)
@@ -1114,14 +1115,15 @@ void BarUISetClass::Rendering()
 
 										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1, operationDur);
 										else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2, operationDur);
-										else temp->buttom.pct.SetTar(0.0, operationDur);
+									else if (temp->hoverStage == BarButtomHoverStageEnum::None)
+										temp->buttom.pct.SetTar(0.0, operationDur);
 									}
 								temp->buttom.w.SetTar(70.0, operationDur);
 								temp->buttom.h.SetTar(30.0, operationDur);
 
-									if (temp->state->emph == BarWidgetEmphasize::Pressed && temp->state->state != BarWidgetState::Selected)
-										temp->buttom.fill.value().SetTar(RGB(127, 127, 127));
-									else temp->buttom.fill.value().SetTar(RGB(88, 255, 236));
+								if (temp->state->state == BarWidgetState::Selected)
+									temp->buttom.fill.value().SetTar(RGB(88, 255, 236));
+								else temp->buttom.fill.value().SetTar(RGB(127, 127, 127));
 								}
 								if (temp->icon.enable.tar)
 								{
@@ -1212,14 +1214,15 @@ void BarUISetClass::Rendering()
 
 										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1, operationDur);
 										else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2, operationDur);
-										else temp->buttom.pct.SetTar(0.0, operationDur);
+									else if (temp->hoverStage == BarButtomHoverStageEnum::None)
+										temp->buttom.pct.SetTar(0.0, operationDur);
 									}
 								temp->buttom.w.SetTar(70.0, operationDur);
 								temp->buttom.h.SetTar(70.0, operationDur);
 
-									if (temp->state->emph == BarWidgetEmphasize::Pressed && temp->state->state != BarWidgetState::Selected)
-										temp->buttom.fill.value().SetTar(RGB(127, 127, 127));
-									else temp->buttom.fill.value().SetTar(RGB(88, 255, 236));
+								if (temp->state->state == BarWidgetState::Selected)
+									temp->buttom.fill.value().SetTar(RGB(88, 255, 236));
+								else temp->buttom.fill.value().SetTar(RGB(127, 127, 127));
 								}
 								if (temp->icon.enable.tar)
 								{
@@ -1299,13 +1302,14 @@ void BarUISetClass::Rendering()
 									SetButtonPositionTar(temp->buttom.y, yO + 35.0, 40.0);
 
 										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.2, operationDur);
-										else temp->buttom.pct.SetTar(0.0, operationDur);
+									else if (temp->hoverStage == BarButtomHoverStageEnum::None)
+										temp->buttom.pct.SetTar(0.0, operationDur);
 									}
 								temp->buttom.w.SetTar(10.0, operationDur);
 								temp->buttom.h.SetTar(70.0, operationDur);
 
-									if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.fill.value().SetTar(RGB(127, 127, 127));
-									else temp->buttom.fill.value().SetTar(RGB(88, 255, 236));
+								// 分割线没有选中状态，隐藏时也预存灰色，避免悬停显现前段混入青色。
+								temp->buttom.fill.value().SetTar(RGB(127, 127, 127));
 								}
 								if (temp->icon.enable.tar)
 								{
@@ -1906,8 +1910,11 @@ void BarUISetClass::Rendering()
 								wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->h.SetTar(15.0);
 								wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->size.SetTar(12.0);
 
-								if (barState.drawAttributeBar.brush1Press && stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenBrush1) shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->pct.SetTar(0.1);
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->pct.SetTar(0.0);
+								if (barState.drawAttributeBar.brush1Press && stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenBrush1)
+									shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->pct.SetTar(0.1);
+								else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1
+									|| drawAttributeBrushHoverStage == BarButtomHoverStageEnum::None)
+									shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->pct.SetTar(0.0);
 
 								svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1]->pct.SetTar(1.0);
 								wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->pct.SetTar(1.0);
@@ -1939,9 +1946,7 @@ void BarUISetClass::Rendering()
 								}
 							}
 
-							if (barState.drawAttributeBar.brush1Press && stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenBrush1)
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->fill.value().SetTar(RGB(127, 127, 127));
-							else shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->fill.value().SetTar(RGB(88, 255, 236));
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->fill.value().SetTar(RGB(127, 127, 127));
 						}
 						// 荧光笔
 						{
@@ -1976,8 +1981,11 @@ void BarUISetClass::Rendering()
 								wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->h.SetTar(15.0);
 								wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->size.SetTar(12.0);
 
-								if (barState.drawAttributeBar.highlight1Press && stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHighlighter1) shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->pct.SetTar(0.1);
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->pct.SetTar(0.0);
+								if (barState.drawAttributeBar.highlight1Press && stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHighlighter1)
+									shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->pct.SetTar(0.1);
+								else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
+									|| drawAttributeHighlightHoverStage == BarButtomHoverStageEnum::None)
+									shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->pct.SetTar(0.0);
 
 								svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1]->pct.SetTar(1.0);
 								wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->pct.SetTar(1.0);
@@ -2009,9 +2017,7 @@ void BarUISetClass::Rendering()
 								}
 							}
 
-							if (barState.drawAttributeBar.highlight1Press && stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHighlighter1)
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->fill.value().SetTar(RGB(127, 127, 127));
-							else shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->fill.value().SetTar(RGB(88, 255, 236));
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->fill.value().SetTar(RGB(127, 127, 127));
 						}
 
 						// 选中
@@ -2555,17 +2561,17 @@ void BarUISetClass::Rendering()
 		}
 
 		auto UpdateHoverAnimation = [&](BarUiPctClass& hoverPct,
-			IdtAtomic<BarButtomHoverStageEnum>& hoverStage, bool visible)
+			IdtAtomic<BarButtomHoverStageEnum>& hoverStage, bool visible, bool hoverAllowed)
 			{
-				if (!visible)
+				if (!visible || !hoverAllowed)
 				{
+					// 背景层还承载按下和选中状态，此处只取消悬停，透明度交由状态动画接管。
 					hoverStage = BarButtomHoverStageEnum::None;
-					hoverPct.SetDirect(0.0);
 				}
 				else if (hoverStage == BarButtomHoverStageEnum::Showing
 					&& hoverPct.IsSame())
 				{
-					// 快速显现完成后立即进入独立的 5 秒渐隐阶段，同一次进入不会重新计时。
+					// 快速显现完成后立即进入独立渐隐阶段，同一次进入不会重新计时。
 					hoverStage = BarButtomHoverStageEnum::Fading;
 					const BarUiCurveSpecClass hoverFadeCurve{
 						BarUiCurveEnum::EaseInSine, BarUiCurveEnum::EaseInSine, 0.0, false };
@@ -2576,21 +2582,22 @@ void BarUISetClass::Rendering()
 				{
 					hoverStage = BarButtomHoverStageEnum::None;
 				}
-
-				if (!hoverPct.IsSame()) ChangePct(hoverPct, false);
 			};
 
-		UpdateHoverAnimation(drawAttributeBrushHover.pct,
-			drawAttributeBrushHoverStage, barState.drawAttribute);
-		UpdateHoverAnimation(drawAttributeHighlightHover.pct,
-			drawAttributeHighlightHoverStage, barState.drawAttribute);
+		UpdateHoverAnimation(shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->pct,
+			drawAttributeBrushHoverStage, barState.drawAttribute,
+			stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenBrush1);
+		UpdateHoverAnimation(shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->pct,
+			drawAttributeHighlightHoverStage, barState.drawAttribute,
+			stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHighlighter1);
 
 		// 特殊体质：按钮
 		for (int id = 0; id < barButtomSet.tot; id++)
 		{
 			BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
 			if (temp == nullptr) continue;
-			UpdateHoverAnimation(temp->hover.pct, temp->hoverStage, !barState.fold && !temp->hide);
+			UpdateHoverAnimation(temp->buttom.pct, temp->hoverStage,
+				!barState.fold && !temp->hide, temp->state->state != BarWidgetState::Selected);
 
 			{
 				bool forceReplace = false, change = false;;
@@ -2792,14 +2799,6 @@ void BarUISetClass::Rendering()
 							{
 								auto obj1 = BarUISetShapeEnum::DrawAttributeBar_Brush1;
 								spec.Shape(barDeviceContext.Get(), *shapeMap[obj1], shapeMap[obj1]->Inherit(Left, *shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]));
-								drawAttributeBrushHover.w.SetDirect(shapeMap[obj1]->w.val);
-								drawAttributeBrushHover.h.SetDirect(shapeMap[obj1]->h.val);
-								if (drawAttributeBrushHover.rw.has_value() && shapeMap[obj1]->rw.has_value())
-									drawAttributeBrushHover.rw.value().SetDirect(shapeMap[obj1]->rw.value().val);
-								if (drawAttributeBrushHover.rh.has_value() && shapeMap[obj1]->rh.has_value())
-									drawAttributeBrushHover.rh.value().SetDirect(shapeMap[obj1]->rh.value().val);
-								spec.Shape(barDeviceContext.Get(), drawAttributeBrushHover,
-									drawAttributeBrushHover.Inherit(Center, *shapeMap[obj1]));
 
 								auto obj2 = BarUISetSvgEnum::DrawAttributeBar_Brush1;
 								spec.Svg(barDeviceContext.Get(), *svgMap[obj2], svgMap[obj2]->Inherit(Top, *shapeMap[obj1]));
@@ -2811,14 +2810,6 @@ void BarUISetClass::Rendering()
 							{
 								auto obj1 = BarUISetShapeEnum::DrawAttributeBar_Highlight1;
 								spec.Shape(barDeviceContext.Get(), *shapeMap[obj1], shapeMap[obj1]->Inherit(Left, *shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]));
-								drawAttributeHighlightHover.w.SetDirect(shapeMap[obj1]->w.val);
-								drawAttributeHighlightHover.h.SetDirect(shapeMap[obj1]->h.val);
-								if (drawAttributeHighlightHover.rw.has_value() && shapeMap[obj1]->rw.has_value())
-									drawAttributeHighlightHover.rw.value().SetDirect(shapeMap[obj1]->rw.value().val);
-								if (drawAttributeHighlightHover.rh.has_value() && shapeMap[obj1]->rh.has_value())
-									drawAttributeHighlightHover.rh.value().SetDirect(shapeMap[obj1]->rh.value().val);
-								spec.Shape(barDeviceContext.Get(), drawAttributeHighlightHover,
-									drawAttributeHighlightHover.Inherit(Center, *shapeMap[obj1]));
 
 								auto obj2 = BarUISetSvgEnum::DrawAttributeBar_Highlight1;
 								spec.Svg(barDeviceContext.Get(), *svgMap[obj2], svgMap[obj2]->Inherit(Top, *shapeMap[obj1]));
@@ -3018,13 +3009,6 @@ void BarUISetClass::Rendering()
 						if (temp == nullptr) continue;
 
 						spec.Shape(barDeviceContext.Get(), temp->buttom, temp->buttom.Inherit(CenterFromTopLeft, *shapeMap[BarUISetShapeEnum::MainBar]));
-						temp->hover.w.SetDirect(temp->buttom.w.val);
-						temp->hover.h.SetDirect(temp->buttom.h.val);
-						if (temp->hover.rw.has_value() && temp->buttom.rw.has_value())
-							temp->hover.rw.value().SetDirect(temp->buttom.rw.value().val);
-						if (temp->hover.rh.has_value() && temp->buttom.rh.has_value())
-							temp->hover.rh.value().SetDirect(temp->buttom.rh.value().val);
-						spec.Shape(barDeviceContext.Get(), temp->hover, temp->hover.Inherit(Center, temp->buttom));
 						spec.Svg(barDeviceContext.Get(), temp->icon, temp->icon.Inherit(Center, temp->buttom));
 						spec.Word(barDeviceContext.Get(), temp->name, temp->name.Inherit(Center, temp->buttom));
 					}
@@ -3072,16 +3056,10 @@ void BarUISetClass::Rendering()
 						BarRenderingAttribute::UnionRectInPlace(
 							current, BarRenderingAttribute::GetWeigetRect(temp->buttom, dirtyZoom));
 						BarRenderingAttribute::UnionRectInPlace(
-							current, BarRenderingAttribute::GetWeigetRect(temp->hover, dirtyZoom));
-						BarRenderingAttribute::UnionRectInPlace(
 							current, BarRenderingAttribute::GetWeigetRect(temp->icon, dirtyZoom));
 						BarRenderingAttribute::UnionRectInPlace(
 							current, BarRenderingAttribute::GetWeigetRect(temp->name, dirtyZoom));
 					}
-					BarRenderingAttribute::UnionRectInPlace(
-						current, BarRenderingAttribute::GetWeigetRect(drawAttributeBrushHover, dirtyZoom));
-					BarRenderingAttribute::UnionRectInPlace(
-						current, BarRenderingAttribute::GetWeigetRect(drawAttributeHighlightHover, dirtyZoom));
 				}
 			{ /**/ }
 
@@ -3249,6 +3227,7 @@ void BarUISetClass::Interact()
 	struct HoverVisualRef
 	{
 		BarUiPctClass* pct = nullptr;
+		BarUiColorClass* fill = nullptr;
 		IdtAtomic<BarButtomHoverStageEnum>* stage = nullptr;
 	};
 	auto GetIndependentHoverVisual = [&](IndependentHoverTargetEnum target) -> HoverVisualRef
@@ -3256,19 +3235,24 @@ void BarUISetClass::Interact()
 			switch (target)
 			{
 			case IndependentHoverTargetEnum::DrawAttributeBrush:
-				return { &drawAttributeBrushHover.pct, &drawAttributeBrushHoverStage };
+				return { &shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->pct,
+					&shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->fill.value(),
+					&drawAttributeBrushHoverStage };
 			case IndependentHoverTargetEnum::DrawAttributeHighlight:
-				return { &drawAttributeHighlightHover.pct, &drawAttributeHighlightHoverStage };
+				return { &shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->pct,
+					&shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->fill.value(),
+					&drawAttributeHighlightHoverStage };
 			default:
 				return {};
 			}
 		};
-	auto StartHover = [&](BarUiPctClass* hoverPct,
+	auto StartHover = [&](BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
 		IdtAtomic<BarButtomHoverStageEnum>* hoverStage)
 		{
-			if (!hoverPct || !hoverStage) return;
+			if (!hoverPct || !hoverFill || !hoverStage) return;
 			const BarUiCurveSpecClass hoverShowCurve{
 				BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine, 0.0, false };
+			hoverFill->SetTar(RGB(127, 127, 127), BarButtonHoverShowDur, hoverShowCurve);
 			hoverPct->SetTar(
 				BarButtonHoverOpacity, BarButtonHoverShowDur, nullopt, true, hoverShowCurve);
 			*hoverStage = BarButtomHoverStageEnum::Showing;
@@ -3278,10 +3262,11 @@ void BarUISetClass::Interact()
 		IdtAtomic<BarButtomHoverStageEnum>* hoverStage, bool immediate)
 		{
 			if (!hoverPct || !hoverStage) return;
-			*hoverStage = BarButtomHoverStageEnum::None;
-			if (immediate) hoverPct->SetDirect(0.0);
+			if (immediate) *hoverStage = BarButtomHoverStageEnum::None;
 			else
 			{
+				// 离开后仍保持灰色背景，直到同一层透明度自然降为零。
+				*hoverStage = BarButtomHoverStageEnum::Fading;
 				const BarUiCurveSpecClass hoverExitCurve{
 					BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine, 0.0, false };
 				hoverPct->SetTar(0.0, BarButtonHoverExitDur, nullopt, true, hoverExitCurve);
@@ -3290,16 +3275,17 @@ void BarUISetClass::Interact()
 		};
 	auto StartMainBarButtonHover = [&](BarButtomClass* button)
 		{
-			if (button) StartHover(&button->hover.pct, &button->hoverStage);
+			if (button && button->buttom.fill.has_value())
+				StartHover(&button->buttom.pct, &button->buttom.fill.value(), &button->hoverStage);
 		};
 	auto StopMainBarButtonHover = [&](BarButtomClass* button, bool immediate)
 		{
-			if (button) StopHover(&button->hover.pct, &button->hoverStage, immediate);
+			if (button) StopHover(&button->buttom.pct, &button->hoverStage, immediate);
 		};
 	auto StartIndependentHover = [&](IndependentHoverTargetEnum target)
 		{
 			auto hover = GetIndependentHoverVisual(target);
-			StartHover(hover.pct, hover.stage);
+			StartHover(hover.pct, hover.fill, hover.stage);
 		};
 	auto StopIndependentHover = [&](IndependentHoverTargetEnum target, bool immediate)
 		{
@@ -3332,7 +3318,10 @@ void BarUISetClass::Interact()
 				for (int id = 0; id < barButtomSet.tot; id++)
 				{
 					BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
-					if (!temp || temp->hide) continue;
+					if (!temp || temp->hide || temp->state->state == BarWidgetState::Selected) continue;
+					bool isColorSelector = temp->name.enable.tar
+						&& temp->name.content.GetTar().substr(0, 7) == L"__color";
+					if (isColorSelector) continue; // 颜色块自身就是内容，不把其填充色改成悬停灰色。
 					if (temp->buttom.IsClick(msg.x, msg.y, barStyle.zoom))
 					{
 						currentHoveredButton = temp;
@@ -3351,12 +3340,14 @@ void BarUISetClass::Interact()
 			if (barState.drawAttribute)
 			{
 				if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1];
-					obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+					stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenBrush1
+					&& obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
 				{
 					currentIndependentButton = IndependentHoverTargetEnum::DrawAttributeBrush;
 				}
 				else if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1];
-					obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+					stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHighlighter1
+					&& obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
 				{
 					currentIndependentButton = IndependentHoverTargetEnum::DrawAttributeHighlight;
 				}
@@ -3416,10 +3407,11 @@ void BarUISetClass::Interact()
 						if (msg.message == WM_LBUTTONDOWN || msg.message == WM_LBUTTONDBLCLK)
 						{
 							bool clickCompleted = false;
-							// 按压立即清除悬停；抬起后必须收到新的鼠标移动才能再次进入。
+							// 同一背景层先切换到按下状态；抬起后必须收到新的鼠标移动才能再次悬停。
+							temp->state->emph = BarWidgetEmphasize::Pressed;
 							StopMainBarButtonHover(hoveredMainBarButton, true);
 							hoveredMainBarButton = nullptr;
-							temp->state->emph = BarWidgetEmphasize::Pressed; UpdateRendering(false);
+							UpdateRendering(false);
 							while (true)
 							{
 								hiex::getmessage_win32(&msg, EM_MOUSE, floating_window);
@@ -3489,9 +3481,10 @@ void BarUISetClass::Interact()
 					continueFlag = false;
 					if (msg.message == WM_LBUTTONDOWN)
 					{
+						barState.drawAttributeBar.brush1Press = true;
 						StopIndependentHover(hoveredIndependentButton, true);
 						hoveredIndependentButton = IndependentHoverTargetEnum::None;
-						barState.drawAttributeBar.brush1Press = true; UpdateRendering(false);
+						UpdateRendering(false);
 						while (true)
 						{
 							hiex::getmessage_win32(&msg, EM_MOUSE, floating_window);
@@ -3519,9 +3512,10 @@ void BarUISetClass::Interact()
 					continueFlag = false;
 					if (msg.message == WM_LBUTTONDOWN)
 					{
+						barState.drawAttributeBar.highlight1Press = true;
 						StopIndependentHover(hoveredIndependentButton, true);
 						hoveredIndependentButton = IndependentHoverTargetEnum::None;
-						barState.drawAttributeBar.highlight1Press = true; UpdateRendering(false);
+						UpdateRendering(false);
 						while (true)
 						{
 							hiex::getmessage_win32(&msg, EM_MOUSE, floating_window);
@@ -3917,12 +3911,6 @@ namespace Inkeys::UI::Bar
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1] = shape;
 
-							barUISet.drawAttributeBrushHover.Initialization(
-								0.0, 0.0, 50.0, 50.0, 4.0, 4.0, nullopt, RGB(127, 127, 127), nullopt);
-							barUISet.drawAttributeBrushHover.pct.Initialization(0.0);
-							barUISet.drawAttributeBrushHover.enable.Initialization(true);
-							barUISet.drawAttributeBrushHover.forceReplace = false;
-
 							auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, RGB(0, 0, 0), nullopt);
 							svg->InitializationFromResource(L"UI", L"barBrush1");
 							svg->SetWH(nullopt, 20.0);
@@ -3938,12 +3926,6 @@ namespace Inkeys::UI::Bar
 							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 50.0, 50.0, 4.0, 4.0, 1.0, RGB(0, 0, 0), nullopt);
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1] = shape;
-
-							barUISet.drawAttributeHighlightHover.Initialization(
-								0.0, 0.0, 50.0, 50.0, 4.0, 4.0, nullopt, RGB(127, 127, 127), nullopt);
-							barUISet.drawAttributeHighlightHover.pct.Initialization(0.0);
-							barUISet.drawAttributeHighlightHover.enable.Initialization(true);
-							barUISet.drawAttributeHighlightHover.forceReplace = false;
 
 							auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, RGB(0, 0, 0), nullopt);
 							svg->InitializationFromResource(L"UI", L"barHighlighter1");

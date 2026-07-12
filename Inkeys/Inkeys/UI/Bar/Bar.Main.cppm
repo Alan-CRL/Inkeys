@@ -167,9 +167,7 @@ public:
 	ankerl::unordered_dense::map<BarUISetSvgEnum, shared_ptr<BarUiSVGClass>> svgMap;
 	ankerl::unordered_dense::map<BarUISetWordEnum, shared_ptr<BarUiWordClass>> wordMap;
 
-	// 独立悬停层不复用按钮原背景，避免影响按压和选中状态。
-	BarUiShapeClass drawAttributeBrushHover;
-	BarUiShapeClass drawAttributeHighlightHover;
+	// 绘制属性按钮同样复用自身背景层，仅单独记录悬停动画阶段。
 	IdtAtomic<BarButtomHoverStageEnum> drawAttributeBrushHoverStage = BarButtomHoverStageEnum::None;
 	IdtAtomic<BarButtomHoverStageEnum> drawAttributeHighlightHoverStage = BarButtomHoverStageEnum::None;
 
