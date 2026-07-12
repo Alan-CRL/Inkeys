@@ -27,10 +27,9 @@ import Inkeys.Conv.Text;
 
 constexpr double BarButtonHoverOpacity = 0.18;
 constexpr double BarButtonPressScale = 0.95;
-// 悬停动画暂时与其他 UI 一同慢放十倍，便于观察显现和渐隐细节。
-constexpr double BarButtonHoverShowDur = 1.2;
-constexpr double BarButtonHoverExitDur = 1.2;
-constexpr double BarButtonHoverFadeDur = 50.0;
+constexpr double BarButtonHoverShowDur = 0.12;
+constexpr double BarButtonHoverExitDur = 0.12;
+constexpr double BarButtonHoverFadeDur = 5.0;
 
 // ====================
 // 窗口
@@ -940,6 +939,9 @@ void BarUISetClass::Rendering()
 				&& abs(layoutTotalWidth - mainBarLayoutWidth.value()) > 0.000001;
 			bool mainBarLayoutExpands = mainBarLayoutChange
 				&& layoutTotalWidth > mainBarLayoutWidth.value();
+			// 布局变化会取代仍在运行的换边关键帧；即使某个控件目标没变，也必须从当前值重建。
+			bool interruptingMainBarSideSwitch = mainBarLayoutChange && mainBarTimeline.IsActive()
+				&& (mainBar->x.hasMiddleV || mainBar->w.hasMiddleV);
 			// 新操作创建完整批次；批次进入最后 30% 后，新布局不再压缩到旧截止时间。
 			bool lateMainBarLayoutChange = !barState.fold && mainBarTimeline.IsActive()
 				&& mainBarLayoutChange && !mainBarTimeline.CanJoin();
@@ -958,24 +960,33 @@ void BarUISetClass::Rendering()
 			}
 			else if (mainBarTimeline.IsActive() && mainBarLayoutChange)
 			{
-				// 前 70% 内反向改变布局时只更换新目标曲线，仍沿用原截止时间。
-				mainBarBatchCurve = mainBarLayoutExpands
-					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack;
+				// 换边中途加入布局时用完整平滑曲线覆盖剩余时间，避免压缩重播 Back 造成突发加速。
+				mainBarBatchCurve = interruptingMainBarSideSwitch
+					? BarUiCurveEnum::EaseInOutCubic
+					: (mainBarLayoutExpands ? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack);
 			}
 			mainBarLayoutWidth = layoutTotalWidth;
 			if (mainBarTimeline.IsActive()) operationDur = mainBarTimeline.GetRemainingDuration();
 			double mainBarPhase = mainBarTimeline.IsActive() ? mainBarTimeline.GetProgress() : 0.0;
-			bool continueMainBarPhase = mainBarTimeline.IsActive() && mainBarPhase > 0.0;
+			bool continueMainBarPhase = mainBarTimeline.IsActive() && mainBarPhase > 0.0
+				&& !interruptingMainBarSideSwitch;
 			syncValueCurveFromBatch = mainBarTimeline.IsActive();
 			BarUiCurveEnum syncedMainBarCurve = mainBarTimeline.IsActive()
 				? mainBarBatchCurve : BarUiCurveEnum::EaseInOutCubic;
-			BarUiCurveEnum syncedMainBarPctCurve = mainBarTimeline.IsActive()
-				&& mainBarBatchCurve == BarUiCurveEnum::EaseInBack
-				? BarUiCurveEnum::EaseInSine : BarUiCurveEnum::EaseOutSine;
+			BarUiCurveEnum syncedMainBarPctCurve = mainBarLayoutChange
+				? (mainBarLayoutExpands ? BarUiCurveEnum::EaseOutSine : BarUiCurveEnum::EaseInSine)
+				: (mainBarTimeline.IsActive() && mainBarBatchCurve == BarUiCurveEnum::EaseInBack
+					? BarUiCurveEnum::EaseInSine : BarUiCurveEnum::EaseOutSine);
 			syncedValueCurve = { syncedMainBarCurve, syncedMainBarCurve,
 				mainBarPhase, continueMainBarPhase };
 			syncedPctCurve = { syncedMainBarPctCurve, syncedMainBarPctCurve,
 				mainBarPhase, continueMainBarPhase };
+			const BarUiCurveSpecClass continuedKeyframeValueCurve{
+				BarUiCurveEnum::EaseInCubic, BarUiCurveEnum::EaseOutBack,
+				mainBarPhase, true };
+			const BarUiCurveSpecClass continuedKeyframePctCurve{
+				BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine,
+				mainBarPhase, true };
 			auto SetButtonPositionTar = [&](BarUiValueClass& value, double target, double middle, bool mirrorX = false)
 				{
 					// 左侧展开仍按正序布局，只将最终横坐标按主栏宽度镜像。
@@ -984,7 +995,13 @@ void BarUISetClass::Rendering()
 					{
 						value.SetTar(target, operationDur, middle, true, keyframeValueCurve);
 					}
-					else value.SetTar(target, operationDur, nullopt, mainBarFoldChange, syncedValueCurve);
+					else if (interruptingMainBarSideSwitch)
+					{
+						// 父栏和按钮必须继续共享换边中点，否则继承坐标会叠加出先后错位。
+						value.SetTar(target, operationDur, middle, true, continuedKeyframeValueCurve);
+					}
+					else value.SetTar(target, operationDur, nullopt,
+						mainBarFoldChange, syncedValueCurve);
 				};
 
 			// 按钮位置计算（特别操作）
@@ -1404,12 +1421,14 @@ void BarUISetClass::Rendering()
 							SyncValueDuration(temp->name.size);
 							SyncPctDuration(temp->name.pct);
 
-							if (mainBarSideSwitch)
+							if (mainBarSideSwitch || interruptingMainBarSideSwitch)
 							{
 								// 换边中点将整个按钮组合隐藏，再从主按钮下方展开到新位置。
-								temp->buttom.pct.SetTar(temp->buttom.pct.tar, operationDur, 0.0, true, keyframePctCurve);
-								temp->icon.pct.SetTar(temp->icon.pct.tar, operationDur, 0.0, true, keyframePctCurve);
-								temp->name.pct.SetTar(temp->name.pct.tar, operationDur, 0.0, true, keyframePctCurve);
+								const BarUiCurveSpecClass& pctCurve = mainBarSideSwitch
+									? keyframePctCurve : continuedKeyframePctCurve;
+								temp->buttom.pct.SetTar(temp->buttom.pct.tar, operationDur, 0.0, true, pctCurve);
+								temp->icon.pct.SetTar(temp->icon.pct.tar, operationDur, 0.0, true, pctCurve);
+								temp->name.pct.SetTar(temp->name.pct.tar, operationDur, 0.0, true, pctCurve);
 							}
 						}
 					}, viewVariant);
@@ -1446,8 +1465,13 @@ void BarUISetClass::Rendering()
 				}
 				else
 				{
-					if (mainBarSideSwitch) mainBar->w.SetTar(totalWidth, operationDur, 80.0, true, keyframeValueCurve);
-					else mainBar->w.SetTar(totalWidth, operationDur, nullopt, mainBarFoldChange, syncedValueCurve);
+					if (mainBarSideSwitch)
+						mainBar->w.SetTar(totalWidth, operationDur, 80.0, true, keyframeValueCurve);
+					else if (interruptingMainBarSideSwitch)
+						// 布局目标变化不能丢掉换边中点，继续在原批次 0.5 时刻收窄到主按钮宽度。
+						mainBar->w.SetTar(totalWidth, operationDur, 80.0, true, continuedKeyframeValueCurve);
+					else mainBar->w.SetTar(totalWidth, operationDur, nullopt,
+						mainBarFoldChange, syncedValueCurve);
 
 					double targetX = 0.0;
 					if (barState.widgetPosition.mainBar)
@@ -1455,17 +1479,26 @@ void BarUISetClass::Rendering()
 					else
 						targetX = -(superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetW() / 2.0 + mainBar->w.tar / 2.0 + 10.0);
 
-					if (mainBarSideSwitch) mainBar->x.SetTar(targetX, operationDur, 0.0, true, keyframeValueCurve);
-					else mainBar->x.SetTar(targetX, operationDur, nullopt, mainBarFoldChange, syncedValueCurve);
+					if (mainBarSideSwitch)
+						mainBar->x.SetTar(targetX, operationDur, 0.0, true, keyframeValueCurve);
+					else if (interruptingMainBarSideSwitch)
+						mainBar->x.SetTar(targetX, operationDur, 0.0, true, continuedKeyframeValueCurve);
+					else mainBar->x.SetTar(targetX, operationDur, nullopt,
+						mainBarFoldChange, syncedValueCurve);
 
-					shapeMap[BarUISetShapeEnum::MainBar]->pct.SetTar(0.8, operationDur, nullopt, false, syncedPctCurve);
-					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().SetTar(0.18, operationDur, nullopt, false, syncedPctCurve);
+					shapeMap[BarUISetShapeEnum::MainBar]->pct.SetTar(
+						0.8, operationDur, nullopt, false, syncedPctCurve);
+					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().SetTar(
+						0.18, operationDur, nullopt, false, syncedPctCurve);
 				}
-				if (mainBarSideSwitch)
+				if (mainBarSideSwitch || interruptingMainBarSideSwitch)
 				{
 					// 主栏填充和边框在换边关键帧同步变为全透明。
-					mainBar->pct.SetTar(mainBar->pct.tar, operationDur, 0.0, true, keyframePctCurve);
-					mainBar->framePct.value().SetTar(mainBar->framePct.value().tar, operationDur, 0.0, true, keyframePctCurve);
+					const BarUiCurveSpecClass& pctCurve = mainBarSideSwitch
+						? keyframePctCurve : continuedKeyframePctCurve;
+					mainBar->pct.SetTar(mainBar->pct.tar, operationDur, 0.0, true, pctCurve);
+					mainBar->framePct.value().SetTar(
+						mainBar->framePct.value().tar, operationDur, 0.0, true, pctCurve);
 				}
 				if (barStyle.darkStyle)
 				{
@@ -3766,6 +3799,14 @@ BarUISetClass barUISet;
 
 namespace Inkeys::UI::Bar
 {
+	void SetAnimationOptions(bool enable, double speedRate)
+	{
+		speedRate = isfinite(speedRate) ? clamp(speedRate, 0.1, 5.0) : 1.0;
+		// 使用足够大的有限倍率统一完成普通动画、批次和 SVG 关键帧，不能用 0 让时间轴停住。
+		BarUiAnimationSpeedRate = enable ? speedRate : 1.0e12;
+		barUISet.UpdateRendering(false);
+	}
+
 	void Initialization()
 	{
 		Inkeys::Thread::StatusGuard guard("BarInitializationClass::BarInitialization");

@@ -18,9 +18,9 @@ import Inkeys.Helper.Thread;
 // ====================
 // 动画
 
-IdtAtomic<double> BarUiDefaultDes = 120.0; // 全局默认速度 px/s；当前为正常速度的十分之一，便于观察动画细节
-IdtAtomic<double> BarUiDefaultOperationDur = 2.0; // 默认操作过程时长 s；正常预期约 0.2s，当前放慢十倍
-IdtAtomic<double> BarUiAnimationSpeedRate = 1.00; // 全局动画速度倍率，运行时作用于过程进度，不改变基础 dur
+IdtAtomic<double> BarUiDefaultDes = 1200.0; // 全局默认速度 px/s
+IdtAtomic<double> BarUiDefaultOperationDur = 0.2; // 默认操作过程时长 s
+IdtAtomic<double> BarUiAnimationSpeedRate = 1.00; // 有效速度倍率；关闭动画时由配置接口切换为即时完成倍率
 
 // ====================
 // 窗口
@@ -199,6 +199,7 @@ enum class BarLogoColorSchemeEnum : int
 namespace Inkeys::UI::Bar
 {
 	export void Initialization();
+	export void SetAnimationOptions(bool enable, double speedRate);
 
 	void InitializeWindow(BarUISetClass& barUISet);
 	void InitializeMedia(BarUISetClass& barUISet);
