@@ -755,6 +755,8 @@ void BarUISetClass::Rendering()
 	optional<double> mainBarLayoutWidth;
 	// 粗细预览使用独立动画值；切换画笔类型时曲线与数字共用同一进度。
 	BarUiValueClass drawAttributePenThickness(max(0.0f, GetPenWidth()));
+	bool drawAttributePenThicknessInitialized =
+		stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
 	// 画笔/荧光笔选择块使用独立的 0~1 横向进度，不加入属性面板的几何批次。
 	BarUiValueClass drawAttributePenSelectProgress(
 		stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1 ? 1.0 : 0.0);
@@ -880,7 +882,17 @@ void BarUISetClass::Rendering()
 			bool drawAttributeVisibilityChange = currentDrawAttributeOpen != drawAttributeLayoutOpen;
 			drawAttributeLayoutOpen = currentDrawAttributeOpen;
 			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
-				drawAttributePenThickness.SetTar(max(0.0f, GetPenWidth()), operationDur);
+			{
+				double penThickness = max(0.0f, GetPenWidth());
+				if (!drawAttributePenThicknessInitialized)
+				{
+					// 首次进入绘制模式时先同步真实粗细，避免稍后展开属性栏仍显示 0 → 默认值。
+					drawAttributePenThickness.SetDirect(penThickness);
+					drawAttributePenThicknessInitialized = true;
+				}
+				else drawAttributePenThickness.SetTar(penThickness, operationDur);
+			}
+			else drawAttributePenThicknessInitialized = false;
 			double drawAttributePenSelectTarget =
 				stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1 ? 1.0 : 0.0;
 			if (!barState.drawAttribute && !drawAttributeVisibilityChange && !drawAttributeTimeline.IsActive())
@@ -928,7 +940,7 @@ void BarUISetClass::Rendering()
 				&& abs(layoutTotalWidth - mainBarLayoutWidth.value()) > 0.000001;
 			bool mainBarLayoutExpands = mainBarLayoutChange
 				&& layoutTotalWidth > mainBarLayoutWidth.value();
-			// 新操作创建完整批次；批次进入最后 20% 后，新布局不再压缩到旧截止时间。
+			// 新操作创建完整批次；批次进入最后 30% 后，新布局不再压缩到旧截止时间。
 			bool lateMainBarLayoutChange = !barState.fold && mainBarTimeline.IsActive()
 				&& mainBarLayoutChange && !mainBarTimeline.CanJoin();
 			bool restartMainBarTimeline = mainBarFoldChange || mainBarSideSwitch
@@ -946,7 +958,7 @@ void BarUISetClass::Rendering()
 			}
 			else if (mainBarTimeline.IsActive() && mainBarLayoutChange)
 			{
-				// 前 80% 内反向改变布局时只更换新目标曲线，仍沿用原截止时间。
+				// 前 70% 内反向改变布局时只更换新目标曲线，仍沿用原截止时间。
 				mainBarBatchCurve = mainBarLayoutExpands
 					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack;
 			}
@@ -1474,7 +1486,7 @@ void BarUISetClass::Rendering()
 					bool continueDrawAttributePhase = false;
 					if (drawAttributeBatchChange)
 					{
-						// 只在主栏批次前 80% 内加入；太晚则使用完整时长创建独立新批次。
+						// 只在主栏批次前 70% 内加入；太晚则使用完整时长创建独立新批次。
 						if (mainBarTimeline.CanJoin())
 						{
 							operationDur = mainBarTimeline.GetRemainingDuration();
