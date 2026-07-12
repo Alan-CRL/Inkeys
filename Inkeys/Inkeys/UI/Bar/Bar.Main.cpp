@@ -26,6 +26,7 @@ import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
 
 constexpr double BarButtonHoverOpacity = 0.18;
+constexpr double BarButtonPressScale = 0.95;
 // 悬停动画暂时与其他 UI 一同慢放十倍，便于观察显现和渐隐细节。
 constexpr double BarButtonHoverShowDur = 1.2;
 constexpr double BarButtonHoverExitDur = 1.2;
@@ -747,6 +748,10 @@ void BarUISetClass::Rendering()
 	BarUiTimelineClass mainBarTimeline;
 	BarUiTimelineClass drawAttributeTimeline;
 	BarUiCurveEnum mainBarBatchCurve = BarUiCurveEnum::EaseInOutCubic;
+	const BarUiCurveSpecClass buttonPressCurve{
+		BarUiCurveEnum::EaseOutCubic, BarUiCurveEnum::EaseOutCubic, 0.0, false };
+	const BarUiCurveSpecClass buttonReleaseCurve{
+		BarUiCurveEnum::EaseOutBack, BarUiCurveEnum::EaseOutBack, 0.0, false };
 	optional<double> mainBarLayoutWidth;
 	// 粗细预览使用独立动画值；切换画笔类型时曲线与数字共用同一进度。
 	BarUiValueClass drawAttributePenThickness(max(0.0f, GetPenWidth()));
@@ -1358,6 +1363,13 @@ void BarUISetClass::Rendering()
 									totalWidth += 15;
 								}
 							}
+
+							// 按压倍率独立于布局批次，松手或拖出时从当前值回弹到标准大小。
+							if (temp->state->emph == BarWidgetEmphasize::Pressed)
+								temp->pressScale.SetTar(BarButtonPressScale, BarUiDefaultOperationDur,
+									nullopt, false, buttonPressCurve);
+							else temp->pressScale.SetTar(1.0, BarUiDefaultOperationDur,
+								nullopt, false, buttonReleaseCurve);
 
 							// 尺寸枚举只负责选择布局，按钮及其内容统一在同一过程时间内到达新布局。
 							SyncValueDuration(temp->buttom.x);
@@ -2631,6 +2643,7 @@ void BarUISetClass::Rendering()
 			if (temp == nullptr) continue;
 			UpdateHoverAnimation(temp->buttom.pct, temp->hoverStage,
 				!barState.fold && !temp->hide, temp->state->state != BarWidgetState::Selected);
+			if (!temp->pressScale.IsSame()) ChangeValue(temp->pressScale, false);
 
 			{
 				bool forceReplace = false, change = false;;
@@ -3043,9 +3056,30 @@ void BarUISetClass::Rendering()
 						BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
 						if (temp == nullptr) continue;
 
-						spec.Shape(barDeviceContext.Get(), temp->buttom, temp->buttom.Inherit(CenterFromTopLeft, *shapeMap[BarUISetShapeEnum::MainBar]));
+						BarUiInheritClass buttonInherit = temp->buttom.Inherit(
+							CenterFromTopLeft, *shapeMap[BarUISetShapeEnum::MainBar]);
+						double pressScale = temp->pressScale.val;
+						if (!isfinite(pressScale) || pressScale <= 0.0) pressScale = 1.0;
+						D2D1_MATRIX_3X2_F originalTransform;
+						barDeviceContext->GetTransform(&originalTransform);
+						bool transformChanged = abs(pressScale - 1.0) > 0.000001;
+						if (transformChanged)
+						{
+							// 整个按钮组合围绕背景中心缩放，组件自身的布局值和命中区域保持不变。
+							FLOAT centerX = static_cast<FLOAT>(
+								(buttonInherit.x + temp->buttom.w.val / 2.0) * barStyle.zoom);
+							FLOAT centerY = static_cast<FLOAT>(
+								(buttonInherit.y + temp->buttom.h.val / 2.0) * barStyle.zoom);
+							D2D1_MATRIX_3X2_F scaleTransform = D2D1::Matrix3x2F::Scale(
+								static_cast<FLOAT>(pressScale), static_cast<FLOAT>(pressScale),
+								D2D1::Point2F(centerX, centerY));
+							barDeviceContext->SetTransform(scaleTransform * originalTransform);
+						}
+
+						spec.Shape(barDeviceContext.Get(), temp->buttom, buttonInherit);
 						spec.Svg(barDeviceContext.Get(), temp->icon, temp->icon.Inherit(Center, temp->buttom));
 						spec.Word(barDeviceContext.Get(), temp->name, temp->name.Inherit(Center, temp->buttom));
+						if (transformChanged) barDeviceContext->SetTransform(originalTransform);
 					}
 				}
 				{ /**/ }
