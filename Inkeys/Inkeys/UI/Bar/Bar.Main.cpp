@@ -729,6 +729,8 @@ void BarUISetClass::Rendering()
 	// 独立记录渲染侧已经处理的主栏方向，不能使用动画 tar 的符号代替布局状态。
 	bool mainBarLayoutSide = barState.widgetPosition.mainBar;
 	bool drawAttributeLayoutSide = barState.widgetPosition.primaryBar;
+	// 离开画笔模式后 GetPenWidth 会立即归零，缓存最后有效粗细供属性栏收起动画继续绘制。
+	float drawAttributePenThickness = max(0.0f, GetPenWidth());
 
 	wstring fps;
 	for (int forNum = 1; !offSignal; forNum = 2)
@@ -777,6 +779,8 @@ void BarUISetClass::Rendering()
 			bool drawAttributeSideSwitch = barState.drawAttribute
 				&& currentDrawAttributeSide != drawAttributeLayoutSide;
 			drawAttributeLayoutSide = currentDrawAttributeSide;
+			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
+				drawAttributePenThickness = max(0.0f, GetPenWidth());
 			bool mainBarFoldChange = (barState.fold && mainBar->x.tar != 0.0)
 				|| (!barState.fold && mainBar->x.tar == 0.0);
 			auto CalculateButtonLayoutWidth = [&]()
@@ -1326,12 +1330,13 @@ void BarUISetClass::Rendering()
 
 				// 绘制属性
 				{
-					constexpr double drawAttributeCompactScale = 60.0 / 335.0;
+					constexpr double drawAttributeCompactWidth = 60.0;
+					constexpr double drawAttributeCompactScale = drawAttributeCompactWidth / 335.0;
+					constexpr double drawAttributeCompactHeight = 120.0 * drawAttributeCompactScale;
 					auto CompactDrawAttributeX = [&](double expandedX) { return expandedX * drawAttributeCompactScale; };
 					auto CompactDrawAttributeY = [&](double expandedY)
 						{
-							return (60.0 - 120.0 * drawAttributeCompactScale) / 2.0
-								+ expandedY * drawAttributeCompactScale;
+							return expandedY * drawAttributeCompactScale;
 						};
 					auto CompactDrawAttributeSize = [&](double expandedSize)
 						{
@@ -1339,10 +1344,11 @@ void BarUISetClass::Rendering()
 						};
 					if (!barState.drawAttribute)
 					{
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->x.SetTar(5.0);
+						// 收起面板保持与 335×120 展开面板相同宽高比，并居中藏在绘制按钮下方。
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->x.SetTar(0.0);
 						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.SetTar(0.0);
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->w.SetTar(60.0);
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->h.SetTar(60.0);
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->w.SetTar(drawAttributeCompactWidth);
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->h.SetTar(drawAttributeCompactHeight);
 
 						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->pct.SetTar(0.0);
 						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->framePct.value().SetTar(0.0);
@@ -2022,8 +2028,10 @@ void BarUISetClass::Rendering()
 						auto drawAttributeBar = shapeMap[BarUISetShapeEnum::DrawAttributeBar];
 						drawAttributeBar->x.SetTar(drawAttributeBar->x.tar, operationDur, 0.0, true);
 						drawAttributeBar->y.SetTar(drawAttributeBar->y.tar, operationDur, 0.0, true);
-						drawAttributeBar->w.SetTar(drawAttributeBar->w.tar, operationDur, 60.0, true);
-						drawAttributeBar->h.SetTar(drawAttributeBar->h.tar, operationDur, 60.0, true);
+						drawAttributeBar->w.SetTar(
+							drawAttributeBar->w.tar, operationDur, drawAttributeCompactWidth, true);
+						drawAttributeBar->h.SetTar(
+							drawAttributeBar->h.tar, operationDur, drawAttributeCompactHeight, true);
 						drawAttributeBar->pct.SetTar(drawAttributeBar->pct.tar, operationDur, 0.0, true);
 						drawAttributeBar->framePct.value().SetTar(
 							drawAttributeBar->framePct.value().tar, operationDur, 0.0, true);
@@ -2038,8 +2046,8 @@ void BarUISetClass::Rendering()
 							bool directChild = i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ColorSelect11)
 								|| i == static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove)
 								|| i == static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect);
-							double middleX = directChild ? 30.0 - middleW / 2.0 : 0.0;
-							double middleY = directChild ? 30.0 - middleH / 2.0 : 0.0;
+							double middleX = directChild ? drawAttributeCompactWidth / 2.0 - middleW / 2.0 : 0.0;
+							double middleY = directChild ? drawAttributeCompactHeight / 2.0 - middleH / 2.0 : 0.0;
 							obj->x.SetTar(obj->x.tar, operationDur, middleX, true);
 							obj->y.SetTar(obj->y.tar, operationDur, middleY, true);
 							obj->w.SetTar(obj->w.tar, operationDur, middleW, true);
@@ -2538,10 +2546,10 @@ void BarUISetClass::Rendering()
 							wordMap[obj2]->Inherit(Right, *shapeMap[obj1]); // 提前计算依赖
 
 							// 自定义绘制：粗细预览
-							// 属性栏未展开时不绘制粗细预览，避免隐藏过程中的过渡几何参与计算。
-							if (barState.drawAttribute && wordMap[obj2]->pct.val > 0.0)
+							// 收起后继续按当前透明度绘制，直至与其他属性控件同步淡出。
+							if (wordMap[obj2]->pct.val > 0.000001)
 							{
-								FLOAT penThickness = static_cast<FLOAT>(GetPenWidth());
+								FLOAT penThickness = drawAttributePenThickness;
 
 								FLOAT tarZoom = barStyle.zoom;
 								double tarX = shapeMap[obj1]->inhX + 5.0;
@@ -3095,7 +3103,9 @@ void BarUISetClass::UpdateRendering(bool updateState)
 	if (updateState)
 	{
 		barButtomSet.StateUpdate();
-		barState.ThicknessDisplayUpdate();
+		// 非画笔模式的 GetPenWidth 为 0，收起过程中保留最后一次有效的粗细文字。
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
+			barState.ThicknessDisplayUpdate();
 	}
 
 	// 通知计算并渲染
