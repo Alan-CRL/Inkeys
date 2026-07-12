@@ -736,7 +736,6 @@ void BarUISetClass::Rendering()
 	optional<double> mainBarLayoutWidth;
 	// 粗细预览使用独立动画值；切换画笔类型时曲线与数字共用同一进度。
 	BarUiValueClass drawAttributePenThickness(max(0.0f, GetPenWidth()));
-	drawAttributePenThickness.curve = BarUiCurveEnum::EaseOutBack;
 
 	wstring fps;
 	for (int forNum = 1; !offSignal; forNum = 2)
@@ -770,6 +769,7 @@ void BarUISetClass::Rendering()
 			double operationDur = BarUiDefaultOperationDur;
 			auto mainBar = shapeMap[BarUISetShapeEnum::MainBar];
 			BarUiCurveSpecClass syncedValueCurve;
+			bool syncValueCurveFromBatch = false;
 			BarUiCurveSpecClass syncedPctCurve{
 				BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine, 0.0, false };
 			const BarUiCurveSpecClass keyframeValueCurve{
@@ -782,10 +782,17 @@ void BarUISetClass::Rendering()
 					if (!value.IsSame() && value.progress == 0.0)
 					{
 						value.dur = operationDur;
-						value.activeCurve = syncedValueCurve.first;
-						value.activeMiddleCurve = syncedValueCurve.second;
-						value.timelineStartProgress = syncedValueCurve.timelineStartProgress;
-						value.continueTimelinePhase = syncedValueCurve.continueTimelinePhase;
+						// 关键帧已经携带前后两段曲线；普通值仅在批次中覆盖自身默认曲线。
+						if (!value.hasMiddleV)
+						{
+							BarUiCurveSpecClass curveSpec = syncValueCurveFromBatch
+								? syncedValueCurve
+								: BarUiCurveSpecClass{ value.curve, value.curve, 0.0, false };
+							value.activeCurve = curveSpec.first;
+							value.activeMiddleCurve = curveSpec.second;
+							value.timelineStartProgress = curveSpec.timelineStartProgress;
+							value.continueTimelinePhase = curveSpec.continueTimelinePhase;
+						}
 					}
 				};
 			auto SyncPctDuration = [&](BarUiPctClass& pct)
@@ -851,6 +858,8 @@ void BarUISetClass::Rendering()
 			double layoutTotalWidth = CalculateButtonLayoutWidth();
 			bool mainBarLayoutChange = mainBarLayoutWidth.has_value()
 				&& abs(layoutTotalWidth - mainBarLayoutWidth.value()) > 0.000001;
+			bool mainBarLayoutExpands = mainBarLayoutChange
+				&& layoutTotalWidth > mainBarLayoutWidth.value();
 			// 新操作创建完整批次；已有批次中的布局重算只继承剩余时间，不延后结束时刻。
 			bool restartMainBarTimeline = mainBarFoldChange || mainBarSideSwitch
 				|| (!barState.fold && !mainBarTimeline.IsActive() && mainBarLayoutChange);
@@ -859,14 +868,22 @@ void BarUISetClass::Rendering()
 				if (mainBarSideSwitch) mainBarBatchCurve = BarUiCurveEnum::EaseInOutCubic;
 				else if (mainBarFoldChange)
 					mainBarBatchCurve = barState.fold
-					? BarUiCurveEnum::EaseInCubic : BarUiCurveEnum::EaseOutCubic;
-				else mainBarBatchCurve = BarUiCurveEnum::EaseInOutCubic;
+					? BarUiCurveEnum::EaseInCubic : BarUiCurveEnum::EaseOutBack;
+				else mainBarBatchCurve = mainBarLayoutExpands
+					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInCubic;
 				mainBarTimeline.Restart(operationDur);
+			}
+			else if (mainBarTimeline.IsActive() && mainBarLayoutChange)
+			{
+				// 批次中途反向改变布局时只更换新目标曲线，仍沿用原截止时间。
+				mainBarBatchCurve = mainBarLayoutExpands
+					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInCubic;
 			}
 			mainBarLayoutWidth = layoutTotalWidth;
 			if (mainBarTimeline.IsActive()) operationDur = mainBarTimeline.GetRemainingDuration();
 			double mainBarPhase = mainBarTimeline.IsActive() ? mainBarTimeline.GetProgress() : 0.0;
 			bool continueMainBarPhase = mainBarTimeline.IsActive() && mainBarPhase > 0.0;
+			syncValueCurveFromBatch = mainBarTimeline.IsActive();
 			BarUiCurveEnum syncedMainBarCurve = mainBarTimeline.IsActive()
 				? mainBarBatchCurve : BarUiCurveEnum::EaseInOutCubic;
 			syncedValueCurve = { syncedMainBarCurve, syncedMainBarCurve,
@@ -901,6 +918,19 @@ void BarUISetClass::Rendering()
 						{
 							BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
 							if (temp == nullptr) continue;
+							if (temp->icon.color1.has_value())
+							{
+								COLORREF lightColor = temp->size == BarButtomSizeEnum::oneOne
+									|| temp->size == BarButtomSizeEnum::oneTwo
+									? RGB(0, 0, 0) : RGB(27, 27, 27);
+								COLORREF iconColor = temp->state->state == BarWidgetState::Selected
+									? RGB(88, 255, 236)
+									: (barStyle.darkStyle ? RGB(255, 255, 255) : lightColor);
+								// 第一次计算或不可见时直接同步，避免 SVG 显示后才从黑色过渡。
+								if (forNum == 1 || barState.fold || temp->hide)
+									temp->icon.color1.value().SetDirect(iconColor);
+								else temp->icon.color1.value().SetTar(iconColor);
+							}
 
 							if (temp->size == BarButtomSizeEnum::oneOne)
 							{
@@ -957,17 +987,6 @@ void BarUISetClass::Rendering()
 									else
 									{
 										temp->icon.pct.SetTar(1.0, operationDur);
-
-										if (barStyle.darkStyle)
-										{
-											if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().SetTar(RGB(88, 255, 236));
-											else temp->icon.color1.value().SetTar(RGB(255, 255, 255));
-										}
-										else
-										{
-											if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().SetTar(RGB(88, 255, 236));
-											else temp->icon.color1.value().SetTar(RGB(0, 0, 0));
-										}
 									}
 								}
 								if (temp->name.enable.tar)
@@ -1066,17 +1085,6 @@ void BarUISetClass::Rendering()
 									else
 									{
 										temp->icon.pct.SetTar(1.0, operationDur);
-
-										if (barStyle.darkStyle)
-										{
-											if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().SetTar(RGB(88, 255, 236));
-											else temp->icon.color1.value().SetTar(RGB(255, 255, 255));
-										}
-										else
-										{
-											if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().SetTar(RGB(88, 255, 236));
-											else temp->icon.color1.value().SetTar(RGB(27, 27, 27));
-										}
 									}
 								}
 								if (temp->name.enable.tar)
@@ -1177,17 +1185,6 @@ void BarUISetClass::Rendering()
 									else
 									{
 										temp->icon.pct.SetTar(1.0, operationDur);
-
-										if (barStyle.darkStyle)
-										{
-											if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().SetTar(RGB(88, 255, 236));
-											else temp->icon.color1.value().SetTar(RGB(255, 255, 255));
-										}
-										else
-										{
-											if (temp->state->state == BarWidgetState::Selected) temp->icon.color1.value().SetTar(RGB(88, 255, 236));
-											else temp->icon.color1.value().SetTar(RGB(27, 27, 27));
-										}
 									}
 								}
 								if (temp->name.enable.tar)
@@ -1272,8 +1269,6 @@ void BarUISetClass::Rendering()
 									else
 									{
 										temp->icon.pct.SetTar(0.18, operationDur);
-										if (barStyle.darkStyle) temp->icon.color1.value().SetTar(RGB(255, 255, 255));
-										else temp->icon.color1.value().SetTar(RGB(0, 0, 0));
 									}
 								}
 
@@ -1409,8 +1404,9 @@ void BarUISetClass::Rendering()
 						drawAttributePhase = drawAttributeTimeline.GetProgress();
 						continueDrawAttributePhase = drawAttributePhase > 0.0;
 					}
+					syncValueCurveFromBatch = drawAttributeTimeline.IsActive();
 					BarUiCurveEnum drawAttributeCurve = drawAttributeTimeline.IsActive()
-						? (barState.drawAttribute ? BarUiCurveEnum::EaseOutCubic : BarUiCurveEnum::EaseInCubic)
+						? (barState.drawAttribute ? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInCubic)
 						: BarUiCurveEnum::EaseInOutCubic;
 					syncedValueCurve = {
 						drawAttributeCurve, drawAttributeCurve,
@@ -1819,6 +1815,13 @@ void BarUISetClass::Rendering()
 					{ /**/ }
 					// 画笔样式区域
 					{
+						auto SetDrawAttributeSvgColor = [&](BarUISetSvgEnum type, COLORREF color)
+							{
+								auto& svgColor = svgMap[type]->color1.value();
+								// 属性栏隐藏时预先完成设色，再次展开不会出现黑色到主题色的过程。
+								if (forNum == 1 || !barState.drawAttribute) svgColor.SetDirect(color);
+								else svgColor.SetTar(color);
+							};
 						// 画笔
 						{
 							if (!barState.drawAttribute)
@@ -1863,12 +1866,12 @@ void BarUISetClass::Rendering()
 								if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1)
 								{
 									wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->color.SetTar(RGB(88, 255, 236));
-									svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1]->color1.value().SetTar(RGB(88, 255, 236));
+									SetDrawAttributeSvgColor(BarUISetSvgEnum::DrawAttributeBar_Brush1, RGB(88, 255, 236));
 								}
 								else
 								{
 									wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->color.SetTar(RGB(255, 255, 255));
-									svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1]->color1.value().SetTar(RGB(255, 255, 255));
+									SetDrawAttributeSvgColor(BarUISetSvgEnum::DrawAttributeBar_Brush1, RGB(255, 255, 255));
 								}
 							}
 							else
@@ -1876,12 +1879,12 @@ void BarUISetClass::Rendering()
 								if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1)
 								{
 									wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->color.SetTar(RGB(88, 255, 236));
-									svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1]->color1.value().SetTar(RGB(88, 255, 236));
+									SetDrawAttributeSvgColor(BarUISetSvgEnum::DrawAttributeBar_Brush1, RGB(88, 255, 236));
 								}
 								else
 								{
 									wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->color.SetTar(RGB(24, 24, 24));
-									svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1]->color1.value().SetTar(RGB(24, 24, 24));
+									SetDrawAttributeSvgColor(BarUISetSvgEnum::DrawAttributeBar_Brush1, RGB(24, 24, 24));
 								}
 							}
 
@@ -1933,12 +1936,12 @@ void BarUISetClass::Rendering()
 								if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
 								{
 									wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->color.SetTar(RGB(88, 255, 236));
-									svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1]->color1.value().SetTar(RGB(88, 255, 236));
+									SetDrawAttributeSvgColor(BarUISetSvgEnum::DrawAttributeBar_Highlight1, RGB(88, 255, 236));
 								}
 								else
 								{
 									wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->color.SetTar(RGB(255, 255, 255));
-									svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1]->color1.value().SetTar(RGB(255, 255, 255));
+									SetDrawAttributeSvgColor(BarUISetSvgEnum::DrawAttributeBar_Highlight1, RGB(255, 255, 255));
 								}
 							}
 							else
@@ -1946,12 +1949,12 @@ void BarUISetClass::Rendering()
 								if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
 								{
 									wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->color.SetTar(RGB(88, 255, 236));
-									svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1]->color1.value().SetTar(RGB(88, 255, 236));
+									SetDrawAttributeSvgColor(BarUISetSvgEnum::DrawAttributeBar_Highlight1, RGB(88, 255, 236));
 								}
 								else
 								{
 									wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->color.SetTar(RGB(24, 24, 24));
-									svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1]->color1.value().SetTar(RGB(24, 24, 24));
+									SetDrawAttributeSvgColor(BarUISetSvgEnum::DrawAttributeBar_Highlight1, RGB(24, 24, 24));
 								}
 							}
 
@@ -3696,6 +3699,7 @@ namespace Inkeys::UI::Bar
 						// 选中
 						{
 							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 50.0, 50.0, 4.0, 4.0, 1.0, RGB(0, 0, 0), nullopt);
+							shape->x.curve = BarUiCurveEnum::EaseOutBack; // 仅画笔类型的背景指示横移使用回弹
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect] = shape;
 						}
