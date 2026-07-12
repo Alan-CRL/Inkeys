@@ -43,10 +43,23 @@ public:
 	BarWidgetEmphasize emph = BarWidgetEmphasize::None;
 };
 
+enum class BarButtomHoverStageEnum : int
+{
+	None,
+	Showing,
+	Fading,
+};
+
 class BarButtomClass
 {
 public:
-	BarButtomClass() {}
+	BarButtomClass()
+	{
+		hover.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(127, 127, 127), nullopt);
+		hover.pct.Initialization(0.0);
+		hover.enable.Initialization(true);
+		hover.forceReplace = false;
+	}
 	// 拷贝构造函数，深拷贝所有数据成员，mutex新建
 	BarButtomClass(const BarButtomClass& other)
 		: size(other.size),
@@ -54,6 +67,8 @@ public:
 		hide(other.hide),
 		only(other.only),
 		buttom(other.buttom),
+		hover(other.hover),
+		hoverStage(other.hoverStage),
 		name(other.name),
 		icon(other.icon),
 		clickFunc(other.clickFunc),
@@ -72,6 +87,8 @@ public:
 
 	// 按钮控件
 	BarUiShapeClass buttom;
+	BarUiShapeClass hover; // 独立灰色悬停覆盖层，不影响选中和按压背景
+	IdtAtomic<BarButtomHoverStageEnum> hoverStage = BarButtomHoverStageEnum::None;
 	BarUiWordClass name;
 	BarUiSVGClass icon;
 

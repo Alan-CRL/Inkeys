@@ -25,6 +25,11 @@ import Inkeys.Conv.Color;
 import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
 
+constexpr double BarButtonHoverOpacity = 0.18;
+constexpr double BarButtonHoverShowDur = 0.12;
+constexpr double BarButtonHoverExitDur = 0.12;
+constexpr double BarButtonHoverFadeDur = 5.0;
+
 // ====================
 // 窗口
 
@@ -2553,6 +2558,25 @@ void BarUISetClass::Rendering()
 		{
 			BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
 			if (temp == nullptr) continue;
+			if (barState.fold || temp->hide)
+			{
+				temp->hoverStage = BarButtomHoverStageEnum::None;
+				temp->hover.pct.SetDirect(0.0);
+			}
+			else if (temp->hoverStage == BarButtomHoverStageEnum::Showing
+				&& temp->hover.pct.IsSame())
+			{
+				// 快速显现完成后立即进入独立的 5 秒渐隐阶段，同一次进入不会重新计时。
+				temp->hoverStage = BarButtomHoverStageEnum::Fading;
+				const BarUiCurveSpecClass hoverFadeCurve{
+					BarUiCurveEnum::EaseInSine, BarUiCurveEnum::EaseInSine, 0.0, false };
+				temp->hover.pct.SetTar(0.0, BarButtonHoverFadeDur, nullopt, true, hoverFadeCurve);
+			}
+			else if (temp->hoverStage == BarButtomHoverStageEnum::Fading
+				&& temp->hover.pct.IsSame())
+			{
+				temp->hoverStage = BarButtomHoverStageEnum::None;
+			}
 
 			{
 				bool forceReplace = false, change = false;;
@@ -2571,6 +2595,7 @@ void BarUISetClass::Rendering()
 				if (temp->buttom.framePct.has_value() && !temp->buttom.framePct->IsSame()) ChangePct(temp->buttom.framePct.value(), forceReplace), change = true;
 				if (!temp->buttom.pct.IsSame()) ChangePct(temp->buttom.pct, forceReplace), change = true;
 			}
+			if (!temp->hover.pct.IsSame()) ChangePct(temp->hover.pct, false);
 
 			{
 				bool forceReplace = false, change = false;;
@@ -2965,6 +2990,13 @@ void BarUISetClass::Rendering()
 						if (temp == nullptr) continue;
 
 						spec.Shape(barDeviceContext.Get(), temp->buttom, temp->buttom.Inherit(CenterFromTopLeft, *shapeMap[BarUISetShapeEnum::MainBar]));
+						temp->hover.w.SetDirect(temp->buttom.w.val);
+						temp->hover.h.SetDirect(temp->buttom.h.val);
+						if (temp->hover.rw.has_value() && temp->buttom.rw.has_value())
+							temp->hover.rw.value().SetDirect(temp->buttom.rw.value().val);
+						if (temp->hover.rh.has_value() && temp->buttom.rh.has_value())
+							temp->hover.rh.value().SetDirect(temp->buttom.rh.value().val);
+						spec.Shape(barDeviceContext.Get(), temp->hover, temp->hover.Inherit(Center, temp->buttom));
 						spec.Svg(barDeviceContext.Get(), temp->icon, temp->icon.Inherit(Center, temp->buttom));
 						spec.Word(barDeviceContext.Get(), temp->name, temp->name.Inherit(Center, temp->buttom));
 					}
@@ -3011,6 +3043,8 @@ void BarUISetClass::Rendering()
 						if (!temp) continue;
 						BarRenderingAttribute::UnionRectInPlace(
 							current, BarRenderingAttribute::GetWeigetRect(temp->buttom, dirtyZoom));
+						BarRenderingAttribute::UnionRectInPlace(
+							current, BarRenderingAttribute::GetWeigetRect(temp->hover, dirtyZoom));
 						BarRenderingAttribute::UnionRectInPlace(
 							current, BarRenderingAttribute::GetWeigetRect(temp->icon, dirtyZoom));
 						BarRenderingAttribute::UnionRectInPlace(
@@ -3172,9 +3206,62 @@ void BarUISetClass::Interact()
 {
 	ExMessage msg;
 	BarButtomClass* lastClickedMainBarButton = nullptr;
+	BarButtomClass* hoveredMainBarButton = nullptr;
+	auto StartMainBarButtonHover = [&](BarButtomClass* button)
+		{
+			if (!button) return;
+			const BarUiCurveSpecClass hoverShowCurve{
+				BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine, 0.0, false };
+			button->hover.pct.SetTar(
+				BarButtonHoverOpacity, BarButtonHoverShowDur, nullopt, true, hoverShowCurve);
+			button->hoverStage = BarButtomHoverStageEnum::Showing;
+			UpdateRendering(false);
+		};
+	auto StopMainBarButtonHover = [&](BarButtomClass* button, bool immediate)
+		{
+			if (!button) return;
+			button->hoverStage = BarButtomHoverStageEnum::None;
+			if (immediate) button->hover.pct.SetDirect(0.0);
+			else
+			{
+				const BarUiCurveSpecClass hoverExitCurve{
+					BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine, 0.0, false };
+				button->hover.pct.SetTar(0.0, BarButtonHoverExitDur, nullopt, true, hoverExitCurve);
+			}
+			UpdateRendering(false);
+		};
 	while (!offSignal)
 	{
 		hiex::getmessage_win32(&msg, EM_MOUSE, floating_window);
+		if (hoveredMainBarButton
+			&& (barState.fold || hoveredMainBarButton->hide))
+		{
+			StopMainBarButtonHover(hoveredMainBarButton, true);
+			hoveredMainBarButton = nullptr;
+		}
+		if (msg.message == WM_MOUSEMOVE)
+		{
+			BarButtomClass* currentHoveredButton = nullptr;
+			if (!barState.fold)
+			{
+				for (int id = 0; id < barButtomSet.tot; id++)
+				{
+					BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
+					if (!temp || temp->hide) continue;
+					if (temp->buttom.IsClick(msg.x, msg.y, barStyle.zoom))
+					{
+						currentHoveredButton = temp;
+						break;
+					}
+				}
+			}
+			if (currentHoveredButton != hoveredMainBarButton)
+			{
+				StopMainBarButtonHover(hoveredMainBarButton, false);
+				hoveredMainBarButton = currentHoveredButton;
+				StartMainBarButtonHover(hoveredMainBarButton);
+			}
+		}
 
 		{
 			bool continueFlag = true;
@@ -3223,6 +3310,9 @@ void BarUISetClass::Interact()
 						if (msg.message == WM_LBUTTONDOWN || msg.message == WM_LBUTTONDBLCLK)
 						{
 							bool clickCompleted = false;
+							// 按压立即清除悬停；抬起后必须收到新的鼠标移动才能再次进入。
+							StopMainBarButtonHover(hoveredMainBarButton, true);
+							hoveredMainBarButton = nullptr;
 							temp->state->emph = BarWidgetEmphasize::Pressed; UpdateRendering(false);
 							while (true)
 							{
