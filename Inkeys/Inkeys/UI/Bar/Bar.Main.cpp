@@ -736,6 +736,12 @@ void BarUISetClass::Rendering()
 	optional<double> mainBarLayoutWidth;
 	// 粗细预览使用独立动画值；切换画笔类型时曲线与数字共用同一进度。
 	BarUiValueClass drawAttributePenThickness(max(0.0f, GetPenWidth()));
+	constexpr double mainButtonScale = 1.05;
+	constexpr double mainButtonBaseSize = 80.0;
+	auto mainButtonLogo = svgMap[BarUISetSvgEnum::logo1];
+	double mainButtonLogoBaseW = mainButtonLogo->w.tar;
+	double mainButtonLogoBaseH = mainButtonLogo->h.tar;
+	unsigned long long handledMainButtonPulseSerial = 0;
 
 	wstring fps;
 	for (int forNum = 1; !offSignal; forNum = 2)
@@ -751,22 +757,49 @@ void BarUISetClass::Rendering()
 		// 主按钮
 		{
 			double operationDur = BarUiDefaultOperationDur;
+			auto mainButton = superellipseMap[BarUISetSuperellipseEnum::MainButton];
+			unsigned long long mainButtonPulseSerial = mainButtonClickPulseSerial.load(std::memory_order_relaxed);
+			bool mainButtonPulse = mainButtonPulseSerial != handledMainButtonPulseSerial;
+			if (mainButtonPulse) handledMainButtonPulseSerial = mainButtonPulseSerial;
+
+			const BarUiCurveSpecClass mainButtonPulseCurve{
+				BarUiCurveEnum::EaseOutBack, BarUiCurveEnum::EaseInBack, 0.0, false };
+			if (mainButtonPulse)
+			{
+				// 有效点击只在松手后触发一次放大关键帧，主图标与超椭圆同步回到原尺寸。
+				mainButton->w.SetTar(mainButtonBaseSize, operationDur,
+					mainButtonBaseSize * mainButtonScale, true, mainButtonPulseCurve);
+				mainButton->h.SetTar(mainButtonBaseSize, operationDur,
+					mainButtonBaseSize * mainButtonScale, true, mainButtonPulseCurve);
+				mainButtonLogo->w.SetTar(mainButtonLogoBaseW, operationDur,
+					mainButtonLogoBaseW * mainButtonScale, true, mainButtonPulseCurve);
+				mainButtonLogo->h.SetTar(mainButtonLogoBaseH, operationDur,
+					mainButtonLogoBaseH * mainButtonScale, true, mainButtonPulseCurve);
+			}
+			else
+			{
+				mainButton->w.SetTar(mainButtonBaseSize, operationDur);
+				mainButton->h.SetTar(mainButtonBaseSize, operationDur);
+				mainButtonLogo->w.SetTar(mainButtonLogoBaseW, operationDur);
+				mainButtonLogo->h.SetTar(mainButtonLogoBaseH, operationDur);
+			}
+
 			BarUiCurveEnum mainButtonPctCurve = barState.fold
 				? BarUiCurveEnum::EaseInSine : BarUiCurveEnum::EaseOutSine;
 			BarUiCurveSpecClass mainButtonPctCurveSpec{
 				mainButtonPctCurve, mainButtonPctCurve, 0.0, false };
 			if (barState.fold)
 			{
-				superellipseMap[BarUISetSuperellipseEnum::MainButton]->n.value().SetTar(3.0, operationDur);
+				mainButton->n.value().SetTar(3.0, operationDur);
 
-				superellipseMap[BarUISetSuperellipseEnum::MainButton]->pct.SetTar(
+				mainButton->pct.SetTar(
 					0.6, operationDur, nullopt, false, mainButtonPctCurveSpec);
 			}
 			else
 			{
-				superellipseMap[BarUISetSuperellipseEnum::MainButton]->n.value().SetTar(10.0, operationDur);
+				mainButton->n.value().SetTar(10.0, operationDur);
 
-				superellipseMap[BarUISetSuperellipseEnum::MainButton]->pct.SetTar(
+				mainButton->pct.SetTar(
 					0.8, operationDur, nullopt, false, mainButtonPctCurveSpec);
 			}
 		}
@@ -2600,8 +2633,12 @@ void BarUISetClass::Rendering()
 				{
 					// 提前计算依赖
 					{
-						superellipseMap[BarUISetSuperellipseEnum::MainButton]->Inherit();
-						shapeMap[BarUISetShapeEnum::MainBar]->Inherit(Center, *superellipseMap[BarUISetSuperellipseEnum::MainButton]);
+						auto mainButton = superellipseMap[BarUISetSuperellipseEnum::MainButton];
+						// 使用动画中的实际宽高计算左上角，保证超椭圆与内部 SVG 始终围绕中心缩放。
+						mainButton->UpInh(BarUiInheritClass(
+							mainButton->x.val - mainButton->w.val / 2.0,
+							mainButton->y.val - mainButton->h.val / 2.0));
+						shapeMap[BarUISetShapeEnum::MainBar]->Inherit(Center, *mainButton);
 						barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->buttom.Inherit(CenterFromTopLeft, *shapeMap[BarUISetShapeEnum::MainBar]);
 					}
 
@@ -3151,6 +3188,7 @@ void BarUISetClass::Interact()
 					double moveDis = Seek(msg);
 					if (moveDis <= 20)
 					{
+						mainButtonClickPulseSerial.fetch_add(1, std::memory_order_relaxed);
 						// 展开/收起主栏
 						if (barState.fold) barState.fold = false;
 						else barState.fold = true;
@@ -3382,7 +3420,6 @@ double BarUISetClass::Seek(const ExMessage& msg)
 
 		ret += sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY));
 		firX = static_cast<double>(p.x), firY = static_cast<double>(p.y);
-
 		// 拖动时收起主栏
 		if (setlist.regularSetting.moveRecover)
 		{
@@ -3392,7 +3429,6 @@ double BarUISetClass::Seek(const ExMessage& msg)
 			}
 		}
 	}
-
 	// 左右侧只在松手时提交；若动画尚未结束，新提交会从当前 val 重建关键帧过程。
 	bool previousMainBarSide = barState.widgetPosition.mainBar;
 	barState.PositionUpdate(tarZoom);

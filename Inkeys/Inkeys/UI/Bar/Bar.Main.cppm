@@ -173,6 +173,7 @@ public:
 protected:
 	// 拖动交互
 	double Seek(const ExMessage& msg);
+	std::atomic<unsigned long long> mainButtonClickPulseSerial = 0;
 };
 // 全局 Bar UI 集合
 export extern BarUISetClass barUISet;
