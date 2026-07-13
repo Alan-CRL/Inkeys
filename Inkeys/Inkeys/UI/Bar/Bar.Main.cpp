@@ -1589,7 +1589,7 @@ void BarUISetClass::Rendering()
 						else
 							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.SetTar(-(shapeMap[BarUISetShapeEnum::MainBar]->GetH() / 2.0 + shapeMap[BarUISetShapeEnum::DrawAttributeBar]->GetH() / 2.0 + 10.0));
 
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->pct.SetTar(0.9);
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->pct.SetTar(0.8);
 						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->framePct.value().SetTar(0.18);
 					}
 					if (barStyle.darkStyle)
