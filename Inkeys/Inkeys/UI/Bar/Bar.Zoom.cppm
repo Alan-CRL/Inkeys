@@ -69,12 +69,8 @@ namespace
 
 	void SetMainButtonPosition(BarUiSuperellipseClass& mainButton, double x, double y)
 	{
-		mainButton.x.tar = x;
-		mainButton.x.val = x;
-		mainButton.x.startV = x;
-		mainButton.y.tar = y;
-		mainButton.y.val = y;
-		mainButton.y.startV = y;
+		mainButton.x.SetDirect(x);
+		mainButton.y.SetDirect(y);
 	}
 
 	void ResetMainButtonDefaultPosition(BarUISetClass& barUISet)

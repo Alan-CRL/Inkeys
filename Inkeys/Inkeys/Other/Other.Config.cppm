@@ -1,4 +1,4 @@
-﻿module;
+module;
 
 #include "../../IdtMain.h"
 
@@ -60,6 +60,16 @@ namespace Inkeys::ConfigDetail
 	GROUP(UI, \
 		GROUP(Bar, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, Zoom, 1.0) \
+		) \
+	) \
+	GROUP(Experimental, \
+		GROUP(Inkeys3, \
+			GROUP(UI3, \
+				GROUP(Animation, \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, true) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, SpeedRate, 1.0) \
+				) \
+			) \
 		) \
 	) \
 	GROUP(PlugIn, \

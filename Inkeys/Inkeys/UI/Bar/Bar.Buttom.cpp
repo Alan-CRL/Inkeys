@@ -415,8 +415,8 @@ void BarButtomSetClass::UpdateDrawButtonStyle()
 
 	// 更新绘制按钮中的图标样式
 	if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
-		preset[(int)BarButtomPresetEnum::Draw]->icon.SetTarFromResource(L"UI", L"barHighlighter1");
-	else preset[(int)BarButtomPresetEnum::Draw]->icon.SetTarFromResource(L"UI", L"barBrush1");
+		preset[(int)BarButtomPresetEnum::Draw]->icon.TransitionToResource(L"UI", L"barHighlighter1");
+	else preset[(int)BarButtomPresetEnum::Draw]->icon.TransitionToResource(L"UI", L"barBrush1");
 }
 
 // TODO 临时方案，按照默认样式加载，后续改为从配置中加载布局
