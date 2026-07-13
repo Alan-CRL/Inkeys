@@ -6,8 +6,6 @@ on:
   push:
     branches:
       - main
-      - insider
-      - canary
 permissions:
   actions: write
 
@@ -58,7 +56,7 @@ jobs:
       matrix:
         platform: [Win32, x64, ARM64]
       fail-fast: false
-    runs-on: windows-2025
+    runs-on: windows-2022
 
     steps:
     - name: Checkout code 
@@ -163,7 +161,7 @@ jobs:
           
   package:
     name: Package
-    runs-on: windows-2025
+    runs-on: windows-2022
     needs: build
 
     steps:
@@ -558,7 +556,7 @@ jobs:
 
   upload:
     name: Upload
-    runs-on: windows-2025
+    runs-on: windows-2022
     needs: package
     
     if: always() && needs.package.result == 'success'
