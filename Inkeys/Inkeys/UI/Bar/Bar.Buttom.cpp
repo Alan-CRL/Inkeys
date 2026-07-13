@@ -127,6 +127,9 @@ void BarButtomSetClass::PresetInitialization()
 					{
 						if (barUISet.barState.drawAttribute) barUISet.barState.drawAttribute = false;
 						else barUISet.barState.drawAttribute = true;
+
+						// 当穿透模式下再次点击绘制按钮，则退出穿透
+						if (penetrate.select) penetrate.select = false;
 					}
 				};
 		}
@@ -240,7 +243,7 @@ void BarButtomSetClass::PresetInitialization()
 		obj->state = &barButtomState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
-	// TODO 重做
+	// TODO 重做（这个会成为撤回的子窗口）
 	// 清空
 	{
 		BarButtomClass* obj = new BarButtomClass;
@@ -267,6 +270,9 @@ void BarButtomSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
+					// 当穿透模式下只能先退出穿透，再清空（比较糟糕的 inkeys2 架构导致的）
+					if (penetrate.select) penetrate.select = false;
+
 					stateMode.cleanPageSign = true;
 				};
 		}
