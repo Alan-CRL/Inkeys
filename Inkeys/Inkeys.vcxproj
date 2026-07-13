@@ -590,6 +590,7 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.RenderingAttribute.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.State.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.State.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Theme.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Zoom.cppm" />
@@ -707,7 +708,9 @@
     <None Include="src\UI\barSelect.svg" />
     <None Include="src\UI\barSetting.svg" />
     <None Include="src\UI\color\colorSelect.svg" />
+    <None Include="src\UI\Frame 94.svg" />
     <None Include="src\UI\logo1.svg" />
+    <None Include="src\UI\logo2.svg" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PptCOM\PptCOM.csproj">

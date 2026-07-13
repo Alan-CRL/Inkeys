@@ -99,6 +99,7 @@ enum class BarUISetSuperellipseEnum : int
 enum class BarUISetSvgEnum : int
 {
 	logo1,
+	logoInk,
 
 	DrawAttributeBar_ColorSelect1,
 	DrawAttributeBar_ColorSelect2,

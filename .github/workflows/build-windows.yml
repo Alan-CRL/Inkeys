@@ -47,7 +47,7 @@ jobs:
           "上传 PackageHistory: ${{ inputs.upload }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Check for '#define IDT_RELEASE'
         if: ${{ inputs.validate_release }}
@@ -82,11 +82,11 @@ jobs:
       matrix:
         platform: [Win32, x64, ARM64]
       fail-fast: false
-    runs-on: windows-2025
+    runs-on: windows-2022
 
     steps:
     - name: Checkout code 
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
       with:
         fetch-depth: 0
         submodules: recursive
@@ -271,13 +271,13 @@ jobs:
           
   package:
     name: Package
-    runs-on: windows-2025
+    runs-on: windows-2022
     needs: build
 
     steps:
       # 获取版本信息
       - name: 拉取代码
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: 拉取版本代号
         id: softwareDate
@@ -715,7 +715,7 @@ jobs:
 
   upload:
     name: Upload
-    runs-on: windows-2025
+    runs-on: windows-2022
     needs: package
     
     if: ${{ inputs.upload && always() && needs.package.result == 'success' }}

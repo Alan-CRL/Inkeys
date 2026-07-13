@@ -18,6 +18,7 @@ module Inkeys.UI.Bar;
 import :Bottom;
 
 import :Main;
+import :Theme;
 
 import Inkeys.Conv.Color;
 import Inkeys.Other.Inputs;
@@ -25,6 +26,9 @@ import Inkeys.Conv.Text;
 
 void BarButtomSetClass::PresetInitialization()
 {
+	const COLORREF defaultButtonFill = GetThemeColor(BarThemeColorEnum::Surface);
+	const COLORREF defaultIconColor = GetThemeColor(BarThemeColorEnum::TextPrimary);
+
 	// 分隔线
 	{
 		BarButtomClass* obj = new BarButtomClass;
@@ -41,11 +45,11 @@ void BarButtomSetClass::PresetInitialization()
 			obj->name.enable.Initialization(false);
 		}
 		{
-			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
 			obj->buttom.enable.Initialization(true);
 		}
 		{
-			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
 			obj->icon.InitializationFromResource(L"UI", L"barDivider");
 			obj->icon.enable.Initialization(true);
 		}
@@ -68,11 +72,11 @@ void BarButtomSetClass::PresetInitialization()
 			obj->name.enable.Initialization(true);
 		}
 		{
-			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
 			obj->buttom.enable.Initialization(true);
 		}
 		{
-			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
 			obj->icon.InitializationFromResource(L"UI", L"barSelect");
 			obj->icon.enable.Initialization(true);
 		}
@@ -102,11 +106,11 @@ void BarButtomSetClass::PresetInitialization()
 			obj->name.enable.Initialization(true);
 		}
 		{
-			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
 			obj->buttom.enable.Initialization(true);
 		}
 		{
-			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
 			obj->icon.InitializationFromResource(L"UI", L"barBrush1");
 			obj->icon.enable.Initialization(true);
 		}
@@ -144,11 +148,11 @@ void BarButtomSetClass::PresetInitialization()
 			obj->name.enable.Initialization(true);
 		}
 		{
-			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
 			obj->buttom.enable.Initialization(true);
 		}
 		{
-			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
 			obj->icon.InitializationFromResource(L"UI", L"barEraser");
 			obj->icon.enable.Initialization(true);
 		}
@@ -178,11 +182,11 @@ void BarButtomSetClass::PresetInitialization()
 			obj->name.enable.Initialization(true);
 		}
 		{
-			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
 			obj->buttom.enable.Initialization(true);
 		}
 		{
-			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
 			obj->icon.InitializationFromResource(L"UI", L"barGeometry");
 			obj->icon.enable.Initialization(true);
 		}
@@ -211,11 +215,11 @@ void BarButtomSetClass::PresetInitialization()
 			obj->name.enable.Initialization(true);
 		}
 		{
-			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
 			obj->buttom.enable.Initialization(true);
 		}
 		{
-			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
 			obj->icon.InitializationFromResource(L"UI", L"barRecall");
 			obj->icon.enable.Initialization(true);
 		}
@@ -251,11 +255,11 @@ void BarButtomSetClass::PresetInitialization()
 			obj->name.enable.Initialization(true);
 		}
 		{
-			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
 			obj->buttom.enable.Initialization(true);
 		}
 		{
-			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
 			obj->icon.InitializationFromResource(L"UI", L"barClean");
 			obj->icon.enable.Initialization(true);
 		}
@@ -285,11 +289,11 @@ void BarButtomSetClass::PresetInitialization()
 			obj->name.enable.Initialization(true);
 		}
 		{
-			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
 			obj->buttom.enable.Initialization(true);
 		}
 		{
-			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
 			obj->icon.InitializationFromResource(L"UI", L"barPierce");
 			obj->icon.enable.Initialization(true);
 		}
@@ -330,11 +334,11 @@ void BarButtomSetClass::PresetInitialization()
 			obj->name.enable.Initialization(true);
 		}
 		{
-			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
 			obj->buttom.enable.Initialization(true);
 		}
 		{
-			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
 			obj->icon.InitializationFromResource(L"UI", L"barFreeze");
 			obj->icon.enable.Initialization(true);
 		}
@@ -378,11 +382,11 @@ void BarButtomSetClass::PresetInitialization()
 			obj->name.enable.Initialization(true);
 		}
 		{
-			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, RGB(0, 0, 0), nullopt);
+			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
 			obj->buttom.enable.Initialization(true);
 		}
 		{
-			obj->icon.Initialization(0.0, 0.0, RGB(0, 0, 0), nullopt);
+			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
 			obj->icon.InitializationFromResource(L"UI", L"barSetting");
 			obj->icon.enable.Initialization(true);
 		}

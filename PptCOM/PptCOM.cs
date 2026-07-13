@@ -31,6 +31,7 @@ using System.CodeDom;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -122,7 +123,7 @@ namespace PptCOM
         }
         public string CheckCOM()
         {
-            string ret = "20260501a";
+            string ret = "20260627a";
             return ret;
         }
 
@@ -385,6 +386,102 @@ namespace PptCOM
                 if (pUnk1 != IntPtr.Zero) Marshal.Release(pUnk1);
                 if (pUnk2 != IntPtr.Zero) Marshal.Release(pUnk2);
             }
+        }
+        private static string NormalizePresentationFullNameForCompare(string fullName)
+        {
+            if (string.IsNullOrWhiteSpace(fullName)) return "";
+            return fullName.Trim();
+        }
+        private static string TryGetPresentationFullNameForCompare(object presentationObj)
+        {
+            if (presentationObj == null) return "";
+
+            try
+            {
+                object value = presentationObj.GetType().InvokeMember("FullName", BindingFlags.GetProperty, null, presentationObj, null);
+                return NormalizePresentationFullNameForCompare(Convert.ToString(value, CultureInfo.InvariantCulture));
+            }
+            catch
+            {
+                return "";
+            }
+        }
+        private string TryGetActivePresentationFullNameForCompare(object applicationObj)
+        {
+            if (applicationObj == null) return "";
+
+            object activePresentation = null;
+
+            try
+            {
+                activePresentation = applicationObj.GetType().InvokeMember("ActivePresentation", BindingFlags.GetProperty, null, applicationObj, null);
+                return TryGetPresentationFullNameForCompare(activePresentation);
+            }
+            catch
+            {
+                return "";
+            }
+            finally
+            {
+                if (activePresentation != null)
+                {
+                    // 只释放临时拿到的 Presentation，避免误释放当前绑定字段。
+                    bool isCurrentPresentation = AreComObjectsEqual(activePresentation, (object)pptActivePresentation);
+                    if (!isCurrentPresentation) SafeRelease(activePresentation);
+                }
+            }
+        }
+        private bool TryGetActiveSlideShowHwndForCompare(object applicationObj, out IntPtr hwnd)
+        {
+            hwnd = IntPtr.Zero;
+            if (applicationObj == null) return false;
+
+            object activePresentation = null;
+            object slideShowWindow = null;
+
+            try
+            {
+                activePresentation = applicationObj.GetType().InvokeMember("ActivePresentation", BindingFlags.GetProperty, null, applicationObj, null);
+                if (activePresentation == null) return false;
+
+                slideShowWindow = activePresentation.GetType().InvokeMember("SlideShowWindow", BindingFlags.GetProperty, null, activePresentation, null);
+                hwnd = GetPptHwndFromSlideShowWindow(slideShowWindow);
+                return hwnd != IntPtr.Zero;
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                if (slideShowWindow != null)
+                {
+                    bool isCurrentSlideShowWindow = AreComObjectsEqual(slideShowWindow, (object)pptSlideShowWindow);
+                    if (!isCurrentSlideShowWindow) SafeRelease(slideShowWindow);
+                }
+
+                if (activePresentation != null)
+                {
+                    bool isCurrentPresentation = AreComObjectsEqual(activePresentation, (object)pptActivePresentation);
+                    if (!isCurrentPresentation) SafeRelease(activePresentation);
+                }
+            }
+        }
+        private bool ShouldKeepCurrentBindingForSamePresentation(object bestApp)
+        {
+            IntPtr currentHwnd = GetPptHwndFromSlideShowWindow((object)pptSlideShowWindow);
+            IntPtr bestHwnd;
+
+            if (currentHwnd != IntPtr.Zero && TryGetActiveSlideShowHwndForCompare(bestApp, out bestHwnd))
+            {
+                return currentHwnd == bestHwnd;
+            }
+
+            string currentFullName = TryGetPresentationFullNameForCompare((object)pptActivePresentation);
+            string bestFullName = TryGetActivePresentationFullNameForCompare(bestApp);
+
+            if (currentFullName.Length == 0 || bestFullName.Length == 0) return false;
+            return string.Equals(currentFullName, bestFullName, StringComparison.OrdinalIgnoreCase);
         }
         private bool IsSlideShowWindowActive(object sswObj)
         {
@@ -925,7 +1022,11 @@ namespace PptCOM
                             // 完全不同
                             if (!AreComObjectsEqual((object)pptApplication, bestApp))
                             {
-                                needRebind = true;
+                                // 同一演示文稿可能有多个 ROT/COM wrapper，当前绑定仍可读时不重绑。
+                                if (!ShouldKeepCurrentBindingForSamePresentation(bestApp))
+                                {
+                                    needRebind = true;
+                                }
                             }
                         }
 
