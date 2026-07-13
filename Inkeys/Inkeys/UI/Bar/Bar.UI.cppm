@@ -12,6 +12,7 @@ import :State;
 // 动画全局默认参数在 Bar.Main.cppm 中统一定义。
 extern IdtAtomic<double> BarUiDefaultDes;
 extern IdtAtomic<double> BarUiDefaultOperationDur;
+extern IdtAtomic<bool> BarUiAnimationEnabled;
 extern IdtAtomic<double> BarUiAnimationSpeedRate;
 
 // 动效类型
@@ -409,6 +410,7 @@ public:
 
 	IdtAtomic<double> des = 2.5; // 默认颜色速度 1/s；对应 0.4s 的标准操作时长
 	IdtAtomic<double> dur = 0.0; // 当前动画段的基础时长 s，不包含全局速度倍率
+	IdtAtomic<bool> animateWhenDisabled = false; // 关闭普通动画后仍继续推进；仅供悬停生命周期使用
 };
 //// 透明度 UI 值
 class BarUiPctClass
@@ -498,6 +500,7 @@ public:
 	IdtAtomic<double> dur = 0.0; // 当前动画段的基础时长 s，不包含全局速度倍率
 	IdtAtomic<bool> hasMiddleV = false; // 是否经过位于时间 0.5 的单个透明度关键帧
 	IdtAtomic<double> middleV = 0.0; // 中间透明度；tar 始终保留最终目标
+	IdtAtomic<bool> animateWhenDisabled = false; // 关闭普通动画后仍继续推进；仅供悬停生命周期使用
 };
 //// 文字 UI 值
 class BarUiStringClass

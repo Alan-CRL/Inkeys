@@ -20,6 +20,7 @@ import Inkeys.Helper.Thread;
 
 IdtAtomic<double> BarUiDefaultDes = 600.0; // 全局默认速度 px/s
 IdtAtomic<double> BarUiDefaultOperationDur = 0.4; // 默认操作过程时长 s
+IdtAtomic<bool> BarUiAnimationEnabled = true;
 IdtAtomic<double> BarUiAnimationSpeedRate = 1.00; // 有效速度倍率；关闭动画时由配置接口切换为即时完成倍率
 
 // ====================

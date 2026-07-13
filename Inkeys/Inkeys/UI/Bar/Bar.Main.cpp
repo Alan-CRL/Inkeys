@@ -29,7 +29,7 @@ constexpr double BarButtonHoverOpacity = 0.18;
 constexpr double BarButtonPressScale = 0.95;
 constexpr double BarButtonHoverShowDur = 0.24;
 constexpr double BarButtonHoverExitDur = 0.24;
-constexpr double BarButtonHoverFadeDur = 10.0;
+constexpr double BarButtonHoverFadeDur = 5.0;
 
 // ====================
 // 窗口
@@ -2492,7 +2492,8 @@ void BarUISetClass::Rendering()
 				COLORREF targetColor = color.tar;
 				COLORREF startColor = color.startColor;
 				double duration = color.dur;
-				double speedRate = BarUiAnimationSpeedRate;
+				double speedRate = !BarUiAnimationEnabled && color.animateWhenDisabled
+					? 1.0 : static_cast<double>(BarUiAnimationSpeedRate);
 				if (forceReplace || startColor == targetColor || !isfinite(duration) || duration <= 0.0
 					|| !isfinite(speedRate) || speedRate <= 0.0 || animationDtSeconds <= 0.0)
 				{
@@ -2520,7 +2521,8 @@ void BarUISetClass::Rendering()
 				double targetPct = pct.tar;
 				double startPct = pct.startV;
 				double duration = pct.dur;
-				double speedRate = BarUiAnimationSpeedRate;
+				double speedRate = !BarUiAnimationEnabled && pct.animateWhenDisabled
+					? 1.0 : static_cast<double>(BarUiAnimationSpeedRate);
 				if (forceReplace || !isfinite(targetPct) || !isfinite(startPct)
 					|| (!pct.hasMiddleV && abs(targetPct - startPct) <= pctEpsilon)
 					|| !isfinite(duration) || duration <= 0.0 || !isfinite(speedRate) || speedRate <= 0.0 || animationDtSeconds <= 0.0)
@@ -2653,19 +2655,25 @@ void BarUISetClass::Rendering()
 			if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace), change = true;
 		}
 
-		auto UpdateHoverAnimation = [&](BarUiPctClass& hoverPct,
+		auto UpdateHoverAnimation = [&](BarUiPctClass& hoverPct, BarUiColorClass* hoverFill,
 			IdtAtomic<BarButtomHoverStageEnum>& hoverStage, bool visible, bool hoverAllowed)
 			{
+				auto FinishHover = [&]()
+					{
+						hoverStage = BarButtomHoverStageEnum::None;
+						hoverPct.animateWhenDisabled = false;
+						if (hoverFill) hoverFill->animateWhenDisabled = false;
+					};
 				if (!visible)
 				{
-					// 隐藏时清除仍在运行的独立悬停过程，避免下次显示继承 50 秒渐隐的灰色。
+					// 隐藏时清除仍在运行的独立悬停过程，避免下次显示继承旧的渐隐灰色。
 					if (hoverStage != BarButtomHoverStageEnum::None) hoverPct.SetDirect(0.0);
-					hoverStage = BarButtomHoverStageEnum::None;
+					FinishHover();
 				}
 				else if (!hoverAllowed)
 				{
 					// 选中状态继续复用同一背景层，透明度由选中动画接管。
-					hoverStage = BarButtomHoverStageEnum::None;
+					FinishHover();
 				}
 				else if (hoverStage == BarButtomHoverStageEnum::Showing
 					&& hoverPct.IsSame())
@@ -2679,14 +2687,16 @@ void BarUISetClass::Rendering()
 				else if (hoverStage == BarButtomHoverStageEnum::Fading
 					&& hoverPct.IsSame())
 				{
-					hoverStage = BarButtomHoverStageEnum::None;
+					FinishHover();
 				}
 			};
 
-		UpdateHoverAnimation(shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->pct,
+		auto drawAttributeBrush = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1];
+		UpdateHoverAnimation(drawAttributeBrush->pct, &drawAttributeBrush->fill.value(),
 			drawAttributeBrushHoverStage, barState.drawAttribute,
 			stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenBrush1);
-		UpdateHoverAnimation(shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->pct,
+		auto drawAttributeHighlight = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1];
+		UpdateHoverAnimation(drawAttributeHighlight->pct, &drawAttributeHighlight->fill.value(),
 			drawAttributeHighlightHoverStage, barState.drawAttribute,
 			stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHighlighter1);
 
@@ -2695,7 +2705,9 @@ void BarUISetClass::Rendering()
 		{
 			BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
 			if (temp == nullptr) continue;
-			UpdateHoverAnimation(temp->buttom.pct, temp->hoverStage,
+			BarUiColorClass* hoverFill = temp->buttom.fill.has_value()
+				? &temp->buttom.fill.value() : nullptr;
+			UpdateHoverAnimation(temp->buttom.pct, hoverFill, temp->hoverStage,
 				!barState.fold && !temp->hide, temp->state->state != BarWidgetState::Selected);
 			if (!temp->pressScale.IsSame()) ChangeValue(temp->pressScale, false);
 
@@ -3375,6 +3387,8 @@ void BarUISetClass::Interact()
 		IdtAtomic<BarButtomHoverStageEnum>* hoverStage)
 		{
 			if (!hoverPct || !hoverFill || !hoverStage) return;
+			hoverPct->animateWhenDisabled = true;
+			hoverFill->animateWhenDisabled = true;
 			const BarUiCurveSpecClass hoverShowCurve{
 				BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine, 0.0, false };
 			hoverFill->SetTar(RGB(127, 127, 127), BarButtonHoverShowDur, hoverShowCurve);
@@ -3383,7 +3397,7 @@ void BarUISetClass::Interact()
 			*hoverStage = BarButtomHoverStageEnum::Showing;
 			UpdateRendering(false);
 		};
-	auto StopHover = [&](BarUiPctClass* hoverPct,
+	auto StopHover = [&](BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
 		IdtAtomic<BarButtomHoverStageEnum>* hoverStage, bool immediate)
 		{
 			if (!hoverPct || !hoverStage) return;
@@ -3392,10 +3406,14 @@ void BarUISetClass::Interact()
 				*hoverStage = BarButtomHoverStageEnum::None;
 				// 立即停止用于按下、隐藏和触摸抬起，不能遗留旧的灰色当前值。
 				hoverPct->SetDirect(0.0);
+				hoverPct->animateWhenDisabled = false;
+				if (hoverFill) hoverFill->animateWhenDisabled = false;
 			}
 			else
 			{
 				// 离开后仍保持灰色背景，直到同一层透明度自然降为零。
+				hoverPct->animateWhenDisabled = true;
+				if (hoverFill) hoverFill->animateWhenDisabled = true;
 				*hoverStage = BarButtomHoverStageEnum::Fading;
 				const BarUiCurveSpecClass hoverExitCurve{
 					BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine, 0.0, false };
@@ -3410,7 +3428,9 @@ void BarUISetClass::Interact()
 		};
 	auto StopMainBarButtonHover = [&](BarButtomClass* button, bool immediate)
 		{
-			if (button) StopHover(&button->buttom.pct, &button->hoverStage, immediate);
+			if (button) StopHover(&button->buttom.pct,
+				button->buttom.fill.has_value() ? &button->buttom.fill.value() : nullptr,
+				&button->hoverStage, immediate);
 		};
 	auto StartIndependentHover = [&](IndependentHoverTargetEnum target)
 		{
@@ -3420,7 +3440,7 @@ void BarUISetClass::Interact()
 	auto StopIndependentHover = [&](IndependentHoverTargetEnum target, bool immediate)
 		{
 			auto hover = GetIndependentHoverVisual(target);
-			StopHover(hover.pct, hover.stage, immediate);
+			StopHover(hover.pct, hover.fill, hover.stage, immediate);
 		};
 	auto SuppressHoverUntilPointerMove = [&]()
 		{
@@ -3803,6 +3823,7 @@ namespace Inkeys::UI::Bar
 	{
 		speedRate = isfinite(speedRate) ? clamp(speedRate, 0.1, 5.0) : 1.0;
 		// 使用足够大的有限倍率统一完成普通动画、批次和 SVG 关键帧，不能用 0 让时间轴停住。
+		BarUiAnimationEnabled = enable;
 		BarUiAnimationSpeedRate = enable ? speedRate : 1.0e12;
 		barUISet.UpdateRendering(false);
 	}
