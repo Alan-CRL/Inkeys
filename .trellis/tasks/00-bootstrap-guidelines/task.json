@@ -1,0 +1,32 @@
+{
+  "id": "00-bootstrap-guidelines",
+  "name": "00-bootstrap-guidelines",
+  "title": "Bootstrap Inkeys Trellis Specs",
+  "description": "Build source-backed Trellis specs for the Inkeys native desktop and PPT/WPS interop codebase",
+  "status": "in_progress",
+  "dev_type": "docs",
+  "scope": "Trellis bootstrap documentation, task context, and spec structure",
+  "package": null,
+  "priority": "P1",
+  "creator": "AlanCRL",
+  "assignee": "AlanCRL",
+  "createdAt": "2026-07-13",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": null,
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    ".trellis/spec/index.md",
+    ".trellis/spec/native-desktop/",
+    ".trellis/spec/ppt-interop/",
+    ".trellis/spec/guides/",
+    ".trellis/tasks/00-bootstrap-guidelines/research/repository-overview.md"
+  ],
+  "notes": "First-time Trellis bootstrap for the Inkeys Windows native desktop application and its PPT/WPS COM bridge",
+  "meta": {}
+}
