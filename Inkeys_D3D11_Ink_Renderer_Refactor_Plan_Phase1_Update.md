@@ -50,6 +50,20 @@ protectedDuration = liveTipDuration + predictionDuration
 
 这个规则避免下一帧预测突然缩短或消失时，笔锋直接吃到上一帧已经烘干到 L1 的部分。
 
+### 3.1 笔宽变化约束
+
+速度压感和原有指数平滑之后，每个新点的半径变化还需同时满足：
+
+```txt
+maxRadiusDeltaByTime = 6 * baseDiameter * deltaTime
+maxRadiusDeltaByDistance = 0.8 * distance(previousPoint, currentPoint)
+maxRadiusDelta = min(maxRadiusDeltaByTime, maxRadiusDeltaByDistance)
+```
+
+两个方向使用相同限制；零时间或零位移不改变半径。L0 完成实时笔锋收细后再检查一次同样的约束，确保 `|r1-r2| < segmentLength`，不露出胶囊端帽。当前测试配置中普通笔和橡皮的 `baseDiameter` 都为 50px，对应最大半径时间变化速率 300px/s。
+
+像素着色器仍保留退化保护：当一个端点圆完全包含另一个时，直接使用实际较大端点的圆心和半径；近零长度段同样返回较大端点圆。
+
 ## 4. 工具切换与圆角橡皮
 
 - `1/Num1` 选择普通笔，`3/Num3` 选择橡皮；默认是普通笔，仅鼠标左键会开始笔画。

@@ -71,6 +71,9 @@ export namespace draw3
 		float expectedSpeed = 500.0f;
 		float currentDiameter = 5.0f;
 		double lastTime = 0.0;
+		// 记录上一个建模点，用于限制相邻点的空间半径变化。
+		float lastPositionX = 0.0f;
+		float lastPositionY = 0.0f;
 		bool hasSample = false;
 
 		StrokeWidthEstimator() = default;

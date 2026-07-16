@@ -21,6 +21,10 @@ namespace draw3
 		constexpr float kVisualStablePositionEpsilonPx = 0.05f;
 		constexpr float kVisualStableRadiusEpsilonPx = 0.02f;
 		constexpr int kVisualStableRequiredFrames = 3;
+		constexpr float kMaxDiameterChangePerBaseDiameterPerSecond = 12.0f;
+		constexpr float kMaxRadiusChangePerPixel = 0.8f;
+		static_assert(kMaxRadiusChangePerPixel > 0.0f && kMaxRadiusChangePerPixel < 1.0f,
+			"半径空间变化率必须严格小于胶囊切线退化阈值");
 
 		float LerpFloat(float from, float to, float ratio)
 		{
@@ -31,6 +35,30 @@ namespace draw3
 		{
 			value = std::clamp(value, 0.0f, 1.0f);
 			return value * value * (3.0f - 2.0f * value); // 比线性插值更平滑，避免笔宽突变。
+		}
+
+		float ClampRadiusTransition(float previousRadius, float desiredRadius, float baseDiameter,
+			float pointDistance, double deltaTime)
+		{
+			// 时间限速跟随基准笔宽；空间限速确保两端圆仍能形成有效公切线。
+			const float maxRadiusDeltaByTime = 0.5f * std::max(0.0f, baseDiameter) *
+				kMaxDiameterChangePerBaseDiameterPerSecond * static_cast<float>(std::max(0.0, deltaTime));
+			const float maxRadiusDeltaByDistance = kMaxRadiusChangePerPixel * std::max(0.0f, pointDistance);
+			const float maxRadiusDelta = std::min(maxRadiusDeltaByTime, maxRadiusDeltaByDistance);
+			return previousRadius + std::clamp(desiredRadius - previousRadius, -maxRadiusDelta, maxRadiusDelta);
+		}
+
+		void LimitRadiusTransitions(std::vector<InkPoint>& points, float baseDiameter)
+		{
+			for (size_t index = 1; index < points.size(); ++index)
+			{
+				const InkPoint& previous = points[index - 1];
+				InkPoint& current = points[index];
+				const float pointDistance = std::hypot(current.x - previous.x, current.y - previous.y);
+				const double deltaTime = std::max(0.0,
+					static_cast<double>(current.time) - static_cast<double>(previous.time));
+				current.r = ClampRadiusTransition(previous.r, current.r, baseDiameter, pointDistance, deltaTime);
+			}
 		}
 
 		StrokeTimingProfile GetStrokeTimingProfile(StrokeTimingProfileId id)
@@ -183,9 +211,14 @@ namespace draw3
 		{
 			const double deltaTime = std::max(0.0, pointTime - lastTime);
 			const float alpha = std::clamp(static_cast<float>(1.0 - std::exp(-deltaTime / 0.035)), 0.05f, 0.65f); // 时间间隔越大，笔宽追随越快。
-			currentDiameter = LerpFloat(currentDiameter, targetDiameter, alpha); // 平滑半径，减少速度噪声造成的闪动。
+			const float desiredDiameter = LerpFloat(currentDiameter, targetDiameter, alpha); // 先保留原有指数平滑手感。
+			const float pointDistance = std::hypot(result.position.x - lastPositionX, result.position.y - lastPositionY);
+			currentDiameter = 2.0f * ClampRadiusTransition(currentDiameter * 0.5f, desiredDiameter * 0.5f,
+				baseDiameter, pointDistance, deltaTime); // 再做对称硬限速，避免胶囊退化为外露端帽。
 		}
 		lastTime = pointTime;
+		lastPositionX = result.position.x;
+		lastPositionY = result.position.y;
 		return { result.position.x, result.position.y, currentDiameter * 0.5f, static_cast<float>(pointTime) };
 	}
 
@@ -308,6 +341,7 @@ namespace draw3
 		}
 		stroke.l0DrawPoints.insert(stroke.l0DrawPoints.end(), stroke.predictedPoints.begin(), stroke.predictedPoints.end()); // 预测点只放在 L0，便于下一帧擦除重画。
 		ApplyLiveTipTaper(stroke.l0DrawPoints, liveTipDurationSeconds);
+		LimitRadiusTransitions(stroke.l0DrawPoints, stroke.widthEstimator.baseDiameter); // 收细会再次改半径，绘制前必须重新保证相邻段的几何约束。
 		stroke.currentL0Rect = RectFromStrokePoints(stroke.l0DrawPoints, width, height);
 	}
 

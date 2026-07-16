@@ -4,11 +4,13 @@
 float sdUnevenCapsule_Vertical(float2 p, float r1, float r2, float h)
 {
     p.x = abs(p.x);
+    if (abs(r1 - r2) >= h)
+    {
+        // 一个端点圆完全包含另一个时，退化为实际较大端点圆。
+        return r1 >= r2 ? length(p) - r1 : length(p - float2(0.0, h)) - r2;
+    }
     float b = (r1 - r2) / h;
-    float b2 = b * b;
-    if (b2 > 1.0)
-        return length(p) - max(r1, r2);
-    float a = sqrt(max(0.0, 1.0 - b2));
+    float a = sqrt(max(0.0, 1.0 - b * b));
     float k = dot(p, float2(-b, a));
     if (k < 0.0)
         return length(p) - r1;
@@ -22,8 +24,8 @@ float GetInkDist_Convex(float2 p, float2 p1, float2 p2, float r1, float r2)
     float2 pa = p - p1;
     float2 ba = p2 - p1;
     float h = length(ba);
-    if (h < 0.1)
-        return length(pa) - r1;
+    if (h < 1e-5)
+        return r1 >= r2 ? length(p - p1) - r1 : length(p - p2) - r2;
     float2 yAxis = ba / h;
     float2 xAxis = float2(-yAxis.y, yAxis.x);
     float2 p_local = float2(dot(pa, xAxis), dot(pa, yAxis));
