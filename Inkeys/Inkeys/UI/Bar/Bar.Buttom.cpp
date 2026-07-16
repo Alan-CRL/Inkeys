@@ -271,8 +271,11 @@ void BarButtomSetClass::PresetInitialization()
 			obj->clickFunc = [&]() -> void
 				{
 					// 当穿透模式下只能先退出穿透，再清空（比较糟糕的 inkeys2 架构导致的）
-					if (penetrate.select) penetrate.select = false;
-
+					if (penetrate.select)
+					{
+						penetrate.select = false;
+						if (FreezeFrame.mode == 2) FreezeFrame.mode = 1;
+					}
 					stateMode.cleanPageSign = true;
 				};
 		}
