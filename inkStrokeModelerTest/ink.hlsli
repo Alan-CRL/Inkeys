@@ -19,12 +19,13 @@ struct InkPoint
     float2 pos;
     float r;
     float time;
+    float2 direction;
 };
 
 // 3. 结构化缓冲区
 StructuredBuffer<InkPoint> InkData : register(t0);
 Texture2D AlphaBlendSource : register(t1);
-Texture2D AuxiliaryBlendSource : register(t2); // 橡皮合成时提供 L0 实时遮罩。
+Texture2D AuxiliaryBlendSource : register(t2); // 双遮罩合成时提供 L0 实时覆盖率。
 SamplerState AlphaBlendSampler : register(s0);
 
 // 4. VS -> PS
@@ -40,5 +41,7 @@ struct PS_INPUT
     nointerpolation float2 p2 : VAL_END;
     nointerpolation float r1 : VAL_RAD_START;
     nointerpolation float r2 : VAL_RAD_END;
+    nointerpolation float2 direction1 : TEXCOORD2;
+    nointerpolation float2 direction2 : TEXCOORD3;
     nointerpolation float shapeType : VAL_TYPE;
 };

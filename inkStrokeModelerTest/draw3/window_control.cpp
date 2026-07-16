@@ -194,6 +194,10 @@ namespace draw3
 			case VK_NUMPAD1:
 				activeTool_.store(DrawingTool::Pen, std::memory_order_relaxed);
 				return 0;
+			case '2':
+			case VK_NUMPAD2:
+				activeTool_.store(DrawingTool::Highlighter, std::memory_order_relaxed);
+				return 0;
 			case '3':
 			case VK_NUMPAD3:
 				activeTool_.store(DrawingTool::Eraser, std::memory_order_relaxed);

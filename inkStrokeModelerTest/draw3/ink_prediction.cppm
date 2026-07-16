@@ -62,7 +62,7 @@ export namespace draw3
 	void ApplyPredictionMode(ink::stroke_model::StrokeModelParams& params,
 		const ink::stroke_model::KalmanPredictorParams& kalmanPredictorParams);
 
-	// 根据建模结果的速度平滑估算墨迹半径。
+	// 根据原始输入速度平滑估算墨迹半径。
 	struct StrokeWidthEstimator
 	{
 		float baseDiameter = 5.0f;
@@ -75,11 +75,28 @@ export namespace draw3
 		float lastPositionX = 0.0f;
 		float lastPositionY = 0.0f;
 		bool hasSample = false;
+		bool hasInputSpeed = false;
 
 		StrokeWidthEstimator() = default;
 		StrokeWidthEstimator(float baseDiameterValue, float expectedSpeedValue);
-		// 追加一个建模结果并返回对应绘制点。
-		InkPoint Append(const ink::stroke_model::Result& result);
+		// 追加建模结果；inputSpeed 为负时只推进几何状态并保持当前笔宽。
+		InkPoint Append(const ink::stroke_model::Result& result, float inputSpeed = -1.0f);
+	};
+
+	// 按路径距离平滑平头笔走势，并限制短线段上的方向旋转。
+	struct StrokeDirectionEstimator
+	{
+		float responseDistance = 50.0f;
+		float directionX = 1.0f;
+		float directionY = 0.0f;
+		float lastPositionX = 0.0f;
+		float lastPositionY = 0.0f;
+		bool hasPosition = false;
+		bool hasDirection = false;
+
+		StrokeDirectionEstimator() = default;
+		explicit StrokeDirectionEstimator(float responseDistanceValue);
+		void Append(InkPoint& point);
 	};
 
 	// 保存一次鼠标笔画的模型结果、预测结果和三层提交状态。
@@ -97,6 +114,9 @@ export namespace draw3
 		RECT lastL0Rect = { 0, 0, 0, 0 };
 		RECT currentL0Rect = { 0, 0, 0, 0 };
 		StrokeWidthEstimator widthEstimator;
+		StrokeDirectionEstimator directionEstimator;
+		bool fixedWidth = false;
+		bool trackDirection = false;
 		POINT lastRawPosition = { 0, 0 };
 		bool hasLastRawPosition = false;
 		bool idleFrozen = false;
@@ -105,7 +125,8 @@ export namespace draw3
 		double lastFrameWallTime = 0.0;
 		double logicalInputTime = 0.0;
 
-		ActiveMouseStroke(float baseDiameter, float expectedSpeed);
+		ActiveMouseStroke(float baseDiameter, float expectedSpeed, bool fixedWidthValue = false,
+			bool trackDirectionValue = false);
 	};
 
 	// 将矩形并入已有脏区。
@@ -118,24 +139,26 @@ export namespace draw3
 	RECT GetFullCanvasRect(int width, int height);
 	// 计算一段墨迹点覆盖的脏矩形。
 	RECT RectFromStrokePoints(const std::vector<InkPoint>& points, int width, int height,
-		size_t firstIndex = 0, size_t lastIndex = (std::numeric_limits<size_t>::max)());
+		StrokeShape shape = StrokeShape::RoundCapsule, size_t firstIndex = 0,
+		size_t lastIndex = (std::numeric_limits<size_t>::max)());
 	// 更新原始坐标并判断是否发生有效移动。
 	bool UpdateRawPositionAndDetectMovement(ActiveMouseStroke& stroke, const POINT& rawPosition);
 	// 在视觉稳定后冻结停笔输入。
 	void UpdateIdleFreezeState(ActiveMouseStroke& stroke, bool rawMoved, double liveTipDurationSeconds);
 	// 转换尚未处理的真实建模结果。
-	void AppendNewModeledPoints(ActiveMouseStroke& stroke);
+	void AppendNewModeledPoints(ActiveMouseStroke& stroke, float inputSpeed = -1.0f);
 	// 使用笔宽估算器副本重建预测绘制点。
 	void RebuildPredictedPoints(ActiveMouseStroke& stroke);
 	// 返回预测末端相对真实末端的时长。
 	double GetPredictionDurationSeconds(const ActiveMouseStroke& stroke);
 	// 重建当前 L0 的真实尾部和预测点。
-	void RebuildL0DrawPoints(ActiveMouseStroke& stroke, double liveTipDurationSeconds, int width, int height);
+	void RebuildL0DrawPoints(ActiveMouseStroke& stroke, double liveTipDurationSeconds,
+		StrokeShape shape, int width, int height);
 	// 将保护窗口之前的稳定前缀提交到 L1。
 	RECT CommitStablePrefixToL1(ActiveMouseStroke& stroke, double liveTipDurationSeconds,
-		double predictionDurationSeconds, DirectX::XMFLOAT4 color, float shapeType,
+		double predictionDurationSeconds, DirectX::XMFLOAT4 color, StrokeShape shape,
 		InkRenderer& renderer, int width, int height);
 	// 清空并重绘当前 L0 实时内容。
 	void DrawL0LiveComposite(ActiveMouseStroke& stroke, DirectX::XMFLOAT4 color,
-		float shapeType, InkRenderer& renderer);
+		StrokeShape shape, InkRenderer& renderer);
 }

@@ -52,7 +52,7 @@ protectedDuration = liveTipDuration + predictionDuration
 
 ### 3.1 笔宽变化约束
 
-速度压感和原有指数平滑之后，每个新点的半径变化还需同时满足：
+速度压感使用相邻有效原始鼠标点的距离/时间，不读取弹簧建模或预测结果的速度；严格恒速输入因此得到恒定目标笔宽。首个有效速度会回填尚未提交的起笔点，停笔及预测段继承最后真实笔宽，避免启动坡度、模型过冲和预测收敛造成“先细后粗”。速度压感和原有指数平滑之后，每个新点的半径变化还需同时满足：
 
 ```txt
 maxRadiusDeltaByTime = 6 * baseDiameter * deltaTime
@@ -64,12 +64,38 @@ maxRadiusDelta = min(maxRadiusDeltaByTime, maxRadiusDeltaByDistance)
 
 像素着色器仍保留退化保护：当一个端点圆完全包含另一个时，直接使用实际较大端点的圆心和半径；近零长度段同样返回较大端点圆。
 
-## 4. 工具切换与圆角橡皮
+## 4. 工具切换、平头荧光笔与圆角橡皮
 
-- `1/Num1` 选择普通笔，`3/Num3` 选择橡皮；默认是普通笔，仅鼠标左键会开始笔画。
+- `1/Num1` 选择普通笔，`2/Num2` 选择荧光笔，`3/Num3` 选择橡皮；默认是普通笔，仅鼠标左键会开始笔画。
 - 每笔按下时固定当前工具，笔画中切换只影响下一笔。
+- 荧光笔固定为 50px、`RGB(255, 0, 0)`、整笔 `alpha = 0.35`；保留普通笔的建模、平滑与 Kalman 预测，不使用模拟压感或实时笔锋。
 - 橡皮使用 50px 基准直径和圆角胶囊（`shapeType = 0`），继续使用画笔的建模、平滑、模拟压感、实时笔锋和分段绘制，但不调用 `Predict()`。
 - 橡皮以 `(0, 0, 0, 1)` 绘制覆盖率遮罩，继续使用 `fwidth + smoothstep` 产生抗锯齿边缘。
+
+### 4.1 标准平头荧光笔
+
+荧光笔的每个建模点保存单位走势。新走势按路径距离指数平均，响应距离固定为一个基准直径：
+
+```txt
+averageWeight = 1 - exp(-pointDistance / baseDiameter)
+maxAngleChange = 0.8 * pointDistance / radius
+```
+
+短线段上的角度变化受第二式限制，防止末端 1–2px 抖动旋转平头或使四边形翻面。首个有效走势只回填尚未提交的起笔点；走势尚未建立时不提交 L1，单击或全程零位移最终按默认水平方向生成居中的 50×50 方形印记。预测使用方向估算器副本，不污染真实点状态。
+
+每段由两个端点的平滑法线和 25px 半宽组成凸四边形，GPU AABB 从四个实际角点计算；CPU 脏矩形使用相同角点公式并增加抗锯齿余量。若极端折返导致四边形退化，CPU 与 GPU 都回退为沿当前线段方向的矩形。
+
+荧光笔在 L1/L0 中以白色、不透明覆盖率和 `D3D11_BLEND_OP_MAX` 逐段累积。实时预览及抬笔提交都只执行一次：
+
+```txt
+coverage = max(L1.a, L0.a)
+premultipliedSource = (0.35, 0, 0, 0.35) * coverage
+dst = premultipliedSource + dst * (1 - premultipliedSource.a)
+```
+
+因此同一笔内的分段重叠、自交及 L1/L0 交界不会加深；不同荧光笔笔画仍按标准 source-over 累积，并可与普通笔历史内容共同保存在 L2 中。
+
+### 4.2 圆角橡皮
 
 橡皮的分层合成语义如下：
 
@@ -117,5 +143,5 @@ Kalman 参数继续跟随当前帧率预设，包括 `prediction_interval_second
 - 接入 RTS 多点触摸和多生产者单消费者输入队列。
 - 将单指 `ActiveMouseStroke` 扩展为 `pointerId -> ActiveStroke`。
 - 设计正式 `InkStrokeRecord`，保存坐标、半径、颜色、工具类型和合成模型。
-- 半透明画笔再引入 per-stroke coverage，避免同一 stroke 内部 alpha 自叠加。
+- 若普通画笔以后也支持半透明，再复用荧光笔的 per-stroke coverage 语义，避免同一 stroke 内部 alpha 自叠加。
 - 后续如果要把最后一帧 prediction 存入正式墨迹数据，需要在持久化结构中标记该段来源，方便以后调参或回放时识别。

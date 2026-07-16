@@ -15,6 +15,7 @@ export namespace draw3
 	enum class DrawingTool
 	{
 		Pen,
+		Highlighter,
 		Eraser
 	};
 

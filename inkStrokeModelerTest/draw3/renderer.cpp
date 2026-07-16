@@ -7,6 +7,8 @@
 #include "../resource.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <d3d11.h>
 #include <DirectXMath.h>
@@ -52,22 +54,42 @@ namespace draw3
 		static_assert(sizeof(GlobalShaderConstants) % 16 == 0);
 	}
 
-	int InkRenderer::DrawStrokeOrDot(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color, float shapeType)
+	int InkRenderer::DrawStrokeOrDot(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color, StrokeShape shape)
 	{
 		if (points.empty()) return 0;
-		if (points.size() >= 2) return DrawStroke(points, color, shapeType);
+		if (points.size() >= 2) return DrawStroke(points, color, shape);
 
-		// 单点使用极短胶囊段复用现有笔刷着色器。
 		std::vector<InkPoint> dotPoints;
 		dotPoints.reserve(2);
-		dotPoints.push_back(points.front());
-		InkPoint dotEnd = points.front();
-		dotEnd.x += std::max(0.25f, dotEnd.r * 0.05f);
-		dotPoints.push_back(dotEnd);
-		return DrawStroke(dotPoints, color, shapeType);
+		if (shape == StrokeShape::SharpStrip)
+		{
+			// 平头笔没有天然圆点，单击时沿默认走势生成一个居中的正方形印记。
+			InkPoint dotStart = points.front();
+			InkPoint dotEnd = points.front();
+			const float directionLength = std::hypot(dotStart.directionX, dotStart.directionY);
+			const float directionX = directionLength > 0.00001f ? dotStart.directionX / directionLength : 1.0f;
+			const float directionY = directionLength > 0.00001f ? dotStart.directionY / directionLength : 0.0f;
+			dotStart.x -= directionX * dotStart.r;
+			dotStart.y -= directionY * dotStart.r;
+			dotEnd.x += directionX * dotEnd.r;
+			dotEnd.y += directionY * dotEnd.r;
+			dotStart.directionX = dotEnd.directionX = directionX;
+			dotStart.directionY = dotEnd.directionY = directionY;
+			dotPoints.push_back(dotStart);
+			dotPoints.push_back(dotEnd);
+		}
+		else
+		{
+			// 圆角工具继续使用极短胶囊段生成点击圆点。
+			dotPoints.push_back(points.front());
+			InkPoint dotEnd = points.front();
+			dotEnd.x += std::max(0.25f, dotEnd.r * 0.05f);
+			dotPoints.push_back(dotEnd);
+		}
+		return DrawStroke(dotPoints, color, shape);
 	}
 
-	int InkRenderer::DrawStroke(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color, float shapeType)
+	int InkRenderer::DrawStroke(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color, StrokeShape shape)
 	{
 		const size_t totalPoints = points.size();
 		if (totalPoints < 2) return 0;
@@ -98,7 +120,7 @@ namespace draw3
 				constants->width = viewportWidth;
 				constants->height = viewportHeight;
 				constants->color = color;
-				constants->shapeType = shapeType;
+				constants->shapeType = static_cast<float>(static_cast<uint32_t>(shape));
 				constants->bufferOffset = static_cast<uint32_t>(m_bufferHead); // 着色器用偏移定位当前批次的起点。
 				context->Unmap(globalCB.Get(), 0);
 			}
@@ -111,9 +133,9 @@ namespace draw3
 			ID3D11Buffer* constantBuffers[] = { globalCB.Get() };
 			context->VSSetConstantBuffers(0, 1, constantBuffers);
 			context->PSSetShader(pixelShader.Get(), nullptr, 0);
-			context->OMSetBlendState(strokeCoverageBlendState.Get(), nullptr, 0xFFFFFFFF); // 画笔和橡皮遮罩都用 MAX 累积覆盖率。
+			context->OMSetBlendState(strokeCoverageBlendState.Get(), nullptr, 0xFFFFFFFF); // 三种工具的临时层都用 MAX 累积本笔覆盖率。
 			context->RSSetState(rasterState.Get());
-			context->Draw((static_cast<UINT>(batchCount) - 1) * 6, 0); // 每两个相邻点生成一个胶囊段，段数乘 6 个顶点。
+			context->Draw((static_cast<UINT>(batchCount) - 1) * 6, 0); // 每两个相邻点生成一个形状段，段数乘 6 个顶点。
 
 			ID3D11ShaderResourceView* nullResources[] = { nullptr };
 			context->VSSetShaderResources(0, 1, nullResources);
@@ -143,19 +165,28 @@ namespace draw3
 
 	void InkRenderer::AlphaBlendResource(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* srcSRV, RECT rect)
 	{
-		CompositeResources(dstRTV, srcSRV, nullptr, rect, false);
+		CompositeResources(dstRTV, srcSRV, nullptr, DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f),
+			rect, CompositeMode::SourceOver);
 	}
 
 	void InkRenderer::ClipResource(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* stableMaskSRV,
 		ID3D11ShaderResourceView* liveMaskSRV, RECT rect)
 	{
-		CompositeResources(dstRTV, stableMaskSRV, liveMaskSRV, rect, true);
+		CompositeResources(dstRTV, stableMaskSRV, liveMaskSRV, DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f),
+			rect, CompositeMode::DestinationOut);
+	}
+
+	void InkRenderer::BlendCoverageResource(ID3D11RenderTargetView* dstRTV,
+		ID3D11ShaderResourceView* stableMaskSRV, ID3D11ShaderResourceView* liveMaskSRV,
+		DirectX::XMFLOAT4 color, RECT rect)
+	{
+		CompositeResources(dstRTV, stableMaskSRV, liveMaskSRV, color, rect, CompositeMode::CoverageTint);
 	}
 
 	void InkRenderer::CompositeResources(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* primarySRV,
-		ID3D11ShaderResourceView* secondarySRV, RECT rect, bool destinationOut)
+		ID3D11ShaderResourceView* secondarySRV, DirectX::XMFLOAT4 color, RECT rect, CompositeMode mode)
 	{
-		if (!dstRTV || !primarySRV || (destinationOut && !secondarySRV)) return;
+		if (!dstRTV || !primarySRV || (mode != CompositeMode::SourceOver && !secondarySRV)) return;
 		rect.left = std::max(0L, rect.left);
 		rect.top = std::max(0L, rect.top);
 		rect.right = std::min(static_cast<LONG>(viewportWidth), rect.right);
@@ -176,8 +207,9 @@ namespace draw3
 		auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
 		constants->width = viewportWidth;
 		constants->height = viewportHeight;
-		constants->color = DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-		constants->shapeType = destinationOut ? 2.0f : 1.0f; // 1 为普通合成，2 为双遮罩裁除。
+		constants->color = color;
+		constants->shapeType = mode == CompositeMode::DestinationOut ? 2.0f
+			: mode == CompositeMode::CoverageTint ? 4.0f : 1.0f; // 4 为双遮罩着色，只透明合成一次。
 		constants->bufferOffset = 0;
 		context->Unmap(globalCB.Get(), 0);
 
@@ -194,7 +226,8 @@ namespace draw3
 		context->PSSetShaderResources(1, ARRAYSIZE(compositeResources), compositeResources);
 		ID3D11SamplerState* samplers[] = { alphaBlendSampler.Get() };
 		context->PSSetSamplers(0, 1, samplers);
-		context->OMSetBlendState(destinationOut ? destinationOutBlendState.Get() : alphaBlendState.Get(), nullptr, 0xFFFFFFFF);
+		context->OMSetBlendState(mode == CompositeMode::DestinationOut
+			? destinationOutBlendState.Get() : alphaBlendState.Get(), nullptr, 0xFFFFFFFF);
 		context->RSSetState(rasterState.Get());
 		context->Draw(6, 0); // 一个矩形由两个三角形组成。
 

@@ -18,16 +18,25 @@ export namespace draw3
 {
 	inline const DirectX::XMFLOAT4 kTransparentLayerClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 
-	// 描述一个带半径和时间戳的墨迹采样点。
+	// 表示渲染器支持的墨迹几何形状。
+	enum class StrokeShape : uint32_t
+	{
+		RoundCapsule = 0,
+		SharpStrip = 3
+	};
+
+	// 描述一个带半径、时间戳和平均走势的墨迹采样点。
 	struct InkPoint
 	{
 		float x;
 		float y;
 		float r;
 		float time;
+		float directionX = 1.0f;
+		float directionY = 0.0f;
 	};
 
-	static_assert(sizeof(InkPoint) == 16, "InkPoint 必须与结构化缓冲区布局保持一致");
+	static_assert(sizeof(InkPoint) == 24, "InkPoint 必须与结构化缓冲区布局保持一致");
 
 	// 管理墨迹着色器、绘制图层及其 D3D11 资源。
 	class InkRenderer
@@ -67,9 +76,11 @@ export namespace draw3
 		float viewportHeight = 0.0f;
 
 		// 绘制一组墨迹点，并兼容只有一个点的点击。
-		int DrawStrokeOrDot(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color, float shapeType = 0.0f);
+		int DrawStrokeOrDot(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color,
+			StrokeShape shape = StrokeShape::RoundCapsule);
 		// 将墨迹点分批写入结构化缓冲区并提交绘制。
-		int DrawStroke(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color, float shapeType = 0.0f);
+		int DrawStroke(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color,
+			StrokeShape shape = StrokeShape::RoundCapsule);
 		// 复制纹理中的指定矩形区域。
 		void CopyResource(ID3D11Texture2D* dst, ID3D11Texture2D* src, RECT rect);
 		// 将源纹理混合到整个目标视图。
@@ -79,6 +90,9 @@ export namespace draw3
 		// 使用两层覆盖率遮罩按脏矩形裁除目标内容。
 		void ClipResource(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* stableMaskSRV,
 			ID3D11ShaderResourceView* liveMaskSRV, RECT rect);
+		// 合并两层覆盖率遮罩，着色后只以 source-over 合成一次。
+		void BlendCoverageResource(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* stableMaskSRV,
+			ID3D11ShaderResourceView* liveMaskSRV, DirectX::XMFLOAT4 color, RECT rect);
 		// 更新视口和屏幕尺寸。
 		void SetScreenSize(float width, float height);
 		// 设置当前输出合并目标。
@@ -97,9 +111,10 @@ export namespace draw3
 		bool Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height);
 
 	private:
-		// 使用矩形着色器执行普通 source-over 或 destination-out 合成。
+		enum class CompositeMode { SourceOver, DestinationOut, CoverageTint };
+		// 使用矩形着色器执行普通复制、destination-out 或双遮罩着色合成。
 		void CompositeResources(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* primarySRV,
-			ID3D11ShaderResourceView* secondarySRV, RECT rect, bool destinationOut);
+			ID3D11ShaderResourceView* secondarySRV, DirectX::XMFLOAT4 color, RECT rect, CompositeMode mode);
 		// 从资源中加载并创建墨迹着色器。
 		bool LoadShaders();
 	};
