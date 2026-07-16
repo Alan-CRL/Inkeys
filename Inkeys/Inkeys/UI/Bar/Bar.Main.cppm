@@ -16,6 +16,14 @@ import Inkeys.Conv.Color;
 import Inkeys.Helper.Thread;
 
 // ====================
+// 动画
+
+IdtAtomic<double> BarUiDefaultDes = 600.0; // 全局默认速度 px/s
+IdtAtomic<double> BarUiDefaultOperationDur = 0.4; // 默认操作过程时长 s
+IdtAtomic<bool> BarUiAnimationEnabled = true;
+IdtAtomic<double> BarUiAnimationSpeedRate = 1.00; // 有效速度倍率；关闭动画时由配置接口切换为即时完成倍率
+
+// ====================
 // 窗口
 
 LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -161,12 +169,17 @@ public:
 	ankerl::unordered_dense::map<BarUISetSvgEnum, shared_ptr<BarUiSVGClass>> svgMap;
 	ankerl::unordered_dense::map<BarUISetWordEnum, shared_ptr<BarUiWordClass>> wordMap;
 
+	// 绘制属性按钮同样复用自身背景层，仅单独记录悬停动画阶段。
+	IdtAtomic<BarButtomHoverStageEnum> drawAttributeBrushHoverStage = BarButtomHoverStageEnum::None;
+	IdtAtomic<BarButtomHoverStageEnum> drawAttributeHighlightHoverStage = BarButtomHoverStageEnum::None;
+
 public:
 	// 渲染更新：状态更新 + 通知计算并渲染
 	void UpdateRendering(bool updateState = true);
 protected:
 	// 拖动交互
 	double Seek(const ExMessage& msg);
+	std::atomic<unsigned long long> mainButtonClickPulseSerial = 0;
 };
 // 全局 Bar UI 集合
 export extern BarUISetClass barUISet;
@@ -188,6 +201,7 @@ enum class BarLogoColorSchemeEnum : int
 namespace Inkeys::UI::Bar
 {
 	export void Initialization();
+	export void SetAnimationOptions(bool enable, double speedRate);
 
 	void InitializeWindow(BarUISetClass& barUISet);
 	void InitializeMedia(BarUISetClass& barUISet);

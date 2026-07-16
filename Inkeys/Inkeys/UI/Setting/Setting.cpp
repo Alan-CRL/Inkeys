@@ -967,6 +967,10 @@ void SettingMain(stop_token sT)
 			struct
 			{
 				bool UI3 = setlist.Experimental.Inkeys3.UI3;
+				bool AnimationEnable = Inkeys::config.Experimental.Inkeys3.UI3.Animation.Enable;
+				float AnimationSpeedRate = static_cast<float>(clamp(
+					static_cast<double>(Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate), 0.1, 5.0));
+				bool AnimationSpeedSavePending = false;
 			}Inkeys3;
 		}Experimental;
 
@@ -8091,8 +8095,11 @@ void SettingMain(stop_token sT)
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
+						// 保留 dev 中根据 UI3 状态收缩容器的行为，颜色统一使用新版 Fluent 令牌。
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
-						ImGui::BeginChild("Inkeys3", { settingItemWidth * settingGlobalScale,235.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("Inkeys3", { settingItemWidth * settingGlobalScale,
+							(Experimental.Inkeys3.UI3 ? 265.0f : 115.0f) * settingGlobalScale }, false,
+							ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -8132,6 +8139,109 @@ void SettingMain(stop_token sT)
 								}
 							}
 
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+							ImGui::EndChild();
+						}
+
+						if (Experimental.Inkeys3.UI3)
+						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+							ImGui::BeginChild("启用 UI3 动画", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+							float cursosPosY = 0;
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+								ImGui::TextUnformatted("启用动画");
+							}
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
+								ImGui::TextUnformatted("关闭后，UI3 主栏动画将立即完成。");
+							}
+							{
+								ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
+								Widgets::toggle.ToggleBool("##启用 UI3 动画", &Experimental.Inkeys3.AnimationEnable);
+								if (Inkeys::config.Experimental.Inkeys3.UI3.Animation.Enable
+									!= Experimental.Inkeys3.AnimationEnable)
+								{
+									Inkeys::config.Experimental.Inkeys3.UI3.Animation.Enable =
+										Experimental.Inkeys3.AnimationEnable;
+									Inkeys::UI::Bar::SetAnimationOptions(Experimental.Inkeys3.AnimationEnable,
+										Experimental.Inkeys3.AnimationSpeedRate);
+									Inkeys::config.Write();
+								}
+							}
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+							ImGui::EndChild();
+
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+							ImGui::BeginChild("UI3 动画速度", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, 20.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+								ImGui::TextUnformatted("动画速度");
+							}
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
+								ImGui::TextUnformatted("调整 UI3 主栏动画速度，范围为 0.1x–5.0x。");
+							}
+							{
+								ImGui::SetCursorPos({ (settingItemWidth - 315.0f) * settingGlobalScale, 20.0f * settingGlobalScale });
+								ImGui::PushItemWidth(250.0f * settingGlobalScale);
+								Widgets::slider.Float("##UI3 动画速度", &Experimental.Inkeys3.AnimationSpeedRate,
+									0.1f, 5.0f, "");
+								Experimental.Inkeys3.AnimationSpeedRate =
+									round(Experimental.Inkeys3.AnimationSpeedRate * 10.0f) / 10.0f;
+								ImGui::PopItemWidth();
+
+								bool isItemActive = ImGui::IsItemActive();
+								if (fabs(Experimental.Inkeys3.AnimationSpeedRate - static_cast<float>(
+									Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate.load())) > 0.0001f)
+								{
+									Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate =
+										static_cast<double>(Experimental.Inkeys3.AnimationSpeedRate);
+									Inkeys::UI::Bar::SetAnimationOptions(Experimental.Inkeys3.AnimationEnable,
+										Experimental.Inkeys3.AnimationSpeedRate);
+									Experimental.Inkeys3.AnimationSpeedSavePending = true;
+								}
+								if (!isItemActive && Experimental.Inkeys3.AnimationSpeedSavePending)
+								{
+									Inkeys::config.Write();
+									Experimental.Inkeys3.AnimationSpeedSavePending = false;
+								}
+							}
+							{
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+								string speedText = format("{:.1f}x", Experimental.Inkeys3.AnimationSpeedRate);
+								ImVec2 textSize = ImGui::CalcTextSize(speedText.c_str());
+								ImGui::SameLine();
+								ImGui::SetCursorPos({ (settingItemWidth - 20.0f) * settingGlobalScale - textSize.x,
+									15.0f * settingGlobalScale + (30.0f * settingGlobalScale - textSize.y) / 2.0f });
+								ImGui::TextUnformatted(speedText.c_str());
+							}
 							{
 								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;

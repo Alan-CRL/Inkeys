@@ -1,0 +1,5 @@
+{"file":".trellis/spec/index.md","reason":"项目 Spec 导航、证据等级和全局实施前决策门"}
+{"file":".trellis/spec/native-desktop/index.md","reason":"原生桌面层入口及 UI、配置、平台支持决策门"}
+{"file":".trellis/spec/ppt-interop/index.md","reason":"PPT/WPS 互操作边界和兼容范围决策门"}
+{"file":".trellis/spec/guides/index.md","reason":"共享思考指南入口"}
+{"file":".trellis/tasks/00-bootstrap-guidelines/research/repository-overview.md","reason":"Bootstrap 仓库扫描、证据矩阵和待确认事项"}

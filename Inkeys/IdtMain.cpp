@@ -1,4 +1,4 @@
-﻿/*
+/*
  * @file		IdtMain.cpp
  * @brief		智绘教项目中心源文件
  * @note		用于初始化智绘教并调用相关模块
@@ -1014,7 +1014,14 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		#pragma region 新配置 Test
 
 			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
+			double animationSpeedRate = static_cast<double>(
+				config.Experimental.Inkeys3.UI3.Animation.SpeedRate);
+			animationSpeedRate = isfinite(animationSpeedRate)
+				? clamp(animationSpeedRate, 0.1, 5.0) : 1.0;
+			config.Experimental.Inkeys3.UI3.Animation.SpeedRate = animationSpeedRate;
 			config.Write();
+			Inkeys::UI::Bar::SetAnimationOptions(
+				config.Experimental.Inkeys3.UI3.Animation.Enable, animationSpeedRate);
 
 			configOnce = Inkeys::config;
 
