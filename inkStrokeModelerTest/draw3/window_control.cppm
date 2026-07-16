@@ -11,6 +11,13 @@ export module draw3.window_control;
 
 export namespace draw3
 {
+	// 表示鼠标左键当前使用的绘制工具。
+	enum class DrawingTool
+	{
+		Pen,
+		Eraser
+	};
+
 	// 表示当前客户区尺寸。
 	struct WindowSize
 	{
@@ -54,8 +61,8 @@ export namespace draw3
 		void RequestFullPresent();
 		// 更新窗口过程对透明 GPU 合成模式的判断。
 		void SetGpuTransparentComposition(bool enabled);
-		// 返回当前画笔形状编号。
-		int BrushShapeType() const;
+		// 返回当前绘制工具。
+		DrawingTool ActiveTool() const;
 		// 返回主循环是否应该退出。
 		bool ExitRequested() const;
 
@@ -74,6 +81,6 @@ export namespace draw3
 		std::atomic<bool> gpuTransparentComposition_ = false;
 		std::atomic<int> pendingResizeWidth_ = 0;
 		std::atomic<int> pendingResizeHeight_ = 0;
-		std::atomic<int> brushShapeType_ = 0;
+		std::atomic<DrawingTool> activeTool_ = DrawingTool::Pen;
 	};
 }

@@ -1,4 +1,4 @@
-// ink.hlsli
+﻿// ink.hlsli
 
 // 1. 常量缓冲区 (b0)
 cbuffer ScreenBuffer : register(b0)
@@ -24,6 +24,7 @@ struct InkPoint
 // 3. 结构化缓冲区
 StructuredBuffer<InkPoint> InkData : register(t0);
 Texture2D AlphaBlendSource : register(t1);
+Texture2D AuxiliaryBlendSource : register(t2); // 橡皮合成时提供 L0 实时遮罩。
 SamplerState AlphaBlendSampler : register(s0);
 
 // 4. VS -> PS

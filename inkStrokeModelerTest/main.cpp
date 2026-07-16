@@ -79,7 +79,7 @@ int main()
 			Sleep(1); // 没有输入时让出时间片，避免主循环空转。
 			continue;
 		}
-		if (message.message == WM_LBUTTONDOWN || message.message == WM_RBUTTONDOWN)
+		if (message.message == WM_LBUTTONDOWN)
 		{
 			drawing.DrawMouseStroke(message);
 		}

@@ -16,7 +16,6 @@ export module draw3.renderer;
 
 export namespace draw3
 {
-	inline const DirectX::XMFLOAT4 kTransparentWindowBackgroundColor(0.0f, 0.0f, 0.0f, 1.0f / 255.0f);
 	inline const DirectX::XMFLOAT4 kTransparentLayerClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 
 	// 描述一个带半径和时间戳的墨迹采样点。
@@ -56,9 +55,9 @@ export namespace draw3
 		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> inkDataSRV;
 		Microsoft::WRL::ComPtr<ID3D11SamplerState> alphaBlendSampler;
 
-		Microsoft::WRL::ComPtr<ID3D11BlendState> penBlendState;
-		Microsoft::WRL::ComPtr<ID3D11BlendState> eraserBlendState;
+		Microsoft::WRL::ComPtr<ID3D11BlendState> strokeCoverageBlendState;
 		Microsoft::WRL::ComPtr<ID3D11BlendState> alphaBlendState;
+		Microsoft::WRL::ComPtr<ID3D11BlendState> destinationOutBlendState;
 		Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterState;
 		Microsoft::WRL::ComPtr<ID3D11DepthStencilState> dsState;
 
@@ -66,26 +65,26 @@ export namespace draw3
 		static constexpr size_t kMaxBufferCapacity = 200000;
 		float viewportWidth = 0.0f;
 		float viewportHeight = 0.0f;
-		DirectX::XMFLOAT4 windowBackgroundColor = kTransparentWindowBackgroundColor;
 
 		// 绘制一组墨迹点，并兼容只有一个点的点击。
-		int DrawStrokeOrDot(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color, float shapeType = 0.0f, bool eraser = false);
+		int DrawStrokeOrDot(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color, float shapeType = 0.0f);
 		// 将墨迹点分批写入结构化缓冲区并提交绘制。
-		int DrawStroke(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color, float shapeType = 0.0f, bool eraser = false);
+		int DrawStroke(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color, float shapeType = 0.0f);
 		// 复制纹理中的指定矩形区域。
 		void CopyResource(ID3D11Texture2D* dst, ID3D11Texture2D* src, RECT rect);
 		// 将源纹理混合到整个目标视图。
 		void BlendResourceGlobal(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* srcSRV);
 		// 将源纹理按脏矩形混合到目标视图。
 		void AlphaBlendResource(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* srcSRV, RECT rect);
+		// 使用两层覆盖率遮罩按脏矩形裁除目标内容。
+		void ClipResource(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* stableMaskSRV,
+			ID3D11ShaderResourceView* liveMaskSRV, RECT rect);
 		// 更新视口和屏幕尺寸。
 		void SetScreenSize(float width, float height);
 		// 设置当前输出合并目标。
 		void SetOMTarget(ID3D11RenderTargetView* renderTargetView);
 		// 使用指定颜色清空渲染目标。
 		void ClearRTV(ID3D11RenderTargetView* renderTargetView, DirectX::XMFLOAT4 color);
-		// 设置窗口背景清屏颜色。
-		void SetWindowBackgroundColor(DirectX::XMFLOAT4 color);
 		// 创建依赖窗口尺寸的 backbuffer 和三层画布资源。
 		bool CreateSizeDependentResources(IDXGISwapChain1* swapChain, UINT width, UINT height);
 		// 释放依赖窗口尺寸的资源。
@@ -98,6 +97,9 @@ export namespace draw3
 		bool Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height);
 
 	private:
+		// 使用矩形着色器执行普通 source-over 或 destination-out 合成。
+		void CompositeResources(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* primarySRV,
+			ID3D11ShaderResourceView* secondarySRV, RECT rect, bool destinationOut);
 		// 从资源中加载并创建墨迹着色器。
 		bool LoadShaders();
 	};

@@ -313,7 +313,7 @@ namespace draw3
 
 	RECT CommitStablePrefixToL1(ActiveMouseStroke& stroke, double liveTipDurationSeconds,
 		double predictionDurationSeconds, DirectX::XMFLOAT4 color, float shapeType,
-		bool eraser, InkRenderer& renderer, int width, int height)
+		InkRenderer& renderer, int width, int height)
 	{
 		if (stroke.realPoints.size() < 2) return {};
 		const size_t protectedStartIndex = FindProtectedStartIndex(
@@ -323,17 +323,17 @@ namespace draw3
 		std::vector<InkPoint> stablePoints(stroke.realPoints.begin() + stroke.committedIndex,
 			stroke.realPoints.begin() + protectedStartIndex + 1);
 		renderer.SetOMTarget(renderer.layerL1RTV.Get());
-		renderer.DrawStrokeOrDot(stablePoints, color, shapeType, eraser);
+		renderer.DrawStrokeOrDot(stablePoints, color, shapeType);
 		stroke.committedIndex = protectedStartIndex; // 推进提交游标，后续帧不重复提交稳定前缀。
 		return RectFromStrokePoints(stablePoints, width, height);
 	}
 
 	void DrawL0LiveComposite(ActiveMouseStroke& stroke, DirectX::XMFLOAT4 color,
-		float shapeType, bool eraser, InkRenderer& renderer)
+		float shapeType, InkRenderer& renderer)
 	{
 		renderer.ClearRTV(renderer.layerL0RTV.Get(), kTransparentLayerClearColor); // L0 每帧从零重画，才能移除旧预测。
 		if (stroke.l0DrawPoints.empty()) return;
 		renderer.SetOMTarget(renderer.layerL0RTV.Get());
-		renderer.DrawStrokeOrDot(stroke.l0DrawPoints, color, shapeType, eraser);
+		renderer.DrawStrokeOrDot(stroke.l0DrawPoints, color, shapeType);
 	}
 }

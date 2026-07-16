@@ -1,4 +1,4 @@
-// inkPixelShader.hlsl
+ï»¿// inkPixelShader.hlsl
 #include "ink.hlsli"
 
 float sdUnevenCapsule_Vertical(float2 p, float r1, float r2, float h)
@@ -42,6 +42,14 @@ float4 main(PS_INPUT input) : SV_Target
         return AlphaBlendSource.Sample(AlphaBlendSampler, input.uv);
     }
 
+    if (type == 2)
+    {
+        float stableAlpha = AlphaBlendSource.Sample(AlphaBlendSampler, input.uv).a;
+        float liveAlpha = AuxiliaryBlendSource.Sample(AlphaBlendSampler, input.uv).a;
+        float maskAlpha = max(stableAlpha, liveAlpha); // æ•´ç¬”è¦†ç›–ç‡åªå–æœ€å¤§å€¼ï¼Œé¿å…é‡å æ®µé‡å¤æ“¦é™¤ã€‚
+        return float4(0.0, 0.0, 0.0, maskAlpha);
+    }
+
     float d = 0.0;
     
     if (type == 0)
@@ -53,22 +61,22 @@ float4 main(PS_INPUT input) : SV_Target
     //aaWidth = max(aaWidth, 1e-5);
     //float alpha = saturate(0.5 - d / aaWidth);
     
-    // 1. »ñÈ¡ÆÁÄ»¿Õ¼äµÄµ¼Êı£¨»ù´¡ÏñËØ¿í¶È£©
+    // 1. è·å–å±å¹•ç©ºé—´çš„å¯¼æ•°ï¼ˆåŸºç¡€åƒç´ å®½åº¦ï¼‰
     float baseAaWidth = fwidth(d);
     
-    // 2. µ÷½ÚÈáºÍ¶ÈÏµÊı (Softness Factor)
-    // 1.0 = ±ê×¼ÈñÀû
-    // 1.5 = Æ½»¬ÇÒÇåÎú (ÍÆ¼öÓÃÓÚ Ink ·ç¸ñ)
-    // 2.0+ = ¿ªÊ¼±äºı
+    // 2. è°ƒèŠ‚æŸ”å’Œåº¦ç³»æ•° (Softness Factor)
+    // 1.0 = æ ‡å‡†é”åˆ©
+    // 1.5 = å¹³æ»‘ä¸”æ¸…æ™° (æ¨èç”¨äº Ink é£æ ¼)
+    // 2.0+ = å¼€å§‹å˜ç³Š
     float softness = 1.5;
     
     float aaWidth = max(baseAaWidth * softness, 1e-5);
     
-    // 3. Ê¹ÓÃ smoothstep ½øĞĞ S ÇúÏß¹ı¶É
-    // ÕâÀïµÄÂß¼­ÊÇ£º
-    // µ± d < -aaWidth/2 (ĞÎ×´ÄÚ²¿) -> smoothstep Êä³ö 0 -> alpha Îª 1
-    // µ± d >  aaWidth/2 (ĞÎ×´Íâ²¿) -> smoothstep Êä³ö 1 -> alpha Îª 0
-    // ÖĞ¼äÇøÓòÆ½»¬²åÖµ
+    // 3. ä½¿ç”¨ smoothstep è¿›è¡Œ S æ›²çº¿è¿‡æ¸¡
+    // è¿™é‡Œçš„é€»è¾‘æ˜¯ï¼š
+    // å½“ d < -aaWidth/2 (å½¢çŠ¶å†…éƒ¨) -> smoothstep è¾“å‡º 0 -> alpha ä¸º 1
+    // å½“ d >  aaWidth/2 (å½¢çŠ¶å¤–éƒ¨) -> smoothstep è¾“å‡º 1 -> alpha ä¸º 0
+    // ä¸­é—´åŒºåŸŸå¹³æ»‘æ’å€¼
     float alpha = 1.0 - smoothstep(-aaWidth * 0.5, aaWidth * 0.5, d);
     
     if (alpha <= 0.0)

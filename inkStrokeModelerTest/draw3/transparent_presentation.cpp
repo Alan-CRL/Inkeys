@@ -267,7 +267,8 @@ namespace draw3
 				D3D11_MAPPED_SUBRESOURCE mapped = {};
 				if (FAILED(context->Map(stagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return false;
 
-				const size_t copyBytes = static_cast<size_t>(dirty.right - dirty.left) * 4;
+				const size_t pixelCount = static_cast<size_t>(dirty.right - dirty.left);
+				const size_t copyBytes = pixelCount * 4;
 				const BYTE* source = static_cast<const BYTE*>(mapped.pData) +
 					static_cast<size_t>(dirty.top) * mapped.RowPitch + static_cast<size_t>(dirty.left) * 4;
 				BYTE* destination = static_cast<BYTE*>(dibBits) +
@@ -275,8 +276,16 @@ namespace draw3
 				for (LONG y = dirty.top; y < dirty.bottom; ++y)
 				{
 					const size_t row = static_cast<size_t>(y - dirty.top);
-					std::memcpy(destination + row * static_cast<size_t>(dibWidth) * 4,
-						source + row * mapped.RowPitch, copyBytes); // 逐行处理 RowPitch 和 DIB stride 不同的情况。
+					const BYTE* sourceRow = source + row * mapped.RowPitch;
+					BYTE* destinationRow = destination + row * static_cast<size_t>(dibWidth) * 4;
+					std::memcpy(destinationRow, sourceRow, copyBytes); // 逐行处理 RowPitch 和 DIB stride 不同的情况。
+					for (size_t x = 0; x < pixelCount; ++x)
+					{
+						const UINT sourceAlpha = sourceRow[x * 4 + 3];
+						// 只在 CPU 输出阶段叠加黑色 alpha=1/255 底层，不回写内部画布。
+						destinationRow[x * 4 + 3] = static_cast<BYTE>(
+							sourceAlpha + ((255u - sourceAlpha) + 127u) / 255u);
+					}
 				}
 				context->Unmap(stagingTexture.Get(), 0);
 
@@ -582,7 +591,6 @@ namespace draw3
 			std::cout << "Trying transparent present mode: " << TransparentPresentModeName(mode) << std::endl;
 			if (!ConfigureWindow(mode) || !CreateSwapChain(mode)) return false;
 
-			renderer->SetWindowBackgroundColor(IsGpuMode(mode) ? kTransparentLayerClearColor : kTransparentWindowBackgroundColor); // GPU 透明用真透明，ULW 用近透明背景接收鼠标。
 			if (!renderer->Init(graphics->device.Get(), graphics->context.Get(), swapChain.Get(), width, height)) return false;
 			if (!InitializePresenter()) return false;
 			std::cout << "Active transparent present mode: " << TransparentPresentModeName(mode) << std::endl;
@@ -692,11 +700,6 @@ namespace draw3
 	bool TransparentPresentationController::IsGpuTransparentComposition() const
 	{
 		return IsGpuMode(impl_->activeMode);
-	}
-
-	DirectX::XMFLOAT4 TransparentPresentationController::WindowBackgroundColor() const
-	{
-		return IsGpuMode(impl_->activeMode) ? kTransparentLayerClearColor : kTransparentWindowBackgroundColor;
 	}
 
 	IDXGISwapChain1* TransparentPresentationController::SwapChain() const

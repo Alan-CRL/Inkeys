@@ -1,4 +1,4 @@
-// inkVertexShader.hlsl
+﻿// inkVertexShader.hlsl
 #include "ink.hlsli"
 
 static const float2 kQuadUVs[6] =
@@ -30,7 +30,7 @@ PS_INPUT main(uint id : SV_VertexID)
     
     float2 templatePos = kQuadUVs[vertexIndex];
 
-    if (type == 1)
+    if (type == 1 || type == 2)
     {
         float2 rectMin = min(p1, p2);
         float2 rectMax = max(p1, p2);

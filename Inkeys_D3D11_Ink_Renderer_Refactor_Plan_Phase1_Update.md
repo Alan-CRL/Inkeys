@@ -6,7 +6,7 @@
 
 - 只处理鼠标单指路径，暂不接 RTS、多指、MPSC 队列和正式墨迹持久化结构。
 - 渲染图层明确为：
-  - `L2_FinalCanvas`：最终白底画布。
+  - `L2_FinalCanvas`：真透明背景的最终画布。
   - `L1_ActiveDry`：稳定前缀烘干层。
   - `L0_LiveComposite`：实时笔锋 + 预测层，每帧清空重绘。
 - 调试阶段 L1 稳定段使用红色，L0 实时内容使用蓝色，便于观察实时层和烘干层边界。
@@ -50,9 +50,37 @@ protectedDuration = liveTipDuration + predictionDuration
 
 这个规则避免下一帧预测突然缩短或消失时，笔锋直接吃到上一帧已经烘干到 L1 的部分。
 
-## 4. 当前实现控制项
+## 4. 工具切换与圆角橡皮
 
-当前在 `main.cpp` 中保留了三个编译期 enum 控制：
+- `1/Num1` 选择普通笔，`3/Num3` 选择橡皮；默认是普通笔，仅鼠标左键会开始笔画。
+- 每笔按下时固定当前工具，笔画中切换只影响下一笔。
+- 橡皮使用 50px 基准直径和圆角胶囊（`shapeType = 0`），继续使用画笔的建模、平滑、模拟压感、实时笔锋和分段绘制，但不调用 `Predict()`。
+- 橡皮以 `(0, 0, 0, 1)` 绘制覆盖率遮罩，继续使用 `fwidth + smoothstep` 产生抗锯齿边缘。
+
+橡皮的分层合成语义如下：
+
+```txt
+L1/L0 内部：
+    每个胶囊段用 D3D11_BLEND_OP_MAX 累积覆盖率。
+
+实时预览：
+    先把 L2 复制到 backbuffer。
+    maskAlpha = max(L1.a, L0.a)。
+    backbuffer.rgba *= (1 - maskAlpha)。
+
+抬笔：
+    把最终 L0 段并入 L1，再用合并遮罩对 L2 执行一次 destination-out。
+```
+
+该路径仅使用 D3D11 核心混合状态，不依赖 D3D11.1。一整笔在裁除目标前先取最大覆盖率，避免胶囊段重叠或 L1/L0 交界重复衰减抗锯齿边缘。
+
+L0/L1/L2/backbuffer 的内部背景统一为 `(0, 0, 0, 0)`。DirectComposition/DWM 路径保留真零 alpha；仅 UpdateLayeredWindow 回退路径在 CPU 拷贝阶段，把内部 premultiplied 画布 source-over 到黑色 `1/255` alpha 命中测试底层。该底层不回写画布，也不跨帧累积。
+
+本阶段涉及的文本源文件统一为 UTF-8 BOM + CRLF。Windows SDK FXC 10.1 不接受 HLSL 开头的 UTF-8 BOM，因此项目在 `$(IntDir)\fxc_utf8` 内生成仅供编译的无 BOM 临时副本；仓库中的 HLSL 源文件仍保持 UTF-8 BOM。
+
+## 5. 当前实现控制项
+
+当前在 `draw3/ink_prediction.cppm` 中保留了三个编译期 enum 控制：
 
 ```cpp
 enum class InkPredictionMode { Disabled, StrokeEnd, Kalman };
@@ -65,12 +93,12 @@ enum class DebugLayerColorMode { NormalInkColor, ColorizeLiveLayer };
 ```cpp
 kActivePredictionMode = InkPredictionMode::Kalman;
 kActiveLiveTipLengthMode = LiveTipLengthMode::Normal;
-kActiveDebugLayerColorMode = DebugLayerColorMode::ColorizeLiveLayer;
+kActiveDebugLayerColorMode = DebugLayerColorMode::NormalInkColor;
 ```
 
 Kalman 参数继续跟随当前帧率预设，包括 `prediction_interval_seconds`、`kalman_desired_number_of_samples`、`kalman_max_time_samples` 和 `min_output_rate`。
 
-## 5. 后续仍待做
+## 6. 后续仍待做
 
 - 接入 RTS 多点触摸和多生产者单消费者输入队列。
 - 将单指 `ActiveMouseStroke` 扩展为 `pointerId -> ActiveStroke`。

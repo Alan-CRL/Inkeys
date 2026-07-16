@@ -4,7 +4,6 @@
 #define NOMINMAX
 #endif
 
-#include <DirectXMath.h>
 #include <dxgi1_2.h>
 #include <memory>
 #include <windows.h>
@@ -54,8 +53,6 @@ export namespace draw3
 		TransparentPresentMode ActiveMode() const;
 		// 返回当前模式是否通过 GPU/DWM 读取 backbuffer alpha。
 		bool IsGpuTransparentComposition() const;
-		// 返回当前窗口背景清屏颜色。
-		DirectX::XMFLOAT4 WindowBackgroundColor() const;
 		// 返回当前交换链供渲染器缩放使用。
 		IDXGISwapChain1* SwapChain() const;
 

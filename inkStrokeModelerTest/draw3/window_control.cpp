@@ -111,9 +111,9 @@ namespace draw3
 		gpuTransparentComposition_.store(enabled, std::memory_order_release);
 	}
 
-	int WindowController::BrushShapeType() const
+	DrawingTool WindowController::ActiveTool() const
 	{
-		return brushShapeType_.load(std::memory_order_relaxed);
+		return activeTool_.load(std::memory_order_relaxed);
 	}
 
 	bool WindowController::ExitRequested() const
@@ -192,7 +192,11 @@ namespace draw3
 				return 0;
 			case '1':
 			case VK_NUMPAD1:
-				brushShapeType_.store(0, std::memory_order_relaxed);
+				activeTool_.store(DrawingTool::Pen, std::memory_order_relaxed);
+				return 0;
+			case '3':
+			case VK_NUMPAD3:
+				activeTool_.store(DrawingTool::Eraser, std::memory_order_relaxed);
 				return 0;
 			case '9':
 			case VK_NUMPAD9:

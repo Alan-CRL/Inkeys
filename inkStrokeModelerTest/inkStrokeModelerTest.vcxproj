@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -347,6 +347,7 @@
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="inkPixelShader.hlsl">
+      <ExcludedFromBuild>true</ExcludedFromBuild>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.0</ShaderModel>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">5.0</ShaderModel>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">5.0</ShaderModel>
@@ -367,6 +368,7 @@
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)%(Filename).cso</ObjectFileOutput>
     </FxCompile>
     <FxCompile Include="inkVertexShader.hlsl">
+      <ExcludedFromBuild>true</ExcludedFromBuild>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.0</ShaderModel>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">5.0</ShaderModel>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">5.0</ShaderModel>
@@ -386,11 +388,43 @@
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Vertex</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
     </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\inkPixelShader.hlsl">
+      <ShaderModel>5.0</ShaderModel>
+      <ShaderType>Pixel</ShaderType>
+      <ObjectFileOutput>$(ProjectDir)inkPixelShader.cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(IntDir)fxc_utf8;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Visible>false</Visible>
+    </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\inkVertexShader.hlsl">
+      <ShaderModel>5.0</ShaderModel>
+      <ShaderType>Vertex</ShaderType>
+      <ObjectFileOutput>$(ProjectDir)inkVertexShader.cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(IntDir)fxc_utf8;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Visible>false</Visible>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="inkStrokeModelerTest.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <!-- FXC 10.1 不接受源文件开头的 UTF-8 BOM，编译前只在中间目录生成无 BOM 副本。 -->
+  <Target Name="PrepareFxcCompatibleHlsl" BeforeTargets="FxCompile"
+          Inputs="$(ProjectDir)ink.hlsli;$(ProjectDir)inkPixelShader.hlsl;$(ProjectDir)inkVertexShader.hlsl"
+          Outputs="$(IntDir)fxc_utf8\ink.hlsli;$(IntDir)fxc_utf8\inkPixelShader.hlsl;$(IntDir)fxc_utf8\inkVertexShader.hlsl">
+    <MakeDir Directories="$(IntDir)fxc_utf8" />
+    <ReadLinesFromFile File="$(ProjectDir)ink.hlsli">
+      <Output TaskParameter="Lines" ItemName="_FxcInkIncludeLines" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(ProjectDir)inkPixelShader.hlsl">
+      <Output TaskParameter="Lines" ItemName="_FxcPixelShaderLines" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(ProjectDir)inkVertexShader.hlsl">
+      <Output TaskParameter="Lines" ItemName="_FxcVertexShaderLines" />
+    </ReadLinesFromFile>
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\ink.hlsli" Lines="@(_FxcInkIncludeLines)" Overwrite="true" Encoding="ASCII" />
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\inkPixelShader.hlsl" Lines="@(_FxcPixelShaderLines)" Overwrite="true" Encoding="ASCII" />
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\inkVertexShader.hlsl" Lines="@(_FxcVertexShaderLines)" Overwrite="true" Encoding="ASCII" />
+  </Target>
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>

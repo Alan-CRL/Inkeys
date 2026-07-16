@@ -52,10 +52,10 @@ namespace draw3
 		static_assert(sizeof(GlobalShaderConstants) % 16 == 0);
 	}
 
-	int InkRenderer::DrawStrokeOrDot(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color, float shapeType, bool eraser)
+	int InkRenderer::DrawStrokeOrDot(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color, float shapeType)
 	{
 		if (points.empty()) return 0;
-		if (points.size() >= 2) return DrawStroke(points, color, shapeType, eraser);
+		if (points.size() >= 2) return DrawStroke(points, color, shapeType);
 
 		// 单点使用极短胶囊段复用现有笔刷着色器。
 		std::vector<InkPoint> dotPoints;
@@ -64,10 +64,10 @@ namespace draw3
 		InkPoint dotEnd = points.front();
 		dotEnd.x += std::max(0.25f, dotEnd.r * 0.05f);
 		dotPoints.push_back(dotEnd);
-		return DrawStroke(dotPoints, color, shapeType, eraser);
+		return DrawStroke(dotPoints, color, shapeType);
 	}
 
-	int InkRenderer::DrawStroke(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color, float shapeType, bool eraser)
+	int InkRenderer::DrawStroke(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color, float shapeType)
 	{
 		const size_t totalPoints = points.size();
 		if (totalPoints < 2) return 0;
@@ -111,15 +111,7 @@ namespace draw3
 			ID3D11Buffer* constantBuffers[] = { globalCB.Get() };
 			context->VSSetConstantBuffers(0, 1, constantBuffers);
 			context->PSSetShader(pixelShader.Get(), nullptr, 0);
-			if (eraser)
-			{
-				float blendFactor[4] = { 0, 0, 0, 0 };
-				context->OMSetBlendState(eraserBlendState.Get(), blendFactor, 0xFFFFFFFF); // 橡皮使用独立混合状态处理透明度。
-			}
-			else
-			{
-				context->OMSetBlendState(penBlendState.Get(), nullptr, 0xFFFFFFFF); // 画笔用 MAX 混合避免重叠边缘变厚。
-			}
+			context->OMSetBlendState(strokeCoverageBlendState.Get(), nullptr, 0xFFFFFFFF); // 画笔和橡皮遮罩都用 MAX 累积覆盖率。
 			context->RSSetState(rasterState.Get());
 			context->Draw((static_cast<UINT>(batchCount) - 1) * 6, 0); // 每两个相邻点生成一个胶囊段，段数乘 6 个顶点。
 
@@ -151,7 +143,19 @@ namespace draw3
 
 	void InkRenderer::AlphaBlendResource(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* srcSRV, RECT rect)
 	{
-		if (!dstRTV || !srcSRV) return;
+		CompositeResources(dstRTV, srcSRV, nullptr, rect, false);
+	}
+
+	void InkRenderer::ClipResource(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* stableMaskSRV,
+		ID3D11ShaderResourceView* liveMaskSRV, RECT rect)
+	{
+		CompositeResources(dstRTV, stableMaskSRV, liveMaskSRV, rect, true);
+	}
+
+	void InkRenderer::CompositeResources(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* primarySRV,
+		ID3D11ShaderResourceView* secondarySRV, RECT rect, bool destinationOut)
+	{
+		if (!dstRTV || !primarySRV || (destinationOut && !secondarySRV)) return;
 		rect.left = std::max(0L, rect.left);
 		rect.top = std::max(0L, rect.top);
 		rect.right = std::min(static_cast<LONG>(viewportWidth), rect.right);
@@ -173,7 +177,7 @@ namespace draw3
 		constants->width = viewportWidth;
 		constants->height = viewportHeight;
 		constants->color = DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-		constants->shapeType = 1.0f; // 这里走矩形混合路径，不使用实际画笔形状。
+		constants->shapeType = destinationOut ? 2.0f : 1.0f; // 1 为普通合成，2 为双遮罩裁除。
 		constants->bufferOffset = 0;
 		context->Unmap(globalCB.Get(), 0);
 
@@ -186,17 +190,18 @@ namespace draw3
 		ID3D11Buffer* constantBuffers[] = { globalCB.Get() };
 		context->VSSetConstantBuffers(0, 1, constantBuffers);
 		context->PSSetShader(pixelShader.Get(), nullptr, 0);
-		context->PSSetShaderResources(1, 1, &srcSRV);
+		ID3D11ShaderResourceView* compositeResources[] = { primarySRV, secondarySRV };
+		context->PSSetShaderResources(1, ARRAYSIZE(compositeResources), compositeResources);
 		ID3D11SamplerState* samplers[] = { alphaBlendSampler.Get() };
 		context->PSSetSamplers(0, 1, samplers);
-		context->OMSetBlendState(alphaBlendState.Get(), nullptr, 0xFFFFFFFF);
+		context->OMSetBlendState(destinationOut ? destinationOutBlendState.Get() : alphaBlendState.Get(), nullptr, 0xFFFFFFFF);
 		context->RSSetState(rasterState.Get());
 		context->Draw(6, 0); // 一个矩形由两个三角形组成。
 
-		ID3D11ShaderResourceView* nullResource[] = { nullptr };
+		ID3D11ShaderResourceView* nullResources[] = { nullptr, nullptr };
 		ID3D11SamplerState* nullSampler[] = { nullptr };
-		context->VSSetShaderResources(0, 1, nullResource);
-		context->PSSetShaderResources(1, 1, nullResource); // 解除 SRV 绑定，避免后续作为 RTV 时冲突。
+		context->VSSetShaderResources(0, 1, nullResources);
+		context->PSSetShaderResources(1, ARRAYSIZE(nullResources), nullResources); // 解除 SRV 绑定，避免后续作为 RTV 时冲突。
 		context->PSSetSamplers(0, 1, nullSampler);
 	}
 
@@ -219,11 +224,6 @@ namespace draw3
 	{
 		const float clearColor[4] = { color.x, color.y, color.z, color.w };
 		context->ClearRenderTargetView(renderTargetView, clearColor);
-	}
-
-	void InkRenderer::SetWindowBackgroundColor(DirectX::XMFLOAT4 color)
-	{
-		windowBackgroundColor = color;
 	}
 
 	bool InkRenderer::CreateSizeDependentResources(IDXGISwapChain1* swapChain, UINT width, UINT height)
@@ -265,10 +265,10 @@ namespace draw3
 	{
 		if (context)
 		{
-			ID3D11ShaderResourceView* nullResources[] = { nullptr, nullptr };
+			ID3D11ShaderResourceView* nullResources[] = { nullptr, nullptr, nullptr };
 			context->OMSetRenderTargets(0, nullptr, nullptr);
-			context->VSSetShaderResources(0, 2, nullResources);
-			context->PSSetShaderResources(0, 2, nullResources); // 释放前先解绑，避免 D3D 仍持有引用。
+			context->VSSetShaderResources(0, 1, nullResources);
+			context->PSSetShaderResources(0, ARRAYSIZE(nullResources), nullResources); // 释放前先解绑，避免 D3D 仍持有引用。
 			context->Flush();
 		}
 		backBufferRTV.Reset();
@@ -292,9 +292,9 @@ namespace draw3
 		inkDataBuffer.Reset();
 		inkDataSRV.Reset();
 		alphaBlendSampler.Reset();
-		penBlendState.Reset();
-		eraserBlendState.Reset();
+		strokeCoverageBlendState.Reset();
 		alphaBlendState.Reset();
+		destinationOutBlendState.Reset();
 		rasterState.Reset();
 		dsState.Reset();
 		device.Reset();
@@ -316,10 +316,10 @@ namespace draw3
 		if (FAILED(swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0))) return false; // 先让交换链获得新尺寸的 backbuffer。
 		if (!CreateSizeDependentResources(swapChain, width, height)) return false;
 
-		ClearRTV(layerL2RTV.Get(), windowBackgroundColor);
+		ClearRTV(layerL2RTV.Get(), kTransparentLayerClearColor);
 		ClearRTV(layerL1RTV.Get(), kTransparentLayerClearColor);
 		ClearRTV(layerL0RTV.Get(), kTransparentLayerClearColor);
-		ClearRTV(backBufferRTV.Get(), windowBackgroundColor);
+		ClearRTV(backBufferRTV.Get(), kTransparentLayerClearColor);
 
 		// 缩放后只保留新旧画布左上角的交集，不拉伸已有内容。
 		const UINT copyWidth = std::min(oldWidth, width);
@@ -355,7 +355,7 @@ namespace draw3
 		blendDescription.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
 		blendDescription.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_MAX;
 		blendDescription.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-		if (FAILED(device->CreateBlendState(&blendDescription, penBlendState.ReleaseAndGetAddressOf()))) return false;
+		if (FAILED(device->CreateBlendState(&blendDescription, strokeCoverageBlendState.ReleaseAndGetAddressOf()))) return false;
 
 		blendDescription = {};
 		blendDescription.RenderTarget[0].BlendEnable = TRUE;
@@ -367,6 +367,18 @@ namespace draw3
 		blendDescription.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
 		blendDescription.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
 		if (FAILED(device->CreateBlendState(&blendDescription, alphaBlendState.ReleaseAndGetAddressOf()))) return false;
+
+		blendDescription = {};
+		blendDescription.RenderTarget[0].BlendEnable = TRUE;
+		// destination-out：源只提供遮罩 alpha，目标 RGBA 同时乘以 (1 - maskAlpha)。
+		blendDescription.RenderTarget[0].SrcBlend = D3D11_BLEND_ZERO;
+		blendDescription.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+		blendDescription.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+		blendDescription.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ZERO;
+		blendDescription.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+		blendDescription.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+		blendDescription.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+		if (FAILED(device->CreateBlendState(&blendDescription, destinationOutBlendState.ReleaseAndGetAddressOf()))) return false;
 
 		D3D11_DEPTH_STENCIL_DESC depthStencilDescription = {};
 		if (FAILED(device->CreateDepthStencilState(&depthStencilDescription, dsState.ReleaseAndGetAddressOf()))) return false;

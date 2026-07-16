@@ -131,8 +131,8 @@ export namespace draw3
 	// 将保护窗口之前的稳定前缀提交到 L1。
 	RECT CommitStablePrefixToL1(ActiveMouseStroke& stroke, double liveTipDurationSeconds,
 		double predictionDurationSeconds, DirectX::XMFLOAT4 color, float shapeType,
-		bool eraser, InkRenderer& renderer, int width, int height);
+		InkRenderer& renderer, int width, int height);
 	// 清空并重绘当前 L0 实时内容。
 	void DrawL0LiveComposite(ActiveMouseStroke& stroke, DirectX::XMFLOAT4 color,
-		float shapeType, bool eraser, InkRenderer& renderer);
+		float shapeType, InkRenderer& renderer);
 }
