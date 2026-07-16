@@ -27,9 +27,9 @@ namespace draw3
 		const WindowSize size = window_.Size();
 		dirty = ClampRectToCanvas(dirty, size.width, size.height); // 限制脏区，避免纹理复制越界。
 		if (IsEmptyRect(dirty)) return;
-		renderer_.CopyResource(renderer_.backBufferTexture, renderer_.layerL2Texture, dirty); // L2 是已经稳定的底层画布。
-		renderer_.AlphaBlendResource(renderer_.backBufferRTV, renderer_.layerL1SRV, dirty); // L1 叠加当前笔画已确认部分。
-		renderer_.AlphaBlendResource(renderer_.backBufferRTV, renderer_.layerL0SRV, dirty); // L0 叠加实时笔锋和预测部分。
+		renderer_.CopyResource(renderer_.backBufferTexture.Get(), renderer_.layerL2Texture.Get(), dirty); // L2 是已经稳定的底层画布。
+		renderer_.AlphaBlendResource(renderer_.backBufferRTV.Get(), renderer_.layerL1SRV.Get(), dirty); // L1 叠加当前笔画已确认部分。
+		renderer_.AlphaBlendResource(renderer_.backBufferRTV.Get(), renderer_.layerL0SRV.Get(), dirty); // L0 叠加实时笔锋和预测部分。
 	}
 
 	bool DrawingController::PresentFrame(RECT dirty, bool presentFull)
@@ -43,10 +43,10 @@ namespace draw3
 	{
 		const WindowSize size = window_.Size();
 		const RECT fullCanvas = GetFullCanvasRect(size.width, size.height);
-		renderer_.ClearRTV(renderer_.layerL2RTV, presentation_.WindowBackgroundColor()); // 清掉长期保存的稳定画布。
-		renderer_.ClearRTV(renderer_.layerL1RTV, kTransparentLayerClearColor); // 清掉当前笔画已确认层。
-		renderer_.ClearRTV(renderer_.layerL0RTV, kTransparentLayerClearColor); // 清掉当前帧实时层。
-		renderer_.ClearRTV(renderer_.backBufferRTV, presentation_.WindowBackgroundColor()); // 先把最终缓冲区也恢复到背景。
+		renderer_.ClearRTV(renderer_.layerL2RTV.Get(), presentation_.WindowBackgroundColor()); // 清掉长期保存的稳定画布。
+		renderer_.ClearRTV(renderer_.layerL1RTV.Get(), kTransparentLayerClearColor); // 清掉当前笔画已确认层。
+		renderer_.ClearRTV(renderer_.layerL0RTV.Get(), kTransparentLayerClearColor); // 清掉当前帧实时层。
+		renderer_.ClearRTV(renderer_.backBufferRTV.Get(), presentation_.WindowBackgroundColor()); // 先把最终缓冲区也恢复到背景。
 		CompositeLayersToBackBuffer(fullCanvas);
 		PresentFrame(fullCanvas, true);
 	}
@@ -229,23 +229,23 @@ namespace draw3
 		// 抬笔时把最后一帧可见 L0 原样落到 L1，避免笔锋和预测回缩。
 		if (!stroke.l0DrawPoints.empty())
 		{
-			renderer_.SetOMTarget(renderer_.layerL1RTV);
+			renderer_.SetOMTarget(renderer_.layerL1RTV.Get());
 			renderer_.DrawStrokeOrDot(stroke.l0DrawPoints, liveInkColor, shapeType, eraser);
 			UnionRectInPlace(strokeDirty, stroke.currentL0Rect);
 		}
 		strokeDirty = ClampRectToCanvas(strokeDirty, finalSize.width, finalSize.height);
 		if (!IsEmptyRect(strokeDirty))
 		{
-			renderer_.AlphaBlendResource(renderer_.layerL2RTV, renderer_.layerL1SRV, strokeDirty); // 抬笔后把本笔真实内容并入稳定画布。
-			renderer_.ClearRTV(renderer_.layerL1RTV, kTransparentLayerClearColor); // L1/L0 都是本笔临时层，结束后清空。
-			renderer_.ClearRTV(renderer_.layerL0RTV, kTransparentLayerClearColor);
+			renderer_.AlphaBlendResource(renderer_.layerL2RTV.Get(), renderer_.layerL1SRV.Get(), strokeDirty); // 抬笔后把本笔真实内容并入稳定画布。
+			renderer_.ClearRTV(renderer_.layerL1RTV.Get(), kTransparentLayerClearColor); // L1/L0 都是本笔临时层，结束后清空。
+			renderer_.ClearRTV(renderer_.layerL0RTV.Get(), kTransparentLayerClearColor);
 			const RECT finalPresentRect = isFirstFrame ? GetFullCanvasRect(finalSize.width, finalSize.height) : strokeDirty;
-			renderer_.CopyResource(renderer_.backBufferTexture, renderer_.layerL2Texture, finalPresentRect);
+			renderer_.CopyResource(renderer_.backBufferTexture.Get(), renderer_.layerL2Texture.Get(), finalPresentRect);
 			PresentFrame(finalPresentRect, isFirstFrame);
 		}
 		else
 		{
-			renderer_.ClearRTV(renderer_.layerL0RTV, kTransparentLayerClearColor);
+			renderer_.ClearRTV(renderer_.layerL0RTV.Get(), kTransparentLayerClearColor);
 			if (isFirstFrame) PresentFullCanvas();
 		}
 		window_.FlushMouseMessages();

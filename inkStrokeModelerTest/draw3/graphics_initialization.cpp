@@ -4,11 +4,11 @@
 #define NOMINMAX
 #endif
 
-#include <atlbase.h>
 #include <d3d11.h>
 #include <dxgi1_2.h>
 #include <iostream>
 #include <windows.h>
+#include <wrl/client.h>
 
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
@@ -47,8 +47,8 @@ namespace draw3
 		}
 
 		HRESULT CreateCompatibleDevice(D3D_DRIVER_TYPE driverType, UINT creationFlags,
-			ATL::CComPtr<ID3D11Device>& device, D3D_FEATURE_LEVEL& actualFeatureLevel,
-			ATL::CComPtr<ID3D11DeviceContext>& context)
+			Microsoft::WRL::ComPtr<ID3D11Device>& device, D3D_FEATURE_LEVEL& actualFeatureLevel,
+			Microsoft::WRL::ComPtr<ID3D11DeviceContext>& context)
 		{
 			static constexpr D3D_FEATURE_LEVEL preferredLevels[] = {
 				D3D_FEATURE_LEVEL_11_1,
@@ -56,19 +56,19 @@ namespace draw3
 			};
 			static constexpr D3D_FEATURE_LEVEL fallbackLevels[] = { D3D_FEATURE_LEVEL_11_0 }; // 旧系统只接受 11_0 列表。
 
-			device.Release();
-			context.Release();
+			device.Reset();
+			context.Reset();
 			HRESULT result = D3D11CreateDevice(nullptr, driverType, nullptr, creationFlags,
 				preferredLevels, ARRAYSIZE(preferredLevels), D3D11_SDK_VERSION,
-				&device, &actualFeatureLevel, &context);
+				device.GetAddressOf(), &actualFeatureLevel, context.GetAddressOf());
 			if (result == E_INVALIDARG)
 			{
 				// Windows 7 不识别 11_1 枚举，使用只含 11_0 的列表重试。
-				device.Release();
-				context.Release();
+				device.Reset();
+				context.Reset();
 				result = D3D11CreateDevice(nullptr, driverType, nullptr, creationFlags,
 					fallbackLevels, ARRAYSIZE(fallbackLevels), D3D11_SDK_VERSION,
-					&device, &actualFeatureLevel, &context);
+					device.GetAddressOf(), &actualFeatureLevel, context.GetAddressOf());
 			}
 			return result;
 		}
@@ -99,7 +99,8 @@ namespace draw3
 		std::cout << "Current D3D device: " << DriverTypeName(resources.driverType) << std::endl;
 		std::cout << "D3D feature level: " << FeatureLevelName(resources.featureLevel) << std::endl;
 
-		result = resources.device->QueryInterface(__uuidof(IDXGIDevice1), reinterpret_cast<void**>(&resources.dxgiDevice)); // 后续需要 DXGI 设备创建交换链。
+		resources.dxgiDevice.Reset();
+		result = resources.device.As(&resources.dxgiDevice); // 使用类型安全的 QueryInterface 获取 DXGI 设备。
 		if (FAILED(result))
 		{
 			LogHResult("ID3D11Device::QueryInterface(IDXGIDevice1)", result);
@@ -107,15 +108,16 @@ namespace draw3
 		}
 		resources.dxgiDevice->SetMaximumFrameLatency(1); // 限制排队帧数，降低笔迹显示延迟。
 
-		result = resources.dxgiDevice->GetAdapter(&resources.adapter); // 取得适配器用于日志和 factory 查询。
+		result = resources.dxgiDevice->GetAdapter(resources.adapter.ReleaseAndGetAddressOf()); // 取得适配器用于日志和 factory 查询。
 		if (FAILED(result) || !resources.adapter)
 		{
 			LogHResult("IDXGIDevice1::GetAdapter", result);
 			return false;
 		}
-		LogAdapterDiagnostics(resources.adapter);
+		LogAdapterDiagnostics(resources.adapter.Get());
 
-		result = resources.adapter->GetParent(__uuidof(IDXGIFactory2), reinterpret_cast<void**>(&resources.factory)); // 交换链必须由同一适配器的 factory 创建。
+		result = resources.adapter->GetParent(__uuidof(IDXGIFactory2),
+			reinterpret_cast<void**>(resources.factory.ReleaseAndGetAddressOf())); // 交换链必须由同一适配器的 factory 创建。
 		if (FAILED(result) || !resources.factory)
 		{
 			LogHResult("IDXGIAdapter::GetParent(IDXGIFactory2)", result);

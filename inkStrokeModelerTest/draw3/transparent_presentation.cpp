@@ -5,7 +5,6 @@
 #endif
 
 #include <algorithm>
-#include <atlbase.h>
 #include <cstring>
 #include <dcomp.h>
 #include <d3d11.h>
@@ -16,6 +15,7 @@
 #include <iostream>
 #include <vector>
 #include <windows.h>
+#include <wrl/client.h>
 
 #pragma comment(lib, "dwmapi.lib")
 
@@ -140,9 +140,9 @@ namespace draw3
 		struct UlwDirtyRectPresenter
 		{
 			HWND window = nullptr;
-			CComPtr<ID3D11Device> device;
-			CComPtr<ID3D11DeviceContext> context;
-			CComPtr<ID3D11Texture2D> stagingTexture;
+			Microsoft::WRL::ComPtr<ID3D11Device> device;
+			Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> stagingTexture;
 			UINT stagingWidth = 0;
 			UINT stagingHeight = 0;
 			HDC memoryDC = nullptr;
@@ -168,9 +168,9 @@ namespace draw3
 			void Reset()
 			{
 				ReleaseDib();
-				stagingTexture.Release();
-				device.Release();
-				context.Release();
+				stagingTexture.Reset();
+				device.Reset();
+				context.Reset();
 				stagingWidth = 0;
 				stagingHeight = 0;
 				window = nullptr;
@@ -180,7 +180,7 @@ namespace draw3
 			{
 				if (!device || width == 0 || height == 0) return false;
 				if (stagingTexture && stagingWidth == width && stagingHeight == height) return true;
-				stagingTexture.Release();
+				stagingTexture.Reset();
 				D3D11_TEXTURE2D_DESC description = {};
 				description.Width = width;
 				description.Height = height;
@@ -190,7 +190,7 @@ namespace draw3
 				description.SampleDesc.Count = 1;
 				description.Usage = D3D11_USAGE_STAGING; // ULW 需要 CPU 读回像素。
 				description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-				if (FAILED(device->CreateTexture2D(&description, nullptr, &stagingTexture))) return false;
+				if (FAILED(device->CreateTexture2D(&description, nullptr, stagingTexture.ReleaseAndGetAddressOf()))) return false;
 				stagingWidth = width;
 				stagingHeight = height;
 				return true;
@@ -262,10 +262,10 @@ namespace draw3
 					static_cast<UINT>(dirty.left), static_cast<UINT>(dirty.top), 0,
 					static_cast<UINT>(dirty.right), static_cast<UINT>(dirty.bottom), 1
 				};
-				context->CopySubresourceRegion(stagingTexture, 0, static_cast<UINT>(dirty.left),
+				context->CopySubresourceRegion(stagingTexture.Get(), 0, static_cast<UINT>(dirty.left),
 					static_cast<UINT>(dirty.top), 0, finalTexture, 0, &sourceRegion); // 只把脏区从 GPU backbuffer 拷到可读纹理。
 				D3D11_MAPPED_SUBRESOURCE mapped = {};
-				if (FAILED(context->Map(stagingTexture, 0, D3D11_MAP_READ, 0, &mapped))) return false;
+				if (FAILED(context->Map(stagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return false;
 
 				const size_t copyBytes = static_cast<size_t>(dirty.right - dirty.left) * 4;
 				const BYTE* source = static_cast<const BYTE*>(mapped.pData) +
@@ -278,7 +278,7 @@ namespace draw3
 					std::memcpy(destination + row * static_cast<size_t>(dibWidth) * 4,
 						source + row * mapped.RowPitch, copyBytes); // 逐行处理 RowPitch 和 DIB stride 不同的情况。
 				}
-				context->Unmap(stagingTexture, 0);
+				context->Unmap(stagingTexture.Get(), 0);
 
 				RECT windowRect = {};
 				if (!GetWindowRect(window, &windowRect)) return false;
@@ -303,9 +303,9 @@ namespace draw3
 		{
 			HWND window = nullptr;
 			HMODULE dcompModule = nullptr;
-			CComPtr<IDCompositionDevice> compositionDevice;
-			CComPtr<IDCompositionTarget> compositionTarget;
-			CComPtr<IDCompositionVisual> rootVisual;
+			Microsoft::WRL::ComPtr<IDCompositionDevice> compositionDevice;
+			Microsoft::WRL::ComPtr<IDCompositionTarget> compositionTarget;
+			Microsoft::WRL::ComPtr<IDCompositionVisual> rootVisual;
 			using CreateDeviceFunction = HRESULT(WINAPI*)(IDXGIDevice*, REFIID, void**);
 
 			~DirectCompositionPresenter()
@@ -316,9 +316,9 @@ namespace draw3
 
 			void Reset()
 			{
-				rootVisual.Release();
-				compositionTarget.Release();
-				compositionDevice.Release();
+				rootVisual.Reset();
+				compositionTarget.Reset();
+				compositionDevice.Reset();
 				window = nullptr;
 			}
 
@@ -333,14 +333,14 @@ namespace draw3
 				auto createDevice = reinterpret_cast<CreateDeviceFunction>(GetProcAddress(dcompModule, "DCompositionCreateDevice"));
 				if (!createDevice) return false;
 
-				IDCompositionDevice* rawDevice = nullptr;
-				HRESULT result = createDevice(dxgiDevice, __uuidof(IDCompositionDevice), reinterpret_cast<void**>(&rawDevice));
-				if (FAILED(result) || !rawDevice) return false;
-				compositionDevice.Attach(rawDevice);
-				if (FAILED(result = compositionDevice->CreateTargetForHwnd(window, TRUE, &compositionTarget))) return false;
-				if (FAILED(result = compositionDevice->CreateVisual(&rootVisual))) return false;
+				HRESULT result = createDevice(dxgiDevice, __uuidof(IDCompositionDevice),
+					reinterpret_cast<void**>(compositionDevice.ReleaseAndGetAddressOf()));
+				if (FAILED(result) || !compositionDevice) return false;
+				if (FAILED(result = compositionDevice->CreateTargetForHwnd(window, TRUE,
+					compositionTarget.ReleaseAndGetAddressOf()))) return false;
+				if (FAILED(result = compositionDevice->CreateVisual(rootVisual.ReleaseAndGetAddressOf()))) return false;
 				if (FAILED(result = rootVisual->SetContent(swapChain))) return false; // 将交换链作为视觉树内容。
-				if (FAILED(result = compositionTarget->SetRoot(rootVisual))) return false;
+				if (FAILED(result = compositionTarget->SetRoot(rootVisual.Get()))) return false;
 				if (FAILED(result = compositionDevice->Commit())) return false; // 提交后 DWM 才开始读取该 visual。
 				return true;
 			}
@@ -418,7 +418,7 @@ namespace draw3
 		HWND window = nullptr;
 		GraphicsDeviceResources* graphics = nullptr;
 		InkRenderer* renderer = nullptr;
-		CComPtr<IDXGISwapChain1> swapChain;
+		Microsoft::WRL::ComPtr<IDXGISwapChain1> swapChain;
 		TransparentPresentMode activeMode = kPreferredTransparentPresentMode;
 		UINT width = 0;
 		UINT height = 0;
@@ -441,7 +441,7 @@ namespace draw3
 		{
 			ResetPresenters();
 			if (renderer) renderer->ReleaseResources();
-			swapChain.Release();
+			swapChain.Reset();
 		}
 
 		bool ConfigureWindow(TransparentPresentMode mode)
@@ -452,11 +452,12 @@ namespace draw3
 
 		HRESULT CreateSwapChainForMode(TransparentPresentMode mode, DXGI_SWAP_CHAIN_DESC1 description)
 		{
-			swapChain.Release();
+			swapChain.Reset();
 			HRESULT result = S_OK;
 			if (IsDirectCompositionMode(mode))
 			{
-				result = graphics->factory->CreateSwapChainForComposition(graphics->device, &description, nullptr, &swapChain); // DComp 使用无 HWND 的 composition swapchain。
+				result = graphics->factory->CreateSwapChainForComposition(graphics->device.Get(), &description, nullptr,
+					swapChain.ReleaseAndGetAddressOf()); // DComp 使用无 HWND 的 composition swapchain。
 				return SUCCEEDED(result) && swapChain ? S_OK : (FAILED(result) ? result : E_FAIL);
 			}
 
@@ -467,18 +468,20 @@ namespace draw3
 				LogSwapChainDescription(TransparentPresentModeName(mode),
 					waitable ? "Trying waitable premultiplied alpha" : "Trying premultiplied alpha", description);
 			}
-			result = graphics->factory->CreateSwapChainForHwnd(graphics->device, window, &description, nullptr, nullptr, &swapChain); // DWM/ULW 路径绑定到实际 HWND。
+			result = graphics->factory->CreateSwapChainForHwnd(graphics->device.Get(), window, &description, nullptr, nullptr,
+				swapChain.ReleaseAndGetAddressOf()); // DWM/ULW 路径绑定到实际 HWND。
 			if (FAILED(result) && IsDwmGlassMode(mode))
 			{
 				BOOL opaqueBlend = TRUE;
 				if (!LogDwmColorizationState(TransparentPresentModeName(mode), "Before unspecified alpha retry", &opaqueBlend)) return result;
 				// Win7 Aero 对 HWND swapchain 使用 UNSPECIFIED alpha，保留原有兼容重试。
-				swapChain.Release();
+				swapChain.Reset();
 				description.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
 				LogSwapChainDescription(TransparentPresentModeName(mode),
 					(description.Flags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT) != 0
 					? "Trying waitable unspecified alpha" : "Trying unspecified alpha", description);
-				result = graphics->factory->CreateSwapChainForHwnd(graphics->device, window, &description, nullptr, nullptr, &swapChain);
+				result = graphics->factory->CreateSwapChainForHwnd(graphics->device.Get(), window, &description, nullptr, nullptr,
+					swapChain.ReleaseAndGetAddressOf());
 			}
 			return SUCCEEDED(result) && swapChain ? S_OK : (FAILED(result) ? result : E_FAIL);
 		}
@@ -493,17 +496,18 @@ namespace draw3
 			{
 				LogHResult(SwapChainCreationStepName(mode, true), result);
 				std::cout << "Waitable swapchain creation failed; fallback to ordinary swapchain." << std::endl;
-				swapChain.Release();
+				swapChain.Reset();
 				return false;
 			}
 
-			CComPtr<IDXGISwapChain2> swapChain2;
-			result = swapChain->QueryInterface(__uuidof(IDXGISwapChain2), reinterpret_cast<void**>(&swapChain2));
+			Microsoft::WRL::ComPtr<IDXGISwapChain2> swapChain2;
+			swapChain2.Reset();
+			result = swapChain.As(&swapChain2);
 			if (FAILED(result) || !swapChain2)
 			{
 				LogHResult("IDXGISwapChain1::QueryInterface(IDXGISwapChain2)", result);
 				std::cout << "Waitable swapchain is not usable; fallback to ordinary swapchain." << std::endl;
-				swapChain.Release();
+				swapChain.Reset();
 				return false;
 			}
 
@@ -512,14 +516,14 @@ namespace draw3
 			{
 				LogHResult("IDXGISwapChain2::SetMaximumFrameLatency(1)", result);
 				std::cout << "Waitable frame latency setup failed; fallback to ordinary swapchain." << std::endl;
-				swapChain.Release();
+				swapChain.Reset();
 				return false;
 			}
 
 			std::cout << "Waitable swapchain enabled in mode " << TransparentPresentModeName(mode) << "." << std::endl;
 			if (IsDwmGlassMode(mode))
 			{
-				LogSwapChainRuntimeDescription(TransparentPresentModeName(mode), swapChain, "Waitable created");
+				LogSwapChainRuntimeDescription(TransparentPresentModeName(mode), swapChain.Get(), "Waitable created");
 			}
 			return true;
 		}
@@ -549,7 +553,7 @@ namespace draw3
 			std::cout << "Ordinary swapchain enabled in mode " << TransparentPresentModeName(mode) << "." << std::endl;
 			if (IsDwmGlassMode(mode))
 			{
-				LogSwapChainRuntimeDescription(TransparentPresentModeName(mode), swapChain, "Created");
+				LogSwapChainRuntimeDescription(TransparentPresentModeName(mode), swapChain.Get(), "Created");
 			}
 			return true;
 		}
@@ -559,9 +563,9 @@ namespace draw3
 			switch (activeMode)
 			{
 			case TransparentPresentMode::UlwDirtyRect:
-				return ulwPresenter.Initialize(window, graphics->device, graphics->context, width, height);
+				return ulwPresenter.Initialize(window, graphics->device.Get(), graphics->context.Get(), width, height);
 			case TransparentPresentMode::DirectCompositionVisualTree:
-				return directCompositionPresenter.Initialize(window, graphics->dxgiDevice, swapChain);
+				return directCompositionPresenter.Initialize(window, graphics->dxgiDevice.Get(), swapChain.Get());
 			case TransparentPresentMode::DwmBlurBehind:
 				return dwmBlurPresenter.Initialize(window);
 			case TransparentPresentMode::DwmBlurBehind2:
@@ -579,7 +583,7 @@ namespace draw3
 			if (!ConfigureWindow(mode) || !CreateSwapChain(mode)) return false;
 
 			renderer->SetWindowBackgroundColor(IsGpuMode(mode) ? kTransparentLayerClearColor : kTransparentWindowBackgroundColor); // GPU 透明用真透明，ULW 用近透明背景接收鼠标。
-			if (!renderer->Init(graphics->device, graphics->context, swapChain, width, height)) return false;
+			if (!renderer->Init(graphics->device.Get(), graphics->context.Get(), swapChain.Get(), width, height)) return false;
 			if (!InitializePresenter()) return false;
 			std::cout << "Active transparent present mode: " << TransparentPresentModeName(mode) << std::endl;
 			return true;
@@ -659,7 +663,7 @@ namespace draw3
 		bool succeeded = false;
 		if (IsUlwMode(impl_->activeMode))
 		{
-			succeeded = impl_->ulwPresenter.Present(impl_->renderer->backBufferTexture, dirty, presentFull); // ULW 需要 CPU 读回并调用 UpdateLayeredWindow。
+			succeeded = impl_->ulwPresenter.Present(impl_->renderer->backBufferTexture.Get(), dirty, presentFull); // ULW 需要 CPU 读回并调用 UpdateLayeredWindow。
 		}
 		else
 		{
@@ -697,6 +701,6 @@ namespace draw3
 
 	IDXGISwapChain1* TransparentPresentationController::SwapChain() const
 	{
-		return impl_->swapChain;
+		return impl_->swapChain.Get();
 	}
 }

@@ -4,13 +4,13 @@
 #define NOMINMAX
 #endif
 
-#include <atlbase.h>
 #include <cstddef>
 #include <cstdint>
 #include <d3d11.h>
 #include <DirectXMath.h>
 #include <dxgi1_2.h>
 #include <vector>
+#include <wrl/client.h>
 
 export module draw3.renderer;
 
@@ -34,33 +34,33 @@ export namespace draw3
 	class InkRenderer
 	{
 	public:
-		CComPtr<ID3D11Device> device;
-		CComPtr<ID3D11DeviceContext> context;
+		Microsoft::WRL::ComPtr<ID3D11Device> device;
+		Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
 
-		CComPtr<ID3D11Texture2D> backBufferTexture;
-		CComPtr<ID3D11Texture2D> layerL2Texture;
-		CComPtr<ID3D11Texture2D> layerL1Texture;
-		CComPtr<ID3D11Texture2D> layerL0Texture;
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> backBufferTexture;
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> layerL2Texture;
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> layerL1Texture;
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> layerL0Texture;
 
-		CComPtr<ID3D11RenderTargetView> backBufferRTV;
-		CComPtr<ID3D11RenderTargetView> layerL2RTV;
-		CComPtr<ID3D11RenderTargetView> layerL1RTV;
-		CComPtr<ID3D11ShaderResourceView> layerL1SRV;
-		CComPtr<ID3D11RenderTargetView> layerL0RTV;
-		CComPtr<ID3D11ShaderResourceView> layerL0SRV;
+		Microsoft::WRL::ComPtr<ID3D11RenderTargetView> backBufferRTV;
+		Microsoft::WRL::ComPtr<ID3D11RenderTargetView> layerL2RTV;
+		Microsoft::WRL::ComPtr<ID3D11RenderTargetView> layerL1RTV;
+		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> layerL1SRV;
+		Microsoft::WRL::ComPtr<ID3D11RenderTargetView> layerL0RTV;
+		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> layerL0SRV;
 
-		CComPtr<ID3D11VertexShader> vertexShader;
-		CComPtr<ID3D11PixelShader> pixelShader;
-		CComPtr<ID3D11Buffer> globalCB;
-		CComPtr<ID3D11Buffer> inkDataBuffer;
-		CComPtr<ID3D11ShaderResourceView> inkDataSRV;
-		CComPtr<ID3D11SamplerState> alphaBlendSampler;
+		Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader;
+		Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> globalCB;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> inkDataBuffer;
+		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> inkDataSRV;
+		Microsoft::WRL::ComPtr<ID3D11SamplerState> alphaBlendSampler;
 
-		CComPtr<ID3D11BlendState> penBlendState;
-		CComPtr<ID3D11BlendState> eraserBlendState;
-		CComPtr<ID3D11BlendState> alphaBlendState;
-		CComPtr<ID3D11RasterizerState> rasterState;
-		CComPtr<ID3D11DepthStencilState> dsState;
+		Microsoft::WRL::ComPtr<ID3D11BlendState> penBlendState;
+		Microsoft::WRL::ComPtr<ID3D11BlendState> eraserBlendState;
+		Microsoft::WRL::ComPtr<ID3D11BlendState> alphaBlendState;
+		Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterState;
+		Microsoft::WRL::ComPtr<ID3D11DepthStencilState> dsState;
 
 		size_t m_bufferHead = 0;
 		static constexpr size_t kMaxBufferCapacity = 200000;
