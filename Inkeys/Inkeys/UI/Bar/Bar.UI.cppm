@@ -133,9 +133,9 @@ public:
 	{
 		return clamp(progress, 0.0, 1.0);
 	}
-	bool CanJoin(double maxProgress = 0.7) const
+	bool CanJoin(double maxProgress = 0.5) const
 	{
-		maxProgress = isfinite(maxProgress) ? clamp(maxProgress, 0.0, 1.0) : 0.7;
+		maxProgress = isfinite(maxProgress) ? clamp(maxProgress, 0.0, 1.0) : 0.5;
 		return IsActive() && GetProgress() <= maxProgress;
 	}
 

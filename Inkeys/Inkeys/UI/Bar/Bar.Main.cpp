@@ -971,7 +971,7 @@ void BarUISetClass::Rendering()
 			// 布局变化会取代仍在运行的换边关键帧；即使某个控件目标没变，也必须从当前值重建。
 			bool interruptingMainBarSideSwitch = mainBarLayoutChange && mainBarTimeline.IsActive()
 				&& (mainBar->x.hasMiddleV || mainBar->w.hasMiddleV);
-			// 新操作创建完整批次；批次进入最后 30% 后，新布局不再压缩到旧截止时间。
+			// 新操作创建完整批次；批次进入后半程后，新布局不再压缩到旧截止时间。
 			bool lateMainBarLayoutChange = !barState.fold && mainBarTimeline.IsActive()
 				&& mainBarLayoutChange && !mainBarTimeline.CanJoin();
 			// 超过加入阈值后会创建新批次，此时旧换边中点已经失效，不能在新批次中再次收窄。
@@ -1535,7 +1535,7 @@ void BarUISetClass::Rendering()
 					bool continueDrawAttributePhase = false;
 					if (drawAttributeBatchChange)
 					{
-						// 只在主栏批次前 70% 内加入；太晚则使用完整时长创建独立新批次。
+						// 只在主栏批次前 50% 内加入；进入后半程则使用完整时长创建独立新批次。
 						if (mainBarTimeline.CanJoin())
 						{
 							operationDur = mainBarTimeline.GetRemainingDuration();
