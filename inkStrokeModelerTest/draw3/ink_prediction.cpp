@@ -549,8 +549,8 @@ namespace draw3
 	}
 
 	ActiveMouseStroke::ActiveMouseStroke(float baseDiameter, float expectedSpeed,
-		bool fixedWidthValue, bool highlighterValue)
-		: widthEstimator(baseDiameter, expectedSpeed), fixedWidth(fixedWidthValue), highlighter(highlighterValue)
+		StrokeWidthMode widthModeValue, bool highlighterValue)
+		: widthEstimator(baseDiameter, expectedSpeed), widthMode(widthModeValue), highlighter(highlighterValue)
 	{
 	}
 
@@ -640,12 +640,17 @@ namespace draw3
 
 	void AppendNewModeledPoints(ActiveMouseStroke& stroke, float inputSpeed)
 	{
-		const float effectiveInputSpeed = stroke.fixedWidth ? -1.0f : inputSpeed;
+		const bool fixedWidth = stroke.widthMode == StrokeWidthMode::Fixed;
+		const float effectiveInputSpeed = fixedWidth ? -1.0f : inputSpeed;
 		const bool seedInitialWidth = effectiveInputSpeed >= 0.0f && !stroke.widthEstimator.hasInputSpeed && stroke.committedIndex == 0;
 		for (size_t index = stroke.convertedResultCount; index < stroke.modeledResults.size(); ++index)
 		{
-			InkPoint point = stroke.widthEstimator.Append(stroke.modeledResults[index], effectiveInputSpeed);
-			if (stroke.fixedWidth) point.r = stroke.widthEstimator.baseDiameter * 0.5f;
+			const auto& result = stroke.modeledResults[index];
+			// 固定宽度工具只取建模后的位置与时间，不经过普通笔的模拟压感估算器。
+			InkPoint point = fixedWidth
+				? InkPoint{ result.position.x, result.position.y, stroke.widthEstimator.baseDiameter * 0.5f,
+					static_cast<float>(result.time.Value()) }
+				: stroke.widthEstimator.Append(result, effectiveInputSpeed);
 			if (stroke.highlighter && stroke.realPoints.empty() && stroke.hasInputStartPoint)
 			{
 				point.x = stroke.inputStartPoint.x;
@@ -693,11 +698,14 @@ namespace draw3
 	{
 		stroke.predictedPoints.clear();
 		StrokeWidthEstimator predictionWidth = stroke.widthEstimator;
+		const bool fixedWidth = stroke.widthMode == StrokeWidthMode::Fixed;
 		// 预测器只预测几何位置，笔宽继承最后真实输入，避免预测速度变化造成尾部回粗。
 		for (const auto& result : stroke.predictedResults)
 		{
-			InkPoint point = predictionWidth.Append(result);
-			if (stroke.fixedWidth) point.r = stroke.widthEstimator.baseDiameter * 0.5f;
+			InkPoint point = fixedWidth
+				? InkPoint{ result.position.x, result.position.y, stroke.widthEstimator.baseDiameter * 0.5f,
+					static_cast<float>(result.time.Value()) }
+				: predictionWidth.Append(result);
 			if (stroke.highlighter)
 			{
 				const InkPoint* previous = !stroke.predictedPoints.empty() ? &stroke.predictedPoints.back()
@@ -761,7 +769,7 @@ namespace draw3
 			? stroke.committedIndex - 1 : stroke.committedIndex;
 		std::vector<InkPoint> stablePoints(stroke.realPoints.begin() + stableStartIndex,
 			stroke.realPoints.begin() + protectedStartIndex + 1);
-		renderer.SetOMTarget(renderer.layerL1RTV.Get());
+		renderer.SetOperatorTarget(renderer.layerL1);
 		RECT dirty = {};
 		if (stroke.highlighter)
 		{
@@ -778,22 +786,47 @@ namespace draw3
 			dirty = RectFromStrokePoints(stablePoints, width, height, shape);
 		}
 		stroke.committedIndex = protectedStartIndex; // 推进提交游标，后续帧不重复提交稳定前缀。
+		stroke.hasCommittedGeometry = true;
 		return dirty;
+	}
+
+	RECT CommitEraserRealPointsToL1(ActiveMouseStroke& stroke, StrokeShape shape,
+		InkRenderer& renderer, int width, int height)
+	{
+		std::vector<InkPoint> newPoints;
+		if (stroke.realPoints.empty())
+		{
+			if (stroke.hasCommittedGeometry || !stroke.hasInputStartPoint) return {};
+			newPoints.push_back(stroke.inputStartPoint); // 建模器尚未给点时也要保证单击橡皮可见。
+		}
+		else
+		{
+			const size_t latestIndex = stroke.realPoints.size() - 1;
+			if (stroke.hasCommittedGeometry && latestIndex <= stroke.committedIndex) return {};
+			const size_t startIndex = stroke.hasCommittedGeometry ? stroke.committedIndex : 0;
+			newPoints.assign(stroke.realPoints.begin() + startIndex, stroke.realPoints.end());
+			stroke.committedIndex = latestIndex;
+		}
+
+		renderer.SetOperatorTarget(renderer.layerL1);
+		renderer.DrawStrokeOrDot(newPoints, kTransparentLayerClearColor, shape, InkOperatorKind::Erase);
+		stroke.hasCommittedGeometry = true;
+		return RectFromStrokePoints(newPoints, width, height, shape);
 	}
 
 	void DrawL0LiveComposite(ActiveMouseStroke& stroke, DirectX::XMFLOAT4 color,
 		StrokeShape shape, InkRenderer& renderer)
 	{
-		renderer.ClearRTV(renderer.layerL0RTV.Get(), kTransparentLayerClearColor); // L0 每帧从零重画，才能移除旧预测。
+		renderer.ClearOperatorLayer(renderer.layerL0); // L0 每帧从单位操作重画，才能移除旧预测。
 		if (stroke.highlighter)
 		{
 			if (stroke.l0HighlighterGeometry.primitives.empty()) return;
-			renderer.SetOMTarget(renderer.layerL0RTV.Get());
+			renderer.SetOperatorTarget(renderer.layerL0);
 			renderer.DrawHighlighterPrimitives(stroke.l0HighlighterGeometry.primitives, color);
 			return;
 		}
 		if (stroke.l0DrawPoints.empty()) return;
-		renderer.SetOMTarget(renderer.layerL0RTV.Get());
+		renderer.SetOperatorTarget(renderer.layerL0);
 		renderer.DrawStrokeOrDot(stroke.l0DrawPoints, color, shape);
 	}
 }

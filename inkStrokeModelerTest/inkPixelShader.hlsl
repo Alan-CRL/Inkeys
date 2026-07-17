@@ -79,35 +79,39 @@ float IsInsideRoundJoinSector(float2 vectorFromCenter, float2 startDirection,
     return inside;
 }
 
-float4 main(PS_INPUT input) : SV_Target
+struct OperatorOutput
+{
+    float4 add : SV_Target0;
+    float4 retain : SV_Target1;
+};
+
+OperatorOutput main(PS_INPUT input)
 {
     int type = (int) (input.shapeType + 0.5);
 
     if (any(isnan(input.p1)) || any(isnan(input.p2)))
         discard;
 
-    if (type == 1)
+    if (type == 1 || type == 2)
     {
-        return AlphaBlendSource.Sample(AlphaBlendSampler, input.uv);
-    }
-
-    if (type == 2)
-    {
-        float stableAlpha = AlphaBlendSource.Sample(AlphaBlendSampler, input.uv).a;
-        float liveAlpha = AuxiliaryBlendSource.Sample(AlphaBlendSampler, input.uv).a;
-        float maskAlpha = max(stableAlpha, liveAlpha); // 整笔覆盖率只取最大值，避免重叠段重复擦除。
-        return float4(0.0, 0.0, 0.0, maskAlpha);
-    }
-
-    if (type == 4)
-    {
-        float stableAlpha = AlphaBlendSource.Sample(AlphaBlendSampler, input.uv).a;
-        float liveAlpha = AuxiliaryBlendSource.Sample(AlphaBlendSampler, input.uv).a;
-        float coverage = max(stableAlpha, liveAlpha);
-        float outAlpha = input.color.a * coverage;
-        if (outAlpha <= 0.0)
-            discard;
-        return float4(input.color.rgb * outAlpha, outAlpha); // 整笔覆盖率着色后只做一次 source-over。
+        float4 stableAdd = StableOperatorAdd.Sample(OperatorSampler, input.uv);
+        float stableRetain = StableOperatorRetain.Sample(OperatorSampler, input.uv).r;
+        float4 liveAdd = LiveOperatorAdd.Sample(OperatorSampler, input.uv);
+        float liveRetain = LiveOperatorRetain.Sample(OperatorSampler, input.uv).r;
+        OperatorOutput output;
+        if (type == 1)
+        {
+            // L1/L0 是同一笔的两段，先取覆盖率并集，避免连接处重复抗锯齿。
+            output.add = max(stableAdd, liveAdd);
+            output.retain = min(stableRetain, liveRetain).xxxx;
+        }
+        else
+        {
+            // 有序操作：New(实时层) after Old(稳定层)。
+            output.add = liveAdd + liveRetain * stableAdd;
+            output.retain = (liveRetain * stableRetain).xxxx;
+        }
+        return output;
     }
 
     float d = 0.0;
@@ -164,6 +168,19 @@ float4 main(PS_INPUT input) : SV_Target
     if (alpha <= 0.0)
         discard;
 
-    float outAlpha = input.color.a * alpha;
-    return float4(input.color.rgb * outAlpha, outAlpha);
+    OperatorOutput output;
+    if (globalOperatorKind == 1)
+    {
+        output.add = 0.0;
+        output.retain = (1.0 - alpha).xxxx; // 橡皮只保留下层的一部分，不产生颜色。
+    }
+    else
+    {
+        float outAlpha = input.color.a * alpha;
+        if (outAlpha <= 0.0)
+            discard;
+        output.add = float4(input.color.rgb * outAlpha, outAlpha);
+        output.retain = (1.0 - outAlpha).xxxx;
+    }
+    return output;
 }

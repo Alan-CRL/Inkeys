@@ -11,6 +11,8 @@ cbuffer ScreenBuffer : register(b0)
     uint globalBufferOffset;
     
     float4 globalColor;
+    uint globalOperatorKind;
+    float3 globalPadding;
 };
 
 // 2. 结构定义
@@ -35,10 +37,12 @@ struct HighlighterPrimitive
 
 // 3. 结构化缓冲区
 StructuredBuffer<InkPoint> InkData : register(t0);
-Texture2D AlphaBlendSource : register(t1);
-Texture2D AuxiliaryBlendSource : register(t2); // 双遮罩合成时提供 L0 实时覆盖率。
+Texture2D StableOperatorAdd : register(t1);
+Texture2D StableOperatorRetain : register(t2);
 StructuredBuffer<HighlighterPrimitive> HighlighterData : register(t3);
-SamplerState AlphaBlendSampler : register(s0);
+Texture2D LiveOperatorAdd : register(t4);
+Texture2D LiveOperatorRetain : register(t5);
+SamplerState OperatorSampler : register(s0);
 
 // 4. VS -> PS
 struct PS_INPUT

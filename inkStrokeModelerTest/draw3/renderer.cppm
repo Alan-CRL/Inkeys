@@ -24,6 +24,20 @@ export namespace draw3
 		RoundCapsule = 0
 	};
 
+	// 描述几何覆盖率要写入绘制墨水还是擦除墨水。
+	enum class InkOperatorKind : uint32_t
+	{
+		Draw = 0,
+		Erase = 1
+	};
+
+	// L1/L0 通常属于同一笔并取覆盖率并集；调试着色时可按时间顺序叠加。
+	enum class OperatorLayerMergeMode : uint32_t
+	{
+		CoverageUnion = 0,
+		Ordered = 1
+	};
+
 	// 描述一个带半径和时间戳的墨迹采样点。
 	struct InkPoint
 	{
@@ -65,6 +79,17 @@ export namespace draw3
 		RECT bounds = { 0, 0, 0, 0 };
 	};
 
+	// 一个临时层保存仿射操作 Result = Add + Retain * Below。
+	struct OperatorLayerResources
+	{
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> addTexture;
+		Microsoft::WRL::ComPtr<ID3D11RenderTargetView> addRTV;
+		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> addSRV;
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> retainTexture;
+		Microsoft::WRL::ComPtr<ID3D11RenderTargetView> retainRTV;
+		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> retainSRV;
+	};
+
 	// 管理墨迹着色器、绘制图层及其 D3D11 资源。
 	class InkRenderer
 	{
@@ -74,15 +99,11 @@ export namespace draw3
 
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> backBufferTexture;
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> layerL2Texture;
-		Microsoft::WRL::ComPtr<ID3D11Texture2D> layerL1Texture;
-		Microsoft::WRL::ComPtr<ID3D11Texture2D> layerL0Texture;
+		OperatorLayerResources layerL1;
+		OperatorLayerResources layerL0;
 
 		Microsoft::WRL::ComPtr<ID3D11RenderTargetView> backBufferRTV;
 		Microsoft::WRL::ComPtr<ID3D11RenderTargetView> layerL2RTV;
-		Microsoft::WRL::ComPtr<ID3D11RenderTargetView> layerL1RTV;
-		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> layerL1SRV;
-		Microsoft::WRL::ComPtr<ID3D11RenderTargetView> layerL0RTV;
-		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> layerL0SRV;
 
 		Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader;
 		Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader;
@@ -91,11 +112,10 @@ export namespace draw3
 		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> inkDataSRV;
 		Microsoft::WRL::ComPtr<ID3D11Buffer> highlighterPrimitiveBuffer;
 		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> highlighterPrimitiveSRV;
-		Microsoft::WRL::ComPtr<ID3D11SamplerState> alphaBlendSampler;
+		Microsoft::WRL::ComPtr<ID3D11SamplerState> operatorSampler;
 
-		Microsoft::WRL::ComPtr<ID3D11BlendState> strokeCoverageBlendState;
-		Microsoft::WRL::ComPtr<ID3D11BlendState> alphaBlendState;
-		Microsoft::WRL::ComPtr<ID3D11BlendState> destinationOutBlendState;
+		Microsoft::WRL::ComPtr<ID3D11BlendState> strokeOperatorBlendState;
+		Microsoft::WRL::ComPtr<ID3D11BlendState> operatorResolveBlendState;
 		Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterState;
 		Microsoft::WRL::ComPtr<ID3D11DepthStencilState> dsState;
 
@@ -106,31 +126,31 @@ export namespace draw3
 
 		// 绘制一组墨迹点，并兼容只有一个点的点击。
 		int DrawStrokeOrDot(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color,
-			StrokeShape shape = StrokeShape::RoundCapsule);
+			StrokeShape shape = StrokeShape::RoundCapsule,
+			InkOperatorKind operatorKind = InkOperatorKind::Draw);
 		// 将墨迹点分批写入结构化缓冲区并提交绘制。
 		int DrawStroke(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color,
-			StrokeShape shape = StrokeShape::RoundCapsule);
-		// 绘制平头 body 与圆角 primitive，临时层仍使用 MAX 累积覆盖率。
+			StrokeShape shape = StrokeShape::RoundCapsule,
+			InkOperatorKind operatorKind = InkOperatorKind::Draw);
+		// 绘制平头 body 与圆角 primitive，临时层使用 Add/MAX、Retain/MIN 累积覆盖率。
 		int DrawHighlighterPrimitives(const std::vector<HighlighterPrimitive>& primitives,
-			DirectX::XMFLOAT4 color);
+			DirectX::XMFLOAT4 color, InkOperatorKind operatorKind = InkOperatorKind::Draw);
 		// 复制纹理中的指定矩形区域。
 		void CopyResource(ID3D11Texture2D* dst, ID3D11Texture2D* src, RECT rect);
-		// 将源纹理混合到整个目标视图。
-		void BlendResourceGlobal(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* srcSRV);
-		// 将源纹理按脏矩形混合到目标视图。
-		void AlphaBlendResource(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* srcSRV, RECT rect);
-		// 使用两层覆盖率遮罩按脏矩形裁除目标内容。
-		void ClipResource(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* stableMaskSRV,
-			ID3D11ShaderResourceView* liveMaskSRV, RECT rect);
-		// 合并两层覆盖率遮罩，着色后只以 source-over 合成一次。
-		void BlendCoverageResource(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* stableMaskSRV,
-			ID3D11ShaderResourceView* liveMaskSRV, DirectX::XMFLOAT4 color, RECT rect);
+		// 将 L1/L0 仿射操作统一应用到目标 RGBA。
+		void ApplyOperatorLayers(ID3D11RenderTargetView* dstRTV,
+			const OperatorLayerResources& stableLayer, const OperatorLayerResources& liveLayer,
+			RECT rect, OperatorLayerMergeMode mergeMode = OperatorLayerMergeMode::CoverageUnion);
 		// 更新视口和屏幕尺寸。
 		void SetScreenSize(float width, float height);
 		// 设置当前输出合并目标。
 		void SetOMTarget(ID3D11RenderTargetView* renderTargetView);
+		// 同时绑定操作层的 Add/Retain 两个输出目标。
+		void SetOperatorTarget(const OperatorLayerResources& layer);
 		// 使用指定颜色清空渲染目标。
 		void ClearRTV(ID3D11RenderTargetView* renderTargetView, DirectX::XMFLOAT4 color);
+		// 将操作层恢复为不改变下层的单位操作。
+		void ClearOperatorLayer(const OperatorLayerResources& layer);
 		// 创建依赖窗口尺寸的 backbuffer 和三层画布资源。
 		bool CreateSizeDependentResources(IDXGISwapChain1* swapChain, UINT width, UINT height);
 		// 释放依赖窗口尺寸的资源。
@@ -143,10 +163,8 @@ export namespace draw3
 		bool Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height);
 
 	private:
-		enum class CompositeMode { SourceOver, DestinationOut, CoverageTint };
-		// 使用矩形着色器执行普通复制、destination-out 或双遮罩着色合成。
-		void CompositeResources(ID3D11RenderTargetView* dstRTV, ID3D11ShaderResourceView* primarySRV,
-			ID3D11ShaderResourceView* secondarySRV, DirectX::XMFLOAT4 color, RECT rect, CompositeMode mode);
+		// 创建 BGRA8 Add 与 R16F Retain 两张尺寸相关纹理。
+		bool CreateOperatorLayerResources(UINT width, UINT height, OperatorLayerResources& layer);
 		// 从资源中加载并创建墨迹着色器。
 		bool LoadShaders();
 	};

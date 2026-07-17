@@ -26,6 +26,8 @@ export namespace draw3
 	enum class DebugLayerColorMode { NormalInkColor, ColorizeLiveLayer };
 	// 选择帧率相关的建模参数组。
 	enum class StrokeTimingProfileId { Fps30, Fps60, Fps120, Fps240 };
+	// 选择当前工具的宽度来源；未来笔速橡皮应增加独立策略，不复用模拟压感。
+	enum class StrokeWidthMode { SimulatedPressure, Fixed };
 
 	inline constexpr InkPredictionMode kActivePredictionMode = InkPredictionMode::Kalman;
 	inline constexpr LiveTipLengthMode kActiveLiveTipLengthMode = LiveTipLengthMode::Normal;
@@ -120,8 +122,9 @@ export namespace draw3
 		RECT lastL0Rect = { 0, 0, 0, 0 };
 		RECT currentL0Rect = { 0, 0, 0, 0 };
 		StrokeWidthEstimator widthEstimator;
-		bool fixedWidth = false;
+		StrokeWidthMode widthMode = StrokeWidthMode::SimulatedPressure;
 		bool highlighter = false;
+		bool hasCommittedGeometry = false;
 		float realPathLength = 0.0f;
 		InkPoint inputStartPoint = {};
 		bool hasInputStartPoint = false;
@@ -136,7 +139,8 @@ export namespace draw3
 		double lastFrameWallTime = 0.0;
 		double logicalInputTime = 0.0;
 
-		ActiveMouseStroke(float baseDiameter, float expectedSpeed, bool fixedWidthValue = false,
+		ActiveMouseStroke(float baseDiameter, float expectedSpeed,
+			StrokeWidthMode widthModeValue = StrokeWidthMode::SimulatedPressure,
 			bool highlighterValue = false);
 	};
 
@@ -175,6 +179,9 @@ export namespace draw3
 	// 将保护窗口之前的稳定前缀提交到 L1。
 	RECT CommitStablePrefixToL1(ActiveMouseStroke& stroke, double liveTipDurationSeconds,
 		double predictionDurationSeconds, DirectX::XMFLOAT4 color, StrokeShape shape,
+		InkRenderer& renderer, int width, int height);
+	// 橡皮不保留 L0，直接把新增真实点（含单击圆点）提交到 L1。
+	RECT CommitEraserRealPointsToL1(ActiveMouseStroke& stroke, StrokeShape shape,
 		InkRenderer& renderer, int width, int height);
 	// 清空并重绘当前 L0 实时内容。
 	void DrawL0LiveComposite(ActiveMouseStroke& stroke, DirectX::XMFLOAT4 color,

@@ -32,7 +32,7 @@ export namespace draw3
 		void DrawMouseStroke(const MouseMessage& startMessage);
 
 	private:
-		void CompositeLayersToBackBuffer(RECT dirty, DrawingTool tool = DrawingTool::Pen);
+		void CompositeLayersToBackBuffer(RECT dirty, bool orderLiveOverStable = false);
 		bool PresentFrame(RECT dirty, bool presentFull);
 
 		WindowController& window_;
