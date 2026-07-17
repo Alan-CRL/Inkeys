@@ -61,31 +61,11 @@ namespace draw3
 
 		std::vector<InkPoint> dotPoints;
 		dotPoints.reserve(2);
-		if (shape == StrokeShape::SharpStrip)
-		{
-			// 平头笔没有天然圆点，单击时沿默认走势生成一个居中的正方形印记。
-			InkPoint dotStart = points.front();
-			InkPoint dotEnd = points.front();
-			const float directionLength = std::hypot(dotStart.directionX, dotStart.directionY);
-			const float directionX = directionLength > 0.00001f ? dotStart.directionX / directionLength : 1.0f;
-			const float directionY = directionLength > 0.00001f ? dotStart.directionY / directionLength : 0.0f;
-			dotStart.x -= directionX * dotStart.r;
-			dotStart.y -= directionY * dotStart.r;
-			dotEnd.x += directionX * dotEnd.r;
-			dotEnd.y += directionY * dotEnd.r;
-			dotStart.directionX = dotEnd.directionX = directionX;
-			dotStart.directionY = dotEnd.directionY = directionY;
-			dotPoints.push_back(dotStart);
-			dotPoints.push_back(dotEnd);
-		}
-		else
-		{
-			// 圆角工具继续使用极短胶囊段生成点击圆点。
-			dotPoints.push_back(points.front());
-			InkPoint dotEnd = points.front();
-			dotEnd.x += std::max(0.25f, dotEnd.r * 0.05f);
-			dotPoints.push_back(dotEnd);
-		}
+		// 圆角工具使用极短胶囊段生成点击圆点；平头笔由独立 primitive 路径处理。
+		dotPoints.push_back(points.front());
+		InkPoint dotEnd = points.front();
+		dotEnd.x += std::max(0.25f, dotEnd.r * 0.05f);
+		dotPoints.push_back(dotEnd);
 		return DrawStroke(dotPoints, color, shape);
 	}
 
@@ -142,6 +122,51 @@ namespace draw3
 			m_bufferHead += batchCount;
 			// 相邻批次共享一个端点，避免分段处出现断裂。
 			startIndex += batchCount - 1;
+		}
+		return 0;
+	}
+
+	int InkRenderer::DrawHighlighterPrimitives(const std::vector<HighlighterPrimitive>& primitives,
+		DirectX::XMFLOAT4 color)
+	{
+		if (primitives.empty()) return 0;
+
+		size_t startIndex = 0;
+		while (startIndex < primitives.size())
+		{
+			const size_t batchCount = std::min(primitives.size() - startIndex, kMaxBufferCapacity);
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
+			if (FAILED(context->Map(highlighterPrimitiveBuffer.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return -1;
+			auto* destination = static_cast<HighlighterPrimitive*>(mapped.pData);
+			std::memcpy(destination, primitives.data() + startIndex,
+				batchCount * sizeof(HighlighterPrimitive)); // 每个 primitive 可独立批处理，不再共享易翻转的四边形端点。
+			context->Unmap(highlighterPrimitiveBuffer.Get(), 0);
+
+			if (FAILED(context->Map(globalCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return -1;
+			auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
+			constants->width = viewportWidth;
+			constants->height = viewportHeight;
+			constants->color = color;
+			constants->shapeType = 3.0f;
+			constants->bufferOffset = 0; // DISCARD 在 D3D11 核心路径即可使用，不依赖动态 SRV 的 NO_OVERWRITE 扩展。
+			context->Unmap(globalCB.Get(), 0);
+
+			context->IASetInputLayout(nullptr);
+			context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			context->VSSetShader(vertexShader.Get(), nullptr, 0);
+			ID3D11ShaderResourceView* primitiveResources[] = { highlighterPrimitiveSRV.Get() };
+			context->VSSetShaderResources(3, 1, primitiveResources);
+			ID3D11Buffer* constantBuffers[] = { globalCB.Get() };
+			context->VSSetConstantBuffers(0, 1, constantBuffers);
+			context->PSSetShader(pixelShader.Get(), nullptr, 0);
+			context->OMSetBlendState(strokeCoverageBlendState.Get(), nullptr, 0xFFFFFFFF);
+			context->RSSetState(rasterState.Get());
+			context->Draw(static_cast<UINT>(batchCount) * 6, 0);
+
+			ID3D11ShaderResourceView* nullResource[] = { nullptr };
+			context->VSSetShaderResources(3, 1, nullResource);
+			startIndex += batchCount;
 		}
 		return 0;
 	}
@@ -298,9 +323,9 @@ namespace draw3
 	{
 		if (context)
 		{
-			ID3D11ShaderResourceView* nullResources[] = { nullptr, nullptr, nullptr };
+			ID3D11ShaderResourceView* nullResources[] = { nullptr, nullptr, nullptr, nullptr };
 			context->OMSetRenderTargets(0, nullptr, nullptr);
-			context->VSSetShaderResources(0, 1, nullResources);
+			context->VSSetShaderResources(0, ARRAYSIZE(nullResources), nullResources);
 			context->PSSetShaderResources(0, ARRAYSIZE(nullResources), nullResources); // 释放前先解绑，避免 D3D 仍持有引用。
 			context->Flush();
 		}
@@ -324,6 +349,8 @@ namespace draw3
 		globalCB.Reset();
 		inkDataBuffer.Reset();
 		inkDataSRV.Reset();
+		highlighterPrimitiveBuffer.Reset();
+		highlighterPrimitiveSRV.Reset();
 		alphaBlendSampler.Reset();
 		strokeCoverageBlendState.Reset();
 		alphaBlendState.Reset();
@@ -436,6 +463,14 @@ namespace draw3
 		shaderResourceDescription.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
 		shaderResourceDescription.Buffer.NumElements = static_cast<UINT>(kMaxBufferCapacity);
 		if (FAILED(device->CreateShaderResourceView(inkDataBuffer.Get(), &shaderResourceDescription, inkDataSRV.ReleaseAndGetAddressOf()))) return false;
+
+		D3D11_BUFFER_DESC highlighterBufferDescription = inkBufferDescription;
+		highlighterBufferDescription.ByteWidth = static_cast<UINT>(kMaxBufferCapacity * sizeof(HighlighterPrimitive));
+		highlighterBufferDescription.StructureByteStride = sizeof(HighlighterPrimitive);
+		if (FAILED(device->CreateBuffer(&highlighterBufferDescription, nullptr,
+			highlighterPrimitiveBuffer.ReleaseAndGetAddressOf()))) return false;
+		if (FAILED(device->CreateShaderResourceView(highlighterPrimitiveBuffer.Get(), &shaderResourceDescription,
+			highlighterPrimitiveSRV.ReleaseAndGetAddressOf()))) return false; // 荧光笔几何单独上传，避免改变普通墨迹点布局。
 
 		D3D11_SAMPLER_DESC samplerDescription = {};
 		samplerDescription.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT; // 混合图层按像素采样，不做线性模糊。

@@ -21,11 +21,16 @@ namespace draw3
 		constexpr float kIdleMoveThresholdPx = 0.25f;
 		constexpr float kVisualStablePositionEpsilonPx = 0.05f;
 		constexpr float kVisualStableRadiusEpsilonPx = 0.02f;
-		constexpr float kVisualStableDirectionEpsilon = 0.002f;
 		constexpr int kVisualStableRequiredFrames = 3;
 		constexpr float kMaxDiameterChangePerBaseDiameterPerSecond = 12.0f;
 		constexpr float kMaxRadiusChangePerPixel = 0.8f;
-		constexpr float kMaxDirectionEdgeChangePerPixel = 0.8f;
+		constexpr float kHighlighterDuplicateDistancePx = 0.01f;
+		constexpr float kHighlighterShortStrokeLengthPx = kHighlighterMinimumStrokeLengthPx;
+		constexpr float kHighlighterRadiusPx = 25.0f;
+		constexpr float kHighlighterBodyOverlapPx = 2.0f;
+		constexpr float kHighlighterBoundsPaddingPx = 3.0f;
+		constexpr float kHighlighterJoinThresholdRadians = 0.5f * 3.14159265358979323846f / 180.0f;
+		constexpr float kHighlighterCircleJoinThresholdRadians = 177.0f * 3.14159265358979323846f / 180.0f;
 		static_assert(kMaxRadiusChangePerPixel > 0.0f && kMaxRadiusChangePerPixel < 1.0f,
 			"半径空间变化率必须严格小于胶囊切线退化阈值");
 
@@ -46,19 +51,34 @@ namespace draw3
 			float y;
 		};
 
-		struct SharpQuad
-		{
-			Float2 corners[4];
-		};
-
 		float Cross2D(Float2 a, Float2 b)
 		{
 			return a.x * b.y - a.y * b.x;
 		}
 
+		float Dot2D(Float2 a, Float2 b)
+		{
+			return a.x * b.x + a.y * b.y;
+		}
+
 		Float2 Subtract(Float2 a, Float2 b)
 		{
 			return { a.x - b.x, a.y - b.y };
+		}
+
+		Float2 Add(Float2 a, Float2 b)
+		{
+			return { a.x + b.x, a.y + b.y };
+		}
+
+		Float2 Multiply(Float2 value, float scale)
+		{
+			return { value.x * scale, value.y * scale };
+		}
+
+		float Length(Float2 value)
+		{
+			return std::hypot(value.x, value.y);
 		}
 
 		Float2 NormalizeOr(Float2 value, Float2 fallback)
@@ -68,70 +88,167 @@ namespace draw3
 				? Float2{ value.x / valueLength, value.y / valueLength } : fallback;
 		}
 
-		bool IsConvexQuad(const SharpQuad& quad)
+		Float2 ToFloat2(const InkPoint& point)
 		{
-			float crosses[4] = {};
-			for (size_t index = 0; index < 4; ++index)
-			{
-				const Float2 edge1 = Subtract(quad.corners[(index + 1) % 4], quad.corners[index]);
-				const Float2 edge2 = Subtract(quad.corners[(index + 2) % 4], quad.corners[(index + 1) % 4]);
-				crosses[index] = Cross2D(edge1, edge2);
-			}
-			const bool allPositive = std::all_of(std::begin(crosses), std::end(crosses),
-				[](float value) { return value > 0.0001f; });
-			const bool allNegative = std::all_of(std::begin(crosses), std::end(crosses),
-				[](float value) { return value < -0.0001f; });
-			return allPositive || allNegative;
+			return { point.x, point.y };
 		}
 
-		SharpQuad BuildSharpQuad(const InkPoint& startPoint, const InkPoint& endPoint)
+		DirectX::XMFLOAT2 ToXMFLOAT2(Float2 point)
 		{
-			Float2 p1{ startPoint.x, startPoint.y };
-			Float2 p2{ endPoint.x, endPoint.y };
-			float r1 = startPoint.r;
-			float r2 = endPoint.r;
-			Float2 direction1 = NormalizeOr({ startPoint.directionX, startPoint.directionY }, { 1.0f, 0.0f });
-			Float2 direction2 = NormalizeOr({ endPoint.directionX, endPoint.directionY }, direction1);
-			Float2 segment = Subtract(p2, p1);
-			float segmentLength = std::hypot(segment.x, segment.y);
-			if (segmentLength <= 0.00001f)
-			{
-				const float halfSize = std::max(r1, r2);
-				const Float2 center = p1;
-				p1 = { center.x - direction2.x * halfSize, center.y - direction2.y * halfSize };
-				p2 = { center.x + direction2.x * halfSize, center.y + direction2.y * halfSize };
-				r1 = r2 = halfSize;
-				direction1 = direction2;
-				segment = Subtract(p2, p1);
-				segmentLength = std::hypot(segment.x, segment.y);
-			}
+			return { point.x, point.y };
+		}
 
-			const Float2 tangent = segmentLength > 0.00001f
-				? Float2{ segment.x / segmentLength, segment.y / segmentLength } : Float2{ 1.0f, 0.0f };
-			if (direction1.x * tangent.x + direction1.y * tangent.y < 0.0f)
-				direction1 = { -direction1.x, -direction1.y };
-			if (direction2.x * tangent.x + direction2.y * tangent.y < 0.0f)
-				direction2 = { -direction2.x, -direction2.y };
+		bool HasHighlighterBoundary(HighlighterBoundaryFlags flags, HighlighterBoundaryFlags value)
+		{
+			return (static_cast<uint32_t>(flags) & static_cast<uint32_t>(value)) != 0;
+		}
 
-			Float2 normal1{ -direction1.y, direction1.x };
-			Float2 normal2{ -direction2.y, direction2.x };
-			auto makeQuad = [&]()
-			{
-				return SharpQuad{ {
-					{ p1.x + normal1.x * r1, p1.y + normal1.y * r1 },
-					{ p2.x + normal2.x * r2, p2.y + normal2.y * r2 },
-					{ p2.x - normal2.x * r2, p2.y - normal2.y * r2 },
-					{ p1.x - normal1.x * r1, p1.y - normal1.y * r1 }
-				} };
+		InkPoint InterpolatePoint(const InkPoint& start, const InkPoint& end, float ratio)
+		{
+			ratio = std::clamp(ratio, 0.0f, 1.0f);
+			return {
+				LerpFloat(start.x, end.x, ratio), LerpFloat(start.y, end.y, ratio),
+				LerpFloat(start.r, end.r, ratio), LerpFloat(start.time, end.time, ratio)
 			};
-			SharpQuad quad = makeQuad();
-			if (!IsConvexQuad(quad))
+		}
+
+		void AppendDistinctPoint(std::vector<InkPoint>& points, const InkPoint& point)
+		{
+			if (!points.empty())
 			{
-				normal1 = { -tangent.y, tangent.x };
-				normal2 = normal1;
-				quad = makeQuad();
+				const float deltaX = point.x - points.back().x;
+				const float deltaY = point.y - points.back().y;
+				if (deltaX * deltaX + deltaY * deltaY <=
+					kHighlighterDuplicateDistancePx * kHighlighterDuplicateDistancePx) return;
 			}
-			return quad;
+			points.push_back(point);
+		}
+
+		std::vector<InkPoint> DeduplicateHighlighterPoints(const std::vector<InkPoint>& points)
+		{
+			std::vector<InkPoint> deduplicated;
+			deduplicated.reserve(points.size());
+			for (const InkPoint& point : points) AppendDistinctPoint(deduplicated, point);
+			return deduplicated;
+		}
+
+		InkPoint PointAtPathDistance(const std::vector<InkPoint>& points,
+			const std::vector<float>& cumulativeDistances, float distance)
+		{
+			if (points.empty()) return {};
+			if (distance <= 0.0f) return points.front();
+			if (distance >= cumulativeDistances.back()) return points.back();
+			for (size_t index = 1; index < points.size(); ++index)
+			{
+				if (cumulativeDistances[index] < distance) continue;
+				const float segmentLength = cumulativeDistances[index] - cumulativeDistances[index - 1];
+				const float ratio = segmentLength > 0.0f
+					? (distance - cumulativeDistances[index - 1]) / segmentLength : 0.0f;
+				return InterpolatePoint(points[index - 1], points[index], ratio);
+			}
+			return points.back();
+		}
+
+		std::vector<InkPoint> BuildHighlighterRenderPath(const std::vector<InkPoint>& inputPoints,
+			HighlighterBoundaryFlags boundaryFlags, const HighlighterStartDirectionState& startDirectionState)
+		{
+			std::vector<InkPoint> points = DeduplicateHighlighterPoints(inputPoints);
+			if (points.size() < 2) return points;
+
+			std::vector<float> cumulativeDistances(points.size(), 0.0f);
+			for (size_t index = 1; index < points.size(); ++index)
+				cumulativeDistances[index] = cumulativeDistances[index - 1] +
+					Length(Subtract(ToFloat2(points[index]), ToFloat2(points[index - 1])));
+			const float totalLength = cumulativeDistances.back();
+			const bool collapseStart = HasHighlighterBoundary(boundaryFlags, HighlighterBoundaryFlags::Start) &&
+				startDirectionState.locked && totalLength >= kHighlighterShortStrokeLengthPx;
+			const bool collapseEnd = HasHighlighterBoundary(boundaryFlags, HighlighterBoundaryFlags::End);
+			const float startCut = collapseStart ? kHighlighterShortStrokeLengthPx : 0.0f;
+			const float endCut = collapseEnd
+				? std::max(0.0f, totalLength - kHighlighterShortStrokeLengthPx) : totalLength;
+
+			// 两个 12px 稳定窗口相交时整段折叠为一条弦，避免生成倒序小段。
+			if (collapseStart && collapseEnd && startCut >= endCut)
+				return { points.front(), points.back() };
+
+			std::vector<InkPoint> renderPath;
+			renderPath.reserve(points.size() + 2);
+			AppendDistinctPoint(renderPath, points.front());
+			if (startCut > 0.0f)
+			{
+				InkPoint startAnchor = PointAtPathDistance(points, cumulativeDistances, startCut);
+				const float chordLength = Length(Subtract(ToFloat2(startAnchor), ToFloat2(points.front())));
+				const Float2 lockedDirection = NormalizeOr(
+					{ startDirectionState.direction.x, startDirectionState.direction.y }, { 1.0f, 0.0f });
+				startAnchor.x = points.front().x + lockedDirection.x * chordLength;
+				startAnchor.y = points.front().y + lockedDirection.y * chordLength;
+				AppendDistinctPoint(renderPath, startAnchor); // 使用锁定方向，后续帧不再让起笔平帽旋转。
+			}
+			for (size_t index = 1; index + 1 < points.size(); ++index)
+			{
+				if (cumulativeDistances[index] > startCut && cumulativeDistances[index] < endCut)
+					AppendDistinctPoint(renderPath, points[index]);
+			}
+			if (endCut < totalLength)
+				AppendDistinctPoint(renderPath, PointAtPathDistance(points, cumulativeDistances, endCut));
+			AppendDistinctPoint(renderPath, points.back());
+			return renderPath;
+		}
+
+		void IncludeHighlighterBounds(RECT& bounds, float minX, float minY, float maxX, float maxY)
+		{
+			const RECT addition = {
+				static_cast<LONG>(std::floor(minX - kHighlighterBoundsPaddingPx)),
+				static_cast<LONG>(std::floor(minY - kHighlighterBoundsPaddingPx)),
+				static_cast<LONG>(std::ceil(maxX + kHighlighterBoundsPaddingPx)),
+				static_cast<LONG>(std::ceil(maxY + kHighlighterBoundsPaddingPx))
+			};
+			if (bounds.left >= bounds.right || bounds.top >= bounds.bottom)
+				bounds = addition;
+			else
+			{
+				bounds.left = std::min(bounds.left, addition.left);
+				bounds.top = std::min(bounds.top, addition.top);
+				bounds.right = std::max(bounds.right, addition.right);
+				bounds.bottom = std::max(bounds.bottom, addition.bottom);
+			}
+		}
+
+		void IncludeHighlighterBodyBounds(RECT& bounds, Float2 p1, Float2 p2, float radius,
+			float startExtension, float endExtension)
+		{
+			const Float2 tangent = NormalizeOr(Subtract(p2, p1), { 1.0f, 0.0f });
+			const Float2 normal{ -tangent.y, tangent.x };
+			p1 = Subtract(p1, Multiply(tangent, startExtension));
+			p2 = Add(p2, Multiply(tangent, endExtension));
+			const Float2 corners[] = {
+				Add(p1, Multiply(normal, radius)), Subtract(p1, Multiply(normal, radius)),
+				Add(p2, Multiply(normal, radius)), Subtract(p2, Multiply(normal, radius))
+			};
+			float minX = corners[0].x;
+			float minY = corners[0].y;
+			float maxX = corners[0].x;
+			float maxY = corners[0].y;
+			for (size_t index = 1; index < std::size(corners); ++index)
+			{
+				minX = std::min(minX, corners[index].x);
+				minY = std::min(minY, corners[index].y);
+				maxX = std::max(maxX, corners[index].x);
+				maxY = std::max(maxY, corners[index].y);
+			}
+			IncludeHighlighterBounds(bounds, minX, minY, maxX, maxY);
+		}
+
+		size_t FindTrailingDistanceStartIndex(const std::vector<InkPoint>& points, float protectedDistance)
+		{
+			if (points.size() < 2) return 0;
+			float accumulatedDistance = 0.0f;
+			for (size_t index = points.size() - 1; index > 0; --index)
+			{
+				accumulatedDistance += Length(Subtract(ToFloat2(points[index]), ToFloat2(points[index - 1])));
+				if (accumulatedDistance >= protectedDistance) return index - 1;
+			}
+			return 0;
 		}
 
 		float ClampRadiusTransition(float previousRadius, float desiredRadius, float baseDiameter,
@@ -195,10 +312,6 @@ namespace draw3
 				const float deltaY = current[index].y - previous[index].y;
 				if (deltaX * deltaX + deltaY * deltaY > positionEpsilonSquared) return false; // 位置仍变化时不能冻结。
 				if (std::abs(current[index].r - previous[index].r) > kVisualStableRadiusEpsilonPx) return false; // 半径还在收敛时也继续刷新。
-				const float directionDeltaX = current[index].directionX - previous[index].directionX;
-				const float directionDeltaY = current[index].directionY - previous[index].directionY;
-				if (directionDeltaX * directionDeltaX + directionDeltaY * directionDeltaY >
-					kVisualStableDirectionEpsilon * kVisualStableDirectionEpsilon) return false;
 			}
 			return true;
 		}
@@ -331,68 +444,113 @@ namespace draw3
 		return { result.position.x, result.position.y, currentDiameter * 0.5f, static_cast<float>(pointTime) };
 	}
 
-	StrokeDirectionEstimator::StrokeDirectionEstimator(float responseDistanceValue)
-		: responseDistance(std::max(0.001f, responseDistanceValue))
+	HighlighterGeometry BuildHighlighterGeometry(const std::vector<InkPoint>& inputPoints,
+		HighlighterBoundaryFlags boundaryFlags, bool shortStrokeMode,
+		const HighlighterStartDirectionState& startDirectionState)
 	{
-	}
+		HighlighterGeometry geometry;
+		if (inputPoints.empty()) return geometry;
 
-	void StrokeDirectionEstimator::Append(InkPoint& point)
-	{
-		if (!hasPosition)
+		if (shortStrokeMode)
 		{
-			lastPositionX = point.x;
-			lastPositionY = point.y;
-			hasPosition = true;
-			point.directionX = directionX;
-			point.directionY = directionY;
-			return;
+			const Float2 start = ToFloat2(inputPoints.front());
+			const Float2 direction = NormalizeOr(
+				{ startDirectionState.direction.x, startDirectionState.direction.y }, { 1.0f, 0.0f });
+			const Float2 end = Add(start, Multiply(direction, kHighlighterShortStrokeLengthPx));
+			HighlighterPrimitive primitive;
+			primitive.p1 = ToXMFLOAT2(start);
+			primitive.p2 = ToXMFLOAT2(end);
+			primitive.direction1 = ToXMFLOAT2(direction);
+			primitive.radius = kHighlighterRadiusPx;
+			primitive.type = HighlighterPrimitiveType::ShortMark;
+			geometry.primitives.push_back(primitive);
+			IncludeHighlighterBodyBounds(geometry.bounds, start, end, kHighlighterRadiusPx, 0.0f, 0.0f);
+			return geometry;
 		}
 
-		const float deltaX = point.x - lastPositionX;
-		const float deltaY = point.y - lastPositionY;
-		const float pointDistance = std::hypot(deltaX, deltaY);
-		if (pointDistance > 0.00001f)
+		const std::vector<InkPoint> points = BuildHighlighterRenderPath(
+			inputPoints, boundaryFlags, startDirectionState);
+		if (points.size() < 2) return geometry; // 纯点击按住期间不生成任何几何。
+
+		const bool hasGlobalStart = HasHighlighterBoundary(boundaryFlags, HighlighterBoundaryFlags::Start);
+		const bool hasGlobalEnd = HasHighlighterBoundary(boundaryFlags, HighlighterBoundaryFlags::End);
+		geometry.primitives.reserve(points.size() * 2);
+		for (size_t index = 0; index + 1 < points.size(); ++index)
 		{
-			const float rawDirectionX = deltaX / pointDistance;
-			const float rawDirectionY = deltaY / pointDistance;
-			if (!hasDirection)
+			const Float2 p1 = ToFloat2(points[index]);
+			const Float2 p2 = ToFloat2(points[index + 1]);
+			if (Length(Subtract(p2, p1)) <= kHighlighterDuplicateDistancePx) continue;
+
+			HighlighterPrimitive primitive;
+			primitive.p1 = ToXMFLOAT2(p1);
+			primitive.p2 = ToXMFLOAT2(p2);
+			primitive.radius = kHighlighterRadiusPx;
+			primitive.startExtension = index == 0 && hasGlobalStart ? 0.0f : kHighlighterBodyOverlapPx;
+			primitive.endExtension = index + 2 == points.size() && hasGlobalEnd
+				? 0.0f : kHighlighterBodyOverlapPx;
+			primitive.type = HighlighterPrimitiveType::Body;
+			geometry.primitives.push_back(primitive);
+			IncludeHighlighterBodyBounds(geometry.bounds, p1, p2, primitive.radius,
+				primitive.startExtension, primitive.endExtension);
+		}
+
+		for (size_t index = 1; index + 1 < points.size(); ++index)
+		{
+			const Float2 center = ToFloat2(points[index]);
+			const Float2 incoming = NormalizeOr(Subtract(center, ToFloat2(points[index - 1])), { 1.0f, 0.0f });
+			const Float2 outgoing = NormalizeOr(Subtract(ToFloat2(points[index + 1]), center), incoming);
+			const float directionDot = std::clamp(Dot2D(incoming, outgoing), -1.0f, 1.0f);
+			const float angle = std::acos(directionDot);
+			if (angle <= kHighlighterJoinThresholdRadians) continue;
+
+			HighlighterPrimitive primitive;
+			primitive.p1 = ToXMFLOAT2(center);
+			primitive.radius = kHighlighterRadiusPx;
+			if (angle >= kHighlighterCircleJoinThresholdRadians)
 			{
-				directionX = rawDirectionX;
-				directionY = rawDirectionY;
-				hasDirection = true;
+				primitive.type = HighlighterPrimitiveType::RoundJoinCircle;
 			}
 			else
 			{
-				const float directionDot = std::clamp(directionX * rawDirectionX + directionY * rawDirectionY, -1.0f, 1.0f);
-				const float directionCross = directionX * rawDirectionY - directionY * rawDirectionX;
-				const float angularDifference = std::atan2(directionCross, directionDot);
-				const float averageWeight = 1.0f - std::exp(-pointDistance / responseDistance);
-				const float desiredAngleChange = angularDifference * averageWeight;
-				const float maxAngleChange = kMaxDirectionEdgeChangePerPixel * pointDistance /
-					std::max(point.r, 0.001f); // 限制横截面边缘位移，避免短线段上的四边形翻转。
-				const float angleChange = std::clamp(desiredAngleChange, -maxAngleChange, maxAngleChange);
-				const float cosine = std::cos(angleChange);
-				const float sine = std::sin(angleChange);
-				const float rotatedX = directionX * cosine - directionY * sine;
-				const float rotatedY = directionX * sine + directionY * cosine;
-				const float rotatedLength = std::hypot(rotatedX, rotatedY);
-				if (rotatedLength > 0.00001f)
-				{
-					directionX = rotatedX / rotatedLength;
-					directionY = rotatedY / rotatedLength;
-				}
+				const float turnSign = Cross2D(incoming, outgoing) >= 0.0f ? 1.0f : -1.0f;
+				const Float2 incomingLeft{ -incoming.y, incoming.x };
+				const Float2 outgoingLeft{ -outgoing.y, outgoing.x };
+				const Float2 outerIncoming = turnSign > 0.0f ? Multiply(incomingLeft, -1.0f) : incomingLeft;
+				const Float2 outerOutgoing = turnSign > 0.0f ? Multiply(outgoingLeft, -1.0f) : outgoingLeft;
+				primitive.direction1 = ToXMFLOAT2(outerIncoming);
+				primitive.direction2 = ToXMFLOAT2(outerOutgoing);
+				primitive.startExtension = turnSign; // sector 在 GPU 端用符号选择顺/逆时针外侧圆弧。
+				primitive.type = HighlighterPrimitiveType::RoundJoinSector;
+			}
+			geometry.primitives.push_back(primitive);
+			IncludeHighlighterBounds(geometry.bounds, center.x - primitive.radius, center.y - primitive.radius,
+				center.x + primitive.radius, center.y + primitive.radius);
+		}
+		return geometry;
+	}
+
+	HighlighterStartDirectionState GetHighlighterShortStrokeDirectionState(const ActiveMouseStroke& stroke)
+	{
+		HighlighterStartDirectionState state;
+		state.locked = true;
+		if (!stroke.realPoints.empty())
+		{
+			const InkPoint& startPoint = stroke.hasInputStartPoint ? stroke.inputStartPoint : stroke.realPoints.front();
+			const Float2 chord = Subtract(ToFloat2(stroke.realPoints.back()), ToFloat2(startPoint));
+			if (Length(chord) > kHighlighterDuplicateDistancePx)
+			{
+				const Float2 direction = NormalizeOr(chord, { 1.0f, 0.0f });
+				state.direction = ToXMFLOAT2(direction);
+				return state;
 			}
 		}
-		lastPositionX = point.x;
-		lastPositionY = point.y;
-		point.directionX = directionX;
-		point.directionY = directionY;
+		if (stroke.hasFirstMovementDirection) state.direction = stroke.firstMovementDirection;
+		return state; // 完全没有有效移动时保留 +X，点击点位于 12×50 矩形左侧中点。
 	}
 
 	ActiveMouseStroke::ActiveMouseStroke(float baseDiameter, float expectedSpeed,
-		bool fixedWidthValue, bool trackDirectionValue)
-		: widthEstimator(baseDiameter, expectedSpeed), directionEstimator(baseDiameter),
-		fixedWidth(fixedWidthValue), trackDirection(trackDirectionValue)
+		bool fixedWidthValue, bool highlighterValue)
+		: widthEstimator(baseDiameter, expectedSpeed), fixedWidth(fixedWidthValue), highlighter(highlighterValue)
 	{
 	}
 
@@ -436,34 +594,6 @@ namespace draw3
 		lastIndex = std::min(lastIndex, points.size());
 		if (firstIndex >= lastIndex) return {};
 		RECT rect = {};
-		if (shape == StrokeShape::SharpStrip)
-		{
-			const size_t segmentEnd = lastIndex > firstIndex + 1 ? lastIndex - 1 : firstIndex + 1;
-			for (size_t index = firstIndex; index < segmentEnd; ++index)
-			{
-				const InkPoint& startPoint = points[index];
-				const InkPoint& endPoint = index + 1 < lastIndex ? points[index + 1] : points[index];
-				const SharpQuad quad = BuildSharpQuad(startPoint, endPoint);
-				float minX = quad.corners[0].x;
-				float minY = quad.corners[0].y;
-				float maxX = quad.corners[0].x;
-				float maxY = quad.corners[0].y;
-				for (size_t cornerIndex = 1; cornerIndex < 4; ++cornerIndex)
-				{
-					minX = std::min(minX, quad.corners[cornerIndex].x);
-					minY = std::min(minY, quad.corners[cornerIndex].y);
-					maxX = std::max(maxX, quad.corners[cornerIndex].x);
-					maxY = std::max(maxY, quad.corners[cornerIndex].y);
-				}
-				UnionRectInPlace(rect, RECT{
-					static_cast<LONG>(std::floor(minX - 3.0f)),
-					static_cast<LONG>(std::floor(minY - 3.0f)),
-					static_cast<LONG>(std::ceil(maxX + 3.0f)),
-					static_cast<LONG>(std::ceil(maxY + 3.0f)) });
-			}
-			return ClampRectToCanvas(rect, width, height);
-		}
-
 		for (size_t index = firstIndex; index < lastIndex; ++index)
 		{
 			const float padding = points[index].r + 3.0f; // 额外 3px 覆盖抗锯齿和胶囊端点。
@@ -516,21 +646,40 @@ namespace draw3
 		{
 			InkPoint point = stroke.widthEstimator.Append(stroke.modeledResults[index], effectiveInputSpeed);
 			if (stroke.fixedWidth) point.r = stroke.widthEstimator.baseDiameter * 0.5f;
-			const bool hadDirection = stroke.directionEstimator.hasDirection;
-			if (stroke.trackDirection)
+			if (stroke.highlighter && stroke.realPoints.empty() && stroke.hasInputStartPoint)
 			{
-				stroke.directionEstimator.Append(point);
-				if (!hadDirection && stroke.directionEstimator.hasDirection)
+				point.x = stroke.inputStartPoint.x;
+				point.y = stroke.inputStartPoint.y; // 长笔画和最终短划共用完全相同的按下起点。
+			}
+			if (stroke.highlighter && !stroke.realPoints.empty())
+			{
+				const float deltaX = point.x - stroke.realPoints.back().x;
+				const float deltaY = point.y - stroke.realPoints.back().y;
+				const float pointDistance = std::hypot(deltaX, deltaY);
+				if (pointDistance <= kHighlighterDuplicateDistancePx) continue; // 重复点不再生成零长度 body 或方块。
+				stroke.realPathLength += pointDistance;
+				if (!stroke.hasFirstMovementDirection)
 				{
-					// 首个有效走势只回填此前尚无方向的起笔点，保留本批后续点各自的平滑结果。
-					for (size_t pointIndex = stroke.committedIndex; pointIndex < stroke.realPoints.size(); ++pointIndex)
-					{
-						stroke.realPoints[pointIndex].directionX = stroke.directionEstimator.directionX;
-						stroke.realPoints[pointIndex].directionY = stroke.directionEstimator.directionY;
-					}
+					stroke.firstMovementDirection = { deltaX / pointDistance, deltaY / pointDistance };
+					stroke.hasFirstMovementDirection = true;
 				}
 			}
 			stroke.realPoints.push_back(point);
+
+			if (stroke.highlighter && !stroke.startDirectionState.locked &&
+				stroke.realPathLength >= kHighlighterShortStrokeLengthPx)
+			{
+				std::vector<float> cumulativeDistances(stroke.realPoints.size(), 0.0f);
+				for (size_t pointIndex = 1; pointIndex < stroke.realPoints.size(); ++pointIndex)
+					cumulativeDistances[pointIndex] = cumulativeDistances[pointIndex - 1] +
+						Length(Subtract(ToFloat2(stroke.realPoints[pointIndex]), ToFloat2(stroke.realPoints[pointIndex - 1])));
+				const InkPoint chordEnd = PointAtPathDistance(stroke.realPoints, cumulativeDistances,
+					kHighlighterShortStrokeLengthPx);
+				Float2 chord = Subtract(ToFloat2(chordEnd), ToFloat2(stroke.realPoints.front()));
+				chord = NormalizeOr(chord, { stroke.firstMovementDirection.x, stroke.firstMovementDirection.y });
+				stroke.startDirectionState.direction = ToXMFLOAT2(chord);
+				stroke.startDirectionState.locked = true; // 首 12px 真实路径一旦完整，起笔平帽方向不再变化。
+			}
 		}
 		if (seedInitialWidth && stroke.widthEstimator.hasInputSpeed)
 		{
@@ -544,13 +693,18 @@ namespace draw3
 	{
 		stroke.predictedPoints.clear();
 		StrokeWidthEstimator predictionWidth = stroke.widthEstimator;
-		StrokeDirectionEstimator predictionDirection = stroke.directionEstimator;
 		// 预测器只预测几何位置，笔宽继承最后真实输入，避免预测速度变化造成尾部回粗。
 		for (const auto& result : stroke.predictedResults)
 		{
 			InkPoint point = predictionWidth.Append(result);
 			if (stroke.fixedWidth) point.r = stroke.widthEstimator.baseDiameter * 0.5f;
-			if (stroke.trackDirection) predictionDirection.Append(point); // 副本保证预测走势不会污染真实点状态。
+			if (stroke.highlighter)
+			{
+				const InkPoint* previous = !stroke.predictedPoints.empty() ? &stroke.predictedPoints.back()
+					: !stroke.realPoints.empty() ? &stroke.realPoints.back() : nullptr;
+				if (previous && std::hypot(point.x - previous->x, point.y - previous->y) <=
+					kHighlighterDuplicateDistancePx) continue;
+			}
 			stroke.predictedPoints.push_back(point);
 		}
 	}
@@ -565,10 +719,24 @@ namespace draw3
 		StrokeShape shape, int width, int height)
 	{
 		stroke.l0DrawPoints.clear();
+		stroke.l0HighlighterGeometry = {};
 		if (!stroke.realPoints.empty())
 		{
-			const size_t startIndex = std::min(stroke.committedIndex, stroke.realPoints.size() - 1); // 从最后已提交点开始保留连接。
+			const size_t contextIndex = stroke.highlighter && stroke.committedIndex > 0
+				? stroke.committedIndex - 1 : stroke.committedIndex; // 荧光笔多留一个上下文点，跨层 round join 才完整。
+			const size_t startIndex = std::min(contextIndex, stroke.realPoints.size() - 1);
 			stroke.l0DrawPoints.insert(stroke.l0DrawPoints.end(), stroke.realPoints.begin() + startIndex, stroke.realPoints.end());
+			if (stroke.highlighter)
+			{
+				HighlighterBoundaryFlags flags = HighlighterBoundaryFlags::End;
+				if (startIndex == 0) flags = flags | HighlighterBoundaryFlags::Start;
+				if (stroke.realPathLength >= kHighlighterShortStrokeLengthPx)
+					stroke.l0DrawPoints.insert(stroke.l0DrawPoints.end(), stroke.predictedPoints.begin(), stroke.predictedPoints.end());
+				stroke.l0HighlighterGeometry = BuildHighlighterGeometry(
+					stroke.l0DrawPoints, flags, false, stroke.startDirectionState);
+				stroke.currentL0Rect = ClampRectToCanvas(stroke.l0HighlighterGeometry.bounds, width, height);
+				return;
+			}
 		}
 		stroke.l0DrawPoints.insert(stroke.l0DrawPoints.end(), stroke.predictedPoints.begin(), stroke.predictedPoints.end()); // 预测点只放在 L0，便于下一帧擦除重画。
 		ApplyLiveTipTaper(stroke.l0DrawPoints, liveTipDurationSeconds);
@@ -581,23 +749,49 @@ namespace draw3
 		InkRenderer& renderer, int width, int height)
 	{
 		if (stroke.realPoints.size() < 2) return {};
-		if (stroke.trackDirection && !stroke.directionEstimator.hasDirection) return {}; // 未移动前留在 L0，避免默认方向方块过早烘干。
-		const size_t protectedStartIndex = FindProtectedStartIndex(
+		if (stroke.highlighter && !stroke.startDirectionState.locked) return {}; // 首 12px 方向锁定前不烘干起笔。
+		size_t protectedStartIndex = FindProtectedStartIndex(
 			stroke.realPoints, liveTipDurationSeconds + predictionDurationSeconds); // 尾部和预测窗口内的点暂不落到 L1。
+		if (stroke.highlighter)
+			protectedStartIndex = std::min(protectedStartIndex,
+				FindTrailingDistanceStartIndex(stroke.realPoints, kHighlighterShortStrokeLengthPx)); // 末端始终保留 12px 弦方向上下文。
 		if (protectedStartIndex <= stroke.committedIndex) return {};
 
-		std::vector<InkPoint> stablePoints(stroke.realPoints.begin() + stroke.committedIndex,
+		const size_t stableStartIndex = stroke.highlighter && stroke.committedIndex > 0
+			? stroke.committedIndex - 1 : stroke.committedIndex;
+		std::vector<InkPoint> stablePoints(stroke.realPoints.begin() + stableStartIndex,
 			stroke.realPoints.begin() + protectedStartIndex + 1);
 		renderer.SetOMTarget(renderer.layerL1RTV.Get());
-		renderer.DrawStrokeOrDot(stablePoints, color, shape);
+		RECT dirty = {};
+		if (stroke.highlighter)
+		{
+			const HighlighterBoundaryFlags flags = stableStartIndex == 0
+				? HighlighterBoundaryFlags::Start : HighlighterBoundaryFlags::None;
+			const HighlighterGeometry geometry = BuildHighlighterGeometry(
+				stablePoints, flags, false, stroke.startDirectionState);
+			renderer.DrawHighlighterPrimitives(geometry.primitives, color);
+			dirty = ClampRectToCanvas(geometry.bounds, width, height);
+		}
+		else
+		{
+			renderer.DrawStrokeOrDot(stablePoints, color, shape);
+			dirty = RectFromStrokePoints(stablePoints, width, height, shape);
+		}
 		stroke.committedIndex = protectedStartIndex; // 推进提交游标，后续帧不重复提交稳定前缀。
-		return RectFromStrokePoints(stablePoints, width, height, shape);
+		return dirty;
 	}
 
 	void DrawL0LiveComposite(ActiveMouseStroke& stroke, DirectX::XMFLOAT4 color,
 		StrokeShape shape, InkRenderer& renderer)
 	{
 		renderer.ClearRTV(renderer.layerL0RTV.Get(), kTransparentLayerClearColor); // L0 每帧从零重画，才能移除旧预测。
+		if (stroke.highlighter)
+		{
+			if (stroke.l0HighlighterGeometry.primitives.empty()) return;
+			renderer.SetOMTarget(renderer.layerL0RTV.Get());
+			renderer.DrawHighlighterPrimitives(stroke.l0HighlighterGeometry.primitives, color);
+			return;
+		}
 		if (stroke.l0DrawPoints.empty()) return;
 		renderer.SetOMTarget(renderer.layerL0RTV.Get());
 		renderer.DrawStrokeOrDot(stroke.l0DrawPoints, color, shape);

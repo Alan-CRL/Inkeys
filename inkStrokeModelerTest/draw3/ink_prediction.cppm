@@ -5,6 +5,7 @@
 #endif
 
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <vector>
 #include <windows.h>
@@ -30,6 +31,7 @@ export namespace draw3
 	inline constexpr LiveTipLengthMode kActiveLiveTipLengthMode = LiveTipLengthMode::Normal;
 	inline constexpr DebugLayerColorMode kActiveDebugLayerColorMode = DebugLayerColorMode::NormalInkColor;
 	inline constexpr StrokeTimingProfileId kActiveStrokeTimingProfileId = StrokeTimingProfileId::Fps120;
+	inline constexpr float kHighlighterMinimumStrokeLengthPx = 12.0f;
 
 	// 保存与目标帧率联动的建模和预测参数。
 	struct StrokeTimingProfile
@@ -83,20 +85,23 @@ export namespace draw3
 		InkPoint Append(const ink::stroke_model::Result& result, float inputSpeed = -1.0f);
 	};
 
-	// 按路径距离平滑平头笔走势，并限制短线段上的方向旋转。
-	struct StrokeDirectionEstimator
+	// 标记当前几何切片是否包含整笔的真实起点或可见终点。
+	enum class HighlighterBoundaryFlags : uint32_t
 	{
-		float responseDistance = 50.0f;
-		float directionX = 1.0f;
-		float directionY = 0.0f;
-		float lastPositionX = 0.0f;
-		float lastPositionY = 0.0f;
-		bool hasPosition = false;
-		bool hasDirection = false;
+		None = 0,
+		Start = 1,
+		End = 2
+	};
 
-		StrokeDirectionEstimator() = default;
-		explicit StrokeDirectionEstimator(float responseDistanceValue);
-		void Append(InkPoint& point);
+	inline HighlighterBoundaryFlags operator|(HighlighterBoundaryFlags left, HighlighterBoundaryFlags right)
+	{
+		return static_cast<HighlighterBoundaryFlags>(static_cast<uint32_t>(left) | static_cast<uint32_t>(right));
+	}
+
+	struct HighlighterStartDirectionState
+	{
+		DirectX::XMFLOAT2 direction = { 1.0f, 0.0f };
+		bool locked = false;
 	};
 
 	// 保存一次鼠标笔画的模型结果、预测结果和三层提交状态。
@@ -109,14 +114,20 @@ export namespace draw3
 		std::vector<InkPoint> predictedPoints;
 		std::vector<InkPoint> l0DrawPoints;
 		std::vector<InkPoint> previousL0DrawPoints;
+		HighlighterGeometry l0HighlighterGeometry;
 		size_t convertedResultCount = 0;
 		size_t committedIndex = 0;
 		RECT lastL0Rect = { 0, 0, 0, 0 };
 		RECT currentL0Rect = { 0, 0, 0, 0 };
 		StrokeWidthEstimator widthEstimator;
-		StrokeDirectionEstimator directionEstimator;
 		bool fixedWidth = false;
-		bool trackDirection = false;
+		bool highlighter = false;
+		float realPathLength = 0.0f;
+		InkPoint inputStartPoint = {};
+		bool hasInputStartPoint = false;
+		DirectX::XMFLOAT2 firstMovementDirection = { 1.0f, 0.0f };
+		bool hasFirstMovementDirection = false;
+		HighlighterStartDirectionState startDirectionState;
 		POINT lastRawPosition = { 0, 0 };
 		bool hasLastRawPosition = false;
 		bool idleFrozen = false;
@@ -126,8 +137,15 @@ export namespace draw3
 		double logicalInputTime = 0.0;
 
 		ActiveMouseStroke(float baseDiameter, float expectedSpeed, bool fixedWidthValue = false,
-			bool trackDirectionValue = false);
+			bool highlighterValue = false);
 	};
+
+	// 将中心线转换为平头 body、内部圆角及可选的抬笔最短矩形。
+	HighlighterGeometry BuildHighlighterGeometry(const std::vector<InkPoint>& points,
+		HighlighterBoundaryFlags boundaryFlags, bool shortStrokeMode,
+		const HighlighterStartDirectionState& startDirectionState);
+	// 为不足 12px 的最终矩形选择确定性起笔方向。
+	HighlighterStartDirectionState GetHighlighterShortStrokeDirectionState(const ActiveMouseStroke& stroke);
 
 	// 将矩形并入已有脏区。
 	void UnionRectInPlace(RECT& target, const RECT& addition);

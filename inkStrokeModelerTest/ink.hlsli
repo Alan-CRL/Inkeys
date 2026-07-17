@@ -19,13 +19,25 @@ struct InkPoint
     float2 pos;
     float r;
     float time;
-    float2 direction;
+};
+
+struct HighlighterPrimitive
+{
+    float2 p1;
+    float2 p2;
+    float2 direction1;
+    float2 direction2;
+    float radius;
+    float startExtension;
+    float endExtension;
+    uint type;
 };
 
 // 3. 结构化缓冲区
 StructuredBuffer<InkPoint> InkData : register(t0);
 Texture2D AlphaBlendSource : register(t1);
 Texture2D AuxiliaryBlendSource : register(t2); // 双遮罩合成时提供 L0 实时覆盖率。
+StructuredBuffer<HighlighterPrimitive> HighlighterData : register(t3);
 SamplerState AlphaBlendSampler : register(s0);
 
 // 4. VS -> PS
@@ -44,4 +56,5 @@ struct PS_INPUT
     nointerpolation float2 direction1 : TEXCOORD2;
     nointerpolation float2 direction2 : TEXCOORD3;
     nointerpolation float shapeType : VAL_TYPE;
+    nointerpolation uint primitiveType : VAL_PRIMITIVE_TYPE;
 };

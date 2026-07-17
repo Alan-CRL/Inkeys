@@ -10,6 +10,7 @@
 #include <DirectXMath.h>
 #include <iostream>
 #include <ink_stroke_modeler/stroke_modeler.h>
+#include <vector>
 #include <windows.h>
 
 module draw3.drawing_controller;
@@ -119,8 +120,8 @@ namespace draw3
 			strokeModelParams.prediction_params = DisabledPredictorParams{}; // 橡皮保留同样的建模流程，但彻底关闭轨迹预测。
 		else
 			ApplyPredictionMode(strokeModelParams, configuration_.kalmanPredictorParams);
-		const float baseDiameter = 50.0f; // 当前三种工具都使用 50px 基准直径，荧光笔固定不变。
-		const StrokeShape shape = highlighter ? StrokeShape::SharpStrip : StrokeShape::RoundCapsule;
+		const float baseDiameter = tool == DrawingTool::Pen ? 100.0f : 50.0f; // 普通笔暂用 100px 测试；荧光笔和橡皮仍保持 50px。
+		const StrokeShape shape = StrokeShape::RoundCapsule;
 		const DirectX::XMFLOAT4 stableInkColor = highlighter
 			? DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f) // 荧光笔临时层只保存不透明覆盖率。
 			: eraser ? DirectX::XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f)
@@ -138,6 +139,8 @@ namespace draw3
 		}
 		const float originX = static_cast<float>(startMessage.x);
 		const float originY = static_cast<float>(startMessage.y);
+		stroke.inputStartPoint = { originX, originY, baseDiameter * 0.5f, 0.0f };
+		stroke.hasInputStartPoint = true; // 最短矩形严格锚定 WM_LBUTTONDOWN 的输入点，而不是预测或平滑后的端点。
 		const auto startTime = std::chrono::high_resolution_clock::now();
 		Input downInput{ .event_type = Input::EventType::kDown, .position = Vec2(originX, originY), .time = Time(0.0) };
 		if (absl::Status status = stroke.modeler.Update(downInput, stroke.modeledResults); !status.ok())
@@ -162,7 +165,9 @@ namespace draw3
 			{
 				const WindowSize size = window_.Size();
 				stroke.lastL0Rect = {}; // Resize 后旧 L0 脏区已无意义，改用重算后的当前区域。
-				stroke.currentL0Rect = RectFromStrokePoints(stroke.l0DrawPoints, size.width, size.height, shape);
+				stroke.currentL0Rect = highlighter
+					? ClampRectToCanvas(stroke.l0HighlighterGeometry.bounds, size.width, size.height)
+					: RectFromStrokePoints(stroke.l0DrawPoints, size.width, size.height, shape);
 				strokeDirty = ClampRectToCanvas(strokeDirty, size.width, size.height);
 				isFirstFrame = true;
 				forceL0Redraw = true;
@@ -212,7 +217,8 @@ namespace draw3
 				AppendNewModeledPoints(stroke, inputSpeed); // 固定宽度工具会在笔画状态内忽略输入速度。
 
 				stroke.predictedResults.clear();
-				if (!eraser && kActivePredictionMode != InkPredictionMode::Disabled)
+				if (!eraser && (!highlighter || stroke.realPathLength >= kHighlighterMinimumStrokeLengthPx) &&
+					kActivePredictionMode != InkPredictionMode::Disabled)
 				{
 					if (absl::Status status = stroke.modeler.Predict(stroke.predictedResults); !status.ok())
 						stroke.predictedResults.clear();
@@ -232,7 +238,9 @@ namespace draw3
 			else if (forceL0Redraw)
 			{
 				stroke.lastL0Rect = {};
-				stroke.currentL0Rect = RectFromStrokePoints(stroke.l0DrawPoints, size.width, size.height, shape);
+				stroke.currentL0Rect = highlighter
+					? ClampRectToCanvas(stroke.l0HighlighterGeometry.bounds, size.width, size.height)
+					: RectFromStrokePoints(stroke.l0DrawPoints, size.width, size.height, shape);
 				DrawL0LiveComposite(stroke, liveInkColor, shape, renderer_);
 				UnionRectInPlace(l0FrameDirty, stroke.currentL0Rect);
 			}
@@ -262,17 +270,46 @@ namespace draw3
 		{
 			const WindowSize size = window_.Size();
 			stroke.lastL0Rect = {};
-			stroke.currentL0Rect = RectFromStrokePoints(stroke.l0DrawPoints, size.width, size.height, shape);
+			stroke.currentL0Rect = highlighter
+				? ClampRectToCanvas(stroke.l0HighlighterGeometry.bounds, size.width, size.height)
+				: RectFromStrokePoints(stroke.l0DrawPoints, size.width, size.height, shape);
 			strokeDirty = ClampRectToCanvas(strokeDirty, size.width, size.height);
 			isFirstFrame = true;
 		}
 
 		const WindowSize finalSize = window_.Size();
+		if (highlighter && stroke.realPathLength < kHighlighterMinimumStrokeLengthPx)
+		{
+			const RECT oldLiveRect = stroke.currentL0Rect;
+			stroke.predictedResults.clear();
+			stroke.predictedPoints.clear(); // 短划只由真实路径分类，抬笔时彻底丢弃预测后缀。
+			stroke.l0DrawPoints = stroke.realPoints;
+			const HighlighterStartDirectionState finalDirection = GetHighlighterShortStrokeDirectionState(stroke);
+			const InkPoint shortMarkStart = stroke.hasInputStartPoint
+				? stroke.inputStartPoint : InkPoint{ originX, originY, baseDiameter * 0.5f, 0.0f };
+			const std::vector<InkPoint> shortMarkPoints = { shortMarkStart };
+			stroke.l0HighlighterGeometry = BuildHighlighterGeometry(shortMarkPoints,
+				HighlighterBoundaryFlags::Start | HighlighterBoundaryFlags::End, true, finalDirection);
+			stroke.currentL0Rect = ClampRectToCanvas(
+				stroke.l0HighlighterGeometry.bounds, finalSize.width, finalSize.height);
+			renderer_.ClearRTV(renderer_.layerL0RTV.Get(), kTransparentLayerClearColor);
+			if (!stroke.l0HighlighterGeometry.primitives.empty())
+			{
+				renderer_.SetOMTarget(renderer_.layerL0RTV.Get());
+				renderer_.DrawHighlighterPrimitives(stroke.l0HighlighterGeometry.primitives, liveInkColor);
+			}
+			UnionRectInPlace(strokeDirty, oldLiveRect); // 最终呈现同时清除按住期间较短的实时预览。
+		}
 		// 抬笔时把最后一帧可见 L0 原样落到 L1，避免笔锋和预测回缩。
-		if (!stroke.l0DrawPoints.empty())
+		const bool hasFinalLiveGeometry = highlighter
+			? !stroke.l0HighlighterGeometry.primitives.empty() : !stroke.l0DrawPoints.empty();
+		if (hasFinalLiveGeometry)
 		{
 			renderer_.SetOMTarget(renderer_.layerL1RTV.Get());
-			renderer_.DrawStrokeOrDot(stroke.l0DrawPoints, liveInkColor, shape);
+			if (highlighter)
+				renderer_.DrawHighlighterPrimitives(stroke.l0HighlighterGeometry.primitives, liveInkColor);
+			else
+				renderer_.DrawStrokeOrDot(stroke.l0DrawPoints, liveInkColor, shape);
 			UnionRectInPlace(strokeDirty, stroke.currentL0Rect);
 		}
 		strokeDirty = ClampRectToCanvas(strokeDirty, finalSize.width, finalSize.height);

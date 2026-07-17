@@ -21,22 +21,49 @@ export namespace draw3
 	// 表示渲染器支持的墨迹几何形状。
 	enum class StrokeShape : uint32_t
 	{
-		RoundCapsule = 0,
-		SharpStrip = 3
+		RoundCapsule = 0
 	};
 
-	// 描述一个带半径、时间戳和平均走势的墨迹采样点。
+	// 描述一个带半径和时间戳的墨迹采样点。
 	struct InkPoint
 	{
 		float x;
 		float y;
 		float r;
 		float time;
-		float directionX = 1.0f;
-		float directionY = 0.0f;
 	};
 
-	static_assert(sizeof(InkPoint) == 24, "InkPoint 必须与结构化缓冲区布局保持一致");
+	static_assert(sizeof(InkPoint) == 16, "InkPoint 必须与结构化缓冲区布局保持一致");
+
+	// 荧光笔拆成独立矩形 body 和解析圆角，避免分段端边互相干扰。
+	enum class HighlighterPrimitiveType : uint32_t
+	{
+		Body = 0,
+		RoundJoinSector = 1,
+		RoundJoinCircle = 2,
+		ShortMark = 3
+	};
+
+	struct HighlighterPrimitive
+	{
+		DirectX::XMFLOAT2 p1 = {};
+		DirectX::XMFLOAT2 p2 = {};
+		DirectX::XMFLOAT2 direction1 = {};
+		DirectX::XMFLOAT2 direction2 = {};
+		float radius = 25.0f;
+		float startExtension = 0.0f;
+		float endExtension = 0.0f;
+		HighlighterPrimitiveType type = HighlighterPrimitiveType::Body;
+	};
+
+	static_assert(sizeof(HighlighterPrimitive) == 48,
+		"HighlighterPrimitive 必须与结构化缓冲区布局保持一致");
+
+	struct HighlighterGeometry
+	{
+		std::vector<HighlighterPrimitive> primitives;
+		RECT bounds = { 0, 0, 0, 0 };
+	};
 
 	// 管理墨迹着色器、绘制图层及其 D3D11 资源。
 	class InkRenderer
@@ -62,6 +89,8 @@ export namespace draw3
 		Microsoft::WRL::ComPtr<ID3D11Buffer> globalCB;
 		Microsoft::WRL::ComPtr<ID3D11Buffer> inkDataBuffer;
 		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> inkDataSRV;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> highlighterPrimitiveBuffer;
+		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> highlighterPrimitiveSRV;
 		Microsoft::WRL::ComPtr<ID3D11SamplerState> alphaBlendSampler;
 
 		Microsoft::WRL::ComPtr<ID3D11BlendState> strokeCoverageBlendState;
@@ -81,6 +110,9 @@ export namespace draw3
 		// 将墨迹点分批写入结构化缓冲区并提交绘制。
 		int DrawStroke(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color,
 			StrokeShape shape = StrokeShape::RoundCapsule);
+		// 绘制平头 body 与圆角 primitive，临时层仍使用 MAX 累积覆盖率。
+		int DrawHighlighterPrimitives(const std::vector<HighlighterPrimitive>& primitives,
+			DirectX::XMFLOAT4 color);
 		// 复制纹理中的指定矩形区域。
 		void CopyResource(ID3D11Texture2D* dst, ID3D11Texture2D* src, RECT rect);
 		// 将源纹理混合到整个目标视图。

@@ -52,15 +52,31 @@ float Cross2D(float2 a, float2 b)
     return a.x * b.y - a.y * b.x;
 }
 
-float GetSharpStripDist(float2 p, float2 q0, float2 q1, float2 q2, float2 q3)
+float GetFlatBodyDist(float2 p, float2 p1, float2 p2, float radius)
 {
-    // 顶点着色器保证四边形为凸；统一绕序后取四条边的最大有符号距离。
-    float orientation = Cross2D(q1 - q0, q2 - q1) >= 0.0 ? 1.0 : -1.0;
-    float d0 = -orientation * Cross2D(q1 - q0, p - q0) / max(length(q1 - q0), 1e-5);
-    float d1 = -orientation * Cross2D(q2 - q1, p - q1) / max(length(q2 - q1), 1e-5);
-    float d2 = -orientation * Cross2D(q3 - q2, p - q2) / max(length(q3 - q2), 1e-5);
-    float d3 = -orientation * Cross2D(q0 - q3, p - q3) / max(length(q0 - q3), 1e-5);
-    return max(max(d0, d1), max(d2, d3));
+    float2 segment = p2 - p1;
+    float rawSegmentLength = length(segment);
+    float segmentLength = max(rawSegmentLength, 1e-5);
+    float2 tangent = rawSegmentLength > 1e-5 ? segment / rawSegmentLength : float2(1.0, 0.0);
+    float2 normal = float2(-tangent.y, tangent.x);
+    float2 center = (p1 + p2) * 0.5;
+    float2 local = float2(dot(p - center, tangent), dot(p - center, normal));
+    float2 q = abs(local) - float2(segmentLength * 0.5, radius);
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+}
+
+float IsInsideRoundJoinSector(float2 vectorFromCenter, float2 startDirection,
+    float2 endDirection, float orientation)
+{
+    float inside = 1.0;
+    if (dot(vectorFromCenter, vectorFromCenter) > 1e-10)
+    {
+        float signValue = orientation >= 0.0 ? 1.0 : -1.0;
+        // 径向边使用硬裁切，邻接 body 的 2px 重叠负责覆盖边界，不产生第二条 AA 接缝。
+        inside = Cross2D(startDirection, vectorFromCenter) * signValue >= -1e-5 &&
+            Cross2D(vectorFromCenter, endDirection) * signValue >= -1e-5 ? 1.0 : 0.0;
+    }
+    return inside;
 }
 
 float4 main(PS_INPUT input) : SV_Target
@@ -102,7 +118,25 @@ float4 main(PS_INPUT input) : SV_Target
     }
     else if (type == 3)
     {
-        d = GetSharpStripDist(input.pixPos, input.p1, input.p2, input.direction1, input.direction2);
+        if (input.primitiveType == 0 || input.primitiveType == 3)
+        {
+            d = GetFlatBodyDist(input.pixPos, input.p1, input.p2, input.r1);
+        }
+        else if (input.primitiveType == 1)
+        {
+            float2 vectorFromCenter = input.pixPos - input.p1;
+            if (IsInsideRoundJoinSector(vectorFromCenter, input.direction1, input.direction2, input.r2) < 0.5)
+                discard;
+            d = length(vectorFromCenter) - input.r1;
+        }
+        else if (input.primitiveType == 2)
+        {
+            d = length(input.pixPos - input.p1) - input.r1;
+        }
+        else
+        {
+            discard;
+        }
     }
 
     //float aaWidth = fwidth(d);

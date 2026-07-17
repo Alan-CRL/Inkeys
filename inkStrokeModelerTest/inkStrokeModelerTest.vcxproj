@@ -393,6 +393,9 @@
       <ShaderType>Pixel</ShaderType>
       <ObjectFileOutput>$(ProjectDir)inkPixelShader.cso</ObjectFileOutput>
       <AdditionalIncludeDirectories>$(IntDir)fxc_utf8;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <DisableOptimizations>false</DisableOptimizations>
+      <EnableDebuggingInformation>false</EnableDebuggingInformation>
+      <AdditionalOptions>/O3 /Qstrip_debug %(AdditionalOptions)</AdditionalOptions>
       <Visible>false</Visible>
     </FxCompile>
     <FxCompile Include="$(IntDir)fxc_utf8\inkVertexShader.hlsl">
@@ -400,6 +403,9 @@
       <ShaderType>Vertex</ShaderType>
       <ObjectFileOutput>$(ProjectDir)inkVertexShader.cso</ObjectFileOutput>
       <AdditionalIncludeDirectories>$(IntDir)fxc_utf8;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <DisableOptimizations>false</DisableOptimizations>
+      <EnableDebuggingInformation>false</EnableDebuggingInformation>
+      <AdditionalOptions>/O3 /Qstrip_debug %(AdditionalOptions)</AdditionalOptions>
       <Visible>false</Visible>
     </FxCompile>
   </ItemGroup>
