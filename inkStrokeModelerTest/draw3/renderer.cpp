@@ -118,6 +118,7 @@ namespace draw3
 			ID3D11Buffer* constantBuffers[] = { globalCB.Get() };
 			context->VSSetConstantBuffers(0, 1, constantBuffers);
 			context->PSSetShader(pixelShader.Get(), nullptr, 0);
+			context->PSSetConstantBuffers(0, 1, constantBuffers); // operatorKind 由像素着色器读取，必须单独绑定到 PS。
 			context->OMSetBlendState(strokeOperatorBlendState.Get(), nullptr, 0xFFFFFFFF); // Add 取 MAX、Retain 取 MIN，整笔覆盖率只累计一次。
 			context->RSSetState(rasterState.Get());
 			context->Draw((static_cast<UINT>(batchCount) - 1) * 6, 0); // 每两个相邻点生成一个形状段，段数乘 6 个顶点。
@@ -166,6 +167,7 @@ namespace draw3
 			ID3D11Buffer* constantBuffers[] = { globalCB.Get() };
 			context->VSSetConstantBuffers(0, 1, constantBuffers);
 			context->PSSetShader(pixelShader.Get(), nullptr, 0);
+			context->PSSetConstantBuffers(0, 1, constantBuffers);
 			context->OMSetBlendState(strokeOperatorBlendState.Get(), nullptr, 0xFFFFFFFF);
 			context->RSSetState(rasterState.Get());
 			context->Draw(static_cast<UINT>(batchCount) * 6, 0);
@@ -230,6 +232,7 @@ namespace draw3
 		ID3D11Buffer* constantBuffers[] = { globalCB.Get() };
 		context->VSSetConstantBuffers(0, 1, constantBuffers);
 		context->PSSetShader(pixelShader.Get(), nullptr, 0);
+		context->PSSetConstantBuffers(0, 1, constantBuffers);
 		ID3D11ShaderResourceView* compositeResources[] = {
 			stableLayer.addSRV.Get(),
 			stableLayer.retainSRV.Get(),
