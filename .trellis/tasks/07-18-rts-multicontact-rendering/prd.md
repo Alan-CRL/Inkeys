@@ -1,4 +1,4 @@
-# RTS 多接触普通笔与低占用绘制线程
+# RTS 多接触绘制与低占用绘制线程
 
 ## Goal
 
@@ -8,7 +8,7 @@
 
 ### 输入与生命周期
 
-- 输入来源统一为 RTS，设备类型值固定为 Touch=0、Pen=1、MouseLeft=2、MouseRight=3；本阶段全部按现有普通笔效果绘制。
+- 输入来源统一为 RTS，设备类型值固定为 Touch=0、Pen=1、MouseLeft=2、MouseRight=3；空闲时按 1/2/3 选择普通笔、荧光笔或橡皮，首个 Down 将工具锁定到本批全部 contact。
 - Down 必须保存不可变初始点并可靠入队；Move 只覆盖最新快照，允许丢弃中间点；Up 必须发布最终位置、时间和不可逆终态，不得丢失。
 - Up 后生产者不再访问记录，记录和模型的回收完全由绘制线程负责；generation 必须阻止槽位复用导致 ABA。
 - 快照字段的跨原子一致性必须可验证；`IdtAtomic<T>` 仅允许平凡可复制且始终无锁的类型，`ContactRecord` 禁止复制和移动。
@@ -39,12 +39,12 @@
 - 保持 Windows 7 SP1 + KB2670838 兼容目标。
 - 保持现有 vcpkg manifest、triplet、install 路径和 concurrentqueue 1.0.4 版本不变。
 - 保持源码原有 UTF-8 BOM、CRLF 和必要的中文关键注释，不修改未跟踪的 `Vcpkg/`。
-- 手掌识别、橡皮、荧光笔、真实压感和 RTS 失败兼容模式不在本任务范围。
+- 手掌识别、真实硬件压感和 RTS 失败兼容模式不在本任务范围。
 
 ## Acceptance Criteria
 
 - [ ] `Release|ARM64` 使用 ARM64 MSBuild 对完整解决方案 Rebuild 成功，C++ modules、两个 Shader 和资源嵌入链均通过。
-- [ ] RTS 鼠标、单指及多指可以同时按普通笔绘制。
+- [ ] RTS 鼠标、单指及多指可以同时使用空闲时选定的 1/2/3 工具绘制。
 - [ ] Down 后立即 Up、快速点击、最后位置变化后立即 Up 均保留最终点和 Up。
 - [ ] 高频 Move 只覆盖快照、不会形成事件积压，Down/Up 不丢失。
 - [ ] 多个 contact 同帧 Up 只触发一次 L2 resolve 和一次 Present。

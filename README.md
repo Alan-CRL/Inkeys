@@ -4,7 +4,7 @@ Inkeys3-Draw3 是面向下一代 Inkeys3 的 Windows 原生墨迹渲染实验项
 
 ## 当前能力
 
-- 鼠标左键单指笔画输入，按每笔固定的工具类型处理。
+- RTS 鼠标、笔和触摸多接触输入；空闲时选择的工具在首个 Down 后锁定到本批所有接触。
 - Google Ink Stroke Modeler 平滑与 Kalman 末端预测。
 - 普通笔的模拟压感、实时笔锋和预测保护窗口。
 - 固定宽度平头荧光笔，支持解析矩形 body、圆角 join 和确定性的短划。
@@ -75,7 +75,7 @@ MSBuild.exe .\inkStrokeModelerTest.sln /m /p:Configuration=Debug /p:Platform=ARM
 | `3` / 小键盘 `3` | 选择橡皮 |
 | `9` / 小键盘 `9` | 退出 |
 
-当前测试参数中，普通笔基准直径为 `100px`，荧光笔和橡皮为 `50px`；这些值由 `DrawingController::DrawMouseStroke` 固定，是实验参数而非稳定产品配置。
+当前测试参数中，普通笔基准直径为 `5px`，荧光笔和橡皮为 `50px`；应在没有活动落笔时选择 1/2/3，下一批落笔会使用该工具。这些值由 `DrawingController` 固定，是实验参数而非稳定产品配置。
 
 ## 仓库边界
 

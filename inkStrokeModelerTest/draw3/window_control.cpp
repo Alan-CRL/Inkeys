@@ -9,6 +9,7 @@
 #include <tpcshrd.h>
 #include "../HiEasyX.h"
 
+#include <iostream>
 #include <tchar.h>
 
 module draw3.window_control;
@@ -55,8 +56,14 @@ namespace draw3
 		if (window_)
 		{
 			// 多点属性需要在第一根手指按下前写入；窗口消息中也返回相同标志。
-			SetProp(window_, MICROSOFT_TABLETPENSERVICE_PROPERTY,
-				reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(kTabletInputFlags)));
+			const ATOM tabletPropertyAtom = GlobalAddAtom(MICROSOFT_TABLETPENSERVICE_PROPERTY);
+			if (!SetProp(window_, MICROSOFT_TABLETPENSERVICE_PROPERTY,
+				reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(kTabletInputFlags))))
+			{
+				std::cout << "Set Tablet Pen Service window property failed. GetLastError="
+					<< GetLastError() << std::endl;
+			}
+			if (tabletPropertyAtom) GlobalDeleteAtom(tabletPropertyAtom); // 与微软示例一致，属性本身仍由 HWND 持有。
 		}
 		return window_ != nullptr;
 	}

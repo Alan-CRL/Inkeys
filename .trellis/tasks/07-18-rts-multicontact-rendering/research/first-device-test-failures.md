@@ -8,6 +8,7 @@
 - **Specific Cause**:
   - RTS 多点不是单一 COM 开关。初版只设置 `IRealTimeStylus3::MultiTouchEnabled=TRUE`，遗漏 HWND 的 `MICROSOFT_TABLETPENSERVICE_PROPERTY` 和 `WM_TABLET_QUERYSYSTEMGESTURESTATUS` 多点 opt-in。
   - Pen 路径遗漏主 Inkeys 已使用的 press-and-hold / flick 禁用，系统手势可能延迟或接管输入。
+  - 初版把当前 Pen/Touch `tcid` 的 ink-to-device factor 当成统一屏幕像素比例。实体 Touch 日志显示原始 `(24175,19508)` 被换算成画布外的 `(17378,14022)`；应沿用已广泛验证的 `IdtRts.cpp`，以首 tablet context 的 scale 换算全部输入。
   - 模拟压感沿用旧单笔估算器，却假设 RTS 最新快照与旧逐帧鼠标具有相同采样节奏；第一份速度会直接回写整段起笔，后续直径变化上限也过高。
   - QCOM ARM64 驱动接受 DirectComposition premultiplied swapchain 与 visual tree，但实体设备上透明像素仍显示为黑色；原实现把 API 初始化成功误当成可见 alpha 正确。
 
@@ -18,6 +19,7 @@
 3. 复用了已有宽度估算器，但没有重新验证“Move 可覆盖”对速度采样和首样本响应的影响。
 4. 主 Inkeys 的 RTS 文件被对照过，窗口过程中的 Tablet PC 标志没有一并纳入研究范围。
 5. 透明呈现验证只检查 HRESULT 和 active mode 日志，没有在真实桌面背景上验证最终合成结果。
+6. 静态检查确认了 callback 和队列，却没有记录原始 X/Y、换算结果和画布尺寸；“收到事件”被错误等同于“坐标可绘制”。
 
 ### 3. Prevention Mechanisms
 
@@ -25,6 +27,7 @@
 |---|---|---|---|
 | P0 | Architecture | HWND 属性、窗口消息和 `IRealTimeStylus3` 三处统一启用多点 | DONE |
 | P0 | Runtime behavior | 禁用 press-and-hold/flick，降低 Pen 被系统手势接管的可能 | DONE |
+| P0 | Coordinate contract | 全输入统一使用首 tablet context scale，当前 tcid 的 device scale 只保留诊断 | DONE |
 | P0 | Width invariant | 真实速度先低通；首样本不回写；时间/空间双限速 | DONE |
 | P0 | Visible alpha | QCOM ARM64 优先 `UlwDirtyRect`；失败时仍保留 DComp/DWM 回退 | DONE |
 | P1 | Documentation | 把三段式 opt-in 和宽度采样规则写入 native spec/cross-layer guide | DONE |
@@ -34,14 +37,16 @@
 
 - **Similar Issues**: 任何重建 HWND、替换窗口过程或新增透明覆盖窗口的工作，都可能再次漏掉 Tablet Pen Service 属性。
 - **Design Improvement**: 速度语义属于真实 input snapshot，不属于 modeler output；未来真实压感也应在 snapshot 边界归一化后再进入模型。
+- **Design Improvement**: 输入诊断至少同时记录 raw、normalized/client pixel 和 publish 结果，避免把坐标空间错误误诊为事件缺失。
 - **Process Improvement**: RTS 任务的最低验证必须包含实体 Pen/Touch callback，`SendInput` 和普通鼠标不能代替。
 
 ### 5. Bayesian Update
 
 | Hypothesis | Prior | Evidence | Updated confidence |
 |---|---:|---|---:|
-| Touch 缺少窗口级多点 opt-in | 45% | Microsoft 文档明确要求窗口属性/消息，源码两处均缺失 | 95% |
-| Pen 被系统手势路径接管 | 30% | 主 Inkeys 禁用 flick/hold，当前测试程序遗漏 | 80% |
+| Touch 缺少窗口级多点 opt-in | 45% | 补齐后三段状态均成功，Touch Down/Up 已进入回调 | 10% |
+| Pen 被系统手势路径接管 | 30% | 补齐后仍不可见，但 Pen context 已正常枚举 | 15% |
+| Touch/Pen 坐标使用了 tablet device scale | 35% | Touch raw/换算日志直接落在 17k×14k 的画布外坐标 | 100% |
 | 宽度突变来自首速度回写和过高追随率 | 25% | 源码存在直接回写与 `12 × baseDiameter/s` 上限，截图症状一致 | 95% |
 | 黑底来自 QCOM DComp 可见 alpha 驱动行为 | 50% | DComp 全链成功、L2/backbuffer 仍以透明清屏，但实体输出为黑色 | 90% |
 

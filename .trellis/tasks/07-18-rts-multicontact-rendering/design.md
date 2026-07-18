@@ -52,7 +52,7 @@ Up 先以 CAS 将路由从 `Producing` 关闭到 `Closing`，等待当前写者�
 
 `RealTimeStylusInput` 在主线程以 `COINIT_MULTITHREADED` 初始化 COM，创建并绑定 `IRealTimeStylus`，要求 `IRealTimeStylus3::MultiTouchEnabled=TRUE`，注册轻量同步插件并启用 RTS。
 
-仅请求 X/Y packet。pressure、w/h 保留为未知值，接口字段先稳定下来。插件在 Enabled/TabletAdded 或 Down 慢路径缓存各 `tcid` 的 X/Y 索引、缩放和设备种类；Packets 热路径只解析批次最后一个完整 packet，不执行 COM 查询、分配或逐包日志。Down/Up 按单个完整 packet 解析并在回调处读取 QPC。
+仅请求 X/Y packet。pressure、w/h 保留为未知值，接口字段先稳定下来。插件在 Enabled/TabletAdded 或 Down 慢路径缓存各 `tcid` 的 X/Y 索引、tablet 诊断比例和设备种类；实际换算沿用已验证的 `IdtRts.cpp`：首 tablet context 提供全输入统一的像素比例，当前 `tcid` 只提供属性顺序，不能把当前 Pen/Touch context 自己的硬件比例当作像素比例。Packets 热路径只解析批次最后一个完整 packet，不执行 COM 查询、分配或无界逐包日志。Down/Up 按单个完整 packet 解析并在回调处读取 QPC。
 
 Touch/Pen 使用缓存 `TabletDeviceKind` 区分；鼠标通过实时按键状态区分 MouseLeft/MouseRight。同步插件只解析并调用协调器发布，模型、速度、D3D 和日志均不进入回调。
 
@@ -66,7 +66,7 @@ Touch/Pen 使用缓存 `TabletDeviceKind` 区分；鼠标通过实时按键状�
 
 ## Layer batching
 
-所有 contact 本阶段使用相同普通笔覆盖运算，因此可以共享临时层：
+首个 Down 把空闲时通过 1/2/3 选择的工具锁定到整批活动 contact；一批内所有 contact 使用相同运算，因此可以共享临时层：
 
 1. 排空 Down，读取所有活动 contact 的一致快照并更新独立模型。
 2. 无 Up 时，各 contact 的稳定增量继续累积至共享 L1；每帧只清一次 L0，再依次绘制全部实时尾部与预测。
@@ -75,7 +75,7 @@ Touch/Pen 使用缓存 `TabletDeviceKind` 区分；鼠标通过实时按键状�
 5. 合并旧/新 L0、稳定增量、完成笔画与窗口请求的 dirty rect，只合成一次 backbuffer 并 Present 一次。
 6. L2 提交与重建成功后，才移除结束 contact、Reset 模型并把 slot 归还协调器。
 
-严格禁止把仍活动 contact 的任何几何提交到 L2。以后增加荧光笔或橡皮时，不同运算的跨 contact 顺序会破坏这一合并前提，必须重新设计。
+严格禁止把仍活动 contact 的任何几何提交到 L2。当前不允许活动批次中途切换工具；以后允许不同工具同时活动时，不同运算的跨 contact 顺序会破坏这一合并前提，必须重新设计。
 
 resize 保留 L2，重建目标后从所有活动 contact 的 CPU 状态恢复 L1/L0。clear 在仍有活动 contact 时继续延后，避免清屏后笔画重新出现。
 

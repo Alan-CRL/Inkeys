@@ -28,13 +28,13 @@
 
 ## Tool State
 
-工具在 `WM_LBUTTONDOWN` 时复制到本笔局部变量，中途按键只影响下一笔。
+单笔兼容路径在 `WM_LBUTTONDOWN` 时复制工具。多 contact 路径只在空闲批次的首个 Down 读取 1/2/3 选择，并把同一工具锁定到该批所有 contact；活动期间的选择只影响下一批。
 
 当前行为：
 
 | Tool | Width | Prediction | Width mode | Live layer |
 |---|---:|---|---|---|
-| Pen | 100px | active configured mode | simulated pressure | real tail + prediction + taper |
+| Pen | 5px | active configured mode | simulated pressure | real tail + prediction + taper |
 | Highlighter | 50px | enabled after real path reaches 12px | fixed | flat primitives, no taper |
 | Eraser | 50px | disabled | fixed | real points directly committed to L1 |
 
@@ -94,7 +94,7 @@ contact 结束时保留上一帧可见 L0，同时加入本帧最终真实输入
 
 - contact identity 是 `(tabletContextId, contactId, generation)`；route 必须通过 generation 和状态的原子 CAS 防止 ABA，记录内容用单写者 seqlock 发布。
 - Down 成功入队后 consumer 才拥有 handle；Down 入队失败必须先关闭并排空可能已进入的 Move，再回收。Up/Cancelled 是 sticky terminal，成功关闭后后续 Move 不得覆盖。
-- packet X/Y 按 `GetPacketDescriptionData` 返回顺序查找并乘以 ink-space-to-device factor；同步回调不得分配、建模、绘制或记录逐包日志。
+- packet X/Y 按当前 `tcid` 的 `GetPacketDescriptionData` 返回顺序查找，但所有输入统一使用 `GetAllTabletContextIds` 首 context 的 ink-to-device scale 转为像素，保持与已广泛验证的 `IdtRts.cpp` 一致。禁止改用当前 Pen/Touch context 自己的硬件比例，否则坐标会落到画布外；同步回调不得分配、建模、绘制或记录无界逐包日志。
 - RTS 多点启用是三段式契约：第一根手指按下前给 HWND 设置 `MICROSOFT_TABLETPENSERVICE_PROPERTY`，窗口过程对 `WM_TABLET_QUERYSYSTEMGESTURESTATUS` 返回 `TABLET_ENABLE_MULTITOUCHDATA`，并令 `IRealTimeStylus3::MultiTouchEnabled=TRUE`。只完成 COM 属性不能视为多点已启用。
 - 同一组窗口标志禁用 press-and-hold、pen feedback 和 flick；可用时同时调用 `IRealTimeStylus2::put_FlicksEnabled(FALSE)`，避免笔事件被系统手势延迟或接管。
 - `Disabled`、RTS `Error`、tablet 移除和 shutdown 都把生产中的 contact 发布为 Cancelled；COM 初始化、FTM 聚合、禁用、移除插件与释放全部在完成 MTA 初始化的主线程完成。

@@ -28,15 +28,34 @@ namespace draw3
 	{
 		const DirectX::XMFLOAT4 kHighlighterCompositeColor(1.0f, 0.0f, 0.0f, 0.35f);
 		const DirectX::XMFLOAT4 kMultiContactInkColor(1.0f, 0.0f, 0.0f, 1.0f);
-		constexpr float kMultiContactDiameter = 100.0f;
+		constexpr float kPenDiameter = 5.0f;
+		constexpr float kWideToolDiameter = 50.0f;
 		constexpr float kRawMoveThresholdPx = 0.25f;
 		constexpr double kInputSpeedSmoothingSeconds = 0.060;
 		constexpr size_t kPreheatedStrokeCount = 16;
 
+		float DiameterForTool(DrawingTool tool)
+		{
+			return tool == DrawingTool::Pen ? kPenDiameter : kWideToolDiameter;
+		}
+
+		StrokeWidthMode WidthModeForTool(DrawingTool tool)
+		{
+			return tool == DrawingTool::Pen
+				? StrokeWidthMode::SimulatedPressure : StrokeWidthMode::Fixed;
+		}
+
+		DirectX::XMFLOAT4 ColorForTool(DrawingTool tool)
+		{
+			if (tool == DrawingTool::Highlighter) return kHighlighterCompositeColor;
+			if (tool == DrawingTool::Eraser) return kTransparentLayerClearColor;
+			return kMultiContactInkColor;
+		}
+
 		struct RuntimeStroke
 		{
 			explicit RuntimeStroke(float expectedSpeed)
-				: stroke(kMultiContactDiameter, expectedSpeed)
+				: stroke(kPenDiameter, expectedSpeed)
 			{
 				stroke.modeledResults.reserve(256);
 				stroke.predictedResults.reserve(64);
@@ -49,6 +68,7 @@ namespace draw3
 
 			ActiveStroke stroke;
 			ContactHandle handle = {};
+			DrawingTool tool = DrawingTool::Pen;
 			ContactSnapshot lastSpeedSnapshot = {};
 			uint64_t lastConsumedSequence = 0;
 			int64_t qpcOrigin = 0;
@@ -71,12 +91,30 @@ namespace draw3
 		RECT DrawStablePrefix(RuntimeStroke& runtime, InkRenderer& renderer, int width, int height)
 		{
 			ActiveStroke& stroke = runtime.stroke;
-			if (!stroke.hasCommittedGeometry || stroke.realPoints.empty()) return {};
-			const size_t pointCount = std::min(stroke.committedIndex + 1, stroke.realPoints.size());
-			if (pointCount == 0) return {};
-			runtime.rebuildPoints.assign(stroke.realPoints.begin(), stroke.realPoints.begin() + pointCount);
+			if (!stroke.hasCommittedGeometry) return {};
+			if (stroke.realPoints.empty())
+			{
+				if (runtime.tool != DrawingTool::Eraser || !stroke.hasInputStartPoint) return {};
+				runtime.rebuildPoints.assign(1, stroke.inputStartPoint);
+			}
+			else
+			{
+				const size_t pointCount = std::min(stroke.committedIndex + 1, stroke.realPoints.size());
+				if (pointCount == 0) return {};
+				runtime.rebuildPoints.assign(stroke.realPoints.begin(), stroke.realPoints.begin() + pointCount);
+			}
 			renderer.SetOperatorTarget(renderer.layerL1);
-			renderer.DrawStrokeOrDot(runtime.rebuildPoints, kMultiContactInkColor);
+			if (runtime.tool == DrawingTool::Highlighter)
+			{
+				const HighlighterGeometry geometry = BuildHighlighterGeometry(runtime.rebuildPoints,
+					HighlighterBoundaryFlags::Start, false, stroke.startDirectionState);
+				renderer.DrawHighlighterPrimitives(geometry.primitives, ColorForTool(runtime.tool));
+				return ClampRectToCanvas(geometry.bounds, width, height);
+			}
+			const InkOperatorKind operatorKind = runtime.tool == DrawingTool::Eraser
+				? InkOperatorKind::Erase : InkOperatorKind::Draw;
+			renderer.DrawStrokeOrDot(runtime.rebuildPoints, ColorForTool(runtime.tool),
+				StrokeShape::RoundCapsule, operatorKind);
 			return RectFromStrokePoints(runtime.rebuildPoints, width, height);
 		}
 
@@ -89,20 +127,37 @@ namespace draw3
 
 			RECT dirty = {};
 			renderer.SetOperatorTarget(renderer.layerL1);
+			if (runtime.tool == DrawingTool::Highlighter)
+			{
+				const bool shortStroke = stroke.realPathLength < kHighlighterMinimumStrokeLengthPx;
+				const HighlighterStartDirectionState direction = shortStroke
+					? GetHighlighterShortStrokeDirectionState(stroke) : stroke.startDirectionState;
+				if (shortStroke && stroke.hasInputStartPoint)
+					runtime.rebuildPoints.assign(1, stroke.inputStartPoint);
+				const HighlighterBoundaryFlags flags =
+					HighlighterBoundaryFlags::Start | HighlighterBoundaryFlags::End;
+				const HighlighterGeometry geometry = BuildHighlighterGeometry(
+					runtime.rebuildPoints, flags, shortStroke, direction);
+				renderer.DrawHighlighterPrimitives(geometry.primitives, ColorForTool(runtime.tool));
+				return ClampRectToCanvas(geometry.bounds, width, height);
+			}
 			if (!runtime.rebuildPoints.empty())
 			{
-				renderer.DrawStrokeOrDot(runtime.rebuildPoints, kMultiContactInkColor);
+				const InkOperatorKind operatorKind = runtime.tool == DrawingTool::Eraser
+					? InkOperatorKind::Erase : InkOperatorKind::Draw;
+				renderer.DrawStrokeOrDot(runtime.rebuildPoints, ColorForTool(runtime.tool),
+					StrokeShape::RoundCapsule, operatorKind);
 				UnionRectInPlace(dirty, RectFromStrokePoints(runtime.rebuildPoints, width, height));
 			}
-			if (!stroke.previousL0DrawPoints.empty())
+			if (runtime.tool == DrawingTool::Pen && !stroke.previousL0DrawPoints.empty())
 			{
 				// 冻结上一帧已经可见的尾部，避免最终 Up 重建几何时 prediction 回缩。
-				renderer.DrawStrokeOrDot(stroke.previousL0DrawPoints, kMultiContactInkColor);
+				renderer.DrawStrokeOrDot(stroke.previousL0DrawPoints, ColorForTool(runtime.tool));
 				UnionRectInPlace(dirty, RectFromStrokePoints(stroke.previousL0DrawPoints, width, height));
 			}
-			if (!stroke.l0DrawPoints.empty())
+			if (runtime.tool == DrawingTool::Pen && !stroke.l0DrawPoints.empty())
 			{
-				renderer.DrawStrokeOrDot(stroke.l0DrawPoints, kMultiContactInkColor);
+				renderer.DrawStrokeOrDot(stroke.l0DrawPoints, ColorForTool(runtime.tool));
 				UnionRectInPlace(dirty, RectFromStrokePoints(stroke.l0DrawPoints, width, height));
 			}
 			return ClampRectToCanvas(dirty, width, height);
@@ -120,9 +175,11 @@ namespace draw3
 				UnionRectInPlace(dirty, DrawStablePrefix(*runtime, renderer, width, height));
 				ActiveStroke& stroke = runtime->stroke;
 				stroke.lastL0Rect = {};
-				stroke.currentL0Rect = RectFromStrokePoints(stroke.l0DrawPoints, width, height);
-				if (!stroke.l0DrawPoints.empty())
-					DrawL0LiveComposite(stroke, kMultiContactInkColor,
+				stroke.currentL0Rect = runtime->tool == DrawingTool::Highlighter
+					? ClampRectToCanvas(stroke.l0HighlighterGeometry.bounds, width, height)
+					: RectFromStrokePoints(stroke.l0DrawPoints, width, height);
+				if (runtime->tool != DrawingTool::Eraser && !stroke.l0DrawPoints.empty())
+					DrawL0LiveComposite(stroke, ColorForTool(runtime->tool),
 						StrokeShape::RoundCapsule, renderer, false);
 				UnionRectInPlace(dirty, stroke.currentL0Rect);
 			}
@@ -207,6 +264,8 @@ namespace draw3
 
 		auto strokeModelParams = configuration_.modelParams;
 		ApplyPredictionMode(strokeModelParams, configuration_.kalmanPredictorParams);
+		auto eraserModelParams = configuration_.modelParams;
+		eraserModelParams.prediction_params = DisabledPredictorParams{};
 		LARGE_INTEGER qpcFrequencyValue = {};
 		QueryPerformanceFrequency(&qpcFrequencyValue);
 		const int64_t qpcFrequency = qpcFrequencyValue.QuadPart;
@@ -251,6 +310,20 @@ namespace draw3
 			{
 				if (!handle.record || handle.record->Generation() != handle.generation) return false;
 				const ContactSnapshot down = handle.record->DownSnapshot();
+				DrawingTool batchTool = window_.ActiveTool();
+				for (RuntimeStroke* activeRuntime : active)
+				{
+					ContactSnapshot activeSnapshot;
+					const bool terminal = input_.TryReadSnapshot(
+						activeRuntime->handle, activeSnapshot) &&
+						(activeSnapshot.phase == ContactPhase::Up ||
+							activeSnapshot.phase == ContactPhase::Cancelled);
+					if (!terminal)
+					{
+						batchTool = activeRuntime->tool;
+						break; // 仍有真实落笔时，新 contact 必须沿用当前批次工具。
+					}
+				}
 				RuntimeStroke* runtime = acquireStroke();
 				if (!runtime)
 				{
@@ -262,11 +335,17 @@ namespace draw3
 					return false;
 				}
 				runtime->handle = handle;
+				runtime->tool = batchTool; // 全部旧 contact 已终止时，当前 Down 才开始读取新工具。
 				runtime->ended = false;
 				runtime->movedThisFrame = false;
 				runtime->visibleDirty = {};
-				runtime->stroke.Reset(kMultiContactDiameter, configuration_.expectedSpeed);
-				if (absl::Status status = runtime->stroke.modeler.Reset(); !status.ok())
+				const float baseDiameter = DiameterForTool(runtime->tool);
+				const bool highlighter = runtime->tool == DrawingTool::Highlighter;
+				runtime->stroke.Reset(baseDiameter, configuration_.expectedSpeed,
+					WidthModeForTool(runtime->tool), highlighter);
+				const auto& modelParams = runtime->tool == DrawingTool::Eraser
+					? eraserModelParams : strokeModelParams;
+				if (absl::Status status = runtime->stroke.modeler.Reset(modelParams); !status.ok())
 				{
 					std::cout << "Error: " << status.message() << std::endl;
 					ContactSnapshot cancelled = down;
@@ -287,7 +366,7 @@ namespace draw3
 				runtime->hasFilteredInputSpeed = false;
 				ActiveStroke& stroke = runtime->stroke;
 				stroke.inputStartPoint = {
-					down.position.x, down.position.y, kMultiContactDiameter * 0.5f, 0.0f };
+					down.position.x, down.position.y, baseDiameter * 0.5f, 0.0f };
 				stroke.hasInputStartPoint = true;
 				const Input downInput{
 					.event_type = Input::EventType::kDown,
@@ -373,7 +452,7 @@ namespace draw3
 					if (terminal)
 					{
 						const float radius = runtime.stroke.realPoints.empty()
-							? kMultiContactDiameter * 0.5f : runtime.stroke.realPoints.back().r;
+							? DiameterForTool(runtime.tool) * 0.5f : runtime.stroke.realPoints.back().r;
 						const InkPoint finalPoint{ snapshot.position.x, snapshot.position.y,
 							radius, static_cast<float>(inputTime) };
 						if (runtime.stroke.realPoints.empty())
@@ -405,9 +484,12 @@ namespace draw3
 		bool clearPending = false;
 		bool timerPeriodActive = false;
 		bool timerPeriodAttempted = false;
+		double lastActiveFrameStartMs = 0.0;
 		while (true)
 		{
 			const double frameStartMs = GetQpcTimeMilliseconds();
+			const double previousFrameMs = lastActiveFrameStartMs > 0.0
+				? frameStartMs - lastActiveFrameStartMs : 0.0;
 			IngressCommand command;
 			while (input_.TryDequeue(command)) processCommand(command);
 
@@ -442,6 +524,7 @@ namespace draw3
 
 			if (active.empty() && !forceFullPresent)
 			{
+				lastActiveFrameStartMs = 0.0;
 				if (timerPeriodActive)
 				{
 					timeEndPeriod(1);
@@ -465,6 +548,8 @@ namespace draw3
 				timerPeriodActive = timeBeginPeriod(1) == TIMERR_NOERROR; // 只为成功的请求配对 timeEndPeriod。
 			}
 
+			const DrawingTool frameTool = active.empty()
+				? window_.ActiveTool() : active.front()->tool;
 			LARGE_INTEGER frameQpc = {};
 			QueryPerformanceCounter(&frameQpc);
 			bool hasEndedStroke = false;
@@ -478,6 +563,10 @@ namespace draw3
 			for (RuntimeStroke* runtime : active)
 			{
 				ActiveStroke& stroke = runtime->stroke;
+				const bool eraser = runtime->tool == DrawingTool::Eraser;
+				const bool highlighter = runtime->tool == DrawingTool::Highlighter;
+				const double liveTipDurationSeconds =
+					eraser || highlighter ? 0.0 : configuration_.liveTipDurationSeconds;
 				stroke.lastL0Rect = stroke.currentL0Rect;
 				stroke.logicalInputTime = std::max(stroke.logicalInputTime,
 					QpcDeltaSeconds(frameQpc.QuadPart, runtime->qpcOrigin, qpcFrequency));
@@ -486,23 +575,36 @@ namespace draw3
 				if (!runtime->ended)
 				{
 					stroke.predictedResults.clear();
-					if (kActivePredictionMode != InkPredictionMode::Disabled)
+					if (!eraser &&
+						(!highlighter || stroke.realPathLength >= kHighlighterMinimumStrokeLengthPx) &&
+						kActivePredictionMode != InkPredictionMode::Disabled)
 					{
 						if (absl::Status status = stroke.modeler.Predict(stroke.predictedResults); !status.ok())
 							stroke.predictedResults.clear();
 					}
 					RebuildPredictedPoints(stroke);
-					stableDirty = CommitStablePrefixToL1(stroke,
-						configuration_.liveTipDurationSeconds, GetPredictionDurationSeconds(stroke),
-						kMultiContactInkColor, StrokeShape::RoundCapsule,
-						renderer_, size.width, size.height);
+					stableDirty = eraser
+						? CommitEraserRealPointsToL1(stroke, StrokeShape::RoundCapsule,
+							renderer_, size.width, size.height)
+						: CommitStablePrefixToL1(stroke, liveTipDurationSeconds,
+							GetPredictionDurationSeconds(stroke), ColorForTool(runtime->tool),
+							StrokeShape::RoundCapsule, renderer_, size.width, size.height);
 				}
 				// 结束帧保留上一帧 prediction，同时接入最终 Up 的真实几何。
-				RebuildL0DrawPoints(stroke, configuration_.liveTipDurationSeconds,
-					StrokeShape::RoundCapsule, size.width, size.height);
+				if (eraser)
+				{
+					stroke.predictedPoints.clear();
+					stroke.l0DrawPoints.clear();
+					stroke.currentL0Rect = {};
+				}
+				else
+				{
+					RebuildL0DrawPoints(stroke, liveTipDurationSeconds,
+						StrokeShape::RoundCapsule, size.width, size.height);
+				}
 				if (!runtime->ended)
 					UpdateIdleFreezeState(stroke, runtime->movedThisFrame,
-						configuration_.liveTipDurationSeconds);
+						liveTipDurationSeconds);
 
 				UnionRectInPlace(frameDirty, stableDirty);
 				UnionRectInPlace(frameDirty, stroke.lastL0Rect);
@@ -539,8 +641,9 @@ namespace draw3
 					{
 						if (!runtime->ended) return false;
 						input_.Recycle(runtime->handle); // L2 提交与活动层重建完成后才归还 slot。
-						runtime->stroke.Reset(kMultiContactDiameter, configuration_.expectedSpeed);
+						runtime->stroke.Reset(kPenDiameter, configuration_.expectedSpeed);
 						runtime->handle = {};
+						runtime->tool = DrawingTool::Pen;
 						runtime->visibleDirty = {};
 						runtime->ended = false;
 						runtime->inUse = false;
@@ -552,8 +655,9 @@ namespace draw3
 				renderer_.ClearOperatorLayer(renderer_.layerL0); // 共享 L0 每帧只恢复一次单位操作。
 				for (RuntimeStroke* runtime : active)
 				{
-					if (!runtime->stroke.l0DrawPoints.empty())
-						DrawL0LiveComposite(runtime->stroke, kMultiContactInkColor,
+					if (runtime->tool != DrawingTool::Eraser &&
+						!runtime->stroke.l0DrawPoints.empty())
+						DrawL0LiveComposite(runtime->stroke, ColorForTool(runtime->tool),
 							StrokeShape::RoundCapsule, renderer_, false);
 				}
 			}
@@ -573,7 +677,9 @@ namespace draw3
 			if (forceFullPresent) frameDirty = GetFullCanvasRect(size.width, size.height);
 			if (!IsEmptyRect(frameDirty))
 			{
-				CompositeLayersToBackBuffer(frameDirty);
+				const bool orderedPreview = frameTool == DrawingTool::Pen &&
+					kActiveDebugLayerColorMode == DebugLayerColorMode::ColorizeLiveLayer;
+				CompositeLayersToBackBuffer(frameDirty, orderedPreview);
 				PresentFrame(frameDirty, forceFullPresent); // 一帧最多一次 backbuffer 合成和一次 Present。
 			}
 
@@ -581,6 +687,22 @@ namespace draw3
 			{
 				const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
 				HighPrecisionWait(workMs, configuration_.timingProfile.target_fps);
+				size_t committedCount = 0;
+				size_t realPointCount = 0;
+				size_t predictedPointCount = 0;
+				size_t l0PointCount = 0;
+				bool allIdleFrozen = true;
+				for (const RuntimeStroke* runtime : active)
+				{
+					committedCount += runtime->stroke.committedIndex;
+					realPointCount += runtime->stroke.realPoints.size();
+					predictedPointCount += runtime->stroke.predictedPoints.size();
+					l0PointCount += runtime->stroke.l0DrawPoints.size();
+					allIdleFrozen = allIdleFrozen && runtime->stroke.idleFrozen;
+				}
+				LogFrameTiming(committedCount, realPointCount, predictedPointCount,
+					l0PointCount, workMs, previousFrameMs, allIdleFrozen); // Debug 输出全部活动 contact 的聚合帧率。
+				lastActiveFrameStartMs = frameStartMs;
 			}
 		}
 
@@ -601,7 +723,7 @@ namespace draw3
 			strokeModelParams.prediction_params = DisabledPredictorParams{}; // 橡皮保留同样的建模流程，但彻底关闭轨迹预测。
 		else
 			ApplyPredictionMode(strokeModelParams, configuration_.kalmanPredictorParams);
-		const float baseDiameter = tool == DrawingTool::Pen ? 100.0f : 50.0f; // 普通笔暂用 100px 测试；荧光笔和橡皮仍保持 50px。
+		const float baseDiameter = tool == DrawingTool::Pen ? 5.0f : 50.0f; // 普通笔恢复默认 5px；荧光笔和橡皮保持 50px。
 		const StrokeShape shape = StrokeShape::RoundCapsule;
 		const DirectX::XMFLOAT4 stableInkColor = highlighter
 			? kHighlighterCompositeColor

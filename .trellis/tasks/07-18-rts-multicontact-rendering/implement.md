@@ -10,7 +10,7 @@
 ## 2. RTS 适配
 
 - [x] 新增 `draw3.realtime_stylus` RAII 模块，完成 MTA COM、RTS 多点启用、同步插件注册和严格关闭顺序。
-- [x] 仅请求 X/Y，缓存每个 tcid 的 packet 属性索引、缩放和设备类型；Down/Up 解析完整 packet，Packets 只解析批次最后一个 packet。
+- [x] 仅请求 X/Y，缓存每个 tcid 的 packet 属性索引、诊断比例和设备类型；坐标统一沿用首 context scale，Down/Up 解析完整 packet，Packets 只解析批次最后一个 packet。
 - [x] 将 Touch/Pen/MouseLeft/MouseRight 映射为 0–3，回调热路径不分配、不查询 COM、不做逐包日志。
 - [x] 初始化或多点接口失败时明确报告并退出，不启用旧输入回退。
 
@@ -29,6 +29,7 @@
 - [x] L2 提交后从 CPU 状态重建剩余 contact 的 L1/L0，批量 dirty rect，并保证每帧一次 backbuffer 合成和一次 Present。
 - [x] resize 后保留 L2 并重建活动临时层；clear 延迟到全部 contact 结束。
 - [x] L2 成功提交后才回收 ended slot/model；Cancelled 也能安全结束。
+- [x] 接入空闲时 1/2/3 工具选择；首个 Down 锁定整批工具，普通笔 5px 模拟压感，荧光笔/橡皮 50px 固定宽度。
 
 ## 5. 主程序、计时和工程注册
 
