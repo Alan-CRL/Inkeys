@@ -21,9 +21,13 @@
   "children": [],
   "parent": null,
   "relatedFiles": [
-    ".trellis/spec/backend/",
-    ".trellis/spec/frontend/"
+    "README.md",
+    ".trellis/spec/index.md",
+    ".trellis/spec/open-questions.md",
+    ".trellis/spec/native/",
+    ".trellis/spec/shaders/",
+    ".trellis/spec/guides/"
   ],
-  "notes": "First-time setup task created by trellis init (fullstack project)",
+  "notes": "First-time setup task reshaped for the native C++20/D3D11 project",
   "meta": {}
 }
