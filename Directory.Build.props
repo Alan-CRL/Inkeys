@@ -1,0 +1,27 @@
+<Project>
+
+	<PropertyGroup Condition="'$(MSBuildProjectExtension)'=='.vcxproj'">
+		<VcpkgEnableManifest>true</VcpkgEnableManifest>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(MSBuildProjectExtension)'=='.vcxproj' and '$(Platform)'=='Win32'">
+		<VcpkgEnableManifest>true</VcpkgEnableManifest>
+		<VcpkgTriplet>x86-windows-static-v143</VcpkgTriplet>
+		<VcpkgInstalledDir>$(MSBuildThisFileDirectory)VcpkgInstalled\Win32\</VcpkgInstalledDir>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(MSBuildProjectExtension)'=='.vcxproj' and '$(Platform)'=='x64'">
+		<VcpkgEnableManifest>true</VcpkgEnableManifest>
+		<VcpkgTriplet>x64-windows-static-v143</VcpkgTriplet>
+		<VcpkgInstalledDir>$(MSBuildThisFileDirectory)VcpkgInstalled\Win64\</VcpkgInstalledDir>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(MSBuildProjectExtension)'=='.vcxproj' and '$(Platform)'=='ARM64'">
+		<VcpkgEnableManifest>true</VcpkgEnableManifest>
+		<VcpkgTriplet>arm64-windows-static-v143</VcpkgTriplet>
+		<VcpkgInstalledDir>$(MSBuildThisFileDirectory)VcpkgInstalled\Arm64\</VcpkgInstalledDir>
+	</PropertyGroup>
+
+	<Import Project="$(MSBuildThisFileDirectory)vcpkg\scripts\buildsystems\msbuild\vcpkg.props"
+	        Condition="'$(MSBuildProjectExtension)'=='.vcxproj'" />
+</Project>

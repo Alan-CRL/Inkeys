@@ -1,5 +1,6 @@
 /.vs/
 /packages/
+/VcpkgInstalled/
 /Release/
 /Debug/
 /x64/

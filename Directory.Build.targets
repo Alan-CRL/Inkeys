@@ -1,0 +1,19 @@
+<Project>
+
+	<!-- 1) 只为 VC++ 项目导入 vcpkg 的 MSBuild 集成。 -->
+	<Import Project="$(MSBuildThisFileDirectory)Vcpkg\scripts\buildsystems\msbuild\vcpkg.targets"
+	        Condition="'$(MSBuildProjectExtension)'=='.vcxproj'" />
+
+	<!-- 2) 将 vcpkg manifest 安装加入模块依赖扫描链。 -->
+	<PropertyGroup Condition="'$(MSBuildProjectExtension)'=='.vcxproj'">
+		<SetModuleDependenciesDependsOn>
+			$(SetModuleDependenciesDependsOn);VcpkgInstallManifestDependencies
+		</SetModuleDependenciesDependsOn>
+	</PropertyGroup>
+
+	<!-- 3) 兜底：确保模块扫描前已完成 vcpkg 安装。 -->
+	<Target Name="ForceVcpkgBeforeModuleScan"
+			BeforeTargets="SetModuleDependencies;ScanDependenciesPerFile;ScanDependencies"
+			DependsOnTargets="VcpkgInstallManifestDependencies"
+			Condition="'$(MSBuildProjectExtension)'=='.vcxproj' and '$(VcpkgEnabled)' == 'true' and '$(VcpkgEnableManifest)' == 'true' and '$(VcpkgManifestInstall)' != 'false'" />
+</Project>
