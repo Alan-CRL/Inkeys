@@ -4,12 +4,16 @@
 
 `main.cpp` 的初始化顺序是：
 
-1. `WindowController::Initialize`
-2. `InitializeGraphicsDevice`
-3. `TransparentPresentationController::Initialize`，内部初始化 `InkRenderer`
-4. `DrawingController` 创建并进入消息循环
+1. 创建 `ContactInputCoordinator`
+2. `WindowController::Initialize`，随后把 coordinator 绑定到窗口控制唤醒
+3. `InitializeGraphicsDevice`
+4. `TransparentPresentationController::Initialize`，内部初始化 `InkRenderer`
+5. `RealTimeStylusInput::Initialize` 启用同步 RTS 插件
+6. `DrawingController` 创建并进入消息循环
 
 不要交换窗口、设备、交换链和 renderer 的依赖顺序。`TransparentPresentationController` 保存对 `GraphicsDeviceResources` 和 `InkRenderer` 的非拥有指针，调用者必须让这些对象覆盖 presenter 生命周期。
+
+退出时先停止 RTS 并解除 `WindowController` 的 coordinator 指针，再销毁 coordinator。RTS 的 COM 对象只由完成 MTA 初始化的主线程创建、禁用、移除插件并释放。
 
 ## Input And Thread Boundary
 
@@ -18,7 +22,9 @@
 - 窗口回调不重建 D3D 资源。
 - `pendingResizeWidth_/Height_` 先写入，`resizeRequested_` 最后 release 发布。
 - `DrawingController::ProcessPendingResize` 在绘制线程依次 resize renderer、resize presenter，两个步骤都成功后才 `CommitSize`。
-- 单笔循环直接读取当前光标并清空积压鼠标消息，以降低延迟。
+- RTS 同步回调只完成 packet 解析、contact 状态发布和唤醒，不调用 D3D、presenter 或 stroke modeler。
+- 控制请求先写 sticky 原子标记，再通过 coordinator 队列唤醒；消费方在阻塞前二次 dequeue，避免清 pending 与入队交错造成丢唤醒。
+- 无活动 contact 时使用 blocking dequeue；活动 contact 仍按帧更新停笔预测。
 
 ## Tool State
 
@@ -50,8 +56,8 @@
 ## Three-Layer Contract
 
 - `L2`：已完成笔画的最终 premultiplied RGBA 画布，背景真透明。
-- `L1`：当前笔已稳定的前缀操作。
-- `L0`：当前帧仍会变化的真实尾部、预测与笔锋，每帧先恢复单位操作再重画。
+- `L1`：共享临时操作层，合并全部活动 contact 已稳定的前缀操作。
+- `L0`：共享临时操作层，合并全部活动 contact 当前帧仍会变化的真实尾部、预测与笔锋；每帧只恢复一次单位操作再重画。
 
 临时操作层表示：
 
@@ -67,7 +73,60 @@ Result = Add + Retain * Below
 liveTipDuration + predictionDuration
 ```
 
-抬笔时最后可见 L0 原样追加到 L1，再把合并操作一次性应用到 L2，随后清空 L1/L0。不要在抬笔时重新用“仅真实点”重建最终几何，否则会造成回缩或跳变。
+contact 结束时保留上一帧可见 L0，同时加入本帧最终真实输入和终态 L0；同一帧的全部结束 contact 只执行一次 L2 resolve、一次 backbuffer composite 和一次 present。仍活动 contact 的 L1/L0 必须在清空临时纹理后从 CPU 状态重建。不要在结束时只用真实点替换上一帧可见几何，否则会造成回缩或跳变。
+
+## Scenario: RTS Multi-Contact Input And Rendering
+
+### 1. Scope / Trigger
+
+修改 RTS packet、contact 路由、跨线程队列、活动笔画、resize/clear、临时层合成或呈现时，必须应用本契约。
+
+### 2. Signatures
+
+- `ContactInputCoordinator::PublishDown/PublishMove/PublishUp/PublishCancelled`
+- `ContactInputCoordinator::TryReadSnapshot/Recycle/PublishControlWake`
+- `RealTimeStylusInput::Initialize/Shutdown`
+- `DrawingController::Run`
+
+### 3. Contracts
+
+- contact identity 是 `(tabletContextId, contactId, generation)`；route 必须通过 generation 和状态的原子 CAS 防止 ABA，记录内容用单写者 seqlock 发布。
+- Down 成功入队后 consumer 才拥有 handle；Down 入队失败必须先关闭并排空可能已进入的 Move，再回收。Up/Cancelled 是 sticky terminal，成功关闭后后续 Move 不得覆盖。
+- packet X/Y 按 `GetPacketDescriptionData` 返回顺序查找并乘以 ink-space-to-device factor；同步回调不得分配、建模、绘制或记录逐包日志。
+- `Disabled`、RTS `Error`、tablet 移除和 shutdown 都把生产中的 contact 发布为 Cancelled；COM 初始化、FTM 聚合、禁用、移除插件与释放全部在完成 MTA 初始化的主线程完成。
+- 每个活动 contact 拥有独立 CPU runtime，其 GPU 几何共同重建到共享 L1/L0；不得提前进入 L2。完成 contact 的同帧批次只 resolve/composite/present 一次，随后重建仍活动 contact。
+- resize 成功后重建活动临时层；clear 在有活动 contact 时延后。无活动 contact 时阻塞等待；1ms timer period 只在活动区间启用，且每次成功 begin 必须配对 end。
+
+### 4. Validation & Error Matrix
+
+| Event / failure | Required behavior |
+|---|---|
+| Down queue enqueue failure | 关闭 route、排空已进入 writer、回收；不得直接写 Free |
+| Concurrent Move and Up/Cancelled | terminal 状态胜出，后续 Move 不覆盖终态 |
+| Snapshot read during write | seqlock 重试，只接受前后相同的偶数 sequence |
+| Disabled / Error / tablet removal | 所有 producing contact 以 Cancelled 结束 |
+| Resize succeeds | 保留 L2 交集并从 CPU runtime 重建全部活动 L1/L0 |
+| Clear with active contact | 延后到活动集合为空 |
+| Multiple Up in one frame | 一次 L2 resolve、一次 composite、一次 present |
+| Present failure | 保持整画布重呈现请求，下一帧恢复 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：两支笔交错移动并同帧抬起，终态完整，单次批量提交，其他活动笔无闪烁。
+- Base：单 contact 的 Down/Move/Up 使用相同 generation、seqlock 和批量渲染路径。
+- Bad：按 `(tabletContextId, contactId)` 直接复用槽位、Down 失败直接 Free，或每个 Up 各自 resolve/present。
+
+### 6. Tests Required
+
+- `Release|ARM64` 全解决方案 Rebuild，且两个 shader 与资源编译步骤成功。
+- 静态验证 generation/state CAS、sticky terminal、seqlock、零自旋阻塞等待、timer begin/end 配对和 Release 无逐帧日志。
+- 真机验证双 contact 交错、同时抬起、活动时 resize、活动时 clear、设备禁用/拔出、长时间 idle CPU 和最终点位置。
+
+### 7. Wrong vs Correct
+
+Wrong：`收到 Up 就立即把该 contact resolve 到 L2 并 Present；槽位只靠 contactId 复用。`
+
+Correct：`route 用 generation+state 精确交接；同帧全部 terminal contact 先完成几何，再统一 resolve/composite/present，并重建剩余活动层。`
 
 ### Visual Prediction Is Not Persistent Ink
 
@@ -85,11 +144,11 @@ liveTipDuration + predictionDuration
 
 ### 1. Scope / Trigger
 
-当任务新增 `InkStrokeRecord`、保存、导出、同步、回放或从 L2/`ActiveMouseStroke` 提取永久笔迹时，必须应用本契约。
+当任务新增 `InkStrokeRecord`、保存、导出、同步、回放或从 L2/活动 contact runtime 提取永久笔迹时，必须应用本契约。
 
 ### 2. Signatures
 
-当前仓库没有正式持久化 API 或记录结构。未来任务必须先定义明确的写入签名和数据结构；禁止把 `ActiveMouseStroke::predictedPoints` 或 L2 像素读取隐式当成持久化接口。
+当前仓库没有正式持久化 API 或记录结构。未来任务必须先定义明确的写入签名和数据结构；禁止把活动 contact 的 prediction 或 L2 像素读取隐式当成持久化接口。
 
 ### 3. Contracts
 

@@ -1,0 +1,8 @@
+{"file":".trellis/spec/native/index.md","reason":"检查原生层整体契约和范围。"}
+{"file":".trellis/spec/native/modules-and-code-style.md","reason":"检查 modules、编码、换行、注释和最小修改。"}
+{"file":".trellis/spec/native/runtime-and-rendering.md","reason":"检查 D3D 线程所有权、L2 完整笔画契约与临时层重建。"}
+{"file":".trellis/spec/native/platform-and-resources.md","reason":"检查 COM/RTS 生命周期、Win7 兼容性和工程注册。"}
+{"file":".trellis/spec/native/quality-and-validation.md","reason":"执行 Release ARM64 完整解决方案质量门。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"复核 producer 到 renderer 的并发数据流、控制唤醒和关闭路径。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"检查是否复用现有模型与渲染 helper，避免无关重构。"}
+{"file":".trellis/tasks/07-18-rts-multicontact-rendering/research/rts-and-queue.md","reason":"按已确认的 RTS、队列和分层风险逐项审计。"}

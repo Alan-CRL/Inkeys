@@ -104,6 +104,19 @@ namespace draw3
 	void WindowController::RequestFullPresent()
 	{
 		fullPresentRequested_.store(true, std::memory_order_release);
+		RequestControlWake();
+	}
+
+	void WindowController::SetInputCoordinator(ContactInputCoordinator* coordinator)
+	{
+		inputCoordinator_.store(coordinator, std::memory_order_release);
+		if (coordinator) coordinator->PublishControlWake(); // 接线前已产生的窗口请求也不能漏唤醒。
+	}
+
+	void WindowController::RequestControlWake()
+	{
+		if (ContactInputCoordinator* coordinator = inputCoordinator_.load(std::memory_order_acquire))
+			coordinator->PublishControlWake();
 	}
 
 	void WindowController::SetGpuTransparentComposition(bool enabled)
@@ -134,10 +147,12 @@ namespace draw3
 		{
 		case WM_DESTROY:
 			exitRequested_.store(true, std::memory_order_release); // 通知主循环退出。
+			RequestControlWake();
 			break;
 
 		case WM_DWMCOMPOSITIONCHANGED:
 			compositionChangedRequested_.store(true, std::memory_order_release); // DWM 状态变化交给主循环刷新 presenter。
+			RequestControlWake();
 			return 0;
 
 		case WM_ERASEBKGND:
@@ -178,6 +193,7 @@ namespace draw3
 					pendingResizeWidth_.store(width, std::memory_order_relaxed);
 					pendingResizeHeight_.store(height, std::memory_order_relaxed);
 					resizeRequested_.store(true, std::memory_order_release);
+					RequestControlWake();
 				}
 				if (gpuTransparent) RequestFullPresent();
 			}
@@ -188,7 +204,8 @@ namespace draw3
 			{
 			case '0':
 			case VK_NUMPAD0:
-				clearCanvasRequested_.store(true, std::memory_order_relaxed);
+				clearCanvasRequested_.store(true, std::memory_order_release);
+				RequestControlWake();
 				return 0;
 			case '1':
 			case VK_NUMPAD1:
@@ -205,6 +222,7 @@ namespace draw3
 			case '9':
 			case VK_NUMPAD9:
 				exitRequested_.store(true, std::memory_order_release);
+				RequestControlWake();
 				return 0;
 			}
 			break;

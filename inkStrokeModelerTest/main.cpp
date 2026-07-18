@@ -3,13 +3,12 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
-#include <mmsystem.h>
 
-#pragma comment(lib, "winmm.lib")
-
+import draw3.contact_input;
 import draw3.drawing_controller;
 import draw3.graphics_initialization;
 import draw3.ink_prediction;
+import draw3.realtime_stylus;
 import draw3.renderer;
 import draw3.transparent_presentation;
 import draw3.window_control;
@@ -29,15 +28,15 @@ namespace
 
 int main()
 {
-	timeBeginPeriod(1); // 保持原有 1ms 系统计时粒度。
-
 	// 先创建窗口，以便透明呈现模块随后绑定 HWND 和交换链。
+	draw3::ContactInputCoordinator input;
 	draw3::WindowController window;
 	if (!window.Initialize(draw3::ShouldPreconfigureNoRedirectionBitmap()))
 	{
 		std::cout << "Failed to initialize the drawing window." << std::endl;
 		return -1;
 	}
+	window.SetInputCoordinator(&input); // 窗口控制请求可唤醒完全空闲的绘制线程。
 
 	// 初始化共享的 D3D11/DXGI 设备资源。
 	draw3::GraphicsDeviceResources graphics;
@@ -54,35 +53,23 @@ int main()
 	}
 	window.SetGpuTransparentComposition(presentation.IsGpuTransparentComposition()); // 让窗口过程按当前透明模式处理背景和重绘。
 
-	// 绘制控制器封装单笔帧循环，入口只保留应用级消息编排。
+	draw3::RealTimeStylusInput stylus;
+	if (!stylus.Initialize(window.Handle(), input))
+	{
+		std::cout << "Failed to initialize RealTimeStylus multi-contact input." << std::endl;
+		return -1; // 本阶段不回退到旧鼠标轮询。
+	}
+
+	// 绘制控制器独占模型与 D3D；RTS 同步插件只发布最新一致快照。
 	draw3::DrawingController drawing(
+		input,
 		window,
 		renderer,
 		presentation,
 		draw3::CreateStrokeModelConfiguration(GetPrimaryDpiX()));
 	drawing.ClearCanvas();
-
-	while (!window.ExitRequested())
-	{
-		if (window.ConsumeClearCanvasRequest()) drawing.ClearCanvas(); // 键盘清屏请求在主绘制线程执行。
-		if (window.ConsumeCompositionChangedRequest())
-		{
-			presentation.RefreshAfterCompositionChanged(); // DWM 状态变化后重新启用玻璃/扩展帧。
-			window.RequestFullPresent(); // 透明模式刷新后补一帧完整画布。
-		}
-		drawing.ProcessPendingResize(true); // Resize 请求会重建交换链和图层资源。
-		if (window.ConsumeFullPresentRequest()) drawing.PresentFullCanvas(); // 处理窗口暴露或移动后的全量刷新。
-
-		draw3::MouseMessage message = {};
-		if (!window.TryGetMouseMessage(message))
-		{
-			Sleep(1); // 没有输入时让出时间片，避免主循环空转。
-			continue;
-		}
-		if (message.message == WM_LBUTTONDOWN)
-		{
-			drawing.DrawMouseStroke(message);
-		}
-	}
+	drawing.Run();
+	stylus.Shutdown(); // 停回调、移除插件后再释放协调器记录。
+	window.SetInputCoordinator(nullptr); // 解除窗口回调中的非拥有指针，再进入局部对象析构。
 	return 0;
 }

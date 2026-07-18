@@ -6,12 +6,17 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cmath>
 #include <DirectXMath.h>
 #include <iostream>
 #include <ink_stroke_modeler/stroke_modeler.h>
+#include <memory>
 #include <vector>
 #include <windows.h>
+#include <mmsystem.h>
+
+#pragma comment(lib, "winmm.lib")
 
 module draw3.drawing_controller;
 
@@ -22,11 +27,110 @@ namespace draw3
 	namespace
 	{
 		const DirectX::XMFLOAT4 kHighlighterCompositeColor(1.0f, 0.0f, 0.0f, 0.35f);
+		const DirectX::XMFLOAT4 kMultiContactInkColor(1.0f, 0.0f, 0.0f, 1.0f);
+		constexpr float kMultiContactDiameter = 100.0f;
+		constexpr float kRawMoveThresholdPx = 0.25f;
+		constexpr size_t kPreheatedStrokeCount = 16;
+
+		struct RuntimeStroke
+		{
+			explicit RuntimeStroke(float expectedSpeed)
+				: stroke(kMultiContactDiameter, expectedSpeed)
+			{
+				stroke.modeledResults.reserve(256);
+				stroke.predictedResults.reserve(64);
+				stroke.realPoints.reserve(256);
+				stroke.predictedPoints.reserve(64);
+				stroke.l0DrawPoints.reserve(128);
+				stroke.previousL0DrawPoints.reserve(128);
+				rebuildPoints.reserve(256);
+			}
+
+			ActiveStroke stroke;
+			ContactHandle handle = {};
+			ContactSnapshot lastSpeedSnapshot = {};
+			uint64_t lastConsumedSequence = 0;
+			int64_t qpcOrigin = 0;
+			double lastModelInputTime = 0.0;
+			RECT visibleDirty = {};
+			std::vector<InkPoint> rebuildPoints;
+			bool inUse = false;
+			bool ended = false;
+			bool movedThisFrame = false;
+		};
+
+		double QpcDeltaSeconds(int64_t newer, int64_t older, int64_t frequency)
+		{
+			if (frequency <= 0 || newer <= older) return 0.0;
+			return static_cast<double>(newer - older) / static_cast<double>(frequency);
+		}
+
+		RECT DrawStablePrefix(RuntimeStroke& runtime, InkRenderer& renderer, int width, int height)
+		{
+			ActiveStroke& stroke = runtime.stroke;
+			if (!stroke.hasCommittedGeometry || stroke.realPoints.empty()) return {};
+			const size_t pointCount = std::min(stroke.committedIndex + 1, stroke.realPoints.size());
+			if (pointCount == 0) return {};
+			runtime.rebuildPoints.assign(stroke.realPoints.begin(), stroke.realPoints.begin() + pointCount);
+			renderer.SetOperatorTarget(renderer.layerL1);
+			renderer.DrawStrokeOrDot(runtime.rebuildPoints, kMultiContactInkColor);
+			return RectFromStrokePoints(runtime.rebuildPoints, width, height);
+		}
+
+		RECT DrawCompletedStroke(RuntimeStroke& runtime, InkRenderer& renderer, int width, int height)
+		{
+			ActiveStroke& stroke = runtime.stroke;
+			runtime.rebuildPoints.assign(stroke.realPoints.begin(), stroke.realPoints.end());
+			if (runtime.rebuildPoints.empty() && stroke.hasInputStartPoint)
+				runtime.rebuildPoints.push_back(stroke.inputStartPoint); // Down 后立即 Up 仍要落下点击圆点。
+
+			RECT dirty = {};
+			renderer.SetOperatorTarget(renderer.layerL1);
+			if (!runtime.rebuildPoints.empty())
+			{
+				renderer.DrawStrokeOrDot(runtime.rebuildPoints, kMultiContactInkColor);
+				UnionRectInPlace(dirty, RectFromStrokePoints(runtime.rebuildPoints, width, height));
+			}
+			if (!stroke.previousL0DrawPoints.empty())
+			{
+				// 冻结上一帧已经可见的尾部，避免最终 Up 重建几何时 prediction 回缩。
+				renderer.DrawStrokeOrDot(stroke.previousL0DrawPoints, kMultiContactInkColor);
+				UnionRectInPlace(dirty, RectFromStrokePoints(stroke.previousL0DrawPoints, width, height));
+			}
+			if (!stroke.l0DrawPoints.empty())
+			{
+				renderer.DrawStrokeOrDot(stroke.l0DrawPoints, kMultiContactInkColor);
+				UnionRectInPlace(dirty, RectFromStrokePoints(stroke.l0DrawPoints, width, height));
+			}
+			return ClampRectToCanvas(dirty, width, height);
+		}
+
+		RECT RebuildActiveLayers(const std::vector<RuntimeStroke*>& active,
+			InkRenderer& renderer, int width, int height)
+		{
+			renderer.ClearOperatorLayer(renderer.layerL1);
+			renderer.ClearOperatorLayer(renderer.layerL0);
+			RECT dirty = {};
+			for (RuntimeStroke* runtime : active)
+			{
+				if (!runtime || runtime->ended) continue;
+				UnionRectInPlace(dirty, DrawStablePrefix(*runtime, renderer, width, height));
+				ActiveStroke& stroke = runtime->stroke;
+				stroke.lastL0Rect = {};
+				stroke.currentL0Rect = RectFromStrokePoints(stroke.l0DrawPoints, width, height);
+				if (!stroke.l0DrawPoints.empty())
+					DrawL0LiveComposite(stroke, kMultiContactInkColor,
+						StrokeShape::RoundCapsule, renderer, false);
+				UnionRectInPlace(dirty, stroke.currentL0Rect);
+			}
+			return ClampRectToCanvas(dirty, width, height);
+		}
 	}
 
-	DrawingController::DrawingController(WindowController& window, InkRenderer& renderer,
+	DrawingController::DrawingController(ContactInputCoordinator& input, WindowController& window, InkRenderer& renderer,
 		TransparentPresentationController& presentation, StrokeModelConfiguration configuration)
-		: window_(window), renderer_(renderer), presentation_(presentation), configuration_(std::move(configuration))
+		: input_(input), window_(window), renderer_(renderer),
+		presentation_(presentation), configuration_(std::move(configuration))
 	{
 	}
 
@@ -94,6 +198,375 @@ namespace draw3
 		return true;
 	}
 
+	void DrawingController::Run()
+	{
+		using namespace ink::stroke_model;
+
+		auto strokeModelParams = configuration_.modelParams;
+		ApplyPredictionMode(strokeModelParams, configuration_.kalmanPredictorParams);
+		LARGE_INTEGER qpcFrequencyValue = {};
+		QueryPerformanceFrequency(&qpcFrequencyValue);
+		const int64_t qpcFrequency = qpcFrequencyValue.QuadPart;
+
+		std::vector<std::unique_ptr<RuntimeStroke>> strokePool;
+		strokePool.reserve(kPreheatedStrokeCount);
+		for (size_t index = 0; index < kPreheatedStrokeCount; ++index)
+		{
+			auto runtime = std::make_unique<RuntimeStroke>(configuration_.expectedSpeed);
+			if (absl::Status status = runtime->stroke.modeler.Reset(strokeModelParams); !status.ok())
+			{
+				std::cout << "Failed to preheat stroke model: " << status.message() << std::endl;
+				return;
+			}
+			strokePool.push_back(std::move(runtime)); // 首批模型和 predictor 在接收 Down 前完成分配。
+		}
+		std::vector<RuntimeStroke*> active;
+		active.reserve(kPreheatedStrokeCount);
+
+		auto acquireStroke = [&]() -> RuntimeStroke*
+			{
+				for (const auto& candidate : strokePool)
+				{
+					if (!candidate->inUse)
+					{
+						candidate->inUse = true;
+						return candidate.get();
+					}
+				}
+				auto runtime = std::make_unique<RuntimeStroke>(configuration_.expectedSpeed);
+				if (absl::Status status = runtime->stroke.modeler.Reset(strokeModelParams); !status.ok())
+				{
+					std::cout << "Failed to initialize expanded stroke model: " << status.message() << std::endl;
+					return nullptr;
+				}
+				runtime->inUse = true;
+				strokePool.push_back(std::move(runtime));
+				return strokePool.back().get();
+			};
+
+		auto initializeStroke = [&](ContactHandle handle) -> bool
+			{
+				if (!handle.record || handle.record->Generation() != handle.generation) return false;
+				const ContactSnapshot down = handle.record->DownSnapshot();
+				RuntimeStroke* runtime = acquireStroke();
+				if (!runtime)
+				{
+					ContactSnapshot cancelled = down;
+					cancelled.phase = ContactPhase::Cancelled;
+					input_.PublishCancelled(handle.record->TabletContextId(),
+						handle.record->ContactId(), cancelled);
+					input_.Recycle(handle);
+					return false;
+				}
+				runtime->handle = handle;
+				runtime->ended = false;
+				runtime->movedThisFrame = false;
+				runtime->visibleDirty = {};
+				runtime->stroke.Reset(kMultiContactDiameter, configuration_.expectedSpeed);
+				if (absl::Status status = runtime->stroke.modeler.Reset(); !status.ok())
+				{
+					std::cout << "Error: " << status.message() << std::endl;
+					ContactSnapshot cancelled = down;
+					cancelled.phase = ContactPhase::Cancelled;
+					input_.PublishCancelled(handle.record->TabletContextId(),
+						handle.record->ContactId(), cancelled);
+					input_.Recycle(handle);
+					runtime->handle = {};
+					runtime->inUse = false;
+					return false;
+				}
+
+				runtime->lastSpeedSnapshot = down;
+				runtime->lastConsumedSequence = down.sequence;
+				runtime->qpcOrigin = down.qpc;
+				runtime->lastModelInputTime = 0.0;
+				ActiveStroke& stroke = runtime->stroke;
+				stroke.inputStartPoint = {
+					down.position.x, down.position.y, kMultiContactDiameter * 0.5f, 0.0f };
+				stroke.hasInputStartPoint = true;
+				const Input downInput{
+					.event_type = Input::EventType::kDown,
+					.position = Vec2(down.position.x, down.position.y),
+					.time = Time(0.0)
+				};
+				if (absl::Status status = stroke.modeler.Update(downInput, stroke.modeledResults); !status.ok())
+				{
+					std::cout << "Error: " << status.message() << std::endl;
+					ContactSnapshot cancelled = down;
+					cancelled.phase = ContactPhase::Cancelled;
+					input_.PublishCancelled(handle.record->TabletContextId(),
+						handle.record->ContactId(), cancelled);
+					input_.Recycle(handle);
+					runtime->handle = {};
+					runtime->inUse = false;
+					return false;
+				}
+				AppendNewModeledPoints(stroke);
+				active.push_back(runtime);
+				return true;
+			};
+
+		auto processCommand = [&](const IngressCommand& command)
+			{
+				if (command.kind == IngressCommandKind::ControlWake)
+				{
+					input_.AcknowledgeControlWake(); // 先清 pending，随后复查窗口的全部原子请求。
+					return;
+				}
+				initializeStroke(command.contact);
+			};
+
+		auto consumeLatestSnapshot = [&](RuntimeStroke& runtime) -> bool
+			{
+				ContactSnapshot snapshot;
+				if (!input_.TryReadSnapshot(runtime.handle, snapshot) ||
+					snapshot.sequence == runtime.lastConsumedSequence) return false;
+				runtime.lastConsumedSequence = snapshot.sequence;
+				if (snapshot.phase == ContactPhase::Down) return false;
+
+				const float deltaX = snapshot.position.x - runtime.lastSpeedSnapshot.position.x;
+				const float deltaY = snapshot.position.y - runtime.lastSpeedSnapshot.position.y;
+				const float distanceSquared = deltaX * deltaX + deltaY * deltaY;
+				const bool terminal = snapshot.phase == ContactPhase::Up ||
+					snapshot.phase == ContactPhase::Cancelled;
+				if (!terminal && distanceSquared <= kRawMoveThresholdPx * kRawMoveThresholdPx)
+					return false; // Move 抖动已消费但不进入模型，也不改变下一次真实速度基准。
+
+				const double deltaSeconds = QpcDeltaSeconds(
+					snapshot.qpc, runtime.lastSpeedSnapshot.qpc, qpcFrequency);
+				float inputSpeed = -1.0f;
+				if (distanceSquared > kRawMoveThresholdPx * kRawMoveThresholdPx && deltaSeconds > 0.0)
+					inputSpeed = std::sqrt(distanceSquared) / static_cast<float>(deltaSeconds);
+
+				double inputTime = QpcDeltaSeconds(snapshot.qpc, runtime.qpcOrigin, qpcFrequency);
+				inputTime = std::max(inputTime, runtime.lastModelInputTime + 0.000001);
+				runtime.lastModelInputTime = inputTime;
+				const Input input{
+					.event_type = terminal ? Input::EventType::kUp : Input::EventType::kMove,
+					.position = Vec2(snapshot.position.x, snapshot.position.y),
+					.time = Time(inputTime)
+				};
+				if (absl::Status status = runtime.stroke.modeler.Update(
+					input, runtime.stroke.modeledResults); !status.ok())
+				{
+					std::cout << "Error: " << status.message() << std::endl;
+					if (terminal)
+					{
+						const float radius = runtime.stroke.realPoints.empty()
+							? kMultiContactDiameter * 0.5f : runtime.stroke.realPoints.back().r;
+						const InkPoint finalPoint{ snapshot.position.x, snapshot.position.y,
+							radius, static_cast<float>(inputTime) };
+						if (runtime.stroke.realPoints.empty())
+							runtime.stroke.realPoints.push_back(finalPoint);
+						else
+						{
+							const float finalDeltaX = finalPoint.x - runtime.stroke.realPoints.back().x;
+							const float finalDeltaY = finalPoint.y - runtime.stroke.realPoints.back().y;
+							if (finalDeltaX * finalDeltaX + finalDeltaY * finalDeltaY > 0.0001f)
+								runtime.stroke.realPoints.push_back(finalPoint);
+							else
+								runtime.stroke.realPoints.back() = finalPoint;
+						}
+						// 模型异常也保留 RTS 的最终位置，不能因随后回收 contact 而吞掉 Up 点。
+					}
+				}
+				AppendNewModeledPoints(runtime.stroke, inputSpeed);
+				runtime.lastSpeedSnapshot = snapshot;
+				if (distanceSquared > kRawMoveThresholdPx * kRawMoveThresholdPx)
+				{
+					runtime.stroke.idleFrozen = false;
+					runtime.stroke.visualStableFrameCount = 0;
+					runtime.stroke.lastMovementInputTime = inputTime;
+				}
+				if (terminal) runtime.ended = true;
+				return distanceSquared > kRawMoveThresholdPx * kRawMoveThresholdPx;
+			};
+
+		bool clearPending = false;
+		bool timerPeriodActive = false;
+		bool timerPeriodAttempted = false;
+		while (true)
+		{
+			const double frameStartMs = GetQpcTimeMilliseconds();
+			IngressCommand command;
+			while (input_.TryDequeue(command)) processCommand(command);
+
+			bool forceFullPresent = false;
+			if (window_.ConsumeClearCanvasRequest()) clearPending = true;
+			if (window_.ConsumeCompositionChangedRequest())
+			{
+				presentation_.RefreshAfterCompositionChanged();
+				window_.RequestFullPresent();
+			}
+			if (ProcessPendingResize(false))
+			{
+				const WindowSize size = window_.Size();
+				RebuildActiveLayers(active, renderer_, size.width, size.height);
+				forceFullPresent = true; // Resize 保留 L2，并从 CPU 状态恢复共享 L1/L0。
+			}
+			if (window_.ConsumeFullPresentRequest()) forceFullPresent = true;
+			if (window_.ExitRequested()) break;
+
+			RECT frameDirty = {};
+			if (active.empty() && clearPending)
+			{
+				const WindowSize size = window_.Size();
+				frameDirty = GetFullCanvasRect(size.width, size.height);
+				renderer_.ClearRTV(renderer_.layerL2RTV.Get(), kTransparentLayerClearColor);
+				renderer_.ClearOperatorLayer(renderer_.layerL1);
+				renderer_.ClearOperatorLayer(renderer_.layerL0);
+				renderer_.ClearRTV(renderer_.backBufferRTV.Get(), kTransparentLayerClearColor);
+				clearPending = false;
+				forceFullPresent = true;
+			}
+
+			if (active.empty() && !forceFullPresent)
+			{
+				if (timerPeriodActive)
+				{
+					timeEndPeriod(1);
+					timerPeriodActive = false;
+				}
+				timerPeriodAttempted = false;
+				// 二次排空后才等待；竞态窗口内到达的命令会留下信号量计数。
+				if (input_.TryDequeue(command))
+				{
+					processCommand(command);
+					continue;
+				}
+				input_.WaitDequeue(command);
+				processCommand(command);
+				continue;
+			}
+
+			if (!active.empty() && !timerPeriodAttempted)
+			{
+				timerPeriodAttempted = true;
+				timerPeriodActive = timeBeginPeriod(1) == TIMERR_NOERROR; // 只为成功的请求配对 timeEndPeriod。
+			}
+
+			LARGE_INTEGER frameQpc = {};
+			QueryPerformanceCounter(&frameQpc);
+			bool hasEndedStroke = false;
+			for (RuntimeStroke* runtime : active)
+			{
+				runtime->movedThisFrame = consumeLatestSnapshot(*runtime);
+				hasEndedStroke = hasEndedStroke || runtime->ended;
+			}
+
+			const WindowSize size = window_.Size();
+			for (RuntimeStroke* runtime : active)
+			{
+				ActiveStroke& stroke = runtime->stroke;
+				stroke.lastL0Rect = stroke.currentL0Rect;
+				stroke.logicalInputTime = std::max(stroke.logicalInputTime,
+					QpcDeltaSeconds(frameQpc.QuadPart, runtime->qpcOrigin, qpcFrequency));
+
+				RECT stableDirty = {};
+				if (!runtime->ended)
+				{
+					stroke.predictedResults.clear();
+					if (kActivePredictionMode != InkPredictionMode::Disabled)
+					{
+						if (absl::Status status = stroke.modeler.Predict(stroke.predictedResults); !status.ok())
+							stroke.predictedResults.clear();
+					}
+					RebuildPredictedPoints(stroke);
+					stableDirty = CommitStablePrefixToL1(stroke,
+						configuration_.liveTipDurationSeconds, GetPredictionDurationSeconds(stroke),
+						kMultiContactInkColor, StrokeShape::RoundCapsule,
+						renderer_, size.width, size.height);
+				}
+				// 结束帧保留上一帧 prediction，同时接入最终 Up 的真实几何。
+				RebuildL0DrawPoints(stroke, configuration_.liveTipDurationSeconds,
+					StrokeShape::RoundCapsule, size.width, size.height);
+				if (!runtime->ended)
+					UpdateIdleFreezeState(stroke, runtime->movedThisFrame,
+						configuration_.liveTipDurationSeconds);
+
+				UnionRectInPlace(frameDirty, stableDirty);
+				UnionRectInPlace(frameDirty, stroke.lastL0Rect);
+				UnionRectInPlace(frameDirty, stroke.currentL0Rect);
+				UnionRectInPlace(runtime->visibleDirty, stableDirty);
+				UnionRectInPlace(runtime->visibleDirty, stroke.lastL0Rect);
+				UnionRectInPlace(runtime->visibleDirty, stroke.currentL0Rect);
+			}
+
+			if (hasEndedStroke)
+			{
+				renderer_.ClearOperatorLayer(renderer_.layerL1);
+				renderer_.ClearOperatorLayer(renderer_.layerL0);
+				RECT completedDirty = {};
+				for (RuntimeStroke* runtime : active)
+				{
+					if (!runtime->ended) continue;
+					UnionRectInPlace(completedDirty,
+						DrawCompletedStroke(*runtime, renderer_, size.width, size.height));
+					UnionRectInPlace(frameDirty, runtime->visibleDirty);
+				}
+				completedDirty = ClampRectToCanvas(completedDirty, size.width, size.height);
+				if (!IsEmptyRect(completedDirty))
+				{
+					// 所有同帧结束 contact 共用一次 resolve，L2 从不接收仍活动的几何。
+					renderer_.ApplyOperatorLayers(renderer_.layerL2RTV.Get(),
+						renderer_.layerL1, renderer_.layerL0, completedDirty);
+					UnionRectInPlace(frameDirty, completedDirty);
+				}
+				UnionRectInPlace(frameDirty,
+					RebuildActiveLayers(active, renderer_, size.width, size.height));
+
+				std::erase_if(active, [&](RuntimeStroke* runtime)
+					{
+						if (!runtime->ended) return false;
+						input_.Recycle(runtime->handle); // L2 提交与活动层重建完成后才归还 slot。
+						runtime->stroke.Reset(kMultiContactDiameter, configuration_.expectedSpeed);
+						runtime->handle = {};
+						runtime->visibleDirty = {};
+						runtime->ended = false;
+						runtime->inUse = false;
+						return true;
+					});
+			}
+			else if (!active.empty())
+			{
+				renderer_.ClearOperatorLayer(renderer_.layerL0); // 共享 L0 每帧只恢复一次单位操作。
+				for (RuntimeStroke* runtime : active)
+				{
+					if (!runtime->stroke.l0DrawPoints.empty())
+						DrawL0LiveComposite(runtime->stroke, kMultiContactInkColor,
+							StrokeShape::RoundCapsule, renderer_, false);
+				}
+			}
+
+			if (active.empty() && clearPending)
+			{
+				frameDirty = GetFullCanvasRect(size.width, size.height);
+				renderer_.ClearRTV(renderer_.layerL2RTV.Get(), kTransparentLayerClearColor);
+				renderer_.ClearOperatorLayer(renderer_.layerL1);
+				renderer_.ClearOperatorLayer(renderer_.layerL0);
+				renderer_.ClearRTV(renderer_.backBufferRTV.Get(), kTransparentLayerClearColor);
+				clearPending = false;
+				forceFullPresent = true;
+			}
+
+			frameDirty = ClampRectToCanvas(frameDirty, size.width, size.height);
+			if (forceFullPresent) frameDirty = GetFullCanvasRect(size.width, size.height);
+			if (!IsEmptyRect(frameDirty))
+			{
+				CompositeLayersToBackBuffer(frameDirty);
+				PresentFrame(frameDirty, forceFullPresent); // 一帧最多一次 backbuffer 合成和一次 Present。
+			}
+
+			if (!active.empty())
+			{
+				const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
+				HighPrecisionWait(workMs, configuration_.timingProfile.target_fps);
+			}
+		}
+
+		if (timerPeriodActive) timeEndPeriod(1);
+	}
+
 	void DrawingController::DrawMouseStroke(const MouseMessage& startMessage)
 	{
 		using namespace ink::stroke_model;
@@ -124,7 +597,7 @@ namespace draw3
 		const bool orderedPreview = tool == DrawingTool::Pen &&
 			kActiveDebugLayerColorMode == DebugLayerColorMode::ColorizeLiveLayer;
 
-		ActiveMouseStroke stroke(baseDiameter, configuration_.expectedSpeed, widthMode, highlighter);
+		ActiveStroke stroke(baseDiameter, configuration_.expectedSpeed, widthMode, highlighter);
 		if (absl::Status status = stroke.modeler.Reset(strokeModelParams); !status.ok()) // 每一笔都用干净的模型状态开始。
 		{
 			std::cout << "Error: " << status.message() << std::endl;

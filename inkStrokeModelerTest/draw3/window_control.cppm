@@ -9,6 +9,8 @@
 
 export module draw3.window_control;
 
+import draw3.contact_input;
+
 export namespace draw3
 {
 	// 表示鼠标左键当前使用的绘制工具。
@@ -60,6 +62,8 @@ export namespace draw3
 		bool ConsumeCompositionChangedRequest();
 		// 请求下一帧执行全画布呈现。
 		void RequestFullPresent();
+		// 关联非拥有的输入协调器，使窗口控制请求能唤醒空闲绘制线程。
+		void SetInputCoordinator(ContactInputCoordinator* coordinator);
 		// 更新窗口过程对透明 GPU 合成模式的判断。
 		void SetGpuTransparentComposition(bool enabled);
 		// 返回当前绘制工具。
@@ -70,6 +74,7 @@ export namespace draw3
 	private:
 		static LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 		LRESULT HandleWindowMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+		void RequestControlWake();
 
 		static WindowController* activeController_;
 		HWND window_ = nullptr;
@@ -83,5 +88,6 @@ export namespace draw3
 		std::atomic<int> pendingResizeWidth_ = 0;
 		std::atomic<int> pendingResizeHeight_ = 0;
 		std::atomic<DrawingTool> activeTool_ = DrawingTool::Pen;
+		std::atomic<ContactInputCoordinator*> inputCoordinator_ = nullptr;
 	};
 }

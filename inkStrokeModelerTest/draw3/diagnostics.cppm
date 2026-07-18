@@ -18,7 +18,7 @@ export namespace draw3
 	double GetQpcTimeMilliseconds();
 	// 按目标帧率执行睡眠与短时忙等待。
 	void HighPrecisionWait(double frameTimeSpentMs, double targetFPS);
-	// 输出单帧墨迹建模和绘制耗时。
+	// Debug 限频输出墨迹建模和绘制耗时；Release 中为空操作。
 	void LogFrameTiming(size_t committedIndex, size_t realPointCount, size_t predictedPointCount,
 		size_t l0PointCount, double workMs, double previousFrameMs, bool idleFrozen);
 	// 输出 HRESULT 失败信息。

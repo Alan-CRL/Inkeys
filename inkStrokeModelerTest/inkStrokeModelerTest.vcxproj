@@ -269,6 +269,10 @@
     <ClCompile Include="HiEasyX\HiSysGUI\SysRadioButton.cpp" />
     <ClCompile Include="HiEasyX\HiSysGUI\SysStatic.cpp" />
     <ClCompile Include="HiEasyX\HiWindow.cpp" />
+    <ClCompile Include="draw3\contact_input.cpp" />
+    <ClCompile Include="draw3\contact_input.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
     <ClCompile Include="draw3\diagnostics.cpp" />
     <ClCompile Include="draw3\diagnostics.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
@@ -283,6 +287,10 @@
     </ClCompile>
     <ClCompile Include="draw3\ink_prediction.cpp" />
     <ClCompile Include="draw3\ink_prediction.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="draw3\realtime_stylus.cpp" />
+    <ClCompile Include="draw3\realtime_stylus.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
     <ClCompile Include="draw3\renderer.cpp" />

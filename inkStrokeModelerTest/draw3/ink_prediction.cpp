@@ -529,7 +529,7 @@ namespace draw3
 		return geometry;
 	}
 
-	HighlighterStartDirectionState GetHighlighterShortStrokeDirectionState(const ActiveMouseStroke& stroke)
+	HighlighterStartDirectionState GetHighlighterShortStrokeDirectionState(const ActiveStroke& stroke)
 	{
 		HighlighterStartDirectionState state;
 		state.locked = true;
@@ -548,10 +548,44 @@ namespace draw3
 		return state; // 完全没有有效移动时保留 +X，点击点位于 12×50 矩形左侧中点。
 	}
 
-	ActiveMouseStroke::ActiveMouseStroke(float baseDiameter, float expectedSpeed,
+	ActiveStroke::ActiveStroke(float baseDiameter, float expectedSpeed,
 		StrokeWidthMode widthModeValue, bool highlighterValue)
-		: widthEstimator(baseDiameter, expectedSpeed), widthMode(widthModeValue), highlighter(highlighterValue)
 	{
+		Reset(baseDiameter, expectedSpeed, widthModeValue, highlighterValue);
+	}
+
+	void ActiveStroke::Reset(float baseDiameter, float expectedSpeed,
+		StrokeWidthMode widthModeValue, bool highlighterValue)
+	{
+		modeledResults.clear();
+		predictedResults.clear();
+		realPoints.clear();
+		predictedPoints.clear();
+		l0DrawPoints.clear();
+		previousL0DrawPoints.clear();
+		l0HighlighterGeometry.primitives.clear();
+		l0HighlighterGeometry.bounds = {};
+		convertedResultCount = 0;
+		committedIndex = 0;
+		lastL0Rect = {};
+		currentL0Rect = {};
+		widthEstimator = StrokeWidthEstimator(baseDiameter, expectedSpeed);
+		widthMode = widthModeValue;
+		highlighter = highlighterValue;
+		hasCommittedGeometry = false;
+		realPathLength = 0.0f;
+		inputStartPoint = {};
+		hasInputStartPoint = false;
+		firstMovementDirection = { 1.0f, 0.0f };
+		hasFirstMovementDirection = false;
+		startDirectionState = {};
+		lastRawPosition = {};
+		hasLastRawPosition = false;
+		idleFrozen = false;
+		visualStableFrameCount = 0;
+		lastMovementInputTime = 0.0;
+		lastFrameWallTime = 0.0;
+		logicalInputTime = 0.0;
 	}
 
 	void UnionRectInPlace(RECT& target, const RECT& addition)
@@ -606,7 +640,7 @@ namespace draw3
 		return ClampRectToCanvas(rect, width, height);
 	}
 
-	bool UpdateRawPositionAndDetectMovement(ActiveMouseStroke& stroke, const POINT& rawPosition)
+	bool UpdateRawPositionAndDetectMovement(ActiveStroke& stroke, const POINT& rawPosition)
 	{
 		if (!stroke.hasLastRawPosition)
 		{
@@ -621,7 +655,7 @@ namespace draw3
 		return true;
 	}
 
-	void UpdateIdleFreezeState(ActiveMouseStroke& stroke, bool rawMoved, double liveTipDurationSeconds)
+	void UpdateIdleFreezeState(ActiveStroke& stroke, bool rawMoved, double liveTipDurationSeconds)
 	{
 		if (rawMoved)
 		{
@@ -638,7 +672,7 @@ namespace draw3
 		if (stroke.visualStableFrameCount >= kVisualStableRequiredFrames) stroke.idleFrozen = true; // 冻结后不再持续喂入相同坐标。
 	}
 
-	void AppendNewModeledPoints(ActiveMouseStroke& stroke, float inputSpeed)
+	void AppendNewModeledPoints(ActiveStroke& stroke, float inputSpeed)
 	{
 		const bool fixedWidth = stroke.widthMode == StrokeWidthMode::Fixed;
 		const float effectiveInputSpeed = fixedWidth ? -1.0f : inputSpeed;
@@ -694,7 +728,7 @@ namespace draw3
 		stroke.convertedResultCount = stroke.modeledResults.size(); // 记录已转换位置，下一帧只处理增量。
 	}
 
-	void RebuildPredictedPoints(ActiveMouseStroke& stroke)
+	void RebuildPredictedPoints(ActiveStroke& stroke)
 	{
 		stroke.predictedPoints.clear();
 		StrokeWidthEstimator predictionWidth = stroke.widthEstimator;
@@ -717,13 +751,13 @@ namespace draw3
 		}
 	}
 
-	double GetPredictionDurationSeconds(const ActiveMouseStroke& stroke)
+	double GetPredictionDurationSeconds(const ActiveStroke& stroke)
 	{
 		if (stroke.realPoints.empty() || stroke.predictedPoints.empty()) return 0.0;
 		return std::max(0.0, static_cast<double>(stroke.predictedPoints.back().time - stroke.realPoints.back().time));
 	}
 
-	void RebuildL0DrawPoints(ActiveMouseStroke& stroke, double liveTipDurationSeconds,
+	void RebuildL0DrawPoints(ActiveStroke& stroke, double liveTipDurationSeconds,
 		StrokeShape shape, int width, int height)
 	{
 		stroke.l0DrawPoints.clear();
@@ -752,7 +786,7 @@ namespace draw3
 		stroke.currentL0Rect = RectFromStrokePoints(stroke.l0DrawPoints, width, height, shape);
 	}
 
-	RECT CommitStablePrefixToL1(ActiveMouseStroke& stroke, double liveTipDurationSeconds,
+	RECT CommitStablePrefixToL1(ActiveStroke& stroke, double liveTipDurationSeconds,
 		double predictionDurationSeconds, DirectX::XMFLOAT4 color, StrokeShape shape,
 		InkRenderer& renderer, int width, int height)
 	{
@@ -790,7 +824,7 @@ namespace draw3
 		return dirty;
 	}
 
-	RECT CommitEraserRealPointsToL1(ActiveMouseStroke& stroke, StrokeShape shape,
+	RECT CommitEraserRealPointsToL1(ActiveStroke& stroke, StrokeShape shape,
 		InkRenderer& renderer, int width, int height)
 	{
 		std::vector<InkPoint> newPoints;
@@ -814,10 +848,10 @@ namespace draw3
 		return RectFromStrokePoints(newPoints, width, height, shape);
 	}
 
-	void DrawL0LiveComposite(ActiveMouseStroke& stroke, DirectX::XMFLOAT4 color,
-		StrokeShape shape, InkRenderer& renderer)
+	void DrawL0LiveComposite(ActiveStroke& stroke, DirectX::XMFLOAT4 color,
+		StrokeShape shape, InkRenderer& renderer, bool clearLayer)
 	{
-		renderer.ClearOperatorLayer(renderer.layerL0); // L0 每帧从单位操作重画，才能移除旧预测。
+		if (clearLayer) renderer.ClearOperatorLayer(renderer.layerL0); // 多 contact 帧由调用方只清一次共享 L0。
 		if (stroke.highlighter)
 		{
 			if (stroke.l0HighlighterGeometry.primitives.empty()) return;

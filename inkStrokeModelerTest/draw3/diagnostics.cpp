@@ -21,6 +21,7 @@ namespace draw3
 {
 	namespace
 	{
+#if defined(_DEBUG)
 		void WriteFastConsoleLine(const char* text, DWORD length)
 		{
 			static HANDLE consoleHandle = GetStdHandle(STD_OUTPUT_HANDLE); // 缓存控制台句柄，减少每帧日志开销。
@@ -31,6 +32,7 @@ namespace draw3
 				WriteFile(consoleHandle, text, length, &written, nullptr); // 输出被重定向时 WriteConsoleA 会失败，改用 WriteFile。
 			}
 		}
+#endif
 
 		const char* DxgiAlphaModeName(DXGI_ALPHA_MODE mode)
 		{
@@ -104,6 +106,11 @@ namespace draw3
 	void LogFrameTiming(size_t committedIndex, size_t realPointCount, size_t predictedPointCount,
 		size_t l0PointCount, double workMs, double previousFrameMs, bool idleFrozen)
 	{
+#if defined(_DEBUG)
+		static double nextLogTimeMs = 0.0;
+		const double nowMs = GetQpcTimeMilliseconds();
+		if (nowMs < nextLogTimeMs) return;
+		nextLogTimeMs = nowMs + 250.0; // Debug 最多每秒输出四次，避免逐帧日志扰动建模。
 		const int logicFps = workMs > 0.001 ? static_cast<int>(1000.0 / workMs) : 0; // 只看本帧代码实际工作耗时。
 		const int realFps = previousFrameMs > 0.001 ? static_cast<int>(1000.0 / previousFrameMs) : 0; // 包含等待后的真实帧间隔。
 		char buffer[256] = {};
@@ -113,6 +120,15 @@ namespace draw3
 			predictedPointCount, l0PointCount, idleFrozen ? 1 : 0);
 		if (length <= 0) return;
 		WriteFastConsoleLine(buffer, static_cast<DWORD>(std::min(length, static_cast<int>(sizeof(buffer) - 1))));
+#else
+		(void)committedIndex;
+		(void)realPointCount;
+		(void)predictedPointCount;
+		(void)l0PointCount;
+		(void)workMs;
+		(void)previousFrameMs;
+		(void)idleFrozen;
+#endif
 	}
 
 	void LogHResult(const char* step, HRESULT result)

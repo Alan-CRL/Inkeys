@@ -123,17 +123,21 @@
     <ClCompile Include="HiEasyX\HiWindow.cpp">
       <Filter>头文件\HiEasyX</Filter>
     </ClCompile>
+    <ClCompile Include="draw3\contact_input.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
     <ClCompile Include="draw3\diagnostics.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
     <ClCompile Include="draw3\drawing_controller.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
     <ClCompile Include="draw3\graphics_initialization.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
     <ClCompile Include="draw3\ink_prediction.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
+    <ClCompile Include="draw3\realtime_stylus.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
     <ClCompile Include="draw3\renderer.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
     <ClCompile Include="draw3\transparent_presentation.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
     <ClCompile Include="draw3\window_control.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
+    <ClCompile Include="draw3\contact_input.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
     <ClCompile Include="draw3\diagnostics.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
     <ClCompile Include="draw3\drawing_controller.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
     <ClCompile Include="draw3\graphics_initialization.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
     <ClCompile Include="draw3\ink_prediction.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
+    <ClCompile Include="draw3\realtime_stylus.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
     <ClCompile Include="draw3\renderer.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
     <ClCompile Include="draw3\transparent_presentation.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
     <ClCompile Include="draw3\window_control.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
