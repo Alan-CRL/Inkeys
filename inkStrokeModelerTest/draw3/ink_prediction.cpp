@@ -22,8 +22,8 @@ namespace draw3
 		constexpr float kVisualStablePositionEpsilonPx = 0.05f;
 		constexpr float kVisualStableRadiusEpsilonPx = 0.02f;
 		constexpr int kVisualStableRequiredFrames = 3;
-		constexpr float kMaxDiameterChangePerBaseDiameterPerSecond = 12.0f;
-		constexpr float kMaxRadiusChangePerPixel = 0.8f;
+		constexpr float kMaxDiameterChangePerBaseDiameterPerSecond = 3.0f;
+		constexpr float kMaxRadiusChangePerPixel = 0.35f;
 		constexpr float kHighlighterDuplicateDistancePx = 0.01f;
 		constexpr float kHighlighterShortStrokeLengthPx = kHighlighterMinimumStrokeLengthPx;
 		constexpr float kHighlighterRadiusPx = 25.0f;
@@ -425,18 +425,15 @@ namespace draw3
 				SmoothStep01(inputSpeed / expectedSpeed)); // 使用原始输入速度，避免弹簧速度的起步坡度和过冲污染笔宽。
 			if (!hasInputSpeed)
 			{
-				currentDiameter = targetDiameter; // 第一个有效速度负责确定起笔宽度，不使用必然为零的 down 速度。
+				// 起笔先保持基准宽度，再按时间/距离渐进追随，避免第一份 Move 让整段突然变粗。
 				hasInputSpeed = true;
 			}
-			else
-			{
-				const double deltaTime = std::max(0.0, pointTime - lastTime);
-				const float alpha = std::clamp(static_cast<float>(1.0 - std::exp(-deltaTime / 0.035)), 0.05f, 0.65f); // 时间间隔越大，笔宽追随越快。
-				const float desiredDiameter = LerpFloat(currentDiameter, targetDiameter, alpha); // 先保留原有指数平滑手感。
-				const float pointDistance = std::hypot(result.position.x - lastPositionX, result.position.y - lastPositionY);
-				currentDiameter = 2.0f * ClampRadiusTransition(currentDiameter * 0.5f, desiredDiameter * 0.5f,
-					baseDiameter, pointDistance, deltaTime); // 再做对称硬限速，避免胶囊退化为外露端帽。
-			}
+			const double deltaTime = std::max(0.0, pointTime - lastTime);
+			const float alpha = std::clamp(static_cast<float>(1.0 - std::exp(-deltaTime / 0.060)), 0.02f, 0.35f); // RTS 覆盖采样下放慢追随，避免单批输出放大宽度变化。
+			const float desiredDiameter = LerpFloat(currentDiameter, targetDiameter, alpha);
+			const float pointDistance = std::hypot(result.position.x - lastPositionX, result.position.y - lastPositionY);
+			currentDiameter = 2.0f * ClampRadiusTransition(currentDiameter * 0.5f, desiredDiameter * 0.5f,
+				baseDiameter, pointDistance, deltaTime); // 时间和空间双重限速，保持胶囊公切线稳定。
 		}
 		lastTime = pointTime;
 		lastPositionX = result.position.x;
@@ -676,7 +673,6 @@ namespace draw3
 	{
 		const bool fixedWidth = stroke.widthMode == StrokeWidthMode::Fixed;
 		const float effectiveInputSpeed = fixedWidth ? -1.0f : inputSpeed;
-		const bool seedInitialWidth = effectiveInputSpeed >= 0.0f && !stroke.widthEstimator.hasInputSpeed && stroke.committedIndex == 0;
 		for (size_t index = stroke.convertedResultCount; index < stroke.modeledResults.size(); ++index)
 		{
 			const auto& result = stroke.modeledResults[index];
@@ -719,11 +715,6 @@ namespace draw3
 				stroke.startDirectionState.direction = ToXMFLOAT2(chord);
 				stroke.startDirectionState.locked = true; // 首 12px 真实路径一旦完整，起笔平帽方向不再变化。
 			}
-		}
-		if (seedInitialWidth && stroke.widthEstimator.hasInputSpeed)
-		{
-			const float initialRadius = stroke.widthEstimator.currentDiameter * 0.5f;
-			for (InkPoint& point : stroke.realPoints) point.r = initialRadius; // 首次移动仍在 L0，可安全回填起笔宽度以消除启动鼓包。
 		}
 		stroke.convertedResultCount = stroke.modeledResults.size(); // 记录已转换位置，下一帧只处理增量。
 	}

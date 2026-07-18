@@ -30,6 +30,7 @@ namespace draw3
 		const DirectX::XMFLOAT4 kMultiContactInkColor(1.0f, 0.0f, 0.0f, 1.0f);
 		constexpr float kMultiContactDiameter = 100.0f;
 		constexpr float kRawMoveThresholdPx = 0.25f;
+		constexpr double kInputSpeedSmoothingSeconds = 0.060;
 		constexpr size_t kPreheatedStrokeCount = 16;
 
 		struct RuntimeStroke
@@ -52,11 +53,13 @@ namespace draw3
 			uint64_t lastConsumedSequence = 0;
 			int64_t qpcOrigin = 0;
 			double lastModelInputTime = 0.0;
+			float filteredInputSpeed = 0.0f;
 			RECT visibleDirty = {};
 			std::vector<InkPoint> rebuildPoints;
 			bool inUse = false;
 			bool ended = false;
 			bool movedThisFrame = false;
+			bool hasFilteredInputSpeed = false;
 		};
 
 		double QpcDeltaSeconds(int64_t newer, int64_t older, int64_t frequency)
@@ -280,6 +283,8 @@ namespace draw3
 				runtime->lastConsumedSequence = down.sequence;
 				runtime->qpcOrigin = down.qpc;
 				runtime->lastModelInputTime = 0.0;
+				runtime->filteredInputSpeed = 0.0f;
+				runtime->hasFilteredInputSpeed = false;
 				ActiveStroke& stroke = runtime->stroke;
 				stroke.inputStartPoint = {
 					down.position.x, down.position.y, kMultiContactDiameter * 0.5f, 0.0f };
@@ -336,7 +341,22 @@ namespace draw3
 					snapshot.qpc, runtime.lastSpeedSnapshot.qpc, qpcFrequency);
 				float inputSpeed = -1.0f;
 				if (distanceSquared > kRawMoveThresholdPx * kRawMoveThresholdPx && deltaSeconds > 0.0)
-					inputSpeed = std::sqrt(distanceSquared) / static_cast<float>(deltaSeconds);
+				{
+					const float measuredSpeed = std::sqrt(distanceSquared) / static_cast<float>(deltaSeconds);
+					if (!runtime.hasFilteredInputSpeed)
+					{
+						runtime.filteredInputSpeed = measuredSpeed;
+						runtime.hasFilteredInputSpeed = true;
+					}
+					else
+					{
+						const float alpha = std::clamp(static_cast<float>(
+							1.0 - std::exp(-deltaSeconds / kInputSpeedSmoothingSeconds)), 0.02f, 0.35f);
+						runtime.filteredInputSpeed +=
+							(measuredSpeed - runtime.filteredInputSpeed) * alpha;
+					}
+					inputSpeed = runtime.filteredInputSpeed; // 每个真实快照先滤速，再交给半径估算器。
+				}
 
 				double inputTime = QpcDeltaSeconds(snapshot.qpc, runtime.qpcOrigin, qpcFrequency);
 				inputTime = std::max(inputTime, runtime.lastModelInputTime + 0.000001);

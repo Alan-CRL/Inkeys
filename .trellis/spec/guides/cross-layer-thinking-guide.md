@@ -31,12 +31,14 @@ Win32/HiEasyX message
 - 窗口过程只写原子请求和待处理尺寸；D3D 资源重建留在主绘制线程。
 - 发布 payload 后再以 release 写请求标志，消费端以 acquire 读取请求后再读取 payload。
 - 不在窗口回调中直接操作 `InkRenderer` 或交换链。
+- RTS 多点同时检查 HWND Tablet Pen Service 属性、`WM_TABLET_QUERYSYSTEMGESTURESTATUS` 返回值和 `IRealTimeStylus3`；不能只验证 COM 初始化成功。
 
 依据：`WindowController::HandleWindowMessage`、`ConsumeResizeRequest`、`DrawingController::ProcessPendingResize`。
 
 ### Model to render points
 
 - 原始鼠标速度只用于普通笔宽估算，预测点继承最后真实笔宽。
+- 最新 snapshot 覆盖采样改变了速度采样节奏；每份真实速度只滤波一次，第一份速度不得回写已可见起笔，半径仍需时间/距离双限速。
 - `ActiveMouseStroke` 的提交游标必须单调前进，已进入 L1 的稳定前缀不能重复提交。
 - 荧光笔的 12px 起止方向窗口、重复点阈值和 dirty bounds 必须一起检查。
 
@@ -61,9 +63,10 @@ Win32/HiEasyX message
 
 ### Presenter fallback
 
-- 初始化顺序当前是 DirectComposition、DWM extended frame、ULW。
+- 默认初始化顺序是 DirectComposition、DWM extended frame、ULW；已知 QCOM ARM64 适配器优先 ULW，以规避 DComp 初始化成功但透明像素实际显示为黑色。
 - 每次新模式尝试前清理上一模式的 presenter、renderer 和 swapchain 状态。
 - GPU 路径保留真透明 alpha；仅 ULW CPU 输出副本叠加 `1/255` alpha 命中测试底层。
+- presenter 初始化成功只证明 API/资源链可用，不证明桌面合成后的可见 alpha 正确；新增适配器或呈现路径时必须在真实桌面背景上验证透明结果。
 
 依据：`TransparentPresentationController::Initialize`、`Impl::ReleaseAttempt`、`UlwDirtyRectPresenter::Present`。
 
@@ -75,6 +78,7 @@ Win32/HiEasyX message
 - 局部 dirty rect 是否覆盖旧内容清除区和新内容绘制区？
 - resize 后 L2 和 L1 是否保留左上角交集，L0 是否可安全重建？
 - 失败回退是否释放了所有上一尝试的资源？
+- 呈现路径是否只验证了 HRESULT，还是也验证了真实桌面上的透明 alpha？
 - 兼容性描述是在陈述项目目标、已有代码路径，还是有环境记录的实测能力？
 - 数据离开瞬时 L2 视觉画布进入持久化时，prediction 是否已经被真实采样替换或显式确认？
 - 人工测试是否覆盖普通笔、荧光笔、橡皮、短划、静止、抬笔、resize 和透明模式回退？

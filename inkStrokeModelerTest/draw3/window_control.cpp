@@ -6,6 +6,7 @@
 
 #include <windows.h>
 #include <dwmapi.h>
+#include <tpcshrd.h>
 #include "../HiEasyX.h"
 
 #include <tchar.h>
@@ -18,6 +19,13 @@ namespace draw3
 
 	namespace
 	{
+		constexpr DWORD kTabletInputFlags =
+			TABLET_ENABLE_MULTITOUCHDATA |
+			TABLET_DISABLE_PRESSANDHOLD |
+			TABLET_DISABLE_PENTAPFEEDBACK |
+			TABLET_DISABLE_PENBARRELFEEDBACK |
+			TABLET_DISABLE_FLICKS;
+
 		RECT GetPrimaryMonitorRectangle()
 		{
 			const POINT origin = { 0, 0 };
@@ -44,6 +52,12 @@ namespace draw3
 			hiex::PreSetWindowStyleEx(WS_EX_NOREDIRECTIONBITMAP);
 		}
 		window_ = hiex::initgraph_win32(size_.width, size_.height, EW_SHOWCONSOLE, _T(""), WindowProcedure);
+		if (window_)
+		{
+			// 多点属性需要在第一根手指按下前写入；窗口消息中也返回相同标志。
+			SetProp(window_, MICROSOFT_TABLETPENSERVICE_PROPERTY,
+				reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(kTabletInputFlags)));
+		}
 		return window_ != nullptr;
 	}
 
@@ -145,7 +159,12 @@ namespace draw3
 		const bool gpuTransparent = gpuTransparentComposition_.load(std::memory_order_acquire); // GPU 透明模式下由 backbuffer 负责背景。
 		switch (message)
 		{
+		case WM_TABLET_QUERYSYSTEMGESTURESTATUS:
+			// 显式接收 RTS 多点数据，并禁止长按/轻拂抢占普通笔输入。
+			return static_cast<LRESULT>(kTabletInputFlags);
+
 		case WM_DESTROY:
+			RemoveProp(window, MICROSOFT_TABLETPENSERVICE_PROPERTY);
 			exitRequested_.store(true, std::memory_order_release); // 通知主循环退出。
 			RequestControlWake();
 			break;

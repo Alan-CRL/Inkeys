@@ -39,6 +39,15 @@ namespace draw3
 
 	namespace
 	{
+		constexpr UINT kQualcommVendorId = 0x4D4F4351u; // "QCOM"
+
+		bool PreferUlwForAdapter(IDXGIAdapter* adapter)
+		{
+			DXGI_ADAPTER_DESC description{};
+			return adapter && SUCCEEDED(adapter->GetDesc(&description))
+				&& description.VendorId == kQualcommVendorId;
+		}
+
 		bool IsUlwMode(TransparentPresentMode mode)
 		{
 			return mode == TransparentPresentMode::UlwDirtyRect;
@@ -629,16 +638,30 @@ namespace draw3
 		impl_->renderer = &renderer;
 		impl_->width = width;
 		impl_->height = height;
-		const TransparentPresentMode modes[] = {
+		const TransparentPresentMode defaultModes[] = {
 			TransparentPresentMode::DirectCompositionVisualTree,
 			TransparentPresentMode::DwmBlurBehind2,
 			TransparentPresentMode::UlwDirtyRect
 		};
-		for (size_t index = 0; index < ARRAYSIZE(modes); ++index)
+		const TransparentPresentMode qualcommModes[] = {
+			TransparentPresentMode::UlwDirtyRect,
+			TransparentPresentMode::DirectCompositionVisualTree,
+			TransparentPresentMode::DwmBlurBehind2
+		};
+		const TransparentPresentMode* modes = defaultModes;
+		size_t modeCount = ARRAYSIZE(defaultModes);
+		if (PreferUlwForAdapter(graphics.adapter.Get()))
+		{
+			// Qualcomm ARM64 驱动可能接受 DComp 交换链，却把透明像素实际合成为黑色。
+			modes = qualcommModes;
+			modeCount = ARRAYSIZE(qualcommModes);
+			std::cout << "Qualcomm adapter detected; prefer UlwDirtyRect for visible alpha correctness." << std::endl;
+		}
+		for (size_t index = 0; index < modeCount; ++index)
 		{
 			if (impl_->TryInitialize(modes[index])) return true; // 按优先级选第一个可用透明呈现路径。
 			impl_->ReleaseAttempt();
-			if (index + 1 < ARRAYSIZE(modes))
+			if (index + 1 < modeCount)
 			{
 				std::cout << "Transparent present mode " << TransparentPresentModeName(modes[index])
 					<< " failed; fallback to " << TransparentPresentModeName(modes[index + 1]) << "." << std::endl;

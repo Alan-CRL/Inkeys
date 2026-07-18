@@ -394,6 +394,16 @@ namespace draw3
 		const GUID desiredProperties[] = { GUID_PACKETPROPERTY_GUID_X, GUID_PACKETPROPERTY_GUID_Y };
 		if (SUCCEEDED(result)) result = impl_->stylus->SetDesiredPacketDescription(
 			static_cast<ULONG>(std::size(desiredProperties)), desiredProperties);
+		if (SUCCEEDED(result))
+		{
+			Microsoft::WRL::ComPtr<IRealTimeStylus2> stylus2;
+			if (SUCCEEDED(impl_->stylus.As(&stylus2)))
+			{
+				// 窗口标志负责多点 opt-in；这里关闭轻拂，避免笔输入被系统手势延迟或接管。
+				const HRESULT flicksResult = stylus2->put_FlicksEnabled(FALSE);
+				if (FAILED(flicksResult)) LogHResult("Disable RealTimeStylus flicks", flicksResult);
+			}
+		}
 		if (SUCCEEDED(result)) result = impl_->stylus.As(&impl_->stylus3);
 		if (SUCCEEDED(result)) result = impl_->stylus3->put_MultiTouchEnabled(TRUE);
 		if (FAILED(result))
