@@ -12,6 +12,7 @@ export module draw3.drawing_controller;
 import draw3.contact_input;
 import draw3.ink_prediction;
 import draw3.renderer;
+import draw3.runtime_metrics;
 import draw3.transparent_presentation;
 import draw3.window_control;
 
@@ -22,7 +23,8 @@ export namespace draw3
 	{
 	public:
 		DrawingController(ContactInputCoordinator& input, WindowController& window, InkRenderer& renderer,
-			TransparentPresentationController& presentation, StrokeModelConfiguration configuration);
+			TransparentPresentationController& presentation, StrokeModelConfiguration configuration,
+			RuntimeMetricsSession* metrics = nullptr);
 		// 清空 L0/L1/L2 和 backbuffer，并立即全量呈现。
 		void ClearCanvas();
 		// 合成并呈现完整画布。
@@ -43,5 +45,8 @@ export namespace draw3
 		InkRenderer& renderer_;
 		TransparentPresentationController& presentation_;
 		StrokeModelConfiguration configuration_;
+		RuntimeMetricsSession* metrics_ = nullptr;
+		double lastPresentDurationMs_ = 0.0;
+		bool lastPresentSucceeded_ = false;
 	};
 }

@@ -5,6 +5,8 @@ VisualStudioVersion = 17.14.36401.2 d17.14
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "inkStrokeModelerTest", "inkStrokeModelerTest\inkStrokeModelerTest.vcxproj", "{A49D68F7-0A7E-4160-9C96-6B59B0C9AA85}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "inkStrokeModelerTestTests", "inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj", "{E9B175D4-6C3B-4A1E-9B85-84B46B7126F1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM64 = Debug|ARM64
@@ -27,6 +29,18 @@ Global
 		{A49D68F7-0A7E-4160-9C96-6B59B0C9AA85}.Release|x64.Build.0 = Release|x64
 		{A49D68F7-0A7E-4160-9C96-6B59B0C9AA85}.Release|x86.ActiveCfg = Release|Win32
 		{A49D68F7-0A7E-4160-9C96-6B59B0C9AA85}.Release|x86.Build.0 = Release|Win32
+		{E9B175D4-6C3B-4A1E-9B85-84B46B7126F1}.Debug|ARM64.ActiveCfg = Debug|ARM64
+		{E9B175D4-6C3B-4A1E-9B85-84B46B7126F1}.Debug|ARM64.Build.0 = Debug|ARM64
+		{E9B175D4-6C3B-4A1E-9B85-84B46B7126F1}.Debug|x64.ActiveCfg = Debug|x64
+		{E9B175D4-6C3B-4A1E-9B85-84B46B7126F1}.Debug|x64.Build.0 = Debug|x64
+		{E9B175D4-6C3B-4A1E-9B85-84B46B7126F1}.Debug|x86.ActiveCfg = Debug|Win32
+		{E9B175D4-6C3B-4A1E-9B85-84B46B7126F1}.Debug|x86.Build.0 = Debug|Win32
+		{E9B175D4-6C3B-4A1E-9B85-84B46B7126F1}.Release|ARM64.ActiveCfg = Release|ARM64
+		{E9B175D4-6C3B-4A1E-9B85-84B46B7126F1}.Release|ARM64.Build.0 = Release|ARM64
+		{E9B175D4-6C3B-4A1E-9B85-84B46B7126F1}.Release|x64.ActiveCfg = Release|x64
+		{E9B175D4-6C3B-4A1E-9B85-84B46B7126F1}.Release|x64.Build.0 = Release|x64
+		{E9B175D4-6C3B-4A1E-9B85-84B46B7126F1}.Release|x86.ActiveCfg = Release|Win32
+		{E9B175D4-6C3B-4A1E-9B85-84B46B7126F1}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

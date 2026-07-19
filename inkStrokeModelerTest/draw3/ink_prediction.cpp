@@ -465,11 +465,15 @@ namespace draw3
 			return geometry;
 		}
 
+		const bool hasGlobalStart = HasHighlighterBoundary(
+			boundaryFlags, HighlighterBoundaryFlags::Start);
+		if (hasGlobalStart && !startDirectionState.locked)
+			return geometry; // 全局起笔方向未锁定前保持不可见，避免已经显示的平帽随后旋转。
+
 		const std::vector<InkPoint> points = BuildHighlighterRenderPath(
 			inputPoints, boundaryFlags, startDirectionState);
 		if (points.size() < 2) return geometry; // 纯点击按住期间不生成任何几何。
 
-		const bool hasGlobalStart = HasHighlighterBoundary(boundaryFlags, HighlighterBoundaryFlags::Start);
 		const bool hasGlobalEnd = HasHighlighterBoundary(boundaryFlags, HighlighterBoundaryFlags::End);
 		geometry.primitives.reserve(points.size() * 2);
 		for (size_t index = 0; index + 1 < points.size(); ++index)

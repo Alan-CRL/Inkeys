@@ -25,6 +25,8 @@
 - RTS 同步回调只完成 packet 解析、contact 状态发布和唤醒，不调用 D3D、presenter 或 stroke modeler。
 - 控制请求先写 sticky 原子标记，再通过 coordinator 队列唤醒；消费方在阻塞前二次 dequeue，避免清 pending 与入队交错造成丢唤醒。
 - 无活动 contact 时使用 blocking dequeue；活动 contact 仍按帧更新停笔预测。
+- Down、Up/Cancelled 和控制请求递增 wake generation 并触发 Win7 可用的 event；Move 只更新合并快照，不把 240Hz packet 变成无界帧驱动。
+- 绘制线程使用 `THREAD_PRIORITY_ABOVE_NORMAL`，活动末段按 QPC deadline 核对 wake generation；完全空闲仍阻塞在队列 semaphore，不自旋。
 
 ## Tool State
 
@@ -86,13 +88,20 @@ contact 结束时保持抬起前最后一帧的视觉结果：重建此前已经
 ### 2. Signatures
 
 - `ContactInputCoordinator::PublishDown/PublishMove/PublishUp/PublishCancelled`
+- `ContactInputCoordinator::TryDequeue(ContactRecord*&)/WaitDequeue(ContactRecord*&)`
 - `ContactInputCoordinator::TryReadSnapshot/Recycle/PublishControlWake`
+- `ContactInputCoordinator::CaptureWakeGeneration/WaitForWake`
+- `ContactInputCoordinator::DiagnosticsSnapshot`
 - `RealTimeStylusInput::Initialize/Shutdown`
 - `DrawingController::Run`
 
 ### 3. Contracts
 
 - contact identity 是 `(tabletContextId, contactId, generation)`；route 必须通过 generation 和状态的原子 CAS 防止 ABA，记录内容用单写者 seqlock 发布。
+- pool 容量是 `round_up_32(max(32, 2 × (SM_MAXIMUMTOUCHES + 2)))`，RTS 启用前一次性建立；每块 32 个 slot 和一个始终无锁的 `uint32_t freeMask`。CAS 清位取得 slot，record 保存不可变 owner/bit，回收顺序严格为 `ConsumerOwned → Free → release 置位`。
+- ingress payload 是原生 `ContactRecord*`：非空只表示 Down，空指针只表示合并的 `ControlWake`。consumer 取到指针后立即读取 generation 并构造线程私有 handle；禁止恢复带 kind 的 command 包装。
+- queue 容量是 `max(256, slotCapacity + 1)`。初始化阶段创建 32 个可 CAS 独占的 Down producer token 和 1 个 control token，并以三参数构造器禁止 implicit producer；热路径只能调用 token 版 `try_enqueue`，不得回退到会分配的 `enqueue`。
+- contact 查找只遍历 `~freeMask` 的 occupied bits，但 generation/state/tcid/cid 仍是最终路由判据；位图只负责跳过空 slot，不能替代 route 校验。
 - Down 成功入队后 consumer 才拥有 handle；Down 入队失败必须先关闭并排空可能已进入的 Move，再回收。Up/Cancelled 是 sticky terminal，成功关闭后后续 Move 不得覆盖。
 - packet X/Y 按当前 `tcid` 的 `GetPacketDescriptionData` 返回顺序查找，但所有输入统一使用 `GetAllTabletContextIds` 首 context 的 ink-to-device scale 转为像素，保持与已广泛验证的 `IdtRts.cpp` 一致。禁止改用当前 Pen/Touch context 自己的硬件比例，否则坐标会落到画布外；同步回调不得分配、建模、绘制或记录无界逐包日志。
 - RTS 多点启用是三段式契约：第一根手指按下前给 HWND 设置 `MICROSOFT_TABLETPENSERVICE_PROPERTY`，窗口过程对 `WM_TABLET_QUERYSYSTEMGESTURESTATUS` 返回 `TABLET_ENABLE_MULTITOUCHDATA`，并令 `IRealTimeStylus3::MultiTouchEnabled=TRUE`。只完成 COM 属性不能视为多点已启用。
@@ -100,12 +109,17 @@ contact 结束时保持抬起前最后一帧的视觉结果：重建此前已经
 - `Disabled`、RTS `Error`、tablet 移除和 shutdown 都把生产中的 contact 发布为 Cancelled；COM 初始化、FTM 聚合、禁用、移除插件与释放全部在完成 MTA 初始化的主线程完成。
 - 每个活动 contact 拥有独立 CPU runtime，其 GPU 几何共同重建到共享 L1/L0；不得提前进入 L2。完成 contact 的同帧批次只 resolve/composite/present 一次，随后重建仍活动 contact。
 - resize 成功后重建活动临时层；clear 在有活动 contact 时延后。无活动 contact 时阻塞等待；1ms timer period 只在活动区间启用，且每次成功 begin 必须配对 end。
+- waitable swapchain resize 必须先 `GetDesc1`，并原样传回 `BufferCount/Format/Flags`；部分驱动在传入零值时第一次 resize 成功、恢复尺寸时失败。
+- 运行指标关闭时不创建会话、不启用输入计数、不写文件；开启后原始样本写入忽略的 `TestResults/`，仓库只保存环境、阈值和分位数摘要。
 
 ### 4. Validation & Error Matrix
 
 | Event / failure | Required behavior |
 |---|---|
 | Down queue enqueue failure | 关闭 route、排空已进入 writer、回收；不得直接写 Free |
+| pool exhausted / 32 tokens occupied | 拒绝 Down，禁止扩容、隐式 producer 或分配回退 |
+| `ContactRecord* == nullptr` dequeued | 只解释为 `ControlWake` 并清 pending；不得解引用 |
+| stale generation / duplicate recycle | route 校验失败且不重复置位，不得回收新一代 contact |
 | Concurrent Move and Up/Cancelled | terminal 状态胜出，后续 Move 不覆盖终态 |
 | Snapshot read during write | seqlock 重试，只接受前后相同的偶数 sequence |
 | `MultiTouchEnabled=TRUE`，但 HWND 未 opt-in | 视为初始化契约不完整；Touch/多指可能完全没有 callback |
@@ -113,6 +127,7 @@ contact 结束时保持抬起前最后一帧的视觉结果：重建此前已经
 | 第一份或突变的速度样本 | 从当前直径平滑追随，不回写已可见点，不允许单帧直接跳到目标直径 |
 | Disabled / Error / tablet removal | 所有 producing contact 以 Cancelled 结束 |
 | Resize succeeds | 保留 L2 交集并从 CPU runtime 重建全部活动 L1/L0 |
+| waitable swapchain second resize | 保留原 swapchain 描述字段；不得用 `ResizeBuffers(..., UNKNOWN, 0)` 丢弃 flags |
 | Clear with active contact | 延后到活动集合为空 |
 | Multiple Up in one frame | 一次 L2 resolve、一次 composite、一次 present |
 | Up arrives after a visible prediction | 稳定前缀加最后可见 L0 原样烘干；不使用 `kUp` 平滑结果重连尾部 |
@@ -120,16 +135,19 @@ contact 结束时保持抬起前最后一帧的视觉结果：重建此前已经
 
 ### 5. Good / Base / Bad Cases
 
-- Good：两支笔交错移动并同帧抬起，终态完整，单次批量提交，其他活动笔无闪烁。
-- Base：单 contact 的 Down/Move/Up 使用相同 generation、seqlock 和批量渲染路径；慢速到快速过渡时宽度连续。
-- Bad：只设置 `IRealTimeStylus3::MultiTouchEnabled` 却不处理 HWND opt-in，或让第一份速度直接重写整段起笔宽度。
+- Good：32 个同步生产者使用显式 token 并发 Down，slot/pointer 唯一；两支笔交错移动并同帧抬起，终态完整且批量提交。
+- Base：单 contact 的 Down/Move/Up 使用相同 generation、seqlock、pointer ingress 和批量渲染路径；慢速到快速过渡时宽度连续。
+- Bad：容量耗尽后调用隐式 `enqueue` 扩容，或只设置 `IRealTimeStylus3::MultiTouchEnabled` 却不处理 HWND opt-in。
 
 ### 6. Tests Required
 
-- `Release|ARM64` 全解决方案 Rebuild，且两个 shader 与资源编译步骤成功。
+- `Debug|ARM64`、`Release|ARM64` 全解决方案 Rebuild，且两个 shader、C++ Modules、资源嵌入与最终链接成功。
+- `Release|x64`、解决方案 `Release|x86`（项目映射 Win32）Rebuild 并运行测试，验证 8/4 字节指针 payload 和 lock-free 静态断言。
+- 自动并发覆盖 32 个生产者、32/64/多 block 容量、耗尽/复用、无分配 Down、Move/Up 竞争、stale generation、重复回收、Cancelled/shutdown 和 ControlWake/Down/终态唤醒。
 - 静态检查窗口属性、`WM_TABLET_QUERYSYSTEMGESTURESTATUS` 与 `IRealTimeStylus3` 三处多点 opt-in 同时存在。
 - 静态验证 generation/state CAS、sticky terminal、seqlock、零自旋阻塞等待、timer begin/end 配对和 Release 无逐帧日志。
 - 真机验证鼠标宽度连续、Pen/Touch 单 contact、双 Touch 交错、同时抬起、活动时 resize、活动时 clear、设备禁用/拔出、长时间 idle CPU 和最终点位置。普通 `SendInput` 不能替代 RTS 硬件验证。
+- Release 自动基准至少连续三轮：即时工具 Down→Present p99 ≤ 8.33ms，活动帧间隔 p99 ≤ 9.5ms，>16.67ms 比例 <1%，连续空闲至少 4.9 秒且 frame/Present 零增长。
 - 快速曲线末端抬笔时，上一帧预测端点仍保留，且最终真实点到预测之间不出现回头、闭环或重复连接。
 
 ### 7. Wrong vs Correct
@@ -145,6 +163,10 @@ Correct：`重建已提交稳定前缀，并把 previousL0DrawPoints 原样烘�
 Wrong：`put_MultiTouchEnabled(TRUE) 成功，所以窗口已经能收到多指。`
 
 Correct：`HWND 属性、WM_TABLET_QUERYSYSTEMGESTURESTATUS 返回值和 IRealTimeStylus3 三处同时 opt-in，再用实体 Touch/Pen 验证 callback。`
+
+Wrong：`IngressCommand{ kind, record } 入队；token try_enqueue 失败后调用普通 enqueue。`
+
+Correct：`非空 ContactRecord* 只表示 Down，nullptr 只表示 ControlWake；全部 producer 在初始化期建 token，热路径只调用 token try_enqueue。`
 
 ### Visual Prediction Is Not Persistent Ink
 
@@ -215,9 +237,13 @@ Correct：`L2 只表示当前视觉结果；永久笔迹只接受真实确认或
 - 转角超过 `0.5°` 生成外侧 round sector，达到 `177°` 改为完整圆。
 - CPU bounds 与 GPU AABB 使用同一几何，并额外保留 `3px`。
 - 起点方向在真实路径达到 `12px` 后锁定；尾端保留至少 `12px` 上下文。
+- 全局 Start 且方向未锁定时不生成活动几何；首次可见时用首段 12px 真实路径的锁定弦方向，后续 Move、L1 切片和完成态不得改变起始平帽。
 - 最终真实路径不足 `12px` 时生成从按下点出发的确定性 `12×50px` short mark；预测不参与短划分类。
+- short mark 只在 Up 时生成；Cancelled/shutdown 不生成最终短划或完成几何。
 
 上述值在当前实现中共同构成一套几何约束，但仍属于实验参数。修改一个值前必须搜索全部消费者并验证相关场景；这不表示当前数值已经成为永久产品标准。
+
+> **已解决（2026-07-19）**：起笔方向锁定前的活动几何保持不可见；不足 `12px`、刚达到 `12px`、长曲线、L1 切片、双向 90° 转角和近 180° 回折均有回归。真实窗口检查中平帽四角完整；用户确认旧“缺角”来自橡皮擦除后的缺口，不是当前荧光笔端帽缺失。
 
 ## Dirty Rect Contract
 

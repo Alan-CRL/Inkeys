@@ -1,0 +1,40 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Tests">
+      <UniqueIdentifier>{B6A1B2D3-D7E9-4C69-94D0-7A96F74882F7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="draw3">
+      <UniqueIdentifier>{9826D1A9-17C5-44CF-A305-2AD89F56E4E1}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="contact_input_tests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="highlighter_geometry_tests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="runtime_benchmark.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\contact_input.cpp">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\contact_input.cppm">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer.cpp">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer.cppm">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\ink_prediction.cpp">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\ink_prediction.cppm">
+      <Filter>draw3</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

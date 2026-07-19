@@ -27,6 +27,7 @@
 2. vertex shader 与 pixel shader 成功编译，且 `.cso` 资源嵌入链完成。
 3. 程序启动后没有明显 D3D Debug Layer error。
 4. 人工验证基础绘制、prediction、抬笔烘干和窗口 resize。
+5. `inkStrokeModelerTestTests` 的并发/生命周期/几何测试通过；涉及调度时再执行 Release 严格基准。
 
 任何未执行或因环境不足无法执行的项目都必须明确标记“未验证”，不能用静态阅读或普通控制台无报错替代。
 
@@ -44,6 +45,8 @@ MSBuild.exe .\inkStrokeModelerTest.sln /m /p:Configuration=Debug /p:Platform=ARM
 
 构建日志需要同时证明 C++ 编译和两个 Shader 编译成功；只看到最终 EXE 存在，不能替代对 Shader 构建/资源链的检查。
 
+仓库内 EasyX 与 ink stroke modeler 预编译库使用 Release ABI。Debug 配置必须保留调试信息/非优化构建，但以 `/MT`、`NDEBUG` 链接；改回 `/MTd`、`_DEBUG` 会产生 `_ITERATOR_DEBUG_LEVEL` 和运行库不匹配。该约束适用于主工程和直接链接真实模块源码的测试工程。
+
 ## D3D Debug Layer
 
 最低门槛要求启动后没有明显 D3D Debug Layer error。
@@ -54,9 +57,18 @@ MSBuild.exe .\inkStrokeModelerTest.sln /m /p:Configuration=Debug /p:Platform=ARM
 
 ## Automated Tests
 
-当前主解决方案没有自动化测试工程，也没有发现项目自有的单元/集成测试文件。不要声称“测试通过”而只执行了构建。
+主解决方案包含无第三方测试框架的 `inkStrokeModelerTestTests` 控制台工程。它直接重新编译并链接真实 `draw3` 模块源码，不复制生产算法。
 
-自动化测试框架暂不指定，测试工程位置、框架和覆盖范围保留为后续任务。新增可测试的纯几何或状态逻辑时，不在普通功能任务中顺手引入测试依赖。
+最低自动覆盖：
+
+- contact pool：32 个并发生产者、32/64/多 block 边界、容量耗尽、释放再取得和无分配 Down。
+- 生命周期：Move/Up 竞争、stale generation、重复回收、Cancelled/shutdown、ControlWake/Down/终态唤醒。
+- 荧光笔：12px 前不可见、最终 short mark、首次可见平帽稳定、完成态/L1 切片、双向 90° 转角和近 180° 回折。
+- 架构：ARM64 Debug/Release、x64 Release、x86 Release 均构建并运行测试。
+
+Release 运行指标用 `--metrics-output <json> --strict-metrics` 启用；关闭时不得分配指标会话或写文件。原始 JSON 放在忽略的 `TestResults/`，只提交环境、阈值和分位数摘要。
+
+即时落笔硬门槛只统计普通笔/橡皮的 Down→首次成功 Present。荧光笔有 12px 不可见闸门，必须单独记录 VisibleEligibility→Present，不得与即时 Down 门槛混为同一总体。
 
 ## Manual Validation Matrix
 

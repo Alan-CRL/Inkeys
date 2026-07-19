@@ -76,8 +76,12 @@ namespace draw3
 			float filteredInputSpeed = 0.0f;
 			RECT visibleDirty = {};
 			std::vector<InkPoint> rebuildPoints;
+			InputDeviceType metricDeviceType = InputDeviceType::Touch;
+			int64_t metricEligibleQpc = 0;
 			bool inUse = false;
 			bool ended = false;
+			bool cancelled = false;
+			bool metricVisible = false;
 			bool movedThisFrame = false;
 			bool hasFilteredInputSpeed = false;
 		};
@@ -205,9 +209,10 @@ namespace draw3
 	}
 
 	DrawingController::DrawingController(ContactInputCoordinator& input, WindowController& window, InkRenderer& renderer,
-		TransparentPresentationController& presentation, StrokeModelConfiguration configuration)
+		TransparentPresentationController& presentation, StrokeModelConfiguration configuration,
+		RuntimeMetricsSession* metrics)
 		: input_(input), window_(window), renderer_(renderer),
-		presentation_(presentation), configuration_(std::move(configuration))
+		presentation_(presentation), configuration_(std::move(configuration)), metrics_(metrics)
 	{
 	}
 
@@ -225,7 +230,11 @@ namespace draw3
 
 	bool DrawingController::PresentFrame(RECT dirty, bool presentFull)
 	{
+		const double presentStartMs = GetQpcTimeMilliseconds();
 		const bool succeeded = presentation_.Present(dirty, presentFull);
+		lastPresentDurationMs_ = GetQpcTimeMilliseconds() - presentStartMs;
+		lastPresentSucceeded_ = succeeded;
+		if (metrics_) metrics_->RecordPresent(lastPresentDurationMs_);
 		if (!succeeded) window_.RequestFullPresent(); // 呈现失败时下一轮强制全量刷新兜底。
 		return succeeded;
 	}
@@ -301,6 +310,10 @@ namespace draw3
 		}
 		std::vector<RuntimeStroke*> active;
 		active.reserve(kPreheatedStrokeCount);
+		const int originalThreadPriority = GetThreadPriority(GetCurrentThread());
+		const bool drawingPriorityRaised = originalThreadPriority != THREAD_PRIORITY_ERROR_RETURN &&
+			SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL) != FALSE;
+		// 绘制线程只在活动期占用 CPU；提高一级优先级降低 120 FPS deadline 被后台窗口抢占的概率。
 
 		auto acquireStroke = [&]() -> RuntimeStroke*
 			{
@@ -354,8 +367,13 @@ namespace draw3
 				runtime->handle = handle;
 				runtime->tool = batchTool; // 全部旧 contact 已终止时，当前 Down 才开始读取新工具。
 				runtime->ended = false;
+				runtime->cancelled = false;
+				runtime->metricVisible = false;
 				runtime->movedThisFrame = false;
 				runtime->visibleDirty = {};
+				runtime->metricDeviceType = handle.record->DeviceType();
+				runtime->metricEligibleQpc =
+					batchTool == DrawingTool::Highlighter ? 0 : down.qpc;
 				const float baseDiameter = DiameterForTool(runtime->tool);
 				const bool highlighter = runtime->tool == DrawingTool::Highlighter;
 				runtime->stroke.Reset(baseDiameter, configuration_.expectedSpeed,
@@ -407,14 +425,14 @@ namespace draw3
 				return true;
 			};
 
-		auto processCommand = [&](const IngressCommand& command)
+		auto processCommand = [&](ContactRecord* record)
 			{
-				if (command.kind == IngressCommandKind::ControlWake)
+				if (!record)
 				{
 					input_.AcknowledgeControlWake(); // 先清 pending，随后复查窗口的全部原子请求。
 					return;
 				}
-				initializeStroke(command.contact);
+				initializeStroke(ContactHandle{ record, record->Generation() }); // 出队后立即固定本地 generation。
 			};
 
 		auto consumeLatestSnapshot = [&](RuntimeStroke& runtime) -> bool
@@ -487,6 +505,10 @@ namespace draw3
 					}
 				}
 				AppendNewModeledPoints(runtime.stroke, inputSpeed);
+				if (runtime.tool == DrawingTool::Highlighter &&
+					runtime.metricEligibleQpc == 0 &&
+					runtime.stroke.startDirectionState.locked)
+					runtime.metricEligibleQpc = snapshot.qpc; // 高亮从真实 12px 首次具备可见资格时开始计时。
 				runtime.lastSpeedSnapshot = snapshot;
 				if (distanceSquared > kRawMoveThresholdPx * kRawMoveThresholdPx)
 				{
@@ -494,7 +516,14 @@ namespace draw3
 					runtime.stroke.visualStableFrameCount = 0;
 					runtime.stroke.lastMovementInputTime = inputTime;
 				}
-				if (terminal) runtime.ended = true;
+				if (terminal)
+				{
+					runtime.ended = true;
+					runtime.cancelled = snapshot.phase == ContactPhase::Cancelled;
+					if (runtime.tool == DrawingTool::Highlighter &&
+						!runtime.cancelled && runtime.metricEligibleQpc == 0)
+						runtime.metricEligibleQpc = snapshot.qpc; // 不足 12px 的 short mark 以 Up 为软件延迟起点。
+				}
 				return distanceSquared > kRawMoveThresholdPx * kRawMoveThresholdPx;
 			};
 
@@ -505,10 +534,13 @@ namespace draw3
 		while (true)
 		{
 			const double frameStartMs = GetQpcTimeMilliseconds();
+			if (metrics_) metrics_->BeginFrame();
+			lastPresentDurationMs_ = 0.0;
+			lastPresentSucceeded_ = false;
 			const double previousFrameMs = lastActiveFrameStartMs > 0.0
 				? frameStartMs - lastActiveFrameStartMs : 0.0;
-			IngressCommand command;
-			while (input_.TryDequeue(command)) processCommand(command);
+			ContactRecord* record = nullptr;
+			while (input_.TryDequeue(record)) processCommand(record);
 
 			bool forceFullPresent = false;
 			if (window_.ConsumeClearCanvasRequest()) clearPending = true;
@@ -541,6 +573,7 @@ namespace draw3
 
 			if (active.empty() && !forceFullPresent)
 			{
+				if (metrics_) metrics_->BeginIdle(frameStartMs);
 				lastActiveFrameStartMs = 0.0;
 				if (timerPeriodActive)
 				{
@@ -549,13 +582,15 @@ namespace draw3
 				}
 				timerPeriodAttempted = false;
 				// 二次排空后才等待；竞态窗口内到达的命令会留下信号量计数。
-				if (input_.TryDequeue(command))
+				if (input_.TryDequeue(record))
 				{
-					processCommand(command);
+					processCommand(record);
+					if (metrics_) metrics_->EndIdle(GetQpcTimeMilliseconds());
 					continue;
 				}
-				input_.WaitDequeue(command);
-				processCommand(command);
+				input_.WaitDequeue(record);
+				processCommand(record);
+				if (metrics_) metrics_->EndIdle(GetQpcTimeMilliseconds());
 				continue;
 			}
 
@@ -567,6 +602,8 @@ namespace draw3
 
 			const DrawingTool frameTool = active.empty()
 				? window_.ActiveTool() : active.front()->tool;
+			const bool frameHadActiveContact = !active.empty();
+			const uint64_t frameWakeGeneration = input_.CaptureWakeGeneration();
 			LARGE_INTEGER frameQpc = {};
 			QueryPerformanceCounter(&frameQpc);
 			bool hasEndedStroke = false;
@@ -636,6 +673,8 @@ namespace draw3
 				UnionRectInPlace(runtime->visibleDirty, stableDirty);
 				UnionRectInPlace(runtime->visibleDirty, stroke.lastL0Rect);
 				UnionRectInPlace(runtime->visibleDirty, stroke.currentL0Rect);
+				if (!IsEmptyRect(stableDirty) || !IsEmptyRect(stroke.currentL0Rect))
+					runtime->metricVisible = true;
 			}
 
 			if (hasEndedStroke)
@@ -646,8 +685,13 @@ namespace draw3
 				for (RuntimeStroke* runtime : active)
 				{
 					if (!runtime->ended) continue;
-					UnionRectInPlace(completedDirty,
-						DrawCompletedStroke(*runtime, renderer_, size.width, size.height));
+					if (!runtime->cancelled)
+					{
+						const RECT completedStrokeDirty =
+							DrawCompletedStroke(*runtime, renderer_, size.width, size.height);
+						UnionRectInPlace(completedDirty, completedStrokeDirty);
+						if (!IsEmptyRect(completedStrokeDirty)) runtime->metricVisible = true;
+					}
 					UnionRectInPlace(frameDirty, runtime->visibleDirty);
 				}
 				completedDirty = ClampRectToCanvas(completedDirty, size.width, size.height);
@@ -664,12 +708,19 @@ namespace draw3
 				std::erase_if(active, [&](RuntimeStroke* runtime)
 					{
 						if (!runtime->ended) return false;
+						if (metrics_ && runtime->metricVisible && !runtime->cancelled)
+							metrics_->StageLanding(runtime->handle.record, runtime->handle.generation,
+								runtime->metricDeviceType, static_cast<uint32_t>(runtime->tool),
+								runtime->metricEligibleQpc);
 						input_.Recycle(runtime->handle); // L2 提交与活动层重建完成后才归还 slot。
 						runtime->stroke.Reset(kPenDiameter, configuration_.expectedSpeed);
 						runtime->handle = {};
 						runtime->tool = DrawingTool::Pen;
 						runtime->visibleDirty = {};
 						runtime->ended = false;
+						runtime->cancelled = false;
+						runtime->metricVisible = false;
+						runtime->metricEligibleQpc = 0;
 						runtime->inUse = false;
 						return true;
 					});
@@ -699,18 +750,41 @@ namespace draw3
 
 			frameDirty = ClampRectToCanvas(frameDirty, size.width, size.height);
 			if (forceFullPresent) frameDirty = GetFullCanvasRect(size.width, size.height);
+			if (metrics_)
+			{
+				for (RuntimeStroke* runtime : active)
+				{
+					if (runtime && runtime->metricVisible && !runtime->cancelled)
+						metrics_->StageLanding(runtime->handle.record, runtime->handle.generation,
+							runtime->metricDeviceType, static_cast<uint32_t>(runtime->tool),
+							runtime->metricEligibleQpc);
+				}
+			}
+			bool presentSucceeded = false;
 			if (!IsEmptyRect(frameDirty))
 			{
 				const bool orderedPreview = frameTool == DrawingTool::Pen &&
 					kActiveDebugLayerColorMode == DebugLayerColorMode::ColorizeLiveLayer;
 				CompositeLayersToBackBuffer(frameDirty, orderedPreview);
-				PresentFrame(frameDirty, forceFullPresent); // 一帧最多一次 backbuffer 合成和一次 Present。
+				presentSucceeded = PresentFrame(
+					frameDirty, forceFullPresent); // 一帧最多一次 backbuffer 合成和一次 Present。
+			}
+			if (metrics_)
+			{
+				LARGE_INTEGER presentQpc = {};
+				QueryPerformanceCounter(&presentQpc);
+				metrics_->CommitStagedLandings(presentSucceeded, presentQpc.QuadPart);
 			}
 
 			if (!active.empty())
 			{
 				const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
-				HighPrecisionWait(workMs, configuration_.timingProfile.target_fps);
+				if (metrics_ && frameHadActiveContact)
+					metrics_->RecordActiveFrame(frameStartMs, workMs,
+						lastPresentDurationMs_, lastPresentSucceeded_);
+				const double remainingFrameBudgetMs =
+					1000.0 / configuration_.timingProfile.target_fps - workMs;
+				input_.WaitForWake(frameWakeGeneration, remainingFrameBudgetMs);
 				size_t committedCount = 0;
 				size_t realPointCount = 0;
 				size_t predictedPointCount = 0;
@@ -730,7 +804,10 @@ namespace draw3
 			}
 		}
 
+		if (metrics_) metrics_->EndIdle(GetQpcTimeMilliseconds());
 		if (timerPeriodActive) timeEndPeriod(1);
+		if (drawingPriorityRaised)
+			SetThreadPriority(GetCurrentThread(), originalThreadPriority);
 	}
 
 	void DrawingController::DrawMouseStroke(const MouseMessage& startMessage)

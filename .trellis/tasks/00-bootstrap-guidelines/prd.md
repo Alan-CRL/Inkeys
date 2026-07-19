@@ -42,7 +42,7 @@
 - [x] 移除不适用的 Web 模板
 - [x] 将维护者确认的 8 项架构规则写入对应 Spec
 - [x] 将无法由当前代码证明的能力保留为“待验证”
-- [ ] 在后续任务中完成 Windows 7、D3D Debug Layer、自动化测试和持久化协议验证
+- [x] 将运行时自动化测试转交 `07-19-draw3-runtime-validation`，并把 Windows 7、D3D Debug Layer 安装和持久化协议明确保留为外部长期待办
 
 ## Acceptance Criteria
 

@@ -401,6 +401,9 @@ namespace draw3
 	bool InkRenderer::Resize(IDXGISwapChain1* swapChain, UINT width, UINT height)
 	{
 		if (!swapChain || width == 0 || height == 0) return false;
+		DXGI_SWAP_CHAIN_DESC1 swapChainDescription = {};
+		if (FAILED(swapChain->GetDesc1(&swapChainDescription))) return false;
+
 		const UINT oldWidth = static_cast<UINT>(viewportWidth);
 		const UINT oldHeight = static_cast<UINT>(viewportHeight);
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> oldL2Texture = layerL2Texture; // 临时保留旧稳定层用于拷贝。
@@ -408,7 +411,9 @@ namespace draw3
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> oldL1RetainTexture = layerL1.retainTexture; // L1 的完整仿射操作都要保留。
 		ReleaseSizeDependentResources();
 
-		if (FAILED(swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0))) return false; // 先让交换链获得新尺寸的 backbuffer。
+		// waitable swapchain 在部分驱动上要求 resize 时原样保留 BufferCount/Format/Flags。
+		if (FAILED(swapChain->ResizeBuffers(swapChainDescription.BufferCount, width, height,
+			swapChainDescription.Format, swapChainDescription.Flags))) return false;
 		if (!CreateSizeDependentResources(swapChain, width, height)) return false;
 
 		ClearRTV(layerL2RTV.Get(), kTransparentLayerClearColor);

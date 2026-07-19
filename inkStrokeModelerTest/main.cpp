@@ -1,4 +1,6 @@
 ﻿#include <iostream>
+#include <memory>
+#include <cwchar>
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -10,6 +12,7 @@ import draw3.graphics_initialization;
 import draw3.ink_prediction;
 import draw3.realtime_stylus;
 import draw3.renderer;
+import draw3.runtime_metrics;
 import draw3.transparent_presentation;
 import draw3.window_control;
 
@@ -26,10 +29,34 @@ namespace
 	}
 }
 
-int main()
+int wmain(int argc, wchar_t* argv[])
 {
+	const wchar_t* metricsOutputPath = nullptr;
+	bool strictMetrics = false;
+	for (int index = 1; index < argc; ++index)
+	{
+		if (wcscmp(argv[index], L"--metrics-output") == 0 && index + 1 < argc)
+			metricsOutputPath = argv[++index];
+		else if (wcscmp(argv[index], L"--strict-metrics") == 0)
+			strictMetrics = true;
+		else
+		{
+			std::cout << "Unknown or incomplete command-line option." << std::endl;
+			return -1;
+		}
+	}
+	if (strictMetrics && !metricsOutputPath)
+	{
+		std::cout << "--strict-metrics requires --metrics-output <path>." << std::endl;
+		return -1;
+	}
+
+	std::unique_ptr<draw3::RuntimeMetricsSession> metrics;
+	if (metricsOutputPath) metrics = std::make_unique<draw3::RuntimeMetricsSession>();
+
 	// 先创建窗口，以便透明呈现模块随后绑定 HWND 和交换链。
 	draw3::ContactInputCoordinator input;
+	input.EnableDiagnostics(metrics != nullptr);
 	draw3::WindowController window;
 	if (!window.Initialize(draw3::ShouldPreconfigureNoRedirectionBitmap()))
 	{
@@ -66,10 +93,22 @@ int main()
 		window,
 		renderer,
 		presentation,
-		draw3::CreateStrokeModelConfiguration(GetPrimaryDpiX()));
+		draw3::CreateStrokeModelConfiguration(GetPrimaryDpiX()),
+		metrics.get());
 	drawing.ClearCanvas();
 	drawing.Run();
 	stylus.Shutdown(); // 停回调、移除插件后再释放协调器记录。
 	window.SetInputCoordinator(nullptr); // 解除窗口回调中的非拥有指针，再进入局部对象析构。
+	if (metrics)
+	{
+		const bool strictPass = metrics->MeetsStrictThresholds();
+		if (!metrics->WriteJson(metricsOutputPath, input.DiagnosticsSnapshot()))
+		{
+			std::cout << "Failed to write runtime metrics JSON." << std::endl;
+			return -1;
+		}
+		std::cout << "Runtime metrics strict gate: " << (strictPass ? "PASS" : "FAIL") << std::endl;
+		if (strictMetrics && !strictPass) return 2;
+	}
 	return 0;
 }

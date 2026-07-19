@@ -1,0 +1,33 @@
+{
+  "id": "draw3-runtime-validation",
+  "name": "draw3-runtime-validation",
+  "title": "Draw3 运行时全量验证",
+  "description": "Add production-linked automated tests, opt-in runtime metrics, interruptible frame waits, and full latency/stability validation.",
+  "status": "in_progress",
+  "dev_type": "native",
+  "scope": "draw3 runtime, solution configuration, tests and validation reports",
+  "package": "native",
+  "priority": "P1",
+  "creator": "AlanCRL",
+  "assignee": "AlanCRL",
+  "createdAt": "2026-07-19",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "07-18-rts-multicontact-rendering",
+  "relatedFiles": [
+    "inkStrokeModelerTest.sln",
+    "inkStrokeModelerTest/main.cpp",
+    "inkStrokeModelerTest/draw3/contact_input.cppm",
+    "inkStrokeModelerTest/draw3/contact_input.cpp",
+    "inkStrokeModelerTest/draw3/drawing_controller.cppm",
+    "inkStrokeModelerTest/draw3/drawing_controller.cpp"
+  ],
+  "notes": "Automated concurrency/geometry tests, four-configuration builds and three consecutive ARM64 Release strict benchmarks pass. Raw reports stay ignored under TestResults; Pen/Touch manual matrix remains pending, while D3D Debug Layer and Windows 7 remain external validation items.",
+  "meta": {}
+}

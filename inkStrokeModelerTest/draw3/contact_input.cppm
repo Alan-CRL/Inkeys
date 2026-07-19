@@ -5,6 +5,7 @@
 #endif
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <type_traits>
@@ -126,6 +127,8 @@ export namespace draw3
 		IdtAtomic<uint64_t> sequence_;
 		IdtAtomic<uint64_t> producerRoute_;
 		std::atomic_flag writerLatch_ = ATOMIC_FLAG_INIT;
+		void* ownerBlock_ = nullptr;
+		uint32_t ownerBit_ = 0;
 	};
 
 	struct ContactHandle
@@ -136,16 +139,19 @@ export namespace draw3
 		explicit operator bool() const noexcept { return record != nullptr; }
 	};
 
-	enum class IngressCommandKind : uint32_t
+	// 只读输入诊断；仅在显式启用后累计热路径计数。
+	struct ContactInputDiagnosticsSnapshot
 	{
-		Down,
-		ControlWake
-	};
-
-	struct IngressCommand
-	{
-		IngressCommandKind kind = IngressCommandKind::ControlWake;
-		ContactHandle contact = {};
+		uint64_t downPublished = 0;
+		uint64_t downRejected = 0;
+		uint64_t movePublished = 0;
+		uint64_t moveContended = 0;
+		uint64_t terminalPublished = 0;
+		uint64_t recycled = 0;
+		uint64_t controlWakes = 0;
+		uint64_t activeWaits = 0;
+		size_t slotCapacity = 0;
+		size_t occupiedSlots = 0;
 	};
 
 	// 协调 RTS 生产者与唯一绘制消费者，并在完全空闲时提供内核等待。
@@ -153,6 +159,10 @@ export namespace draw3
 	{
 	public:
 		ContactInputCoordinator();
+#if defined(DRAW3_TESTING)
+		// 测试构建可精确注入 slot 数；正式运行始终使用系统容量策略。
+		explicit ContactInputCoordinator(size_t slotCapacityForTesting);
+#endif
 		~ContactInputCoordinator();
 		ContactInputCoordinator(const ContactInputCoordinator&) = delete;
 		ContactInputCoordinator& operator=(const ContactInputCoordinator&) = delete;
@@ -177,12 +187,20 @@ export namespace draw3
 		// RTS 停止回调后取消仍由生产者持有的全部 contact。
 		void CloseAllProducerContacts(int64_t qpc) noexcept;
 
-		bool TryDequeue(IngressCommand& command) noexcept;
-		void WaitDequeue(IngressCommand& command) noexcept;
+		// 非空指针表示 Down，空指针表示合并的 ControlWake。
+		bool TryDequeue(ContactRecord*& record) noexcept;
+		void WaitDequeue(ContactRecord*& record) noexcept;
 		// 窗口请求已经原子发布后，合并投递一次控制唤醒。
 		bool PublishControlWake() noexcept;
 		// 消费 ControlWake 后先清 pending，再复查全部窗口请求。
 		void AcknowledgeControlWake() noexcept;
+		// 捕获活动等待使用的单调 wake generation。
+		uint64_t CaptureWakeGeneration() const noexcept;
+		// 等待 generation 变化或帧预算到期；返回 true 表示被输入/控制请求打断。
+		bool WaitForWake(uint64_t observedGeneration, double timeoutMilliseconds) noexcept;
+		// 指标会话显式启用/关闭输入计数。
+		void EnableDiagnostics(bool enabled) noexcept;
+		ContactInputDiagnosticsSnapshot DiagnosticsSnapshot() const noexcept;
 
 	private:
 		std::unique_ptr<ContactInputCoordinatorImpl> impl_;

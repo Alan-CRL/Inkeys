@@ -31,6 +31,7 @@
 - [x] L2 成功提交后才回收 ended slot/model；Cancelled 也能安全结束。
 - [x] 接入空闲时 1/2/3 工具选择；首个 Down 锁定整批工具，普通笔 5px 模拟压感，荧光笔/橡皮 50px 固定宽度。
 - [x] 修复 Up 帧末端折返/双束：直接烘干最后可见 L0，不再用 `kUp` 平滑结果重连终态尾部。
+- [x] 由子任务 `07-19-highlighter-start-cap-stability` 修复荧光笔 start cap，并验证活动态、L1 切片和完成态起端几何一致。
 
 ## 5. 主程序、计时和工程注册
 
@@ -40,9 +41,15 @@
 - [x] 在 `.vcxproj` 和 `.filters` 注册新模块/实现；不改 vcpkg manifest、triplet、install 路径及未跟踪 `Vcpkg/`。
 - [x] 保持既有 UTF-8 BOM、CRLF，并为状态发布、提交/重建等关键步骤添加简短中文注释。
 
-## 6. Quality gates
+## 6. 子任务集成
 
-- [x] 检查 `git diff --check`、源码编码/换行、vcpkg 配置未变和 `Vcpkg/` 未被触碰。
+- [x] `07-19-draw3-runtime-validation`：测试工程、运行指标、可中断低延迟等待和自动鼠标基准。
+- [x] `07-19-rts-contact-pool-lock-free`：预分配位图对象池、裸指针 ingress 和显式 producer token。
+- [x] `07-19-highlighter-start-cap-stability`：首次可见闸门、稳定 start cap 和几何回归。
+
+## 7. Quality gates
+
+- [x] 检查 `git diff --check`、源码编码/换行、vcpkg 配置未变，且构建生成的未跟踪 `Vcpkg/` 缓存未进入提交。
 - [x] 使用 ARM64 MSBuild 对完整解决方案执行：
 
   ```powershell

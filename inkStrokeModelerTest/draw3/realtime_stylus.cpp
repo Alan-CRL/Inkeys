@@ -170,6 +170,7 @@ namespace draw3
 				}
 				const bool published = coordinator_.PublishDown(
 					stylusInfo->tcid, stylusInfo->cid, deviceType, snapshot);
+#if defined(_DEBUG)
 				moveDiagnosticCount_.store(0, std::memory_order_relaxed); // 每次落笔重新保留少量 Move 日志。
 				std::cout << "[RTS] down tcid=" << stylusInfo->tcid << " cid=" << stylusInfo->cid
 					<< " type=" << static_cast<uint32_t>(deviceType)
@@ -177,6 +178,7 @@ namespace draw3
 					<< packet[metadata->xIndex] << "," << packet[metadata->yIndex] << ") pixel=("
 					<< snapshot.position.x << "," << snapshot.position.y << ") published="
 					<< (published ? "yes" : "no") << std::endl;
+#endif
 				return published ? S_OK : E_OUTOFMEMORY;
 			}
 
@@ -194,9 +196,11 @@ namespace draw3
 					return S_OK;
 				}
 				const bool published = coordinator_.PublishUp(stylusInfo->tcid, stylusInfo->cid, snapshot);
+#if defined(_DEBUG)
 				std::cout << "[RTS] up tcid=" << stylusInfo->tcid << " cid=" << stylusInfo->cid
 					<< " pixel=(" << snapshot.position.x << "," << snapshot.position.y
 					<< ") published=" << (published ? "yes" : "no") << std::endl;
+#endif
 				return S_OK;
 			}
 
@@ -237,6 +241,7 @@ namespace draw3
 					return S_OK;
 				}
 				const bool published = coordinator_.PublishMove(stylusInfo->tcid, stylusInfo->cid, snapshot);
+#if defined(_DEBUG)
 				const uint32_t diagnosticIndex = moveDiagnosticCount_.fetch_add(1, std::memory_order_relaxed);
 				if (diagnosticIndex < 8)
 				{
@@ -244,6 +249,7 @@ namespace draw3
 						<< " packets=" << packetCount << " pixel=(" << snapshot.position.x << ","
 						<< snapshot.position.y << ") published=" << (published ? "yes" : "no") << std::endl;
 				}
+#endif
 				return S_OK;
 			}
 

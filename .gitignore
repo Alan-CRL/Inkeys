@@ -1,10 +1,12 @@
 /.vs/
 /packages/
 /VcpkgInstalled/
+/TestResults/
 /Release/
 /Debug/
 /x64/
 /ARM64/
+/Win32/
 /inkStrokeModelerTest/inkStrokeModelerTest/
 /inkStrokeModelerTest/Release/
 /inkStrokeModelerTest/Debug/
