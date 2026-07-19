@@ -62,7 +62,7 @@
 - `Inkeys/Inkeys.rc`、`Inkeys/resource.h`：Win32 resource；
 - `Inkeys/Inkeys.vcxproj`：字体、图像、manifest、shader 等项目项。
 
-`【直接确认】` 当前加载方式并不统一，包括 Win32 resource、磁盘/解包路径、GDI+/D2D bitmap、ImGui DX9 texture 和 lunasvg/SVG。`【合理推断】` 新资源应先跟随目标窗口已有加载器、缓存和释放点；建立新生命周期前需说明现有路径为何不适用。
+`【直接确认】` 当前加载方式并不统一，包括 Win32 resource、磁盘/解包路径、GDI+/D2D bitmap、ImGui DX11 SRV 和 lunasvg/SVG。设置窗口还把预编译 VS/PS CSO 作为 `SHADERS` 资源嵌入 EXE。`【合理推断】` 新资源应先跟随目标窗口已有加载器、缓存和释放点；建立新生命周期前需说明现有路径为何不适用。
 
 ## 二进制与生成资源的范围
 

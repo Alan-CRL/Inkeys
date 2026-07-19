@@ -408,7 +408,7 @@
     <ClInclude Include="additional\hashlib++\hl_wrapperfactory.h" />
     <ClInclude Include="additional\imgui\imconfig.h" />
     <ClInclude Include="additional\imgui\imgui.h" />
-    <ClInclude Include="additional\imgui\imgui_impl_dx9.h" />
+    <ClInclude Include="additional\imgui\imgui_impl_dx11.h" />
     <ClInclude Include="additional\imgui\imgui_impl_win32.h" />
     <ClInclude Include="additional\imgui\imgui_internal.h" />
     <ClInclude Include="additional\imgui\imgui_offset_rect.h" />
@@ -497,7 +497,7 @@
     <ClCompile Include="additional\hashlib++\hl_wrapperfactory.cpp" />
     <ClCompile Include="additional\imgui\imgui.cpp" />
     <ClCompile Include="additional\imgui\imgui_draw.cpp" />
-    <ClCompile Include="additional\imgui\imgui_impl_dx9.cpp" />
+    <ClCompile Include="additional\imgui\imgui_impl_dx11.cpp" />
     <ClCompile Include="additional\imgui\imgui_impl_win32.cpp" />
     <ClCompile Include="additional\imgui\imgui_tables.cpp" />
     <ClCompile Include="additional\imgui\imgui_toggle.cpp" />
@@ -760,6 +760,18 @@
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
     </FxCompile>
     <FxCompile Include="additional\imgui\CustomShaders\imgui_vs.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.0</ShaderModel>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>

@@ -315,7 +315,7 @@
     <ClInclude Include="additional\imgui\imgui.h">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
-    <ClInclude Include="additional\imgui\imgui_impl_dx9.h">
+    <ClInclude Include="additional\imgui\imgui_impl_dx11.h">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
     <ClInclude Include="additional\imgui\imgui_impl_win32.h">
@@ -560,7 +560,7 @@
     <ClCompile Include="additional\imgui\imgui_draw.cpp">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
-    <ClCompile Include="additional\imgui\imgui_impl_dx9.cpp">
+    <ClCompile Include="additional\imgui\imgui_impl_dx11.cpp">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
     <ClCompile Include="additional\imgui\imgui_impl_win32.cpp">
