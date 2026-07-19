@@ -75,7 +75,7 @@ Result = Add + Retain * Below
 liveTipDuration + predictionDuration
 ```
 
-contact 结束时保留上一帧可见 L0，同时加入本帧最终真实输入和终态 L0；同一帧的全部结束 contact 只执行一次 L2 resolve、一次 backbuffer composite 和一次 present。仍活动 contact 的 L1/L0 必须在清空临时纹理后从 CPU 状态重建。不要在结束时只用真实点替换上一帧可见几何，否则会造成回缩或跳变。
+contact 结束时保持抬起前最后一帧的视觉结果：重建此前已经进入 L1 的稳定前缀，再把 `previousL0DrawPoints` 中的真实尾部、prediction 和笔锋原样合入 L1。Up 只结束输入和生命周期；其 `kUp` 平滑结果不得再次连接或替换最后可见 L0，否则会形成折返或双束。只有 Down 后立即 Up、尚未生成过可见 L0 时，才使用最终真实点/初始点兜底生成点击或短段。同一帧的全部结束 contact 只执行一次 L2 resolve、一次 backbuffer composite 和一次 present。仍活动 contact 的 L1/L0 必须在清空临时纹理后从 CPU 状态重建。
 
 ## Scenario: RTS Multi-Contact Input And Rendering
 
@@ -115,6 +115,7 @@ contact 结束时保留上一帧可见 L0，同时加入本帧最终真实输入
 | Resize succeeds | 保留 L2 交集并从 CPU runtime 重建全部活动 L1/L0 |
 | Clear with active contact | 延后到活动集合为空 |
 | Multiple Up in one frame | 一次 L2 resolve、一次 composite、一次 present |
+| Up arrives after a visible prediction | 稳定前缀加最后可见 L0 原样烘干；不使用 `kUp` 平滑结果重连尾部 |
 | Present failure | 保持整画布重呈现请求，下一帧恢复 |
 
 ### 5. Good / Base / Bad Cases
@@ -129,12 +130,17 @@ contact 结束时保留上一帧可见 L0，同时加入本帧最终真实输入
 - 静态检查窗口属性、`WM_TABLET_QUERYSYSTEMGESTURESTATUS` 与 `IRealTimeStylus3` 三处多点 opt-in 同时存在。
 - 静态验证 generation/state CAS、sticky terminal、seqlock、零自旋阻塞等待、timer begin/end 配对和 Release 无逐帧日志。
 - 真机验证鼠标宽度连续、Pen/Touch 单 contact、双 Touch 交错、同时抬起、活动时 resize、活动时 clear、设备禁用/拔出、长时间 idle CPU 和最终点位置。普通 `SendInput` 不能替代 RTS 硬件验证。
+- 快速曲线末端抬笔时，上一帧预测端点仍保留，且最终真实点到预测之间不出现回头、闭环或重复连接。
 
 ### 7. Wrong vs Correct
 
 Wrong：`收到 Up 就立即把该 contact resolve 到 L2 并 Present；槽位只靠 contactId 复用。`
 
 Correct：`route 用 generation+state 精确交接；同帧全部 terminal contact 先完成几何，再统一 resolve/composite/present，并重建剩余活动层。`
+
+Wrong：`Up 后用新的真实尾部重建 L0，再把上一帧留下的 predictedPoints 直接追加在最终 Up 点后面。`
+
+Correct：`重建已提交稳定前缀，并把 previousL0DrawPoints 原样烘干；只有从未出现可见 L0 时才用最终真实点兜底。`
 
 Wrong：`put_MultiTouchEnabled(TRUE) 成功，所以窗口已经能收到多指。`
 

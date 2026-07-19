@@ -141,6 +141,34 @@ namespace draw3
 				renderer.DrawHighlighterPrimitives(geometry.primitives, ColorForTool(runtime.tool));
 				return ClampRectToCanvas(geometry.bounds, width, height);
 			}
+			if (runtime.tool == DrawingTool::Pen)
+			{
+				runtime.rebuildPoints.clear();
+				if (stroke.hasCommittedGeometry && !stroke.realPoints.empty())
+				{
+					const size_t stablePointCount =
+						std::min(stroke.committedIndex + 1, stroke.realPoints.size());
+					runtime.rebuildPoints.assign(
+						stroke.realPoints.begin(), stroke.realPoints.begin() + stablePointCount);
+					renderer.DrawStrokeOrDot(runtime.rebuildPoints, ColorForTool(runtime.tool));
+					UnionRectInPlace(dirty,
+						RectFromStrokePoints(runtime.rebuildPoints, width, height));
+				}
+				if (!stroke.previousL0DrawPoints.empty())
+				{
+					// 抬起时直接烘干最后可见 L0，不再用 kUp 的平滑结果重连尾部。
+					renderer.DrawStrokeOrDot(
+						stroke.previousL0DrawPoints, ColorForTool(runtime.tool));
+					UnionRectInPlace(dirty,
+						RectFromStrokePoints(stroke.previousL0DrawPoints, width, height));
+					return ClampRectToCanvas(dirty, width, height);
+				}
+
+				// Down 后立即 Up 尚无可见 L0 时，仍需用最终真实点或初始点生成点击。
+				runtime.rebuildPoints.assign(stroke.realPoints.begin(), stroke.realPoints.end());
+				if (runtime.rebuildPoints.empty() && stroke.hasInputStartPoint)
+					runtime.rebuildPoints.push_back(stroke.inputStartPoint);
+			}
 			if (!runtime.rebuildPoints.empty())
 			{
 				const InkOperatorKind operatorKind = runtime.tool == DrawingTool::Eraser
@@ -148,17 +176,6 @@ namespace draw3
 				renderer.DrawStrokeOrDot(runtime.rebuildPoints, ColorForTool(runtime.tool),
 					StrokeShape::RoundCapsule, operatorKind);
 				UnionRectInPlace(dirty, RectFromStrokePoints(runtime.rebuildPoints, width, height));
-			}
-			if (runtime.tool == DrawingTool::Pen && !stroke.previousL0DrawPoints.empty())
-			{
-				// 冻结上一帧已经可见的尾部，避免最终 Up 重建几何时 prediction 回缩。
-				renderer.DrawStrokeOrDot(stroke.previousL0DrawPoints, ColorForTool(runtime.tool));
-				UnionRectInPlace(dirty, RectFromStrokePoints(stroke.previousL0DrawPoints, width, height));
-			}
-			if (runtime.tool == DrawingTool::Pen && !stroke.l0DrawPoints.empty())
-			{
-				renderer.DrawStrokeOrDot(stroke.l0DrawPoints, ColorForTool(runtime.tool));
-				UnionRectInPlace(dirty, RectFromStrokePoints(stroke.l0DrawPoints, width, height));
 			}
 			return ClampRectToCanvas(dirty, width, height);
 		}
@@ -590,17 +607,24 @@ namespace draw3
 							GetPredictionDurationSeconds(stroke), ColorForTool(runtime->tool),
 							StrokeShape::RoundCapsule, renderer_, size.width, size.height);
 				}
-				// 结束帧保留上一帧 prediction，同时接入最终 Up 的真实几何。
 				if (eraser)
 				{
 					stroke.predictedPoints.clear();
 					stroke.l0DrawPoints.clear();
 					stroke.currentL0Rect = {};
 				}
-				else
+				else if (!runtime->ended)
 				{
 					RebuildL0DrawPoints(stroke, liveTipDurationSeconds,
 						StrokeShape::RoundCapsule, size.width, size.height);
+				}
+				else
+				{
+					// Up 后旧 prediction 仍基于上一真实末端，禁止把它接到新的最终点之后形成折返。
+					stroke.predictedResults.clear();
+					stroke.predictedPoints.clear();
+					stroke.l0DrawPoints.clear();
+					stroke.currentL0Rect = {};
 				}
 				if (!runtime->ended)
 					UpdateIdleFreezeState(stroke, runtime->movedThisFrame,
