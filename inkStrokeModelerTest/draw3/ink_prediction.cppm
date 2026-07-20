@@ -58,6 +58,7 @@ export namespace draw3
 		double liveTipDurationSeconds;
 		ink::stroke_model::KalmanPredictorParams kalmanPredictorParams;
 		ink::stroke_model::StrokeModelParams modelParams;
+		bool retainPredictionOnUp = false; // 默认由模型生成 Up 收尾；外部开关可选择保留最后可见 prediction。
 	};
 
 	// 根据 DPI 和当前帧率预设创建模型配置。
@@ -154,6 +155,9 @@ export namespace draw3
 		const HighlighterStartDirectionState& startDirectionState);
 	// 为不足 12px 的最终矩形选择确定性起笔方向。
 	HighlighterStartDirectionState GetHighlighterShortStrokeDirectionState(const ActiveStroke& stroke);
+	// 选择普通笔完成态尾段：默认连接模型 Up 结果，开关启用时保留最后可见 L0。
+	void BuildCompletedPenTail(const ActiveStroke& stroke, bool retainPredictionOnUp,
+		std::vector<InkPoint>& output);
 
 	// 将矩形并入已有脏区。
 	void UnionRectInPlace(RECT& target, const RECT& addition);

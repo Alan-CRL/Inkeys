@@ -549,6 +549,25 @@ namespace draw3
 		return state; // 完全没有有效移动时保留 +X，点击点位于 12×50 矩形左侧中点。
 	}
 
+	void BuildCompletedPenTail(const ActiveStroke& stroke, bool retainPredictionOnUp,
+		std::vector<InkPoint>& output)
+	{
+		output.clear();
+		if (retainPredictionOnUp && !stroke.previousL0DrawPoints.empty())
+		{
+			output.assign(stroke.previousL0DrawPoints.begin(), stroke.previousL0DrawPoints.end());
+			return; // 开关启用时只烘干最后可见 L0，不再连接模型 Up 尾段。
+		}
+		if (!stroke.realPoints.empty())
+		{
+			const size_t tailStart = stroke.hasCommittedGeometry
+				? std::min(stroke.committedIndex, stroke.realPoints.size() - 1) : 0;
+			output.assign(stroke.realPoints.begin() + tailStart, stroke.realPoints.end());
+		}
+		if (output.empty() && stroke.hasInputStartPoint)
+			output.push_back(stroke.inputStartPoint); // Down 后立即 Up 尚无建模点时仍生成点击。
+	}
+
 	ActiveStroke::ActiveStroke(float baseDiameter, float expectedSpeed,
 		StrokeWidthMode widthModeValue, bool highlighterValue)
 	{

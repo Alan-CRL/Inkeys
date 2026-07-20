@@ -40,7 +40,7 @@ Win32/HiEasyX message
 - 原始鼠标速度只用于普通笔宽估算，预测点继承最后真实笔宽。
 - 最新 snapshot 覆盖采样改变了速度采样节奏；每份真实速度只滤波一次，第一份速度不得回写已可见起笔，半径仍需时间/距离双限速。
 - `ActiveMouseStroke` 的提交游标必须单调前进，已进入 L1 的稳定前缀不能重复提交。
-- Up 后不再用 `kUp` 平滑结果重连尾部；完成笔画由已提交稳定前缀和上一帧可见 L0 原样组成。
+- Up 收尾由 `retainPredictionOnUp` 唯一选择：默认连接 `kUp` 的真实 modeled 尾段并清除 prediction；开启时只烘干上一帧可见 L0，禁止两种尾段同时绘制。
 - 荧光笔的 12px 起止方向窗口、重复点阈值和 dirty bounds 必须一起检查。
 
 依据：`AppendNewModeledPoints`、`RebuildPredictedPoints`、`CommitStablePrefixToL1`、`BuildHighlighterGeometry`。
@@ -58,8 +58,8 @@ Win32/HiEasyX message
 - L2 是已落定的 premultiplied RGBA 画布。
 - L1 是当前笔稳定前缀操作，L0 是每帧清空重绘的实时操作。
 - 普通绘制与橡皮都编码为 `Add + Retain * Below`；同笔分段默认使用覆盖率并集。
-- 抬笔时最后可见 L0 先并入 L1，再一次性作用到 L2，避免视觉回缩。
-- “保留最后可见 L0”表示直接烘干其真实尾部、prediction 和笔锋；不得再并排绘制或重建另一条终态尾部。
+- 抬笔时默认把模型 `kUp` 的真实尾段并入 L1；`retainPredictionOnUp` 开启时改为把最后可见 L0 并入 L1，再一次性作用到 L2。
+- “保留最后可见 L0”表示直接烘干其真实尾部、prediction 和笔锋；此分支不得再并排绘制或重建另一条终态尾部。
 
 依据：`DrawingController::CompositeLayersToBackBuffer`、`DrawMouseStroke`、`InkRenderer::ApplyOperatorLayers`。
 

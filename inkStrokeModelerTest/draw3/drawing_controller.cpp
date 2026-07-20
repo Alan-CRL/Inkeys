@@ -122,7 +122,8 @@ namespace draw3
 			return RectFromStrokePoints(runtime.rebuildPoints, width, height);
 		}
 
-		RECT DrawCompletedStroke(RuntimeStroke& runtime, InkRenderer& renderer, int width, int height)
+		RECT DrawCompletedStroke(RuntimeStroke& runtime, InkRenderer& renderer, int width, int height,
+			bool retainPredictionOnUp)
 		{
 			ActiveStroke& stroke = runtime.stroke;
 			runtime.rebuildPoints.assign(stroke.realPoints.begin(), stroke.realPoints.end());
@@ -158,20 +159,7 @@ namespace draw3
 					UnionRectInPlace(dirty,
 						RectFromStrokePoints(runtime.rebuildPoints, width, height));
 				}
-				if (!stroke.previousL0DrawPoints.empty())
-				{
-					// 抬起时直接烘干最后可见 L0，不再用 kUp 的平滑结果重连尾部。
-					renderer.DrawStrokeOrDot(
-						stroke.previousL0DrawPoints, ColorForTool(runtime.tool));
-					UnionRectInPlace(dirty,
-						RectFromStrokePoints(stroke.previousL0DrawPoints, width, height));
-					return ClampRectToCanvas(dirty, width, height);
-				}
-
-				// Down 后立即 Up 尚无可见 L0 时，仍需用最终真实点或初始点生成点击。
-				runtime.rebuildPoints.assign(stroke.realPoints.begin(), stroke.realPoints.end());
-				if (runtime.rebuildPoints.empty() && stroke.hasInputStartPoint)
-					runtime.rebuildPoints.push_back(stroke.inputStartPoint);
+				BuildCompletedPenTail(stroke, retainPredictionOnUp, runtime.rebuildPoints);
 			}
 			if (!runtime.rebuildPoints.empty())
 			{
@@ -688,7 +676,8 @@ namespace draw3
 					if (!runtime->cancelled)
 					{
 						const RECT completedStrokeDirty =
-							DrawCompletedStroke(*runtime, renderer_, size.width, size.height);
+							DrawCompletedStroke(*runtime, renderer_, size.width, size.height,
+								configuration_.retainPredictionOnUp);
 						UnionRectInPlace(completedDirty, completedStrokeDirty);
 						if (!IsEmptyRect(completedStrokeDirty)) runtime->metricVisible = true;
 					}

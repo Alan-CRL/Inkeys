@@ -28,7 +28,7 @@
 - 每个 contact 使用独立的 ink-stroke-modeler 状态；Down 消费时先输入不可变初始 `kDown`，随后连接当前最新 Move/Up。
 - Up 快照必须作为包含最终位置和 QPC 的 `kUp` 输入；Down 后立即 Up 仍需生成点击或短段。
 - 速度由绘制线程根据相邻已消费真实快照的位置/QPC 计算；无新快照的动画帧不得重复更新速度。
-- 保留现有预测与速度模拟压感，真实硬件压感暂不参与绘制。
+- 保留现有预测与速度模拟压感，真实硬件压感暂不参与绘制。新增 `retainPredictionOnUp` 开关并默认关闭：关闭时用模型的 `kUp` 结果平滑完成真实尾部且不提交 prediction；开启时把抬笔前最后可见 L0（含 prediction）直接烘干到 L1。
 - L2 始终只包含完整笔画。多个 contact 同帧 Up 时只进行一次 L2 resolve、一次 backbuffer 合成和一次 Present。
 - 一个 contact 结束时，其余活动 contact 必须保持可见，且不得提前写入 L2；提交后从 CPU 状态重建剩余 contact 的共享 L1/L0。
 - resize 保留 L2 并重建活动 L1/L0；clear 延续现有语义，等待全部 contact 结束后执行。
@@ -46,6 +46,7 @@
 - [ ] `Release|ARM64` 使用 ARM64 MSBuild 对完整解决方案 Rebuild 成功，C++ modules、两个 Shader 和资源嵌入链均通过。
 - [ ] RTS 鼠标、单指及多指可以同时使用空闲时选定的 1/2/3 工具绘制。
 - [ ] Down 后立即 Up、快速点击、最后位置变化后立即 Up 均保留最终点和 Up。
+- [ ] `retainPredictionOnUp=false` 时抬笔由模型平滑完成真实笔锋且不保留 prediction；设为 `true` 时最后可见 L0 原样进入 L1。
 - [ ] 高频 Move 只覆盖快照、不会形成事件积压，Down/Up 不丢失。
 - [ ] 多个 contact 同帧 Up 只触发一次 L2 resolve 和一次 Present。
 - [ ] 某一 contact Up 时，其余活动笔画不消失、不重复，也不会提前进入 L2。

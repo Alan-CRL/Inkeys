@@ -63,6 +63,39 @@ namespace
 int RunHighlighterGeometryTests()
 {
 	int failures = 0;
+	const draw3::StrokeModelConfiguration defaultConfiguration =
+		draw3::CreateStrokeModelConfiguration(96);
+	HIGHLIGHTER_CHECK(!defaultConfiguration.retainPredictionOnUp);
+	draw3::ActiveStroke completedPen(5.0f, 500.0f);
+	completedPen.realPoints = {
+		{ 10.0f, 20.0f, 2.5f, 0.0f },
+		{ 20.0f, 20.0f, 2.4f, 0.01f },
+		{ 30.0f, 22.0f, 1.8f, 0.02f },
+		{ 40.0f, 25.0f, 0.8f, 0.03f }
+	};
+	completedPen.committedIndex = 1;
+	completedPen.hasCommittedGeometry = true;
+	completedPen.previousL0DrawPoints = {
+		{ 20.0f, 20.0f, 2.4f, 0.01f },
+		{ 50.0f, 30.0f, 1.2f, 0.04f }
+	};
+	std::vector<draw3::InkPoint> completedTail;
+	draw3::BuildCompletedPenTail(completedPen, false, completedTail);
+	HIGHLIGHTER_CHECK(completedTail.size() == 3);
+	HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().x, 20.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(completedTail.back().x, 40.0f));
+	draw3::BuildCompletedPenTail(completedPen, true, completedTail);
+	HIGHLIGHTER_CHECK(completedTail.size() == 2);
+	HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().x, 20.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(completedTail.back().x, 50.0f));
+
+	draw3::ActiveStroke clickPen(5.0f, 500.0f);
+	clickPen.inputStartPoint = { 12.0f, 34.0f, 2.5f, 0.0f };
+	clickPen.hasInputStartPoint = true;
+	draw3::BuildCompletedPenTail(clickPen, false, completedTail);
+	HIGHLIGHTER_CHECK(completedTail.size() == 1);
+	HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().x, 12.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().y, 34.0f));
 	const draw3::HighlighterBoundaryFlags complete =
 		draw3::HighlighterBoundaryFlags::Start | draw3::HighlighterBoundaryFlags::End;
 	const draw3::HighlighterStartDirectionState unlocked = {};

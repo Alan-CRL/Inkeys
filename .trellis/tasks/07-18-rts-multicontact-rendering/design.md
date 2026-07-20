@@ -70,7 +70,7 @@ Touch/Pen 使用缓存 `TabletDeviceKind` 区分；鼠标通过实时按键状�
 
 1. 排空 Down，读取所有活动 contact 的一致快照并更新独立模型。
 2. 无 Up 时，各 contact 的稳定增量继续累积至共享 L1；每帧只清一次 L0，再依次绘制全部实时尾部与预测。
-3. 有 Up 时，清空 scratch，把本帧所有已完成 contact 的稳定前缀、上一帧可见尾部和最终 Up 几何合并画入 L1，只调用一次 `ApplyOperatorLayers` 写入 L2。
+3. 有 Up 时，清空 scratch，把本帧所有已完成 contact 的稳定前缀与所选收尾合并画入 L1：默认采用模型运行到 `kUp` 后的真实尾段；`retainPredictionOnUp` 开启时改为上一帧可见 L0。随后只调用一次 `ApplyOperatorLayers` 写入 L2。
 4. 清空 L1，从剩余活动 contact 的 CPU 稳定几何重建共享 L1，再清空并重建共享 L0。
 5. 合并旧/新 L0、稳定增量、完成笔画与窗口请求的 dirty rect，只合成一次 backbuffer 并 Present 一次。
 6. L2 提交与重建成功后，才移除结束 contact、Reset 模型并把 slot 归还协调器。
