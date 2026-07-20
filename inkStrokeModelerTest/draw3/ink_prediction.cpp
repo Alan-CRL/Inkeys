@@ -31,8 +31,47 @@ namespace draw3
 		constexpr float kHighlighterBoundsPaddingPx = 3.0f;
 		constexpr float kHighlighterJoinThresholdRadians = 0.5f * 3.14159265358979323846f / 180.0f;
 		constexpr float kHighlighterCircleJoinThresholdRadians = 177.0f * 3.14159265358979323846f / 180.0f;
+		constexpr uint32_t kMouseWidthModeShift = 0;
+		constexpr uint32_t kTouchWidthModeShift = 1;
+		constexpr uint32_t kPenWidthModeShift = 2;
+		constexpr uint32_t kInputWidthModeMask = 0x1;
+		constexpr uint32_t kPenInputWidthModeMask = 0x3;
 		static_assert(kMaxRadiusChangePerPixel > 0.0f && kMaxRadiusChangePerPixel < 1.0f,
 			"半径空间变化率必须严格小于胶囊切线退化阈值");
+		static_assert(std::atomic<uint32_t>::is_always_lock_free,
+			"设备宽度设置要求 32 位原子始终无锁");
+
+		bool IsValid(InputWidthMode value) noexcept
+		{
+			return value == InputWidthMode::Fixed || value == InputWidthMode::SimulatedPressure;
+		}
+
+		bool IsValid(PenInputWidthMode value) noexcept
+		{
+			return value == PenInputWidthMode::Fixed || value == PenInputWidthMode::SimulatedPressure ||
+				value == PenInputWidthMode::HardwarePressure;
+		}
+
+		bool IsValid(InputWidthModeSettings settings) noexcept
+		{
+			return IsValid(settings.mouse) && IsValid(settings.touch) && IsValid(settings.pen);
+		}
+
+		uint32_t EncodeInputWidthModeSettings(InputWidthModeSettings settings) noexcept
+		{
+			return (static_cast<uint32_t>(settings.mouse) << kMouseWidthModeShift) |
+				(static_cast<uint32_t>(settings.touch) << kTouchWidthModeShift) |
+				(static_cast<uint32_t>(settings.pen) << kPenWidthModeShift);
+		}
+
+		InputWidthModeSettings DecodeInputWidthModeSettings(uint32_t encoded) noexcept
+		{
+			return {
+				static_cast<InputWidthMode>((encoded >> kMouseWidthModeShift) & kInputWidthModeMask),
+				static_cast<InputWidthMode>((encoded >> kTouchWidthModeShift) & kInputWidthModeMask),
+				static_cast<PenInputWidthMode>((encoded >> kPenWidthModeShift) & kPenInputWidthModeMask)
+			};
+		}
 
 		float LerpFloat(float from, float to, float ratio)
 		{
@@ -347,6 +386,23 @@ namespace draw3
 		}
 	}
 
+	InputWidthModeSettingsState::InputWidthModeSettingsState(InputWidthModeSettings settings) noexcept
+		: encoded_(EncodeInputWidthModeSettings(IsValid(settings) ? settings : InputWidthModeSettings{}))
+	{
+	}
+
+	bool InputWidthModeSettingsState::Set(InputWidthModeSettings settings) noexcept
+	{
+		if (!IsValid(settings)) return false;
+		encoded_.store(EncodeInputWidthModeSettings(settings), std::memory_order_release);
+		return true;
+	}
+
+	InputWidthModeSettings InputWidthModeSettingsState::Get() const noexcept
+	{
+		return DecodeInputWidthModeSettings(encoded_.load(std::memory_order_acquire));
+	}
+
 	StrokeModelConfiguration CreateStrokeModelConfiguration(int dpiX)
 	{
 		const StrokeTimingProfile timingProfile = GetStrokeTimingProfile(kActiveStrokeTimingProfileId);
@@ -384,6 +440,7 @@ namespace draw3
 				.max_outputs_per_call = timingProfile.max_outputs_per_call
 			}
 		};
+		modelParams.stylus_state_modeler_params.use_stroke_normal_projection = true;
 		return { timingProfile, expectedSpeed, GetLiveTipDurationSeconds(timingProfile), kalmanParams, modelParams };
 	}
 
@@ -402,6 +459,48 @@ namespace draw3
 			params.prediction_params = kalmanPredictorParams; // 默认使用调过参的 Kalman 预测。
 			break;
 		}
+	}
+
+	StrokeWidthMode ResolveStrokeWidthMode(InputDeviceType deviceType,
+		InputWidthModeSettings settings, float downPressure) noexcept
+	{
+		const auto resolveBasicMode = [](InputWidthMode mode)
+			{
+				return mode == InputWidthMode::Fixed
+					? StrokeWidthMode::Fixed : StrokeWidthMode::SimulatedPressure;
+			};
+		switch (deviceType)
+		{
+		case InputDeviceType::Touch:
+			return resolveBasicMode(IsValid(settings.touch)
+				? settings.touch : InputWidthMode::SimulatedPressure);
+		case InputDeviceType::MouseLeft:
+		case InputDeviceType::MouseRight:
+			return resolveBasicMode(IsValid(settings.mouse)
+				? settings.mouse : InputWidthMode::SimulatedPressure);
+		case InputDeviceType::Pen:
+		default:
+			break;
+		}
+
+		switch (IsValid(settings.pen) ? settings.pen : PenInputWidthMode::HardwarePressure)
+		{
+		case PenInputWidthMode::Fixed:
+			return StrokeWidthMode::Fixed;
+		case PenInputWidthMode::SimulatedPressure:
+			return StrokeWidthMode::SimulatedPressure;
+		case PenInputWidthMode::HardwarePressure:
+		default:
+			return std::isfinite(downPressure) && downPressure >= 0.0f && downPressure <= 1.0f
+				? StrokeWidthMode::HardwarePressure : StrokeWidthMode::SimulatedPressure;
+		}
+	}
+
+	float HardwarePressureDiameter(float baseDiameter, float pressure) noexcept
+	{
+		if (!std::isfinite(baseDiameter) || baseDiameter <= 0.0f) return 0.0f;
+		if (!std::isfinite(pressure) || pressure < 0.0f) return baseDiameter;
+		return baseDiameter * (0.2f + 1.2f * std::clamp(pressure, 0.0f, 1.0f));
 	}
 
 	StrokeWidthEstimator::StrokeWidthEstimator(float baseDiameterValue, float expectedSpeedValue)
@@ -434,6 +533,31 @@ namespace draw3
 			const float pointDistance = std::hypot(result.position.x - lastPositionX, result.position.y - lastPositionY);
 			currentDiameter = 2.0f * ClampRadiusTransition(currentDiameter * 0.5f, desiredDiameter * 0.5f,
 				baseDiameter, pointDistance, deltaTime); // 时间和空间双重限速，保持胶囊公切线稳定。
+		}
+		lastTime = pointTime;
+		lastPositionX = result.position.x;
+		lastPositionY = result.position.y;
+		return { result.position.x, result.position.y, currentDiameter * 0.5f, static_cast<float>(pointTime) };
+	}
+
+	InkPoint StrokeWidthEstimator::AppendHardwarePressure(const ink::stroke_model::Result& result)
+	{
+		const double pointTime = result.time.Value();
+		const bool hasPressure = std::isfinite(result.pressure) && result.pressure >= 0.0f;
+		const float targetDiameter = hasPressure
+			? HardwarePressureDiameter(baseDiameter, result.pressure) : currentDiameter;
+		if (!hasSample)
+		{
+			currentDiameter = hasPressure ? targetDiameter : baseDiameter;
+			hasSample = true;
+		}
+		else if (hasPressure)
+		{
+			const double deltaTime = std::max(0.0, pointTime - lastTime);
+			const float pointDistance = std::hypot(
+				result.position.x - lastPositionX, result.position.y - lastPositionY);
+			currentDiameter = 2.0f * ClampRadiusTransition(currentDiameter * 0.5f,
+				targetDiameter * 0.5f, baseDiameter, pointDistance, deltaTime);
 		}
 		lastTime = pointTime;
 		lastPositionX = result.position.x;
@@ -694,16 +818,24 @@ namespace draw3
 
 	void AppendNewModeledPoints(ActiveStroke& stroke, float inputSpeed)
 	{
-		const bool fixedWidth = stroke.widthMode == StrokeWidthMode::Fixed;
-		const float effectiveInputSpeed = fixedWidth ? -1.0f : inputSpeed;
 		for (size_t index = stroke.convertedResultCount; index < stroke.modeledResults.size(); ++index)
 		{
 			const auto& result = stroke.modeledResults[index];
-			// 固定宽度工具只取建模后的位置与时间，不经过普通笔的模拟压感估算器。
-			InkPoint point = fixedWidth
-				? InkPoint{ result.position.x, result.position.y, stroke.widthEstimator.baseDiameter * 0.5f,
-					static_cast<float>(result.time.Value()) }
-				: stroke.widthEstimator.Append(result, effectiveInputSpeed);
+			InkPoint point;
+			switch (stroke.widthMode)
+			{
+			case StrokeWidthMode::Fixed:
+				point = { result.position.x, result.position.y, stroke.widthEstimator.baseDiameter * 0.5f,
+					static_cast<float>(result.time.Value()) };
+				break;
+			case StrokeWidthMode::HardwarePressure:
+				point = stroke.widthEstimator.AppendHardwarePressure(result);
+				break;
+			case StrokeWidthMode::SimulatedPressure:
+			default:
+				point = stroke.widthEstimator.Append(result, inputSpeed);
+				break;
+			}
 			if (stroke.highlighter && stroke.realPoints.empty() && stroke.hasInputStartPoint)
 			{
 				point.x = stroke.inputStartPoint.x;
@@ -745,15 +877,13 @@ namespace draw3
 	void RebuildPredictedPoints(ActiveStroke& stroke)
 	{
 		stroke.predictedPoints.clear();
-		StrokeWidthEstimator predictionWidth = stroke.widthEstimator;
-		const bool fixedWidth = stroke.widthMode == StrokeWidthMode::Fixed;
+		const float predictedRadius = !stroke.realPoints.empty()
+			? stroke.realPoints.back().r : stroke.widthEstimator.baseDiameter * 0.5f;
 		// 预测器只预测几何位置，笔宽继承最后真实输入，避免预测速度变化造成尾部回粗。
 		for (const auto& result : stroke.predictedResults)
 		{
-			InkPoint point = fixedWidth
-				? InkPoint{ result.position.x, result.position.y, stroke.widthEstimator.baseDiameter * 0.5f,
-					static_cast<float>(result.time.Value()) }
-				: predictionWidth.Append(result);
+			InkPoint point{ result.position.x, result.position.y, predictedRadius,
+				static_cast<float>(result.time.Value()) };
 			if (stroke.highlighter)
 			{
 				const InkPoint* previous = !stroke.predictedPoints.empty() ? &stroke.predictedPoints.back()

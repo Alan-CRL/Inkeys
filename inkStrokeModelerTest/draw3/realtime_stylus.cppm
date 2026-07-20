@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include <cstdint>
 #include <memory>
 #include <windows.h>
 
@@ -36,4 +37,19 @@ export namespace draw3
 	private:
 		std::unique_ptr<RealTimeStylusInputImpl> impl_;
 	};
+
+#if defined(DRAW3_TESTING)
+	enum class RtsAngleUnitForTesting : uint32_t { Unsupported, Degrees, Radians };
+	struct RtsStylusAnglesForTesting
+	{
+		float tilt = -1.0f;
+		float orientation = -1.0f;
+	};
+	float NormalizeRtsPressureForTesting(int32_t rawValue,
+		int32_t logicalMin, int32_t logicalMax) noexcept;
+	float DecodeRtsAngleForTesting(int32_t rawValue, RtsAngleUnitForTesting unit,
+		float resolution) noexcept;
+	RtsStylusAnglesForTesting DecodeRtsStylusAnglesForTesting(bool hasAzimuthAltitude,
+		float azimuth, float altitude, float xTilt, float yTilt) noexcept;
+#endif
 }

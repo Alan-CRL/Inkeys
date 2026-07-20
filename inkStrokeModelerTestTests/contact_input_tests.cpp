@@ -5,6 +5,7 @@
 #include <atomic>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cwchar>
 #include <cstdlib>
@@ -16,6 +17,8 @@
 #include <windows.h>
 
 import draw3.contact_input;
+import draw3.ink_prediction;
+import draw3.realtime_stylus;
 
 int RunHighlighterGeometryTests();
 int RunRuntimeBenchmark(const wchar_t* applicationPath, const wchar_t* reportPath);
@@ -44,11 +47,24 @@ namespace
 		QueryPerformanceCounter(&counter);
 		draw3::ContactSnapshot snapshot;
 		snapshot.position = { static_cast<float>(seed), static_cast<float>(seed * 2u) };
-		snapshot.pressure = 0.5f;
+		snapshot.pressure = static_cast<float>(seed);
+		snapshot.tilt = static_cast<float>(seed) + 0.25f;
+		snapshot.orientation = static_cast<float>(seed) + 0.5f;
 		snapshot.contactSize = { 8.0f, 8.0f };
 		snapshot.qpc = counter.QuadPart;
 		snapshot.phase = phase;
 		return snapshot;
+	}
+
+	void CheckSnapshotStylusState(const draw3::ContactSnapshot& snapshot, TestState& state)
+	{
+		TEST_CHECK(state, snapshot.tilt == snapshot.pressure + 0.25f);
+		TEST_CHECK(state, snapshot.orientation == snapshot.pressure + 0.5f);
+	}
+
+	bool NearlyEqual(float left, float right, float tolerance = 0.0001f)
+	{
+		return std::abs(left - right) <= tolerance;
 	}
 
 	std::vector<draw3::ContactHandle> DrainDowns(
@@ -61,7 +77,11 @@ namespace
 			draw3::ContactRecord* record = nullptr;
 			TEST_CHECK(state, input.TryDequeue(record));
 			TEST_CHECK(state, record != nullptr);
-			if (record) handles.push_back({ record, record->Generation() });
+			if (record)
+			{
+				CheckSnapshotStylusState(record->DownSnapshot(), state);
+				handles.push_back({ record, record->Generation() });
+			}
 		}
 		return handles;
 	}
@@ -80,6 +100,7 @@ namespace
 			draw3::ContactSnapshot observed;
 			TEST_CHECK(state, input.TryReadSnapshot(handle, observed));
 			TEST_CHECK(state, observed.phase == terminal);
+			CheckSnapshotStylusState(observed, state);
 			input.Recycle(handle);
 		}
 	}
@@ -258,6 +279,135 @@ namespace
 		TEST_CHECK(state, input.WaitForWake(generation, 50.0));
 		input.Recycle(handles.front());
 	}
+
+	void TestRtsStylusConversions(TestState& state)
+	{
+		const float pressure4095 = draw3::NormalizeRtsPressureForTesting(2048, 0, 4095);
+		const float pressure8191 = draw3::NormalizeRtsPressureForTesting(4096, 0, 8191);
+		TEST_CHECK(state, NearlyEqual(pressure4095, pressure8191));
+		TEST_CHECK(state, draw3::NormalizeRtsPressureForTesting(-10, 0, 4095) == 0.0f);
+		TEST_CHECK(state, draw3::NormalizeRtsPressureForTesting(5000, 0, 4095) == 1.0f);
+		TEST_CHECK(state, draw3::NormalizeRtsPressureForTesting(10, 20, 20) < 0.0f);
+
+		constexpr float pi = 3.14159265358979323846f;
+		const float degrees = draw3::DecodeRtsAngleForTesting(
+			9000, draw3::RtsAngleUnitForTesting::Degrees, 100.0f);
+		const float radians = draw3::DecodeRtsAngleForTesting(
+			15708, draw3::RtsAngleUnitForTesting::Radians, 10000.0f);
+		TEST_CHECK(state, NearlyEqual(degrees, pi * 0.5f));
+		TEST_CHECK(state, NearlyEqual(radians, pi * 0.5f, 0.0002f));
+		TEST_CHECK(state, draw3::DecodeRtsAngleForTesting(
+			9000, draw3::RtsAngleUnitForTesting::Unsupported, 100.0f) < 0.0f);
+		TEST_CHECK(state, draw3::DecodeRtsAngleForTesting(
+			9000, draw3::RtsAngleUnitForTesting::Degrees, 0.0f) < 0.0f);
+
+		const draw3::RtsStylusAnglesForTesting direct = draw3::DecodeRtsStylusAnglesForTesting(
+			true, pi * 0.5f, pi * 0.25f, 0.0f, 0.0f);
+		TEST_CHECK(state, NearlyEqual(direct.tilt, pi * 0.25f));
+		TEST_CHECK(state, NearlyEqual(direct.orientation, pi * 1.5f));
+		const draw3::RtsStylusAnglesForTesting xTilt = draw3::DecodeRtsStylusAnglesForTesting(
+			false, 0.0f, 0.0f, pi * 0.25f, 0.0f);
+		TEST_CHECK(state, NearlyEqual(xTilt.tilt, pi * 0.25f));
+		TEST_CHECK(state, NearlyEqual(xTilt.orientation, 0.0f));
+		const draw3::RtsStylusAnglesForTesting yTilt = draw3::DecodeRtsStylusAnglesForTesting(
+			false, 0.0f, 0.0f, 0.0f, pi * 0.25f);
+		TEST_CHECK(state, NearlyEqual(yTilt.tilt, pi * 0.25f));
+		TEST_CHECK(state, NearlyEqual(yTilt.orientation, pi * 1.5f));
+		const draw3::RtsStylusAnglesForTesting unknown = draw3::DecodeRtsStylusAnglesForTesting(
+			false, 0.0f, 0.0f, NAN, NAN);
+		TEST_CHECK(state, unknown.tilt < 0.0f);
+		TEST_CHECK(state, unknown.orientation < 0.0f);
+	}
+
+	void TestInputWidthModesAndHardwarePressure(TestState& state)
+	{
+		const draw3::InputWidthModeSettings defaults;
+		TEST_CHECK(state, defaults.mouse == draw3::InputWidthMode::SimulatedPressure);
+		TEST_CHECK(state, defaults.touch == draw3::InputWidthMode::SimulatedPressure);
+		TEST_CHECK(state, defaults.pen == draw3::PenInputWidthMode::HardwarePressure);
+		TEST_CHECK(state, draw3::ResolveStrokeWidthMode(
+			draw3::InputDeviceType::Pen, defaults, 0.5f) == draw3::StrokeWidthMode::HardwarePressure);
+		TEST_CHECK(state, draw3::ResolveStrokeWidthMode(
+			draw3::InputDeviceType::Pen, defaults, -1.0f) == draw3::StrokeWidthMode::SimulatedPressure);
+		TEST_CHECK(state, draw3::ResolveStrokeWidthMode(
+			draw3::InputDeviceType::Touch, defaults, 0.5f) == draw3::StrokeWidthMode::SimulatedPressure);
+
+		draw3::InputWidthModeSettings fixed = defaults;
+		fixed.mouse = draw3::InputWidthMode::Fixed;
+		fixed.touch = draw3::InputWidthMode::Fixed;
+		fixed.pen = draw3::PenInputWidthMode::Fixed;
+		TEST_CHECK(state, draw3::ResolveStrokeWidthMode(
+			draw3::InputDeviceType::MouseLeft, fixed, -1.0f) == draw3::StrokeWidthMode::Fixed);
+		TEST_CHECK(state, draw3::ResolveStrokeWidthMode(
+			draw3::InputDeviceType::MouseRight, fixed, -1.0f) == draw3::StrokeWidthMode::Fixed);
+		TEST_CHECK(state, draw3::ResolveStrokeWidthMode(
+			draw3::InputDeviceType::Touch, fixed, -1.0f) == draw3::StrokeWidthMode::Fixed);
+		TEST_CHECK(state, draw3::ResolveStrokeWidthMode(
+			draw3::InputDeviceType::Pen, fixed, 0.5f) == draw3::StrokeWidthMode::Fixed);
+		draw3::InputWidthModeSettings simulated = defaults;
+		simulated.pen = draw3::PenInputWidthMode::SimulatedPressure;
+		TEST_CHECK(state, draw3::ResolveStrokeWidthMode(
+			draw3::InputDeviceType::Pen, simulated, 0.5f) == draw3::StrokeWidthMode::SimulatedPressure);
+		draw3::InputWidthModeSettingsState settingsState(fixed);
+		TEST_CHECK(state, settingsState.Get() == fixed);
+		TEST_CHECK(state, !settingsState.Set({
+			static_cast<draw3::InputWidthMode>(99), draw3::InputWidthMode::Fixed,
+			draw3::PenInputWidthMode::Fixed }));
+		TEST_CHECK(state, settingsState.Get() == fixed);
+		TEST_CHECK(state, settingsState.Set(defaults));
+		TEST_CHECK(state, settingsState.Get() == defaults);
+
+		TEST_CHECK(state, NearlyEqual(draw3::HardwarePressureDiameter(5.0f, 0.0f), 1.0f));
+		TEST_CHECK(state, NearlyEqual(draw3::HardwarePressureDiameter(5.0f, 0.5f), 4.0f));
+		TEST_CHECK(state, NearlyEqual(draw3::HardwarePressureDiameter(5.0f, 1.0f), 7.0f));
+		for (const auto [pressure, expectedRadius] : {
+			std::pair{ 0.0f, 0.5f }, std::pair{ 0.5f, 2.0f }, std::pair{ 1.0f, 3.5f } })
+		{
+			draw3::ActiveStroke stroke(5.0f, 500.0f, draw3::StrokeWidthMode::HardwarePressure);
+			ink::stroke_model::Result result;
+			result.position = { 10.0f, 20.0f };
+			result.time = ink::stroke_model::Time(0.0);
+			result.pressure = pressure;
+			stroke.modeledResults.push_back(result);
+			draw3::AppendNewModeledPoints(stroke);
+			TEST_CHECK(state, stroke.realPoints.size() == 1);
+			TEST_CHECK(state, NearlyEqual(stroke.realPoints.front().r, expectedRadius));
+		}
+
+		draw3::ActiveStroke predicted(5.0f, 500.0f, draw3::StrokeWidthMode::HardwarePressure);
+		ink::stroke_model::Result realResult;
+		realResult.position = { 1.0f, 1.0f };
+		realResult.time = ink::stroke_model::Time(0.0);
+		realResult.pressure = 1.0f;
+		predicted.modeledResults.push_back(realResult);
+		draw3::AppendNewModeledPoints(predicted);
+		ink::stroke_model::Result predictionResult;
+		predictionResult.position = { 2.0f, 1.0f };
+		predictionResult.time = ink::stroke_model::Time(0.01);
+		predictionResult.pressure = 0.0f;
+		predicted.predictedResults.push_back(predictionResult);
+		draw3::RebuildPredictedPoints(predicted);
+		TEST_CHECK(state, predicted.predictedPoints.size() == 1);
+		TEST_CHECK(state, NearlyEqual(
+			predicted.predictedPoints.front().r, predicted.realPoints.back().r));
+
+		draw3::ActiveStroke missingPressure(5.0f, 500.0f, draw3::StrokeWidthMode::HardwarePressure);
+		ink::stroke_model::Result validPressure;
+		validPressure.position = { 0.0f, 0.0f };
+		validPressure.time = ink::stroke_model::Time(0.0);
+		validPressure.pressure = 0.5f;
+		missingPressure.modeledResults.push_back(validPressure);
+		draw3::AppendNewModeledPoints(missingPressure);
+		ink::stroke_model::Result unknownPressure;
+		unknownPressure.position = { 100.0f, 0.0f };
+		unknownPressure.time = ink::stroke_model::Time(0.1);
+		unknownPressure.pressure = -1.0f;
+		missingPressure.modeledResults.push_back(unknownPressure);
+		draw3::AppendNewModeledPoints(missingPressure);
+		TEST_CHECK(state, missingPressure.realPoints.size() == 2);
+		TEST_CHECK(state, NearlyEqual(
+			missingPressure.realPoints.front().r, missingPressure.realPoints.back().r));
+	}
 }
 
 void* operator new(size_t size)
@@ -302,6 +452,8 @@ int wmain(int argc, wchar_t* argv[])
 	TestPublishDownDoesNotAllocate(state);
 	TestMoveUpRaceAndShutdown(state);
 	TestWakeProtocols(state);
+	TestRtsStylusConversions(state);
+	TestInputWidthModesAndHardwarePressure(state);
 	state.failures += RunHighlighterGeometryTests();
 	if (state.failures == 0)
 	{

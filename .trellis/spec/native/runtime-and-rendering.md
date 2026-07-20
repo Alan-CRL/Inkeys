@@ -36,7 +36,7 @@
 
 | Tool | Width | Prediction | Width mode | Live layer |
 |---|---:|---|---|---|
-| Pen | 5px | active configured mode | simulated pressure | real tail + prediction + taper |
+| Pen | 5px base; hardware 1–7px | active configured mode | per-device fixed/simulated/hardware | real tail + prediction + taper |
 | Highlighter | 50px | enabled after real path reaches 12px | fixed | flat primitives, no taper |
 | Eraser | 50px | disabled | fixed | real points directly committed to L1 |
 
@@ -48,14 +48,72 @@
 
 - 输入时间使用单调递增的 logical time，来源是 wall-clock delta。
 - 小于 `0.25px` 的原始移动视为抖动。
-- 普通笔宽使用相邻有效原始鼠标点的速度，不使用 modeled/predicted velocity。
+- 普通笔 `SimulatedPressure` 使用相邻有效原始点的速度，不使用 modeled/predicted velocity。
 - RTS 路径先按真实 snapshot 的距离/QPC 计算速度并做一次低通，再交给笔宽估算器；同一批 modeled output 不得被当成多份新的速度采样。
 - 第一份有效速度只能从基准宽度渐进追随，禁止回写并瞬间改变已经可见的起笔点。当前直径时间变化上限为每秒 `3 × baseDiameter`，相邻点半径变化上限为 `0.35 × distance`。
-- 预测点通过 `StrokeWidthEstimator` 副本继承最后真实宽度。
+- 预测点直接继承最后真实宽度，不使用 predicted velocity 或 predicted pressure 改写半径。
+- 普通笔 `HardwarePressure` 使用模型插值后的 `[0,1]` pressure 映射基准直径的 `0.2–1.4` 倍；Down 压力缺失时整笔回退 `SimulatedPressure`，后续偶发缺失保持上一真实宽度。
 - 半径变化同时受时间和距离限制；L0 taper 后再次调用 `LimitRadiusTransitions`。
 - 视觉连续三帧稳定后可冻结停笔更新，移动时解除冻结。
 
 依据：`StrokeWidthEstimator::Append`、`UpdateRawPositionAndDetectMovement`、`UpdateIdleFreezeState`、`RebuildPredictedPoints`。
+
+## Scenario: RTS Stylus State And Device Width Modes
+
+### 1. Scope / Trigger
+
+修改 RTS desired packet、tablet property metadata、`ContactSnapshot` 笔状态、Stroke Modeler 输入或普通笔宽度来源时，必须应用本契约。
+
+### 2. Signatures
+
+- `ContactSnapshot::{pressure, tilt, orientation}`
+- `InputWidthMode { Fixed, SimulatedPressure }`
+- `PenInputWidthMode { Fixed, SimulatedPressure, HardwarePressure }`
+- `InputWidthModeSettingsState::Set/Get`
+- `DrawingController::SetInputWidthModeSettings/GetInputWidthModeSettings`
+- `ResolveStrokeWidthMode`、`HardwarePressureDiameter`
+
+### 3. Contracts
+
+- RTS 必须要求 X/Y；NormalPressure、X/Y Tilt、Azimuth、Altitude 是可选属性，metadata 在慢路径缓存 index 和 `PROPERTY_METRICS` 后一次发布。
+- Pen snapshot 使用模型单位：pressure `[0,1]`、tilt `[0,π/2]`、orientation `[0,2π)`；未知为 `-1`。Touch/Mouse 三项保持未知。
+- 压力按 `(raw-logicalMin)/(logicalMax-logicalMin)` 归一化，不写死硬件级数。角度优先 Azimuth/Altitude，缺失时由 X/Y Tilt 推导。
+- 三类设备设置编码在单个 32 位原子快照中；设置更新只影响之后 Down 的普通笔，活动笔画不切换。默认 Mouse/Touch 模拟、Pen 硬件。
+- 非普通笔工具始终固定宽度。Pen 硬件模式 Down 无压力时锁定回退模拟；真实直径为 `base × (0.2 + 1.2 × pressure)`。
+- pressure/tilt/orientation 即使在固定或模拟宽度模式也传入模型；坐标未移动但笔状态有效变化时不得被原始移动阈值丢弃。
+- 预测点冻结最后真实半径，再应用既有 L0 taper；不得用预测 pressure 改写尾宽。
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| 扩展 desired packet 请求失败 | 记录慢路径诊断并重试仅 X/Y |
+| 可选属性缺失、单位/分辨率无效 | 对应字段为 `-1`，输入继续工作 |
+| `logicalMax <= logicalMin` | pressure 为 `-1`，禁止除零或猜测级数 |
+| Pen Hardware Down pressure 无效 | 整笔使用 `SimulatedPressure` |
+| Hardware 笔画后续 pressure 暂时无效 | 沿用上一有效值，不中途切换模式 |
+| runtime 设置包含无效 enum | setter 返回 false，原子快照保持不变 |
+| 仅 pressure/tilt/orientation 变化 | 进入模型但不更新位置速度基准 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：MPP2.0 的 4095 logical max 与更高级数设备都归一化为同一曲线，倾角沿笔画进入模型，运行时切换只影响下一笔。
+- Base：无压感 Pen、Mouse 和 Touch 继续通过固定或模拟模式绘制。
+- Bad：把 raw pressure 当 4096 分母、在 Move 回调查询 COM，或用三个独立原子发布成组设置。
+
+### 6. Tests Required
+
+- 4095/8191 范围、越界夹取、无效范围；degrees/radians、Azimuth/Altitude、X/Y Tilt 和环绕。
+- contact Down/Move/Up/竞争/复用中的三字段一致快照。
+- Mouse/Touch/Pen 模式矩阵、无效 setter、Down 缺失回退、后续缺失保持。
+- pressure 0/0.5/1 对应 5px base 的 1/4/7px，短点击使用 Down 半径，预测半径等于最后真实半径。
+- 实体 Pen 验证轻重压、倾斜/旋转、抬笔；普通鼠标自动输入不能替代硬件结果。
+
+### 7. Wrong vs Correct
+
+Wrong：`pressure = packetValue / 4096.0f；每帧按当前设置重新选择宽度模式。`
+
+Correct：`按当前 tablet PROPERTY_METRICS 归一化；Down 时从单原子设置快照解析并锁定整笔模式。`
 
 ## Three-Layer Contract
 

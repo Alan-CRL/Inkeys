@@ -68,6 +68,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>dwmapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Platform)'=='Win32'">
@@ -105,6 +106,14 @@
     <ClCompile Include="runtime_benchmark.cpp" />
     <ClCompile Include="..\inkStrokeModelerTest\draw3\contact_input.cpp" Link="draw3\contact_input.cpp" />
     <ClCompile Include="..\inkStrokeModelerTest\draw3\contact_input.cppm" Link="draw3\contact_input.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\diagnostics.cpp" Link="draw3\diagnostics.cpp" />
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\diagnostics.cppm" Link="draw3\diagnostics.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\realtime_stylus.cpp" Link="draw3\realtime_stylus.cpp" />
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\realtime_stylus.cppm" Link="draw3\realtime_stylus.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer.cpp" Link="draw3\renderer.cpp" />

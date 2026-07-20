@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -14,6 +15,7 @@
 
 export module draw3.ink_prediction;
 
+import draw3.contact_input;
 import draw3.renderer;
 
 export namespace draw3
@@ -26,8 +28,34 @@ export namespace draw3
 	enum class DebugLayerColorMode { NormalInkColor, ColorizeLiveLayer };
 	// 选择帧率相关的建模参数组。
 	enum class StrokeTimingProfileId { Fps30, Fps60, Fps120, Fps240 };
+	// Mouse 与 Touch 可选择固定宽度或速度模拟压感。
+	enum class InputWidthMode : uint32_t { Fixed, SimulatedPressure };
+	// Pen 额外支持 RTS 硬件压力。
+	enum class PenInputWidthMode : uint32_t { Fixed, SimulatedPressure, HardwarePressure };
+
+	struct InputWidthModeSettings
+	{
+		InputWidthMode mouse = InputWidthMode::SimulatedPressure;
+		InputWidthMode touch = InputWidthMode::SimulatedPressure;
+		PenInputWidthMode pen = PenInputWidthMode::HardwarePressure;
+
+		friend bool operator==(const InputWidthModeSettings&, const InputWidthModeSettings&) = default;
+	};
+
+	// 以单个 32 位原子快照发布三类设备设置，供外部设置线程安全更新。
+	class InputWidthModeSettingsState
+	{
+	public:
+		explicit InputWidthModeSettingsState(InputWidthModeSettings settings = {}) noexcept;
+		bool Set(InputWidthModeSettings settings) noexcept;
+		InputWidthModeSettings Get() const noexcept;
+
+	private:
+		std::atomic<uint32_t> encoded_ = 0;
+	};
+
 	// 选择当前工具的宽度来源；未来笔速橡皮应增加独立策略，不复用模拟压感。
-	enum class StrokeWidthMode { SimulatedPressure, Fixed };
+	enum class StrokeWidthMode { SimulatedPressure, HardwarePressure, Fixed };
 
 	inline constexpr InkPredictionMode kActivePredictionMode = InkPredictionMode::Kalman;
 	inline constexpr LiveTipLengthMode kActiveLiveTipLengthMode = LiveTipLengthMode::Normal;
@@ -59,6 +87,7 @@ export namespace draw3
 		ink::stroke_model::KalmanPredictorParams kalmanPredictorParams;
 		ink::stroke_model::StrokeModelParams modelParams;
 		bool retainPredictionOnUp = false; // 默认由模型生成 Up 收尾；外部开关可选择保留最后可见 prediction。
+		InputWidthModeSettings inputWidthModes = {};
 	};
 
 	// 根据 DPI 和当前帧率预设创建模型配置。
@@ -66,6 +95,11 @@ export namespace draw3
 	// 将当前预测模式写入模型参数。
 	void ApplyPredictionMode(ink::stroke_model::StrokeModelParams& params,
 		const ink::stroke_model::KalmanPredictorParams& kalmanPredictorParams);
+	// 为普通笔 contact 按设备设置解析本笔固定的宽度来源。
+	StrokeWidthMode ResolveStrokeWidthMode(InputDeviceType deviceType,
+		InputWidthModeSettings settings, float downPressure) noexcept;
+	// 将归一化硬件压力线性映射为基准直径的 0.2–1.4 倍。
+	float HardwarePressureDiameter(float baseDiameter, float pressure) noexcept;
 
 	// 根据原始输入速度平滑估算墨迹半径。
 	struct StrokeWidthEstimator
@@ -86,6 +120,8 @@ export namespace draw3
 		StrokeWidthEstimator(float baseDiameterValue, float expectedSpeedValue);
 		// 追加建模结果；inputSpeed 为负时只推进几何状态并保持当前笔宽。
 		InkPoint Append(const ink::stroke_model::Result& result, float inputSpeed = -1.0f);
+		// 使用模型插值后的硬件压力追加建模结果；无效压力保持上一真实宽度。
+		InkPoint AppendHardwarePressure(const ink::stroke_model::Result& result);
 	};
 
 	// 标记当前几何切片是否包含整笔的真实起点或可见终点。

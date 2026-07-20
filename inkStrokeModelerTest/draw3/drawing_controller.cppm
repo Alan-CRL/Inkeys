@@ -25,6 +25,9 @@ export namespace draw3
 		DrawingController(ContactInputCoordinator& input, WindowController& window, InkRenderer& renderer,
 			TransparentPresentationController& presentation, StrokeModelConfiguration configuration,
 			RuntimeMetricsSession* metrics = nullptr);
+		// 成组更新设备宽度设置；新设置只影响之后开始的普通笔笔画。
+		bool SetInputWidthModeSettings(InputWidthModeSettings settings) noexcept;
+		InputWidthModeSettings GetInputWidthModeSettings() const noexcept;
 		// 清空 L0/L1/L2 和 backbuffer，并立即全量呈现。
 		void ClearCanvas();
 		// 合成并呈现完整画布。
@@ -45,6 +48,7 @@ export namespace draw3
 		InkRenderer& renderer_;
 		TransparentPresentationController& presentation_;
 		StrokeModelConfiguration configuration_;
+		InputWidthModeSettingsState inputWidthModeSettings_;
 		RuntimeMetricsSession* metrics_ = nullptr;
 		double lastPresentDurationMs_ = 0.0;
 		bool lastPresentSucceeded_ = false;

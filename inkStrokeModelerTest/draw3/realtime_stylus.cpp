@@ -4,11 +4,13 @@
 #define NOMINMAX
 #endif
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <mutex>
 #include <new>
 #include <windows.h>
@@ -27,6 +29,73 @@ namespace draw3
 	namespace
 	{
 		constexpr size_t kTabletMetadataCapacity = 32;
+		constexpr float kUnknownStylusValue = -1.0f;
+		constexpr float kPi = 3.14159265358979323846f;
+		constexpr float kHalfPi = kPi * 0.5f;
+		constexpr float kTwoPi = kPi * 2.0f;
+		constexpr float kTiltLimit = kHalfPi - 0.0001f;
+
+		struct PacketPropertyMetadata
+		{
+			PROPERTY_METRICS metrics = {};
+			ULONG index = 0;
+			bool present = false;
+		};
+
+		struct DecodedStylusAngles
+		{
+			float tilt = kUnknownStylusValue;
+			float orientation = kUnknownStylusValue;
+		};
+
+		float NormalizePressure(LONG rawValue, const PROPERTY_METRICS& metrics) noexcept
+		{
+			if (metrics.nLogicalMax <= metrics.nLogicalMin) return kUnknownStylusValue;
+			const double range = static_cast<double>(metrics.nLogicalMax) - metrics.nLogicalMin;
+			const double normalized = (static_cast<double>(rawValue) - metrics.nLogicalMin) / range;
+			return static_cast<float>(std::clamp(normalized, 0.0, 1.0));
+		}
+
+		bool DecodeAngle(LONG rawValue, const PROPERTY_METRICS& metrics, float& radians) noexcept
+		{
+			if (!std::isfinite(metrics.fResolution) || metrics.fResolution <= 0.0f) return false;
+			const LONG clampedValue = metrics.nLogicalMax > metrics.nLogicalMin
+				? std::clamp(rawValue, metrics.nLogicalMin, metrics.nLogicalMax) : rawValue;
+			const float physicalValue = static_cast<float>(clampedValue) / metrics.fResolution;
+			if (metrics.Units == PROPERTY_UNITS_DEGREES)
+				radians = physicalValue * kPi / 180.0f;
+			else if (metrics.Units == PROPERTY_UNITS_RADIANS)
+				radians = physicalValue;
+			else
+				return false;
+			return std::isfinite(radians);
+		}
+
+		float WrapOrientation(float angle) noexcept
+		{
+			angle = std::fmod(angle, kTwoPi);
+			if (angle < 0.0f) angle += kTwoPi;
+			return angle;
+		}
+
+		DecodedStylusAngles DecodeStylusAngles(bool hasAzimuthAltitude,
+			float azimuth, float altitude, float xTilt, float yTilt) noexcept
+		{
+			DecodedStylusAngles result;
+			if (hasAzimuthAltitude && std::isfinite(azimuth) && std::isfinite(altitude))
+			{
+				result.tilt = kHalfPi - std::clamp(altitude, 0.0f, kHalfPi);
+				result.orientation = WrapOrientation(kTwoPi - azimuth);
+				return result;
+			}
+			if (!std::isfinite(xTilt) || !std::isfinite(yTilt)) return result;
+			const float xProjection = std::tan(std::clamp(xTilt, -kTiltLimit, kTiltLimit));
+			const float yProjection = std::tan(std::clamp(yTilt, -kTiltLimit, kTiltLimit));
+			result.tilt = std::clamp(std::atan(std::hypot(xProjection, yProjection)), 0.0f, kHalfPi);
+			result.orientation = WrapOrientation(std::atan2(-yProjection, xProjection));
+			return result;
+		}
+
 		int64_t QueryQpc() noexcept
 		{
 			LARGE_INTEGER value = {};
@@ -41,6 +110,11 @@ namespace draw3
 			ULONG propertyCount = 0;
 			ULONG xIndex = 0;
 			ULONG yIndex = 1;
+			PacketPropertyMetadata pressure;
+			PacketPropertyMetadata xTilt;
+			PacketPropertyMetadata yTilt;
+			PacketPropertyMetadata azimuth;
+			PacketPropertyMetadata altitude;
 			float packetScaleX = 1.0f;
 			float packetScaleY = 1.0f;
 			InputDeviceType deviceType = InputDeviceType::Pen;
@@ -356,6 +430,17 @@ namespace draw3
 				ULONG yIndex = 1;
 				bool hasX = false;
 				bool hasY = false;
+				PacketPropertyMetadata pressure;
+				PacketPropertyMetadata xTilt;
+				PacketPropertyMetadata yTilt;
+				PacketPropertyMetadata azimuth;
+				PacketPropertyMetadata altitude;
+				const auto captureProperty = [&](PacketPropertyMetadata& targetMetadata, ULONG index)
+					{
+						targetMetadata.metrics = properties[index].PropertyMetrics;
+						targetMetadata.index = index;
+						targetMetadata.present = true;
+					};
 				for (ULONG index = 0; index < propertyCount; ++index)
 				{
 					if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_X))
@@ -368,6 +453,16 @@ namespace draw3
 						yIndex = index;
 						hasY = true;
 					}
+					else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE))
+						captureProperty(pressure, index);
+					else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_X_TILT_ORIENTATION))
+						captureProperty(xTilt, index);
+					else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_Y_TILT_ORIENTATION))
+						captureProperty(yTilt, index);
+					else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_AZIMUTH_ORIENTATION))
+						captureProperty(azimuth, index);
+					else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_ALTITUDE_ORIENTATION))
+						captureProperty(altitude, index);
 				}
 				CoTaskMemFree(properties);
 				if (!hasX || !hasY || inkToDeviceScaleX <= 0.0f || inkToDeviceScaleY <= 0.0f)
@@ -402,6 +497,11 @@ namespace draw3
 				target->propertyCount = propertyCount;
 				target->xIndex = xIndex;
 				target->yIndex = yIndex;
+				target->pressure = pressure;
+				target->xTilt = xTilt;
+				target->yTilt = yTilt;
+				target->azimuth = azimuth;
+				target->altitude = altitude;
 				target->packetScaleX = inkToDeviceScaleX;
 				target->packetScaleY = inkToDeviceScaleY;
 				target->deviceType = deviceType;
@@ -409,7 +509,10 @@ namespace draw3
 				std::cout << "[RTS] metadata tcid=" << contextId << " type="
 					<< static_cast<uint32_t>(deviceType) << " properties=" << propertyCount
 					<< " xyIndex=(" << xIndex << "," << yIndex << ") scale=("
-					<< inkToDeviceScaleX << "," << inkToDeviceScaleY << ")" << std::endl;
+					<< inkToDeviceScaleX << "," << inkToDeviceScaleY << ") pressure="
+					<< (pressure.present ? "yes" : "no") << " azAlt="
+					<< (azimuth.present && altitude.present ? "yes" : "no") << " xyTilt="
+					<< (xTilt.present && yTilt.present ? "yes" : "no") << std::endl;
 				return target;
 			}
 
@@ -424,7 +527,32 @@ namespace draw3
 				// 当前 tcid 只决定属性索引；像素比例统一沿用首 tablet context。
 				snapshot.position.x = static_cast<float>(packet[xIndex]) * inkToPixelScaleX_;
 				snapshot.position.y = static_cast<float>(packet[yIndex]) * inkToPixelScaleY_;
-				snapshot.pressure = -1.0f; // 本阶段保留字段，但真实硬件压感不参与绘制。
+				snapshot.pressure = kUnknownStylusValue;
+				snapshot.tilt = kUnknownStylusValue;
+				snapshot.orientation = kUnknownStylusValue;
+				if (metadata->deviceType == InputDeviceType::Pen)
+				{
+					if (metadata->pressure.present && metadata->pressure.index < propertyCount)
+						snapshot.pressure = NormalizePressure(
+							packet[metadata->pressure.index], metadata->pressure.metrics);
+
+					float azimuth = 0.0f;
+					float altitude = 0.0f;
+					const bool hasAzimuthAltitude = metadata->azimuth.present && metadata->altitude.present &&
+						metadata->azimuth.index < propertyCount && metadata->altitude.index < propertyCount &&
+						DecodeAngle(packet[metadata->azimuth.index], metadata->azimuth.metrics, azimuth) &&
+						DecodeAngle(packet[metadata->altitude.index], metadata->altitude.metrics, altitude);
+					float xTilt = 0.0f;
+					float yTilt = 0.0f;
+					const bool hasXyTilt = metadata->xTilt.present && metadata->yTilt.present &&
+						metadata->xTilt.index < propertyCount && metadata->yTilt.index < propertyCount &&
+						DecodeAngle(packet[metadata->xTilt.index], metadata->xTilt.metrics, xTilt) &&
+						DecodeAngle(packet[metadata->yTilt.index], metadata->yTilt.metrics, yTilt);
+					const DecodedStylusAngles angles = DecodeStylusAngles(hasAzimuthAltitude,
+						azimuth, altitude, hasXyTilt ? xTilt : NAN, hasXyTilt ? yTilt : NAN);
+					snapshot.tilt = angles.tilt;
+					snapshot.orientation = angles.orientation;
+				}
 				snapshot.contactSize = { -1.0f, -1.0f };
 				snapshot.qpc = QueryQpc();
 				snapshot.phase = phase;
@@ -444,6 +572,39 @@ namespace draw3
 			std::array<TabletMetadata, kTabletMetadataCapacity> metadata_ = {};
 		};
 	}
+
+#if defined(DRAW3_TESTING)
+	float NormalizeRtsPressureForTesting(int32_t rawValue,
+		int32_t logicalMin, int32_t logicalMax) noexcept
+	{
+		PROPERTY_METRICS metrics = {};
+		metrics.nLogicalMin = logicalMin;
+		metrics.nLogicalMax = logicalMax;
+		return NormalizePressure(rawValue, metrics);
+	}
+
+	float DecodeRtsAngleForTesting(int32_t rawValue, RtsAngleUnitForTesting unit,
+		float resolution) noexcept
+	{
+		PROPERTY_METRICS metrics = {};
+		metrics.nLogicalMin = (std::numeric_limits<LONG>::min)();
+		metrics.nLogicalMax = (std::numeric_limits<LONG>::max)();
+		metrics.fResolution = resolution;
+		if (unit == RtsAngleUnitForTesting::Degrees) metrics.Units = PROPERTY_UNITS_DEGREES;
+		else if (unit == RtsAngleUnitForTesting::Radians) metrics.Units = PROPERTY_UNITS_RADIANS;
+		else metrics.Units = PROPERTY_UNITS_DEFAULT;
+		float radians = kUnknownStylusValue;
+		return DecodeAngle(rawValue, metrics, radians) ? radians : kUnknownStylusValue;
+	}
+
+	RtsStylusAnglesForTesting DecodeRtsStylusAnglesForTesting(bool hasAzimuthAltitude,
+		float azimuth, float altitude, float xTilt, float yTilt) noexcept
+	{
+		const DecodedStylusAngles decoded = DecodeStylusAngles(
+			hasAzimuthAltitude, azimuth, altitude, xTilt, yTilt);
+		return { decoded.tilt, decoded.orientation };
+	}
+#endif
 
 	struct RealTimeStylusInputImpl
 	{
@@ -502,9 +663,29 @@ namespace draw3
 		if (FAILED(result)) LogHResult("Bind RealTimeStylus HWND", result);
 		if (SUCCEEDED(result)) result = impl_->stylus->SetAllTabletsMode(TRUE); // 同时接收鼠标、笔和触摸。
 		if (FAILED(result)) LogHResult("Set RealTimeStylus all-tablets mode", result);
-		const GUID desiredProperties[] = { GUID_PACKETPROPERTY_GUID_X, GUID_PACKETPROPERTY_GUID_Y };
-		if (SUCCEEDED(result)) result = impl_->stylus->SetDesiredPacketDescription(
-			static_cast<ULONG>(std::size(desiredProperties)), desiredProperties);
+		const GUID desiredProperties[] = {
+			GUID_PACKETPROPERTY_GUID_X,
+			GUID_PACKETPROPERTY_GUID_Y,
+			GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE,
+			GUID_PACKETPROPERTY_GUID_X_TILT_ORIENTATION,
+			GUID_PACKETPROPERTY_GUID_Y_TILT_ORIENTATION,
+			GUID_PACKETPROPERTY_GUID_AZIMUTH_ORIENTATION,
+			GUID_PACKETPROPERTY_GUID_ALTITUDE_ORIENTATION
+		};
+		if (SUCCEEDED(result))
+		{
+			result = impl_->stylus->SetDesiredPacketDescription(
+				static_cast<ULONG>(std::size(desiredProperties)), desiredProperties);
+			if (FAILED(result))
+			{
+				LogHResult("Set extended RealTimeStylus packet description", result);
+				const GUID requiredProperties[] = {
+					GUID_PACKETPROPERTY_GUID_X, GUID_PACKETPROPERTY_GUID_Y
+				};
+				result = impl_->stylus->SetDesiredPacketDescription(
+					static_cast<ULONG>(std::size(requiredProperties)), requiredProperties);
+			}
+		}
 		if (FAILED(result)) LogHResult("Set RealTimeStylus packet description", result);
 		if (SUCCEEDED(result))
 		{

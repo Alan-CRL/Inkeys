@@ -31,6 +31,11 @@ namespace draw3
 		constexpr float kPenDiameter = 5.0f;
 		constexpr float kWideToolDiameter = 50.0f;
 		constexpr float kRawMoveThresholdPx = 0.25f;
+		constexpr float kStylusPressureEpsilon = 0.0001f;
+		constexpr float kStylusAngleEpsilon = 0.0001f;
+		constexpr float kPi = 3.14159265358979323846f;
+		constexpr float kHalfPi = kPi * 0.5f;
+		constexpr float kTwoPi = kPi * 2.0f;
 		constexpr double kInputSpeedSmoothingSeconds = 0.060;
 		constexpr size_t kPreheatedStrokeCount = 16;
 
@@ -43,6 +48,44 @@ namespace draw3
 		{
 			return tool == DrawingTool::Pen
 				? StrokeWidthMode::SimulatedPressure : StrokeWidthMode::Fixed;
+		}
+
+		bool HasLinearStylusChange(float current, float previous, float epsilon, float maximum) noexcept
+		{
+			if (!std::isfinite(current) || current < 0.0f || current > maximum) return false;
+			return !std::isfinite(previous) || previous < 0.0f ||
+				std::abs(current - previous) > epsilon;
+		}
+
+		bool HasOrientationChange(float current, float previous) noexcept
+		{
+			if (!std::isfinite(current) || current < 0.0f || current >= kTwoPi) return false;
+			if (!std::isfinite(previous) || previous < 0.0f || previous >= kTwoPi) return true;
+			const float difference = std::abs(current - previous);
+			return std::min(difference, kTwoPi - difference) > kStylusAngleEpsilon;
+		}
+
+		bool HasStylusStateChange(const ContactSnapshot& current,
+			const ContactSnapshot& previous) noexcept
+		{
+			return HasLinearStylusChange(current.pressure, previous.pressure,
+				kStylusPressureEpsilon, 1.0f) ||
+				HasLinearStylusChange(current.tilt, previous.tilt, kStylusAngleEpsilon, kHalfPi) ||
+				HasOrientationChange(current.orientation, previous.orientation);
+		}
+
+		float KeepLastValidStylusValue(float value, float maximum, float& lastValue) noexcept
+		{
+			if (std::isfinite(value) && value >= 0.0f && value <= maximum)
+				lastValue = value;
+			return lastValue;
+		}
+
+		float KeepLastValidOrientation(float value, float& lastValue) noexcept
+		{
+			if (std::isfinite(value) && value >= 0.0f && value < kTwoPi)
+				lastValue = value;
+			return lastValue;
 		}
 
 		DirectX::XMFLOAT4 ColorForTool(DrawingTool tool)
@@ -70,10 +113,14 @@ namespace draw3
 			ContactHandle handle = {};
 			DrawingTool tool = DrawingTool::Pen;
 			ContactSnapshot lastSpeedSnapshot = {};
+			ContactSnapshot lastModelSnapshot = {};
 			uint64_t lastConsumedSequence = 0;
 			int64_t qpcOrigin = 0;
 			double lastModelInputTime = 0.0;
 			float filteredInputSpeed = 0.0f;
+			float lastPressure = -1.0f;
+			float lastTilt = -1.0f;
+			float lastOrientation = -1.0f;
 			RECT visibleDirty = {};
 			std::vector<InkPoint> rebuildPoints;
 			InputDeviceType metricDeviceType = InputDeviceType::Touch;
@@ -200,8 +247,19 @@ namespace draw3
 		TransparentPresentationController& presentation, StrokeModelConfiguration configuration,
 		RuntimeMetricsSession* metrics)
 		: input_(input), window_(window), renderer_(renderer),
-		presentation_(presentation), configuration_(std::move(configuration)), metrics_(metrics)
+		presentation_(presentation), configuration_(std::move(configuration)),
+		inputWidthModeSettings_(configuration_.inputWidthModes), metrics_(metrics)
 	{
+	}
+
+	bool DrawingController::SetInputWidthModeSettings(InputWidthModeSettings settings) noexcept
+	{
+		return inputWidthModeSettings_.Set(settings);
+	}
+
+	InputWidthModeSettings DrawingController::GetInputWidthModeSettings() const noexcept
+	{
+		return inputWidthModeSettings_.Get();
 	}
 
 	void DrawingController::CompositeLayersToBackBuffer(RECT dirty, bool orderLiveOverStable)
@@ -364,8 +422,12 @@ namespace draw3
 					batchTool == DrawingTool::Highlighter ? 0 : down.qpc;
 				const float baseDiameter = DiameterForTool(runtime->tool);
 				const bool highlighter = runtime->tool == DrawingTool::Highlighter;
+				const StrokeWidthMode widthMode = runtime->tool == DrawingTool::Pen
+					? ResolveStrokeWidthMode(handle.record->DeviceType(),
+						inputWidthModeSettings_.Get(), down.pressure)
+					: StrokeWidthMode::Fixed;
 				runtime->stroke.Reset(baseDiameter, configuration_.expectedSpeed,
-					WidthModeForTool(runtime->tool), highlighter);
+					widthMode, highlighter);
 				const auto& modelParams = runtime->tool == DrawingTool::Eraser
 					? eraserModelParams : strokeModelParams;
 				if (absl::Status status = runtime->stroke.modeler.Reset(modelParams); !status.ok())
@@ -382,19 +444,28 @@ namespace draw3
 				}
 
 				runtime->lastSpeedSnapshot = down;
+				runtime->lastModelSnapshot = down;
 				runtime->lastConsumedSequence = down.sequence;
 				runtime->qpcOrigin = down.qpc;
 				runtime->lastModelInputTime = 0.0;
 				runtime->filteredInputSpeed = 0.0f;
 				runtime->hasFilteredInputSpeed = false;
+				runtime->lastPressure = down.pressure;
+				runtime->lastTilt = down.tilt;
+				runtime->lastOrientation = down.orientation;
 				ActiveStroke& stroke = runtime->stroke;
+				const float initialDiameter = widthMode == StrokeWidthMode::HardwarePressure
+					? HardwarePressureDiameter(baseDiameter, down.pressure) : baseDiameter;
 				stroke.inputStartPoint = {
-					down.position.x, down.position.y, baseDiameter * 0.5f, 0.0f };
+					down.position.x, down.position.y, initialDiameter * 0.5f, 0.0f };
 				stroke.hasInputStartPoint = true;
 				const Input downInput{
 					.event_type = Input::EventType::kDown,
 					.position = Vec2(down.position.x, down.position.y),
-					.time = Time(0.0)
+					.time = Time(0.0),
+					.pressure = down.pressure,
+					.tilt = down.tilt,
+					.orientation = down.orientation
 				};
 				if (absl::Status status = stroke.modeler.Update(downInput, stroke.modeledResults); !status.ok())
 				{
@@ -436,13 +507,15 @@ namespace draw3
 				const float distanceSquared = deltaX * deltaX + deltaY * deltaY;
 				const bool terminal = snapshot.phase == ContactPhase::Up ||
 					snapshot.phase == ContactPhase::Cancelled;
-				if (!terminal && distanceSquared <= kRawMoveThresholdPx * kRawMoveThresholdPx)
+				const bool positionMoved = distanceSquared > kRawMoveThresholdPx * kRawMoveThresholdPx;
+				const bool stylusStateChanged = HasStylusStateChange(snapshot, runtime.lastModelSnapshot);
+				if (!terminal && !positionMoved && !stylusStateChanged)
 					return false; // Move 抖动已消费但不进入模型，也不改变下一次真实速度基准。
 
 				const double deltaSeconds = QpcDeltaSeconds(
 					snapshot.qpc, runtime.lastSpeedSnapshot.qpc, qpcFrequency);
 				float inputSpeed = -1.0f;
-				if (distanceSquared > kRawMoveThresholdPx * kRawMoveThresholdPx && deltaSeconds > 0.0)
+				if (positionMoved && deltaSeconds > 0.0)
 				{
 					const float measuredSpeed = std::sqrt(distanceSquared) / static_cast<float>(deltaSeconds);
 					if (!runtime.hasFilteredInputSpeed)
@@ -463,10 +536,19 @@ namespace draw3
 				double inputTime = QpcDeltaSeconds(snapshot.qpc, runtime.qpcOrigin, qpcFrequency);
 				inputTime = std::max(inputTime, runtime.lastModelInputTime + 0.000001);
 				runtime.lastModelInputTime = inputTime;
+				const float pressure = KeepLastValidStylusValue(snapshot.pressure, 1.0f,
+					runtime.lastPressure);
+				const float tilt = KeepLastValidStylusValue(snapshot.tilt, kHalfPi,
+					runtime.lastTilt);
+				const float orientation = KeepLastValidOrientation(
+					snapshot.orientation, runtime.lastOrientation);
 				const Input input{
 					.event_type = terminal ? Input::EventType::kUp : Input::EventType::kMove,
 					.position = Vec2(snapshot.position.x, snapshot.position.y),
-					.time = Time(inputTime)
+					.time = Time(inputTime),
+					.pressure = pressure,
+					.tilt = tilt,
+					.orientation = orientation
 				};
 				if (absl::Status status = runtime.stroke.modeler.Update(
 					input, runtime.stroke.modeledResults); !status.ok())
@@ -475,7 +557,7 @@ namespace draw3
 					if (terminal)
 					{
 						const float radius = runtime.stroke.realPoints.empty()
-							? DiameterForTool(runtime.tool) * 0.5f : runtime.stroke.realPoints.back().r;
+							? runtime.stroke.inputStartPoint.r : runtime.stroke.realPoints.back().r;
 						const InkPoint finalPoint{ snapshot.position.x, snapshot.position.y,
 							radius, static_cast<float>(inputTime) };
 						if (runtime.stroke.realPoints.empty())
@@ -497,8 +579,9 @@ namespace draw3
 					runtime.metricEligibleQpc == 0 &&
 					runtime.stroke.startDirectionState.locked)
 					runtime.metricEligibleQpc = snapshot.qpc; // 高亮从真实 12px 首次具备可见资格时开始计时。
-				runtime.lastSpeedSnapshot = snapshot;
-				if (distanceSquared > kRawMoveThresholdPx * kRawMoveThresholdPx)
+				runtime.lastModelSnapshot = snapshot;
+				if (positionMoved) runtime.lastSpeedSnapshot = snapshot;
+				if (positionMoved || stylusStateChanged)
 				{
 					runtime.stroke.idleFrozen = false;
 					runtime.stroke.visualStableFrameCount = 0;
@@ -512,7 +595,7 @@ namespace draw3
 						!runtime.cancelled && runtime.metricEligibleQpc == 0)
 						runtime.metricEligibleQpc = snapshot.qpc; // 不足 12px 的 short mark 以 Up 为软件延迟起点。
 				}
-				return distanceSquared > kRawMoveThresholdPx * kRawMoveThresholdPx;
+				return positionMoved || stylusStateChanged;
 			};
 
 		bool clearPending = false;

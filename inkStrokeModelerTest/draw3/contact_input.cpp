@@ -160,6 +160,8 @@ namespace draw3
 			record.x_.Store(snapshot.position.x);
 			record.y_.Store(snapshot.position.y);
 			record.pressure_.Store(snapshot.pressure);
+			record.tilt_.Store(snapshot.tilt);
+			record.orientation_.Store(snapshot.orientation);
 			record.width_.Store(snapshot.contactSize.width);
 			record.height_.Store(snapshot.contactSize.height);
 			record.qpc_.Store(snapshot.qpc);
@@ -203,6 +205,8 @@ namespace draw3
 			record.x_.Store(snapshot.position.x);
 			record.y_.Store(snapshot.position.y);
 			record.pressure_.Store(snapshot.pressure);
+			record.tilt_.Store(snapshot.tilt);
+			record.orientation_.Store(snapshot.orientation);
 			record.width_.Store(snapshot.contactSize.width);
 			record.height_.Store(snapshot.contactSize.height);
 			record.qpc_.Store(snapshot.qpc);
@@ -225,6 +229,8 @@ namespace draw3
 				candidate.position.x = record.x_.Load();
 				candidate.position.y = record.y_.Load();
 				candidate.pressure = record.pressure_.Load();
+				candidate.tilt = record.tilt_.Load();
+				candidate.orientation = record.orientation_.Load();
 				candidate.contactSize.width = record.width_.Load();
 				candidate.contactSize.height = record.height_.Load();
 				candidate.qpc = record.qpc_.Load();
