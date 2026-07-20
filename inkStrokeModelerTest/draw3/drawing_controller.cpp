@@ -111,7 +111,9 @@ namespace draw3
 
 			ActiveStroke stroke;
 			ContactHandle handle = {};
+			DrawingTool selectedTool = DrawingTool::Pen;
 			DrawingTool tool = DrawingTool::Pen;
+			bool suppressPressure = false;
 			ContactSnapshot lastSpeedSnapshot = {};
 			ContactSnapshot lastModelSnapshot = {};
 			uint64_t lastConsumedSequence = 0;
@@ -248,7 +250,8 @@ namespace draw3
 		RuntimeMetricsSession* metrics)
 		: input_(input), window_(window), renderer_(renderer),
 		presentation_(presentation), configuration_(std::move(configuration)),
-		inputWidthModeSettings_(configuration_.inputWidthModes), metrics_(metrics)
+		inputWidthModeSettings_(configuration_.inputWidthModes),
+		invertedPenEraserEnabled_(configuration_.invertedPenEraserEnabled), metrics_(metrics)
 	{
 	}
 
@@ -260,6 +263,16 @@ namespace draw3
 	InputWidthModeSettings DrawingController::GetInputWidthModeSettings() const noexcept
 	{
 		return inputWidthModeSettings_.Get();
+	}
+
+	void DrawingController::SetInvertedPenEraserEnabled(bool enabled) noexcept
+	{
+		invertedPenEraserEnabled_.store(enabled, std::memory_order_release);
+	}
+
+	bool DrawingController::GetInvertedPenEraserEnabled() const noexcept
+	{
+		return invertedPenEraserEnabled_.load(std::memory_order_acquire);
 	}
 
 	void DrawingController::CompositeLayersToBackBuffer(RECT dirty, bool orderLiveOverStable)
@@ -386,6 +399,7 @@ namespace draw3
 			{
 				if (!handle.record || handle.record->Generation() != handle.generation) return false;
 				const ContactSnapshot down = handle.record->DownSnapshot();
+				const InputDeviceType deviceType = handle.record->DeviceType();
 				DrawingTool batchTool = window_.ActiveTool();
 				for (RuntimeStroke* activeRuntime : active)
 				{
@@ -396,7 +410,7 @@ namespace draw3
 							activeSnapshot.phase == ContactPhase::Cancelled);
 					if (!terminal)
 					{
-						batchTool = activeRuntime->tool;
+						batchTool = activeRuntime->selectedTool;
 						break; // 仍有真实落笔时，新 contact 必须沿用当前批次工具。
 					}
 				}
@@ -411,20 +425,29 @@ namespace draw3
 					return false;
 				}
 				runtime->handle = handle;
-				runtime->tool = batchTool; // 全部旧 contact 已终止时，当前 Down 才开始读取新工具。
+				runtime->selectedTool = batchTool; // 倒转覆盖不能污染同批后续 contact 的原始选择。
+				const bool selectedToolSupportsOverride =
+					batchTool == DrawingTool::Pen || batchTool == DrawingTool::Highlighter;
+				const bool invertedEraser = ShouldUseInvertedPenEraser(deviceType,
+					down.isInvertedCursor, invertedPenEraserEnabled_.load(std::memory_order_acquire),
+					selectedToolSupportsOverride);
+				runtime->tool = invertedEraser ? DrawingTool::Eraser : batchTool;
+				runtime->suppressPressure = deviceType == InputDeviceType::Pen && down.isInvertedCursor;
 				runtime->ended = false;
 				runtime->cancelled = false;
 				runtime->metricVisible = false;
 				runtime->movedThisFrame = false;
 				runtime->visibleDirty = {};
-				runtime->metricDeviceType = handle.record->DeviceType();
+				runtime->metricDeviceType = deviceType;
 				runtime->metricEligibleQpc =
-					batchTool == DrawingTool::Highlighter ? 0 : down.qpc;
+					runtime->tool == DrawingTool::Highlighter ? 0 : down.qpc;
+				const float downPressure = ResolveStylusPressureForModel(
+					deviceType, down.isInvertedCursor, down.pressure);
 				const float baseDiameter = DiameterForTool(runtime->tool);
 				const bool highlighter = runtime->tool == DrawingTool::Highlighter;
 				const StrokeWidthMode widthMode = runtime->tool == DrawingTool::Pen
-					? ResolveStrokeWidthMode(handle.record->DeviceType(),
-						inputWidthModeSettings_.Get(), down.pressure)
+					? ResolveStrokeWidthMode(deviceType,
+						inputWidthModeSettings_.Get(), downPressure)
 					: StrokeWidthMode::Fixed;
 				runtime->stroke.Reset(baseDiameter, configuration_.expectedSpeed,
 					widthMode, highlighter);
@@ -443,19 +466,21 @@ namespace draw3
 					return false;
 				}
 
+				ContactSnapshot modelDown = down;
+				modelDown.pressure = downPressure;
 				runtime->lastSpeedSnapshot = down;
-				runtime->lastModelSnapshot = down;
+				runtime->lastModelSnapshot = modelDown;
 				runtime->lastConsumedSequence = down.sequence;
 				runtime->qpcOrigin = down.qpc;
 				runtime->lastModelInputTime = 0.0;
 				runtime->filteredInputSpeed = 0.0f;
 				runtime->hasFilteredInputSpeed = false;
-				runtime->lastPressure = down.pressure;
+				runtime->lastPressure = downPressure;
 				runtime->lastTilt = down.tilt;
 				runtime->lastOrientation = down.orientation;
 				ActiveStroke& stroke = runtime->stroke;
 				const float initialDiameter = widthMode == StrokeWidthMode::HardwarePressure
-					? HardwarePressureDiameter(baseDiameter, down.pressure) : baseDiameter;
+					? HardwarePressureDiameter(baseDiameter, downPressure) : baseDiameter;
 				stroke.inputStartPoint = {
 					down.position.x, down.position.y, initialDiameter * 0.5f, 0.0f };
 				stroke.hasInputStartPoint = true;
@@ -463,7 +488,7 @@ namespace draw3
 					.event_type = Input::EventType::kDown,
 					.position = Vec2(down.position.x, down.position.y),
 					.time = Time(0.0),
-					.pressure = down.pressure,
+					.pressure = downPressure,
 					.tilt = down.tilt,
 					.orientation = down.orientation
 				};
@@ -501,6 +526,8 @@ namespace draw3
 					snapshot.sequence == runtime.lastConsumedSequence) return false;
 				runtime.lastConsumedSequence = snapshot.sequence;
 				if (snapshot.phase == ContactPhase::Down) return false;
+				ContactSnapshot modelSnapshot = snapshot;
+				if (runtime.suppressPressure) modelSnapshot.pressure = -1.0f;
 
 				const float deltaX = snapshot.position.x - runtime.lastSpeedSnapshot.position.x;
 				const float deltaY = snapshot.position.y - runtime.lastSpeedSnapshot.position.y;
@@ -508,7 +535,7 @@ namespace draw3
 				const bool terminal = snapshot.phase == ContactPhase::Up ||
 					snapshot.phase == ContactPhase::Cancelled;
 				const bool positionMoved = distanceSquared > kRawMoveThresholdPx * kRawMoveThresholdPx;
-				const bool stylusStateChanged = HasStylusStateChange(snapshot, runtime.lastModelSnapshot);
+				const bool stylusStateChanged = HasStylusStateChange(modelSnapshot, runtime.lastModelSnapshot);
 				if (!terminal && !positionMoved && !stylusStateChanged)
 					return false; // Move 抖动已消费但不进入模型，也不改变下一次真实速度基准。
 
@@ -536,12 +563,12 @@ namespace draw3
 				double inputTime = QpcDeltaSeconds(snapshot.qpc, runtime.qpcOrigin, qpcFrequency);
 				inputTime = std::max(inputTime, runtime.lastModelInputTime + 0.000001);
 				runtime.lastModelInputTime = inputTime;
-				const float pressure = KeepLastValidStylusValue(snapshot.pressure, 1.0f,
+				const float pressure = KeepLastValidStylusValue(modelSnapshot.pressure, 1.0f,
 					runtime.lastPressure);
-				const float tilt = KeepLastValidStylusValue(snapshot.tilt, kHalfPi,
+				const float tilt = KeepLastValidStylusValue(modelSnapshot.tilt, kHalfPi,
 					runtime.lastTilt);
 				const float orientation = KeepLastValidOrientation(
-					snapshot.orientation, runtime.lastOrientation);
+					modelSnapshot.orientation, runtime.lastOrientation);
 				const Input input{
 					.event_type = terminal ? Input::EventType::kUp : Input::EventType::kMove,
 					.position = Vec2(snapshot.position.x, snapshot.position.y),
@@ -579,7 +606,7 @@ namespace draw3
 					runtime.metricEligibleQpc == 0 &&
 					runtime.stroke.startDirectionState.locked)
 					runtime.metricEligibleQpc = snapshot.qpc; // 高亮从真实 12px 首次具备可见资格时开始计时。
-				runtime.lastModelSnapshot = snapshot;
+				runtime.lastModelSnapshot = modelSnapshot;
 				if (positionMoved) runtime.lastSpeedSnapshot = snapshot;
 				if (positionMoved || stylusStateChanged)
 				{
@@ -787,7 +814,9 @@ namespace draw3
 						input_.Recycle(runtime->handle); // L2 提交与活动层重建完成后才归还 slot。
 						runtime->stroke.Reset(kPenDiameter, configuration_.expectedSpeed);
 						runtime->handle = {};
+						runtime->selectedTool = DrawingTool::Pen;
 						runtime->tool = DrawingTool::Pen;
+						runtime->suppressPressure = false;
 						runtime->visibleDirty = {};
 						runtime->ended = false;
 						runtime->cancelled = false;

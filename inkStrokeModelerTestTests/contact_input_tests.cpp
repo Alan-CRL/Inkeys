@@ -50,6 +50,7 @@ namespace
 		snapshot.pressure = static_cast<float>(seed);
 		snapshot.tilt = static_cast<float>(seed) + 0.25f;
 		snapshot.orientation = static_cast<float>(seed) + 0.5f;
+		snapshot.isInvertedCursor = (seed & 1u) != 0;
 		snapshot.contactSize = { 8.0f, 8.0f };
 		snapshot.qpc = counter.QuadPart;
 		snapshot.phase = phase;
@@ -60,6 +61,8 @@ namespace
 	{
 		TEST_CHECK(state, snapshot.tilt == snapshot.pressure + 0.25f);
 		TEST_CHECK(state, snapshot.orientation == snapshot.pressure + 0.5f);
+		TEST_CHECK(state, snapshot.isInvertedCursor ==
+			((static_cast<uint32_t>(snapshot.pressure) & 1u) != 0));
 	}
 
 	bool NearlyEqual(float left, float right, float tolerance = 0.0001f)
@@ -408,6 +411,35 @@ namespace
 		TEST_CHECK(state, NearlyEqual(
 			missingPressure.realPoints.front().r, missingPressure.realPoints.back().r));
 	}
+
+	void TestInvertedPenPolicy(TestState& state)
+	{
+		draw3::StrokeModelConfiguration configuration;
+		TEST_CHECK(state, configuration.invertedPenEraserEnabled);
+		TEST_CHECK(state, draw3::ShouldUseInvertedPenEraser(
+			draw3::InputDeviceType::Pen, true, true, true));
+		TEST_CHECK(state, !draw3::ShouldUseInvertedPenEraser(
+			draw3::InputDeviceType::Pen, true, false, true));
+		TEST_CHECK(state, !draw3::ShouldUseInvertedPenEraser(
+			draw3::InputDeviceType::Pen, false, true, true));
+		TEST_CHECK(state, !draw3::ShouldUseInvertedPenEraser(
+			draw3::InputDeviceType::Pen, true, true, false));
+		TEST_CHECK(state, !draw3::ShouldUseInvertedPenEraser(
+			draw3::InputDeviceType::Touch, true, true, true));
+		TEST_CHECK(state, !draw3::ShouldUseInvertedPenEraser(
+			draw3::InputDeviceType::MouseLeft, true, true, true));
+
+		const float suppressedPressure = draw3::ResolveStylusPressureForModel(
+			draw3::InputDeviceType::Pen, true, 0.75f);
+		TEST_CHECK(state, suppressedPressure == -1.0f);
+		TEST_CHECK(state, draw3::ResolveStylusPressureForModel(
+			draw3::InputDeviceType::Pen, false, 0.75f) == 0.75f);
+		TEST_CHECK(state, draw3::ResolveStylusPressureForModel(
+			draw3::InputDeviceType::Touch, true, 0.75f) == 0.75f);
+		TEST_CHECK(state, draw3::ResolveStrokeWidthMode(draw3::InputDeviceType::Pen,
+			configuration.inputWidthModes, suppressedPressure) ==
+			draw3::StrokeWidthMode::SimulatedPressure);
+	}
 }
 
 void* operator new(size_t size)
@@ -454,6 +486,7 @@ int wmain(int argc, wchar_t* argv[])
 	TestWakeProtocols(state);
 	TestRtsStylusConversions(state);
 	TestInputWidthModesAndHardwarePressure(state);
+	TestInvertedPenPolicy(state);
 	state.failures += RunHighlighterGeometryTests();
 	if (state.failures == 0)
 	{

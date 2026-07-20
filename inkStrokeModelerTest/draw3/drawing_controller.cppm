@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include <atomic>
 #include <compare>
 #include <windows.h>
 
@@ -28,6 +29,9 @@ export namespace draw3
 		// 成组更新设备宽度设置；新设置只影响之后开始的普通笔笔画。
 		bool SetInputWidthModeSettings(InputWidthModeSettings settings) noexcept;
 		InputWidthModeSettings GetInputWidthModeSettings() const noexcept;
+		// 控制倒转 Pen 是否在画笔/荧光笔下临时作为橡皮；只影响之后开始的笔画。
+		void SetInvertedPenEraserEnabled(bool enabled) noexcept;
+		bool GetInvertedPenEraserEnabled() const noexcept;
 		// 清空 L0/L1/L2 和 backbuffer，并立即全量呈现。
 		void ClearCanvas();
 		// 合成并呈现完整画布。
@@ -49,6 +53,7 @@ export namespace draw3
 		TransparentPresentationController& presentation_;
 		StrokeModelConfiguration configuration_;
 		InputWidthModeSettingsState inputWidthModeSettings_;
+		std::atomic<bool> invertedPenEraserEnabled_ = true;
 		RuntimeMetricsSession* metrics_ = nullptr;
 		double lastPresentDurationMs_ = 0.0;
 		bool lastPresentSucceeded_ = false;

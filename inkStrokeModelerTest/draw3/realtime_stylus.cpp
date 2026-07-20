@@ -234,6 +234,8 @@ namespace draw3
 						<< " metadata=" << (metadata ? "yes" : "no") << std::endl;
 					return S_OK;
 				}
+				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
+					stylusInfo->bIsInvertedCursor != FALSE;
 				InputDeviceType deviceType = metadata ? metadata->deviceType : InputDeviceType::Pen;
 				if (deviceType == InputDeviceType::MouseLeft)
 				{
@@ -269,6 +271,8 @@ namespace draw3
 						<< " cid=" << stylusInfo->cid << " properties=" << propertyCount << std::endl;
 					return S_OK;
 				}
+				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
+					stylusInfo->bIsInvertedCursor != FALSE;
 				const bool published = coordinator_.PublishUp(stylusInfo->tcid, stylusInfo->cid, snapshot);
 #if defined(_DEBUG)
 				std::cout << "[RTS] up tcid=" << stylusInfo->tcid << " cid=" << stylusInfo->cid
@@ -314,6 +318,8 @@ namespace draw3
 					}
 					return S_OK;
 				}
+				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
+					stylusInfo->bIsInvertedCursor != FALSE;
 				const bool published = coordinator_.PublishMove(stylusInfo->tcid, stylusInfo->cid, snapshot);
 #if defined(_DEBUG)
 				const uint32_t diagnosticIndex = moveDiagnosticCount_.fetch_add(1, std::memory_order_relaxed);

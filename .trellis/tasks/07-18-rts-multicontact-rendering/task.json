@@ -22,7 +22,8 @@
     "07-19-rts-contact-pool-lock-free",
     "07-19-draw3-runtime-validation",
     "07-19-highlighter-start-cap-stability",
-    "07-20-rts-pen-pressure-stylus-state"
+    "07-20-rts-pen-pressure-stylus-state",
+    "07-20-rts-inverted-pen-eraser"
   ],
   "parent": null,
   "relatedFiles": [],

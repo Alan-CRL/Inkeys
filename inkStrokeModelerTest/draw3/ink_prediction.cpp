@@ -496,6 +496,19 @@ namespace draw3
 		}
 	}
 
+	bool ShouldUseInvertedPenEraser(InputDeviceType deviceType,
+		bool isInvertedCursor, bool enabled, bool selectedToolSupportsOverride) noexcept
+	{
+		return enabled && selectedToolSupportsOverride &&
+			deviceType == InputDeviceType::Pen && isInvertedCursor;
+	}
+
+	float ResolveStylusPressureForModel(InputDeviceType deviceType,
+		bool isInvertedCursor, float pressure) noexcept
+	{
+		return deviceType == InputDeviceType::Pen && isInvertedCursor ? -1.0f : pressure;
+	}
+
 	float HardwarePressureDiameter(float baseDiameter, float pressure) noexcept
 	{
 		if (!std::isfinite(baseDiameter) || baseDiameter <= 0.0f) return 0.0f;

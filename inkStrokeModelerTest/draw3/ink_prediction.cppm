@@ -87,6 +87,7 @@ export namespace draw3
 		ink::stroke_model::KalmanPredictorParams kalmanPredictorParams;
 		ink::stroke_model::StrokeModelParams modelParams;
 		bool retainPredictionOnUp = false; // 默认由模型生成 Up 收尾；外部开关可选择保留最后可见 prediction。
+		bool invertedPenEraserEnabled = true; // 默认允许倒转 Pen 在画笔/荧光笔下临时覆盖为橡皮。
 		InputWidthModeSettings inputWidthModes = {};
 	};
 
@@ -98,6 +99,12 @@ export namespace draw3
 	// 为普通笔 contact 按设备设置解析本笔固定的宽度来源。
 	StrokeWidthMode ResolveStrokeWidthMode(InputDeviceType deviceType,
 		InputWidthModeSettings settings, float downPressure) noexcept;
+	// 判断倒转 Pen 是否请求把当前可绘制工具覆盖为橡皮。
+	bool ShouldUseInvertedPenEraser(InputDeviceType deviceType,
+		bool isInvertedCursor, bool enabled, bool selectedToolSupportsOverride) noexcept;
+	// 倒转 Pen 的压力不稳定，进入模型前统一标记为未知。
+	float ResolveStylusPressureForModel(InputDeviceType deviceType,
+		bool isInvertedCursor, float pressure) noexcept;
 	// 将归一化硬件压力线性映射为基准直径的 0.2–1.4 倍。
 	float HardwarePressureDiameter(float baseDiameter, float pressure) noexcept;
 

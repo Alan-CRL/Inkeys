@@ -57,6 +57,7 @@ export namespace draw3
 		float pressure = -1.0f;
 		float tilt = -1.0f;
 		float orientation = -1.0f;
+		bool isInvertedCursor = false;
 		SizeF contactSize = {};
 		int64_t qpc = 0;
 		ContactPhase phase = ContactPhase::Down;
@@ -124,6 +125,7 @@ export namespace draw3
 		IdtAtomic<float> pressure_;
 		IdtAtomic<float> tilt_;
 		IdtAtomic<float> orientation_;
+		IdtAtomic<uint32_t> isInvertedCursor_;
 		IdtAtomic<float> width_;
 		IdtAtomic<float> height_;
 		IdtAtomic<int64_t> qpc_;

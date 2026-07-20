@@ -115,6 +115,68 @@ Wrong：`pressure = packetValue / 4096.0f；每帧按当前设置重新选择宽
 
 Correct：`按当前 tablet PROPERTY_METRICS 归一化；Down 时从单原子设置快照解析并锁定整笔模式。`
 
+## Scenario: RTS Inverted Pen Eraser
+
+### 1. Scope / Trigger
+
+修改 RTS `StylusInfo`、`ContactSnapshot` 倒转状态、笔尾橡皮开关、contact 工具覆盖或倒转 Pen 模型输入时，必须应用本契约。
+
+### 2. Signatures
+
+- `ContactSnapshot::isInvertedCursor`
+- `StrokeModelConfiguration::invertedPenEraserEnabled`
+- `DrawingController::SetInvertedPenEraserEnabled/GetInvertedPenEraserEnabled`
+- `ShouldUseInvertedPenEraser`
+- `ResolveStylusPressureForModel`
+
+### 3. Contracts
+
+- RTS Down、Move、Up 从 `StylusInfo::bIsInvertedCursor` 发布倒转状态；只有 `InputDeviceType::Pen` 可置为 `true`，且该字段属于 contact seqlock 一致快照。
+- 开关默认开启并由单原子 Set/Get 更新；绘制线程只在 Down 读取，活动 contact 不切换语义。
+- 开关开启时，倒转 Pen 只覆盖当前选择为 Pen/Highlighter 的 contact 为 Eraser；已选 Eraser、Mouse、Touch 不受影响。
+- 每个 runtime 必须分别保存批次 `selectedTool` 和 contact 有效 `tool`。同批后续 contact 继承前者，禁止从倒转覆盖后的 Eraser 继承。
+- 倒转 Pen 无论开关状态都锁定屏蔽 pressure；Down、Move、Up 模型输入为 `-1`，倾角和方位角继续传输。开关关闭后普通笔 HardwarePressure 因 Down 压力未知回退 SimulatedPressure。
+- 倒转橡皮复用现有 50px 固定宽度、禁用 prediction、真实点直接提交 L1 的路径；不得提前引入压感橡皮语义。
+
+```cpp
+const bool supportsOverride = selectedTool == DrawingTool::Pen ||
+    selectedTool == DrawingTool::Highlighter;
+effectiveTool = ShouldUseInvertedPenEraser(deviceType, inverted, enabled, supportsOverride)
+    ? DrawingTool::Eraser : selectedTool;
+modelPressure = ResolveStylusPressureForModel(deviceType, inverted, rawPressure);
+```
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Pen + inverted + enabled + Pen/Highlighter | 当前 contact 锁定 Eraser，pressure 为 `-1` |
+| Pen + inverted + disabled | 保持选择工具，pressure 仍为 `-1` |
+| Pen + inverted + selected Eraser | 保持 Eraser，不产生第二种工具语义 |
+| Pen + non-inverted | 保持选择工具和原压力链 |
+| Touch/Mouse 即使标志异常为 true | 不触发倒转橡皮或压力屏蔽 |
+| Move/Up 标志相对 Down 变化 | 保持 Down 锁定的工具与压力策略 |
+| 倒转 contact 后同批正常 contact Down | 继承原 `selectedTool`，不得继承有效 Eraser |
+
+### 5. Good / Base / Bad Cases
+
+- Good：MPP2.0 翻转后直接使用现有橡皮路径，关闭开关后笔尾可用模拟压感书写，同批正常 contact 仍按原工具绘制。
+- Base：不支持倒转标志的 Pen、Mouse 和 Touch 保持既有行为。
+- Bad：把倒转后的 `tool` 当作批次选择继续传播，或仅在 Down 屏蔽压力而在 Move/Up 恢复硬件压力。
+
+### 6. Tests Required
+
+- 倒转字段在 Down、Move、Up、竞争读取和 slot 复用中的一致性。
+- device/inverted/enabled/tool-eligibility 策略矩阵；倒转 pressure 为 `-1`，HardwarePressure 回退 SimulatedPressure。
+- ARM64 `Debug|ARM64` 完整解决方案构建与控制台测试。
+- MPP2.0 真机覆盖 Pen/Highlighter 翻转擦除、开关关闭后的笔尾书写、抬笔和恢复正常笔尖。
+
+### 7. Wrong vs Correct
+
+Wrong：`runtime.tool = Eraser; nextBatchTool = runtime.tool; model.pressure = snapshot.pressure;`
+
+Correct：`runtime.selectedTool` 保留批次选择，`runtime.tool` 只保存当前 contact 覆盖；倒转 Pen 整笔向模型传 `pressure=-1`。
+
 ## Three-Layer Contract
 
 - `L2`：已完成笔画的最终 premultiplied RGBA 画布，背景真透明。
