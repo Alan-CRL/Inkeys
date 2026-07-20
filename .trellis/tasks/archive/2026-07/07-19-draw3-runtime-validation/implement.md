@@ -32,8 +32,16 @@
 
 - [x] ARM64 Debug/Release 全解决方案 Rebuild 并运行测试。
 - [x] x64/x86 Release 构建并运行可执行的测试，验证指针宽度和 lock-free 断言。
-- [ ] 记录 Pen 100 次、Touch 100 次及完整多指/书写稳定性矩阵。
+- [x] 记录 Pen 100 次、Touch 100 次及完整多指/书写稳定性矩阵。
 - [x] 如实记录 D3D11 Debug Layer、Windows 7 或硬件限制导致的未验证项。
+
+### 2026-07-20 ARM64 真机摘要
+
+- 环境：Windows 11 ARM64，Qualcomm Adreno X1-85，D3D feature level 11_1，`UlwDirtyRect`，RTS `maxTouches=10`。
+- Pen 隔离基线：157 Down/terminal/recycle，0 rejected/contended，landing p99 3.5352ms，frame p99 8.6592ms，long-frame ratio 0，idle frame/present growth 0。
+- Touch 场景轮：120 Down/terminal/recycle，覆盖多指、resize、clear；0 rejected/contended，landing p99 11.5426ms，其中 4 个样本超过 8.33ms，frame p99 8.8682ms，long-frame ratio 0。
+- Touch 隔离基线：103 Down/terminal/recycle，0 rejected/contended，landing p99 2.4555ms，超过 8.33ms 的样本为 0，frame p99 8.5140ms，long-frame ratio 0。
+- 原始报告：忽略目录 `TestResults/pen-100-retry.json`、`touch-100.json`、`touch-100-retry.json`；通用 strict gate 要求 200 landing，因此 100 次真机矩阵不以 `strictPass` 字段判定。
 
 ## 6. 质量门
 

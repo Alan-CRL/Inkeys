@@ -48,7 +48,7 @@
 - [x] 自动化并发、几何和鼠标基准均可从测试工程运行。
 - [x] 连续三次 Release 自动鼠标基准满足严格门槛。
 - [x] ARM64 Debug/Release、x64/x86 Release 全解决方案构建及相应测试通过。
-- [ ] Pen/Touch 真机矩阵记录设备环境、样本数、分位数和场景结果。
+- [x] Pen/Touch 真机矩阵记录设备环境、样本数、分位数和场景结果。
 - [x] 未安装的 D3D11 Debug Layer 与未执行的 Windows 7 验证不被伪报通过。
 
 ## Out of Scope
