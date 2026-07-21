@@ -39,7 +39,7 @@
 
 ## 6. 质量门
 
-- [ ] 使用 ARM64 MSBuild 对完整解决方案执行 Release Rebuild，超时不少于10分钟：
+- [x] 使用 ARM64 MSBuild 对完整解决方案执行 Release Rebuild，超时不少于10分钟；2026-07-20 完整 Rebuild 和 Release 控制台测试通过：
 
   ```powershell
   & 'C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\arm64\MSBuild.exe' `

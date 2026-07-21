@@ -26,3 +26,8 @@ project_doc_fallback_filenames = ["AGENTS.md"]
 # aborts the entire config load and blocks Codex from starting. Codex's own
 # default for multi_agent_v2 is used instead; tune it in your user-level
 # config if needed.
+
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = true

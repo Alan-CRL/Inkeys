@@ -43,7 +43,7 @@
 
 ## Acceptance Criteria
 
-- [ ] `Release|ARM64` 使用 ARM64 MSBuild 对完整解决方案 Rebuild 成功，C++ modules、两个 Shader 和资源嵌入链均通过。
+- [x] `Release|ARM64` 使用 ARM64 MSBuild 对完整解决方案 Rebuild 成功，C++ modules、两个 Shader 和资源嵌入链均通过。
 - [ ] RTS 鼠标、单指及多指可以同时使用空闲时选定的 1/2/3 工具绘制。
 - [ ] Down 后立即 Up、快速点击、最后位置变化后立即 Up 均保留最终点和 Up。
 - [ ] `retainPredictionOnUp=false` 时抬笔由模型平滑完成真实笔锋且不保留 prediction；设为 `true` 时最后可见 L0 原样进入 L1。
