@@ -516,6 +516,277 @@ namespace draw3
 		return baseDiameter * (0.2f + 1.2f * std::clamp(pressure, 0.0f, 1.0f));
 	}
 
+	bool TryGetInterruptedStrokeTailDirection(const std::vector<InkPoint>& realPoints,
+		float dpiScale, DirectX::XMFLOAT2& direction) noexcept
+	{
+		direction = {};
+		if (realPoints.size() < 2) return false;
+		const float safeScale = std::max(dpiScale, 0.1f);
+		const float lookbackDistance =
+			kInterruptedStrokeReconnectDirectionLookbackPx * safeScale;
+		const float minimumDistance =
+			kInterruptedStrokeReconnectMinimumDirectionPx * safeScale;
+		const InkPoint& end = realPoints.back();
+		float startX = end.x;
+		float startY = end.y;
+		float remaining = lookbackDistance;
+		for (size_t index = realPoints.size() - 1; index > 0 && remaining > 0.0f; --index)
+		{
+			const InkPoint& current = realPoints[index];
+			const InkPoint& previous = realPoints[index - 1];
+			const float deltaX = current.x - previous.x;
+			const float deltaY = current.y - previous.y;
+			const float segmentLength = std::sqrt(deltaX * deltaX + deltaY * deltaY);
+			if (segmentLength <= 0.0001f) continue;
+			if (segmentLength >= remaining)
+			{
+				const float ratio = remaining / segmentLength;
+				startX = current.x - deltaX * ratio;
+				startY = current.y - deltaY * ratio;
+				remaining = 0.0f;
+			}
+			else
+			{
+				startX = previous.x;
+				startY = previous.y;
+				remaining -= segmentLength;
+			}
+		}
+		const float chordX = end.x - startX;
+		const float chordY = end.y - startY;
+		const float chordLength = std::sqrt(chordX * chordX + chordY * chordY);
+		if (chordLength < minimumDistance) return false;
+		direction = { chordX / chordLength, chordY / chordLength };
+		return true;
+	}
+
+	InterruptedStrokeReconnectMotion ResolveInterruptedStrokeReconnectMotion(
+		const std::vector<ink::stroke_model::Result>& predictedResults,
+		const std::vector<InkPoint>& realPoints,
+		DirectX::XMFLOAT2 fallbackDirection, float fallbackSpeed,
+		double upInputTime, double gapSeconds, float dpiScale) noexcept
+	{
+		InterruptedStrokeReconnectMotion motion;
+		const auto useFallback = [&]()
+			{
+				const float directionLength = std::hypot(
+					fallbackDirection.x, fallbackDirection.y);
+				if (!std::isfinite(directionLength) || directionLength <= 0.0001f ||
+					!std::isfinite(fallbackSpeed) || fallbackSpeed <= 0.0f) return;
+				motion.valid = true;
+				motion.source = InterruptedStrokeReconnectMotionSource::RealTail;
+				motion.direction = {
+					fallbackDirection.x / directionLength,
+					fallbackDirection.y / directionLength
+				};
+				motion.speed = fallbackSpeed;
+			};
+
+		if (predictedResults.empty() || !std::isfinite(upInputTime) ||
+			!std::isfinite(gapSeconds) || gapSeconds < 0.0)
+		{
+			useFallback();
+			return motion;
+		}
+
+		const double lastPredictionTime = predictedResults.back().time.Value();
+		motion.predictionHorizonMilliseconds = std::max(
+			0.0, (lastPredictionTime - upInputTime) * 1000.0);
+		const double targetTime = upInputTime + gapSeconds;
+		ink::stroke_model::Vec2 selectedPosition = predictedResults.front().position;
+		ink::stroke_model::Vec2 selectedVelocity = predictedResults.front().velocity;
+		double selectedTime = predictedResults.front().time.Value();
+		for (size_t index = 1; index < predictedResults.size(); ++index)
+		{
+			const auto& previous = predictedResults[index - 1];
+			const auto& current = predictedResults[index];
+			const double previousTime = previous.time.Value();
+			const double currentTime = current.time.Value();
+			if (targetTime > currentTime) continue;
+			const double duration = currentTime - previousTime;
+			const float ratio = duration > 0.0
+				? std::clamp(static_cast<float>((targetTime - previousTime) / duration), 0.0f, 1.0f)
+				: 1.0f;
+			selectedPosition = {
+				previous.position.x + (current.position.x - previous.position.x) * ratio,
+				previous.position.y + (current.position.y - previous.position.y) * ratio
+			};
+			selectedVelocity = {
+				previous.velocity.x + (current.velocity.x - previous.velocity.x) * ratio,
+				previous.velocity.y + (current.velocity.y - previous.velocity.y) * ratio
+			};
+			selectedTime = previousTime + duration * ratio;
+			break;
+		}
+		if (targetTime > lastPredictionTime)
+		{
+			selectedPosition = predictedResults.back().position;
+			selectedVelocity = predictedResults.back().velocity;
+			selectedTime = lastPredictionTime;
+		}
+
+		const float predictedSpeed = std::hypot(selectedVelocity.x, selectedVelocity.y);
+		if (std::isfinite(predictedSpeed) && predictedSpeed > 0.0001f)
+		{
+			motion.valid = true;
+			motion.source = InterruptedStrokeReconnectMotionSource::PredictionVelocity;
+			motion.direction = {
+				selectedVelocity.x / predictedSpeed,
+				selectedVelocity.y / predictedSpeed
+			};
+			motion.speed = predictedSpeed;
+			return motion;
+		}
+
+		if (!realPoints.empty())
+		{
+			const float deltaX = selectedPosition.x - realPoints.back().x;
+			const float deltaY = selectedPosition.y - realPoints.back().y;
+			const float chordLength = std::hypot(deltaX, deltaY);
+			const double predictionDuration = selectedTime - upInputTime;
+			if (std::isfinite(chordLength) &&
+				chordLength >= std::max(dpiScale, 0.1f) && predictionDuration > 0.0)
+			{
+				motion.valid = true;
+				motion.source = InterruptedStrokeReconnectMotionSource::PredictionChord;
+				motion.direction = { deltaX / chordLength, deltaY / chordLength };
+				motion.speed = chordLength / static_cast<float>(predictionDuration);
+				return motion;
+			}
+		}
+
+		useFallback();
+		return motion;
+	}
+
+	InterruptedStrokeReconnectResult EvaluateInterruptedStrokeReconnect(
+		const InterruptedStrokeReconnectInput& input) noexcept
+	{
+		InterruptedStrokeReconnectResult result;
+		result.motionSource = input.motionSource;
+		result.referenceSpeed = input.previousSpeed;
+		if (input.qpcFrequency <= 0 || input.newDownQpc <= input.previousUpQpc)
+		{
+			result.rejectReason = InterruptedStrokeReconnectRejectReason::InvalidTime;
+			return result;
+		}
+		if (!std::isfinite(input.previousSpeed) || input.previousSpeed <= 0.0f)
+		{
+			result.rejectReason = InterruptedStrokeReconnectRejectReason::InvalidSpeed;
+			return result;
+		}
+
+		const double gapSeconds = static_cast<double>(input.newDownQpc - input.previousUpQpc) /
+			static_cast<double>(input.qpcFrequency);
+		result.gapMilliseconds = gapSeconds * 1000.0;
+		if (gapSeconds > kInterruptedStrokeReconnectWindowSeconds)
+		{
+			result.rejectReason = InterruptedStrokeReconnectRejectReason::WindowExpired;
+			return result;
+		}
+
+		const float safeScale = std::max(input.dpiScale, 0.1f);
+		const float deltaX = input.newPosition.x - input.previousPosition.x;
+		const float deltaY = input.newPosition.y - input.previousPosition.y;
+		result.distance = std::sqrt(deltaX * deltaX + deltaY * deltaY);
+		result.expectedDistance = input.previousSpeed * static_cast<float>(gapSeconds);
+		result.bridgeSpeed = result.distance / static_cast<float>(gapSeconds);
+		result.speedRatio = result.bridgeSpeed / input.previousSpeed;
+		result.distanceRatioError = std::isfinite(result.speedRatio) && result.speedRatio > 0.0f
+			? std::abs(std::log(result.speedRatio))
+			: (std::numeric_limits<float>::infinity)();
+		const bool usesPrediction = input.motionSource ==
+			InterruptedStrokeReconnectMotionSource::PredictionVelocity ||
+			input.motionSource == InterruptedStrokeReconnectMotionSource::PredictionChord;
+		if (usesPrediction)
+		{
+			result.minimumDistance = std::max(0.0f,
+				result.expectedDistance * kInterruptedStrokeReconnectMinimumSpeedRatio -
+				kInterruptedStrokeReconnectDistanceSlackPx * safeScale);
+			result.maximumDistance = std::min(
+				kInterruptedStrokeReconnectPredictedMaximumDistancePx * safeScale,
+				result.expectedDistance * kInterruptedStrokeReconnectMaximumSpeedRatio +
+				kInterruptedStrokeReconnectDistanceSlackPx * safeScale);
+		}
+		else
+		{
+			result.minimumDistance =
+				result.expectedDistance * kInterruptedStrokeReconnectMinimumSpeedRatio;
+			result.maximumDistance = std::min(
+				kInterruptedStrokeReconnectFallbackMaximumDistancePx * safeScale,
+				std::max(6.0f * safeScale,
+					result.expectedDistance * 1.75f +
+					kInterruptedStrokeReconnectDistanceSlackPx * safeScale));
+		}
+		if (result.distance <= 0.0001f || result.distance < result.minimumDistance ||
+			result.distance > result.maximumDistance)
+		{
+			result.rejectReason = InterruptedStrokeReconnectRejectReason::Distance;
+			return result;
+		}
+
+		const float directionLength = std::sqrt(
+			input.previousDirection.x * input.previousDirection.x +
+			input.previousDirection.y * input.previousDirection.y);
+		if (!std::isfinite(directionLength) || directionLength <= 0.0001f)
+		{
+			result.rejectReason = InterruptedStrokeReconnectRejectReason::InvalidDirection;
+			return result;
+		}
+		const float dot = std::clamp(
+			(deltaX * input.previousDirection.x + deltaY * input.previousDirection.y) /
+			(result.distance * directionLength), -1.0f, 1.0f);
+		result.angleDegrees = std::acos(dot) * 180.0f / 3.14159265358979323846f;
+		if (result.angleDegrees > kInterruptedStrokeReconnectMaximumAngleDegrees)
+		{
+			result.rejectReason = InterruptedStrokeReconnectRejectReason::Angle;
+			return result;
+		}
+
+		result.matched = std::isfinite(result.distanceRatioError);
+		result.rejectReason = result.matched
+			? InterruptedStrokeReconnectRejectReason::None
+			: InterruptedStrokeReconnectRejectReason::InvalidSpeed;
+		return result;
+	}
+
+	bool AreInterruptedStrokeReconnectIdentitiesCompatible(
+		const InterruptedStrokeReconnectIdentity& previous,
+		const InterruptedStrokeReconnectIdentity& current) noexcept
+	{
+		return previous.deviceType == current.deviceType &&
+			previous.selectedTool == current.selectedTool &&
+			previous.tool == current.tool &&
+			previous.widthMode == current.widthMode &&
+			previous.invertedCursor == current.invertedCursor &&
+			previous.suppressPressure == current.suppressPressure;
+	}
+
+	bool IsBetterInterruptedStrokeReconnectMatch(
+		const InterruptedStrokeReconnectResult& candidate, int64_t candidateUpQpc,
+		const InterruptedStrokeReconnectResult& current, int64_t currentUpQpc) noexcept
+	{
+		if (!candidate.matched) return false;
+		if (!current.matched) return true;
+		if (candidate.distanceRatioError != current.distanceRatioError)
+			return candidate.distanceRatioError < current.distanceRatioError;
+		if (candidate.angleDegrees != current.angleDegrees)
+			return candidate.angleDegrees < current.angleDegrees;
+		if (candidate.distance != current.distance) return candidate.distance < current.distance;
+		return candidateUpQpc > currentUpQpc;
+	}
+
+	size_t GetInterruptedStrokeReconnectEvictionCount(size_t candidateCount) noexcept
+	{
+		return candidateCount > kMaximumInterruptedStrokeReconnectCandidates
+			? candidateCount - kMaximumInterruptedStrokeReconnectCandidates : 0;
+	}
+
+	bool IsInterruptedStrokeReconnectExpired(int64_t deadlineQpc, int64_t nowQpc) noexcept
+	{
+		return deadlineQpc > 0 && nowQpc >= deadlineQpc;
+	}
+
 	StrokeWidthEstimator::StrokeWidthEstimator(float baseDiameterValue, float expectedSpeedValue)
 		: baseDiameter(baseDiameterValue), minDiameter(baseDiameterValue * 0.8f),
 		maxDiameter(baseDiameterValue * 1.4f), expectedSpeed(std::max(1.0f, expectedSpeedValue)),

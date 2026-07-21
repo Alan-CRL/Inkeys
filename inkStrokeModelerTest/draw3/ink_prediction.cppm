@@ -61,7 +61,19 @@ export namespace draw3
 	inline constexpr LiveTipLengthMode kActiveLiveTipLengthMode = LiveTipLengthMode::Normal;
 	inline constexpr DebugLayerColorMode kActiveDebugLayerColorMode = DebugLayerColorMode::NormalInkColor;
 	inline constexpr StrokeTimingProfileId kActiveStrokeTimingProfileId = StrokeTimingProfileId::Fps120;
+	// 人工验证临时开关：开启时禁用笔尾橡皮，并用测试色标出断触续接桥接段。
+	inline constexpr bool kInterruptedStrokeReconnectManualTestModeEnabled = true;
 	inline constexpr float kHighlighterMinimumStrokeLengthPx = 12.0f;
+	inline constexpr double kInterruptedStrokeReconnectWindowSeconds = 0.080;
+	inline constexpr float kInterruptedStrokeReconnectDirectionLookbackPx = 12.0f;
+	inline constexpr float kInterruptedStrokeReconnectMinimumDirectionPx = 4.0f;
+	inline constexpr float kInterruptedStrokeReconnectMaximumAngleDegrees = 35.0f;
+	inline constexpr float kInterruptedStrokeReconnectFallbackMaximumDistancePx = 32.0f;
+	inline constexpr float kInterruptedStrokeReconnectPredictedMaximumDistancePx = 64.0f;
+	inline constexpr float kInterruptedStrokeReconnectDistanceSlackPx = 4.0f;
+	inline constexpr float kInterruptedStrokeReconnectMinimumSpeedRatio = 0.35f;
+	inline constexpr float kInterruptedStrokeReconnectMaximumSpeedRatio = 2.75f;
+	inline constexpr size_t kMaximumInterruptedStrokeReconnectCandidates = 8;
 
 	// 保存与目标帧率联动的建模和预测参数。
 	struct StrokeTimingProfile
@@ -88,7 +100,85 @@ export namespace draw3
 		ink::stroke_model::StrokeModelParams modelParams;
 		bool retainPredictionOnUp = false; // 默认由模型生成 Up 收尾；外部开关可选择保留最后可见 prediction。
 		bool invertedPenEraserEnabled = true; // 默认允许倒转 Pen 在画笔/荧光笔下临时覆盖为橡皮。
+		bool interruptedStrokeReconnectEnabled = true; // 默认暂留物理 Up，允许短暂断触继续同一模型。
 		InputWidthModeSettings inputWidthModes = {};
+	};
+
+	enum class InterruptedStrokeReconnectMotionSource
+	{
+		None,
+		PredictionVelocity,
+		PredictionChord,
+		RealTail
+	};
+
+	enum class InterruptedStrokeReconnectRejectReason
+	{
+		None,
+		IdentityMismatch,
+		InvalidTime,
+		WindowExpired,
+		InvalidSpeed,
+		InvalidDirection,
+		Distance,
+		Angle
+	};
+
+	// 保存按新 Down 时刻解析出的预测方向与参考速度。
+	struct InterruptedStrokeReconnectMotion
+	{
+		bool valid = false;
+		InterruptedStrokeReconnectMotionSource source =
+			InterruptedStrokeReconnectMotionSource::None;
+		DirectX::XMFLOAT2 direction = {};
+		float speed = -1.0f;
+		double predictionHorizonMilliseconds = 0.0;
+	};
+
+	// 描述一次物理 Up 到新 Down 的运动学续接候选。
+	struct InterruptedStrokeReconnectInput
+	{
+		PointF previousPosition = {};
+		DirectX::XMFLOAT2 previousDirection = {};
+		float previousSpeed = -1.0f;
+		int64_t previousUpQpc = 0;
+		PointF newPosition = {};
+		int64_t newDownQpc = 0;
+		int64_t qpcFrequency = 0;
+		float dpiScale = 1.0f;
+		InterruptedStrokeReconnectMotionSource motionSource =
+			InterruptedStrokeReconnectMotionSource::RealTail;
+	};
+
+	// 返回续接判定和成功日志所需的量化指标。
+	struct InterruptedStrokeReconnectResult
+	{
+		bool matched = false;
+		InterruptedStrokeReconnectRejectReason rejectReason =
+			InterruptedStrokeReconnectRejectReason::None;
+		InterruptedStrokeReconnectMotionSource motionSource =
+			InterruptedStrokeReconnectMotionSource::None;
+		double gapMilliseconds = 0.0;
+		float distance = 0.0f;
+		float minimumDistance = 0.0f;
+		float maximumDistance = 0.0f;
+		float expectedDistance = 0.0f;
+		float referenceSpeed = 0.0f;
+		float angleDegrees = 180.0f;
+		float bridgeSpeed = 0.0f;
+		float speedRatio = 0.0f;
+		float distanceRatioError = (std::numeric_limits<float>::infinity)();
+	};
+
+	// 汇总必须保持一致的设备、工具和笔宽策略；工具值由 DrawingTool 转为固定整数。
+	struct InterruptedStrokeReconnectIdentity
+	{
+		InputDeviceType deviceType = InputDeviceType::Touch;
+		uint32_t selectedTool = 0;
+		uint32_t tool = 0;
+		StrokeWidthMode widthMode = StrokeWidthMode::SimulatedPressure;
+		bool invertedCursor = false;
+		bool suppressPressure = false;
 	};
 
 	// 根据 DPI 和当前帧率预设创建模型配置。
@@ -107,6 +197,30 @@ export namespace draw3
 		bool isInvertedCursor, float pressure) noexcept;
 	// 将归一化硬件压力线性映射为基准直径的 0.2–1.4 倍。
 	float HardwarePressureDiameter(float baseDiameter, float pressure) noexcept;
+	// 从末端真实点的有限回看窗口计算稳定延伸方向。
+	bool TryGetInterruptedStrokeTailDirection(const std::vector<InkPoint>& realPoints,
+		float dpiScale, DirectX::XMFLOAT2& direction) noexcept;
+	// 按 Down 间隔选择预测状态；prediction 无效时回退真实尾方向与滤波输入速度。
+	InterruptedStrokeReconnectMotion ResolveInterruptedStrokeReconnectMotion(
+		const std::vector<ink::stroke_model::Result>& predictedResults,
+		const std::vector<InkPoint>& realPoints,
+		DirectX::XMFLOAT2 fallbackDirection, float fallbackSpeed,
+		double upInputTime, double gapSeconds, float dpiScale) noexcept;
+	// 以时间、预测运动包络或保守回退策略判断新 Down 是否属于同一笔。
+	InterruptedStrokeReconnectResult EvaluateInterruptedStrokeReconnect(
+		const InterruptedStrokeReconnectInput& input) noexcept;
+	// 续接前要求设备、工具和本笔固定策略完全一致。
+	bool AreInterruptedStrokeReconnectIdentitiesCompatible(
+		const InterruptedStrokeReconnectIdentity& previous,
+		const InterruptedStrokeReconnectIdentity& current) noexcept;
+	// 多候选命中时按预测距离误差、角度、距离和较新的 Up 确定唯一候选。
+	bool IsBetterInterruptedStrokeReconnectMatch(
+		const InterruptedStrokeReconnectResult& candidate, int64_t candidateUpQpc,
+		const InterruptedStrokeReconnectResult& current, int64_t currentUpQpc) noexcept;
+	// 返回超过固定候选上限后必须立即完成的数量。
+	size_t GetInterruptedStrokeReconnectEvictionCount(size_t candidateCount) noexcept;
+	// deadline 到点即应完成候选，避免仅候选等待错过清理。
+	bool IsInterruptedStrokeReconnectExpired(int64_t deadlineQpc, int64_t nowQpc) noexcept;
 
 	// 根据原始输入速度平滑估算墨迹半径。
 	struct StrokeWidthEstimator

@@ -13,6 +13,7 @@
 #include <new>
 #include <set>
 #include <thread>
+#include <variant>
 #include <vector>
 #include <windows.h>
 
@@ -412,6 +413,249 @@ namespace
 			missingPressure.realPoints.front().r, missingPressure.realPoints.back().r));
 	}
 
+	void TestInterruptedStrokeReconnectPolicy(TestState& state)
+	{
+		draw3::StrokeModelConfiguration configuration;
+		TEST_CHECK(state, configuration.interruptedStrokeReconnectEnabled);
+
+		std::vector<draw3::InkPoint> directionPoints{
+			{ 0.0f, 0.0f, 1.0f, 0.0f },
+			{ 6.0f, 0.0f, 1.0f, 0.01f },
+			{ 12.0f, 0.0f, 1.0f, 0.02f }
+		};
+		DirectX::XMFLOAT2 direction = {};
+		TEST_CHECK(state, draw3::TryGetInterruptedStrokeTailDirection(
+			directionPoints, 1.0f, direction));
+		TEST_CHECK(state, NearlyEqual(direction.x, 1.0f));
+		TEST_CHECK(state, NearlyEqual(direction.y, 0.0f));
+		directionPoints = {
+			{ 0.0f, 0.0f, 1.0f, 0.0f }, { 3.0f, 0.0f, 1.0f, 0.01f }
+		};
+		TEST_CHECK(state, !draw3::TryGetInterruptedStrokeTailDirection(
+			directionPoints, 1.0f, direction));
+
+		std::vector<ink::stroke_model::Result> prediction(2);
+		prediction[0].position = { 20.0f, 2.0f };
+		prediction[0].velocity = { 100.0f, 0.0f };
+		prediction[0].time = ink::stroke_model::Time(0.05);
+		prediction[1].position = { 20.0f, 8.0f };
+		prediction[1].velocity = { 0.0f, 200.0f };
+		prediction[1].time = ink::stroke_model::Time(0.07);
+		const std::vector<draw3::InkPoint> realTail{
+			{ 10.0f, 0.0f, 1.0f, 0.02f }, { 20.0f, 0.0f, 1.0f, 0.04f }
+		};
+		const draw3::InterruptedStrokeReconnectMotion interpolatedMotion =
+			draw3::ResolveInterruptedStrokeReconnectMotion(
+				prediction, realTail, { 1.0f, 0.0f }, 300.0f, 0.04, 0.02, 1.0f);
+		TEST_CHECK(state, interpolatedMotion.valid);
+		TEST_CHECK(state, interpolatedMotion.source ==
+			draw3::InterruptedStrokeReconnectMotionSource::PredictionVelocity);
+		TEST_CHECK(state, NearlyEqual(interpolatedMotion.speed, std::sqrt(12500.0f), 0.01f));
+		TEST_CHECK(state, NearlyEqual(interpolatedMotion.direction.x,
+			50.0f / std::sqrt(12500.0f), 0.001f));
+		TEST_CHECK(state, NearlyEqual(interpolatedMotion.direction.y,
+			100.0f / std::sqrt(12500.0f), 0.001f));
+		const draw3::InterruptedStrokeReconnectMotion extrapolatedMotion =
+			draw3::ResolveInterruptedStrokeReconnectMotion(
+				prediction, realTail, { 1.0f, 0.0f }, 300.0f, 0.04, 0.08, 1.0f);
+		TEST_CHECK(state, extrapolatedMotion.source ==
+			draw3::InterruptedStrokeReconnectMotionSource::PredictionVelocity);
+		TEST_CHECK(state, NearlyEqual(extrapolatedMotion.direction.x, 0.0f));
+		TEST_CHECK(state, NearlyEqual(extrapolatedMotion.direction.y, 1.0f));
+		TEST_CHECK(state, NearlyEqual(extrapolatedMotion.speed, 200.0f));
+		TEST_CHECK(state, NearlyEqual(static_cast<float>(
+			extrapolatedMotion.predictionHorizonMilliseconds), 30.0f, 0.01f));
+		const draw3::InterruptedStrokeReconnectMotion fallbackMotion =
+			draw3::ResolveInterruptedStrokeReconnectMotion(
+				{}, realTail, { 1.0f, 0.0f }, 300.0f, 0.04, 0.05, 1.0f);
+		TEST_CHECK(state, fallbackMotion.source ==
+			draw3::InterruptedStrokeReconnectMotionSource::RealTail);
+		TEST_CHECK(state, NearlyEqual(fallbackMotion.speed, 300.0f));
+		prediction[0].velocity = {};
+		prediction[1].velocity = {};
+		const draw3::InterruptedStrokeReconnectMotion chordMotion =
+			draw3::ResolveInterruptedStrokeReconnectMotion(
+				prediction, realTail, { 1.0f, 0.0f }, 300.0f, 0.04, 0.08, 1.0f);
+		TEST_CHECK(state, chordMotion.source ==
+			draw3::InterruptedStrokeReconnectMotionSource::PredictionChord);
+		TEST_CHECK(state, NearlyEqual(chordMotion.direction.x, 0.0f));
+		TEST_CHECK(state, NearlyEqual(chordMotion.direction.y, 1.0f));
+		TEST_CHECK(state, NearlyEqual(chordMotion.speed, 8.0f / 0.03f, 0.01f));
+
+		draw3::InterruptedStrokeReconnectInput input{
+			.previousPosition = { 20.0f, 10.0f },
+			.previousDirection = { 1.0f, 0.0f },
+			.previousSpeed = 200.0f,
+			.previousUpQpc = 1000,
+			.newPosition = { 30.0f, 10.0f },
+			.newDownQpc = 1050,
+			.qpcFrequency = 1000,
+			.dpiScale = 1.0f
+		};
+		const draw3::InterruptedStrokeReconnectResult matched =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, matched.matched);
+		TEST_CHECK(state, NearlyEqual(matched.distance, 10.0f));
+		TEST_CHECK(state, NearlyEqual(matched.speedRatio, 1.0f));
+
+		input.newDownQpc = 1080;
+		input.newPosition = { 36.0f, 10.0f }; // 80ms 窗口边界仍允许续接。
+		TEST_CHECK(state, draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+
+		input.newDownQpc = 1081;
+		TEST_CHECK(state, !draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+		input.newDownQpc = 1050;
+		input.newPosition = { 28.19152f, 15.73576f }; // 10px、35°方向边界。
+		TEST_CHECK(state, draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+		input.newPosition = { 28.09017f, 15.87785f }; // 10px、36°，刚超过方向上限。
+		TEST_CHECK(state, !draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+		input.newPosition = { 23.5f, 10.0f }; // 70px/s，速度比下界 0.35。
+		TEST_CHECK(state, draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+		input.newPosition = { 23.0f, 10.0f }; // 60px/s，仅为末速的 0.3 倍。
+		TEST_CHECK(state, !draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+		input.previousSpeed = 80.0f;
+		input.newDownQpc = 1050;
+		input.newPosition = { 31.0f, 10.0f }; // 220px/s，速度比上界 2.75。
+		TEST_CHECK(state, draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+		input.newPosition = { 31.04f, 10.0f }; // 略超过速度比和自适应距离上界。
+		TEST_CHECK(state, !draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+		input.previousSpeed = 400.0f;
+		input.newDownQpc = 1080;
+		input.newPosition = { 52.0f, 10.0f }; // 96 DPI 下绝对距离上限 32px。
+		TEST_CHECK(state, draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+		input.newPosition = { 52.01f, 10.0f };
+		TEST_CHECK(state, !draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+
+		input.previousSpeed = 300.0f;
+		input.newDownQpc = 1050;
+		input.newPosition = { 51.0f, 10.0f };
+		input.dpiScale = 1.0f;
+		TEST_CHECK(state, !draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+		input.dpiScale = 2.0f;
+		const draw3::InterruptedStrokeReconnectResult dpiMatched =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, dpiMatched.matched);
+
+		input.dpiScale = 1.0f;
+		input.previousDirection = { 0.0f, 1.0f };
+		input.previousSpeed = 400.0f;
+		input.previousUpQpc = 1000;
+		input.newDownQpc = 1080;
+		input.motionSource = draw3::InterruptedStrokeReconnectMotionSource::PredictionVelocity;
+		input.newPosition = { 20.0f, 70.0f }; // 预测速度包络允许 60px 曲线续接。
+		const draw3::InterruptedStrokeReconnectResult predictedLongBridge =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, predictedLongBridge.matched);
+		TEST_CHECK(state, NearlyEqual(predictedLongBridge.maximumDistance, 64.0f));
+		TEST_CHECK(state, NearlyEqual(predictedLongBridge.expectedDistance, 32.0f));
+		input.newPosition = { 20.0f, 74.01f };
+		TEST_CHECK(state, !draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+		input.newPosition = { 30.0f, 10.0f };
+		const draw3::InterruptedStrokeReconnectResult predictedCurveReject =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, !predictedCurveReject.matched);
+		TEST_CHECK(state, predictedCurveReject.rejectReason ==
+			draw3::InterruptedStrokeReconnectRejectReason::Angle);
+		input.previousDirection = { 1.0f, 0.0f };
+		TEST_CHECK(state, draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+
+		const draw3::InterruptedStrokeReconnectIdentity identity{
+			draw3::InputDeviceType::Pen, 0, 0,
+			draw3::StrokeWidthMode::HardwarePressure, false, false
+		};
+		draw3::InterruptedStrokeReconnectIdentity changed = identity;
+		TEST_CHECK(state, draw3::AreInterruptedStrokeReconnectIdentitiesCompatible(identity, changed));
+		for (const draw3::InputDeviceType deviceType : {
+			draw3::InputDeviceType::Touch, draw3::InputDeviceType::Pen,
+			draw3::InputDeviceType::MouseLeft, draw3::InputDeviceType::MouseRight })
+		{
+			for (uint32_t tool = 0; tool < 3; ++tool)
+			{
+				const draw3::InterruptedStrokeReconnectIdentity supported{
+					deviceType, tool, tool, draw3::StrokeWidthMode::Fixed, false, false
+				};
+				TEST_CHECK(state, draw3::AreInterruptedStrokeReconnectIdentitiesCompatible(
+					supported, supported));
+			}
+		}
+		changed.deviceType = draw3::InputDeviceType::Touch;
+		TEST_CHECK(state, !draw3::AreInterruptedStrokeReconnectIdentitiesCompatible(identity, changed));
+		changed = identity;
+		changed.selectedTool = 1;
+		TEST_CHECK(state, !draw3::AreInterruptedStrokeReconnectIdentitiesCompatible(identity, changed));
+		changed = identity;
+		changed.tool = 2;
+		TEST_CHECK(state, !draw3::AreInterruptedStrokeReconnectIdentitiesCompatible(identity, changed));
+		changed = identity;
+		changed.widthMode = draw3::StrokeWidthMode::Fixed;
+		TEST_CHECK(state, !draw3::AreInterruptedStrokeReconnectIdentitiesCompatible(identity, changed));
+		changed = identity;
+		changed.invertedCursor = true;
+		TEST_CHECK(state, !draw3::AreInterruptedStrokeReconnectIdentitiesCompatible(identity, changed));
+		changed = identity;
+		changed.suppressPressure = true;
+		TEST_CHECK(state, !draw3::AreInterruptedStrokeReconnectIdentitiesCompatible(identity, changed));
+		TEST_CHECK(state, draw3::kMaximumInterruptedStrokeReconnectCandidates == 8);
+		TEST_CHECK(state, draw3::GetInterruptedStrokeReconnectEvictionCount(8) == 0);
+		TEST_CHECK(state, draw3::GetInterruptedStrokeReconnectEvictionCount(9) == 1);
+		TEST_CHECK(state, draw3::GetInterruptedStrokeReconnectEvictionCount(16) == 8);
+		TEST_CHECK(state, !draw3::IsInterruptedStrokeReconnectExpired(1000, 999));
+		TEST_CHECK(state, draw3::IsInterruptedStrokeReconnectExpired(1000, 1000));
+
+		draw3::InterruptedStrokeReconnectResult fartherFromForecast = matched;
+		fartherFromForecast.distanceRatioError = 0.1f;
+		TEST_CHECK(state, draw3::IsBetterInterruptedStrokeReconnectMatch(
+			matched, 900, fartherFromForecast, 1000));
+		draw3::InterruptedStrokeReconnectResult straighter = matched;
+		straighter.distanceRatioError = matched.distanceRatioError;
+		straighter.angleDegrees = matched.angleDegrees - 1.0f;
+		TEST_CHECK(state, draw3::IsBetterInterruptedStrokeReconnectMatch(
+			straighter, 900, matched, 1000));
+		draw3::InterruptedStrokeReconnectResult same = matched;
+		TEST_CHECK(state, draw3::IsBetterInterruptedStrokeReconnectMatch(
+			same, 1100, matched, 1000));
+	}
+
+	void TestInterruptedStrokeReconnectModelLifecycle(TestState& state)
+	{
+		draw3::StrokeModelConfiguration configuration = draw3::CreateStrokeModelConfiguration(96);
+		using ink::stroke_model::Input;
+		using ink::stroke_model::Time;
+		using ink::stroke_model::Vec2;
+		for (uint32_t tool = 0; tool < 3; ++tool)
+		{
+			auto params = configuration.modelParams;
+			const bool eraser = tool == 2;
+			if (eraser)
+				params.prediction_params = ink::stroke_model::DisabledPredictorParams{};
+			else
+				draw3::ApplyPredictionMode(params, configuration.kalmanPredictorParams);
+			draw3::ActiveStroke stroke(tool == 0 ? 5.0f : 50.0f, configuration.expectedSpeed);
+			TEST_CHECK(state, stroke.modeler.Reset(params).ok());
+
+			for (const Input input : {
+				Input{ .event_type = Input::EventType::kDown, .position = Vec2(0.0f, 0.0f), .time = Time(0.0) },
+				Input{ .event_type = Input::EventType::kMove, .position = Vec2(10.0f, 0.0f), .time = Time(0.02) },
+				Input{ .event_type = Input::EventType::kMove, .position = Vec2(20.0f, 0.0f), .time = Time(0.04) }, // 暂留 Up。
+				Input{ .event_type = Input::EventType::kMove, .position = Vec2(30.0f, 0.0f), .time = Time(0.06) }, // 新 Down 续作 Move。
+				Input{ .event_type = Input::EventType::kUp, .position = Vec2(40.0f, 0.0f), .time = Time(0.08) }
+				})
+			{
+				TEST_CHECK(state, stroke.modeler.Update(input, stroke.modeledResults).ok());
+				draw3::AppendNewModeledPoints(stroke, 500.0f);
+			}
+			TEST_CHECK(state, stroke.realPoints.size() >= 5);
+			TEST_CHECK(state, stroke.realPoints.back().x > 30.0f);
+			if (eraser)
+			{
+				TEST_CHECK(state, std::holds_alternative<
+					ink::stroke_model::DisabledPredictorParams>(params.prediction_params));
+				std::vector<ink::stroke_model::Result> predictedResults;
+				TEST_CHECK(state, predictedResults.empty());
+			}
+		}
+	}
+
 	void TestInvertedPenPolicy(TestState& state)
 	{
 		draw3::StrokeModelConfiguration configuration;
@@ -486,6 +730,8 @@ int wmain(int argc, wchar_t* argv[])
 	TestWakeProtocols(state);
 	TestRtsStylusConversions(state);
 	TestInputWidthModesAndHardwarePressure(state);
+	TestInterruptedStrokeReconnectPolicy(state);
+	TestInterruptedStrokeReconnectModelLifecycle(state);
 	TestInvertedPenPolicy(state);
 	state.failures += RunHighlighterGeometryTests();
 	if (state.failures == 0)

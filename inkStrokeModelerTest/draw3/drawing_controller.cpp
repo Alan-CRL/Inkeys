@@ -11,6 +11,7 @@
 #include <DirectXMath.h>
 #include <iostream>
 #include <ink_stroke_modeler/stroke_modeler.h>
+#include <limits>
 #include <memory>
 #include <vector>
 #include <windows.h>
@@ -28,8 +29,10 @@ namespace draw3
 	{
 		const DirectX::XMFLOAT4 kHighlighterCompositeColor(1.0f, 0.0f, 0.0f, 0.35f);
 		const DirectX::XMFLOAT4 kMultiContactInkColor(1.0f, 0.0f, 0.0f, 1.0f);
+		const DirectX::XMFLOAT4 kReconnectManualTestColor(0.0f, 1.0f, 0.0f, 1.0f);
 		constexpr float kPenDiameter = 5.0f;
 		constexpr float kWideToolDiameter = 50.0f;
+		constexpr float kReconnectManualTestRadiusPx = 4.0f;
 		constexpr float kRawMoveThresholdPx = 0.25f;
 		constexpr float kStylusPressureEpsilon = 0.0001f;
 		constexpr float kStylusAngleEpsilon = 0.0001f;
@@ -95,6 +98,12 @@ namespace draw3
 			return kMultiContactInkColor;
 		}
 
+		struct ReconnectManualTestRange
+		{
+			size_t firstPointIndex = 0;
+			size_t lastPointIndex = 0;
+		};
+
 		struct RuntimeStroke
 		{
 			explicit RuntimeStroke(float expectedSpeed)
@@ -107,6 +116,7 @@ namespace draw3
 				stroke.l0DrawPoints.reserve(128);
 				stroke.previousL0DrawPoints.reserve(128);
 				rebuildPoints.reserve(256);
+				reconnectPredictedResults.reserve(64);
 			}
 
 			ActiveStroke stroke;
@@ -125,6 +135,8 @@ namespace draw3
 			float lastOrientation = -1.0f;
 			RECT visibleDirty = {};
 			std::vector<InkPoint> rebuildPoints;
+			std::vector<ink::stroke_model::Result> reconnectPredictedResults;
+			std::vector<ReconnectManualTestRange> reconnectManualTestRanges;
 			InputDeviceType metricDeviceType = InputDeviceType::Touch;
 			int64_t metricEligibleQpc = 0;
 			bool inUse = false;
@@ -133,12 +145,125 @@ namespace draw3
 			bool metricVisible = false;
 			bool movedThisFrame = false;
 			bool hasFilteredInputSpeed = false;
+			bool invertedCursor = false;
+			bool awaitingReconnect = false;
+			bool reconnectVisualRefresh = false;
+			ContactSnapshot deferredUpSnapshot = {};
+			DirectX::XMFLOAT2 reconnectDirection = {};
+			int64_t reconnectDeadlineQpc = 0;
 		};
+
+		const char* InputDeviceTypeName(InputDeviceType deviceType) noexcept
+		{
+			switch (deviceType)
+			{
+			case InputDeviceType::Pen: return "Pen";
+			case InputDeviceType::MouseLeft: return "MouseLeft";
+			case InputDeviceType::MouseRight: return "MouseRight";
+			default: return "Touch";
+			}
+		}
+
+		const char* DrawingToolName(DrawingTool tool) noexcept
+		{
+			switch (tool)
+			{
+			case DrawingTool::Highlighter: return "Highlighter";
+			case DrawingTool::Eraser: return "Eraser";
+			default: return "Pen";
+			}
+		}
+
+		const char* ReconnectMotionSourceName(
+			InterruptedStrokeReconnectMotionSource source) noexcept
+		{
+			switch (source)
+			{
+			case InterruptedStrokeReconnectMotionSource::PredictionVelocity:
+				return "prediction_velocity";
+			case InterruptedStrokeReconnectMotionSource::PredictionChord:
+				return "prediction_chord";
+			case InterruptedStrokeReconnectMotionSource::RealTail:
+				return "real_tail";
+			default:
+				return "none";
+			}
+		}
+
+		const char* ReconnectRejectReasonName(
+			InterruptedStrokeReconnectRejectReason reason) noexcept
+		{
+			switch (reason)
+			{
+			case InterruptedStrokeReconnectRejectReason::IdentityMismatch:
+				return "identity";
+			case InterruptedStrokeReconnectRejectReason::InvalidTime:
+				return "invalid_time";
+			case InterruptedStrokeReconnectRejectReason::WindowExpired:
+				return "window";
+			case InterruptedStrokeReconnectRejectReason::InvalidSpeed:
+				return "invalid_speed";
+			case InterruptedStrokeReconnectRejectReason::InvalidDirection:
+				return "invalid_direction";
+			case InterruptedStrokeReconnectRejectReason::Distance:
+				return "distance";
+			case InterruptedStrokeReconnectRejectReason::Angle:
+				return "angle";
+			default:
+				return "none";
+			}
+		}
+
+		InterruptedStrokeReconnectIdentity ReconnectIdentity(const RuntimeStroke& runtime) noexcept
+		{
+			return {
+				runtime.metricDeviceType,
+				static_cast<uint32_t>(runtime.selectedTool),
+				static_cast<uint32_t>(runtime.tool),
+				runtime.stroke.widthMode,
+				runtime.invertedCursor,
+				runtime.suppressPressure
+			};
+		}
+
+		bool HasPhysicalContact(const std::vector<RuntimeStroke*>& active) noexcept
+		{
+			return std::any_of(active.begin(), active.end(), [](const RuntimeStroke* runtime)
+				{
+					return runtime && !runtime->ended && !runtime->awaitingReconnect;
+				});
+		}
 
 		double QpcDeltaSeconds(int64_t newer, int64_t older, int64_t frequency)
 		{
 			if (frequency <= 0 || newer <= older) return 0.0;
 			return static_cast<double>(newer - older) / static_cast<double>(frequency);
+		}
+
+		RECT DrawReconnectManualTestRanges(RuntimeStroke& runtime, InkRenderer& renderer,
+			int width, int height)
+		{
+			if constexpr (!kInterruptedStrokeReconnectManualTestModeEnabled) return {};
+			if (runtime.reconnectManualTestRanges.empty() || runtime.stroke.realPoints.empty()) return {};
+
+			renderer.SetOperatorTarget(renderer.layerL1);
+			RECT dirty = {};
+			for (const ReconnectManualTestRange& range : runtime.reconnectManualTestRanges)
+			{
+				const size_t firstIndex = std::min(range.firstPointIndex,
+					runtime.stroke.realPoints.size());
+				const size_t lastIndex = std::min(range.lastPointIndex,
+					runtime.stroke.realPoints.size());
+				if (lastIndex <= firstIndex) continue;
+				runtime.rebuildPoints.assign(runtime.stroke.realPoints.begin() + firstIndex,
+					runtime.stroke.realPoints.begin() + lastIndex);
+				for (InkPoint& point : runtime.rebuildPoints)
+					point.r = std::min(point.r, kReconnectManualTestRadiusPx);
+				renderer.DrawStrokeOrDot(runtime.rebuildPoints, kReconnectManualTestColor);
+				UnionRectInPlace(dirty,
+					RectFromStrokePoints(runtime.rebuildPoints, width, height));
+			}
+			return ClampRectToCanvas(dirty, width, height);
 		}
 
 		RECT DrawStablePrefix(RuntimeStroke& runtime, InkRenderer& renderer, int width, int height)
@@ -231,6 +356,9 @@ namespace draw3
 			{
 				if (!runtime || runtime->ended) continue;
 				UnionRectInPlace(dirty, DrawStablePrefix(*runtime, renderer, width, height));
+				if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
+					UnionRectInPlace(dirty,
+						DrawReconnectManualTestRanges(*runtime, renderer, width, height));
 				ActiveStroke& stroke = runtime->stroke;
 				stroke.lastL0Rect = {};
 				stroke.currentL0Rect = runtime->tool == DrawingTool::Highlighter
@@ -354,6 +482,25 @@ namespace draw3
 		LARGE_INTEGER qpcFrequencyValue = {};
 		QueryPerformanceFrequency(&qpcFrequencyValue);
 		const int64_t qpcFrequency = qpcFrequencyValue.QuadPart;
+		const float reconnectDpiScale = std::max(configuration_.expectedSpeed / 500.0f, 0.1f);
+		bool effectiveInvertedPenEraserEnabled = false;
+		if constexpr (!kInterruptedStrokeReconnectManualTestModeEnabled)
+			effectiveInvertedPenEraserEnabled =
+				invertedPenEraserEnabled_.load(std::memory_order_acquire);
+		std::cout << "[StrokeReconnect] enabled=" <<
+			(configuration_.interruptedStrokeReconnectEnabled ? "true" : "false") <<
+			" window_ms=" << kInterruptedStrokeReconnectWindowSeconds * 1000.0 <<
+			" angle_deg=" << kInterruptedStrokeReconnectMaximumAngleDegrees <<
+			" predicted_max_distance_px=" <<
+			kInterruptedStrokeReconnectPredictedMaximumDistancePx * reconnectDpiScale <<
+			" fallback_max_distance_px=" <<
+			kInterruptedStrokeReconnectFallbackMaximumDistancePx * reconnectDpiScale <<
+			" speed_ratio=[" << kInterruptedStrokeReconnectMinimumSpeedRatio << "," <<
+			kInterruptedStrokeReconnectMaximumSpeedRatio << "] candidates=" <<
+			kMaximumInterruptedStrokeReconnectCandidates <<
+			" manual_test=" << (kInterruptedStrokeReconnectManualTestModeEnabled ? "true" : "false") <<
+			" inverted_pen_eraser=" << (effectiveInvertedPenEraserEnabled ? "true" : "false") <<
+			std::endl;
 
 		std::vector<std::unique_ptr<RuntimeStroke>> strokePool;
 		strokePool.reserve(kPreheatedStrokeCount);
@@ -403,17 +550,215 @@ namespace draw3
 				DrawingTool batchTool = window_.ActiveTool();
 				for (RuntimeStroke* activeRuntime : active)
 				{
-					ContactSnapshot activeSnapshot;
-					const bool terminal = input_.TryReadSnapshot(
-						activeRuntime->handle, activeSnapshot) &&
-						(activeSnapshot.phase == ContactPhase::Up ||
-							activeSnapshot.phase == ContactPhase::Cancelled);
-					if (!terminal)
+					if (activeRuntime && !activeRuntime->ended && !activeRuntime->awaitingReconnect)
 					{
 						batchTool = activeRuntime->selectedTool;
 						break; // 仍有真实落笔时，新 contact 必须沿用当前批次工具。
 					}
 				}
+				const bool selectedToolSupportsOverride =
+					batchTool == DrawingTool::Pen || batchTool == DrawingTool::Highlighter;
+				bool effectiveInvertedPenEraserEnabled = false;
+				if constexpr (!kInterruptedStrokeReconnectManualTestModeEnabled)
+					effectiveInvertedPenEraserEnabled =
+						invertedPenEraserEnabled_.load(std::memory_order_acquire);
+				const bool invertedEraser = ShouldUseInvertedPenEraser(deviceType,
+					down.isInvertedCursor, effectiveInvertedPenEraserEnabled,
+					selectedToolSupportsOverride);
+				const DrawingTool tool = invertedEraser ? DrawingTool::Eraser : batchTool;
+				const bool suppressPressure = deviceType == InputDeviceType::Pen && down.isInvertedCursor;
+				const float downPressure = ResolveStylusPressureForModel(
+					deviceType, down.isInvertedCursor, down.pressure);
+				const StrokeWidthMode widthMode = tool == DrawingTool::Pen
+					? ResolveStrokeWidthMode(deviceType,
+						inputWidthModeSettings_.Get(), downPressure)
+					: StrokeWidthMode::Fixed;
+				const InterruptedStrokeReconnectIdentity downIdentity{
+					deviceType,
+					static_cast<uint32_t>(batchTool),
+					static_cast<uint32_t>(tool),
+					widthMode,
+					down.isInvertedCursor,
+					suppressPressure
+				};
+
+				RuntimeStroke* reconnectRuntime = nullptr;
+				InterruptedStrokeReconnectResult reconnectResult;
+				RuntimeStroke* diagnosticRuntime = nullptr;
+				InterruptedStrokeReconnectResult diagnosticResult;
+				if (configuration_.interruptedStrokeReconnectEnabled)
+				{
+					for (RuntimeStroke* candidate : active)
+					{
+						if (!candidate || !candidate->awaitingReconnect || candidate->ended) continue;
+						if (!AreInterruptedStrokeReconnectIdentitiesCompatible(
+							ReconnectIdentity(*candidate), downIdentity))
+						{
+							if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
+							{
+								if (!diagnosticRuntime || candidate->deferredUpSnapshot.qpc >
+									diagnosticRuntime->deferredUpSnapshot.qpc)
+								{
+									diagnosticRuntime = candidate;
+									diagnosticResult = {};
+									diagnosticResult.rejectReason =
+										InterruptedStrokeReconnectRejectReason::IdentityMismatch;
+									diagnosticResult.gapMilliseconds = QpcDeltaSeconds(
+										down.qpc, candidate->deferredUpSnapshot.qpc, qpcFrequency) * 1000.0;
+									diagnosticResult.distance = std::hypot(
+										down.position.x - candidate->deferredUpSnapshot.position.x,
+										down.position.y - candidate->deferredUpSnapshot.position.y);
+								}
+							}
+							continue;
+						}
+						const double gapSeconds = QpcDeltaSeconds(
+							down.qpc, candidate->deferredUpSnapshot.qpc, qpcFrequency);
+						const InterruptedStrokeReconnectMotion motion =
+							ResolveInterruptedStrokeReconnectMotion(
+								candidate->reconnectPredictedResults,
+								candidate->stroke.realPoints,
+								candidate->reconnectDirection,
+								candidate->filteredInputSpeed,
+								candidate->lastModelInputTime,
+								gapSeconds,
+								reconnectDpiScale);
+						const InterruptedStrokeReconnectResult result =
+							EvaluateInterruptedStrokeReconnect({
+								.previousPosition = candidate->deferredUpSnapshot.position,
+								.previousDirection = motion.direction,
+								.previousSpeed = motion.speed,
+								.previousUpQpc = candidate->deferredUpSnapshot.qpc,
+								.newPosition = down.position,
+								.newDownQpc = down.qpc,
+								.qpcFrequency = qpcFrequency,
+								.dpiScale = reconnectDpiScale,
+								.motionSource = motion.source
+							});
+						if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
+						{
+							if (!diagnosticRuntime || candidate->deferredUpSnapshot.qpc >
+								diagnosticRuntime->deferredUpSnapshot.qpc)
+							{
+								diagnosticRuntime = candidate;
+								diagnosticResult = result;
+							}
+						}
+						if (IsBetterInterruptedStrokeReconnectMatch(result,
+							candidate->deferredUpSnapshot.qpc, reconnectResult,
+							reconnectRuntime ? reconnectRuntime->deferredUpSnapshot.qpc : 0))
+						{
+							reconnectRuntime = candidate;
+							reconnectResult = result;
+						}
+					}
+				}
+				if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
+				{
+					if (!reconnectRuntime && diagnosticRuntime)
+					{
+						std::cout << "[StrokeReconnect] rejected device=" <<
+							InputDeviceTypeName(deviceType) << " tool=" << DrawingToolName(tool) <<
+							" reason=" << ReconnectRejectReasonName(diagnosticResult.rejectReason) <<
+							" motion=" << ReconnectMotionSourceName(diagnosticResult.motionSource) <<
+							" gap_ms=" << diagnosticResult.gapMilliseconds <<
+							" distance_px=" << diagnosticResult.distance <<
+							" expected_px=" << diagnosticResult.expectedDistance <<
+							" reference_speed=" << diagnosticResult.referenceSpeed <<
+							" raw_speed=" << diagnosticRuntime->filteredInputSpeed <<
+							" range_px=[" << diagnosticResult.minimumDistance << "," <<
+							diagnosticResult.maximumDistance << "] angle_deg=" <<
+							diagnosticResult.angleDegrees << " speed_ratio=" <<
+							diagnosticResult.speedRatio << std::endl;
+					}
+				}
+
+				if (reconnectRuntime)
+				{
+					const float reconnectPreviousRawSpeed = reconnectRuntime->filteredInputSpeed;
+					ContactSnapshot modelDown = down;
+					modelDown.pressure = downPressure;
+					float lastPressure = reconnectRuntime->lastPressure;
+					float lastTilt = reconnectRuntime->lastTilt;
+					float lastOrientation = reconnectRuntime->lastOrientation;
+					const float pressure = KeepLastValidStylusValue(
+						modelDown.pressure, 1.0f, lastPressure);
+					const float tilt = KeepLastValidStylusValue(modelDown.tilt, kHalfPi, lastTilt);
+					const float orientation = KeepLastValidOrientation(
+						modelDown.orientation, lastOrientation);
+					double inputTime = QpcDeltaSeconds(
+						down.qpc, reconnectRuntime->qpcOrigin, qpcFrequency);
+					inputTime = std::max(inputTime, reconnectRuntime->lastModelInputTime + 0.000001);
+					const Input reconnectInput{
+						.event_type = Input::EventType::kMove,
+						.position = Vec2(down.position.x, down.position.y),
+						.time = Time(inputTime),
+						.pressure = pressure,
+						.tilt = tilt,
+						.orientation = orientation
+					};
+					const size_t reconnectManualTestFirstPointIndex =
+						reconnectRuntime->stroke.realPoints.empty()
+						? 0 : reconnectRuntime->stroke.realPoints.size() - 1;
+					if (absl::Status status = reconnectRuntime->stroke.modeler.Update(
+						reconnectInput, reconnectRuntime->stroke.modeledResults); status.ok())
+					{
+						const double gapSeconds = reconnectResult.gapMilliseconds / 1000.0;
+						const float alpha = std::clamp(static_cast<float>(
+							1.0 - std::exp(-gapSeconds / kInputSpeedSmoothingSeconds)), 0.02f, 0.35f);
+						reconnectRuntime->filteredInputSpeed +=
+							(reconnectResult.bridgeSpeed - reconnectRuntime->filteredInputSpeed) * alpha;
+						AppendNewModeledPoints(reconnectRuntime->stroke,
+							reconnectRuntime->filteredInputSpeed);
+						if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
+						{
+							const size_t lastPointIndex = reconnectRuntime->stroke.realPoints.size();
+							if (lastPointIndex > reconnectManualTestFirstPointIndex + 1)
+							{
+								// 记录旧末点到续接 Down 的模型输出，仅用于人工观察桥接范围。
+								reconnectRuntime->reconnectManualTestRanges.push_back({
+									reconnectManualTestFirstPointIndex, lastPointIndex });
+							}
+						}
+						input_.Recycle(reconnectRuntime->handle); // 新 contact 接管前释放已经 ConsumerOwned 的旧 slot。
+						reconnectRuntime->handle = handle;
+						reconnectRuntime->lastSpeedSnapshot = down;
+						reconnectRuntime->lastModelSnapshot = modelDown;
+						reconnectRuntime->lastConsumedSequence = down.sequence;
+						reconnectRuntime->lastModelInputTime = inputTime;
+						reconnectRuntime->lastPressure = lastPressure;
+						reconnectRuntime->lastTilt = lastTilt;
+						reconnectRuntime->lastOrientation = lastOrientation;
+						reconnectRuntime->awaitingReconnect = false;
+						reconnectRuntime->reconnectVisualRefresh = true;
+						reconnectRuntime->deferredUpSnapshot = {};
+						reconnectRuntime->reconnectDeadlineQpc = 0;
+						reconnectRuntime->reconnectPredictedResults.clear();
+						reconnectRuntime->metricEligibleQpc =
+							tool == DrawingTool::Highlighter &&
+							!reconnectRuntime->stroke.startDirectionState.locked ? 0 : down.qpc;
+						reconnectRuntime->metricVisible = false;
+						reconnectRuntime->movedThisFrame = true;
+						reconnectRuntime->stroke.idleFrozen = false;
+						reconnectRuntime->stroke.visualStableFrameCount = 0;
+						reconnectRuntime->stroke.lastMovementInputTime = inputTime;
+						std::cout << "[StrokeReconnect] linked device=" << InputDeviceTypeName(deviceType) <<
+							" tool=" << DrawingToolName(tool) << " gap_ms=" << reconnectResult.gapMilliseconds <<
+							" motion=" << ReconnectMotionSourceName(reconnectResult.motionSource) <<
+							" distance_px=" << reconnectResult.distance <<
+							" expected_px=" << reconnectResult.expectedDistance <<
+							" reference_speed=" << reconnectResult.referenceSpeed <<
+							" raw_speed=" << reconnectPreviousRawSpeed <<
+							" angle_deg=" << reconnectResult.angleDegrees <<
+							" speed_ratio=" << reconnectResult.speedRatio << std::endl;
+						return true;
+					}
+					else
+					{
+						std::cout << "Failed to continue interrupted stroke: " << status.message() << std::endl;
+					}
+				}
+
 				RuntimeStroke* runtime = acquireStroke();
 				if (!runtime)
 				{
@@ -426,29 +771,26 @@ namespace draw3
 				}
 				runtime->handle = handle;
 				runtime->selectedTool = batchTool; // 倒转覆盖不能污染同批后续 contact 的原始选择。
-				const bool selectedToolSupportsOverride =
-					batchTool == DrawingTool::Pen || batchTool == DrawingTool::Highlighter;
-				const bool invertedEraser = ShouldUseInvertedPenEraser(deviceType,
-					down.isInvertedCursor, invertedPenEraserEnabled_.load(std::memory_order_acquire),
-					selectedToolSupportsOverride);
-				runtime->tool = invertedEraser ? DrawingTool::Eraser : batchTool;
-				runtime->suppressPressure = deviceType == InputDeviceType::Pen && down.isInvertedCursor;
+				runtime->tool = tool;
+				runtime->suppressPressure = suppressPressure;
 				runtime->ended = false;
 				runtime->cancelled = false;
 				runtime->metricVisible = false;
 				runtime->movedThisFrame = false;
 				runtime->visibleDirty = {};
 				runtime->metricDeviceType = deviceType;
+				runtime->invertedCursor = down.isInvertedCursor;
+				runtime->awaitingReconnect = false;
+				runtime->reconnectVisualRefresh = false;
+				runtime->deferredUpSnapshot = {};
+				runtime->reconnectDirection = {};
+				runtime->reconnectDeadlineQpc = 0;
+				runtime->reconnectPredictedResults.clear();
+				runtime->reconnectManualTestRanges.clear();
 				runtime->metricEligibleQpc =
 					runtime->tool == DrawingTool::Highlighter ? 0 : down.qpc;
-				const float downPressure = ResolveStylusPressureForModel(
-					deviceType, down.isInvertedCursor, down.pressure);
 				const float baseDiameter = DiameterForTool(runtime->tool);
 				const bool highlighter = runtime->tool == DrawingTool::Highlighter;
-				const StrokeWidthMode widthMode = runtime->tool == DrawingTool::Pen
-					? ResolveStrokeWidthMode(deviceType,
-						inputWidthModeSettings_.Get(), downPressure)
-					: StrokeWidthMode::Fixed;
 				runtime->stroke.Reset(baseDiameter, configuration_.expectedSpeed,
 					widthMode, highlighter);
 				const auto& modelParams = runtime->tool == DrawingTool::Eraser
@@ -519,8 +861,71 @@ namespace draw3
 				initializeStroke(ContactHandle{ record, record->Generation() }); // 出队后立即固定本地 generation。
 			};
 
+		auto appendTerminalFallback = [&](RuntimeStroke& runtime,
+			const ContactSnapshot& snapshot, double inputTime)
+			{
+				const float radius = runtime.stroke.realPoints.empty()
+					? runtime.stroke.inputStartPoint.r : runtime.stroke.realPoints.back().r;
+				const InkPoint finalPoint{ snapshot.position.x, snapshot.position.y,
+					radius, static_cast<float>(inputTime) };
+				if (runtime.stroke.realPoints.empty())
+					runtime.stroke.realPoints.push_back(finalPoint);
+				else
+				{
+					const float deltaX = finalPoint.x - runtime.stroke.realPoints.back().x;
+					const float deltaY = finalPoint.y - runtime.stroke.realPoints.back().y;
+					if (deltaX * deltaX + deltaY * deltaY > 0.0001f)
+						runtime.stroke.realPoints.push_back(finalPoint);
+					else
+						runtime.stroke.realPoints.back() = finalPoint;
+				}
+				// 模型异常也保留 RTS 的最终位置，不能因随后回收 contact 而吞掉 Up 点。
+			};
+
+		auto completeModelUp = [&](RuntimeStroke& runtime,
+			const ContactSnapshot& snapshot, bool cancelled)
+			{
+				ContactSnapshot modelSnapshot = snapshot;
+				if (runtime.suppressPressure) modelSnapshot.pressure = -1.0f;
+				double inputTime = QpcDeltaSeconds(snapshot.qpc, runtime.qpcOrigin, qpcFrequency);
+				inputTime = std::max(inputTime, runtime.lastModelInputTime + 0.000001);
+				runtime.lastModelInputTime = inputTime;
+				const float pressure = KeepLastValidStylusValue(
+					modelSnapshot.pressure, 1.0f, runtime.lastPressure);
+				const float tilt = KeepLastValidStylusValue(
+					modelSnapshot.tilt, kHalfPi, runtime.lastTilt);
+				const float orientation = KeepLastValidOrientation(
+					modelSnapshot.orientation, runtime.lastOrientation);
+				const Input upInput{
+					.event_type = Input::EventType::kUp,
+					.position = Vec2(snapshot.position.x, snapshot.position.y),
+					.time = Time(inputTime),
+					.pressure = pressure,
+					.tilt = tilt,
+					.orientation = orientation
+				};
+				if (absl::Status status = runtime.stroke.modeler.Update(
+					upInput, runtime.stroke.modeledResults); status.ok())
+					AppendNewModeledPoints(runtime.stroke);
+				else
+				{
+					std::cout << "Error: " << status.message() << std::endl;
+					appendTerminalFallback(runtime, snapshot, inputTime);
+				}
+				runtime.lastModelSnapshot = modelSnapshot;
+				runtime.ended = true;
+				runtime.cancelled = cancelled;
+				runtime.awaitingReconnect = false;
+				runtime.reconnectVisualRefresh = false;
+				runtime.reconnectDeadlineQpc = 0;
+				if (runtime.tool == DrawingTool::Highlighter &&
+					!cancelled && runtime.metricEligibleQpc == 0)
+					runtime.metricEligibleQpc = snapshot.qpc; // 不足 12px 的 short mark 以 Up 为软件延迟起点。
+			};
+
 		auto consumeLatestSnapshot = [&](RuntimeStroke& runtime) -> bool
 			{
+				if (runtime.ended || runtime.awaitingReconnect) return false;
 				ContactSnapshot snapshot;
 				if (!input_.TryReadSnapshot(runtime.handle, snapshot) ||
 					snapshot.sequence == runtime.lastConsumedSequence) return false;
@@ -534,6 +939,8 @@ namespace draw3
 				const float distanceSquared = deltaX * deltaX + deltaY * deltaY;
 				const bool terminal = snapshot.phase == ContactPhase::Up ||
 					snapshot.phase == ContactPhase::Cancelled;
+				const bool deferUp = snapshot.phase == ContactPhase::Up &&
+					configuration_.interruptedStrokeReconnectEnabled;
 				const bool positionMoved = distanceSquared > kRawMoveThresholdPx * kRawMoveThresholdPx;
 				const bool stylusStateChanged = HasStylusStateChange(modelSnapshot, runtime.lastModelSnapshot);
 				if (!terminal && !positionMoved && !stylusStateChanged)
@@ -570,38 +977,25 @@ namespace draw3
 				const float orientation = KeepLastValidOrientation(
 					modelSnapshot.orientation, runtime.lastOrientation);
 				const Input input{
-					.event_type = terminal ? Input::EventType::kUp : Input::EventType::kMove,
+					.event_type = terminal && !deferUp ? Input::EventType::kUp : Input::EventType::kMove,
 					.position = Vec2(snapshot.position.x, snapshot.position.y),
 					.time = Time(inputTime),
 					.pressure = pressure,
 					.tilt = tilt,
 					.orientation = orientation
 				};
+				bool modelUpdateSucceeded = false;
 				if (absl::Status status = runtime.stroke.modeler.Update(
-					input, runtime.stroke.modeledResults); !status.ok())
+					input, runtime.stroke.modeledResults); status.ok())
+				{
+					modelUpdateSucceeded = true;
+					AppendNewModeledPoints(runtime.stroke, inputSpeed);
+				}
+				else
 				{
 					std::cout << "Error: " << status.message() << std::endl;
-					if (terminal)
-					{
-						const float radius = runtime.stroke.realPoints.empty()
-							? runtime.stroke.inputStartPoint.r : runtime.stroke.realPoints.back().r;
-						const InkPoint finalPoint{ snapshot.position.x, snapshot.position.y,
-							radius, static_cast<float>(inputTime) };
-						if (runtime.stroke.realPoints.empty())
-							runtime.stroke.realPoints.push_back(finalPoint);
-						else
-						{
-							const float finalDeltaX = finalPoint.x - runtime.stroke.realPoints.back().x;
-							const float finalDeltaY = finalPoint.y - runtime.stroke.realPoints.back().y;
-							if (finalDeltaX * finalDeltaX + finalDeltaY * finalDeltaY > 0.0001f)
-								runtime.stroke.realPoints.push_back(finalPoint);
-							else
-								runtime.stroke.realPoints.back() = finalPoint;
-						}
-						// 模型异常也保留 RTS 的最终位置，不能因随后回收 contact 而吞掉 Up 点。
-					}
+					if (terminal && !deferUp) appendTerminalFallback(runtime, snapshot, inputTime);
 				}
-				AppendNewModeledPoints(runtime.stroke, inputSpeed);
 				if (runtime.tool == DrawingTool::Highlighter &&
 					runtime.metricEligibleQpc == 0 &&
 					runtime.stroke.startDirectionState.locked)
@@ -614,15 +1008,43 @@ namespace draw3
 					runtime.stroke.visualStableFrameCount = 0;
 					runtime.stroke.lastMovementInputTime = inputTime;
 				}
-				if (terminal)
+				if (deferUp)
+				{
+					DirectX::XMFLOAT2 direction = {};
+					if (modelUpdateSucceeded && runtime.hasFilteredInputSpeed &&
+						TryGetInterruptedStrokeTailDirection(
+							runtime.stroke.realPoints, reconnectDpiScale, direction))
+					{
+						runtime.reconnectPredictedResults.clear();
+						if (runtime.tool != DrawingTool::Eraser &&
+							kActivePredictionMode != InkPredictionMode::Disabled)
+						{
+							// 同帧新 Down 会在渲染前出队，因此候选创建时必须先冻结最新 prediction。
+							if (absl::Status status = runtime.stroke.modeler.Predict(
+								runtime.reconnectPredictedResults); !status.ok())
+								runtime.reconnectPredictedResults.clear();
+						}
+						runtime.awaitingReconnect = true;
+						runtime.reconnectVisualRefresh = true;
+						runtime.deferredUpSnapshot = snapshot;
+						runtime.reconnectDirection = direction;
+						runtime.reconnectDeadlineQpc = snapshot.qpc + static_cast<int64_t>(
+							kInterruptedStrokeReconnectWindowSeconds * static_cast<double>(qpcFrequency));
+					}
+					else
+					{
+						completeModelUp(runtime, snapshot, false);
+					}
+				}
+				else if (terminal)
 				{
 					runtime.ended = true;
 					runtime.cancelled = snapshot.phase == ContactPhase::Cancelled;
 					if (runtime.tool == DrawingTool::Highlighter &&
 						!runtime.cancelled && runtime.metricEligibleQpc == 0)
-						runtime.metricEligibleQpc = snapshot.qpc; // 不足 12px 的 short mark 以 Up 为软件延迟起点。
+						runtime.metricEligibleQpc = snapshot.qpc;
 				}
-				return positionMoved || stylusStateChanged;
+				return positionMoved || stylusStateChanged || deferUp;
 			};
 
 		bool clearPending = false;
@@ -638,7 +1060,6 @@ namespace draw3
 			const double previousFrameMs = lastActiveFrameStartMs > 0.0
 				? frameStartMs - lastActiveFrameStartMs : 0.0;
 			ContactRecord* record = nullptr;
-			while (input_.TryDequeue(record)) processCommand(record);
 
 			bool forceFullPresent = false;
 			if (window_.ConsumeClearCanvasRequest()) clearPending = true;
@@ -692,29 +1113,73 @@ namespace draw3
 				continue;
 			}
 
-			if (!active.empty() && !timerPeriodAttempted)
-			{
-				timerPeriodAttempted = true;
-				timerPeriodActive = timeBeginPeriod(1) == TIMERR_NOERROR; // 只为成功的请求配对 timeEndPeriod。
-			}
-
-			const DrawingTool frameTool = active.empty()
-				? window_.ActiveTool() : active.front()->tool;
-			const bool frameHadActiveContact = !active.empty();
+			const bool frameHadActiveContact = HasPhysicalContact(active);
 			const uint64_t frameWakeGeneration = input_.CaptureWakeGeneration();
 			LARGE_INTEGER frameQpc = {};
 			QueryPerformanceCounter(&frameQpc);
 			bool hasEndedStroke = false;
+			if (!configuration_.interruptedStrokeReconnectEnabled)
+			{
+				while (input_.TryDequeue(record)) processCommand(record);
+				// 关闭开关时保留原先的 Down 出队顺序，确保它是完整的回滚点。
+			}
+			// 先把旧 contact 的 Up 转成候选，同帧随后出队的新 Down 才能看到它。
 			for (RuntimeStroke* runtime : active)
 			{
 				runtime->movedThisFrame = consumeLatestSnapshot(*runtime);
 				hasEndedStroke = hasEndedStroke || runtime->ended;
 			}
 
+			size_t reconnectCandidateCount = static_cast<size_t>(std::count_if(
+				active.begin(), active.end(), [](const RuntimeStroke* runtime)
+					{ return runtime && runtime->awaitingReconnect; }));
+			size_t reconnectEvictionCount =
+				GetInterruptedStrokeReconnectEvictionCount(reconnectCandidateCount);
+			while (reconnectEvictionCount > 0)
+			{
+				RuntimeStroke* oldest = nullptr;
+				for (RuntimeStroke* runtime : active)
+				{
+					if (!runtime || !runtime->awaitingReconnect) continue;
+					if (!oldest || runtime->deferredUpSnapshot.qpc < oldest->deferredUpSnapshot.qpc)
+						oldest = runtime;
+				}
+				if (!oldest) break;
+				completeModelUp(*oldest, oldest->deferredUpSnapshot, false);
+				hasEndedStroke = true;
+				--reconnectEvictionCount;
+			}
+
+			if (configuration_.interruptedStrokeReconnectEnabled)
+				while (input_.TryDequeue(record)) processCommand(record);
+			for (RuntimeStroke* runtime : active)
+			{
+				if (!runtime || !runtime->awaitingReconnect ||
+					!IsInterruptedStrokeReconnectExpired(
+						runtime->reconnectDeadlineQpc, frameQpc.QuadPart)) continue;
+				completeModelUp(*runtime, runtime->deferredUpSnapshot, false);
+				hasEndedStroke = true;
+			}
+
+			const bool hasPhysicalContact = HasPhysicalContact(active);
+			if (hasPhysicalContact && !timerPeriodAttempted)
+			{
+				timerPeriodAttempted = true;
+				timerPeriodActive = timeBeginPeriod(1) == TIMERR_NOERROR; // 只为成功的请求配对 timeEndPeriod。
+			}
+			const auto frameToolIterator = std::find_if(active.begin(), active.end(),
+				[](const RuntimeStroke* runtime)
+					{ return runtime && !runtime->ended && !runtime->awaitingReconnect; });
+			const DrawingTool frameTool = frameToolIterator != active.end()
+				? (*frameToolIterator)->tool
+				: active.empty() ? window_.ActiveTool() : active.front()->tool;
+
 			const WindowSize size = window_.Size();
 			for (RuntimeStroke* runtime : active)
 			{
 				ActiveStroke& stroke = runtime->stroke;
+				if (runtime->awaitingReconnect && !runtime->reconnectVisualRefresh)
+					continue; // 暂留候选保持上一帧 L0/L1，不制造脏区或重复 prediction。
 				const bool eraser = runtime->tool == DrawingTool::Eraser;
 				const bool highlighter = runtime->tool == DrawingTool::Highlighter;
 				const double liveTipDurationSeconds =
@@ -727,7 +1192,15 @@ namespace draw3
 				if (!runtime->ended)
 				{
 					stroke.predictedResults.clear();
-					if (!eraser &&
+					if (runtime->awaitingReconnect)
+					{
+						if (!eraser &&
+							(!highlighter || stroke.realPathLength >= kHighlighterMinimumStrokeLengthPx))
+							stroke.predictedResults.assign(
+								runtime->reconnectPredictedResults.begin(),
+								runtime->reconnectPredictedResults.end());
+					}
+					else if (!eraser &&
 						(!highlighter || stroke.realPathLength >= kHighlighterMinimumStrokeLengthPx) &&
 						kActivePredictionMode != InkPredictionMode::Disabled)
 					{
@@ -761,9 +1234,15 @@ namespace draw3
 					stroke.l0DrawPoints.clear();
 					stroke.currentL0Rect = {};
 				}
-				if (!runtime->ended)
+				if (!runtime->ended && !runtime->awaitingReconnect)
 					UpdateIdleFreezeState(stroke, runtime->movedThisFrame,
 						liveTipDurationSeconds);
+				if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
+				{
+					if (!runtime->ended)
+						UnionRectInPlace(stableDirty,
+							DrawReconnectManualTestRanges(*runtime, renderer_, size.width, size.height));
+				}
 
 				UnionRectInPlace(frameDirty, stableDirty);
 				UnionRectInPlace(frameDirty, stroke.lastL0Rect);
@@ -773,6 +1252,7 @@ namespace draw3
 				UnionRectInPlace(runtime->visibleDirty, stroke.currentL0Rect);
 				if (!IsEmptyRect(stableDirty) || !IsEmptyRect(stroke.currentL0Rect))
 					runtime->metricVisible = true;
+				runtime->reconnectVisualRefresh = false;
 			}
 
 			if (hasEndedStroke)
@@ -785,9 +1265,12 @@ namespace draw3
 					if (!runtime->ended) continue;
 					if (!runtime->cancelled)
 					{
-						const RECT completedStrokeDirty =
+						RECT completedStrokeDirty =
 							DrawCompletedStroke(*runtime, renderer_, size.width, size.height,
 								configuration_.retainPredictionOnUp);
+						if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
+							UnionRectInPlace(completedStrokeDirty,
+								DrawReconnectManualTestRanges(*runtime, renderer_, size.width, size.height));
 						UnionRectInPlace(completedDirty, completedStrokeDirty);
 						if (!IsEmptyRect(completedStrokeDirty)) runtime->metricVisible = true;
 					}
@@ -817,9 +1300,17 @@ namespace draw3
 						runtime->selectedTool = DrawingTool::Pen;
 						runtime->tool = DrawingTool::Pen;
 						runtime->suppressPressure = false;
+						runtime->invertedCursor = false;
 						runtime->visibleDirty = {};
 						runtime->ended = false;
 						runtime->cancelled = false;
+						runtime->awaitingReconnect = false;
+						runtime->reconnectVisualRefresh = false;
+						runtime->deferredUpSnapshot = {};
+						runtime->reconnectDirection = {};
+						runtime->reconnectDeadlineQpc = 0;
+						runtime->reconnectPredictedResults.clear();
+						runtime->reconnectManualTestRanges.clear();
 						runtime->metricVisible = false;
 						runtime->metricEligibleQpc = 0;
 						runtime->inUse = false;
@@ -877,7 +1368,8 @@ namespace draw3
 				metrics_->CommitStagedLandings(presentSucceeded, presentQpc.QuadPart);
 			}
 
-			if (!active.empty())
+			const bool hasPhysicalContactAfterFrame = HasPhysicalContact(active);
+			if (hasPhysicalContactAfterFrame)
 			{
 				const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
 				if (metrics_ && frameHadActiveContact)
@@ -902,6 +1394,33 @@ namespace draw3
 				LogFrameTiming(committedCount, realPointCount, predictedPointCount,
 					l0PointCount, workMs, previousFrameMs, allIdleFrozen); // Debug 输出全部活动 contact 的聚合帧率。
 				lastActiveFrameStartMs = frameStartMs;
+			}
+			else if (!active.empty())
+			{
+				lastActiveFrameStartMs = 0.0;
+				if (timerPeriodActive)
+				{
+					timeEndPeriod(1);
+					timerPeriodActive = false;
+				}
+				timerPeriodAttempted = false;
+				int64_t nearestDeadlineQpc = (std::numeric_limits<int64_t>::max)();
+				for (const RuntimeStroke* runtime : active)
+				{
+					if (runtime && runtime->awaitingReconnect)
+						nearestDeadlineQpc = std::min(
+							nearestDeadlineQpc, runtime->reconnectDeadlineQpc);
+				}
+				LARGE_INTEGER waitStartQpc = {};
+				QueryPerformanceCounter(&waitStartQpc);
+				const double timeoutMilliseconds = nearestDeadlineQpc ==
+					(std::numeric_limits<int64_t>::max)()
+					? 0.0
+					: QpcDeltaSeconds(nearestDeadlineQpc,
+						waitStartQpc.QuadPart, qpcFrequency) * 1000.0;
+				if (metrics_) metrics_->BeginIdle(GetQpcTimeMilliseconds());
+				input_.WaitForWake(frameWakeGeneration, timeoutMilliseconds);
+				if (metrics_) metrics_->EndIdle(GetQpcTimeMilliseconds());
 			}
 		}
 

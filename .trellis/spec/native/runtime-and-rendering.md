@@ -58,6 +58,71 @@
 
 依据：`StrokeWidthEstimator::Append`、`UpdateRawPositionAndDetectMovement`、`UpdateIdleFreezeState`、`RebuildPredictedPoints`。
 
+## Scenario: RTS Interrupted Stroke Reconnect
+
+### 1. Scope / Trigger
+
+修改 RTS 物理 Up、`RuntimeStroke` 生命周期、modeler 终态、活动层重建或 contact handle 回收时，必须应用本契约。
+
+### 2. Signatures
+
+- `StrokeModelConfiguration::interruptedStrokeReconnectEnabled`
+- `TryGetInterruptedStrokeTailDirection`
+- `ResolveInterruptedStrokeReconnectMotion`
+- `EvaluateInterruptedStrokeReconnect`
+- `AreInterruptedStrokeReconnectIdentitiesCompatible`
+- `IsBetterInterruptedStrokeReconnectMatch`
+
+### 3. Contracts
+
+- 开关默认开启且只在构造 `DrawingController` 前配置；关闭时必须保留原先 Down 出队和立即 `kUp` 顺序。
+- 物理 Up 在 80ms 窗口内先作为 `kMove` 输入并冻结 modeler、真实点、prediction、L0/L1 CPU 状态、提交游标、宽度估算器和旧 handle；Cancelled 立即终结。
+- 候选必须具有有效末速和末端方向，并与新 Down 的设备、批次选择工具、有效工具、宽度模式、倒转状态和压力屏蔽策略完全一致。Up 的 `kMove` 成功后必须在新 Down 出队前冻结匹配专用 prediction，保证同帧 Up→Down 使用最新状态。
+- prediction 有有效速度时，按 Down 间隔在预测时域内插值，超出时域使用最后预测状态；方向夹角不超过 35°，距离按 `预测速度×间隔` 的 `[0.35,2.75]` 包络加 `4px*dpiScale` 余量，绝对上限为 `64px*dpiScale`。
+- prediction 为空、速度无效或工具禁用 prediction 时，回退真实尾方向与滤波末速：96 DPI 下方向回看 12px、有效方向至少 4px、绝对距离不超过 32px，沿用原自适应距离和速度比规则。
+- 多候选按实际/预测距离比例误差、角度、距离、较新 Up 的顺序选择。命中时旧 handle 回收，新 handle 接管原 runtime，新 Down 以连续时间作为 `kMove`；不得 Reset modeler 或宽度状态。
+- 最多保留 8 个候选；超限先以保存的 Up 完成最旧候选。仅剩候选时结束 1ms timer period，并等待新 Down、控制 wake 或最近 deadline。
+- 超时后才发送真正 `kUp`，随后沿用同帧批量 L2 resolve、活动层重建、指标提交、handle 回收和 runtime Reset。resize 重建候选，clear 最多额外等待当前候选剩余窗口。
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Up 无有效末速/方向 | 立即发送 `kUp`，不进入候选 |
+| Cancelled | 立即终结，不可续接 |
+| 设备、工具或笔状态不一致 | 新 Down 创建独立笔画，旧候选继续等待 |
+| 任一时间/距离/方向/速度阈值失败 | 拒绝续接；正常模式不输出逐候选日志，人工测试模式只输出最近候选的一行诊断 |
+| prediction 为空/速度无效/禁用 | 使用真实尾方向、滤波末速和 32px 保守上限 |
+| 暂留 `kMove` 失败 | 立即回退真正 `kUp`，不得遗留候选 |
+| 续接 `kMove` 失败 | 新 Down 正常建笔，旧候选继续等待至超时 |
+| 第 9 个候选进入 | 最旧候选同帧完成，候选数恢复为 8 |
+| 80ms 到期 | 用保存 Up 发送 `kUp` 并进入既有完成批处理 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：Pen 在预测曲线方向 50ms 后恢复 Down，预测速度包络允许超过 32px 但不超过 64px 的合理桥接；原 qpc origin、modeler、真实点和宽度状态连续。
+- Base：未命中的普通笔、荧光笔、橡皮及 Touch/Mouse/Pen 都按独立笔画处理，旧候选按 deadline 正常收尾。
+- Bad：物理 Up 立即 `kUp` 后尝试 Reset/拼接新模型，或只按距离匹配而忽略设备、工具、方向和速度。
+
+### 6. Tests Required
+
+- 精确覆盖 80ms、35°、prediction 时域插值/末状态、64px 预测上限、32px 回退上限、DPI 缩放和距离包络越界拒绝。
+- 覆盖四类 `InputDeviceType`、三类工具以及全部身份字段不一致拒绝。
+- 覆盖预测距离比例误差/角度/距离/Up 时间的多候选确定性选择、候选上限和超时策略。
+- 同一 modeler 依次接收 `Down → Move → 暂留 Up(kMove) → 新 Down(kMove) → Up`；橡皮使用 Disabled predictor。
+- 静态检查功能关闭时保留旧队列顺序，仅候选时 timer period 已结束且 deadline 可自行唤醒。
+- 实体 Pen/Touch/Mouse 验证续接、主动分笔不误连、快速断触、resize、clear 和三类工具；`SendInput` 不能替代 RTS 硬件验证。
+
+### 7. Wrong vs Correct
+
+Wrong：`收到物理 Up 就发送 kUp；新 Down 命中后 Reset 一个模型并手工画直线桥接。`
+
+Correct：`Up 暂作 kMove 并保存快照；命中后把新 Down 作为原模型的连续 kMove，超时才发送保存的 kUp。`
+
+Wrong：`只用真实尾部 12px 弦方向和固定 32px 上限判断曲线断触。`
+
+Correct：`Up 的 kMove 后立即冻结 prediction；优先用预测方向与预测速度包络，prediction 不可用时再回退真实尾和 32px 保守策略。`
+
 ## Scenario: RTS Stylus State And Device Width Modes
 
 ### 1. Scope / Trigger
