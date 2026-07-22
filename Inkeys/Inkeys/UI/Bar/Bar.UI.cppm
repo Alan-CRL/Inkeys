@@ -680,6 +680,12 @@ public:
 };
 
 /// 控件
+enum class BarUiFrameRenderingEnum : int
+{
+	Solid = 0,
+	PointLight = 1,
+};
+
 //// 单个形状控件
 class BarUiShapeClass : public BarUiInnheritBaseClass
 {
@@ -707,6 +713,7 @@ public:
 
 	// 透明度
 	optional<BarUiPctClass> framePct; // 控件边框透明度
+	BarUiFrameRenderingEnum frameRendering = BarUiFrameRenderingEnum::Solid; // 默认保留原纯色边框
 };
 //// 单个超椭圆控件
 class BarUiSuperellipseClass : public BarUiInnheritBaseClass
@@ -736,6 +743,7 @@ public:
 
 	// 透明度
 	optional<BarUiPctClass> framePct; // 控件边框透明度
+	BarUiFrameRenderingEnum frameRendering = BarUiFrameRenderingEnum::Solid; // 默认保留原纯色边框
 };
 //// 单个 SVG 控件
 class BarUiSVGClass : public BarUiInnheritBaseClass

@@ -29,17 +29,21 @@ public:
 		target.bottom = max(target.bottom, add.bottom);
 	}
 
-	static int GetFrameDirtyOutset(const optional<BarUiValueClass>& ft, double tarZoom)
+	static int GetFrameDirtyOutset(const optional<BarUiValueClass>& ft,
+		BarUiFrameRenderingEnum frameRendering, double tarZoom)
 	{
 		if (!ft.has_value()) return 0;
 
 		// 边框外扩需要折算到设备像素，固定抗锯齿余量在矩形计算处统一追加。
-		return static_cast<int>(ceil(ft.value().val * tarZoom));
+		double dirtyWidth = ft.value().val;
+		if (frameRendering == BarUiFrameRenderingEnum::PointLight)
+			dirtyWidth += 2.0; // 点光模式还会绘制总宽增加 2px 的微弱扩散层。
+		return static_cast<int>(ceil(dirtyWidth * tarZoom));
 	}
 
 	static RECT GetWeigetRect(const BarUiShapeClass& shape, double tarZoom)
 	{
-		int ft = GetFrameDirtyOutset(shape.ft, tarZoom) + dirtyAntialiasPadding;
+		int ft = GetFrameDirtyOutset(shape.ft, shape.frameRendering, tarZoom) + dirtyAntialiasPadding;
 
 		RECT ret;
 		ret.left = static_cast<LONG>(floor(shape.inhX * tarZoom) - ft);
@@ -51,7 +55,7 @@ public:
 	}
 	static RECT GetWeigetRect(const BarUiSuperellipseClass& superellipse, double tarZoom)
 	{
-		int ft = GetFrameDirtyOutset(superellipse.ft, tarZoom) + dirtyAntialiasPadding;
+		int ft = GetFrameDirtyOutset(superellipse.ft, superellipse.frameRendering, tarZoom) + dirtyAntialiasPadding;
 
 		RECT ret;
 		ret.left = static_cast<LONG>(floor(superellipse.inhX * tarZoom) - ft);

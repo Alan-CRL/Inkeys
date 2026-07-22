@@ -139,9 +139,34 @@ public:
 	bool Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, RECT* targetRect = nullptr, bool clip = false);
 	bool Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, const BarUiInheritClass& inh);
 	bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT textAlign = DWRITE_TEXT_ALIGNMENT_CENTER);
+	bool PrepareFrameLighting(chrono::steady_clock::time_point now);
 
 public:
 	BarUISetClass* barUISetClass = nullptr;
+
+protected:
+	struct FrameGradientBrushCacheClass
+	{
+		COLORREF color = RGB(0, 0, 0);
+		bool interaction = false;
+		ComPtr<ID2D1RadialGradientBrush> brush;
+	};
+
+	ID2D1RadialGradientBrush* GetFrameGradientBrush(
+		ID2D1DeviceContext* deviceContext, COLORREF color, bool interaction);
+	bool DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLORREF color,
+		double framePct, FLOAT strokeWidth, const D2D1_ROUNDED_RECT* roundedRect,
+		ID2D1Geometry* geometry);
+
+	D2D1_POINT_2F framePrimaryLight = D2D1::Point2F();
+	D2D1_POINT_2F frameInteractionLight = D2D1::Point2F();
+	FLOAT framePrimaryLightIntensity = 1.0F;
+	FLOAT frameInteractionLightIntensity = 0.0F;
+	FLOAT frameLightRadius = 0.0F;
+	bool frameInteractionLightVisible = false;
+	bool frameLightingWasAnimating = false;
+	bool frameGradientFailureLogged = false;
+	vector<FrameGradientBrushCacheClass> frameGradientBrushCache;
 };
 
 // UI 总集
@@ -179,7 +204,16 @@ public:
 protected:
 	// 拖动交互
 	double Seek(const ExMessage& msg);
+	void RegisterBorderInteractionLight(double clientX, double clientY, bool restartPrimaryPulse);
 	std::atomic<unsigned long long> mainButtonClickPulseSerial = 0;
+
+	mutex borderInteractionLightMutex;
+	D2D1_POINT_2F borderInteractionLightPoint = D2D1::Point2F();
+	chrono::steady_clock::time_point borderInteractionLightUpdatedAt{};
+	chrono::steady_clock::time_point borderPrimaryLightPulseStartedAt{};
+	bool hasBorderInteractionLight = false;
+
+	friend class BarUIRendering;
 };
 // 全局 Bar UI 集合
 export extern BarUISetClass barUISet;
