@@ -127,6 +127,13 @@ enum class BarUISetWordEnum : int
 	DrawAttributeBar_ThicknessDisplay,
 };
 
+enum class BarBorderLightSourceEnum : int
+{
+	Primary,
+	Interaction,
+	Cursor,
+};
+
 // 具体渲染
 class BarUIRendering
 {
@@ -139,7 +146,7 @@ public:
 	bool Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, RECT* targetRect = nullptr, bool clip = false);
 	bool Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, const BarUiInheritClass& inh);
 	bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT textAlign = DWRITE_TEXT_ALIGNMENT_CENTER);
-	bool PrepareFrameLighting(chrono::steady_clock::time_point now);
+	bool PrepareFrameLighting(double animationDtSeconds);
 
 public:
 	BarUISetClass* barUISetClass = nullptr;
@@ -148,24 +155,41 @@ protected:
 	struct FrameGradientBrushCacheClass
 	{
 		COLORREF color = RGB(0, 0, 0);
-		bool interaction = false;
+		BarBorderLightSourceEnum lightSource = BarBorderLightSourceEnum::Primary;
 		ComPtr<ID2D1RadialGradientBrush> brush;
 	};
 
 	ID2D1RadialGradientBrush* GetFrameGradientBrush(
-		ID2D1DeviceContext* deviceContext, COLORREF color, bool interaction);
+		ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource);
 	bool DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLORREF color,
 		double framePct, FLOAT strokeWidth, const D2D1_ROUNDED_RECT* roundedRect,
 		ID2D1Geometry* geometry);
 
 	D2D1_POINT_2F framePrimaryLight = D2D1::Point2F();
 	D2D1_POINT_2F frameInteractionLight = D2D1::Point2F();
+	D2D1_POINT_2F frameCursorLight = D2D1::Point2F();
 	FLOAT framePrimaryLightIntensity = 1.0F;
 	FLOAT frameInteractionLightIntensity = 0.0F;
+	FLOAT frameCursorLightIntensity = 0.0F;
 	FLOAT frameLightRadius = 0.0F;
 	bool frameInteractionLightVisible = false;
+	bool frameCursorLightVisible = false;
+	bool frameInteractionLightAnimating = false;
+	bool framePrimaryLightAnimating = false;
+	bool frameCursorLightAnimating = false;
+	bool frameAnimationStateInitialized = false;
+	bool frameLastAnimationEnabled = false;
+	bool frameCursorInputAvailable = false;
 	bool frameLightingWasAnimating = false;
 	bool frameGradientFailureLogged = false;
+	double frameInteractionLightElapsed = 0.0;
+	double framePrimaryLightElapsed = 0.0;
+	double frameCursorLightFadeElapsed = 0.0;
+	unsigned long long handledBorderInteractionLightSerial = 0;
+	unsigned long long handledBorderPrimaryLightPulseSerial = 0;
+	unsigned long long handledBorderCursorLightSerial = 0;
+	COLORREF framePrimaryLightColor = RGB(0, 0, 0);
+	bool framePrimaryLightUsesPenColor = false;
 	vector<FrameGradientBrushCacheClass> frameGradientBrushCache;
 };
 
@@ -205,15 +229,22 @@ protected:
 	// 拖动交互
 	double Seek(const ExMessage& msg);
 	void RegisterBorderInteractionLight(double clientX, double clientY, bool restartPrimaryPulse);
+	void InitializeBorderCursorInput();
+	void RegisterBorderCursorLight(HWND hWnd);
 	std::atomic<unsigned long long> mainButtonClickPulseSerial = 0;
 
-	mutex borderInteractionLightMutex;
+	mutex borderLightMutex;
 	D2D1_POINT_2F borderInteractionLightPoint = D2D1::Point2F();
-	chrono::steady_clock::time_point borderInteractionLightUpdatedAt{};
-	chrono::steady_clock::time_point borderPrimaryLightPulseStartedAt{};
-	bool hasBorderInteractionLight = false;
+	D2D1_POINT_2F borderCursorLightPoint = D2D1::Point2F();
+	unsigned long long borderInteractionLightSerial = 0;
+	unsigned long long borderPrimaryLightPulseSerial = 0;
+	unsigned long long borderCursorLightSerial = 0;
+	bool borderCursorInputAvailable = false;
+	bool borderCursorLightReady = false;
+	bool borderCursorRegistrationFailureLogged = false;
 
 	friend class BarUIRendering;
+	friend LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 };
 // 全局 Bar UI 集合
 export extern BarUISetClass barUISet;
