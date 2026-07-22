@@ -33,11 +33,6 @@ constexpr double BarButtonHoverShowDur = 0.24;
 constexpr double BarButtonHoverExitDur = 0.24;
 constexpr double BarButtonHoverFadeDur = 5.0;
 constexpr double BarBorderLightRadius = 480.0;
-constexpr double BarBorderInteractionDur = 1.80;
-constexpr double BarBorderInteractionIntensity = 0.40;
-constexpr double BarBorderPrimaryDimDur = 0.30;
-constexpr double BarBorderPrimaryRecoverDur = 1.50;
-constexpr double BarBorderPrimaryMinIntensity = 0.60;
 constexpr double BarBorderCursorFadeInDur = 0.30;
 constexpr double BarBorderCursorIntensity = 0.60;
 constexpr double BarBorderDiffuseOpacity = 0.12;
@@ -321,10 +316,7 @@ BarUIRendering::BarUIRendering(BarUISetClass* barUISetClassT) { barUISetClass = 
 bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 {
 	frameGradientBrushCache.clear();
-	framePrimaryLightIntensity = 1.0F;
-	frameInteractionLightIntensity = 0.0F;
 	frameCursorLightIntensity = 0.0F;
-	frameInteractionLightVisible = false;
 	frameCursorLightVisible = false;
 
 	double zoom = barUISetClass ? static_cast<double>(barUISetClass->barStyle.zoom) : 0.0;
@@ -341,30 +333,25 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 				static_cast<FLOAT>(mainButton->y.val * zoom));
 		}
 
-		// 仅非穿透画笔模式把主光切到动画中的画笔色；其余两束光仍使用边框主题色。
-		framePrimaryLightUsesPenColor =
+		// 非穿透画笔模式下，仅由控件自己的光色策略决定是否采用动画画笔色。
+		frameDrawingUsesPenColor =
 			stateMode.StateModeSelect == StateModeSelectEnum::IdtPen && !penetrate.select;
-		if (framePrimaryLightUsesPenColor)
+		if (frameDrawingUsesPenColor)
 		{
-			framePrimaryLightColor = GetPenColor();
+			frameDrawingPenColor = GetPenColor();
 			auto mainButtonInkIt = barUISetClass->svgMap.find(BarUISetSvgEnum::logoInk);
 			if (mainButtonInkIt != barUISetClass->svgMap.end()
 				&& mainButtonInkIt->second && mainButtonInkIt->second->color1.has_value())
-				framePrimaryLightColor = mainButtonInkIt->second->color1.value().val;
+				frameDrawingPenColor = mainButtonInkIt->second->color1.value().val;
 		}
 	}
 
-	unsigned long long interactionSerial = 0;
-	unsigned long long primaryPulseSerial = 0;
 	unsigned long long cursorSerial = 0;
 	bool cursorInputAvailable = false;
 	if (barUISetClass)
 	{
-		lock_guard lock(barUISetClass->borderLightMutex);
-		frameInteractionLight = barUISetClass->borderInteractionLightPoint;
+		lock_guard lock(barUISetClass->borderCursorLightMutex);
 		frameCursorLight = barUISetClass->borderCursorLightPoint;
-		interactionSerial = barUISetClass->borderInteractionLightSerial;
-		primaryPulseSerial = barUISetClass->borderPrimaryLightPulseSerial;
 		cursorSerial = barUISetClass->borderCursorLightSerial;
 		cursorInputAvailable = barUISetClass->borderCursorInputAvailable
 			&& barUISetClass->borderCursorLightReady;
@@ -379,8 +366,6 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	double scaledDtSeconds = animationDtSeconds * animationSpeedRate;
 
 	bool stateChanged = false;
-	bool interactionRestarted = false;
-	bool primaryRestarted = false;
 	bool cursorFadeRestarted = false;
 	bool cursorMoved = false;
 	if (!frameAnimationStateInitialized)
@@ -389,11 +374,7 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 		frameLastAnimationEnabled = animationEnabled;
 		frameCursorInputAvailable = cursorInputAvailable;
 		if (!animationEnabled)
-		{
-			handledBorderInteractionLightSerial = interactionSerial;
-			handledBorderPrimaryLightPulseSerial = primaryPulseSerial;
 			handledBorderCursorLightSerial = cursorSerial;
-		}
 		else if (cursorInputAvailable)
 		{
 			frameCursorLightFadeElapsed = 0.0;
@@ -406,12 +387,8 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	{
 		stateChanged = true;
 		frameLastAnimationEnabled = animationEnabled;
-		// 切换动画时消费旧点击序号，重新开启只让当前鼠标光从零淡入。
-		handledBorderInteractionLightSerial = interactionSerial;
-		handledBorderPrimaryLightPulseSerial = primaryPulseSerial;
+		// 重新开启动画时只让当前鼠标光从零淡入，移动不会重复启动淡入。
 		handledBorderCursorLightSerial = cursorSerial;
-		frameInteractionLightAnimating = false;
-		framePrimaryLightAnimating = false;
 		frameCursorLightAnimating = animationEnabled && cursorInputAvailable;
 		frameCursorLightFadeElapsed = 0.0;
 		cursorFadeRestarted = frameCursorLightAnimating;
@@ -429,70 +406,18 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 
 	if (!animationEnabled)
 	{
-		// 关闭动画后动态光与主光脉冲立即清空，只保留稳定的第一主光。
-		handledBorderInteractionLightSerial = interactionSerial;
-		handledBorderPrimaryLightPulseSerial = primaryPulseSerial;
+		// 关闭动画后立即隐藏鼠标光，基础灰边和第一主光保持稳定。
 		handledBorderCursorLightSerial = cursorSerial;
-		frameInteractionLightAnimating = false;
-		framePrimaryLightAnimating = false;
 		frameCursorLightAnimating = false;
 		bool needSettlingFrame = frameLightingWasAnimating;
 		frameLightingWasAnimating = false;
 		return stateChanged || needSettlingFrame;
 	}
 
-	if (interactionSerial != handledBorderInteractionLightSerial)
-	{
-		handledBorderInteractionLightSerial = interactionSerial;
-		frameInteractionLightElapsed = 0.0;
-		frameInteractionLightAnimating = true;
-		interactionRestarted = true;
-	}
-	if (primaryPulseSerial != handledBorderPrimaryLightPulseSerial)
-	{
-		handledBorderPrimaryLightPulseSerial = primaryPulseSerial;
-		framePrimaryLightElapsed = 0.0;
-		framePrimaryLightAnimating = true;
-		primaryRestarted = true;
-	}
 	if (cursorSerial != handledBorderCursorLightSerial)
 	{
 		handledBorderCursorLightSerial = cursorSerial;
 		cursorMoved = cursorInputAvailable;
-	}
-
-	if (frameInteractionLightAnimating)
-	{
-		if (!interactionRestarted) frameInteractionLightElapsed += scaledDtSeconds;
-		double progress = frameInteractionLightElapsed / BarBorderInteractionDur;
-		frameInteractionLightIntensity = static_cast<FLOAT>(BarBorderInteractionIntensity
-			* (1.0 - ApplyBorderLightSmoothstep(progress)));
-		if (frameInteractionLightElapsed >= BarBorderInteractionDur)
-		{
-			frameInteractionLightIntensity = 0.0F;
-			frameInteractionLightAnimating = false;
-		}
-		frameInteractionLightVisible = frameInteractionLightIntensity > 0.0F;
-	}
-
-	if (framePrimaryLightAnimating)
-	{
-		if (!primaryRestarted) framePrimaryLightElapsed += scaledDtSeconds;
-		double intensity = 1.0;
-		if (framePrimaryLightElapsed < BarBorderPrimaryDimDur)
-		{
-			double progress = ApplyBorderLightSmoothstep(
-				framePrimaryLightElapsed / BarBorderPrimaryDimDur);
-			intensity = 1.0 + (BarBorderPrimaryMinIntensity - 1.0) * progress;
-		}
-		else if (framePrimaryLightElapsed < BarBorderPrimaryDimDur + BarBorderPrimaryRecoverDur)
-		{
-			double progress = ApplyBorderLightSmoothstep(
-				(framePrimaryLightElapsed - BarBorderPrimaryDimDur) / BarBorderPrimaryRecoverDur);
-			intensity = BarBorderPrimaryMinIntensity + (1.0 - BarBorderPrimaryMinIntensity) * progress;
-		}
-		else framePrimaryLightAnimating = false;
-		framePrimaryLightIntensity = static_cast<FLOAT>(intensity);
 	}
 
 	if (cursorInputAvailable)
@@ -514,12 +439,10 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	}
 
 	// 时间过程结束后再绘制一帧最终状态，随后恢复原有静止等待。
-	bool lightingAnimating = frameInteractionLightAnimating
-		|| framePrimaryLightAnimating || frameCursorLightAnimating;
+	bool lightingAnimating = frameCursorLightAnimating;
 	bool needSettlingFrame = frameLightingWasAnimating && !lightingAnimating;
 	frameLightingWasAnimating = lightingAnimating;
-	return lightingAnimating || needSettlingFrame || stateChanged
-		|| interactionRestarted || primaryRestarted || cursorMoved;
+	return lightingAnimating || needSettlingFrame || stateChanged || cursorMoved;
 }
 
 ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
@@ -531,13 +454,12 @@ ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
 		if (cache.color == rgb && cache.lightSource == lightSource) return cache.brush.Get();
 	}
 
-	const FLOAT tailOpacity = lightSource == BarBorderLightSourceEnum::Primary ? 0.04F : 0.0F;
 	D2D1_GRADIENT_STOP gradientStops[] =
 	{
 		{ 0.00F, Inkeys::Color::ConvertToD2dColor(rgb, 1.00) },
 		{ 0.25F, Inkeys::Color::ConvertToD2dColor(rgb, 0.72) },
 		{ 0.65F, Inkeys::Color::ConvertToD2dColor(rgb, 0.20) },
-		{ 1.00F, Inkeys::Color::ConvertToD2dColor(rgb, static_cast<double>(tailOpacity)) },
+		{ 1.00F, Inkeys::Color::ConvertToD2dColor(rgb, 0.00) },
 	};
 
 	ComPtr<ID2D1GradientStopCollection> stopCollection;
@@ -547,8 +469,7 @@ ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
 	if (SUCCEEDED(hr))
 	{
 		D2D1_POINT_2F center = framePrimaryLight;
-		if (lightSource == BarBorderLightSourceEnum::Interaction) center = frameInteractionLight;
-		else if (lightSource == BarBorderLightSourceEnum::Cursor) center = frameCursorLight;
+		if (lightSource == BarBorderLightSourceEnum::Cursor) center = frameCursorLight;
 		FrameGradientBrushCacheClass cache;
 		cache.color = rgb;
 		cache.lightSource = lightSource;
@@ -574,6 +495,7 @@ ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
 }
 
 bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLORREF color,
+	BarUiFrameLightColorEnum frameLightColor,
 	double framePct, FLOAT strokeWidth, const D2D1_ROUNDED_RECT* roundedRect,
 	ID2D1Geometry* geometry)
 {
@@ -583,19 +505,22 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 	FLOAT opacity = static_cast<FLOAT>(clamp(framePct, 0.0, 1.0));
 	if (opacity <= 0.0F) return true;
 
-	COLORREF primaryColor = framePrimaryLightUsesPenColor ? framePrimaryLightColor : color;
+	COLORREF lightColor = color;
+	if (frameDrawingUsesPenColor
+		&& frameLightColor == BarUiFrameLightColorEnum::PenWhenDrawing)
+		lightColor = frameDrawingPenColor;
 	ID2D1RadialGradientBrush* primaryBrush = GetFrameGradientBrush(
-		deviceContext, primaryColor, BarBorderLightSourceEnum::Primary);
-	ID2D1RadialGradientBrush* interactionBrush = nullptr;
+		deviceContext, lightColor, BarBorderLightSourceEnum::Primary);
 	ID2D1RadialGradientBrush* cursorBrush = nullptr;
-	if (frameInteractionLightVisible)
-		interactionBrush = GetFrameGradientBrush(
-			deviceContext, color, BarBorderLightSourceEnum::Interaction);
 	if (frameCursorLightVisible)
 		cursorBrush = GetFrameGradientBrush(
-			deviceContext, color, BarBorderLightSourceEnum::Cursor);
-	if (!primaryBrush || (frameInteractionLightVisible && !interactionBrush)
-		|| (frameCursorLightVisible && !cursorBrush)) return false;
+			deviceContext, lightColor, BarBorderLightSourceEnum::Cursor);
+	if (!primaryBrush || (frameCursorLightVisible && !cursorBrush)) return false;
+
+	ComPtr<ID2D1SolidColorBrush> baseFrameBrush;
+	HRESULT hr = deviceContext->CreateSolidColorBrush(
+		Inkeys::Color::ConvertToD2dColor(color, opacity), &baseFrameBrush);
+	if (FAILED(hr) || !baseFrameBrush) return false;
 
 	auto DrawPass = [&](ID2D1RadialGradientBrush* brush, FLOAT intensity, FLOAT width)
 		{
@@ -606,14 +531,15 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 		};
 
 	deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
+	// 点光范围之外仍完整保留原边框，光源只在基础灰边上增加强调。
+	if (roundedRect) deviceContext->DrawRoundedRectangle(roundedRect, baseFrameBrush.Get(), strokeWidth);
+	else deviceContext->DrawGeometry(geometry, baseFrameBrush.Get(), strokeWidth);
 	FLOAT diffuseWidth = strokeWidth + static_cast<FLOAT>(
 		BarBorderDiffuseExtraWidth * static_cast<double>(barUISetClass->barStyle.zoom));
-	DrawPass(primaryBrush, framePrimaryLightIntensity * static_cast<FLOAT>(BarBorderDiffuseOpacity), diffuseWidth);
+	DrawPass(primaryBrush, static_cast<FLOAT>(BarBorderDiffuseOpacity), diffuseWidth);
 	DrawPass(cursorBrush, frameCursorLightIntensity * static_cast<FLOAT>(BarBorderDiffuseOpacity), diffuseWidth);
-	DrawPass(interactionBrush, frameInteractionLightIntensity * static_cast<FLOAT>(BarBorderDiffuseOpacity), diffuseWidth);
-	DrawPass(primaryBrush, framePrimaryLightIntensity, strokeWidth);
+	DrawPass(primaryBrush, 1.0F, strokeWidth);
 	DrawPass(cursorBrush, frameCursorLightIntensity, strokeWidth);
-	DrawPass(interactionBrush, frameInteractionLightIntensity, strokeWidth);
 	return true;
 }
 
@@ -680,7 +606,8 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 			if (shouldDraw)
 			{
 				bool pointLightDrawn = shape.frameRendering == BarUiFrameRenderingEnum::PointLight
-					&& DrawPointLightFrame(deviceContext, frame, tarFramePct, strokeWidth, &roundedRect, nullptr);
+					&& DrawPointLightFrame(deviceContext, frame, shape.frameLightColor,
+						tarFramePct, strokeWidth, &roundedRect, nullptr);
 				if (!pointLightDrawn)
 				{
 					ComPtr<ID2D1SolidColorBrush> spBorderBrush;
@@ -839,7 +766,8 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 			if (shouldDraw)
 			{
 				bool pointLightDrawn = superellipse.frameRendering == BarUiFrameRenderingEnum::PointLight
-					&& DrawPointLightFrame(deviceContext, frame, tarFramePct, strokeWidth, nullptr, geometry.Get());
+					&& DrawPointLightFrame(deviceContext, frame, superellipse.frameLightColor,
+						tarFramePct, strokeWidth, nullptr, geometry.Get());
 				if (!pointLightDrawn)
 				{
 					ComPtr<ID2D1SolidColorBrush> spBorderBrush;
@@ -3854,7 +3782,6 @@ void BarUISetClass::Interact()
 				continueFlag = false;
 				if (msg.message == WM_LBUTTONDOWN)
 				{
-					RegisterBorderInteractionLight(msg.x, msg.y, true);
 					double moveDis = Seek(msg);
 					if (moveDis <= 20)
 					{
@@ -3893,7 +3820,6 @@ void BarUISetClass::Interact()
 						continueFlag = false;
 						if (msg.message == WM_LBUTTONDOWN || msg.message == WM_LBUTTONDBLCLK)
 						{
-							RegisterBorderInteractionLight(msg.x, msg.y, true);
 							bool clickCompleted = false;
 							// 同一背景层先切换到按下状态；抬起后必须收到新的鼠标移动才能再次悬停。
 							temp->state->emph = BarWidgetEmphasize::Pressed;
@@ -3942,8 +3868,6 @@ void BarUISetClass::Interact()
 							continueFlag = false;
 							if (msg.lbutton)
 							{
-								if (msg.message == WM_LBUTTONDOWN || msg.message == WM_LBUTTONDBLCLK)
-									RegisterBorderInteractionLight(msg.x, msg.y, true);
 								SetPenColor(Inkeys::Color::SetAlphaR(obj->fill.value().tar, 255));
 								UpdateRendering();
 
@@ -3973,7 +3897,6 @@ void BarUISetClass::Interact()
 					continueFlag = false;
 					if (msg.message == WM_LBUTTONDOWN)
 					{
-						RegisterBorderInteractionLight(msg.x, msg.y, true);
 						barState.drawAttributeBar.brush1Press = true;
 						StopIndependentHover(hoveredIndependentButton, true);
 						hoveredIndependentButton = IndependentHoverTargetEnum::None;
@@ -4006,7 +3929,6 @@ void BarUISetClass::Interact()
 					continueFlag = false;
 					if (msg.message == WM_LBUTTONDOWN)
 					{
-						RegisterBorderInteractionLight(msg.x, msg.y, true);
 						barState.drawAttributeBar.highlight1Press = true;
 						StopIndependentHover(hoveredIndependentButton, true);
 						hoveredIndependentButton = IndependentHoverTargetEnum::None;
@@ -4056,22 +3978,6 @@ void BarUISetClass::UpdateRendering(bool updateState)
 	BarAtomic::wait.Store(true);
 }
 
-void BarUISetClass::RegisterBorderInteractionLight(
-	double clientX, double clientY, bool restartPrimaryPulse)
-{
-	if (!isfinite(clientX) || !isfinite(clientY)) return;
-
-	{
-		lock_guard lock(borderLightMutex);
-		borderInteractionLightPoint = D2D1::Point2F(
-			static_cast<FLOAT>(clientX), static_cast<FLOAT>(clientY));
-		++borderInteractionLightSerial;
-		if (restartPrimaryPulse) ++borderPrimaryLightPulseSerial;
-	}
-
-	UpdateRendering(false);
-}
-
 void BarUISetClass::InitializeBorderCursorInput()
 {
 	RAWINPUTDEVICE rawInputDevice{};
@@ -4084,7 +3990,7 @@ void BarUISetClass::InitializeBorderCursorInput()
 		DWORD registrationError = GetLastError();
 		bool needLog = false;
 		{
-			lock_guard lock(borderLightMutex);
+			lock_guard lock(borderCursorLightMutex);
 			borderCursorInputAvailable = false;
 			borderCursorLightReady = false;
 			if (!borderCursorRegistrationFailureLogged)
@@ -4103,7 +4009,7 @@ void BarUISetClass::InitializeBorderCursorInput()
 	bool cursorReady = GetCursorPos(&cursorPoint)
 		&& ScreenToClient(floating_window, &cursorPoint);
 	{
-		lock_guard lock(borderLightMutex);
+		lock_guard lock(borderCursorLightMutex);
 		borderCursorInputAvailable = true;
 		borderCursorLightReady = cursorReady;
 		if (cursorReady)
@@ -4123,7 +4029,7 @@ void BarUISetClass::RegisterBorderCursorLight(HWND hWnd)
 
 	bool cursorChanged = false;
 	{
-		lock_guard lock(borderLightMutex);
+		lock_guard lock(borderCursorLightMutex);
 		if (!borderCursorInputAvailable) return;
 		D2D1_POINT_2F nextPoint = D2D1::Point2F(
 			static_cast<FLOAT>(cursorPoint.x), static_cast<FLOAT>(cursorPoint.y));
@@ -4193,13 +4099,6 @@ double BarUISetClass::Seek(const ExMessage& msg)
 
 		mainButton->x.SetDirect(clamp(nextX, minX, maxX));
 		mainButton->y.SetDirect(clamp(nextY, minY, maxY));
-
-		POINT clientPoint = p;
-		if (ScreenToClient(floating_window, &clientPoint))
-		{
-			// 拖动只续接交互光，不重复启动主按钮中心的明暗脉冲。
-			RegisterBorderInteractionLight(clientPoint.x, clientPoint.y, false);
-		}
 
 		ret += sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY));
 		firX = static_cast<double>(p.x), firY = static_cast<double>(p.y);
@@ -4332,6 +4231,7 @@ namespace Inkeys::UI::Bar
 				superellipse->pct.Initialization(0.6);
 				superellipse->framePct = BarUiPctClass(0.18);
 				superellipse->frameRendering = BarUiFrameRenderingEnum::PointLight;
+				superellipse->frameLightColor = BarUiFrameLightColorEnum::PenWhenDrawing;
 				superellipse->enable.Initialization(true);
 				barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton] = superellipse;
 
@@ -4360,6 +4260,7 @@ namespace Inkeys::UI::Bar
 				shape->pct.Initialization(0.8);
 				shape->framePct = BarUiPctClass(0.18);
 				shape->frameRendering = BarUiFrameRenderingEnum::PointLight;
+				shape->frameLightColor = BarUiFrameLightColorEnum::PenWhenDrawing;
 				shape->w.mod = BarUiValueModeEnum::Variable;
 				shape->h.mod = BarUiValueModeEnum::Variable;
 				shape->enable.Initialization(true);
@@ -4371,6 +4272,7 @@ namespace Inkeys::UI::Bar
 					shape->pct.Initialization(0.8);
 					shape->framePct = BarUiPctClass(0.18);
 					shape->frameRendering = BarUiFrameRenderingEnum::PointLight;
+					shape->frameLightColor = BarUiFrameLightColorEnum::PenWhenDrawing;
 					shape->w.mod = BarUiValueModeEnum::Variable;
 					shape->h.mod = BarUiValueModeEnum::Variable;
 					shape->enable.Initialization(true);

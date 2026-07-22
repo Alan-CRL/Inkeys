@@ -130,7 +130,6 @@ enum class BarUISetWordEnum : int
 enum class BarBorderLightSourceEnum : int
 {
 	Primary,
-	Interaction,
 	Cursor,
 };
 
@@ -162,34 +161,25 @@ protected:
 	ID2D1RadialGradientBrush* GetFrameGradientBrush(
 		ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource);
 	bool DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLORREF color,
+		BarUiFrameLightColorEnum frameLightColor,
 		double framePct, FLOAT strokeWidth, const D2D1_ROUNDED_RECT* roundedRect,
 		ID2D1Geometry* geometry);
 
 	D2D1_POINT_2F framePrimaryLight = D2D1::Point2F();
-	D2D1_POINT_2F frameInteractionLight = D2D1::Point2F();
 	D2D1_POINT_2F frameCursorLight = D2D1::Point2F();
-	FLOAT framePrimaryLightIntensity = 1.0F;
-	FLOAT frameInteractionLightIntensity = 0.0F;
 	FLOAT frameCursorLightIntensity = 0.0F;
 	FLOAT frameLightRadius = 0.0F;
-	bool frameInteractionLightVisible = false;
 	bool frameCursorLightVisible = false;
-	bool frameInteractionLightAnimating = false;
-	bool framePrimaryLightAnimating = false;
 	bool frameCursorLightAnimating = false;
 	bool frameAnimationStateInitialized = false;
 	bool frameLastAnimationEnabled = false;
 	bool frameCursorInputAvailable = false;
 	bool frameLightingWasAnimating = false;
 	bool frameGradientFailureLogged = false;
-	double frameInteractionLightElapsed = 0.0;
-	double framePrimaryLightElapsed = 0.0;
 	double frameCursorLightFadeElapsed = 0.0;
-	unsigned long long handledBorderInteractionLightSerial = 0;
-	unsigned long long handledBorderPrimaryLightPulseSerial = 0;
 	unsigned long long handledBorderCursorLightSerial = 0;
-	COLORREF framePrimaryLightColor = RGB(0, 0, 0);
-	bool framePrimaryLightUsesPenColor = false;
+	COLORREF frameDrawingPenColor = RGB(0, 0, 0);
+	bool frameDrawingUsesPenColor = false;
 	vector<FrameGradientBrushCacheClass> frameGradientBrushCache;
 };
 
@@ -228,16 +218,12 @@ public:
 protected:
 	// 拖动交互
 	double Seek(const ExMessage& msg);
-	void RegisterBorderInteractionLight(double clientX, double clientY, bool restartPrimaryPulse);
 	void InitializeBorderCursorInput();
 	void RegisterBorderCursorLight(HWND hWnd);
 	std::atomic<unsigned long long> mainButtonClickPulseSerial = 0;
 
-	mutex borderLightMutex;
-	D2D1_POINT_2F borderInteractionLightPoint = D2D1::Point2F();
+	mutex borderCursorLightMutex;
 	D2D1_POINT_2F borderCursorLightPoint = D2D1::Point2F();
-	unsigned long long borderInteractionLightSerial = 0;
-	unsigned long long borderPrimaryLightPulseSerial = 0;
 	unsigned long long borderCursorLightSerial = 0;
 	bool borderCursorInputAvailable = false;
 	bool borderCursorLightReady = false;
