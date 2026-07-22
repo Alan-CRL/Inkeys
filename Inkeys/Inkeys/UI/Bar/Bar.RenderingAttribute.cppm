@@ -11,6 +11,7 @@ class BarRenderingAttribute
 {
 public:
 	static constexpr int dirtyAntialiasPadding = 3;
+	static constexpr double pointLightDiffuseExtraWidth = 6.0;
 
 	static void UnionRectInPlace(RECT& target, const RECT& add)
 	{
@@ -37,7 +38,7 @@ public:
 		// 边框外扩需要折算到设备像素，固定抗锯齿余量在矩形计算处统一追加。
 		double dirtyWidth = ft.value().val;
 		if (frameRendering == BarUiFrameRenderingEnum::PointLight)
-			dirtyWidth += 2.0; // 点光模式还会绘制总宽增加 2px 的微弱扩散层。
+			dirtyWidth += pointLightDiffuseExtraWidth; // 1px 清晰边外侧再覆盖约 3px 柔光。
 		return static_cast<int>(ceil(dirtyWidth * tarZoom));
 	}
 

@@ -690,6 +690,11 @@ enum class BarUiFrameLightColorEnum : int
 	Frame = 0,
 	PenWhenDrawing = 1,
 };
+enum class BarUiFrameLightOpacitySourceEnum : int
+{
+	FramePct = 0,
+	ObjectPct = 1,
+};
 
 //// 单个形状控件
 class BarUiShapeClass : public BarUiInnheritBaseClass
@@ -720,6 +725,7 @@ public:
 	optional<BarUiPctClass> framePct; // 控件边框透明度
 	BarUiFrameRenderingEnum frameRendering = BarUiFrameRenderingEnum::Solid; // 默认保留原纯色边框
 	BarUiFrameLightColorEnum frameLightColor = BarUiFrameLightColorEnum::Frame;
+	BarUiFrameLightOpacitySourceEnum frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::FramePct;
 };
 //// 单个超椭圆控件
 class BarUiSuperellipseClass : public BarUiInnheritBaseClass
@@ -751,6 +757,7 @@ public:
 	optional<BarUiPctClass> framePct; // 控件边框透明度
 	BarUiFrameRenderingEnum frameRendering = BarUiFrameRenderingEnum::Solid; // 默认保留原纯色边框
 	BarUiFrameLightColorEnum frameLightColor = BarUiFrameLightColorEnum::Frame;
+	BarUiFrameLightOpacitySourceEnum frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::FramePct;
 };
 //// 单个 SVG 控件
 class BarUiSVGClass : public BarUiInnheritBaseClass

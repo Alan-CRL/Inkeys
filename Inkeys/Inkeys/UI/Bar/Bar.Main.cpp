@@ -9,6 +9,9 @@ module;
 #include "../../../IdtDrawpad.h"
 #include "../../../IdtState.h"
 #include "../../../IdtWindow.h"
+#include <d2d1effects.h>
+
+#pragma comment(lib, "dxguid.lib")
 
 // ====================
 // 临时
@@ -35,8 +38,12 @@ constexpr double BarButtonHoverFadeDur = 5.0;
 constexpr double BarBorderLightRadius = 480.0;
 constexpr double BarBorderCursorFadeInDur = 0.30;
 constexpr double BarBorderCursorIntensity = 0.60;
-constexpr double BarBorderDiffuseOpacity = 0.12;
-constexpr double BarBorderDiffuseExtraWidth = 2.0;
+constexpr double BarBorderFrameDiffuseOpacity = 0.30;
+constexpr double BarBorderPenDiffuseOpacity = 0.20;
+constexpr double BarColorSwatchFrameOpacity = 0.18;
+constexpr int BarBorderDiffuseCompositePasses = 2;
+// 标准差等于线宽时，1px 线源经过一维 Gaussian 后中心约保留 38.3%。
+constexpr double BarBorderGaussianCenterCoverage = 0.382924922548;
 
 double ApplyBorderLightSmoothstep(double progress)
 {
@@ -496,50 +503,136 @@ ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
 
 bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLORREF color,
 	BarUiFrameLightColorEnum frameLightColor,
-	double framePct, FLOAT strokeWidth, const D2D1_ROUNDED_RECT* roundedRect,
+	double baseFramePct, double lightPct, FLOAT strokeWidth,
+	const D2D1_ROUNDED_RECT* roundedRect,
 	ID2D1Geometry* geometry)
 {
 	if (!deviceContext || (!roundedRect && !geometry) || strokeWidth <= 0.0F || frameLightRadius <= 0.0F)
 		return false;
 
-	FLOAT opacity = static_cast<FLOAT>(clamp(framePct, 0.0, 1.0));
-	if (opacity <= 0.0F) return true;
+	FLOAT baseOpacity = static_cast<FLOAT>(clamp(baseFramePct, 0.0, 1.0));
+	FLOAT lightOpacity = static_cast<FLOAT>(clamp(lightPct, 0.0, 1.0));
+	if (baseOpacity <= 0.0F && lightOpacity <= 0.0F) return true;
 
+	bool usePenLightColor = frameDrawingUsesPenColor
+		&& frameLightColor == BarUiFrameLightColorEnum::PenWhenDrawing;
 	COLORREF lightColor = color;
-	if (frameDrawingUsesPenColor
-		&& frameLightColor == BarUiFrameLightColorEnum::PenWhenDrawing)
+	if (usePenLightColor)
 		lightColor = frameDrawingPenColor;
-	ID2D1RadialGradientBrush* primaryBrush = GetFrameGradientBrush(
-		deviceContext, lightColor, BarBorderLightSourceEnum::Primary);
+	FLOAT diffuseOpacity = static_cast<FLOAT>(usePenLightColor
+		? BarBorderPenDiffuseOpacity : BarBorderFrameDiffuseOpacity);
+	ID2D1RadialGradientBrush* primaryBrush = nullptr;
 	ID2D1RadialGradientBrush* cursorBrush = nullptr;
-	if (frameCursorLightVisible)
+	if (lightOpacity > 0.0F)
+		primaryBrush = GetFrameGradientBrush(
+			deviceContext, lightColor, BarBorderLightSourceEnum::Primary);
+	if (lightOpacity > 0.0F && frameCursorLightVisible)
 		cursorBrush = GetFrameGradientBrush(
 			deviceContext, lightColor, BarBorderLightSourceEnum::Cursor);
-	if (!primaryBrush || (frameCursorLightVisible && !cursorBrush)) return false;
+	if (lightOpacity > 0.0F
+		&& (!primaryBrush || (frameCursorLightVisible && !cursorBrush))) return false;
 
 	ComPtr<ID2D1SolidColorBrush> baseFrameBrush;
-	HRESULT hr = deviceContext->CreateSolidColorBrush(
-		Inkeys::Color::ConvertToD2dColor(color, opacity), &baseFrameBrush);
-	if (FAILED(hr) || !baseFrameBrush) return false;
+	HRESULT hr = S_OK;
+	if (baseOpacity > 0.0F)
+	{
+		hr = deviceContext->CreateSolidColorBrush(
+			Inkeys::Color::ConvertToD2dColor(color, baseOpacity), &baseFrameBrush);
+		if (FAILED(hr) || !baseFrameBrush) return false;
+	}
 
-	auto DrawPass = [&](ID2D1RadialGradientBrush* brush, FLOAT intensity, FLOAT width)
+	auto DrawLightPass = [&](ID2D1RadialGradientBrush* brush, FLOAT intensity, FLOAT width)
 		{
 			if (!brush || intensity <= 0.0F) return;
-			brush->SetOpacity(clamp(opacity * intensity, 0.0F, 1.0F));
+			brush->SetOpacity(clamp(lightOpacity * intensity, 0.0F, 1.0F));
 			if (roundedRect) deviceContext->DrawRoundedRectangle(roundedRect, brush, width);
 			else deviceContext->DrawGeometry(geometry, brush, width);
+		};
+	auto LogDiffuseFailure = [&](const char* operation, HRESULT failureHr)
+		{
+			if (frameDiffuseEffectFailureLogged) return;
+			frameDiffuseEffectFailureLogged = true;
+			if (IDTLogger) IDTLogger->error(
+				"[BarUIRendering::DrawPointLightFrame] {} 失败，跳过边框柔光, hr=0x{:08X}",
+				operation, static_cast<unsigned int>(failureHr));
 		};
 
 	deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
 	// 点光范围之外仍完整保留原边框，光源只在基础灰边上增加强调。
-	if (roundedRect) deviceContext->DrawRoundedRectangle(roundedRect, baseFrameBrush.Get(), strokeWidth);
-	else deviceContext->DrawGeometry(geometry, baseFrameBrush.Get(), strokeWidth);
-	FLOAT diffuseWidth = strokeWidth + static_cast<FLOAT>(
-		BarBorderDiffuseExtraWidth * static_cast<double>(barUISetClass->barStyle.zoom));
-	DrawPass(primaryBrush, static_cast<FLOAT>(BarBorderDiffuseOpacity), diffuseWidth);
-	DrawPass(cursorBrush, frameCursorLightIntensity * static_cast<FLOAT>(BarBorderDiffuseOpacity), diffuseWidth);
-	DrawPass(primaryBrush, 1.0F, strokeWidth);
-	DrawPass(cursorBrush, frameCursorLightIntensity, strokeWidth);
+	if (baseFrameBrush)
+	{
+		if (roundedRect) deviceContext->DrawRoundedRectangle(roundedRect, baseFrameBrush.Get(), strokeWidth);
+		else deviceContext->DrawGeometry(geometry, baseFrameBrush.Get(), strokeWidth);
+	}
+
+	if (lightOpacity > 0.0F)
+	{
+		bool effectReady = frameGaussianBlurEffect != nullptr
+			&& !frameDiffuseEffectFailureLogged;
+		if (!effectReady && !frameDiffuseEffectFailureLogged)
+		{
+			hr = deviceContext->CreateEffect(CLSID_D2D1GaussianBlur, &frameGaussianBlurEffect);
+			if (SUCCEEDED(hr))
+				hr = frameGaussianBlurEffect->SetValue(
+					D2D1_GAUSSIANBLUR_PROP_OPTIMIZATION,
+					D2D1_GAUSSIANBLUR_OPTIMIZATION_BALANCED);
+			if (SUCCEEDED(hr))
+				hr = frameGaussianBlurEffect->SetValue(
+					D2D1_GAUSSIANBLUR_PROP_BORDER_MODE, D2D1_BORDER_MODE_SOFT);
+			if (FAILED(hr))
+			{
+				frameGaussianBlurEffect.Reset();
+				LogDiffuseFailure("创建 Gaussian Blur Effect", hr);
+			}
+			effectReady = frameGaussianBlurEffect != nullptr;
+		}
+
+		if (effectReady)
+		{
+			ComPtr<ID2D1CommandList> diffuseCommands;
+			hr = deviceContext->CreateCommandList(&diffuseCommands);
+			if (SUCCEEDED(hr) && diffuseCommands)
+			{
+				ComPtr<ID2D1Image> originalTarget;
+				deviceContext->GetTarget(&originalTarget);
+				if (originalTarget)
+				{
+					deviceContext->SetTarget(diffuseCommands.Get());
+					// 先把两束同色的空间衰减写入 1px 线源，再由 Gaussian 沿轮廓法线扩散。
+					FLOAT diffuseSourceOpacity = static_cast<FLOAT>(clamp(
+						diffuseOpacity / BarBorderGaussianCenterCoverage, 0.0, 1.0));
+					DrawLightPass(primaryBrush, diffuseSourceOpacity, strokeWidth);
+					DrawLightPass(cursorBrush,
+						frameCursorLightIntensity * diffuseSourceOpacity, strokeWidth);
+					deviceContext->SetTarget(originalTarget.Get());
+
+					hr = diffuseCommands->Close();
+					if (SUCCEEDED(hr))
+					{
+						FLOAT standardDeviation = static_cast<FLOAT>(
+							BarRenderingAttribute::pointLightDiffuseExtraWidth / 6.0
+							* static_cast<double>(barUISetClass->barStyle.zoom));
+						hr = frameGaussianBlurEffect->SetValue(
+							D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, standardDeviation);
+						if (SUCCEEDED(hr))
+						{
+							frameGaussianBlurEffect->SetInput(0, diffuseCommands.Get());
+							// 同一 Gaussian 输出重复 SOURCE_OVER，让近端按 1-(1-a)^2 增强，远端仍连续归零。
+							for (int pass = 0; pass < BarBorderDiffuseCompositePasses; pass++)
+								deviceContext->DrawImage(frameGaussianBlurEffect.Get());
+						}
+					}
+				}
+				else hr = E_POINTER;
+			}
+			else if (SUCCEEDED(hr)) hr = E_POINTER;
+			if (FAILED(hr)) LogDiffuseFailure("记录或绘制 Gaussian 柔光", hr);
+		}
+
+		// 清晰边保持原有 480px 点光渐变，不受 Gaussian 轮廓扩散替代。
+		DrawLightPass(primaryBrush, 1.0F, strokeWidth);
+		DrawLightPass(cursorBrush, frameCursorLightIntensity, strokeWidth);
+	}
 	return true;
 }
 
@@ -595,6 +688,9 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 			COLORREF frame = shape.frame.value().val;
 			double tarFramePct = tarPct;
 			if (shape.framePct.has_value()) tarFramePct = shape.framePct.value().val;
+			double tarFrameLightPct = tarFramePct;
+			if (shape.frameLightOpacitySource == BarUiFrameLightOpacitySourceEnum::ObjectPct)
+				tarFrameLightPct = tarPct;
 
 			FLOAT strokeWidth = 4.0f * static_cast<FLOAT>(tarZoom);
 			bool shouldDraw = true;
@@ -607,7 +703,7 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 			{
 				bool pointLightDrawn = shape.frameRendering == BarUiFrameRenderingEnum::PointLight
 					&& DrawPointLightFrame(deviceContext, frame, shape.frameLightColor,
-						tarFramePct, strokeWidth, &roundedRect, nullptr);
+						tarFramePct, tarFrameLightPct, strokeWidth, &roundedRect, nullptr);
 				if (!pointLightDrawn)
 				{
 					ComPtr<ID2D1SolidColorBrush> spBorderBrush;
@@ -755,6 +851,9 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 			COLORREF frame = superellipse.frame.value().val;
 			double tarFramePct = tarPct;
 			if (superellipse.framePct.has_value()) tarFramePct = superellipse.framePct.value().val;
+			double tarFrameLightPct = tarFramePct;
+			if (superellipse.frameLightOpacitySource == BarUiFrameLightOpacitySourceEnum::ObjectPct)
+				tarFrameLightPct = tarPct;
 
 			FLOAT strokeWidth = 4.0f * static_cast<FLOAT>(tarZoom);
 			bool shouldDraw = true;
@@ -767,7 +866,7 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 			{
 				bool pointLightDrawn = superellipse.frameRendering == BarUiFrameRenderingEnum::PointLight
 					&& DrawPointLightFrame(deviceContext, frame, superellipse.frameLightColor,
-						tarFramePct, strokeWidth, nullptr, geometry.Get());
+						tarFramePct, tarFrameLightPct, strokeWidth, nullptr, geometry.Get());
 				if (!pointLightDrawn)
 				{
 					ComPtr<ID2D1SolidColorBrush> spBorderBrush;
@@ -2425,6 +2524,9 @@ void BarUISetClass::Rendering()
 						double size = barState.drawAttribute ? 30.0 : CompactDrawAttributeSize(30.0);
 						shape->w.SetTar(size);
 						shape->h.SetTar(size);
+						// 填充先显现，灰边只随同一批次淡入到 18%。
+						shape->framePct.value().SetTar(
+							barState.drawAttribute ? BarColorSwatchFrameOpacity : 0.0);
 
 						auto svg = svgMap[static_cast<BarUISetSvgEnum>(
 							static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_ColorSelect1)
@@ -4416,8 +4518,11 @@ namespace Inkeys::UI::Bar
 							i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ColorSelect11); i++)
 						{
 							// 当前颜色边框统一启用点光，其他未来边框仍按需显式选择。
-							barUISet.shapeMap[static_cast<BarUISetShapeEnum>(i)]->frameRendering =
-								BarUiFrameRenderingEnum::PointLight;
+							auto shape = barUISet.shapeMap[static_cast<BarUISetShapeEnum>(i)];
+							shape->frameRendering = BarUiFrameRenderingEnum::PointLight;
+							shape->framePct = BarUiPctClass(0.0);
+							// 18% 只控制基础灰边；追光随色块填充进度完整显现。
+							shape->frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::ObjectPct;
 						}
 					}
 					{ /**/ }

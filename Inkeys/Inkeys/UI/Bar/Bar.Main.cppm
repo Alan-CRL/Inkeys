@@ -162,7 +162,8 @@ protected:
 		ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource);
 	bool DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLORREF color,
 		BarUiFrameLightColorEnum frameLightColor,
-		double framePct, FLOAT strokeWidth, const D2D1_ROUNDED_RECT* roundedRect,
+		double baseFramePct, double lightPct, FLOAT strokeWidth,
+		const D2D1_ROUNDED_RECT* roundedRect,
 		ID2D1Geometry* geometry);
 
 	D2D1_POINT_2F framePrimaryLight = D2D1::Point2F();
@@ -176,11 +177,13 @@ protected:
 	bool frameCursorInputAvailable = false;
 	bool frameLightingWasAnimating = false;
 	bool frameGradientFailureLogged = false;
+	bool frameDiffuseEffectFailureLogged = false;
 	double frameCursorLightFadeElapsed = 0.0;
 	unsigned long long handledBorderCursorLightSerial = 0;
 	COLORREF frameDrawingPenColor = RGB(0, 0, 0);
 	bool frameDrawingUsesPenColor = false;
 	vector<FrameGradientBrushCacheClass> frameGradientBrushCache;
+	ComPtr<ID2D1Effect> frameGaussianBlurEffect;
 };
 
 // UI 总集
