@@ -474,6 +474,13 @@ LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 	case WM_LBUTTONUP:
 	case WM_RBUTTONUP:
 	{
+		ULONG_PTR extraInfo = static_cast<ULONG_PTR>(GetMessageExtraInfo());
+		bool simulatedByTouch = (extraInfo & 0xFFFFFF00) == 0xFF515700;
+		if (msg == WM_LBUTTONDOWN && useInkeys3UI && useMouseInput && !simulatedByTouch)
+		{
+			// 画布开始接收鼠标落笔后立即关闭第三光源，等待鼠标重新进入 UI3 再激活。
+			Inkeys::UI::Bar::NotifyCanvasMouseDrawingStarted();
+		}
 		if (useMouseInput)
 		{
 			HandleMouseInput(hWnd, msg, wParam, lParam);

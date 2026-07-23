@@ -3,6 +3,7 @@ module;
 #include "../../../IdtMain.h"
 
 #include "../../../IdtD2DPreparation.h"
+#include <array>
 
 export module Inkeys.UI.Bar:Main;
 
@@ -139,6 +140,12 @@ enum class BarBorderPrimaryAnchorEnum : int
 	Draw,
 	Eraser,
 };
+enum class BarBorderCursorTrackingStateEnum : int
+{
+	Dormant,
+	Inside,
+	Grace,
+};
 
 // 具体渲染
 class BarUIRendering
@@ -179,6 +186,8 @@ protected:
 	D2D1_POINT_2F framePrimaryLightTarget = D2D1::Point2F();
 	D2D1_POINT_2F frameCursorLight = D2D1::Point2F();
 	FLOAT frameCursorLightIntensity = 0.0F;
+	FLOAT frameCursorLightIntensityStart = 0.0F;
+	FLOAT frameCursorLightIntensityTarget = 0.0F;
 	FLOAT frameLightRadius = 0.0F;
 	BarBorderPrimaryAnchorEnum framePrimaryLightAnchor = BarBorderPrimaryAnchorEnum::MainButton;
 	bool framePrimaryLightAnchorInitialized = false;
@@ -248,8 +257,14 @@ public:
 protected:
 	// 拖动交互
 	double Seek(const ExMessage& msg);
-	void InitializeBorderCursorInput();
+	bool SetBorderCursorRawInputEnabled(HWND hWnd, bool enabled);
+	void ActivateBorderCursorTracking(HWND hWnd);
 	void RegisterBorderCursorLight(HWND hWnd);
+	void HandleBorderCursorGraceTimeout(HWND hWnd);
+	void SuspendBorderCursorTracking(HWND hWnd);
+	bool ScheduleBorderCursorGraceTimer(HWND hWnd, UINT delayMs);
+	void RefreshBorderCursorVisibleRegions();
+	bool IsBorderCursorNearVisibleRegion(POINT clientPoint);
 	std::atomic<unsigned long long> mainButtonClickPulseSerial = 0;
 
 	mutex borderCursorLightMutex;
@@ -257,7 +272,16 @@ protected:
 	unsigned long long borderCursorLightSerial = 0;
 	bool borderCursorInputAvailable = false;
 	bool borderCursorLightReady = false;
+	bool borderCursorLightTargetVisible = false;
+	bool borderCursorRawInputRegistered = false;
 	bool borderCursorRegistrationFailureLogged = false;
+	bool borderCursorRemovalFailureLogged = false;
+	bool borderCursorTimerFailureLogged = false;
+	BarBorderCursorTrackingStateEnum borderCursorTrackingState =
+		BarBorderCursorTrackingStateEnum::Dormant;
+	ULONGLONG borderCursorGraceDeadlineTick = 0;
+	array<RECT, 3> borderCursorVisibleRegions{};
+	size_t borderCursorVisibleRegionCount = 0;
 
 	friend class BarUIRendering;
 	friend LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -283,6 +307,7 @@ namespace Inkeys::UI::Bar
 {
 	export void Initialization();
 	export void SetAnimationOptions(bool enable, double speedRate);
+	export void NotifyCanvasMouseDrawingStarted();
 
 	void InitializeWindow(BarUISetClass& barUISet);
 	void InitializeMedia(BarUISetClass& barUISet);

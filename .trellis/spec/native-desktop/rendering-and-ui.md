@@ -54,6 +54,68 @@
 - `GetDC/ReleaseDC`、`BeginDraw/EndDraw` 在成功与失败路径成对；
 - 不在没有线程安全依据时跨线程传递 device context/target。
 
+### UI3 第三鼠标光休眠契约
+
+#### 1. Scope / Trigger
+
+当修改 UI3 Bar 的第三鼠标光、全局鼠标跟踪或画布鼠标落笔通知时，必须保持 `Dormant → Inside → Grace` 状态机；传统 `IdtFloating`、触摸和数位笔输入不属于该契约。
+
+#### 2. Signatures
+
+~~~cpp
+namespace Inkeys::UI::Bar
+{
+	export void NotifyCanvasMouseDrawingStarted();
+}
+~~~
+
+画布只能调用该通知接口，不得从画布线程直接修改 Bar、D2D 或 Raw Input 状态。
+
+#### 3. Contracts
+
+- `Dormant`：第三光源目标透明度为 0，鼠标 Raw Input 必须注销；仅 UI3 窗口自然收到真实 `WM_MOUSEMOVE` 才能进入 `Inside`。
+- `Inside`：注册鼠标 `RIDEV_INPUTSINK`；首次离开实际接收消息的窗口区域时进入 `Grace`，并记录 `GetTickCount64() + 5000` 的绝对截止时间。
+- `Grace`：区域外移动不得重置截止时间。光源仅在距离已发布 UI 外框不超过 `50 × barStyle.zoom` 物理像素时更新坐标并唤醒渲染。
+- `Grace → Inside`：重新进入实际接收消息区域时取消定时器；仅回到 50px 邻域不能从 `Dormant` 唤醒。
+- `Grace → Dormant`：绝对截止时间到达，或画布开始真实鼠标绘制时，注销 Raw Input 并从当前强度平滑淡出。
+- 5 秒等待使用窗口定时器，不得新增轮询线程或靠持续渲染计时。
+
+#### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| `RegisterRawInputDevices` 注册失败 | 第三光源保持隐藏；错误至多记录一次，不影响主光和 UI 交互 |
+| `RIDEV_REMOVE` 注销失败 | 逻辑状态仍进入 `Dormant`，迟到的 `WM_INPUT` 必须被忽略 |
+| 窗口定时器创建失败 | 立即进入 `Dormant`，不得无限保留全局跟踪 |
+| 动画关闭 | 立即隐藏第三光源并请求休眠 |
+| 触摸模拟鼠标消息 | 不得激活第三光源，也不得触发画布鼠标绘制休眠通知 |
+
+#### 5. Good / Base / Bad Cases
+
+- Good：离开 UI 后在外部持续移动，5 秒截止时间保持不变；超时后不再读取全局光标位置。
+- Base：宽限期内返回 UI，取消休眠并从当前透明度继续淡入。
+- Bad：在每个 `WM_INPUT` 上重设 5 秒计时，或在 `Dormant` 中保留 `RIDEV_INPUTSINK` 只靠逻辑分支过滤。
+
+#### 6. Tests Required
+
+- 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`。
+- 手工验证 UI 外启动、进入 UI、离开后 5 秒内返回、超过 50px、5 秒超时、休眠后仅靠近 50px、画布鼠标落笔和动画关闭。
+- 性能验证至少比较 `Dormant` 与持续全局移动时的 CPU；`Dormant` 中不得出现由第三光源导致的持续渲染唤醒。
+
+#### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：区域外每次移动都会把休眠延后 5 秒。
+deadline = GetTickCount64() + 5000;
+
+// Correct：只在 Inside → Grace 的首次转换设置绝对截止时间。
+if (state == TrackingState::Inside)
+{
+	state = TrackingState::Grace;
+	deadline = GetTickCount64() + 5000;
+}
+~~~
+
 ### UI3 动画批次加入与关键帧中点
 
 `【直接确认；设计约定】` `BarUiTimelineClass::CanJoin(double maxProgress = 0.5)` 是主栏布局变化和绘制属性加入主栏批次的统一判断入口；无效参数同样回退到 `0.5`，边界判断为 `GetProgress() <= maxProgress`。
