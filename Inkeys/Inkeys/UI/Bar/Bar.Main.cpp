@@ -1044,7 +1044,8 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 			{
 				bool pointLightDrawn = superellipse.frameRendering == BarUiFrameRenderingEnum::PointLight
 					&& DrawPointLightFrame(deviceContext, frame, superellipse.frameLightColor,
-						superellipse.framePrimaryLightEnabled, 1.0,
+						superellipse.framePrimaryLightEnabled,
+						superellipse.frameCursorLightIntensityScale,
 						tarFramePct, tarFrameLightPct,
 						strokeWidth, nullptr, geometry.Get());
 				if (!pointLightDrawn)
