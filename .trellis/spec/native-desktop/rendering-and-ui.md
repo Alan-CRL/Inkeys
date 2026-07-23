@@ -75,7 +75,7 @@ namespace Inkeys::UI::Bar
 
 - `Dormant`：第三光源目标透明度为 0，鼠标 Raw Input 必须注销；仅 UI3 窗口自然收到真实 `WM_MOUSEMOVE` 才能进入 `Inside`。
 - `Inside`：注册鼠标 `RIDEV_INPUTSINK`；首次离开实际接收消息的窗口区域时进入 `Grace`，并记录 `GetTickCount64() + 5000` 的绝对截止时间。
-- `Grace`：区域外移动不得重置截止时间。光源仅在距离已发布 UI 外框不超过 `50 × barStyle.zoom` 物理像素时更新坐标并唤醒渲染。
+- `Grace`：区域外移动不得重置截止时间。光源空间强度根据光标到已发布 UI 外框的距离连续计算；外框内部为 1，距离在 `50 × barStyle.zoom` 内使用 smoothstep 衰减到 0。
 - `Grace → Inside`：重新进入实际接收消息区域时取消定时器；仅回到 50px 邻域不能从 `Dormant` 唤醒。
 - `Grace → Dormant`：绝对截止时间到达，或画布开始真实鼠标绘制时，注销 Raw Input 并从当前强度平滑淡出。
 - 5 秒等待使用窗口定时器，不得新增轮询线程或靠持续渲染计时。
@@ -92,7 +92,7 @@ namespace Inkeys::UI::Bar
 
 #### 5. Good / Base / Bad Cases
 
-- Good：离开 UI 后在外部持续移动，5 秒截止时间保持不变；超时后不再读取全局光标位置。
+- Good：离开 UI 后在外部持续移动，5 秒截止时间保持不变；光标从可见外框向外移动时亮度连续衰减，超过 50px × zoom 后不再因位置变化唤醒渲染。
 - Base：宽限期内返回 UI，取消休眠并从当前透明度继续淡入。
 - Bad：在每个 `WM_INPUT` 上重设 5 秒计时，或在 `Dormant` 中保留 `RIDEV_INPUTSINK` 只靠逻辑分支过滤。
 

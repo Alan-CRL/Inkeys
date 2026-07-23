@@ -188,6 +188,7 @@ protected:
 	FLOAT frameCursorLightIntensity = 0.0F;
 	FLOAT frameCursorLightIntensityStart = 0.0F;
 	FLOAT frameCursorLightIntensityTarget = 0.0F;
+	FLOAT frameCursorLightSpatialIntensity = 0.0F;
 	FLOAT frameLightRadius = 0.0F;
 	BarBorderPrimaryAnchorEnum framePrimaryLightAnchor = BarBorderPrimaryAnchorEnum::MainButton;
 	bool framePrimaryLightAnchorInitialized = false;
@@ -264,7 +265,7 @@ protected:
 	void SuspendBorderCursorTracking(HWND hWnd);
 	bool ScheduleBorderCursorGraceTimer(HWND hWnd, UINT delayMs);
 	void RefreshBorderCursorVisibleRegions();
-	bool IsBorderCursorNearVisibleRegion(POINT clientPoint);
+	double GetBorderCursorLightSpatialIntensity(POINT clientPoint);
 	std::atomic<unsigned long long> mainButtonClickPulseSerial = 0;
 
 	mutex borderCursorLightMutex;
@@ -272,7 +273,7 @@ protected:
 	unsigned long long borderCursorLightSerial = 0;
 	bool borderCursorInputAvailable = false;
 	bool borderCursorLightReady = false;
-	bool borderCursorLightTargetVisible = false;
+	double borderCursorLightSpatialIntensity = 0.0;
 	bool borderCursorRawInputRegistered = false;
 	bool borderCursorRegistrationFailureLogged = false;
 	bool borderCursorRemovalFailureLogged = false;

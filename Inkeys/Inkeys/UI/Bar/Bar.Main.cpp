@@ -361,7 +361,6 @@ BarUIRendering::BarUIRendering(BarUISetClass* barUISetClassT) { barUISetClass = 
 bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 {
 	frameGradientBrushCache.clear();
-	frameCursorLightIntensity = 0.0F;
 	frameCursorLightVisible = false;
 	frameDrawingUsesPenColor = false;
 	COLORREF desiredDrawingPenColor = frameDrawingPenColorInitialized
@@ -436,14 +435,17 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 
 	unsigned long long cursorSerial = 0;
 	bool cursorInputAvailable = false;
+	FLOAT cursorLightSpatialIntensity = 0.0F;
 	if (barUISetClass)
 	{
 		lock_guard lock(barUISetClass->borderCursorLightMutex);
 		frameCursorLight = barUISetClass->borderCursorLightPoint;
 		cursorSerial = barUISetClass->borderCursorLightSerial;
 		cursorInputAvailable = barUISetClass->borderCursorInputAvailable
-			&& barUISetClass->borderCursorLightReady
-			&& barUISetClass->borderCursorLightTargetVisible;
+			&& barUISetClass->borderCursorLightReady;
+		cursorLightSpatialIntensity = static_cast<FLOAT>(clamp(
+			barUISetClass->borderCursorLightSpatialIntensity, 0.0, 1.0));
+		frameCursorLightSpatialIntensity = cursorLightSpatialIntensity;
 	}
 
 	bool animationEnabled = BarUiAnimationEnabled;
@@ -806,8 +808,9 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 		+ (BarBorderPenDiffuseOpacity - BarBorderFrameDiffuseOpacity) * penColorBlend);
 	ID2D1RadialGradientBrush* primaryBrush = nullptr;
 	ID2D1RadialGradientBrush* cursorBrush = nullptr;
-	FLOAT cursorLightIntensity = frameCursorLightIntensity * static_cast<FLOAT>(
-		clamp(cursorLightIntensityScale, 0.0, 1.0));
+	FLOAT cursorLightIntensity = frameCursorLightIntensity
+		* frameCursorLightSpatialIntensity
+		* static_cast<FLOAT>(clamp(cursorLightIntensityScale, 0.0, 1.0));
 	bool drawPrimaryLight = lightOpacity > 0.0F && primaryLightEnabled;
 	bool drawCursorLight = lightOpacity > 0.0F && frameCursorLightVisible
 		&& cursorLightIntensity > 0.0F;
@@ -4371,7 +4374,6 @@ bool BarUISetClass::SetBorderCursorRawInputEnabled(HWND hWnd, bool enabled)
 			// 先关闭逻辑入口，注销失败时迟到的 WM_INPUT 也不会继续唤醒渲染。
 			borderCursorRawInputRegistered = false;
 			borderCursorInputAvailable = false;
-			borderCursorLightTargetVisible = false;
 		}
 		if (!wasRegistered) return true;
 
@@ -4417,7 +4419,6 @@ bool BarUISetClass::SetBorderCursorRawInputEnabled(HWND hWnd, bool enabled)
 			lock_guard lock(borderCursorLightMutex);
 			borderCursorInputAvailable = false;
 			borderCursorRawInputRegistered = false;
-			borderCursorLightTargetVisible = false;
 			if (!borderCursorRegistrationFailureLogged)
 			{
 				borderCursorRegistrationFailureLogged = true;
@@ -4449,10 +4450,12 @@ void BarUISetClass::ActivateBorderCursorTracking(HWND hWnd)
 
 	bool cancelGraceTimer = false;
 	bool needRegistration = false;
+	bool inputStateChanged = false;
 	{
 		lock_guard lock(borderCursorLightMutex);
 		cancelGraceTimer =
 			borderCursorTrackingState == BarBorderCursorTrackingStateEnum::Grace;
+		inputStateChanged = !borderCursorInputAvailable;
 		borderCursorTrackingState = BarBorderCursorTrackingStateEnum::Inside;
 		borderCursorGraceDeadlineTick = 0;
 		needRegistration = !borderCursorRawInputRegistered;
@@ -4460,23 +4463,27 @@ void BarUISetClass::ActivateBorderCursorTracking(HWND hWnd)
 	if (cancelGraceTimer) KillTimer(hWnd, BarBorderCursorGraceTimerId);
 	if (needRegistration && !SetBorderCursorRawInputEnabled(hWnd, true)) return;
 
+	double spatialIntensity = GetBorderCursorLightSpatialIntensity(cursorPoint);
 	bool needRendering = false;
 	{
 		lock_guard lock(borderCursorLightMutex);
 		if (!borderCursorRawInputRegistered) return;
+		bool spatialChanged = abs(
+			borderCursorLightSpatialIntensity - spatialIntensity) > 0.0001;
+		borderCursorLightSpatialIntensity = spatialIntensity;
 		D2D1_POINT_2F nextPoint = D2D1::Point2F(
 			static_cast<FLOAT>(cursorPoint.x), static_cast<FLOAT>(cursorPoint.y));
-		bool cursorChanged = !borderCursorLightReady
-			|| nextPoint.x != borderCursorLightPoint.x || nextPoint.y != borderCursorLightPoint.y;
-		bool visibilityChanged = !borderCursorLightTargetVisible;
+		bool cursorChanged = spatialIntensity > 0.0
+			&& (!borderCursorLightReady
+				|| nextPoint.x != borderCursorLightPoint.x || nextPoint.y != borderCursorLightPoint.y);
 		borderCursorLightReady = true;
-		borderCursorLightTargetVisible = true;
 		if (cursorChanged)
 		{
 			borderCursorLightPoint = nextPoint;
 			++borderCursorLightSerial;
 		}
-		needRendering = cursorChanged || visibilityChanged;
+		else if (spatialChanged) ++borderCursorLightSerial;
+		needRendering = inputStateChanged || cursorChanged || spatialChanged;
 	}
 	if (needRendering) UpdateRendering(false);
 }
@@ -4530,7 +4537,7 @@ void BarUISetClass::RegisterBorderCursorLight(HWND hWnd)
 		return;
 	}
 
-	bool cursorNearVisibleRegion = IsBorderCursorNearVisibleRegion(clientPoint);
+	double spatialIntensity = GetBorderCursorLightSpatialIntensity(clientPoint);
 	bool needRendering = false;
 	{
 		lock_guard lock(borderCursorLightMutex);
@@ -4538,11 +4545,11 @@ void BarUISetClass::RegisterBorderCursorLight(HWND hWnd)
 			|| borderCursorTrackingState != BarBorderCursorTrackingStateEnum::Grace)
 			return;
 
-		bool visibilityChanged =
-			borderCursorLightTargetVisible != cursorNearVisibleRegion;
-		borderCursorLightTargetVisible = cursorNearVisibleRegion;
+		bool spatialChanged = abs(
+			borderCursorLightSpatialIntensity - spatialIntensity) > 0.0001;
+		borderCursorLightSpatialIntensity = spatialIntensity;
 		bool cursorChanged = false;
-		if (cursorNearVisibleRegion)
+		if (spatialIntensity > 0.0)
 		{
 			D2D1_POINT_2F nextPoint = D2D1::Point2F(
 				static_cast<FLOAT>(clientPoint.x), static_cast<FLOAT>(clientPoint.y));
@@ -4555,7 +4562,8 @@ void BarUISetClass::RegisterBorderCursorLight(HWND hWnd)
 				++borderCursorLightSerial;
 			}
 		}
-		needRendering = visibilityChanged || cursorChanged;
+		else if (spatialChanged) ++borderCursorLightSerial;
+		needRendering = spatialChanged || cursorChanged;
 	}
 	if (needRendering && BarUiAnimationEnabled) UpdateRendering(false);
 }
@@ -4588,16 +4596,17 @@ void BarUISetClass::HandleBorderCursorGraceTimeout(HWND hWnd)
 void BarUISetClass::SuspendBorderCursorTracking(HWND hWnd)
 {
 	if (hWnd) KillTimer(hWnd, BarBorderCursorGraceTimerId);
-	bool visibilityChanged = false;
+	bool needRendering = false;
 	{
 		lock_guard lock(borderCursorLightMutex);
+		needRendering = borderCursorInputAvailable
+			|| borderCursorRawInputRegistered
+			|| borderCursorLightSpatialIntensity > 0.0001;
 		borderCursorTrackingState = BarBorderCursorTrackingStateEnum::Dormant;
 		borderCursorGraceDeadlineTick = 0;
-		visibilityChanged = borderCursorLightTargetVisible;
-		borderCursorLightTargetVisible = false;
 	}
 	SetBorderCursorRawInputEnabled(hWnd, false);
-	if (visibilityChanged) UpdateRendering(false);
+	if (needRendering) UpdateRendering(false);
 }
 
 bool BarUISetClass::ScheduleBorderCursorGraceTimer(HWND hWnd, UINT delayMs)
@@ -4651,7 +4660,7 @@ void BarUISetClass::RefreshBorderCursorVisibleRegions()
 	borderCursorVisibleRegionCount = nextCount;
 }
 
-bool BarUISetClass::IsBorderCursorNearVisibleRegion(POINT clientPoint)
+double BarUISetClass::GetBorderCursorLightSpatialIntensity(POINT clientPoint)
 {
 	array<RECT, 3> visibleRegions{};
 	size_t visibleRegionCount = 0;
@@ -4662,9 +4671,11 @@ bool BarUISetClass::IsBorderCursorNearVisibleRegion(POINT clientPoint)
 	}
 
 	double zoom = barStyle.zoom;
-	if (!isfinite(zoom) || zoom <= 0.0) return false;
+	if (!isfinite(zoom) || zoom <= 0.0) return 0.0;
 	double distanceLimit = BarBorderCursorVisibleDistance * zoom;
-	double distanceLimitSquared = distanceLimit * distanceLimit;
+	if (distanceLimit <= 0.0) return 0.0;
+	bool hasVisibleRegion = false;
+	double nearestDistanceSquared = 0.0;
 	for (size_t i = 0; i < visibleRegionCount; i++)
 	{
 		const RECT& region = visibleRegions[i];
@@ -4674,9 +4685,19 @@ bool BarUISetClass::IsBorderCursorNearVisibleRegion(POINT clientPoint)
 		else if (clientPoint.x > region.right) dx = static_cast<double>(clientPoint.x - region.right);
 		if (clientPoint.y < region.top) dy = static_cast<double>(region.top - clientPoint.y);
 		else if (clientPoint.y > region.bottom) dy = static_cast<double>(clientPoint.y - region.bottom);
-		if (dx * dx + dy * dy <= distanceLimitSquared) return true;
+		double distanceSquared = dx * dx + dy * dy;
+		if (!hasVisibleRegion || distanceSquared < nearestDistanceSquared)
+		{
+			hasVisibleRegion = true;
+			nearestDistanceSquared = distanceSquared;
+		}
 	}
-	return false;
+	if (!hasVisibleRegion) return 0.0;
+
+	double distanceRatio = clamp(
+		sqrt(nearestDistanceSquared) / distanceLimit, 0.0, 1.0);
+	// 50px 范围内按距离连续衰减，接受消息区域只参与生命周期判断。
+	return ApplyBorderLightSmoothstep(1.0 - distanceRatio);
 }
 
 // 拖动交互
