@@ -38,6 +38,7 @@ constexpr double BarButtonHoverFadeDur = 5.0;
 constexpr double BarBorderLightRadius = 480.0;
 constexpr double BarBorderCursorFadeInDur = 0.30;
 constexpr double BarBorderLightIntensity = 1.0;
+constexpr double BarColorSwatchCursorLightIntensity = 0.60;
 constexpr double BarBorderFrameDiffuseOpacity = 0.30;
 constexpr double BarBorderPenDiffuseOpacity = 0.20;
 constexpr double BarColorSwatchFrameOpacity = 0.18;
@@ -49,6 +50,22 @@ double ApplyBorderLightSmoothstep(double progress)
 {
 	progress = clamp(progress, 0.0, 1.0);
 	return progress * progress * (3.0 - 2.0 * progress);
+}
+
+COLORREF MixBarUiColor(COLORREF startColor, COLORREF targetColor, double progress)
+{
+	// UI 颜色动画统一按 RGB 三通道共享同一条曲线进度。
+	progress = clamp(progress, 0.0, 1.0);
+	auto MixChannel = [progress](BYTE start, BYTE target)
+		{
+			double value = static_cast<double>(start)
+				+ static_cast<double>(static_cast<int>(target) - static_cast<int>(start)) * progress;
+			return static_cast<BYTE>(clamp(value, 0.0, 255.0) + 0.5);
+		};
+	return RGB(
+		MixChannel(GetRValue(startColor), GetRValue(targetColor)),
+		MixChannel(GetGValue(startColor), GetGValue(targetColor)),
+		MixChannel(GetBValue(startColor), GetBValue(targetColor)));
 }
 
 // ====================
@@ -325,6 +342,8 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	frameGradientBrushCache.clear();
 	frameCursorLightIntensity = 0.0F;
 	frameCursorLightVisible = false;
+	frameDrawingUsesPenColor = false;
+	COLORREF desiredDrawingPenColor = GetPenColor() & 0x00FFFFFF;
 
 	double zoom = barUISetClass ? static_cast<double>(barUISetClass->barStyle.zoom) : 0.0;
 	if (!isfinite(zoom) || zoom <= 0.0) zoom = 0.0;
@@ -385,17 +404,9 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 			}
 		}
 
-		// 非穿透画笔模式下，仅由控件自己的光色策略决定是否采用动画画笔色。
+		// 非穿透画笔模式下，仅由控件自己的光色策略决定是否采用画笔色。
 		frameDrawingUsesPenColor =
 			stateMode.StateModeSelect == StateModeSelectEnum::IdtPen && !penetrate.select;
-		if (frameDrawingUsesPenColor)
-		{
-			frameDrawingPenColor = GetPenColor();
-			auto mainButtonInkIt = barUISetClass->svgMap.find(BarUISetSvgEnum::logoInk);
-			if (mainButtonInkIt != barUISetClass->svgMap.end()
-				&& mainButtonInkIt->second && mainButtonInkIt->second->color1.has_value())
-				frameDrawingPenColor = mainButtonInkIt->second->color1.value().val;
-		}
 	}
 
 	unsigned long long cursorSerial = 0;
@@ -416,6 +427,53 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	if (!isfinite(animationDtSeconds) || animationDtSeconds < 0.0) animationDtSeconds = 0.0;
 	animationDtSeconds = clamp(animationDtSeconds, 0.0, 0.05);
 	double scaledDtSeconds = animationDtSeconds * animationSpeedRate;
+
+	bool penLightColorChanged = false;
+	if (!frameDrawingPenColorInitialized)
+	{
+		frameDrawingPenColorInitialized = true;
+		frameDrawingPenColorStart = desiredDrawingPenColor;
+		frameDrawingPenColorTarget = desiredDrawingPenColor;
+		frameDrawingPenColor = desiredDrawingPenColor;
+	}
+	else if ((frameDrawingPenColorTarget & 0x00FFFFFF) != desiredDrawingPenColor)
+	{
+		// 连续换色从当前视觉颜色重新起步，避免快速点击色块时发生跳变。
+		frameDrawingPenColorStart = frameDrawingPenColor;
+		frameDrawingPenColorTarget = desiredDrawingPenColor;
+		frameDrawingPenColorElapsed = 0.0;
+		frameDrawingPenColorAnimating = animationEnabled && frameDrawingUsesPenColor;
+		penLightColorChanged = true;
+	}
+
+	if (!animationEnabled || !frameDrawingUsesPenColor)
+	{
+		frameDrawingPenColor = frameDrawingPenColorTarget;
+		frameDrawingPenColorAnimating = false;
+		frameDrawingPenColorElapsed = 0.0;
+	}
+	else if (frameDrawingPenColorAnimating)
+	{
+		double colorDuration = BarUiDefaultOperationDur;
+		if (!isfinite(colorDuration) || colorDuration <= 0.0)
+		{
+			frameDrawingPenColor = frameDrawingPenColorTarget;
+			frameDrawingPenColorAnimating = false;
+		}
+		else
+		{
+			frameDrawingPenColorElapsed += scaledDtSeconds;
+			double progress = clamp(frameDrawingPenColorElapsed / colorDuration, 0.0, 1.0);
+			double curvedProgress = BarUiApplyCurve(BarUiCurveEnum::EaseInOutCubic, progress);
+			frameDrawingPenColor = MixBarUiColor(
+				frameDrawingPenColorStart, frameDrawingPenColorTarget, curvedProgress);
+			if (progress >= 1.0)
+			{
+				frameDrawingPenColor = frameDrawingPenColorTarget;
+				frameDrawingPenColorAnimating = false;
+			}
+		}
+	}
 
 	bool primaryLightMoved = false;
 	bool primaryStateChanged = false;
@@ -484,7 +542,7 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 		primaryLightMoved = PointsDiffer(previousPrimaryLight, framePrimaryLight);
 	}
 
-	bool stateChanged = primaryStateChanged;
+	bool stateChanged = primaryStateChanged || penLightColorChanged;
 	bool cursorFadeRestarted = false;
 	bool cursorMoved = false;
 	if (!frameAnimationStateInitialized)
@@ -558,7 +616,8 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	}
 
 	// 时间过程结束后再绘制一帧最终状态，随后恢复原有静止等待。
-	bool lightingAnimating = frameCursorLightAnimating || framePrimaryLightAnimating;
+	bool lightingAnimating = frameCursorLightAnimating || framePrimaryLightAnimating
+		|| frameDrawingPenColorAnimating;
 	bool needSettlingFrame = frameLightingWasAnimating && !lightingAnimating;
 	frameLightingWasAnimating = lightingAnimating;
 	return lightingAnimating || needSettlingFrame || stateChanged || cursorMoved || primaryLightMoved;
@@ -615,7 +674,8 @@ ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
 
 bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLORREF color,
 	BarUiFrameLightColorEnum frameLightColor,
-	bool primaryLightEnabled, double baseFramePct, double lightPct, FLOAT strokeWidth,
+	bool primaryLightEnabled, double cursorLightIntensityScale,
+	double baseFramePct, double lightPct, FLOAT strokeWidth,
 	const D2D1_ROUNDED_RECT* roundedRect,
 	ID2D1Geometry* geometry)
 {
@@ -635,8 +695,11 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 		? BarBorderPenDiffuseOpacity : BarBorderFrameDiffuseOpacity);
 	ID2D1RadialGradientBrush* primaryBrush = nullptr;
 	ID2D1RadialGradientBrush* cursorBrush = nullptr;
+	FLOAT cursorLightIntensity = frameCursorLightIntensity * static_cast<FLOAT>(
+		clamp(cursorLightIntensityScale, 0.0, 1.0));
 	bool drawPrimaryLight = lightOpacity > 0.0F && primaryLightEnabled;
-	bool drawCursorLight = lightOpacity > 0.0F && frameCursorLightVisible;
+	bool drawCursorLight = lightOpacity > 0.0F && frameCursorLightVisible
+		&& cursorLightIntensity > 0.0F;
 	if (drawPrimaryLight)
 		primaryBrush = GetFrameGradientBrush(
 			deviceContext, lightColor, BarBorderLightSourceEnum::Primary);
@@ -716,7 +779,7 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 						diffuseOpacity / BarBorderGaussianCenterCoverage, 0.0, 1.0));
 					DrawLightPass(primaryBrush, diffuseSourceOpacity, strokeWidth);
 					DrawLightPass(cursorBrush,
-						frameCursorLightIntensity * diffuseSourceOpacity, strokeWidth);
+						cursorLightIntensity * diffuseSourceOpacity, strokeWidth);
 					deviceContext->SetTarget(originalTarget.Get());
 
 					hr = diffuseCommands->Close();
@@ -744,7 +807,7 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 
 		// 清晰边保持原有 480px 点光渐变，不受 Gaussian 轮廓扩散替代。
 		DrawLightPass(primaryBrush, static_cast<FLOAT>(BarBorderLightIntensity), strokeWidth);
-		DrawLightPass(cursorBrush, frameCursorLightIntensity, strokeWidth);
+		DrawLightPass(cursorBrush, cursorLightIntensity, strokeWidth);
 	}
 	return true;
 }
@@ -816,7 +879,8 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 			{
 				bool pointLightDrawn = shape.frameRendering == BarUiFrameRenderingEnum::PointLight
 					&& DrawPointLightFrame(deviceContext, frame, shape.frameLightColor,
-						shape.framePrimaryLightEnabled, tarFramePct, tarFrameLightPct,
+						shape.framePrimaryLightEnabled, shape.frameCursorLightIntensityScale,
+						tarFramePct, tarFrameLightPct,
 						strokeWidth, &roundedRect, nullptr);
 				if (!pointLightDrawn)
 				{
@@ -980,7 +1044,8 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 			{
 				bool pointLightDrawn = superellipse.frameRendering == BarUiFrameRenderingEnum::PointLight
 					&& DrawPointLightFrame(deviceContext, frame, superellipse.frameLightColor,
-						superellipse.framePrimaryLightEnabled, tarFramePct, tarFrameLightPct,
+						superellipse.framePrimaryLightEnabled, 1.0,
+						tarFramePct, tarFrameLightPct,
 						strokeWidth, nullptr, geometry.Get());
 				if (!pointLightDrawn)
 				{
@@ -2860,19 +2925,6 @@ void BarUISetClass::Rendering()
 				pct.timelineStartProgress = 0.0;
 				pct.continueTimelinePhase = false;
 			};
-		auto MixColorChannel = [](int start, int target, double progress) -> int
-			{
-				double val = static_cast<double>(start) + static_cast<double>(target - start) * progress;
-				return static_cast<int>(clamp(val, 0.0, 255.0) + 0.5);
-			};
-		auto MixColor = [&](COLORREF startColor, COLORREF targetColor, double progress) -> COLORREF
-			{
-				// 颜色按 RGB 三通道共享同一条曲线进度。
-				return RGB(
-					MixColorChannel(GetRValue(startColor), GetRValue(targetColor), progress),
-					MixColorChannel(GetGValue(startColor), GetGValue(targetColor), progress),
-					MixColorChannel(GetBValue(startColor), GetBValue(targetColor), progress));
-			};
 		auto ApplyAnimationCurve = [](BarUiCurveEnum curve, double progress,
 			double timelineStartProgress, bool continueTimelinePhase) -> double
 			{
@@ -2956,7 +3008,8 @@ void BarUISetClass::Rendering()
 				double progress = clamp(static_cast<double>(color.progress) + animationDtSeconds * speedRate / duration, 0.0, 1.0);
 				double curveProgress = ApplyAnimationCurve(color.activeCurve, progress,
 					color.timelineStartProgress, color.continueTimelinePhase);
-				COLORREF nextColor = MixColor(startColor, targetColor, clamp(curveProgress, 0.0, 1.0));
+			COLORREF nextColor = MixBarUiColor(
+				startColor, targetColor, clamp(curveProgress, 0.0, 1.0));
 				if (progress >= 1.0)
 				{
 					FinishColor(color, targetColor);
@@ -4637,6 +4690,7 @@ namespace Inkeys::UI::Bar
 							shape->frameRendering = BarUiFrameRenderingEnum::PointLight;
 							shape->framePct = BarUiPctClass(0.0);
 							shape->framePrimaryLightEnabled = false;
+							shape->frameCursorLightIntensityScale = BarColorSwatchCursorLightIntensity;
 							// 18% 只控制基础灰边；色块仅由鼠标追光随填充进度完整显现。
 							shape->frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::ObjectPct;
 						}

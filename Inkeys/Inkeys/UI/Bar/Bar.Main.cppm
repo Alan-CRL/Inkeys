@@ -169,7 +169,8 @@ protected:
 		ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource);
 	bool DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLORREF color,
 		BarUiFrameLightColorEnum frameLightColor,
-		bool primaryLightEnabled, double baseFramePct, double lightPct, FLOAT strokeWidth,
+		bool primaryLightEnabled, double cursorLightIntensityScale,
+		double baseFramePct, double lightPct, FLOAT strokeWidth,
 		const D2D1_ROUNDED_RECT* roundedRect,
 		ID2D1Geometry* geometry);
 
@@ -192,9 +193,14 @@ protected:
 	bool frameDiffuseEffectFailureLogged = false;
 	double framePrimaryLightMoveElapsed = 0.0;
 	double frameCursorLightFadeElapsed = 0.0;
+	double frameDrawingPenColorElapsed = 0.0;
 	unsigned long long handledBorderCursorLightSerial = 0;
 	COLORREF frameDrawingPenColor = RGB(0, 0, 0);
+	COLORREF frameDrawingPenColorStart = RGB(0, 0, 0);
+	COLORREF frameDrawingPenColorTarget = RGB(0, 0, 0);
 	bool frameDrawingUsesPenColor = false;
+	bool frameDrawingPenColorInitialized = false;
+	bool frameDrawingPenColorAnimating = false;
 	vector<FrameGradientBrushCacheClass> frameGradientBrushCache;
 	ComPtr<ID2D1Effect> frameGaussianBlurEffect;
 };

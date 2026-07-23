@@ -727,6 +727,7 @@ public:
 	BarUiFrameLightColorEnum frameLightColor = BarUiFrameLightColorEnum::Frame;
 	BarUiFrameLightOpacitySourceEnum frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::FramePct;
 	bool framePrimaryLightEnabled = true; // PointLight 默认接受主光源，可按控件关闭
+	double frameCursorLightIntensityScale = 1.0; // 鼠标光默认与主光同强度
 };
 //// 单个超椭圆控件
 class BarUiSuperellipseClass : public BarUiInnheritBaseClass
