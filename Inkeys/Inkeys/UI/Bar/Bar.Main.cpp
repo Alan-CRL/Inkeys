@@ -37,7 +37,7 @@ constexpr double BarButtonHoverExitDur = 0.24;
 constexpr double BarButtonHoverFadeDur = 5.0;
 constexpr double BarBorderLightRadius = 480.0;
 constexpr double BarBorderCursorFadeInDur = 0.30;
-constexpr double BarBorderCursorLightRadius = 50.0;
+constexpr double BarBorderCursorLightRadius = 240.0;
 constexpr ULONGLONG BarBorderCursorGraceDurationMs = 5000;
 constexpr UINT_PTR BarBorderCursorGraceTimerId = 0x494B4301;
 constexpr UINT BarBorderCursorSuspendMessage = WM_APP + 0x31;
@@ -918,7 +918,7 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 			if (FAILED(hr)) LogDiffuseFailure("记录或绘制 Gaussian 柔光", hr);
 		}
 
-		// 第一光源保留 480px，第三光源使用 50px 光圈；同距离像素不再受其他 UI 区域影响。
+		// 第一光源保留 480px，第三光源使用 240px 光圈；同距离像素不再受其他 UI 区域影响。
 		DrawLightPass(primaryBrush, static_cast<FLOAT>(BarBorderLightIntensity), strokeWidth);
 		DrawLightPass(cursorBrush, cursorLightIntensity, strokeWidth);
 	}
@@ -4461,7 +4461,7 @@ void BarUISetClass::ActivateBorderCursorTracking(HWND hWnd)
 	if (cancelGraceTimer) KillTimer(hWnd, BarBorderCursorGraceTimerId);
 	if (needRegistration && !SetBorderCursorRawInputEnabled(hWnd, true)) return;
 
-	// 接受区只控制生命周期；50px 邻近判断仅用于裁剪无效渲染唤醒。
+	// 接受区只控制生命周期；240px 邻近判断仅用于裁剪无效渲染唤醒。
 	bool cursorNearVisibleRegion = IsBorderCursorLightNearVisibleRegion(screenPoint);
 	POINT clientPoint = screenPoint;
 	if (!ScreenToClient(hWnd, &clientPoint)) return;
@@ -4554,7 +4554,7 @@ void BarUISetClass::RegisterBorderCursorLight(HWND hWnd)
 		{
 			D2D1_POINT_2F nextPoint = D2D1::Point2F(
 				static_cast<FLOAT>(clientPoint.x), static_cast<FLOAT>(clientPoint.y));
-			// 跨出 50px 时发布最后一个位置，让 50px 径向渐变自然落到 0。
+			// 跨出 240px 时发布最后一个位置，让 240px 径向渐变自然落到 0。
 			cursorChanged = !borderCursorLightReady
 				|| nextPoint.x != borderCursorLightPoint.x || nextPoint.y != borderCursorLightPoint.y;
 			if (cursorChanged)
