@@ -194,6 +194,12 @@ protected:
 	double framePrimaryLightMoveElapsed = 0.0;
 	double frameCursorLightFadeElapsed = 0.0;
 	double frameDrawingPenColorElapsed = 0.0;
+	double frameDrawingModeTransitionElapsed = 0.0;
+	double frameDrawingPenColorBlend = 0.0;
+	double frameDrawingPenColorBlendStart = 0.0;
+	double frameDrawingPenColorBlendTarget = 0.0;
+	double frameDrawingLightOpacity = 1.0;
+	double frameDrawingLightOpacityStart = 1.0;
 	unsigned long long handledBorderCursorLightSerial = 0;
 	COLORREF frameDrawingPenColor = RGB(0, 0, 0);
 	COLORREF frameDrawingPenColorStart = RGB(0, 0, 0);
@@ -201,6 +207,8 @@ protected:
 	bool frameDrawingUsesPenColor = false;
 	bool frameDrawingPenColorInitialized = false;
 	bool frameDrawingPenColorAnimating = false;
+	bool frameDrawingModeInitialized = false;
+	bool frameDrawingModeTransitionAnimating = false;
 	vector<FrameGradientBrushCacheClass> frameGradientBrushCache;
 	ComPtr<ID2D1Effect> frameGaussianBlurEffect;
 };

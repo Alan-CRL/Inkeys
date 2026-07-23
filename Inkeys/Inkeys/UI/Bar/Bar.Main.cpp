@@ -343,7 +343,8 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	frameCursorLightIntensity = 0.0F;
 	frameCursorLightVisible = false;
 	frameDrawingUsesPenColor = false;
-	COLORREF desiredDrawingPenColor = GetPenColor() & 0x00FFFFFF;
+	COLORREF desiredDrawingPenColor = frameDrawingPenColorInitialized
+		? frameDrawingPenColorTarget : (GetPenColor() & 0x00FFFFFF);
 
 	double zoom = barUISetClass ? static_cast<double>(barUISetClass->barStyle.zoom) : 0.0;
 	if (!isfinite(zoom) || zoom <= 0.0) zoom = 0.0;
@@ -354,6 +355,9 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	bool primaryTargetAvailable = false;
 	if (barUISetClass)
 	{
+		// 离开画笔模式后 GetPenColor 会回退到黑色；退出过渡必须保留最后一次有效画笔色。
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
+			desiredDrawingPenColor = GetPenColor() & 0x00FFFFFF;
 		switch (stateMode.StateModeSelect)
 		{
 		case StateModeSelectEnum::IdtPen:
@@ -427,6 +431,75 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	if (!isfinite(animationDtSeconds) || animationDtSeconds < 0.0) animationDtSeconds = 0.0;
 	animationDtSeconds = clamp(animationDtSeconds, 0.0, 0.05);
 	double scaledDtSeconds = animationDtSeconds * animationSpeedRate;
+
+	bool drawingModeTransitionStarted = false;
+	double desiredPenColorBlend = frameDrawingUsesPenColor ? 1.0 : 0.0;
+	if (!frameDrawingModeInitialized)
+	{
+		frameDrawingModeInitialized = true;
+		frameDrawingPenColorBlend = desiredPenColorBlend;
+		frameDrawingPenColorBlendStart = desiredPenColorBlend;
+		frameDrawingPenColorBlendTarget = desiredPenColorBlend;
+		frameDrawingLightOpacity = 1.0;
+		frameDrawingLightOpacityStart = 1.0;
+	}
+	else if (frameDrawingPenColorBlendTarget != desiredPenColorBlend)
+	{
+		// 进入与退出绘制共用同一关键帧：先隐藏光影，在中点换色，再对称显示。
+		frameDrawingPenColorBlendStart = frameDrawingPenColorBlend;
+		frameDrawingPenColorBlendTarget = desiredPenColorBlend;
+		frameDrawingLightOpacityStart = frameDrawingLightOpacity;
+		frameDrawingModeTransitionElapsed = 0.0;
+		frameDrawingModeTransitionAnimating = animationEnabled;
+		drawingModeTransitionStarted = true;
+	}
+
+	if (!animationEnabled)
+	{
+		frameDrawingPenColorBlend = frameDrawingPenColorBlendTarget;
+		frameDrawingLightOpacity = 1.0;
+		frameDrawingModeTransitionAnimating = false;
+		frameDrawingModeTransitionElapsed = 0.0;
+	}
+	else if (frameDrawingModeTransitionAnimating)
+	{
+		double transitionDuration = BarUiDefaultOperationDur;
+		if (!isfinite(transitionDuration) || transitionDuration <= 0.0)
+		{
+			frameDrawingPenColorBlend = frameDrawingPenColorBlendTarget;
+			frameDrawingLightOpacity = 1.0;
+			frameDrawingModeTransitionAnimating = false;
+		}
+		else
+		{
+			frameDrawingModeTransitionElapsed += scaledDtSeconds;
+			double progress = clamp(
+				frameDrawingModeTransitionElapsed / transitionDuration, 0.0, 1.0);
+			// 颜色变化压缩在中间 30% 时段，光影在正中完全透明，避免看见颜色互相覆盖。
+			double colorProgress = ApplyBorderLightSmoothstep(
+				clamp((progress - 0.35) / 0.30, 0.0, 1.0));
+			frameDrawingPenColorBlend = frameDrawingPenColorBlendStart
+				+ (frameDrawingPenColorBlendTarget - frameDrawingPenColorBlendStart)
+				* colorProgress;
+			if (progress < 0.5)
+			{
+				double fadeOutProgress = ApplyBorderLightSmoothstep(progress * 2.0);
+				frameDrawingLightOpacity =
+					frameDrawingLightOpacityStart * (1.0 - fadeOutProgress);
+			}
+			else
+			{
+				frameDrawingLightOpacity = ApplyBorderLightSmoothstep(
+					(progress - 0.5) * 2.0);
+			}
+			if (progress >= 1.0)
+			{
+				frameDrawingPenColorBlend = frameDrawingPenColorBlendTarget;
+				frameDrawingLightOpacity = 1.0;
+				frameDrawingModeTransitionAnimating = false;
+			}
+		}
+	}
 
 	bool penLightColorChanged = false;
 	if (!frameDrawingPenColorInitialized)
@@ -542,7 +615,8 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 		primaryLightMoved = PointsDiffer(previousPrimaryLight, framePrimaryLight);
 	}
 
-	bool stateChanged = primaryStateChanged || penLightColorChanged;
+	bool stateChanged = primaryStateChanged || penLightColorChanged
+		|| drawingModeTransitionStarted;
 	bool cursorFadeRestarted = false;
 	bool cursorMoved = false;
 	if (!frameAnimationStateInitialized)
@@ -617,7 +691,7 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 
 	// 时间过程结束后再绘制一帧最终状态，随后恢复原有静止等待。
 	bool lightingAnimating = frameCursorLightAnimating || framePrimaryLightAnimating
-		|| frameDrawingPenColorAnimating;
+		|| frameDrawingPenColorAnimating || frameDrawingModeTransitionAnimating;
 	bool needSettlingFrame = frameLightingWasAnimating && !lightingAnimating;
 	frameLightingWasAnimating = lightingAnimating;
 	return lightingAnimating || needSettlingFrame || stateChanged || cursorMoved || primaryLightMoved;
@@ -686,13 +760,19 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 	FLOAT lightOpacity = static_cast<FLOAT>(clamp(lightPct, 0.0, 1.0));
 	if (baseOpacity <= 0.0F && lightOpacity <= 0.0F) return true;
 
-	bool usePenLightColor = frameDrawingUsesPenColor
-		&& frameLightColor == BarUiFrameLightColorEnum::PenWhenDrawing;
+	bool useDrawingLightTransition =
+		frameLightColor == BarUiFrameLightColorEnum::PenWhenDrawing;
+	double penColorBlend = useDrawingLightTransition
+		? clamp(frameDrawingPenColorBlend, 0.0, 1.0) : 0.0;
+	if (useDrawingLightTransition)
+		lightOpacity *= static_cast<FLOAT>(
+			clamp(frameDrawingLightOpacity, 0.0, 1.0));
 	COLORREF lightColor = color;
-	if (usePenLightColor)
-		lightColor = frameDrawingPenColor;
-	FLOAT diffuseOpacity = static_cast<FLOAT>(usePenLightColor
-		? BarBorderPenDiffuseOpacity : BarBorderFrameDiffuseOpacity);
+	if (penColorBlend > 0.0)
+		lightColor = MixBarUiColor(color, frameDrawingPenColor, penColorBlend);
+	FLOAT diffuseOpacity = static_cast<FLOAT>(
+		BarBorderFrameDiffuseOpacity
+		+ (BarBorderPenDiffuseOpacity - BarBorderFrameDiffuseOpacity) * penColorBlend);
 	ID2D1RadialGradientBrush* primaryBrush = nullptr;
 	ID2D1RadialGradientBrush* cursorBrush = nullptr;
 	FLOAT cursorLightIntensity = frameCursorLightIntensity * static_cast<FLOAT>(
