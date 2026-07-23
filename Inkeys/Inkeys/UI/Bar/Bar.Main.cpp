@@ -37,7 +37,7 @@ constexpr double BarButtonHoverExitDur = 0.24;
 constexpr double BarButtonHoverFadeDur = 5.0;
 constexpr double BarBorderLightRadius = 480.0;
 constexpr double BarBorderCursorFadeInDur = 0.30;
-constexpr double BarBorderCursorVisibleDistance = 50.0;
+constexpr double BarBorderCursorLightRadius = 50.0;
 constexpr ULONGLONG BarBorderCursorGraceDurationMs = 5000;
 constexpr UINT_PTR BarBorderCursorGraceTimerId = 0x494B4301;
 constexpr UINT BarBorderCursorSuspendMessage = WM_APP + 0x31;
@@ -369,6 +369,7 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	double zoom = barUISetClass ? static_cast<double>(barUISetClass->barStyle.zoom) : 0.0;
 	if (!isfinite(zoom) || zoom <= 0.0) zoom = 0.0;
 	frameLightRadius = static_cast<FLOAT>(BarBorderLightRadius * zoom);
+	frameCursorLightRadius = static_cast<FLOAT>(BarBorderCursorLightRadius * zoom);
 
 	BarBorderPrimaryAnchorEnum desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::MainButton;
 	D2D1_POINT_2F desiredPrimaryLight = framePrimaryLight;
@@ -435,7 +436,6 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 
 	unsigned long long cursorSerial = 0;
 	bool cursorInputAvailable = false;
-	FLOAT cursorLightSpatialIntensity = 0.0F;
 	if (barUISetClass)
 	{
 		lock_guard lock(barUISetClass->borderCursorLightMutex);
@@ -443,9 +443,6 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 		cursorSerial = barUISetClass->borderCursorLightSerial;
 		cursorInputAvailable = barUISetClass->borderCursorInputAvailable
 			&& barUISetClass->borderCursorLightReady;
-		cursorLightSpatialIntensity = static_cast<FLOAT>(clamp(
-			barUISetClass->borderCursorLightSpatialIntensity, 0.0, 1.0));
-		frameCursorLightSpatialIntensity = cursorLightSpatialIntensity;
 	}
 
 	bool animationEnabled = BarUiAnimationEnabled;
@@ -755,12 +752,15 @@ ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
 	{
 		D2D1_POINT_2F center = framePrimaryLight;
 		if (lightSource == BarBorderLightSourceEnum::Cursor) center = frameCursorLight;
+		FLOAT radius = lightSource == BarBorderLightSourceEnum::Cursor
+			? frameCursorLightRadius : frameLightRadius;
+		if (radius <= 0.0F) return nullptr;
 		FrameGradientBrushCacheClass cache;
 		cache.color = rgb;
 		cache.lightSource = lightSource;
 		hr = deviceContext->CreateRadialGradientBrush(
 			D2D1::RadialGradientBrushProperties(
-				center, D2D1::Point2F(), frameLightRadius, frameLightRadius),
+				center, D2D1::Point2F(), radius, radius),
 			stopCollection.Get(), &cache.brush);
 		if (SUCCEEDED(hr))
 		{
@@ -809,7 +809,6 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 	ID2D1RadialGradientBrush* primaryBrush = nullptr;
 	ID2D1RadialGradientBrush* cursorBrush = nullptr;
 	FLOAT cursorLightIntensity = frameCursorLightIntensity
-		* frameCursorLightSpatialIntensity
 		* static_cast<FLOAT>(clamp(cursorLightIntensityScale, 0.0, 1.0));
 	bool drawPrimaryLight = lightOpacity > 0.0F && primaryLightEnabled;
 	bool drawCursorLight = lightOpacity > 0.0F && frameCursorLightVisible
@@ -919,7 +918,7 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 			if (FAILED(hr)) LogDiffuseFailure("记录或绘制 Gaussian 柔光", hr);
 		}
 
-		// 清晰边保持原有 480px 点光渐变，不受 Gaussian 轮廓扩散替代。
+		// 第一光源保留 480px，第三光源使用 50px 光圈；同距离像素不再受其他 UI 区域影响。
 		DrawLightPass(primaryBrush, static_cast<FLOAT>(BarBorderLightIntensity), strokeWidth);
 		DrawLightPass(cursorBrush, cursorLightIntensity, strokeWidth);
 	}
@@ -4443,9 +4442,8 @@ void BarUISetClass::ActivateBorderCursorTracking(HWND hWnd)
 {
 	if (!hWnd || !BarUiAnimationEnabled) return;
 
-	POINT cursorPoint{};
-	bool cursorReady = GetCursorPos(&cursorPoint)
-		&& ScreenToClient(hWnd, &cursorPoint);
+	POINT screenPoint{};
+	bool cursorReady = GetCursorPos(&screenPoint);
 	if (!cursorReady) return;
 
 	bool cancelGraceTimer = false;
@@ -4463,27 +4461,30 @@ void BarUISetClass::ActivateBorderCursorTracking(HWND hWnd)
 	if (cancelGraceTimer) KillTimer(hWnd, BarBorderCursorGraceTimerId);
 	if (needRegistration && !SetBorderCursorRawInputEnabled(hWnd, true)) return;
 
-	double spatialIntensity = GetBorderCursorLightSpatialIntensity(cursorPoint);
+	// 接受区只控制生命周期；50px 邻近判断仅用于裁剪无效渲染唤醒。
+	bool cursorNearVisibleRegion = IsBorderCursorLightNearVisibleRegion(screenPoint);
+	POINT clientPoint = screenPoint;
+	if (!ScreenToClient(hWnd, &clientPoint)) return;
 	bool needRendering = false;
 	{
 		lock_guard lock(borderCursorLightMutex);
 		if (!borderCursorRawInputRegistered) return;
-		bool spatialChanged = abs(
-			borderCursorLightSpatialIntensity - spatialIntensity) > 0.0001;
-		borderCursorLightSpatialIntensity = spatialIntensity;
+		bool proximityChanged =
+			borderCursorLightNearVisibleRegion != cursorNearVisibleRegion;
+		borderCursorLightNearVisibleRegion = cursorNearVisibleRegion;
 		D2D1_POINT_2F nextPoint = D2D1::Point2F(
-			static_cast<FLOAT>(cursorPoint.x), static_cast<FLOAT>(cursorPoint.y));
-		bool cursorChanged = spatialIntensity > 0.0
-			&& (!borderCursorLightReady
-				|| nextPoint.x != borderCursorLightPoint.x || nextPoint.y != borderCursorLightPoint.y);
+			static_cast<FLOAT>(clientPoint.x), static_cast<FLOAT>(clientPoint.y));
+		// Inside 始终发布真实光标点，不能依赖首帧可见区域缓存已经完成。
+		bool cursorChanged = !borderCursorLightReady
+			|| nextPoint.x != borderCursorLightPoint.x || nextPoint.y != borderCursorLightPoint.y;
 		borderCursorLightReady = true;
 		if (cursorChanged)
 		{
 			borderCursorLightPoint = nextPoint;
 			++borderCursorLightSerial;
 		}
-		else if (spatialChanged) ++borderCursorLightSerial;
-		needRendering = inputStateChanged || cursorChanged || spatialChanged;
+		else if (proximityChanged) ++borderCursorLightSerial;
+		needRendering = inputStateChanged || cursorChanged || proximityChanged;
 	}
 	if (needRendering) UpdateRendering(false);
 }
@@ -4505,9 +4506,6 @@ void BarUISetClass::RegisterBorderCursorLight(HWND hWnd)
 		ActivateBorderCursorTracking(hWnd);
 		return;
 	}
-
-	POINT clientPoint = screenPoint;
-	if (!ScreenToClient(hWnd, &clientPoint)) return;
 
 	ULONGLONG now = GetTickCount64();
 	bool startGraceTimer = false;
@@ -4537,7 +4535,10 @@ void BarUISetClass::RegisterBorderCursorLight(HWND hWnd)
 		return;
 	}
 
-	double spatialIntensity = GetBorderCursorLightSpatialIntensity(clientPoint);
+	// 区域外仍更新同一光源点；邻近判断不参与任何亮度公式。
+	bool cursorNearVisibleRegion = IsBorderCursorLightNearVisibleRegion(screenPoint);
+	POINT clientPoint = screenPoint;
+	if (!ScreenToClient(hWnd, &clientPoint)) return;
 	bool needRendering = false;
 	{
 		lock_guard lock(borderCursorLightMutex);
@@ -4545,14 +4546,15 @@ void BarUISetClass::RegisterBorderCursorLight(HWND hWnd)
 			|| borderCursorTrackingState != BarBorderCursorTrackingStateEnum::Grace)
 			return;
 
-		bool spatialChanged = abs(
-			borderCursorLightSpatialIntensity - spatialIntensity) > 0.0001;
-		borderCursorLightSpatialIntensity = spatialIntensity;
+		bool proximityChanged =
+			borderCursorLightNearVisibleRegion != cursorNearVisibleRegion;
+		borderCursorLightNearVisibleRegion = cursorNearVisibleRegion;
 		bool cursorChanged = false;
-		if (spatialIntensity > 0.0)
+		if (cursorNearVisibleRegion || proximityChanged)
 		{
 			D2D1_POINT_2F nextPoint = D2D1::Point2F(
 				static_cast<FLOAT>(clientPoint.x), static_cast<FLOAT>(clientPoint.y));
+			// 跨出 50px 时发布最后一个位置，让 50px 径向渐变自然落到 0。
 			cursorChanged = !borderCursorLightReady
 				|| nextPoint.x != borderCursorLightPoint.x || nextPoint.y != borderCursorLightPoint.y;
 			if (cursorChanged)
@@ -4562,8 +4564,8 @@ void BarUISetClass::RegisterBorderCursorLight(HWND hWnd)
 				++borderCursorLightSerial;
 			}
 		}
-		else if (spatialChanged) ++borderCursorLightSerial;
-		needRendering = spatialChanged || cursorChanged;
+		else if (proximityChanged) ++borderCursorLightSerial;
+		needRendering = proximityChanged || cursorChanged;
 	}
 	if (needRendering && BarUiAnimationEnabled) UpdateRendering(false);
 }
@@ -4601,7 +4603,7 @@ void BarUISetClass::SuspendBorderCursorTracking(HWND hWnd)
 		lock_guard lock(borderCursorLightMutex);
 		needRendering = borderCursorInputAvailable
 			|| borderCursorRawInputRegistered
-			|| borderCursorLightSpatialIntensity > 0.0001;
+			|| borderCursorLightNearVisibleRegion;
 		borderCursorTrackingState = BarBorderCursorTrackingStateEnum::Dormant;
 		borderCursorGraceDeadlineTick = 0;
 	}
@@ -4655,12 +4657,26 @@ void BarUISetClass::RefreshBorderCursorVisibleRegions()
 	AddShape(shapeMap[BarUISetShapeEnum::MainBar]);
 	AddShape(shapeMap[BarUISetShapeEnum::DrawAttributeBar]);
 
+	// 距离判断统一在屏幕坐标完成，避免接受区内外分别换算客户区坐标。
+	POINT clientOrigin{};
+	if (!floating_window || !ClientToScreen(floating_window, &clientOrigin))
+	{
+		nextCount = 0;
+	}
+	for (size_t i = 0; i < nextCount; ++i)
+	{
+		nextRegions[i].left += clientOrigin.x;
+		nextRegions[i].right += clientOrigin.x;
+		nextRegions[i].top += clientOrigin.y;
+		nextRegions[i].bottom += clientOrigin.y;
+	}
+
 	lock_guard lock(borderCursorLightMutex);
 	borderCursorVisibleRegions = nextRegions;
 	borderCursorVisibleRegionCount = nextCount;
 }
 
-double BarUISetClass::GetBorderCursorLightSpatialIntensity(POINT clientPoint)
+bool BarUISetClass::IsBorderCursorLightNearVisibleRegion(POINT screenPoint)
 {
 	array<RECT, 3> visibleRegions{};
 	size_t visibleRegionCount = 0;
@@ -4671,33 +4687,23 @@ double BarUISetClass::GetBorderCursorLightSpatialIntensity(POINT clientPoint)
 	}
 
 	double zoom = barStyle.zoom;
-	if (!isfinite(zoom) || zoom <= 0.0) return 0.0;
-	double distanceLimit = BarBorderCursorVisibleDistance * zoom;
-	if (distanceLimit <= 0.0) return 0.0;
-	bool hasVisibleRegion = false;
-	double nearestDistanceSquared = 0.0;
+	if (!isfinite(zoom) || zoom <= 0.0) return false;
+	double distanceLimit = BarBorderCursorLightRadius * zoom;
+	if (distanceLimit <= 0.0) return false;
+	double distanceLimitSquared = distanceLimit * distanceLimit;
 	for (size_t i = 0; i < visibleRegionCount; i++)
 	{
 		const RECT& region = visibleRegions[i];
 		double dx = 0.0;
 		double dy = 0.0;
-		if (clientPoint.x < region.left) dx = static_cast<double>(region.left - clientPoint.x);
-		else if (clientPoint.x > region.right) dx = static_cast<double>(clientPoint.x - region.right);
-		if (clientPoint.y < region.top) dy = static_cast<double>(region.top - clientPoint.y);
-		else if (clientPoint.y > region.bottom) dy = static_cast<double>(clientPoint.y - region.bottom);
+		if (screenPoint.x < region.left) dx = static_cast<double>(region.left - screenPoint.x);
+		else if (screenPoint.x > region.right) dx = static_cast<double>(screenPoint.x - region.right);
+		if (screenPoint.y < region.top) dy = static_cast<double>(region.top - screenPoint.y);
+		else if (screenPoint.y > region.bottom) dy = static_cast<double>(screenPoint.y - region.bottom);
 		double distanceSquared = dx * dx + dy * dy;
-		if (!hasVisibleRegion || distanceSquared < nearestDistanceSquared)
-		{
-			hasVisibleRegion = true;
-			nearestDistanceSquared = distanceSquared;
-		}
+		if (distanceSquared <= distanceLimitSquared) return true;
 	}
-	if (!hasVisibleRegion) return 0.0;
-
-	double distanceRatio = clamp(
-		sqrt(nearestDistanceSquared) / distanceLimit, 0.0, 1.0);
-	// 50px 范围内按距离连续衰减，接受消息区域只参与生命周期判断。
-	return ApplyBorderLightSmoothstep(1.0 - distanceRatio);
+	return false;
 }
 
 // 拖动交互

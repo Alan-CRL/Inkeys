@@ -75,7 +75,8 @@ namespace Inkeys::UI::Bar
 
 - `Dormant`：第三光源目标透明度为 0，鼠标 Raw Input 必须注销；仅 UI3 窗口自然收到真实 `WM_MOUSEMOVE` 才能进入 `Inside`。
 - `Inside`：注册鼠标 `RIDEV_INPUTSINK`；首次离开实际接收消息的窗口区域时进入 `Grace`，并记录 `GetTickCount64() + 5000` 的绝对截止时间。
-- `Grace`：区域外移动不得重置截止时间。光源空间强度根据光标到已发布 UI 外框的距离连续计算；外框内部为 1，距离在 `50 × barStyle.zoom` 内使用 smoothstep 衰减到 0。
+- `Grace`：区域外移动不得重置截止时间。第三光源使用独立的 `50 × barStyle.zoom` 径向渐变；已发布 UI 外框只用于判断光圈是否可能命中 UI，从而裁剪渲染唤醒，不得作为全局亮度乘数。
+- 同一控件的同一边框像素上，第三光源贡献只由光标到该像素的距离、生命周期强度和控件固定比例决定；光标是否位于接受消息区域、主栏或其他可见区域内不得改变该贡献。第一光源可独立影响最终合成结果，不属于该一致性契约。
 - `Grace → Inside`：重新进入实际接收消息区域时取消定时器；仅回到 50px 邻域不能从 `Dormant` 唤醒。
 - `Grace → Dormant`：绝对截止时间到达，或画布开始真实鼠标绘制时，注销 Raw Input 并从当前强度平滑淡出。
 - 5 秒等待使用窗口定时器，不得新增轮询线程或靠持续渲染计时。
@@ -92,14 +93,15 @@ namespace Inkeys::UI::Bar
 
 #### 5. Good / Base / Bad Cases
 
-- Good：离开 UI 后在外部持续移动，5 秒截止时间保持不变；光标从可见外框向外移动时亮度连续衰减，超过 50px × zoom 后不再因位置变化唤醒渲染。
+- Good：离开 UI 后在外部持续移动，5 秒截止时间保持不变；第三光源按 50px × zoom 径向渐变连续归零，光圈离开全部可见外框后不再因位置变化唤醒渲染。
 - Base：宽限期内返回 UI，取消休眠并从当前透明度继续淡入。
-- Bad：在每个 `WM_INPUT` 上重设 5 秒计时，或在 `Dormant` 中保留 `RIDEV_INPUTSINK` 只靠逻辑分支过滤。
+- Bad：把光标到主栏、绘制属性栏等任意区域的最近距离乘到所有控件的第三光源强度上；这会让其他区域为当前边框“托底”，造成等距离位置亮度不同。
 
 #### 6. Tests Required
 
 - 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`。
 - 手工验证 UI 外启动、进入 UI、离开后 5 秒内返回、超过 50px、5 秒超时、休眠后仅靠近 50px、画布鼠标落笔和动画关闭。
+- 对同一边框像素分别从接受消息区域内外取等距离光标位置，隔离第一光源后确认第三光源贡献一致。
 - 性能验证至少比较 `Dormant` 与持续全局移动时的 CPU；`Dormant` 中不得出现由第三光源导致的持续渲染唤醒。
 
 #### 7. Wrong vs Correct
@@ -114,6 +116,15 @@ if (state == TrackingState::Inside)
 	state = TrackingState::Grace;
 	deadline = GetTickCount64() + 5000;
 }
+~~~
+
+~~~cpp
+// Wrong：任意 UI 的最近距离会同时改变所有边框的第三光源亮度。
+cursorIntensity = lifecycleIntensity * nearestVisibleRegionIntensity;
+
+// Correct：区域距离只裁剪唤醒；第三光源贡献由自身 50px 径向画刷决定。
+cursorIntensity = lifecycleIntensity * controlIntensityScale;
+cursorRadius = 50.0 * zoom;
 ~~~
 
 ### UI3 动画批次加入与关键帧中点
