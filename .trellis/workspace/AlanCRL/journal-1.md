@@ -38,3 +38,36 @@ Completed the source-backed Trellis bootstrap and second-pass evidence audit for
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: 完成 UI3 边框点光追光
+
+**Date**: 2026-07-22
+**Task**: 完成 UI3 边框点光追光
+**Branch**: `feature/animation`
+
+### Summary
+
+实现并验收 UI3 主按钮、主栏、绘制属性栏与颜色块的双光源边框追光、分控件染色、基础灰边、全局鼠标跟随及非线性 Gaussian 柔光；完成 ARM64 构建与静态验证。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `13aa445` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

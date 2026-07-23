@@ -5,9 +5,13 @@ module;
 #include "../../../IdtConfiguration.h"
 #include "../../../IdtD2DPreparation.h"
 #include "../../../IdtDisplayManagement.h"
+#include "../../../IdtDraw.h"
 #include "../../../IdtDrawpad.h"
 #include "../../../IdtState.h"
 #include "../../../IdtWindow.h"
+#include <d2d1effects.h>
+
+#pragma comment(lib, "dxguid.lib")
 
 // ====================
 // 临时
@@ -31,6 +35,38 @@ constexpr double BarButtonPressScale = 0.95;
 constexpr double BarButtonHoverShowDur = 0.24;
 constexpr double BarButtonHoverExitDur = 0.24;
 constexpr double BarButtonHoverFadeDur = 5.0;
+constexpr double BarBorderLightRadius = 480.0;
+constexpr double BarBorderCursorFadeInDur = 0.30;
+constexpr double BarBorderLightIntensity = 1.0;
+constexpr double BarColorSwatchCursorLightIntensity = 0.60;
+constexpr double BarBorderFrameDiffuseOpacity = 0.30;
+constexpr double BarBorderPenDiffuseOpacity = 0.20;
+constexpr double BarColorSwatchFrameOpacity = 0.18;
+constexpr int BarBorderDiffuseCompositePasses = 2;
+// 标准差等于线宽时，1px 线源经过一维 Gaussian 后中心约保留 38.3%。
+constexpr double BarBorderGaussianCenterCoverage = 0.382924922548;
+
+double ApplyBorderLightSmoothstep(double progress)
+{
+	progress = clamp(progress, 0.0, 1.0);
+	return progress * progress * (3.0 - 2.0 * progress);
+}
+
+COLORREF MixBarUiColor(COLORREF startColor, COLORREF targetColor, double progress)
+{
+	// UI 颜色动画统一按 RGB 三通道共享同一条曲线进度。
+	progress = clamp(progress, 0.0, 1.0);
+	auto MixChannel = [progress](BYTE start, BYTE target)
+		{
+			double value = static_cast<double>(start)
+				+ static_cast<double>(static_cast<int>(target) - static_cast<int>(start)) * progress;
+			return static_cast<BYTE>(clamp(value, 0.0, 255.0) + 0.5);
+		};
+	return RGB(
+		MixChannel(GetRValue(startColor), GetRValue(targetColor)),
+		MixChannel(GetGValue(startColor), GetGValue(targetColor)),
+		MixChannel(GetBValue(startColor), GetBValue(targetColor)));
+}
 
 // ====================
 // 窗口
@@ -45,6 +81,13 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 	switch (msg)
 	{
+	case WM_INPUT:
+	{
+		// Raw Input 只负责唤醒并读取系统光标，WM_INPUT 仍交给默认过程完成清理。
+		barUISet.RegisterBorderCursorLight(hWnd);
+		return HIWINDOW_DEFAULT_PROC;
+	}
+
 	case WM_TABLET_QUERYSYSTEMGESTURESTATUS:
 	{
 		DWORD flags = 0;
@@ -294,6 +337,481 @@ void HighPrecisionWait(double frameTimeSpentMs, double targetFPS)
 // 具体渲染
 BarUIRendering::BarUIRendering(BarUISetClass* barUISetClassT) { barUISetClass = barUISetClassT; }
 
+bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
+{
+	frameGradientBrushCache.clear();
+	frameCursorLightIntensity = 0.0F;
+	frameCursorLightVisible = false;
+	frameDrawingUsesPenColor = false;
+	COLORREF desiredDrawingPenColor = GetPenColor() & 0x00FFFFFF;
+
+	double zoom = barUISetClass ? static_cast<double>(barUISetClass->barStyle.zoom) : 0.0;
+	if (!isfinite(zoom) || zoom <= 0.0) zoom = 0.0;
+	frameLightRadius = static_cast<FLOAT>(BarBorderLightRadius * zoom);
+
+	BarBorderPrimaryAnchorEnum desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::MainButton;
+	D2D1_POINT_2F desiredPrimaryLight = framePrimaryLight;
+	bool primaryTargetAvailable = false;
+	if (barUISetClass)
+	{
+		switch (stateMode.StateModeSelect)
+		{
+		case StateModeSelectEnum::IdtPen:
+			desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Draw;
+			break;
+		case StateModeSelectEnum::IdtEraser:
+			desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Eraser;
+			break;
+		case StateModeSelectEnum::IdtSelection:
+			desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Select;
+			break;
+		default:
+			break;
+		}
+
+		auto mainButtonIt = barUISetClass->superellipseMap.find(
+			BarUISetSuperellipseEnum::MainButton);
+		if (mainButtonIt != barUISetClass->superellipseMap.end() && mainButtonIt->second)
+		{
+			auto mainButton = mainButtonIt->second;
+			desiredPrimaryLight = D2D1::Point2F(
+				static_cast<FLOAT>(mainButton->x.val * zoom),
+				static_cast<FLOAT>((mainButton->y.val + mainButton->h.val / 2.0) * zoom));
+			primaryTargetAvailable = true;
+
+			BarButtomPresetEnum anchorPreset = BarButtomPresetEnum::None;
+			switch (desiredPrimaryAnchor)
+			{
+			case BarBorderPrimaryAnchorEnum::Select: anchorPreset = BarButtomPresetEnum::Select; break;
+			case BarBorderPrimaryAnchorEnum::Draw: anchorPreset = BarButtomPresetEnum::Draw; break;
+			case BarBorderPrimaryAnchorEnum::Eraser: anchorPreset = BarButtomPresetEnum::Eraser; break;
+			default: break;
+			}
+
+			auto mainBarIt = barUISetClass->shapeMap.find(BarUISetShapeEnum::MainBar);
+			BarButtomClass* anchorButton = anchorPreset == BarButtomPresetEnum::None
+				? nullptr : barUISetClass->barButtomSet.preset[static_cast<int>(anchorPreset)];
+			if (mainBarIt != barUISetClass->shapeMap.end() && mainBarIt->second && anchorButton)
+			{
+				auto mainBar = mainBarIt->second;
+				double mainBarLeft = mainButton->x.val + mainBar->x.val - mainBar->w.val / 2.0;
+				double mainBarTop = mainButton->y.val + mainBar->y.val - mainBar->h.val / 2.0;
+				// 主光落在当前模式按钮的下边缘中心，控件布局动画时目标也随之更新。
+				desiredPrimaryLight = D2D1::Point2F(
+					static_cast<FLOAT>((mainBarLeft + anchorButton->buttom.x.val) * zoom),
+					static_cast<FLOAT>((mainBarTop + anchorButton->buttom.y.val
+						+ anchorButton->buttom.h.val / 2.0) * zoom));
+			}
+		}
+
+		// 非穿透画笔模式下，仅由控件自己的光色策略决定是否采用画笔色。
+		frameDrawingUsesPenColor =
+			stateMode.StateModeSelect == StateModeSelectEnum::IdtPen && !penetrate.select;
+	}
+
+	unsigned long long cursorSerial = 0;
+	bool cursorInputAvailable = false;
+	if (barUISetClass)
+	{
+		lock_guard lock(barUISetClass->borderCursorLightMutex);
+		frameCursorLight = barUISetClass->borderCursorLightPoint;
+		cursorSerial = barUISetClass->borderCursorLightSerial;
+		cursorInputAvailable = barUISetClass->borderCursorInputAvailable
+			&& barUISetClass->borderCursorLightReady;
+	}
+
+	bool animationEnabled = BarUiAnimationEnabled;
+	double animationSpeedRate = BarUiAnimationSpeedRate;
+	if (!isfinite(animationSpeedRate)) animationSpeedRate = 1.0;
+	animationSpeedRate = clamp(animationSpeedRate, 0.1, 5.0);
+	if (!isfinite(animationDtSeconds) || animationDtSeconds < 0.0) animationDtSeconds = 0.0;
+	animationDtSeconds = clamp(animationDtSeconds, 0.0, 0.05);
+	double scaledDtSeconds = animationDtSeconds * animationSpeedRate;
+
+	bool penLightColorChanged = false;
+	if (!frameDrawingPenColorInitialized)
+	{
+		frameDrawingPenColorInitialized = true;
+		frameDrawingPenColorStart = desiredDrawingPenColor;
+		frameDrawingPenColorTarget = desiredDrawingPenColor;
+		frameDrawingPenColor = desiredDrawingPenColor;
+	}
+	else if ((frameDrawingPenColorTarget & 0x00FFFFFF) != desiredDrawingPenColor)
+	{
+		// 连续换色从当前视觉颜色重新起步，避免快速点击色块时发生跳变。
+		frameDrawingPenColorStart = frameDrawingPenColor;
+		frameDrawingPenColorTarget = desiredDrawingPenColor;
+		frameDrawingPenColorElapsed = 0.0;
+		frameDrawingPenColorAnimating = animationEnabled && frameDrawingUsesPenColor;
+		penLightColorChanged = true;
+	}
+
+	if (!animationEnabled || !frameDrawingUsesPenColor)
+	{
+		frameDrawingPenColor = frameDrawingPenColorTarget;
+		frameDrawingPenColorAnimating = false;
+		frameDrawingPenColorElapsed = 0.0;
+	}
+	else if (frameDrawingPenColorAnimating)
+	{
+		double colorDuration = BarUiDefaultOperationDur;
+		if (!isfinite(colorDuration) || colorDuration <= 0.0)
+		{
+			frameDrawingPenColor = frameDrawingPenColorTarget;
+			frameDrawingPenColorAnimating = false;
+		}
+		else
+		{
+			frameDrawingPenColorElapsed += scaledDtSeconds;
+			double progress = clamp(frameDrawingPenColorElapsed / colorDuration, 0.0, 1.0);
+			double curvedProgress = BarUiApplyCurve(BarUiCurveEnum::EaseInOutCubic, progress);
+			frameDrawingPenColor = MixBarUiColor(
+				frameDrawingPenColorStart, frameDrawingPenColorTarget, curvedProgress);
+			if (progress >= 1.0)
+			{
+				frameDrawingPenColor = frameDrawingPenColorTarget;
+				frameDrawingPenColorAnimating = false;
+			}
+		}
+	}
+
+	bool primaryLightMoved = false;
+	bool primaryStateChanged = false;
+	if (primaryTargetAvailable)
+	{
+		auto PointsDiffer = [](D2D1_POINT_2F left, D2D1_POINT_2F right)
+			{
+				return abs(left.x - right.x) > 0.01F || abs(left.y - right.y) > 0.01F;
+			};
+		D2D1_POINT_2F previousPrimaryLight = framePrimaryLight;
+		if (!framePrimaryLightAnchorInitialized)
+		{
+			framePrimaryLightAnchorInitialized = true;
+			framePrimaryLightAnchor = desiredPrimaryAnchor;
+			framePrimaryLightStart = desiredPrimaryLight;
+			framePrimaryLightTarget = desiredPrimaryLight;
+			framePrimaryLight = desiredPrimaryLight;
+		}
+		else
+		{
+			bool anchorChanged = framePrimaryLightAnchor != desiredPrimaryAnchor;
+			if (anchorChanged)
+			{
+				framePrimaryLightAnchor = desiredPrimaryAnchor;
+				framePrimaryLightStart = framePrimaryLight;
+				framePrimaryLightMoveElapsed = 0.0;
+				framePrimaryLightAnimating = animationEnabled;
+				primaryStateChanged = true;
+			}
+			framePrimaryLightTarget = desiredPrimaryLight;
+
+			if (!animationEnabled)
+			{
+				framePrimaryLight = desiredPrimaryLight;
+				framePrimaryLightAnimating = false;
+				framePrimaryLightMoveElapsed = 0.0;
+			}
+			else if (framePrimaryLightAnimating)
+			{
+				double moveDuration = BarUiDefaultOperationDur;
+				if (!isfinite(moveDuration) || moveDuration <= 0.0)
+				{
+					framePrimaryLight = framePrimaryLightTarget;
+					framePrimaryLightAnimating = false;
+				}
+				else
+				{
+					framePrimaryLightMoveElapsed += scaledDtSeconds;
+					double progress = clamp(framePrimaryLightMoveElapsed / moveDuration, 0.0, 1.0);
+					double curvedProgress = BarUiApplyCurve(
+						BarUiCurveEnum::EaseInOutCubic, progress);
+					framePrimaryLight = D2D1::Point2F(
+						static_cast<FLOAT>(framePrimaryLightStart.x
+							+ (framePrimaryLightTarget.x - framePrimaryLightStart.x) * curvedProgress),
+						static_cast<FLOAT>(framePrimaryLightStart.y
+							+ (framePrimaryLightTarget.y - framePrimaryLightStart.y) * curvedProgress));
+					if (progress >= 1.0)
+					{
+						framePrimaryLight = framePrimaryLightTarget;
+						framePrimaryLightAnimating = false;
+					}
+				}
+			}
+			else framePrimaryLight = desiredPrimaryLight;
+		}
+		primaryLightMoved = PointsDiffer(previousPrimaryLight, framePrimaryLight);
+	}
+
+	bool stateChanged = primaryStateChanged || penLightColorChanged;
+	bool cursorFadeRestarted = false;
+	bool cursorMoved = false;
+	if (!frameAnimationStateInitialized)
+	{
+		frameAnimationStateInitialized = true;
+		frameLastAnimationEnabled = animationEnabled;
+		frameCursorInputAvailable = cursorInputAvailable;
+		if (!animationEnabled)
+			handledBorderCursorLightSerial = cursorSerial;
+		else if (cursorInputAvailable)
+		{
+			frameCursorLightFadeElapsed = 0.0;
+			frameCursorLightAnimating = true;
+			cursorFadeRestarted = true;
+			handledBorderCursorLightSerial = cursorSerial;
+		}
+	}
+	else if (animationEnabled != frameLastAnimationEnabled)
+	{
+		stateChanged = true;
+		frameLastAnimationEnabled = animationEnabled;
+		// 重新开启动画时只让当前鼠标光从零淡入，移动不会重复启动淡入。
+		handledBorderCursorLightSerial = cursorSerial;
+		frameCursorLightAnimating = animationEnabled && cursorInputAvailable;
+		frameCursorLightFadeElapsed = 0.0;
+		cursorFadeRestarted = frameCursorLightAnimating;
+	}
+
+	if (cursorInputAvailable != frameCursorInputAvailable)
+	{
+		frameCursorInputAvailable = cursorInputAvailable;
+		stateChanged = true;
+		handledBorderCursorLightSerial = cursorSerial;
+		frameCursorLightFadeElapsed = 0.0;
+		frameCursorLightAnimating = animationEnabled && cursorInputAvailable;
+		cursorFadeRestarted = frameCursorLightAnimating;
+	}
+
+	if (!animationEnabled)
+	{
+		// 关闭动画后立即隐藏鼠标光，基础灰边和第一主光保持稳定。
+		handledBorderCursorLightSerial = cursorSerial;
+		frameCursorLightAnimating = false;
+		bool needSettlingFrame = frameLightingWasAnimating;
+		frameLightingWasAnimating = false;
+		return stateChanged || needSettlingFrame || primaryLightMoved;
+	}
+
+	if (cursorSerial != handledBorderCursorLightSerial)
+	{
+		handledBorderCursorLightSerial = cursorSerial;
+		cursorMoved = cursorInputAvailable;
+	}
+
+	if (cursorInputAvailable)
+	{
+		if (frameCursorLightAnimating)
+		{
+			if (!cursorFadeRestarted) frameCursorLightFadeElapsed += scaledDtSeconds;
+			double progress = frameCursorLightFadeElapsed / BarBorderCursorFadeInDur;
+			frameCursorLightIntensity = static_cast<FLOAT>(BarBorderLightIntensity
+				* ApplyBorderLightSmoothstep(progress));
+			if (frameCursorLightFadeElapsed >= BarBorderCursorFadeInDur)
+			{
+				frameCursorLightIntensity = static_cast<FLOAT>(BarBorderLightIntensity);
+				frameCursorLightAnimating = false;
+			}
+		}
+		else frameCursorLightIntensity = static_cast<FLOAT>(BarBorderLightIntensity);
+		frameCursorLightVisible = frameCursorLightIntensity > 0.0F;
+	}
+
+	// 时间过程结束后再绘制一帧最终状态，随后恢复原有静止等待。
+	bool lightingAnimating = frameCursorLightAnimating || framePrimaryLightAnimating
+		|| frameDrawingPenColorAnimating;
+	bool needSettlingFrame = frameLightingWasAnimating && !lightingAnimating;
+	frameLightingWasAnimating = lightingAnimating;
+	return lightingAnimating || needSettlingFrame || stateChanged || cursorMoved || primaryLightMoved;
+}
+
+ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
+	ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource)
+{
+	COLORREF rgb = color & 0x00FFFFFF;
+	for (auto& cache : frameGradientBrushCache)
+	{
+		if (cache.color == rgb && cache.lightSource == lightSource) return cache.brush.Get();
+	}
+
+	D2D1_GRADIENT_STOP gradientStops[] =
+	{
+		{ 0.00F, Inkeys::Color::ConvertToD2dColor(rgb, 1.00) },
+		{ 0.25F, Inkeys::Color::ConvertToD2dColor(rgb, 0.72) },
+		{ 0.65F, Inkeys::Color::ConvertToD2dColor(rgb, 0.20) },
+		{ 1.00F, Inkeys::Color::ConvertToD2dColor(rgb, 0.00) },
+	};
+
+	ComPtr<ID2D1GradientStopCollection> stopCollection;
+	HRESULT hr = deviceContext->CreateGradientStopCollection(
+		gradientStops, ARRAYSIZE(gradientStops), D2D1_GAMMA_2_2,
+		D2D1_EXTEND_MODE_CLAMP, &stopCollection);
+	if (SUCCEEDED(hr))
+	{
+		D2D1_POINT_2F center = framePrimaryLight;
+		if (lightSource == BarBorderLightSourceEnum::Cursor) center = frameCursorLight;
+		FrameGradientBrushCacheClass cache;
+		cache.color = rgb;
+		cache.lightSource = lightSource;
+		hr = deviceContext->CreateRadialGradientBrush(
+			D2D1::RadialGradientBrushProperties(
+				center, D2D1::Point2F(), frameLightRadius, frameLightRadius),
+			stopCollection.Get(), &cache.brush);
+		if (SUCCEEDED(hr))
+		{
+			frameGradientBrushCache.emplace_back(move(cache));
+			return frameGradientBrushCache.back().brush.Get();
+		}
+	}
+
+	if (!frameGradientFailureLogged)
+	{
+		frameGradientFailureLogged = true;
+		if (IDTLogger) IDTLogger->error(
+			"[BarUIRendering::GetFrameGradientBrush] 创建边框点光渐变失败, hr=0x{:08X}",
+			static_cast<unsigned int>(hr));
+	}
+	return nullptr;
+}
+
+bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLORREF color,
+	BarUiFrameLightColorEnum frameLightColor,
+	bool primaryLightEnabled, double cursorLightIntensityScale,
+	double baseFramePct, double lightPct, FLOAT strokeWidth,
+	const D2D1_ROUNDED_RECT* roundedRect,
+	ID2D1Geometry* geometry)
+{
+	if (!deviceContext || (!roundedRect && !geometry) || strokeWidth <= 0.0F || frameLightRadius <= 0.0F)
+		return false;
+
+	FLOAT baseOpacity = static_cast<FLOAT>(clamp(baseFramePct, 0.0, 1.0));
+	FLOAT lightOpacity = static_cast<FLOAT>(clamp(lightPct, 0.0, 1.0));
+	if (baseOpacity <= 0.0F && lightOpacity <= 0.0F) return true;
+
+	bool usePenLightColor = frameDrawingUsesPenColor
+		&& frameLightColor == BarUiFrameLightColorEnum::PenWhenDrawing;
+	COLORREF lightColor = color;
+	if (usePenLightColor)
+		lightColor = frameDrawingPenColor;
+	FLOAT diffuseOpacity = static_cast<FLOAT>(usePenLightColor
+		? BarBorderPenDiffuseOpacity : BarBorderFrameDiffuseOpacity);
+	ID2D1RadialGradientBrush* primaryBrush = nullptr;
+	ID2D1RadialGradientBrush* cursorBrush = nullptr;
+	FLOAT cursorLightIntensity = frameCursorLightIntensity * static_cast<FLOAT>(
+		clamp(cursorLightIntensityScale, 0.0, 1.0));
+	bool drawPrimaryLight = lightOpacity > 0.0F && primaryLightEnabled;
+	bool drawCursorLight = lightOpacity > 0.0F && frameCursorLightVisible
+		&& cursorLightIntensity > 0.0F;
+	if (drawPrimaryLight)
+		primaryBrush = GetFrameGradientBrush(
+			deviceContext, lightColor, BarBorderLightSourceEnum::Primary);
+	if (drawCursorLight)
+		cursorBrush = GetFrameGradientBrush(
+			deviceContext, lightColor, BarBorderLightSourceEnum::Cursor);
+	if ((drawPrimaryLight && !primaryBrush) || (drawCursorLight && !cursorBrush)) return false;
+
+	ComPtr<ID2D1SolidColorBrush> baseFrameBrush;
+	HRESULT hr = S_OK;
+	if (baseOpacity > 0.0F)
+	{
+		hr = deviceContext->CreateSolidColorBrush(
+			Inkeys::Color::ConvertToD2dColor(color, baseOpacity), &baseFrameBrush);
+		if (FAILED(hr) || !baseFrameBrush) return false;
+	}
+
+	auto DrawLightPass = [&](ID2D1RadialGradientBrush* brush, FLOAT intensity, FLOAT width)
+		{
+			if (!brush || intensity <= 0.0F) return;
+			brush->SetOpacity(clamp(lightOpacity * intensity, 0.0F, 1.0F));
+			if (roundedRect) deviceContext->DrawRoundedRectangle(roundedRect, brush, width);
+			else deviceContext->DrawGeometry(geometry, brush, width);
+		};
+	auto LogDiffuseFailure = [&](const char* operation, HRESULT failureHr)
+		{
+			if (frameDiffuseEffectFailureLogged) return;
+			frameDiffuseEffectFailureLogged = true;
+			if (IDTLogger) IDTLogger->error(
+				"[BarUIRendering::DrawPointLightFrame] {} 失败，跳过边框柔光, hr=0x{:08X}",
+				operation, static_cast<unsigned int>(failureHr));
+		};
+
+	deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
+	// 点光范围之外仍完整保留原边框，光源只在基础灰边上增加强调。
+	if (baseFrameBrush)
+	{
+		if (roundedRect) deviceContext->DrawRoundedRectangle(roundedRect, baseFrameBrush.Get(), strokeWidth);
+		else deviceContext->DrawGeometry(geometry, baseFrameBrush.Get(), strokeWidth);
+	}
+
+	if (drawPrimaryLight || drawCursorLight)
+	{
+		bool effectReady = frameGaussianBlurEffect != nullptr
+			&& !frameDiffuseEffectFailureLogged;
+		if (!effectReady && !frameDiffuseEffectFailureLogged)
+		{
+			hr = deviceContext->CreateEffect(CLSID_D2D1GaussianBlur, &frameGaussianBlurEffect);
+			if (SUCCEEDED(hr))
+				hr = frameGaussianBlurEffect->SetValue(
+					D2D1_GAUSSIANBLUR_PROP_OPTIMIZATION,
+					D2D1_GAUSSIANBLUR_OPTIMIZATION_BALANCED);
+			if (SUCCEEDED(hr))
+				hr = frameGaussianBlurEffect->SetValue(
+					D2D1_GAUSSIANBLUR_PROP_BORDER_MODE, D2D1_BORDER_MODE_SOFT);
+			if (FAILED(hr))
+			{
+				frameGaussianBlurEffect.Reset();
+				LogDiffuseFailure("创建 Gaussian Blur Effect", hr);
+			}
+			effectReady = frameGaussianBlurEffect != nullptr;
+		}
+
+		if (effectReady)
+		{
+			ComPtr<ID2D1CommandList> diffuseCommands;
+			hr = deviceContext->CreateCommandList(&diffuseCommands);
+			if (SUCCEEDED(hr) && diffuseCommands)
+			{
+				ComPtr<ID2D1Image> originalTarget;
+				deviceContext->GetTarget(&originalTarget);
+				if (originalTarget)
+				{
+					deviceContext->SetTarget(diffuseCommands.Get());
+					// 先把两束同色的空间衰减写入 1px 线源，再由 Gaussian 沿轮廓法线扩散。
+					FLOAT diffuseSourceOpacity = static_cast<FLOAT>(clamp(
+						diffuseOpacity / BarBorderGaussianCenterCoverage, 0.0, 1.0));
+					DrawLightPass(primaryBrush, diffuseSourceOpacity, strokeWidth);
+					DrawLightPass(cursorBrush,
+						cursorLightIntensity * diffuseSourceOpacity, strokeWidth);
+					deviceContext->SetTarget(originalTarget.Get());
+
+					hr = diffuseCommands->Close();
+					if (SUCCEEDED(hr))
+					{
+						FLOAT standardDeviation = static_cast<FLOAT>(
+							BarRenderingAttribute::pointLightDiffuseExtraWidth / 6.0
+							* static_cast<double>(barUISetClass->barStyle.zoom));
+						hr = frameGaussianBlurEffect->SetValue(
+							D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, standardDeviation);
+						if (SUCCEEDED(hr))
+						{
+							frameGaussianBlurEffect->SetInput(0, diffuseCommands.Get());
+							// 同一 Gaussian 输出重复 SOURCE_OVER，让近端按 1-(1-a)^2 增强，远端仍连续归零。
+							for (int pass = 0; pass < BarBorderDiffuseCompositePasses; pass++)
+								deviceContext->DrawImage(frameGaussianBlurEffect.Get());
+						}
+					}
+				}
+				else hr = E_POINTER;
+			}
+			else if (SUCCEEDED(hr)) hr = E_POINTER;
+			if (FAILED(hr)) LogDiffuseFailure("记录或绘制 Gaussian 柔光", hr);
+		}
+
+		// 清晰边保持原有 480px 点光渐变，不受 Gaussian 轮廓扩散替代。
+		DrawLightPass(primaryBrush, static_cast<FLOAT>(BarBorderLightIntensity), strokeWidth);
+		DrawLightPass(cursorBrush, cursorLightIntensity, strokeWidth);
+	}
+	return true;
+}
+
 bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, RECT* targetRect, bool clip)
 {
 	// 判断是否启用
@@ -346,17 +864,32 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 			COLORREF frame = shape.frame.value().val;
 			double tarFramePct = tarPct;
 			if (shape.framePct.has_value()) tarFramePct = shape.framePct.value().val;
-
-			ComPtr<ID2D1SolidColorBrush> spBorderBrush;
-			deviceContext->CreateSolidColorBrush(Inkeys::Color::ConvertToD2dColor(frame, tarFramePct), &spBorderBrush);
+			double tarFrameLightPct = tarFramePct;
+			if (shape.frameLightOpacitySource == BarUiFrameLightOpacitySourceEnum::ObjectPct)
+				tarFrameLightPct = tarPct;
 
 			FLOAT strokeWidth = 4.0f * static_cast<FLOAT>(tarZoom);
+			bool shouldDraw = true;
 			if (shape.ft.has_value())
 			{
 				strokeWidth = static_cast<FLOAT>(shape.ft.value().val * tarZoom);
-				if (strokeWidth > 0.0F) deviceContext->DrawRoundedRectangle(&roundedRect, spBorderBrush.Get(), strokeWidth);
+				shouldDraw = strokeWidth > 0.0F;
 			}
-			else deviceContext->DrawRoundedRectangle(&roundedRect, spBorderBrush.Get(), strokeWidth);
+			if (shouldDraw)
+			{
+				bool pointLightDrawn = shape.frameRendering == BarUiFrameRenderingEnum::PointLight
+					&& DrawPointLightFrame(deviceContext, frame, shape.frameLightColor,
+						shape.framePrimaryLightEnabled, shape.frameCursorLightIntensityScale,
+						tarFramePct, tarFrameLightPct,
+						strokeWidth, &roundedRect, nullptr);
+				if (!pointLightDrawn)
+				{
+					ComPtr<ID2D1SolidColorBrush> spBorderBrush;
+					deviceContext->CreateSolidColorBrush(
+						Inkeys::Color::ConvertToD2dColor(frame, tarFramePct), &spBorderBrush);
+					deviceContext->DrawRoundedRectangle(&roundedRect, spBorderBrush.Get(), strokeWidth);
+				}
+			}
 		}
 	}
 
@@ -496,17 +1029,33 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 			COLORREF frame = superellipse.frame.value().val;
 			double tarFramePct = tarPct;
 			if (superellipse.framePct.has_value()) tarFramePct = superellipse.framePct.value().val;
-
-			ComPtr<ID2D1SolidColorBrush> spBorderBrush;
-			deviceContext->CreateSolidColorBrush(Inkeys::Color::ConvertToD2dColor(frame, tarFramePct), &spBorderBrush);
+			double tarFrameLightPct = tarFramePct;
+			if (superellipse.frameLightOpacitySource == BarUiFrameLightOpacitySourceEnum::ObjectPct)
+				tarFrameLightPct = tarPct;
 
 			FLOAT strokeWidth = 4.0f * static_cast<FLOAT>(tarZoom);
+			bool shouldDraw = true;
 			if (superellipse.ft.has_value())
 			{
 				strokeWidth = static_cast<FLOAT>(superellipse.ft.value().val * tarZoom);
-				if (strokeWidth > 0.0F) deviceContext->DrawGeometry(geometry.Get(), spBorderBrush.Get(), strokeWidth);
+				shouldDraw = strokeWidth > 0.0F;
 			}
-			else deviceContext->DrawGeometry(geometry.Get(), spBorderBrush.Get(), strokeWidth);
+			if (shouldDraw)
+			{
+				bool pointLightDrawn = superellipse.frameRendering == BarUiFrameRenderingEnum::PointLight
+					&& DrawPointLightFrame(deviceContext, frame, superellipse.frameLightColor,
+						superellipse.framePrimaryLightEnabled,
+						superellipse.frameCursorLightIntensityScale,
+						tarFramePct, tarFrameLightPct,
+						strokeWidth, nullptr, geometry.Get());
+				if (!pointLightDrawn)
+				{
+					ComPtr<ID2D1SolidColorBrush> spBorderBrush;
+					deviceContext->CreateSolidColorBrush(
+						Inkeys::Color::ConvertToD2dColor(frame, tarFramePct), &spBorderBrush);
+					deviceContext->DrawGeometry(geometry.Get(), spBorderBrush.Get(), strokeWidth);
+				}
+			}
 		}
 	}
 
@@ -737,6 +1286,7 @@ void BarUISetClass::Rendering()
 		barDeviceContext->SetTarget(barBackgroundBitmap.Get());
 		barDeviceContext->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 	}
+	InitializeBorderCursorInput();
 
 	chrono::high_resolution_clock::time_point reckon = chrono::high_resolution_clock::now();
 	chrono::high_resolution_clock::time_point animationReckon = reckon;
@@ -971,7 +1521,7 @@ void BarUISetClass::Rendering()
 			// 布局变化会取代仍在运行的换边关键帧；即使某个控件目标没变，也必须从当前值重建。
 			bool interruptingMainBarSideSwitch = mainBarLayoutChange && mainBarTimeline.IsActive()
 				&& (mainBar->x.hasMiddleV || mainBar->w.hasMiddleV);
-			// 新操作创建完整批次；批次进入最后 30% 后，新布局不再压缩到旧截止时间。
+			// 新操作创建完整批次；批次进入后半程后，新布局不再压缩到旧截止时间。
 			bool lateMainBarLayoutChange = !barState.fold && mainBarTimeline.IsActive()
 				&& mainBarLayoutChange && !mainBarTimeline.CanJoin();
 			// 超过加入阈值后会创建新批次，此时旧换边中点已经失效，不能在新批次中再次收窄。
@@ -1535,7 +2085,7 @@ void BarUISetClass::Rendering()
 					bool continueDrawAttributePhase = false;
 					if (drawAttributeBatchChange)
 					{
-						// 只在主栏批次前 70% 内加入；太晚则使用完整时长创建独立新批次。
+						// 只在主栏批次前 50% 内加入；进入后半程则使用完整时长创建独立新批次。
 						if (mainBarTimeline.CanJoin())
 						{
 							operationDur = mainBarTimeline.GetRemainingDuration();
@@ -1634,7 +2184,7 @@ void BarUISetClass::Rendering()
 							{
 								// 说明当前选中的是当前的颜色
 								svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect1]->pct.SetTar(1.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->ft.value().SetTar(2.0);
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->ft.value().SetTar(1.0);
 							}
 							else
 							{
@@ -1665,7 +2215,7 @@ void BarUISetClass::Rendering()
 							if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->fill.value().tar))
 							{
 								svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect2]->pct.SetTar(1.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->ft.value().SetTar(2.0);
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->ft.value().SetTar(1.0);
 							}
 							else
 							{
@@ -1696,7 +2246,7 @@ void BarUISetClass::Rendering()
 							if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->fill.value().tar))
 							{
 								svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect3]->pct.SetTar(1.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->ft.value().SetTar(2.0);
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->ft.value().SetTar(1.0);
 							}
 							else
 							{
@@ -1727,7 +2277,7 @@ void BarUISetClass::Rendering()
 							if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->fill.value().tar))
 							{
 								svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect4]->pct.SetTar(1.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->ft.value().SetTar(2.0);
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->ft.value().SetTar(1.0);
 							}
 							else
 							{
@@ -1758,7 +2308,7 @@ void BarUISetClass::Rendering()
 							if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->fill.value().tar))
 							{
 								svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect5]->pct.SetTar(1.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->ft.value().SetTar(2.0);
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->ft.value().SetTar(1.0);
 							}
 							else
 							{
@@ -1789,7 +2339,7 @@ void BarUISetClass::Rendering()
 							if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->fill.value().tar))
 							{
 								svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect6]->pct.SetTar(1.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->ft.value().SetTar(2.0);
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->ft.value().SetTar(1.0);
 							}
 							else
 							{
@@ -1820,7 +2370,7 @@ void BarUISetClass::Rendering()
 							if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->fill.value().tar))
 							{
 								svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect7]->pct.SetTar(1.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->ft.value().SetTar(2.0);
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->ft.value().SetTar(1.0);
 							}
 							else
 							{
@@ -1851,7 +2401,7 @@ void BarUISetClass::Rendering()
 							if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->fill.value().tar))
 							{
 								svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect8]->pct.SetTar(1.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->ft.value().SetTar(2.0);
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->ft.value().SetTar(1.0);
 							}
 							else
 							{
@@ -1882,7 +2432,7 @@ void BarUISetClass::Rendering()
 							if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->fill.value().tar))
 							{
 								svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect9]->pct.SetTar(1.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->ft.value().SetTar(2.0);
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->ft.value().SetTar(1.0);
 							}
 							else
 							{
@@ -1913,7 +2463,7 @@ void BarUISetClass::Rendering()
 							if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->fill.value().tar))
 							{
 								svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect10]->pct.SetTar(1.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->ft.value().SetTar(2.0);
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->ft.value().SetTar(1.0);
 							}
 							else
 							{
@@ -1944,7 +2494,7 @@ void BarUISetClass::Rendering()
 							if (barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->fill.value().tar))
 							{
 								svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect11]->pct.SetTar(1.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->ft.value().SetTar(2.0);
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->ft.value().SetTar(1.0);
 							}
 							else
 							{
@@ -2155,6 +2705,9 @@ void BarUISetClass::Rendering()
 						double size = barState.drawAttribute ? 30.0 : CompactDrawAttributeSize(30.0);
 						shape->w.SetTar(size);
 						shape->h.SetTar(size);
+						// 填充先显现，灰边只随同一批次淡入到 18%。
+						shape->framePct.value().SetTar(
+							barState.drawAttribute ? BarColorSwatchFrameOpacity : 0.0);
 
 						auto svg = svgMap[static_cast<BarUISetSvgEnum>(
 							static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_ColorSelect1)
@@ -2373,19 +2926,6 @@ void BarUISetClass::Rendering()
 				pct.timelineStartProgress = 0.0;
 				pct.continueTimelinePhase = false;
 			};
-		auto MixColorChannel = [](int start, int target, double progress) -> int
-			{
-				double val = static_cast<double>(start) + static_cast<double>(target - start) * progress;
-				return static_cast<int>(clamp(val, 0.0, 255.0) + 0.5);
-			};
-		auto MixColor = [&](COLORREF startColor, COLORREF targetColor, double progress) -> COLORREF
-			{
-				// 颜色按 RGB 三通道共享同一条曲线进度。
-				return RGB(
-					MixColorChannel(GetRValue(startColor), GetRValue(targetColor), progress),
-					MixColorChannel(GetGValue(startColor), GetGValue(targetColor), progress),
-					MixColorChannel(GetBValue(startColor), GetBValue(targetColor), progress));
-			};
 		auto ApplyAnimationCurve = [](BarUiCurveEnum curve, double progress,
 			double timelineStartProgress, bool continueTimelinePhase) -> double
 			{
@@ -2469,7 +3009,8 @@ void BarUISetClass::Rendering()
 				double progress = clamp(static_cast<double>(color.progress) + animationDtSeconds * speedRate / duration, 0.0, 1.0);
 				double curveProgress = ApplyAnimationCurve(color.activeCurve, progress,
 					color.timelineStartProgress, color.continueTimelinePhase);
-				COLORREF nextColor = MixColor(startColor, targetColor, clamp(curveProgress, 0.0, 1.0));
+			COLORREF nextColor = MixBarUiColor(
+				startColor, targetColor, clamp(curveProgress, 0.0, 1.0));
 				if (progress >= 1.0)
 				{
 					FinishColor(color, targetColor);
@@ -2733,7 +3274,8 @@ void BarUISetClass::Rendering()
 	#pragma endregion
 
 		bool needRenderOnce = BarAtomic::renderOnceFlag.exchange(false);
-		if (needRendering || true == BarAtomic::sustainFlag || true == needRenderOnce)
+		bool needBorderLightingRendering = spec.PrepareFrameLighting(animationDtSeconds);
+		if (needRendering || true == BarAtomic::sustainFlag || true == needRenderOnce || needBorderLightingRendering)
 		{
 		#pragma region 渲染UI
 
@@ -3706,6 +4248,76 @@ void BarUISetClass::UpdateRendering(bool updateState)
 	// 通知计算并渲染
 	BarAtomic::wait.Store(true);
 }
+
+void BarUISetClass::InitializeBorderCursorInput()
+{
+	RAWINPUTDEVICE rawInputDevice{};
+	rawInputDevice.usUsagePage = 0x01; // Generic Desktop Controls
+	rawInputDevice.usUsage = 0x02; // Mouse
+	rawInputDevice.dwFlags = RIDEV_INPUTSINK;
+	rawInputDevice.hwndTarget = floating_window;
+	if (!RegisterRawInputDevices(&rawInputDevice, 1, sizeof(rawInputDevice)))
+	{
+		DWORD registrationError = GetLastError();
+		bool needLog = false;
+		{
+			lock_guard lock(borderCursorLightMutex);
+			borderCursorInputAvailable = false;
+			borderCursorLightReady = false;
+			if (!borderCursorRegistrationFailureLogged)
+			{
+				borderCursorRegistrationFailureLogged = true;
+				needLog = true;
+			}
+		}
+		if (needLog && IDTLogger) IDTLogger->error(
+			"[BarUISetClass::InitializeBorderCursorInput] 注册全局鼠标 Raw Input 失败, error={}",
+			registrationError);
+		return;
+	}
+
+	POINT cursorPoint{};
+	bool cursorReady = GetCursorPos(&cursorPoint)
+		&& ScreenToClient(floating_window, &cursorPoint);
+	{
+		lock_guard lock(borderCursorLightMutex);
+		borderCursorInputAvailable = true;
+		borderCursorLightReady = cursorReady;
+		if (cursorReady)
+		{
+			borderCursorLightPoint = D2D1::Point2F(
+				static_cast<FLOAT>(cursorPoint.x), static_cast<FLOAT>(cursorPoint.y));
+			++borderCursorLightSerial;
+		}
+	}
+	if (cursorReady && BarUiAnimationEnabled) UpdateRendering(false);
+}
+
+void BarUISetClass::RegisterBorderCursorLight(HWND hWnd)
+{
+	POINT cursorPoint{};
+	if (!hWnd || !GetCursorPos(&cursorPoint) || !ScreenToClient(hWnd, &cursorPoint)) return;
+
+	bool cursorChanged = false;
+	{
+		lock_guard lock(borderCursorLightMutex);
+		if (!borderCursorInputAvailable) return;
+		D2D1_POINT_2F nextPoint = D2D1::Point2F(
+			static_cast<FLOAT>(cursorPoint.x), static_cast<FLOAT>(cursorPoint.y));
+		cursorChanged = !borderCursorLightReady
+			|| nextPoint.x != borderCursorLightPoint.x || nextPoint.y != borderCursorLightPoint.y;
+		if (cursorChanged)
+		{
+			borderCursorLightPoint = nextPoint;
+			borderCursorLightReady = true;
+			++borderCursorLightSerial;
+		}
+	}
+
+	// 动画关闭时只保存最新坐标，不为已经隐藏的第三光源唤醒渲染。
+	if (cursorChanged && BarUiAnimationEnabled) UpdateRendering(false);
+}
+
 // 拖动交互
 double BarUISetClass::Seek(const ExMessage& msg)
 {
@@ -3889,6 +4501,8 @@ namespace Inkeys::UI::Bar
 				auto superellipse = make_shared<BarUiSuperellipseClass>(mainX, mainY, 80.0, 80.0, 3.0, 1.0, GetThemeColor(BarThemeColorEnum::Surface), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 				superellipse->pct.Initialization(0.6);
 				superellipse->framePct = BarUiPctClass(0.18);
+				superellipse->frameRendering = BarUiFrameRenderingEnum::PointLight;
+				superellipse->frameLightColor = BarUiFrameLightColorEnum::PenWhenDrawing;
 				superellipse->enable.Initialization(true);
 				barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton] = superellipse;
 
@@ -3916,6 +4530,8 @@ namespace Inkeys::UI::Bar
 				auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 80.0, 80.0, 8.0, 8.0, 1.0, GetThemeColor(BarThemeColorEnum::Surface), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 				shape->pct.Initialization(0.8);
 				shape->framePct = BarUiPctClass(0.18);
+				shape->frameRendering = BarUiFrameRenderingEnum::PointLight;
+				shape->frameLightColor = BarUiFrameLightColorEnum::PenWhenDrawing;
 				shape->w.mod = BarUiValueModeEnum::Variable;
 				shape->h.mod = BarUiValueModeEnum::Variable;
 				shape->enable.Initialization(true);
@@ -3926,6 +4542,8 @@ namespace Inkeys::UI::Bar
 					auto shape = make_shared<BarUiShapeClass>(10.0, 10.0, 60.0, 60.0, 8.0, 8.0, 1.0, GetThemeColor(BarThemeColorEnum::Surface), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 					shape->pct.Initialization(0.8);
 					shape->framePct = BarUiPctClass(0.18);
+					shape->frameRendering = BarUiFrameRenderingEnum::PointLight;
+					shape->frameLightColor = BarUiFrameLightColorEnum::PenWhenDrawing;
 					shape->w.mod = BarUiValueModeEnum::Variable;
 					shape->h.mod = BarUiValueModeEnum::Variable;
 					shape->enable.Initialization(true);
@@ -3935,7 +4553,7 @@ namespace Inkeys::UI::Bar
 					{
 						// Color 1
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect1), GetThemeColor(BarThemeColorEnum::SwatchFrame));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect1), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1] = shape;
 
@@ -3947,7 +4565,7 @@ namespace Inkeys::UI::Bar
 						}
 						// Color 2
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect2), GetThemeColor(BarThemeColorEnum::SwatchFrame));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect2), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2] = shape;
 
@@ -3959,7 +4577,7 @@ namespace Inkeys::UI::Bar
 						}
 						// Color 3
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect3), GetThemeColor(BarThemeColorEnum::SwatchFrame));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect3), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3] = shape;
 
@@ -3971,7 +4589,7 @@ namespace Inkeys::UI::Bar
 						}
 						// Color 4
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect4), GetThemeColor(BarThemeColorEnum::SwatchFrame));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect4), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4] = shape;
 
@@ -3983,7 +4601,7 @@ namespace Inkeys::UI::Bar
 						}
 						// Color 5
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect5), GetThemeColor(BarThemeColorEnum::SwatchFrame));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect5), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5] = shape;
 
@@ -3995,7 +4613,7 @@ namespace Inkeys::UI::Bar
 						}
 						// Color 6
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect6), GetThemeColor(BarThemeColorEnum::SwatchFrame));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect6), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6] = shape;
 
@@ -4007,7 +4625,7 @@ namespace Inkeys::UI::Bar
 						}
 						// Color 7
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect7), GetThemeColor(BarThemeColorEnum::SwatchFrame));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect7), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7] = shape;
 
@@ -4019,7 +4637,7 @@ namespace Inkeys::UI::Bar
 						}
 						// Color 8
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect8), GetThemeColor(BarThemeColorEnum::SwatchFrame));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect8), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8] = shape;
 
@@ -4031,7 +4649,7 @@ namespace Inkeys::UI::Bar
 						}
 						// Color 9
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect9), GetThemeColor(BarThemeColorEnum::SwatchFrame));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect9), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9] = shape;
 
@@ -4043,7 +4661,7 @@ namespace Inkeys::UI::Bar
 						}
 						// Color 10
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect10), GetThemeColor(BarThemeColorEnum::SwatchFrame));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect10), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10] = shape;
 
@@ -4055,7 +4673,7 @@ namespace Inkeys::UI::Bar
 						}
 						// Color 11
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect11), GetThemeColor(BarThemeColorEnum::SwatchFrame));
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0, GetPresetColor(BarThemePresetColorEnum::ColorSelect11), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11] = shape;
 
@@ -4064,6 +4682,18 @@ namespace Inkeys::UI::Bar
 							svg->SetWH(15.0, 15.0);
 							svg->enable.Initialization(true);
 							barUISet.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect11] = svg;
+						}
+						for (int i = static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ColorSelect1);
+							i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ColorSelect11); i++)
+						{
+							// 颜色块沿用普通边框色与点光参数，但保持 Frame 策略，禁止画笔染色。
+							auto shape = barUISet.shapeMap[static_cast<BarUISetShapeEnum>(i)];
+							shape->frameRendering = BarUiFrameRenderingEnum::PointLight;
+							shape->framePct = BarUiPctClass(0.0);
+							shape->framePrimaryLightEnabled = false;
+							shape->frameCursorLightIntensityScale = BarColorSwatchCursorLightIntensity;
+							// 18% 只控制基础灰边；色块仅由鼠标追光随填充进度完整显现。
+							shape->frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::ObjectPct;
 						}
 					}
 					{ /**/ }

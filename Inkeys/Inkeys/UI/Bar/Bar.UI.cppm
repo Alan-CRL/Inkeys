@@ -133,9 +133,9 @@ public:
 	{
 		return clamp(progress, 0.0, 1.0);
 	}
-	bool CanJoin(double maxProgress = 0.7) const
+	bool CanJoin(double maxProgress = 0.5) const
 	{
-		maxProgress = isfinite(maxProgress) ? clamp(maxProgress, 0.0, 1.0) : 0.7;
+		maxProgress = isfinite(maxProgress) ? clamp(maxProgress, 0.0, 1.0) : 0.5;
 		return IsActive() && GetProgress() <= maxProgress;
 	}
 
@@ -680,6 +680,22 @@ public:
 };
 
 /// 控件
+enum class BarUiFrameRenderingEnum : int
+{
+	Solid = 0,
+	PointLight = 1,
+};
+enum class BarUiFrameLightColorEnum : int
+{
+	Frame = 0,
+	PenWhenDrawing = 1,
+};
+enum class BarUiFrameLightOpacitySourceEnum : int
+{
+	FramePct = 0,
+	ObjectPct = 1,
+};
+
 //// 单个形状控件
 class BarUiShapeClass : public BarUiInnheritBaseClass
 {
@@ -707,6 +723,11 @@ public:
 
 	// 透明度
 	optional<BarUiPctClass> framePct; // 控件边框透明度
+	BarUiFrameRenderingEnum frameRendering = BarUiFrameRenderingEnum::Solid; // 默认保留原纯色边框
+	BarUiFrameLightColorEnum frameLightColor = BarUiFrameLightColorEnum::Frame;
+	BarUiFrameLightOpacitySourceEnum frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::FramePct;
+	bool framePrimaryLightEnabled = true; // PointLight 默认接受主光源，可按控件关闭
+	double frameCursorLightIntensityScale = 1.0; // 鼠标光默认与主光同强度
 };
 //// 单个超椭圆控件
 class BarUiSuperellipseClass : public BarUiInnheritBaseClass
@@ -736,6 +757,11 @@ public:
 
 	// 透明度
 	optional<BarUiPctClass> framePct; // 控件边框透明度
+	BarUiFrameRenderingEnum frameRendering = BarUiFrameRenderingEnum::Solid; // 默认保留原纯色边框
+	BarUiFrameLightColorEnum frameLightColor = BarUiFrameLightColorEnum::Frame;
+	BarUiFrameLightOpacitySourceEnum frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::FramePct;
+	bool framePrimaryLightEnabled = true; // PointLight 默认接受主光源，可按控件关闭
+	double frameCursorLightIntensityScale = 1.0; // 鼠标光默认与主光同强度
 };
 //// 单个 SVG 控件
 class BarUiSVGClass : public BarUiInnheritBaseClass

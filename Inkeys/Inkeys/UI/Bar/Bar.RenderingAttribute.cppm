@@ -11,6 +11,7 @@ class BarRenderingAttribute
 {
 public:
 	static constexpr int dirtyAntialiasPadding = 3;
+	static constexpr double pointLightDiffuseExtraWidth = 6.0;
 
 	static void UnionRectInPlace(RECT& target, const RECT& add)
 	{
@@ -29,17 +30,19 @@ public:
 		target.bottom = max(target.bottom, add.bottom);
 	}
 
-	static int GetFrameDirtyOutset(const optional<BarUiValueClass>& ft, double tarZoom)
+	static int GetFrameDirtyOutset(const optional<BarUiValueClass>& ft,
+		BarUiFrameRenderingEnum frameRendering, double tarZoom)
 	{
-		if (!ft.has_value()) return 0;
-
 		// 边框外扩需要折算到设备像素，固定抗锯齿余量在矩形计算处统一追加。
-		return static_cast<int>(ceil(ft.value().val * tarZoom));
+		double dirtyWidth = ft.has_value() ? static_cast<double>(ft.value().val) : 0.0;
+		if (frameRendering == BarUiFrameRenderingEnum::PointLight)
+			dirtyWidth += pointLightDiffuseExtraWidth; // 1px 清晰边外侧再覆盖约 3px 柔光。
+		return static_cast<int>(ceil(dirtyWidth * tarZoom));
 	}
 
 	static RECT GetWeigetRect(const BarUiShapeClass& shape, double tarZoom)
 	{
-		int ft = GetFrameDirtyOutset(shape.ft, tarZoom) + dirtyAntialiasPadding;
+		int ft = GetFrameDirtyOutset(shape.ft, shape.frameRendering, tarZoom) + dirtyAntialiasPadding;
 
 		RECT ret;
 		ret.left = static_cast<LONG>(floor(shape.inhX * tarZoom) - ft);
@@ -51,7 +54,7 @@ public:
 	}
 	static RECT GetWeigetRect(const BarUiSuperellipseClass& superellipse, double tarZoom)
 	{
-		int ft = GetFrameDirtyOutset(superellipse.ft, tarZoom) + dirtyAntialiasPadding;
+		int ft = GetFrameDirtyOutset(superellipse.ft, superellipse.frameRendering, tarZoom) + dirtyAntialiasPadding;
 
 		RECT ret;
 		ret.left = static_cast<LONG>(floor(superellipse.inhX * tarZoom) - ft);
