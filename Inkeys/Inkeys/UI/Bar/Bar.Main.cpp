@@ -1400,7 +1400,6 @@ void BarUISetClass::Rendering()
 				}
 				// 着色层和底图同尺寸，贴合修正交给 SVG 路径本身处理。
 				bool showLogoInk = stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
-				showLogoInk = showLogoInk || barButtomSet.barButtomState[(int)BarButtomPresetEnum::Pierce].state == BarWidgetState::Selected;
 				// 显隐和换色共用 UI3 动画时钟，关闭动画时由全局倍率立即完成。
 				mainButtonInk->color1.value().SetTar(GetPenColor(), operationDur);
 				mainButtonInk->pct.SetTar(showLogoInk ? 1.0 : 0.0, operationDur);
@@ -3910,14 +3909,14 @@ void BarUISetClass::Interact()
 			UpdateRendering(false);
 		};
 	auto StopHover = [&](BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
-		IdtAtomic<BarButtomHoverStageEnum>* hoverStage, bool immediate)
+		IdtAtomic<BarButtomHoverStageEnum>* hoverStage, bool immediate, bool preserveVisual = false)
 		{
 			if (!hoverPct || !hoverStage) return;
 			if (immediate)
 			{
 				*hoverStage = BarButtomHoverStageEnum::None;
-				// 立即停止用于按下、隐藏和触摸抬起，不能遗留旧的灰色当前值。
-				hoverPct->SetDirect(0.0);
+				// 按下时保留当前视觉值交给按压态续接，隐藏等场景仍立即清零。
+				if (!preserveVisual) hoverPct->SetDirect(0.0);
 				hoverPct->animateWhenDisabled = false;
 				if (hoverFill) hoverFill->animateWhenDisabled = false;
 			}
@@ -3938,11 +3937,11 @@ void BarUISetClass::Interact()
 			if (button && button->buttom.fill.has_value())
 				StartHover(&button->buttom.pct, &button->buttom.fill.value(), &button->hoverStage);
 		};
-	auto StopMainBarButtonHover = [&](BarButtomClass* button, bool immediate)
+	auto StopMainBarButtonHover = [&](BarButtomClass* button, bool immediate, bool preserveVisual = false)
 		{
 			if (button) StopHover(&button->buttom.pct,
 				button->buttom.fill.has_value() ? &button->buttom.fill.value() : nullptr,
-				&button->hoverStage, immediate);
+				&button->hoverStage, immediate, preserveVisual);
 		};
 	auto StartIndependentHover = [&](IndependentHoverTargetEnum target)
 		{
@@ -4094,7 +4093,7 @@ void BarUISetClass::Interact()
 							bool clickCompleted = false;
 							// 同一背景层先切换到按下状态；抬起后必须收到新的鼠标移动才能再次悬停。
 							temp->state->emph = BarWidgetEmphasize::Pressed;
-							StopMainBarButtonHover(hoveredMainBarButton, true);
+							StopMainBarButtonHover(hoveredMainBarButton, true, true);
 							hoveredMainBarButton = nullptr;
 							UpdateRendering(false);
 							while (true)
