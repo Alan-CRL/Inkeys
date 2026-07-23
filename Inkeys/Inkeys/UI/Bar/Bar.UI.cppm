@@ -726,6 +726,7 @@ public:
 	BarUiFrameRenderingEnum frameRendering = BarUiFrameRenderingEnum::Solid; // 默认保留原纯色边框
 	BarUiFrameLightColorEnum frameLightColor = BarUiFrameLightColorEnum::Frame;
 	BarUiFrameLightOpacitySourceEnum frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::FramePct;
+	bool framePrimaryLightEnabled = true; // PointLight 默认接受主光源，可按控件关闭
 };
 //// 单个超椭圆控件
 class BarUiSuperellipseClass : public BarUiInnheritBaseClass
@@ -758,6 +759,7 @@ public:
 	BarUiFrameRenderingEnum frameRendering = BarUiFrameRenderingEnum::Solid; // 默认保留原纯色边框
 	BarUiFrameLightColorEnum frameLightColor = BarUiFrameLightColorEnum::Frame;
 	BarUiFrameLightOpacitySourceEnum frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::FramePct;
+	bool framePrimaryLightEnabled = true; // PointLight 默认接受主光源，可按控件关闭
 };
 //// 单个 SVG 控件
 class BarUiSVGClass : public BarUiInnheritBaseClass

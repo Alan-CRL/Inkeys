@@ -132,6 +132,13 @@ enum class BarBorderLightSourceEnum : int
 	Primary,
 	Cursor,
 };
+enum class BarBorderPrimaryAnchorEnum : int
+{
+	MainButton,
+	Select,
+	Draw,
+	Eraser,
+};
 
 // 具体渲染
 class BarUIRendering
@@ -162,14 +169,19 @@ protected:
 		ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource);
 	bool DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLORREF color,
 		BarUiFrameLightColorEnum frameLightColor,
-		double baseFramePct, double lightPct, FLOAT strokeWidth,
+		bool primaryLightEnabled, double baseFramePct, double lightPct, FLOAT strokeWidth,
 		const D2D1_ROUNDED_RECT* roundedRect,
 		ID2D1Geometry* geometry);
 
 	D2D1_POINT_2F framePrimaryLight = D2D1::Point2F();
+	D2D1_POINT_2F framePrimaryLightStart = D2D1::Point2F();
+	D2D1_POINT_2F framePrimaryLightTarget = D2D1::Point2F();
 	D2D1_POINT_2F frameCursorLight = D2D1::Point2F();
 	FLOAT frameCursorLightIntensity = 0.0F;
 	FLOAT frameLightRadius = 0.0F;
+	BarBorderPrimaryAnchorEnum framePrimaryLightAnchor = BarBorderPrimaryAnchorEnum::MainButton;
+	bool framePrimaryLightAnchorInitialized = false;
+	bool framePrimaryLightAnimating = false;
 	bool frameCursorLightVisible = false;
 	bool frameCursorLightAnimating = false;
 	bool frameAnimationStateInitialized = false;
@@ -178,6 +190,7 @@ protected:
 	bool frameLightingWasAnimating = false;
 	bool frameGradientFailureLogged = false;
 	bool frameDiffuseEffectFailureLogged = false;
+	double framePrimaryLightMoveElapsed = 0.0;
 	double frameCursorLightFadeElapsed = 0.0;
 	unsigned long long handledBorderCursorLightSerial = 0;
 	COLORREF frameDrawingPenColor = RGB(0, 0, 0);

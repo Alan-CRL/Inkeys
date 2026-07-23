@@ -37,7 +37,7 @@ constexpr double BarButtonHoverExitDur = 0.24;
 constexpr double BarButtonHoverFadeDur = 5.0;
 constexpr double BarBorderLightRadius = 480.0;
 constexpr double BarBorderCursorFadeInDur = 0.30;
-constexpr double BarBorderCursorIntensity = 0.60;
+constexpr double BarBorderLightIntensity = 1.0;
 constexpr double BarBorderFrameDiffuseOpacity = 0.30;
 constexpr double BarBorderPenDiffuseOpacity = 0.20;
 constexpr double BarColorSwatchFrameOpacity = 0.18;
@@ -330,14 +330,59 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	if (!isfinite(zoom) || zoom <= 0.0) zoom = 0.0;
 	frameLightRadius = static_cast<FLOAT>(BarBorderLightRadius * zoom);
 
+	BarBorderPrimaryAnchorEnum desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::MainButton;
+	D2D1_POINT_2F desiredPrimaryLight = framePrimaryLight;
+	bool primaryTargetAvailable = false;
 	if (barUISetClass)
 	{
-		auto mainButton = barUISetClass->superellipseMap[BarUISetSuperellipseEnum::MainButton];
-		if (mainButton)
+		switch (stateMode.StateModeSelect)
 		{
-			framePrimaryLight = D2D1::Point2F(
+		case StateModeSelectEnum::IdtPen:
+			desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Draw;
+			break;
+		case StateModeSelectEnum::IdtEraser:
+			desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Eraser;
+			break;
+		case StateModeSelectEnum::IdtSelection:
+			desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Select;
+			break;
+		default:
+			break;
+		}
+
+		auto mainButtonIt = barUISetClass->superellipseMap.find(
+			BarUISetSuperellipseEnum::MainButton);
+		if (mainButtonIt != barUISetClass->superellipseMap.end() && mainButtonIt->second)
+		{
+			auto mainButton = mainButtonIt->second;
+			desiredPrimaryLight = D2D1::Point2F(
 				static_cast<FLOAT>(mainButton->x.val * zoom),
-				static_cast<FLOAT>(mainButton->y.val * zoom));
+				static_cast<FLOAT>((mainButton->y.val + mainButton->h.val / 2.0) * zoom));
+			primaryTargetAvailable = true;
+
+			BarButtomPresetEnum anchorPreset = BarButtomPresetEnum::None;
+			switch (desiredPrimaryAnchor)
+			{
+			case BarBorderPrimaryAnchorEnum::Select: anchorPreset = BarButtomPresetEnum::Select; break;
+			case BarBorderPrimaryAnchorEnum::Draw: anchorPreset = BarButtomPresetEnum::Draw; break;
+			case BarBorderPrimaryAnchorEnum::Eraser: anchorPreset = BarButtomPresetEnum::Eraser; break;
+			default: break;
+			}
+
+			auto mainBarIt = barUISetClass->shapeMap.find(BarUISetShapeEnum::MainBar);
+			BarButtomClass* anchorButton = anchorPreset == BarButtomPresetEnum::None
+				? nullptr : barUISetClass->barButtomSet.preset[static_cast<int>(anchorPreset)];
+			if (mainBarIt != barUISetClass->shapeMap.end() && mainBarIt->second && anchorButton)
+			{
+				auto mainBar = mainBarIt->second;
+				double mainBarLeft = mainButton->x.val + mainBar->x.val - mainBar->w.val / 2.0;
+				double mainBarTop = mainButton->y.val + mainBar->y.val - mainBar->h.val / 2.0;
+				// 主光落在当前模式按钮的下边缘中心，控件布局动画时目标也随之更新。
+				desiredPrimaryLight = D2D1::Point2F(
+					static_cast<FLOAT>((mainBarLeft + anchorButton->buttom.x.val) * zoom),
+					static_cast<FLOAT>((mainBarTop + anchorButton->buttom.y.val
+						+ anchorButton->buttom.h.val / 2.0) * zoom));
+			}
 		}
 
 		// 非穿透画笔模式下，仅由控件自己的光色策略决定是否采用动画画笔色。
@@ -372,7 +417,74 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	animationDtSeconds = clamp(animationDtSeconds, 0.0, 0.05);
 	double scaledDtSeconds = animationDtSeconds * animationSpeedRate;
 
-	bool stateChanged = false;
+	bool primaryLightMoved = false;
+	bool primaryStateChanged = false;
+	if (primaryTargetAvailable)
+	{
+		auto PointsDiffer = [](D2D1_POINT_2F left, D2D1_POINT_2F right)
+			{
+				return abs(left.x - right.x) > 0.01F || abs(left.y - right.y) > 0.01F;
+			};
+		D2D1_POINT_2F previousPrimaryLight = framePrimaryLight;
+		if (!framePrimaryLightAnchorInitialized)
+		{
+			framePrimaryLightAnchorInitialized = true;
+			framePrimaryLightAnchor = desiredPrimaryAnchor;
+			framePrimaryLightStart = desiredPrimaryLight;
+			framePrimaryLightTarget = desiredPrimaryLight;
+			framePrimaryLight = desiredPrimaryLight;
+		}
+		else
+		{
+			bool anchorChanged = framePrimaryLightAnchor != desiredPrimaryAnchor;
+			if (anchorChanged)
+			{
+				framePrimaryLightAnchor = desiredPrimaryAnchor;
+				framePrimaryLightStart = framePrimaryLight;
+				framePrimaryLightMoveElapsed = 0.0;
+				framePrimaryLightAnimating = animationEnabled;
+				primaryStateChanged = true;
+			}
+			framePrimaryLightTarget = desiredPrimaryLight;
+
+			if (!animationEnabled)
+			{
+				framePrimaryLight = desiredPrimaryLight;
+				framePrimaryLightAnimating = false;
+				framePrimaryLightMoveElapsed = 0.0;
+			}
+			else if (framePrimaryLightAnimating)
+			{
+				double moveDuration = BarUiDefaultOperationDur;
+				if (!isfinite(moveDuration) || moveDuration <= 0.0)
+				{
+					framePrimaryLight = framePrimaryLightTarget;
+					framePrimaryLightAnimating = false;
+				}
+				else
+				{
+					framePrimaryLightMoveElapsed += scaledDtSeconds;
+					double progress = clamp(framePrimaryLightMoveElapsed / moveDuration, 0.0, 1.0);
+					double curvedProgress = BarUiApplyCurve(
+						BarUiCurveEnum::EaseInOutCubic, progress);
+					framePrimaryLight = D2D1::Point2F(
+						static_cast<FLOAT>(framePrimaryLightStart.x
+							+ (framePrimaryLightTarget.x - framePrimaryLightStart.x) * curvedProgress),
+						static_cast<FLOAT>(framePrimaryLightStart.y
+							+ (framePrimaryLightTarget.y - framePrimaryLightStart.y) * curvedProgress));
+					if (progress >= 1.0)
+					{
+						framePrimaryLight = framePrimaryLightTarget;
+						framePrimaryLightAnimating = false;
+					}
+				}
+			}
+			else framePrimaryLight = desiredPrimaryLight;
+		}
+		primaryLightMoved = PointsDiffer(previousPrimaryLight, framePrimaryLight);
+	}
+
+	bool stateChanged = primaryStateChanged;
 	bool cursorFadeRestarted = false;
 	bool cursorMoved = false;
 	if (!frameAnimationStateInitialized)
@@ -418,7 +530,7 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 		frameCursorLightAnimating = false;
 		bool needSettlingFrame = frameLightingWasAnimating;
 		frameLightingWasAnimating = false;
-		return stateChanged || needSettlingFrame;
+		return stateChanged || needSettlingFrame || primaryLightMoved;
 	}
 
 	if (cursorSerial != handledBorderCursorLightSerial)
@@ -433,23 +545,23 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 		{
 			if (!cursorFadeRestarted) frameCursorLightFadeElapsed += scaledDtSeconds;
 			double progress = frameCursorLightFadeElapsed / BarBorderCursorFadeInDur;
-			frameCursorLightIntensity = static_cast<FLOAT>(BarBorderCursorIntensity
+			frameCursorLightIntensity = static_cast<FLOAT>(BarBorderLightIntensity
 				* ApplyBorderLightSmoothstep(progress));
 			if (frameCursorLightFadeElapsed >= BarBorderCursorFadeInDur)
 			{
-				frameCursorLightIntensity = static_cast<FLOAT>(BarBorderCursorIntensity);
+				frameCursorLightIntensity = static_cast<FLOAT>(BarBorderLightIntensity);
 				frameCursorLightAnimating = false;
 			}
 		}
-		else frameCursorLightIntensity = static_cast<FLOAT>(BarBorderCursorIntensity);
+		else frameCursorLightIntensity = static_cast<FLOAT>(BarBorderLightIntensity);
 		frameCursorLightVisible = frameCursorLightIntensity > 0.0F;
 	}
 
 	// 时间过程结束后再绘制一帧最终状态，随后恢复原有静止等待。
-	bool lightingAnimating = frameCursorLightAnimating;
+	bool lightingAnimating = frameCursorLightAnimating || framePrimaryLightAnimating;
 	bool needSettlingFrame = frameLightingWasAnimating && !lightingAnimating;
 	frameLightingWasAnimating = lightingAnimating;
-	return lightingAnimating || needSettlingFrame || stateChanged || cursorMoved;
+	return lightingAnimating || needSettlingFrame || stateChanged || cursorMoved || primaryLightMoved;
 }
 
 ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
@@ -503,7 +615,7 @@ ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
 
 bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLORREF color,
 	BarUiFrameLightColorEnum frameLightColor,
-	double baseFramePct, double lightPct, FLOAT strokeWidth,
+	bool primaryLightEnabled, double baseFramePct, double lightPct, FLOAT strokeWidth,
 	const D2D1_ROUNDED_RECT* roundedRect,
 	ID2D1Geometry* geometry)
 {
@@ -523,14 +635,15 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 		? BarBorderPenDiffuseOpacity : BarBorderFrameDiffuseOpacity);
 	ID2D1RadialGradientBrush* primaryBrush = nullptr;
 	ID2D1RadialGradientBrush* cursorBrush = nullptr;
-	if (lightOpacity > 0.0F)
+	bool drawPrimaryLight = lightOpacity > 0.0F && primaryLightEnabled;
+	bool drawCursorLight = lightOpacity > 0.0F && frameCursorLightVisible;
+	if (drawPrimaryLight)
 		primaryBrush = GetFrameGradientBrush(
 			deviceContext, lightColor, BarBorderLightSourceEnum::Primary);
-	if (lightOpacity > 0.0F && frameCursorLightVisible)
+	if (drawCursorLight)
 		cursorBrush = GetFrameGradientBrush(
 			deviceContext, lightColor, BarBorderLightSourceEnum::Cursor);
-	if (lightOpacity > 0.0F
-		&& (!primaryBrush || (frameCursorLightVisible && !cursorBrush))) return false;
+	if ((drawPrimaryLight && !primaryBrush) || (drawCursorLight && !cursorBrush)) return false;
 
 	ComPtr<ID2D1SolidColorBrush> baseFrameBrush;
 	HRESULT hr = S_OK;
@@ -565,7 +678,7 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 		else deviceContext->DrawGeometry(geometry, baseFrameBrush.Get(), strokeWidth);
 	}
 
-	if (lightOpacity > 0.0F)
+	if (drawPrimaryLight || drawCursorLight)
 	{
 		bool effectReady = frameGaussianBlurEffect != nullptr
 			&& !frameDiffuseEffectFailureLogged;
@@ -630,7 +743,7 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 		}
 
 		// 清晰边保持原有 480px 点光渐变，不受 Gaussian 轮廓扩散替代。
-		DrawLightPass(primaryBrush, 1.0F, strokeWidth);
+		DrawLightPass(primaryBrush, static_cast<FLOAT>(BarBorderLightIntensity), strokeWidth);
 		DrawLightPass(cursorBrush, frameCursorLightIntensity, strokeWidth);
 	}
 	return true;
@@ -703,7 +816,8 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 			{
 				bool pointLightDrawn = shape.frameRendering == BarUiFrameRenderingEnum::PointLight
 					&& DrawPointLightFrame(deviceContext, frame, shape.frameLightColor,
-						tarFramePct, tarFrameLightPct, strokeWidth, &roundedRect, nullptr);
+						shape.framePrimaryLightEnabled, tarFramePct, tarFrameLightPct,
+						strokeWidth, &roundedRect, nullptr);
 				if (!pointLightDrawn)
 				{
 					ComPtr<ID2D1SolidColorBrush> spBorderBrush;
@@ -866,7 +980,8 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 			{
 				bool pointLightDrawn = superellipse.frameRendering == BarUiFrameRenderingEnum::PointLight
 					&& DrawPointLightFrame(deviceContext, frame, superellipse.frameLightColor,
-						tarFramePct, tarFrameLightPct, strokeWidth, nullptr, geometry.Get());
+						superellipse.framePrimaryLightEnabled, tarFramePct, tarFrameLightPct,
+						strokeWidth, nullptr, geometry.Get());
 				if (!pointLightDrawn)
 				{
 					ComPtr<ID2D1SolidColorBrush> spBorderBrush;
@@ -4521,7 +4636,8 @@ namespace Inkeys::UI::Bar
 							auto shape = barUISet.shapeMap[static_cast<BarUISetShapeEnum>(i)];
 							shape->frameRendering = BarUiFrameRenderingEnum::PointLight;
 							shape->framePct = BarUiPctClass(0.0);
-							// 18% 只控制基础灰边；追光随色块填充进度完整显现。
+							shape->framePrimaryLightEnabled = false;
+							// 18% 只控制基础灰边；色块仅由鼠标追光随填充进度完整显现。
 							shape->frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::ObjectPct;
 						}
 					}
