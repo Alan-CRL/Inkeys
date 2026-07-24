@@ -1022,6 +1022,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			config.Write();
 			Inkeys::UI::Bar::SetAnimationOptions(
 				config.Experimental.Inkeys3.UI3.Animation.Enable, animationSpeedRate);
+			Inkeys::UI::Bar::SetEdgeLightingOptions(
+				config.Experimental.Inkeys3.UI3.EdgeLighting.Enable,
+				config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic);
 
 			configOnce = Inkeys::config;
 

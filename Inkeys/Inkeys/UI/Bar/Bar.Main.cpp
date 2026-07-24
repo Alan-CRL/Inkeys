@@ -379,6 +379,32 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	frameLightRadius = static_cast<FLOAT>(BarBorderLightRadius * zoom);
 	frameCursorLightRadius = static_cast<FLOAT>(BarBorderCursorLightRadius * zoom);
 
+	bool edgeLightingEnabled = BarUiEdgeLightingEnabled;
+	bool dynamicEdgeLightingEnabled = edgeLightingEnabled && BarUiDynamicEdgeLightingEnabled;
+	if (!edgeLightingEnabled)
+	{
+		// 总开关关闭时停止所有仅服务于点光的动画计算，基础灰边仍由绘制阶段保留。
+		bool needSettlingFrame = frameEdgeLightingEnabled || frameLightingWasAnimating
+			|| frameCursorLightIntensity > 0.0001F;
+		frameEdgeLightingEnabled = false;
+		framePrimaryLightAnchorInitialized = false;
+		framePrimaryLightAnimating = false;
+		frameCursorLightIntensity = 0.0F;
+		frameCursorLightIntensityStart = 0.0F;
+		frameCursorLightIntensityTarget = 0.0F;
+		frameCursorLightAnimating = false;
+		frameCursorInputAvailable = false;
+		frameAnimationStateInitialized = false;
+		frameDrawingPenColorAnimating = false;
+		frameDrawingPenColorInitialized = false;
+		frameDrawingModeTransitionAnimating = false;
+		frameDrawingModeInitialized = false;
+		frameLightingWasAnimating = false;
+		return needSettlingFrame;
+	}
+	bool edgeLightingStateChanged = !frameEdgeLightingEnabled;
+	frameEdgeLightingEnabled = true;
+
 	BarBorderPrimaryAnchorEnum desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::MainButton;
 	D2D1_POINT_2F desiredPrimaryLight = framePrimaryLight;
 	bool primaryTargetAvailable = false;
@@ -644,11 +670,12 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 		primaryLightMoved = PointsDiffer(previousPrimaryLight, framePrimaryLight);
 	}
 
-	bool stateChanged = primaryStateChanged || penLightColorChanged
+	bool stateChanged = edgeLightingStateChanged || primaryStateChanged || penLightColorChanged
 		|| drawingModeTransitionStarted;
 	bool cursorFadeRestarted = false;
 	bool cursorMoved = false;
-	bool desiredCursorLightVisible = animationEnabled && cursorInputAvailable;
+	bool desiredCursorLightVisible = animationEnabled
+		&& dynamicEdgeLightingEnabled && cursorInputAvailable;
 	if (!frameAnimationStateInitialized)
 	{
 		frameAnimationStateInitialized = true;
@@ -818,8 +845,11 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 	ID2D1RadialGradientBrush* cursorBrush = nullptr;
 	FLOAT cursorLightIntensity = frameCursorLightIntensity
 		* static_cast<FLOAT>(clamp(cursorLightIntensityScale, 0.0, 1.0));
-	bool drawPrimaryLight = lightOpacity > 0.0F && primaryLightEnabled;
-	bool drawCursorLight = lightOpacity > 0.0F && frameCursorLightVisible
+	bool edgeLightingEnabled = BarUiEdgeLightingEnabled;
+	bool drawPrimaryLight = edgeLightingEnabled
+		&& lightOpacity > 0.0F && primaryLightEnabled;
+	bool drawCursorLight = edgeLightingEnabled
+		&& lightOpacity > 0.0F && frameCursorLightVisible
 		&& cursorLightIntensity > 0.0F;
 	if (drawPrimaryLight)
 		primaryBrush = GetFrameGradientBrush(
@@ -4448,7 +4478,8 @@ bool BarUISetClass::SetBorderCursorRawInputEnabled(HWND hWnd, bool enabled)
 
 void BarUISetClass::ActivateBorderCursorTracking(HWND hWnd)
 {
-	if (!hWnd || !BarUiAnimationEnabled) return;
+	if (!hWnd || !BarUiAnimationEnabled
+		|| !BarUiEdgeLightingEnabled || !BarUiDynamicEdgeLightingEnabled) return;
 	{
 		lock_guard lock(borderCursorLightMutex);
 		if (borderCursorActivationBlockedUntilLeave) return;
@@ -4503,7 +4534,7 @@ void BarUISetClass::ActivateBorderCursorTracking(HWND hWnd)
 
 void BarUISetClass::RegisterBorderCursorLight(HWND hWnd)
 {
-	if (!hWnd) return;
+	if (!hWnd || !BarUiEdgeLightingEnabled || !BarUiDynamicEdgeLightingEnabled) return;
 	{
 		lock_guard lock(borderCursorLightMutex);
 		if (!borderCursorRawInputRegistered
@@ -4819,6 +4850,16 @@ namespace Inkeys::UI::Bar
 		BarUiAnimationEnabled = enable;
 		BarUiAnimationSpeedRate = enable ? speedRate : 1.0e12;
 		if (!enable && floating_window)
+			PostMessage(floating_window, BarBorderCursorSuspendMessage, 0, 0);
+		barUISet.UpdateRendering(false);
+	}
+
+	void SetEdgeLightingOptions(bool enable, bool dynamic)
+	{
+		BarUiEdgeLightingEnabled = enable;
+		BarUiDynamicEdgeLightingEnabled = dynamic;
+		// 关闭任一级动态光门禁时，统一交给 Bar 窗口线程注销 Raw Input。
+		if ((!enable || !dynamic) && floating_window)
 			PostMessage(floating_window, BarBorderCursorSuspendMessage, 0, 0);
 		barUISet.UpdateRendering(false);
 	}

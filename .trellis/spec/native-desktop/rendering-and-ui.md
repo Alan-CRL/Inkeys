@@ -127,6 +127,70 @@ cursorIntensity = lifecycleIntensity * controlIntensityScale;
 cursorRadius = 240.0 * zoom;
 ~~~
 
+### UI3 边缘光影实验开关契约
+
+#### 1. Scope / Trigger
+
+修改 UI3 边缘点光、第三鼠标光的设置或 Inkeys3 配置时，必须同时核对 Setting、`Inkeys.Other.Config` schema、Bar 运行时门禁与启动同步；传统 `IdtFloating` 不在该契约内。
+
+#### 2. Signatures
+
+~~~cpp
+namespace Inkeys::UI::Bar
+{
+	export void SetEdgeLightingOptions(bool enable, bool dynamic);
+}
+~~~
+
+持久化路径为：
+
+~~~text
+Experimental.Inkeys3.UI3.EdgeLighting.Enable  : bool = true
+Experimental.Inkeys3.UI3.EdgeLighting.Dynamic : bool = true
+~~~
+
+#### 3. Contracts
+
+- `Enable=false`：第一主光、第三鼠标光和 Gaussian 柔光均不绘制；基础灰边继续绘制；停止仅服务于光影的动画推进，并请求第三光源进入 Dormant、注销 Raw Input。
+- `Enable=true, Dynamic=false`：第一主光和 Gaussian 柔光保持；只有第三鼠标光关闭，禁止注册/处理其 Raw Input。切换关闭时可以沿既有 300ms 淡出收尾。
+- `Enable=true, Dynamic=true`：保持第三光源 `Dormant / Inside / Grace` 状态机；重新开启不主动全局取鼠标，等待自然进入 UI3。
+- Setting 只在 UI3 开启时显示总开关，只在总开关开启时显示动态开关；隐藏动态项不得覆盖其持久化值。
+- schema 是字段声明、默认值和 JSON 读写的唯一来源；不得在 `Other.Config.cpp` 为两个 bool 添加特判。
+
+#### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 旧配置缺少新字段 | schema 默认值均为 `true`，升级后视觉保持不变 |
+| 关闭任一动态门禁 | 立即阻止新的激活/位置处理，并向 Bar 窗口投递既有休眠消息 |
+| 配置写入失败 | 本次运行时状态仍即时生效；不得直接从 Setting 线程修改 D2D 或 Raw Input |
+| 总开关关闭期间工具或颜色变化 | 不因第一光源位置、颜色或过渡继续产生光影专用渲染帧 |
+
+#### 5. Good / Base / Bad Cases
+
+- Good：关闭动态开关后主光仍可见，第三光源完成收尾后不再注册 Raw Input。
+- Base：关闭总开关后只剩基础灰边；重新开启后恢复主光，并保留此前动态开关选择。
+- Bad：把动态开关乘到全部光影或基础灰边上，导致关闭第三光源时第一主光也消失。
+
+#### 6. Tests Required
+
+- 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`。
+- 手工验证四种组合：总开关关、总开关开且动态关、两者全开、动态关后重启。
+- 检查 `main.json` 两个路径、旧配置缺失字段默认值、设置卡片条件显示与容器高度。
+- 在动态关闭和总开关关闭时观察 Raw Input 注销及静止/移动 CPU，确认第三光源不再唤醒渲染。
+
+#### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：动态开关错误地关闭所有边缘光影。
+drawPrimaryLight = edgeLightingEnabled && dynamicEdgeLightingEnabled;
+
+// Correct：动态开关只进入第三光源的激活与可见性条件。
+drawPrimaryLight = edgeLightingEnabled;
+desiredCursorLightVisible = edgeLightingEnabled && dynamicEdgeLightingEnabled
+	&& cursorInputAvailable;
+~~~
+
 ### UI3 动画批次加入与关键帧中点
 
 `【直接确认；设计约定】` `BarUiTimelineClass::CanJoin(double maxProgress = 0.5)` 是主栏布局变化和绘制属性加入主栏批次的统一判断入口；无效参数同样回退到 `0.5`，边界判断为 `GetProgress() <= maxProgress`。
