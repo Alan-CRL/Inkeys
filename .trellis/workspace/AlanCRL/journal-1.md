@@ -71,3 +71,40 @@ Completed the source-backed Trellis bootstrap and second-pass evidence audit for
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: UI3 第三光源休眠与距离一致性
+
+**Date**: 2026-07-24
+**Task**: UI3 第三光源休眠与距离一致性
+**Branch**: `feature/animation`
+
+### Summary
+
+完成 UI3 第三光源 Dormant/Inside/Grace 状态机、240px 动态光圈、等距离亮度一致性及 Draw2 落笔即时休眠，并通过完整 Debug ARM64 构建与用户验收。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b8e3d1b` | (see git log) |
+| `b797397` | (see git log) |
+| `e694b8d` | (see git log) |
+| `9bbe2ff` | (see git log) |
+| `0e27f9b` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
