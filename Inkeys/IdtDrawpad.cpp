@@ -2268,6 +2268,9 @@ int drawpad_main()
 					TouchTemp.pop_front();
 					lock2.unlock();
 
+					// Draw2 在落笔线程派发前只通知一次；后续采样不再触碰 UI3 状态。
+					if (useInkeys3UI) Inkeys::UI::Bar::NotifyCanvasDrawingStarted();
+
 					thread MultiFingerDrawing_thread(MultiFingerDrawing, touchPoint.pid, touchPoint.mode, stateMode, nextPointMode);
 					MultiFingerDrawing_thread.detach();
 				}

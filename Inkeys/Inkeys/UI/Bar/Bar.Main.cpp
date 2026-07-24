@@ -37,6 +37,10 @@ constexpr double BarButtonHoverExitDur = 0.24;
 constexpr double BarButtonHoverFadeDur = 5.0;
 constexpr double BarBorderLightRadius = 480.0;
 constexpr double BarBorderCursorFadeInDur = 0.30;
+constexpr double BarBorderCursorLightRadius = 240.0;
+constexpr ULONGLONG BarBorderCursorGraceDurationMs = 5000;
+constexpr UINT_PTR BarBorderCursorGraceTimerId = 0x494B4301;
+constexpr UINT BarBorderCursorSuspendMessage = WM_APP + 0x31;
 constexpr double BarBorderLightIntensity = 1.0;
 constexpr double BarColorSwatchCursorLightIntensity = 0.60;
 constexpr double BarBorderFrameDiffuseOpacity = 0.30;
@@ -86,6 +90,30 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		// Raw Input 只负责唤醒并读取系统光标，WM_INPUT 仍交给默认过程完成清理。
 		barUISet.RegisterBorderCursorLight(hWnd);
 		return HIWINDOW_DEFAULT_PROC;
+	}
+
+	case WM_TIMER:
+	{
+		if (wParam == BarBorderCursorGraceTimerId)
+		{
+			barUISet.HandleBorderCursorGraceTimeout(hWnd);
+			return 0;
+		}
+		return HIWINDOW_DEFAULT_PROC;
+	}
+
+	case BarBorderCursorSuspendMessage:
+	{
+		barUISet.SuspendBorderCursorTracking(hWnd, wParam != 0);
+		return 0;
+	}
+
+	case WM_MOUSELEAVE:
+	{
+		// 落笔时若光标仍在 UI3 内，必须先真实离开，下一次进入才允许重新激活。
+		lock_guard lock(barUISet.borderCursorLightMutex);
+		barUISet.borderCursorActivationBlockedUntilLeave = false;
+		return 0;
 	}
 
 	case WM_TABLET_QUERYSYSTEMGESTURESTATUS:
@@ -258,6 +286,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		// 如果是触摸模拟出来的鼠标消息，就直接丢掉
 		DWORD extraInfo = GetMessageExtraInfo();
 		if ((extraInfo & 0xFFFFFF00) == 0xFF515700) return 0;
+		if (msg == WM_MOUSEMOVE) barUISet.ActivateBorderCursorTracking(hWnd);
 		if (msg == WM_LBUTTONDOWN || msg == WM_LBUTTONDBLCLK) Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, true);
 		if (msg == WM_LBUTTONUP) Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, false);
 
@@ -340,7 +369,6 @@ BarUIRendering::BarUIRendering(BarUISetClass* barUISetClassT) { barUISetClass = 
 bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 {
 	frameGradientBrushCache.clear();
-	frameCursorLightIntensity = 0.0F;
 	frameCursorLightVisible = false;
 	frameDrawingUsesPenColor = false;
 	COLORREF desiredDrawingPenColor = frameDrawingPenColorInitialized
@@ -349,6 +377,33 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	double zoom = barUISetClass ? static_cast<double>(barUISetClass->barStyle.zoom) : 0.0;
 	if (!isfinite(zoom) || zoom <= 0.0) zoom = 0.0;
 	frameLightRadius = static_cast<FLOAT>(BarBorderLightRadius * zoom);
+	frameCursorLightRadius = static_cast<FLOAT>(BarBorderCursorLightRadius * zoom);
+
+	bool edgeLightingEnabled = BarUiEdgeLightingEnabled;
+	bool dynamicEdgeLightingEnabled = edgeLightingEnabled && BarUiDynamicEdgeLightingEnabled;
+	if (!edgeLightingEnabled)
+	{
+		// 总开关关闭时停止所有仅服务于点光的动画计算，基础灰边仍由绘制阶段保留。
+		bool needSettlingFrame = frameEdgeLightingEnabled || frameLightingWasAnimating
+			|| frameCursorLightIntensity > 0.0001F;
+		frameEdgeLightingEnabled = false;
+		framePrimaryLightAnchorInitialized = false;
+		framePrimaryLightAnimating = false;
+		frameCursorLightIntensity = 0.0F;
+		frameCursorLightIntensityStart = 0.0F;
+		frameCursorLightIntensityTarget = 0.0F;
+		frameCursorLightAnimating = false;
+		frameCursorInputAvailable = false;
+		frameAnimationStateInitialized = false;
+		frameDrawingPenColorAnimating = false;
+		frameDrawingPenColorInitialized = false;
+		frameDrawingModeTransitionAnimating = false;
+		frameDrawingModeInitialized = false;
+		frameLightingWasAnimating = false;
+		return needSettlingFrame;
+	}
+	bool edgeLightingStateChanged = !frameEdgeLightingEnabled;
+	frameEdgeLightingEnabled = true;
 
 	BarBorderPrimaryAnchorEnum desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::MainButton;
 	D2D1_POINT_2F desiredPrimaryLight = framePrimaryLight;
@@ -615,50 +670,60 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 		primaryLightMoved = PointsDiffer(previousPrimaryLight, framePrimaryLight);
 	}
 
-	bool stateChanged = primaryStateChanged || penLightColorChanged
+	bool stateChanged = edgeLightingStateChanged || primaryStateChanged || penLightColorChanged
 		|| drawingModeTransitionStarted;
 	bool cursorFadeRestarted = false;
 	bool cursorMoved = false;
+	bool desiredCursorLightVisible = animationEnabled
+		&& dynamicEdgeLightingEnabled && cursorInputAvailable;
 	if (!frameAnimationStateInitialized)
 	{
 		frameAnimationStateInitialized = true;
 		frameLastAnimationEnabled = animationEnabled;
-		frameCursorInputAvailable = cursorInputAvailable;
-		if (!animationEnabled)
-			handledBorderCursorLightSerial = cursorSerial;
-		else if (cursorInputAvailable)
+		frameCursorInputAvailable = desiredCursorLightVisible;
+		handledBorderCursorLightSerial = cursorSerial;
+		frameCursorLightIntensity = 0.0F;
+		frameCursorLightIntensityStart = 0.0F;
+		frameCursorLightIntensityTarget =
+			desiredCursorLightVisible ? static_cast<FLOAT>(BarBorderLightIntensity) : 0.0F;
+		if (desiredCursorLightVisible)
 		{
 			frameCursorLightFadeElapsed = 0.0;
 			frameCursorLightAnimating = true;
 			cursorFadeRestarted = true;
-			handledBorderCursorLightSerial = cursorSerial;
 		}
 	}
-	else if (animationEnabled != frameLastAnimationEnabled)
+	else
 	{
-		stateChanged = true;
-		frameLastAnimationEnabled = animationEnabled;
-		// 重新开启动画时只让当前鼠标光从零淡入，移动不会重复启动淡入。
-		handledBorderCursorLightSerial = cursorSerial;
-		frameCursorLightAnimating = animationEnabled && cursorInputAvailable;
-		frameCursorLightFadeElapsed = 0.0;
-		cursorFadeRestarted = frameCursorLightAnimating;
-	}
-
-	if (cursorInputAvailable != frameCursorInputAvailable)
-	{
-		frameCursorInputAvailable = cursorInputAvailable;
-		stateChanged = true;
-		handledBorderCursorLightSerial = cursorSerial;
-		frameCursorLightFadeElapsed = 0.0;
-		frameCursorLightAnimating = animationEnabled && cursorInputAvailable;
-		cursorFadeRestarted = frameCursorLightAnimating;
+		if (animationEnabled != frameLastAnimationEnabled)
+		{
+			stateChanged = true;
+			frameLastAnimationEnabled = animationEnabled;
+		}
+		if (desiredCursorLightVisible != frameCursorInputAvailable)
+		{
+			// 显隐切换从当前强度续接，靠近、超时和重新进入时不会发生亮度跳变。
+			frameCursorInputAvailable = desiredCursorLightVisible;
+			stateChanged = true;
+			handledBorderCursorLightSerial = cursorSerial;
+			frameCursorLightIntensityStart = frameCursorLightIntensity;
+			frameCursorLightIntensityTarget = desiredCursorLightVisible
+				? static_cast<FLOAT>(BarBorderLightIntensity) : 0.0F;
+			frameCursorLightFadeElapsed = 0.0;
+			frameCursorLightAnimating = animationEnabled
+				&& abs(frameCursorLightIntensityTarget - frameCursorLightIntensityStart) > 0.0001F;
+			cursorFadeRestarted = frameCursorLightAnimating;
+		}
 	}
 
 	if (!animationEnabled)
 	{
 		// 关闭动画后立即隐藏鼠标光，基础灰边和第一主光保持稳定。
 		handledBorderCursorLightSerial = cursorSerial;
+		frameCursorInputAvailable = false;
+		frameCursorLightIntensity = 0.0F;
+		frameCursorLightIntensityStart = 0.0F;
+		frameCursorLightIntensityTarget = 0.0F;
 		frameCursorLightAnimating = false;
 		bool needSettlingFrame = frameLightingWasAnimating;
 		frameLightingWasAnimating = false;
@@ -668,26 +733,26 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	if (cursorSerial != handledBorderCursorLightSerial)
 	{
 		handledBorderCursorLightSerial = cursorSerial;
-		cursorMoved = cursorInputAvailable;
+		cursorMoved = desiredCursorLightVisible;
 	}
 
-	if (cursorInputAvailable)
+	if (frameCursorLightAnimating)
 	{
-		if (frameCursorLightAnimating)
+		if (!cursorFadeRestarted) frameCursorLightFadeElapsed += scaledDtSeconds;
+		double progress = frameCursorLightFadeElapsed / BarBorderCursorFadeInDur;
+		double curvedProgress = ApplyBorderLightSmoothstep(progress);
+		frameCursorLightIntensity = static_cast<FLOAT>(
+			frameCursorLightIntensityStart
+			+ (frameCursorLightIntensityTarget - frameCursorLightIntensityStart)
+			* curvedProgress);
+		if (frameCursorLightFadeElapsed >= BarBorderCursorFadeInDur)
 		{
-			if (!cursorFadeRestarted) frameCursorLightFadeElapsed += scaledDtSeconds;
-			double progress = frameCursorLightFadeElapsed / BarBorderCursorFadeInDur;
-			frameCursorLightIntensity = static_cast<FLOAT>(BarBorderLightIntensity
-				* ApplyBorderLightSmoothstep(progress));
-			if (frameCursorLightFadeElapsed >= BarBorderCursorFadeInDur)
-			{
-				frameCursorLightIntensity = static_cast<FLOAT>(BarBorderLightIntensity);
-				frameCursorLightAnimating = false;
-			}
+			frameCursorLightIntensity = frameCursorLightIntensityTarget;
+			frameCursorLightAnimating = false;
 		}
-		else frameCursorLightIntensity = static_cast<FLOAT>(BarBorderLightIntensity);
-		frameCursorLightVisible = frameCursorLightIntensity > 0.0F;
 	}
+	else frameCursorLightIntensity = frameCursorLightIntensityTarget;
+	frameCursorLightVisible = frameCursorLightIntensity > 0.0001F;
 
 	// 时间过程结束后再绘制一帧最终状态，随后恢复原有静止等待。
 	bool lightingAnimating = frameCursorLightAnimating || framePrimaryLightAnimating
@@ -722,12 +787,15 @@ ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
 	{
 		D2D1_POINT_2F center = framePrimaryLight;
 		if (lightSource == BarBorderLightSourceEnum::Cursor) center = frameCursorLight;
+		FLOAT radius = lightSource == BarBorderLightSourceEnum::Cursor
+			? frameCursorLightRadius : frameLightRadius;
+		if (radius <= 0.0F) return nullptr;
 		FrameGradientBrushCacheClass cache;
 		cache.color = rgb;
 		cache.lightSource = lightSource;
 		hr = deviceContext->CreateRadialGradientBrush(
 			D2D1::RadialGradientBrushProperties(
-				center, D2D1::Point2F(), frameLightRadius, frameLightRadius),
+				center, D2D1::Point2F(), radius, radius),
 			stopCollection.Get(), &cache.brush);
 		if (SUCCEEDED(hr))
 		{
@@ -775,10 +843,13 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 		+ (BarBorderPenDiffuseOpacity - BarBorderFrameDiffuseOpacity) * penColorBlend);
 	ID2D1RadialGradientBrush* primaryBrush = nullptr;
 	ID2D1RadialGradientBrush* cursorBrush = nullptr;
-	FLOAT cursorLightIntensity = frameCursorLightIntensity * static_cast<FLOAT>(
-		clamp(cursorLightIntensityScale, 0.0, 1.0));
-	bool drawPrimaryLight = lightOpacity > 0.0F && primaryLightEnabled;
-	bool drawCursorLight = lightOpacity > 0.0F && frameCursorLightVisible
+	FLOAT cursorLightIntensity = frameCursorLightIntensity
+		* static_cast<FLOAT>(clamp(cursorLightIntensityScale, 0.0, 1.0));
+	bool edgeLightingEnabled = BarUiEdgeLightingEnabled;
+	bool drawPrimaryLight = edgeLightingEnabled
+		&& lightOpacity > 0.0F && primaryLightEnabled;
+	bool drawCursorLight = edgeLightingEnabled
+		&& lightOpacity > 0.0F && frameCursorLightVisible
 		&& cursorLightIntensity > 0.0F;
 	if (drawPrimaryLight)
 		primaryBrush = GetFrameGradientBrush(
@@ -885,7 +956,7 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 			if (FAILED(hr)) LogDiffuseFailure("记录或绘制 Gaussian 柔光", hr);
 		}
 
-		// 清晰边保持原有 480px 点光渐变，不受 Gaussian 轮廓扩散替代。
+		// 第一光源保留 480px，第三光源使用 240px 光圈；同距离像素不再受其他 UI 区域影响。
 		DrawLightPass(primaryBrush, static_cast<FLOAT>(BarBorderLightIntensity), strokeWidth);
 		DrawLightPass(cursorBrush, cursorLightIntensity, strokeWidth);
 	}
@@ -1366,8 +1437,6 @@ void BarUISetClass::Rendering()
 		barDeviceContext->SetTarget(barBackgroundBitmap.Get());
 		barDeviceContext->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 	}
-	InitializeBorderCursorInput();
-
 	chrono::high_resolution_clock::time_point reckon = chrono::high_resolution_clock::now();
 	chrono::high_resolution_clock::time_point animationReckon = reckon;
 	RECT original = RECT(0, 0, barWindow.w, barWindow.h), current = RECT(0, 0, 0, 0);
@@ -3354,7 +3423,8 @@ void BarUISetClass::Rendering()
 
 		bool needRenderOnce = BarAtomic::renderOnceFlag.exchange(false);
 		bool needBorderLightingRendering = spec.PrepareFrameLighting(animationDtSeconds);
-		if (needRendering || true == BarAtomic::sustainFlag || true == needRenderOnce || needBorderLightingRendering)
+		if (needRendering || true == BarAtomic::sustainFlag || true == needRenderOnce
+			|| needBorderLightingRendering || BarUiDebugModeEnabled)
 		{
 		#pragma region 渲染UI
 
@@ -3390,6 +3460,8 @@ void BarUISetClass::Rendering()
 					{
 						auto obj = BarUISetShapeEnum::DrawAttributeBar;
 						spec.Shape(barDeviceContext.Get(), *shapeMap[obj], shapeMap[obj]->Inherit(Center, barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->buttom), &current, true);
+						// 只发布三个外层可见区域，Raw Input 高频路径无需遍历全部子控件。
+						RefreshBorderCursorVisibleRegions();
 
 						// Color 区域
 						{
@@ -3788,17 +3860,17 @@ void BarUISetClass::Rendering()
 				}
 			{ /**/ }
 
-			// 调试 + FPS
-			/*
+			// 调试模式持续显示实时 FPS，并把文本范围加入脏区。
+			if (BarUiDebugModeEnabled)
 			{
-				double tarZoom = barStyle.zoom;
+				FLOAT tarZoom = static_cast<FLOAT>(barStyle.zoom);
 				wstring content = L"开发版本 " + editionDate + L" | 不代表最终品质 | " + fps;
 
 				ComPtr<IDWriteTextFormat> pTextFormat;
 				pTextFormat = barMedia.formatCache->GetFormat(
 					L"HarmonyOS Sans SC",
-					12.0 * tarZoom,
-					dWriteFontCollection,
+					12.0F * tarZoom,
+					dWriteFontCollection.Get(),
 					DWRITE_FONT_WEIGHT_NORMAL,
 					DWRITE_FONT_STYLE_NORMAL,
 					DWRITE_FONT_STRETCH_NORMAL,
@@ -3817,7 +3889,10 @@ void BarUISetClass::Rendering()
 				double tarY = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->inhY + barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetH();
 
 				// 4. 设定绘制区域
-				D2D1_RECT_F layoutRect = D2D1::RectF(tarX * tarZoom, tarY * tarZoom, (tarX + 300) * tarZoom, (tarY + 20) * tarZoom);
+				D2D1_RECT_F layoutRect = D2D1::RectF(
+					static_cast<FLOAT>(tarX * tarZoom), static_cast<FLOAT>(tarY * tarZoom),
+					static_cast<FLOAT>((tarX + 300) * tarZoom),
+					static_cast<FLOAT>((tarY + 20) * tarZoom));
 
 				RECT tmp = RECT((LONG)(layoutRect.left), (LONG)(layoutRect.top), (LONG)(layoutRect.right), (LONG)(layoutRect.bottom));
 				BarRenderingAttribute::UnionRectInPlace(current, tmp);
@@ -3826,37 +3901,38 @@ void BarUISetClass::Rendering()
 				barDeviceContext->DrawTextW(
 					content.c_str(),           // text
 					(UINT32)content.length(),  // text length
-					pTextFormat,               // format
+					pTextFormat.Get(),         // format
 					layoutRect,                // layout rect
-					pBrush,                    // brush
+					pBrush.Get(),              // brush
 					D2D1_DRAW_TEXT_OPTIONS_NONE
 				);
 			}
-			*/
 
-			// 如果你需要测试脏区更新的区域，则可以取消注释下面的代码，并注释下方的脏区更新代码
-			/*
-			RECT target = original;
-			original = current;
-			BarRenderingAttribute::UnionRectInPlace(target, current);
+			if (BarUiDebugModeEnabled)
 			{
-				// 脏区更新限制
-				if (target.left < 0) target.left = 0;
-				if (target.top < 0) target.top = 0;
-				if (target.right > barWindow.w) target.right = barWindow.w;
-				if (target.bottom > barWindow.h) target.bottom = barWindow.h;
-			}
+				// 红框只标记本帧即将提交的实际脏区，不改变正常更新区域。
+				RECT debugTarget = original;
+				BarRenderingAttribute::UnionRectInPlace(debugTarget, current);
+				{
+					if (debugTarget.left < 0) debugTarget.left = 0;
+					if (debugTarget.top < 0) debugTarget.top = 0;
+					LONG debugWindowWidth = static_cast<LONG>(barWindow.w);
+					LONG debugWindowHeight = static_cast<LONG>(barWindow.h);
+					if (debugTarget.right > debugWindowWidth) debugTarget.right = debugWindowWidth;
+					if (debugTarget.bottom > debugWindowHeight) debugTarget.bottom = debugWindowHeight;
+				}
 
-			{
 				COLORREF frame = RGB(255, 0, 0);
-				D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(target.left, target.top, target.right - 1, target.bottom - 1), 0, 0);
+				D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
+					static_cast<FLOAT>(debugTarget.left), static_cast<FLOAT>(debugTarget.top),
+					static_cast<FLOAT>(debugTarget.right - 1),
+					static_cast<FLOAT>(debugTarget.bottom - 1)), 0, 0);
 
 				ComPtr<ID2D1SolidColorBrush> spBorderBrush;
 				barDeviceContext->CreateSolidColorBrush(Inkeys::Color::ConvertToD2dColor(frame, 1.0), &spBorderBrush);
 
 				barDeviceContext->DrawRoundedRectangle(&roundedRect, spBorderBrush.Get(), 1.0f);
 			}
-			*/
 
 			barDeviceContext->Flush();
 
@@ -3927,6 +4003,7 @@ void BarUISetClass::Rendering()
 			//if (delay >= 10.0) std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(delay)));
 		}
 
+		if (BarUiDebugModeEnabled)
 		{
 			double cost = chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count();
 			fps = format(L"{:.2f} FPS", 1000.0 / cost);
@@ -4328,13 +4405,55 @@ void BarUISetClass::UpdateRendering(bool updateState)
 	BarAtomic::wait.Store(true);
 }
 
-void BarUISetClass::InitializeBorderCursorInput()
+bool BarUISetClass::SetBorderCursorRawInputEnabled(HWND hWnd, bool enabled)
 {
+	if (!hWnd) return false;
+	if (!enabled)
+	{
+		bool wasRegistered = false;
+		{
+			lock_guard lock(borderCursorLightMutex);
+			wasRegistered = borderCursorRawInputRegistered;
+			// 先关闭逻辑入口，注销失败时迟到的 WM_INPUT 也不会继续唤醒渲染。
+			borderCursorRawInputRegistered = false;
+			borderCursorInputAvailable = false;
+		}
+		if (!wasRegistered) return true;
+
+		RAWINPUTDEVICE rawInputDevice{};
+		rawInputDevice.usUsagePage = 0x01;
+		rawInputDevice.usUsage = 0x02;
+		rawInputDevice.dwFlags = RIDEV_REMOVE;
+		rawInputDevice.hwndTarget = nullptr;
+		if (RegisterRawInputDevices(&rawInputDevice, 1, sizeof(rawInputDevice))) return true;
+
+		DWORD removalError = GetLastError();
+		bool needLog = false;
+		{
+			lock_guard lock(borderCursorLightMutex);
+			if (!borderCursorRemovalFailureLogged)
+			{
+				borderCursorRemovalFailureLogged = true;
+				needLog = true;
+			}
+		}
+		if (needLog && IDTLogger) IDTLogger->error(
+			"[BarUISetClass::SetBorderCursorRawInputEnabled] 注销全局鼠标 Raw Input 失败, error={}",
+			removalError);
+		return false;
+	}
+
+	{
+		lock_guard lock(borderCursorLightMutex);
+		if (borderCursorRawInputRegistered) return true;
+		if (borderCursorRegistrationFailureLogged) return false;
+	}
+
 	RAWINPUTDEVICE rawInputDevice{};
 	rawInputDevice.usUsagePage = 0x01; // Generic Desktop Controls
 	rawInputDevice.usUsage = 0x02; // Mouse
 	rawInputDevice.dwFlags = RIDEV_INPUTSINK;
-	rawInputDevice.hwndTarget = floating_window;
+	rawInputDevice.hwndTarget = hWnd;
 	if (!RegisterRawInputDevices(&rawInputDevice, 1, sizeof(rawInputDevice)))
 	{
 		DWORD registrationError = GetLastError();
@@ -4342,7 +4461,7 @@ void BarUISetClass::InitializeBorderCursorInput()
 		{
 			lock_guard lock(borderCursorLightMutex);
 			borderCursorInputAvailable = false;
-			borderCursorLightReady = false;
+			borderCursorRawInputRegistered = false;
 			if (!borderCursorRegistrationFailureLogged)
 			{
 				borderCursorRegistrationFailureLogged = true;
@@ -4350,51 +4469,301 @@ void BarUISetClass::InitializeBorderCursorInput()
 			}
 		}
 		if (needLog && IDTLogger) IDTLogger->error(
-			"[BarUISetClass::InitializeBorderCursorInput] 注册全局鼠标 Raw Input 失败, error={}",
+			"[BarUISetClass::SetBorderCursorRawInputEnabled] 注册全局鼠标 Raw Input 失败, error={}",
 			registrationError);
-		return;
+		return false;
 	}
 
-	POINT cursorPoint{};
-	bool cursorReady = GetCursorPos(&cursorPoint)
-		&& ScreenToClient(floating_window, &cursorPoint);
 	{
 		lock_guard lock(borderCursorLightMutex);
 		borderCursorInputAvailable = true;
-		borderCursorLightReady = cursorReady;
-		if (cursorReady)
+		borderCursorRawInputRegistered = true;
+	}
+	return true;
+}
+
+void BarUISetClass::ActivateBorderCursorTracking(HWND hWnd)
+{
+	if (!hWnd || !BarUiAnimationEnabled
+		|| !BarUiEdgeLightingEnabled || !BarUiDynamicEdgeLightingEnabled) return;
+	{
+		lock_guard lock(borderCursorLightMutex);
+		if (borderCursorActivationBlockedUntilLeave) return;
+	}
+
+	POINT screenPoint{};
+	bool cursorReady = GetCursorPos(&screenPoint);
+	if (!cursorReady) return;
+
+	bool cancelGraceTimer = false;
+	bool needRegistration = false;
+	bool inputStateChanged = false;
+	{
+		lock_guard lock(borderCursorLightMutex);
+		cancelGraceTimer =
+			borderCursorTrackingState == BarBorderCursorTrackingStateEnum::Grace;
+		inputStateChanged = !borderCursorInputAvailable;
+		borderCursorTrackingState = BarBorderCursorTrackingStateEnum::Inside;
+		borderCursorGraceDeadlineTick = 0;
+		needRegistration = !borderCursorRawInputRegistered;
+	}
+	if (cancelGraceTimer) KillTimer(hWnd, BarBorderCursorGraceTimerId);
+	if (needRegistration && !SetBorderCursorRawInputEnabled(hWnd, true)) return;
+
+	// 接受区只控制生命周期；240px 邻近判断仅用于裁剪无效渲染唤醒。
+	bool cursorNearVisibleRegion = IsBorderCursorLightNearVisibleRegion(screenPoint);
+	POINT clientPoint = screenPoint;
+	if (!ScreenToClient(hWnd, &clientPoint)) return;
+	bool needRendering = false;
+	{
+		lock_guard lock(borderCursorLightMutex);
+		if (!borderCursorRawInputRegistered) return;
+		bool proximityChanged =
+			borderCursorLightNearVisibleRegion != cursorNearVisibleRegion;
+		borderCursorLightNearVisibleRegion = cursorNearVisibleRegion;
+		D2D1_POINT_2F nextPoint = D2D1::Point2F(
+			static_cast<FLOAT>(clientPoint.x), static_cast<FLOAT>(clientPoint.y));
+		// Inside 始终发布真实光标点，不能依赖首帧可见区域缓存已经完成。
+		bool cursorChanged = !borderCursorLightReady
+			|| nextPoint.x != borderCursorLightPoint.x || nextPoint.y != borderCursorLightPoint.y;
+		borderCursorLightReady = true;
+		if (cursorChanged)
 		{
-			borderCursorLightPoint = D2D1::Point2F(
-				static_cast<FLOAT>(cursorPoint.x), static_cast<FLOAT>(cursorPoint.y));
+			borderCursorLightPoint = nextPoint;
 			++borderCursorLightSerial;
 		}
+		else if (proximityChanged) ++borderCursorLightSerial;
+		needRendering = inputStateChanged || cursorChanged || proximityChanged;
 	}
-	if (cursorReady && BarUiAnimationEnabled) UpdateRendering(false);
+	if (needRendering) UpdateRendering(false);
 }
 
 void BarUISetClass::RegisterBorderCursorLight(HWND hWnd)
 {
-	POINT cursorPoint{};
-	if (!hWnd || !GetCursorPos(&cursorPoint) || !ScreenToClient(hWnd, &cursorPoint)) return;
-
-	bool cursorChanged = false;
+	if (!hWnd || !BarUiEdgeLightingEnabled || !BarUiDynamicEdgeLightingEnabled) return;
 	{
 		lock_guard lock(borderCursorLightMutex);
-		if (!borderCursorInputAvailable) return;
-		D2D1_POINT_2F nextPoint = D2D1::Point2F(
-			static_cast<FLOAT>(cursorPoint.x), static_cast<FLOAT>(cursorPoint.y));
-		cursorChanged = !borderCursorLightReady
-			|| nextPoint.x != borderCursorLightPoint.x || nextPoint.y != borderCursorLightPoint.y;
-		if (cursorChanged)
-		{
-			borderCursorLightPoint = nextPoint;
-			borderCursorLightReady = true;
-			++borderCursorLightSerial;
-		}
+		if (!borderCursorRawInputRegistered
+			|| borderCursorTrackingState == BarBorderCursorTrackingStateEnum::Dormant)
+			return;
 	}
 
-	// 动画关闭时只保存最新坐标，不为已经隐藏的第三光源唤醒渲染。
-	if (cursorChanged && BarUiAnimationEnabled) UpdateRendering(false);
+	POINT screenPoint{};
+	if (!GetCursorPos(&screenPoint)) return;
+	if (WindowFromPoint(screenPoint) == hWnd)
+	{
+		ActivateBorderCursorTracking(hWnd);
+		return;
+	}
+
+	ULONGLONG now = GetTickCount64();
+	bool startGraceTimer = false;
+	bool graceExpired = false;
+	{
+		lock_guard lock(borderCursorLightMutex);
+		if (!borderCursorRawInputRegistered) return;
+		if (borderCursorTrackingState == BarBorderCursorTrackingStateEnum::Inside)
+		{
+			// 截止时间只在首次离开时确定，区域外连续移动不能延长宽限期。
+			borderCursorTrackingState = BarBorderCursorTrackingStateEnum::Grace;
+			borderCursorGraceDeadlineTick = now + BarBorderCursorGraceDurationMs;
+			startGraceTimer = true;
+		}
+		else if (borderCursorTrackingState == BarBorderCursorTrackingStateEnum::Grace)
+			graceExpired = now >= borderCursorGraceDeadlineTick;
+	}
+	if (graceExpired)
+	{
+		SuspendBorderCursorTracking(hWnd);
+		return;
+	}
+	if (startGraceTimer && !ScheduleBorderCursorGraceTimer(
+		hWnd, static_cast<UINT>(BarBorderCursorGraceDurationMs)))
+	{
+		SuspendBorderCursorTracking(hWnd);
+		return;
+	}
+
+	// 区域外仍更新同一光源点；邻近判断不参与任何亮度公式。
+	bool cursorNearVisibleRegion = IsBorderCursorLightNearVisibleRegion(screenPoint);
+	POINT clientPoint = screenPoint;
+	if (!ScreenToClient(hWnd, &clientPoint)) return;
+	bool needRendering = false;
+	{
+		lock_guard lock(borderCursorLightMutex);
+		if (!borderCursorRawInputRegistered
+			|| borderCursorTrackingState != BarBorderCursorTrackingStateEnum::Grace)
+			return;
+
+		bool proximityChanged =
+			borderCursorLightNearVisibleRegion != cursorNearVisibleRegion;
+		borderCursorLightNearVisibleRegion = cursorNearVisibleRegion;
+		bool cursorChanged = false;
+		if (cursorNearVisibleRegion || proximityChanged)
+		{
+			D2D1_POINT_2F nextPoint = D2D1::Point2F(
+				static_cast<FLOAT>(clientPoint.x), static_cast<FLOAT>(clientPoint.y));
+			// 跨出 240px 时发布最后一个位置，让 240px 径向渐变自然落到 0。
+			cursorChanged = !borderCursorLightReady
+				|| nextPoint.x != borderCursorLightPoint.x || nextPoint.y != borderCursorLightPoint.y;
+			if (cursorChanged)
+			{
+				borderCursorLightPoint = nextPoint;
+				borderCursorLightReady = true;
+				++borderCursorLightSerial;
+			}
+		}
+		else if (proximityChanged) ++borderCursorLightSerial;
+		needRendering = proximityChanged || cursorChanged;
+	}
+	if (needRendering && BarUiAnimationEnabled) UpdateRendering(false);
+}
+
+void BarUISetClass::HandleBorderCursorGraceTimeout(HWND hWnd)
+{
+	ULONGLONG now = GetTickCount64();
+	ULONGLONG remaining = 0;
+	bool shouldSuspend = false;
+	{
+		lock_guard lock(borderCursorLightMutex);
+		if (borderCursorTrackingState != BarBorderCursorTrackingStateEnum::Grace)
+		{
+			KillTimer(hWnd, BarBorderCursorGraceTimerId);
+			return;
+		}
+		if (now >= borderCursorGraceDeadlineTick) shouldSuspend = true;
+		else remaining = borderCursorGraceDeadlineTick - now;
+	}
+	if (shouldSuspend)
+	{
+		SuspendBorderCursorTracking(hWnd);
+		return;
+	}
+	if (!ScheduleBorderCursorGraceTimer(
+		hWnd, static_cast<UINT>(max<ULONGLONG>(1, remaining))))
+		SuspendBorderCursorTracking(hWnd);
+}
+
+void BarUISetClass::SuspendBorderCursorTracking(HWND hWnd, bool waitForMouseLeave)
+{
+	if (hWnd) KillTimer(hWnd, BarBorderCursorGraceTimerId);
+	bool blockActivationUntilLeave = false;
+	if (waitForMouseLeave && hWnd)
+	{
+		POINT screenPoint{};
+		if (GetCursorPos(&screenPoint) && WindowFromPoint(screenPoint) == hWnd)
+		{
+			TRACKMOUSEEVENT trackMouseEvent{ sizeof(TRACKMOUSEEVENT), TME_LEAVE, hWnd, 0 };
+			blockActivationUntilLeave = TrackMouseEvent(&trackMouseEvent) != FALSE;
+		}
+	}
+	bool needRendering = false;
+	{
+		lock_guard lock(borderCursorLightMutex);
+		needRendering = borderCursorInputAvailable
+			|| borderCursorRawInputRegistered
+			|| borderCursorLightNearVisibleRegion;
+		borderCursorTrackingState = BarBorderCursorTrackingStateEnum::Dormant;
+		borderCursorGraceDeadlineTick = 0;
+		borderCursorActivationBlockedUntilLeave = blockActivationUntilLeave;
+	}
+	SetBorderCursorRawInputEnabled(hWnd, false);
+	if (needRendering) UpdateRendering(false);
+}
+
+bool BarUISetClass::ScheduleBorderCursorGraceTimer(HWND hWnd, UINT delayMs)
+{
+	if (hWnd && SetTimer(hWnd, BarBorderCursorGraceTimerId, max<UINT>(1, delayMs), nullptr))
+		return true;
+
+	DWORD timerError = GetLastError();
+	bool needLog = false;
+	{
+		lock_guard lock(borderCursorLightMutex);
+		if (!borderCursorTimerFailureLogged)
+		{
+			borderCursorTimerFailureLogged = true;
+			needLog = true;
+		}
+	}
+	if (needLog && IDTLogger) IDTLogger->error(
+		"[BarUISetClass::ScheduleBorderCursorGraceTimer] 创建第三光源休眠定时器失败, error={}",
+		timerError);
+	return false;
+}
+
+void BarUISetClass::RefreshBorderCursorVisibleRegions()
+{
+	array<RECT, 3> nextRegions{};
+	size_t nextCount = 0;
+	double zoom = barStyle.zoom;
+	auto AddShape = [&](const shared_ptr<BarUiShapeClass>& shape)
+		{
+			if (!shape || !shape->enable.val || shape->pct.val <= 0.000001
+				|| nextCount >= nextRegions.size())
+				return;
+			nextRegions[nextCount++] = BarRenderingAttribute::GetWeigetRect(*shape, zoom);
+		};
+	auto AddSuperellipse = [&](const shared_ptr<BarUiSuperellipseClass>& superellipse)
+		{
+			if (!superellipse || !superellipse->enable.val
+				|| superellipse->pct.val <= 0.000001 || nextCount >= nextRegions.size())
+				return;
+			nextRegions[nextCount++] =
+				BarRenderingAttribute::GetWeigetRect(*superellipse, zoom);
+		};
+
+	AddSuperellipse(superellipseMap[BarUISetSuperellipseEnum::MainButton]);
+	AddShape(shapeMap[BarUISetShapeEnum::MainBar]);
+	AddShape(shapeMap[BarUISetShapeEnum::DrawAttributeBar]);
+
+	// 距离判断统一在屏幕坐标完成，避免接受区内外分别换算客户区坐标。
+	POINT clientOrigin{};
+	if (!floating_window || !ClientToScreen(floating_window, &clientOrigin))
+	{
+		nextCount = 0;
+	}
+	for (size_t i = 0; i < nextCount; ++i)
+	{
+		nextRegions[i].left += clientOrigin.x;
+		nextRegions[i].right += clientOrigin.x;
+		nextRegions[i].top += clientOrigin.y;
+		nextRegions[i].bottom += clientOrigin.y;
+	}
+
+	lock_guard lock(borderCursorLightMutex);
+	borderCursorVisibleRegions = nextRegions;
+	borderCursorVisibleRegionCount = nextCount;
+}
+
+bool BarUISetClass::IsBorderCursorLightNearVisibleRegion(POINT screenPoint)
+{
+	array<RECT, 3> visibleRegions{};
+	size_t visibleRegionCount = 0;
+	{
+		lock_guard lock(borderCursorLightMutex);
+		visibleRegions = borderCursorVisibleRegions;
+		visibleRegionCount = borderCursorVisibleRegionCount;
+	}
+
+	double zoom = barStyle.zoom;
+	if (!isfinite(zoom) || zoom <= 0.0) return false;
+	double distanceLimit = BarBorderCursorLightRadius * zoom;
+	if (distanceLimit <= 0.0) return false;
+	double distanceLimitSquared = distanceLimit * distanceLimit;
+	for (size_t i = 0; i < visibleRegionCount; i++)
+	{
+		const RECT& region = visibleRegions[i];
+		double dx = 0.0;
+		double dy = 0.0;
+		if (screenPoint.x < region.left) dx = static_cast<double>(region.left - screenPoint.x);
+		else if (screenPoint.x > region.right) dx = static_cast<double>(screenPoint.x - region.right);
+		if (screenPoint.y < region.top) dy = static_cast<double>(region.top - screenPoint.y);
+		else if (screenPoint.y > region.bottom) dy = static_cast<double>(screenPoint.y - region.bottom);
+		double distanceSquared = dx * dx + dy * dy;
+		if (distanceSquared <= distanceLimitSquared) return true;
+	}
+	return false;
 }
 
 // 拖动交互
@@ -4486,7 +4855,33 @@ namespace Inkeys::UI::Bar
 		// 使用足够大的有限倍率统一完成普通动画、批次和 SVG 关键帧，不能用 0 让时间轴停住。
 		BarUiAnimationEnabled = enable;
 		BarUiAnimationSpeedRate = enable ? speedRate : 1.0e12;
+		if (!enable && floating_window)
+			PostMessage(floating_window, BarBorderCursorSuspendMessage, 0, 0);
 		barUISet.UpdateRendering(false);
+	}
+
+	void SetEdgeLightingOptions(bool enable, bool dynamic)
+	{
+		BarUiEdgeLightingEnabled = enable;
+		BarUiDynamicEdgeLightingEnabled = dynamic;
+		// 关闭任一级动态光门禁时，统一交给 Bar 窗口线程注销 Raw Input。
+		if ((!enable || !dynamic) && floating_window)
+			PostMessage(floating_window, BarBorderCursorSuspendMessage, 0, 0);
+		barUISet.UpdateRendering(false);
+	}
+
+	void SetDebugMode(bool enable)
+	{
+		BarUiDebugModeEnabled = enable;
+		// 关闭时也请求一帧，用新旧脏区并集清除 FPS 文本与红框。
+		barUISet.UpdateRendering(false);
+	}
+
+	void NotifyCanvasDrawingStarted()
+	{
+		// Draw2/Draw3 只投递落笔事件，Raw Input 注销和光源状态切换统一由 Bar 窗口线程处理。
+		if (floating_window)
+			PostMessage(floating_window, BarBorderCursorSuspendMessage, 1, 0);
 	}
 
 	void Initialization()

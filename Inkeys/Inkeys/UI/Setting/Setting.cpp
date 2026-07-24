@@ -971,6 +971,9 @@ void SettingMain(stop_token sT)
 				float AnimationSpeedRate = static_cast<float>(clamp(
 					static_cast<double>(Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate), 0.1, 5.0));
 				bool AnimationSpeedSavePending = false;
+				bool EdgeLightingEnable = Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable;
+				bool DynamicEdgeLighting = Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic;
+				bool DebugMode = Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable;
 			}Inkeys3;
 		}Experimental;
 
@@ -8101,7 +8104,9 @@ void SettingMain(stop_token sT)
 						// 保留 dev 中根据 UI3 状态收缩容器的行为，颜色统一使用新版 Fluent 令牌。
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
 						ImGui::BeginChild("Inkeys3", { settingItemWidth * settingGlobalScale,
-							(Experimental.Inkeys3.UI3 ? 265.0f : 115.0f) * settingGlobalScale }, false,
+							(Experimental.Inkeys3.UI3
+								? (Experimental.Inkeys3.EdgeLightingEnable ? 490.0f : 415.0f)
+								: 115.0f) * settingGlobalScale }, false,
 							ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
@@ -8148,6 +8153,136 @@ void SettingMain(stop_token sT)
 								while (PushFontNum) PushFontNum--, ImGui::PopFont();
 							}
 							ImGui::EndChild();
+
+						if (Experimental.Inkeys3.UI3)
+						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+							ImGui::BeginChild("启用边缘光影", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+							{
+								float cursosPosY = 0;
+								{
+									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+									ImGui::TextUnformatted("启用边缘光影");
+								}
+								{
+									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
+									ImGui::TextUnformatted("关闭后仅保留基础边框，停用点光与柔光效果。");
+								}
+								{
+									ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
+									Widgets::toggle.ToggleBool("##启用边缘光影", &Experimental.Inkeys3.EdgeLightingEnable);
+									if (Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable
+										!= Experimental.Inkeys3.EdgeLightingEnable)
+									{
+										Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable =
+											Experimental.Inkeys3.EdgeLightingEnable;
+										Inkeys::UI::Bar::SetEdgeLightingOptions(
+											Experimental.Inkeys3.EdgeLightingEnable,
+											Experimental.Inkeys3.DynamicEdgeLighting);
+										Inkeys::config.Write();
+									}
+								}
+								{
+									if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+									if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+									while (PushFontNum) PushFontNum--, ImGui::PopFont();
+								}
+							}
+							ImGui::EndChild();
+
+							if (Experimental.Inkeys3.EdgeLightingEnable)
+							{
+								ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+								ImGui::BeginChild("动态边缘光影", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+									ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+								{
+									float cursosPosY = 0;
+									{
+										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+										ImGui::TextUnformatted("动态边缘光影");
+									}
+									{
+										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
+										ImGui::TextUnformatted("控制跟随鼠标的第三光源，关闭后停止全局鼠标跟踪。");
+									}
+									{
+										ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
+										Widgets::toggle.ToggleBool("##动态边缘光影", &Experimental.Inkeys3.DynamicEdgeLighting);
+										if (Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic
+											!= Experimental.Inkeys3.DynamicEdgeLighting)
+										{
+											Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic =
+												Experimental.Inkeys3.DynamicEdgeLighting;
+											Inkeys::UI::Bar::SetEdgeLightingOptions(
+												Experimental.Inkeys3.EdgeLightingEnable,
+												Experimental.Inkeys3.DynamicEdgeLighting);
+											Inkeys::config.Write();
+										}
+									}
+									{
+										if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+										if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+										while (PushFontNum) PushFontNum--, ImGui::PopFont();
+									}
+								}
+								ImGui::EndChild();
+							}
+
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+							ImGui::BeginChild("UI 调试模式", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+							{
+								float cursosPosY = 0;
+								{
+									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+									ImGui::TextUnformatted("UI 调试模式");
+								}
+								{
+									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
+									ImGui::TextUnformatted("显示 UI3 实时 FPS 和每帧脏区边界。");
+								}
+								{
+									ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
+									Widgets::toggle.ToggleBool("##UI 调试模式", &Experimental.Inkeys3.DebugMode);
+									if (Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable
+										!= Experimental.Inkeys3.DebugMode)
+									{
+										Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable =
+											Experimental.Inkeys3.DebugMode;
+										Inkeys::UI::Bar::SetDebugMode(Experimental.Inkeys3.DebugMode);
+										Inkeys::config.Write();
+									}
+								}
+								{
+									if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+									if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+									while (PushFontNum) PushFontNum--, ImGui::PopFont();
+								}
+							}
+							ImGui::EndChild();
+						}
 						}
 
 						if (Experimental.Inkeys3.UI3)
