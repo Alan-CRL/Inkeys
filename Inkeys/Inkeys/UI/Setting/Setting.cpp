@@ -973,6 +973,7 @@ void SettingMain(stop_token sT)
 				bool AnimationSpeedSavePending = false;
 				bool EdgeLightingEnable = Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable;
 				bool DynamicEdgeLighting = Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic;
+				bool DebugMode = Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable;
 			}Inkeys3;
 		}Experimental;
 
@@ -8104,7 +8105,7 @@ void SettingMain(stop_token sT)
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
 						ImGui::BeginChild("Inkeys3", { settingItemWidth * settingGlobalScale,
 							(Experimental.Inkeys3.UI3
-								? (Experimental.Inkeys3.EdgeLightingEnable ? 415.0f : 340.0f)
+								? (Experimental.Inkeys3.EdgeLightingEnable ? 490.0f : 415.0f)
 								: 115.0f) * settingGlobalScale }, false,
 							ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
@@ -8241,6 +8242,46 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::EndChild();
 							}
+
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+							ImGui::BeginChild("UI 调试模式", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+							{
+								float cursosPosY = 0;
+								{
+									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+									ImGui::TextUnformatted("UI 调试模式");
+								}
+								{
+									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
+									ImGui::TextUnformatted("显示 UI3 实时 FPS 和每帧脏区边界。");
+								}
+								{
+									ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
+									Widgets::toggle.ToggleBool("##UI 调试模式", &Experimental.Inkeys3.DebugMode);
+									if (Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable
+										!= Experimental.Inkeys3.DebugMode)
+									{
+										Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable =
+											Experimental.Inkeys3.DebugMode;
+										Inkeys::UI::Bar::SetDebugMode(Experimental.Inkeys3.DebugMode);
+										Inkeys::config.Write();
+									}
+								}
+								{
+									if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+									if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+									while (PushFontNum) PushFontNum--, ImGui::PopFont();
+								}
+							}
+							ImGui::EndChild();
 						}
 						}
 

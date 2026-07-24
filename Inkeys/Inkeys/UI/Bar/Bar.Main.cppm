@@ -25,6 +25,7 @@ IdtAtomic<bool> BarUiAnimationEnabled = true;
 IdtAtomic<double> BarUiAnimationSpeedRate = 1.00; // 有效速度倍率；关闭动画时由配置接口切换为即时完成倍率
 IdtAtomic<bool> BarUiEdgeLightingEnabled = true;
 IdtAtomic<bool> BarUiDynamicEdgeLightingEnabled = true;
+IdtAtomic<bool> BarUiDebugModeEnabled = false;
 
 // ====================
 // 窗口
@@ -313,6 +314,7 @@ namespace Inkeys::UI::Bar
 	export void Initialization();
 	export void SetAnimationOptions(bool enable, double speedRate);
 	export void SetEdgeLightingOptions(bool enable, bool dynamic);
+	export void SetDebugMode(bool enable);
 	export void NotifyCanvasDrawingStarted();
 
 	void InitializeWindow(BarUISetClass& barUISet);

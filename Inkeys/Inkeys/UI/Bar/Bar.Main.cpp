@@ -3423,7 +3423,8 @@ void BarUISetClass::Rendering()
 
 		bool needRenderOnce = BarAtomic::renderOnceFlag.exchange(false);
 		bool needBorderLightingRendering = spec.PrepareFrameLighting(animationDtSeconds);
-		if (needRendering || true == BarAtomic::sustainFlag || true == needRenderOnce || needBorderLightingRendering)
+		if (needRendering || true == BarAtomic::sustainFlag || true == needRenderOnce
+			|| needBorderLightingRendering || BarUiDebugModeEnabled)
 		{
 		#pragma region 渲染UI
 
@@ -3859,17 +3860,17 @@ void BarUISetClass::Rendering()
 				}
 			{ /**/ }
 
-			// 调试 + FPS
-			/*
+			// 调试模式持续显示实时 FPS，并把文本范围加入脏区。
+			if (BarUiDebugModeEnabled)
 			{
-				double tarZoom = barStyle.zoom;
+				FLOAT tarZoom = static_cast<FLOAT>(barStyle.zoom);
 				wstring content = L"开发版本 " + editionDate + L" | 不代表最终品质 | " + fps;
 
 				ComPtr<IDWriteTextFormat> pTextFormat;
 				pTextFormat = barMedia.formatCache->GetFormat(
 					L"HarmonyOS Sans SC",
-					12.0 * tarZoom,
-					dWriteFontCollection,
+					12.0F * tarZoom,
+					dWriteFontCollection.Get(),
 					DWRITE_FONT_WEIGHT_NORMAL,
 					DWRITE_FONT_STYLE_NORMAL,
 					DWRITE_FONT_STRETCH_NORMAL,
@@ -3888,7 +3889,10 @@ void BarUISetClass::Rendering()
 				double tarY = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->inhY + barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetH();
 
 				// 4. 设定绘制区域
-				D2D1_RECT_F layoutRect = D2D1::RectF(tarX * tarZoom, tarY * tarZoom, (tarX + 300) * tarZoom, (tarY + 20) * tarZoom);
+				D2D1_RECT_F layoutRect = D2D1::RectF(
+					static_cast<FLOAT>(tarX * tarZoom), static_cast<FLOAT>(tarY * tarZoom),
+					static_cast<FLOAT>((tarX + 300) * tarZoom),
+					static_cast<FLOAT>((tarY + 20) * tarZoom));
 
 				RECT tmp = RECT((LONG)(layoutRect.left), (LONG)(layoutRect.top), (LONG)(layoutRect.right), (LONG)(layoutRect.bottom));
 				BarRenderingAttribute::UnionRectInPlace(current, tmp);
@@ -3897,37 +3901,38 @@ void BarUISetClass::Rendering()
 				barDeviceContext->DrawTextW(
 					content.c_str(),           // text
 					(UINT32)content.length(),  // text length
-					pTextFormat,               // format
+					pTextFormat.Get(),         // format
 					layoutRect,                // layout rect
-					pBrush,                    // brush
+					pBrush.Get(),              // brush
 					D2D1_DRAW_TEXT_OPTIONS_NONE
 				);
 			}
-			*/
 
-			// 如果你需要测试脏区更新的区域，则可以取消注释下面的代码，并注释下方的脏区更新代码
-			/*
-			RECT target = original;
-			original = current;
-			BarRenderingAttribute::UnionRectInPlace(target, current);
+			if (BarUiDebugModeEnabled)
 			{
-				// 脏区更新限制
-				if (target.left < 0) target.left = 0;
-				if (target.top < 0) target.top = 0;
-				if (target.right > barWindow.w) target.right = barWindow.w;
-				if (target.bottom > barWindow.h) target.bottom = barWindow.h;
-			}
+				// 红框只标记本帧即将提交的实际脏区，不改变正常更新区域。
+				RECT debugTarget = original;
+				BarRenderingAttribute::UnionRectInPlace(debugTarget, current);
+				{
+					if (debugTarget.left < 0) debugTarget.left = 0;
+					if (debugTarget.top < 0) debugTarget.top = 0;
+					LONG debugWindowWidth = static_cast<LONG>(barWindow.w);
+					LONG debugWindowHeight = static_cast<LONG>(barWindow.h);
+					if (debugTarget.right > debugWindowWidth) debugTarget.right = debugWindowWidth;
+					if (debugTarget.bottom > debugWindowHeight) debugTarget.bottom = debugWindowHeight;
+				}
 
-			{
 				COLORREF frame = RGB(255, 0, 0);
-				D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(target.left, target.top, target.right - 1, target.bottom - 1), 0, 0);
+				D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
+					static_cast<FLOAT>(debugTarget.left), static_cast<FLOAT>(debugTarget.top),
+					static_cast<FLOAT>(debugTarget.right - 1),
+					static_cast<FLOAT>(debugTarget.bottom - 1)), 0, 0);
 
 				ComPtr<ID2D1SolidColorBrush> spBorderBrush;
 				barDeviceContext->CreateSolidColorBrush(Inkeys::Color::ConvertToD2dColor(frame, 1.0), &spBorderBrush);
 
 				barDeviceContext->DrawRoundedRectangle(&roundedRect, spBorderBrush.Get(), 1.0f);
 			}
-			*/
 
 			barDeviceContext->Flush();
 
@@ -3998,6 +4003,7 @@ void BarUISetClass::Rendering()
 			//if (delay >= 10.0) std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(delay)));
 		}
 
+		if (BarUiDebugModeEnabled)
 		{
 			double cost = chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - reckon).count();
 			fps = format(L"{:.2f} FPS", 1000.0 / cost);
@@ -4861,6 +4867,13 @@ namespace Inkeys::UI::Bar
 		// 关闭任一级动态光门禁时，统一交给 Bar 窗口线程注销 Raw Input。
 		if ((!enable || !dynamic) && floating_window)
 			PostMessage(floating_window, BarBorderCursorSuspendMessage, 0, 0);
+		barUISet.UpdateRendering(false);
+	}
+
+	void SetDebugMode(bool enable)
+	{
+		BarUiDebugModeEnabled = enable;
+		// 关闭时也请求一帧，用新旧脏区并集清除 FPS 文本与红框。
 		barUISet.UpdateRendering(false);
 	}
 

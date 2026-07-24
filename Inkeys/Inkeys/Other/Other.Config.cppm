@@ -65,6 +65,9 @@ namespace Inkeys::ConfigDetail
 	GROUP(Experimental, \
 		GROUP(Inkeys3, \
 			GROUP(UI3, \
+				GROUP(Debug, \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, false) \
+				) \
 				GROUP(EdgeLighting, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, true) \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Dynamic, true) \
