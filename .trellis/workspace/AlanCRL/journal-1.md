@@ -71,3 +71,36 @@ Completed 80ms interrupted-stroke retention and model reuse across pen, highligh
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Fixed vertical highlighter nib
+
+**Date**: 2026-07-24
+**Task**: Fixed vertical highlighter nib
+**Branch**: `bugfix/highlight`
+
+### Summary
+
+Replaced tangent-oriented highlighter geometry with a fixed 6.25x50px vertical rectangle sweep, retained cached completion on Up, and validated ARM64 Debug/Release builds and tests plus manual drawing behavior.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e5ebc97` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
