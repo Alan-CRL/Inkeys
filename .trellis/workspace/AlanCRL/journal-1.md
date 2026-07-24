@@ -141,3 +141,37 @@ Completed the source-backed Trellis bootstrap and second-pass evidence audit for
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: 归档既有 UI3 动画与色块任务
+
+**Date**: 2026-07-24
+**Task**: 归档既有 UI3 动画与色块任务
+**Branch**: `feature/animation`
+
+### Summary
+
+审计 Git 历史、任务验收项与当前源码，确认动画批次加入阈值 50% 和颜色色块 1px 柔和描边均已完成，归档两个遗留活动任务。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `22eb8ce` | (see git log) |
+| `d66909e` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

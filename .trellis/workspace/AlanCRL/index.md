@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
+- **Total Sessions**: 5
 - **Last Active**: 2026-07-24
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~143 | Active |
+| `journal-1.md` | ~177 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-07-24 | 归档既有 UI3 动画与色块任务 | `22eb8ce`, `d66909e` | `feature/animation` |
 | 4 | 2026-07-24 | UI3 边缘光影实验开关 | `0529c79` | `feature/animation` |
 | 3 | 2026-07-24 | UI3 第三光源休眠与距离一致性 | `b8e3d1b`, `b797397`, `e694b8d`, `9bbe2ff`, `0e27f9b` | `feature/animation` |
 | 2 | 2026-07-22 | 完成 UI3 边框点光追光 | `13aa445` | `feature/animation` |
