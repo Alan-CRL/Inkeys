@@ -108,3 +108,36 @@ Completed the source-backed Trellis bootstrap and second-pass evidence audit for
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: UI3 边缘光影实验开关
+
+**Date**: 2026-07-24
+**Task**: UI3 边缘光影实验开关
+**Branch**: `feature/animation`
+
+### Summary
+
+在实验选项中新增边缘光影总开关和仅控制第三光源的动态开关，配置写入 Inkeys3 schema，关闭路径注销 Raw Input；完整 Debug ARM64 构建和用户验收通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0529c79` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
