@@ -6,7 +6,7 @@
 - UI3 窗口收到自然 `WM_MOUSEMOVE` 时进入 `Inside`。该消息只会在窗口实际可接受鼠标消息时出现，休眠态不需要全局检测线程。
 - `Inside` 动态注册 `RIDEV_INPUTSINK`；Raw Input 通过 `WindowFromPoint` 判断是否仍由 UI3 接受消息。首次离开转入 `Grace`，记录 `GetTickCount64()` 绝对截止时间并设置一次窗口定时器。
 - `Grace` 中的后续 Raw Input 只更新邻近判定和绝对截止检查，不重置截止时间。重新进入转回 `Inside`；超时转入 `Dormant` 并用 `RIDEV_REMOVE` 注销。
-- 画布输入入口通过导出的 UI3 通知函数向 Bar 窗口 `PostMessage`，由窗口线程执行休眠转换，避免 RTS/画布线程直接修改 Bar 或 D2D 状态。
+- Draw2 在 `TouchTemp` 取出落笔、派发 `MultiFingerDrawing` 线程之前，通过导出的 UI3 通知函数向 Bar 窗口 `PostMessage`；由窗口线程执行休眠转换，避免 RTS/画布线程直接修改 Bar 或 D2D 状态。该接口不绑定 Draw2 类型，后续 Draw3 在自身落笔派发边界复用。
 
 ## Visible Region and Distance
 
@@ -21,6 +21,7 @@
 - `BarUIRendering::PrepareFrameLighting` 将现有单向淡入改为可逆强度动画：保存当前强度、目标强度和 elapsed，用相同 300ms smoothstep 在 0 与 1 之间连续过渡。
 - 第三光源对目标像素的贡献为生命周期动画强度、控件固定比例和第三光源径向渐变的组合；不得使用光标到其他 UI 的最近距离做全局乘法。第一光源可以独立改变最终合成像素，但不改变第三光源自身的等距离贡献。
 - 休眠时保留最后光源点，直到生命周期淡出完成。
+- 画布落笔休眠时若光标仍命中 UI3 窗口，注册一次 `WM_MOUSELEAVE` 并阻止区域内 `WM_MOUSEMOVE` 激活；收到离开消息后才重新允许下一次自然进入激活。
 - 动画关闭时强度立即为 0，并请求 Bar 进入休眠，保持现有“第三光源关闭”语义。
 
 ## Timer and Failure Handling

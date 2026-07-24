@@ -262,7 +262,7 @@ protected:
 	void ActivateBorderCursorTracking(HWND hWnd);
 	void RegisterBorderCursorLight(HWND hWnd);
 	void HandleBorderCursorGraceTimeout(HWND hWnd);
-	void SuspendBorderCursorTracking(HWND hWnd);
+	void SuspendBorderCursorTracking(HWND hWnd, bool waitForMouseLeave = false);
 	bool ScheduleBorderCursorGraceTimer(HWND hWnd, UINT delayMs);
 	void RefreshBorderCursorVisibleRegions();
 	bool IsBorderCursorLightNearVisibleRegion(POINT screenPoint);
@@ -278,6 +278,7 @@ protected:
 	bool borderCursorRegistrationFailureLogged = false;
 	bool borderCursorRemovalFailureLogged = false;
 	bool borderCursorTimerFailureLogged = false;
+	bool borderCursorActivationBlockedUntilLeave = false;
 	BarBorderCursorTrackingStateEnum borderCursorTrackingState =
 		BarBorderCursorTrackingStateEnum::Dormant;
 	ULONGLONG borderCursorGraceDeadlineTick = 0;
@@ -308,7 +309,7 @@ namespace Inkeys::UI::Bar
 {
 	export void Initialization();
 	export void SetAnimationOptions(bool enable, double speedRate);
-	export void NotifyCanvasMouseDrawingStarted();
+	export void NotifyCanvasDrawingStarted();
 
 	void InitializeWindow(BarUISetClass& barUISet);
 	void InitializeMedia(BarUISetClass& barUISet);

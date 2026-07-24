@@ -104,7 +104,15 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 	case BarBorderCursorSuspendMessage:
 	{
-		barUISet.SuspendBorderCursorTracking(hWnd);
+		barUISet.SuspendBorderCursorTracking(hWnd, wParam != 0);
+		return 0;
+	}
+
+	case WM_MOUSELEAVE:
+	{
+		// 落笔时若光标仍在 UI3 内，必须先真实离开，下一次进入才允许重新激活。
+		lock_guard lock(barUISet.borderCursorLightMutex);
+		barUISet.borderCursorActivationBlockedUntilLeave = false;
 		return 0;
 	}
 
@@ -4441,6 +4449,10 @@ bool BarUISetClass::SetBorderCursorRawInputEnabled(HWND hWnd, bool enabled)
 void BarUISetClass::ActivateBorderCursorTracking(HWND hWnd)
 {
 	if (!hWnd || !BarUiAnimationEnabled) return;
+	{
+		lock_guard lock(borderCursorLightMutex);
+		if (borderCursorActivationBlockedUntilLeave) return;
+	}
 
 	POINT screenPoint{};
 	bool cursorReady = GetCursorPos(&screenPoint);
@@ -4595,9 +4607,19 @@ void BarUISetClass::HandleBorderCursorGraceTimeout(HWND hWnd)
 		SuspendBorderCursorTracking(hWnd);
 }
 
-void BarUISetClass::SuspendBorderCursorTracking(HWND hWnd)
+void BarUISetClass::SuspendBorderCursorTracking(HWND hWnd, bool waitForMouseLeave)
 {
 	if (hWnd) KillTimer(hWnd, BarBorderCursorGraceTimerId);
+	bool blockActivationUntilLeave = false;
+	if (waitForMouseLeave && hWnd)
+	{
+		POINT screenPoint{};
+		if (GetCursorPos(&screenPoint) && WindowFromPoint(screenPoint) == hWnd)
+		{
+			TRACKMOUSEEVENT trackMouseEvent{ sizeof(TRACKMOUSEEVENT), TME_LEAVE, hWnd, 0 };
+			blockActivationUntilLeave = TrackMouseEvent(&trackMouseEvent) != FALSE;
+		}
+	}
 	bool needRendering = false;
 	{
 		lock_guard lock(borderCursorLightMutex);
@@ -4606,6 +4628,7 @@ void BarUISetClass::SuspendBorderCursorTracking(HWND hWnd)
 			|| borderCursorLightNearVisibleRegion;
 		borderCursorTrackingState = BarBorderCursorTrackingStateEnum::Dormant;
 		borderCursorGraceDeadlineTick = 0;
+		borderCursorActivationBlockedUntilLeave = blockActivationUntilLeave;
 	}
 	SetBorderCursorRawInputEnabled(hWnd, false);
 	if (needRendering) UpdateRendering(false);
@@ -4800,11 +4823,11 @@ namespace Inkeys::UI::Bar
 		barUISet.UpdateRendering(false);
 	}
 
-	void NotifyCanvasMouseDrawingStarted()
+	void NotifyCanvasDrawingStarted()
 	{
-		// 画布线程只投递状态事件，Raw Input 注销和光源状态切换统一由 Bar 窗口线程处理。
+		// Draw2/Draw3 只投递落笔事件，Raw Input 注销和光源状态切换统一由 Bar 窗口线程处理。
 		if (floating_window)
-			PostMessage(floating_window, BarBorderCursorSuspendMessage, 0, 0);
+			PostMessage(floating_window, BarBorderCursorSuspendMessage, 1, 0);
 	}
 
 	void Initialization()

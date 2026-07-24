@@ -58,14 +58,14 @@
 
 #### 1. Scope / Trigger
 
-当修改 UI3 Bar 的第三鼠标光、全局鼠标跟踪或画布鼠标落笔通知时，必须保持 `Dormant → Inside → Grace` 状态机；传统 `IdtFloating`、触摸和数位笔输入不属于该契约。
+当修改 UI3 Bar 的第三鼠标光、全局鼠标跟踪或画布落笔通知时，必须保持 `Dormant → Inside → Grace` 状态机；传统 `IdtFloating` 不属于该契约。Draw2 的鼠标、笔和触摸在统一绘制线程派发边界触发休眠；后续 Draw3 应复用同一通知接口。
 
 #### 2. Signatures
 
 ~~~cpp
 namespace Inkeys::UI::Bar
 {
-	export void NotifyCanvasMouseDrawingStarted();
+	export void NotifyCanvasDrawingStarted();
 }
 ~~~
 
@@ -78,7 +78,7 @@ namespace Inkeys::UI::Bar
 - `Grace`：区域外移动不得重置截止时间。第三光源使用独立的 `240 × barStyle.zoom` 径向渐变；已发布 UI 外框只用于判断光圈是否可能命中 UI，从而裁剪渲染唤醒，不得作为全局亮度乘数。
 - 同一控件的同一边框像素上，第三光源贡献只由光标到该像素的距离、生命周期强度和控件固定比例决定；光标是否位于接受消息区域、主栏或其他可见区域内不得改变该贡献。第一光源可独立影响最终合成结果，不属于该一致性契约。
 - `Grace → Inside`：重新进入实际接收消息区域时取消定时器；仅回到 240px 邻域不能从 `Dormant` 唤醒。
-- `Grace → Dormant`：绝对截止时间到达，或画布开始真实鼠标绘制时，注销 Raw Input 并从当前强度平滑淡出。
+- `Grace → Dormant`：绝对截止时间到达，或画布开始真实绘制时，注销 Raw Input 并从当前强度平滑淡出。落笔时若光标仍在 UI3 接收区，区域内后续移动不得重新激活；必须先收到离开，再由下一次自然进入激活。
 - 5 秒等待使用窗口定时器，不得新增轮询线程或靠持续渲染计时。
 
 #### 4. Validation & Error Matrix
@@ -89,7 +89,7 @@ namespace Inkeys::UI::Bar
 | `RIDEV_REMOVE` 注销失败 | 逻辑状态仍进入 `Dormant`，迟到的 `WM_INPUT` 必须被忽略 |
 | 窗口定时器创建失败 | 立即进入 `Dormant`，不得无限保留全局跟踪 |
 | 动画关闭 | 立即隐藏第三光源并请求休眠 |
-| 触摸模拟鼠标消息 | 不得激活第三光源，也不得触发画布鼠标绘制休眠通知 |
+| 触摸模拟鼠标消息 | 不得激活第三光源；画布休眠仅由 Draw2 统一落笔派发边界通知，不由模拟鼠标消息重复通知 |
 
 #### 5. Good / Base / Bad Cases
 
@@ -100,7 +100,7 @@ namespace Inkeys::UI::Bar
 #### 6. Tests Required
 
 - 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`。
-- 手工验证 UI 外启动、进入 UI、离开后 5 秒内返回、超过 240px、5 秒超时、休眠后仅靠近 240px、画布鼠标落笔和动画关闭。
+- 手工验证 UI 外启动、进入 UI、离开后 5 秒内返回、超过 240px、5 秒超时、休眠后仅靠近 240px、Draw2 鼠标/笔/触摸落笔、落笔时仍位于接收区和动画关闭。
 - 对同一边框像素分别从接受消息区域内外取等距离光标位置，隔离第一光源后确认第三光源贡献一致。
 - 性能验证至少比较 `Dormant` 与持续全局移动时的 CPU；`Dormant` 中不得出现由第三光源导致的持续渲染唤醒。
 
