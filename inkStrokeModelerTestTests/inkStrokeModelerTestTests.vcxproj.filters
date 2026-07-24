@@ -24,6 +24,12 @@
     <ClCompile Include="..\inkStrokeModelerTest\draw3\contact_input.cppm">
       <Filter>draw3</Filter>
     </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\haptic_feedback.cpp">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\haptic_feedback.cppm">
+      <Filter>draw3</Filter>
+    </ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer.cpp">
       <Filter>draw3</Filter>
     </ClCompile>

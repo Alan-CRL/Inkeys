@@ -18,6 +18,7 @@
 #include <windows.h>
 
 import draw3.contact_input;
+import draw3.haptic_feedback;
 import draw3.ink_prediction;
 import draw3.realtime_stylus;
 
@@ -1062,6 +1063,87 @@ namespace
 			configuration.inputWidthModes, suppressedPressure) ==
 			draw3::StrokeWidthMode::SimulatedPressure);
 	}
+
+	void TestHapticFeedbackContracts(TestState& state)
+	{
+		TEST_CHECK(state, draw3::kSystemDefaultHapticIntensity < 0.0);
+		TEST_CHECK(state, static_cast<uint16_t>(
+			draw3::HapticContinuousFeedback::InkContinuous) == 0x100B);
+		TEST_CHECK(state, static_cast<uint16_t>(
+			draw3::HapticContinuousFeedback::PencilContinuous) == 0x100C);
+		TEST_CHECK(state, static_cast<uint16_t>(
+			draw3::HapticContinuousFeedback::MarkerContinuous) == 0x100D);
+		TEST_CHECK(state, static_cast<uint16_t>(
+			draw3::HapticContinuousFeedback::ChiselMarkerContinuous) == 0x100E);
+		TEST_CHECK(state, static_cast<uint16_t>(
+			draw3::HapticContinuousFeedback::BrushContinuous) == 0x100F);
+		TEST_CHECK(state, static_cast<uint16_t>(
+			draw3::HapticContinuousFeedback::EraserContinuous) == 0x1010);
+		TEST_CHECK(state, static_cast<uint16_t>(
+			draw3::HapticContinuousFeedback::GalaxyPenContinuous) == 0x1011);
+		TEST_CHECK(state, static_cast<uint16_t>(
+			draw3::HapticDiscreteFeedback::Click) == 0x1003);
+		TEST_CHECK(state, static_cast<uint16_t>(
+			draw3::HapticDiscreteFeedback::Press) == 0x1006);
+		TEST_CHECK(state, static_cast<uint16_t>(
+			draw3::HapticDiscreteFeedback::Release) == 0x1007);
+		TEST_CHECK(state, static_cast<uint16_t>(
+			draw3::HapticDiscreteFeedback::Hover) == 0x1008);
+		TEST_CHECK(state, static_cast<uint16_t>(
+			draw3::HapticDiscreteFeedback::Success) == 0x1009);
+		TEST_CHECK(state, static_cast<uint16_t>(
+			draw3::HapticDiscreteFeedback::Error) == 0x100A);
+		TEST_CHECK(state, static_cast<uint16_t>(
+			draw3::HapticDiscreteFeedback::Collide) == 0x1012);
+		TEST_CHECK(state, static_cast<uint16_t>(
+			draw3::HapticDiscreteFeedback::Align) == 0x1013);
+		TEST_CHECK(state, static_cast<uint16_t>(
+			draw3::HapticDiscreteFeedback::Step) == 0x1014);
+		TEST_CHECK(state, static_cast<uint16_t>(
+			draw3::HapticDiscreteFeedback::Grow) == 0x1015);
+
+		TEST_CHECK(state, draw3::ResolveContinuousHapticFeedback(
+			draw3::HapticToolFeedback::Pen) ==
+			draw3::HapticContinuousFeedback::InkContinuous);
+		TEST_CHECK(state, draw3::ResolveContinuousHapticFeedback(
+			draw3::HapticToolFeedback::Highlighter) ==
+			draw3::HapticContinuousFeedback::ChiselMarkerContinuous);
+		TEST_CHECK(state, draw3::ResolveContinuousHapticFeedback(
+			draw3::HapticToolFeedback::Eraser) ==
+			draw3::HapticContinuousFeedback::EraserContinuous);
+		TEST_CHECK(state, draw3::FallbackContinuousHapticFeedback(
+			draw3::HapticContinuousFeedback::EraserContinuous) ==
+			draw3::HapticContinuousFeedback::InkContinuous);
+		TEST_CHECK(state, draw3::FallbackContinuousHapticFeedback(
+			draw3::HapticContinuousFeedback::PencilContinuous) ==
+			draw3::HapticContinuousFeedback::InkContinuous);
+		TEST_CHECK(state, draw3::FallbackContinuousHapticFeedback(
+			draw3::HapticContinuousFeedback::MarkerContinuous) ==
+			draw3::HapticContinuousFeedback::InkContinuous);
+		TEST_CHECK(state, draw3::FallbackContinuousHapticFeedback(
+			draw3::HapticContinuousFeedback::ChiselMarkerContinuous) ==
+			draw3::HapticContinuousFeedback::InkContinuous);
+		TEST_CHECK(state, draw3::FallbackContinuousHapticFeedback(
+			draw3::HapticContinuousFeedback::BrushContinuous) ==
+			draw3::HapticContinuousFeedback::InkContinuous);
+		TEST_CHECK(state, draw3::FallbackContinuousHapticFeedback(
+			draw3::HapticContinuousFeedback::GalaxyPenContinuous) ==
+			draw3::HapticContinuousFeedback::InkContinuous);
+		TEST_CHECK(state, draw3::FallbackDiscreteHapticFeedback(
+			draw3::HapticDiscreteFeedback::Step) ==
+			draw3::HapticDiscreteFeedback::Click);
+
+		draw3::StrokeModelConfiguration configuration;
+		TEST_CHECK(state, configuration.hapticFeedbackEnabled);
+		draw3::PenHapticFeedback haptics;
+		haptics.SetEnabled(false);
+		TEST_CHECK(state, !haptics.IsEnabled());
+		TEST_CHECK(state, !haptics.AttachPointerId(42));
+		TEST_CHECK(state, !haptics.PlayDiscrete(draw3::HapticDiscreteFeedback::Step));
+		TEST_CHECK(state, !haptics.TickContinuous(
+			draw3::HapticContinuousFeedback::InkContinuous));
+		haptics.StopFeedback();
+	}
 }
 
 void* operator new(size_t size)
@@ -1111,6 +1193,7 @@ int wmain(int argc, wchar_t* argv[])
 	TestInterruptedStrokeReconnectPolicy(state);
 	TestInterruptedStrokeReconnectModelLifecycle(state);
 	TestInvertedPenPolicy(state);
+	TestHapticFeedbackContracts(state);
 	state.failures += RunHighlighterGeometryTests();
 	if (state.failures == 0)
 	{

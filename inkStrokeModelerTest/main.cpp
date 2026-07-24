@@ -9,6 +9,7 @@
 import draw3.contact_input;
 import draw3.drawing_controller;
 import draw3.graphics_initialization;
+import draw3.haptic_feedback;
 import draw3.ink_prediction;
 import draw3.realtime_stylus;
 import draw3.renderer;
@@ -87,17 +88,24 @@ int wmain(int argc, wchar_t* argv[])
 		return -1; // 本阶段不回退到旧鼠标轮询。
 	}
 
+	draw3::StrokeModelConfiguration strokeConfiguration =
+		draw3::CreateStrokeModelConfiguration(GetPrimaryDpiX());
+	draw3::PenHapticFeedback haptics;
+	haptics.Initialize(); // 失败时保持 no-op，不能影响 Win7/旧系统启动和绘制。
+
 	// 绘制控制器独占模型与 D3D；RTS 同步插件只发布最新一致快照。
 	draw3::DrawingController drawing(
 		input,
 		window,
 		renderer,
 		presentation,
-		draw3::CreateStrokeModelConfiguration(GetPrimaryDpiX()),
-		metrics.get());
+		strokeConfiguration,
+		metrics.get(),
+		&haptics);
 	drawing.ClearCanvas(); // 隐藏状态下先提交透明底图，避免初始化期间闪出白色窗口背景。
 	window.Show();
 	drawing.Run();
+	haptics.Shutdown();
 	stylus.Shutdown(); // 停回调、移除插件后再释放协调器记录。
 	window.SetInputCoordinator(nullptr); // 解除窗口回调中的非拥有指针，再进入局部对象析构。
 	if (metrics)

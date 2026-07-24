@@ -9,6 +9,7 @@
 #include <tpcshrd.h>
 #include "../HiEasyX.h"
 
+#include <cstdint>
 #include <iostream>
 #include <tchar.h>
 
@@ -26,6 +27,29 @@ namespace draw3
 			TABLET_DISABLE_PENTAPFEEDBACK |
 			TABLET_DISABLE_PENBARRELFEEDBACK |
 			TABLET_DISABLE_FLICKS;
+
+		using GetPointerPenInfoFunction = BOOL(WINAPI*)(
+			UINT32 pointerId, POINTER_PEN_INFO* penInfo);
+
+		bool TryGetPointerEraserHint(uint32_t pointerId, bool& eraserHint) noexcept
+		{
+			eraserHint = false;
+			// Win7 没有 Pointer Pen API，必须动态解析，缺失时继续使用当前工具。
+			static const GetPointerPenInfoFunction getPointerPenInfo = []() noexcept
+				{
+					const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+					return user32 ? reinterpret_cast<GetPointerPenInfoFunction>(
+						GetProcAddress(user32, "GetPointerPenInfo")) : nullptr;
+				}();
+			if (!getPointerPenInfo) return false;
+
+			POINTER_PEN_INFO penInfo = {};
+			if (!getPointerPenInfo(pointerId, &penInfo) ||
+				penInfo.pointerInfo.pointerType != PT_PEN)
+				return false;
+			eraserHint = (penInfo.penFlags & (PEN_FLAG_INVERTED | PEN_FLAG_ERASER)) != 0;
+			return true;
+		}
 
 		RECT GetPrimaryMonitorRectangle()
 		{
@@ -156,6 +180,20 @@ namespace draw3
 		return activeTool_.load(std::memory_order_relaxed);
 	}
 
+	bool WindowController::ConsumeHapticPointerId(uint32_t& pointerId, bool& eraserHint)
+	{
+		if (!hapticPointerIdRequested_.exchange(false, std::memory_order_acquire))
+			return false;
+		pointerId = pendingHapticPointerId_.load(std::memory_order_relaxed);
+		eraserHint = pendingHapticPointerEraser_.load(std::memory_order_relaxed);
+		return pointerId != 0;
+	}
+
+	bool WindowController::ConsumeHapticPointerLeave()
+	{
+		return hapticPointerLeaveRequested_.exchange(false, std::memory_order_acquire);
+	}
+
 	bool WindowController::ExitRequested() const
 	{
 		return exitRequested_.load(std::memory_order_acquire);
@@ -175,6 +213,39 @@ namespace draw3
 		case WM_TABLET_QUERYSYSTEMGESTURESTATUS:
 			// 显式接收 RTS 多点数据，并禁止长按/轻拂抢占普通笔输入。
 			return static_cast<LRESULT>(kTabletInputFlags);
+
+		case WM_POINTERLEAVE:
+			lastHapticPenInfoPointerId_ = 0;
+			lastHapticPenInfoKnown_ = false;
+			lastHapticPenInfoEraser_ = false;
+			hapticPointerLeaveRequested_.store(true, std::memory_order_release);
+			RequestControlWake();
+			break;
+		case WM_POINTERENTER:
+		case WM_POINTERDOWN:
+		{
+			const uint32_t pointerId = static_cast<uint32_t>(LOWORD(wParam));
+			if (pointerId != 0)
+			{
+				if (pointerId != lastHapticPenInfoPointerId_ || !lastHapticPenInfoKnown_)
+				{
+					bool eraserHint = false;
+					const bool known = TryGetPointerEraserHint(pointerId, eraserHint);
+					lastHapticPenInfoPointerId_ = pointerId;
+					lastHapticPenInfoKnown_ = known;
+					lastHapticPenInfoEraser_ = known && eraserHint;
+				}
+				// Pointer 只作为触觉设备绑定/笔尾线索；RTS 仍是唯一绘制输入来源。
+				hapticPointerLeaveRequested_.store(false, std::memory_order_relaxed);
+				pendingHapticPointerId_.store(pointerId, std::memory_order_relaxed);
+				pendingHapticPointerEraser_.store(
+					lastHapticPenInfoKnown_ && lastHapticPenInfoEraser_,
+					std::memory_order_relaxed);
+				hapticPointerIdRequested_.store(true, std::memory_order_release);
+				RequestControlWake();
+			}
+			break;
+		}
 
 		case WM_DESTROY:
 			RemoveProp(window, MICROSOFT_TABLETPENSERVICE_PROPERTY);

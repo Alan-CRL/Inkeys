@@ -5,6 +5,7 @@
 #endif
 
 #include <atomic>
+#include <cstdint>
 #include <windows.h>
 
 export module draw3.window_control;
@@ -70,6 +71,9 @@ export namespace draw3
 		void SetGpuTransparentComposition(bool enabled);
 		// 返回当前绘制工具。
 		DrawingTool ActiveTool() const;
+		// 消费最近一次 Pointer 消息中的 pointerId 和笔尾提示；仅用于触觉预启动。
+		bool ConsumeHapticPointerId(uint32_t& pointerId, bool& eraserHint);
+		bool ConsumeHapticPointerLeave();
 		// 返回主循环是否应该退出。
 		bool ExitRequested() const;
 
@@ -89,7 +93,14 @@ export namespace draw3
 		std::atomic<bool> gpuTransparentComposition_ = false;
 		std::atomic<int> pendingResizeWidth_ = 0;
 		std::atomic<int> pendingResizeHeight_ = 0;
+		std::atomic<uint32_t> pendingHapticPointerId_ = 0;
+		std::atomic<bool> pendingHapticPointerEraser_ = false;
+		std::atomic<bool> hapticPointerIdRequested_ = false;
+		std::atomic<bool> hapticPointerLeaveRequested_ = false;
 		std::atomic<DrawingTool> activeTool_ = DrawingTool::Pen;
 		std::atomic<ContactInputCoordinator*> inputCoordinator_ = nullptr;
+		uint32_t lastHapticPenInfoPointerId_ = 0;
+		bool lastHapticPenInfoKnown_ = false;
+		bool lastHapticPenInfoEraser_ = false;
 	};
 }

@@ -286,6 +286,10 @@
     <ClCompile Include="draw3\graphics_initialization.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
+    <ClCompile Include="draw3\haptic_feedback.cpp" />
+    <ClCompile Include="draw3\haptic_feedback.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
     <ClCompile Include="draw3\ink_prediction.cpp" />
     <ClCompile Include="draw3\ink_prediction.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>

@@ -22,6 +22,7 @@
 module draw3.drawing_controller;
 
 import draw3.diagnostics;
+import draw3.haptic_feedback;
 
 namespace draw3
 {
@@ -146,6 +147,7 @@ namespace draw3
 			bool movedThisFrame = false;
 			bool hasFilteredInputSpeed = false;
 			bool invertedCursor = false;
+			bool hapticEligible = false;
 			bool awaitingReconnect = false;
 			bool reconnectVisualRefresh = false;
 			ContactSnapshot deferredUpSnapshot = {};
@@ -232,6 +234,29 @@ namespace draw3
 				{
 					return runtime && !runtime->ended && !runtime->awaitingReconnect;
 				});
+		}
+
+		HapticToolFeedback HapticToolForDrawingTool(DrawingTool tool) noexcept
+		{
+			switch (tool)
+			{
+			case DrawingTool::Highlighter:
+				return HapticToolFeedback::Highlighter;
+			case DrawingTool::Eraser:
+				return HapticToolFeedback::Eraser;
+			default:
+				return HapticToolFeedback::Pen;
+			}
+		}
+
+		HapticContinuousFeedback HapticFeedbackForRuntime(
+			const RuntimeStroke& runtime) noexcept
+		{
+			// 部分笔固件虽枚举 0x1010，却不会驱动笔尾；倒转笔尾使用必需的 InkContinuous。
+			if (runtime.invertedCursor)
+				return HapticContinuousFeedback::InkContinuous;
+			return ResolveContinuousHapticFeedback(
+				HapticToolForDrawingTool(runtime.tool));
 		}
 
 		double QpcDeltaSeconds(int64_t newer, int64_t older, int64_t frequency)
@@ -375,12 +400,14 @@ namespace draw3
 
 	DrawingController::DrawingController(ContactInputCoordinator& input, WindowController& window, InkRenderer& renderer,
 		TransparentPresentationController& presentation, StrokeModelConfiguration configuration,
-		RuntimeMetricsSession* metrics)
+		RuntimeMetricsSession* metrics, PenHapticFeedback* haptics)
 		: input_(input), window_(window), renderer_(renderer),
 		presentation_(presentation), configuration_(std::move(configuration)),
 		inputWidthModeSettings_(configuration_.inputWidthModes),
-		invertedPenEraserEnabled_(configuration_.invertedPenEraserEnabled), metrics_(metrics)
+		invertedPenEraserEnabled_(configuration_.invertedPenEraserEnabled), metrics_(metrics),
+		haptics_(haptics)
 	{
+		if (haptics_) haptics_->SetEnabled(configuration_.hapticFeedbackEnabled);
 	}
 
 	bool DrawingController::SetInputWidthModeSettings(InputWidthModeSettings settings) noexcept
@@ -807,6 +834,12 @@ namespace draw3
 						reconnectRuntime->stroke.idleFrozen = false;
 						reconnectRuntime->stroke.visualStableFrameCount = 0;
 						reconnectRuntime->stroke.lastMovementInputTime = inputTime;
+						if (haptics_ && reconnectRuntime->hapticEligible)
+						{
+							if (reconnectRuntime->invertedCursor)
+								haptics_->StopFeedback(); // 倒转笔尾需在真正接触后重新提交波形。
+							haptics_->TickContinuous(HapticFeedbackForRuntime(*reconnectRuntime));
+						}
 						std::cout << "[StrokeReconnect] linked device=" << InputDeviceTypeName(deviceType) <<
 							" tool=" << DrawingToolName(tool) <<
 							" new_tcid=" << handle.record->TabletContextId() <<
@@ -879,6 +912,7 @@ namespace draw3
 				runtime->visibleDirty = {};
 				runtime->metricDeviceType = deviceType;
 				runtime->invertedCursor = down.isInvertedCursor;
+				runtime->hapticEligible = deviceType == InputDeviceType::Pen;
 				runtime->awaitingReconnect = false;
 				runtime->reconnectVisualRefresh = false;
 				runtime->deferredUpSnapshot = {};
@@ -947,6 +981,12 @@ namespace draw3
 				}
 				AppendNewModeledPoints(stroke);
 				active.push_back(runtime);
+				if (haptics_ && runtime->hapticEligible)
+				{
+					if (runtime->invertedCursor)
+						haptics_->StopFeedback(); // 倒转笔尾不沿用悬停预热的同波形状态。
+					haptics_->TickContinuous(HapticFeedbackForRuntime(*runtime));
+				}
 				return true;
 			};
 
@@ -1124,6 +1164,15 @@ namespace draw3
 								runtime.reconnectPredictedResults.clear();
 						}
 						runtime.awaitingReconnect = true;
+						const bool anotherPenContactActive = std::any_of(active.begin(), active.end(),
+							[&](const RuntimeStroke* candidate)
+							{
+								return candidate && candidate != &runtime &&
+									candidate->hapticEligible && !candidate->ended &&
+									!candidate->awaitingReconnect;
+							});
+						if (haptics_ && runtime.hapticEligible && !anotherPenContactActive)
+							haptics_->StopFeedback();
 						runtime.reconnectVisualRefresh = true;
 						runtime.deferredUpSnapshot = snapshot;
 						runtime.reconnectDirection = direction;
@@ -1150,6 +1199,7 @@ namespace draw3
 		bool timerPeriodActive = false;
 		bool timerPeriodAttempted = false;
 		double lastActiveFrameStartMs = 0.0;
+		bool hapticContinuousActive = false;
 		while (true)
 		{
 			const double frameStartMs = GetQpcTimeMilliseconds();
@@ -1174,6 +1224,25 @@ namespace draw3
 				forceFullPresent = true; // Resize 保留 L2，并从 CPU 状态恢复共享 L1/L0。
 			}
 			if (window_.ConsumeFullPresentRequest()) forceFullPresent = true;
+			if (haptics_)
+			{
+				if (window_.ConsumeHapticPointerLeave())
+					haptics_->StopFeedback();
+				uint32_t pointerId = 0;
+				bool pointerEraserHint = false;
+				if (window_.ConsumeHapticPointerId(pointerId, pointerEraserHint))
+				{
+					if (haptics_->AttachPointerId(pointerId))
+					{
+						// 笔尾需在 RTS Down 前预启动橡皮波形，RTS 仍在 Down 时校验真实工具。
+						const HapticContinuousFeedback hapticFeedback = pointerEraserHint
+							? HapticContinuousFeedback::InkContinuous
+							: ResolveContinuousHapticFeedback(
+								HapticToolForDrawingTool(window_.ActiveTool()));
+						haptics_->TickContinuous(hapticFeedback);
+					}
+				}
+			}
 			if (window_.ExitRequested()) break;
 
 			RECT frameDirty = {};
@@ -1191,6 +1260,11 @@ namespace draw3
 
 			if (active.empty() && !forceFullPresent)
 			{
+				if (hapticContinuousActive && haptics_)
+				{
+					haptics_->StopFeedback();
+					hapticContinuousActive = false;
+				}
 				if (metrics_) metrics_->BeginIdle(frameStartMs);
 				lastActiveFrameStartMs = 0.0;
 				if (timerPeriodActive)
@@ -1400,6 +1474,7 @@ namespace draw3
 						runtime->tool = DrawingTool::Pen;
 						runtime->suppressPressure = false;
 						runtime->invertedCursor = false;
+						runtime->hapticEligible = false;
 						runtime->visibleDirty = {};
 						runtime->ended = false;
 						runtime->cancelled = false;
@@ -1425,6 +1500,31 @@ namespace draw3
 						!runtime->stroke.l0DrawPoints.empty())
 						DrawL0LiveComposite(runtime->stroke, ColorForTool(runtime->tool),
 							StrokeShape::RoundCapsule, renderer_, false);
+				}
+			}
+
+			if (haptics_)
+			{
+				RuntimeStroke* hapticRuntime = nullptr;
+				for (RuntimeStroke* runtime : active)
+				{
+					if (runtime && runtime->hapticEligible &&
+						!runtime->ended && !runtime->awaitingReconnect)
+					{
+						hapticRuntime = runtime;
+						break;
+					}
+				}
+				if (hapticRuntime)
+				{
+					hapticContinuousActive = haptics_->TickContinuous(
+					HapticFeedbackForRuntime(*hapticRuntime)) ||
+						hapticContinuousActive;
+				}
+				else if (hapticContinuousActive)
+				{
+					haptics_->StopFeedback();
+					hapticContinuousActive = false;
 				}
 			}
 
@@ -1524,6 +1624,7 @@ namespace draw3
 		}
 
 		if (metrics_) metrics_->EndIdle(GetQpcTimeMilliseconds());
+		if (haptics_) haptics_->StopFeedback();
 		if (timerPeriodActive) timeEndPeriod(1);
 		if (drawingPriorityRaised)
 			SetThreadPriority(GetCurrentThread(), originalThreadPriority);

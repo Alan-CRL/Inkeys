@@ -11,6 +11,7 @@
 export module draw3.drawing_controller;
 
 import draw3.contact_input;
+import draw3.haptic_feedback;
 import draw3.ink_prediction;
 import draw3.renderer;
 import draw3.runtime_metrics;
@@ -25,7 +26,7 @@ export namespace draw3
 	public:
 		DrawingController(ContactInputCoordinator& input, WindowController& window, InkRenderer& renderer,
 			TransparentPresentationController& presentation, StrokeModelConfiguration configuration,
-			RuntimeMetricsSession* metrics = nullptr);
+			RuntimeMetricsSession* metrics = nullptr, PenHapticFeedback* haptics = nullptr);
 		// 成组更新设备宽度设置；新设置只影响之后开始的普通笔笔画。
 		bool SetInputWidthModeSettings(InputWidthModeSettings settings) noexcept;
 		InputWidthModeSettings GetInputWidthModeSettings() const noexcept;
@@ -55,6 +56,7 @@ export namespace draw3
 		InputWidthModeSettingsState inputWidthModeSettings_;
 		std::atomic<bool> invertedPenEraserEnabled_ = true;
 		RuntimeMetricsSession* metrics_ = nullptr;
+		PenHapticFeedback* haptics_ = nullptr;
 		double lastPresentDurationMs_ = 0.0;
 		bool lastPresentSucceeded_ = false;
 	};

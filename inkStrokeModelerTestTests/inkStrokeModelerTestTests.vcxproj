@@ -112,6 +112,10 @@
     <ClCompile Include="..\inkStrokeModelerTest\draw3\diagnostics.cppm" Link="draw3\diagnostics.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\haptic_feedback.cpp" Link="draw3\haptic_feedback.cpp" />
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\haptic_feedback.cppm" Link="draw3\haptic_feedback.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\realtime_stylus.cpp" Link="draw3\realtime_stylus.cpp" />
     <ClCompile Include="..\inkStrokeModelerTest\draw3\realtime_stylus.cppm" Link="draw3\realtime_stylus.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>

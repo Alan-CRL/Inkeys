@@ -118,6 +118,7 @@ export namespace draw3
 		bool retainPredictionOnUp = false; // 默认由模型生成 Up 收尾；外部开关可选择保留最后可见 prediction。
 		bool invertedPenEraserEnabled = true; // 默认允许倒转 Pen 在画笔/荧光笔下临时覆盖为橡皮。
 		bool interruptedStrokeReconnectEnabled = true; // 默认暂留物理 Up，允许短暂断触继续同一模型。
+		bool hapticFeedbackEnabled = true; // 当前原型默认启用触觉；后续由 Inkeys3 设置替换。
 		InputWidthModeSettings inputWidthModes = {};
 	};
 
