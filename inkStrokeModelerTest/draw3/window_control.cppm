@@ -42,6 +42,8 @@ export namespace draw3
 	public:
 		// 创建覆盖主显示器的绘图窗口。
 		bool Initialize(bool preconfigureNoRedirectionBitmap);
+		// 首个透明帧准备完成后显示绘图窗口。
+		void Show();
 		// 返回窗口句柄。
 		HWND Handle() const;
 		// 返回当前客户区尺寸。

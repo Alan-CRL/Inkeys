@@ -435,10 +435,10 @@ namespace
 			directionPoints, 1.0f, direction));
 
 		std::vector<ink::stroke_model::Result> prediction(2);
-		prediction[0].position = { 20.0f, 2.0f };
+		prediction[0].position = { 24.0f, 2.0f };
 		prediction[0].velocity = { 100.0f, 0.0f };
 		prediction[0].time = ink::stroke_model::Time(0.05);
-		prediction[1].position = { 20.0f, 8.0f };
+		prediction[1].position = { 28.0f, 8.0f };
 		prediction[1].velocity = { 0.0f, 200.0f };
 		prediction[1].time = ink::stroke_model::Time(0.07);
 		const std::vector<draw3::InkPoint> realTail{
@@ -449,48 +449,65 @@ namespace
 				prediction, realTail, { 1.0f, 0.0f }, 300.0f, 0.04, 0.02, 1.0f);
 		TEST_CHECK(state, interpolatedMotion.valid);
 		TEST_CHECK(state, interpolatedMotion.source ==
-			draw3::InterruptedStrokeReconnectMotionSource::PredictionVelocity);
-		TEST_CHECK(state, NearlyEqual(interpolatedMotion.speed, std::sqrt(12500.0f), 0.01f));
+			draw3::InterruptedStrokeReconnectMotionSource::PredictionPosition);
+		TEST_CHECK(state, NearlyEqual(interpolatedMotion.predictedDistance,
+			std::sqrt(61.0f), 0.01f));
 		TEST_CHECK(state, NearlyEqual(interpolatedMotion.direction.x,
-			50.0f / std::sqrt(12500.0f), 0.001f));
+			6.0f / std::sqrt(61.0f), 0.001f));
 		TEST_CHECK(state, NearlyEqual(interpolatedMotion.direction.y,
-			100.0f / std::sqrt(12500.0f), 0.001f));
+			5.0f / std::sqrt(61.0f), 0.001f));
+		TEST_CHECK(state, NearlyEqual(interpolatedMotion.speed,
+			std::sqrt(61.0f) / 0.02f, 0.1f));
+		TEST_CHECK(state, NearlyEqual(static_cast<float>(
+			interpolatedMotion.forecastDurationMilliseconds), 20.0f, 0.01f));
 		const draw3::InterruptedStrokeReconnectMotion extrapolatedMotion =
 			draw3::ResolveInterruptedStrokeReconnectMotion(
 				prediction, realTail, { 1.0f, 0.0f }, 300.0f, 0.04, 0.08, 1.0f);
 		TEST_CHECK(state, extrapolatedMotion.source ==
-			draw3::InterruptedStrokeReconnectMotionSource::PredictionVelocity);
-		TEST_CHECK(state, NearlyEqual(extrapolatedMotion.direction.x, 0.0f));
-		TEST_CHECK(state, NearlyEqual(extrapolatedMotion.direction.y, 1.0f));
-		TEST_CHECK(state, NearlyEqual(extrapolatedMotion.speed, 200.0f));
+			draw3::InterruptedStrokeReconnectMotionSource::PredictionPosition);
+		TEST_CHECK(state, NearlyEqual(extrapolatedMotion.direction.x,
+			1.0f / std::sqrt(2.0f), 0.001f));
+		TEST_CHECK(state, NearlyEqual(extrapolatedMotion.direction.y,
+			1.0f / std::sqrt(2.0f), 0.001f));
+		TEST_CHECK(state, NearlyEqual(extrapolatedMotion.speed,
+			std::sqrt(128.0f) / 0.03f, 0.1f));
 		TEST_CHECK(state, NearlyEqual(static_cast<float>(
 			extrapolatedMotion.predictionHorizonMilliseconds), 30.0f, 0.01f));
+		TEST_CHECK(state, NearlyEqual(static_cast<float>(
+			extrapolatedMotion.beyondPredictionHorizonMilliseconds), 50.0f, 0.01f));
+		TEST_CHECK(state, extrapolatedMotion.terminalDirectionValid);
+		TEST_CHECK(state, NearlyEqual(extrapolatedMotion.terminalDirection.y, 1.0f));
+		TEST_CHECK(state, NearlyEqual(extrapolatedMotion.recentInputSpeed, 300.0f));
 		const draw3::InterruptedStrokeReconnectMotion fallbackMotion =
 			draw3::ResolveInterruptedStrokeReconnectMotion(
-				{}, realTail, { 1.0f, 0.0f }, 300.0f, 0.04, 0.05, 1.0f);
+				{}, realTail, { 1.0f, 0.0f }, 100000.0f, 0.04, 0.05, 1.0f);
 		TEST_CHECK(state, fallbackMotion.source ==
 			draw3::InterruptedStrokeReconnectMotionSource::RealTail);
-		TEST_CHECK(state, NearlyEqual(fallbackMotion.speed, 300.0f));
+		TEST_CHECK(state, NearlyEqual(fallbackMotion.speed, 500.0f));
 		prediction[0].velocity = {};
 		prediction[1].velocity = {};
-		const draw3::InterruptedStrokeReconnectMotion chordMotion =
+		const draw3::InterruptedStrokeReconnectMotion positionMotion =
 			draw3::ResolveInterruptedStrokeReconnectMotion(
 				prediction, realTail, { 1.0f, 0.0f }, 300.0f, 0.04, 0.08, 1.0f);
-		TEST_CHECK(state, chordMotion.source ==
-			draw3::InterruptedStrokeReconnectMotionSource::PredictionChord);
-		TEST_CHECK(state, NearlyEqual(chordMotion.direction.x, 0.0f));
-		TEST_CHECK(state, NearlyEqual(chordMotion.direction.y, 1.0f));
-		TEST_CHECK(state, NearlyEqual(chordMotion.speed, 8.0f / 0.03f, 0.01f));
+		TEST_CHECK(state, positionMotion.source ==
+			draw3::InterruptedStrokeReconnectMotionSource::PredictionPosition);
+		TEST_CHECK(state, !positionMotion.terminalDirectionValid);
+		TEST_CHECK(state, NearlyEqual(positionMotion.predictedDistance, std::sqrt(128.0f), 0.01f));
 
 		draw3::InterruptedStrokeReconnectInput input{
 			.previousPosition = { 20.0f, 10.0f },
-			.previousDirection = { 1.0f, 0.0f },
-			.previousSpeed = 200.0f,
 			.previousUpQpc = 1000,
 			.newPosition = { 30.0f, 10.0f },
 			.newDownQpc = 1050,
 			.qpcFrequency = 1000,
-			.dpiScale = 1.0f
+			.dpiScale = 1.0f,
+			.motion = {
+				.valid = true,
+				.source = draw3::InterruptedStrokeReconnectMotionSource::RealTail,
+				.direction = { 1.0f, 0.0f },
+				.directionReliable = true,
+				.speed = 200.0f
+			}
 		};
 		const draw3::InterruptedStrokeReconnectResult matched =
 			draw3::EvaluateInterruptedStrokeReconnect(input);
@@ -511,22 +528,22 @@ namespace
 		TEST_CHECK(state, !draw3::EvaluateInterruptedStrokeReconnect(input).matched);
 		input.newPosition = { 23.5f, 10.0f }; // 70px/s，速度比下界 0.35。
 		TEST_CHECK(state, draw3::EvaluateInterruptedStrokeReconnect(input).matched);
-		input.newPosition = { 23.0f, 10.0f }; // 60px/s，仅为末速的 0.3 倍。
+		input.newPosition = { 22.9f, 10.0f }; // 连同数值容差仍低于末速下界。
 		TEST_CHECK(state, !draw3::EvaluateInterruptedStrokeReconnect(input).matched);
-		input.previousSpeed = 80.0f;
+		input.motion.speed = 80.0f;
 		input.newDownQpc = 1050;
 		input.newPosition = { 31.0f, 10.0f }; // 220px/s，速度比上界 2.75。
 		TEST_CHECK(state, draw3::EvaluateInterruptedStrokeReconnect(input).matched);
-		input.newPosition = { 31.04f, 10.0f }; // 略超过速度比和自适应距离上界。
+		input.newPosition = { 31.51f, 10.0f }; // 超过自适应距离上界及数值容差。
 		TEST_CHECK(state, !draw3::EvaluateInterruptedStrokeReconnect(input).matched);
-		input.previousSpeed = 400.0f;
+		input.motion.speed = 400.0f;
 		input.newDownQpc = 1080;
 		input.newPosition = { 52.0f, 10.0f }; // 96 DPI 下绝对距离上限 32px。
 		TEST_CHECK(state, draw3::EvaluateInterruptedStrokeReconnect(input).matched);
-		input.newPosition = { 52.01f, 10.0f };
+		input.newPosition = { 52.51f, 10.0f };
 		TEST_CHECK(state, !draw3::EvaluateInterruptedStrokeReconnect(input).matched);
 
-		input.previousSpeed = 300.0f;
+		input.motion.speed = 300.0f;
 		input.newDownQpc = 1050;
 		input.newPosition = { 51.0f, 10.0f };
 		input.dpiScale = 1.0f;
@@ -537,27 +554,383 @@ namespace
 		TEST_CHECK(state, dpiMatched.matched);
 
 		input.dpiScale = 1.0f;
-		input.previousDirection = { 0.0f, 1.0f };
-		input.previousSpeed = 400.0f;
 		input.previousUpQpc = 1000;
 		input.newDownQpc = 1080;
-		input.motionSource = draw3::InterruptedStrokeReconnectMotionSource::PredictionVelocity;
+		input.motion = {
+			.valid = true,
+			.source = draw3::InterruptedStrokeReconnectMotionSource::PredictionPosition,
+			.direction = { 0.0f, 1.0f },
+			.predictedDisplacement = { 0.0f, 60.0f },
+			.terminalDirection = { 0.0f, -1.0f },
+			.directionReliable = true,
+			.terminalDirectionValid = true,
+			.speed = 750.0f,
+			.terminalSpeed = 400.0f,
+			.predictedDistance = 60.0f,
+			.forecastDurationMilliseconds = 80.0,
+			.predictionHorizonMilliseconds = 80.0
+		};
 		input.newPosition = { 20.0f, 70.0f }; // 预测速度包络允许 60px 曲线续接。
 		const draw3::InterruptedStrokeReconnectResult predictedLongBridge =
 			draw3::EvaluateInterruptedStrokeReconnect(input);
 		TEST_CHECK(state, predictedLongBridge.matched);
-		TEST_CHECK(state, NearlyEqual(predictedLongBridge.maximumDistance, 64.0f));
-		TEST_CHECK(state, NearlyEqual(predictedLongBridge.expectedDistance, 32.0f));
-		input.newPosition = { 20.0f, 74.01f };
-		TEST_CHECK(state, !draw3::EvaluateInterruptedStrokeReconnect(input).matched);
-		input.newPosition = { 30.0f, 10.0f };
+		TEST_CHECK(state, NearlyEqual(predictedLongBridge.maximumDistance, 109.0f));
+		TEST_CHECK(state, NearlyEqual(predictedLongBridge.expectedDistance, 60.0f));
+		TEST_CHECK(state, predictedLongBridge.terminalVelocityAngleDegrees > 170.0f);
+		input.newPosition = { 20.0f, 74.51f }; // 预测落点仍在误差范围内，不再被固定 64px 提前拒绝。
+		TEST_CHECK(state, draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+		input.newPosition = { 20.0f, 120.0f };
+		const draw3::InterruptedStrokeReconnectResult adaptiveDistanceReject =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, !adaptiveDistanceReject.matched);
+		TEST_CHECK(state, adaptiveDistanceReject.rejectReason ==
+			draw3::InterruptedStrokeReconnectRejectReason::Distance);
+		input.motion.recentInputSpeed = 10000.0f;
+		input.newPosition = { 20.0f, 267.0f };
+		const draw3::InterruptedStrokeReconnectResult absoluteAdaptiveDistanceReject =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, NearlyEqual(absoluteAdaptiveDistanceReject.maximumDistance, 256.0f));
+		TEST_CHECK(state, !absoluteAdaptiveDistanceReject.matched);
+		input.motion.recentInputSpeed = -1.0f;
+
+		input.motion.predictedDisplacement = { 20.0f, 0.0f };
+		input.motion.predictedDistance = 20.0f;
+		input.motion.direction = { 1.0f, 0.0f };
+		input.motion.speed = 250.0f;
+		input.motion.terminalDirection = { -1.0f, 0.0f };
+		input.newPosition = { 40.0f, 10.0f };
+		const draw3::InterruptedStrokeReconnectResult predictedCurveMatch =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, predictedCurveMatch.matched); // 终点切线反向不再否决预测落点。
+		TEST_CHECK(state, predictedCurveMatch.terminalVelocityAngleDegrees > 170.0f);
+		input.newPosition = { 20.0f, 30.0f };
 		const draw3::InterruptedStrokeReconnectResult predictedCurveReject =
 			draw3::EvaluateInterruptedStrokeReconnect(input);
 		TEST_CHECK(state, !predictedCurveReject.matched);
 		TEST_CHECK(state, predictedCurveReject.rejectReason ==
-			draw3::InterruptedStrokeReconnectRejectReason::Angle);
-		input.previousDirection = { 1.0f, 0.0f };
+			draw3::InterruptedStrokeReconnectRejectReason::ForecastError);
+
+		input.motion.predictedDisplacement = { 1.0f, 0.0f };
+		input.motion.predictedDistance = 1.0f;
+		input.motion.directionReliable = false;
+		input.motion.speed = 50.0f;
+		input.motion.forecastDurationMilliseconds = 20.0;
+		input.motion.predictionHorizonMilliseconds = 20.0;
+		input.motion.beyondPredictionHorizonMilliseconds = 60.0;
+		input.newPosition = { 25.0f, 10.0f };
+		const draw3::InterruptedStrokeReconnectResult shortForecast =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, shortForecast.matched);
+		TEST_CHECK(state, !shortForecast.directionReliable);
+		TEST_CHECK(state, NearlyEqual(shortForecast.angleDegrees, 0.0f));
+
+		input.motion.predictedDisplacement = { 20.0f, 0.0f };
+		input.motion.predictedDistance = 20.0f;
+		input.motion.direction = { 1.0f, 0.0f };
+		input.motion.directionReliable = true;
+		input.motion.speed = 1000.0f;
+		input.motion.forecastDurationMilliseconds = 20.0;
+		input.motion.predictionHorizonMilliseconds = 20.0;
+		input.motion.beyondPredictionHorizonMilliseconds = 20.0;
+		input.newDownQpc = 1040;
+		input.newPosition = { 65.0f, 10.0f }; // 超出预测时域后 25px 落点误差由不确定度覆盖。
 		TEST_CHECK(state, draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+		input.motion.beyondPredictionHorizonMilliseconds = 0.0;
+		TEST_CHECK(state, !draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+
+		input.previousPosition = { 0.0f, 0.0f };
+		input.previousUpQpc = 1000000;
+		input.newDownQpc = 1070100;
+		input.qpcFrequency = 1000000;
+		input.dpiScale = 2.0f;
+		input.newPosition = { 82.6f, 0.0f };
+		input.motion = {
+			.valid = true,
+			.source = draw3::InterruptedStrokeReconnectMotionSource::PredictionPosition,
+			.direction = { 1.0f, 0.0f },
+			.predictedDisplacement = { 19.1f, 0.0f },
+			.directionReliable = true,
+			.speed = 1144.0f,
+			.predictedDistance = 19.1f,
+			.forecastDurationMilliseconds = 16.7,
+			.predictionHorizonMilliseconds = 16.7,
+			.beyondPredictionHorizonMilliseconds = 53.4
+		};
+		const draw3::InterruptedStrokeReconnectResult longExtrapolation =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, longExtrapolation.matched);
+		TEST_CHECK(state, longExtrapolation.predictionExtrapolated);
+		TEST_CHECK(state, longExtrapolation.endpointError < 15.0f);
+
+		input.newDownQpc = 1039200;
+		input.newPosition = { 33.0f, 4.6f }; // 与预测弦约 8°，对应短间隔波浪线误拒样本。
+		input.motion.predictedDisplacement = { 9.8f, 0.0f };
+		input.motion.predictedDistance = 9.8f;
+		input.motion.speed = 590.0f;
+		input.motion.forecastDurationMilliseconds = 16.6;
+		input.motion.predictionHorizonMilliseconds = 16.6;
+		input.motion.beyondPredictionHorizonMilliseconds = 22.6;
+		const draw3::InterruptedStrokeReconnectResult shortExtrapolation =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, shortExtrapolation.matched);
+		TEST_CHECK(state, shortExtrapolation.predictionExtrapolated);
+
+		input.newDownQpc = 1022490;
+		input.newPosition = { 129.25f, 0.0f }; // 高速直线只略超旧 128px 固定上限。
+		input.motion.predictedDisplacement = { 117.304f, 0.0f };
+		input.motion.predictedDistance = 117.304f;
+		input.motion.speed = 5278.7f;
+		input.motion.recentInputSpeed = 4891.36f;
+		input.motion.forecastDurationMilliseconds = 22.2222;
+		input.motion.predictionHorizonMilliseconds = 22.2222;
+		input.motion.beyondPredictionHorizonMilliseconds = 0.2678;
+		const draw3::InterruptedStrokeReconnectResult fastStraight =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, fastStraight.matched);
+		TEST_CHECK(state, fastStraight.maximumDistance > 129.25f);
+		TEST_CHECK(state, !fastStraight.predictionExtrapolated);
+
+		input.newDownQpc = 1030596;
+		input.newPosition = { 103.3f, 34.0f }; // 加速圆弧：方向可信，但冻结端点纵向距离偏短。
+		input.motion.predictedDisplacement = { 64.2236f, 0.0f };
+		input.motion.predictedDistance = 64.2236f;
+		input.motion.speed = 2568.94f;
+		input.motion.recentInputSpeed = 2488.06f;
+		input.motion.forecastDurationMilliseconds = 25.0;
+		input.motion.predictionHorizonMilliseconds = 25.0;
+		input.motion.beyondPredictionHorizonMilliseconds = 5.596;
+		const draw3::InterruptedStrokeReconnectResult acceleratingArc =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, acceleratingArc.matched);
+		TEST_CHECK(state, acceleratingArc.predictionExtrapolated);
+		TEST_CHECK(state, acceleratingArc.lateralError < acceleratingArc.maximumLateralError);
+
+		const float degreesToRadians = 3.14159265358979323846f / 180.0f;
+		input.newDownQpc = 1067856;
+		const float curvedBridgeAngle = 68.0491f * degreesToRadians;
+		input.newPosition = {
+			48.6732f * std::cos(curvedBridgeAngle),
+			48.6732f * std::sin(curvedBridgeAngle)
+		};
+		const float terminalDirectionAngle = (68.0491f - 30.446f) * degreesToRadians;
+		input.motion = {
+			.valid = true,
+			.source = draw3::InterruptedStrokeReconnectMotionSource::PredictionPosition,
+			.direction = { 1.0f, 0.0f },
+			.predictedDisplacement = { 13.2373f, 0.0f },
+			.terminalDirection = {
+				std::cos(terminalDirectionAngle), std::sin(terminalDirectionAngle) },
+			.directionReliable = true,
+			.terminalDirectionValid = true,
+			.speed = 720.0f,
+			.recentInputSpeed = 720.0f,
+			.terminalSpeed = 720.0f,
+			.predictedDistance = 13.2373f,
+			.forecastDurationMilliseconds = 19.4444,
+			.predictionHorizonMilliseconds = 19.4444,
+			.beyondPredictionHorizonMilliseconds = 48.4117
+		};
+		const draw3::InterruptedStrokeReconnectResult terminalDirectionArc =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, terminalDirectionArc.matched);
+		TEST_CHECK(state, terminalDirectionArc.predictionExtrapolated);
+		TEST_CHECK(state, terminalDirectionArc.selectedTerminalDirectionCorridor);
+		TEST_CHECK(state, terminalDirectionArc.angleDegrees >
+			draw3::kInterruptedStrokeReconnectExtrapolationMaximumAngleDegrees);
+		TEST_CHECK(state, terminalDirectionArc.selectedDirectionAngleDegrees <
+			draw3::kInterruptedStrokeReconnectExtrapolationMaximumAngleDegrees);
+
+		input.motion.terminalDirection = { 1.0f, 0.0f };
+		const draw3::InterruptedStrokeReconnectResult terminalDirectionHighAngle =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, !terminalDirectionHighAngle.matched);
+		TEST_CHECK(state, !terminalDirectionHighAngle.selectedTerminalDirectionCorridor);
+
+		input.motion.terminalDirection = {
+			std::cos(terminalDirectionAngle), std::sin(terminalDirectionAngle) };
+		input.motion.speed = 100.0f;
+		input.motion.recentInputSpeed = 100.0f;
+		const draw3::InterruptedStrokeReconnectResult terminalDirectionSpeedReject =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, !terminalDirectionSpeedReject.matched);
+
+		input.newDownQpc = 1074926;
+		input.newPosition = { 52.4157f, 0.0f };
+		const float shortChordTerminalAngle = 22.6339f * degreesToRadians;
+		input.motion = {
+			.valid = true,
+			.source = draw3::InterruptedStrokeReconnectMotionSource::PredictionPosition,
+			.direction = { 1.0f, 0.0f },
+			.predictedDisplacement = { 7.57397f, 0.0f },
+			.terminalDirection = {
+				std::cos(shortChordTerminalAngle), std::sin(shortChordTerminalAngle) },
+			.directionReliable = false,
+			.terminalDirectionValid = true,
+			.speed = 443.016f,
+			.recentInputSpeed = 443.016f,
+			.terminalSpeed = 443.016f,
+			.predictedDistance = 7.57397f,
+			.forecastDurationMilliseconds = 17.0,
+			.predictionHorizonMilliseconds = 17.0,
+			.beyondPredictionHorizonMilliseconds = 57.926
+		};
+		const draw3::InterruptedStrokeReconnectResult shortChordTerminalDirection =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, shortChordTerminalDirection.matched);
+		TEST_CHECK(state, !shortChordTerminalDirection.directionReliable);
+		TEST_CHECK(state, shortChordTerminalDirection.selectedTerminalDirectionCorridor);
+
+		input.newDownQpc = 1021923;
+		input.newPosition = { 22.8131f, 0.0f }; // 预测仍覆盖恢复时刻，但急弯预测位移明显偏短。
+		input.motion = {
+			.valid = true,
+			.source = draw3::InterruptedStrokeReconnectMotionSource::PredictionPosition,
+			.direction = { 1.0f, 0.0f },
+			.predictedDisplacement = { 6.52956f, 0.0f },
+			.terminalDirection = { 1.0f, 0.0f },
+			.directionReliable = false,
+			.terminalDirectionValid = true,
+			.speed = 564.059f,
+			.recentInputSpeed = 564.059f,
+			.terminalSpeed = 346.442f,
+			.predictedDistance = 6.52956f,
+			.forecastDurationMilliseconds = 21.9228,
+			.predictionHorizonMilliseconds = 25.0,
+			.beyondPredictionHorizonMilliseconds = 0.0
+		};
+		const draw3::InterruptedStrokeReconnectResult inHorizonShortChord =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, inHorizonShortChord.matched);
+		TEST_CHECK(state, !inHorizonShortChord.predictionExtrapolated);
+		TEST_CHECK(state, inHorizonShortChord.selectedTerminalDirectionCorridor);
+		TEST_CHECK(state, inHorizonShortChord.selectedInHorizonTerminalDirectionCorridor);
+
+		const float inHorizonChordAngle = 30.3733f * degreesToRadians;
+		input.newDownQpc = 1030276;
+		input.newPosition = { 42.195f, 0.0f };
+		input.motion = {
+			.valid = true,
+			.source = draw3::InterruptedStrokeReconnectMotionSource::PredictionPosition,
+			.direction = { std::cos(inHorizonChordAngle), std::sin(inHorizonChordAngle) },
+			.predictedDisplacement = {
+				8.89835f * std::cos(inHorizonChordAngle),
+				8.89835f * std::sin(inHorizonChordAngle) },
+			.terminalDirection = { 1.0f, 0.0f },
+			.directionReliable = true,
+			.terminalDirectionValid = true,
+			.speed = 795.802f,
+			.recentInputSpeed = 795.802f,
+			.terminalSpeed = 303.067f,
+			.predictedDistance = 8.89835f,
+			.forecastDurationMilliseconds = 30.2755,
+			.predictionHorizonMilliseconds = 30.5556,
+			.beyondPredictionHorizonMilliseconds = 0.0
+		};
+		const draw3::InterruptedStrokeReconnectResult inHorizonCurve =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, inHorizonCurve.matched);
+		TEST_CHECK(state, inHorizonCurve.selectedInHorizonTerminalDirectionCorridor);
+		TEST_CHECK(state, inHorizonCurve.selectedDirectionAngleDegrees < 1.0f);
+
+		input.newDownQpc = 1035000;
+		input.motion.forecastDurationMilliseconds = 35.0;
+		input.motion.predictionHorizonMilliseconds = 40.0;
+		TEST_CHECK(state, draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+		input.newDownQpc = 1035001;
+		input.motion.forecastDurationMilliseconds = 35.001;
+		TEST_CHECK(state, !draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+		input.newDownQpc = 1030276;
+		input.motion.forecastDurationMilliseconds = 30.2755;
+		input.motion.predictionHorizonMilliseconds = 30.5556;
+		const float acceptedInHorizonTerminalAngle = 14.9f * degreesToRadians;
+		input.motion.terminalDirection = {
+			std::cos(acceptedInHorizonTerminalAngle),
+			std::sin(acceptedInHorizonTerminalAngle) };
+		TEST_CHECK(state, draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+		const float excessiveInHorizonTerminalAngle = 15.1f * degreesToRadians;
+		input.motion.terminalDirection = {
+			std::cos(excessiveInHorizonTerminalAngle),
+			std::sin(excessiveInHorizonTerminalAngle) };
+		TEST_CHECK(state, !draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+		input.motion.terminalDirection = { 1.0f, 0.0f };
+		input.newPosition = { 35.0f, 0.0f };
+		input.motion.speed = 580.0f;
+		input.motion.recentInputSpeed = 580.0f;
+		TEST_CHECK(state, draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+		input.motion.speed = 570.0f;
+		input.motion.recentInputSpeed = 570.0f;
+		TEST_CHECK(state, !draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+
+		input.newDownQpc = 1039388;
+		input.newPosition = { 36.52f, 5.10f }; // 慢到快波浪线：输入末速补足预测平均速度的滞后。
+		input.motion.predictedDisplacement = { 10.2821f, 0.0f };
+		input.motion.predictedDistance = 10.2821f;
+		input.motion.direction = { 1.0f, 0.0f };
+		input.motion.directionReliable = true;
+		input.motion.speed = 336.505f;
+		input.motion.recentInputSpeed = 626.65f;
+		input.motion.forecastDurationMilliseconds = 30.5556;
+		input.motion.predictionHorizonMilliseconds = 30.5556;
+		input.motion.beyondPredictionHorizonMilliseconds = 8.8324;
+		input.motion.terminalDirection = {};
+		input.motion.terminalDirectionValid = false;
+		input.motion.terminalSpeed = -1.0f;
+		const draw3::InterruptedStrokeReconnectResult acceleratingWave =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, acceleratingWave.matched);
+		TEST_CHECK(state, acceleratingWave.predictionExtrapolated);
+		TEST_CHECK(state, acceleratingWave.speedRatio <
+			draw3::kInterruptedStrokeReconnectMaximumSpeedRatio);
+
+		input.newDownQpc = 1030229;
+		input.newPosition = { 21.03f, 0.0f };
+		input.motion.predictedDisplacement = { 0.0f, 5.6068f };
+		input.motion.predictedDistance = 5.6068f;
+		input.motion.direction = { 0.0f, 1.0f };
+		input.motion.directionReliable = false; // 预测弦不足 4px*dpi 时不得用加速走廊放行。
+		input.motion.speed = 403.69f;
+		input.motion.recentInputSpeed = 696.926f;
+		input.motion.forecastDurationMilliseconds = 13.8889;
+		input.motion.predictionHorizonMilliseconds = 13.8889;
+		input.motion.beyondPredictionHorizonMilliseconds = 16.3401;
+		const draw3::InterruptedStrokeReconnectResult unreliableAcceleration =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, !unreliableAcceleration.matched);
+		TEST_CHECK(state, !unreliableAcceleration.predictionExtrapolated);
+
+		input.newDownQpc = 1037900;
+		input.newPosition = { -2.2f, 28.6f }; // 预测弦反向超过 90°，不得因外推而放行。
+		input.motion.predictedDisplacement = { 19.0f, 0.0f };
+		input.motion.predictedDistance = 19.0f;
+		input.motion.direction = { 1.0f, 0.0f };
+		input.motion.directionReliable = true;
+		input.motion.speed = 1142.8f;
+		input.motion.recentInputSpeed = -1.0f;
+		input.motion.forecastDurationMilliseconds = 16.7;
+		input.motion.predictionHorizonMilliseconds = 16.7;
+		input.motion.beyondPredictionHorizonMilliseconds = 21.2;
+		const draw3::InterruptedStrokeReconnectResult highAngleExtrapolation =
+			draw3::EvaluateInterruptedStrokeReconnect(input);
+		TEST_CHECK(state, !highAngleExtrapolation.matched);
+		TEST_CHECK(state, !highAngleExtrapolation.predictionExtrapolated);
+
+		input.previousPosition = { 20.0f, 10.0f };
+		input.previousUpQpc = 1000;
+		input.qpcFrequency = 1000;
+		input.dpiScale = 1.0f;
+		input.motion.predictedDisplacement = { 20.0f, 0.0f };
+		input.motion.predictedDistance = 20.0f;
+		input.motion.direction = { 1.0f, 0.0f };
+		input.motion.directionReliable = true;
+		input.motion.speed = 500.0f;
+		input.motion.forecastDurationMilliseconds = 20.0;
+		input.motion.predictionHorizonMilliseconds = 20.0;
+		input.motion.beyondPredictionHorizonMilliseconds = 0.0;
+		input.newDownQpc = 1040;
+		input.newPosition = { 51.49f, 10.0f }; // 落点误差边界允许 0.5px 数值余量。
+		TEST_CHECK(state, draw3::EvaluateInterruptedStrokeReconnect(input).matched);
+		input.newPosition = { 51.51f, 10.0f };
+		TEST_CHECK(state, !draw3::EvaluateInterruptedStrokeReconnect(input).matched);
 
 		const draw3::InterruptedStrokeReconnectIdentity identity{
 			draw3::InputDeviceType::Pen, 0, 0,
@@ -596,6 +969,10 @@ namespace
 		changed.suppressPressure = true;
 		TEST_CHECK(state, !draw3::AreInterruptedStrokeReconnectIdentitiesCompatible(identity, changed));
 		TEST_CHECK(state, draw3::kMaximumInterruptedStrokeReconnectCandidates == 8);
+		TEST_CHECK(state, draw3::kInterruptedStrokeReconnectSimulationMinimumDropMs <
+			draw3::kInterruptedStrokeReconnectSimulationMaximumDropMs);
+		TEST_CHECK(state, draw3::kInterruptedStrokeReconnectSimulationMaximumDropMs <
+			static_cast<uint32_t>(draw3::kInterruptedStrokeReconnectWindowSeconds * 1000.0));
 		TEST_CHECK(state, draw3::GetInterruptedStrokeReconnectEvictionCount(8) == 0);
 		TEST_CHECK(state, draw3::GetInterruptedStrokeReconnectEvictionCount(9) == 1);
 		TEST_CHECK(state, draw3::GetInterruptedStrokeReconnectEvictionCount(16) == 8);
@@ -603,12 +980,13 @@ namespace
 		TEST_CHECK(state, draw3::IsInterruptedStrokeReconnectExpired(1000, 1000));
 
 		draw3::InterruptedStrokeReconnectResult fartherFromForecast = matched;
-		fartherFromForecast.distanceRatioError = 0.1f;
+		fartherFromForecast.matchScore = matched.matchScore + 0.1f;
 		TEST_CHECK(state, draw3::IsBetterInterruptedStrokeReconnectMatch(
 			matched, 900, fartherFromForecast, 1000));
 		draw3::InterruptedStrokeReconnectResult straighter = matched;
-		straighter.distanceRatioError = matched.distanceRatioError;
+		straighter.matchScore = matched.matchScore;
 		straighter.angleDegrees = matched.angleDegrees - 1.0f;
+		straighter.selectedDirectionAngleDegrees = matched.selectedDirectionAngleDegrees - 1.0f;
 		TEST_CHECK(state, draw3::IsBetterInterruptedStrokeReconnectMatch(
 			straighter, 900, matched, 1000));
 		draw3::InterruptedStrokeReconnectResult same = matched;

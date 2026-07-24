@@ -47,6 +47,7 @@ namespace draw3
 
 		hiex::PreSetWindowStyle(WS_POPUP);
 		hiex::PreSetWindowPos(monitorRect.left, monitorRect.top);
+		hiex::PreSetWindowShowState(SW_HIDE); // 避免透明 presenter 首次提交前暴露 HiEasyX 白色类背景。
 		if (preconfigureNoRedirectionBitmap)
 		{
 			// Win7 不支持该扩展样式，因此只在确认 DComp API 存在时预置。
@@ -66,6 +67,11 @@ namespace draw3
 			if (tabletPropertyAtom) GlobalDeleteAtom(tabletPropertyAtom); // 与微软示例一致，属性本身仍由 HWND 持有。
 		}
 		return window_ != nullptr;
+	}
+
+	void WindowController::Show()
+	{
+		if (window_) ShowWindow(window_, SW_SHOWNORMAL);
 	}
 
 	HWND WindowController::Handle() const

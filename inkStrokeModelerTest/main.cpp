@@ -95,7 +95,8 @@ int wmain(int argc, wchar_t* argv[])
 		presentation,
 		draw3::CreateStrokeModelConfiguration(GetPrimaryDpiX()),
 		metrics.get());
-	drawing.ClearCanvas();
+	drawing.ClearCanvas(); // 隐藏状态下先提交透明底图，避免初始化期间闪出白色窗口背景。
+	window.Show();
 	drawing.Run();
 	stylus.Shutdown(); // 停回调、移除插件后再释放协调器记录。
 	window.SetInputCoordinator(nullptr); // 解除窗口回调中的非拥有指针，再进入局部对象析构。

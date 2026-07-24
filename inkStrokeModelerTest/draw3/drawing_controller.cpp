@@ -179,10 +179,8 @@ namespace draw3
 		{
 			switch (source)
 			{
-			case InterruptedStrokeReconnectMotionSource::PredictionVelocity:
-				return "prediction_velocity";
-			case InterruptedStrokeReconnectMotionSource::PredictionChord:
-				return "prediction_chord";
+			case InterruptedStrokeReconnectMotionSource::PredictionPosition:
+				return "prediction_position";
 			case InterruptedStrokeReconnectMotionSource::RealTail:
 				return "real_tail";
 			default:
@@ -207,6 +205,8 @@ namespace draw3
 				return "invalid_direction";
 			case InterruptedStrokeReconnectRejectReason::Distance:
 				return "distance";
+			case InterruptedStrokeReconnectRejectReason::ForecastError:
+				return "forecast_error";
 			case InterruptedStrokeReconnectRejectReason::Angle:
 				return "angle";
 			default:
@@ -490,15 +490,45 @@ namespace draw3
 		std::cout << "[StrokeReconnect] enabled=" <<
 			(configuration_.interruptedStrokeReconnectEnabled ? "true" : "false") <<
 			" window_ms=" << kInterruptedStrokeReconnectWindowSeconds * 1000.0 <<
-			" angle_deg=" << kInterruptedStrokeReconnectMaximumAngleDegrees <<
-			" predicted_max_distance_px=" <<
+			" prediction_endpoint_base_px=" <<
+			kInterruptedStrokeReconnectDistanceSlackPx * reconnectDpiScale <<
+			" prediction_relative=" << kInterruptedStrokeReconnectEndpointRelativeTolerance <<
+			" beyond_horizon_ratio=" <<
+			kInterruptedStrokeReconnectBeyondHorizonUncertaintyRatio <<
+			" extrapolation_angle_deg=" <<
+			kInterruptedStrokeReconnectExtrapolationMaximumAngleDegrees <<
+			" terminal_direction_corridor_angle_deg=" <<
+			kInterruptedStrokeReconnectExtrapolationMaximumAngleDegrees <<
+			" in_horizon_terminal_gap_ms=" <<
+			kInterruptedStrokeReconnectInHorizonTerminalMaximumGapSeconds * 1000.0 <<
+			" in_horizon_terminal_angle_deg=" <<
+			kInterruptedStrokeReconnectInHorizonTerminalMaximumAngleDegrees <<
+			" in_horizon_terminal_speed_ratio=[" <<
+			kInterruptedStrokeReconnectInHorizonTerminalMinimumSpeedRatio << "," <<
+			kInterruptedStrokeReconnectInHorizonTerminalMaximumSpeedRatio << "]" <<
+			" comparison_epsilon_px=" <<
+			kInterruptedStrokeReconnectComparisonEpsilonPx * reconnectDpiScale <<
+			" predicted_base_max_px=" <<
 			kInterruptedStrokeReconnectPredictedMaximumDistancePx * reconnectDpiScale <<
+			" predicted_adaptive_max_px=" <<
+			kInterruptedStrokeReconnectAdaptiveMaximumDistancePx * reconnectDpiScale <<
+			" adaptive_distance_speed_ratio=" <<
+			kInterruptedStrokeReconnectAdaptiveDistanceSpeedRatio <<
+			" adaptive_relative=" <<
+			kInterruptedStrokeReconnectAdaptiveRelativeTolerance <<
+			" fallback_angle_deg=" << kInterruptedStrokeReconnectMaximumAngleDegrees <<
 			" fallback_max_distance_px=" <<
 			kInterruptedStrokeReconnectFallbackMaximumDistancePx * reconnectDpiScale <<
-			" speed_ratio=[" << kInterruptedStrokeReconnectMinimumSpeedRatio << "," <<
+			" fallback_speed_ratio=[" << kInterruptedStrokeReconnectMinimumSpeedRatio << "," <<
 			kInterruptedStrokeReconnectMaximumSpeedRatio << "] candidates=" <<
 			kMaximumInterruptedStrokeReconnectCandidates <<
 			" manual_test=" << (kInterruptedStrokeReconnectManualTestModeEnabled ? "true" : "false") <<
+			" simulation=" << (kInterruptedStrokeReconnectSimulationEnabled ? "true" : "false") <<
+			" simulation_interval_ms=[" <<
+			kInterruptedStrokeReconnectSimulationMinimumIntervalMs << "," <<
+			kInterruptedStrokeReconnectSimulationMaximumIntervalMs << "]" <<
+			" simulation_drop_ms=[" << kInterruptedStrokeReconnectSimulationMinimumDropMs << "," <<
+			kInterruptedStrokeReconnectSimulationMaximumDropMs << "]" <<
 			" inverted_pen_eraser=" << (effectiveInvertedPenEraserEnabled ? "true" : "false") <<
 			std::endl;
 
@@ -626,14 +656,12 @@ namespace draw3
 						const InterruptedStrokeReconnectResult result =
 							EvaluateInterruptedStrokeReconnect({
 								.previousPosition = candidate->deferredUpSnapshot.position,
-								.previousDirection = motion.direction,
-								.previousSpeed = motion.speed,
 								.previousUpQpc = candidate->deferredUpSnapshot.qpc,
 								.newPosition = down.position,
 								.newDownQpc = down.qpc,
 								.qpcFrequency = qpcFrequency,
 								.dpiScale = reconnectDpiScale,
-								.motionSource = motion.source
+								.motion = motion
 							});
 						if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
 						{
@@ -659,23 +687,60 @@ namespace draw3
 					{
 						std::cout << "[StrokeReconnect] rejected device=" <<
 							InputDeviceTypeName(deviceType) << " tool=" << DrawingToolName(tool) <<
+							" new_tcid=" << handle.record->TabletContextId() <<
+							" new_cid=" << handle.record->ContactId() <<
+							" candidate_tcid=" << diagnosticRuntime->handle.record->TabletContextId() <<
+							" candidate_cid=" << diagnosticRuntime->handle.record->ContactId() <<
+							" candidate_generation=" << diagnosticRuntime->handle.generation <<
 							" reason=" << ReconnectRejectReasonName(diagnosticResult.rejectReason) <<
 							" motion=" << ReconnectMotionSourceName(diagnosticResult.motionSource) <<
 							" gap_ms=" << diagnosticResult.gapMilliseconds <<
 							" distance_px=" << diagnosticResult.distance <<
-							" expected_px=" << diagnosticResult.expectedDistance <<
+							" predicted_displacement_px=" << diagnosticResult.expectedDistance <<
+							" endpoint_error_px=" << diagnosticResult.endpointError <<
+							" endpoint_limit_px=" << diagnosticResult.maximumEndpointError <<
+							" forecast_ms=" << diagnosticResult.forecastDurationMilliseconds <<
+							" horizon_ms=" << diagnosticResult.predictionHorizonMilliseconds <<
+							" beyond_horizon_ms=" <<
+							diagnosticResult.beyondPredictionHorizonMilliseconds <<
 							" reference_speed=" << diagnosticResult.referenceSpeed <<
-							" raw_speed=" << diagnosticRuntime->filteredInputSpeed <<
+							" recent_input_speed=" << diagnosticResult.recentInputSpeed <<
+							" terminal_speed=" << diagnosticResult.terminalSpeed <<
+							" filtered_input_speed=" << diagnosticRuntime->filteredInputSpeed <<
+							" longitudinal_px=" << diagnosticResult.longitudinalDistance <<
+							" longitudinal_error_px=" << diagnosticResult.longitudinalError <<
+							" longitudinal_limit_px=" <<
+							diagnosticResult.maximumLongitudinalError <<
+							" lateral_error_px=" << diagnosticResult.lateralError <<
+							" lateral_limit_px=" << diagnosticResult.maximumLateralError <<
 							" range_px=[" << diagnosticResult.minimumDistance << "," <<
-							diagnosticResult.maximumDistance << "] angle_deg=" <<
-							diagnosticResult.angleDegrees << " speed_ratio=" <<
-							diagnosticResult.speedRatio << std::endl;
+							diagnosticResult.maximumDistance << "] forecast_angle_deg=" <<
+							diagnosticResult.angleDegrees << " terminal_angle_deg=" <<
+							diagnosticResult.terminalVelocityAngleDegrees <<
+							" selected_angle_deg=" <<
+							diagnosticResult.selectedDirectionAngleDegrees <<
+							" direction_reliable=" <<
+							(diagnosticResult.directionReliable ? "true" : "false") <<
+							" prediction_extrapolated=" <<
+							(diagnosticResult.predictionExtrapolated ? "true" : "false") <<
+							" terminal_direction_corridor_selected=" <<
+							(diagnosticResult.selectedTerminalDirectionCorridor ? "true" : "false") <<
+							" in_horizon_terminal_corridor_selected=" <<
+							(diagnosticResult.selectedInHorizonTerminalDirectionCorridor ?
+								"true" : "false") <<
+							" speed_ratio=" << diagnosticResult.speedRatio <<
+							" match_score=" << diagnosticResult.matchScore << std::endl;
 					}
 				}
 
 				if (reconnectRuntime)
 				{
 					const float reconnectPreviousRawSpeed = reconnectRuntime->filteredInputSpeed;
+					const uint32_t reconnectPreviousTabletContextId =
+						reconnectRuntime->handle.record->TabletContextId();
+					const uint32_t reconnectPreviousContactId =
+						reconnectRuntime->handle.record->ContactId();
+					const uint64_t reconnectPreviousGeneration = reconnectRuntime->handle.generation;
 					ContactSnapshot modelDown = down;
 					modelDown.pressure = downPressure;
 					float lastPressure = reconnectRuntime->lastPressure;
@@ -743,14 +808,48 @@ namespace draw3
 						reconnectRuntime->stroke.visualStableFrameCount = 0;
 						reconnectRuntime->stroke.lastMovementInputTime = inputTime;
 						std::cout << "[StrokeReconnect] linked device=" << InputDeviceTypeName(deviceType) <<
-							" tool=" << DrawingToolName(tool) << " gap_ms=" << reconnectResult.gapMilliseconds <<
+							" tool=" << DrawingToolName(tool) <<
+							" new_tcid=" << handle.record->TabletContextId() <<
+							" new_cid=" << handle.record->ContactId() <<
+							" candidate_tcid=" << reconnectPreviousTabletContextId <<
+							" candidate_cid=" << reconnectPreviousContactId <<
+							" candidate_generation=" << reconnectPreviousGeneration <<
+							" gap_ms=" << reconnectResult.gapMilliseconds <<
 							" motion=" << ReconnectMotionSourceName(reconnectResult.motionSource) <<
 							" distance_px=" << reconnectResult.distance <<
-							" expected_px=" << reconnectResult.expectedDistance <<
+							" predicted_displacement_px=" << reconnectResult.expectedDistance <<
+							" endpoint_error_px=" << reconnectResult.endpointError <<
+							" endpoint_limit_px=" << reconnectResult.maximumEndpointError <<
+							" forecast_ms=" << reconnectResult.forecastDurationMilliseconds <<
+							" horizon_ms=" << reconnectResult.predictionHorizonMilliseconds <<
+							" beyond_horizon_ms=" <<
+							reconnectResult.beyondPredictionHorizonMilliseconds <<
 							" reference_speed=" << reconnectResult.referenceSpeed <<
-							" raw_speed=" << reconnectPreviousRawSpeed <<
-							" angle_deg=" << reconnectResult.angleDegrees <<
-							" speed_ratio=" << reconnectResult.speedRatio << std::endl;
+							" recent_input_speed=" << reconnectResult.recentInputSpeed <<
+							" terminal_speed=" << reconnectResult.terminalSpeed <<
+							" filtered_input_speed=" << reconnectPreviousRawSpeed <<
+							" longitudinal_px=" << reconnectResult.longitudinalDistance <<
+							" longitudinal_error_px=" << reconnectResult.longitudinalError <<
+							" longitudinal_limit_px=" <<
+							reconnectResult.maximumLongitudinalError <<
+							" lateral_error_px=" << reconnectResult.lateralError <<
+							" lateral_limit_px=" << reconnectResult.maximumLateralError <<
+							" forecast_angle_deg=" << reconnectResult.angleDegrees <<
+							" terminal_angle_deg=" <<
+							reconnectResult.terminalVelocityAngleDegrees <<
+							" selected_angle_deg=" <<
+							reconnectResult.selectedDirectionAngleDegrees <<
+							" direction_reliable=" <<
+							(reconnectResult.directionReliable ? "true" : "false") <<
+							" prediction_extrapolated=" <<
+							(reconnectResult.predictionExtrapolated ? "true" : "false") <<
+							" terminal_direction_corridor_selected=" <<
+							(reconnectResult.selectedTerminalDirectionCorridor ? "true" : "false") <<
+							" in_horizon_terminal_corridor_selected=" <<
+							(reconnectResult.selectedInHorizonTerminalDirectionCorridor ?
+								"true" : "false") <<
+							" speed_ratio=" << reconnectResult.speedRatio <<
+							" match_score=" << reconnectResult.matchScore << std::endl;
 						return true;
 					}
 					else

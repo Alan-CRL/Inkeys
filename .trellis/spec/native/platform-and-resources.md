@@ -125,6 +125,8 @@ DirectCompositionVisualTree
   -> UlwDirtyRect
 ```
 
+窗口由 `WindowController` 通过 HiEasyX 的 `PreSetWindowShowState(SW_HIDE)` 隐藏创建。设备、presenter、RTS 和 renderer 初始化完成后，必须先提交一张透明画布，再显示窗口；这样 ULW 与 GPU 透明路径都不会在首帧前暴露 HiEasyX 的白色窗口类背景。该行为只使用第三方公开 API，不修改 `HiEasyX/` 源码。
+
 每种模式先尝试 waitable swapchain，失败后使用普通 swapchain。GPU 透明模式使用 BGRA8、flip sequential、双缓冲和 premultiplied alpha；DWM HWND 路径失败时会尝试 unspecified alpha 兼容模式。
 
 - DComp 运行时加载 `dcomp.dll`，不把 API 可用性当成编译期保证。

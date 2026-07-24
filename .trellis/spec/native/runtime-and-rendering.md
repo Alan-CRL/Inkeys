@@ -5,11 +5,11 @@
 `main.cpp` 的初始化顺序是：
 
 1. 创建 `ContactInputCoordinator`
-2. `WindowController::Initialize`，随后把 coordinator 绑定到窗口控制唤醒
+2. `WindowController::Initialize` 创建隐藏窗口，随后把 coordinator 绑定到窗口控制唤醒
 3. `InitializeGraphicsDevice`
 4. `TransparentPresentationController::Initialize`，内部初始化 `InkRenderer`
 5. `RealTimeStylusInput::Initialize` 启用同步 RTS 插件
-6. `DrawingController` 创建并进入消息循环
+6. `DrawingController` 创建，先提交透明画布并显示窗口，再进入消息循环
 
 不要交换窗口、设备、交换链和 renderer 的依赖顺序。`TransparentPresentationController` 保存对 `GraphicsDeviceResources` 和 `InkRenderer` 的非拥有指针，调用者必须让这些对象覆盖 presenter 生命周期。
 
@@ -72,17 +72,27 @@
 - `EvaluateInterruptedStrokeReconnect`
 - `AreInterruptedStrokeReconnectIdentitiesCompatible`
 - `IsBetterInterruptedStrokeReconnectMatch`
+- `InterruptedStrokeReconnectResult::predictionExtrapolated`
+- `InterruptedStrokeReconnectResult::selectedTerminalDirectionCorridor`
+- `InterruptedStrokeReconnectResult::selectedInHorizonTerminalDirectionCorridor`
+- `kInterruptedStrokeReconnectSimulationEnabled`
 
 ### 3. Contracts
 
 - 开关默认开启且只在构造 `DrawingController` 前配置；关闭时必须保留原先 Down 出队和立即 `kUp` 顺序。
 - 物理 Up 在 80ms 窗口内先作为 `kMove` 输入并冻结 modeler、真实点、prediction、L0/L1 CPU 状态、提交游标、宽度估算器和旧 handle；Cancelled 立即终结。
 - 候选必须具有有效末速和末端方向，并与新 Down 的设备、批次选择工具、有效工具、宽度模式、倒转状态和压力屏蔽策略完全一致。Up 的 `kMove` 成功后必须在新 Down 出队前冻结匹配专用 prediction，保证同帧 Up→Down 使用最新状态。
-- prediction 有有效速度时，按 Down 间隔在预测时域内插值，超出时域使用最后预测状态；方向夹角不超过 35°，距离按 `预测速度×间隔` 的 `[0.35,2.75]` 包络加 `4px*dpiScale` 余量，绝对上限为 `64px*dpiScale`。
-- prediction 为空、速度无效或工具禁用 prediction 时，回退真实尾方向与滤波末速：96 DPI 下方向回看 12px、有效方向至少 4px、绝对距离不超过 32px，沿用原自适应距离和速度比规则。
-- 多候选按实际/预测距离比例误差、角度、距离、较新 Up 的顺序选择。命中时旧 handle 回收，新 handle 接管原 runtime，新 Down 以连续时间作为 `kMove`；不得 Reset modeler 或宽度状态。
+- prediction 有有效位置和正时域时，按 Down 间隔在预测时域内插值，超出时域使用最后预测位置；以 `selectedPredictionPosition - modeledPositionAtUp` 得到模型预测位移，再平移到物理 Up 坐标生成预测落点，禁止直接把预测终点瞬时速度方向与整段曲线桥接弦做硬比较。
+- prediction 路径要求新 Down 到预测落点的误差不超过 `4px*dpiScale + 0.35*predictedDistance + 0.75*forecastAverageSpeed*beyondHorizon`；桥接距离上限按 `referenceSpeed=max(forecastAverageSpeed,recentFilteredInputSpeed)` 计算为 `clamp(referenceSpeed*gap*1.75 + 4px*dpiScale, 64px*dpiScale, 256px*dpiScale)`，且必须在完成方向与落点诊断后才以该上限拒绝。边界比较额外允许 `0.5px*dpiScale` 数值容差；终点速度只用于诊断。
+- 冻结预测端点失败后，先在预测弦可靠、桥接夹角不超过 35°、相对 `referenceSpeed` 的速度比位于 `[0.35, 2.75]` 且 Down 超过预测时域时尝试加速自适应走廊：`adaptedDistance=max(predictedDistance,referenceSpeed*gap)`，桥接向预测弦投影后的纵向误差与横向误差必须分别不超过 `4px*dpiScale + 0.50*adaptedDistance`；禁止再次叠加时域外不确定度。
+- 若预测弦走廊失败且预测末端速度方向有效，以相同 35°、速度比、动态距离和纵横误差限制尝试第二方向走廊；该走廊不依赖短预测弦达到 4px，但末端速度方向自身必须有效。禁止通过提高全局角度或扩大圆形落点容差代替第二走廊；命中时设置 `predictionExtrapolated=true`，并以 `selectedTerminalDirectionCorridor=true` 标记所选方向轴；拒绝诊断也使用该字段说明当前纵横误差属于哪条走廊。
+- 若冻结端点失败但新 Down 仍在预测时域内，只允许末端速度方向使用严格补救走廊：完整间隔不超过 35ms、末端方向夹角不超过 15°、速度比位于 `[0.5,2.0]`，且继续通过现有动态距离和纵横误差限制。预测弦不得进入该分支；命中时设置 `selectedTerminalDirectionCorridor=true`、`selectedInHorizonTerminalDirectionCorridor=true`，并保持 `predictionExtrapolated=false`。
+- prediction 为空、位置/时域无效或工具禁用 prediction 时，回退真实尾方向与模型真实点末端时间窗速度：96 DPI 下方向回看 12px、有效方向至少 4px、绝对距离不超过 32px，沿用 35°、自适应距离和速度比规则；模型时间窗不可用时才使用滤波 RTS 末速，并按当前间隔与绝对上限裁掉无意义尖峰。
+- 多候选按归一化预测落点误差、实际选择走廊夹角、距离、较新 Up 的顺序选择；回退候选首排序量仍为实际/预测距离比例误差。命中时旧 handle 回收，新 handle 接管原 runtime，新 Down 以连续时间作为 `kMove`；不得 Reset modeler 或宽度状态。
 - 最多保留 8 个候选；超限先以保存的 Up 完成最旧候选。仅剩候选时结束 1ms timer period，并等待新 Down、控制 wake 或最近 deadline。
 - 超时后才发送真正 `kUp`，随后沿用同帧批量 L2 resolve、活动层重建、指标提交、handle 回收和 runtime Reset。resize 重建候选，clear 最多额外等待当前候选剩余窗口。
+- RTS 断触注入只用于人工测试：开启时使用固定 32 contact 状态和合成 contact id 随机生成 Up→丢弃 20–70ms Move→新 Down；关闭时必须由 `if constexpr` 选择原始 coordinator 直达分支，空模拟器不得查询频率、生成随机数、加锁或输出日志。
+- `kInterruptedStrokeReconnectManualTestModeEnabled` 与 `kInterruptedStrokeReconnectSimulationEnabled` 的正式默认值均为 `false`。人工测试开关关闭时恢复笔尾倒转橡皮，并由 `if constexpr` 移除绿色桥接覆盖和拒绝诊断；模拟开关关闭时不进入任何合成 contact 热路径。
 
 ### 4. Validation & Error Matrix
 
@@ -91,22 +101,34 @@
 | Up 无有效末速/方向 | 立即发送 `kUp`，不进入候选 |
 | Cancelled | 立即终结，不可续接 |
 | 设备、工具或笔状态不一致 | 新 Down 创建独立笔画，旧候选继续等待 |
-| 任一时间/距离/方向/速度阈值失败 | 拒绝续接；正常模式不输出逐候选日志，人工测试模式只输出最近候选的一行诊断 |
-| prediction 为空/速度无效/禁用 | 使用真实尾方向、滤波末速和 32px 保守上限 |
+| prediction 路径超过时间、动态距离上限或预测落点误差 | 拒绝续接；正常模式不输出逐候选日志，人工测试模式只输出最近候选的一行诊断，并带新/候选 contact id 与 generation |
+| 冻结预测端点失败但方向/速度连续且输入末速更高 | 尝试一次纵向/横向分离的加速走廊；命中设置 `predictionExtrapolated=true` |
+| 预测弦角超过 35°但预测末端速度方向在 35°内 | 使用相同距离、速度比和纵横误差约束尝试末端方向走廊；命中同时设置 `selectedTerminalDirectionCorridor=true` |
+| 新 Down 仍在预测时域内且预测端点明显偏短 | 仅在 `≤35ms`、末端方向 `≤15°`、速度比 `[0.5,2.0]` 和纵横误差均通过时使用严格终速走廊 |
+| 预测弦和末端速度方向都超过 35°，或末端方向无效 | 不使用第二走廊，保留原拒绝结果 |
+| 加速走廊角度超过 35°、速度比越界或方向不可靠 | 不尝试加速走廊，保留原拒绝结果 |
+| prediction 为空/位置或时域无效/禁用 | 使用真实尾方向、模型尾部时间窗速度和 32px 保守上限；时间窗速度不可用才回退滤波 RTS 末速 |
 | 暂留 `kMove` 失败 | 立即回退真正 `kUp`，不得遗留候选 |
 | 续接 `kMove` 失败 | 新 Down 正常建笔，旧候选继续等待至超时 |
 | 第 9 个候选进入 | 最旧候选同帧完成，候选数恢复为 8 |
 | 80ms 到期 | 用保存 Up 发送 `kUp` 并进入既有完成批处理 |
+| 断触注入期间物理 Up | 不生成恢复 Down，已合成 Up 的候选自然超时 |
 
 ### 5. Good / Base / Bad Cases
 
-- Good：Pen 在预测曲线方向 50ms 后恢复 Down，预测速度包络允许超过 32px 但不超过 64px 的合理桥接；原 qpc origin、modeler、真实点和宽度状态连续。
+- Good：Pen 沿预测曲线 50ms 后恢复 Down；预测终点切线即使已经转向，只要新 Down 落在预测位移走廊内且桥接不超过当前速度自适应上限，原 qpc origin、modeler、真实点和宽度状态连续。
+- Good：预测只覆盖 17ms、实际间隔 70ms，但预测弦与桥接夹角 10°、抬笔前输入速度高于预测平均速度且速度比约 1.0；冻结端点失败后按加速走廊命中。
+- Good：圆弧桥接与 19ms 短预测弦偏差 68°，但与预测末端速度方向偏差 30°，速度比和纵横误差均通过；第二方向走廊命中且不提高全局 35°。
+- Good：波浪线在 30ms 内恢复，预测仍覆盖该时刻但位移严重偏短；桥接与末端速度方向偏差 1°、速度比 1.75 且纵横误差通过，严格时域内走廊命中。
 - Base：未命中的普通笔、荧光笔、橡皮及 Touch/Mouse/Pen 都按独立笔画处理，旧候选按 deadline 正常收尾。
-- Bad：物理 Up 立即 `kUp` 后尝试 Reset/拼接新模型，或只按距离匹配而忽略设备、工具、方向和速度。
+- Bad：物理 Up 立即 `kUp` 后尝试 Reset/拼接新模型，或用预测终点瞬时切线对整段曲线桥接弦做 35° 硬拒绝。
+- Bad：把 `matchScore` 全局放宽以接纳加速样本，导致 90° 以上的人工重新落笔一起误连；或模拟开关关闭后仍在每个 Move 上查状态和加锁。
 
 ### 6. Tests Required
 
-- 精确覆盖 80ms、35°、prediction 时域插值/末状态、64px 预测上限、32px 回退上限、DPI 缩放和距离包络越界拒绝。
+- 精确覆盖 80ms、prediction 位置时域插值/末状态、预测位移与终点切线反向仍命中、预测落点误差与数值容差、时域外不确定度、64–256px 动态预测上限、35°/32px 回退边界、DPI 缩放和 RTS 速度尖峰抑制。
+- 覆盖高速直线略超基础上限、慢到快圆弧/波浪线加速走廊命中、预测弦超过 35°但末端速度方向走廊命中、时域内 35ms/15°/[0.5,2.0] 严格终速走廊、对应间隔/角度/速度比越界拒绝，并断言 `predictionExtrapolated`、两个终速走廊标记与横向/纵向误差。
+- 分别以模拟开关 true/false 构建；false 的 Release 编译必须选择原始 Down/Move/Up 直接发布分支。
 - 覆盖四类 `InputDeviceType`、三类工具以及全部身份字段不一致拒绝。
 - 覆盖预测距离比例误差/角度/距离/Up 时间的多候选确定性选择、候选上限和超时策略。
 - 同一 modeler 依次接收 `Down → Move → 暂留 Up(kMove) → 新 Down(kMove) → Up`；橡皮使用 Disabled predictor。
@@ -119,9 +141,17 @@ Wrong：`收到物理 Up 就发送 kUp；新 Down 命中后 Reset 一个模型�
 
 Correct：`Up 暂作 kMove 并保存快照；命中后把新 Down 作为原模型的连续 kMove，超时才发送保存的 kUp。`
 
-Wrong：`只用真实尾部 12px 弦方向和固定 32px 上限判断曲线断触。`
+Wrong：`用目标预测状态的瞬时 velocity 方向比较 physicalUp→newDown 的整段弦；曲线跨过拐点时接近反向就拒绝。`
 
-Correct：`Up 的 kMove 后立即冻结 prediction；优先用预测方向与预测速度包络，prediction 不可用时再回退真实尾和 32px 保守策略。`
+Correct：`Up 的 kMove 后立即冻结 prediction；把 modeledUp→selectedPredictionPosition 的位移平移到 physicalUp，按 newDown 到预测落点的误差判定，prediction 不可用时再回退真实尾和 32px 保守策略。`
+
+Wrong：`预测端点太短时直接把圆形容差整体乘大、继续用固定 64px 提前拒绝高速直线，或无条件沿预测方向外推。`
+
+Correct：`先执行冻结端点判定并完成诊断；仅在方向可靠、夹角≤35°、速度比有效且目标超过预测时域时，用抬笔前输入速度修正纵向距离，并分别限制纵向和横向误差。`
+
+Wrong：`圆弧短预测弦超过 35°后直接拒绝，或把全局角度提高到 50°。`
+
+Correct：`保持预测弦走廊不变；其失败后只在预测末端速度方向有效且仍满足 35°、速度比、动态距离和纵横误差时，尝试第二方向走廊。`
 
 ## Scenario: RTS Stylus State And Device Width Modes
 
@@ -440,6 +470,7 @@ Correct：`L2 只表示当前视觉结果；永久笔迹只接受真实确认或
 
 ## Transparent Presentation Contract
 
+- 绘图窗口用 `SW_HIDE` 预设创建；完成 presenter 初始化和首个透明画布提交后才显示。禁止在初始化期间先暴露 HiEasyX 白色窗口类背景，也不得为此直接修改第三方 HiEasyX 源码。
 - DirectComposition swapchain、visual tree 和 `Commit` 全部成功，不代表驱动一定按 premultiplied alpha 合成；透明正确性必须通过真实桌面背景验证。
 - 默认优先 DirectComposition；当前 QCOM ARM64 适配器优先使用 `UlwDirtyRect`，因为实体设备已观察到 DComp 透明像素显示为黑色。
 - 适配器专用回退只改变尝试顺序，不移除后续模式；首选模式失败时仍按既有清理和回退协议继续。

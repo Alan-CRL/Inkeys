@@ -567,19 +567,60 @@ namespace draw3
 		double upInputTime, double gapSeconds, float dpiScale) noexcept
 	{
 		InterruptedStrokeReconnectMotion motion;
+		if (std::isfinite(fallbackSpeed) && fallbackSpeed > 0.0f)
+			motion.recentInputSpeed = fallbackSpeed;
 		const auto useFallback = [&]()
 			{
 				const float directionLength = std::hypot(
 					fallbackDirection.x, fallbackDirection.y);
+				float resolvedSpeed = fallbackSpeed;
+				if (realPoints.size() >= 2)
+				{
+					const float lookbackDistance =
+						kInterruptedStrokeReconnectDirectionLookbackPx * std::max(dpiScale, 0.1f);
+					const float minimumDistance =
+						kInterruptedStrokeReconnectMinimumDirectionPx * std::max(dpiScale, 0.1f);
+					float accumulatedDistance = 0.0f;
+					double startTime = realPoints.back().time;
+					for (size_t index = realPoints.size() - 1; index > 0; --index)
+					{
+						const InkPoint& current = realPoints[index];
+						const InkPoint& previous = realPoints[index - 1];
+						const float segmentLength = std::hypot(
+							current.x - previous.x, current.y - previous.y);
+						accumulatedDistance += segmentLength;
+						startTime = previous.time;
+						if (accumulatedDistance >= lookbackDistance) break;
+					}
+					const double duration = static_cast<double>(realPoints.back().time) - startTime;
+					if (accumulatedDistance >= minimumDistance && duration > 0.000001)
+					{
+						const float modeledTailSpeed =
+							accumulatedDistance / static_cast<float>(duration);
+						if (std::isfinite(modeledTailSpeed) && modeledTailSpeed > 0.0f)
+							resolvedSpeed = modeledTailSpeed; // 模型时间窗比 RTS 尾包瞬时速度更抗异常尖峰。
+					}
+				}
+				if ((!std::isfinite(resolvedSpeed) || resolvedSpeed <= 0.0f) &&
+					std::isfinite(fallbackSpeed) && fallbackSpeed > 0.0f)
+					resolvedSpeed = fallbackSpeed;
+				if (gapSeconds > 0.0 && std::isfinite(resolvedSpeed))
+				{
+					const float maximumUsefulSpeed =
+						kInterruptedStrokeReconnectFallbackMaximumDistancePx * std::max(dpiScale, 0.1f) /
+						(kInterruptedStrokeReconnectMinimumSpeedRatio * static_cast<float>(gapSeconds));
+					resolvedSpeed = std::min(resolvedSpeed, maximumUsefulSpeed);
+				}
 				if (!std::isfinite(directionLength) || directionLength <= 0.0001f ||
-					!std::isfinite(fallbackSpeed) || fallbackSpeed <= 0.0f) return;
+					!std::isfinite(resolvedSpeed) || resolvedSpeed <= 0.0f) return;
 				motion.valid = true;
 				motion.source = InterruptedStrokeReconnectMotionSource::RealTail;
+				motion.directionReliable = true;
 				motion.direction = {
 					fallbackDirection.x / directionLength,
 					fallbackDirection.y / directionLength
 				};
-				motion.speed = fallbackSpeed;
+				motion.speed = resolvedSpeed;
 			};
 
 		if (predictedResults.empty() || !std::isfinite(upInputTime) ||
@@ -593,6 +634,8 @@ namespace draw3
 		motion.predictionHorizonMilliseconds = std::max(
 			0.0, (lastPredictionTime - upInputTime) * 1000.0);
 		const double targetTime = upInputTime + gapSeconds;
+		motion.beyondPredictionHorizonMilliseconds = std::max(
+			0.0, (targetTime - lastPredictionTime) * 1000.0);
 		ink::stroke_model::Vec2 selectedPosition = predictedResults.front().position;
 		ink::stroke_model::Vec2 selectedVelocity = predictedResults.front().velocity;
 		double selectedTime = predictedResults.front().time.Value();
@@ -625,32 +668,36 @@ namespace draw3
 			selectedTime = lastPredictionTime;
 		}
 
-		const float predictedSpeed = std::hypot(selectedVelocity.x, selectedVelocity.y);
-		if (std::isfinite(predictedSpeed) && predictedSpeed > 0.0001f)
-		{
-			motion.valid = true;
-			motion.source = InterruptedStrokeReconnectMotionSource::PredictionVelocity;
-			motion.direction = {
-				selectedVelocity.x / predictedSpeed,
-				selectedVelocity.y / predictedSpeed
-			};
-			motion.speed = predictedSpeed;
-			return motion;
-		}
-
-		if (!realPoints.empty())
+		const double forecastDuration = selectedTime - upInputTime;
+		if (!realPoints.empty() && forecastDuration > 0.0 &&
+			std::isfinite(selectedPosition.x) && std::isfinite(selectedPosition.y))
 		{
 			const float deltaX = selectedPosition.x - realPoints.back().x;
 			const float deltaY = selectedPosition.y - realPoints.back().y;
-			const float chordLength = std::hypot(deltaX, deltaY);
-			const double predictionDuration = selectedTime - upInputTime;
-			if (std::isfinite(chordLength) &&
-				chordLength >= std::max(dpiScale, 0.1f) && predictionDuration > 0.0)
+			const float predictedDistance = std::hypot(deltaX, deltaY);
+			if (std::isfinite(predictedDistance))
 			{
 				motion.valid = true;
-				motion.source = InterruptedStrokeReconnectMotionSource::PredictionChord;
-				motion.direction = { deltaX / chordLength, deltaY / chordLength };
-				motion.speed = chordLength / static_cast<float>(predictionDuration);
+				motion.source = InterruptedStrokeReconnectMotionSource::PredictionPosition;
+				motion.predictedDisplacement = { deltaX, deltaY };
+				motion.predictedDistance = predictedDistance;
+				motion.forecastDurationMilliseconds = forecastDuration * 1000.0;
+				motion.speed = predictedDistance / static_cast<float>(forecastDuration);
+				motion.directionReliable = predictedDistance >=
+					kInterruptedStrokeReconnectMinimumDirectionPx * std::max(dpiScale, 0.1f);
+				if (predictedDistance > 0.0001f)
+					motion.direction = { deltaX / predictedDistance, deltaY / predictedDistance };
+
+				const float terminalSpeed = std::hypot(selectedVelocity.x, selectedVelocity.y);
+				if (std::isfinite(terminalSpeed) && terminalSpeed > 0.0001f)
+				{
+					motion.terminalDirectionValid = true;
+					motion.terminalSpeed = terminalSpeed;
+					motion.terminalDirection = {
+						selectedVelocity.x / terminalSpeed,
+						selectedVelocity.y / terminalSpeed
+					};
+				}
 				return motion;
 			}
 		}
@@ -663,16 +710,18 @@ namespace draw3
 		const InterruptedStrokeReconnectInput& input) noexcept
 	{
 		InterruptedStrokeReconnectResult result;
-		result.motionSource = input.motionSource;
-		result.referenceSpeed = input.previousSpeed;
+		result.motionSource = input.motion.source;
+		result.referenceSpeed = input.motion.speed;
+		result.recentInputSpeed = input.motion.recentInputSpeed;
+		result.terminalSpeed = input.motion.terminalSpeed;
+		result.forecastDurationMilliseconds = input.motion.forecastDurationMilliseconds;
+		result.predictionHorizonMilliseconds = input.motion.predictionHorizonMilliseconds;
+		result.beyondPredictionHorizonMilliseconds =
+			input.motion.beyondPredictionHorizonMilliseconds;
+		result.directionReliable = input.motion.directionReliable;
 		if (input.qpcFrequency <= 0 || input.newDownQpc <= input.previousUpQpc)
 		{
 			result.rejectReason = InterruptedStrokeReconnectRejectReason::InvalidTime;
-			return result;
-		}
-		if (!std::isfinite(input.previousSpeed) || input.previousSpeed <= 0.0f)
-		{
-			result.rejectReason = InterruptedStrokeReconnectRejectReason::InvalidSpeed;
 			return result;
 		}
 
@@ -689,61 +738,292 @@ namespace draw3
 		const float deltaX = input.newPosition.x - input.previousPosition.x;
 		const float deltaY = input.newPosition.y - input.previousPosition.y;
 		result.distance = std::sqrt(deltaX * deltaX + deltaY * deltaY);
-		result.expectedDistance = input.previousSpeed * static_cast<float>(gapSeconds);
 		result.bridgeSpeed = result.distance / static_cast<float>(gapSeconds);
-		result.speedRatio = result.bridgeSpeed / input.previousSpeed;
-		result.distanceRatioError = std::isfinite(result.speedRatio) && result.speedRatio > 0.0f
+		const float comparisonEpsilon =
+			kInterruptedStrokeReconnectComparisonEpsilonPx * safeScale;
+		if (!input.motion.valid)
+		{
+			result.rejectReason = InterruptedStrokeReconnectRejectReason::InvalidDirection;
+			return result;
+		}
+
+		if (input.motion.source == InterruptedStrokeReconnectMotionSource::PredictionPosition)
+		{
+			result.expectedDistance = input.motion.predictedDistance;
+			result.minimumDistance = 0.0f;
+			const float predictionSpeed = std::isfinite(input.motion.speed) && input.motion.speed > 0.0f
+				? input.motion.speed : 0.0f;
+			const float recentInputSpeed = std::isfinite(input.motion.recentInputSpeed) &&
+				input.motion.recentInputSpeed > 0.0f ? input.motion.recentInputSpeed : 0.0f;
+			result.referenceSpeed = std::max(predictionSpeed, recentInputSpeed);
+			const float adaptiveDistanceLimit = result.referenceSpeed > 0.0f
+				? result.referenceSpeed * static_cast<float>(gapSeconds) *
+					kInterruptedStrokeReconnectAdaptiveDistanceSpeedRatio +
+					kInterruptedStrokeReconnectDistanceSlackPx * safeScale
+				: 0.0f;
+			result.maximumDistance = std::min(
+				kInterruptedStrokeReconnectAdaptiveMaximumDistancePx * safeScale,
+				std::max(kInterruptedStrokeReconnectPredictedMaximumDistancePx * safeScale,
+					adaptiveDistanceLimit));
+
+			const float expectedX = input.previousPosition.x +
+				input.motion.predictedDisplacement.x;
+			const float expectedY = input.previousPosition.y +
+				input.motion.predictedDisplacement.y;
+			result.endpointError = std::hypot(
+				input.newPosition.x - expectedX, input.newPosition.y - expectedY);
+			const float beyondHorizonSeconds = static_cast<float>(
+				std::max(0.0, input.motion.beyondPredictionHorizonMilliseconds) / 1000.0);
+			const float horizonUncertainty = std::max(0.0f, input.motion.speed) *
+				beyondHorizonSeconds * kInterruptedStrokeReconnectBeyondHorizonUncertaintyRatio;
+			result.maximumEndpointError = std::min(result.maximumDistance,
+				kInterruptedStrokeReconnectDistanceSlackPx * safeScale +
+				input.motion.predictedDistance *
+				kInterruptedStrokeReconnectEndpointRelativeTolerance + horizonUncertainty);
+			result.speedRatio = result.referenceSpeed > 0.0001f
+				? result.bridgeSpeed / result.referenceSpeed : 0.0f;
+
+			if (input.motion.directionReliable && result.distance > 0.0001f)
+			{
+				const float directionLength = std::hypot(
+					input.motion.direction.x, input.motion.direction.y);
+				if (std::isfinite(directionLength) && directionLength > 0.0001f)
+				{
+					const float dot = std::clamp(
+						(deltaX * input.motion.direction.x + deltaY * input.motion.direction.y) /
+						(result.distance * directionLength), -1.0f, 1.0f);
+					result.angleDegrees = std::acos(dot) * 180.0f / 3.14159265358979323846f;
+				}
+			}
+			else
+			{
+				result.angleDegrees = 0.0f; // 预测弦过短时角度不稳定，只按落点误差判断。
+			}
+			result.selectedDirectionAngleDegrees = result.angleDegrees;
+			if (input.motion.terminalDirectionValid && result.distance > 0.0001f)
+			{
+				const float terminalDot = std::clamp(
+					(deltaX * input.motion.terminalDirection.x +
+						deltaY * input.motion.terminalDirection.y) / result.distance,
+					-1.0f, 1.0f);
+				result.terminalVelocityAngleDegrees =
+					std::acos(terminalDot) * 180.0f / 3.14159265358979323846f;
+			}
+			result.matchScore = result.maximumEndpointError > 0.0001f
+				? result.endpointError / result.maximumEndpointError
+				: (result.endpointError <= comparisonEpsilon ? 0.0f :
+					(std::numeric_limits<float>::infinity)());
+			const bool withinDistanceLimit =
+				result.distance <= result.maximumDistance + comparisonEpsilon;
+			if (result.endpointError <= result.maximumEndpointError + comparisonEpsilon &&
+				withinDistanceLimit)
+			{
+				result.matched = std::isfinite(result.matchScore);
+				result.rejectReason = result.matched
+					? InterruptedStrokeReconnectRejectReason::None
+					: InterruptedStrokeReconnectRejectReason::InvalidDirection;
+				return result;
+			}
+
+			const double forecastSeconds =
+				input.motion.forecastDurationMilliseconds / 1000.0;
+			const bool canExtrapolateCommon =
+				std::isfinite(result.referenceSpeed) && result.referenceSpeed > 0.0f &&
+				forecastSeconds > 0.0 && gapSeconds > forecastSeconds &&
+				input.motion.beyondPredictionHorizonMilliseconds > 0.0 &&
+				result.speedRatio >= kInterruptedStrokeReconnectMinimumSpeedRatio &&
+				result.speedRatio <= kInterruptedStrokeReconnectMaximumSpeedRatio;
+			const bool canUseInHorizonTerminalCorridor =
+				std::isfinite(result.referenceSpeed) && result.referenceSpeed > 0.0f &&
+				forecastSeconds > 0.0 &&
+				input.motion.beyondPredictionHorizonMilliseconds <= 0.0 &&
+				gapSeconds <= kInterruptedStrokeReconnectInHorizonTerminalMaximumGapSeconds &&
+				result.speedRatio >= kInterruptedStrokeReconnectInHorizonTerminalMinimumSpeedRatio &&
+				result.speedRatio <= kInterruptedStrokeReconnectInHorizonTerminalMaximumSpeedRatio;
+			struct DirectionCorridor
+			{
+				bool evaluated = false;
+				bool matched = false;
+				float angleDegrees = 180.0f;
+				float longitudinalDistance = 0.0f;
+				float longitudinalError = 0.0f;
+				float maximumLongitudinalError = 0.0f;
+				float lateralError = 0.0f;
+				float maximumLateralError = 0.0f;
+				float expectedDistance = 0.0f;
+				float endpointError = 0.0f;
+				float maximumEndpointError = 0.0f;
+				float matchScore = (std::numeric_limits<float>::infinity)();
+			};
+			const auto evaluateDirectionCorridor = [&](DirectX::XMFLOAT2 direction,
+				float angleDegrees, bool directionValid, bool policyEnabled,
+				float maximumAngleDegrees)
+				{
+					DirectionCorridor corridor;
+					const float directionLength = std::hypot(direction.x, direction.y);
+					if (!policyEnabled || !directionValid || !std::isfinite(directionLength) ||
+						directionLength <= 0.0001f || angleDegrees > maximumAngleDegrees)
+						return corridor;
+
+					corridor.evaluated = true;
+					corridor.angleDegrees = angleDegrees;
+					corridor.expectedDistance = std::max(input.motion.predictedDistance,
+						result.referenceSpeed * static_cast<float>(gapSeconds));
+					const float directionX = direction.x / directionLength;
+					const float directionY = direction.y / directionLength;
+					corridor.longitudinalDistance = deltaX * directionX + deltaY * directionY;
+					corridor.lateralError = std::abs(deltaX * directionY - deltaY * directionX);
+					corridor.longitudinalError = std::abs(
+						corridor.longitudinalDistance - corridor.expectedDistance);
+					corridor.maximumLongitudinalError =
+						kInterruptedStrokeReconnectDistanceSlackPx * safeScale +
+						corridor.expectedDistance * kInterruptedStrokeReconnectAdaptiveRelativeTolerance;
+					corridor.maximumLateralError = corridor.maximumLongitudinalError;
+					const float longitudinalScore = corridor.maximumLongitudinalError > 0.0001f
+						? corridor.longitudinalError / corridor.maximumLongitudinalError :
+						(std::numeric_limits<float>::infinity)();
+					const float lateralScore = corridor.maximumLateralError > 0.0001f
+						? corridor.lateralError / corridor.maximumLateralError :
+						(std::numeric_limits<float>::infinity)();
+					corridor.endpointError = std::hypot(
+						corridor.longitudinalError, corridor.lateralError);
+					corridor.maximumEndpointError = std::hypot(
+						corridor.maximumLongitudinalError, corridor.maximumLateralError);
+					corridor.matchScore = std::max(longitudinalScore, lateralScore);
+					corridor.matched = corridor.longitudinalDistance > 0.0f && withinDistanceLimit &&
+						corridor.longitudinalError <=
+							corridor.maximumLongitudinalError + comparisonEpsilon &&
+						corridor.lateralError <=
+							corridor.maximumLateralError + comparisonEpsilon;
+					return corridor;
+				};
+			const auto applyDirectionCorridor = [&](const DirectionCorridor& corridor,
+				bool usedTerminalDirection)
+				{
+					result.longitudinalDistance = corridor.longitudinalDistance;
+					result.longitudinalError = corridor.longitudinalError;
+					result.maximumLongitudinalError = corridor.maximumLongitudinalError;
+					result.lateralError = corridor.lateralError;
+					result.maximumLateralError = corridor.maximumLateralError;
+					result.expectedDistance = corridor.expectedDistance;
+					result.endpointError = corridor.endpointError;
+					result.maximumEndpointError = corridor.maximumEndpointError;
+					result.matchScore = corridor.matchScore;
+					result.selectedDirectionAngleDegrees = corridor.angleDegrees;
+					result.selectedTerminalDirectionCorridor = usedTerminalDirection;
+				};
+
+			// 先保持原预测弦走廊；曲线导致短弦滞后时，再尝试模型预测末端速度方向。
+			const DirectionCorridor chordCorridor = evaluateDirectionCorridor(
+				input.motion.direction, result.angleDegrees, input.motion.directionReliable,
+				canExtrapolateCommon,
+				kInterruptedStrokeReconnectExtrapolationMaximumAngleDegrees);
+			if (chordCorridor.matched)
+			{
+				applyDirectionCorridor(chordCorridor, false);
+				result.predictionExtrapolated = true;
+				result.matched = std::isfinite(result.matchScore);
+				result.rejectReason = result.matched
+					? InterruptedStrokeReconnectRejectReason::None
+					: InterruptedStrokeReconnectRejectReason::InvalidDirection;
+				return result;
+			}
+
+			const DirectionCorridor terminalCorridor = evaluateDirectionCorridor(
+				input.motion.terminalDirection, result.terminalVelocityAngleDegrees,
+				input.motion.terminalDirectionValid, canExtrapolateCommon,
+				kInterruptedStrokeReconnectExtrapolationMaximumAngleDegrees);
+			if (terminalCorridor.matched)
+			{
+				applyDirectionCorridor(terminalCorridor, true);
+				result.predictionExtrapolated = true;
+				result.matched = std::isfinite(result.matchScore);
+				result.rejectReason = result.matched
+					? InterruptedStrokeReconnectRejectReason::None
+					: InterruptedStrokeReconnectRejectReason::InvalidDirection;
+				return result;
+			}
+
+			// 预测仍覆盖新 Down 时只允许更短间隔、更小角度和更窄速度比的终速走廊，
+			// 修复急弯中预测位移严重偏短，而不放宽正常的预测落点容差。
+			const DirectionCorridor inHorizonTerminalCorridor = evaluateDirectionCorridor(
+				input.motion.terminalDirection, result.terminalVelocityAngleDegrees,
+				input.motion.terminalDirectionValid, canUseInHorizonTerminalCorridor,
+				kInterruptedStrokeReconnectInHorizonTerminalMaximumAngleDegrees);
+			if (inHorizonTerminalCorridor.matched)
+			{
+				applyDirectionCorridor(inHorizonTerminalCorridor, true);
+				result.selectedInHorizonTerminalDirectionCorridor = true;
+				result.matched = std::isfinite(result.matchScore);
+				result.rejectReason = result.matched
+					? InterruptedStrokeReconnectRejectReason::None
+					: InterruptedStrokeReconnectRejectReason::InvalidDirection;
+				return result;
+			}
+
+			if (inHorizonTerminalCorridor.evaluated)
+			{
+				applyDirectionCorridor(inHorizonTerminalCorridor, true);
+				result.selectedInHorizonTerminalDirectionCorridor = true;
+			}
+			else if (chordCorridor.evaluated || terminalCorridor.evaluated)
+			{
+				const bool useTerminalDiagnostics = terminalCorridor.evaluated &&
+					(!chordCorridor.evaluated || terminalCorridor.matchScore < chordCorridor.matchScore);
+				applyDirectionCorridor(useTerminalDiagnostics ? terminalCorridor : chordCorridor,
+					useTerminalDiagnostics);
+			}
+			result.rejectReason = withinDistanceLimit
+				? InterruptedStrokeReconnectRejectReason::ForecastError
+				: InterruptedStrokeReconnectRejectReason::Distance;
+			return result;
+		}
+
+		if (!std::isfinite(input.motion.speed) || input.motion.speed <= 0.0f)
+		{
+			result.rejectReason = InterruptedStrokeReconnectRejectReason::InvalidSpeed;
+			return result;
+		}
+		result.expectedDistance = input.motion.speed * static_cast<float>(gapSeconds);
+		result.speedRatio = result.bridgeSpeed / input.motion.speed;
+		result.matchScore = std::isfinite(result.speedRatio) && result.speedRatio > 0.0f
 			? std::abs(std::log(result.speedRatio))
 			: (std::numeric_limits<float>::infinity)();
-		const bool usesPrediction = input.motionSource ==
-			InterruptedStrokeReconnectMotionSource::PredictionVelocity ||
-			input.motionSource == InterruptedStrokeReconnectMotionSource::PredictionChord;
-		if (usesPrediction)
-		{
-			result.minimumDistance = std::max(0.0f,
-				result.expectedDistance * kInterruptedStrokeReconnectMinimumSpeedRatio -
-				kInterruptedStrokeReconnectDistanceSlackPx * safeScale);
-			result.maximumDistance = std::min(
-				kInterruptedStrokeReconnectPredictedMaximumDistancePx * safeScale,
-				result.expectedDistance * kInterruptedStrokeReconnectMaximumSpeedRatio +
-				kInterruptedStrokeReconnectDistanceSlackPx * safeScale);
-		}
-		else
-		{
-			result.minimumDistance =
-				result.expectedDistance * kInterruptedStrokeReconnectMinimumSpeedRatio;
-			result.maximumDistance = std::min(
-				kInterruptedStrokeReconnectFallbackMaximumDistancePx * safeScale,
-				std::max(6.0f * safeScale,
-					result.expectedDistance * 1.75f +
-					kInterruptedStrokeReconnectDistanceSlackPx * safeScale));
-		}
-		if (result.distance <= 0.0001f || result.distance < result.minimumDistance ||
-			result.distance > result.maximumDistance)
+		result.minimumDistance =
+			result.expectedDistance * kInterruptedStrokeReconnectMinimumSpeedRatio;
+		result.maximumDistance = std::min(
+			kInterruptedStrokeReconnectFallbackMaximumDistancePx * safeScale,
+			std::max(6.0f * safeScale,
+				result.expectedDistance * 1.75f +
+				kInterruptedStrokeReconnectDistanceSlackPx * safeScale));
+		if (result.distance <= 0.0001f ||
+			result.distance + comparisonEpsilon < result.minimumDistance ||
+			result.distance > result.maximumDistance + comparisonEpsilon)
 		{
 			result.rejectReason = InterruptedStrokeReconnectRejectReason::Distance;
 			return result;
 		}
 
 		const float directionLength = std::sqrt(
-			input.previousDirection.x * input.previousDirection.x +
-			input.previousDirection.y * input.previousDirection.y);
+			input.motion.direction.x * input.motion.direction.x +
+			input.motion.direction.y * input.motion.direction.y);
 		if (!std::isfinite(directionLength) || directionLength <= 0.0001f)
 		{
 			result.rejectReason = InterruptedStrokeReconnectRejectReason::InvalidDirection;
 			return result;
 		}
 		const float dot = std::clamp(
-			(deltaX * input.previousDirection.x + deltaY * input.previousDirection.y) /
+			(deltaX * input.motion.direction.x + deltaY * input.motion.direction.y) /
 			(result.distance * directionLength), -1.0f, 1.0f);
 		result.angleDegrees = std::acos(dot) * 180.0f / 3.14159265358979323846f;
+		result.selectedDirectionAngleDegrees = result.angleDegrees;
 		if (result.angleDegrees > kInterruptedStrokeReconnectMaximumAngleDegrees)
 		{
 			result.rejectReason = InterruptedStrokeReconnectRejectReason::Angle;
 			return result;
 		}
 
-		result.matched = std::isfinite(result.distanceRatioError);
+		result.matched = std::isfinite(result.matchScore);
 		result.rejectReason = result.matched
 			? InterruptedStrokeReconnectRejectReason::None
 			: InterruptedStrokeReconnectRejectReason::InvalidSpeed;
@@ -768,10 +1048,10 @@ namespace draw3
 	{
 		if (!candidate.matched) return false;
 		if (!current.matched) return true;
-		if (candidate.distanceRatioError != current.distanceRatioError)
-			return candidate.distanceRatioError < current.distanceRatioError;
-		if (candidate.angleDegrees != current.angleDegrees)
-			return candidate.angleDegrees < current.angleDegrees;
+		if (candidate.matchScore != current.matchScore)
+			return candidate.matchScore < current.matchScore;
+		if (candidate.selectedDirectionAngleDegrees != current.selectedDirectionAngleDegrees)
+			return candidate.selectedDirectionAngleDegrees < current.selectedDirectionAngleDegrees;
 		if (candidate.distance != current.distance) return candidate.distance < current.distance;
 		return candidateUpQpc > currentUpQpc;
 	}

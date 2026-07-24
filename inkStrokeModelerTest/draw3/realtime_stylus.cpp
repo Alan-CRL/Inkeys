@@ -23,6 +23,7 @@
 module draw3.realtime_stylus;
 
 import draw3.diagnostics;
+import draw3.ink_prediction;
 
 namespace draw3
 {
@@ -103,6 +104,238 @@ namespace draw3
 			return value.QuadPart;
 		}
 
+		template<bool Enabled>
+		class InterruptedStrokeSimulation;
+
+		template<>
+		class InterruptedStrokeSimulation<false>
+		{
+		public:
+			explicit InterruptedStrokeSimulation(ContactInputCoordinator&) noexcept {}
+			bool PublishDown(uint32_t, uint32_t, InputDeviceType,
+				const ContactSnapshot&) noexcept { return false; }
+			bool PublishMove(uint32_t, uint32_t,
+				const ContactSnapshot&) noexcept { return false; }
+			bool PublishUp(uint32_t, uint32_t,
+				const ContactSnapshot&) noexcept { return false; }
+			void Reset() noexcept {}
+		};
+
+		template<>
+		class InterruptedStrokeSimulation<true>
+		{
+			struct ContactState
+			{
+				bool occupied = false;
+				bool dropping = false;
+				bool resumeFailureLogged = false;
+				uint32_t tabletContextId = 0;
+				uint32_t physicalContactId = 0;
+				uint32_t routedContactId = 0;
+				InputDeviceType deviceType = InputDeviceType::Pen;
+				int64_t interruptionUpQpc = 0;
+				int64_t resumeQpc = 0;
+				int64_t nextInterruptionQpc = 0;
+				uint32_t requestedDropMilliseconds = 0;
+			};
+
+		public:
+			explicit InterruptedStrokeSimulation(ContactInputCoordinator& coordinator) noexcept
+				: coordinator_(coordinator)
+			{
+				LARGE_INTEGER frequency = {};
+				if (QueryPerformanceFrequency(&frequency) && frequency.QuadPart > 0)
+					qpcFrequency_ = frequency.QuadPart;
+				const uint64_t seed = static_cast<uint64_t>(QueryQpc()) ^
+					(static_cast<uint64_t>(GetCurrentThreadId()) << 32);
+				randomState_ = static_cast<uint32_t>(seed ^ (seed >> 32));
+				if (randomState_ == 0) randomState_ = 0x6d2b79f5u;
+				std::cout << "[StrokeReconnectSimulation] enabled=true interval_ms=["
+					<< kInterruptedStrokeReconnectSimulationMinimumIntervalMs << ","
+					<< kInterruptedStrokeReconnectSimulationMaximumIntervalMs << "] drop_ms=["
+					<< kInterruptedStrokeReconnectSimulationMinimumDropMs << ","
+					<< kInterruptedStrokeReconnectSimulationMaximumDropMs << "]" << std::endl;
+			}
+
+			bool PublishDown(uint32_t tabletContextId, uint32_t contactId,
+				InputDeviceType deviceType, const ContactSnapshot& snapshot)
+			{
+				std::lock_guard lock(mutex_);
+				const bool published = coordinator_.PublishDown(
+					tabletContextId, contactId, deviceType, snapshot);
+				if (!published || qpcFrequency_ <= 0) return published;
+				ContactState* state = AcquireState(tabletContextId, contactId);
+				if (!state) return published;
+				state->routedContactId = contactId;
+				state->deviceType = deviceType;
+				ScheduleNextInterruption(*state, snapshot.qpc);
+				return true;
+			}
+
+			bool PublishMove(uint32_t tabletContextId, uint32_t contactId,
+				const ContactSnapshot& snapshot) noexcept
+			{
+				std::lock_guard lock(mutex_);
+				ContactState* state = FindState(tabletContextId, contactId);
+				if (!state) return coordinator_.PublishMove(tabletContextId, contactId, snapshot);
+				if (state->dropping)
+				{
+					if (snapshot.qpc < state->resumeQpc) return true;
+					ContactSnapshot resumedDown = snapshot;
+					resumedDown.phase = ContactPhase::Down;
+					const uint32_t resumedContactId = NextSyntheticContactId();
+					if (!coordinator_.PublishDown(tabletContextId, resumedContactId,
+						state->deviceType, resumedDown))
+					{
+						if (!state->resumeFailureLogged)
+						{
+							std::cout << "[StrokeReconnectSimulation] resume_failed tcid="
+								<< tabletContextId << " physical_cid=" << contactId << std::endl;
+							state->resumeFailureLogged = true;
+						}
+						return false;
+					}
+					state->routedContactId = resumedContactId;
+					state->dropping = false;
+					state->resumeFailureLogged = false;
+					const double actualGapMilliseconds = static_cast<double>(
+						snapshot.qpc - state->interruptionUpQpc) * 1000.0 /
+						static_cast<double>(qpcFrequency_);
+					ScheduleNextInterruption(*state, snapshot.qpc);
+					std::cout << "[StrokeReconnectSimulation] resumed device="
+						<< static_cast<uint32_t>(state->deviceType) << " tcid=" << tabletContextId
+						<< " physical_cid=" << contactId << " synthetic_cid=" << resumedContactId
+						<< " requested_drop_ms=" << state->requestedDropMilliseconds
+						<< " actual_gap_ms=" << actualGapMilliseconds << std::endl;
+					return true;
+				}
+
+				if (snapshot.qpc >= state->nextInterruptionQpc)
+				{
+					ContactSnapshot syntheticUp = snapshot;
+					syntheticUp.phase = ContactPhase::Up;
+					if (coordinator_.PublishUp(tabletContextId,
+						state->routedContactId, syntheticUp))
+					{
+						state->requestedDropMilliseconds = RandomBetween(
+							kInterruptedStrokeReconnectSimulationMinimumDropMs,
+							kInterruptedStrokeReconnectSimulationMaximumDropMs);
+						state->interruptionUpQpc = snapshot.qpc;
+						state->resumeQpc = snapshot.qpc +
+							MillisecondsToQpc(state->requestedDropMilliseconds);
+						state->dropping = true;
+						std::cout << "[StrokeReconnectSimulation] interrupted device="
+							<< static_cast<uint32_t>(state->deviceType) << " tcid=" << tabletContextId
+							<< " physical_cid=" << contactId << " routed_cid="
+							<< state->routedContactId << " drop_ms="
+							<< state->requestedDropMilliseconds << std::endl;
+						return true;
+					}
+					ScheduleNextInterruption(*state, snapshot.qpc);
+				}
+				return coordinator_.PublishMove(tabletContextId,
+					state->routedContactId, snapshot);
+			}
+
+			bool PublishUp(uint32_t tabletContextId, uint32_t contactId,
+				const ContactSnapshot& snapshot) noexcept
+			{
+				std::lock_guard lock(mutex_);
+				ContactState* state = FindState(tabletContextId, contactId);
+				if (!state) return coordinator_.PublishUp(tabletContextId, contactId, snapshot);
+				bool published = true;
+				if (!state->dropping)
+					published = coordinator_.PublishUp(
+						tabletContextId, state->routedContactId, snapshot);
+				else
+					std::cout << "[StrokeReconnectSimulation] physical_up_during_drop tcid="
+						<< tabletContextId << " physical_cid=" << contactId << std::endl;
+				*state = {};
+				return published;
+			}
+
+			void Reset() noexcept
+			{
+				std::lock_guard lock(mutex_);
+				for (ContactState& state : contacts_) state = {};
+			}
+
+		private:
+			ContactState* FindState(uint32_t tabletContextId, uint32_t physicalContactId) noexcept
+			{
+				for (ContactState& state : contacts_)
+				{
+					if (state.occupied && state.tabletContextId == tabletContextId &&
+						state.physicalContactId == physicalContactId) return &state;
+				}
+				return nullptr;
+			}
+
+			ContactState* AcquireState(uint32_t tabletContextId, uint32_t physicalContactId) noexcept
+			{
+				if (ContactState* existing = FindState(tabletContextId, physicalContactId))
+				{
+					*existing = {};
+					existing->occupied = true;
+					existing->tabletContextId = tabletContextId;
+					existing->physicalContactId = physicalContactId;
+					return existing;
+				}
+				for (ContactState& state : contacts_)
+				{
+					if (state.occupied) continue;
+					state = {};
+					state.occupied = true;
+					state.tabletContextId = tabletContextId;
+					state.physicalContactId = physicalContactId;
+					return &state;
+				}
+				return nullptr;
+			}
+
+			uint32_t NextRandom() noexcept
+			{
+				randomState_ ^= randomState_ << 13;
+				randomState_ ^= randomState_ >> 17;
+				randomState_ ^= randomState_ << 5;
+				return randomState_;
+			}
+
+			uint32_t RandomBetween(uint32_t minimum, uint32_t maximum) noexcept
+			{
+				if (maximum <= minimum) return minimum;
+				return minimum + NextRandom() % (maximum - minimum + 1);
+			}
+
+			int64_t MillisecondsToQpc(uint32_t milliseconds) const noexcept
+			{
+				return static_cast<int64_t>(std::max(1.0,
+					static_cast<double>(qpcFrequency_) * milliseconds / 1000.0));
+			}
+
+			void ScheduleNextInterruption(ContactState& state, int64_t nowQpc) noexcept
+			{
+				const uint32_t intervalMilliseconds = RandomBetween(
+					kInterruptedStrokeReconnectSimulationMinimumIntervalMs,
+					kInterruptedStrokeReconnectSimulationMaximumIntervalMs);
+				state.nextInterruptionQpc = nowQpc + MillisecondsToQpc(intervalMilliseconds);
+			}
+
+			uint32_t NextSyntheticContactId() noexcept
+			{
+				++syntheticContactSequence_;
+				return 0x80000000u | (syntheticContactSequence_ & 0x7fffffffu);
+			}
+
+			static constexpr size_t kContactCapacity = 32;
+			ContactInputCoordinator& coordinator_;
+			std::mutex mutex_;
+			std::array<ContactState, kContactCapacity> contacts_ = {};
+			int64_t qpcFrequency_ = 0;
+			uint32_t randomState_ = 0;
+			uint32_t syntheticContactSequence_ = 0;
+		};
+
 		struct TabletMetadata
 		{
 			std::atomic<bool> published = false;
@@ -124,7 +357,7 @@ namespace draw3
 		{
 		public:
 			explicit StylusSyncPlugin(ContactInputCoordinator& coordinator)
-				: coordinator_(coordinator)
+				: coordinator_(coordinator), interruptionSimulation_(coordinator)
 			{
 				marshalerResult_ = CoCreateFreeThreadedMarshaler(
 					static_cast<IUnknown*>(this), freeThreadedMarshaler_.ReleaseAndGetAddressOf());
@@ -168,6 +401,8 @@ namespace draw3
 			{
 				if (!source || (contextCount > 0 && !contextIds)) return E_INVALIDARG;
 				std::cout << "[RTS] enabled contexts=" << contextCount << std::endl;
+				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
+					interruptionSimulation_.Reset();
 				pixelScalePublished_.store(false, std::memory_order_release);
 				if (contextCount > 0)
 				{
@@ -207,6 +442,8 @@ namespace draw3
 				ULONG, const TABLET_CONTEXT_ID*) override
 			{
 				std::cout << "[RTS] disabled." << std::endl;
+				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
+					interruptionSimulation_.Reset();
 				coordinator_.CloseAllProducerContacts(QueryQpc());
 				return S_OK;
 			}
@@ -244,8 +481,13 @@ namespace draw3
 					deviceType = rightButtonDown && !leftButtonDown
 						? InputDeviceType::MouseRight : InputDeviceType::MouseLeft;
 				}
-				const bool published = coordinator_.PublishDown(
-					stylusInfo->tcid, stylusInfo->cid, deviceType, snapshot);
+				bool published = false;
+				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
+					published = interruptionSimulation_.PublishDown(
+						stylusInfo->tcid, stylusInfo->cid, deviceType, snapshot);
+				else
+					published = coordinator_.PublishDown(
+						stylusInfo->tcid, stylusInfo->cid, deviceType, snapshot);
 #if defined(_DEBUG)
 				moveDiagnosticCount_.store(0, std::memory_order_relaxed); // 每次落笔重新保留少量 Move 日志。
 				std::cout << "[RTS] down tcid=" << stylusInfo->tcid << " cid=" << stylusInfo->cid
@@ -273,7 +515,12 @@ namespace draw3
 				}
 				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
-				const bool published = coordinator_.PublishUp(stylusInfo->tcid, stylusInfo->cid, snapshot);
+				bool published = false;
+				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
+					published = interruptionSimulation_.PublishUp(
+						stylusInfo->tcid, stylusInfo->cid, snapshot);
+				else
+					published = coordinator_.PublishUp(stylusInfo->tcid, stylusInfo->cid, snapshot);
 #if defined(_DEBUG)
 				std::cout << "[RTS] up tcid=" << stylusInfo->tcid << " cid=" << stylusInfo->cid
 					<< " pixel=(" << snapshot.position.x << "," << snapshot.position.y
@@ -320,7 +567,12 @@ namespace draw3
 				}
 				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
-				const bool published = coordinator_.PublishMove(stylusInfo->tcid, stylusInfo->cid, snapshot);
+				bool published = false;
+				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
+					published = interruptionSimulation_.PublishMove(
+						stylusInfo->tcid, stylusInfo->cid, snapshot);
+				else
+					published = coordinator_.PublishMove(stylusInfo->tcid, stylusInfo->cid, snapshot);
 #if defined(_DEBUG)
 				const uint32_t diagnosticIndex = moveDiagnosticCount_.fetch_add(1, std::memory_order_relaxed);
 				if (diagnosticIndex < 8)
@@ -358,6 +610,8 @@ namespace draw3
 			HRESULT STDMETHODCALLTYPE TabletRemoved(IRealTimeStylus*, LONG) override
 			{
 				// 回调只给 tablet index，无法无查询地还原 tcid；设备移除时安全取消全部活动 contact。
+				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
+					interruptionSimulation_.Reset();
 				coordinator_.CloseAllProducerContacts(QueryQpc());
 				return S_OK;
 			}
@@ -369,6 +623,8 @@ namespace draw3
 				std::cout << "[RTS] plugin error dataInterest=0x" << std::hex
 					<< static_cast<unsigned long>(dataInterest)
 					<< " HRESULT=0x" << static_cast<unsigned long>(errorCode) << std::dec << std::endl;
+				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
+					interruptionSimulation_.Reset();
 				coordinator_.CloseAllProducerContacts(QueryQpc());
 				return S_OK;
 			}
@@ -569,6 +825,8 @@ namespace draw3
 			std::atomic<HRESULT> lastError_ = S_OK;
 			std::atomic<uint32_t> moveDiagnosticCount_ = 0;
 			ContactInputCoordinator& coordinator_;
+			[[no_unique_address]] InterruptedStrokeSimulation<
+				kInterruptedStrokeReconnectSimulationEnabled> interruptionSimulation_;
 			std::atomic<bool> pixelScalePublished_ = false;
 			float inkToPixelScaleX_ = 1.0f;
 			float inkToPixelScaleY_ = 1.0f;
