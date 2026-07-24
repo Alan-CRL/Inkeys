@@ -9,7 +9,7 @@
 | Contract | Primary locations |
 |---|---|
 | `InkPoint` layout | `draw3/renderer.cppm`, `ink.hlsli`, structured buffer creation |
-| `HighlighterPrimitive` layout/type | `draw3/renderer.cppm`, `ink_prediction.cpp`, `ink.hlsli`, both shaders |
+| `HighlighterPrimitive` layout/sweep | `draw3/renderer.cppm`, `ink_prediction.cpp`, `ink.hlsli`, both shaders |
 | Global shader constants | `draw3/renderer.cpp`, `ink.hlsli`, VS/PS binding calls |
 | L0/L1/L2 semantics | `drawing_controller.cpp`, `renderer.cpp`, pixel shader；phase document 只记录历史设计/计划，差异须单列 |
 | HLSL source/output | `.vcxproj`, `.rc`, `resource.h`, `.hlsl/.hlsli`, `.cso` |

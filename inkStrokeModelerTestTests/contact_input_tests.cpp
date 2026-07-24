@@ -16,6 +16,7 @@
 #include <variant>
 #include <vector>
 #include <windows.h>
+#include <DirectXMath.h>
 
 import draw3.contact_input;
 import draw3.haptic_feedback;

@@ -19,22 +19,12 @@ C++ 用 `static_assert(sizeof(InkPoint) == 16)`，D3D buffer 的 `StructureByteS
 ```text
 float2 p1
 float2 p2
-float2 direction1
-float2 direction2
-float radius
-float startExtension
-float endExtension
-uint type
+float2 halfSize
 ```
 
-总大小 `48 bytes`，HLSL 在 `t3` 读取。`HighlighterPrimitiveType` 当前值：
+总大小 `24 bytes`，HLSL 在 `t3` 读取。`halfSize` 当前固定为 `(1.25, 25)`；`p1 == p2` 表示单点矩形，否则表示固定矩形沿 `p1→p2` 的 sweep。
 
-- `0` Body
-- `1` RoundJoinSector
-- `2` RoundJoinCircle
-- `3` ShortMark
-
-修改布局时必须同步 `.cppm`、buffer stride、`ink.hlsli`、VS 解包和 PS 分支。
+修改布局时必须同步 `.cppm`、buffer stride、`ink.hlsli`、VS 解包和 PS sweep 分支。
 
 ## Constant Buffer
 
@@ -100,8 +90,8 @@ Result = Add + Retain * Destination
 
 ## Geometry And Bounds
 
-- VS 为圆胶囊和荧光笔 primitive 生成覆盖形状的 quad/AABB。
-- PS 使用 signed distance 与 `fwidth`/`smoothstep` 做抗锯齿。
+- VS 为圆胶囊和荧光笔固定矩形 sweep 生成覆盖形状的 quad/AABB。
+- PS 使用 signed distance 与 `fwidth`/`smoothstep` 做抗锯齿；高亮 sweep 的零等值线由 X/Y/线段法线半平面交集确定。
 - CPU dirty bounds 必须至少覆盖 VS 生成范围；当前普遍预留 2px 几何扩展和 3px bounds padding。
-- 零长度或一端圆包含另一端时，pixel shader 退化为较大端点圆。
+- 普通笔零长度或一端圆包含另一端时退化为较大端点圆；高亮零长度退化为固定竖直矩形。
 - `InkPoint` 中出现 NaN 时 PS discard；CPU 仍应避免生成非有限输入。

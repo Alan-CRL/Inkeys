@@ -27,38 +27,13 @@ PS_INPUT main(uint id : SV_VertexID)
     if (type == 3)
     {
         HighlighterPrimitive primitive = HighlighterData[globalBufferOffset + itemIndex];
-        float2 rectMin = 0.0;
-        float2 rectMax = 0.0;
-        output.primitiveType = primitive.type;
-        output.r1 = primitive.radius;
-
-        if (primitive.type == 0 || primitive.type == 3)
-        {
-            // body 和最终短划都是解析矩形；只有内部 body 端点会向外重叠 2px。
-            float2 tangent = SafeNormalize(primitive.p2 - primitive.p1, float2(1.0, 0.0));
-            float2 normal = float2(-tangent.y, tangent.x);
-            float2 p1 = primitive.p1 - tangent * primitive.startExtension;
-            float2 p2 = primitive.p2 + tangent * primitive.endExtension;
-            float2 q0 = p1 + normal * primitive.radius;
-            float2 q1 = p1 - normal * primitive.radius;
-            float2 q2 = p2 + normal * primitive.radius;
-            float2 q3 = p2 - normal * primitive.radius;
-            rectMin = min(min(q0, q1), min(q2, q3)) - 2.0;
-            rectMax = max(max(q0, q1), max(q2, q3)) + 2.0;
-            output.p1 = p1;
-            output.p2 = p2;
-        }
-        else
-        {
-            // sector 使用完整圆 AABB；像素着色器再裁出转弯外侧圆弧。
-            rectMin = primitive.p1 - primitive.radius - 2.0;
-            rectMax = primitive.p1 + primitive.radius + 2.0;
-            output.p1 = primitive.p1;
-            output.p2 = primitive.p1;
-            output.r2 = primitive.startExtension;
-            output.direction1 = primitive.direction1;
-            output.direction2 = primitive.direction2;
-        }
+        // 固定竖直矩形沿 p1→p2 扫掠，AABB 覆盖 sweep 的轴向边界。
+        float2 rectMin = min(primitive.p1, primitive.p2) - primitive.halfSize - 2.0;
+        float2 rectMax = max(primitive.p1, primitive.p2) + primitive.halfSize + 2.0;
+        output.p1 = primitive.p1;
+        output.p2 = primitive.p2;
+        output.r1 = primitive.halfSize.x;
+        output.r2 = primitive.halfSize.y;
 
         float2 worldPos = lerp(rectMin, rectMax, templatePos);
         output.pos = float4((worldPos.x / screenWidth) * 2.0 - 1.0,

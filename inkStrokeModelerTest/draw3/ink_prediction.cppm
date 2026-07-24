@@ -69,7 +69,7 @@ export namespace draw3
 	inline constexpr uint32_t kInterruptedStrokeReconnectSimulationMaximumIntervalMs = 520;
 	inline constexpr uint32_t kInterruptedStrokeReconnectSimulationMinimumDropMs = 20;
 	inline constexpr uint32_t kInterruptedStrokeReconnectSimulationMaximumDropMs = 70;
-	inline constexpr float kHighlighterMinimumStrokeLengthPx = 12.0f;
+	inline constexpr float kHighlighterNibAspectRatio = 8.0f;
 	inline constexpr double kInterruptedStrokeReconnectWindowSeconds = 0.080;
 	inline constexpr float kInterruptedStrokeReconnectDirectionLookbackPx = 12.0f;
 	inline constexpr float kInterruptedStrokeReconnectMinimumDirectionPx = 4.0f;
@@ -288,24 +288,6 @@ export namespace draw3
 	};
 
 	// 标记当前几何切片是否包含整笔的真实起点或可见终点。
-	enum class HighlighterBoundaryFlags : uint32_t
-	{
-		None = 0,
-		Start = 1,
-		End = 2
-	};
-
-	inline HighlighterBoundaryFlags operator|(HighlighterBoundaryFlags left, HighlighterBoundaryFlags right)
-	{
-		return static_cast<HighlighterBoundaryFlags>(static_cast<uint32_t>(left) | static_cast<uint32_t>(right));
-	}
-
-	struct HighlighterStartDirectionState
-	{
-		DirectX::XMFLOAT2 direction = { 1.0f, 0.0f };
-		bool locked = false;
-	};
-
 	// 保存一个 contact 的模型结果、预测结果和三层提交状态。
 	struct ActiveStroke
 	{
@@ -317,6 +299,8 @@ export namespace draw3
 		std::vector<InkPoint> l0DrawPoints;
 		std::vector<InkPoint> previousL0DrawPoints;
 		HighlighterGeometry l0HighlighterGeometry;
+		// 荧光笔稳定前缀的 CPU 重放缓存，Up 和 resize 都直接重放这里。
+		HighlighterGeometry committedHighlighterGeometry;
 		size_t convertedResultCount = 0;
 		size_t committedIndex = 0;
 		RECT lastL0Rect = { 0, 0, 0, 0 };
@@ -325,12 +309,8 @@ export namespace draw3
 		StrokeWidthMode widthMode = StrokeWidthMode::SimulatedPressure;
 		bool highlighter = false;
 		bool hasCommittedGeometry = false;
-		float realPathLength = 0.0f;
 		InkPoint inputStartPoint = {};
 		bool hasInputStartPoint = false;
-		DirectX::XMFLOAT2 firstMovementDirection = { 1.0f, 0.0f };
-		bool hasFirstMovementDirection = false;
-		HighlighterStartDirectionState startDirectionState;
 		POINT lastRawPosition = { 0, 0 };
 		bool hasLastRawPosition = false;
 		bool idleFrozen = false;
@@ -348,12 +328,11 @@ export namespace draw3
 			bool highlighterValue = false);
 	};
 
-	// 将中心线转换为平头 body、内部圆角及可选的抬笔最短矩形。
-	HighlighterGeometry BuildHighlighterGeometry(const std::vector<InkPoint>& points,
-		HighlighterBoundaryFlags boundaryFlags, bool shortStrokeMode,
-		const HighlighterStartDirectionState& startDirectionState);
-	// 为不足 12px 的最终矩形选择确定性起笔方向。
-	HighlighterStartDirectionState GetHighlighterShortStrokeDirectionState(const ActiveStroke& stroke);
+	// 将中心线转换为固定竖直矩形沿路径扫掠的几何；单点生成一个点击矩形。
+	HighlighterGeometry BuildHighlighterGeometry(const std::vector<InkPoint>& points);
+	// 把已提交稳定前缀和最后一帧 live 高亮几何直接拼成完成态。
+	HighlighterGeometry MergeHighlighterGeometry(const HighlighterGeometry& committedGeometry,
+		const HighlighterGeometry& liveGeometry);
 	// 选择普通笔完成态尾段：默认连接模型 Up 结果，开关启用时保留最后可见 L0。
 	void BuildCompletedPenTail(const ActiveStroke& stroke, bool retainPredictionOnUp,
 		std::vector<InkPoint>& output);

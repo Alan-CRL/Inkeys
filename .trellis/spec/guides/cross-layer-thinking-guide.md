@@ -41,13 +41,13 @@ Win32/HiEasyX message
 - 最新 snapshot 覆盖采样改变了速度采样节奏；每份真实速度只滤波一次，第一份速度不得回写已可见起笔，半径仍需时间/距离双限速。
 - `ActiveMouseStroke` 的提交游标必须单调前进，已进入 L1 的稳定前缀不能重复提交。
 - Up 收尾由 `retainPredictionOnUp` 唯一选择：默认连接 `kUp` 的真实 modeled 尾段并清除 prediction；开启时只烘干上一帧可见 L0，禁止两种尾段同时绘制。
-- 荧光笔的 12px 起止方向窗口、重复点阈值和 dirty bounds 必须一起检查。
+- 荧光笔固定矩形的 8:1 half size、0.25px 去重、sweep coverage 和 dirty bounds 必须一起检查。
 
 依据：`AppendNewModeledPoints`、`RebuildPredictedPoints`、`CommitStablePrefixToL1`、`BuildHighlighterGeometry`。
 
 ### CPU to HLSL
 
-- C++ 结构大小、字段顺序、常量缓冲区对齐、寄存器槽和 primitive 枚举必须同步。
+- C++ 结构大小、字段顺序、常量缓冲区对齐、寄存器槽和 primitive 语义必须同步。
 - `GlobalShaderConstants` 要同时绑定 VS `b0` 和 PS `b0`。
 - SRV 用作 RTV 前必须解除绑定。
 
@@ -83,4 +83,4 @@ Win32/HiEasyX message
 - 呈现路径是否只验证了 HRESULT，还是也验证了真实桌面上的透明 alpha？
 - 兼容性描述是在陈述项目目标、已有代码路径，还是有环境记录的实测能力？
 - 数据离开瞬时 L2 视觉画布进入持久化时，prediction 是否已经被真实采样替换或显式确认？
-- 人工测试是否覆盖普通笔、荧光笔、橡皮、短划、静止、抬笔、resize 和透明模式回退？
+- 人工测试是否覆盖普通笔、荧光笔固定单点/极慢移动、橡皮、静止、抬笔、resize 和透明模式回退？

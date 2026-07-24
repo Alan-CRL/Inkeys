@@ -295,6 +295,14 @@ namespace draw3
 		{
 			ActiveStroke& stroke = runtime.stroke;
 			if (!stroke.hasCommittedGeometry) return {};
+			if (runtime.tool == DrawingTool::Highlighter)
+			{
+				if (stroke.committedHighlighterGeometry.primitives.empty()) return {};
+				renderer.SetOperatorTarget(renderer.layerL1);
+				renderer.DrawHighlighterPrimitives(stroke.committedHighlighterGeometry.primitives,
+					ColorForTool(runtime.tool));
+				return ClampRectToCanvas(stroke.committedHighlighterGeometry.bounds, width, height);
+			}
 			if (stroke.realPoints.empty())
 			{
 				if (runtime.tool != DrawingTool::Eraser || !stroke.hasInputStartPoint) return {};
@@ -307,13 +315,6 @@ namespace draw3
 				runtime.rebuildPoints.assign(stroke.realPoints.begin(), stroke.realPoints.begin() + pointCount);
 			}
 			renderer.SetOperatorTarget(renderer.layerL1);
-			if (runtime.tool == DrawingTool::Highlighter)
-			{
-				const HighlighterGeometry geometry = BuildHighlighterGeometry(runtime.rebuildPoints,
-					HighlighterBoundaryFlags::Start, false, stroke.startDirectionState);
-				renderer.DrawHighlighterPrimitives(geometry.primitives, ColorForTool(runtime.tool));
-				return ClampRectToCanvas(geometry.bounds, width, height);
-			}
 			const InkOperatorKind operatorKind = runtime.tool == DrawingTool::Eraser
 				? InkOperatorKind::Erase : InkOperatorKind::Draw;
 			renderer.DrawStrokeOrDot(runtime.rebuildPoints, ColorForTool(runtime.tool),
@@ -325,29 +326,31 @@ namespace draw3
 			bool retainPredictionOnUp)
 		{
 			ActiveStroke& stroke = runtime.stroke;
-			runtime.rebuildPoints.assign(stroke.realPoints.begin(), stroke.realPoints.end());
-			if (runtime.rebuildPoints.empty() && stroke.hasInputStartPoint)
-				runtime.rebuildPoints.push_back(stroke.inputStartPoint); // Down 后立即 Up 仍要落下点击圆点。
-
 			RECT dirty = {};
 			renderer.SetOperatorTarget(renderer.layerL1);
 			if (runtime.tool == DrawingTool::Highlighter)
 			{
-				const bool shortStroke = stroke.realPathLength < kHighlighterMinimumStrokeLengthPx;
-				const HighlighterStartDirectionState direction = shortStroke
-					? GetHighlighterShortStrokeDirectionState(stroke) : stroke.startDirectionState;
-				if (shortStroke && stroke.hasInputStartPoint)
-					runtime.rebuildPoints.assign(1, stroke.inputStartPoint);
-				const HighlighterBoundaryFlags flags =
-					HighlighterBoundaryFlags::Start | HighlighterBoundaryFlags::End;
-				const HighlighterGeometry geometry = BuildHighlighterGeometry(
-					runtime.rebuildPoints, flags, shortStroke, direction);
+				HighlighterGeometry geometry = MergeHighlighterGeometry(
+					stroke.committedHighlighterGeometry, stroke.l0HighlighterGeometry);
+				if (geometry.primitives.empty())
+				{
+					std::vector<InkPoint> clickPoints;
+					if (stroke.hasInputStartPoint)
+						clickPoints.push_back(stroke.inputStartPoint);
+					else if (!stroke.realPoints.empty())
+						clickPoints.push_back(stroke.realPoints.front());
+					geometry = BuildHighlighterGeometry(clickPoints); // 同帧 Down→Up 尚未生成 L0 时只补一次点击矩形。
+				}
+				if (geometry.primitives.empty()) return {};
+				// 已可见笔画只重放缓存的稳定前缀和最后一帧 live 几何，不回扫 realPoints。
 				renderer.DrawHighlighterPrimitives(geometry.primitives, ColorForTool(runtime.tool));
 				return ClampRectToCanvas(geometry.bounds, width, height);
 			}
+			runtime.rebuildPoints.assign(stroke.realPoints.begin(), stroke.realPoints.end());
+			if (runtime.rebuildPoints.empty() && stroke.hasInputStartPoint)
+				runtime.rebuildPoints.push_back(stroke.inputStartPoint); // Down 后立即 Up 仍要落下点击圆点。
 			if (runtime.tool == DrawingTool::Pen)
 			{
-				runtime.rebuildPoints.clear();
 				if (stroke.hasCommittedGeometry && !stroke.realPoints.empty())
 				{
 					const size_t stablePointCount =
@@ -826,9 +829,7 @@ namespace draw3
 						reconnectRuntime->deferredUpSnapshot = {};
 						reconnectRuntime->reconnectDeadlineQpc = 0;
 						reconnectRuntime->reconnectPredictedResults.clear();
-						reconnectRuntime->metricEligibleQpc =
-							tool == DrawingTool::Highlighter &&
-							!reconnectRuntime->stroke.startDirectionState.locked ? 0 : down.qpc;
+						reconnectRuntime->metricEligibleQpc = down.qpc;
 						reconnectRuntime->metricVisible = false;
 						reconnectRuntime->movedThisFrame = true;
 						reconnectRuntime->stroke.idleFrozen = false;
@@ -920,8 +921,7 @@ namespace draw3
 				runtime->reconnectDeadlineQpc = 0;
 				runtime->reconnectPredictedResults.clear();
 				runtime->reconnectManualTestRanges.clear();
-				runtime->metricEligibleQpc =
-					runtime->tool == DrawingTool::Highlighter ? 0 : down.qpc;
+				runtime->metricEligibleQpc = down.qpc;
 				const float baseDiameter = DiameterForTool(runtime->tool);
 				const bool highlighter = runtime->tool == DrawingTool::Highlighter;
 				runtime->stroke.Reset(baseDiameter, configuration_.expectedSpeed,
@@ -1057,9 +1057,6 @@ namespace draw3
 				runtime.awaitingReconnect = false;
 				runtime.reconnectVisualRefresh = false;
 				runtime.reconnectDeadlineQpc = 0;
-				if (runtime.tool == DrawingTool::Highlighter &&
-					!cancelled && runtime.metricEligibleQpc == 0)
-					runtime.metricEligibleQpc = snapshot.qpc; // 不足 12px 的 short mark 以 Up 为软件延迟起点。
 			};
 
 		auto consumeLatestSnapshot = [&](RuntimeStroke& runtime) -> bool
@@ -1135,10 +1132,6 @@ namespace draw3
 					std::cout << "Error: " << status.message() << std::endl;
 					if (terminal && !deferUp) appendTerminalFallback(runtime, snapshot, inputTime);
 				}
-				if (runtime.tool == DrawingTool::Highlighter &&
-					runtime.metricEligibleQpc == 0 &&
-					runtime.stroke.startDirectionState.locked)
-					runtime.metricEligibleQpc = snapshot.qpc; // 高亮从真实 12px 首次具备可见资格时开始计时。
 				runtime.lastModelSnapshot = modelSnapshot;
 				if (positionMoved) runtime.lastSpeedSnapshot = snapshot;
 				if (positionMoved || stylusStateChanged)
@@ -1188,9 +1181,6 @@ namespace draw3
 				{
 					runtime.ended = true;
 					runtime.cancelled = snapshot.phase == ContactPhase::Cancelled;
-					if (runtime.tool == DrawingTool::Highlighter &&
-						!runtime.cancelled && runtime.metricEligibleQpc == 0)
-						runtime.metricEligibleQpc = snapshot.qpc;
 				}
 				return positionMoved || stylusStateChanged || deferUp;
 			};
@@ -1367,14 +1357,12 @@ namespace draw3
 					stroke.predictedResults.clear();
 					if (runtime->awaitingReconnect)
 					{
-						if (!eraser &&
-							(!highlighter || stroke.realPathLength >= kHighlighterMinimumStrokeLengthPx))
+						if (!eraser)
 							stroke.predictedResults.assign(
 								runtime->reconnectPredictedResults.begin(),
 								runtime->reconnectPredictedResults.end());
 					}
 					else if (!eraser &&
-						(!highlighter || stroke.realPathLength >= kHighlighterMinimumStrokeLengthPx) &&
 						kActivePredictionMode != InkPredictionMode::Disabled)
 					{
 						if (absl::Status status = stroke.modeler.Predict(stroke.predictedResults); !status.ok())
@@ -1756,8 +1744,7 @@ namespace draw3
 				}
 				else
 				{
-					if ((!highlighter || stroke.realPathLength >= kHighlighterMinimumStrokeLengthPx) &&
-						kActivePredictionMode != InkPredictionMode::Disabled)
+					if (kActivePredictionMode != InkPredictionMode::Disabled)
 					{
 						if (absl::Status status = stroke.modeler.Predict(stroke.predictedResults); !status.ok())
 							stroke.predictedResults.clear();
@@ -1819,18 +1806,13 @@ namespace draw3
 		}
 
 		const WindowSize finalSize = window_.Size();
-		if (highlighter && stroke.realPathLength < kHighlighterMinimumStrokeLengthPx)
+		if (highlighter && stroke.l0HighlighterGeometry.primitives.empty() && stroke.hasInputStartPoint)
 		{
 			const RECT oldLiveRect = stroke.currentL0Rect;
 			stroke.predictedResults.clear();
-			stroke.predictedPoints.clear(); // 短划只由真实路径分类，抬笔时彻底丢弃预测后缀。
-			stroke.l0DrawPoints = stroke.realPoints;
-			const HighlighterStartDirectionState finalDirection = GetHighlighterShortStrokeDirectionState(stroke);
-			const InkPoint shortMarkStart = stroke.hasInputStartPoint
-				? stroke.inputStartPoint : InkPoint{ originX, originY, baseDiameter * 0.5f, 0.0f };
-			const std::vector<InkPoint> shortMarkPoints = { shortMarkStart };
-			stroke.l0HighlighterGeometry = BuildHighlighterGeometry(shortMarkPoints,
-				HighlighterBoundaryFlags::Start | HighlighterBoundaryFlags::End, true, finalDirection);
+			stroke.predictedPoints.clear();
+			stroke.l0DrawPoints = { stroke.inputStartPoint };
+			stroke.l0HighlighterGeometry = BuildHighlighterGeometry(stroke.l0DrawPoints);
 			stroke.currentL0Rect = ClampRectToCanvas(
 				stroke.l0HighlighterGeometry.bounds, finalSize.width, finalSize.height);
 			renderer_.ClearOperatorLayer(renderer_.layerL0);

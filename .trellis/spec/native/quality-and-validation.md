@@ -63,12 +63,12 @@ MSBuild.exe .\inkStrokeModelerTest.sln /m /p:Configuration=Debug /p:Platform=ARM
 
 - contact pool：32 个并发生产者、32/64/多 block 边界、容量耗尽、释放再取得和无分配 Down。
 - 生命周期：Move/Up 竞争、stale generation、重复回收、Cancelled/shutdown、ControlWake/Down/终态唤醒。
-- 荧光笔：12px 前不可见、最终 short mark、首次可见平帽稳定、完成态/L1 切片、双向 90° 转角和近 180° 回折。
+- 荧光笔：单点固定矩形、6.25×50px half size、0.25px 去抖、三方向 sweep、完成态/L1 切片、锐角和近 180° 回折。
 - 架构：ARM64 Debug/Release、x64 Release、x86 Release 均构建并运行测试。
 
 Release 运行指标用 `--metrics-output <json> --strict-metrics` 启用；关闭时不得分配指标会话或写文件。原始 JSON 放在忽略的 `TestResults/`，只提交环境、阈值和分位数摘要。
 
-即时落笔硬门槛只统计普通笔/橡皮的 Down→首次成功 Present。荧光笔有 12px 不可见闸门，必须单独记录 VisibleEligibility→Present，不得与即时 Down 门槛混为同一总体。
+即时落笔硬门槛统一统计普通笔、荧光笔和橡皮的 Down→首次成功 Present；荧光笔不再有独立 VisibleEligibility 闸门。
 
 ## Manual Validation Matrix
 
@@ -82,7 +82,7 @@ Release 运行指标用 `--metrics-output <json> --strict-metrics` 启用；关�
 按影响范围追加：
 
 - 普通笔：点击、慢速、快速、停住后继续、抬笔无回缩。
-- 荧光笔：纯点击、短于/等于/长于 12px、直线、锐角、近 180° 折返、自交。
+- 荧光笔：纯点击、极慢移动、快速移动、水平/竖直/斜线、锐角、近 180° 折返、自交和抬笔无跳变。
 - 橡皮：点击、连续擦除、段重叠、L1/L0 交界抗锯齿。
 - 窗口：绘制中 resize、缩小/放大、重新暴露、移动、清屏。
 - 呈现：首选 GPU 路径；涉及兼容时覆盖 fallback 或 WARP。

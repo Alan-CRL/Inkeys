@@ -49,28 +49,15 @@ export namespace draw3
 
 	static_assert(sizeof(InkPoint) == 16, "InkPoint 必须与结构化缓冲区布局保持一致");
 
-	// 荧光笔拆成独立矩形 body 和解析圆角，避免分段端边互相干扰。
-	enum class HighlighterPrimitiveType : uint32_t
-	{
-		Body = 0,
-		RoundJoinSector = 1,
-		RoundJoinCircle = 2,
-		ShortMark = 3
-	};
-
+	// 荧光笔是固定竖直矩形沿中心线扫掠的 primitive；p1 == p2 表示单击矩形。
 	struct HighlighterPrimitive
 	{
 		DirectX::XMFLOAT2 p1 = {};
 		DirectX::XMFLOAT2 p2 = {};
-		DirectX::XMFLOAT2 direction1 = {};
-		DirectX::XMFLOAT2 direction2 = {};
-		float radius = 25.0f;
-		float startExtension = 0.0f;
-		float endExtension = 0.0f;
-		HighlighterPrimitiveType type = HighlighterPrimitiveType::Body;
+		DirectX::XMFLOAT2 halfSize = { 1.25f, 25.0f };
 	};
 
-	static_assert(sizeof(HighlighterPrimitive) == 48,
+	static_assert(sizeof(HighlighterPrimitive) == 24,
 		"HighlighterPrimitive 必须与结构化缓冲区布局保持一致");
 
 	struct HighlighterGeometry
@@ -132,7 +119,7 @@ export namespace draw3
 		int DrawStroke(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color,
 			StrokeShape shape = StrokeShape::RoundCapsule,
 			InkOperatorKind operatorKind = InkOperatorKind::Draw);
-		// 绘制平头 body 与圆角 primitive，临时层使用 Add/MAX、Retain/MIN 累积覆盖率。
+		// 绘制固定矩形 sweep，临时层使用 Add/MAX、Retain/MIN 累积覆盖率。
 		int DrawHighlighterPrimitives(const std::vector<HighlighterPrimitive>& primitives,
 			DirectX::XMFLOAT4 color, InkOperatorKind operatorKind = InkOperatorKind::Draw);
 		// 复制纹理中的指定矩形区域。

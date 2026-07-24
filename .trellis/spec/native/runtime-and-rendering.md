@@ -37,7 +37,7 @@
 | Tool | Width | Prediction | Width mode | Live layer |
 |---|---:|---|---|---|
 | Pen | 5px base; hardware 1–7px | active configured mode | per-device fixed/simulated/hardware | real tail + prediction + taper |
-| Highlighter | 50px | enabled after real path reaches 12px | fixed | flat primitives, no taper |
+| Highlighter | 6.25×50px fixed vertical nib | enabled from Down | fixed | rectangle sweep primitives, no taper |
 | Eraser | 50px | disabled | fixed | real points directly committed to L1 |
 
 这是当前实验实现。预测时长、目标帧率、笔宽、live-tip 和几何阈值默认都是实验参数；只有公开接口、持久化格式或明确兼容要求已经依赖某值时，该值才升级为兼容契约。
@@ -446,19 +446,16 @@ Correct：`L2 只表示当前视觉结果；永久笔迹只接受真实确认或
 
 ## Highlighter Geometry
 
-- 连续点距离不超过 `0.01px` 时去重。
-- body 是固定半径 `25px` 的解析矩形。
-- 内部端点沿切线重叠 `2px`，全局 butt cap 不延伸。
-- 转角超过 `0.5°` 生成外侧 round sector，达到 `177°` 改为完整圆。
-- CPU bounds 与 GPU AABB 使用同一几何，并额外保留 `3px`。
-- 起点方向在真实路径达到 `12px` 后锁定；尾端保留至少 `12px` 上下文。
-- 全局 Start 且方向未锁定时不生成活动几何；首次可见时用首段 12px 真实路径的锁定弦方向，后续 Move、L1 切片和完成态不得改变起始平帽。
-- 最终真实路径不足 `12px` 时生成从按下点出发的确定性 `12×50px` short mark；预测不参与短划分类。
-- short mark 只在 Up 时生成；Cancelled/shutdown 不生成最终短划或完成几何。
+- 画刷固定为画布 Y 轴方向的 `6.25×50px` 矩形，指针位于矩形中心；路径、笔倾角和设备方向都不旋转画刷。
+- 连续点距离不超过 `0.25px` 时去重；累计位移超过阈值后再生成新 sweep。
+- 单点生成一个居中矩形；每对相邻点生成该矩形沿中心线平移的凸扫掠区域。
+- shader 以 X/Y 轴向边界和线段法线边界的半平面交集计算 sweep；零长度退化为矩形 SDF。
+- 相邻 sweep 通过 Add/MAX、Retain/MIN coverage union 连接，不生成 round join、cap 或 short mark primitive。
+- CPU bounds 与 GPU AABB 都使用 `halfSize=(1.25,25)`，并分别保留现有 `3px` dirty padding 与 `2px` shader quad padding。
+- Down 起允许 L0 点击矩形和 prediction；`12px` 不再是可见性、完成态或几何分支。
+- L1 只增量缓存稳定 sweep，Up 只重放缓存和最后一帧 L0；从未生成 L0 的同步点击仅补一次单点矩形。
 
-上述值在当前实现中共同构成一套几何约束，但仍属于实验参数。修改一个值前必须搜索全部消费者并验证相关场景；这不表示当前数值已经成为永久产品标准。
-
-> **已解决（2026-07-19）**：起笔方向锁定前的活动几何保持不可见；不足 `12px`、刚达到 `12px`、长曲线、L1 切片、双向 90° 转角和近 180° 回折均有回归。真实窗口检查中平帽四角完整；用户确认旧“缺角”来自橡皮擦除后的缺口，不是当前荧光笔端帽缺失。
+上述尺寸和去重值仍属于实验参数。修改任一值时必须同时验证 CPU bounds、HLSL coverage、L0/L1 切片、缓存完成态和单点行为。
 
 ## Dirty Rect Contract
 

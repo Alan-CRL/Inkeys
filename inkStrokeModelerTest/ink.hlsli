@@ -27,12 +27,7 @@ struct HighlighterPrimitive
 {
     float2 p1;
     float2 p2;
-    float2 direction1;
-    float2 direction2;
-    float radius;
-    float startExtension;
-    float endExtension;
-    uint type;
+    float2 halfSize;
 };
 
 // 3. 结构化缓冲区
@@ -57,8 +52,5 @@ struct PS_INPUT
     nointerpolation float2 p2 : VAL_END;
     nointerpolation float r1 : VAL_RAD_START;
     nointerpolation float r2 : VAL_RAD_END;
-    nointerpolation float2 direction1 : TEXCOORD2;
-    nointerpolation float2 direction2 : TEXCOORD3;
     nointerpolation float shapeType : VAL_TYPE;
-    nointerpolation uint primitiveType : VAL_PRIMITIVE_TYPE;
 };

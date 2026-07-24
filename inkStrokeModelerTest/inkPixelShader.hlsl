@@ -47,36 +47,25 @@ float GetInkDist_Convex(float2 p, float2 p1, float2 p2, float r1, float r2)
     return distanceToInk;
 }
 
-float Cross2D(float2 a, float2 b)
-{
-    return a.x * b.y - a.y * b.x;
-}
-
-float GetFlatBodyDist(float2 p, float2 p1, float2 p2, float radius)
+float GetFixedNibSweepDist(float2 p, float2 p1, float2 p2, float2 halfSize)
 {
     float2 segment = p2 - p1;
-    float rawSegmentLength = length(segment);
-    float segmentLength = max(rawSegmentLength, 1e-5);
-    float2 tangent = rawSegmentLength > 1e-5 ? segment / rawSegmentLength : float2(1.0, 0.0);
-    float2 normal = float2(-tangent.y, tangent.x);
-    float2 center = (p1 + p2) * 0.5;
-    float2 local = float2(dot(p - center, tangent), dot(p - center, normal));
-    float2 q = abs(local) - float2(segmentLength * 0.5, radius);
-    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
-}
-
-float IsInsideRoundJoinSector(float2 vectorFromCenter, float2 startDirection,
-    float2 endDirection, float orientation)
-{
-    float inside = 1.0;
-    if (dot(vectorFromCenter, vectorFromCenter) > 1e-10)
+    if (dot(segment, segment) <= 1e-10)
     {
-        float signValue = orientation >= 0.0 ? 1.0 : -1.0;
-        // 径向边使用硬裁切，邻接 body 的 2px 重叠负责覆盖边界，不产生第二条 AA 接缝。
-        inside = Cross2D(startDirection, vectorFromCenter) * signValue >= -1e-5 &&
-            Cross2D(vectorFromCenter, endDirection) * signValue >= -1e-5 ? 1.0 : 0.0;
+        float2 q = abs(p - p1) - halfSize;
+        return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
     }
-    return inside;
+
+    // sweep 是三个方向半平面的交集：X/Y 轴向边界和线段法线边界。
+    float2 centerMin = min(p1, p2);
+    float2 centerMax = max(p1, p2);
+    float2 axisDistance = max(centerMin - halfSize - p, p - centerMax - halfSize);
+    float distanceToSweep = max(axisDistance.x, axisDistance.y);
+    float2 normal = normalize(float2(-segment.y, segment.x));
+    float normalSupport = dot(abs(normal), halfSize);
+    distanceToSweep = max(distanceToSweep,
+        abs(dot(p - p1, normal)) - normalSupport);
+    return distanceToSweep;
 }
 
 struct OperatorOutput
@@ -121,27 +110,8 @@ OperatorOutput main(PS_INPUT input)
         d = GetInkDist_Convex(input.pixPos, input.p1, input.p2, input.r1, input.r2);
     }
     else if (type == 3)
-    {
-        if (input.primitiveType == 0 || input.primitiveType == 3)
-        {
-            d = GetFlatBodyDist(input.pixPos, input.p1, input.p2, input.r1);
-        }
-        else if (input.primitiveType == 1)
-        {
-            float2 vectorFromCenter = input.pixPos - input.p1;
-            if (IsInsideRoundJoinSector(vectorFromCenter, input.direction1, input.direction2, input.r2) < 0.5)
-                discard;
-            d = length(vectorFromCenter) - input.r1;
-        }
-        else if (input.primitiveType == 2)
-        {
-            d = length(input.pixPos - input.p1) - input.r1;
-        }
-        else
-        {
-            discard;
-        }
-    }
+        d = GetFixedNibSweepDist(input.pixPos, input.p1, input.p2,
+            float2(input.r1, input.r2));
 
     //float aaWidth = fwidth(d);
     //aaWidth = max(aaWidth, 1e-5);

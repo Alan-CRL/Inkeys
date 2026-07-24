@@ -84,21 +84,12 @@ namespace draw3
 			}
 		}
 
-		bool UsesImmediateLandingGate(const LandingSample& sample)
-		{
-			return sample.tool != 1; // 荧光笔必须先完成 12px 可见闸门，单独记录 eligibility→Present。
-		}
-
-		std::vector<double> SelectLandingLatencies(
-			const std::vector<LandingSample>& samples, bool immediateGate)
+		std::vector<double> CollectLandingLatencies(const std::vector<LandingSample>& samples)
 		{
 			std::vector<double> values;
 			values.reserve(samples.size());
 			for (const LandingSample& sample : samples)
-			{
-				if (UsesImmediateLandingGate(sample) == immediateGate)
-					values.push_back(sample.latencyMs);
-			}
+				values.push_back(sample.latencyMs);
 			return values;
 		}
 
@@ -281,7 +272,7 @@ namespace draw3
 	bool RuntimeMetricsSession::MeetsStrictThresholds() const
 	{
 		const std::vector<double> landingLatencies =
-			SelectLandingLatencies(impl_->landingSamples, true);
+			CollectLandingLatencies(impl_->landingSamples);
 		return landingLatencies.size() >= kRequiredLandingCount &&
 			Percentile99(landingLatencies) <= kLandingP99LimitMs &&
 			!impl_->frameIntervalsMs.empty() &&
@@ -296,9 +287,7 @@ namespace draw3
 		const ContactInputDiagnosticsSnapshot& inputDiagnostics) const
 	{
 		const std::vector<double> landingLatencies =
-			SelectLandingLatencies(impl_->landingSamples, true);
-		const std::vector<double> highlighterEligibilityLatencies =
-			SelectLandingLatencies(impl_->landingSamples, false);
+			CollectLandingLatencies(impl_->landingSamples);
 		const bool strictPass = MeetsStrictThresholds();
 
 		std::ostringstream stream;
@@ -310,7 +299,7 @@ namespace draw3
 		stream << "  },\n";
 		stream << "  \"thresholds\": {\n";
 		stream << "    \"requiredLandings\": " << kRequiredLandingCount << ",\n";
-		stream << "    \"landingPopulation\": \"Pen+Eraser Down to Present\",\n";
+		stream << "    \"landingPopulation\": \"Pen+Highlighter+Eraser Down to Present\",\n";
 		stream << "    \"landingP99Ms\": " << kLandingP99LimitMs << ",\n";
 		stream << "    \"frameIntervalP99Ms\": " << kFrameIntervalP99LimitMs << ",\n";
 		stream << "    \"longFrameMs\": " << kLongFrameLimitMs << ",\n";
@@ -321,9 +310,6 @@ namespace draw3
 		stream << "    \"landingCount\": " << landingLatencies.size() << ",\n";
 		stream << "    \"landingP99Ms\": " << Percentile99(landingLatencies) << ",\n";
 		stream << "    \"totalLandingCount\": " << impl_->landingSamples.size() << ",\n";
-		stream << "    \"highlighterEligibilityCount\": " << highlighterEligibilityLatencies.size() << ",\n";
-		stream << "    \"highlighterEligibilityP99Ms\": "
-			<< Percentile99(highlighterEligibilityLatencies) << ",\n";
 		stream << "    \"activeFrameCount\": " << impl_->totalFrames << ",\n";
 		stream << "    \"frameIntervalP99Ms\": " << Percentile99(impl_->frameIntervalsMs) << ",\n";
 		stream << "    \"longFrameRatio\": " << impl_->LongFrameRatio() << ",\n";
@@ -350,8 +336,7 @@ namespace draw3
 			const LandingSample& sample = impl_->landingSamples[index];
 			stream << "    {\"device\": \"" << DeviceName(sample.deviceType)
 				<< "\", \"tool\": \"" << ToolName(sample.tool)
-				<< "\", \"origin\": \""
-				<< (UsesImmediateLandingGate(sample) ? "Down" : "HighlighterVisibleEligibility")
+				<< "\", \"origin\": \"Down"
 				<< "\", \"latencyMs\": " << sample.latencyMs << "}";
 			stream << (index + 1 == impl_->landingSamples.size() ? "\n" : ",\n");
 		}

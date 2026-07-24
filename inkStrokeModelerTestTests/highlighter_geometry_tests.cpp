@@ -3,6 +3,7 @@
 #endif
 
 #include <cmath>
+#include <cstddef>
 #include <iostream>
 #include <vector>
 #include <windows.h>
@@ -17,37 +18,13 @@ namespace
 		return std::abs(left - right) <= epsilon;
 	}
 
-	const draw3::HighlighterPrimitive* FirstBody(const draw3::HighlighterGeometry& geometry)
+	bool SamePrimitive(const draw3::HighlighterPrimitive& left,
+		const draw3::HighlighterPrimitive& right)
 	{
-		for (const draw3::HighlighterPrimitive& primitive : geometry.primitives)
-		{
-			if (primitive.type == draw3::HighlighterPrimitiveType::Body) return &primitive;
-		}
-		return nullptr;
-	}
-
-	const draw3::HighlighterPrimitive* FirstPrimitive(
-		const draw3::HighlighterGeometry& geometry, draw3::HighlighterPrimitiveType type)
-	{
-		for (const draw3::HighlighterPrimitive& primitive : geometry.primitives)
-		{
-			if (primitive.type == type) return &primitive;
-		}
-		return nullptr;
-	}
-
-	float Cross(float ax, float ay, float bx, float by)
-	{
-		return ax * by - ay * bx;
-	}
-
-	bool SectorContains(const draw3::HighlighterPrimitive& primitive, float x, float y)
-	{
-		const float vectorX = x - primitive.p1.x;
-		const float vectorY = y - primitive.p1.y;
-		const float sign = primitive.startExtension >= 0.0f ? 1.0f : -1.0f;
-		return Cross(primitive.direction1.x, primitive.direction1.y, vectorX, vectorY) * sign >= -0.00001f &&
-			Cross(vectorX, vectorY, primitive.direction2.x, primitive.direction2.y) * sign >= -0.00001f;
+		return NearlyEqual(left.p1.x, right.p1.x) && NearlyEqual(left.p1.y, right.p1.y) &&
+			NearlyEqual(left.p2.x, right.p2.x) && NearlyEqual(left.p2.y, right.p2.y) &&
+			NearlyEqual(left.halfSize.x, right.halfSize.x) &&
+			NearlyEqual(left.halfSize.y, right.halfSize.y);
 	}
 
 	void Check(bool condition, const char* expression, int line, int& failures)
@@ -96,141 +73,135 @@ int RunHighlighterGeometryTests()
 	HIGHLIGHTER_CHECK(completedTail.size() == 1);
 	HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().x, 12.0f));
 	HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().y, 34.0f));
-	const draw3::HighlighterBoundaryFlags complete =
-		draw3::HighlighterBoundaryFlags::Start | draw3::HighlighterBoundaryFlags::End;
-	const draw3::HighlighterStartDirectionState unlocked = {};
 
-	const std::vector<draw3::InkPoint> underThreshold = {
-		{ 10.0f, 20.0f, 25.0f, 0.0f },
-		{ 18.0f, 20.0f, 25.0f, 0.01f }
-	};
-	draw3::HighlighterGeometry geometry =
-		draw3::BuildHighlighterGeometry(underThreshold, complete, false, unlocked);
+	constexpr float kHalfHeight = 25.0f;
+	constexpr float kHalfWidth = 3.125f;
+	HIGHLIGHTER_CHECK(NearlyEqual(draw3::kHighlighterNibAspectRatio, 8.0f));
+	HIGHLIGHTER_CHECK(sizeof(draw3::HighlighterPrimitive) == 24);
+
+	draw3::HighlighterGeometry geometry = draw3::BuildHighlighterGeometry({});
 	HIGHLIGHTER_CHECK(geometry.primitives.empty());
 	HIGHLIGHTER_CHECK(geometry.bounds.left == geometry.bounds.right);
 	HIGHLIGHTER_CHECK(geometry.bounds.top == geometry.bounds.bottom);
 
-	draw3::HighlighterStartDirectionState shortDirection;
-	shortDirection.locked = true;
-	shortDirection.direction = { 0.0f, 1.0f };
-	geometry = draw3::BuildHighlighterGeometry(
-		{ underThreshold.front() }, complete, true, shortDirection);
+	const draw3::InkPoint click = { 10.0f, 20.0f, kHalfHeight, 0.0f };
+	geometry = draw3::BuildHighlighterGeometry({ click });
 	HIGHLIGHTER_CHECK(geometry.primitives.size() == 1);
 	if (!geometry.primitives.empty())
 	{
 		const draw3::HighlighterPrimitive& mark = geometry.primitives.front();
-		HIGHLIGHTER_CHECK(mark.type == draw3::HighlighterPrimitiveType::ShortMark);
-		HIGHLIGHTER_CHECK(NearlyEqual(mark.p1.x, 10.0f));
-		HIGHLIGHTER_CHECK(NearlyEqual(mark.p1.y, 20.0f));
-		HIGHLIGHTER_CHECK(NearlyEqual(mark.p2.x, 10.0f));
-		HIGHLIGHTER_CHECK(NearlyEqual(mark.p2.y, 32.0f));
-		HIGHLIGHTER_CHECK(NearlyEqual(mark.radius, 25.0f));
+		HIGHLIGHTER_CHECK(NearlyEqual(mark.p1.x, click.x));
+		HIGHLIGHTER_CHECK(NearlyEqual(mark.p1.y, click.y));
+		HIGHLIGHTER_CHECK(NearlyEqual(mark.p2.x, click.x));
+		HIGHLIGHTER_CHECK(NearlyEqual(mark.p2.y, click.y));
+		HIGHLIGHTER_CHECK(NearlyEqual(mark.halfSize.x, kHalfWidth));
+		HIGHLIGHTER_CHECK(NearlyEqual(mark.halfSize.y, kHalfHeight));
+	}
+	HIGHLIGHTER_CHECK(geometry.bounds.left == 3);
+	HIGHLIGHTER_CHECK(geometry.bounds.top == -8);
+	HIGHLIGHTER_CHECK(geometry.bounds.right == 17);
+	HIGHLIGHTER_CHECK(geometry.bounds.bottom == 48);
+
+	const std::vector<draw3::InkPoint> underTwelvePixels = {
+		click, { 18.0f, 20.0f, kHalfHeight, 0.01f }
+	};
+	const draw3::HighlighterGeometry underTwelve =
+		draw3::BuildHighlighterGeometry(underTwelvePixels);
+	HIGHLIGHTER_CHECK(underTwelve.primitives.size() == 1);
+	const std::vector<draw3::InkPoint> exactlyTwelvePixels = {
+		click, { 22.0f, 20.0f, kHalfHeight, 0.01f }
+	};
+	const draw3::HighlighterGeometry exactlyTwelve =
+		draw3::BuildHighlighterGeometry(exactlyTwelvePixels);
+	HIGHLIGHTER_CHECK(exactlyTwelve.primitives.size() == 1); // 12px 不再是可见性或几何分支。
+	if (!exactlyTwelve.primitives.empty())
+	{
+		const draw3::HighlighterPrimitive& sweep = exactlyTwelve.primitives.front();
+		HIGHLIGHTER_CHECK(NearlyEqual(sweep.p1.x, 10.0f));
+		HIGHLIGHTER_CHECK(NearlyEqual(sweep.p2.x, 22.0f));
+		HIGHLIGHTER_CHECK(NearlyEqual(sweep.halfSize.x, kHalfWidth));
+		HIGHLIGHTER_CHECK(NearlyEqual(sweep.halfSize.y, kHalfHeight));
 	}
 
-	draw3::HighlighterStartDirectionState locked;
-	locked.locked = true;
-	locked.direction = { 1.0f, 0.0f };
-	const std::vector<draw3::InkPoint> exactThreshold = {
-		{ 10.0f, 20.0f, 25.0f, 0.0f },
-		{ 22.0f, 20.0f, 25.0f, 0.01f }
+	const std::vector<draw3::InkPoint> curve = {
+		{ 10.0f, 20.0f, kHalfHeight, 0.0f },
+		{ 40.0f, 20.0f, kHalfHeight, 0.01f },
+		{ 40.0f, 50.0f, kHalfHeight, 0.02f },
+		{ 12.0f, 52.0f, kHalfHeight, 0.03f }
 	};
-	const draw3::HighlighterGeometry firstVisible =
-		draw3::BuildHighlighterGeometry(exactThreshold, complete, false, locked);
-	const draw3::HighlighterPrimitive* firstBody = FirstBody(firstVisible);
-	HIGHLIGHTER_CHECK(firstBody != nullptr);
-	draw3::HighlighterPrimitive firstCap = {};
-	if (firstBody)
+	geometry = draw3::BuildHighlighterGeometry(curve);
+	HIGHLIGHTER_CHECK(geometry.primitives.size() == curve.size() - 1); // 转角和回折不再追加圆角 primitive。
+	for (std::size_t index = 0; index < geometry.primitives.size(); ++index)
 	{
-		firstCap = *firstBody;
-		HIGHLIGHTER_CHECK(NearlyEqual(firstCap.p1.x, 10.0f));
-		HIGHLIGHTER_CHECK(NearlyEqual(firstCap.p1.y, 20.0f));
-		HIGHLIGHTER_CHECK(NearlyEqual(firstCap.p2.x, 22.0f));
-		HIGHLIGHTER_CHECK(NearlyEqual(firstCap.p2.y, 20.0f));
-		HIGHLIGHTER_CHECK(NearlyEqual(firstCap.startExtension, 0.0f));
-	}
-
-	const std::vector<draw3::InkPoint> appendedCurve = {
-		{ 10.0f, 20.0f, 25.0f, 0.0f },
-		{ 22.0f, 20.0f, 25.0f, 0.01f },
-		{ 22.0f, 36.0f, 25.0f, 0.02f },
-		{ 40.0f, 48.0f, 25.0f, 0.03f }
-	};
-	for (const draw3::HighlighterBoundaryFlags flags : {
-		draw3::HighlighterBoundaryFlags::Start, complete })
-	{
-		const draw3::HighlighterGeometry appended =
-			draw3::BuildHighlighterGeometry(appendedCurve, flags, false, locked);
-		const draw3::HighlighterPrimitive* appendedBody = FirstBody(appended);
-		HIGHLIGHTER_CHECK(appendedBody != nullptr);
-		if (firstBody && appendedBody)
+		const draw3::HighlighterPrimitive& primitive = geometry.primitives[index];
+		HIGHLIGHTER_CHECK(NearlyEqual(primitive.halfSize.x, kHalfWidth));
+		HIGHLIGHTER_CHECK(NearlyEqual(primitive.halfSize.y, kHalfHeight));
+		if (index + 1 < geometry.primitives.size())
 		{
-			HIGHLIGHTER_CHECK(NearlyEqual(appendedBody->p1.x, firstCap.p1.x));
-			HIGHLIGHTER_CHECK(NearlyEqual(appendedBody->p1.y, firstCap.p1.y));
-			HIGHLIGHTER_CHECK(NearlyEqual(appendedBody->p2.x, firstCap.p2.x));
-			HIGHLIGHTER_CHECK(NearlyEqual(appendedBody->p2.y, firstCap.p2.y));
-			HIGHLIGHTER_CHECK(NearlyEqual(appendedBody->startExtension, 0.0f));
+			const draw3::HighlighterPrimitive& next = geometry.primitives[index + 1];
+			HIGHLIGHTER_CHECK(NearlyEqual(primitive.p2.x, next.p1.x));
+			HIGHLIGHTER_CHECK(NearlyEqual(primitive.p2.y, next.p1.y));
 		}
 	}
 
-	const std::vector<draw3::InkPoint> internalSlice = {
-		{ 22.0f, 20.0f, 25.0f, 0.01f },
-		{ 22.0f, 36.0f, 25.0f, 0.02f }
+	const std::vector<draw3::InkPoint> subpixelJitter = {
+		click,
+		{ 10.01f, 20.0f, kHalfHeight, 0.001f },
+		{ 10.20f, 20.0f, kHalfHeight, 0.002f }
 	};
-	geometry = draw3::BuildHighlighterGeometry(
-		internalSlice, draw3::HighlighterBoundaryFlags::None, false, unlocked);
-	HIGHLIGHTER_CHECK(FirstBody(geometry) != nullptr); // 非全局 Start 的 L1 切片不受首次可见闸门影响。
-
-	// 连续 90° 转角必须用外侧扇区补齐；否则截图中会出现三角形缺角。
-	const std::vector<draw3::InkPoint> clockwiseCorner = {
-		{ 10.0f, 20.0f, 25.0f, 0.0f },
-		{ 40.0f, 20.0f, 25.0f, 0.01f },
-		{ 40.0f, 50.0f, 25.0f, 0.02f }
-	};
-	geometry = draw3::BuildHighlighterGeometry(
-		clockwiseCorner, complete, false, locked);
-	const draw3::HighlighterPrimitive* clockwiseSector =
-		FirstPrimitive(geometry, draw3::HighlighterPrimitiveType::RoundJoinSector);
-	HIGHLIGHTER_CHECK(clockwiseSector != nullptr);
-	if (clockwiseSector)
+	geometry = draw3::BuildHighlighterGeometry(subpixelJitter);
+	HIGHLIGHTER_CHECK(geometry.primitives.size() == 1);
+	if (!geometry.primitives.empty())
 	{
-		HIGHLIGHTER_CHECK(SectorContains(*clockwiseSector, 50.0f, 10.0f));
-		HIGHLIGHTER_CHECK(!SectorContains(*clockwiseSector, 30.0f, 30.0f));
-		HIGHLIGHTER_CHECK(geometry.bounds.left <= 14 && geometry.bounds.top <= -6);
-		HIGHLIGHTER_CHECK(geometry.bounds.right >= 66 && geometry.bounds.bottom >= 53);
+		HIGHLIGHTER_CHECK(NearlyEqual(geometry.primitives.front().p1.x, 10.0f));
+		HIGHLIGHTER_CHECK(NearlyEqual(geometry.primitives.front().p2.x, 10.0f));
 	}
+	std::vector<draw3::InkPoint> accumulatedMovement = subpixelJitter;
+	accumulatedMovement.push_back({ 10.26f, 20.0f, kHalfHeight, 0.003f });
+	geometry = draw3::BuildHighlighterGeometry(accumulatedMovement);
+	HIGHLIGHTER_CHECK(geometry.primitives.size() == 1);
+	if (!geometry.primitives.empty())
+		HIGHLIGHTER_CHECK(NearlyEqual(geometry.primitives.front().p2.x, 10.26f));
 
-	const std::vector<draw3::InkPoint> counterClockwiseCorner = {
-		{ 10.0f, 50.0f, 25.0f, 0.0f },
-		{ 40.0f, 50.0f, 25.0f, 0.01f },
-		{ 40.0f, 20.0f, 25.0f, 0.02f }
+	const std::vector<draw3::InkPoint> committedPoints = {
+		{ 10.0f, 20.0f, kHalfHeight, 0.0f },
+		{ 22.0f, 20.0f, kHalfHeight, 0.01f }
 	};
-	geometry = draw3::BuildHighlighterGeometry(
-		counterClockwiseCorner, complete, false, locked);
-	const draw3::HighlighterPrimitive* counterClockwiseSector =
-		FirstPrimitive(geometry, draw3::HighlighterPrimitiveType::RoundJoinSector);
-	HIGHLIGHTER_CHECK(counterClockwiseSector != nullptr);
-	if (counterClockwiseSector)
-	{
-		HIGHLIGHTER_CHECK(SectorContains(*counterClockwiseSector, 50.0f, 60.0f));
-		HIGHLIGHTER_CHECK(!SectorContains(*counterClockwiseSector, 30.0f, 40.0f));
-	}
+	const std::vector<draw3::InkPoint> liveTailPoints = {
+		{ 22.0f, 20.0f, kHalfHeight, 0.01f },
+		{ 22.0f, 36.0f, kHalfHeight, 0.02f },
+		{ 40.0f, 48.0f, kHalfHeight, 0.03f }
+	};
+	const draw3::HighlighterGeometry committedPrefix =
+		draw3::BuildHighlighterGeometry(committedPoints);
+	const draw3::HighlighterGeometry liveTail =
+		draw3::BuildHighlighterGeometry(liveTailPoints);
+	const draw3::HighlighterGeometry completedFromCache =
+		draw3::MergeHighlighterGeometry(committedPrefix, liveTail);
+	HIGHLIGHTER_CHECK(completedFromCache.primitives.size() == 3);
+	HIGHLIGHTER_CHECK(SamePrimitive(completedFromCache.primitives.front(),
+		committedPrefix.primitives.front()));
+	HIGHLIGHTER_CHECK(SamePrimitive(completedFromCache.primitives.back(),
+		liveTail.primitives.back()));
+	HIGHLIGHTER_CHECK(NearlyEqual(committedPrefix.primitives.back().p2.x,
+		liveTail.primitives.front().p1.x));
+	HIGHLIGHTER_CHECK(NearlyEqual(committedPrefix.primitives.back().p2.y,
+		liveTail.primitives.front().p1.y));
 
-	const std::vector<draw3::InkPoint> hairpin = {
-		{ 10.0f, 20.0f, 25.0f, 0.0f },
-		{ 40.0f, 20.0f, 25.0f, 0.01f },
-		{ 10.0f, 21.0f, 25.0f, 0.02f }
+	draw3::ActiveStroke cachedCompletion(50.0f, 500.0f,
+		draw3::StrokeWidthMode::Fixed, true);
+	cachedCompletion.committedHighlighterGeometry = committedPrefix;
+	cachedCompletion.l0HighlighterGeometry = liveTail;
+	cachedCompletion.realPoints = {
+		{ 300.0f, 400.0f, kHalfHeight, 1.0f },
+		{ 100.0f, 50.0f, kHalfHeight, 1.1f }
 	};
-	geometry = draw3::BuildHighlighterGeometry(hairpin, complete, false, locked);
-	HIGHLIGHTER_CHECK(FirstPrimitive(
-		geometry, draw3::HighlighterPrimitiveType::RoundJoinCircle) != nullptr);
-
-	const std::vector<draw3::InkPoint> duplicateStart = {
-		{ 10.0f, 20.0f, 25.0f, 0.0f },
-		{ 10.0f, 20.0f, 25.0f, 0.001f },
-		{ 30.0f, 20.0f, 25.0f, 0.01f }
-	};
-	geometry = draw3::BuildHighlighterGeometry(duplicateStart, complete, false, unlocked);
-	HIGHLIGHTER_CHECK(geometry.primitives.empty());
+	const draw3::HighlighterGeometry afterRealPointMutation = draw3::MergeHighlighterGeometry(
+		cachedCompletion.committedHighlighterGeometry, cachedCompletion.l0HighlighterGeometry);
+	HIGHLIGHTER_CHECK(afterRealPointMutation.primitives.size() == completedFromCache.primitives.size());
+	for (std::size_t index = 0; index < completedFromCache.primitives.size(); ++index)
+		HIGHLIGHTER_CHECK(SamePrimitive(afterRealPointMutation.primitives[index],
+			completedFromCache.primitives[index]));
 
 	if (failures == 0) std::cout << "All highlighter geometry tests passed." << std::endl;
 	return failures;
