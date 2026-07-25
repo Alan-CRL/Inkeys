@@ -336,12 +336,11 @@ namespace draw3
 	void WindowController::PublishPenCursorSample(
 		const DrawingCursorSample& sample) noexcept
 	{
+		if (sample.valid)
+			SetDrawingCursorPointerAuthority(DrawingCursorPointerAuthority::Pen);
 		DrawingCursorSample previous;
 		penCursorSample_.Read(previous);
 		if (!penCursorSample_.Publish(sample)) return;
-		if (!ResolveGetPointerType())
-			drawingCursorPointerAuthority_.store(
-				DrawingCursorPointerAuthority::Unknown, std::memory_order_release);
 		RequestDrawingCursorRender();
 		if (previous.valid != sample.valid || previous.inContact != sample.inContact ||
 			previous.inverted != sample.inverted) QueueSystemCursorRefresh();
@@ -480,8 +479,12 @@ namespace draw3
 			const PointerDetails details = QueryPointerDetails(pointerId);
 			const DrawingCursorPointerAuthority previousAuthority =
 				drawingCursorPointerAuthority_.load(std::memory_order_acquire);
+			DrawingCursorSample penSample;
+			const bool penSampleValid = penCursorSample_.Read(penSample) && penSample.valid;
 			const DrawingCursorPointerAuthority leaveAuthority = details.typeKnown
-				? AuthorityForPointerType(details.type) : previousAuthority;
+				? AuthorityForPointerType(details.type)
+				: previousAuthority == DrawingCursorPointerAuthority::Pen || penSampleValid
+					? DrawingCursorPointerAuthority::Pen : previousAuthority;
 			if (leaveAuthority == DrawingCursorPointerAuthority::Pen) ClearPenCursorSample();
 			// 保留离开的设备 authority，防止陈旧 Mouse 样本在没有新鼠标移动时恢复。
 			SetDrawingCursorPointerAuthority(leaveAuthority);

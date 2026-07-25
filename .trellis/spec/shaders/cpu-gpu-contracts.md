@@ -41,7 +41,7 @@ float2 halfSize
 
 它绑定在 VS `b0` 与 PS `b0`。`operatorKind` 只在 pixel shader 使用，但仍属于同一共享常量缓冲区。
 
-`LaserStyleConstants` 绑定到 VS/PS `b1`，总大小固定为 `96 bytes`：
+`LaserStyleConstants` 绑定到 VS/PS `b1`，总大小固定为 `112 bytes`：
 
 | C++ | HLSL |
 |---|---|
@@ -49,8 +49,9 @@ float2 halfSize
 | `coreColor` | `laserCoreColor` |
 | `scatterColor` | `laserScatterColor` |
 | `borderColor` | `laserBorderColor` |
+| `edgeColor` | `laserEdgeColor`（红粉外缘高亮） |
 | `glowColor` | `laserGlowColor` |
-| `parameters.x/y` | `laserParameters.x/y`（组 opacity、DPI scale） |
+| `parameters.x/y/z/w` | `laserParameters.x/y/z/w`（组 opacity、DPI scale、外缘 glow 下/上阈值） |
 
 新增字段必须保持 16 字节对齐，并同步 `renderer.cppm/.cpp`、`ink.hlsli` 与 shape `7/8/9/10` 的绑定。
 
@@ -84,7 +85,7 @@ Laser coverage 写入只绑定单张 coverage RTV，并以 `D3D11_BLEND_OP_MAX` 
 - `4`：瞬态 Cursor Circle。
 - `5`：瞬态 Cursor Rectangle。
 - `6`：瞬态 EraserGripCircle。
-- `7`：Laser coverage 胶囊写入。
+- `7`：Laser 可变端点压力 coverage 胶囊写入。
 - `8`：Laser stable/live coverage resolve。
 - `9`：Laser Hover/Touch 笔尖。
 - `10`：Laser 稀疏粒子。
@@ -119,5 +120,6 @@ Result = Add + Retain * Destination
 - VS 为圆胶囊和荧光笔固定矩形 sweep 生成覆盖形状的 quad/AABB。
 - PS 使用 signed distance 与 `fwidth`/`smoothstep` 做抗锯齿；高亮 sweep 的零等值线由 X/Y/线段法线半平面交集确定。
 - CPU dirty bounds 必须至少覆盖 VS 生成范围；当前普遍预留 2px 几何扩展和 3px bounds padding。
+- Laser shape `7` 的 `InkPoint.r` 是白芯半径；VS/PS 分别按 `14/2.5`、`7.5/2.5` 比例扩展光晕和红边，CPU bounds 必须使用同一最大光晕比例并逐点读取压力半径。
 - 普通笔零长度或一端圆包含另一端时退化为较大端点圆；高亮零长度退化为固定竖直矩形。
 - `InkPoint` 中出现 NaN 时 PS discard；CPU 仍应避免生成非有限输入。

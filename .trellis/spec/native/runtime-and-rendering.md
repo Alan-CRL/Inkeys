@@ -39,7 +39,7 @@
 | Pen | 5px base; hardware 1–7px | active configured mode | per-device fixed/simulated/hardware | real tail + prediction + taper |
 | Highlighter | 6.25×50px fixed vertical nib | enabled from Down | fixed | rectangle sweep primitives, no taper |
 | Eraser | 50px | disabled | fixed | real points directly committed to L1 |
-| Laser | 5px core + 24px glow | active configured mode | fixed | independent stable/live coverage, never L2 |
+| Laser | 5px core + 15px red border + 28px glow | active configured mode | Pen laser pressure; Mouse/Touch fixed | independent stable/live coverage, never L2 |
 
 这是当前实验实现。预测时长、目标帧率、笔宽、live-tip 和几何阈值默认都是实验参数；只有公开接口、持久化格式或明确兼容要求已经依赖某值时，该值才升级为兼容契约。
 
@@ -61,6 +61,8 @@
 
 - Laser 在 Down 时锁定到当前批次，支持 Pen、Mouse 和多 Touch；跳过断触 reconnect、倒转笔尾橡皮覆盖和触觉反馈。
 - stable/live 只写独立 `R8G8B8A8_UNORM` coverage，四通道为白芯、白红散射、红边和红晕；确认前缀增量写 stable，活动真实尾部和 prediction 每帧重建 live。任何 Laser 几何都不得进入 L2。
+- 96 DPI 基准材质为 5px 白芯、15px 红边、28px 完整光晕和 1px 内侧散射，resolve 顺序为柔光、红边、红粉外缘高亮、内侧散射、白芯。Pen 使用 `0.65 + 0.75 * clamp(p, 0, 1)` 同比缩放全部材质层；无效压力保持上一宽度，prediction 继承最后真实半径，Mouse/Touch 固定基准宽度。
+- 起笔固定 seed 生成 12-18 枚粒子，真实路径每 8-12px 发射一枚且每 contact 最多 48 枚；流速为 `clamp(0.025 * smoothedSpeed, 8*dpiScale, 36*dpiScale)`。轨迹粒子用弧长和 segment cursor 沿红边外侧前进，到当前路径末端钳住；Up 只扫描一次最近真实路径点，75% 收束至红边、25% 至中心线，并在约 220ms 内缩小淡出。
 - 最后一根 Laser Up 才记录 `lastAllUpQpc`；默认满亮保持 `3.0s`，固定 `0.8s` smooth fade。新 Down 在 Hold/Fade 中把整组 opacity 恢复为 `1` 并重新计时。
 - `SetLaserHoldDurationSeconds` 只接受 finite non-negative 值；运行中调整须由 control wake 唤醒并相对最后一次全部 Up 立即重算。粒子 setter 同样发布 control wake，关闭后下一帧清理旧粒子 bounds。
 - Hold 静态期不持续 Present；Fade、接触、prediction 和粒子动画才驱动帧。resize 保留 stable 左上角交集，live 重新绘制；clear/Present 失败恢复必须重建/清理 Laser coverage。
@@ -79,15 +81,15 @@
 
 ### 5. Good / Base / Bad Cases
 
-- Good：白芯与红边在深色、混合背景可见，外晕不遮挡底层；粒子每 contact 不超过 10 枚且不形成连续带。
-- Base：Hover 为静态 LaserDot，活动 Touch 各自显示独立 tip，抬笔后粒子就近收束并在约 `140ms` 消失。
+- Good：白芯与厚红边在深色、混合背景可见，外缘高亮和外晕不遮挡底层；粒子沿急转弯曲线运动且追加真实点不使旧粒子跳变。
+- Base：Hover 为静态 LaserDot，活动 Touch 各自显示独立 tip，抬笔后粒子就近收束并在约 `220ms` 消失。
 - Bad：把 Laser stable coverage resolve 到 L2、为 prediction 启用 reconnect、或在 Hold 期自旋 Present。
 
 ### 6. Tests Required
 
 - 断言按键 4/枚举、最后 Up 计时、3.0s Hold、0.8s fade、运行中设置变化和非法输入。
-- 断言 Laser 不进入 reconnect/L2，coverage bounds 覆盖 24px 外晕，resize/clear/Present failure 无残影。
-- 断言粒子 seed/弧长槽位稳定、36-48px 发射间隔、每 contact 上限 10、Up 收束约 140ms、开关清理旧 dirty。
+- 断言 Laser 不进入 reconnect/L2，压力 `0/0.5/1` 映射和 prediction 半径继承正确，coverage bounds 覆盖 28px 基准外晕及最大压力，resize/clear/Present failure 无残影。
+- 断言粒子 seed/弧长槽位稳定、8-12px 发射间隔、每 contact 上限 48、路径转弯/末端钳制/追加无跳变、Up 最近点收束约 220ms、开关清理旧 dirty。
 - Debug/Release ARM64 全解决方案构建、两份 shader 编译/嵌入；人工覆盖 Pen/Mouse/Touch Hover、单/多指、白/深/混合背景。
 
 ### 7. Wrong vs Correct
@@ -119,8 +121,8 @@ Correct：`Up -> stable coverage + lifecycle Hold`；只在 Hold deadline/Fade�
 - Pen 直径为 `max(当前基准画笔粗细, 5px * dpiScale)`；Highlighter 为 6.25x50px 固定竖直矩形。二者使用当前 RGB、25% fill Alpha 和 `#B8B8B8` 细内描边；fill Alpha 不得降低 outline Alpha，压力不改变 cursor 尺寸。
 - EraserGripCircle 直径直接复用 50px 画布擦除宽度，不乘 DPI、不设最小值；主体纯白，圆环宽度为 4%D，两条圆头竖线宽度为 10%D、中心偏移为 12%D、半高为 24%D，结构颜色为 `#CFCFCF`。Hover 整体 Alpha 0.5，Contact 整体 Alpha 1.0。
 - RTS InAir/Down/Packets/Up 发布 X/Y/QPC、inverted 和 contact；InAir/Packets 只解码批次最后一个包。样本使用 writer latch + sequence 一致发布，并以 sticky control wake 合并；RTS 回调不得调用 D3D 或 `SetCursor`。
-- Windows 8+ 动态解析 Pointer API，并区分 `Unknown/Pen/Mouse/Touch`；`WM_POINTERENTER/UPDATE` 使用 `GetPointerInfo/GetPointerPenInfo` 直接发布 Pen Hover 坐标，不能依赖首个 RTS Down。旧系统由 RTS Pen 样本和非 promoted Mouse 消息回退。Pointer authority 仍为 Pen 且 Pen 样本有效时，低优先级 `WM_MOUSE*` 不得抢占；缺少 Pointer API 时同样以有效 RTS Pen 样本维持该优先级。Mouse 使用 `TrackMouseEvent/WM_MOUSELEAVE` 清理。
-- Pen/Touch 离开后应清除其可见样本，但保留最后设备 authority 作为“当前无光标”状态；禁止将 authority 立即改为 Unknown 而使旧 Mouse 样本复活。只有新的非 promoted `WM_MOUSE*` 才能明确切换到 Mouse 并恢复鼠标。
+- Windows 8+ 动态解析 Pointer API，并区分 `Unknown/Pen/Mouse/Touch`；`WM_POINTERENTER/UPDATE` 使用 `GetPointerInfo/GetPointerPenInfo` 直接发布 Pen Hover 坐标，不能依赖首个 RTS Down。每个有效 RTS Pen 样本都必须明确取得 Pen authority。旧系统由 RTS Pen 样本和非 promoted Mouse 消息回退。Pointer authority 仍为 Pen 且 Pen 样本有效时，低优先级 `WM_MOUSE*` 不得抢占；缺少 Pointer API 时同样以有效 RTS Pen 样本维持该优先级。Mouse 使用 `TrackMouseEvent/WM_MOUSELEAVE` 清理。
+- Pen/Touch 离开后应清除其可见样本，但保留最后设备 authority 作为“当前无光标”状态；`WM_POINTERLEAVE` 无法取得 pointer type 时，只要旧 authority 或有效样本表明是 Pen，仍按 Pen 离开处理。禁止将 authority 立即改为 Unknown 而使旧 Mouse 样本复活。只有新的非 promoted `WM_MOUSE*` 才能明确切换到 Mouse 并恢复鼠标。
 - Pen/Highlighter：Pen Hover 显示应用 cursor，Pen Contact 只隐藏系统 cursor；Mouse 保留 `IDC_ARROW`；Touch 不显示笔尖 cursor。
 - Eraser/倒转笔尾：Pen/Mouse Hover 显示 Alpha 0.5，Contact 显示 Alpha 1.0，并隐藏系统 cursor。每个活动 Touch eraser contact 独立显示一枚 Alpha 1.0 cursor，不存在 Touch Hover；多指不得互相覆盖状态。
 - 活动主指针使用 Down 锁定的有效工具；没有匹配主指针但仍有活动批次时使用批次 `selectedTool`。Touch cursor 直接读取各自 runtime 的一致 `lastModelSnapshot` 和有效 `tool`。

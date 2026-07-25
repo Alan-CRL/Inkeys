@@ -236,13 +236,18 @@ namespace draw3
 	{
 		const float scale = std::isfinite(dpiScale) ? std::max(dpiScale, 0.01f) : 1.0f;
 		laserStyleConstants_.radii = DirectX::XMFLOAT4(
-			2.5f * scale, 5.0f * scale, 12.0f * scale, 0.75f * scale);
+			2.5f * scale, 7.5f * scale, 14.0f * scale, 1.0f * scale);
 		laserStyleConstants_.coreColor = DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-		laserStyleConstants_.scatterColor = DirectX::XMFLOAT4(1.0f, 0.88f, 0.90f, 0.92f);
+		laserStyleConstants_.scatterColor = DirectX::XMFLOAT4(
+			1.0f, 240.0f / 255.0f, 243.0f / 255.0f, 0.94f);
 		laserStyleConstants_.borderColor = DirectX::XMFLOAT4(
-			1.0f, 45.0f / 255.0f, 61.0f / 255.0f, 0.96f);
-		laserStyleConstants_.glowColor = DirectX::XMFLOAT4(1.0f, 0.08f, 0.14f, 0.24f);
-		laserStyleConstants_.parameters = DirectX::XMFLOAT4(1.0f, scale, 0.0f, 0.0f);
+			1.0f, 11.0f / 255.0f, 30.0f / 255.0f, 0.98f);
+		laserStyleConstants_.edgeColor = DirectX::XMFLOAT4(
+			1.0f, 112.0f / 255.0f, 128.0f / 255.0f, 0.72f);
+		laserStyleConstants_.glowColor = DirectX::XMFLOAT4(1.0f, 0.04f, 0.10f, 0.24f);
+		// z/w 是 7.5-8.5px 外缘在归一化 glow 曲线上的阈值。
+		laserStyleConstants_.parameters = DirectX::XMFLOAT4(
+			1.0f, scale, 0.20f, 0.29f);
 	}
 
 	bool InkRenderer::UpdateLaserStyleConstants(float opacity)

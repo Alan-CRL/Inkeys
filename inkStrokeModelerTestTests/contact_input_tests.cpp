@@ -368,6 +368,9 @@ namespace
 		TEST_CHECK(state, NearlyEqual(draw3::HardwarePressureDiameter(5.0f, 0.0f), 1.0f));
 		TEST_CHECK(state, NearlyEqual(draw3::HardwarePressureDiameter(5.0f, 0.5f), 4.0f));
 		TEST_CHECK(state, NearlyEqual(draw3::HardwarePressureDiameter(5.0f, 1.0f), 7.0f));
+		TEST_CHECK(state, NearlyEqual(draw3::LaserPressureDiameter(5.0f, 0.0f), 3.25f));
+		TEST_CHECK(state, NearlyEqual(draw3::LaserPressureDiameter(5.0f, 0.5f), 5.125f));
+		TEST_CHECK(state, NearlyEqual(draw3::LaserPressureDiameter(5.0f, 1.0f), 7.0f));
 		for (const auto [pressure, expectedRadius] : {
 			std::pair{ 0.0f, 0.5f }, std::pair{ 0.5f, 2.0f }, std::pair{ 1.0f, 3.5f } })
 		{
@@ -381,6 +384,55 @@ namespace
 			TEST_CHECK(state, stroke.realPoints.size() == 1);
 			TEST_CHECK(state, NearlyEqual(stroke.realPoints.front().r, expectedRadius));
 		}
+		for (const auto [pressure, expectedRadius] : {
+			std::pair{ 0.0f, 1.625f }, std::pair{ 0.5f, 2.5625f },
+			std::pair{ 1.0f, 3.5f } })
+		{
+			draw3::ActiveStroke stroke(
+				5.0f, 500.0f, draw3::StrokeWidthMode::LaserPressure);
+			ink::stroke_model::Result result;
+			result.position = { 10.0f, 20.0f };
+			result.time = ink::stroke_model::Time(0.0);
+			result.pressure = pressure;
+			stroke.modeledResults.push_back(result);
+			draw3::AppendNewModeledPoints(stroke);
+			TEST_CHECK(state, stroke.realPoints.size() == 1);
+			TEST_CHECK(state, NearlyEqual(stroke.realPoints.front().r, expectedRadius));
+		}
+
+		draw3::ActiveStroke invalidLaserPressure(
+			5.0f, 500.0f, draw3::StrokeWidthMode::LaserPressure);
+		ink::stroke_model::Result validLaserResult;
+		validLaserResult.position = { 1.0f, 1.0f };
+		validLaserResult.time = ink::stroke_model::Time(0.0);
+		validLaserResult.pressure = 0.5f;
+		invalidLaserPressure.modeledResults.push_back(validLaserResult);
+		draw3::AppendNewModeledPoints(invalidLaserPressure);
+		ink::stroke_model::Result invalidLaserResult = validLaserResult;
+		invalidLaserResult.position = { 2.0f, 1.0f };
+		invalidLaserResult.time = ink::stroke_model::Time(0.01);
+		invalidLaserResult.pressure = -1.0f;
+		invalidLaserPressure.modeledResults.push_back(invalidLaserResult);
+		draw3::AppendNewModeledPoints(invalidLaserPressure);
+		TEST_CHECK(state, invalidLaserPressure.realPoints.size() == 2);
+		TEST_CHECK(state, NearlyEqual(invalidLaserPressure.realPoints[0].r,
+			invalidLaserPressure.realPoints[1].r));
+		ink::stroke_model::Result laserPrediction = invalidLaserResult;
+		laserPrediction.position = { 3.0f, 1.0f };
+		laserPrediction.time = ink::stroke_model::Time(0.02);
+		laserPrediction.pressure = 1.0f;
+		invalidLaserPressure.predictedResults.push_back(laserPrediction);
+		draw3::RebuildPredictedPoints(invalidLaserPressure);
+		TEST_CHECK(state, invalidLaserPressure.predictedPoints.size() == 1);
+		TEST_CHECK(state, NearlyEqual(invalidLaserPressure.predictedPoints.front().r,
+			invalidLaserPressure.realPoints.back().r));
+
+		draw3::ActiveStroke fixedLaser(5.0f, 500.0f, draw3::StrokeWidthMode::Fixed);
+		ink::stroke_model::Result fixedLaserResult = validLaserResult;
+		fixedLaserResult.pressure = 1.0f;
+		fixedLaser.modeledResults.push_back(fixedLaserResult);
+		draw3::AppendNewModeledPoints(fixedLaser);
+		TEST_CHECK(state, NearlyEqual(fixedLaser.realPoints.front().r, 2.5f));
 
 		draw3::ActiveStroke predicted(5.0f, 500.0f, draw3::StrokeWidthMode::HardwarePressure);
 		ink::stroke_model::Result realResult;

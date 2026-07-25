@@ -99,13 +99,41 @@ float LaserAaCoverage(float distanceToEdge)
     return 1.0 - smoothstep(-aaWidth * 0.5, aaWidth * 0.5, distanceToEdge);
 }
 
-float4 GetLaserCoverage(float distanceToCenter)
+float4 GetLaserDotCoverage(float distanceToCenter)
 {
     float core = LaserAaCoverage(distanceToCenter - laserRadii.x);
     float scatter = LaserAaCoverage(abs(distanceToCenter - laserRadii.x) - laserRadii.w);
     float border = LaserAaCoverage(distanceToCenter - laserRadii.y);
     float glowEdge = LaserAaCoverage(distanceToCenter - laserRadii.z);
     float glowFalloff = pow(saturate(1.0 - distanceToCenter / max(laserRadii.z, 1e-4)), 1.7);
+    return saturate(float4(core, scatter, border, glowEdge * glowFalloff));
+}
+
+float4 GetLaserStrokeCoverage(PS_INPUT input)
+{
+    float baseCoreRadius = max(laserRadii.x, 1e-4);
+    float borderRatio = laserRadii.y / baseCoreRadius;
+    float glowRatio = laserRadii.z / baseCoreRadius;
+    float coreDistance = GetInkDist_Convex(
+        input.pixPos, input.p1, input.p2, input.r1, input.r2);
+    float borderDistance = GetInkDist_Convex(input.pixPos, input.p1, input.p2,
+        input.r1 * borderRatio, input.r2 * borderRatio);
+    float glowDistance = GetInkDist_Convex(input.pixPos, input.p1, input.p2,
+        input.r1 * glowRatio, input.r2 * glowRatio);
+
+    float2 segment = input.p2 - input.p1;
+    float segmentLengthSquared = dot(segment, segment);
+    float segmentRatio = segmentLengthSquared > 1e-8
+        ? saturate(dot(input.pixPos - input.p1, segment) / segmentLengthSquared) : 0.0;
+    float localCoreRadius = max(lerp(input.r1, input.r2, segmentRatio), 1e-4);
+    float scatterWidth = laserRadii.w * localCoreRadius / baseCoreRadius;
+    float localGlowRadius = localCoreRadius * glowRatio;
+
+    float core = LaserAaCoverage(coreDistance);
+    float scatter = LaserAaCoverage(abs(coreDistance) - scatterWidth);
+    float border = LaserAaCoverage(borderDistance);
+    float glowEdge = LaserAaCoverage(glowDistance);
+    float glowFalloff = pow(saturate(-glowDistance / max(localGlowRadius, 1e-4)), 1.7);
     return saturate(float4(core, scatter, border, glowEdge * glowFalloff));
 }
 
@@ -120,6 +148,9 @@ OperatorOutput ResolveLaserMaterial(float4 coverage, float opacity)
     float4 color = 0.0;
     color = LayerPremultiplied(color, laserGlowColor, coverage.a);
     color = LayerPremultiplied(color, laserBorderColor, coverage.b);
+    float edgeCoverage = smoothstep(laserParameters.z, laserParameters.w, coverage.a) *
+        (1.0 - coverage.b);
+    color = LayerPremultiplied(color, laserEdgeColor, edgeCoverage);
     color = LayerPremultiplied(color, laserScatterColor, coverage.g);
     color = LayerPremultiplied(color, laserCoreColor, coverage.r);
     color *= saturate(opacity);
@@ -140,7 +171,7 @@ OperatorOutput main(PS_INPUT input)
     {
         float distanceToCenter = length(input.pixPos - input.p1);
         if (type == 9)
-            return ResolveLaserMaterial(GetLaserCoverage(distanceToCenter),
+            return ResolveLaserMaterial(GetLaserDotCoverage(distanceToCenter),
                 input.r2 * laserParameters.x);
 
         float coreCoverage = LaserAaCoverage(distanceToCenter - input.r1);
@@ -244,10 +275,8 @@ OperatorOutput main(PS_INPUT input)
 
     if (type == 7)
     {
-        float distanceToCenter = GetInkDist_Convex(
-            input.pixPos, input.p1, input.p2, 0.0, 0.0);
         OperatorOutput coverageOutput;
-        coverageOutput.add = GetLaserCoverage(max(distanceToCenter, 0.0));
+        coverageOutput.add = GetLaserStrokeCoverage(input);
         coverageOutput.retain = 0.0;
         return coverageOutput;
     }

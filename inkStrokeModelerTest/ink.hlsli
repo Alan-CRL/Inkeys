@@ -15,13 +15,14 @@ cbuffer ScreenBuffer : register(b0)
     float3 globalPadding;
 };
 
-// Laser 独立材质常量：radii=(白芯, 红边, 外晕, 散射带)，parameters.x=整组 opacity。
+// Laser 独立材质常量：radii=(白芯, 红边, 外晕, 散射带)，parameters.zw=外缘 glow 阈值。
 cbuffer LaserStyleBuffer : register(b1)
 {
     float4 laserRadii;
     float4 laserCoreColor;
     float4 laserScatterColor;
     float4 laserBorderColor;
+    float4 laserEdgeColor;
     float4 laserGlowColor;
     float4 laserParameters;
 };

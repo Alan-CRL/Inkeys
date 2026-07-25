@@ -159,6 +159,12 @@ int RunPenCursorTests()
 
 	// Pen 离开后 authority 仍拒绝陈旧 Mouse 样本，直到真实鼠标移动切换 authority。
 	draw3::DrawingCursorSample absentPen;
+	PEN_CURSOR_CHECK(!draw3::ResolveLaserDrawingCursorVisual(
+		absentPen, mouseHover, DrawingCursorPointerAuthority::Pen,
+		penAppearance).visible);
+	PEN_CURSOR_CHECK(draw3::ResolveLaserDrawingCursorVisual(
+		absentPen, mouseHover, DrawingCursorPointerAuthority::Mouse,
+		penAppearance).visible);
 	visual = draw3::ResolvePrimaryDrawingCursorVisual(
 		absentPen, mouseHover, DrawingCursorPointerAuthority::Pen,
 		penAppearance, eraserAppearance, false);

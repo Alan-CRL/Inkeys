@@ -5,8 +5,9 @@
 1. 扩展工具枚举、键 4、工具名称/宽度/光标选择和运行时设置 API；加入 Laser session/lifecycle 纯逻辑与单元测试。
 2. 扩展 renderer 的 stable/live Laser coverage 资源、MAX coverage 写入、resolve pass、resize/clear/release 和 CPU/GPU 常量契约。
 3. 接入多 contact 主循环：Laser 模型输入、stable commit、live prediction、Up 收尾、无 reconnect/no L2、deadline wait 和 dirty rect。
-4. 实现 LaserDot Hover/接触笔尖与确定性稀疏粒子，接入粒子开关和动态留存秒数设置。
-5. 补充自动测试、D3D/透明路径人工验证和 Release 性能指标；按 Trellis check 修正全部问题。
+4. 实现 LaserDot Hover/接触笔尖、压力半径和确定性曲线粒子；接入粒子开关和动态留存秒数设置。粒子采用 12-18 枚起笔、8-12px 弧长间隔、48 枚上限和 8-36px/s 流速，Up 最近路径点收束。
+5. 完善 Pen authority/leave/re-entry 光标状态，补充可变半径 bounds 与 112-byte shader 契约。
+6. 补充自动测试、D3D/透明路径人工验证和 Release 性能指标；按 Trellis check 修正全部问题。
 
 ## Validation Commands
 

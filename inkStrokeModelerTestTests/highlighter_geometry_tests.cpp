@@ -48,7 +48,7 @@ int RunHighlighterGeometryTests()
 	HIGHLIGHTER_CHECK(defaultConfiguration.laserHoldDurationSeconds == 3.0);
 	HIGHLIGHTER_CHECK(draw3::CreateStrokeModelConfiguration(192).dpiScale == 2.0f);
 	HIGHLIGHTER_CHECK(sizeof(draw3::LaserDot) == 16);
-	HIGHLIGHTER_CHECK(sizeof(draw3::LaserStyleConstants) == 96);
+	HIGHLIGHTER_CHECK(sizeof(draw3::LaserStyleConstants) == 112);
 
 	draw3::LaserTrailLifecycle laserLifecycle;
 	draw3::BeginLaserContact(laserLifecycle);
@@ -74,17 +74,58 @@ int RunHighlighterGeometryTests()
 	HIGHLIGHTER_CHECK(laserLifecycle.phase == draw3::LaserTrailPhase::Inactive);
 
 	const float particleInterval = draw3::LaserParticleEmissionIntervalPx(42, 3, 1.0f);
-	HIGHLIGHTER_CHECK(particleInterval >= 36.0f && particleInterval <= 48.0f);
+	HIGHLIGHTER_CHECK(particleInterval >= 8.0f && particleInterval <= 12.0f);
 	HIGHLIGHTER_CHECK(NearlyEqual(particleInterval,
 		draw3::LaserParticleEmissionIntervalPx(42, 3, 1.0f)));
 	HIGHLIGHTER_CHECK(NearlyEqual(
-		draw3::LaserParticleFlowSpeedPxPerSecond(0.0f, 1.0f), 24.0f));
+		draw3::LaserParticleFlowSpeedPxPerSecond(0.0f, 1.0f), 8.0f));
 	HIGHLIGHTER_CHECK(NearlyEqual(
-		draw3::LaserParticleFlowSpeedPxPerSecond(10000.0f, 1.0f), 160.0f));
+		draw3::LaserParticleFlowSpeedPxPerSecond(10000.0f, 1.0f), 36.0f));
+	HIGHLIGHTER_CHECK(draw3::LaserDownParticleCount(42) >= 12);
+	HIGHLIGHTER_CHECK(draw3::LaserDownParticleCount(42) <= 18);
+	HIGHLIGHTER_CHECK(draw3::LaserDownParticleCount(42) ==
+		draw3::LaserDownParticleCount(42));
+	HIGHLIGHTER_CHECK(draw3::kLaserMaximumParticlesPerContact == 48);
 	const RECT laserBounds = draw3::RectFromLaserPoints({
-		{ 20.0f, 20.0f, 2.5f, 0.0f } }, 1.0f, 100, 100);
-	HIGHLIGHTER_CHECK(laserBounds.left == 5 && laserBounds.top == 5);
-	HIGHLIGHTER_CHECK(laserBounds.right == 35 && laserBounds.bottom == 35);
+		{ 50.0f, 50.0f, 2.5f, 0.0f } }, 1.0f, 100, 100);
+	HIGHLIGHTER_CHECK(laserBounds.left == 33 && laserBounds.top == 33);
+	HIGHLIGHTER_CHECK(laserBounds.right == 67 && laserBounds.bottom == 67);
+	const RECT maximumPressureLaserBounds = draw3::RectFromLaserPoints({
+		{ 50.0f, 50.0f, 3.5f, 0.0f } }, 1.0f, 100, 100);
+	HIGHLIGHTER_CHECK(maximumPressureLaserBounds.left == 27);
+	HIGHLIGHTER_CHECK(maximumPressureLaserBounds.right == 73);
+	const RECT highDpiLaserBounds = draw3::RectFromLaserPoints({
+		{ 50.0f, 50.0f, 5.0f, 0.0f } }, 2.0f, 100, 100);
+	HIGHLIGHTER_CHECK(highDpiLaserBounds.left == 19);
+	HIGHLIGHTER_CHECK(highDpiLaserBounds.right == 81);
+
+	std::vector<draw3::InkPoint> laserPath = {
+		{ 0.0f, 0.0f, 2.0f, 0.0f },
+		{ 10.0f, 0.0f, 2.5f, 0.01f },
+		{ 10.0f, 10.0f, 3.0f, 0.02f }
+	};
+	size_t pathCursor = 0;
+	float pathCursorArc = 0.0f;
+	draw3::LaserPathSample pathSample;
+	HIGHLIGHTER_CHECK(draw3::SampleLaserPathAtArcLength(
+		laserPath, 15.0f, pathCursor, pathCursorArc, pathSample));
+	HIGHLIGHTER_CHECK(NearlyEqual(pathSample.x, 10.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(pathSample.y, 5.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(pathSample.tangentX, 0.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(pathSample.tangentY, 1.0f));
+	laserPath.push_back({ 20.0f, 10.0f, 3.5f, 0.03f });
+	HIGHLIGHTER_CHECK(draw3::SampleLaserPathAtArcLength(
+		laserPath, 15.0f, pathCursor, pathCursorArc, pathSample));
+	HIGHLIGHTER_CHECK(NearlyEqual(pathSample.x, 10.0f) &&
+		NearlyEqual(pathSample.y, 5.0f));
+	HIGHLIGHTER_CHECK(draw3::SampleLaserPathAtArcLength(
+		laserPath, 25.0f, pathCursor, pathCursorArc, pathSample));
+	HIGHLIGHTER_CHECK(NearlyEqual(pathSample.x, 15.0f) &&
+		NearlyEqual(pathSample.y, 10.0f));
+	HIGHLIGHTER_CHECK(draw3::FindNearestLaserPathSample(
+		laserPath, 12.0f, 4.0f, pathSample));
+	HIGHLIGHTER_CHECK(NearlyEqual(pathSample.x, 10.0f) &&
+		NearlyEqual(pathSample.y, 4.0f));
 	draw3::ActiveStroke completedPen(5.0f, 500.0f);
 	completedPen.realPoints = {
 		{ 10.0f, 20.0f, 2.5f, 0.0f },

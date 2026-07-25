@@ -34,10 +34,12 @@ namespace draw3
 		const DirectX::XMFLOAT4 kReconnectManualTestColor(0.0f, 1.0f, 0.0f, 1.0f);
 		constexpr float kPenDiameter = 5.0f;
 		constexpr float kLaserDiameter = 5.0f;
-		constexpr float kLaserGlowRadiusAt96Dpi = 12.0f;
-		constexpr double kLaserParticleConvergeSeconds = 0.140;
-		constexpr double kLaserDownParticleLifetimeSeconds = 0.48;
-		constexpr double kLaserTrailParticleLifetimeSeconds = 0.34;
+		constexpr float kLaserGlowRadiusAt96Dpi = 14.0f;
+		constexpr double kLaserParticleConvergeSeconds = 0.220;
+		constexpr double kLaserParticleScatterSeconds = 0.180;
+		constexpr double kLaserDownParticleLifetimeSeconds = 0.650;
+		constexpr double kLaserTrailParticleLifetimeSeconds = 0.800;
+		constexpr size_t kLaserReservedContactCount = 32;
 		constexpr float kMinimumPenCursorDiameterAt96Dpi = 5.0f;
 		constexpr float kPenTipCursorFillAlpha = 0.25f;
 		constexpr float kWideToolDiameter = 50.0f;
@@ -56,12 +58,6 @@ namespace draw3
 			if (tool == DrawingTool::Pen) return kPenDiameter;
 			if (tool == DrawingTool::Laser) return kLaserDiameter;
 			return kWideToolDiameter;
-		}
-
-		StrokeWidthMode WidthModeForTool(DrawingTool tool)
-		{
-			return tool == DrawingTool::Pen
-				? StrokeWidthMode::SimulatedPressure : StrokeWidthMode::Fixed;
 		}
 
 		bool HasLinearStylusChange(float current, float previous, float epsilon, float maximum) noexcept
@@ -167,6 +163,7 @@ namespace draw3
 			uint32_t laserParticleSlot = 0;
 			size_t laserParticleProcessedPointCount = 0;
 			float laserArcSinceParticle = 0.0f;
+			float laserProcessedArcLength = 0.0f;
 			InkPoint laserLastParticlePoint = {};
 			bool hasLaserLastParticlePoint = false;
 		};
@@ -190,10 +187,17 @@ namespace draw3
 			int64_t convergeStartQpc = 0;
 			float convergeStartX = 0.0f;
 			float convergeStartY = 0.0f;
+			float convergeStartRadius = 0.0f;
+			float convergeStartOpacity = 0.0f;
 			float currentX = 0.0f;
 			float currentY = 0.0f;
 			float currentRadius = 0.0f;
 			float currentOpacity = 0.0f;
+			float pathArcLength = 0.0f;
+			float pathSegmentStartArcLength = 0.0f;
+			size_t pathSegmentCursor = 0;
+			int64_t lastUpdateQpc = 0;
+			const std::vector<InkPoint>* pathPoints = nullptr;
 			bool downParticle = false;
 			bool converging = false;
 		};
@@ -343,6 +347,8 @@ namespace draw3
 		void AppendLaserParticle(std::vector<LaserParticle>& particles,
 			uint32_t owner, uint32_t slot, float x, float y,
 			float tangentX, float tangentY, float inputSpeed, bool downParticle,
+			const std::vector<InkPoint>* pathPoints, float pathArcLength,
+			size_t pathSegmentCursor, float pathSegmentStartArcLength,
 			int64_t nowQpc, float dpiScale)
 		{
 			if (CountLaserParticles(particles, owner) >= kLaserMaximumParticlesPerContact) return;
@@ -367,16 +373,21 @@ namespace draw3
 			particle.normalX = -tangentY;
 			particle.normalY = tangentX;
 			particle.directionSign = LaserUnit(owner, slot, 0) < 0.5f ? -1.0f : 1.0f;
-			particle.scatterDistance = (3.0f + 4.0f * LaserUnit(owner, slot, 1)) * dpiScale;
+			particle.scatterDistance = (4.0f + 6.0f * LaserUnit(owner, slot, 1)) * dpiScale;
 			particle.flowSpeed = LaserParticleFlowSpeedPxPerSecond(inputSpeed, dpiScale);
-			particle.radius = (0.6f + 0.6f * LaserUnit(owner, slot, 2)) * dpiScale;
+			particle.radius = (0.75f + 0.60f * LaserUnit(owner, slot, 2)) * dpiScale;
 			particle.lifetimeSeconds = downParticle
 				? kLaserDownParticleLifetimeSeconds : kLaserTrailParticleLifetimeSeconds;
 			particle.birthQpc = nowQpc;
+			particle.lastUpdateQpc = nowQpc;
 			particle.currentX = x;
 			particle.currentY = y;
 			particle.currentRadius = particle.radius;
 			particle.currentOpacity = 1.0f;
+			particle.pathArcLength = pathArcLength;
+			particle.pathSegmentCursor = pathSegmentCursor;
+			particle.pathSegmentStartArcLength = pathSegmentStartArcLength;
+			particle.pathPoints = pathPoints;
 			particle.downParticle = downParticle;
 			particles.push_back(particle);
 		}
@@ -394,8 +405,9 @@ namespace draw3
 					(particle.anchorX - particle.convergeStartX) * smooth;
 				particle.currentY = particle.convergeStartY +
 					(particle.anchorY - particle.convergeStartY) * smooth;
-				particle.currentRadius = particle.radius * (1.0f - smooth);
-				particle.currentOpacity = (1.0f - smooth) * (1.0f - smooth);
+				particle.currentRadius = particle.convergeStartRadius * (1.0f - smooth);
+				particle.currentOpacity = particle.convergeStartOpacity *
+					(1.0f - smooth) * (1.0f - smooth);
 				return t < 1.0f;
 			}
 
@@ -405,43 +417,82 @@ namespace draw3
 			const float fade = 1.0f - normalizedAge * normalizedAge;
 			if (particle.downParticle)
 			{
-				const float scatterT = std::clamp(static_cast<float>(age / 0.12), 0.0f, 1.0f);
+				const float scatterT = std::clamp(static_cast<float>(
+					age / kLaserParticleScatterSeconds), 0.0f, 1.0f);
 				const float smooth = scatterT * scatterT * (3.0f - 2.0f * scatterT);
-				const float angle = (LaserUnit(particle.owner, particle.slot, 3) - 0.5f) * 1.2f;
-				const float directionX = std::cos(angle) * particle.normalX +
-					std::sin(angle) * particle.tangentX;
-				const float directionY = std::cos(angle) * particle.normalY +
-					std::sin(angle) * particle.tangentY;
-				particle.currentX = particle.anchorX + directionX *
-					particle.directionSign * particle.scatterDistance * smooth;
-				particle.currentY = particle.anchorY + directionY *
-					particle.directionSign * particle.scatterDistance * smooth;
+				const float angle = LaserUnit(particle.owner, particle.slot, 3) * kTwoPi;
+				particle.currentX = particle.anchorX +
+					std::cos(angle) * particle.scatterDistance * smooth;
+				particle.currentY = particle.anchorY +
+					std::sin(angle) * particle.scatterDistance * smooth;
 			}
-			else
+			else if (particle.pathPoints)
 			{
-				const float travel = particle.flowSpeed * static_cast<float>(age);
-				const float normalOffset = particle.directionSign * particle.scatterDistance * 0.35f;
-				particle.currentX = particle.anchorX + particle.tangentX * travel +
-					particle.normalX * normalOffset;
-				particle.currentY = particle.anchorY + particle.tangentY * travel +
-					particle.normalY * normalOffset;
+				const float deltaSeconds = static_cast<float>(QpcDeltaSeconds(
+					nowQpc, particle.lastUpdateQpc, qpcFrequency));
+				particle.pathArcLength += particle.flowSpeed * deltaSeconds;
+				LaserPathSample sample;
+				if (SampleLaserPathAtArcLength(*particle.pathPoints,
+					particle.pathArcLength, particle.pathSegmentCursor,
+					particle.pathSegmentStartArcLength, sample))
+				{
+					const float normalX = -sample.tangentY;
+					const float normalY = sample.tangentX;
+					// 粒子贴着三倍白芯半径的红边外侧走，转弯时随 segment 更新法线。
+					const float normalOffset = particle.directionSign *
+						(std::max(sample.radius, 0.0f) * 3.0f + particle.radius * 0.6f);
+					particle.currentX = sample.x + normalX * normalOffset;
+					particle.currentY = sample.y + normalY * normalOffset;
+					if (sample.atPathEnd && particle.pathSegmentCursor + 1 <
+						particle.pathPoints->size())
+					{
+						const InkPoint& start = (*particle.pathPoints)[particle.pathSegmentCursor];
+						const InkPoint& end = (*particle.pathPoints)[particle.pathSegmentCursor + 1];
+						particle.pathArcLength = particle.pathSegmentStartArcLength +
+							std::hypot(end.x - start.x, end.y - start.y);
+					}
+				}
 			}
+			particle.lastUpdateQpc = nowQpc;
 			particle.currentRadius = particle.radius * (0.75f + 0.25f * fade);
-			particle.currentOpacity = fade * 0.72f;
+			particle.currentOpacity = fade * (particle.downParticle ? 0.68f : 0.62f);
 			return true;
 		}
 
 		void BeginLaserParticleConvergence(std::vector<LaserParticle>& particles,
-			uint32_t owner, int64_t nowQpc, int64_t qpcFrequency) noexcept
+			uint32_t owner, const std::vector<InkPoint>& path,
+			int64_t nowQpc, int64_t qpcFrequency) noexcept
 		{
 			for (LaserParticle& particle : particles)
 			{
 				if (particle.owner != owner || particle.converging) continue;
 				UpdateLaserParticle(particle, nowQpc, qpcFrequency);
+				LaserPathSample nearest;
+				if (FindNearestLaserPathSample(path,
+					particle.currentX, particle.currentY, nearest))
+				{
+					particle.anchorX = nearest.x;
+					particle.anchorY = nearest.y;
+					if (LaserUnit(owner, particle.slot, 4) < 0.75f)
+					{
+						const float normalX = -nearest.tangentY;
+						const float normalY = nearest.tangentX;
+						const float sideDot = (particle.currentX - nearest.x) * normalX +
+							(particle.currentY - nearest.y) * normalY;
+						const float side = std::abs(sideDot) > 0.001f
+							? (sideDot < 0.0f ? -1.0f : 1.0f) : particle.directionSign;
+						const float edgeOffset = std::max(nearest.radius, 0.0f) * 3.0f;
+						particle.anchorX += normalX * side * edgeOffset;
+						particle.anchorY += normalY * side * edgeOffset;
+					}
+				}
 				particle.converging = true;
+				particle.pathPoints = nullptr;
 				particle.convergeStartQpc = nowQpc;
 				particle.convergeStartX = particle.currentX;
 				particle.convergeStartY = particle.currentY;
+				particle.convergeStartRadius = particle.currentRadius;
+				particle.convergeStartOpacity = particle.currentOpacity;
 			}
 		}
 
@@ -560,6 +611,9 @@ namespace draw3
 				float deltaX = segmentEnd.x - segmentStart.x;
 				float deltaY = segmentEnd.y - segmentStart.y;
 				float segmentLength = std::hypot(deltaX, deltaY);
+				const float fullSegmentLength = segmentLength;
+				const float segmentStartArcLength = runtime.laserProcessedArcLength;
+				float currentArcLength = segmentStartArcLength;
 				while (segmentLength > 0.0001f)
 				{
 					const float interval = LaserParticleEmissionIntervalPx(
@@ -573,10 +627,13 @@ namespace draw3
 					const float ratio = needed / segmentLength;
 					const float emitX = segmentStart.x + deltaX * ratio;
 					const float emitY = segmentStart.y + deltaY * ratio;
+					const float emitArcLength = currentArcLength + needed;
 					AppendLaserParticle(particles, runtime.laserParticleOwner,
 						runtime.laserParticleSlot++, emitX, emitY, deltaX, deltaY,
-						runtime.filteredInputSpeed, false, nowQpc, dpiScale);
+						runtime.filteredInputSpeed, false, &points, emitArcLength,
+						index - 1, segmentStartArcLength, nowQpc, dpiScale);
 					runtime.laserArcSinceParticle = 0.0f;
+					currentArcLength = emitArcLength;
 					segmentStart.x = emitX;
 					segmentStart.y = emitY;
 					deltaX = segmentEnd.x - segmentStart.x;
@@ -584,8 +641,31 @@ namespace draw3
 					segmentLength = std::hypot(deltaX, deltaY);
 				}
 				runtime.laserLastParticlePoint = segmentEnd;
+				runtime.laserProcessedArcLength += fullSegmentLength;
 			}
 			runtime.laserParticleProcessedPointCount = points.size();
+		}
+
+		void SkipLaserTrailParticleEmission(RuntimeStroke& runtime) noexcept
+		{
+			const std::vector<InkPoint>& points = runtime.stroke.realPoints;
+			if (points.empty()) return;
+			if (!runtime.hasLaserLastParticlePoint)
+			{
+				runtime.laserLastParticlePoint = points.front();
+				runtime.hasLaserLastParticlePoint = true;
+				runtime.laserParticleProcessedPointCount = 1;
+			}
+			for (size_t index = runtime.laserParticleProcessedPointCount;
+				index < points.size(); ++index)
+			{
+				runtime.laserProcessedArcLength += std::hypot(
+					points[index].x - runtime.laserLastParticlePoint.x,
+					points[index].y - runtime.laserLastParticlePoint.y);
+				runtime.laserLastParticlePoint = points[index];
+			}
+			runtime.laserParticleProcessedPointCount = points.size();
+			runtime.laserArcSinceParticle = 0.0f;
 		}
 
 		RECT DrawStablePrefix(RuntimeStroke& runtime, InkRenderer& renderer, int width, int height)
@@ -960,7 +1040,7 @@ namespace draw3
 		std::vector<LaserParticle> laserParticles;
 		std::vector<LaserDot> laserParticleDots;
 		std::vector<LaserDot> laserTipDots;
-		laserParticles.reserve(kPreheatedStrokeCount * kLaserMaximumParticlesPerContact);
+		laserParticles.reserve(kLaserReservedContactCount * kLaserMaximumParticlesPerContact);
 		laserParticleDots.reserve(kPreheatedStrokeCount * kLaserMaximumParticlesPerContact);
 		laserTipDots.reserve(kPreheatedStrokeCount + 1);
 		RECT previousLaserParticleBounds = {};
@@ -1021,7 +1101,8 @@ namespace draw3
 				const StrokeWidthMode widthMode = tool == DrawingTool::Pen
 					? ResolveStrokeWidthMode(deviceType,
 						inputWidthModeSettings_.Get(), downPressure)
-					: StrokeWidthMode::Fixed;
+					: tool == DrawingTool::Laser && deviceType == InputDeviceType::Pen
+						? StrokeWidthMode::LaserPressure : StrokeWidthMode::Fixed;
 				const InterruptedStrokeReconnectIdentity downIdentity{
 					deviceType,
 					static_cast<uint32_t>(batchTool),
@@ -1316,10 +1397,12 @@ namespace draw3
 				runtime->laserParticleSlot = 0;
 				runtime->laserParticleProcessedPointCount = 0;
 				runtime->laserArcSinceParticle = 0.0f;
+				runtime->laserProcessedArcLength = 0.0f;
 				runtime->laserLastParticlePoint = {};
 				runtime->hasLaserLastParticlePoint = false;
 				runtime->metricEligibleQpc = down.qpc;
-				const float baseDiameter = DiameterForTool(runtime->tool);
+				const float baseDiameter = DiameterForTool(runtime->tool) *
+					(runtime->tool == DrawingTool::Laser ? configuration_.dpiScale : 1.0f);
 				const bool highlighter = runtime->tool == DrawingTool::Highlighter;
 				runtime->stroke.Reset(baseDiameter, configuration_.expectedSpeed,
 					widthMode, highlighter);
@@ -1352,7 +1435,9 @@ namespace draw3
 				runtime->lastOrientation = down.orientation;
 				ActiveStroke& stroke = runtime->stroke;
 				const float initialDiameter = widthMode == StrokeWidthMode::HardwarePressure
-					? HardwarePressureDiameter(baseDiameter, downPressure) : baseDiameter;
+					? HardwarePressureDiameter(baseDiameter, downPressure)
+					: widthMode == StrokeWidthMode::LaserPressure
+						? LaserPressureDiameter(baseDiameter, downPressure) : baseDiameter;
 				stroke.inputStartPoint = {
 					down.position.x, down.position.y, initialDiameter * 0.5f, 0.0f };
 				stroke.hasInputStartPoint = true;
@@ -1389,14 +1474,15 @@ namespace draw3
 					laserOpacity = 1.0f;
 					if (laserParticlesEnabled_.load(std::memory_order_acquire))
 					{
-						const uint32_t particleCount = 3u +
-							(MixLaserSeed(runtime->laserParticleOwner) % 3u);
+						const uint32_t particleCount =
+							LaserDownParticleCount(runtime->laserParticleOwner);
 						for (uint32_t particleIndex = 0;
 							particleIndex < particleCount; ++particleIndex)
 						{
 							AppendLaserParticle(laserParticles, runtime->laserParticleOwner,
 								runtime->laserParticleSlot++, down.position.x, down.position.y,
-								1.0f, 0.0f, 0.0f, true, down.qpc, configuration_.dpiScale);
+								1.0f, 0.0f, 0.0f, true, &runtime->stroke.realPoints,
+								0.0f, 0, 0.0f, down.qpc, configuration_.dpiScale);
 						}
 					}
 				}
@@ -1565,7 +1651,8 @@ namespace draw3
 				{
 					EndLaserContact(laserLifecycle, snapshot.qpc);
 					BeginLaserParticleConvergence(laserParticles,
-						runtime.laserParticleOwner, snapshot.qpc, qpcFrequency);
+						runtime.laserParticleOwner, runtime.stroke.realPoints,
+						snapshot.qpc, qpcFrequency);
 				}
 				if (deferUp)
 				{
@@ -2003,13 +2090,8 @@ namespace draw3
 						if (particlesEnabled)
 							EmitLaserTrailParticles(*runtime, laserParticles,
 								frameQpc.QuadPart, configuration_.dpiScale);
-						else if (!stroke.realPoints.empty())
-						{
-							runtime->laserParticleProcessedPointCount = stroke.realPoints.size();
-							runtime->laserLastParticlePoint = stroke.realPoints.back();
-							runtime->hasLaserLastParticlePoint = true;
-							runtime->laserArcSinceParticle = 0.0f;
-						}
+						else
+							SkipLaserTrailParticleEmission(*runtime);
 					}
 					else
 					{
@@ -2174,6 +2256,7 @@ namespace draw3
 						runtime->laserParticleSlot = 0;
 						runtime->laserParticleProcessedPointCount = 0;
 						runtime->laserArcSinceParticle = 0.0f;
+						runtime->laserProcessedArcLength = 0.0f;
 						runtime->laserLastParticlePoint = {};
 						runtime->hasLaserLastParticlePoint = false;
 						runtime->metricVisible = false;

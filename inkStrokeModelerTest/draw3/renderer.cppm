@@ -81,11 +81,12 @@ export namespace draw3
 		DirectX::XMFLOAT4 coreColor = {};
 		DirectX::XMFLOAT4 scatterColor = {};
 		DirectX::XMFLOAT4 borderColor = {};
+		DirectX::XMFLOAT4 edgeColor = {};
 		DirectX::XMFLOAT4 glowColor = {};
 		DirectX::XMFLOAT4 parameters = {};
 	};
 
-	static_assert(sizeof(LaserStyleConstants) == 96,
+	static_assert(sizeof(LaserStyleConstants) == 112,
 		"LaserStyleConstants 必须与 HLSL b1 保持 16 字节对齐");
 
 	struct HighlighterGeometry
@@ -164,7 +165,7 @@ export namespace draw3
 			DirectX::XMFLOAT4 color, InkOperatorKind operatorKind = InkOperatorKind::Draw);
 		// 在当前 backbuffer 最上层绘制一枚瞬态应用光标，不修改 L0/L1/L2。
 		void DrawTransientDrawingCursor(const DrawingCursorVisual& visual);
-		// 把固定宽度胶囊写入当前 Laser coverage，四通道使用 MAX 累积。
+		// 把可变压力胶囊写入当前 Laser coverage，四通道使用 MAX 累积。
 		int DrawLaserCoverage(const std::vector<InkPoint>& points);
 		// 合并 stable/live coverage，并以合法预乘 Alpha 叠加到目标。
 		void ResolveLaserCoverage(ID3D11RenderTargetView* dstRTV, RECT rect, float opacity);

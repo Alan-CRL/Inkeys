@@ -8,6 +8,7 @@
 #include <cmath>
 #include <iterator>
 #include <ink_stroke_modeler/stroke_modeler.h>
+#include <limits>
 #include <windows.h>
 
 #pragma comment(lib, "ink_stroke_modeler_merge.lib")
@@ -76,14 +77,121 @@ namespace draw3
 		value *= 0x7FEB352Du;
 		value ^= value >> 15;
 		const float unit = static_cast<float>(value & 0xFFFFu) / 65535.0f;
-		return (36.0f + unit * 12.0f) * std::max(dpiScale, 0.01f);
+		return (8.0f + unit * 4.0f) * std::max(dpiScale, 0.01f);
 	}
 
 	float LaserParticleFlowSpeedPxPerSecond(float inputSpeed, float dpiScale) noexcept
 	{
 		const float scale = std::max(dpiScale, 0.01f);
 		const float speed = std::isfinite(inputSpeed) ? std::max(inputSpeed, 0.0f) : 0.0f;
-		return std::clamp(0.12f * speed, 24.0f * scale, 160.0f * scale);
+		return std::clamp(0.025f * speed, 8.0f * scale, 36.0f * scale);
+	}
+
+	uint32_t LaserDownParticleCount(uint32_t strokeSeed) noexcept
+	{
+		return 12u + (strokeSeed % 7u);
+	}
+
+	bool SampleLaserPathAtArcLength(const std::vector<InkPoint>& points,
+		float arcLength, size_t& segmentCursor, float& segmentStartArcLength,
+		LaserPathSample& sample) noexcept
+	{
+		if (points.empty()) return false;
+		const float targetArcLength = std::isfinite(arcLength)
+			? std::max(arcLength, 0.0f) : 0.0f;
+		if (points.size() == 1)
+		{
+			sample = { points.front().x, points.front().y, points.front().r,
+				1.0f, 0.0f, 0, true };
+			segmentCursor = 0;
+			segmentStartArcLength = 0.0f;
+			return true;
+		}
+
+		if (segmentCursor + 1 >= points.size() ||
+			targetArcLength + 0.0001f < segmentStartArcLength)
+		{
+			segmentCursor = 0;
+			segmentStartArcLength = 0.0f;
+		}
+		while (segmentCursor + 1 < points.size())
+		{
+			const InkPoint& start = points[segmentCursor];
+			const InkPoint& end = points[segmentCursor + 1];
+			const float deltaX = end.x - start.x;
+			const float deltaY = end.y - start.y;
+			const float segmentLength = std::hypot(deltaX, deltaY);
+			if (segmentLength <= 0.0001f)
+			{
+				++segmentCursor;
+				continue;
+			}
+			const float segmentEndArcLength = segmentStartArcLength + segmentLength;
+			const bool lastSegment = segmentCursor + 2 == points.size();
+			if (targetArcLength <= segmentEndArcLength || lastSegment)
+			{
+				const float ratio = std::clamp(
+					(targetArcLength - segmentStartArcLength) / segmentLength, 0.0f, 1.0f);
+				sample.x = start.x + deltaX * ratio;
+				sample.y = start.y + deltaY * ratio;
+				sample.radius = start.r + (end.r - start.r) * ratio;
+				sample.tangentX = deltaX / segmentLength;
+				sample.tangentY = deltaY / segmentLength;
+				sample.segmentIndex = segmentCursor;
+				sample.atPathEnd = lastSegment && targetArcLength >= segmentEndArcLength;
+				return true;
+			}
+			segmentStartArcLength = segmentEndArcLength;
+			++segmentCursor;
+		}
+
+		const InkPoint& end = points.back();
+		sample = { end.x, end.y, end.r, 1.0f, 0.0f,
+			points.size() - 2, true };
+		return true;
+	}
+
+	bool FindNearestLaserPathSample(const std::vector<InkPoint>& points,
+		float x, float y, LaserPathSample& sample) noexcept
+	{
+		if (points.empty() || !std::isfinite(x) || !std::isfinite(y)) return false;
+		if (points.size() == 1)
+		{
+			sample = { points.front().x, points.front().y, points.front().r,
+				1.0f, 0.0f, 0, true };
+			return true;
+		}
+
+		float bestDistanceSquared = (std::numeric_limits<float>::infinity)();
+		bool found = false;
+		for (size_t index = 0; index + 1 < points.size(); ++index)
+		{
+			const InkPoint& start = points[index];
+			const InkPoint& end = points[index + 1];
+			const float deltaX = end.x - start.x;
+			const float deltaY = end.y - start.y;
+			const float lengthSquared = deltaX * deltaX + deltaY * deltaY;
+			if (lengthSquared <= 0.00000001f) continue;
+			const float ratio = std::clamp(
+				((x - start.x) * deltaX + (y - start.y) * deltaY) / lengthSquared,
+				0.0f, 1.0f);
+			const float nearestX = start.x + deltaX * ratio;
+			const float nearestY = start.y + deltaY * ratio;
+			const float distanceX = x - nearestX;
+			const float distanceY = y - nearestY;
+			const float distanceSquared = distanceX * distanceX + distanceY * distanceY;
+			if (distanceSquared >= bestDistanceSquared) continue;
+			const float segmentLength = std::sqrt(lengthSquared);
+			bestDistanceSquared = distanceSquared;
+			sample = { nearestX, nearestY, start.r + (end.r - start.r) * ratio,
+				deltaX / segmentLength, deltaY / segmentLength, index,
+				index + 2 == points.size() && ratio >= 1.0f };
+			found = true;
+		}
+		if (found) return true;
+		sample = { points.front().x, points.front().y, points.front().r,
+			1.0f, 0.0f, 0, true };
+		return true;
 	}
 
 	namespace
@@ -425,6 +533,13 @@ namespace draw3
 		if (!std::isfinite(baseDiameter) || baseDiameter <= 0.0f) return 0.0f;
 		if (!std::isfinite(pressure) || pressure < 0.0f) return baseDiameter;
 		return baseDiameter * (0.2f + 1.2f * std::clamp(pressure, 0.0f, 1.0f));
+	}
+
+	float LaserPressureDiameter(float baseDiameter, float pressure) noexcept
+	{
+		if (!std::isfinite(baseDiameter) || baseDiameter <= 0.0f) return 0.0f;
+		if (!std::isfinite(pressure) || pressure < 0.0f) return baseDiameter;
+		return baseDiameter * (0.65f + 0.75f * std::clamp(pressure, 0.0f, 1.0f));
 	}
 
 	bool TryGetInterruptedStrokeTailDirection(const std::vector<InkPoint>& realPoints,
@@ -1040,6 +1155,32 @@ namespace draw3
 		return { result.position.x, result.position.y, currentDiameter * 0.5f, static_cast<float>(pointTime) };
 	}
 
+	InkPoint StrokeWidthEstimator::AppendLaserPressure(const ink::stroke_model::Result& result)
+	{
+		const double pointTime = result.time.Value();
+		const bool hasPressure = std::isfinite(result.pressure) && result.pressure >= 0.0f;
+		const float targetDiameter = hasPressure
+			? LaserPressureDiameter(baseDiameter, result.pressure) : currentDiameter;
+		if (!hasSample)
+		{
+			currentDiameter = hasPressure ? targetDiameter : baseDiameter;
+			hasSample = true;
+		}
+		else if (hasPressure)
+		{
+			const double deltaTime = std::max(0.0, pointTime - lastTime);
+			const float pointDistance = std::hypot(
+				result.position.x - lastPositionX, result.position.y - lastPositionY);
+			currentDiameter = 2.0f * ClampRadiusTransition(currentDiameter * 0.5f,
+				targetDiameter * 0.5f, baseDiameter, pointDistance, deltaTime);
+		}
+		lastTime = pointTime;
+		lastPositionX = result.position.x;
+		lastPositionY = result.position.y;
+		return { result.position.x, result.position.y,
+			currentDiameter * 0.5f, static_cast<float>(pointTime) };
+	}
+
 	HighlighterGeometry BuildHighlighterGeometry(const std::vector<InkPoint>& inputPoints)
 	{
 		HighlighterGeometry geometry;
@@ -1203,11 +1344,15 @@ namespace draw3
 		float dpiScale, int width, int height)
 	{
 		if (points.empty()) return {};
-		const float padding = 12.0f * std::max(dpiScale, 0.01f) + 3.0f;
+		const float scale = std::max(dpiScale, 0.01f);
+		const float fallbackCoreRadius = 2.5f * scale;
 		RECT rect = {};
 		for (const InkPoint& point : points)
 		{
 			if (!std::isfinite(point.x) || !std::isfinite(point.y)) continue;
+			const float coreRadius = std::isfinite(point.r) && point.r > 0.0f
+				? point.r : fallbackCoreRadius;
+			const float padding = coreRadius * (14.0f / 2.5f) + 3.0f;
 			UnionRectInPlace(rect, RECT{
 				static_cast<LONG>(std::floor(point.x - padding)),
 				static_cast<LONG>(std::floor(point.y - padding)),
@@ -1263,6 +1408,9 @@ namespace draw3
 				break;
 			case StrokeWidthMode::HardwarePressure:
 				point = stroke.widthEstimator.AppendHardwarePressure(result);
+				break;
+			case StrokeWidthMode::LaserPressure:
+				point = stroke.widthEstimator.AppendLaserPressure(result);
 				break;
 			case StrokeWidthMode::SimulatedPressure:
 			default:

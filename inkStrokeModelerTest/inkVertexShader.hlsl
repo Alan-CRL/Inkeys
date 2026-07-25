@@ -102,15 +102,15 @@ PS_INPUT main(uint id : SV_VertexID)
         return output;
     }
 
-    // 普通笔和橡皮继续使用原有的变半径圆胶囊 OBB。
+    // 普通笔、橡皮和 Laser 都使用端点半径构造足够覆盖外晕的 OBB。
     float2 segment = p2 - p1;
     float segmentLength = length(segment);
     float2 tangent = segmentLength > 0.001 ? segment / segmentLength : float2(1.0, 0.0);
     float2 normal = float2(-tangent.y, tangent.x);
-    float shapeRadius = type == 7 ? laserRadii.z : max(r1, r2);
-    float startRadius = type == 7 ? shapeRadius : r1;
-    float endRadius = type == 7 ? shapeRadius : r2;
-    float maxRadius = shapeRadius;
+    float laserGlowRatio = laserRadii.z / max(laserRadii.x, 1e-4);
+    float startRadius = type == 7 ? max(r1, 0.0) * laserGlowRatio : r1;
+    float endRadius = type == 7 ? max(r2, 0.0) * laserGlowRatio : r2;
+    float maxRadius = max(startRadius, endRadius);
     float localX = lerp(-startRadius - 2.0, segmentLength + endRadius + 2.0, templatePos.x);
     float localY = lerp(-maxRadius - 2.0, maxRadius + 2.0, templatePos.y);
     float2 worldPos = p1 + tangent * localX + normal * localY;
@@ -120,7 +120,7 @@ PS_INPUT main(uint id : SV_VertexID)
     output.pixPos = worldPos;
     output.p1 = p1;
     output.p2 = p2;
-    output.r1 = type == 7 ? 0.0 : r1;
-    output.r2 = type == 7 ? 0.0 : r2;
+    output.r1 = r1;
+    output.r2 = r2;
     return output;
 }
