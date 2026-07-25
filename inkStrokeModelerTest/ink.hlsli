@@ -15,6 +15,17 @@ cbuffer ScreenBuffer : register(b0)
     float3 globalPadding;
 };
 
+// Laser 独立材质常量：radii=(白芯, 红边, 外晕, 散射带)，parameters.x=整组 opacity。
+cbuffer LaserStyleBuffer : register(b1)
+{
+    float4 laserRadii;
+    float4 laserCoreColor;
+    float4 laserScatterColor;
+    float4 laserBorderColor;
+    float4 laserGlowColor;
+    float4 laserParameters;
+};
+
 // 2. 结构定义
 struct InkPoint
 {
@@ -37,6 +48,8 @@ Texture2D StableOperatorRetain : register(t2);
 StructuredBuffer<HighlighterPrimitive> HighlighterData : register(t3);
 Texture2D LiveOperatorAdd : register(t4);
 Texture2D LiveOperatorRetain : register(t5);
+Texture2D LaserStableCoverage : register(t6);
+Texture2D LaserLiveCoverage : register(t7);
 SamplerState OperatorSampler : register(s0);
 
 // 4. VS -> PS

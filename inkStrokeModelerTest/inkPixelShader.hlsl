@@ -93,12 +93,72 @@ struct OperatorOutput
     float4 retain : SV_Target1;
 };
 
+float LaserAaCoverage(float distanceToEdge)
+{
+    float aaWidth = max(fwidth(distanceToEdge) * 1.25, 1e-4);
+    return 1.0 - smoothstep(-aaWidth * 0.5, aaWidth * 0.5, distanceToEdge);
+}
+
+float4 GetLaserCoverage(float distanceToCenter)
+{
+    float core = LaserAaCoverage(distanceToCenter - laserRadii.x);
+    float scatter = LaserAaCoverage(abs(distanceToCenter - laserRadii.x) - laserRadii.w);
+    float border = LaserAaCoverage(distanceToCenter - laserRadii.y);
+    float glowEdge = LaserAaCoverage(distanceToCenter - laserRadii.z);
+    float glowFalloff = pow(saturate(1.0 - distanceToCenter / max(laserRadii.z, 1e-4)), 1.7);
+    return saturate(float4(core, scatter, border, glowEdge * glowFalloff));
+}
+
+float4 LayerPremultiplied(float4 below, float4 color, float coverage)
+{
+    float alpha = saturate(color.a * coverage);
+    return float4(color.rgb * alpha, alpha) + (1.0 - alpha) * below;
+}
+
+OperatorOutput ResolveLaserMaterial(float4 coverage, float opacity)
+{
+    float4 color = 0.0;
+    color = LayerPremultiplied(color, laserGlowColor, coverage.a);
+    color = LayerPremultiplied(color, laserBorderColor, coverage.b);
+    color = LayerPremultiplied(color, laserScatterColor, coverage.g);
+    color = LayerPremultiplied(color, laserCoreColor, coverage.r);
+    color *= saturate(opacity);
+    OperatorOutput output;
+    output.add = color;
+    output.retain = (1.0 - color.a).xxxx;
+    return output;
+}
+
 OperatorOutput main(PS_INPUT input)
 {
     int type = (int) (input.shapeType + 0.5);
 
     if (any(isnan(input.p1)) || any(isnan(input.p2)))
         discard;
+
+    if (type == 9 || type == 10)
+    {
+        float distanceToCenter = length(input.pixPos - input.p1);
+        if (type == 9)
+            return ResolveLaserMaterial(GetLaserCoverage(distanceToCenter),
+                input.r2 * laserParameters.x);
+
+        float coreCoverage = LaserAaCoverage(distanceToCenter - input.r1);
+        float glowRadius = max(input.r1 * 3.0, 3.0 * laserParameters.y);
+        float glowCoverage = LaserAaCoverage(distanceToCenter - glowRadius) *
+            pow(saturate(1.0 - distanceToCenter / max(glowRadius, 1e-4)), 2.0);
+        float opacity = saturate(input.r2);
+        float4 particle = 0.0;
+        particle = LayerPremultiplied(particle,
+            float4(1.0, 0.22, 0.28, 0.12), glowCoverage);
+        particle = LayerPremultiplied(particle,
+            float4(1.0, 0.90, 0.92, 0.92), coreCoverage);
+        particle *= opacity;
+        OperatorOutput particleOutput;
+        particleOutput.add = particle;
+        particleOutput.retain = (1.0 - particle.a).xxxx;
+        return particleOutput;
+    }
 
     if (type >= 4 && type <= 6)
     {
@@ -142,6 +202,14 @@ OperatorOutput main(PS_INPUT input)
         return cursorOutput;
     }
 
+    if (type == 8)
+    {
+        float4 coverage = max(
+            LaserStableCoverage.Sample(OperatorSampler, input.uv),
+            LaserLiveCoverage.Sample(OperatorSampler, input.uv));
+        return ResolveLaserMaterial(coverage, laserParameters.x);
+    }
+
     if (type == 1 || type == 2)
     {
         float4 stableAdd = StableOperatorAdd.Sample(OperatorSampler, input.uv);
@@ -173,6 +241,16 @@ OperatorOutput main(PS_INPUT input)
     else if (type == 3)
         d = GetFixedNibSweepDist(input.pixPos, input.p1, input.p2,
             float2(input.r1, input.r2));
+
+    if (type == 7)
+    {
+        float distanceToCenter = GetInkDist_Convex(
+            input.pixPos, input.p1, input.p2, 0.0, 0.0);
+        OperatorOutput coverageOutput;
+        coverageOutput.add = GetLaserCoverage(max(distanceToCenter, 0.0));
+        coverageOutput.retain = 0.0;
+        return coverageOutput;
+    }
 
     //float aaWidth = fwidth(d);
     //aaWidth = max(aaWidth, 1e-5);

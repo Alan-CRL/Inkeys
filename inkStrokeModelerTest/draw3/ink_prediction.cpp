@@ -16,6 +16,76 @@ module draw3.ink_prediction;
 
 namespace draw3
 {
+	void BeginLaserContact(LaserTrailLifecycle& lifecycle) noexcept
+	{
+		++lifecycle.activeContactCount;
+		lifecycle.phase = LaserTrailPhase::Active;
+	}
+
+	void EndLaserContact(LaserTrailLifecycle& lifecycle, int64_t upQpc) noexcept
+	{
+		if (lifecycle.activeContactCount == 0) return;
+		--lifecycle.activeContactCount;
+		if (lifecycle.activeContactCount != 0) return;
+		lifecycle.lastAllUpQpc = upQpc;
+		lifecycle.phase = LaserTrailPhase::Hold;
+	}
+
+	float EvaluateLaserTrailOpacity(LaserTrailLifecycle& lifecycle,
+		int64_t nowQpc, int64_t qpcFrequency, double holdDurationSeconds) noexcept
+	{
+		if (lifecycle.phase == LaserTrailPhase::Inactive) return 0.0f;
+		if (lifecycle.activeContactCount != 0 || lifecycle.phase == LaserTrailPhase::Active)
+		{
+			lifecycle.phase = LaserTrailPhase::Active;
+			return 1.0f;
+		}
+		if (qpcFrequency <= 0 || lifecycle.lastAllUpQpc <= 0 ||
+			!std::isfinite(holdDurationSeconds) || holdDurationSeconds < 0.0)
+		{
+			lifecycle = {};
+			return 0.0f;
+		}
+
+		const double elapsedSeconds = std::max(0.0,
+			static_cast<double>(nowQpc - lifecycle.lastAllUpQpc) /
+			static_cast<double>(qpcFrequency));
+		if (elapsedSeconds < holdDurationSeconds)
+		{
+			lifecycle.phase = LaserTrailPhase::Hold;
+			return 1.0f;
+		}
+		const double fadeProgress = (elapsedSeconds - holdDurationSeconds) /
+			kLaserFadeDurationSeconds;
+		if (fadeProgress >= 1.0)
+		{
+			lifecycle = {};
+			return 0.0f;
+		}
+		lifecycle.phase = LaserTrailPhase::Fade;
+		const float t = std::clamp(static_cast<float>(fadeProgress), 0.0f, 1.0f);
+		const float smooth = t * t * (3.0f - 2.0f * t);
+		return 1.0f - smooth;
+	}
+
+	float LaserParticleEmissionIntervalPx(
+		uint32_t strokeSeed, uint32_t slot, float dpiScale) noexcept
+	{
+		uint32_t value = strokeSeed ^ (slot * 0x9E3779B9u);
+		value ^= value >> 16;
+		value *= 0x7FEB352Du;
+		value ^= value >> 15;
+		const float unit = static_cast<float>(value & 0xFFFFu) / 65535.0f;
+		return (36.0f + unit * 12.0f) * std::max(dpiScale, 0.01f);
+	}
+
+	float LaserParticleFlowSpeedPxPerSecond(float inputSpeed, float dpiScale) noexcept
+	{
+		const float scale = std::max(dpiScale, 0.01f);
+		const float speed = std::isfinite(inputSpeed) ? std::max(inputSpeed, 0.0f) : 0.0f;
+		return std::clamp(0.12f * speed, 24.0f * scale, 160.0f * scale);
+	}
+
 	namespace
 	{
 		constexpr float kIdleMoveThresholdPx = 0.25f;
@@ -1125,6 +1195,24 @@ namespace draw3
 				static_cast<LONG>(std::floor(points[index].y - padding)),
 				static_cast<LONG>(std::ceil(points[index].x + padding)),
 				static_cast<LONG>(std::ceil(points[index].y + padding)) });
+		}
+		return ClampRectToCanvas(rect, width, height);
+	}
+
+	RECT RectFromLaserPoints(const std::vector<InkPoint>& points,
+		float dpiScale, int width, int height)
+	{
+		if (points.empty()) return {};
+		const float padding = 12.0f * std::max(dpiScale, 0.01f) + 3.0f;
+		RECT rect = {};
+		for (const InkPoint& point : points)
+		{
+			if (!std::isfinite(point.x) || !std::isfinite(point.y)) continue;
+			UnionRectInPlace(rect, RECT{
+				static_cast<LONG>(std::floor(point.x - padding)),
+				static_cast<LONG>(std::floor(point.y - padding)),
+				static_cast<LONG>(std::ceil(point.x + padding)),
+				static_cast<LONG>(std::ceil(point.y + padding)) });
 		}
 		return ClampRectToCanvas(rect, width, height);
 	}

@@ -108,9 +108,16 @@ export namespace draw3
 		const DrawingCursorAppearance& selectedAppearance,
 		const DrawingCursorAppearance& eraserAppearance,
 		bool selectedToolIsEraser) noexcept;
+	// Laser 的 Pen/Mouse Hover 都显示发光点，Contact 笔尖由活动 contact 独立生成。
+	DrawingCursorVisual ResolveLaserDrawingCursorVisual(
+		const DrawingCursorSample& penSample,
+		const DrawingCursorSample& mouseSample,
+		DrawingCursorPointerAuthority pointerAuthority,
+		const DrawingCursorAppearance& laserAppearance) noexcept;
 	// 决定当前 HWND 客户区应使用系统箭头还是隐藏系统光标。
 	bool ShouldHideSystemDrawingCursor(DrawingCursorPointerAuthority pointerAuthority,
-		bool selectedToolIsEraser, bool penSampleValid, bool mouseSampleValid) noexcept;
+		bool selectedToolIsEraser, bool selectedToolIsLaser,
+		bool penSampleValid, bool mouseSampleValid) noexcept;
 	// Touch 橡皮接触始终生成不透明 visual；Hover 不调用该函数。
 	DrawingCursorVisual MakeTouchEraserDrawingCursorVisual(float x, float y,
 		const DrawingCursorAppearance& eraserAppearance) noexcept;

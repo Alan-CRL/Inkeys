@@ -232,6 +232,189 @@ namespace draw3
 		context->VSSetShaderResources(0, 1, nullResource);
 	}
 
+	void InkRenderer::ConfigureLaserStyle(float dpiScale) noexcept
+	{
+		const float scale = std::isfinite(dpiScale) ? std::max(dpiScale, 0.01f) : 1.0f;
+		laserStyleConstants_.radii = DirectX::XMFLOAT4(
+			2.5f * scale, 5.0f * scale, 12.0f * scale, 0.75f * scale);
+		laserStyleConstants_.coreColor = DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+		laserStyleConstants_.scatterColor = DirectX::XMFLOAT4(1.0f, 0.88f, 0.90f, 0.92f);
+		laserStyleConstants_.borderColor = DirectX::XMFLOAT4(
+			1.0f, 45.0f / 255.0f, 61.0f / 255.0f, 0.96f);
+		laserStyleConstants_.glowColor = DirectX::XMFLOAT4(1.0f, 0.08f, 0.14f, 0.24f);
+		laserStyleConstants_.parameters = DirectX::XMFLOAT4(1.0f, scale, 0.0f, 0.0f);
+	}
+
+	bool InkRenderer::UpdateLaserStyleConstants(float opacity)
+	{
+		if (!laserStyleCB) return false;
+		laserStyleConstants_.parameters.x = std::clamp(opacity, 0.0f, 1.0f);
+		D3D11_MAPPED_SUBRESOURCE mapped = {};
+		if (FAILED(context->Map(laserStyleCB.Get(), 0,
+			D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
+		std::memcpy(mapped.pData, &laserStyleConstants_, sizeof(laserStyleConstants_));
+		context->Unmap(laserStyleCB.Get(), 0);
+		return true;
+	}
+
+	int InkRenderer::DrawLaserCoverage(const std::vector<InkPoint>& points)
+	{
+		if (points.empty()) return 0;
+		if (!UpdateLaserStyleConstants(1.0f)) return -1;
+		std::vector<InkPoint> dotPoints;
+		const std::vector<InkPoint>* drawPoints = &points;
+		if (points.size() == 1)
+		{
+			dotPoints = points;
+			InkPoint dotEnd = points.front();
+			dotEnd.x += 0.25f;
+			dotPoints.push_back(dotEnd);
+			drawPoints = &dotPoints;
+		}
+
+		size_t startIndex = 0;
+		while (startIndex + 1 < drawPoints->size())
+		{
+			const size_t remaining = drawPoints->size() - startIndex;
+			const size_t batchCount = std::min(remaining, kMaxBufferCapacity);
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
+			if (FAILED(context->Map(inkDataBuffer.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return -1;
+			std::memcpy(mapped.pData, drawPoints->data() + startIndex,
+				batchCount * sizeof(InkPoint));
+			context->Unmap(inkDataBuffer.Get(), 0);
+
+			if (FAILED(context->Map(globalCB.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return -1;
+			auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
+			constants->width = viewportWidth;
+			constants->height = viewportHeight;
+			constants->shapeType = 7.0f;
+			constants->bufferOffset = 0;
+			constants->color = {};
+			constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
+			context->Unmap(globalCB.Get(), 0);
+
+			context->IASetInputLayout(nullptr);
+			context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			context->VSSetShader(vertexShader.Get(), nullptr, 0);
+			ID3D11ShaderResourceView* inkResources[] = { inkDataSRV.Get() };
+			context->VSSetShaderResources(0, 1, inkResources);
+			ID3D11Buffer* constantBuffers[] = { globalCB.Get(), laserStyleCB.Get() };
+			context->VSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
+			context->PSSetShader(pixelShader.Get(), nullptr, 0);
+			context->PSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
+			context->OMSetBlendState(laserCoverageBlendState.Get(), nullptr, 0xFFFFFFFF);
+			context->RSSetState(rasterState.Get());
+			context->Draw((static_cast<UINT>(batchCount) - 1) * 6, 0);
+
+			ID3D11ShaderResourceView* nullResource[] = { nullptr };
+			context->VSSetShaderResources(0, 1, nullResource);
+			startIndex += batchCount - 1;
+		}
+		return 0;
+	}
+
+	void InkRenderer::ResolveLaserCoverage(
+		ID3D11RenderTargetView* dstRTV, RECT rect, float opacity)
+	{
+		if (!dstRTV || !laserStableCoverage.srv || !laserLiveCoverage.srv ||
+			!UpdateLaserStyleConstants(opacity)) return;
+		rect.left = std::max(0L, rect.left);
+		rect.top = std::max(0L, rect.top);
+		rect.right = std::min(static_cast<LONG>(viewportWidth), rect.right);
+		rect.bottom = std::min(static_cast<LONG>(viewportHeight), rect.bottom);
+		if (rect.left >= rect.right || rect.top >= rect.bottom) return;
+
+		const InkPoint rectPoints[2] = {
+			{ static_cast<float>(rect.left), static_cast<float>(rect.top), 0.0f, 0.0f },
+			{ static_cast<float>(rect.right), static_cast<float>(rect.bottom), 0.0f, 0.0f }
+		};
+		D3D11_MAPPED_SUBRESOURCE mapped = {};
+		if (FAILED(context->Map(inkDataBuffer.Get(), 0,
+			D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
+		std::memcpy(mapped.pData, rectPoints, sizeof(rectPoints));
+		context->Unmap(inkDataBuffer.Get(), 0);
+		if (FAILED(context->Map(globalCB.Get(), 0,
+			D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
+		auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
+		constants->width = viewportWidth;
+		constants->height = viewportHeight;
+		constants->shapeType = 8.0f;
+		constants->bufferOffset = 0;
+		constants->color = {};
+		constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
+		context->Unmap(globalCB.Get(), 0);
+
+		SetOMTarget(dstRTV);
+		context->IASetInputLayout(nullptr);
+		context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		context->VSSetShader(vertexShader.Get(), nullptr, 0);
+		ID3D11ShaderResourceView* inkResource[] = { inkDataSRV.Get() };
+		context->VSSetShaderResources(0, 1, inkResource);
+		ID3D11Buffer* constantBuffers[] = { globalCB.Get(), laserStyleCB.Get() };
+		context->VSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
+		context->PSSetShader(pixelShader.Get(), nullptr, 0);
+		context->PSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
+		ID3D11ShaderResourceView* coverageResources[] = {
+			laserStableCoverage.srv.Get(), laserLiveCoverage.srv.Get()
+		};
+		context->PSSetShaderResources(6, ARRAYSIZE(coverageResources), coverageResources);
+		ID3D11SamplerState* samplers[] = { operatorSampler.Get() };
+		context->PSSetSamplers(0, 1, samplers);
+		context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF);
+		context->RSSetState(rasterState.Get());
+		context->Draw(6, 0);
+
+		ID3D11ShaderResourceView* nullCoverage[] = { nullptr, nullptr };
+		ID3D11ShaderResourceView* nullInk[] = { nullptr };
+		context->VSSetShaderResources(0, 1, nullInk);
+		context->PSSetShaderResources(6, ARRAYSIZE(nullCoverage), nullCoverage);
+	}
+
+	void InkRenderer::DrawLaserDots(const std::vector<LaserDot>& dots, bool particles)
+	{
+		if (dots.empty() || !backBufferRTV || !UpdateLaserStyleConstants(1.0f)) return;
+		size_t startIndex = 0;
+		while (startIndex < dots.size())
+		{
+			const size_t batchCount = std::min(dots.size() - startIndex, kMaxBufferCapacity);
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
+			if (FAILED(context->Map(inkDataBuffer.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
+			std::memcpy(mapped.pData, dots.data() + startIndex,
+				batchCount * sizeof(LaserDot));
+			context->Unmap(inkDataBuffer.Get(), 0);
+			if (FAILED(context->Map(globalCB.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
+			auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
+			constants->width = viewportWidth;
+			constants->height = viewportHeight;
+			constants->shapeType = particles ? 10.0f : 9.0f;
+			constants->bufferOffset = 0;
+			constants->color = {};
+			constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
+			context->Unmap(globalCB.Get(), 0);
+
+			SetOMTarget(backBufferRTV.Get());
+			context->IASetInputLayout(nullptr);
+			context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			context->VSSetShader(vertexShader.Get(), nullptr, 0);
+			ID3D11ShaderResourceView* inkResources[] = { inkDataSRV.Get() };
+			context->VSSetShaderResources(0, 1, inkResources);
+			ID3D11Buffer* constantBuffers[] = { globalCB.Get(), laserStyleCB.Get() };
+			context->VSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
+			context->PSSetShader(pixelShader.Get(), nullptr, 0);
+			context->PSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
+			context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF);
+			context->RSSetState(rasterState.Get());
+			context->Draw(static_cast<UINT>(batchCount) * 6, 0);
+			ID3D11ShaderResourceView* nullResource[] = { nullptr };
+			context->VSSetShaderResources(0, 1, nullResource);
+			startIndex += batchCount;
+		}
+	}
+
 	void InkRenderer::CopyResource(ID3D11Texture2D* dst, ID3D11Texture2D* src, RECT rect)
 	{
 		D3D11_BOX sourceRegion = {};
@@ -329,6 +512,13 @@ namespace draw3
 		if (dsState) context->OMSetDepthStencilState(dsState.Get(), 0);
 	}
 
+	void InkRenderer::SetLaserCoverageTarget(const LaserCoverageResources& layer)
+	{
+		ID3D11RenderTargetView* targets[] = { layer.rtv.Get() };
+		context->OMSetRenderTargets(1, targets, nullptr);
+		if (dsState) context->OMSetDepthStencilState(dsState.Get(), 0);
+	}
+
 	void InkRenderer::ClearRTV(ID3D11RenderTargetView* renderTargetView, DirectX::XMFLOAT4 color)
 	{
 		const float clearColor[4] = { color.x, color.y, color.z, color.w };
@@ -339,6 +529,17 @@ namespace draw3
 	{
 		ClearRTV(layer.addRTV.Get(), kTransparentLayerClearColor);
 		ClearRTV(layer.retainRTV.Get(), DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f)); // Retain=1 表示不改变下层。
+	}
+
+	void InkRenderer::ClearLaserCoverage(const LaserCoverageResources& layer)
+	{
+		if (layer.rtv) ClearRTV(layer.rtv.Get(), kTransparentLayerClearColor);
+	}
+
+	void InkRenderer::ClearAllLaserCoverage()
+	{
+		ClearLaserCoverage(laserStableCoverage);
+		ClearLaserCoverage(laserLiveCoverage);
 	}
 
 	bool InkRenderer::CreateOperatorLayerResources(UINT width, UINT height, OperatorLayerResources& layer)
@@ -370,6 +571,27 @@ namespace draw3
 		return true;
 	}
 
+	bool InkRenderer::CreateLaserCoverageResources(
+		UINT width, UINT height, LaserCoverageResources& layer)
+	{
+		D3D11_TEXTURE2D_DESC description = {};
+		description.Width = width;
+		description.Height = height;
+		description.MipLevels = 1;
+		description.ArraySize = 1;
+		description.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		description.SampleDesc.Count = 1;
+		description.Usage = D3D11_USAGE_DEFAULT;
+		description.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+		if (FAILED(device->CreateTexture2D(&description, nullptr,
+			layer.texture.ReleaseAndGetAddressOf()))) return false;
+		if (FAILED(device->CreateRenderTargetView(layer.texture.Get(), nullptr,
+			layer.rtv.ReleaseAndGetAddressOf()))) return false;
+		if (FAILED(device->CreateShaderResourceView(layer.texture.Get(), nullptr,
+			layer.srv.ReleaseAndGetAddressOf()))) return false;
+		return true;
+	}
+
 	bool InkRenderer::CreateSizeDependentResources(IDXGISwapChain1* swapChain, UINT width, UINT height)
 	{
 		if (!device || !context || !swapChain || width == 0 || height == 0) return false;
@@ -396,6 +618,8 @@ namespace draw3
 		if (FAILED(device->CreateRenderTargetView(layerL2Texture.Get(), &renderTargetDescription, layerL2RTV.ReleaseAndGetAddressOf()))) return false;
 		if (!CreateOperatorLayerResources(width, height, layerL1)) return false; // L1 保存当前笔画已确认前缀操作。
 		if (!CreateOperatorLayerResources(width, height, layerL0)) return false; // L0 保存每帧变化的笔锋和预测操作。
+		if (!CreateLaserCoverageResources(width, height, laserStableCoverage)) return false;
+		if (!CreateLaserCoverageResources(width, height, laserLiveCoverage)) return false;
 
 		SetScreenSize(static_cast<float>(width), static_cast<float>(height));
 		return true;
@@ -405,7 +629,8 @@ namespace draw3
 	{
 		if (context)
 		{
-			ID3D11ShaderResourceView* nullResources[] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
+			ID3D11ShaderResourceView* nullResources[] = {
+				nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
 			context->OMSetRenderTargets(0, nullptr, nullptr);
 			context->VSSetShaderResources(0, ARRAYSIZE(nullResources), nullResources);
 			context->PSSetShaderResources(0, ARRAYSIZE(nullResources), nullResources); // 释放前先解绑，避免 D3D 仍持有引用。
@@ -427,6 +652,12 @@ namespace draw3
 		layerL0.retainRTV.Reset();
 		layerL0.retainSRV.Reset();
 		layerL0.retainTexture.Reset();
+		laserStableCoverage.rtv.Reset();
+		laserStableCoverage.srv.Reset();
+		laserStableCoverage.texture.Reset();
+		laserLiveCoverage.rtv.Reset();
+		laserLiveCoverage.srv.Reset();
+		laserLiveCoverage.texture.Reset();
 	}
 
 	void InkRenderer::ReleaseResources()
@@ -435,6 +666,7 @@ namespace draw3
 		vertexShader.Reset();
 		pixelShader.Reset();
 		globalCB.Reset();
+		laserStyleCB.Reset();
 		inkDataBuffer.Reset();
 		inkDataSRV.Reset();
 		highlighterPrimitiveBuffer.Reset();
@@ -442,6 +674,7 @@ namespace draw3
 		operatorSampler.Reset();
 		strokeOperatorBlendState.Reset();
 		operatorResolveBlendState.Reset();
+		laserCoverageBlendState.Reset();
 		rasterState.Reset();
 		dsState.Reset();
 		device.Reset();
@@ -462,6 +695,8 @@ namespace draw3
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> oldL2Texture = layerL2Texture; // 临时保留旧稳定层用于拷贝。
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> oldL1AddTexture = layerL1.addTexture;
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> oldL1RetainTexture = layerL1.retainTexture; // L1 的完整仿射操作都要保留。
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> oldLaserStableTexture =
+			laserStableCoverage.texture;
 		ReleaseSizeDependentResources();
 
 		// waitable swapchain 在部分驱动上要求 resize 时原样保留 BufferCount/Format/Flags。
@@ -472,6 +707,7 @@ namespace draw3
 		ClearRTV(layerL2RTV.Get(), kTransparentLayerClearColor);
 		ClearOperatorLayer(layerL1);
 		ClearOperatorLayer(layerL0);
+		ClearAllLaserCoverage();
 		ClearRTV(backBufferRTV.Get(), kTransparentLayerClearColor);
 
 		// 缩放后只保留新旧画布左上角的交集，不拉伸已有内容。
@@ -483,6 +719,8 @@ namespace draw3
 			if (oldL2Texture) CopyResource(layerL2Texture.Get(), oldL2Texture.Get(), keepRect); // 保留已完成笔迹。
 			if (oldL1AddTexture) CopyResource(layerL1.addTexture.Get(), oldL1AddTexture.Get(), keepRect);
 			if (oldL1RetainTexture) CopyResource(layerL1.retainTexture.Get(), oldL1RetainTexture.Get(), keepRect); // 保留正在绘制的稳定前缀。
+			if (oldLaserStableTexture)
+				CopyResource(laserStableCoverage.texture.Get(), oldLaserStableTexture.Get(), keepRect);
 		}
 		return true;
 	}
@@ -498,6 +736,10 @@ namespace draw3
 			D3D11_CPU_ACCESS_WRITE, 0, 0
 		};
 		if (FAILED(device->CreateBuffer(&constantBufferDescription, nullptr, globalCB.ReleaseAndGetAddressOf()))) return false;
+		constantBufferDescription.ByteWidth = sizeof(LaserStyleConstants);
+		if (FAILED(device->CreateBuffer(&constantBufferDescription, nullptr,
+			laserStyleCB.ReleaseAndGetAddressOf()))) return false;
+		ConfigureLaserStyle(1.0f);
 
 		D3D11_BLEND_DESC blendDescription = {};
 		blendDescription.IndependentBlendEnable = TRUE;
@@ -532,6 +774,18 @@ namespace draw3
 		blendDescription.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
 		blendDescription.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
 		if (FAILED(device->CreateBlendState(&blendDescription, operatorResolveBlendState.ReleaseAndGetAddressOf()))) return false;
+
+		blendDescription = {};
+		blendDescription.RenderTarget[0].BlendEnable = TRUE;
+		blendDescription.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
+		blendDescription.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;
+		blendDescription.RenderTarget[0].BlendOp = D3D11_BLEND_OP_MAX;
+		blendDescription.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+		blendDescription.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
+		blendDescription.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_MAX;
+		blendDescription.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+		if (FAILED(device->CreateBlendState(&blendDescription,
+			laserCoverageBlendState.ReleaseAndGetAddressOf()))) return false;
 
 		D3D11_DEPTH_STENCIL_DESC depthStencilDescription = {};
 		if (FAILED(device->CreateDepthStencilState(&depthStencilDescription, dsState.ReleaseAndGetAddressOf()))) return false;

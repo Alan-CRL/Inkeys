@@ -91,6 +91,37 @@ export namespace draw3
 	inline constexpr float kInterruptedStrokeReconnectMinimumSpeedRatio = 0.35f;
 	inline constexpr float kInterruptedStrokeReconnectMaximumSpeedRatio = 2.75f;
 	inline constexpr size_t kMaximumInterruptedStrokeReconnectCandidates = 8;
+	inline constexpr double kLaserFadeDurationSeconds = 0.8;
+	inline constexpr size_t kLaserMaximumParticlesPerContact = 10;
+
+	enum class LaserTrailPhase : uint32_t
+	{
+		Inactive,
+		Active,
+		Hold,
+		Fade
+	};
+
+	// 保存整组激光轨迹的 contact 计数和最后一次全部抬笔时刻。
+	struct LaserTrailLifecycle
+	{
+		LaserTrailPhase phase = LaserTrailPhase::Inactive;
+		uint32_t activeContactCount = 0;
+		int64_t lastAllUpQpc = 0;
+	};
+
+	// 新 contact 在完全消失前会恢复整组满亮并重新进入 Active。
+	void BeginLaserContact(LaserTrailLifecycle& lifecycle) noexcept;
+	// 只有最后一根 Laser 抬起时才开始 Hold 计时。
+	void EndLaserContact(LaserTrailLifecycle& lifecycle, int64_t upQpc) noexcept;
+	// 根据当前设置即时重算 Hold/Fade，并返回平滑后的整组 opacity。
+	float EvaluateLaserTrailOpacity(LaserTrailLifecycle& lifecycle,
+		int64_t nowQpc, int64_t qpcFrequency, double holdDurationSeconds) noexcept;
+	// 固定 seed 和槽位生成 36-48px 的稳定发射间隔。
+	float LaserParticleEmissionIntervalPx(
+		uint32_t strokeSeed, uint32_t slot, float dpiScale) noexcept;
+	// 粒子流速只追随平滑输入速度，并保持 DPI 对应的上下限。
+	float LaserParticleFlowSpeedPxPerSecond(float inputSpeed, float dpiScale) noexcept;
 
 	// 保存与目标帧率联动的建模和预测参数。
 	struct StrokeTimingProfile
@@ -120,6 +151,8 @@ export namespace draw3
 		bool invertedPenEraserEnabled = true; // 默认允许倒转 Pen 在画笔/荧光笔下临时覆盖为橡皮。
 		bool interruptedStrokeReconnectEnabled = true; // 默认暂留物理 Up，允许短暂断触继续同一模型。
 		bool hapticFeedbackEnabled = true; // 当前原型默认启用触觉；后续由 Inkeys3 设置替换。
+		bool laserParticlesEnabled = true; // 激光粒子默认开启，但可由外部设置即时关闭。
+		double laserHoldDurationSeconds = 3.0; // 最后一根激光笔抬起后的满亮留存时间。
 		InputWidthModeSettings inputWidthModes = {};
 	};
 
@@ -350,6 +383,9 @@ export namespace draw3
 	RECT RectFromStrokePoints(const std::vector<InkPoint>& points, int width, int height,
 		StrokeShape shape = StrokeShape::RoundCapsule, size_t firstIndex = 0,
 		size_t lastIndex = (std::numeric_limits<size_t>::max)());
+	// 激光脏区额外覆盖 24px 外晕和抗锯齿 padding。
+	RECT RectFromLaserPoints(const std::vector<InkPoint>& points,
+		float dpiScale, int width, int height);
 	// 更新原始坐标并判断是否发生有效移动。
 	bool UpdateRawPositionAndDetectMovement(ActiveStroke& stroke, const POINT& rawPosition);
 	// 在视觉稳定后冻结停笔输入。

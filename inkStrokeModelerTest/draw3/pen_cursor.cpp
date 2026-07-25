@@ -152,8 +152,27 @@ namespace draw3
 		return visual;
 	}
 
+	DrawingCursorVisual ResolveLaserDrawingCursorVisual(
+		const DrawingCursorSample& penSample,
+		const DrawingCursorSample& mouseSample,
+		DrawingCursorPointerAuthority pointerAuthority,
+		const DrawingCursorAppearance& laserAppearance) noexcept
+	{
+		DrawingCursorVisual visual;
+		const DrawingCursorSample* sample = SelectPrimarySample(
+			penSample, mouseSample, pointerAuthority);
+		if (!sample || sample->inContact ||
+			!IsValidDrawingCursorAppearance(laserAppearance)) return visual;
+		visual.visible = true;
+		visual.x = sample->x;
+		visual.y = sample->y;
+		visual.appearance = laserAppearance;
+		return visual;
+	}
+
 	bool ShouldHideSystemDrawingCursor(DrawingCursorPointerAuthority pointerAuthority,
-		bool selectedToolIsEraser, bool penSampleValid, bool mouseSampleValid) noexcept
+		bool selectedToolIsEraser, bool selectedToolIsLaser,
+		bool penSampleValid, bool mouseSampleValid) noexcept
 	{
 		switch (pointerAuthority)
 		{
@@ -161,9 +180,10 @@ namespace draw3
 			return true;
 		case DrawingCursorPointerAuthority::Mouse:
 		case DrawingCursorPointerAuthority::Touch:
-			return selectedToolIsEraser;
+			return selectedToolIsEraser || selectedToolIsLaser;
 		default:
-			return penSampleValid || (selectedToolIsEraser && mouseSampleValid);
+			return penSampleValid ||
+				((selectedToolIsEraser || selectedToolIsLaser) && mouseSampleValid);
 		}
 	}
 

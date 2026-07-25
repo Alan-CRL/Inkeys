@@ -80,6 +80,7 @@ namespace draw3
 			case 0: return "Pen";
 			case 1: return "Highlighter";
 			case 2: return "Eraser";
+			case 3: return "Laser";
 			default: return "Unknown";
 			}
 		}
@@ -242,6 +243,11 @@ namespace draw3
 			impl_->presentDurationsMs.push_back(std::max(0.0, presentMs));
 	}
 
+	void RuntimeMetricsSession::EndActiveFrameSequence() noexcept
+	{
+		impl_->lastActiveFrameStartMs = 0.0;
+	}
+
 	void RuntimeMetricsSession::RecordPresent(double) noexcept
 	{
 		++impl_->totalPresents;
@@ -299,7 +305,7 @@ namespace draw3
 		stream << "  },\n";
 		stream << "  \"thresholds\": {\n";
 		stream << "    \"requiredLandings\": " << kRequiredLandingCount << ",\n";
-		stream << "    \"landingPopulation\": \"Pen+Highlighter+Eraser Down to Present\",\n";
+		stream << "    \"landingPopulation\": \"Pen+Highlighter+Eraser+Laser Down to Present\",\n";
 		stream << "    \"landingP99Ms\": " << kLandingP99LimitMs << ",\n";
 		stream << "    \"frameIntervalP99Ms\": " << kFrameIntervalP99LimitMs << ",\n";
 		stream << "    \"longFrameMs\": " << kLongFrameLimitMs << ",\n";

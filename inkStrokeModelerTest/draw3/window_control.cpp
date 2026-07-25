@@ -275,7 +275,8 @@ namespace draw3
 		}
 		if (tool == DrawingTool::Pen) penCursorAppearance_ = appearance;
 		else if (tool == DrawingTool::Highlighter) highlighterCursorAppearance_ = appearance;
-		else eraserCursorAppearance_ = appearance;
+		else if (tool == DrawingTool::Eraser) eraserCursorAppearance_ = appearance;
+		else laserCursorAppearance_ = appearance;
 		RequestDrawingCursorRender();
 		return true;
 	}
@@ -285,7 +286,8 @@ namespace draw3
 	{
 		if (tool == DrawingTool::Pen) return penCursorAppearance_;
 		if (tool == DrawingTool::Highlighter) return highlighterCursorAppearance_;
-		return eraserCursorAppearance_;
+		if (tool == DrawingTool::Eraser) return eraserCursorAppearance_;
+		return laserCursorAppearance_;
 	}
 
 	void WindowController::SetActiveDrawingCursorTool(DrawingTool tool) noexcept
@@ -311,7 +313,7 @@ namespace draw3
 	{
 		const int32_t activeTool = activeDrawingCursorTool_.load(std::memory_order_acquire);
 		if (activeTool >= static_cast<int32_t>(DrawingTool::Pen) &&
-			activeTool <= static_cast<int32_t>(DrawingTool::Eraser))
+			activeTool <= static_cast<int32_t>(DrawingTool::Laser))
 			return static_cast<DrawingTool>(activeTool);
 		return ActiveTool();
 	}
@@ -420,7 +422,8 @@ namespace draw3
 		const DrawingTool tool = EffectiveDrawingCursorTool();
 		const bool hide = ShouldHideSystemDrawingCursor(
 			drawingCursorPointerAuthority_.load(std::memory_order_acquire),
-			tool == DrawingTool::Eraser, penSample.valid, mouseSample.valid);
+			tool == DrawingTool::Eraser, tool == DrawingTool::Laser,
+			penSample.valid, mouseSample.valid);
 		SetCursor(hide ? nullptr : defaultCursor_); // 仅影响当前 HWND，不使用全局计数式 ShowCursor。
 	}
 
@@ -661,6 +664,12 @@ namespace draw3
 			case '3':
 			case VK_NUMPAD3:
 				activeTool_.store(DrawingTool::Eraser, std::memory_order_relaxed);
+				RequestDrawingCursorRender();
+				QueueSystemCursorRefresh();
+				return 0;
+			case '4':
+			case VK_NUMPAD4:
+				activeTool_.store(DrawingTool::Laser, std::memory_order_relaxed);
 				RequestDrawingCursorRender();
 				QueueSystemCursorRefresh();
 				return 0;

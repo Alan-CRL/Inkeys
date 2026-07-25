@@ -33,6 +33,12 @@ export namespace draw3
 		// 控制倒转 Pen 是否在画笔/荧光笔下临时作为橡皮；只影响之后开始的笔画。
 		void SetInvertedPenEraserEnabled(bool enabled) noexcept;
 		bool GetInvertedPenEraserEnabled() const noexcept;
+		// 即时控制激光笔的稀疏粒子点缀，不影响主轨迹和留存计时。
+		void SetLaserParticlesEnabled(bool enabled) noexcept;
+		bool GetLaserParticlesEnabled() const noexcept;
+		// 设置最后一根激光笔抬起后的满亮留存秒数；只接受有限非负值。
+		bool SetLaserHoldDurationSeconds(double seconds) noexcept;
+		double GetLaserHoldDurationSeconds() const noexcept;
 		// 清空 L0/L1/L2 和 backbuffer，并立即全量呈现。
 		void ClearCanvas();
 		// 合成并呈现完整画布。
@@ -55,6 +61,8 @@ export namespace draw3
 		StrokeModelConfiguration configuration_;
 		InputWidthModeSettingsState inputWidthModeSettings_;
 		std::atomic<bool> invertedPenEraserEnabled_ = true;
+		std::atomic<bool> laserParticlesEnabled_ = true;
+		std::atomic<double> laserHoldDurationSeconds_ = 3.0;
 		RuntimeMetricsSession* metrics_ = nullptr;
 		PenHapticFeedback* haptics_ = nullptr;
 		double lastPresentDurationMs_ = 0.0;

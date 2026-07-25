@@ -44,7 +44,47 @@ int RunHighlighterGeometryTests()
 		draw3::CreateStrokeModelConfiguration(96);
 	HIGHLIGHTER_CHECK(!defaultConfiguration.retainPredictionOnUp);
 	HIGHLIGHTER_CHECK(defaultConfiguration.dpiScale == 1.0f);
+	HIGHLIGHTER_CHECK(defaultConfiguration.laserParticlesEnabled);
+	HIGHLIGHTER_CHECK(defaultConfiguration.laserHoldDurationSeconds == 3.0);
 	HIGHLIGHTER_CHECK(draw3::CreateStrokeModelConfiguration(192).dpiScale == 2.0f);
+	HIGHLIGHTER_CHECK(sizeof(draw3::LaserDot) == 16);
+	HIGHLIGHTER_CHECK(sizeof(draw3::LaserStyleConstants) == 96);
+
+	draw3::LaserTrailLifecycle laserLifecycle;
+	draw3::BeginLaserContact(laserLifecycle);
+	draw3::BeginLaserContact(laserLifecycle);
+	HIGHLIGHTER_CHECK(laserLifecycle.activeContactCount == 2);
+	draw3::EndLaserContact(laserLifecycle, 1000);
+	HIGHLIGHTER_CHECK(laserLifecycle.phase == draw3::LaserTrailPhase::Active);
+	draw3::EndLaserContact(laserLifecycle, 1000);
+	HIGHLIGHTER_CHECK(laserLifecycle.phase == draw3::LaserTrailPhase::Hold);
+	HIGHLIGHTER_CHECK(NearlyEqual(draw3::EvaluateLaserTrailOpacity(
+		laserLifecycle, 3999, 1000, 3.0), 1.0f));
+	const float halfFadeOpacity = draw3::EvaluateLaserTrailOpacity(
+		laserLifecycle, 4400, 1000, 3.0);
+	HIGHLIGHTER_CHECK(laserLifecycle.phase == draw3::LaserTrailPhase::Fade);
+	HIGHLIGHTER_CHECK(NearlyEqual(halfFadeOpacity, 0.5f, 0.01f));
+	draw3::BeginLaserContact(laserLifecycle);
+	HIGHLIGHTER_CHECK(laserLifecycle.phase == draw3::LaserTrailPhase::Active);
+	HIGHLIGHTER_CHECK(NearlyEqual(draw3::EvaluateLaserTrailOpacity(
+		laserLifecycle, 4500, 1000, 3.0), 1.0f));
+	draw3::EndLaserContact(laserLifecycle, 4500);
+	HIGHLIGHTER_CHECK(draw3::EvaluateLaserTrailOpacity(
+		laserLifecycle, 5301, 1000, 0.0) == 0.0f);
+	HIGHLIGHTER_CHECK(laserLifecycle.phase == draw3::LaserTrailPhase::Inactive);
+
+	const float particleInterval = draw3::LaserParticleEmissionIntervalPx(42, 3, 1.0f);
+	HIGHLIGHTER_CHECK(particleInterval >= 36.0f && particleInterval <= 48.0f);
+	HIGHLIGHTER_CHECK(NearlyEqual(particleInterval,
+		draw3::LaserParticleEmissionIntervalPx(42, 3, 1.0f)));
+	HIGHLIGHTER_CHECK(NearlyEqual(
+		draw3::LaserParticleFlowSpeedPxPerSecond(0.0f, 1.0f), 24.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(
+		draw3::LaserParticleFlowSpeedPxPerSecond(10000.0f, 1.0f), 160.0f));
+	const RECT laserBounds = draw3::RectFromLaserPoints({
+		{ 20.0f, 20.0f, 2.5f, 0.0f } }, 1.0f, 100, 100);
+	HIGHLIGHTER_CHECK(laserBounds.left == 5 && laserBounds.top == 5);
+	HIGHLIGHTER_CHECK(laserBounds.right == 35 && laserBounds.bottom == 35);
 	draw3::ActiveStroke completedPen(5.0f, 500.0f);
 	completedPen.realPoints = {
 		{ 10.0f, 20.0f, 2.5f, 0.0f },

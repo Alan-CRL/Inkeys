@@ -20,7 +20,8 @@ export namespace draw3
 	{
 		Pen,
 		Highlighter,
-		Eraser
+		Eraser,
+		Laser
 	};
 
 	// 表示当前客户区尺寸。
@@ -75,7 +76,7 @@ export namespace draw3
 		void SetGpuTransparentComposition(bool enabled);
 		// 返回当前绘制工具。
 		DrawingTool ActiveTool() const;
-		// 配置 Pen/Highlighter/Eraser 的应用内瞬态光标外观。
+		// 配置 Pen/Highlighter/Eraser/Laser 的应用内瞬态光标外观。
 		bool ConfigureDrawingCursor(DrawingTool tool,
 			const DrawingCursorAppearance& appearance);
 		DrawingCursorAppearance CursorAppearanceForTool(DrawingTool tool) const noexcept;
@@ -134,6 +135,7 @@ export namespace draw3
 		DrawingCursorAppearance penCursorAppearance_ = {};
 		DrawingCursorAppearance highlighterCursorAppearance_ = {};
 		DrawingCursorAppearance eraserCursorAppearance_ = {};
+		DrawingCursorAppearance laserCursorAppearance_ = {};
 		HCURSOR defaultCursor_ = nullptr;
 		uint32_t lastHapticPenInfoPointerId_ = 0;
 		bool lastHapticPenInfoKnown_ = false;

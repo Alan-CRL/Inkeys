@@ -160,11 +160,12 @@ int RunRuntimeBenchmark(const wchar_t* applicationPath, const wchar_t* reportPat
 	const int usableHeight = std::max<int>(
 		200, height - 2 * (top - static_cast<int>(originalRect.top)));
 
-	for (int index = 0; index < 250; ++index)
+	for (int index = 0; index < 300; ++index)
 	{
 		if (index == 0) SendKey('1');
 		if (index == 150) SendKey('2');
 		if (index == 200) SendKey('3');
+		if (index == 250) SendKey('4'); // 最后 50 笔覆盖默认粒子开启的 Laser 活动路径。
 		const int row = index / 20;
 		const int column = index % 20;
 		const int startX = left + column * std::max(8, usableWidth / 22);

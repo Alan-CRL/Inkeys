@@ -24,6 +24,25 @@ PS_INPUT main(uint id : SV_VertexID)
     output.color = globalColor;
     output.shapeType = globalShapeType;
 
+    if (type == 9 || type == 10)
+    {
+        InkPoint dot = InkData[globalBufferOffset + itemIndex];
+        float outerRadius = type == 9
+            ? laserRadii.z : max(dot.r * 3.0, 3.0 * laserParameters.y);
+        float2 center = dot.pos;
+        float2 rectMin = center - outerRadius - 2.0;
+        float2 rectMax = center + outerRadius + 2.0;
+        float2 worldPos = lerp(rectMin, rectMax, templatePos);
+        output.pos = float4((worldPos.x / screenWidth) * 2.0 - 1.0,
+            -((worldPos.y / screenHeight) * 2.0 - 1.0), 0.0, 1.0);
+        output.pixPos = worldPos;
+        output.p1 = center;
+        output.p2 = outerRadius.xx;
+        output.r1 = dot.r;
+        output.r2 = dot.time;
+        return output;
+    }
+
     if (type >= 4 && type <= 6)
     {
         InkPoint cursor = InkData[globalBufferOffset];
@@ -69,7 +88,7 @@ PS_INPUT main(uint id : SV_VertexID)
     float r1 = data1.r;
     float r2 = data2.r;
 
-    if (type == 1 || type == 2)
+    if (type == 1 || type == 2 || type == 8)
     {
         float2 rectMin = min(p1, p2);
         float2 rectMax = max(p1, p2);
@@ -88,8 +107,11 @@ PS_INPUT main(uint id : SV_VertexID)
     float segmentLength = length(segment);
     float2 tangent = segmentLength > 0.001 ? segment / segmentLength : float2(1.0, 0.0);
     float2 normal = float2(-tangent.y, tangent.x);
-    float maxRadius = max(r1, r2);
-    float localX = lerp(-r1 - 2.0, segmentLength + r2 + 2.0, templatePos.x);
+    float shapeRadius = type == 7 ? laserRadii.z : max(r1, r2);
+    float startRadius = type == 7 ? shapeRadius : r1;
+    float endRadius = type == 7 ? shapeRadius : r2;
+    float maxRadius = shapeRadius;
+    float localX = lerp(-startRadius - 2.0, segmentLength + endRadius + 2.0, templatePos.x);
     float localY = lerp(-maxRadius - 2.0, maxRadius + 2.0, templatePos.y);
     float2 worldPos = p1 + tangent * localX + normal * localY;
 
@@ -98,7 +120,7 @@ PS_INPUT main(uint id : SV_VertexID)
     output.pixPos = worldPos;
     output.p1 = p1;
     output.p2 = p2;
-    output.r1 = r1;
-    output.r2 = r2;
+    output.r1 = type == 7 ? 0.0 : r1;
+    output.r2 = type == 7 ? 0.0 : r2;
     return output;
 }

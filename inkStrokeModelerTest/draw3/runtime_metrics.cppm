@@ -39,6 +39,8 @@ export namespace draw3
 		// 记录活动帧间隔、工作和 Present 耗时。
 		void RecordActiveFrame(double frameStartMs, double workMs,
 			double presentMs, bool presented);
+		// 物理接触结束后切断连续帧区间，避免把粒子动画期间的间隔计入书写帧率。
+		void EndActiveFrameSequence() noexcept;
 		// 记录一次实际 Present。
 		void RecordPresent(double presentMs) noexcept;
 		// 标记完全空闲阻塞区间，用于证明 frame/Present 计数不增长。

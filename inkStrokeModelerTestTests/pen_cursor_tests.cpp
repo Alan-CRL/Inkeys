@@ -134,17 +134,28 @@ int RunPenCursorTests()
 		penAppearance, eraserAppearance, true).visible);
 
 	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
-		DrawingCursorPointerAuthority::Pen, false, true, false));
+		DrawingCursorPointerAuthority::Pen, false, false, true, false));
 	PEN_CURSOR_CHECK(!draw3::ShouldHideSystemDrawingCursor(
-		DrawingCursorPointerAuthority::Mouse, false, false, true));
+		DrawingCursorPointerAuthority::Mouse, false, false, false, true));
 	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
-		DrawingCursorPointerAuthority::Mouse, true, false, true));
+		DrawingCursorPointerAuthority::Mouse, true, false, false, true));
 	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
-		DrawingCursorPointerAuthority::Touch, true, false, false));
+		DrawingCursorPointerAuthority::Touch, true, false, false, false));
 	PEN_CURSOR_CHECK(!draw3::ShouldHideSystemDrawingCursor(
-		DrawingCursorPointerAuthority::Touch, false, false, false));
+		DrawingCursorPointerAuthority::Touch, false, false, false, false));
 	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
-		DrawingCursorPointerAuthority::Unknown, false, true, false));
+		DrawingCursorPointerAuthority::Unknown, false, false, true, false));
+	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
+		DrawingCursorPointerAuthority::Mouse, false, true, false, true));
+
+	mouseHover.inContact = false;
+	const draw3::DrawingCursorVisual laserMouseHover =
+		draw3::ResolveLaserDrawingCursorVisual(
+			penHover, mouseHover, DrawingCursorPointerAuthority::Mouse, penAppearance);
+	PEN_CURSOR_CHECK(laserMouseHover.visible);
+	PEN_CURSOR_CHECK(Near(laserMouseHover.x, mouseHover.x));
+	PEN_CURSOR_CHECK(!draw3::ResolveLaserDrawingCursorVisual(
+		penContact, mouseHover, DrawingCursorPointerAuthority::Pen, penAppearance).visible);
 
 	// Pen 离开后 authority 仍拒绝陈旧 Mouse 样本，直到真实鼠标移动切换 authority。
 	draw3::DrawingCursorSample absentPen;
@@ -153,9 +164,9 @@ int RunPenCursorTests()
 		penAppearance, eraserAppearance, false);
 	PEN_CURSOR_CHECK(!visual.visible);
 	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
-		DrawingCursorPointerAuthority::Pen, false, false, true));
+		DrawingCursorPointerAuthority::Pen, false, false, false, true));
 	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
-		DrawingCursorPointerAuthority::Pen, true, false, true));
+		DrawingCursorPointerAuthority::Pen, true, false, false, true));
 
 	const draw3::DrawingCursorVisual firstTouch =
 		draw3::MakeTouchEraserDrawingCursorVisual(100.0f, 150.0f, eraserAppearance);
