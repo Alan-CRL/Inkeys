@@ -15,10 +15,10 @@
 
 - 只对系统当前活动指针类型为 Pen 的当前窗口客户区设置自定义彩色 `HCURSOR`（包括 Eraser/倒转 Pen），不得使用 `SetSystemCursor`、窗口类全局光标或全局计数式 `ShowCursor`。
 - Pen 光标是直径为 `max(5px, 5px × DPI scale)` 的圆；Highlighter 光标是 6.25x50px 的固定竖直矩形。Pen 不随实时压力变化。
-- Pen/Highlighter 光标边缘使用约 0.75 个设备像素、向内占用的浅灰色 `#B8B8B8` 外框，外框透明度语义不变；内部使用当前墨迹 RGB 和 50% Alpha，并按 Windows 彩色光标要求写入 straight BGRA。
-- Eraser 光标是无最小尺寸限制的白色 `EraserGripCircle`；Hover 整枚光标 Alpha 为 0.75，Contact 为 1.0，圆环和三条竖线统一使用中灰色 `#808080`，圆环宽度按直径的 4% 比例计算。
+- Pen/Highlighter 光标边缘使用约 0.75 个设备像素、向内占用的浅灰色 `#B8B8B8` 外框，外框透明度语义不变；内部使用当前墨迹 RGB 和 50% Alpha，并按 `CreateIconIndirect` 的 user-mode Alpha cursor 路径写入直通 Alpha BGRA。
+- Eraser 光标是无最小尺寸限制的白色 `EraserGripCircle`；Hover 整枚光标 Alpha 为 0.5，Contact 为 1.0，圆环和两条加粗圆头竖线统一使用浅灰色 `#CFCFCF`，圆环宽度按直径的 4% 比例计算。逻辑 RGB 与 Alpha 独立写入直通 Alpha BGRA；位图按微软 `CreateAlphaCursor` 示例使用正高度 `BITMAPV5HEADER + BI_BITFIELDS`、屏幕 HDC 和显式 RGBA masks 创建，不额外指定颜色空间。
 - Pen 悬停进入窗口时显示光标；Down 后通过当前窗口的 `SetCursor(nullptr)` 立即隐藏，接触 Move 期间保持隐藏，Up 后仍在范围内时恢复悬停光标；离开范围、RTS 禁用/错误/设备移除/shutdown 或窗口销毁时恢复默认箭头。禁止使用全局计数式 `ShowCursor`。
-- Eraser 或倒转 Pen 悬停时显示 Alpha 0.75 的 EraserGripCircle；Down/Move 期间保持显示并切换为 Alpha 1.0，Up 后恢复 Alpha 0.75。
+- Eraser 或倒转 Pen 悬停时显示 Alpha 0.5 的 EraserGripCircle；Down/Move 期间保持显示并切换为 Alpha 1.0，Up 后恢复 Alpha 0.5。
 - Windows 8+ 以动态解析的系统 Pointer 类型为最高优先级；系统仍报告 `PT_PEN` 时低优先级 Mouse 消息不得抢占，系统切换到 Mouse 后立即恢复默认箭头。
 - Windows 7 缺少 Pointer API 时，以 RTS in-range/out-of-range 和 Pen packet 状态回退，不得因此破坏启动或绘制。
 - Touch 不触发自定义光标；普通 Eraser 和倒转 Pen 使用 Eraser 光标，悬停与接触状态都保留倒转信息；Mouse/Touch 或其他非 Pen authority 使用默认箭头。
@@ -27,12 +27,13 @@
 
 ## Acceptance Criteria
 
-- [x] 自动测试覆盖圆形/矩形/EraserGripCircle 位图尺寸、中心热点、透明背景、内描边、straight Alpha、抓手竖线和 fractional 小尺寸覆盖。
+- [x] 自动测试覆盖圆形/矩形/EraserGripCircle 位图尺寸、中心热点、透明背景、内描边、直通 Alpha、抓手竖线和 fractional 小尺寸覆盖。
 - [x] 自动测试覆盖 Pen hover/contact 隐藏、Eraser hover/contact 两档 Alpha、倒转 Pen、Mouse 系统接管、Touch 忽略、工具切换、out-of-range 及 RTS reset/shutdown 状态。
 - [x] RTS `DataInterest` 包含 in-range、out-of-range 和 in-air packets，且高频通知最多保留一个待处理窗口刷新消息。
 - [x] `Debug|ARM64` 完整解决方案构建成功，两个 shader、C++ Modules、资源嵌入和测试工程均成功。
 - [x] `inkStrokeModelerTestTests` 通过。
 - [ ] 实体 Pen 验证 Pen/Highlighter 悬停显示与接触隐藏、Eraser/倒转 Pen 两档 Alpha 和抓手纹理、Up 恢复、Mouse 系统接管、Touch、窗口外恢复和其他应用不受影响。
+- [ ] HDR 开启时用实体屏幕观察验证半透明 Eraser；截图工具的合成结果不得替代硬件光标平面验收。
 
 ## Out Of Scope
 

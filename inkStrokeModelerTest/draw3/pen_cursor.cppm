@@ -70,7 +70,7 @@ export namespace draw3
 		std::vector<uint32_t> bgra;
 	};
 
-	// 生成带可配置内描边、填充 Alpha 和整体 opacity 的 straight BGRA 光标位图。
+	// 生成供 CreateIconIndirect 使用的直通 Alpha BGRA 光标位图；RGB 与 Alpha 独立存储。
 	DrawingCursorBitmap BuildDrawingCursorBitmap(const DrawingCursorAppearance& appearance);
 	// 从 CPU 位图创建调用方拥有的彩色 HCURSOR；失败时返回 nullptr。
 	HCURSOR CreateDrawingCursor(const DrawingCursorAppearance& appearance);

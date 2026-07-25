@@ -67,8 +67,8 @@
 - sink 是非拥有指针；RTS shutdown 必须先禁用并移除插件，再发布 Default 和清空 sink。
 - 跨线程状态使用原子值，并以单个 pending 标志合并私有窗口消息；消息队列最多保留一个待处理光标刷新。
 - 私有刷新调用 `SetCursor` 前必须用 `WindowFromPoint` 确认当前窗口/子窗口仍拥有指针；`WM_SETCURSOR` 只处理 `HTCLIENT`。
-- Pen 光标直径为 `max(5px, 5px × DPI scale)`，Highlighter 是 6.25x50px 固定竖直矩形；外轮廓等于光标 footprint，使用现有配置的 `#B8B8B8` 内描边且外框透明度语义不变，内部为当前 RGB、50% Alpha 的 straight BGRA。压力不改变光标尺寸。
-- EraserGripCircle 直径直接复用画布像素中的 `kWideToolDiameter`，不再额外乘 DPI scale，也不设置最小尺寸；圆环宽度为直径 4%，三条竖线宽度为直径 2.5%，全部使用 `#808080`。Hover 整枚 Alpha 为 0.75，Contact 整枚 Alpha 为 1.0。
+- Pen 光标直径为 `max(5px, 5px × DPI scale)`，Highlighter 是 6.25x50px 固定竖直矩形；外轮廓等于光标 footprint，使用现有配置的 `#B8B8B8` 内描边且外框透明度语义不变，内部为当前 RGB、50% Alpha。`CreateIconIndirect` 的 user-mode DIB 使用直通 Alpha BGRA，逻辑 RGB 不乘 Alpha；不得把内核 `DrvSetPointerShape` 的预乘表面契约套到这里。`CreateDrawingCursor` 按微软 `CreateAlphaCursor` 示例使用正高度 bottom-up `BITMAPV5HEADER + BI_BITFIELDS`、屏幕 HDC、兼容内存 DC、空单色 mask 和显式 RGBA masks，CPU top-down 行写入时翻转，不额外指定颜色空间。压力不改变光标尺寸。
+- EraserGripCircle 直径直接复用画布像素中的 `kWideToolDiameter`，不再额外乘 DPI scale，也不设置最小尺寸；主体由栅格器强制为纯白，不接受调用方填充 RGB。圆环宽度为直径 4%，两条圆头竖线宽度为直径 10%，全部使用 `#CFCFCF`。Hover 整枚 Alpha 为 0.5，Contact 整枚 Alpha 为 1.0；Hover 白色主体存储 `RGB=255,A=128`，浅灰结构存储 `RGB=207,A=128`。
 - 活动 Pen 使用 Down 锁定的有效工具覆盖；没有活动 Pen 时使用当前选择工具。普通 Eraser 或 inverted 状态解析为 EraserGripCircle，光标不进入 L0/L1/L2、模型或 contact payload。
 
 ### 4. Validation & Error Matrix
@@ -80,7 +80,10 @@
 | 接触时 Pointer authority 切换为 NonPen | 立即恢复默认箭头，不沿用 Pen 隐藏状态 |
 | Pointer 类型是 Mouse/Touch | 立即使用默认箭头，即使 RTS 状态尚未清除 |
 | Pointer API 不存在 | 清除旧 NonPen authority，按 RTS Pen 状态回退 |
-| Inverted Pen 或有效工具为 Eraser | 使用 EraserGripCircle；Hover Alpha 0.75，Contact Alpha 1.0 |
+| Inverted Pen 或有效工具为 Eraser | 使用 EraserGripCircle；Hover Alpha 0.5，Contact Alpha 1.0 |
+| 半透明白色位于白色背景 | 主体保持白色；若变灰/黑，检查是否退化为未声明 Alpha 的 32bpp `BI_RGB` |
+| 半透明白色位于红色背景 | 中心合成为约 `RGB=(255,127–128,127–128)`；背景红色变暗表示句柄未进入 32-bit Alpha 分支 |
+| HDR 屏幕实显与截图颜色不同 | 以实体屏幕为准；截图可能使用软件合成，只能检查源位图，不代表 HDR 硬件光标平面 |
 | 光标位图/句柄创建失败 | 记录一次诊断，继续启动并使用默认箭头 |
 | 私有刷新到达时指针已在其他窗口 | 不调用 `SetCursor`，由目标窗口管理自己的光标 |
 | RTS disabled/error/removal/shutdown | 发布 Default，不得遗留 sink 或自定义光标状态 |
@@ -93,16 +96,16 @@
 
 ### 6. Tests Required
 
-- CPU 位图断言中心热点、透明 padding、96/192 DPI 下限语义、6.25x50px 矩形、EraserGripCircle、#808080 圆环、三条竖线、小数边缘覆盖、0.75px 浅灰内描边和 straight Alpha。
+- CPU 位图断言中心热点、透明 padding、96/192 DPI 下限语义、6.25x50px 矩形、EraserGripCircle 纯白主体、#CFCFCF 圆环、两条加粗圆头竖线、小数边缘覆盖、0.75px 浅灰内描边和直通 Alpha；另建无描边纯白 50% Alpha 圆并断言创建前中心像素严格等于 `0x80FFFFFF`。截图或 `DrawIconEx` 合成不作为硬件光标平面的格式判据。
 - 状态决策断言 Default/Hover/Contact/Inverted、Normal Eraser、Unknown/Pen/NonPen authority 和工具 eligibility 矩阵。
 - 静态/自动断言 RTS `DataInterest` 包含 StylusInRange、StylusOutOfRange、InAirPackets。
 - 完整 `Debug|ARM64` 解决方案构建及控制台测试；实体 Pen 验证 hover 显示、Down/Move 隐藏、Up 恢复、Mouse 系统接管、Touch、窗口边界和其他应用。
 
 ### 7. Wrong vs Correct
 
-Wrong：`RTS 回调直接 SetCursor/ShowCursor；鼠标离开本窗口后仍由延迟消息设置自定义光标。`
+Wrong：`把 DrvSetPointerShape 的预乘要求直接套到 CreateIconIndirect；用 BITMAPINFOHEADER + BI_RGB 承载 Alpha 光标；RTS 回调直接 SetCursor/ShowCursor。`
 
-Correct：`RTS 只发布原子状态；窗口线程合并刷新，并在当前 HWND 确实拥有指针时处理 HTCLIENT 光标。`
+Correct：`CreateIconIndirect 使用直通 Alpha BGRA，并按微软示例用正高度 BITMAPV5HEADER + BI_BITFIELDS、屏幕 HDC 和显式 RGBA masks 声明格式；RTS 只发布原子状态。`
 
 ## Stroke Modeling Invariants
 

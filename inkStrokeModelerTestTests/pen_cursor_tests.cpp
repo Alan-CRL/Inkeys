@@ -93,42 +93,61 @@ int RunPenCursorTests()
 	PEN_CURSOR_CHECK(Alpha(PixelAt(highlighter, 6, 52)) == 128);
 
 	draw3::DrawingCursorAppearance eraserHoverAppearance = {
-		draw3::DrawingCursorShape::EraserGripCircle, 50.0f, 50.0f, 1.0f, 1.0f, 1.0f
+		draw3::DrawingCursorShape::EraserGripCircle, 50.0f, 50.0f, 0.0f, 0.0f, 0.0f
 	};
-	eraserHoverAppearance.opacity = 0.75f;
+	eraserHoverAppearance.opacity = 0.5f;
 	eraserHoverAppearance.fillAlpha = 1.0f;
 	eraserHoverAppearance.outlineWidth = 2.0f;
-	eraserHoverAppearance.outlineRed = 128.0f / 255.0f;
-	eraserHoverAppearance.outlineGreen = 128.0f / 255.0f;
-	eraserHoverAppearance.outlineBlue = 128.0f / 255.0f;
+	eraserHoverAppearance.outlineRed = 207.0f / 255.0f;
+	eraserHoverAppearance.outlineGreen = 207.0f / 255.0f;
+	eraserHoverAppearance.outlineBlue = 207.0f / 255.0f;
 	const draw3::DrawingCursorBitmap eraserHover =
 		draw3::BuildDrawingCursorBitmap(eraserHoverAppearance);
 	PEN_CURSOR_CHECK(eraserHover.width == 55);
 	PEN_CURSOR_CHECK(eraserHover.height == 55);
 	PEN_CURSOR_CHECK(eraserHover.hotspotX == 27);
 	PEN_CURSOR_CHECK(eraserHover.hotspotY == 27);
-	const uint32_t eraserWhite = PixelAt(eraserHover, 32, 27);
-	PEN_CURSOR_CHECK(Alpha(eraserWhite) == 191);
+	const uint32_t eraserWhite = PixelAt(eraserHover, 27, 27);
+	PEN_CURSOR_CHECK(Alpha(eraserWhite) == 128);
 	PEN_CURSOR_CHECK(Red(eraserWhite) == 255);
 	PEN_CURSOR_CHECK(Green(eraserWhite) == 255);
 	PEN_CURSOR_CHECK(Blue(eraserWhite) == 255);
-	const uint32_t eraserStripe = PixelAt(eraserHover, 27, 27);
-	PEN_CURSOR_CHECK(Alpha(eraserStripe) == 239);
-	PEN_CURSOR_CHECK(Red(eraserStripe) == 153);
-	PEN_CURSOR_CHECK(Green(eraserStripe) == 153);
-	PEN_CURSOR_CHECK(Blue(eraserStripe) == 153);
+	const uint32_t eraserStripe = PixelAt(eraserHover, 21, 27);
+	PEN_CURSOR_CHECK(Alpha(eraserStripe) == 128);
+	PEN_CURSOR_CHECK(Red(eraserStripe) == 207);
+	PEN_CURSOR_CHECK(Green(eraserStripe) == 207);
+	PEN_CURSOR_CHECK(Blue(eraserStripe) == 207);
+	PEN_CURSOR_CHECK(PixelAt(eraserHover, 33, 27) == eraserStripe);
+	const uint32_t eraserRoundedStripeEdge = PixelAt(eraserHover, 23, 38);
+	PEN_CURSOR_CHECK(Red(eraserRoundedStripeEdge) > 207);
+	PEN_CURSOR_CHECK(Red(eraserRoundedStripeEdge) < 255);
 	const uint32_t eraserRing = PixelAt(eraserHover, 51, 27);
-	PEN_CURSOR_CHECK(Alpha(eraserRing) == 191);
-	PEN_CURSOR_CHECK(Red(eraserRing) == 128);
-	PEN_CURSOR_CHECK(Green(eraserRing) == 128);
-	PEN_CURSOR_CHECK(Blue(eraserRing) == 128);
+	PEN_CURSOR_CHECK(Alpha(eraserRing) == 128);
+	PEN_CURSOR_CHECK(Red(eraserRing) == 207);
+	PEN_CURSOR_CHECK(Green(eraserRing) == 207);
+	PEN_CURSOR_CHECK(Blue(eraserRing) == 207);
+
+	draw3::DrawingCursorAppearance pureWhiteProbeAppearance = {
+		draw3::DrawingCursorShape::Circle, 50.0f, 50.0f, 1.0f, 1.0f, 1.0f
+	};
+	pureWhiteProbeAppearance.opacity = 0.5f;
+	pureWhiteProbeAppearance.fillAlpha = 1.0f;
+	pureWhiteProbeAppearance.outlineWidth = 0.0f;
+	const draw3::DrawingCursorBitmap pureWhiteProbe =
+		draw3::BuildDrawingCursorBitmap(pureWhiteProbeAppearance);
+	const uint32_t pureWhiteProbeCenter = PixelAt(pureWhiteProbe,
+		pureWhiteProbe.hotspotX, pureWhiteProbe.hotspotY);
+	PEN_CURSOR_CHECK(pureWhiteProbeCenter == 0x80FFFFFFu);
+	HCURSOR nativePureWhiteProbe = draw3::CreateDrawingCursor(pureWhiteProbeAppearance);
+	PEN_CURSOR_CHECK(nativePureWhiteProbe != nullptr);
+	if (nativePureWhiteProbe) DestroyCursor(nativePureWhiteProbe);
 	eraserHoverAppearance.opacity = 1.0f;
 	const draw3::DrawingCursorBitmap eraserContact =
 		draw3::BuildDrawingCursorBitmap(eraserHoverAppearance);
-	PEN_CURSOR_CHECK(Alpha(PixelAt(eraserContact, 32, 27)) == 255);
-	PEN_CURSOR_CHECK(Red(PixelAt(eraserContact, 32, 27)) == 255);
 	PEN_CURSOR_CHECK(Alpha(PixelAt(eraserContact, 27, 27)) == 255);
-	PEN_CURSOR_CHECK(Red(PixelAt(eraserContact, 27, 27)) == 128);
+	PEN_CURSOR_CHECK(Red(PixelAt(eraserContact, 27, 27)) == 255);
+	PEN_CURSOR_CHECK(Alpha(PixelAt(eraserContact, 21, 27)) == 255);
+	PEN_CURSOR_CHECK(Red(PixelAt(eraserContact, 21, 27)) == 207);
 	const draw3::DrawingCursorBitmap fractionalEraser =
 		draw3::BuildDrawingCursorBitmap({
 			draw3::DrawingCursorShape::EraserGripCircle, 0.5f, 0.5f, 1.0f, 1.0f, 1.0f

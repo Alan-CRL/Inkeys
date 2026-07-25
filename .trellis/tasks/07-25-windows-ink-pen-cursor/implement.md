@@ -2,7 +2,7 @@
 
 ## Implementation
 
-1. 新增 `draw3.pen_cursor` 模块及项目清单，完成 Pen/Highlighter/EraserGripCircle 的纯 CPU SDF 栅格化、straight BGRA、`CreateIconIndirect` 和句柄销毁。
+1. 新增 `draw3.pen_cursor` 模块及项目清单，完成 Pen/Highlighter/EraserGripCircle 的纯 CPU SDF 栅格化、直通 Alpha BGRA、`CreateIconIndirect` 和句柄销毁。
 2. 扩展 `WindowController`：配置 Pen/Highlighter/Eraser 两档外观，实现事件 sink、活动工具覆盖、Pointer 类型动态探测、合并刷新消息和 `WM_SETCURSOR`。
 3. 扩展 RTS：订阅 range/in-air 事件，在 Pen hover/contact/reset 路径发布 Hover/Contact/Default 并保留 inverted 信息，保证 shutdown 后不再访问 sink。
 4. 由 `DrawingController` 使用现有尺寸/颜色配置三类光标，并在活动 Pen 工具变化时发布覆盖；更新 `main.cpp` 初始化接线。
@@ -25,6 +25,8 @@ git diff --check
 - 2026-07-25：根据真机反馈修正 Pen 光标 DPI 下限和 straight BGRA；本轮按用户要求仅完成差异、引用、编码与换行静态检查，未重新构建或运行测试。
 - 2026-07-25：根据后续反馈将外框改为 0.75px `#B8B8B8`，并在 Pen Contact 期间使用当前窗口 `SetCursor(nullptr)` 隐藏；完整 `Debug|ARM64` 构建和全部控制台测试再次通过，仅有既有 third-party 警告。
 - 2026-07-25：实现 EraserGripCircle、普通/倒转 Eraser 状态选择、Hover 0.75/Contact 1.0 两枚句柄、#808080 抓手圆环与三条竖线；ARM64 Debug 全量构建和全部控制台测试通过。
+- 2026-07-25：区分内核 `DrvSetPointerShape` 与 user-mode `CreateIconIndirect` 契约，最终恢复直通 Alpha BGRA，同时保留 `BITMAPV5HEADER + BI_BITFIELDS` 并显式设置 `LCS_WINDOWS_COLOR_SPACE`；无描边纯白 50% Alpha 圆在创建前必须为 `0x80FFFFFF`。本轮未重新构建或运行测试。
+- 2026-07-25：微软官方 `CreateAlphaCursor` 示例确认 straight Alpha；原生创建路径进一步对齐为正高度 bottom-up DIB、屏幕 HDC、兼容内存 DC、空单色 mask，并移除非示例的颜色空间字段。已观察到 HDR 屏幕实显偏灰而同版截图颜色正确，因此 HDR 硬件光标平面仍需实体复验；本轮按要求未重新构建或运行测试。
 - 未验证：实体 Pen/Mouse/Touch、接触隐藏与 Eraser 不透明显示、Up 恢复、Windows 7 Pointer API 回退和 D3D Debug Layer。
 
 ## Risk And Rollback

@@ -440,12 +440,12 @@ namespace draw3
 			eraserCursorDiameter,
 			1.0f, 1.0f, 1.0f
 		};
-		eraserAppearance.opacity = 0.75f;
+		eraserAppearance.opacity = 0.5f;
 		eraserAppearance.fillAlpha = 1.0f;
 		eraserAppearance.outlineWidth = eraserCursorDiameter * 0.04f;
-		eraserAppearance.outlineRed = 128.0f / 255.0f;
-		eraserAppearance.outlineGreen = 128.0f / 255.0f;
-		eraserAppearance.outlineBlue = 128.0f / 255.0f;
+		eraserAppearance.outlineRed = 207.0f / 255.0f;
+		eraserAppearance.outlineGreen = 207.0f / 255.0f;
+		eraserAppearance.outlineBlue = 207.0f / 255.0f;
 		window_.ConfigureDrawingCursor(DrawingTool::Eraser, eraserAppearance);
 		if (haptics_) haptics_->SetEnabled(configuration_.hapticFeedbackEnabled);
 	}
