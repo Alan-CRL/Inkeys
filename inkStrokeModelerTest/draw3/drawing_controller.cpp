@@ -432,7 +432,8 @@ namespace draw3
 			highlighterColor.y,
 			highlighterColor.z
 		});
-		const float eraserCursorDiameter = kWideToolDiameter * configuration_.dpiScale;
+		// 橡皮实际模型使用画布像素宽度，光标不能再次乘 DPI。
+		const float eraserCursorDiameter = kWideToolDiameter;
 		DrawingCursorAppearance eraserAppearance = {
 			DrawingCursorShape::EraserGripCircle,
 			eraserCursorDiameter,

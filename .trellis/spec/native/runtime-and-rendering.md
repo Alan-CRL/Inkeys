@@ -68,7 +68,7 @@
 - 跨线程状态使用原子值，并以单个 pending 标志合并私有窗口消息；消息队列最多保留一个待处理光标刷新。
 - 私有刷新调用 `SetCursor` 前必须用 `WindowFromPoint` 确认当前窗口/子窗口仍拥有指针；`WM_SETCURSOR` 只处理 `HTCLIENT`。
 - Pen 光标直径为 `max(5px, 5px × DPI scale)`，Highlighter 是 6.25x50px 固定竖直矩形；外轮廓等于光标 footprint，使用现有配置的 `#B8B8B8` 内描边且外框透明度语义不变，内部为当前 RGB、50% Alpha 的 straight BGRA。压力不改变光标尺寸。
-- EraserGripCircle 直径复用 `kWideToolDiameter × DPI scale`，不设置最小尺寸；圆环宽度为直径 4%，三条竖线宽度为直径 2.5%，全部使用 `#808080`。Hover 整枚 Alpha 为 0.75，Contact 整枚 Alpha 为 1.0。
+- EraserGripCircle 直径直接复用画布像素中的 `kWideToolDiameter`，不再额外乘 DPI scale，也不设置最小尺寸；圆环宽度为直径 4%，三条竖线宽度为直径 2.5%，全部使用 `#808080`。Hover 整枚 Alpha 为 0.75，Contact 整枚 Alpha 为 1.0。
 - 活动 Pen 使用 Down 锁定的有效工具覆盖；没有活动 Pen 时使用当前选择工具。普通 Eraser 或 inverted 状态解析为 EraserGripCircle，光标不进入 L0/L1/L2、模型或 contact payload。
 
 ### 4. Validation & Error Matrix
