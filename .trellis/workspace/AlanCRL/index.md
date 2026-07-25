@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
+- **Total Sessions**: 5
 - **Last Active**: 2026-07-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~139 | Active |
+| `journal-1.md` | ~172 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-07-25 | L0 drawing cursor acceptance fixes | `0327796` | `main` |
 | 4 | 2026-07-25 | Windows Ink cursor alpha refinement | `2af3c9b` | `main` |
 | 3 | 2026-07-24 | Fixed vertical highlighter nib | `e5ebc97` | `bugfix/highlight` |
 | 2 | 2026-07-24 | RTS interrupted stroke reconnect | `6104fd5` | `main` |

@@ -137,3 +137,36 @@ Aligned CreateIconIndirect cursor construction with the Microsoft alpha cursor s
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: L0 drawing cursor acceptance fixes
+
+**Date**: 2026-07-25
+**Task**: L0 drawing cursor acceptance fixes
+**Branch**: `main`
+
+### Summary
+
+Fixed Pen/Mouse cursor authority handoff, immediate Pen hover coordinates, stale Mouse cursor restoration, and reduced Pen/Highlighter fill alpha to 25%; ARM64 Debug build and tests passed.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0327796` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
