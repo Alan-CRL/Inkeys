@@ -24,6 +24,7 @@ import draw3.ink_prediction;
 import draw3.realtime_stylus;
 
 int RunHighlighterGeometryTests();
+int RunPenCursorTests();
 int RunRuntimeBenchmark(const wchar_t* applicationPath, const wchar_t* reportPath);
 
 namespace
@@ -288,6 +289,7 @@ namespace
 
 	void TestRtsStylusConversions(TestState& state)
 	{
+		TEST_CHECK(state, draw3::RtsPenCursorDataInterestEnabledForTesting());
 		const float pressure4095 = draw3::NormalizeRtsPressureForTesting(2048, 0, 4095);
 		const float pressure8191 = draw3::NormalizeRtsPressureForTesting(4096, 0, 8191);
 		TEST_CHECK(state, NearlyEqual(pressure4095, pressure8191));
@@ -1196,6 +1198,7 @@ int wmain(int argc, wchar_t* argv[])
 	TestInvertedPenPolicy(state);
 	TestHapticFeedbackContracts(state);
 	state.failures += RunHighlighterGeometryTests();
+	state.failures += RunPenCursorTests();
 	if (state.failures == 0)
 	{
 		std::cout << "All draw3 contact input tests passed." << std::endl;

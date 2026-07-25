@@ -23,6 +23,7 @@ module draw3.drawing_controller;
 
 import draw3.diagnostics;
 import draw3.haptic_feedback;
+import draw3.pen_cursor;
 
 namespace draw3
 {
@@ -410,6 +411,24 @@ namespace draw3
 		invertedPenEraserEnabled_(configuration_.invertedPenEraserEnabled), metrics_(metrics),
 		haptics_(haptics)
 	{
+		const DirectX::XMFLOAT4 penColor = ColorForTool(DrawingTool::Pen);
+		window_.ConfigureDrawingCursor(DrawingTool::Pen, {
+			DrawingCursorShape::Circle,
+			kPenDiameter,
+			kPenDiameter,
+			penColor.x,
+			penColor.y,
+			penColor.z
+		});
+		const DirectX::XMFLOAT4 highlighterColor = ColorForTool(DrawingTool::Highlighter);
+		window_.ConfigureDrawingCursor(DrawingTool::Highlighter, {
+			DrawingCursorShape::Rectangle,
+			kWideToolDiameter / kHighlighterNibAspectRatio,
+			kWideToolDiameter,
+			highlighterColor.x,
+			highlighterColor.y,
+			highlighterColor.z
+		});
 		if (haptics_) haptics_->SetEnabled(configuration_.hapticFeedbackEnabled);
 	}
 
@@ -1196,6 +1215,7 @@ namespace draw3
 			if (metrics_) metrics_->BeginFrame();
 			lastPresentDurationMs_ = 0.0;
 			lastPresentSucceeded_ = false;
+			if (active.empty()) window_.ClearActivePenCursorTool();
 			const double previousFrameMs = lastActiveFrameStartMs > 0.0
 				? frameStartMs - lastActiveFrameStartMs : 0.0;
 			ContactRecord* record = nullptr;
@@ -1336,6 +1356,16 @@ namespace draw3
 			const DrawingTool frameTool = frameToolIterator != active.end()
 				? (*frameToolIterator)->tool
 				: active.empty() ? window_.ActiveTool() : active.front()->tool;
+			const auto activePenCursorIterator = std::find_if(active.begin(), active.end(),
+				[](const RuntimeStroke* runtime)
+				{
+					return runtime && runtime->metricDeviceType == InputDeviceType::Pen &&
+						!runtime->ended && !runtime->awaitingReconnect;
+				});
+			if (activePenCursorIterator != active.end())
+				window_.SetActivePenCursorTool((*activePenCursorIterator)->tool);
+			else
+				window_.ClearActivePenCursorTool();
 
 			const WindowSize size = window_.Size();
 			for (RuntimeStroke* runtime : active)

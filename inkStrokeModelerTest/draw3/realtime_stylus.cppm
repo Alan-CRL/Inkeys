@@ -11,6 +11,7 @@
 export module draw3.realtime_stylus;
 
 import draw3.contact_input;
+import draw3.pen_cursor;
 
 namespace draw3
 {
@@ -29,7 +30,8 @@ export namespace draw3
 		RealTimeStylusInput& operator=(const RealTimeStylusInput&) = delete;
 
 		// 初始化 MTA COM、RTS、多点接口和同步插件；任一步失败均返回 false。
-		bool Initialize(HWND window, ContactInputCoordinator& coordinator);
+		bool Initialize(HWND window, ContactInputCoordinator& coordinator,
+			PenCursorEventSink* penCursorSink = nullptr);
 		// 先停止回调、移除插件，再取消生产者持有的 contact 并释放 COM。
 		void Shutdown() noexcept;
 		bool IsInitialized() const noexcept;
@@ -51,5 +53,6 @@ export namespace draw3
 		float resolution) noexcept;
 	RtsStylusAnglesForTesting DecodeRtsStylusAnglesForTesting(bool hasAzimuthAltitude,
 		float azimuth, float altitude, float xTilt, float yTilt) noexcept;
+	bool RtsPenCursorDataInterestEnabledForTesting() noexcept;
 #endif
 }

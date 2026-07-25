@@ -291,10 +291,14 @@
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
     <ClCompile Include="draw3\ink_prediction.cpp" />
-    <ClCompile Include="draw3\ink_prediction.cppm">
-      <CompileAs>CompileAsCppModule</CompileAs>
-    </ClCompile>
-    <ClCompile Include="draw3\realtime_stylus.cpp" />
+	<ClCompile Include="draw3\ink_prediction.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="draw3\pen_cursor.cpp" />
+	<ClCompile Include="draw3\pen_cursor.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="draw3\realtime_stylus.cpp" />
     <ClCompile Include="draw3\realtime_stylus.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>

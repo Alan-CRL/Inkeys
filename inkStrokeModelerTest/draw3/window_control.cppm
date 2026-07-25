@@ -11,6 +11,7 @@
 export module draw3.window_control;
 
 import draw3.contact_input;
+import draw3.pen_cursor;
 
 export namespace draw3
 {
@@ -38,9 +39,10 @@ export namespace draw3
 	};
 
 	// 管理窗口创建、消息回调及跨线程控制请求。
-	class WindowController
+	class WindowController : public PenCursorEventSink
 	{
 	public:
+		~WindowController() override;
 		// 创建覆盖主显示器的绘图窗口。
 		bool Initialize(bool preconfigureNoRedirectionBitmap);
 		// 首个透明帧准备完成后显示绘图窗口。
@@ -71,6 +73,13 @@ export namespace draw3
 		void SetGpuTransparentComposition(bool enabled);
 		// 返回当前绘制工具。
 		DrawingTool ActiveTool() const;
+		// 配置 Pen/Highlighter 的当前笔尖光标；应在窗口显示前完成。
+		bool ConfigureDrawingCursor(DrawingTool tool, const DrawingCursorAppearance& appearance);
+		// 活动 Pen 笔画锁定有效工具；无活动 Pen 时传回悬停选择。
+		void SetActivePenCursorTool(DrawingTool tool) noexcept;
+		void ClearActivePenCursorTool() noexcept;
+		// RTS 同步插件只发布设备状态，窗口线程负责真正调用 SetCursor。
+		void PublishPenCursorDeviceState(PenCursorDeviceState state) noexcept override;
 		// 消费最近一次 Pointer 消息中的 pointerId 和笔尾提示；仅用于触觉预启动。
 		bool ConsumeHapticPointerId(uint32_t& pointerId, bool& eraserHint);
 		bool ConsumeHapticPointerLeave();
@@ -81,6 +90,10 @@ export namespace draw3
 		static LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 		LRESULT HandleWindowMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 		void RequestControlWake();
+		void QueuePenCursorRefresh() noexcept;
+		void SetPenCursorPointerAuthority(PenCursorPointerAuthority authority) noexcept;
+		void ApplyWindowCursor() noexcept;
+		DrawingTool EffectivePenCursorTool() const noexcept;
 
 		static WindowController* activeController_;
 		HWND window_ = nullptr;
@@ -98,7 +111,15 @@ export namespace draw3
 		std::atomic<bool> hapticPointerIdRequested_ = false;
 		std::atomic<bool> hapticPointerLeaveRequested_ = false;
 		std::atomic<DrawingTool> activeTool_ = DrawingTool::Pen;
+		std::atomic<int32_t> activePenCursorTool_ = -1;
+		std::atomic<PenCursorDeviceState> penCursorDeviceState_ = PenCursorDeviceState::Default;
+		std::atomic<PenCursorPointerAuthority> penCursorPointerAuthority_ =
+			PenCursorPointerAuthority::Unknown;
+		std::atomic<bool> penCursorRefreshPosted_ = false;
 		std::atomic<ContactInputCoordinator*> inputCoordinator_ = nullptr;
+		HCURSOR defaultCursor_ = nullptr;
+		HCURSOR penCursor_ = nullptr;
+		HCURSOR highlighterCursor_ = nullptr;
 		uint32_t lastHapticPenInfoPointerId_ = 0;
 		bool lastHapticPenInfoKnown_ = false;
 		bool lastHapticPenInfoEraser_ = false;

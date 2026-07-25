@@ -12,9 +12,12 @@
     <ClCompile Include="contact_input_tests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
-    <ClCompile Include="highlighter_geometry_tests.cpp">
-      <Filter>Tests</Filter>
-    </ClCompile>
+	<ClCompile Include="highlighter_geometry_tests.cpp">
+	  <Filter>Tests</Filter>
+	</ClCompile>
+	<ClCompile Include="pen_cursor_tests.cpp">
+	  <Filter>Tests</Filter>
+	</ClCompile>
     <ClCompile Include="runtime_benchmark.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
@@ -27,9 +30,15 @@
     <ClCompile Include="..\inkStrokeModelerTest\draw3\haptic_feedback.cpp">
       <Filter>draw3</Filter>
     </ClCompile>
-    <ClCompile Include="..\inkStrokeModelerTest\draw3\haptic_feedback.cppm">
-      <Filter>draw3</Filter>
-    </ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\haptic_feedback.cppm">
+	  <Filter>draw3</Filter>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\pen_cursor.cpp">
+	  <Filter>draw3</Filter>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\pen_cursor.cppm">
+	  <Filter>draw3</Filter>
+	</ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer.cpp">
       <Filter>draw3</Filter>
     </ClCompile>

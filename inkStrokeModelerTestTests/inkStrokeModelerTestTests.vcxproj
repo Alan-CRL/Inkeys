@@ -102,8 +102,9 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="contact_input_tests.cpp" />
-    <ClCompile Include="highlighter_geometry_tests.cpp" />
-    <ClCompile Include="runtime_benchmark.cpp" />
+	<ClCompile Include="highlighter_geometry_tests.cpp" />
+	<ClCompile Include="pen_cursor_tests.cpp" />
+	<ClCompile Include="runtime_benchmark.cpp" />
     <ClCompile Include="..\inkStrokeModelerTest\draw3\contact_input.cpp" Link="draw3\contact_input.cpp" />
     <ClCompile Include="..\inkStrokeModelerTest\draw3\contact_input.cppm" Link="draw3\contact_input.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
@@ -113,10 +114,14 @@
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\haptic_feedback.cpp" Link="draw3\haptic_feedback.cpp" />
-    <ClCompile Include="..\inkStrokeModelerTest\draw3\haptic_feedback.cppm" Link="draw3\haptic_feedback.cppm">
-      <CompileAs>CompileAsCppModule</CompileAs>
-    </ClCompile>
-    <ClCompile Include="..\inkStrokeModelerTest\draw3\realtime_stylus.cpp" Link="draw3\realtime_stylus.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\haptic_feedback.cppm" Link="draw3\haptic_feedback.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\pen_cursor.cpp" Link="draw3\pen_cursor.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\pen_cursor.cppm" Link="draw3\pen_cursor.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\realtime_stylus.cpp" Link="draw3\realtime_stylus.cpp" />
     <ClCompile Include="..\inkStrokeModelerTest\draw3\realtime_stylus.cppm" Link="draw3\realtime_stylus.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>

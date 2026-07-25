@@ -82,7 +82,7 @@ int wmain(int argc, wchar_t* argv[])
 	window.SetGpuTransparentComposition(presentation.IsGpuTransparentComposition()); // 让窗口过程按当前透明模式处理背景和重绘。
 
 	draw3::RealTimeStylusInput stylus;
-	if (!stylus.Initialize(window.Handle(), input))
+	if (!stylus.Initialize(window.Handle(), input, &window))
 	{
 		std::cout << "Failed to initialize RealTimeStylus multi-contact input." << std::endl;
 		return -1; // 本阶段不回退到旧鼠标轮询。

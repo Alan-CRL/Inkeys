@@ -35,6 +35,12 @@ namespace draw3
 		constexpr float kHalfPi = kPi * 0.5f;
 		constexpr float kTwoPi = kPi * 2.0f;
 		constexpr float kTiltLimit = kHalfPi - 0.0001f;
+		constexpr RealTimeStylusDataInterest kRtsDataInterest =
+			static_cast<RealTimeStylusDataInterest>(
+				RTSDI_RealTimeStylusEnabled | RTSDI_RealTimeStylusDisabled |
+				RTSDI_StylusInRange | RTSDI_StylusOutOfRange | RTSDI_InAirPackets |
+				RTSDI_StylusDown | RTSDI_Packets | RTSDI_StylusUp |
+				RTSDI_TabletAdded | RTSDI_TabletRemoved | RTSDI_Error);
 
 		struct PacketPropertyMetadata
 		{
@@ -356,8 +362,9 @@ namespace draw3
 		class StylusSyncPlugin final : public IStylusSyncPlugin
 		{
 		public:
-			explicit StylusSyncPlugin(ContactInputCoordinator& coordinator)
-				: coordinator_(coordinator), interruptionSimulation_(coordinator)
+			StylusSyncPlugin(ContactInputCoordinator& coordinator, PenCursorEventSink* penCursorSink)
+				: coordinator_(coordinator), interruptionSimulation_(coordinator),
+				penCursorSink_(penCursorSink)
 			{
 				marshalerResult_ = CoCreateFreeThreadedMarshaler(
 					static_cast<IUnknown*>(this), freeThreadedMarshaler_.ReleaseAndGetAddressOf());
@@ -444,17 +451,25 @@ namespace draw3
 				std::cout << "[RTS] disabled." << std::endl;
 				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
 					interruptionSimulation_.Reset();
+				PublishDefaultPenCursor();
 				coordinator_.CloseAllProducerContacts(QueryQpc());
 				return S_OK;
 			}
 
-			HRESULT STDMETHODCALLTYPE StylusInRange(IRealTimeStylus*, TABLET_CONTEXT_ID, STYLUS_ID) override
+			HRESULT STDMETHODCALLTYPE StylusInRange(IRealTimeStylus* source,
+				TABLET_CONTEXT_ID contextId, STYLUS_ID) override
 			{
+				if (source)
+				{
+					// InRange 不含倒转信息；等待首个 InAir/Pointer 包决定普通笔或笔尾。
+					EnsureMetadata(source, contextId, nullptr);
+				}
 				return S_OK;
 			}
 
 			HRESULT STDMETHODCALLTYPE StylusOutOfRange(IRealTimeStylus*, TABLET_CONTEXT_ID, STYLUS_ID) override
 			{
+				PublishDefaultPenCursor();
 				return S_OK;
 			}
 
@@ -473,6 +488,7 @@ namespace draw3
 				}
 				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
+				PublishPenCursor(metadata, stylusInfo);
 				InputDeviceType deviceType = metadata ? metadata->deviceType : InputDeviceType::Pen;
 				if (deviceType == InputDeviceType::MouseLeft)
 				{
@@ -515,6 +531,7 @@ namespace draw3
 				}
 				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
+				PublishPenCursor(metadata, stylusInfo);
 				bool published = false;
 				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
 					published = interruptionSimulation_.PublishUp(
@@ -539,9 +556,14 @@ namespace draw3
 				return S_OK;
 			}
 
-			HRESULT STDMETHODCALLTYPE InAirPackets(IRealTimeStylus*, const StylusInfo*, ULONG,
+			HRESULT STDMETHODCALLTYPE InAirPackets(IRealTimeStylus* source,
+				const StylusInfo* stylusInfo, ULONG,
 				ULONG, LONG*, ULONG*, LONG**) override
 			{
+				if (!stylusInfo) return E_INVALIDARG;
+				const TabletMetadata* metadata = FindMetadata(stylusInfo->tcid);
+				if (!metadata && source) metadata = EnsureMetadata(source, stylusInfo->tcid, nullptr);
+				PublishPenCursor(metadata, stylusInfo);
 				return S_OK;
 			}
 
@@ -567,6 +589,7 @@ namespace draw3
 				}
 				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
+				PublishPenCursor(metadata, stylusInfo);
 				bool published = false;
 				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
 					published = interruptionSimulation_.PublishMove(
@@ -612,6 +635,7 @@ namespace draw3
 				// 回调只给 tablet index，无法无查询地还原 tcid；设备移除时安全取消全部活动 contact。
 				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
 					interruptionSimulation_.Reset();
+				PublishDefaultPenCursor();
 				coordinator_.CloseAllProducerContacts(QueryQpc());
 				return S_OK;
 			}
@@ -625,6 +649,7 @@ namespace draw3
 					<< " HRESULT=0x" << static_cast<unsigned long>(errorCode) << std::dec << std::endl;
 				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
 					interruptionSimulation_.Reset();
+				PublishDefaultPenCursor();
 				coordinator_.CloseAllProducerContacts(QueryQpc());
 				return S_OK;
 			}
@@ -637,14 +662,26 @@ namespace draw3
 			HRESULT STDMETHODCALLTYPE DataInterest(RealTimeStylusDataInterest* interest) override
 			{
 				if (!interest) return E_POINTER;
-				*interest = static_cast<RealTimeStylusDataInterest>(
-					RTSDI_RealTimeStylusEnabled | RTSDI_RealTimeStylusDisabled |
-					RTSDI_StylusDown | RTSDI_Packets | RTSDI_StylusUp |
-					RTSDI_TabletAdded | RTSDI_TabletRemoved | RTSDI_Error);
+				*interest = kRtsDataInterest;
 				return S_OK;
 			}
 
 		private:
+			void PublishPenCursor(const TabletMetadata* metadata,
+				const StylusInfo* stylusInfo) noexcept
+			{
+				if (!penCursorSink_ || !metadata || !stylusInfo ||
+					metadata->deviceType != InputDeviceType::Pen) return;
+				penCursorSink_->PublishPenCursorDeviceState(stylusInfo->bIsInvertedCursor != FALSE
+					? PenCursorDeviceState::InvertedPen : PenCursorDeviceState::Pen);
+			}
+
+			void PublishDefaultPenCursor() noexcept
+			{
+				if (penCursorSink_)
+					penCursorSink_->PublishPenCursorDeviceState(PenCursorDeviceState::Default);
+			}
+
 			const TabletMetadata* FindMetadata(TABLET_CONTEXT_ID contextId) const noexcept
 			{
 				for (const TabletMetadata& metadata : metadata_)
@@ -827,6 +864,7 @@ namespace draw3
 			ContactInputCoordinator& coordinator_;
 			[[no_unique_address]] InterruptedStrokeSimulation<
 				kInterruptedStrokeReconnectSimulationEnabled> interruptionSimulation_;
+			PenCursorEventSink* penCursorSink_ = nullptr;
 			std::atomic<bool> pixelScalePublished_ = false;
 			float inkToPixelScaleX_ = 1.0f;
 			float inkToPixelScaleY_ = 1.0f;
@@ -868,6 +906,14 @@ namespace draw3
 			hasAzimuthAltitude, azimuth, altitude, xTilt, yTilt);
 		return { decoded.tilt, decoded.orientation };
 	}
+
+	bool RtsPenCursorDataInterestEnabledForTesting() noexcept
+	{
+		const uint32_t dataInterest = static_cast<uint32_t>(kRtsDataInterest);
+		return (dataInterest & static_cast<uint32_t>(RTSDI_StylusInRange)) != 0 &&
+			(dataInterest & static_cast<uint32_t>(RTSDI_StylusOutOfRange)) != 0 &&
+			(dataInterest & static_cast<uint32_t>(RTSDI_InAirPackets)) != 0;
+	}
 #endif
 
 	struct RealTimeStylusInputImpl
@@ -876,6 +922,7 @@ namespace draw3
 		Microsoft::WRL::ComPtr<IRealTimeStylus3> stylus3;
 		Microsoft::WRL::ComPtr<IStylusSyncPlugin> plugin;
 		ContactInputCoordinator* coordinator = nullptr;
+		PenCursorEventSink* penCursorSink = nullptr;
 		bool comInitialized = false;
 		bool pluginAdded = false;
 		bool initialized = false;
@@ -891,10 +938,12 @@ namespace draw3
 		Shutdown();
 	}
 
-	bool RealTimeStylusInput::Initialize(HWND window, ContactInputCoordinator& coordinator)
+	bool RealTimeStylusInput::Initialize(HWND window, ContactInputCoordinator& coordinator,
+		PenCursorEventSink* penCursorSink)
 	{
 		if (!window || impl_->initialized) return false;
 		impl_->coordinator = &coordinator;
+		impl_->penCursorSink = penCursorSink;
 		DWORD windowProcessId = 0;
 		const DWORD windowThreadId = GetWindowThreadProcessId(window, &windowProcessId);
 		std::cout << "[RTS] initialize currentThread=" << GetCurrentThreadId()
@@ -910,6 +959,7 @@ namespace draw3
 		{
 			LogHResult("CoInitializeEx(COINIT_MULTITHREADED)", result);
 			impl_->coordinator = nullptr;
+			impl_->penCursorSink = nullptr;
 			return false;
 		}
 		impl_->comInitialized = true;
@@ -979,7 +1029,7 @@ namespace draw3
 			return false;
 		}
 
-		auto* plugin = new (std::nothrow) StylusSyncPlugin(coordinator);
+		auto* plugin = new (std::nothrow) StylusSyncPlugin(coordinator, penCursorSink);
 		if (!plugin)
 		{
 			Shutdown();
@@ -1031,10 +1081,13 @@ namespace draw3
 		}
 
 		if (impl_->coordinator) impl_->coordinator->CloseAllProducerContacts(QueryQpc());
+		if (impl_->penCursorSink)
+			impl_->penCursorSink->PublishPenCursorDeviceState(PenCursorDeviceState::Default);
 		impl_->plugin.Reset();
 		impl_->stylus3.Reset();
 		impl_->stylus.Reset();
 		impl_->coordinator = nullptr;
+		impl_->penCursorSink = nullptr;
 		impl_->initialized = false;
 		if (impl_->comInitialized)
 		{
