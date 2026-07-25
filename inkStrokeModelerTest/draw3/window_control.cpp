@@ -5,6 +5,7 @@
 #endif
 
 #include <windows.h>
+#include <windowsx.h>
 #include <dwmapi.h>
 #include <tpcshrd.h>
 #include "../HiEasyX.h"
@@ -21,7 +22,7 @@ namespace draw3
 
 	namespace
 	{
-		constexpr UINT kApplyPenCursorMessage = WM_APP + 1;
+		constexpr UINT kApplySystemCursorMessage = WM_APP + 1;
 		constexpr LONG_PTR kPromotedPointerSignatureMask = 0xFFFFFF00;
 		constexpr LONG_PTR kPromotedPointerSignature = 0xFF515700;
 
@@ -89,6 +90,18 @@ namespace draw3
 				kPromotedPointerSignature;
 		}
 
+		DrawingCursorPointerAuthority AuthorityForPointerType(
+			POINTER_INPUT_TYPE pointerType) noexcept
+		{
+			switch (pointerType)
+			{
+			case PT_PEN: return DrawingCursorPointerAuthority::Pen;
+			case PT_MOUSE: return DrawingCursorPointerAuthority::Mouse;
+			case PT_TOUCH: return DrawingCursorPointerAuthority::Touch;
+			default: return DrawingCursorPointerAuthority::Unknown;
+			}
+		}
+
 		RECT GetPrimaryMonitorRectangle()
 		{
 			const POINT origin = { 0, 0 };
@@ -102,14 +115,7 @@ namespace draw3
 
 	WindowController::~WindowController()
 	{
-		if (penCursor_) DestroyCursor(penCursor_);
-		if (highlighterCursor_) DestroyCursor(highlighterCursor_);
-		if (eraserCursor_) DestroyCursor(eraserCursor_);
-		if (eraserContactCursor_) DestroyCursor(eraserContactCursor_);
-		penCursor_ = nullptr;
-		highlighterCursor_ = nullptr;
-		eraserCursor_ = nullptr;
-		eraserContactCursor_ = nullptr;
+		if (activeController_ == this) activeController_ = nullptr;
 	}
 
 	bool WindowController::Initialize(bool preconfigureNoRedirectionBitmap)
@@ -203,6 +209,11 @@ namespace draw3
 		return compositionChangedRequested_.exchange(false, std::memory_order_acquire);
 	}
 
+	bool WindowController::ConsumeDrawingCursorRenderRequest()
+	{
+		return drawingCursorRenderRequested_.exchange(false, std::memory_order_acquire);
+	}
+
 	void WindowController::RequestFullPresent()
 	{
 		fullPresentRequested_.store(true, std::memory_order_release);
@@ -234,82 +245,142 @@ namespace draw3
 	bool WindowController::ConfigureDrawingCursor(
 		DrawingTool tool, const DrawingCursorAppearance& appearance)
 	{
-		HCURSOR cursor = CreateDrawingCursor(appearance);
-		if (!cursor)
+		if (!IsValidDrawingCursorAppearance(appearance))
 		{
-			std::cout << "Create drawing cursor failed for tool="
+			std::cout << "Invalid drawing cursor appearance for tool="
 				<< static_cast<uint32_t>(tool) << std::endl;
 			return false;
 		}
-		if (tool == DrawingTool::Eraser)
-		{
-			DrawingCursorAppearance contactAppearance = appearance;
-			contactAppearance.opacity = 1.0f;
-			HCURSOR contactCursor = CreateDrawingCursor(contactAppearance);
-			if (!contactCursor)
-			{
-				DestroyCursor(cursor);
-				std::cout << "Create eraser contact cursor failed." << std::endl;
-				return false;
-			}
-			if (eraserCursor_) DestroyCursor(eraserCursor_);
-			if (eraserContactCursor_) DestroyCursor(eraserContactCursor_);
-			eraserCursor_ = cursor;
-			eraserContactCursor_ = contactCursor;
-		}
-		else
-		{
-			HCURSOR& target = tool == DrawingTool::Pen ? penCursor_ : highlighterCursor_;
-			if (target) DestroyCursor(target);
-			target = cursor;
-		}
-		QueuePenCursorRefresh();
+		if (tool == DrawingTool::Pen) penCursorAppearance_ = appearance;
+		else if (tool == DrawingTool::Highlighter) highlighterCursorAppearance_ = appearance;
+		else eraserCursorAppearance_ = appearance;
+		RequestDrawingCursorRender();
 		return true;
 	}
 
-	void WindowController::SetActivePenCursorTool(DrawingTool tool) noexcept
+	DrawingCursorAppearance WindowController::CursorAppearanceForTool(
+		DrawingTool tool) const noexcept
+	{
+		if (tool == DrawingTool::Pen) return penCursorAppearance_;
+		if (tool == DrawingTool::Highlighter) return highlighterCursorAppearance_;
+		return eraserCursorAppearance_;
+	}
+
+	void WindowController::SetActiveDrawingCursorTool(DrawingTool tool) noexcept
 	{
 		const int32_t encoded = static_cast<int32_t>(tool);
-		if (activePenCursorTool_.exchange(encoded, std::memory_order_acq_rel) != encoded)
-			QueuePenCursorRefresh();
+		if (activeDrawingCursorTool_.exchange(encoded, std::memory_order_acq_rel) != encoded)
+		{
+			RequestDrawingCursorRender();
+			QueueSystemCursorRefresh();
+		}
 	}
 
-	void WindowController::ClearActivePenCursorTool() noexcept
+	void WindowController::ClearActiveDrawingCursorTool() noexcept
 	{
-		if (activePenCursorTool_.exchange(-1, std::memory_order_acq_rel) != -1)
-			QueuePenCursorRefresh();
+		if (activeDrawingCursorTool_.exchange(-1, std::memory_order_acq_rel) != -1)
+		{
+			RequestDrawingCursorRender();
+			QueueSystemCursorRefresh();
+		}
 	}
 
-	void WindowController::PublishPenCursorDeviceState(PenCursorDeviceState state) noexcept
+	DrawingTool WindowController::EffectiveDrawingCursorTool() const noexcept
 	{
-		if (state != PenCursorDeviceState::Default && !ResolveGetPointerType())
-			penCursorPointerAuthority_.store(
-				PenCursorPointerAuthority::Unknown, std::memory_order_release);
-		if (penCursorDeviceState_.exchange(state, std::memory_order_acq_rel) != state)
-			QueuePenCursorRefresh();
-	}
-
-	void WindowController::QueuePenCursorRefresh() noexcept
-	{
-		if (!window_ || penCursorRefreshPosted_.exchange(true, std::memory_order_acq_rel)) return;
-		if (!PostMessageW(window_, kApplyPenCursorMessage, 0, 0))
-			penCursorRefreshPosted_.store(false, std::memory_order_release);
-	}
-
-	void WindowController::SetPenCursorPointerAuthority(
-		PenCursorPointerAuthority authority) noexcept
-	{
-		if (penCursorPointerAuthority_.exchange(authority, std::memory_order_acq_rel) != authority)
-			QueuePenCursorRefresh();
-	}
-
-	DrawingTool WindowController::EffectivePenCursorTool() const noexcept
-	{
-		const int32_t activeTool = activePenCursorTool_.load(std::memory_order_acquire);
+		const int32_t activeTool = activeDrawingCursorTool_.load(std::memory_order_acquire);
 		if (activeTool >= static_cast<int32_t>(DrawingTool::Pen) &&
 			activeTool <= static_cast<int32_t>(DrawingTool::Eraser))
 			return static_cast<DrawingTool>(activeTool);
 		return ActiveTool();
+	}
+
+	DrawingCursorPointerAuthority WindowController::CursorPointerAuthority() const noexcept
+	{
+		return drawingCursorPointerAuthority_.load(std::memory_order_acquire);
+	}
+
+	bool WindowController::ReadPenCursorSample(DrawingCursorSample& sample) const noexcept
+	{
+		return penCursorSample_.Read(sample);
+	}
+
+	bool WindowController::ReadMouseCursorSample(DrawingCursorSample& sample) const noexcept
+	{
+		return mouseCursorSample_.Read(sample);
+	}
+
+	void WindowController::PublishPenCursorSample(
+		const DrawingCursorSample& sample) noexcept
+	{
+		DrawingCursorSample previous;
+		penCursorSample_.Read(previous);
+		if (!penCursorSample_.Publish(sample)) return;
+		if (!ResolveGetPointerType())
+			drawingCursorPointerAuthority_.store(
+				DrawingCursorPointerAuthority::Unknown, std::memory_order_release);
+		RequestDrawingCursorRender();
+		if (previous.valid != sample.valid || previous.inContact != sample.inContact ||
+			previous.inverted != sample.inverted) QueueSystemCursorRefresh();
+	}
+
+	void WindowController::ClearPenCursorSample() noexcept
+	{
+		if (!penCursorSample_.Clear()) return;
+		RequestDrawingCursorRender();
+		QueueSystemCursorRefresh();
+	}
+
+	void WindowController::PublishMouseCursorSample(
+		const DrawingCursorSample& sample) noexcept
+	{
+		DrawingCursorSample previous;
+		mouseCursorSample_.Read(previous);
+		if (!mouseCursorSample_.Publish(sample)) return;
+		RequestDrawingCursorRender();
+		if (previous.valid != sample.valid || previous.inContact != sample.inContact)
+			QueueSystemCursorRefresh();
+	}
+
+	void WindowController::ClearMouseCursorSample() noexcept
+	{
+		if (!mouseCursorSample_.Clear()) return;
+		RequestDrawingCursorRender();
+		QueueSystemCursorRefresh();
+	}
+
+	bool WindowController::ShouldIgnoreMouseCursorMessage() const noexcept
+	{
+		if (IsPromotedPointerMouseMessage()) return true;
+		const DrawingCursorPointerAuthority authority =
+			drawingCursorPointerAuthority_.load(std::memory_order_acquire);
+		if (authority == DrawingCursorPointerAuthority::Pen) return true;
+		if (ResolveGetPointerType()) return false;
+
+		// Windows 7 没有 Pointer API：Pen 仍在 RTS range 内时，低优先级鼠标消息不得抢占。
+		DrawingCursorSample penSample;
+		return penCursorSample_.Read(penSample) && penSample.valid;
+	}
+
+	void WindowController::RequestDrawingCursorRender() noexcept
+	{
+		drawingCursorRenderRequested_.store(true, std::memory_order_release);
+		RequestControlWake();
+	}
+
+	void WindowController::QueueSystemCursorRefresh() noexcept
+	{
+		if (!window_ || systemCursorRefreshPosted_.exchange(true, std::memory_order_acq_rel)) return;
+		if (!PostMessageW(window_, kApplySystemCursorMessage, 0, 0))
+			systemCursorRefreshPosted_.store(false, std::memory_order_release);
+	}
+
+	void WindowController::SetDrawingCursorPointerAuthority(
+		DrawingCursorPointerAuthority authority) noexcept
+	{
+		if (drawingCursorPointerAuthority_.exchange(authority,
+			std::memory_order_acq_rel) == authority) return;
+		RequestDrawingCursorRender();
+		QueueSystemCursorRefresh();
 	}
 
 	void WindowController::ApplyWindowCursor() noexcept
@@ -319,33 +390,15 @@ namespace draw3
 		const HWND cursorWindow = WindowFromPoint(cursorPosition);
 		if (cursorWindow != window_ && (!cursorWindow || !IsChild(window_, cursorWindow)))
 			return; // 私有刷新消息不能改变其他窗口当前拥有的系统光标。
-		const DrawingTool tool = EffectivePenCursorTool();
-		const PenCursorDeviceState deviceState =
-			penCursorDeviceState_.load(std::memory_order_acquire);
-		const PenCursorPointerAuthority pointerAuthority =
-			penCursorPointerAuthority_.load(std::memory_order_acquire);
-		const bool eraserCursor = ShouldShowEraserCursor(
-			deviceState, pointerAuthority, tool == DrawingTool::Eraser);
-		if (eraserCursor)
-		{
-			const HCURSOR cursor = IsPenCursorContact(deviceState)
-				? eraserContactCursor_ : eraserCursor_;
-			SetCursor(cursor ? cursor : defaultCursor_);
-			return;
-		}
-		HCURSOR drawingCursor = nullptr;
-		if (tool == DrawingTool::Pen) drawingCursor = penCursor_;
-		else if (tool == DrawingTool::Highlighter) drawingCursor = highlighterCursor_;
-		if (ShouldHideDrawingCursor(deviceState, pointerAuthority))
-		{
-			SetCursor(nullptr); // 仅隐藏当前窗口当前光标，不使用全局计数式 ShowCursor。
-			return;
-		}
-		const bool showDrawingCursor = drawingCursor && ShouldShowDrawingCursor(
-			deviceState,
-			pointerAuthority,
-			tool == DrawingTool::Pen || tool == DrawingTool::Highlighter);
-		SetCursor(showDrawingCursor ? drawingCursor : defaultCursor_);
+		DrawingCursorSample penSample;
+		DrawingCursorSample mouseSample;
+		penCursorSample_.Read(penSample);
+		mouseCursorSample_.Read(mouseSample);
+		const DrawingTool tool = EffectiveDrawingCursorTool();
+		const bool hide = ShouldHideSystemDrawingCursor(
+			drawingCursorPointerAuthority_.load(std::memory_order_acquire),
+			tool == DrawingTool::Eraser, penSample.valid, mouseSample.valid);
+		SetCursor(hide ? nullptr : defaultCursor_); // 仅影响当前 HWND，不使用全局计数式 ShowCursor。
 	}
 
 	bool WindowController::ConsumeHapticPointerId(uint32_t& pointerId, bool& eraserHint)
@@ -378,8 +431,8 @@ namespace draw3
 		const bool gpuTransparent = gpuTransparentComposition_.load(std::memory_order_acquire); // GPU 透明模式下由 backbuffer 负责背景。
 		switch (message)
 		{
-		case kApplyPenCursorMessage:
-			penCursorRefreshPosted_.store(false, std::memory_order_release);
+		case kApplySystemCursorMessage:
+			systemCursorRefreshPosted_.store(false, std::memory_order_release);
 			ApplyWindowCursor();
 			return 0;
 
@@ -399,10 +452,10 @@ namespace draw3
 		{
 			const uint32_t pointerId = static_cast<uint32_t>(LOWORD(wParam));
 			const PointerDetails details = QueryPointerDetails(pointerId);
-			if (details.typeKnown && details.type == PT_PEN)
+			if (details.typeKnown)
 			{
-				SetPenCursorPointerAuthority(PenCursorPointerAuthority::Unknown);
-				PublishPenCursorDeviceState(PenCursorDeviceState::Default);
+				if (details.type == PT_PEN) ClearPenCursorSample();
+				SetDrawingCursorPointerAuthority(DrawingCursorPointerAuthority::Unknown);
 			}
 			lastHapticPenInfoPointerId_ = 0;
 			lastHapticPenInfoKnown_ = false;
@@ -419,20 +472,7 @@ namespace draw3
 			const uint32_t pointerId = static_cast<uint32_t>(LOWORD(wParam));
 			const PointerDetails details = QueryPointerDetails(pointerId);
 			if (details.typeKnown)
-			{
-				if (details.type == PT_PEN)
-				{
-					SetPenCursorPointerAuthority(PenCursorPointerAuthority::Pen);
-					const bool inContact = details.penInfoKnown
-						? details.inContact : message == WM_POINTERDOWN;
-					PublishPenCursorDeviceState(ResolvePenCursorDeviceState(
-						details.penInfoKnown && details.eraserHint, inContact));
-				}
-				else
-				{
-					SetPenCursorPointerAuthority(PenCursorPointerAuthority::NonPen);
-				}
-			}
+				SetDrawingCursorPointerAuthority(AuthorityForPointerType(details.type));
 			if ((message == WM_POINTERENTER || message == WM_POINTERDOWN) && pointerId != 0)
 			{
 				if (pointerId != lastHapticPenInfoPointerId_ || !lastHapticPenInfoKnown_)
@@ -454,10 +494,11 @@ namespace draw3
 		}
 
 		case WM_DESTROY:
-			penCursorDeviceState_.store(PenCursorDeviceState::Default, std::memory_order_release);
-			penCursorPointerAuthority_.store(
-				PenCursorPointerAuthority::NonPen, std::memory_order_release);
-			ApplyWindowCursor();
+			penCursorSample_.Clear();
+			mouseCursorSample_.Clear();
+			drawingCursorPointerAuthority_.store(
+				DrawingCursorPointerAuthority::Unknown, std::memory_order_release);
+			SetCursor(defaultCursor_);
 			RemoveProp(window, MICROSOFT_TABLETPENSERVICE_PROPERTY);
 			exitRequested_.store(true, std::memory_order_release); // 通知主循环退出。
 			RequestControlWake();
@@ -514,16 +555,45 @@ namespace draw3
 
 		case WM_MOUSEMOVE:
 		case WM_LBUTTONDOWN:
+		case WM_LBUTTONUP:
 		case WM_RBUTTONDOWN:
+		case WM_RBUTTONUP:
 		case WM_MBUTTONDOWN:
+		case WM_MBUTTONUP:
+		{
+			if (ShouldIgnoreMouseCursorMessage()) break;
+			SetDrawingCursorPointerAuthority(DrawingCursorPointerAuthority::Mouse);
+			if (message == WM_MOUSEMOVE && !trackingMouseLeave_)
+			{
+				TRACKMOUSEEVENT tracking = { sizeof(TRACKMOUSEEVENT), TME_LEAVE, window, 0 };
+				trackingMouseLeave_ = TrackMouseEvent(&tracking) != FALSE;
+			}
+			const bool buttonDown = message == WM_LBUTTONDOWN || message == WM_RBUTTONDOWN ||
+				message == WM_MBUTTONDOWN ||
+				(wParam & (MK_LBUTTON | MK_RBUTTON | MK_MBUTTON)) != 0;
+			DrawingCursorSample sample;
+			sample.x = static_cast<float>(GET_X_LPARAM(lParam));
+			sample.y = static_cast<float>(GET_Y_LPARAM(lParam));
+			sample.valid = true;
+			sample.inContact = buttonDown;
+			LARGE_INTEGER qpc = {};
+			QueryPerformanceCounter(&qpc);
+			sample.qpc = qpc.QuadPart;
+			PublishMouseCursorSample(sample);
+			break;
+		}
+
+		case WM_MOUSELEAVE:
+			trackingMouseLeave_ = false;
+			ClearMouseCursorSample();
+			if (drawingCursorPointerAuthority_.load(std::memory_order_acquire) ==
+				DrawingCursorPointerAuthority::Mouse)
+				SetDrawingCursorPointerAuthority(DrawingCursorPointerAuthority::Unknown);
+			break;
+
 		case WM_MOUSEWHEEL:
-			// Pointer API 已确认 Pen 时忽略低优先级鼠标消息；旧系统由 RTS in-range 保持相同语义。
-			if (!IsPromotedPointerMouseMessage() &&
-				penCursorPointerAuthority_.load(std::memory_order_acquire) !=
-					PenCursorPointerAuthority::Pen &&
-				penCursorDeviceState_.load(std::memory_order_acquire) ==
-					PenCursorDeviceState::Default)
-				SetPenCursorPointerAuthority(PenCursorPointerAuthority::NonPen);
+			if (!ShouldIgnoreMouseCursorMessage())
+				SetDrawingCursorPointerAuthority(DrawingCursorPointerAuthority::Mouse);
 			break;
 
 		case WM_KEYDOWN:
@@ -537,17 +607,20 @@ namespace draw3
 			case '1':
 			case VK_NUMPAD1:
 				activeTool_.store(DrawingTool::Pen, std::memory_order_relaxed);
-				QueuePenCursorRefresh();
+				RequestDrawingCursorRender();
+				QueueSystemCursorRefresh();
 				return 0;
 			case '2':
 			case VK_NUMPAD2:
 				activeTool_.store(DrawingTool::Highlighter, std::memory_order_relaxed);
-				QueuePenCursorRefresh();
+				RequestDrawingCursorRender();
+				QueueSystemCursorRefresh();
 				return 0;
 			case '3':
 			case VK_NUMPAD3:
 				activeTool_.store(DrawingTool::Eraser, std::memory_order_relaxed);
-				QueuePenCursorRefresh();
+				RequestDrawingCursorRender();
+				QueueSystemCursorRefresh();
 				return 0;
 			case '9':
 			case VK_NUMPAD9:

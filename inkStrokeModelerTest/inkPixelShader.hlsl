@@ -68,6 +68,25 @@ float GetFixedNibSweepDist(float2 p, float2 p1, float2 p2, float2 halfSize)
     return distanceToSweep;
 }
 
+float GetRectangleDist(float2 p, float2 halfSize)
+{
+    float2 q = abs(p) - halfSize;
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+}
+
+float GetVerticalCapsuleDist(float2 p, float radius, float halfHeight)
+{
+    float segmentHalfHeight = max(halfHeight - radius, 0.0);
+    p.y -= clamp(p.y, -segmentHalfHeight, segmentHalfHeight);
+    return length(p) - radius;
+}
+
+float CursorCoverage(float distanceToShape)
+{
+    // 与旧 CPU 栅格器一致，零等值线两侧共使用 1px 线性 AA。
+    return saturate(0.5 - distanceToShape);
+}
+
 struct OperatorOutput
 {
     float4 add : SV_Target0;
@@ -80,6 +99,48 @@ OperatorOutput main(PS_INPUT input)
 
     if (any(isnan(input.p1)) || any(isnan(input.p2)))
         discard;
+
+    if (type >= 4 && type <= 6)
+    {
+        float2 local = input.pixPos - input.p1;
+        float distanceToShape = type == 5
+            ? GetRectangleDist(local, input.p2)
+            : length(local) - min(input.p2.x, input.p2.y);
+        float outerCoverage = CursorCoverage(distanceToShape);
+        float innerCoverage = CursorCoverage(distanceToShape + max(input.r1, 0.0));
+        float outlineCoverage = max(0.0, outerCoverage - innerCoverage);
+        float opacity = saturate(input.color.a);
+        float outlineAlpha = outlineCoverage * opacity;
+        float fillAlpha = innerCoverage * saturate(input.r2) * opacity;
+        float alpha = outlineAlpha + fillAlpha;
+        float3 outlineColor = saturate(globalPadding);
+        float3 rgb = 0.0;
+        if (alpha > 0.0)
+            rgb = (outlineAlpha * outlineColor + fillAlpha * saturate(input.color.rgb)) / alpha;
+
+        if (type == 6)
+        {
+            float diameter = min(input.p2.x, input.p2.y) * 2.0;
+            float stripeRadius = diameter * 0.05;
+            float stripeHalfHeight = diameter * 0.24;
+            float stripeOffset = diameter * 0.12;
+            float stripeCoverage = max(
+                CursorCoverage(GetVerticalCapsuleDist(
+                    local - float2(-stripeOffset, 0.0), stripeRadius, stripeHalfHeight)),
+                CursorCoverage(GetVerticalCapsuleDist(
+                    local - float2(stripeOffset, 0.0), stripeRadius, stripeHalfHeight)));
+            stripeCoverage = min(stripeCoverage, innerCoverage);
+            rgb += stripeCoverage * (outlineColor - rgb);
+            alpha += stripeCoverage * (opacity - alpha);
+        }
+
+        if (alpha <= 0.0)
+            discard;
+        OperatorOutput cursorOutput;
+        cursorOutput.add = float4(rgb * alpha, alpha);
+        cursorOutput.retain = (1.0 - alpha).xxxx;
+        return cursorOutput;
+    }
 
     if (type == 1 || type == 2)
     {

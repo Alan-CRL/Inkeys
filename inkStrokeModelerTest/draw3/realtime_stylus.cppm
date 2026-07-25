@@ -31,7 +31,7 @@ export namespace draw3
 
 		// 初始化 MTA COM、RTS、多点接口和同步插件；任一步失败均返回 false。
 		bool Initialize(HWND window, ContactInputCoordinator& coordinator,
-			PenCursorEventSink* penCursorSink = nullptr);
+			DrawingCursorEventSink* drawingCursorSink = nullptr);
 		// 先停止回调、移除插件，再取消生产者持有的 contact 并释放 COM。
 		void Shutdown() noexcept;
 		bool IsInitialized() const noexcept;

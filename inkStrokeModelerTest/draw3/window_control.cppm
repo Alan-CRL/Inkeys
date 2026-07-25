@@ -15,7 +15,7 @@ import draw3.pen_cursor;
 
 export namespace draw3
 {
-	// 表示鼠标左键当前使用的绘制工具。
+	// 表示当前选择或活动 contact 锁定的绘制工具。
 	enum class DrawingTool
 	{
 		Pen,
@@ -38,8 +38,8 @@ export namespace draw3
 		int y = 0;
 	};
 
-	// 管理窗口创建、消息回调及跨线程控制请求。
-	class WindowController : public PenCursorEventSink
+	// 管理窗口创建、消息回调、系统光标和跨线程瞬态光标请求。
+	class WindowController : public DrawingCursorEventSink
 	{
 	public:
 		~WindowController() override;
@@ -65,6 +65,8 @@ export namespace draw3
 		bool ConsumeFullPresentRequest();
 		// 消费一次 DWM 合成状态变化请求。
 		bool ConsumeCompositionChangedRequest();
+		// 消费一次合并的瞬态光标重绘请求。
+		bool ConsumeDrawingCursorRenderRequest();
 		// 请求下一帧执行全画布呈现。
 		void RequestFullPresent();
 		// 关联非拥有的输入协调器，使窗口控制请求能唤醒空闲绘制线程。
@@ -73,13 +75,19 @@ export namespace draw3
 		void SetGpuTransparentComposition(bool enabled);
 		// 返回当前绘制工具。
 		DrawingTool ActiveTool() const;
-		// 配置 Pen/Highlighter/Eraser 的当前笔尖光标；应在窗口显示前完成。
-		bool ConfigureDrawingCursor(DrawingTool tool, const DrawingCursorAppearance& appearance);
-		// 活动 Pen 笔画锁定有效工具；无活动 Pen 时传回悬停选择。
-		void SetActivePenCursorTool(DrawingTool tool) noexcept;
-		void ClearActivePenCursorTool() noexcept;
-		// RTS 同步插件只发布设备状态，窗口线程负责真正调用 SetCursor。
-		void PublishPenCursorDeviceState(PenCursorDeviceState state) noexcept override;
+		// 配置 Pen/Highlighter/Eraser 的应用内瞬态光标外观。
+		bool ConfigureDrawingCursor(DrawingTool tool,
+			const DrawingCursorAppearance& appearance);
+		DrawingCursorAppearance CursorAppearanceForTool(DrawingTool tool) const noexcept;
+		// 活动 Pen/Mouse contact 锁定有效工具；没有主指针 contact 时恢复批次选择。
+		void SetActiveDrawingCursorTool(DrawingTool tool) noexcept;
+		void ClearActiveDrawingCursorTool() noexcept;
+		DrawingTool EffectiveDrawingCursorTool() const noexcept;
+		DrawingCursorPointerAuthority CursorPointerAuthority() const noexcept;
+		bool ReadPenCursorSample(DrawingCursorSample& sample) const noexcept;
+		bool ReadMouseCursorSample(DrawingCursorSample& sample) const noexcept;
+		void PublishPenCursorSample(const DrawingCursorSample& sample) noexcept override;
+		void ClearPenCursorSample() noexcept override;
 		// 消费最近一次 Pointer 消息中的 pointerId 和笔尾提示；仅用于触觉预启动。
 		bool ConsumeHapticPointerId(uint32_t& pointerId, bool& eraserHint);
 		bool ConsumeHapticPointerLeave();
@@ -90,10 +98,14 @@ export namespace draw3
 		static LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 		LRESULT HandleWindowMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 		void RequestControlWake();
-		void QueuePenCursorRefresh() noexcept;
-		void SetPenCursorPointerAuthority(PenCursorPointerAuthority authority) noexcept;
+		void RequestDrawingCursorRender() noexcept;
+		void QueueSystemCursorRefresh() noexcept;
+		void SetDrawingCursorPointerAuthority(
+			DrawingCursorPointerAuthority authority) noexcept;
+		void PublishMouseCursorSample(const DrawingCursorSample& sample) noexcept;
+		void ClearMouseCursorSample() noexcept;
+		bool ShouldIgnoreMouseCursorMessage() const noexcept;
 		void ApplyWindowCursor() noexcept;
-		DrawingTool EffectivePenCursorTool() const noexcept;
 
 		static WindowController* activeController_;
 		HWND window_ = nullptr;
@@ -102,6 +114,7 @@ export namespace draw3
 		std::atomic<bool> resizeRequested_ = false;
 		std::atomic<bool> fullPresentRequested_ = false;
 		std::atomic<bool> compositionChangedRequested_ = false;
+		std::atomic<bool> drawingCursorRenderRequested_ = false;
 		std::atomic<bool> exitRequested_ = false;
 		std::atomic<bool> gpuTransparentComposition_ = false;
 		std::atomic<int> pendingResizeWidth_ = 0;
@@ -111,19 +124,20 @@ export namespace draw3
 		std::atomic<bool> hapticPointerIdRequested_ = false;
 		std::atomic<bool> hapticPointerLeaveRequested_ = false;
 		std::atomic<DrawingTool> activeTool_ = DrawingTool::Pen;
-		std::atomic<int32_t> activePenCursorTool_ = -1;
-		std::atomic<PenCursorDeviceState> penCursorDeviceState_ = PenCursorDeviceState::Default;
-		std::atomic<PenCursorPointerAuthority> penCursorPointerAuthority_ =
-			PenCursorPointerAuthority::Unknown;
-		std::atomic<bool> penCursorRefreshPosted_ = false;
+		std::atomic<int32_t> activeDrawingCursorTool_ = -1;
+		std::atomic<DrawingCursorPointerAuthority> drawingCursorPointerAuthority_ =
+			DrawingCursorPointerAuthority::Unknown;
+		std::atomic<bool> systemCursorRefreshPosted_ = false;
 		std::atomic<ContactInputCoordinator*> inputCoordinator_ = nullptr;
+		DrawingCursorSampleMailbox penCursorSample_;
+		DrawingCursorSampleMailbox mouseCursorSample_;
+		DrawingCursorAppearance penCursorAppearance_ = {};
+		DrawingCursorAppearance highlighterCursorAppearance_ = {};
+		DrawingCursorAppearance eraserCursorAppearance_ = {};
 		HCURSOR defaultCursor_ = nullptr;
-		HCURSOR penCursor_ = nullptr;
-		HCURSOR highlighterCursor_ = nullptr;
-		HCURSOR eraserCursor_ = nullptr;
-		HCURSOR eraserContactCursor_ = nullptr;
 		uint32_t lastHapticPenInfoPointerId_ = 0;
 		bool lastHapticPenInfoKnown_ = false;
 		bool lastHapticPenInfoEraser_ = false;
+		bool trackingMouseLeave_ = false;
 	};
 }

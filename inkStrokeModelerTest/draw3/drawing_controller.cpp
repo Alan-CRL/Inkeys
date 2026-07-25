@@ -1227,13 +1227,68 @@ namespace draw3
 		bool timerPeriodAttempted = false;
 		double lastActiveFrameStartMs = 0.0;
 		bool hapticContinuousActive = false;
+		std::vector<DrawingCursorVisual> previousCursorVisuals;
+		std::vector<DrawingCursorVisual> currentCursorVisuals;
+		previousCursorVisuals.reserve(kPreheatedStrokeCount + 1);
+		currentCursorVisuals.reserve(kPreheatedStrokeCount + 1);
+
+		auto buildDrawingCursorVisuals = [&]()
+		{
+			currentCursorVisuals.clear();
+			DrawingCursorSample penSample;
+			DrawingCursorSample mouseSample;
+			window_.ReadPenCursorSample(penSample);
+			window_.ReadMouseCursorSample(mouseSample);
+			const DrawingTool cursorTool = window_.EffectiveDrawingCursorTool();
+			const DrawingCursorVisual primary = ResolvePrimaryDrawingCursorVisual(
+				penSample, mouseSample, window_.CursorPointerAuthority(),
+				window_.CursorAppearanceForTool(cursorTool),
+				window_.CursorAppearanceForTool(DrawingTool::Eraser),
+				cursorTool == DrawingTool::Eraser);
+			if (primary.visible) currentCursorVisuals.push_back(primary);
+
+			const DrawingCursorAppearance eraserAppearance =
+				window_.CursorAppearanceForTool(DrawingTool::Eraser);
+			for (const RuntimeStroke* runtime : active)
+			{
+				if (!runtime || runtime->ended || runtime->awaitingReconnect ||
+					runtime->metricDeviceType != InputDeviceType::Touch ||
+					runtime->tool != DrawingTool::Eraser) continue;
+				const ContactSnapshot& snapshot = runtime->lastModelSnapshot;
+				const DrawingCursorVisual touchVisual = MakeTouchEraserDrawingCursorVisual(
+					snapshot.position.x, snapshot.position.y, eraserAppearance);
+				if (touchVisual.visible) currentCursorVisuals.push_back(touchVisual);
+			}
+		};
+
+		auto cursorVisualsEquivalent = [&]() noexcept
+		{
+			if (previousCursorVisuals.size() != currentCursorVisuals.size()) return false;
+			for (size_t index = 0; index < currentCursorVisuals.size(); ++index)
+			{
+				if (!AreDrawingCursorVisualsEquivalent(
+					previousCursorVisuals[index], currentCursorVisuals[index])) return false;
+			}
+			return true;
+		};
+
+		auto cursorVisualBounds = [&](const std::vector<DrawingCursorVisual>& visuals)
+		{
+			RECT bounds = {};
+			const WindowSize size = window_.Size();
+			for (const DrawingCursorVisual& visual : visuals)
+				UnionRectInPlace(bounds,
+					DrawingCursorVisualBounds(visual, size.width, size.height));
+			return bounds;
+		};
 		while (true)
 		{
 			const double frameStartMs = GetQpcTimeMilliseconds();
 			if (metrics_) metrics_->BeginFrame();
 			lastPresentDurationMs_ = 0.0;
 			lastPresentSucceeded_ = false;
-			if (active.empty()) window_.ClearActivePenCursorTool();
+			if (active.empty()) window_.ClearActiveDrawingCursorTool();
+			const bool drawingCursorRequested = window_.ConsumeDrawingCursorRenderRequest();
 			const double previousFrameMs = lastActiveFrameStartMs > 0.0
 				? frameStartMs - lastActiveFrameStartMs : 0.0;
 			ContactRecord* record = nullptr;
@@ -1286,7 +1341,7 @@ namespace draw3
 				forceFullPresent = true;
 			}
 
-			if (active.empty() && !forceFullPresent)
+			if (active.empty() && !forceFullPresent && !drawingCursorRequested)
 			{
 				if (hapticContinuousActive && haptics_)
 				{
@@ -1374,16 +1429,37 @@ namespace draw3
 			const DrawingTool frameTool = frameToolIterator != active.end()
 				? (*frameToolIterator)->tool
 				: active.empty() ? window_.ActiveTool() : active.front()->tool;
-			const auto activePenCursorIterator = std::find_if(active.begin(), active.end(),
-				[](const RuntimeStroke* runtime)
+			const DrawingCursorPointerAuthority cursorAuthority =
+				window_.CursorPointerAuthority();
+			auto activeCursorIterator = std::find_if(active.begin(), active.end(),
+				[&](const RuntimeStroke* runtime)
 				{
-					return runtime && runtime->metricDeviceType == InputDeviceType::Pen &&
-						!runtime->ended && !runtime->awaitingReconnect;
+					if (!runtime || runtime->ended || runtime->awaitingReconnect) return false;
+					if (cursorAuthority == DrawingCursorPointerAuthority::Pen ||
+						cursorAuthority == DrawingCursorPointerAuthority::Unknown)
+						return runtime->metricDeviceType == InputDeviceType::Pen;
+					if (cursorAuthority == DrawingCursorPointerAuthority::Mouse)
+						return runtime->metricDeviceType == InputDeviceType::MouseLeft ||
+							runtime->metricDeviceType == InputDeviceType::MouseRight;
+					return false;
 				});
-			if (activePenCursorIterator != active.end())
-				window_.SetActivePenCursorTool((*activePenCursorIterator)->tool);
+			if (activeCursorIterator == active.end() &&
+				cursorAuthority == DrawingCursorPointerAuthority::Unknown)
+			{
+				activeCursorIterator = std::find_if(active.begin(), active.end(),
+					[](const RuntimeStroke* runtime)
+					{
+						return runtime && !runtime->ended && !runtime->awaitingReconnect &&
+							(runtime->metricDeviceType == InputDeviceType::MouseLeft ||
+								runtime->metricDeviceType == InputDeviceType::MouseRight);
+					});
+			}
+			if (activeCursorIterator != active.end())
+				window_.SetActiveDrawingCursorTool((*activeCursorIterator)->tool);
+			else if (frameToolIterator != active.end())
+				window_.SetActiveDrawingCursorTool((*frameToolIterator)->selectedTool);
 			else
-				window_.ClearActivePenCursorTool();
+				window_.ClearActiveDrawingCursorTool();
 
 			const WindowSize size = window_.Size();
 			for (RuntimeStroke* runtime : active)
@@ -1575,6 +1651,18 @@ namespace draw3
 				forceFullPresent = true;
 			}
 
+			buildDrawingCursorVisuals();
+			if (!cursorVisualsEquivalent())
+			{
+				// 先重建旧区清除上一帧，再把全部当前 visual 绘制到 backbuffer 最上层。
+				UnionRectInPlace(frameDirty, cursorVisualBounds(previousCursorVisuals));
+				UnionRectInPlace(frameDirty, cursorVisualBounds(currentCursorVisuals));
+			}
+			else if (!IsEmptyRect(frameDirty) && !currentCursorVisuals.empty())
+			{
+				// 其他几何触发 Present 时也要先重建光标区，避免半透明像素在旧 backbuffer 上重复叠加。
+				UnionRectInPlace(frameDirty, cursorVisualBounds(currentCursorVisuals));
+			}
 			frameDirty = ClampRectToCanvas(frameDirty, size.width, size.height);
 			if (forceFullPresent) frameDirty = GetFullCanvasRect(size.width, size.height);
 			if (metrics_)
@@ -1593,9 +1681,12 @@ namespace draw3
 				const bool orderedPreview = frameTool == DrawingTool::Pen &&
 					kActiveDebugLayerColorMode == DebugLayerColorMode::ColorizeLiveLayer;
 				CompositeLayersToBackBuffer(frameDirty, orderedPreview);
+				for (const DrawingCursorVisual& visual : currentCursorVisuals)
+					renderer_.DrawTransientDrawingCursor(visual);
 				presentSucceeded = PresentFrame(
 					frameDirty, forceFullPresent); // 一帧最多一次 backbuffer 合成和一次 Present。
 			}
+			previousCursorVisuals = currentCursorVisuals;
 			if (metrics_)
 			{
 				LARGE_INTEGER presentQpc = {};

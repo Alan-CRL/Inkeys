@@ -179,6 +179,59 @@ namespace draw3
 		return 0;
 	}
 
+	void InkRenderer::DrawTransientDrawingCursor(const DrawingCursorVisual& visual)
+	{
+		if (!visual.visible || !IsValidDrawingCursorAppearance(visual.appearance) ||
+			!backBufferRTV || !inkDataBuffer || !globalCB) return;
+		const DrawingCursorAppearance& appearance = visual.appearance;
+		const float shapeType = appearance.shape == DrawingCursorShape::Circle ? 4.0f
+			: appearance.shape == DrawingCursorShape::Rectangle ? 5.0f : 6.0f;
+		const InkPoint cursorData[2] = {
+			{ visual.x, visual.y, appearance.width * 0.5f, appearance.height * 0.5f },
+			{ appearance.outlineWidth, appearance.fillAlpha, 0.0f, 0.0f }
+		};
+
+		D3D11_MAPPED_SUBRESOURCE mapped = {};
+		if (FAILED(context->Map(inkDataBuffer.Get(), 0,
+			D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
+		std::memcpy(mapped.pData, cursorData, sizeof(cursorData));
+		context->Unmap(inkDataBuffer.Get(), 0);
+		m_bufferHead = 2;
+
+		if (FAILED(context->Map(globalCB.Get(), 0,
+			D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
+		auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
+		constants->width = viewportWidth;
+		constants->height = viewportHeight;
+		constants->shapeType = shapeType;
+		constants->bufferOffset = 0;
+		constants->color = DirectX::XMFLOAT4(
+			appearance.red, appearance.green, appearance.blue, appearance.opacity);
+		constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
+		constants->padding[0] = appearance.outlineRed;
+		constants->padding[1] = appearance.outlineGreen;
+		constants->padding[2] = appearance.outlineBlue;
+		context->Unmap(globalCB.Get(), 0);
+
+		SetOMTarget(backBufferRTV.Get());
+		context->IASetInputLayout(nullptr);
+		context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		context->VSSetShader(vertexShader.Get(), nullptr, 0);
+		ID3D11ShaderResourceView* shaderResources[] = { inkDataSRV.Get() };
+		context->VSSetShaderResources(0, 1, shaderResources);
+		ID3D11Buffer* constantBuffers[] = { globalCB.Get() };
+		context->VSSetConstantBuffers(0, 1, constantBuffers);
+		context->PSSetShader(pixelShader.Get(), nullptr, 0);
+		context->PSSetConstantBuffers(0, 1, constantBuffers);
+		// Cursor PS 直接输出 premultiplied Add 和 Retain，复用 resolve blend 叠到 backbuffer。
+		context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF);
+		context->RSSetState(rasterState.Get());
+		context->Draw(6, 0);
+
+		ID3D11ShaderResourceView* nullResource[] = { nullptr };
+		context->VSSetShaderResources(0, 1, nullResource);
+	}
+
 	void InkRenderer::CopyResource(ID3D11Texture2D* dst, ID3D11Texture2D* src, RECT rect)
 	{
 		D3D11_BOX sourceRegion = {};

@@ -24,6 +24,25 @@ PS_INPUT main(uint id : SV_VertexID)
     output.color = globalColor;
     output.shapeType = globalShapeType;
 
+    if (type >= 4 && type <= 6)
+    {
+        InkPoint cursor = InkData[globalBufferOffset];
+        InkPoint style = InkData[globalBufferOffset + 1];
+        float2 center = cursor.pos;
+        float2 halfSize = float2(cursor.r, cursor.time);
+        float2 rectMin = center - halfSize - 2.0;
+        float2 rectMax = center + halfSize + 2.0;
+        float2 worldPos = lerp(rectMin, rectMax, templatePos);
+        output.pos = float4((worldPos.x / screenWidth) * 2.0 - 1.0,
+            -((worldPos.y / screenHeight) * 2.0 - 1.0), 0.0, 1.0);
+        output.pixPos = worldPos;
+        output.p1 = center;
+        output.p2 = halfSize;
+        output.r1 = style.pos.x;
+        output.r2 = style.pos.y;
+        return output;
+    }
+
     if (type == 3)
     {
         HighlighterPrimitive primitive = HighlighterData[globalBufferOffset + itemIndex];

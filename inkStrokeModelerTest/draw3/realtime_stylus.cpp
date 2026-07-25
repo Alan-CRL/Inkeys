@@ -362,9 +362,9 @@ namespace draw3
 		class StylusSyncPlugin final : public IStylusSyncPlugin
 		{
 		public:
-			StylusSyncPlugin(ContactInputCoordinator& coordinator, PenCursorEventSink* penCursorSink)
+			StylusSyncPlugin(ContactInputCoordinator& coordinator, DrawingCursorEventSink* drawingCursorSink)
 				: coordinator_(coordinator), interruptionSimulation_(coordinator),
-				penCursorSink_(penCursorSink)
+				drawingCursorSink_(drawingCursorSink)
 			{
 				marshalerResult_ = CoCreateFreeThreadedMarshaler(
 					static_cast<IUnknown*>(this), freeThreadedMarshaler_.ReleaseAndGetAddressOf());
@@ -478,10 +478,10 @@ namespace draw3
 			{
 				if (!source || !stylusInfo || !packet) return E_INVALIDARG;
 				const TabletMetadata* metadata = EnsureMetadata(source, stylusInfo->tcid, nullptr);
-				PublishPenCursor(metadata, stylusInfo, true); // Down 一到即隐藏，解码失败也不能遗留悬停光标。
 				ContactSnapshot snapshot;
 				if (!DecodeSnapshot(metadata, propertyCount, packet, ContactPhase::Down, snapshot))
 				{
+					PublishDefaultPenCursor(); // 解码失败时不能把旧 Hover visual 留在接触位置。
 					std::cout << "[RTS] down decode failed tcid=" << stylusInfo->tcid
 						<< " cid=" << stylusInfo->cid << " properties=" << propertyCount
 						<< " metadata=" << (metadata ? "yes" : "no") << std::endl;
@@ -489,6 +489,7 @@ namespace draw3
 				}
 				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
+				PublishPenCursor(metadata, stylusInfo, true, snapshot);
 				InputDeviceType deviceType = metadata ? metadata->deviceType : InputDeviceType::Pen;
 				if (deviceType == InputDeviceType::MouseLeft)
 				{
@@ -522,16 +523,17 @@ namespace draw3
 				if (!stylusInfo || !packet) return E_INVALIDARG;
 				const TabletMetadata* metadata = FindMetadata(stylusInfo->tcid);
 				if (!metadata && source) metadata = EnsureMetadata(source, stylusInfo->tcid, nullptr);
-				PublishPenCursor(metadata, stylusInfo, false); // Up 后仍在范围内，恢复悬停光标。
 				ContactSnapshot snapshot;
 				if (!DecodeSnapshot(metadata, propertyCount, packet, ContactPhase::Up, snapshot))
 				{
+					PublishDefaultPenCursor();
 					std::cout << "[RTS] up decode failed tcid=" << stylusInfo->tcid
 						<< " cid=" << stylusInfo->cid << " properties=" << propertyCount << std::endl;
 					return S_OK;
 				}
 				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
+				PublishPenCursor(metadata, stylusInfo, false, snapshot); // Up 后继续显示悬停 visual。
 				bool published = false;
 				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
 					published = interruptionSimulation_.PublishUp(
@@ -557,13 +559,22 @@ namespace draw3
 			}
 
 			HRESULT STDMETHODCALLTYPE InAirPackets(IRealTimeStylus* source,
-				const StylusInfo* stylusInfo, ULONG,
-				ULONG, LONG*, ULONG*, LONG**) override
+				const StylusInfo* stylusInfo, ULONG packetCount,
+				ULONG packetBufferLength, LONG* packets, ULONG*, LONG**) override
 			{
-				if (!stylusInfo) return E_INVALIDARG;
+				if (!stylusInfo || !packets || packetCount == 0 || packetBufferLength < packetCount ||
+					packetBufferLength % packetCount != 0) return E_INVALIDARG;
 				const TabletMetadata* metadata = FindMetadata(stylusInfo->tcid);
 				if (!metadata && source) metadata = EnsureMetadata(source, stylusInfo->tcid, nullptr);
-				PublishPenCursor(metadata, stylusInfo, false);
+				const ULONG propertyCount = packetBufferLength / packetCount;
+				const LONG* lastPacket = packets +
+					static_cast<size_t>(packetCount - 1) * propertyCount;
+				ContactSnapshot snapshot;
+				if (!DecodeSnapshot(metadata, propertyCount, lastPacket,
+					ContactPhase::Move, snapshot)) return S_OK;
+				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
+					stylusInfo->bIsInvertedCursor != FALSE;
+				PublishPenCursor(metadata, stylusInfo, false, snapshot);
 				return S_OK;
 			}
 
@@ -589,7 +600,7 @@ namespace draw3
 				}
 				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
-				PublishPenCursor(metadata, stylusInfo, true);
+				PublishPenCursor(metadata, stylusInfo, true, snapshot);
 				bool published = false;
 				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
 					published = interruptionSimulation_.PublishMove(
@@ -668,18 +679,24 @@ namespace draw3
 
 		private:
 			void PublishPenCursor(const TabletMetadata* metadata,
-				const StylusInfo* stylusInfo, bool inContact) noexcept
+				const StylusInfo* stylusInfo, bool inContact,
+				const ContactSnapshot& snapshot) noexcept
 			{
-				if (!penCursorSink_ || !metadata || !stylusInfo ||
+				if (!drawingCursorSink_ || !metadata || !stylusInfo ||
 					metadata->deviceType != InputDeviceType::Pen) return;
-				penCursorSink_->PublishPenCursorDeviceState(ResolvePenCursorDeviceState(
-					stylusInfo->bIsInvertedCursor != FALSE, inContact));
+				DrawingCursorSample sample;
+				sample.x = snapshot.position.x;
+				sample.y = snapshot.position.y;
+				sample.qpc = snapshot.qpc;
+				sample.valid = true;
+				sample.inverted = stylusInfo->bIsInvertedCursor != FALSE;
+				sample.inContact = inContact;
+				drawingCursorSink_->PublishPenCursorSample(sample);
 			}
 
 			void PublishDefaultPenCursor() noexcept
 			{
-				if (penCursorSink_)
-					penCursorSink_->PublishPenCursorDeviceState(PenCursorDeviceState::Default);
+				if (drawingCursorSink_) drawingCursorSink_->ClearPenCursorSample();
 			}
 
 			const TabletMetadata* FindMetadata(TABLET_CONTEXT_ID contextId) const noexcept
@@ -864,7 +881,7 @@ namespace draw3
 			ContactInputCoordinator& coordinator_;
 			[[no_unique_address]] InterruptedStrokeSimulation<
 				kInterruptedStrokeReconnectSimulationEnabled> interruptionSimulation_;
-			PenCursorEventSink* penCursorSink_ = nullptr;
+			DrawingCursorEventSink* drawingCursorSink_ = nullptr;
 			std::atomic<bool> pixelScalePublished_ = false;
 			float inkToPixelScaleX_ = 1.0f;
 			float inkToPixelScaleY_ = 1.0f;
@@ -922,7 +939,7 @@ namespace draw3
 		Microsoft::WRL::ComPtr<IRealTimeStylus3> stylus3;
 		Microsoft::WRL::ComPtr<IStylusSyncPlugin> plugin;
 		ContactInputCoordinator* coordinator = nullptr;
-		PenCursorEventSink* penCursorSink = nullptr;
+		DrawingCursorEventSink* drawingCursorSink = nullptr;
 		bool comInitialized = false;
 		bool pluginAdded = false;
 		bool initialized = false;
@@ -939,11 +956,11 @@ namespace draw3
 	}
 
 	bool RealTimeStylusInput::Initialize(HWND window, ContactInputCoordinator& coordinator,
-		PenCursorEventSink* penCursorSink)
+		DrawingCursorEventSink* drawingCursorSink)
 	{
 		if (!window || impl_->initialized) return false;
 		impl_->coordinator = &coordinator;
-		impl_->penCursorSink = penCursorSink;
+		impl_->drawingCursorSink = drawingCursorSink;
 		DWORD windowProcessId = 0;
 		const DWORD windowThreadId = GetWindowThreadProcessId(window, &windowProcessId);
 		std::cout << "[RTS] initialize currentThread=" << GetCurrentThreadId()
@@ -959,7 +976,7 @@ namespace draw3
 		{
 			LogHResult("CoInitializeEx(COINIT_MULTITHREADED)", result);
 			impl_->coordinator = nullptr;
-			impl_->penCursorSink = nullptr;
+			impl_->drawingCursorSink = nullptr;
 			return false;
 		}
 		impl_->comInitialized = true;
@@ -1029,7 +1046,7 @@ namespace draw3
 			return false;
 		}
 
-		auto* plugin = new (std::nothrow) StylusSyncPlugin(coordinator, penCursorSink);
+		auto* plugin = new (std::nothrow) StylusSyncPlugin(coordinator, drawingCursorSink);
 		if (!plugin)
 		{
 			Shutdown();
@@ -1081,13 +1098,12 @@ namespace draw3
 		}
 
 		if (impl_->coordinator) impl_->coordinator->CloseAllProducerContacts(QueryQpc());
-		if (impl_->penCursorSink)
-			impl_->penCursorSink->PublishPenCursorDeviceState(PenCursorDeviceState::Default);
+		if (impl_->drawingCursorSink) impl_->drawingCursorSink->ClearPenCursorSample();
 		impl_->plugin.Reset();
 		impl_->stylus3.Reset();
 		impl_->stylus.Reset();
 		impl_->coordinator = nullptr;
-		impl_->penCursorSink = nullptr;
+		impl_->drawingCursorSink = nullptr;
 		impl_->initialized = false;
 		if (impl_->comInitialized)
 		{

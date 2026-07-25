@@ -37,7 +37,7 @@ float2 halfSize
 | `bufferOffset` | `globalBufferOffset` |
 | `color` | `globalColor` |
 | `operatorKind` | `globalOperatorKind` |
-| `padding[3]` | `globalPadding` |
+| `padding[3]` | `globalPadding`（cursor shape 时为 outline RGB） |
 
 它绑定在 VS `b0` 与 PS `b0`。`operatorKind` 只在 pixel shader 使用，但仍属于同一共享常量缓冲区。
 
@@ -64,6 +64,9 @@ float2 halfSize
 - `1`：L1/L0 coverage union 合成矩形。
 - `2`：L1 后再应用 L0 的 ordered 合成矩形。
 - `3`：荧光笔 primitive。
+- `4`：瞬态 Cursor Circle。
+- `5`：瞬态 Cursor Rectangle。
+- `6`：瞬态 EraserGripCircle。
 
 `globalOperatorKind`：
 
@@ -71,6 +74,8 @@ float2 halfSize
 - `1` Erase：Add 为零，Retain 为 `1-coverage`。
 
 这些数值虽然部分未暴露在 enum 中，但已经是 CPU/GPU 协议；不要任意复用。
+
+Cursor `InkData[0]` 使用 `pos=center, r=halfWidth, time=halfHeight`；`InkData[1].pos` 使用 `x=outlineWidth, y=fillAlpha`。`globalColor` 保存 fill RGB 与整体 opacity，`globalPadding` 保存 outline RGB。Cursor shape 不写 operator texture，而是对 backbuffer 使用 `operatorResolveBlendState` 直接计算 `premultiplied Add + Retain * Destination`。
 
 ## Affine Operator Layers
 

@@ -4,12 +4,10 @@
 #define NOMINMAX
 #endif
 
+#include <windows.h>
+
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
-#include <cstring>
-#include <vector>
-#include <windows.h>
 
 module draw3.pen_cursor;
 
@@ -17,246 +15,198 @@ namespace draw3
 {
 	namespace
 	{
-		constexpr float kAntialiasHalfWidthPx = 0.5f;
-		constexpr float kTransparentPaddingPx = 2.0f;
-		constexpr float kMaximumCursorExtentPx = 256.0f;
-		constexpr float kEraserGripStripeOffsetRatio = 0.12f;
-		constexpr float kEraserGripStripeWidthRatio = 0.10f;
-		constexpr float kEraserGripStripeHalfHeightRatio = 0.24f;
+		constexpr float kCursorBoundsPaddingPx = 2.0f;
+		constexpr float kMaximumCursorExtentPx = 4096.0f;
 
-		float SignedDistanceToRectangle(float x, float y, float halfWidth, float halfHeight) noexcept
+		bool FloatEqual(float left, float right) noexcept
 		{
-			const float dx = std::abs(x) - halfWidth;
-			const float dy = std::abs(y) - halfHeight;
-			const float outside = std::hypot(std::max(dx, 0.0f), std::max(dy, 0.0f));
-			return outside + std::min(std::max(dx, dy), 0.0f);
+			return std::abs(left - right) <= 0.0001f;
 		}
 
-		float SignedDistanceToVerticalCapsule(float x, float y,
-			float radius, float halfHeight) noexcept
+		bool AppearanceEqual(const DrawingCursorAppearance& left,
+			const DrawingCursorAppearance& right) noexcept
 		{
-			const float segmentHalfHeight = std::max(halfHeight - radius, 0.0f);
-			const float nearestY = std::clamp(y, -segmentHalfHeight, segmentHalfHeight);
-			return std::hypot(x, y - nearestY) - radius;
+			return left.shape == right.shape &&
+				FloatEqual(left.width, right.width) && FloatEqual(left.height, right.height) &&
+				FloatEqual(left.red, right.red) && FloatEqual(left.green, right.green) &&
+				FloatEqual(left.blue, right.blue) && FloatEqual(left.opacity, right.opacity) &&
+				FloatEqual(left.fillAlpha, right.fillAlpha) &&
+				FloatEqual(left.outlineWidth, right.outlineWidth) &&
+				FloatEqual(left.outlineRed, right.outlineRed) &&
+				FloatEqual(left.outlineGreen, right.outlineGreen) &&
+				FloatEqual(left.outlineBlue, right.outlineBlue);
 		}
 
-		float CoverageFromSignedDistance(float distance) noexcept
+		const DrawingCursorSample* SelectPrimarySample(
+			const DrawingCursorSample& penSample,
+			const DrawingCursorSample& mouseSample,
+			DrawingCursorPointerAuthority pointerAuthority) noexcept
 		{
-			return std::clamp(kAntialiasHalfWidthPx - distance, 0.0f, 1.0f);
-		}
-
-		uint8_t ToByte(float value) noexcept
-		{
-			return static_cast<uint8_t>(std::lround(std::clamp(value, 0.0f, 1.0f) * 255.0f));
-		}
-
-		uint32_t PackStraightBgra(float red, float green, float blue, float alpha) noexcept
-		{
-			alpha = std::clamp(alpha, 0.0f, 1.0f);
-			if (alpha <= 0.0f) return 0;
-			const uint32_t a = ToByte(alpha);
-			const uint32_t r = ToByte(std::clamp(red, 0.0f, 1.0f));
-			const uint32_t g = ToByte(std::clamp(green, 0.0f, 1.0f));
-			const uint32_t b = ToByte(std::clamp(blue, 0.0f, 1.0f));
-			return (a << 24) | (r << 16) | (g << 8) | b;
-		}
-	}
-
-	DrawingCursorBitmap BuildDrawingCursorBitmap(const DrawingCursorAppearance& appearance)
-	{
-		DrawingCursorBitmap bitmap;
-		if (!std::isfinite(appearance.width) || !std::isfinite(appearance.height) ||
-			!std::isfinite(appearance.opacity) || !std::isfinite(appearance.fillAlpha) ||
-			!std::isfinite(appearance.outlineWidth) || !std::isfinite(appearance.outlineRed) ||
-			!std::isfinite(appearance.outlineGreen) || !std::isfinite(appearance.outlineBlue) ||
-			appearance.width <= 0.0f || appearance.height <= 0.0f ||
-			appearance.width > kMaximumCursorExtentPx ||
-			appearance.height > kMaximumCursorExtentPx) return bitmap;
-
-		const float halfWidth = appearance.width * 0.5f;
-		const float halfHeight = appearance.height * 0.5f;
-		const int bitmapHalfWidth = static_cast<int>(std::ceil(halfWidth + kTransparentPaddingPx));
-		const int bitmapHalfHeight = static_cast<int>(std::ceil(halfHeight + kTransparentPaddingPx));
-		bitmap.width = bitmapHalfWidth * 2 + 1;
-		bitmap.height = bitmapHalfHeight * 2 + 1;
-		bitmap.hotspotX = static_cast<uint32_t>(bitmapHalfWidth);
-		bitmap.hotspotY = static_cast<uint32_t>(bitmapHalfHeight);
-		bitmap.bgra.resize(
-			static_cast<size_t>(bitmap.width) * static_cast<size_t>(bitmap.height));
-
-		const bool eraserGrip = appearance.shape == DrawingCursorShape::EraserGripCircle;
-		// 橡皮主体固定为纯白，避免调用方颜色影响半透明诊断和最终外观。
-		const float fillRed = eraserGrip ? 1.0f : std::clamp(appearance.red, 0.0f, 1.0f);
-		const float fillGreen = eraserGrip ? 1.0f : std::clamp(appearance.green, 0.0f, 1.0f);
-		const float fillBlue = eraserGrip ? 1.0f : std::clamp(appearance.blue, 0.0f, 1.0f);
-		const float opacity = std::clamp(appearance.opacity, 0.0f, 1.0f);
-		const float fillAlphaRatio = std::clamp(appearance.fillAlpha, 0.0f, 1.0f);
-		const float outlineWidth = std::max(appearance.outlineWidth, 0.0f);
-		const float outlineRed = std::clamp(appearance.outlineRed, 0.0f, 1.0f);
-		const float outlineGreen = std::clamp(appearance.outlineGreen, 0.0f, 1.0f);
-		const float outlineBlue = std::clamp(appearance.outlineBlue, 0.0f, 1.0f);
-		const float diameter = std::min(appearance.width, appearance.height);
-		for (int y = 0; y < bitmap.height; ++y)
-		{
-			for (int x = 0; x < bitmap.width; ++x)
+			switch (pointerAuthority)
 			{
-				const float localX = static_cast<float>(x) - static_cast<float>(bitmap.hotspotX);
-				const float localY = static_cast<float>(y) - static_cast<float>(bitmap.hotspotY);
-				const float signedDistance = appearance.shape == DrawingCursorShape::Rectangle
-					? SignedDistanceToRectangle(localX, localY, halfWidth, halfHeight)
-					: std::hypot(localX, localY) - std::min(halfWidth, halfHeight);
-				const float outerCoverage = CoverageFromSignedDistance(signedDistance);
-				const float innerCoverage = CoverageFromSignedDistance(
-					signedDistance + outlineWidth);
-				const float outlineCoverage = std::max(0.0f, outerCoverage - innerCoverage);
-				const float outlineAlpha = outlineCoverage * opacity;
-				const float fillAlpha = innerCoverage * fillAlphaRatio * opacity;
-				float alpha = outlineAlpha + fillAlpha;
-				float red = 0.0f;
-				float green = 0.0f;
-				float blue = 0.0f;
-				if (alpha > 0.0f)
-				{
-					red = (outlineAlpha * outlineRed + fillAlpha * fillRed) / alpha;
-					green = (outlineAlpha * outlineGreen + fillAlpha * fillGreen) / alpha;
-					blue = (outlineAlpha * outlineBlue + fillAlpha * fillBlue) / alpha;
-				}
-				if (eraserGrip)
-				{
-					const float stripeRadius = diameter * kEraserGripStripeWidthRatio * 0.5f;
-					const float stripeHalfHeight = diameter * kEraserGripStripeHalfHeightRatio;
-					float stripeCoverage = 0.0f;
-					for (int stripe = -1; stripe <= 1; stripe += 2)
-					{
-						const float stripeCenter = static_cast<float>(stripe) *
-							diameter * kEraserGripStripeOffsetRatio;
-						stripeCoverage = std::max(stripeCoverage, CoverageFromSignedDistance(
-							SignedDistanceToVerticalCapsule(localX - stripeCenter, localY,
-								stripeRadius, stripeHalfHeight)));
-					}
-					stripeCoverage = std::min(stripeCoverage, innerCoverage);
-					// 抓手线直接替换纯 RGB，Alpha 仍作为独立通道保持统一透明度。
-					red += stripeCoverage * (outlineRed - red);
-					green += stripeCoverage * (outlineGreen - green);
-					blue += stripeCoverage * (outlineBlue - blue);
-					alpha += stripeCoverage * (opacity - alpha);
-				}
-				bitmap.bgra[static_cast<size_t>(y) * bitmap.width + x] =
-					PackStraightBgra(red, green, blue, alpha);
+			case DrawingCursorPointerAuthority::Pen:
+				return penSample.valid ? &penSample : nullptr;
+			case DrawingCursorPointerAuthority::Mouse:
+				return mouseSample.valid ? &mouseSample : nullptr;
+			case DrawingCursorPointerAuthority::Touch:
+				return nullptr;
+			default:
+				if (penSample.valid) return &penSample;
+				return mouseSample.valid ? &mouseSample : nullptr;
 			}
 		}
-		return bitmap;
 	}
 
-	HCURSOR CreateDrawingCursor(const DrawingCursorAppearance& appearance)
+	bool DrawingCursorSampleMailbox::Publish(DrawingCursorSample sample) noexcept
 	{
-		const DrawingCursorBitmap bitmap = BuildDrawingCursorBitmap(appearance);
-		if (bitmap.bgra.empty()) return nullptr;
+		if (!std::isfinite(sample.x) || !std::isfinite(sample.y)) sample.valid = false;
+		while (writerLatch_.test_and_set(std::memory_order_acquire)) YieldProcessor();
 
-		BITMAPV5HEADER bitmapHeader = {};
-		bitmapHeader.bV5Size = sizeof(BITMAPV5HEADER);
-		bitmapHeader.bV5Width = bitmap.width;
-		bitmapHeader.bV5Height = bitmap.height;
-		bitmapHeader.bV5Planes = 1;
-		bitmapHeader.bV5BitCount = 32;
-		bitmapHeader.bV5Compression = BI_BITFIELDS;
-		// 与微软 Alpha Cursor 示例保持一致，只声明 RGBA masks，不额外引入颜色空间转换。
-		bitmapHeader.bV5RedMask = 0x00FF0000;
-		bitmapHeader.bV5GreenMask = 0x0000FF00;
-		bitmapHeader.bV5BlueMask = 0x000000FF;
-		bitmapHeader.bV5AlphaMask = 0xFF000000;
-		HDC screenDc = GetDC(nullptr);
-		if (!screenDc) return nullptr;
-		void* dibBits = nullptr;
-		HBITMAP colorBitmap = CreateDIBSection(screenDc,
-			reinterpret_cast<const BITMAPINFO*>(&bitmapHeader),
-			DIB_RGB_COLORS, &dibBits, nullptr, 0);
-		HDC memoryDc = CreateCompatibleDC(screenDc);
-		ReleaseDC(nullptr, screenDc);
-		if (!colorBitmap || !dibBits || !memoryDc)
+		const bool changed = valid_.load(std::memory_order_relaxed) != (sample.valid ? 1u : 0u) ||
+			inverted_.load(std::memory_order_relaxed) != (sample.inverted ? 1u : 0u) ||
+			inContact_.load(std::memory_order_relaxed) != (sample.inContact ? 1u : 0u) ||
+			!FloatEqual(x_.load(std::memory_order_relaxed), sample.x) ||
+			!FloatEqual(y_.load(std::memory_order_relaxed), sample.y);
+		uint64_t sequence = sequence_.load(std::memory_order_relaxed);
+		if ((sequence & 1u) != 0) ++sequence;
+		sequence_.store(sequence + 1, std::memory_order_release); // 奇数表示跨字段更新中。
+		x_.store(sample.x, std::memory_order_relaxed);
+		y_.store(sample.y, std::memory_order_relaxed);
+		qpc_.store(sample.qpc, std::memory_order_relaxed);
+		valid_.store(sample.valid ? 1u : 0u, std::memory_order_relaxed);
+		inverted_.store(sample.inverted ? 1u : 0u, std::memory_order_relaxed);
+		inContact_.store(sample.inContact ? 1u : 0u, std::memory_order_relaxed);
+		sequence_.store(sequence + 2, std::memory_order_release); // 偶数一次性发布一致样本。
+		writerLatch_.clear(std::memory_order_release);
+		return changed;
+	}
+
+	bool DrawingCursorSampleMailbox::Clear() noexcept
+	{
+		return Publish({});
+	}
+
+	bool DrawingCursorSampleMailbox::Read(DrawingCursorSample& sample) const noexcept
+	{
+		for (int attempt = 0; attempt < 32; ++attempt)
 		{
-			if (memoryDc) DeleteDC(memoryDc);
-			if (colorBitmap) DeleteObject(colorBitmap);
-			return nullptr;
+			const uint64_t sequenceBefore = sequence_.load(std::memory_order_acquire);
+			if ((sequenceBefore & 1u) != 0)
+			{
+				YieldProcessor();
+				continue;
+			}
+			DrawingCursorSample candidate;
+			candidate.x = x_.load(std::memory_order_relaxed);
+			candidate.y = y_.load(std::memory_order_relaxed);
+			candidate.qpc = qpc_.load(std::memory_order_relaxed);
+			candidate.valid = valid_.load(std::memory_order_relaxed) != 0;
+			candidate.inverted = inverted_.load(std::memory_order_relaxed) != 0;
+			candidate.inContact = inContact_.load(std::memory_order_relaxed) != 0;
+			const uint64_t sequenceAfter = sequence_.load(std::memory_order_acquire);
+			if (sequenceBefore == sequenceAfter && (sequenceAfter & 1u) == 0)
+			{
+				candidate.sequence = sequenceAfter;
+				sample = candidate;
+				return true;
+			}
 		}
-		HGDIOBJ oldBitmap = SelectObject(memoryDc, colorBitmap);
-		if (!oldBitmap || oldBitmap == HGDI_ERROR)
+		return false;
+	}
+
+	bool IsValidDrawingCursorAppearance(const DrawingCursorAppearance& appearance) noexcept
+	{
+		return std::isfinite(appearance.width) && std::isfinite(appearance.height) &&
+			std::isfinite(appearance.red) && std::isfinite(appearance.green) &&
+			std::isfinite(appearance.blue) && std::isfinite(appearance.opacity) &&
+			std::isfinite(appearance.fillAlpha) && std::isfinite(appearance.outlineWidth) &&
+			std::isfinite(appearance.outlineRed) && std::isfinite(appearance.outlineGreen) &&
+			std::isfinite(appearance.outlineBlue) &&
+			appearance.width > 0.0f && appearance.height > 0.0f &&
+			appearance.width <= kMaximumCursorExtentPx &&
+			appearance.height <= kMaximumCursorExtentPx;
+	}
+
+	DrawingCursorVisual ResolvePrimaryDrawingCursorVisual(
+		const DrawingCursorSample& penSample,
+		const DrawingCursorSample& mouseSample,
+		DrawingCursorPointerAuthority pointerAuthority,
+		const DrawingCursorAppearance& selectedAppearance,
+		const DrawingCursorAppearance& eraserAppearance,
+		bool selectedToolIsEraser) noexcept
+	{
+		DrawingCursorVisual visual;
+		const DrawingCursorSample* sample = SelectPrimarySample(
+			penSample, mouseSample, pointerAuthority);
+		if (!sample) return visual;
+		const bool pen = sample == &penSample;
+		const bool eraser = selectedToolIsEraser || (pen && sample->inverted);
+		if (!eraser && (!pen || sample->inContact)) return visual;
+
+		visual.visible = true;
+		visual.x = sample->x;
+		visual.y = sample->y;
+		visual.appearance = eraser ? eraserAppearance : selectedAppearance;
+		if (eraser && sample->inContact) visual.appearance.opacity = 1.0f;
+		if (!IsValidDrawingCursorAppearance(visual.appearance)) visual.visible = false;
+		return visual;
+	}
+
+	bool ShouldHideSystemDrawingCursor(DrawingCursorPointerAuthority pointerAuthority,
+		bool selectedToolIsEraser, bool penSampleValid, bool mouseSampleValid) noexcept
+	{
+		switch (pointerAuthority)
 		{
-			DeleteDC(memoryDc);
-			DeleteObject(colorBitmap);
-			return nullptr;
+		case DrawingCursorPointerAuthority::Pen:
+			return true;
+		case DrawingCursorPointerAuthority::Mouse:
+		case DrawingCursorPointerAuthority::Touch:
+			return selectedToolIsEraser;
+		default:
+			return penSampleValid || (selectedToolIsEraser && mouseSampleValid);
 		}
-		SelectObject(memoryDc, oldBitmap);
-		DeleteDC(memoryDc);
-
-		// 官方示例使用 bottom-up DIB；CPU 栅格保持 top-down，拷贝时显式翻转行序。
-		auto* destinationPixels = static_cast<uint32_t*>(dibBits);
-		const size_t rowPixelCount = static_cast<size_t>(bitmap.width);
-		for (int y = 0; y < bitmap.height; ++y)
-		{
-			const size_t sourceOffset = static_cast<size_t>(y) * rowPixelCount;
-			const size_t destinationOffset =
-				static_cast<size_t>(bitmap.height - 1 - y) * rowPixelCount;
-			std::memcpy(destinationPixels + destinationOffset,
-				bitmap.bgra.data() + sourceOffset, rowPixelCount * sizeof(uint32_t));
-		}
-
-		HBITMAP maskBitmap = CreateBitmap(bitmap.width, bitmap.height, 1, 1, nullptr);
-		if (!maskBitmap)
-		{
-			DeleteObject(colorBitmap);
-			return nullptr;
-		}
-
-		ICONINFO iconInfo = {};
-		iconInfo.fIcon = FALSE;
-		iconInfo.xHotspot = bitmap.hotspotX;
-		iconInfo.yHotspot = bitmap.hotspotY;
-		iconInfo.hbmMask = maskBitmap;
-		iconInfo.hbmColor = colorBitmap;
-		GdiFlush();
-		HCURSOR cursor = reinterpret_cast<HCURSOR>(CreateIconIndirect(&iconInfo));
-		DeleteObject(maskBitmap);
-		DeleteObject(colorBitmap);
-		return cursor;
 	}
 
-	PenCursorDeviceState ResolvePenCursorDeviceState(bool inverted, bool inContact) noexcept
+	DrawingCursorVisual MakeTouchEraserDrawingCursorVisual(float x, float y,
+		const DrawingCursorAppearance& eraserAppearance) noexcept
 	{
-		if (inContact)
-			return inverted ? PenCursorDeviceState::InvertedPenContact
-				: PenCursorDeviceState::PenContact;
-		return inverted ? PenCursorDeviceState::InvertedPenHover
-			: PenCursorDeviceState::PenHover;
+		DrawingCursorVisual visual;
+		if (!std::isfinite(x) || !std::isfinite(y) ||
+			!IsValidDrawingCursorAppearance(eraserAppearance)) return visual;
+		visual.visible = true;
+		visual.x = x;
+		visual.y = y;
+		visual.appearance = eraserAppearance;
+		visual.appearance.opacity = 1.0f;
+		return visual;
 	}
 
-	bool ShouldHideDrawingCursor(PenCursorDeviceState deviceState,
-		PenCursorPointerAuthority pointerAuthority) noexcept
+	RECT DrawingCursorVisualBounds(const DrawingCursorVisual& visual,
+		int canvasWidth, int canvasHeight) noexcept
 	{
-		return deviceState == PenCursorDeviceState::PenContact &&
-			pointerAuthority != PenCursorPointerAuthority::NonPen;
+		if (!visual.visible || !IsValidDrawingCursorAppearance(visual.appearance) ||
+			canvasWidth <= 0 || canvasHeight <= 0) return {};
+		const float halfWidth = visual.appearance.width * 0.5f + kCursorBoundsPaddingPx;
+		const float halfHeight = visual.appearance.height * 0.5f + kCursorBoundsPaddingPx;
+		RECT bounds = {
+			static_cast<LONG>(std::floor(visual.x - halfWidth)),
+			static_cast<LONG>(std::floor(visual.y - halfHeight)),
+			static_cast<LONG>(std::ceil(visual.x + halfWidth)),
+			static_cast<LONG>(std::ceil(visual.y + halfHeight))
+		};
+		bounds.left = std::clamp(bounds.left, 0L, static_cast<LONG>(canvasWidth));
+		bounds.top = std::clamp(bounds.top, 0L, static_cast<LONG>(canvasHeight));
+		bounds.right = std::clamp(bounds.right, 0L, static_cast<LONG>(canvasWidth));
+		bounds.bottom = std::clamp(bounds.bottom, 0L, static_cast<LONG>(canvasHeight));
+		return bounds.left < bounds.right && bounds.top < bounds.bottom ? bounds : RECT{};
 	}
 
-	bool IsPenCursorContact(PenCursorDeviceState deviceState) noexcept
+	bool AreDrawingCursorVisualsEquivalent(
+		const DrawingCursorVisual& left, const DrawingCursorVisual& right) noexcept
 	{
-		return deviceState == PenCursorDeviceState::PenContact ||
-			deviceState == PenCursorDeviceState::InvertedPenContact;
-	}
-
-	bool ShouldShowEraserCursor(PenCursorDeviceState deviceState,
-		PenCursorPointerAuthority pointerAuthority, bool eraserTool) noexcept
-	{
-		const bool penState = deviceState != PenCursorDeviceState::Default;
-		const bool inverted = deviceState == PenCursorDeviceState::InvertedPenHover ||
-			deviceState == PenCursorDeviceState::InvertedPenContact;
-		return penState && pointerAuthority != PenCursorPointerAuthority::NonPen &&
-			(eraserTool || inverted);
-	}
-
-	bool ShouldShowDrawingCursor(PenCursorDeviceState deviceState,
-		PenCursorPointerAuthority pointerAuthority, bool toolEligible) noexcept
-	{
-		return toolEligible && deviceState == PenCursorDeviceState::PenHover &&
-			pointerAuthority != PenCursorPointerAuthority::NonPen;
+		if (left.visible != right.visible) return false;
+		if (!left.visible) return true;
+		return FloatEqual(left.x, right.x) && FloatEqual(left.y, right.y) &&
+			AppearanceEqual(left.appearance, right.appearance);
 	}
 }

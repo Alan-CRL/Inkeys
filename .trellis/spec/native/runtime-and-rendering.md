@@ -44,68 +44,72 @@
 
 当前源码描述现有行为，阶段说明描述历史设计或计划。两者出现数值或工具语义差异时，应并列记录，不得自动用源码覆盖历史目标，也不得自动让实现恢复为阶段说明。
 
-## Scenario: Window-Scoped Windows Ink Pen Cursor
+## Scenario: L0-Frame Transient Drawing Cursor
 
 ### 1. Scope / Trigger
 
-修改 RTS range/in-air 订阅、Pointer 类型仲裁、`WM_SETCURSOR`、工具光标外观或 `HCURSOR` 生命周期时，必须应用本契约。
+修改 RTS range/in-air 坐标、Pointer authority、`WM_SETCURSOR`、工具光标外观、瞬态 backbuffer 绘制或 cursor dirty bounds 时，必须应用本契约。
 
 ### 2. Signatures
 
-- `RealTimeStylusInput::Initialize(HWND, ContactInputCoordinator&, PenCursorEventSink*)`
-- `PenCursorEventSink::PublishPenCursorDeviceState`
-- `WindowController::ConfigureDrawingCursor`
-- `WindowController::SetActivePenCursorTool/ClearActivePenCursorTool`
-- `BuildDrawingCursorBitmap`、`CreateDrawingCursor`、`ShouldShowDrawingCursor`
-- `ShouldShowEraserCursor`、`IsPenCursorContact`
+- `RealTimeStylusInput::Initialize(HWND, ContactInputCoordinator&, DrawingCursorEventSink*)`
+- `DrawingCursorEventSink::PublishPenCursorSample/ClearPenCursorSample`
+- `WindowController::ConfigureDrawingCursor/ConsumeDrawingCursorRenderRequest`
+- `ResolvePrimaryDrawingCursorVisual`、`MakeTouchEraserDrawingCursorVisual`
+- `DrawingCursorVisualBounds`、`InkRenderer::DrawTransientDrawingCursor`
 
 ### 3. Contracts
 
-- 自定义光标仅用于当前 HWND 客户区中的 Hover Normal Pen/Highlighter 和 EraserGripCircle；Normal Pen/Highlighter Contact 使用当前窗口的 `SetCursor(nullptr)` 隐藏，Eraser/倒转 Pen Contact 使用不透明 EraserGripCircle，Mouse/Touch 使用 `IDC_ARROW`。禁止 `SetSystemCursor`、窗口类全局光标和计数式 `ShowCursor`。
-- Windows 8+ 动态解析 `GetPointerType/GetPointerPenInfo`，Pointer 类型优先于 RTS 回退；Windows 7 缺少 API 时由 RTS in-air/out-of-range 驱动，不得形成静态导入。
-- `StylusInRange` 只预热 metadata，因为它没有倒转信息；InAir/Up 发布 Hover，Down/接触 Packets 发布 Contact，并保留 inverted 信息。disabled、error、tablet removal、out-of-range 和 shutdown 都发布 Default。
-- sink 是非拥有指针；RTS shutdown 必须先禁用并移除插件，再发布 Default 和清空 sink。
-- 跨线程状态使用原子值，并以单个 pending 标志合并私有窗口消息；消息队列最多保留一个待处理光标刷新。
-- 私有刷新调用 `SetCursor` 前必须用 `WindowFromPoint` 确认当前窗口/子窗口仍拥有指针；`WM_SETCURSOR` 只处理 `HTCLIENT`。
-- Pen 光标直径为 `max(5px, 5px × DPI scale)`，Highlighter 是 6.25x50px 固定竖直矩形；外轮廓等于光标 footprint，使用现有配置的 `#B8B8B8` 内描边且外框透明度语义不变，内部为当前 RGB、50% Alpha。`CreateIconIndirect` 的 user-mode DIB 使用直通 Alpha BGRA，逻辑 RGB 不乘 Alpha；不得把内核 `DrvSetPointerShape` 的预乘表面契约套到这里。`CreateDrawingCursor` 按微软 `CreateAlphaCursor` 示例使用正高度 bottom-up `BITMAPV5HEADER + BI_BITFIELDS`、屏幕 HDC、兼容内存 DC、空单色 mask 和显式 RGBA masks，CPU top-down 行写入时翻转，不额外指定颜色空间。压力不改变光标尺寸。
-- EraserGripCircle 直径直接复用画布像素中的 `kWideToolDiameter`，不再额外乘 DPI scale，也不设置最小尺寸；主体由栅格器强制为纯白，不接受调用方填充 RGB。圆环宽度为直径 4%，两条圆头竖线宽度为直径 10%，全部使用 `#CFCFCF`。Hover 整枚 Alpha 为 0.5，Contact 整枚 Alpha 为 1.0；Hover 白色主体存储 `RGB=255,A=128`，浅灰结构存储 `RGB=207,A=128`。
-- 活动 Pen 使用 Down 锁定的有效工具覆盖；没有活动 Pen 时使用当前选择工具。普通 Eraser 或 inverted 状态解析为 EraserGripCircle，光标不进入 L0/L1/L2、模型或 contact payload。
+- 自定义 Pen/Highlighter/Eraser 光标属于 L0 帧的最终瞬态视觉：先把 dirty 区域按 `L2 + L1 + L0` 合成到 backbuffer，再逐枚绘制 cursor。禁止把 cursor 写入共享 `layerL0`、L1、L2、ActiveStroke、contact payload、reconnect 或 metrics。
+- shader shape type `4/5/6` 分别表示 Cursor Circle、Rectangle、EraserGripCircle；复用两项 `InkPoint`、48 字节全局常量和 resolve dual-source blend，直接输出 premultiplied Add 与 Retain。尺寸变化只能更新常量/primitive，不创建尺寸相关纹理或 `HCURSOR`。
+- Pen 直径为 `max(当前基准画笔粗细, 5px * dpiScale)`；Highlighter 为 6.25x50px 固定竖直矩形。二者使用当前 RGB、50% fill Alpha 和 `#B8B8B8` 细内描边；压力不改变 cursor 尺寸。
+- EraserGripCircle 直径直接复用 50px 画布擦除宽度，不乘 DPI、不设最小值；主体纯白，圆环宽度为 4%D，两条圆头竖线宽度为 10%D、中心偏移为 12%D、半高为 24%D，结构颜色为 `#CFCFCF`。Hover 整体 Alpha 0.5，Contact 整体 Alpha 1.0。
+- RTS InAir/Down/Packets/Up 发布 X/Y/QPC、inverted 和 contact；InAir/Packets 只解码批次最后一个包。样本使用 writer latch + sequence 一致发布，并以 sticky control wake 合并；RTS 回调不得调用 D3D 或 `SetCursor`。
+- Windows 8+ 动态解析 Pointer API，并区分 `Unknown/Pen/Mouse/Touch`；旧系统由 RTS Pen 样本和非 promoted Mouse 消息回退。Pointer authority 仍为 Pen 时，低优先级 `WM_MOUSE*` 不得抢占；缺少 Pointer API 时以有效 RTS Pen 样本维持该优先级。Mouse 使用 `TrackMouseEvent/WM_MOUSELEAVE` 清理。
+- Pen/Highlighter：Pen Hover 显示应用 cursor，Pen Contact 只隐藏系统 cursor；Mouse 保留 `IDC_ARROW`；Touch 不显示笔尖 cursor。
+- Eraser/倒转笔尾：Pen/Mouse Hover 显示 Alpha 0.5，Contact 显示 Alpha 1.0，并隐藏系统 cursor。每个活动 Touch eraser contact 独立显示一枚 Alpha 1.0 cursor，不存在 Touch Hover；多指不得互相覆盖状态。
+- 活动主指针使用 Down 锁定的有效工具；没有匹配主指针但仍有活动批次时使用批次 `selectedTool`。Touch cursor 直接读取各自 runtime 的一致 `lastModelSnapshot` 和有效 `tool`。
+- 当前和上一帧全部 cursor bounds 的并集必须加入 `frameDirty`；隐藏、离开、Up、工具切换、resize、clear、重新暴露和 Present 恢复都沿用该规则。即使 cursor 未变，只要其他几何会触发 Present，也必须把当前 cursor bounds 合入脏区并从 `L2 + L1 + L0` 重建，禁止在上一帧半透明 cursor 像素上再次叠加。静止且几何/状态不变时不得单独重复 Present。
+- 窗口线程只允许 `SetCursor(nullptr)` 或非拥有的系统 `IDC_ARROW`；禁止 `CreateIconIndirect`、`SetSystemCursor`、窗口类全局 cursor 和计数式 `ShowCursor`。私有刷新必须先用 `WindowFromPoint` 确认当前 HWND 所有权。
+- sink 是非拥有指针；RTS shutdown 必须先禁用并移除插件，再清理 Pen 样本和 sink。disabled、error、tablet removal、out-of-range 同样清理旧 visual。
 
 ### 4. Validation & Error Matrix
 
 | Condition | Required behavior |
 |---|---|
-| Pointer 类型是 `PT_PEN`、处于 Hover 且工具为 Pen/Highlighter | 显示对应彩色光标 |
-| Pen Down 或接触 Move | 当前窗口立即 `SetCursor(nullptr)`，不显示箭头或自定义光标 |
-| 接触时 Pointer authority 切换为 NonPen | 立即恢复默认箭头，不沿用 Pen 隐藏状态 |
-| Pointer 类型是 Mouse/Touch | 立即使用默认箭头，即使 RTS 状态尚未清除 |
-| Pointer API 不存在 | 清除旧 NonPen authority，按 RTS Pen 状态回退 |
-| Inverted Pen 或有效工具为 Eraser | 使用 EraserGripCircle；Hover Alpha 0.5，Contact Alpha 1.0 |
-| 半透明白色位于白色背景 | 主体保持白色；若变灰/黑，检查是否退化为未声明 Alpha 的 32bpp `BI_RGB` |
-| 半透明白色位于红色背景 | 中心合成为约 `RGB=(255,127–128,127–128)`；背景红色变暗表示句柄未进入 32-bit Alpha 分支 |
-| HDR 屏幕实显与截图颜色不同 | 以实体屏幕为准；截图可能使用软件合成，只能检查源位图，不代表 HDR 硬件光标平面 |
-| 光标位图/句柄创建失败 | 记录一次诊断，继续启动并使用默认箭头 |
-| 私有刷新到达时指针已在其他窗口 | 不调用 `SetCursor`，由目标窗口管理自己的光标 |
-| RTS disabled/error/removal/shutdown | 发布 Default，不得遗留 sink 或自定义光标状态 |
+| Pen Hover + Pen/Highlighter | 隐藏系统 cursor，显示对应 Circle/Rectangle |
+| Pen Contact + Pen/Highlighter | 隐藏系统 cursor，不绘制应用 cursor |
+| Pen/Mouse Hover + Eraser | 隐藏系统 cursor，绘制 Alpha 0.5 EraserGripCircle |
+| Pen/Mouse Contact + Eraser 或 inverted Pen | 隐藏系统 cursor，绘制 Alpha 1.0 EraserGripCircle |
+| N 个 Touch Eraser Contact | 同时绘制 N 枚 Alpha 1.0 EraserGripCircle |
+| Touch 使用 Pen/Highlighter | 不绘制应用 cursor |
+| Mouse 使用 Pen/Highlighter | 使用 `IDC_ARROW`，不绘制应用 cursor |
+| Cursor 消失或移动 | dirty 包含旧 bounds 与新 bounds，正常图层重建后无残影 |
+| Contact 完成/L2 resolve | cursor 像素从未进入 operator layer，L2 只接收墨迹 |
+| Pointer API 不存在 | authority 为 Unknown，按有效 Pen 优先、Mouse 次之回退 |
+| Renderer 尚未配置 | 不提前隐藏系统 cursor；应用初始化继续按顶层失败契约处理 |
+| RTS disabled/error/removal/shutdown | 清理 Pen 样本、唤醒绘制线程并清除旧 bounds |
 
 ### 5. Good / Base / Bad Cases
 
-- Good：Pen 悬停后 InAir 发布 Hover，5px 基准笔在 200% DPI 下显示 10px 圆；Down/Move 隐藏，Up 后继续悬停再次显示圆。
-- Base：Touch/Mouse 绘制行为不变；Windows 7 没有 Pointer API 时 RTS 回退仍可显示并恢复光标。
-- Bad：在每个 240Hz packet 上无界 `PostMessage`，或私有消息在指针已进入其他应用后直接设置自定义光标。
+- Good：两指同时擦除时显示两枚白色不透明抓手圆；其中一指 Up 只清除对应旧区，另一枚继续移动。
+- Good：MPP Pen Hover 显示彩色笔尖，Down 后应用笔尖消失但系统 cursor 仍隐藏，Up 后在最新位置恢复。
+- Base：Mouse 在 Pen/Highlighter 下保持箭头，在 Eraser 下切换为应用圆；Windows 7 路径标记待真机验证。
+- Bad：把多枚 cursor 画进共享 L0 后随 contact Up resolve 到 L2，或为每次宽度变化重建 `HCURSOR`/纹理。
 
 ### 6. Tests Required
 
-- CPU 位图断言中心热点、透明 padding、96/192 DPI 下限语义、6.25x50px 矩形、EraserGripCircle 纯白主体、#CFCFCF 圆环、两条加粗圆头竖线、小数边缘覆盖、0.75px 浅灰内描边和直通 Alpha；另建无描边纯白 50% Alpha 圆并断言创建前中心像素严格等于 `0x80FFFFFF`。截图或 `DrawIconEx` 合成不作为硬件光标平面的格式判据。
-- 状态决策断言 Default/Hover/Contact/Inverted、Normal Eraser、Unknown/Pen/NonPen authority 和工具 eligibility 矩阵。
-- 静态/自动断言 RTS `DataInterest` 包含 StylusInRange、StylusOutOfRange、InAirPackets。
-- 完整 `Debug|ARM64` 解决方案构建及控制台测试；实体 Pen 验证 hover 显示、Down/Move 隐藏、Up 恢复、Mouse 系统接管、Touch、窗口边界和其他应用。
+- 自动断言 appearance 有效性、sample sequence 一致性、Pen/Mouse/Touch authority、Hover/Contact/Inverted 矩阵和系统 cursor 隐藏决策。
+- 自动断言 Circle/Rectangle/Eraser 参数、Touch 强制 Alpha 1.0、旧/新 bounds、边界裁剪和多 visual 同时存在。
+- 静态断言 RTS DataInterest 含 InRange/OutOfRange/InAir，InAir 选择最后 packet；搜索确认无自建 `HCURSOR` API。
+- 完整 `Debug|ARM64` 解决方案构建必须重新编译两个 shader 并完成 `.cso` 资源嵌入；运行控制台测试。
+- 真机覆盖 Pen、Highlighter、Eraser、笔尾、Mouse、单/多 Touch、窗口边界、SDR/HDR 和白/红/黑背景。
 
 ### 7. Wrong vs Correct
 
-Wrong：`把 DrvSetPointerShape 的预乘要求直接套到 CreateIconIndirect；用 BITMAPINFOHEADER + BI_RGB 承载 Alpha 光标；RTS 回调直接 SetCursor/ShowCursor。`
+Wrong：`renderer.SetOperatorTarget(renderer.layerL0); renderer.DrawTransientDrawingCursor(cursor);`
 
-Correct：`CreateIconIndirect 使用直通 Alpha BGRA，并按微软示例用正高度 BITMAPV5HEADER + BI_BITFIELDS、屏幕 HDC 和显式 RGBA masks 声明格式；RTS 只发布原子状态。`
+Correct：`CompositeLayersToBackBuffer(dirty); renderer.DrawTransientDrawingCursor(cursor); PresentFrame(dirty);`
 
 ## Stroke Modeling Invariants
 
@@ -340,6 +344,8 @@ Correct：`runtime.selectedTool` 保留批次选择，`runtime.tool` 只保存�
 - `L2`：已完成笔画的最终 premultiplied RGBA 画布，背景真透明。
 - `L1`：共享临时操作层，合并全部活动 contact 已稳定的前缀操作。
 - `L0`：共享临时操作层，合并全部活动 contact 当前帧仍会变化的真实尾部、预测与笔锋；每帧只恢复一次单位操作再重画。
+
+应用绘制 cursor 虽属于 L0 帧的瞬态视觉层级，但只在 backbuffer 最终合成阶段绘制；它不是 `layerL0` operator 的内容，也不得参与任何 L0→L2 resolve。
 
 临时操作层表示：
 

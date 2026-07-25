@@ -14,6 +14,8 @@
 
 export module draw3.renderer;
 
+import draw3.pen_cursor;
+
 export namespace draw3
 {
 	inline const DirectX::XMFLOAT4 kTransparentLayerClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -122,6 +124,8 @@ export namespace draw3
 		// 绘制固定矩形 sweep，临时层使用 Add/MAX、Retain/MIN 累积覆盖率。
 		int DrawHighlighterPrimitives(const std::vector<HighlighterPrimitive>& primitives,
 			DirectX::XMFLOAT4 color, InkOperatorKind operatorKind = InkOperatorKind::Draw);
+		// 在当前 backbuffer 最上层绘制一枚瞬态应用光标，不修改 L0/L1/L2。
+		void DrawTransientDrawingCursor(const DrawingCursorVisual& visual);
 		// 复制纹理中的指定矩形区域。
 		void CopyResource(ID3D11Texture2D* dst, ID3D11Texture2D* src, RECT rect);
 		// 将 L1/L0 仿射操作统一应用到目标 RGBA。
