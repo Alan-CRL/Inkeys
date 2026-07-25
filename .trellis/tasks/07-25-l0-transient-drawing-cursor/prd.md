@@ -13,12 +13,13 @@
 ## Requirements
 
 - 所有自定义工具光标在 L0 帧的最终阶段绘制到 backbuffer，且永不进入 L0/L1/L2 持久状态、contact payload、模型或指标。
-- Pen 光标是当前颜色圆形，直径为 `max(当前画笔粗细, 5px * dpiScale)`；Highlighter 是当前颜色 `6.25x50px` 竖直矩形。两者保持浅灰细内描边和 50% 填充 Alpha。
+- Pen 光标是当前颜色圆形，直径为 `max(当前画笔粗细, 5px * dpiScale)`；Highlighter 是当前颜色 `6.25x50px` 竖直矩形。两者保持浅灰细内描边，内部填充 Alpha 为 25%。
 - Eraser 光标直径等于实际 50px 擦除宽度；主体纯白，圆环和两条圆头竖线为 `#CFCFCF`；Hover 整体 Alpha 0.5，Contact 整体 Alpha 1.0。
 - Pen/Highlighter 的 Pen Hover 显示应用光标，Pen Contact 隐藏；Mouse 保留系统箭头；Touch 不显示笔尖光标。
 - Eraser 的 Pen/Mouse Hover 和 Contact 均隐藏系统光标并显示应用光标；倒转笔尾按 Eraser 处理。
 - Eraser 的每个活动 Touch contact 都显示一枚 100% 不透明橡皮圆；Touch 没有 Hover 半透明状态，多指必须同时显示多枚互不替代的光标。
 - RTS InAir/Down/Packets/Up 发布最新 Pen 坐标、接触和倒转状态；非 promoted Mouse 消息发布 Mouse 坐标；高频更新必须合并且能唤醒空闲绘制线程。
+- Pen Pointer Enter/Update 必须立即发布 Hover 坐标，不得等到首次 Down；Pen 离开时清除自定义光标，但不得回退到旧 Mouse 坐标，只有新的真实 Mouse 移动才恢复鼠标光标。
 - 光标移动、隐藏、工具切换、离开窗口、resize、清屏和全量恢复都必须清除旧位置并在当前帧最后重绘新位置。
 - 删除自建彩色 `HCURSOR` 路径；只允许窗口线程使用 `SetCursor(nullptr)` 或系统 `IDC_ARROW`，禁止全局光标 API。
 - 外观尺寸在绘制时通过常量传递，不因位置或尺寸变化创建 `HCURSOR` 或 GPU 纹理，为后续动态笔速橡皮保留低成本更新能力。

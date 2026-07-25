@@ -62,10 +62,11 @@
 
 - 自定义 Pen/Highlighter/Eraser 光标属于 L0 帧的最终瞬态视觉：先把 dirty 区域按 `L2 + L1 + L0` 合成到 backbuffer，再逐枚绘制 cursor。禁止把 cursor 写入共享 `layerL0`、L1、L2、ActiveStroke、contact payload、reconnect 或 metrics。
 - shader shape type `4/5/6` 分别表示 Cursor Circle、Rectangle、EraserGripCircle；复用两项 `InkPoint`、48 字节全局常量和 resolve dual-source blend，直接输出 premultiplied Add 与 Retain。尺寸变化只能更新常量/primitive，不创建尺寸相关纹理或 `HCURSOR`。
-- Pen 直径为 `max(当前基准画笔粗细, 5px * dpiScale)`；Highlighter 为 6.25x50px 固定竖直矩形。二者使用当前 RGB、50% fill Alpha 和 `#B8B8B8` 细内描边；压力不改变 cursor 尺寸。
+- Pen 直径为 `max(当前基准画笔粗细, 5px * dpiScale)`；Highlighter 为 6.25x50px 固定竖直矩形。二者使用当前 RGB、25% fill Alpha 和 `#B8B8B8` 细内描边；fill Alpha 不得降低 outline Alpha，压力不改变 cursor 尺寸。
 - EraserGripCircle 直径直接复用 50px 画布擦除宽度，不乘 DPI、不设最小值；主体纯白，圆环宽度为 4%D，两条圆头竖线宽度为 10%D、中心偏移为 12%D、半高为 24%D，结构颜色为 `#CFCFCF`。Hover 整体 Alpha 0.5，Contact 整体 Alpha 1.0。
 - RTS InAir/Down/Packets/Up 发布 X/Y/QPC、inverted 和 contact；InAir/Packets 只解码批次最后一个包。样本使用 writer latch + sequence 一致发布，并以 sticky control wake 合并；RTS 回调不得调用 D3D 或 `SetCursor`。
-- Windows 8+ 动态解析 Pointer API，并区分 `Unknown/Pen/Mouse/Touch`；旧系统由 RTS Pen 样本和非 promoted Mouse 消息回退。Pointer authority 仍为 Pen 时，低优先级 `WM_MOUSE*` 不得抢占；缺少 Pointer API 时以有效 RTS Pen 样本维持该优先级。Mouse 使用 `TrackMouseEvent/WM_MOUSELEAVE` 清理。
+- Windows 8+ 动态解析 Pointer API，并区分 `Unknown/Pen/Mouse/Touch`；`WM_POINTERENTER/UPDATE` 使用 `GetPointerInfo/GetPointerPenInfo` 直接发布 Pen Hover 坐标，不能依赖首个 RTS Down。旧系统由 RTS Pen 样本和非 promoted Mouse 消息回退。Pointer authority 仍为 Pen 且 Pen 样本有效时，低优先级 `WM_MOUSE*` 不得抢占；缺少 Pointer API 时同样以有效 RTS Pen 样本维持该优先级。Mouse 使用 `TrackMouseEvent/WM_MOUSELEAVE` 清理。
+- Pen/Touch 离开后应清除其可见样本，但保留最后设备 authority 作为“当前无光标”状态；禁止将 authority 立即改为 Unknown 而使旧 Mouse 样本复活。只有新的非 promoted `WM_MOUSE*` 才能明确切换到 Mouse 并恢复鼠标。
 - Pen/Highlighter：Pen Hover 显示应用 cursor，Pen Contact 只隐藏系统 cursor；Mouse 保留 `IDC_ARROW`；Touch 不显示笔尖 cursor。
 - Eraser/倒转笔尾：Pen/Mouse Hover 显示 Alpha 0.5，Contact 显示 Alpha 1.0，并隐藏系统 cursor。每个活动 Touch eraser contact 独立显示一枚 Alpha 1.0 cursor，不存在 Touch Hover；多指不得互相覆盖状态。
 - 活动主指针使用 Down 锁定的有效工具；没有匹配主指针但仍有活动批次时使用批次 `selectedTool`。Touch cursor 直接读取各自 runtime 的一致 `lastModelSnapshot` 和有效 `tool`。
@@ -87,13 +88,16 @@
 | Cursor 消失或移动 | dirty 包含旧 bounds 与新 bounds，正常图层重建后无残影 |
 | Contact 完成/L2 resolve | cursor 像素从未进入 operator layer，L2 只接收墨迹 |
 | Pointer API 不存在 | authority 为 Unknown，按有效 Pen 优先、Mouse 次之回退 |
+| Mouse 已移动后 Pen Enter | 立即用 Pointer 客户区坐标绘制 Pen Hover，不等待 Down |
+| Pen 离开且无新 Mouse 消息 | 清除 Pen visual 与系统 cursor，不显示旧 Mouse 位置 |
+| Pen 离开后 Mouse 再移动 | 切换 authority 为 Mouse；Pen/Highlighter 恢复箭头，Eraser 显示 Mouse 橡皮 visual |
 | Renderer 尚未配置 | 不提前隐藏系统 cursor；应用初始化继续按顶层失败契约处理 |
 | RTS disabled/error/removal/shutdown | 清理 Pen 样本、唤醒绘制线程并清除旧 bounds |
 
 ### 5. Good / Base / Bad Cases
 
 - Good：两指同时擦除时显示两枚白色不透明抓手圆；其中一指 Up 只清除对应旧区，另一枚继续移动。
-- Good：MPP Pen Hover 显示彩色笔尖，Down 后应用笔尖消失但系统 cursor 仍隐藏，Up 后在最新位置恢复。
+- Good：MPP Pen Enter 直接显示彩色笔尖，Down 后应用笔尖消失但系统 cursor 仍隐藏，Up 后在最新位置恢复；离开后保持无 cursor，直到鼠标再移动。
 - Base：Mouse 在 Pen/Highlighter 下保持箭头，在 Eraser 下切换为应用圆；Windows 7 路径标记待真机验证。
 - Bad：把多枚 cursor 画进共享 L0 后随 contact Up resolve 到 L2，或为每次宽度变化重建 `HCURSOR`/纹理。
 
@@ -101,15 +105,16 @@
 
 - 自动断言 appearance 有效性、sample sequence 一致性、Pen/Mouse/Touch authority、Hover/Contact/Inverted 矩阵和系统 cursor 隐藏决策。
 - 自动断言 Circle/Rectangle/Eraser 参数、Touch 强制 Alpha 1.0、旧/新 bounds、边界裁剪和多 visual 同时存在。
+- 自动断言 Pen authority + 无效 Pen 样本 + 陈旧 Mouse 样本不生成 visual；真实 Mouse authority 切换后才恢复 Mouse visual。
 - 静态断言 RTS DataInterest 含 InRange/OutOfRange/InAir，InAir 选择最后 packet；搜索确认无自建 `HCURSOR` API。
 - 完整 `Debug|ARM64` 解决方案构建必须重新编译两个 shader 并完成 `.cso` 资源嵌入；运行控制台测试。
 - 真机覆盖 Pen、Highlighter、Eraser、笔尾、Mouse、单/多 Touch、窗口边界、SDR/HDR 和白/红/黑背景。
 
 ### 7. Wrong vs Correct
 
-Wrong：`renderer.SetOperatorTarget(renderer.layerL0); renderer.DrawTransientDrawingCursor(cursor);`
+Wrong：`Pen leave -> authority=Unknown -> ResolvePrimaryDrawingCursorVisual 回退到旧 Mouse 坐标。`
 
-Correct：`CompositeLayersToBackBuffer(dirty); renderer.DrawTransientDrawingCursor(cursor); PresentFrame(dirty);`
+Correct：`Pen leave -> clear Pen sample + keep Pen authority；新 WM_MOUSEMOVE 才切换 Mouse authority。`
 
 ## Stroke Modeling Invariants
 

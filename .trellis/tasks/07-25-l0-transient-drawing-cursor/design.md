@@ -9,7 +9,9 @@
 ## Input And State
 
 - RTS sink 发布包含 X/Y/QPC、Hover/Contact、倒转状态的 Pen 样本。`InAirPackets` 校验包布局并只解码最后一个包。
+- `WM_POINTERENTER/UPDATE` 动态调用 `GetPointerInfo/GetPointerPenInfo` 直接发布 Pen Hover 坐标，补足部分驱动在 Down 前不发 InAir packet 的窗口。
 - WindowController 分别保存 Pen 和 Mouse 的无锁一致快照，并维护 `Unknown/Pen/Mouse/Touch` pointer authority。
+- Pen/Touch 离开时清除当前可见样本，但保留最后设备 authority；因此陈旧 Mouse 快照不会重新显示，直到新的非 promoted Mouse 消息明确接管。
 - 非 promoted `WM_MOUSEMOVE` 更新 Mouse 样本；`TrackMouseEvent` 和 `WM_MOUSELEAVE` 负责清除窗口外状态。
 - 样本更新通过现有 control wake 合并；系统光标刷新继续使用窗口线程的单个私有消息，RTS 回调不直接调用 `SetCursor`。
 - DrawingController 按 authority、设备状态、当前选择工具和活动 contact 锁定工具解析 Pen/Mouse 主光标；同时遍历活动 Touch eraser runtime，为每个 contact 生成独立的不透明 `DrawingCursorVisual`。

@@ -34,6 +34,7 @@ namespace draw3
 		const DirectX::XMFLOAT4 kReconnectManualTestColor(0.0f, 1.0f, 0.0f, 1.0f);
 		constexpr float kPenDiameter = 5.0f;
 		constexpr float kMinimumPenCursorDiameterAt96Dpi = 5.0f;
+		constexpr float kPenTipCursorFillAlpha = 0.25f;
 		constexpr float kWideToolDiameter = 50.0f;
 		constexpr float kReconnectManualTestRadiusPx = 4.0f;
 		constexpr float kRawMoveThresholdPx = 0.25f;
@@ -415,23 +416,27 @@ namespace draw3
 		const DirectX::XMFLOAT4 penColor = ColorForTool(DrawingTool::Pen);
 		const float penCursorDiameter = std::max(
 			kPenDiameter, kMinimumPenCursorDiameterAt96Dpi * configuration_.dpiScale);
-		window_.ConfigureDrawingCursor(DrawingTool::Pen, {
+		DrawingCursorAppearance penCursorAppearance = {
 			DrawingCursorShape::Circle,
 			penCursorDiameter,
 			penCursorDiameter,
 			penColor.x,
 			penColor.y,
 			penColor.z
-		});
+		};
+		penCursorAppearance.fillAlpha = kPenTipCursorFillAlpha;
+		window_.ConfigureDrawingCursor(DrawingTool::Pen, penCursorAppearance);
 		const DirectX::XMFLOAT4 highlighterColor = ColorForTool(DrawingTool::Highlighter);
-		window_.ConfigureDrawingCursor(DrawingTool::Highlighter, {
+		DrawingCursorAppearance highlighterCursorAppearance = {
 			DrawingCursorShape::Rectangle,
 			kWideToolDiameter / kHighlighterNibAspectRatio,
 			kWideToolDiameter,
 			highlighterColor.x,
 			highlighterColor.y,
 			highlighterColor.z
-		});
+		};
+		highlighterCursorAppearance.fillAlpha = kPenTipCursorFillAlpha;
+		window_.ConfigureDrawingCursor(DrawingTool::Highlighter, highlighterCursorAppearance);
 		// 橡皮实际模型使用画布像素宽度，光标不能再次乘 DPI。
 		const float eraserCursorDiameter = kWideToolDiameter;
 		DrawingCursorAppearance eraserAppearance = {

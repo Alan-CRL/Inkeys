@@ -146,6 +146,17 @@ int RunPenCursorTests()
 	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
 		DrawingCursorPointerAuthority::Unknown, false, true, false));
 
+	// Pen 离开后 authority 仍拒绝陈旧 Mouse 样本，直到真实鼠标移动切换 authority。
+	draw3::DrawingCursorSample absentPen;
+	visual = draw3::ResolvePrimaryDrawingCursorVisual(
+		absentPen, mouseHover, DrawingCursorPointerAuthority::Pen,
+		penAppearance, eraserAppearance, false);
+	PEN_CURSOR_CHECK(!visual.visible);
+	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
+		DrawingCursorPointerAuthority::Pen, false, false, true));
+	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
+		DrawingCursorPointerAuthority::Pen, true, false, true));
+
 	const draw3::DrawingCursorVisual firstTouch =
 		draw3::MakeTouchEraserDrawingCursorVisual(100.0f, 150.0f, eraserAppearance);
 	const draw3::DrawingCursorVisual secondTouch =

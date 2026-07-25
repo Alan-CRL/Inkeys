@@ -35,6 +35,8 @@ namespace draw3
 
 		using GetPointerPenInfoFunction = BOOL(WINAPI*)(
 			UINT32 pointerId, POINTER_PEN_INFO* penInfo);
+		using GetPointerInfoFunction = BOOL(WINAPI*)(
+			UINT32 pointerId, POINTER_INFO* pointerInfo);
 		using GetPointerTypeFunction = BOOL(WINAPI*)(
 			UINT32 pointerId, POINTER_INPUT_TYPE* pointerType);
 
@@ -54,6 +56,8 @@ namespace draw3
 			bool typeKnown = false;
 			POINTER_INPUT_TYPE type = PT_POINTER;
 			bool penInfoKnown = false;
+			bool positionKnown = false;
+			POINT screenPosition = {};
 			bool eraserHint = false;
 			bool inContact = false;
 		};
@@ -71,12 +75,30 @@ namespace draw3
 			const GetPointerTypeFunction getPointerType = ResolveGetPointerType();
 			if (!getPointerType || !getPointerType(pointerId, &details.type)) return details;
 			details.typeKnown = true;
+			static const GetPointerInfoFunction getPointerInfo = []() noexcept
+				{
+					const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+					return user32 ? reinterpret_cast<GetPointerInfoFunction>(
+						GetProcAddress(user32, "GetPointerInfo")) : nullptr;
+				}();
+			if (getPointerInfo)
+			{
+				POINTER_INFO pointerInfo = {};
+				if (getPointerInfo(pointerId, &pointerInfo) &&
+					pointerInfo.pointerType == details.type)
+				{
+					details.positionKnown = true;
+					details.screenPosition = pointerInfo.ptPixelLocation;
+				}
+			}
 			if (details.type != PT_PEN || !getPointerPenInfo) return details;
 
 			POINTER_PEN_INFO penInfo = {};
 			if (!getPointerPenInfo(pointerId, &penInfo) ||
 				penInfo.pointerInfo.pointerType != PT_PEN) return details;
 			details.penInfoKnown = true;
+			details.positionKnown = true;
+			details.screenPosition = penInfo.pointerInfo.ptPixelLocation;
 			details.eraserHint =
 				(penInfo.penFlags & (PEN_FLAG_INVERTED | PEN_FLAG_ERASER)) != 0;
 			details.inContact =
@@ -353,11 +375,12 @@ namespace draw3
 		if (IsPromotedPointerMouseMessage()) return true;
 		const DrawingCursorPointerAuthority authority =
 			drawingCursorPointerAuthority_.load(std::memory_order_acquire);
-		if (authority == DrawingCursorPointerAuthority::Pen) return true;
+		DrawingCursorSample penSample;
+		if (authority == DrawingCursorPointerAuthority::Pen)
+			return penCursorSample_.Read(penSample) && penSample.valid;
 		if (ResolveGetPointerType()) return false;
 
 		// Windows 7 没有 Pointer API：Pen 仍在 RTS range 内时，低优先级鼠标消息不得抢占。
-		DrawingCursorSample penSample;
 		return penCursorSample_.Read(penSample) && penSample.valid;
 	}
 
@@ -452,11 +475,13 @@ namespace draw3
 		{
 			const uint32_t pointerId = static_cast<uint32_t>(LOWORD(wParam));
 			const PointerDetails details = QueryPointerDetails(pointerId);
-			if (details.typeKnown)
-			{
-				if (details.type == PT_PEN) ClearPenCursorSample();
-				SetDrawingCursorPointerAuthority(DrawingCursorPointerAuthority::Unknown);
-			}
+			const DrawingCursorPointerAuthority previousAuthority =
+				drawingCursorPointerAuthority_.load(std::memory_order_acquire);
+			const DrawingCursorPointerAuthority leaveAuthority = details.typeKnown
+				? AuthorityForPointerType(details.type) : previousAuthority;
+			if (leaveAuthority == DrawingCursorPointerAuthority::Pen) ClearPenCursorSample();
+			// 保留离开的设备 authority，防止陈旧 Mouse 样本在没有新鼠标移动时恢复。
+			SetDrawingCursorPointerAuthority(leaveAuthority);
 			lastHapticPenInfoPointerId_ = 0;
 			lastHapticPenInfoKnown_ = false;
 			lastHapticPenInfoEraser_ = false;
@@ -473,6 +498,23 @@ namespace draw3
 			const PointerDetails details = QueryPointerDetails(pointerId);
 			if (details.typeKnown)
 				SetDrawingCursorPointerAuthority(AuthorityForPointerType(details.type));
+			if (details.type == PT_PEN && details.positionKnown)
+			{
+				POINT clientPosition = details.screenPosition;
+				if (ScreenToClient(window, &clientPosition))
+				{
+					DrawingCursorSample sample;
+					sample.x = static_cast<float>(clientPosition.x);
+					sample.y = static_cast<float>(clientPosition.y);
+					sample.valid = true;
+					sample.inverted = details.eraserHint;
+					sample.inContact = details.inContact;
+					LARGE_INTEGER qpc = {};
+					QueryPerformanceCounter(&qpc);
+					sample.qpc = qpc.QuadPart;
+					PublishPenCursorSample(sample);
+				}
+			}
 			if ((message == WM_POINTERENTER || message == WM_POINTERDOWN) && pointerId != 0)
 			{
 				if (pointerId != lastHapticPenInfoPointerId_ || !lastHapticPenInfoKnown_)
