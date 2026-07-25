@@ -104,3 +104,36 @@ Replaced tangent-oriented highlighter geometry with a fixed 6.25x50px vertical r
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Windows Ink cursor alpha refinement
+
+**Date**: 2026-07-25
+**Task**: Windows Ink cursor alpha refinement
+**Branch**: `main`
+
+### Summary
+
+Aligned CreateIconIndirect cursor construction with the Microsoft alpha cursor sample, retained straight Alpha and recorded the unresolved HDR hardware-cursor darkening for follow-up.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2af3c9b` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
