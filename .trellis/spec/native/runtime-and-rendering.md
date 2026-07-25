@@ -30,7 +30,7 @@
 
 ## Tool State
 
-单笔兼容路径在 `WM_LBUTTONDOWN` 时复制工具。多 contact 路径只在空闲批次的首个 Down 读取 1/2/3 选择，并把同一工具锁定到该批所有 contact；活动期间的选择只影响下一批。
+单笔兼容路径在 `WM_LBUTTONDOWN` 时复制工具。多 contact 路径只在空闲批次的首个 Down 读取 1/2/3/4 选择，并把同一工具锁定到该批所有 contact；活动期间的选择只影响下一批。
 
 当前行为：
 
@@ -39,8 +39,62 @@
 | Pen | 5px base; hardware 1–7px | active configured mode | per-device fixed/simulated/hardware | real tail + prediction + taper |
 | Highlighter | 6.25×50px fixed vertical nib | enabled from Down | fixed | rectangle sweep primitives, no taper |
 | Eraser | 50px | disabled | fixed | real points directly committed to L1 |
+| Laser | 5px core + 24px glow | active configured mode | fixed | independent stable/live coverage, never L2 |
 
 这是当前实验实现。预测时长、目标帧率、笔宽、live-tip 和几何阈值默认都是实验参数；只有公开接口、持久化格式或明确兼容要求已经依赖某值时，该值才升级为兼容契约。
+
+## Scenario: Laser Pointer Glow Trail
+
+### 1. Scope / Trigger
+
+修改 `DrawingTool::Laser`、Laser coverage、激光粒子/笔尖、留存计时或其多 contact 主循环时，必须应用本契约。
+
+### 2. Signatures
+
+- `DrawingTool::Laser`，数字键/小键盘 `4`
+- `StrokeModelConfiguration::laserParticlesEnabled`、`laserHoldDurationSeconds`
+- `DrawingController::SetLaserParticlesEnabled/GetLaserParticlesEnabled`
+- `DrawingController::SetLaserHoldDurationSeconds/GetLaserHoldDurationSeconds`
+- `InkRenderer::DrawLaserCoverage/ResolveLaserCoverage/DrawLaserDots`
+
+### 3. Contracts
+
+- Laser 在 Down 时锁定到当前批次，支持 Pen、Mouse 和多 Touch；跳过断触 reconnect、倒转笔尾橡皮覆盖和触觉反馈。
+- stable/live 只写独立 `R8G8B8A8_UNORM` coverage，四通道为白芯、白红散射、红边和红晕；确认前缀增量写 stable，活动真实尾部和 prediction 每帧重建 live。任何 Laser 几何都不得进入 L2。
+- 最后一根 Laser Up 才记录 `lastAllUpQpc`；默认满亮保持 `3.0s`，固定 `0.8s` smooth fade。新 Down 在 Hold/Fade 中把整组 opacity 恢复为 `1` 并重新计时。
+- `SetLaserHoldDurationSeconds` 只接受 finite non-negative 值；运行中调整须由 control wake 唤醒并相对最后一次全部 Up 立即重算。粒子 setter 同样发布 control wake，关闭后下一帧清理旧粒子 bounds。
+- Hold 静态期不持续 Present；Fade、接触、prediction 和粒子动画才驱动帧。resize 保留 stable 左上角交集，live 重新绘制；clear/Present 失败恢复必须重建/清理 Laser coverage。
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Down/Up 多 contact | 只有最后一根 Up 启动 Hold；中间 Up 不改变 opacity |
+| Hold/Fade 新 Down | 旧 stable coverage 全组恢复满亮并重新计时 |
+| 非法 hold seconds | setter 返回 `false`，旧值保持不变且不发布设置 |
+| Laser Up | 清除 prediction/live，不 reconnect、不 resolve 到 L2 |
+| 粒子关闭 | 停止生成/动画，下一帧 union 旧粒子 bounds 并清除 |
+| 3 秒 Hold 静止 | 不产生额外 frame/Present；deadline 或 control/input wake 才恢复 |
+| resize/clear/Present 失败 | stable 交集保留或按请求清空，旧/新 glow bounds 都进入 dirty |
+
+### 5. Good / Base / Bad Cases
+
+- Good：白芯与红边在深色、混合背景可见，外晕不遮挡底层；粒子每 contact 不超过 10 枚且不形成连续带。
+- Base：Hover 为静态 LaserDot，活动 Touch 各自显示独立 tip，抬笔后粒子就近收束并在约 `140ms` 消失。
+- Bad：把 Laser stable coverage resolve 到 L2、为 prediction 启用 reconnect、或在 Hold 期自旋 Present。
+
+### 6. Tests Required
+
+- 断言按键 4/枚举、最后 Up 计时、3.0s Hold、0.8s fade、运行中设置变化和非法输入。
+- 断言 Laser 不进入 reconnect/L2，coverage bounds 覆盖 24px 外晕，resize/clear/Present failure 无残影。
+- 断言粒子 seed/弧长槽位稳定、36-48px 发射间隔、每 contact 上限 10、Up 收束约 140ms、开关清理旧 dirty。
+- Debug/Release ARM64 全解决方案构建、两份 shader 编译/嵌入；人工覆盖 Pen/Mouse/Touch Hover、单/多指、白/深/混合背景。
+
+### 7. Wrong vs Correct
+
+Wrong：`Up -> ApplyOperatorLayers(layerL2) -> Present`，或 Hold 期间用固定帧定时器持续刷新。
+
+Correct：`Up -> stable coverage + lifecycle Hold`；只在 Hold deadline/Fade、输入或粒子动画唤醒时 resolve Laser 到 backbuffer，L2 保持不变。
 
 当前源码描述现有行为，阶段说明描述历史设计或计划。两者出现数值或工具语义差异时，应并列记录，不得自动用源码覆盖历史目标，也不得自动让实现恢复为阶段说明。
 

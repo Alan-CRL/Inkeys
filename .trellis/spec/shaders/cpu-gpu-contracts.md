@@ -41,6 +41,19 @@ float2 halfSize
 
 它绑定在 VS `b0` 与 PS `b0`。`operatorKind` 只在 pixel shader 使用，但仍属于同一共享常量缓冲区。
 
+`LaserStyleConstants` 绑定到 VS/PS `b1`，总大小固定为 `96 bytes`：
+
+| C++ | HLSL |
+|---|---|
+| `radii` | `laserRadii`（白芯、红边、外晕、散射带） |
+| `coreColor` | `laserCoreColor` |
+| `scatterColor` | `laserScatterColor` |
+| `borderColor` | `laserBorderColor` |
+| `glowColor` | `laserGlowColor` |
+| `parameters.x/y` | `laserParameters.x/y`（组 opacity、DPI scale） |
+
+新增字段必须保持 16 字节对齐，并同步 `renderer.cppm/.cpp`、`ink.hlsli` 与 shape `7/8/9/10` 的绑定。
+
 ## Resource Registers
 
 | Register | Resource |
@@ -52,9 +65,13 @@ float2 halfSize
 | `t3` | HighlighterData |
 | `t4` | LiveOperatorAdd |
 | `t5` | LiveOperatorRetain |
+| `t6` | LaserStableCoverage (`R8G8B8A8_UNORM`) |
+| `t7` | LaserLiveCoverage (`R8G8B8A8_UNORM`) |
 | `s0` | OperatorSampler |
 
 `ApplyOperatorLayers` 绑定 PS `t1..t5` 时为 VS `t3` 留空槽。修改数组顺序前必须按寄存器表核对。
+
+Laser coverage 写入只绑定单张 coverage RTV，并以 `D3D11_BLEND_OP_MAX` 增量累积四通道 `(core, scatter, border, glow)`；resolve 才绑定 `t6/t7`，完成后必须解除 SRV，随后才能清空或 resize 纹理。
 
 ## Shape And Operator Modes
 
@@ -67,6 +84,10 @@ float2 halfSize
 - `4`：瞬态 Cursor Circle。
 - `5`：瞬态 Cursor Rectangle。
 - `6`：瞬态 EraserGripCircle。
+- `7`：Laser coverage 胶囊写入。
+- `8`：Laser stable/live coverage resolve。
+- `9`：Laser Hover/Touch 笔尖。
+- `10`：Laser 稀疏粒子。
 
 `globalOperatorKind`：
 
