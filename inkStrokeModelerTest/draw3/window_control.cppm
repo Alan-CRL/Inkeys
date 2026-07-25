@@ -73,7 +73,7 @@ export namespace draw3
 		void SetGpuTransparentComposition(bool enabled);
 		// 返回当前绘制工具。
 		DrawingTool ActiveTool() const;
-		// 配置 Pen/Highlighter 的当前笔尖光标；应在窗口显示前完成。
+		// 配置 Pen/Highlighter/Eraser 的当前笔尖光标；应在窗口显示前完成。
 		bool ConfigureDrawingCursor(DrawingTool tool, const DrawingCursorAppearance& appearance);
 		// 活动 Pen 笔画锁定有效工具；无活动 Pen 时传回悬停选择。
 		void SetActivePenCursorTool(DrawingTool tool) noexcept;
@@ -120,6 +120,8 @@ export namespace draw3
 		HCURSOR defaultCursor_ = nullptr;
 		HCURSOR penCursor_ = nullptr;
 		HCURSOR highlighterCursor_ = nullptr;
+		HCURSOR eraserCursor_ = nullptr;
+		HCURSOR eraserContactCursor_ = nullptr;
 		uint32_t lastHapticPenInfoPointerId_ = 0;
 		bool lastHapticPenInfoKnown_ = false;
 		bool lastHapticPenInfoEraser_ = false;

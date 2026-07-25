@@ -33,6 +33,7 @@ namespace draw3
 		const DirectX::XMFLOAT4 kMultiContactInkColor(1.0f, 0.0f, 0.0f, 1.0f);
 		const DirectX::XMFLOAT4 kReconnectManualTestColor(0.0f, 1.0f, 0.0f, 1.0f);
 		constexpr float kPenDiameter = 5.0f;
+		constexpr float kMinimumPenCursorDiameterAt96Dpi = 6.0f;
 		constexpr float kWideToolDiameter = 50.0f;
 		constexpr float kReconnectManualTestRadiusPx = 4.0f;
 		constexpr float kRawMoveThresholdPx = 0.25f;
@@ -412,10 +413,12 @@ namespace draw3
 		haptics_(haptics)
 	{
 		const DirectX::XMFLOAT4 penColor = ColorForTool(DrawingTool::Pen);
+		const float penCursorDiameter = std::max(
+			kPenDiameter, kMinimumPenCursorDiameterAt96Dpi * configuration_.dpiScale);
 		window_.ConfigureDrawingCursor(DrawingTool::Pen, {
 			DrawingCursorShape::Circle,
-			kPenDiameter,
-			kPenDiameter,
+			penCursorDiameter,
+			penCursorDiameter,
 			penColor.x,
 			penColor.y,
 			penColor.z
@@ -429,6 +432,20 @@ namespace draw3
 			highlighterColor.y,
 			highlighterColor.z
 		});
+		const float eraserCursorDiameter = kWideToolDiameter * configuration_.dpiScale;
+		DrawingCursorAppearance eraserAppearance = {
+			DrawingCursorShape::EraserGripCircle,
+			eraserCursorDiameter,
+			eraserCursorDiameter,
+			1.0f, 1.0f, 1.0f
+		};
+		eraserAppearance.opacity = 0.75f;
+		eraserAppearance.fillAlpha = 1.0f;
+		eraserAppearance.outlineWidth = eraserCursorDiameter * 0.04f;
+		eraserAppearance.outlineRed = 128.0f / 255.0f;
+		eraserAppearance.outlineGreen = 128.0f / 255.0f;
+		eraserAppearance.outlineBlue = 128.0f / 255.0f;
+		window_.ConfigureDrawingCursor(DrawingTool::Eraser, eraserAppearance);
 		if (haptics_) haptics_->SetEnabled(configuration_.hapticFeedbackEnabled);
 	}
 
@@ -531,7 +548,7 @@ namespace draw3
 		LARGE_INTEGER qpcFrequencyValue = {};
 		QueryPerformanceFrequency(&qpcFrequencyValue);
 		const int64_t qpcFrequency = qpcFrequencyValue.QuadPart;
-		const float reconnectDpiScale = std::max(configuration_.expectedSpeed / 500.0f, 0.1f);
+		const float reconnectDpiScale = configuration_.dpiScale;
 		bool effectiveInvertedPenEraserEnabled = false;
 		if constexpr (!kInterruptedStrokeReconnectManualTestModeEnabled)
 			effectiveInvertedPenEraserEnabled =

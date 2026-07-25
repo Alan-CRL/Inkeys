@@ -112,6 +112,7 @@ export namespace draw3
 	{
 		StrokeTimingProfile timingProfile;
 		float expectedSpeed;
+		float dpiScale = 1.0f;
 		double liveTipDurationSeconds;
 		ink::stroke_model::KalmanPredictorParams kalmanPredictorParams;
 		ink::stroke_model::StrokeModelParams modelParams;

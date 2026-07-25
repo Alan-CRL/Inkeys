@@ -57,43 +57,46 @@
 - `WindowController::ConfigureDrawingCursor`
 - `WindowController::SetActivePenCursorTool/ClearActivePenCursorTool`
 - `BuildDrawingCursorBitmap`、`CreateDrawingCursor`、`ShouldShowDrawingCursor`
+- `ShouldShowEraserCursor`、`IsPenCursorContact`
 
 ### 3. Contracts
 
-- 自定义光标仅用于当前 HWND 客户区中的 Normal Pen；Mouse、Touch、Eraser 和 Inverted Pen 使用 `IDC_ARROW`。禁止 `SetSystemCursor`、窗口类全局光标和计数式 `ShowCursor`。
+- 自定义光标仅用于当前 HWND 客户区中的 Hover Normal Pen/Highlighter 和 EraserGripCircle；Normal Pen/Highlighter Contact 使用当前窗口的 `SetCursor(nullptr)` 隐藏，Eraser/倒转 Pen Contact 使用不透明 EraserGripCircle，Mouse/Touch 使用 `IDC_ARROW`。禁止 `SetSystemCursor`、窗口类全局光标和计数式 `ShowCursor`。
 - Windows 8+ 动态解析 `GetPointerType/GetPointerPenInfo`，Pointer 类型优先于 RTS 回退；Windows 7 缺少 API 时由 RTS in-air/out-of-range 驱动，不得形成静态导入。
-- `StylusInRange` 只预热 metadata，因为它没有倒转信息；首个 InAir/Pointer 包发布 Normal/Inverted。disabled、error、tablet removal、out-of-range 和 shutdown 都发布 Default。
+- `StylusInRange` 只预热 metadata，因为它没有倒转信息；InAir/Up 发布 Hover，Down/接触 Packets 发布 Contact，并保留 inverted 信息。disabled、error、tablet removal、out-of-range 和 shutdown 都发布 Default。
 - sink 是非拥有指针；RTS shutdown 必须先禁用并移除插件，再发布 Default 和清空 sink。
 - 跨线程状态使用原子值，并以单个 pending 标志合并私有窗口消息；消息队列最多保留一个待处理光标刷新。
 - 私有刷新调用 `SetCursor` 前必须用 `WindowFromPoint` 确认当前窗口/子窗口仍拥有指针；`WM_SETCURSOR` 只处理 `HTCLIENT`。
-- Pen 是 5px 基准圆，Highlighter 是 6.25x50px 固定竖直矩形；外轮廓等于笔尖 footprint，1px `#4A4A4A` 内描边，内部为当前 RGB、50% Alpha 的预乘 BGRA。压力不改变光标尺寸。
-- 活动 Pen 使用 Down 锁定的有效工具覆盖；没有活动 Pen 时使用当前选择工具。光标不进入 L0/L1/L2、模型或 contact payload。
+- Pen 光标直径取基准直径与 `6px × DPI scale` 的较大值，Highlighter 是 6.25x50px 固定竖直矩形；外轮廓等于光标 footprint，使用现有配置的 `#B8B8B8` 内描边且外框透明度语义不变，内部为当前 RGB、50% Alpha 的 straight BGRA。压力不改变光标尺寸。
+- EraserGripCircle 直径复用 `kWideToolDiameter × DPI scale`，不设置最小尺寸；圆环宽度为直径 4%，三条竖线宽度为直径 2.5%，全部使用 `#808080`。Hover 整枚 Alpha 为 0.75，Contact 整枚 Alpha 为 1.0。
+- 活动 Pen 使用 Down 锁定的有效工具覆盖；没有活动 Pen 时使用当前选择工具。普通 Eraser 或 inverted 状态解析为 EraserGripCircle，光标不进入 L0/L1/L2、模型或 contact payload。
 
 ### 4. Validation & Error Matrix
 
 | Condition | Required behavior |
 |---|---|
-| Pointer 类型是 `PT_PEN` 且工具为 Pen/Highlighter | 显示对应彩色光标 |
+| Pointer 类型是 `PT_PEN`、处于 Hover 且工具为 Pen/Highlighter | 显示对应彩色光标 |
+| Pen Down 或接触 Move | 当前窗口立即 `SetCursor(nullptr)`，不显示箭头或自定义光标 |
+| 接触时 Pointer authority 切换为 NonPen | 立即恢复默认箭头，不沿用 Pen 隐藏状态 |
 | Pointer 类型是 Mouse/Touch | 立即使用默认箭头，即使 RTS 状态尚未清除 |
 | Pointer API 不存在 | 清除旧 NonPen authority，按 RTS Pen 状态回退 |
-| Inverted Pen 或有效工具为 Eraser | 使用默认箭头，并保留倒转状态供未来扩展 |
+| Inverted Pen 或有效工具为 Eraser | 使用 EraserGripCircle；Hover Alpha 0.75，Contact Alpha 1.0 |
 | 光标位图/句柄创建失败 | 记录一次诊断，继续启动并使用默认箭头 |
 | 私有刷新到达时指针已在其他窗口 | 不调用 `SetCursor`，由目标窗口管理自己的光标 |
 | RTS disabled/error/removal/shutdown | 发布 Default，不得遗留 sink 或自定义光标状态 |
 
 ### 5. Good / Base / Bad Cases
 
-- Good：Pen 悬停后 InAir 发布 Normal，窗口显示 5px 圆；Down 后绘制线程锁定 Pen 工具，Up 后继续悬停仍显示圆。
+- Good：Pen 悬停后 InAir 发布 Hover，5px 基准笔在 200% DPI 下显示 12px 圆；Down/Move 隐藏，Up 后继续悬停再次显示圆。
 - Base：Touch/Mouse 绘制行为不变；Windows 7 没有 Pointer API 时 RTS 回退仍可显示并恢复光标。
 - Bad：在每个 240Hz packet 上无界 `PostMessage`，或私有消息在指针已进入其他应用后直接设置自定义光标。
 
 ### 6. Tests Required
 
-- CPU 位图断言中心热点、透明 padding、5px 圆、6.25x50px 矩形、小数边缘覆盖、1px 内描边和 50% 预乘 Alpha。
-- 状态决策断言 Default/Normal/Inverted、Unknown/Pen/NonPen authority 和工具 eligibility 矩阵。
+- CPU 位图断言中心热点、透明 padding、96/192 DPI 下限语义、6.25x50px 矩形、EraserGripCircle、#808080 圆环、三条竖线、小数边缘覆盖、0.75px 浅灰内描边和 straight Alpha。
+- 状态决策断言 Default/Hover/Contact/Inverted、Normal Eraser、Unknown/Pen/NonPen authority 和工具 eligibility 矩阵。
 - 静态/自动断言 RTS `DataInterest` 包含 StylusInRange、StylusOutOfRange、InAirPackets。
-- 完整 `Debug|ARM64` 解决方案构建及控制台测试；实体 Pen 验证 hover、Down/Move/Up、Mouse 系统接管、Touch、窗口边界和其他应用。
-- `HCURSOR` 在接触时持续可见属于真机硬门槛；驱动强制隐藏时标记失败，不自动改为 GPU 覆盖层。
+- 完整 `Debug|ARM64` 解决方案构建及控制台测试；实体 Pen 验证 hover 显示、Down/Move 隐藏、Up 恢复、Mouse 系统接管、Touch、窗口边界和其他应用。
 
 ### 7. Wrong vs Correct
 

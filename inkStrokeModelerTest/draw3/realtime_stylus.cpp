@@ -478,6 +478,7 @@ namespace draw3
 			{
 				if (!source || !stylusInfo || !packet) return E_INVALIDARG;
 				const TabletMetadata* metadata = EnsureMetadata(source, stylusInfo->tcid, nullptr);
+				PublishPenCursor(metadata, stylusInfo, true); // Down 一到即隐藏，解码失败也不能遗留悬停光标。
 				ContactSnapshot snapshot;
 				if (!DecodeSnapshot(metadata, propertyCount, packet, ContactPhase::Down, snapshot))
 				{
@@ -488,7 +489,6 @@ namespace draw3
 				}
 				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
-				PublishPenCursor(metadata, stylusInfo);
 				InputDeviceType deviceType = metadata ? metadata->deviceType : InputDeviceType::Pen;
 				if (deviceType == InputDeviceType::MouseLeft)
 				{
@@ -522,6 +522,7 @@ namespace draw3
 				if (!stylusInfo || !packet) return E_INVALIDARG;
 				const TabletMetadata* metadata = FindMetadata(stylusInfo->tcid);
 				if (!metadata && source) metadata = EnsureMetadata(source, stylusInfo->tcid, nullptr);
+				PublishPenCursor(metadata, stylusInfo, false); // Up 后仍在范围内，恢复悬停光标。
 				ContactSnapshot snapshot;
 				if (!DecodeSnapshot(metadata, propertyCount, packet, ContactPhase::Up, snapshot))
 				{
@@ -531,7 +532,6 @@ namespace draw3
 				}
 				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
-				PublishPenCursor(metadata, stylusInfo);
 				bool published = false;
 				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
 					published = interruptionSimulation_.PublishUp(
@@ -563,7 +563,7 @@ namespace draw3
 				if (!stylusInfo) return E_INVALIDARG;
 				const TabletMetadata* metadata = FindMetadata(stylusInfo->tcid);
 				if (!metadata && source) metadata = EnsureMetadata(source, stylusInfo->tcid, nullptr);
-				PublishPenCursor(metadata, stylusInfo);
+				PublishPenCursor(metadata, stylusInfo, false);
 				return S_OK;
 			}
 
@@ -589,7 +589,7 @@ namespace draw3
 				}
 				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
-				PublishPenCursor(metadata, stylusInfo);
+				PublishPenCursor(metadata, stylusInfo, true);
 				bool published = false;
 				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
 					published = interruptionSimulation_.PublishMove(
@@ -668,12 +668,12 @@ namespace draw3
 
 		private:
 			void PublishPenCursor(const TabletMetadata* metadata,
-				const StylusInfo* stylusInfo) noexcept
+				const StylusInfo* stylusInfo, bool inContact) noexcept
 			{
 				if (!penCursorSink_ || !metadata || !stylusInfo ||
 					metadata->deviceType != InputDeviceType::Pen) return;
-				penCursorSink_->PublishPenCursorDeviceState(stylusInfo->bIsInvertedCursor != FALSE
-					? PenCursorDeviceState::InvertedPen : PenCursorDeviceState::Pen);
+				penCursorSink_->PublishPenCursorDeviceState(ResolvePenCursorDeviceState(
+					stylusInfo->bIsInvertedCursor != FALSE, inContact));
 			}
 
 			void PublishDefaultPenCursor() noexcept

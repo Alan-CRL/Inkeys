@@ -245,7 +245,8 @@ namespace draw3
 	StrokeModelConfiguration CreateStrokeModelConfiguration(int dpiX)
 	{
 		const StrokeTimingProfile timingProfile = GetStrokeTimingProfile(kActiveStrokeTimingProfileId);
-		const float expectedSpeed = 500.0f * (static_cast<float>(dpiX) / 96.0f); // DPI 越高，像素速度按比例放大。
+		const float dpiScale = std::max(static_cast<float>(dpiX) / 96.0f, 0.1f);
+		const float expectedSpeed = 500.0f * dpiScale; // DPI 越高，像素速度按比例放大。
 		ink::stroke_model::KalmanPredictorParams kalmanParams;
 		kalmanParams.process_noise = 0.05;
 		kalmanParams.measurement_noise = 0.01;
@@ -280,7 +281,8 @@ namespace draw3
 			}
 		};
 		modelParams.stylus_state_modeler_params.use_stroke_normal_projection = true;
-		return { timingProfile, expectedSpeed, GetLiveTipDurationSeconds(timingProfile), kalmanParams, modelParams };
+		return { timingProfile, expectedSpeed, dpiScale,
+			GetLiveTipDurationSeconds(timingProfile), kalmanParams, modelParams };
 	}
 
 	void ApplyPredictionMode(ink::stroke_model::StrokeModelParams& params,

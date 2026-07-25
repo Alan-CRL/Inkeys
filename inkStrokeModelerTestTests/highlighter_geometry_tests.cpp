@@ -43,6 +43,8 @@ int RunHighlighterGeometryTests()
 	const draw3::StrokeModelConfiguration defaultConfiguration =
 		draw3::CreateStrokeModelConfiguration(96);
 	HIGHLIGHTER_CHECK(!defaultConfiguration.retainPredictionOnUp);
+	HIGHLIGHTER_CHECK(defaultConfiguration.dpiScale == 1.0f);
+	HIGHLIGHTER_CHECK(draw3::CreateStrokeModelConfiguration(192).dpiScale == 2.0f);
 	draw3::ActiveStroke completedPen(5.0f, 500.0f);
 	completedPen.realPoints = {
 		{ 10.0f, 20.0f, 2.5f, 0.0f },

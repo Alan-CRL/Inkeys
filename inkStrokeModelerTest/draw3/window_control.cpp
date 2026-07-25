@@ -54,6 +54,7 @@ namespace draw3
 			POINTER_INPUT_TYPE type = PT_POINTER;
 			bool penInfoKnown = false;
 			bool eraserHint = false;
+			bool inContact = false;
 		};
 
 		PointerDetails QueryPointerDetails(uint32_t pointerId) noexcept
@@ -77,6 +78,8 @@ namespace draw3
 			details.penInfoKnown = true;
 			details.eraserHint =
 				(penInfo.penFlags & (PEN_FLAG_INVERTED | PEN_FLAG_ERASER)) != 0;
+			details.inContact =
+				(penInfo.pointerInfo.pointerFlags & POINTER_FLAG_INCONTACT) != 0;
 			return details;
 		}
 
@@ -101,8 +104,12 @@ namespace draw3
 	{
 		if (penCursor_) DestroyCursor(penCursor_);
 		if (highlighterCursor_) DestroyCursor(highlighterCursor_);
+		if (eraserCursor_) DestroyCursor(eraserCursor_);
+		if (eraserContactCursor_) DestroyCursor(eraserContactCursor_);
 		penCursor_ = nullptr;
 		highlighterCursor_ = nullptr;
+		eraserCursor_ = nullptr;
+		eraserContactCursor_ = nullptr;
 	}
 
 	bool WindowController::Initialize(bool preconfigureNoRedirectionBitmap)
@@ -227,7 +234,6 @@ namespace draw3
 	bool WindowController::ConfigureDrawingCursor(
 		DrawingTool tool, const DrawingCursorAppearance& appearance)
 	{
-		if (tool == DrawingTool::Eraser) return false;
 		HCURSOR cursor = CreateDrawingCursor(appearance);
 		if (!cursor)
 		{
@@ -235,9 +241,28 @@ namespace draw3
 				<< static_cast<uint32_t>(tool) << std::endl;
 			return false;
 		}
-		HCURSOR& target = tool == DrawingTool::Pen ? penCursor_ : highlighterCursor_;
-		if (target) DestroyCursor(target);
-		target = cursor;
+		if (tool == DrawingTool::Eraser)
+		{
+			DrawingCursorAppearance contactAppearance = appearance;
+			contactAppearance.opacity = 1.0f;
+			HCURSOR contactCursor = CreateDrawingCursor(contactAppearance);
+			if (!contactCursor)
+			{
+				DestroyCursor(cursor);
+				std::cout << "Create eraser contact cursor failed." << std::endl;
+				return false;
+			}
+			if (eraserCursor_) DestroyCursor(eraserCursor_);
+			if (eraserContactCursor_) DestroyCursor(eraserContactCursor_);
+			eraserCursor_ = cursor;
+			eraserContactCursor_ = contactCursor;
+		}
+		else
+		{
+			HCURSOR& target = tool == DrawingTool::Pen ? penCursor_ : highlighterCursor_;
+			if (target) DestroyCursor(target);
+			target = cursor;
+		}
 		QueuePenCursorRefresh();
 		return true;
 	}
@@ -295,12 +320,30 @@ namespace draw3
 		if (cursorWindow != window_ && (!cursorWindow || !IsChild(window_, cursorWindow)))
 			return; // 私有刷新消息不能改变其他窗口当前拥有的系统光标。
 		const DrawingTool tool = EffectivePenCursorTool();
+		const PenCursorDeviceState deviceState =
+			penCursorDeviceState_.load(std::memory_order_acquire);
+		const PenCursorPointerAuthority pointerAuthority =
+			penCursorPointerAuthority_.load(std::memory_order_acquire);
+		const bool eraserCursor = ShouldShowEraserCursor(
+			deviceState, pointerAuthority, tool == DrawingTool::Eraser);
+		if (eraserCursor)
+		{
+			const HCURSOR cursor = IsPenCursorContact(deviceState)
+				? eraserContactCursor_ : eraserCursor_;
+			SetCursor(cursor ? cursor : defaultCursor_);
+			return;
+		}
 		HCURSOR drawingCursor = nullptr;
 		if (tool == DrawingTool::Pen) drawingCursor = penCursor_;
 		else if (tool == DrawingTool::Highlighter) drawingCursor = highlighterCursor_;
+		if (ShouldHideDrawingCursor(deviceState, pointerAuthority))
+		{
+			SetCursor(nullptr); // 仅隐藏当前窗口当前光标，不使用全局计数式 ShowCursor。
+			return;
+		}
 		const bool showDrawingCursor = drawingCursor && ShouldShowDrawingCursor(
-			penCursorDeviceState_.load(std::memory_order_acquire),
-			penCursorPointerAuthority_.load(std::memory_order_acquire),
+			deviceState,
+			pointerAuthority,
 			tool == DrawingTool::Pen || tool == DrawingTool::Highlighter);
 		SetCursor(showDrawingCursor ? drawingCursor : defaultCursor_);
 	}
@@ -380,8 +423,10 @@ namespace draw3
 				if (details.type == PT_PEN)
 				{
 					SetPenCursorPointerAuthority(PenCursorPointerAuthority::Pen);
-					PublishPenCursorDeviceState(details.penInfoKnown && details.eraserHint
-						? PenCursorDeviceState::InvertedPen : PenCursorDeviceState::Pen);
+					const bool inContact = details.penInfoKnown
+						? details.inContact : message == WM_POINTERDOWN;
+					PublishPenCursorDeviceState(ResolvePenCursorDeviceState(
+						details.penInfoKnown && details.eraserHint, inContact));
 				}
 				else
 				{
