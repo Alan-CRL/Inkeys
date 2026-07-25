@@ -23,7 +23,7 @@ Windows 8+ 的 `WM_POINTER*` 通过动态解析 `GetPointerType`/`GetPointerPenI
 - WindowController 用一个原子设备状态和一个原子 pending 标志合并刷新；状态变化可频繁发生，但消息队列最多只有一个光标刷新消息。
 - `WM_SETCURSOR` 仅在 `HTCLIENT` 处理；非客户区继续交给默认过程。Pointer API 已确认 `PT_PEN` 时才使用 Pen 状态，系统切换到 Mouse 时立即设置 `IDC_ARROW`。
 - 绘制线程发布活动 Pen 的有效工具覆盖；无活动 Pen 时使用 `ActiveTool()`。Eraser 工具或 inverted 状态解析为 Eraser 光标，Normal Pen/Highlighter Contact 才解析为隐藏。
-- 自定义光标位图带透明 padding，热点位于几何中心。Pen 外轮廓直径取基准直径与 `6px × DPI scale` 的较大值，Highlighter 外轮廓覆盖 6.25x50 footprint；内框距离使用现有配置，外框为浅灰色 `#B8B8B8` 且透明度语义不变，填充颜色为当前 RGB、Alpha 0.5，全部像素为 Windows 彩色光标使用的 straight BGRA。EraserGripCircle 使用当前橡皮直径、4% 比例中灰圆环、三条 2.5% 比例竖线和 Hover/Contact 两档整体 Alpha。
+- 自定义光标位图带透明 padding，热点位于几何中心。Pen 外轮廓直径为 `max(5px, 5px × DPI scale)`，Highlighter 外轮廓覆盖 6.25x50 footprint；内框距离使用现有配置，外框为浅灰色 `#B8B8B8` 且透明度语义不变，填充颜色为当前 RGB、Alpha 0.5，全部像素为 Windows 彩色光标使用的 straight BGRA。EraserGripCircle 使用当前橡皮直径、4% 比例中灰圆环、三条 2.5% 比例竖线和 Hover/Contact 两档整体 Alpha。
 - 自建 Pen/Highlighter `HCURSOR` 及两枚 Eraser `HCURSOR` 在重配或 WindowController 销毁时调用 `DestroyCursor`；共享 `IDC_ARROW` 不销毁。
 
 ## Compatibility And Failure

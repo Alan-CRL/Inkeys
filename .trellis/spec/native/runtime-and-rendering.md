@@ -67,7 +67,7 @@
 - sink 是非拥有指针；RTS shutdown 必须先禁用并移除插件，再发布 Default 和清空 sink。
 - 跨线程状态使用原子值，并以单个 pending 标志合并私有窗口消息；消息队列最多保留一个待处理光标刷新。
 - 私有刷新调用 `SetCursor` 前必须用 `WindowFromPoint` 确认当前窗口/子窗口仍拥有指针；`WM_SETCURSOR` 只处理 `HTCLIENT`。
-- Pen 光标直径取基准直径与 `6px × DPI scale` 的较大值，Highlighter 是 6.25x50px 固定竖直矩形；外轮廓等于光标 footprint，使用现有配置的 `#B8B8B8` 内描边且外框透明度语义不变，内部为当前 RGB、50% Alpha 的 straight BGRA。压力不改变光标尺寸。
+- Pen 光标直径为 `max(5px, 5px × DPI scale)`，Highlighter 是 6.25x50px 固定竖直矩形；外轮廓等于光标 footprint，使用现有配置的 `#B8B8B8` 内描边且外框透明度语义不变，内部为当前 RGB、50% Alpha 的 straight BGRA。压力不改变光标尺寸。
 - EraserGripCircle 直径复用 `kWideToolDiameter × DPI scale`，不设置最小尺寸；圆环宽度为直径 4%，三条竖线宽度为直径 2.5%，全部使用 `#808080`。Hover 整枚 Alpha 为 0.75，Contact 整枚 Alpha 为 1.0。
 - 活动 Pen 使用 Down 锁定的有效工具覆盖；没有活动 Pen 时使用当前选择工具。普通 Eraser 或 inverted 状态解析为 EraserGripCircle，光标不进入 L0/L1/L2、模型或 contact payload。
 
@@ -87,7 +87,7 @@
 
 ### 5. Good / Base / Bad Cases
 
-- Good：Pen 悬停后 InAir 发布 Hover，5px 基准笔在 200% DPI 下显示 12px 圆；Down/Move 隐藏，Up 后继续悬停再次显示圆。
+- Good：Pen 悬停后 InAir 发布 Hover，5px 基准笔在 200% DPI 下显示 10px 圆；Down/Move 隐藏，Up 后继续悬停再次显示圆。
 - Base：Touch/Mouse 绘制行为不变；Windows 7 没有 Pointer API 时 RTS 回退仍可显示并恢复光标。
 - Bad：在每个 240Hz packet 上无界 `PostMessage`，或私有消息在指针已进入其他应用后直接设置自定义光标。
 

@@ -14,7 +14,7 @@
 ## Requirements
 
 - 只对系统当前活动指针类型为 Pen 的当前窗口客户区设置自定义彩色 `HCURSOR`（包括 Eraser/倒转 Pen），不得使用 `SetSystemCursor`、窗口类全局光标或全局计数式 `ShowCursor`。
-- Pen 光标是直径不小于 `6px × DPI scale` 的圆；Highlighter 光标是 6.25x50px 的固定竖直矩形。Pen 取当前基准直径与 DPI 缩放后下限的较大值，不随实时压力变化。
+- Pen 光标是直径为 `max(5px, 5px × DPI scale)` 的圆；Highlighter 光标是 6.25x50px 的固定竖直矩形。Pen 不随实时压力变化。
 - Pen/Highlighter 光标边缘使用约 0.75 个设备像素、向内占用的浅灰色 `#B8B8B8` 外框，外框透明度语义不变；内部使用当前墨迹 RGB 和 50% Alpha，并按 Windows 彩色光标要求写入 straight BGRA。
 - Eraser 光标是无最小尺寸限制的白色 `EraserGripCircle`；Hover 整枚光标 Alpha 为 0.75，Contact 为 1.0，圆环和三条竖线统一使用中灰色 `#808080`，圆环宽度按直径的 4% 比例计算。
 - Pen 悬停进入窗口时显示光标；Down 后通过当前窗口的 `SetCursor(nullptr)` 立即隐藏，接触 Move 期间保持隐藏，Up 后仍在范围内时恢复悬停光标；离开范围、RTS 禁用/错误/设备移除/shutdown 或窗口销毁时恢复默认箭头。禁止使用全局计数式 `ShowCursor`。

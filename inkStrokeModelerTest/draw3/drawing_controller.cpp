@@ -33,7 +33,7 @@ namespace draw3
 		const DirectX::XMFLOAT4 kMultiContactInkColor(1.0f, 0.0f, 0.0f, 1.0f);
 		const DirectX::XMFLOAT4 kReconnectManualTestColor(0.0f, 1.0f, 0.0f, 1.0f);
 		constexpr float kPenDiameter = 5.0f;
-		constexpr float kMinimumPenCursorDiameterAt96Dpi = 6.0f;
+		constexpr float kMinimumPenCursorDiameterAt96Dpi = 5.0f;
 		constexpr float kWideToolDiameter = 50.0f;
 		constexpr float kReconnectManualTestRadiusPx = 4.0f;
 		constexpr float kRawMoveThresholdPx = 0.25f;
