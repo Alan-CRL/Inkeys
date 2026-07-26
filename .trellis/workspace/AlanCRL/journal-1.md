@@ -175,3 +175,36 @@ Completed the source-backed Trellis bootstrap and second-pass evidence audit for
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: UI3 光影渲染性能优化
+
+**Date**: 2026-07-26
+**Task**: UI3 光影渲染性能优化
+**Branch**: `feature/animation`
+
+### Summary
+
+默认 WARP 共享设备 epoch 与整帧串行租约；A8 预模糊遮罩、画刷复用、局部脏区和绘图静默降载；用户确认属性窗口展开帧率明显提高，其他场景留待窗口拆分后继续验证与接入。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cde5627` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
