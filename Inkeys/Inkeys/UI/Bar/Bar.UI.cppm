@@ -723,6 +723,7 @@ public:
 
 	// 透明度
 	optional<BarUiPctClass> framePct; // 控件边框透明度
+	optional<BarUiPctClass> frameLightPct; // 仅点光边框使用的独立透明度
 	BarUiFrameRenderingEnum frameRendering = BarUiFrameRenderingEnum::Solid; // 默认保留原纯色边框
 	BarUiFrameLightColorEnum frameLightColor = BarUiFrameLightColorEnum::Frame;
 	BarUiFrameLightOpacitySourceEnum frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::FramePct;

@@ -43,6 +43,8 @@ constexpr UINT_PTR BarBorderCursorGraceTimerId = 0x494B4301;
 constexpr UINT BarBorderCursorSuspendMessage = WM_APP + 0x31;
 constexpr double BarBorderLightIntensity = 1.0;
 constexpr double BarColorSwatchCursorLightIntensity = 0.60;
+constexpr double BarButtonCursorLightIntensity = BarColorSwatchCursorLightIntensity * 0.5;
+constexpr double BarButtonPressedLightOpacity = 0.5;
 constexpr double BarBorderFrameDiffuseOpacity = 0.30;
 constexpr double BarBorderPenDiffuseOpacity = 0.20;
 constexpr double BarColorSwatchFrameOpacity = 0.18;
@@ -970,7 +972,9 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 	if (!shape.fill.has_value() && !shape.frame.has_value()) return false;
 	if (barUISetClass->barStyle.zoom <= 0.0) return false;
 	if (shape.w.val <= 0 || shape.h.val <= 0) return false;
-	if (shape.pct.val <= 0.0) return false;
+	double frameLightPct = shape.frameLightPct.has_value()
+		? clamp(static_cast<double>(shape.frameLightPct.value().val), 0.0, 1.0) : 0.0;
+	if (shape.pct.val <= 0.0 && frameLightPct <= 0.0) return false;
 
 	// 初始化绘制量
 	double tarX = inh.x; // 绘制左上角 x
@@ -1000,7 +1004,7 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 	// 渲染到 DC
 	{
 		// 渲染填充
-		if (shape.fill.has_value())
+		if (shape.fill.has_value() && tarPct > 0.0)
 		{
 			COLORREF fill = shape.fill.value().val;
 
@@ -1015,8 +1019,10 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 			COLORREF frame = shape.frame.value().val;
 			double tarFramePct = tarPct;
 			if (shape.framePct.has_value()) tarFramePct = shape.framePct.value().val;
-			double tarFrameLightPct = tarFramePct;
-			if (shape.frameLightOpacitySource == BarUiFrameLightOpacitySourceEnum::ObjectPct)
+			double tarFrameLightPct = shape.frameLightPct.has_value()
+				? frameLightPct : tarFramePct;
+			if (!shape.frameLightPct.has_value()
+				&& shape.frameLightOpacitySource == BarUiFrameLightOpacitySourceEnum::ObjectPct)
 				tarFrameLightPct = tarPct;
 
 			FLOAT strokeWidth = 4.0f * static_cast<FLOAT>(tarZoom);
@@ -1755,6 +1761,32 @@ void BarUISetClass::Rendering()
 									temp->icon.color1.value().SetDirect(iconColor);
 								else temp->icon.color1.value().SetTar(iconColor);
 							}
+							if (temp->preset.load() != BarButtomPresetEnum::Divider)
+							{
+								COLORREF buttonLightColor = temp->state->state == BarWidgetState::Selected
+									? GetThemeColor(BarThemeColorEnum::Accent)
+									: GetThemeColor(BarThemeColorEnum::TextPrimary);
+								if (!temp->buttom.frame.has_value())
+									temp->buttom.frame = BarUiColorClass(buttonLightColor);
+								if (!temp->buttom.framePct.has_value())
+									temp->buttom.framePct = BarUiPctClass(0.0);
+								if (!temp->buttom.frameLightPct.has_value())
+									temp->buttom.frameLightPct = BarUiPctClass(0.0);
+								if (!temp->buttom.ft.has_value())
+									temp->buttom.ft = BarUiValueClass(1.0);
+								temp->buttom.frameRendering = BarUiFrameRenderingEnum::PointLight;
+								temp->buttom.framePrimaryLightEnabled = false;
+								temp->buttom.frameCursorLightIntensityScale = BarButtonCursorLightIntensity;
+								if (forNum == 1 || barState.fold || temp->hide)
+									temp->buttom.frame.value().SetDirect(buttonLightColor);
+								else temp->buttom.frame.value().SetTar(buttonLightColor);
+								bool buttonLightVisible = !barState.fold && !temp->hide
+									&& temp->buttom.enable.tar;
+								double buttonLightOpacity = buttonLightVisible
+									? (temp->state->emph == BarWidgetEmphasize::Pressed
+										? BarButtonPressedLightOpacity : 1.0) : 0.0;
+								temp->buttom.frameLightPct.value().SetTar(buttonLightOpacity, operationDur);
+							}
 
 							if (temp->size == BarButtomSizeEnum::oneOne)
 							{
@@ -2143,6 +2175,9 @@ void BarUISetClass::Rendering()
 								const BarUiCurveSpecClass& pctCurve = mainBarSideSwitch
 									? keyframePctCurve : continuedKeyframePctCurve;
 								temp->buttom.pct.SetTar(temp->buttom.pct.tar, operationDur, 0.0, true, pctCurve);
+								if (temp->buttom.frameLightPct.has_value())
+									temp->buttom.frameLightPct.value().SetTar(
+										temp->buttom.frameLightPct.value().tar, operationDur, 0.0, true, pctCurve);
 								temp->icon.pct.SetTar(temp->icon.pct.tar, operationDur, 0.0, true, pctCurve);
 								temp->name.pct.SetTar(temp->name.pct.tar, operationDur, 0.0, true, pctCurve);
 							}
@@ -2715,23 +2750,37 @@ void BarUISetClass::Rendering()
 							word->w.SetTar(80.0 * layoutScale);
 							word->h.SetTar(30.0 * layoutScale);
 							word->size.SetTar(12.0 * layoutScale);
+							if (button.enabled)
+							{
+								if (!shape->frame.has_value()) shape->frame = BarUiColorClass(GetThemeColor(BarThemeColorEnum::TextPrimary));
+								if (!shape->framePct.has_value()) shape->framePct = BarUiPctClass(0.0);
+								if (!shape->frameLightPct.has_value()) shape->frameLightPct = BarUiPctClass(0.0);
+								if (!shape->ft.has_value()) shape->ft = BarUiValueClass(1.0);
+								shape->frameRendering = BarUiFrameRenderingEnum::PointLight;
+								shape->framePrimaryLightEnabled = false;
+								shape->frameCursorLightIntensityScale = BarButtonCursorLightIntensity;
+							}
 
 							if (!barState.drawAttribute)
 							{
 								shape->pct.SetTar(0.0);
 								svg->pct.SetTar(0.0);
 								word->pct.SetTar(0.0);
+								if (shape->frameLightPct.has_value()) shape->frameLightPct->SetTar(0.0);
 							}
 							else
 							{
-								svg->pct.SetTar(1.0);
-								word->pct.SetTar(1.0);
+								svg->pct.SetTar(button.enabled ? 1.0 : 0.0);
+								word->pct.SetTar(button.enabled ? 1.0 : 0.0);
 								if (!button.enabled) shape->pct.SetTar(0.0);
 								else if (button.pressed) shape->pct.SetTar(0.1);
 								else if (button.selected) shape->pct.SetTar(0.2);
 								else if (button.hoverStage
 									&& *button.hoverStage == BarButtomHoverStageEnum::None)
 									shape->pct.SetTar(0.0);
+								if (shape->frameLightPct.has_value())
+									shape->frameLightPct->SetTar(button.enabled
+										? (button.pressed ? BarButtonPressedLightOpacity : 1.0) : 0.0);
 							}
 
 							COLORREF contentColor = button.enabled
@@ -2741,6 +2790,7 @@ void BarUISetClass::Rendering()
 								: GetThemeColor(BarThemeColorEnum::SwatchFrame);
 							word->color.SetTar(contentColor);
 							SetDrawAttributeSvgColor(button.svg, contentColor);
+							if (button.enabled) shape->frame.value().SetTar(contentColor);
 							shape->fill.value().SetTar(button.selected
 								? GetThemeColor(BarThemeColorEnum::Accent)
 								: GetThemeColor(BarThemeColorEnum::PressedFill));
@@ -2832,6 +2882,7 @@ void BarUISetClass::Rendering()
 						if (obj->ft.has_value()) SyncValueDuration(obj->ft.value());
 						SyncPctDuration(obj->pct);
 						if (obj->framePct.has_value()) SyncPctDuration(obj->framePct.value());
+						if (obj->frameLightPct.has_value()) SyncPctDuration(obj->frameLightPct.value());
 					}
 					for (int i = static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_ColorSelect1);
 						i <= static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_Brush2); i++)
@@ -2875,6 +2926,8 @@ void BarUISetClass::Rendering()
 							obj->pct.SetTar(obj->pct.tar, operationDur, nullopt, true, syncedPctCurve);
 							if (obj->framePct.has_value())
 								obj->framePct.value().SetTar(obj->framePct.value().tar, operationDur, nullopt, true, syncedPctCurve);
+							if (obj->frameLightPct.has_value())
+								obj->frameLightPct.value().SetTar(obj->frameLightPct.value().tar, operationDur, nullopt, true, syncedPctCurve);
 						}
 						for (int i = static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_ColorSelect1);
 							i <= static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_Brush2); i++)
@@ -2937,6 +2990,9 @@ void BarUISetClass::Rendering()
 							obj->pct.SetTar(obj->pct.tar, operationDur, 0.0, true, drawAttributeKeyframePctCurve);
 							if (obj->framePct.has_value())
 								obj->framePct.value().SetTar(obj->framePct.value().tar, operationDur, 0.0, true,
+									drawAttributeKeyframePctCurve);
+							if (obj->frameLightPct.has_value())
+								obj->frameLightPct.value().SetTar(obj->frameLightPct.value().tar, operationDur, 0.0, true,
 									drawAttributeKeyframePctCurve);
 						}
 						for (int i = static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_ColorSelect1);
@@ -3183,6 +3239,7 @@ void BarUISetClass::Rendering()
 			if (val->fill.has_value() && !val->fill->IsSame()) ChangeColor(val->fill.value(), forceReplace), change = true;
 			if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value(), forceReplace), change = true;
 			if (val->framePct.has_value() && !val->framePct->IsSame()) ChangePct(val->framePct.value(), forceReplace), change = true;
+			if (val->frameLightPct.has_value() && !val->frameLightPct->IsSame()) ChangePct(val->frameLightPct.value(), forceReplace), change = true;
 			if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace), change = true;
 		}
 		for (const auto& [key, val] : superellipseMap)
@@ -3306,6 +3363,7 @@ void BarUISetClass::Rendering()
 				if (temp->buttom.fill.has_value() && !temp->buttom.fill->IsSame()) ChangeColor(temp->buttom.fill.value(), forceReplace), change = true;
 				if (temp->buttom.frame.has_value() && !temp->buttom.frame->IsSame()) ChangeColor(temp->buttom.frame.value(), forceReplace), change = true;
 				if (temp->buttom.framePct.has_value() && !temp->buttom.framePct->IsSame()) ChangePct(temp->buttom.framePct.value(), forceReplace), change = true;
+				if (temp->buttom.frameLightPct.has_value() && !temp->buttom.frameLightPct->IsSame()) ChangePct(temp->buttom.frameLightPct.value(), forceReplace), change = true;
 				if (!temp->buttom.pct.IsSame()) ChangePct(temp->buttom.pct, forceReplace), change = true;
 			}
 			{

@@ -191,6 +191,20 @@ desiredCursorLightVisible = edgeLightingEnabled && dynamicEdgeLightingEnabled
 	&& cursorInputAvailable;
 ~~~
 
+### UI3 按钮边框光影约定
+
+按钮未选中时通常保持背景透明，但仍可能需要显示鼠标第三光源。此时不得复用按钮本体 `pct` 作为边框光影透明度；应使用 `BarUiShapeClass::frameLightPct` 独立控制光影，保持 `framePct = 0`，并配置：
+
+~~~cpp
+shape.frameRendering = BarUiFrameRenderingEnum::PointLight;
+shape.framePrimaryLightEnabled = false;
+shape.frameCursorLightIntensityScale = buttonIntensity;
+~~~
+
+按钮的 `buttonIntensity` 应由颜色边框的第三光源强度按产品要求折算；本项目当前按钮使用色块边框强度的一半。按下时同时缩放按钮和 PointLight 边框，并降低 `frameLightPct`；PointLight 的 Gaussian 漫反射继续由 `BarRenderingAttribute::pointLightDiffuseExtraWidth` 覆盖脏区。
+
+错误做法是把 `frameLightPct` 绑定到按钮本体 `pct`，这会让未选中按钮的透明背景同时隐藏其光影；正确做法是让 `Shape()` 在本体 `pct == 0` 且 `frameLightPct > 0` 时仅绘制 PointLight 边框。
+
 ### UI3 动画批次加入与关键帧中点
 
 `【直接确认；设计约定】` `BarUiTimelineClass::CanJoin(double maxProgress = 0.5)` 是主栏布局变化和绘制属性加入主栏批次的统一判断入口；无效参数同样回退到 `0.5`，边界判断为 `GetProgress() <= maxProgress`。
