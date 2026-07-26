@@ -42,8 +42,8 @@ constexpr ULONGLONG BarBorderCursorGraceDurationMs = 5000;
 constexpr UINT_PTR BarBorderCursorGraceTimerId = 0x494B4301;
 constexpr UINT BarBorderCursorSuspendMessage = WM_APP + 0x31;
 constexpr double BarBorderLightIntensity = 1.0;
-constexpr double BarColorSwatchCursorLightIntensity = 0.60;
-constexpr double BarButtonCursorLightIntensity = BarColorSwatchCursorLightIntensity * 0.5;
+constexpr double BarColorSwatchCursorLightIntensity = 0.30;
+constexpr double BarButtonCursorLightIntensity = 0.30;
 constexpr double BarButtonPressedLightOpacity = 0.5;
 constexpr double BarBorderFrameDiffuseOpacity = 0.30;
 constexpr double BarBorderPenDiffuseOpacity = 0.20;
@@ -1780,8 +1780,10 @@ void BarUISetClass::Rendering()
 								if (forNum == 1 || barState.fold || temp->hide)
 									temp->buttom.frame.value().SetDirect(buttonLightColor);
 								else temp->buttom.frame.value().SetTar(buttonLightColor);
+								// 主栏仅让选中按钮响应第三光源，未选中按钮保持无光影。
 								bool buttonLightVisible = !barState.fold && !temp->hide
-									&& temp->buttom.enable.tar;
+									&& temp->buttom.enable.tar
+									&& temp->state->state == BarWidgetState::Selected;
 								double buttonLightOpacity = buttonLightVisible
 									? (temp->state->emph == BarWidgetEmphasize::Pressed
 										? BarButtonPressedLightOpacity : 1.0) : 0.0;
@@ -2770,8 +2772,9 @@ void BarUISetClass::Rendering()
 							}
 							else
 							{
-								svg->pct.SetTar(button.enabled ? 1.0 : 0.0);
-								word->pct.SetTar(button.enabled ? 1.0 : 0.0);
+								// 预留笔型只禁用交互与光影，图标和文字仍正常显示。
+								svg->pct.SetTar(1.0);
+								word->pct.SetTar(1.0);
 								if (!button.enabled) shape->pct.SetTar(0.0);
 								else if (button.pressed) shape->pct.SetTar(0.1);
 								else if (button.selected) shape->pct.SetTar(0.2);
@@ -2779,7 +2782,7 @@ void BarUISetClass::Rendering()
 									&& *button.hoverStage == BarButtomHoverStageEnum::None)
 									shape->pct.SetTar(0.0);
 								if (shape->frameLightPct.has_value())
-									shape->frameLightPct->SetTar(button.enabled
+									shape->frameLightPct->SetTar(button.enabled && button.selected
 										? (button.pressed ? BarButtonPressedLightOpacity : 1.0) : 0.0);
 							}
 
@@ -2787,7 +2790,7 @@ void BarUISetClass::Rendering()
 								? (button.selected
 									? GetThemeColor(BarThemeColorEnum::Accent)
 									: GetThemeColor(BarThemeColorEnum::TextPrimary))
-								: GetThemeColor(BarThemeColorEnum::SwatchFrame);
+								: RGB(200, 200, 200);
 							word->color.SetTar(contentColor);
 							SetDrawAttributeSvgColor(button.svg, contentColor);
 							if (button.enabled) shape->frame.value().SetTar(contentColor);
