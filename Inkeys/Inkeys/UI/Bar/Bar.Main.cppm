@@ -92,8 +92,8 @@ enum class BarUISetShapeEnum : int
 	DrawAttributeBar_ColorSelect11,
 	DrawAttributeBar_Brush1,
 	DrawAttributeBar_Highlight1,
-	DrawAttributeBar_DrawSelect,
-	DrawAttributeBar_DrawSelectGroove,
+	DrawAttributeBar_Laser,
+	DrawAttributeBar_Brush2,
 	DrawAttributeBar_ThicknessSelect,
 };
 enum class BarUISetSuperellipseEnum : int
@@ -119,6 +119,8 @@ enum class BarUISetSvgEnum : int
 
 	DrawAttributeBar_Brush1,
 	DrawAttributeBar_Highlight1,
+	DrawAttributeBar_Laser,
+	DrawAttributeBar_Brush2,
 };
 enum class BarUISetWordEnum : int
 {
@@ -128,6 +130,8 @@ enum class BarUISetWordEnum : int
 
 	DrawAttributeBar_Brush1,
 	DrawAttributeBar_Highlight1,
+	DrawAttributeBar_Laser,
+	DrawAttributeBar_Brush2,
 	DrawAttributeBar_ThicknessDisplay,
 };
 

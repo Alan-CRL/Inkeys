@@ -285,6 +285,10 @@ BARSELECT               UI                      "src\\UI\\barSelect.svg"
 
 BARBRUSH1               UI                      "src\\UI\\barBrush1.svg"
 
+BARBRUSH2               UI                      "src\\UI\\barBrush2.svg"
+
+BARLASER                UI                      "src\\UI\\barLaser.svg"
+
 BARFREEZE               UI                      "src\\UI\\barFreeze.svg"
 
 BARSETTING              UI                      "src\\UI\\barSetting.svg"

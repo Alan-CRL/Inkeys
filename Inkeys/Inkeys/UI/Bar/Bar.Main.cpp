@@ -1456,10 +1456,9 @@ void BarUISetClass::Rendering()
 	BarUiValueClass drawAttributePenThickness(max(0.0f, GetPenWidth()));
 	bool drawAttributePenThicknessInitialized =
 		stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
-	// 画笔/荧光笔选择块使用独立的 0~1 横向进度，不加入属性面板的几何批次。
-	BarUiValueClass drawAttributePenSelectProgress(
-		stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1 ? 1.0 : 0.0);
-	drawAttributePenSelectProgress.curve = BarUiCurveEnum::EaseOutBack;
+	// 笔型按钮沿用主栏的独立按压缩放，不改变布局值与命中区域。
+	BarUiValueClass drawAttributeBrushPressScale(1.0);
+	BarUiValueClass drawAttributeHighlightPressScale(1.0);
 	constexpr double mainButtonScale = 1.05;
 	constexpr double mainButtonBaseSize = 80.0;
 	auto mainButtonLogo = svgMap[BarUISetSvgEnum::logo1];
@@ -1619,12 +1618,6 @@ void BarUISetClass::Rendering()
 				else drawAttributePenThickness.SetTar(penThickness, operationDur);
 			}
 			else drawAttributePenThicknessInitialized = false;
-			double drawAttributePenSelectTarget =
-				stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1 ? 1.0 : 0.0;
-			if (!barState.drawAttribute && !drawAttributeVisibilityChange && !drawAttributeTimeline.IsActive())
-				drawAttributePenSelectProgress.SetDirect(drawAttributePenSelectTarget);
-			else drawAttributePenSelectProgress.SetTar(
-				drawAttributePenSelectTarget, BarUiDefaultOperationDur);
 			bool mainBarFoldChange = (barState.fold && mainBar->x.tar != 0.0)
 				|| (!barState.fold && mainBar->x.tar == 0.0);
 			auto CalculateButtonLayoutWidth = [&]()
@@ -2267,9 +2260,13 @@ void BarUISetClass::Rendering()
 					const BarUiCurveSpecClass drawAttributeKeyframePctCurve{
 						BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine,
 						drawAttributePhase, continueDrawAttributePhase };
+					constexpr double drawAttributeExpandedWidth = 335.0;
+					constexpr double drawAttributeExpandedHeight = 150.0;
 					constexpr double drawAttributeCompactWidth = 60.0;
-					constexpr double drawAttributeCompactScale = drawAttributeCompactWidth / 335.0;
-					constexpr double drawAttributeCompactHeight = 120.0 * drawAttributeCompactScale;
+					constexpr double drawAttributeCompactScale =
+						drawAttributeCompactWidth / drawAttributeExpandedWidth;
+					constexpr double drawAttributeCompactHeight =
+						drawAttributeExpandedHeight * drawAttributeCompactScale;
 					auto CompactDrawAttributeX = [&](double expandedX) { return expandedX * drawAttributeCompactScale; };
 					auto CompactDrawAttributeY = [&](double expandedY)
 						{
@@ -2281,7 +2278,7 @@ void BarUISetClass::Rendering()
 						};
 					if (!barState.drawAttribute)
 					{
-						// 收起面板保持与 335×120 展开面板相同宽高比，并居中藏在绘制按钮下方。
+						// 收起面板保持与展开面板相同宽高比，并居中藏在绘制按钮下方。
 						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->x.SetTar(0.0);
 						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.SetTar(0.0);
 						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->w.SetTar(drawAttributeCompactWidth);
@@ -2292,8 +2289,8 @@ void BarUISetClass::Rendering()
 					}
 					else
 					{
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->w.SetTar(335.0);
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->h.SetTar(120.0);
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->w.SetTar(drawAttributeExpandedWidth);
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->h.SetTar(drawAttributeExpandedHeight);
 
 						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->x.SetTar(0);
 						if (barState.widgetPosition.primaryBar)
@@ -2316,7 +2313,7 @@ void BarUISetClass::Rendering()
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->x.SetTar(CompactDrawAttributeX(5.0));
 								if (barState.widgetPosition.primaryBar)
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->y.SetTar(CompactDrawAttributeY(5.0));
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->y.SetTar(CompactDrawAttributeY(50.0));
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->y.SetTar(CompactDrawAttributeY(75.0));
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->pct.SetTar(0.0);
 							}
@@ -2324,7 +2321,7 @@ void BarUISetClass::Rendering()
 							{
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->x.SetTar(5.0);
 								if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->y.SetTar(5.0);
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->y.SetTar(50.0);
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->y.SetTar(75.0);
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->pct.SetTar(1.0);
 							}
@@ -2348,7 +2345,7 @@ void BarUISetClass::Rendering()
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->x.SetTar(CompactDrawAttributeX(5.0));
 								if (barState.widgetPosition.primaryBar)
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->y.SetTar(CompactDrawAttributeY(40.0));
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->y.SetTar(CompactDrawAttributeY(85.0));
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->y.SetTar(CompactDrawAttributeY(110.0));
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->pct.SetTar(0.0);
 							}
@@ -2356,7 +2353,7 @@ void BarUISetClass::Rendering()
 							{
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->x.SetTar(5.0);
 								if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->y.SetTar(40.0);
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->y.SetTar(85.0);
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->y.SetTar(110.0);
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->pct.SetTar(1.0);
 							}
@@ -2379,7 +2376,7 @@ void BarUISetClass::Rendering()
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->x.SetTar(CompactDrawAttributeX(40.0));
 								if (barState.widgetPosition.primaryBar)
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->y.SetTar(CompactDrawAttributeY(5.0));
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->y.SetTar(CompactDrawAttributeY(50.0));
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->y.SetTar(CompactDrawAttributeY(75.0));
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->pct.SetTar(0.0);
 							}
@@ -2387,7 +2384,7 @@ void BarUISetClass::Rendering()
 							{
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->x.SetTar(40.0);
 								if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->y.SetTar(5.0);
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->y.SetTar(50.0);
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->y.SetTar(75.0);
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->pct.SetTar(1.0);
 							}
@@ -2410,7 +2407,7 @@ void BarUISetClass::Rendering()
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->x.SetTar(CompactDrawAttributeX(40.0));
 								if (barState.widgetPosition.primaryBar)
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->y.SetTar(CompactDrawAttributeY(40.0));
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->y.SetTar(CompactDrawAttributeY(85.0));
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->y.SetTar(CompactDrawAttributeY(110.0));
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->pct.SetTar(0.0);
 							}
@@ -2418,7 +2415,7 @@ void BarUISetClass::Rendering()
 							{
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->x.SetTar(40.0);
 								if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->y.SetTar(40.0);
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->y.SetTar(85.0);
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->y.SetTar(110.0);
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->pct.SetTar(1.0);
 							}
@@ -2441,7 +2438,7 @@ void BarUISetClass::Rendering()
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->x.SetTar(CompactDrawAttributeX(75.0));
 								if (barState.widgetPosition.primaryBar)
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->y.SetTar(CompactDrawAttributeY(5.0));
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->y.SetTar(CompactDrawAttributeY(50.0));
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->y.SetTar(CompactDrawAttributeY(75.0));
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->pct.SetTar(0.0);
 							}
@@ -2449,7 +2446,7 @@ void BarUISetClass::Rendering()
 							{
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->x.SetTar(75.0);
 								if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->y.SetTar(5.0);
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->y.SetTar(50.0);
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->y.SetTar(75.0);
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->pct.SetTar(1.0);
 							}
@@ -2472,7 +2469,7 @@ void BarUISetClass::Rendering()
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->x.SetTar(CompactDrawAttributeX(75.0));
 								if (barState.widgetPosition.primaryBar)
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->y.SetTar(CompactDrawAttributeY(40.0));
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->y.SetTar(CompactDrawAttributeY(85.0));
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->y.SetTar(CompactDrawAttributeY(110.0));
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->pct.SetTar(0.0);
 							}
@@ -2480,7 +2477,7 @@ void BarUISetClass::Rendering()
 							{
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->x.SetTar(75.0);
 								if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->y.SetTar(40.0);
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->y.SetTar(85.0);
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->y.SetTar(110.0);
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->pct.SetTar(1.0);
 							}
@@ -2503,7 +2500,7 @@ void BarUISetClass::Rendering()
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->x.SetTar(CompactDrawAttributeX(110.0));
 								if (barState.widgetPosition.primaryBar)
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->y.SetTar(CompactDrawAttributeY(5.0));
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->y.SetTar(CompactDrawAttributeY(50.0));
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->y.SetTar(CompactDrawAttributeY(75.0));
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->pct.SetTar(0.0);
 							}
@@ -2511,7 +2508,7 @@ void BarUISetClass::Rendering()
 							{
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->x.SetTar(110.0);
 								if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->y.SetTar(5.0);
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->y.SetTar(50.0);
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->y.SetTar(75.0);
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->pct.SetTar(1.0);
 							}
@@ -2534,7 +2531,7 @@ void BarUISetClass::Rendering()
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->x.SetTar(CompactDrawAttributeX(110.0));
 								if (barState.widgetPosition.primaryBar)
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->y.SetTar(CompactDrawAttributeY(40.0));
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->y.SetTar(CompactDrawAttributeY(85.0));
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->y.SetTar(CompactDrawAttributeY(110.0));
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->pct.SetTar(0.0);
 							}
@@ -2542,7 +2539,7 @@ void BarUISetClass::Rendering()
 							{
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->x.SetTar(110.0);
 								if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->y.SetTar(40.0);
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->y.SetTar(85.0);
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->y.SetTar(110.0);
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->pct.SetTar(1.0);
 							}
@@ -2565,7 +2562,7 @@ void BarUISetClass::Rendering()
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->x.SetTar(CompactDrawAttributeX(145.0));
 								if (barState.widgetPosition.primaryBar)
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->y.SetTar(CompactDrawAttributeY(5.0));
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->y.SetTar(CompactDrawAttributeY(50.0));
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->y.SetTar(CompactDrawAttributeY(75.0));
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->pct.SetTar(0.0);
 							}
@@ -2573,7 +2570,7 @@ void BarUISetClass::Rendering()
 							{
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->x.SetTar(145.0);
 								if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->y.SetTar(5.0);
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->y.SetTar(50.0);
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->y.SetTar(75.0);
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->pct.SetTar(1.0);
 							}
@@ -2596,7 +2593,7 @@ void BarUISetClass::Rendering()
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->x.SetTar(CompactDrawAttributeX(145.0));
 								if (barState.widgetPosition.primaryBar)
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->y.SetTar(CompactDrawAttributeY(40.0));
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->y.SetTar(CompactDrawAttributeY(85.0));
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->y.SetTar(CompactDrawAttributeY(110.0));
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->pct.SetTar(0.0);
 							}
@@ -2604,7 +2601,7 @@ void BarUISetClass::Rendering()
 							{
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->x.SetTar(145.0);
 								if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->y.SetTar(40.0);
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->y.SetTar(85.0);
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->y.SetTar(110.0);
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->pct.SetTar(1.0);
 							}
@@ -2627,7 +2624,7 @@ void BarUISetClass::Rendering()
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->x.SetTar(CompactDrawAttributeX(180.0));
 								if (barState.widgetPosition.primaryBar)
 									shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->y.SetTar(CompactDrawAttributeY(5.0));
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->y.SetTar(CompactDrawAttributeY(50.0));
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->y.SetTar(CompactDrawAttributeY(75.0));
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->pct.SetTar(0.0);
 							}
@@ -2635,7 +2632,7 @@ void BarUISetClass::Rendering()
 							{
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->x.SetTar(180.0);
 								if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->y.SetTar(5.0);
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->y.SetTar(50.0);
+								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->y.SetTar(75.0);
 
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->pct.SetTar(1.0);
 							}
@@ -2662,145 +2659,99 @@ void BarUISetClass::Rendering()
 								if (forNum == 1 || !barState.drawAttribute) svgColor.SetDirect(color);
 								else svgColor.SetTar(color);
 							};
-						// 画笔
+						struct PenTypeButtonLayout
 						{
+							BarUISetShapeEnum shape;
+							BarUISetSvgEnum svg;
+							BarUISetWordEnum word;
+							double y;
+							bool enabled;
+							bool selected;
+							bool pressed;
+							IdtAtomic<BarButtomHoverStageEnum>* hoverStage;
+							BarUiValueClass* pressScale;
+						};
+						const PenTypeButtonLayout penTypeButtons[] =
+						{
+							{ BarUISetShapeEnum::DrawAttributeBar_Brush2,
+								BarUISetSvgEnum::DrawAttributeBar_Brush2,
+								BarUISetWordEnum::DrawAttributeBar_Brush2,
+								5.0, false, false, false, nullptr, nullptr },
+							{ BarUISetShapeEnum::DrawAttributeBar_Laser,
+								BarUISetSvgEnum::DrawAttributeBar_Laser,
+								BarUISetWordEnum::DrawAttributeBar_Laser,
+								40.0, false, false, false, nullptr, nullptr },
+							{ BarUISetShapeEnum::DrawAttributeBar_Highlight1,
+								BarUISetSvgEnum::DrawAttributeBar_Highlight1,
+								BarUISetWordEnum::DrawAttributeBar_Highlight1,
+								75.0, true,
+								stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1,
+								barState.drawAttributeBar.highlight1Press,
+								&drawAttributeHighlightHoverStage, &drawAttributeHighlightPressScale },
+							{ BarUISetShapeEnum::DrawAttributeBar_Brush1,
+								BarUISetSvgEnum::DrawAttributeBar_Brush1,
+								BarUISetWordEnum::DrawAttributeBar_Brush1,
+								110.0, true,
+								stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1,
+								barState.drawAttributeBar.brush1Press,
+								&drawAttributeBrushHoverStage, &drawAttributeBrushPressScale },
+						};
+						for (const auto& button : penTypeButtons)
+						{
+							auto shape = shapeMap[button.shape];
+							auto svg = svgMap[button.svg];
+							auto word = wordMap[button.word];
+							double layoutScale = barState.drawAttribute ? 1.0 : drawAttributeCompactScale;
+
+							shape->x.SetTar(215.0 * layoutScale);
+							shape->y.SetTar(button.y * layoutScale);
+							shape->w.SetTar(115.0 * layoutScale);
+							shape->h.SetTar(30.0 * layoutScale);
+							svg->x.SetTar(6.0 * layoutScale);
+							svg->y.SetTar(0.0);
+							svg->SetWH(18.0 * layoutScale, 18.0 * layoutScale);
+							word->x.SetTar(-5.0 * layoutScale);
+							word->y.SetTar(0.0);
+							word->w.SetTar(80.0 * layoutScale);
+							word->h.SetTar(30.0 * layoutScale);
+							word->size.SetTar(12.0 * layoutScale);
+
 							if (!barState.drawAttribute)
 							{
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->x.SetTar(CompactDrawAttributeSize(5.0));
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->y.SetTar(0.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->w.SetTar(CompactDrawAttributeSize(50.0));
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->h.SetTar(CompactDrawAttributeSize(50.0));
-								svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1]->x.SetTar(0.0);
-								svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1]->y.SetTar(CompactDrawAttributeSize(5.0));
-								svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1]->SetWH(nullopt, CompactDrawAttributeSize(20.0));
-								wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->w.SetTar(CompactDrawAttributeSize(50.0));
-								wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->h.SetTar(CompactDrawAttributeSize(15.0));
-								wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->size.SetTar(CompactDrawAttributeSize(12.0));
-
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->pct.SetTar(0.0);
-
-								svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1]->pct.SetTar(0.0);
-								wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->pct.SetTar(0.0);
+								shape->pct.SetTar(0.0);
+								svg->pct.SetTar(0.0);
+								word->pct.SetTar(0.0);
 							}
 							else
 							{
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->x.SetTar(5.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->y.SetTar(0.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->w.SetTar(50.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->h.SetTar(50.0);
-								svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1]->x.SetTar(0.0);
-								svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1]->y.SetTar(5.0);
-								svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1]->SetWH(nullopt, 20.0);
-								wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->w.SetTar(50.0);
-								wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->h.SetTar(15.0);
-								wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->size.SetTar(12.0);
-
-								if (barState.drawAttributeBar.brush1Press && stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenBrush1)
-									shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->pct.SetTar(0.1);
-								else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1
-									|| drawAttributeBrushHoverStage == BarButtomHoverStageEnum::None)
-									shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->pct.SetTar(0.0);
-
-								svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1]->pct.SetTar(1.0);
-								wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->pct.SetTar(1.0);
+								svg->pct.SetTar(1.0);
+								word->pct.SetTar(1.0);
+								if (!button.enabled) shape->pct.SetTar(0.0);
+								else if (button.pressed) shape->pct.SetTar(0.1);
+								else if (button.selected) shape->pct.SetTar(0.2);
+								else if (button.hoverStage
+									&& *button.hoverStage == BarButtomHoverStageEnum::None)
+									shape->pct.SetTar(0.0);
 							}
-						COLORREF brushColor = stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1
-							? GetThemeColor(BarThemeColorEnum::Accent)
-							: GetThemeColor(BarThemeColorEnum::TextPrimary);
-						wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1]->color.SetTar(brushColor);
-						SetDrawAttributeSvgColor(BarUISetSvgEnum::DrawAttributeBar_Brush1, brushColor);
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->fill.value().SetTar(
-							GetThemeColor(BarThemeColorEnum::PressedFill));
-						}
-						// 荧光笔
-						{
-							if (!barState.drawAttribute)
+
+							COLORREF contentColor = button.enabled
+								? (button.selected
+									? GetThemeColor(BarThemeColorEnum::Accent)
+									: GetThemeColor(BarThemeColorEnum::TextPrimary))
+								: GetThemeColor(BarThemeColorEnum::SwatchFrame);
+							word->color.SetTar(contentColor);
+							SetDrawAttributeSvgColor(button.svg, contentColor);
+							shape->fill.value().SetTar(button.selected
+								? GetThemeColor(BarThemeColorEnum::Accent)
+								: GetThemeColor(BarThemeColorEnum::PressedFill));
+
+							if (button.pressScale)
 							{
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->x.SetTar(CompactDrawAttributeSize(60.0));
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->y.SetTar(0.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->w.SetTar(CompactDrawAttributeSize(50.0));
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->h.SetTar(CompactDrawAttributeSize(50.0));
-								svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1]->x.SetTar(0.0);
-								svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1]->y.SetTar(CompactDrawAttributeSize(5.0));
-								svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1]->SetWH(nullopt, CompactDrawAttributeSize(20.0));
-								wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->w.SetTar(CompactDrawAttributeSize(50.0));
-								wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->h.SetTar(CompactDrawAttributeSize(15.0));
-								wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->size.SetTar(CompactDrawAttributeSize(12.0));
-
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->pct.SetTar(0.0);
-
-								svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1]->pct.SetTar(0.0);
-								wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->pct.SetTar(0.0);
+								button.pressScale->SetTar(
+									button.pressed ? BarButtonPressScale : 1.0,
+									BarUiDefaultOperationDur, nullopt, false,
+									button.pressed ? buttonPressCurve : buttonReleaseCurve);
 							}
-							else
-							{
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->x.SetTar(60.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->y.SetTar(0.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->w.SetTar(50.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->h.SetTar(50.0);
-								svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1]->x.SetTar(0.0);
-								svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1]->y.SetTar(5.0);
-								svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1]->SetWH(nullopt, 20.0);
-								wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->w.SetTar(50.0);
-								wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->h.SetTar(15.0);
-								wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->size.SetTar(12.0);
-
-								if (barState.drawAttributeBar.highlight1Press && stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHighlighter1)
-									shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->pct.SetTar(0.1);
-								else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
-									|| drawAttributeHighlightHoverStage == BarButtomHoverStageEnum::None)
-									shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->pct.SetTar(0.0);
-
-								svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1]->pct.SetTar(1.0);
-								wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->pct.SetTar(1.0);
-							}
-						COLORREF highlighterColor = stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
-							? GetThemeColor(BarThemeColorEnum::Accent)
-							: GetThemeColor(BarThemeColorEnum::TextPrimary);
-						wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1]->color.SetTar(highlighterColor);
-						SetDrawAttributeSvgColor(BarUISetSvgEnum::DrawAttributeBar_Highlight1, highlighterColor);
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->fill.value().SetTar(
-							GetThemeColor(BarThemeColorEnum::PressedFill));
-						}
-
-						// 选中
-						{
-						if (!barState.drawAttribute)
-						{
-							shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect]->pct.SetTar(0.0);
-						}
-						else
-						{
-							shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect]->pct.SetTar(0.2);
-						}
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect]->fill.value().SetTar(
-							GetThemeColor(BarThemeColorEnum::Accent));
-						}
-						// 选中滑动槽
-						{
-							if (!barState.drawAttribute)
-							{
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->x.SetTar(CompactDrawAttributeX(215.0));
-								if (barState.widgetPosition.primaryBar)
-									shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->y.SetTar(CompactDrawAttributeY(5.0));
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->y.SetTar(CompactDrawAttributeY(50.0));
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->w.SetTar(CompactDrawAttributeSize(115.0));
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->h.SetTar(CompactDrawAttributeSize(65.0));
-
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->pct.SetTar(0.0);
-							}
-							else
-							{
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->x.SetTar(215.0);
-								if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->y.SetTar(5.0);
-								else shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->y.SetTar(50.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->w.SetTar(115.0);
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->h.SetTar(65.0);
-
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->pct.SetTar(0.15);
-							}
-							shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]->fill.value().SetTar(
-								GetThemeColor(BarThemeColorEnum::SubtleFill), operationDur);
 						}
 					}
 					{ /**/ }
@@ -2810,7 +2761,7 @@ void BarUISetClass::Rendering()
 						{
 							shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->x.SetTar(CompactDrawAttributeX(5.0));
 							if (barState.widgetPosition.primaryBar)
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->y.SetTar(CompactDrawAttributeY(75.0));
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->y.SetTar(CompactDrawAttributeY(105.0));
 							else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->y.SetTar(CompactDrawAttributeY(5.0));
 							shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->w.SetTar(CompactDrawAttributeSize(205.0));
 							shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->h.SetTar(CompactDrawAttributeSize(40.0));
@@ -2820,7 +2771,7 @@ void BarUISetClass::Rendering()
 						else
 						{
 							shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->x.SetTar(5.0);
-							if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->y.SetTar(75.0);
+							if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->y.SetTar(105.0);
 							else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->y.SetTar(5.0);
 							shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->w.SetTar(205.0);
 							shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->h.SetTar(40.0);
@@ -2872,14 +2823,10 @@ void BarUISetClass::Rendering()
 					{
 						auto obj = shapeMap[static_cast<BarUISetShapeEnum>(i)];
 						if (!obj) continue;
-						bool isDrawSelect = i == static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_DrawSelect);
-						if (!isDrawSelect)
-						{
-							SyncValueDuration(obj->x);
-							SyncValueDuration(obj->y);
-							SyncValueDuration(obj->w);
-							SyncValueDuration(obj->h);
-						}
+						SyncValueDuration(obj->x);
+						SyncValueDuration(obj->y);
+						SyncValueDuration(obj->w);
+						SyncValueDuration(obj->h);
 						if (obj->rw.has_value()) SyncValueDuration(obj->rw.value());
 						if (obj->rh.has_value()) SyncValueDuration(obj->rh.value());
 						if (obj->ft.has_value()) SyncValueDuration(obj->ft.value());
@@ -2887,7 +2834,7 @@ void BarUISetClass::Rendering()
 						if (obj->framePct.has_value()) SyncPctDuration(obj->framePct.value());
 					}
 					for (int i = static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_ColorSelect1);
-						i <= static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_Highlight1); i++)
+						i <= static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_Brush2); i++)
 					{
 						auto obj = svgMap[static_cast<BarUISetSvgEnum>(i)];
 						if (!obj) continue;
@@ -2918,14 +2865,10 @@ void BarUISetClass::Rendering()
 						{
 							auto obj = shapeMap[static_cast<BarUISetShapeEnum>(i)];
 							if (!obj) continue;
-							bool isDrawSelect = i == static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_DrawSelect);
-							if (!isDrawSelect)
-							{
-								obj->x.SetTar(obj->x.tar, operationDur, nullopt, true, syncedValueCurve);
-								obj->y.SetTar(obj->y.tar, operationDur, nullopt, true, syncedValueCurve);
-								obj->w.SetTar(obj->w.tar, operationDur, nullopt, true, syncedValueCurve);
-								obj->h.SetTar(obj->h.tar, operationDur, nullopt, true, syncedValueCurve);
-							}
+							obj->x.SetTar(obj->x.tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->y.SetTar(obj->y.tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->w.SetTar(obj->w.tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->h.SetTar(obj->h.tar, operationDur, nullopt, true, syncedValueCurve);
 							if (obj->rw.has_value()) obj->rw.value().SetTar(obj->rw.value().tar, operationDur, nullopt, true, syncedValueCurve);
 							if (obj->rh.has_value()) obj->rh.value().SetTar(obj->rh.value().tar, operationDur, nullopt, true, syncedValueCurve);
 							if (obj->ft.has_value()) obj->ft.value().SetTar(obj->ft.value().tar, operationDur, nullopt, true, syncedValueCurve);
@@ -2934,7 +2877,7 @@ void BarUISetClass::Rendering()
 								obj->framePct.value().SetTar(obj->framePct.value().tar, operationDur, nullopt, true, syncedPctCurve);
 						}
 						for (int i = static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_ColorSelect1);
-							i <= static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_Highlight1); i++)
+							i <= static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_Brush2); i++)
 						{
 							auto obj = svgMap[static_cast<BarUISetSvgEnum>(i)];
 							if (!obj) continue;
@@ -2983,28 +2926,21 @@ void BarUISetClass::Rendering()
 						{
 							auto obj = shapeMap[static_cast<BarUISetShapeEnum>(i)];
 							if (!obj) continue;
-							bool isDrawSelect = i == static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_DrawSelect);
-							if (!isDrawSelect)
-							{
-								double middleW = max(1.0, CompactDrawAttributeSize(obj->w.tar));
-								double middleH = max(1.0, CompactDrawAttributeSize(obj->h.tar));
-								bool directChild = i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ColorSelect11)
-									|| i == static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove)
-									|| i == static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect);
-								double middleX = directChild ? drawAttributeCompactWidth / 2.0 - middleW / 2.0 : 0.0;
-								double middleY = directChild ? drawAttributeCompactHeight / 2.0 - middleH / 2.0 : 0.0;
-								obj->x.SetTar(obj->x.tar, operationDur, middleX, true, drawAttributeKeyframeValueCurve);
-								obj->y.SetTar(obj->y.tar, operationDur, middleY, true, drawAttributeKeyframeValueCurve);
-								obj->w.SetTar(obj->w.tar, operationDur, middleW, true, drawAttributeKeyframeValueCurve);
-								obj->h.SetTar(obj->h.tar, operationDur, middleH, true, drawAttributeKeyframeValueCurve);
-							}
+							double middleW = max(1.0, CompactDrawAttributeSize(obj->w.tar));
+							double middleH = max(1.0, CompactDrawAttributeSize(obj->h.tar));
+							double middleX = drawAttributeCompactWidth / 2.0 - middleW / 2.0;
+							double middleY = drawAttributeCompactHeight / 2.0 - middleH / 2.0;
+							obj->x.SetTar(obj->x.tar, operationDur, middleX, true, drawAttributeKeyframeValueCurve);
+							obj->y.SetTar(obj->y.tar, operationDur, middleY, true, drawAttributeKeyframeValueCurve);
+							obj->w.SetTar(obj->w.tar, operationDur, middleW, true, drawAttributeKeyframeValueCurve);
+							obj->h.SetTar(obj->h.tar, operationDur, middleH, true, drawAttributeKeyframeValueCurve);
 							obj->pct.SetTar(obj->pct.tar, operationDur, 0.0, true, drawAttributeKeyframePctCurve);
 							if (obj->framePct.has_value())
 								obj->framePct.value().SetTar(obj->framePct.value().tar, operationDur, 0.0, true,
 									drawAttributeKeyframePctCurve);
 						}
 						for (int i = static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_ColorSelect1);
-							i <= static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_Highlight1); i++)
+							i <= static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_Brush2); i++)
 						{
 							auto obj = svgMap[static_cast<BarUISetSvgEnum>(i)];
 							if (!obj) continue;
@@ -3228,7 +3164,8 @@ void BarUISetClass::Rendering()
 			};
 		// 独立的粗细值也进入统一动画时钟，方便后续直接替换为非线性或回弹曲线。
 		if (!drawAttributePenThickness.IsSame()) ChangeValue(drawAttributePenThickness, false);
-		if (!drawAttributePenSelectProgress.IsSame()) ChangeValue(drawAttributePenSelectProgress, false);
+		if (!drawAttributeBrushPressScale.IsSame()) ChangeValue(drawAttributeBrushPressScale, false);
+		if (!drawAttributeHighlightPressScale.IsSame()) ChangeValue(drawAttributeHighlightPressScale, false);
 
 		for (const auto& [key, val] : shapeMap)
 		{
@@ -3247,18 +3184,6 @@ void BarUISetClass::Rendering()
 			if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value(), forceReplace), change = true;
 			if (val->framePct.has_value() && !val->framePct->IsSame()) ChangePct(val->framePct.value(), forceReplace), change = true;
 			if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace), change = true;
-		}
-		{
-			// 青色选择块的左右进度独立推进，实际几何只跟随灰色槽当前缩放比例。
-			auto drawSelect = shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect];
-			auto drawSelectGroove = shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove];
-			double grooveScale = drawSelectGroove->w.val / 115.0;
-			if (!isfinite(grooveScale)) grooveScale = 0.0;
-			grooveScale = max(0.0, grooveScale);
-			double selectX = 5.0 + 55.0 * static_cast<double>(drawAttributePenSelectProgress.val);
-			drawSelect->x.SetDirect(selectX * grooveScale);
-			drawSelect->w.SetDirect(50.0 * grooveScale);
-			drawSelect->h.SetDirect(50.0 * grooveScale);
 		}
 		for (const auto& [key, val] : superellipseMap)
 		{
@@ -3557,38 +3482,61 @@ void BarUISetClass::Rendering()
 						}
 						// 画笔样式区域
 						{
-							// 选中滑动槽
+							struct PenTypeButtonRender
 							{
-								auto obj = BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove;
-								spec.Shape(barDeviceContext.Get(), *shapeMap[obj], shapeMap[obj]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
-							}
-							// 选中
+								BarUISetShapeEnum shape;
+								BarUISetSvgEnum svg;
+								BarUISetWordEnum word;
+								BarUiValueClass* pressScale;
+							};
+							const PenTypeButtonRender penTypeButtons[] =
 							{
-								auto obj = BarUISetShapeEnum::DrawAttributeBar_DrawSelect;
-								spec.Shape(barDeviceContext.Get(), *shapeMap[obj], shapeMap[obj]->Inherit(Left, *shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]));
-							}
-
-							// 画笔
+								{ BarUISetShapeEnum::DrawAttributeBar_Brush2,
+									BarUISetSvgEnum::DrawAttributeBar_Brush2,
+									BarUISetWordEnum::DrawAttributeBar_Brush2, nullptr },
+								{ BarUISetShapeEnum::DrawAttributeBar_Laser,
+									BarUISetSvgEnum::DrawAttributeBar_Laser,
+									BarUISetWordEnum::DrawAttributeBar_Laser, nullptr },
+								{ BarUISetShapeEnum::DrawAttributeBar_Highlight1,
+									BarUISetSvgEnum::DrawAttributeBar_Highlight1,
+									BarUISetWordEnum::DrawAttributeBar_Highlight1,
+									&drawAttributeHighlightPressScale },
+								{ BarUISetShapeEnum::DrawAttributeBar_Brush1,
+									BarUISetSvgEnum::DrawAttributeBar_Brush1,
+									BarUISetWordEnum::DrawAttributeBar_Brush1,
+									&drawAttributeBrushPressScale },
+							};
+							for (const auto& button : penTypeButtons)
 							{
-								auto obj1 = BarUISetShapeEnum::DrawAttributeBar_Brush1;
-								spec.Shape(barDeviceContext.Get(), *shapeMap[obj1], shapeMap[obj1]->Inherit(Left, *shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]));
+								auto shape = shapeMap[button.shape];
+								BarUiInheritClass shapeInherit = shape->Inherit(
+									TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]);
+								double pressScale = button.pressScale
+									? static_cast<double>(button.pressScale->val) : 1.0;
+								if (!isfinite(pressScale) || pressScale <= 0.0) pressScale = 1.0;
 
-								auto obj2 = BarUISetSvgEnum::DrawAttributeBar_Brush1;
-								spec.Svg(barDeviceContext.Get(), *svgMap[obj2], svgMap[obj2]->Inherit(Top, *shapeMap[obj1]));
+								D2D1_MATRIX_3X2_F originalTransform;
+								barDeviceContext->GetTransform(&originalTransform);
+								bool transformChanged = abs(pressScale - 1.0) > 0.000001;
+								if (transformChanged)
+								{
+									// 与主栏一致，整个图文按钮围绕背景中心缩放。
+									FLOAT centerX = static_cast<FLOAT>(
+										(shapeInherit.x + shape->w.val / 2.0) * barStyle.zoom);
+									FLOAT centerY = static_cast<FLOAT>(
+										(shapeInherit.y + shape->h.val / 2.0) * barStyle.zoom);
+									D2D1_MATRIX_3X2_F scaleTransform = D2D1::Matrix3x2F::Scale(
+										static_cast<FLOAT>(pressScale), static_cast<FLOAT>(pressScale),
+										D2D1::Point2F(centerX, centerY));
+									barDeviceContext->SetTransform(scaleTransform * originalTransform);
+								}
 
-								auto obj3 = BarUISetWordEnum::DrawAttributeBar_Brush1;
-								spec.Word(barDeviceContext.Get(), *wordMap[obj3], wordMap[obj3]->Inherit(ToBottom, *svgMap[obj2]));
-							}
-							// 荧光笔
-							{
-								auto obj1 = BarUISetShapeEnum::DrawAttributeBar_Highlight1;
-								spec.Shape(barDeviceContext.Get(), *shapeMap[obj1], shapeMap[obj1]->Inherit(Left, *shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove]));
-
-								auto obj2 = BarUISetSvgEnum::DrawAttributeBar_Highlight1;
-								spec.Svg(barDeviceContext.Get(), *svgMap[obj2], svgMap[obj2]->Inherit(Top, *shapeMap[obj1]));
-
-								auto obj3 = BarUISetWordEnum::DrawAttributeBar_Highlight1;
-								spec.Word(barDeviceContext.Get(), *wordMap[obj3], wordMap[obj3]->Inherit(ToBottom, *svgMap[obj2]));
+								spec.Shape(barDeviceContext.Get(), *shape, shapeInherit);
+								spec.Svg(barDeviceContext.Get(), *svgMap[button.svg],
+									svgMap[button.svg]->Inherit(Left, *shape));
+								spec.Word(barDeviceContext.Get(), *wordMap[button.word],
+									wordMap[button.word]->Inherit(Right, *shape));
+								if (transformChanged) barDeviceContext->SetTransform(originalTransform);
 							}
 						}
 						// 粗细调节区域
@@ -3830,7 +3778,7 @@ void BarUISetClass::Rendering()
 							current, BarRenderingAttribute::GetWeigetRect(*obj, dirtyZoom));
 					}
 					for (int i = static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_ColorSelect1);
-						i <= static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_Highlight1); i++)
+						i <= static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_Brush2); i++)
 					{
 						auto obj = svgMap[static_cast<BarUISetSvgEnum>(i)];
 						if (obj) BarRenderingAttribute::UnionRectInPlace(
@@ -5174,51 +5122,43 @@ namespace Inkeys::UI::Bar
 					{ /**/ }
 					// 画笔样式区域
 					{
-						// 画笔
+						auto InitializePenTypeButton = [&](BarUISetShapeEnum shapeType,
+							BarUISetSvgEnum svgType, BarUISetWordEnum wordType,
+							const wchar_t* resourceName, const wchar_t* text)
 						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 50.0, 50.0, 4.0, 4.0, 1.0, GetThemeColor(BarThemeColorEnum::Accent), nullopt);
+							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 115.0, 30.0,
+								4.0, 4.0, 1.0, GetThemeColor(BarThemeColorEnum::PressedFill), nullopt);
 							shape->enable.Initialization(true);
-							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1] = shape;
+							barUISet.shapeMap[shapeType] = shape;
 
 							auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, GetThemeColor(BarThemeColorEnum::TextPrimary), nullopt);
-							svg->InitializationFromResource(L"UI", L"barBrush1");
-							svg->SetWH(nullopt, 20.0);
+							svg->InitializationFromResource(L"UI", resourceName);
+							svg->SetWH(18.0, 18.0);
 							svg->enable.Initialization(true);
-							barUISet.svgMap[BarUISetSvgEnum::DrawAttributeBar_Brush1] = svg;
+							barUISet.svgMap[svgType] = svg;
 
-							auto word = make_shared<BarUiWordClass>(0.0, 5.0, 50.0, 15.0, L"画笔", 12.0, GetThemeColor(BarThemeColorEnum::TextPrimary));
+							auto word = make_shared<BarUiWordClass>(0.0, 0.0, 80.0, 30.0,
+								text, 12.0, GetThemeColor(BarThemeColorEnum::TextPrimary));
 							word->enable.Initialization(true);
-							barUISet.wordMap[BarUISetWordEnum::DrawAttributeBar_Brush1] = word;
-						}
-						// 荧光笔
-						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 50.0, 50.0, 4.0, 4.0, 1.0, GetThemeColor(BarThemeColorEnum::Accent), nullopt);
-							shape->enable.Initialization(true);
-							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1] = shape;
-
-							auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, GetThemeColor(BarThemeColorEnum::TextPrimary), nullopt);
-							svg->InitializationFromResource(L"UI", L"barHighlighter1");
-							svg->SetWH(nullopt, 20.0);
-							svg->enable.Initialization(true);
-							barUISet.svgMap[BarUISetSvgEnum::DrawAttributeBar_Highlight1] = svg;
-
-							auto word = make_shared<BarUiWordClass>(0.0, 5.0, 50.0, 15.0, L"荧光笔", 12.0, GetThemeColor(BarThemeColorEnum::TextPrimary));
-							word->enable.Initialization(true);
-							barUISet.wordMap[BarUISetWordEnum::DrawAttributeBar_Highlight1] = word;
-						}
-
-						// 选中
-						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 50.0, 50.0, 4.0, 4.0, 1.0, GetThemeColor(BarThemeColorEnum::Accent), nullopt);
-							shape->enable.Initialization(true);
-							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelect] = shape;
-						}
-						// 选中滑动槽
-						{
-							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 60.0, 60.0, 4.0, 4.0, 1.0, GetThemeColor(BarThemeColorEnum::SubtleFill), nullopt);
-							shape->enable.Initialization(true);
-							barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_DrawSelectGroove] = shape;
-						}
+							barUISet.wordMap[wordType] = word;
+						};
+						// 从上到下固定为刷子、激光笔、荧光笔、画笔。
+						InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Brush2,
+							BarUISetSvgEnum::DrawAttributeBar_Brush2,
+							BarUISetWordEnum::DrawAttributeBar_Brush2,
+							L"barBrush2", L"刷子");
+						InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Laser,
+							BarUISetSvgEnum::DrawAttributeBar_Laser,
+							BarUISetWordEnum::DrawAttributeBar_Laser,
+							L"barLaser", L"激光笔");
+						InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Highlight1,
+							BarUISetSvgEnum::DrawAttributeBar_Highlight1,
+							BarUISetWordEnum::DrawAttributeBar_Highlight1,
+							L"barHighlighter1", L"荧光笔");
+						InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Brush1,
+							BarUISetSvgEnum::DrawAttributeBar_Brush1,
+							BarUISetWordEnum::DrawAttributeBar_Brush1,
+							L"barBrush1", L"画笔");
 					}
 					// 粗细调节区域
 					{
