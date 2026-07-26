@@ -6,7 +6,7 @@
 
 | 区域 | 当前选择关系 | 图形/呈现链 | 直接证据 |
 | --- | --- | --- | --- |
-| `Inkeys.UI.Bar` | `【直接确认】` `IdtMain.cpp::wWinMain` 仅在 `useInkeys3UI` 为 true 时启动 `Inkeys::UI::Bar::Initialization` | D3D11 WARP 提供 DXGI/D2D device；Bar 用 D2D/DWrite 绘制，经 GDI interop 和 `UpdateLayeredWindowIndirect` 呈现 | `IdtMain.cpp`、`IdtD2DPreparation.cpp::D2DStarup`、`Inkeys/Inkeys/UI/Bar/Bar.Main.cpp::BarUISetClass::Rendering` |
+| `Inkeys.UI.Bar` | `【直接确认】` `IdtMain.cpp::wWinMain` 仅在 `useInkeys3UI` 为 true 时启动 `Inkeys::UI::Bar::Initialization` | 默认由共享 D3D11 WARP epoch 提供 DXGI/D2D device；Bar 用独立 D2D device context/DWrite 绘制，经 GDI interop 和 `UpdateLayeredWindowIndirect` 呈现 | `IdtMain.cpp`、`IdtD2DPreparation.cpp::D2DStarup`、`Inkeys/Inkeys/UI/Bar/Bar.Main.cpp::BarUISetClass::Rendering` |
 | 传统 `IdtFloating` | `【直接确认】` 同一分支在 `useInkeys3UI` 为 false 时启动 `floating_main`；`SetListStruct::Experimental.Inkeys3.UI3` 的源码默认值为 false | HiEasyX/EasyX、GDI/GDI+、分层窗口 | `IdtConfiguration.h`、`IdtMain.cpp::wWinMain`、`IdtFloating.cpp` |
 | 设置窗口 | `【直接确认】` 当前主工程编译的唯一 ImGui renderer 是 DX9 | Dear ImGui Win32 + Direct3D 9 HAL | `Setting.Base.cppm::CreateDeviceD3D`、`Setting.cpp` 中 `ImGui_ImplDX9_*`、`Inkeys.vcxproj` |
 | 主画板 | `【直接确认】` 两套悬浮栏分支共用的墨迹窗口 | HiEasyX/EasyX `IMAGE`、GDI+ 笔画、软件合成、分层窗口 | `IdtDrawpad.cpp::DrawpadDrawing`、`IdtImage.cpp` |
@@ -23,15 +23,15 @@
 
 1. 创建 multithreaded `ID2D1Factory1`；
 2. 创建 shared `IDWriteFactory`；
-3. 以 `D3D_DRIVER_TYPE_WARP`、`D3D11_CREATE_DEVICE_BGRA_SUPPORT` 和 feature level 11.1/11.0 创建 D3D11 device；
+3. 默认以 `D3D_DRIVER_TYPE_WARP`、`D3D11_CREATE_DEVICE_BGRA_SUPPORT` 和 feature level 11.1/11.0 创建 D3D11 device；Windows 7 运行时以 `E_INVALIDARG` 拒绝包含 11.1 的列表时仅重试 11.0；
 4. 取得 `IDXGIDevice`；
 5. 由 D2D factory 创建 `ID2D1Device`。
 
-共享对象使用 `Microsoft::WRL::ComPtr`。初始化失败路径会写日志并 reset 已创建对象。
+共享对象使用 `Microsoft::WRL::ComPtr`。默认 epoch 为 WARP；`PrepareUi3RenderBackend`/`CommitPreparedUi3RenderBackend` 为以后显式选择 Hardware 提供帧边界切换入口。初始化失败路径会写日志并 reset 已创建对象。
 
 `【直接确认】` 消费者并不相同：
 
-- `d2dDevice_WARP` 在本轮扫描中由 `Bar.Main.cpp::BarUISetClass::Rendering` 用来创建 D2D device context；
+- `d2dDevice_UI3` 和 `GetUi3RenderDeviceEpoch()` 在本轮扫描中由 `Bar.Main.cpp::BarUISetClass::Rendering` 用来创建每客户端独立的 D2D device context；
 - `d2dFactory1`、`dWriteFactory1` 也被 `IdtPlug-in.cpp::PptUI` 用于 D2D DC target 和文字，不依赖 Bar 是否启用；
 - 设置窗口没有使用这条 device 链，而是独立 D3D9 device；
 - 主画板不是 D2D target。
@@ -54,6 +54,102 @@
 - `GetDC/ReleaseDC`、`BeginDraw/EndDraw` 在成功与失败路径成对；
 - 不在没有线程安全依据时跨线程传递 device context/target。
 
+### UI3 共享设备、整帧租约与光影缓存契约
+
+#### 1. Scope / Trigger
+
+新增或修改 UI3 Bar、PptBar、Setting、白板等使用同一 D3D11.1/D2D1.1 device 的客户端，或修改 WARP/Hardware 选择、Bar 光影、脏区与分层窗口提交时，必须遵守本节。该契约不把传统 `IdtFloating`、主画板 EasyX 表面或当前 ImGui DX9 设置窗口自动迁入 UI3。
+
+#### 2. Signatures
+
+~~~cpp
+enum class Ui3RenderBackend : unsigned char { Warp, Hardware };
+enum class Ui3RenderPriority : unsigned char { Interactive, Cosmetic };
+
+Ui3RenderDeviceEpoch GetUi3RenderDeviceEpoch();
+Ui3RenderPass AcquireUi3RenderPass(Ui3RenderPriority priority);
+HRESULT PrepareUi3RenderBackend(Ui3RenderBackend backend);
+bool CommitPreparedUi3RenderBackend();
+~~~
+
+每个 epoch 至少发布 `backend`、单调递增的 `generation`、实际 `featureLevel`、`ID3D11Device`、可选 `ID3D11Device1` 与 `ID2D1Device`。`Ui3RenderPass` 是 move-only RAII 租约。
+
+#### 3. Contracts
+
+- 启动默认创建 WARP epoch。Hardware 只能显式准备；准备过程在当前 epoch 旁路创建完整 device，失败时不得破坏正在使用的 WARP。
+- 发布新 epoch 前必须取得 `Interactive` 整帧租约。客户端也必须先取得租约，再读取 epoch，并在 `generation` 变化时于本帧 `BeginDraw` 前重建自己的 device context、target、GDI interop、brush/effect/mask 等设备相关资源。
+- 共享的是 D3D/D2D device，不共享客户端 device context 或 target。租约覆盖该客户端的完整绘制和呈现区间，至少包括资源检查、`BeginDraw`、D2D 命令、`GetDC/ReleaseDC`、`UpdateLayeredWindowIndirect` 与 `EndDraw`，禁止不同 UI3 客户端的帧交错。
+- `Interactive` 帧可以等待租约；`Cosmetic` 帧在有交互等待者或设备正忙时必须跳帧，并保持正常帧率节流，不能自旋重试。开始真实绘图后，Bar 光影帧属于可牺牲的装饰工作。
+- Bar 主帧只保留一组 `BeginDraw/EndDraw`，`GetDC` 已承担必要提交，前面不得再调用显式 `Flush`。Windows 7 Platform Update 路径在 `GetDC` 前必须弹出所有 clip/layer。
+- 动态光只长期缓存颜色停靠点/画刷和几何的 A8 预模糊遮罩；画刷位置、半径和透明度每帧更新。禁止缓存快速变化的最终光影帧或冻结布局状态。
+- A8 遮罩按几何参数量化且有容量上限。生成时使用同一 D2D device 上的专用 device context，先用一组 `BeginDraw/EndDraw` 写 source target，再把 source 作为 Gaussian 输入，用第二组 `BeginDraw/EndDraw` 写 output；禁止在同一 draw span 中把仍绑定为 target 的 bitmap 当作输入。
+- 稳态帧不得创建 Gaussian effect、command list、渐变停靠点、solid brush 或重新生成已有遮罩。`FillOpacityMask` 前临时切为 `D2D1_ANTIALIAS_MODE_ALIASED`，结束后恢复。
+- 光源与控件扩展边界不相交时必须裁剪该光源的 diffuse/hard-light 绘制；D2D 全局 dirty clip 和 layered-window dirty rect 必须使用旧边界与新边界的并集。
+
+#### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| Windows 7 运行时以 `E_INVALIDARG` 拒绝 feature level 11.1 列表 | 只用 11.0 重试；仍失败则保留初始化失败语义 |
+| Hardware 准备失败 | 当前 WARP epoch 和全部客户端资源保持可用；不得发布半成品 |
+| `generation` 变化后客户端资源重建失败 | 跳过该帧；同一 generation 错误限频，不能用旧 device 的资源向新 epoch 提交 |
+| 装饰帧租约竞争失败 | 直接跳过并按目标 FPS 等待，不得忙循环 |
+| A8、Effect 或遮罩专用 context 失败 | 本设备会话停用 diffuse mask；保留基础灰边和硬光，不得退回逐帧实时 Gaussian 或逐帧重试 |
+| 主 `EndDraw` 返回 `D2DERR_RECREATE_TARGET` | 丢弃客户端设备资源并在下一帧按当前 epoch 重建 |
+| 主 `EndDraw` 暴露刚创建遮罩的延迟错误 | 清空遮罩缓存并将本设备会话标为不可用，避免错误循环 |
+
+#### 5. Good / Base / Bad Cases
+
+- Good：WARP 中展开属性栏时，遮罩仅在新几何首次出现时生成；稳态帧复用 A8 mask、gradient brush 和 solid brush，Bar 主上下文每帧仅一次提交。
+- Base：后台准备 Hardware 成功，帧间取得整帧租约并发布新 generation；Bar 下一帧先重建全部资源，再开始绘制。
+- Bad：切换全局 device 指针后让旧 Bar context 继续一帧，或为避免重建而跨 device 复用 bitmap/brush；这会造成设备域错配、空白帧或设备丢失错误。
+
+#### 6. Tests Required
+
+- 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`，必须使用 ARM64 host MSBuild。
+- 在 WARP 上分别测光影关、仅主光、主光+动态光：属性栏展开/收起、主栏状态切换、鼠标第三光和长时间静止；记录 CPU、帧时间、遮罩 cache miss 和提交次数。
+- 在 Windows 7 SP1 + KB2670838 实机验证 feature level 回退、A8 target、Gaussian、`FillOpacityMask`、clip 栈为空时的 `GetDC` 及 layered-window 脏区无残影。
+- 在支持设备上循环执行 WARP → Hardware → WARP 帧边界切换，覆盖动画中、装饰帧竞争、资源重建失败与 Hardware 准备失败；断言旧 epoch 在发布前始终可用。
+- 后续每接入一个共享设备客户端，都要并发触发其交互与 Bar 装饰帧，断言帧串行、交互优先、无自旋和跨 device 资源复用。
+- 视觉对比基础灰边、硬光、圆角九宫格遮罩接缝和超椭圆量化伸缩；允许经产品确认的轻微 diffuse 像素差异，不允许边缘断裂或残影。
+
+#### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：先读取 epoch，等待租约期间 epoch 可能已经切换。
+auto epoch = GetUi3RenderDeviceEpoch();
+auto pass = AcquireUi3RenderPass(Ui3RenderPriority::Interactive);
+DrawWith(epoch);
+
+// Correct：租约内读取 epoch，并在 BeginDraw 前处理 generation。
+auto pass = AcquireUi3RenderPass(priority);
+if (!pass) return;
+auto epoch = GetUi3RenderDeviceEpoch();
+if (epoch.generation != localGeneration) RecreateClientResources(epoch);
+BeginDrawAndPresent();
+~~~
+
+~~~cpp
+// Wrong：刚把 bitmap 设为 target，就在同一 BeginDraw 中作为 effect input。
+context->SetTarget(source);
+context->BeginDraw();
+DrawSource();
+effect->SetInput(0, source);
+context->DrawImage(effect);
+
+// Correct：先结束 source 提交，再在独立 draw span 中生成 output。
+maskContext->SetTarget(source);
+maskContext->BeginDraw();
+DrawSource();
+maskContext->EndDraw();
+maskContext->SetTarget(nullptr);
+effect->SetInput(0, source);
+maskContext->SetTarget(output);
+maskContext->BeginDraw();
+maskContext->DrawImage(effect);
+maskContext->EndDraw();
+~~~
+
 ### UI3 第三鼠标光休眠契约
 
 #### 1. Scope / Trigger
@@ -66,10 +162,11 @@
 namespace Inkeys::UI::Bar
 {
 	export void NotifyCanvasDrawingStarted();
+	export void NotifyCanvasDrawingEnded();
 }
 ~~~
 
-画布只能调用该通知接口，不得从画布线程直接修改 Bar、D2D 或 Raw Input 状态。
+画布只能成对调用通知接口，不得从画布线程直接修改 Bar、D2D 或 Raw Input 状态。Draw2 在每个真实笔迹线程入口建立 RAII guard，所有正常、提前返回和异常退出路径都由析构发送 `Ended`。
 
 #### 3. Contracts
 
@@ -80,6 +177,8 @@ namespace Inkeys::UI::Bar
 - `Grace → Inside`：重新进入实际接收消息区域时取消定时器；仅回到 240px 邻域不能从 `Dormant` 唤醒。
 - `Grace → Dormant`：绝对截止时间到达，或画布开始真实绘制时，注销 Raw Input 并从当前强度平滑淡出。落笔时若光标仍在 UI3 接收区，区域内后续移动不得重新激活；必须先收到离开，再由下一次自然进入激活。
 - 5 秒等待使用窗口定时器，不得新增轮询线程或靠持续渲染计时。
+- 并发笔迹由原子 activity count 合并：`0 → 1` 才向 Bar 窗口线程发送 Started，`1 → 0` 才发送 Ended。Bar 在绘图期间关闭边缘光影、停止第三光 Raw Input，并让非必要状态动画立即完成；最后笔迹结束后延迟 150ms 退出静默，避免短间隔连续落笔抖动。
+- 绘图静默不允许画布线程直接写 UI 对象；按钮点击或必要状态变化仍可请求单帧反馈。
 
 #### 4. Validation & Error Matrix
 
@@ -90,6 +189,9 @@ namespace Inkeys::UI::Bar
 | 窗口定时器创建失败 | 立即进入 `Dormant`，不得无限保留全局跟踪 |
 | 动画关闭 | 立即隐藏第三光源并请求休眠 |
 | 触摸模拟鼠标消息 | 不得激活第三光源；画布休眠仅由 Draw2 统一落笔派发边界通知，不由模拟鼠标消息重复通知 |
+| 笔迹在取得 Canvas 前提前返回 | RAII guard 仍必须发送 Ended，activity count 最终回到 0 |
+| 多指笔迹交错结束 | 仅最后一个笔迹启动 150ms 退出定时器；任一新 Started 取消该定时器 |
+| Started/Ended 窗口消息迟到或交错 | 窗口线程以当前原子 count 复核；过期消息不得错误进入或退出静默 |
 
 #### 5. Good / Base / Bad Cases
 
@@ -103,6 +205,7 @@ namespace Inkeys::UI::Bar
 - 手工验证 UI 外启动、进入 UI、离开后 5 秒内返回、超过 240px、5 秒超时、休眠后仅靠近 240px、Draw2 鼠标/笔/触摸落笔、落笔时仍位于接收区和动画关闭。
 - 对同一边框像素分别从接受消息区域内外取等距离光标位置，隔离第一光源后确认第三光源贡献一致。
 - 性能验证至少比较 `Dormant` 与持续全局移动时的 CPU；`Dormant` 中不得出现由第三光源导致的持续渲染唤醒。
+- 多指和快速连续短笔迹下记录 activity count/quiet 状态，确认无永久静默、无中途恢复动态光，最后一笔后约 150ms 恢复。
 
 #### 7. Wrong vs Correct
 
@@ -125,6 +228,16 @@ cursorIntensity = lifecycleIntensity * nearestVisibleRegionIntensity;
 // Correct：区域距离只裁剪唤醒；第三光源贡献由自身 240px 径向画刷决定。
 cursorIntensity = lifecycleIntensity * controlIntensityScale;
 cursorRadius = 240.0 * zoom;
+~~~
+
+~~~cpp
+// Wrong：只通知开始，线程提前返回或多指结束后 Bar 永久静默。
+NotifyCanvasDrawingStarted();
+RunDetachedStroke();
+
+// Correct：每个真实笔迹线程以 RAII 成对通知，原子计数只发布首尾边界。
+CanvasDrawingActivityGuard guard;
+RunStroke();
 ~~~
 
 ### UI3 边缘光影实验开关契约

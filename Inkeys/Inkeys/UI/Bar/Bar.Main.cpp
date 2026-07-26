@@ -41,6 +41,9 @@ constexpr double BarBorderCursorLightRadius = 240.0;
 constexpr ULONGLONG BarBorderCursorGraceDurationMs = 5000;
 constexpr UINT_PTR BarBorderCursorGraceTimerId = 0x494B4301;
 constexpr UINT BarBorderCursorSuspendMessage = WM_APP + 0x31;
+constexpr UINT_PTR BarCanvasDrawingQuietTimerId = 0x494B4302;
+constexpr UINT BarCanvasDrawingActivityMessage = WM_APP + 0x32;
+constexpr UINT BarCanvasDrawingQuietDelayMs = 150;
 constexpr double BarBorderLightIntensity = 1.0;
 constexpr double BarColorSwatchCursorLightIntensity = 0.50;
 constexpr double BarButtonCursorLightIntensity = 0.30;
@@ -51,6 +54,7 @@ constexpr double BarColorSwatchFrameOpacity = 0.18;
 constexpr int BarBorderDiffuseCompositePasses = 2;
 // 标准差等于线宽时，1px 线源经过一维 Gaussian 后中心约保留 38.3%。
 constexpr double BarBorderGaussianCenterCoverage = 0.382924922548;
+std::atomic_uint BarCanvasDrawingActivityCount = 0;
 
 double ApplyBorderLightSmoothstep(double progress)
 {
@@ -101,12 +105,23 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 			barUISet.HandleBorderCursorGraceTimeout(hWnd);
 			return 0;
 		}
+		if (wParam == BarCanvasDrawingQuietTimerId)
+		{
+			barUISet.HandleCanvasDrawingQuietTimeout(hWnd);
+			return 0;
+		}
 		return HIWINDOW_DEFAULT_PROC;
 	}
 
 	case BarBorderCursorSuspendMessage:
 	{
 		barUISet.SuspendBorderCursorTracking(hWnd, wParam != 0);
+		return 0;
+	}
+
+	case BarCanvasDrawingActivityMessage:
+	{
+		barUISet.HandleCanvasDrawingActivity(hWnd, wParam != 0);
 		return 0;
 	}
 
@@ -368,9 +383,66 @@ void HighPrecisionWait(double frameTimeSpentMs, double targetFPS)
 // 具体渲染
 BarUIRendering::BarUIRendering(BarUISetClass* barUISetClassT) { barUISetClass = barUISetClassT; }
 
-bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
+void BarUIRendering::DiscardDeviceResources()
 {
 	frameGradientBrushCache.clear();
+	frameDiffuseMaskCache.clear();
+	frameGeometryDiffuseMaskCache.clear();
+	frameSolidColorBrush.Reset();
+	frameGaussianBlurEffect.Reset();
+	frameMaskDeviceContext.Reset();
+	frameGradientFailureLogged = false;
+	frameDiffuseEffectFailureLogged = false;
+	frameDiffuseMaskFailureLogged = false;
+	frameDiffuseMaskUnavailable = false;
+	frameDiffuseMaskCreatedThisFrame = false;
+	frameDirtyClipActive = false;
+	frameDirtyClipRect = {};
+}
+
+void BarUIRendering::PushFrameDirtyClip(
+	ID2D1DeviceContext* deviceContext, const D2D1_RECT_F& dirtyRect)
+{
+	if (!deviceContext || frameDirtyClipActive) return;
+	frameDirtyClipRect = dirtyRect;
+	deviceContext->PushAxisAlignedClip(
+		dirtyRect, D2D1_ANTIALIAS_MODE_ALIASED);
+	frameDirtyClipActive = true;
+}
+
+void BarUIRendering::PopFrameDirtyClip(ID2D1DeviceContext* deviceContext)
+{
+	if (!deviceContext || !frameDirtyClipActive) return;
+	deviceContext->PopAxisAlignedClip();
+	frameDirtyClipActive = false;
+}
+
+void BarUIRendering::HandleFrameEndDrawResult(HRESULT endDrawResult)
+{
+	if (SUCCEEDED(endDrawResult))
+	{
+		frameDiffuseMaskCreatedThisFrame = false;
+		return;
+	}
+	if (!frameDiffuseMaskCreatedThisFrame) return;
+
+	// A8/Effect 错误可能只在 EndDraw 暴露；本会话立即降级，不能进入逐帧重试。
+	frameDiffuseMaskCache.clear();
+	frameGeometryDiffuseMaskCache.clear();
+	frameGaussianBlurEffect.Reset();
+	frameDiffuseMaskUnavailable = true;
+	frameDiffuseMaskCreatedThisFrame = false;
+	if (!frameDiffuseMaskFailureLogged)
+	{
+		frameDiffuseMaskFailureLogged = true;
+		if (IDTLogger) IDTLogger->error(
+			"[BarUIRendering::HandleFrameEndDrawResult] A8 预模糊遮罩提交失败，本设备停用柔光遮罩, hr=0x{:08X}",
+			static_cast<unsigned int>(endDrawResult));
+	}
+}
+
+bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
+{
 	frameCursorLightVisible = false;
 	frameDrawingUsesPenColor = false;
 	COLORREF desiredDrawingPenColor = frameDrawingPenColorInitialized
@@ -381,11 +453,13 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	frameLightRadius = static_cast<FLOAT>(BarBorderLightRadius * zoom);
 	frameCursorLightRadius = static_cast<FLOAT>(BarBorderCursorLightRadius * zoom);
 
-	bool edgeLightingEnabled = BarUiEdgeLightingEnabled;
+	bool canvasDrawingQuiet = barUISetClass
+		&& barUISetClass->canvasDrawingQuiet.load(std::memory_order_acquire);
+	bool edgeLightingEnabled = BarUiEdgeLightingEnabled && !canvasDrawingQuiet;
 	bool dynamicEdgeLightingEnabled = edgeLightingEnabled && BarUiDynamicEdgeLightingEnabled;
 	if (!edgeLightingEnabled)
 	{
-		// 总开关关闭时停止所有仅服务于点光的动画计算，基础灰边仍由绘制阶段保留。
+		// 总开关关闭或绘图静默时停止点光计算，基础灰边仍由绘制阶段保留。
 		bool needSettlingFrame = frameEdgeLightingEnabled || frameLightingWasAnimating
 			|| frameCursorLightIntensity > 0.0001F;
 		frameEdgeLightingEnabled = false;
@@ -481,7 +555,7 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 			&& barUISetClass->borderCursorLightReady;
 	}
 
-	bool animationEnabled = BarUiAnimationEnabled;
+	bool animationEnabled = BarUiAnimationEnabled && !canvasDrawingQuiet;
 	double animationSpeedRate = BarUiAnimationSpeedRate;
 	if (!isfinite(animationSpeedRate)) animationSpeedRate = 1.0;
 	animationSpeedRate = clamp(animationSpeedRate, 0.1, 5.0);
@@ -768,9 +842,23 @@ ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
 	ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource)
 {
 	COLORREF rgb = color & 0x00FFFFFF;
+	D2D1_POINT_2F center = framePrimaryLight;
+	if (lightSource == BarBorderLightSourceEnum::Cursor) center = frameCursorLight;
+	FLOAT radius = lightSource == BarBorderLightSourceEnum::Cursor
+		? frameCursorLightRadius : frameLightRadius;
+	if (radius <= 0.0F) return nullptr;
+
 	for (auto& cache : frameGradientBrushCache)
 	{
-		if (cache.color == rgb && cache.lightSource == lightSource) return cache.brush.Get();
+		if (cache.color == rgb && cache.lightSource == lightSource)
+		{
+			// 颜色停靠点长期复用，动态光位置与半径只更新画刷的轻量属性。
+			cache.brush->SetCenter(center);
+			cache.brush->SetGradientOriginOffset(D2D1::Point2F());
+			cache.brush->SetRadiusX(radius);
+			cache.brush->SetRadiusY(radius);
+			return cache.brush.Get();
+		}
 	}
 
 	D2D1_GRADIENT_STOP gradientStops[] =
@@ -787,11 +875,6 @@ ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
 		D2D1_EXTEND_MODE_CLAMP, &stopCollection);
 	if (SUCCEEDED(hr))
 	{
-		D2D1_POINT_2F center = framePrimaryLight;
-		if (lightSource == BarBorderLightSourceEnum::Cursor) center = frameCursorLight;
-		FLOAT radius = lightSource == BarBorderLightSourceEnum::Cursor
-			? frameCursorLightRadius : frameLightRadius;
-		if (radius <= 0.0F) return nullptr;
 		FrameGradientBrushCacheClass cache;
 		cache.color = rgb;
 		cache.lightSource = lightSource;
@@ -801,6 +884,9 @@ ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
 			stopCollection.Get(), &cache.brush);
 		if (SUCCEEDED(hr))
 		{
+			// 动画混色会产生短期颜色，限制缓存容量避免长期运行后无界增长。
+			if (frameGradientBrushCache.size() >= 32)
+				frameGradientBrushCache.erase(frameGradientBrushCache.begin());
 			frameGradientBrushCache.emplace_back(move(cache));
 			return frameGradientBrushCache.back().brush.Get();
 		}
@@ -816,12 +902,456 @@ ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
 	return nullptr;
 }
 
+ID2D1SolidColorBrush* BarUIRendering::GetFrameSolidColorBrush(
+	ID2D1DeviceContext* deviceContext, COLORREF color, double opacity)
+{
+	if (!deviceContext) return nullptr;
+	D2D1_COLOR_F d2dColor = Inkeys::Color::ConvertToD2dColor(
+		color, clamp(opacity, 0.0, 1.0));
+	if (!frameSolidColorBrush)
+	{
+		if (FAILED(deviceContext->CreateSolidColorBrush(
+			d2dColor, &frameSolidColorBrush)))
+			return nullptr;
+	}
+	else
+	{
+		frameSolidColorBrush->SetColor(d2dColor);
+		frameSolidColorBrush->SetOpacity(1.0F);
+	}
+	return frameSolidColorBrush.Get();
+}
+
+BarUIRendering::FrameDiffuseMaskCacheClass* BarUIRendering::GetRoundedRectDiffuseMask(
+	ID2D1DeviceContext* deviceContext,
+	const D2D1_ROUNDED_RECT& roundedRect, FLOAT strokeWidth)
+{
+	if (!deviceContext || strokeWidth <= 0.0F || !barUISetClass
+		|| frameDiffuseMaskUnavailable) return nullptr;
+	FLOAT standardDeviation = static_cast<FLOAT>(
+		BarRenderingAttribute::pointLightDiffuseExtraWidth / 6.0
+		* static_cast<double>(barUISetClass->barStyle.zoom));
+	if (standardDeviation <= 0.0F) return nullptr;
+
+	auto QuantizeQuarter = [](FLOAT value) -> int
+		{
+			return max(0, static_cast<int>(lround(static_cast<double>(value) * 4.0)));
+		};
+	int radiusXQuarter = QuantizeQuarter(roundedRect.radiusX);
+	int radiusYQuarter = QuantizeQuarter(roundedRect.radiusY);
+	int strokeWidthQuarter = max(1, QuantizeQuarter(strokeWidth));
+	int standardDeviationQuarter = max(1, QuantizeQuarter(standardDeviation));
+	for (auto& cache : frameDiffuseMaskCache)
+	{
+		if (cache.radiusXQuarter == radiusXQuarter
+			&& cache.radiusYQuarter == radiusYQuarter
+			&& cache.strokeWidthQuarter == strokeWidthQuarter
+			&& cache.standardDeviationQuarter == standardDeviationQuarter)
+			return &cache;
+	}
+
+	if (!frameMaskDeviceContext && !frameDiffuseEffectFailureLogged)
+	{
+		ComPtr<ID2D1Device> owningDevice;
+		deviceContext->GetDevice(&owningDevice);
+		HRESULT hr = owningDevice
+			? owningDevice->CreateDeviceContext(
+				D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &frameMaskDeviceContext)
+			: E_POINTER;
+		if (FAILED(hr))
+		{
+			frameDiffuseEffectFailureLogged = true;
+			frameDiffuseMaskUnavailable = true;
+			if (IDTLogger) IDTLogger->error(
+				"[BarUIRendering::GetRoundedRectDiffuseMask] 创建遮罩缓存 DeviceContext 失败, hr=0x{:08X}",
+				static_cast<unsigned int>(hr));
+		}
+	}
+	if (!frameGaussianBlurEffect
+		&& frameMaskDeviceContext && !frameDiffuseEffectFailureLogged)
+	{
+		HRESULT hr = frameMaskDeviceContext->CreateEffect(
+			CLSID_D2D1GaussianBlur, &frameGaussianBlurEffect);
+		if (SUCCEEDED(hr))
+			hr = frameGaussianBlurEffect->SetValue(
+				D2D1_GAUSSIANBLUR_PROP_OPTIMIZATION,
+				D2D1_GAUSSIANBLUR_OPTIMIZATION_BALANCED);
+		if (SUCCEEDED(hr))
+			hr = frameGaussianBlurEffect->SetValue(
+				D2D1_GAUSSIANBLUR_PROP_BORDER_MODE, D2D1_BORDER_MODE_SOFT);
+		if (FAILED(hr))
+		{
+			frameGaussianBlurEffect.Reset();
+			frameDiffuseEffectFailureLogged = true;
+			frameDiffuseMaskUnavailable = true;
+			if (IDTLogger) IDTLogger->error(
+				"[BarUIRendering::GetRoundedRectDiffuseMask] 创建 Gaussian Blur Effect 失败, hr=0x{:08X}",
+				static_cast<unsigned int>(hr));
+		}
+	}
+	if (!frameMaskDeviceContext || !frameGaussianBlurEffect) return nullptr;
+
+	FrameDiffuseMaskCacheClass cache;
+	cache.radiusXQuarter = radiusXQuarter;
+	cache.radiusYQuarter = radiusYQuarter;
+	cache.strokeWidthQuarter = strokeWidthQuarter;
+	cache.standardDeviationQuarter = standardDeviationQuarter;
+	cache.radiusX = static_cast<FLOAT>(radiusXQuarter) / 4.0F;
+	cache.radiusY = static_cast<FLOAT>(radiusYQuarter) / 4.0F;
+	FLOAT cachedStrokeWidth = static_cast<FLOAT>(strokeWidthQuarter) / 4.0F;
+	FLOAT cachedStandardDeviation =
+		static_cast<FLOAT>(standardDeviationQuarter) / 4.0F;
+	cache.padding = ceilf(cachedStandardDeviation * 3.0F
+		+ cachedStrokeWidth * 0.5F + 1.0F);
+	cache.size = D2D1::SizeF(
+		cache.padding * 2.0F + cache.radiusX * 2.0F + 1.0F,
+		cache.padding * 2.0F + cache.radiusY * 2.0F + 1.0F);
+
+	D2D1_SIZE_U pixelSize = D2D1::SizeU(
+		max<UINT32>(1, static_cast<UINT32>(ceilf(cache.size.width))),
+		max<UINT32>(1, static_cast<UINT32>(ceilf(cache.size.height))));
+	D2D1_BITMAP_PROPERTIES1 bitmapProperties = D2D1::BitmapProperties1(
+		D2D1_BITMAP_OPTIONS_TARGET,
+		D2D1::PixelFormat(
+			DXGI_FORMAT_A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
+		96.0F, 96.0F);
+	ComPtr<ID2D1Bitmap1> sourceBitmap;
+	ComPtr<ID2D1Bitmap1> outputBitmap;
+	HRESULT hr = frameMaskDeviceContext->CreateBitmap(
+		pixelSize, nullptr, 0, bitmapProperties, &sourceBitmap);
+	if (SUCCEEDED(hr))
+		hr = frameMaskDeviceContext->CreateBitmap(
+			pixelSize, nullptr, 0, bitmapProperties, &outputBitmap);
+	ComPtr<ID2D1SolidColorBrush> sourceBrush;
+	if (SUCCEEDED(hr))
+		hr = frameMaskDeviceContext->CreateSolidColorBrush(
+			D2D1::ColorF(D2D1::ColorF::White), &sourceBrush);
+	if (SUCCEEDED(hr))
+		hr = frameGaussianBlurEffect->SetValue(
+			D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION,
+			cachedStandardDeviation);
+
+	if (SUCCEEDED(hr))
+	{
+		D2D1_COLOR_F transparent = D2D1::ColorF(0.0F, 0.0F);
+		D2D1_ROUNDED_RECT localRoundedRect = D2D1::RoundedRect(
+			D2D1::RectF(
+				cache.padding, cache.padding,
+				cache.padding + cache.radiusX * 2.0F + 1.0F,
+				cache.padding + cache.radiusY * 2.0F + 1.0F),
+			cache.radiusX, cache.radiusY);
+
+		// 缓存上下文分两次提交，避免同一 BeginDraw 内把刚写完的 Target 当作 Effect 输入。
+		frameMaskDeviceContext->SetTarget(sourceBitmap.Get());
+		frameMaskDeviceContext->BeginDraw();
+		frameMaskDeviceContext->SetTransform(D2D1::Matrix3x2F::Identity());
+		frameMaskDeviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
+		frameMaskDeviceContext->Clear(&transparent);
+		frameMaskDeviceContext->DrawRoundedRectangle(
+			&localRoundedRect, sourceBrush.Get(), cachedStrokeWidth);
+		hr = frameMaskDeviceContext->EndDraw();
+		frameMaskDeviceContext->SetTarget(nullptr);
+
+		if (SUCCEEDED(hr))
+		{
+			frameGaussianBlurEffect->SetInput(0, sourceBitmap.Get());
+			frameMaskDeviceContext->SetTarget(outputBitmap.Get());
+			frameMaskDeviceContext->BeginDraw();
+			frameMaskDeviceContext->SetTransform(D2D1::Matrix3x2F::Identity());
+			frameMaskDeviceContext->Clear(&transparent);
+			frameMaskDeviceContext->DrawImage(frameGaussianBlurEffect.Get());
+			hr = frameMaskDeviceContext->EndDraw();
+			frameMaskDeviceContext->SetTarget(nullptr);
+			frameGaussianBlurEffect->SetInput(0, nullptr);
+		}
+	}
+
+	if (FAILED(hr))
+	{
+		frameDiffuseMaskUnavailable = true;
+		if (!frameDiffuseMaskFailureLogged)
+		{
+			frameDiffuseMaskFailureLogged = true;
+			if (IDTLogger) IDTLogger->error(
+				"[BarUIRendering::GetRoundedRectDiffuseMask] 创建预模糊遮罩失败，本设备停用柔光遮罩, hr=0x{:08X}",
+				static_cast<unsigned int>(hr));
+		}
+		return nullptr;
+	}
+
+	cache.bitmap = move(outputBitmap);
+	if (frameDiffuseMaskCache.size() >= 24)
+		frameDiffuseMaskCache.erase(frameDiffuseMaskCache.begin());
+	frameDiffuseMaskCache.emplace_back(move(cache));
+	frameDiffuseMaskCreatedThisFrame = true;
+	return &frameDiffuseMaskCache.back();
+}
+
+void BarUIRendering::DrawRoundedRectDiffuseMask(ID2D1DeviceContext* deviceContext,
+	const FrameDiffuseMaskCacheClass& mask,
+	const D2D1_ROUNDED_RECT& roundedRect,
+	ID2D1RadialGradientBrush* brush, FLOAT opacity)
+{
+	if (!deviceContext || !mask.bitmap || !brush || opacity <= 0.0F) return;
+	brush->SetOpacity(clamp(opacity, 0.0F, 1.0F));
+
+	FLOAT destinationLeft = roundedRect.rect.left - mask.padding;
+	FLOAT destinationTop = roundedRect.rect.top - mask.padding;
+	FLOAT destinationRight = roundedRect.rect.right + mask.padding;
+	FLOAT destinationBottom = roundedRect.rect.bottom + mask.padding;
+	FLOAT destinationMiddleLeft = min(
+		roundedRect.rect.left + mask.radiusX,
+		(roundedRect.rect.left + roundedRect.rect.right) * 0.5F);
+	FLOAT destinationMiddleRight = max(
+		roundedRect.rect.right - mask.radiusX, destinationMiddleLeft);
+	FLOAT destinationMiddleTop = min(
+		roundedRect.rect.top + mask.radiusY,
+		(roundedRect.rect.top + roundedRect.rect.bottom) * 0.5F);
+	FLOAT destinationMiddleBottom = max(
+		roundedRect.rect.bottom - mask.radiusY, destinationMiddleTop);
+
+	const FLOAT sourceX[] =
+	{
+		0.0F,
+		mask.padding + mask.radiusX,
+		mask.padding + mask.radiusX + 1.0F,
+		mask.size.width,
+	};
+	const FLOAT sourceY[] =
+	{
+		0.0F,
+		mask.padding + mask.radiusY,
+		mask.padding + mask.radiusY + 1.0F,
+		mask.size.height,
+	};
+	const FLOAT destinationX[] =
+	{
+		destinationLeft,
+		destinationMiddleLeft,
+		destinationMiddleRight,
+		destinationRight,
+	};
+	const FLOAT destinationY[] =
+	{
+		destinationTop,
+		destinationMiddleTop,
+		destinationMiddleBottom,
+		destinationBottom,
+	};
+
+	D2D1_ANTIALIAS_MODE originalAntialiasMode = deviceContext->GetAntialiasMode();
+	deviceContext->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
+	for (int y = 0; y < 3; y++)
+	{
+		for (int x = 0; x < 3; x++)
+		{
+			if (destinationX[x + 1] <= destinationX[x]
+				|| destinationY[y + 1] <= destinationY[y]) continue;
+			D2D1_RECT_F destinationRect = D2D1::RectF(
+				destinationX[x], destinationY[y],
+				destinationX[x + 1], destinationY[y + 1]);
+			D2D1_RECT_F sourceRect = D2D1::RectF(
+				sourceX[x], sourceY[y], sourceX[x + 1], sourceY[y + 1]);
+			deviceContext->FillOpacityMask(
+				mask.bitmap.Get(), brush, &destinationRect, &sourceRect);
+		}
+	}
+	deviceContext->SetAntialiasMode(originalAntialiasMode);
+}
+
+BarUIRendering::FrameGeometryDiffuseMaskCacheClass* BarUIRendering::GetGeometryDiffuseMask(
+	ID2D1DeviceContext* deviceContext, ID2D1Geometry* geometry,
+	FLOAT strokeWidth, int geometryVariantQuarter)
+{
+	if (!deviceContext || !geometry || strokeWidth <= 0.0F || !barUISetClass)
+		return nullptr;
+	if (frameDiffuseMaskUnavailable) return nullptr;
+	D2D1_RECT_F geometryBounds{};
+	HRESULT hr = geometry->GetBounds(nullptr, &geometryBounds);
+	if (FAILED(hr)) return nullptr;
+	FLOAT width = geometryBounds.right - geometryBounds.left;
+	FLOAT height = geometryBounds.bottom - geometryBounds.top;
+	if (width <= 0.0F || height <= 0.0F) return nullptr;
+
+	FLOAT standardDeviation = static_cast<FLOAT>(
+		BarRenderingAttribute::pointLightDiffuseExtraWidth / 6.0
+		* static_cast<double>(barUISetClass->barStyle.zoom));
+	auto QuantizeQuarter = [](FLOAT value) -> int
+		{
+			return max(0, static_cast<int>(lround(static_cast<double>(value) * 4.0)));
+		};
+	int widthQuarter = max(1, QuantizeQuarter(width));
+	int heightQuarter = max(1, QuantizeQuarter(height));
+	int strokeWidthQuarter = max(1, QuantizeQuarter(strokeWidth));
+	int standardDeviationQuarter = max(1, QuantizeQuarter(standardDeviation));
+	for (auto& cache : frameGeometryDiffuseMaskCache)
+	{
+		if (cache.widthQuarter == widthQuarter
+			&& cache.heightQuarter == heightQuarter
+			&& cache.geometryVariantQuarter == geometryVariantQuarter
+			&& cache.strokeWidthQuarter == strokeWidthQuarter
+			&& cache.standardDeviationQuarter == standardDeviationQuarter)
+			return &cache;
+	}
+
+	if (!frameMaskDeviceContext && !frameDiffuseEffectFailureLogged)
+	{
+		ComPtr<ID2D1Device> owningDevice;
+		deviceContext->GetDevice(&owningDevice);
+		hr = owningDevice
+			? owningDevice->CreateDeviceContext(
+				D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &frameMaskDeviceContext)
+			: E_POINTER;
+		if (FAILED(hr))
+		{
+			frameDiffuseEffectFailureLogged = true;
+			frameDiffuseMaskUnavailable = true;
+			if (IDTLogger) IDTLogger->error(
+				"[BarUIRendering::GetGeometryDiffuseMask] 创建遮罩缓存 DeviceContext 失败, hr=0x{:08X}",
+				static_cast<unsigned int>(hr));
+		}
+	}
+	if (!frameGaussianBlurEffect
+		&& frameMaskDeviceContext && !frameDiffuseEffectFailureLogged)
+	{
+		hr = frameMaskDeviceContext->CreateEffect(
+			CLSID_D2D1GaussianBlur, &frameGaussianBlurEffect);
+		if (SUCCEEDED(hr))
+			hr = frameGaussianBlurEffect->SetValue(
+				D2D1_GAUSSIANBLUR_PROP_OPTIMIZATION,
+				D2D1_GAUSSIANBLUR_OPTIMIZATION_BALANCED);
+		if (SUCCEEDED(hr))
+			hr = frameGaussianBlurEffect->SetValue(
+				D2D1_GAUSSIANBLUR_PROP_BORDER_MODE, D2D1_BORDER_MODE_SOFT);
+		if (FAILED(hr))
+		{
+			frameGaussianBlurEffect.Reset();
+			frameDiffuseEffectFailureLogged = true;
+			frameDiffuseMaskUnavailable = true;
+			if (IDTLogger) IDTLogger->error(
+				"[BarUIRendering::GetGeometryDiffuseMask] 创建 Gaussian Blur Effect 失败, hr=0x{:08X}",
+				static_cast<unsigned int>(hr));
+		}
+	}
+	if (!frameMaskDeviceContext || !frameGaussianBlurEffect) return nullptr;
+
+	FrameGeometryDiffuseMaskCacheClass cache;
+	cache.widthQuarter = widthQuarter;
+	cache.heightQuarter = heightQuarter;
+	cache.geometryVariantQuarter = geometryVariantQuarter;
+	cache.strokeWidthQuarter = strokeWidthQuarter;
+	cache.standardDeviationQuarter = standardDeviationQuarter;
+	FLOAT cachedStrokeWidth = static_cast<FLOAT>(strokeWidthQuarter) / 4.0F;
+	FLOAT cachedStandardDeviation =
+		static_cast<FLOAT>(standardDeviationQuarter) / 4.0F;
+	cache.padding = ceilf(cachedStandardDeviation * 3.0F
+		+ cachedStrokeWidth * 0.5F + 1.0F);
+	cache.size = D2D1::SizeF(
+		width + cache.padding * 2.0F,
+		height + cache.padding * 2.0F);
+
+	D2D1_SIZE_U pixelSize = D2D1::SizeU(
+		max<UINT32>(1, static_cast<UINT32>(ceilf(cache.size.width))),
+		max<UINT32>(1, static_cast<UINT32>(ceilf(cache.size.height))));
+	D2D1_BITMAP_PROPERTIES1 bitmapProperties = D2D1::BitmapProperties1(
+		D2D1_BITMAP_OPTIONS_TARGET,
+		D2D1::PixelFormat(
+			DXGI_FORMAT_A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
+		96.0F, 96.0F);
+	ComPtr<ID2D1Bitmap1> sourceBitmap;
+	ComPtr<ID2D1Bitmap1> outputBitmap;
+	hr = frameMaskDeviceContext->CreateBitmap(
+		pixelSize, nullptr, 0, bitmapProperties, &sourceBitmap);
+	if (SUCCEEDED(hr))
+		hr = frameMaskDeviceContext->CreateBitmap(
+			pixelSize, nullptr, 0, bitmapProperties, &outputBitmap);
+	ComPtr<ID2D1SolidColorBrush> sourceBrush;
+	if (SUCCEEDED(hr))
+		hr = frameMaskDeviceContext->CreateSolidColorBrush(
+			D2D1::ColorF(D2D1::ColorF::White), &sourceBrush);
+	if (SUCCEEDED(hr))
+		hr = frameGaussianBlurEffect->SetValue(
+			D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION,
+			cachedStandardDeviation);
+
+	if (SUCCEEDED(hr))
+	{
+		D2D1_COLOR_F transparent = D2D1::ColorF(0.0F, 0.0F);
+
+		// 缓存上下文分两次提交，避免同一 BeginDraw 内把刚写完的 Target 当作 Effect 输入。
+		frameMaskDeviceContext->SetTarget(sourceBitmap.Get());
+		frameMaskDeviceContext->BeginDraw();
+		frameMaskDeviceContext->SetTransform(D2D1::Matrix3x2F::Translation(
+			cache.padding - geometryBounds.left,
+			cache.padding - geometryBounds.top));
+		frameMaskDeviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
+		frameMaskDeviceContext->Clear(&transparent);
+		frameMaskDeviceContext->DrawGeometry(
+			geometry, sourceBrush.Get(), cachedStrokeWidth);
+		hr = frameMaskDeviceContext->EndDraw();
+		frameMaskDeviceContext->SetTarget(nullptr);
+
+		if (SUCCEEDED(hr))
+		{
+			frameGaussianBlurEffect->SetInput(0, sourceBitmap.Get());
+			frameMaskDeviceContext->SetTarget(outputBitmap.Get());
+			frameMaskDeviceContext->BeginDraw();
+			frameMaskDeviceContext->SetTransform(D2D1::Matrix3x2F::Identity());
+			frameMaskDeviceContext->Clear(&transparent);
+			frameMaskDeviceContext->DrawImage(frameGaussianBlurEffect.Get());
+			hr = frameMaskDeviceContext->EndDraw();
+			frameMaskDeviceContext->SetTarget(nullptr);
+			frameGaussianBlurEffect->SetInput(0, nullptr);
+		}
+	}
+	if (FAILED(hr))
+	{
+		frameDiffuseMaskUnavailable = true;
+		if (!frameDiffuseMaskFailureLogged)
+		{
+			frameDiffuseMaskFailureLogged = true;
+			if (IDTLogger) IDTLogger->error(
+				"[BarUIRendering::GetGeometryDiffuseMask] 创建几何预模糊遮罩失败，本设备停用柔光遮罩, hr=0x{:08X}",
+				static_cast<unsigned int>(hr));
+		}
+		return nullptr;
+	}
+
+	cache.bitmap = move(outputBitmap);
+	if (frameGeometryDiffuseMaskCache.size() >= 24)
+		frameGeometryDiffuseMaskCache.erase(frameGeometryDiffuseMaskCache.begin());
+	frameGeometryDiffuseMaskCache.emplace_back(move(cache));
+	frameDiffuseMaskCreatedThisFrame = true;
+	return &frameGeometryDiffuseMaskCache.back();
+}
+
+void BarUIRendering::DrawGeometryDiffuseMask(ID2D1DeviceContext* deviceContext,
+	const FrameGeometryDiffuseMaskCacheClass& mask,
+	const D2D1_RECT_F& geometryBounds,
+	ID2D1RadialGradientBrush* brush, FLOAT opacity)
+{
+	if (!deviceContext || !mask.bitmap || !brush || opacity <= 0.0F) return;
+	D2D1_RECT_F destinationRect = D2D1::RectF(
+		geometryBounds.left - mask.padding,
+		geometryBounds.top - mask.padding,
+		geometryBounds.right + mask.padding,
+		geometryBounds.bottom + mask.padding);
+	D2D1_RECT_F sourceRect = D2D1::RectF(
+		0.0F, 0.0F, mask.size.width, mask.size.height);
+	brush->SetOpacity(clamp(opacity, 0.0F, 1.0F));
+	D2D1_ANTIALIAS_MODE originalAntialiasMode = deviceContext->GetAntialiasMode();
+	deviceContext->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
+	deviceContext->FillOpacityMask(
+		mask.bitmap.Get(), brush, &destinationRect, &sourceRect);
+	deviceContext->SetAntialiasMode(originalAntialiasMode);
+}
+
 bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLORREF color,
 	BarUiFrameLightColorEnum frameLightColor,
 	bool primaryLightEnabled, double cursorLightIntensityScale,
 	double baseFramePct, double lightPct, FLOAT strokeWidth,
 	const D2D1_ROUNDED_RECT* roundedRect,
-	ID2D1Geometry* geometry)
+	ID2D1Geometry* geometry, int geometryVariantQuarter)
 {
 	if (!deviceContext || (!roundedRect && !geometry) || strokeWidth <= 0.0F || frameLightRadius <= 0.0F)
 		return false;
@@ -847,12 +1377,36 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 	ID2D1RadialGradientBrush* cursorBrush = nullptr;
 	FLOAT cursorLightIntensity = frameCursorLightIntensity
 		* static_cast<FLOAT>(clamp(cursorLightIntensityScale, 0.0, 1.0));
-	bool edgeLightingEnabled = BarUiEdgeLightingEnabled;
+	bool canvasDrawingQuiet = barUISetClass
+		&& barUISetClass->canvasDrawingQuiet.load(std::memory_order_acquire);
+	bool edgeLightingEnabled = BarUiEdgeLightingEnabled && !canvasDrawingQuiet;
+	D2D1_RECT_F lightBounds{};
+	if (roundedRect) lightBounds = roundedRect->rect;
+	else if (geometry && FAILED(geometry->GetBounds(nullptr, &lightBounds)))
+		return false;
+	FLOAT lightBoundsOutset = strokeWidth
+		+ static_cast<FLOAT>(
+			BarRenderingAttribute::pointLightDiffuseExtraWidth
+			* static_cast<double>(barUISetClass->barStyle.zoom));
+	lightBounds.left -= lightBoundsOutset;
+	lightBounds.top -= lightBoundsOutset;
+	lightBounds.right += lightBoundsOutset;
+	lightBounds.bottom += lightBoundsOutset;
+	auto LightIntersectsBounds = [&](D2D1_POINT_2F point, FLOAT radius) -> bool
+		{
+			FLOAT nearestX = clamp(point.x, lightBounds.left, lightBounds.right);
+			FLOAT nearestY = clamp(point.y, lightBounds.top, lightBounds.bottom);
+			FLOAT deltaX = point.x - nearestX;
+			FLOAT deltaY = point.y - nearestY;
+			return deltaX * deltaX + deltaY * deltaY <= radius * radius;
+		};
 	bool drawPrimaryLight = edgeLightingEnabled
-		&& lightOpacity > 0.0F && primaryLightEnabled;
+		&& lightOpacity > 0.0F && primaryLightEnabled
+		&& LightIntersectsBounds(framePrimaryLight, frameLightRadius);
 	bool drawCursorLight = edgeLightingEnabled
 		&& lightOpacity > 0.0F && frameCursorLightVisible
-		&& cursorLightIntensity > 0.0F;
+		&& cursorLightIntensity > 0.0F
+		&& LightIntersectsBounds(frameCursorLight, frameCursorLightRadius);
 	if (drawPrimaryLight)
 		primaryBrush = GetFrameGradientBrush(
 			deviceContext, lightColor, BarBorderLightSourceEnum::Primary);
@@ -861,13 +1415,11 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 			deviceContext, lightColor, BarBorderLightSourceEnum::Cursor);
 	if ((drawPrimaryLight && !primaryBrush) || (drawCursorLight && !cursorBrush)) return false;
 
-	ComPtr<ID2D1SolidColorBrush> baseFrameBrush;
-	HRESULT hr = S_OK;
+	ID2D1SolidColorBrush* baseFrameBrush = nullptr;
 	if (baseOpacity > 0.0F)
 	{
-		hr = deviceContext->CreateSolidColorBrush(
-			Inkeys::Color::ConvertToD2dColor(color, baseOpacity), &baseFrameBrush);
-		if (FAILED(hr) || !baseFrameBrush) return false;
+		baseFrameBrush = GetFrameSolidColorBrush(deviceContext, color, baseOpacity);
+		if (!baseFrameBrush) return false;
 	}
 
 	auto DrawLightPass = [&](ID2D1RadialGradientBrush* brush, FLOAT intensity, FLOAT width)
@@ -877,85 +1429,59 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 			if (roundedRect) deviceContext->DrawRoundedRectangle(roundedRect, brush, width);
 			else deviceContext->DrawGeometry(geometry, brush, width);
 		};
-	auto LogDiffuseFailure = [&](const char* operation, HRESULT failureHr)
-		{
-			if (frameDiffuseEffectFailureLogged) return;
-			frameDiffuseEffectFailureLogged = true;
-			if (IDTLogger) IDTLogger->error(
-				"[BarUIRendering::DrawPointLightFrame] {} 失败，跳过边框柔光, hr=0x{:08X}",
-				operation, static_cast<unsigned int>(failureHr));
-		};
-
 	deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
 	// 点光范围之外仍完整保留原边框，光源只在基础灰边上增加强调。
 	if (baseFrameBrush)
 	{
-		if (roundedRect) deviceContext->DrawRoundedRectangle(roundedRect, baseFrameBrush.Get(), strokeWidth);
-		else deviceContext->DrawGeometry(geometry, baseFrameBrush.Get(), strokeWidth);
+		if (roundedRect) deviceContext->DrawRoundedRectangle(roundedRect, baseFrameBrush, strokeWidth);
+		else deviceContext->DrawGeometry(geometry, baseFrameBrush, strokeWidth);
 	}
 
 	if (drawPrimaryLight || drawCursorLight)
 	{
-		bool effectReady = frameGaussianBlurEffect != nullptr
-			&& !frameDiffuseEffectFailureLogged;
-		if (!effectReady && !frameDiffuseEffectFailureLogged)
-		{
-			hr = deviceContext->CreateEffect(CLSID_D2D1GaussianBlur, &frameGaussianBlurEffect);
-			if (SUCCEEDED(hr))
-				hr = frameGaussianBlurEffect->SetValue(
-					D2D1_GAUSSIANBLUR_PROP_OPTIMIZATION,
-					D2D1_GAUSSIANBLUR_OPTIMIZATION_BALANCED);
-			if (SUCCEEDED(hr))
-				hr = frameGaussianBlurEffect->SetValue(
-					D2D1_GAUSSIANBLUR_PROP_BORDER_MODE, D2D1_BORDER_MODE_SOFT);
-			if (FAILED(hr))
+		FLOAT diffuseSourceOpacity = static_cast<FLOAT>(clamp(
+			diffuseOpacity / BarBorderGaussianCenterCoverage, 0.0, 1.0));
+		auto CompositeOpacity = [](FLOAT opacity) -> FLOAT
 			{
-				frameGaussianBlurEffect.Reset();
-				LogDiffuseFailure("创建 Gaussian Blur Effect", hr);
+				opacity = clamp(opacity, 0.0F, 1.0F);
+				return 1.0F - static_cast<FLOAT>(pow(
+					1.0F - opacity, BarBorderDiffuseCompositePasses));
+			};
+		if (roundedRect)
+		{
+			FrameDiffuseMaskCacheClass* diffuseMask =
+				GetRoundedRectDiffuseMask(deviceContext, *roundedRect, strokeWidth);
+			if (diffuseMask)
+			{
+				// 模糊后的几何遮罩跨帧复用，光源颜色和位置仍由实时径向画刷决定。
+				DrawRoundedRectDiffuseMask(deviceContext, *diffuseMask,
+					*roundedRect, primaryBrush,
+					CompositeOpacity(lightOpacity * diffuseSourceOpacity));
+				DrawRoundedRectDiffuseMask(deviceContext, *diffuseMask,
+					*roundedRect, cursorBrush,
+					CompositeOpacity(lightOpacity * cursorLightIntensity
+						* diffuseSourceOpacity));
 			}
-			effectReady = frameGaussianBlurEffect != nullptr;
 		}
-
-		if (effectReady)
+		else if (geometry)
 		{
-			ComPtr<ID2D1CommandList> diffuseCommands;
-			hr = deviceContext->CreateCommandList(&diffuseCommands);
-			if (SUCCEEDED(hr) && diffuseCommands)
+			D2D1_RECT_F geometryBounds{};
+			if (SUCCEEDED(geometry->GetBounds(nullptr, &geometryBounds)))
 			{
-				ComPtr<ID2D1Image> originalTarget;
-				deviceContext->GetTarget(&originalTarget);
-				if (originalTarget)
+				FrameGeometryDiffuseMaskCacheClass* diffuseMask =
+					GetGeometryDiffuseMask(deviceContext, geometry,
+						strokeWidth, geometryVariantQuarter);
+				if (diffuseMask)
 				{
-					deviceContext->SetTarget(diffuseCommands.Get());
-					// 先把两束同色的空间衰减写入 1px 线源，再由 Gaussian 沿轮廓法线扩散。
-					FLOAT diffuseSourceOpacity = static_cast<FLOAT>(clamp(
-						diffuseOpacity / BarBorderGaussianCenterCoverage, 0.0, 1.0));
-					DrawLightPass(primaryBrush, diffuseSourceOpacity, strokeWidth);
-					DrawLightPass(cursorBrush,
-						cursorLightIntensity * diffuseSourceOpacity, strokeWidth);
-					deviceContext->SetTarget(originalTarget.Get());
-
-					hr = diffuseCommands->Close();
-					if (SUCCEEDED(hr))
-					{
-						FLOAT standardDeviation = static_cast<FLOAT>(
-							BarRenderingAttribute::pointLightDiffuseExtraWidth / 6.0
-							* static_cast<double>(barUISetClass->barStyle.zoom));
-						hr = frameGaussianBlurEffect->SetValue(
-							D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, standardDeviation);
-						if (SUCCEEDED(hr))
-						{
-							frameGaussianBlurEffect->SetInput(0, diffuseCommands.Get());
-							// 同一 Gaussian 输出重复 SOURCE_OVER，让近端按 1-(1-a)^2 增强，远端仍连续归零。
-							for (int pass = 0; pass < BarBorderDiffuseCompositePasses; pass++)
-								deviceContext->DrawImage(frameGaussianBlurEffect.Get());
-						}
-					}
+					DrawGeometryDiffuseMask(deviceContext, *diffuseMask,
+						geometryBounds, primaryBrush,
+						CompositeOpacity(lightOpacity * diffuseSourceOpacity));
+					DrawGeometryDiffuseMask(deviceContext, *diffuseMask,
+						geometryBounds, cursorBrush,
+						CompositeOpacity(lightOpacity * cursorLightIntensity
+							* diffuseSourceOpacity));
 				}
-				else hr = E_POINTER;
 			}
-			else if (SUCCEEDED(hr)) hr = E_POINTER;
-			if (FAILED(hr)) LogDiffuseFailure("记录或绘制 Gaussian 柔光", hr);
 		}
 
 		// 第一光源保留 480px，第三光源使用 240px 光圈；同距离像素不再受其他 UI 区域影响。
@@ -994,11 +1520,11 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 	// Clip
 	if (clip)
 	{
-		ComPtr<ID2D1SolidColorBrush> spFillBrush;
-		deviceContext->CreateSolidColorBrush(Inkeys::Color::ConvertToD2dColor(RGB(0, 0, 0), 0.0), &spFillBrush);
-
+		ID2D1SolidColorBrush* fillBrush =
+			GetFrameSolidColorBrush(deviceContext, RGB(0, 0, 0), 0.0);
+		if (!fillBrush) return false;
 		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
-		deviceContext->FillRoundedRectangle(&roundedRect, spFillBrush.Get());
+		deviceContext->FillRoundedRectangle(&roundedRect, fillBrush);
 		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
 	}
 	// 渲染到 DC
@@ -1007,11 +1533,10 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 		if (shape.fill.has_value() && tarPct > 0.0)
 		{
 			COLORREF fill = shape.fill.value().val;
-
-			ComPtr<ID2D1SolidColorBrush> spFillBrush;
-			deviceContext->CreateSolidColorBrush(Inkeys::Color::ConvertToD2dColor(fill, tarPct), &spFillBrush);
-
-			deviceContext->FillRoundedRectangle(&roundedRect, spFillBrush.Get());
+			ID2D1SolidColorBrush* fillBrush =
+				GetFrameSolidColorBrush(deviceContext, fill, tarPct);
+			if (!fillBrush) return false;
+			deviceContext->FillRoundedRectangle(&roundedRect, fillBrush);
 		}
 		// 渲染边框
 		if (shape.frame.has_value())
@@ -1041,10 +1566,11 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 						strokeWidth, &roundedRect, nullptr);
 				if (!pointLightDrawn)
 				{
-					ComPtr<ID2D1SolidColorBrush> spBorderBrush;
-					deviceContext->CreateSolidColorBrush(
-						Inkeys::Color::ConvertToD2dColor(frame, tarFramePct), &spBorderBrush);
-					deviceContext->DrawRoundedRectangle(&roundedRect, spBorderBrush.Get(), strokeWidth);
+					ID2D1SolidColorBrush* borderBrush =
+						GetFrameSolidColorBrush(deviceContext, frame, tarFramePct);
+					if (!borderBrush) return false;
+					deviceContext->DrawRoundedRectangle(
+						&roundedRect, borderBrush, strokeWidth);
 				}
 			}
 		}
@@ -1160,11 +1686,11 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 	// Clip
 	if (clip)
 	{
-		ComPtr<ID2D1SolidColorBrush> spFillBrush;
-		deviceContext->CreateSolidColorBrush(Inkeys::Color::ConvertToD2dColor(RGB(0, 0, 0), 0.0), &spFillBrush);
-
+		ID2D1SolidColorBrush* fillBrush =
+			GetFrameSolidColorBrush(deviceContext, RGB(0, 0, 0), 0.0);
+		if (!fillBrush) return false;
 		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
-		deviceContext->FillGeometry(geometry.Get(), spFillBrush.Get());
+		deviceContext->FillGeometry(geometry.Get(), fillBrush);
 		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
 	}
 
@@ -1174,11 +1700,10 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 		if (superellipse.fill.has_value())
 		{
 			COLORREF fill = superellipse.fill.value().val;
-
-			ComPtr<ID2D1SolidColorBrush> spFillBrush;
-			deviceContext->CreateSolidColorBrush(Inkeys::Color::ConvertToD2dColor(fill, tarPct), &spFillBrush);
-
-			deviceContext->FillGeometry(geometry.Get(), spFillBrush.Get());
+			ID2D1SolidColorBrush* fillBrush =
+				GetFrameSolidColorBrush(deviceContext, fill, tarPct);
+			if (!fillBrush) return false;
+			deviceContext->FillGeometry(geometry.Get(), fillBrush);
 		}
 		// 渲染边框
 		if (superellipse.frame.has_value())
@@ -1204,13 +1729,14 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 						superellipse.framePrimaryLightEnabled,
 						superellipse.frameCursorLightIntensityScale,
 						tarFramePct, tarFrameLightPct,
-						strokeWidth, nullptr, geometry.Get());
+						strokeWidth, nullptr, geometry.Get(),
+						static_cast<int>(lround(tarN * 4.0)));
 				if (!pointLightDrawn)
 				{
-					ComPtr<ID2D1SolidColorBrush> spBorderBrush;
-					deviceContext->CreateSolidColorBrush(
-						Inkeys::Color::ConvertToD2dColor(frame, tarFramePct), &spBorderBrush);
-					deviceContext->DrawGeometry(geometry.Get(), spBorderBrush.Get(), strokeWidth);
+					ID2D1SolidColorBrush* borderBrush =
+						GetFrameSolidColorBrush(deviceContext, frame, tarFramePct);
+					if (!borderBrush) return false;
+					deviceContext->DrawGeometry(geometry.Get(), borderBrush, strokeWidth);
 				}
 			}
 		}
@@ -1340,15 +1866,16 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 	{
 		COLORREF color = word.color.val;
 
-		ComPtr<ID2D1SolidColorBrush> spFillBrush;
-		deviceContext->CreateSolidColorBrush(Inkeys::Color::ConvertToD2dColor(color, tarPct), &spFillBrush);
+		ID2D1SolidColorBrush* fillBrush =
+			GetFrameSolidColorBrush(deviceContext, color, tarPct);
+		if (!fillBrush) return false;
 
 		deviceContext->DrawTextW(
 			tarContent.c_str(),
 			wcslen(tarContent.c_str()),
 			textFormat,
 			layoutRect,
-			spFillBrush.Get(),
+			fillBrush,
 			D2D1_DRAW_TEXT_OPTIONS_CLIP
 		);
 	}
@@ -1404,13 +1931,19 @@ void BarUISetClass::Rendering()
 	ComPtr<ID2D1DeviceContext>				barDeviceContext;
 	ComPtr<ID2D1Bitmap1>					barBackgroundBitmap;
 	ComPtr<ID2D1GdiInteropRenderTarget>	barGdiInterop;
+	unsigned long long barDeviceGeneration = 0;
+	unsigned long long barDeviceResourceFailureGeneration = 0;
+	bool barEndDrawFailureLogged = false;
+	auto CreateBarDeviceResources = [&](const Ui3RenderDeviceEpoch& epoch) -> HRESULT
 	{
-		HRESULT hr = d2dDevice_WARP->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &barDeviceContext);
-		if (FAILED(hr))
-		{
-			if (IDTLogger) IDTLogger->error("[BarUISetClass::Rendering] CreateDeviceContext 失败, hr=0x{:08X}", static_cast<unsigned int>(hr));
-			return;
-		}
+		if (!epoch.d2dDevice) return E_POINTER;
+
+		ComPtr<ID2D1DeviceContext> nextDeviceContext;
+		ComPtr<ID2D1Bitmap1> nextBackgroundBitmap;
+		ComPtr<ID2D1GdiInteropRenderTarget> nextGdiInterop;
+		HRESULT hr = epoch.d2dDevice->CreateDeviceContext(
+			D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &nextDeviceContext);
+		if (FAILED(hr)) return hr;
 
 		D2D1_BITMAP_PROPERTIES1 bitmapProperties =
 			D2D1::BitmapProperties1(
@@ -1420,28 +1953,41 @@ void BarUISetClass::Rendering()
 
 		D2D1_SIZE_U size = D2D1::SizeU(static_cast<UINT32>(barWindow.w), static_cast<UINT32>(barWindow.h));
 
-		hr = barDeviceContext->CreateBitmap(
+		hr = nextDeviceContext->CreateBitmap(
 			size,
 			nullptr,
 			0,
 			&bitmapProperties,
-			&barBackgroundBitmap
+			&nextBackgroundBitmap
 		);
+		if (FAILED(hr)) return hr;
+
+		hr = nextDeviceContext.As(&nextGdiInterop);
+		if (FAILED(hr)) return hr;
+
+		nextDeviceContext->SetTarget(nextBackgroundBitmap.Get());
+		nextDeviceContext->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+
+		// 新 epoch 完整就绪后再替换旧资源，避免 Hardware 准备失败时出现空白。
+		barDeviceContext = move(nextDeviceContext);
+		barBackgroundBitmap = move(nextBackgroundBitmap);
+		barGdiInterop = move(nextGdiInterop);
+		barDeviceGeneration = epoch.generation;
+		barDeviceResourceFailureGeneration = 0;
+		spec.DiscardDeviceResources();
+		return S_OK;
+	};
+	{
+		auto renderPass = AcquireUi3RenderPass(Ui3RenderPriority::Interactive);
+		Ui3RenderDeviceEpoch epoch = GetUi3RenderDeviceEpoch();
+		HRESULT hr = CreateBarDeviceResources(epoch);
 		if (FAILED(hr))
 		{
-			if (IDTLogger) IDTLogger->error("[BarUISetClass::Rendering] CreateBitmap 失败, hr=0x{:08X}", static_cast<unsigned int>(hr));
+			if (IDTLogger) IDTLogger->error(
+				"[BarUISetClass::Rendering] 创建 UI3 Bar 设备资源失败, hr=0x{:08X}",
+				static_cast<unsigned int>(hr));
 			return;
 		}
-
-		hr = barDeviceContext.As(&barGdiInterop);
-		if (FAILED(hr))
-		{
-			if (IDTLogger) IDTLogger->error("[BarUISetClass::Rendering] 获取 ID2D1GdiInteropRenderTarget 失败, hr=0x{:08X}", static_cast<unsigned int>(hr));
-			return;
-		}
-
-		barDeviceContext->SetTarget(barBackgroundBitmap.Get());
-		barDeviceContext->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 	}
 	chrono::high_resolution_clock::time_point reckon = chrono::high_resolution_clock::now();
 	chrono::high_resolution_clock::time_point animationReckon = reckon;
@@ -1482,6 +2028,9 @@ void BarUISetClass::Rendering()
 		animationReckon = animationNow;
 		if (!isfinite(animationDtSeconds) || animationDtSeconds < 0.0) animationDtSeconds = 0.0;
 		animationDtSeconds = clamp(animationDtSeconds, 0.0, 0.05); // 防止调试或休眠恢复后一帧跳太远
+		bool canvasDrawingQuiet = this->canvasDrawingQuiet.load(std::memory_order_acquire);
+		double currentAnimationSpeedRate = canvasDrawingQuiet
+			? 1.0e12 : static_cast<double>(BarUiAnimationSpeedRate);
 
 		// 主按钮
 		{
@@ -3091,7 +3640,7 @@ void BarUISetClass::Rendering()
 				double targetValue = value.tar;
 				double startValue = value.startV;
 				double duration = value.dur;
-				double speedRate = BarUiAnimationSpeedRate;
+				double speedRate = currentAnimationSpeedRate;
 
 				// 第一阶段：Linear 和 Variable 共用时间进度；Once 或异常时长仍直接到目标。
 				if (forceReplace || mod == BarUiValueModeEnum::Once || !isfinite(duration) || duration <= 0.0
@@ -3141,8 +3690,9 @@ void BarUISetClass::Rendering()
 				COLORREF targetColor = color.tar;
 				COLORREF startColor = color.startColor;
 				double duration = color.dur;
-				double speedRate = !BarUiAnimationEnabled && color.animateWhenDisabled
-					? 1.0 : static_cast<double>(BarUiAnimationSpeedRate);
+				double speedRate = !canvasDrawingQuiet
+					&& !BarUiAnimationEnabled && color.animateWhenDisabled
+					? 1.0 : currentAnimationSpeedRate;
 				if (forceReplace || startColor == targetColor || !isfinite(duration) || duration <= 0.0
 					|| !isfinite(speedRate) || speedRate <= 0.0 || animationDtSeconds <= 0.0)
 				{
@@ -3171,8 +3721,9 @@ void BarUISetClass::Rendering()
 				double targetPct = pct.tar;
 				double startPct = pct.startV;
 				double duration = pct.dur;
-				double speedRate = !BarUiAnimationEnabled && pct.animateWhenDisabled
-					? 1.0 : static_cast<double>(BarUiAnimationSpeedRate);
+				double speedRate = !canvasDrawingQuiet
+					&& !BarUiAnimationEnabled && pct.animateWhenDisabled
+					? 1.0 : currentAnimationSpeedRate;
 				if (forceReplace || !isfinite(targetPct) || !isfinite(startPct)
 					|| (!pct.hasMiddleV && abs(targetPct - startPct) <= pctEpsilon)
 					|| !isfinite(duration) || duration <= 0.0 || !isfinite(speedRate) || speedRate <= 0.0 || animationDtSeconds <= 0.0)
@@ -3266,7 +3817,7 @@ void BarUISetClass::Rendering()
 		{
 			bool forceReplace = false, change = false;;
 			if (val->forceReplace) val->forceReplace = false, forceReplace = true;
-			if (val->AdvanceContentTransition(animationDtSeconds, BarUiAnimationSpeedRate))
+			if (val->AdvanceContentTransition(animationDtSeconds, currentAnimationSpeedRate))
 				needRendering = true;
 
 			if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace), change = true;
@@ -3304,6 +3855,12 @@ void BarUISetClass::Rendering()
 						hoverPct.animateWhenDisabled = false;
 						if (hoverFill) hoverFill->animateWhenDisabled = false;
 					};
+				if (canvasDrawingQuiet)
+				{
+					if (hoverStage != BarButtomHoverStageEnum::None) hoverPct.SetDirect(0.0);
+					FinishHover();
+					return;
+				}
 				if (!visible)
 				{
 					// 隐藏时清除仍在运行的独立悬停过程，避免下次显示继承旧的渐隐灰色。
@@ -3372,7 +3929,7 @@ void BarUISetClass::Rendering()
 			{
 				bool forceReplace = false, change = false;;
 				if (temp->icon.forceReplace) temp->icon.forceReplace = false, forceReplace = true;
-				if (temp->icon.AdvanceContentTransition(animationDtSeconds, BarUiAnimationSpeedRate))
+				if (temp->icon.AdvanceContentTransition(animationDtSeconds, currentAnimationSpeedRate))
 					needRendering = true;
 
 				if (!temp->icon.enable.IsSame()) ChangeState(temp->icon.enable, forceReplace), change = true;
@@ -3403,8 +3960,8 @@ void BarUISetClass::Rendering()
 		}
 
 		// 时间轴与属性值在同一帧末尾推进，避免批次剩余时间和实际动画相差一帧。
-		mainBarTimeline.Advance(animationDtSeconds, BarUiAnimationSpeedRate);
-		drawAttributeTimeline.Advance(animationDtSeconds, BarUiAnimationSpeedRate);
+		mainBarTimeline.Advance(animationDtSeconds, currentAnimationSpeedRate);
+		drawAttributeTimeline.Advance(animationDtSeconds, currentAnimationSpeedRate);
 
 	#pragma endregion
 
@@ -3415,12 +3972,101 @@ void BarUISetClass::Rendering()
 		{
 		#pragma region 渲染UI
 
+			bool interactiveFrame = needRendering || true == BarAtomic::sustainFlag
+				|| needRenderOnce || BarUiDebugModeEnabled;
+			auto renderPass = AcquireUi3RenderPass(interactiveFrame
+				? Ui3RenderPriority::Interactive : Ui3RenderPriority::Cosmetic);
+			if (!renderPass)
+			{
+				// 其他 UI3 客户端占用共享设备时，装饰帧直接让出本帧且保持 60Hz 节流。
+				HighPrecisionWait(chrono::duration<double, milli>(
+					chrono::high_resolution_clock::now() - reckon).count(), 60.0);
+				reckon = chrono::high_resolution_clock::now();
+				continue;
+			}
+
+			Ui3RenderDeviceEpoch epoch = GetUi3RenderDeviceEpoch();
+			if (epoch.generation != barDeviceGeneration)
+			{
+				HRESULT hr = CreateBarDeviceResources(epoch);
+				if (FAILED(hr))
+				{
+					if (barDeviceResourceFailureGeneration != epoch.generation)
+					{
+						barDeviceResourceFailureGeneration = epoch.generation;
+						if (IDTLogger) IDTLogger->error(
+							"[BarUISetClass::Rendering] 切换 UI3 epoch 后重建 Bar 资源失败, hr=0x{:08X}",
+							static_cast<unsigned int>(hr));
+					}
+					HighPrecisionWait(chrono::duration<double, milli>(
+						chrono::high_resolution_clock::now() - reckon).count(), 60.0);
+					reckon = chrono::high_resolution_clock::now();
+					continue;
+				}
+				original = RECT(0, 0, barWindow.w, barWindow.h);
+			}
+
+			// BeginDraw 前计算三个根控件的保守边界，用同一 dirty rect 约束清除、D2D 和 ULW。
+			auto mainButton = superellipseMap[BarUISetSuperellipseEnum::MainButton];
+			mainButton->UpInh(BarUiInheritClass(
+				mainButton->x.val - mainButton->w.val / 2.0,
+				mainButton->y.val - mainButton->h.val / 2.0));
+			auto mainBar = shapeMap[BarUISetShapeEnum::MainBar];
+			mainBar->Inherit(BarUiInheritEnum::Center, *mainButton);
+			auto drawButton =
+				barButtomSet.preset[static_cast<int>(BarButtomPresetEnum::Draw)];
+			drawButton->buttom.Inherit(
+				BarUiInheritEnum::CenterFromTopLeft, *mainBar);
+			auto drawAttribute = shapeMap[BarUISetShapeEnum::DrawAttributeBar];
+			drawAttribute->Inherit(BarUiInheritEnum::Center, drawButton->buttom);
+
+			RECT predicted = RECT(0, 0, 0, 0);
+			auto IncludeShapeBounds = [&](const shared_ptr<BarUiShapeClass>& shape)
+				{
+					double lightPct = shape->frameLightPct.has_value()
+						? static_cast<double>(shape->frameLightPct.value().val) : 0.0;
+					if (shape->enable.val
+						&& (shape->pct.val > 0.0 || lightPct > 0.0))
+						BarRenderingAttribute::UnionRectInPlace(predicted,
+							BarRenderingAttribute::GetWeigetRect(
+								*shape, static_cast<double>(barStyle.zoom)));
+				};
+			IncludeShapeBounds(mainBar);
+			IncludeShapeBounds(drawAttribute);
+			if (mainButton->enable.val && mainButton->pct.val > 0.0)
+				BarRenderingAttribute::UnionRectInPlace(predicted,
+					BarRenderingAttribute::GetWeigetRect(
+						*mainButton, static_cast<double>(barStyle.zoom)));
+
+			RECT frameDirty = original;
+			BarRenderingAttribute::UnionRectInPlace(frameDirty, predicted);
+			if (BarUiDebugModeEnabled)
+				frameDirty = RECT(0, 0, barWindow.w, barWindow.h);
+			frameDirty.left = clamp<LONG>(
+				frameDirty.left, 0, static_cast<LONG>(barWindow.w));
+			frameDirty.top = clamp<LONG>(
+				frameDirty.top, 0, static_cast<LONG>(barWindow.h));
+			frameDirty.right = clamp<LONG>(
+				frameDirty.right, 0, static_cast<LONG>(barWindow.w));
+			frameDirty.bottom = clamp<LONG>(
+				frameDirty.bottom, 0, static_cast<LONG>(barWindow.h));
+			if (frameDirty.right <= frameDirty.left
+				|| frameDirty.bottom <= frameDirty.top)
+				frameDirty = RECT(0, 0, barWindow.w, barWindow.h);
+			D2D1_RECT_F frameDirtyRect = D2D1::RectF(
+				static_cast<FLOAT>(frameDirty.left),
+				static_cast<FLOAT>(frameDirty.top),
+				static_cast<FLOAT>(frameDirty.right),
+				static_cast<FLOAT>(frameDirty.bottom));
+
 			current = RECT(0, 0, 0, 0);
 			barDeviceContext->BeginDraw();
+			spec.PushFrameDirtyClip(barDeviceContext.Get(), frameDirtyRect);
 
 			// 清除背景
 			{
 				D2D1_COLOR_F clearColor = Inkeys::Color::ConvertToD2dColor(RGBA(0, 0, 0, 0));
+				// 全局 dirty clip 已经同时覆盖旧、新边界，Clear 不再触碰其余全屏位图。
 				barDeviceContext->Clear(&clearColor);
 
 				// TODO 绘制纯白全透明警告用户开启 aero
@@ -3747,11 +4393,9 @@ void BarUISetClass::Rendering()
 								sink->Close();
 
 								// ==== 画刷 ====
-								ComPtr<ID2D1SolidColorBrush> brush;
-								barDeviceContext->CreateSolidColorBrush(
-									Inkeys::Color::ConvertToD2dColor(color, tarPct),
-									&brush
-								);
+								ID2D1SolidColorBrush* brush =
+									spec.GetFrameSolidColorBrush(
+										barDeviceContext.Get(), color, tarPct);
 
 								// ==== Stroke Style（圆头、圆角）====
 								ComPtr<ID2D1StrokeStyle> strokeStyle;
@@ -3762,7 +4406,8 @@ void BarUISetClass::Rendering()
 								factory->CreateStrokeStyle(&props, nullptr, 0, &strokeStyle);
 
 								// ==== 绘制贝塞尔曲线（裁切生效）====
-								barDeviceContext->DrawGeometry(pathGeometry.Get(), brush.Get(), penThickness, strokeStyle.Get());
+								if (brush) barDeviceContext->DrawGeometry(
+									pathGeometry.Get(), brush, penThickness, strokeStyle.Get());
 
 								// ==== 结束裁切 ====
 								barDeviceContext->PopLayer();
@@ -3890,10 +4535,9 @@ void BarUISetClass::Rendering()
 				);
 
 				// 3. 创建画刷
-				ComPtr<ID2D1SolidColorBrush> pBrush;
-				barDeviceContext->CreateSolidColorBrush(
-					D2D1::ColorF(255, 255, 255, 0.5),
-					&pBrush);
+				ID2D1SolidColorBrush* pBrush =
+					spec.GetFrameSolidColorBrush(
+						barDeviceContext.Get(), RGB(255, 255, 255), 0.5);
 
 				double tarX = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->inhX;
 				double tarY = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->inhY + barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetH();
@@ -3908,12 +4552,12 @@ void BarUISetClass::Rendering()
 				BarRenderingAttribute::UnionRectInPlace(current, tmp);
 
 				// 5. 绘制文本
-				barDeviceContext->DrawTextW(
+				if (pBrush) barDeviceContext->DrawTextW(
 					content.c_str(),           // text
 					(UINT32)content.length(),  // text length
 					pTextFormat.Get(),         // format
 					layoutRect,                // layout rect
-					pBrush.Get(),              // brush
+					pBrush,                    // brush
 					D2D1_DRAW_TEXT_OPTIONS_NONE
 				);
 			}
@@ -3938,19 +4582,21 @@ void BarUISetClass::Rendering()
 					static_cast<FLOAT>(debugTarget.right - 1),
 					static_cast<FLOAT>(debugTarget.bottom - 1)), 0, 0);
 
-				ComPtr<ID2D1SolidColorBrush> spBorderBrush;
-				barDeviceContext->CreateSolidColorBrush(Inkeys::Color::ConvertToD2dColor(frame, 1.0), &spBorderBrush);
+				ID2D1SolidColorBrush* borderBrush =
+					spec.GetFrameSolidColorBrush(
+						barDeviceContext.Get(), frame, 1.0);
 
-				barDeviceContext->DrawRoundedRectangle(&roundedRect, spBorderBrush.Get(), 1.0f);
+				if (borderBrush)
+					barDeviceContext->DrawRoundedRectangle(
+						&roundedRect, borderBrush, 1.0f);
 			}
 
-			barDeviceContext->Flush();
-
+			// Windows 7 Platform Update 要求 GetDC 时 Clip/Layer 栈为空。
+			spec.PopFrameDirtyClip(barDeviceContext.Get());
 			{
 				// 脏区更新
-				RECT target = original;
+				RECT target = frameDirty;
 				original = current;
-				BarRenderingAttribute::UnionRectInPlace(target, current);
 				{
 					// 脏区更新限制
 					if (target.left < 0) target.left = 0;
@@ -3971,7 +4617,7 @@ void BarUISetClass::Rendering()
 				}
 				else
 				{
-					// 获取 DC
+					// GetDC 自带必要的 D2D 提交，避免在此之前再做一次重复 Flush。
 					HDC hdc = nullptr;
 					HRESULT hr = barGdiInterop->GetDC(D2D1_DC_INITIALIZE_MODE_COPY, &hdc);
 					if (FAILED(hr))
@@ -3990,7 +4636,23 @@ void BarUISetClass::Rendering()
 				}
 			}
 
-			barDeviceContext->EndDraw();
+			HRESULT endDrawHr = barDeviceContext->EndDraw();
+			spec.HandleFrameEndDrawResult(endDrawHr);
+			if (FAILED(endDrawHr))
+			{
+				if (!barEndDrawFailureLogged && IDTLogger)
+					IDTLogger->error(
+						"[BarUISetClass::Rendering] EndDraw 失败，将在下一帧降级恢复或重建设备资源, hr=0x{:08X}",
+						static_cast<unsigned int>(endDrawHr));
+				barEndDrawFailureLogged = true;
+				if (endDrawHr == D2DERR_RECREATE_TARGET)
+				{
+					barDeviceGeneration = 0;
+					spec.DiscardDeviceResources();
+				}
+				BarAtomic::renderOnceFlag = true;
+			}
+			else barEndDrawFailureLogged = false;
 			barMedia.formatCache->Clean();
 
 		#pragma endregion
@@ -4495,6 +5157,7 @@ bool BarUISetClass::SetBorderCursorRawInputEnabled(HWND hWnd, bool enabled)
 void BarUISetClass::ActivateBorderCursorTracking(HWND hWnd)
 {
 	if (!hWnd || !BarUiAnimationEnabled
+		|| canvasDrawingQuiet.load(std::memory_order_acquire)
 		|| !BarUiEdgeLightingEnabled || !BarUiDynamicEdgeLightingEnabled) return;
 	{
 		lock_guard lock(borderCursorLightMutex);
@@ -4550,7 +5213,8 @@ void BarUISetClass::ActivateBorderCursorTracking(HWND hWnd)
 
 void BarUISetClass::RegisterBorderCursorLight(HWND hWnd)
 {
-	if (!hWnd || !BarUiEdgeLightingEnabled || !BarUiDynamicEdgeLightingEnabled) return;
+	if (!hWnd || canvasDrawingQuiet.load(std::memory_order_acquire)
+		|| !BarUiEdgeLightingEnabled || !BarUiDynamicEdgeLightingEnabled) return;
 	{
 		lock_guard lock(borderCursorLightMutex);
 		if (!borderCursorRawInputRegistered
@@ -4652,6 +5316,38 @@ void BarUISetClass::HandleBorderCursorGraceTimeout(HWND hWnd)
 	if (!ScheduleBorderCursorGraceTimer(
 		hWnd, static_cast<UINT>(max<ULONGLONG>(1, remaining))))
 		SuspendBorderCursorTracking(hWnd);
+}
+
+void BarUISetClass::HandleCanvasDrawingActivity(HWND hWnd, bool started)
+{
+	if (!hWnd) return;
+	if (started && BarCanvasDrawingActivityCount.load(std::memory_order_acquire) == 0)
+		started = false;
+	if (started)
+	{
+		KillTimer(hWnd, BarCanvasDrawingQuietTimerId);
+		bool wasQuiet = canvasDrawingQuiet.exchange(true, std::memory_order_acq_rel);
+		// 绘图期间停掉动态光输入；按钮和必要状态仍可按需请求单帧刷新。
+		SuspendBorderCursorTracking(hWnd, true);
+		if (!wasQuiet) UpdateRendering(false);
+		return;
+	}
+
+	if (BarCanvasDrawingActivityCount.load(std::memory_order_acquire) != 0) return;
+	if (!SetTimer(hWnd, BarCanvasDrawingQuietTimerId,
+		BarCanvasDrawingQuietDelayMs, nullptr))
+	{
+		canvasDrawingQuiet.store(false, std::memory_order_release);
+		UpdateRendering(false);
+	}
+}
+
+void BarUISetClass::HandleCanvasDrawingQuietTimeout(HWND hWnd)
+{
+	if (hWnd) KillTimer(hWnd, BarCanvasDrawingQuietTimerId);
+	if (BarCanvasDrawingActivityCount.load(std::memory_order_acquire) != 0) return;
+	if (canvasDrawingQuiet.exchange(false, std::memory_order_acq_rel))
+		UpdateRendering(false);
 }
 
 void BarUISetClass::SuspendBorderCursorTracking(HWND hWnd, bool waitForMouseLeave)
@@ -4889,9 +5585,24 @@ namespace Inkeys::UI::Bar
 
 	void NotifyCanvasDrawingStarted()
 	{
-		// Draw2/Draw3 只投递落笔事件，Raw Input 注销和光源状态切换统一由 Bar 窗口线程处理。
-		if (floating_window)
-			PostMessage(floating_window, BarBorderCursorSuspendMessage, 1, 0);
+		// 只在首个并发笔迹进入时通知窗口线程，避免每个采样或多指笔迹重复切换状态。
+		if (BarCanvasDrawingActivityCount.fetch_add(1, std::memory_order_acq_rel) == 0
+			&& floating_window)
+			PostMessage(floating_window, BarCanvasDrawingActivityMessage, 1, 0);
+	}
+
+	void NotifyCanvasDrawingEnded()
+	{
+		unsigned int activityCount =
+			BarCanvasDrawingActivityCount.load(std::memory_order_acquire);
+		while (activityCount != 0
+			&& !BarCanvasDrawingActivityCount.compare_exchange_weak(
+				activityCount, activityCount - 1,
+				std::memory_order_acq_rel, std::memory_order_acquire))
+		{
+		}
+		if (activityCount == 1 && floating_window)
+			PostMessage(floating_window, BarCanvasDrawingActivityMessage, 0, 0);
 	}
 
 	void Initialization()

@@ -534,6 +534,19 @@ void ResetPrepareCanvas()
 
 void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInfo, StateModeSelectEnum stateModeSelect)
 {
+	struct CanvasDrawingActivityGuard
+	{
+		bool enabled = false;
+		explicit CanvasDrawingActivityGuard(bool enabledT) : enabled(enabledT)
+		{
+			if (enabled) Inkeys::UI::Bar::NotifyCanvasDrawingStarted();
+		}
+		~CanvasDrawingActivityGuard()
+		{
+			if (enabled) Inkeys::UI::Bar::NotifyCanvasDrawingEnded();
+		}
+	} canvasDrawingActivityGuard(useInkeys3UI);
+
 	struct
 	{
 		int width;
@@ -2267,9 +2280,6 @@ int drawpad_main()
 					unique_lock<shared_mutex> lock2(touchTempSm);
 					TouchTemp.pop_front();
 					lock2.unlock();
-
-					// Draw2 在落笔线程派发前只通知一次；后续采样不再触碰 UI3 状态。
-					if (useInkeys3UI) Inkeys::UI::Bar::NotifyCanvasDrawingStarted();
 
 					thread MultiFingerDrawing_thread(MultiFingerDrawing, touchPoint.pid, touchPoint.mode, stateMode, nextPointMode);
 					MultiFingerDrawing_thread.detach();

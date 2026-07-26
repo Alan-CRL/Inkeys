@@ -167,6 +167,11 @@ public:
 	bool Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, const BarUiInheritClass& inh);
 	bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT textAlign = DWRITE_TEXT_ALIGNMENT_CENTER);
 	bool PrepareFrameLighting(double animationDtSeconds);
+	void DiscardDeviceResources();
+	void PushFrameDirtyClip(
+		ID2D1DeviceContext* deviceContext, const D2D1_RECT_F& dirtyRect);
+	void PopFrameDirtyClip(ID2D1DeviceContext* deviceContext);
+	void HandleFrameEndDrawResult(HRESULT endDrawResult);
 
 public:
 	BarUISetClass* barUISetClass = nullptr;
@@ -178,15 +183,54 @@ protected:
 		BarBorderLightSourceEnum lightSource = BarBorderLightSourceEnum::Primary;
 		ComPtr<ID2D1RadialGradientBrush> brush;
 	};
+	struct FrameDiffuseMaskCacheClass
+	{
+		int radiusXQuarter = 0;
+		int radiusYQuarter = 0;
+		int strokeWidthQuarter = 0;
+		int standardDeviationQuarter = 0;
+		FLOAT padding = 0.0F;
+		FLOAT radiusX = 0.0F;
+		FLOAT radiusY = 0.0F;
+		D2D1_SIZE_F size{};
+		ComPtr<ID2D1Bitmap1> bitmap;
+	};
+	struct FrameGeometryDiffuseMaskCacheClass
+	{
+		int widthQuarter = 0;
+		int heightQuarter = 0;
+		int geometryVariantQuarter = 0;
+		int strokeWidthQuarter = 0;
+		int standardDeviationQuarter = 0;
+		FLOAT padding = 0.0F;
+		D2D1_SIZE_F size{};
+		ComPtr<ID2D1Bitmap1> bitmap;
+	};
 
 	ID2D1RadialGradientBrush* GetFrameGradientBrush(
 		ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource);
+	ID2D1SolidColorBrush* GetFrameSolidColorBrush(
+		ID2D1DeviceContext* deviceContext, COLORREF color, double opacity);
+	FrameDiffuseMaskCacheClass* GetRoundedRectDiffuseMask(
+		ID2D1DeviceContext* deviceContext,
+		const D2D1_ROUNDED_RECT& roundedRect, FLOAT strokeWidth);
+	void DrawRoundedRectDiffuseMask(ID2D1DeviceContext* deviceContext,
+		const FrameDiffuseMaskCacheClass& mask,
+		const D2D1_ROUNDED_RECT& roundedRect,
+		ID2D1RadialGradientBrush* brush, FLOAT opacity);
+	FrameGeometryDiffuseMaskCacheClass* GetGeometryDiffuseMask(
+		ID2D1DeviceContext* deviceContext, ID2D1Geometry* geometry,
+		FLOAT strokeWidth, int geometryVariantQuarter);
+	void DrawGeometryDiffuseMask(ID2D1DeviceContext* deviceContext,
+		const FrameGeometryDiffuseMaskCacheClass& mask,
+		const D2D1_RECT_F& geometryBounds,
+		ID2D1RadialGradientBrush* brush, FLOAT opacity);
 	bool DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLORREF color,
 		BarUiFrameLightColorEnum frameLightColor,
 		bool primaryLightEnabled, double cursorLightIntensityScale,
 		double baseFramePct, double lightPct, FLOAT strokeWidth,
 		const D2D1_ROUNDED_RECT* roundedRect,
-		ID2D1Geometry* geometry);
+		ID2D1Geometry* geometry, int geometryVariantQuarter = 0);
 
 	D2D1_POINT_2F framePrimaryLight = D2D1::Point2F();
 	D2D1_POINT_2F framePrimaryLightStart = D2D1::Point2F();
@@ -209,6 +253,11 @@ protected:
 	bool frameEdgeLightingEnabled = false;
 	bool frameGradientFailureLogged = false;
 	bool frameDiffuseEffectFailureLogged = false;
+	bool frameDiffuseMaskFailureLogged = false;
+	bool frameDiffuseMaskUnavailable = false;
+	bool frameDiffuseMaskCreatedThisFrame = false;
+	bool frameDirtyClipActive = false;
+	D2D1_RECT_F frameDirtyClipRect{};
 	double framePrimaryLightMoveElapsed = 0.0;
 	double frameCursorLightFadeElapsed = 0.0;
 	double frameDrawingPenColorElapsed = 0.0;
@@ -228,7 +277,13 @@ protected:
 	bool frameDrawingModeInitialized = false;
 	bool frameDrawingModeTransitionAnimating = false;
 	vector<FrameGradientBrushCacheClass> frameGradientBrushCache;
+	vector<FrameDiffuseMaskCacheClass> frameDiffuseMaskCache;
+	vector<FrameGeometryDiffuseMaskCacheClass> frameGeometryDiffuseMaskCache;
+	ComPtr<ID2D1SolidColorBrush> frameSolidColorBrush;
+	ComPtr<ID2D1DeviceContext> frameMaskDeviceContext;
 	ComPtr<ID2D1Effect> frameGaussianBlurEffect;
+
+	friend class BarUISetClass;
 };
 
 // UI 总集
@@ -272,9 +327,12 @@ protected:
 	void HandleBorderCursorGraceTimeout(HWND hWnd);
 	void SuspendBorderCursorTracking(HWND hWnd, bool waitForMouseLeave = false);
 	bool ScheduleBorderCursorGraceTimer(HWND hWnd, UINT delayMs);
+	void HandleCanvasDrawingActivity(HWND hWnd, bool started);
+	void HandleCanvasDrawingQuietTimeout(HWND hWnd);
 	void RefreshBorderCursorVisibleRegions();
 	bool IsBorderCursorLightNearVisibleRegion(POINT screenPoint);
 	std::atomic<unsigned long long> mainButtonClickPulseSerial = 0;
+	std::atomic_bool canvasDrawingQuiet = false;
 
 	mutex borderCursorLightMutex;
 	D2D1_POINT_2F borderCursorLightPoint = D2D1::Point2F();
@@ -320,6 +378,7 @@ namespace Inkeys::UI::Bar
 	export void SetEdgeLightingOptions(bool enable, bool dynamic);
 	export void SetDebugMode(bool enable);
 	export void NotifyCanvasDrawingStarted();
+	export void NotifyCanvasDrawingEnded();
 
 	void InitializeWindow(BarUISetClass& barUISet);
 	void InitializeMedia(BarUISetClass& barUISet);
