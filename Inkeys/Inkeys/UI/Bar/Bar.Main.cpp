@@ -1685,7 +1685,8 @@ void BarUISetClass::Rendering()
 					mainBarBatchCurve = barState.fold
 					? BarUiCurveEnum::EaseInBack : BarUiCurveEnum::EaseOutBack;
 				else mainBarBatchCurve = mainBarLayoutExpands
-					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack;
+					// 展开保留回弹活力；收起立即响应并在末端平稳减速到零。
+					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseOutCubic;
 				mainBarTimeline.Restart(operationDur);
 			}
 			else if (mainBarTimeline.IsActive() && mainBarLayoutChange)
@@ -1693,7 +1694,7 @@ void BarUISetClass::Rendering()
 				// 换边中途加入布局时用完整平滑曲线覆盖剩余时间，避免压缩重播 Back 造成突发加速。
 				mainBarBatchCurve = continueMainBarSideSwitchKeyframe
 					? BarUiCurveEnum::EaseInOutCubic
-					: (mainBarLayoutExpands ? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack);
+					: (mainBarLayoutExpands ? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseOutCubic);
 			}
 			mainBarLayoutWidth = layoutTotalWidth;
 			if (mainBarTimeline.IsActive()) operationDur = mainBarTimeline.GetRemainingDuration();
@@ -1704,7 +1705,7 @@ void BarUISetClass::Rendering()
 			BarUiCurveEnum syncedMainBarCurve = mainBarTimeline.IsActive()
 				? mainBarBatchCurve : BarUiCurveEnum::EaseInOutCubic;
 			BarUiCurveEnum syncedMainBarPctCurve = mainBarLayoutChange
-				? (mainBarLayoutExpands ? BarUiCurveEnum::EaseOutSine : BarUiCurveEnum::EaseInSine)
+				? (mainBarLayoutExpands ? BarUiCurveEnum::EaseOutSine : BarUiCurveEnum::EaseOutCubic)
 				: (mainBarTimeline.IsActive() && mainBarBatchCurve == BarUiCurveEnum::EaseInBack
 					? BarUiCurveEnum::EaseInSine : BarUiCurveEnum::EaseOutSine);
 			syncedValueCurve = { syncedMainBarCurve, syncedMainBarCurve,
