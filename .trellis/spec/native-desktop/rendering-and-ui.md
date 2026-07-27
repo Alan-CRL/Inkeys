@@ -61,10 +61,8 @@
 - `Setting.Base.cppm::CreateDeviceD3D` 调用 `D3D11CreateDeviceAndSwapChain`，请求 feature level 11.0 并创建独立 hardware device/context、discard swap chain 和 RTV；
 - `Setting.cpp` 调用 `ImGui_ImplWin32_Init`、`ImGui_ImplDX11_Init/NewFrame/RenderDrawData/Shutdown`；`WM_SIZE` 只排队宽高，渲染线程释放 RTV、`ResizeBuffers` 后重建，遮挡时用 `DXGI_PRESENT_TEST` 降低忙等；
 - 设置图片使用 `ID3D11ShaderResourceView*` 作为 `ImTextureID`；EasyX 提供的 BGRA 字节上传为 `DXGI_FORMAT_B8G8R8A8_UNORM` immutable texture/SRV；
-- `Inkeys/Inkeys.vcxproj` 编译 `additional/imgui/imgui_impl_win32.cpp` 与 `imgui_impl_dx11.cpp`，DX9 backend 源码仍随附但不参与主工程编译；
+- `Inkeys/Inkeys.vcxproj` 编译 `additional/imgui/imgui_impl_win32.cpp` 与 `imgui_impl_dx11.cpp`，仓库不再随附 ImGui DX9 backend；
 - DX11 backend 不在运行时调用 `D3DCompile`：`IDR_SHADERS2` 是 VS、`IDR_SHADERS1` 是 PS，两个预编译 CSO 由 `Inkeys.rc` 嵌入 EXE；Inkeys 定制段在 backend 中用成对注释精确标记。
-
-`【历史/兼容；非当前产品路径】` `Inkeys/additional/imgui/` 仍随附 `imgui_impl_dx9.cpp/.h`，但当前 vcxproj 不编译它，设置窗口也没有 `ImGui_ImplDX9_*` 调用。不得仅因源码仍存在就把当前产品路径写成 DX9。
 
 `【合理推断】` 设置 UI 的局部改动应复用 `Setting.Widgets`、`Setting.Wrap` 及现有字体/纹理路径；普通设置功能不得顺带更换 device、swap-chain、shader 或 SRV 所有权。
 
