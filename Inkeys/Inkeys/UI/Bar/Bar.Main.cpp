@@ -49,6 +49,16 @@ constexpr double BarColorSwatchCursorLightIntensity = 0.50;
 constexpr double BarButtonCursorLightIntensity = 0.30;
 constexpr double BarButtonPressedLightOpacity = 0.5;
 constexpr double BarBrushThicknessPresetDip[] = { 1.0, 3.0, 6.0 };
+constexpr double BarDrawAttributeExpandedWidth = 370.0;
+constexpr double BarDrawAttributeExpandedHeight = 185.0;
+constexpr double BarDrawAttributeCompactWidth = 60.0;
+constexpr double BarDrawAttributeCompactScale =
+	BarDrawAttributeCompactWidth / BarDrawAttributeExpandedWidth;
+constexpr double BarDrawAttributeCompactHeight =
+	BarDrawAttributeExpandedHeight * BarDrawAttributeCompactScale;
+constexpr double BarDrawAttributeGap = 5.0;
+constexpr double BarDrawAttributeThicknessHeight = 105.0;
+constexpr double BarDrawAttributeThicknessControlHeight = 30.0;
 constexpr double BarBorderFrameDiffuseOpacity = 0.30;
 constexpr double BarBorderPenDiffuseOpacity = 0.20;
 constexpr double BarColorSwatchFrameOpacity = 0.18;
@@ -2891,49 +2901,49 @@ void BarUISetClass::Rendering()
 					const BarUiCurveSpecClass drawAttributeKeyframePctCurve{
 						BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine,
 						drawAttributePhase, continueDrawAttributePhase };
-					constexpr double drawAttributeExpandedWidth = 370.0;
-					constexpr double drawAttributeExpandedHeight = 185.0;
-					constexpr double drawAttributeCompactWidth = 60.0;
-					constexpr double drawAttributeCompactScale =
-						drawAttributeCompactWidth / drawAttributeExpandedWidth;
-					constexpr double drawAttributeCompactHeight =
-						drawAttributeExpandedHeight * drawAttributeCompactScale;
-					auto CompactDrawAttributeX = [&](double expandedX) { return expandedX * drawAttributeCompactScale; };
+					auto CompactDrawAttributeX = [&](double expandedX) { return expandedX * BarDrawAttributeCompactScale; };
 					auto CompactDrawAttributeY = [&](double expandedY)
 						{
-							return expandedY * drawAttributeCompactScale;
+							return expandedY * BarDrawAttributeCompactScale;
 						};
 					auto CompactDrawAttributeSize = [&](double expandedSize)
 						{
-							return expandedSize * drawAttributeCompactScale;
+							return expandedSize * BarDrawAttributeCompactScale;
 						};
+					double drawAttributeLayoutScale =
+						barState.drawAttribute ? 1.0 : BarDrawAttributeCompactScale;
+					auto drawAttributeBar =
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar];
 					if (!barState.drawAttribute)
 					{
 						// 收起面板保持与展开面板相同宽高比，并居中藏在绘制按钮下方。
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->x.SetTar(0.0);
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.SetTar(0.0);
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->w.SetTar(drawAttributeCompactWidth);
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->h.SetTar(drawAttributeCompactHeight);
+						drawAttributeBar->x.SetTar(0.0);
+						drawAttributeBar->y.SetTar(0.0);
+						drawAttributeBar->w.SetTar(BarDrawAttributeCompactWidth);
+						drawAttributeBar->h.SetTar(BarDrawAttributeCompactHeight);
 
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->pct.SetTar(0.0);
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->framePct.value().SetTar(0.0);
+						drawAttributeBar->pct.SetTar(0.0);
+						drawAttributeBar->framePct.value().SetTar(0.0);
 					}
 					else
 					{
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->w.SetTar(drawAttributeExpandedWidth);
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->h.SetTar(drawAttributeExpandedHeight);
+						drawAttributeBar->w.SetTar(BarDrawAttributeExpandedWidth);
+						drawAttributeBar->h.SetTar(BarDrawAttributeExpandedHeight);
 
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->x.SetTar(0);
+						drawAttributeBar->x.SetTar(0);
 						if (barState.widgetPosition.primaryBar)
-							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.SetTar((shapeMap[BarUISetShapeEnum::MainBar]->GetH() / 2.0 + shapeMap[BarUISetShapeEnum::DrawAttributeBar]->GetH() / 2.0 + 10.0));
+							drawAttributeBar->y.SetTar((shapeMap[BarUISetShapeEnum::MainBar]->GetH() / 2.0 + drawAttributeBar->GetH() / 2.0 + 10.0));
 						else
-							shapeMap[BarUISetShapeEnum::DrawAttributeBar]->y.SetTar(-(shapeMap[BarUISetShapeEnum::MainBar]->GetH() / 2.0 + shapeMap[BarUISetShapeEnum::DrawAttributeBar]->GetH() / 2.0 + 10.0));
+							drawAttributeBar->y.SetTar(-(shapeMap[BarUISetShapeEnum::MainBar]->GetH() / 2.0 + drawAttributeBar->GetH() / 2.0 + 10.0));
 
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->pct.SetTar(0.8);
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar]->framePct.value().SetTar(0.18);
+						drawAttributeBar->pct.SetTar(0.8);
+						drawAttributeBar->framePct.value().SetTar(0.18);
 					}
-					shapeMap[BarUISetShapeEnum::DrawAttributeBar]->fill.value().SetTar(GetThemeColor(BarThemeColorEnum::Surface));
-					shapeMap[BarUISetShapeEnum::DrawAttributeBar]->frame.value().SetTar(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+					drawAttributeBar->rw.value().SetTar(8.0 * drawAttributeLayoutScale);
+					drawAttributeBar->rh.value().SetTar(8.0 * drawAttributeLayoutScale);
+					drawAttributeBar->ft.value().SetTar(drawAttributeLayoutScale);
+					drawAttributeBar->fill.value().SetTar(GetThemeColor(BarThemeColorEnum::Surface));
+					drawAttributeBar->frame.value().SetTar(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 
 					// Color 区域
 					{
@@ -3282,9 +3292,9 @@ void BarUISetClass::Rendering()
 					}
 					if (!barState.widgetPosition.primaryBar)
 					{
-						// 属性栏位于主栏上方时，颜色区随新增笔型行整体下移。
+						// 属性栏位于主栏上方时，让颜色区底边距与左边距同为 5px。
 						double colorOffset = barState.drawAttribute
-							? 35.0 : CompactDrawAttributeY(35.0);
+							? 40.0 : CompactDrawAttributeY(40.0);
 						for (int i = static_cast<int>(
 							BarUISetShapeEnum::DrawAttributeBar_ColorSelect1);
 							i <= static_cast<int>(
@@ -3351,12 +3361,15 @@ void BarUISetClass::Rendering()
 							auto shape = shapeMap[button.shape];
 							auto svg = svgMap[button.svg];
 							auto word = wordMap[button.word];
-							double layoutScale = barState.drawAttribute ? 1.0 : drawAttributeCompactScale;
+							double layoutScale = drawAttributeLayoutScale;
 
 							shape->x.SetTar(250.0 * layoutScale);
 							shape->y.SetTar(button.y * layoutScale);
 							shape->w.SetTar(115.0 * layoutScale);
 							shape->h.SetTar(30.0 * layoutScale);
+							shape->rw.value().SetTar(4.0 * layoutScale);
+							shape->rh.value().SetTar(4.0 * layoutScale);
+							shape->ft.value().SetTar(layoutScale);
 							svg->x.SetTar(6.0 * layoutScale);
 							svg->y.SetTar(0.0);
 							svg->SetWH(18.0 * layoutScale, 18.0 * layoutScale);
@@ -3423,14 +3436,25 @@ void BarUISetClass::Rendering()
 					{ /**/ }
 					// 粗细调节区域
 					{
-						double layoutScale = barState.drawAttribute ? 1.0 : drawAttributeCompactScale;
+						double layoutScale = drawAttributeLayoutScale;
 						double thicknessY = barState.widgetPosition.primaryBar ? 75.0 : 5.0;
+						bool thicknessControlsOnTop =
+							barState.widgetPosition.primaryBar;
+						double thicknessControlOffsetY = thicknessControlsOnTop
+							? BarDrawAttributeGap
+							: BarDrawAttributeThicknessHeight
+								- BarDrawAttributeGap
+								- BarDrawAttributeThicknessControlHeight;
 						auto thicknessRegion =
 							shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect];
 						thicknessRegion->x.SetTar(5.0 * layoutScale);
 						thicknessRegion->y.SetTar(thicknessY * layoutScale);
 						thicknessRegion->w.SetTar(240.0 * layoutScale);
-						thicknessRegion->h.SetTar(95.0 * layoutScale);
+						thicknessRegion->h.SetTar(
+							BarDrawAttributeThicknessHeight * layoutScale);
+						thicknessRegion->rw.value().SetTar(4.0 * layoutScale);
+						thicknessRegion->rh.value().SetTar(4.0 * layoutScale);
+						thicknessRegion->ft.value().SetTar(layoutScale);
 						thicknessRegion->pct.SetTar(barState.drawAttribute ? 0.15 : 0.0);
 						thicknessRegion->fill.value().SetTar(
 							GetThemeColor(BarThemeColorEnum::SubtleFill), operationDur);
@@ -3438,7 +3462,8 @@ void BarUISetClass::Rendering()
 						auto thicknessDisplay =
 							wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay];
 						thicknessDisplay->x.SetTar(15.0 * layoutScale);
-						thicknessDisplay->y.SetTar((thicknessY + 60.0) * layoutScale);
+						thicknessDisplay->y.SetTar(
+							(thicknessY + thicknessControlOffsetY) * layoutScale);
 						thicknessDisplay->w.SetTar(90.0 * layoutScale);
 						thicknessDisplay->h.SetTar(30.0 * layoutScale);
 						thicknessDisplay->size.SetTar(13.0 * layoutScale);
@@ -3459,9 +3484,12 @@ void BarUISetClass::Rendering()
 							{
 								auto shape = shapeMap[shapeType];
 								shape->x.SetTar(x * layoutScale);
-								shape->y.SetTar((thicknessY + 60.0) * layoutScale);
-								shape->w.SetTar(30.0 * layoutScale);
-								shape->h.SetTar(30.0 * layoutScale);
+								shape->y.SetTar(
+									(thicknessY + thicknessControlOffsetY) * layoutScale);
+								shape->w.SetTar(
+									BarDrawAttributeThicknessControlHeight * layoutScale);
+								shape->h.SetTar(
+									BarDrawAttributeThicknessControlHeight * layoutScale);
 								shape->rw.value().SetTar(4.0 * layoutScale);
 								shape->rh.value().SetTar(4.0 * layoutScale);
 								shape->fill.value().SetTar(selected
@@ -3491,9 +3519,12 @@ void BarUISetClass::Rendering()
 								if (numberWord)
 								{
 									numberWord->x.SetTar(x * layoutScale);
-									numberWord->y.SetTar((thicknessY + 60.0) * layoutScale);
-									numberWord->w.SetTar(30.0 * layoutScale);
-									numberWord->h.SetTar(30.0 * layoutScale);
+									numberWord->y.SetTar(
+										(thicknessY + thicknessControlOffsetY) * layoutScale);
+									numberWord->w.SetTar(
+										BarDrawAttributeThicknessControlHeight * layoutScale);
+									numberWord->h.SetTar(
+										BarDrawAttributeThicknessControlHeight * layoutScale);
 									numberWord->size.SetTar(10.0 * layoutScale);
 								}
 								pressScale.SetTar(pressed ? BarButtonPressScale : 1.0,
@@ -3576,6 +3607,9 @@ void BarUISetClass::Rendering()
 						double size = barState.drawAttribute ? 30.0 : CompactDrawAttributeSize(30.0);
 						shape->w.SetTar(size);
 						shape->h.SetTar(size);
+						shape->rw.value().SetTar(4.0 * drawAttributeLayoutScale);
+						shape->rh.value().SetTar(4.0 * drawAttributeLayoutScale);
+						shape->ft.value().SetTar(drawAttributeLayoutScale);
 						// 填充先显现，灰边只随同一批次淡入到 18%。
 						shape->framePct.value().SetTar(
 							barState.drawAttribute ? BarColorSwatchFrameOpacity : 0.0);
@@ -3677,18 +3711,29 @@ void BarUISetClass::Rendering()
 
 					if (drawAttributeSideSwitch)
 					{
-						// 上下换边与主栏一致：先收拢到绘制按钮位置并隐藏，再向另一侧展开。
-						auto drawAttributeBar = shapeMap[BarUISetShapeEnum::DrawAttributeBar];
+						// 中点的 x/y 是相对绘制按钮中心的偏移，因此固定为 0。
 						drawAttributeBar->x.SetTar(
 							drawAttributeBar->x.tar, operationDur, 0.0, true, drawAttributeKeyframeValueCurve);
 						drawAttributeBar->y.SetTar(
 							drawAttributeBar->y.tar, operationDur, 0.0, true, drawAttributeKeyframeValueCurve);
 						drawAttributeBar->w.SetTar(
-							drawAttributeBar->w.tar, operationDur, drawAttributeCompactWidth, true,
+							drawAttributeBar->w.tar, operationDur, BarDrawAttributeCompactWidth, true,
 							drawAttributeKeyframeValueCurve);
 						drawAttributeBar->h.SetTar(
-							drawAttributeBar->h.tar, operationDur, drawAttributeCompactHeight, true,
+							drawAttributeBar->h.tar, operationDur, BarDrawAttributeCompactHeight, true,
 							drawAttributeKeyframeValueCurve);
+						drawAttributeBar->rw.value().SetTar(
+							drawAttributeBar->rw.value().tar, operationDur,
+							CompactDrawAttributeSize(drawAttributeBar->rw.value().tar),
+							true, drawAttributeKeyframeValueCurve);
+						drawAttributeBar->rh.value().SetTar(
+							drawAttributeBar->rh.value().tar, operationDur,
+							CompactDrawAttributeSize(drawAttributeBar->rh.value().tar),
+							true, drawAttributeKeyframeValueCurve);
+						drawAttributeBar->ft.value().SetTar(
+							drawAttributeBar->ft.value().tar, operationDur,
+							CompactDrawAttributeSize(drawAttributeBar->ft.value().tar),
+							true, drawAttributeKeyframeValueCurve);
 						drawAttributeBar->pct.SetTar(
 							drawAttributeBar->pct.tar, operationDur, 0.0, true, drawAttributeKeyframePctCurve);
 						drawAttributeBar->framePct.value().SetTar(
@@ -3702,12 +3747,24 @@ void BarUISetClass::Rendering()
 							if (!obj) continue;
 							double middleW = max(1.0, CompactDrawAttributeSize(obj->w.tar));
 							double middleH = max(1.0, CompactDrawAttributeSize(obj->h.tar));
-							double middleX = drawAttributeCompactWidth / 2.0 - middleW / 2.0;
-							double middleY = drawAttributeCompactHeight / 2.0 - middleH / 2.0;
+							double middleX = BarDrawAttributeCompactWidth / 2.0 - middleW / 2.0;
+							double middleY = BarDrawAttributeCompactHeight / 2.0 - middleH / 2.0;
 							obj->x.SetTar(obj->x.tar, operationDur, middleX, true, drawAttributeKeyframeValueCurve);
 							obj->y.SetTar(obj->y.tar, operationDur, middleY, true, drawAttributeKeyframeValueCurve);
 							obj->w.SetTar(obj->w.tar, operationDur, middleW, true, drawAttributeKeyframeValueCurve);
 							obj->h.SetTar(obj->h.tar, operationDur, middleH, true, drawAttributeKeyframeValueCurve);
+							if (obj->rw.has_value())
+								obj->rw.value().SetTar(obj->rw.value().tar, operationDur,
+									CompactDrawAttributeSize(obj->rw.value().tar), true,
+									drawAttributeKeyframeValueCurve);
+							if (obj->rh.has_value())
+								obj->rh.value().SetTar(obj->rh.value().tar, operationDur,
+									CompactDrawAttributeSize(obj->rh.value().tar), true,
+									drawAttributeKeyframeValueCurve);
+							if (obj->ft.has_value())
+								obj->ft.value().SetTar(obj->ft.value().tar, operationDur,
+									CompactDrawAttributeSize(obj->ft.value().tar), true,
+									drawAttributeKeyframeValueCurve);
 							obj->pct.SetTar(obj->pct.tar, operationDur, 0.0, true, drawAttributeKeyframePctCurve);
 							if (obj->framePct.has_value())
 								obj->framePct.value().SetTar(obj->framePct.value().tar, operationDur, 0.0, true,
@@ -4462,12 +4519,19 @@ void BarUISetClass::Rendering()
 								wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay];
 							auto thicknessAdjust =
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust];
+							double panelAnimationScale = panel->w.val
+								/ BarDrawAttributeExpandedWidth;
+							if (!isfinite(panelAnimationScale)
+								|| panelAnimationScale <= 0.0)
+								panelAnimationScale = 0.0;
 							spec.Shape(barDeviceContext.Get(), *thicknessRegion,
 								thicknessRegion->Inherit(TopLeft, *panel));
 							BarUiInheritClass thicknessDisplayInherit =
 								thicknessDisplay->Inherit(TopLeft, *panel);
 							BarUiInheritClass thicknessAdjustInherit =
 								thicknessAdjust->Inherit(TopLeft, *panel);
+							bool thicknessControlsOnTop =
+								barState.widgetPosition.primaryBar;
 
 							double contentOpacity = thicknessDisplay->pct.val;
 							FLOAT uiZoom = static_cast<FLOAT>(barStyle.zoom);
@@ -4476,20 +4540,32 @@ void BarUISetClass::Rendering()
 								barDeviceContext.Get(), contentColor, contentOpacity);
 							if (contentOpacity > 0.000001 && previewBrush && uiZoom > 0.0f)
 							{
-								// 色带宽度按控件布局缩放，高度直接取设备像素粗细。
+								// 展开静止后保持真实设备 px；面板动画时只补上同一几何缩放倍率。
 								FLOAT requestedThickness = max(0.0f,
-									static_cast<FLOAT>(drawAttributePenThickness.val));
-								// 复用下排到底边的间隙，在灰框顶端与按钮顶端之间对称留白。
-								double contentGap = max(0.0,
-									thicknessRegion->inhY + thicknessRegion->h.val
-									- thicknessAdjustInherit.y
-									- thicknessAdjust->h.val);
+									static_cast<FLOAT>(drawAttributePenThickness.val
+										* panelAnimationScale));
+								// 换边时镜像上下布局，并复用控件到灰框边缘的间隙。
+								double contentGap = thicknessControlsOnTop
+									? thicknessAdjustInherit.y
+										- thicknessRegion->inhY
+									: thicknessRegion->inhY
+										+ thicknessRegion->h.val
+										- thicknessAdjustInherit.y
+										- thicknessAdjust->h.val;
+								contentGap = max(0.0, contentGap);
 								contentGap = min(
-									contentGap, thicknessRegion->w.val / 2.0);
-								double previewTop =
-									thicknessRegion->inhY + contentGap;
-								double previewBottom = max(
-									previewTop, thicknessAdjustInherit.y - contentGap);
+									contentGap, thicknessRegion->h.val / 2.0);
+								double previewTop = thicknessControlsOnTop
+									? thicknessAdjustInherit.y
+										+ thicknessAdjust->h.val
+										+ contentGap
+									: thicknessRegion->inhY + contentGap;
+								double previewBottom = thicknessControlsOnTop
+									? thicknessRegion->inhY
+										+ thicknessRegion->h.val
+										- contentGap
+									: thicknessAdjustInherit.y - contentGap;
+								previewBottom = max(previewTop, previewBottom);
 								double previewAreaHeight =
 									previewBottom - previewTop;
 								FLOAT maxPreviewThickness = max(1.0f,
@@ -4595,8 +4671,24 @@ void BarUISetClass::Rendering()
 								{
 									auto adjustSvg = svgMap[
 										BarUISetSvgEnum::DrawAttributeBar_ThicknessAdjust];
+									D2D1_MATRIX_3X2_F buttonTransform;
+									barDeviceContext->GetTransform(&buttonTransform);
+									if (barState.widgetPosition.primaryBar)
+									{
+										// 属性栏换到主栏下方时，调节提示箭头同步朝下。
+										FLOAT centerX = static_cast<FLOAT>(
+											(shapeInherit.x + shape->w.val / 2.0) * uiZoom);
+										FLOAT centerY = static_cast<FLOAT>(
+											(shapeInherit.y + shape->h.val / 2.0) * uiZoom);
+										barDeviceContext->SetTransform(
+											D2D1::Matrix3x2F::Rotation(
+												180.0f, D2D1::Point2F(centerX, centerY))
+											* buttonTransform);
+									}
 									spec.Svg(barDeviceContext.Get(), *adjustSvg,
 										adjustSvg->Inherit(Center, *shape));
+									if (barState.widgetPosition.primaryBar)
+										barDeviceContext->SetTransform(buttonTransform);
 								}
 								else
 								{
@@ -4618,13 +4710,15 @@ void BarUISetClass::Rendering()
 												shape->w.val, shape->h.val) * uiZoom)
 											- 8.0f * uiZoom);
 										FLOAT diameter = min(
-											static_cast<FLOAT>(actualPx), innerDiameter);
+											static_cast<FLOAT>(actualPx
+												* panelAnimationScale), innerDiameter);
 										D2D1_ELLIPSE ellipse = D2D1::Ellipse(
 											D2D1::Point2F(centerX, centerY),
 											diameter / 2.0f, diameter / 2.0f);
 										barDeviceContext->FillEllipse(
 											&ellipse, buttonBrush);
-										if (static_cast<FLOAT>(actualPx) > innerDiameter)
+										if (static_cast<FLOAT>(actualPx
+											* panelAnimationScale) > innerDiameter)
 										{
 											// 填满时用黑白高对比数字保留真实设备像素值。
 											wstring numberText = to_wstring(actualPx);
@@ -6121,7 +6215,15 @@ namespace Inkeys::UI::Bar
 
 				// 绘制属性（一级菜单）
 				{
-					auto shape = make_shared<BarUiShapeClass>(10.0, 10.0, 60.0, 60.0, 8.0, 8.0, 1.0, GetThemeColor(BarThemeColorEnum::Surface), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+					// 初值就是绘制按钮中心处的等比紧凑态，避免首轮展开从旧 60×60 几何起步。
+					auto shape = make_shared<BarUiShapeClass>(
+						0.0, 0.0,
+						BarDrawAttributeCompactWidth, BarDrawAttributeCompactHeight,
+						8.0 * BarDrawAttributeCompactScale,
+						8.0 * BarDrawAttributeCompactScale,
+						BarDrawAttributeCompactScale,
+						GetThemeColor(BarThemeColorEnum::Surface),
+						GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 					shape->pct.Initialization(0.8);
 					shape->framePct = BarUiPctClass(0.18);
 					shape->frameRendering = BarUiFrameRenderingEnum::PointLight;
@@ -6327,7 +6429,8 @@ namespace Inkeys::UI::Bar
 					// 粗细调节区域
 					{
 						auto shape = make_shared<BarUiShapeClass>(0.0, 0.0,
-							240.0, 95.0, 4.0, 4.0, 1.0,
+							240.0, BarDrawAttributeThicknessHeight,
+							4.0, 4.0, 1.0,
 							GetThemeColor(BarThemeColorEnum::SubtleFill), nullopt);
 						shape->enable.Initialization(true);
 						barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect] = shape;
