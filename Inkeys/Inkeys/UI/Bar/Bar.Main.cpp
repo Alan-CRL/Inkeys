@@ -420,9 +420,13 @@ void BarUIRendering::DiscardDeviceResources()
 	frameDiffuseMaskCache.clear();
 	frameGeometryDiffuseMaskCache.clear();
 	frameSolidColorBrush.Reset();
+	thicknessPreviewGradientBrush.Reset();
 	frameGaussianBlurEffect.Reset();
 	frameMaskDeviceContext.Reset();
 	frameGradientFailureLogged = false;
+	thicknessPreviewGradientFailureLogged = false;
+	thicknessPreviewGradientUnavailable = false;
+	thicknessPreviewGradientColorInitialized = false;
 	frameDiffuseEffectFailureLogged = false;
 	frameDiffuseMaskFailureLogged = false;
 	frameDiffuseMaskUnavailable = false;
@@ -951,6 +955,58 @@ ID2D1SolidColorBrush* BarUIRendering::GetFrameSolidColorBrush(
 		frameSolidColorBrush->SetOpacity(1.0F);
 	}
 	return frameSolidColorBrush.Get();
+}
+
+ID2D1LinearGradientBrush* BarUIRendering::GetThicknessPreviewGradientBrush(
+	ID2D1DeviceContext* deviceContext, COLORREF color,
+	D2D1_POINT_2F startPoint, D2D1_POINT_2F endPoint)
+{
+	if (!deviceContext || thicknessPreviewGradientUnavailable) return nullptr;
+	COLORREF rgb = color & 0x00FFFFFF;
+	if (!thicknessPreviewGradientBrush
+		|| !thicknessPreviewGradientColorInitialized
+		|| thicknessPreviewGradientColor != rgb)
+	{
+		D2D1_GRADIENT_STOP gradientStops[] =
+		{
+			{ 0.0F, Inkeys::Color::ConvertToD2dColor(rgb, 0.35) },
+			{ 1.0F, Inkeys::Color::ConvertToD2dColor(rgb, 1.00) },
+		};
+		ComPtr<ID2D1GradientStopCollection> stopCollection;
+		HRESULT hr = deviceContext->CreateGradientStopCollection(
+			gradientStops, ARRAYSIZE(gradientStops), D2D1_GAMMA_2_2,
+			D2D1_EXTEND_MODE_CLAMP, &stopCollection);
+		if (SUCCEEDED(hr))
+		{
+			ComPtr<ID2D1LinearGradientBrush> brush;
+			hr = deviceContext->CreateLinearGradientBrush(
+				D2D1::LinearGradientBrushProperties(startPoint, endPoint),
+				stopCollection.Get(), &brush);
+			if (SUCCEEDED(hr))
+			{
+				thicknessPreviewGradientBrush = move(brush);
+				thicknessPreviewGradientColor = rgb;
+				thicknessPreviewGradientColorInitialized = true;
+			}
+		}
+		if (FAILED(hr))
+		{
+			thicknessPreviewGradientUnavailable = true;
+			if (!thicknessPreviewGradientFailureLogged)
+			{
+				thicknessPreviewGradientFailureLogged = true;
+				if (IDTLogger) IDTLogger->error(
+					"[BarUIRendering::GetThicknessPreviewGradientBrush] 创建粗细预览渐变失败, hr=0x{:08X}",
+					static_cast<unsigned int>(hr));
+			}
+			return nullptr;
+		}
+	}
+
+	thicknessPreviewGradientBrush->SetStartPoint(startPoint);
+	thicknessPreviewGradientBrush->SetEndPoint(endPoint);
+	thicknessPreviewGradientBrush->SetOpacity(1.0F);
+	return thicknessPreviewGradientBrush.Get();
 }
 
 BarUIRendering::FrameDiffuseMaskCacheClass* BarUIRendering::GetRoundedRectDiffuseMask(
@@ -4509,9 +4565,7 @@ void BarUISetClass::Rendering()
 							double contentOpacity = thicknessDisplay->pct.val;
 							FLOAT uiZoom = static_cast<FLOAT>(barStyle.zoom);
 							COLORREF contentColor = thicknessDisplay->color.val;
-							ID2D1SolidColorBrush* previewBrush = spec.GetFrameSolidColorBrush(
-								barDeviceContext.Get(), contentColor, contentOpacity);
-							if (contentOpacity > 0.000001 && previewBrush && uiZoom > 0.0f)
+							if (contentOpacity > 0.000001 && uiZoom > 0.0f)
 							{
 								// 展开静止后保持真实设备 px；面板动画时只补上同一几何缩放倍率。
 								FLOAT requestedThickness = max(0.0f,
@@ -4573,8 +4627,30 @@ void BarUISetClass::Rendering()
 								// 两种笔型始终绘制同一个圆角矩形，只连续动画高度和圆角。
 								D2D1_ROUNDED_RECT roundedPreview{
 									previewRect, previewRadius, previewRadius };
-								barDeviceContext->FillRoundedRectangle(
-									&roundedPreview, previewBrush);
+								ID2D1Brush* previewBrush = nullptr;
+								if (stateMode.Pen.ModeSelect
+									== PenModeSelectEnum::IdtPenHighlighter1)
+								{
+									// 荧光笔由左侧 35% 透明度平滑过渡到右侧完全不透明。
+									auto gradientBrush =
+										spec.GetThicknessPreviewGradientBrush(
+											barDeviceContext.Get(), contentColor,
+											D2D1::Point2F(previewRect.left, centerY),
+											D2D1::Point2F(previewRect.right, centerY));
+									if (gradientBrush)
+									{
+										gradientBrush->SetOpacity(
+											static_cast<FLOAT>(contentOpacity));
+										previewBrush = gradientBrush;
+									}
+								}
+								if (!previewBrush)
+									previewBrush = spec.GetFrameSolidColorBrush(
+										barDeviceContext.Get(), contentColor,
+										contentOpacity);
+								if (previewBrush)
+									barDeviceContext->FillRoundedRectangle(
+										&roundedPreview, previewBrush);
 							}
 
 							struct ThicknessButtonRender
@@ -4617,12 +4693,8 @@ void BarUISetClass::Rendering()
 								double buttonOpacity = presetButton
 									? static_cast<double>(numberWord->pct.val)
 									: (adjustVisible ? contentOpacity : 0.0);
-								bool selected = presetButton && displayedThickness
-									== GetBarBrushThicknessPresetPx(
-										button.presetIndex, barStyle.dpiZoom);
-								COLORREF buttonColor = selected
-									? GetThemeColor(BarThemeColorEnum::Accent)
-									: GetThemeColor(BarThemeColorEnum::TextPrimary);
+								// 圆点读取 Shape 的当前边框色，跟随白色到青色的已有颜色动画。
+								COLORREF buttonColor = shape->frame.value().val;
 
 								double pressScale = button.pressScale->val;
 								if (!isfinite(pressScale) || pressScale <= 0.0)

@@ -222,6 +222,9 @@ protected:
 		ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource);
 	ID2D1SolidColorBrush* GetFrameSolidColorBrush(
 		ID2D1DeviceContext* deviceContext, COLORREF color, double opacity);
+	ID2D1LinearGradientBrush* GetThicknessPreviewGradientBrush(
+		ID2D1DeviceContext* deviceContext, COLORREF color,
+		D2D1_POINT_2F startPoint, D2D1_POINT_2F endPoint);
 	FrameDiffuseMaskCacheClass* GetRoundedRectDiffuseMask(
 		ID2D1DeviceContext* deviceContext,
 		const D2D1_ROUNDED_RECT& roundedRect, FLOAT strokeWidth);
@@ -263,6 +266,9 @@ protected:
 	bool frameLightingWasAnimating = false;
 	bool frameEdgeLightingEnabled = false;
 	bool frameGradientFailureLogged = false;
+	bool thicknessPreviewGradientFailureLogged = false;
+	bool thicknessPreviewGradientUnavailable = false;
+	bool thicknessPreviewGradientColorInitialized = false;
 	bool frameDiffuseEffectFailureLogged = false;
 	bool frameDiffuseMaskFailureLogged = false;
 	bool frameDiffuseMaskUnavailable = false;
@@ -291,6 +297,8 @@ protected:
 	vector<FrameDiffuseMaskCacheClass> frameDiffuseMaskCache;
 	vector<FrameGeometryDiffuseMaskCacheClass> frameGeometryDiffuseMaskCache;
 	ComPtr<ID2D1SolidColorBrush> frameSolidColorBrush;
+	ComPtr<ID2D1LinearGradientBrush> thicknessPreviewGradientBrush;
+	COLORREF thicknessPreviewGradientColor = RGB(0, 0, 0);
 	ComPtr<ID2D1DeviceContext> frameMaskDeviceContext;
 	ComPtr<ID2D1Effect> frameGaussianBlurEffect;
 
