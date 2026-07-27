@@ -3421,9 +3421,13 @@ void BarUISetClass::Rendering()
 						thicknessRegion->rw.value().SetTar(4.0 * layoutScale);
 						thicknessRegion->rh.value().SetTar(4.0 * layoutScale);
 						thicknessRegion->ft.value().SetTar(layoutScale);
-						thicknessRegion->pct.SetTar(barState.drawAttribute ? 0.15 : 0.0);
-						thicknessRegion->fill.value().SetTar(
-							GetThemeColor(BarThemeColorEnum::SubtleFill), operationDur);
+						thicknessRegion->pct.SetTar(barState.drawAttribute ? 1.0 : 0.0);
+						thicknessRegion->framePct.value().SetTar(
+							barState.drawAttribute ? 0.18 : 0.0);
+						thicknessRegion->frameLightPct.value().SetTar(
+							barState.drawAttribute ? 1.0 : 0.0);
+						thicknessRegion->frame.value().SetTar(
+							GetThemeColor(BarThemeColorEnum::SurfaceFrame), operationDur);
 
 						auto thicknessDisplay =
 							wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay];
@@ -6406,7 +6410,16 @@ namespace Inkeys::UI::Bar
 						auto shape = make_shared<BarUiShapeClass>(0.0, 0.0,
 							240.0, BarDrawAttributeThicknessHeight,
 							4.0, 4.0, 1.0,
-							GetThemeColor(BarThemeColorEnum::SubtleFill), nullopt);
+							nullopt, GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+						shape->pct.Initialization(0.0);
+						shape->framePct = BarUiPctClass(0.0);
+						shape->frameLightPct = BarUiPctClass(0.0);
+						// 粗细外框保持透明，仅用基础灰边承载第三鼠标光。
+						shape->frameRendering = BarUiFrameRenderingEnum::PointLight;
+						shape->frameLightColor = BarUiFrameLightColorEnum::Frame;
+						shape->framePrimaryLightEnabled = false;
+						shape->frameCursorLightIntensityScale =
+							BarButtonCursorLightIntensity;
 						shape->enable.Initialization(true);
 						barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect] = shape;
 
