@@ -48,6 +48,7 @@ constexpr double BarBorderLightIntensity = 1.0;
 constexpr double BarColorSwatchCursorLightIntensity = 0.50;
 constexpr double BarButtonCursorLightIntensity = 0.30;
 constexpr double BarButtonPressedLightOpacity = 0.5;
+constexpr double BarBrushThicknessPresetDip[] = { 1.0, 3.0, 6.0 };
 constexpr double BarBorderFrameDiffuseOpacity = 0.30;
 constexpr double BarBorderPenDiffuseOpacity = 0.20;
 constexpr double BarColorSwatchFrameOpacity = 0.18;
@@ -55,6 +56,26 @@ constexpr int BarBorderDiffuseCompositePasses = 2;
 // 标准差等于线宽时，1px 线源经过一维 Gaussian 后中心约保留 38.3%。
 constexpr double BarBorderGaussianCenterCoverage = 0.382924922548;
 std::atomic_uint BarCanvasDrawingActivityCount = 0;
+
+int GetBarBrushThicknessPresetPx(size_t index, double dpiZoom)
+{
+	if (index >= 3 || !isfinite(dpiZoom) || dpiZoom <= 0.0) return 1;
+	// 预设只跟随系统 DPI，不能再叠加 UI 配置缩放。
+	return max(1, static_cast<int>(lround(BarBrushThicknessPresetDip[index] * dpiZoom)));
+}
+
+COLORREF GetBarReadableTextColor(COLORREF background)
+{
+	auto LinearChannel = [](BYTE channel)
+		{
+			double value = static_cast<double>(channel) / 255.0;
+			return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4);
+		};
+	double luminance = 0.2126 * LinearChannel(GetRValue(background))
+		+ 0.7152 * LinearChannel(GetGValue(background))
+		+ 0.0722 * LinearChannel(GetBValue(background));
+	return luminance > 0.179 ? RGB(0, 0, 0) : RGB(255, 255, 255);
+}
 
 double ApplyBorderLightSmoothstep(double progress)
 {
@@ -2011,6 +2032,10 @@ void BarUISetClass::Rendering()
 	// 笔型按钮沿用主栏的独立按压缩放，不改变布局值与命中区域。
 	BarUiValueClass drawAttributeBrushPressScale(1.0);
 	BarUiValueClass drawAttributeHighlightPressScale(1.0);
+	BarUiValueClass drawAttributeThicknessFinePressScale(1.0);
+	BarUiValueClass drawAttributeThicknessMediumPressScale(1.0);
+	BarUiValueClass drawAttributeThicknessCoarsePressScale(1.0);
+	BarUiValueClass drawAttributeThicknessAdjustPressScale(1.0);
 	constexpr double mainButtonScale = 1.05;
 	constexpr double mainButtonBaseSize = 80.0;
 	auto mainButtonLogo = svgMap[BarUISetSvgEnum::logo1];
@@ -2846,7 +2871,7 @@ void BarUISetClass::Rendering()
 					const BarUiCurveSpecClass drawAttributeKeyframePctCurve{
 						BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine,
 						drawAttributePhase, continueDrawAttributePhase };
-					constexpr double drawAttributeExpandedWidth = 335.0;
+					constexpr double drawAttributeExpandedWidth = 370.0;
 					constexpr double drawAttributeExpandedHeight = 150.0;
 					constexpr double drawAttributeCompactWidth = 60.0;
 					constexpr double drawAttributeCompactScale =
@@ -3289,7 +3314,7 @@ void BarUISetClass::Rendering()
 							auto word = wordMap[button.word];
 							double layoutScale = barState.drawAttribute ? 1.0 : drawAttributeCompactScale;
 
-							shape->x.SetTar(215.0 * layoutScale);
+							shape->x.SetTar(250.0 * layoutScale);
 							shape->y.SetTar(button.y * layoutScale);
 							shape->w.SetTar(115.0 * layoutScale);
 							shape->h.SetTar(30.0 * layoutScale);
@@ -3359,44 +3384,133 @@ void BarUISetClass::Rendering()
 					{ /**/ }
 					// 粗细调节区域
 					{
-						if (!barState.drawAttribute)
-						{
-							shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->x.SetTar(CompactDrawAttributeX(5.0));
-							if (barState.widgetPosition.primaryBar)
-								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->y.SetTar(CompactDrawAttributeY(105.0));
-							else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->y.SetTar(CompactDrawAttributeY(5.0));
-							shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->w.SetTar(CompactDrawAttributeSize(205.0));
-							shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->h.SetTar(CompactDrawAttributeSize(40.0));
-
-							shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->pct.SetTar(0.0);
-						}
-						else
-						{
-							shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->x.SetTar(5.0);
-							if (barState.widgetPosition.primaryBar) shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->y.SetTar(105.0);
-							else shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->y.SetTar(5.0);
-							shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->w.SetTar(205.0);
-							shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->h.SetTar(40.0);
-
-							shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->pct.SetTar(0.15);
-						}
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect]->fill.value().SetTar(
+						double layoutScale = barState.drawAttribute ? 1.0 : drawAttributeCompactScale;
+						double thicknessY = barState.widgetPosition.primaryBar ? 75.0 : 5.0;
+						auto thicknessRegion =
+							shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect];
+						thicknessRegion->x.SetTar(5.0 * layoutScale);
+						thicknessRegion->y.SetTar(thicknessY * layoutScale);
+						thicknessRegion->w.SetTar(240.0 * layoutScale);
+						thicknessRegion->h.SetTar(70.0 * layoutScale);
+						thicknessRegion->pct.SetTar(barState.drawAttribute ? 0.15 : 0.0);
+						thicknessRegion->fill.value().SetTar(
 							GetThemeColor(BarThemeColorEnum::SubtleFill), operationDur);
 
-						if (!barState.drawAttribute)
+						auto thicknessDisplay =
+							wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay];
+						thicknessDisplay->x.SetTar(10.0 * layoutScale);
+						thicknessDisplay->y.SetTar((thicknessY + 35.0) * layoutScale);
+						thicknessDisplay->w.SetTar(90.0 * layoutScale);
+						thicknessDisplay->h.SetTar(30.0 * layoutScale);
+						thicknessDisplay->size.SetTar(13.0 * layoutScale);
+						thicknessDisplay->pct.SetTar(barState.drawAttribute ? 1.0 : 0.0);
+						thicknessDisplay->color.SetTar(
+							GetThemeColor(BarThemeColorEnum::TextPrimary));
+
+						bool brushMode =
+							stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1;
+						int displayedThickness = static_cast<int>(lround(clamp(
+							static_cast<double>(drawAttributePenThickness.val),
+							0.0, 999.0)));
+						auto ConfigureThicknessButton = [&](BarUISetShapeEnum shapeType,
+							shared_ptr<BarUiWordClass> numberWord, double x, bool visible,
+							bool selected, bool pressed,
+							IdtAtomic<BarButtomHoverStageEnum>& hoverStage,
+							BarUiValueClass& pressScale)
+							{
+								auto shape = shapeMap[shapeType];
+								shape->x.SetTar(x * layoutScale);
+								shape->y.SetTar((thicknessY + 35.0) * layoutScale);
+								shape->w.SetTar(30.0 * layoutScale);
+								shape->h.SetTar(30.0 * layoutScale);
+								shape->rw.value().SetTar(4.0 * layoutScale);
+								shape->rh.value().SetTar(4.0 * layoutScale);
+								shape->fill.value().SetTar(
+									GetThemeColor(BarThemeColorEnum::PressedFill));
+								shape->frame.value().SetTar(selected
+									? GetThemeColor(BarThemeColorEnum::Accent)
+									: GetThemeColor(BarThemeColorEnum::TextPrimary));
+
+								if (!visible)
+								{
+									shape->pct.SetTar(0.0);
+									shape->frameLightPct.value().SetTar(0.0);
+									if (numberWord) numberWord->pct.SetTar(0.0);
+								}
+								else
+								{
+									if (pressed) shape->pct.SetTar(0.10);
+									else if (hoverStage == BarButtomHoverStageEnum::None)
+										shape->pct.SetTar(0.0);
+									shape->frameLightPct.value().SetTar(selected
+										? (pressed ? BarButtonPressedLightOpacity : 1.0) : 0.0);
+									if (numberWord) numberWord->pct.SetTar(1.0);
+								}
+
+								if (numberWord)
+								{
+									numberWord->x.SetTar(x * layoutScale);
+									numberWord->y.SetTar((thicknessY + 35.0) * layoutScale);
+									numberWord->w.SetTar(30.0 * layoutScale);
+									numberWord->h.SetTar(30.0 * layoutScale);
+									numberWord->size.SetTar(10.0 * layoutScale);
+								}
+								pressScale.SetTar(pressed ? BarButtonPressScale : 1.0,
+									BarUiDefaultOperationDur, nullopt, false,
+									pressed ? buttonPressCurve : buttonReleaseCurve);
+							};
+
+						const BarUISetShapeEnum presetShapes[] =
 						{
-							wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->w.SetTar(CompactDrawAttributeSize(80.0));
-							wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->h.SetTar(CompactDrawAttributeSize(30.0));
-							wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->size.SetTar(CompactDrawAttributeSize(15.0));
-							wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->pct.SetTar(0.0);
-						}
-						else
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessFine,
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessMedium,
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessCoarse,
+						};
+						const BarUISetWordEnum presetWords[] =
 						{
-							wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->w.SetTar(80.0);
-							wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->h.SetTar(30.0);
-							wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->size.SetTar(15.0);
-							wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->pct.SetTar(1.0);
+							BarUISetWordEnum::DrawAttributeBar_ThicknessFineNumber,
+							BarUISetWordEnum::DrawAttributeBar_ThicknessMediumNumber,
+							BarUISetWordEnum::DrawAttributeBar_ThicknessCoarseNumber,
+						};
+						IdtAtomic<bool>* presetPresses[] =
+						{
+							&barState.drawAttributeBar.thicknessFinePress,
+							&barState.drawAttributeBar.thicknessMediumPress,
+							&barState.drawAttributeBar.thicknessCoarsePress,
+						};
+						IdtAtomic<BarButtomHoverStageEnum>* presetHoverStages[] =
+						{
+							&drawAttributeThicknessFineHoverStage,
+							&drawAttributeThicknessMediumHoverStage,
+							&drawAttributeThicknessCoarseHoverStage,
+						};
+						BarUiValueClass* presetPressScales[] =
+						{
+							&drawAttributeThicknessFinePressScale,
+							&drawAttributeThicknessMediumPressScale,
+							&drawAttributeThicknessCoarsePressScale,
+						};
+						for (size_t i = 0; i < 3; ++i)
+						{
+							int presetPx = GetBarBrushThicknessPresetPx(i, barStyle.dpiZoom);
+							auto numberWord = wordMap[presetWords[i]];
+							wstring numberText = to_wstring(presetPx);
+							numberWord->content.SetTar(numberText);
+							ConfigureThicknessButton(presetShapes[i], numberWord,
+								105.0 + static_cast<double>(i) * 35.0,
+								barState.drawAttribute && brushMode,
+								displayedThickness == presetPx, *presetPresses[i],
+								*presetHoverStages[i], *presetPressScales[i]);
 						}
+						bool adjustVisible = barState.drawAttribute
+							&& (brushMode || stateMode.Pen.ModeSelect
+								== PenModeSelectEnum::IdtPenHighlighter1);
+						ConfigureThicknessButton(
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust, nullptr,
+							210.0, adjustVisible, false,
+							barState.drawAttributeBar.thicknessAdjustPress,
+							drawAttributeThicknessAdjustHoverStage,
+							drawAttributeThicknessAdjustPressScale);
 					}
 
 					// 颜色块在收起状态保留缩小后的相对排布，展开时同时恢复坐标和尺寸。
@@ -3421,7 +3535,7 @@ void BarUISetClass::Rendering()
 
 					// 展开、收起时，属性栏及全部内部控件共用同一个完成时刻。
 					for (int i = static_cast<int>(BarUISetShapeEnum::DrawAttributeBar);
-						i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect); i++)
+						i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust); i++)
 					{
 						auto obj = shapeMap[static_cast<BarUISetShapeEnum>(i)];
 						if (!obj) continue;
@@ -3448,7 +3562,7 @@ void BarUISetClass::Rendering()
 						SyncPctDuration(obj->pct);
 					}
 					for (int i = static_cast<int>(BarUISetWordEnum::DrawAttributeBar_Brush1);
-						i <= static_cast<int>(BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay); i++)
+						i <= static_cast<int>(BarUISetWordEnum::DrawAttributeBar_ThicknessCoarseNumber); i++)
 					{
 						auto obj = wordMap[static_cast<BarUISetWordEnum>(i)];
 						if (!obj) continue;
@@ -3464,7 +3578,7 @@ void BarUISetClass::Rendering()
 					{
 						// 每次展开或收起都从当前值重建，所有子控件共用本批次的同一结束时刻。
 						for (int i = static_cast<int>(BarUISetShapeEnum::DrawAttributeBar);
-							i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect); i++)
+							i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust); i++)
 						{
 							auto obj = shapeMap[static_cast<BarUISetShapeEnum>(i)];
 							if (!obj) continue;
@@ -3493,7 +3607,7 @@ void BarUISetClass::Rendering()
 							obj->pct.SetTar(obj->pct.tar, operationDur, nullopt, true, syncedPctCurve);
 						}
 						for (int i = static_cast<int>(BarUISetWordEnum::DrawAttributeBar_Brush1);
-							i <= static_cast<int>(BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay); i++)
+							i <= static_cast<int>(BarUISetWordEnum::DrawAttributeBar_ThicknessCoarseNumber); i++)
 						{
 							auto obj = wordMap[static_cast<BarUISetWordEnum>(i)];
 							if (!obj) continue;
@@ -3527,7 +3641,7 @@ void BarUISetClass::Rendering()
 							drawAttributeKeyframePctCurve);
 
 						for (int i = static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ColorSelect1);
-							i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect); i++)
+							i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust); i++)
 						{
 							auto obj = shapeMap[static_cast<BarUISetShapeEnum>(i)];
 							if (!obj) continue;
@@ -3561,7 +3675,7 @@ void BarUISetClass::Rendering()
 							obj->pct.SetTar(obj->pct.tar, operationDur, 0.0, true, drawAttributeKeyframePctCurve);
 						}
 						for (int i = static_cast<int>(BarUISetWordEnum::DrawAttributeBar_Brush1);
-							i <= static_cast<int>(BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay); i++)
+							i <= static_cast<int>(BarUISetWordEnum::DrawAttributeBar_ThicknessCoarseNumber); i++)
 						{
 							auto obj = wordMap[static_cast<BarUISetWordEnum>(i)];
 							if (!obj) continue;
@@ -3776,6 +3890,10 @@ void BarUISetClass::Rendering()
 		if (!drawAttributePenThickness.IsSame()) ChangeValue(drawAttributePenThickness, false);
 		if (!drawAttributeBrushPressScale.IsSame()) ChangeValue(drawAttributeBrushPressScale, false);
 		if (!drawAttributeHighlightPressScale.IsSame()) ChangeValue(drawAttributeHighlightPressScale, false);
+		if (!drawAttributeThicknessFinePressScale.IsSame()) ChangeValue(drawAttributeThicknessFinePressScale, false);
+		if (!drawAttributeThicknessMediumPressScale.IsSame()) ChangeValue(drawAttributeThicknessMediumPressScale, false);
+		if (!drawAttributeThicknessCoarsePressScale.IsSame()) ChangeValue(drawAttributeThicknessCoarsePressScale, false);
+		if (!drawAttributeThicknessAdjustPressScale.IsSame()) ChangeValue(drawAttributeThicknessAdjustPressScale, false);
 
 		for (const auto& [key, val] : shapeMap)
 		{
@@ -3896,6 +4014,35 @@ void BarUISetClass::Rendering()
 		UpdateHoverAnimation(drawAttributeHighlight->pct, &drawAttributeHighlight->fill.value(),
 			drawAttributeHighlightHoverStage, barState.drawAttribute,
 			stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHighlighter1);
+		const BarUISetShapeEnum thicknessPresetShapes[] =
+		{
+			BarUISetShapeEnum::DrawAttributeBar_ThicknessFine,
+			BarUISetShapeEnum::DrawAttributeBar_ThicknessMedium,
+			BarUISetShapeEnum::DrawAttributeBar_ThicknessCoarse,
+		};
+		IdtAtomic<BarButtomHoverStageEnum>* thicknessPresetHoverStages[] =
+		{
+			&drawAttributeThicknessFineHoverStage,
+			&drawAttributeThicknessMediumHoverStage,
+			&drawAttributeThicknessCoarseHoverStage,
+		};
+		bool brushMode = stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1;
+		int displayedThickness = static_cast<int>(lround(clamp(
+			static_cast<double>(drawAttributePenThickness.val), 0.0, 999.0)));
+		for (size_t i = 0; i < 3; ++i)
+		{
+			auto shape = shapeMap[thicknessPresetShapes[i]];
+			bool selected = displayedThickness
+				== GetBarBrushThicknessPresetPx(i, barStyle.dpiZoom);
+			UpdateHoverAnimation(shape->pct, &shape->fill.value(),
+				*thicknessPresetHoverStages[i], barState.drawAttribute && brushMode, !selected);
+		}
+		auto thicknessAdjust =
+			shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust];
+		bool thicknessAdjustVisible = barState.drawAttribute && (brushMode
+			|| stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1);
+		UpdateHoverAnimation(thicknessAdjust->pct, &thicknessAdjust->fill.value(),
+			drawAttributeThicknessAdjustHoverStage, thicknessAdjustVisible, true);
 
 		// 特殊体质：按钮
 		for (int id = 0; id < barButtomSet.tot; id++)
@@ -4248,180 +4395,200 @@ void BarUISetClass::Rendering()
 						}
 						// 粗细调节区域
 						{
-							auto obj1 = BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect;
-							spec.Shape(barDeviceContext.Get(), *shapeMap[obj1], shapeMap[obj1]->Inherit(TopLeft, *shapeMap[BarUISetShapeEnum::DrawAttributeBar]));
+							auto panel = shapeMap[BarUISetShapeEnum::DrawAttributeBar];
+							auto thicknessRegion =
+								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect];
+							auto thicknessDisplay =
+								wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay];
+							spec.Shape(barDeviceContext.Get(), *thicknessRegion,
+								thicknessRegion->Inherit(TopLeft, *panel));
 
-							auto obj2 = BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay;
-							wordMap[obj2]->Inherit(Right, *shapeMap[obj1]); // 提前计算依赖
-
-							// 自定义绘制：粗细预览
-							// 收起后继续按当前透明度绘制，直至与其他属性控件同步淡出。
-							if (wordMap[obj2]->pct.val > 0.000001)
+							double contentOpacity = thicknessDisplay->pct.val;
+							FLOAT uiZoom = static_cast<FLOAT>(barStyle.zoom);
+							COLORREF contentColor = thicknessDisplay->color.val;
+							ID2D1SolidColorBrush* previewBrush = spec.GetFrameSolidColorBrush(
+								barDeviceContext.Get(), contentColor, contentOpacity);
+							if (contentOpacity > 0.000001 && previewBrush && uiZoom > 0.0f)
 							{
-								FLOAT penThickness = max(0.0f,
+								// 色带宽度按控件布局缩放，高度直接取设备像素粗细。
+								FLOAT requestedThickness = max(0.0f,
 									static_cast<FLOAT>(drawAttributePenThickness.val));
-
-								FLOAT tarZoom = barStyle.zoom;
-								double tarX = shapeMap[obj1]->inhX + 5.0;
-								double tarY = shapeMap[obj1]->inhY + 5.0;
-								double tarEndX = wordMap[obj2]->inhX;
-								double tarEndY = shapeMap[obj1]->inhY + shapeMap[obj1]->h.val - 5.0;
-								double tarRw = 0.0;
-								double tarRh = 0.0;
-								if (shapeMap[obj1]->rw.has_value()) tarRw = shapeMap[obj1]->rw.value().val;
-								if (shapeMap[obj1]->rh.has_value()) tarRh = shapeMap[obj1]->rh.value().val;
-
-								COLORREF color = wordMap[obj2]->color.val;
-								double tarPct = wordMap[obj2]->pct.val;
-
-								float rectX1 = static_cast<FLOAT>(tarX) * tarZoom;
-								float rectY1 = static_cast<FLOAT>(tarY) * tarZoom;
-								float rectX2 = static_cast<FLOAT>(tarEndX) * tarZoom;
-								float rectY2 = static_cast<FLOAT>(tarEndY) * tarZoom;
-								if (!isfinite(rectX1)) rectX1 = 0.0f;
-								if (!isfinite(rectY1)) rectY1 = 0.0f;
-								if (!isfinite(rectX2)) rectX2 = rectX1;
-								if (!isfinite(rectY2)) rectY2 = rectY1;
-
-								// 文字和粗细区域独立动画时端点可能交叉，先规范化矩形再创建几何体。
-								auto tarRect = D2D1::RectF(
-									min(rectX1, rectX2), min(rectY1, rectY2),
-									max(rectX1, rectX2), max(rectY1, rectY2));
-
-								// ==== 创建圆角矩形几何 ====
-								ComPtr<ID2D1Factory> factory;
-								barDeviceContext->GetFactory(&factory);
-
-								ComPtr<ID2D1RoundedRectangleGeometry> roundedRectGeo;
-								D2D1_ROUNDED_RECT roundedRect = {
-									tarRect,
-									static_cast<FLOAT>(tarRw) * tarZoom,
-									static_cast<FLOAT>(tarRh) * tarZoom
-								};
-								factory->CreateRoundedRectangleGeometry(roundedRect, &roundedRectGeo);
-
-								// ==== 创建 Layer ====
-								ComPtr<ID2D1Layer> layer;
-								barDeviceContext->CreateLayer(&layer);
-
-								// ==== 启用裁切层 ====
-								D2D1_LAYER_PARAMETERS layerParams = D2D1::LayerParameters();
-								layerParams.geometricMask = roundedRectGeo.Get();
-								layerParams.maskAntialiasMode = D2D1_ANTIALIAS_MODE_PER_PRIMITIVE;
-
-								barDeviceContext->PushLayer(&layerParams, layer.Get());
-
-								// ====== 四个经过点（百分比） ======
-								auto w = tarRect.right - tarRect.left;
-								auto h = tarRect.bottom - tarRect.top;
-								float middleX = tarRect.left + w * 0.5f;
-								float middleY = tarRect.top + h * 0.5f;
-								float insetX = min(5.0f * tarZoom, max(0.0f, w * 0.5f));
-								float insetY = min(5.0f * tarZoom, max(0.0f, h * 0.5f));
-								auto SafeClamp = [](float value, float bound1, float bound2)
-									{
-										if (!isfinite(value)) value = 0.0f;
-										if (!isfinite(bound1)) bound1 = value;
-										if (!isfinite(bound2)) bound2 = value;
-										float lower = min(bound1, bound2);
-										float upper = max(bound1, bound2);
-										return min(max(value, lower), upper);
-									};
-
-								// 不再直接调用 std::clamp，确保异常动画输入也不会触发调试断言。
-								D2D1_POINT_2F p1 = {
-									SafeClamp(tarRect.left + penThickness / 2.0f, tarRect.left + insetX, middleX), middleY };
-								D2D1_POINT_2F p4 = {
-									SafeClamp(tarRect.right - penThickness / 2.0f, middleX, tarRect.right - insetX), middleY };
-								D2D1_POINT_2F p2 = {
-									tarRect.left + (p4.x - p1.x) / 3.0f,
-									SafeClamp(tarRect.top + penThickness / 2.0f, tarRect.top + insetY, middleY) };
-								D2D1_POINT_2F p3 = {
-									tarRect.left + (p4.x - p1.x) * 2.0f / 3.0f,
-									SafeClamp(tarRect.bottom - penThickness / 2.0f, middleY, tarRect.bottom - insetY) };
-
-								vector<D2D1_POINT_2F> pts = { p1,p2,p3,p4 };
-
-								// ====== 内部 lambda：Catmull-Rom 样条到 Bezier 转换 ======
-								auto catmullRomToBeziers = [](const vector<D2D1_POINT_2F>& pts, float tension = 1.0f)
-									{
-										vector<D2D1_BEZIER_SEGMENT> beziers;
-										if (pts.size() < 2) return beziers;
-
-										// 为首尾补点（非闭合）
-										vector<D2D1_POINT_2F> p;
-										p.push_back(pts.front());
-										p.insert(p.end(), pts.begin(), pts.end());
-										p.push_back(pts.back());
-
-										for (int i = 1; i < (int)p.size() - 2; i++)
-										{
-											D2D1_POINT_2F p0 = p[i - 1];
-											D2D1_POINT_2F p1 = p[i];
-											D2D1_POINT_2F p2 = p[i + 1];
-											D2D1_POINT_2F p3 = p[i + 2];
-
-											D2D1_BEZIER_SEGMENT seg;
-											seg.point1 = {
-												p1.x + (p2.x - p0.x) / 6.0f * tension,
-												p1.y + (p2.y - p0.y) / 6.0f * tension
-											};
-											seg.point2 = {
-												p2.x - (p3.x - p1.x) / 6.0f * tension,
-												p2.y - (p3.y - p1.y) / 6.0f * tension
-											};
-											seg.point3 = p2;
-											beziers.push_back(seg);
-										}
-										return beziers;
-									};
-
-								// 生成 Bezier 段
-								auto beziers = catmullRomToBeziers(pts, 1.0f);
-
-								// ====== 创建 PathGeometry ======
-								ComPtr<ID2D1PathGeometry> pathGeometry;
-								factory->CreatePathGeometry(&pathGeometry);
-
-								ComPtr<ID2D1GeometrySink> sink;
-								pathGeometry->Open(&sink);
-
-								sink->BeginFigure(pts.front(), D2D1_FIGURE_BEGIN_HOLLOW);
-								for (auto& bz : beziers) sink->AddBezier(bz);
-								sink->EndFigure(D2D1_FIGURE_END_OPEN);
-
-								sink->Close();
-
-								// ==== 画刷 ====
-								ID2D1SolidColorBrush* brush =
-									spec.GetFrameSolidColorBrush(
-										barDeviceContext.Get(), color, tarPct);
-
-								// ==== Stroke Style（圆头、圆角）====
-								ComPtr<ID2D1StrokeStyle> strokeStyle;
-								D2D1_STROKE_STYLE_PROPERTIES props{};
-								props.startCap = D2D1_CAP_STYLE_ROUND;
-								props.endCap = D2D1_CAP_STYLE_ROUND;
-								props.lineJoin = D2D1_LINE_JOIN_ROUND;
-								factory->CreateStrokeStyle(&props, nullptr, 0, &strokeStyle);
-
-								// ==== 绘制贝塞尔曲线（裁切生效）====
-								if (brush) barDeviceContext->DrawGeometry(
-									pathGeometry.Get(), brush, penThickness, strokeStyle.Get());
-
-								// ==== 结束裁切 ====
-								barDeviceContext->PopLayer();
+								FLOAT maxPreviewThickness = max(1.0f,
+									static_cast<FLOAT>(
+										thicknessRegion->h.val * 0.30 * uiZoom));
+								FLOAT previewThickness =
+									min(requestedThickness, maxPreviewThickness);
+								double previewPadding =
+									max(0.0, thicknessRegion->w.val / 48.0);
+								FLOAT left = static_cast<FLOAT>(
+									(thicknessRegion->inhX + previewPadding) * uiZoom);
+								FLOAT right = static_cast<FLOAT>(
+									(thicknessRegion->inhX + thicknessRegion->w.val
+										- previewPadding)
+									* uiZoom);
+								FLOAT centerY = static_cast<FLOAT>(
+									(thicknessRegion->inhY
+										+ thicknessRegion->h.val * 0.25) * uiZoom);
+								D2D1_RECT_F previewRect = D2D1::RectF(left,
+									centerY - previewThickness / 2.0f, right,
+									centerY + previewThickness / 2.0f);
+								if (stateMode.Pen.ModeSelect
+									== PenModeSelectEnum::IdtPenHighlighter1)
+								{
+									barDeviceContext->FillRectangle(&previewRect, previewBrush);
+								}
+								else
+								{
+									D2D1_ROUNDED_RECT roundedPreview{
+										previewRect, previewThickness / 2.0f,
+										previewThickness / 2.0f };
+									barDeviceContext->FillRoundedRectangle(
+										&roundedPreview, previewBrush);
+								}
 							}
 
-							// 数字直接取曲线的同一个动画值，保证切换画笔类型时同步连续变化。
+							struct ThicknessButtonRender
+							{
+								BarUISetShapeEnum shape;
+								BarUISetWordEnum numberWord;
+								BarUiValueClass* pressScale;
+								int presetIndex;
+							};
+							const ThicknessButtonRender thicknessButtons[] =
+							{
+								{ BarUISetShapeEnum::DrawAttributeBar_ThicknessFine,
+									BarUISetWordEnum::DrawAttributeBar_ThicknessFineNumber,
+									&drawAttributeThicknessFinePressScale, 0 },
+								{ BarUISetShapeEnum::DrawAttributeBar_ThicknessMedium,
+									BarUISetWordEnum::DrawAttributeBar_ThicknessMediumNumber,
+									&drawAttributeThicknessMediumPressScale, 1 },
+								{ BarUISetShapeEnum::DrawAttributeBar_ThicknessCoarse,
+									BarUISetWordEnum::DrawAttributeBar_ThicknessCoarseNumber,
+									&drawAttributeThicknessCoarsePressScale, 2 },
+								{ BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust,
+									BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay,
+									&drawAttributeThicknessAdjustPressScale, -1 },
+							};
 							int displayedThickness = static_cast<int>(lround(clamp(
-								static_cast<double>(drawAttributePenThickness.val), 0.0, 999.0)));
-							wstring thicknessText = L"粗细" + format(L" {:>3}", displayedThickness);
-							wordMap[obj2]->content.SetVal(thicknessText);
-							wordMap[obj2]->content.SetTar(thicknessText);
+								static_cast<double>(drawAttributePenThickness.val),
+								0.0, 999.0)));
+							for (const auto& button : thicknessButtons)
+							{
+								auto shape = shapeMap[button.shape];
+								BarUiInheritClass shapeInherit =
+									shape->Inherit(TopLeft, *panel);
+								bool presetButton = button.presetIndex >= 0;
+								auto numberWord = presetButton
+									? wordMap[button.numberWord] : nullptr;
+								bool adjustVisible = stateMode.Pen.ModeSelect
+									== PenModeSelectEnum::IdtPenBrush1
+									|| stateMode.Pen.ModeSelect
+									== PenModeSelectEnum::IdtPenHighlighter1;
+								double buttonOpacity = presetButton
+									? static_cast<double>(numberWord->pct.val)
+									: (adjustVisible ? contentOpacity : 0.0);
+								bool selected = presetButton && displayedThickness
+									== GetBarBrushThicknessPresetPx(
+										button.presetIndex, barStyle.dpiZoom);
+								COLORREF buttonColor = selected
+									? GetThemeColor(BarThemeColorEnum::Accent)
+									: GetThemeColor(BarThemeColorEnum::TextPrimary);
 
-							// obj2
-							spec.Word(barDeviceContext.Get(), *wordMap[obj2], wordMap[obj2]->Inherit(Right, *shapeMap[obj1]), DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING);
+								double pressScale = button.pressScale->val;
+								if (!isfinite(pressScale) || pressScale <= 0.0)
+									pressScale = 1.0;
+								D2D1_MATRIX_3X2_F originalTransform;
+								barDeviceContext->GetTransform(&originalTransform);
+								bool transformChanged =
+									abs(pressScale - 1.0) > 0.000001;
+								if (transformChanged)
+								{
+									FLOAT centerX = static_cast<FLOAT>(
+										(shapeInherit.x + shape->w.val / 2.0) * uiZoom);
+									FLOAT centerY = static_cast<FLOAT>(
+										(shapeInherit.y + shape->h.val / 2.0) * uiZoom);
+									barDeviceContext->SetTransform(
+										D2D1::Matrix3x2F::Scale(
+											static_cast<FLOAT>(pressScale),
+											static_cast<FLOAT>(pressScale),
+											D2D1::Point2F(centerX, centerY))
+										* originalTransform);
+								}
+
+								spec.Shape(barDeviceContext.Get(), *shape, shapeInherit);
+								ID2D1SolidColorBrush* buttonBrush =
+									spec.GetFrameSolidColorBrush(barDeviceContext.Get(),
+										buttonColor, buttonOpacity);
+								if (buttonOpacity > 0.000001 && buttonBrush
+									&& uiZoom > 0.0f)
+								{
+									FLOAT centerX = static_cast<FLOAT>(
+										(shapeInherit.x + shape->w.val / 2.0) * uiZoom);
+									FLOAT centerY = static_cast<FLOAT>(
+										(shapeInherit.y + shape->h.val / 2.0) * uiZoom);
+									if (presetButton)
+									{
+										int actualPx = GetBarBrushThicknessPresetPx(
+											button.presetIndex, barStyle.dpiZoom);
+										FLOAT innerDiameter = max(1.0f,
+											static_cast<FLOAT>(min(
+												shape->w.val, shape->h.val) * uiZoom)
+											- 8.0f * uiZoom);
+										FLOAT diameter = min(
+											static_cast<FLOAT>(actualPx), innerDiameter);
+										D2D1_ELLIPSE ellipse = D2D1::Ellipse(
+											D2D1::Point2F(centerX, centerY),
+											diameter / 2.0f, diameter / 2.0f);
+										barDeviceContext->FillEllipse(
+											&ellipse, buttonBrush);
+										if (static_cast<FLOAT>(actualPx) > innerDiameter)
+										{
+											// 填满时用黑白高对比数字保留真实设备像素值。
+											wstring numberText = to_wstring(actualPx);
+											numberWord->content.SetVal(numberText);
+											numberWord->content.SetTar(numberText);
+											numberWord->color.SetDirect(
+												GetBarReadableTextColor(buttonColor));
+											spec.Word(barDeviceContext.Get(), *numberWord,
+												numberWord->Inherit(TopLeft, *panel),
+												DWRITE_FONT_WEIGHT_BOLD,
+												DWRITE_TEXT_ALIGNMENT_CENTER);
+										}
+									}
+									else
+									{
+										FLOAT halfWidth = static_cast<FLOAT>(
+											shape->w.val * 0.20 * uiZoom);
+										FLOAT halfHeight = static_cast<FLOAT>(
+											shape->h.val * (2.0 / 15.0) * uiZoom);
+										FLOAT strokeWidth = max(0.75f,
+											static_cast<FLOAT>(
+												min(shape->w.val, shape->h.val)
+												* 0.05 * uiZoom));
+										barDeviceContext->DrawLine(
+											D2D1::Point2F(centerX - halfWidth,
+												centerY + halfHeight),
+											D2D1::Point2F(centerX, centerY - halfHeight),
+											buttonBrush, strokeWidth);
+										barDeviceContext->DrawLine(
+											D2D1::Point2F(centerX, centerY - halfHeight),
+											D2D1::Point2F(centerX + halfWidth,
+												centerY + halfHeight),
+											buttonBrush, strokeWidth);
+									}
+								}
+								if (transformChanged)
+									barDeviceContext->SetTransform(originalTransform);
+							}
+
+							wstring thicknessText =
+								L"粗细 " + to_wstring(displayedThickness);
+							thicknessDisplay->content.SetVal(thicknessText);
+							thicknessDisplay->content.SetTar(thicknessText);
+							spec.Word(barDeviceContext.Get(), *thicknessDisplay,
+								thicknessDisplay->Inherit(TopLeft, *panel),
+								DWRITE_FONT_WEIGHT_NORMAL,
+								DWRITE_TEXT_ALIGNMENT_LEADING);
 						}
 					}
 
@@ -4477,7 +4644,7 @@ void BarUISetClass::Rendering()
 					// 动画中的子控件可能暂时超出父级边界，脏区必须包含其真实新旧范围以清除残影。
 					double dirtyZoom = barStyle.zoom;
 					for (int i = static_cast<int>(BarUISetShapeEnum::DrawAttributeBar);
-						i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect); i++)
+						i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust); i++)
 					{
 						auto obj = shapeMap[static_cast<BarUISetShapeEnum>(i)];
 						if (obj) BarRenderingAttribute::UnionRectInPlace(
@@ -4491,7 +4658,7 @@ void BarUISetClass::Rendering()
 							current, BarRenderingAttribute::GetWeigetRect(*obj, dirtyZoom));
 					}
 					for (int i = static_cast<int>(BarUISetWordEnum::DrawAttributeBar_Brush1);
-						i <= static_cast<int>(BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay); i++)
+						i <= static_cast<int>(BarUISetWordEnum::DrawAttributeBar_ThicknessCoarseNumber); i++)
 					{
 						auto obj = wordMap[static_cast<BarUISetWordEnum>(i)];
 						if (obj) BarRenderingAttribute::UnionRectInPlace(
@@ -4698,6 +4865,10 @@ void BarUISetClass::Interact()
 		None,
 		DrawAttributeBrush,
 		DrawAttributeHighlight,
+		DrawAttributeThicknessFine,
+		DrawAttributeThicknessMedium,
+		DrawAttributeThicknessCoarse,
+		DrawAttributeThicknessAdjust,
 	};
 	IndependentHoverTargetEnum hoveredIndependentButton = IndependentHoverTargetEnum::None;
 	struct HoverVisualRef
@@ -4718,6 +4889,22 @@ void BarUISetClass::Interact()
 				return { &shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->pct,
 					&shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->fill.value(),
 					&drawAttributeHighlightHoverStage };
+			case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
+				return { &shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessFine]->pct,
+					&shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessFine]->fill.value(),
+					&drawAttributeThicknessFineHoverStage };
+			case IndependentHoverTargetEnum::DrawAttributeThicknessMedium:
+				return { &shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessMedium]->pct,
+					&shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessMedium]->fill.value(),
+					&drawAttributeThicknessMediumHoverStage };
+			case IndependentHoverTargetEnum::DrawAttributeThicknessCoarse:
+				return { &shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessCoarse]->pct,
+					&shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessCoarse]->fill.value(),
+					&drawAttributeThicknessCoarseHoverStage };
+			case IndependentHoverTargetEnum::DrawAttributeThicknessAdjust:
+				return { &shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust]->pct,
+					&shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust]->fill.value(),
+					&drawAttributeThicknessAdjustHoverStage };
 			default:
 				return {};
 			}
@@ -4791,6 +4978,37 @@ void BarUISetClass::Interact()
 				suppressHoverUntilPointerMove = true;
 			}
 		};
+	auto IsIndependentHoverAllowed = [&](IndependentHoverTargetEnum target)
+		{
+			if (!barState.drawAttribute) return false;
+			switch (target)
+			{
+			case IndependentHoverTargetEnum::DrawAttributeBrush:
+				return stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenBrush1;
+			case IndependentHoverTargetEnum::DrawAttributeHighlight:
+				return stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHighlighter1;
+			case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
+			case IndependentHoverTargetEnum::DrawAttributeThicknessMedium:
+			case IndependentHoverTargetEnum::DrawAttributeThicknessCoarse:
+			{
+				if (stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenBrush1)
+					return false;
+				size_t index = static_cast<size_t>(target)
+					- static_cast<size_t>(
+						IndependentHoverTargetEnum::DrawAttributeThicknessFine);
+				int displayedThickness =
+					static_cast<int>(lround(max(0.0f, GetPenWidth())));
+				return displayedThickness
+					!= GetBarBrushThicknessPresetPx(index, barStyle.dpiZoom);
+			}
+			case IndependentHoverTargetEnum::DrawAttributeThicknessAdjust:
+				return stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1
+					|| stateMode.Pen.ModeSelect
+					== PenModeSelectEnum::IdtPenHighlighter1;
+			default:
+				return false;
+			}
+		};
 	while (!offSignal)
 	{
 		hiex::getmessage_win32(&msg, EM_MOUSE, floating_window);
@@ -4800,10 +5018,9 @@ void BarUISetClass::Interact()
 			StopMainBarButtonHover(hoveredMainBarButton, true);
 			hoveredMainBarButton = nullptr;
 		}
-		if (hoveredIndependentButton == IndependentHoverTargetEnum::DrawAttributeBrush
-			|| hoveredIndependentButton == IndependentHoverTargetEnum::DrawAttributeHighlight)
+		if (hoveredIndependentButton != IndependentHoverTargetEnum::None)
 		{
-			if (!barState.drawAttribute)
+			if (!IsIndependentHoverAllowed(hoveredIndependentButton))
 			{
 				StopIndependentHover(hoveredIndependentButton, true);
 				hoveredIndependentButton = IndependentHoverTargetEnum::None;
@@ -4851,17 +5068,53 @@ void BarUISetClass::Interact()
 			IndependentHoverTargetEnum currentIndependentButton = IndependentHoverTargetEnum::None;
 			if (barState.drawAttribute)
 			{
-				if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1];
+				const BarUISetShapeEnum presetShapes[] =
+				{
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessFine,
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessMedium,
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessCoarse,
+				};
+				for (size_t i = 0; i < 3; ++i)
+				{
+					auto target = static_cast<IndependentHoverTargetEnum>(
+						static_cast<int>(
+							IndependentHoverTargetEnum::DrawAttributeThicknessFine)
+						+ static_cast<int>(i));
+					auto obj = shapeMap[presetShapes[i]];
+					if (IsIndependentHoverAllowed(target)
+						&& obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+					{
+						currentIndependentButton = target;
+						break;
+					}
+				}
+				if (currentIndependentButton == IndependentHoverTargetEnum::None)
+				{
+					auto obj =
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust];
+					if (IsIndependentHoverAllowed(
+						IndependentHoverTargetEnum::DrawAttributeThicknessAdjust)
+						&& obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+						currentIndependentButton =
+							IndependentHoverTargetEnum::DrawAttributeThicknessAdjust;
+				}
+				if (currentIndependentButton == IndependentHoverTargetEnum::None)
+				{
+					if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1];
 					stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenBrush1
 					&& obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
-				{
-					currentIndependentButton = IndependentHoverTargetEnum::DrawAttributeBrush;
-				}
-				else if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1];
-					stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHighlighter1
-					&& obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
-				{
-					currentIndependentButton = IndependentHoverTargetEnum::DrawAttributeHighlight;
+					{
+						currentIndependentButton =
+							IndependentHoverTargetEnum::DrawAttributeBrush;
+					}
+					else if (auto obj =
+						shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1];
+						stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHighlighter1
+						&& obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+					{
+						currentIndependentButton =
+							IndependentHoverTargetEnum::DrawAttributeHighlight;
+					}
 				}
 			}
 			if (currentIndependentButton != hoveredIndependentButton)
@@ -4987,6 +5240,75 @@ void BarUISetClass::Interact()
 						}
 
 						if (!continueFlag) break;
+					}
+				}
+
+				// 粗细预设和未来调节入口
+				if (continueFlag && barState.drawAttribute)
+				{
+					struct ThicknessButtonInteraction
+					{
+						BarUISetShapeEnum shape;
+						IdtAtomic<bool>* pressed;
+						int presetIndex;
+					};
+					const ThicknessButtonInteraction thicknessButtons[] =
+					{
+						{ BarUISetShapeEnum::DrawAttributeBar_ThicknessFine,
+							&barState.drawAttributeBar.thicknessFinePress, 0 },
+						{ BarUISetShapeEnum::DrawAttributeBar_ThicknessMedium,
+							&barState.drawAttributeBar.thicknessMediumPress, 1 },
+						{ BarUISetShapeEnum::DrawAttributeBar_ThicknessCoarse,
+							&barState.drawAttributeBar.thicknessCoarsePress, 2 },
+						{ BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust,
+							&barState.drawAttributeBar.thicknessAdjustPress, -1 },
+					};
+					bool brushMode =
+						stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1;
+					for (const auto& button : thicknessButtons)
+					{
+						bool visible = button.presetIndex >= 0 ? brushMode
+							: (brushMode || stateMode.Pen.ModeSelect
+								== PenModeSelectEnum::IdtPenHighlighter1);
+						auto obj = shapeMap[button.shape];
+						if (!visible || !obj
+							|| !obj->IsClick(msg.x, msg.y, barStyle.zoom))
+							continue;
+
+						continueFlag = false;
+						if (msg.message == WM_LBUTTONDOWN)
+						{
+							*button.pressed = true;
+							StopIndependentHover(hoveredIndependentButton, true);
+							hoveredIndependentButton =
+								IndependentHoverTargetEnum::None;
+							UpdateRendering(false);
+							while (true)
+							{
+								hiex::getmessage_win32(
+									&msg, EM_MOUSE, floating_window);
+								if (obj->IsClick(msg.x, msg.y, barStyle.zoom))
+								{
+									if (!msg.lbutton)
+									{
+										if (button.presetIndex >= 0)
+											SetPenWidth(static_cast<float>(
+												GetBarBrushThicknessPresetPx(
+													button.presetIndex,
+													barStyle.dpiZoom)));
+										UpdateRendering();
+										break;
+									}
+								}
+								else break;
+							}
+							*button.pressed = false;
+							UpdateRendering(false);
+							SuppressHoverUntilPointerMove();
+							hiex::flushmessage_win32(
+								EM_MOUSE, floating_window);
+						}
+						break;
 					}
 				}
 
@@ -5934,13 +6256,59 @@ namespace Inkeys::UI::Bar
 					}
 					// 粗细调节区域
 					{
-						auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 60.0, 60.0, 4.0, 4.0, 1.0, GetThemeColor(BarThemeColorEnum::SubtleFill), nullopt);
+						auto shape = make_shared<BarUiShapeClass>(0.0, 0.0,
+							240.0, 70.0, 4.0, 4.0, 1.0,
+							GetThemeColor(BarThemeColorEnum::SubtleFill), nullopt);
 						shape->enable.Initialization(true);
 						barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect] = shape;
 
-						auto word = make_shared<BarUiWordClass>(-10.0, 0.0, 30.0, 30.0, L"", 15.0, GetThemeColor(BarThemeColorEnum::TextPrimary));
+						auto word = make_shared<BarUiWordClass>(0.0, 0.0,
+							90.0, 30.0, L"", 13.0,
+							GetThemeColor(BarThemeColorEnum::TextPrimary));
 						word->enable.Initialization(true);
 						barUISet.wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay] = word;
+
+						auto InitializeThicknessButton = [&](BarUISetShapeEnum shapeType)
+							{
+								auto button = make_shared<BarUiShapeClass>(
+									0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0,
+									GetThemeColor(BarThemeColorEnum::PressedFill),
+									GetThemeColor(BarThemeColorEnum::TextPrimary));
+								button->pct.Initialization(0.0);
+								button->framePct = BarUiPctClass(0.0);
+								button->frameLightPct = BarUiPctClass(0.0);
+								button->frameRendering =
+									BarUiFrameRenderingEnum::PointLight;
+								button->framePrimaryLightEnabled = false;
+								button->frameCursorLightIntensityScale =
+									BarButtonCursorLightIntensity;
+								button->enable.Initialization(true);
+								barUISet.shapeMap[shapeType] = button;
+							};
+						InitializeThicknessButton(
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessFine);
+						InitializeThicknessButton(
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessMedium);
+						InitializeThicknessButton(
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessCoarse);
+						InitializeThicknessButton(
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust);
+
+						const BarUISetWordEnum numberWords[] =
+						{
+							BarUISetWordEnum::DrawAttributeBar_ThicknessFineNumber,
+							BarUISetWordEnum::DrawAttributeBar_ThicknessMediumNumber,
+							BarUISetWordEnum::DrawAttributeBar_ThicknessCoarseNumber,
+						};
+						for (auto wordType : numberWords)
+						{
+							auto numberWord = make_shared<BarUiWordClass>(
+								0.0, 0.0, 30.0, 30.0, L"", 10.0,
+								GetThemeColor(BarThemeColorEnum::TextPrimary));
+							numberWord->pct.Initialization(0.0);
+							numberWord->enable.Initialization(true);
+							barUISet.wordMap[wordType] = numberWord;
+						}
 					}
 				}
 			}

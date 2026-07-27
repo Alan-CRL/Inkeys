@@ -14,6 +14,10 @@ public:
 	{
 		IdtAtomic<bool> brush1Press = false;
 		IdtAtomic<bool> highlight1Press = false;
+		IdtAtomic<bool> thicknessFinePress = false;
+		IdtAtomic<bool> thicknessMediumPress = false;
+		IdtAtomic<bool> thicknessCoarsePress = false;
+		IdtAtomic<bool> thicknessAdjustPress = false;
 	}drawAttributeBar;
 
 	struct

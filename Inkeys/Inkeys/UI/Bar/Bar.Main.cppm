@@ -95,6 +95,10 @@ enum class BarUISetShapeEnum : int
 	DrawAttributeBar_Laser,
 	DrawAttributeBar_Brush2,
 	DrawAttributeBar_ThicknessSelect,
+	DrawAttributeBar_ThicknessFine,
+	DrawAttributeBar_ThicknessMedium,
+	DrawAttributeBar_ThicknessCoarse,
+	DrawAttributeBar_ThicknessAdjust,
 };
 enum class BarUISetSuperellipseEnum : int
 {
@@ -133,6 +137,9 @@ enum class BarUISetWordEnum : int
 	DrawAttributeBar_Laser,
 	DrawAttributeBar_Brush2,
 	DrawAttributeBar_ThicknessDisplay,
+	DrawAttributeBar_ThicknessFineNumber,
+	DrawAttributeBar_ThicknessMediumNumber,
+	DrawAttributeBar_ThicknessCoarseNumber,
 };
 
 enum class BarBorderLightSourceEnum : int
@@ -314,6 +321,10 @@ public:
 	// 绘制属性按钮同样复用自身背景层，仅单独记录悬停动画阶段。
 	IdtAtomic<BarButtomHoverStageEnum> drawAttributeBrushHoverStage = BarButtomHoverStageEnum::None;
 	IdtAtomic<BarButtomHoverStageEnum> drawAttributeHighlightHoverStage = BarButtomHoverStageEnum::None;
+	IdtAtomic<BarButtomHoverStageEnum> drawAttributeThicknessFineHoverStage = BarButtomHoverStageEnum::None;
+	IdtAtomic<BarButtomHoverStageEnum> drawAttributeThicknessMediumHoverStage = BarButtomHoverStageEnum::None;
+	IdtAtomic<BarButtomHoverStageEnum> drawAttributeThicknessCoarseHoverStage = BarButtomHoverStageEnum::None;
+	IdtAtomic<BarButtomHoverStageEnum> drawAttributeThicknessAdjustHoverStage = BarButtomHoverStageEnum::None;
 
 public:
 	// 渲染更新：状态更新 + 通知计算并渲染
