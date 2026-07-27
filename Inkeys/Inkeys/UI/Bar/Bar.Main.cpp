@@ -3713,8 +3713,9 @@ void BarUISetClass::Rendering()
 							if (!obj) continue;
 							double middleW = max(1.0, CompactDrawAttributeSize(obj->w.tar));
 							double middleH = max(1.0, CompactDrawAttributeSize(obj->h.tar));
-							double middleX = BarDrawAttributeCompactWidth / 2.0 - middleW / 2.0;
-							double middleY = BarDrawAttributeCompactHeight / 2.0 - middleH / 2.0;
+							// 根面板负责对齐绘制按钮；子控件保留完整布局的等比微缩坐标。
+							double middleX = CompactDrawAttributeX(obj->x.tar);
+							double middleY = CompactDrawAttributeY(obj->y.tar);
 							obj->x.SetTar(obj->x.tar, operationDur, middleX, true, drawAttributeKeyframeValueCurve);
 							obj->y.SetTar(obj->y.tar, operationDur, middleY, true, drawAttributeKeyframeValueCurve);
 							obj->w.SetTar(obj->w.tar, operationDur, middleW, true, drawAttributeKeyframeValueCurve);
@@ -3744,8 +3745,10 @@ void BarUISetClass::Rendering()
 						{
 							auto obj = svgMap[static_cast<BarUISetSvgEnum>(i)];
 							if (!obj) continue;
-							obj->x.SetTar(obj->x.tar, operationDur, 0.0, true, drawAttributeKeyframeValueCurve);
-							obj->y.SetTar(obj->y.tar, operationDur, 0.0, true, drawAttributeKeyframeValueCurve);
+							obj->x.SetTar(obj->x.tar, operationDur,
+								CompactDrawAttributeX(obj->x.tar), true, drawAttributeKeyframeValueCurve);
+							obj->y.SetTar(obj->y.tar, operationDur,
+								CompactDrawAttributeY(obj->y.tar), true, drawAttributeKeyframeValueCurve);
 							obj->w.SetTar(obj->w.tar, operationDur,
 								max(1.0, CompactDrawAttributeSize(obj->w.tar)), true, drawAttributeKeyframeValueCurve);
 							obj->h.SetTar(obj->h.tar, operationDur,
@@ -3757,8 +3760,10 @@ void BarUISetClass::Rendering()
 						{
 							auto obj = wordMap[static_cast<BarUISetWordEnum>(i)];
 							if (!obj) continue;
-							obj->x.SetTar(obj->x.tar, operationDur, 0.0, true, drawAttributeKeyframeValueCurve);
-							obj->y.SetTar(obj->y.tar, operationDur, 0.0, true, drawAttributeKeyframeValueCurve);
+							obj->x.SetTar(obj->x.tar, operationDur,
+								CompactDrawAttributeX(obj->x.tar), true, drawAttributeKeyframeValueCurve);
+							obj->y.SetTar(obj->y.tar, operationDur,
+								CompactDrawAttributeY(obj->y.tar), true, drawAttributeKeyframeValueCurve);
 							obj->w.SetTar(obj->w.tar, operationDur,
 								max(1.0, CompactDrawAttributeSize(obj->w.tar)), true, drawAttributeKeyframeValueCurve);
 							obj->h.SetTar(obj->h.tar, operationDur,
@@ -4496,8 +4501,6 @@ void BarUISetClass::Rendering()
 								thicknessDisplay->Inherit(TopLeft, *panel);
 							BarUiInheritClass thicknessAdjustInherit =
 								thicknessAdjust->Inherit(TopLeft, *panel);
-							bool thicknessControlsOnTop =
-								barState.widgetPosition.primaryBar;
 
 							double contentOpacity = thicknessDisplay->pct.val;
 							FLOAT uiZoom = static_cast<FLOAT>(barStyle.zoom);
@@ -4510,45 +4513,51 @@ void BarUISetClass::Rendering()
 								FLOAT requestedThickness = max(0.0f,
 									static_cast<FLOAT>(drawAttributePenThickness.val
 										* panelAnimationScale));
-								// 换边时镜像上下布局，并复用控件到灰框边缘的间隙。
-								double contentGap = thicknessControlsOnTop
-									? thicknessAdjustInherit.y
-										- thicknessRegion->inhY
-									: thicknessRegion->inhY
-										+ thicknessRegion->h.val
-										- thicknessAdjustInherit.y
-										- thicknessAdjust->h.val;
-								contentGap = max(0.0, contentGap);
-								contentGap = min(
-									contentGap, thicknessRegion->h.val / 2.0);
-								double previewTop = thicknessControlsOnTop
-									? thicknessAdjustInherit.y
-										+ thicknessAdjust->h.val
-										+ contentGap
-									: thicknessRegion->inhY + contentGap;
-								double previewBottom = thicknessControlsOnTop
-									? thicknessRegion->inhY
-										+ thicknessRegion->h.val
-										- contentGap
-									: thicknessAdjustInherit.y - contentGap;
-								previewBottom = max(previewTop, previewBottom);
+								// 从动画中的控件位置连续推导上下方向，换边时先收拢到中点再镜像展开。
+								double regionCenterY = thicknessRegion->inhY
+									+ thicknessRegion->h.val / 2.0;
+								double controlCenterY = thicknessAdjustInherit.y
+									+ thicknessAdjust->h.val / 2.0;
+								double controlCenterOffset =
+									(BarDrawAttributeThicknessHeight / 2.0
+										- BarDrawAttributeGap
+										- BarDrawAttributeThicknessControlHeight / 2.0)
+									* panelAnimationScale;
+								double previewSide = controlCenterOffset > 0.000001
+									? clamp((regionCenterY - controlCenterY)
+										/ controlCenterOffset, -1.0, 1.0)
+									: 0.0;
 								double previewAreaHeight =
-									previewBottom - previewTop;
+									(BarDrawAttributeThicknessHeight
+										- BarDrawAttributeThicknessControlHeight
+										- BarDrawAttributeGap * 3.0)
+									* panelAnimationScale;
+								double previewCenterOffset =
+									(BarDrawAttributeThicknessHeight / 2.0
+										- BarDrawAttributeGap
+										- (BarDrawAttributeThicknessHeight
+											- BarDrawAttributeThicknessControlHeight
+											- BarDrawAttributeGap * 3.0) / 2.0)
+									* panelAnimationScale;
+								double previewCenterY = regionCenterY
+									+ previewSide * previewCenterOffset;
 								FLOAT maxPreviewThickness = max(1.0f,
 									static_cast<FLOAT>(
 										previewAreaHeight * uiZoom));
 								FLOAT previewThickness =
 									min(requestedThickness, maxPreviewThickness);
+								// 水平内边距使用同一面板倍率，避免关键帧读到已经归零的文字局部坐标。
+								double horizontalInset =
+									BarDrawAttributeGap * 2.0
+									* panelAnimationScale;
 								FLOAT left = static_cast<FLOAT>(
-									thicknessDisplayInherit.x * uiZoom);
-								// 左端沿用文字对齐线，右端取灰色区域的对称内边距。
-								double horizontalInset = thicknessDisplayInherit.x
-									- thicknessRegion->inhX;
+									(thicknessRegion->inhX + horizontalInset)
+									* uiZoom);
 								FLOAT right = static_cast<FLOAT>(
 									(thicknessRegion->inhX + thicknessRegion->w.val
 										- horizontalInset) * uiZoom);
 								FLOAT centerY = static_cast<FLOAT>(
-									(previewTop + previewBottom) / 2.0 * uiZoom);
+									previewCenterY * uiZoom);
 								D2D1_RECT_F previewRect = D2D1::RectF(left,
 									centerY - previewThickness / 2.0f, right,
 									centerY + previewThickness / 2.0f);
