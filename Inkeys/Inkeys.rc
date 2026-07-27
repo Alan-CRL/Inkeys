@@ -309,6 +309,8 @@ COLORSELECT             UI                      "src\\UI\\color\\colorSelect.svg
 
 BARHIGHLIGHTER1         UI                      "src\\UI\\barHighlighter1.svg"
 
+BARTHICKNESSADJUST      UI                      "src\\UI\\barThicknessAdjust.svg"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //

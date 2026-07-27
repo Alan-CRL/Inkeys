@@ -318,6 +318,20 @@ shape.frameCursorLightIntensityScale = buttonIntensity;
 
 错误做法是把 `frameLightPct` 绑定到按钮本体 `pct`，这会让未选中按钮的透明背景同时隐藏其光影；正确做法是让 `Shape()` 在本体 `pct == 0` 且 `frameLightPct > 0` 时仅绘制 PointLight 边框。
 
+### UI3 按钮悬停与按压衔接约定
+
+主栏按钮的 `5s` 表示指针仍停留时，悬停背景完成快速显现后自然淡出的时长；它不是鼠标移出的退出时长。鼠标移出继续使用 `BarButtonHoverExitDur` 快速退出，避免残留多个按钮背景或在布局更新中出现长时间闪烁。
+
+复用主栏悬停状态机的独立控件必须同时遵守：
+
+- `Showing` 完成后才进入 `5s` 的 `Fading`，同一次进入不得反复重启计时；
+- 鼠标移出调用普通非立即 `StopHover`，不得为独立控件另传 `5s`；
+- 鼠标按下先建立按压状态，再以 `preserveVisual=true` 结束悬停，使透明度和填充色从当前值连续过渡到按下态；禁止先 `SetDirect(0)` 再升到按下透明度；
+- 隐藏、失效或选择状态不再允许悬停时仍可立即清零，不能误用按下的保留视觉路径；
+- 属性栏批次同步不得覆盖标记为 `animateWhenDisabled` 的悬停时长。
+
+手工验证至少覆盖：指针驻留至自然淡出、淡出中移出、显现中按下、淡出中按下、拖出取消，以及抬起后未移动指针时不重新触发悬停。
+
 ### UI3 动画批次加入与关键帧中点
 
 `【直接确认；设计约定】` `BarUiTimelineClass::CanJoin(double maxProgress = 0.5)` 是主栏布局变化和绘制属性加入主栏批次的统一判断入口；无效参数同样回退到 `0.5`，边界判断为 `GetProgress() <= maxProgress`。

@@ -1001,6 +1001,9 @@
     <None Include="src\UI\barHighlighter1.svg">
       <Filter>资源文件</Filter>
     </None>
+    <None Include="src\UI\barThicknessAdjust.svg">
+      <Filter>资源文件</Filter>
+    </None>
     <None Include="src\UI\barGeometry.svg">
       <Filter>资源文件</Filter>
     </None>
