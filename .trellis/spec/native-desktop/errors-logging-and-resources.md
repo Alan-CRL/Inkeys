@@ -7,7 +7,7 @@
 | 边界 | `【直接确认】`的当前实现 | 证据 |
 | --- | --- | --- |
 | D2D/D3D11 初始化 | 检查 `HRESULT`/`FAILED`，记录并 reset 已创建对象 | `IdtD2DPreparation.cpp::D2DStarup` |
-| 设置 D3D9 | 创建函数返回 bool；Present/device-lost/reset 走显式分支 | `Setting.Base.cppm::CreateDeviceD3D/ResetDevice`、`Setting.cpp` |
+| 设置 D3D11 | device/RTV/SRV 创建函数返回 bool；resize、occlusion 与 present 走显式分支 | `Setting.Base.cppm::CreateDeviceD3D/ResizeSwapChain/LoadTextureFromMemory`、`Setting.cpp` |
 | RealTimeStylus | HRESULT 加 `SafeRTSInit` 的 SEH 防护，失败切换 mouse fallback | `IdtRts.cpp::SafeRTSInit`、`IdtMain.cpp` |
 | PPT native | 调用处可见 `_com_error`，服务通过快照取得并判空 | `IdtPlug-in.cpp::GetPptComSnapshot` 及 PPT 命令包装 |
 | PptCOM managed | `COMException`/HRESULT 分类，识别 Office busy 并限时重试 | `PptCOM/PptCOM.cs::IsBusyComException`、`HandleBusyException` |
@@ -35,8 +35,8 @@
 | 资源 | `【直接确认】`的当前所有权 | 证据/边界 |
 | --- | --- | --- |
 | D3D11、D2D、DWrite、DXGI | `Microsoft::WRL::ComPtr` | `IdtD2DPreparation.cpp`、`Bar.Main.cpp` |
-| 设置窗口 D3D9 | raw COM pointer + 显式 `Release` | `Setting.Base.cppm::CleanupDeviceD3D` |
-| ImGui context/backends | 显式 Win32/DX9 shutdown 与 `DestroyContext` | `Setting.cpp` 的窗口线程退出路径 |
+| 设置窗口 D3D11、DXGI、SRV | raw COM pointer + 显式 `Release`；SRV、RTV、swap chain、context、device 按依赖逆序清理 | `Setting.Base.cppm::CleanupSettingTextures/CleanupDeviceD3D` |
+| ImGui context/backends | 显式 DX11/Win32 shutdown 与 `DestroyContext` | `Setting.cpp` 的窗口线程退出路径 |
 | Office COM（C#） | 事件解绑、`ReleaseComObject`/`FinalReleaseComObject`、置 null | `PptCOM/PptCOM.cs::FullCleanup` 及 release helpers |
 | native PPT 服务 | `_com_ptr_t` 包装、`pptComSlotSm` 保护服务槽/快照 | `IdtPlug-in.cpp::Get/Set/ResetPptComSnapshot` |
 | HiEasyX `IMAGE`/临时画布 | 指针、容器、显式 delete 或回收队列 | `IdtDrawpad.cpp`、`IdtImage.cpp` |
@@ -49,7 +49,7 @@
 
 仓库没有一条可证明适用于所有子系统的统一“七步清理顺序”。可直接确认的是各自路径：
 
-- `【直接确认】` 设置线程关闭 ImGui DX9/Win32 backend、context，再调用 `CleanupDeviceD3D`；证据为 `Setting.cpp`、`Setting.Base.cppm`。
+- `【直接确认】` 设置线程关闭 ImGui DX11/Win32 backend 与 context，再释放用户图片 SRV、RTV、swap chain、device context 和 device；hide/show 与 stop 路径都执行该顺序。证据为 `Setting.cpp`、`Setting.Base.cppm`。
 - `【直接确认】` `PptCOM/PptCOM.cs::FullCleanup` 解绑事件并释放 slide-show window、presentation、application；WPS 分支有额外 GC/释放处理。
 - `【直接确认】` `IdtMain.cpp` 的退出路径处理 COM apartment、activation context、加载模块和部分进程级 handle。
 - `【直接确认】` 多个传统线程观察 `offSignal` 或线程状态；具体等待范围和超时逻辑位于 `IdtMain.cpp` 及各线程入口。

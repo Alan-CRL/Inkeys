@@ -314,17 +314,7 @@ void SettingMain(stop_token sT)
 	{
 		if (showWindow)
 		{
-			{
-				for (unsigned int i = 0; i < size(TextureSettingSign); i++)
-				{
-					if (TextureSettingSign[i])
-					{
-						TextureSettingSign[i]->Release();
-						TextureSettingSign[i] = nullptr;
-					}
-				}
-			}
-
+			CleanupSettingTextures();
 			CleanupDeviceD3D();
 			::ShowWindow(setting_window, SW_HIDE);
 		}
@@ -337,7 +327,15 @@ void SettingMain(stop_token sT)
 			::ShowWindow(setting_window, SW_SHOWNOACTIVATE);
 			showWindow = true;
 
-			CreateDeviceD3D(setting_window);
+			if (!CreateDeviceD3D(setting_window))
+			{
+				if (IDTLogger) IDTLogger->error("[SettingMain] 创建 D3D11 设置窗口设备失败");
+				CleanupDeviceD3D();
+				::ShowWindow(setting_window, SW_HIDE);
+				showWindow = false;
+				test.select = false;
+				continue;
+			}
 
 			// 初始化
 			{
@@ -707,7 +705,7 @@ void SettingMain(stop_token sT)
 		ImGui::StyleColorsLight();
 
 		ImGui_ImplWin32_Init(setting_window);
-		ImGui_ImplDX9_Init(g_pd3dDevice);
+		ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 
 		{
 			ImFontConfig font_cfg;
@@ -986,32 +984,36 @@ void SettingMain(stop_token sT)
 
 		while (!sT.stop_requested())
 		{
-			// Handle lost D3D9 device
-			if (g_DeviceLost)
+			// 窗口被遮挡时仅探测呈现状态，避免持续提交和忙等。
+			if (g_SwapChainOccluded)
 			{
-				HRESULT hr = g_pd3dDevice->TestCooperativeLevel();
-				if (hr == D3DERR_DEVICELOST)
+				if (g_pSwapChain->Present(0, DXGI_PRESENT_TEST) == DXGI_STATUS_OCCLUDED)
 				{
 					this_thread::sleep_for(chrono::milliseconds(10));
 					continue;
 				}
-				if (hr == D3DERR_DEVICENOTRESET) ResetDevice();
-				g_DeviceLost = false;
+				g_SwapChainOccluded = false;
 			}
 
 			// Handle window resize (we don't resize directly in the WM_SIZE handler)
 			if (g_ResizeWidth != 0 && g_ResizeHeight != 0)
 			{
-				g_d3dpp.BackBufferWidth = g_ResizeWidth;
-				g_d3dpp.BackBufferHeight = g_ResizeHeight;
+				const UINT resizeWidth = g_ResizeWidth;
+				const UINT resizeHeight = g_ResizeHeight;
 				g_ResizeWidth = g_ResizeHeight = 0;
-				ResetDevice();
+				if (!ResizeSwapChain(resizeWidth, resizeHeight))
+				{
+					g_ResizeWidth = resizeWidth;
+					g_ResizeHeight = resizeHeight;
+					this_thread::sleep_for(chrono::milliseconds(10));
+					continue;
+				}
 			}
 
 			hiex::DelayFPS(recond, 24);
 
 			// Start the Dear ImGui frame
-			ImGui_ImplDX9_NewFrame();
+			ImGui_ImplDX11_NewFrame();
 			ImGui_ImplWin32_NewFrame();
 			ImGui::NewFrame();
 			EnableAutoUpdate = GetEnableAutoUpdate();
@@ -9195,19 +9197,18 @@ void SettingMain(stop_token sT)
 
 			// 渲染
 			ImGui::EndFrame();
-			g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, FALSE);
-			g_pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
-			g_pd3dDevice->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
-			D3DCOLOR clear_col_dx = D3DCOLOR_RGBA((int)(clear_color.x * clear_color.w * 255.0f), (int)(clear_color.y * clear_color.w * 255.0f), (int)(clear_color.z * clear_color.w * 255.0f), (int)(clear_color.w * 255.0f));
-			g_pd3dDevice->Clear(0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, clear_col_dx, 1.0f, 0);
-			if (g_pd3dDevice->BeginScene() >= 0)
-			{
-				ImGui::Render();
-				ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
-				g_pd3dDevice->EndScene();
-			}
-			HRESULT result = g_pd3dDevice->Present(nullptr, nullptr, nullptr, nullptr);
-			if (result == D3DERR_DEVICELOST) g_DeviceLost = true;
+			ImGui::Render();
+			const float clearColor[4] = {
+				clear_color.x * clear_color.w,
+				clear_color.y * clear_color.w,
+				clear_color.z * clear_color.w,
+				clear_color.w
+			};
+			g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
+			g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clearColor);
+			ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+			const HRESULT result = g_pSwapChain->Present(1, 0);
+			g_SwapChainOccluded = (result == DXGI_STATUS_OCCLUDED);
 
 			if (!test.select) break;
 			if (!showWindow)
@@ -9221,9 +9222,17 @@ void SettingMain(stop_token sT)
 
 		io.Fonts->Clear();
 
-		ImGui_ImplDX9_Shutdown();
+		ImGui_ImplDX11_Shutdown();
 		ImGui_ImplWin32_Shutdown();
 		ImGui::DestroyContext();
+	}
+
+	// stop 路径不会再次进入外层循环，需在退出线程前完成最终逆序清理。
+	if (showWindow)
+	{
+		CleanupSettingTextures();
+		CleanupDeviceD3D();
+		::ShowWindow(setting_window, SW_HIDE);
 	}
 
 	// 通知相关线程下班
