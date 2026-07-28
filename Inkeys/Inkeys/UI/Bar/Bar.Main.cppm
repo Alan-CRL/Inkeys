@@ -158,7 +158,9 @@ enum class BarUISetWordEnum : int
 	DrawAttributeBar_ThicknessCoarseNumber,
 	DrawAttributeBar_ThicknessAnnotationLabel,
 	DrawAttributeBar_ThicknessAnnotationPopupText,
+	DrawAttributeBar_ThicknessAnnotationPopupBody,
 	DrawAttributeBar_ThicknessOverflowPopupText,
+	DrawAttributeBar_ThicknessOverflowPopupBody,
 };
 
 enum class BarBorderLightSourceEnum : int

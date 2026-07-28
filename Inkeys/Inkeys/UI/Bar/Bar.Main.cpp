@@ -60,15 +60,19 @@ constexpr double BarDrawAttributeGap = 5.0;
 constexpr double BarDrawAttributeThicknessHeight = 105.0;
 constexpr double BarDrawAttributeThicknessControlHeight = 30.0;
 constexpr double BarDrawAttributeSurfaceOpacity = 0.80;
+constexpr double BarDrawAttributeThicknessContentInset =
+	BarDrawAttributeGap * 2.0;
 constexpr double BarThicknessTooltipBadgeHeight = 24.0;
 constexpr double BarThicknessTooltipIconSize = 14.0;
 constexpr double BarThicknessTooltipPadding = 8.0;
 constexpr double BarThicknessTooltipCloseReserve = 19.0;
-constexpr double BarThicknessTooltipFontSize = 12.0;
-constexpr double BarThicknessTooltipPopupGap = 10.0;
+constexpr double BarThicknessTooltipTitleFontSize = 12.0;
+constexpr double BarThicknessTooltipBodyFontSize = 10.0;
+constexpr double BarThicknessTooltipLineGap = 3.0;
+constexpr double BarThicknessTooltipPopupGap =
+	BarDrawAttributeThicknessContentInset;
 constexpr double BarThicknessTooltipFillOpacity = 0.80;
 constexpr double BarThicknessTooltipFrameOpacity = 0.18;
-constexpr bool BarAlwaysShowThicknessOverflowBadgeForTesting = true;
 constexpr double BarBorderFrameDiffuseOpacity = 0.30;
 constexpr double BarBorderPenDiffuseOpacity = 0.20;
 constexpr double BarColorSwatchFrameOpacity = 0.18;
@@ -2270,23 +2274,31 @@ void BarUISetClass::Rendering()
 	BarUiValueClass drawAttributeOverflowPopupProgress(0.0);
 	D2D1_SIZE_F annotationLabelTextSize =
 		spec.MeasureText(L"标注线", 13.0, DWRITE_FONT_WEIGHT_NORMAL);
-	D2D1_SIZE_F annotationPopupTextSize = spec.MeasureText(
-		L"画水平和竖直线（标注线）\n"
-		L"仅适用于软笔、硬笔和荧光笔；笔迹会锁定为水平、竖直或 45°。",
-		BarThicknessTooltipFontSize, DWRITE_FONT_WEIGHT_NORMAL);
-	D2D1_SIZE_F overflowPopupTextSize = spec.MeasureText(
-		L"实际粗细超出预览范围\n"
-		L"墨迹已缩放至框内显示，粗细数值仍为真实像素。",
-		BarThicknessTooltipFontSize, DWRITE_FONT_WEIGHT_NORMAL);
+	D2D1_SIZE_F annotationPopupTitleSize = spec.MeasureText(
+		L"启用标注线（暂不可用）",
+		BarThicknessTooltipTitleFontSize, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+	D2D1_SIZE_F annotationPopupBodySize = spec.MeasureText(
+		L"锁定绘制方向仅为水平、竖直或斜45°",
+		BarThicknessTooltipBodyFontSize, DWRITE_FONT_WEIGHT_NORMAL);
+	D2D1_SIZE_F overflowPopupTitleSize = spec.MeasureText(
+		L"墨迹粗细超出预览范围",
+		BarThicknessTooltipTitleFontSize, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+	D2D1_SIZE_F overflowPopupBodySize = spec.MeasureText(
+		L"预览中的粗细可能与绘制粗细不一致。",
+		BarThicknessTooltipBodyFontSize, DWRITE_FONT_WEIGHT_NORMAL);
 	double annotationBadgeWidth = ceil(annotationLabelTextSize.width)
 		+ 6.0 * 2.0 + 4.0 + BarThicknessTooltipIconSize;
-	double annotationPopupWidth = ceil(annotationPopupTextSize.width)
+	double annotationPopupWidth = ceil(max(
+		annotationPopupTitleSize.width, annotationPopupBodySize.width))
 		+ BarThicknessTooltipPadding * 2.0 + BarThicknessTooltipCloseReserve;
-	double annotationPopupHeight = ceil(annotationPopupTextSize.height)
+	double annotationPopupHeight = ceil(annotationPopupTitleSize.height
+		+ BarThicknessTooltipLineGap + annotationPopupBodySize.height)
 		+ BarThicknessTooltipPadding * 2.0;
-	double overflowPopupWidth = ceil(overflowPopupTextSize.width)
+	double overflowPopupWidth = ceil(max(
+		overflowPopupTitleSize.width, overflowPopupBodySize.width))
 		+ BarThicknessTooltipPadding * 2.0 + BarThicknessTooltipCloseReserve;
-	double overflowPopupHeight = ceil(overflowPopupTextSize.height)
+	double overflowPopupHeight = ceil(overflowPopupTitleSize.height
+		+ BarThicknessTooltipLineGap + overflowPopupBodySize.height)
 		+ BarThicknessTooltipPadding * 2.0;
 	// 笔型按钮沿用主栏的独立按压缩放，不改变布局值与命中区域。
 	BarUiValueClass drawAttributeBrushPressScale(1.0);
@@ -3694,7 +3706,8 @@ void BarUISetClass::Rendering()
 								- BarDrawAttributeThicknessControlHeight;
 						auto thicknessRegion =
 							shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect];
-						thicknessRegion->x.SetTar(5.0 * layoutScale);
+						thicknessRegion->x.SetTar(
+							BarDrawAttributeGap * layoutScale);
 						thicknessRegion->y.SetTar(thicknessY * layoutScale);
 						thicknessRegion->w.SetTar(240.0 * layoutScale);
 						thicknessRegion->h.SetTar(
@@ -3712,7 +3725,10 @@ void BarUISetClass::Rendering()
 
 						auto thicknessDisplay =
 							wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay];
-						thicknessDisplay->x.SetTar(15.0 * layoutScale);
+						thicknessDisplay->x.SetTar(
+							(BarDrawAttributeGap
+								+ BarDrawAttributeThicknessContentInset)
+							* layoutScale);
 						thicknessDisplay->y.SetTar(
 							(thicknessY + thicknessControlOffsetY) * layoutScale);
 						thicknessDisplay->w.SetTar(90.0 * layoutScale);
@@ -3860,9 +3876,8 @@ void BarUISetClass::Rendering()
 								- BarDrawAttributeGap * 3.0)
 							* max(0.0, static_cast<double>(barStyle.zoom));
 						bool previewOverflow = tooltipBaseVisible
-							&& (BarAlwaysShowThicknessOverflowBadgeForTesting
-								|| static_cast<double>(GetPenWidth())
-									> expandedPreviewCapacity + 0.001);
+							&& static_cast<double>(GetPenWidth())
+								> expandedPreviewCapacity + 0.001;
 						barState.drawAttributeBar.thicknessPreviewOverflow =
 							previewOverflow;
 
@@ -3923,11 +3938,20 @@ void BarUISetClass::Rendering()
 							->color.SetTar(
 								GetThemeColor(BarThemeColorEnum::TextPrimary),
 								operationDur);
+						COLORREF popupBodyColor = MixBarUiColor(
+							GetThemeColor(BarThemeColorEnum::TextPrimary),
+							GetThemeColor(BarThemeColorEnum::Surface), 0.45);
+						wordMap[
+							BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupBody]
+							->color.SetTar(popupBodyColor, operationDur);
 						wordMap[
 							BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText]
 							->color.SetTar(
 								GetThemeColor(BarThemeColorEnum::TextPrimary),
 								operationDur);
+						wordMap[
+							BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupBody]
+							->color.SetTar(popupBodyColor, operationDur);
 						svgMap[
 							BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationInfo]
 							->color1.value().SetTar(
@@ -4633,8 +4657,10 @@ void BarUISetClass::Rendering()
 			double previewCenterY =
 				regionCenterY + previewSide * previewCenterOffset;
 			double previewTop = previewCenterY - previewAreaHeight / 2.0;
+			// 预览区自身已内缩 5px，再留 5px 后与横向 10px 外边距一致。
 			double badgeTop = previewTop + BarDrawAttributeGap * panelScale;
-			double badgeMargin = BarDrawAttributeGap * panelScale;
+			double badgeMargin =
+				BarDrawAttributeThicknessContentInset * panelScale;
 			double contentOpacity = clamp(
 				static_cast<double>(thicknessDisplay->pct.val), 0.0, 1.0);
 			bool annotationVisible = barState.drawAttribute && !barState.fold
@@ -4764,6 +4790,8 @@ void BarUISetClass::Rendering()
 				double targetTop = 0.0;
 				double baseWidth = 0.0;
 				double baseHeight = 0.0;
+				double titleHeight = 0.0;
+				double bodyHeight = 0.0;
 				double progress = 0.0;
 				double opacity = 0.0;
 			};
@@ -4772,13 +4800,16 @@ void BarUISetClass::Rendering()
 			double logicalWindowHeight = barStyle.zoom > 0.0
 				? static_cast<double>(barWindow.h) / barStyle.zoom : 0.0;
 			auto BuildPopupLayout = [&](double anchorX, double anchorY,
-				double width, double height, double progress)
+				double width, double height, double titleHeight,
+				double bodyHeight, double progress)
 				{
 					PopupDerivedLayout layout;
 					layout.anchorX = anchorX;
 					layout.anchorY = anchorY;
 					layout.baseWidth = width;
 					layout.baseHeight = height;
+					layout.titleHeight = titleHeight;
+					layout.bodyHeight = bodyHeight;
 					layout.progress = max(0.0, progress)
 						* panelExpandedProgress;
 					layout.opacity = clamp(layout.progress, 0.0, 1.0);
@@ -4809,10 +4840,14 @@ void BarUISetClass::Rendering()
 			PopupDerivedLayout annotationPopupLayout = BuildPopupLayout(
 				annotationAnchorX, annotationAnchorY,
 				annotationPopupWidth, annotationPopupHeight,
+				annotationPopupTitleSize.height,
+				annotationPopupBodySize.height,
 				drawAttributeAnnotationPopupProgress.val);
 			PopupDerivedLayout overflowPopupLayout = BuildPopupLayout(
 				overflowAnchorX, overflowAnchorY,
 				overflowPopupWidth, overflowPopupHeight,
+				overflowPopupTitleSize.height,
+				overflowPopupBodySize.height,
 				drawAttributeOverflowPopupProgress.val);
 
 			auto PopupTargetIntersects = [](const PopupDerivedLayout& a,
@@ -4847,7 +4882,8 @@ void BarUISetClass::Rendering()
 
 			auto ApplyPopupLayout = [&](const PopupDerivedLayout& layout,
 				BarUISetShapeEnum popupShapeType,
-				BarUISetWordEnum popupWordType,
+				BarUISetWordEnum popupTitleType,
+				BarUISetWordEnum popupBodyType,
 				BarUISetShapeEnum closeHitType,
 				BarUISetSvgEnum closeSvgType,
 				bool pinned)
@@ -4875,17 +4911,30 @@ void BarUISetClass::Rendering()
 
 					double padding =
 						BarThicknessTooltipPadding * scale;
-					auto text = wordMap[popupWordType];
-					text->x.SetDirect(localX + padding);
-					text->y.SetDirect(localY + padding);
-					text->w.SetDirect(max(0.0,
+					double contentWidth = max(0.0,
 						width - (BarThicknessTooltipPadding * 2.0
-							+ BarThicknessTooltipCloseReserve) * scale));
-					text->h.SetDirect(max(0.0, height - padding * 2.0));
-					text->size.SetDirect(
-						BarThicknessTooltipFontSize * scale);
-					text->pct.SetDirect(layout.opacity);
-					text->Inherit(BarUiInheritEnum::TopLeft, *panel);
+							+ BarThicknessTooltipCloseReserve) * scale);
+					auto title = wordMap[popupTitleType];
+					title->x.SetDirect(localX + padding);
+					title->y.SetDirect(localY + padding);
+					title->w.SetDirect(contentWidth);
+					title->h.SetDirect(layout.titleHeight * scale);
+					title->size.SetDirect(
+						BarThicknessTooltipTitleFontSize * scale);
+					title->pct.SetDirect(layout.opacity);
+					title->Inherit(BarUiInheritEnum::TopLeft, *panel);
+
+					auto body = wordMap[popupBodyType];
+					body->x.SetDirect(localX + padding);
+					body->y.SetDirect(localY + padding
+						+ (layout.titleHeight
+							+ BarThicknessTooltipLineGap) * scale);
+					body->w.SetDirect(contentWidth);
+					body->h.SetDirect(layout.bodyHeight * scale);
+					body->size.SetDirect(
+						BarThicknessTooltipBodyFontSize * scale);
+					body->pct.SetDirect(layout.opacity);
+					body->Inherit(BarUiInheritEnum::TopLeft, *panel);
 
 					double closeSize =
 						BarThicknessTooltipIconSize * scale;
@@ -4906,12 +4955,14 @@ void BarUISetClass::Rendering()
 			ApplyPopupLayout(annotationPopupLayout,
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
 				BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupText,
+				BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupBody,
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit,
 				BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationPopupClose,
 				barState.drawAttributeBar.thicknessAnnotationPinned);
 			ApplyPopupLayout(overflowPopupLayout,
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup,
 				BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText,
+				BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupBody,
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit,
 				BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowPopupClose,
 				barState.drawAttributeBar.thicknessOverflowPinned);
@@ -5013,7 +5064,11 @@ void BarUISetClass::Rendering()
 			IncludeWordBounds(wordMap[
 				BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupText]);
 			IncludeWordBounds(wordMap[
+				BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupBody]);
+			IncludeWordBounds(wordMap[
 				BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText]);
+			IncludeWordBounds(wordMap[
+				BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupBody]);
 			IncludeSvgBounds(svgMap[
 				BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationPopupClose]);
 			IncludeSvgBounds(svgMap[
@@ -5299,7 +5354,7 @@ void BarUISetClass::Rendering()
 									min(requestedThickness, maxPreviewThickness);
 								// 水平内边距使用同一面板倍率，避免关键帧读到已经归零的文字局部坐标。
 								double horizontalInset =
-									BarDrawAttributeGap * 2.0
+									BarDrawAttributeThicknessContentInset
 									* panelAnimationScale;
 								FLOAT left = static_cast<FLOAT>(
 									(thicknessRegion->inhX + horizontalInset)
@@ -5627,7 +5682,7 @@ void BarUISetClass::Rendering()
 					}
 					for (int i = static_cast<int>(BarUISetWordEnum::DrawAttributeBar_Brush1);
 						i <= static_cast<int>(
-							BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText);
+							BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupBody);
 						i++)
 					{
 						auto obj = wordMap[static_cast<BarUISetWordEnum>(i)];
@@ -5657,16 +5712,22 @@ void BarUISetClass::Rendering()
 				auto panel = shapeMap[BarUISetShapeEnum::DrawAttributeBar];
 				auto DrawThicknessPopup =
 					[&](BarUISetShapeEnum popupShapeType,
-						BarUISetWordEnum popupWordType,
+						BarUISetWordEnum popupTitleType,
+						BarUISetWordEnum popupBodyType,
 						BarUISetSvgEnum closeSvgType)
 					{
 						auto popup = shapeMap[popupShapeType];
-						auto popupWord = wordMap[popupWordType];
+						auto popupTitle = wordMap[popupTitleType];
+						auto popupBody = wordMap[popupBodyType];
 						auto closeSvg = svgMap[closeSvgType];
 						spec.Shape(barDeviceContext.Get(), *popup,
 							popup->Inherit(TopLeft, *panel), &current, false);
-						spec.Word(barDeviceContext.Get(), *popupWord,
-							popupWord->Inherit(TopLeft, *panel),
+						spec.Word(barDeviceContext.Get(), *popupTitle,
+							popupTitle->Inherit(TopLeft, *panel),
+							DWRITE_FONT_WEIGHT_SEMI_BOLD,
+							DWRITE_TEXT_ALIGNMENT_LEADING);
+						spec.Word(barDeviceContext.Get(), *popupBody,
+							popupBody->Inherit(TopLeft, *panel),
 							DWRITE_FONT_WEIGHT_NORMAL,
 							DWRITE_TEXT_ALIGNMENT_LEADING);
 						spec.Svg(barDeviceContext.Get(), *closeSvg,
@@ -5675,10 +5736,12 @@ void BarUISetClass::Rendering()
 				DrawThicknessPopup(
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
 					BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupText,
+					BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupBody,
 					BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationPopupClose);
 				DrawThicknessPopup(
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup,
 					BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText,
+					BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupBody,
 					BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowPopupClose);
 
 				auto annotationBadge = shapeMap[
@@ -7578,27 +7641,37 @@ namespace Inkeys::UI::Bar
 							BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationLabel] =
 							annotationLabel;
 
-						auto annotationPopupText = make_shared<BarUiWordClass>(
-							0.0, 0.0, 1.0, 1.0,
-							L"画水平和竖直线（标注线）\n"
-							L"仅适用于软笔、硬笔和荧光笔；笔迹会锁定为水平、竖直或 45°。",
-							12.0, GetThemeColor(BarThemeColorEnum::TextPrimary));
-						annotationPopupText->pct.Initialization(0.0);
-						annotationPopupText->enable.Initialization(true);
-						barUISet.wordMap[
-							BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupText] =
-							annotationPopupText;
-
-						auto overflowPopupText = make_shared<BarUiWordClass>(
-							0.0, 0.0, 1.0, 1.0,
-							L"实际粗细超出预览范围\n"
-							L"墨迹已缩放至框内显示，粗细数值仍为真实像素。",
-							12.0, GetThemeColor(BarThemeColorEnum::TextPrimary));
-						overflowPopupText->pct.Initialization(0.0);
-						overflowPopupText->enable.Initialization(true);
-						barUISet.wordMap[
-							BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText] =
-							overflowPopupText;
+						COLORREF popupBodyColor = MixBarUiColor(
+							GetThemeColor(BarThemeColorEnum::TextPrimary),
+							GetThemeColor(BarThemeColorEnum::Surface), 0.45);
+						auto InitializeTooltipWord =
+							[&](BarUISetWordEnum wordType, const wchar_t* text,
+								double size, COLORREF color)
+							{
+								auto word = make_shared<BarUiWordClass>(
+									0.0, 0.0, 1.0, 1.0, text, size, color);
+								word->pct.Initialization(0.0);
+								word->enable.Initialization(true);
+								barUISet.wordMap[wordType] = word;
+							};
+						InitializeTooltipWord(
+							BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupText,
+							L"启用标注线（暂不可用）",
+							BarThicknessTooltipTitleFontSize,
+							GetThemeColor(BarThemeColorEnum::TextPrimary));
+						InitializeTooltipWord(
+							BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupBody,
+							L"锁定绘制方向仅为水平、竖直或斜45°",
+							BarThicknessTooltipBodyFontSize, popupBodyColor);
+						InitializeTooltipWord(
+							BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText,
+							L"墨迹粗细超出预览范围",
+							BarThicknessTooltipTitleFontSize,
+							GetThemeColor(BarThemeColorEnum::TextPrimary));
+						InitializeTooltipWord(
+							BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupBody,
+							L"预览中的粗细可能与绘制粗细不一致。",
+							BarThicknessTooltipBodyFontSize, popupBodyColor);
 
 						auto InitializeTooltipSvg =
 							[&](BarUISetSvgEnum svgType, const wchar_t* resourceName,
