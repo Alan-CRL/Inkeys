@@ -62,10 +62,11 @@ constexpr double BarDrawAttributeThicknessContentInset =
 	BarDrawAttributeGap * 2.0;
 constexpr double BarThicknessTooltipBadgeHeight = 24.0;
 constexpr double BarThicknessTooltipIconSize = 14.0;
+constexpr double BarThicknessTooltipCloseButtonSize = 20.0;
 constexpr double BarThicknessTooltipHitPadding = 2.0;
 constexpr bool BarThicknessOverflowPreviewAlwaysVisible = true;
 constexpr double BarThicknessTooltipPadding = 8.0;
-constexpr double BarThicknessTooltipCloseReserve = 19.0;
+constexpr double BarThicknessTooltipCloseReserve = 25.0;
 constexpr double BarThicknessTooltipTitleFontSize = 12.0;
 constexpr double BarThicknessTooltipBodyFontSize = 10.0;
 constexpr double BarThicknessTooltipLineGap = 3.0;
@@ -2170,8 +2171,10 @@ void BarUISetClass::CloseDrawAttributeTooltips()
 {
 	barState.drawAttributeBar.thicknessAnnotationHover = false;
 	barState.drawAttributeBar.thicknessAnnotationPinned = false;
+	barState.drawAttributeBar.thicknessAnnotationClosePress = false;
 	barState.drawAttributeBar.thicknessOverflowHover = false;
 	barState.drawAttributeBar.thicknessOverflowPinned = false;
+	barState.drawAttributeBar.thicknessOverflowClosePress = false;
 }
 
 // 渲染
@@ -2338,6 +2341,11 @@ void BarUISetClass::Rendering()
 	BarUiValueClass drawAttributeThicknessMediumPressScale(1.0);
 	BarUiValueClass drawAttributeThicknessCoarsePressScale(1.0);
 	BarUiValueClass drawAttributeThicknessAdjustPressScale(1.0);
+	BarUiValueClass drawAttributeAnnotationClosePressScale(1.0);
+	BarUiValueClass drawAttributeOverflowClosePressScale(1.0);
+	// 固定态结束后仍保留关闭图标，直到浮窗收起动画真正到达终点。
+	bool drawAttributeAnnotationCloseVisible = false;
+	bool drawAttributeOverflowCloseVisible = false;
 	constexpr double mainButtonScale = 1.05;
 	constexpr double mainButtonBaseSize = 80.0;
 	auto mainButtonLogo = svgMap[BarUISetSvgEnum::logo1];
@@ -3917,11 +3925,13 @@ void BarUISetClass::Rendering()
 						{
 							barState.drawAttributeBar.thicknessAnnotationHover = false;
 							barState.drawAttributeBar.thicknessAnnotationPinned = false;
+							barState.drawAttributeBar.thicknessAnnotationClosePress = false;
 						}
 						if (!previewOverflow)
 						{
 							barState.drawAttributeBar.thicknessOverflowHover = false;
 							barState.drawAttributeBar.thicknessOverflowPinned = false;
+							barState.drawAttributeBar.thicknessOverflowClosePress = false;
 						}
 
 						auto SetTooltipProgress = [&](BarUiValueClass& progress,
@@ -3943,6 +3953,38 @@ void BarUISetClass::Rendering()
 							previewOverflow
 							&& (barState.drawAttributeBar.thicknessOverflowHover
 								|| barState.drawAttributeBar.thicknessOverflowPinned));
+
+						auto ConfigureTooltipCloseButton =
+							[&](BarUISetShapeEnum shapeType, bool pinned,
+								bool pressed,
+								IdtAtomic<BarButtomHoverStageEnum>& hoverStage,
+								BarUiValueClass& pressScale)
+							{
+								auto closeButton = shapeMap[shapeType];
+								closeButton->fill.value().SetTar(
+									GetThemeColor(BarThemeColorEnum::PressedFill),
+									operationDur);
+								if (!pinned) closeButton->pct.SetTar(0.0);
+								else if (pressed) closeButton->pct.SetTar(0.10);
+								else if (hoverStage == BarButtomHoverStageEnum::None)
+									closeButton->pct.SetTar(0.0);
+								pressScale.SetTar(
+									pressed ? BarButtonPressScale : 1.0,
+									BarUiDefaultOperationDur, nullopt, false,
+									pressed ? buttonPressCurve : buttonReleaseCurve);
+							};
+						ConfigureTooltipCloseButton(
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit,
+							barState.drawAttributeBar.thicknessAnnotationPinned,
+							barState.drawAttributeBar.thicknessAnnotationClosePress,
+							drawAttributeAnnotationCloseHoverStage,
+							drawAttributeAnnotationClosePressScale);
+						ConfigureTooltipCloseButton(
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit,
+							barState.drawAttributeBar.thicknessOverflowPinned,
+							barState.drawAttributeBar.thicknessOverflowClosePress,
+							drawAttributeOverflowCloseHoverStage,
+							drawAttributeOverflowClosePressScale);
 
 						const BarUISetShapeEnum tooltipSurfaces[] =
 						{
@@ -4419,6 +4461,10 @@ void BarUISetClass::Rendering()
 		if (!drawAttributeThicknessMediumPressScale.IsSame()) ChangeValue(drawAttributeThicknessMediumPressScale, false);
 		if (!drawAttributeThicknessCoarsePressScale.IsSame()) ChangeValue(drawAttributeThicknessCoarsePressScale, false);
 		if (!drawAttributeThicknessAdjustPressScale.IsSame()) ChangeValue(drawAttributeThicknessAdjustPressScale, false);
+		if (!drawAttributeAnnotationClosePressScale.IsSame())
+			ChangeValue(drawAttributeAnnotationClosePressScale, false);
+		if (!drawAttributeOverflowClosePressScale.IsSame())
+			ChangeValue(drawAttributeOverflowClosePressScale, false);
 
 		for (const auto& [key, val] : shapeMap)
 		{
@@ -4562,6 +4608,18 @@ void BarUISetClass::Rendering()
 			|| stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1);
 		UpdateHoverAnimation(thicknessAdjust->pct, &thicknessAdjust->fill.value(),
 			drawAttributeThicknessAdjustHoverStage, thicknessAdjustVisible, true);
+		auto annotationClose = shapeMap[
+			BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit];
+		UpdateHoverAnimation(annotationClose->pct,
+			&annotationClose->fill.value(),
+			drawAttributeAnnotationCloseHoverStage,
+			barState.drawAttributeBar.thicknessAnnotationPinned, true);
+		auto overflowClose = shapeMap[
+			BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit];
+		UpdateHoverAnimation(overflowClose->pct,
+			&overflowClose->fill.value(),
+			drawAttributeOverflowCloseHoverStage,
+			barState.drawAttributeBar.thicknessOverflowPinned, true);
 
 		// 特殊体质：按钮
 		for (int id = 0; id < barButtomSet.tot; id++)
@@ -4723,13 +4781,13 @@ void BarUISetClass::Rendering()
 						shape->frameLightPct->SetDirect(opacity);
 				};
 			auto SetHitDerived = [&](const shared_ptr<BarUiShapeClass>& shape,
-				double x, double y, double size)
+				double x, double y, double size, bool clearVisual = true)
 				{
 					shape->x.SetDirect(x);
 					shape->y.SetDirect(y);
 					shape->w.SetDirect(max(0.0, size));
 					shape->h.SetDirect(max(0.0, size));
-					shape->pct.SetDirect(0.0);
+					if (clearVisual) shape->pct.SetDirect(0.0);
 				};
 
 			double annotationOpacity =
@@ -4897,7 +4955,7 @@ void BarUISetClass::Rendering()
 				BarUISetWordEnum popupBodyType,
 				BarUISetShapeEnum closeHitType,
 				BarUISetSvgEnum closeSvgType,
-				bool pinned)
+				bool closeVisible)
 				{
 					double scale = max(0.0, layout.progress);
 					double width = layout.baseWidth * scale;
@@ -4947,21 +5005,40 @@ void BarUISetClass::Rendering()
 					body->pct.SetDirect(layout.opacity);
 					body->Inherit(BarUiInheritEnum::TopLeft, *panel);
 
-					double closeSize =
+					double closeButtonSize =
+						BarThicknessTooltipCloseButtonSize * scale;
+					double closeIconSize =
 						BarThicknessTooltipIconSize * scale;
-					double closeX = localX + width - padding - closeSize;
+					double closeX =
+						localX + width - padding - closeButtonSize;
 					double closeY = localY + padding;
 					auto closeHit = shapeMap[closeHitType];
-					SetHitDerived(closeHit, closeX, closeY, closeSize);
+					SetHitDerived(
+						closeHit, closeX, closeY, closeButtonSize, false);
+					if (closeHit->rw.has_value())
+						closeHit->rw->SetDirect(4.0 * scale);
+					if (closeHit->rh.has_value())
+						closeHit->rh->SetDirect(4.0 * scale);
 					closeHit->Inherit(BarUiInheritEnum::TopLeft, *panel);
 					auto closeSvg = svgMap[closeSvgType];
-					closeSvg->x.SetDirect(closeX);
-					closeSvg->y.SetDirect(closeY);
-					closeSvg->w.SetDirect(closeSize);
-					closeSvg->h.SetDirect(closeSize);
+					closeSvg->x.SetDirect(closeX
+						+ (closeButtonSize - closeIconSize) / 2.0);
+					closeSvg->y.SetDirect(closeY
+						+ (closeButtonSize - closeIconSize) / 2.0);
+					closeSvg->w.SetDirect(closeIconSize);
+					closeSvg->h.SetDirect(closeIconSize);
 					closeSvg->pct.SetDirect(
-						pinned ? layout.opacity : 0.0);
+						closeVisible ? layout.opacity : 0.0);
 					closeSvg->Inherit(BarUiInheritEnum::TopLeft, *panel);
+				};
+			auto KeepCloseVisibleThroughCollapse =
+				[](bool pinned, const PopupDerivedLayout& layout,
+					bool& closeVisible)
+				{
+					if (pinned) closeVisible = true;
+					else if (layout.progress <= 0.000001)
+						closeVisible = false;
+					return closeVisible;
 				};
 			ApplyPopupLayout(annotationPopupLayout,
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
@@ -4969,14 +5046,20 @@ void BarUISetClass::Rendering()
 				BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupBody,
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit,
 				BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationPopupClose,
-				barState.drawAttributeBar.thicknessAnnotationPinned);
+				KeepCloseVisibleThroughCollapse(
+					barState.drawAttributeBar.thicknessAnnotationPinned,
+					annotationPopupLayout,
+					drawAttributeAnnotationCloseVisible));
 			ApplyPopupLayout(overflowPopupLayout,
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup,
 				BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText,
 				BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupBody,
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit,
 				BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowPopupClose,
-				barState.drawAttributeBar.thicknessOverflowPinned);
+				KeepCloseVisibleThroughCollapse(
+					barState.drawAttributeBar.thicknessOverflowPinned,
+					overflowPopupLayout,
+					drawAttributeOverflowCloseVisible));
 		}
 
 		// 时间轴与属性值在同一帧末尾推进，避免批次剩余时间和实际动画相差一帧。
@@ -5761,12 +5844,15 @@ void BarUISetClass::Rendering()
 					[&](BarUISetShapeEnum popupShapeType,
 						BarUISetWordEnum popupTitleType,
 						BarUISetWordEnum popupBodyType,
+						BarUISetShapeEnum closeHitType,
 						BarUISetSvgEnum closeSvgType,
-						BarUISetShapeEnum anchorBadgeType)
+						BarUISetShapeEnum anchorBadgeType,
+						BarUiValueClass& closePressScale)
 					{
 						auto popup = shapeMap[popupShapeType];
 						auto popupTitle = wordMap[popupTitleType];
 						auto popupBody = wordMap[popupBodyType];
+						auto closeHit = shapeMap[closeHitType];
 						auto closeSvg = svgMap[closeSvgType];
 						BarUiInheritClass popupInherit =
 							popup->Inherit(TopLeft, *panel);
@@ -5785,6 +5871,8 @@ void BarUISetClass::Rendering()
 							popupTitle->Inherit(TopLeft, *panel);
 						BarUiInheritClass bodyInherit =
 							popupBody->Inherit(TopLeft, *panel);
+						BarUiInheritClass closeHitInherit =
+							closeHit->Inherit(TopLeft, *panel);
 						BarUiInheritClass closeInherit =
 							closeSvg->Inherit(TopLeft, *panel);
 						if (popup->pct.val <= 0.0
@@ -5809,6 +5897,12 @@ void BarUISetClass::Rendering()
 						double bodyW = popupBody->w.val;
 						double bodyH = popupBody->h.val;
 						double bodySize = popupBody->size.val;
+						double closeHitW = closeHit->w.val;
+						double closeHitH = closeHit->h.val;
+						double closeHitRw = closeHit->rw.has_value()
+							? static_cast<double>(closeHit->rw->val) : 0.0;
+						double closeHitRh = closeHit->rh.has_value()
+							? static_cast<double>(closeHit->rh->val) : 0.0;
 						double closeW = closeSvg->w.val;
 						double closeH = closeSvg->h.val;
 						popupTitle->w.SetDirect(titleW / popupGeometryScale);
@@ -5819,6 +5913,14 @@ void BarUISetClass::Rendering()
 						popupBody->h.SetDirect(bodyH / popupGeometryScale);
 						popupBody->size.SetDirect(
 							BarThicknessTooltipBodyFontSize);
+						closeHit->w.SetDirect(closeHitW / popupGeometryScale);
+						closeHit->h.SetDirect(closeHitH / popupGeometryScale);
+						if (closeHit->rw.has_value())
+							closeHit->rw->SetDirect(
+								closeHitRw / popupGeometryScale);
+						if (closeHit->rh.has_value())
+							closeHit->rh->SetDirect(
+								closeHitRh / popupGeometryScale);
 						closeSvg->w.SetDirect(closeW / popupGeometryScale);
 						closeSvg->h.SetDirect(closeH / popupGeometryScale);
 
@@ -5845,6 +5947,33 @@ void BarUISetClass::Rendering()
 								UnscaleCoordinate(bodyInherit.y, anchorY)),
 							DWRITE_FONT_WEIGHT_NORMAL,
 							DWRITE_TEXT_ALIGNMENT_LEADING);
+						double unscaledCloseX =
+							UnscaleCoordinate(closeHitInherit.x, anchorX);
+						double unscaledCloseY =
+							UnscaleCoordinate(closeHitInherit.y, anchorY);
+						double closeScale = closePressScale.val;
+						D2D1_MATRIX_3X2_F popupTransform;
+						barDeviceContext->GetTransform(&popupTransform);
+						if (abs(closeScale - 1.0) > 0.000001)
+						{
+							// 背景与叉号围绕 20px 按钮中心同步缩放，命中区域保持原尺寸。
+							double closeCenterX =
+								unscaledCloseX + closeHit->w.val / 2.0;
+							double closeCenterY =
+								unscaledCloseY + closeHit->h.val / 2.0;
+							barDeviceContext->SetTransform(
+								D2D1::Matrix3x2F::Scale(
+									static_cast<FLOAT>(closeScale),
+									static_cast<FLOAT>(closeScale),
+									D2D1::Point2F(
+										static_cast<FLOAT>(
+											closeCenterX * barStyle.zoom),
+										static_cast<FLOAT>(
+											closeCenterY * barStyle.zoom)))
+								* popupTransform);
+						}
+						spec.Shape(barDeviceContext.Get(), *closeHit,
+							BarUiInheritClass(unscaledCloseX, unscaledCloseY));
 						spec.Svg(barDeviceContext.Get(), *closeSvg,
 							BarUiInheritClass(
 								UnscaleCoordinate(closeInherit.x, anchorX),
@@ -5857,6 +5986,12 @@ void BarUISetClass::Rendering()
 						popupBody->w.SetDirect(bodyW);
 						popupBody->h.SetDirect(bodyH);
 						popupBody->size.SetDirect(bodySize);
+						closeHit->w.SetDirect(closeHitW);
+						closeHit->h.SetDirect(closeHitH);
+						if (closeHit->rw.has_value())
+							closeHit->rw->SetDirect(closeHitRw);
+						if (closeHit->rh.has_value())
+							closeHit->rh->SetDirect(closeHitRh);
 						closeSvg->w.SetDirect(closeW);
 						closeSvg->h.SetDirect(closeH);
 					};
@@ -5864,14 +5999,18 @@ void BarUISetClass::Rendering()
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
 					BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupText,
 					BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupBody,
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit,
 					BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationPopupClose,
-					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationBadge);
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationBadge,
+					drawAttributeAnnotationClosePressScale);
 				DrawThicknessPopup(
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup,
 					BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText,
 					BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupBody,
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit,
 					BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowPopupClose,
-					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowBadge);
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowBadge,
+					drawAttributeOverflowClosePressScale);
 
 				auto annotationBadge = shapeMap[
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationBadge];
@@ -6093,6 +6232,8 @@ void BarUISetClass::Interact()
 		DrawAttributeThicknessMedium,
 		DrawAttributeThicknessCoarse,
 		DrawAttributeThicknessAdjust,
+		DrawAttributeAnnotationClose,
+		DrawAttributeOverflowClose,
 	};
 	IndependentHoverTargetEnum hoveredIndependentButton = IndependentHoverTargetEnum::None;
 	struct HoverVisualRef
@@ -6129,6 +6270,20 @@ void BarUISetClass::Interact()
 				return { &shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust]->pct,
 					&shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust]->fill.value(),
 					&drawAttributeThicknessAdjustHoverStage };
+			case IndependentHoverTargetEnum::DrawAttributeAnnotationClose:
+				return { &shapeMap[
+						BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit]->pct,
+					&shapeMap[
+						BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit]
+						->fill.value(),
+					&drawAttributeAnnotationCloseHoverStage };
+			case IndependentHoverTargetEnum::DrawAttributeOverflowClose:
+				return { &shapeMap[
+						BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit]->pct,
+					&shapeMap[
+						BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit]
+						->fill.value(),
+					&drawAttributeOverflowCloseHoverStage };
 			default:
 				return {};
 			}
@@ -6232,6 +6387,15 @@ void BarUISetClass::Interact()
 				return stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1
 					|| stateMode.Pen.ModeSelect
 					== PenModeSelectEnum::IdtPenHighlighter1;
+			case IndependentHoverTargetEnum::DrawAttributeAnnotationClose:
+				return !barState.fold
+					&& barState.drawAttributeBar.thicknessAnnotationPinned
+					&& PenModeSupportsAnnotationLine(
+						stateMode.Pen.ModeSelect);
+			case IndependentHoverTargetEnum::DrawAttributeOverflowClose:
+				return !barState.fold
+					&& barState.drawAttributeBar.thicknessOverflowPinned
+					&& barState.drawAttributeBar.thicknessPreviewOverflow;
 			default:
 				return false;
 			}
@@ -6328,13 +6492,38 @@ void BarUISetClass::Interact()
 			IndependentHoverTargetEnum currentIndependentButton = IndependentHoverTargetEnum::None;
 			if (barState.drawAttribute)
 			{
+				// 两个浮窗允许覆盖，按绘制顺序优先命中上层的粗细超限浮窗。
+				auto overflowClose = shapeMap[
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit];
+				auto annotationClose = shapeMap[
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit];
+				if (IsIndependentHoverAllowed(
+					IndependentHoverTargetEnum::DrawAttributeOverflowClose)
+					&& overflowClose
+					&& overflowClose->IsClick(msg.x, msg.y, barStyle.zoom))
+				{
+					currentIndependentButton =
+						IndependentHoverTargetEnum::DrawAttributeOverflowClose;
+				}
+				else if (IsIndependentHoverAllowed(
+					IndependentHoverTargetEnum::DrawAttributeAnnotationClose)
+					&& annotationClose
+					&& annotationClose->IsClick(msg.x, msg.y, barStyle.zoom))
+				{
+					currentIndependentButton =
+						IndependentHoverTargetEnum::DrawAttributeAnnotationClose;
+				}
+
 				const BarUISetShapeEnum presetShapes[] =
 				{
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessFine,
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessMedium,
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessCoarse,
 				};
-				for (size_t i = 0; i < 3; ++i)
+				for (size_t i = 0;
+					currentIndependentButton == IndependentHoverTargetEnum::None
+						&& i < 3;
+					++i)
 				{
 					auto target = static_cast<IndependentHoverTargetEnum>(
 						static_cast<int>(
@@ -6396,25 +6585,28 @@ void BarUISetClass::Interact()
 				BarUISetShapeEnum closeHit;
 				IdtAtomic<bool>* hover;
 				IdtAtomic<bool>* pinned;
+				IdtAtomic<bool>* pressed;
 				bool available;
 			};
 			ThicknessTooltipInteraction tooltipInteractions[] =
 			{
-				{
-					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit,
-					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
-					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit,
-					&barState.drawAttributeBar.thicknessAnnotationHover,
-					&barState.drawAttributeBar.thicknessAnnotationPinned,
-					AnnotationTooltipAvailable(),
-				},
 				{
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowInfoHit,
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup,
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit,
 					&barState.drawAttributeBar.thicknessOverflowHover,
 					&barState.drawAttributeBar.thicknessOverflowPinned,
+					&barState.drawAttributeBar.thicknessOverflowClosePress,
 					OverflowTooltipAvailable(),
+				},
+				{
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit,
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit,
+					&barState.drawAttributeBar.thicknessAnnotationHover,
+					&barState.drawAttributeBar.thicknessAnnotationPinned,
+					&barState.drawAttributeBar.thicknessAnnotationClosePress,
+					AnnotationTooltipAvailable(),
 				},
 			};
 
@@ -6429,6 +6621,12 @@ void BarUISetClass::Interact()
 				continueFlag = false;
 				if (msg.message == WM_LBUTTONDOWN)
 				{
+					*tooltip.pressed = true;
+					StopIndependentHover(
+						hoveredIndependentButton, true, true);
+					hoveredIndependentButton =
+						IndependentHoverTargetEnum::None;
+					UpdateRendering(false);
 					while (true)
 					{
 						hiex::getmessage_win32(
@@ -6440,12 +6638,13 @@ void BarUISetClass::Interact()
 							{
 								*tooltip.pinned = false;
 								*tooltip.hover = false;
-								UpdateRendering(false);
 								break;
 							}
 						}
 						else break;
 					}
+					*tooltip.pressed = false;
+					UpdateRendering(false);
 					SuppressHoverUntilPointerMove();
 					hiex::flushmessage_win32(EM_MOUSE, floating_window);
 				}
@@ -7596,11 +7795,11 @@ namespace Inkeys::UI::Bar
 						InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Brush2,
 							BarUISetSvgEnum::DrawAttributeBar_Brush2,
 							BarUISetWordEnum::DrawAttributeBar_Brush2,
-							L"barBrush2", L"刷子");
+							L"barBrush1", L"刷子");
 						InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Laser,
 							BarUISetSvgEnum::DrawAttributeBar_Laser,
 							BarUISetWordEnum::DrawAttributeBar_Laser,
-							L"barLaser", L"激光笔");
+							L"barBrush1", L"激光笔");
 						InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Highlight1,
 							BarUISetSvgEnum::DrawAttributeBar_Highlight1,
 							BarUISetWordEnum::DrawAttributeBar_Highlight1,
@@ -7609,11 +7808,11 @@ namespace Inkeys::UI::Bar
 							BarUISetSvgEnum::DrawAttributeBar_Brush1,
 							BarUISetWordEnum::DrawAttributeBar_Brush1,
 							L"barBrush1", L"硬笔");
-						// 软笔暂未接入绘制模式，复用毛刷轮廓并保持灰色禁用态。
+						// 临时统一复用硬笔图标，待三种笔型图标完善后再恢复各自资源。
 						InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_SoftPen,
 							BarUISetSvgEnum::DrawAttributeBar_SoftPen,
 							BarUISetWordEnum::DrawAttributeBar_SoftPen,
-							L"barBrush2", L"软笔");
+							L"barBrush1", L"软笔");
 					}
 					// 粗细调节区域
 					{
@@ -7722,6 +7921,21 @@ namespace Inkeys::UI::Bar
 								hit->enable.Initialization(true);
 								barUISet.shapeMap[shapeType] = hit;
 							};
+						auto InitializeTooltipCloseButton =
+							[&](BarUISetShapeEnum shapeType)
+							{
+								auto button = make_shared<BarUiShapeClass>(
+									0.0, 0.0,
+									BarThicknessTooltipCloseButtonSize,
+									BarThicknessTooltipCloseButtonSize,
+									4.0, 4.0, nullopt,
+									GetThemeColor(
+										BarThemeColorEnum::PressedFill),
+									nullopt);
+								button->pct.Initialization(0.0);
+								button->enable.Initialization(true);
+								barUISet.shapeMap[shapeType] = button;
+							};
 
 						InitializeTooltipSurface(
 							BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationBadge,
@@ -7738,15 +7952,13 @@ namespace Inkeys::UI::Bar
 						InitializeTooltipSurface(
 							BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
 							1.0, 1.0);
-						InitializeTooltipHit(
-							BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit,
-							14.0);
+						InitializeTooltipCloseButton(
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit);
 						InitializeTooltipSurface(
 							BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup,
 							1.0, 1.0);
-						InitializeTooltipHit(
-							BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit,
-							14.0);
+						InitializeTooltipCloseButton(
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit);
 
 						auto annotationLabel = make_shared<BarUiWordClass>(
 							0.0, 0.0, 48.0, 24.0, L"标注线", 13.0,

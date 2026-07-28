@@ -372,6 +372,8 @@ public:
 	IdtAtomic<BarButtomHoverStageEnum> drawAttributeThicknessMediumHoverStage = BarButtomHoverStageEnum::None;
 	IdtAtomic<BarButtomHoverStageEnum> drawAttributeThicknessCoarseHoverStage = BarButtomHoverStageEnum::None;
 	IdtAtomic<BarButtomHoverStageEnum> drawAttributeThicknessAdjustHoverStage = BarButtomHoverStageEnum::None;
+	IdtAtomic<BarButtomHoverStageEnum> drawAttributeAnnotationCloseHoverStage = BarButtomHoverStageEnum::None;
+	IdtAtomic<BarButtomHoverStageEnum> drawAttributeOverflowCloseHoverStage = BarButtomHoverStageEnum::None;
 
 public:
 	// 渲染更新：状态更新 + 通知计算并渲染

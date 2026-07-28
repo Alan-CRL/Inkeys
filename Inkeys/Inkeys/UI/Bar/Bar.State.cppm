@@ -20,8 +20,10 @@ public:
 		IdtAtomic<bool> thicknessAdjustPress = false;
 		IdtAtomic<bool> thicknessAnnotationHover = false;
 		IdtAtomic<bool> thicknessAnnotationPinned = false;
+		IdtAtomic<bool> thicknessAnnotationClosePress = false;
 		IdtAtomic<bool> thicknessOverflowHover = false;
 		IdtAtomic<bool> thicknessOverflowPinned = false;
+		IdtAtomic<bool> thicknessOverflowClosePress = false;
 		IdtAtomic<bool> thicknessPreviewOverflow = false;
 	}drawAttributeBar;
 
