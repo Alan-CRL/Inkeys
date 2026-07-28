@@ -100,6 +100,14 @@ enum class BarUISetShapeEnum : int
 	DrawAttributeBar_ThicknessMedium,
 	DrawAttributeBar_ThicknessCoarse,
 	DrawAttributeBar_ThicknessAdjust,
+	DrawAttributeBar_ThicknessAnnotationBadge,
+	DrawAttributeBar_ThicknessAnnotationInfoHit,
+	DrawAttributeBar_ThicknessOverflowBadge,
+	DrawAttributeBar_ThicknessOverflowInfoHit,
+	DrawAttributeBar_ThicknessAnnotationPopup,
+	DrawAttributeBar_ThicknessAnnotationPopupCloseHit,
+	DrawAttributeBar_ThicknessOverflowPopup,
+	DrawAttributeBar_ThicknessOverflowPopupCloseHit,
 };
 enum class BarUISetSuperellipseEnum : int
 {
@@ -128,6 +136,10 @@ enum class BarUISetSvgEnum : int
 	DrawAttributeBar_Brush2,
 	DrawAttributeBar_SoftPen,
 	DrawAttributeBar_ThicknessAdjust,
+	DrawAttributeBar_ThicknessAnnotationInfo,
+	DrawAttributeBar_ThicknessOverflowInfo,
+	DrawAttributeBar_ThicknessAnnotationPopupClose,
+	DrawAttributeBar_ThicknessOverflowPopupClose,
 };
 enum class BarUISetWordEnum : int
 {
@@ -144,6 +156,9 @@ enum class BarUISetWordEnum : int
 	DrawAttributeBar_ThicknessFineNumber,
 	DrawAttributeBar_ThicknessMediumNumber,
 	DrawAttributeBar_ThicknessCoarseNumber,
+	DrawAttributeBar_ThicknessAnnotationLabel,
+	DrawAttributeBar_ThicknessAnnotationPopupText,
+	DrawAttributeBar_ThicknessOverflowPopupText,
 };
 
 enum class BarBorderLightSourceEnum : int
@@ -177,6 +192,8 @@ public:
 	bool Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, RECT* targetRect = nullptr, bool clip = false);
 	bool Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, const BarUiInheritClass& inh);
 	bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT textAlign = DWRITE_TEXT_ALIGNMENT_CENTER);
+	D2D1_SIZE_F MeasureText(const wstring& content, double fontSize,
+		DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_NORMAL);
 	bool PrepareFrameLighting(double animationDtSeconds);
 	void DiscardDeviceResources();
 	void PushFrameDirtyClip(
@@ -224,7 +241,11 @@ protected:
 		ID2D1DeviceContext* deviceContext, COLORREF color, double opacity);
 	ID2D1LinearGradientBrush* GetThicknessPreviewGradientBrush(
 		ID2D1DeviceContext* deviceContext, COLORREF color,
-		D2D1_POINT_2F startPoint, D2D1_POINT_2F endPoint);
+		D2D1_POINT_2F startPoint, D2D1_POINT_2F endPoint,
+		FLOAT leftOpacity);
+	ID2D1PathGeometry* GetThicknessPreviewPath(
+		const array<D2D1_POINT_2F, 4>& points);
+	ID2D1StrokeStyle* GetThicknessPreviewStrokeStyle();
 	FrameDiffuseMaskCacheClass* GetRoundedRectDiffuseMask(
 		ID2D1DeviceContext* deviceContext,
 		const D2D1_ROUNDED_RECT& roundedRect, FLOAT strokeWidth);
@@ -269,6 +290,9 @@ protected:
 	bool thicknessPreviewGradientFailureLogged = false;
 	bool thicknessPreviewGradientUnavailable = false;
 	bool thicknessPreviewGradientColorInitialized = false;
+	bool thicknessPreviewPathFailureLogged = false;
+	bool thicknessPreviewPathUnavailable = false;
+	bool thicknessPreviewPathInitialized = false;
 	bool frameDiffuseEffectFailureLogged = false;
 	bool frameDiffuseMaskFailureLogged = false;
 	bool frameDiffuseMaskUnavailable = false;
@@ -298,7 +322,11 @@ protected:
 	vector<FrameGeometryDiffuseMaskCacheClass> frameGeometryDiffuseMaskCache;
 	ComPtr<ID2D1SolidColorBrush> frameSolidColorBrush;
 	ComPtr<ID2D1LinearGradientBrush> thicknessPreviewGradientBrush;
+	ComPtr<ID2D1PathGeometry> thicknessPreviewPath;
+	ComPtr<ID2D1StrokeStyle> thicknessPreviewStrokeStyle;
 	COLORREF thicknessPreviewGradientColor = RGB(0, 0, 0);
+	FLOAT thicknessPreviewGradientLeftOpacity = -1.0F;
+	array<D2D1_POINT_2F, 4> thicknessPreviewPathPoints{};
 	ComPtr<ID2D1DeviceContext> frameMaskDeviceContext;
 	ComPtr<ID2D1Effect> frameGaussianBlurEffect;
 
@@ -352,6 +380,7 @@ protected:
 	bool ScheduleBorderCursorGraceTimer(HWND hWnd, UINT delayMs);
 	void HandleCanvasDrawingActivity(HWND hWnd, bool started);
 	void HandleCanvasDrawingQuietTimeout(HWND hWnd);
+	void CloseDrawAttributeTooltips();
 	void RefreshBorderCursorVisibleRegions();
 	bool IsBorderCursorLightNearVisibleRegion(POINT screenPoint);
 	std::atomic<unsigned long long> mainButtonClickPulseSerial = 0;

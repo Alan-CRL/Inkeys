@@ -311,6 +311,10 @@ BARHIGHLIGHTER1         UI                      "src\\UI\\barHighlighter1.svg"
 
 BARTHICKNESSADJUST      UI                      "src\\UI\\barThicknessAdjust.svg"
 
+BARINFO                 UI                      "src\\UI\\barInfo.svg"
+
+BARCLOSESMALL           UI                      "src\\UI\\barCloseSmall.svg"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //

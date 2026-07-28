@@ -59,6 +59,13 @@ constexpr double BarDrawAttributeCompactHeight =
 constexpr double BarDrawAttributeGap = 5.0;
 constexpr double BarDrawAttributeThicknessHeight = 105.0;
 constexpr double BarDrawAttributeThicknessControlHeight = 30.0;
+constexpr double BarThicknessTooltipBadgeHeight = 24.0;
+constexpr double BarThicknessTooltipIconSize = 14.0;
+constexpr double BarThicknessTooltipPadding = 8.0;
+constexpr double BarThicknessTooltipCloseReserve = 19.0;
+constexpr double BarThicknessTooltipFontSize = 12.0;
+constexpr double BarThicknessTooltipFillOpacity = 0.15;
+constexpr double BarThicknessTooltipFrameOpacity = 0.18;
 constexpr double BarBorderFrameDiffuseOpacity = 0.30;
 constexpr double BarBorderPenDiffuseOpacity = 0.20;
 constexpr double BarColorSwatchFrameOpacity = 0.18;
@@ -66,6 +73,19 @@ constexpr int BarBorderDiffuseCompositePasses = 2;
 // 标准差等于线宽时，1px 线源经过一维 Gaussian 后中心约保留 38.3%。
 constexpr double BarBorderGaussianCenterCoverage = 0.382924922548;
 std::atomic_uint BarCanvasDrawingActivityCount = 0;
+
+bool PenModeUsesCurvedThicknessPreview(PenModeSelectEnum mode)
+{
+	// 未来软笔、激光笔接入实际模式枚举后，只需在这里扩展。
+	return mode == PenModeSelectEnum::IdtPenBrush1;
+}
+
+bool PenModeSupportsAnnotationLine(PenModeSelectEnum mode)
+{
+	// 激光笔不显示标注线入口；未来软笔模式在这里加入。
+	return mode == PenModeSelectEnum::IdtPenBrush1
+		|| mode == PenModeSelectEnum::IdtPenHighlighter1;
+}
 
 int GetBarBrushThicknessPresetPx(size_t index, double dpiZoom)
 {
@@ -421,12 +441,18 @@ void BarUIRendering::DiscardDeviceResources()
 	frameGeometryDiffuseMaskCache.clear();
 	frameSolidColorBrush.Reset();
 	thicknessPreviewGradientBrush.Reset();
+	thicknessPreviewPath.Reset();
+	thicknessPreviewStrokeStyle.Reset();
 	frameGaussianBlurEffect.Reset();
 	frameMaskDeviceContext.Reset();
 	frameGradientFailureLogged = false;
 	thicknessPreviewGradientFailureLogged = false;
 	thicknessPreviewGradientUnavailable = false;
 	thicknessPreviewGradientColorInitialized = false;
+	thicknessPreviewGradientLeftOpacity = -1.0F;
+	thicknessPreviewPathFailureLogged = false;
+	thicknessPreviewPathUnavailable = false;
+	thicknessPreviewPathInitialized = false;
 	frameDiffuseEffectFailureLogged = false;
 	frameDiffuseMaskFailureLogged = false;
 	frameDiffuseMaskUnavailable = false;
@@ -959,17 +985,20 @@ ID2D1SolidColorBrush* BarUIRendering::GetFrameSolidColorBrush(
 
 ID2D1LinearGradientBrush* BarUIRendering::GetThicknessPreviewGradientBrush(
 	ID2D1DeviceContext* deviceContext, COLORREF color,
-	D2D1_POINT_2F startPoint, D2D1_POINT_2F endPoint)
+	D2D1_POINT_2F startPoint, D2D1_POINT_2F endPoint,
+	FLOAT leftOpacity)
 {
 	if (!deviceContext || thicknessPreviewGradientUnavailable) return nullptr;
 	COLORREF rgb = color & 0x00FFFFFF;
+	leftOpacity = round(clamp(leftOpacity, 0.0F, 1.0F) * 255.0F) / 255.0F;
 	if (!thicknessPreviewGradientBrush
 		|| !thicknessPreviewGradientColorInitialized
-		|| thicknessPreviewGradientColor != rgb)
+		|| thicknessPreviewGradientColor != rgb
+		|| thicknessPreviewGradientLeftOpacity != leftOpacity)
 	{
 		D2D1_GRADIENT_STOP gradientStops[] =
 		{
-			{ 0.0F, Inkeys::Color::ConvertToD2dColor(rgb, 0.35) },
+			{ 0.0F, Inkeys::Color::ConvertToD2dColor(rgb, leftOpacity) },
 			{ 1.0F, Inkeys::Color::ConvertToD2dColor(rgb, 1.00) },
 		};
 		ComPtr<ID2D1GradientStopCollection> stopCollection;
@@ -986,6 +1015,7 @@ ID2D1LinearGradientBrush* BarUIRendering::GetThicknessPreviewGradientBrush(
 			{
 				thicknessPreviewGradientBrush = move(brush);
 				thicknessPreviewGradientColor = rgb;
+				thicknessPreviewGradientLeftOpacity = leftOpacity;
 				thicknessPreviewGradientColorInitialized = true;
 			}
 		}
@@ -1007,6 +1037,77 @@ ID2D1LinearGradientBrush* BarUIRendering::GetThicknessPreviewGradientBrush(
 	thicknessPreviewGradientBrush->SetEndPoint(endPoint);
 	thicknessPreviewGradientBrush->SetOpacity(1.0F);
 	return thicknessPreviewGradientBrush.Get();
+}
+
+ID2D1PathGeometry* BarUIRendering::GetThicknessPreviewPath(
+	const array<D2D1_POINT_2F, 4>& points)
+{
+	if (!d2dFactory1 || thicknessPreviewPathUnavailable) return nullptr;
+	bool pointsChanged = !thicknessPreviewPathInitialized;
+	for (size_t i = 0; i < points.size() && !pointsChanged; ++i)
+	{
+		pointsChanged = abs(points[i].x - thicknessPreviewPathPoints[i].x) > 0.001F
+			|| abs(points[i].y - thicknessPreviewPathPoints[i].y) > 0.001F;
+	}
+	if (!pointsChanged && thicknessPreviewPath) return thicknessPreviewPath.Get();
+
+	ComPtr<ID2D1PathGeometry> path;
+	HRESULT hr = d2dFactory1->CreatePathGeometry(&path);
+	if (SUCCEEDED(hr))
+	{
+		ComPtr<ID2D1GeometrySink> sink;
+		hr = path->Open(&sink);
+		if (SUCCEEDED(hr))
+		{
+			sink->BeginFigure(points[0], D2D1_FIGURE_BEGIN_HOLLOW);
+			D2D1_BEZIER_SEGMENT segment{ points[1], points[2], points[3] };
+			sink->AddBezier(segment);
+			sink->EndFigure(D2D1_FIGURE_END_OPEN);
+			hr = sink->Close();
+		}
+	}
+	if (FAILED(hr))
+	{
+		thicknessPreviewPathUnavailable = true;
+		if (!thicknessPreviewPathFailureLogged)
+		{
+			thicknessPreviewPathFailureLogged = true;
+			if (IDTLogger) IDTLogger->error(
+				"[BarUIRendering::GetThicknessPreviewPath] 创建粗细预览路径失败, hr=0x{:08X}",
+				static_cast<unsigned int>(hr));
+		}
+		return nullptr;
+	}
+
+	thicknessPreviewPath = move(path);
+	thicknessPreviewPathPoints = points;
+	thicknessPreviewPathInitialized = true;
+	return thicknessPreviewPath.Get();
+}
+
+ID2D1StrokeStyle* BarUIRendering::GetThicknessPreviewStrokeStyle()
+{
+	if (thicknessPreviewStrokeStyle) return thicknessPreviewStrokeStyle.Get();
+	if (!d2dFactory1 || thicknessPreviewPathUnavailable) return nullptr;
+	D2D1_STROKE_STYLE_PROPERTIES properties = D2D1::StrokeStyleProperties(
+		D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_ROUND,
+		D2D1_CAP_STYLE_ROUND, D2D1_LINE_JOIN_ROUND,
+		10.0F, D2D1_DASH_STYLE_SOLID, 0.0F);
+	HRESULT hr = d2dFactory1->CreateStrokeStyle(
+		properties, nullptr, 0, &thicknessPreviewStrokeStyle);
+	if (FAILED(hr))
+	{
+		thicknessPreviewPathUnavailable = true;
+		if (!thicknessPreviewPathFailureLogged)
+		{
+			thicknessPreviewPathFailureLogged = true;
+			if (IDTLogger) IDTLogger->error(
+				"[BarUIRendering::GetThicknessPreviewStrokeStyle] 创建圆头描边样式失败, hr=0x{:08X}",
+				static_cast<unsigned int>(hr));
+		}
+		return nullptr;
+	}
+	return thicknessPreviewStrokeStyle.Get();
 }
 
 BarUIRendering::FrameDiffuseMaskCacheClass* BarUIRendering::GetRoundedRectDiffuseMask(
@@ -1970,7 +2071,70 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 	return true;
 }
 
+D2D1_SIZE_F BarUIRendering::MeasureText(
+	const wstring& content, double fontSize, DWRITE_FONT_WEIGHT fontWeight)
+{
+	D2D1_SIZE_F result = D2D1::SizeF();
+	if (content.empty() || !dWriteFactory1 || !barUISetClass
+		|| !barUISetClass->barMedia.formatCache || fontSize <= 0.0)
+		return result;
+
+	IDWriteTextFormat* textFormat =
+		barUISetClass->barMedia.formatCache->GetFormat(
+			L"HarmonyOS Sans SC", static_cast<FLOAT>(fontSize),
+			dWriteFontCollection.Get(),
+			fontWeight, DWRITE_FONT_STYLE_NORMAL,
+			DWRITE_FONT_STRETCH_NORMAL, L"zh-cn",
+			DWRITE_TEXT_ALIGNMENT_LEADING,
+			DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+	if (!textFormat) return result;
+
+	ComPtr<IDWriteTextLayout> textLayout;
+	HRESULT hr = dWriteFactory1->CreateTextLayout(
+		content.c_str(), static_cast<UINT32>(content.size()), textFormat,
+		4096.0F, 4096.0F, &textLayout);
+	if (SUCCEEDED(hr))
+	{
+		textLayout->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+		DWRITE_TEXT_METRICS metrics{};
+		hr = textLayout->GetMetrics(&metrics);
+		if (SUCCEEDED(hr))
+		{
+			result.width = ceil(metrics.widthIncludingTrailingWhitespace);
+			result.height = ceil(metrics.height);
+			return result;
+		}
+	}
+
+	// DWrite 测量失败时保留可读区域，不能让提示框退化为零尺寸。
+	size_t maxLineLength = 0;
+	size_t currentLineLength = 0;
+	size_t lineCount = 1;
+	for (wchar_t ch : content)
+	{
+		if (ch == L'\n')
+		{
+			maxLineLength = max(maxLineLength, currentLineLength);
+			currentLineLength = 0;
+			++lineCount;
+		}
+		else ++currentLineLength;
+	}
+	maxLineLength = max(maxLineLength, currentLineLength);
+	result.width = static_cast<FLOAT>(maxLineLength * fontSize);
+	result.height = static_cast<FLOAT>(lineCount * fontSize * 1.4);
+	return result;
+}
+
 // UI 总集
+
+void BarUISetClass::CloseDrawAttributeTooltips()
+{
+	barState.drawAttributeBar.thicknessAnnotationHover = false;
+	barState.drawAttributeBar.thicknessAnnotationPinned = false;
+	barState.drawAttributeBar.thicknessOverflowHover = false;
+	barState.drawAttributeBar.thicknessOverflowPinned = false;
+}
 
 // 渲染
 void BarUISetClass::Rendering()
@@ -2095,10 +2259,32 @@ void BarUISetClass::Rendering()
 	BarUiValueClass drawAttributePenThickness(max(0.0f, GetPenWidth()));
 	bool drawAttributePenThicknessInitialized =
 		stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
-	BarUiValueClass drawAttributePenPreviewRoundness(
-		stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1 ? 0.0 : 1.0);
-	bool drawAttributePenPreviewRoundnessInitialized =
+	BarUiValueClass drawAttributePenPreviewMorph(
+		stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1 ? 1.0 : 0.0);
+	bool drawAttributePenPreviewMorphInitialized =
 		stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
+	BarUiValueClass drawAttributeAnnotationPopupProgress(0.0);
+	BarUiValueClass drawAttributeOverflowPopupProgress(0.0);
+	D2D1_SIZE_F annotationLabelTextSize =
+		spec.MeasureText(L"标注线", 13.0, DWRITE_FONT_WEIGHT_NORMAL);
+	D2D1_SIZE_F annotationPopupTextSize = spec.MeasureText(
+		L"画水平和竖直线（标注线）\n"
+		L"仅适用于软笔、硬笔和荧光笔；笔迹会锁定为水平、竖直或 45°。",
+		BarThicknessTooltipFontSize, DWRITE_FONT_WEIGHT_NORMAL);
+	D2D1_SIZE_F overflowPopupTextSize = spec.MeasureText(
+		L"实际粗细超出预览范围\n"
+		L"墨迹已缩放至框内显示，粗细数值仍为真实像素。",
+		BarThicknessTooltipFontSize, DWRITE_FONT_WEIGHT_NORMAL);
+	double annotationBadgeWidth = ceil(annotationLabelTextSize.width)
+		+ 6.0 * 2.0 + 4.0 + BarThicknessTooltipIconSize;
+	double annotationPopupWidth = ceil(annotationPopupTextSize.width)
+		+ BarThicknessTooltipPadding * 2.0 + BarThicknessTooltipCloseReserve;
+	double annotationPopupHeight = ceil(annotationPopupTextSize.height)
+		+ BarThicknessTooltipPadding * 2.0;
+	double overflowPopupWidth = ceil(overflowPopupTextSize.width)
+		+ BarThicknessTooltipPadding * 2.0 + BarThicknessTooltipCloseReserve;
+	double overflowPopupHeight = ceil(overflowPopupTextSize.height)
+		+ BarThicknessTooltipPadding * 2.0;
 	// 笔型按钮沿用主栏的独立按压缩放，不改变布局值与命中区域。
 	BarUiValueClass drawAttributeBrushPressScale(1.0);
 	BarUiValueClass drawAttributeHighlightPressScale(1.0);
@@ -2260,9 +2446,11 @@ void BarUISetClass::Rendering()
 			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 			{
 				double penThickness = max(0.0f, GetPenWidth());
-				double penPreviewRoundness =
-					stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
-					? 0.0 : 1.0;
+				double penPreviewMorph =
+					PenModeUsesCurvedThicknessPreview(stateMode.Pen.ModeSelect)
+					? 0.0
+					: (stateMode.Pen.ModeSelect
+						== PenModeSelectEnum::IdtPenHighlighter1 ? 1.0 : 0.0);
 				if (!drawAttributePenThicknessInitialized)
 				{
 					// 首次进入绘制模式时先同步真实粗细，避免稍后展开属性栏仍显示 0 → 默认值。
@@ -2270,19 +2458,18 @@ void BarUISetClass::Rendering()
 					drawAttributePenThicknessInitialized = true;
 				}
 				else drawAttributePenThickness.SetTar(penThickness, operationDur);
-				if (!drawAttributePenPreviewRoundnessInitialized)
+				if (!drawAttributePenPreviewMorphInitialized)
 				{
-					drawAttributePenPreviewRoundness.SetDirect(
-						penPreviewRoundness);
-					drawAttributePenPreviewRoundnessInitialized = true;
+					drawAttributePenPreviewMorph.SetDirect(penPreviewMorph);
+					drawAttributePenPreviewMorphInitialized = true;
 				}
-				else drawAttributePenPreviewRoundness.SetTar(
-					penPreviewRoundness, operationDur);
+				else drawAttributePenPreviewMorph.SetTar(
+					penPreviewMorph, operationDur);
 			}
 			else
 			{
 				drawAttributePenThicknessInitialized = false;
-				drawAttributePenPreviewRoundnessInitialized = false;
+				drawAttributePenPreviewMorphInitialized = false;
 			}
 			bool mainBarFoldChange = (barState.fold && mainBar->x.tar != 0.0)
 				|| (!barState.fold && mainBar->x.tar == 0.0);
@@ -3623,6 +3810,103 @@ void BarUISetClass::Rendering()
 						if (forNum == 1 || !barState.drawAttribute)
 							thicknessAdjustColor.SetDirect(thicknessAdjustTargetColor);
 						else thicknessAdjustColor.SetTar(thicknessAdjustTargetColor);
+
+						bool tooltipBaseVisible =
+							barState.drawAttribute && !barState.fold;
+						bool annotationSupported = tooltipBaseVisible
+							&& PenModeSupportsAnnotationLine(
+								stateMode.Pen.ModeSelect);
+						double expandedPreviewCapacity =
+							(BarDrawAttributeThicknessHeight
+								- BarDrawAttributeThicknessControlHeight
+								- BarDrawAttributeGap * 3.0)
+							* max(0.0, static_cast<double>(barStyle.zoom));
+						bool previewOverflow = tooltipBaseVisible
+							&& static_cast<double>(GetPenWidth())
+								> expandedPreviewCapacity + 0.001;
+						barState.drawAttributeBar.thicknessPreviewOverflow =
+							previewOverflow;
+
+						if (!tooltipBaseVisible) CloseDrawAttributeTooltips();
+						if (!annotationSupported)
+						{
+							barState.drawAttributeBar.thicknessAnnotationHover = false;
+							barState.drawAttributeBar.thicknessAnnotationPinned = false;
+						}
+						if (!previewOverflow)
+						{
+							barState.drawAttributeBar.thicknessOverflowHover = false;
+							barState.drawAttributeBar.thicknessOverflowPinned = false;
+						}
+
+						auto SetTooltipProgress = [&](BarUiValueClass& progress,
+							bool visible)
+							{
+								BarUiCurveEnum curve = visible
+									? BarUiCurveEnum::EaseOutBack
+									: BarUiCurveEnum::EaseInBack;
+								BarUiCurveSpecClass curveSpec{
+									curve, curve, 0.0, false };
+								progress.SetTar(visible ? 1.0 : 0.0,
+									operationDur, nullopt, false, curveSpec);
+							};
+						SetTooltipProgress(drawAttributeAnnotationPopupProgress,
+							annotationSupported
+							&& (barState.drawAttributeBar.thicknessAnnotationHover
+								|| barState.drawAttributeBar.thicknessAnnotationPinned));
+						SetTooltipProgress(drawAttributeOverflowPopupProgress,
+							previewOverflow
+							&& (barState.drawAttributeBar.thicknessOverflowHover
+								|| barState.drawAttributeBar.thicknessOverflowPinned));
+
+						const BarUISetShapeEnum tooltipSurfaces[] =
+						{
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationBadge,
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowBadge,
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup,
+						};
+						for (auto shapeType : tooltipSurfaces)
+						{
+							auto surface = shapeMap[shapeType];
+							surface->fill.value().SetTar(
+								GetThemeColor(BarThemeColorEnum::SubtleFill),
+								operationDur);
+							surface->frame.value().SetTar(
+								GetThemeColor(BarThemeColorEnum::SurfaceFrame),
+								operationDur);
+						}
+						wordMap[
+							BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationLabel]
+							->color.SetTar(RGB(200, 200, 200), operationDur);
+						wordMap[
+							BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupText]
+							->color.SetTar(
+								GetThemeColor(BarThemeColorEnum::TextPrimary),
+								operationDur);
+						wordMap[
+							BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText]
+							->color.SetTar(
+								GetThemeColor(BarThemeColorEnum::TextPrimary),
+								operationDur);
+						svgMap[
+							BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationInfo]
+							->color1.value().SetTar(
+								RGB(200, 200, 200), operationDur);
+						svgMap[
+							BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowInfo]
+							->color1.value().SetTar(
+								RGB(255, 255, 255), operationDur);
+						svgMap[
+							BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationPopupClose]
+							->color1.value().SetTar(
+								GetThemeColor(BarThemeColorEnum::TextPrimary),
+								operationDur);
+						svgMap[
+							BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowPopupClose]
+							->color1.value().SetTar(
+								GetThemeColor(BarThemeColorEnum::TextPrimary),
+								operationDur);
 					}
 
 					// 颜色块在收起状态保留缩小后的相对排布，展开时同时恢复坐标和尺寸。
@@ -4031,8 +4315,12 @@ void BarUISetClass::Rendering()
 			};
 		// 独立的粗细值也进入统一动画时钟，方便后续直接替换为非线性或回弹曲线。
 		if (!drawAttributePenThickness.IsSame()) ChangeValue(drawAttributePenThickness, false);
-		if (!drawAttributePenPreviewRoundness.IsSame())
-			ChangeValue(drawAttributePenPreviewRoundness, false);
+		if (!drawAttributePenPreviewMorph.IsSame())
+			ChangeValue(drawAttributePenPreviewMorph, false);
+		if (!drawAttributeAnnotationPopupProgress.IsSame())
+			ChangeValue(drawAttributeAnnotationPopupProgress, false);
+		if (!drawAttributeOverflowPopupProgress.IsSame())
+			ChangeValue(drawAttributeOverflowPopupProgress, false);
 		if (!drawAttributeBrushPressScale.IsSame()) ChangeValue(drawAttributeBrushPressScale, false);
 		if (!drawAttributeHighlightPressScale.IsSame()) ChangeValue(drawAttributeHighlightPressScale, false);
 		if (!drawAttributeThicknessFinePressScale.IsSame()) ChangeValue(drawAttributeThicknessFinePressScale, false);
@@ -4251,6 +4539,343 @@ void BarUISetClass::Rendering()
 			}
 		}
 
+		// 提示控件全部从动画中的粗细区域派生，换边时随面板收拢到叹号锚点。
+		{
+			auto mainButton =
+				superellipseMap[BarUISetSuperellipseEnum::MainButton];
+			mainButton->UpInh(BarUiInheritClass(
+				mainButton->x.val - mainButton->w.val / 2.0,
+				mainButton->y.val - mainButton->h.val / 2.0));
+			auto mainBar = shapeMap[BarUISetShapeEnum::MainBar];
+			mainBar->Inherit(BarUiInheritEnum::Center, *mainButton);
+			auto drawButton =
+				barButtomSet.preset[static_cast<int>(BarButtomPresetEnum::Draw)];
+			drawButton->buttom.Inherit(
+				BarUiInheritEnum::CenterFromTopLeft, *mainBar);
+			auto panel = shapeMap[BarUISetShapeEnum::DrawAttributeBar];
+			panel->Inherit(BarUiInheritEnum::Center, drawButton->buttom);
+			auto region =
+				shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect];
+			region->Inherit(BarUiInheritEnum::TopLeft, *panel);
+			auto adjust =
+				shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust];
+			BarUiInheritClass adjustInherit =
+				adjust->Inherit(BarUiInheritEnum::TopLeft, *panel);
+			auto thicknessDisplay =
+				wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay];
+
+			double panelScale = panel->w.val / BarDrawAttributeExpandedWidth;
+			if (!isfinite(panelScale) || panelScale <= 0.0) panelScale = 0.0;
+			double panelExpandedProgress = clamp(
+				(panelScale - BarDrawAttributeCompactScale)
+				/ (1.0 - BarDrawAttributeCompactScale), 0.0, 1.0);
+			double regionCenterY = region->inhY + region->h.val / 2.0;
+			double controlCenterY = adjustInherit.y + adjust->h.val / 2.0;
+			double controlCenterOffset =
+				(BarDrawAttributeThicknessHeight / 2.0
+					- BarDrawAttributeGap
+					- BarDrawAttributeThicknessControlHeight / 2.0)
+				* panelScale;
+			double previewSide = controlCenterOffset > 0.000001
+				? clamp((regionCenterY - controlCenterY)
+					/ controlCenterOffset, -1.0, 1.0)
+				: 0.0;
+			double previewAreaHeight =
+				(BarDrawAttributeThicknessHeight
+					- BarDrawAttributeThicknessControlHeight
+					- BarDrawAttributeGap * 3.0) * panelScale;
+			double previewCenterOffset =
+				(BarDrawAttributeThicknessHeight / 2.0
+					- BarDrawAttributeGap
+					- (BarDrawAttributeThicknessHeight
+						- BarDrawAttributeThicknessControlHeight
+						- BarDrawAttributeGap * 3.0) / 2.0)
+				* panelScale;
+			double previewCenterY =
+				regionCenterY + previewSide * previewCenterOffset;
+			double previewTop = previewCenterY - previewAreaHeight / 2.0;
+			double badgeTop = previewTop + BarDrawAttributeGap * panelScale;
+			double badgeMargin = BarDrawAttributeGap * panelScale;
+			double contentOpacity = clamp(
+				static_cast<double>(thicknessDisplay->pct.val), 0.0, 1.0);
+			bool annotationVisible = barState.drawAttribute && !barState.fold
+				&& PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect);
+			bool overflowVisible = barState.drawAttribute && !barState.fold
+				&& barState.drawAttributeBar.thicknessPreviewOverflow;
+
+			auto SetSurfaceDerived = [&](const shared_ptr<BarUiShapeClass>& shape,
+				double x, double y, double width, double height, double opacity)
+				{
+					shape->x.SetDirect(x);
+					shape->y.SetDirect(y);
+					shape->w.SetDirect(max(0.0, width));
+					shape->h.SetDirect(max(0.0, height));
+					if (shape->rw.has_value())
+						shape->rw->SetDirect(4.0 * panelScale);
+					if (shape->rh.has_value())
+						shape->rh->SetDirect(4.0 * panelScale);
+					if (shape->ft.has_value())
+						shape->ft->SetDirect(panelScale);
+					shape->pct.SetDirect(
+						BarThicknessTooltipFillOpacity * opacity);
+					if (shape->framePct.has_value())
+						shape->framePct->SetDirect(
+							BarThicknessTooltipFrameOpacity * opacity);
+					if (shape->frameLightPct.has_value())
+						shape->frameLightPct->SetDirect(opacity);
+				};
+			auto SetHitDerived = [&](const shared_ptr<BarUiShapeClass>& shape,
+				double x, double y, double size)
+				{
+					shape->x.SetDirect(x);
+					shape->y.SetDirect(y);
+					shape->w.SetDirect(max(0.0, size));
+					shape->h.SetDirect(max(0.0, size));
+					shape->pct.SetDirect(0.0);
+				};
+
+			double annotationOpacity =
+				annotationVisible ? contentOpacity : 0.0;
+			double annotationBadgeX =
+				region->x.val + badgeMargin;
+			double annotationBadgeY = badgeTop - panel->inhY;
+			double annotationBadgeW = annotationBadgeWidth * panelScale;
+			double annotationBadgeH =
+				BarThicknessTooltipBadgeHeight * panelScale;
+			auto annotationBadge = shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationBadge];
+			SetSurfaceDerived(annotationBadge,
+				annotationBadgeX, annotationBadgeY,
+				annotationBadgeW, annotationBadgeH, annotationOpacity);
+			annotationBadge->Inherit(BarUiInheritEnum::TopLeft, *panel);
+
+			auto annotationLabel = wordMap[
+				BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationLabel];
+			annotationLabel->x.SetDirect(
+				annotationBadgeX + 6.0 * panelScale);
+			annotationLabel->y.SetDirect(annotationBadgeY);
+			annotationLabel->w.SetDirect(max(0.0,
+				annotationBadgeW
+					- (6.0 * 2.0 + 4.0 + BarThicknessTooltipIconSize)
+						* panelScale));
+			annotationLabel->h.SetDirect(annotationBadgeH);
+			annotationLabel->size.SetDirect(13.0 * panelScale);
+			annotationLabel->pct.SetDirect(annotationOpacity);
+
+			double annotationInfoX = annotationBadgeX + annotationBadgeW
+				- (6.0 + BarThicknessTooltipIconSize) * panelScale;
+			double annotationInfoY = annotationBadgeY
+				+ (BarThicknessTooltipBadgeHeight
+					- BarThicknessTooltipIconSize) / 2.0 * panelScale;
+			auto annotationInfo = svgMap[
+				BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationInfo];
+			annotationInfo->x.SetDirect(annotationInfoX);
+			annotationInfo->y.SetDirect(annotationInfoY);
+			annotationInfo->w.SetDirect(
+				BarThicknessTooltipIconSize * panelScale);
+			annotationInfo->h.SetDirect(
+				BarThicknessTooltipIconSize * panelScale);
+			annotationInfo->pct.SetDirect(annotationOpacity);
+			auto annotationInfoHit = shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit];
+			SetHitDerived(annotationInfoHit, annotationInfoX, annotationInfoY,
+				BarThicknessTooltipIconSize * panelScale);
+			annotationInfoHit->Inherit(BarUiInheritEnum::TopLeft, *panel);
+
+			double overflowOpacity =
+				overflowVisible ? contentOpacity : 0.0;
+			double overflowBadgeW =
+				BarThicknessTooltipBadgeHeight * panelScale;
+			double overflowBadgeX = region->x.val + region->w.val
+				- badgeMargin - overflowBadgeW;
+			double overflowBadgeY = badgeTop - panel->inhY;
+			auto overflowBadge = shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowBadge];
+			SetSurfaceDerived(overflowBadge,
+				overflowBadgeX, overflowBadgeY,
+				overflowBadgeW, overflowBadgeW, overflowOpacity);
+			overflowBadge->Inherit(BarUiInheritEnum::TopLeft, *panel);
+
+			double overflowInfoX = overflowBadgeX
+				+ (BarThicknessTooltipBadgeHeight
+					- BarThicknessTooltipIconSize) / 2.0 * panelScale;
+			double overflowInfoY = overflowBadgeY
+				+ (BarThicknessTooltipBadgeHeight
+					- BarThicknessTooltipIconSize) / 2.0 * panelScale;
+			auto overflowInfo = svgMap[
+				BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowInfo];
+			overflowInfo->x.SetDirect(overflowInfoX);
+			overflowInfo->y.SetDirect(overflowInfoY);
+			overflowInfo->w.SetDirect(
+				BarThicknessTooltipIconSize * panelScale);
+			overflowInfo->h.SetDirect(
+				BarThicknessTooltipIconSize * panelScale);
+			overflowInfo->pct.SetDirect(overflowOpacity);
+			auto overflowInfoHit = shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowInfoHit];
+			SetHitDerived(overflowInfoHit, overflowInfoX, overflowInfoY,
+				BarThicknessTooltipIconSize * panelScale);
+			overflowInfoHit->Inherit(BarUiInheritEnum::TopLeft, *panel);
+
+			struct PopupDerivedLayout
+			{
+				double anchorX = 0.0;
+				double anchorY = 0.0;
+				double targetLeft = 0.0;
+				double targetTop = 0.0;
+				double baseWidth = 0.0;
+				double baseHeight = 0.0;
+				double progress = 0.0;
+				double opacity = 0.0;
+			};
+			double logicalWindowWidth = barStyle.zoom > 0.0
+				? static_cast<double>(barWindow.w) / barStyle.zoom : 0.0;
+			double logicalWindowHeight = barStyle.zoom > 0.0
+				? static_cast<double>(barWindow.h) / barStyle.zoom : 0.0;
+			auto BuildPopupLayout = [&](double anchorX, double anchorY,
+				double width, double height, double progress)
+				{
+					PopupDerivedLayout layout;
+					layout.anchorX = anchorX;
+					layout.anchorY = anchorY;
+					layout.baseWidth = width;
+					layout.baseHeight = height;
+					layout.progress = max(0.0, progress)
+						* panelExpandedProgress;
+					layout.opacity = clamp(layout.progress, 0.0, 1.0);
+					layout.targetLeft = clamp(
+						anchorX - width / 2.0, BarDrawAttributeGap,
+						max(BarDrawAttributeGap,
+							logicalWindowWidth - BarDrawAttributeGap - width));
+					double targetCenterY = anchorY + previewSide
+						* (BarDrawAttributeGap + height / 2.0);
+					layout.targetTop = clamp(
+						targetCenterY - height / 2.0,
+						BarDrawAttributeGap,
+						max(BarDrawAttributeGap,
+							logicalWindowHeight - BarDrawAttributeGap - height));
+					return layout;
+				};
+
+			double annotationAnchorX = panel->inhX + annotationInfoX
+				+ BarThicknessTooltipIconSize * panelScale / 2.0;
+			double annotationAnchorY = panel->inhY + annotationInfoY
+				+ BarThicknessTooltipIconSize * panelScale / 2.0;
+			double overflowAnchorX = panel->inhX + overflowInfoX
+				+ BarThicknessTooltipIconSize * panelScale / 2.0;
+			double overflowAnchorY = panel->inhY + overflowInfoY
+				+ BarThicknessTooltipIconSize * panelScale / 2.0;
+			PopupDerivedLayout annotationPopupLayout = BuildPopupLayout(
+				annotationAnchorX, annotationAnchorY,
+				annotationPopupWidth, annotationPopupHeight,
+				drawAttributeAnnotationPopupProgress.val);
+			PopupDerivedLayout overflowPopupLayout = BuildPopupLayout(
+				overflowAnchorX, overflowAnchorY,
+				overflowPopupWidth, overflowPopupHeight,
+				drawAttributeOverflowPopupProgress.val);
+
+			auto PopupTargetIntersects = [](const PopupDerivedLayout& a,
+				const PopupDerivedLayout& b)
+				{
+					return a.targetLeft < b.targetLeft + b.baseWidth
+						&& a.targetLeft + a.baseWidth > b.targetLeft
+						&& a.targetTop < b.targetTop + b.baseHeight
+						&& a.targetTop + a.baseHeight > b.targetTop;
+				};
+			if (annotationPopupLayout.opacity > 0.0
+				&& overflowPopupLayout.opacity > 0.0
+				&& PopupTargetIntersects(
+					annotationPopupLayout, overflowPopupLayout))
+			{
+				// 第二个浮窗沿当前弹出方向继续错开，两个展开起点仍各自是叹号。
+				if (previewSide < 0.0)
+					overflowPopupLayout.targetTop = max(
+						BarDrawAttributeGap,
+						annotationPopupLayout.targetTop
+							- BarDrawAttributeGap
+							- overflowPopupLayout.baseHeight);
+				else
+					overflowPopupLayout.targetTop = min(
+						max(BarDrawAttributeGap,
+							logicalWindowHeight - BarDrawAttributeGap
+								- overflowPopupLayout.baseHeight),
+						annotationPopupLayout.targetTop
+							+ annotationPopupLayout.baseHeight
+							+ BarDrawAttributeGap);
+			}
+
+			auto ApplyPopupLayout = [&](const PopupDerivedLayout& layout,
+				BarUISetShapeEnum popupShapeType,
+				BarUISetWordEnum popupWordType,
+				BarUISetShapeEnum closeHitType,
+				BarUISetSvgEnum closeSvgType,
+				bool pinned)
+				{
+					double scale = max(0.0, layout.progress);
+					double width = layout.baseWidth * scale;
+					double height = layout.baseHeight * scale;
+					double absoluteX = layout.anchorX
+						+ (layout.targetLeft - layout.anchorX) * scale;
+					double absoluteY = layout.anchorY
+						+ (layout.targetTop - layout.anchorY) * scale;
+					double localX = absoluteX - panel->inhX;
+					double localY = absoluteY - panel->inhY;
+					auto popup = shapeMap[popupShapeType];
+					SetSurfaceDerived(popup, localX, localY,
+						width, height, layout.opacity);
+					// 浮窗从叹号弹性展开时，圆角和边框也按自身比例等比生长。
+					if (popup->rw.has_value())
+						popup->rw->SetDirect(4.0 * scale);
+					if (popup->rh.has_value())
+						popup->rh->SetDirect(4.0 * scale);
+					if (popup->ft.has_value())
+						popup->ft->SetDirect(scale);
+					popup->Inherit(BarUiInheritEnum::TopLeft, *panel);
+
+					double padding =
+						BarThicknessTooltipPadding * scale;
+					auto text = wordMap[popupWordType];
+					text->x.SetDirect(localX + padding);
+					text->y.SetDirect(localY + padding);
+					text->w.SetDirect(max(0.0,
+						width - (BarThicknessTooltipPadding * 2.0
+							+ BarThicknessTooltipCloseReserve) * scale));
+					text->h.SetDirect(max(0.0, height - padding * 2.0));
+					text->size.SetDirect(
+						BarThicknessTooltipFontSize * scale);
+					text->pct.SetDirect(layout.opacity);
+					text->Inherit(BarUiInheritEnum::TopLeft, *panel);
+
+					double closeSize =
+						BarThicknessTooltipIconSize * scale;
+					double closeX = localX + width - padding - closeSize;
+					double closeY = localY + padding;
+					auto closeHit = shapeMap[closeHitType];
+					SetHitDerived(closeHit, closeX, closeY, closeSize);
+					closeHit->Inherit(BarUiInheritEnum::TopLeft, *panel);
+					auto closeSvg = svgMap[closeSvgType];
+					closeSvg->x.SetDirect(closeX);
+					closeSvg->y.SetDirect(closeY);
+					closeSvg->w.SetDirect(closeSize);
+					closeSvg->h.SetDirect(closeSize);
+					closeSvg->pct.SetDirect(
+						pinned ? layout.opacity : 0.0);
+					closeSvg->Inherit(BarUiInheritEnum::TopLeft, *panel);
+				};
+			ApplyPopupLayout(annotationPopupLayout,
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
+				BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupText,
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit,
+				BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationPopupClose,
+				barState.drawAttributeBar.thicknessAnnotationPinned);
+			ApplyPopupLayout(overflowPopupLayout,
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup,
+				BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText,
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit,
+				BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowPopupClose,
+				barState.drawAttributeBar.thicknessOverflowPinned);
+		}
+
 		// 时间轴与属性值在同一帧末尾推进，避免批次剩余时间和实际动画相差一帧。
 		mainBarTimeline.Advance(animationDtSeconds, currentAnimationSpeedRate);
 		drawAttributeTimeline.Advance(animationDtSeconds, currentAnimationSpeedRate);
@@ -4323,8 +4948,35 @@ void BarUISetClass::Rendering()
 							BarRenderingAttribute::GetWeigetRect(
 								*shape, static_cast<double>(barStyle.zoom)));
 				};
+			auto IncludeSvgBounds = [&](const shared_ptr<BarUiSVGClass>& svg)
+				{
+					if (svg->enable.val && svg->pct.val > 0.0)
+						BarRenderingAttribute::UnionRectInPlace(predicted,
+							BarRenderingAttribute::GetWeigetRect(
+								*svg, static_cast<double>(barStyle.zoom)));
+				};
+			auto IncludeWordBounds = [&](const shared_ptr<BarUiWordClass>& word)
+				{
+					if (word->enable.val && word->pct.val > 0.0)
+						BarRenderingAttribute::UnionRectInPlace(predicted,
+							BarRenderingAttribute::GetWeigetRect(
+								*word, static_cast<double>(barStyle.zoom)));
+				};
 			IncludeShapeBounds(mainBar);
 			IncludeShapeBounds(drawAttribute);
+			// 浮窗可越过绘制属性边框，BeginDraw 前必须显式纳入新帧脏区。
+			IncludeShapeBounds(shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup]);
+			IncludeShapeBounds(shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup]);
+			IncludeWordBounds(wordMap[
+				BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupText]);
+			IncludeWordBounds(wordMap[
+				BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText]);
+			IncludeSvgBounds(svgMap[
+				BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationPopupClose]);
+			IncludeSvgBounds(svgMap[
+				BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowPopupClose]);
 			if (mainButton->enable.val && mainButton->pct.val > 0.0)
 				BarRenderingAttribute::UnionRectInPlace(predicted,
 					BarRenderingAttribute::GetWeigetRect(
@@ -4619,39 +5271,128 @@ void BarUISetClass::Rendering()
 								D2D1_RECT_F previewRect = D2D1::RectF(left,
 									centerY - previewThickness / 2.0f, right,
 									centerY + previewThickness / 2.0f);
-								FLOAT previewRadius = previewThickness / 2.0f
-									* static_cast<FLOAT>(clamp(
-										static_cast<double>(
-											drawAttributePenPreviewRoundness.val),
-										0.0, 1.0));
-								// 两种笔型始终绘制同一个圆角矩形，只连续动画高度和圆角。
-								D2D1_ROUNDED_RECT roundedPreview{
-									previewRect, previewRadius, previewRadius };
-								ID2D1Brush* previewBrush = nullptr;
-								if (stateMode.Pen.ModeSelect
-									== PenModeSelectEnum::IdtPenHighlighter1)
-								{
-									// 荧光笔由左侧 35% 透明度平滑过渡到右侧完全不透明。
-									auto gradientBrush =
-										spec.GetThicknessPreviewGradientBrush(
-											barDeviceContext.Get(), contentColor,
-											D2D1::Point2F(previewRect.left, centerY),
-											D2D1::Point2F(previewRect.right, centerY));
-									if (gradientBrush)
-									{
-										gradientBrush->SetOpacity(
-											static_cast<FLOAT>(contentOpacity));
-										previewBrush = gradientBrush;
-									}
-								}
-								if (!previewBrush)
-									previewBrush = spec.GetFrameSolidColorBrush(
+								double previewMorph = clamp(
+									static_cast<double>(
+										drawAttributePenPreviewMorph.val),
+									0.0, 1.0);
+								double hardCurveProgress =
+									clamp(1.0 - previewMorph * 2.0, 0.0, 1.0);
+								double highlighterProgress =
+									clamp((previewMorph - 0.5) * 2.0, 0.0, 1.0);
+								double panelExpandedProgress = clamp(
+									(panelAnimationScale
+										- BarDrawAttributeCompactScale)
+									/ (1.0 - BarDrawAttributeCompactScale),
+									0.0, 1.0);
+								ID2D1SolidColorBrush* solidBrush =
+									spec.GetFrameSolidColorBrush(
 										barDeviceContext.Get(), contentColor,
 										contentOpacity);
-								if (previewBrush)
-									barDeviceContext->FillRoundedRectangle(
-										&roundedPreview, previewBrush);
+
+								if (previewMorph <= 0.5 && solidBrush
+									&& previewThickness > 0.0F)
+								{
+									FLOAT radius = previewThickness / 2.0F;
+									FLOAT startX = min(previewRect.right,
+										previewRect.left + radius);
+									FLOAT endX = max(startX,
+										previewRect.right - radius);
+									FLOAT span = max(0.0F, endX - startX);
+									FLOAT availableAmplitude = max(0.0F,
+										(maxPreviewThickness - previewThickness)
+											/ 2.0F);
+									FLOAT amplitude = min(
+										maxPreviewThickness * 0.22F,
+										availableAmplitude)
+										* static_cast<FLOAT>(
+											hardCurveProgress
+											* panelExpandedProgress);
+									array<D2D1_POINT_2F, 4> points =
+									{
+										D2D1::Point2F(startX,
+											centerY + amplitude),
+										D2D1::Point2F(startX + span / 3.0F,
+											centerY - amplitude),
+										D2D1::Point2F(startX + span * 2.0F / 3.0F,
+											centerY + amplitude),
+										D2D1::Point2F(endX,
+											centerY - amplitude),
+									};
+									auto path =
+										spec.GetThicknessPreviewPath(points);
+									auto strokeStyle =
+										spec.GetThicknessPreviewStrokeStyle();
+									if (path && strokeStyle)
+										barDeviceContext->DrawGeometry(
+											path, solidBrush, previewThickness,
+											strokeStyle);
+									else
+									{
+										// 路径资源失败时保持圆头直线，避免整个预览消失。
+										D2D1_ROUNDED_RECT fallback{
+											previewRect, radius, radius };
+										barDeviceContext->FillRoundedRectangle(
+											&fallback, solidBrush);
+									}
+								}
+								else if (previewThickness > 0.0F)
+								{
+									FLOAT previewRadius =
+										previewThickness / 2.0F
+										* static_cast<FLOAT>(
+											1.0 - highlighterProgress);
+									D2D1_ROUNDED_RECT roundedPreview{
+										previewRect,
+										previewRadius, previewRadius };
+									FLOAT leftOpacity = static_cast<FLOAT>(
+										1.0 - 0.65 * highlighterProgress);
+									ID2D1LinearGradientBrush* gradientBrush =
+										spec.GetThicknessPreviewGradientBrush(
+											barDeviceContext.Get(), contentColor,
+											D2D1::Point2F(
+												previewRect.left, centerY),
+											D2D1::Point2F(
+												previewRect.right, centerY),
+											leftOpacity);
+									ID2D1Brush* previewBrush =
+										gradientBrush
+										? static_cast<ID2D1Brush*>(gradientBrush)
+										: static_cast<ID2D1Brush*>(solidBrush);
+									if (previewBrush)
+									{
+										if (gradientBrush)
+											gradientBrush->SetOpacity(
+											static_cast<FLOAT>(contentOpacity));
+										barDeviceContext->FillRoundedRectangle(
+											&roundedPreview, previewBrush);
+									}
+								}
 							}
+
+							// 徽标覆盖在墨迹预览上方，但不改变墨迹自身的居中区域。
+							auto annotationBadge = shapeMap[
+								BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationBadge];
+							spec.Shape(barDeviceContext.Get(), *annotationBadge,
+								annotationBadge->Inherit(TopLeft, *panel));
+							auto annotationLabel = wordMap[
+								BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationLabel];
+							spec.Word(barDeviceContext.Get(), *annotationLabel,
+								annotationLabel->Inherit(TopLeft, *panel),
+								DWRITE_FONT_WEIGHT_NORMAL,
+								DWRITE_TEXT_ALIGNMENT_LEADING);
+							auto annotationInfo = svgMap[
+								BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationInfo];
+							spec.Svg(barDeviceContext.Get(), *annotationInfo,
+								annotationInfo->Inherit(TopLeft, *panel));
+
+							auto overflowBadge = shapeMap[
+								BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowBadge];
+							spec.Shape(barDeviceContext.Get(), *overflowBadge,
+								overflowBadge->Inherit(TopLeft, *panel));
+							auto overflowInfo = svgMap[
+								BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowInfo];
+							spec.Svg(barDeviceContext.Get(), *overflowInfo,
+								overflowInfo->Inherit(TopLeft, *panel));
 
 							struct ThicknessButtonRender
 							{
@@ -4851,21 +5592,27 @@ void BarUISetClass::Rendering()
 					// 动画中的子控件可能暂时超出父级边界，脏区必须包含其真实新旧范围以清除残影。
 					double dirtyZoom = barStyle.zoom;
 					for (int i = static_cast<int>(BarUISetShapeEnum::DrawAttributeBar);
-						i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust); i++)
+						i <= static_cast<int>(
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit);
+						i++)
 					{
 						auto obj = shapeMap[static_cast<BarUISetShapeEnum>(i)];
 						if (obj) BarRenderingAttribute::UnionRectInPlace(
 							current, BarRenderingAttribute::GetWeigetRect(*obj, dirtyZoom));
 					}
 					for (int i = static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_ColorSelect1);
-						i <= static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_ThicknessAdjust); i++)
+						i <= static_cast<int>(
+							BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowPopupClose);
+						i++)
 					{
 						auto obj = svgMap[static_cast<BarUISetSvgEnum>(i)];
 						if (obj) BarRenderingAttribute::UnionRectInPlace(
 							current, BarRenderingAttribute::GetWeigetRect(*obj, dirtyZoom));
 					}
 					for (int i = static_cast<int>(BarUISetWordEnum::DrawAttributeBar_Brush1);
-						i <= static_cast<int>(BarUISetWordEnum::DrawAttributeBar_ThicknessCoarseNumber); i++)
+						i <= static_cast<int>(
+							BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText);
+						i++)
 					{
 						auto obj = wordMap[static_cast<BarUISetWordEnum>(i)];
 						if (obj) BarRenderingAttribute::UnionRectInPlace(
@@ -4888,6 +5635,36 @@ void BarUISetClass::Rendering()
 					}
 				}
 			{ /**/ }
+
+			// 提示浮窗最后绘制，保证越过属性栏后仍位于主栏和主按钮上方。
+			{
+				auto panel = shapeMap[BarUISetShapeEnum::DrawAttributeBar];
+				auto DrawThicknessPopup =
+					[&](BarUISetShapeEnum popupShapeType,
+						BarUISetWordEnum popupWordType,
+						BarUISetSvgEnum closeSvgType)
+					{
+						auto popup = shapeMap[popupShapeType];
+						auto popupWord = wordMap[popupWordType];
+						auto closeSvg = svgMap[closeSvgType];
+						spec.Shape(barDeviceContext.Get(), *popup,
+							popup->Inherit(TopLeft, *panel), &current, true);
+						spec.Word(barDeviceContext.Get(), *popupWord,
+							popupWord->Inherit(TopLeft, *panel),
+							DWRITE_FONT_WEIGHT_NORMAL,
+							DWRITE_TEXT_ALIGNMENT_LEADING);
+						spec.Svg(barDeviceContext.Get(), *closeSvg,
+							closeSvg->Inherit(TopLeft, *panel));
+					};
+				DrawThicknessPopup(
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
+					BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupText,
+					BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationPopupClose);
+				DrawThicknessPopup(
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup,
+					BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText,
+					BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowPopupClose);
+			}
 
 			// 调试模式持续显示实时 FPS，并把文本范围加入脏区。
 			if (BarUiDebugModeEnabled)
@@ -5219,6 +5996,22 @@ void BarUISetClass::Interact()
 				return false;
 			}
 		};
+	auto SetTooltipFlag = [&](IdtAtomic<bool>& flag, bool value)
+		{
+			if (static_cast<bool>(flag) == value) return false;
+			flag = value;
+			return true;
+		};
+	auto AnnotationTooltipAvailable = [&]()
+		{
+			return barState.drawAttribute && !barState.fold
+				&& PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect);
+		};
+	auto OverflowTooltipAvailable = [&]()
+		{
+			return barState.drawAttribute && !barState.fold
+				&& barState.drawAttributeBar.thicknessPreviewOverflow;
+		};
 	while (!offSignal)
 	{
 		hiex::getmessage_win32(&msg, EM_MOUSE, floating_window);
@@ -5250,6 +6043,23 @@ void BarUISetClass::Interact()
 				}
 				suppressHoverUntilPointerMove = false;
 			}
+
+			bool tooltipHoverChanged = false;
+			auto annotationInfoHit = shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit];
+			auto overflowInfoHit = shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowInfoHit];
+			tooltipHoverChanged |= SetTooltipFlag(
+				barState.drawAttributeBar.thicknessAnnotationHover,
+				AnnotationTooltipAvailable() && annotationInfoHit
+				&& annotationInfoHit->IsClick(
+					msg.x, msg.y, barStyle.zoom));
+			tooltipHoverChanged |= SetTooltipFlag(
+				barState.drawAttributeBar.thicknessOverflowHover,
+				OverflowTooltipAvailable() && overflowInfoHit
+				&& overflowInfoHit->IsClick(
+					msg.x, msg.y, barStyle.zoom));
+			if (tooltipHoverChanged) UpdateRendering(false);
 
 			BarButtomClass* currentHoveredButton = nullptr;
 			if (!barState.fold)
@@ -5337,6 +6147,114 @@ void BarUISetClass::Interact()
 
 		{
 			bool continueFlag = true;
+
+			// 提示控件位于顶层，固定浮窗必须先于下方主栏和属性栏消费点击。
+			struct ThicknessTooltipInteraction
+			{
+				BarUISetShapeEnum infoHit;
+				BarUISetShapeEnum popup;
+				BarUISetShapeEnum closeHit;
+				IdtAtomic<bool>* hover;
+				IdtAtomic<bool>* pinned;
+				bool available;
+			};
+			ThicknessTooltipInteraction tooltipInteractions[] =
+			{
+				{
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit,
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit,
+					&barState.drawAttributeBar.thicknessAnnotationHover,
+					&barState.drawAttributeBar.thicknessAnnotationPinned,
+					AnnotationTooltipAvailable(),
+				},
+				{
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowInfoHit,
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup,
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit,
+					&barState.drawAttributeBar.thicknessOverflowHover,
+					&barState.drawAttributeBar.thicknessOverflowPinned,
+					OverflowTooltipAvailable(),
+				},
+			};
+
+			for (auto& tooltip : tooltipInteractions)
+			{
+				auto closeHit = shapeMap[tooltip.closeHit];
+				if (!continueFlag || !tooltip.available
+					|| !static_cast<bool>(*tooltip.pinned) || !closeHit
+					|| !closeHit->IsClick(msg.x, msg.y, barStyle.zoom))
+					continue;
+
+				continueFlag = false;
+				if (msg.message == WM_LBUTTONDOWN)
+				{
+					while (true)
+					{
+						hiex::getmessage_win32(
+							&msg, EM_MOUSE, floating_window);
+						if (closeHit->IsClick(
+							msg.x, msg.y, barStyle.zoom))
+						{
+							if (!msg.lbutton)
+							{
+								*tooltip.pinned = false;
+								*tooltip.hover = false;
+								UpdateRendering(false);
+								break;
+							}
+						}
+						else break;
+					}
+					SuppressHoverUntilPointerMove();
+					hiex::flushmessage_win32(EM_MOUSE, floating_window);
+				}
+			}
+
+			for (auto& tooltip : tooltipInteractions)
+			{
+				auto infoHit = shapeMap[tooltip.infoHit];
+				if (!continueFlag || !tooltip.available || !infoHit
+					|| !infoHit->IsClick(msg.x, msg.y, barStyle.zoom))
+					continue;
+
+				continueFlag = false;
+				if (msg.message == WM_LBUTTONDOWN)
+				{
+					while (true)
+					{
+						hiex::getmessage_win32(
+							&msg, EM_MOUSE, floating_window);
+						if (infoHit->IsClick(
+							msg.x, msg.y, barStyle.zoom))
+						{
+							if (!msg.lbutton)
+							{
+								*tooltip.pinned = true;
+								break;
+							}
+						}
+						else break;
+					}
+					// 固定态接管可见性；拖出取消时也清掉本次 hover。
+					*tooltip.hover = false;
+					UpdateRendering(false);
+					SuppressHoverUntilPointerMove();
+					hiex::flushmessage_win32(EM_MOUSE, floating_window);
+				}
+			}
+
+			for (auto& tooltip : tooltipInteractions)
+			{
+				auto popup = shapeMap[tooltip.popup];
+				if (continueFlag && tooltip.available
+					&& static_cast<bool>(*tooltip.pinned) && popup
+					&& popup->IsClick(msg.x, msg.y, barStyle.zoom))
+				{
+					// 固定浮窗正文只阻止点击穿透，关闭动作由右上角 X 独立处理。
+					continueFlag = false;
+				}
+			}
 
 			// 主按钮
 			if (auto obj = superellipseMap[BarUISetSuperellipseEnum::MainButton]; continueFlag && obj->IsClick(msg.x, msg.y, barStyle.zoom))
@@ -6553,6 +7471,120 @@ namespace Inkeys::UI::Bar
 							numberWord->enable.Initialization(true);
 							barUISet.wordMap[wordType] = numberWord;
 						}
+
+						auto InitializeTooltipSurface =
+							[&](BarUISetShapeEnum shapeType, double width, double height)
+							{
+								auto surface = make_shared<BarUiShapeClass>(
+									0.0, 0.0, width, height, 4.0, 4.0, 1.0,
+									GetThemeColor(BarThemeColorEnum::SubtleFill),
+									GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+								surface->pct.Initialization(0.0);
+								surface->framePct = BarUiPctClass(0.0);
+								surface->frameLightPct = BarUiPctClass(0.0);
+								surface->frameRendering =
+									BarUiFrameRenderingEnum::PointLight;
+								surface->frameLightColor =
+									BarUiFrameLightColorEnum::Frame;
+								surface->framePrimaryLightEnabled = false;
+								surface->frameCursorLightIntensityScale =
+									BarButtonCursorLightIntensity;
+								surface->enable.Initialization(true);
+								barUISet.shapeMap[shapeType] = surface;
+							};
+						auto InitializeTooltipHit =
+							[&](BarUISetShapeEnum shapeType, double size)
+							{
+								auto hit = make_shared<BarUiShapeClass>(
+									0.0, 0.0, size, size, nullopt, nullopt,
+									nullopt, nullopt, nullopt);
+								hit->pct.Initialization(0.0);
+								hit->enable.Initialization(true);
+								barUISet.shapeMap[shapeType] = hit;
+							};
+
+						InitializeTooltipSurface(
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationBadge,
+							72.0, 24.0);
+						InitializeTooltipHit(
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit,
+							14.0);
+						InitializeTooltipSurface(
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowBadge,
+							24.0, 24.0);
+						InitializeTooltipHit(
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowInfoHit,
+							14.0);
+						InitializeTooltipSurface(
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
+							1.0, 1.0);
+						InitializeTooltipHit(
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit,
+							14.0);
+						InitializeTooltipSurface(
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup,
+							1.0, 1.0);
+						InitializeTooltipHit(
+							BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit,
+							14.0);
+
+						auto annotationLabel = make_shared<BarUiWordClass>(
+							0.0, 0.0, 48.0, 24.0, L"标注线", 13.0,
+							RGB(200, 200, 200));
+						annotationLabel->pct.Initialization(0.0);
+						annotationLabel->enable.Initialization(true);
+						barUISet.wordMap[
+							BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationLabel] =
+							annotationLabel;
+
+						auto annotationPopupText = make_shared<BarUiWordClass>(
+							0.0, 0.0, 1.0, 1.0,
+							L"画水平和竖直线（标注线）\n"
+							L"仅适用于软笔、硬笔和荧光笔；笔迹会锁定为水平、竖直或 45°。",
+							12.0, GetThemeColor(BarThemeColorEnum::TextPrimary));
+						annotationPopupText->pct.Initialization(0.0);
+						annotationPopupText->enable.Initialization(true);
+						barUISet.wordMap[
+							BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupText] =
+							annotationPopupText;
+
+						auto overflowPopupText = make_shared<BarUiWordClass>(
+							0.0, 0.0, 1.0, 1.0,
+							L"实际粗细超出预览范围\n"
+							L"墨迹已缩放至框内显示，粗细数值仍为真实像素。",
+							12.0, GetThemeColor(BarThemeColorEnum::TextPrimary));
+						overflowPopupText->pct.Initialization(0.0);
+						overflowPopupText->enable.Initialization(true);
+						barUISet.wordMap[
+							BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText] =
+							overflowPopupText;
+
+						auto InitializeTooltipSvg =
+							[&](BarUISetSvgEnum svgType, const wchar_t* resourceName,
+								COLORREF color, double size)
+							{
+								auto svg = make_shared<BarUiSVGClass>(
+									0.0, 0.0, color, nullopt);
+								svg->InitializationFromResource(L"UI", resourceName);
+								svg->SetWH(size, size);
+								svg->pct.Initialization(0.0);
+								svg->enable.Initialization(true);
+								barUISet.svgMap[svgType] = svg;
+							};
+						InitializeTooltipSvg(
+							BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationInfo,
+							L"barInfo", RGB(200, 200, 200), 14.0);
+						InitializeTooltipSvg(
+							BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowInfo,
+							L"barInfo", RGB(255, 255, 255), 14.0);
+						InitializeTooltipSvg(
+							BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationPopupClose,
+							L"barCloseSmall",
+							GetThemeColor(BarThemeColorEnum::TextPrimary), 14.0);
+						InitializeTooltipSvg(
+							BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowPopupClose,
+							L"barCloseSmall",
+							GetThemeColor(BarThemeColorEnum::TextPrimary), 14.0);
 					}
 				}
 			}

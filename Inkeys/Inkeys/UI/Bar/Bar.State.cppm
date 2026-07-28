@@ -18,6 +18,11 @@ public:
 		IdtAtomic<bool> thicknessMediumPress = false;
 		IdtAtomic<bool> thicknessCoarsePress = false;
 		IdtAtomic<bool> thicknessAdjustPress = false;
+		IdtAtomic<bool> thicknessAnnotationHover = false;
+		IdtAtomic<bool> thicknessAnnotationPinned = false;
+		IdtAtomic<bool> thicknessOverflowHover = false;
+		IdtAtomic<bool> thicknessOverflowPinned = false;
+		IdtAtomic<bool> thicknessPreviewOverflow = false;
 	}drawAttributeBar;
 
 	struct
