@@ -96,6 +96,9 @@ def _detect_platform(input_data: dict) -> str | None:
     if isinstance(input_data.get("cursor_version"), str):
         return "cursor"
     env_map = {
+        # ZCode may set both ZCODE_PROJECT_DIR and CLAUDE_PROJECT_DIR; check
+        # ZCODE first so ZCode sessions aren't misdetected as claude.
+        "ZCODE_PROJECT_DIR": "zcode",
         "CLAUDE_PROJECT_DIR": "claude",
         "CURSOR_PROJECT_DIR": "cursor",
         "CODEBUDDY_PROJECT_DIR": "codebuddy",
@@ -128,6 +131,8 @@ def _detect_platform(input_data: dict) -> str | None:
         return "kiro"
     if ".trae" in script_parts:
         return "trae"
+    if ".zcode" in script_parts:
+        return "zcode"
     return None
 
 
@@ -223,28 +228,82 @@ def _read_trellis_config(root: Path) -> dict:
         return {}
 
 
+DEFAULT_PROMPT_INJECTION_SKIP_KEYWORD = "no-trellis"
+
+
+def _resolve_skip_keyword(config: dict) -> str:
+    """Read `prompt_injection.skip_keyword` from parsed .trellis/config.yaml.
+
+    Mirrors `common.config.get_prompt_injection_config()`. Defaults to
+    "no-trellis"; "" disables the escape hatch entirely. A non-string value
+    falls back to the default.
+    """
+    if isinstance(config, dict):
+        section = config.get("prompt_injection")
+        if isinstance(section, dict):
+            raw = section.get("skip_keyword", DEFAULT_PROMPT_INJECTION_SKIP_KEYWORD)
+            if isinstance(raw, str):
+                return raw
+    return DEFAULT_PROMPT_INJECTION_SKIP_KEYWORD
+
+
+def prompt_has_skip_keyword(prompt: str, keyword: str) -> bool:
+    """Case-insensitive, word-boundary match of `keyword` in `prompt`.
+
+    Hyphen counts as a word char so "no-trellisx" / "xno-trellis" /
+    "foo-no-trellis" don't match, but punctuation/whitespace boundaries do.
+    Empty keyword never matches (disables the escape hatch).
+    """
+    if not keyword or not isinstance(prompt, str):
+        return False
+    pattern = r"(?<![\w-])" + re.escape(keyword) + r"(?![\w-])"
+    return re.search(pattern, prompt, re.IGNORECASE) is not None
+
+
+def _resolve_codex_dispatch_mode(config: dict) -> str:
+    """Normalize `codex.dispatch_mode` from .trellis/config.yaml to "auto" or "inline".
+
+    Defaults to `auto`. The legacy `sub-agent` value is an alias for `auto`.
+    Any other explicit value (including invalid ones) falls back to `inline`
+    without per-turn warnings. Shared by `_codex_mode_banner` (the per-turn
+    banner) and `resolve_breadcrumb_key` (the breadcrumb tag key) so the two
+    stay in lockstep.
+    """
+    mode = "auto"
+    if isinstance(config, dict):
+        codex_cfg = config.get("codex")
+        if isinstance(codex_cfg, dict):
+            cfg_mode = str(codex_cfg.get("dispatch_mode", mode)).strip().lower()
+            if cfg_mode == "inline":
+                mode = "inline"
+            elif cfg_mode in ("auto", "sub-agent"):
+                mode = "auto"
+            else:
+                mode = "inline"
+    return mode
+
+
 def _codex_mode_banner(config: dict) -> str:
     """Emit a `<codex-mode>` banner for the additionalContext payload.
 
     Reads `codex.dispatch_mode` from .trellis/config.yaml; defaults to
-    `inline` when missing or invalid because Codex sub-agents run with
-    `fork_turns="none"` isolation and can't inherit the parent session's
-    task context. The banner makes the active mode explicit to Codex AI
-    per turn, complementing the workflow-state body which is per-status.
-    Mode tells AI which dispatch protocol to follow; workflow-state tells
-    AI what step it's at.
+    `auto`, which dispatches Trellis sub-agents using native Codex context
+    injection with a child-side fallback. This does not rely on inherited
+    parent transcripts: `fork_turns` remains caller-controlled, and
+    fresh-history sub-agents still receive their explicit delegated task and
+    inherited session configuration. `inline` is an explicit opt-out; the
+    legacy `sub-agent` value is an alias for `auto`. Invalid explicit values
+    fall back to `inline` without per-turn warnings. The banner makes the
+    active mode explicit to Codex AI per turn, complementing the workflow-state
+    body which is per-status. Mode tells AI which dispatch protocol to follow;
+    workflow-state tells AI what step it's at.
     """
-    mode = "inline"
-    if isinstance(config, dict):
-        codex_cfg = config.get("codex")
-        if isinstance(codex_cfg, dict):
-            cfg_mode = codex_cfg.get("dispatch_mode")
-            if cfg_mode in ("inline", "sub-agent"):
-                mode = cfg_mode
-    if mode == "sub-agent":
+    mode = _resolve_codex_dispatch_mode(config)
+    if mode == "auto":
         meaning = (
-            "sub-agent: implement/check work defaults to Trellis sub-agents; "
-            "the main session still coordinates, clarifies, updates specs, commits, and finishes."
+            "auto: implement/check work defaults to Trellis sub-agents; native Codex "
+            "context injection is preferred and child-side loading is the fallback. "
+            "The main session still coordinates, clarifies, updates specs, commits, and finishes."
         )
     else:
         meaning = (
@@ -259,22 +318,17 @@ def resolve_breadcrumb_key(
 ) -> str:
     """Pick the breadcrumb tag key based on Codex dispatch_mode.
 
-    Codex defaults to ``inline`` because sub-agents run with ``fork_turns="none"``
-    isolation and can't inherit the parent session's task context. Users can
-    opt into ``codex.dispatch_mode: sub-agent`` in ``.trellis/config.yaml``
-    to use the parallel ``<status>-inline`` tag → ``<status>`` flip. Invalid
-    or missing values fall back to inline.
+    Codex defaults to ``auto`` and therefore uses the ordinary ``<status>``
+    breadcrumb for native SubagentStart dispatch with child-side fallback;
+    it does not depend on an inherited parent transcript. ``inline`` selects
+    the parallel ``<status>-inline`` tag; ``sub-agent`` remains an alias for
+    ``auto``. Invalid explicit values fall back to inline without per-turn
+    warnings.
 
     Non-codex platforms return the plain status unchanged.
     """
     if platform == "codex":
-        mode = "inline"
-        if isinstance(config, dict):
-            codex_cfg = config.get("codex")
-            if isinstance(codex_cfg, dict):
-                cfg_mode = codex_cfg.get("dispatch_mode")
-                if cfg_mode in ("inline", "sub-agent"):
-                    mode = cfg_mode
+        mode = _resolve_codex_dispatch_mode(config)
         return f"{status}-inline" if mode == "inline" else status
     return status
 
@@ -353,9 +407,12 @@ def main() -> int:
     if root is None:
         return 0  # not a Trellis project
 
+    config = _read_trellis_config(root)
+    if prompt_has_skip_keyword(data.get("prompt", ""), _resolve_skip_keyword(config)):
+        return 0  # user opted out of the per-turn breadcrumb for this turn
+
     templates = load_breadcrumbs(root)
     platform = _detect_platform(data)
-    config = _read_trellis_config(root)
     task = get_active_task(root, data)
     if task is None:
         # No active task — still emit a breadcrumb nudging AI toward

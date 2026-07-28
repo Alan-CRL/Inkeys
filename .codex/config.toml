@@ -26,3 +26,14 @@ project_doc_fallback_filenames = ["AGENTS.md"]
 # aborts the entire config load and blocks Codex from starting. Codex's own
 # default for multi_agent_v2 is used instead; tune it in your user-level
 # config if needed.
+
+# Pin the subagent recursion depth explicitly instead of relying on Codex's
+# default. #445 removed the per-agent `[features] multi_agent = false` guard
+# (the #240/#241 wait_agent-deadlock structural fix) because native subagent
+# dispatch already caps recursion via `agents.max_depth` — but that key is
+# global/user-level, not settable inside an individual agent's .toml. Pinning
+# it here means an upstream default change, or a user's own global override,
+# can't silently reopen the recursion the #240/#241 fix closed. Project config
+# (this file) takes precedence over user-level `~/.codex/config.toml`.
+[agents]
+max_depth = 1
