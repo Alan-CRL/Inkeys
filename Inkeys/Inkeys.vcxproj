@@ -703,6 +703,7 @@
     <None Include="src\UI\barGeometry.svg" />
     <None Include="src\UI\barHighlighter1.svg" />
     <None Include="src\UI\barInfo.svg" />
+    <None Include="src\UI\barQuestion.svg" />
     <None Include="src\UI\barCloseSmall.svg" />
     <None Include="src\UI\barThicknessAdjust.svg" />
     <None Include="src\UI\barPierce.svg" />

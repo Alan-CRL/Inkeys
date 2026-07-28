@@ -313,6 +313,8 @@ BARTHICKNESSADJUST      UI                      "src\\UI\\barThicknessAdjust.svg
 
 BARINFO                 UI                      "src\\UI\\barInfo.svg"
 
+BARQUESTION             UI                      "src\\UI\\barQuestion.svg"
+
 BARCLOSESMALL           UI                      "src\\UI\\barCloseSmall.svg"
 
 

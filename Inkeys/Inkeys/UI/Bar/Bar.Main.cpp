@@ -62,6 +62,7 @@ constexpr double BarDrawAttributeThicknessContentInset =
 	BarDrawAttributeGap * 2.0;
 constexpr double BarThicknessTooltipBadgeHeight = 24.0;
 constexpr double BarThicknessTooltipIconSize = 14.0;
+constexpr double BarThicknessTooltipHitPadding = 2.0;
 constexpr double BarThicknessTooltipPadding = 8.0;
 constexpr double BarThicknessTooltipCloseReserve = 19.0;
 constexpr double BarThicknessTooltipTitleFontSize = 12.0;
@@ -4722,8 +4723,13 @@ void BarUISetClass::Rendering()
 			annotationInfo->pct.SetDirect(annotationOpacity);
 			auto annotationInfoHit = shapeMap[
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit];
-			SetHitDerived(annotationInfoHit, annotationInfoX, annotationInfoY,
-				BarThicknessTooltipIconSize * panelScale);
+			double tooltipHitPadding =
+				BarThicknessTooltipHitPadding * panelScale;
+			SetHitDerived(annotationInfoHit,
+				annotationInfoX - tooltipHitPadding,
+				annotationInfoY - tooltipHitPadding,
+				(BarThicknessTooltipIconSize
+					+ BarThicknessTooltipHitPadding * 2.0) * panelScale);
 			annotationInfoHit->Inherit(BarUiInheritEnum::TopLeft, *panel);
 
 			double overflowOpacity =
@@ -4757,8 +4763,11 @@ void BarUISetClass::Rendering()
 			overflowInfo->pct.SetDirect(overflowOpacity);
 			auto overflowInfoHit = shapeMap[
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowInfoHit];
-			SetHitDerived(overflowInfoHit, overflowInfoX, overflowInfoY,
-				BarThicknessTooltipIconSize * panelScale);
+			SetHitDerived(overflowInfoHit,
+				overflowInfoX - tooltipHitPadding,
+				overflowInfoY - tooltipHitPadding,
+				(BarThicknessTooltipIconSize
+					+ BarThicknessTooltipHitPadding * 2.0) * panelScale);
 			overflowInfoHit->Inherit(BarUiInheritEnum::TopLeft, *panel);
 
 			struct PopupDerivedLayout
@@ -7643,7 +7652,7 @@ namespace Inkeys::UI::Bar
 							};
 						InitializeTooltipSvg(
 							BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationInfo,
-							L"barInfo", RGB(200, 200, 200), 14.0);
+							L"barQuestion", RGB(200, 200, 200), 14.0);
 						InitializeTooltipSvg(
 							BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowInfo,
 							L"barInfo", RGB(255, 255, 255), 14.0);
