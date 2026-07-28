@@ -208,3 +208,36 @@ Completed the source-backed Trellis bootstrap and second-pass evidence audit for
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: UI3 Bar button layout configuration
+
+**Date**: 2026-07-28
+**Task**: UI3 Bar button layout configuration
+**Branch**: `feature/settings`
+
+### Summary
+
+Added reusable locked JSON sequences, persisted UI3 Bar button order and visibility, registered stable IDs with duplicate policy, and unified effective visibility handling.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7678b31` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

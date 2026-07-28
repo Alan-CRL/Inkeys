@@ -4,7 +4,10 @@ module;
 
 #include <initializer_list>
 #include <mutex>
+#include <shared_mutex>
+#include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 export module Inkeys.Other.Config;
@@ -16,6 +19,97 @@ export namespace Inkeys
 		NoUpload,
 		Upload
 	};
+
+	namespace BarButtonId
+	{
+		inline constexpr char Divider[] = "Inkeys.Bar.Divider";
+		inline constexpr char Select[] = "Inkeys.Bar.Select";
+		inline constexpr char Draw[] = "Inkeys.Bar.Draw";
+		inline constexpr char Eraser[] = "Inkeys.Bar.Eraser";
+		inline constexpr char Geometry[] = "Inkeys.Bar.Geometry";
+		inline constexpr char Recall[] = "Inkeys.Bar.Recall";
+		inline constexpr char Clean[] = "Inkeys.Bar.Clean";
+		inline constexpr char Pierce[] = "Inkeys.Bar.Pierce";
+		inline constexpr char Freeze[] = "Inkeys.Bar.Freeze";
+		inline constexpr char Setting[] = "Inkeys.Bar.Setting";
+	}
+
+	struct BarButtonLayoutEntry
+	{
+		std::string Id;
+		bool Visible = true;
+	};
+
+	template <typename ElementT>
+	class ConfigSequence
+	{
+	public:
+		using ElementType = ElementT;
+
+		ConfigSequence() = default;
+		ConfigSequence(std::initializer_list<ElementT> valuesIn) : values(valuesIn) {}
+		ConfigSequence(const ConfigSequence& other) : values(other.Snapshot()) {}
+
+		ConfigSequence& operator=(const ConfigSequence& other)
+		{
+			if (this != &other) Replace(other.Snapshot());
+			return *this;
+		}
+
+		std::vector<ElementT> Snapshot() const
+		{
+			// 序列化及外部读取都先取得一致快照，避免观察到修改中的半成品。
+			std::shared_lock lock(rwMutex);
+			return values;
+		}
+
+		void Replace(std::vector<ElementT> valuesIn)
+		{
+			// 完整的新序列只在独占锁内一次性替换。
+			std::unique_lock lock(rwMutex);
+			values = std::move(valuesIn);
+		}
+
+	private:
+		mutable std::shared_mutex rwMutex;
+		std::vector<ElementT> values;
+	};
+
+	// 自定义序列类型可特化该适配器，向配置层提供一致快照和事务式替换。
+	template <typename SequenceT>
+	struct ConfigSequenceAdapter;
+
+	template <typename ElementT>
+	struct ConfigSequenceAdapter<ConfigSequence<ElementT>>
+	{
+		using ElementType = ElementT;
+
+		static std::vector<ElementT> Snapshot(const ConfigSequence<ElementT>& sequence)
+		{
+			return sequence.Snapshot();
+		}
+
+		static void Replace(ConfigSequence<ElementT>& sequence, std::vector<ElementT> values)
+		{
+			sequence.Replace(std::move(values));
+		}
+	};
+
+	inline ConfigSequence<BarButtonLayoutEntry> MakeDefaultBarButtonLayout()
+	{
+		return {
+			{ BarButtonId::Select, true },
+			{ BarButtonId::Draw, true },
+			{ BarButtonId::Eraser, true },
+			{ BarButtonId::Geometry, false },
+			{ BarButtonId::Recall, true },
+			{ BarButtonId::Clean, true },
+			{ BarButtonId::Divider, true },
+			{ BarButtonId::Pierce, true },
+			{ BarButtonId::Freeze, true },
+			{ BarButtonId::Setting, true },
+		};
+	}
 }
 
 namespace Inkeys::ConfigDetail
@@ -60,6 +154,7 @@ namespace Inkeys::ConfigDetail
 	GROUP(UI, \
 		GROUP(Bar, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, Zoom, 1.0) \
+			X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarButtonLayoutEntry>, ButtonLayout, MakeDefaultBarButtonLayout()) \
 		) \
 	) \
 	GROUP(Experimental, \
@@ -273,15 +368,27 @@ GROUP(Experimental, \
    config.PlugIn.PPTHelper.autoTakeOver = true;
    config.Write();
 
-七、当前支持的类型
+七、当前支持的值类型
 1. bool
 2. 整数类型
 3. 浮点类型
 4. std::string
 5. std::wstring
 6. IdtAtomic<以上类型>
+7. ConfigSequence<元素类型>
 
-如果新增了这里未支持的类型，需要去 Other.Config.cpp 里补 JsonScalarTraits。
+八、添加顺序序列
+ConfigSequence<T> 内部使用 shared_mutex。读取 JSON 时会先完整解析数组，
+全部元素有效后再一次性替换；写入 JSON 时先在读锁下取得一致快照。
+
+自定义元素类型需要在 Other.Config.cpp 中补 JsonValueCodec<T>，
+负责单个元素与 Json::Value 之间的校验和转换。
+
+如果已有自定义序列容器，不需要改为 std::vector：
+在本模块中为它特化 ConfigSequenceAdapter<T>，提供 ElementType、
+Snapshot(...) 和 Replace(...)，即可复用相同的 JSON 数组协议。
+
+如果新增了这里未支持的普通值类型，需要去 Other.Config.cpp 里补 JsonValueCodec。
 除这种“新增全新类型支持”的情况外，日常新增、修改、删除配置项或 GROUP，
 都只需要改 INKEYS_CONFIG_SCHEMA(...) 这一处。
 */

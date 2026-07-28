@@ -2482,7 +2482,7 @@ void BarUISetClass::Rendering()
 						if (!temp) continue;
 						if (temp->size == BarButtomSizeEnum::oneOne)
 						{
-							if (temp->hide) continue;
+							if (!temp->IsVisible()) continue;
 							if (yO <= 5.0) yO += 37.5, width += 37.5;
 							else if (xO + 37.5 >= width) xO += 37.5, yO = 5.0;
 							else xO += 37.5;
@@ -2490,19 +2490,19 @@ void BarUISetClass::Rendering()
 						else if (temp->size == BarButtomSizeEnum::twoOne)
 						{
 							if (yO > 5.0 && xO + 75.0 > width) xO = width, yO = 5.0;
-							if (temp->hide) continue;
+							if (!temp->IsVisible()) continue;
 							if (yO <= 5.0) yO += 37.5, width += 75.0;
 							else xO += 75.0, yO = 5.0;
 						}
 						else if (temp->size == BarButtomSizeEnum::twoTwo)
 						{
 							if (yO > 5.0) yO = 5.0, xO = width;
-							if (!temp->hide) xO += 75.0, width += 75.0;
+							if (temp->IsVisible()) xO += 75.0, width += 75.0;
 						}
 						else if (temp->size == BarButtomSizeEnum::oneTwo)
 						{
 							if (yO > 5.0) xO = width;
-							if (!temp->hide) xO += 15.0, yO = 5.0, width += 15.0;
+							if (temp->IsVisible()) xO += 15.0, yO = 5.0, width += 15.0;
 						}
 					}
 					return width;
@@ -2604,7 +2604,7 @@ void BarUISetClass::Rendering()
 									? GetThemeColor(BarThemeColorEnum::Accent)
 									: GetThemeColor(BarThemeColorEnum::TextPrimary);
 								// 第一次计算或不可见时直接同步，避免 SVG 显示后才从黑色过渡。
-								if (forNum == 1 || barState.fold || temp->hide)
+								if (forNum == 1 || barState.fold || !temp->IsVisible())
 									temp->icon.color1.value().SetDirect(iconColor);
 								else temp->icon.color1.value().SetTar(iconColor);
 							}
@@ -2644,7 +2644,7 @@ void BarUISetClass::Rendering()
 
 								if (temp->buttom.enable.tar)
 								{
-									if (barState.fold || temp->hide)
+									if (barState.fold || !temp->IsVisible())
 									{
 										if (barState.fold)
 										{
@@ -2686,7 +2686,7 @@ void BarUISetClass::Rendering()
 
 									temp->icon.x.SetTar(0.0);
 									temp->icon.y.SetTar(0.0);
-									if (barState.fold || temp->hide)
+									if (barState.fold || !temp->IsVisible())
 									{
 										temp->icon.pct.SetTar(0.0, operationDur);
 									}
@@ -2708,7 +2708,7 @@ void BarUISetClass::Rendering()
 								temp->lastDrawX = temp->buttom.x.tar;
 								temp->lastDrawY = temp->buttom.y.tar;
 
-								if (temp->hide)
+								if (!temp->IsVisible())
 								{
 									temp->buttom.pct.SetTar(0.0, operationDur);
 									temp->icon.pct.SetTar(0.0, operationDur);
@@ -2757,7 +2757,7 @@ void BarUISetClass::Rendering()
 
 								if (temp->buttom.enable.tar)
 								{
-									if (barState.fold || temp->hide)
+									if (barState.fold || !temp->IsVisible())
 									{
 										if (barState.fold)
 										{
@@ -2791,7 +2791,7 @@ void BarUISetClass::Rendering()
 
 									temp->icon.x.SetTar(-21.0); // 靠左对齐（上下两侧均保持 6px 的空隙，而左侧是 5px）
 									temp->icon.y.SetTar(0.0);
-									if (barState.fold || temp->hide) temp->icon.pct.SetTar(0.0, operationDur);
+									if (barState.fold || !temp->IsVisible()) temp->icon.pct.SetTar(0.0, operationDur);
 									else
 									{
 										temp->icon.pct.SetTar(1.0, operationDur);
@@ -2806,7 +2806,7 @@ void BarUISetClass::Rendering()
 									temp->name.y.SetTar(0.0);
 									temp->name.w.SetTar(37); // 70px 宽度中除去左侧 icon 占用的 18px + 5px * 2 的空隙,考虑自身右侧还有 5px 的间隙
 									temp->name.h.SetTar(30.0);
-									if (barState.fold || temp->hide) temp->name.pct.SetTar(0.0, operationDur);
+									if (barState.fold || !temp->IsVisible()) temp->name.pct.SetTar(0.0, operationDur);
 									else temp->name.pct.SetTar(1.0, operationDur);
 
 									if (temp->state->state == BarWidgetState::Selected)
@@ -2819,7 +2819,7 @@ void BarUISetClass::Rendering()
 								temp->lastDrawX = temp->buttom.x.tar;
 								temp->lastDrawY = temp->buttom.y.tar;
 
-								if (temp->hide)
+								if (!temp->IsVisible())
 								{
 									temp->buttom.pct.SetTar(0.0, operationDur);
 									temp->icon.pct.SetTar(0.0, operationDur);
@@ -2853,7 +2853,7 @@ void BarUISetClass::Rendering()
 
 								if (temp->buttom.enable.tar)
 								{
-									if (barState.fold || temp->hide)
+									if (barState.fold || !temp->IsVisible())
 									{
 										if (barState.fold)
 										{
@@ -2885,7 +2885,7 @@ void BarUISetClass::Rendering()
 									temp->icon.SetWH(nullopt, 28.0);
 									temp->icon.x.SetTar(0.0);
 									temp->icon.y.SetTar(-10.0);
-									if (barState.fold || temp->hide)
+									if (barState.fold || !temp->IsVisible())
 									{
 										temp->icon.pct.SetTar(0.0, operationDur);
 									}
@@ -2903,7 +2903,7 @@ void BarUISetClass::Rendering()
 									temp->name.y.SetTar(20.0);
 									temp->name.w.SetTar(70.0);
 									temp->name.h.SetTar(25.0);
-									if (barState.fold || temp->hide) temp->name.pct.SetTar(0.0, operationDur);
+									if (barState.fold || !temp->IsVisible()) temp->name.pct.SetTar(0.0, operationDur);
 									else temp->name.pct.SetTar(1.0, operationDur);
 
 									if (temp->state->state == BarWidgetState::Selected)
@@ -2917,7 +2917,7 @@ void BarUISetClass::Rendering()
 								temp->lastDrawX = temp->buttom.x.tar;
 								temp->lastDrawY = temp->buttom.y.tar;
 
-								if (temp->hide)
+								if (!temp->IsVisible())
 								{
 									temp->buttom.pct.SetTar(0.0, operationDur);
 									temp->icon.pct.SetTar(0.0, operationDur);
@@ -2937,7 +2937,7 @@ void BarUISetClass::Rendering()
 
 								if (temp->buttom.enable.tar)
 								{
-									if (barState.fold || temp->hide)
+									if (barState.fold || !temp->IsVisible())
 									{
 										if (barState.fold)
 										{
@@ -2965,7 +2965,7 @@ void BarUISetClass::Rendering()
 								if (temp->icon.enable.tar)
 								{
 									temp->icon.SetWH(nullopt, 60.0);
-									if (barState.fold || temp->hide)
+									if (barState.fold || !temp->IsVisible())
 									{
 										temp->icon.pct.SetTar(0.0, operationDur);
 									}
@@ -2980,7 +2980,7 @@ void BarUISetClass::Rendering()
 								temp->lastDrawX = temp->buttom.x.tar;
 								temp->lastDrawY = temp->buttom.y.tar;
 
-								if (temp->hide)
+								if (!temp->IsVisible())
 								{
 									temp->buttom.pct.SetTar(0.0, operationDur);
 									temp->icon.pct.SetTar(0.0, operationDur);
@@ -3033,11 +3033,45 @@ void BarUISetClass::Rendering()
 						}
 					}, viewVariant);
 
+				auto FindVisibleAnchor = [&](BarButtomClass* hidden, BarButtomClass* preferred)
+					{
+						const int buttonCount = barButtomSet.tot.load();
+						int hiddenIndex = -1;
+						for (int index = 0; index < buttonCount; index++)
+						{
+							BarButtomClass* candidate = barButtomSet.buttomlist.Get(index);
+							if (candidate == hidden) hiddenIndex = index;
+							if (candidate && candidate == preferred && candidate->IsVisible()) return candidate;
+						}
+						if (hiddenIndex < 0) return static_cast<BarButtomClass*>(nullptr);
+
+						// 首选锚点不可见时，按布局距离寻找最近的有效按钮。
+						for (int distance = 1; distance < buttonCount; distance++)
+						{
+							const int previousIndex = hiddenIndex - distance;
+							if (previousIndex >= 0)
+							{
+								BarButtomClass* candidate = barButtomSet.buttomlist.Get(previousIndex);
+								if (candidate && candidate->IsVisible()) return candidate;
+							}
+
+							const int nextIndex = hiddenIndex + distance;
+							if (nextIndex < buttonCount)
+							{
+								BarButtomClass* candidate = barButtomSet.buttomlist.Get(nextIndex);
+								if (candidate && candidate->IsVisible()) return candidate;
+							}
+						}
+						return static_cast<BarButtomClass*>(nullptr);
+					};
 				auto AnchorHiddenButton = [&](BarButtomPresetEnum hiddenPreset, BarButtomPresetEnum anchorPreset)
 					{
 						BarButtomClass* hidden = barButtomSet.preset[static_cast<int>(hiddenPreset)];
-						BarButtomClass* anchor = barButtomSet.preset[static_cast<int>(anchorPreset)];
-						if (barState.fold || !hidden || !anchor || !hidden->hide) return;
+						if (barState.fold || !hidden || hidden->IsVisible()) return;
+
+						BarButtomClass* anchor = FindVisibleAnchor(
+							hidden, barButtomSet.preset[static_cast<int>(anchorPreset)]);
+						if (!anchor) return;
 
 						// 隐藏控件停在来源按钮中心，显示时从该位置展开。
 						SetButtonPositionTar(hidden->buttom.x, anchor->buttom.x.tar, 40.0);
@@ -4485,7 +4519,7 @@ void BarUISetClass::Rendering()
 			BarUiColorClass* hoverFill = temp->buttom.fill.has_value()
 				? &temp->buttom.fill.value() : nullptr;
 			UpdateHoverAnimation(temp->buttom.pct, hoverFill, temp->hoverStage,
-				!barState.fold && !temp->hide, temp->state->state != BarWidgetState::Selected);
+				!barState.fold && temp->IsVisible(), temp->state->state != BarWidgetState::Selected);
 			if (!temp->pressScale.IsSame()) ChangeValue(temp->pressScale, false);
 
 			{
@@ -6016,7 +6050,7 @@ void BarUISetClass::Interact()
 	{
 		hiex::getmessage_win32(&msg, EM_MOUSE, floating_window);
 		if (hoveredMainBarButton
-			&& (barState.fold || hoveredMainBarButton->hide))
+			&& (barState.fold || !hoveredMainBarButton->IsVisible()))
 		{
 			StopMainBarButtonHover(hoveredMainBarButton, true);
 			hoveredMainBarButton = nullptr;
@@ -6067,7 +6101,7 @@ void BarUISetClass::Interact()
 				for (int id = 0; id < barButtomSet.tot; id++)
 				{
 					BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
-					if (!temp || temp->hide || temp->state->state == BarWidgetState::Selected) continue;
+					if (!temp || !temp->IsVisible() || temp->state->state == BarWidgetState::Selected) continue;
 					bool isColorSelector = temp->name.enable.tar
 						&& temp->name.content.GetTar().substr(0, 7) == L"__color";
 					if (isColorSelector) continue; // 颜色块自身就是内容，不把其填充色改成悬停灰色。
@@ -6290,7 +6324,7 @@ void BarUISetClass::Interact()
 				for (int id = 0; id < barButtomSet.tot; id++)
 				{
 					BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
-					if (temp == nullptr || temp->hide) continue;
+					if (temp == nullptr || !temp->IsVisible()) continue;
 
 					// 双击第二击仍归属于第一击按钮，避免动画中按钮位移导致命中丢失。
 					bool doubleClickContinuation = msg.message == WM_LBUTTONDBLCLK
