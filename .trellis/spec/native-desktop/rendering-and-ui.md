@@ -70,6 +70,7 @@ Ui3RenderDeviceEpoch GetUi3RenderDeviceEpoch();
 Ui3RenderPass AcquireUi3RenderPass(Ui3RenderPriority priority);
 HRESULT PrepareUi3RenderBackend(Ui3RenderBackend backend);
 bool CommitPreparedUi3RenderBackend();
+void BarUIRendering::SetFrameCursorDiffuseMaskSuppressed(bool suppressed);
 ~~~
 
 每个 epoch 至少发布 `backend`、单调递增的 `generation`、实际 `featureLevel`、`ID3D11Device`、可选 `ID3D11Device1` 与 `ID2D1Device`。`Ui3RenderPass` 是 move-only RAII 租约。
@@ -83,6 +84,7 @@ bool CommitPreparedUi3RenderBackend();
 - Bar 主帧只保留一组 `BeginDraw/EndDraw`，`GetDC` 已承担必要提交，前面不得再调用显式 `Flush`。Windows 7 Platform Update 路径在 `GetDC` 前必须弹出所有 clip/layer。
 - 动态光只长期缓存颜色停靠点/画刷和几何的 A8 预模糊遮罩；画刷位置、半径和透明度每帧更新。禁止缓存快速变化的最终光影帧或冻结布局状态。
 - A8 遮罩按几何参数量化且有容量上限。生成时使用同一 D2D device 上的专用 device context，先用一组 `BeginDraw/EndDraw` 写 source target，再把 source 作为 Gaussian 输入，用第二组 `BeginDraw/EndDraw` 写 output；禁止在同一 draw span 中把仍绑定为 target 的 bitmap 当作输入。
+- PointLight 控件的圆角、边框粗细或形状变体正在快速动画时，必须通过 `SetFrameCursorDiffuseMaskSuppressed(true)` 暂停第三光源的 Gaussian 遮罩生成；第一光源、基础边框和实时硬光继续绘制。几何稳定后立即解除门禁，仅为稳定参数生成一次遮罩并跨帧复用。
 - 稳态帧不得创建 Gaussian effect、command list、渐变停靠点、solid brush 或重新生成已有遮罩。`FillOpacityMask` 前临时切为 `D2D1_ANTIALIAS_MODE_ALIASED`，结束后恢复。
 - 光源与控件扩展边界不相交时必须裁剪该光源的 diffuse/hard-light 绘制；D2D 全局 dirty clip 和 layered-window dirty rect 必须使用旧边界与新边界的并集。
 
@@ -95,12 +97,13 @@ bool CommitPreparedUi3RenderBackend();
 | `generation` 变化后客户端资源重建失败 | 跳过该帧；同一 generation 错误限频，不能用旧 device 的资源向新 epoch 提交 |
 | 装饰帧租约竞争失败 | 直接跳过并按目标 FPS 等待，不得忙循环 |
 | A8、Effect 或遮罩专用 context 失败 | 本设备会话停用 diffuse mask；保留基础灰边和硬光，不得退回逐帧实时 Gaussian 或逐帧重试 |
+| PointLight 几何动画中 | 暂停第三光源 diffuse mask 的查询与创建；第一光源、基础边框和硬光保持，动画结束后恢复稳定遮罩 |
 | 主 `EndDraw` 返回 `D2DERR_RECREATE_TARGET` | 丢弃客户端设备资源并在下一帧按当前 epoch 重建 |
 | 主 `EndDraw` 暴露刚创建遮罩的延迟错误 | 清空遮罩缓存并将本设备会话标为不可用，避免错误循环 |
 
 #### 5. Good / Base / Bad Cases
 
-- Good：WARP 中展开属性栏时，遮罩仅在新几何首次出现时生成；稳态帧复用 A8 mask、gradient brush 和 solid brush，Bar 主上下文每帧仅一次提交。
+- Good：WARP 中展开属性栏或弹性提示浮窗时不生成随动画变化的遮罩；几何稳定后只生成一次，稳态帧复用 A8 mask、gradient brush 和 solid brush，Bar 主上下文每帧仅一次提交。
 - Base：后台准备 Hardware 成功，帧间取得整帧租约并发布新 generation；Bar 下一帧先重建全部资源，再开始绘制。
 - Bad：切换全局 device 指针后让旧 Bar context 继续一帧，或为避免重建而跨 device 复用 bitmap/brush；这会造成设备域错配、空白帧或设备丢失错误。
 
@@ -108,6 +111,7 @@ bool CommitPreparedUi3RenderBackend();
 
 - 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`，必须使用 ARM64 host MSBuild。
 - 在 WARP 上分别测光影关、仅主光、主光+动态光：属性栏展开/收起、主栏状态切换、鼠标第三光和长时间静止；记录 CPU、帧时间、遮罩 cache miss 和提交次数。
+- 反复展开/收起绘制属性和两个提示浮窗；动画期间第三光源遮罩不得引入新的 cache miss，稳定后的首次可见帧最多产生对应稳定几何的单次 miss；第一光源全程保持原效果。
 - 在 Windows 7 SP1 + KB2670838 实机验证 feature level 回退、A8 target、Gaussian、`FillOpacityMask`、clip 栈为空时的 `GetDC` 及 layered-window 脏区无残影。
 - 在支持设备上循环执行 WARP → Hardware → WARP 帧边界切换，覆盖动画中、装饰帧竞争、资源重建失败与 Hardware 准备失败；断言旧 epoch 在发布前始终可用。
 - 后续每接入一个共享设备客户端，都要并发触发其交互与 Bar 装饰帧，断言帧串行、交互优先、无自旋和跨 device 资源复用。
@@ -148,6 +152,16 @@ maskContext->SetTarget(output);
 maskContext->BeginDraw();
 maskContext->DrawImage(effect);
 maskContext->EndDraw();
+~~~
+
+~~~cpp
+// Wrong：弹性浮窗每帧改变圆角和边框时仍生成新的 Gaussian 遮罩变体。
+DrawAnimatedPointLightFrame();
+
+// Correct：动画阶段保留第一光源和硬光，稳定后恢复第三光源柔光遮罩。
+lighting.SetFrameCursorDiffuseMaskSuppressed(geometryTimeline.IsActive());
+DrawAnimatedPointLightFrame();
+lighting.SetFrameCursorDiffuseMaskSuppressed(false);
 ~~~
 
 ### UI3 第三鼠标光休眠契约
@@ -353,6 +367,8 @@ shape.frameCursorLightIntensityScale = buttonIntensity;
 收起终点和换边中点的根面板均以锚点为中心，并限制为固定紧凑尺寸。直属 Shape 的隐藏 `x/y`、宽高、圆角和边框必须由最终展开目标乘固定展开到紧凑倍率；嵌套 SVG/Word 的局部坐标和尺寸也使用同一倍率。根面板负责对齐锚点，内部控件保留完整布局的等比微缩关系。隐藏中点不得使用运行中的子对象 `val` 乘“紧凑宽度 / 当前面板宽度”，因为位置动画被打断或重启时，两者不再保持同一比例，会放大旧的展开坐标。
 
 直接绘制、没有独立 Shape 承载的几何也必须加入同一动画契约。若其布局依赖上下方向，不得在换边开始时直接读取已经切换的方向布尔值；应从正在动画的承载 Shape 推导连续位置，或为该几何提交同批次关键帧，否则它会在其他控件收缩前瞬间跳到新布局。
+
+由面板当前几何派生的徽标、提示图标等控件，显隐和透明度必须读取承载内容的当前动画值（`val`），不能直接读取 `fold`、`drawAttribute` 等目标状态后立即置零；交互门禁可以立即关闭，但视觉应继续等比收拢到动画终点。
 
 手工验证至少覆盖面板在主栏上方和下方的展开/收起，以及上到下、下到上的换边。检查颜色块、区域背景、按钮 Shape 及其 SVG/Word；不允许出现尺寸已缩小但局部 `y` 仍停留在展开值，或隐藏点落在 `60×30` 面板之外。
 

@@ -63,6 +63,7 @@ constexpr double BarDrawAttributeThicknessContentInset =
 constexpr double BarThicknessTooltipBadgeHeight = 24.0;
 constexpr double BarThicknessTooltipIconSize = 14.0;
 constexpr double BarThicknessTooltipHitPadding = 2.0;
+constexpr bool BarThicknessOverflowPreviewAlwaysVisible = true;
 constexpr double BarThicknessTooltipPadding = 8.0;
 constexpr double BarThicknessTooltipCloseReserve = 19.0;
 constexpr double BarThicknessTooltipTitleFontSize = 12.0;
@@ -458,6 +459,7 @@ void BarUIRendering::DiscardDeviceResources()
 	frameDiffuseMaskFailureLogged = false;
 	frameDiffuseMaskUnavailable = false;
 	frameDiffuseMaskCreatedThisFrame = false;
+	frameCursorDiffuseMaskSuppressed = false;
 	frameDirtyClipActive = false;
 	frameDirtyClipRect = {};
 }
@@ -1622,7 +1624,9 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 		else deviceContext->DrawGeometry(geometry, baseFrameBrush, strokeWidth);
 	}
 
-	if (drawPrimaryLight || drawCursorLight)
+	bool drawCursorDiffuse =
+		drawCursorLight && !frameCursorDiffuseMaskSuppressed;
+	if (drawPrimaryLight || drawCursorDiffuse)
 	{
 		FLOAT diffuseSourceOpacity = static_cast<FLOAT>(clamp(
 			diffuseOpacity / BarBorderGaussianCenterCoverage, 0.0, 1.0));
@@ -1639,13 +1643,19 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 			if (diffuseMask)
 			{
 				// 模糊后的几何遮罩跨帧复用，光源颜色和位置仍由实时径向画刷决定。
-				DrawRoundedRectDiffuseMask(deviceContext, *diffuseMask,
-					*roundedRect, primaryBrush,
-					CompositeOpacity(lightOpacity * diffuseSourceOpacity));
-				DrawRoundedRectDiffuseMask(deviceContext, *diffuseMask,
-					*roundedRect, cursorBrush,
-					CompositeOpacity(lightOpacity * cursorLightIntensity
-						* diffuseSourceOpacity));
+				if (drawPrimaryLight)
+				{
+					DrawRoundedRectDiffuseMask(deviceContext, *diffuseMask,
+						*roundedRect, primaryBrush,
+						CompositeOpacity(lightOpacity * diffuseSourceOpacity));
+				}
+				if (drawCursorDiffuse)
+				{
+					DrawRoundedRectDiffuseMask(deviceContext, *diffuseMask,
+						*roundedRect, cursorBrush,
+						CompositeOpacity(lightOpacity * cursorLightIntensity
+							* diffuseSourceOpacity));
+				}
 			}
 		}
 		else if (geometry)
@@ -1658,21 +1668,27 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 						strokeWidth, geometryVariantQuarter);
 				if (diffuseMask)
 				{
-					DrawGeometryDiffuseMask(deviceContext, *diffuseMask,
-						geometryBounds, primaryBrush,
-						CompositeOpacity(lightOpacity * diffuseSourceOpacity));
-					DrawGeometryDiffuseMask(deviceContext, *diffuseMask,
-						geometryBounds, cursorBrush,
-						CompositeOpacity(lightOpacity * cursorLightIntensity
-							* diffuseSourceOpacity));
+					if (drawPrimaryLight)
+					{
+						DrawGeometryDiffuseMask(deviceContext, *diffuseMask,
+							geometryBounds, primaryBrush,
+							CompositeOpacity(lightOpacity * diffuseSourceOpacity));
+					}
+					if (drawCursorDiffuse)
+					{
+						DrawGeometryDiffuseMask(deviceContext, *diffuseMask,
+							geometryBounds, cursorBrush,
+							CompositeOpacity(lightOpacity * cursorLightIntensity
+								* diffuseSourceOpacity));
+					}
 				}
 			}
 		}
 
-		// 第一光源保留 480px，第三光源使用 240px 光圈；同距离像素不再受其他 UI 区域影响。
-		DrawLightPass(primaryBrush, static_cast<FLOAT>(BarBorderLightIntensity), strokeWidth);
-		DrawLightPass(cursorBrush, cursorLightIntensity, strokeWidth);
 	}
+	// 第三光源 Gaussian 可在快速几何动画期间暂停，第一光源与双方硬光不受影响。
+	DrawLightPass(primaryBrush, static_cast<FLOAT>(BarBorderLightIntensity), strokeWidth);
+	DrawLightPass(cursorBrush, cursorLightIntensity, strokeWidth);
 	return true;
 }
 
@@ -3863,9 +3879,11 @@ void BarUISetClass::Rendering()
 								- BarDrawAttributeThicknessControlHeight
 								- BarDrawAttributeGap * 3.0)
 							* max(0.0, static_cast<double>(barStyle.zoom));
+						// 测试阶段始终开放超限徽标；关闭该常量即可恢复真实粗细门禁。
 						bool previewOverflow = tooltipBaseVisible
-							&& static_cast<double>(GetPenWidth())
-								> expandedPreviewCapacity + 0.001;
+							&& (BarThicknessOverflowPreviewAlwaysVisible
+								|| static_cast<double>(GetPenWidth())
+									> expandedPreviewCapacity + 0.001);
 						barState.drawAttributeBar.thicknessPreviewOverflow =
 							previewOverflow;
 
@@ -4643,10 +4661,11 @@ void BarUISetClass::Rendering()
 				BarDrawAttributeThicknessContentInset * panelScale;
 			double contentOpacity = clamp(
 				static_cast<double>(thicknessDisplay->pct.val), 0.0, 1.0);
-			bool annotationVisible = barState.drawAttribute && !barState.fold
-				&& PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect);
-			bool overflowVisible = barState.drawAttribute && !barState.fold
-				&& barState.drawAttributeBar.thicknessPreviewOverflow;
+			// 徽标显隐跟随当前内容透明度，不能读取收起目标状态后瞬间消失。
+			bool annotationVisible =
+				PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect);
+			bool overflowVisible = BarThicknessOverflowPreviewAlwaysVisible
+				|| barState.drawAttributeBar.thicknessPreviewOverflow;
 
 			auto SetSurfaceDerived = [&](const shared_ptr<BarUiShapeClass>& shape,
 				double x, double y, double width, double height, double opacity)
@@ -5119,6 +5138,9 @@ void BarUISetClass::Rendering()
 
 					// 绘制属性
 					{
+						// 几何动画时暂停 Gaussian 遮罩生成；稳定后继续复用既有缓存。
+						spec.SetFrameCursorDiffuseMaskSuppressed(
+							drawAttributeTimeline.IsActive());
 						auto obj = BarUISetShapeEnum::DrawAttributeBar;
 						spec.Shape(barDeviceContext.Get(), *shapeMap[obj], shapeMap[obj]->Inherit(Center, barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->buttom), &current, true);
 						// 只发布三个外层可见区域，Raw Input 高频路径无需遍历全部子控件。
@@ -5597,6 +5619,7 @@ void BarUISetClass::Rendering()
 								DWRITE_FONT_WEIGHT_NORMAL,
 								DWRITE_TEXT_ALIGNMENT_LEADING);
 						}
+						spec.SetFrameCursorDiffuseMaskSuppressed(false);
 					}
 
 					// 主栏
@@ -5697,6 +5720,10 @@ void BarUISetClass::Rendering()
 
 			// 浮窗不擦除已经绘制的背景；徽标随后覆盖，形成从按钮下层展开的层级。
 			{
+				bool popupGeometryAnimating = drawAttributeTimeline.IsActive()
+					|| !drawAttributeAnnotationPopupProgress.IsSame()
+					|| !drawAttributeOverflowPopupProgress.IsSame();
+				spec.SetFrameCursorDiffuseMaskSuppressed(popupGeometryAnimating);
 				auto panel = shapeMap[BarUISetShapeEnum::DrawAttributeBar];
 				auto DrawThicknessPopup =
 					[&](BarUISetShapeEnum popupShapeType,
@@ -5755,6 +5782,7 @@ void BarUISetClass::Rendering()
 					BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowInfo];
 				spec.Svg(barDeviceContext.Get(), *overflowInfo,
 					overflowInfo->Inherit(TopLeft, *panel));
+				spec.SetFrameCursorDiffuseMaskSuppressed(false);
 			}
 
 			// 调试模式持续显示实时 FPS，并把文本范围加入脏区。
