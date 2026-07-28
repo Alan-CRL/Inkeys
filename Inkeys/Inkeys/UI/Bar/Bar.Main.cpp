@@ -41,9 +41,7 @@ constexpr double BarBorderCursorLightRadius = 240.0;
 constexpr ULONGLONG BarBorderCursorGraceDurationMs = 5000;
 constexpr UINT_PTR BarBorderCursorGraceTimerId = 0x494B4301;
 constexpr UINT BarBorderCursorSuspendMessage = WM_APP + 0x31;
-constexpr UINT_PTR BarCanvasDrawingQuietTimerId = 0x494B4302;
 constexpr UINT BarCanvasDrawingActivityMessage = WM_APP + 0x32;
-constexpr UINT BarCanvasDrawingQuietDelayMs = 150;
 constexpr double BarBorderLightIntensity = 1.0;
 constexpr double BarColorSwatchCursorLightIntensity = 0.50;
 constexpr double BarButtonCursorLightIntensity = 0.30;
@@ -163,11 +161,6 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 			barUISet.HandleBorderCursorGraceTimeout(hWnd);
 			return 0;
 		}
-		if (wParam == BarCanvasDrawingQuietTimerId)
-		{
-			barUISet.HandleCanvasDrawingQuietTimeout(hWnd);
-			return 0;
-		}
 		return HIWINDOW_DEFAULT_PROC;
 	}
 
@@ -185,7 +178,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 	case WM_MOUSELEAVE:
 	{
-		// 落笔时若光标仍在 UI3 内，必须先真实离开，下一次进入才允许重新激活。
+		// 需要等待离开的休眠路径在真实移出后解除重新激活限制。
 		lock_guard lock(barUISet.borderCursorLightMutex);
 		barUISet.borderCursorActivationBlockedUntilLeave = false;
 		return 0;
@@ -521,13 +514,11 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	frameLightRadius = static_cast<FLOAT>(BarBorderLightRadius * zoom);
 	frameCursorLightRadius = static_cast<FLOAT>(BarBorderCursorLightRadius * zoom);
 
-	bool canvasDrawingQuiet = barUISetClass
-		&& barUISetClass->canvasDrawingQuiet.load(std::memory_order_acquire);
-	bool edgeLightingEnabled = BarUiEdgeLightingEnabled && !canvasDrawingQuiet;
+	bool edgeLightingEnabled = BarUiEdgeLightingEnabled;
 	bool dynamicEdgeLightingEnabled = edgeLightingEnabled && BarUiDynamicEdgeLightingEnabled;
 	if (!edgeLightingEnabled)
 	{
-		// 总开关关闭或绘图静默时停止点光计算，基础灰边仍由绘制阶段保留。
+		// 总开关关闭时停止点光计算，基础灰边仍由绘制阶段保留。
 		bool needSettlingFrame = frameEdgeLightingEnabled || frameLightingWasAnimating
 			|| frameCursorLightIntensity > 0.0001F;
 		frameEdgeLightingEnabled = false;
@@ -623,7 +614,7 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 			&& barUISetClass->borderCursorLightReady;
 	}
 
-	bool animationEnabled = BarUiAnimationEnabled && !canvasDrawingQuiet;
+	bool animationEnabled = BarUiAnimationEnabled;
 	double animationSpeedRate = BarUiAnimationSpeedRate;
 	if (!isfinite(animationSpeedRate)) animationSpeedRate = 1.0;
 	animationSpeedRate = clamp(animationSpeedRate, 0.1, 5.0);
@@ -1572,9 +1563,7 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 	ID2D1RadialGradientBrush* cursorBrush = nullptr;
 	FLOAT cursorLightIntensity = frameCursorLightIntensity
 		* static_cast<FLOAT>(clamp(cursorLightIntensityScale, 0.0, 1.0));
-	bool canvasDrawingQuiet = barUISetClass
-		&& barUISetClass->canvasDrawingQuiet.load(std::memory_order_acquire);
-	bool edgeLightingEnabled = BarUiEdgeLightingEnabled && !canvasDrawingQuiet;
+	bool edgeLightingEnabled = BarUiEdgeLightingEnabled;
 	D2D1_RECT_F lightBounds{};
 	if (roundedRect) lightBounds = roundedRect->rect;
 	else if (geometry && FAILED(geometry->GetBounds(nullptr, &lightBounds)))
@@ -2324,9 +2313,7 @@ void BarUISetClass::Rendering()
 		animationReckon = animationNow;
 		if (!isfinite(animationDtSeconds) || animationDtSeconds < 0.0) animationDtSeconds = 0.0;
 		animationDtSeconds = clamp(animationDtSeconds, 0.0, 0.05); // 防止调试或休眠恢复后一帧跳太远
-		bool canvasDrawingQuiet = this->canvasDrawingQuiet.load(std::memory_order_acquire);
-		double currentAnimationSpeedRate = canvasDrawingQuiet
-			? 1.0e12 : static_cast<double>(BarUiAnimationSpeedRate);
+		double currentAnimationSpeedRate = static_cast<double>(BarUiAnimationSpeedRate);
 
 		// 主按钮
 		{
@@ -4294,8 +4281,7 @@ void BarUISetClass::Rendering()
 				COLORREF targetColor = color.tar;
 				COLORREF startColor = color.startColor;
 				double duration = color.dur;
-				double speedRate = !canvasDrawingQuiet
-					&& !BarUiAnimationEnabled && color.animateWhenDisabled
+				double speedRate = !BarUiAnimationEnabled && color.animateWhenDisabled
 					? 1.0 : currentAnimationSpeedRate;
 				if (forceReplace || startColor == targetColor || !isfinite(duration) || duration <= 0.0
 					|| !isfinite(speedRate) || speedRate <= 0.0 || animationDtSeconds <= 0.0)
@@ -4325,8 +4311,7 @@ void BarUISetClass::Rendering()
 				double targetPct = pct.tar;
 				double startPct = pct.startV;
 				double duration = pct.dur;
-				double speedRate = !canvasDrawingQuiet
-					&& !BarUiAnimationEnabled && pct.animateWhenDisabled
+				double speedRate = !BarUiAnimationEnabled && pct.animateWhenDisabled
 					? 1.0 : currentAnimationSpeedRate;
 				if (forceReplace || !isfinite(targetPct) || !isfinite(startPct)
 					|| (!pct.hasMiddleV && abs(targetPct - startPct) <= pctEpsilon)
@@ -4469,12 +4454,6 @@ void BarUISetClass::Rendering()
 						hoverPct.animateWhenDisabled = false;
 						if (hoverFill) hoverFill->animateWhenDisabled = false;
 					};
-				if (canvasDrawingQuiet)
-				{
-					if (hoverStage != BarButtomHoverStageEnum::None) hoverPct.SetDirect(0.0);
-					FinishHover();
-					return;
-				}
 				if (!visible)
 				{
 					// 隐藏时清除仍在运行的独立悬停过程，避免下次显示继承旧的渐隐灰色。
@@ -6710,7 +6689,6 @@ bool BarUISetClass::SetBorderCursorRawInputEnabled(HWND hWnd, bool enabled)
 void BarUISetClass::ActivateBorderCursorTracking(HWND hWnd)
 {
 	if (!hWnd || !BarUiAnimationEnabled
-		|| canvasDrawingQuiet.load(std::memory_order_acquire)
 		|| !BarUiEdgeLightingEnabled || !BarUiDynamicEdgeLightingEnabled) return;
 	{
 		lock_guard lock(borderCursorLightMutex);
@@ -6766,8 +6744,7 @@ void BarUISetClass::ActivateBorderCursorTracking(HWND hWnd)
 
 void BarUISetClass::RegisterBorderCursorLight(HWND hWnd)
 {
-	if (!hWnd || canvasDrawingQuiet.load(std::memory_order_acquire)
-		|| !BarUiEdgeLightingEnabled || !BarUiDynamicEdgeLightingEnabled) return;
+	if (!hWnd || !BarUiEdgeLightingEnabled || !BarUiDynamicEdgeLightingEnabled) return;
 	{
 		lock_guard lock(borderCursorLightMutex);
 		if (!borderCursorRawInputRegistered
@@ -6873,34 +6850,15 @@ void BarUISetClass::HandleBorderCursorGraceTimeout(HWND hWnd)
 
 void BarUISetClass::HandleCanvasDrawingActivity(HWND hWnd, bool started)
 {
-	if (!hWnd) return;
+	if (!hWnd || !started) return;
 	if (started && BarCanvasDrawingActivityCount.load(std::memory_order_acquire) == 0)
-		started = false;
-	if (started)
-	{
-		KillTimer(hWnd, BarCanvasDrawingQuietTimerId);
-		bool wasQuiet = canvasDrawingQuiet.exchange(true, std::memory_order_acq_rel);
-		// 绘图期间停掉动态光输入；按钮和必要状态仍可按需请求单帧刷新。
-		SuspendBorderCursorTracking(hWnd, true);
-		if (!wasQuiet) UpdateRendering(false);
 		return;
-	}
 
-	if (BarCanvasDrawingActivityCount.load(std::memory_order_acquire) != 0) return;
-	if (!SetTimer(hWnd, BarCanvasDrawingQuietTimerId,
-		BarCanvasDrawingQuietDelayMs, nullptr))
-	{
-		canvasDrawingQuiet.store(false, std::memory_order_release);
-		UpdateRendering(false);
-	}
-}
+	POINT screenPoint{};
+	if (!GetCursorPos(&screenPoint) || WindowFromPoint(screenPoint) == hWnd) return;
 
-void BarUISetClass::HandleCanvasDrawingQuietTimeout(HWND hWnd)
-{
-	if (hWnd) KillTimer(hWnd, BarCanvasDrawingQuietTimerId);
-	if (BarCanvasDrawingActivityCount.load(std::memory_order_acquire) != 0) return;
-	if (canvasDrawingQuiet.exchange(false, std::memory_order_acq_rel))
-		UpdateRendering(false);
+	// 落笔只在消息接收区外一次性关闭第三鼠标光，第一光源与后续绘制过程保持独立。
+	SuspendBorderCursorTracking(hWnd);
 }
 
 void BarUISetClass::SuspendBorderCursorTracking(HWND hWnd, bool waitForMouseLeave)
@@ -7154,8 +7112,6 @@ namespace Inkeys::UI::Bar
 				std::memory_order_acq_rel, std::memory_order_acquire))
 		{
 		}
-		if (activityCount == 1 && floating_window)
-			PostMessage(floating_window, BarCanvasDrawingActivityMessage, 0, 0);
 	}
 
 	void Initialization()

@@ -381,12 +381,10 @@ protected:
 	void SuspendBorderCursorTracking(HWND hWnd, bool waitForMouseLeave = false);
 	bool ScheduleBorderCursorGraceTimer(HWND hWnd, UINT delayMs);
 	void HandleCanvasDrawingActivity(HWND hWnd, bool started);
-	void HandleCanvasDrawingQuietTimeout(HWND hWnd);
 	void CloseDrawAttributeTooltips();
 	void RefreshBorderCursorVisibleRegions();
 	bool IsBorderCursorLightNearVisibleRegion(POINT screenPoint);
 	std::atomic<unsigned long long> mainButtonClickPulseSerial = 0;
-	std::atomic_bool canvasDrawingQuiet = false;
 
 	mutex borderCursorLightMutex;
 	D2D1_POINT_2F borderCursorLightPoint = D2D1::Point2F();

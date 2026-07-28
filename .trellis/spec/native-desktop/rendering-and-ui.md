@@ -177,8 +177,9 @@ namespace Inkeys::UI::Bar
 - `Grace → Inside`：重新进入实际接收消息区域时取消定时器；仅回到 240px 邻域不能从 `Dormant` 唤醒。
 - `Grace → Dormant`：绝对截止时间到达，或画布开始真实绘制时，注销 Raw Input 并从当前强度平滑淡出。落笔时若光标仍在 UI3 接收区，区域内后续移动不得重新激活；必须先收到离开，再由下一次自然进入激活。
 - 5 秒等待使用窗口定时器，不得新增轮询线程或靠持续渲染计时。
-- 并发笔迹由原子 activity count 合并：`0 → 1` 才向 Bar 窗口线程发送 Started，`1 → 0` 才发送 Ended。Bar 在绘图期间关闭边缘光影、停止第三光 Raw Input，并让非必要状态动画立即完成；最后笔迹结束后延迟 150ms 退出静默，避免短间隔连续落笔抖动。
-- 绘图静默不允许画布线程直接写 UI 对象；按钮点击或必要状态变化仍可请求单帧反馈。
+- 并发笔迹由原子 activity count 合并：`0 → 1` 才向 Bar 窗口线程发送 Started，结束通知只负责把 activity count 安全归零，不维持绘图静默状态。
+- Bar 窗口线程收到 Started 时只做一次落笔检查：若系统光标位于实际接收消息窗口之外，则让第三光源进入 `Dormant` 并注销 Raw Input；若仍在接收区内则不改变第三光源。后续绘制过程和抬笔不再持续控制光影。
+- 落笔通知不得参与 `BarUiEdgeLightingEnabled`、第一光源、光色过渡或普通 UI 动画门禁；画布线程仍只能通过通知接口请求第三光源休眠，不得直接写 UI、D2D 或 Raw Input 状态。
 
 #### 4. Validation & Error Matrix
 
@@ -190,14 +191,14 @@ namespace Inkeys::UI::Bar
 | 动画关闭 | 立即隐藏第三光源并请求休眠 |
 | 触摸模拟鼠标消息 | 不得激活第三光源；画布休眠仅由 Draw2 统一落笔派发边界通知，不由模拟鼠标消息重复通知 |
 | 笔迹在取得 Canvas 前提前返回 | RAII guard 仍必须发送 Ended，activity count 最终回到 0 |
-| 多指笔迹交错结束 | 仅最后一个笔迹启动 150ms 退出定时器；任一新 Started 取消该定时器 |
-| Started/Ended 窗口消息迟到或交错 | 窗口线程以当前原子 count 复核；过期消息不得错误进入或退出静默 |
+| 多指笔迹交错结束 | activity count 最终回到 0；不得因任一笔仍活动而持续压制第一光源或 UI 动画 |
+| Started 窗口消息迟到 | 窗口线程以当前原子 count 复核；计数已归零时忽略过期消息 |
 
 #### 5. Good / Base / Bad Cases
 
-- Good：离开 UI 后在外部持续移动，5 秒截止时间保持不变；第三光源按 240px × zoom 径向渐变连续归零，光圈离开全部可见外框后不再因位置变化唤醒渲染。
+- Good：在 UI 接收区外落笔时第三光源一次性休眠，但第一光源、光色过渡与普通 UI 动画在整笔期间继续正常工作。
 - Base：宽限期内返回 UI，取消休眠并从当前透明度继续淡入。
-- Bad：把光标到主栏、绘制属性栏等任意区域的最近距离乘到所有控件的第三光源强度上；这会让其他区域为当前边框“托底”，造成等距离位置亮度不同。
+- Bad：把 activity count 或绘图静默状态乘到总光影开关上；这会让第一光源和第三光源在整笔期间一起消失。
 
 #### 6. Tests Required
 
@@ -205,7 +206,8 @@ namespace Inkeys::UI::Bar
 - 手工验证 UI 外启动、进入 UI、离开后 5 秒内返回、超过 240px、5 秒超时、休眠后仅靠近 240px、Draw2 鼠标/笔/触摸落笔、落笔时仍位于接收区和动画关闭。
 - 对同一边框像素分别从接受消息区域内外取等距离光标位置，隔离第一光源后确认第三光源贡献一致。
 - 性能验证至少比较 `Dormant` 与持续全局移动时的 CPU；`Dormant` 中不得出现由第三光源导致的持续渲染唤醒。
-- 多指和快速连续短笔迹下记录 activity count/quiet 状态，确认无永久静默、无中途恢复动态光，最后一笔后约 150ms 恢复。
+- UI 接收区外落笔后确认第三光源立即休眠；整笔持续期间移动并抬笔，第一光源、光色过渡和普通 UI 动画始终不受影响。
+- 多指和快速连续短笔迹下记录 activity count，确认最终归零且不存在绘图静默门禁。
 
 #### 7. Wrong vs Correct
 
@@ -231,13 +233,14 @@ cursorRadius = 240.0 * zoom;
 ~~~
 
 ~~~cpp
-// Wrong：只通知开始，线程提前返回或多指结束后 Bar 永久静默。
-NotifyCanvasDrawingStarted();
-RunDetachedStroke();
+// Wrong：把整段绘图活动当成总光影静默，连第一光源也一起关闭。
+edgeLightingEnabled = BarUiEdgeLightingEnabled && !canvasDrawingQuiet;
 
-// Correct：每个真实笔迹线程以 RAII 成对通知，原子计数只发布首尾边界。
+// Correct：每个真实笔迹线程仍以 RAII 成对通知，但 Started 只触发一次第三光源休眠检查。
 CanvasDrawingActivityGuard guard;
 RunStroke();
+if (started && WindowFromPoint(screenPoint) != hWnd)
+	SuspendBorderCursorTracking(hWnd);
 ~~~
 
 ### UI3 边缘光影实验开关契约
