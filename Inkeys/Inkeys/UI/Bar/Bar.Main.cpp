@@ -59,13 +59,16 @@ constexpr double BarDrawAttributeCompactHeight =
 constexpr double BarDrawAttributeGap = 5.0;
 constexpr double BarDrawAttributeThicknessHeight = 105.0;
 constexpr double BarDrawAttributeThicknessControlHeight = 30.0;
+constexpr double BarDrawAttributeSurfaceOpacity = 0.80;
 constexpr double BarThicknessTooltipBadgeHeight = 24.0;
 constexpr double BarThicknessTooltipIconSize = 14.0;
 constexpr double BarThicknessTooltipPadding = 8.0;
 constexpr double BarThicknessTooltipCloseReserve = 19.0;
 constexpr double BarThicknessTooltipFontSize = 12.0;
-constexpr double BarThicknessTooltipFillOpacity = 0.15;
+constexpr double BarThicknessTooltipPopupGap = 10.0;
+constexpr double BarThicknessTooltipFillOpacity = 0.80;
 constexpr double BarThicknessTooltipFrameOpacity = 0.18;
+constexpr bool BarAlwaysShowThicknessOverflowBadgeForTesting = true;
 constexpr double BarBorderFrameDiffuseOpacity = 0.30;
 constexpr double BarBorderPenDiffuseOpacity = 0.20;
 constexpr double BarColorSwatchFrameOpacity = 0.18;
@@ -3213,7 +3216,8 @@ void BarUISetClass::Rendering()
 						else
 							drawAttributeBar->y.SetTar(-(shapeMap[BarUISetShapeEnum::MainBar]->GetH() / 2.0 + drawAttributeBar->GetH() / 2.0 + 10.0));
 
-						drawAttributeBar->pct.SetTar(0.8);
+						drawAttributeBar->pct.SetTar(
+							BarDrawAttributeSurfaceOpacity);
 						drawAttributeBar->framePct.value().SetTar(0.18);
 					}
 					drawAttributeBar->rw.value().SetTar(8.0 * drawAttributeLayoutScale);
@@ -3856,8 +3860,9 @@ void BarUISetClass::Rendering()
 								- BarDrawAttributeGap * 3.0)
 							* max(0.0, static_cast<double>(barStyle.zoom));
 						bool previewOverflow = tooltipBaseVisible
-							&& static_cast<double>(GetPenWidth())
-								> expandedPreviewCapacity + 0.001;
+							&& (BarAlwaysShowThicknessOverflowBadgeForTesting
+								|| static_cast<double>(GetPenWidth())
+									> expandedPreviewCapacity + 0.001);
 						barState.drawAttributeBar.thicknessPreviewOverflow =
 							previewOverflow;
 
@@ -3904,7 +3909,7 @@ void BarUISetClass::Rendering()
 						{
 							auto surface = shapeMap[shapeType];
 							surface->fill.value().SetTar(
-								GetThemeColor(BarThemeColorEnum::SubtleFill),
+								GetThemeColor(BarThemeColorEnum::Surface),
 								operationDur);
 							surface->frame.value().SetTar(
 								GetThemeColor(BarThemeColorEnum::SurfaceFrame),
@@ -4781,8 +4786,10 @@ void BarUISetClass::Rendering()
 						anchorX - width / 2.0, BarDrawAttributeGap,
 						max(BarDrawAttributeGap,
 							logicalWindowWidth - BarDrawAttributeGap - width));
+					// 浮窗完整落在徽标外侧，避免从叹号中心展开后压住当前按钮。
 					double targetCenterY = anchorY + previewSide
-						* (BarDrawAttributeGap + height / 2.0);
+						* (BarThicknessTooltipBadgeHeight / 2.0 * panelScale
+							+ BarThicknessTooltipPopupGap + height / 2.0);
 					layout.targetTop = clamp(
 						targetCenterY - height / 2.0,
 						BarDrawAttributeGap,
@@ -5403,31 +5410,6 @@ void BarUISetClass::Rendering()
 								}
 							}
 
-							// 徽标覆盖在墨迹预览上方，但不改变墨迹自身的居中区域。
-							auto annotationBadge = shapeMap[
-								BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationBadge];
-							spec.Shape(barDeviceContext.Get(), *annotationBadge,
-								annotationBadge->Inherit(TopLeft, *panel));
-							auto annotationLabel = wordMap[
-								BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationLabel];
-							spec.Word(barDeviceContext.Get(), *annotationLabel,
-								annotationLabel->Inherit(TopLeft, *panel),
-								DWRITE_FONT_WEIGHT_NORMAL,
-								DWRITE_TEXT_ALIGNMENT_LEADING);
-							auto annotationInfo = svgMap[
-								BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationInfo];
-							spec.Svg(barDeviceContext.Get(), *annotationInfo,
-								annotationInfo->Inherit(TopLeft, *panel));
-
-							auto overflowBadge = shapeMap[
-								BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowBadge];
-							spec.Shape(barDeviceContext.Get(), *overflowBadge,
-								overflowBadge->Inherit(TopLeft, *panel));
-							auto overflowInfo = svgMap[
-								BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowInfo];
-							spec.Svg(barDeviceContext.Get(), *overflowInfo,
-								overflowInfo->Inherit(TopLeft, *panel));
-
 							struct ThicknessButtonRender
 							{
 								BarUISetShapeEnum shape;
@@ -5670,7 +5652,7 @@ void BarUISetClass::Rendering()
 				}
 			{ /**/ }
 
-			// 提示浮窗最后绘制，保证越过属性栏后仍位于主栏和主按钮上方。
+			// 浮窗不擦除已经绘制的背景；徽标随后覆盖，形成从按钮下层展开的层级。
 			{
 				auto panel = shapeMap[BarUISetShapeEnum::DrawAttributeBar];
 				auto DrawThicknessPopup =
@@ -5682,7 +5664,7 @@ void BarUISetClass::Rendering()
 						auto popupWord = wordMap[popupWordType];
 						auto closeSvg = svgMap[closeSvgType];
 						spec.Shape(barDeviceContext.Get(), *popup,
-							popup->Inherit(TopLeft, *panel), &current, true);
+							popup->Inherit(TopLeft, *panel), &current, false);
 						spec.Word(barDeviceContext.Get(), *popupWord,
 							popupWord->Inherit(TopLeft, *panel),
 							DWRITE_FONT_WEIGHT_NORMAL,
@@ -5698,6 +5680,30 @@ void BarUISetClass::Rendering()
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup,
 					BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText,
 					BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowPopupClose);
+
+				auto annotationBadge = shapeMap[
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationBadge];
+				spec.Shape(barDeviceContext.Get(), *annotationBadge,
+					annotationBadge->Inherit(TopLeft, *panel));
+				auto annotationLabel = wordMap[
+					BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationLabel];
+				spec.Word(barDeviceContext.Get(), *annotationLabel,
+					annotationLabel->Inherit(TopLeft, *panel),
+					DWRITE_FONT_WEIGHT_NORMAL,
+					DWRITE_TEXT_ALIGNMENT_LEADING);
+				auto annotationInfo = svgMap[
+					BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationInfo];
+				spec.Svg(barDeviceContext.Get(), *annotationInfo,
+					annotationInfo->Inherit(TopLeft, *panel));
+
+				auto overflowBadge = shapeMap[
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowBadge];
+				spec.Shape(barDeviceContext.Get(), *overflowBadge,
+					overflowBadge->Inherit(TopLeft, *panel));
+				auto overflowInfo = svgMap[
+					BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowInfo];
+				spec.Svg(barDeviceContext.Get(), *overflowInfo,
+					overflowInfo->Inherit(TopLeft, *panel));
 			}
 
 			// 调试模式持续显示实时 FPS，并把文本范围加入脏区。
@@ -7227,7 +7233,8 @@ namespace Inkeys::UI::Bar
 						BarDrawAttributeCompactScale,
 						GetThemeColor(BarThemeColorEnum::Surface),
 						GetThemeColor(BarThemeColorEnum::SurfaceFrame));
-					shape->pct.Initialization(0.8);
+					shape->pct.Initialization(
+						BarDrawAttributeSurfaceOpacity);
 					shape->framePct = BarUiPctClass(0.18);
 					shape->frameRendering = BarUiFrameRenderingEnum::PointLight;
 					shape->frameLightColor = BarUiFrameLightColorEnum::PenWhenDrawing;
@@ -7511,7 +7518,7 @@ namespace Inkeys::UI::Bar
 							{
 								auto surface = make_shared<BarUiShapeClass>(
 									0.0, 0.0, width, height, 4.0, 4.0, 1.0,
-									GetThemeColor(BarThemeColorEnum::SubtleFill),
+									GetThemeColor(BarThemeColorEnum::Surface),
 									GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 								surface->pct.Initialization(0.0);
 								surface->framePct = BarUiPctClass(0.0);
