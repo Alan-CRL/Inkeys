@@ -64,7 +64,6 @@ constexpr double BarThicknessTooltipBadgeHeight = 24.0;
 constexpr double BarThicknessTooltipIconSize = 14.0;
 constexpr double BarThicknessTooltipCloseButtonSize = 20.0;
 constexpr double BarThicknessTooltipHitPadding = 2.0;
-constexpr bool BarThicknessOverflowPreviewAlwaysVisible = true;
 constexpr double BarThicknessTooltipPadding = 8.0;
 constexpr double BarThicknessTooltipCloseReserve = 25.0;
 constexpr double BarThicknessTooltipTitleFontSize = 12.0;
@@ -1043,7 +1042,7 @@ ID2D1LinearGradientBrush* BarUIRendering::GetThicknessPreviewGradientBrush(
 }
 
 ID2D1PathGeometry* BarUIRendering::GetThicknessPreviewPath(
-	const array<D2D1_POINT_2F, 4>& points)
+	const array<D2D1_POINT_2F, 7>& points)
 {
 	if (!d2dFactory1 || thicknessPreviewPathUnavailable) return nullptr;
 	bool pointsChanged = !thicknessPreviewPathInitialized;
@@ -1063,8 +1062,13 @@ ID2D1PathGeometry* BarUIRendering::GetThicknessPreviewPath(
 		if (SUCCEEDED(hr))
 		{
 			sink->BeginFigure(points[0], D2D1_FIGURE_BEGIN_HOLLOW);
-			D2D1_BEZIER_SEGMENT segment{ points[1], points[2], points[3] };
-			sink->AddBezier(segment);
+			// 两段镜像贝塞尔形成两个平衡拐点，中点保持连续切线。
+			D2D1_BEZIER_SEGMENT firstSegment{
+				points[1], points[2], points[3] };
+			D2D1_BEZIER_SEGMENT secondSegment{
+				points[4], points[5], points[6] };
+			sink->AddBezier(firstSegment);
+			sink->AddBezier(secondSegment);
 			sink->EndFigure(D2D1_FIGURE_END_OPEN);
 			hr = sink->Close();
 		}
@@ -3912,11 +3916,9 @@ void BarUISetClass::Rendering()
 								- BarDrawAttributeThicknessControlHeight
 								- BarDrawAttributeGap * 3.0)
 							* max(0.0, static_cast<double>(barStyle.zoom));
-						// 测试阶段始终开放超限徽标；关闭该常量即可恢复真实粗细门禁。
 						bool previewOverflow = tooltipBaseVisible
-							&& (BarThicknessOverflowPreviewAlwaysVisible
-								|| static_cast<double>(GetPenWidth())
-									> expandedPreviewCapacity + 0.001);
+							&& static_cast<double>(GetPenWidth())
+								> expandedPreviewCapacity + 0.001;
 						barState.drawAttributeBar.thicknessPreviewOverflow =
 							previewOverflow;
 
@@ -4756,8 +4758,8 @@ void BarUISetClass::Rendering()
 			// 徽标显隐跟随当前内容透明度，不能读取收起目标状态后瞬间消失。
 			bool annotationVisible =
 				PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect);
-			bool overflowVisible = BarThicknessOverflowPreviewAlwaysVisible
-				|| barState.drawAttributeBar.thicknessPreviewOverflow;
+			bool overflowVisible =
+				barState.drawAttributeBar.thicknessPreviewOverflow;
 
 			auto SetSurfaceDerived = [&](const shared_ptr<BarUiShapeClass>& shape,
 				double x, double y, double width, double height, double opacity)
@@ -5465,11 +5467,6 @@ void BarUISetClass::Rendering()
 								FLOAT right = static_cast<FLOAT>(
 									(thicknessRegion->inhX + thicknessRegion->w.val
 										- horizontalInset) * uiZoom);
-								FLOAT centerY = static_cast<FLOAT>(
-									previewCenterY * uiZoom);
-								D2D1_RECT_F previewRect = D2D1::RectF(left,
-									centerY - previewThickness / 2.0f, right,
-									centerY + previewThickness / 2.0f);
 								double previewMorph = clamp(
 									static_cast<double>(
 										drawAttributePenPreviewMorph.val),
@@ -5483,39 +5480,98 @@ void BarUISetClass::Rendering()
 										- BarDrawAttributeCompactScale)
 									/ (1.0 - BarDrawAttributeCompactScale),
 									0.0, 1.0);
+								FLOAT radius = previewThickness / 2.0F;
+								FLOAT availableAmplitude = max(0.0F,
+									(maxPreviewThickness - previewThickness)
+										/ 2.0F);
+								FLOAT amplitude = min(
+									maxPreviewThickness * 0.34F,
+									availableAmplitude)
+									* static_cast<FLOAT>(
+										hardCurveProgress
+										* panelExpandedProgress);
+								FLOAT previewHalfHeight =
+									maxPreviewThickness / 2.0F;
+								FLOAT verticalExtent = radius + amplitude;
+								FLOAT maxCenterShift = max(
+									0.0F, previewHalfHeight - verticalExtent);
+								FLOAT badgeProtectedDepth =
+									static_cast<FLOAT>(
+										(BarThicknessTooltipBadgeHeight
+											+ BarDrawAttributeGap * 2.0)
+										* panelAnimationScale * uiZoom);
+								FLOAT desiredCenterShift = max(0.0F,
+									badgeProtectedDepth - previewHalfHeight
+										+ radius);
+								FLOAT centerShift = min(
+									desiredCenterShift, maxCenterShift);
+								FLOAT awayFromBadges =
+									static_cast<FLOAT>(-previewSide);
+								FLOAT centerY = static_cast<FLOAT>(
+									previewCenterY * uiZoom)
+									+ awayFromBadges * centerShift;
+								D2D1_RECT_F previewRect = D2D1::RectF(left,
+									centerY - previewThickness / 2.0f, right,
+									centerY + previewThickness / 2.0f);
 								ID2D1SolidColorBrush* solidBrush =
 									spec.GetFrameSolidColorBrush(
 										barDeviceContext.Get(), contentColor,
 										contentOpacity);
+								FLOAT frameInset = static_cast<FLOAT>(
+									panelAnimationScale * uiZoom);
+								D2D1_RECT_F previewClip = D2D1::RectF(
+									static_cast<FLOAT>(
+										thicknessRegion->inhX * uiZoom)
+										+ frameInset,
+									static_cast<FLOAT>(
+										thicknessRegion->inhY * uiZoom)
+										+ frameInset,
+									static_cast<FLOAT>(
+										(thicknessRegion->inhX
+											+ thicknessRegion->w.val) * uiZoom)
+										- frameInset,
+									static_cast<FLOAT>(
+										(thicknessRegion->inhY
+											+ thicknessRegion->h.val) * uiZoom)
+										- frameInset);
+								bool previewClipPushed =
+									previewClip.right > previewClip.left
+									&& previewClip.bottom > previewClip.top;
+								if (previewClipPushed)
+									barDeviceContext->PushAxisAlignedClip(
+										previewClip,
+										D2D1_ANTIALIAS_MODE_ALIASED);
 
 								if (previewMorph <= 0.5 && solidBrush
 									&& previewThickness > 0.0F)
 								{
-									FLOAT radius = previewThickness / 2.0F;
 									FLOAT startX = min(previewRect.right,
 										previewRect.left + radius);
 									FLOAT endX = max(startX,
 										previewRect.right - radius);
 									FLOAT span = max(0.0F, endX - startX);
-									FLOAT availableAmplitude = max(0.0F,
-										(maxPreviewThickness - previewThickness)
-											/ 2.0F);
-									FLOAT amplitude = min(
-										maxPreviewThickness * 0.22F,
-										availableAmplitude)
-										* static_cast<FLOAT>(
-											hardCurveProgress
-											* panelExpandedProgress);
-									array<D2D1_POINT_2F, 4> points =
+									FLOAT awayTurnY =
+										centerY + awayFromBadges * amplitude;
+									FLOAT towardTurnY =
+										centerY - awayFromBadges * amplitude;
+									array<D2D1_POINT_2F, 7> points =
 									{
-										D2D1::Point2F(startX,
-											centerY + amplitude),
-										D2D1::Point2F(startX + span / 3.0F,
-											centerY - amplitude),
-										D2D1::Point2F(startX + span * 2.0F / 3.0F,
-											centerY + amplitude),
-										D2D1::Point2F(endX,
-											centerY - amplitude),
+										D2D1::Point2F(startX, centerY),
+										D2D1::Point2F(
+											startX + span * 0.30F,
+											awayTurnY),
+										D2D1::Point2F(
+											startX + span * 0.40F,
+											awayTurnY),
+										D2D1::Point2F(
+											startX + span / 2.0F, centerY),
+										D2D1::Point2F(
+											startX + span * 0.60F,
+											towardTurnY),
+										D2D1::Point2F(
+											startX + span * 0.70F,
+											towardTurnY),
+										D2D1::Point2F(endX, centerY),
 									};
 									auto path =
 										spec.GetThicknessPreviewPath(points);
@@ -5566,6 +5622,8 @@ void BarUISetClass::Rendering()
 											&roundedPreview, previewBrush);
 									}
 								}
+								if (previewClipPushed)
+									barDeviceContext->PopAxisAlignedClip();
 							}
 
 							struct ThicknessButtonRender

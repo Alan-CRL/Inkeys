@@ -250,7 +250,7 @@ protected:
 		D2D1_POINT_2F startPoint, D2D1_POINT_2F endPoint,
 		FLOAT leftOpacity);
 	ID2D1PathGeometry* GetThicknessPreviewPath(
-		const array<D2D1_POINT_2F, 4>& points);
+		const array<D2D1_POINT_2F, 7>& points);
 	ID2D1StrokeStyle* GetThicknessPreviewStrokeStyle();
 	FrameDiffuseMaskCacheClass* GetRoundedRectDiffuseMask(
 		ID2D1DeviceContext* deviceContext,
@@ -333,7 +333,7 @@ protected:
 	ComPtr<ID2D1StrokeStyle> thicknessPreviewStrokeStyle;
 	COLORREF thicknessPreviewGradientColor = RGB(0, 0, 0);
 	FLOAT thicknessPreviewGradientLeftOpacity = -1.0F;
-	array<D2D1_POINT_2F, 4> thicknessPreviewPathPoints{};
+	array<D2D1_POINT_2F, 7> thicknessPreviewPathPoints{};
 	ComPtr<ID2D1DeviceContext> frameMaskDeviceContext;
 	ComPtr<ID2D1Effect> frameGaussianBlurEffect;
 
