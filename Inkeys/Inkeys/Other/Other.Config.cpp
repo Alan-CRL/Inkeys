@@ -5,6 +5,8 @@ module;
 #include <initializer_list>
 #include <sstream>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 module Inkeys.Other.Config;
@@ -172,13 +174,13 @@ namespace
 	}
 
 	template <typename ValueT, typename EnableT = void>
-	struct JsonScalarTraits
+	struct JsonValueCodec
 	{
-		static_assert(InkeysConfigDependentFalseV<ValueT>, "Inkeys::Config: unsupported scalar type in schema.");
+		static_assert(InkeysConfigDependentFalseV<ValueT>, "Inkeys::Config: unsupported value type in schema.");
 	};
 
 	template <>
-	struct JsonScalarTraits<bool, void>
+	struct JsonValueCodec<bool, void>
 	{
 		static bool TryRead(const Json::Value& jsonValue, bool& outValue)
 		{
@@ -194,7 +196,7 @@ namespace
 	};
 
 	template <typename ValueT>
-	struct JsonScalarTraits<ValueT, std::enable_if_t<std::is_integral_v<ValueT> && !std::is_same_v<ValueT, bool>>>
+	struct JsonValueCodec<ValueT, std::enable_if_t<std::is_integral_v<ValueT> && !std::is_same_v<ValueT, bool>>>
 	{
 		static bool TryRead(const Json::Value& jsonValue, ValueT& outValue)
 		{
@@ -219,7 +221,7 @@ namespace
 	};
 
 	template <typename ValueT>
-	struct JsonScalarTraits<ValueT, std::enable_if_t<std::is_floating_point_v<ValueT>>>
+	struct JsonValueCodec<ValueT, std::enable_if_t<std::is_floating_point_v<ValueT>>>
 	{
 		static bool TryRead(const Json::Value& jsonValue, ValueT& outValue)
 		{
@@ -235,7 +237,7 @@ namespace
 	};
 
 	template <>
-	struct JsonScalarTraits<std::string, void>
+	struct JsonValueCodec<std::string, void>
 	{
 		static bool TryRead(const Json::Value& jsonValue, std::string& outValue)
 		{
@@ -251,7 +253,7 @@ namespace
 	};
 
 	template <>
-	struct JsonScalarTraits<std::wstring, void>
+	struct JsonValueCodec<std::wstring, void>
 	{
 		static bool TryRead(const Json::Value& jsonValue, std::wstring& outValue)
 		{
@@ -267,19 +269,86 @@ namespace
 	};
 
 	template <typename ValueT>
-	struct JsonScalarTraits<IdtAtomic<ValueT>, void>
+	struct JsonValueCodec<IdtAtomic<ValueT>, void>
 	{
 		static bool TryRead(const Json::Value& jsonValue, IdtAtomic<ValueT>& outValue)
 		{
 			ValueT loadedValue{};
-			if (!JsonScalarTraits<ValueT>::TryRead(jsonValue, loadedValue)) return false;
+			if (!JsonValueCodec<ValueT>::TryRead(jsonValue, loadedValue)) return false;
 			outValue.store(loadedValue);
 			return true;
 		}
 
 		static Json::Value ToJson(const IdtAtomic<ValueT>& value)
 		{
-			return JsonScalarTraits<ValueT>::ToJson(value.load());
+			return JsonValueCodec<ValueT>::ToJson(value.load());
+		}
+	};
+
+	template <>
+	struct JsonValueCodec<Inkeys::BarButtonLayoutEntry, void>
+	{
+		static bool TryRead(const Json::Value& jsonValue, Inkeys::BarButtonLayoutEntry& outValue)
+		{
+			if (!jsonValue.isObject()) return false;
+			if (!jsonValue.isMember("Id") || !jsonValue["Id"].isString()) return false;
+
+			std::string id = jsonValue["Id"].asString();
+			if (id.empty()) return false;
+
+			bool visible = true;
+			if (jsonValue.isMember("Visible"))
+			{
+				if (!jsonValue["Visible"].isBool()) return false;
+				visible = jsonValue["Visible"].asBool();
+			}
+
+			outValue = { std::move(id), visible };
+			return true;
+		}
+
+		static Json::Value ToJson(const Inkeys::BarButtonLayoutEntry& value)
+		{
+			Json::Value result(Json::objectValue);
+			result["Id"] = value.Id;
+			result["Visible"] = value.Visible;
+			return result;
+		}
+	};
+
+	template <typename ValueT>
+	struct JsonValueCodec<ValueT, std::void_t<typename Inkeys::ConfigSequenceAdapter<ValueT>::ElementType>>
+	{
+		using AdapterT = Inkeys::ConfigSequenceAdapter<ValueT>;
+		using ElementT = typename AdapterT::ElementType;
+
+		static bool TryRead(const Json::Value& jsonValue, ValueT& outValue)
+		{
+			if (!jsonValue.isArray()) return false;
+
+			std::vector<ElementT> loadedValues;
+			loadedValues.reserve(jsonValue.size());
+			for (Json::ArrayIndex index = 0; index < jsonValue.size(); index++)
+			{
+				ElementT loadedValue{};
+				if (!JsonValueCodec<ElementT>::TryRead(jsonValue[index], loadedValue)) return false;
+				loadedValues.emplace_back(std::move(loadedValue));
+			}
+
+			// 只有整个数组解析成功后，才由序列适配器一次性接收。
+			AdapterT::Replace(outValue, std::move(loadedValues));
+			return true;
+		}
+
+		static Json::Value ToJson(const ValueT& value)
+		{
+			Json::Value result(Json::arrayValue);
+			const std::vector<ElementT> values = AdapterT::Snapshot(value);
+			for (const ElementT& element : values)
+			{
+				result.append(JsonValueCodec<ElementT>::ToJson(element));
+			}
+			return result;
 		}
 	};
 
@@ -386,7 +455,7 @@ namespace
 			if (!jsonValue) return;
 
 			T loadedValue{};
-			if (!JsonScalarTraits<T>::TryRead(*jsonValue, loadedValue)) return;
+			if (!JsonValueCodec<T>::TryRead(*jsonValue, loadedValue)) return;
 
 			AssignConfigValue(value, loadedValue);
 		}
@@ -418,7 +487,7 @@ namespace
 		void HandleValue(const char* name, T& value, const T&, bool, Inkeys::ConfigUploadMode, const char*)
 		{
 			Json::Value& parent = EnsureObjectPath(root, groupPath);
-			parent[name] = JsonScalarTraits<T>::ToJson(value);
+			parent[name] = JsonValueCodec<T>::ToJson(value);
 		}
 
 	private:
@@ -444,7 +513,7 @@ namespace
 		{
 			if (uploadMode != Inkeys::ConfigUploadMode::Upload) return;
 
-			std::string valueText = JsonValueToUploadText(JsonScalarTraits<T>::ToJson(value));
+			std::string valueText = JsonValueToUploadText(JsonValueCodec<T>::ToJson(value));
 			MakeUploadTextSingleLine(valueText);
 			const std::string keyText = UsesFullUploadPath(uploadName) ? JoinPath(groupPath, name) : std::string(uploadName);
 

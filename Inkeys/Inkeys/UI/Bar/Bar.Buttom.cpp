@@ -14,6 +14,8 @@ module;
 #include "../../../IdtDisplayManagement.h"
 #include "../../../IdtWindow.h"
 
+#include <unordered_set>
+
 module Inkeys.UI.Bar;
 import :Bottom;
 
@@ -23,6 +25,30 @@ import :Theme;
 import Inkeys.Conv.Color;
 import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
+import Inkeys.Other.Config;
+
+bool BarButtomSetClass::RegisterButton(const std::string& id, BarButtomClass* button, bool allowMultiple)
+{
+	if (id.empty() || button == nullptr) return false;
+
+	unique_lock lock(registrationMutex);
+	if (registrations.contains(id)) return false;
+
+	button->id = id;
+	button->only = !allowMultiple;
+	registrations.emplace(id, BarButtonRegistrationClass{ button, allowMultiple });
+	return true;
+}
+
+bool BarButtomSetClass::TryGetRegistration(const std::string& id, BarButtonRegistrationClass& outRegistration) const
+{
+	shared_lock lock(registrationMutex);
+	auto registration = registrations.find(id);
+	if (registration == registrations.end()) return false;
+
+	outRegistration = registration->second;
+	return true;
+}
 
 void BarButtomSetClass::PresetInitialization()
 {
@@ -383,7 +409,6 @@ void BarButtomSetClass::PresetInitialization()
 			obj->preset = BarButtomPresetEnum::Setting;
 			obj->hide = false;
 
-			obj->only = false;
 		}
 
 		{
@@ -411,6 +436,18 @@ void BarButtomSetClass::PresetInitialization()
 		obj->state = &barButtomState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
+
+	// 官方按钮使用稳定 ID；注册时同时声明是否允许在布局中重复。
+	RegisterButton(Inkeys::BarButtonId::Divider, preset[(int)BarButtomPresetEnum::Divider], true);
+	RegisterButton(Inkeys::BarButtonId::Select, preset[(int)BarButtomPresetEnum::Select], false);
+	RegisterButton(Inkeys::BarButtonId::Draw, preset[(int)BarButtomPresetEnum::Draw], false);
+	RegisterButton(Inkeys::BarButtonId::Eraser, preset[(int)BarButtomPresetEnum::Eraser], false);
+	RegisterButton(Inkeys::BarButtonId::Geometry, preset[(int)BarButtomPresetEnum::Geometry], false);
+	RegisterButton(Inkeys::BarButtonId::Recall, preset[(int)BarButtomPresetEnum::Recall], false);
+	RegisterButton(Inkeys::BarButtonId::Clean, preset[(int)BarButtomPresetEnum::Clean], false);
+	RegisterButton(Inkeys::BarButtonId::Pierce, preset[(int)BarButtomPresetEnum::Pierce], false);
+	RegisterButton(Inkeys::BarButtonId::Freeze, preset[(int)BarButtomPresetEnum::Freeze], false);
+	RegisterButton(Inkeys::BarButtonId::Setting, preset[(int)BarButtomPresetEnum::Setting], false);
 }
 void BarButtomSetClass::StateUpdate()
 {
@@ -428,29 +465,48 @@ void BarButtomSetClass::UpdateDrawButtonStyle()
 	else preset[(int)BarButtomPresetEnum::Draw]->icon.TransitionToResource(L"UI", L"barBrush1");
 }
 
-// TODO 临时方案，按照默认样式加载，后续改为从配置中加载布局
 void BarButtomSetClass::Load()
 {
-	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Select]);
-	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Draw]);
-	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Eraser]);
-	// buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Geometry]);
+	const std::vector<Inkeys::BarButtonLayoutEntry> layout =
+		Inkeys::config.UI.Bar.ButtonLayout.Snapshot();
+	std::vector<Inkeys::BarButtonLayoutEntry> normalizedLayout;
+	normalizedLayout.reserve(layout.size());
+	std::unordered_set<std::string> loadedSingletons;
 
-	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Recall]);
-	// buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Redo]);
-	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Clean]);
+	for (const Inkeys::BarButtonLayoutEntry& entry : layout)
+	{
+		BarButtonRegistrationClass registration;
+		if (!TryGetRegistration(entry.Id, registration))
+		{
+			// 未注册项可能来自暂时缺失的插件，保留原位置但不创建 UI。
+			normalizedLayout.emplace_back(entry);
+			continue;
+		}
 
-	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Divider]);
+		if (!registration.allowMultiple && !loadedSingletons.emplace(entry.Id).second)
+		{
+			// 单例按钮只采用第一条，规范化结果会在下一次 Config::Write() 时清理磁盘。
+			continue;
+		}
 
-	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Pierce]);
-	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Freeze]);
+		normalizedLayout.emplace_back(entry);
+		registration.button->userVisible = entry.Visible;
 
-	buttomlist.Set(tot++, preset[(int)BarButtomPresetEnum::Setting]);
+		const int targetIndex = tot.load();
+		if (buttomlist.Set(targetIndex, registration.button)) tot = targetIndex + 1;
+	}
+
+	Inkeys::config.UI.Bar.ButtonLayout.Replace(std::move(normalizedLayout));
 }
 
 void BarButtomSetClass::PresetHoming()
 {
-	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen || barUISet.barState.fold) barUISet.barState.drawAttribute = false;
+	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
+		|| barUISet.barState.fold
+		|| !preset[(int)BarButtomPresetEnum::Draw]->IsVisible())
+	{
+		barUISet.barState.drawAttribute = false;
+	}
 
 	// 进入非绘制模式需要隐藏无用按钮
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)

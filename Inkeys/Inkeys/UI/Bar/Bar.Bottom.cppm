@@ -2,6 +2,9 @@ module;
 
 #include "../../../IdtMain.h"
 
+#include <string>
+#include <unordered_map>
+
 export module Inkeys.UI.Bar:Bottom;
 
 import :UI;
@@ -62,6 +65,8 @@ public:
 	BarButtomClass(const BarButtomClass& other)
 		: size(other.size),
 		preset(other.preset),
+		id(other.id),
+		userVisible(other.userVisible),
 		hide(other.hide),
 		only(other.only),
 		buttom(other.buttom),
@@ -73,9 +78,17 @@ public:
 		state(other.state) // 浅拷贝指针
 	{}
 
+	bool IsVisible() const
+	{
+		return userVisible.load() && !hide.load();
+	}
+
 public:
 	IdtAtomic<BarButtomSizeEnum> size;
 	IdtAtomic<BarButtomPresetEnum> preset = BarButtomPresetEnum::None;
+	std::string id;
+	// 配置显隐与运行时上下文 hide 分离，所有消费方统一读取 IsVisible()。
+	IdtAtomic<bool> userVisible = true;
 	IdtAtomic<bool> hide = true;
 	IdtAtomic<bool> only = true;
 
@@ -96,6 +109,13 @@ public:
 
 	BarButtomStateClass* state;
 };
+
+struct BarButtonRegistrationClass
+{
+	BarButtomClass* button = nullptr;
+	bool allowMultiple = false;
+};
+
 class BarButtomListClass
 {
 public:
@@ -108,19 +128,22 @@ public:
 	bool Set(int x, BarButtomClass* ptr)
 	{
 		unique_lock lock(mt);
-		if (!(x >= 0 && x < list.size()) || ptr == nullptr) return false;
+		if (x < 0 || ptr == nullptr) return false;
+		const size_t index = static_cast<size_t>(x);
+		// 配置序列不设固定长度，按需扩展运行时按钮槽位。
+		if (index >= list.size()) list.resize(index + 1);
 
 		// 如果对象不唯一，则应用深拷贝
 		if (!ptr->only)
 		{
 			// 深拷贝 BarButtomClass 对象
 			shared_ptr<BarButtomClass> copy = make_shared<BarButtomClass>(*ptr);
-			list[x] = copy;
+			list[index] = copy;
 		}
 		else
 		{
 			// 直接使用传入的指针
-			list[x] = shared_ptr<BarButtomClass>(ptr);
+			list[index] = shared_ptr<BarButtomClass>(ptr);
 		}
 
 		return true;
@@ -146,23 +169,27 @@ class BarButtomSetClass
 {
 public:
 	BarButtomListClass buttomlist;
-	IdtAtomic<int> tot; // 顺序列顶，开
+	IdtAtomic<int> tot = 0; // 顺序列顶，开
 
 	// 按钮状态
 	unordered_map<int, BarButtomStateClass> barButtomState;
 
 	// 预设按钮模态
-	BarButtomClass* preset[40];
+	BarButtomClass* preset[40]{};
 
 public:
+	bool RegisterButton(const std::string& id, BarButtomClass* button, bool allowMultiple);
 	void PresetInitialization();
 	void StateUpdate();
 	void UpdateDrawButtonStyle();
 
-	// TODO 临时方案，按照默认样式加载，后续改为从配置中加载布局
 	void Load();
 
 protected:
+	bool TryGetRegistration(const std::string& id, BarButtonRegistrationClass& outRegistration) const;
 	void PresetHoming();
 	void CalcState();
+
+	mutable shared_mutex registrationMutex;
+	unordered_map<std::string, BarButtonRegistrationClass> registrations;
 };

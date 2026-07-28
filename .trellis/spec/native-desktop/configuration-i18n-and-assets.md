@@ -34,6 +34,57 @@
 4. JSON key 改名属于持久化格式变化；没有迁移代码时不能假设旧 key 会自动升级。
 5. 记录设置窗口写的是哪套配置，避免 UI 显示值、运行时缓存与磁盘文件分叉。
 
+## UI3 Bar 顺序布局配置合同
+
+### 1. Scope / Trigger
+
+修改 `UI.Bar.ButtonLayout`、配置顺序序列 codec、UI3 Bar 按钮注册或有效可见性时适用。该合同不包含设置界面的拖拽排序/显隐编辑。
+
+### 2. Signatures
+
+- `ConfigSequence<T>::Snapshot() -> std::vector<T>`
+- `ConfigSequence<T>::Replace(std::vector<T>) -> void`
+- `ConfigSequenceAdapter<T>::ElementType / Snapshot(...) / Replace(...)`
+- `BarButtomSetClass::RegisterButton(const std::string&, BarButtomClass*, bool allowMultiple) -> bool`
+
+### 3. Contracts
+
+- JSON 路径为 `UI.Bar.ButtonLayout`，值为顺序数组；元素格式固定为 `{ "Id": string, "Visible": bool }`，`Visible` 缺省为 `true`。
+- `ConfigSequence<T>` 的快照在共享锁下生成；JSON 先完整解析到临时集合，成功后才在独占锁下整体替换。
+- 官方 ID 定义在 `Inkeys::BarButtonId`，当前仅 `Inkeys.Bar.Divider` 允许重复；Redo 没有运行时对象，不进入默认数组。
+- Bar 按数组顺序加载。已注册单例只取第一条，后续重复项从内存配置移除；未知 ID（包括重复项）原样保留但不渲染。
+- `BarButtomClass::IsVisible()` 是唯一消费入口，结果为配置 `userVisible` 且运行时上下文 `hide` 为 false。
+
+### 4. Validation & Error Matrix
+
+| 输入/状态 | 行为 |
+| --- | --- |
+| 字段缺失 | 保留 schema 默认布局 |
+| 字段不是数组 | 整个字段回退默认布局 |
+| 元素不是对象，或 `Id` 缺失/空 | 整个字段回退默认布局 |
+| `Visible` 缺失 | 读取为 `true` |
+| `Visible` 不是 bool | 整个字段回退默认布局 |
+| 已注册单例重复 | 第一条生效，后续项从内存序列移除 |
+| 未注册 ID 重复 | 全部保留，不创建 UI |
+
+### 5. Good / Base / Bad Cases
+
+- Good：自定义顺序、隐藏项和多个 Divider 均按数组顺序生效。
+- Base：旧配置没有字段时使用 Select、Draw、Eraser、Geometry(hidden)、Recall、Clean、Divider、Pierce、Freeze、Setting。
+- Bad：数组任一元素 schema 错误时，不得保留此前已解析的部分结果。
+
+### 6. Tests Required
+
+- 验证缺字段、空数组、调整顺序、隐藏项、多个 Divider。
+- 验证单例重复在内存中被清理，下一次 `Config::Write()` 后从 JSON 消失。
+- 验证未知及重复未知 ID 均被保留，`configOnce = config` 后序列内容一致。
+- 执行 `git diff --check` 和完整 Solution `Debug|ARM64` 构建；仓库没有对应自动化测试时，需明确记录未做 UI 运行验证。
+
+### 7. Wrong vs Correct
+
+- Wrong：逐个解析元素时直接修改运行时容器，或让布局/命中继续直接读取 `hide`。
+- Correct：先完整解析并事务替换；所有布局、动画、悬停、命中和隐藏锚点统一调用 `IsVisible()`。
+
 ## 国际化源与生成物
 
 | 路径 | `【直接确认】`的角色 |
