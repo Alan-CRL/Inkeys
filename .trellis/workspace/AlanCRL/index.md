@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 7
+- **Total Sessions**: 8
 - **Last Active**: 2026-07-28
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~243 | Active |
+| `journal-1.md` | ~264 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 8 | 2026-07-28 | 完善 UI3 粗细预览与提示交互 | `bb49af9` | `feature/animation` |
 | 7 | 2026-07-28 | UI3 Bar button layout configuration | `7678b31` | `feature/settings` |
 | 6 | 2026-07-26 | UI3 光影渲染性能优化 | `cde5627` | `feature/animation` |
 | 5 | 2026-07-24 | 归档既有 UI3 动画与色块任务 | `22eb8ce`, `d66909e` | `feature/animation` |

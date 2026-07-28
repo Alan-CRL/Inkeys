@@ -241,3 +241,24 @@ Added reusable locked JSON sequences, persisted UI3 Bar button order and visibil
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: 完善 UI3 粗细预览与提示交互
+
+**Date**: 2026-07-28
+**Task**: 完善 UI3 粗细预览与提示交互
+**Branch**: `feature/animation`
+
+### Summary
+
+完成粗细预览动态避让、上下倒转、边界裁剪和对称双拐点曲线，恢复粗细超限警告的真实容量门禁；完整 Debug|ARM64 编译及人工验证通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bb49af9` | (see git log) |
+
+### Status
+
+[OK] **Completed**
