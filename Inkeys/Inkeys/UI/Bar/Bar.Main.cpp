@@ -57,7 +57,7 @@ constexpr double BarDrawAttributeCompactHeight =
 constexpr double BarDrawAttributeGap = 5.0;
 constexpr double BarDrawAttributeThicknessHeight = 105.0;
 constexpr double BarDrawAttributeThicknessControlHeight = 30.0;
-constexpr double BarDrawAttributeSurfaceOpacity = 0.80;
+constexpr double BarDrawAttributeSurfaceOpacity = 0.95;
 constexpr double BarDrawAttributeThicknessContentInset =
 	BarDrawAttributeGap * 2.0;
 constexpr double BarThicknessTooltipBadgeHeight = 24.0;
@@ -71,7 +71,8 @@ constexpr double BarThicknessTooltipBodyFontSize = 10.0;
 constexpr double BarThicknessTooltipLineGap = 3.0;
 constexpr double BarThicknessTooltipPopupGap =
 	BarDrawAttributeThicknessContentInset;
-constexpr double BarThicknessTooltipFillOpacity = 0.80;
+constexpr double BarThicknessTooltipFillOpacity =
+	BarDrawAttributeSurfaceOpacity;
 constexpr double BarThicknessTooltipFrameOpacity = 0.18;
 constexpr double BarBorderFrameDiffuseOpacity = 0.30;
 constexpr double BarBorderPenDiffuseOpacity = 0.20;
@@ -459,7 +460,7 @@ void BarUIRendering::DiscardDeviceResources()
 	frameDiffuseMaskFailureLogged = false;
 	frameDiffuseMaskUnavailable = false;
 	frameDiffuseMaskCreatedThisFrame = false;
-	frameCursorDiffuseMaskSuppressed = false;
+	frameDiffuseMaskGeometryScale = 1.0;
 	frameDirtyClipActive = false;
 	frameDirtyClipRect = {};
 }
@@ -1288,62 +1289,75 @@ void BarUIRendering::DrawRoundedRectDiffuseMask(ID2D1DeviceContext* deviceContex
 	FLOAT destinationTop = roundedRect.rect.top - mask.padding;
 	FLOAT destinationRight = roundedRect.rect.right + mask.padding;
 	FLOAT destinationBottom = roundedRect.rect.bottom + mask.padding;
+	FLOAT destinationRadiusX = max(0.0F, roundedRect.radiusX);
+	FLOAT destinationRadiusY = max(0.0F, roundedRect.radiusY);
 	FLOAT destinationMiddleLeft = min(
-		roundedRect.rect.left + mask.radiusX,
+		roundedRect.rect.left + destinationRadiusX,
 		(roundedRect.rect.left + roundedRect.rect.right) * 0.5F);
 	FLOAT destinationMiddleRight = max(
-		roundedRect.rect.right - mask.radiusX, destinationMiddleLeft);
+		roundedRect.rect.right - destinationRadiusX, destinationMiddleLeft);
 	FLOAT destinationMiddleTop = min(
-		roundedRect.rect.top + mask.radiusY,
+		roundedRect.rect.top + destinationRadiusY,
 		(roundedRect.rect.top + roundedRect.rect.bottom) * 0.5F);
 	FLOAT destinationMiddleBottom = max(
-		roundedRect.rect.bottom - mask.radiusY, destinationMiddleTop);
-
-	const FLOAT sourceX[] =
-	{
-		0.0F,
-		mask.padding + mask.radiusX,
-		mask.padding + mask.radiusX + 1.0F,
-		mask.size.width,
-	};
-	const FLOAT sourceY[] =
-	{
-		0.0F,
-		mask.padding + mask.radiusY,
-		mask.padding + mask.radiusY + 1.0F,
-		mask.size.height,
-	};
-	const FLOAT destinationX[] =
-	{
-		destinationLeft,
-		destinationMiddleLeft,
-		destinationMiddleRight,
-		destinationRight,
-	};
-	const FLOAT destinationY[] =
-	{
-		destinationTop,
-		destinationMiddleTop,
-		destinationMiddleBottom,
-		destinationBottom,
-	};
+		roundedRect.rect.bottom - destinationRadiusY, destinationMiddleTop);
 
 	D2D1_ANTIALIAS_MODE originalAntialiasMode = deviceContext->GetAntialiasMode();
 	deviceContext->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
-	for (int y = 0; y < 3; y++)
+	auto DrawSlices = [&](const FLOAT* sourceX, const FLOAT* sourceY,
+		const FLOAT* destinationX, const FLOAT* destinationY, int segmentCount)
 	{
-		for (int x = 0; x < 3; x++)
+		for (int y = 0; y < segmentCount; y++)
 		{
-			if (destinationX[x + 1] <= destinationX[x]
-				|| destinationY[y + 1] <= destinationY[y]) continue;
-			D2D1_RECT_F destinationRect = D2D1::RectF(
-				destinationX[x], destinationY[y],
-				destinationX[x + 1], destinationY[y + 1]);
-			D2D1_RECT_F sourceRect = D2D1::RectF(
-				sourceX[x], sourceY[y], sourceX[x + 1], sourceY[y + 1]);
-			deviceContext->FillOpacityMask(
-				mask.bitmap.Get(), brush, &destinationRect, &sourceRect);
+			for (int x = 0; x < segmentCount; x++)
+			{
+				if (destinationX[x + 1] <= destinationX[x]
+					|| destinationY[y + 1] <= destinationY[y]) continue;
+				D2D1_RECT_F destinationRect = D2D1::RectF(
+					destinationX[x], destinationY[y],
+					destinationX[x + 1], destinationY[y + 1]);
+				D2D1_RECT_F sourceRect = D2D1::RectF(
+					sourceX[x], sourceY[y],
+					sourceX[x + 1], sourceY[y + 1]);
+				deviceContext->FillOpacityMask(
+					mask.bitmap.Get(), brush, &destinationRect, &sourceRect);
+			}
 		}
+	};
+	bool geometryScaled = abs(destinationRadiusX - mask.radiusX) > 0.001F
+		|| abs(destinationRadiusY - mask.radiusY) > 0.001F;
+	if (!geometryScaled)
+	{
+		const FLOAT sourceX[] = { 0.0F,
+			mask.padding + mask.radiusX,
+			mask.padding + mask.radiusX + 1.0F, mask.size.width };
+		const FLOAT sourceY[] = { 0.0F,
+			mask.padding + mask.radiusY,
+			mask.padding + mask.radiusY + 1.0F, mask.size.height };
+		const FLOAT destinationX[] = { destinationLeft,
+			destinationMiddleLeft, destinationMiddleRight, destinationRight };
+		const FLOAT destinationY[] = { destinationTop,
+			destinationMiddleTop, destinationMiddleBottom, destinationBottom };
+		DrawSlices(sourceX, sourceY, destinationX, destinationY, 3);
+	}
+	else
+	{
+		// 动画缩放时单独保留 Gaussian 外扩段，避免柔光宽度随圆角一起压扁。
+		const FLOAT sourceX[] = { 0.0F, mask.padding,
+			mask.padding + mask.radiusX,
+			mask.padding + mask.radiusX + 1.0F,
+			mask.padding + mask.radiusX * 2.0F + 1.0F, mask.size.width };
+		const FLOAT sourceY[] = { 0.0F, mask.padding,
+			mask.padding + mask.radiusY,
+			mask.padding + mask.radiusY + 1.0F,
+			mask.padding + mask.radiusY * 2.0F + 1.0F, mask.size.height };
+		const FLOAT destinationX[] = { destinationLeft, roundedRect.rect.left,
+			destinationMiddleLeft, destinationMiddleRight,
+			roundedRect.rect.right, destinationRight };
+		const FLOAT destinationY[] = { destinationTop, roundedRect.rect.top,
+			destinationMiddleTop, destinationMiddleBottom,
+			roundedRect.rect.bottom, destinationBottom };
+		DrawSlices(sourceX, sourceY, destinationX, destinationY, 5);
 	}
 	deviceContext->SetAntialiasMode(originalAntialiasMode);
 }
@@ -1624,9 +1638,7 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 		else deviceContext->DrawGeometry(geometry, baseFrameBrush, strokeWidth);
 	}
 
-	bool drawCursorDiffuse =
-		drawCursorLight && !frameCursorDiffuseMaskSuppressed;
-	if (drawPrimaryLight || drawCursorDiffuse)
+	if (drawPrimaryLight || drawCursorLight)
 	{
 		FLOAT diffuseSourceOpacity = static_cast<FLOAT>(clamp(
 			diffuseOpacity / BarBorderGaussianCenterCoverage, 0.0, 1.0));
@@ -1638,8 +1650,22 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 			};
 		if (roundedRect)
 		{
+			D2D1_ROUNDED_RECT maskRoundedRect = *roundedRect;
+			FLOAT maskStrokeWidth = strokeWidth;
+			if (isfinite(frameDiffuseMaskGeometryScale)
+				&& frameDiffuseMaskGeometryScale > 0.0)
+			{
+				// 等比动画只改变落点九宫格，缓存仍使用稳定的完整圆角和描边。
+				maskRoundedRect.radiusX *=
+					static_cast<FLOAT>(frameDiffuseMaskGeometryScale);
+				maskRoundedRect.radiusY *=
+					static_cast<FLOAT>(frameDiffuseMaskGeometryScale);
+				maskStrokeWidth *=
+					static_cast<FLOAT>(frameDiffuseMaskGeometryScale);
+			}
 			FrameDiffuseMaskCacheClass* diffuseMask =
-				GetRoundedRectDiffuseMask(deviceContext, *roundedRect, strokeWidth);
+				GetRoundedRectDiffuseMask(
+					deviceContext, maskRoundedRect, maskStrokeWidth);
 			if (diffuseMask)
 			{
 				// 模糊后的几何遮罩跨帧复用，光源颜色和位置仍由实时径向画刷决定。
@@ -1649,7 +1675,7 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 						*roundedRect, primaryBrush,
 						CompositeOpacity(lightOpacity * diffuseSourceOpacity));
 				}
-				if (drawCursorDiffuse)
+				if (drawCursorLight)
 				{
 					DrawRoundedRectDiffuseMask(deviceContext, *diffuseMask,
 						*roundedRect, cursorBrush,
@@ -1674,7 +1700,7 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 							geometryBounds, primaryBrush,
 							CompositeOpacity(lightOpacity * diffuseSourceOpacity));
 					}
-					if (drawCursorDiffuse)
+					if (drawCursorLight)
 					{
 						DrawGeometryDiffuseMask(deviceContext, *diffuseMask,
 							geometryBounds, cursorBrush,
@@ -1686,7 +1712,6 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 		}
 
 	}
-	// 第三光源 Gaussian 可在快速几何动画期间暂停，第一光源与双方硬光不受影响。
 	DrawLightPass(primaryBrush, static_cast<FLOAT>(BarBorderLightIntensity), strokeWidth);
 	DrawLightPass(cursorBrush, cursorLightIntensity, strokeWidth);
 	return true;
@@ -4655,8 +4680,17 @@ void BarUISetClass::Rendering()
 			double previewCenterY =
 				regionCenterY + previewSide * previewCenterOffset;
 			double previewTop = previewCenterY - previewAreaHeight / 2.0;
-			// 预览区自身已内缩 5px，再留 5px 后与横向 10px 外边距一致。
-			double badgeTop = previewTop + BarDrawAttributeGap * panelScale;
+			// 倒转布局把两个徽标镜像到预览区下沿，换边过程中连续过渡。
+			double badgeTopAtUpperEdge =
+				previewTop + BarDrawAttributeGap * panelScale;
+			double badgeTopAtLowerEdge = previewTop + previewAreaHeight
+				- (BarDrawAttributeGap + BarThicknessTooltipBadgeHeight)
+					* panelScale;
+			double badgeLowerProgress =
+				clamp((previewSide + 1.0) / 2.0, 0.0, 1.0);
+			double badgeTop = badgeTopAtUpperEdge
+				+ (badgeTopAtLowerEdge - badgeTopAtUpperEdge)
+					* badgeLowerProgress;
 			double badgeMargin =
 				BarDrawAttributeThicknessContentInset * panelScale;
 			double contentOpacity = clamp(
@@ -4856,36 +4890,6 @@ void BarUISetClass::Rendering()
 				overflowPopupTitleSize.height,
 				overflowPopupBodySize.height,
 				drawAttributeOverflowPopupProgress.val);
-
-			auto PopupTargetIntersects = [](const PopupDerivedLayout& a,
-				const PopupDerivedLayout& b)
-				{
-					return a.targetLeft < b.targetLeft + b.baseWidth
-						&& a.targetLeft + a.baseWidth > b.targetLeft
-						&& a.targetTop < b.targetTop + b.baseHeight
-						&& a.targetTop + a.baseHeight > b.targetTop;
-				};
-			if (annotationPopupLayout.opacity > 0.0
-				&& overflowPopupLayout.opacity > 0.0
-				&& PopupTargetIntersects(
-					annotationPopupLayout, overflowPopupLayout))
-			{
-				// 第二个浮窗沿当前弹出方向继续错开，两个展开起点仍各自是叹号。
-				if (previewSide < 0.0)
-					overflowPopupLayout.targetTop = max(
-						BarDrawAttributeGap,
-						annotationPopupLayout.targetTop
-							- BarDrawAttributeGap
-							- overflowPopupLayout.baseHeight);
-				else
-					overflowPopupLayout.targetTop = min(
-						max(BarDrawAttributeGap,
-							logicalWindowHeight - BarDrawAttributeGap
-								- overflowPopupLayout.baseHeight),
-						annotationPopupLayout.targetTop
-							+ annotationPopupLayout.baseHeight
-							+ BarDrawAttributeGap);
-			}
 
 			auto ApplyPopupLayout = [&](const PopupDerivedLayout& layout,
 				BarUISetShapeEnum popupShapeType,
@@ -5138,10 +5142,16 @@ void BarUISetClass::Rendering()
 
 					// 绘制属性
 					{
-						// 几何动画时暂停 Gaussian 遮罩生成；稳定后继续复用既有缓存。
-						spec.SetFrameCursorDiffuseMaskSuppressed(
-							drawAttributeTimeline.IsActive());
 						auto obj = BarUISetShapeEnum::DrawAttributeBar;
+						auto drawAttributePanel = shapeMap[obj];
+						double panelGeometryScale = drawAttributePanel->w.val
+							/ BarDrawAttributeExpandedWidth;
+						if (!isfinite(panelGeometryScale)
+							|| panelGeometryScale <= 0.000001)
+							panelGeometryScale = 1.0;
+						// 等比收拢时复用完整尺寸的柔光遮罩，第三光源亮度全程连续。
+						spec.SetFrameDiffuseMaskGeometryScale(
+							1.0 / panelGeometryScale);
 						spec.Shape(barDeviceContext.Get(), *shapeMap[obj], shapeMap[obj]->Inherit(Center, barButtomSet.preset[(int)BarButtomPresetEnum::Draw]->buttom), &current, true);
 						// 只发布三个外层可见区域，Raw Input 高频路径无需遍历全部子控件。
 						RefreshBorderCursorVisibleRegions();
@@ -5619,7 +5629,7 @@ void BarUISetClass::Rendering()
 								DWRITE_FONT_WEIGHT_NORMAL,
 								DWRITE_TEXT_ALIGNMENT_LEADING);
 						}
-						spec.SetFrameCursorDiffuseMaskSuppressed(false);
+						spec.SetFrameDiffuseMaskGeometryScale(1.0);
 					}
 
 					// 主栏
@@ -5720,47 +5730,158 @@ void BarUISetClass::Rendering()
 
 			// 浮窗不擦除已经绘制的背景；徽标随后覆盖，形成从按钮下层展开的层级。
 			{
-				bool popupGeometryAnimating = drawAttributeTimeline.IsActive()
-					|| !drawAttributeAnnotationPopupProgress.IsSame()
-					|| !drawAttributeOverflowPopupProgress.IsSame();
-				spec.SetFrameCursorDiffuseMaskSuppressed(popupGeometryAnimating);
 				auto panel = shapeMap[BarUISetShapeEnum::DrawAttributeBar];
+				if (panel->pct.val > 0.0 && barMedia.formatCache)
+				{
+					// 属性栏可见期间保留两档完整字号，浮窗首帧只做缓存查询。
+					barMedia.formatCache->GetFormat(
+						L"HarmonyOS Sans SC",
+						static_cast<FLOAT>(
+							BarThicknessTooltipTitleFontSize * barStyle.zoom),
+						dWriteFontCollection.Get(),
+						DWRITE_FONT_WEIGHT_SEMI_BOLD,
+						DWRITE_FONT_STYLE_NORMAL,
+						DWRITE_FONT_STRETCH_NORMAL,
+						L"zh-cn",
+						DWRITE_TEXT_ALIGNMENT_LEADING,
+						DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+					barMedia.formatCache->GetFormat(
+						L"HarmonyOS Sans SC",
+						static_cast<FLOAT>(
+							BarThicknessTooltipBodyFontSize * barStyle.zoom),
+						dWriteFontCollection.Get(),
+						DWRITE_FONT_WEIGHT_NORMAL,
+						DWRITE_FONT_STYLE_NORMAL,
+						DWRITE_FONT_STRETCH_NORMAL,
+						L"zh-cn",
+						DWRITE_TEXT_ALIGNMENT_LEADING,
+						DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+				}
 				auto DrawThicknessPopup =
 					[&](BarUISetShapeEnum popupShapeType,
 						BarUISetWordEnum popupTitleType,
 						BarUISetWordEnum popupBodyType,
-						BarUISetSvgEnum closeSvgType)
+						BarUISetSvgEnum closeSvgType,
+						BarUISetShapeEnum anchorBadgeType)
 					{
 						auto popup = shapeMap[popupShapeType];
 						auto popupTitle = wordMap[popupTitleType];
 						auto popupBody = wordMap[popupBodyType];
 						auto closeSvg = svgMap[closeSvgType];
+						BarUiInheritClass popupInherit =
+							popup->Inherit(TopLeft, *panel);
+						double popupGeometryScale = popup->rw.has_value()
+							? popup->rw->val / 4.0 : 1.0;
+						if (!isfinite(popupGeometryScale)
+							|| popupGeometryScale <= 0.000001)
+							popupGeometryScale = 1.0;
+						spec.SetFrameDiffuseMaskGeometryScale(
+							1.0 / popupGeometryScale);
 						spec.Shape(barDeviceContext.Get(), *popup,
-							popup->Inherit(TopLeft, *panel), &current, false);
+							popupInherit, &current, false);
+						spec.SetFrameDiffuseMaskGeometryScale(1.0);
+
+						BarUiInheritClass titleInherit =
+							popupTitle->Inherit(TopLeft, *panel);
+						BarUiInheritClass bodyInherit =
+							popupBody->Inherit(TopLeft, *panel);
+						BarUiInheritClass closeInherit =
+							closeSvg->Inherit(TopLeft, *panel);
+						if (popup->pct.val <= 0.0
+							|| popupGeometryScale <= 0.000001)
+							return;
+
+						auto anchorBadge = shapeMap[anchorBadgeType];
+						double anchorX = anchorBadge->inhX
+							+ anchorBadge->w.val / 2.0;
+						double anchorY = anchorBadge->inhY
+							+ anchorBadge->h.val / 2.0;
+						auto UnscaleCoordinate =
+							[&](double value, double anchor)
+							{
+								return anchor
+									+ (value - anchor) / popupGeometryScale;
+							};
+
+						double titleW = popupTitle->w.val;
+						double titleH = popupTitle->h.val;
+						double titleSize = popupTitle->size.val;
+						double bodyW = popupBody->w.val;
+						double bodyH = popupBody->h.val;
+						double bodySize = popupBody->size.val;
+						double closeW = closeSvg->w.val;
+						double closeH = closeSvg->h.val;
+						popupTitle->w.SetDirect(titleW / popupGeometryScale);
+						popupTitle->h.SetDirect(titleH / popupGeometryScale);
+						popupTitle->size.SetDirect(
+							BarThicknessTooltipTitleFontSize);
+						popupBody->w.SetDirect(bodyW / popupGeometryScale);
+						popupBody->h.SetDirect(bodyH / popupGeometryScale);
+						popupBody->size.SetDirect(
+							BarThicknessTooltipBodyFontSize);
+						closeSvg->w.SetDirect(closeW / popupGeometryScale);
+						closeSvg->h.SetDirect(closeH / popupGeometryScale);
+
+						D2D1_MATRIX_3X2_F originalTransform;
+						barDeviceContext->GetTransform(&originalTransform);
+						barDeviceContext->SetTransform(
+							D2D1::Matrix3x2F::Scale(
+								static_cast<FLOAT>(popupGeometryScale),
+								static_cast<FLOAT>(popupGeometryScale),
+								D2D1::Point2F(
+									static_cast<FLOAT>(anchorX * barStyle.zoom),
+									static_cast<FLOAT>(anchorY * barStyle.zoom)))
+							* originalTransform);
+						// 文字和 SVG 使用完整尺寸资源再整体缩放，避免动画每帧创建新字号格式。
 						spec.Word(barDeviceContext.Get(), *popupTitle,
-							popupTitle->Inherit(TopLeft, *panel),
+							BarUiInheritClass(
+								UnscaleCoordinate(titleInherit.x, anchorX),
+								UnscaleCoordinate(titleInherit.y, anchorY)),
 							DWRITE_FONT_WEIGHT_SEMI_BOLD,
 							DWRITE_TEXT_ALIGNMENT_LEADING);
 						spec.Word(barDeviceContext.Get(), *popupBody,
-							popupBody->Inherit(TopLeft, *panel),
+							BarUiInheritClass(
+								UnscaleCoordinate(bodyInherit.x, anchorX),
+								UnscaleCoordinate(bodyInherit.y, anchorY)),
 							DWRITE_FONT_WEIGHT_NORMAL,
 							DWRITE_TEXT_ALIGNMENT_LEADING);
 						spec.Svg(barDeviceContext.Get(), *closeSvg,
-							closeSvg->Inherit(TopLeft, *panel));
+							BarUiInheritClass(
+								UnscaleCoordinate(closeInherit.x, anchorX),
+								UnscaleCoordinate(closeInherit.y, anchorY)));
+						barDeviceContext->SetTransform(originalTransform);
+
+						popupTitle->w.SetDirect(titleW);
+						popupTitle->h.SetDirect(titleH);
+						popupTitle->size.SetDirect(titleSize);
+						popupBody->w.SetDirect(bodyW);
+						popupBody->h.SetDirect(bodyH);
+						popupBody->size.SetDirect(bodySize);
+						closeSvg->w.SetDirect(closeW);
+						closeSvg->h.SetDirect(closeH);
 					};
 				DrawThicknessPopup(
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
 					BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupText,
 					BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupBody,
-					BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationPopupClose);
+					BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationPopupClose,
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationBadge);
 				DrawThicknessPopup(
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup,
 					BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText,
 					BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupBody,
-					BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowPopupClose);
+					BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowPopupClose,
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowBadge);
 
 				auto annotationBadge = shapeMap[
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationBadge];
+				double badgeGeometryScale = annotationBadge->rw.has_value()
+					? annotationBadge->rw->val / 4.0 : 1.0;
+				if (!isfinite(badgeGeometryScale)
+					|| badgeGeometryScale <= 0.000001)
+					badgeGeometryScale = 1.0;
+				spec.SetFrameDiffuseMaskGeometryScale(
+					1.0 / badgeGeometryScale);
 				spec.Shape(barDeviceContext.Get(), *annotationBadge,
 					annotationBadge->Inherit(TopLeft, *panel));
 				auto annotationLabel = wordMap[
@@ -5782,7 +5903,7 @@ void BarUISetClass::Rendering()
 					BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowInfo];
 				spec.Svg(barDeviceContext.Get(), *overflowInfo,
 					overflowInfo->Inherit(TopLeft, *panel));
-				spec.SetFrameCursorDiffuseMaskSuppressed(false);
+				spec.SetFrameDiffuseMaskGeometryScale(1.0);
 			}
 
 			// 调试模式持续显示实时 FPS，并把文本范围加入脏区。
@@ -6350,6 +6471,8 @@ void BarUISetClass::Interact()
 							if (!msg.lbutton)
 							{
 								*tooltip.pinned = true;
+								// 悬停浮窗已经稳定时没有进度动画，固定后强制补一帧显示关闭按钮。
+								BarAtomic::renderOnceFlag = true;
 								break;
 							}
 						}

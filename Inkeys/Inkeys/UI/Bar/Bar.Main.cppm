@@ -202,9 +202,9 @@ public:
 		ID2D1DeviceContext* deviceContext, const D2D1_RECT_F& dirtyRect);
 	void PopFrameDirtyClip(ID2D1DeviceContext* deviceContext);
 	void HandleFrameEndDrawResult(HRESULT endDrawResult);
-	void SetFrameCursorDiffuseMaskSuppressed(bool suppressed)
+	void SetFrameDiffuseMaskGeometryScale(double scale)
 	{
-		frameCursorDiffuseMaskSuppressed = suppressed;
+		frameDiffuseMaskGeometryScale = scale > 0.0 ? scale : 1.0;
 	}
 
 public:
@@ -303,7 +303,7 @@ protected:
 	bool frameDiffuseMaskFailureLogged = false;
 	bool frameDiffuseMaskUnavailable = false;
 	bool frameDiffuseMaskCreatedThisFrame = false;
-	bool frameCursorDiffuseMaskSuppressed = false;
+	double frameDiffuseMaskGeometryScale = 1.0;
 	bool frameDirtyClipActive = false;
 	D2D1_RECT_F frameDirtyClipRect{};
 	double framePrimaryLightMoveElapsed = 0.0;
