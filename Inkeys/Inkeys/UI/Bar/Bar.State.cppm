@@ -25,9 +25,11 @@ public:
 		IdtAtomic<bool> thicknessSliderCapture = false;
 		IdtAtomic<float> thicknessSliderCandidateWidth = 0.0f;
 		IdtAtomic<bool> thicknessAnnotationHover = false;
+		IdtAtomic<bool> thicknessAnnotationHoverGrace = false;
 		IdtAtomic<bool> thicknessAnnotationPinned = false;
 		IdtAtomic<bool> thicknessAnnotationClosePress = false;
 		IdtAtomic<bool> thicknessOverflowHover = false;
+		IdtAtomic<bool> thicknessOverflowHoverGrace = false;
 		IdtAtomic<bool> thicknessOverflowPinned = false;
 		IdtAtomic<bool> thicknessOverflowClosePress = false;
 		IdtAtomic<bool> thicknessPreviewOverflow = false;

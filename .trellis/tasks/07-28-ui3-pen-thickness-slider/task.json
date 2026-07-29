@@ -2,7 +2,7 @@
   "id": "ui3-pen-thickness-slider",
   "name": "ui3-pen-thickness-slider",
   "title": "UI3 墨迹粗细连续滑块",
-  "description": "为 UI3 绘制属性粗细预览区加入可悬停、固定和全局相对拖动的硬笔/荧光笔连续滑块。",
+  "description": "为 UI3 绘制属性粗细预览区加入可悬停、固定和全局捕获拖动的硬笔/荧光笔连续滑块。",
   "status": "in_progress",
   "dev_type": null,
   "scope": "UI3 Bar drawing attributes",

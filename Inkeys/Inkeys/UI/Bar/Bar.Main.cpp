@@ -40,6 +40,9 @@ constexpr double BarBorderCursorFadeInDur = 0.30;
 constexpr double BarBorderCursorLightRadius = 240.0;
 constexpr ULONGLONG BarBorderCursorGraceDurationMs = 5000;
 constexpr UINT_PTR BarBorderCursorGraceTimerId = 0x494B4301;
+constexpr UINT BarThicknessTooltipHoverGraceMs = 100;
+constexpr UINT_PTR BarThicknessAnnotationTooltipGraceTimerId = 0x494B4302;
+constexpr UINT_PTR BarThicknessOverflowTooltipGraceTimerId = 0x494B4303;
 constexpr UINT BarBorderCursorSuspendMessage = WM_APP + 0x31;
 constexpr UINT BarCanvasDrawingActivityMessage = WM_APP + 0x32;
 constexpr UINT BarThicknessSliderCaptureMessage = WM_APP + 0x33;
@@ -308,6 +311,79 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 			barUISet.HandleBorderCursorGraceTimeout(hWnd);
 			return 0;
 		}
+		if (wParam == BarThicknessAnnotationTooltipGraceTimerId
+			|| wParam == BarThicknessOverflowTooltipGraceTimerId)
+		{
+			bool annotation =
+				wParam == BarThicknessAnnotationTooltipGraceTimerId;
+			UINT_PTR timerId = annotation
+				? BarThicknessAnnotationTooltipGraceTimerId
+				: BarThicknessOverflowTooltipGraceTimerId;
+			KillTimer(hWnd, timerId);
+
+			auto& drawAttribute = barUISet.barState.drawAttributeBar;
+			IdtAtomic<bool>& grace = annotation
+				? drawAttribute.thicknessAnnotationHoverGrace
+				: drawAttribute.thicknessOverflowHoverGrace;
+			IdtAtomic<bool>& hover = annotation
+				? drawAttribute.thicknessAnnotationHover
+				: drawAttribute.thicknessOverflowHover;
+			IdtAtomic<bool>& pinned = annotation
+				? drawAttribute.thicknessAnnotationPinned
+				: drawAttribute.thicknessOverflowPinned;
+			if (!static_cast<bool>(grace))
+				return 0;
+
+			bool popupInteractive = static_cast<bool>(hover)
+				|| static_cast<bool>(pinned) || static_cast<bool>(grace);
+			grace = false;
+
+			POINT point{};
+			bool pointAvailable = GetCursorPos(&point)
+				&& ScreenToClient(hWnd, &point);
+			auto infoHit = barUISet.shapeMap[annotation
+				? BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit
+				: BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowInfoHit];
+			auto popup = barUISet.shapeMap[annotation
+				? BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup
+				: BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup];
+			bool available = barUISet.barState.drawAttribute
+				&& !barUISet.barState.fold
+				&& (annotation
+					? PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect)
+					: static_cast<bool>(drawAttribute.thicknessPreviewOverflow));
+			bool pointerInside = pointAvailable && available
+				&& ((infoHit && infoHit->IsClick(
+					point.x, point.y, barUISet.barStyle.zoom))
+					|| (popupInteractive && popup && popup->IsClick(
+						point.x, point.y, barUISet.barStyle.zoom)));
+			bool changed = static_cast<bool>(hover) != pointerInside;
+			hover = pointerInside;
+
+			auto sliderHit = barUISet.shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderHit];
+			bool sliderAvailable = stateMode.StateModeSelect
+				== StateModeSelectEnum::IdtPen
+				&& barUISet.barState.drawAttribute && !barUISet.barState.fold
+				&& GetBarThicknessSliderRange(
+					stateMode.Pen.ModeSelect,
+					barUISet.barStyle.dpiZoom).supported;
+			bool sliderHover = sliderAvailable
+				&& ((pointAvailable && sliderHit && sliderHit->IsClick(
+					point.x, point.y, barUISet.barStyle.zoom))
+					|| drawAttribute.thicknessAnnotationHover
+					|| drawAttribute.thicknessAnnotationHoverGrace
+					|| drawAttribute.thicknessOverflowHover
+					|| drawAttribute.thicknessOverflowHoverGrace);
+			if (static_cast<bool>(drawAttribute.thicknessSliderHover)
+				!= sliderHover)
+			{
+				drawAttribute.thicknessSliderHover = sliderHover;
+				changed = true;
+			}
+			if (changed) barUISet.UpdateRendering(false);
+			return 0;
+		}
 		return HIWINDOW_DEFAULT_PROC;
 	}
 
@@ -371,7 +447,11 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		if (barUISet.barState.drawAttributeBar.thicknessSliderHover
 			&& !barUISet.barState.drawAttributeBar.thicknessSliderPinned
 			&& !barUISet.barState.drawAttributeBar.thicknessSliderPressed
-			&& !barUISet.barState.drawAttributeBar.thicknessSliderDragging)
+			&& !barUISet.barState.drawAttributeBar.thicknessSliderDragging
+			&& !barUISet.barState.drawAttributeBar.thicknessAnnotationHover
+			&& !barUISet.barState.drawAttributeBar.thicknessAnnotationHoverGrace
+			&& !barUISet.barState.drawAttributeBar.thicknessOverflowHover
+			&& !barUISet.barState.drawAttributeBar.thicknessOverflowHoverGrace)
 		{
 			barUISet.barState.drawAttributeBar.thicknessSliderHover = false;
 			barUISet.UpdateRendering(false);
@@ -2365,10 +2445,19 @@ D2D1_SIZE_F BarUIRendering::MeasureText(
 
 void BarUISetClass::CloseDrawAttributeTooltips()
 {
+	if (floating_window && IsWindow(floating_window))
+	{
+		KillTimer(floating_window,
+			BarThicknessAnnotationTooltipGraceTimerId);
+		KillTimer(floating_window,
+			BarThicknessOverflowTooltipGraceTimerId);
+	}
 	barState.drawAttributeBar.thicknessAnnotationHover = false;
+	barState.drawAttributeBar.thicknessAnnotationHoverGrace = false;
 	barState.drawAttributeBar.thicknessAnnotationPinned = false;
 	barState.drawAttributeBar.thicknessAnnotationClosePress = false;
 	barState.drawAttributeBar.thicknessOverflowHover = false;
+	barState.drawAttributeBar.thicknessOverflowHoverGrace = false;
 	barState.drawAttributeBar.thicknessOverflowPinned = false;
 	barState.drawAttributeBar.thicknessOverflowClosePress = false;
 }
@@ -2757,8 +2846,14 @@ void BarUISetClass::Rendering()
 			if (thicknessSliderActive
 				!= drawAttributeThicknessSliderTargetActive)
 			{
-				// 只在进入滑块态时关闭已有提示，之后仍允许徽标重新响应。
-				if (thicknessSliderActive) CloseDrawAttributeTooltips();
+				// 从轨道进入时关闭旧提示；直接进入徽标时保留当前浮窗悬停。
+				bool thicknessTooltipHovered =
+					barState.drawAttributeBar.thicknessAnnotationHover
+					|| barState.drawAttributeBar.thicknessAnnotationHoverGrace
+					|| barState.drawAttributeBar.thicknessOverflowHover
+					|| barState.drawAttributeBar.thicknessOverflowHoverGrace;
+				if (thicknessSliderActive && !thicknessTooltipHovered)
+					CloseDrawAttributeTooltips();
 				drawAttributeThicknessSliderTargetActive =
 					thicknessSliderActive;
 			}
@@ -6998,6 +7093,46 @@ void BarUISetClass::Interact()
 			flag = value;
 			return true;
 		};
+	auto CancelTooltipHoverGrace = [&](IdtAtomic<bool>& grace,
+		UINT_PTR timerId)
+		{
+			if (!static_cast<bool>(grace)) return;
+			grace = false;
+			if (floating_window && IsWindow(floating_window))
+				KillTimer(floating_window, timerId);
+		};
+	auto UpdateTooltipHover = [&](bool available, bool pointerInside,
+		IdtAtomic<bool>& hover, IdtAtomic<bool>& pinned,
+		IdtAtomic<bool>& grace, UINT_PTR timerId)
+		{
+			if (!available)
+			{
+				CancelTooltipHoverGrace(grace, timerId);
+				return SetTooltipFlag(hover, false);
+			}
+			if (pointerInside)
+			{
+				CancelTooltipHoverGrace(grace, timerId);
+				return SetTooltipFlag(hover, true);
+			}
+			if (static_cast<bool>(pinned))
+			{
+				CancelTooltipHoverGrace(grace, timerId);
+				return SetTooltipFlag(hover, false);
+			}
+			if (!static_cast<bool>(hover)
+				|| static_cast<bool>(grace))
+				return false;
+
+			if (floating_window && IsWindow(floating_window)
+				&& SetTimer(floating_window, timerId,
+					BarThicknessTooltipHoverGraceMs, nullptr))
+			{
+				grace = true;
+				return false;
+			}
+			return SetTooltipFlag(hover, false);
+		};
 	auto AnnotationTooltipAvailable = [&]()
 		{
 			return barState.drawAttribute && !barState.fold
@@ -7062,31 +7197,59 @@ void BarUISetClass::Interact()
 				&& overflowInfoHit
 				&& overflowInfoHit->IsClick(
 					msg.x, msg.y, barStyle.zoom);
+			auto annotationPopup = shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup];
+			auto overflowPopup = shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup];
+			bool annotationPopupInteractive =
+				barState.drawAttributeBar.thicknessAnnotationHover
+				|| barState.drawAttributeBar.thicknessAnnotationHoverGrace
+				|| barState.drawAttributeBar.thicknessAnnotationPinned;
+			bool overflowPopupInteractive =
+				barState.drawAttributeBar.thicknessOverflowHover
+				|| barState.drawAttributeBar.thicknessOverflowHoverGrace
+				|| barState.drawAttributeBar.thicknessOverflowPinned;
+			bool annotationPopupHover = AnnotationTooltipAvailable()
+				&& annotationPopupInteractive && annotationPopup
+				&& annotationPopup->IsClick(
+					msg.x, msg.y, barStyle.zoom);
+			bool overflowPopupHover = OverflowTooltipAvailable()
+				&& overflowPopupInteractive && overflowPopup
+				&& overflowPopup->IsClick(
+					msg.x, msg.y, barStyle.zoom);
+			bool tooltipHoverChanged = false;
+			tooltipHoverChanged |= UpdateTooltipHover(
+				AnnotationTooltipAvailable(),
+				annotationBadgeHover || annotationPopupHover,
+				barState.drawAttributeBar.thicknessAnnotationHover,
+				barState.drawAttributeBar.thicknessAnnotationPinned,
+				barState.drawAttributeBar.thicknessAnnotationHoverGrace,
+				BarThicknessAnnotationTooltipGraceTimerId);
+			tooltipHoverChanged |= UpdateTooltipHover(
+				OverflowTooltipAvailable(),
+				overflowBadgeHover || overflowPopupHover,
+				barState.drawAttributeBar.thicknessOverflowHover,
+				barState.drawAttributeBar.thicknessOverflowPinned,
+				barState.drawAttributeBar.thicknessOverflowHoverGrace,
+				BarThicknessOverflowTooltipGraceTimerId);
+
 			auto sliderHit = shapeMap[
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderHit];
-			// 徽标覆盖在预览区上方，悬停命中必须先于滑块激活区。
+			// 徽标、浮窗和两者之间的宽限期都属于粗细悬停区域。
 			bool sliderHover = ThicknessSliderAvailable()
-				&& !annotationBadgeHover && !overflowBadgeHover
-				&& sliderHit
-				&& sliderHit->IsClick(
-					msg.x, msg.y, barStyle.zoom);
-			if (static_cast<bool>(
+				&& ((sliderHit && sliderHit->IsClick(
+					msg.x, msg.y, barStyle.zoom))
+					|| barState.drawAttributeBar.thicknessAnnotationHover
+					|| barState.drawAttributeBar.thicknessAnnotationHoverGrace
+					|| barState.drawAttributeBar.thicknessOverflowHover
+					|| barState.drawAttributeBar.thicknessOverflowHoverGrace);
+			bool sliderHoverChanged = static_cast<bool>(
 				barState.drawAttributeBar.thicknessSliderHover)
-				!= sliderHover)
-			{
-				barState.drawAttributeBar.thicknessSliderHover =
-					sliderHover;
+				!= sliderHover;
+			if (sliderHoverChanged)
+				barState.drawAttributeBar.thicknessSliderHover = sliderHover;
+			if (tooltipHoverChanged || sliderHoverChanged)
 				UpdateRendering(false);
-			}
-
-			bool tooltipHoverChanged = false;
-			tooltipHoverChanged |= SetTooltipFlag(
-				barState.drawAttributeBar.thicknessAnnotationHover,
-				annotationBadgeHover);
-			tooltipHoverChanged |= SetTooltipFlag(
-				barState.drawAttributeBar.thicknessOverflowHover,
-				overflowBadgeHover);
-			if (tooltipHoverChanged) UpdateRendering(false);
 
 			BarButtomClass* currentHoveredButton = nullptr;
 			if (!barState.fold)
@@ -7207,8 +7370,10 @@ void BarUISetClass::Interact()
 				BarUISetShapeEnum popup;
 				BarUISetShapeEnum closeHit;
 				IdtAtomic<bool>* hover;
+				IdtAtomic<bool>* hoverGrace;
 				IdtAtomic<bool>* pinned;
 				IdtAtomic<bool>* pressed;
+				UINT_PTR hoverGraceTimerId;
 				bool available;
 			};
 			ThicknessTooltipInteraction tooltipInteractions[] =
@@ -7218,8 +7383,10 @@ void BarUISetClass::Interact()
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup,
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit,
 					&barState.drawAttributeBar.thicknessOverflowHover,
+					&barState.drawAttributeBar.thicknessOverflowHoverGrace,
 					&barState.drawAttributeBar.thicknessOverflowPinned,
 					&barState.drawAttributeBar.thicknessOverflowClosePress,
+					BarThicknessOverflowTooltipGraceTimerId,
 					OverflowTooltipAvailable(),
 				},
 				{
@@ -7227,8 +7394,10 @@ void BarUISetClass::Interact()
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit,
 					&barState.drawAttributeBar.thicknessAnnotationHover,
+					&barState.drawAttributeBar.thicknessAnnotationHoverGrace,
 					&barState.drawAttributeBar.thicknessAnnotationPinned,
 					&barState.drawAttributeBar.thicknessAnnotationClosePress,
+					BarThicknessAnnotationTooltipGraceTimerId,
 					AnnotationTooltipAvailable(),
 				},
 			};
@@ -7244,6 +7413,8 @@ void BarUISetClass::Interact()
 				continueFlag = false;
 				if (msg.message == WM_LBUTTONDOWN)
 				{
+					CancelTooltipHoverGrace(
+						*tooltip.hoverGrace, tooltip.hoverGraceTimerId);
 					*tooltip.pressed = true;
 					StopIndependentHover(
 						hoveredIndependentButton, true, true);
@@ -7283,6 +7454,8 @@ void BarUISetClass::Interact()
 				continueFlag = false;
 				if (msg.message == WM_LBUTTONDOWN)
 				{
+					CancelTooltipHoverGrace(
+						*tooltip.hoverGrace, tooltip.hoverGraceTimerId);
 					while (true)
 					{
 						hiex::getmessage_win32(
@@ -7312,10 +7485,11 @@ void BarUISetClass::Interact()
 			{
 				auto popup = shapeMap[tooltip.popup];
 				if (continueFlag && tooltip.available
-					&& static_cast<bool>(*tooltip.pinned) && popup
+					&& (static_cast<bool>(*tooltip.pinned)
+						|| static_cast<bool>(*tooltip.hover)) && popup
 					&& popup->IsClick(msg.x, msg.y, barStyle.zoom))
 				{
-					// 固定浮窗正文只阻止点击穿透，关闭动作由右上角 X 独立处理。
+					// 悬停或固定浮窗正文都阻止点击穿透，关闭动作仍由 X 独立处理。
 					continueFlag = false;
 				}
 			}
@@ -7438,10 +7612,9 @@ void BarUISetClass::Interact()
 								static_cast<LONG>(msg.y) };
 							ClientToScreen(
 								floating_window, &startScreenPoint);
-							double dragBaseScreenX =
+							double pressScreenX =
 								static_cast<double>(
 									startScreenPoint.x);
-							double dragBaseWidth = initialWidth;
 
 							auto panel = shapeMap[
 								BarUISetShapeEnum::DrawAttributeBar];
@@ -7459,13 +7632,24 @@ void BarUISetClass::Interact()
 									*adjust,
 									BarUiInheritClass(
 										adjust->inhX, adjust->inhY));
-							double sliderTravelPx = max(1.0,
-								(previewGeometry.trackRight
-									- previewGeometry.trackLeft
-									- BarThicknessSliderThumbDiameter
-										* previewGeometry.panelScale)
-									* static_cast<double>(
-										barStyle.zoom));
+							double halfThumb =
+								BarThicknessSliderThumbDiameter
+								* previewGeometry.panelScale / 2.0;
+							POINT trackStartPoint{
+								static_cast<LONG>(lround(
+									(previewGeometry.trackLeft + halfThumb)
+									* static_cast<double>(barStyle.zoom))), 0 };
+							POINT trackEndPoint{
+								static_cast<LONG>(lround(
+									(previewGeometry.trackRight - halfThumb)
+									* static_cast<double>(barStyle.zoom))), 0 };
+							ClientToScreen(floating_window, &trackStartPoint);
+							ClientToScreen(floating_window, &trackEndPoint);
+							double trackStartScreenX =
+								static_cast<double>(trackStartPoint.x);
+							double trackTravelScreenX = max(1.0,
+								static_cast<double>(trackEndPoint.x)
+									- trackStartScreenX);
 
 							barState.drawAttributeBar
 								.thicknessSliderCandidateWidth = initialWidth;
@@ -7508,8 +7692,10 @@ void BarUISetClass::Interact()
 									double screenX =
 										static_cast<double>(
 											screenPoint.x);
-									if (screenX != dragBaseScreenX)
+									if (!gestureDragged
+										&& screenX != pressScreenX)
 									{
+										// 仅水平位移会把按下手势切换为真实的滑轨拖动。
 										gestureDragged = true;
 										if (!barState.drawAttributeBar
 											.thicknessSliderDragging)
@@ -7519,16 +7705,17 @@ void BarUISetClass::Interact()
 												true;
 											UpdateRendering(false);
 										}
+									}
 
+									if (gestureDragged)
+									{
 										double rangeSpan =
 											static_cast<double>(
 												range.max - range.min);
-										double rawWidth =
-											dragBaseWidth
-											+ (screenX
-												- dragBaseScreenX)
-												/ sliderTravelPx
-												* rangeSpan;
+										// 首次移动后直接投影到滑轨，圆点跟随当前指针/触点位置。
+										double rawWidth = range.min
+											+ (screenX - trackStartScreenX)
+												/ trackTravelScreenX * rangeSpan;
 										double clampedWidth = clamp(
 											rawWidth,
 											static_cast<double>(
@@ -7556,18 +7743,6 @@ void BarUISetClass::Interact()
 												.thicknessSliderCandidateWidth =
 												finalWidth;
 											UpdateRendering(false);
-										}
-
-										// 端点外的位移不累积，反向一像素即可离开端点。
-										if (rawWidth <= range.min)
-										{
-											dragBaseWidth = range.min;
-											dragBaseScreenX = screenX;
-										}
-										else if (rawWidth >= range.max)
-										{
-											dragBaseWidth = range.max;
-											dragBaseScreenX = screenX;
 										}
 									}
 									continue;
@@ -7615,18 +7790,54 @@ void BarUISetClass::Interact()
 								auto overflowInfoHit = shapeMap[
 									BarUISetShapeEnum::
 										DrawAttributeBar_ThicknessOverflowInfoHit];
-								bool pointerOverBadge =
-									(AnnotationTooltipAvailable()
-										&& annotationInfoHit
-										&& annotationInfoHit->IsClick(
-											msg.x, msg.y, barStyle.zoom))
-									|| (OverflowTooltipAvailable()
-										&& overflowInfoHit
-										&& overflowInfoHit->IsClick(
-											msg.x, msg.y, barStyle.zoom));
+								auto annotationPopup = shapeMap[
+									BarUISetShapeEnum::
+										DrawAttributeBar_ThicknessAnnotationPopup];
+								auto overflowPopup = shapeMap[
+									BarUISetShapeEnum::
+										DrawAttributeBar_ThicknessOverflowPopup];
+								bool annotationPopupInteractive =
+									barState.drawAttributeBar.thicknessAnnotationHover
+									|| barState.drawAttributeBar.thicknessAnnotationHoverGrace
+									|| barState.drawAttributeBar.thicknessAnnotationPinned;
+								bool overflowPopupInteractive =
+									barState.drawAttributeBar.thicknessOverflowHover
+									|| barState.drawAttributeBar.thicknessOverflowHoverGrace
+									|| barState.drawAttributeBar.thicknessOverflowPinned;
+								bool annotationPointerInside =
+									(annotationInfoHit && annotationInfoHit->IsClick(
+										msg.x, msg.y, barStyle.zoom))
+									|| (annotationPopupInteractive && annotationPopup
+										&& annotationPopup->IsClick(
+										msg.x, msg.y, barStyle.zoom));
+								bool overflowPointerInside =
+									(overflowInfoHit && overflowInfoHit->IsClick(
+										msg.x, msg.y, barStyle.zoom))
+									|| (overflowPopupInteractive && overflowPopup
+										&& overflowPopup->IsClick(
+										msg.x, msg.y, barStyle.zoom));
+								// 内层捕获循环不会处理普通 hover，抬起后统一重算提示和宽限期。
+								UpdateTooltipHover(
+									AnnotationTooltipAvailable(),
+									annotationPointerInside,
+									barState.drawAttributeBar.thicknessAnnotationHover,
+									barState.drawAttributeBar.thicknessAnnotationPinned,
+									barState.drawAttributeBar.thicknessAnnotationHoverGrace,
+									BarThicknessAnnotationTooltipGraceTimerId);
+								UpdateTooltipHover(
+									OverflowTooltipAvailable(),
+									overflowPointerInside,
+									barState.drawAttributeBar.thicknessOverflowHover,
+									barState.drawAttributeBar.thicknessOverflowPinned,
+									barState.drawAttributeBar.thicknessOverflowHoverGrace,
+									BarThicknessOverflowTooltipGraceTimerId);
 								barState.drawAttributeBar.thicknessSliderHover =
-									!pointerOverBadge && sliderHit->IsClick(
-										msg.x, msg.y, barStyle.zoom);
+									sliderHit->IsClick(
+										msg.x, msg.y, barStyle.zoom)
+									|| barState.drawAttributeBar.thicknessAnnotationHover
+									|| barState.drawAttributeBar.thicknessAnnotationHoverGrace
+									|| barState.drawAttributeBar.thicknessOverflowHover
+									|| barState.drawAttributeBar.thicknessOverflowHoverGrace;
 							}
 							else CloseThicknessSlider(false);
 							if (penModeChanged
@@ -7710,6 +7921,18 @@ void BarUISetClass::Interact()
 						continueFlag = false;
 						if (msg.message == WM_LBUTTONDOWN)
 						{
+							bool clickCompleted = false;
+							bool sliderPinnedAtPress = button.presetIndex < 0
+								&& barState.drawAttributeBar
+									.thicknessSliderPinned;
+							if (button.presetIndex < 0)
+							{
+								// 小三角按下即切换选中态；拖出取消时恢复按下前状态。
+								barState.drawAttributeBar
+									.thicknessSliderPinned = !sliderPinnedAtPress;
+								barState.drawAttributeBar
+									.thicknessSliderHover = false;
+							}
 							*button.pressed = true;
 							StopIndependentHover(hoveredIndependentButton, true, true);
 							hoveredIndependentButton =
@@ -7724,28 +7947,27 @@ void BarUISetClass::Interact()
 									if (!msg.lbutton)
 									{
 										if (button.presetIndex >= 0)
+										{
 											SetPenWidth(static_cast<float>(
 												GetBarBrushThicknessPresetPx(
 													button.presetIndex,
 													barStyle.dpiZoom)));
+										}
 										else
 										{
-											bool pinned =
-												!barState.drawAttributeBar
-													.thicknessSliderPinned;
 											barState.drawAttributeBar
-												.thicknessSliderPinned =
-												pinned;
-											barState.drawAttributeBar
-												.thicknessSliderHover =
-												false;
+												.thicknessSliderHover = false;
 										}
+										clickCompleted = true;
 										UpdateRendering();
 										break;
 									}
 								}
 								else break;
 							}
+							if (button.presetIndex < 0 && !clickCompleted)
+								barState.drawAttributeBar.thicknessSliderPinned =
+									sliderPinnedAtPress;
 							*button.pressed = false;
 							UpdateRendering(false);
 							SuppressHoverUntilPointerMove();
