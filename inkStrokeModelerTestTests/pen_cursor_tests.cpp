@@ -31,6 +31,9 @@ int RunPenCursorTests()
 	draw3::DrawingCursorAppearance penAppearance = {
 		draw3::DrawingCursorShape::Circle, 10.0f, 10.0f, 1.0f, 0.0f, 0.0f
 	};
+	draw3::DrawingCursorAppearance laserAppearance = {
+		draw3::DrawingCursorShape::Circle, 5.0f, 5.0f, 1.0f, 0.0f, 0.0f
+	};
 	draw3::DrawingCursorAppearance highlighterAppearance = {
 		draw3::DrawingCursorShape::Rectangle, 6.25f, 50.0f, 1.0f, 0.0f, 0.0f
 	};
@@ -45,6 +48,7 @@ int RunPenCursorTests()
 	eraserAppearance.outlineBlue = 207.0f / 255.0f;
 
 	PEN_CURSOR_CHECK(draw3::IsValidDrawingCursorAppearance(penAppearance));
+	PEN_CURSOR_CHECK(draw3::IsValidDrawingCursorAppearance(laserAppearance));
 	PEN_CURSOR_CHECK(draw3::IsValidDrawingCursorAppearance(highlighterAppearance));
 	PEN_CURSOR_CHECK(draw3::IsValidDrawingCursorAppearance(eraserAppearance));
 	PEN_CURSOR_CHECK(!draw3::IsValidDrawingCursorAppearance({}));
@@ -151,22 +155,22 @@ int RunPenCursorTests()
 	mouseHover.inContact = false;
 	const draw3::DrawingCursorVisual laserMouseHover =
 		draw3::ResolveLaserDrawingCursorVisual(
-			penHover, mouseHover, DrawingCursorPointerAuthority::Mouse, penAppearance);
+			penHover, mouseHover, DrawingCursorPointerAuthority::Mouse, laserAppearance);
 	PEN_CURSOR_CHECK(laserMouseHover.visible);
 	PEN_CURSOR_CHECK(Near(laserMouseHover.x, mouseHover.x));
-	PEN_CURSOR_CHECK(Near(laserMouseHover.appearance.width, 10.0f));
-	PEN_CURSOR_CHECK(Near(laserMouseHover.appearance.width * 0.5f, 5.0f));
+	PEN_CURSOR_CHECK(Near(laserMouseHover.appearance.width, 5.0f));
+	PEN_CURSOR_CHECK(Near(laserMouseHover.appearance.width * 0.5f, 2.5f));
 	PEN_CURSOR_CHECK(!draw3::ResolveLaserDrawingCursorVisual(
-		penContact, mouseHover, DrawingCursorPointerAuthority::Pen, penAppearance).visible);
+		penContact, mouseHover, DrawingCursorPointerAuthority::Pen, laserAppearance).visible);
 
 	// Pen 离开后 authority 仍拒绝陈旧 Mouse 样本，直到真实鼠标移动切换 authority。
 	draw3::DrawingCursorSample absentPen;
 	PEN_CURSOR_CHECK(!draw3::ResolveLaserDrawingCursorVisual(
 		absentPen, mouseHover, DrawingCursorPointerAuthority::Pen,
-		penAppearance).visible);
+		laserAppearance).visible);
 	PEN_CURSOR_CHECK(draw3::ResolveLaserDrawingCursorVisual(
 		absentPen, mouseHover, DrawingCursorPointerAuthority::Mouse,
-		penAppearance).visible);
+		laserAppearance).visible);
 	visual = draw3::ResolvePrimaryDrawingCursorVisual(
 		absentPen, mouseHover, DrawingCursorPointerAuthority::Pen,
 		penAppearance, eraserAppearance, false);

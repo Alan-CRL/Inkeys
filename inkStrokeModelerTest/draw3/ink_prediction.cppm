@@ -413,7 +413,7 @@ export namespace draw3
 	RECT RectFromStrokePoints(const std::vector<InkPoint>& points, int width, int height,
 		StrokeShape shape = StrokeShape::RoundCapsule, size_t firstIndex = 0,
 		size_t lastIndex = (std::numeric_limits<size_t>::max)());
-	// 激光脏区按每点实体半径覆盖固定 3px 漫反射和抗锯齿 padding。
+	// 激光脏区按每点实体半径覆盖固定 5px 漫反射和抗锯齿 padding。
 	RECT RectFromLaserPoints(const std::vector<InkPoint>& points,
 		float dpiScale, int width, int height);
 	// 更新原始坐标并判断是否发生有效移动。

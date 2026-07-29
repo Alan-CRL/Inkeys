@@ -99,18 +99,24 @@ float LaserAaCoverage(float distanceToEdge)
     return 1.0 - smoothstep(-aaWidth * 0.5, aaWidth * 0.5, distanceToEdge);
 }
 
+float LaserDiffuseCoverage(float distanceFromSolid)
+{
+    // 实体边界为 1，固定漫反射外缘为 0；平方曲线更快收束，仍只需一次乘法。
+    float fade = saturate(1.0 - distanceFromSolid / max(laserRadii.z, 1e-4));
+    return fade * fade;
+}
+
 float4 GetLaserDotCoverage(float distanceToCenter, float solidRadius)
 {
     float baseSolidRadius = max(laserRadii.y, 1e-4);
     float coreRadius = solidRadius * laserRadii.x / baseSolidRadius;
     float scatterWidth = solidRadius * laserRadii.w / baseSolidRadius;
-    float diffuseDistance = distanceToCenter - solidRadius - laserRadii.z;
+    float borderDistance = distanceToCenter - solidRadius;
     float core = LaserAaCoverage(distanceToCenter - coreRadius);
     float scatter = LaserAaCoverage(abs(distanceToCenter - coreRadius) - scatterWidth);
-    float border = LaserAaCoverage(distanceToCenter - solidRadius);
-    float glowEdge = LaserAaCoverage(diffuseDistance);
-    float glowFalloff = pow(saturate(-diffuseDistance / max(laserRadii.z, 1e-4)), 1.7);
-    return saturate(float4(core, scatter, border, glowEdge * glowFalloff));
+    float border = LaserAaCoverage(borderDistance);
+    float diffuse = LaserDiffuseCoverage(borderDistance);
+    return saturate(float4(core, scatter, border, diffuse));
 }
 
 float4 GetLaserStrokeCoverage(PS_INPUT input)
@@ -121,8 +127,6 @@ float4 GetLaserStrokeCoverage(PS_INPUT input)
         input.pixPos, input.p1, input.p2, input.r1 * coreRatio, input.r2 * coreRatio);
     float borderDistance = GetInkDist_Convex(
         input.pixPos, input.p1, input.p2, input.r1, input.r2);
-    float diffuseDistance = GetInkDist_Convex(input.pixPos, input.p1, input.p2,
-        input.r1 + laserRadii.z, input.r2 + laserRadii.z);
 
     float2 segment = input.p2 - input.p1;
     float segmentLengthSquared = dot(segment, segment);
@@ -134,9 +138,8 @@ float4 GetLaserStrokeCoverage(PS_INPUT input)
     float core = LaserAaCoverage(coreDistance);
     float scatter = LaserAaCoverage(abs(coreDistance) - scatterWidth);
     float border = LaserAaCoverage(borderDistance);
-    float glowEdge = LaserAaCoverage(diffuseDistance);
-    float glowFalloff = pow(saturate(-diffuseDistance / max(laserRadii.z, 1e-4)), 1.7);
-    return saturate(float4(core, scatter, border, glowEdge * glowFalloff));
+    float diffuse = LaserDiffuseCoverage(borderDistance);
+    return saturate(float4(core, scatter, border, diffuse));
 }
 
 float4 LayerPremultiplied(float4 below, float4 color, float coverage)
@@ -148,11 +151,12 @@ float4 LayerPremultiplied(float4 below, float4 color, float coverage)
 OperatorOutput ResolveLaserMaterial(float4 coverage, float opacity)
 {
     float4 color = 0.0;
-    color = LayerPremultiplied(color, laserGlowColor, coverage.a);
+    float edgeMix = smoothstep(laserParameters.z, laserParameters.w, coverage.a) *
+        (1.0 - coverage.b) * laserEdgeColor.a;
+    float4 diffuseColor = float4(
+        lerp(laserGlowColor.rgb, laserEdgeColor.rgb, edgeMix), laserGlowColor.a);
+    color = LayerPremultiplied(color, diffuseColor, coverage.a);
     color = LayerPremultiplied(color, laserBorderColor, coverage.b);
-    float edgeCoverage = smoothstep(laserParameters.z, laserParameters.w, coverage.a) *
-        (1.0 - coverage.b);
-    color = LayerPremultiplied(color, laserEdgeColor, edgeCoverage);
     color = LayerPremultiplied(color, laserScatterColor, coverage.g);
     color = LayerPremultiplied(color, laserCoreColor, coverage.r);
     color *= saturate(opacity);

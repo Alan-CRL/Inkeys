@@ -4,7 +4,7 @@
 
 Laser 复用现有 `RuntimeStroke` 的模型输入、真实点和 prediction，但将两张全尺寸 RGBA8 资源分别作为已完成轨迹的预乘颜色层和可复用的单笔 coverage scratch。每支未烘干 Laser 独立以 MAX blend 生成无接缝 coverage，再按 Down 顺序解析材质并 source-over 到目标；同一批次最后一支抬起后，所有未烘干轨迹按相同顺序写入稳定颜色层。完成普通 `L2 + L1 + L0` 合成后，先叠加稳定颜色，再依次叠加活动批次、粒子和发光笔尖，最后绘制普通 cursor 并 Present。
 
-coverage 四通道分别保存白芯、白色散射脊、红色实体外套和红色外部漫反射。独立 `LaserStyleConstants` 同时供 VS 按端点实体半径与固定漫反射宽度扩大 quad、PS 生成 coverage/resolve 材质，避免复用现有常量 padding。96 DPI 基准材质的实体总直径为 10px，其中白芯约 3.33px，红色实体轮廓再向外固定扩散 3px；压力只缩放实体半径，漫反射宽度只随 DPI 缩放。常量结构保持 112 bytes 并绑定 `b1`，resolve 输出 premultiplied Add/Retain，并沿用双源混合叠加到 backbuffer 或稳定颜色层。
+coverage 四通道分别保存白芯、白色散射脊、红色实体外套和红色外部漫反射。独立 `LaserStyleConstants` 同时供 VS 按端点实体半径与固定漫反射宽度扩大 quad、PS 生成 coverage/resolve 材质，避免复用现有常量 padding。96 DPI 基准材质的实体总直径为 5px，其中白芯约 1.67px，红色实体轮廓再向外固定扩散 5px；压力只缩放实体半径，漫反射宽度只随 DPI 缩放。PS 复用实体 signed distance，以仅含乘加的平方曲线把漫反射从实体边界 alpha 1 更快地衰减到外缘 alpha 0；红粉高光只混合 RGB，不再作为第二层抬高 alpha。常量结构保持 112 bytes 并绑定 `b1`，resolve 输出 premultiplied Add/Retain，并沿用双源混合叠加到 backbuffer 或稳定颜色层。
 
 ## State And Data Flow
 
@@ -33,6 +33,6 @@ Pen/Mouse Hover 和所有活动 contact 的笔尖使用专用 LaserDot shader sh
 ## Risks And Rollback
 
 - 两张 RGBA8 资源增加与画布面积线性相关的 GPU 内存；稳定颜色只在批次结束时写入，单笔 scratch 局部清理，并用 Release 指标验证 ARM64 多 contact 成本。
-- CPU bounds 必须覆盖实体半径外固定 3px 的漫反射、未烘干层新旧区域、粒子和 tip；任何遗漏会产生残影。
+- CPU bounds 必须覆盖实体半径外固定 5px 的漫反射、未烘干层新旧区域、粒子和 tip；任何遗漏会产生残影。
 - CPU/HLSL 结构、shape type、寄存器和常量缓冲区必须同步；构建两个 shader 和完整解决方案作为合并门槛。
 - 如果动态粒子影响帧预算，可通过公开开关即时关闭，不回退主轨迹实现。

@@ -49,8 +49,8 @@ float2 halfSize
 | `coreColor` | `laserCoreColor` |
 | `scatterColor` | `laserScatterColor` |
 | `borderColor` | `laserBorderColor` |
-| `edgeColor` | `laserEdgeColor`（红粉外缘高亮） |
-| `glowColor` | `laserGlowColor` |
+| `edgeColor` | `laserEdgeColor`（RGB 为红粉外缘高亮，alpha 为 RGB 混合强度） |
+| `glowColor` | `laserGlowColor`（alpha 为实体边界处的漫反射峰值） |
 | `parameters.x/y/z/w` | `laserParameters.x/y/z/w`（组 opacity、DPI scale、外缘 glow 下/上阈值） |
 
 新增字段必须保持 16 字节对齐，并同步 `renderer.cppm/.cpp`、`ink.hlsli` 与 shape `7/8/9/10/11/12` 的绑定。
@@ -122,7 +122,7 @@ Result = Add + Retain * Destination
 - VS 为圆胶囊和荧光笔固定矩形 sweep 生成覆盖形状的 quad/AABB。
 - PS 使用 signed distance 与 `fwidth`/`smoothstep` 做抗锯齿；高亮 sweep 的零等值线由 X/Y/线段法线半平面交集确定。
 - CPU dirty bounds 必须至少覆盖 VS 生成范围；当前普遍预留 2px 几何扩展和 3px bounds padding。
-- Laser shape `7` 的 `InkPoint.r` 是红色实体外半径。96 DPI 基准实体半径为 5px，白芯半径是实体半径的 `1/3`，漫反射在实体轮廓外固定扩展 3px；压力只改变实体/白芯/散射比例，不改变 3px 漫反射。VS、PS、Hover/Touch `LaserDot.radius`、粒子红边锚点和 CPU bounds 必须复用 `renderer.cppm` 的尺寸契约。
+- Laser shape `7` 的 `InkPoint.r` 是红色实体外半径。96 DPI 基准实体半径为 2.5px，白芯半径是实体半径的 `1/3`，漫反射在实体轮廓外固定扩展 5px；压力只改变实体/白芯/散射比例，不改变 5px 漫反射。PS 必须复用实体 signed distance，以平方曲线令 coverage 在实体边界为 1、5px 外缘为 0；红粉高光只混合 diffuse RGB，禁止通过额外 source-over 层抬高渐变 alpha。VS、PS、Hover/Touch `LaserDot.radius`、粒子红边锚点和 CPU bounds 必须复用 `renderer.cppm` 的尺寸契约。
 - 普通笔零长度或一端圆包含另一端时退化为较大端点圆；高亮零长度退化为固定竖直矩形。
 - `InkPoint` 中出现 NaN 时 PS discard；CPU 仍应避免生成非有限输入。
 
@@ -160,7 +160,8 @@ Result = Add + Retain * Destination
 
 ### 6. Tests Required
 
-- 断言 96 DPI 的实体直径 10px、白芯直径约 3.33px、漫反射每侧 3px，且 DPI/压力换算符合固定漫反射契约。
+- 断言 96 DPI 的实体直径 5px、白芯直径约 1.67px、漫反射每侧 5px，且 DPI/压力换算符合固定漫反射契约。
+- 静态核对 `LaserDiffuseCoverage(0)=1`、`LaserDiffuseCoverage(diffuseExtent)=0` 且区间内单调；`ResolveLaserMaterial` 在红色实体外只能由单一 diffuse 层决定 alpha，红粉高光不得再次 source-over 抬高透明度。
 - 断言 `LaserDot.radius`、固定宽度轨迹半径和 Touch/Hover 尺寸一致，`LaserStyleConstants == 112 bytes`。
 - 断言 CPU dirty bounds 覆盖实体半径、固定漫反射和 AA padding；人工验证反向 Down 顺序、较老笔继续书写、取消、resize、Hold/Fade 与静态 Hold 零 Present。
 

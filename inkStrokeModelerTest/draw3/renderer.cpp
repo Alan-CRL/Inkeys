@@ -247,7 +247,8 @@ namespace draw3
 			1.0f, 11.0f / 255.0f, 30.0f / 255.0f, 0.98f);
 		laserStyleConstants_.edgeColor = DirectX::XMFLOAT4(
 			1.0f, 112.0f / 255.0f, 128.0f / 255.0f, 0.72f);
-		laserStyleConstants_.glowColor = DirectX::XMFLOAT4(1.0f, 0.04f, 0.10f, 0.24f);
+		// 漫反射在实体边界达到满 alpha；edgeColor.a 只控制粉色高光的 RGB 混合强度。
+		laserStyleConstants_.glowColor = DirectX::XMFLOAT4(1.0f, 0.04f, 0.10f, 1.0f);
 		// z/w 是红色实体外侧漫反射曲线的边缘高亮阈值。
 		laserStyleConstants_.parameters = DirectX::XMFLOAT4(
 			1.0f, scale, 0.20f, 0.29f);

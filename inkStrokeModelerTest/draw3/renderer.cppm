@@ -19,9 +19,9 @@ import draw3.pen_cursor;
 export namespace draw3
 {
 	inline const DirectX::XMFLOAT4 kTransparentLayerClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-	inline constexpr float kLaserSolidDiameterAt96Dpi = 10.0f;
+	inline constexpr float kLaserSolidDiameterAt96Dpi = 5.0f;
 	inline constexpr float kLaserCoreDiameterRatio = 1.0f / 3.0f;
-	inline constexpr float kLaserDiffuseExtentAt96Dpi = 3.0f;
+	inline constexpr float kLaserDiffuseExtentAt96Dpi = 5.0f;
 	inline constexpr float kLaserScatterHalfWidthToCoreRatio = 0.4f;
 
 	// Laser 的 InkPoint.r 统一表示红色实体外半径；漫反射宽度不随压力变化。
