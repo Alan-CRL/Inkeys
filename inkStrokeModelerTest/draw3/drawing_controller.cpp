@@ -33,7 +33,7 @@ namespace draw3
 		const DirectX::XMFLOAT4 kMultiContactInkColor(1.0f, 0.0f, 0.0f, 1.0f);
 		const DirectX::XMFLOAT4 kReconnectManualTestColor(0.0f, 1.0f, 0.0f, 1.0f);
 		constexpr float kPenDiameter = 5.0f;
-		constexpr float kLaserDiameter = 5.0f;
+		constexpr float kLaserDiameter = 2.5f;
 		constexpr float kLaserGlowRadiusAt96Dpi = 14.0f;
 		constexpr double kLaserParticleConvergeSeconds = 0.220;
 		constexpr double kLaserParticleScatterSeconds = 0.180;

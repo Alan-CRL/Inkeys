@@ -39,7 +39,7 @@
 | Pen | 5px base; hardware 1–7px | active configured mode | per-device fixed/simulated/hardware | real tail + prediction + taper |
 | Highlighter | 6.25×50px fixed vertical nib | enabled from Down | fixed | rectangle sweep primitives, no taper |
 | Eraser | 50px | disabled | fixed | real points directly committed to L1 |
-| Laser | 5px core + 15px red border + 28px glow | active configured mode | Pen laser pressure; Mouse/Touch fixed | independent stable/live coverage, never L2 |
+| Laser | 2.5px core + 7.5px red border + 14px glow | active configured mode | Pen laser pressure; Mouse/Touch fixed | independent stable/live coverage, never L2 |
 
 这是当前实验实现。预测时长、目标帧率、笔宽、live-tip 和几何阈值默认都是实验参数；只有公开接口、持久化格式或明确兼容要求已经依赖某值时，该值才升级为兼容契约。
 
@@ -61,8 +61,8 @@
 
 - Laser 在 Down 时锁定到当前批次，支持 Pen、Mouse 和多 Touch；跳过断触 reconnect、倒转笔尾橡皮覆盖和触觉反馈。
 - stable/live 只写独立 `R8G8B8A8_UNORM` coverage，四通道为白芯、白红散射、红边和红晕；确认前缀增量写 stable，活动真实尾部和 prediction 每帧重建 live。任何 Laser 几何都不得进入 L2。
-- 96 DPI 基准材质为 5px 白芯、15px 红边、28px 完整光晕和 1px 内侧散射，resolve 顺序为柔光、红边、红粉外缘高亮、内侧散射、白芯。Pen 使用 `0.65 + 0.75 * clamp(p, 0, 1)` 同比缩放全部材质层；无效压力保持上一宽度，prediction 继承最后真实半径，Mouse/Touch 固定基准宽度。
-- 起笔固定 seed 生成 12-18 枚粒子，真实路径每 8-12px 发射一枚且每 contact 最多 48 枚；流速为 `clamp(0.025 * smoothedSpeed, 8*dpiScale, 36*dpiScale)`。轨迹粒子用弧长和 segment cursor 沿红边外侧前进，到当前路径末端钳住；Up 只扫描一次最近真实路径点，75% 收束至红边、25% 至中心线，并在约 220ms 内缩小淡出。
+- 96 DPI 默认轨迹为 2.5px 白芯、7.5px 红边、14px 完整光晕和 0.5px 内侧散射，resolve 顺序仍为柔光、红边、红粉外缘高亮、内侧散射、白芯；LaserDot 笔尖仍使用 5px 白芯、15px 红边、28px 完整光晕和 1px 内侧散射。Pen 使用 `0.65 + 0.75 * clamp(p, 0, 1)` 同比缩放全部轨迹材质层；无效压力保持上一宽度，prediction 继承最后真实半径，Mouse/Touch 固定基准宽度。
+- 粒子暂时默认关闭；外部开启后，起笔固定 seed 生成 12-18 枚粒子，真实路径每 8-12px 发射一枚且每 contact 最多 48 枚；流速为 `clamp(0.025 * smoothedSpeed, 8*dpiScale, 36*dpiScale)`。轨迹粒子用弧长和 segment cursor 沿红边外侧前进，到当前路径末端钳住；Up 只扫描一次最近真实路径点，75% 收束至红边、25% 至中心线，并在约 220ms 内缩小淡出。
 - 最后一根 Laser Up 才记录 `lastAllUpQpc`；默认满亮保持 `3.0s`，固定 `0.8s` smooth fade。新 Down 在 Hold/Fade 中把整组 opacity 恢复为 `1` 并重新计时。
 - `SetLaserHoldDurationSeconds` 只接受 finite non-negative 值；运行中调整须由 control wake 唤醒并相对最后一次全部 Up 立即重算。粒子 setter 同样发布 control wake，关闭后下一帧清理旧粒子 bounds。
 - Hold 静态期不持续 Present；Fade、接触、prediction 和粒子动画才驱动帧。resize 保留 stable 左上角交集，live 重新绘制；clear/Present 失败恢复必须重建/清理 Laser coverage。

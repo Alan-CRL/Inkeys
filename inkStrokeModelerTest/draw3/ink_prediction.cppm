@@ -172,7 +172,7 @@ export namespace draw3
 		bool invertedPenEraserEnabled = true; // 默认允许倒转 Pen 在画笔/荧光笔下临时覆盖为橡皮。
 		bool interruptedStrokeReconnectEnabled = true; // 默认暂留物理 Up，允许短暂断触继续同一模型。
 		bool hapticFeedbackEnabled = true; // 当前原型默认启用触觉；后续由 Inkeys3 设置替换。
-		bool laserParticlesEnabled = true; // 激光粒子默认开启，但可由外部设置即时关闭。
+		bool laserParticlesEnabled = false; // 暂时默认隐藏激光粒子，仍可由外部设置即时开启。
 		double laserHoldDurationSeconds = 3.0; // 最后一根激光笔抬起后的满亮留存时间。
 		InputWidthModeSettings inputWidthModes = {};
 	};
