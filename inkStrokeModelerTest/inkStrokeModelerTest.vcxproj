@@ -294,6 +294,10 @@
 	<ClCompile Include="draw3\ink_prediction.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
+    <ClCompile Include="draw3\laser_particles.cpp" />
+    <ClCompile Include="draw3\laser_particles.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
 	<ClCompile Include="draw3\pen_cursor.cpp" />
 	<ClCompile Include="draw3\pen_cursor.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
@@ -321,6 +325,11 @@
     <ClCompile Include="main.cpp" />
     <None Include="main3.cpp" />
     <None Include="ink.hlsli" />
+    <None Include="laserParticleCommon.hlsli" />
+    <None Include="laserParticleEmitCS.hlsl" />
+    <None Include="laserParticleEmitCS.cso" />
+    <None Include="laserParticleUpdateCS.hlsl" />
+    <None Include="laserParticleUpdateCS.cso" />
     <None Include="inkPixelShader.cso" />
     <None Include="inkVertexShader.cso" />
     <None Include="main2.cpp" />
@@ -359,6 +368,7 @@
     <ClInclude Include="HiEasyX\HiSysGUI\SysStatic.h" />
     <ClInclude Include="HiEasyX\HiWindow.h" />
     <None Include="renderer2.h" />
+    <ClInclude Include="laserParticleResource.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>
@@ -429,15 +439,36 @@
       <AdditionalOptions>/O3 /Qstrip_debug %(AdditionalOptions)</AdditionalOptions>
       <Visible>false</Visible>
     </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\laserParticleUpdateCS.hlsl">
+      <ShaderModel>5.0</ShaderModel>
+      <ShaderType>Compute</ShaderType>
+      <ObjectFileOutput>$(ProjectDir)laserParticleUpdateCS.cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(IntDir)fxc_utf8;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <DisableOptimizations>false</DisableOptimizations>
+      <EnableDebuggingInformation>false</EnableDebuggingInformation>
+      <AdditionalOptions>/O3 /Qstrip_debug %(AdditionalOptions)</AdditionalOptions>
+      <Visible>false</Visible>
+    </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\laserParticleEmitCS.hlsl">
+      <ShaderModel>5.0</ShaderModel>
+      <ShaderType>Compute</ShaderType>
+      <ObjectFileOutput>$(ProjectDir)laserParticleEmitCS.cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(IntDir)fxc_utf8;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <DisableOptimizations>false</DisableOptimizations>
+      <EnableDebuggingInformation>false</EnableDebuggingInformation>
+      <AdditionalOptions>/O3 /Qstrip_debug %(AdditionalOptions)</AdditionalOptions>
+      <Visible>false</Visible>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="inkStrokeModelerTest.rc" />
+    <ResourceCompile Include="laserParticleShaders.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <!-- FXC 10.1 不接受源文件开头的 UTF-8 BOM，编译前只在中间目录生成无 BOM 副本。 -->
   <Target Name="PrepareFxcCompatibleHlsl" BeforeTargets="FxCompile"
-          Inputs="$(ProjectDir)ink.hlsli;$(ProjectDir)inkPixelShader.hlsl;$(ProjectDir)inkVertexShader.hlsl"
-          Outputs="$(IntDir)fxc_utf8\ink.hlsli;$(IntDir)fxc_utf8\inkPixelShader.hlsl;$(IntDir)fxc_utf8\inkVertexShader.hlsl">
+          Inputs="$(ProjectDir)ink.hlsli;$(ProjectDir)laserParticleCommon.hlsli;$(ProjectDir)inkPixelShader.hlsl;$(ProjectDir)inkVertexShader.hlsl;$(ProjectDir)laserParticleUpdateCS.hlsl;$(ProjectDir)laserParticleEmitCS.hlsl"
+          Outputs="$(IntDir)fxc_utf8\ink.hlsli;$(IntDir)fxc_utf8\laserParticleCommon.hlsli;$(IntDir)fxc_utf8\inkPixelShader.hlsl;$(IntDir)fxc_utf8\inkVertexShader.hlsl;$(IntDir)fxc_utf8\laserParticleUpdateCS.hlsl;$(IntDir)fxc_utf8\laserParticleEmitCS.hlsl">
     <MakeDir Directories="$(IntDir)fxc_utf8" />
     <ReadLinesFromFile File="$(ProjectDir)ink.hlsli">
       <Output TaskParameter="Lines" ItemName="_FxcInkIncludeLines" />
@@ -448,9 +479,21 @@
     <ReadLinesFromFile File="$(ProjectDir)inkVertexShader.hlsl">
       <Output TaskParameter="Lines" ItemName="_FxcVertexShaderLines" />
     </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(ProjectDir)laserParticleCommon.hlsli">
+      <Output TaskParameter="Lines" ItemName="_FxcLaserParticleIncludeLines" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(ProjectDir)laserParticleUpdateCS.hlsl">
+      <Output TaskParameter="Lines" ItemName="_FxcLaserParticleUpdateLines" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(ProjectDir)laserParticleEmitCS.hlsl">
+      <Output TaskParameter="Lines" ItemName="_FxcLaserParticleEmitLines" />
+    </ReadLinesFromFile>
     <WriteLinesToFile File="$(IntDir)fxc_utf8\ink.hlsli" Lines="@(_FxcInkIncludeLines)" Overwrite="true" Encoding="ASCII" />
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\laserParticleCommon.hlsli" Lines="@(_FxcLaserParticleIncludeLines)" Overwrite="true" Encoding="ASCII" />
     <WriteLinesToFile File="$(IntDir)fxc_utf8\inkPixelShader.hlsl" Lines="@(_FxcPixelShaderLines)" Overwrite="true" Encoding="ASCII" />
     <WriteLinesToFile File="$(IntDir)fxc_utf8\inkVertexShader.hlsl" Lines="@(_FxcVertexShaderLines)" Overwrite="true" Encoding="ASCII" />
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\laserParticleUpdateCS.hlsl" Lines="@(_FxcLaserParticleUpdateLines)" Overwrite="true" Encoding="ASCII" />
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\laserParticleEmitCS.hlsl" Lines="@(_FxcLaserParticleEmitLines)" Overwrite="true" Encoding="ASCII" />
   </Target>
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

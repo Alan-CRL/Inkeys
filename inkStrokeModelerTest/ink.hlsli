@@ -1,5 +1,7 @@
 ﻿// ink.hlsli
 
+#include "laserParticleCommon.hlsli"
+
 // 1. 常量缓冲区 (b0)
 cbuffer ScreenBuffer : register(b0)
 {
@@ -51,6 +53,7 @@ Texture2D LiveOperatorAdd : register(t4);
 Texture2D LiveOperatorRetain : register(t5);
 Texture2D LaserCompositedColor : register(t6);
 Texture2D LaserStrokeCoverage : register(t7);
+StructuredBuffer<LaserGpuParticle> LaserParticleData : register(t8);
 SamplerState OperatorSampler : register(s0);
 
 // 4. VS -> PS

@@ -61,7 +61,7 @@ export namespace draw3
 		StrokeModelConfiguration configuration_;
 		InputWidthModeSettingsState inputWidthModeSettings_;
 		std::atomic<bool> invertedPenEraserEnabled_ = true;
-		std::atomic<bool> laserParticlesEnabled_ = false;
+		std::atomic<bool> laserParticlesEnabled_ = true;
 		std::atomic<double> laserHoldDurationSeconds_ = 3.0;
 		RuntimeMetricsSession* metrics_ = nullptr;
 		PenHapticFeedback* haptics_ = nullptr;

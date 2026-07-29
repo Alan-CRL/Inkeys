@@ -13,7 +13,7 @@ float2 SafeNormalize(float2 value, float2 fallbackValue)
     return valueLength > 1e-5 ? value / valueLength : fallbackValue;
 }
 
-PS_INPUT main(uint id : SV_VertexID)
+PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
 {
     PS_INPUT output = (PS_INPUT) 0;
     int type = (int) (globalShapeType + 0.5);
@@ -24,12 +24,39 @@ PS_INPUT main(uint id : SV_VertexID)
     output.color = globalColor;
     output.shapeType = globalShapeType;
 
-    if (type == 9 || type == 10)
+    if (type == 10)
+    {
+        LaserGpuParticle particle = LaserParticleData[instanceId];
+        if (particle.alive == 0 || particle.opacity <= 0.0 ||
+            particle.currentRadius <= 0.0)
+        {
+            // 固定实例绘制中，死亡槽生成退化图元，不需要 GPU 计数器回读。
+            output.pos = float4(-2.0, -2.0, 0.0, 1.0);
+            output.p1 = 0.0;
+            output.p2 = 0.0;
+            return output;
+        }
+
+        float glowExtent = max(globalColor.x, 0.0) * laserParameters.y;
+        float outerRadius = particle.currentRadius + glowExtent;
+        float2 center = particle.position;
+        float2 rectMin = center - outerRadius - 2.0;
+        float2 rectMax = center + outerRadius + 2.0;
+        float2 worldPos = lerp(rectMin, rectMax, templatePos);
+        output.pos = float4((worldPos.x / screenWidth) * 2.0 - 1.0,
+            -((worldPos.y / screenHeight) * 2.0 - 1.0), 0.0, 1.0);
+        output.pixPos = worldPos;
+        output.p1 = center;
+        output.p2 = outerRadius.xx;
+        output.r1 = particle.currentRadius;
+        output.r2 = particle.opacity;
+        return output;
+    }
+
+    if (type == 9)
     {
         InkPoint dot = InkData[globalBufferOffset + itemIndex];
-        float outerRadius = type == 9
-            ? max(dot.r, 0.0) + laserRadii.z
-            : max(dot.r * 3.0, 3.0 * laserParameters.y);
+        float outerRadius = max(dot.r, 0.0) + laserRadii.z;
         float2 center = dot.pos;
         float2 rectMin = center - outerRadius - 2.0;
         float2 rectMax = center + outerRadius + 2.0;

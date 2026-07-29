@@ -92,7 +92,6 @@ export namespace draw3
 	inline constexpr float kInterruptedStrokeReconnectMaximumSpeedRatio = 2.75f;
 	inline constexpr size_t kMaximumInterruptedStrokeReconnectCandidates = 8;
 	inline constexpr double kLaserFadeDurationSeconds = 0.8;
-	inline constexpr size_t kLaserMaximumParticlesPerContact = 48;
 
 	enum class LaserTrailPhase : uint32_t
 	{
@@ -122,33 +121,6 @@ export namespace draw3
 		const LaserTrailLifecycle& lifecycle, size_t pendingLayerCount) noexcept;
 	// Cancelled 或空几何层不能参与活动合成和稳定烘干。
 	bool ShouldCompositeLaserLayer(bool cancelled, size_t pointCount) noexcept;
-	// 固定 seed 和槽位生成 8-12px 的稳定发射间隔。
-	float LaserParticleEmissionIntervalPx(
-		uint32_t strokeSeed, uint32_t slot, float dpiScale) noexcept;
-	// 粒子流速只追随平滑输入速度，并保持 DPI 对应的上下限。
-	float LaserParticleFlowSpeedPxPerSecond(float inputSpeed, float dpiScale) noexcept;
-	// 固定 seed 决定起笔调试粒子数量，范围始终为 12-18。
-	uint32_t LaserDownParticleCount(uint32_t strokeSeed) noexcept;
-
-	struct LaserPathSample
-	{
-		float x = 0.0f;
-		float y = 0.0f;
-		float radius = 0.0f;
-		float tangentX = 1.0f;
-		float tangentY = 0.0f;
-		size_t segmentIndex = 0;
-		bool atPathEnd = false;
-	};
-
-	// 以递增弧长沿真实曲线采样；cursor 只前进，使逐帧推进摊销为 O(粒子数)。
-	bool SampleLaserPathAtArcLength(const std::vector<InkPoint>& points,
-		float arcLength, size_t& segmentCursor, float& segmentStartArcLength,
-		LaserPathSample& sample) noexcept;
-	// Up 时执行一次全路径最近点扫描，随后粒子不再引用 runtime 路径。
-	bool FindNearestLaserPathSample(const std::vector<InkPoint>& points,
-		float x, float y, LaserPathSample& sample) noexcept;
-
 	// 保存与目标帧率联动的建模和预测参数。
 	struct StrokeTimingProfile
 	{
@@ -177,7 +149,8 @@ export namespace draw3
 		bool invertedPenEraserEnabled = true; // 默认允许倒转 Pen 在画笔/荧光笔下临时覆盖为橡皮。
 		bool interruptedStrokeReconnectEnabled = true; // 默认暂留物理 Up，允许短暂断触继续同一模型。
 		bool hapticFeedbackEnabled = true; // 当前原型默认启用触觉；后续由 Inkeys3 设置替换。
-		bool laserParticlesEnabled = false; // 暂时默认隐藏激光粒子，仍可由外部设置即时开启。
+		bool laserParticlesEnabled = true; // GPU 粒子默认开启；资源不可用时只降级激光主体。
+		LaserParticleConfig laserParticleConfig = {};
 		double laserHoldDurationSeconds = 3.0; // 最后一根激光笔抬起后的满亮留存时间。
 		InputWidthModeSettings inputWidthModes = {};
 	};

@@ -3,8 +3,11 @@
 本层覆盖：
 
 - `inkStrokeModelerTest/ink.hlsli`
+- `inkStrokeModelerTest/laserParticleCommon.hlsli`
 - `inkStrokeModelerTest/inkVertexShader.hlsl`
 - `inkStrokeModelerTest/inkPixelShader.hlsl`
+- `inkStrokeModelerTest/laserParticleUpdateCS.hlsl`
+- `inkStrokeModelerTest/laserParticleEmitCS.hlsl`
 - `draw3/renderer.cppm` 与 `draw3/renderer.cpp` 中的 CPU/GPU 镜像
 - `.vcxproj`、`.rc` 与 `resource.h` 中的 shader 构建和资源嵌入
 
@@ -29,6 +32,6 @@
 - [ ] SRV/RTV 绑定解除完整，没有资源冲突。
 - [ ] CPU bounds 覆盖 shader 实际绘制区域和 AA padding。
 - [ ] `.vcxproj` 的临时副本、FXC 输出和 `.rc` 嵌入链仍一致。
-- [ ] 若任务修改 HLSL、CPU/GPU 契约或工程资源链：完整解决方案构建成功，vertex/pixel shader 编译和 `.cso` 资源嵌入链均有成功证据。
+- [ ] 若任务修改 HLSL、CPU/GPU 契约或工程资源链：完整解决方案构建成功，vertex/pixel/update compute/emit compute 四个 shader 编译和 `.cso` 资源嵌入链均有成功证据。
 - [ ] 若任务修改视觉数学：执行相应人工场景；无法运行时明确标记“未验证”。
 - [ ] 纯文档任务可跳过构建和视觉验证，但必须检查索引、链接、格式与规则一致性。

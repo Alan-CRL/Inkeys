@@ -5,6 +5,7 @@
 #endif
 
 #include "../resource.h"
+#include "../laserParticleResource.h"
 
 #include <algorithm>
 #include <cmath>
@@ -54,6 +55,15 @@ namespace draw3
 
 		static_assert(sizeof(GlobalShaderConstants) == 48);
 		static_assert(sizeof(GlobalShaderConstants) % 16 == 0);
+
+		void ReportLaserParticleUnavailableOnce() noexcept
+		{
+			static bool reported = false;
+			if (reported) return;
+			reported = true;
+			::OutputDebugStringW(
+				L"[Draw3] D3D11 Compute Shader 激光粒子不可用，已仅保留激光主体。\n");
+		}
 	}
 
 	int InkRenderer::DrawStrokeOrDot(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color,
@@ -254,6 +264,61 @@ namespace draw3
 			1.0f, scale, 0.20f, 0.29f);
 	}
 
+	void InkRenderer::ConfigureLaserParticles(
+		const LaserParticleConfig& configuration, float dpiScale) noexcept
+	{
+		const LaserParticleConfig effectiveConfiguration =
+			IsValidLaserParticleConfig(configuration)
+			? configuration : LaserParticleConfig{};
+		laserParticleGlowExtentDip_ = effectiveConfiguration.glowExtentDip;
+		laserParticleSystem_.Configure(
+			effectiveConfiguration, dpiScale, kLaserCoreDiameterRatio);
+	}
+
+	bool InkRenderer::LaserParticlesAvailable() const noexcept
+	{
+		return laserParticleSystem_.IsAvailable();
+	}
+
+	LaserParticlePathHandle InkRenderer::AcquireLaserParticlePath() noexcept
+	{
+		return laserParticleSystem_.AcquirePath();
+	}
+
+	uint32_t InkRenderer::AppendLaserParticlePathPoints(LaserParticlePathHandle path,
+		std::span<const LaserParticlePathPoint> points) noexcept
+	{
+		return laserParticleSystem_.AppendPathPoints(path, points);
+	}
+
+	void InkRenderer::SetLaserParticlePathInputSpeed(
+		LaserParticlePathHandle path, float filteredInputSpeed) noexcept
+	{
+		laserParticleSystem_.SetPathInputSpeed(path, filteredInputSpeed);
+	}
+
+	void InkRenderer::EndLaserParticlePath(LaserParticlePathHandle path) noexcept
+	{
+		laserParticleSystem_.EndPath(path);
+	}
+
+	void InkRenderer::SimulateLaserParticles(
+		float wallDeltaSeconds, float motionDeltaSeconds) noexcept
+	{
+		laserParticleSystem_.Simulate(wallDeltaSeconds, motionDeltaSeconds);
+	}
+
+	void InkRenderer::EmitLaserParticles(
+		const LaserParticleEmissionRequest& request) noexcept
+	{
+		laserParticleSystem_.Emit(request);
+	}
+
+	void InkRenderer::ResetLaserParticles() noexcept
+	{
+		laserParticleSystem_.Reset();
+	}
+
 	bool InkRenderer::UpdateLaserStyleConstants(float opacity)
 	{
 		if (!laserStyleCB) return false;
@@ -409,7 +474,7 @@ namespace draw3
 			12.0f, nullptr, 0, nullptr);
 	}
 
-	void InkRenderer::DrawLaserDots(const std::vector<LaserDot>& dots, bool particles)
+	void InkRenderer::DrawLaserDots(const std::vector<LaserDot>& dots)
 	{
 		if (dots.empty() || !backBufferRTV || !UpdateLaserStyleConstants(1.0f)) return;
 		size_t startIndex = 0;
@@ -427,7 +492,7 @@ namespace draw3
 			auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
 			constants->width = viewportWidth;
 			constants->height = viewportHeight;
-			constants->shapeType = particles ? 10.0f : 9.0f;
+			constants->shapeType = 9.0f;
 			constants->bufferOffset = 0;
 			constants->color = {};
 			constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
@@ -450,6 +515,44 @@ namespace draw3
 			context->VSSetShaderResources(0, 1, nullResource);
 			startIndex += batchCount;
 		}
+	}
+
+	void InkRenderer::DrawLaserParticles()
+	{
+		ID3D11ShaderResourceView* particleResource =
+			laserParticleSystem_.ParticleShaderResourceView();
+		if (!particleResource || !backBufferRTV ||
+			!UpdateLaserStyleConstants(1.0f)) return;
+
+		D3D11_MAPPED_SUBRESOURCE mapped = {};
+		if (FAILED(context->Map(globalCB.Get(), 0,
+			D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
+		auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
+		constants->width = viewportWidth;
+		constants->height = viewportHeight;
+		constants->shapeType = 10.0f;
+		constants->bufferOffset = 0;
+		// shape 10 复用 globalColor.x 向 VS/PS 传递可配置的 DIP 辉光范围。
+		constants->color = DirectX::XMFLOAT4(
+			laserParticleGlowExtentDip_, 0.0f, 0.0f, 0.0f);
+		constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
+		context->Unmap(globalCB.Get(), 0);
+
+		SetOMTarget(backBufferRTV.Get());
+		context->IASetInputLayout(nullptr);
+		context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		context->VSSetShader(vertexShader.Get(), nullptr, 0);
+		context->VSSetShaderResources(8, 1, &particleResource);
+		ID3D11Buffer* constantBuffers[] = { globalCB.Get(), laserStyleCB.Get() };
+		context->VSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
+		context->PSSetShader(pixelShader.Get(), nullptr, 0);
+		context->PSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
+		context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF);
+		context->RSSetState(rasterState.Get());
+		context->DrawInstanced(6, kLaserParticleCapacity, 0, 0);
+
+		ID3D11ShaderResourceView* nullParticle[] = { nullptr };
+		context->VSSetShaderResources(8, 1, nullParticle);
 	}
 
 	void InkRenderer::CopyResource(ID3D11Texture2D* dst, ID3D11Texture2D* src, RECT rect)
@@ -667,9 +770,9 @@ namespace draw3
 		if (context)
 		{
 			ID3D11ShaderResourceView* nullResources[] = {
-				nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
+				nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
 			context->OMSetRenderTargets(0, nullptr, nullptr);
-			context->VSSetShaderResources(0, ARRAYSIZE(nullResources), nullResources);
+			context->VSSetShaderResources(0, ARRAYSIZE(nullResources), nullResources); // t8 粒子 SRV 也随 Resize 显式解绑。
 			context->PSSetShaderResources(0, ARRAYSIZE(nullResources), nullResources); // 释放前先解绑，避免 D3D 仍持有引用。
 			context->Flush();
 		}
@@ -699,6 +802,7 @@ namespace draw3
 
 	void InkRenderer::ReleaseResources()
 	{
+		laserParticleSystem_.Release();
 		ReleaseSizeDependentResources();
 		vertexShader.Reset();
 		pixelShader.Reset();
@@ -875,6 +979,16 @@ namespace draw3
 		if (!vertexShaderBlob.data || !pixelShaderBlob.data) return false;
 		if (FAILED(device->CreateVertexShader(vertexShaderBlob.data, vertexShaderBlob.size, nullptr, vertexShader.ReleaseAndGetAddressOf()))) return false;
 		if (FAILED(device->CreatePixelShader(pixelShaderBlob.data, pixelShaderBlob.size, nullptr, pixelShader.ReleaseAndGetAddressOf()))) return false;
+		const ShaderBlob updateShaderBlob =
+			LoadShaderFromResource(IDR_LASER_PARTICLE_UPDATE_CS);
+		const ShaderBlob emitShaderBlob =
+			LoadShaderFromResource(IDR_LASER_PARTICLE_EMIT_CS);
+		const bool particlesReady = updateShaderBlob.data && emitShaderBlob.data &&
+			laserParticleSystem_.Initialize(device.Get(), context.Get(),
+				{ updateShaderBlob.data, updateShaderBlob.size },
+				{ emitShaderBlob.data, emitShaderBlob.size });
+		if (!particlesReady)
+			ReportLaserParticleUnavailableOnce();
 		return true;
 	}
 }

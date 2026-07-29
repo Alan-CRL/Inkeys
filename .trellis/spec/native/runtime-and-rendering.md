@@ -52,9 +52,11 @@
 ### 2. Signatures
 
 - `DrawingTool::Laser`，数字键/小键盘 `4`
-- `StrokeModelConfiguration::laserParticlesEnabled`、`laserHoldDurationSeconds`
+- `StrokeModelConfiguration::laserParticlesEnabled`、`laserParticleConfig`、`laserHoldDurationSeconds`
 - `DrawingController::SetLaserParticlesEnabled/GetLaserParticlesEnabled`
 - `DrawingController::SetLaserHoldDurationSeconds/GetLaserHoldDurationSeconds`
+- `InkRenderer::AcquireLaserParticlePath/AppendLaserParticlePathPoints/SetLaserParticlePathInputSpeed/EndLaserParticlePath`
+- `InkRenderer::SimulateLaserParticles/EmitLaserParticles/ResetLaserParticles/DrawLaserParticles`
 - `InkRenderer::DrawLaserCoverage/ClearLaserCoverageRect/ResolveLaserStrokeCoverage/ResolveLaserCompositedColor/DrawLaserDots`
 
 ### 3. Contracts
@@ -63,9 +65,14 @@
 - 已完成 Laser 使用独立 `R8G8B8A8_UNORM` 预乘颜色层；每支未烘干轨迹先独立写入可复用的单笔 `R8G8B8A8_UNORM` coverage scratch，四通道为白芯、白红散射、红色实体外套和外部漫反射，再按 Down 顺序 source-over。任何 Laser 几何都不得进入 L2。
 - 96 DPI 默认实体总直径为 5px，白芯直径约 1.67px，红色实体轮廓外每侧固定扩散 5px，因此完整视觉直径为 15px；漫反射 coverage 在实体边界为 1，使用平方曲线向外单调衰减并在 5px 外缘为 0，红粉外缘高光只混合 RGB 而不额外增加 alpha。`LaserDot`、Touch 笔尖和固定宽度轨迹复用同一尺寸契约。Pen 使用 `0.65 + 0.75 * clamp(p, 0, 1)` 缩放实体、白芯和内侧散射，外部 5px 漫反射只随 DPI 缩放；无效压力保持上一宽度，prediction 继承最后真实实体半径，Mouse/Touch 固定基准宽度。
 - 多支 Laser 按 Down 顺序分层，后 Down 的整支轨迹位于上层；较早结束的 contact 保留最终 CPU 几何直到同批最后一支抬起，同一笔自交仍以 coverage 并集避免重复加深。
-- 粒子暂时默认关闭；外部开启后，起笔固定 seed 生成 12-18 枚粒子，真实路径每 8-12px 发射一枚且每 contact 最多 48 枚；流速为 `clamp(0.025 * smoothedSpeed, 8*dpiScale, 36*dpiScale)`。轨迹粒子用弧长和 segment cursor 沿红边外侧前进，到当前路径末端钳住；Up 只扫描一次最近真实路径点，75% 收束至红边、25% 至中心线，并在约 220ms 内缩小淡出。
+- 粒子默认开启，但只使用 FL11_0+ 的 D3D11 Compute Shader 固定池：`2048` 粒子、`32` 路径、每路径 `16384` 个点。路径点只来自追加式 `realPoints`，每点保存位置、真实实体半径和累计弧长；prediction 不得上传。整笔逐帧重绘只能改 Laser 主体，不能重建 GPU 粒子。
+- Down 首个真实点只申请路径且不爆发；后续真实弧长默认每 `2px` 一粒，全局每帧最多 `96` 粒，超额整数部分当帧丢弃。运行中重新开启从当前真实末端建立发射基线，不补发历史弧长。
+- 每粒子保存 path slot/generation、弧长、segment cursor、平滑位置/切线、横向偏移、速度、寿命和最大行程。目标速度为 `clamp(12*dpiScale + 0.08*filteredInputSpeed, 12*dpiScale, 96*dpiScale)`，附加固定 `±12%` 差异并以 `80ms` 时间常数追随；运动 `dt <= 1/30s`，寿命使用实际时间。
+- 出生点位于白芯内部，约 `120ms` 向随机侧扩散至红色实体边缘外最多 `1.5 DIP`；寿命 `0.45–0.70s`、行程 `24–56 DIP`，后 `45%` 淡出。到达当前真实路径末端时钳制并丢弃多余位移，路径后续追加只能从钳制点按新一帧 `dt` 继续，禁止追赶。
+- Up 当帧停止沿弧长前进并进入 `220ms` 收束；固定 seed 决定 `75%` 收束到当前弧长红边、`25%` 收束到中心线。CPU 不保存、更新或回读粒子位置，只维护发射余量、路径上传游标和固定容量保守脏区。
+- Compute 顺序固定为 `VS t8 unbind -> CS t0/t1 + u0 -> Dispatch -> CS unbind`；绘制为 shape `10` 的 `DrawInstanced(6, 2048, 0, 0)`，死亡槽生成退化图元。粒子在激光主体/实时墨迹之后、Laser tip 之前绘制，PS 输出预乘 Alpha 白核与 `3 DIP * dpiScale` 辉光。
 - 最后一根 Laser Up 才记录 `lastAllUpQpc`；默认满亮保持 `3.0s`，固定 `0.8s` smooth fade。新 Down 在 Hold/Fade 中把整组 opacity 恢复为 `1` 并重新计时。
-- `SetLaserHoldDurationSeconds` 只接受 finite non-negative 值；运行中调整须由 control wake 唤醒并相对最后一次全部 Up 立即重算。粒子 setter 同样发布 control wake，关闭后下一帧清理旧粒子 bounds。
+- `SetLaserHoldDurationSeconds` 只接受 finite non-negative 值；运行中调整须由 control wake 唤醒并相对最后一次全部 Up 立即重算。粒子 setter 同样发布 control wake；关闭后下一帧 reset GPU 状态并 union 旧保守 bounds。
 - Hold 静态期不持续 Present；Fade、接触、prediction 和粒子动画才驱动帧。resize 保留稳定颜色层左上角交集，未烘干层从 CPU 几何重建；clear/Present 失败恢复必须同步重建或清理稳定颜色、scratch 和新旧 bounds。
 
 ### 4. Validation & Error Matrix
@@ -76,28 +83,31 @@
 | Hold/Fade 新 Down | 旧稳定颜色层全组恢复满亮并重新计时 |
 | 非法 hold seconds | setter 返回 `false`，旧值保持不变且不发布设置 |
 | Laser Up | 清除 prediction；同批最后 Up 才有序烘入稳定颜色层，不 reconnect、不 resolve 到 L2 |
-| 粒子关闭 | 停止生成/动画，下一帧 union 旧粒子 bounds 并清除 |
+| 粒子关闭 | 下一帧 reset GPU 池/路径 generation、清空保守脏区并 union 旧 bounds |
+| FL < 11_0 或 CS/SRV/UAV/buffer 创建失败 | 只记录一次诊断并将粒子系统标记不可用；激光主体、瞬态层和 Present 继续 |
+| 32 个路径槽占满或单路径超过 16384 点 | 停止对应 contact 的新粒子；不得覆盖仍被 generation 引用的路径 |
+| 卡顿或当前路径末端 | 寿命按实际时间；沿线运动最多推进 1/30s，末端多余位移丢弃且不积压 |
 | 3 秒 Hold 静止 | 不产生额外 frame/Present；deadline 或 control/input wake 才恢复 |
 | resize/clear/Present 失败 | 稳定颜色交集保留或按请求清空，未烘干层重建，旧/新 glow bounds 都进入 dirty |
 
 ### 5. Good / Base / Bad Cases
 
 - Good：白芯与厚红边在深色、混合背景可见，外缘高亮和外晕不遮挡底层；粒子沿急转弯曲线运动且追加真实点不使旧粒子跳变。
-- Base：Hover 为静态 LaserDot，活动 Touch 各自显示独立 tip，抬笔后粒子就近收束并在约 `220ms` 消失。
-- Bad：把 Laser 稳定颜色层 resolve 到 L2、先把多支笔 MAX 到同一 coverage、为 prediction 启用 reconnect、或在 Hold 期自旋 Present。
+- Base：Hover 为静态 LaserDot，活动 Touch 各自显示独立 tip；GPU 不可用时只有粒子降级，抬笔后已有粒子在约 `220ms` 消失。
+- Bad：把 prediction 上传成粒子路径、每帧按重绘路径重建粒子、同时绑定粒子 UAV 与 VS SRV，或用 GPU readback 决定 dirty。
 
 ### 6. Tests Required
 
 - 断言按键 4/枚举、最后 Up 计时、3.0s Hold、0.8s fade、运行中设置变化和非法输入。
 - 断言 Laser 不进入 reconnect/L2，压力 `0/0.5/1` 只缩放实体且 prediction 半径继承正确，coverage bounds 覆盖 15px 基准完整视觉直径、最大压力实体和固定 5px 漫反射；静态核对漫反射 alpha 从实体边界的 1 单调衰减到外缘的 0，resize/clear/Present failure 无残影。
-- 断言粒子 seed/弧长槽位稳定、8-12px 发射间隔、每 contact 上限 48、路径转弯/末端钳制/追加无跳变、Up 最近点收束约 220ms、开关清理旧 dirty。
-- Debug/Release ARM64 全解决方案构建、两份 shader 编译/嵌入；人工覆盖 Pen/Mouse/Touch Hover、单/多指、白/深/混合背景。
+- 断言默认开启、Down 零爆发、每 2px 发射、全局 96 上限且不积压、速度目标/80ms 平滑、弧长末端丢弃、generation/容量溢出、75/25 收束和保守 dirty 到期。
+- Debug/Release ARM64 全解决方案构建、VS/PS/两个 CS 均以 SM5.0 编译并嵌入；人工覆盖慢/快画、急弯、长按、路径追加、多接触、Resize、ULW、开关和 Hold/Fade。
 
 ### 7. Wrong vs Correct
 
-Wrong：`Up -> ApplyOperatorLayers(layerL2) -> Present`，或 Hold 期间用固定帧定时器持续刷新。
+Wrong：`每帧 CPU 更新 vector<Particle> -> 上传 InkData -> Draw`，或 CS dispatch 时仍让同一粒子缓冲绑定在 VS `t8`。
 
-Correct：`last Up -> ordered bake into stable premultiplied color + lifecycle Hold`；只在 Hold deadline/Fade、输入或粒子动画唤醒时 resolve Laser 到 backbuffer，L2 保持不变。
+Correct：`追加真实点 -> GPU Update/Emit -> 显式解绑 -> DrawInstanced 固定池`；last Up 有序烘干主体并令 GPU 粒子收束，只在 Fade、输入或保守粒子 dirty 活动时刷新，L2 保持不变。
 
 当前源码描述现有行为，阶段说明描述历史设计或计划。两者出现数值或工具语义差异时，应并列记录，不得自动用源码覆盖历史目标，也不得自动让实现恢复为阶段说明。
 

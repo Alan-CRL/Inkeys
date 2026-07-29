@@ -9,11 +9,13 @@
 #include <d3d11.h>
 #include <DirectXMath.h>
 #include <dxgi1_2.h>
+#include <span>
 #include <vector>
 #include <wrl/client.h>
 
 export module draw3.renderer;
 
+export import draw3.laser_particles;
 import draw3.pen_cursor;
 
 export namespace draw3
@@ -87,7 +89,7 @@ export namespace draw3
 	static_assert(sizeof(HighlighterPrimitive) == 24,
 		"HighlighterPrimitive 必须与结构化缓冲区布局保持一致");
 
-	// 激光笔尖和粒子共用四浮点批数据；Laser 笔尖的 radius 是红色实体外半径。
+	// Laser 笔尖的 radius 是红色实体外半径；粒子改由独立 GPU 缓冲区保存。
 	struct LaserDot
 	{
 		float x = 0.0f;
@@ -200,10 +202,25 @@ export namespace draw3
 			ID3D11RenderTargetView* dstRTV, RECT rect, float opacity);
 		// 以不混合的矩形写零局部清理单笔 scratch。
 		void ClearLaserCoverageRect(RECT rect);
-		// 批量绘制 Laser 笔尖或低密度粒子，不修改任何画布层。
-		void DrawLaserDots(const std::vector<LaserDot>& dots, bool particles);
+		// 批量绘制 Laser 笔尖，不修改任何画布层。
+		void DrawLaserDots(const std::vector<LaserDot>& dots);
+		// 固定实例绘制 GPU 粒子；死亡槽在 VS 中退化。
+		void DrawLaserParticles();
 		// 按 DPI 配置白芯、实体外套、散射和固定漫反射尺寸。
 		void ConfigureLaserStyle(float dpiScale) noexcept;
+		void ConfigureLaserParticles(
+			const LaserParticleConfig& configuration, float dpiScale) noexcept;
+		bool LaserParticlesAvailable() const noexcept;
+		LaserParticlePathHandle AcquireLaserParticlePath() noexcept;
+		uint32_t AppendLaserParticlePathPoints(LaserParticlePathHandle path,
+			std::span<const LaserParticlePathPoint> points) noexcept;
+		void SetLaserParticlePathInputSpeed(
+			LaserParticlePathHandle path, float filteredInputSpeed) noexcept;
+		void EndLaserParticlePath(LaserParticlePathHandle path) noexcept;
+		void SimulateLaserParticles(
+			float wallDeltaSeconds, float motionDeltaSeconds) noexcept;
+		void EmitLaserParticles(const LaserParticleEmissionRequest& request) noexcept;
+		void ResetLaserParticles() noexcept;
 		// 复制纹理中的指定矩形区域。
 		void CopyResource(ID3D11Texture2D* dst, ID3D11Texture2D* src, RECT rect);
 		// 将 L1/L0 仿射操作统一应用到目标 RGBA。
@@ -246,5 +263,7 @@ export namespace draw3
 		// 从资源中加载并创建墨迹着色器。
 		bool LoadShaders();
 		LaserStyleConstants laserStyleConstants_ = {};
+		float laserParticleGlowExtentDip_ = LaserParticleConfig{}.glowExtentDip;
+		LaserParticleSystem laserParticleSystem_;
 	};
 }

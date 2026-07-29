@@ -28,7 +28,7 @@
 - [ ] D3D 操作仍在绘制线程执行，窗口回调只发布请求。
 - [ ] L0/L1/L2、dirty rect、resize 和 presenter fallback 不变量保持一致。
 - [ ] 失败路径记录足够上下文，并释放/复位部分创建的资源。
-- [ ] 若任务修改业务源码、HLSL 或工程配置：使用 ARM64 MSBuild 构建完整 `inkStrokeModelerTest.sln` 的 `Debug|ARM64` 配置，并确认两个 Shader 编译及资源链成功。
+- [ ] 若任务修改业务源码、HLSL 或工程配置：使用 ARM64 MSBuild 构建完整 `inkStrokeModelerTest.sln` 的 `Debug|ARM64` 配置，并确认 VS/PS/UpdateCS/EmitCS 四个 Shader 编译及资源链成功。
 - [ ] 若任务修改运行行为：启动后检查 D3D Debug Layer 输出；当前启用方式尚待验证时必须如实标记。
 - [ ] 若任务修改运行行为：至少完成人工基础绘制、prediction、抬笔烘干和窗口 resize；没有执行的验证必须明确说明。
 - [ ] 纯文档任务可跳过上述构建和运行检查，但必须完成文档链接、格式、规则一致性及 Git 范围检查，并在交付中说明。

@@ -184,3 +184,78 @@ for (const auto& layer : layersInDownOrder) {
     ResolveLaserStrokeCoverage(backBuffer, layer.bounds);
 }
 ```
+
+## Scenario: D3D11 Laser Particle Compute Pipeline
+
+### 1. Scope / Trigger
+
+修改 `draw3.laser_particles`、路径/粒子镜像布局、CS 常量、资源寄存器、shape `10` 或粒子 dirty 策略时，必须同步本节。
+
+### 2. Signatures
+
+- `LaserParticlePathHandle { uint32_t slot, generation }`
+- `LaserParticlePathPoint { float x, y, radius, arcLength }`，固定 `16 bytes`
+- `LaserParticlePathHeader`，固定 `32 bytes`
+- `LaserGpuParticle`，固定 `128 bytes`
+- `LaserParticleSystem::Initialize/AcquirePath/AppendPathPoints/SetPathInputSpeed/EndPath/Simulate/Emit/Reset`
+- `InkRenderer::DrawLaserParticles()` 固定调用 `DrawInstanced(6, 2048, 0, 0)`
+
+### 3. Contracts
+
+- 容量是编译期契约：粒子 `2048`、路径 `32`、每路径点 `16384`；资源只在 renderer Init/Release 创建销毁，Resize 不重建。
+- CS 资源表：
+
+| Stage | Register | Resource |
+|---|---|---|
+| UpdateCS/EmitCS | `t0` | `StructuredBuffer<LaserParticlePathPoint>` |
+| UpdateCS/EmitCS | `t1` | `StructuredBuffer<LaserParticlePathHeader>` |
+| UpdateCS/EmitCS | `u0` | `RWStructuredBuffer<LaserGpuParticle>` |
+| VS shape 10 | `t8` | 同一粒子缓冲的 SRV |
+
+- Update 常量为 `64 bytes`：3 个 `float4` + 1 个 `uint4`。Emit 常量为 `96 bytes`：`uint4 + 4*float4 + uint4`。CPU 结构必须 `static_assert(size % 16 == 0)` 并与 HLSL 字段顺序一致。
+- 每次 Compute 前先 `VSSetShaderResources(8, null)`；Dispatch 后依次解除 `u0`、`t0/t1`、`b0` 和 CS。绘制结束再解除 VS `t8`。禁止依赖 D3D11 自动冲突修复。
+- path slot 只有 `active == 0` 才能复用，复用时 generation 非零递增；粒子 generation 不匹配立即死亡。容量不足不得覆盖活跃路径。
+- UpdateCS 优先使用 segment cursor，失配时固定 15 步二分；零长度段沿用持久化切线。到路径末端只累计实际推进距离，丢弃请求中的多余位移。
+- EmitCS 使用 CPU 管理的循环槽覆盖最旧粒子，不使用 Append/Consume、计数器、间接绘制或回读。VS 通过 `SV_InstanceID` 取槽；死亡槽生成屏幕外退化图元。
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| feature level < 11_0 | `Initialize` 返回 false，renderer 继续创建 VS/PS 和主体资源 |
+| CS/buffer/SRV/UAV 任一创建失败 | 释放已建粒子资源、诊断一次、`IsAvailable == false` |
+| stale handle/generation | Append/Emit/End 忽略；UpdateCS 杀死旧粒子 |
+| path point overflow | 只接受剩余点并停止该 contact 后续发射，不覆盖其他槽 |
+| particle pool wrap | 新发射覆盖循环槽，不分配、不回读 |
+| UAV/SRV 切换 | 显式解绑后再切换 stage；Debug Layer 不应报告同资源读写冲突 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：路径持续追加时粒子持有弧长/游标并沿急弯前进，整笔重绘和 Resize 都不改变其 GPU 状态。
+- Base：没有活粒子仍固定绘制 2048 实例，死亡槽退化；设备不支持 CS 时仅无粒子。
+- Bad：每帧重建粒子 buffer、复用仍活跃 path slot、用 `CopyResource/Map` 回读位置，或同时绑定 `u0` 与 `t8`。
+
+### 6. Tests Required
+
+- 静态断言三种镜像结构大小以及 Update/Emit 常量 16 字节对齐。
+- 单元测试 generation wrap、append clamp、发射距离/96 上限、速度平滑、末端无追赶、75/25 收束和 dirty 到期。
+- 完整 ARM64 解决方案构建必须让 FXC 成功编译 VS、PS、UpdateCS、EmitCS；人工启用 D3D11 Debug Layer 检查 SRV/UAV 冲突。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```cpp
+context->CSSetUnorderedAccessViews(0, 1, &particleUav, nullptr);
+// particle SRV 仍绑定在 VS t8。
+context->Dispatch(32, 1, 1);
+```
+
+#### Correct
+
+```cpp
+context->VSSetShaderResources(8, 1, &nullSrv);
+context->CSSetUnorderedAccessViews(0, 1, &particleUav, nullptr);
+context->Dispatch(32, 1, 1);
+context->CSSetUnorderedAccessViews(0, 1, &nullUav, nullptr);
+```

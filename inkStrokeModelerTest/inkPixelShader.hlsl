@@ -182,9 +182,11 @@ OperatorOutput main(PS_INPUT input)
                 input.r2 * laserParameters.x);
 
         float coreCoverage = LaserAaCoverage(distanceToCenter - input.r1);
-        float glowRadius = max(input.r1 * 3.0, 3.0 * laserParameters.y);
+        float glowExtent = max(input.color.x * laserParameters.y, 1e-4);
+        float glowRadius = input.r1 + glowExtent;
+        float glowDistance = max(distanceToCenter - input.r1, 0.0);
         float glowCoverage = LaserAaCoverage(distanceToCenter - glowRadius) *
-            pow(saturate(1.0 - distanceToCenter / max(glowRadius, 1e-4)), 2.0);
+            pow(saturate(1.0 - glowDistance / glowExtent), 2.0);
         float opacity = saturate(input.r2);
         float4 particle = 0.0;
         particle = LayerPremultiplied(particle,

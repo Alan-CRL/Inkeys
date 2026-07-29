@@ -129,6 +129,7 @@
     <ClCompile Include="draw3\graphics_initialization.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
     <ClCompile Include="draw3\haptic_feedback.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
 	<ClCompile Include="draw3\ink_prediction.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
+    <ClCompile Include="draw3\laser_particles.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
 	<ClCompile Include="draw3\pen_cursor.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
 	<ClCompile Include="draw3\realtime_stylus.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
     <ClCompile Include="draw3\runtime_metrics.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
@@ -141,6 +142,7 @@
     <ClCompile Include="draw3\graphics_initialization.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
     <ClCompile Include="draw3\haptic_feedback.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\ink_prediction.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
+    <ClCompile Include="draw3\laser_particles.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\pen_cursor.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\realtime_stylus.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
     <ClCompile Include="draw3\runtime_metrics.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
@@ -248,10 +250,28 @@
     <ClInclude Include="resource.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="laserParticleResource.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="ink.hlsli">
       <Filter>HLSL</Filter>
+    </None>
+    <None Include="laserParticleCommon.hlsli">
+      <Filter>HLSL</Filter>
+    </None>
+    <None Include="laserParticleUpdateCS.hlsl">
+      <Filter>HLSL</Filter>
+    </None>
+    <None Include="laserParticleEmitCS.hlsl">
+      <Filter>HLSL</Filter>
+    </None>
+    <None Include="laserParticleUpdateCS.cso">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="laserParticleEmitCS.cso">
+      <Filter>资源文件</Filter>
     </None>
     <None Include="shader.hlsl">
       <Filter>废弃代码</Filter>
@@ -282,6 +302,9 @@
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="inkStrokeModelerTest.rc">
+      <Filter>资源文件</Filter>
+    </ResourceCompile>
+    <ResourceCompile Include="laserParticleShaders.rc">
       <Filter>资源文件</Filter>
     </ResourceCompile>
   </ItemGroup>
