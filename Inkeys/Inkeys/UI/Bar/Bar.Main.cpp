@@ -147,6 +147,7 @@ struct BarThicknessPreviewGeometry
 	double previewTop = 0.0;
 	double previewBottom = 0.0;
 	double previewCenterY = 0.0;
+	double sliderCenterY = 0.0;
 	double previewLeft = 0.0;
 	double previewRight = 0.0;
 	double trackLeft = 0.0;
@@ -196,6 +197,12 @@ BarThicknessPreviewGeometry CalculateBarThicknessPreviewGeometry(
 		geometry.previewCenterY - previewAreaHeight / 2.0;
 	geometry.previewBottom =
 		geometry.previewCenterY + previewAreaHeight / 2.0;
+	// 滑轨避开边缘徽标，并在徽标与粗细控制行之间的净空中居中。
+	double badgeProtectedDepth =
+		(BarThicknessTooltipBadgeHeight + BarDrawAttributeGap * 2.0)
+		* geometry.panelScale;
+	geometry.sliderCenterY = geometry.previewCenterY
+		- geometry.previewSide * badgeProtectedDepth / 2.0;
 	double frameInset = geometry.panelScale;
 	geometry.previewLeft = thicknessRegionInherit.x + frameInset;
 	geometry.previewRight = thicknessRegionInherit.x
@@ -345,6 +352,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 			barUISet.barState.drawAttributeBar.thicknessSliderPinned = false;
 			barUISet.barState.drawAttributeBar.thicknessSliderDragging = false;
 			barUISet.barState.drawAttributeBar.thicknessSliderPressed = false;
+			barUISet.barState.drawAttributeBar.thicknessSliderCandidateWidth = 0.0f;
 			barUISet.CloseDrawAttributeTooltips();
 			QueueBarThicknessSliderEnd(hWnd);
 			barUISet.UpdateRendering(false);
@@ -2375,6 +2383,7 @@ void BarUISetClass::CloseThicknessSlider(bool cancelCapture)
 	barState.drawAttributeBar.thicknessSliderPinned = false;
 	barState.drawAttributeBar.thicknessSliderDragging = false;
 	barState.drawAttributeBar.thicknessSliderPressed = false;
+	barState.drawAttributeBar.thicknessSliderCandidateWidth = 0.0f;
 
 	if (floating_window && IsWindow(floating_window)
 		&& (barState.drawAttributeBar.thicknessSliderCapture
@@ -2745,44 +2754,51 @@ void BarUISetClass::Rendering()
 					|| barState.drawAttributeBar.thicknessSliderPinned
 					|| barState.drawAttributeBar.thicknessSliderPressed
 					|| barState.drawAttributeBar.thicknessSliderDragging);
-			if (thicknessSliderActive) CloseDrawAttributeTooltips();
-			const BarUiCurveSpecClass thicknessSliderProgressCurve{
-				BarUiCurveEnum::EaseInOutCubic,
-				BarUiCurveEnum::EaseInOutCubic, 0.0, false };
-			drawAttributeThicknessSliderProgress.SetTar(
-				thicknessSliderActive ? 1.0 : 0.0,
-				operationDur, nullopt, false,
-				thicknessSliderProgressCurve);
 			if (thicknessSliderActive
 				!= drawAttributeThicknessSliderTargetActive)
 			{
-				const BarUiCurveSpecClass thumbOpacityCurve{
-					thicknessSliderActive
-						? BarUiCurveEnum::EaseOutCubic
-						: BarUiCurveEnum::EaseInCubic,
-					thicknessSliderActive
-						? BarUiCurveEnum::EaseOutCubic
-						: BarUiCurveEnum::EaseInCubic,
-					0.0, false };
-				const BarUiCurveSpecClass thumbScaleCurve{
-					thicknessSliderActive
-						? BarUiCurveEnum::EaseOutBack
-						: BarUiCurveEnum::EaseInCubic,
-					thicknessSliderActive
-						? BarUiCurveEnum::EaseOutBack
-						: BarUiCurveEnum::EaseInCubic,
-					0.0, false };
-				drawAttributeThicknessSliderThumbOpacity.SetTar(
-					thicknessSliderActive ? 1.0 : 0.0,
-					BarThicknessSliderThumbAnimationDur,
-					nullopt, false, thumbOpacityCurve);
-				drawAttributeThicknessSliderThumbScale.SetTar(
-					thicknessSliderActive ? 1.0 : 0.75,
-					BarThicknessSliderThumbAnimationDur,
-					nullopt, false, thumbScaleCurve);
+				// 只在进入滑块态时关闭已有提示，之后仍允许徽标重新响应。
+				if (thicknessSliderActive) CloseDrawAttributeTooltips();
 				drawAttributeThicknessSliderTargetActive =
 					thicknessSliderActive;
 			}
+			const BarUiCurveSpecClass thicknessSliderProgressCurve{
+				BarUiCurveEnum::EaseInOutCubic,
+				BarUiCurveEnum::EaseInOutCubic, 0.0, false };
+			bool keepThicknessSliderTrackFlat = thicknessSliderActive
+				|| drawAttributeThicknessSliderThumbOpacity.val > 0.000001
+				|| drawAttributeThicknessSliderThumbOpacity.tar > 0.000001;
+			drawAttributeThicknessSliderProgress.SetTar(
+				keepThicknessSliderTrackFlat ? 1.0 : 0.0,
+				operationDur, nullopt, false,
+				thicknessSliderProgressCurve);
+			// 圆点只在轨道完全拉直后出现；退出时先完全消失，再恢复预览。
+			bool thicknessSliderThumbVisible = thicknessSliderActive
+				&& drawAttributeThicknessSliderProgress.val >= 0.999999;
+			const BarUiCurveSpecClass thumbOpacityCurve{
+				thicknessSliderThumbVisible
+					? BarUiCurveEnum::EaseOutCubic
+					: BarUiCurveEnum::EaseInCubic,
+				thicknessSliderThumbVisible
+					? BarUiCurveEnum::EaseOutCubic
+					: BarUiCurveEnum::EaseInCubic,
+				0.0, false };
+			const BarUiCurveSpecClass thumbScaleCurve{
+				thicknessSliderThumbVisible
+					? BarUiCurveEnum::EaseOutBack
+					: BarUiCurveEnum::EaseInCubic,
+				thicknessSliderThumbVisible
+					? BarUiCurveEnum::EaseOutBack
+					: BarUiCurveEnum::EaseInCubic,
+				0.0, false };
+			drawAttributeThicknessSliderThumbOpacity.SetTar(
+				thicknessSliderThumbVisible ? 1.0 : 0.0,
+				BarThicknessSliderThumbAnimationDur,
+				nullopt, false, thumbOpacityCurve);
+			drawAttributeThicknessSliderThumbScale.SetTar(
+				thicknessSliderThumbVisible ? 1.0 : 0.75,
+				BarThicknessSliderThumbAnimationDur,
+				nullopt, false, thumbScaleCurve);
 			const BarUiCurveSpecClass thicknessSliderStateCurve{
 				BarUiCurveEnum::EaseOutCubic,
 				BarUiCurveEnum::EaseOutCubic, 0.0, false };
@@ -4267,11 +4283,11 @@ void BarUISetClass::Rendering()
 									operationDur, nullopt, false, curveSpec);
 							};
 						SetTooltipProgress(drawAttributeAnnotationPopupProgress,
-							!thicknessSliderActive && annotationSupported
+							annotationSupported
 							&& (barState.drawAttributeBar.thicknessAnnotationHover
 								|| barState.drawAttributeBar.thicknessAnnotationPinned));
 						SetTooltipProgress(drawAttributeOverflowPopupProgress,
-							!thicknessSliderActive && previewOverflow
+							previewOverflow
 							&& (barState.drawAttributeBar.thicknessOverflowHover
 								|| barState.drawAttributeBar.thicknessOverflowPinned));
 
@@ -5091,12 +5107,16 @@ void BarUISetClass::Rendering()
 					== StateModeSelectEnum::IdtPen
 					&& range.supported)
 				{
+					double sliderPositionWidth =
+						barState.drawAttributeBar.thicknessSliderDragging
+						? static_cast<double>(barState.drawAttributeBar
+							.thicknessSliderCandidateWidth)
+						: static_cast<double>(GetPenWidth());
 					drawAttributeThicknessSliderNormalized =
 						range.max > range.min
-						? clamp((static_cast<double>(
-							drawAttributePenThickness.val) - range.min)
-							/ static_cast<double>(
-								range.max - range.min),
+							? clamp((sliderPositionWidth - range.min)
+								/ static_cast<double>(
+									range.max - range.min),
 							0.0, 1.0)
 						: 0.0;
 				}
@@ -5119,7 +5139,7 @@ void BarUISetClass::Rendering()
 					thumbCenterX - thumbDiameter / 2.0
 						- panel->inhX);
 				sliderThumb->y.SetDirect(
-					previewGeometry.previewCenterY
+					previewGeometry.sliderCenterY
 						- thumbDiameter / 2.0 - panel->inhY);
 				sliderThumb->w.SetDirect(thumbDiameter);
 				sliderThumb->h.SetDirect(thumbDiameter);
@@ -5895,9 +5915,14 @@ void BarUISetClass::Rendering()
 										1.0 - sliderProgress);
 								FLOAT awayFromBadges =
 									static_cast<FLOAT>(-previewSide);
-								FLOAT centerY = static_cast<FLOAT>(
+								FLOAT normalCenterY = static_cast<FLOAT>(
 									previewGeometry.previewCenterY * uiZoom)
 									+ awayFromBadges * centerShift;
+								FLOAT sliderCenterY = static_cast<FLOAT>(
+									previewGeometry.sliderCenterY * uiZoom);
+								FLOAT centerY = normalCenterY
+									+ (sliderCenterY - normalCenterY)
+										* static_cast<FLOAT>(sliderProgress);
 								D2D1_RECT_F previewRect = D2D1::RectF(left,
 									centerY - previewThickness / 2.0f, right,
 									centerY + previewThickness / 2.0f);
@@ -6928,14 +6953,6 @@ void BarUISetClass::Interact()
 					stateMode.Pen.ModeSelect,
 					barStyle.dpiZoom).supported;
 		};
-	auto ThicknessSliderActive = [&]()
-		{
-			return ThicknessSliderAvailable()
-				&& (barState.drawAttributeBar.thicknessSliderHover
-					|| barState.drawAttributeBar.thicknessSliderPinned
-					|| barState.drawAttributeBar.thicknessSliderPressed
-					|| barState.drawAttributeBar.thicknessSliderDragging);
-		};
 	auto IsIndependentHoverAllowed = [&](IndependentHoverTargetEnum target)
 		{
 			if (!barState.drawAttribute) return false;
@@ -6984,13 +7001,11 @@ void BarUISetClass::Interact()
 	auto AnnotationTooltipAvailable = [&]()
 		{
 			return barState.drawAttribute && !barState.fold
-				&& !ThicknessSliderActive()
 				&& PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect);
 		};
 	auto OverflowTooltipAvailable = [&]()
 		{
 			return barState.drawAttribute && !barState.fold
-				&& !ThicknessSliderActive()
 				&& barState.drawAttributeBar.thicknessPreviewOverflow;
 		};
 	while (!offSignal)
@@ -7035,9 +7050,23 @@ void BarUISetClass::Interact()
 				suppressHoverUntilPointerMove = false;
 			}
 
+			auto annotationInfoHit = shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit];
+			auto overflowInfoHit = shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowInfoHit];
+			bool annotationBadgeHover = AnnotationTooltipAvailable()
+				&& annotationInfoHit
+				&& annotationInfoHit->IsClick(
+					msg.x, msg.y, barStyle.zoom);
+			bool overflowBadgeHover = OverflowTooltipAvailable()
+				&& overflowInfoHit
+				&& overflowInfoHit->IsClick(
+					msg.x, msg.y, barStyle.zoom);
 			auto sliderHit = shapeMap[
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderHit];
+			// 徽标覆盖在预览区上方，悬停命中必须先于滑块激活区。
 			bool sliderHover = ThicknessSliderAvailable()
+				&& !annotationBadgeHover && !overflowBadgeHover
 				&& sliderHit
 				&& sliderHit->IsClick(
 					msg.x, msg.y, barStyle.zoom);
@@ -7047,25 +7076,16 @@ void BarUISetClass::Interact()
 			{
 				barState.drawAttributeBar.thicknessSliderHover =
 					sliderHover;
-				if (sliderHover) CloseDrawAttributeTooltips();
 				UpdateRendering(false);
 			}
 
 			bool tooltipHoverChanged = false;
-			auto annotationInfoHit = shapeMap[
-				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit];
-			auto overflowInfoHit = shapeMap[
-				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowInfoHit];
 			tooltipHoverChanged |= SetTooltipFlag(
 				barState.drawAttributeBar.thicknessAnnotationHover,
-				AnnotationTooltipAvailable() && annotationInfoHit
-				&& annotationInfoHit->IsClick(
-					msg.x, msg.y, barStyle.zoom));
+				annotationBadgeHover);
 			tooltipHoverChanged |= SetTooltipFlag(
 				barState.drawAttributeBar.thicknessOverflowHover,
-				OverflowTooltipAvailable() && overflowInfoHit
-				&& overflowInfoHit->IsClick(
-					msg.x, msg.y, barStyle.zoom));
+				overflowBadgeHover);
 			if (tooltipHoverChanged) UpdateRendering(false);
 
 			BarButtomClass* currentHoveredButton = nullptr;
@@ -7384,7 +7404,7 @@ void BarUISetClass::Interact()
 
 			// 绘制属性
 			{
-				// 粗细预览区：按下即固定，水平移动后进入相对拖动。
+				// 粗细预览区：点击后固定；悬停进入的拖动不改变固定状态。
 				if (continueFlag && ThicknessSliderAvailable())
 				{
 					auto sliderHit = shapeMap[
@@ -7402,12 +7422,15 @@ void BarUISetClass::Interact()
 								gesturePenMode, barStyle.dpiZoom);
 							float initialWidth = GetPenWidth();
 							float finalWidth = initialWidth;
-							int lastTargetWidth =
+							int lastCandidateWidth =
 								static_cast<int>(lround(initialWidth));
-							bool currentWidthIsInteger =
+							bool candidateWidthIsInteger =
 								abs(static_cast<double>(initialWidth)
-									- lastTargetWidth) <= 0.000001;
-							bool valueApplied = false;
+									- lastCandidateWidth) <= 0.000001;
+							bool candidateChanged = false;
+							bool gestureDragged = false;
+							bool pinnedAtPress = barState.drawAttributeBar
+								.thicknessSliderPinned;
 							bool penModeChanged = false;
 
 							POINT startScreenPoint{
@@ -7444,11 +7467,10 @@ void BarUISetClass::Interact()
 									* static_cast<double>(
 										barStyle.zoom));
 
-							barState.drawAttributeBar.thicknessSliderPinned =
-								true;
+							barState.drawAttributeBar
+								.thicknessSliderCandidateWidth = initialWidth;
 							barState.drawAttributeBar.thicknessSliderPressed =
 								true;
-							CloseDrawAttributeTooltips();
 							StopIndependentHover(
 								hoveredIndependentButton, true, true);
 							hoveredIndependentButton =
@@ -7488,6 +7510,7 @@ void BarUISetClass::Interact()
 											screenPoint.x);
 									if (screenX != dragBaseScreenX)
 									{
+										gestureDragged = true;
 										if (!barState.drawAttributeBar
 											.thicknessSliderDragging)
 										{
@@ -7517,21 +7540,22 @@ void BarUISetClass::Interact()
 												clampedWidth)),
 											range.min, range.max);
 										if (targetWidth
-											!= lastTargetWidth
-											|| !currentWidthIsInteger)
+											!= lastCandidateWidth
+											|| !candidateWidthIsInteger)
 										{
-											if (!SetPenWidth(
-												static_cast<float>(
-													targetWidth),
-												false))
-												break;
-											lastTargetWidth = targetWidth;
-											currentWidthIsInteger = true;
+											lastCandidateWidth = targetWidth;
+											candidateWidthIsInteger = true;
 											finalWidth =
 												static_cast<float>(
 													targetWidth);
-											valueApplied = true;
-											UpdateRendering();
+											candidateChanged = abs(
+												static_cast<double>(
+													finalWidth - initialWidth))
+												> 0.000001;
+											barState.drawAttributeBar
+												.thicknessSliderCandidateWidth =
+												finalWidth;
+											UpdateRendering(false);
 										}
 
 										// 端点外的位移不累积，反向一像素即可离开端点。
@@ -7553,26 +7577,58 @@ void BarUISetClass::Interact()
 									break;
 							}
 
-							if (barState.drawAttributeBar
-								.thicknessSliderCapture)
+							bool gestureCaptured = barState.drawAttributeBar
+								.thicknessSliderCapture;
+							if (gestureCaptured)
 								SendMessage(floating_window,
 									BarThicknessSliderCaptureMessage,
 									BarThicknessSliderCaptureStop, 0);
 							barState.drawAttributeBar
-								.thicknessSliderDragging = false;
-							barState.drawAttributeBar
 								.thicknessSliderPressed = false;
 
-							bool canCommit =
-								stateMode.StateModeSelect
+							bool gestureCompleted = gestureCaptured
+								&& !offSignal && !msg.lbutton
+								&& barState.drawAttribute && !barState.fold
+								&& stateMode.StateModeSelect
 									== StateModeSelectEnum::IdtPen
 								&& stateMode.Pen.ModeSelect
 									== gesturePenMode;
-							if (valueApplied && canCommit
-								&& abs(static_cast<double>(
-									finalWidth - initialWidth))
-									> 0.000001)
+							bool canCommit = gestureCompleted
+								&& candidateChanged;
+							if (canCommit)
 								SetPenWidth(finalWidth, true);
+							barState.drawAttributeBar
+								.thicknessSliderDragging = false;
+							barState.drawAttributeBar
+								.thicknessSliderCandidateWidth = 0.0f;
+							if (gestureCompleted && gestureDragged)
+								barState.drawAttributeBar.thicknessSliderPinned =
+									pinnedAtPress;
+							else if (gestureCompleted)
+								barState.drawAttributeBar
+									.thicknessSliderPinned = true;
+							if (gestureCompleted)
+							{
+								auto annotationInfoHit = shapeMap[
+									BarUISetShapeEnum::
+										DrawAttributeBar_ThicknessAnnotationInfoHit];
+								auto overflowInfoHit = shapeMap[
+									BarUISetShapeEnum::
+										DrawAttributeBar_ThicknessOverflowInfoHit];
+								bool pointerOverBadge =
+									(AnnotationTooltipAvailable()
+										&& annotationInfoHit
+										&& annotationInfoHit->IsClick(
+											msg.x, msg.y, barStyle.zoom))
+									|| (OverflowTooltipAvailable()
+										&& overflowInfoHit
+										&& overflowInfoHit->IsClick(
+											msg.x, msg.y, barStyle.zoom));
+								barState.drawAttributeBar.thicknessSliderHover =
+									!pointerOverBadge && sliderHit->IsClick(
+										msg.x, msg.y, barStyle.zoom);
+							}
+							else CloseThicknessSlider(false);
 							if (penModeChanged
 								|| !ThicknessSliderAvailable())
 								CloseThicknessSlider(false);
@@ -7683,8 +7739,6 @@ void BarUISetClass::Interact()
 											barState.drawAttributeBar
 												.thicknessSliderHover =
 												false;
-											if (pinned)
-												CloseDrawAttributeTooltips();
 										}
 										UpdateRendering();
 										break;

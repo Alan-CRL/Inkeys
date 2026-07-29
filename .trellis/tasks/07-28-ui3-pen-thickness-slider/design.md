@@ -13,23 +13,24 @@
 - 滑轨中心行程使用既有预览左右端点，并向内收一个圆点半径，保证端点时圆点完整位于粗细框内；相同端点同时用于数值映射和命中。
 - 轨道目标高度为 `4 × barStyle.zoom × panelAnimationScale` 设备像素，圆角为高度一半；目标色为主题 Accent，并按 Rest/Hover/Pressed 平滑过渡到 `100%/90%/80%` 强度。
 - 硬笔阶段把 Bezier 振幅乘以 `(1-sliderProgress)`，并把实际预览粗细连续插值到轨道高度；荧光笔把左端透明度从 `0.35` 插值到 `1.0`、圆角插值到半高，同时把粗细插值到同一轨道高度。两种笔型在 `sliderProgress=1` 时得到完全一致的轨道几何。
-- 轨道进入/退出使用默认 `0.4s`、可打断的 cubic 曲线；圆点透明度和 `0.75→1.0` 外观缩放使用进入回弹、退出平滑曲线。外径保持 `20px` 逻辑尺寸，内圆按 WinUI 比例在 Rest/Hover/Pressed 的 `12px/14px/10px` 间动画。
+- 滑轨目标纵坐标从当前动画中的粗细文字边缘、标注线徽标边缘及两侧间隙推导，上下换边时连续镜像。进入时先把 `sliderProgress` 推到 `1`，到达后才启动圆点透明度和 `0.75→1.0` 回弹；退出时先隐藏圆点，透明度到 `0` 后才把 `sliderProgress` 恢复到 `0`。
+- 轨道进入/退出使用默认 `0.4s`、可打断的 cubic 曲线；圆点退出使用平滑曲线。外径保持 `20px` 逻辑尺寸，内圆按 WinUI 比例在 Rest/Hover/Pressed 的 `12px/14px/10px` 间动画。
 - 圆点由主题派生灰色圆底、细灰外缘和 Accent 内圆构成；深色圆底按 WinUI 的 `#454545` 观感由 Surface 向 TextPrimary 混合得到，浅色继续使用 Surface。使用现有 D2D 画刷缓存，不在稳定帧创建资源。圆点、轨道及其旧/新边界加入同一 predicted/current 脏区并集。
 - 固定小三角复用预设按钮的选中填充、青色内容、`frameLightPct` 和 PointLight 强度；临时 hover 不设置选中目标。
 
 ## 范围与相对映射
 
 - 文件内统一提供笔型范围函数：硬笔 `[1, round(30 × dpiZoom)]`，荧光笔 `[round(30 × dpiZoom), round(100 × dpiZoom)]`，并确保 `max >= min`。
-- 圆点位置使用 `clamp((GetPenWidth()-min)/(max-min), 0, 1)`；范围外值只影响圆点显示钳制，不调用 `SetPenWidth()`。
+- 非拖动时圆点位置使用 `clamp((GetPenWidth()-min)/(max-min), 0, 1)`，拖动时把分子替换为原子候选值；范围外值只影响圆点显示钳制，不调用 `SetPenWidth()`。
 - 按下时记录屏幕坐标 `startScreenX`、起始粗细 `startWidth`、起始笔型和轨道设备行程。拖动值为 `startWidth + deltaScreenX / travelPx × (max-min)`，随后钳制并四舍五入到整数设备像素。
 - 相对位移始终以屏幕坐标计算，因此 Bar 自身布局动画或窗口坐标变化不会让圆点跳动；圆点不吸附到指针绝对位置。
-- 拖动中仅在整数目标变化时调用 `SetPenWidth(value, false)` 并唤醒渲染；结束时若发生过有效变化，调用一次 `SetPenWidth(finalValue, true)`。
+- 拖动中把整数候选值写入 `IdtAtomic<float>`，渲染线程只用它计算圆点归一化位置，不调用 `SetPenWidth()`，也不让候选值进入文字、预设按钮或超限判断。正常抬起且笔型未变化时，若候选值不同于起始值，只调用一次 `SetPenWidth(finalValue, true)`。
 
 ## 输入捕获与命中优先级
 
 - 预览区域使用从当前动画几何派生的独立命中矩形，排除控制行；正常和倒转布局共用同一推导，不新增固定坐标分支。
-- 指针移动先更新滑块 hover；未固定且没有捕获时移出立即把目标进度恢复为普通预览。
-- 预览区 `WM_LBUTTONDOWN` 立即固定并开始候选拖动。若后续屏幕横坐标改变，则在同一手势进入 dragging 并相对更新；直接抬起只完成固定。
+- 指针移动先按视觉层级命中标注线和超限徽标，命中上层徽标时预览区不取得 hover 或点击；滑块刚激活时关闭旧浮窗，但后续徽标仍可重新打开提示。未固定且没有捕获时移出立即把目标进度恢复为普通预览。
+- 预览区 `WM_LBUTTONDOWN` 只记录按压前是否已经固定，并开始候选拖动。若后续屏幕横坐标改变，则进入 dragging 且未固定手势不选中小三角；直接抬起才按普通点击固定。
 - 鼠标候选拖动开始时对 `floating_window` 调用 `SetCapture`；用局部 RAII/统一清理函数保证正常抬起、模式切换、属性栏收起、`WM_CAPTURECHANGED` 和线程退出路径都调用 `ReleaseCapture` 并清除按压状态。
 - WndProc 在本任务拖动激活时把捕获丢失转成一次可消费的结束事件，避免 `hiex::getmessage_win32` 永久等待；结束坐标使用 `GetCursorPos` 后转客户区。
 - 现有 `WM_TOUCH` active touch id 继续提供同一接触序列的屏幕坐标；触摸和鼠标最终进入同一个相对映射函数。手工验证触点离开 Bar 命中窗口后仍收到 MOVE/UP；若平台不继续投递，则在不改变多点锁定规则的前提下补充等价捕获结束信号。
@@ -37,6 +38,7 @@
 
 ## 兼容、性能与回滚
 
-- 不改变 `SetPenWidth`、粗细记忆或绘制引擎接口；拖动期间的 `setMemory=false` 沿用传统粗细滑条的即时反馈方式。
+- 不改变 `SetPenWidth`、粗细记忆或绘制引擎接口；本滑块拖动期间只维护 UI 候选值，正常抬起后才一次性写入真实粗细和记忆。
+- 小三角 SVG 使用 UI3 现有可着色标记色，继续由 `BarUiColorClass::SetTar()` 在主题文字色与 Accent 间动画，不硬编码最终白色或青色。
 - 维持 UI3 单帧租约、单组 `BeginDraw/EndDraw`、设备 epoch 重建和 layered-window 脏区约定；稳定滑块帧不得新增 D2D 资源创建。
 - 保持源文件原编码、CRLF 与关键路径中文注释。回滚只需恢复三个 UI3 Bar 源文件和本任务文档，不涉及数据迁移。

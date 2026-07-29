@@ -23,6 +23,7 @@ public:
 		IdtAtomic<bool> thicknessSliderDragging = false;
 		IdtAtomic<bool> thicknessSliderPressed = false;
 		IdtAtomic<bool> thicknessSliderCapture = false;
+		IdtAtomic<float> thicknessSliderCandidateWidth = 0.0f;
 		IdtAtomic<bool> thicknessAnnotationHover = false;
 		IdtAtomic<bool> thicknessAnnotationPinned = false;
 		IdtAtomic<bool> thicknessAnnotationClosePress = false;
