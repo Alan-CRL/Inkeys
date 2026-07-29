@@ -42,6 +42,10 @@ constexpr ULONGLONG BarBorderCursorGraceDurationMs = 5000;
 constexpr UINT_PTR BarBorderCursorGraceTimerId = 0x494B4301;
 constexpr UINT BarBorderCursorSuspendMessage = WM_APP + 0x31;
 constexpr UINT BarCanvasDrawingActivityMessage = WM_APP + 0x32;
+constexpr UINT BarThicknessSliderCaptureMessage = WM_APP + 0x33;
+constexpr WPARAM BarThicknessSliderCaptureStop = 0;
+constexpr WPARAM BarThicknessSliderCaptureStart = 1;
+constexpr WPARAM BarThicknessSliderCaptureCancel = 2;
 constexpr double BarBorderLightIntensity = 1.0;
 constexpr double BarColorSwatchCursorLightIntensity = 0.50;
 constexpr double BarButtonCursorLightIntensity = 0.30;
@@ -60,6 +64,17 @@ constexpr double BarDrawAttributeThicknessControlHeight = 30.0;
 constexpr double BarDrawAttributeSurfaceOpacity = 0.95;
 constexpr double BarDrawAttributeThicknessContentInset =
 	BarDrawAttributeGap * 2.0;
+constexpr double BarThicknessSliderTrackHeight = 4.0;
+constexpr double BarThicknessSliderThumbDiameter = 20.0;
+constexpr double BarThicknessSliderThumbCenterDiameter = 12.0;
+constexpr double BarThicknessSliderThumbHoverCenterDiameter = 14.0;
+constexpr double BarThicknessSliderThumbPressedCenterDiameter = 10.0;
+constexpr double BarThicknessSliderHardPenMinPx = 1.0;
+constexpr double BarThicknessSliderHardPenMaxDip = 30.0;
+constexpr double BarThicknessSliderHighlighterMinDip = 30.0;
+constexpr double BarThicknessSliderHighlighterMaxDip = 100.0;
+constexpr double BarThicknessSliderThumbAnimationDur = 0.28;
+constexpr double BarThicknessSliderPressAnimationDur = 0.12;
 constexpr double BarThicknessTooltipBadgeHeight = 24.0;
 constexpr double BarThicknessTooltipIconSize = 14.0;
 constexpr double BarThicknessTooltipCloseButtonSize = 20.0;
@@ -93,6 +108,107 @@ bool PenModeSupportsAnnotationLine(PenModeSelectEnum mode)
 	// 激光笔不显示标注线入口；未来软笔模式在这里加入。
 	return mode == PenModeSelectEnum::IdtPenBrush1
 		|| mode == PenModeSelectEnum::IdtPenHighlighter1;
+}
+
+struct BarThicknessSliderRange
+{
+	int min = 0;
+	int max = 0;
+	bool supported = false;
+};
+
+BarThicknessSliderRange GetBarThicknessSliderRange(
+	PenModeSelectEnum mode, double dpiZoom)
+{
+	if (!isfinite(dpiZoom) || dpiZoom <= 0.0) dpiZoom = 1.0;
+	if (mode == PenModeSelectEnum::IdtPenBrush1)
+	{
+		int maximum = max(1, static_cast<int>(lround(
+			BarThicknessSliderHardPenMaxDip * dpiZoom)));
+		return {
+			static_cast<int>(BarThicknessSliderHardPenMinPx),
+			maximum, true };
+	}
+	if (mode == PenModeSelectEnum::IdtPenHighlighter1)
+	{
+		int minimum = max(1, static_cast<int>(lround(
+			BarThicknessSliderHighlighterMinDip * dpiZoom)));
+		int maximum = max(minimum, static_cast<int>(lround(
+			BarThicknessSliderHighlighterMaxDip * dpiZoom)));
+		return { minimum, maximum, true };
+	}
+	return {};
+}
+
+struct BarThicknessPreviewGeometry
+{
+	double panelScale = 0.0;
+	double previewSide = 0.0;
+	double previewTop = 0.0;
+	double previewBottom = 0.0;
+	double previewCenterY = 0.0;
+	double previewLeft = 0.0;
+	double previewRight = 0.0;
+	double trackLeft = 0.0;
+	double trackRight = 0.0;
+	bool valid = false;
+};
+
+BarThicknessPreviewGeometry CalculateBarThicknessPreviewGeometry(
+	const BarUiShapeClass& panel,
+	const BarUiShapeClass& thicknessRegion,
+	const BarUiInheritClass& thicknessRegionInherit,
+	const BarUiShapeClass& thicknessAdjust,
+	const BarUiInheritClass& thicknessAdjustInherit)
+{
+	BarThicknessPreviewGeometry geometry;
+	geometry.panelScale = panel.w.val / BarDrawAttributeExpandedWidth;
+	if (!isfinite(geometry.panelScale) || geometry.panelScale <= 0.0)
+		return geometry;
+
+	double regionCenterY = thicknessRegionInherit.y
+		+ thicknessRegion.h.val / 2.0;
+	double controlCenterY = thicknessAdjustInherit.y
+		+ thicknessAdjust.h.val / 2.0;
+	double controlCenterOffset =
+		(BarDrawAttributeThicknessHeight / 2.0
+			- BarDrawAttributeGap
+			- BarDrawAttributeThicknessControlHeight / 2.0)
+		* geometry.panelScale;
+	geometry.previewSide = controlCenterOffset > 0.000001
+		? clamp((regionCenterY - controlCenterY)
+			/ controlCenterOffset, -1.0, 1.0)
+		: 0.0;
+	double previewAreaHeight =
+		(BarDrawAttributeThicknessHeight
+			- BarDrawAttributeThicknessControlHeight
+			- BarDrawAttributeGap * 3.0) * geometry.panelScale;
+	double previewCenterOffset =
+		(BarDrawAttributeThicknessHeight / 2.0
+			- BarDrawAttributeGap
+			- (BarDrawAttributeThicknessHeight
+				- BarDrawAttributeThicknessControlHeight
+				- BarDrawAttributeGap * 3.0) / 2.0)
+		* geometry.panelScale;
+	geometry.previewCenterY = regionCenterY
+		+ geometry.previewSide * previewCenterOffset;
+	geometry.previewTop =
+		geometry.previewCenterY - previewAreaHeight / 2.0;
+	geometry.previewBottom =
+		geometry.previewCenterY + previewAreaHeight / 2.0;
+	double frameInset = geometry.panelScale;
+	geometry.previewLeft = thicknessRegionInherit.x + frameInset;
+	geometry.previewRight = thicknessRegionInherit.x
+		+ thicknessRegion.w.val - frameInset;
+	double contentInset =
+		BarDrawAttributeThicknessContentInset * geometry.panelScale;
+	geometry.trackLeft = thicknessRegionInherit.x + contentInset;
+	geometry.trackRight = thicknessRegionInherit.x
+		+ thicknessRegion.w.val - contentInset;
+	geometry.valid = geometry.previewBottom > geometry.previewTop
+		&& geometry.previewRight > geometry.previewLeft
+		&& geometry.trackRight > geometry.trackLeft;
+	return geometry;
 }
 
 int GetBarBrushThicknessPresetPx(size_t index, double dpiZoom)
@@ -137,6 +253,27 @@ COLORREF MixBarUiColor(COLORREF startColor, COLORREF targetColor, double progres
 		MixChannel(GetBValue(startColor), GetBValue(targetColor)));
 }
 
+void QueueBarThicknessSliderEnd(HWND hWnd)
+{
+	if (!hWnd) return;
+	POINT point{};
+	if (!GetCursorPos(&point)) point = {};
+	ScreenToClient(hWnd, &point);
+
+	ExMessage message{};
+	message.message = WM_LBUTTONUP;
+	message.x = static_cast<short>(clamp<LONG>(
+		point.x, SHRT_MIN, SHRT_MAX));
+	message.y = static_cast<short>(clamp<LONG>(
+		point.y, SHRT_MIN, SHRT_MAX));
+	message.lbutton = false;
+
+	int index = hiex::GetWindowIndex(hWnd, false);
+	if (index < 0) return;
+	unique_lock lock(hiex::g_vecWindows_vecMessage_sm[index]);
+	hiex::g_vecWindows[index].vecMessage.push_back(message);
+}
+
 // ====================
 // 窗口
 
@@ -179,11 +316,58 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		return 0;
 	}
 
+	case BarThicknessSliderCaptureMessage:
+	{
+		if (wParam == BarThicknessSliderCaptureStart)
+		{
+			// 捕获必须由窗口线程建立，保证鼠标移出 Bar 后仍继续投递。
+			SetCapture(hWnd);
+			bool captured = GetCapture() == hWnd;
+			barUISet.barState.drawAttributeBar.thicknessSliderCapture =
+				captured;
+			return captured ? 1 : 0;
+		}
+
+		barUISet.barState.drawAttributeBar.thicknessSliderCapture = false;
+		if (GetCapture() == hWnd) ReleaseCapture();
+		if (wParam == BarThicknessSliderCaptureCancel)
+			QueueBarThicknessSliderEnd(hWnd);
+		return 0;
+	}
+
+	case WM_CAPTURECHANGED:
+	{
+		if (barUISet.barState.drawAttributeBar.thicknessSliderCapture)
+		{
+			// 捕获被其他窗口夺走时，合成抬起事件唤醒阻塞式手势循环。
+			barUISet.barState.drawAttributeBar.thicknessSliderCapture = false;
+			barUISet.barState.drawAttributeBar.thicknessSliderHover = false;
+			barUISet.barState.drawAttributeBar.thicknessSliderPinned = false;
+			barUISet.barState.drawAttributeBar.thicknessSliderDragging = false;
+			barUISet.barState.drawAttributeBar.thicknessSliderPressed = false;
+			barUISet.CloseDrawAttributeTooltips();
+			QueueBarThicknessSliderEnd(hWnd);
+			barUISet.UpdateRendering(false);
+			return 0;
+		}
+		return HIWINDOW_DEFAULT_PROC;
+	}
+
 	case WM_MOUSELEAVE:
 	{
 		// 需要等待离开的休眠路径在真实移出后解除重新激活限制。
-		lock_guard lock(barUISet.borderCursorLightMutex);
-		barUISet.borderCursorActivationBlockedUntilLeave = false;
+		{
+			lock_guard lock(barUISet.borderCursorLightMutex);
+			barUISet.borderCursorActivationBlockedUntilLeave = false;
+		}
+		if (barUISet.barState.drawAttributeBar.thicknessSliderHover
+			&& !barUISet.barState.drawAttributeBar.thicknessSliderPinned
+			&& !barUISet.barState.drawAttributeBar.thicknessSliderPressed
+			&& !barUISet.barState.drawAttributeBar.thicknessSliderDragging)
+		{
+			barUISet.barState.drawAttributeBar.thicknessSliderHover = false;
+			barUISet.UpdateRendering(false);
+		}
 		return 0;
 	}
 
@@ -2181,6 +2365,30 @@ void BarUISetClass::CloseDrawAttributeTooltips()
 	barState.drawAttributeBar.thicknessOverflowClosePress = false;
 }
 
+void BarUISetClass::CloseThicknessSlider(bool cancelCapture)
+{
+	bool gestureActive =
+		barState.drawAttributeBar.thicknessSliderPressed
+		|| barState.drawAttributeBar.thicknessSliderDragging
+		|| barState.drawAttributeBar.thicknessSliderCapture;
+	barState.drawAttributeBar.thicknessSliderHover = false;
+	barState.drawAttributeBar.thicknessSliderPinned = false;
+	barState.drawAttributeBar.thicknessSliderDragging = false;
+	barState.drawAttributeBar.thicknessSliderPressed = false;
+
+	if (floating_window && IsWindow(floating_window)
+		&& (barState.drawAttributeBar.thicknessSliderCapture
+			|| (cancelCapture && gestureActive)))
+	{
+		SendMessage(floating_window, BarThicknessSliderCaptureMessage,
+			cancelCapture
+				? BarThicknessSliderCaptureCancel
+				: BarThicknessSliderCaptureStop,
+			0);
+	}
+	else barState.drawAttributeBar.thicknessSliderCapture = false;
+}
+
 // 渲染
 void BarUISetClass::Rendering()
 {
@@ -2308,6 +2516,23 @@ void BarUISetClass::Rendering()
 		stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1 ? 1.0 : 0.0);
 	bool drawAttributePenPreviewMorphInitialized =
 		stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
+	BarUiValueClass drawAttributeThicknessSliderProgress(0.0);
+	BarUiValueClass drawAttributeThicknessSliderThumbOpacity(0.0);
+	BarUiValueClass drawAttributeThicknessSliderThumbScale(0.75);
+	BarUiValueClass drawAttributeThicknessSliderAccentOpacity(1.0);
+	BarUiValueClass drawAttributeThicknessSliderCenterDiameter(
+		BarThicknessSliderThumbCenterDiameter);
+	bool drawAttributeThicknessSliderTargetActive = false;
+	double drawAttributeThicknessSliderNormalized = 0.0;
+	{
+		auto range = GetBarThicknessSliderRange(
+			stateMode.Pen.ModeSelect, barStyle.dpiZoom);
+		if (range.supported && range.max > range.min)
+			drawAttributeThicknessSliderNormalized = clamp(
+				(static_cast<double>(GetPenWidth()) - range.min)
+				/ static_cast<double>(range.max - range.min),
+				0.0, 1.0);
+	}
 	BarUiValueClass drawAttributeAnnotationPopupProgress(0.0);
 	BarUiValueClass drawAttributeOverflowPopupProgress(0.0);
 	D2D1_SIZE_F annotationLabelTextSize =
@@ -2499,6 +2724,94 @@ void BarUISetClass::Rendering()
 			bool currentDrawAttributeOpen = barState.drawAttribute;
 			bool drawAttributeVisibilityChange = currentDrawAttributeOpen != drawAttributeLayoutOpen;
 			drawAttributeLayoutOpen = currentDrawAttributeOpen;
+			auto thicknessSliderRange = GetBarThicknessSliderRange(
+				stateMode.Pen.ModeSelect, barStyle.dpiZoom);
+			bool thicknessSliderAvailable =
+				stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
+				&& thicknessSliderRange.supported
+				&& barState.drawAttribute && !barState.fold;
+			if (!thicknessSliderAvailable
+				&& (barState.drawAttributeBar.thicknessSliderHover
+					|| barState.drawAttributeBar.thicknessSliderPinned
+					|| barState.drawAttributeBar.thicknessSliderPressed
+					|| barState.drawAttributeBar.thicknessSliderDragging
+					|| barState.drawAttributeBar.thicknessSliderCapture))
+			{
+				// 属性栏失效时主动结束捕获，嵌套输入循环会收到一次合成抬起。
+				CloseThicknessSlider(true);
+			}
+			bool thicknessSliderActive = thicknessSliderAvailable
+				&& (barState.drawAttributeBar.thicknessSliderHover
+					|| barState.drawAttributeBar.thicknessSliderPinned
+					|| barState.drawAttributeBar.thicknessSliderPressed
+					|| barState.drawAttributeBar.thicknessSliderDragging);
+			if (thicknessSliderActive) CloseDrawAttributeTooltips();
+			const BarUiCurveSpecClass thicknessSliderProgressCurve{
+				BarUiCurveEnum::EaseInOutCubic,
+				BarUiCurveEnum::EaseInOutCubic, 0.0, false };
+			drawAttributeThicknessSliderProgress.SetTar(
+				thicknessSliderActive ? 1.0 : 0.0,
+				operationDur, nullopt, false,
+				thicknessSliderProgressCurve);
+			if (thicknessSliderActive
+				!= drawAttributeThicknessSliderTargetActive)
+			{
+				const BarUiCurveSpecClass thumbOpacityCurve{
+					thicknessSliderActive
+						? BarUiCurveEnum::EaseOutCubic
+						: BarUiCurveEnum::EaseInCubic,
+					thicknessSliderActive
+						? BarUiCurveEnum::EaseOutCubic
+						: BarUiCurveEnum::EaseInCubic,
+					0.0, false };
+				const BarUiCurveSpecClass thumbScaleCurve{
+					thicknessSliderActive
+						? BarUiCurveEnum::EaseOutBack
+						: BarUiCurveEnum::EaseInCubic,
+					thicknessSliderActive
+						? BarUiCurveEnum::EaseOutBack
+						: BarUiCurveEnum::EaseInCubic,
+					0.0, false };
+				drawAttributeThicknessSliderThumbOpacity.SetTar(
+					thicknessSliderActive ? 1.0 : 0.0,
+					BarThicknessSliderThumbAnimationDur,
+					nullopt, false, thumbOpacityCurve);
+				drawAttributeThicknessSliderThumbScale.SetTar(
+					thicknessSliderActive ? 1.0 : 0.75,
+					BarThicknessSliderThumbAnimationDur,
+					nullopt, false, thumbScaleCurve);
+				drawAttributeThicknessSliderTargetActive =
+					thicknessSliderActive;
+			}
+			const BarUiCurveSpecClass thicknessSliderStateCurve{
+				BarUiCurveEnum::EaseOutCubic,
+				BarUiCurveEnum::EaseOutCubic, 0.0, false };
+			double thicknessSliderAccentOpacity = 1.0;
+			double thicknessSliderCenterDiameter =
+				BarThicknessSliderThumbCenterDiameter;
+			if (thicknessSliderActive
+				&& barState.drawAttributeBar.thicknessSliderPressed)
+			{
+				thicknessSliderAccentOpacity = 0.80;
+				thicknessSliderCenterDiameter =
+					BarThicknessSliderThumbPressedCenterDiameter;
+			}
+			else if (thicknessSliderActive
+				&& barState.drawAttributeBar.thicknessSliderHover)
+			{
+				thicknessSliderAccentOpacity = 0.90;
+				thicknessSliderCenterDiameter =
+					BarThicknessSliderThumbHoverCenterDiameter;
+			}
+			// 对齐 WinUI：外圈不缩放，只让强调色强度和中心圆尺寸平滑切换。
+			drawAttributeThicknessSliderAccentOpacity.SetTar(
+				thicknessSliderAccentOpacity,
+				BarThicknessSliderPressAnimationDur,
+				nullopt, false, thicknessSliderStateCurve);
+			drawAttributeThicknessSliderCenterDiameter.SetTar(
+				thicknessSliderCenterDiameter,
+				BarThicknessSliderPressAnimationDur,
+				nullopt, false, thicknessSliderStateCurve);
 			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 			{
 				double penThickness = max(0.0f, GetPenWidth());
@@ -2513,6 +2826,9 @@ void BarUISetClass::Rendering()
 					drawAttributePenThickness.SetDirect(penThickness);
 					drawAttributePenThicknessInitialized = true;
 				}
+				else if (barState.drawAttributeBar.thicknessSliderDragging)
+					// 拖动反馈必须跟手，结束后再恢复普通粗细过渡。
+					drawAttributePenThickness.SetDirect(penThickness);
 				else drawAttributePenThickness.SetTar(penThickness, operationDur);
 				if (!drawAttributePenPreviewMorphInitialized)
 				{
@@ -3887,7 +4203,8 @@ void BarUISetClass::Rendering()
 								== PenModeSelectEnum::IdtPenHighlighter1);
 						ConfigureThicknessButton(
 							BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust, nullptr,
-							205.0, adjustVisible, false,
+							205.0, adjustVisible,
+							barState.drawAttributeBar.thicknessSliderPinned,
 							barState.drawAttributeBar.thicknessAdjustPress,
 							drawAttributeThicknessAdjustHoverStage,
 							drawAttributeThicknessAdjustPressScale);
@@ -3901,7 +4218,9 @@ void BarUISetClass::Rendering()
 						auto& thicknessAdjustColor =
 							thicknessAdjustSvg->color1.value();
 						COLORREF thicknessAdjustTargetColor =
-							GetThemeColor(BarThemeColorEnum::TextPrimary);
+							barState.drawAttributeBar.thicknessSliderPinned
+								? GetThemeColor(BarThemeColorEnum::Accent)
+								: GetThemeColor(BarThemeColorEnum::TextPrimary);
 						if (forNum == 1 || !barState.drawAttribute)
 							thicknessAdjustColor.SetDirect(thicknessAdjustTargetColor);
 						else thicknessAdjustColor.SetTar(thicknessAdjustTargetColor);
@@ -3948,11 +4267,11 @@ void BarUISetClass::Rendering()
 									operationDur, nullopt, false, curveSpec);
 							};
 						SetTooltipProgress(drawAttributeAnnotationPopupProgress,
-							annotationSupported
+							!thicknessSliderActive && annotationSupported
 							&& (barState.drawAttributeBar.thicknessAnnotationHover
 								|| barState.drawAttributeBar.thicknessAnnotationPinned));
 						SetTooltipProgress(drawAttributeOverflowPopupProgress,
-							previewOverflow
+							!thicknessSliderActive && previewOverflow
 							&& (barState.drawAttributeBar.thicknessOverflowHover
 								|| barState.drawAttributeBar.thicknessOverflowPinned));
 
@@ -4453,6 +4772,16 @@ void BarUISetClass::Rendering()
 		if (!drawAttributePenThickness.IsSame()) ChangeValue(drawAttributePenThickness, false);
 		if (!drawAttributePenPreviewMorph.IsSame())
 			ChangeValue(drawAttributePenPreviewMorph, false);
+		if (!drawAttributeThicknessSliderProgress.IsSame())
+			ChangeValue(drawAttributeThicknessSliderProgress, false);
+		if (!drawAttributeThicknessSliderThumbOpacity.IsSame())
+			ChangeValue(drawAttributeThicknessSliderThumbOpacity, false);
+		if (!drawAttributeThicknessSliderThumbScale.IsSame())
+			ChangeValue(drawAttributeThicknessSliderThumbScale, false);
+		if (!drawAttributeThicknessSliderAccentOpacity.IsSame())
+			ChangeValue(drawAttributeThicknessSliderAccentOpacity, false);
+		if (!drawAttributeThicknessSliderCenterDiameter.IsSame())
+			ChangeValue(drawAttributeThicknessSliderCenterDiameter, false);
 		if (!drawAttributeAnnotationPopupProgress.IsSame())
 			ChangeValue(drawAttributeAnnotationPopupProgress, false);
 		if (!drawAttributeOverflowPopupProgress.IsSame())
@@ -4609,7 +4938,8 @@ void BarUISetClass::Rendering()
 		bool thicknessAdjustVisible = barState.drawAttribute && (brushMode
 			|| stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1);
 		UpdateHoverAnimation(thicknessAdjust->pct, &thicknessAdjust->fill.value(),
-			drawAttributeThicknessAdjustHoverStage, thicknessAdjustVisible, true);
+			drawAttributeThicknessAdjustHoverStage, thicknessAdjustVisible,
+			!barState.drawAttributeBar.thicknessSliderPinned);
 		auto annotationClose = shapeMap[
 			BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit];
 		UpdateHoverAnimation(annotationClose->pct,
@@ -4702,7 +5032,8 @@ void BarUISetClass::Rendering()
 			panel->Inherit(BarUiInheritEnum::Center, drawButton->buttom);
 			auto region =
 				shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect];
-			region->Inherit(BarUiInheritEnum::TopLeft, *panel);
+			BarUiInheritClass regionInherit =
+				region->Inherit(BarUiInheritEnum::TopLeft, *panel);
 			auto adjust =
 				shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust];
 			BarUiInheritClass adjustInherit =
@@ -4710,36 +5041,17 @@ void BarUISetClass::Rendering()
 			auto thicknessDisplay =
 				wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay];
 
-			double panelScale = panel->w.val / BarDrawAttributeExpandedWidth;
-			if (!isfinite(panelScale) || panelScale <= 0.0) panelScale = 0.0;
+			auto previewGeometry = CalculateBarThicknessPreviewGeometry(
+				*panel, *region, regionInherit, *adjust, adjustInherit);
+			double panelScale = previewGeometry.panelScale;
 			double panelExpandedProgress = clamp(
 				(panelScale - BarDrawAttributeCompactScale)
 				/ (1.0 - BarDrawAttributeCompactScale), 0.0, 1.0);
-			double regionCenterY = region->inhY + region->h.val / 2.0;
-			double controlCenterY = adjustInherit.y + adjust->h.val / 2.0;
-			double controlCenterOffset =
-				(BarDrawAttributeThicknessHeight / 2.0
-					- BarDrawAttributeGap
-					- BarDrawAttributeThicknessControlHeight / 2.0)
-				* panelScale;
-			double previewSide = controlCenterOffset > 0.000001
-				? clamp((regionCenterY - controlCenterY)
-					/ controlCenterOffset, -1.0, 1.0)
-				: 0.0;
-			double previewAreaHeight =
-				(BarDrawAttributeThicknessHeight
-					- BarDrawAttributeThicknessControlHeight
-					- BarDrawAttributeGap * 3.0) * panelScale;
-			double previewCenterOffset =
-				(BarDrawAttributeThicknessHeight / 2.0
-					- BarDrawAttributeGap
-					- (BarDrawAttributeThicknessHeight
-						- BarDrawAttributeThicknessControlHeight
-						- BarDrawAttributeGap * 3.0) / 2.0)
-				* panelScale;
-			double previewCenterY =
-				regionCenterY + previewSide * previewCenterOffset;
-			double previewTop = previewCenterY - previewAreaHeight / 2.0;
+			double previewSide = previewGeometry.previewSide;
+			double previewAreaHeight = max(0.0,
+				previewGeometry.previewBottom
+					- previewGeometry.previewTop);
+			double previewTop = previewGeometry.previewTop;
 			// 倒转布局把两个徽标镜像到预览区下沿，换边过程中连续过渡。
 			double badgeTopAtUpperEdge =
 				previewTop + BarDrawAttributeGap * panelScale;
@@ -4755,6 +5067,78 @@ void BarUISetClass::Rendering()
 				BarDrawAttributeThicknessContentInset * panelScale;
 			double contentOpacity = clamp(
 				static_cast<double>(thicknessDisplay->pct.val), 0.0, 1.0);
+			auto sliderHit = shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderHit];
+			auto sliderThumb = shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderThumb];
+			if (previewGeometry.valid)
+			{
+				// 命中框只覆盖预览区，明确排除粗细文字与按钮控制行。
+				sliderHit->x.SetDirect(
+					previewGeometry.previewLeft - panel->inhX);
+				sliderHit->y.SetDirect(
+					previewGeometry.previewTop - panel->inhY);
+				sliderHit->w.SetDirect(
+					previewGeometry.previewRight
+						- previewGeometry.previewLeft);
+				sliderHit->h.SetDirect(previewAreaHeight);
+				sliderHit->pct.SetDirect(0.0);
+				sliderHit->Inherit(BarUiInheritEnum::TopLeft, *panel);
+
+				auto range = GetBarThicknessSliderRange(
+					stateMode.Pen.ModeSelect, barStyle.dpiZoom);
+				if (stateMode.StateModeSelect
+					== StateModeSelectEnum::IdtPen
+					&& range.supported)
+				{
+					drawAttributeThicknessSliderNormalized =
+						range.max > range.min
+						? clamp((static_cast<double>(
+							drawAttributePenThickness.val) - range.min)
+							/ static_cast<double>(
+								range.max - range.min),
+							0.0, 1.0)
+						: 0.0;
+				}
+				double baseThumbDiameter =
+					BarThicknessSliderThumbDiameter * panelScale;
+				double thumbTravel = max(0.0,
+					previewGeometry.trackRight
+						- previewGeometry.trackLeft
+						- baseThumbDiameter);
+				double thumbCenterX =
+					previewGeometry.trackLeft
+					+ baseThumbDiameter / 2.0
+					+ thumbTravel
+						* drawAttributeThicknessSliderNormalized;
+				double thumbScale = max(0.0, static_cast<double>(
+					drawAttributeThicknessSliderThumbScale.val));
+				double thumbDiameter =
+					baseThumbDiameter * thumbScale;
+				sliderThumb->x.SetDirect(
+					thumbCenterX - thumbDiameter / 2.0
+						- panel->inhX);
+				sliderThumb->y.SetDirect(
+					previewGeometry.previewCenterY
+						- thumbDiameter / 2.0 - panel->inhY);
+				sliderThumb->w.SetDirect(thumbDiameter);
+				sliderThumb->h.SetDirect(thumbDiameter);
+				sliderThumb->pct.SetDirect(clamp(
+					static_cast<double>(
+						drawAttributeThicknessSliderThumbOpacity.val)
+						* contentOpacity, 0.0, 1.0));
+				sliderThumb->Inherit(
+					BarUiInheritEnum::TopLeft, *panel);
+			}
+			else
+			{
+				sliderHit->w.SetDirect(0.0);
+				sliderHit->h.SetDirect(0.0);
+				sliderHit->pct.SetDirect(0.0);
+				sliderThumb->w.SetDirect(0.0);
+				sliderThumb->h.SetDirect(0.0);
+				sliderThumb->pct.SetDirect(0.0);
+			}
 			// 徽标显隐跟随当前内容透明度，不能读取收起目标状态后瞬间消失。
 			bool annotationVisible =
 				PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect);
@@ -5152,6 +5536,16 @@ void BarUISetClass::Rendering()
 				};
 			IncludeShapeBounds(mainBar);
 			IncludeShapeBounds(drawAttribute);
+			auto thicknessSliderHit = shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderHit];
+			if (thicknessSliderHit
+				&& drawAttributeThicknessSliderProgress.val > 0.0)
+				BarRenderingAttribute::UnionRectInPlace(predicted,
+					BarRenderingAttribute::GetWeigetRect(
+						*thicknessSliderHit,
+						static_cast<double>(barStyle.zoom)));
+			IncludeShapeBounds(shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderThumb]);
 			// 浮窗可越过绘制属性边框，BeginDraw 前必须显式纳入新帧脏区。
 			IncludeShapeBounds(shapeMap[
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup]);
@@ -5403,70 +5797,61 @@ void BarUISetClass::Rendering()
 								wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay];
 							auto thicknessAdjust =
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust];
-							double panelAnimationScale = panel->w.val
-								/ BarDrawAttributeExpandedWidth;
-							if (!isfinite(panelAnimationScale)
-								|| panelAnimationScale <= 0.0)
-								panelAnimationScale = 0.0;
+							BarUiInheritClass thicknessRegionInherit =
+								thicknessRegion->Inherit(TopLeft, *panel);
 							spec.Shape(barDeviceContext.Get(), *thicknessRegion,
-								thicknessRegion->Inherit(TopLeft, *panel));
+								thicknessRegionInherit);
 							BarUiInheritClass thicknessDisplayInherit =
 								thicknessDisplay->Inherit(TopLeft, *panel);
 							BarUiInheritClass thicknessAdjustInherit =
 								thicknessAdjust->Inherit(TopLeft, *panel);
+							auto previewGeometry =
+								CalculateBarThicknessPreviewGeometry(
+									*panel, *thicknessRegion,
+									thicknessRegionInherit,
+									*thicknessAdjust,
+									thicknessAdjustInherit);
+							double panelAnimationScale =
+								previewGeometry.panelScale;
 
 							double contentOpacity = thicknessDisplay->pct.val;
 							FLOAT uiZoom = static_cast<FLOAT>(barStyle.zoom);
 							COLORREF contentColor = thicknessDisplay->color.val;
-							if (contentOpacity > 0.000001 && uiZoom > 0.0f)
+							if (contentOpacity > 0.000001 && uiZoom > 0.0f
+								&& previewGeometry.valid)
 							{
 								// 展开静止后保持真实设备 px；面板动画时只补上同一几何缩放倍率。
 								FLOAT requestedThickness = max(0.0f,
 									static_cast<FLOAT>(drawAttributePenThickness.val
 										* panelAnimationScale));
-								// 从动画中的控件位置连续推导上下方向，换边时先收拢到中点再镜像展开。
-								double regionCenterY = thicknessRegion->inhY
-									+ thicknessRegion->h.val / 2.0;
-								double controlCenterY = thicknessAdjustInherit.y
-									+ thicknessAdjust->h.val / 2.0;
-								double controlCenterOffset =
-									(BarDrawAttributeThicknessHeight / 2.0
-										- BarDrawAttributeGap
-										- BarDrawAttributeThicknessControlHeight / 2.0)
-									* panelAnimationScale;
-								double previewSide = controlCenterOffset > 0.000001
-									? clamp((regionCenterY - controlCenterY)
-										/ controlCenterOffset, -1.0, 1.0)
-									: 0.0;
 								double previewAreaHeight =
-									(BarDrawAttributeThicknessHeight
-										- BarDrawAttributeThicknessControlHeight
-										- BarDrawAttributeGap * 3.0)
-									* panelAnimationScale;
-								double previewCenterOffset =
-									(BarDrawAttributeThicknessHeight / 2.0
-										- BarDrawAttributeGap
-										- (BarDrawAttributeThicknessHeight
-											- BarDrawAttributeThicknessControlHeight
-											- BarDrawAttributeGap * 3.0) / 2.0)
-									* panelAnimationScale;
-								double previewCenterY = regionCenterY
-									+ previewSide * previewCenterOffset;
+									previewGeometry.previewBottom
+										- previewGeometry.previewTop;
 								FLOAT maxPreviewThickness = max(1.0f,
 									static_cast<FLOAT>(
 										previewAreaHeight * uiZoom));
-								FLOAT previewThickness =
+								FLOAT normalPreviewThickness =
 									min(requestedThickness, maxPreviewThickness);
-								// 水平内边距使用同一面板倍率，避免关键帧读到已经归零的文字局部坐标。
-								double horizontalInset =
-									BarDrawAttributeThicknessContentInset
-									* panelAnimationScale;
+								double sliderProgress = clamp(
+									static_cast<double>(
+										drawAttributeThicknessSliderProgress.val),
+									0.0, 1.0);
+								FLOAT trackThickness = min(
+									maxPreviewThickness,
+									static_cast<FLOAT>(
+										BarThicknessSliderTrackHeight
+										* panelAnimationScale * uiZoom));
+								FLOAT previewThickness = static_cast<FLOAT>(
+									normalPreviewThickness
+									+ (trackThickness
+										- normalPreviewThickness)
+										* sliderProgress);
 								FLOAT left = static_cast<FLOAT>(
-									(thicknessRegion->inhX + horizontalInset)
-									* uiZoom);
+									previewGeometry.trackLeft * uiZoom);
 								FLOAT right = static_cast<FLOAT>(
-									(thicknessRegion->inhX + thicknessRegion->w.val
-										- horizontalInset) * uiZoom);
+									previewGeometry.trackRight * uiZoom);
+								double previewSide =
+									previewGeometry.previewSide;
 								double previewMorph = clamp(
 									static_cast<double>(
 										drawAttributePenPreviewMorph.val),
@@ -5489,7 +5874,8 @@ void BarUISetClass::Rendering()
 									availableAmplitude)
 									* static_cast<FLOAT>(
 										hardCurveProgress
-										* panelExpandedProgress);
+										* panelExpandedProgress
+										* (1.0 - sliderProgress));
 								FLOAT previewHalfHeight =
 									maxPreviewThickness / 2.0F;
 								FLOAT verticalExtent = radius + amplitude;
@@ -5504,18 +5890,29 @@ void BarUISetClass::Rendering()
 									badgeProtectedDepth - previewHalfHeight
 										+ radius);
 								FLOAT centerShift = min(
-									desiredCenterShift, maxCenterShift);
+									desiredCenterShift, maxCenterShift)
+									* static_cast<FLOAT>(
+										1.0 - sliderProgress);
 								FLOAT awayFromBadges =
 									static_cast<FLOAT>(-previewSide);
 								FLOAT centerY = static_cast<FLOAT>(
-									previewCenterY * uiZoom)
+									previewGeometry.previewCenterY * uiZoom)
 									+ awayFromBadges * centerShift;
 								D2D1_RECT_F previewRect = D2D1::RectF(left,
 									centerY - previewThickness / 2.0f, right,
 									centerY + previewThickness / 2.0f);
+								COLORREF trackColor = MixBarUiColor(
+									GetThemeColor(
+										BarThemeColorEnum::Surface),
+									GetThemeColor(
+										BarThemeColorEnum::Accent),
+									drawAttributeThicknessSliderAccentOpacity.val);
+								COLORREF previewColor = MixBarUiColor(
+									contentColor, trackColor,
+									sliderProgress);
 								ID2D1SolidColorBrush* solidBrush =
 									spec.GetFrameSolidColorBrush(
-										barDeviceContext.Get(), contentColor,
+										barDeviceContext.Get(), previewColor,
 										contentOpacity);
 								FLOAT frameInset = static_cast<FLOAT>(
 									panelAnimationScale * uiZoom);
@@ -5592,18 +5989,27 @@ void BarUISetClass::Rendering()
 								}
 								else if (previewThickness > 0.0F)
 								{
-									FLOAT previewRadius =
+									FLOAT normalPreviewRadius =
 										previewThickness / 2.0F
 										* static_cast<FLOAT>(
 											1.0 - highlighterProgress);
+									FLOAT previewRadius = static_cast<FLOAT>(
+										normalPreviewRadius
+										+ (previewThickness / 2.0F
+											- normalPreviewRadius)
+											* sliderProgress);
 									D2D1_ROUNDED_RECT roundedPreview{
 										previewRect,
 										previewRadius, previewRadius };
-									FLOAT leftOpacity = static_cast<FLOAT>(
+									FLOAT normalLeftOpacity = static_cast<FLOAT>(
 										1.0 - 0.65 * highlighterProgress);
+									FLOAT leftOpacity = static_cast<FLOAT>(
+										normalLeftOpacity
+										+ (1.0F - normalLeftOpacity)
+											* sliderProgress);
 									ID2D1LinearGradientBrush* gradientBrush =
 										spec.GetThicknessPreviewGradientBrush(
-											barDeviceContext.Get(), contentColor,
+											barDeviceContext.Get(), previewColor,
 											D2D1::Point2F(
 												previewRect.left, centerY),
 											D2D1::Point2F(
@@ -5621,6 +6027,101 @@ void BarUISetClass::Rendering()
 										barDeviceContext->FillRoundedRectangle(
 											&roundedPreview, previewBrush);
 									}
+								}
+								auto sliderThumb = shapeMap[
+									BarUISetShapeEnum::
+										DrawAttributeBar_ThicknessSliderThumb];
+								double thumbOpacity = clamp(
+									static_cast<double>(sliderThumb->pct.val),
+									0.0, 1.0);
+								if (thumbOpacity > 0.000001
+									&& sliderThumb->w.val > 0.0
+									&& sliderThumb->h.val > 0.0)
+								{
+									BarUiInheritClass thumbInherit =
+										sliderThumb->Inherit(
+											TopLeft, *panel);
+									FLOAT thumbDiameter =
+										static_cast<FLOAT>(min(
+											sliderThumb->w.val,
+											sliderThumb->h.val) * uiZoom);
+									FLOAT thumbRadius =
+										thumbDiameter / 2.0F;
+									D2D1_POINT_2F thumbCenter =
+										D2D1::Point2F(
+											static_cast<FLOAT>(
+												(thumbInherit.x
+													+ sliderThumb->w.val
+														/ 2.0)
+												* uiZoom),
+											static_cast<FLOAT>(
+												(thumbInherit.y
+													+ sliderThumb->h.val
+														/ 2.0)
+												* uiZoom));
+									auto FillThumbCircle =
+										[&](COLORREF color, FLOAT radius)
+										{
+											if (radius <= 0.0F) return;
+											auto brush =
+												spec.GetFrameSolidColorBrush(
+													barDeviceContext.Get(),
+													color, thumbOpacity);
+											if (!brush) return;
+											D2D1_ELLIPSE ellipse =
+												D2D1::Ellipse(
+													thumbCenter,
+													radius, radius);
+											barDeviceContext->FillEllipse(
+												&ellipse, brush);
+										};
+									COLORREF surfaceColor =
+										panel->fill.has_value()
+										? static_cast<COLORREF>(
+											panel->fill.value().val)
+										: GetThemeColor(
+											BarThemeColorEnum::Surface);
+									COLORREF textColor = GetThemeColor(
+										BarThemeColorEnum::TextPrimary);
+									COLORREF accentColor = GetThemeColor(
+										BarThemeColorEnum::Accent);
+									double accentOpacity = clamp(
+										static_cast<double>(
+											drawAttributeThicknessSliderAccentOpacity.val),
+										0.0, 1.0);
+									COLORREF centerColor = MixBarUiColor(
+										surfaceColor, accentColor,
+										accentOpacity);
+									COLORREF outerFillColor =
+										barStyle.darkStyle
+										? MixBarUiColor(
+											surfaceColor, textColor, 0.20)
+										: surfaceColor;
+									COLORREF outerFrameColor = MixBarUiColor(
+										outerFillColor, textColor,
+										barStyle.darkStyle ? 0.12 : 0.16);
+
+									// WinUI 式灰色圆底与 1px 外缘，内圆承担三态反馈。
+									FillThumbCircle(
+										outerFrameColor, thumbRadius);
+									FillThumbCircle(
+										outerFillColor,
+										max(0.0F, thumbRadius
+											- static_cast<FLOAT>(
+												panelAnimationScale * uiZoom)));
+									FLOAT centerDiameter =
+										static_cast<FLOAT>(
+											drawAttributeThicknessSliderCenterDiameter.val)
+										* static_cast<FLOAT>(
+											panelAnimationScale
+											* max(0.0,
+												static_cast<double>(
+													drawAttributeThicknessSliderThumbScale.val)))
+										* uiZoom;
+									FillThumbCircle(
+										centerColor,
+										min(thumbRadius * 0.70F,
+											centerDiameter / 2.0F));
 								}
 								if (previewClipPushed)
 									barDeviceContext->PopAxisAlignedClip();
@@ -6418,6 +6919,23 @@ void BarUISetClass::Interact()
 				suppressHoverUntilPointerMove = true;
 			}
 		};
+	auto ThicknessSliderAvailable = [&]()
+		{
+			return stateMode.StateModeSelect
+				== StateModeSelectEnum::IdtPen
+				&& barState.drawAttribute && !barState.fold
+				&& GetBarThicknessSliderRange(
+					stateMode.Pen.ModeSelect,
+					barStyle.dpiZoom).supported;
+		};
+	auto ThicknessSliderActive = [&]()
+		{
+			return ThicknessSliderAvailable()
+				&& (barState.drawAttributeBar.thicknessSliderHover
+					|| barState.drawAttributeBar.thicknessSliderPinned
+					|| barState.drawAttributeBar.thicknessSliderPressed
+					|| barState.drawAttributeBar.thicknessSliderDragging);
+		};
 	auto IsIndependentHoverAllowed = [&](IndependentHoverTargetEnum target)
 		{
 			if (!barState.drawAttribute) return false;
@@ -6442,9 +6960,8 @@ void BarUISetClass::Interact()
 					!= GetBarBrushThicknessPresetPx(index, barStyle.dpiZoom);
 			}
 			case IndependentHoverTargetEnum::DrawAttributeThicknessAdjust:
-				return stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1
-					|| stateMode.Pen.ModeSelect
-					== PenModeSelectEnum::IdtPenHighlighter1;
+				return ThicknessSliderAvailable()
+					&& !barState.drawAttributeBar.thicknessSliderPinned;
 			case IndependentHoverTargetEnum::DrawAttributeAnnotationClose:
 				return !barState.fold
 					&& barState.drawAttributeBar.thicknessAnnotationPinned
@@ -6467,16 +6984,28 @@ void BarUISetClass::Interact()
 	auto AnnotationTooltipAvailable = [&]()
 		{
 			return barState.drawAttribute && !barState.fold
+				&& !ThicknessSliderActive()
 				&& PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect);
 		};
 	auto OverflowTooltipAvailable = [&]()
 		{
 			return barState.drawAttribute && !barState.fold
+				&& !ThicknessSliderActive()
 				&& barState.drawAttributeBar.thicknessPreviewOverflow;
 		};
 	while (!offSignal)
 	{
 		hiex::getmessage_win32(&msg, EM_MOUSE, floating_window);
+		if (!ThicknessSliderAvailable()
+			&& (barState.drawAttributeBar.thicknessSliderHover
+				|| barState.drawAttributeBar.thicknessSliderPinned
+				|| barState.drawAttributeBar.thicknessSliderPressed
+				|| barState.drawAttributeBar.thicknessSliderDragging
+				|| barState.drawAttributeBar.thicknessSliderCapture))
+		{
+			CloseThicknessSlider(true);
+			UpdateRendering(false);
+		}
 		if (hoveredMainBarButton
 			&& (barState.fold || !hoveredMainBarButton->IsVisible()))
 		{
@@ -6504,6 +7033,22 @@ void BarUISetClass::Interact()
 					continue;
 				}
 				suppressHoverUntilPointerMove = false;
+			}
+
+			auto sliderHit = shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderHit];
+			bool sliderHover = ThicknessSliderAvailable()
+				&& sliderHit
+				&& sliderHit->IsClick(
+					msg.x, msg.y, barStyle.zoom);
+			if (static_cast<bool>(
+				barState.drawAttributeBar.thicknessSliderHover)
+				!= sliderHover)
+			{
+				barState.drawAttributeBar.thicknessSliderHover =
+					sliderHover;
+				if (sliderHover) CloseDrawAttributeTooltips();
+				UpdateRendering(false);
 			}
 
 			bool tooltipHoverChanged = false;
@@ -6767,7 +7312,11 @@ void BarUISetClass::Interact()
 						mainButtonClickPulseSerial.fetch_add(1, std::memory_order_relaxed);
 						// 展开/收起主栏
 						if (barState.fold) barState.fold = false;
-						else barState.fold = true;
+						else
+						{
+							barState.fold = true;
+							CloseThicknessSlider(true);
+						}
 						UpdateRendering();
 					}
 					SuppressHoverUntilPointerMove();
@@ -6835,6 +7384,206 @@ void BarUISetClass::Interact()
 
 			// 绘制属性
 			{
+				// 粗细预览区：按下即固定，水平移动后进入相对拖动。
+				if (continueFlag && ThicknessSliderAvailable())
+				{
+					auto sliderHit = shapeMap[
+						BarUISetShapeEnum::
+							DrawAttributeBar_ThicknessSliderHit];
+					if (sliderHit && sliderHit->IsClick(
+						msg.x, msg.y, barStyle.zoom))
+					{
+						continueFlag = false;
+						if (msg.message == WM_LBUTTONDOWN)
+						{
+							PenModeSelectEnum gesturePenMode =
+								stateMode.Pen.ModeSelect;
+							auto range = GetBarThicknessSliderRange(
+								gesturePenMode, barStyle.dpiZoom);
+							float initialWidth = GetPenWidth();
+							float finalWidth = initialWidth;
+							int lastTargetWidth =
+								static_cast<int>(lround(initialWidth));
+							bool currentWidthIsInteger =
+								abs(static_cast<double>(initialWidth)
+									- lastTargetWidth) <= 0.000001;
+							bool valueApplied = false;
+							bool penModeChanged = false;
+
+							POINT startScreenPoint{
+								static_cast<LONG>(msg.x),
+								static_cast<LONG>(msg.y) };
+							ClientToScreen(
+								floating_window, &startScreenPoint);
+							double dragBaseScreenX =
+								static_cast<double>(
+									startScreenPoint.x);
+							double dragBaseWidth = initialWidth;
+
+							auto panel = shapeMap[
+								BarUISetShapeEnum::DrawAttributeBar];
+							auto region = shapeMap[
+								BarUISetShapeEnum::
+									DrawAttributeBar_ThicknessSelect];
+							auto adjust = shapeMap[
+								BarUISetShapeEnum::
+									DrawAttributeBar_ThicknessAdjust];
+							auto previewGeometry =
+								CalculateBarThicknessPreviewGeometry(
+									*panel, *region,
+									BarUiInheritClass(
+										region->inhX, region->inhY),
+									*adjust,
+									BarUiInheritClass(
+										adjust->inhX, adjust->inhY));
+							double sliderTravelPx = max(1.0,
+								(previewGeometry.trackRight
+									- previewGeometry.trackLeft
+									- BarThicknessSliderThumbDiameter
+										* previewGeometry.panelScale)
+									* static_cast<double>(
+										barStyle.zoom));
+
+							barState.drawAttributeBar.thicknessSliderPinned =
+								true;
+							barState.drawAttributeBar.thicknessSliderPressed =
+								true;
+							CloseDrawAttributeTooltips();
+							StopIndependentHover(
+								hoveredIndependentButton, true, true);
+							hoveredIndependentButton =
+								IndependentHoverTargetEnum::None;
+							SendMessage(floating_window,
+								BarThicknessSliderCaptureMessage,
+								BarThicknessSliderCaptureStart, 0);
+							UpdateRendering(false);
+
+							while (!offSignal)
+							{
+								hiex::getmessage_win32(
+									&msg, EM_MOUSE, floating_window);
+								bool samePenMode =
+									stateMode.StateModeSelect
+										== StateModeSelectEnum::IdtPen
+									&& stateMode.Pen.ModeSelect
+										== gesturePenMode;
+								if (!samePenMode
+									|| !barState.drawAttribute
+									|| barState.fold)
+								{
+									penModeChanged = !samePenMode;
+									break;
+								}
+
+								if (msg.message == WM_MOUSEMOVE
+									&& msg.lbutton)
+								{
+									POINT screenPoint{
+										static_cast<LONG>(msg.x),
+										static_cast<LONG>(msg.y) };
+									ClientToScreen(
+										floating_window, &screenPoint);
+									double screenX =
+										static_cast<double>(
+											screenPoint.x);
+									if (screenX != dragBaseScreenX)
+									{
+										if (!barState.drawAttributeBar
+											.thicknessSliderDragging)
+										{
+											barState.drawAttributeBar
+												.thicknessSliderDragging =
+												true;
+											UpdateRendering(false);
+										}
+
+										double rangeSpan =
+											static_cast<double>(
+												range.max - range.min);
+										double rawWidth =
+											dragBaseWidth
+											+ (screenX
+												- dragBaseScreenX)
+												/ sliderTravelPx
+												* rangeSpan;
+										double clampedWidth = clamp(
+											rawWidth,
+											static_cast<double>(
+												range.min),
+											static_cast<double>(
+												range.max));
+										int targetWidth = clamp(
+											static_cast<int>(lround(
+												clampedWidth)),
+											range.min, range.max);
+										if (targetWidth
+											!= lastTargetWidth
+											|| !currentWidthIsInteger)
+										{
+											if (!SetPenWidth(
+												static_cast<float>(
+													targetWidth),
+												false))
+												break;
+											lastTargetWidth = targetWidth;
+											currentWidthIsInteger = true;
+											finalWidth =
+												static_cast<float>(
+													targetWidth);
+											valueApplied = true;
+											UpdateRendering();
+										}
+
+										// 端点外的位移不累积，反向一像素即可离开端点。
+										if (rawWidth <= range.min)
+										{
+											dragBaseWidth = range.min;
+											dragBaseScreenX = screenX;
+										}
+										else if (rawWidth >= range.max)
+										{
+											dragBaseWidth = range.max;
+											dragBaseScreenX = screenX;
+										}
+									}
+									continue;
+								}
+								if (msg.message == WM_LBUTTONUP
+									|| !msg.lbutton)
+									break;
+							}
+
+							if (barState.drawAttributeBar
+								.thicknessSliderCapture)
+								SendMessage(floating_window,
+									BarThicknessSliderCaptureMessage,
+									BarThicknessSliderCaptureStop, 0);
+							barState.drawAttributeBar
+								.thicknessSliderDragging = false;
+							barState.drawAttributeBar
+								.thicknessSliderPressed = false;
+
+							bool canCommit =
+								stateMode.StateModeSelect
+									== StateModeSelectEnum::IdtPen
+								&& stateMode.Pen.ModeSelect
+									== gesturePenMode;
+							if (valueApplied && canCommit
+								&& abs(static_cast<double>(
+									finalWidth - initialWidth))
+									> 0.000001)
+								SetPenWidth(finalWidth, true);
+							if (penModeChanged
+								|| !ThicknessSliderAvailable())
+								CloseThicknessSlider(false);
+							UpdateRendering();
+							SuppressHoverUntilPointerMove();
+							hiex::flushmessage_win32(
+								EM_MOUSE, floating_window);
+						}
+					}
+				}
+
 				// 颜色选择
 				if (continueFlag)
 				{
@@ -6870,7 +7619,7 @@ void BarUISetClass::Interact()
 					}
 				}
 
-				// 粗细预设和未来调节入口
+				// 粗细预设和滑块固定入口
 				if (continueFlag && barState.drawAttribute)
 				{
 					struct ThicknessButtonInteraction
@@ -6923,6 +7672,20 @@ void BarUISetClass::Interact()
 												GetBarBrushThicknessPresetPx(
 													button.presetIndex,
 													barStyle.dpiZoom)));
+										else
+										{
+											bool pinned =
+												!barState.drawAttributeBar
+													.thicknessSliderPinned;
+											barState.drawAttributeBar
+												.thicknessSliderPinned =
+												pinned;
+											barState.drawAttributeBar
+												.thicknessSliderHover =
+												false;
+											if (pinned)
+												CloseDrawAttributeTooltips();
+										}
 										UpdateRendering();
 										break;
 									}
@@ -7006,6 +7769,7 @@ void BarUISetClass::Interact()
 			}
 		}
 	}
+	CloseThicknessSlider(false);
 }
 // 渲染更新：状态更新 + 通知计算并渲染
 void BarUISetClass::UpdateRendering(bool updateState)
@@ -7921,6 +8685,25 @@ namespace Inkeys::UI::Bar
 							BarUISetShapeEnum::DrawAttributeBar_ThicknessCoarse);
 						InitializeThicknessButton(
 							BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust);
+						auto InitializeThicknessSliderShape =
+							[&](BarUISetShapeEnum shapeType)
+							{
+								auto sliderShape =
+									make_shared<BarUiShapeClass>(
+										0.0, 0.0, 1.0, 1.0,
+										nullopt, nullopt, nullopt,
+										nullopt, nullopt);
+								sliderShape->pct.Initialization(0.0);
+								sliderShape->enable.Initialization(true);
+								barUISet.shapeMap[shapeType] =
+									sliderShape;
+							};
+						InitializeThicknessSliderShape(
+							BarUISetShapeEnum::
+								DrawAttributeBar_ThicknessSliderHit);
+						InitializeThicknessSliderShape(
+							BarUISetShapeEnum::
+								DrawAttributeBar_ThicknessSliderThumb);
 						auto adjustSvg = make_shared<BarUiSVGClass>(
 							0.0, 0.0,
 							GetThemeColor(BarThemeColorEnum::TextPrimary), nullopt);

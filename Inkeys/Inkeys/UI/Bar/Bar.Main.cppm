@@ -100,6 +100,8 @@ enum class BarUISetShapeEnum : int
 	DrawAttributeBar_ThicknessMedium,
 	DrawAttributeBar_ThicknessCoarse,
 	DrawAttributeBar_ThicknessAdjust,
+	DrawAttributeBar_ThicknessSliderHit,
+	DrawAttributeBar_ThicknessSliderThumb,
 	DrawAttributeBar_ThicknessAnnotationBadge,
 	DrawAttributeBar_ThicknessAnnotationInfoHit,
 	DrawAttributeBar_ThicknessOverflowBadge,
@@ -389,6 +391,7 @@ protected:
 	bool ScheduleBorderCursorGraceTimer(HWND hWnd, UINT delayMs);
 	void HandleCanvasDrawingActivity(HWND hWnd, bool started);
 	void CloseDrawAttributeTooltips();
+	void CloseThicknessSlider(bool cancelCapture);
 	void RefreshBorderCursorVisibleRegions();
 	bool IsBorderCursorLightNearVisibleRegion(POINT screenPoint);
 	std::atomic<unsigned long long> mainButtonClickPulseSerial = 0;

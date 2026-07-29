@@ -18,6 +18,11 @@ public:
 		IdtAtomic<bool> thicknessMediumPress = false;
 		IdtAtomic<bool> thicknessCoarsePress = false;
 		IdtAtomic<bool> thicknessAdjustPress = false;
+		IdtAtomic<bool> thicknessSliderHover = false;
+		IdtAtomic<bool> thicknessSliderPinned = false;
+		IdtAtomic<bool> thicknessSliderDragging = false;
+		IdtAtomic<bool> thicknessSliderPressed = false;
+		IdtAtomic<bool> thicknessSliderCapture = false;
 		IdtAtomic<bool> thicknessAnnotationHover = false;
 		IdtAtomic<bool> thicknessAnnotationPinned = false;
 		IdtAtomic<bool> thicknessAnnotationClosePress = false;
