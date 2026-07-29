@@ -69,6 +69,17 @@ namespace draw3
 		return 1.0f - smooth;
 	}
 
+	bool ShouldBakeLaserBatch(
+		const LaserTrailLifecycle& lifecycle, size_t pendingLayerCount) noexcept
+	{
+		return lifecycle.activeContactCount == 0 && pendingLayerCount > 0;
+	}
+
+	bool ShouldCompositeLaserLayer(bool cancelled, size_t pointCount) noexcept
+	{
+		return !cancelled && pointCount > 0;
+	}
+
 	float LaserParticleEmissionIntervalPx(
 		uint32_t strokeSeed, uint32_t slot, float dpiScale) noexcept
 	{
@@ -1345,14 +1356,14 @@ namespace draw3
 	{
 		if (points.empty()) return {};
 		const float scale = std::max(dpiScale, 0.01f);
-		const float fallbackCoreRadius = 2.5f * scale;
+		const float fallbackSolidRadius = LaserSolidRadius(scale);
 		RECT rect = {};
 		for (const InkPoint& point : points)
 		{
 			if (!std::isfinite(point.x) || !std::isfinite(point.y)) continue;
-			const float coreRadius = std::isfinite(point.r) && point.r > 0.0f
-				? point.r : fallbackCoreRadius;
-			const float padding = coreRadius * (14.0f / 2.5f) + 3.0f;
+			const float solidRadius = std::isfinite(point.r) && point.r > 0.0f
+				? point.r : fallbackSolidRadius;
+			const float padding = LaserVisualRadius(solidRadius, scale) + 3.0f;
 			UnionRectInPlace(rect, RECT{
 				static_cast<LONG>(std::floor(point.x - padding)),
 				static_cast<LONG>(std::floor(point.y - padding)),

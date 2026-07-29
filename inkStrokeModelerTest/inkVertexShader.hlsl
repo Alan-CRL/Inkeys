@@ -28,7 +28,8 @@ PS_INPUT main(uint id : SV_VertexID)
     {
         InkPoint dot = InkData[globalBufferOffset + itemIndex];
         float outerRadius = type == 9
-            ? laserRadii.z : max(dot.r * 3.0, 3.0 * laserParameters.y);
+            ? max(dot.r, 0.0) + laserRadii.z
+            : max(dot.r * 3.0, 3.0 * laserParameters.y);
         float2 center = dot.pos;
         float2 rectMin = center - outerRadius - 2.0;
         float2 rectMax = center + outerRadius + 2.0;
@@ -88,7 +89,7 @@ PS_INPUT main(uint id : SV_VertexID)
     float r1 = data1.r;
     float r2 = data2.r;
 
-    if (type == 1 || type == 2 || type == 8)
+    if (type == 1 || type == 2 || type == 8 || type == 11 || type == 12)
     {
         float2 rectMin = min(p1, p2);
         float2 rectMax = max(p1, p2);
@@ -102,14 +103,13 @@ PS_INPUT main(uint id : SV_VertexID)
         return output;
     }
 
-    // 普通笔、橡皮和 Laser 都使用端点半径构造足够覆盖外晕的 OBB。
+    // 普通笔、橡皮和 Laser 都使用端点半径构造足够覆盖完整材质的 OBB。
     float2 segment = p2 - p1;
     float segmentLength = length(segment);
     float2 tangent = segmentLength > 0.001 ? segment / segmentLength : float2(1.0, 0.0);
     float2 normal = float2(-tangent.y, tangent.x);
-    float laserGlowRatio = laserRadii.z / max(laserRadii.x, 1e-4);
-    float startRadius = type == 7 ? max(r1, 0.0) * laserGlowRatio : r1;
-    float endRadius = type == 7 ? max(r2, 0.0) * laserGlowRatio : r2;
+    float startRadius = type == 7 ? max(r1, 0.0) + laserRadii.z : r1;
+    float endRadius = type == 7 ? max(r2, 0.0) + laserRadii.z : r2;
     float maxRadius = max(startRadius, endRadius);
     float localX = lerp(-startRadius - 2.0, segmentLength + endRadius + 2.0, templatePos.x);
     float localY = lerp(-maxRadius - 2.0, maxRadius + 2.0, templatePos.y);

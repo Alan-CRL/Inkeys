@@ -15,7 +15,7 @@ cbuffer ScreenBuffer : register(b0)
     float3 globalPadding;
 };
 
-// Laser 独立材质常量：radii=(白芯, 红边, 外晕, 散射带)，parameters.zw=外缘 glow 阈值。
+// Laser 独立材质常量：radii=(基准白芯半径, 基准实体半径, 固定漫反射宽度, 基准散射半宽)。
 cbuffer LaserStyleBuffer : register(b1)
 {
     float4 laserRadii;
@@ -49,8 +49,8 @@ Texture2D StableOperatorRetain : register(t2);
 StructuredBuffer<HighlighterPrimitive> HighlighterData : register(t3);
 Texture2D LiveOperatorAdd : register(t4);
 Texture2D LiveOperatorRetain : register(t5);
-Texture2D LaserStableCoverage : register(t6);
-Texture2D LaserLiveCoverage : register(t7);
+Texture2D LaserCompositedColor : register(t6);
+Texture2D LaserStrokeCoverage : register(t7);
 SamplerState OperatorSampler : register(s0);
 
 // 4. VS -> PS

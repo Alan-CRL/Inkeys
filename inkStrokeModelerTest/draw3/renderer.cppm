@@ -19,6 +19,31 @@ import draw3.pen_cursor;
 export namespace draw3
 {
 	inline const DirectX::XMFLOAT4 kTransparentLayerClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+	inline constexpr float kLaserSolidDiameterAt96Dpi = 10.0f;
+	inline constexpr float kLaserCoreDiameterRatio = 1.0f / 3.0f;
+	inline constexpr float kLaserDiffuseExtentAt96Dpi = 3.0f;
+	inline constexpr float kLaserScatterHalfWidthToCoreRatio = 0.4f;
+
+	// Laser 的 InkPoint.r 统一表示红色实体外半径；漫反射宽度不随压力变化。
+	constexpr float LaserSolidRadius(float dpiScale = 1.0f) noexcept
+	{
+		return kLaserSolidDiameterAt96Dpi * 0.5f * dpiScale;
+	}
+
+	constexpr float LaserCoreRadius(float solidRadius) noexcept
+	{
+		return solidRadius * kLaserCoreDiameterRatio;
+	}
+
+	constexpr float LaserDiffuseExtent(float dpiScale = 1.0f) noexcept
+	{
+		return kLaserDiffuseExtentAt96Dpi * dpiScale;
+	}
+
+	constexpr float LaserVisualRadius(float solidRadius, float dpiScale = 1.0f) noexcept
+	{
+		return solidRadius + LaserDiffuseExtent(dpiScale);
+	}
 
 	// 表示渲染器支持的墨迹几何形状。
 	enum class StrokeShape : uint32_t
@@ -62,7 +87,7 @@ export namespace draw3
 	static_assert(sizeof(HighlighterPrimitive) == 24,
 		"HighlighterPrimitive 必须与结构化缓冲区布局保持一致");
 
-	// 激光笔尖和粒子共用四浮点批数据；time 保存瞬态 opacity。
+	// 激光笔尖和粒子共用四浮点批数据；Laser 笔尖的 radius 是红色实体外半径。
 	struct LaserDot
 	{
 		float x = 0.0f;
@@ -106,7 +131,7 @@ export namespace draw3
 		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> retainSRV;
 	};
 
-	// 一张 RGBA8 coverage 分别保存白芯、散射脊、红边和红晕。
+	// 通用 RGBA8 Laser 层；按用途保存稳定预乘颜色或单笔 coverage。
 	struct LaserCoverageResources
 	{
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
@@ -125,8 +150,8 @@ export namespace draw3
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> layerL2Texture;
 		OperatorLayerResources layerL1;
 		OperatorLayerResources layerL0;
-		LaserCoverageResources laserStableCoverage;
-		LaserCoverageResources laserLiveCoverage;
+		LaserCoverageResources laserCompositedColor;
+		LaserCoverageResources laserStrokeCoverage;
 
 		Microsoft::WRL::ComPtr<ID3D11RenderTargetView> backBufferRTV;
 		Microsoft::WRL::ComPtr<ID3D11RenderTargetView> layerL2RTV;
@@ -167,11 +192,17 @@ export namespace draw3
 		void DrawTransientDrawingCursor(const DrawingCursorVisual& visual);
 		// 把可变压力胶囊写入当前 Laser coverage，四通道使用 MAX 累积。
 		int DrawLaserCoverage(const std::vector<InkPoint>& points);
-		// 合并 stable/live coverage，并以合法预乘 Alpha 叠加到目标。
-		void ResolveLaserCoverage(ID3D11RenderTargetView* dstRTV, RECT rect, float opacity);
+		// 将单笔 coverage 解析为材质，并按 source-over 叠加到目标。
+		void ResolveLaserStrokeCoverage(
+			ID3D11RenderTargetView* dstRTV, RECT rect, float opacity = 1.0f);
+		// 将已烘干的预乘颜色层按整组 opacity 叠加到目标。
+		void ResolveLaserCompositedColor(
+			ID3D11RenderTargetView* dstRTV, RECT rect, float opacity);
+		// 以不混合的矩形写零局部清理单笔 scratch。
+		void ClearLaserCoverageRect(RECT rect);
 		// 批量绘制 Laser 笔尖或低密度粒子，不修改任何画布层。
 		void DrawLaserDots(const std::vector<LaserDot>& dots, bool particles);
-		// 按 DPI 配置白芯、红边、散射和外晕尺寸。
+		// 按 DPI 配置白芯、实体外套、散射和固定漫反射尺寸。
 		void ConfigureLaserStyle(float dpiScale) noexcept;
 		// 复制纹理中的指定矩形区域。
 		void CopyResource(ID3D11Texture2D* dst, ID3D11Texture2D* src, RECT rect);
@@ -209,6 +240,9 @@ export namespace draw3
 		bool CreateOperatorLayerResources(UINT width, UINT height, OperatorLayerResources& layer);
 		bool CreateLaserCoverageResources(UINT width, UINT height, LaserCoverageResources& layer);
 		bool UpdateLaserStyleConstants(float opacity);
+		void DrawLaserRectPass(ID3D11RenderTargetView* dstRTV, RECT rect,
+			float opacity, float shapeType, ID3D11ShaderResourceView* source,
+			UINT sourceSlot, ID3D11BlendState* blendState);
 		// 从资源中加载并创建墨迹着色器。
 		bool LoadShaders();
 		LaserStyleConstants laserStyleConstants_ = {};

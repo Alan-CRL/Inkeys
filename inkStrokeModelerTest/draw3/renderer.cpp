@@ -235,8 +235,11 @@ namespace draw3
 	void InkRenderer::ConfigureLaserStyle(float dpiScale) noexcept
 	{
 		const float scale = std::isfinite(dpiScale) ? std::max(dpiScale, 0.01f) : 1.0f;
+		const float solidRadius = LaserSolidRadius(scale);
+		const float coreRadius = LaserCoreRadius(solidRadius);
 		laserStyleConstants_.radii = DirectX::XMFLOAT4(
-			2.5f * scale, 7.5f * scale, 14.0f * scale, 1.0f * scale);
+			coreRadius, solidRadius, LaserDiffuseExtent(scale),
+			coreRadius * kLaserScatterHalfWidthToCoreRatio);
 		laserStyleConstants_.coreColor = DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
 		laserStyleConstants_.scatterColor = DirectX::XMFLOAT4(
 			1.0f, 240.0f / 255.0f, 243.0f / 255.0f, 0.94f);
@@ -245,7 +248,7 @@ namespace draw3
 		laserStyleConstants_.edgeColor = DirectX::XMFLOAT4(
 			1.0f, 112.0f / 255.0f, 128.0f / 255.0f, 0.72f);
 		laserStyleConstants_.glowColor = DirectX::XMFLOAT4(1.0f, 0.04f, 0.10f, 0.24f);
-		// z/w 是 7.5-8.5px 外缘在归一化 glow 曲线上的阈值。
+		// z/w 是红色实体外侧漫反射曲线的边缘高亮阈值。
 		laserStyleConstants_.parameters = DirectX::XMFLOAT4(
 			1.0f, scale, 0.20f, 0.29f);
 	}
@@ -320,11 +323,11 @@ namespace draw3
 		return 0;
 	}
 
-	void InkRenderer::ResolveLaserCoverage(
-		ID3D11RenderTargetView* dstRTV, RECT rect, float opacity)
+	void InkRenderer::DrawLaserRectPass(ID3D11RenderTargetView* dstRTV, RECT rect,
+		float opacity, float shapeType, ID3D11ShaderResourceView* source,
+		UINT sourceSlot, ID3D11BlendState* blendState)
 	{
-		if (!dstRTV || !laserStableCoverage.srv || !laserLiveCoverage.srv ||
-			!UpdateLaserStyleConstants(opacity)) return;
+		if (!dstRTV || !UpdateLaserStyleConstants(opacity)) return;
 		rect.left = std::max(0L, rect.left);
 		rect.top = std::max(0L, rect.top);
 		rect.right = std::min(static_cast<LONG>(viewportWidth), rect.right);
@@ -345,12 +348,15 @@ namespace draw3
 		auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
 		constants->width = viewportWidth;
 		constants->height = viewportHeight;
-		constants->shapeType = 8.0f;
+		constants->shapeType = shapeType;
 		constants->bufferOffset = 0;
 		constants->color = {};
 		constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
 		context->Unmap(globalCB.Get(), 0);
 
+		// 先解绑两张 Laser SRV，再把其中任意一张安全地切换为 RTV。
+		ID3D11ShaderResourceView* nullLaserResources[] = { nullptr, nullptr };
+		context->PSSetShaderResources(6, ARRAYSIZE(nullLaserResources), nullLaserResources);
 		SetOMTarget(dstRTV);
 		context->IASetInputLayout(nullptr);
 		context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -361,20 +367,45 @@ namespace draw3
 		context->VSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
 		context->PSSetShader(pixelShader.Get(), nullptr, 0);
 		context->PSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
-		ID3D11ShaderResourceView* coverageResources[] = {
-			laserStableCoverage.srv.Get(), laserLiveCoverage.srv.Get()
-		};
-		context->PSSetShaderResources(6, ARRAYSIZE(coverageResources), coverageResources);
-		ID3D11SamplerState* samplers[] = { operatorSampler.Get() };
-		context->PSSetSamplers(0, 1, samplers);
-		context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF);
+		if (source && sourceSlot >= 6 && sourceSlot <= 7)
+		{
+			ID3D11ShaderResourceView* sourceResources[] = { source };
+			context->PSSetShaderResources(sourceSlot, 1, sourceResources);
+			ID3D11SamplerState* samplers[] = { operatorSampler.Get() };
+			context->PSSetSamplers(0, 1, samplers);
+		}
+		context->OMSetBlendState(blendState, nullptr, 0xFFFFFFFF);
 		context->RSSetState(rasterState.Get());
 		context->Draw(6, 0);
 
-		ID3D11ShaderResourceView* nullCoverage[] = { nullptr, nullptr };
 		ID3D11ShaderResourceView* nullInk[] = { nullptr };
+		ID3D11SamplerState* nullSampler[] = { nullptr };
 		context->VSSetShaderResources(0, 1, nullInk);
-		context->PSSetShaderResources(6, ARRAYSIZE(nullCoverage), nullCoverage);
+		context->PSSetShaderResources(6, ARRAYSIZE(nullLaserResources), nullLaserResources);
+		context->PSSetSamplers(0, 1, nullSampler);
+	}
+
+	void InkRenderer::ResolveLaserStrokeCoverage(
+		ID3D11RenderTargetView* dstRTV, RECT rect, float opacity)
+	{
+		if (!laserStrokeCoverage.srv) return;
+		DrawLaserRectPass(dstRTV, rect, opacity, 8.0f,
+			laserStrokeCoverage.srv.Get(), 7, operatorResolveBlendState.Get());
+	}
+
+	void InkRenderer::ResolveLaserCompositedColor(
+		ID3D11RenderTargetView* dstRTV, RECT rect, float opacity)
+	{
+		if (!laserCompositedColor.srv) return;
+		DrawLaserRectPass(dstRTV, rect, opacity, 11.0f,
+			laserCompositedColor.srv.Get(), 6, operatorResolveBlendState.Get());
+	}
+
+	void InkRenderer::ClearLaserCoverageRect(RECT rect)
+	{
+		if (!laserStrokeCoverage.rtv) return;
+		DrawLaserRectPass(laserStrokeCoverage.rtv.Get(), rect, 1.0f,
+			12.0f, nullptr, 0, nullptr);
 	}
 
 	void InkRenderer::DrawLaserDots(const std::vector<LaserDot>& dots, bool particles)
@@ -543,8 +574,8 @@ namespace draw3
 
 	void InkRenderer::ClearAllLaserCoverage()
 	{
-		ClearLaserCoverage(laserStableCoverage);
-		ClearLaserCoverage(laserLiveCoverage);
+		ClearLaserCoverage(laserCompositedColor);
+		ClearLaserCoverage(laserStrokeCoverage);
 	}
 
 	bool InkRenderer::CreateOperatorLayerResources(UINT width, UINT height, OperatorLayerResources& layer)
@@ -623,8 +654,8 @@ namespace draw3
 		if (FAILED(device->CreateRenderTargetView(layerL2Texture.Get(), &renderTargetDescription, layerL2RTV.ReleaseAndGetAddressOf()))) return false;
 		if (!CreateOperatorLayerResources(width, height, layerL1)) return false; // L1 保存当前笔画已确认前缀操作。
 		if (!CreateOperatorLayerResources(width, height, layerL0)) return false; // L0 保存每帧变化的笔锋和预测操作。
-		if (!CreateLaserCoverageResources(width, height, laserStableCoverage)) return false;
-		if (!CreateLaserCoverageResources(width, height, laserLiveCoverage)) return false;
+		if (!CreateLaserCoverageResources(width, height, laserCompositedColor)) return false;
+		if (!CreateLaserCoverageResources(width, height, laserStrokeCoverage)) return false;
 
 		SetScreenSize(static_cast<float>(width), static_cast<float>(height));
 		return true;
@@ -657,12 +688,12 @@ namespace draw3
 		layerL0.retainRTV.Reset();
 		layerL0.retainSRV.Reset();
 		layerL0.retainTexture.Reset();
-		laserStableCoverage.rtv.Reset();
-		laserStableCoverage.srv.Reset();
-		laserStableCoverage.texture.Reset();
-		laserLiveCoverage.rtv.Reset();
-		laserLiveCoverage.srv.Reset();
-		laserLiveCoverage.texture.Reset();
+		laserCompositedColor.rtv.Reset();
+		laserCompositedColor.srv.Reset();
+		laserCompositedColor.texture.Reset();
+		laserStrokeCoverage.rtv.Reset();
+		laserStrokeCoverage.srv.Reset();
+		laserStrokeCoverage.texture.Reset();
 	}
 
 	void InkRenderer::ReleaseResources()
@@ -700,8 +731,8 @@ namespace draw3
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> oldL2Texture = layerL2Texture; // 临时保留旧稳定层用于拷贝。
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> oldL1AddTexture = layerL1.addTexture;
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> oldL1RetainTexture = layerL1.retainTexture; // L1 的完整仿射操作都要保留。
-		Microsoft::WRL::ComPtr<ID3D11Texture2D> oldLaserStableTexture =
-			laserStableCoverage.texture;
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> oldLaserCompositedTexture =
+			laserCompositedColor.texture;
 		ReleaseSizeDependentResources();
 
 		// waitable swapchain 在部分驱动上要求 resize 时原样保留 BufferCount/Format/Flags。
@@ -724,8 +755,9 @@ namespace draw3
 			if (oldL2Texture) CopyResource(layerL2Texture.Get(), oldL2Texture.Get(), keepRect); // 保留已完成笔迹。
 			if (oldL1AddTexture) CopyResource(layerL1.addTexture.Get(), oldL1AddTexture.Get(), keepRect);
 			if (oldL1RetainTexture) CopyResource(layerL1.retainTexture.Get(), oldL1RetainTexture.Get(), keepRect); // 保留正在绘制的稳定前缀。
-			if (oldLaserStableTexture)
-				CopyResource(laserStableCoverage.texture.Get(), oldLaserStableTexture.Get(), keepRect);
+			if (oldLaserCompositedTexture)
+				CopyResource(laserCompositedColor.texture.Get(),
+					oldLaserCompositedTexture.Get(), keepRect);
 		}
 		return true;
 	}

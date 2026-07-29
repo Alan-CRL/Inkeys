@@ -39,7 +39,7 @@
 | Pen | 5px base; hardware 1–7px | active configured mode | per-device fixed/simulated/hardware | real tail + prediction + taper |
 | Highlighter | 6.25×50px fixed vertical nib | enabled from Down | fixed | rectangle sweep primitives, no taper |
 | Eraser | 50px | disabled | fixed | real points directly committed to L1 |
-| Laser | 2.5px core + 7.5px red border + 14px glow | active configured mode | Pen laser pressure; Mouse/Touch fixed | independent stable/live coverage, never L2 |
+| Laser | 10px solid (3.33px core) + 3px diffuse/side | active configured mode | Pen laser pressure; Mouse/Touch fixed | stable premultiplied color + per-stroke coverage scratch, never L2 |
 
 这是当前实验实现。预测时长、目标帧率、笔宽、live-tip 和几何阈值默认都是实验参数；只有公开接口、持久化格式或明确兼容要求已经依赖某值时，该值才升级为兼容契约。
 
@@ -55,40 +55,41 @@
 - `StrokeModelConfiguration::laserParticlesEnabled`、`laserHoldDurationSeconds`
 - `DrawingController::SetLaserParticlesEnabled/GetLaserParticlesEnabled`
 - `DrawingController::SetLaserHoldDurationSeconds/GetLaserHoldDurationSeconds`
-- `InkRenderer::DrawLaserCoverage/ResolveLaserCoverage/DrawLaserDots`
+- `InkRenderer::DrawLaserCoverage/ClearLaserCoverageRect/ResolveLaserStrokeCoverage/ResolveLaserCompositedColor/DrawLaserDots`
 
 ### 3. Contracts
 
 - Laser 在 Down 时锁定到当前批次，支持 Pen、Mouse 和多 Touch；跳过断触 reconnect、倒转笔尾橡皮覆盖和触觉反馈。
-- stable/live 只写独立 `R8G8B8A8_UNORM` coverage，四通道为白芯、白红散射、红边和红晕；确认前缀增量写 stable，活动真实尾部和 prediction 每帧重建 live。任何 Laser 几何都不得进入 L2。
-- 96 DPI 默认轨迹为 2.5px 白芯、7.5px 红边、14px 完整光晕和 0.5px 内侧散射，resolve 顺序仍为柔光、红边、红粉外缘高亮、内侧散射、白芯；LaserDot 笔尖仍使用 5px 白芯、15px 红边、28px 完整光晕和 1px 内侧散射。Pen 使用 `0.65 + 0.75 * clamp(p, 0, 1)` 同比缩放全部轨迹材质层；无效压力保持上一宽度，prediction 继承最后真实半径，Mouse/Touch 固定基准宽度。
+- 已完成 Laser 使用独立 `R8G8B8A8_UNORM` 预乘颜色层；每支未烘干轨迹先独立写入可复用的单笔 `R8G8B8A8_UNORM` coverage scratch，四通道为白芯、白红散射、红色实体外套和外部漫反射，再按 Down 顺序 source-over。任何 Laser 几何都不得进入 L2。
+- 96 DPI 默认实体总直径为 10px，白芯直径约 3.33px，红色实体轮廓外每侧固定扩散 3px，因此完整视觉直径为 16px；resolve 顺序仍为柔光、红色实体、红粉外缘高亮、内侧散射、白芯。`LaserDot`、Touch 笔尖和固定宽度轨迹复用同一尺寸契约。Pen 使用 `0.65 + 0.75 * clamp(p, 0, 1)` 缩放实体、白芯和内侧散射，外部 3px 漫反射只随 DPI 缩放；无效压力保持上一宽度，prediction 继承最后真实实体半径，Mouse/Touch 固定基准宽度。
+- 多支 Laser 按 Down 顺序分层，后 Down 的整支轨迹位于上层；较早结束的 contact 保留最终 CPU 几何直到同批最后一支抬起，同一笔自交仍以 coverage 并集避免重复加深。
 - 粒子暂时默认关闭；外部开启后，起笔固定 seed 生成 12-18 枚粒子，真实路径每 8-12px 发射一枚且每 contact 最多 48 枚；流速为 `clamp(0.025 * smoothedSpeed, 8*dpiScale, 36*dpiScale)`。轨迹粒子用弧长和 segment cursor 沿红边外侧前进，到当前路径末端钳住；Up 只扫描一次最近真实路径点，75% 收束至红边、25% 至中心线，并在约 220ms 内缩小淡出。
 - 最后一根 Laser Up 才记录 `lastAllUpQpc`；默认满亮保持 `3.0s`，固定 `0.8s` smooth fade。新 Down 在 Hold/Fade 中把整组 opacity 恢复为 `1` 并重新计时。
 - `SetLaserHoldDurationSeconds` 只接受 finite non-negative 值；运行中调整须由 control wake 唤醒并相对最后一次全部 Up 立即重算。粒子 setter 同样发布 control wake，关闭后下一帧清理旧粒子 bounds。
-- Hold 静态期不持续 Present；Fade、接触、prediction 和粒子动画才驱动帧。resize 保留 stable 左上角交集，live 重新绘制；clear/Present 失败恢复必须重建/清理 Laser coverage。
+- Hold 静态期不持续 Present；Fade、接触、prediction 和粒子动画才驱动帧。resize 保留稳定颜色层左上角交集，未烘干层从 CPU 几何重建；clear/Present 失败恢复必须同步重建或清理稳定颜色、scratch 和新旧 bounds。
 
 ### 4. Validation & Error Matrix
 
 | Condition | Required behavior |
 |---|---|
 | Down/Up 多 contact | 只有最后一根 Up 启动 Hold；中间 Up 不改变 opacity |
-| Hold/Fade 新 Down | 旧 stable coverage 全组恢复满亮并重新计时 |
+| Hold/Fade 新 Down | 旧稳定颜色层全组恢复满亮并重新计时 |
 | 非法 hold seconds | setter 返回 `false`，旧值保持不变且不发布设置 |
-| Laser Up | 清除 prediction/live，不 reconnect、不 resolve 到 L2 |
+| Laser Up | 清除 prediction；同批最后 Up 才有序烘入稳定颜色层，不 reconnect、不 resolve 到 L2 |
 | 粒子关闭 | 停止生成/动画，下一帧 union 旧粒子 bounds 并清除 |
 | 3 秒 Hold 静止 | 不产生额外 frame/Present；deadline 或 control/input wake 才恢复 |
-| resize/clear/Present 失败 | stable 交集保留或按请求清空，旧/新 glow bounds 都进入 dirty |
+| resize/clear/Present 失败 | 稳定颜色交集保留或按请求清空，未烘干层重建，旧/新 glow bounds 都进入 dirty |
 
 ### 5. Good / Base / Bad Cases
 
 - Good：白芯与厚红边在深色、混合背景可见，外缘高亮和外晕不遮挡底层；粒子沿急转弯曲线运动且追加真实点不使旧粒子跳变。
 - Base：Hover 为静态 LaserDot，活动 Touch 各自显示独立 tip，抬笔后粒子就近收束并在约 `220ms` 消失。
-- Bad：把 Laser stable coverage resolve 到 L2、为 prediction 启用 reconnect、或在 Hold 期自旋 Present。
+- Bad：把 Laser 稳定颜色层 resolve 到 L2、先把多支笔 MAX 到同一 coverage、为 prediction 启用 reconnect、或在 Hold 期自旋 Present。
 
 ### 6. Tests Required
 
 - 断言按键 4/枚举、最后 Up 计时、3.0s Hold、0.8s fade、运行中设置变化和非法输入。
-- 断言 Laser 不进入 reconnect/L2，压力 `0/0.5/1` 映射和 prediction 半径继承正确，coverage bounds 覆盖 28px 基准外晕及最大压力，resize/clear/Present failure 无残影。
+- 断言 Laser 不进入 reconnect/L2，压力 `0/0.5/1` 只缩放实体且 prediction 半径继承正确，coverage bounds 覆盖 16px 基准完整视觉直径、最大压力实体和固定 3px 漫反射，resize/clear/Present failure 无残影。
 - 断言粒子 seed/弧长槽位稳定、8-12px 发射间隔、每 contact 上限 48、路径转弯/末端钳制/追加无跳变、Up 最近点收束约 220ms、开关清理旧 dirty。
 - Debug/Release ARM64 全解决方案构建、两份 shader 编译/嵌入；人工覆盖 Pen/Mouse/Touch Hover、单/多指、白/深/混合背景。
 
@@ -96,7 +97,7 @@
 
 Wrong：`Up -> ApplyOperatorLayers(layerL2) -> Present`，或 Hold 期间用固定帧定时器持续刷新。
 
-Correct：`Up -> stable coverage + lifecycle Hold`；只在 Hold deadline/Fade、输入或粒子动画唤醒时 resolve Laser 到 backbuffer，L2 保持不变。
+Correct：`last Up -> ordered bake into stable premultiplied color + lifecycle Hold`；只在 Hold deadline/Fade、输入或粒子动画唤醒时 resolve Laser 到 backbuffer，L2 保持不变。
 
 当前源码描述现有行为，阶段说明描述历史设计或计划。两者出现数值或工具语义差异时，应并列记录，不得自动用源码覆盖历史目标，也不得自动让实现恢复为阶段说明。
 

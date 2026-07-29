@@ -33,8 +33,7 @@ namespace draw3
 		const DirectX::XMFLOAT4 kMultiContactInkColor(1.0f, 0.0f, 0.0f, 1.0f);
 		const DirectX::XMFLOAT4 kReconnectManualTestColor(0.0f, 1.0f, 0.0f, 1.0f);
 		constexpr float kPenDiameter = 5.0f;
-		constexpr float kLaserDiameter = 2.5f;
-		constexpr float kLaserGlowRadiusAt96Dpi = 14.0f;
+		constexpr float kLaserDiameter = kLaserSolidDiameterAt96Dpi;
 		constexpr double kLaserParticleConvergeSeconds = 0.220;
 		constexpr double kLaserParticleScatterSeconds = 0.180;
 		constexpr double kLaserDownParticleLifetimeSeconds = 0.650;
@@ -160,6 +159,7 @@ namespace draw3
 			DirectX::XMFLOAT2 reconnectDirection = {};
 			int64_t reconnectDeadlineQpc = 0;
 			uint32_t laserParticleOwner = 0;
+			uint64_t laserLayerId = 0;
 			uint32_t laserParticleSlot = 0;
 			size_t laserParticleProcessedPointCount = 0;
 			float laserArcSinceParticle = 0.0f;
@@ -167,6 +167,90 @@ namespace draw3
 			InkPoint laserLastParticlePoint = {};
 			bool hasLaserLastParticlePoint = false;
 		};
+
+		struct LaserStrokeLayer
+		{
+			uint64_t id = 0;
+			RuntimeStroke* runtime = nullptr;
+			std::vector<InkPoint> completedPoints;
+			RECT bounds = {};
+			bool cancelled = false;
+		};
+
+		LaserStrokeLayer* FindLaserStrokeLayer(
+			std::vector<LaserStrokeLayer>& layers, uint64_t id) noexcept
+		{
+			const auto iterator = std::find_if(layers.begin(), layers.end(),
+				[id](const LaserStrokeLayer& layer) { return layer.id == id; });
+			return iterator == layers.end() ? nullptr : &*iterator;
+		}
+
+		const std::vector<InkPoint>& LaserStrokeLayerPoints(
+			const LaserStrokeLayer& layer) noexcept
+		{
+			if (layer.runtime) return layer.runtime->stroke.l0DrawPoints;
+			return layer.completedPoints;
+		}
+
+		void FinalizeLaserStrokeLayer(std::vector<LaserStrokeLayer>& layers,
+			RuntimeStroke& runtime, bool cancelled, float dpiScale, int width, int height)
+		{
+			LaserStrokeLayer* layer = FindLaserStrokeLayer(layers, runtime.laserLayerId);
+			if (!layer) return;
+			layer->runtime = nullptr;
+			layer->cancelled = cancelled;
+			layer->completedPoints.clear();
+			if (!cancelled)
+			{
+				if (!runtime.stroke.realPoints.empty())
+					layer->completedPoints = runtime.stroke.realPoints;
+				else if (runtime.stroke.hasInputStartPoint)
+					layer->completedPoints.push_back(runtime.stroke.inputStartPoint);
+			}
+			layer->bounds = cancelled ? RECT{} : RectFromLaserPoints(
+				layer->completedPoints, dpiScale, width, height);
+			runtime.laserLayerId = 0;
+		}
+
+		void BakeLaserStrokeLayers(std::vector<LaserStrokeLayer>& layers,
+			InkRenderer& renderer, float dpiScale, int width, int height,
+			RECT& compositedBounds)
+		{
+			for (LaserStrokeLayer& layer : layers)
+			{
+				const std::vector<InkPoint>& points = LaserStrokeLayerPoints(layer);
+				if (!ShouldCompositeLaserLayer(layer.cancelled, points.size())) continue;
+				layer.bounds = RectFromLaserPoints(points, dpiScale, width, height);
+				if (IsEmptyRect(layer.bounds)) continue;
+				// 每支笔先独立生成 coverage，再按 Down 顺序烘入稳定预乘颜色。
+				renderer.ClearLaserCoverageRect(layer.bounds);
+				renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage);
+				renderer.DrawLaserCoverage(points);
+				renderer.ResolveLaserStrokeCoverage(
+					renderer.laserCompositedColor.rtv.Get(), layer.bounds);
+				UnionRectInPlace(compositedBounds, layer.bounds);
+			}
+			layers.clear();
+		}
+
+		void DrawLaserStrokeLayers(std::vector<LaserStrokeLayer>& layers,
+			InkRenderer& renderer, ID3D11RenderTargetView* target,
+			RECT clipBounds, float dpiScale, int width, int height)
+		{
+			for (LaserStrokeLayer& layer : layers)
+			{
+				const std::vector<InkPoint>& points = LaserStrokeLayerPoints(layer);
+				if (!ShouldCompositeLaserLayer(layer.cancelled, points.size())) continue;
+				layer.bounds = RectFromLaserPoints(points, dpiScale, width, height);
+				RECT resolveBounds = {};
+				if (!IntersectRect(&resolveBounds, &layer.bounds, &clipBounds)) continue;
+				// scratch 仅清本笔矩形，同笔各段仍通过 MAX 形成 coverage 并集。
+				renderer.ClearLaserCoverageRect(layer.bounds);
+				renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage);
+				renderer.DrawLaserCoverage(points);
+				renderer.ResolveLaserStrokeCoverage(target, resolveBounds);
+			}
+		}
 
 		struct LaserParticle
 		{
@@ -438,9 +522,9 @@ namespace draw3
 				{
 					const float normalX = -sample.tangentY;
 					const float normalY = sample.tangentX;
-					// 粒子贴着三倍白芯半径的红边外侧走，转弯时随 segment 更新法线。
+					// InkPoint.r 已是红色实体外半径，粒子直接贴着红边外侧走。
 					const float normalOffset = particle.directionSign *
-						(std::max(sample.radius, 0.0f) * 3.0f + particle.radius * 0.6f);
+						(std::max(sample.radius, 0.0f) + particle.radius * 0.6f);
 					particle.currentX = sample.x + normalX * normalOffset;
 					particle.currentY = sample.y + normalY * normalOffset;
 					if (sample.atPathEnd && particle.pathSegmentCursor + 1 <
@@ -481,7 +565,7 @@ namespace draw3
 							(particle.currentY - nearest.y) * normalY;
 						const float side = std::abs(sideDot) > 0.001f
 							? (sideDot < 0.0f ? -1.0f : 1.0f) : particle.directionSign;
-						const float edgeOffset = std::max(nearest.radius, 0.0f) * 3.0f;
+						const float edgeOffset = std::max(nearest.radius, 0.0f);
 						particle.anchorX += normalX * side * edgeOffset;
 						particle.anchorY += normalY * side * edgeOffset;
 					}
@@ -504,7 +588,7 @@ namespace draw3
 			{
 				const float radius = particles
 					? std::max(dot.radius * 3.0f, 3.0f * dpiScale)
-					: kLaserGlowRadiusAt96Dpi * dpiScale;
+					: LaserVisualRadius(dot.radius, dpiScale);
 				UnionRectInPlace(bounds, RECT{
 					static_cast<LONG>(std::floor(dot.x - radius - 2.0f)),
 					static_cast<LONG>(std::floor(dot.y - radius - 2.0f)),
@@ -512,17 +596,6 @@ namespace draw3
 					static_cast<LONG>(std::ceil(dot.y + radius + 2.0f)) });
 			}
 			return ClampRectToCanvas(bounds, width, height);
-		}
-
-		size_t FindLaserProtectedStartIndex(
-			const std::vector<InkPoint>& points, double protectedDurationSeconds) noexcept
-		{
-			if (points.size() < 2) return 0;
-			const double startTime = static_cast<double>(points.back().time) -
-				std::max(0.0, protectedDurationSeconds);
-			size_t index = 0;
-			while (index + 1 < points.size() && points[index + 1].time < startTime) ++index;
-			return index;
 		}
 
 		RECT DrawReconnectManualTestRanges(RuntimeStroke& runtime, InkRenderer& renderer,
@@ -549,47 +622,6 @@ namespace draw3
 					RectFromStrokePoints(runtime.rebuildPoints, width, height));
 			}
 			return ClampRectToCanvas(dirty, width, height);
-		}
-
-		RECT CommitLaserStablePrefix(RuntimeStroke& runtime, InkRenderer& renderer,
-			double protectedDurationSeconds, float dpiScale, int width, int height)
-		{
-			ActiveStroke& stroke = runtime.stroke;
-			if (stroke.realPoints.size() < 2) return {};
-			const size_t protectedStartIndex = FindLaserProtectedStartIndex(
-				stroke.realPoints, protectedDurationSeconds);
-			if (protectedStartIndex <= stroke.committedIndex) return {};
-			runtime.rebuildPoints.assign(stroke.realPoints.begin() + stroke.committedIndex,
-				stroke.realPoints.begin() + protectedStartIndex + 1);
-			renderer.SetLaserCoverageTarget(renderer.laserStableCoverage);
-			renderer.DrawLaserCoverage(runtime.rebuildPoints);
-			stroke.committedIndex = protectedStartIndex;
-			stroke.hasCommittedGeometry = true;
-			return RectFromLaserPoints(runtime.rebuildPoints, dpiScale, width, height);
-		}
-
-		RECT CommitCompletedLaser(RuntimeStroke& runtime, InkRenderer& renderer,
-			float dpiScale, int width, int height)
-		{
-			ActiveStroke& stroke = runtime.stroke;
-			runtime.rebuildPoints.clear();
-			if (stroke.realPoints.empty())
-			{
-				if (stroke.hasInputStartPoint) runtime.rebuildPoints.push_back(stroke.inputStartPoint);
-			}
-			else
-			{
-				const size_t startIndex = stroke.hasCommittedGeometry
-					? std::min(stroke.committedIndex, stroke.realPoints.size() - 1) : 0;
-				runtime.rebuildPoints.assign(
-					stroke.realPoints.begin() + startIndex, stroke.realPoints.end());
-				stroke.committedIndex = stroke.realPoints.size() - 1;
-			}
-			if (runtime.rebuildPoints.empty()) return {};
-			renderer.SetLaserCoverageTarget(renderer.laserStableCoverage);
-			renderer.DrawLaserCoverage(runtime.rebuildPoints);
-			stroke.hasCommittedGeometry = true;
-			return RectFromLaserPoints(runtime.rebuildPoints, dpiScale, width, height);
 		}
 
 		void EmitLaserTrailParticles(RuntimeStroke& runtime,
@@ -831,11 +863,12 @@ namespace draw3
 		eraserAppearance.outlineGreen = 207.0f / 255.0f;
 		eraserAppearance.outlineBlue = 207.0f / 255.0f;
 		window_.ConfigureDrawingCursor(DrawingTool::Eraser, eraserAppearance);
-		const float laserOuterDiameter = 24.0f * configuration_.dpiScale;
+		const float laserSolidDiameter =
+			kLaserSolidDiameterAt96Dpi * configuration_.dpiScale;
 		DrawingCursorAppearance laserAppearance = {
 			DrawingCursorShape::Circle,
-			laserOuterDiameter,
-			laserOuterDiameter,
+			laserSolidDiameter,
+			laserSolidDiameter,
 			1.0f, 1.0f, 1.0f
 		};
 		laserAppearance.fillAlpha = 1.0f;
@@ -1037,10 +1070,13 @@ namespace draw3
 		float laserOpacity = 0.0f;
 		RECT laserStableBounds = {};
 		RECT laserLiveBounds = {};
+		std::vector<LaserStrokeLayer> laserStrokeLayers;
+		uint64_t nextLaserLayerId = 1;
 		std::vector<LaserParticle> laserParticles;
 		std::vector<LaserDot> laserParticleDots;
 		std::vector<LaserDot> laserTipDots;
 		laserParticles.reserve(kLaserReservedContactCount * kLaserMaximumParticlesPerContact);
+		laserStrokeLayers.reserve(kLaserReservedContactCount);
 		laserParticleDots.reserve(kPreheatedStrokeCount * kLaserMaximumParticlesPerContact);
 		laserTipDots.reserve(kPreheatedStrokeCount + 1);
 		RECT previousLaserParticleBounds = {};
@@ -1394,6 +1430,7 @@ namespace draw3
 				runtime->reconnectPredictedResults.clear();
 				runtime->reconnectManualTestRanges.clear();
 				runtime->laserParticleOwner = LaserOwnerForHandle(handle);
+				runtime->laserLayerId = 0;
 				runtime->laserParticleSlot = 0;
 				runtime->laserParticleProcessedPointCount = 0;
 				runtime->laserArcSinceParticle = 0.0f;
@@ -1464,12 +1501,26 @@ namespace draw3
 				AppendNewModeledPoints(stroke);
 				if (runtime->tool == DrawingTool::Laser)
 				{
+					const WindowSize laserSize = window_.Size();
 					if (laserLifecycle.phase == LaserTrailPhase::Inactive)
 					{
 						renderer_.ClearAllLaserCoverage();
 						laserStableBounds = {};
 						laserLiveBounds = {};
+						laserStrokeLayers.clear();
 					}
+					else if (laserLifecycle.phase != LaserTrailPhase::Active &&
+						!laserStrokeLayers.empty())
+					{
+						// 同帧发生“最后 Up → 新 Down”时，也先把上一批按原顺序烘干。
+						BakeLaserStrokeLayers(laserStrokeLayers, renderer_,
+							configuration_.dpiScale, laserSize.width, laserSize.height,
+							laserStableBounds);
+						laserLiveBounds = {};
+					}
+					runtime->laserLayerId = nextLaserLayerId++;
+					laserStrokeLayers.push_back(LaserStrokeLayer{
+						.id = runtime->laserLayerId, .runtime = runtime });
 					BeginLaserContact(laserLifecycle);
 					laserOpacity = 1.0f;
 					if (laserParticlesEnabled_.load(std::memory_order_acquire))
@@ -1650,6 +1701,11 @@ namespace draw3
 				if (terminal && runtime.tool == DrawingTool::Laser)
 				{
 					EndLaserContact(laserLifecycle, snapshot.qpc);
+					const WindowSize laserSize = window_.Size();
+					// contact 结束后复制最终 CPU 几何，避免 runtime 回收破坏同批次层级。
+					FinalizeLaserStrokeLayer(laserStrokeLayers, runtime,
+						snapshot.phase == ContactPhase::Cancelled,
+						configuration_.dpiScale, laserSize.width, laserSize.height);
 					BeginLaserParticleConvergence(laserParticles,
 						runtime.laserParticleOwner, runtime.stroke.realPoints,
 						snapshot.qpc, qpcFrequency);
@@ -1725,7 +1781,7 @@ namespace draw3
 					window_.CursorAppearanceForTool(DrawingTool::Laser));
 				if (primary.visible)
 					laserTipDots.push_back({ primary.x, primary.y,
-						2.5f * configuration_.dpiScale, primary.appearance.opacity });
+						primary.appearance.width * 0.5f, primary.appearance.opacity });
 			}
 			else
 			{
@@ -1747,7 +1803,7 @@ namespace draw3
 				{
 					const ContactSnapshot& snapshot = runtime->lastModelSnapshot;
 					laserTipDots.push_back({ snapshot.position.x, snapshot.position.y,
-						2.5f * configuration_.dpiScale, 1.0f });
+						LaserSolidRadius(configuration_.dpiScale), 1.0f });
 					continue;
 				}
 				if (!runtime || runtime->ended || runtime->awaitingReconnect ||
@@ -1806,6 +1862,13 @@ namespace draw3
 				laserStableBounds = ClampRectToCanvas(
 					laserStableBounds, size.width, size.height);
 				laserLiveBounds = {};
+				for (LaserStrokeLayer& layer : laserStrokeLayers)
+				{
+					const std::vector<InkPoint>& points = LaserStrokeLayerPoints(layer);
+					layer.bounds = RectFromLaserPoints(points, configuration_.dpiScale,
+						size.width, size.height);
+					UnionRectInPlace(laserLiveBounds, layer.bounds);
+				}
 				forceFullPresent = true; // Resize 保留 L2，并从 CPU 状态恢复共享 L1/L0。
 			}
 			if (window_.ConsumeFullPresentRequest()) forceFullPresent = true;
@@ -1867,6 +1930,7 @@ namespace draw3
 				renderer_.ClearAllLaserCoverage();
 				laserStableBounds = {};
 				laserLiveBounds = {};
+				laserStrokeLayers.clear();
 			}
 			if (particleCleanupRequested)
 			{
@@ -1887,6 +1951,7 @@ namespace draw3
 				laserOpacity = 0.0f;
 				laserStableBounds = {};
 				laserLiveBounds = {};
+				laserStrokeLayers.clear();
 				laserParticles.clear();
 				previousLaserParticleBounds = {};
 				previousLaserTipBounds = {};
@@ -2051,8 +2116,6 @@ namespace draw3
 				{
 					return runtime && runtime->tool == DrawingTool::Laser;
 				});
-			if (hasLaserRuntime)
-				renderer_.ClearLaserCoverage(renderer_.laserLiveCoverage);
 			for (RuntimeStroke* runtime : active)
 			{
 				ActiveStroke& stroke = runtime->stroke;
@@ -2060,7 +2123,6 @@ namespace draw3
 				{
 					stroke.logicalInputTime = std::max(stroke.logicalInputTime,
 						QpcDeltaSeconds(frameQpc.QuadPart, runtime->qpcOrigin, qpcFrequency));
-					RECT stableDirty = {};
 					if (!runtime->ended)
 					{
 						stroke.predictedResults.clear();
@@ -2071,21 +2133,18 @@ namespace draw3
 								stroke.predictedResults.clear();
 						}
 						RebuildPredictedPoints(stroke);
-						stableDirty = CommitLaserStablePrefix(*runtime, renderer_,
-							configuration_.liveTipDurationSeconds +
-							GetPredictionDurationSeconds(stroke),
-							configuration_.dpiScale, size.width, size.height);
 						RebuildL0DrawPoints(stroke, 0.0,
 							StrokeShape::RoundCapsule, size.width, size.height);
 						if (stroke.l0DrawPoints.empty() && stroke.hasInputStartPoint)
 							stroke.l0DrawPoints.push_back(stroke.inputStartPoint);
-						const RECT liveBounds = RectFromLaserPoints(stroke.l0DrawPoints,
-							configuration_.dpiScale, size.width, size.height);
-						if (!stroke.l0DrawPoints.empty())
+						if (LaserStrokeLayer* layer = FindLaserStrokeLayer(
+							laserStrokeLayers, runtime->laserLayerId))
 						{
-							renderer_.SetLaserCoverageTarget(renderer_.laserLiveCoverage);
-							renderer_.DrawLaserCoverage(stroke.l0DrawPoints);
-							UnionRectInPlace(currentLaserLiveBounds, liveBounds);
+							layer->bounds = RectFromLaserPoints(stroke.l0DrawPoints,
+								configuration_.dpiScale, size.width, size.height);
+							UnionRectInPlace(currentLaserLiveBounds, layer->bounds);
+							UnionRectInPlace(runtime->visibleDirty, layer->bounds);
+							if (!IsEmptyRect(layer->bounds)) runtime->metricVisible = true;
 						}
 						if (particlesEnabled)
 							EmitLaserTrailParticles(*runtime, laserParticles,
@@ -2098,15 +2157,7 @@ namespace draw3
 						stroke.predictedResults.clear();
 						stroke.predictedPoints.clear();
 						stroke.l0DrawPoints.clear();
-						if (!runtime->cancelled)
-							stableDirty = CommitCompletedLaser(*runtime, renderer_,
-								configuration_.dpiScale, size.width, size.height);
 					}
-					UnionRectInPlace(laserStableBounds, stableDirty);
-					UnionRectInPlace(frameDirty, stableDirty);
-					UnionRectInPlace(runtime->visibleDirty, stableDirty);
-					if (!IsEmptyRect(stableDirty) || !IsEmptyRect(currentLaserLiveBounds))
-						runtime->metricVisible = true;
 					continue; // Laser 不写普通 L1/L0，也不进入后续 L2 完成路径。
 				}
 				if (runtime->awaitingReconnect && !runtime->reconnectVisualRefresh)
@@ -2183,11 +2234,28 @@ namespace draw3
 					runtime->metricVisible = true;
 				runtime->reconnectVisualRefresh = false;
 			}
-			if (hasLaserRuntime)
+			if (hasLaserRuntime || !laserStrokeLayers.empty())
 			{
+				currentLaserLiveBounds = {};
+				for (LaserStrokeLayer& layer : laserStrokeLayers)
+				{
+					const std::vector<InkPoint>& points = LaserStrokeLayerPoints(layer);
+					if (!ShouldCompositeLaserLayer(layer.cancelled, points.size())) continue;
+					layer.bounds = RectFromLaserPoints(points, configuration_.dpiScale,
+						size.width, size.height);
+					UnionRectInPlace(currentLaserLiveBounds, layer.bounds);
+				}
 				UnionRectInPlace(frameDirty, previousLaserLiveBounds);
 				UnionRectInPlace(frameDirty, currentLaserLiveBounds);
 				laserLiveBounds = currentLaserLiveBounds;
+			}
+			if (ShouldBakeLaserBatch(laserLifecycle, laserStrokeLayers.size()))
+			{
+				// 同批次最后一支抬起后一次性烘干，随后 Hold/Fade 只解析稳定颜色。
+				BakeLaserStrokeLayers(laserStrokeLayers, renderer_,
+					configuration_.dpiScale, size.width, size.height, laserStableBounds);
+				UnionRectInPlace(frameDirty, laserLiveBounds);
+				laserLiveBounds = {};
 			}
 
 			if (hasEndedStroke)
@@ -2201,7 +2269,7 @@ namespace draw3
 					if (runtime->tool == DrawingTool::Laser)
 					{
 						UnionRectInPlace(frameDirty, runtime->visibleDirty);
-						continue; // Laser stable coverage 保留到生命周期结束，永不 resolve 到 L2。
+						continue; // Laser 稳定预乘颜色层保留到生命周期结束，永不 resolve 到 L2。
 					}
 					if (!runtime->cancelled)
 					{
@@ -2253,6 +2321,7 @@ namespace draw3
 						runtime->reconnectPredictedResults.clear();
 						runtime->reconnectManualTestRanges.clear();
 						runtime->laserParticleOwner = 0;
+						runtime->laserLayerId = 0;
 						runtime->laserParticleSlot = 0;
 						runtime->laserParticleProcessedPointCount = 0;
 						runtime->laserArcSinceParticle = 0.0f;
@@ -2315,6 +2384,7 @@ namespace draw3
 				laserOpacity = 0.0f;
 				laserStableBounds = {};
 				laserLiveBounds = {};
+				laserStrokeLayers.clear();
 				laserParticles.clear();
 				previousLaserParticleBounds = {};
 				previousLaserTipBounds = {};
@@ -2399,8 +2469,13 @@ namespace draw3
 					kActiveDebugLayerColorMode == DebugLayerColorMode::ColorizeLiveLayer;
 				CompositeLayersToBackBuffer(frameDirty, orderedPreview);
 				if (laserLifecycle.phase != LaserTrailPhase::Inactive && laserOpacity > 0.0f)
-					renderer_.ResolveLaserCoverage(
+				{
+					renderer_.ResolveLaserCompositedColor(
 						renderer_.backBufferRTV.Get(), frameDirty, laserOpacity);
+					DrawLaserStrokeLayers(laserStrokeLayers, renderer_,
+						renderer_.backBufferRTV.Get(), frameDirty, configuration_.dpiScale,
+						size.width, size.height);
+				}
 				renderer_.DrawLaserDots(laserParticleDots, true);
 				renderer_.DrawLaserDots(laserTipDots, false);
 				for (const DrawingCursorVisual& visual : currentCursorVisuals)

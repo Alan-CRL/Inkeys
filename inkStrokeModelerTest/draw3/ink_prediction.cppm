@@ -117,6 +117,11 @@ export namespace draw3
 	// 根据当前设置即时重算 Hold/Fade，并返回平滑后的整组 opacity。
 	float EvaluateLaserTrailOpacity(LaserTrailLifecycle& lifecycle,
 		int64_t nowQpc, int64_t qpcFrequency, double holdDurationSeconds) noexcept;
+	// 最后一个 contact 结束且仍有未烘干层时，才允许进入批次烘干。
+	bool ShouldBakeLaserBatch(
+		const LaserTrailLifecycle& lifecycle, size_t pendingLayerCount) noexcept;
+	// Cancelled 或空几何层不能参与活动合成和稳定烘干。
+	bool ShouldCompositeLaserLayer(bool cancelled, size_t pointCount) noexcept;
 	// 固定 seed 和槽位生成 8-12px 的稳定发射间隔。
 	float LaserParticleEmissionIntervalPx(
 		uint32_t strokeSeed, uint32_t slot, float dpiScale) noexcept;
@@ -408,7 +413,7 @@ export namespace draw3
 	RECT RectFromStrokePoints(const std::vector<InkPoint>& points, int width, int height,
 		StrokeShape shape = StrokeShape::RoundCapsule, size_t firstIndex = 0,
 		size_t lastIndex = (std::numeric_limits<size_t>::max)());
-	// 激光脏区按每点压力覆盖 28px 基准外晕和抗锯齿 padding。
+	// 激光脏区按每点实体半径覆盖固定 3px 漫反射和抗锯齿 padding。
 	RECT RectFromLaserPoints(const std::vector<InkPoint>& points,
 		float dpiScale, int width, int height);
 	// 更新原始坐标并判断是否发生有效移动。

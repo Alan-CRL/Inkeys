@@ -154,6 +154,8 @@ int RunPenCursorTests()
 			penHover, mouseHover, DrawingCursorPointerAuthority::Mouse, penAppearance);
 	PEN_CURSOR_CHECK(laserMouseHover.visible);
 	PEN_CURSOR_CHECK(Near(laserMouseHover.x, mouseHover.x));
+	PEN_CURSOR_CHECK(Near(laserMouseHover.appearance.width, 10.0f));
+	PEN_CURSOR_CHECK(Near(laserMouseHover.appearance.width * 0.5f, 5.0f));
 	PEN_CURSOR_CHECK(!draw3::ResolveLaserDrawingCursorVisual(
 		penContact, mouseHover, DrawingCursorPointerAuthority::Pen, penAppearance).visible);
 
