@@ -10,6 +10,7 @@ cbuffer LaserParticleEmitBuffer : register(b0)
     float4 laserEmitMotionRadius;
     float4 laserEmitVisual;
     float4 laserEmitBreath;
+    float4 laserEmitLayering;
 };
 
 [numthreads(64, 1, 1)]
@@ -45,10 +46,18 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     float entityCoreRadius = max(laserEmitLife.x, 0.0) *
         saturate(laserEmitLife.y);
     float coreOffset = random2 * entityCoreRadius * 0.72;
-    float launchSpeed = lerp(
-        laserEmitMotionRadius.x, laserEmitMotionRadius.y, random3);
     float lifetimeSeconds = lerp(
         laserEmitLife.z, laserEmitLife.w, random4);
+    // 先生成偏向小粒子的连续尺寸层级，再让亮度和射程保持带随机扰动的弱相关。
+    float sizeRatio = pow(saturate(random8),
+        max(laserEmitBreath.w, 1e-4));
+    float launchSpeedRatio = lerp(random3, 1.0 - sizeRatio,
+        saturate(laserEmitLayering.y));
+    float launchSpeed = lerp(
+        laserEmitMotionRadius.x, laserEmitMotionRadius.y,
+        launchSpeedRatio);
+    float brightnessRatio = lerp(random5, sizeRatio,
+        saturate(laserEmitLayering.x));
 
     LaserGpuParticle particle = (LaserGpuParticle) 0;
     particle.position = laserEmitSource.xy + selectedNormal * coreOffset;
@@ -57,11 +66,11 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     particle.maximumTravelDistance = max(
         launchSpeed * lifetimeSeconds * 0.5, 1e-4);
     particle.baseRadius = lerp(
-        laserEmitMotionRadius.w, laserEmitVisual.x, random8);
+        laserEmitMotionRadius.w, laserEmitVisual.x, sizeRatio);
     particle.currentRadius = particle.baseRadius;
     particle.opacity = 1.0;
     particle.baseBrightness = lerp(
-        laserEmitVisual.y, laserEmitVisual.z, random5);
+        laserEmitVisual.y, laserEmitVisual.z, brightnessRatio);
     particle.currentBrightness = particle.baseBrightness;
     particle.breathingFrequencyHz = lerp(
         laserEmitBreath.x, laserEmitBreath.y, random6);

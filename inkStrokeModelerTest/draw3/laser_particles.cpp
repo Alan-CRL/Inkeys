@@ -53,21 +53,24 @@ namespace draw3
 			float coreRadiusRatio = 1.0f / 3.0f;
 			float minimumLifetimeSeconds = 0.7f;
 			float maximumLifetimeSeconds = 1.0f;
-			float minimumLaunchSpeed = 28.0f;
-			float maximumLaunchSpeed = 64.0f;
+			float minimumLaunchSpeed = 10.0f;
+			float maximumLaunchSpeed = 17.0f;
 			float maximumDeflectionRadians = 25.0f * kPi / 180.0f;
-			float minimumRadius = 0.65f;
-			float maximumRadius = 1.10f;
-			float minimumBrightness = 0.68f;
+			float minimumRadius = 0.28f;
+			float maximumRadius = 1.15f;
+			float minimumBrightness = 0.42f;
 			float maximumBrightness = 1.0f;
 			float breathingAmplitude = 0.12f;
 			float minimumBreathingFrequencyHz = 0.8f;
 			float maximumBreathingFrequencyHz = 1.4f;
 			float breathingRampSeconds = 0.20f;
-			float padding = 0.0f;
+			float sizeDistributionExponent = 2.8f;
+			float sizeBrightnessCorrelation = 0.72f;
+			float sizeTravelCorrelation = 0.30f;
+			float padding[2] = {};
 		};
 
-		static_assert(sizeof(LaserParticleEmitConstants) == 96);
+		static_assert(sizeof(LaserParticleEmitConstants) == 112);
 		static_assert(sizeof(LaserParticleEmitConstants) % 16 == 0);
 
 		bool IsFinitePositive(float value) noexcept
@@ -123,11 +126,15 @@ namespace draw3
 			IsFinitePositive(configuration.minimumRadiusDip) &&
 			IsFinitePositive(configuration.maximumRadiusDip) &&
 			configuration.maximumRadiusDip >= configuration.minimumRadiusDip &&
-			IsFinitePositive(configuration.glowExtentDip) &&
+			IsFinitePositive(configuration.sizeDistributionExponent) &&
+			IsFiniteUnit(configuration.sizeBrightnessCorrelation) &&
+			IsFiniteUnit(configuration.sizeTravelCorrelation) &&
+			IsFinitePositive(configuration.glowRadiusScale) &&
 			IsFiniteUnit(configuration.glowRed) &&
 			IsFiniteUnit(configuration.glowGreen) &&
 			IsFiniteUnit(configuration.glowBlue) &&
 			IsFiniteUnit(configuration.glowAlpha) &&
+			IsFiniteUnit(configuration.coreColorWhiteMix) &&
 			IsFiniteUnit(configuration.minimumBrightness) &&
 			configuration.maximumBrightness >= configuration.minimumBrightness &&
 			configuration.maximumBrightness <= 1.0f &&
@@ -196,15 +203,32 @@ namespace draw3
 	}
 
 	LaserParticleBirthSample ResolveLaserParticleBirthSample(
-		float launchSpeedSample, float lifetimeSample,
+		float sizeSample, float launchSpeedSample, float lifetimeSample,
+		float brightnessSample,
 		const LaserParticleConfig& configuration) noexcept
 	{
 		LaserParticleBirthSample result;
 		if (!IsValidLaserParticleConfig(configuration) ||
+			!std::isfinite(sizeSample) ||
 			!std::isfinite(launchSpeedSample) ||
-			!std::isfinite(lifetimeSample)) return result;
-		const float speedRatio = std::clamp(launchSpeedSample, 0.0f, 1.0f);
+			!std::isfinite(lifetimeSample) ||
+			!std::isfinite(brightnessSample)) return result;
+		const float sizeRatio = std::pow(
+			std::clamp(sizeSample, 0.0f, 1.0f),
+			configuration.sizeDistributionExponent);
+		const float independentSpeedRatio =
+			std::clamp(launchSpeedSample, 0.0f, 1.0f);
+		const float speedRatio =
+			independentSpeedRatio *
+				(1.0f - configuration.sizeTravelCorrelation) +
+			(1.0f - sizeRatio) * configuration.sizeTravelCorrelation;
 		const float lifetimeRatio = std::clamp(lifetimeSample, 0.0f, 1.0f);
+		const float independentBrightnessRatio =
+			std::clamp(brightnessSample, 0.0f, 1.0f);
+		const float brightnessRatio =
+			independentBrightnessRatio *
+				(1.0f - configuration.sizeBrightnessCorrelation) +
+			sizeRatio * configuration.sizeBrightnessCorrelation;
 		result.launchSpeedDipPerSecond =
 			configuration.minimumLaunchSpeedDipPerSecond +
 			(configuration.maximumLaunchSpeedDipPerSecond -
@@ -212,6 +236,14 @@ namespace draw3
 		result.lifetimeSeconds = configuration.minimumLifetimeSeconds +
 			(configuration.maximumLifetimeSeconds -
 				configuration.minimumLifetimeSeconds) * lifetimeRatio;
+		result.baseRadiusDip = configuration.minimumRadiusDip +
+			(configuration.maximumRadiusDip -
+				configuration.minimumRadiusDip) * sizeRatio;
+		result.baseBrightness = configuration.minimumBrightness +
+			(configuration.maximumBrightness -
+				configuration.minimumBrightness) * brightnessRatio;
+		result.maximumTravelDistanceDip =
+			result.launchSpeedDipPerSecond * result.lifetimeSeconds * 0.5f;
 		result.valid = true;
 		return result;
 	}
@@ -232,6 +264,25 @@ namespace draw3
 		const float ramp = rampRatio * rampRatio * (3.0f - 2.0f * rampRatio);
 		return std::clamp(base + configuration.breathingAmplitude *
 			std::sin(kTwoPi * frequency * age + phase) * ramp, 0.0f, 1.0f);
+	}
+
+	float LaserParticleGlowExtentDip(float currentRadiusDip,
+		const LaserParticleConfig& configuration) noexcept
+	{
+		if (!IsValidLaserParticleConfig(configuration) ||
+			!std::isfinite(currentRadiusDip)) return 0.0f;
+		return std::max(currentRadiusDip, 0.0f) *
+			configuration.glowRadiusScale;
+	}
+
+	float LaserParticleCoreColorMix(float baseBrightness,
+		const LaserParticleConfig& configuration) noexcept
+	{
+		if (!IsValidLaserParticleConfig(configuration)) return 0.0f;
+		const float brightness = std::isfinite(baseBrightness)
+			? std::clamp(baseBrightness, 0.0f, 1.0f) : 0.0f;
+		return configuration.coreColorWhiteMix +
+			(1.0f - configuration.coreColorWhiteMix) * brightness;
 	}
 
 	float MaximumLaserParticleTravelDip(
@@ -321,8 +372,8 @@ namespace draw3
 			? std::max(request.entityRadius, 0.0f) : 0.0f;
 		const float padding = MaximumLaserParticleTravelDip(configuration) * scale +
 			entityRadius * coreRatio * kMaximumCoreSpawnOffsetRatio +
-			configuration.maximumRadiusDip * scale +
-			configuration.glowExtentDip * scale + 2.0f;
+			configuration.maximumRadiusDip *
+				(1.0f + configuration.glowRadiusScale) * scale + 2.0f;
 		return {
 			static_cast<LONG>(std::floor(request.positionX - padding)),
 			static_cast<LONG>(std::floor(request.positionY - padding)),
@@ -581,6 +632,12 @@ namespace draw3
 		constants.maximumBreathingFrequencyHz =
 			configuration_.maximumBreathingFrequencyHz;
 		constants.breathingRampSeconds = configuration_.breathingRampSeconds;
+		constants.sizeDistributionExponent =
+			configuration_.sizeDistributionExponent;
+		constants.sizeBrightnessCorrelation =
+			configuration_.sizeBrightnessCorrelation;
+		constants.sizeTravelCorrelation =
+			configuration_.sizeTravelCorrelation;
 
 		D3D11_MAPPED_SUBRESOURCE mapped = {};
 		if (FAILED(context_->Map(emitConstants_.Get(), 0,

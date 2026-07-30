@@ -270,11 +270,14 @@ namespace draw3
 		const LaserParticleConfig effectiveConfiguration =
 			IsValidLaserParticleConfig(configuration)
 			? configuration : LaserParticleConfig{};
-		laserParticleGlowExtentDip_ = effectiveConfiguration.glowExtentDip;
+		laserParticleGlowRadiusScale_ =
+			effectiveConfiguration.glowRadiusScale;
 		laserParticleGlowRed_ = effectiveConfiguration.glowRed;
 		laserParticleGlowGreen_ = effectiveConfiguration.glowGreen;
 		laserParticleGlowBlue_ = effectiveConfiguration.glowBlue;
 		laserParticleGlowAlpha_ = effectiveConfiguration.glowAlpha;
+		laserParticleCoreColorWhiteMix_ =
+			effectiveConfiguration.coreColorWhiteMix;
 		laserParticleSystem_.Configure(
 			effectiveConfiguration, dpiScale, kLaserCoreDiameterRatio);
 	}
@@ -514,14 +517,14 @@ namespace draw3
 		constants->height = viewportHeight;
 		constants->shapeType = 10.0f;
 		constants->bufferOffset = 0;
-		// shape 10 用 color.x/z/w 传辉光范围和深红粉色，color.y 由 VS 写入逐粒亮度。
+		// shape 10 的辉光随核心半径缩放；baseBrightness 决定稳定的核心色相层级。
 		constants->color = DirectX::XMFLOAT4(
-			laserParticleGlowExtentDip_, 0.0f,
+			laserParticleGlowRadiusScale_, 0.0f,
 			laserParticleGlowGreen_, laserParticleGlowBlue_);
 		constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
 		constants->padding[0] = laserParticleGlowRed_;
 		constants->padding[1] = laserParticleGlowAlpha_;
-		constants->padding[2] = 0.0f;
+		constants->padding[2] = laserParticleCoreColorWhiteMix_;
 		context->Unmap(globalCB.Get(), 0);
 
 		SetOMTarget(backBufferRTV.Get());

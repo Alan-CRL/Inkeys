@@ -182,7 +182,7 @@ OperatorOutput main(PS_INPUT input)
                 input.r2 * laserParameters.x);
 
         float coreCoverage = LaserAaCoverage(distanceToCenter - input.r1);
-        float glowExtent = max(input.color.x * laserParameters.y, 1e-4);
+        float glowExtent = max(input.p2.x, 1e-4);
         float glowRadius = input.r1 + glowExtent;
         float glowDistance = max(distanceToCenter - input.r1, 0.0);
         float glowCoverage = LaserAaCoverage(distanceToCenter - glowRadius) *
@@ -191,11 +191,17 @@ OperatorOutput main(PS_INPUT input)
         float brightness = saturate(input.color.y);
         float3 glowColor = float3(
             globalPadding.x, input.color.z, input.color.w) * brightness;
+        // 出生层级稳定决定泛红程度，呼吸只继续调制当前 RGB 亮度。
+        float coreColorMix = saturate(globalPadding.z +
+            (1.0 - globalPadding.z) * saturate(input.p2.y));
+        float3 coreColor = lerp(
+            float3(globalPadding.x, input.color.z, input.color.w),
+            laserScatterColor.rgb, coreColorMix) * brightness;
         float4 particle = 0.0;
         particle = LayerPremultiplied(particle,
             float4(glowColor, globalPadding.y), glowCoverage);
         particle = LayerPremultiplied(particle,
-            float4(brightness.xxx, 0.92), coreCoverage);
+            float4(coreColor, 0.92), coreCoverage);
         particle *= opacity;
         OperatorOutput particleOutput;
         particleOutput.add = particle;

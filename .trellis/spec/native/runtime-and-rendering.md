@@ -66,12 +66,12 @@
 - 多支 Laser 按 Down 顺序分层，后 Down 的整支轨迹位于上层；较早结束的 contact 保留最终 CPU 几何直到同批最后一支抬起，同一笔自交仍以 coverage 并集避免重复加深。
 - 粒子默认开启，但只使用 FL11_0+ 的 D3D11 Compute Shader 固定池：`2048` 个 `LaserGpuParticle` 槽，以及同一缓冲的 `u0` UAV/VS `t8` SRV。没有路径点/路径头资源、Append/Consume、间接绘制或 GPU 回读；整笔逐帧重绘和 Resize 都不得重建 GPU 粒子。
 - 出生位置直接取当前 `l0DrawPoints.back()`；切线从 L0 尾部反向查找最后一个非退化段，重复点沿用上一有效切线。真实首次移动前没有方向时不发射，也不累计会在之后补出的 Down 余量。prediction 只影响新粒子的出生位置/切线，不影响密度。
-- 发射 `dt <= 1/30s`，速率为 `min(48, 6 + filteredRealInputSpeedDipPerSecond / 4)` 粒/秒：静止每 contact 每秒 6 粒，移动约每 `4 DIP` 一粒，全局每帧最多 `96` 粒；预算超额和卡顿的整数部分不积压。运行中关闭会在下一帧 reset；重新开启后仍须已有或重新取得有效 L0 切线。
-- 每粒以 50/50 概率选择正/负法线，并在对应法线附近均匀偏转 `±25°`。出生速度独立均匀随机为 `28–64 DIP/s`，不继承画笔前向速度；寿命独立均匀随机为 `0.7–1.0s`。
+- 发射 `dt <= 1/30s`，速率为 `min(72, 6 + filteredRealInputSpeedDipPerSecond / 2.5)` 粒/秒：静止每 contact 每秒 6 粒，移动约每 `2.5 DIP` 一粒，全局每帧最多 `96` 粒；预算超额和卡顿的整数部分不积压。运行中关闭会在下一帧 reset；重新开启后仍须已有或重新取得有效 L0 切线。
+- 每粒以 50/50 概率选择正/负法线，并在对应法线附近均匀偏转 `±25°`。尺寸层级为 `lerp(0.28, 1.15, pow(random, 2.8)) DIP`；出生速度以 70% 独立随机与 30% 反向尺寸层级混合后映射到 `10–17 DIP/s`，寿命独立均匀随机为 `0.7–1.0s`，标称行程为 `3.5–8.5 DIP`。粒子不继承画笔前向速度。
 - 每粒只保存屏幕位置、固定速度、年龄/寿命、实际累计/最大行程、出生/当前半径、Alpha、亮度和呼吸状态。实际推进速度与 Alpha 均乘 `1-smoothstep(0,1,age/lifetime)`，运动 `dt <= 1/30s`，年龄使用实际 wall time。前 10% 最大行程保持出生半径，之后按实际累计行程 smoothstep 缩至 20%。
 - 粒子出生后不再读取 L0、真实点、prediction 或 contact 状态。Up/Cancel 只停止新发射；prediction 回缩、急弯和最后 Up 均不得修正存量位置/速度。禁止路径追赶、generation/弧长/segment cursor、端点受阻淡出和 prediction correction。
-- 出生点可在白芯内沿所选法线随机偏移。基础亮度随机 `0.68–1.0`，`0.8–1.4Hz` 随机相位呼吸以 `0.12` 振幅在 `0.2s` 渐入且只改变 RGB；白色核心的 Alpha 只使用生命周期曲线。
-- Compute 顺序固定为 `VS t8 unbind -> CS u0 + b0 -> Dispatch -> CS unbind`；绘制为 shape `10` 的 `DrawInstanced(6, 2048, 0, 0)`，死亡槽生成退化图元。粒子在激光主体/实时墨迹之后、Laser tip 之前绘制，PS 输出预乘 Alpha 的纯白核与 `(1.0, 0.32, 0.40)`、峰值 Alpha `0.34` 的 `3 DIP * dpiScale` 深红粉辉光，并保留二次距离衰减。
+- 出生点可在白芯内沿所选法线随机偏移。基础亮度以 72% 尺寸层级和 28% 独立随机样本混合后映射到 `0.42–1.0`，因此大粒子通常更亮、小粒子通常更暗但范围仍重叠。`0.8–1.4Hz` 随机相位呼吸以 `0.12` 振幅在 `0.2s` 渐入且只改变 RGB；核心 Alpha 只使用生命周期曲线。
+- Compute 顺序固定为 `VS t8 unbind -> CS u0 + b0 -> Dispatch -> CS unbind`；绘制为 shape `10` 的 `DrawInstanced(6, 2048, 0, 0)`，死亡槽生成退化图元。粒子在激光主体/实时墨迹之后、Laser tip 之前绘制。VS 令辉光半径为当前核心半径的 `1.5` 倍，并传递出生基础亮度；PS 根据该基础亮度在深红粉辉光色与现有淡粉白散射色之间确定核心色相，暗小粒子更泛红、亮大粒子更接近淡粉白。辉光保持 `(1.0, 0.32, 0.40)`、峰值 Alpha `0.34` 和二次距离衰减，所有输出继续使用预乘 Alpha。
 - CPU 把同一帧实际发射请求合成一个未裁剪保守包络，按最大减速弹道、白芯出生偏移、最大粒子半径、辉光和 AA 扩展；每个帧批次在最大寿命 1 秒后独立到期。Tracker 保存原始包络，每帧按当前画布裁剪，Resize 后不得复用旧画布裁剪结果。
 - 最后一根 Laser Up 才记录 `lastAllUpQpc`；默认满亮保持 `3.0s`，固定 `0.8s` smooth fade。当前批次实际安排过粒子时，有效 Hold 为 `max(公开设置值, maximumLifetimeSeconds)`，默认下限即 `1.0s`，但 setter/getter 值不变。新 Down 在 Hold/Fade 中把整组 opacity 恢复为 `1` 并重新计时。
 - `SetLaserHoldDurationSeconds` 只接受 finite non-negative 值；运行中调整须由 control wake 唤醒并相对最后一次全部 Up 立即重算。粒子 setter 同样发布 control wake；关闭后下一帧 reset GPU 状态并 union 旧保守 bounds。
@@ -104,7 +104,7 @@
 
 - 断言按键 4/枚举、最后 Up 计时、3.0s Hold、0.8s fade、运行中设置变化和非法输入。
 - 断言 Laser 不进入 reconnect/L2，压力 `0/0.5/1` 只缩放实体且 prediction 半径继承正确，coverage bounds 覆盖 15px 基准完整视觉直径、最大压力实体和固定 5px 漫反射；静态核对漫反射 alpha 从实体边界的 1 单调衰减到外缘的 0，resize/clear/Present failure 无残影。
-- 断言默认开启、Down 零爆发、首次真实移动后静止 6/s、移动每 4 DIP 密度、48/s 与全局 96 上限且不积压、双侧法线与 `±25°` 偏转、`28–64 DIP/s` 速度和 `0.7–1.0s` 寿命范围、速度/Alpha 曲线单调性、按行程缩至 20%、亮度呼吸不改 Alpha、出生锚点取 L0 前端、Up/prediction 跳变不改变存量运动、1 秒有效 Hold 下限、帧批次 dirty 到期和 resize 重裁剪。
+- 断言默认开启、Down 零爆发、首次真实移动后静止 6/s、移动每 2.5 DIP 密度、72/s 与全局 96 上限且不积压、双侧法线与 `±25°` 偏转、连续偏小尺寸分布、尺寸/亮度正相关、尺寸/射程弱反向相关、`10–17 DIP/s` 速度、`0.7–1.0s` 寿命和不超过 8.5 DIP 的标称行程、速度/Alpha 曲线单调性、按行程缩至 20%、比例辉光和核心色相层级、亮度呼吸不改 Alpha、出生锚点取 L0 前端、Up/prediction 跳变不改变存量运动、1 秒有效 Hold 下限、帧批次 dirty 到期和 resize 重裁剪。
 - Debug/Release ARM64 全解决方案构建、VS/PS/两个 CS 均以 SM5.0 编译并嵌入；人工覆盖慢/快画、急弯、长按、路径追加、多接触、Resize、ULW、开关和 Hold/Fade。
 
 ### 7. Wrong vs Correct

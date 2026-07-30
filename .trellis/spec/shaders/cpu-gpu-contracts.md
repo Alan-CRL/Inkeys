@@ -208,15 +208,15 @@ for (const auto& layer : layersInDownOrder) {
 | UpdateCS/EmitCS | `u0` | `RWStructuredBuffer<LaserGpuParticle>` |
 | VS shape 10 | `t8` | 同一粒子缓冲的 SRV |
 
-- Update 常量为 `32 bytes`：`float4(wallDeltaSeconds, motionDeltaSeconds, shrinkStartTravelRatio, endRadiusScale)`、`uint2(resetAll, particleCapacity)` 和 `float2` padding。Emit 常量为 `96 bytes`：`uint4 + 5*float4`，依次承载循环槽/数量/容量/seed、出生位置/切线、实体半径/核心比例/寿命范围、速度/偏转/半径范围、亮度/呼吸振幅及呼吸频率/渐入。CPU 结构必须 `static_assert(size % 16 == 0)` 并与 HLSL 字段顺序一致。
+- Update 常量为 `32 bytes`：`float4(wallDeltaSeconds, motionDeltaSeconds, shrinkStartTravelRatio, endRadiusScale)`、`uint2(resetAll, particleCapacity)` 和 `float2` padding。Emit 常量为 `112 bytes`：`uint4 + 6*float4`，依次承载循环槽/数量/容量/seed、出生位置/切线、实体半径/核心比例/寿命范围、速度/偏转/半径范围、亮度/呼吸振幅、呼吸频率/渐入/尺寸分布指数，以及尺寸-亮度和尺寸-射程相关度。CPU 结构必须 `static_assert(size % 16 == 0)` 并与 HLSL 字段顺序一致。
 - `LaserGpuParticle` 只保存屏幕位置、固定速度、年龄/寿命、累计/最大行程、出生/当前半径、Alpha、基础/当前亮度、呼吸参数、seed/alive 和 padding；CPU/HLSL 字段偏移必须一致并保持 `128 bytes`。
 - 每次 Compute 前先 `VSSetShaderResources(8, null)`；Dispatch 后解除 `u0`、`b0` 和 CS。绘制结束再解除 VS `t8`。禁止依赖 D3D11 自动冲突修复，也禁止重新引入 CS `t0/t1` 路径 SRV。
-- EmitCS 使用 CPU 管理的循环槽覆盖最旧粒子，不使用 Append/Consume、计数器、间接绘制或回读。每粒以 50/50 概率选择正/负法线，在所选法线附近均匀偏转 `±25°`，并独立均匀采样 `28–64 DIP/s` 初速度和 `0.7–1.0s` 寿命；画笔前向速度不得进入粒子速度。
+- EmitCS 使用 CPU 管理的循环槽覆盖最旧粒子，不使用 Append/Consume、计数器、间接绘制或回读。每粒以 50/50 概率选择正/负法线，在所选法线附近均匀偏转 `±25°`；尺寸使用 `pow(random, 2.8)` 偏小分布映射到 `0.28–1.15 DIP`，亮度以 72% 尺寸层级和 28% 独立样本映射到 `0.42–1.0`，速度以 70% 独立样本和 30% 反向尺寸层级映射到 `10–17 DIP/s`，寿命为 `0.7–1.0s`。画笔前向速度不得进入粒子速度。
 - Emit 请求的屏幕锚点直接使用本帧 `l0DrawPoints.back()`，切线来自最后一个非退化 L0 段；重复点沿用上一有效切线，首次真实移动前没有有效方向时不发射。prediction 可以改变新粒子的锚点/切线，但不能参与发射密度或存量状态。
 - UpdateCS 用实际 wall time 累计年龄，用最多 `1/30s` 的 motion dt 推进；固定速度和 Alpha 都乘 `1-smoothstep(0,1,age/lifetime)`。粒子按实际累计行程计算尺寸，前 10% 保持出生半径，之后 smoothstep 到 20%；达到自身寿命立即死亡。
 - 粒子出生后 UpdateCS 不再读取路径、画笔、prediction 或 Up 状态；Up/Cancel 只停止 CPU 新请求。禁止 path slot/generation、弧长、segment cursor、端点阻塞淡出、路径追赶和 prediction correction。
-- 每粒写入 `0.68–1.0` 基础亮度、`0.8–1.4Hz` 呼吸频率、随机相位和 `0.12` 振幅；VS 通过 `SV_InstanceID` 取槽，死亡槽生成屏幕外退化图元。呼吸亮度只乘核心/辉光 RGB，不乘 Alpha。
-- shape `10` 的核心为中性白，3 DIP 辉光为 `(1.0, 0.32, 0.40)`、峰值 Alpha `0.34`，保留二次距离衰减并继续输出预乘 Alpha operator-resolve。
+- 每粒写入 `0.42–1.0` 基础亮度、`0.8–1.4Hz` 呼吸频率、随机相位和 `0.12` 振幅；VS 通过 `SV_InstanceID` 取槽，死亡槽生成屏幕外退化图元。呼吸亮度只乘核心/辉光 RGB，不乘 Alpha。
+- shape `10` 的 VS 以当前核心半径乘 `1.5` 得到逐粒辉光范围，并把出生基础亮度通过现有 `p2` 传给 PS；PS 在 `(1.0, 0.32, 0.40)` 深红粉与现有淡粉白散射色之间按该亮度插值核心色相。辉光峰值 Alpha `0.34`，保留二次距离衰减并继续输出预乘 Alpha operator-resolve。
 
 ### 4. Validation & Error Matrix
 
@@ -238,8 +238,8 @@ for (const auto& layer : layersInDownOrder) {
 
 ### 6. Tests Required
 
-- 静态断言 `LaserGpuParticle == 128 bytes`，并断言 Update `32 bytes`、Emit `96 bytes` 且均 16 字节对齐。
-- 单元测试 Down 零爆发、静止 6/s、移动 4 DIP 密度、48/s 与全局 96 预算、无整数积压、双侧法线与 `±25°` 偏转、`28–64 DIP/s` 和 `0.7–1.0s` 采样范围、速度/Alpha 单调性、按行程缩至 20%、呼吸与 Alpha 分离、Up/prediction 无修正、批次 dirty 到期和 resize 后重裁剪。
+- 静态断言 `LaserGpuParticle == 128 bytes`，并断言 Update `32 bytes`、Emit `112 bytes` 且均 16 字节对齐。
+- 单元测试 Down 零爆发、静止 6/s、移动 2.5 DIP 密度、72/s 与全局 96 预算、无整数积压、双侧法线与 `±25°` 偏转、偏小尺寸分布、尺寸/亮度和尺寸/射程相关度、`10–17 DIP/s`、`0.7–1.0s` 与 8.5 DIP 行程上限、速度/Alpha 单调性、按行程缩至 20%、比例辉光与核心色相、呼吸与 Alpha 分离、Up/prediction 无修正、批次 dirty 到期和 resize 后重裁剪。
 - 静态搜索确认 UpdateCS/EmitCS 仅声明 `u0/b0`，VS 仅在 `t8` 读取，并且路径结构、generation、弧长、segment cursor、端点淡出和 prediction correction 不在粒子源码中。
 - 完整 ARM64 解决方案构建必须让 FXC 成功编译 VS、PS、UpdateCS、EmitCS；人工启用 D3D11 Debug Layer 检查 SRV/UAV 冲突。
 

@@ -22,24 +22,28 @@ export namespace draw3
 	struct LaserParticleConfig
 	{
 		float idleEmissionRatePerSecond = 6.0f;
-		float motionEmissionSpacingDip = 4.0f;
-		float maximumEmissionRatePerSecond = 48.0f;
+		float motionEmissionSpacingDip = 2.5f;
+		float maximumEmissionRatePerSecond = 72.0f;
 		uint32_t maximumSpawnPerFrame = 96;
 		float minimumLifetimeSeconds = 0.7f;
 		float maximumLifetimeSeconds = 1.0f;
-		float minimumLaunchSpeedDipPerSecond = 28.0f;
-		float maximumLaunchSpeedDipPerSecond = 64.0f;
+		float minimumLaunchSpeedDipPerSecond = 10.0f;
+		float maximumLaunchSpeedDipPerSecond = 17.0f;
 		float maximumDeflectionAngleDegrees = 25.0f;
 		float shrinkStartTravelRatio = 0.10f;
 		float endRadiusScale = 0.20f;
-		float minimumRadiusDip = 0.65f;
-		float maximumRadiusDip = 1.10f;
-		float glowExtentDip = 3.0f;
+		float minimumRadiusDip = 0.28f;
+		float maximumRadiusDip = 1.15f;
+		float sizeDistributionExponent = 2.8f;
+		float sizeBrightnessCorrelation = 0.72f;
+		float sizeTravelCorrelation = 0.30f;
+		float glowRadiusScale = 1.5f;
 		float glowRed = 1.0f;
 		float glowGreen = 0.32f;
 		float glowBlue = 0.40f;
 		float glowAlpha = 0.34f;
-		float minimumBrightness = 0.68f;
+		float coreColorWhiteMix = 0.50f;
+		float minimumBrightness = 0.42f;
 		float maximumBrightness = 1.0f;
 		float breathingAmplitude = 0.12f;
 		float minimumBreathingFrequencyHz = 0.8f;
@@ -95,15 +99,23 @@ export namespace draw3
 	{
 		float launchSpeedDipPerSecond = 0.0f;
 		float lifetimeSeconds = 0.0f;
+		float baseRadiusDip = 0.0f;
+		float baseBrightness = 0.0f;
+		float maximumTravelDistanceDip = 0.0f;
 		bool valid = false;
 	};
 
-	// 与 EmitCS 一致：两个独立均匀样本分别映射到喷射速度和生命周期。
+	// 与 EmitCS 一致：尺寸偏小分布决定基础层级，再与独立样本弱相关地决定亮度和射程。
 	LaserParticleBirthSample ResolveLaserParticleBirthSample(
-		float launchSpeedSample, float lifetimeSample,
+		float sizeSample, float launchSpeedSample, float lifetimeSample,
+		float brightnessSample,
 		const LaserParticleConfig& configuration) noexcept;
 	float EvaluateLaserParticleBrightness(float baseBrightness, float ageSeconds,
 		float breathingFrequencyHz, float breathingPhase,
+		const LaserParticleConfig& configuration) noexcept;
+	float LaserParticleGlowExtentDip(float currentRadiusDip,
+		const LaserParticleConfig& configuration) noexcept;
+	float LaserParticleCoreColorMix(float baseBrightness,
 		const LaserParticleConfig& configuration) noexcept;
 	float MaximumLaserParticleTravelDip(
 		const LaserParticleConfig& configuration) noexcept;

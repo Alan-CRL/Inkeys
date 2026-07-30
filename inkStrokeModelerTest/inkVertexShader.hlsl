@@ -37,7 +37,9 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
             return output;
         }
 
-        float glowExtent = max(globalColor.x, 0.0) * laserParameters.y;
+        // 小粒子保持细碎，高亮大粒子才拥有相应更宽的红粉辉光。
+        float glowExtent = max(particle.currentRadius *
+            max(globalColor.x, 0.0), 1e-4);
         float outerRadius = particle.currentRadius + glowExtent;
         float2 center = particle.position;
         float2 rectMin = center - outerRadius - 2.0;
@@ -47,7 +49,7 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
             -((worldPos.y / screenHeight) * 2.0 - 1.0), 0.0, 1.0);
         output.pixPos = worldPos;
         output.p1 = center;
-        output.p2 = outerRadius.xx;
+        output.p2 = float2(glowExtent, particle.baseBrightness);
         output.r1 = particle.currentRadius;
         output.r2 = particle.opacity;
         output.color.y = particle.currentBrightness;

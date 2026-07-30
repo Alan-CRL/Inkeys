@@ -13,7 +13,7 @@
 
 - 使用 ARM64 `MSBuild.exe` 完整构建 `inkStrokeModelerTest.sln /t:Build /p:Configuration=Debug /p:Platform=ARM64`，只编译/链接但不运行测试，并确认 VS/PS 与两个 CS 均成功编译并嵌入资源。
 - 本轮不运行任何 EXE（包括测试程序），不启动 GUI、指标场景、浏览器或电脑控制。
-- 静态核对 CPU/HLSL `LaserGpuParticle` 128-byte 镜像、32/96-byte 常量缓冲、固定容量、FXC `cs_5_0` 产物、仅 `u0 ↔ t8` 的显式解绑、绘制顺序、屏幕空间独立运动、时间寿命和开关降级路径。
+- 静态核对 CPU/HLSL `LaserGpuParticle` 128-byte 镜像、32/112-byte 常量缓冲、固定容量、FXC `cs_5_0` 产物、仅 `u0 ↔ t8` 的显式解绑、绘制顺序、屏幕空间独立运动、时间寿命和开关降级路径。
 - 自动测试运行、Release、视觉观感、ULW 强制回退和 Windows 7 运行验证留待用户后续验证。
 - 运行 `git diff --check`，检查 shader/source 保持 UTF-8 BOM + CRLF，核对无关 `Vcpkg/` 未被修改。
 
@@ -28,12 +28,14 @@
 ## Current Particle Revision
 
 - [x] 发射源改为当前 L0 笔尖和最后非退化切线；真实首次移动前不发射，重复点沿用上一有效方向。
-- [x] EmitCS 改为双侧法线 `±25°` 随机喷射，速度 `28–64 DIP/s`、寿命 `0.7–1.0s`，不继承画笔前向速度。
+- [x] EmitCS 使用双侧法线 `±25°` 随机喷射，连续偏小尺寸分布为 `0.28–1.15 DIP`，速度 `10–17 DIP/s`、寿命 `0.7–1.0s`，不继承画笔前向速度。
 - [x] UpdateCS 改为屏幕空间独立运动、生命周期减速/Alpha 和按实际行程缩至 20% 半径；删除所有路径资源与 prediction 修正。
-- [x] 3 DIP 粒子辉光调整为 `(1.0, 0.32, 0.40)`、峰值 Alpha `0.34`；呼吸继续只改变 RGB。
+- [x] 基础亮度与尺寸正相关、射程与尺寸弱反向相关；小粒子更多且通常更暗、更远，层级范围保持重叠。
+- [x] 粒子辉光调整为核心半径的 1.5 倍，颜色保持 `(1.0, 0.32, 0.40)`、峰值 Alpha `0.34`；暗小核心更泛红，亮大核心更接近淡粉白，呼吸继续只改变 RGB。
 - [x] 脏区改为每帧未裁剪发射批次，按最大 1 秒寿命到期并在使用时按当前画布裁剪；内部最小 Hold 同步为最大寿命。
-- [x] 编译测试覆盖默认参数、发射预算、法线偏转、速度/寿命区间、减速、缩小、呼吸分离、独立运动和 dirty/resize。
-- [x] 完整 `Debug|ARM64` 构建与最终静态差异检查。
+- [x] 编译测试覆盖默认参数、发射预算、法线偏转、尺寸分布与相关度、8.5 DIP 标称行程、减速、缩小、核心/辉光层级、呼吸分离、独立运动和 dirty/resize。
+- [x] 完整 `Debug|ARM64` 构建。
+- [x] 最终静态差异检查。
 - [ ] 用户在真实白色、深色和混合背景上验证动态观感。
 
 ## Static Validation Evidence
@@ -51,3 +53,4 @@
 - 2026-07-30（端点积压修正）：ARM64 原生 `MSBuild.exe` 对完整解决方案执行 `Debug|ARM64 /t:Rebuild` 成功，测试源码及 VS、PS、`UpdateCS`、`EmitCS` 均成功编译；未运行任何 EXE、窗口或电脑控制，运行时观感仍待用户验证。
 - 2026-07-30（屏幕空间法线喷射）：移除路径槽、generation、弧长、segment cursor、端点淡出和 prediction correction。新粒子从 L0 笔尖沿随机正/负法线 `±25°` 喷射，以 `28–64 DIP/s`、`0.7–1.0s` 独立运动并按实际行程缩至 20%；3 DIP 辉光同步为 `(1.0, 0.32, 0.40)`、峰值 Alpha `0.34`。
 - 2026-07-30（屏幕空间法线喷射）：ARM64 原生 `MSBuild.exe` 对完整 `inkStrokeModelerTest.sln` 执行 `Debug|ARM64 /t:Build /m` 成功；首次完整重编译由 FXC 成功编译 VS、PS、`UpdateCS`、`EmitCS`，主工程与测试工程均完成编译/链接（0 error，42 条既有 `additional/` 第三方警告），修正测试断言后的最终增量构建为 0 warning / 0 error。没有运行任何 EXE、窗口或电脑控制。
+- 2026-07-30（视频式粒子层级调优）：静态核对确认源码、PRD、设计和规范均已同步到 `2.5 DIP` 移动发射间距、`72/s` 单 contact 上限、`10–17 DIP/s` 出生速度、`0.28–1.15 DIP` 偏小尺寸分布、`glowRadiusScale=1.5`、基础亮度/尺寸正相关和射程/尺寸弱反向相关。ARM64 原生 `MSBuild.exe` 对完整 `inkStrokeModelerTest.sln` 执行 `Debug|ARM64 /t:Build /m` 成功；FXC 成功编译 VS、PS、`UpdateCS`、`EmitCS` 并生成 `.cso`，主工程与测试工程均完成编译/链接（0 error，42 条既有 `additional/` 第三方警告）。`git diff --check` 未报告 whitespace error，仅输出 Trellis Markdown 的 LF/CRLF 工作区提示。未运行任何 EXE、窗口或电脑控制。

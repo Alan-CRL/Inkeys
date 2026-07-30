@@ -256,11 +256,13 @@ export namespace draw3
 		// 从资源中加载并创建墨迹着色器。
 		bool LoadShaders();
 		LaserStyleConstants laserStyleConstants_ = {};
-		float laserParticleGlowExtentDip_ = LaserParticleConfig{}.glowExtentDip;
+		float laserParticleGlowRadiusScale_ = LaserParticleConfig{}.glowRadiusScale;
 		float laserParticleGlowRed_ = LaserParticleConfig{}.glowRed;
 		float laserParticleGlowGreen_ = LaserParticleConfig{}.glowGreen;
 		float laserParticleGlowBlue_ = LaserParticleConfig{}.glowBlue;
 		float laserParticleGlowAlpha_ = LaserParticleConfig{}.glowAlpha;
+		float laserParticleCoreColorWhiteMix_ =
+			LaserParticleConfig{}.coreColorWhiteMix;
 		LaserParticleSystem laserParticleSystem_;
 	};
 }
