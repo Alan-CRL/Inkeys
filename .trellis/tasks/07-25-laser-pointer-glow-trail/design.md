@@ -9,23 +9,25 @@ coverage 四通道分别保存白芯、白色散射脊、红色实体外套和�
 ## State And Data Flow
 
 - `DrawingTool::Laser` 只在 Down 时锁定到 runtime；该工具跳过 reconnect 和 L1/L2 提交。
-- 每个 Laser runtime 只保存所属 Down 顺序层、GPU 路径 handle、真实点上传游标、真实/已发布组合弧长、时间发射小数余量、上一帧出生锚点（仅用于脏区）和 seed 游标；每粒子的 segment cursor、位置/切线、端点受阻时间、亮度与呼吸相位只存在 GPU 缓冲。Pen 输入保留上一有效压力半径。较早结束的 contact 将最终 CPU 几何保留在所属层，直到同批次最后一个 contact 抬起。
+- 每个 Laser runtime 只保存所属 Down 顺序层、时间发射小数余量、上一有效 L0 切线和 seed 游标；粒子位置、固定初速度、年龄/寿命、累计/最大行程、半径、Alpha、亮度与呼吸状态只存在 GPU 缓冲。Pen 输入保留上一有效压力半径。较早结束的 contact 将最终 CPU 几何保留在所属层，直到同批次最后一个 contact 抬起。
 - 全局 Laser session 保存稳定颜色 bounds、未烘干层及其旧/新 bounds、活动 contact 数、最后全部 Up QPC 和阶段 `Inactive/Active/Hold/Fade`。
-- Active 阶段 opacity 为 1；最后 Up 时按 Down 顺序把未烘干层写入稳定颜色并进入 Hold；`holdSeconds` 从原子设置读取并相对最后 Up 实时计算。当前批次实际安排过 GPU 粒子时只在内部令有效 Hold 取 `max(holdSeconds, 3.0s)`，不改写公开设置；Fade 固定 0.8s；完成后清空稳定颜色、scratch 和 bounds。
+- Active 阶段 opacity 为 1；最后 Up 时按 Down 顺序把未烘干层写入稳定颜色并进入 Hold；`holdSeconds` 从原子设置读取并相对最后 Up 实时计算。当前批次实际安排过 GPU 粒子时只在内部令有效 Hold 取 `max(holdSeconds, maximumLifetimeSeconds)`，默认即 `max(holdSeconds, 1.0s)`，不改写公开设置；Fade 固定 0.8s；完成后清空稳定颜色、scratch 和 bounds。
 - 新 Laser Down 在 Hold/Fade 中保留稳定颜色、恢复 opacity=1 并回到 Active；新批次始终绘制在旧稳定颜色上方，完全清空后不会恢复已消失内容。
 - scratch 使用矩形覆盖写零局部清理，避免每支 contact 全画布清空；resize 只复制稳定颜色交集并从 CPU 几何重建未烘干层；clear 同时清空 Laser session；Present 恢复覆盖新旧 bounds。
 
 ## Particles And Tips
 
-粒子由独立 `draw3.laser_particles` 模块管理。Renderer 初始化时固定创建 2048 槽粒子 UAV/SRV、32 个路径槽和每槽 16384 点的组合路径 SRV；任何帧都不创建资源、不使用 Append/Consume/间接绘制，也不做 GPU 回读。每条路径由不可变真实前缀和每帧替换的 prediction 尾组成，新真实点先覆盖旧预测尾，再从最新真实末端重写本帧预测点；真实点始终优先占用容量。路径 handle 使用 slot/generation 防止旧粒子引用复用槽，路径容量不足时只停发对应 contact。
+粒子由独立 `draw3.laser_particles` 模块管理。Renderer 初始化时只固定创建 2048 槽粒子 UAV/SRV、Update/Emit 两个常量缓冲和两个 Compute Shader；任何帧都不创建资源，不使用路径点/路径头缓冲、Append/Consume、间接绘制或 GPU 回读。CPU 通过循环写入游标覆盖最旧槽，Resize 不重建粒子资源。
 
-`EmitCS` 在当前组合路径末端创建粒子，屏幕出生锚点直接取本帧 `l0DrawPoints.back()`，因此真实尾、prediction 与可见笔锋发生跳变时，新粒子也立即位于最前端；CPU 保存的上一锚点只参与旧/新脏区包络。`UpdateCS` 保存并推进每粒子的组合弧长、segment cursor、平滑位置/切线、横向偏移、速度、最长 3 秒寿命和呼吸状态。路径采样优先使用 cursor，跨越过多段时用固定次数二分查找；预测尾缩短时弧长立即钳制，但只有已经发射的粒子保持修正状态，按当前生命周期实际沿线速度的 2 倍限速直至真正到达新目标，丢弃的位移不追赶。
+控制器从本帧 `l0DrawPoints.back()` 取得出生位置，并从 L0 尾部反向查找最后一个非退化线段作为切线；重复点沿用 runtime 中上一有效切线。真实输入尚未产生首次移动且没有有效方向时不发射，也不累计随后会形成 Down 爆发的余量。prediction 可以决定当前出生位置和最后 L0 切线，但其位移不进入密度计算。
 
-发射使用上限 `1/30s` 的时间积分：`rate=min(48, 6 + max(组合弧长增量, 0)/dt/4)` 粒/秒，全局每帧最多 96 粒，超额整数不积压。Down 只建立累计基线；静止也以每秒 6 粒生成，预测回缩只保留该基线。粒子从白芯内出生，120ms 内向随机左右扩散并最多越出实体红边 10 DIP。
+发射使用上限 `1/30s` 的时间积分：`rate=min(48, 6 + filteredRealInputSpeedDipPerSecond/4)` 粒/秒，全局每帧最多 96 粒，预算截断和卡顿造成的整数超额不积压。移动后的静止帧回到每秒 6 粒基线。`EmitCS` 对每粒以 50/50 概率选择正/负法线，再在该法线附近均匀偏转 `±25°`；出生速度在 `28–64 DIP/s`、寿命在 `0.7–1.0s` 独立均匀取样，不继承笔尖前向速度。出生点允许在白芯内沿所选法线随机偏移。
 
-活动期间基础流速为 `clamp(12*dpiScale + 0.08*filteredInputSpeed, 12*dpiScale, 96*dpiScale)`，以 80ms 时间常数追随并带固定 `±12%` 粒子差异。最长寿命 3.0s，实际推进速度与基础 Alpha 同乘 `1-smoothstep(0,1,age/3)`；不再用最大行程终止。原未使用的 `birthArcLength` float 改为 `endpointBlockedSeconds`：粒子每帧仍到达当前路径末端时按 wall time 累计，Alpha 再乘以基准 0.35s、按 seed 固定 ±25% 的 `1-smoothstep` 端点因子，到零即死亡；离开末端时停止累计但不回退，避免重新变亮。Up 只停止发射和路径追加、冻结最后输入速度，未到端点的粒子继续沿最终路径减速，抵达端点后快速淡出；路径槽仍按 3 秒保守期限回收。
+`UpdateCS` 只读取粒子自身状态和 `b0`：先用 wall time 累计年龄，再以不超过 `1/30s` 的 motion dt 把固定速度乘 `1-smoothstep(0,1,age/lifetime)` 推进屏幕位置；同一曲线直接作为 Alpha。实际飞行距离逐步累计，前 10% 最大行程保持出生半径，之后平滑缩至 20%。Up/Cancel 只停止新请求；prediction 回缩、急弯和最终路径变化都不能重定位存量粒子，也没有端点阻塞淡出、路径追赶或 prediction correction。
 
-每粒基础亮度随机为 0.68–1.0，0.8–1.4Hz 的独立随机相位呼吸以 0.12 振幅在出生后 0.2s 渐入，并只乘 RGB。现有 VS 的 shape `10` 通过 `SV_InstanceID` 从 VS `t8` 读取粒子并固定 `DrawInstanced(6, 2048)`；PS 输出纯白亮核与 `(1.0, 0.55, 0.62)`、峰值 Alpha 0.24 的 3 DIP 浅粉红辉光，继续使用 premultiplied Add/Retain。绘制顺序仍为稳定 Laser、活动逐笔层、粒子、Laser tip，因此粒子穿过红色实体时保持可见。
+每粒基础亮度随机为 0.68–1.0，0.8–1.4Hz 的独立随机相位呼吸以 0.12 振幅在出生后 0.2s 渐入，并只乘 RGB。现有 VS 的 shape `10` 通过 `SV_InstanceID` 从 VS `t8` 读取粒子并固定 `DrawInstanced(6, 2048)`；PS 输出纯白亮核与 `(1.0, 0.32, 0.40)`、峰值 Alpha 0.34 的 3 DIP 深红粉辉光，保留二次距离衰减和 premultiplied Add/Retain。绘制顺序仍为稳定 Laser、活动逐笔层、粒子、Laser tip。
+
+脏区不再附着整条路径。控制器把同一帧实际发射请求的未裁剪保守包络合成一个批次，按最大减速弹道行程、白芯出生偏移、最大粒子半径、3 DIP 辉光和 AA 扩展，并以最大寿命 1 秒为独立到期时间。Tracker 保存原始包络，使用时才按当前画布裁剪，因此 resize 后仍能覆盖尚存粒子；固定槽极端耗尽时只允许保守合并，不得漏清像素。
 
 Pen/Mouse Hover 和所有活动 contact 的笔尖使用专用 LaserDot shader shape。`LaserDot.radius` 表示实际参与材质计算的实体外半径，Hover、Touch 和固定宽度真实轨迹复用同一套尺寸契约。Hover 静止不动画；活动 tip 由最新一致输入位置驱动。粒子关闭时停止推进/生成并把上一帧粒子 bounds 标脏。
 
@@ -41,6 +43,6 @@ Pen/Mouse Hover 和所有活动 contact 的笔尖使用专用 LaserDot shader sh
 ## Risks And Rollback
 
 - 两张 RGBA8 资源增加与画布面积线性相关的 GPU 内存；稳定颜色只在批次结束时写入，单笔 scratch 局部清理，并用 Release 指标验证 ARM64 多 contact 成本。
-- GPU 粒子不允许回读；CPU 保守脏区按路径合并，覆盖旧/新 prediction 前端及修正区，并按减速曲线积分的最大推进、实体半径、10 DIP 横向扩散、粒子半径、3 DIP 辉光和 AA 扩展，保留到最后一次发射后 3 秒。
+- GPU 粒子不允许回读；CPU 仅按每帧发射批次保存未裁剪保守包络，覆盖最大弹道、白芯出生偏移、粒子半径、3 DIP 辉光和 AA，并在该批次发射后 1 秒到期。该包络可能过绘，但不能依赖当前画布裁剪后的矩形作为长期状态。
 - CPU/HLSL 结构、shape type、寄存器和常量缓冲区必须同步；构建 VS、PS、UpdateCS、EmitCS 四个 shader 和完整解决方案作为合并门槛。
 - 如果 Compute Shader 或任一固定资源创建失败，粒子模块只记录一次并保持不可用；公开开关仍可即时关闭，主轨迹和透明呈现回退不受影响。

@@ -9,7 +9,6 @@
 #include <d3d11.h>
 #include <DirectXMath.h>
 #include <dxgi1_2.h>
-#include <span>
 #include <vector>
 #include <wrl/client.h>
 
@@ -211,14 +210,6 @@ export namespace draw3
 		void ConfigureLaserParticles(
 			const LaserParticleConfig& configuration, float dpiScale) noexcept;
 		bool LaserParticlesAvailable() const noexcept;
-		LaserParticlePathHandle AcquireLaserParticlePath() noexcept;
-		uint32_t AppendLaserParticleRealPathPoints(LaserParticlePathHandle path,
-			std::span<const LaserParticlePathPoint> points) noexcept;
-		uint32_t ReplaceLaserParticlePredictionPathPoints(LaserParticlePathHandle path,
-			std::span<const LaserParticlePathPoint> points) noexcept;
-		void SetLaserParticlePathInputSpeed(
-			LaserParticlePathHandle path, float filteredInputSpeed) noexcept;
-		void EndLaserParticlePath(LaserParticlePathHandle path) noexcept;
 		void SimulateLaserParticles(
 			float wallDeltaSeconds, float motionDeltaSeconds) noexcept;
 		void EmitLaserParticles(const LaserParticleEmissionRequest& request) noexcept;

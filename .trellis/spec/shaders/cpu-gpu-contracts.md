@@ -189,39 +189,34 @@ for (const auto& layer : layersInDownOrder) {
 
 ### 1. Scope / Trigger
 
-修改 `draw3.laser_particles`、路径/粒子镜像布局、CS 常量、资源寄存器、shape `10` 或粒子 dirty 策略时，必须同步本节。
+修改 `draw3.laser_particles`、粒子镜像布局、CS 常量、资源寄存器、shape `10` 或粒子 dirty 策略时，必须同步本节。
 
 ### 2. Signatures
 
-- `LaserParticlePathHandle { uint32_t slot, generation }`
-- `LaserParticlePathPoint { float x, y, radius, arcLength }`，固定 `16 bytes`
-- `LaserParticlePathHeader`，固定 `32 bytes`
 - `LaserGpuParticle`，固定 `128 bytes`
-- `LaserParticleSystem::Initialize/AcquirePath/AppendRealPathPoints/ReplacePredictionPathPoints/SetPathInputSpeed/EndPath/Simulate/Emit/Reset`
+- `LaserParticleEmissionRequest { positionX, positionY, tangentX, tangentY, entityRadius, count, seedBase }`
+- `LaserParticleSystem::Initialize/Configure/Simulate/Emit/Reset`
 - `InkRenderer::DrawLaserParticles()` 固定调用 `DrawInstanced(6, 2048, 0, 0)`
 
 ### 3. Contracts
 
-- 容量是编译期契约：粒子 `2048`、路径 `32`、每路径点 `16384`；资源只在 renderer Init/Release 创建销毁，Resize 不重建。
+- 容量是编译期契约：粒子固定 `2048` 槽；粒子缓冲、SRV/UAV、两个 CS 和两个常量缓冲只在 renderer Init/Release 创建销毁，Resize 不重建。
 - CS 资源表：
 
 | Stage | Register | Resource |
 |---|---|---|
-| UpdateCS/EmitCS | `t0` | `StructuredBuffer<LaserParticlePathPoint>` |
-| UpdateCS/EmitCS | `t1` | `StructuredBuffer<LaserParticlePathHeader>` |
 | UpdateCS/EmitCS | `u0` | `RWStructuredBuffer<LaserGpuParticle>` |
 | VS shape 10 | `t8` | 同一粒子缓冲的 SRV |
 
-- Update 常量为 `64 bytes`：3 个 `float4`，随后是 reset/path capacity/particle capacity 三个 uint 与 `endpointFadeSeconds` float；`laserUpdatePosition.xyzw` 依次为正常位置响应秒数、异常修正速度倍率、跳变阈值和 DPI scale，默认值为 `0.040/2.0/6.0/dpiScale`，端点淡出基准为 `0.35s`。Emit 常量为 `112 bytes`：`uint4 + 5*float4 + uint4`，默认最大法线额外距离为 `10 DIP * dpiScale`。CPU 结构必须 `static_assert(size % 16 == 0)` 并与 HLSL 字段顺序一致。
-- 每次 Compute 前先 `VSSetShaderResources(8, null)`；Dispatch 后依次解除 `u0`、`t0/t1`、`b0` 和 CS。绘制结束再解除 VS `t8`。禁止依赖 D3D11 自动冲突修复。
-- path slot 只有 `active == 0` 才能复用，复用时 generation 非零递增；粒子 generation 不匹配立即死亡。容量不足不得覆盖活跃路径。
-- 路径缓冲的 `[0, realPointCount)` 是不可变真实前缀，其后是本帧完整替换的 prediction 尾；真实追加先覆盖旧尾，header 只发布当前组合点数。真实点优先容量，预测尾可以缩短或清空。
-- `LaserGpuParticle` 复用原 `birthArcLength` float 保存 `endpointBlockedSeconds`，并复用原保留 float 保存 `predictionCorrectionActive`，不改变 `128 bytes` 布局；异常修正一旦触发就保持该状态，直到位置真正到达目标，不能在进入跳变阈值后提前切回快速响应。
-- UpdateCS 优先使用 segment cursor，失配时固定 15 步二分；零长度段沿用持久化切线。预测尾回缩或到路径末端时钳制弧长、丢弃多余位移；持久屏幕位置/切线正常按 40ms 响应，异常跳变与回缩按当前生命周期实际沿线速度的 2 倍限速靠近新目标。
-- UpdateCS 用实际 wall time 累计最长 `3.0s` 年龄，用最多 `1/30s` 的 motion dt 推进；速度倍率与基础 Alpha 都为 `1-smoothstep(0,1,age/3)`。有有效请求位移且推进后仍处于当前路径末端时累计 `endpointBlockedSeconds`，Alpha 再乘以基准 `0.35s`、按 seed 固定 `±25%` 的 `1-smoothstep` 端点因子，到零立即死亡；离开末端停止累计但不得回退。Up 的 `header.ended` 不切换收束阶段，只冻结路径和输入速度。
-- EmitCS 使用 CPU 管理的循环槽覆盖最旧粒子，不使用 Append/Consume、计数器、间接绘制或回读。每粒写入 `0.68–1.0` 基础亮度、`0.8–1.4Hz` 呼吸频率、随机相位和 `0.12` 振幅；VS 通过 `SV_InstanceID` 取槽，死亡槽生成屏幕外退化图元。
-- Emit 请求的屏幕锚点必须直接使用本帧可见 `l0DrawPoints.back()`，新粒子立即位于真实尾、prediction 与笔锋最前端；只有已写入结构化缓冲的既有粒子使用 `predictionCorrectionActive` 限速修正。
-- shape `10` 的呼吸亮度只乘核心/辉光 RGB，不乘 Alpha；核心为中性白，3 DIP 辉光为 `(1.0, 0.55, 0.62)`、峰值 Alpha `0.24`，输出继续满足预乘 Alpha operator-resolve。
+- Update 常量为 `32 bytes`：`float4(wallDeltaSeconds, motionDeltaSeconds, shrinkStartTravelRatio, endRadiusScale)`、`uint2(resetAll, particleCapacity)` 和 `float2` padding。Emit 常量为 `96 bytes`：`uint4 + 5*float4`，依次承载循环槽/数量/容量/seed、出生位置/切线、实体半径/核心比例/寿命范围、速度/偏转/半径范围、亮度/呼吸振幅及呼吸频率/渐入。CPU 结构必须 `static_assert(size % 16 == 0)` 并与 HLSL 字段顺序一致。
+- `LaserGpuParticle` 只保存屏幕位置、固定速度、年龄/寿命、累计/最大行程、出生/当前半径、Alpha、基础/当前亮度、呼吸参数、seed/alive 和 padding；CPU/HLSL 字段偏移必须一致并保持 `128 bytes`。
+- 每次 Compute 前先 `VSSetShaderResources(8, null)`；Dispatch 后解除 `u0`、`b0` 和 CS。绘制结束再解除 VS `t8`。禁止依赖 D3D11 自动冲突修复，也禁止重新引入 CS `t0/t1` 路径 SRV。
+- EmitCS 使用 CPU 管理的循环槽覆盖最旧粒子，不使用 Append/Consume、计数器、间接绘制或回读。每粒以 50/50 概率选择正/负法线，在所选法线附近均匀偏转 `±25°`，并独立均匀采样 `28–64 DIP/s` 初速度和 `0.7–1.0s` 寿命；画笔前向速度不得进入粒子速度。
+- Emit 请求的屏幕锚点直接使用本帧 `l0DrawPoints.back()`，切线来自最后一个非退化 L0 段；重复点沿用上一有效切线，首次真实移动前没有有效方向时不发射。prediction 可以改变新粒子的锚点/切线，但不能参与发射密度或存量状态。
+- UpdateCS 用实际 wall time 累计年龄，用最多 `1/30s` 的 motion dt 推进；固定速度和 Alpha 都乘 `1-smoothstep(0,1,age/lifetime)`。粒子按实际累计行程计算尺寸，前 10% 保持出生半径，之后 smoothstep 到 20%；达到自身寿命立即死亡。
+- 粒子出生后 UpdateCS 不再读取路径、画笔、prediction 或 Up 状态；Up/Cancel 只停止 CPU 新请求。禁止 path slot/generation、弧长、segment cursor、端点阻塞淡出、路径追赶和 prediction correction。
+- 每粒写入 `0.68–1.0` 基础亮度、`0.8–1.4Hz` 呼吸频率、随机相位和 `0.12` 振幅；VS 通过 `SV_InstanceID` 取槽，死亡槽生成屏幕外退化图元。呼吸亮度只乘核心/辉光 RGB，不乘 Alpha。
+- shape `10` 的核心为中性白，3 DIP 辉光为 `(1.0, 0.32, 0.40)`、峰值 Alpha `0.34`，保留二次距离衰减并继续输出预乘 Alpha operator-resolve。
 
 ### 4. Validation & Error Matrix
 
@@ -229,21 +224,23 @@ for (const auto& layer : layersInDownOrder) {
 |---|---|
 | feature level < 11_0 | `Initialize` 返回 false，renderer 继续创建 VS/PS 和主体资源 |
 | CS/buffer/SRV/UAV 任一创建失败 | 释放已建粒子资源、诊断一次、`IsAvailable == false` |
-| stale handle/generation | 真实追加/预测替换/Emit/End 忽略；UpdateCS 杀死旧粒子 |
-| path point overflow | 只接受剩余点并停止该 contact 后续发射，不覆盖其他槽 |
+| 无有效 L0 切线 | 不发射并清空该 contact 的小数余量，不形成 Down 补发 |
+| 非有限请求位置/切线或退化切线 | Emit 忽略该请求，不移动循环槽 |
 | particle pool wrap | 新发射覆盖循环槽，不分配、不回读 |
 | UAV/SRV 切换 | 显式解绑后再切换 stage；Debug Layer 不应报告同资源读写冲突 |
+| Up/Cancel/prediction 跳变 | 既有粒子的速度、位置和寿命不被控制器修正 |
 
 ### 5. Good / Base / Bad Cases
 
-- Good：真实前缀持续追加、prediction 尾替换或回缩时，粒子持有弧长/游标/平滑位置并沿急弯前进，整笔重绘和 Resize 都不重建其 GPU 状态。
+- Good：新粒子从当前 L0 笔尖向两侧法线随机喷射；prediction 尾替换、回缩、急弯和 Up 都不改变既有粒子的屏幕空间轨迹。
 - Base：没有活粒子仍固定绘制 2048 实例，死亡槽退化；设备不支持 CS 时仅无粒子。
-- Bad：每帧重建粒子 buffer、复用仍活跃 path slot、用 `CopyResource/Map` 回读位置，或同时绑定 `u0` 与 `t8`。
+- Bad：每帧重建粒子 buffer、让存量粒子重新采样 L0、用 `CopyResource/Map` 回读位置，或同时绑定 `u0` 与 `t8`。
 
 ### 6. Tests Required
 
-- 静态断言三种镜像结构大小以及 Update/Emit 常量 16 字节对齐。
-- 单元测试 generation wrap、真实/预测容量 clamp、静止时间发射、移动 4 DIP 密度/96 上限、预测回缩不补发、速度平滑、最长 3 秒生命周期、呼吸只改亮度、10 DIP 法线额外距离、立即 L0 前端出生、慢速/Up 末端受阻累计与快速淡出曲线、末端无追赶、Up 后继续运动、既有粒子极端预测跳变的 2 倍速度限速追赶和 dirty 到期。
+- 静态断言 `LaserGpuParticle == 128 bytes`，并断言 Update `32 bytes`、Emit `96 bytes` 且均 16 字节对齐。
+- 单元测试 Down 零爆发、静止 6/s、移动 4 DIP 密度、48/s 与全局 96 预算、无整数积压、双侧法线与 `±25°` 偏转、`28–64 DIP/s` 和 `0.7–1.0s` 采样范围、速度/Alpha 单调性、按行程缩至 20%、呼吸与 Alpha 分离、Up/prediction 无修正、批次 dirty 到期和 resize 后重裁剪。
+- 静态搜索确认 UpdateCS/EmitCS 仅声明 `u0/b0`，VS 仅在 `t8` 读取，并且路径结构、generation、弧长、segment cursor、端点淡出和 prediction correction 不在粒子源码中。
 - 完整 ARM64 解决方案构建必须让 FXC 成功编译 VS、PS、UpdateCS、EmitCS；人工启用 D3D11 Debug Layer 检查 SRV/UAV 冲突。
 
 ### 7. Wrong vs Correct

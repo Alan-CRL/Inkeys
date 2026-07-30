@@ -4,11 +4,9 @@
 
 cbuffer LaserParticleUpdateBuffer : register(b0)
 {
-    float4 laserUpdateTime;
-    float4 laserUpdateSpeed;
-    float4 laserUpdatePosition;
-    uint3 laserUpdateFlags;
-    float laserEndpointFadeSeconds;
+    float4 laserUpdateParameters;
+    uint2 laserUpdateFlags;
+    float2 laserUpdatePadding;
 };
 
 void KillLaserParticle(inout LaserGpuParticle particle)
@@ -23,7 +21,7 @@ void KillLaserParticle(inout LaserGpuParticle particle)
 void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
     uint particleIndex = dispatchThreadId.x;
-    if (particleIndex >= min(laserUpdateFlags.z, LASER_PARTICLE_CAPACITY))
+    if (particleIndex >= min(laserUpdateFlags.y, LASER_PARTICLE_CAPACITY))
         return;
 
     LaserGpuParticle particle = LaserParticles[particleIndex];
@@ -36,25 +34,11 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     if (particle.alive == 0)
         return;
 
-    if (particle.pathSlot >= LASER_PARTICLE_PATH_CAPACITY)
-    {
-        KillLaserParticle(particle);
-        LaserParticles[particleIndex] = particle;
-        return;
-    }
-
-    LaserParticlePathHeader header = LaserParticlePathHeaders[particle.pathSlot];
-    if (header.active == 0 || header.generation != particle.pathGeneration)
-    {
-        KillLaserParticle(particle);
-        LaserParticles[particleIndex] = particle;
-        return;
-    }
-
-    float wallDeltaSeconds = max(laserUpdateTime.x, 0.0);
-    float motionDeltaSeconds = clamp(laserUpdateTime.y, 0.0, 1.0 / 30.0);
+    float wallDeltaSeconds = max(laserUpdateParameters.x, 0.0);
+    float motionDeltaSeconds = clamp(
+        laserUpdateParameters.y, 0.0, 1.0 / 30.0);
     particle.ageSeconds += wallDeltaSeconds;
-    float lifetimeSeconds = max(particle.lifetimeSeconds, laserUpdateSpeed.w);
+    float lifetimeSeconds = max(particle.lifetimeSeconds, 1e-4);
     if (particle.ageSeconds >= lifetimeSeconds)
     {
         KillLaserParticle(particle);
@@ -62,113 +46,23 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         return;
     }
 
-    float2 pathPosition;
-    float pathRadius;
-    float2 pathTangent;
-    float pathEndArcLength;
-
-    if (!SampleLaserParticlePath(particle.pathSlot, header,
-        particle.pathArcLength, particle.segmentCursor, particle.tangent,
-        pathPosition, pathRadius, pathTangent, pathEndArcLength))
-    {
-        KillLaserParticle(particle);
-        LaserParticles[particleIndex] = particle;
-        return;
-    }
-
-    float targetSpeed = clamp(laserUpdateSpeed.x +
-        laserUpdateSpeed.z * max(header.filteredInputSpeed, 0.0),
-        laserUpdateSpeed.x, laserUpdateSpeed.y) * particle.speedJitter;
-    float speedBlend = 1.0 - exp(-motionDeltaSeconds /
-        max(laserUpdateTime.z, 1e-4));
-    particle.flowSpeed = lerp(particle.flowSpeed, targetSpeed, speedBlend);
-
     float lifeFraction = saturate(particle.ageSeconds / lifetimeSeconds);
     float lifeFactor = 1.0 - smoothstep(0.0, 1.0, lifeFraction);
-    float requestedAdvance = max(particle.flowSpeed, 0.0) *
-        lifeFactor * motionDeltaSeconds;
-    float advancedArcLength = min(
-        particle.pathArcLength + requestedAdvance, pathEndArcLength);
-    particle.pathArcLength = advancedArcLength;
-    bool reachedPathEnd = requestedAdvance > 1e-4 &&
-        advancedArcLength >= pathEndArcLength - 1e-4;
-    if (reachedPathEnd)
-        particle.endpointBlockedSeconds += wallDeltaSeconds;
+    // 出生后不再读取轨迹；固定初速度只乘生命周期减速曲线。
+    float2 motion = particle.velocity * lifeFactor * motionDeltaSeconds;
+    particle.position += motion;
+    particle.traveledDistance += length(motion);
 
-    // 缓慢前行或 Up 后受阻于路径末端的粒子，按种子错开后快速淡出。
-    float endpointFadeDuration = max(laserEndpointFadeSeconds, 1e-4) *
-        lerp(0.75, 1.25,
-            LaserParticleRandom01(particle.seed ^ 0xA511E9B3u));
-    float endpointFadeFactor = 1.0 - smoothstep(
-        0.0, endpointFadeDuration, particle.endpointBlockedSeconds);
-    if (endpointFadeFactor <= 0.0)
-    {
-        KillLaserParticle(particle);
-        LaserParticles[particleIndex] = particle;
-        return;
-    }
-
-    if (!SampleLaserParticlePath(particle.pathSlot, header,
-        particle.pathArcLength, particle.segmentCursor, particle.tangent,
-        pathPosition, pathRadius, pathTangent, pathEndArcLength))
-    {
-        KillLaserParticle(particle);
-        LaserParticles[particleIndex] = particle;
-        return;
-    }
-
-    particle.pathRadius = pathRadius;
-    float spread = saturate(particle.ageSeconds /
-        max(laserUpdateTime.w, 1e-4));
-    float spreadEased = spread * spread * (3.0 - 2.0 * spread);
-    float side = particle.lateralExtra < 0.0 ? -1.0 : 1.0;
-    float targetOffset = side * (pathRadius + abs(particle.lateralExtra));
-    particle.lateralOffset = lerp(
-        particle.lateralStartOffset, targetOffset, spreadEased);
-    float2 targetPosition = pathPosition +
-        float2(-pathTangent.y, pathTangent.x) * particle.lateralOffset;
-    float directFollowDistance = max(laserUpdatePosition.z,
-        2.0 * max(header.filteredInputSpeed, 0.0) * motionDeltaSeconds +
-        2.0 * laserUpdatePosition.w);
-    float targetDistance = distance(particle.position, targetPosition);
-    bool requiresLimitedCorrection =
-        particle.predictionCorrectionActive > 0.5 ||
-        targetDistance > directFollowDistance;
-    float normalResponseBlend = 1.0 - exp(-motionDeltaSeconds /
-        max(laserUpdatePosition.x, 1e-4));
-    float maximumCorrectionDistance = max(particle.flowSpeed, 0.0) *
-        lifeFactor * max(laserUpdatePosition.y, 0.0) * motionDeltaSeconds;
-    float tangentBlend = requiresLimitedCorrection && targetDistance > 1e-4
-        ? saturate(maximumCorrectionDistance / targetDistance)
-        : normalResponseBlend;
-    particle.tangent = LaserParticleSafeNormalize(
-        lerp(particle.tangent, pathTangent, tangentBlend), pathTangent);
-    targetPosition = pathPosition +
-        float2(-particle.tangent.y, particle.tangent.x) * particle.lateralOffset;
-    if (requiresLimitedCorrection)
-    {
-        // prediction 跳变或回缩时，最多按当前实际沿线速度的固定倍率追赶。
-        float2 correction = targetPosition - particle.position;
-        float correctionDistance = length(correction);
-        if (correctionDistance <= maximumCorrectionDistance ||
-            correctionDistance <= 1e-4)
-        {
-            particle.position = targetPosition;
-            particle.predictionCorrectionActive = 0.0;
-        }
-        else
-        {
-            particle.position += correction *
-                saturate(maximumCorrectionDistance / correctionDistance);
-            particle.predictionCorrectionActive = 1.0;
-        }
-    }
-    else
-    {
-        particle.position = lerp(
-            particle.position, targetPosition, normalResponseBlend);
-        particle.predictionCorrectionActive = 0.0;
-    }
+    float maximumTravelDistance = max(
+        particle.maximumTravelDistance, 1e-4);
+    float travelRatio = saturate(
+        particle.traveledDistance / maximumTravelDistance);
+    float shrinkStart = clamp(laserUpdateParameters.z, 0.0, 0.9999);
+    float shrinkRatio = saturate(
+        (travelRatio - shrinkStart) / max(1.0 - shrinkStart, 1e-4));
+    float shrinkSmooth = smoothstep(0.0, 1.0, shrinkRatio);
+    particle.currentRadius = particle.baseRadius * lerp(
+        1.0, saturate(laserUpdateParameters.w), shrinkSmooth);
 
     float breathingRampRatio = saturate(particle.ageSeconds /
         max(particle.breathingRampSeconds, 1e-4));
@@ -178,7 +72,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         particle.breathingAmplitude * sin(6.28318530718 *
         particle.breathingFrequencyHz * particle.ageSeconds +
         particle.breathingPhase) * breathingRamp);
-    particle.opacity = lifeFactor * endpointFadeFactor;
-    particle.currentRadius = particle.baseRadius;
+    // 呼吸只改变 RGB 亮度，Alpha 始终使用同一生命周期曲线。
+    particle.opacity = lifeFactor;
     LaserParticles[particleIndex] = particle;
 }

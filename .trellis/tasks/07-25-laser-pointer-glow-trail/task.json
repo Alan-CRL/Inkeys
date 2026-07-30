@@ -2,7 +2,7 @@
   "id": "laser-pointer-glow-trail",
   "name": "laser-pointer-glow-trail",
   "title": "发光激光笔",
-  "description": "新增按键 4 的多指发光激光笔，使用独立瞬态 coverage 层、预测线尾、可调留存时间和可关闭的稀疏粒子效果。",
+  "description": "新增按键 4 的多指发光激光笔，使用独立瞬态 coverage 层、可调留存时间和从 L0 笔尖沿法线喷射的可关闭屏幕空间粒子。",
   "status": "in_progress",
   "dev_type": null,
   "scope": null,

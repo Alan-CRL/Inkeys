@@ -284,36 +284,6 @@ namespace draw3
 		return laserParticleSystem_.IsAvailable();
 	}
 
-	LaserParticlePathHandle InkRenderer::AcquireLaserParticlePath() noexcept
-	{
-		return laserParticleSystem_.AcquirePath();
-	}
-
-	uint32_t InkRenderer::AppendLaserParticleRealPathPoints(
-		LaserParticlePathHandle path,
-		std::span<const LaserParticlePathPoint> points) noexcept
-	{
-		return laserParticleSystem_.AppendRealPathPoints(path, points);
-	}
-
-	uint32_t InkRenderer::ReplaceLaserParticlePredictionPathPoints(
-		LaserParticlePathHandle path,
-		std::span<const LaserParticlePathPoint> points) noexcept
-	{
-		return laserParticleSystem_.ReplacePredictionPathPoints(path, points);
-	}
-
-	void InkRenderer::SetLaserParticlePathInputSpeed(
-		LaserParticlePathHandle path, float filteredInputSpeed) noexcept
-	{
-		laserParticleSystem_.SetPathInputSpeed(path, filteredInputSpeed);
-	}
-
-	void InkRenderer::EndLaserParticlePath(LaserParticlePathHandle path) noexcept
-	{
-		laserParticleSystem_.EndPath(path);
-	}
-
 	void InkRenderer::SimulateLaserParticles(
 		float wallDeltaSeconds, float motionDeltaSeconds) noexcept
 	{
@@ -544,7 +514,7 @@ namespace draw3
 		constants->height = viewportHeight;
 		constants->shapeType = 10.0f;
 		constants->bufferOffset = 0;
-		// shape 10 用 color.x/z/w 传辉光范围和浅红色，color.y 由 VS 写入逐粒亮度。
+		// shape 10 用 color.x/z/w 传辉光范围和深红粉色，color.y 由 VS 写入逐粒亮度。
 		constants->color = DirectX::XMFLOAT4(
 			laserParticleGlowExtentDip_, 0.0f,
 			laserParticleGlowGreen_, laserParticleGlowBlue_);
