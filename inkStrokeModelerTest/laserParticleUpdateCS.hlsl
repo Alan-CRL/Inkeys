@@ -112,16 +112,45 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     float directFollowDistance = max(laserUpdatePosition.z,
         2.0 * max(header.filteredInputSpeed, 0.0) * motionDeltaSeconds +
         2.0 * laserUpdatePosition.w);
-    float responseSeconds = distance(particle.position, targetPosition) >
-        directFollowDistance
-        ? laserUpdatePosition.y : laserUpdatePosition.x;
-    float responseBlend = 1.0 - exp(-motionDeltaSeconds /
-        max(responseSeconds, 1e-4));
+    float targetDistance = distance(particle.position, targetPosition);
+    bool requiresLimitedCorrection =
+        particle.predictionCorrectionActive > 0.5 ||
+        targetDistance > directFollowDistance;
+    float normalResponseBlend = 1.0 - exp(-motionDeltaSeconds /
+        max(laserUpdatePosition.x, 1e-4));
+    float maximumCorrectionDistance = max(particle.flowSpeed, 0.0) *
+        lifeFactor * max(laserUpdatePosition.y, 0.0) * motionDeltaSeconds;
+    float tangentBlend = requiresLimitedCorrection && targetDistance > 1e-4
+        ? saturate(maximumCorrectionDistance / targetDistance)
+        : normalResponseBlend;
     particle.tangent = LaserParticleSafeNormalize(
-        lerp(particle.tangent, pathTangent, responseBlend), pathTangent);
+        lerp(particle.tangent, pathTangent, tangentBlend), pathTangent);
     targetPosition = pathPosition +
         float2(-particle.tangent.y, particle.tangent.x) * particle.lateralOffset;
-    particle.position = lerp(particle.position, targetPosition, responseBlend);
+    if (requiresLimitedCorrection)
+    {
+        // prediction 跳变或回缩时，最多按当前实际沿线速度的固定倍率追赶。
+        float2 correction = targetPosition - particle.position;
+        float correctionDistance = length(correction);
+        if (correctionDistance <= maximumCorrectionDistance ||
+            correctionDistance <= 1e-4)
+        {
+            particle.position = targetPosition;
+            particle.predictionCorrectionActive = 0.0;
+        }
+        else
+        {
+            particle.position += correction *
+                saturate(maximumCorrectionDistance / correctionDistance);
+            particle.predictionCorrectionActive = 1.0;
+        }
+    }
+    else
+    {
+        particle.position = lerp(
+            particle.position, targetPosition, normalResponseBlend);
+        particle.predictionCorrectionActive = 0.0;
+    }
 
     float breathingRampRatio = saturate(particle.ageSeconds /
         max(particle.breathingRampSeconds, 1e-4));

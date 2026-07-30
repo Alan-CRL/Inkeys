@@ -35,7 +35,7 @@ export namespace draw3
 		float inputSpeedInfluence = 0.08f;
 		float speedResponseSeconds = 0.080f;
 		float spreadSeconds = 0.120f;
-		float maximumLateralExtraDip = 4.5f;
+		float maximumLateralExtraDip = 10.0f;
 		float minimumRadiusDip = 0.65f;
 		float maximumRadiusDip = 1.10f;
 		float glowExtentDip = 3.0f;
@@ -50,7 +50,7 @@ export namespace draw3
 		float maximumBreathingFrequencyHz = 1.4f;
 		float breathingRampSeconds = 0.20f;
 		float positionResponseSeconds = 0.040f;
-		float predictionCorrectionResponseSeconds = 0.120f;
+		float predictionCorrectionSpeedMultiplier = 2.0f;
 		float predictionJumpThresholdDip = 6.0f;
 	};
 
@@ -120,7 +120,7 @@ export namespace draw3
 		float breathingPhase = 0.0f;
 		float breathingAmplitude = 0.0f;
 		float breathingRampSeconds = 0.20f;
-		float padding0 = 0.0f;
+		float predictionCorrectionActive = 0.0f;
 		uint32_t pathSlot = kInvalidLaserParticlePathSlot;
 		uint32_t pathGeneration = 0;
 		uint32_t segmentCursor = 0;
@@ -164,9 +164,10 @@ export namespace draw3
 		float x = 0.0f;
 		float y = 0.0f;
 		bool valid = false;
+		bool predictionCorrectionActive = false;
 	};
 
-	// 正常预测位置直接跟随；只有异常跳变才按独立时间常数渐进靠近。
+	// 正常预测位置直接跟随；异常跳变按正常粒子速度的固定倍率限速追赶。
 	LaserParticleEmissionAnchor UpdateLaserParticleEmissionAnchor(
 		LaserParticleEmissionAnchor current, float targetX, float targetY,
 		float filteredInputSpeed, float wallDeltaSeconds, float dpiScale,

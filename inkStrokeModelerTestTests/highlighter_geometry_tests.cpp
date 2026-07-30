@@ -104,6 +104,10 @@ int RunHighlighterGeometryTests()
 		draw3::kLaserParticleCapacity + 1;
 	HIGHLIGHTER_CHECK(!draw3::IsValidLaserParticleConfig(
 		invalidParticleConfiguration));
+	invalidParticleConfiguration = particleConfiguration;
+	invalidParticleConfiguration.predictionCorrectionSpeedMultiplier = 0.0f;
+	HIGHLIGHTER_CHECK(!draw3::IsValidLaserParticleConfig(
+		invalidParticleConfiguration));
 	HIGHLIGHTER_CHECK(draw3::kLaserParticleCapacity == 2048);
 	HIGHLIGHTER_CHECK(draw3::kLaserParticlePathCapacity == 32);
 	HIGHLIGHTER_CHECK(draw3::kLaserParticlePathPointCapacity == 16384);
@@ -119,7 +123,9 @@ int RunHighlighterGeometryTests()
 	HIGHLIGHTER_CHECK(particleConfiguration.maximumSpawnPerFrame == 96);
 	HIGHLIGHTER_CHECK(NearlyEqual(particleConfiguration.lifetimeSeconds, 3.0f));
 	HIGHLIGHTER_CHECK(NearlyEqual(
-		particleConfiguration.maximumLateralExtraDip, 4.5f));
+		particleConfiguration.maximumLateralExtraDip, 10.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(
+		particleConfiguration.predictionCorrectionSpeedMultiplier, 2.0f));
 	HIGHLIGHTER_CHECK(NearlyEqual(particleConfiguration.glowExtentDip, 3.0f));
 	HIGHLIGHTER_CHECK(NearlyEqual(particleConfiguration.glowGreen, 0.55f));
 	HIGHLIGHTER_CHECK(NearlyEqual(particleConfiguration.glowBlue, 0.62f));
@@ -216,11 +222,20 @@ int RunHighlighterGeometryTests()
 	HIGHLIGHTER_CHECK(NearlyEqual(anchor.x, 5.0f));
 	anchor = draw3::UpdateLaserParticleEmissionAnchor(anchor,
 		105.0f, 0.0f, 0.0f, 1.0f / 60.0f, 1.0f, particleConfiguration);
-	HIGHLIGHTER_CHECK(anchor.x > 5.0f && anchor.x < 25.0f);
+	HIGHLIGHTER_CHECK(NearlyEqual(anchor.x, 5.4f));
+	HIGHLIGHTER_CHECK(anchor.predictionCorrectionActive);
 	const float firstCorrectionX = anchor.x;
 	anchor = draw3::UpdateLaserParticleEmissionAnchor(anchor,
 		105.0f, 0.0f, 0.0f, 1.0f / 60.0f, 1.0f, particleConfiguration);
-	HIGHLIGHTER_CHECK(anchor.x > firstCorrectionX && anchor.x < 105.0f);
+	HIGHLIGHTER_CHECK(NearlyEqual(anchor.x, firstCorrectionX + 0.4f));
+	anchor = draw3::UpdateLaserParticleEmissionAnchor(anchor,
+		-105.0f, 0.0f, 0.0f, 1.0f / 60.0f, 1.0f, particleConfiguration);
+	HIGHLIGHTER_CHECK(NearlyEqual(anchor.x, firstCorrectionX));
+	HIGHLIGHTER_CHECK(anchor.predictionCorrectionActive);
+	anchor = draw3::UpdateLaserParticleEmissionAnchor(anchor,
+		5.5f, 0.0f, 0.0f, 1.0f / 60.0f, 1.0f, particleConfiguration);
+	HIGHLIGHTER_CHECK(NearlyEqual(anchor.x, 5.5f));
+	HIGHLIGHTER_CHECK(!anchor.predictionCorrectionActive);
 	draw3::LaserParticleArcAdvance advance = draw3::AdvanceLaserParticleArc(
 		9.0f, 10.0f, 100.0f, 1.0f, 1.0f);
 	HIGHLIGHTER_CHECK(NearlyEqual(advance.arcLength, 10.0f));

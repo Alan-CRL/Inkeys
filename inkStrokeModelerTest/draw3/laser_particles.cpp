@@ -35,7 +35,7 @@ namespace draw3
 			float inputSpeedInfluence = 0.08f;
 			float lifetimeSeconds = 3.0f;
 			float positionResponseSeconds = 0.040f;
-			float predictionCorrectionResponseSeconds = 0.120f;
+			float predictionCorrectionSpeedMultiplier = 2.0f;
 			float predictionJumpThreshold = 6.0f;
 			float dpiScale = 1.0f;
 			uint32_t resetAll = 0;
@@ -56,7 +56,7 @@ namespace draw3
 			float arcLength = 0.0f;
 			float anchorX = 0.0f;
 			float anchorY = 0.0f;
-			float maximumLateralExtra = 4.5f;
+			float maximumLateralExtra = 10.0f;
 			float lifetimeSeconds = 3.0f;
 			float minimumBrightness = 0.68f;
 			float maximumBrightness = 1.0f;
@@ -143,7 +143,7 @@ namespace draw3
 				configuration.minimumBreathingFrequencyHz &&
 			IsFinitePositive(configuration.breathingRampSeconds) &&
 			IsFinitePositive(configuration.positionResponseSeconds) &&
-			IsFinitePositive(configuration.predictionCorrectionResponseSeconds) &&
+			IsFinitePositive(configuration.predictionCorrectionSpeedMultiplier) &&
 			IsFinitePositive(configuration.predictionJumpThresholdDip);
 	}
 
@@ -283,13 +283,24 @@ namespace draw3
 		const float directFollowDistance = std::max(
 			configuration.predictionJumpThresholdDip * scale,
 			2.0f * speed * deltaSeconds + 2.0f * scale);
-		if (distance <= directFollowDistance)
+		const bool requiresLimitedCorrection =
+			current.predictionCorrectionActive || distance > directFollowDistance;
+		if (!requiresLimitedCorrection)
 			return { targetX, targetY, true };
-		if (deltaSeconds <= 0.0f) return current;
+		current.predictionCorrectionActive = true;
+		if (deltaSeconds <= 0.0f || !std::isfinite(distance) ||
+			distance <= kMinimumPositiveValue) return current;
 
-		const float blend = 1.0f - std::exp(-deltaSeconds /
-			std::max(configuration.predictionCorrectionResponseSeconds,
-				kMinimumPositiveValue));
+		// 极端 prediction 修正只按正常粒子速度的固定倍率追赶，避免大距离指数吸附。
+		const float correctionMultiplier =
+			IsFinitePositive(configuration.predictionCorrectionSpeedMultiplier)
+			? configuration.predictionCorrectionSpeedMultiplier : 0.0f;
+		const float maximumCorrectionDistance = LaserParticleTargetSpeed(
+			speed, scale, configuration) * correctionMultiplier * deltaSeconds;
+		if (maximumCorrectionDistance >= distance)
+			return { targetX, targetY, true };
+		const float blend = std::clamp(
+			maximumCorrectionDistance / distance, 0.0f, 1.0f);
 		current.x += deltaX * blend;
 		current.y += deltaY * blend;
 		current.valid = true;
@@ -702,8 +713,8 @@ namespace draw3
 		constants.inputSpeedInfluence = configuration_.inputSpeedInfluence;
 		constants.lifetimeSeconds = configuration_.lifetimeSeconds;
 		constants.positionResponseSeconds = configuration_.positionResponseSeconds;
-		constants.predictionCorrectionResponseSeconds =
-			configuration_.predictionCorrectionResponseSeconds;
+		constants.predictionCorrectionSpeedMultiplier =
+			configuration_.predictionCorrectionSpeedMultiplier;
 		constants.predictionJumpThreshold =
 			configuration_.predictionJumpThresholdDip * dpiScale_;
 		constants.dpiScale = dpiScale_;

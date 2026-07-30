@@ -47,7 +47,7 @@ struct LaserGpuParticle
     float breathingPhase;
     float breathingAmplitude;
     float breathingRampSeconds;
-    float padding0;
+    float predictionCorrectionActive;
     uint pathSlot;
     uint pathGeneration;
     uint segmentCursor;
