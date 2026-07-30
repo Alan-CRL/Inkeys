@@ -29,7 +29,7 @@ struct LaserGpuParticle
     float2 position;
     float2 tangent;
     float pathArcLength;
-    float birthArcLength;
+    float endpointBlockedSeconds;
     float flowSpeed;
     float speedJitter;
     float ageSeconds;

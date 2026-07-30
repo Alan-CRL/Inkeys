@@ -67,10 +67,11 @@
 - 多支 Laser 按 Down 顺序分层，后 Down 的整支轨迹位于上层；较早结束的 contact 保留最终 CPU 几何直到同批最后一支抬起，同一笔自交仍以 coverage 并集避免重复加深。
 - 粒子默认开启，但只使用 FL11_0+ 的 D3D11 Compute Shader 固定池：`2048` 粒子、`32` 路径、每路径 `16384` 个点。路径点由不可变追加式 `realPoints` 前缀和每帧替换的当前 `predictedPoints` 尾组成；新真实点覆盖旧预测尾后再重写预测尾，真实点优先占用容量。整笔逐帧重绘不得重建 GPU 粒子。
 - Down 只申请路径并建立时间发射基线，不爆发。发射 `dt <= 1/30s`，速率为 `min(48, 6 + max(组合路径新增弧长, 0) / dt / 4)` 粒/秒：静止每 contact 每秒 6 粒，移动约每 `4 DIP` 一粒，全局每帧最多 `96` 粒；预算超额、卡顿和预测回缩均不积压。运行中重新开启从当前组合路径末端建立基线。
-- 每粒子保存 path slot/generation、组合弧长、segment cursor、平滑位置/切线、横向偏移、速度、固定寿命和呼吸参数。基础目标速度为 `clamp(12*dpiScale + 0.08*filteredInputSpeed, 12*dpiScale, 96*dpiScale)`，附加固定 `±12%` 差异并以 `80ms` 时间常数追随；实际推进速度乘 `1-smoothstep(0,1,age/3)`，运动 `dt <= 1/30s`，寿命使用实际时间。
-- 出生弧长取当前组合路径末端，CPU 出生锚点正常直接跟随 L0 前端；位移超过 `max(6*dpiScale, 2*filteredInputSpeed*dt + 2*dpiScale)` 时进入持久修正状态，按目标粒子速度的 `2×` 限速直到到达。预测尾缩短时粒子弧长立即钳制，持久位置/切线正常使用 `40ms` 响应，异常跳变与回缩保持修正状态并按当前生命周期实际沿线速度的 `2×` 限速直到到达新路径，不追赶丢弃位移。
+- 每粒子保存 path slot/generation、组合弧长、segment cursor、平滑位置/切线、横向偏移、速度、最长寿命、端点受阻时间和呼吸参数。基础目标速度为 `clamp(12*dpiScale + 0.08*filteredInputSpeed, 12*dpiScale, 96*dpiScale)`，附加固定 `±12%` 差异并以 `80ms` 时间常数追随；实际推进速度乘 `1-smoothstep(0,1,age/3)`，运动 `dt <= 1/30s`，寿命与端点受阻时间使用实际 wall time。
+- 出生弧长取当前组合路径末端，屏幕出生锚点每帧直接取当前 `l0DrawPoints.back()`，覆盖真实尾、prediction 与可见笔锋；新粒子不参与预测修正延迟。预测尾缩短时既有粒子的弧长立即钳制，持久位置/切线正常使用 `40ms` 响应，异常跳变与回缩保持修正状态并按当前生命周期实际沿线速度的 `2×` 限速直到到达新路径，不追赶丢弃位移。
 - 出生点位于白芯内部，约 `120ms` 向随机侧扩散至红色实体边缘外最多 `10 DIP`。固定寿命 `3.0s`，Alpha 同样使用 `1-smoothstep(0,1,age/3)`；基础亮度随机 `0.68–1.0`，`0.8–1.4Hz` 随机相位呼吸以 `0.12` 振幅在 `0.2s` 渐入且只改变 RGB。
-- Up 只停止发射和路径追加并冻结最后输入速度；存量粒子继续沿最终组合路径减速淡出，不再执行 75/25 收束。带粒子的路径在 Up 后保留 3 秒再回收。CPU 不保存、更新或回读粒子位置，只维护时间发射余量、路径上传状态、出生锚点和固定容量保守脏区。
+- 粒子在有有效请求位移且仍到达当前路径末端时累计受阻时间，Alpha 额外乘以基准 `0.35s`、按 seed 固定 `±25%` 的非线性端点淡出因子；离开末端只停止累计，不允许因子回退而重新变亮。该规则清理极慢前行的前端积压和 Up 后最终端点积压。
+- Up 只停止发射和路径追加并冻结最后输入速度；未到端点的存量粒子继续沿最终组合路径减速淡出，抵达端点者快速提前结束，不再执行 75/25 收束。带粒子的路径仍按最长 3 秒保守期限回收。CPU 不保存、更新或回读粒子位置，只维护时间发射余量、路径上传状态、上一出生锚点脏区和固定容量保守脏区。
 - Compute 顺序固定为 `VS t8 unbind -> CS t0/t1 + u0 -> Dispatch -> CS unbind`；绘制为 shape `10` 的 `DrawInstanced(6, 2048, 0, 0)`，死亡槽生成退化图元。粒子在激光主体/实时墨迹之后、Laser tip 之前绘制，PS 输出预乘 Alpha 的纯白核与 `(1.0, 0.55, 0.62)`、峰值 Alpha `0.24` 的 `3 DIP * dpiScale` 浅粉红辉光。
 - 最后一根 Laser Up 才记录 `lastAllUpQpc`；默认满亮保持 `3.0s`，固定 `0.8s` smooth fade。当前批次实际安排过粒子时，有效 Hold 为 `max(公开设置值, 3.0s)`，但 setter/getter 值不变。新 Down 在 Hold/Fade 中把整组 opacity 恢复为 `1` 并重新计时。
 - `SetLaserHoldDurationSeconds` 只接受 finite non-negative 值；运行中调整须由 control wake 唤醒并相对最后一次全部 Up 立即重算。粒子 setter 同样发布 control wake；关闭后下一帧 reset GPU 状态并 union 旧保守 bounds。
@@ -87,7 +88,7 @@
 | 粒子关闭 | 下一帧 reset GPU 池/路径 generation、清空保守脏区并 union 旧 bounds |
 | FL < 11_0 或 CS/SRV/UAV/buffer 创建失败 | 只记录一次诊断并将粒子系统标记不可用；激光主体、瞬态层和 Present 继续 |
 | 32 个路径槽占满或单路径超过 16384 点 | 停止对应 contact 的新粒子；不得覆盖仍被 generation 引用的路径 |
-| 卡顿或当前路径末端 | 寿命按实际时间；沿线运动最多推进 1/30s，末端多余位移丢弃且不积压 |
+| 卡顿或当前路径末端 | 寿命按实际时间；沿线运动最多推进 1/30s，末端多余位移丢弃且不积压；持续受阻者按约 0.26–0.44s 快速淡出 |
 | Hold 静止且无存活粒子 | 不产生额外 frame/Present；deadline 或 control/input wake 才恢复 |
 | Hold 中仍有存活粒子 | 粒子保守 dirty 驱动帧；最后一粒到期后停止持续 Present |
 | resize/clear/Present 失败 | 稳定颜色交集保留或按请求清空，未烘干层重建，旧/新 glow bounds 都进入 dirty |
@@ -95,14 +96,14 @@
 ### 5. Good / Base / Bad Cases
 
 - Good：白芯与厚红边在深色、混合背景可见，浅粉红粒子辉光在白底可辨；粒子沿急转弯和 L0 prediction 尾运动，预测修正与真实前缀增长都不使旧粒子跳变。
-- Base：Hover 为静态 LaserDot，活动 Touch 各自显示独立 tip；GPU 不可用时只有粒子降级，抬笔后已有粒子继续按各自剩余 3 秒寿命减速淡出。
+- Base：Hover 为静态 LaserDot，活动 Touch 各自显示独立 tip；GPU 不可用时只有粒子降级，抬笔后已有粒子继续减速，未到端点者最长保留 3 秒、到达端点者快速淡出。
 - Bad：把 prediction 固化进不可变真实前缀、预测回缩后补发或瞬移已有粒子、每帧按重绘路径重建粒子、同时绑定粒子 UAV 与 VS SRV，或用 GPU readback 决定 dirty。
 
 ### 6. Tests Required
 
 - 断言按键 4/枚举、最后 Up 计时、3.0s Hold、0.8s fade、运行中设置变化和非法输入。
 - 断言 Laser 不进入 reconnect/L2，压力 `0/0.5/1` 只缩放实体且 prediction 半径继承正确，coverage bounds 覆盖 15px 基准完整视觉直径、最大压力实体和固定 5px 漫反射；静态核对漫反射 alpha 从实体边界的 1 单调衰减到外缘的 0，resize/clear/Present failure 无残影。
-- 断言默认开启、Down 零爆发、静止时间发射、移动每 4 DIP 密度、预测回缩不补发、全局 96 上限且不积压、速度目标/80ms 平滑、固定 3 秒生命周期及曲线单调性、亮度呼吸不改 Alpha、10 DIP 法线额外距离、弧长末端丢弃、L0 极端跳变与回缩按 2 倍正常速度限速追赶、组合尾替换、generation/容量溢出、Up 后继续运动、有效 Hold 下限和保守 dirty 到期。
+- 断言默认开启、Down 零爆发、静止时间发射、移动每 4 DIP 密度、预测回缩不补发、全局 96 上限且不积压、速度目标/80ms 平滑、最长 3 秒生命周期及曲线单调性、亮度呼吸不改 Alpha、10 DIP 法线额外距离、出生锚点立即取 L0 前端、慢速/Up 端点受阻时间和快速淡出曲线、弧长末端丢弃、既有粒子在 L0 极端跳变与回缩时按 2 倍正常速度限速追赶、组合尾替换、generation/容量溢出、Up 后继续运动、有效 Hold 下限和保守 dirty 到期。
 - Debug/Release ARM64 全解决方案构建、VS/PS/两个 CS 均以 SM5.0 编译并嵌入；人工覆盖慢/快画、急弯、长按、路径追加、多接触、Resize、ULW、开关和 Hold/Fade。
 
 ### 7. Wrong vs Correct

@@ -60,7 +60,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         float2(-pathTangent.y, pathTangent.x) * startOffset;
     particle.tangent = pathTangent;
     particle.pathArcLength = min(sampleArcLength, pathEndArcLength);
-    particle.birthArcLength = particle.pathArcLength;
+    particle.endpointBlockedSeconds = 0.0;
     particle.flowSpeed = targetSpeed;
     particle.speedJitter = speedJitter;
     particle.lifetimeSeconds = laserEmitLifeBrightness.x;

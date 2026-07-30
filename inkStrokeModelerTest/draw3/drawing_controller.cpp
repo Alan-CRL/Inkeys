@@ -418,8 +418,7 @@ namespace draw3
 		}
 
 		LaserParticlePathSync SyncLaserParticlePath(
-			RuntimeStroke& runtime, InkRenderer& renderer, float wallDeltaSeconds,
-			const LaserParticleConfig& configuration, float dpiScale) noexcept
+			RuntimeStroke& runtime, InkRenderer& renderer) noexcept
 		{
 			LaserParticlePathSync result;
 			result.previousArcLength = runtime.laserParticlePublishedArcLength;
@@ -565,19 +564,21 @@ namespace draw3
 				? previousPoint.arcLength : runtime.laserParticleRealPathArcLength;
 			if (runtime.laserParticlePathStopped && predictionCount == 0)
 				result.currentArcLength = runtime.laserParticleRealPathArcLength;
-			const float targetX = hasPreviousPoint
-				? previousPoint.x : runtime.laserParticleLastUploadedPoint.x;
-			const float targetY = hasPreviousPoint
-				? previousPoint.y : runtime.laserParticleLastUploadedPoint.y;
+			// 新粒子立即锚定本帧可见 L0 前端；上一锚点只用于覆盖旧脏区。
+			const InkPoint* visibleFront = runtime.stroke.l0DrawPoints.empty()
+				? nullptr : &runtime.stroke.l0DrawPoints.back();
+			const float targetX = visibleFront ? visibleFront->x :
+				hasPreviousPoint ? previousPoint.x :
+				runtime.laserParticleLastUploadedPoint.x;
+			const float targetY = visibleFront ? visibleFront->y :
+				hasPreviousPoint ? previousPoint.y :
+				runtime.laserParticleLastUploadedPoint.y;
 			if (hasPreviousPoint || runtime.hasLaserParticleLastUploadedPoint)
 			{
 				const LaserParticleEmissionAnchor oldAnchor =
 					runtime.laserParticleEmissionAnchor;
 				runtime.laserParticleEmissionAnchor =
-					UpdateLaserParticleEmissionAnchor(
-						runtime.laserParticleEmissionAnchor, targetX, targetY,
-						runtime.filteredInputSpeed, wallDeltaSeconds, dpiScale,
-						configuration);
+					ResolveLaserParticleEmissionAnchor(targetX, targetY);
 				if (oldAnchor.valid)
 					IncludeLaserParticlePoint(
 						result.changedBounds, oldAnchor.x, oldAnchor.y);
@@ -1489,8 +1490,7 @@ namespace draw3
 					BeginLaserContact(laserLifecycle);
 					laserOpacity = 1.0f;
 					if (particlesWereEnabled)
-						SyncLaserParticlePath(*runtime, renderer_, 0.0f,
-							laserParticleConfiguration, configuration_.dpiScale);
+						SyncLaserParticlePath(*runtime, renderer_);
 					// Down 只建立组合路径和时间累计基线；没有起笔爆发。
 				}
 				active.push_back(runtime);
@@ -2142,9 +2142,7 @@ namespace draw3
 					if (particlesEnabled)
 					{
 						const LaserParticlePathSync particlePath =
-							SyncLaserParticlePath(*runtime, renderer_,
-								laserParticleWallDeltaSeconds,
-								laserParticleConfiguration, configuration_.dpiScale);
+							SyncLaserParticlePath(*runtime, renderer_);
 						const float forwardArcLength = std::max(
 							particlePath.currentArcLength -
 							particlePath.previousArcLength, 0.0f);

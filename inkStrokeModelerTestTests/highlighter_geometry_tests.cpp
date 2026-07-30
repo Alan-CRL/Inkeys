@@ -108,6 +108,10 @@ int RunHighlighterGeometryTests()
 	invalidParticleConfiguration.predictionCorrectionSpeedMultiplier = 0.0f;
 	HIGHLIGHTER_CHECK(!draw3::IsValidLaserParticleConfig(
 		invalidParticleConfiguration));
+	invalidParticleConfiguration = particleConfiguration;
+	invalidParticleConfiguration.endpointFadeSeconds = 0.0f;
+	HIGHLIGHTER_CHECK(!draw3::IsValidLaserParticleConfig(
+		invalidParticleConfiguration));
 	HIGHLIGHTER_CHECK(draw3::kLaserParticleCapacity == 2048);
 	HIGHLIGHTER_CHECK(draw3::kLaserParticlePathCapacity == 32);
 	HIGHLIGHTER_CHECK(draw3::kLaserParticlePathPointCapacity == 16384);
@@ -122,6 +126,8 @@ int RunHighlighterGeometryTests()
 		particleConfiguration.maximumEmissionRatePerSecond, 48.0f));
 	HIGHLIGHTER_CHECK(particleConfiguration.maximumSpawnPerFrame == 96);
 	HIGHLIGHTER_CHECK(NearlyEqual(particleConfiguration.lifetimeSeconds, 3.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(
+		particleConfiguration.endpointFadeSeconds, 0.35f));
 	HIGHLIGHTER_CHECK(NearlyEqual(
 		particleConfiguration.maximumLateralExtraDip, 10.0f));
 	HIGHLIGHTER_CHECK(NearlyEqual(
@@ -216,36 +222,51 @@ int RunHighlighterGeometryTests()
 		true, particleConfiguration), 3.0f));
 	HIGHLIGHTER_CHECK(draw3::LaserParticleLifetimeDeadlineQpc(
 		100, 1000, particleConfiguration) == 3100);
-	draw3::LaserParticleEmissionAnchor anchor{ 0.0f, 0.0f, true };
-	anchor = draw3::UpdateLaserParticleEmissionAnchor(anchor,
-		5.0f, 0.0f, 0.0f, 1.0f / 60.0f, 1.0f, particleConfiguration);
+	draw3::LaserParticleEmissionAnchor anchor =
+		draw3::ResolveLaserParticleEmissionAnchor(5.0f, 0.0f);
 	HIGHLIGHTER_CHECK(NearlyEqual(anchor.x, 5.0f));
-	anchor = draw3::UpdateLaserParticleEmissionAnchor(anchor,
-		105.0f, 0.0f, 0.0f, 1.0f / 60.0f, 1.0f, particleConfiguration);
-	HIGHLIGHTER_CHECK(NearlyEqual(anchor.x, 5.4f));
-	HIGHLIGHTER_CHECK(anchor.predictionCorrectionActive);
-	const float firstCorrectionX = anchor.x;
-	anchor = draw3::UpdateLaserParticleEmissionAnchor(anchor,
-		105.0f, 0.0f, 0.0f, 1.0f / 60.0f, 1.0f, particleConfiguration);
-	HIGHLIGHTER_CHECK(NearlyEqual(anchor.x, firstCorrectionX + 0.4f));
-	anchor = draw3::UpdateLaserParticleEmissionAnchor(anchor,
-		-105.0f, 0.0f, 0.0f, 1.0f / 60.0f, 1.0f, particleConfiguration);
-	HIGHLIGHTER_CHECK(NearlyEqual(anchor.x, firstCorrectionX));
-	HIGHLIGHTER_CHECK(anchor.predictionCorrectionActive);
-	anchor = draw3::UpdateLaserParticleEmissionAnchor(anchor,
-		5.5f, 0.0f, 0.0f, 1.0f / 60.0f, 1.0f, particleConfiguration);
-	HIGHLIGHTER_CHECK(NearlyEqual(anchor.x, 5.5f));
-	HIGHLIGHTER_CHECK(!anchor.predictionCorrectionActive);
+	anchor = draw3::ResolveLaserParticleEmissionAnchor(105.0f, -20.0f);
+	HIGHLIGHTER_CHECK(NearlyEqual(anchor.x, 105.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(anchor.y, -20.0f));
+	HIGHLIGHTER_CHECK(!draw3::ResolveLaserParticleEmissionAnchor(
+		std::nanf(""), 0.0f).valid);
 	draw3::LaserParticleArcAdvance advance = draw3::AdvanceLaserParticleArc(
 		9.0f, 10.0f, 100.0f, 1.0f, 1.0f);
 	HIGHLIGHTER_CHECK(NearlyEqual(advance.arcLength, 10.0f));
 	HIGHLIGHTER_CHECK(NearlyEqual(advance.actualAdvance, 1.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(advance.requestedAdvance, 100.0f));
+	HIGHLIGHTER_CHECK(advance.reachedPathEnd);
 	advance = draw3::AdvanceLaserParticleArc(
 		advance.arcLength, 20.0f, 100.0f, 1.0f, 0.0f);
 	HIGHLIGHTER_CHECK(NearlyEqual(advance.arcLength, 10.0f));
+	HIGHLIGHTER_CHECK(!advance.reachedPathEnd);
 	advance = draw3::AdvanceLaserParticleArc(
 		advance.arcLength, 20.0f, 100.0f, 0.5f, 0.02f);
 	HIGHLIGHTER_CHECK(NearlyEqual(advance.arcLength, 11.0f));
+	HIGHLIGHTER_CHECK(!advance.reachedPathEnd);
+	const draw3::LaserParticleArcAdvance slowEndpointAdvance =
+		draw3::AdvanceLaserParticleArc(
+			0.0f, 0.1f, 12.0f, 1.0f, 1.0f / 60.0f);
+	HIGHLIGHTER_CHECK(slowEndpointAdvance.reachedPathEnd);
+	const draw3::LaserParticleArcAdvance fastPathAdvance =
+		draw3::AdvanceLaserParticleArc(
+			0.0f, 1.0f, 12.0f, 1.0f, 1.0f / 60.0f);
+	HIGHLIGHTER_CHECK(!fastPathAdvance.reachedPathEnd);
+	float endpointBlockedSeconds =
+		draw3::UpdateLaserParticleEndpointBlockedSeconds(
+			0.0f, slowEndpointAdvance.reachedPathEnd,
+			slowEndpointAdvance.requestedAdvance, 1.0f / 60.0f);
+	HIGHLIGHTER_CHECK(NearlyEqual(endpointBlockedSeconds, 1.0f / 60.0f));
+	endpointBlockedSeconds = draw3::UpdateLaserParticleEndpointBlockedSeconds(
+		endpointBlockedSeconds, false, fastPathAdvance.requestedAdvance, 1.0f);
+	HIGHLIGHTER_CHECK(NearlyEqual(endpointBlockedSeconds, 1.0f / 60.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticleEndpointFadeFactor(
+		0.0f, particleConfiguration.endpointFadeSeconds), 1.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticleEndpointFadeFactor(
+		0.175f, particleConfiguration.endpointFadeSeconds), 0.5f));
+	HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticleEndpointFadeFactor(
+		particleConfiguration.endpointFadeSeconds,
+		particleConfiguration.endpointFadeSeconds), 0.0f));
 	advance = draw3::AdvanceLaserParticleArc(
 		advance.arcLength, 20.0f, 100.0f,
 		draw3::LaserParticleLifeFactor(2.9f,

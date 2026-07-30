@@ -212,14 +212,15 @@ for (const auto& layer : layersInDownOrder) {
 | UpdateCS/EmitCS | `u0` | `RWStructuredBuffer<LaserGpuParticle>` |
 | VS shape 10 | `t8` | 同一粒子缓冲的 SRV |
 
-- Update 常量为 `64 bytes`：3 个 `float4` + 1 个 `uint4`；其中 `laserUpdatePosition.xyzw` 依次为正常位置响应秒数、异常修正速度倍率、跳变阈值和 DPI scale，默认值为 `0.040/2.0/6.0/dpiScale`。Emit 常量为 `112 bytes`：`uint4 + 5*float4 + uint4`，默认最大法线额外距离为 `10 DIP * dpiScale`。CPU 结构必须 `static_assert(size % 16 == 0)` 并与 HLSL 字段顺序一致。
+- Update 常量为 `64 bytes`：3 个 `float4`，随后是 reset/path capacity/particle capacity 三个 uint 与 `endpointFadeSeconds` float；`laserUpdatePosition.xyzw` 依次为正常位置响应秒数、异常修正速度倍率、跳变阈值和 DPI scale，默认值为 `0.040/2.0/6.0/dpiScale`，端点淡出基准为 `0.35s`。Emit 常量为 `112 bytes`：`uint4 + 5*float4 + uint4`，默认最大法线额外距离为 `10 DIP * dpiScale`。CPU 结构必须 `static_assert(size % 16 == 0)` 并与 HLSL 字段顺序一致。
 - 每次 Compute 前先 `VSSetShaderResources(8, null)`；Dispatch 后依次解除 `u0`、`t0/t1`、`b0` 和 CS。绘制结束再解除 VS `t8`。禁止依赖 D3D11 自动冲突修复。
 - path slot 只有 `active == 0` 才能复用，复用时 generation 非零递增；粒子 generation 不匹配立即死亡。容量不足不得覆盖活跃路径。
 - 路径缓冲的 `[0, realPointCount)` 是不可变真实前缀，其后是本帧完整替换的 prediction 尾；真实追加先覆盖旧尾，header 只发布当前组合点数。真实点优先容量，预测尾可以缩短或清空。
-- `LaserGpuParticle` 复用原保留 float 保存 `predictionCorrectionActive`，不改变 `128 bytes` 布局；异常修正一旦触发就保持该状态，直到位置真正到达目标，不能在进入跳变阈值后提前切回快速响应。
+- `LaserGpuParticle` 复用原 `birthArcLength` float 保存 `endpointBlockedSeconds`，并复用原保留 float 保存 `predictionCorrectionActive`，不改变 `128 bytes` 布局；异常修正一旦触发就保持该状态，直到位置真正到达目标，不能在进入跳变阈值后提前切回快速响应。
 - UpdateCS 优先使用 segment cursor，失配时固定 15 步二分；零长度段沿用持久化切线。预测尾回缩或到路径末端时钳制弧长、丢弃多余位移；持久屏幕位置/切线正常按 40ms 响应，异常跳变与回缩按当前生命周期实际沿线速度的 2 倍限速靠近新目标。
-- UpdateCS 用实际 wall time 累计固定 `3.0s` 年龄，用最多 `1/30s` 的 motion dt 推进；速度倍率与 Alpha 都为 `1-smoothstep(0,1,age/3)`。Up 的 `header.ended` 不切换收束阶段，只冻结路径和输入速度。
+- UpdateCS 用实际 wall time 累计最长 `3.0s` 年龄，用最多 `1/30s` 的 motion dt 推进；速度倍率与基础 Alpha 都为 `1-smoothstep(0,1,age/3)`。有有效请求位移且推进后仍处于当前路径末端时累计 `endpointBlockedSeconds`，Alpha 再乘以基准 `0.35s`、按 seed 固定 `±25%` 的 `1-smoothstep` 端点因子，到零立即死亡；离开末端停止累计但不得回退。Up 的 `header.ended` 不切换收束阶段，只冻结路径和输入速度。
 - EmitCS 使用 CPU 管理的循环槽覆盖最旧粒子，不使用 Append/Consume、计数器、间接绘制或回读。每粒写入 `0.68–1.0` 基础亮度、`0.8–1.4Hz` 呼吸频率、随机相位和 `0.12` 振幅；VS 通过 `SV_InstanceID` 取槽，死亡槽生成屏幕外退化图元。
+- Emit 请求的屏幕锚点必须直接使用本帧可见 `l0DrawPoints.back()`，新粒子立即位于真实尾、prediction 与笔锋最前端；只有已写入结构化缓冲的既有粒子使用 `predictionCorrectionActive` 限速修正。
 - shape `10` 的呼吸亮度只乘核心/辉光 RGB，不乘 Alpha；核心为中性白，3 DIP 辉光为 `(1.0, 0.55, 0.62)`、峰值 Alpha `0.24`，输出继续满足预乘 Alpha operator-resolve。
 
 ### 4. Validation & Error Matrix
@@ -242,7 +243,7 @@ for (const auto& layer : layersInDownOrder) {
 ### 6. Tests Required
 
 - 静态断言三种镜像结构大小以及 Update/Emit 常量 16 字节对齐。
-- 单元测试 generation wrap、真实/预测容量 clamp、静止时间发射、移动 4 DIP 密度/96 上限、预测回缩不补发、速度平滑、固定 3 秒生命周期、呼吸只改亮度、10 DIP 法线额外距离、末端无追赶、Up 后继续运动、极端预测跳变的 2 倍速度限速追赶和 dirty 到期。
+- 单元测试 generation wrap、真实/预测容量 clamp、静止时间发射、移动 4 DIP 密度/96 上限、预测回缩不补发、速度平滑、最长 3 秒生命周期、呼吸只改亮度、10 DIP 法线额外距离、立即 L0 前端出生、慢速/Up 末端受阻累计与快速淡出曲线、末端无追赶、Up 后继续运动、既有粒子极端预测跳变的 2 倍速度限速追赶和 dirty 到期。
 - 完整 ARM64 解决方案构建必须让 FXC 成功编译 VS、PS、UpdateCS、EmitCS；人工启用 D3D11 Debug Layer 检查 SRV/UAV 冲突。
 
 ### 7. Wrong vs Correct

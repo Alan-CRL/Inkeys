@@ -7,7 +7,8 @@ cbuffer LaserParticleUpdateBuffer : register(b0)
     float4 laserUpdateTime;
     float4 laserUpdateSpeed;
     float4 laserUpdatePosition;
-    uint4 laserUpdateFlags;
+    uint3 laserUpdateFlags;
+    float laserEndpointFadeSeconds;
 };
 
 void KillLaserParticle(inout LaserGpuParticle particle)
@@ -89,6 +90,23 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     float advancedArcLength = min(
         particle.pathArcLength + requestedAdvance, pathEndArcLength);
     particle.pathArcLength = advancedArcLength;
+    bool reachedPathEnd = requestedAdvance > 1e-4 &&
+        advancedArcLength >= pathEndArcLength - 1e-4;
+    if (reachedPathEnd)
+        particle.endpointBlockedSeconds += wallDeltaSeconds;
+
+    // 缓慢前行或 Up 后受阻于路径末端的粒子，按种子错开后快速淡出。
+    float endpointFadeDuration = max(laserEndpointFadeSeconds, 1e-4) *
+        lerp(0.75, 1.25,
+            LaserParticleRandom01(particle.seed ^ 0xA511E9B3u));
+    float endpointFadeFactor = 1.0 - smoothstep(
+        0.0, endpointFadeDuration, particle.endpointBlockedSeconds);
+    if (endpointFadeFactor <= 0.0)
+    {
+        KillLaserParticle(particle);
+        LaserParticles[particleIndex] = particle;
+        return;
+    }
 
     if (!SampleLaserParticlePath(particle.pathSlot, header,
         particle.pathArcLength, particle.segmentCursor, particle.tangent,
@@ -160,7 +178,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         particle.breathingAmplitude * sin(6.28318530718 *
         particle.breathingFrequencyHz * particle.ageSeconds +
         particle.breathingPhase) * breathingRamp);
-    particle.opacity = lifeFactor;
+    particle.opacity = lifeFactor * endpointFadeFactor;
     particle.currentRadius = particle.baseRadius;
     LaserParticles[particleIndex] = particle;
 }

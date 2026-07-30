@@ -30,6 +30,7 @@ export namespace draw3
 		float maximumEmissionRatePerSecond = 48.0f;
 		uint32_t maximumSpawnPerFrame = 96;
 		float lifetimeSeconds = 3.0f;
+		float endpointFadeSeconds = 0.35f;
 		float minimumSpeedDipPerSecond = 12.0f;
 		float maximumSpeedDipPerSecond = 96.0f;
 		float inputSpeedInfluence = 0.08f;
@@ -102,7 +103,7 @@ export namespace draw3
 		float position[2] = {};
 		float tangent[2] = { 1.0f, 0.0f };
 		float pathArcLength = 0.0f;
-		float birthArcLength = 0.0f;
+		float endpointBlockedSeconds = 0.0f;
 		float flowSpeed = 0.0f;
 		float speedJitter = 1.0f;
 		float ageSeconds = 0.0f;
@@ -164,24 +165,27 @@ export namespace draw3
 		float x = 0.0f;
 		float y = 0.0f;
 		bool valid = false;
-		bool predictionCorrectionActive = false;
 	};
 
-	// 正常预测位置直接跟随；异常跳变按正常粒子速度的固定倍率限速追赶。
-	LaserParticleEmissionAnchor UpdateLaserParticleEmissionAnchor(
-		LaserParticleEmissionAnchor current, float targetX, float targetY,
-		float filteredInputSpeed, float wallDeltaSeconds, float dpiScale,
-		const LaserParticleConfig& configuration) noexcept;
+	// 新粒子始终从本帧可见 L0 最前端出生，不继承存量粒子的预测修正延迟。
+	LaserParticleEmissionAnchor ResolveLaserParticleEmissionAnchor(
+		float targetX, float targetY) noexcept;
 
 	struct LaserParticleArcAdvance
 	{
 		float arcLength = 0.0f;
 		float actualAdvance = 0.0f;
+		float requestedAdvance = 0.0f;
+		bool reachedPathEnd = false;
 	};
 
 	// 到达当前组合路径末端时丢弃多余位移，后续路径更新不会补追。
 	LaserParticleArcAdvance AdvanceLaserParticleArc(float arcLength, float pathEndArcLength,
 		float speed, float lifeFactor, float motionDeltaSeconds) noexcept;
+	float UpdateLaserParticleEndpointBlockedSeconds(float currentBlockedSeconds,
+		bool reachedPathEnd, float requestedAdvance, float wallDeltaSeconds) noexcept;
+	float LaserParticleEndpointFadeFactor(
+		float endpointBlockedSeconds, float endpointFadeSeconds) noexcept;
 
 	uint32_t NextLaserParticlePathGeneration(uint32_t generation) noexcept;
 	uint32_t ClampLaserParticlePathAppendCount(
