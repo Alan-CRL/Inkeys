@@ -107,12 +107,18 @@ export namespace draw3
 		LaserTrailPhase phase = LaserTrailPhase::Inactive;
 		uint32_t activeContactCount = 0;
 		int64_t lastAllUpQpc = 0;
+		double minimumHoldDurationSeconds = 0.0;
 	};
 
 	// 新 contact 在完全消失前会恢复整组满亮并重新进入 Active。
 	void BeginLaserContact(LaserTrailLifecycle& lifecycle) noexcept;
 	// 只有最后一根 Laser 抬起时才开始 Hold 计时。
 	void EndLaserContact(LaserTrailLifecycle& lifecycle, int64_t upQpc) noexcept;
+	// 当前批次实际发射粒子后，主体 Hold 不得早于粒子寿命结束。
+	void RequireLaserMinimumHold(
+		LaserTrailLifecycle& lifecycle, double minimumSeconds) noexcept;
+	double EffectiveLaserHoldDurationSeconds(
+		const LaserTrailLifecycle& lifecycle, double configuredSeconds) noexcept;
 	// 根据当前设置即时重算 Hold/Fade，并返回平滑后的整组 opacity。
 	float EvaluateLaserTrailOpacity(LaserTrailLifecycle& lifecycle,
 		int64_t nowQpc, int64_t qpcFrequency, double holdDurationSeconds) noexcept;

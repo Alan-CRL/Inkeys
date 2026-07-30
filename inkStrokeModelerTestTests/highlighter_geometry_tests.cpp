@@ -71,6 +71,11 @@ int RunHighlighterGeometryTests()
 	HIGHLIGHTER_CHECK(!draw3::ShouldBakeLaserBatch(laserLifecycle, 2));
 	draw3::EndLaserContact(laserLifecycle, 1000);
 	HIGHLIGHTER_CHECK(laserLifecycle.phase == draw3::LaserTrailPhase::Hold);
+	draw3::RequireLaserMinimumHold(laserLifecycle, 3.0);
+	HIGHLIGHTER_CHECK(draw3::EffectiveLaserHoldDurationSeconds(
+		laserLifecycle, 0.25) == 3.0);
+	HIGHLIGHTER_CHECK(draw3::EffectiveLaserHoldDurationSeconds(
+		laserLifecycle, 5.0) == 5.0);
 	HIGHLIGHTER_CHECK(draw3::ShouldBakeLaserBatch(laserLifecycle, 2));
 	HIGHLIGHTER_CHECK(!draw3::ShouldBakeLaserBatch(laserLifecycle, 0));
 	HIGHLIGHTER_CHECK(draw3::ShouldCompositeLaserLayer(false, 1));
@@ -87,6 +92,7 @@ int RunHighlighterGeometryTests()
 	HIGHLIGHTER_CHECK(NearlyEqual(draw3::EvaluateLaserTrailOpacity(
 		laserLifecycle, 4500, 1000, 3.0), 1.0f));
 	draw3::EndLaserContact(laserLifecycle, 4500);
+	laserLifecycle.minimumHoldDurationSeconds = 0.0;
 	HIGHLIGHTER_CHECK(draw3::EvaluateLaserTrailOpacity(
 		laserLifecycle, 5301, 1000, 0.0) == 0.0f);
 	HIGHLIGHTER_CHECK(laserLifecycle.phase == draw3::LaserTrailPhase::Inactive);
@@ -104,28 +110,59 @@ int RunHighlighterGeometryTests()
 	HIGHLIGHTER_CHECK(sizeof(draw3::LaserParticlePathPoint) == 16);
 	HIGHLIGHTER_CHECK(sizeof(draw3::LaserParticlePathHeader) == 32);
 	HIGHLIGHTER_CHECK(sizeof(draw3::LaserGpuParticle) == 128);
-	HIGHLIGHTER_CHECK(NearlyEqual(particleConfiguration.particlesPerPixel, 0.5f));
+	HIGHLIGHTER_CHECK(NearlyEqual(
+		particleConfiguration.idleEmissionRatePerSecond, 6.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(
+		particleConfiguration.motionEmissionSpacingDip, 4.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(
+		particleConfiguration.maximumEmissionRatePerSecond, 48.0f));
 	HIGHLIGHTER_CHECK(particleConfiguration.maximumSpawnPerFrame == 96);
+	HIGHLIGHTER_CHECK(NearlyEqual(particleConfiguration.lifetimeSeconds, 3.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(
+		particleConfiguration.maximumLateralExtraDip, 4.5f));
 	HIGHLIGHTER_CHECK(NearlyEqual(particleConfiguration.glowExtentDip, 3.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(particleConfiguration.glowGreen, 0.55f));
+	HIGHLIGHTER_CHECK(NearlyEqual(particleConfiguration.glowBlue, 0.62f));
+	HIGHLIGHTER_CHECK(NearlyEqual(particleConfiguration.glowAlpha, 0.24f));
 
-	// Down 首点没有新增弧长，因此不会产生旧式起笔爆发。
+	// Down 帧 dt 为零，只建立时间发射基线，不产生旧式起笔爆发。
 	draw3::LaserParticleEmissionSchedule emission =
 		draw3::ScheduleLaserParticleEmission(
-			0.0f, 0.0f, 96, particleConfiguration);
+			0.0f, 0.0f, 0.0f, 96, particleConfiguration);
 	HIGHLIGHTER_CHECK(emission.count == 0);
+	float emissionFraction = 0.0f;
+	for (int frame = 0; frame < 4; ++frame)
+	{
+		emission = draw3::ScheduleLaserParticleEmission(
+			1.0f / 30.0f, 0.0f, emissionFraction, 96, particleConfiguration);
+		HIGHLIGHTER_CHECK(emission.count == 0);
+		emissionFraction = emission.fractionalParticles;
+	}
 	emission = draw3::ScheduleLaserParticleEmission(
-		1.0f, emission.distanceSinceLastEmission, 96, particleConfiguration);
-	HIGHLIGHTER_CHECK(emission.count == 0);
-	HIGHLIGHTER_CHECK(NearlyEqual(emission.distanceSinceLastEmission, 1.0f));
-	emission = draw3::ScheduleLaserParticleEmission(
-		1.0f, emission.distanceSinceLastEmission, 96, particleConfiguration);
+		1.0f / 30.0f, 0.0f, emissionFraction, 96, particleConfiguration);
 	HIGHLIGHTER_CHECK(emission.count == 1);
-	HIGHLIGHTER_CHECK(NearlyEqual(emission.distanceSinceLastEmission, 0.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(emission.fractionalParticles, 0.0f));
 	emission = draw3::ScheduleLaserParticleEmission(
-		1000.0f, 0.0f, 96, particleConfiguration);
-	HIGHLIGHTER_CHECK(emission.count == 96);
+		1.0f / 60.0f, 100.0f / 60.0f, 0.0f, 96, particleConfiguration);
+	HIGHLIGHTER_CHECK(NearlyEqual(emission.emissionRatePerSecond, 31.0f));
 	emission = draw3::ScheduleLaserParticleEmission(
-		0.0f, emission.distanceSinceLastEmission, 96, particleConfiguration);
+		1.0f / 60.0f, 1000.0f, 0.0f, 96, particleConfiguration);
+	HIGHLIGHTER_CHECK(NearlyEqual(emission.emissionRatePerSecond, 48.0f));
+	emission = draw3::ScheduleLaserParticleEmission(
+		1.0f / 60.0f, -100.0f, 0.0f, 96, particleConfiguration);
+	HIGHLIGHTER_CHECK(NearlyEqual(emission.emissionRatePerSecond, 6.0f));
+	HIGHLIGHTER_CHECK(emission.count == 0); // 预测尾回缩不补发丢失的弧长。
+	emission = draw3::ScheduleLaserParticleEmission(
+		0.5f, 4.0f, 0.0f, 96, particleConfiguration);
+	HIGHLIGHTER_CHECK(NearlyEqual(emission.emissionRatePerSecond, 36.0f));
+	HIGHLIGHTER_CHECK(emission.count == 1); // 卡顿只积分一个 1/30 秒安全步。
+	emission = draw3::ScheduleLaserParticleEmission(
+		1.0f / 30.0f, 1000.0f, 0.0f, 0, particleConfiguration);
+	HIGHLIGHTER_CHECK(emission.count == 0);
+	HIGHLIGHTER_CHECK(emission.fractionalParticles > 0.59f &&
+		emission.fractionalParticles < 0.61f);
+	emission = draw3::ScheduleLaserParticleEmission(
+		0.0f, 0.0f, emission.fractionalParticles, 96, particleConfiguration);
 	HIGHLIGHTER_CHECK(emission.count == 0); // 超额整数部分不积压到下一帧。
 
 	HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticleTargetSpeed(
@@ -141,41 +178,97 @@ int RunHighlighterGeometryTests()
 	HIGHLIGHTER_CHECK(NearlyEqual(draw3::SmoothLaserParticleSpeed(
 		smoothedParticleSpeed, 12.0f, 0.0f,
 		particleConfiguration.speedResponseSeconds), smoothedParticleSpeed));
+	HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticleLifeFactor(
+		0.0f, particleConfiguration.lifetimeSeconds), 1.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticleLifeFactor(
+		1.5f, particleConfiguration.lifetimeSeconds), 0.5f));
+	HIGHLIGHTER_CHECK(draw3::LaserParticleLifeFactor(
+		0.75f, particleConfiguration.lifetimeSeconds) >
+		draw3::LaserParticleLifeFactor(
+			1.5f, particleConfiguration.lifetimeSeconds));
+	HIGHLIGHTER_CHECK(draw3::LaserParticleLifeFactor(
+		1.5f, particleConfiguration.lifetimeSeconds) >
+		draw3::LaserParticleLifeFactor(
+			2.25f, particleConfiguration.lifetimeSeconds));
+	HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticleLifeFactor(
+		3.0f, particleConfiguration.lifetimeSeconds), 0.0f));
+	const float breathingAge = 0.2f;
+	const float breathingPhase = 1.57079632679f -
+		6.28318530718f * breathingAge;
+	HIGHLIGHTER_CHECK(NearlyEqual(draw3::EvaluateLaserParticleBrightness(
+		0.8f, 0.0f, 1.0f, breathingPhase, particleConfiguration), 0.8f));
+	HIGHLIGHTER_CHECK(draw3::EvaluateLaserParticleBrightness(
+		0.8f, breathingAge, 1.0f, breathingPhase,
+		particleConfiguration) > 0.91f);
+	HIGHLIGHTER_CHECK(draw3::MaximumLaserParticleTravelDip(
+		particleConfiguration) > 164.0f);
+	HIGHLIGHTER_CHECK(draw3::MaximumLaserParticleTravelDip(
+		particleConfiguration) < 166.0f);
+	HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticlePathRetirementSeconds(
+		false, particleConfiguration), 0.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticlePathRetirementSeconds(
+		true, particleConfiguration), 3.0f));
+	HIGHLIGHTER_CHECK(draw3::LaserParticleLifetimeDeadlineQpc(
+		100, 1000, particleConfiguration) == 3100);
+	draw3::LaserParticleEmissionAnchor anchor{ 0.0f, 0.0f, true };
+	anchor = draw3::UpdateLaserParticleEmissionAnchor(anchor,
+		5.0f, 0.0f, 0.0f, 1.0f / 60.0f, 1.0f, particleConfiguration);
+	HIGHLIGHTER_CHECK(NearlyEqual(anchor.x, 5.0f));
+	anchor = draw3::UpdateLaserParticleEmissionAnchor(anchor,
+		105.0f, 0.0f, 0.0f, 1.0f / 60.0f, 1.0f, particleConfiguration);
+	HIGHLIGHTER_CHECK(anchor.x > 5.0f && anchor.x < 25.0f);
+	const float firstCorrectionX = anchor.x;
+	anchor = draw3::UpdateLaserParticleEmissionAnchor(anchor,
+		105.0f, 0.0f, 0.0f, 1.0f / 60.0f, 1.0f, particleConfiguration);
+	HIGHLIGHTER_CHECK(anchor.x > firstCorrectionX && anchor.x < 105.0f);
 	draw3::LaserParticleArcAdvance advance = draw3::AdvanceLaserParticleArc(
-		9.0f, 10.0f, 0.0f, 56.0f, 100.0f, 1.0f);
+		9.0f, 10.0f, 100.0f, 1.0f, 1.0f);
 	HIGHLIGHTER_CHECK(NearlyEqual(advance.arcLength, 10.0f));
-	HIGHLIGHTER_CHECK(NearlyEqual(advance.traveledDistance, 1.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(advance.actualAdvance, 1.0f));
 	advance = draw3::AdvanceLaserParticleArc(
-		advance.arcLength, 20.0f, advance.traveledDistance,
-		56.0f, 100.0f, 0.0f);
+		advance.arcLength, 20.0f, 100.0f, 1.0f, 0.0f);
 	HIGHLIGHTER_CHECK(NearlyEqual(advance.arcLength, 10.0f));
 	advance = draw3::AdvanceLaserParticleArc(
-		advance.arcLength, 20.0f, advance.traveledDistance,
-		56.0f, 100.0f, 0.01f);
+		advance.arcLength, 20.0f, 100.0f, 0.5f, 0.02f);
 	HIGHLIGHTER_CHECK(NearlyEqual(advance.arcLength, 11.0f));
+	advance = draw3::AdvanceLaserParticleArc(
+		advance.arcLength, 20.0f, 100.0f,
+		draw3::LaserParticleLifeFactor(2.9f,
+			particleConfiguration.lifetimeSeconds), 1.0f / 30.0f);
+	HIGHLIGHTER_CHECK(advance.actualAdvance > 0.0f); // Up 不再终止存量粒子。
+	advance = draw3::AdvanceLaserParticleArc(
+		advance.arcLength, 20.0f, 100.0f,
+		draw3::LaserParticleLifeFactor(3.0f,
+			particleConfiguration.lifetimeSeconds), 1.0f / 30.0f);
+	HIGHLIGHTER_CHECK(NearlyEqual(advance.actualAdvance, 0.0f));
 	HIGHLIGHTER_CHECK(draw3::NextLaserParticlePathGeneration(0) == 1);
 	HIGHLIGHTER_CHECK(draw3::NextLaserParticlePathGeneration(0xFFFFFFFFu) == 1);
+	// 真实前缀增长会覆盖旧预测尾，随后只发布本帧新的、更短预测尾。
+	const uint32_t firstPredictionCount =
+		draw3::ClampLaserParticlePathAppendCount(10, 8);
+	const uint32_t replacedPredictionCount =
+		draw3::ClampLaserParticlePathAppendCount(12, 3);
+	HIGHLIGHTER_CHECK(10 + firstPredictionCount == 18);
+	HIGHLIGHTER_CHECK(12 + replacedPredictionCount == 15);
 	HIGHLIGHTER_CHECK(draw3::ClampLaserParticlePathAppendCount(
 		draw3::kLaserParticlePathPointCapacity - 2, 8) == 2);
 	HIGHLIGHTER_CHECK(draw3::ClampLaserParticlePathAppendCount(
 		draw3::kLaserParticlePathPointCapacity, 1) == 0);
-	uint32_t edgeConvergenceCount = 0;
-	for (uint32_t seed = 0; seed < 4096; ++seed)
-		if (draw3::LaserParticleConvergesToEdge(seed))
-			++edgeConvergenceCount;
-	HIGHLIGHTER_CHECK(edgeConvergenceCount > 2949);
-	HIGHLIGHTER_CHECK(edgeConvergenceCount < 3195);
 	draw3::LaserParticleDirtyTracker dirtyTracker;
 	const draw3::LaserParticlePathHandle dirtyPath{ 2, 7 };
+	const int64_t dirtyExpiry = draw3::LaserParticleLifetimeDeadlineQpc(
+		120, 1000, particleConfiguration);
 	dirtyTracker.Add(dirtyPath, RECT{ 10, 20, 30, 40 }, 100);
+	dirtyTracker.Add(dirtyPath, RECT{ 5, 15, 35, 45 }, dirtyExpiry);
+	dirtyTracker.ExpandPath(dirtyPath, RECT{ 0, 10, 40, 50 });
 	HIGHLIGHTER_CHECK(dirtyTracker.HasActive(50));
 	const RECT dirtyBounds = dirtyTracker.ActiveBounds(50);
-	HIGHLIGHTER_CHECK(dirtyBounds.left == 10 && dirtyBounds.top == 20);
-	HIGHLIGHTER_CHECK(dirtyBounds.right == 30 && dirtyBounds.bottom == 40);
-	dirtyTracker.EndPath(dirtyPath, 60);
-	HIGHLIGHTER_CHECK(!dirtyTracker.HasActive(60));
-	HIGHLIGHTER_CHECK(dirtyTracker.ActiveBounds(60).left ==
-		dirtyTracker.ActiveBounds(60).right);
+	HIGHLIGHTER_CHECK(dirtyBounds.left == 0 && dirtyBounds.top == 10);
+	HIGHLIGHTER_CHECK(dirtyBounds.right == 40 && dirtyBounds.bottom == 50);
+	HIGHLIGHTER_CHECK(dirtyTracker.HasActive(dirtyExpiry - 1));
+	HIGHLIGHTER_CHECK(!dirtyTracker.HasActive(dirtyExpiry));
+	HIGHLIGHTER_CHECK(dirtyTracker.ActiveBounds(dirtyExpiry).left ==
+		dirtyTracker.ActiveBounds(dirtyExpiry).right);
 	const RECT laserBounds = draw3::RectFromLaserPoints({
 		{ 50.0f, 50.0f, 2.5f, 0.0f } }, 1.0f, 100, 100);
 	HIGHLIGHTER_CHECK(laserBounds.left == 39 && laserBounds.top == 39);

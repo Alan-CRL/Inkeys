@@ -5,10 +5,11 @@
 cbuffer LaserParticleEmitBuffer : register(b0)
 {
     uint4 laserEmitPath;
-    float4 laserEmitArc;
-    float4 laserEmitLifetimeTravel;
-    float4 laserEmitRadiusSpeed0;
-    float4 laserEmitSpeed1;
+    float4 laserEmitSpawn;
+    float4 laserEmitLifeBrightness;
+    float4 laserEmitBreathRadius;
+    float4 laserEmitRadiusSpeed;
+    float4 laserEmitSpeed;
     uint4 laserEmitSeed;
 };
 
@@ -26,8 +27,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         return;
 
     uint seed = LaserParticleHash(laserEmitSeed.x + localIndex * 0x9E3779B9u);
-    float sampleRatio = ((float) localIndex + 0.5) / max((float) spawnCount, 1.0);
-    float sampleArcLength = lerp(laserEmitArc.x, laserEmitArc.y, sampleRatio);
+    float sampleArcLength = max(laserEmitSpawn.x, 0.0);
     uint segmentCursor = 0;
     float2 pathPosition;
     float pathRadius;
@@ -44,42 +44,47 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     float random3 = LaserParticleRandom01(seed ^ 0xC2B2AE35u);
     float random4 = LaserParticleRandom01(seed ^ 0x27D4EB2Fu);
     float random5 = LaserParticleRandom01(seed ^ 0x165667B1u);
+    float random6 = LaserParticleRandom01(seed ^ 0xD3A2646Cu);
+    float random7 = LaserParticleRandom01(seed ^ 0x85EBCA77u);
     float side = random0 < 0.5 ? -1.0 : 1.0;
-    float coreRadius = pathRadius * laserEmitRadiusSpeed0.z;
+    float coreRadius = pathRadius * laserEmitRadiusSpeed.y;
     float startOffset = (random1 * 2.0 - 1.0) * coreRadius * 0.72;
-    float signedExtra = side * random2 * max(laserEmitArc.w, 0.0);
+    float signedExtra = side * random2 * max(laserEmitSpawn.w, 0.0);
     float speedJitter = lerp(0.88, 1.12, random3);
-    float targetSpeed = clamp(laserEmitRadiusSpeed0.w +
-        laserEmitSpeed1.y * max(header.filteredInputSpeed, 0.0),
-        laserEmitRadiusSpeed0.w, laserEmitSpeed1.x) * speedJitter;
+    float targetSpeed = clamp(laserEmitRadiusSpeed.z +
+        laserEmitSpeed.x * max(header.filteredInputSpeed, 0.0),
+        laserEmitRadiusSpeed.z, laserEmitRadiusSpeed.w) * speedJitter;
 
     LaserGpuParticle particle = (LaserGpuParticle) 0;
-    particle.position = pathPosition +
+    particle.position = laserEmitSpawn.yz +
         float2(-pathTangent.y, pathTangent.x) * startOffset;
     particle.tangent = pathTangent;
     particle.pathArcLength = min(sampleArcLength, pathEndArcLength);
     particle.birthArcLength = particle.pathArcLength;
-    particle.maximumTravelDistance = lerp(
-        laserEmitLifetimeTravel.z, laserEmitLifetimeTravel.w, random4);
     particle.flowSpeed = targetSpeed;
     particle.speedJitter = speedJitter;
-    particle.lifetimeSeconds = lerp(
-        laserEmitLifetimeTravel.x, laserEmitLifetimeTravel.y, random5);
+    particle.lifetimeSeconds = laserEmitLifeBrightness.x;
     particle.lateralOffset = startOffset;
     particle.lateralStartOffset = startOffset;
     particle.lateralExtra = signedExtra;
     particle.pathRadius = pathRadius;
     particle.baseRadius = lerp(
-        laserEmitRadiusSpeed0.x, laserEmitRadiusSpeed0.y,
-        LaserParticleRandom01(seed ^ 0x85EBCA77u));
+        laserEmitBreathRadius.w, laserEmitRadiusSpeed.x, random7);
     particle.currentRadius = particle.baseRadius;
     particle.opacity = 1.0;
+    particle.baseBrightness = lerp(
+        laserEmitLifeBrightness.y, laserEmitLifeBrightness.z, random4);
+    particle.currentBrightness = particle.baseBrightness;
+    particle.breathingFrequencyHz = lerp(
+        laserEmitBreathRadius.x, laserEmitBreathRadius.y, random5);
+    particle.breathingPhase = random6 * 6.28318530718;
+    particle.breathingAmplitude = laserEmitLifeBrightness.w;
+    particle.breathingRampSeconds = laserEmitBreathRadius.z;
     particle.pathSlot = laserEmitPath.x;
     particle.pathGeneration = laserEmitPath.y;
     particle.segmentCursor = segmentCursor;
     particle.seed = seed;
     particle.alive = 1;
-    particle.phase = 0;
 
     uint particleCapacity = min(laserEmitSeed.z, LASER_PARTICLE_CAPACITY);
     uint particleIndex = (laserEmitPath.z + localIndex) % max(particleCapacity, 1u);

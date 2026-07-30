@@ -20,21 +20,24 @@ namespace draw3
 	namespace
 	{
 		constexpr float kMinimumPositiveValue = 0.0001f;
+		constexpr float kTwoPi = 6.28318530717958647692f;
+		constexpr float kMaximumMotionDeltaSeconds = 1.0f / 30.0f;
+		constexpr float kMaximumSpeedJitter = 1.12f;
 
 		struct LaserParticleUpdateConstants
 		{
 			float wallDeltaSeconds = 0.0f;
 			float motionDeltaSeconds = 0.0f;
-			float dpiScale = 1.0f;
 			float speedResponseSeconds = 0.080f;
+			float spreadSeconds = 0.120f;
 			float minimumSpeed = 12.0f;
 			float maximumSpeed = 96.0f;
 			float inputSpeedInfluence = 0.08f;
-			float spreadSeconds = 0.120f;
-			float fadeStartFraction = 0.55f;
-			float convergenceSeconds = 0.220f;
+			float lifetimeSeconds = 3.0f;
 			float positionResponseSeconds = 0.040f;
-			float padding0 = 0.0f;
+			float predictionCorrectionResponseSeconds = 0.120f;
+			float predictionJumpThreshold = 6.0f;
+			float dpiScale = 1.0f;
 			uint32_t resetAll = 0;
 			uint32_t pathPointCapacity = kLaserParticlePathPointCapacity;
 			uint32_t particleCapacity = kLaserParticleCapacity;
@@ -50,33 +53,41 @@ namespace draw3
 			uint32_t pathGeneration = 0;
 			uint32_t spawnStart = 0;
 			uint32_t spawnCount = 0;
-			float startArcLength = 0.0f;
-			float endArcLength = 0.0f;
-			float dpiScale = 1.0f;
-			float maximumLateralExtra = 1.5f;
-			float minimumLifetime = 0.45f;
-			float maximumLifetime = 0.70f;
-			float minimumTravel = 24.0f;
-			float maximumTravel = 56.0f;
+			float arcLength = 0.0f;
+			float anchorX = 0.0f;
+			float anchorY = 0.0f;
+			float maximumLateralExtra = 4.5f;
+			float lifetimeSeconds = 3.0f;
+			float minimumBrightness = 0.68f;
+			float maximumBrightness = 1.0f;
+			float breathingAmplitude = 0.12f;
+			float minimumBreathingFrequencyHz = 0.8f;
+			float maximumBreathingFrequencyHz = 1.4f;
+			float breathingRampSeconds = 0.20f;
 			float minimumRadius = 0.65f;
 			float maximumRadius = 1.10f;
 			float coreRadiusRatio = 1.0f / 3.0f;
 			float minimumSpeed = 12.0f;
 			float maximumSpeed = 96.0f;
 			float inputSpeedInfluence = 0.08f;
-			float padding0[2] = {};
+			float padding0[3] = {};
 			uint32_t seedBase = 0;
 			uint32_t pathPointCapacity = kLaserParticlePathPointCapacity;
 			uint32_t particleCapacity = kLaserParticleCapacity;
 			uint32_t padding1 = 0;
 		};
 
-		static_assert(sizeof(LaserParticleEmitConstants) == 96);
+		static_assert(sizeof(LaserParticleEmitConstants) == 112);
 		static_assert(sizeof(LaserParticleEmitConstants) % 16 == 0);
 
 		bool IsFinitePositive(float value) noexcept
 		{
 			return std::isfinite(value) && value > 0.0f;
+		}
+
+		bool IsFiniteUnit(float value) noexcept
+		{
+			return std::isfinite(value) && value >= 0.0f && value <= 1.0f;
 		}
 
 		void UnionRectLocal(RECT& destination, RECT source) noexcept
@@ -93,24 +104,20 @@ namespace draw3
 			destination.bottom = std::max(destination.bottom, source.bottom);
 		}
 
-		uint32_t MixParticleSeed(uint32_t value) noexcept
-		{
-			value ^= value >> 16;
-			value *= 0x7FEB352Du;
-			value ^= value >> 15;
-			value *= 0x846CA68Bu;
-			return value ^ (value >> 16);
-		}
 	}
 
 	bool IsValidLaserParticleConfig(const LaserParticleConfig& configuration) noexcept
 	{
-		return IsFinitePositive(configuration.particlesPerPixel) &&
+		return IsFinitePositive(configuration.idleEmissionRatePerSecond) &&
+			IsFinitePositive(configuration.motionEmissionSpacingDip) &&
+			IsFinitePositive(configuration.maximumEmissionRatePerSecond) &&
+			configuration.maximumEmissionRatePerSecond >=
+				configuration.idleEmissionRatePerSecond &&
 			configuration.maximumSpawnPerFrame > 0 &&
 			configuration.maximumSpawnPerFrame <= kLaserParticleCapacity &&
-			IsFinitePositive(configuration.minimumLifetimeSeconds) &&
-			configuration.maximumLifetimeSeconds >= configuration.minimumLifetimeSeconds &&
+			IsFinitePositive(configuration.lifetimeSeconds) &&
 			IsFinitePositive(configuration.minimumSpeedDipPerSecond) &&
+			IsFinitePositive(configuration.maximumSpeedDipPerSecond) &&
 			configuration.maximumSpeedDipPerSecond >= configuration.minimumSpeedDipPerSecond &&
 			std::isfinite(configuration.inputSpeedInfluence) &&
 			configuration.inputSpeedInfluence >= 0.0f &&
@@ -118,37 +125,55 @@ namespace draw3
 			IsFinitePositive(configuration.spreadSeconds) &&
 			std::isfinite(configuration.maximumLateralExtraDip) &&
 			configuration.maximumLateralExtraDip >= 0.0f &&
-			IsFinitePositive(configuration.minimumTravelDip) &&
-			configuration.maximumTravelDip >= configuration.minimumTravelDip &&
 			IsFinitePositive(configuration.minimumRadiusDip) &&
+			IsFinitePositive(configuration.maximumRadiusDip) &&
 			configuration.maximumRadiusDip >= configuration.minimumRadiusDip &&
 			IsFinitePositive(configuration.glowExtentDip) &&
-			std::isfinite(configuration.fadeStartFraction) &&
-			configuration.fadeStartFraction > 0.0f &&
-			configuration.fadeStartFraction < 1.0f &&
-			IsFinitePositive(configuration.convergenceSeconds) &&
-			IsFinitePositive(configuration.positionResponseSeconds);
+			IsFiniteUnit(configuration.glowRed) &&
+			IsFiniteUnit(configuration.glowGreen) &&
+			IsFiniteUnit(configuration.glowBlue) &&
+			IsFiniteUnit(configuration.glowAlpha) &&
+			IsFiniteUnit(configuration.minimumBrightness) &&
+			configuration.maximumBrightness >= configuration.minimumBrightness &&
+			configuration.maximumBrightness <= 1.0f &&
+			IsFiniteUnit(configuration.breathingAmplitude) &&
+			IsFinitePositive(configuration.minimumBreathingFrequencyHz) &&
+			IsFinitePositive(configuration.maximumBreathingFrequencyHz) &&
+			configuration.maximumBreathingFrequencyHz >=
+				configuration.minimumBreathingFrequencyHz &&
+			IsFinitePositive(configuration.breathingRampSeconds) &&
+			IsFinitePositive(configuration.positionResponseSeconds) &&
+			IsFinitePositive(configuration.predictionCorrectionResponseSeconds) &&
+			IsFinitePositive(configuration.predictionJumpThresholdDip);
 	}
 
-	LaserParticleEmissionSchedule ScheduleLaserParticleEmission(float appendedArcLength,
-		float distanceSinceLastEmission, uint32_t remainingFrameBudget,
+	LaserParticleEmissionSchedule ScheduleLaserParticleEmission(float wallDeltaSeconds,
+		float forwardArcLength, float fractionalParticles, uint32_t remainingFrameBudget,
 		const LaserParticleConfig& configuration) noexcept
 	{
 		LaserParticleEmissionSchedule result;
 		if (!IsValidLaserParticleConfig(configuration)) return result;
-		const float spacing = 1.0f / configuration.particlesPerPixel;
-		const float appended = std::isfinite(appendedArcLength)
-			? std::max(appendedArcLength, 0.0f) : 0.0f;
-		const float carry = std::isfinite(distanceSinceLastEmission)
-			? std::clamp(distanceSinceLastEmission, 0.0f, spacing) : 0.0f;
-		const float total = carry + appended;
+		const float wallDelta = std::isfinite(wallDeltaSeconds)
+			? std::max(wallDeltaSeconds, 0.0f) : 0.0f;
+		const float emissionDelta = std::min(wallDelta, kMaximumMotionDeltaSeconds);
+		const float forward = std::isfinite(forwardArcLength)
+			? std::max(forwardArcLength, 0.0f) : 0.0f;
+		const float forwardSpeed = emissionDelta > kMinimumPositiveValue
+			? forward / emissionDelta : 0.0f;
+		result.emissionRatePerSecond = std::min(
+			configuration.idleEmissionRatePerSecond +
+				forwardSpeed / configuration.motionEmissionSpacingDip,
+			configuration.maximumEmissionRatePerSecond);
+		const float carry = std::isfinite(fractionalParticles)
+			? std::clamp(fractionalParticles, 0.0f, 0.999999f) : 0.0f;
+		const float total = carry + result.emissionRatePerSecond * emissionDelta;
 		const uint32_t available = static_cast<uint32_t>(std::min(
-			std::floor(static_cast<double>(total) / static_cast<double>(spacing)),
+			std::floor(static_cast<double>(total)),
 			static_cast<double>((std::numeric_limits<uint32_t>::max)())));
 		result.count = std::min(available, remainingFrameBudget);
-		result.distanceSinceLastEmission = std::fmod(total, spacing);
-		if (!std::isfinite(result.distanceSinceLastEmission))
-			result.distanceSinceLastEmission = 0.0f;
+		result.fractionalParticles = total - std::floor(total);
+		if (!std::isfinite(result.fractionalParticles))
+			result.fractionalParticles = 0.0f;
 		return result;
 	}
 
@@ -179,25 +204,112 @@ namespace draw3
 		return current + (target - current) * blend;
 	}
 
+	float LaserParticleLifeFactor(float ageSeconds, float lifetimeSeconds) noexcept
+	{
+		const float age = std::isfinite(ageSeconds) ? std::max(ageSeconds, 0.0f) : 0.0f;
+		const float lifetime = IsFinitePositive(lifetimeSeconds)
+			? lifetimeSeconds : kMinimumPositiveValue;
+		const float ratio = std::clamp(age / lifetime, 0.0f, 1.0f);
+		const float smooth = ratio * ratio * (3.0f - 2.0f * ratio);
+		return 1.0f - smooth;
+	}
+
+	float EvaluateLaserParticleBrightness(float baseBrightness, float ageSeconds,
+		float breathingFrequencyHz, float breathingPhase,
+		const LaserParticleConfig& configuration) noexcept
+	{
+		const float base = std::isfinite(baseBrightness)
+			? std::clamp(baseBrightness, 0.0f, 1.0f) : 1.0f;
+		const float age = std::isfinite(ageSeconds) ? std::max(ageSeconds, 0.0f) : 0.0f;
+		const float frequency = IsFinitePositive(breathingFrequencyHz)
+			? breathingFrequencyHz : configuration.minimumBreathingFrequencyHz;
+		const float phase = std::isfinite(breathingPhase) ? breathingPhase : 0.0f;
+		const float rampRatio = std::clamp(age /
+			std::max(configuration.breathingRampSeconds, kMinimumPositiveValue),
+			0.0f, 1.0f);
+		const float ramp = rampRatio * rampRatio * (3.0f - 2.0f * rampRatio);
+		return std::clamp(base + configuration.breathingAmplitude *
+			std::sin(kTwoPi * frequency * age + phase) * ramp, 0.0f, 1.0f);
+	}
+
+	float MaximumLaserParticleTravelDip(
+		const LaserParticleConfig& configuration) noexcept
+	{
+		if (!IsValidLaserParticleConfig(configuration)) return 0.0f;
+		// 1-smoothstep 在完整寿命上的积分为 1/2；再保留一个最大运动步的余量。
+		return configuration.maximumSpeedDipPerSecond * kMaximumSpeedJitter *
+			(configuration.lifetimeSeconds * 0.5f + kMaximumMotionDeltaSeconds);
+	}
+
+	float LaserParticlePathRetirementSeconds(bool hasEmitted,
+		const LaserParticleConfig& configuration) noexcept
+	{
+		return hasEmitted && IsValidLaserParticleConfig(configuration)
+			? configuration.lifetimeSeconds : 0.0f;
+	}
+
+	int64_t LaserParticleLifetimeDeadlineQpc(int64_t nowQpc,
+		int64_t qpcFrequency, const LaserParticleConfig& configuration) noexcept
+	{
+		if (nowQpc < 0 || qpcFrequency <= 0 ||
+			!IsValidLaserParticleConfig(configuration)) return nowQpc;
+		const double lifetimeTicks = std::ceil(
+			static_cast<double>(configuration.lifetimeSeconds) *
+			static_cast<double>(qpcFrequency));
+		const double remainingTicks = static_cast<double>(
+			(std::numeric_limits<int64_t>::max)() - nowQpc);
+		if (lifetimeTicks >= remainingTicks)
+			return (std::numeric_limits<int64_t>::max)();
+		return nowQpc + static_cast<int64_t>(lifetimeTicks);
+	}
+
+	LaserParticleEmissionAnchor UpdateLaserParticleEmissionAnchor(
+		LaserParticleEmissionAnchor current, float targetX, float targetY,
+		float filteredInputSpeed, float wallDeltaSeconds, float dpiScale,
+		const LaserParticleConfig& configuration) noexcept
+	{
+		if (!std::isfinite(targetX) || !std::isfinite(targetY)) return current;
+		if (!current.valid || !std::isfinite(current.x) || !std::isfinite(current.y))
+			return { targetX, targetY, true };
+
+		const float deltaSeconds = std::isfinite(wallDeltaSeconds)
+			? std::clamp(wallDeltaSeconds, 0.0f, kMaximumMotionDeltaSeconds) : 0.0f;
+		const float scale = std::isfinite(dpiScale) ? std::max(dpiScale, 0.01f) : 1.0f;
+		const float speed = std::isfinite(filteredInputSpeed)
+			? std::max(filteredInputSpeed, 0.0f) : 0.0f;
+		const float deltaX = targetX - current.x;
+		const float deltaY = targetY - current.y;
+		const float distance = std::hypot(deltaX, deltaY);
+		const float directFollowDistance = std::max(
+			configuration.predictionJumpThresholdDip * scale,
+			2.0f * speed * deltaSeconds + 2.0f * scale);
+		if (distance <= directFollowDistance)
+			return { targetX, targetY, true };
+		if (deltaSeconds <= 0.0f) return current;
+
+		const float blend = 1.0f - std::exp(-deltaSeconds /
+			std::max(configuration.predictionCorrectionResponseSeconds,
+				kMinimumPositiveValue));
+		current.x += deltaX * blend;
+		current.y += deltaY * blend;
+		current.valid = true;
+		return current;
+	}
+
 	LaserParticleArcAdvance AdvanceLaserParticleArc(float arcLength, float pathEndArcLength,
-		float traveledDistance, float maximumTravelDistance, float speed,
-		float motionDeltaSeconds) noexcept
+		float speed, float lifeFactor, float motionDeltaSeconds) noexcept
 	{
 		LaserParticleArcAdvance result;
 		result.arcLength = std::isfinite(arcLength) ? std::max(arcLength, 0.0f) : 0.0f;
-		result.traveledDistance = std::isfinite(traveledDistance)
-			? std::max(traveledDistance, 0.0f) : 0.0f;
 		const float pathEnd = std::isfinite(pathEndArcLength)
 			? std::max(pathEndArcLength, 0.0f) : result.arcLength;
-		const float maximumTravel = std::isfinite(maximumTravelDistance)
-			? std::max(maximumTravelDistance, 0.0f) : 0.0f;
-		const float remainingTravel = std::max(maximumTravel - result.traveledDistance, 0.0f);
-		const float delta = std::min(std::max(speed, 0.0f) *
-			std::max(motionDeltaSeconds, 0.0f), remainingTravel);
+		const float multiplier = std::isfinite(lifeFactor)
+			? std::clamp(lifeFactor, 0.0f, 1.0f) : 0.0f;
+		const float delta = std::max(speed, 0.0f) * multiplier *
+			std::max(motionDeltaSeconds, 0.0f);
 		const float newArcLength = std::min(result.arcLength + delta, pathEnd);
-		const float actualAdvance = std::max(newArcLength - result.arcLength, 0.0f);
+		result.actualAdvance = std::max(newArcLength - result.arcLength, 0.0f);
 		result.arcLength = newArcLength;
-		result.traveledDistance += actualAdvance;
 		return result;
 	}
 
@@ -215,16 +327,19 @@ namespace draw3
 			kLaserParticlePathPointCapacity - currentPointCount);
 	}
 
-	bool LaserParticleConvergesToEdge(uint32_t seed) noexcept
-	{
-		return (MixParticleSeed(seed ^ 0xA511E9B3u) & 0xFFFFu) < 49152u;
-	}
-
 	void LaserParticleDirtyTracker::Add(
 		LaserParticlePathHandle path, RECT bounds, int64_t expiresQpc) noexcept
 	{
 		if (!path.IsValid() || bounds.left >= bounds.right ||
 			bounds.top >= bounds.bottom || expiresQpc <= 0) return;
+		for (Region& region : regions_)
+		{
+			if (!region.active || region.path != path) continue;
+			// 同一路径只保留一个包络，避免 3 秒寿命下按帧耗尽固定数组。
+			UnionRectLocal(region.bounds, bounds);
+			region.expiresQpc = std::max(region.expiresQpc, expiresQpc);
+			return;
+		}
 		for (Region& region : regions_)
 		{
 			if (region.active) continue;
@@ -240,14 +355,16 @@ namespace draw3
 		fallback.active = true;
 	}
 
-	void LaserParticleDirtyTracker::EndPath(
-		LaserParticlePathHandle path, int64_t expiresQpc) noexcept
+	void LaserParticleDirtyTracker::ExpandPath(
+		LaserParticlePathHandle path, RECT bounds) noexcept
 	{
-		if (!path.IsValid()) return;
+		if (!path.IsValid() || bounds.left >= bounds.right ||
+			bounds.top >= bounds.bottom) return;
 		for (Region& region : regions_)
 		{
-			if (!region.active || region.path != path) continue;
-			region.expiresQpc = std::min(region.expiresQpc, expiresQpc);
+			if (!region.active) continue;
+			if (region.path == path || !region.path.IsValid())
+				UnionRectLocal(region.bounds, bounds);
 		}
 	}
 
@@ -476,13 +593,31 @@ namespace draw3
 		return {};
 	}
 
-	uint32_t LaserParticleSystem::AppendPathPoints(LaserParticlePathHandle path,
+	void LaserParticleSystem::WritePathPointRange(uint32_t pathSlot,
+		uint32_t firstPoint, std::span<const LaserParticlePathPoint> points) noexcept
+	{
+		if (points.empty()) return;
+		const uint32_t baseElement = pathSlot * kLaserParticlePathPointCapacity +
+			firstPoint;
+		D3D11_BOX destinationBox = {};
+		destinationBox.left = baseElement * sizeof(LaserParticlePathPoint);
+		destinationBox.right = destinationBox.left +
+			static_cast<UINT>(points.size()) * sizeof(LaserParticlePathPoint);
+		destinationBox.top = 0;
+		destinationBox.bottom = 1;
+		destinationBox.front = 0;
+		destinationBox.back = 1;
+		context_->UpdateSubresource(pathPointBuffer_.Get(), 0, &destinationBox,
+			points.data(), 0, 0);
+	}
+
+	uint32_t LaserParticleSystem::AppendRealPathPoints(LaserParticlePathHandle path,
 		std::span<const LaserParticlePathPoint> points) noexcept
 	{
 		if (!available_ || !IsCurrentPath(path) || points.empty()) return 0;
 		PathSlotState& slot = pathSlots_[path.slot];
 		const uint32_t appendCount = ClampLaserParticlePathAppendCount(
-			slot.header.pointCount, static_cast<uint32_t>(std::min<size_t>(
+			slot.realPointCount, static_cast<uint32_t>(std::min<size_t>(
 				points.size(), (std::numeric_limits<uint32_t>::max)())));
 		if (appendCount == 0)
 		{
@@ -490,21 +625,29 @@ namespace draw3
 			return 0;
 		}
 
-		const uint32_t baseElement = path.slot * kLaserParticlePathPointCapacity +
-			slot.header.pointCount;
-		D3D11_BOX destinationBox = {};
-		destinationBox.left = baseElement * sizeof(LaserParticlePathPoint);
-		destinationBox.right = destinationBox.left +
-			appendCount * sizeof(LaserParticlePathPoint);
-		destinationBox.top = 0;
-		destinationBox.bottom = 1;
-		destinationBox.front = 0;
-		destinationBox.back = 1;
-		context_->UpdateSubresource(pathPointBuffer_.Get(), 0, &destinationBox,
-			points.data(), 0, 0);
-		slot.header.pointCount += appendCount;
+		WritePathPointRange(path.slot, slot.realPointCount,
+			points.first(appendCount));
+		slot.realPointCount += appendCount;
+		slot.header.pointCount = slot.realPointCount;
 		slot.overflowed = appendCount < points.size();
 		return appendCount;
+	}
+
+	uint32_t LaserParticleSystem::ReplacePredictionPathPoints(
+		LaserParticlePathHandle path,
+		std::span<const LaserParticlePathPoint> points) noexcept
+	{
+		if (!available_ || !IsCurrentPath(path)) return 0;
+		PathSlotState& slot = pathSlots_[path.slot];
+		const uint32_t predictionCount = ClampLaserParticlePathAppendCount(
+			slot.realPointCount, static_cast<uint32_t>(std::min<size_t>(
+				points.size(), (std::numeric_limits<uint32_t>::max)())));
+		if (predictionCount > 0)
+			WritePathPointRange(path.slot, slot.realPointCount,
+				points.first(predictionCount));
+		slot.header.pointCount = slot.realPointCount + predictionCount;
+		slot.overflowed = predictionCount < points.size();
+		return predictionCount;
 	}
 
 	void LaserParticleSystem::SetPathInputSpeed(
@@ -520,12 +663,13 @@ namespace draw3
 		if (!IsCurrentPath(path)) return;
 		PathSlotState& slot = pathSlots_[path.slot];
 		slot.header.ended = 1;
-		if (!slot.hasEmitted)
+		slot.retireSeconds = LaserParticlePathRetirementSeconds(
+			slot.hasEmitted, configuration_);
+		if (slot.retireSeconds <= 0.0f)
 		{
 			slot.header.active = 0;
 			return;
 		}
-		slot.retireSeconds = configuration_.convergenceSeconds;
 	}
 
 	bool LaserParticleSystem::UploadPathHeaders() noexcept
@@ -551,15 +695,18 @@ namespace draw3
 			? std::max(wallDeltaSeconds, 0.0f) : 0.0f;
 		constants.motionDeltaSeconds = std::isfinite(motionDeltaSeconds)
 			? std::clamp(motionDeltaSeconds, 0.0f, 1.0f / 30.0f) : 0.0f;
-		constants.dpiScale = dpiScale_;
 		constants.speedResponseSeconds = configuration_.speedResponseSeconds;
+		constants.spreadSeconds = configuration_.spreadSeconds;
 		constants.minimumSpeed = configuration_.minimumSpeedDipPerSecond * dpiScale_;
 		constants.maximumSpeed = configuration_.maximumSpeedDipPerSecond * dpiScale_;
 		constants.inputSpeedInfluence = configuration_.inputSpeedInfluence;
-		constants.spreadSeconds = configuration_.spreadSeconds;
-		constants.fadeStartFraction = configuration_.fadeStartFraction;
-		constants.convergenceSeconds = configuration_.convergenceSeconds;
+		constants.lifetimeSeconds = configuration_.lifetimeSeconds;
 		constants.positionResponseSeconds = configuration_.positionResponseSeconds;
+		constants.predictionCorrectionResponseSeconds =
+			configuration_.predictionCorrectionResponseSeconds;
+		constants.predictionJumpThreshold =
+			configuration_.predictionJumpThresholdDip * dpiScale_;
+		constants.dpiScale = dpiScale_;
 		constants.resetAll = resetAll ? 1u : 0u;
 
 		D3D11_MAPPED_SUBRESOURCE mapped = {};
@@ -610,15 +757,21 @@ namespace draw3
 		constants.pathGeneration = request.path.generation;
 		constants.spawnStart = spawnCursor_;
 		constants.spawnCount = count;
-		constants.startArcLength = std::max(request.startArcLength, 0.0f);
-		constants.endArcLength = std::max(request.endArcLength, constants.startArcLength);
-		constants.dpiScale = dpiScale_;
+		constants.arcLength = std::isfinite(request.arcLength)
+			? std::max(request.arcLength, 0.0f) : 0.0f;
+		constants.anchorX = std::isfinite(request.anchorX) ? request.anchorX : 0.0f;
+		constants.anchorY = std::isfinite(request.anchorY) ? request.anchorY : 0.0f;
 		constants.maximumLateralExtra =
 			configuration_.maximumLateralExtraDip * dpiScale_;
-		constants.minimumLifetime = configuration_.minimumLifetimeSeconds;
-		constants.maximumLifetime = configuration_.maximumLifetimeSeconds;
-		constants.minimumTravel = configuration_.minimumTravelDip * dpiScale_;
-		constants.maximumTravel = configuration_.maximumTravelDip * dpiScale_;
+		constants.lifetimeSeconds = configuration_.lifetimeSeconds;
+		constants.minimumBrightness = configuration_.minimumBrightness;
+		constants.maximumBrightness = configuration_.maximumBrightness;
+		constants.breathingAmplitude = configuration_.breathingAmplitude;
+		constants.minimumBreathingFrequencyHz =
+			configuration_.minimumBreathingFrequencyHz;
+		constants.maximumBreathingFrequencyHz =
+			configuration_.maximumBreathingFrequencyHz;
+		constants.breathingRampSeconds = configuration_.breathingRampSeconds;
 		constants.minimumRadius = configuration_.minimumRadiusDip * dpiScale_;
 		constants.maximumRadius = configuration_.maximumRadiusDip * dpiScale_;
 		constants.coreRadiusRatio = coreRadiusRatio_;

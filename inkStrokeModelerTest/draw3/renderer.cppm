@@ -212,7 +212,9 @@ export namespace draw3
 			const LaserParticleConfig& configuration, float dpiScale) noexcept;
 		bool LaserParticlesAvailable() const noexcept;
 		LaserParticlePathHandle AcquireLaserParticlePath() noexcept;
-		uint32_t AppendLaserParticlePathPoints(LaserParticlePathHandle path,
+		uint32_t AppendLaserParticleRealPathPoints(LaserParticlePathHandle path,
+			std::span<const LaserParticlePathPoint> points) noexcept;
+		uint32_t ReplaceLaserParticlePredictionPathPoints(LaserParticlePathHandle path,
 			std::span<const LaserParticlePathPoint> points) noexcept;
 		void SetLaserParticlePathInputSpeed(
 			LaserParticlePathHandle path, float filteredInputSpeed) noexcept;
@@ -264,6 +266,10 @@ export namespace draw3
 		bool LoadShaders();
 		LaserStyleConstants laserStyleConstants_ = {};
 		float laserParticleGlowExtentDip_ = LaserParticleConfig{}.glowExtentDip;
+		float laserParticleGlowRed_ = LaserParticleConfig{}.glowRed;
+		float laserParticleGlowGreen_ = LaserParticleConfig{}.glowGreen;
+		float laserParticleGlowBlue_ = LaserParticleConfig{}.glowBlue;
+		float laserParticleGlowAlpha_ = LaserParticleConfig{}.glowAlpha;
 		LaserParticleSystem laserParticleSystem_;
 	};
 }

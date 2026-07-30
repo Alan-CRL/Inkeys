@@ -50,6 +50,7 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
         output.p2 = outerRadius.xx;
         output.r1 = particle.currentRadius;
         output.r2 = particle.opacity;
+        output.color.y = particle.currentBrightness;
         return output;
     }
 

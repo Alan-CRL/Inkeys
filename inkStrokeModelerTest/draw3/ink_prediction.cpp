@@ -19,6 +19,8 @@ namespace draw3
 {
 	void BeginLaserContact(LaserTrailLifecycle& lifecycle) noexcept
 	{
+		if (lifecycle.phase == LaserTrailPhase::Inactive)
+			lifecycle.minimumHoldDurationSeconds = 0.0;
 		++lifecycle.activeContactCount;
 		lifecycle.phase = LaserTrailPhase::Active;
 	}
@@ -30,6 +32,25 @@ namespace draw3
 		if (lifecycle.activeContactCount != 0) return;
 		lifecycle.lastAllUpQpc = upQpc;
 		lifecycle.phase = LaserTrailPhase::Hold;
+	}
+
+	void RequireLaserMinimumHold(
+		LaserTrailLifecycle& lifecycle, double minimumSeconds) noexcept
+	{
+		if (!std::isfinite(minimumSeconds) || minimumSeconds <= 0.0) return;
+		lifecycle.minimumHoldDurationSeconds =
+			std::max(lifecycle.minimumHoldDurationSeconds, minimumSeconds);
+	}
+
+	double EffectiveLaserHoldDurationSeconds(
+		const LaserTrailLifecycle& lifecycle, double configuredSeconds) noexcept
+	{
+		if (!std::isfinite(configuredSeconds) || configuredSeconds < 0.0)
+			return configuredSeconds;
+		const double minimumSeconds =
+			std::isfinite(lifecycle.minimumHoldDurationSeconds)
+			? std::max(lifecycle.minimumHoldDurationSeconds, 0.0) : 0.0;
+		return std::max(configuredSeconds, minimumSeconds);
 	}
 
 	float EvaluateLaserTrailOpacity(LaserTrailLifecycle& lifecycle,
@@ -47,6 +68,8 @@ namespace draw3
 			lifecycle = {};
 			return 0.0f;
 		}
+		holdDurationSeconds = EffectiveLaserHoldDurationSeconds(
+			lifecycle, holdDurationSeconds);
 
 		const double elapsedSeconds = std::max(0.0,
 			static_cast<double>(nowQpc - lifecycle.lastAllUpQpc) /

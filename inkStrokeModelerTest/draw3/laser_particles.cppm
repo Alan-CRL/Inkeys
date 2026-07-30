@@ -25,24 +25,33 @@ export namespace draw3
 	// GPU 粒子行为参数均使用 DIP；提交 Compute Shader 前只乘一次当前 dpiScale。
 	struct LaserParticleConfig
 	{
-		float particlesPerPixel = 0.5f;
+		float idleEmissionRatePerSecond = 6.0f;
+		float motionEmissionSpacingDip = 4.0f;
+		float maximumEmissionRatePerSecond = 48.0f;
 		uint32_t maximumSpawnPerFrame = 96;
-		float minimumLifetimeSeconds = 0.45f;
-		float maximumLifetimeSeconds = 0.70f;
+		float lifetimeSeconds = 3.0f;
 		float minimumSpeedDipPerSecond = 12.0f;
 		float maximumSpeedDipPerSecond = 96.0f;
 		float inputSpeedInfluence = 0.08f;
 		float speedResponseSeconds = 0.080f;
 		float spreadSeconds = 0.120f;
-		float maximumLateralExtraDip = 1.5f;
-		float minimumTravelDip = 24.0f;
-		float maximumTravelDip = 56.0f;
+		float maximumLateralExtraDip = 4.5f;
 		float minimumRadiusDip = 0.65f;
 		float maximumRadiusDip = 1.10f;
 		float glowExtentDip = 3.0f;
-		float fadeStartFraction = 0.55f;
-		float convergenceSeconds = 0.220f;
+		float glowRed = 1.0f;
+		float glowGreen = 0.55f;
+		float glowBlue = 0.62f;
+		float glowAlpha = 0.24f;
+		float minimumBrightness = 0.68f;
+		float maximumBrightness = 1.0f;
+		float breathingAmplitude = 0.12f;
+		float minimumBreathingFrequencyHz = 0.8f;
+		float maximumBreathingFrequencyHz = 1.4f;
+		float breathingRampSeconds = 0.20f;
 		float positionResponseSeconds = 0.040f;
+		float predictionCorrectionResponseSeconds = 0.120f;
+		float predictionJumpThresholdDip = 6.0f;
 	};
 
 	bool IsValidLaserParticleConfig(const LaserParticleConfig& configuration) noexcept;
@@ -61,7 +70,7 @@ export namespace draw3
 			const LaserParticlePathHandle&) = default;
 	};
 
-	// 与 HLSL LaserParticlePathPoint 一致；arcLength 是追加式真实路径累计弧长。
+	// 与 HLSL LaserParticlePathPoint 一致；arcLength 是真实前缀和当前预测尾的累计弧长。
 	struct LaserParticlePathPoint
 	{
 		float x = 0.0f;
@@ -94,8 +103,6 @@ export namespace draw3
 		float tangent[2] = { 1.0f, 0.0f };
 		float pathArcLength = 0.0f;
 		float birthArcLength = 0.0f;
-		float traveledDistance = 0.0f;
-		float maximumTravelDistance = 0.0f;
 		float flowSpeed = 0.0f;
 		float speedJitter = 1.0f;
 		float ageSeconds = 0.0f;
@@ -107,17 +114,19 @@ export namespace draw3
 		float baseRadius = 0.0f;
 		float currentRadius = 0.0f;
 		float opacity = 0.0f;
-		float convergeStartOpacity = 0.0f;
-		float convergeStartRadius = 0.0f;
-		float convergeStartOffset = 0.0f;
-		float convergeStartPosition[2] = {};
+		float baseBrightness = 1.0f;
+		float currentBrightness = 1.0f;
+		float breathingFrequencyHz = 1.0f;
+		float breathingPhase = 0.0f;
+		float breathingAmplitude = 0.0f;
+		float breathingRampSeconds = 0.20f;
+		float padding0 = 0.0f;
 		uint32_t pathSlot = kInvalidLaserParticlePathSlot;
 		uint32_t pathGeneration = 0;
 		uint32_t segmentCursor = 0;
 		uint32_t seed = 0;
 		uint32_t alive = 0;
-		uint32_t phase = 0;
-		uint32_t padding1[2] = {};
+		uint32_t padding1[3] = {};
 	};
 
 	static_assert(sizeof(LaserGpuParticle) == 128,
@@ -126,40 +135,63 @@ export namespace draw3
 	struct LaserParticleEmissionSchedule
 	{
 		uint32_t count = 0;
-		float distanceSinceLastEmission = 0.0f;
+		float fractionalParticles = 0.0f;
+		float emissionRatePerSecond = 0.0f;
 	};
 
-	// 按真实新增弧长计算本帧发射量；超出预算的整数部分直接丢弃，不形成下一帧积压。
-	LaserParticleEmissionSchedule ScheduleLaserParticleEmission(float appendedArcLength,
-		float distanceSinceLastEmission, uint32_t remainingFrameBudget,
+	// 用时间积分静止基线和 L0 前端正向速度；超额整数部分不积压到下一帧。
+	LaserParticleEmissionSchedule ScheduleLaserParticleEmission(float wallDeltaSeconds,
+		float forwardArcLength, float fractionalParticles, uint32_t remainingFrameBudget,
 		const LaserParticleConfig& configuration) noexcept;
 
 	float LaserParticleTargetSpeed(float filteredInputSpeed, float dpiScale,
 		const LaserParticleConfig& configuration) noexcept;
 	float SmoothLaserParticleSpeed(float currentSpeed, float targetSpeed,
 		float deltaSeconds, float responseSeconds) noexcept;
+	float LaserParticleLifeFactor(float ageSeconds, float lifetimeSeconds) noexcept;
+	float EvaluateLaserParticleBrightness(float baseBrightness, float ageSeconds,
+		float breathingFrequencyHz, float breathingPhase,
+		const LaserParticleConfig& configuration) noexcept;
+	float MaximumLaserParticleTravelDip(
+		const LaserParticleConfig& configuration) noexcept;
+	float LaserParticlePathRetirementSeconds(bool hasEmitted,
+		const LaserParticleConfig& configuration) noexcept;
+	int64_t LaserParticleLifetimeDeadlineQpc(int64_t nowQpc,
+		int64_t qpcFrequency, const LaserParticleConfig& configuration) noexcept;
+
+	struct LaserParticleEmissionAnchor
+	{
+		float x = 0.0f;
+		float y = 0.0f;
+		bool valid = false;
+	};
+
+	// 正常预测位置直接跟随；只有异常跳变才按独立时间常数渐进靠近。
+	LaserParticleEmissionAnchor UpdateLaserParticleEmissionAnchor(
+		LaserParticleEmissionAnchor current, float targetX, float targetY,
+		float filteredInputSpeed, float wallDeltaSeconds, float dpiScale,
+		const LaserParticleConfig& configuration) noexcept;
 
 	struct LaserParticleArcAdvance
 	{
 		float arcLength = 0.0f;
-		float traveledDistance = 0.0f;
+		float actualAdvance = 0.0f;
 	};
 
-	// 到达当前真实路径末端时丢弃多余位移，后续追加路径不会补追。
+	// 到达当前组合路径末端时丢弃多余位移，后续路径更新不会补追。
 	LaserParticleArcAdvance AdvanceLaserParticleArc(float arcLength, float pathEndArcLength,
-		float traveledDistance, float maximumTravelDistance, float speed,
-		float motionDeltaSeconds) noexcept;
+		float speed, float lifeFactor, float motionDeltaSeconds) noexcept;
 
 	uint32_t NextLaserParticlePathGeneration(uint32_t generation) noexcept;
 	uint32_t ClampLaserParticlePathAppendCount(
 		uint32_t currentPointCount, uint32_t requestedPointCount) noexcept;
-	bool LaserParticleConvergesToEdge(uint32_t seed) noexcept;
 
 	struct LaserParticleEmissionRequest
 	{
 		LaserParticlePathHandle path = {};
-		float startArcLength = 0.0f;
-		float endArcLength = 0.0f;
+		float arcLength = 0.0f;
+		float anchorX = 0.0f;
+		float anchorY = 0.0f;
 		uint32_t count = 0;
 		uint32_t seedBase = 0;
 	};
@@ -175,7 +207,7 @@ export namespace draw3
 	{
 	public:
 		void Add(LaserParticlePathHandle path, RECT bounds, int64_t expiresQpc) noexcept;
-		void EndPath(LaserParticlePathHandle path, int64_t expiresQpc) noexcept;
+		void ExpandPath(LaserParticlePathHandle path, RECT bounds) noexcept;
 		RECT ActiveBounds(int64_t nowQpc) noexcept;
 		bool HasActive(int64_t nowQpc) const noexcept;
 		bool HasAny() const noexcept;
@@ -193,7 +225,7 @@ export namespace draw3
 		std::array<Region, kLaserParticleDirtyRegionCapacity> regions_ = {};
 	};
 
-	// 管理固定 D3D11 粒子池、真实路径槽和 Compute Shader 调度。
+	// 管理固定 D3D11 粒子池、真实前缀/预测尾路径槽和 Compute Shader 调度。
 	class LaserParticleSystem
 	{
 	public:
@@ -206,7 +238,9 @@ export namespace draw3
 		bool IsAvailable() const noexcept;
 
 		LaserParticlePathHandle AcquirePath() noexcept;
-		uint32_t AppendPathPoints(LaserParticlePathHandle path,
+		uint32_t AppendRealPathPoints(LaserParticlePathHandle path,
+			std::span<const LaserParticlePathPoint> points) noexcept;
+		uint32_t ReplacePredictionPathPoints(LaserParticlePathHandle path,
 			std::span<const LaserParticlePathPoint> points) noexcept;
 		void SetPathInputSpeed(LaserParticlePathHandle path, float filteredInputSpeed) noexcept;
 		void EndPath(LaserParticlePathHandle path) noexcept;
@@ -221,12 +255,15 @@ export namespace draw3
 		struct PathSlotState
 		{
 			LaserParticlePathHeader header = {};
+			uint32_t realPointCount = 0;
 			float retireSeconds = 0.0f;
 			bool overflowed = false;
 			bool hasEmitted = false;
 		};
 
 		bool IsCurrentPath(LaserParticlePathHandle path) const noexcept;
+		void WritePathPointRange(uint32_t pathSlot, uint32_t firstPoint,
+			std::span<const LaserParticlePathPoint> points) noexcept;
 		bool UploadPathHeaders() noexcept;
 		bool DispatchUpdate(float wallDeltaSeconds, float motionDeltaSeconds,
 			bool resetAll) noexcept;

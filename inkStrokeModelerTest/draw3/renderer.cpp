@@ -271,6 +271,10 @@ namespace draw3
 			IsValidLaserParticleConfig(configuration)
 			? configuration : LaserParticleConfig{};
 		laserParticleGlowExtentDip_ = effectiveConfiguration.glowExtentDip;
+		laserParticleGlowRed_ = effectiveConfiguration.glowRed;
+		laserParticleGlowGreen_ = effectiveConfiguration.glowGreen;
+		laserParticleGlowBlue_ = effectiveConfiguration.glowBlue;
+		laserParticleGlowAlpha_ = effectiveConfiguration.glowAlpha;
 		laserParticleSystem_.Configure(
 			effectiveConfiguration, dpiScale, kLaserCoreDiameterRatio);
 	}
@@ -285,10 +289,18 @@ namespace draw3
 		return laserParticleSystem_.AcquirePath();
 	}
 
-	uint32_t InkRenderer::AppendLaserParticlePathPoints(LaserParticlePathHandle path,
+	uint32_t InkRenderer::AppendLaserParticleRealPathPoints(
+		LaserParticlePathHandle path,
 		std::span<const LaserParticlePathPoint> points) noexcept
 	{
-		return laserParticleSystem_.AppendPathPoints(path, points);
+		return laserParticleSystem_.AppendRealPathPoints(path, points);
+	}
+
+	uint32_t InkRenderer::ReplaceLaserParticlePredictionPathPoints(
+		LaserParticlePathHandle path,
+		std::span<const LaserParticlePathPoint> points) noexcept
+	{
+		return laserParticleSystem_.ReplacePredictionPathPoints(path, points);
 	}
 
 	void InkRenderer::SetLaserParticlePathInputSpeed(
@@ -532,10 +544,14 @@ namespace draw3
 		constants->height = viewportHeight;
 		constants->shapeType = 10.0f;
 		constants->bufferOffset = 0;
-		// shape 10 复用 globalColor.x 向 VS/PS 传递可配置的 DIP 辉光范围。
+		// shape 10 用 color.x/z/w 传辉光范围和浅红色，color.y 由 VS 写入逐粒亮度。
 		constants->color = DirectX::XMFLOAT4(
-			laserParticleGlowExtentDip_, 0.0f, 0.0f, 0.0f);
+			laserParticleGlowExtentDip_, 0.0f,
+			laserParticleGlowGreen_, laserParticleGlowBlue_);
 		constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
+		constants->padding[0] = laserParticleGlowRed_;
+		constants->padding[1] = laserParticleGlowAlpha_;
+		constants->padding[2] = 0.0f;
 		context->Unmap(globalCB.Get(), 0);
 
 		SetOMTarget(backBufferRTV.Get());

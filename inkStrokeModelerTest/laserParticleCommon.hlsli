@@ -30,8 +30,6 @@ struct LaserGpuParticle
     float2 tangent;
     float pathArcLength;
     float birthArcLength;
-    float traveledDistance;
-    float maximumTravelDistance;
     float flowSpeed;
     float speedJitter;
     float ageSeconds;
@@ -43,17 +41,19 @@ struct LaserGpuParticle
     float baseRadius;
     float currentRadius;
     float opacity;
-    float convergeStartOpacity;
-    float convergeStartRadius;
-    float convergeStartOffset;
-    float2 convergeStartPosition;
+    float baseBrightness;
+    float currentBrightness;
+    float breathingFrequencyHz;
+    float breathingPhase;
+    float breathingAmplitude;
+    float breathingRampSeconds;
+    float padding0;
     uint pathSlot;
     uint pathGeneration;
     uint segmentCursor;
     uint seed;
     uint alive;
-    uint phase;
-    uint2 padding1;
+    uint3 padding1;
 };
 
 uint LaserParticleHash(uint value)
@@ -74,11 +74,6 @@ float2 LaserParticleSafeNormalize(float2 value, float2 fallbackValue)
 {
     float valueLength = length(value);
     return valueLength > 1e-5 ? value / valueLength : fallbackValue;
-}
-
-bool LaserParticleConvergesToEdgeGpu(uint seed)
-{
-    return (LaserParticleHash(seed ^ 0xA511E9B3u) & 0xFFFFu) < 49152u;
 }
 
 #ifdef LASER_PARTICLE_COMPUTE_RESOURCES
