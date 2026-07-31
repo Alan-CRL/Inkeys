@@ -1293,23 +1293,16 @@ namespace draw3
 						!laserStrokeLayers.empty())
 					{
 						// 同帧发生"最后 Up → 新 Down"时，也先把上一批按原顺序烘干。
-						const double dbg_bakeB_start = GetQpcTimeMilliseconds();
 						BakeLaserStrokeLayers(laserStrokeLayers, renderer_,
 							configuration_.dpiScale, laserSize.width, laserSize.height,
 							laserStableBounds);
 						laserLiveBounds = {};
-						std::cout << "[LaserPerf] CondB Bake ms=" << (GetQpcTimeMilliseconds() - dbg_bakeB_start)
-							<< " phase=" << static_cast<int>(laserLifecycle.phase) << std::endl;
 					}
 					runtime->laserLayerId = nextLaserLayerId++;
 					laserStrokeLayers.push_back(LaserStrokeLayer{
 						.id = runtime->laserLayerId, .runtime = runtime });
 					BeginLaserContact(laserLifecycle);
 					laserOpacity = 1.0f;
-					std::cout << "[LaserPerf] NewDown phase_was=" << static_cast<int>(laserLifecycle.phase)
-						<< " stableBounds=(" << laserStableBounds.left << "," << laserStableBounds.top
-						<< "," << laserStableBounds.right << "," << laserStableBounds.bottom << ")"
-						<< std::endl;
 					// Down 只重置时间累计；得到首条非退化 L0 切线前不发射。
 				}
 				active.push_back(runtime);
@@ -2122,10 +2115,8 @@ namespace draw3
 			if (ShouldBakeLaserBatch(laserLifecycle, laserStrokeLayers.size()))
 			{
 				// 同批次最后一支抬起后一次性烘干，随后 Hold/Fade 只解析稳定颜色。
-				const double dbg_bakeUp_start = GetQpcTimeMilliseconds();
 				BakeLaserStrokeLayers(laserStrokeLayers, renderer_,
 					configuration_.dpiScale, size.width, size.height, laserStableBounds);
-				std::cout << "[LaserPerf] UpBake ms=" << (GetQpcTimeMilliseconds() - dbg_bakeUp_start) << std::endl;
 				UnionRectInPlace(frameDirty, laserLiveBounds);
 				laserLiveBounds = {};
 			}
@@ -2143,18 +2134,12 @@ namespace draw3
 					!laserParticleEmissionRequests.empty());
 			if (shouldSimulateLaserParticles)
 			{
-				const double dbg_sim_start = GetQpcTimeMilliseconds();
 				renderer_.SimulateLaserParticles(
 					laserParticleWallDeltaSeconds, laserParticleWallDeltaSeconds);
 				lastLaserParticleSimulationQpc = frameQpc.QuadPart;
 				for (const LaserParticleEmissionRequest& request :
 					laserParticleEmissionRequests)
 					renderer_.EmitLaserParticles(request);
-				const double dbg_sim_ms = GetQpcTimeMilliseconds() - dbg_sim_start;
-				if (dbg_sim_ms > 2.0)
-					std::cout << "[LaserPerf] Simulate ms=" << dbg_sim_ms
-						<< " wallDelta=" << laserParticleWallDeltaSeconds
-						<< " emit=" << laserParticleEmissionRequests.size() << std::endl;
 				// Up/Cancel 只让控制器停止创建请求；存量粒子继续按自身寿命独立运动。
 			}
 
@@ -2350,47 +2335,23 @@ namespace draw3
 			{
 				const bool orderedPreview = frameTool == DrawingTool::Pen &&
 					kActiveDebugLayerColorMode == DebugLayerColorMode::ColorizeLiveLayer;
-				const double dbg_render_start = GetQpcTimeMilliseconds();
 				CompositeLayersToBackBuffer(frameDirty, orderedPreview);
 				// 粒子先于激光主体绘制，使粒子辉光托衬在墨迹主体下方，避免遮挡演示内容。
 				if (particlesEnabled)
 					renderer_.DrawLaserParticles();
 				if (laserLifecycle.phase != LaserTrailPhase::Inactive && laserOpacity > 0.0f)
 				{
-					const double dbg_stroke_start = GetQpcTimeMilliseconds();
 					renderer_.ResolveLaserCompositedColor(
 						renderer_.backBufferRTV.Get(), frameDirty, laserOpacity);
-					// 获取当前活跃笔画的总点数（调试用）
-					size_t dbg_total_pts = 0;
-					for (const auto& layer : laserStrokeLayers)
-					{
-						const auto& pts = LaserStrokeLayerPoints(layer);
-						dbg_total_pts += pts.size();
-					}
 					DrawLaserStrokeLayers(laserStrokeLayers, renderer_,
 						renderer_.backBufferRTV.Get(), frameDirty, configuration_.dpiScale,
 						size.width, size.height);
-					const double dbg_stroke_ms = GetQpcTimeMilliseconds() - dbg_stroke_start;
-					if (dbg_stroke_ms > 2.0)
-						std::cout << "[LaserPerf] DrawStrokes ms=" << dbg_stroke_ms
-							<< " pts=" << dbg_total_pts
-							<< " layers=" << laserStrokeLayers.size() << std::endl;
 				}
 				renderer_.DrawLaserDots(laserTipDots);
 				for (const DrawingCursorVisual& visual : currentCursorVisuals)
 					renderer_.DrawTransientDrawingCursor(visual);
-				const double dbg_present_start = GetQpcTimeMilliseconds();
 				presentSucceeded = PresentFrame(
 					frameDirty, forceFullPresent); // 一帧最多一次 backbuffer 合成和一次 Present。
-				const double dbg_present_ms = GetQpcTimeMilliseconds() - dbg_present_start;
-				const double dbg_total_render_ms = GetQpcTimeMilliseconds() - dbg_render_start;
-				if (dbg_total_render_ms > 8.0 && frameTool == DrawingTool::Laser)
-					std::cout << "[LaserPerf] SlowFrame render=" << dbg_total_render_ms
-						<< " present=" << dbg_present_ms
-						<< " phase=" << static_cast<int>(laserLifecycle.phase)
-						<< " dirty=(" << frameDirty.left << "," << frameDirty.top
-						<< "," << frameDirty.right << "," << frameDirty.bottom << ")"
-						<< std::endl;
 			}
 			previousCursorVisuals = currentCursorVisuals;
 			previousLaserParticleBounds = currentLaserParticleBounds;
