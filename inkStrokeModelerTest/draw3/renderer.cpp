@@ -319,27 +319,35 @@ namespace draw3
 	int InkRenderer::DrawLaserCoverage(const std::vector<InkPoint>& points)
 	{
 		if (points.empty()) return 0;
+		return DrawLaserCoverageRange(points.data(), points.size());
+	}
+
+	int InkRenderer::DrawLaserCoverageRange(const InkPoint* first, size_t count)
+	{
+		if (count == 0 || !first) return 0;
 		if (!UpdateLaserStyleConstants(1.0f)) return -1;
-		std::vector<InkPoint> dotPoints;
-		const std::vector<InkPoint>* drawPoints = &points;
-		if (points.size() == 1)
+		// 单点展开为极短线段，保证 shape 7 至少有两端点可绘制。
+		InkPoint singleDotEnd;
+		const InkPoint* drawData = first;
+		size_t drawCount = count;
+		if (count == 1)
 		{
-			dotPoints = points;
-			InkPoint dotEnd = points.front();
-			dotEnd.x += 0.25f;
-			dotPoints.push_back(dotEnd);
-			drawPoints = &dotPoints;
+			singleDotEnd = *first;
+			singleDotEnd.x += 0.25f;
+			// 借用栈上临时数组避免堆分配。
+			const InkPoint dotPair[2] = { *first, singleDotEnd };
+			return DrawLaserCoverageRange(dotPair, 2);
 		}
 
 		size_t startIndex = 0;
-		while (startIndex + 1 < drawPoints->size())
+		while (startIndex + 1 < drawCount)
 		{
-			const size_t remaining = drawPoints->size() - startIndex;
+			const size_t remaining = drawCount - startIndex;
 			const size_t batchCount = std::min(remaining, kMaxBufferCapacity);
 			D3D11_MAPPED_SUBRESOURCE mapped = {};
 			if (FAILED(context->Map(inkDataBuffer.Get(), 0,
 				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return -1;
-			std::memcpy(mapped.pData, drawPoints->data() + startIndex,
+			std::memcpy(mapped.pData, drawData + startIndex,
 				batchCount * sizeof(InkPoint));
 			context->Unmap(inkDataBuffer.Get(), 0);
 

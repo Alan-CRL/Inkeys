@@ -1249,15 +1249,16 @@ namespace draw3
 		return ClampRectToCanvas(rect, width, height);
 	}
 
-	RECT RectFromLaserPoints(const std::vector<InkPoint>& points,
+	RECT RectFromLaserPoints(const InkPoint* points, size_t count,
 		float dpiScale, int width, int height)
 	{
-		if (points.empty()) return {};
+		if (!points || count == 0) return {};
 		const float scale = std::max(dpiScale, 0.01f);
 		const float fallbackSolidRadius = LaserSolidRadius(scale);
 		RECT rect = {};
-		for (const InkPoint& point : points)
+		for (size_t i = 0; i < count; ++i)
 		{
+			const InkPoint& point = points[i];
 			if (!std::isfinite(point.x) || !std::isfinite(point.y)) continue;
 			const float solidRadius = std::isfinite(point.r) && point.r > 0.0f
 				? point.r : fallbackSolidRadius;
@@ -1269,6 +1270,12 @@ namespace draw3
 				static_cast<LONG>(std::ceil(point.y + padding)) });
 		}
 		return ClampRectToCanvas(rect, width, height);
+	}
+
+	RECT RectFromLaserPoints(const std::vector<InkPoint>& points,
+		float dpiScale, int width, int height)
+	{
+		return RectFromLaserPoints(points.data(), points.size(), dpiScale, width, height);
 	}
 
 	bool UpdateRawPositionAndDetectMovement(ActiveStroke& stroke, const POINT& rawPosition)
