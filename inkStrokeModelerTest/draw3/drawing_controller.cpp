@@ -865,6 +865,9 @@ namespace draw3
 		bool particlesWereEnabled =
 			laserParticlesEnabled_.load(std::memory_order_acquire) &&
 			renderer_.LaserParticlesAvailable();
+		// 有效状态：只在激光生命周期为 Inactive 时才同步开关，
+		// 避免开关在绘制中/Hold/Fade 期间立即生效打断当前笔画或粒子动画。
+		bool particlesEnabledEffective = particlesWereEnabled;
 		const int originalThreadPriority = GetThreadPriority(GetCurrentThread());
 		const bool drawingPriorityRaised = originalThreadPriority != THREAD_PRIORITY_ERROR_RETURN &&
 			SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL) != FALSE;
@@ -1685,16 +1688,20 @@ namespace draw3
 			const bool particlesEnabled =
 				laserParticlesEnabled_.load(std::memory_order_acquire) &&
 				renderer_.LaserParticlesAvailable();
+			// 只在 Inactive（屏幕上无激光笔画）时才更新有效状态，
+			// 确保开关切换在当前笔画/Hold/Fade 全部消失后的下一笔才生效。
+			if (laserLifecycle.phase == LaserTrailPhase::Inactive)
+				particlesEnabledEffective = particlesEnabled;
 
 			RECT frameDirty = {};
-			if (particlesWereEnabled != particlesEnabled)
+			if (particlesWereEnabled != particlesEnabledEffective)
 			{
 				for (RuntimeStroke* runtime : active)
 				{
 					if (runtime && runtime->tool == DrawingTool::Laser)
 						ResetLaserParticleEmitterState(*runtime);
 				}
-				if (!particlesEnabled)
+				if (!particlesEnabledEffective)
 				{
 					// 关闭后的下一绘制帧清空 GPU 状态，并用旧保守区清除透明窗口残影。
 					UnionRectInPlace(frameDirty, previousLaserParticleBounds);
@@ -1703,7 +1710,7 @@ namespace draw3
 					lastLaserParticleSimulationQpc = 0;
 					laserLifecycle.minimumHoldDurationSeconds = 0.0;
 				}
-				particlesWereEnabled = particlesEnabled;
+				particlesWereEnabled = particlesEnabledEffective;
 			}
 			const WindowSize animationCanvasSize = window_.Size();
 			RECT currentLaserParticleBounds = ClampRectToCanvas(
@@ -1957,7 +1964,7 @@ namespace draw3
 						stroke.predictedPoints.clear();
 						stroke.l0DrawPoints.clear();
 					}
-					if (particlesEnabled && !runtime->ended)
+					if (particlesEnabledEffective && !runtime->ended)
 					{
 						const LaserParticleEmissionSource source =
 							ResolveLaserParticleEmissionSource(*runtime);
@@ -2129,7 +2136,7 @@ namespace draw3
 					return runtime && runtime->tool == DrawingTool::Laser &&
 						!runtime->ended;
 				});
-			const bool shouldSimulateLaserParticles = particlesEnabled &&
+			const bool shouldSimulateLaserParticles = particlesEnabledEffective &&
 				(hasActiveLaserParticleContact ||
 					laserParticleDirtyTracker.HasActive(frameQpc.QuadPart) ||
 					!IsEmptyRect(previousLaserParticleBounds) ||
@@ -2339,7 +2346,7 @@ namespace draw3
 					kActiveDebugLayerColorMode == DebugLayerColorMode::ColorizeLiveLayer;
 				CompositeLayersToBackBuffer(frameDirty, orderedPreview);
 				// 粒子先于激光主体绘制，使粒子辉光托衬在墨迹主体下方，避免遮挡演示内容。
-				if (particlesEnabled)
+				if (particlesEnabledEffective)
 					renderer_.DrawLaserParticles();
 				if (laserLifecycle.phase != LaserTrailPhase::Inactive && laserOpacity > 0.0f)
 				{
