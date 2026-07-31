@@ -186,7 +186,7 @@ OperatorOutput main(PS_INPUT input)
         float glowRadius = input.r1 + glowExtent;
         float glowDistance = max(distanceToCenter - input.r1, 0.0);
         float glowCoverage = LaserAaCoverage(distanceToCenter - glowRadius) *
-            pow(saturate(1.0 - glowDistance / glowExtent), 2.0);
+            pow(saturate(1.0 - glowDistance / glowExtent), 1.2);
         float opacity = saturate(input.r2);
         float brightness = saturate(input.color.y);
         float3 glowColor = float3(

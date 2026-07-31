@@ -37,9 +37,9 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
             return output;
         }
 
-        // 小粒子保持细碎，高亮大粒子才拥有相应更宽的红粉辉光。
+        // 比例辉光叠加固定 2 DIP 地板，确保最小粒子在任意 DPI 下均有肉眼可见的辉光。
         float glowExtent = max(particle.currentRadius *
-            max(globalColor.x, 0.0), 1e-4);
+            max(globalColor.x, 0.0) + 2.0 * laserParameters.y, 1e-4);
         float outerRadius = particle.currentRadius + glowExtent;
         float2 center = particle.position;
         float2 rectMin = center - outerRadius - 2.0;
