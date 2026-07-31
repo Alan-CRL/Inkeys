@@ -36,7 +36,11 @@
 - [x] 编译测试覆盖默认参数、发射预算、法线偏转、尺寸分布与相关度、8.5 DIP 标称行程、减速、缩小、核心/辉光层级、呼吸分离、独立运动和 dirty/resize。
 - [x] 完整 `Debug|ARM64` 构建。
 - [x] 最终静态差异检查。
-- [x] 用户在真实白色、深色和混合背景上验证动态观感。
+- [x] 粒子小型化与密度提升：半径 `0.28–1.4 DIP`（指数 2.0），间距 1.8 DIP，上限 90/s、120/帧。
+- [x] 行程缩短：速度 `18–40 DIP/s`、寿命 `0.55–0.75s`，标称行程 `5–15 DIP`（原32 DIP）。
+- [x] 辉光进一步收窄：Alpha `0.18`、倍率 `2.0`。
+- [x] PS `coreColorMix` 改为上限模式（`= coreColorWhiteMix × brightness`，上限 0.82），最亮粒子白中带红（18% 红色调保留），全体"微红白色"而非纯白。
+- [x] 预热所有激光着色器路径（`WarmUpLaserShaders()`），消除 Qualcomm/Adreno 首笔 JIT 编译卡顿（对 Nvidia/AMD/Intel/WARP 零额外开销）。
 - [x] 排查并确认"抬笔后迅速落笔卡顿"问题：已通过层级调整修复（粒子移到激光主体下方减少 Adreno TBDR tile cache flush），诊断输出证实第2次起落笔 DrawStrokes < 2ms、帧时 < 8ms；唯一慢帧（会话首笔~18ms）为 Qualcomm 驱动一次性 JIT shader 编译，非可修复缺陷。
 
 ## Static Validation Evidence
