@@ -258,6 +258,14 @@ OperatorOutput main(PS_INPUT input)
         return ResolveLaserMaterial(coverage, laserParameters.x);
     }
 
+    if (type == 13)
+    {
+        // Same-stroke L1/L0 coverage resolves material exactly once after MAX.
+        float4 stableCoverage = LaserStrokeCoverage.Sample(OperatorSampler, input.uv);
+        float4 liveCoverage = LaserLiveCoverage.Sample(OperatorSampler, input.uv);
+        return ResolveLaserMaterial(max(stableCoverage, liveCoverage), laserParameters.x);
+    }
+
     if (type == 11)
     {
         float4 color = LaserCompositedColor.Sample(OperatorSampler, input.uv) *

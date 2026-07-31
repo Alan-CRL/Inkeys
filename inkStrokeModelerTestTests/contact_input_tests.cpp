@@ -24,6 +24,7 @@ import draw3.ink_prediction;
 import draw3.realtime_stylus;
 
 int RunHighlighterGeometryTests();
+int RunLaserIncrementalCoverageTests();
 int RunPenCursorTests();
 int RunRuntimeBenchmark(const wchar_t* applicationPath, const wchar_t* reportPath);
 
@@ -1237,6 +1238,8 @@ int wmain(int argc, wchar_t* argv[])
 {
 	if (argc == 4 && wcscmp(argv[1], L"--benchmark") == 0)
 		return RunRuntimeBenchmark(argv[2], argv[3]);
+	if (argc == 2 && wcscmp(argv[1], L"--laser-incremental-only") == 0)
+		return RunLaserIncrementalCoverageTests() == 0 ? 0 : 1;
 	TestState state;
 	TestConcurrentDownUniqueness(state);
 	TestCapacityBoundariesAndReuse(state);
@@ -1250,6 +1253,7 @@ int wmain(int argc, wchar_t* argv[])
 	TestInvertedPenPolicy(state);
 	TestHapticFeedbackContracts(state);
 	state.failures += RunHighlighterGeometryTests();
+	state.failures += RunLaserIncrementalCoverageTests();
 	state.failures += RunPenCursorTests();
 	if (state.failures == 0)
 	{

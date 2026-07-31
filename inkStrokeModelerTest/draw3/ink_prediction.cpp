@@ -312,6 +312,40 @@ namespace draw3
 		}
 	}
 
+	LaserIncrementalRanges PlanLaserIncrementalRanges(
+		const std::vector<InkPoint>& realPoints,
+		const LaserIncrementalStrokeState& state,
+		double protectedDurationSeconds) noexcept
+	{
+		LaserIncrementalRanges ranges;
+		if (realPoints.empty()) return ranges;
+		const size_t protectedIndex = FindProtectedStartIndex(
+			realPoints, protectedDurationSeconds);
+		const size_t committedIndex = std::min(
+			state.rebuildRequired ? size_t{ 0 } : state.stableCommittedIndex,
+			realPoints.size() - 1);
+		const size_t stableEnd = std::max(committedIndex, protectedIndex);
+		if (stableEnd > committedIndex)
+		{
+			ranges.stableFirstIndex = committedIndex;
+			ranges.stablePointCount = stableEnd - committedIndex + 1;
+		}
+		ranges.nextStableCommittedIndex = stableEnd;
+		ranges.liveFirstIndex = stableEnd;
+		ranges.livePointCount = realPoints.size() - stableEnd;
+		return ranges;
+	}
+
+	LaserCoverageMode SelectLaserCoverageMode(
+		LaserCoverageMode current, size_t layerCount, bool resourcesAvailable) noexcept
+	{
+		if (current == LaserCoverageMode::FullRedraw) return current;
+		if (layerCount == 0) return LaserCoverageMode::Inactive;
+		if (!resourcesAvailable || layerCount > 1) return LaserCoverageMode::FullRedraw;
+		if (current == LaserCoverageMode::Inactive) return LaserCoverageMode::Incremental;
+		return current;
+	}
+
 	InputWidthModeSettingsState::InputWidthModeSettingsState(InputWidthModeSettings settings) noexcept
 		: encoded_(EncodeInputWidthModeSettings(IsValid(settings) ? settings : InputWidthModeSettings{}))
 	{

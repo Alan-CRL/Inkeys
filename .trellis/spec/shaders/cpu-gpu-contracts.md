@@ -53,7 +53,7 @@ float2 halfSize
 | `glowColor` | `laserGlowColor`（alpha 为实体边界处的漫反射峰值） |
 | `parameters.x/y/z/w` | `laserParameters.x/y/z/w`（组 opacity、DPI scale、外缘 glow 下/上阈值） |
 
-新增字段必须保持 16 字节对齐，并同步 `renderer.cppm/.cpp`、`ink.hlsli` 与 shape `7/8/9/10/11/12` 的绑定。
+新增字段必须保持 16 字节对齐，并同步 `renderer.cppm/.cpp`、`ink.hlsli` 与 shape `7/8/9/10/11/12/13` 的绑定。
 
 ## Resource Registers
 
@@ -68,11 +68,13 @@ float2 halfSize
 | `t5` | LiveOperatorRetain |
 | `t6` | LaserCompositedColor，已完成轨迹的预乘颜色 (`R8G8B8A8_UNORM`) |
 | `t7` | LaserStrokeCoverage，可复用的单笔 coverage scratch (`R8G8B8A8_UNORM`) |
+| `t8` | LaserParticleData，固定 2048 槽粒子池 SRV |
+| `t9` | LaserLiveCoverage，单 contact 当前 L0/prediction coverage (`R8G8B8A8_UNORM`) |
 | `s0` | OperatorSampler |
 
 `ApplyOperatorLayers` 绑定 PS `t1..t5` 时为 VS `t3` 留空槽。修改数组顺序前必须按寄存器表核对。
 
-Laser coverage 写入只绑定 `t7` RTV，并以 `D3D11_BLEND_OP_MAX` 累积单支笔的四通道 `(core, scatter, solid shell, diffuse)`。shape `8` 把 `t7` 解析为材质，按 Down 顺序 source-over 到 backbuffer 或 `t6`；shape `11` 再把 `t6` 以整组 opacity 叠到 backbuffer。每次 resolve 后必须解除 `t6/t7` SRV，随后才能把对应纹理切回 RTV。
+Laser coverage 写入绑定当前 coverage RTV（稳定前缀为 `t7`、实时尾部为 `t9`），并以 `D3D11_BLEND_OP_MAX` 累积单支笔的四通道 `(core, scatter, solid shell, diffuse)`。shape `8` 把 `t7` 解析为材质；shape `13` 同时采样 `t7/t9`，逐通道取 `max` 后只解析一次材质；两者均按 Down 顺序 source-over 到 backbuffer 或 `t6`。shape `11` 再把 `t6` 以整组 opacity 叠到 backbuffer。每次 resolve、Resize 或切换 RTV 前必须解除 `t6..t9` SRV，随后才能把对应纹理切回 RTV。
 
 ## Shape And Operator Modes
 
@@ -90,7 +92,8 @@ Laser coverage 写入只绑定 `t7` RTV，并以 `D3D11_BLEND_OP_MAX` 累积单�
 - `9`：Laser Hover/Touch 笔尖。
 - `10`：Laser 稀疏粒子。
 - `11`：解析 `t6` 稳定预乘颜色和整组 opacity。
-- `12`：关闭混合后，以矩形覆盖写零局部清理 `t7`。
+- `12`：关闭混合后，以矩形覆盖写零局部清理当前 coverage（`t7` 或 `t9`）。
+- `13`：逐通道 `max(t7, t9)` 后单次解析 Laser 材质，用于单 contact 增量快路。
 
 `globalOperatorKind`：
 
@@ -134,16 +137,20 @@ Result = Add + Retain * Destination
 
 ### 2. Signatures
 
-- `DrawLaserCoverage(points)`：把一支笔写入当前 `t7` RTV。
-- `ClearLaserCoverageRect(rect)`：shape `12` 局部覆盖清零 `t7`。
+- `DrawLaserCoverage(points)`：把一支笔写入当前 coverage RTV（`t7` 或 `t9`）。
+- `ClearLaserCoverageRect(rect)` / `bool ClearLaserLiveCoverageRect(rect)`：shape `12` 局部覆盖清零 `t7` / `t9`；增量 live clear 失败返回 `false`。
 - `ResolveLaserStrokeCoverage(dst, rect, opacity)`：shape `8` 将 `t7` source-over 到 `dst`。
+- `bool ResolveLaserIncrementalCoverage(dst, rect, opacity)`：shape `13` 对 `t7/t9` 取逐通道 MAX 后 source-over 到 `dst`；资源或 pass 失败返回 `false`。
 - `ResolveLaserCompositedColor(dst, rect, opacity)`：shape `11` 将 `t6` source-over 到 `dst`。
+- `EnsureLaserIncrementalCoverageResources()`：只在绘制线程按需创建 `t9`，失败后本会话禁用增量快路。
 
 ### 3. Contracts
 
-- 同一支笔的所有真实点和 prediction 先在 `t7` 以 MAX 取 coverage 并集；不同笔禁止在同一次 MAX 中合并。
+- 单 contact 的稳定真实前缀写入 `t7`，当前真实尾部和 prediction 写入独立 `t9`；shape `13` 对两张 coverage 逐通道取 MAX 后只解析一次材质。同一笔的自交和 L1/L0 重叠因此幂等，prediction 回缩不能污染 `t7`。
+- 多 contact 或资源不可用时回退现有逐笔 `t7` scratch；不同笔禁止在同一次 MAX 中合并，当前批次一旦回退便保持到最后 Bake。
 - 未烘干层按 Down 顺序逐支解析，后 Down 的整支笔永远位于上层；较早结束的 contact 必须保留最终 CPU 几何，直到同批最后一个 contact 抬起。
-- 最后 Up 后按同一顺序烘入 `t6`；resize 只复制 `t6` 交集，未烘干层从 CPU 几何重建。Laser 永不写入 L2。
+- `frameDirty` 必须在基础层合成前闭合旧/新 live、稳定 delta、粒子、cursor 和 fade 区域；粒子或 cursor dirty 与稳定 Laser 相交时，shape `13` 在同一 dirty 区域重放。
+- 最后 Up 后按同一顺序烘入 `t6`；单 contact 快路把 coverage pair 一次 resolve，多 contact 继续完整 Bake。resize 只复制 `t6` 交集，`t7/t9` 为空并由 CPU 几何重建。Laser 永不写入 L2。
 
 ### 4. Validation & Error Matrix
 
@@ -151,6 +158,9 @@ Result = Add + Retain * Destination
 - SRV/RTV 缺失或常量映射失败 → 当前 pass 返回，不绑定冲突资源。
 - Cancelled contact → 标记旧 bounds 为脏，不解析或烘干该层。
 - Fade 完成/clear → 同步清空 `t6`、`t7`、未烘干层和全部新旧 bounds。
+- `t9` 创建/Resize 失败 → 释放部分资源、记录一次诊断、当前会话锁定完整重绘；其他工具和粒子池继续。
+- 增量 clear/upload/resolve 返回失败 → 不推进稳定游标，清空 `t7/t9`，记录 `coverage_submission_failed` 或 `coverage_resolve_failed`，并在同帧切到完整重绘。
+- Resize → `t7/t9` 重新创建为空，活动 CPU 几何下次帧重建；Present failure → 保留仍有效的 coverage，发布 full-present 请求并在下一帧重新解析旧/新 dirty bounds。
 
 ### 5. Good/Base/Bad Cases
 
@@ -164,24 +174,32 @@ Result = Add + Retain * Destination
 - 静态核对 `LaserDiffuseCoverage(0)=1`、`LaserDiffuseCoverage(diffuseExtent)=0` 且区间内单调；`ResolveLaserMaterial` 在红色实体外只能由单一 diffuse 层决定 alpha，红粉高光不得再次 source-over 抬高透明度。
 - 断言 `LaserDot.radius`、固定宽度轨迹半径和 Touch/Hover 尺寸一致，`LaserStyleConstants == 112 bytes`。
 - 断言 CPU dirty bounds 覆盖实体半径、固定漫反射和 AA padding；人工验证反向 Down 顺序、较老笔继续书写、取消、resize、Hold/Fade 与静态 Hold 零 Present。
+- 增量状态测试必须断言时间保护边界单调推进、L1/L0 共享一个连接点、prediction 回缩不后退稳定游标、自交 dirty union 不丢失、第二 contact 锁定 fallback、Resize/Clear/resource failure 重建，以及 `max(t7,t9)` 与完整 coverage union 的 CPU 等价性；静态核对 t9、shape `13` 和 t6-t9 解绑契约。
 
 ### 7. Wrong vs Correct
 
 #### Wrong
 
 ```cpp
-// 不同 contact 直接丢进同一张 MAX coverage，层级信息永久丢失。
-for (const auto& contact : contacts) DrawLaserCoverage(contact.points);
-ResolveLaserStrokeCoverage(backBuffer, dirty);
+// 把 stable/live 分开 source-over，会让交界处的同一段材质重复叠加。
+ResolveLaserStrokeCoverage(backBuffer, stableRect);
+ResolveLaserStrokeCoverage(backBuffer, liveRect);
 ```
 
 #### Correct
 
 ```cpp
-for (const auto& layer : layersInDownOrder) {
-    ClearLaserCoverageRect(layer.bounds);
-    DrawLaserCoverage(layer.points);
-    ResolveLaserStrokeCoverage(backBuffer, layer.bounds);
+if (singleContact && liveCoverageAvailable) {
+    DrawLaserCoverage(stableDelta);       // t7，MAX 持久化
+    ClearLaserLiveCoverageRect(oldLive);  // t9，只清瞬态
+    DrawLaserCoverage(liveAndPrediction); // t9
+    ResolveLaserIncrementalCoverage(backBuffer, dirty); // max(t7, t9) 一次材质解析
+} else {
+    for (const auto& layer : layersInDownOrder) {
+        ClearLaserCoverageRect(layer.bounds);
+        DrawLaserCoverage(layer.points);
+        ResolveLaserStrokeCoverage(backBuffer, layer.bounds);
+    }
 }
 ```
 

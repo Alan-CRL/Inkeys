@@ -15,6 +15,9 @@
 	<ClCompile Include="highlighter_geometry_tests.cpp">
 	  <Filter>Tests</Filter>
 	</ClCompile>
+	<ClCompile Include="laser_incremental_coverage_tests.cpp">
+	  <Filter>Tests</Filter>
+	</ClCompile>
 	<ClCompile Include="pen_cursor_tests.cpp">
 	  <Filter>Tests</Filter>
 	</ClCompile>

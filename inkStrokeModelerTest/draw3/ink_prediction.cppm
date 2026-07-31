@@ -110,6 +110,39 @@ export namespace draw3
 		double minimumHoldDurationSeconds = 0.0;
 	};
 
+	// 单 contact coverage 的批次模式；多 contact 一旦出现便锁定完整重绘。
+	enum class LaserCoverageMode : uint32_t
+	{
+		Inactive,
+		Incremental,
+		FullRedraw
+	};
+
+	struct LaserIncrementalStrokeState
+	{
+		size_t stableCommittedIndex = 0;
+		bool rebuildRequired = true;
+	};
+
+	struct LaserIncrementalRanges
+	{
+		size_t stableFirstIndex = 0;
+		size_t stablePointCount = 0;
+		size_t liveFirstIndex = 0;
+		size_t livePointCount = 0;
+		size_t nextStableCommittedIndex = 0;
+	};
+
+	// 按现有 live-tip/prediction 时间保护边界计算稳定 delta 与实时尾部范围。
+	LaserIncrementalRanges PlanLaserIncrementalRanges(
+		const std::vector<InkPoint>& realPoints,
+		const LaserIncrementalStrokeState& state,
+		double protectedDurationSeconds) noexcept;
+	// 资源可用时首个 contact 进入快路，第二个 contact 将当前批次锁定回退。
+	LaserCoverageMode SelectLaserCoverageMode(
+		LaserCoverageMode current, size_t layerCount,
+		bool resourcesAvailable) noexcept;
+
 	// 新 contact 在完全消失前会恢复整组满亮并重新进入 Active。
 	void BeginLaserContact(LaserTrailLifecycle& lifecycle) noexcept;
 	// 只有最后一根 Laser 抬起时才开始 Hold 计时。

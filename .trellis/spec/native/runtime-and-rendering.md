@@ -57,11 +57,14 @@
 - `DrawingController::SetLaserHoldDurationSeconds/GetLaserHoldDurationSeconds`
 - `InkRenderer::SimulateLaserParticles/EmitLaserParticles/ResetLaserParticles/DrawLaserParticles`
 - `InkRenderer::DrawLaserCoverage/ClearLaserCoverageRect/ResolveLaserStrokeCoverage/ResolveLaserCompositedColor/DrawLaserDots`
+- `InkRenderer::ClearLaserLiveCoverageRect/ResolveLaserIncrementalCoverage/EnsureLaserIncrementalCoverageResources`
 
 ### 3. Contracts
 
 - Laser 在 Down 时锁定到当前批次，支持 Pen、Mouse 和多 Touch；跳过断触 reconnect、倒转笔尾橡皮覆盖和触觉反馈。
-- 已完成 Laser 使用独立 `R8G8B8A8_UNORM` 预乘颜色层；每支未烘干轨迹先独立写入可复用的单笔 `R8G8B8A8_UNORM` coverage scratch，四通道为白芯、白红散射、红色实体外套和外部漫反射，再按 Down 顺序 source-over。任何 Laser 几何都不得进入 L2。
+- 已完成 Laser 使用独立 `R8G8B8A8_UNORM` 预乘颜色层，任何 Laser 几何都不得进入 L2。单 contact 快路中，`t7` `laserStrokeCoverage` 保存按时间保护边界推进的稳定真实前缀，`t9` `laserLiveCoverage` 保存当前真实尾部和 prediction；两者在 shape `13` 逐通道取 `max` 后只调用一次 `ResolveLaserMaterial`。L1/L0 交界保留一个重叠点，稳定前缀只接受已确认 `realPoints`，所以 prediction 回缩不会污染稳定 coverage。
+- `t9` 只由绘制线程在首次观察 `ActiveTool() == Laser` 时按需创建并预热，创建后直到 renderer 释放都保留；资源创建/Resize 失败只记录一次并把当前会话降级为完整重绘。没有选择 Laser 的会话不分配该缓冲。
+- 单个有效 Laser layer 且 coverage 可用时使用增量快路；出现第二个 layer、Cancel/状态异常或资源不可用后，当前批次锁定完整重绘直到最后一次 Bake。完整路径继续逐笔清理 `t7`、按 Down 顺序 source-over，不能把不同 contact 放入同一次 MAX。
 - 96 DPI 默认实体总直径为 5px，白芯直径约 1.67px，红色实体轮廓外每侧固定扩散 5px，因此完整视觉直径为 15px；漫反射 coverage 在实体边界为 1，使用平方曲线向外单调衰减并在 5px 外缘为 0，红粉外缘高光只混合 RGB 而不额外增加 alpha。`LaserDot`、Touch 笔尖和固定宽度轨迹复用同一尺寸契约。Pen 使用 `0.65 + 0.75 * clamp(p, 0, 1)` 缩放实体、白芯和内侧散射，外部 5px 漫反射只随 DPI 缩放；无效压力保持上一宽度，prediction 继承最后真实实体半径，Mouse/Touch 固定基准宽度。
 - 多支 Laser 按 Down 顺序分层，后 Down 的整支轨迹位于上层；较早结束的 contact 保留最终 CPU 几何直到同批最后一支抬起，同一笔自交仍以 coverage 并集避免重复加深。
 - 粒子默认开启，但只使用 FL11_0+ 的 D3D11 Compute Shader 固定池：`2048` 个 `LaserGpuParticle` 槽，以及同一缓冲的 `u0` UAV/VS `t8` SRV。没有路径点/路径头资源、Append/Consume、间接绘制或 GPU 回读；整笔逐帧重绘和 Resize 都不得重建 GPU 粒子。
@@ -71,11 +74,11 @@
 - 每粒只保存屏幕位置、固定速度、年龄/寿命、实际累计/最大行程、出生/当前半径、Alpha、亮度和呼吸状态。实际推进速度与 Alpha 均乘 `1-smoothstep(0,1,age/lifetime)`，运动 `dt <= 1/30s`，年龄使用实际 wall time。前 10% 最大行程保持出生半径，之后按实际累计行程 smoothstep 缩至 20%。
 - 粒子出生后不再读取 L0、真实点、prediction 或 contact 状态。Up/Cancel 只停止新发射；prediction 回缩、急弯和最后 Up 均不得修正存量位置/速度。禁止路径追赶、generation/弧长/segment cursor、端点受阻淡出和 prediction correction。
 - 出生点可在白芯内沿所选法线随机偏移。基础亮度以 72% 尺寸层级和 28% 独立随机样本混合后映射到 `0.42–1.0`，因此大粒子通常更亮、小粒子通常更暗但范围仍重叠。`0.8–1.4Hz` 随机相位呼吸以 `0.12` 振幅在 `0.2s` 渐入且只改变 RGB；核心 Alpha 只使用生命周期曲线。
-- Compute 顺序固定为 `VS t8 unbind -> CS u0 + b0 -> Dispatch -> CS unbind`；绘制为 shape `10` 的 `DrawInstanced(6, 2048, 0, 0)`，死亡槽生成退化图元。粒子在激光主体/实时墨迹之后、Laser tip 之前绘制。VS 令辉光半径为当前核心半径的 `1.5` 倍，并传递出生基础亮度；PS 根据该基础亮度在深红粉辉光色与现有淡粉白散射色之间确定核心色相，暗小粒子更泛红、亮大粒子更接近淡粉白。辉光保持 `(1.0, 0.32, 0.40)`、峰值 Alpha `0.34` 和二次距离衰减，所有输出继续使用预乘 Alpha。
+- Compute 顺序固定为 `VS t8 unbind -> CS u0 + b0 -> Dispatch -> CS unbind`；绘制为 shape `10` 的 `DrawInstanced(6, 2048, 0, 0)`，死亡槽生成退化图元。每个 dirty frame 的顺序固定为 `L2 + 普通 L1/L0` 合成、粒子、已烘干 Laser 颜色层、shape `13` 的稳定/live coverage、Laser tip、普通 cursor、Present；粒子因此仍在激光主体下方。VS 令辉光半径为当前核心半径的 `1.5` 倍，并传递出生基础亮度；PS 根据该基础亮度在深红粉辉光色与现有淡粉白散射色之间确定核心色相，暗小粒子更泛红、亮大粒子更接近淡粉白。辉光保持 `(1.0, 0.32, 0.40)`、峰值 Alpha `0.34` 和二次距离衰减，所有输出继续使用预乘 Alpha。
 - CPU 把同一帧实际发射请求合成一个未裁剪保守包络，按最大减速弹道、白芯出生偏移、最大粒子半径、辉光和 AA 扩展；每个帧批次在最大寿命 1 秒后独立到期。Tracker 保存原始包络，每帧按当前画布裁剪，Resize 后不得复用旧画布裁剪结果。
 - 最后一根 Laser Up 才记录 `lastAllUpQpc`；默认满亮保持 `3.0s`，固定 `0.8s` smooth fade。当前批次实际安排过粒子时，有效 Hold 为 `max(公开设置值, maximumLifetimeSeconds)`，默认下限即 `1.0s`，但 setter/getter 值不变。新 Down 在 Hold/Fade 中把整组 opacity 恢复为 `1` 并重新计时。
 - `SetLaserHoldDurationSeconds` 只接受 finite non-negative 值；运行中调整须由 control wake 唤醒并相对最后一次全部 Up 立即重算。粒子 setter 同样发布 control wake；关闭后下一帧 reset GPU 状态并 union 旧保守 bounds。
-- Hold 静态期不持续 Present；Fade、接触、prediction 和粒子动画才驱动帧。resize 保留稳定颜色层左上角交集，未烘干层从 CPU 几何重建；clear/Present 失败恢复必须同步重建或清理稳定颜色、scratch 和新旧 bounds。
+- Hold 静态期不持续 Present；Fade、接触、prediction 和粒子动画才驱动帧。resize 只保留稳定颜色层左上角交集，`t7/t9` 新建为空；活动 Laser coverage 从 CPU 几何重建，不能复制旧 live coverage。clear 必须同步清理稳定颜色、scratch 和新旧 bounds；Present failure 保留仍有效的 coverage、请求下一帧 full-present，并重新解析旧/新 dirty bounds。粒子或 cursor dirty 与稳定 Laser 相交时，coverage 必须在最终 `frameDirty` 内再次解析。
 
 ### 4. Validation & Error Matrix
 
@@ -87,6 +90,8 @@
 | Laser Up | 清除 prediction；同批最后 Up 才有序烘入稳定颜色层，不 reconnect、不 resolve 到 L2 |
 | 粒子关闭 | 下一帧 reset GPU 粒子池、清空保守脏区并 union 旧 bounds |
 | FL < 11_0 或 CS/SRV/UAV/buffer 创建失败 | 只记录一次诊断并将粒子系统标记不可用；激光主体、瞬态层和 Present 继续 |
+| `laserLiveCoverage` 创建/Resize 失败 | 只记录一次 `[LaserPerf]`，当前会话禁用增量快路并锁定完整重绘；Pen/Highlighter/Eraser 和粒子池继续 |
+| 增量状态异常或 Laser Cancel | 清理 `t7/t9`，脏化旧 live/stable bounds，并将当前批次锁定完整重绘；不把部分 coverage 烘入颜色层 |
 | 无首次真实移动/有效 L0 切线 | 不发射、不累计小数余量；不能由 prediction 单独触发 Down 爆发 |
 | 卡顿 | 寿命按实际 wall time；屏幕运动最多推进 1/30s，未推进的距离不追赶 |
 | Up/Cancel/prediction 回缩 | 停止新请求或改变后续出生源；存量粒子继续原屏幕轨迹 |
@@ -104,6 +109,7 @@
 
 - 断言按键 4/枚举、最后 Up 计时、3.0s Hold、0.8s fade、运行中设置变化和非法输入。
 - 断言 Laser 不进入 reconnect/L2，压力 `0/0.5/1` 只缩放实体且 prediction 半径继承正确，coverage bounds 覆盖 15px 基准完整视觉直径、最大压力实体和固定 5px 漫反射；静态核对漫反射 alpha 从实体边界的 1 单调衰减到外缘的 0，resize/clear/Present failure 无残影。
+- 增量状态测试必须断言时间保护边界单调推进、L1/L0 共享一个连接点、prediction 回缩不后退稳定游标、自交 dirty union 不丢失、第二 contact 锁定 fallback、Resize/Clear/resource failure 重建，以及 `max(t7,t9)` 与完整 coverage union 的 CPU 等价性；静态核对 t9、shape `13` 和 t6-t9 解绑契约。
 - 断言默认开启、Down 零爆发、首次真实移动后静止 6/s、移动每 2.5 DIP 密度、72/s 与全局 96 上限且不积压、双侧法线与 `±25°` 偏转、连续偏小尺寸分布、尺寸/亮度正相关、尺寸/射程弱反向相关、`10–17 DIP/s` 速度、`0.7–1.0s` 寿命和不超过 8.5 DIP 的标称行程、速度/Alpha 曲线单调性、按行程缩至 20%、比例辉光和核心色相层级、亮度呼吸不改 Alpha、出生锚点取 L0 前端、Up/prediction 跳变不改变存量运动、1 秒有效 Hold 下限、帧批次 dirty 到期和 resize 重裁剪。
 - Debug/Release ARM64 全解决方案构建、VS/PS/两个 CS 均以 SM5.0 编译并嵌入；人工覆盖慢/快画、急弯、长按、路径追加、多接触、Resize、ULW、开关和 Hold/Fade。
 

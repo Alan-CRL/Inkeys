@@ -24,6 +24,8 @@ export namespace draw3
 	inline constexpr float kLaserCoreDiameterRatio = 1.0f / 3.0f;
 	inline constexpr float kLaserDiffuseExtentAt96Dpi = 5.0f;
 	inline constexpr float kLaserScatterHalfWidthToCoreRatio = 0.4f;
+	// 临时性能日志开关；用户回传数据后可在后续任务中关闭或移除。
+	inline constexpr bool kLaserIncrementalDiagnosticsEnabled = true;
 
 	// Laser 的 InkPoint.r 统一表示红色实体外半径；漫反射宽度不随压力变化。
 	constexpr float LaserSolidRadius(float dpiScale = 1.0f) noexcept
@@ -196,11 +198,19 @@ export namespace draw3
 		// 将单笔 coverage 解析为材质，并按 source-over 叠加到目标。
 		void ResolveLaserStrokeCoverage(
 			ID3D11RenderTargetView* dstRTV, RECT rect, float opacity = 1.0f);
+		// 对稳定 L1 与实时 L0 coverage 逐通道取 MAX 后，只解析一次 Laser 材质。
+		bool ResolveLaserIncrementalCoverage(
+			ID3D11RenderTargetView* dstRTV, RECT rect, float opacity = 1.0f);
 		// 将已烘干的预乘颜色层按整组 opacity 叠加到目标。
 		void ResolveLaserCompositedColor(
 			ID3D11RenderTargetView* dstRTV, RECT rect, float opacity);
 		// 以不混合的矩形写零局部清理单笔 scratch。
 		void ClearLaserCoverageRect(RECT rect);
+		bool ClearLaserLiveCoverageRect(RECT rect);
+		// 仅在绘制线程选择 Laser 后创建 L0 coverage；失败会永久降级到完整重绘。
+		bool EnsureLaserIncrementalCoverageResources();
+		bool LaserIncrementalCoverageAvailable() const noexcept;
+		void ClearLaserIncrementalCoverage();
 		// 批量绘制 Laser 笔尖，不修改任何画布层。
 		void DrawLaserDots(const std::vector<LaserDot>& dots);
 		// 固定实例绘制 GPU 粒子；死亡槽在 VS 中退化。
@@ -231,6 +241,8 @@ export namespace draw3
 		void SetOperatorTarget(const OperatorLayerResources& layer);
 		// 绑定单张 Laser coverage RTV。
 		void SetLaserCoverageTarget(const LaserCoverageResources& layer);
+		// 绑定按需创建的单 contact Laser live coverage RTV。
+		void SetLaserLiveCoverageTarget();
 		// 使用指定颜色清空渲染目标。
 		void ClearRTV(ID3D11RenderTargetView* renderTargetView, DirectX::XMFLOAT4 color);
 		// 将操作层恢复为不改变下层的单位操作。
@@ -252,10 +264,13 @@ export namespace draw3
 		// 创建 BGRA8 Add 与 R16F Retain 两张尺寸相关纹理。
 		bool CreateOperatorLayerResources(UINT width, UINT height, OperatorLayerResources& layer);
 		bool CreateLaserCoverageResources(UINT width, UINT height, LaserCoverageResources& layer);
+		void UnbindLaserCoverageShaderResources();
 		bool UpdateLaserStyleConstants(float opacity);
-		void DrawLaserRectPass(ID3D11RenderTargetView* dstRTV, RECT rect,
+		bool DrawLaserRectPass(ID3D11RenderTargetView* dstRTV, RECT rect,
 			float opacity, float shapeType, ID3D11ShaderResourceView* source,
-			UINT sourceSlot, ID3D11BlendState* blendState);
+			UINT sourceSlot, ID3D11BlendState* blendState,
+			ID3D11ShaderResourceView* secondarySource = nullptr,
+			UINT secondarySourceSlot = 0);
 		// 从资源中加载并创建墨迹着色器。
 		bool LoadShaders();
 		LaserStyleConstants laserStyleConstants_ = {};
@@ -267,5 +282,9 @@ export namespace draw3
 		float laserParticleCoreColorWhiteMix_ =
 			LaserParticleConfig{}.coreColorWhiteMix;
 		LaserParticleSystem laserParticleSystem_;
+		// 单 contact Laser 的实时尾部 coverage 按需创建，避免非 Laser 会话分配额外画布。
+		LaserCoverageResources laserLiveCoverage;
+		bool laserIncrementalCoverageEnabled_ = false;
+		bool laserIncrementalCoverageUnavailable_ = false;
 	};
 }

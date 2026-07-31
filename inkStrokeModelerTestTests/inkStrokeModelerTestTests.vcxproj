@@ -103,6 +103,7 @@
   <ItemGroup>
     <ClCompile Include="contact_input_tests.cpp" />
 	<ClCompile Include="highlighter_geometry_tests.cpp" />
+	<ClCompile Include="laser_incremental_coverage_tests.cpp" />
 	<ClCompile Include="pen_cursor_tests.cpp" />
 	<ClCompile Include="runtime_benchmark.cpp" />
     <ClCompile Include="..\inkStrokeModelerTest\draw3\contact_input.cpp" Link="draw3\contact_input.cpp" />

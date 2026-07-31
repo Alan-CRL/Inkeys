@@ -1,0 +1,9 @@
+{"file":".trellis/spec/native/index.md","reason":"原生绘制层总览与质量检查入口。"}
+{"file":".trellis/spec/native/modules-and-code-style.md","reason":"C++20 modules、中文注释、UTF-8 BOM 与 CRLF 约束。"}
+{"file":".trellis/spec/native/runtime-and-rendering.md","reason":"Laser 生命周期、L0/L1/L2、dirty、粒子层级与多 contact 契约。"}
+{"file":".trellis/spec/native/platform-and-resources.md","reason":"D3D 线程边界、按需资源、Resize、释放与失败回退。"}
+{"file":".trellis/spec/native/quality-and-validation.md","reason":"ARM64 完整解决方案构建、自动测试与人工验证门槛。"}
+{"file":".trellis/spec/shaders/index.md","reason":"Shader 层范围与 CPU/GPU 镜像入口。"}
+{"file":".trellis/spec/shaders/cpu-gpu-contracts.md","reason":"Laser coverage 通道、SRV 槽、shape、混合与解绑契约。"}
+{"file":".trellis/spec/shaders/build-and-encoding.md","reason":"HLSL 编码、四份 shader 构建、CSO 与资源嵌入链。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Window、controller、renderer、HLSL 与 presenter 的跨层恢复检查。"}
