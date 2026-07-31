@@ -9,6 +9,7 @@ Provides:
     cmd_set_branch     - Set git branch for task
     cmd_set_base_branch - Set PR target branch
     cmd_set_scope      - Set scope for PR title
+    cmd_set_meta       - Set/overwrite a task metadata key
     cmd_add_subtask    - Link child task to parent
     cmd_remove_subtask - Unlink child task from parent
 """
@@ -30,7 +31,7 @@ from .config import (
     resolve_package,
     validate_package,
 )
-from .git import run_git
+from .git import branch_exists_locally, resolve_default_branch, run_git
 from .io import read_json, write_json
 from .log import Colors, colored
 from .paths import (
@@ -116,7 +117,7 @@ def _repo_relative_path(path: Path, repo_root: Path) -> str:
 # Config directories of platforms that consume implement.jsonl / check.jsonl.
 # Keep in sync with src/types/ai-tools.ts AI_TOOLS entries — these are the
 # platforms listed in workflow.md's "agent-capable" Skill Routing block.
-# Codex is checked separately because default inline mode does not consume
+# Codex is checked separately because explicit inline mode does not consume
 # JSONL. Kilo / Antigravity / Devin are NOT in this list either: they load
 # specs through skills instead of JSONL.
 _SUBAGENT_CONFIG_DIRS: tuple[str, ...] = (
@@ -133,6 +134,8 @@ _SUBAGENT_CONFIG_DIRS: tuple[str, ...] = (
     ".trae",      # Trae IDE
     ".omp",       # Oh My Pi
     ".zcode",     # ZCode
+    ".grok",      # Grok Build
+    ".kimi-code", # Kimi Code
 )
 _CODEX_CONFIG_DIR = ".codex"
 
@@ -148,14 +151,15 @@ def _has_subagent_platform(repo_root: Path) -> bool:
     """Return True if any sub-agent-capable platform is configured.
 
     Detected by probing well-known config directories at the repo root. Codex
-    only counts when ``codex.dispatch_mode`` explicitly opts into
-    ``sub-agent``; inline mode loads context through skills, not JSONL.
+    counts by default through ``codex.dispatch_mode: auto`` (including the
+    legacy ``sub-agent`` alias); explicit inline mode loads context through
+    skills, not JSONL.
     """
     for config_dir in _SUBAGENT_CONFIG_DIRS:
         if (repo_root / config_dir).is_dir():
             return True
     if (repo_root / _CODEX_CONFIG_DIR).is_dir():
-        return get_codex_dispatch_mode(repo_root) == "sub-agent"
+        return get_codex_dispatch_mode(repo_root) == "auto"
     return False
 
 
@@ -168,6 +172,26 @@ def _write_seed_jsonl(path: Path) -> None:
     """
     seed = {"_example": _SEED_EXAMPLE}
     path.write_text(json.dumps(seed, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def _parse_meta_pairs(pairs: list[str] | None) -> dict[str, str] | None:
+    """Parse repeatable ``--meta key=value`` pairs into a dict.
+
+    Returns ``None`` (after printing an error naming the bad value) on the
+    first malformed pair: missing ``=`` or an empty key. Values are stored
+    as-is (strings, no nesting, no type coercion).
+    """
+    meta: dict[str, str] = {}
+    for pair in pairs or []:
+        key, sep, value = pair.partition("=")
+        if not sep or not key:
+            print(
+                colored(f"Error: malformed --meta value '{pair}' (expected key=value)", Colors.RED),
+                file=sys.stderr,
+            )
+            return None
+        meta[key] = value
+    return meta
 
 
 def _default_prd_content(title: str, description: str | None = None) -> str:
@@ -206,6 +230,11 @@ def cmd_create(args: argparse.Namespace) -> int:
 
     if not args.title:
         print(colored("Error: title is required", Colors.RED), file=sys.stderr)
+        return 1
+
+    # Validate --meta (CLI source: fail-fast, before any directory is created)
+    meta = _parse_meta_pairs(getattr(args, "meta", None))
+    if meta is None:
         return 1
 
     # Validate --package (CLI source: fail-fast)
@@ -293,9 +322,32 @@ def cmd_create(args: argparse.Namespace) -> int:
 
     today = datetime.now().strftime("%Y-%m-%d")
 
-    # Record current branch as base_branch (PR target)
+    # Record the PR target branch. Prefer the repo's actual default branch
+    # (origin/HEAD) so creating a task from a feature branch doesn't
+    # mis-stamp that feature branch as the PR target (#399 item 1). Falls
+    # back to the checked-out branch when the default can't be resolved
+    # (no remote configured, offline, etc.) — the pre-existing behavior.
+    # --base-branch lets the caller override both when neither is correct.
     _, branch_out, _ = run_git(["branch", "--show-current"], cwd=repo_root)
     current_branch = branch_out.strip() or "main"
+    explicit_base_branch: str | None = getattr(args, "base_branch", None)
+    if explicit_base_branch:
+        base_branch = explicit_base_branch
+    else:
+        resolved_base_branch = resolve_default_branch(repo_root)
+        if resolved_base_branch:
+            base_branch = resolved_base_branch
+        else:
+            base_branch = current_branch
+            print(
+                colored(
+                    f"warning: could not resolve the repository's default branch "
+                    f"(no remote configured, offline, etc.); stamping base_branch as "
+                    f"the checked-out branch '{base_branch}'. Pass --base-branch to override.",
+                    Colors.YELLOW,
+                ),
+                file=sys.stderr,
+            )
 
     description = (args.description or "").strip()
     if not description.strip():
@@ -322,7 +374,7 @@ def cmd_create(args: argparse.Namespace) -> int:
         "createdAt": today,
         "completedAt": None,
         "branch": None,
-        "base_branch": current_branch,
+        "base_branch": base_branch,
         "worktree_path": None,
         "commit": None,
         "pr_url": None,
@@ -331,7 +383,7 @@ def cmd_create(args: argparse.Namespace) -> int:
         "parent": None,
         "relatedFiles": [],
         "notes": "",
-        "meta": {},
+        "meta": meta,
     }
 
     write_json(task_json_path, task_data)
@@ -393,20 +445,46 @@ def cmd_create(args: argparse.Namespace) -> int:
     else:
         try:
             from .active_task import resolve_context_key, set_active_task
-            if resolve_context_key():
-                try:
-                    rel_dir = task_dir.relative_to(repo_root).as_posix()
-                except ValueError:
-                    rel_dir = str(task_dir)
-                active = set_active_task(rel_dir, repo_root)
-                if active:
-                    print(
-                        colored(f"Activated task for this session: {active.task_path}", Colors.GREEN),
-                        file=sys.stderr,
-                    )
-                    print(f"Source: {active.source}", file=sys.stderr)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(
+                colored(f"Warning: session activation unavailable (import failed: {exc})", Colors.YELLOW),
+                file=sys.stderr,
+            )
+        else:
+            try:
+                context_key = resolve_context_key()
+            except Exception as exc:
+                print(
+                    colored(f"Warning: session activation failed (context resolution: {exc})", Colors.YELLOW),
+                    file=sys.stderr,
+                )
+            else:
+                # No session identity is the normal CLI-outside-an-AI-session
+                # case (see comment above) — stay silent, not a failure.
+                if context_key:
+                    try:
+                        rel_dir = task_dir.relative_to(repo_root).as_posix()
+                    except ValueError:
+                        rel_dir = str(task_dir)
+                    try:
+                        active = set_active_task(rel_dir, repo_root)
+                    except Exception as exc:
+                        print(
+                            colored(f"Warning: session activation failed (pointer persistence: {exc})", Colors.YELLOW),
+                            file=sys.stderr,
+                        )
+                    else:
+                        if active:
+                            print(
+                                colored(f"Activated task for this session: {active.task_path}", Colors.GREEN),
+                                file=sys.stderr,
+                            )
+                            print(f"Source: {active.source}", file=sys.stderr)
+                        else:
+                            print(
+                                colored("Warning: session activation failed (no pointer returned)", Colors.YELLOW),
+                                file=sys.stderr,
+                            )
 
     print(colored(f"Created task: {dir_name}", Colors.GREEN), file=sys.stderr)
     print("", file=sys.stderr)
@@ -478,6 +556,19 @@ def cmd_archive(args: argparse.Namespace) -> int:
     if task_json_path.is_file():
         data = read_json(task_json_path)
         if data:
+            # Warn (don't block) when the recorded branch is stale — it was
+            # likely already merged and deleted (#399 item 2).
+            stored_branch = data.get("branch")
+            if stored_branch and not branch_exists_locally(stored_branch, repo_root):
+                print(
+                    colored(
+                        f"Warning: recorded branch '{stored_branch}' no longer exists locally "
+                        "(likely merged and deleted).",
+                        Colors.YELLOW,
+                    ),
+                    file=sys.stderr,
+                )
+
             data["status"] = "completed"
             data["completedAt"] = today
             write_json(task_json_path, data)
@@ -815,4 +906,40 @@ def cmd_set_scope(args: argparse.Namespace) -> int:
     write_json(task_json, data)
 
     print(colored(f"✓ Scope set to: {scope}", Colors.GREEN))
+    return 0
+
+
+# =============================================================================
+# Command: set-meta
+# =============================================================================
+
+def cmd_set_meta(args: argparse.Namespace) -> int:
+    """Set/overwrite one metadata key on an existing task."""
+    repo_root = get_repo_root()
+    target_dir = resolve_task_dir(args.dir, repo_root)
+    key = args.key
+    value = args.value
+
+    if not key:
+        print(colored("Error: Missing arguments", Colors.RED))
+        print("Usage: python task.py set-meta <task-dir> <key> <value>")
+        return 1
+
+    task_json = target_dir / FILE_TASK_JSON
+    if not task_json.is_file():
+        print(colored(f"Error: task.json not found at {target_dir}", Colors.RED))
+        return 1
+
+    data = read_json(task_json)
+    if not data:
+        return 1
+
+    meta = data.get("meta")
+    if not isinstance(meta, dict):
+        meta = {}
+    meta[key] = value
+    data["meta"] = meta
+    write_json(task_json, data)
+
+    print(colored(f"✓ Meta set: {key} = {value}", Colors.GREEN))
     return 0

@@ -44,6 +44,10 @@ _KNOWN_PLATFORMS = {
     "copilot",
     "pi",
     "trae",
+    "grok",
+    "kimi",
+    "zcode",
+    "snow",
 }
 
 _ENV_SESSION_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -59,6 +63,14 @@ _ENV_SESSION_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("copilot", ("COPILOT_SESSION_ID", "COPILOT_SESSIONID")),
     ("pi", ("PI_SESSION_ID", "PI_SESSIONID")),
     ("trae", ("TRAE_SESSION_ID",)),
+    # ZCode reuses CLAUDE_SESSION_ID (it does not document a ZCODE_SESSION_ID).
+    # Platform-scoped lookup (_iter_env_keys filters by platform name), so this
+    # only fires when the resolver already detected "zcode" — no collision with
+    # the claude entry above.
+    ("zcode", ("CLAUDE_SESSION_ID",)),
+    # Snow CLI exports SNOW_SESSION_ID into hook/terminal/sub-agent children.
+    # TRELLIS_CONTEXT_ID remains the preferred override when present.
+    ("snow", ("SNOW_SESSION_ID",)),
 )
 _ENV_CONVERSATION_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("cursor", ("CURSOR_CONVERSATION_ID", "CURSOR_CONVERSATIONID")),
@@ -77,6 +89,12 @@ _ENV_PLATFORM_ALIASES = {
     "factory": "droid",
     "factory-ai": "droid",
     "github-copilot": "copilot",
+}
+# ZCode intentionally reuses CLAUDE_SESSION_ID. Hooks know the host is ZCode,
+# while later shell commands see only the shared env name and resolve it through
+# the Claude entry. Canonicalize both paths to one runtime filename.
+_CONTEXT_KEY_PLATFORM_ALIASES = {
+    "zcode": "claude",
 }
 
 
@@ -191,6 +209,7 @@ def _detect_platform(platform_input: dict[str, Any] | None, platform: str | None
 
 
 def _context_key(platform_name: str, kind: str, value: str) -> str:
+    platform_name = _CONTEXT_KEY_PLATFORM_ALIASES.get(platform_name, platform_name)
     if kind == "transcript":
         return f"{platform_name}_transcript_{_hash_value(value)}"
     safe_value = _sanitize_key(value)
@@ -382,15 +401,18 @@ def _lookup_cursor_shell_ticket_context_key() -> str | None:
 def resolve_context_key(
     platform_input: dict[str, Any] | None = None,
     platform: str | None = None,
+    *,
+    allow_environment_context: bool = True,
 ) -> str | None:
     """Resolve a stable session/window context key, if one is available.
 
     `TRELLIS_CONTEXT_ID` is an explicit context-key override used by CLI
     scripts and subprocesses. It does not store the task itself.
     """
-    override = _string_value(os.environ.get("TRELLIS_CONTEXT_ID"))
-    if override:
-        return _sanitize_key(override) or _hash_value(override)
+    if allow_environment_context:
+        override = _string_value(os.environ.get("TRELLIS_CONTEXT_ID"))
+        if override:
+            return _sanitize_key(override) or _hash_value(override)
 
     data = _as_dict(platform_input)
     platform_name = _detect_platform(data, platform) if data or platform else None
@@ -408,11 +430,12 @@ def resolve_context_key(
         if transcript_path:
             return _context_key(platform_name or "session", "transcript", transcript_path)
 
-    env_context_key = _lookup_env_context_key(platform_name)
-    if env_context_key:
-        return env_context_key
+    if allow_environment_context:
+        env_context_key = _lookup_env_context_key(platform_name)
+        if env_context_key:
+            return env_context_key
 
-    if platform_name in (None, "session", "cursor"):
+    if allow_environment_context and platform_name in (None, "session", "cursor"):
         return _lookup_cursor_shell_ticket_context_key()
     return None
 
@@ -471,17 +494,24 @@ def resolve_active_task(
     repo_root: Path,
     platform_input: dict[str, Any] | None = None,
     platform: str | None = None,
+    *,
+    allow_single_session_fallback: bool = True,
+    allow_environment_context: bool = True,
 ) -> ActiveTask:
     """Resolve the active task from session runtime state only.
 
     A stale session task is returned as stale. Missing context identity or a
     missing/empty session context falls back to single-session inference: if
     exactly one session file exists in the runtime, return its task with
-    source_type="session-fallback" — covers class-2 platform sub-agents (codex,
-    copilot, gemini, qoder) that don't inherit the parent's session id. ≥2
+    source_type="session-fallback" — covers pull-based platform sub-agents
+    (copilot, gemini, qoder) that don't inherit the parent's session id. ≥2
     files or 0 files yield ActiveTask(None) — refuses to guess across windows.
     """
-    context_key = resolve_context_key(platform_input, platform)
+    context_key = resolve_context_key(
+        platform_input,
+        platform,
+        allow_environment_context=allow_environment_context,
+    )
     if context_key:
         context = _read_json(_context_path(repo_root, context_key)) or {}
         task_ref = _string_value(context.get("current_task"))
@@ -489,9 +519,10 @@ def resolve_active_task(
         if active:
             return active
 
-    fallback = _resolve_single_session_fallback(repo_root)
-    if fallback is not None:
-        return fallback
+    if allow_single_session_fallback:
+        fallback = _resolve_single_session_fallback(repo_root)
+        if fallback is not None:
+            return fallback
 
     return ActiveTask(None, "none", context_key)
 
@@ -581,13 +612,16 @@ def clear_active_task(
     platform_input: dict[str, Any] | None = None,
     platform: str | None = None,
 ) -> ActiveTask:
-    """Clear the active task by deleting the current session context file."""
+    """Clear the active task by deleting its resolved session context file."""
     context_key = resolve_context_key(platform_input, platform)
     if not context_key:
         return ActiveTask(None, "none")
 
     previous = resolve_active_task(repo_root, platform_input, platform)
-    context_path = _context_path(repo_root, context_key)
+    if not previous.task_path or not previous.context_key:
+        return previous
+
+    context_path = _context_path(repo_root, previous.context_key)
     if context_path.is_file():
         _remove_file(context_path)
     return previous
