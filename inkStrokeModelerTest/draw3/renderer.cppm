@@ -193,8 +193,6 @@ export namespace draw3
 		void DrawTransientDrawingCursor(const DrawingCursorVisual& visual);
 		// 把可变压力胶囊写入当前 Laser coverage，四通道使用 MAX 累积。
 		int DrawLaserCoverage(const std::vector<InkPoint>& points);
-		// 同上，但仅绘制 points[first, first+count)，不分配子向量。
-		int DrawLaserCoverageRange(const InkPoint* first, size_t count);
 		// 将单笔 coverage 解析为材质，并按 source-over 叠加到目标。
 		void ResolveLaserStrokeCoverage(
 			ID3D11RenderTargetView* dstRTV, RECT rect, float opacity = 1.0f);

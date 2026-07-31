@@ -395,8 +395,6 @@ export namespace draw3
 	// 激光脏区按每点实体半径覆盖固定 5px 漫反射和抗锯齿 padding。
 	RECT RectFromLaserPoints(const std::vector<InkPoint>& points,
 		float dpiScale, int width, int height);
-	RECT RectFromLaserPoints(const InkPoint* points, size_t count,
-		float dpiScale, int width, int height);
 	// 更新原始坐标并判断是否发生有效移动。
 	bool UpdateRawPositionAndDetectMovement(ActiveStroke& stroke, const POINT& rawPosition);
 	// 在视觉稳定后冻结停笔输入。

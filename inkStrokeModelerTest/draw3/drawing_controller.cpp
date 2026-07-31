@@ -164,10 +164,6 @@ namespace draw3
 			bool hasLaserParticleTangent = false;
 		};
 
-		// 末端活动窗口大小：最后 kLaserLiveTipCount 个点每帧清除重画（预测+近期未提交实点）。
-		// 其余已提交点以 MAX blend 增量累积，不重画。
-		constexpr size_t kLaserLiveTipCount = 32;
-
 		struct LaserStrokeLayer
 		{
 			uint64_t id = 0;
@@ -175,10 +171,6 @@ namespace draw3
 			std::vector<InkPoint> completedPoints;
 			RECT bounds = {};
 			bool cancelled = false;
-			// 增量渲染状态：coverage 纹理中已累积的点数（只增不减）。
-			size_t stableDrawnCount = 0;
-			// 上一帧 tip 区域（需在下一帧清除覆盖范围以消除预测残影）。
-			RECT previousTipBounds = {};
 		};
 
 		LaserStrokeLayer* FindLaserStrokeLayer(
@@ -226,77 +218,33 @@ namespace draw3
 				if (!ShouldCompositeLaserLayer(layer.cancelled, points.size())) continue;
 				layer.bounds = RectFromLaserPoints(points, dpiScale, width, height);
 				if (IsEmptyRect(layer.bounds)) continue;
-				// coverage 纹理已通过增量渲染累积了 stableDrawnCount 个点；
-				// 烘干时只需补画剩余点，然后一次 resolve 到稳定颜色层。
+				// 每支笔先独立生成 coverage，再按 Down 顺序烘入稳定预乘颜色。
+				renderer.ClearLaserCoverageRect(layer.bounds);
 				renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage);
-				if (layer.stableDrawnCount < points.size())
-				{
-					const size_t from = layer.stableDrawnCount > 0
-						? layer.stableDrawnCount - 1 : 0; // 1点重叠确保连续性
-					renderer.DrawLaserCoverageRange(
-						points.data() + from, points.size() - from);
-				}
+				renderer.DrawLaserCoverage(points);
 				renderer.ResolveLaserStrokeCoverage(
 					renderer.laserCompositedColor.rtv.Get(), layer.bounds);
-				// 烘干后清除本 contact 的 coverage 区域，供下一笔复用。
-				renderer.ClearLaserCoverageRect(layer.bounds);
 				UnionRectInPlace(compositedBounds, layer.bounds);
 			}
 			layers.clear();
 		}
 
-		// DrawLaserStrokeLayers：增量渲染版本。
-		// 每帧仅画新增稳定点 delta + 末端活动 tip；coverage 纹理跨帧持久累积。
-		// outFrameDirty：本次渲染新增/修改的区域（累积到调用方的 frameDirty）。
 		void DrawLaserStrokeLayers(std::vector<LaserStrokeLayer>& layers,
 			InkRenderer& renderer, ID3D11RenderTargetView* target,
-			RECT& outFrameDirty, float dpiScale, int width, int height)
+			RECT clipBounds, float dpiScale, int width, int height)
 		{
 			for (LaserStrokeLayer& layer : layers)
 			{
 				const std::vector<InkPoint>& points = LaserStrokeLayerPoints(layer);
 				if (!ShouldCompositeLaserLayer(layer.cancelled, points.size())) continue;
 				layer.bounds = RectFromLaserPoints(points, dpiScale, width, height);
-				renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage);
-
-				// ── 稳定 delta：仅画本帧新增的已提交点 ──────────────────────────
-				const size_t newStableCount = points.size() > kLaserLiveTipCount
-					? points.size() - kLaserLiveTipCount : 0;
-				RECT stableDeltaBounds = {};
-				if (newStableCount > layer.stableDrawnCount)
-				{
-					const size_t from = layer.stableDrawnCount > 0
-						? layer.stableDrawnCount - 1 : 0;
-					const size_t deltaCount = newStableCount + 1 - from; // +1 重叠
-					// MAX blend 直接累积，无需清除。
-					renderer.DrawLaserCoverageRange(points.data() + from, deltaCount);
-					stableDeltaBounds = RectFromLaserPoints(
-						points.data() + from, deltaCount, dpiScale, width, height);
-					layer.stableDrawnCount = newStableCount;
-				}
-
-				// ── 活动 tip：清除上一帧残影，重画末端 ─────────────────────────
-				if (!IsEmptyRect(layer.previousTipBounds))
-					renderer.ClearLaserCoverageRect(layer.previousTipBounds);
-				const size_t tipFrom = layer.stableDrawnCount > 0
-					? layer.stableDrawnCount - 1 : 0;
-				const size_t tipCount = points.size() - tipFrom;
-				renderer.DrawLaserCoverageRange(points.data() + tipFrom, tipCount);
-				const RECT newTipBounds = RectFromLaserPoints(
-					points.data() + tipFrom, tipCount, dpiScale, width, height);
-
-				// ── 本层脏区：旧 tip + 新 tip + 稳定 delta ──────────────────────
-				RECT layerDirty = layer.previousTipBounds;
-				UnionRectInPlace(layerDirty, newTipBounds);
-				UnionRectInPlace(layerDirty, stableDeltaBounds);
-				layer.previousTipBounds = newTipBounds;
-
-				// ── Resolve coverage → 目标 RTV（仅脏区）─────────────────────────
 				RECT resolveBounds = {};
-				if (IntersectRect(&resolveBounds, &layer.bounds, &layerDirty))
-					renderer.ResolveLaserStrokeCoverage(target, resolveBounds);
-
-				UnionRectInPlace(outFrameDirty, layerDirty);
+				if (!IntersectRect(&resolveBounds, &layer.bounds, &clipBounds)) continue;
+				// scratch 仅清本笔矩形，同笔各段仍通过 MAX 形成 coverage 并集。
+				renderer.ClearLaserCoverageRect(layer.bounds);
+				renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage);
+				renderer.DrawLaserCoverage(points);
+				renderer.ResolveLaserStrokeCoverage(target, resolveBounds);
 			}
 		}
 
@@ -2168,23 +2116,9 @@ namespace draw3
 					layer.bounds = RectFromLaserPoints(points, configuration_.dpiScale,
 						size.width, size.height);
 					UnionRectInPlace(currentLaserLiveBounds, layer.bounds);
-					// 增量渲染：仅脏化上一帧 tip 区域以触发擦除/重绘；
-					// DrawLaserStrokeLayers 会精确累加本帧的实际 delta 脏区。
-					if (!IsEmptyRect(layer.previousTipBounds))
-					{
-						UnionRectInPlace(frameDirty, layer.previousTipBounds);
-					}
-					else
-					{
-						// 首帧 previousTipBounds 尚未初始化，估算 tip 范围保证本帧触发渲染。
-						const size_t n = points.size();
-						const size_t tipFrom = n > kLaserLiveTipCount
-							? n - kLaserLiveTipCount : 0;
-						UnionRectInPlace(frameDirty, RectFromLaserPoints(
-							points.data() + tipFrom, n - tipFrom,
-							configuration_.dpiScale, size.width, size.height));
-					}
 				}
+				UnionRectInPlace(frameDirty, previousLaserLiveBounds);
+				UnionRectInPlace(frameDirty, currentLaserLiveBounds);
 				laserLiveBounds = currentLaserLiveBounds;
 			}
 			if (ShouldBakeLaserBatch(laserLifecycle, laserStrokeLayers.size()))
