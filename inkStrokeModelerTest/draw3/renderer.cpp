@@ -544,6 +544,49 @@ namespace draw3
 		context->VSSetShaderResources(8, 1, nullParticle);
 	}
 
+	void InkRenderer::WarmUpLaserShaders() noexcept
+	{
+		// 在主循环开始前，用零宽高视口提交一次各激光 shape 的 draw call。
+		// GPU 驱动（尤其 Qualcomm/Adreno 的延迟 JIT 模型）会在收到 draw call 时立即编译
+		// 对应的着色器执行路径，而非等到第一次真实绘制。
+		// 对已在 CreateShader 阶段完成编译的驱动（Nvidia/AMD/Intel/WARP），此函数
+		// 只提交几个零像素 draw call，无可见副作用，开销可忽略。
+		if (!context || !backBufferRTV) return;
+
+		// 保存当前视口，替换为零宽高视口以抑制任何像素写入。
+		D3D11_VIEWPORT savedVP = {};
+		UINT vpCount = 1;
+		context->RSGetViewports(&vpCount, &savedVP);
+		const D3D11_VIEWPORT emptyVP = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f };
+		context->RSSetViewports(1, &emptyVP);
+
+		// shape 10: 粒子 VS/PS（DrawLaserParticles 内部含所有绑定与 DrawInstanced）
+		DrawLaserParticles();
+
+		// shape 9: 激光笔尖 LaserDot（需至少1条数据以通过 dots.empty() 检查）
+		const LaserDot warmUpDot{ 0.0f, 0.0f, 1.0f };
+		DrawLaserDots({ warmUpDot });
+
+		// shape 7/8/11/12: 笔画 coverage 生成与 resolve 路径
+		if (laserStrokeCoverage.rtv && laserCompositedColor.rtv && laserCompositedColor.srv)
+		{
+			const RECT warmUpRect{ 0, 0, 1, 1 };
+			const std::vector<InkPoint> warmUpPts{
+				{ 0.0f, 0.0f, 1.0f, 0.0f }, { 1.0f, 0.0f, 1.0f, 0.0f }
+			};
+			ClearLaserCoverageRect(warmUpRect);                              // shape 12
+			SetLaserCoverageTarget(laserStrokeCoverage);
+			DrawLaserCoverage(warmUpPts);                                    // shape 7
+			ResolveLaserStrokeCoverage(                                      // shape 8
+				laserCompositedColor.rtv.Get(), warmUpRect);
+			ResolveLaserCompositedColor(                                     // shape 11
+				backBufferRTV.Get(), warmUpRect, 1.0f);
+		}
+
+		// 恢复视口，不留任何可见副作用。
+		context->RSSetViewports(1, &savedVP);
+	}
+
 	void InkRenderer::CopyResource(ID3D11Texture2D* dst, ID3D11Texture2D* src, RECT rect)
 	{
 		D3D11_BOX sourceRegion = {};

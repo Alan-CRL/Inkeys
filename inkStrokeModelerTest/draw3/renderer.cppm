@@ -205,6 +205,9 @@ export namespace draw3
 		void DrawLaserDots(const std::vector<LaserDot>& dots);
 		// 固定实例绘制 GPU 粒子；死亡槽在 VS 中退化。
 		void DrawLaserParticles();
+		// 在主循环开始前提交零像素 draw call，迫使驱动提前 JIT 编译所有激光着色器路径。
+		// 消除 Qualcomm/Adreno 等延迟编译驱动的首笔卡顿；对 Nvidia/AMD/Intel/WARP 无额外开销。
+		void WarmUpLaserShaders() noexcept;
 		// 按 DPI 配置白芯、实体外套、散射和固定漫反射尺寸。
 		void ConfigureLaserStyle(float dpiScale) noexcept;
 		void ConfigureLaserParticles(

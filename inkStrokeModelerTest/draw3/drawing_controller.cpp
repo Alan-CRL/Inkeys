@@ -1603,6 +1603,8 @@ namespace draw3
 					DrawingCursorVisualBounds(visual, size.width, size.height));
 			return bounds;
 		};
+		// 预热所有激光着色器路径，消除首笔落下时 Qualcomm/Adreno 等 GPU 驱动的 JIT 编译卡顿。
+		renderer_.WarmUpLaserShaders();
 		while (true)
 		{
 			const double frameStartMs = GetQpcTimeMilliseconds();
