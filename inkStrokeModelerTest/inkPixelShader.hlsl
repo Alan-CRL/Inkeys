@@ -191,9 +191,10 @@ OperatorOutput main(PS_INPUT input)
         float brightness = saturate(input.color.y);
         float3 glowColor = float3(
             globalPadding.x, input.color.z, input.color.w) * brightness;
-        // 出生层级稳定决定泛红程度，呼吸只继续调制当前 RGB 亮度。
-        float coreColorMix = saturate(globalPadding.z +
-            (1.0 - globalPadding.z) * saturate(input.p2.y));
+        // coreColorWhiteMix (globalPadding.z) 作为 lerp 上限而非下限：
+        // 亮大粒子最多混合到 coreColorWhiteMix% 的白色，始终保留 (1-coreColorWhiteMix) 的红色调；
+        // 暗小粒子接近纯红粉色。效果：全体粒子"白中带红"而非纯白。
+        float coreColorMix = globalPadding.z * saturate(input.p2.y);
         float3 coreColor = lerp(
             float3(globalPadding.x, input.color.z, input.color.w),
             laserScatterColor.rgb, coreColorMix) * brightness;

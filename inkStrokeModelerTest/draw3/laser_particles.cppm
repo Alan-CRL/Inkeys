@@ -22,27 +22,28 @@ export namespace draw3
 	struct LaserParticleConfig
 	{
 		float idleEmissionRatePerSecond = 6.0f;
-		float motionEmissionSpacingDip = 2.5f;
-		float maximumEmissionRatePerSecond = 72.0f;
-		uint32_t maximumSpawnPerFrame = 96;
-		float minimumLifetimeSeconds = 0.7f;
-		float maximumLifetimeSeconds = 1.0f;
-		float minimumLaunchSpeedDipPerSecond = 28.0f;
-		float maximumLaunchSpeedDipPerSecond = 64.0f;
+		float motionEmissionSpacingDip = 1.8f;      // 2.5→1.8 更密集
+		float maximumEmissionRatePerSecond = 90.0f; // 72→90
+		uint32_t maximumSpawnPerFrame = 120;         // 96→120
+		float minimumLifetimeSeconds = 0.55f;        // 0.70→0.55 缩短行程
+		float maximumLifetimeSeconds = 0.75f;        // 1.00→0.75
+		float minimumLaunchSpeedDipPerSecond = 18.0f; // 28→18 更接近墨迹
+		float maximumLaunchSpeedDipPerSecond = 40.0f; // 64→40
 		float maximumDeflectionAngleDegrees = 25.0f;
 		float shrinkStartTravelRatio = 0.10f;
 		float endRadiusScale = 0.20f;
-		float minimumRadiusDip = 0.45f;
-		float maximumRadiusDip = 2.2f;
-		float sizeDistributionExponent = 1.6f;
+		float minimumRadiusDip = 0.28f;              // 0.45→0.28 更小
+		float maximumRadiusDip = 1.4f;               // 2.2→1.4
+		float sizeDistributionExponent = 2.0f;       // 1.6→2.0 偏向小粒子
 		float sizeBrightnessCorrelation = 0.72f;
 		float sizeTravelCorrelation = 0.30f;
-		float glowRadiusScale = 2.5f;
+		float glowRadiusScale = 2.0f;                // 2.5→2.0 辉光范围收窄
 		float glowRed = 1.0f;
 		float glowGreen = 0.32f;
 		float glowBlue = 0.40f;
-		float glowAlpha = 0.28f;
-		float coreColorWhiteMix = 0.50f;
+		float glowAlpha = 0.18f;                     // 0.28→0.18 辉光更浅
+		// 核心最大白色混合比；用作 lerp 上限使最亮粒子仍保留红色调。
+		float coreColorWhiteMix = 0.82f;             // 0.50→0.82（见 PS）
 		float minimumBrightness = 0.42f;
 		float maximumBrightness = 1.0f;
 		float breathingAmplitude = 0.18f;
