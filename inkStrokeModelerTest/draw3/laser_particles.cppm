@@ -37,11 +37,11 @@ export namespace draw3
 		float sizeDistributionExponent = 1.6f;
 		float sizeBrightnessCorrelation = 0.72f;
 		float sizeTravelCorrelation = 0.30f;
-		float glowRadiusScale = 4.0f;
+		float glowRadiusScale = 2.5f;
 		float glowRed = 1.0f;
 		float glowGreen = 0.32f;
 		float glowBlue = 0.40f;
-		float glowAlpha = 0.50f;
+		float glowAlpha = 0.28f;
 		float coreColorWhiteMix = 0.50f;
 		float minimumBrightness = 0.42f;
 		float maximumBrightness = 1.0f;

@@ -2336,6 +2336,9 @@ namespace draw3
 				const bool orderedPreview = frameTool == DrawingTool::Pen &&
 					kActiveDebugLayerColorMode == DebugLayerColorMode::ColorizeLiveLayer;
 				CompositeLayersToBackBuffer(frameDirty, orderedPreview);
+				// 粒子先于激光主体绘制，使粒子辉光托衬在墨迹主体下方，避免遮挡演示内容。
+				if (particlesEnabled)
+					renderer_.DrawLaserParticles();
 				if (laserLifecycle.phase != LaserTrailPhase::Inactive && laserOpacity > 0.0f)
 				{
 					renderer_.ResolveLaserCompositedColor(
@@ -2344,8 +2347,6 @@ namespace draw3
 						renderer_.backBufferRTV.Get(), frameDirty, configuration_.dpiScale,
 						size.width, size.height);
 				}
-				if (particlesEnabled)
-					renderer_.DrawLaserParticles();
 				renderer_.DrawLaserDots(laserTipDots);
 				for (const DrawingCursorVisual& visual : currentCursorVisuals)
 					renderer_.DrawTransientDrawingCursor(visual);
