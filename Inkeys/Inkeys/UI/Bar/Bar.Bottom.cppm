@@ -218,11 +218,10 @@ bool RegisterButton(
 std::vector<Inkeys::BarExtensionButtonLayoutEntry> NormalizeExtensionZone(
 				const std::vector<Inkeys::BarExtensionButtonLayoutEntry>& configured);
 			void AppendFixedButtons(const std::vector<Inkeys::BarFixedButtonLayoutEntry>& entries);
-			void AppendExtensionButtons(const std::vector<Inkeys::BarExtensionButtonLayoutEntry>& entries);
+			// 返回实际创建到 UI 的扩展按钮数量（未知 ID 只留配置不计）。
+			int AppendExtensionButtons(const std::vector<Inkeys::BarExtensionButtonLayoutEntry>& entries);
 			// 交界分割线仅进运行时列表，不写回配置。
 			void AppendBoundaryDivider();
-			// 全局规则：相邻分割线只保留一个（配置与运行时共用语义）。
-			void CollapseAdjacentRuntimeDividers();
 
 		mutable shared_mutex registrationMutex;
 		unordered_map<std::string, BarButtonRegistrationClass> registrations;

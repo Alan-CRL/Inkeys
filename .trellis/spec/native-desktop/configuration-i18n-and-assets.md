@@ -61,8 +61,8 @@
   - `RegisterButton` 按分区强制上述规则；B 区规范化时丢弃官方前缀 ID 与非法点分格式。
 - A1 默认 required：Select, Draw, Eraser, Geometry, Recall, Clean（**不含 Divider**）。
 - A2 默认 required：Pierce, Freeze, Setting。
-- **交界分割线**：运行时在 `A1|B` 与 `B|A2` 各注入一条 `Inkeys.Bar.Divider`，**不写入**三区配置。B 为空时两条相邻，折叠为一条。
-- **相邻分割线全局规则**：运行时列表中相邻 Divider 只保留一条；配置侧若出现相邻 Divider 也只保留一条（交界 Divider 本身不进配置）。
+- **交界分割线**：运行时注入 `Inkeys.Bar.Divider` 且**不写入**三区配置。B 有可见扩展按钮时在 `A1|B` 与 `B|A2` 各插一条；B 无可上栏扩展项时只在 A1/A2 之间插一条。
+- **相邻分割线规则**：配置侧相邻 Divider 只保留一条；运行时通过“先判断 B 是否有可见项再注入”避免相邻交界线。不得对 `only` 单例按钮重复 `buttomlist.Set` 重建列表（会 double-free）。
 - A1/A2 **严校验**：配置 Id 多重集合必须恰好等于该区 required 默认集合；缺项、多余/错区 ID、非法重复、字段类型错误 → **仅该区**重置为默认顺序。不做逐项补洞。配置中的 Divider 在 A 区先剥离再校验。
 - A 区不持久化用户 Visible；A 元素若误带 `Visible` 则忽略并剥离写回。A 的默认 `userVisible` 仅来自注册写死值（Geometry 默认 false）。
 - `Size` 本轮只镜像注册默认；缺省/非法/非默认均纠正为注册默认并写回，**不**因 Size 触发 A 区整区重置。后续设置 UI 可开放用户改 Size。
