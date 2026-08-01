@@ -21,7 +21,7 @@
 ## 范围与绝对映射
 
 - 文件内统一提供笔型范围函数：硬笔 `[1, round(30 × dpiZoom)]`，荧光笔 `[round(30 × dpiZoom), round(100 × dpiZoom)]`，并确保 `max >= min`。
-- 圆点归一化位置统一由 `drawAttributePenThickness.val` 推导：非拖动时该值对真实粗细做 `SetTar` 动画，因此点击下方快捷粗细后圆点平滑移动；拖动中该值已 `SetDirect` 到候选值，圆点仍跟手。范围外值只影响圆点显示钳制，不调用 `SetPenWidth()`。
+- 圆点位置使用独立的 `drawAttributeThicknessSliderNormalized`（0–1）动画值：每帧按当前笔形量程把候选/真实粗细归一化后 `SetTar`，笔形切换时量程变化不会把旧宽度直接夹到 0。拖动中对该归一化值 `SetDirect`，圆点仍跟手。范围外值只影响圆点显示钳制，不调用 `SetPenWidth()`。
 - 按下时记录屏幕坐标 `pressScreenX`、起始粗细、起始笔型，以及圆点中心可达的滑轨屏幕左右端点。未发生水平移动时保留起始候选值，只按点击固定处理。
 - 首次发生水平移动后，拖动值为 `min + (screenX-trackStartScreenX) / trackTravelScreenX × (max-min)`，随后钳制并四舍五入到整数设备像素；圆点直接跟随指针/触点在滑轨上的绝对投影。
 - 拖动中把整数候选值写入 `IdtAtomic<float>`，渲染线程用它计算圆点归一化位置，并把 `drawAttributePenThickness` 以 `SetDirect` 同步到候选值，使左下角“粗细”数字即时显示准确值；仍不调用 `SetPenWidth()`，超限判断继续读真实值。正常抬起且笔型未变化时，若候选值不同于起始值，只调用一次 `SetPenWidth(finalValue, true)`，之后 `drawAttributePenThickness` 恢复 `SetTar` 动画过渡。

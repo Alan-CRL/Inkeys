@@ -2620,17 +2620,22 @@ void BarUISetClass::Rendering()
 	BarUiValueClass drawAttributeThicknessSliderAccentOpacity(1.0);
 	BarUiValueClass drawAttributeThicknessSliderCenterDiameter(
 		BarThicknessSliderThumbCenterDiameter);
-	bool drawAttributeThicknessSliderTargetActive = false;
-	double drawAttributeThicknessSliderNormalized = 0.0;
-	{
-		auto range = GetBarThicknessSliderRange(
-			stateMode.Pen.ModeSelect, barStyle.dpiZoom);
-		if (range.supported && range.max > range.min)
-			drawAttributeThicknessSliderNormalized = clamp(
-				(static_cast<double>(GetPenWidth()) - range.min)
-				/ static_cast<double>(range.max - range.min),
-				0.0, 1.0);
-	}
+bool drawAttributeThicknessSliderTargetActive = false;
+		// 圆点位置用独立归一化动画，避免笔形切换后量程瞬变把圆点夹到 0。
+		BarUiValueClass drawAttributeThicknessSliderNormalized(0.0);
+		bool drawAttributeThicknessSliderNormalizedInitialized = false;
+		{
+			auto range = GetBarThicknessSliderRange(
+				stateMode.Pen.ModeSelect, barStyle.dpiZoom);
+			if (range.supported && range.max > range.min)
+			{
+				drawAttributeThicknessSliderNormalized.SetDirect(clamp(
+					(static_cast<double>(GetPenWidth()) - range.min)
+					/ static_cast<double>(range.max - range.min),
+					0.0, 1.0));
+				drawAttributeThicknessSliderNormalizedInitialized = true;
+			}
+		}
 	BarUiValueClass drawAttributeAnnotationPopupProgress(0.0);
 	BarUiValueClass drawAttributeOverflowPopupProgress(0.0);
 	D2D1_SIZE_F annotationLabelTextSize =
@@ -2950,19 +2955,46 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 						// 拖动中数字跟手，不走过渡动画。
 						drawAttributePenThickness.SetDirect(penThickness);
 					else drawAttributePenThickness.SetTar(penThickness, operationDur);
-				if (!drawAttributePenPreviewMorphInitialized)
-				{
-					drawAttributePenPreviewMorph.SetDirect(penPreviewMorph);
-					drawAttributePenPreviewMorphInitialized = true;
+					if (!drawAttributePenPreviewMorphInitialized)
+					{
+						drawAttributePenPreviewMorph.SetDirect(penPreviewMorph);
+						drawAttributePenPreviewMorphInitialized = true;
+					}
+					else drawAttributePenPreviewMorph.SetTar(
+						penPreviewMorph, operationDur);
+
+					// 圆点位置按当前笔形量程归一化；笔形切换时对 0–1 做动画，不直接用旧宽度/新量程瞬算。
+					auto thicknessSliderRange = GetBarThicknessSliderRange(
+						stateMode.Pen.ModeSelect, barStyle.dpiZoom);
+					if (thicknessSliderRange.supported
+						&& thicknessSliderRange.max > thicknessSliderRange.min)
+					{
+						double targetNormalized = clamp(
+							(penThickness - thicknessSliderRange.min)
+							/ static_cast<double>(
+								thicknessSliderRange.max
+									- thicknessSliderRange.min),
+							0.0, 1.0);
+						if (!drawAttributeThicknessSliderNormalizedInitialized)
+						{
+							drawAttributeThicknessSliderNormalized.SetDirect(
+								targetNormalized);
+							drawAttributeThicknessSliderNormalizedInitialized =
+								true;
+						}
+						else if (thicknessSliderDragging)
+							drawAttributeThicknessSliderNormalized.SetDirect(
+								targetNormalized);
+						else drawAttributeThicknessSliderNormalized.SetTar(
+							targetNormalized, operationDur);
+					}
 				}
-				else drawAttributePenPreviewMorph.SetTar(
-					penPreviewMorph, operationDur);
-			}
-			else
-			{
-				drawAttributePenThicknessInitialized = false;
-				drawAttributePenPreviewMorphInitialized = false;
-			}
+				else
+				{
+					drawAttributePenThicknessInitialized = false;
+					drawAttributePenPreviewMorphInitialized = false;
+					drawAttributeThicknessSliderNormalizedInitialized = false;
+				}
 			bool mainBarFoldChange = (barState.fold && mainBar->x.tar != 0.0)
 				|| (!barState.fold && mainBar->x.tar == 0.0);
 			auto CalculateButtonLayoutWidth = [&]()
@@ -4895,10 +4927,12 @@ ConfigureThicknessButton(presetShapes[i], numberWord,
 				needRendering = true;
 			// 独立的粗细值也进入统一动画时钟，方便后续直接替换为非线性或回弹曲线。
 			if (!drawAttributePenThickness.IsSame()) ChangeValue(drawAttributePenThickness, false);
-		if (!drawAttributePenPreviewMorph.IsSame())
-			ChangeValue(drawAttributePenPreviewMorph, false);
-		if (!drawAttributeThicknessSliderProgress.IsSame())
-			ChangeValue(drawAttributeThicknessSliderProgress, false);
+			if (!drawAttributePenPreviewMorph.IsSame())
+				ChangeValue(drawAttributePenPreviewMorph, false);
+			if (!drawAttributeThicknessSliderNormalized.IsSame())
+				ChangeValue(drawAttributeThicknessSliderNormalized, false);
+			if (!drawAttributeThicknessSliderProgress.IsSame())
+				ChangeValue(drawAttributeThicknessSliderProgress, false);
 		if (!drawAttributeThicknessSliderThumbOpacity.IsSame())
 			ChangeValue(drawAttributeThicknessSliderThumbOpacity, false);
 		if (!drawAttributeThicknessSliderThumbScale.IsSame())
@@ -5211,35 +5245,21 @@ bool brushMode = stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1;
 				sliderHit->pct.SetDirect(0.0);
 				sliderHit->Inherit(BarUiInheritEnum::TopLeft, *panel);
 
-				auto range = GetBarThicknessSliderRange(
-					stateMode.Pen.ModeSelect, barStyle.dpiZoom);
-if (stateMode.StateModeSelect
-						== StateModeSelectEnum::IdtPen
-						&& range.supported)
-					{
-						// 非拖动时跟随 drawAttributePenThickness 动画，
-						// 点击下方快捷粗细后圆点平滑移动；拖动中该值已 SetDirect 到候选值。
-						double sliderPositionWidth = static_cast<double>(
-							drawAttributePenThickness.val);
-						drawAttributeThicknessSliderNormalized =
-							range.max > range.min
-								? clamp((sliderPositionWidth - range.min)
-									/ static_cast<double>(
-										range.max - range.min),
-								0.0, 1.0)
-							: 0.0;
-					}
-				double baseThumbDiameter =
-					BarThicknessSliderThumbDiameter * panelScale;
-				double thumbTravel = max(0.0,
-					previewGeometry.trackRight
-						- previewGeometry.trackLeft
-						- baseThumbDiameter);
-				double thumbCenterX =
-					previewGeometry.trackLeft
-					+ baseThumbDiameter / 2.0
-					+ thumbTravel
-						* drawAttributeThicknessSliderNormalized;
+double baseThumbDiameter =
+						BarThicknessSliderThumbDiameter * panelScale;
+					double thumbTravel = max(0.0,
+						previewGeometry.trackRight
+							- previewGeometry.trackLeft
+							- baseThumbDiameter);
+					// 使用独立归一化动画值，笔形切换与快捷粗细都会平滑移动圆点。
+					double thumbNormalized = clamp(
+						static_cast<double>(
+							drawAttributeThicknessSliderNormalized.val),
+						0.0, 1.0);
+					double thumbCenterX =
+						previewGeometry.trackLeft
+						+ baseThumbDiameter / 2.0
+						+ thumbTravel * thumbNormalized;
 				double thumbScale = max(0.0, static_cast<double>(
 					drawAttributeThicknessSliderThumbScale.val));
 				double thumbDiameter =
