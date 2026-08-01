@@ -34,83 +34,188 @@ export namespace Inkeys
 		inline constexpr char Setting[] = "Inkeys.Bar.Setting";
 	}
 
-	struct BarButtonLayoutEntry
-	{
-		std::string Id;
-		bool Visible = true;
-	};
-
-	template <typename ElementT>
-	class ConfigSequence
-	{
-	public:
-		using ElementType = ElementT;
-
-		ConfigSequence() = default;
-		ConfigSequence(std::initializer_list<ElementT> valuesIn) : values(valuesIn) {}
-		ConfigSequence(const ConfigSequence& other) : values(other.Snapshot()) {}
-
-		ConfigSequence& operator=(const ConfigSequence& other)
+// 与 BarButtomSizeEnum 对应的配置侧尺寸枚举，JSON 使用同名字符串。
+		enum class BarButtonSizeKind
 		{
-			if (this != &other) Replace(other.Snapshot());
-			return *this;
-		}
-
-		std::vector<ElementT> Snapshot() const
-		{
-			// 序列化及外部读取都先取得一致快照，避免观察到修改中的半成品。
-			std::shared_lock lock(rwMutex);
-			return values;
-		}
-
-		void Replace(std::vector<ElementT> valuesIn)
-		{
-			// 完整的新序列只在独占锁内一次性替换。
-			std::unique_lock lock(rwMutex);
-			values = std::move(valuesIn);
-		}
-
-	private:
-		mutable std::shared_mutex rwMutex;
-		std::vector<ElementT> values;
-	};
-
-	// 自定义序列类型可特化该适配器，向配置层提供一致快照和事务式替换。
-	template <typename SequenceT>
-	struct ConfigSequenceAdapter;
-
-	template <typename ElementT>
-	struct ConfigSequenceAdapter<ConfigSequence<ElementT>>
-	{
-		using ElementType = ElementT;
-
-		static std::vector<ElementT> Snapshot(const ConfigSequence<ElementT>& sequence)
-		{
-			return sequence.Snapshot();
-		}
-
-		static void Replace(ConfigSequence<ElementT>& sequence, std::vector<ElementT> values)
-		{
-			sequence.Replace(std::move(values));
-		}
-	};
-
-	inline ConfigSequence<BarButtonLayoutEntry> MakeDefaultBarButtonLayout()
-	{
-		return {
-			{ BarButtonId::Select, true },
-			{ BarButtonId::Draw, true },
-			{ BarButtonId::Eraser, true },
-			{ BarButtonId::Geometry, false },
-			{ BarButtonId::Recall, true },
-			{ BarButtonId::Clean, true },
-			{ BarButtonId::Divider, true },
-			{ BarButtonId::Pierce, true },
-			{ BarButtonId::Freeze, true },
-			{ BarButtonId::Setting, true },
+			TwoTwo,
+			TwoOne,
+			OneTwo,
+			OneOne
 		};
+
+		// A1/A2 固定区：只存 Id 与 Size；Visible 不进配置。
+		struct BarFixedButtonLayoutEntry
+		{
+			std::string Id;
+			BarButtonSizeKind Size = BarButtonSizeKind::TwoTwo;
+		};
+
+		// B 扩展区：Id + Size + 用户显隐。
+		struct BarExtensionButtonLayoutEntry
+		{
+			std::string Id;
+			BarButtonSizeKind Size = BarButtonSizeKind::TwoTwo;
+			bool Visible = true;
+		};
+
+		// 兼容旧单数组 ButtonLayout 的读取形态（仅迁移使用）。
+		struct BarLegacyButtonLayoutEntry
+		{
+			std::string Id;
+			bool Visible = true;
+		};
+
+		template <typename ElementT>
+		class ConfigSequence
+		{
+		public:
+			using ElementType = ElementT;
+
+			ConfigSequence() = default;
+			ConfigSequence(std::initializer_list<ElementT> valuesIn) : values(valuesIn) {}
+			ConfigSequence(const ConfigSequence& other) : values(other.Snapshot()) {}
+
+			ConfigSequence& operator=(const ConfigSequence& other)
+			{
+				if (this != &other) Replace(other.Snapshot());
+				return *this;
+			}
+
+			std::vector<ElementT> Snapshot() const
+			{
+				// 序列化及外部读取都先取得一致快照，避免观察到修改中的半成品。
+				std::shared_lock lock(rwMutex);
+				return values;
+			}
+
+			void Replace(std::vector<ElementT> valuesIn)
+			{
+				// 完整的新序列只在独占锁内一次性替换。
+				std::unique_lock lock(rwMutex);
+				values = std::move(valuesIn);
+			}
+
+		private:
+			mutable std::shared_mutex rwMutex;
+			std::vector<ElementT> values;
+		};
+
+		// 自定义序列类型可特化该适配器，向配置层提供一致快照和事务式替换。
+		template <typename SequenceT>
+		struct ConfigSequenceAdapter;
+
+		template <typename ElementT>
+		struct ConfigSequenceAdapter<ConfigSequence<ElementT>>
+		{
+			using ElementType = ElementT;
+
+			static std::vector<ElementT> Snapshot(const ConfigSequence<ElementT>& sequence)
+			{
+				return sequence.Snapshot();
+			}
+
+			static void Replace(ConfigSequence<ElementT>& sequence, std::vector<ElementT> values)
+			{
+				sequence.Replace(std::move(values));
+			}
+		};
+
+		inline BarButtonSizeKind DefaultSizeForBarButtonId(std::string_view id)
+		{
+			if (id == BarButtonId::Divider) return BarButtonSizeKind::OneTwo;
+			if (id == BarButtonId::Pierce || id == BarButtonId::Freeze) return BarButtonSizeKind::TwoOne;
+			return BarButtonSizeKind::TwoTwo;
+		}
+
+inline bool IsFixedButtonsA1Id(std::string_view id)
+			{
+				// Divider 不进 A1 配置；仅在 A1|B / B|A2 交界由运行时注入。
+				return id == BarButtonId::Select
+					|| id == BarButtonId::Draw
+					|| id == BarButtonId::Eraser
+					|| id == BarButtonId::Geometry
+					|| id == BarButtonId::Recall
+					|| id == BarButtonId::Clean;
+			}
+
+			inline bool IsRuntimeBoundaryDividerId(std::string_view id)
+			{
+				return id == BarButtonId::Divider;
+			}
+
+		inline bool IsFixedButtonsA2Id(std::string_view id)
+		{
+			return id == BarButtonId::Pierce
+				|| id == BarButtonId::Freeze
+				|| id == BarButtonId::Setting;
+		}
+
+		inline bool IsOfficialFixedBarButtonId(std::string_view id)
+		{
+			return IsFixedButtonsA1Id(id) || IsFixedButtonsA2Id(id);
+		}
+
+		// 官方按钮 ID 必须以 Inkeys. 开头（当前形如 Inkeys.Bar.Select）。
+		inline bool IsOfficialBarButtonIdPrefix(std::string_view id)
+		{
+			constexpr std::string_view kPrefix = "Inkeys.";
+			return id.size() > kPrefix.size() && id.substr(0, kPrefix.size()) == kPrefix;
+		}
+
+		// 点分 ID：至少两段，形如 xxx.xxx 或 xxx.xxx.xxx；不允许首尾点或空段。
+		inline bool IsDottedBarButtonId(std::string_view id)
+		{
+			if (id.empty() || id.front() == '.' || id.back() == '.') return false;
+
+			bool sawDot = false;
+			bool segmentNonEmpty = false;
+			for (const char ch : id)
+			{
+				if (ch == '.')
+				{
+					if (!segmentNonEmpty) return false;
+					sawDot = true;
+					segmentNonEmpty = false;
+					continue;
+				}
+				segmentNonEmpty = true;
+			}
+
+			return sawDot && segmentNonEmpty;
+		}
+
+		// 扩展/插件按钮：点分 ID，且不得占用官方 Inkeys. 前缀。
+		inline bool IsExtensionBarButtonId(std::string_view id)
+		{
+			return IsDottedBarButtonId(id) && !IsOfficialBarButtonIdPrefix(id);
+		}
+
+inline ConfigSequence<BarFixedButtonLayoutEntry> MakeDefaultFixedButtonsA1()
+			{
+				return {
+					{ BarButtonId::Select, BarButtonSizeKind::TwoTwo },
+					{ BarButtonId::Draw, BarButtonSizeKind::TwoTwo },
+					{ BarButtonId::Eraser, BarButtonSizeKind::TwoTwo },
+					{ BarButtonId::Geometry, BarButtonSizeKind::TwoTwo },
+					{ BarButtonId::Recall, BarButtonSizeKind::TwoTwo },
+					{ BarButtonId::Clean, BarButtonSizeKind::TwoTwo },
+				};
+			}
+
+		inline ConfigSequence<BarExtensionButtonLayoutEntry> MakeDefaultExtensionButtons()
+		{
+			return {};
+		}
+
+		inline ConfigSequence<BarFixedButtonLayoutEntry> MakeDefaultFixedButtonsA2()
+		{
+			return {
+				{ BarButtonId::Pierce, BarButtonSizeKind::TwoOne },
+				{ BarButtonId::Freeze, BarButtonSizeKind::TwoOne },
+				{ BarButtonId::Setting, BarButtonSizeKind::TwoTwo },
+			};
+		}
 	}
-}
 
 namespace Inkeys::ConfigDetail
 {
@@ -151,12 +256,14 @@ namespace Inkeys::ConfigDetail
 		H(ConfigUploadMode::NoUpload, "NaN", std::wstring, TargetArchitecture, ::targetArchitecture) \
 		H(ConfigUploadMode::Upload, "we", std::wstring, WindowsEdition, ::windowsEdition) \
 	) \
-	GROUP(UI, \
-		GROUP(Bar, \
-			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, Zoom, 1.0) \
-			X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarButtonLayoutEntry>, ButtonLayout, MakeDefaultBarButtonLayout()) \
+GROUP(UI, \
+			GROUP(Bar, \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, Zoom, 1.0) \
+				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarFixedButtonLayoutEntry>, FixedButtonsA1, MakeDefaultFixedButtonsA1()) \
+				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarExtensionButtonLayoutEntry>, ExtensionButtons, MakeDefaultExtensionButtons()) \
+				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarFixedButtonLayoutEntry>, FixedButtonsA2, MakeDefaultFixedButtonsA2()) \
+			) \
 		) \
-	) \
 	GROUP(Experimental, \
 		GROUP(Inkeys3, \
 			GROUP(UI3, \
@@ -241,13 +348,15 @@ namespace Inkeys
 			#undef INKEYS_CONFIG_TRAVERSE_H_VALUE
 		}
 
-		bool ReadImpl(const std::vector<std::string>& paths);
-		void ApplyDefaults(const std::vector<std::string>& paths);
-		void ApplyDocument(const Json::Value& root, const std::vector<std::string>& paths, bool includeWriteOnly = false);
-		void OverlayDocument(Json::Value& root);
-		bool LoadDocumentOnly(Json::Value& outRoot) const;
-		static bool WriteDocumentToFile(const std::wstring& filePath, const Json::Value& root);
-	};
+bool ReadImpl(const std::vector<std::string>& paths);
+			void ApplyDefaults(const std::vector<std::string>& paths);
+			void ApplyDocument(const Json::Value& root, const std::vector<std::string>& paths, bool includeWriteOnly = false);
+			void OverlayDocument(Json::Value& root);
+			// 旧 UI.Bar.ButtonLayout 单数组拆到 A1/B/A2；仅在新区字段缺失时执行。
+			bool TryMigrateLegacyBarButtonLayout(Json::Value& root);
+			bool LoadDocumentOnly(Json::Value& outRoot) const;
+			static bool WriteDocumentToFile(const std::wstring& filePath, const Json::Value& root);
+		};
 
 	inline Inkeys::Config& Config::operator=(const Inkeys::Config& other)
 	{

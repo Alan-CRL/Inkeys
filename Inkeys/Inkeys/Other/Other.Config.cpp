@@ -285,36 +285,148 @@ namespace
 		}
 	};
 
-	template <>
-	struct JsonValueCodec<Inkeys::BarButtonLayoutEntry, void>
-	{
-		static bool TryRead(const Json::Value& jsonValue, Inkeys::BarButtonLayoutEntry& outValue)
+bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSizeKind& outSize)
 		{
-			if (!jsonValue.isObject()) return false;
-			if (!jsonValue.isMember("Id") || !jsonValue["Id"].isString()) return false;
-
-			std::string id = jsonValue["Id"].asString();
-			if (id.empty()) return false;
-
-			bool visible = true;
-			if (jsonValue.isMember("Visible"))
+			if (!jsonValue.isString()) return false;
+			const std::string text = jsonValue.asString();
+			if (text == "twoTwo")
 			{
-				if (!jsonValue["Visible"].isBool()) return false;
-				visible = jsonValue["Visible"].asBool();
+				outSize = Inkeys::BarButtonSizeKind::TwoTwo;
+				return true;
+			}
+			if (text == "twoOne")
+			{
+				outSize = Inkeys::BarButtonSizeKind::TwoOne;
+				return true;
+			}
+			if (text == "oneTwo")
+			{
+				outSize = Inkeys::BarButtonSizeKind::OneTwo;
+				return true;
+			}
+			if (text == "oneOne")
+			{
+				outSize = Inkeys::BarButtonSizeKind::OneOne;
+				return true;
+			}
+			return false;
+		}
+
+		const char* BarButtonSizeKindToText(Inkeys::BarButtonSizeKind size)
+		{
+			switch (size)
+			{
+			case Inkeys::BarButtonSizeKind::TwoTwo: return "twoTwo";
+			case Inkeys::BarButtonSizeKind::TwoOne: return "twoOne";
+			case Inkeys::BarButtonSizeKind::OneTwo: return "oneTwo";
+			case Inkeys::BarButtonSizeKind::OneOne: return "oneOne";
+			}
+			return "twoTwo";
+		}
+
+		// 固定区：读取 Id；Size 缺省/非法时先落默认，Load 时再纠正到注册默认。
+		// 误带 Visible 时忽略，不导致整字段失败。
+		template <>
+		struct JsonValueCodec<Inkeys::BarFixedButtonLayoutEntry, void>
+		{
+			static bool TryRead(const Json::Value& jsonValue, Inkeys::BarFixedButtonLayoutEntry& outValue)
+			{
+				if (!jsonValue.isObject()) return false;
+				if (!jsonValue.isMember("Id") || !jsonValue["Id"].isString()) return false;
+
+				std::string id = jsonValue["Id"].asString();
+				if (id.empty()) return false;
+
+				Inkeys::BarButtonSizeKind size = Inkeys::DefaultSizeForBarButtonId(id);
+				if (jsonValue.isMember("Size"))
+				{
+					Inkeys::BarButtonSizeKind parsedSize = size;
+					if (TryReadBarButtonSizeKind(jsonValue["Size"], parsedSize)) size = parsedSize;
+				}
+
+				outValue = { std::move(id), size };
+				return true;
 			}
 
-			outValue = { std::move(id), visible };
-			return true;
-		}
+			static Json::Value ToJson(const Inkeys::BarFixedButtonLayoutEntry& value)
+			{
+				Json::Value result(Json::objectValue);
+				result["Id"] = value.Id;
+				result["Size"] = BarButtonSizeKindToText(value.Size);
+				return result;
+			}
+		};
 
-		static Json::Value ToJson(const Inkeys::BarButtonLayoutEntry& value)
+		template <>
+		struct JsonValueCodec<Inkeys::BarExtensionButtonLayoutEntry, void>
 		{
-			Json::Value result(Json::objectValue);
-			result["Id"] = value.Id;
-			result["Visible"] = value.Visible;
-			return result;
-		}
-	};
+			static bool TryRead(const Json::Value& jsonValue, Inkeys::BarExtensionButtonLayoutEntry& outValue)
+			{
+				if (!jsonValue.isObject()) return false;
+				if (!jsonValue.isMember("Id") || !jsonValue["Id"].isString()) return false;
+
+				std::string id = jsonValue["Id"].asString();
+				if (id.empty()) return false;
+
+				Inkeys::BarButtonSizeKind size = Inkeys::DefaultSizeForBarButtonId(id);
+				if (jsonValue.isMember("Size"))
+				{
+					Inkeys::BarButtonSizeKind parsedSize = size;
+					if (TryReadBarButtonSizeKind(jsonValue["Size"], parsedSize)) size = parsedSize;
+				}
+
+				bool visible = true;
+				if (jsonValue.isMember("Visible"))
+				{
+					if (!jsonValue["Visible"].isBool()) return false;
+					visible = jsonValue["Visible"].asBool();
+				}
+
+				outValue = { std::move(id), size, visible };
+				return true;
+			}
+
+			static Json::Value ToJson(const Inkeys::BarExtensionButtonLayoutEntry& value)
+			{
+				Json::Value result(Json::objectValue);
+				result["Id"] = value.Id;
+				result["Size"] = BarButtonSizeKindToText(value.Size);
+				result["Visible"] = value.Visible;
+				return result;
+			}
+		};
+
+		// 旧单数组仅用于启动迁移，不进入 schema。
+		template <>
+		struct JsonValueCodec<Inkeys::BarLegacyButtonLayoutEntry, void>
+		{
+			static bool TryRead(const Json::Value& jsonValue, Inkeys::BarLegacyButtonLayoutEntry& outValue)
+			{
+				if (!jsonValue.isObject()) return false;
+				if (!jsonValue.isMember("Id") || !jsonValue["Id"].isString()) return false;
+
+				std::string id = jsonValue["Id"].asString();
+				if (id.empty()) return false;
+
+				bool visible = true;
+				if (jsonValue.isMember("Visible"))
+				{
+					if (!jsonValue["Visible"].isBool()) return false;
+					visible = jsonValue["Visible"].asBool();
+				}
+
+				outValue = { std::move(id), visible };
+				return true;
+			}
+
+			static Json::Value ToJson(const Inkeys::BarLegacyButtonLayoutEntry& value)
+			{
+				Json::Value result(Json::objectValue);
+				result["Id"] = value.Id;
+				result["Visible"] = value.Visible;
+				return result;
+			}
+		};
 
 	template <typename ValueT>
 	struct JsonValueCodec<ValueT, std::void_t<typename Inkeys::ConfigSequenceAdapter<ValueT>::ElementType>>
@@ -633,12 +745,92 @@ namespace Inkeys
 			return false;
 		}
 
+		// 先迁移旧单数组，再套用文档，避免新区默认值挡住拆分结果。
+		TryMigrateLegacyBarButtonLayout(parsedRoot);
 		ApplyDocument(parsedRoot, paths);
 		loadedDocument = parsedRoot;
 		hasLoadedDocument = true;
 		return true;
 	}
 
+	bool Config::TryMigrateLegacyBarButtonLayout(Json::Value& root)
+	{
+		if (!root.isObject() || !root.isMember("UI") || !root["UI"].isObject()) return false;
+		Json::Value& uiNode = root["UI"];
+		if (!uiNode.isMember("Bar") || !uiNode["Bar"].isObject()) return false;
+		Json::Value& barNode = uiNode["Bar"];
+
+		// 已有任一新字段时不再从旧数组迁移，避免覆盖用户新区配置。
+		const bool hasNewLayoutFields =
+			barNode.isMember("FixedButtonsA1")
+			|| barNode.isMember("ExtensionButtons")
+			|| barNode.isMember("FixedButtonsA2");
+		if (hasNewLayoutFields) return false;
+		if (!barNode.isMember("ButtonLayout") || !barNode["ButtonLayout"].isArray()) return false;
+
+		auto sizeText = [](BarButtonSizeKind size) -> const char*
+		{
+			switch (size)
+			{
+			case BarButtonSizeKind::TwoTwo: return "twoTwo";
+			case BarButtonSizeKind::TwoOne: return "twoOne";
+			case BarButtonSizeKind::OneTwo: return "oneTwo";
+			case BarButtonSizeKind::OneOne: return "oneOne";
+			}
+			return "twoTwo";
+		};
+
+		auto makeFixedObject = [&](const std::string& id) -> Json::Value
+		{
+			Json::Value item(Json::objectValue);
+			item["Id"] = id;
+			item["Size"] = sizeText(DefaultSizeForBarButtonId(id));
+			return item;
+		};
+
+		auto makeExtensionObject = [&](const std::string& id, bool visible) -> Json::Value
+		{
+			Json::Value item(Json::objectValue);
+			item["Id"] = id;
+			item["Size"] = sizeText(DefaultSizeForBarButtonId(id));
+			item["Visible"] = visible;
+			return item;
+		};
+
+		Json::Value fixedA1Json(Json::arrayValue);
+		Json::Value extensionJson(Json::arrayValue);
+		Json::Value fixedA2Json(Json::arrayValue);
+
+		for (Json::ArrayIndex index = 0; index < barNode["ButtonLayout"].size(); index++)
+		{
+			const Json::Value& jsonValue = barNode["ButtonLayout"][index];
+			if (!jsonValue.isObject()) return false;
+			if (!jsonValue.isMember("Id") || !jsonValue["Id"].isString()) return false;
+
+			const std::string id = jsonValue["Id"].asString();
+			if (id.empty()) return false;
+
+			bool visible = true;
+			if (jsonValue.isMember("Visible"))
+			{
+				if (!jsonValue["Visible"].isBool()) return false;
+				visible = jsonValue["Visible"].asBool();
+			}
+
+// 旧布局中的 Divider 不迁入三区配置；交界分割线改由运行时注入。
+			if (IsRuntimeBoundaryDividerId(id)) continue;
+			if (IsFixedButtonsA1Id(id)) fixedA1Json.append(makeFixedObject(id));
+			else if (IsFixedButtonsA2Id(id)) fixedA2Json.append(makeFixedObject(id));
+			else extensionJson.append(makeExtensionObject(id, visible));
+			}
+
+		// 迁移结果写回文档节点；A 区是否合法由后续 Load 严校验决定。
+		barNode["FixedButtonsA1"] = fixedA1Json;
+		barNode["ExtensionButtons"] = extensionJson;
+		barNode["FixedButtonsA2"] = fixedA2Json;
+		barNode.removeMember("ButtonLayout");
+		return true;
+	}
 	void Config::ApplyDefaults(const std::vector<std::string>& paths)
 	{
 		DefaultValueHandler handler(paths);
