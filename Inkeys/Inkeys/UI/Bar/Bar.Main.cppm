@@ -158,12 +158,13 @@ enum class BarUISetWordEnum : int
 	DrawAttributeBar_ThicknessFineNumber,
 	DrawAttributeBar_ThicknessMediumNumber,
 	DrawAttributeBar_ThicknessCoarseNumber,
-	DrawAttributeBar_ThicknessAnnotationLabel,
-	DrawAttributeBar_ThicknessAnnotationPopupText,
-	DrawAttributeBar_ThicknessAnnotationPopupBody,
-	DrawAttributeBar_ThicknessOverflowPopupText,
-	DrawAttributeBar_ThicknessOverflowPopupBody,
-};
+DrawAttributeBar_ThicknessAnnotationLabel,
+		DrawAttributeBar_ThicknessHoldLockLabel,
+		DrawAttributeBar_ThicknessAnnotationPopupText,
+		DrawAttributeBar_ThicknessAnnotationPopupBody,
+		DrawAttributeBar_ThicknessOverflowPopupText,
+		DrawAttributeBar_ThicknessOverflowPopupBody,
+	};
 
 enum class BarBorderLightSourceEnum : int
 {

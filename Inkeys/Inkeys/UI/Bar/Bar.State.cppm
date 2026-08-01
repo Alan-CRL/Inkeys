@@ -18,12 +18,16 @@ public:
 		IdtAtomic<bool> thicknessMediumPress = false;
 		IdtAtomic<bool> thicknessCoarsePress = false;
 		IdtAtomic<bool> thicknessAdjustPress = false;
-		IdtAtomic<bool> thicknessSliderHover = false;
-		IdtAtomic<bool> thicknessSliderPinned = false;
-		IdtAtomic<bool> thicknessSliderDragging = false;
-		IdtAtomic<bool> thicknessSliderPressed = false;
-		IdtAtomic<bool> thicknessSliderCapture = false;
-		IdtAtomic<float> thicknessSliderCandidateWidth = 0.0f;
+IdtAtomic<bool> thicknessSliderHover = false;
+			IdtAtomic<bool> thicknessSliderPinned = false;
+			IdtAtomic<bool> thicknessSliderDragging = false;
+			IdtAtomic<bool> thicknessSliderPressed = false;
+			IdtAtomic<bool> thicknessSliderCapture = false;
+			IdtAtomic<float> thicknessSliderCandidateWidth = 0.0f;
+			// 拖动改值后静止保持：提示/进度/锁定，跨交互与渲染线程共享。
+			IdtAtomic<bool> thicknessSliderHoldHintActive = false;
+			IdtAtomic<bool> thicknessSliderHoldLocked = false;
+			IdtAtomic<float> thicknessSliderHoldProgress = 0.0f;
 		IdtAtomic<bool> thicknessAnnotationHover = false;
 		IdtAtomic<bool> thicknessAnnotationHoverGrace = false;
 		IdtAtomic<bool> thicknessAnnotationPinned = false;
