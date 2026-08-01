@@ -173,6 +173,7 @@ DrawAttributeBar_ThicknessAnnotationLabel,
 		DrawAttributeBar_ThicknessOverflowPopupBody,
 		DrawAttributeBar_ColorPickerTone,
 		DrawAttributeBar_ColorPickerRgb,
+		DrawAttributeBar_ColorPickerOpacity,
 		DrawAttributeBar_ColorPickerHoldLabel,
 	};
 
