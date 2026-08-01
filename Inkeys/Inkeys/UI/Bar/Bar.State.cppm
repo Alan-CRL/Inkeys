@@ -49,9 +49,7 @@ IdtAtomic<bool> thicknessSliderHover = false;
 		IdtAtomic<bool> colorPickerHoldLocked = false;
 		IdtAtomic<float> colorPickerHoldProgress = 0.0f;
 		IdtAtomic<float> colorPickerPointerY = 0.0f;
-		IdtAtomic<bool> colorPickerKeyboardPreviewVisible = false;
 		IdtAtomic<unsigned int> colorPickerKeyboardDownMask = 0;
-		IdtAtomic<COLORREF> colorPickerPreviewColor = RGB(0, 0, 0);
 	}drawAttributeBar;
 
 	struct

@@ -53,7 +53,6 @@ constexpr WPARAM BarThicknessSliderCaptureCancel = 2;
 constexpr WPARAM BarColorPickerCaptureStop = 0;
 constexpr WPARAM BarColorPickerCaptureStart = 1;
 constexpr WPARAM BarColorPickerCaptureCancel = 2;
-constexpr UINT_PTR BarColorPickerKeyboardPreviewTimerId = 0x494B4304;
 constexpr double BarBorderLightIntensity = 1.0;
 constexpr double BarColorSwatchCursorLightIntensity = 0.50;
 constexpr double BarButtonCursorLightIntensity = 0.30;
@@ -121,7 +120,6 @@ constexpr double BarColorPickerKeyboardStepDip = 2.0;
 constexpr double BarColorPickerHoldStillnessPx = 5.0;
 constexpr ULONGLONG BarColorPickerHoldHintDelayMs = 500;
 constexpr ULONGLONG BarColorPickerHoldLockDelayMs = 1500;
-constexpr UINT BarColorPickerKeyboardPreviewDurationMs = 3000;
 constexpr double BarColorPickerPanelAnimationDur = 0.20;
 constexpr double BarColorPickerPreviewAnimationDur = 0.16;
 constexpr int BarBorderDiffuseCompositePasses = 2;
@@ -468,16 +466,6 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		if (wParam == BarBorderCursorGraceTimerId)
 		{
 			barUISet.HandleBorderCursorGraceTimeout(hWnd);
-			return 0;
-		}
-		if (wParam == BarColorPickerKeyboardPreviewTimerId)
-		{
-			KillTimer(hWnd, BarColorPickerKeyboardPreviewTimerId);
-			if (barUISet.barState.drawAttributeBar.colorPickerKeyboardPreviewVisible)
-			{
-				barUISet.barState.drawAttributeBar.colorPickerKeyboardPreviewVisible = false;
-				barUISet.UpdateRendering(false);
-			}
 			return 0;
 		}
 		if (wParam == BarThicknessAnnotationTooltipGraceTimerId
@@ -2845,11 +2833,9 @@ void BarUISetClass::CloseColorPicker(bool cancelCapture)
 	picker.colorPickerHoldHintActive = false;
 	picker.colorPickerHoldLocked = false;
 	picker.colorPickerHoldProgress = 0.0f;
-	picker.colorPickerKeyboardPreviewVisible = false;
 	picker.colorPickerKeyboardDownMask = 0;
 	if (floating_window && IsWindow(floating_window))
 	{
-		KillTimer(floating_window, BarColorPickerKeyboardPreviewTimerId);
 		if (picker.colorPickerPointerCapture || (cancelCapture && gestureActive))
 		{
 			SendMessage(floating_window, BarColorPickerCaptureMessage,
@@ -3016,7 +3002,6 @@ BarUiValueClass drawAttributeAnnotationPopupProgress(0.0);
 		BarUiValueClass drawAttributeOverflowPopupProgress(0.0);
 		BarUiValueClass drawAttributeColorPickerProgress(0.0);
 		BarUiValueClass drawAttributeColorPickerToneMix(0.0);
-		BarUiValueClass drawAttributeColorPickerPreviewOpacity(0.0);
 		BarUiValueClass drawAttributeColorPickerHoldOpacity(0.0);
 		BarUiValueClass drawAttributeThicknessHoldHintOpacity(0.0);
 		BarUiValueClass drawAttributeThicknessHoldRingOpacity(0.0);
@@ -3245,12 +3230,6 @@ BarUiValueClass drawAttributeAnnotationPopupProgress(0.0);
 			drawAttributeColorPickerToneMix.SetTar(
 				barState.drawAttributeBar.colorPickerDarkTone ? 1.0 : 0.0,
 				BarColorPickerPanelAnimationDur);
-			bool colorPickerPreviewTarget =
-				barState.drawAttributeBar.colorPickerPointerPressed
-					|| barState.drawAttributeBar.colorPickerKeyboardPreviewVisible;
-			drawAttributeColorPickerPreviewOpacity.SetTar(
-				colorPickerPreviewTarget ? 1.0 : 0.0,
-				BarColorPickerPreviewAnimationDur);
 			drawAttributeColorPickerHoldOpacity.SetTar(
 				barState.drawAttributeBar.colorPickerHoldHintActive
 					|| barState.drawAttributeBar.colorPickerHoldLocked ? 1.0 : 0.0,
@@ -5462,8 +5441,6 @@ for (size_t i = 0; i < 3; ++i)
 			ChangeValue(drawAttributeColorPickerProgress, false);
 		if (!drawAttributeColorPickerToneMix.IsSame())
 			ChangeValue(drawAttributeColorPickerToneMix, false);
-		if (!drawAttributeColorPickerPreviewOpacity.IsSame())
-			ChangeValue(drawAttributeColorPickerPreviewOpacity, false);
 		if (!drawAttributeColorPickerHoldOpacity.IsSame())
 			ChangeValue(drawAttributeColorPickerHoldOpacity, false);
 		// 保持进度仅在按压期间推进；静止打开的面板不会维持渲染唤醒。
@@ -6301,10 +6278,7 @@ auto annotationInfoHit = shapeMap[
 		pickerHoldWord->UpInh(BarUiInheritClass(
 			holdLeft + 8.0 * pickerScale, holdTop));
 
-		// 指针与键盘共用顶部预览槽：固定在「亮/暗色系」右侧、关闭按钮左侧。
-		double previewOpacity = clamp(static_cast<double>(
-			drawAttributeColorPickerPreviewOpacity.val), 0.0, 1.0);
-		double previewScale = 0.92 + 0.08 * previewOpacity;
+		// 顶部色预览是面板固定控件：随面板展开常驻，无独立入退场，不显示文字。
 		double previewSlotGap = 8.0 * pickerScale;
 		double previewSlotLeft = pickerToneHit->inhX
 			+ pickerToneHit->w.val + previewSlotGap;
@@ -6313,36 +6287,12 @@ auto annotationInfoHit = shapeMap[
 		double previewSlotHeight = pickerToneHit->h.val;
 		double previewSlotWidth = max(0.0,
 			previewSlotRight - previewSlotLeft);
-		double previewWidth = previewSlotWidth * previewScale;
-		double previewHeight = previewSlotHeight * previewScale;
-		double previewBubbleLeft = previewSlotLeft
-			+ (previewSlotWidth - previewWidth) / 2.0;
-		double previewBubbleTop = previewSlotTop
-			+ (previewSlotHeight - previewHeight) / 2.0;
-		SetAbsoluteHit(pickerPreview, previewBubbleLeft, previewBubbleTop,
-			previewWidth, previewHeight);
-		pickerPreview->pct.SetDirect(previewOpacity);
-		pickerPreview->rw->SetDirect(7.0 * previewScale);
-		pickerPreview->rh->SetDirect(7.0 * previewScale);
-		pickerPreview->fill->SetDirect(
-			barState.drawAttributeBar.colorPickerPreviewColor);
-		auto previewRgbWord = wordMap[
-			BarUISetWordEnum::DrawAttributeBar_ColorPickerPreviewRgb];
-		COLORREF previewColor =
-			barState.drawAttributeBar.colorPickerPreviewColor;
-		wstring previewText = to_wstring(GetRValue(previewColor)) + L", "
-			+ to_wstring(GetGValue(previewColor)) + L", "
-			+ to_wstring(GetBValue(previewColor));
-		previewRgbWord->content.SetVal(previewText);
-		previewRgbWord->content.SetTar(previewText);
-		previewRgbWord->w.SetDirect(previewWidth);
-		previewRgbWord->h.SetDirect(previewHeight);
-		previewRgbWord->size.SetDirect(12.0 * previewScale);
-		previewRgbWord->pct.SetDirect(previewOpacity);
-		previewRgbWord->color.SetDirect(
-			GetBarReadableTextColor(previewColor));
-		previewRgbWord->UpInh(BarUiInheritClass(
-			previewBubbleLeft, previewBubbleTop));
+		SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
+			previewSlotWidth, previewSlotHeight);
+		pickerPreview->pct.SetDirect(pickerOpacity);
+		pickerPreview->rw->SetDirect(7.0 * pickerScale);
+		pickerPreview->rh->SetDirect(7.0 * pickerScale);
+		pickerPreview->fill->SetDirect(pickerColor);
 		}
 
 		// 时间轴与属性值在同一帧末尾推进，避免批次剩余时间和实际动画相差一帧。
@@ -6477,8 +6427,6 @@ IncludeShapeBounds(shapeMap[
 				BarUISetWordEnum::DrawAttributeBar_ColorPickerTone]);
 			IncludeWordBounds(wordMap[
 				BarUISetWordEnum::DrawAttributeBar_ColorPickerRgb]);
-			IncludeWordBounds(wordMap[
-				BarUISetWordEnum::DrawAttributeBar_ColorPickerPreviewRgb]);
 			IncludeWordBounds(wordMap[
 				BarUISetWordEnum::DrawAttributeBar_ColorPickerHoldLabel]);
 			if (mainButton->enable.val && mainButton->pct.val > 0.0)
@@ -7853,11 +7801,6 @@ auto annotationInfo = svgMap[
 						spec.Shape(barDeviceContext.Get(), *preview,
 							BarUiInheritClass(preview->inhX, preview->inhY),
 							&current, false);
-						auto previewWord = wordMap[
-							BarUISetWordEnum::DrawAttributeBar_ColorPickerPreviewRgb];
-						spec.Word(barDeviceContext.Get(), *previewWord,
-							BarUiInheritClass(previewWord->inhX, previewWord->inhY),
-							DWRITE_FONT_WEIGHT_SEMI_BOLD);
 					}
 				}
 
@@ -8311,7 +8254,6 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			barState.drawAttributeBar.colorPickerMarkerY =
 				static_cast<float>(markerY);
 			barState.drawAttributeBar.colorPickerMarkerVisible = true;
-			barState.drawAttributeBar.colorPickerPreviewColor = color;
 			SetPenColor(Inkeys::Color::SetAlphaR(color, 255), setMemory);
 		};
 	auto ProjectCurrentColorPickerPoint = [&]()
@@ -8326,8 +8268,6 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			barState.drawAttributeBar.colorPickerMarkerY =
 				static_cast<float>(y);
 			barState.drawAttributeBar.colorPickerMarkerVisible = exact;
-			barState.drawAttributeBar.colorPickerPreviewColor =
-				GetPenColor() & 0x00FFFFFF;
 		};
 	auto HandleColorPickerKeyboard = [&](const ExMessage& keyMessage)
 		{
@@ -8379,13 +8319,6 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			ApplyColorPickerPoint(markerX, markerY, false);
 			barState.drawAttributeBar.colorPickerKeyboardDownMask =
 				downMask | keyMask;
-			barState.drawAttributeBar.colorPickerKeyboardPreviewVisible = true;
-			bool previewTimerArmed = floating_window && IsWindow(floating_window)
-				&& SetTimer(floating_window,
-					BarColorPickerKeyboardPreviewTimerId,
-					BarColorPickerKeyboardPreviewDurationMs, nullptr) != 0;
-			if (!previewTimerArmed)
-				barState.drawAttributeBar.colorPickerKeyboardPreviewVisible = false;
 			UpdateRendering();
 		};
 	auto RunColorPickerPointerGesture = [&](ExMessage& gestureMessage)
@@ -8460,12 +8393,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 
 			auto& picker = barState.drawAttributeBar;
 		picker.colorPickerPointerPressed = true;
-		picker.colorPickerKeyboardPreviewVisible = false;
 		picker.colorPickerKeyboardDownMask = 0;
 		picker.colorPickerHoldHintActive = false;
 		picker.colorPickerHoldLocked = false;
 		picker.colorPickerHoldProgress = 0.0f;
-		KillTimer(floating_window, BarColorPickerKeyboardPreviewTimerId);
 		ApplyClientPoint(gestureMessage.x, gestureMessage.y);
 		SendMessage(floating_window, BarColorPickerCaptureMessage,
 			BarColorPickerCaptureStart, 0);
@@ -10741,7 +10672,7 @@ namespace Inkeys::UI::Bar
 							BarUISetShapeEnum::DrawAttributeBar_ColorPickerCloseHit, 7.0);
 						InitializePickerHit(
 							BarUISetShapeEnum::DrawAttributeBar_ColorPickerPreviewBubble,
-							12.0, GetPenColor() & 0x00FFFFFF);
+							7.0, GetPenColor() & 0x00FFFFFF);
 						InitializePickerHit(
 							BarUISetShapeEnum::DrawAttributeBar_ColorPickerHoldHint,
 							7.0, GetThemeColor(BarThemeColorEnum::Surface));
@@ -10762,9 +10693,6 @@ namespace Inkeys::UI::Bar
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerRgb,
 							L"R 0    G 0    B 0", 12.0);
-						InitializePickerWord(
-							BarUISetWordEnum::DrawAttributeBar_ColorPickerPreviewRgb,
-							L"0, 0, 0", 13.0);
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerHoldLabel,
 							L"保持并固定颜色", 12.0);
