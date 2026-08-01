@@ -325,3 +325,24 @@ Reopened 07-28 and replaced single ButtonLayout with FixedButtonsA1/ExtensionBut
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: 修复 UI3 Bar 主栏动画批次不同步
+
+**Date**: 2026-08-01
+**Task**: 修复 UI3 Bar 主栏动画批次不同步
+**Branch**: `feature/animation`
+
+### Summary
+
+修复展开后半程布局变化时按钮与主栏动画批次不同步；ARM64 Debug 全量构建通过，用户实机验证通过并归档任务。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6f4dd2b` | (see git log) |
+
+### Status
+
+[OK] **Completed**
