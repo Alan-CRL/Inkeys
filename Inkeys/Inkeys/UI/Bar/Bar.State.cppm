@@ -40,6 +40,8 @@ IdtAtomic<bool> thicknessSliderHover = false;
 		// 简易颜色选择器：输入线程串行改色，渲染线程只读取这些轻量状态。
 		IdtAtomic<bool> colorPickerOpen = false;
 		IdtAtomic<bool> colorPickerDarkTone = false;
+		IdtAtomic<bool> colorPickerTonePress = false;
+		IdtAtomic<bool> colorPickerClosePress = false;
 		IdtAtomic<bool> colorPickerMarkerVisible = false;
 		IdtAtomic<float> colorPickerMarkerX = 0.0f;
 		IdtAtomic<float> colorPickerMarkerY = 0.0f;

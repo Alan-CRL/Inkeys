@@ -94,7 +94,7 @@ constexpr double BarThicknessSliderThumbAnimationDur = 0.28;
 	constexpr double BarThicknessHoldRingTextGap = 2.0;
 	constexpr double BarThicknessTooltipBadgeHeight = 24.0;
 constexpr double BarThicknessTooltipIconSize = 14.0;
-constexpr double BarThicknessTooltipCloseButtonSize = 20.0;
+	constexpr double BarThicknessTooltipCloseButtonSize = 20.0;
 constexpr double BarThicknessTooltipHitPadding = 2.0;
 constexpr double BarThicknessTooltipPadding = 8.0;
 constexpr double BarThicknessTooltipCloseReserve = 25.0;
@@ -2843,6 +2843,8 @@ void BarUISetClass::CloseColorPicker(bool cancelCapture)
 	picker.colorPickerHoldHintActive = false;
 	picker.colorPickerHoldLocked = false;
 	picker.colorPickerHoldProgress = 0.0f;
+	picker.colorPickerTonePress = false;
+	picker.colorPickerClosePress = false;
 	picker.colorPickerKeyboardDownMask = 0;
 	if (floating_window && IsWindow(floating_window))
 	{
@@ -3057,6 +3059,8 @@ BarUiValueClass drawAttributeAnnotationPopupProgress(0.0);
 	BarUiValueClass drawAttributeThicknessAdjustPressScale(1.0);
 	BarUiValueClass drawAttributeAnnotationClosePressScale(1.0);
 	BarUiValueClass drawAttributeOverflowClosePressScale(1.0);
+	BarUiValueClass drawAttributeColorPickerTonePressScale(1.0);
+	BarUiValueClass drawAttributeColorPickerClosePressScale(1.0);
 	// 固定态结束后仍保留关闭图标，直到浮窗收起动画真正到达终点。
 	bool drawAttributeAnnotationCloseVisible = false;
 	bool drawAttributeOverflowCloseVisible = false;
@@ -4548,9 +4552,27 @@ SetButtonPositionTar(temp->buttom.x, xO + 5.0, 40.0, true);
 							GetThemeColor(BarThemeColorEnum::Surface), operationDur);
 						pickerPanel->frame->SetTar(
 							GetThemeColor(BarThemeColorEnum::SurfaceFrame), operationDur);
-						shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorPickerToneToggle]
-							->fill->SetTar(
-								GetThemeColor(BarThemeColorEnum::SubtleFill), operationDur);
+						{
+							auto toneHit = shapeMap[
+								BarUISetShapeEnum::DrawAttributeBar_ColorPickerToneToggle];
+							auto closeHit = shapeMap[
+								BarUISetShapeEnum::DrawAttributeBar_ColorPickerCloseHit];
+							// 与笔类型按钮一致：背景层用 PressedFill，不启用边框光影动画。
+							toneHit->fill->SetTar(
+								GetThemeColor(BarThemeColorEnum::PressedFill), operationDur);
+							closeHit->fill->SetTar(
+								GetThemeColor(BarThemeColorEnum::PressedFill), operationDur);
+							if (!toneHit->framePct.has_value()) toneHit->framePct = BarUiPctClass(0.0);
+							if (!closeHit->framePct.has_value()) closeHit->framePct = BarUiPctClass(0.0);
+							if (!toneHit->frameLightPct.has_value())
+								toneHit->frameLightPct = BarUiPctClass(0.0);
+							if (!closeHit->frameLightPct.has_value())
+								closeHit->frameLightPct = BarUiPctClass(0.0);
+							toneHit->framePct->SetTar(0.0);
+							closeHit->framePct->SetTar(0.0);
+							toneHit->frameLightPct->SetTar(0.0);
+							closeHit->frameLightPct->SetTar(0.0);
+						}
 						shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorPickerHoldHint]
 							->fill->SetTar(
 								GetThemeColor(BarThemeColorEnum::Surface), operationDur);
@@ -5468,6 +5490,10 @@ for (size_t i = 0; i < 3; ++i)
 			ChangeValue(drawAttributeAnnotationClosePressScale, false);
 		if (!drawAttributeOverflowClosePressScale.IsSame())
 			ChangeValue(drawAttributeOverflowClosePressScale, false);
+		if (!drawAttributeColorPickerTonePressScale.IsSame())
+			ChangeValue(drawAttributeColorPickerTonePressScale, false);
+		if (!drawAttributeColorPickerClosePressScale.IsSame())
+			ChangeValue(drawAttributeColorPickerClosePressScale, false);
 
 		for (const auto& [key, val] : shapeMap)
 		{
@@ -5628,6 +5654,20 @@ bool thicknessPresetMode =
 			&overflowClose->fill.value(),
 			drawAttributeOverflowCloseHoverStage,
 			barState.drawAttributeBar.thicknessOverflowPinned, true);
+		auto colorPickerTone =
+			shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorPickerToneToggle];
+		UpdateHoverAnimation(colorPickerTone->pct,
+			&colorPickerTone->fill.value(),
+			drawAttributeColorPickerToneHoverStage,
+			barState.drawAttributeBar.colorPickerOpen,
+			!barState.drawAttributeBar.colorPickerTonePress);
+		auto colorPickerClose =
+			shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorPickerCloseHit];
+		UpdateHoverAnimation(colorPickerClose->pct,
+			&colorPickerClose->fill.value(),
+			drawAttributeColorPickerCloseHoverStage,
+			barState.drawAttributeBar.colorPickerOpen,
+			!barState.drawAttributeBar.colorPickerClosePress);
 
 		// 特殊体质：按钮
 		for (int id = 0; id < barButtomSet.tot; id++)
@@ -6091,10 +6131,10 @@ auto annotationInfoHit = shapeMap[
 					body->pct.SetDirect(layout.opacity);
 					body->Inherit(BarUiInheritEnum::TopLeft, *panel);
 
-					double closeButtonSize =
-						BarThicknessTooltipCloseButtonSize * scale;
-					double closeIconSize =
-						BarThicknessTooltipIconSize * scale;
+double closeButtonSize =
+							BarThicknessTooltipCloseButtonSize * scale;
+						double closeIconSize =
+							BarThicknessTooltipIconSize * scale;
 					double closeX =
 						localX + width - padding - closeButtonSize;
 					double closeY = localY + padding;
@@ -6217,18 +6257,47 @@ auto annotationInfoHit = shapeMap[
 			paletteWidth, paletteHeight);
 		pickerPalette->rw->SetDirect(pickerControlRadius);
 		pickerPalette->rh->SetDirect(pickerControlRadius);
-		SetAbsoluteHit(pickerToneHit,
-			pickerLeft + 12.0 * pickerScale,
-			pickerTop + 10.0 * pickerScale,
-			68.0 * pickerScale, 28.0 * pickerScale);
+		// 色系/关闭按钮只更新几何，pct 交给悬停与按压状态机，避免每帧 SetDirect 冲掉动画。
+		pickerToneHit->w.SetDirect(68.0 * pickerScale);
+		pickerToneHit->h.SetDirect(28.0 * pickerScale);
 		pickerToneHit->rw->SetDirect(pickerControlRadius);
 		pickerToneHit->rh->SetDirect(pickerControlRadius);
-		SetAbsoluteHit(pickerCloseHit,
-			pickerLeft + pickerWidth - 38.0 * pickerScale,
-			pickerTop + 10.0 * pickerScale,
-			28.0 * pickerScale, 28.0 * pickerScale);
+		pickerToneHit->UpInh(BarUiInheritClass(
+			pickerLeft + 12.0 * pickerScale,
+			pickerTop + 10.0 * pickerScale));
+		if (!barState.drawAttributeBar.colorPickerOpen)
+			pickerToneHit->pct.SetTar(0.0);
+		else if (barState.drawAttributeBar.colorPickerTonePress)
+			pickerToneHit->pct.SetTar(0.10);
+		else if (drawAttributeColorPickerToneHoverStage
+			== BarButtomHoverStageEnum::None)
+			pickerToneHit->pct.SetTar(0.08);
+		drawAttributeColorPickerTonePressScale.SetTar(
+			barState.drawAttributeBar.colorPickerTonePress
+				? BarButtonPressScale : 1.0,
+			BarUiDefaultOperationDur, nullopt, false,
+			barState.drawAttributeBar.colorPickerTonePress
+				? buttonPressCurve : buttonReleaseCurve);
+		pickerCloseHit->w.SetDirect(28.0 * pickerScale);
+		pickerCloseHit->h.SetDirect(28.0 * pickerScale);
 		pickerCloseHit->rw->SetDirect(pickerControlRadius);
 		pickerCloseHit->rh->SetDirect(pickerControlRadius);
+		pickerCloseHit->UpInh(BarUiInheritClass(
+			pickerLeft + pickerWidth - 38.0 * pickerScale,
+			pickerTop + 10.0 * pickerScale));
+		if (!barState.drawAttributeBar.colorPickerOpen)
+			pickerCloseHit->pct.SetTar(0.0);
+		else if (barState.drawAttributeBar.colorPickerClosePress)
+			pickerCloseHit->pct.SetTar(0.10);
+		else if (drawAttributeColorPickerCloseHoverStage
+			== BarButtomHoverStageEnum::None)
+			pickerCloseHit->pct.SetTar(0.0);
+		drawAttributeColorPickerClosePressScale.SetTar(
+			barState.drawAttributeBar.colorPickerClosePress
+				? BarButtonPressScale : 1.0,
+			BarUiDefaultOperationDur, nullopt, false,
+			barState.drawAttributeBar.colorPickerClosePress
+				? buttonPressCurve : buttonReleaseCurve);
 
 		auto pickerToneWord = wordMap[
 			BarUISetWordEnum::DrawAttributeBar_ColorPickerTone];
@@ -7666,14 +7735,35 @@ auto annotationInfo = svgMap[
 
 						auto toneHit = shapeMap[
 							BarUISetShapeEnum::DrawAttributeBar_ColorPickerToneToggle];
-						toneHit->pct.SetDirect(0.16 * pickerOpacity);
-						spec.Shape(barDeviceContext.Get(), *toneHit,
-							BarUiInheritClass(toneHit->inhX, toneHit->inhY));
 						auto toneWord = wordMap[
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerTone];
+						double tonePressScale = clamp(static_cast<double>(
+							drawAttributeColorPickerTonePressScale.val), 0.0, 1.0);
+						if (!isfinite(tonePressScale) || tonePressScale <= 0.0)
+							tonePressScale = 1.0;
+						D2D1_MATRIX_3X2_F pickerButtonTransform;
+						barDeviceContext->GetTransform(&pickerButtonTransform);
+						bool toneTransformChanged = abs(tonePressScale - 1.0) > 0.000001;
+						if (toneTransformChanged)
+						{
+							FLOAT centerX = static_cast<FLOAT>(
+								(toneHit->inhX + toneHit->w.val / 2.0) * barStyle.zoom);
+							FLOAT centerY = static_cast<FLOAT>(
+								(toneHit->inhY + toneHit->h.val / 2.0) * barStyle.zoom);
+							barDeviceContext->SetTransform(
+								D2D1::Matrix3x2F::Scale(
+									static_cast<FLOAT>(tonePressScale),
+									static_cast<FLOAT>(tonePressScale),
+									D2D1::Point2F(centerX, centerY))
+								* pickerButtonTransform);
+						}
+						spec.Shape(barDeviceContext.Get(), *toneHit,
+							BarUiInheritClass(toneHit->inhX, toneHit->inhY));
 						spec.Word(barDeviceContext.Get(), *toneWord,
 							BarUiInheritClass(toneWord->inhX, toneWord->inhY),
 							DWRITE_FONT_WEIGHT_SEMI_BOLD);
+						if (toneTransformChanged)
+							barDeviceContext->SetTransform(pickerButtonTransform);
 
 						auto palette = shapeMap[
 							BarUISetShapeEnum::DrawAttributeBar_ColorPickerPalette];
@@ -7745,29 +7835,55 @@ auto annotationInfo = svgMap[
 							DWRITE_FONT_WEIGHT_NORMAL,
 							DWRITE_TEXT_ALIGNMENT_LEADING);
 
-						// 关闭按钮不依赖新资源，用两条线绘制清晰的 X。
+						// 关闭按钮命中区保持 28px，X 视觉为命中区的 1/3（相对此前 2/3 再减半）；按压缩放不影响命中。
 						auto closeHit = shapeMap[
 							BarUISetShapeEnum::DrawAttributeBar_ColorPickerCloseHit];
+						double closePressScale = clamp(static_cast<double>(
+							drawAttributeColorPickerClosePressScale.val), 0.0, 1.0);
+						if (!isfinite(closePressScale) || closePressScale <= 0.0)
+							closePressScale = 1.0;
+						D2D1_MATRIX_3X2_F closeTransform;
+						barDeviceContext->GetTransform(&closeTransform);
+						bool closeTransformChanged = abs(closePressScale - 1.0) > 0.000001;
+						if (closeTransformChanged)
+						{
+							FLOAT centerX = static_cast<FLOAT>(
+								(closeHit->inhX + closeHit->w.val / 2.0) * barStyle.zoom);
+							FLOAT centerY = static_cast<FLOAT>(
+								(closeHit->inhY + closeHit->h.val / 2.0) * barStyle.zoom);
+							barDeviceContext->SetTransform(
+								D2D1::Matrix3x2F::Scale(
+									static_cast<FLOAT>(closePressScale),
+									static_cast<FLOAT>(closePressScale),
+									D2D1::Point2F(centerX, centerY))
+								* closeTransform);
+						}
+						spec.Shape(barDeviceContext.Get(), *closeHit,
+							BarUiInheritClass(closeHit->inhX, closeHit->inhY));
 						if (auto closeBrush = spec.GetFrameSolidColorBrush(
 							barDeviceContext.Get(),
-							GetThemeColor(BarThemeColorEnum::TextPrimary), pickerOpacity))
+							GetThemeColor(BarThemeColorEnum::TextPrimary),
+							pickerOpacity))
 						{
-							FLOAT inset = 8.0F * uiZoom;
-							FLOAT left = static_cast<FLOAT>(closeHit->inhX * uiZoom);
-							FLOAT top = static_cast<FLOAT>(closeHit->inhY * uiZoom);
-							FLOAT right = static_cast<FLOAT>(
-								(closeHit->inhX + closeHit->w.val) * uiZoom);
-							FLOAT bottom = static_cast<FLOAT>(
-								(closeHit->inhY + closeHit->h.val) * uiZoom);
+// 相对此前 2/3 再减半为 1/3；去掉固定内缩与下限，避免小尺寸被夹回原观感。
+								FLOAT glyphScale = 1.0F / 3.0F;
+								FLOAT centerX = static_cast<FLOAT>(
+									(closeHit->inhX + closeHit->w.val / 2.0) * uiZoom);
+								FLOAT centerY = static_cast<FLOAT>(
+									(closeHit->inhY + closeHit->h.val / 2.0) * uiZoom);
+								FLOAT half = max(1.0F * uiZoom, static_cast<FLOAT>(
+									closeHit->w.val * uiZoom * glyphScale * 0.5F));
 							barDeviceContext->DrawLine(
-								D2D1::Point2F(left + inset, top + inset),
-								D2D1::Point2F(right - inset, bottom - inset),
+								D2D1::Point2F(centerX - half, centerY - half),
+								D2D1::Point2F(centerX + half, centerY + half),
 								closeBrush, max(1.0F, 1.6F * uiZoom));
 							barDeviceContext->DrawLine(
-								D2D1::Point2F(right - inset, top + inset),
-								D2D1::Point2F(left + inset, bottom - inset),
+								D2D1::Point2F(centerX + half, centerY - half),
+								D2D1::Point2F(centerX - half, centerY + half),
 								closeBrush, max(1.0F, 1.6F * uiZoom));
 						}
+						if (closeTransformChanged)
+							barDeviceContext->SetTransform(closeTransform);
 
 						auto holdHint = shapeMap[
 							BarUISetShapeEnum::DrawAttributeBar_ColorPickerHoldHint];
@@ -7999,6 +8115,8 @@ void BarUISetClass::Interact()
 		DrawAttributeThicknessAdjust,
 		DrawAttributeAnnotationClose,
 		DrawAttributeOverflowClose,
+		DrawAttributeColorPickerTone,
+		DrawAttributeColorPickerClose,
 	};
 	IndependentHoverTargetEnum hoveredIndependentButton = IndependentHoverTargetEnum::None;
 	struct HoverVisualRef
@@ -8049,6 +8167,20 @@ void BarUISetClass::Interact()
 						BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit]
 						->fill.value(),
 					&drawAttributeOverflowCloseHoverStage };
+			case IndependentHoverTargetEnum::DrawAttributeColorPickerTone:
+				return { &shapeMap[
+						BarUISetShapeEnum::DrawAttributeBar_ColorPickerToneToggle]->pct,
+					&shapeMap[
+						BarUISetShapeEnum::DrawAttributeBar_ColorPickerToneToggle]
+						->fill.value(),
+					&drawAttributeColorPickerToneHoverStage };
+			case IndependentHoverTargetEnum::DrawAttributeColorPickerClose:
+				return { &shapeMap[
+						BarUISetShapeEnum::DrawAttributeBar_ColorPickerCloseHit]->pct,
+					&shapeMap[
+						BarUISetShapeEnum::DrawAttributeBar_ColorPickerCloseHit]
+						->fill.value(),
+					&drawAttributeColorPickerCloseHoverStage };
 			default:
 				return {};
 			}
@@ -8170,6 +8302,16 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				return !barState.fold
 					&& barState.drawAttributeBar.thicknessOverflowPinned
 					&& barState.drawAttributeBar.thicknessPreviewOverflow;
+			case IndependentHoverTargetEnum::DrawAttributeColorPickerTone:
+				return stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
+					&& !barState.fold
+					&& barState.drawAttributeBar.colorPickerOpen
+					&& !barState.drawAttributeBar.colorPickerTonePress;
+			case IndependentHoverTargetEnum::DrawAttributeColorPickerClose:
+				return stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
+					&& !barState.fold
+					&& barState.drawAttributeBar.colorPickerOpen
+					&& !barState.drawAttributeBar.colorPickerClosePress;
 			default:
 				return false;
 			}
@@ -8623,7 +8765,31 @@ auto ColorPickerAvailable = [&]()
 				}
 
 				IndependentHoverTargetEnum currentIndependentButton = IndependentHoverTargetEnum::None;
-				if (barState.drawAttribute && !colorPickerOccludes)
+				if (ColorPickerAvailable() && barState.drawAttributeBar.colorPickerOpen)
+				{
+					auto colorPickerCloseHit = shapeMap[
+						BarUISetShapeEnum::DrawAttributeBar_ColorPickerCloseHit];
+					auto colorPickerToneHit = shapeMap[
+						BarUISetShapeEnum::DrawAttributeBar_ColorPickerToneToggle];
+					if (IsIndependentHoverAllowed(
+						IndependentHoverTargetEnum::DrawAttributeColorPickerClose)
+						&& colorPickerCloseHit
+						&& colorPickerCloseHit->IsClick(msg.x, msg.y, barStyle.zoom))
+					{
+						currentIndependentButton =
+							IndependentHoverTargetEnum::DrawAttributeColorPickerClose;
+					}
+					else if (IsIndependentHoverAllowed(
+						IndependentHoverTargetEnum::DrawAttributeColorPickerTone)
+						&& colorPickerToneHit
+						&& colorPickerToneHit->IsClick(msg.x, msg.y, barStyle.zoom))
+					{
+						currentIndependentButton =
+							IndependentHoverTargetEnum::DrawAttributeColorPickerTone;
+					}
+				}
+				if (currentIndependentButton == IndependentHoverTargetEnum::None
+					&& barState.drawAttribute && !colorPickerOccludes)
 				{
 				// 两个浮窗允许覆盖，按绘制顺序优先命中上层的粗细超限浮窗。
 				auto overflowClose = shapeMap[
@@ -8728,6 +8894,12 @@ auto ColorPickerAvailable = [&]()
 					continueFlag = false;
 					if (msg.message == WM_LBUTTONDOWN)
 					{
+						StopIndependentHover(
+							hoveredIndependentButton, true, true);
+						hoveredIndependentButton =
+							IndependentHoverTargetEnum::None;
+						barState.drawAttributeBar.colorPickerClosePress = true;
+						UpdateRendering(false);
 						while (true)
 						{
 							hiex::getmessage_win32(
@@ -8737,10 +8909,11 @@ auto ColorPickerAvailable = [&]()
 							if (!msg.lbutton)
 							{
 								CloseColorPicker(false);
-								UpdateRendering(false);
 								break;
 							}
 						}
+						barState.drawAttributeBar.colorPickerClosePress = false;
+						UpdateRendering(false);
 						SuppressHoverUntilPointerMove();
 						hiex::flushmessage_win32(
 							EM_MOUSE, floating_window);
@@ -8752,6 +8925,12 @@ auto ColorPickerAvailable = [&]()
 					continueFlag = false;
 					if (msg.message == WM_LBUTTONDOWN)
 					{
+						StopIndependentHover(
+							hoveredIndependentButton, true, true);
+						hoveredIndependentButton =
+							IndependentHoverTargetEnum::None;
+						barState.drawAttributeBar.colorPickerTonePress = true;
+						UpdateRendering(false);
 						while (true)
 						{
 							hiex::getmessage_win32(
@@ -8765,10 +8944,11 @@ auto ColorPickerAvailable = [&]()
 										.colorPickerDarkTone);
 								// 切换只反投影选点，不写画笔；不可精确表示时隐藏标记。
 								ProjectCurrentColorPickerPoint();
-								UpdateRendering(false);
 								break;
 							}
 						}
+						barState.drawAttributeBar.colorPickerTonePress = false;
+						UpdateRendering(false);
 						SuppressHoverUntilPointerMove();
 						hiex::flushmessage_win32(
 							EM_MOUSE, floating_window);
@@ -10691,9 +10871,10 @@ namespace Inkeys::UI::Bar
 							BarUISetShapeEnum::DrawAttributeBar_ColorPickerPalette, 4.0);
 						InitializePickerHit(
 							BarUISetShapeEnum::DrawAttributeBar_ColorPickerToneToggle,
-							4.0, GetThemeColor(BarThemeColorEnum::SubtleFill));
+							4.0, GetThemeColor(BarThemeColorEnum::PressedFill));
 						InitializePickerHit(
-							BarUISetShapeEnum::DrawAttributeBar_ColorPickerCloseHit, 4.0);
+							BarUISetShapeEnum::DrawAttributeBar_ColorPickerCloseHit,
+							4.0, GetThemeColor(BarThemeColorEnum::PressedFill));
 						InitializePickerHit(
 							BarUISetShapeEnum::DrawAttributeBar_ColorPickerPreviewBubble,
 							4.0, GetPenColor() & 0x00FFFFFF);
