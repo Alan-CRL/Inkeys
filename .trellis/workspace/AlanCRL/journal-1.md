@@ -262,3 +262,31 @@ Added reusable locked JSON sequences, persisted UI3 Bar button order and visibil
 ### Status
 
 [OK] **Completed**
+
+
+## Session 9: UI3 粗细滑块交互完善与图标更新
+
+**Date**: 2026-08-01
+**Task**: UI3 粗细滑块交互完善与图标更新
+**Branch**: `feature/animation`
+
+### Summary
+
+完善 UI3 粗细滑块：点击跳值、触摸固定选中、拖动数字反馈、关闭动画可拖、圆点出现后才改值、笔形切换平滑、荧光笔三档数字预设、笔型图标替换、拖动静止保持锁定；记录 i18n/无标注线布局 Future Notes。归档 07-28-ui3-pen-thickness-slider。实时预览功能已撤回。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e0831fa` | (see git log) |
+| `7afce7a` | (see git log) |
+| `45989ce` | (see git log) |
+| `9a21a3a` | (see git log) |
+| `8d172fe` | (see git log) |
+| `ea292c4` | (see git log) |
+| `4a4edd0` | (see git log) |
+| `d361a89` | (see git log) |
+
+### Status
+
+[OK] **Completed**
