@@ -3103,6 +3103,8 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 			// 新操作创建完整批次；批次进入后半程后，新布局不再压缩到旧截止时间。
 			bool lateMainBarLayoutChange = !barState.fold && mainBarTimeline.IsActive()
 				&& mainBarLayoutChange && !mainBarTimeline.CanJoin();
+			// 后半程布局变化会重开完整批次；目标未变的在途布局值也要从当前值同步重启。
+			bool forceRestartMainBarLayout = mainBarFoldChange || lateMainBarLayoutChange;
 			// 超过加入阈值后会创建新批次，此时旧换边中点已经失效，不能在新批次中再次收窄。
 			bool continueMainBarSideSwitchKeyframe = interruptingMainBarSideSwitch
 				&& !lateMainBarLayoutChange;
@@ -3163,7 +3165,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 						value.SetTar(target, operationDur, middle, true, continuedKeyframeValueCurve);
 					}
 					else value.SetTar(target, operationDur, nullopt,
-						mainBarFoldChange, syncedValueCurve);
+						forceRestartMainBarLayout, syncedValueCurve);
 				};
 
 			// 按钮位置计算（特别操作）
@@ -3680,8 +3682,8 @@ SetButtonPositionTar(temp->buttom.x, xO + 5.0, 40.0, true);
 			{
 				if (barState.fold)
 				{
-					mainBar->x.SetTar(0.0, operationDur, nullopt, mainBarFoldChange, syncedValueCurve);
-					mainBar->w.SetTar(80.0, operationDur, nullopt, mainBarFoldChange, syncedValueCurve);
+					mainBar->x.SetTar(0.0, operationDur, nullopt, forceRestartMainBarLayout, syncedValueCurve);
+					mainBar->w.SetTar(80.0, operationDur, nullopt, forceRestartMainBarLayout, syncedValueCurve);
 
 					shapeMap[BarUISetShapeEnum::MainBar]->pct.SetTar(0.0, operationDur, nullopt, false, syncedPctCurve);
 					shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().SetTar(0.0, operationDur, nullopt, false, syncedPctCurve);
@@ -3694,7 +3696,7 @@ SetButtonPositionTar(temp->buttom.x, xO + 5.0, 40.0, true);
 						// 布局目标变化不能丢掉换边中点，继续在原批次 0.5 时刻收窄到主按钮宽度。
 						mainBar->w.SetTar(totalWidth, operationDur, 80.0, true, continuedKeyframeValueCurve);
 					else mainBar->w.SetTar(totalWidth, operationDur, nullopt,
-						mainBarFoldChange, syncedValueCurve);
+						forceRestartMainBarLayout, syncedValueCurve);
 
 					double targetX = 0.0;
 					if (barState.widgetPosition.mainBar)
@@ -3707,7 +3709,7 @@ SetButtonPositionTar(temp->buttom.x, xO + 5.0, 40.0, true);
 					else if (continueMainBarSideSwitchKeyframe)
 						mainBar->x.SetTar(targetX, operationDur, 0.0, true, continuedKeyframeValueCurve);
 					else mainBar->x.SetTar(targetX, operationDur, nullopt,
-						mainBarFoldChange, syncedValueCurve);
+						forceRestartMainBarLayout, syncedValueCurve);
 
 					shapeMap[BarUISetShapeEnum::MainBar]->pct.SetTar(
 						0.8, operationDur, nullopt, false, syncedPctCurve);
