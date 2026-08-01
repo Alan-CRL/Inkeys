@@ -4889,8 +4889,12 @@ ConfigureThicknessButton(presetShapes[i], numberWord,
 				needRendering = true;
 				stringO.ApplyTar();
 			};
-		// 独立的粗细值也进入统一动画时钟，方便后续直接替换为非线性或回弹曲线。
-		if (!drawAttributePenThickness.IsSame()) ChangeValue(drawAttributePenThickness, false);
+// 关闭动画时拖动不会改变 val/tar，仍需每帧重绘圆点位置。
+			if (barState.drawAttributeBar.thicknessSliderDragging
+				|| barState.drawAttributeBar.thicknessSliderPressed)
+				needRendering = true;
+			// 独立的粗细值也进入统一动画时钟，方便后续直接替换为非线性或回弹曲线。
+			if (!drawAttributePenThickness.IsSame()) ChangeValue(drawAttributePenThickness, false);
 		if (!drawAttributePenPreviewMorph.IsSame())
 			ChangeValue(drawAttributePenPreviewMorph, false);
 		if (!drawAttributeThicknessSliderProgress.IsSame())
@@ -5209,23 +5213,22 @@ bool brushMode = stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1;
 
 				auto range = GetBarThicknessSliderRange(
 					stateMode.Pen.ModeSelect, barStyle.dpiZoom);
-				if (stateMode.StateModeSelect
-					== StateModeSelectEnum::IdtPen
-					&& range.supported)
-				{
-					double sliderPositionWidth =
-						barState.drawAttributeBar.thicknessSliderDragging
-						? static_cast<double>(barState.drawAttributeBar
-							.thicknessSliderCandidateWidth)
-						: static_cast<double>(GetPenWidth());
-					drawAttributeThicknessSliderNormalized =
-						range.max > range.min
-							? clamp((sliderPositionWidth - range.min)
-								/ static_cast<double>(
-									range.max - range.min),
-							0.0, 1.0)
-						: 0.0;
-				}
+if (stateMode.StateModeSelect
+						== StateModeSelectEnum::IdtPen
+						&& range.supported)
+					{
+						// 非拖动时跟随 drawAttributePenThickness 动画，
+						// 点击下方快捷粗细后圆点平滑移动；拖动中该值已 SetDirect 到候选值。
+						double sliderPositionWidth = static_cast<double>(
+							drawAttributePenThickness.val);
+						drawAttributeThicknessSliderNormalized =
+							range.max > range.min
+								? clamp((sliderPositionWidth - range.min)
+									/ static_cast<double>(
+										range.max - range.min),
+								0.0, 1.0)
+							: 0.0;
+					}
 				double baseThumbDiameter =
 					BarThicknessSliderThumbDiameter * panelScale;
 				double thumbTravel = max(0.0,
@@ -7589,7 +7592,7 @@ void BarUISetClass::Interact()
 
 // 绘制属性
 				{
-					// 粗细预览区：点击后固定；已显示时可点轨跳值；悬停拖动不固定，无悬停拖动会固定。
+					// 粗细预览区：点击后固定；圆点完全出现后才可跳值/拖动；悬停拖动不固定，无悬停拖动会固定。
 					if (continueFlag && ThicknessSliderAvailable())
 					{
 						auto sliderHit = shapeMap[
@@ -7619,7 +7622,7 @@ void BarUISetClass::Interact()
 									.thicknessSliderHover;
 								bool pinnedAtPress = barState.drawAttributeBar
 									.thicknessSliderPinned;
-								// 仅在滑块已经显示后，才允许点击滑轨位置快速跳值。
+								// 悬停/固定只表示进入滑块态；改值还要等圆点完全出现。
 								bool sliderAlreadyShown =
 									hoverAtPress || pinnedAtPress;
 								bool penModeChanged = false;
@@ -7641,6 +7644,9 @@ void BarUISetClass::Interact()
 								auto adjust = shapeMap[
 									BarUISetShapeEnum::
 										DrawAttributeBar_ThicknessAdjust];
+								auto sliderThumb = shapeMap[
+									BarUISetShapeEnum::
+										DrawAttributeBar_ThicknessSliderThumb];
 								auto previewGeometry =
 									CalculateBarThicknessPreviewGeometry(
 										*panel, *region,
@@ -7667,13 +7673,38 @@ void BarUISetClass::Interact()
 								double trackTravelScreenX = max(1.0,
 									static_cast<double>(trackEndPoint.x)
 										- trackStartScreenX);
+								double rangeSpan =
+									static_cast<double>(
+										range.max - range.min);
+								double initialNormalized =
+									range.max > range.min
+										? clamp(
+											(static_cast<double>(initialWidth)
+												- range.min) / rangeSpan,
+											0.0, 1.0)
+										: 0.0;
+								double thumbCenterScreenX =
+									trackStartScreenX
+									+ initialNormalized * trackTravelScreenX;
+								// 以渲染后的圆点透明度为准：未完全出现时忽略一切改值手势。
+								bool thumbFullyVisible = sliderThumb
+									&& sliderThumb->w.val > 0.0
+									&& sliderThumb->h.val > 0.0
+									&& static_cast<double>(sliderThumb->pct.val)
+										>= 0.999999;
+								bool valueAdjustAllowed =
+									sliderAlreadyShown && thumbFullyVisible;
+								// 点在圆点内：保持相对偏移；点在外侧：中心对齐到触点 X。
+								bool pressOnThumb = valueAdjustAllowed
+									&& sliderThumb->IsClick(
+										msg.x, msg.y, barStyle.zoom);
+								double grabOffsetScreenX = pressOnThumb
+									? (pressScreenX - thumbCenterScreenX)
+									: 0.0;
 								auto ProjectWidthFromScreenX =
 									[&](double screenX) -> float
 									{
-										double rangeSpan =
-											static_cast<double>(
-												range.max - range.min);
-										// 直接投影到滑轨，圆点跟随当前指针/触点位置。
+										// screenX 表示目标圆点中心的屏幕横坐标。
 										double rawWidth = range.min
 											+ (screenX - trackStartScreenX)
 												/ trackTravelScreenX * rangeSpan;
@@ -7689,6 +7720,8 @@ void BarUISetClass::Interact()
 								auto ApplyCandidateWidth =
 									[&](float targetWidth) -> bool
 									{
+										if (!valueAdjustAllowed) return false;
+
 										int roundedWidth = static_cast<int>(
 											lround(targetWidth));
 										if (roundedWidth == lastCandidateWidth
@@ -7713,8 +7746,8 @@ void BarUISetClass::Interact()
 									.thicknessSliderCandidateWidth = initialWidth;
 								barState.drawAttributeBar.thicknessSliderPressed =
 									true;
-								// 已显示时按下即跳到点击位置；首次显示前的点击仍只负责固定。
-								if (sliderAlreadyShown)
+								// 圆点完全出现且点在外侧时，按下即跳到点击位置；点在圆点内只开始抓取。
+								if (valueAdjustAllowed && !pressOnThumb)
 								{
 									ApplyCandidateWidth(
 										ProjectWidthFromScreenX(pressScreenX));
@@ -7763,8 +7796,10 @@ void BarUISetClass::Interact()
 										{
 											// 仅水平位移会把按下手势切换为真实的滑轨拖动。
 											gestureDragged = true;
-											if (!barState.drawAttributeBar
-												.thicknessSliderDragging)
+											// 圆点未完全出现时，滑动只用于区分点击/拖动，不进入候选拖动态。
+											if (valueAdjustAllowed
+												&& !barState.drawAttributeBar
+													.thicknessSliderDragging)
 											{
 												barState.drawAttributeBar
 													.thicknessSliderDragging =
@@ -7776,7 +7811,7 @@ void BarUISetClass::Interact()
 										if (gestureDragged
 											&& ApplyCandidateWidth(
 												ProjectWidthFromScreenX(
-													screenX)))
+													screenX - grabOffsetScreenX)))
 											UpdateRendering(false);
 										continue;
 									}

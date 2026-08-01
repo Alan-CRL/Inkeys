@@ -21,7 +21,7 @@
 ## 范围与绝对映射
 
 - 文件内统一提供笔型范围函数：硬笔 `[1, round(30 × dpiZoom)]`，荧光笔 `[round(30 × dpiZoom), round(100 × dpiZoom)]`，并确保 `max >= min`。
-- 非拖动时圆点位置使用 `clamp((GetPenWidth()-min)/(max-min), 0, 1)`，拖动时把分子替换为原子候选值；范围外值只影响圆点显示钳制，不调用 `SetPenWidth()`。
+- 圆点归一化位置统一由 `drawAttributePenThickness.val` 推导：非拖动时该值对真实粗细做 `SetTar` 动画，因此点击下方快捷粗细后圆点平滑移动；拖动中该值已 `SetDirect` 到候选值，圆点仍跟手。范围外值只影响圆点显示钳制，不调用 `SetPenWidth()`。
 - 按下时记录屏幕坐标 `pressScreenX`、起始粗细、起始笔型，以及圆点中心可达的滑轨屏幕左右端点。未发生水平移动时保留起始候选值，只按点击固定处理。
 - 首次发生水平移动后，拖动值为 `min + (screenX-trackStartScreenX) / trackTravelScreenX × (max-min)`，随后钳制并四舍五入到整数设备像素；圆点直接跟随指针/触点在滑轨上的绝对投影。
 - 拖动中把整数候选值写入 `IdtAtomic<float>`，渲染线程用它计算圆点归一化位置，并把 `drawAttributePenThickness` 以 `SetDirect` 同步到候选值，使左下角“粗细”数字即时显示准确值；仍不调用 `SetPenWidth()`，超限判断继续读真实值。正常抬起且笔型未变化时，若候选值不同于起始值，只调用一次 `SetPenWidth(finalValue, true)`，之后 `drawAttributePenThickness` 恢复 `SetTar` 动画过渡。
@@ -30,7 +30,8 @@
 
 - 预览区域使用从当前动画几何派生的独立命中矩形，排除控制行；正常和倒转布局共用同一推导，不新增固定坐标分支。
 - 指针移动先按视觉层级命中标注线和超限徽标；徽标、已显示浮窗正文及其 `100ms` 离开宽限期都维持滑块 hover，浮窗正文消费点击避免穿透。进入对应浮窗会取消待执行的宽限定时器；滑块刚激活时关闭旧浮窗，但后续徽标仍可重新打开提示。
-- 预览区 `WM_LBUTTONDOWN` 记录按压前是否已经悬停/固定。仅当滑块已显示（`hover || pinned`）时，按下即按绝对投影跳到该点；首次显示前的点击仍只固定不跳值。若后续屏幕横坐标改变，则进入 dragging；临时悬停拖动抬起后保持未固定，触摸等无悬停进入的拖动抬起后固定并选中小三角；直接抬起才按普通点击固定。
+- 预览区 `WM_LBUTTONDOWN` 记录按压前是否已经悬停/固定，并以渲染侧圆点 `pct.val >= 0.999999` 判定圆点是否完全出现。仅当圆点完全出现后才允许跳值/拖动改候选值；动画未完成时的按下与水平滑动只参与点击/拖动区分与固定，不写候选值、不进入 `thicknessSliderDragging`。点在圆点外时按下即按触点 X 绝对投影跳值；点在圆点内则记录 `grabOffset = pressX - thumbCenterX`，拖动时用 `screenX - grabOffset` 保持相对位置。临时悬停拖动抬起后保持未固定，触摸等无悬停进入的拖动抬起后固定并选中小三角；直接抬起才按普通点击固定。
+- 关闭动画时拖动不会改变 `drawAttributePenThickness` 的 val/tar 差值，渲染循环在 `thicknessSliderDragging || thicknessSliderPressed` 时强制 `needRendering`，保证圆点每帧刷新。
 - 小三角按下时锁存原固定态；原本已固定时先进入收起目标，确认点击后保持取消固定，拖出取消时恢复原固定态，避免预览单击固定后紧接着点击三角又被反向选中。
 - 鼠标候选拖动开始时对 `floating_window` 调用 `SetCapture`；用局部 RAII/统一清理函数保证正常抬起、模式切换、属性栏收起、`WM_CAPTURECHANGED` 和线程退出路径都调用 `ReleaseCapture` 并清除按压状态。
 - WndProc 在本任务拖动激活时把捕获丢失转成一次可消费的结束事件，避免 `hiex::getmessage_win32` 永久等待；结束坐标使用 `GetCursorPos` 后转客户区。
