@@ -37,6 +37,23 @@ IdtAtomic<bool> thicknessSliderHover = false;
 		IdtAtomic<bool> thicknessOverflowPinned = false;
 		IdtAtomic<bool> thicknessOverflowClosePress = false;
 		IdtAtomic<bool> thicknessPreviewOverflow = false;
+		// 简易颜色选择器：输入线程串行改色，渲染线程只读取这些轻量状态。
+		IdtAtomic<bool> colorPickerOpen = false;
+		IdtAtomic<bool> colorPickerDarkTone = false;
+		IdtAtomic<bool> colorPickerMarkerVisible = false;
+		IdtAtomic<float> colorPickerMarkerX = 0.0f;
+		IdtAtomic<float> colorPickerMarkerY = 0.0f;
+		IdtAtomic<bool> colorPickerPointerPressed = false;
+		IdtAtomic<bool> colorPickerPointerCapture = false;
+		IdtAtomic<bool> colorPickerHoldHintActive = false;
+		IdtAtomic<bool> colorPickerHoldLocked = false;
+		IdtAtomic<float> colorPickerHoldProgress = 0.0f;
+		IdtAtomic<float> colorPickerPointerX = 0.0f;
+		IdtAtomic<float> colorPickerPointerY = 0.0f;
+		IdtAtomic<bool> colorPickerKeyboardPreviewVisible = false;
+		IdtAtomic<bool> colorPickerPreviewFromPointer = false;
+		IdtAtomic<unsigned int> colorPickerKeyboardDownMask = 0;
+		IdtAtomic<COLORREF> colorPickerPreviewColor = RGB(0, 0, 0);
 	}drawAttributeBar;
 
 	struct

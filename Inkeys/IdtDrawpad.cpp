@@ -1,4 +1,4 @@
-﻿import Inkeys.UI.Bar;
+import Inkeys.UI.Bar;
 import Inkeys.Helper.Thread;
 import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
@@ -53,6 +53,12 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 
 		if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) Inkeys::Inputs::SetKeyBoardDown((BYTE)pKeyInfo->vkCode, true);
 		else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) Inkeys::Inputs::SetKeyBoardDown((BYTE)pKeyInfo->vkCode, false);
+
+		// UI3 颜色面板打开时由 Bar 交互线程串行处理方向键/WASD；关闭时完全沿用原快捷键与 PPT 路径。
+		if (useInkeys3UI && Inkeys::UI::Bar::TryQueueColorPickerKeyboardInput(
+			static_cast<BYTE>(pKeyInfo->vkCode),
+			wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN))
+			return 1;
 
 		if (!IsHotkeyDown && (Inkeys::Inputs::IsKeyBoardDown(VK_CONTROL) || Inkeys::Inputs::IsKeyBoardDown(VK_LCONTROL) || Inkeys::Inputs::IsKeyBoardDown(VK_RCONTROL)) && (Inkeys::Inputs::IsKeyBoardDown(VK_LWIN) || Inkeys::Inputs::IsKeyBoardDown(VK_RWIN)) && (Inkeys::Inputs::IsKeyBoardDown(VK_MENU) || Inkeys::Inputs::IsKeyBoardDown(VK_LMENU) || Inkeys::Inputs::IsKeyBoardDown(VK_RMENU)))
 		{

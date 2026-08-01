@@ -90,6 +90,7 @@ enum class BarUISetShapeEnum : int
 	DrawAttributeBar_ColorSelect9,
 	DrawAttributeBar_ColorSelect10,
 	DrawAttributeBar_ColorSelect11,
+	DrawAttributeBar_ColorSelect12,
 	DrawAttributeBar_Brush1,
 	DrawAttributeBar_Highlight1,
 	DrawAttributeBar_Laser,
@@ -110,6 +111,12 @@ enum class BarUISetShapeEnum : int
 	DrawAttributeBar_ThicknessAnnotationPopupCloseHit,
 	DrawAttributeBar_ThicknessOverflowPopup,
 	DrawAttributeBar_ThicknessOverflowPopupCloseHit,
+	DrawAttributeBar_ColorPickerPanel,
+	DrawAttributeBar_ColorPickerPalette,
+	DrawAttributeBar_ColorPickerToneToggle,
+	DrawAttributeBar_ColorPickerCloseHit,
+	DrawAttributeBar_ColorPickerPreviewBubble,
+	DrawAttributeBar_ColorPickerHoldHint,
 };
 enum class BarUISetSuperellipseEnum : int
 {
@@ -164,6 +171,10 @@ DrawAttributeBar_ThicknessAnnotationLabel,
 		DrawAttributeBar_ThicknessAnnotationPopupBody,
 		DrawAttributeBar_ThicknessOverflowPopupText,
 		DrawAttributeBar_ThicknessOverflowPopupBody,
+		DrawAttributeBar_ColorPickerTone,
+		DrawAttributeBar_ColorPickerRgb,
+		DrawAttributeBar_ColorPickerPreviewRgb,
+		DrawAttributeBar_ColorPickerHoldLabel,
 	};
 
 enum class BarBorderLightSourceEnum : int
@@ -252,6 +263,17 @@ protected:
 		ID2D1DeviceContext* deviceContext, COLORREF color,
 		D2D1_POINT_2F startPoint, D2D1_POINT_2F endPoint,
 		FLOAT leftOpacity);
+	ID2D1LinearGradientBrush* GetColorPickerHueGradientBrush(
+		ID2D1DeviceContext* deviceContext,
+		D2D1_POINT_2F startPoint, D2D1_POINT_2F endPoint);
+	ID2D1LinearGradientBrush* GetColorPickerToneGradientBrush(
+		ID2D1DeviceContext* deviceContext, bool darkTone,
+		D2D1_POINT_2F startPoint, D2D1_POINT_2F endPoint,
+		FLOAT opacity);
+	void DrawProgressRing(ID2D1DeviceContext* deviceContext,
+		D2D1_POINT_2F center, FLOAT radius, FLOAT strokeWidth,
+		FLOAT progress, COLORREF trackColor, COLORREF progressColor,
+		FLOAT trackOpacity, FLOAT progressOpacity);
 	ID2D1PathGeometry* GetThicknessPreviewPath(
 		const array<D2D1_POINT_2F, 7>& points);
 	ID2D1StrokeStyle* GetThicknessPreviewStrokeStyle();
@@ -302,6 +324,8 @@ protected:
 	bool thicknessPreviewPathFailureLogged = false;
 	bool thicknessPreviewPathUnavailable = false;
 	bool thicknessPreviewPathInitialized = false;
+	bool colorPickerGradientFailureLogged = false;
+	bool colorPickerGradientUnavailable = false;
 	bool frameDiffuseEffectFailureLogged = false;
 	bool frameDiffuseMaskFailureLogged = false;
 	bool frameDiffuseMaskUnavailable = false;
@@ -332,6 +356,9 @@ protected:
 	vector<FrameGeometryDiffuseMaskCacheClass> frameGeometryDiffuseMaskCache;
 	ComPtr<ID2D1SolidColorBrush> frameSolidColorBrush;
 	ComPtr<ID2D1LinearGradientBrush> thicknessPreviewGradientBrush;
+	ComPtr<ID2D1LinearGradientBrush> colorPickerHueGradientBrush;
+	ComPtr<ID2D1LinearGradientBrush> colorPickerLightGradientBrush;
+	ComPtr<ID2D1LinearGradientBrush> colorPickerDarkGradientBrush;
 	ComPtr<ID2D1PathGeometry> thicknessPreviewPath;
 	ComPtr<ID2D1StrokeStyle> thicknessPreviewStrokeStyle;
 	COLORREF thicknessPreviewGradientColor = RGB(0, 0, 0);
@@ -393,6 +420,7 @@ protected:
 	void HandleCanvasDrawingActivity(HWND hWnd, bool started);
 	void CloseDrawAttributeTooltips();
 	void CloseThicknessSlider(bool cancelCapture);
+	void CloseColorPicker(bool cancelCapture);
 	void RefreshBorderCursorVisibleRegions();
 	bool IsBorderCursorLightNearVisibleRegion(POINT screenPoint);
 	std::atomic<unsigned long long> mainButtonClickPulseSerial = 0;
@@ -411,7 +439,7 @@ protected:
 	BarBorderCursorTrackingStateEnum borderCursorTrackingState =
 		BarBorderCursorTrackingStateEnum::Dormant;
 	ULONGLONG borderCursorGraceDeadlineTick = 0;
-	array<RECT, 3> borderCursorVisibleRegions{};
+	array<RECT, 5> borderCursorVisibleRegions{};
 	size_t borderCursorVisibleRegionCount = 0;
 
 	friend class BarUIRendering;
@@ -442,6 +470,7 @@ namespace Inkeys::UI::Bar
 	export void SetDebugMode(bool enable);
 	export void NotifyCanvasDrawingStarted();
 	export void NotifyCanvasDrawingEnded();
+	export bool TryQueueColorPickerKeyboardInput(BYTE vkCode, bool keyDown);
 
 	void InitializeWindow(BarUISetClass& barUISet);
 	void InitializeMedia(BarUISetClass& barUISet);
