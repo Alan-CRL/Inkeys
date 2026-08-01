@@ -287,6 +287,8 @@ BARBRUSH1               UI                      "src\\UI\\barBrush1.svg"
 
 BARBRUSH2               UI                      "src\\UI\\barBrush2.svg"
 
+BARPAINTBRUSH           UI                      "src\\UI\\barPaintBrush.svg"
+
 BARLASER                UI                      "src\\UI\\barLaser.svg"
 
 BARFREEZE               UI                      "src\\UI\\barFreeze.svg"

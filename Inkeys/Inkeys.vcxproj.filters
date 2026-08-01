@@ -1019,7 +1019,13 @@
     <None Include="src\UI\barClean.svg">
       <Filter>资源文件</Filter>
     </None>
-    <None Include="src\UI\barBursh1.svg">
+    <None Include="src\UI\barBrush2.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barPaintBrush.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barLaser.svg">
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\barBrush1.svg">

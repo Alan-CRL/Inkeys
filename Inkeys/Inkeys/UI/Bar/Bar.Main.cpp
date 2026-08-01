@@ -9022,29 +9022,29 @@ namespace Inkeys::UI::Bar
 							word->enable.Initialization(true);
 							barUISet.wordMap[wordType] = word;
 						};
-						// 从上到下固定为刷子、激光笔、荧光笔、硬笔、软笔。
-						InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Brush2,
-							BarUISetSvgEnum::DrawAttributeBar_Brush2,
-							BarUISetWordEnum::DrawAttributeBar_Brush2,
-							L"barBrush1", L"刷子");
-						InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Laser,
-							BarUISetSvgEnum::DrawAttributeBar_Laser,
-							BarUISetWordEnum::DrawAttributeBar_Laser,
-							L"barBrush1", L"激光笔");
-						InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Highlight1,
-							BarUISetSvgEnum::DrawAttributeBar_Highlight1,
-							BarUISetWordEnum::DrawAttributeBar_Highlight1,
-							L"barHighlighter1", L"荧光笔");
-						InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Brush1,
-							BarUISetSvgEnum::DrawAttributeBar_Brush1,
-							BarUISetWordEnum::DrawAttributeBar_Brush1,
-							L"barBrush1", L"硬笔");
-						// 临时统一复用硬笔图标，待三种笔型图标完善后再恢复各自资源。
-						InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_SoftPen,
-							BarUISetSvgEnum::DrawAttributeBar_SoftPen,
-							BarUISetWordEnum::DrawAttributeBar_SoftPen,
-							L"barBrush1", L"软笔");
-					}
+// 从上到下固定为刷子、激光笔、荧光笔、硬笔、软笔。
+							// barBrush1=硬笔，barBrush2=软笔；刷子使用独立 barPaintBrush。
+							InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Brush2,
+								BarUISetSvgEnum::DrawAttributeBar_Brush2,
+								BarUISetWordEnum::DrawAttributeBar_Brush2,
+								L"barPaintBrush", L"刷子");
+							InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Laser,
+								BarUISetSvgEnum::DrawAttributeBar_Laser,
+								BarUISetWordEnum::DrawAttributeBar_Laser,
+								L"barLaser", L"激光笔");
+							InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Highlight1,
+								BarUISetSvgEnum::DrawAttributeBar_Highlight1,
+								BarUISetWordEnum::DrawAttributeBar_Highlight1,
+								L"barHighlighter1", L"荧光笔");
+							InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Brush1,
+								BarUISetSvgEnum::DrawAttributeBar_Brush1,
+								BarUISetWordEnum::DrawAttributeBar_Brush1,
+								L"barBrush1", L"硬笔");
+							InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_SoftPen,
+								BarUISetSvgEnum::DrawAttributeBar_SoftPen,
+								BarUISetWordEnum::DrawAttributeBar_SoftPen,
+								L"barBrush2", L"软笔");
+						}
 					// 粗细调节区域
 					{
 						auto shape = make_shared<BarUiShapeClass>(0.0, 0.0,

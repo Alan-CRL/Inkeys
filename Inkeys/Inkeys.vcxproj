@@ -695,7 +695,9 @@
     <None Include="src\i18n\zh-TW.jsonc" />
     <None Include="src\ui1.bin" />
     <None Include="src\UI\barBrush1.svg" />
-    <None Include="src\UI\barBursh1.svg" />
+    <None Include="src\UI\barBrush2.svg" />
+    <None Include="src\UI\barPaintBrush.svg" />
+    <None Include="src\UI\barLaser.svg" />
     <None Include="src\UI\barClean.svg" />
     <None Include="src\UI\barDivider.svg" />
     <None Include="src\UI\barEraser.svg" />
