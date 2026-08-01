@@ -115,7 +115,7 @@ constexpr double BarColorPickerPaletteInset = 12.0;
 constexpr double BarColorPickerPaletteTop = 48.0;
 constexpr double BarColorPickerPaletteWidth = 276.0;
 constexpr double BarColorPickerPaletteHeight = 132.0;
-constexpr double BarColorPickerPanelGap = 8.0;
+constexpr double BarColorPickerPanelGap = BarDrawAttributeGap * 2.0;
 constexpr double BarColorPickerKeyboardStepDip = 2.0;
 constexpr double BarColorPickerHoldStillnessPx = 5.0;
 constexpr ULONGLONG BarColorPickerHoldHintDelayMs = 500;
@@ -504,34 +504,44 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 			auto popup = barUISet.shapeMap[annotation
 				? BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup
 				: BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup];
-			bool available = barUISet.barState.drawAttribute
-				&& !barUISet.barState.fold
-				&& (annotation
-					? PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect)
-					: static_cast<bool>(drawAttribute.thicknessPreviewOverflow));
-			bool pointerInside = pointAvailable && available
-				&& ((infoHit && infoHit->IsClick(
-					point.x, point.y, barUISet.barStyle.zoom))
-					|| (popupInteractive && popup && popup->IsClick(
-						point.x, point.y, barUISet.barStyle.zoom)));
-			bool changed = static_cast<bool>(hover) != pointerInside;
-			hover = pointerInside;
+bool available = barUISet.barState.drawAttribute
+					&& !barUISet.barState.fold
+					&& (annotation
+						? PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect)
+						: static_cast<bool>(drawAttribute.thicknessPreviewOverflow));
+				// 颜色选择器盖住下方控件时，宽限期计时器也不得再把悬停还给滑块/提示。
+				auto colorPickerPanel = barUISet.shapeMap[
+					BarUISetShapeEnum::DrawAttributeBar_ColorPickerPanel];
+				bool colorPickerOccludes = pointAvailable
+					&& barUISet.barState.drawAttributeBar.colorPickerOpen
+					&& colorPickerPanel
+					&& colorPickerPanel->IsClick(
+						point.x, point.y, barUISet.barStyle.zoom);
+				bool pointerInside = pointAvailable && available
+					&& !colorPickerOccludes
+					&& ((infoHit && infoHit->IsClick(
+						point.x, point.y, barUISet.barStyle.zoom))
+						|| (popupInteractive && popup && popup->IsClick(
+							point.x, point.y, barUISet.barStyle.zoom)));
+				bool changed = static_cast<bool>(hover) != pointerInside;
+				hover = pointerInside;
 
-			auto sliderHit = barUISet.shapeMap[
-				BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderHit];
-			bool sliderAvailable = stateMode.StateModeSelect
-				== StateModeSelectEnum::IdtPen
-				&& barUISet.barState.drawAttribute && !barUISet.barState.fold
-				&& GetBarThicknessSliderRange(
-					stateMode.Pen.ModeSelect,
-					barUISet.barStyle.dpiZoom).supported;
-			bool sliderHover = sliderAvailable
-				&& ((pointAvailable && sliderHit && sliderHit->IsClick(
-					point.x, point.y, barUISet.barStyle.zoom))
-					|| drawAttribute.thicknessAnnotationHover
-					|| drawAttribute.thicknessAnnotationHoverGrace
-					|| drawAttribute.thicknessOverflowHover
-					|| drawAttribute.thicknessOverflowHoverGrace);
+				auto sliderHit = barUISet.shapeMap[
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderHit];
+				bool sliderAvailable = stateMode.StateModeSelect
+					== StateModeSelectEnum::IdtPen
+					&& barUISet.barState.drawAttribute && !barUISet.barState.fold
+					&& GetBarThicknessSliderRange(
+						stateMode.Pen.ModeSelect,
+						barUISet.barStyle.dpiZoom).supported;
+				bool sliderHover = sliderAvailable
+					&& !colorPickerOccludes
+					&& ((pointAvailable && sliderHit && sliderHit->IsClick(
+						point.x, point.y, barUISet.barStyle.zoom))
+						|| drawAttribute.thicknessAnnotationHover
+						|| drawAttribute.thicknessAnnotationHoverGrace
+						|| drawAttribute.thicknessOverflowHover
+						|| drawAttribute.thicknessOverflowHoverGrace);
 			if (static_cast<bool>(drawAttribute.thicknessSliderHover)
 				!= sliderHover)
 			{
@@ -6159,22 +6169,15 @@ auto annotationInfoHit = shapeMap[
 			double pickerHeight = BarColorPickerPanelHeight * pickerScale;
 			double swatchCenterX = customSwatch->inhX
 				+ customSwatch->w.val / 2.0;
-			double outwardDirection = barState.widgetPosition.primaryBar ? 1.0 : -1.0;
-			double targetPickerLeft = clamp(
-				swatchCenterX - BarColorPickerPanelWidth / 2.0,
-				BarDrawAttributeGap,
-				max(BarDrawAttributeGap,
-					logicalWindowWidth - BarDrawAttributeGap
-						- BarColorPickerPanelWidth));
-			double targetPickerTop = barState.widgetPosition.primaryBar
-				? panel->inhY + panel->h.val + BarColorPickerPanelGap
-				: panel->inhY - BarColorPickerPanelGap
+			// 与绘制属性同向：primaryBar 时向下，倒转后向上；不按屏幕边夹紧，可越出可视区。
+			bool openBelowSwatch = barState.widgetPosition.primaryBar;
+			double outwardDirection = openBelowSwatch ? 1.0 : -1.0;
+			double targetPickerLeft =
+				swatchCenterX - BarColorPickerPanelWidth / 2.0;
+			double targetPickerTop = openBelowSwatch
+				? customSwatch->inhY + customSwatch->h.val + BarColorPickerPanelGap
+				: customSwatch->inhY - BarColorPickerPanelGap
 					- BarColorPickerPanelHeight;
-			targetPickerTop = clamp(targetPickerTop,
-				BarDrawAttributeGap,
-				max(BarDrawAttributeGap,
-					logicalWindowHeight - BarDrawAttributeGap
-						- BarColorPickerPanelHeight));
 			double pickerCenterX = targetPickerLeft
 				+ BarColorPickerPanelWidth / 2.0;
 			double pickerCenterY = targetPickerTop
@@ -6183,10 +6186,13 @@ auto annotationInfoHit = shapeMap[
 			double pickerLeft = pickerCenterX - pickerWidth / 2.0;
 			double pickerTop = pickerCenterY - pickerHeight / 2.0;
 			double pickerOpacity = pickerProgress;
+		// 面板圆角/底色/边框透明度与绘制属性栏保持同一套 Surface 规范。
+		double pickerPanelRadius = 8.0 * pickerScale;
+		double pickerControlRadius = 4.0 * pickerScale;
 		pickerPanel->w.SetDirect(pickerWidth);
 		pickerPanel->h.SetDirect(pickerHeight);
-		pickerPanel->rw->SetDirect(10.0 * pickerScale);
-		pickerPanel->rh->SetDirect(10.0 * pickerScale);
+		pickerPanel->rw->SetDirect(pickerPanelRadius);
+		pickerPanel->rh->SetDirect(pickerPanelRadius);
 		pickerPanel->pct.SetDirect(
 			BarDrawAttributeSurfaceOpacity * pickerOpacity);
 		pickerPanel->framePct->SetDirect(0.18 * pickerOpacity);
@@ -6209,20 +6215,20 @@ auto annotationInfoHit = shapeMap[
 		double paletteHeight = BarColorPickerPaletteHeight * pickerScale;
 		SetAbsoluteHit(pickerPalette, paletteLeft, paletteTop,
 			paletteWidth, paletteHeight);
-		pickerPalette->rw->SetDirect(7.0 * pickerScale);
-		pickerPalette->rh->SetDirect(7.0 * pickerScale);
+		pickerPalette->rw->SetDirect(pickerControlRadius);
+		pickerPalette->rh->SetDirect(pickerControlRadius);
 		SetAbsoluteHit(pickerToneHit,
 			pickerLeft + 12.0 * pickerScale,
 			pickerTop + 10.0 * pickerScale,
 			68.0 * pickerScale, 28.0 * pickerScale);
-		pickerToneHit->rw->SetDirect(7.0 * pickerScale);
-		pickerToneHit->rh->SetDirect(7.0 * pickerScale);
+		pickerToneHit->rw->SetDirect(pickerControlRadius);
+		pickerToneHit->rh->SetDirect(pickerControlRadius);
 		SetAbsoluteHit(pickerCloseHit,
 			pickerLeft + pickerWidth - 38.0 * pickerScale,
 			pickerTop + 10.0 * pickerScale,
 			28.0 * pickerScale, 28.0 * pickerScale);
-		pickerCloseHit->rw->SetDirect(7.0 * pickerScale);
-		pickerCloseHit->rh->SetDirect(7.0 * pickerScale);
+		pickerCloseHit->rw->SetDirect(pickerControlRadius);
+		pickerCloseHit->rh->SetDirect(pickerControlRadius);
 
 		auto pickerToneWord = wordMap[
 			BarUISetWordEnum::DrawAttributeBar_ColorPickerTone];
@@ -6267,8 +6273,8 @@ auto annotationInfoHit = shapeMap[
 			: paletteTop + 6.0 * pickerScale;
 		SetAbsoluteHit(pickerHold, holdLeft, holdTop, holdWidth, holdHeight);
 		pickerHold->pct.SetDirect(0.82 * holdOpacity);
-		pickerHold->rw->SetDirect(7.0 * pickerScale);
-		pickerHold->rh->SetDirect(7.0 * pickerScale);
+		pickerHold->rw->SetDirect(pickerControlRadius);
+		pickerHold->rh->SetDirect(pickerControlRadius);
 		auto pickerHoldWord = wordMap[
 			BarUISetWordEnum::DrawAttributeBar_ColorPickerHoldLabel];
 		pickerHoldWord->w.SetDirect(holdWidth - 34.0 * pickerScale);
@@ -6290,8 +6296,8 @@ auto annotationInfoHit = shapeMap[
 		SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			previewSlotWidth, previewSlotHeight);
 		pickerPreview->pct.SetDirect(pickerOpacity);
-		pickerPreview->rw->SetDirect(7.0 * pickerScale);
-		pickerPreview->rh->SetDirect(7.0 * pickerScale);
+		pickerPreview->rw->SetDirect(pickerControlRadius);
+		pickerPreview->rh->SetDirect(pickerControlRadius);
 		pickerPreview->fill->SetDirect(pickerColor);
 		}
 
@@ -8224,11 +8230,21 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			return barState.drawAttribute && !barState.fold
 				&& barState.drawAttributeBar.thicknessPreviewOverflow;
 		};
-	auto ColorPickerAvailable = [&]()
-		{
-			return stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
-				&& barState.drawAttribute && !barState.fold;
-		};
+auto ColorPickerAvailable = [&]()
+			{
+				return stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
+					&& barState.drawAttribute && !barState.fold;
+			};
+		auto IsColorPickerOccludingPoint = [&](int clientX, int clientY)
+			{
+				if (!ColorPickerAvailable()
+					|| !barState.drawAttributeBar.colorPickerOpen)
+					return false;
+				auto pickerPanel = shapeMap[
+					BarUISetShapeEnum::DrawAttributeBar_ColorPickerPanel];
+				return pickerPanel
+					&& pickerPanel->IsClick(clientX, clientY, barStyle.zoom);
+			};
 	auto ColorPickerKeyMask = [](BYTE vkCode) -> unsigned int
 		{
 			switch (vkCode)
@@ -8508,99 +8524,107 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				suppressHoverUntilPointerMove = false;
 			}
 
-			auto annotationInfoHit = shapeMap[
-				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit];
-			auto overflowInfoHit = shapeMap[
-				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowInfoHit];
-			bool annotationBadgeHover = AnnotationTooltipAvailable()
-				&& annotationInfoHit
-				&& annotationInfoHit->IsClick(
-					msg.x, msg.y, barStyle.zoom);
-			bool overflowBadgeHover = OverflowTooltipAvailable()
-				&& overflowInfoHit
-				&& overflowInfoHit->IsClick(
-					msg.x, msg.y, barStyle.zoom);
-			auto annotationPopup = shapeMap[
-				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup];
-			auto overflowPopup = shapeMap[
-				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup];
-			bool annotationPopupInteractive =
-				barState.drawAttributeBar.thicknessAnnotationHover
-				|| barState.drawAttributeBar.thicknessAnnotationHoverGrace
-				|| barState.drawAttributeBar.thicknessAnnotationPinned;
-			bool overflowPopupInteractive =
-				barState.drawAttributeBar.thicknessOverflowHover
-				|| barState.drawAttributeBar.thicknessOverflowHoverGrace
-				|| barState.drawAttributeBar.thicknessOverflowPinned;
-			bool annotationPopupHover = AnnotationTooltipAvailable()
-				&& annotationPopupInteractive && annotationPopup
-				&& annotationPopup->IsClick(
-					msg.x, msg.y, barStyle.zoom);
-			bool overflowPopupHover = OverflowTooltipAvailable()
-				&& overflowPopupInteractive && overflowPopup
-				&& overflowPopup->IsClick(
-					msg.x, msg.y, barStyle.zoom);
-			bool tooltipHoverChanged = false;
-			tooltipHoverChanged |= UpdateTooltipHover(
-				AnnotationTooltipAvailable(),
-				annotationBadgeHover || annotationPopupHover,
-				barState.drawAttributeBar.thicknessAnnotationHover,
-				barState.drawAttributeBar.thicknessAnnotationPinned,
-				barState.drawAttributeBar.thicknessAnnotationHoverGrace,
-				BarThicknessAnnotationTooltipGraceTimerId);
-			tooltipHoverChanged |= UpdateTooltipHover(
-				OverflowTooltipAvailable(),
-				overflowBadgeHover || overflowPopupHover,
-				barState.drawAttributeBar.thicknessOverflowHover,
-				barState.drawAttributeBar.thicknessOverflowPinned,
-				barState.drawAttributeBar.thicknessOverflowHoverGrace,
-				BarThicknessOverflowTooltipGraceTimerId);
-
-			auto sliderHit = shapeMap[
-				BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderHit];
-			// 徽标、浮窗和两者之间的宽限期都属于粗细悬停区域。
-			bool sliderHover = ThicknessSliderAvailable()
-				&& ((sliderHit && sliderHit->IsClick(
-					msg.x, msg.y, barStyle.zoom))
-					|| barState.drawAttributeBar.thicknessAnnotationHover
+// 颜色选择器盖住绘制属性时，下方滑块/提示/按钮都不得再被悬停激活。
+				bool colorPickerOccludes =
+					IsColorPickerOccludingPoint(msg.x, msg.y);
+				auto annotationInfoHit = shapeMap[
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit];
+				auto overflowInfoHit = shapeMap[
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowInfoHit];
+				bool annotationBadgeHover = !colorPickerOccludes
+					&& AnnotationTooltipAvailable()
+					&& annotationInfoHit
+					&& annotationInfoHit->IsClick(
+						msg.x, msg.y, barStyle.zoom);
+				bool overflowBadgeHover = !colorPickerOccludes
+					&& OverflowTooltipAvailable()
+					&& overflowInfoHit
+					&& overflowInfoHit->IsClick(
+						msg.x, msg.y, barStyle.zoom);
+				auto annotationPopup = shapeMap[
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup];
+				auto overflowPopup = shapeMap[
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup];
+				bool annotationPopupInteractive =
+					barState.drawAttributeBar.thicknessAnnotationHover
 					|| barState.drawAttributeBar.thicknessAnnotationHoverGrace
-					|| barState.drawAttributeBar.thicknessOverflowHover
-					|| barState.drawAttributeBar.thicknessOverflowHoverGrace);
-			bool sliderHoverChanged = static_cast<bool>(
-				barState.drawAttributeBar.thicknessSliderHover)
-				!= sliderHover;
-			if (sliderHoverChanged)
-				barState.drawAttributeBar.thicknessSliderHover = sliderHover;
-			if (tooltipHoverChanged || sliderHoverChanged)
-				UpdateRendering(false);
+					|| barState.drawAttributeBar.thicknessAnnotationPinned;
+				bool overflowPopupInteractive =
+					barState.drawAttributeBar.thicknessOverflowHover
+					|| barState.drawAttributeBar.thicknessOverflowHoverGrace
+					|| barState.drawAttributeBar.thicknessOverflowPinned;
+				bool annotationPopupHover = !colorPickerOccludes
+					&& AnnotationTooltipAvailable()
+					&& annotationPopupInteractive && annotationPopup
+					&& annotationPopup->IsClick(
+						msg.x, msg.y, barStyle.zoom);
+				bool overflowPopupHover = !colorPickerOccludes
+					&& OverflowTooltipAvailable()
+					&& overflowPopupInteractive && overflowPopup
+					&& overflowPopup->IsClick(
+						msg.x, msg.y, barStyle.zoom);
+				bool tooltipHoverChanged = false;
+				tooltipHoverChanged |= UpdateTooltipHover(
+					AnnotationTooltipAvailable(),
+					annotationBadgeHover || annotationPopupHover,
+					barState.drawAttributeBar.thicknessAnnotationHover,
+					barState.drawAttributeBar.thicknessAnnotationPinned,
+					barState.drawAttributeBar.thicknessAnnotationHoverGrace,
+					BarThicknessAnnotationTooltipGraceTimerId);
+				tooltipHoverChanged |= UpdateTooltipHover(
+					OverflowTooltipAvailable(),
+					overflowBadgeHover || overflowPopupHover,
+					barState.drawAttributeBar.thicknessOverflowHover,
+					barState.drawAttributeBar.thicknessOverflowPinned,
+					barState.drawAttributeBar.thicknessOverflowHoverGrace,
+					BarThicknessOverflowTooltipGraceTimerId);
 
-			BarButtomClass* currentHoveredButton = nullptr;
-			if (!barState.fold)
-			{
-				for (int id = 0; id < barButtomSet.tot; id++)
+				auto sliderHit = shapeMap[
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderHit];
+				// 徽标、浮窗和两者之间的宽限期都属于粗细悬停区域。
+				bool sliderHover = !colorPickerOccludes
+					&& ThicknessSliderAvailable()
+					&& ((sliderHit && sliderHit->IsClick(
+						msg.x, msg.y, barStyle.zoom))
+						|| barState.drawAttributeBar.thicknessAnnotationHover
+						|| barState.drawAttributeBar.thicknessAnnotationHoverGrace
+						|| barState.drawAttributeBar.thicknessOverflowHover
+						|| barState.drawAttributeBar.thicknessOverflowHoverGrace);
+				bool sliderHoverChanged = static_cast<bool>(
+					barState.drawAttributeBar.thicknessSliderHover)
+					!= sliderHover;
+				if (sliderHoverChanged)
+					barState.drawAttributeBar.thicknessSliderHover = sliderHover;
+				if (tooltipHoverChanged || sliderHoverChanged)
+					UpdateRendering(false);
+
+				BarButtomClass* currentHoveredButton = nullptr;
+				if (!barState.fold && !colorPickerOccludes)
 				{
-					BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
-					if (!temp || !temp->IsVisible() || temp->state->state == BarWidgetState::Selected) continue;
-					bool isColorSelector = temp->name.enable.tar
-						&& temp->name.content.GetTar().substr(0, 7) == L"__color";
-					if (isColorSelector) continue; // 颜色块自身就是内容，不把其填充色改成悬停灰色。
-					if (temp->buttom.IsClick(msg.x, msg.y, barStyle.zoom))
+					for (int id = 0; id < barButtomSet.tot; id++)
 					{
-						currentHoveredButton = temp;
-						break;
+						BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
+						if (!temp || !temp->IsVisible() || temp->state->state == BarWidgetState::Selected) continue;
+						bool isColorSelector = temp->name.enable.tar
+							&& temp->name.content.GetTar().substr(0, 7) == L"__color";
+						if (isColorSelector) continue; // 颜色块自身就是内容，不把其填充色改成悬停灰色。
+						if (temp->buttom.IsClick(msg.x, msg.y, barStyle.zoom))
+						{
+							currentHoveredButton = temp;
+							break;
+						}
 					}
 				}
-			}
-			if (currentHoveredButton != hoveredMainBarButton)
-			{
-				StopMainBarButtonHover(hoveredMainBarButton, false);
-				hoveredMainBarButton = currentHoveredButton;
-				StartMainBarButtonHover(hoveredMainBarButton);
-			}
+				if (currentHoveredButton != hoveredMainBarButton)
+				{
+					StopMainBarButtonHover(hoveredMainBarButton, false);
+					hoveredMainBarButton = currentHoveredButton;
+					StartMainBarButtonHover(hoveredMainBarButton);
+				}
 
-			IndependentHoverTargetEnum currentIndependentButton = IndependentHoverTargetEnum::None;
-			if (barState.drawAttribute)
-			{
+				IndependentHoverTargetEnum currentIndependentButton = IndependentHoverTargetEnum::None;
+				if (barState.drawAttribute && !colorPickerOccludes)
+				{
 				// 两个浮窗允许覆盖，按绘制顺序优先命中上层的粗细超限浮窗。
 				auto overflowClose = shapeMap[
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit];
@@ -10648,14 +10672,14 @@ namespace Inkeys::UI::Bar
 							};
 						{
 							auto pickerPanel = make_shared<BarUiShapeClass>(
-								0.0, 0.0, 1.0, 1.0, 10.0, 10.0, 1.0,
+								0.0, 0.0, 1.0, 1.0, 8.0, 8.0, 1.0,
 								GetThemeColor(BarThemeColorEnum::Surface),
 								GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 							pickerPanel->pct.Initialization(0.0);
 							pickerPanel->framePct = BarUiPctClass(0.0);
 							pickerPanel->frameLightPct = BarUiPctClass(0.0);
 							pickerPanel->frameRendering = BarUiFrameRenderingEnum::PointLight;
-							pickerPanel->frameLightColor = BarUiFrameLightColorEnum::Frame;
+							pickerPanel->frameLightColor = BarUiFrameLightColorEnum::PenWhenDrawing;
 							pickerPanel->framePrimaryLightEnabled = false;
 							pickerPanel->frameCursorLightIntensityScale =
 								BarButtonCursorLightIntensity;
@@ -10664,18 +10688,18 @@ namespace Inkeys::UI::Bar
 								BarUISetShapeEnum::DrawAttributeBar_ColorPickerPanel] = pickerPanel;
 						}
 						InitializePickerHit(
-							BarUISetShapeEnum::DrawAttributeBar_ColorPickerPalette, 7.0);
+							BarUISetShapeEnum::DrawAttributeBar_ColorPickerPalette, 4.0);
 						InitializePickerHit(
 							BarUISetShapeEnum::DrawAttributeBar_ColorPickerToneToggle,
-							7.0, GetThemeColor(BarThemeColorEnum::SubtleFill));
+							4.0, GetThemeColor(BarThemeColorEnum::SubtleFill));
 						InitializePickerHit(
-							BarUISetShapeEnum::DrawAttributeBar_ColorPickerCloseHit, 7.0);
+							BarUISetShapeEnum::DrawAttributeBar_ColorPickerCloseHit, 4.0);
 						InitializePickerHit(
 							BarUISetShapeEnum::DrawAttributeBar_ColorPickerPreviewBubble,
-							7.0, GetPenColor() & 0x00FFFFFF);
+							4.0, GetPenColor() & 0x00FFFFFF);
 						InitializePickerHit(
 							BarUISetShapeEnum::DrawAttributeBar_ColorPickerHoldHint,
-							7.0, GetThemeColor(BarThemeColorEnum::Surface));
+							4.0, GetThemeColor(BarThemeColorEnum::Surface));
 
 						auto InitializePickerWord = [&](BarUISetWordEnum type,
 							const wchar_t* text, double size)

@@ -43,6 +43,8 @@ Pointer/touch message ───────────────────�
 ## Rendering and Resources
 
 - 复用 Bar 的共享 D3D11/D2D 渲染租约和同一个 layered `floating_window`。
+- 面板相对第 12 色块定位，方向与绘制属性一致：`primaryBar==true` 时开在色块下方，倒转后开在色块上方；不做屏幕边夹紧，可覆盖绘制属性内容。
+- 面板圆角 8、内部控件圆角 4，背景/边框与绘制属性栏共用 `Surface`、`SurfaceFrame` 与 0.95/0.18 透明度。
 - 缓存三个设备资源：横向色相渐变、亮色纵向透明白覆盖、暗色纵向透明黑覆盖。只在 device generation 变化时创建，在 `DiscardDeviceResources` 中释放。
 - 第 12 色块使用同一色相画刷绘制静态圆角外圈；色板先绘制横向色相，再绘制纵向覆盖。
 - 保持进度抽取为通用圆环绘制帮助函数，粗细与颜色选择器共用几何语义。
