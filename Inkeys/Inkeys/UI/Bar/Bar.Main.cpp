@@ -54,6 +54,8 @@ constexpr double BarColorSwatchCursorLightIntensity = 0.50;
 constexpr double BarButtonCursorLightIntensity = 0.30;
 constexpr double BarButtonPressedLightOpacity = 0.5;
 constexpr double BarBrushThicknessPresetDip[] = { 1.0, 3.0, 6.0 };
+	// 荧光笔细/中/粗预设，落在 30–100 连续滑块量程内。
+	constexpr double BarHighlighterThicknessPresetDip[] = { 30.0, 50.0, 80.0 };
 constexpr double BarDrawAttributeExpandedWidth = 370.0;
 constexpr double BarDrawAttributeExpandedHeight = 185.0;
 constexpr double BarDrawAttributeCompactWidth = 60.0;
@@ -221,12 +223,25 @@ BarThicknessPreviewGeometry CalculateBarThicknessPreviewGeometry(
 	return geometry;
 }
 
-int GetBarBrushThicknessPresetPx(size_t index, double dpiZoom)
-{
-	if (index >= 3 || !isfinite(dpiZoom) || dpiZoom <= 0.0) return 1;
-	// 预设只跟随系统 DPI，不能再叠加 UI 配置缩放。
-	return max(1, static_cast<int>(lround(BarBrushThicknessPresetDip[index] * dpiZoom)));
-}
+int GetBarThicknessPresetPx(
+		PenModeSelectEnum mode, size_t index, double dpiZoom)
+	{
+		if (index >= 3 || !isfinite(dpiZoom) || dpiZoom <= 0.0) return 1;
+		// 预设只跟随系统 DPI，不能再叠加 UI 配置缩放。
+		const double* presets = nullptr;
+		if (mode == PenModeSelectEnum::IdtPenBrush1)
+			presets = BarBrushThicknessPresetDip;
+		else if (mode == PenModeSelectEnum::IdtPenHighlighter1)
+			presets = BarHighlighterThicknessPresetDip;
+		else return 1;
+		return max(1, static_cast<int>(lround(presets[index] * dpiZoom)));
+	}
+
+	bool PenModeUsesThicknessPresets(PenModeSelectEnum mode)
+	{
+		return mode == PenModeSelectEnum::IdtPenBrush1
+			|| mode == PenModeSelectEnum::IdtPenHighlighter1;
+	}
 
 COLORREF GetBarReadableTextColor(COLORREF background)
 {
@@ -4247,18 +4262,18 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 						thicknessDisplay->color.SetTar(
 							GetThemeColor(BarThemeColorEnum::TextPrimary));
 
-bool brushMode =
-								stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1;
+bool thicknessPresetMode =
+								PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect);
 							// 预设选中只看真实粗细；左下角数字由动画值驱动。
 							int actualThickness = static_cast<int>(lround(clamp(
 								static_cast<double>(max(0.0f, GetPenWidth())),
 								0.0, 999.0)));
 							auto ConfigureThicknessButton = [&](BarUISetShapeEnum shapeType,
-							shared_ptr<BarUiWordClass> numberWord, double x, bool visible,
-							bool selected, bool pressed,
-							IdtAtomic<BarButtomHoverStageEnum>& hoverStage,
-							BarUiValueClass& pressScale)
-							{
+								shared_ptr<BarUiWordClass> numberWord, double x, bool visible,
+								bool selected, bool pressed,
+								IdtAtomic<BarButtomHoverStageEnum>& hoverStage,
+								BarUiValueClass& pressScale)
+								{
 								auto shape = shapeMap[shapeType];
 								shape->x.SetTar(x * layoutScale);
 								shape->y.SetTar(
@@ -4339,21 +4354,21 @@ bool brushMode =
 							&drawAttributeThicknessMediumPressScale,
 							&drawAttributeThicknessCoarsePressScale,
 						};
-						for (size_t i = 0; i < 3; ++i)
-						{
-							int presetPx = GetBarBrushThicknessPresetPx(i, barStyle.dpiZoom);
-							auto numberWord = wordMap[presetWords[i]];
-							wstring numberText = to_wstring(presetPx);
-							numberWord->content.SetTar(numberText);
-ConfigureThicknessButton(presetShapes[i], numberWord,
+for (size_t i = 0; i < 3; ++i)
+							{
+								int presetPx = GetBarThicknessPresetPx(
+									stateMode.Pen.ModeSelect, i, barStyle.dpiZoom);
+								auto numberWord = wordMap[presetWords[i]];
+								wstring numberText = to_wstring(presetPx);
+								numberWord->content.SetTar(numberText);
+								ConfigureThicknessButton(presetShapes[i], numberWord,
 									100.0 + static_cast<double>(i) * 35.0,
-									barState.drawAttribute && brushMode,
+									barState.drawAttribute && thicknessPresetMode,
 									actualThickness == presetPx, *presetPresses[i],
 									*presetHoverStages[i], *presetPressScales[i]);
-						}
-						bool adjustVisible = barState.drawAttribute
-							&& (brushMode || stateMode.Pen.ModeSelect
-								== PenModeSelectEnum::IdtPenHighlighter1);
+							}
+							bool adjustVisible = barState.drawAttribute
+								&& thicknessPresetMode;
 						ConfigureThicknessButton(
 							BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust, nullptr,
 							205.0, adjustVisible,
@@ -5081,7 +5096,8 @@ ConfigureThicknessButton(presetShapes[i], numberWord,
 			&drawAttributeThicknessMediumHoverStage,
 			&drawAttributeThicknessCoarseHoverStage,
 		};
-bool brushMode = stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1;
+bool thicknessPresetMode =
+				PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect);
 			// 悬停动画同样只按真实粗细判断预设选中，避免拖动候选值误亮按钮。
 			int actualThickness = static_cast<int>(lround(clamp(
 				static_cast<double>(max(0.0f, GetPenWidth())), 0.0, 999.0)));
@@ -5089,14 +5105,16 @@ bool brushMode = stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1;
 			{
 				auto shape = shapeMap[thicknessPresetShapes[i]];
 				bool selected = actualThickness
-					== GetBarBrushThicknessPresetPx(i, barStyle.dpiZoom);
-			UpdateHoverAnimation(shape->pct, &shape->fill.value(),
-				*thicknessPresetHoverStages[i], barState.drawAttribute && brushMode, !selected);
-		}
-		auto thicknessAdjust =
-			shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust];
-		bool thicknessAdjustVisible = barState.drawAttribute && (brushMode
-			|| stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1);
+					== GetBarThicknessPresetPx(
+						stateMode.Pen.ModeSelect, i, barStyle.dpiZoom);
+				UpdateHoverAnimation(shape->pct, &shape->fill.value(),
+					*thicknessPresetHoverStages[i],
+					barState.drawAttribute && thicknessPresetMode, !selected);
+			}
+			auto thicknessAdjust =
+				shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust];
+			bool thicknessAdjustVisible =
+				barState.drawAttribute && thicknessPresetMode;
 		UpdateHoverAnimation(thicknessAdjust->pct, &thicknessAdjust->fill.value(),
 			drawAttributeThicknessAdjustHoverStage, thicknessAdjustVisible,
 			!barState.drawAttributeBar.thicknessSliderPinned);
@@ -6311,16 +6329,19 @@ double baseThumbDiameter =
 								auto shape = shapeMap[button.shape];
 								BarUiInheritClass shapeInherit =
 									shape->Inherit(TopLeft, *panel);
-								bool presetButton = button.presetIndex >= 0;
-								auto numberWord = presetButton
-									? wordMap[button.numberWord] : nullptr;
-								bool adjustVisible = stateMode.Pen.ModeSelect
-									== PenModeSelectEnum::IdtPenBrush1
-									|| stateMode.Pen.ModeSelect
-									== PenModeSelectEnum::IdtPenHighlighter1;
-								double buttonOpacity = presetButton
-									? static_cast<double>(numberWord->pct.val)
-									: (adjustVisible ? contentOpacity : 0.0);
+bool presetButton = button.presetIndex >= 0;
+									auto numberWord = presetButton
+										? wordMap[button.numberWord] : nullptr;
+									bool adjustVisible =
+										PenModeUsesThicknessPresets(
+											stateMode.Pen.ModeSelect);
+									bool highlighterPreset =
+										presetButton
+										&& stateMode.Pen.ModeSelect
+											== PenModeSelectEnum::IdtPenHighlighter1;
+									double buttonOpacity = presetButton
+										? static_cast<double>(numberWord->pct.val)
+										: (adjustVisible ? contentOpacity : 0.0);
 								// 圆点读取 Shape 的当前边框色，跟随白色到青色的已有颜色动画。
 								COLORREF buttonColor = shape->frame.value().val;
 
@@ -6369,49 +6390,69 @@ double baseThumbDiameter =
 									if (barState.widgetPosition.primaryBar)
 										barDeviceContext->SetTransform(buttonTransform);
 								}
-								else
-								{
-									ID2D1SolidColorBrush* buttonBrush =
-										spec.GetFrameSolidColorBrush(
-											barDeviceContext.Get(), buttonColor,
-											buttonOpacity);
-									if (buttonOpacity > 0.000001 && buttonBrush
-										&& uiZoom > 0.0f)
+else
 									{
-										FLOAT centerX = static_cast<FLOAT>(
-											(shapeInherit.x + shape->w.val / 2.0) * uiZoom);
-										FLOAT centerY = static_cast<FLOAT>(
-											(shapeInherit.y + shape->h.val / 2.0) * uiZoom);
-										int actualPx = GetBarBrushThicknessPresetPx(
+										int actualPx = GetBarThicknessPresetPx(
+											stateMode.Pen.ModeSelect,
 											button.presetIndex, barStyle.dpiZoom);
-										FLOAT innerDiameter = max(1.0f,
-											static_cast<FLOAT>(min(
-												shape->w.val, shape->h.val) * uiZoom)
-											- 8.0f * uiZoom);
-										FLOAT diameter = min(
-											static_cast<FLOAT>(actualPx
-												* panelAnimationScale), innerDiameter);
-										D2D1_ELLIPSE ellipse = D2D1::Ellipse(
-											D2D1::Point2F(centerX, centerY),
-											diameter / 2.0f, diameter / 2.0f);
-										barDeviceContext->FillEllipse(
-											&ellipse, buttonBrush);
-										if (static_cast<FLOAT>(actualPx
-											* panelAnimationScale) > innerDiameter)
+										if (highlighterPreset)
 										{
-											// 填满时用黑白高对比数字保留真实设备像素值。
-											wstring numberText = to_wstring(actualPx);
-											numberWord->content.SetVal(numberText);
-											numberWord->content.SetTar(numberText);
-											numberWord->color.SetDirect(
-												GetBarReadableTextColor(buttonColor));
-											spec.Word(barDeviceContext.Get(), *numberWord,
-												numberWord->Inherit(TopLeft, *panel),
-												DWRITE_FONT_WEIGHT_BOLD,
-												DWRITE_TEXT_ALIGNMENT_CENTER);
+											// 荧光笔预设始终显示数字，不再画圆点。
+											if (buttonOpacity > 0.000001 && numberWord)
+											{
+												wstring numberText = to_wstring(actualPx);
+												numberWord->content.SetVal(numberText);
+												numberWord->content.SetTar(numberText);
+												numberWord->color.SetDirect(buttonColor);
+												numberWord->pct.SetDirect(buttonOpacity);
+												spec.Word(barDeviceContext.Get(), *numberWord,
+													numberWord->Inherit(TopLeft, *panel),
+													DWRITE_FONT_WEIGHT_BOLD,
+													DWRITE_TEXT_ALIGNMENT_CENTER);
+											}
+										}
+										else
+										{
+											ID2D1SolidColorBrush* buttonBrush =
+												spec.GetFrameSolidColorBrush(
+													barDeviceContext.Get(), buttonColor,
+													buttonOpacity);
+											if (buttonOpacity > 0.000001 && buttonBrush
+												&& uiZoom > 0.0f)
+											{
+												FLOAT centerX = static_cast<FLOAT>(
+													(shapeInherit.x + shape->w.val / 2.0) * uiZoom);
+												FLOAT centerY = static_cast<FLOAT>(
+													(shapeInherit.y + shape->h.val / 2.0) * uiZoom);
+												FLOAT innerDiameter = max(1.0f,
+													static_cast<FLOAT>(min(
+														shape->w.val, shape->h.val) * uiZoom)
+													- 8.0f * uiZoom);
+												FLOAT diameter = min(
+													static_cast<FLOAT>(actualPx
+														* panelAnimationScale), innerDiameter);
+												D2D1_ELLIPSE ellipse = D2D1::Ellipse(
+													D2D1::Point2F(centerX, centerY),
+													diameter / 2.0f, diameter / 2.0f);
+												barDeviceContext->FillEllipse(
+													&ellipse, buttonBrush);
+												if (static_cast<FLOAT>(actualPx
+													* panelAnimationScale) > innerDiameter)
+												{
+													// 填满时用黑白高对比数字保留真实设备像素值。
+													wstring numberText = to_wstring(actualPx);
+													numberWord->content.SetVal(numberText);
+													numberWord->content.SetTar(numberText);
+													numberWord->color.SetDirect(
+														GetBarReadableTextColor(buttonColor));
+													spec.Word(barDeviceContext.Get(), *numberWord,
+														numberWord->Inherit(TopLeft, *panel),
+														DWRITE_FONT_WEIGHT_BOLD,
+														DWRITE_TEXT_ALIGNMENT_CENTER);
+												}
+											}
 										}
 									}
-								}
 								if (transformChanged)
 									barDeviceContext->SetTransform(originalTransform);
 							}
@@ -7091,20 +7132,21 @@ void BarUISetClass::Interact()
 				return stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenBrush1;
 			case IndependentHoverTargetEnum::DrawAttributeHighlight:
 				return stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHighlighter1;
-			case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
-			case IndependentHoverTargetEnum::DrawAttributeThicknessMedium:
-			case IndependentHoverTargetEnum::DrawAttributeThicknessCoarse:
-			{
-				if (stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenBrush1)
-					return false;
-				size_t index = static_cast<size_t>(target)
-					- static_cast<size_t>(
-						IndependentHoverTargetEnum::DrawAttributeThicknessFine);
-				int displayedThickness =
-					static_cast<int>(lround(max(0.0f, GetPenWidth())));
-				return displayedThickness
-					!= GetBarBrushThicknessPresetPx(index, barStyle.dpiZoom);
-			}
+case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
+				case IndependentHoverTargetEnum::DrawAttributeThicknessMedium:
+				case IndependentHoverTargetEnum::DrawAttributeThicknessCoarse:
+				{
+					if (!PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect))
+						return false;
+					size_t index = static_cast<size_t>(target)
+						- static_cast<size_t>(
+							IndependentHoverTargetEnum::DrawAttributeThicknessFine);
+					int displayedThickness =
+						static_cast<int>(lround(max(0.0f, GetPenWidth())));
+					return displayedThickness
+						!= GetBarThicknessPresetPx(
+							stateMode.Pen.ModeSelect, index, barStyle.dpiZoom);
+				}
 			case IndependentHoverTargetEnum::DrawAttributeThicknessAdjust:
 				return ThicknessSliderAvailable()
 					&& !barState.drawAttributeBar.thicknessSliderPinned;
@@ -7998,53 +8040,52 @@ void BarUISetClass::Interact()
 						{ BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust,
 							&barState.drawAttributeBar.thicknessAdjustPress, -1 },
 					};
-					bool brushMode =
-						stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1;
-					for (const auto& button : thicknessButtons)
-					{
-						bool visible = button.presetIndex >= 0 ? brushMode
-							: (brushMode || stateMode.Pen.ModeSelect
-								== PenModeSelectEnum::IdtPenHighlighter1);
-						auto obj = shapeMap[button.shape];
-						if (!visible || !obj
-							|| !obj->IsClick(msg.x, msg.y, barStyle.zoom))
-							continue;
-
-						continueFlag = false;
-						if (msg.message == WM_LBUTTONDOWN)
+bool thicknessPresetMode =
+							PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect);
+						for (const auto& button : thicknessButtons)
 						{
-							bool clickCompleted = false;
-							bool sliderPinnedAtPress = button.presetIndex < 0
-								&& barState.drawAttributeBar
-									.thicknessSliderPinned;
-							if (button.presetIndex < 0)
+							bool visible = thicknessPresetMode;
+							auto obj = shapeMap[button.shape];
+							if (!visible || !obj
+								|| !obj->IsClick(msg.x, msg.y, barStyle.zoom))
+								continue;
+
+							continueFlag = false;
+							if (msg.message == WM_LBUTTONDOWN)
 							{
-								// 小三角按下即切换选中态；拖出取消时恢复按下前状态。
-								barState.drawAttributeBar
-									.thicknessSliderPinned = !sliderPinnedAtPress;
-								barState.drawAttributeBar
-									.thicknessSliderHover = false;
-							}
-							*button.pressed = true;
-							StopIndependentHover(hoveredIndependentButton, true, true);
-							hoveredIndependentButton =
-								IndependentHoverTargetEnum::None;
-							UpdateRendering(false);
-							while (true)
-							{
-								hiex::getmessage_win32(
-									&msg, EM_MOUSE, floating_window);
-								if (obj->IsClick(msg.x, msg.y, barStyle.zoom))
+								bool clickCompleted = false;
+								bool sliderPinnedAtPress = button.presetIndex < 0
+									&& barState.drawAttributeBar
+										.thicknessSliderPinned;
+								if (button.presetIndex < 0)
 								{
-									if (!msg.lbutton)
+									// 小三角按下即切换选中态；拖出取消时恢复按下前状态。
+									barState.drawAttributeBar
+										.thicknessSliderPinned = !sliderPinnedAtPress;
+									barState.drawAttributeBar
+										.thicknessSliderHover = false;
+								}
+								*button.pressed = true;
+								StopIndependentHover(hoveredIndependentButton, true, true);
+								hoveredIndependentButton =
+									IndependentHoverTargetEnum::None;
+								UpdateRendering(false);
+								while (true)
+								{
+									hiex::getmessage_win32(
+										&msg, EM_MOUSE, floating_window);
+									if (obj->IsClick(msg.x, msg.y, barStyle.zoom))
 									{
-										if (button.presetIndex >= 0)
+										if (!msg.lbutton)
 										{
-											SetPenWidth(static_cast<float>(
-												GetBarBrushThicknessPresetPx(
-													button.presetIndex,
-													barStyle.dpiZoom)));
-										}
+											if (button.presetIndex >= 0)
+											{
+												SetPenWidth(static_cast<float>(
+													GetBarThicknessPresetPx(
+														stateMode.Pen.ModeSelect,
+														button.presetIndex,
+														barStyle.dpiZoom)));
+											}
 										else
 										{
 											barState.drawAttributeBar
