@@ -3051,40 +3051,47 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 				}
 			bool mainBarFoldChange = (barState.fold && mainBar->x.tar != 0.0)
 				|| (!barState.fold && mainBar->x.tar == 0.0);
-			auto CalculateButtonLayoutWidth = [&]()
-				{
-					double width = 5.0, xO = 5.0, yO = 5.0;
-					for (int id = 0; id < barButtomSet.tot; id++)
+// 与下方布局共用：间隙 5，1*1 边长 32.5，使
+				// 2*1 = 两枚 1*1 + 间隙，2*2 = 两枚 2*1 + 间隙 = 四枚 1*1，且各处间隙一致。
+				constexpr double barBtnGap = 5.0;
+				constexpr double barBtnOne = 32.5; // (70 - gap) / 2，保持正方形
+				constexpr double barBtnTwo = barBtnOne * 2.0 + barBtnGap; // 70
+				constexpr double barBtnOneStep = barBtnOne + barBtnGap; // 37.5
+				constexpr double barBtnTwoStep = barBtnTwo + barBtnGap; // 75
+				auto CalculateButtonLayoutWidth = [&]()
 					{
-						BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
-						if (!temp) continue;
-						if (temp->size == BarButtomSizeEnum::oneOne)
+						double width = barBtnGap, xO = barBtnGap, yO = barBtnGap;
+						for (int id = 0; id < barButtomSet.tot; id++)
 						{
-							if (!temp->IsVisible()) continue;
-							if (yO <= 5.0) yO += 37.5, width += 37.5;
-							else if (xO + 37.5 >= width) xO += 37.5, yO = 5.0;
-							else xO += 37.5;
+							BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
+							if (!temp) continue;
+							if (temp->size == BarButtomSizeEnum::oneOne)
+							{
+								if (!temp->IsVisible()) continue;
+								if (yO <= barBtnGap) yO += barBtnOneStep, width += barBtnOneStep;
+								else if (xO + barBtnOneStep >= width) xO += barBtnOneStep, yO = barBtnGap;
+								else xO += barBtnOneStep;
+							}
+							else if (temp->size == BarButtomSizeEnum::twoOne)
+							{
+								if (yO > barBtnGap && xO + barBtnTwoStep > width) xO = width, yO = barBtnGap;
+								if (!temp->IsVisible()) continue;
+								if (yO <= barBtnGap) yO += barBtnOneStep, width += barBtnTwoStep;
+								else xO += barBtnTwoStep, yO = barBtnGap;
+							}
+							else if (temp->size == BarButtomSizeEnum::twoTwo)
+							{
+								if (yO > barBtnGap) yO = barBtnGap, xO = width;
+								if (temp->IsVisible()) xO += barBtnTwoStep, width += barBtnTwoStep;
+							}
+							else if (temp->size == BarButtomSizeEnum::oneTwo)
+							{
+								if (yO > barBtnGap) xO = width;
+								if (temp->IsVisible()) xO += 15.0, yO = barBtnGap, width += 15.0;
+							}
 						}
-						else if (temp->size == BarButtomSizeEnum::twoOne)
-						{
-							if (yO > 5.0 && xO + 75.0 > width) xO = width, yO = 5.0;
-							if (!temp->IsVisible()) continue;
-							if (yO <= 5.0) yO += 37.5, width += 75.0;
-							else xO += 75.0, yO = 5.0;
-						}
-						else if (temp->size == BarButtomSizeEnum::twoTwo)
-						{
-							if (yO > 5.0) yO = 5.0, xO = width;
-							if (temp->IsVisible()) xO += 75.0, width += 75.0;
-						}
-						else if (temp->size == BarButtomSizeEnum::oneTwo)
-						{
-							if (yO > 5.0) xO = width;
-							if (temp->IsVisible()) xO += 15.0, yO = 5.0, width += 15.0;
-						}
-					}
-					return width;
-				};
+						return width;
+					};
 			double layoutTotalWidth = CalculateButtonLayoutWidth();
 			bool mainBarLayoutChange = mainBarLayoutWidth.has_value()
 				&& abs(layoutTotalWidth - mainBarLayoutWidth.value()) > 0.000001;
@@ -3160,10 +3167,14 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 				};
 
 			// 按钮位置计算（特别操作）
-			double totalWidth = 5.0;
+			double totalWidth = barBtnGap;
 			{
-				double xO = 5.0, yO = 5.0;
+				double xO = barBtnGap, yO = barBtnGap;
 				// 控件计算的 xO 和 yO 包含自身和 右侧、下册 的空隙值 5px
+				// 统一间隙 5：1*1=32.5（正方形），两枚 1*1+间隙=2*1(70x32.5)，
+				// 两枚 2*1+间隙=2*2(70x70)，四枚 1*1 合成 2*2；两行时上/中/下间距均为 5。
+				constexpr double barBtnOneHalf = barBtnOne / 2.0; // 16.25
+				constexpr double barBtnTwoHalf = barBtnTwo / 2.0; // 35
 
 				// 两侧始终按正序计算；向左展开时由横坐标镜像实现从右向左填充。
 				auto baseRange = views::iota(0, barButtomSet.tot);
@@ -3234,21 +3245,21 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 									}
 									else
 									{
-									SetButtonPositionTar(temp->buttom.x, xO + 15.0, 40.0, true);
-									if (yO <= 5.0) SetButtonPositionTar(temp->buttom.y, yO + 17.5, 40.0); // 位于第一行
-									else SetButtonPositionTar(temp->buttom.y, yO + 15.0, 40.0); // 位于第二行
+SetButtonPositionTar(temp->buttom.x, xO + barBtnOneHalf, 40.0, true);
+											// 1*1=32.5：两行时 top/gap/bottom 均为 5，且与 2*2 上下端对齐。
+											SetButtonPositionTar(temp->buttom.y, yO + barBtnOneHalf, 40.0);
 
-										if (isColorSelector) temp->buttom.pct.SetTar(1.0, operationDur); // 只有颜色选择器使用
-										else
-										{
-											if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1, operationDur);
-											else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2, operationDur);
-											else if (temp->hoverStage == BarButtomHoverStageEnum::None)
-												temp->buttom.pct.SetTar(0.0, operationDur);
+												if (isColorSelector) temp->buttom.pct.SetTar(1.0, operationDur); // 只有颜色选择器使用
+											else
+											{
+												if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1, operationDur);
+												else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2, operationDur);
+												else if (temp->hoverStage == BarButtomHoverStageEnum::None)
+													temp->buttom.pct.SetTar(0.0, operationDur);
+											}
 										}
-									}
-								temp->buttom.w.SetTar(30.0, operationDur);
-								temp->buttom.h.SetTar(30.0, operationDur);
+									temp->buttom.w.SetTar(barBtnOne, operationDur);
+									temp->buttom.h.SetTar(barBtnOne, operationDur);
 
 									if (!isColorSelector)
 									{
@@ -3295,10 +3306,10 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 								else
 								{
 									// 位于第一行
-									if (yO <= 5.0)
+									if (yO <= barBtnGap)
 									{
-										yO += 37.5;
-										totalWidth += 37.5;
+										yO += barBtnOneStep;
+										totalWidth += barBtnOneStep;
 										// 只有在第一行时才增加总宽度，因为第二行没有再加的必要
 										// 如果第二行是 twoOne 或 twoTwo 的按钮，则会自动换行到更右侧
 									}
@@ -3307,29 +3318,29 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 									{
 										// 如果第一行是 twoOne，现在是第二行应该存在塞下第二个 1*1 的按钮的情况
 
-										if (xO + 37.5 >= totalWidth)
+										if (xO + barBtnOneStep >= totalWidth)
 										{
-											// 如果当前 xO + 37.5 超过了总宽度，则换行到更右侧
-											xO += 37.5;
-											yO = 5.0;
+											// 如果当前 xO + step 超过了总宽度，则换行到更右侧
+											xO += barBtnOneStep;
+											yO = barBtnGap;
 										}
 										else
 										{
 											// 否则继续在当前行
-											xO += 37.5;
+											xO += barBtnOneStep;
 										}
 									}
 								}
 							}
 							if (temp->size == BarButtomSizeEnum::twoOne)
 							{
-								if (yO > 5.0)
+								if (yO > barBtnGap)
 								{
 									// 如果当前位置处于第二行，且容不下一个 2*1 的按钮，则换行到更右侧
-									if (xO + 75.0 > totalWidth)
+									if (xO + barBtnTwoStep > totalWidth)
 									{
 										xO = totalWidth;
-										yO = 5.0;
+										yO = barBtnGap;
 									}
 								}
 
@@ -3347,17 +3358,17 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 									}
 									else
 									{
-									SetButtonPositionTar(temp->buttom.x, xO + 35.0, 40.0, true);
-									if (yO <= 5.0) SetButtonPositionTar(temp->buttom.y, yO + 17.5, 40.0); // 位于第一行
-									else SetButtonPositionTar(temp->buttom.y, yO + 15.0, 40.0); // 位于第二行
+SetButtonPositionTar(temp->buttom.x, xO + barBtnTwoHalf, 40.0, true);
+											// 2*1=70x32.5：与 oneOne 同网格，两行贴齐 2*2 且间隙均为 5。
+											SetButtonPositionTar(temp->buttom.y, yO + barBtnOneHalf, 40.0);
 
-										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1, operationDur);
-										else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2, operationDur);
-									else if (temp->hoverStage == BarButtomHoverStageEnum::None)
-										temp->buttom.pct.SetTar(0.0, operationDur);
-									}
-								temp->buttom.w.SetTar(70.0, operationDur);
-								temp->buttom.h.SetTar(30.0, operationDur);
+												if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1, operationDur);
+												else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2, operationDur);
+											else if (temp->hoverStage == BarButtomHoverStageEnum::None)
+												temp->buttom.pct.SetTar(0.0, operationDur);
+											}
+										temp->buttom.w.SetTar(barBtnTwo, operationDur);
+										temp->buttom.h.SetTar(barBtnOne, operationDur);
 
 								if (temp->state->state == BarWidgetState::Selected)
 									temp->buttom.fill.value().SetTar(GetThemeColor(BarThemeColorEnum::Accent));
@@ -3367,7 +3378,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 								{
 									temp->icon.SetWH(nullopt, 18.0);
 
-									temp->icon.x.SetTar(-21.0); // 靠左对齐（上下两侧均保持 6px 的空隙，而左侧是 5px）
+									temp->icon.x.SetTar(-21.0); // 靠左对齐（70 宽内：左 5 + icon 18 + 间隙，右侧留给文字）
 									temp->icon.y.SetTar(0.0);
 									if (barState.fold || !temp->IsVisible()) temp->icon.pct.SetTar(0.0, operationDur);
 									else
@@ -3380,10 +3391,10 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 								}
 								if (temp->name.enable.tar)
 								{
-									temp->name.x.SetTar(11.5); // 右对齐
-									temp->name.y.SetTar(0.0);
-									temp->name.w.SetTar(37); // 70px 宽度中除去左侧 icon 占用的 18px + 5px * 2 的空隙,考虑自身右侧还有 5px 的间隙
-									temp->name.h.SetTar(30.0);
+temp->name.x.SetTar(11.5); // 右对齐
+										temp->name.y.SetTar(0.0);
+										temp->name.w.SetTar(37); // 70px 宽度中除去左侧 icon 占用的 18px + 5px * 2 的空隙,考虑自身右侧还有 5px 的间隙
+										temp->name.h.SetTar(barBtnOne);
 									if (barState.fold || !temp->IsVisible()) temp->name.pct.SetTar(0.0, operationDur);
 									else temp->name.pct.SetTar(1.0, operationDur);
 
@@ -3406,26 +3417,26 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 								else
 								{
 									// 位于第一行
-									if (yO <= 5.0)
+									if (yO <= barBtnGap)
 									{
-										yO += 37.5;
-										totalWidth += 75.0;
+										yO += barBtnOneStep;
+										totalWidth += barBtnTwoStep;
 										// 只在第一行中增加总宽度，因为第二行没有再加的必要
 										// 第二行如果是 oneOne 的按钮，那么在超过宽度时也会自动换行到更右侧
 									}
 									// 位于第二行
 									else
 									{
-										xO += 75.0;
-										yO = 5.0;
+										xO += barBtnTwoStep;
+										yO = barBtnGap;
 									}
 								}
 							}
 							if (temp->size == BarButtomSizeEnum::twoTwo)
 							{
-								if (yO > 5.0)
+								if (yO > barBtnGap)
 								{
-									yO = 5.0;
+									yO = barBtnGap;
 									xO = totalWidth;
 								}
 
@@ -3443,16 +3454,16 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 									}
 									else
 									{
-									SetButtonPositionTar(temp->buttom.x, xO + 35.0, 40.0, true);
-									SetButtonPositionTar(temp->buttom.y, yO + 35.0, 40.0);
+SetButtonPositionTar(temp->buttom.x, xO + barBtnTwoHalf, 40.0, true);
+									SetButtonPositionTar(temp->buttom.y, yO + barBtnTwoHalf, 40.0);
 
-										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1, operationDur);
-										else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2, operationDur);
-									else if (temp->hoverStage == BarButtomHoverStageEnum::None)
-										temp->buttom.pct.SetTar(0.0, operationDur);
-									}
-								temp->buttom.w.SetTar(70.0, operationDur);
-								temp->buttom.h.SetTar(70.0, operationDur);
+											if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.1, operationDur);
+											else if (temp->state->state == BarWidgetState::Selected) temp->buttom.pct.SetTar(0.2, operationDur);
+										else if (temp->hoverStage == BarButtomHoverStageEnum::None)
+											temp->buttom.pct.SetTar(0.0, operationDur);
+										}
+									temp->buttom.w.SetTar(barBtnTwo, operationDur);
+									temp->buttom.h.SetTar(barBtnTwo, operationDur);
 
 								if (temp->state->state == BarWidgetState::Selected)
 									temp->buttom.fill.value().SetTar(GetThemeColor(BarThemeColorEnum::Accent));
@@ -3477,10 +3488,10 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 								}
 								if (temp->name.enable.tar)
 								{
-									temp->name.x.SetTar(0.0);
-									temp->name.y.SetTar(20.0);
-									temp->name.w.SetTar(70.0);
-									temp->name.h.SetTar(25.0);
+temp->name.x.SetTar(0.0);
+										temp->name.y.SetTar(20.0);
+										temp->name.w.SetTar(barBtnTwo);
+										temp->name.h.SetTar(25.0);
 									if (barState.fold || !temp->IsVisible()) temp->name.pct.SetTar(0.0, operationDur);
 									else temp->name.pct.SetTar(1.0, operationDur);
 
@@ -3503,15 +3514,15 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 								}
 								else
 								{
-									xO += 75, yO = 5.0;
-									totalWidth += 75;
+xO += barBtnTwoStep, yO = barBtnGap;
+										totalWidth += barBtnTwoStep;
+									}
 								}
-							}
 
-							// 特殊体质 - 分隔栏
-							if (temp->size == BarButtomSizeEnum::oneTwo)
-							{
-								if (yO > 5.0) xO = totalWidth;
+								// 特殊体质 - 分隔栏
+								if (temp->size == BarButtomSizeEnum::oneTwo)
+								{
+									if (yO > barBtnGap) xO = totalWidth;
 
 								if (temp->buttom.enable.tar)
 								{
@@ -3527,15 +3538,15 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 									}
 									else
 									{
-									SetButtonPositionTar(temp->buttom.x, xO + 5.0, 40.0, true);
-									SetButtonPositionTar(temp->buttom.y, yO + 35.0, 40.0);
+SetButtonPositionTar(temp->buttom.x, xO + 5.0, 40.0, true);
+									SetButtonPositionTar(temp->buttom.y, yO + barBtnTwoHalf, 40.0);
 
-										if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.2, operationDur);
-									else if (temp->hoverStage == BarButtomHoverStageEnum::None)
-										temp->buttom.pct.SetTar(0.0, operationDur);
-									}
-								temp->buttom.w.SetTar(10.0, operationDur);
-								temp->buttom.h.SetTar(70.0, operationDur);
+											if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.2, operationDur);
+										else if (temp->hoverStage == BarButtomHoverStageEnum::None)
+											temp->buttom.pct.SetTar(0.0, operationDur);
+										}
+									temp->buttom.w.SetTar(10.0, operationDur);
+									temp->buttom.h.SetTar(barBtnTwo, operationDur);
 
 								// 分割线没有选中状态，隐藏时也预存灰色，避免悬停显现前段混入青色。
 								temp->buttom.fill.value().SetTar(GetThemeColor(BarThemeColorEnum::PressedFill));
@@ -3566,7 +3577,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 								}
 								else
 								{
-									xO += 15, yO = 5.0;
+									xO += 15, yO = barBtnGap;
 									totalWidth += 15;
 								}
 							}

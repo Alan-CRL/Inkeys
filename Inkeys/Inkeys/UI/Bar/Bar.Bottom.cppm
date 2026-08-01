@@ -13,10 +13,10 @@ import Inkeys.Other.Config;
 
 enum class BarButtomSizeEnum : int
 {
-	twoTwo, // 2*2 -> 70 * 50
-	twoOne, // 2*1 -> 70 * 32.5
+	twoTwo, // 2*2 -> 70 * 70（= 两枚 2*1 + 间隙 5，或四枚 1*1）
+	twoOne, // 2*1 -> 70 * 32.5（= 两枚 1*1 + 间隙 5）
 	oneTwo, // 1*2 -> 10 * 70 仅限分割线（偏窄）
-	oneOne // 1*1 -> 32.5 * 32.5
+	oneOne // 1*1 -> 32.5 * 32.5（正方形）
 };
 enum class BarButtomPresetEnum : int
 {
