@@ -9,6 +9,7 @@ export module Inkeys.UI.Bar:Bottom;
 
 import :UI;
 import :State;
+import Inkeys.Other.Config;
 
 enum class BarButtomSizeEnum : int
 {
@@ -110,11 +111,22 @@ public:
 	BarButtomStateClass* state;
 };
 
-struct BarButtonRegistrationClass
-{
-	BarButtomClass* button = nullptr;
-	bool allowMultiple = false;
-};
+enum class BarButtonLayoutZoneEnum : int
+	{
+		FixedA1,
+		Extension,
+		FixedA2
+	};
+
+	struct BarButtonRegistrationClass
+	{
+		BarButtomClass* button = nullptr;
+		bool allowMultiple = false;
+		BarButtonLayoutZoneEnum zone = BarButtonLayoutZoneEnum::Extension;
+		// 注册时写死的默认尺寸/用户显隐；A 区配置不可改 Visible，Size 本轮也纠正回这里。
+		BarButtomSizeEnum defaultSize = BarButtomSizeEnum::twoTwo;
+		bool defaultUserVisible = true;
+	};
 
 class BarButtomListClass
 {
@@ -178,18 +190,36 @@ public:
 	BarButtomClass* preset[40]{};
 
 public:
-	bool RegisterButton(const std::string& id, BarButtomClass* button, bool allowMultiple);
-	void PresetInitialization();
-	void StateUpdate();
-	void UpdateDrawButtonStyle();
+bool RegisterButton(
+			const std::string& id,
+			BarButtomClass* button,
+			bool allowMultiple,
+			BarButtonLayoutZoneEnum zone,
+			bool defaultUserVisible = true);
+		void PresetInitialization();
+		void StateUpdate();
+		void UpdateDrawButtonStyle();
 
-	void Load();
+		void Load();
 
-protected:
-	bool TryGetRegistration(const std::string& id, BarButtonRegistrationClass& outRegistration) const;
-	void PresetHoming();
-	void CalcState();
+	protected:
+		bool TryGetRegistration(const std::string& id, BarButtonRegistrationClass& outRegistration) const;
+		void PresetHoming();
+		void CalcState();
+		static Inkeys::BarButtonSizeKind ToConfigSize(BarButtomSizeEnum size);
+		static BarButtomSizeEnum ToRuntimeSize(Inkeys::BarButtonSizeKind size);
+		static bool IsExactFixedZonePermutation(
+			const std::vector<Inkeys::BarFixedButtonLayoutEntry>& configured,
+			const std::vector<Inkeys::BarFixedButtonLayoutEntry>& defaults);
+		std::vector<Inkeys::BarFixedButtonLayoutEntry> NormalizeFixedZone(
+			const std::vector<Inkeys::BarFixedButtonLayoutEntry>& configured,
+			const std::vector<Inkeys::BarFixedButtonLayoutEntry>& defaults,
+			BarButtonLayoutZoneEnum zone);
+		std::vector<Inkeys::BarExtensionButtonLayoutEntry> NormalizeExtensionZone(
+			const std::vector<Inkeys::BarExtensionButtonLayoutEntry>& configured);
+		void AppendFixedButtons(const std::vector<Inkeys::BarFixedButtonLayoutEntry>& entries);
+		void AppendExtensionButtons(const std::vector<Inkeys::BarExtensionButtonLayoutEntry>& entries);
 
-	mutable shared_mutex registrationMutex;
-	unordered_map<std::string, BarButtonRegistrationClass> registrations;
-};
+		mutable shared_mutex registrationMutex;
+		unordered_map<std::string, BarButtonRegistrationClass> registrations;
+	};

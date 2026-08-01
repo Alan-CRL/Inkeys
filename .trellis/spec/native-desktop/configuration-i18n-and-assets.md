@@ -34,56 +34,74 @@
 4. JSON key 改名属于持久化格式变化；没有迁移代码时不能假设旧 key 会自动升级。
 5. 记录设置窗口写的是哪套配置，避免 UI 显示值、运行时缓存与磁盘文件分叉。
 
-## UI3 Bar 顺序布局配置合同
+## UI3 Bar 分区布局配置合同
 
 ### 1. Scope / Trigger
 
-修改 `UI.Bar.ButtonLayout`、配置顺序序列 codec、UI3 Bar 按钮注册或有效可见性时适用。该合同不包含设置界面的拖拽排序/显隐编辑。
+修改 `UI.Bar.FixedButtonsA1` / `ExtensionButtons` / `FixedButtonsA2`、布局序列 codec、UI3 Bar 按钮注册、默认尺寸/显隐或 `Load()` 规范化时适用。该合同不包含设置界面的拖拽排序/显隐/改尺寸编辑。
 
 ### 2. Signatures
 
 - `ConfigSequence<T>::Snapshot() -> std::vector<T>`
 - `ConfigSequence<T>::Replace(std::vector<T>) -> void`
 - `ConfigSequenceAdapter<T>::ElementType / Snapshot(...) / Replace(...)`
-- `BarButtomSetClass::RegisterButton(const std::string&, BarButtomClass*, bool allowMultiple) -> bool`
+- `BarButtomSetClass::RegisterButton(id, button, allowMultiple, zone, defaultUserVisible=true) -> bool`
+- `BarButtomSetClass::Load() -> void`
 
 ### 3. Contracts
 
-- JSON 路径为 `UI.Bar.ButtonLayout`，值为顺序数组；元素格式固定为 `{ "Id": string, "Visible": bool }`，`Visible` 缺省为 `true`。
-- `ConfigSequence<T>` 的快照在共享锁下生成；JSON 先完整解析到临时集合，成功后才在独占锁下整体替换。
-- 官方 ID 定义在 `Inkeys::BarButtonId`，当前仅 `Inkeys.Bar.Divider` 允许重复；Redo 没有运行时对象，不进入默认数组。
-- Bar 按数组顺序加载。已注册单例只取第一条，后续重复项从内存配置移除；未知 ID（包括重复项）原样保留但不渲染。
-- `BarButtomClass::IsVisible()` 是唯一消费入口，结果为配置 `userVisible` 且运行时上下文 `hide` 为 false。
+- JSON 路径：
+  - `UI.Bar.FixedButtonsA1`：`{ "Id": string, "Size": "twoTwo"|"twoOne"|"oneTwo"|"oneOne" }[]`
+  - `UI.Bar.ExtensionButtons`：`{ "Id": string, "Size": ..., "Visible": bool }[]`，`Visible` 缺省 `true`
+  - `UI.Bar.FixedButtonsA2`：同 A1 元素形态
+- 运行时渲染顺序恒为 `normalize(A1) + normalize(B) + normalize(A2)`。
+- **按钮 ID 命名**：
+  - 官方按钮必须以 `Inkeys.` 开头，当前形如 `Inkeys.Bar.Select`。
+  - 扩展/插件/组件按钮**不得**使用 `Inkeys.` 前缀，且必须为点分 ID：至少两段，形如 `xxx.xxx` 或 `xxx.xxx.xxx`（不允许首尾 `.` 或空段）。
+  - `RegisterButton` 按分区强制上述规则；B 区规范化时丢弃官方前缀 ID 与非法点分格式。
+- A1 默认 required：Select, Draw, Eraser, Geometry, Recall, Clean, Divider。
+- A2 默认 required：Pierce, Freeze, Setting。
+- A1/A2 **严校验**：配置 Id 多重集合必须恰好等于该区 required 默认集合；缺项、多余/错区 ID、非法重复、字段类型错误 → **仅该区**重置为默认顺序。不做逐项补洞。
+- A 区不持久化用户 Visible；A 元素若误带 `Visible` 则忽略并剥离写回。A 的默认 `userVisible` 仅来自注册写死值（Geometry 默认 false）。
+- `Size` 本轮只镜像注册默认；缺省/非法/非默认均纠正为注册默认并写回，**不**因 Size 触发 A 区整区重置。后续设置 UI 可开放用户改 Size。
+- B 区：顺序 + Visible；符合扩展 ID 规则的未知/已卸载插件 ID **永久保留**且不渲染；`Inkeys.*` 与非法 ID 格式误入 B 时剔除；已注册扩展单例只取第一条。
+- 旧 `UI.Bar.ButtonLayout` 单数组：仅当三个新字段都缺失时拆分迁移；迁移后 A 仍走严校验，B 保留扩展项 Visible。
+- 发版新增 A 区 required 官方按钮：旧配置缺新 ID → 该 A 区整区重置默认；不猜测新按钮插入点。
+- `ConfigSequence<T>` 快照在共享锁下生成；JSON 先完整解析到临时集合，成功后才在独占锁下整体替换。
+- `BarButtomClass::IsVisible()` 是唯一消费入口：`userVisible && !hide`。`PresetHoming` 等运行时仍可临时改 Freeze 尺寸或上下文 `hide`。
 
 ### 4. Validation & Error Matrix
 
 | 输入/状态 | 行为 |
 | --- | --- |
-| 字段缺失 | 保留 schema 默认布局 |
-| 字段不是数组 | 整个字段回退默认布局 |
-| 元素不是对象，或 `Id` 缺失/空 | 整个字段回退默认布局 |
-| `Visible` 缺失 | 读取为 `true` |
-| `Visible` 不是 bool | 整个字段回退默认布局 |
-| 已注册单例重复 | 第一条生效，后续项从内存序列移除 |
-| 未注册 ID 重复 | 全部保留，不创建 UI |
+| A1/A2 字段缺失 | schema 默认该区 |
+| A1/A2 不是数组 / 元素无合法 Id | 配置读失败则保留默认；Load 再严校验 |
+| A1/A2 Id 集合不是 required 恰好排列 | 该区重置默认顺序并写回 |
+| A 元素带 `Visible` | 忽略剥离，不整区重置 |
+| A/B `Size` 缺省/非法/非注册默认 | 纠正为注册默认，不因 Size 重置 A |
+| B `Visible` 缺失 | `true` |
+| B `Visible` 不是 bool | 整个 ExtensionButtons 字段回退默认（空数组） |
+| B 含 `Inkeys.*` 或非点分/空段 Id | 剔除 |
+| B 未知插件 Id（合法扩展点分格式） | 保留不渲染 |
+| 旧 `ButtonLayout` 且无新字段 | 拆到 A1/B/A2 后继续上述规则 |
+| 已有任一新字段 | 不再读旧 `ButtonLayout` |
 
 ### 5. Good / Base / Bad Cases
 
-- Good：自定义顺序、隐藏项和多个 Divider 均按数组顺序生效。
-- Base：旧配置没有字段时使用 Select、Draw、Eraser、Geometry(hidden)、Recall、Clean、Divider、Pierce、Freeze、Setting。
-- Bad：数组任一元素 schema 错误时，不得保留此前已解析的部分结果。
+- Good：仅打乱 A1 顺序后启动，顺序保留；B 中插件隐藏后重装仍在原位。
+- Base：无新区字段时 A1/A2 默认序，Geometry 注册默认隐藏，B 为空。
+- Bad：A1 缺少 Geometry 或混入 Pierce → A1 整区回默认，A2/B 不动。
 
 ### 6. Tests Required
 
-- 验证缺字段、空数组、调整顺序、隐藏项、多个 Divider。
-- 验证单例重复在内存中被清理，下一次 `Config::Write()` 后从 JSON 消失。
-- 验证未知及重复未知 ID 均被保留，`configOnce = config` 后序列内容一致。
-- 执行 `git diff --check` 和完整 Solution `Debug|ARM64` 构建；仓库没有对应自动化测试时，需明确记录未做 UI 运行验证。
+- 验证 A 缺项/错区重置、Size 纠正、A 误带 Visible 剥离、B 未知 ID 保留、官方 ID 误入 B 剔除。
+- 验证旧 `ButtonLayout` 迁移与 `configOnce = config` 后三区一致。
+- 执行 `git diff --check` 和完整 Solution `Debug|ARM64` 构建；无自动化 UI 测试时记录未做运行验证。
 
 ### 7. Wrong vs Correct
 
-- Wrong：逐个解析元素时直接修改运行时容器，或让布局/命中继续直接读取 `hide`。
-- Correct：先完整解析并事务替换；所有布局、动画、悬停、命中和隐藏锚点统一调用 `IsVisible()`。
+- Wrong：继续用单数组表达固定区+插件区，或 A 缺项时猜测插入点补洞。
+- Correct：三区分存；A 非法整区重置；运行时始终 A1+B+A2；布局/命中统一 `IsVisible()`。
 
 ## 国际化源与生成物
 
