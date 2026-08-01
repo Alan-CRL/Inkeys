@@ -2923,24 +2923,33 @@ void BarUISetClass::Rendering()
 				thicknessSliderCenterDiameter,
 				BarThicknessSliderPressAnimationDur,
 				nullopt, false, thicknessSliderStateCurve);
-			if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
-			{
-				double penThickness = max(0.0f, GetPenWidth());
-				double penPreviewMorph =
-					PenModeUsesCurvedThicknessPreview(stateMode.Pen.ModeSelect)
-					? 0.0
-					: (stateMode.Pen.ModeSelect
-						== PenModeSelectEnum::IdtPenHighlighter1 ? 1.0 : 0.0);
-				if (!drawAttributePenThicknessInitialized)
+if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 				{
-					// 首次进入绘制模式时先同步真实粗细，避免稍后展开属性栏仍显示 0 → 默认值。
-					drawAttributePenThickness.SetDirect(penThickness);
-					drawAttributePenThicknessInitialized = true;
-				}
-				else if (barState.drawAttributeBar.thicknessSliderDragging)
-					// 拖动反馈必须跟手，结束后再恢复普通粗细过渡。
-					drawAttributePenThickness.SetDirect(penThickness);
-				else drawAttributePenThickness.SetTar(penThickness, operationDur);
+					// 真实粗细仍只在抬起提交；拖动中数字即时显示候选值，抬手后恢复普通动画。
+					double penThickness = max(0.0f, GetPenWidth());
+					bool thicknessSliderDragging =
+						barState.drawAttributeBar.thicknessSliderDragging;
+					if (thicknessSliderDragging)
+					{
+						penThickness = max(0.0f,
+							static_cast<float>(barState.drawAttributeBar
+								.thicknessSliderCandidateWidth));
+					}
+					double penPreviewMorph =
+						PenModeUsesCurvedThicknessPreview(stateMode.Pen.ModeSelect)
+						? 0.0
+						: (stateMode.Pen.ModeSelect
+							== PenModeSelectEnum::IdtPenHighlighter1 ? 1.0 : 0.0);
+					if (!drawAttributePenThicknessInitialized)
+					{
+						// 首次进入绘制模式时先同步真实粗细，避免稍后展开属性栏仍显示 0 → 默认值。
+						drawAttributePenThickness.SetDirect(penThickness);
+						drawAttributePenThicknessInitialized = true;
+					}
+					else if (thicknessSliderDragging)
+						// 拖动中数字跟手，不走过渡动画。
+						drawAttributePenThickness.SetDirect(penThickness);
+					else drawAttributePenThickness.SetTar(penThickness, operationDur);
 				if (!drawAttributePenPreviewMorphInitialized)
 				{
 					drawAttributePenPreviewMorph.SetDirect(penPreviewMorph);
@@ -4206,12 +4215,13 @@ void BarUISetClass::Rendering()
 						thicknessDisplay->color.SetTar(
 							GetThemeColor(BarThemeColorEnum::TextPrimary));
 
-						bool brushMode =
-							stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1;
-						int displayedThickness = static_cast<int>(lround(clamp(
-							static_cast<double>(drawAttributePenThickness.val),
-							0.0, 999.0)));
-						auto ConfigureThicknessButton = [&](BarUISetShapeEnum shapeType,
+bool brushMode =
+								stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1;
+							// 预设选中只看真实粗细；左下角数字由动画值驱动。
+							int actualThickness = static_cast<int>(lround(clamp(
+								static_cast<double>(max(0.0f, GetPenWidth())),
+								0.0, 999.0)));
+							auto ConfigureThicknessButton = [&](BarUISetShapeEnum shapeType,
 							shared_ptr<BarUiWordClass> numberWord, double x, bool visible,
 							bool selected, bool pressed,
 							IdtAtomic<BarButtomHoverStageEnum>& hoverStage,
@@ -4303,11 +4313,11 @@ void BarUISetClass::Rendering()
 							auto numberWord = wordMap[presetWords[i]];
 							wstring numberText = to_wstring(presetPx);
 							numberWord->content.SetTar(numberText);
-							ConfigureThicknessButton(presetShapes[i], numberWord,
-								100.0 + static_cast<double>(i) * 35.0,
-								barState.drawAttribute && brushMode,
-								displayedThickness == presetPx, *presetPresses[i],
-								*presetHoverStages[i], *presetPressScales[i]);
+ConfigureThicknessButton(presetShapes[i], numberWord,
+									100.0 + static_cast<double>(i) * 35.0,
+									barState.drawAttribute && brushMode,
+									actualThickness == presetPx, *presetPresses[i],
+									*presetHoverStages[i], *presetPressScales[i]);
 						}
 						bool adjustVisible = barState.drawAttribute
 							&& (brushMode || stateMode.Pen.ModeSelect
@@ -5033,14 +5043,15 @@ void BarUISetClass::Rendering()
 			&drawAttributeThicknessMediumHoverStage,
 			&drawAttributeThicknessCoarseHoverStage,
 		};
-		bool brushMode = stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1;
-		int displayedThickness = static_cast<int>(lround(clamp(
-			static_cast<double>(drawAttributePenThickness.val), 0.0, 999.0)));
-		for (size_t i = 0; i < 3; ++i)
-		{
-			auto shape = shapeMap[thicknessPresetShapes[i]];
-			bool selected = displayedThickness
-				== GetBarBrushThicknessPresetPx(i, barStyle.dpiZoom);
+bool brushMode = stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1;
+			// 悬停动画同样只按真实粗细判断预设选中，避免拖动候选值误亮按钮。
+			int actualThickness = static_cast<int>(lround(clamp(
+				static_cast<double>(max(0.0f, GetPenWidth())), 0.0, 999.0)));
+			for (size_t i = 0; i < 3; ++i)
+			{
+				auto shape = shapeMap[thicknessPresetShapes[i]];
+				bool selected = actualThickness
+					== GetBarBrushThicknessPresetPx(i, barStyle.dpiZoom);
 			UpdateHoverAnimation(shape->pct, &shape->fill.value(),
 				*thicknessPresetHoverStages[i], barState.drawAttribute && brushMode, !selected);
 		}

@@ -24,7 +24,7 @@
 - 非拖动时圆点位置使用 `clamp((GetPenWidth()-min)/(max-min), 0, 1)`，拖动时把分子替换为原子候选值；范围外值只影响圆点显示钳制，不调用 `SetPenWidth()`。
 - 按下时记录屏幕坐标 `pressScreenX`、起始粗细、起始笔型，以及圆点中心可达的滑轨屏幕左右端点。未发生水平移动时保留起始候选值，只按点击固定处理。
 - 首次发生水平移动后，拖动值为 `min + (screenX-trackStartScreenX) / trackTravelScreenX × (max-min)`，随后钳制并四舍五入到整数设备像素；圆点直接跟随指针/触点在滑轨上的绝对投影。
-- 拖动中把整数候选值写入 `IdtAtomic<float>`，渲染线程只用它计算圆点归一化位置，不调用 `SetPenWidth()`，也不让候选值进入文字、预设按钮或超限判断。正常抬起且笔型未变化时，若候选值不同于起始值，只调用一次 `SetPenWidth(finalValue, true)`。
+- 拖动中把整数候选值写入 `IdtAtomic<float>`，渲染线程用它计算圆点归一化位置，并把 `drawAttributePenThickness` 以 `SetDirect` 同步到候选值，使左下角“粗细”数字即时显示准确值；仍不调用 `SetPenWidth()`，超限判断继续读真实值。正常抬起且笔型未变化时，若候选值不同于起始值，只调用一次 `SetPenWidth(finalValue, true)`，之后 `drawAttributePenThickness` 恢复 `SetTar` 动画过渡。
 
 ## 输入捕获与命中优先级
 
