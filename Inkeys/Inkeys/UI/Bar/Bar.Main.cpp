@@ -110,11 +110,14 @@ constexpr double BarBorderFrameDiffuseOpacity = 0.30;
 constexpr double BarBorderPenDiffuseOpacity = 0.20;
 constexpr double BarColorSwatchFrameOpacity = 0.18;
 constexpr double BarColorPickerPanelWidth = 300.0;
-constexpr double BarColorPickerPanelHeight = 226.0;
+constexpr double BarColorPickerPanelHeight = 222.0;
 constexpr double BarColorPickerPaletteInset = 12.0;
 constexpr double BarColorPickerPaletteTop = 48.0;
 constexpr double BarColorPickerPaletteWidth = 276.0;
 constexpr double BarColorPickerPaletteHeight = 132.0;
+// 与粗细快速调节按钮同高（30px），顶部色系/预览/关闭共用。
+constexpr double BarColorPickerChromeHeight = 30.0;
+constexpr double BarColorPickerChromeTop = 8.0;
 constexpr double BarColorPickerPanelGap = BarDrawAttributeGap * 2.0;
 constexpr double BarColorPickerKeyboardStepDip = 2.0;
 constexpr double BarColorPickerHoldStillnessPx = 5.0;
@@ -6257,14 +6260,16 @@ double closeButtonSize =
 			paletteWidth, paletteHeight);
 		pickerPalette->rw->SetDirect(pickerControlRadius);
 		pickerPalette->rh->SetDirect(pickerControlRadius);
+		// 顶部色系/预览/关闭与粗细快速调节按钮同高（30px）。
+		double chromeHeight = BarColorPickerChromeHeight * pickerScale;
+		double chromeTop = pickerTop + BarColorPickerChromeTop * pickerScale;
 		// 色系/关闭按钮只更新几何，pct 交给悬停与按压状态机，避免每帧 SetDirect 冲掉动画。
-		pickerToneHit->w.SetDirect(68.0 * pickerScale);
-		pickerToneHit->h.SetDirect(28.0 * pickerScale);
+		pickerToneHit->w.SetDirect(64.0 * pickerScale);
+		pickerToneHit->h.SetDirect(chromeHeight);
 		pickerToneHit->rw->SetDirect(pickerControlRadius);
 		pickerToneHit->rh->SetDirect(pickerControlRadius);
 		pickerToneHit->UpInh(BarUiInheritClass(
-			pickerLeft + 12.0 * pickerScale,
-			pickerTop + 10.0 * pickerScale));
+			pickerLeft + 12.0 * pickerScale, chromeTop));
 		if (!barState.drawAttributeBar.colorPickerOpen)
 			pickerToneHit->pct.SetTar(0.0);
 		else if (barState.drawAttributeBar.colorPickerTonePress)
@@ -6278,13 +6283,13 @@ double closeButtonSize =
 			BarUiDefaultOperationDur, nullopt, false,
 			barState.drawAttributeBar.colorPickerTonePress
 				? buttonPressCurve : buttonReleaseCurve);
-		pickerCloseHit->w.SetDirect(28.0 * pickerScale);
-		pickerCloseHit->h.SetDirect(28.0 * pickerScale);
+		pickerCloseHit->w.SetDirect(chromeHeight);
+		pickerCloseHit->h.SetDirect(chromeHeight);
 		pickerCloseHit->rw->SetDirect(pickerControlRadius);
 		pickerCloseHit->rh->SetDirect(pickerControlRadius);
 		pickerCloseHit->UpInh(BarUiInheritClass(
-			pickerLeft + pickerWidth - 38.0 * pickerScale,
-			pickerTop + 10.0 * pickerScale));
+			pickerLeft + pickerWidth - 12.0 * pickerScale - chromeHeight,
+			chromeTop));
 		if (!barState.drawAttributeBar.colorPickerOpen)
 			pickerCloseHit->pct.SetTar(0.0);
 		else if (barState.drawAttributeBar.colorPickerClosePress)
@@ -6304,24 +6309,31 @@ double closeButtonSize =
 		pickerToneWord->content.SetVal(
 			barState.drawAttributeBar.colorPickerDarkTone ? L"暗色系" : L"亮色系");
 		pickerToneWord->content.SetTar(pickerToneWord->content.GetVal());
-		pickerToneWord->w.SetDirect(68.0 * pickerScale);
-		pickerToneWord->h.SetDirect(28.0 * pickerScale);
+		// 与笔类型按钮文字一致：12px 常规字重。
+		pickerToneWord->w.SetDirect(pickerToneHit->w.val);
+		pickerToneWord->h.SetDirect(chromeHeight);
 		pickerToneWord->size.SetDirect(12.0 * pickerScale);
 		pickerToneWord->pct.SetDirect(pickerOpacity);
 		pickerToneWord->UpInh(BarUiInheritClass(
 			pickerToneHit->inhX, pickerToneHit->inhY));
 
-		COLORREF pickerColor = GetPenColor() & 0x00FFFFFF;
+		COLORREF pickerColorFull = GetPenColor();
+		COLORREF pickerColor = pickerColorFull & 0x00FFFFFF;
+		int pickerAlphaPct = static_cast<int>(lround(
+			clamp(static_cast<double>(GetAValue(pickerColorFull)) * 100.0 / 255.0,
+				0.0, 100.0)));
 		auto pickerRgbWord = wordMap[
 			BarUISetWordEnum::DrawAttributeBar_ColorPickerRgb];
+		// 与“粗细”行一致：13px 常规字重；透明度按 inkeys2 实际绘制 alpha 显示为 0%–100%。
 		wstring pickerRgbText = L"R " + to_wstring(GetRValue(pickerColor))
 			+ L"    G " + to_wstring(GetGValue(pickerColor))
-			+ L"    B " + to_wstring(GetBValue(pickerColor));
+			+ L"    B " + to_wstring(GetBValue(pickerColor))
+			+ L"    透明度 " + to_wstring(pickerAlphaPct) + L"%";
 		pickerRgbWord->content.SetVal(pickerRgbText);
 		pickerRgbWord->content.SetTar(pickerRgbText);
 		pickerRgbWord->w.SetDirect(paletteWidth);
-		pickerRgbWord->h.SetDirect(28.0 * pickerScale);
-		pickerRgbWord->size.SetDirect(12.0 * pickerScale);
+		pickerRgbWord->h.SetDirect(22.0 * pickerScale);
+		pickerRgbWord->size.SetDirect(13.0 * pickerScale);
 		pickerRgbWord->pct.SetDirect(pickerOpacity);
 		pickerRgbWord->UpInh(BarUiInheritClass(
 			paletteLeft, paletteTop + paletteHeight + 6.0 * pickerScale));
@@ -7759,9 +7771,10 @@ auto annotationInfo = svgMap[
 						}
 						spec.Shape(barDeviceContext.Get(), *toneHit,
 							BarUiInheritClass(toneHit->inhX, toneHit->inhY));
+						// 与笔类型按钮一致，使用常规字重。
 						spec.Word(barDeviceContext.Get(), *toneWord,
 							BarUiInheritClass(toneWord->inhX, toneWord->inhY),
-							DWRITE_FONT_WEIGHT_SEMI_BOLD);
+							DWRITE_FONT_WEIGHT_NORMAL);
 						if (toneTransformChanged)
 							barDeviceContext->SetTransform(pickerButtonTransform);
 
@@ -10897,7 +10910,7 @@ namespace Inkeys::UI::Bar
 							L"亮色系", 12.0);
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerRgb,
-							L"R 0    G 0    B 0", 12.0);
+							L"R 0    G 0    B 0    透明度 100%", 13.0);
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerHoldLabel,
 							L"保持并固定颜色", 12.0);
