@@ -817,10 +817,12 @@ namespace Inkeys
 				visible = jsonValue["Visible"].asBool();
 			}
 
+// 旧布局中的 Divider 不迁入三区配置；交界分割线改由运行时注入。
+			if (IsRuntimeBoundaryDividerId(id)) continue;
 			if (IsFixedButtonsA1Id(id)) fixedA1Json.append(makeFixedObject(id));
 			else if (IsFixedButtonsA2Id(id)) fixedA2Json.append(makeFixedObject(id));
 			else extensionJson.append(makeExtensionObject(id, visible));
-		}
+			}
 
 		// 迁移结果写回文档节点；A 区是否合法由后续 Load 严校验决定。
 		barNode["FixedButtonsA1"] = fixedA1Json;

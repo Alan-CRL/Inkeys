@@ -470,6 +470,7 @@ void BarButtomSetClass::PresetInitialization()
 	RegisterButton(Inkeys::BarButtonId::Geometry, preset[(int)BarButtomPresetEnum::Geometry], false, BarButtonLayoutZoneEnum::FixedA1, false);
 	RegisterButton(Inkeys::BarButtonId::Recall, preset[(int)BarButtomPresetEnum::Recall], false, BarButtonLayoutZoneEnum::FixedA1);
 	RegisterButton(Inkeys::BarButtonId::Clean, preset[(int)BarButtomPresetEnum::Clean], false, BarButtonLayoutZoneEnum::FixedA1);
+	// Divider 不进 A1 配置 required 集；仅作运行时交界注入模板（可多实例拷贝）。
 	RegisterButton(Inkeys::BarButtonId::Divider, preset[(int)BarButtomPresetEnum::Divider], true, BarButtonLayoutZoneEnum::FixedA1);
 	RegisterButton(Inkeys::BarButtonId::Pierce, preset[(int)BarButtomPresetEnum::Pierce], false, BarButtonLayoutZoneEnum::FixedA2);
 	RegisterButton(Inkeys::BarButtonId::Freeze, preset[(int)BarButtomPresetEnum::Freeze], false, BarButtonLayoutZoneEnum::FixedA2);
@@ -544,14 +545,25 @@ std::vector<Inkeys::BarFixedButtonLayoutEntry> BarButtomSetClass::NormalizeFixed
 	const std::vector<Inkeys::BarFixedButtonLayoutEntry>& defaults,
 	BarButtonLayoutZoneEnum zone)
 {
+	// 固定区配置不含交界 Divider；旧配置里的 Divider 先剥离再严校验。
+	std::vector<Inkeys::BarFixedButtonLayoutEntry> configuredWithoutDivider;
+	configuredWithoutDivider.reserve(configured.size());
+	for (const Inkeys::BarFixedButtonLayoutEntry& entry : configured)
+	{
+		if (Inkeys::IsRuntimeBoundaryDividerId(entry.Id)) continue;
+		configuredWithoutDivider.push_back(entry);
+	}
+
 	// 严校验：必须是该区 required 集合的恰好排列，否则整区回默认。
 	std::vector<Inkeys::BarFixedButtonLayoutEntry> source =
-		IsExactFixedZonePermutation(configured, defaults) ? configured : defaults;
+		IsExactFixedZonePermutation(configuredWithoutDivider, defaults) ? configuredWithoutDivider : defaults;
 
 	std::vector<Inkeys::BarFixedButtonLayoutEntry> normalized;
 	normalized.reserve(source.size());
 	for (const Inkeys::BarFixedButtonLayoutEntry& entry : source)
 	{
+		if (Inkeys::IsRuntimeBoundaryDividerId(entry.Id)) continue;
+
 		BarButtonRegistrationClass registration;
 		if (!TryGetRegistration(entry.Id, registration)) continue;
 		if (registration.zone != zone) continue;
@@ -565,6 +577,7 @@ std::vector<Inkeys::BarFixedButtonLayoutEntry> BarButtomSetClass::NormalizeFixed
 		normalized.clear();
 		for (const Inkeys::BarFixedButtonLayoutEntry& entry : defaults)
 		{
+			if (Inkeys::IsRuntimeBoundaryDividerId(entry.Id)) continue;
 			normalized.push_back({ entry.Id, entry.Size });
 		}
 	}
@@ -589,6 +602,14 @@ std::vector<Inkeys::BarExtensionButtonLayoutEntry> BarButtomSetClass::NormalizeE
 		{
 			if (registration.zone != BarButtonLayoutZoneEnum::Extension) continue;
 			if (!registration.allowMultiple && !loadedSingletons.emplace(entry.Id).second) continue;
+
+			// 配置中相邻分割线只保留一条（扩展区若未来出现同类装饰项时同样适用）。
+			if (!normalized.empty()
+				&& Inkeys::IsRuntimeBoundaryDividerId(normalized.back().Id)
+				&& Inkeys::IsRuntimeBoundaryDividerId(entry.Id))
+			{
+				continue;
+			}
 
 			normalized.push_back({
 				entry.Id,
@@ -645,9 +666,57 @@ void BarButtomSetClass::AppendExtensionButtons(const std::vector<Inkeys::BarExte
 	}
 }
 
+void BarButtomSetClass::AppendBoundaryDivider()
+{
+	BarButtonRegistrationClass registration;
+	if (!TryGetRegistration(Inkeys::BarButtonId::Divider, registration) || registration.button == nullptr)
+	{
+		return;
+	}
+
+	// 交界分割线强制可见，尺寸用注册默认；不写配置。
+	registration.button->userVisible = true;
+	registration.button->size = registration.defaultSize;
+
+	const int targetIndex = tot.load();
+	if (buttomlist.Set(targetIndex, registration.button)) tot = targetIndex + 1;
+}
+
+void BarButtomSetClass::CollapseAdjacentRuntimeDividers()
+{
+	const int count = tot.load();
+	if (count <= 1) return;
+
+	std::vector<BarButtomClass*> collapsed;
+	collapsed.reserve(static_cast<size_t>(count));
+
+	for (int index = 0; index < count; index++)
+	{
+		BarButtomClass* button = buttomlist.Get(index);
+		if (button == nullptr) continue;
+
+		if (!collapsed.empty()
+			&& collapsed.back() != nullptr
+			&& Inkeys::IsRuntimeBoundaryDividerId(collapsed.back()->id)
+			&& Inkeys::IsRuntimeBoundaryDividerId(button->id))
+		{
+			// 相邻分割线只保留第一个。
+			continue;
+		}
+		collapsed.push_back(button);
+	}
+
+	tot = 0;
+	for (BarButtomClass* button : collapsed)
+	{
+		const int targetIndex = tot.load();
+		if (buttomlist.Set(targetIndex, button)) tot = targetIndex + 1;
+	}
+}
+
 void BarButtomSetClass::Load()
 {
-	// 运行时顺序恒为 A1 + B + A2。
+	// 配置顺序：A1 + B + A2；运行时在 A1|B 与 B|A2 交界注入分割线（不写配置）。
 	const std::vector<Inkeys::BarFixedButtonLayoutEntry> defaultA1 =
 		Inkeys::MakeDefaultFixedButtonsA1().Snapshot();
 	const std::vector<Inkeys::BarFixedButtonLayoutEntry> defaultA2 =
@@ -666,9 +735,14 @@ void BarButtomSetClass::Load()
 
 	tot = 0;
 	AppendFixedButtons(normalizedA1);
+	AppendBoundaryDivider(); // A1 | B
 	AppendExtensionButtons(normalizedB);
+	AppendBoundaryDivider(); // B | A2
 	AppendFixedButtons(normalizedA2);
+	// B 为空时两个交界分割线相邻，全局折叠为一条。
+	CollapseAdjacentRuntimeDividers();
 
+	// 写回仅三区配置；交界 Divider 永不进入 schema 字段。
 	Inkeys::config.UI.Bar.FixedButtonsA1.Replace(std::move(normalizedA1));
 	Inkeys::config.UI.Bar.ExtensionButtons.Replace(std::move(normalizedB));
 	Inkeys::config.UI.Bar.FixedButtonsA2.Replace(std::move(normalizedA2));

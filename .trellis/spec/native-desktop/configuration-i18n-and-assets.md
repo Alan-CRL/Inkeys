@@ -59,13 +59,15 @@
   - 官方按钮必须以 `Inkeys.` 开头，当前形如 `Inkeys.Bar.Select`。
   - 扩展/插件/组件按钮**不得**使用 `Inkeys.` 前缀，且必须为点分 ID：至少两段，形如 `xxx.xxx` 或 `xxx.xxx.xxx`（不允许首尾 `.` 或空段）。
   - `RegisterButton` 按分区强制上述规则；B 区规范化时丢弃官方前缀 ID 与非法点分格式。
-- A1 默认 required：Select, Draw, Eraser, Geometry, Recall, Clean, Divider。
+- A1 默认 required：Select, Draw, Eraser, Geometry, Recall, Clean（**不含 Divider**）。
 - A2 默认 required：Pierce, Freeze, Setting。
-- A1/A2 **严校验**：配置 Id 多重集合必须恰好等于该区 required 默认集合；缺项、多余/错区 ID、非法重复、字段类型错误 → **仅该区**重置为默认顺序。不做逐项补洞。
+- **交界分割线**：运行时在 `A1|B` 与 `B|A2` 各注入一条 `Inkeys.Bar.Divider`，**不写入**三区配置。B 为空时两条相邻，折叠为一条。
+- **相邻分割线全局规则**：运行时列表中相邻 Divider 只保留一条；配置侧若出现相邻 Divider 也只保留一条（交界 Divider 本身不进配置）。
+- A1/A2 **严校验**：配置 Id 多重集合必须恰好等于该区 required 默认集合；缺项、多余/错区 ID、非法重复、字段类型错误 → **仅该区**重置为默认顺序。不做逐项补洞。配置中的 Divider 在 A 区先剥离再校验。
 - A 区不持久化用户 Visible；A 元素若误带 `Visible` 则忽略并剥离写回。A 的默认 `userVisible` 仅来自注册写死值（Geometry 默认 false）。
 - `Size` 本轮只镜像注册默认；缺省/非法/非默认均纠正为注册默认并写回，**不**因 Size 触发 A 区整区重置。后续设置 UI 可开放用户改 Size。
 - B 区：顺序 + Visible；符合扩展 ID 规则的未知/已卸载插件 ID **永久保留**且不渲染；`Inkeys.*` 与非法 ID 格式误入 B 时剔除；已注册扩展单例只取第一条。
-- 旧 `UI.Bar.ButtonLayout` 单数组：仅当三个新字段都缺失时拆分迁移；迁移后 A 仍走严校验，B 保留扩展项 Visible。
+- 旧 `UI.Bar.ButtonLayout` 单数组：仅当三个新字段都缺失时拆分迁移；其中 Divider 丢弃不迁入；迁移后 A 仍走严校验，B 保留扩展项 Visible。
 - 发版新增 A 区 required 官方按钮：旧配置缺新 ID → 该 A 区整区重置默认；不猜测新按钮插入点。
 - `ConfigSequence<T>` 快照在共享锁下生成；JSON 先完整解析到临时集合，成功后才在独占锁下整体替换。
 - `BarButtomClass::IsVisible()` 是唯一消费入口：`userVisible && !hide`。`PresetHoming` 等运行时仍可临时改 Freeze 尺寸或上下文 `hide`。
@@ -83,8 +85,10 @@
 | B `Visible` 不是 bool | 整个 ExtensionButtons 字段回退默认（空数组） |
 | B 含 `Inkeys.*` 或非点分/空段 Id | 剔除 |
 | B 未知插件 Id（合法扩展点分格式） | 保留不渲染 |
-| 旧 `ButtonLayout` 且无新字段 | 拆到 A1/B/A2 后继续上述规则 |
+| 旧 `ButtonLayout` 且无新字段 | 拆到 A1/B/A2；Divider 不迁入，交界运行时注入 |
 | 已有任一新字段 | 不再读旧 `ButtonLayout` |
+| B 为空 | 运行时 A1 与 A2 之间仅一条交界分割线 |
+| 相邻两条 Divider（运行时/配置） | 只保留一条 |
 
 ### 5. Good / Base / Bad Cases
 

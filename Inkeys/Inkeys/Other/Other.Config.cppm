@@ -127,16 +127,21 @@ export namespace Inkeys
 			return BarButtonSizeKind::TwoTwo;
 		}
 
-		inline bool IsFixedButtonsA1Id(std::string_view id)
-		{
-			return id == BarButtonId::Select
-				|| id == BarButtonId::Draw
-				|| id == BarButtonId::Eraser
-				|| id == BarButtonId::Geometry
-				|| id == BarButtonId::Recall
-				|| id == BarButtonId::Clean
-				|| id == BarButtonId::Divider;
-		}
+inline bool IsFixedButtonsA1Id(std::string_view id)
+			{
+				// Divider 不进 A1 配置；仅在 A1|B / B|A2 交界由运行时注入。
+				return id == BarButtonId::Select
+					|| id == BarButtonId::Draw
+					|| id == BarButtonId::Eraser
+					|| id == BarButtonId::Geometry
+					|| id == BarButtonId::Recall
+					|| id == BarButtonId::Clean;
+			}
+
+			inline bool IsRuntimeBoundaryDividerId(std::string_view id)
+			{
+				return id == BarButtonId::Divider;
+			}
 
 		inline bool IsFixedButtonsA2Id(std::string_view id)
 		{
@@ -185,18 +190,17 @@ export namespace Inkeys
 			return IsDottedBarButtonId(id) && !IsOfficialBarButtonIdPrefix(id);
 		}
 
-		inline ConfigSequence<BarFixedButtonLayoutEntry> MakeDefaultFixedButtonsA1()
-		{
-			return {
-				{ BarButtonId::Select, BarButtonSizeKind::TwoTwo },
-				{ BarButtonId::Draw, BarButtonSizeKind::TwoTwo },
-				{ BarButtonId::Eraser, BarButtonSizeKind::TwoTwo },
-				{ BarButtonId::Geometry, BarButtonSizeKind::TwoTwo },
-				{ BarButtonId::Recall, BarButtonSizeKind::TwoTwo },
-				{ BarButtonId::Clean, BarButtonSizeKind::TwoTwo },
-				{ BarButtonId::Divider, BarButtonSizeKind::OneTwo },
-			};
-		}
+inline ConfigSequence<BarFixedButtonLayoutEntry> MakeDefaultFixedButtonsA1()
+			{
+				return {
+					{ BarButtonId::Select, BarButtonSizeKind::TwoTwo },
+					{ BarButtonId::Draw, BarButtonSizeKind::TwoTwo },
+					{ BarButtonId::Eraser, BarButtonSizeKind::TwoTwo },
+					{ BarButtonId::Geometry, BarButtonSizeKind::TwoTwo },
+					{ BarButtonId::Recall, BarButtonSizeKind::TwoTwo },
+					{ BarButtonId::Clean, BarButtonSizeKind::TwoTwo },
+				};
+			}
 
 		inline ConfigSequence<BarExtensionButtonLayoutEntry> MakeDefaultExtensionButtons()
 		{
