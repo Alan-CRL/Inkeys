@@ -117,9 +117,6 @@ constexpr double BarColorPickerPaletteTop = 48.0;
 constexpr double BarColorPickerPaletteWidth = 276.0;
 constexpr double BarColorPickerPaletteHeight = 132.0;
 constexpr double BarColorPickerPanelGap = 8.0;
-constexpr double BarColorPickerPreviewWidth = 112.0;
-constexpr double BarColorPickerPreviewHeight = 68.0;
-constexpr double BarColorPickerPreviewGap = 14.0;
 constexpr double BarColorPickerKeyboardStepDip = 2.0;
 constexpr double BarColorPickerHoldStillnessPx = 5.0;
 constexpr ULONGLONG BarColorPickerHoldHintDelayMs = 500;
@@ -6304,63 +6301,29 @@ auto annotationInfoHit = shapeMap[
 		pickerHoldWord->UpInh(BarUiInheritClass(
 			holdLeft + 8.0 * pickerScale, holdTop));
 
-		// 指针预览反向避让；键盘预览选择面板四周可用空间最大的一侧。
+		// 指针与键盘共用顶部预览槽：固定在「亮/暗色系」右侧、关闭按钮左侧。
 		double previewOpacity = clamp(static_cast<double>(
 			drawAttributeColorPickerPreviewOpacity.val), 0.0, 1.0);
 		double previewScale = 0.92 + 0.08 * previewOpacity;
-		double previewWidth = BarColorPickerPreviewWidth * previewScale;
-		double previewHeight = BarColorPickerPreviewHeight * previewScale;
-		double previewBubbleLeft = 0.0, previewBubbleTop = 0.0;
-		if (barState.drawAttributeBar.colorPickerPointerPressed
-			|| barState.drawAttributeBar.colorPickerPreviewFromPointer)
-		{
-			double pointerX = barState.drawAttributeBar.colorPickerPointerX;
-			double pointerY = barState.drawAttributeBar.colorPickerPointerY;
-			previewBubbleLeft = pointerX < paletteLeft + paletteWidth / 2.0
-				? pointerX + BarColorPickerPreviewGap
-				: pointerX - BarColorPickerPreviewGap - previewWidth;
-			previewBubbleTop = pointerY - previewHeight / 2.0;
-		}
-		else
-		{
-			double spaces[] = {
-				pickerLeft,
-				logicalWindowWidth - (pickerLeft + pickerWidth),
-				pickerTop,
-				logicalWindowHeight - (pickerTop + pickerHeight) };
-			int largestSide = static_cast<int>(max_element(
-				begin(spaces), end(spaces)) - begin(spaces));
-			switch (largestSide)
-			{
-			case 0:
-				previewBubbleLeft = pickerLeft - BarColorPickerPreviewGap - previewWidth;
-				previewBubbleTop = pickerTop + (pickerHeight - previewHeight) / 2.0;
-				break;
-			case 1:
-				previewBubbleLeft = pickerLeft + pickerWidth + BarColorPickerPreviewGap;
-				previewBubbleTop = pickerTop + (pickerHeight - previewHeight) / 2.0;
-				break;
-			case 2:
-				previewBubbleLeft = pickerLeft + (pickerWidth - previewWidth) / 2.0;
-				previewBubbleTop = pickerTop - BarColorPickerPreviewGap - previewHeight;
-				break;
-			default:
-				previewBubbleLeft = pickerLeft + (pickerWidth - previewWidth) / 2.0;
-				previewBubbleTop = pickerTop + pickerHeight + BarColorPickerPreviewGap;
-				break;
-			}
-		}
-		previewBubbleLeft = clamp(previewBubbleLeft, BarDrawAttributeGap,
-			max(BarDrawAttributeGap,
-				logicalWindowWidth - BarDrawAttributeGap - previewWidth));
-		previewBubbleTop = clamp(previewBubbleTop, BarDrawAttributeGap,
-			max(BarDrawAttributeGap,
-				logicalWindowHeight - BarDrawAttributeGap - previewHeight));
+		double previewSlotGap = 8.0 * pickerScale;
+		double previewSlotLeft = pickerToneHit->inhX
+			+ pickerToneHit->w.val + previewSlotGap;
+		double previewSlotRight = pickerCloseHit->inhX - previewSlotGap;
+		double previewSlotTop = pickerToneHit->inhY;
+		double previewSlotHeight = pickerToneHit->h.val;
+		double previewSlotWidth = max(0.0,
+			previewSlotRight - previewSlotLeft);
+		double previewWidth = previewSlotWidth * previewScale;
+		double previewHeight = previewSlotHeight * previewScale;
+		double previewBubbleLeft = previewSlotLeft
+			+ (previewSlotWidth - previewWidth) / 2.0;
+		double previewBubbleTop = previewSlotTop
+			+ (previewSlotHeight - previewHeight) / 2.0;
 		SetAbsoluteHit(pickerPreview, previewBubbleLeft, previewBubbleTop,
 			previewWidth, previewHeight);
 		pickerPreview->pct.SetDirect(previewOpacity);
-		pickerPreview->rw->SetDirect(12.0 * previewScale);
-		pickerPreview->rh->SetDirect(12.0 * previewScale);
+		pickerPreview->rw->SetDirect(7.0 * previewScale);
+		pickerPreview->rh->SetDirect(7.0 * previewScale);
 		pickerPreview->fill->SetDirect(
 			barState.drawAttributeBar.colorPickerPreviewColor);
 		auto previewRgbWord = wordMap[
@@ -6374,7 +6337,7 @@ auto annotationInfoHit = shapeMap[
 		previewRgbWord->content.SetTar(previewText);
 		previewRgbWord->w.SetDirect(previewWidth);
 		previewRgbWord->h.SetDirect(previewHeight);
-		previewRgbWord->size.SetDirect(13.0 * previewScale);
+		previewRgbWord->size.SetDirect(12.0 * previewScale);
 		previewRgbWord->pct.SetDirect(previewOpacity);
 		previewRgbWord->color.SetDirect(
 			GetBarReadableTextColor(previewColor));
@@ -8417,7 +8380,6 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			barState.drawAttributeBar.colorPickerKeyboardDownMask =
 				downMask | keyMask;
 			barState.drawAttributeBar.colorPickerKeyboardPreviewVisible = true;
-			barState.drawAttributeBar.colorPickerPreviewFromPointer = false;
 			bool previewTimerArmed = floating_window && IsWindow(floating_window)
 				&& SetTimer(floating_window,
 					BarColorPickerKeyboardPreviewTimerId,
@@ -8444,8 +8406,6 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						static_cast<double>(barStyle.zoom));
 					double logicalX = static_cast<double>(clientX) / zoom;
 					double logicalY = static_cast<double>(clientY) / zoom;
-					barState.drawAttributeBar.colorPickerPointerX =
-						static_cast<float>(logicalX);
 					barState.drawAttributeBar.colorPickerPointerY =
 						static_cast<float>(logicalY);
 					double markerX = clamp(
@@ -8500,7 +8460,6 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 
 			auto& picker = barState.drawAttributeBar;
 		picker.colorPickerPointerPressed = true;
-		picker.colorPickerPreviewFromPointer = true;
 		picker.colorPickerKeyboardPreviewVisible = false;
 		picker.colorPickerKeyboardDownMask = 0;
 		picker.colorPickerHoldHintActive = false;
