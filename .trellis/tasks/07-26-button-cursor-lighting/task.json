@@ -21,6 +21,9 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
-  "meta": {}
+  "notes": "主体实现已在代码中。用户决定：本任务稍后完成；在渲染管线重构前先做整体性能优化，再回来收口验收与归档。",
+  "meta": {
+    "defer": "complete-after-performance-pass",
+    "before": "08-01-render-pipeline-refactor"
+  }
 }

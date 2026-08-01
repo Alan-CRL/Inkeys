@@ -21,6 +21,9 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
-  "meta": {}
+  "notes": "调查任务本身仍可补 research 文档；其后续实施排在 08-01-render-pipeline-refactor（渲染管线重构）完成之后。",
+  "meta": {
+    "after": "08-01-render-pipeline-refactor"
+  }
 }
+
