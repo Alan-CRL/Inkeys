@@ -346,3 +346,24 @@ Reopened 07-28 and replaced single ButtonLayout with FixedButtonsA1/ExtensionBut
 ### Status
 
 [OK] **Completed**
+
+
+## Session 12: UI3 内置组件运行时投影
+
+**Date**: 2026-08-02
+**Task**: UI3 内置组件运行时投影
+**Branch**: `feature/animation`
+
+### Summary
+
+为 UI3 注册 16 个内置组件，支持 PNG 图标，并以 UI2 组件开关即时投影运行时 B 区；人工验收与 ARM64 Debug 构建通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9962a0f` | (see git log) |
+
+### Status
+
+[OK] **Completed**
