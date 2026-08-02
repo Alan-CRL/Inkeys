@@ -124,7 +124,7 @@ constexpr double BarColorPickerHoldStillnessPx = 5.0;
 constexpr ULONGLONG BarColorPickerHoldHintDelayMs = 500;
 constexpr ULONGLONG BarColorPickerHoldLockDelayMs = 1500;
 constexpr double BarColorPickerPanelAnimationDur = 0.20;
-constexpr double BarColorPickerPreviewAnimationDur = 0.16;
+constexpr double BarColorPickerHoldHintAnimationDur = 0.18;
 constexpr int BarBorderDiffuseCompositePasses = 2;
 // 标准差等于线宽时，1px 线源经过一维 Gaussian 后中心约保留 38.3%。
 constexpr double BarBorderGaussianCenterCoverage = 0.382924922548;
@@ -363,31 +363,36 @@ COLORREF ConvertBarColorPickerHsvToRgb(double hue, double saturation, double val
 	return RGB(Channel(red), Channel(green), Channel(blue));
 }
 
-COLORREF GetBarColorPickerColor(double x, double y, bool darkTone)
+COLORREF GetBarColorPickerColor(double x, double y, bool darkTone,
+	bool openBelowSwatch)
 {
 	x = x - floor(x);
 	y = clamp(y, 0.0, 1.0);
+	// 黑/白端始终远离入口；上下展开时只翻转纵向色义，不翻转内容。
+	double farProgress = openBelowSwatch ? y : 1.0 - y;
 	return darkTone
-		? ConvertBarColorPickerHsvToRgb(x, 1.0, 1.0 - y)
-		: ConvertBarColorPickerHsvToRgb(x, y, 1.0);
+		? ConvertBarColorPickerHsvToRgb(x, 1.0, 1.0 - farProgress)
+		: ConvertBarColorPickerHsvToRgb(x, 1.0 - farProgress, 1.0);
 }
 
 bool ProjectBarColorPickerColor(COLORREF color, bool darkTone,
-	double& x, double& y, bool& exact)
+	bool openBelowSwatch, double& x, double& y, bool& exact)
 {
 	BarColorPickerHsv hsv = ConvertBarColorPickerRgbToHsv(color);
 	x = hsv.hue;
+	double farProgress = 0.0;
 	if (darkTone)
 	{
-		y = 1.0 - hsv.value;
+		farProgress = 1.0 - hsv.value;
 		exact = hsv.saturation >= 1.0 - 0.5 / 255.0
 			|| hsv.value <= 0.5 / 255.0;
 	}
 	else
 	{
-		y = hsv.saturation;
+		farProgress = 1.0 - hsv.saturation;
 		exact = hsv.value >= 1.0 - 0.5 / 255.0;
 	}
+	y = openBelowSwatch ? farProgress : 1.0 - farProgress;
 	return true;
 }
 
@@ -3066,6 +3071,10 @@ BarUiValueClass drawAttributeAnnotationPopupProgress(0.0);
 		BarUiValueClass drawAttributeColorPickerProgress(0.0);
 		BarUiValueClass drawAttributeColorPickerToneMix(0.0);
 		BarUiValueClass drawAttributeColorPickerHoldOpacity(0.0);
+		BarUiValueClass drawAttributeColorPickerHoldRingOpacity(0.0);
+		BarUiValueClass drawAttributeColorPickerHoldTextMix(0.0);
+		bool drawAttributeColorPickerHoldTargetActive = false;
+		bool drawAttributeColorPickerHoldOnTop = true;
 		// 颜色选择器底部 R/G/B/透明度读数：拖动时直接跟手，其余情况与粗细数字一样走动画。
 		BarUiValueClass drawAttributeColorPickerDisplayR(0.0);
 		BarUiValueClass drawAttributeColorPickerDisplayG(0.0);
@@ -3267,6 +3276,14 @@ BarUiValueClass drawAttributeAnnotationPopupProgress(0.0);
 			bool drawAttributeSideSwitch = barState.drawAttribute
 				&& currentDrawAttributeSide != drawAttributeLayoutSide;
 			drawAttributeLayoutSide = currentDrawAttributeSide;
+			if (drawAttributeSideSwitch
+				&& barState.drawAttributeBar.colorPickerOpen
+				&& barState.drawAttributeBar.colorPickerMarkerVisible)
+			{
+				// 色板纵向语义随展开方向翻转，选点同步镜像以保持当前颜色不变。
+				barState.drawAttributeBar.colorPickerMarkerY = 1.0f
+					- static_cast<float>(barState.drawAttributeBar.colorPickerMarkerY);
+			}
 			bool currentDrawAttributeOpen = barState.drawAttribute;
 			bool drawAttributeVisibilityChange = currentDrawAttributeOpen != drawAttributeLayoutOpen;
 			drawAttributeLayoutOpen = currentDrawAttributeOpen;
@@ -3289,9 +3306,9 @@ BarUiValueClass drawAttributeAnnotationPopupProgress(0.0);
 			}
 			const BarUiCurveSpecClass colorPickerPanelCurve{
 				barState.drawAttributeBar.colorPickerOpen
-					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInCubic,
+					? BarUiCurveEnum::EaseOutCubic : BarUiCurveEnum::EaseInCubic,
 				barState.drawAttributeBar.colorPickerOpen
-					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInCubic,
+					? BarUiCurveEnum::EaseOutCubic : BarUiCurveEnum::EaseInCubic,
 				0.0, false };
 			drawAttributeColorPickerProgress.SetTar(
 				colorPickerAvailable
@@ -3301,22 +3318,32 @@ BarUiValueClass drawAttributeAnnotationPopupProgress(0.0);
 			drawAttributeColorPickerToneMix.SetTar(
 				barState.drawAttributeBar.colorPickerDarkTone ? 1.0 : 0.0,
 				BarColorPickerPanelAnimationDur);
-			drawAttributeColorPickerHoldOpacity.SetTar(
+			bool colorPickerHoldHintTarget =
 				barState.drawAttributeBar.colorPickerHoldHintActive
-					|| barState.drawAttributeBar.colorPickerHoldLocked ? 1.0 : 0.0,
-				BarColorPickerPreviewAnimationDur);
+				|| barState.drawAttributeBar.colorPickerHoldLocked;
+			bool colorPickerHoldRingTarget =
+				barState.drawAttributeBar.colorPickerHoldHintActive
+				&& !barState.drawAttributeBar.colorPickerHoldLocked;
+			drawAttributeColorPickerHoldOpacity.SetTar(
+				colorPickerHoldHintTarget ? 1.0 : 0.0,
+				BarColorPickerHoldHintAnimationDur);
+			drawAttributeColorPickerHoldRingOpacity.SetTar(
+				colorPickerHoldRingTarget ? 1.0 : 0.0,
+				BarColorPickerHoldHintAnimationDur);
+			drawAttributeColorPickerHoldTextMix.SetTar(
+				barState.drawAttributeBar.colorPickerHoldLocked ? 1.0 : 0.0,
+				BarColorPickerHoldHintAnimationDur);
 			{
-				// draw2：荧光笔 stroke 层额外按 130/255 合成，读数要反映真实绘制透明度。
+				// Draw2 绘制源色时忽略通道 alpha，最终透明度只由 stroke 层的 130/255 决定。
 				COLORREF penColor = GetPenColor();
 				double displayR = GetRValue(penColor);
 				double displayG = GetGValue(penColor);
 				double displayB = GetBValue(penColor);
-				double channelAlpha = GetAValue(penColor) / 255.0;
 				double strokeAlpha =
 					stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
 						? (130.0 / 255.0) : 1.0;
 				double displayOpacity = clamp(
-					channelAlpha * strokeAlpha * 100.0, 0.0, 100.0);
+					strokeAlpha * 100.0, 0.0, 100.0);
 				bool pickerDragging =
 					barState.drawAttributeBar.colorPickerPointerPressed;
 				if (!drawAttributeColorPickerDisplayInitialized)
@@ -5738,6 +5765,10 @@ for (size_t i = 0; i < 3; ++i)
 			ChangeValue(drawAttributeColorPickerToneMix, false);
 		if (!drawAttributeColorPickerHoldOpacity.IsSame())
 			ChangeValue(drawAttributeColorPickerHoldOpacity, false);
+		if (!drawAttributeColorPickerHoldRingOpacity.IsSame())
+			ChangeValue(drawAttributeColorPickerHoldRingOpacity, false);
+		if (!drawAttributeColorPickerHoldTextMix.IsSame())
+			ChangeValue(drawAttributeColorPickerHoldTextMix, false);
 		if (!drawAttributeColorPickerDisplayR.IsSame())
 			ChangeValue(drawAttributeColorPickerDisplayR, false);
 		if (!drawAttributeColorPickerDisplayG.IsSame())
@@ -6506,7 +6537,7 @@ double closeButtonSize =
 				+ BarColorPickerPanelWidth / 2.0;
 			double pickerCenterY = targetPickerTop
 				+ BarColorPickerPanelHeight / 2.0
-				+ outwardDirection * (1.0 - pickerProgress) * 8.0;
+				- outwardDirection * (1.0 - pickerProgress) * 8.0;
 			double pickerLeft = pickerCenterX - pickerWidth / 2.0;
 			double pickerTop = pickerCenterY - pickerHeight / 2.0;
 			double pickerOpacity = pickerProgress;
@@ -6620,7 +6651,8 @@ double closeButtonSize =
 			static_cast<double>(drawAttributeColorPickerDisplayOpacity.val),
 			0.0, 100.0)));
 		double footerTop = paletteTop + paletteHeight;
-		double footerBottom = pickerTop + pickerHeight - 8.0 * pickerScale;
+		// 文字区域覆盖色板下沿到面板下沿，连同上下留白一起做竖直居中。
+		double footerBottom = pickerTop + pickerHeight;
 		double footerHeight = max(22.0 * pickerScale, footerBottom - footerTop);
 		auto pickerRgbWord = wordMap[
 			BarUISetWordEnum::DrawAttributeBar_ColorPickerRgb];
@@ -6650,20 +6682,28 @@ double closeButtonSize =
 		pickerOpacityWord->UpInh(BarUiInheritClass(
 			paletteLeft + rgbWidth, footerTop));
 
-		// 保持提示始终放在触点相反的一侧，不跟手插值，避免遮住当前选点。
+		// 保持提示只在本次显现开始时决定侧边；隐藏途中不再跟手换边。
 		double holdOpacity = clamp(static_cast<double>(
 			drawAttributeColorPickerHoldOpacity.val) * pickerOpacity, 0.0, 1.0);
 		double holdWidth = min(paletteWidth - 12.0 * pickerScale,
 			static_cast<double>(colorPickerHoldTextSize.width)
 				+ 44.0 * pickerScale);
 		double holdHeight = 28.0 * pickerScale;
-		bool pointerOnTopHalf = static_cast<double>(
-			barState.drawAttributeBar.colorPickerPointerY)
-			< paletteTop + paletteHeight / 2.0;
+		bool holdTargetActive =
+			barState.drawAttributeBar.colorPickerHoldHintActive
+			|| barState.drawAttributeBar.colorPickerHoldLocked;
+		if (holdTargetActive && !drawAttributeColorPickerHoldTargetActive)
+		{
+			bool pointerOnTopHalf = static_cast<double>(
+				barState.drawAttributeBar.colorPickerPointerY)
+				< paletteTop + paletteHeight / 2.0;
+			drawAttributeColorPickerHoldOnTop = !pointerOnTopHalf;
+		}
+		drawAttributeColorPickerHoldTargetActive = holdTargetActive;
 		double holdLeft = paletteLeft + (paletteWidth - holdWidth) / 2.0;
-		double holdTop = pointerOnTopHalf
-			? paletteTop + paletteHeight - holdHeight - 6.0 * pickerScale
-			: paletteTop + 6.0 * pickerScale;
+		double holdTop = drawAttributeColorPickerHoldOnTop
+			? paletteTop + 6.0 * pickerScale
+			: paletteTop + paletteHeight - holdHeight - 6.0 * pickerScale;
 		SetAbsoluteHit(pickerHold, holdLeft, holdTop, holdWidth, holdHeight);
 		pickerHold->pct.SetDirect(0.82 * holdOpacity);
 		pickerHold->rw->SetDirect(pickerControlRadius);
@@ -6674,6 +6714,14 @@ double closeButtonSize =
 		pickerHoldWord->h.SetDirect(holdHeight);
 		pickerHoldWord->size.SetDirect(12.0 * pickerScale);
 		pickerHoldWord->pct.SetDirect(holdOpacity);
+		COLORREF colorPickerHoldGrayColor = MixBarUiColor(
+			GetThemeColor(BarThemeColorEnum::TextPrimary),
+			GetThemeColor(BarThemeColorEnum::Surface), 0.45);
+		pickerHoldWord->color.SetDirect(MixBarUiColor(
+			colorPickerHoldGrayColor,
+			GetThemeColor(BarThemeColorEnum::TextPrimary),
+			clamp(static_cast<double>(
+				drawAttributeColorPickerHoldTextMix.val), 0.0, 1.0)));
 		pickerHoldWord->UpInh(BarUiInheritClass(
 			holdLeft + 8.0 * pickerScale, holdTop));
 
@@ -8025,6 +8073,8 @@ auto annotationInfo = svgMap[
 					double pickerOpacity = clamp(
 						static_cast<double>(pickerPanel->pct.val)
 							/ BarDrawAttributeSurfaceOpacity, 0.0, 1.0);
+					double pickerGeometryScale = clamp(
+						pickerPanel->w.val / BarColorPickerPanelWidth, 0.0, 1.0);
 					if (pickerOpacity > 0.000001)
 					{
 						spec.Shape(barDeviceContext.Get(), *pickerPanel,
@@ -8086,17 +8136,23 @@ auto annotationInfo = svgMap[
 								&roundedPalette, hueBrush);
 							double darkMix = clamp(static_cast<double>(
 								drawAttributeColorPickerToneMix.val), 0.0, 1.0);
+							bool openBelowSwatch =
+								barState.widgetPosition.primaryBar;
+							D2D1_POINT_2F nearPoint = D2D1::Point2F(
+								paletteRect.left,
+								openBelowSwatch ? paletteRect.top : paletteRect.bottom);
+							D2D1_POINT_2F farPoint = D2D1::Point2F(
+								paletteRect.left,
+								openBelowSwatch ? paletteRect.bottom : paletteRect.top);
 							auto lightBrush = spec.GetColorPickerToneGradientBrush(
 								barDeviceContext.Get(), false,
-								D2D1::Point2F(paletteRect.left, paletteRect.top),
-								D2D1::Point2F(paletteRect.left, paletteRect.bottom),
+								farPoint, nearPoint,
 								static_cast<FLOAT>(pickerOpacity * (1.0 - darkMix)));
 							if (lightBrush) barDeviceContext->FillRoundedRectangle(
 								&roundedPalette, lightBrush);
 							auto darkBrush = spec.GetColorPickerToneGradientBrush(
 								barDeviceContext.Get(), true,
-								D2D1::Point2F(paletteRect.left, paletteRect.top),
-								D2D1::Point2F(paletteRect.left, paletteRect.bottom),
+								nearPoint, farPoint,
 								static_cast<FLOAT>(pickerOpacity * darkMix));
 							if (darkBrush) barDeviceContext->FillRoundedRectangle(
 								&roundedPalette, darkBrush);
@@ -8114,16 +8170,17 @@ auto annotationInfo = svgMap[
 								static_cast<FLOAT>(paletteRect.top
 									+ markerY * (paletteRect.bottom - paletteRect.top)));
 							D2D1_ELLIPSE outer = D2D1::Ellipse(markerCenter,
-								5.5F * uiZoom, 5.5F * uiZoom);
+								static_cast<FLOAT>(5.5 * pickerGeometryScale) * uiZoom,
+								static_cast<FLOAT>(5.5 * pickerGeometryScale) * uiZoom);
 							if (auto markerShadow = spec.GetFrameSolidColorBrush(
 								barDeviceContext.Get(), RGB(0, 0, 0),
 								pickerOpacity * 0.72))
 								barDeviceContext->DrawEllipse(&outer, markerShadow,
-									3.0F * uiZoom);
+									static_cast<FLOAT>(3.0 * pickerGeometryScale) * uiZoom);
 							if (auto markerBrush = spec.GetFrameSolidColorBrush(
 								barDeviceContext.Get(), RGB(255, 255, 255), pickerOpacity))
 								barDeviceContext->DrawEllipse(&outer, markerBrush,
-									1.5F * uiZoom);
+									static_cast<FLOAT>(1.5 * pickerGeometryScale) * uiZoom);
 						}
 
 						auto rgbWord = wordMap[
@@ -8139,7 +8196,7 @@ auto annotationInfo = svgMap[
 							DWRITE_FONT_WEIGHT_NORMAL,
 							DWRITE_TEXT_ALIGNMENT_TRAILING);
 
-						// 关闭按钮命中区保持 28px，X 视觉为命中区的 1/3（相对此前 2/3 再减半）；按压缩放不影响命中。
+						// 关闭按钮与顶部控件同为 30px 高，X 视觉为命中区的 1/3；按压缩放不影响命中。
 						auto closeHit = shapeMap[
 							BarUISetShapeEnum::DrawAttributeBar_ColorPickerCloseHit];
 						double closePressScale = clamp(static_cast<double>(
@@ -8191,32 +8248,50 @@ auto annotationInfo = svgMap[
 
 						auto holdHint = shapeMap[
 							BarUISetShapeEnum::DrawAttributeBar_ColorPickerHoldHint];
-						if (holdHint->pct.val > 0.000001)
+						auto holdWord = wordMap[
+							BarUISetWordEnum::DrawAttributeBar_ColorPickerHoldLabel];
+						double holdRingOpacity = clamp(static_cast<double>(
+							drawAttributeColorPickerHoldRingOpacity.val)
+							* pickerOpacity, 0.0, 1.0);
+						if (holdHint->pct.val > 0.000001
+							|| holdWord->pct.val > 0.000001
+							|| holdRingOpacity > 0.000001)
 						{
-							spec.Shape(barDeviceContext.Get(), *holdHint,
-								BarUiInheritClass(holdHint->inhX, holdHint->inhY));
-							auto holdWord = wordMap[
-								BarUISetWordEnum::DrawAttributeBar_ColorPickerHoldLabel];
-							spec.Word(barDeviceContext.Get(), *holdWord,
-								BarUiInheritClass(holdWord->inhX, holdWord->inhY),
-								DWRITE_FONT_WEIGHT_NORMAL,
-								DWRITE_TEXT_ALIGNMENT_LEADING);
-							FLOAT ringRadius = 7.0F * uiZoom;
-							D2D1_POINT_2F ringCenter = D2D1::Point2F(
-								static_cast<FLOAT>((holdHint->inhX
-									+ holdHint->w.val - 16.0) * uiZoom),
-								static_cast<FLOAT>((holdHint->inhY
-									+ holdHint->h.val / 2.0) * uiZoom));
-							float progress = clamp(static_cast<float>(
-								barState.drawAttributeBar.colorPickerHoldProgress),
-								0.0F, 1.0F);
-							spec.DrawProgressRing(
-								barDeviceContext.Get(), ringCenter, ringRadius,
-								2.0F * uiZoom, progress,
-								GetThemeColor(BarThemeColorEnum::TextPrimary),
-								GetThemeColor(BarThemeColorEnum::TextPrimary),
-								static_cast<FLOAT>(holdHint->pct.val * 0.25),
-								static_cast<FLOAT>(holdHint->pct.val));
+							if (holdHint->pct.val > 0.000001)
+								spec.Shape(barDeviceContext.Get(), *holdHint,
+									BarUiInheritClass(holdHint->inhX, holdHint->inhY));
+							if (holdWord->pct.val > 0.000001)
+								spec.Word(barDeviceContext.Get(), *holdWord,
+									BarUiInheritClass(holdWord->inhX, holdWord->inhY),
+									DWRITE_FONT_WEIGHT_NORMAL,
+									DWRITE_TEXT_ALIGNMENT_LEADING);
+							if (holdRingOpacity > 0.000001)
+							{
+								FLOAT ringRadius = static_cast<FLOAT>(
+									7.0 * pickerGeometryScale) * uiZoom;
+								D2D1_POINT_2F ringCenter = D2D1::Point2F(
+									static_cast<FLOAT>((holdHint->inhX
+										+ holdHint->w.val
+										- 16.0 * pickerGeometryScale) * uiZoom),
+									static_cast<FLOAT>((holdHint->inhY
+										+ holdHint->h.val / 2.0) * uiZoom));
+								float progress = clamp(static_cast<float>(
+									barState.drawAttributeBar.colorPickerHoldProgress),
+									0.0F, 1.0F);
+								COLORREF holdRingTrackColor = MixBarUiColor(
+									GetThemeColor(BarThemeColorEnum::TextPrimary),
+									GetThemeColor(BarThemeColorEnum::Surface), 0.70);
+								COLORREF holdRingFillColor = MixBarUiColor(
+									GetThemeColor(BarThemeColorEnum::TextPrimary),
+									GetThemeColor(BarThemeColorEnum::Surface), 0.35);
+								spec.DrawProgressRing(
+									barDeviceContext.Get(), ringCenter, ringRadius,
+									static_cast<FLOAT>(2.0 * pickerGeometryScale) * uiZoom,
+									progress,
+									holdRingTrackColor, holdRingFillColor,
+									static_cast<FLOAT>(holdRingOpacity * 0.45),
+									static_cast<FLOAT>(holdRingOpacity));
+							}
 						}
 					}
 
@@ -8710,7 +8785,8 @@ auto ColorPickerAvailable = [&]()
 			markerY = clamp(markerY, 0.0, 1.0);
 			COLORREF color = GetBarColorPickerColor(
 				markerX >= 1.0 ? 0.0 : markerX, markerY,
-				barState.drawAttributeBar.colorPickerDarkTone);
+				barState.drawAttributeBar.colorPickerDarkTone,
+				barState.widgetPosition.primaryBar);
 			barState.drawAttributeBar.colorPickerMarkerX =
 				static_cast<float>(markerX);
 			barState.drawAttributeBar.colorPickerMarkerY =
@@ -8722,14 +8798,18 @@ auto ColorPickerAvailable = [&]()
 		{
 			double x = 0.0, y = 0.0;
 			bool exact = false;
-			ProjectBarColorPickerColor(GetPenColor() & 0x00FFFFFF,
+			COLORREF currentColor = GetPenColor() & 0x00FFFFFF;
+			ProjectBarColorPickerColor(currentColor,
 				barState.drawAttributeBar.colorPickerDarkTone,
+				barState.widgetPosition.primaryBar,
 				x, y, exact);
 			barState.drawAttributeBar.colorPickerMarkerX =
 				static_cast<float>(x);
 			barState.drawAttributeBar.colorPickerMarkerY =
 				static_cast<float>(y);
-			barState.drawAttributeBar.colorPickerMarkerVisible = exact;
+			// 主栏预设色不是自定义选点；只有非预设当前色或后续色板输入才显示圆环。
+			barState.drawAttributeBar.colorPickerMarkerVisible =
+				exact && !IsBarPresetColor(currentColor);
 		};
 	auto HandleColorPickerKeyboard = [&](const ExMessage& keyMessage)
 		{
@@ -8766,6 +8846,7 @@ auto ColorPickerAvailable = [&]()
 				bool exact = false;
 				ProjectBarColorPickerColor(GetPenColor() & 0x00FFFFFF,
 					barState.drawAttributeBar.colorPickerDarkTone,
+					barState.widgetPosition.primaryBar,
 					markerX, markerY, exact);
 			}
 			double horizontalStep = BarColorPickerKeyboardStepDip / palette->w.val;
@@ -9180,7 +9261,27 @@ auto ColorPickerAvailable = [&]()
 		{
 			bool continueFlag = true;
 
-			// 颜色面板位于最上层；外部点击不关闭，只有入口和 X 改变打开状态。
+			// 面板外按下先收起，再把同一次点击继续交给绘制属性或主栏控件。
+			if (continueFlag && msg.message == WM_LBUTTONDOWN
+				&& ColorPickerAvailable()
+				&& barState.drawAttributeBar.colorPickerOpen)
+			{
+				auto pickerPanel = shapeMap[
+					BarUISetShapeEnum::DrawAttributeBar_ColorPickerPanel];
+				auto customSwatch = shapeMap[
+					BarUISetShapeEnum::DrawAttributeBar_ColorSelect12];
+				bool insidePicker = pickerPanel && pickerPanel->IsClick(
+					msg.x, msg.y, barStyle.zoom);
+				bool insideEntry = customSwatch && customSwatch->IsClick(
+					msg.x, msg.y, barStyle.zoom);
+				if (!insidePicker && !insideEntry)
+				{
+					CloseColorPicker(false);
+					UpdateRendering(false);
+				}
+			}
+
+			// 颜色面板位于最上层；面板内部阻止点击穿透，入口和 X 可主动关闭。
 			if (continueFlag && ColorPickerAvailable()
 				&& barState.drawAttributeBar.colorPickerOpen)
 			{
