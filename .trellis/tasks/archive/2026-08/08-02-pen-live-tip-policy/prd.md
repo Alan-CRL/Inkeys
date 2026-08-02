@@ -35,14 +35,14 @@
 
 ## Acceptance Criteria
 
-- [ ] Mouse / Touch + 普通笔：实时笔锋明显可见。
-- [ ] Pen + HardwarePressure：不叠加 L0 tip taper。
-- [ ] Pen 回退 SimulatedPressure：与鼠标一样启用 tip。
-- [ ] 稳定 `realPoints` 仍受既有笔宽限速。
-- [ ] L0 tip 段满足公切线安全，不露端帽。
-- [ ] 默认抬笔后 tip 仍保留，不因回退未 taper 的 realPoints 而消失。
-- [ ] 荧光笔 / 橡皮 / 激光不回归。
-- [ ] 测试覆盖 tip 开关策略、抬笔定住与 taper 后几何约束。
+- [x] Mouse / Touch + 普通笔：实时笔锋明显可见。
+- [x] Pen + HardwarePressure：不叠加 L0 tip taper。
+- [x] Pen 回退 SimulatedPressure：与鼠标一样启用 tip。
+- [x] 稳定 `realPoints` 仍受既有笔宽限速。
+- [x] L0 tip 段满足公切线安全，不露端帽。
+- [x] 默认抬笔后 tip 仍保留，不因回退未 taper 的 realPoints 而消失。
+- [x] 荧光笔 / 橡皮 / 激光不回归。
+- [x] 测试覆盖 tip 开关策略、抬笔定住与 taper 后几何约束。
 
 ## Out of Scope
 
