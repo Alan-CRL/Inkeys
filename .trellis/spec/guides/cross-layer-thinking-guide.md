@@ -65,10 +65,11 @@ Win32/HiEasyX message
 
 ### Presenter fallback
 
-- 默认初始化顺序是 DirectComposition、DWM extended frame、ULW；已知 QCOM ARM64 适配器优先 ULW，以规避 DComp 初始化成功但透明像素实际显示为黑色。
+- 所有适配器统一按 DirectComposition、DWM extended frame、ULW 初始化；厂商、架构或 OS 标签本身不能改变顺序。
 - 每次新模式尝试前清理上一模式的 presenter、renderer 和 swapchain 状态。
 - GPU 路径保留真透明 alpha；仅 ULW CPU 输出副本叠加 `1/255` alpha 命中测试底层。
 - presenter 初始化成功只证明 API/资源链可用，不证明桌面合成后的可见 alpha 正确；新增适配器或呈现路径时必须在真实桌面背景上验证透明结果。
+- 设备/驱动专用兼容策略必须同时记录 OS、VendorId、DeviceId、SubSysId、Revision、UMD driver version 和真实背景视觉结果，不能把单机现象泛化为整个厂商。
 
 依据：`TransparentPresentationController::Initialize`、`Impl::ReleaseAttempt`、`UlwDirtyRectPresenter::Present`。
 

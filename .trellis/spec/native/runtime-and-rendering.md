@@ -621,6 +621,6 @@ Correct：`L2 只表示当前视觉结果；永久笔迹只接受真实确认或
 
 - 绘图窗口用 `SW_HIDE` 预设创建；完成 presenter 初始化和首个透明画布提交后才显示。禁止在初始化期间先暴露 HiEasyX 白色窗口类背景，也不得为此直接修改第三方 HiEasyX 源码。
 - DirectComposition swapchain、visual tree 和 `Commit` 全部成功，不代表驱动一定按 premultiplied alpha 合成；透明正确性必须通过真实桌面背景验证。
-- 默认优先 DirectComposition；当前 QCOM ARM64 适配器优先使用 `UlwDirtyRect`，因为实体设备已观察到 DComp 透明像素显示为黑色。
-- 适配器专用回退只改变尝试顺序，不移除后续模式；首选模式失败时仍按既有清理和回退协议继续。
+- 所有适配器统一按 DirectComposition、DWM extended frame、ULW 的顺序尝试；厂商、架构或 OS 标签本身不能作为提前降级依据。
+- 若要增加设备或驱动专用兼容路径，必须记录 OS、VendorId、DeviceId、SubSysId、Revision、UMD driver version 和真实桌面背景视觉结果；首选模式失败时仍按既有清理和回退协议继续。
 - ULW 的 `1/255` alpha 只存在于 CPU 输出副本以维持窗口命中，不能写回 L0/L1/L2 或改变墨迹 alpha。

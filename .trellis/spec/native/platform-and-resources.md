@@ -14,6 +14,12 @@ Windows 7 SP1 + KB2670838 是 Inkeys 的正式项目级兼容目标。面向平�
 - 当前代码路径：源码中存在的兼容处理。
 - 实测能力：指定操作系统、补丁、GPU/驱动和 presenter 下实际通过的场景。
 
+### 未来欢迎页透明度测试备忘
+
+- 未来实现欢迎页时，Windows 7 环境或检测到 Qualcomm GPU 的设备必须额外显示一页透明度测试，让用户在真实桌面背景上确认窗口是否正确透明。
+- 测试结果用于选择或建议兼容呈现路径，不能仅凭 OS、GPU 厂商或 API 初始化成功自动判定透明正确。
+- 该页面尚未实现；实现时应另立任务，定义可回退选择、结果保存方式和无法判断时的处理。
+
 ## Scenario: Windows Compatibility Claim
 
 ### 1. Scope / Trigger
@@ -133,6 +139,7 @@ DirectCompositionVisualTree
 - GPU 模式通过 `Present1` 和 dirty rect 呈现。
 - ULW 把 backbuffer dirty rect 读回 staging/DIB，并只在 CPU 输出副本中加入 `1/255` alpha 命中测试底层。
 - 内部 L0/L1/L2/backbuffer 始终保持真透明背景。
+- 厂商、架构或 OS 标签本身不改变上述候选顺序；专用兼容路径必须有完整设备/驱动元组和真实透明度测试结果作为证据。
 
 不要把 ULW 命中测试底层写回 GPU 画布，也不要在回退尝试之间复用上一模式的 swapchain/presenter 状态。
 
