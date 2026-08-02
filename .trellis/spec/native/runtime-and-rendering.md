@@ -53,7 +53,9 @@
 
 - `DrawingTool::Laser`，数字键/小键盘 `4`
 - `StrokeModelConfiguration::laserParticlesEnabled`、`laserParticleConfig`、`laserHoldDurationSeconds`
+- `StrokeModelConfiguration::laserMultiTouchDrawingEnabled`
 - `DrawingController::SetLaserParticlesEnabled/GetLaserParticlesEnabled`
+- `DrawingController::SetLaserMultiTouchDrawingEnabled/GetLaserMultiTouchDrawingEnabled`
 - `DrawingController::SetLaserHoldDurationSeconds/GetLaserHoldDurationSeconds`
 - `InkRenderer::SimulateLaserParticles/EmitLaserParticles/ResetLaserParticles/DrawLaserParticles`
 - `InkRenderer::DrawLaserCoverage/ClearLaserCoverageRect/ResolveLaserStrokeCoverage/ResolveLaserCompositedColor/DrawLaserDots`
@@ -61,13 +63,13 @@
 
 ### 3. Contracts
 
-- Laser 在 Down 时锁定到当前批次，支持 Pen、Mouse 和多 Touch；跳过断触 reconnect、倒转笔尾橡皮覆盖和触觉反馈。
+- Laser 在 Down 时锁定到当前批次，支持 Pen、Mouse 和 Touch；`laserMultiTouchDrawingEnabled` 默认关闭，此时只接受第一根活动 Touch，后续 Touch Down 直接回收且不打断第一根，运行中切换只影响之后开始的 contact。开启后恢复多 Touch；Laser 继续跳过断触 reconnect、倒转笔尾橡皮覆盖和触觉反馈。
 - 已完成 Laser 使用独立 `R8G8B8A8_UNORM` 预乘颜色层，任何 Laser 几何都不得进入 L2。单 contact 快路中，`t7` `laserStrokeCoverage` 保存按时间保护边界推进的稳定真实前缀，`t9` `laserLiveCoverage` 保存当前真实尾部和 prediction；两者在 shape `13` 逐通道取 `max` 后只调用一次 `ResolveLaserMaterial`。L1/L0 交界保留一个重叠点，稳定前缀只接受已确认 `realPoints`，所以 prediction 回缩不会污染稳定 coverage。
 - `t9` 只由绘制线程在首次观察 `ActiveTool() == Laser` 时按需创建并预热，创建后直到 renderer 释放都保留；资源创建/Resize 失败只记录一次并把当前会话降级为完整重绘。没有选择 Laser 的会话不分配该缓冲。
 - 单个有效 Laser layer 且 coverage 可用时使用增量快路；出现第二个 layer、Cancel/状态异常或资源不可用后，当前批次锁定完整重绘直到最后一次 Bake。完整路径继续逐笔清理 `t7`、按 Down 顺序 source-over，不能把不同 contact 放入同一次 MAX。
 - 96 DPI 默认实体总直径为 5px，白芯直径约 1.67px，红色实体轮廓外每侧固定扩散 5px，因此完整视觉直径为 15px；漫反射 coverage 在实体边界为 1，使用平方曲线向外单调衰减并在 5px 外缘为 0，红粉外缘高光只混合 RGB 而不额外增加 alpha。`LaserDot`、Touch 笔尖和固定宽度轨迹复用同一尺寸契约。Pen 使用 `0.65 + 0.75 * clamp(p, 0, 1)` 缩放实体、白芯和内侧散射，外部 5px 漫反射只随 DPI 缩放；无效压力保持上一宽度，prediction 继承最后真实实体半径，Mouse/Touch 固定基准宽度。
 - 多支 Laser 按 Down 顺序分层，后 Down 的整支轨迹位于上层；较早结束的 contact 保留最终 CPU 几何直到同批最后一支抬起，同一笔自交仍以 coverage 并集避免重复加深。
-- 粒子默认开启，但只使用 FL11_0+ 的 D3D11 Compute Shader 固定池：`2048` 个 `LaserGpuParticle` 槽，以及同一缓冲的 `u0` UAV/VS `t8` SRV。没有路径点/路径头资源、Append/Consume、间接绘制或 GPU 回读；整笔逐帧重绘和 Resize 都不得重建 GPU 粒子。
+- 粒子默认关闭，外部可通过设置接口按需开启；启用后只使用 FL11_0+ 的 D3D11 Compute Shader 固定池：`2048` 个 `LaserGpuParticle` 槽，以及同一缓冲的 `u0` UAV/VS `t8` SRV。没有路径点/路径头资源、Append/Consume、间接绘制或 GPU 回读；整笔逐帧重绘和 Resize 都不得重建 GPU 粒子。
 - 出生位置直接取当前 `l0DrawPoints.back()`；切线从 L0 尾部反向查找最后一个非退化段，重复点沿用上一有效切线。真实首次移动前没有方向时不发射，也不累计会在之后补出的 Down 余量。prediction 只影响新粒子的出生位置/切线，不影响密度。
 - 发射 `dt <= 1/30s`，速率为 `min(72, 6 + filteredRealInputSpeedDipPerSecond / 2.5)` 粒/秒：静止每 contact 每秒 6 粒，移动约每 `2.5 DIP` 一粒，全局每帧最多 `96` 粒；预算超额和卡顿的整数部分不积压。运行中关闭会在下一帧 reset；重新开启后仍须已有或重新取得有效 L0 切线。
 - 每粒以 50/50 概率选择正/负法线，并在对应法线附近均匀偏转 `±25°`。尺寸层级为 `lerp(0.28, 1.15, pow(random, 2.8)) DIP`；出生速度以 70% 独立随机与 30% 反向尺寸层级混合后映射到 `10–17 DIP/s`，寿命独立均匀随机为 `0.7–1.0s`，标称行程为 `3.5–8.5 DIP`。粒子不继承画笔前向速度。
@@ -85,6 +87,7 @@
 | Condition | Required behavior |
 |---|---|
 | Down/Up 多 contact | 只有最后一根 Up 启动 Hold；中间 Up 不改变 opacity |
+| 多指开关关闭 | 第一根 Touch 正常绘制；其仍活动时忽略后续 Touch Down，Pen/Mouse 和既有 contact 不受影响 |
 | Hold/Fade 新 Down | 旧稳定颜色层全组恢复满亮并重新计时 |
 | 非法 hold seconds | setter 返回 `false`，旧值保持不变且不发布设置 |
 | Laser Up | 清除 prediction；同批最后 Up 才有序烘入稳定颜色层，不 reconnect、不 resolve 到 L2 |
@@ -102,15 +105,16 @@
 ### 5. Good / Base / Bad Cases
 
 - Good：白芯与厚红边在深色、混合背景可见，深红粉粒子辉光在白底可辨；新粒子从笔尖两侧法线喷射，急弯和 prediction 回缩不改变旧粒子。
-- Base：Hover 为静态 LaserDot，活动 Touch 各自显示独立 tip；GPU 不可用时只有粒子降级，抬笔后已有粒子按自身最长 1 秒寿命继续减速、缩小和淡出。
-- Bad：让粒子绑定/重采样整条路径、用 prediction 位移提高密度、预测回缩后瞬移已有粒子、同时绑定粒子 UAV 与 VS SRV，或用 GPU readback 决定 dirty。
+- Base：默认关闭多指绘图时仅第一根 Touch 生成轨迹和 tip；开启后各活动 Touch 显示独立 tip。GPU 不可用时只有粒子降级，抬笔后已有粒子按自身最长 1 秒寿命继续减速、缩小和淡出。
+- Bad：关闭多指后中断已经开始的 Touch、让被忽略的第二根 Touch 在第一根抬起时中途接管，或让粒子绑定/重采样整条路径、用 prediction 位移提高密度、预测回缩后瞬移已有粒子、同时绑定粒子 UAV 与 VS SRV、用 GPU readback 决定 dirty。
 
 ### 6. Tests Required
 
 - 断言按键 4/枚举、最后 Up 计时、3.0s Hold、0.8s fade、运行中设置变化和非法输入。
+- 断言多指配置默认关闭、setter/getter 往返，以及关闭时第二根 Touch Down 被忽略、开启时进入既有多 contact Laser 路径。
 - 断言 Laser 不进入 reconnect/L2，压力 `0/0.5/1` 只缩放实体且 prediction 半径继承正确，coverage bounds 覆盖 15px 基准完整视觉直径、最大压力实体和固定 5px 漫反射；静态核对漫反射 alpha 从实体边界的 1 单调衰减到外缘的 0，resize/clear/Present failure 无残影。
 - 增量状态测试必须断言时间保护边界单调推进、L1/L0 共享一个连接点、prediction 回缩不后退稳定游标、自交 dirty union 不丢失、第二 contact 锁定 fallback、Resize/Clear/resource failure 重建，以及 `max(t7,t9)` 与完整 coverage union 的 CPU 等价性；静态核对 t9、shape `13` 和 t6-t9 解绑契约。
-- 断言默认开启、Down 零爆发、首次真实移动后静止 6/s、移动每 2.5 DIP 密度、72/s 与全局 96 上限且不积压、双侧法线与 `±25°` 偏转、连续偏小尺寸分布、尺寸/亮度正相关、尺寸/射程弱反向相关、`10–17 DIP/s` 速度、`0.7–1.0s` 寿命和不超过 8.5 DIP 的标称行程、速度/Alpha 曲线单调性、按行程缩至 20%、比例辉光和核心色相层级、亮度呼吸不改 Alpha、出生锚点取 L0 前端、Up/prediction 跳变不改变存量运动、1 秒有效 Hold 下限、帧批次 dirty 到期和 resize 重裁剪。
+- 断言默认关闭；开启后覆盖 Down 零爆发、首次真实移动后静止 6/s、移动每 2.5 DIP 密度、72/s 与全局 96 上限且不积压、双侧法线与 `±25°` 偏转、连续偏小尺寸分布、尺寸/亮度正相关、尺寸/射程弱反向相关、`10–17 DIP/s` 速度、`0.7–1.0s` 寿命和不超过 8.5 DIP 的标称行程、速度/Alpha 曲线单调性、按行程缩至 20%、比例辉光和核心色相层级、亮度呼吸不改 Alpha、出生锚点取 L0 前端、Up/prediction 跳变不改变存量运动、1 秒有效 Hold 下限、帧批次 dirty 到期和 resize 重裁剪。
 - Debug/Release ARM64 全解决方案构建、VS/PS/两个 CS 均以 SM5.0 编译并嵌入；人工覆盖慢/快画、急弯、长按、路径追加、多接触、Resize、ULW、开关和 Hold/Fade。
 
 ### 7. Wrong vs Correct
@@ -118,6 +122,10 @@
 Wrong：`每帧 CPU 更新 vector<Particle> -> 上传 InkData -> Draw`，或 CS dispatch 时仍让同一粒子缓冲绑定在 VS `t8`。
 
 Correct：`从当前 L0 笔尖/切线创建发射请求 -> GPU Update/Emit -> 显式解绑 -> DrawInstanced 固定池`；last Up 有序烘干主体，GPU 存量粒子沿各自屏幕速度继续减速、缩小和淡出，只在 Fade、输入或保守粒子 dirty 活动时刷新，L2 保持不变。
+
+Wrong：关闭多指开关后，在第一根 Touch 抬起时把仍按住但 Down 已忽略的第二根 Touch 接成新轨迹。
+
+Correct：关闭时直接回收后续 Touch 的 consumer slot；该手指必须重新 Down 才能在之后开始新轨迹，运行中开关变化不改写既有 contact。
 
 当前源码描述现有行为，阶段说明描述历史设计或计划。两者出现数值或工具语义差异时，应并列记录，不得自动用源码覆盖历史目标，也不得自动让实现恢复为阶段说明。
 
@@ -133,6 +141,7 @@ Correct：`从当前 L0 笔尖/切线创建发射请求 -> GPU Update/Emit -> �
 - `DrawingCursorEventSink::PublishPenCursorSample/ClearPenCursorSample`
 - `WindowController::ConfigureDrawingCursor/ConsumeDrawingCursorRenderRequest`
 - `ResolvePrimaryDrawingCursorVisual`、`MakeTouchEraserDrawingCursorVisual`
+- `ShouldSuppressMouseButtonUpCursorSample`
 - `DrawingCursorVisualBounds`、`InkRenderer::DrawTransientDrawingCursor`
 
 ### 3. Contracts
@@ -141,8 +150,8 @@ Correct：`从当前 L0 笔尖/切线创建发射请求 -> GPU Update/Emit -> �
 - shader shape type `4/5/6` 分别表示 Cursor Circle、Rectangle、EraserGripCircle；复用两项 `InkPoint`、48 字节全局常量和 resolve dual-source blend，直接输出 premultiplied Add 与 Retain。尺寸变化只能更新常量/primitive，不创建尺寸相关纹理或 `HCURSOR`。
 - Pen 直径为 `max(当前基准画笔粗细, 5px * dpiScale)`；Highlighter 为 6.25x50px 固定竖直矩形。二者使用当前 RGB、25% fill Alpha 和 `#B8B8B8` 细内描边；fill Alpha 不得降低 outline Alpha，压力不改变 cursor 尺寸。
 - EraserGripCircle 直径直接复用 50px 画布擦除宽度，不乘 DPI、不设最小值；主体纯白，圆环宽度为 4%D，两条圆头竖线宽度为 10%D、中心偏移为 12%D、半高为 24%D，结构颜色为 `#CFCFCF`。Hover 整体 Alpha 0.5，Contact 整体 Alpha 1.0。
-- RTS InAir/Down/Packets/Up 发布 X/Y/QPC、inverted 和 contact；InAir/Packets 只解码批次最后一个包。样本使用 writer latch + sequence 一致发布，并以 sticky control wake 合并；RTS 回调不得调用 D3D 或 `SetCursor`。
-- Windows 8+ 动态解析 Pointer API，并区分 `Unknown/Pen/Mouse/Touch`；`WM_POINTERENTER/UPDATE` 使用 `GetPointerInfo/GetPointerPenInfo` 直接发布 Pen Hover 坐标，不能依赖首个 RTS Down。每个有效 RTS Pen 样本都必须明确取得 Pen authority。旧系统由 RTS Pen 样本和非 promoted Mouse 消息回退。Pointer authority 仍为 Pen 且 Pen 样本有效时，低优先级 `WM_MOUSE*` 不得抢占；缺少 Pointer API 时同样以有效 RTS Pen 样本维持该优先级。Mouse 使用 `TrackMouseEvent/WM_MOUSELEAVE` 清理。
+- RTS InAir/Down/Packets 发布 X/Y/QPC、inverted 和 contact；StylusUp 只清除 Pen 样本，不把终态坐标冒充 Hover。后续真实 InAir 包才允许重新显示 Hover。InAir/Packets 只解码批次最后一个包。样本使用 writer latch + sequence 一致发布，并以 sticky control wake 合并；RTS 回调不得调用 D3D 或 `SetCursor`。
+- Windows 8+ 动态解析 Pointer API，并区分 `Unknown/Pen/Mouse/Touch`；`WM_POINTERENTER/UPDATE` 使用 `GetPointerInfo/GetPointerPenInfo` 直接发布 Pen Hover 坐标，不能依赖首个 RTS Down。`WM_POINTERUP` 同样只清除 Pen 样本，后续 Update 才恢复 Hover。每个有效 RTS Pen 样本都必须明确取得 Pen authority。旧系统由 RTS Pen 样本和非 promoted Mouse 消息回退。Pointer authority 仍为 Pen 且 Pen 样本有效时，低优先级 `WM_MOUSE*` 不得抢占；Pen/Touch authority 下的孤立 Mouse ButtonUp 必须忽略，避免终态兼容消息重新生成 Hover。Mouse 使用 `TrackMouseEvent/WM_MOUSELEAVE` 清理。
 - Pen/Touch 离开后应清除其可见样本，但保留最后设备 authority 作为“当前无光标”状态；`WM_POINTERLEAVE` 无法取得 pointer type 时，只要旧 authority 或有效样本表明是 Pen，仍按 Pen 离开处理。禁止将 authority 立即改为 Unknown 而使旧 Mouse 样本复活。只有新的非 promoted `WM_MOUSE*` 才能明确切换到 Mouse 并恢复鼠标。
 - Pen/Highlighter：Pen Hover 显示应用 cursor，Pen Contact 只隐藏系统 cursor；Mouse 保留 `IDC_ARROW`；Touch 不显示笔尖 cursor。
 - Eraser/倒转笔尾：Pen/Mouse Hover 显示 Alpha 0.5，Contact 显示 Alpha 1.0，并隐藏系统 cursor。每个活动 Touch eraser contact 独立显示一枚 Alpha 1.0 cursor，不存在 Touch Hover；多指不得互相覆盖状态。
@@ -157,9 +166,11 @@ Correct：`从当前 L0 笔尖/切线创建发射请求 -> GPU Update/Emit -> �
 |---|---|
 | Pen Hover + Pen/Highlighter | 隐藏系统 cursor，显示对应 Circle/Rectangle |
 | Pen Contact + Pen/Highlighter | 隐藏系统 cursor，不绘制应用 cursor |
+| Pen Up | 清除应用 cursor；只有后续真实 InAir/Pointer Update 才恢复 Hover |
 | Pen/Mouse Hover + Eraser | 隐藏系统 cursor，绘制 Alpha 0.5 EraserGripCircle |
 | Pen/Mouse Contact + Eraser 或 inverted Pen | 隐藏系统 cursor，绘制 Alpha 1.0 EraserGripCircle |
 | N 个 Touch Eraser Contact | 同时绘制 N 枚 Alpha 1.0 EraserGripCircle |
+| Touch Up + 兼容 Mouse ButtonUp | 清除对应 contact visual，并忽略终态 Mouse Up，不在原地生成 Hover |
 | Touch 使用 Pen/Highlighter | 不绘制应用 cursor |
 | Mouse 使用 Pen/Highlighter | 使用 `IDC_ARROW`，不绘制应用 cursor |
 | Cursor 消失或移动 | dirty 包含旧 bounds 与新 bounds，正常图层重建后无残影 |
@@ -174,7 +185,7 @@ Correct：`从当前 L0 笔尖/切线创建发射请求 -> GPU Update/Emit -> �
 ### 5. Good / Base / Bad Cases
 
 - Good：两指同时擦除时显示两枚白色不透明抓手圆；其中一指 Up 只清除对应旧区，另一枚继续移动。
-- Good：MPP Pen Enter 直接显示彩色笔尖，Down 后应用笔尖消失但系统 cursor 仍隐藏，Up 后在最新位置恢复；离开后保持无 cursor，直到鼠标再移动。
+- Good：MPP Pen Enter 直接显示彩色笔尖，Down 后应用笔尖消失且系统 cursor 仍隐藏；Up 立即保持无应用 cursor，后续真实 Hover Update/InAir 到达后才在新样本位置恢复。
 - Base：Mouse 在 Pen/Highlighter 下保持箭头，在 Eraser 下切换为应用圆；Windows 7 路径标记待真机验证。
 - Bad：把多枚 cursor 画进共享 L0 后随 contact Up resolve 到 L2，或为每次宽度变化重建 `HCURSOR`/纹理。
 
@@ -183,6 +194,7 @@ Correct：`从当前 L0 笔尖/切线创建发射请求 -> GPU Update/Emit -> �
 - 自动断言 appearance 有效性、sample sequence 一致性、Pen/Mouse/Touch authority、Hover/Contact/Inverted 矩阵和系统 cursor 隐藏决策。
 - 自动断言 Circle/Rectangle/Eraser 参数、Touch 强制 Alpha 1.0、旧/新 bounds、边界裁剪和多 visual 同时存在。
 - 自动断言 Pen authority + 无效 Pen 样本 + 陈旧 Mouse 样本不生成 visual；真实 Mouse authority 切换后才恢复 Mouse visual。
+- 自动断言 Pen/Touch authority 抑制孤立 Mouse ButtonUp，Mouse/Unknown 不抑制；静态核对 RTS StylusUp 与 `WM_POINTERUP` 都调用 clear 而非发布终态 Hover。
 - 静态断言 RTS DataInterest 含 InRange/OutOfRange/InAir，InAir 选择最后 packet；搜索确认无自建 `HCURSOR` API。
 - 完整 `Debug|ARM64` 解决方案构建必须重新编译两个 shader 并完成 `.cso` 资源嵌入；运行控制台测试。
 - 真机覆盖 Pen、Highlighter、Eraser、笔尾、Mouse、单/多 Touch、窗口边界、SDR/HDR 和白/红/黑背景。
@@ -192,6 +204,10 @@ Correct：`从当前 L0 笔尖/切线创建发射请求 -> GPU Update/Emit -> �
 Wrong：`Pen leave -> authority=Unknown -> ResolvePrimaryDrawingCursorVisual 回退到旧 Mouse 坐标。`
 
 Correct：`Pen leave -> clear Pen sample + keep Pen authority；新 WM_MOUSEMOVE 才切换 Mouse authority。`
+
+Wrong：`StylusUp/WM_POINTERUP -> publish(valid=true, inContact=false, lastContactPosition)`，随后没有 Hover/Leave 时光标永久停在抬笔点。
+
+Correct：`StylusUp/WM_POINTERUP -> clear Pen sample`；后续真实 InAir/Pointer Update 才发布 Hover，Pen/Touch authority 下的兼容 Mouse ButtonUp 直接忽略。
 
 ## Stroke Modeling Invariants
 

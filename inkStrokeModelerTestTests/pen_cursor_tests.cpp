@@ -151,6 +151,14 @@ int RunPenCursorTests()
 		DrawingCursorPointerAuthority::Unknown, false, false, true, false));
 	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
 		DrawingCursorPointerAuthority::Mouse, false, true, false, true));
+	PEN_CURSOR_CHECK(draw3::ShouldSuppressMouseButtonUpCursorSample(
+		DrawingCursorPointerAuthority::Pen));
+	PEN_CURSOR_CHECK(draw3::ShouldSuppressMouseButtonUpCursorSample(
+		DrawingCursorPointerAuthority::Touch));
+	PEN_CURSOR_CHECK(!draw3::ShouldSuppressMouseButtonUpCursorSample(
+		DrawingCursorPointerAuthority::Mouse));
+	PEN_CURSOR_CHECK(!draw3::ShouldSuppressMouseButtonUpCursorSample(
+		DrawingCursorPointerAuthority::Unknown));
 
 	mouseHover.inContact = false;
 	const draw3::DrawingCursorVisual laserMouseHover =

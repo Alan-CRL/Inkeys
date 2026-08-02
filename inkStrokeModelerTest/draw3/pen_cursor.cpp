@@ -187,6 +187,13 @@ namespace draw3
 		}
 	}
 
+	bool ShouldSuppressMouseButtonUpCursorSample(
+		DrawingCursorPointerAuthority pointerAuthority) noexcept
+	{
+		return pointerAuthority == DrawingCursorPointerAuthority::Pen ||
+			pointerAuthority == DrawingCursorPointerAuthority::Touch;
+	}
+
 	DrawingCursorVisual MakeTouchEraserDrawingCursorVisual(float x, float y,
 		const DrawingCursorAppearance& eraserAppearance) noexcept
 	{

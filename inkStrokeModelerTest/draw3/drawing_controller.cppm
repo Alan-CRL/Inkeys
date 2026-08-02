@@ -36,6 +36,9 @@ export namespace draw3
 		// 即时控制激光笔的稀疏粒子点缀，不影响主轨迹和留存计时。
 		void SetLaserParticlesEnabled(bool enabled) noexcept;
 		bool GetLaserParticlesEnabled() const noexcept;
+		// 控制激光笔是否接受同时按下的多根 Touch；只影响之后开始的 contact。
+		void SetLaserMultiTouchDrawingEnabled(bool enabled) noexcept;
+		bool GetLaserMultiTouchDrawingEnabled() const noexcept;
 		// 设置最后一根激光笔抬起后的满亮留存秒数；只接受有限非负值。
 		bool SetLaserHoldDurationSeconds(double seconds) noexcept;
 		double GetLaserHoldDurationSeconds() const noexcept;
@@ -58,7 +61,8 @@ export namespace draw3
 		StrokeModelConfiguration configuration_;
 		InputWidthModeSettingsState inputWidthModeSettings_;
 		std::atomic<bool> invertedPenEraserEnabled_ = true;
-		std::atomic<bool> laserParticlesEnabled_ = true;
+		std::atomic<bool> laserParticlesEnabled_ = false;
+		std::atomic<bool> laserMultiTouchDrawingEnabled_ = false;
 		std::atomic<double> laserHoldDurationSeconds_ = 3.0;
 		RuntimeMetricsSession* metrics_ = nullptr;
 		PenHapticFeedback* haptics_ = nullptr;

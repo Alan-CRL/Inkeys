@@ -188,7 +188,8 @@ export namespace draw3
 		bool invertedPenEraserEnabled = true; // 默认允许倒转 Pen 在画笔/荧光笔下临时覆盖为橡皮。
 		bool interruptedStrokeReconnectEnabled = true; // 默认暂留物理 Up，允许短暂断触继续同一模型。
 		bool hapticFeedbackEnabled = true; // 当前原型默认启用触觉；后续由 Inkeys3 设置替换。
-		bool laserParticlesEnabled = true; // GPU 粒子默认开启；资源不可用时只降级激光主体。
+		bool laserParticlesEnabled = false; // GPU 粒子默认关闭；外部可按需开启，资源不可用时只降级激光主体。
+		bool laserMultiTouchDrawingEnabled = false; // 默认只接受第一根 Touch，外部可显式启用激光笔多指绘图。
 		LaserParticleConfig laserParticleConfig = {};
 		double laserHoldDurationSeconds = 3.0; // 最后一根激光笔抬起后的满亮留存时间。
 		InputWidthModeSettings inputWidthModes = {};

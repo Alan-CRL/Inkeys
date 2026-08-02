@@ -598,9 +598,17 @@ namespace draw3
 		{
 			const uint32_t pointerId = static_cast<uint32_t>(LOWORD(wParam));
 			const PointerDetails details = QueryPointerDetails(pointerId);
+			const DrawingCursorPointerAuthority previousAuthority =
+				drawingCursorPointerAuthority_.load(std::memory_order_acquire);
+			const DrawingCursorPointerAuthority pointerAuthority = details.typeKnown
+				? AuthorityForPointerType(details.type) : previousAuthority;
 			if (details.typeKnown)
-				SetDrawingCursorPointerAuthority(AuthorityForPointerType(details.type));
-			if (details.type == PT_PEN && details.positionKnown)
+				SetDrawingCursorPointerAuthority(pointerAuthority);
+			if (message == WM_POINTERUP && pointerAuthority == DrawingCursorPointerAuthority::Pen)
+			{
+				ClearPenCursorSample(); // 终态坐标不能冒充 Hover；新 Update/InAir 会重新发布。
+			}
+			else if (details.type == PT_PEN && details.positionKnown)
 			{
 				POINT clientPosition = details.screenPosition;
 				if (ScreenToClient(window, &clientPosition))
@@ -706,6 +714,11 @@ namespace draw3
 		case WM_MBUTTONDOWN:
 		case WM_MBUTTONUP:
 		{
+			const bool buttonUp = message == WM_LBUTTONUP || message == WM_RBUTTONUP ||
+				message == WM_MBUTTONUP;
+			if (buttonUp && ShouldSuppressMouseButtonUpCursorSample(
+				drawingCursorPointerAuthority_.load(std::memory_order_acquire)))
+				break; // Pointer 终态后的兼容 Mouse Up 不能把已隐藏光标重新发布为 Hover。
 			if (ShouldIgnoreMouseCursorMessage()) break;
 			SetDrawingCursorPointerAuthority(DrawingCursorPointerAuthority::Mouse);
 			if (message == WM_MOUSEMOVE && !trackingMouseLeave_)

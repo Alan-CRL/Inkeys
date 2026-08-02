@@ -533,7 +533,7 @@ namespace draw3
 				}
 				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
-				PublishPenCursor(metadata, stylusInfo, false, snapshot); // Up 后继续显示悬停 visual。
+				PublishDefaultPenCursor(); // Up 只清除接触光标，后续 InAir/Pointer 样本再恢复真实 Hover。
 				bool published = false;
 				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
 					published = interruptionSimulation_.PublishUp(

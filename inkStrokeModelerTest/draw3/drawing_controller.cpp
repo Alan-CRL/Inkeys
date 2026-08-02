@@ -801,6 +801,7 @@ namespace draw3
 		inputWidthModeSettings_(configuration_.inputWidthModes),
 		invertedPenEraserEnabled_(configuration_.invertedPenEraserEnabled),
 		laserParticlesEnabled_(configuration_.laserParticlesEnabled),
+		laserMultiTouchDrawingEnabled_(configuration_.laserMultiTouchDrawingEnabled),
 		laserHoldDurationSeconds_(std::isfinite(configuration_.laserHoldDurationSeconds) &&
 			configuration_.laserHoldDurationSeconds >= 0.0
 			? configuration_.laserHoldDurationSeconds : 3.0), metrics_(metrics),
@@ -891,6 +892,16 @@ namespace draw3
 	bool DrawingController::GetLaserParticlesEnabled() const noexcept
 	{
 		return laserParticlesEnabled_.load(std::memory_order_acquire);
+	}
+
+	void DrawingController::SetLaserMultiTouchDrawingEnabled(bool enabled) noexcept
+	{
+		laserMultiTouchDrawingEnabled_.store(enabled, std::memory_order_release);
+	}
+
+	bool DrawingController::GetLaserMultiTouchDrawingEnabled() const noexcept
+	{
+		return laserMultiTouchDrawingEnabled_.load(std::memory_order_acquire);
 	}
 
 	bool DrawingController::SetLaserHoldDurationSeconds(double seconds) noexcept
@@ -1113,13 +1124,26 @@ namespace draw3
 				const ContactSnapshot down = handle.record->DownSnapshot();
 				const InputDeviceType deviceType = handle.record->DeviceType();
 				DrawingTool batchTool = window_.ActiveTool();
+				bool hasActiveBatchContact = false;
+				bool hasActiveLaserTouchContact = false;
 				for (RuntimeStroke* activeRuntime : active)
 				{
 					if (activeRuntime && !activeRuntime->ended && !activeRuntime->awaitingReconnect)
 					{
-						batchTool = activeRuntime->selectedTool;
-						break; // 仍有真实落笔时，新 contact 必须沿用当前批次工具。
+						if (!hasActiveBatchContact)
+							batchTool = activeRuntime->selectedTool; // 仍有真实落笔时，新 contact 必须沿用当前批次工具。
+						hasActiveBatchContact = true;
+						hasActiveLaserTouchContact = hasActiveLaserTouchContact ||
+							(activeRuntime->selectedTool == DrawingTool::Laser &&
+								activeRuntime->metricDeviceType == InputDeviceType::Touch);
 					}
+				}
+				if (batchTool == DrawingTool::Laser && deviceType == InputDeviceType::Touch &&
+					hasActiveLaserTouchContact &&
+					!laserMultiTouchDrawingEnabled_.load(std::memory_order_acquire))
+				{
+					input_.Recycle(handle); // 关闭多指时忽略后续 Touch，保留第一根手指的完整生命周期。
+					return false;
 				}
 				const bool selectedToolSupportsOverride =
 					batchTool == DrawingTool::Pen || batchTool == DrawingTool::Highlighter;
