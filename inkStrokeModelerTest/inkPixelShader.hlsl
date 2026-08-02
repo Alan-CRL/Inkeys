@@ -191,18 +191,14 @@ OperatorOutput main(PS_INPUT input)
         float brightness = saturate(input.color.y);
         float3 glowColor = float3(
             globalPadding.x, input.color.z, input.color.w) * brightness;
-        // coreColorWhiteMix (globalPadding.z) 作为 lerp 上限而非下限：
-        // 亮大粒子最多混合到 coreColorWhiteMix% 的白色，始终保留 (1-coreColorWhiteMix) 的红色调；
-        // 暗小粒子接近纯红粉色。效果：全体粒子"白中带红"而非纯白。
-        float coreColorMix = globalPadding.z * saturate(input.p2.y);
-        float3 coreColor = lerp(
-            float3(globalPadding.x, input.color.z, input.color.w),
-            laserScatterColor.rgb, coreColorMix) * brightness;
+        // 粒子核心直接复用激光红色外套（borderColor），不再向白/粉白混合；
+        // 只保留生命周期与呼吸带来的亮度变化，避免白底上发灰发白。
+        float3 coreColor = laserBorderColor.rgb * brightness;
         float4 particle = 0.0;
         particle = LayerPremultiplied(particle,
             float4(glowColor, globalPadding.y), glowCoverage);
         particle = LayerPremultiplied(particle,
-            float4(coreColor, 0.92), coreCoverage);
+            float4(coreColor, 0.96), coreCoverage);
         particle *= opacity;
         OperatorOutput particleOutput;
         particleOutput.add = particle;

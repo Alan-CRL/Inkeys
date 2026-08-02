@@ -42,8 +42,9 @@ export namespace draw3
 		float glowGreen = 0.32f;
 		float glowBlue = 0.40f;
 		float glowAlpha = 0.18f;                     // 0.28→0.18 辉光更浅
-		// 核心最大白色混合比；用作 lerp 上限使最亮粒子仍保留红色调。
-		float coreColorWhiteMix = 0.82f;             // 0.50→0.82（见 PS）
+		// 粒子核心已直接使用激光 border 红；以下两项保留配置兼容，PS 不再参与核心色相。
+		float coreColorWhiteMix = 0.0f;
+		float coreColorWhiteMixJitter = 0.0f;
 		float minimumBrightness = 0.42f;
 		float maximumBrightness = 1.0f;
 		float breathingAmplitude = 0.18f;
@@ -116,10 +117,14 @@ export namespace draw3
 		const LaserParticleConfig& configuration) noexcept;
 	float LaserParticleGlowExtentDip(float currentRadiusDip,
 		const LaserParticleConfig& configuration) noexcept;
-	float LaserParticleCoreColorMix(float baseBrightness,
-		const LaserParticleConfig& configuration) noexcept;
-	float MaximumLaserParticleTravelDip(
-		const LaserParticleConfig& configuration) noexcept;
+// 与 PS 一致：coreColorMix = whiteMix * baseBrightness * whiteMixScale。
+		float LaserParticleCoreColorMix(float baseBrightness,
+			const LaserParticleConfig& configuration, float whiteMixScale = 1.0f) noexcept;
+		// 由粒子 seed 生成核心白度微小随机缩放，范围约 1±jitter。
+		float LaserParticleCoreColorWhiteMixScale(uint32_t seed,
+			const LaserParticleConfig& configuration) noexcept;
+		float MaximumLaserParticleTravelDip(
+			const LaserParticleConfig& configuration) noexcept;
 	int64_t LaserParticleLifetimeDeadlineQpc(int64_t nowQpc,
 		int64_t qpcFrequency, const LaserParticleConfig& configuration) noexcept;
 

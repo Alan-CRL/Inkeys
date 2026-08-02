@@ -53,6 +53,10 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
         output.r1 = particle.currentRadius;
         output.r2 = particle.opacity;
         output.color.y = particle.currentBrightness;
+        // color.x：核心白度微小随机缩放（1±jitter），避免整片均匀纯白。
+        float whiteMixJitter = saturate(globalColor.y);
+        float whiteMixRandom = LaserParticleRandom01(particle.seed ^ 0xA511E9B3u);
+        output.color.x = saturate(1.0 + (whiteMixRandom * 2.0 - 1.0) * whiteMixJitter);
         return output;
     }
 

@@ -281,6 +281,8 @@ export namespace draw3
 		float laserParticleGlowAlpha_ = LaserParticleConfig{}.glowAlpha;
 		float laserParticleCoreColorWhiteMix_ =
 			LaserParticleConfig{}.coreColorWhiteMix;
+		float laserParticleCoreColorWhiteMixJitter_ =
+			LaserParticleConfig{}.coreColorWhiteMixJitter;
 		LaserParticleSystem laserParticleSystem_;
 		// 单 contact Laser 的实时尾部 coverage 按需创建，避免非 Laser 会话分配额外画布。
 		LaserCoverageResources laserLiveCoverage;

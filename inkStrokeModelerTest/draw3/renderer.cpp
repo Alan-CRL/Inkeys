@@ -278,6 +278,8 @@ namespace draw3
 		laserParticleGlowAlpha_ = effectiveConfiguration.glowAlpha;
 		laserParticleCoreColorWhiteMix_ =
 			effectiveConfiguration.coreColorWhiteMix;
+		laserParticleCoreColorWhiteMixJitter_ =
+			effectiveConfiguration.coreColorWhiteMixJitter;
 		laserParticleSystem_.Configure(
 			effectiveConfiguration, dpiScale, kLaserCoreDiameterRatio);
 	}
@@ -571,15 +573,15 @@ namespace draw3
 		constants->height = viewportHeight;
 		constants->shapeType = 10.0f;
 		constants->bufferOffset = 0;
-		// shape 10 的辉光随核心半径缩放；baseBrightness 决定稳定的核心色相层级。
-		constants->color = DirectX::XMFLOAT4(
-			laserParticleGlowRadiusScale_, 0.0f,
-			laserParticleGlowGreen_, laserParticleGlowBlue_);
-		constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
-		constants->padding[0] = laserParticleGlowRed_;
-		constants->padding[1] = laserParticleGlowAlpha_;
-		constants->padding[2] = laserParticleCoreColorWhiteMix_;
-		context->Unmap(globalCB.Get(), 0);
+// shape 10：color.x=辉光半径倍率，color.y=核心白度 jitter；padding 传辉光色与 whiteMix。
+			constants->color = DirectX::XMFLOAT4(
+				laserParticleGlowRadiusScale_, laserParticleCoreColorWhiteMixJitter_,
+				laserParticleGlowGreen_, laserParticleGlowBlue_);
+			constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
+			constants->padding[0] = laserParticleGlowRed_;
+			constants->padding[1] = laserParticleGlowAlpha_;
+			constants->padding[2] = laserParticleCoreColorWhiteMix_;
+			context->Unmap(globalCB.Get(), 0);
 
 		SetOMTarget(backBufferRTV.Get());
 		context->IASetInputLayout(nullptr);

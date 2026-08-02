@@ -135,6 +135,7 @@ namespace draw3
 			IsFiniteUnit(configuration.glowBlue) &&
 			IsFiniteUnit(configuration.glowAlpha) &&
 			IsFiniteUnit(configuration.coreColorWhiteMix) &&
+			IsFiniteUnit(configuration.coreColorWhiteMixJitter) &&
 			IsFiniteUnit(configuration.minimumBrightness) &&
 			configuration.maximumBrightness >= configuration.minimumBrightness &&
 			configuration.maximumBrightness <= 1.0f &&
@@ -275,15 +276,33 @@ namespace draw3
 			configuration.glowRadiusScale;
 	}
 
-	float LaserParticleCoreColorMix(float baseBrightness,
-		const LaserParticleConfig& configuration) noexcept
-	{
-		if (!IsValidLaserParticleConfig(configuration)) return 0.0f;
-		const float brightness = std::isfinite(baseBrightness)
-			? std::clamp(baseBrightness, 0.0f, 1.0f) : 0.0f;
-		return configuration.coreColorWhiteMix +
-			(1.0f - configuration.coreColorWhiteMix) * brightness;
-	}
+float LaserParticleCoreColorMix(float baseBrightness,
+			const LaserParticleConfig& configuration, float whiteMixScale) noexcept
+		{
+			if (!IsValidLaserParticleConfig(configuration)) return 0.0f;
+			const float brightness = std::isfinite(baseBrightness)
+				? std::clamp(baseBrightness, 0.0f, 1.0f) : 0.0f;
+			const float scale = std::isfinite(whiteMixScale)
+				? std::clamp(whiteMixScale, 0.0f, 2.0f) : 1.0f;
+			// 与 PS 一致：whiteMix 是相对 scatter 的上限，再乘出生亮度与微小随机缩放。
+			return std::clamp(configuration.coreColorWhiteMix * brightness * scale, 0.0f, 1.0f);
+		}
+
+		float LaserParticleCoreColorWhiteMixScale(uint32_t seed,
+			const LaserParticleConfig& configuration) noexcept
+		{
+			if (!IsValidLaserParticleConfig(configuration)) return 1.0f;
+			// 与 VS 使用同一 hash 路径，保证 CPU 断言与 GPU 一致。
+			uint32_t value = seed ^ 0xA511E9B3u;
+			value ^= value >> 16;
+			value *= 0x7FEB352Du;
+			value ^= value >> 15;
+			value *= 0x846CA68Bu;
+			value ^= value >> 16;
+			const float random01 = static_cast<float>(value & 0x00FFFFFFu) / 16777216.0f;
+			const float halfRange = configuration.coreColorWhiteMixJitter;
+			return std::clamp(1.0f + (random01 * 2.0f - 1.0f) * halfRange, 0.0f, 2.0f);
+		}
 
 	float MaximumLaserParticleTravelDip(
 		const LaserParticleConfig& configuration) noexcept
