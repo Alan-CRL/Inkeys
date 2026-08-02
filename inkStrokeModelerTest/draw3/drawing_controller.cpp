@@ -804,7 +804,7 @@ namespace draw3
 		laserMultiTouchDrawingEnabled_(configuration_.laserMultiTouchDrawingEnabled),
 		laserHoldDurationSeconds_(std::isfinite(configuration_.laserHoldDurationSeconds) &&
 			configuration_.laserHoldDurationSeconds >= 0.0
-			? configuration_.laserHoldDurationSeconds : 3.0), metrics_(metrics),
+			? configuration_.laserHoldDurationSeconds : 1.0), metrics_(metrics),
 		haptics_(haptics)
 	{
 		const DirectX::XMFLOAT4 penColor = ColorForTool(DrawingTool::Pen);

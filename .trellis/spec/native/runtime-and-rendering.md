@@ -78,7 +78,7 @@
 - 出生点可在白芯内沿所选法线随机偏移。基础亮度以 72% 尺寸层级和 28% 独立随机样本混合后映射到 `0.42–1.0`，因此大粒子通常更亮、小粒子通常更暗但范围仍重叠。`0.8–1.4Hz` 随机相位呼吸以 `0.12` 振幅在 `0.2s` 渐入且只改变 RGB；核心 Alpha 只使用生命周期曲线。
 - Compute 顺序固定为 `VS t8 unbind -> CS u0 + b0 -> Dispatch -> CS unbind`；绘制为 shape `10` 的 `DrawInstanced(6, 2048, 0, 0)`，死亡槽生成退化图元。每个 dirty frame 的顺序固定为 `L2 + 普通 L1/L0` 合成、粒子、已烘干 Laser 颜色层、shape `13` 的稳定/live coverage、Laser tip、普通 cursor、Present；粒子因此仍在激光主体下方。VS 令辉光半径为当前核心半径的 `2.0` 倍加 `2 × dpiScale` 地板，并传递出生基础亮度；PS 粒子核心直接复用激光红色外套 `borderColor=(1.0, 11/255, 30/255)`，只乘生命周期/呼吸亮度，不再向白混合。辉光保持 `(1.0, 0.32, 0.40)`、峰值 Alpha `0.18` 和 `pow(1.6)` 衰减，所有输出继续使用预乘 Alpha。
 - CPU 把同一帧实际发射请求合成一个未裁剪保守包络，按最大减速弹道、白芯出生偏移、最大粒子半径、辉光和 AA 扩展；每个帧批次在最大寿命 1 秒后独立到期。Tracker 保存原始包络，每帧按当前画布裁剪，Resize 后不得复用旧画布裁剪结果。
-- 最后一根 Laser Up 才记录 `lastAllUpQpc`；默认满亮保持 `3.0s`，固定 `0.8s` smooth fade。当前批次实际安排过粒子时，有效 Hold 为 `max(公开设置值, maximumLifetimeSeconds)`，默认下限即 `1.0s`，但 setter/getter 值不变。新 Down 在 Hold/Fade 中把整组 opacity 恢复为 `1` 并重新计时。
+- 最后一根 Laser Up 才记录 `lastAllUpQpc`；默认满亮保持 `1.0s`，固定 `0.8s` smooth fade。当前批次实际安排过粒子时，有效 Hold 为 `max(公开设置值, maximumLifetimeSeconds)`，默认下限即 `1.0s`，但 setter/getter 值不变。新 Down 在 Hold/Fade 中把整组 opacity 恢复为 `1` 并重新计时。
 - `SetLaserHoldDurationSeconds` 只接受 finite non-negative 值；运行中调整须由 control wake 唤醒并相对最后一次全部 Up 立即重算。粒子 setter 同样发布 control wake；关闭后下一帧 reset GPU 状态并 union 旧保守 bounds。
 - Hold 静态期不持续 Present；Fade、接触、prediction 和粒子动画才驱动帧。resize 只保留稳定颜色层左上角交集，`t7/t9` 新建为空；活动 Laser coverage 从 CPU 几何重建，不能复制旧 live coverage。clear 必须同步清理稳定颜色、scratch 和新旧 bounds；Present failure 保留仍有效的 coverage、请求下一帧 full-present，并重新解析旧/新 dirty bounds。粒子或 cursor dirty 与稳定 Laser 相交时，coverage 必须在最终 `frameDirty` 内再次解析。
 
@@ -110,7 +110,7 @@
 
 ### 6. Tests Required
 
-- 断言按键 4/枚举、最后 Up 计时、3.0s Hold、0.8s fade、运行中设置变化和非法输入。
+- 断言按键 4/枚举、最后 Up 计时、1.0s Hold、0.8s fade、运行中设置变化和非法输入。
 - 断言多指配置默认关闭、setter/getter 往返，以及关闭时第二根 Touch Down 被忽略、开启时进入既有多 contact Laser 路径。
 - 断言 Laser 不进入 reconnect/L2，压力 `0/0.5/1` 只缩放实体且 prediction 半径继承正确，coverage bounds 覆盖 15px 基准完整视觉直径、最大压力实体和固定 5px 漫反射；静态核对漫反射 alpha 从实体边界的 1 单调衰减到外缘的 0，resize/clear/Present failure 无残影。
 - 增量状态测试必须断言时间保护边界单调推进、L1/L0 共享一个连接点、prediction 回缩不后退稳定游标、自交 dirty union 不丢失、第二 contact 锁定 fallback、Resize/Clear/resource failure 重建，以及 `max(t7,t9)` 与完整 coverage union 的 CPU 等价性；静态核对 t9、shape `13` 和 t6-t9 解绑契约。

@@ -63,7 +63,7 @@ export namespace draw3
 		std::atomic<bool> invertedPenEraserEnabled_ = true;
 		std::atomic<bool> laserParticlesEnabled_ = false;
 		std::atomic<bool> laserMultiTouchDrawingEnabled_ = false;
-		std::atomic<double> laserHoldDurationSeconds_ = 3.0;
+		std::atomic<double> laserHoldDurationSeconds_ = 1.0;
 		RuntimeMetricsSession* metrics_ = nullptr;
 		PenHapticFeedback* haptics_ = nullptr;
 		double lastPresentDurationMs_ = 0.0;

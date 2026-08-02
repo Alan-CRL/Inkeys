@@ -191,7 +191,7 @@ export namespace draw3
 		bool laserParticlesEnabled = false; // GPU 粒子默认关闭；外部可按需开启，资源不可用时只降级激光主体。
 		bool laserMultiTouchDrawingEnabled = false; // 默认只接受第一根 Touch，外部可显式启用激光笔多指绘图。
 		LaserParticleConfig laserParticleConfig = {};
-		double laserHoldDurationSeconds = 3.0; // 最后一根激光笔抬起后的满亮留存时间。
+		double laserHoldDurationSeconds = 1.0; // 最后一根激光笔抬起后的满亮留存时间。
 		InputWidthModeSettings inputWidthModes = {};
 	};
 
