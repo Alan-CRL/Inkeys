@@ -47,9 +47,6 @@ export namespace draw3
 		bool ProcessPendingResize(bool presentAfterResize);
 		// 运行 RTS 多 contact 绘制循环；完全空闲时阻塞在零自旋信号量。
 		void Run();
-		// 保留旧鼠标单笔入口，主绘制流程不再调用。
-		void DrawMouseStroke(const MouseMessage& startMessage);
-
 	private:
 		void CompositeLayersToBackBuffer(RECT dirty, bool orderLiveOverStable = false);
 		bool PresentFrame(RECT dirty, bool presentFull);

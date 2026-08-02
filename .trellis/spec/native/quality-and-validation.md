@@ -4,7 +4,7 @@
 
 - 只修改任务要求的最小范围。
 - 不顺手格式化、重命名、封装公开 renderer 字段或清理历史文件。
-- `additional/`、`HiEasyX/`、`lib/` 默认视为第三方/外部来源，原则上不直接修改；必要修改必须形成独立补丁并记录原因、上游来源和验证。
+- `additional/`、`lib/` 默认视为第三方/外部来源，原则上不直接修改；必要修改必须形成独立补丁并记录原因、上游来源和验证。
 - 历史 `.vcxproj` 残留引用与 `ResTest/` 暂不删除；用途或弃用状态不清楚时标记“待验证”，留给专门清理任务。
 - `InkRenderer` 公开 D3D 资源是实现暴露；没有专门架构任务时不新增直接依赖。
 - `.cso`、`.aps`、中间 HLSL 副本和平台输出不手工编辑。
@@ -47,9 +47,9 @@ MSBuild.exe .\inkStrokeModelerTest.sln /m /p:Configuration=Debug /p:Platform=ARM
 
 构建日志需要同时证明 C++ 编译和两个 Shader 编译成功；只看到最终 EXE 存在，不能替代对 Shader 构建/资源链的检查。
 
-仓库内 EasyX 与 ink stroke modeler 预编译库使用 Release ABI。Debug 配置必须保留调试信息/非优化构建，但以 `/MT`、`NDEBUG` 链接；改回 `/MTd`、`_DEBUG` 会产生 `_ITERATOR_DEBUG_LEVEL` 和运行库不匹配。该约束适用于主工程和直接链接真实模块源码的测试工程。
+仓库内 ink stroke modeler 预编译库使用 Release ABI。Debug 配置必须保留调试信息/非优化构建，但以 `/MT`、`NDEBUG` 链接；改回 `/MTd`、`_DEBUG` 会产生 `_ITERATOR_DEBUG_LEVEL` 和运行库不匹配。该约束适用于主工程和直接链接真实模块源码的测试工程。
 
-`HiEasyX\HiWindow.cpp` 的 Release 文件级 `WholeProgramOptimization=false` 是窗口创建兼容约束。检查编译命令时，该文件应保留 `/O2` 但不含 `/GL`，其余主工程源码仍使用项目级全程序优化；不要为规避单文件问题关闭整个工程的 LTCG。
+原生窗口宿主不需要文件级 `WholeProgramOptimization` 例外。Release 必须继续使用项目级 `/GL/LTCG`，并通过启动测试确认 `WS_EX_NOREDIRECTIONBITMAP` 直接进入 `CreateWindowExW`。
 
 ## D3D Debug Layer
 

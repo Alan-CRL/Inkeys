@@ -16,7 +16,7 @@
 - [ ] 阅读任务文档，并确认修改的是当前 `draw3` 路径而非历史/参考代码。
 - [ ] 阅读将修改模块的 `.cppm` 接口和 `.cpp` 实现。
 - [ ] 用 `rg` 搜索相关常量、枚举、结构、资源和文档镜像。
-- [ ] 涉及 `additional/`、`HiEasyX/`、`lib/` 时先确认独立第三方补丁范围和上游来源。
+- [ ] 涉及 `additional/`、`lib/` 时先确认独立第三方补丁范围和上游来源。
 - [ ] 涉及 CPU/GPU 契约时同时阅读 [Shaders](../shaders/index.md)。
 - [ ] 涉及三层画布、线程回调或 presenter 时阅读 [Cross-Layer Guide](../guides/cross-layer-thinking-guide.md)。
 - [ ] 保持原文件 UTF-8 BOM + CRLF，不格式化无关代码。

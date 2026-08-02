@@ -619,7 +619,7 @@ Correct：`L2 只表示当前视觉结果；永久笔迹只接受真实确认或
 
 ## Transparent Presentation Contract
 
-- 绘图窗口用 `SW_HIDE` 预设创建；完成 presenter 初始化和首个透明画布提交后才显示。禁止在初始化期间先暴露 HiEasyX 白色窗口类背景，也不得为此直接修改第三方 HiEasyX 源码。
+- 原生绘图窗口不带 `WS_VISIBLE` 创建；完成 presenter 初始化和首个透明画布提交后才显示。窗口类不得配置会在初始化期间暴露实色背景的 GDI 画刷。
 - DirectComposition swapchain、visual tree 和 `Commit` 全部成功，不代表驱动一定按 premultiplied alpha 合成；透明正确性必须通过真实桌面背景验证。
 - 所有适配器统一按 DirectComposition、DWM extended frame、ULW 的顺序尝试；厂商、架构或 OS 标签本身不能作为提前降级依据。
 - 若要增加设备或驱动专用兼容路径，必须记录 OS、VendorId、DeviceId、SubSysId、Revision、UMD driver version 和真实桌面背景视觉结果；首选模式失败时仍按既有清理和回退协议继续。

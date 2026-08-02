@@ -243,36 +243,6 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="HiEasyX\HiCanvas.cpp" />
-    <ClCompile Include="HiEasyX\HiContainer.cpp" />
-    <ClCompile Include="HiEasyX\HiDrawingProperty.cpp" />
-    <ClCompile Include="HiEasyX\HiFPS.cpp" />
-    <ClCompile Include="HiEasyX\HiFunc.cpp" />
-    <ClCompile Include="HiEasyX\HiGdiplus.cpp" />
-    <ClCompile Include="HiEasyX\HiGif.cpp" />
-    <ClCompile Include="HiEasyX\HiGUI\Button.cpp" />
-    <ClCompile Include="HiEasyX\HiGUI\ControlBase.cpp" />
-    <ClCompile Include="HiEasyX\HiGUI\Page.cpp" />
-    <ClCompile Include="HiEasyX\HiGUI\ProgressCtrl.cpp" />
-    <ClCompile Include="HiEasyX\HiGUI\ScrollBar.cpp" />
-    <ClCompile Include="HiEasyX\HiGUI\Static.cpp" />
-    <ClCompile Include="HiEasyX\HiIcon.cpp" />
-    <ClCompile Include="HiEasyX\HiMouseDrag.cpp" />
-    <ClCompile Include="HiEasyX\HiMusicMCI.cpp" />
-    <ClCompile Include="HiEasyX\HiStart.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysButton.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysCheckBox.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysComboBox.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysControlBase.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysEdit.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysGroup.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysGroupBox.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysRadioButton.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysStatic.cpp" />
-    <ClCompile Include="HiEasyX\HiWindow.cpp">
-      <!-- HiEasyX 用一次性全局状态向窗口线程传递预设；Release LTCG 会丢失扩展样式。 -->
-      <WholeProgramOptimization Condition="'$(Configuration)'=='Release'">false</WholeProgramOptimization>
-    </ClCompile>
     <ClCompile Include="draw3\contact_input.cpp" />
     <ClCompile Include="draw3\contact_input.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
@@ -338,38 +308,6 @@
     <None Include="main2.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="HiEasyX.h" />
-    <ClInclude Include="HiEasyX\HiCanvas.h" />
-    <ClInclude Include="HiEasyX\HiContainer.h" />
-    <ClInclude Include="HiEasyX\HiDef.h" />
-    <ClInclude Include="HiEasyX\HiDrawingProperty.h" />
-    <ClInclude Include="HiEasyX\HiFPS.h" />
-    <ClInclude Include="HiEasyX\HiFunc.h" />
-    <ClInclude Include="HiEasyX\HiGdiplus.h" />
-    <ClInclude Include="HiEasyX\HiGif.h" />
-    <ClInclude Include="HiEasyX\HiGUI\Button.h" />
-    <ClInclude Include="HiEasyX\HiGUI\ControlBase.h" />
-    <ClInclude Include="HiEasyX\HiGUI\HiGUI.h" />
-    <ClInclude Include="HiEasyX\HiGUI\Page.h" />
-    <ClInclude Include="HiEasyX\HiGUI\ProgressCtrl.h" />
-    <ClInclude Include="HiEasyX\HiGUI\ScrollBar.h" />
-    <ClInclude Include="HiEasyX\HiGUI\Static.h" />
-    <ClInclude Include="HiEasyX\HiIcon.h" />
-    <ClInclude Include="HiEasyX\HiMacro.h" />
-    <ClInclude Include="HiEasyX\HiMouseDrag.h" />
-    <ClInclude Include="HiEasyX\HiMusicMCI.h" />
-    <ClInclude Include="HiEasyX\HiStart.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\HiSysGUI.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysButton.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysCheckBox.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysComboBox.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysControlBase.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysEdit.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysGroup.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysGroupBox.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysRadioButton.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysStatic.h" />
-    <ClInclude Include="HiEasyX\HiWindow.h" />
     <None Include="renderer2.h" />
     <ClInclude Include="laserParticleResource.h" />
     <ClInclude Include="resource.h" />

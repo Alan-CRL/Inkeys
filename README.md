@@ -16,7 +16,7 @@ Inkeys3-Draw3 是面向下一代 Inkeys3 的 Windows 原生墨迹渲染实验项
 ## 运行结构
 
 ```text
-Win32/HiEasyX 消息
+原生 Win32 消息
         |
         v
 WindowController
@@ -62,7 +62,7 @@ CPU 与 GPU 的共享结构和寄存器契约定义在 `inkStrokeModelerTest/dra
 MSBuild.exe .\inkStrokeModelerTest.sln /m /p:Configuration=Debug /p:Platform=ARM64
 ```
 
-不要单独编译某个 `.cppm` 或 `.cpp` 文件；模块依赖、HLSL 临时副本和资源嵌入均由工程文件编排。仓库内的 `additional/`、`HiEasyX/` 和 `lib/` 是当前工程直接引用的第三方源码或预编译库，本项目没有包管理器安装步骤。
+不要单独编译某个 `.cppm` 或 `.cpp` 文件；模块依赖、HLSL 临时副本和资源嵌入均由工程文件编排。仓库内的 `additional/` 和 `lib/` 是当前工程直接引用的第三方源码或预编译库，本项目没有包管理器安装步骤。
 
 ## 操作
 
@@ -83,7 +83,6 @@ MSBuild.exe .\inkStrokeModelerTest.sln /m /p:Configuration=Debug /p:Platform=ARM
 - `inkStrokeModelerTest/`：主解决方案中的实际应用工程。
 - `inkStrokeModelerTest/draw3/`：当前 Draw3 核心模块。
 - `inkStrokeModelerTest/additional/`：Google Ink Stroke Modeler 与 Abseil 源码快照。
-- `inkStrokeModelerTest/HiEasyX/`：窗口和消息适配代码。
 - `ResTest/DirectInkPresenter/`：透明窗口呈现参考项目，不属于主解决方案。
 - `main2.cpp`、`main3.cpp`、`renderer2.h`、`shader.hlsl`：工程中仅残留 `None` 引用，当前工作树中不存在对应文件；用途和弃用状态待专门任务确认。
 - `.cso`、`.aps` 和各平台输出目录：生成或构建产物，不作为架构规范来源。

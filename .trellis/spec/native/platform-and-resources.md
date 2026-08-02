@@ -41,7 +41,7 @@ bool TransparentPresentationController::Present(RECT dirty, bool presentFull);
 
 本规则不新增 API；修改上述签名或返回语义需要专门设计并检查全部调用者。
 
-Release 工程还包含一个窗口创建边界约束：`HiEasyX\HiWindow.cpp` 必须通过 `.vcxproj` 的文件级元数据关闭 `WholeProgramOptimization`，其余源码仍沿用项目级 Release 优化设置。
+`WindowController` 直接使用原生 Win32 API 创建窗口，并拥有独立消息线程；工程不需要窗口源文件的 Release 优化例外。
 
 ### 3. Contracts
 
@@ -49,7 +49,10 @@ Release 工程还包含一个窗口创建边界约束：`HiEasyX\HiWindow.cpp` �
 - 实测记录必须包含：OS/补丁、GPU/驱动、feature level、active presenter、是否 WARP、场景与结果。
 - 没有环境记录时，只能声明代码路径存在并标记“待验证”。
 - 首选 DComp 时，`WS_EX_NOREDIRECTIONBITMAP` 必须随 `CreateWindowEx` 的 `dwExStyle` 传入；不能依赖创建后调用 `SetWindowLongPtr` 补设。
-- HiEasyX 通过一次性全局预设和独立窗口线程传递创建参数。ARM64 Release 的 `/GL/LTCG` 已实测会使扩展样式未进入创建参数，因此 `HiEasyX\HiWindow.cpp` 必须保持文件级 `WholeProgramOptimization=false`；不要扩大为关闭整个工程的优化。
+- 窗口线程使用 `_beginthreadex` 启动，通过手动复位事件发布创建结果；禁止 detached thread、普通全局预设或轮询非原子完成标志。
+- `WindowController::window_` 是跨线程句柄，必须以 acquire/release 原子语义发布和清空；调用 Win32 API 前先读取到局部 `HWND`，避免关闭期间重复读取失效句柄。
+- `WM_NCCREATE` 必须从 `CREATESTRUCTW::lpCreateParams` 取得控制器并写入 `GWLP_USERDATA`；其余未处理消息交给 `DefWindowProcW`。
+- 析构时向仍有效的 HWND 投递 `WM_CLOSE` 并等待线程句柄；`WM_DESTROY` 必须 `PostQuitMessage`；消息泵无论因 `WM_QUIT` 还是 `GetMessageW` 错误结束，都要由窗口线程销毁仍有效的 HWND 后再清空原子句柄。
 
 ### 4. Validation & Error Matrix
 
@@ -59,7 +62,9 @@ Release 工程还包含一个窗口创建边界约束：`HiEasyX\HiWindow.cpp` �
 | hardware device 创建失败 | 尝试 WARP；两者都失败则初始化失败 |
 | DirectComposition API/初始化不可用 | 进入下一 presenter，不宣称 DComp 可用 |
 | DComp 窗口在创建后缺少 `WS_EX_NOREDIRECTIONBITMAP` | 输出包含实际 `GWL_EXSTYLE` 的低频诊断并进入下一 presenter；不要尝试创建后补设 |
-| Release 移除 `HiWindow.cpp` 的文件级优化例外 | 视为窗口创建契约回归；ARM64 Release 可能以错误 87 回退 DWM |
+| 窗口类注册、线程或 `CreateWindowExW` 失败 | 输出对应 Win32/CRT 上下文，发布失败结果并回收线程与事件句柄 |
+| `WM_CLOSE` 投递失败 | 向已记录的窗口线程投递 `WM_QUIT`，析构仍等待线程结束 |
+| `GetMessageW` 返回 `-1` 或线程收到兜底 `WM_QUIT` | 记录错误（如有），销毁仍有效的 HWND，原子清空句柄后结束线程 |
 | 当前 presenter 初始化失败 | 清理本次资源后尝试下一 presenter |
 | presenter `Present` 失败 | 返回失败并请求后续全量呈现 |
 | 未在目标系统执行 | 结果标记“待验证”，不得写“已支持/已保证” |
@@ -76,8 +81,9 @@ Release 工程还包含一个窗口创建边界约束：`HiEasyX\HiWindow.cpp` �
 
 - 目标系统启动与 device/presenter 日志。
 - ARM64 Debug/Release 多轮启动，确认 active presenter；涉及窗口预设或工程优化时，两种配置都必须验证。
-- 检查 Release 编译命令：`HiEasyX\HiWindow.cpp` 保留 `/O2`、不含 `/GL`，其他源码仍使用项目级全程序优化。
+- 检查 Release 编译命令：窗口宿主与其他自研源码都沿用项目级 `/O2 /GL`，没有文件级 WPO 例外。
 - 基础绘制、prediction、抬笔烘干、窗口 resize。
+- 关闭窗口、快捷键退出和 `WM_QUIT` 兜底均应断言 HWND 被销毁、窗口线程可等待结束且进程无死锁。
 - 能触发时验证 presenter fallback；不能触发时记录环境限制。
 - Debug Layer 检查方式可用后，记录无明显 D3D error。
 
@@ -145,7 +151,7 @@ DirectCompositionVisualTree
   -> UlwDirtyRect
 ```
 
-窗口由 `WindowController` 通过 HiEasyX 的 `PreSetWindowShowState(SW_HIDE)` 隐藏创建。设备、presenter、RTS 和 renderer 初始化完成后，必须先提交一张透明画布，再显示窗口；这样 ULW 与 GPU 透明路径都不会在首帧前暴露 HiEasyX 的白色窗口类背景。该行为只使用第三方公开 API，不修改 `HiEasyX/` 源码。
+窗口由 `WindowController` 直接以不含 `WS_VISIBLE` 的 `WS_POPUP` 样式创建，且窗口类背景画刷为空。设备、presenter、RTS 和 renderer 初始化完成后，必须先提交一张透明画布，再显示窗口，避免首帧前出现实色背景。
 
 每种模式先尝试 waitable swapchain，失败后使用普通 swapchain。GPU 透明模式使用 BGRA8、flip sequential、双缓冲和 premultiplied alpha；DWM HWND 路径失败时会尝试 unspecified alpha 兼容模式。
 

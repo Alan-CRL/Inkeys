@@ -7,7 +7,7 @@
 修改前先写出受影响路径：
 
 ```text
-Win32/HiEasyX message
+Win32 window message
   -> WindowController atomic request
   -> main / DrawingController
   -> Stroke Modeler and ink_prediction
@@ -39,7 +39,7 @@ Win32/HiEasyX message
 
 - 原始鼠标速度只用于普通笔宽估算，预测点继承最后真实笔宽。
 - 最新 snapshot 覆盖采样改变了速度采样节奏；每份真实速度只滤波一次，第一份速度不得回写已可见起笔，半径仍需时间/距离双限速。
-- `ActiveMouseStroke` 的提交游标必须单调前进，已进入 L1 的稳定前缀不能重复提交。
+- 活动 contact 的提交游标必须单调前进，已进入 L1 的稳定前缀不能重复提交。
 - Up 收尾由 `retainPredictionOnUp` 唯一选择：默认连接 `kUp` 的真实 modeled 尾段并清除 prediction；开启时只烘干上一帧可见 L0，禁止两种尾段同时绘制。
 - 荧光笔固定矩形的 8:1 half size、0.25px 去重、sweep coverage 和 dirty bounds 必须一起检查。
 
@@ -61,13 +61,13 @@ Win32/HiEasyX message
 - 抬笔时默认把模型 `kUp` 的真实尾段并入 L1；`retainPredictionOnUp` 开启时改为把最后可见 L0 并入 L1，再一次性作用到 L2。
 - “保留最后可见 L0”表示直接烘干其真实尾部、prediction 和笔锋；此分支不得再并排绘制或重建另一条终态尾部。
 
-依据：`DrawingController::CompositeLayersToBackBuffer`、`DrawMouseStroke`、`InkRenderer::ApplyOperatorLayers`。
+依据：`DrawingController::CompositeLayersToBackBuffer`、`DrawCompletedStroke`、`InkRenderer::ApplyOperatorLayers`。
 
 ### Presenter fallback
 
-- 窗口创建链必须按 `ShouldPreconfigureNoRedirectionBitmap -> HiEasyX PreSet -> 独立窗口线程 -> CreateWindowEx -> DComp ConfigureWindow` 检查；不能只看 presenter 初始化阶段。
+- 窗口创建链必须按 `ShouldPreconfigureNoRedirectionBitmap -> WindowController 独立窗口线程 -> CreateWindowExW -> DComp ConfigureWindow` 检查；不能只看 presenter 初始化阶段。
 - `WS_EX_NOREDIRECTIONBITMAP` 是 DComp 的创建期窗口契约。创建后缺失时记录并回退，不用 `SetWindowLongPtr` 补设。
-- HiEasyX 窗口预设涉及 Release 优化边界；修改相关代码或 `.vcxproj` 时必须比较 Debug/Release，并确认 `HiWindow.cpp` 的文件级 `/GL` 例外仍生效。
+- 修改窗口线程、创建样式或 `.vcxproj` 时必须比较 Debug/Release，并验证初始化事件、`GWLP_USERDATA` 路由和关闭等待都能完成。
 - 所有适配器统一按 DirectComposition、DWM extended frame、ULW 初始化；厂商、架构或 OS 标签本身不能改变顺序。
 - 每次新模式尝试前清理上一模式的 presenter、renderer 和 swapchain 状态。
 - GPU 路径保留真透明 alpha；仅 ULW CPU 输出副本叠加 `1/255` alpha 命中测试底层。

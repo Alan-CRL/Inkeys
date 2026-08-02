@@ -31,14 +31,6 @@ export namespace draw3
 		int height = 0;
 	};
 
-	// 表示主循环关心的鼠标消息。
-	struct MouseMessage
-	{
-		UINT message = 0;
-		int x = 0;
-		int y = 0;
-	};
-
 	// 管理窗口创建、消息回调、系统光标和跨线程瞬态光标请求。
 	class WindowController : public DrawingCursorEventSink
 	{
@@ -54,10 +46,6 @@ export namespace draw3
 		WindowSize Size() const;
 		// 在 D3D 资源重建成功后提交新的逻辑尺寸。
 		void CommitSize(int width, int height);
-		// 获取一条鼠标消息；没有消息时返回 false。
-		bool TryGetMouseMessage(MouseMessage& message) const;
-		// 清空当前窗口积压的鼠标消息。
-		void FlushMouseMessages() const;
 		// 消费一次清屏请求。
 		bool ConsumeClearCanvasRequest();
 		// 消费一次窗口缩放请求并返回目标尺寸。
@@ -96,7 +84,9 @@ export namespace draw3
 		bool ExitRequested() const;
 
 	private:
+		static unsigned __stdcall WindowThreadEntry(void* context);
 		static LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+		void RunWindowThread();
 		LRESULT HandleWindowMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 		void RequestControlWake();
 		void RequestDrawingCursorRender() noexcept;
@@ -108,8 +98,11 @@ export namespace draw3
 		bool ShouldIgnoreMouseCursorMessage() const noexcept;
 		void ApplyWindowCursor() noexcept;
 
-		static WindowController* activeController_;
-		HWND window_ = nullptr;
+		std::atomic<HWND> window_ = nullptr;
+		HANDLE windowThread_ = nullptr;
+		DWORD windowThreadId_ = 0;
+		HANDLE windowReadyEvent_ = nullptr;
+		DWORD initialExtendedStyle_ = 0;
 		WindowSize size_ = {};
 		std::atomic<bool> clearCanvasRequested_ = false;
 		std::atomic<bool> resizeRequested_ = false;

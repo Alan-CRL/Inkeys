@@ -4,7 +4,7 @@
 
 ## Project Snapshot
 
-- 平台：Windows 桌面，Win32/HiEasyX 窗口；项目级正式兼容目标包含 Windows 7 SP1 + KB2670838。
+- 平台：Windows 桌面，原生 Win32 窗口；项目级正式兼容目标包含 Windows 7 SP1 + KB2670838。
 - 语言：C++20 modules 与 HLSL Shader Model 5.0。
 - 图形：D3D11、DXGI、DirectComposition、DWM、UpdateLayeredWindow。
 - 墨迹：Google Ink Stroke Modeler 与 Kalman prediction。
@@ -39,7 +39,7 @@
 ## Repository Boundaries
 
 - `inkStrokeModelerTest/draw3/` 是当前自研核心，规范示例优先来自这里。
-- `inkStrokeModelerTest/additional/`、`inkStrokeModelerTest/HiEasyX/` 与 `inkStrokeModelerTest/lib/` 默认属于第三方/外部来源；原则上不直接修改，必要补丁必须独立记录原因和上游来源。
+- `inkStrokeModelerTest/additional/` 与 `inkStrokeModelerTest/lib/` 默认属于第三方/外部来源；原则上不直接修改，必要补丁必须独立记录原因和上游来源。
 - `ResTest/DirectInkPresenter/` 是独立参考解决方案，不参与主解决方案构建；暂时保留，普通功能任务不得顺手删除。
 - `.vcxproj` 中 `main2.cpp`、`main3.cpp`、`renderer2.h`、`shader.hlsl` 是不参与编译的残留 `None` 引用，对应文件当前不存在；用途和清理时机均待专门任务确认。
 - `.cso`、`.aps`、平台输出目录、IDE 缓存和中间 HLSL 副本属于生成或构建产物，不作为手工编辑目标。

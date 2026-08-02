@@ -26,7 +26,7 @@
 
 ## Third-Party And External Source Policy
 
-**已确认规则**：`inkStrokeModelerTest/additional/`、`inkStrokeModelerTest/HiEasyX/`、`inkStrokeModelerTest/lib/` 以及同类目录默认视为第三方或外部来源代码。
+**已确认规则**：`inkStrokeModelerTest/additional/`、`inkStrokeModelerTest/lib/` 以及同类目录默认视为第三方或外部来源代码。
 
 - 原则上不直接修改。
 - 确需修改时，使用独立补丁或独立变更批次。
@@ -44,12 +44,7 @@
 - 两者不一致时必须显式记录差异，不得自动选择任一方作为最终规范。
 - 是否更新实现、恢复历史设计或修正文档，必须由当前任务的明确需求或专门架构决定确认。
 
-已知差异示例：
-
-- 阶段说明记录普通笔基准直径 `50px`；当前 `DrawingController::DrawMouseStroke` 使用 `100px`。
-- 阶段说明描述橡皮保留画笔式实时笔锋；当前源码关闭橡皮预测、使用零 live-tip 时长，并把新增真实点直接提交 L1。
-
-这些示例仅描述差异，不对最终产品行为作选择。
+具体差异必须以当前任务中的源码锚点记录；已经删除的历史入口不得继续作为现行行为示例。
 
 ## Experimental Parameters
 

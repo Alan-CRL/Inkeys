@@ -8,20 +8,20 @@
 #include <windowsx.h>
 #include <dwmapi.h>
 #include <tpcshrd.h>
-#include "../HiEasyX.h"
 
 #include <cstdint>
+#include <cerrno>
 #include <iostream>
-#include <tchar.h>
+#include <process.h>
+#include <tchar.h> // Tablet Pen Service 属性宏仍使用 _T。
 
 module draw3.window_control;
 
 namespace draw3
 {
-	WindowController* WindowController::activeController_ = nullptr;
-
 	namespace
 	{
+		constexpr wchar_t kWindowClassName[] = L"InkeysDraw3Window";
 		constexpr UINT kApplySystemCursorMessage = WM_APP + 1;
 		constexpr LONG_PTR kPromotedPointerSignatureMask = 0xFFFFFF00;
 		constexpr LONG_PTR kPromotedPointerSignature = 0xFF515700;
@@ -137,31 +137,67 @@ namespace draw3
 
 	WindowController::~WindowController()
 	{
-		if (activeController_ == this) activeController_ = nullptr;
+		const HWND window = window_.load(std::memory_order_acquire);
+		if (window && IsWindow(window) && !PostMessageW(window, WM_CLOSE, 0, 0) && windowThreadId_)
+			PostThreadMessageW(windowThreadId_, WM_QUIT, 0, 0); // HWND 关闭投递失败时仍保证线程可退出。
+		if (windowThread_)
+		{
+			WaitForSingleObject(windowThread_, INFINITE); // 等待窗口过程停止使用当前控制器实例。
+			CloseHandle(windowThread_);
+			windowThread_ = nullptr;
+			windowThreadId_ = 0;
+		}
+		if (windowReadyEvent_)
+		{
+			CloseHandle(windowReadyEvent_);
+			windowReadyEvent_ = nullptr;
+		}
 	}
 
 	bool WindowController::Initialize(bool preconfigureNoRedirectionBitmap)
 	{
-		const RECT monitorRect = GetPrimaryMonitorRectangle(); // 以主显示器区域作为初始全屏画布。
-		size_.width = static_cast<int>(monitorRect.right - monitorRect.left);
-		size_.height = static_cast<int>(monitorRect.bottom - monitorRect.top);
-		activeController_ = this; // HiEasyX 只能接静态回调，这里转回当前实例。
 		defaultCursor_ = LoadCursorW(nullptr, IDC_ARROW);
-
-		hiex::PreSetWindowStyle(WS_POPUP);
-		hiex::PreSetWindowPos(monitorRect.left, monitorRect.top);
-		hiex::PreSetWindowShowState(SW_HIDE); // 避免透明 presenter 首次提交前暴露 HiEasyX 白色类背景。
-		if (preconfigureNoRedirectionBitmap)
+		initialExtendedStyle_ = preconfigureNoRedirectionBitmap ? WS_EX_NOREDIRECTIONBITMAP : 0;
+		windowReadyEvent_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+		if (!windowReadyEvent_)
 		{
-			// Win7 不支持该扩展样式，因此只在确认 DComp API 存在时预置。
-			hiex::PreSetWindowStyleEx(WS_EX_NOREDIRECTIONBITMAP);
+			std::cout << "Create window-ready event failed. GetLastError=" << GetLastError() << std::endl;
+			return false;
 		}
-		window_ = hiex::initgraph_win32(size_.width, size_.height, EW_SHOWCONSOLE, _T(""), WindowProcedure);
-		if (window_)
+
+		unsigned threadId = 0;
+		const uintptr_t threadHandle = _beginthreadex(
+			nullptr, 0, WindowThreadEntry, this, 0, &threadId);
+		windowThread_ = reinterpret_cast<HANDLE>(threadHandle);
+		windowThreadId_ = static_cast<DWORD>(threadId);
+		if (!threadHandle)
+		{
+			std::cout << "Create window thread failed. errno=" << errno << std::endl;
+			CloseHandle(windowReadyEvent_);
+			windowReadyEvent_ = nullptr;
+			return false;
+		}
+
+		const DWORD waitResult = WaitForSingleObject(windowReadyEvent_, INFINITE);
+		CloseHandle(windowReadyEvent_);
+		windowReadyEvent_ = nullptr;
+		const HWND window = window_.load(std::memory_order_acquire);
+		if (waitResult != WAIT_OBJECT_0 || !window)
+		{
+			if (waitResult != WAIT_OBJECT_0)
+				std::cout << "Wait for drawing window failed. GetLastError=" << GetLastError() << std::endl;
+			WaitForSingleObject(windowThread_, INFINITE);
+			CloseHandle(windowThread_);
+			windowThread_ = nullptr;
+			windowThreadId_ = 0;
+			return false;
+		}
+
+		if (window)
 		{
 			// 多点属性需要在第一根手指按下前写入；窗口消息中也返回相同标志。
 			const ATOM tabletPropertyAtom = GlobalAddAtom(MICROSOFT_TABLETPENSERVICE_PROPERTY);
-			if (!SetProp(window_, MICROSOFT_TABLETPENSERVICE_PROPERTY,
+			if (!SetProp(window, MICROSOFT_TABLETPENSERVICE_PROPERTY,
 				reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(kTabletInputFlags))))
 			{
 				std::cout << "Set Tablet Pen Service window property failed. GetLastError="
@@ -169,17 +205,71 @@ namespace draw3
 			}
 			if (tabletPropertyAtom) GlobalDeleteAtom(tabletPropertyAtom); // 与微软示例一致，属性本身仍由 HWND 持有。
 		}
-		return window_ != nullptr;
+		return window != nullptr;
+	}
+
+	unsigned __stdcall WindowController::WindowThreadEntry(void* context)
+	{
+		auto* controller = static_cast<WindowController*>(context);
+		if (controller) controller->RunWindowThread();
+		return 0;
+	}
+
+	void WindowController::RunWindowThread()
+	{
+		const HINSTANCE instance = GetModuleHandleW(nullptr);
+		WNDCLASSEXW windowClass = {};
+		windowClass.cbSize = sizeof(windowClass);
+		windowClass.style = CS_DBLCLKS;
+		windowClass.lpfnWndProc = WindowProcedure;
+		windowClass.hInstance = instance;
+		windowClass.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+		windowClass.hIconSm = windowClass.hIcon;
+		windowClass.lpszClassName = kWindowClassName;
+		if (!RegisterClassExW(&windowClass) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
+		{
+			std::cout << "Register drawing window class failed. GetLastError=" << GetLastError() << std::endl;
+			SetEvent(windowReadyEvent_);
+			return;
+		}
+
+		const RECT monitorRect = GetPrimaryMonitorRectangle();
+		size_.width = static_cast<int>(monitorRect.right - monitorRect.left);
+		size_.height = static_cast<int>(monitorRect.bottom - monitorRect.top);
+		const HWND window = CreateWindowExW(
+			initialExtendedStyle_, kWindowClassName, L"Inkeys Draw3", WS_POPUP,
+			monitorRect.left, monitorRect.top, size_.width, size_.height,
+			nullptr, nullptr, instance, this);
+		window_.store(window, std::memory_order_release);
+		if (!window)
+			std::cout << "Create drawing window failed. GetLastError=" << GetLastError() << std::endl;
+		SetEvent(windowReadyEvent_); // HWND 和尺寸在事件发出前完成发布。
+		if (!window) return;
+
+		MSG message = {};
+		BOOL messageResult = 0;
+		while ((messageResult = GetMessageW(&message, nullptr, 0, 0)) > 0)
+		{
+			TranslateMessage(&message);
+			DispatchMessageW(&message);
+		}
+		if (messageResult == -1)
+			std::cout << "Drawing window message loop failed. GetLastError="
+				<< GetLastError() << std::endl;
+		// WM_QUIT 兜底不能遗留仍绑定当前控制器的 HWND。
+		if (IsWindow(window)) DestroyWindow(window);
+		window_.store(nullptr, std::memory_order_release);
 	}
 
 	void WindowController::Show()
 	{
-		if (window_) ShowWindow(window_, SW_SHOWNORMAL);
+		if (const HWND window = window_.load(std::memory_order_acquire))
+			ShowWindow(window, SW_SHOWNORMAL);
 	}
 
 	HWND WindowController::Handle() const
 	{
-		return window_;
+		return window_.load(std::memory_order_acquire);
 	}
 
 	WindowSize WindowController::Size() const
@@ -191,21 +281,6 @@ namespace draw3
 	{
 		size_.width = width;
 		size_.height = height;
-	}
-
-	bool WindowController::TryGetMouseMessage(MouseMessage& message) const
-	{
-		ExMessage nativeMessage = {};
-		if (!hiex::peekmessage_win32(&nativeMessage, EM_MOUSE, true, window_)) return false;
-		message.message = nativeMessage.message;
-		message.x = nativeMessage.x;
-		message.y = nativeMessage.y;
-		return true;
-	}
-
-	void WindowController::FlushMouseMessages() const
-	{
-		hiex::flushmessage_win32(EM_MOUSE, window_);
 	}
 
 	bool WindowController::ConsumeClearCanvasRequest()
@@ -393,8 +468,9 @@ namespace draw3
 
 	void WindowController::QueueSystemCursorRefresh() noexcept
 	{
-		if (!window_ || systemCursorRefreshPosted_.exchange(true, std::memory_order_acq_rel)) return;
-		if (!PostMessageW(window_, kApplySystemCursorMessage, 0, 0))
+		const HWND window = window_.load(std::memory_order_acquire);
+		if (!window || systemCursorRefreshPosted_.exchange(true, std::memory_order_acq_rel)) return;
+		if (!PostMessageW(window, kApplySystemCursorMessage, 0, 0))
 			systemCursorRefreshPosted_.store(false, std::memory_order_release);
 	}
 
@@ -410,9 +486,10 @@ namespace draw3
 	void WindowController::ApplyWindowCursor() noexcept
 	{
 		POINT cursorPosition = {};
-		if (!window_ || !GetCursorPos(&cursorPosition)) return;
+		const HWND window = window_.load(std::memory_order_acquire);
+		if (!window || !GetCursorPos(&cursorPosition)) return;
 		const HWND cursorWindow = WindowFromPoint(cursorPosition);
-		if (cursorWindow != window_ && (!cursorWindow || !IsChild(window_, cursorWindow)))
+		if (cursorWindow != window && (!cursorWindow || !IsChild(window, cursorWindow)))
 			return; // 私有刷新消息不能改变其他窗口当前拥有的系统光标。
 		DrawingCursorSample penSample;
 		DrawingCursorSample mouseSample;
@@ -447,8 +524,27 @@ namespace draw3
 
 	LRESULT CALLBACK WindowController::WindowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
-		if (!activeController_) return HIWINDOW_DEFAULT_PROC;
-		return activeController_->HandleWindowMessage(window, message, wParam, lParam); // 静态窗口过程转发到当前控制器实例。
+		auto* controller = reinterpret_cast<WindowController*>(
+			GetWindowLongPtrW(window, GWLP_USERDATA));
+		if (message == WM_NCCREATE)
+		{
+			const auto* create = reinterpret_cast<const CREATESTRUCTW*>(lParam);
+			controller = create ? static_cast<WindowController*>(create->lpCreateParams) : nullptr;
+			if (!controller) return FALSE;
+			SetLastError(ERROR_SUCCESS);
+			if (!SetWindowLongPtrW(window, GWLP_USERDATA,
+				reinterpret_cast<LONG_PTR>(controller)) && GetLastError() != ERROR_SUCCESS)
+			{
+				std::cout << "Bind drawing window controller failed. GetLastError="
+					<< GetLastError() << std::endl;
+				return FALSE;
+			}
+		}
+		if (!controller) return DefWindowProcW(window, message, wParam, lParam);
+
+		const LRESULT result = controller->HandleWindowMessage(window, message, wParam, lParam);
+		if (message == WM_NCDESTROY) SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+		return result;
 	}
 
 	LRESULT WindowController::HandleWindowMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
@@ -550,7 +646,8 @@ namespace draw3
 			RemoveProp(window, MICROSOFT_TABLETPENSERVICE_PROPERTY);
 			exitRequested_.store(true, std::memory_order_release); // 通知主循环退出。
 			RequestControlWake();
-			break;
+			PostQuitMessage(0);
+			return 0;
 
 		case WM_DWMCOMPOSITIONCHANGED:
 			compositionChangedRequested_.store(true, std::memory_order_release); // DWM 状态变化交给主循环刷新 presenter。
@@ -684,6 +781,6 @@ namespace draw3
 			}
 			break;
 		}
-		return HIWINDOW_DEFAULT_PROC;
+		return DefWindowProcW(window, message, wParam, lParam);
 	}
 }

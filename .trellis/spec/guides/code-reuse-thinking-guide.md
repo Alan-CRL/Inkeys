@@ -31,7 +31,7 @@
 - 普通笔/橡皮的圆胶囊点流与荧光笔 primitive 流使用不同 GPU 缓冲区；不要只为减少类型数量而合并。
 - GPU transparent present 与 ULW CPU readback 的 alpha/命中测试语义不同；不要共享会污染内部画布的背景处理。
 - `.vcxproj` 对 `main2.cpp`、`main3.cpp`、`renderer2.h`、`shader.hlsl` 仅保留 `None` 引用且当前文件不存在；`ResTest/` 是独立参考解决方案。不得把这些残留引用或参考代码当成可直接复用的当前实现。
-- 第三方 `additional/` 和 `HiEasyX/` 的既有模式不自动成为 `draw3` 新代码的风格标准。
+- 第三方 `additional/` 的既有模式不自动成为 `draw3` 新代码的风格标准。
 
 ## Review Checklist
 

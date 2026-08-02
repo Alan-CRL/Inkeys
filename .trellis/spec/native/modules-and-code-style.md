@@ -49,11 +49,11 @@ Windows/标准库头放在模块声明前；模块依赖用 `import draw3.xxx;`�
 - 简单 guard 可单行 `if (...) return ...;`；复杂失败路径使用完整块。
 - 作用域使用 RAII：COM 接口使用 `Microsoft::WRL::ComPtr`，动态实现对象使用 `std::unique_ptr`。
 
-不要以 `additional/`、`HiEasyX/` 或 `ResTest/` 的第三方/参考风格覆盖 `draw3` 的本地风格。
+不要以 `additional/` 或 `ResTest/` 的第三方/参考风格覆盖 `draw3` 的本地风格。
 
 ## Third-Party Patch Boundary
 
-`additional/`、`HiEasyX/`、`lib/` 以及同类路径默认属于第三方或外部来源：
+`additional/`、`lib/` 以及同类路径默认属于第三方或外部来源：
 
 - 原则上不直接修改。
 - 必须修改时，使用与自研功能分离的补丁或变更批次。
