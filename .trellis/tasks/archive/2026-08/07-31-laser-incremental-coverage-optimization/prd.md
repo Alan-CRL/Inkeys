@@ -33,13 +33,13 @@
 
 ## Acceptance Criteria
 
-- [ ] 单 contact 快路每帧 coverage 提交量只包含新增稳定 delta 与当前 live 尾部，不随整笔总点数线性增长。
-- [ ] 新 shader 对 L1/L0 coverage 逐通道 MAX 后只解析一次材质；直线、急弯、自交、压力变化和 prediction 回缩无轨迹消失或辉光重复加深。
-- [ ] 粒子开启时，粒子 dirty 内稳定 Laser 能正确重放，主体不再回到整笔几何重画。
-- [ ] 第二个 Laser contact 出现后当前批次锁定完整重绘；多指 Down 顺序、最终 Bake 和取消语义与当前实现一致。
-- [ ] 新资源只在绘制线程首次选择 Laser 时创建，创建失败只记录一次并回退；Pen/Highlighter/Eraser 帧不增加 draw/dispatch。
-- [ ] Resize、Clear、Hold/Fade、新 Down、Present 失败恢复均无残影、丢失或过期增量状态。
-- [ ] 每批诊断汇总包含模式、粒子状态、layer/点数、stable/live 提交量、完整重绘等价量、dirty 面积、活动帧、coverage 提交耗时和回退原因。
-- [ ] 新增 CPU 状态测试覆盖稳定边界、L0/L1 重叠、prediction 回缩、多 contact 回退、Resize/clear reset 和 coverage MAX 等价性。
-- [ ] ARM64 原生 MSBuild 对完整 `inkStrokeModelerTest.sln` 执行 `Debug|ARM64` 成功，VS、PS、UpdateCS、EmitCS 与测试工程均编译链接。
-- [ ] 用户在白色、深色和混合背景上验证粒子开关、多 contact、Resize/Clear 与长笔画动态观感，并回传临时诊断输出。
+- [x] 单 contact 快路每帧 coverage 提交量只包含新增稳定 delta 与当前 live 尾部，不随整笔总点数线性增长。
+- [x] 新 shader 对 L1/L0 coverage 逐通道 MAX 后只解析一次材质；直线、急弯、自交、压力变化和 prediction 回缩无轨迹消失或辉光重复加深。
+- [x] 粒子开启时，粒子 dirty 内稳定 Laser 能正确重放，主体不再回到整笔几何重画。
+- [x] 第二个 Laser contact 出现后当前批次锁定完整重绘；多指 Down 顺序、最终 Bake 和取消语义与当前实现一致。
+- [x] 新资源只在绘制线程首次选择 Laser 时创建，创建失败只记录一次并回退；Pen/Highlighter/Eraser 帧不增加 draw/dispatch。
+- [x] Resize、Clear、Hold/Fade、新 Down、Present 失败恢复均无残影、丢失或过期增量状态。
+- [x] 每批诊断汇总包含模式、粒子状态、layer/点数、stable/live 提交量、完整重绘等价量、dirty 面积、活动帧、coverage 提交耗时和回退原因。
+- [x] 新增 CPU 状态测试覆盖稳定边界、L0/L1 重叠、prediction 回缩、多 contact 回退、Resize/clear reset 和 coverage MAX 等价性。
+- [x] ARM64 原生 MSBuild 对完整 `inkStrokeModelerTest.sln` 执行 Debug/Release 构建成功，VS、PS、UpdateCS、EmitCS 与测试工程均编译链接。
+- [x] 用户已在真实环境验证粒子开关、多 contact、Resize/Clear 与长笔画动态观感。

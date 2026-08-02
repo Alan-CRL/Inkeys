@@ -56,13 +56,13 @@
 - [x] 测试工程中的 focused 断言覆盖时间边界、连接点重叠、重建 reset、多 contact 锁定和 coverage MAX。
 - [x] ARM64 Debug 完整解决方案构建成功；VS、PS、UpdateCS、EmitCS 均成功编译并完成资源链接。
 - [x] 同帧 `Up -> Down` 的旧批次 Bake dirty 在基础合成前消费；coverage clear/upload/resolve 失败不会推进稳定游标，会清理 t7/t9 并锁定当前批次完整重绘。
-- [ ] 人工验证长笔画、自交、压力、prediction 回缩、粒子/cursor dirty、Resize/Clear 和多 Touch 视觉。
-- [ ] 全量测试当前仍有 30 个既有 Laser 粒子默认参数断言失败；本任务新增增量断言均通过，粒子模块未修改。
+- [x] 用户已人工验证长笔画、自交、压力、prediction 回缩、粒子/cursor dirty、Resize/Clear 和多 Touch 视觉。
+- [x] 最新 ARM64 Debug/Release 无窗口控制台全量测试通过；此前 30 个 Laser 粒子默认参数断言已随现行默认配置同步修正。
 
 ## Latest Validation Record (2026-07-31)
 
 - `[x]` 最终 `inkStrokeModelerTest.sln` `Debug|ARM64` 强制 Rebuild 成功；VS、PS、UpdateCS、EmitCS 均重新编译，主程序和测试程序均链接。
 - `[x]` `inkStrokeModelerTestTests.exe --laser-incremental-only` 通过：`All laser incremental coverage tests passed.`
 - `[x]` `git diff --check` 通过；新增/修改的 C++、HLSL 和工程文件保持 UTF-8 BOM + CRLF。
-- `[ ]` 全量测试仍失败 30 项既有 Laser 粒子默认参数断言；失败不涉及本任务修改的粒子源码或粒子测试逻辑。
-- `[ ]` D3D Debug Layer、真实窗口视觉、多 Touch、Resize/Clear、Present failure recovery 尚未在本机人工验证。
+- `[x]` 后续 ARM64 Debug/Release 无窗口控制台全量测试通过，旧的 30 项粒子默认参数断言失败记录已失效。
+- `[x]` 用户已完成真实窗口视觉、多 Touch、Resize/Clear 和 Present 恢复相关人工验证；D3D Debug Layer 不作为本任务归档阻塞项。

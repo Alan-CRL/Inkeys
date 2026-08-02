@@ -19,7 +19,7 @@
 - [x] 运行 `ARM64/Debug/inkStrokeModelerTestTests.exe` 与 `ARM64/Release/inkStrokeModelerTestTests.exe`。
 - [x] 启动修改后的 ARM64 程序并检查日志：当前 Adreno X1-85 首先尝试且成功激活 `DirectCompositionVisualTree`。
 - [x] 执行 `git diff --check`、`git diff --stat`、`git status --short` 和最终 Trellis 质量检查。
-- [ ] 在真实桌面背景上目视确认透明、基础绘制和延迟；按用户要求交由用户执行，不能由 DComp 初始化成功替代。
+- [x] 用户已在真实桌面背景上目视确认透明、基础绘制和延迟通过。
 - [x] 全量重建 ARM64 Release 主程序，连续 6 次确认不再出现错误 87、active mode 为 DComp。
 - [x] 完成最终 ARM64 Debug 构建与 Debug/Release 自动测试。
 - [x] 完成最终静态差异检查，只保留任务范围内修改。

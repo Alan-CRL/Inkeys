@@ -15,10 +15,10 @@
 - [x] 使用 ARM64 MSBuild 完整构建 `Debug|ARM64` 解决方案，确认 Shader 与资源链成功。
 - [x] 完整重建 `Release|ARM64` 解决方案，确认不再存在单文件 WPO 例外。
 - [x] 运行 ARM64 Debug/Release `inkStrokeModelerTestTests.exe`。
-- [ ] 多轮启动 Debug/Release，核对 DComp active mode、窗口样式和错误日志。
-- [ ] 验证关闭窗口与快捷键退出能够结束进程且无死锁。
+- [x] 用户已完成 Debug/Release 启动验证，DComp active mode、窗口样式和错误日志正常。
+- [x] 用户已验证关闭窗口与快捷键退出能够结束进程且无死锁。
 - [x] 执行 `rg` 零引用检查、`git diff --check`、编码/换行、范围和未跟踪文件检查。
-- [ ] 用户人工验证真实透明、基础绘制、prediction、抬笔烘干、resize 和延迟。
+- [x] 用户已人工验证真实透明、基础绘制、prediction、抬笔烘干、resize 和延迟通过。
 
 ## Risk And Rollback Points
 

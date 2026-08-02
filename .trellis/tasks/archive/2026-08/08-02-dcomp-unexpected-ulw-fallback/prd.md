@@ -34,7 +34,7 @@
 - [x] `git diff --check`、改动范围和 CRLF/编码检查通过；未跟踪的 `Vcpkg/` 保持不动。
 - [x] `Release|ARM64` 全量重建后连续 6 次启动均激活 DComp，不再因错误 87 回退；编译记录确认 `HiWindow.cpp` 保留 `/O2` 且不含 `/GL`。
 - [x] 最终 `Debug|ARM64` 完整构建通过，ARM64 Debug/Release 自动测试通过；此前 Debug 连续 6 次均进入 DComp。
-- [ ] 当前 Adreno X1-85 上 Release 激活 `DirectCompositionVisualTree`，透明桌面背景可见且基础绘制延迟不再落入 DWM/ULW 兼容路径。
+- [x] 用户已确认当前 Adreno X1-85 上 Release 激活 `DirectCompositionVisualTree`，透明桌面背景和基础绘制延迟表现正常，未落入 DWM/ULW 兼容路径。
 
 ## Out of Scope
 

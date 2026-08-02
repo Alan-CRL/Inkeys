@@ -191,3 +191,46 @@ Fixed Pen/Mouse cursor authority handoff, immediate Pen hover coordinates, stale
 ### Status
 
 [OK] **Completed**
+
+
+## Session 7: 完成并归档任务 4-8
+
+**Date**: 2026-08-02
+**Task**: 完成并归档任务 4-8
+**Branch**: `main`
+
+### Summary
+
+任务 4-8 的代码、ARM64 Debug/Release 构建、无窗口控制台测试及用户人工验收均已完成，已同步验收记录并归档。
+
+### Main Changes
+
+- 同步激光笔 1 秒默认消失时间、粒子默认关闭和多指默认关闭的任务契约
+- 清理激光增量优化中过期的 30 项测试失败记录
+- 归档发光激光笔、增量 coverage、DComp 修复、粒子核心和 Win32 宿主任务
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `aa305d3` | (see git log) |
+| `56e95d7` | (see git log) |
+| `bc22d07` | (see git log) |
+| `41754d1` | (see git log) |
+| `b91366d` | (see git log) |
+| `be50ae4` | (see git log) |
+| `b035a67` | (see git log) |
+
+### Testing
+
+- [OK] ARM64 Debug/Release 全解决方案构建已通过
+- [OK] ARM64 Debug/Release 无窗口控制台单元测试已通过
+- [OK] 用户确认任务 4-8 人工测试通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 继续保留并处理任务 1-3
