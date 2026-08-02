@@ -151,6 +151,8 @@ enum class BarUISetSvgEnum : int
 	DrawAttributeBar_ThicknessAnnotationPopupClose,
 	DrawAttributeBar_ThicknessOverflowPopupClose,
 	DrawAttributeBar_ColorSelect12Check,
+	DrawAttributeBar_ColorPickerToneSun,
+	DrawAttributeBar_ColorPickerToneMoon,
 };
 enum class BarUISetPngEnum : int
 {
@@ -177,8 +179,9 @@ DrawAttributeBar_ThicknessAnnotationLabel,
 		DrawAttributeBar_ThicknessAnnotationPopupBody,
 		DrawAttributeBar_ThicknessOverflowPopupText,
 		DrawAttributeBar_ThicknessOverflowPopupBody,
-		DrawAttributeBar_ColorPickerTone,
 		DrawAttributeBar_ColorPickerRgb,
+		DrawAttributeBar_ColorPickerG,
+		DrawAttributeBar_ColorPickerB,
 		DrawAttributeBar_ColorPickerOpacity,
 		DrawAttributeBar_ColorPickerHoldLabel,
 	};

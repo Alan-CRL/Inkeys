@@ -311,6 +311,10 @@ COLORSELECT             UI                      "src\\UI\\color\\colorSelect.svg
 
 COLORCUSTOM             PNG                     "src\\UI\\color\\colorCustom.png"
 
+COLORSUN                UI                      "src\\UI\\color\\colorSun.svg"
+
+COLORMOON               UI                      "src\\UI\\color\\colorMoon.svg"
+
 BARHIGHLIGHTER1         UI                      "src\\UI\\barHighlighter1.svg"
 
 BARTHICKNESSADJUST      UI                      "src\\UI\\barThicknessAdjust.svg"
