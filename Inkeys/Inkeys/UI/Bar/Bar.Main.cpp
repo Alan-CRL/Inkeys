@@ -914,6 +914,12 @@ BarUIRendering::BarUIRendering(BarUISetClass* barUISetClassT) { barUISetClass = 
 
 void BarUIRendering::DiscardDeviceResources()
 {
+	if (barUISetClass)
+	{
+		// D2D 位图属于当前 device generation，切换设备时只丢上传缓存，保留解码像素。
+		for (const auto& [key, png] : barUISetClass->pngMap)
+			if (png) png->ResetCache();
+	}
 	frameGradientBrushCache.clear();
 	frameDiffuseMaskCache.clear();
 	frameGeometryDiffuseMaskCache.clear();
@@ -2647,6 +2653,48 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, 
 		);
 	}
 
+	return true;
+}
+bool BarUIRendering::Png(ID2D1DeviceContext* deviceContext, BarUiPNGClass& png, const BarUiInheritClass& inh)
+{
+	if (!deviceContext || !png.enable.val) return false;
+	if (barUISetClass->barStyle.zoom <= 0.0) return false;
+	if (png.w.val <= 0.0 || png.h.val <= 0.0 || png.pct.val <= 0.0) return false;
+	if (!png.cacheBitmap && !png.CacheBitmap(deviceContext)) return false;
+
+	double tarZoom = barUISetClass->barStyle.zoom;
+	double tarX = inh.x * tarZoom;
+	double tarY = inh.y * tarZoom;
+	double tarW = png.w.val * tarZoom;
+	double tarH = png.h.val * tarZoom;
+	double tarPct = clamp(static_cast<double>(png.pct.val), 0.0, 1.0);
+	double tarAngle = png.angle.val;
+	if (!isfinite(tarAngle)) tarAngle = 0.0;
+
+	D2D1_MATRIX_3X2_F originalTransform;
+	deviceContext->GetTransform(&originalTransform);
+	bool transformChanged = abs(fmod(tarAngle, 360.0)) > 0.000001;
+	if (transformChanged)
+	{
+		// 只旋转绘制内容，目标宽高和布局坐标保持不变。
+		deviceContext->SetTransform(
+			D2D1::Matrix3x2F::Rotation(
+				static_cast<FLOAT>(tarAngle),
+				D2D1::Point2F(
+					static_cast<FLOAT>(tarX + tarW / 2.0),
+					static_cast<FLOAT>(tarY + tarH / 2.0)))
+			* originalTransform);
+	}
+
+	deviceContext->DrawBitmap(
+		png.cacheBitmap.Get(),
+		D2D1::RectF(
+			static_cast<FLOAT>(tarX), static_cast<FLOAT>(tarY),
+			static_cast<FLOAT>(tarX + tarW), static_cast<FLOAT>(tarY + tarH)),
+		static_cast<FLOAT>(tarPct),
+		D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+		nullptr);
+	if (transformChanged) deviceContext->SetTransform(originalTransform);
 	return true;
 }
 bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight, DWRITE_TEXT_ALIGNMENT textAlign)
@@ -4567,23 +4615,55 @@ SetButtonPositionTar(temp->buttom.x, xO + 5.0, 40.0, true);
 								shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->ft.value().SetTar(1.0);
 							}
 						}
-						// Color 12：固定彩虹入口，当前颜色是否为自定义色在绘制时按 RGB 判定。
+						// Color 12：圆盘始终存在，色芯和右下角绿勾只在自定义色模式中淡入。
 						{
 							auto customSwatch = shapeMap[
 								BarUISetShapeEnum::DrawAttributeBar_ColorSelect12];
+							auto customInner = shapeMap[
+								BarUISetShapeEnum::DrawAttributeBar_ColorSelect12Inner];
+							auto customWheel = pngMap[
+								BarUISetPngEnum::DrawAttributeBar_ColorSelect12Wheel];
+							auto customCheck = svgMap[
+								BarUISetSvgEnum::DrawAttributeBar_ColorSelect12Check];
+							COLORREF currentColor = GetPenColor() & 0x00FFFFFF;
+							bool customSelected = !IsBarPresetColor(currentColor);
 							if (!barState.drawAttribute)
 							{
 								customSwatch->x.SetTar(CompactDrawAttributeX(180.0));
 								customSwatch->y.SetTar(
 									CompactDrawAttributeY(colorBottomY));
 								customSwatch->pct.SetTar(0.0);
+								customWheel->pct.SetTar(0.0);
+								customInner->pct.SetTar(0.0);
+								customCheck->pct.SetTar(0.0);
 							}
 							else
 							{
 								customSwatch->x.SetTar(180.0);
 								customSwatch->y.SetTar(colorBottomY);
 								customSwatch->pct.SetTar(1.0);
+								customWheel->pct.SetTar(1.0);
+								customInner->pct.SetTar(customSelected ? 1.0 : 0.0,
+									operationDur);
+								customCheck->pct.SetTar(customSelected ? 1.0 : 0.0,
+									operationDur);
 							}
+							double customScale = drawAttributeLayoutScale;
+							// 色盘铺满入口，随后绘制的 1 DIP 外框覆盖其边缘，避免出现内圈空隙。
+							customWheel->x.SetTar(0.0);
+							customWheel->y.SetTar(0.0);
+							customInner->x.SetTar(9.0 * customScale);
+							customInner->y.SetTar(9.0 * customScale);
+							customCheck->x.SetTar(15.0 * customScale);
+							customCheck->y.SetTar(15.0 * customScale);
+							// 色芯只动画透明度，拖动色板时纯色必须即时跟手。
+							customInner->fill->SetDirect(currentColor);
+							customInner->frame->SetTar(
+								GetThemeColor(BarThemeColorEnum::SurfaceFrame), operationDur);
+							customInner->framePct->SetTar(customSelected
+								&& barState.drawAttribute ? BarColorSwatchFrameOpacity : 0.0);
+							customSwatch->framePct->SetTar(
+								barState.drawAttribute ? BarColorSwatchFrameOpacity : 0.0);
 							if (customSwatch->frameLightPct.has_value())
 								customSwatch->frameLightPct->SetTar(
 									barState.drawAttribute ? 1.0 : 0.0);
@@ -5102,6 +5182,34 @@ for (size_t i = 0; i < 3; ++i)
 						svg->w.SetTar(svgSize);
 						svg->h.SetTar(svgSize);
 					}
+					{
+						double customScale = barState.drawAttribute
+							? 1.0 : BarDrawAttributeCompactScale;
+						auto customSwatch = shapeMap[
+							BarUISetShapeEnum::DrawAttributeBar_ColorSelect12];
+						customSwatch->w.SetTar(30.0 * customScale);
+						customSwatch->h.SetTar(30.0 * customScale);
+						customSwatch->rw->SetTar(15.0 * customScale);
+						customSwatch->rh->SetTar(15.0 * customScale);
+						customSwatch->ft->SetTar(customScale);
+
+						auto customInner = shapeMap[
+							BarUISetShapeEnum::DrawAttributeBar_ColorSelect12Inner];
+						customInner->w.SetTar(12.0 * customScale);
+						customInner->h.SetTar(12.0 * customScale);
+						customInner->rw->SetTar(6.0 * customScale);
+						customInner->rh->SetTar(6.0 * customScale);
+						customInner->ft->SetTar(customScale);
+
+						auto customWheel = pngMap[
+							BarUISetPngEnum::DrawAttributeBar_ColorSelect12Wheel];
+						customWheel->w.SetTar(30.0 * customScale);
+						customWheel->h.SetTar(30.0 * customScale);
+						auto customCheck = svgMap[
+							BarUISetSvgEnum::DrawAttributeBar_ColorSelect12Check];
+						customCheck->w.SetTar(15.0 * customScale);
+						customCheck->h.SetTar(15.0 * customScale);
+					}
 
 					// 展开、收起时，属性栏及全部内部控件共用同一个完成时刻。
 					for (int i = static_cast<int>(BarUISetShapeEnum::DrawAttributeBar);
@@ -5130,6 +5238,34 @@ for (size_t i = 0; i < 3; ++i)
 						SyncValueDuration(obj->w);
 						SyncValueDuration(obj->h);
 						SyncPctDuration(obj->pct);
+					}
+					{
+						auto obj = shapeMap[
+							BarUISetShapeEnum::DrawAttributeBar_ColorSelect12Inner];
+						SyncValueDuration(obj->x);
+						SyncValueDuration(obj->y);
+						SyncValueDuration(obj->w);
+						SyncValueDuration(obj->h);
+						SyncValueDuration(obj->rw.value());
+						SyncValueDuration(obj->rh.value());
+						SyncValueDuration(obj->ft.value());
+						SyncPctDuration(obj->pct);
+						SyncPctDuration(obj->framePct.value());
+						auto png = pngMap[
+							BarUISetPngEnum::DrawAttributeBar_ColorSelect12Wheel];
+						SyncValueDuration(png->x);
+						SyncValueDuration(png->y);
+						SyncValueDuration(png->w);
+						SyncValueDuration(png->h);
+						SyncValueDuration(png->angle);
+						SyncPctDuration(png->pct);
+						auto svg = svgMap[
+							BarUISetSvgEnum::DrawAttributeBar_ColorSelect12Check];
+						SyncValueDuration(svg->x);
+						SyncValueDuration(svg->y);
+						SyncValueDuration(svg->w);
+						SyncValueDuration(svg->h);
+						SyncPctDuration(svg->pct);
 					}
 					for (int i = static_cast<int>(BarUISetWordEnum::DrawAttributeBar_Brush1);
 						i <= static_cast<int>(BarUISetWordEnum::DrawAttributeBar_ThicknessCoarseNumber); i++)
@@ -5175,6 +5311,35 @@ for (size_t i = 0; i < 3; ++i)
 							obj->w.SetTar(obj->w.tar, operationDur, nullopt, true, syncedValueCurve);
 							obj->h.SetTar(obj->h.tar, operationDur, nullopt, true, syncedValueCurve);
 							obj->pct.SetTar(obj->pct.tar, operationDur, nullopt, true, syncedPctCurve);
+						}
+						{
+							auto obj = shapeMap[
+								BarUISetShapeEnum::DrawAttributeBar_ColorSelect12Inner];
+							obj->x.SetTar(obj->x.tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->y.SetTar(obj->y.tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->w.SetTar(obj->w.tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->h.SetTar(obj->h.tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->rw->SetTar(obj->rw->tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->rh->SetTar(obj->rh->tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->ft->SetTar(obj->ft->tar, operationDur, nullopt, true, syncedValueCurve);
+							obj->pct.SetTar(obj->pct.tar, operationDur, nullopt, true, syncedPctCurve);
+							obj->framePct->SetTar(obj->framePct->tar, operationDur,
+								nullopt, true, syncedPctCurve);
+							auto png = pngMap[
+								BarUISetPngEnum::DrawAttributeBar_ColorSelect12Wheel];
+							png->x.SetTar(png->x.tar, operationDur, nullopt, true, syncedValueCurve);
+							png->y.SetTar(png->y.tar, operationDur, nullopt, true, syncedValueCurve);
+							png->w.SetTar(png->w.tar, operationDur, nullopt, true, syncedValueCurve);
+							png->h.SetTar(png->h.tar, operationDur, nullopt, true, syncedValueCurve);
+							png->angle.SetTar(png->angle.tar, operationDur, nullopt, true, syncedValueCurve);
+							png->pct.SetTar(png->pct.tar, operationDur, nullopt, true, syncedPctCurve);
+							auto svg = svgMap[
+								BarUISetSvgEnum::DrawAttributeBar_ColorSelect12Check];
+							svg->x.SetTar(svg->x.tar, operationDur, nullopt, true, syncedValueCurve);
+							svg->y.SetTar(svg->y.tar, operationDur, nullopt, true, syncedValueCurve);
+							svg->w.SetTar(svg->w.tar, operationDur, nullopt, true, syncedValueCurve);
+							svg->h.SetTar(svg->h.tar, operationDur, nullopt, true, syncedValueCurve);
+							svg->pct.SetTar(svg->pct.tar, operationDur, nullopt, true, syncedPctCurve);
 						}
 						for (int i = static_cast<int>(BarUISetWordEnum::DrawAttributeBar_Brush1);
 							i <= static_cast<int>(BarUISetWordEnum::DrawAttributeBar_ThicknessCoarseNumber); i++)
@@ -5269,6 +5434,56 @@ for (size_t i = 0; i < 3; ++i)
 							obj->h.SetTar(obj->h.tar, operationDur,
 								max(1.0, CompactDrawAttributeSize(obj->h.tar)), true, drawAttributeKeyframeValueCurve);
 							obj->pct.SetTar(obj->pct.tar, operationDur, 0.0, true, drawAttributeKeyframePctCurve);
+						}
+						{
+							auto obj = shapeMap[
+								BarUISetShapeEnum::DrawAttributeBar_ColorSelect12Inner];
+							obj->x.SetTar(obj->x.tar, operationDur,
+								obj->x.tar * BarDrawAttributeCompactScale,
+								true, drawAttributeKeyframeValueCurve);
+							obj->y.SetTar(obj->y.tar, operationDur,
+								obj->y.tar * BarDrawAttributeCompactScale,
+								true, drawAttributeKeyframeValueCurve);
+							obj->w.SetTar(obj->w.tar, operationDur,
+								max(1.0, obj->w.tar * BarDrawAttributeCompactScale),
+								true, drawAttributeKeyframeValueCurve);
+							obj->h.SetTar(obj->h.tar, operationDur,
+								max(1.0, obj->h.tar * BarDrawAttributeCompactScale),
+								true, drawAttributeKeyframeValueCurve);
+							obj->rw->SetTar(obj->rw->tar, operationDur,
+								obj->rw->tar * BarDrawAttributeCompactScale,
+								true, drawAttributeKeyframeValueCurve);
+							obj->rh->SetTar(obj->rh->tar, operationDur,
+								obj->rh->tar * BarDrawAttributeCompactScale,
+								true, drawAttributeKeyframeValueCurve);
+							obj->ft->SetTar(obj->ft->tar, operationDur,
+								obj->ft->tar * BarDrawAttributeCompactScale,
+								true, drawAttributeKeyframeValueCurve);
+							obj->pct.SetTar(obj->pct.tar, operationDur, 0.0,
+								true, drawAttributeKeyframePctCurve);
+							obj->framePct->SetTar(obj->framePct->tar, operationDur, 0.0,
+								true, drawAttributeKeyframePctCurve);
+							auto SetCustomContentKeyframe = [&](auto& content)
+								{
+									content->x.SetTar(content->x.tar, operationDur,
+										content->x.tar * BarDrawAttributeCompactScale,
+										true, drawAttributeKeyframeValueCurve);
+									content->y.SetTar(content->y.tar, operationDur,
+										content->y.tar * BarDrawAttributeCompactScale,
+										true, drawAttributeKeyframeValueCurve);
+									content->w.SetTar(content->w.tar, operationDur,
+										max(1.0, content->w.tar * BarDrawAttributeCompactScale),
+										true, drawAttributeKeyframeValueCurve);
+									content->h.SetTar(content->h.tar, operationDur,
+										max(1.0, content->h.tar * BarDrawAttributeCompactScale),
+										true, drawAttributeKeyframeValueCurve);
+									content->pct.SetTar(content->pct.tar, operationDur, 0.0,
+										true, drawAttributeKeyframePctCurve);
+								};
+							SetCustomContentKeyframe(pngMap[
+								BarUISetPngEnum::DrawAttributeBar_ColorSelect12Wheel]);
+							SetCustomContentKeyframe(svgMap[
+								BarUISetSvgEnum::DrawAttributeBar_ColorSelect12Check]);
 						}
 						for (int i = static_cast<int>(BarUISetWordEnum::DrawAttributeBar_Brush1);
 							i <= static_cast<int>(BarUISetWordEnum::DrawAttributeBar_ThicknessCoarseNumber); i++)
@@ -5602,6 +5817,19 @@ for (size_t i = 0; i < 3; ++i)
 			if (!val->svg.IsSame()) ChangeString(val->svg, forceReplace), change = true;
 			if (val->color1.has_value() && !val->color1->IsSame()) ChangeColor(val->color1.value(), forceReplace), change = true;
 			if (val->color2.has_value() && !val->color2->IsSame()) ChangeColor(val->color2.value(), forceReplace), change = true;
+			if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace), change = true;
+		}
+		for (const auto& [key, val] : pngMap)
+		{
+			bool forceReplace = false, change = false;
+			if (val->forceReplace) val->forceReplace = false, forceReplace = true;
+
+			if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace), change = true;
+			if (!val->x.IsSame()) ChangeValue(val->x, forceReplace), change = true;
+			if (!val->y.IsSame()) ChangeValue(val->y, forceReplace), change = true;
+			if (!val->w.IsSame()) ChangeValue(val->w, forceReplace), change = true;
+			if (!val->h.IsSame()) ChangeValue(val->h, forceReplace), change = true;
+			if (!val->angle.IsSame()) ChangeValue(val->angle, forceReplace), change = true;
 			if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace), change = true;
 		}
 		for (const auto& [key, val] : wordMap)
@@ -6546,6 +6774,13 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 							BarRenderingAttribute::GetWeigetRect(
 								*svg, static_cast<double>(barStyle.zoom)));
 				};
+			auto IncludePngBounds = [&](const shared_ptr<BarUiPNGClass>& png)
+				{
+					if (png->enable.val && png->pct.val > 0.0)
+						BarRenderingAttribute::UnionRectInPlace(predicted,
+							BarRenderingAttribute::GetWeigetRect(
+								*png, static_cast<double>(barStyle.zoom)));
+				};
 			auto IncludeWordBounds = [&](const shared_ptr<BarUiWordClass>& word)
 				{
 					if (word->enable.val && word->pct.val > 0.0)
@@ -6595,6 +6830,12 @@ IncludeShapeBounds(shapeMap[
 				BarUISetShapeEnum::DrawAttributeBar_ColorPickerPreviewBubble]);
 			IncludeShapeBounds(shapeMap[
 				BarUISetShapeEnum::DrawAttributeBar_ColorPickerHoldHint]);
+			IncludeShapeBounds(shapeMap[
+				BarUISetShapeEnum::DrawAttributeBar_ColorSelect12Inner]);
+			IncludePngBounds(pngMap[
+				BarUISetPngEnum::DrawAttributeBar_ColorSelect12Wheel]);
+			IncludeSvgBounds(svgMap[
+				BarUISetSvgEnum::DrawAttributeBar_ColorSelect12Check]);
 			IncludeWordBounds(wordMap[
 				BarUISetWordEnum::DrawAttributeBar_ColorPickerTone]);
 			IncludeWordBounds(wordMap[
@@ -6765,79 +7006,28 @@ IncludeShapeBounds(shapeMap[
 								auto obj2 = BarUISetSvgEnum::DrawAttributeBar_ColorSelect11;
 								spec.Svg(barDeviceContext.Get(), *svgMap[obj2], svgMap[obj2]->Inherit(Center, *shapeMap[obj1]));
 							}
-							// Color 12：缓存色相渐变绘制静态彩虹外圈，不生成逐帧位图。
+							// Color 12：圆盘、色芯和绿勾都继承入口的当前几何，换边时不直接跳到目标方向。
 							{
 								auto customSwatch = shapeMap[
 									BarUISetShapeEnum::DrawAttributeBar_ColorSelect12];
 								BarUiInheritClass customInherit = customSwatch->Inherit(
 									TopLeft, *shapeMap[
 										BarUISetShapeEnum::DrawAttributeBar]);
-								FLOAT zoom = static_cast<FLOAT>(barStyle.zoom);
-								FLOAT left = static_cast<FLOAT>(customInherit.x * zoom);
-								FLOAT top = static_cast<FLOAT>(customInherit.y * zoom);
-								FLOAT right = static_cast<FLOAT>(
-									(customInherit.x + customSwatch->w.val) * zoom);
-								FLOAT bottom = static_cast<FLOAT>(
-									(customInherit.y + customSwatch->h.val) * zoom);
-								FLOAT radius = static_cast<FLOAT>(4.0 * zoom);
-								auto hueBrush = spec.GetColorPickerHueGradientBrush(
-									barDeviceContext.Get(),
-									D2D1::Point2F(left, top),
-									D2D1::Point2F(right, top));
-								if (hueBrush && customSwatch->pct.val > 0.000001)
-								{
-									hueBrush->SetOpacity(static_cast<FLOAT>(
-										customSwatch->pct.val));
-									D2D1_ROUNDED_RECT outer{
-										D2D1::RectF(left, top, right, bottom),
-										radius, radius };
-									barDeviceContext->FillRoundedRectangle(
-										&outer, hueBrush);
-
-									COLORREF currentColor = GetPenColor() & 0x00FFFFFF;
-									bool customSelected = !IsBarPresetColor(currentColor);
-									FLOAT inset = static_cast<FLOAT>(3.0 * zoom);
-									auto innerBrush = spec.GetFrameSolidColorBrush(
-										barDeviceContext.Get(),
-										customSelected ? currentColor
-											: GetThemeColor(BarThemeColorEnum::Surface),
-										customSwatch->pct.val);
-									if (innerBrush)
-									{
-										D2D1_ROUNDED_RECT inner{
-											D2D1::RectF(left + inset, top + inset,
-												right - inset, bottom - inset),
-											max(0.0F, radius - inset),
-											max(0.0F, radius - inset) };
-										barDeviceContext->FillRoundedRectangle(
-											&inner, innerBrush);
-									}
-									if (customSelected)
-									{
-										auto checkBrush = spec.GetFrameSolidColorBrush(
-											barDeviceContext.Get(), RGB(38, 201, 119),
-											customSwatch->pct.val);
-										if (checkBrush)
-										{
-											FLOAT stroke = max(1.5F, 2.0F * zoom);
-											barDeviceContext->DrawLine(
-												D2D1::Point2F(right - 11.0F * zoom,
-													bottom - 7.0F * zoom),
-												D2D1::Point2F(right - 7.5F * zoom,
-													bottom - 3.5F * zoom),
-												checkBrush, stroke);
-											barDeviceContext->DrawLine(
-												D2D1::Point2F(right - 7.5F * zoom,
-													bottom - 3.5F * zoom),
-												D2D1::Point2F(right - 3.0F * zoom,
-													bottom - 10.0F * zoom),
-												checkBrush, stroke);
-										}
-									}
-								}
-								// 透明本体只承载原有色块的第三鼠标光边框。
+								auto customWheel = pngMap[
+									BarUISetPngEnum::DrawAttributeBar_ColorSelect12Wheel];
+								spec.Png(barDeviceContext.Get(), *customWheel,
+									customWheel->Inherit(TopLeft, *customSwatch));
+								// 外框后绘制，用与其他色块一致的 1 DIP 边框压住色盘边缘。
 								spec.Shape(barDeviceContext.Get(), *customSwatch,
 									customInherit);
+								auto customInner = shapeMap[
+									BarUISetShapeEnum::DrawAttributeBar_ColorSelect12Inner];
+								spec.Shape(barDeviceContext.Get(), *customInner,
+									customInner->Inherit(TopLeft, *customSwatch));
+								auto customCheck = svgMap[
+									BarUISetSvgEnum::DrawAttributeBar_ColorSelect12Check];
+								spec.Svg(barDeviceContext.Get(), *customCheck,
+									customCheck->Inherit(TopLeft, *customSwatch));
 							}
 						}
 						// 画笔样式区域
@@ -7494,6 +7684,15 @@ else
 						if (obj) BarRenderingAttribute::UnionRectInPlace(
 							current, BarRenderingAttribute::GetWeigetRect(*obj, dirtyZoom));
 					}
+					BarRenderingAttribute::UnionRectInPlace(current,
+						BarRenderingAttribute::GetWeigetRect(*shapeMap[
+							BarUISetShapeEnum::DrawAttributeBar_ColorSelect12Inner], dirtyZoom));
+					BarRenderingAttribute::UnionRectInPlace(current,
+						BarRenderingAttribute::GetWeigetRect(*pngMap[
+							BarUISetPngEnum::DrawAttributeBar_ColorSelect12Wheel], dirtyZoom));
+					BarRenderingAttribute::UnionRectInPlace(current,
+						BarRenderingAttribute::GetWeigetRect(*svgMap[
+							BarUISetSvgEnum::DrawAttributeBar_ColorSelect12Check], dirtyZoom));
 					for (int id = 0; id < barButtomSet.tot; id++)
 					{
 						BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
@@ -10919,10 +11118,10 @@ namespace Inkeys::UI::Bar
 							svg->enable.Initialization(true);
 							barUISet.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect11] = svg;
 						}
-						// Color 12 只承担命中与原有点光边框，彩虹和自定义内层由 D2D 缓存画刷绘制。
+						// Color 12 承担命中和圆形点光边框，内容由独立 SVG/色芯控件继承它的动画几何。
 						{
 							auto shape = make_shared<BarUiShapeClass>(
-								0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0,
+								0.0, 0.0, 30.0, 30.0, 15.0, 15.0, 1.0,
 								nullopt, GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 							shape->pct.Initialization(0.0);
 							shape->framePct = BarUiPctClass(0.0);
@@ -10930,6 +11129,34 @@ namespace Inkeys::UI::Bar
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[
 								BarUISetShapeEnum::DrawAttributeBar_ColorSelect12] = shape;
+
+							auto inner = make_shared<BarUiShapeClass>(
+								9.0, 9.0, 12.0, 12.0, 6.0, 6.0, 1.0,
+								GetPenColor() & 0x00FFFFFF,
+								GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+							inner->pct.Initialization(0.0);
+							inner->framePct = BarUiPctClass(0.0);
+							inner->enable.Initialization(true);
+							barUISet.shapeMap[
+								BarUISetShapeEnum::DrawAttributeBar_ColorSelect12Inner] = inner;
+
+							auto wheel = make_shared<BarUiPNGClass>(0.0, 0.0);
+							wheel->InitializationFromResource(L"PNG", L"colorCustom");
+							wheel->SetWH(30.0, 30.0);
+							wheel->pct.Initialization(0.0);
+							wheel->enable.Initialization(true);
+							barUISet.pngMap[
+								BarUISetPngEnum::DrawAttributeBar_ColorSelect12Wheel] = wheel;
+
+							// 右下角徽标与预设色完全复用同一个绿勾 SVG。
+							auto check = make_shared<BarUiSVGClass>(
+								15.0, 15.0, nullopt, nullopt);
+							check->InitializationFromResource(L"UI", L"colorSelect");
+							check->SetWH(15.0, 15.0);
+							check->pct.Initialization(0.0);
+							check->enable.Initialization(true);
+							barUISet.svgMap[
+								BarUISetSvgEnum::DrawAttributeBar_ColorSelect12Check] = check;
 						}
 						for (int i = static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ColorSelect1);
 							i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ColorSelect12); i++)

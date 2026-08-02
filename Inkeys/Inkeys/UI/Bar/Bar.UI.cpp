@@ -4,6 +4,11 @@ module;
 
 #include "../../../IdtD2DPreparation.h"
 
+#define STBI_ONLY_PNG
+#define STBI_NO_STDIO
+#define STB_IMAGE_IMPLEMENTATION
+#include "../../../additional/stbimage/stb_image.h"
+
 #define LUNASVG_BUILD_STATIC
 #include <lunasvg/lunasvg.h>
 #pragma comment(lib, "lunasvg.lib")
@@ -451,6 +456,132 @@ pair<double, double> BarUiSVGClass::CalcWH()
 	double w = static_cast<double>(document->width());
 	double h = static_cast<double>(document->height());
 	return make_pair(w, h);
+}
+
+//// 单个 PNG 控件
+BarUiPNGClass::BarUiPNGClass(double xT, double yT, BarUiValueModeEnum type)
+{
+	Initialization(xT, yT, type);
+}
+void BarUiPNGClass::Initialization(double xT, double yT, BarUiValueModeEnum type)
+{
+	x.Initialization(xT, type);
+	y.Initialization(yT, type);
+	angle.Initialization(0.0, type);
+}
+bool BarUiPNGClass::InitializationFromMemory(const void* data, size_t size)
+{
+	if (!data || size == 0 || size > static_cast<size_t>(INT_MAX)) return false;
+
+	int width = 0, height = 0, channels = 0;
+	stbi_uc* decoded = stbi_load_from_memory(
+		static_cast<const stbi_uc*>(data), static_cast<int>(size),
+		&width, &height, &channels, STBI_rgb_alpha);
+	if (!decoded || width <= 0 || height <= 0)
+	{
+		if (decoded) stbi_image_free(decoded);
+		return false;
+	}
+
+	const size_t maxBufferSize = (numeric_limits<size_t>::max)();
+	if (static_cast<size_t>(width) > maxBufferSize / static_cast<size_t>(height))
+	{
+		stbi_image_free(decoded);
+		return false;
+	}
+	const size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
+	if (pixelCount > maxBufferSize / 4
+		|| static_cast<UINT32>(width) > (numeric_limits<UINT32>::max)() / 4)
+	{
+		stbi_image_free(decoded);
+		return false;
+	}
+
+	vector<unsigned char> nextPixels(pixelCount * 4);
+	for (size_t i = 0; i < pixelCount; i++)
+	{
+		const unsigned int alpha = decoded[i * 4 + 3];
+		// stb 输出直通 RGBA；D2D 分层窗口使用预乘 BGRA，上传前一次性转换。
+		nextPixels[i * 4 + 0] = static_cast<unsigned char>(
+			(decoded[i * 4 + 2] * alpha + 127) / 255);
+		nextPixels[i * 4 + 1] = static_cast<unsigned char>(
+			(decoded[i * 4 + 1] * alpha + 127) / 255);
+		nextPixels[i * 4 + 2] = static_cast<unsigned char>(
+			(decoded[i * 4 + 0] * alpha + 127) / 255);
+		nextPixels[i * 4 + 3] = static_cast<unsigned char>(alpha);
+	}
+	stbi_image_free(decoded);
+
+	bitmapPixels = move(nextPixels);
+	bitmapWidth = static_cast<UINT32>(width);
+	bitmapHeight = static_cast<UINT32>(height);
+	rW = static_cast<double>(width);
+	rH = static_cast<double>(height);
+	ResetCache();
+	return true;
+}
+bool BarUiPNGClass::InitializationFromResource(const wstring& resType, const wstring& resName)
+{
+	void* resourceData = nullptr;
+	DWORD resourceSize = 0;
+	if (!Inkeys::Load::ExtractResourcePtr(resourceData, resourceSize, resType, resName))
+		return false;
+	return InitializationFromMemory(resourceData, static_cast<size_t>(resourceSize));
+}
+bool BarUiPNGClass::SetWH(optional<double> wT, optional<double> hT)
+{
+	double tarW = 0.0, tarH = 0.0;
+	if (wT.has_value() && hT.has_value())
+	{
+		// 同时指定宽高时允许非等比拉伸。
+		tarW = wT.value();
+		tarH = hT.value();
+	}
+	else
+	{
+		if (rW <= 0.0 || rH <= 0.0) return false;
+		if (wT.has_value())
+		{
+			tarW = wT.value();
+			tarH = rH * (tarW / rW);
+		}
+		else if (hT.has_value())
+		{
+			tarH = hT.value();
+			tarW = rW * (tarH / rH);
+		}
+		else
+		{
+			tarW = rW;
+			tarH = rH;
+		}
+	}
+	if (!isfinite(tarW) || !isfinite(tarH) || tarW <= 0.0 || tarH <= 0.0)
+		return false;
+
+	w.SetTar(tarW);
+	h.SetTar(tarH);
+	return true;
+}
+bool BarUiPNGClass::CacheBitmap(ID2D1DeviceContext* deviceContext)
+{
+	if (!deviceContext || bitmapPixels.empty() || bitmapWidth == 0 || bitmapHeight == 0)
+		return false;
+
+	D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(
+		D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+	ComPtr<ID2D1Bitmap> nextBitmap;
+	HRESULT hr = deviceContext->CreateBitmap(
+		D2D1::SizeU(bitmapWidth, bitmapHeight), bitmapPixels.data(),
+		bitmapWidth * 4, props, &nextBitmap);
+	if (FAILED(hr) || !nextBitmap) return false;
+
+	cacheBitmap = move(nextBitmap);
+	return true;
+}
+void BarUiPNGClass::ResetCache()
+{
+	cacheBitmap.Reset();
 }
 
 //// 单个文字控件

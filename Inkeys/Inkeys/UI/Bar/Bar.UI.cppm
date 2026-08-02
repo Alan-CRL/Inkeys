@@ -825,6 +825,36 @@ public:
 	double rW; // 实际宽度
 	double rH; // 实际高度
 };
+//// 单个 PNG 控件
+class BarUiPNGClass : public BarUiInnheritBaseClass
+{
+public:
+	BarUiPNGClass() {}
+	BarUiPNGClass(double xT, double yT, BarUiValueModeEnum type = BarUiValueModeEnum::Linear);
+
+	void Initialization(double xT, double yT, BarUiValueModeEnum type = BarUiValueModeEnum::Linear);
+	bool InitializationFromMemory(const void* data, size_t size);
+	bool InitializationFromResource(const wstring& resType, const wstring& resName);
+	bool SetWH(optional<double> wT, optional<double> hT);
+	bool CacheBitmap(ID2D1DeviceContext* deviceContext);
+	void ResetCache();
+
+public:
+	// 整体该控件是否显示
+	BarUiStateClass enable;
+	// 绕目标矩形中心旋转，不改变控件本身的宽高。
+	BarUiValueClass angle;
+	Microsoft::WRL::ComPtr<ID2D1Bitmap> cacheBitmap;
+
+protected:
+	vector<unsigned char> bitmapPixels;
+	UINT32 bitmapWidth = 0;
+	UINT32 bitmapHeight = 0;
+
+public:
+	double rW = 0.0; // PNG 原始宽度
+	double rH = 0.0; // PNG 原始高度
+};
 //// 单个文字控件
 class BarUiWordClass : public BarUiInnheritBaseClass
 {

@@ -73,6 +73,28 @@ public:
 		ret.bottom = static_cast<LONG>(ceil((svg.inhY + svg.h.val) * tarZoom) + dirtyAntialiasPadding);
 		return ret;
 	}
+	static RECT GetWeigetRect(const BarUiPNGClass& png, double tarZoom)
+	{
+		constexpr double pi = 3.14159265358979323846;
+		double radians = png.angle.val * pi / 180.0;
+		double rotatedW = abs(png.w.val * cos(radians))
+			+ abs(png.h.val * sin(radians));
+		double rotatedH = abs(png.w.val * sin(radians))
+			+ abs(png.h.val * cos(radians));
+		double centerX = (png.inhX + png.w.val / 2.0) * tarZoom;
+		double centerY = (png.inhY + png.h.val / 2.0) * tarZoom;
+
+		RECT ret;
+		ret.left = static_cast<LONG>(floor(centerX - rotatedW * tarZoom / 2.0)
+			- dirtyAntialiasPadding);
+		ret.top = static_cast<LONG>(floor(centerY - rotatedH * tarZoom / 2.0)
+			- dirtyAntialiasPadding);
+		ret.right = static_cast<LONG>(ceil(centerX + rotatedW * tarZoom / 2.0)
+			+ dirtyAntialiasPadding);
+		ret.bottom = static_cast<LONG>(ceil(centerY + rotatedH * tarZoom / 2.0)
+			+ dirtyAntialiasPadding);
+		return ret;
+	}
 	static RECT GetWeigetRect(const BarUiWordClass& word, double tarZoom)
 	{
 		RECT ret;

@@ -980,6 +980,9 @@
     <None Include="src\UI\color\colorSelect.svg">
       <Filter>资源文件</Filter>
     </None>
+    <Image Include="src\UI\color\colorCustom.png">
+      <Filter>资源文件</Filter>
+    </Image>
     <None Include="src\UI\barSetting.svg">
       <Filter>资源文件</Filter>
     </None>

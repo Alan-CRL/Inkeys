@@ -117,6 +117,7 @@ enum class BarUISetShapeEnum : int
 	DrawAttributeBar_ColorPickerCloseHit,
 	DrawAttributeBar_ColorPickerPreviewBubble,
 	DrawAttributeBar_ColorPickerHoldHint,
+	DrawAttributeBar_ColorSelect12Inner,
 };
 enum class BarUISetSuperellipseEnum : int
 {
@@ -149,6 +150,11 @@ enum class BarUISetSvgEnum : int
 	DrawAttributeBar_ThicknessOverflowInfo,
 	DrawAttributeBar_ThicknessAnnotationPopupClose,
 	DrawAttributeBar_ThicknessOverflowPopupClose,
+	DrawAttributeBar_ColorSelect12Check,
+};
+enum class BarUISetPngEnum : int
+{
+	DrawAttributeBar_ColorSelect12Wheel,
 };
 enum class BarUISetWordEnum : int
 {
@@ -207,6 +213,7 @@ public:
 	bool Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, RECT* targetRect = nullptr, bool clip = false);
 	bool Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, RECT* targetRect = nullptr, bool clip = false);
 	bool Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, const BarUiInheritClass& inh);
+	bool Png(ID2D1DeviceContext* deviceContext, BarUiPNGClass& png, const BarUiInheritClass& inh);
 	bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT textAlign = DWRITE_TEXT_ALIGNMENT_CENTER);
 	D2D1_SIZE_F MeasureText(const wstring& content, double fontSize,
 		DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_NORMAL);
@@ -393,6 +400,7 @@ public:
 	ankerl::unordered_dense::map<BarUISetShapeEnum, shared_ptr<BarUiShapeClass>> shapeMap;
 	ankerl::unordered_dense::map<BarUISetSuperellipseEnum, shared_ptr<BarUiSuperellipseClass>> superellipseMap;
 	ankerl::unordered_dense::map<BarUISetSvgEnum, shared_ptr<BarUiSVGClass>> svgMap;
+	ankerl::unordered_dense::map<BarUISetPngEnum, shared_ptr<BarUiPNGClass>> pngMap;
 	ankerl::unordered_dense::map<BarUISetWordEnum, shared_ptr<BarUiWordClass>> wordMap;
 
 	// 绘制属性按钮同样复用自身背景层，仅单独记录悬停动画阶段。
