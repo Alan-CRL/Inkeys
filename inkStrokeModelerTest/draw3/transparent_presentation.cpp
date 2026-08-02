@@ -119,6 +119,12 @@ namespace draw3
 			}
 
 			const LONG_PTR extendedStyle = GetWindowLongPtr(window, GWL_EXSTYLE);
+			if (noRedirectionBitmap && (extendedStyle & WS_EX_NOREDIRECTIONBITMAP) == 0)
+			{
+				std::cout << "DirectComposition requires WS_EX_NOREDIRECTIONBITMAP at window creation; current exStyle=0x"
+					<< std::hex << extendedStyle << std::dec << std::endl;
+				return false; // 该样式决定 DWM 是否分配重定向表面，创建后不能可靠补设。
+			}
 			LONG_PTR desiredExtendedStyle = extendedStyle & ~(
 				WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE |
 				WS_EX_DLGMODALFRAME | WS_EX_STATICEDGE | WS_EX_NOREDIRECTIONBITMAP);

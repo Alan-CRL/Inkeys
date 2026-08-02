@@ -29,6 +29,8 @@
 4. 人工验证基础绘制、prediction、抬笔烘干和窗口 resize。
 5. `inkStrokeModelerTestTests` 的并发/生命周期/几何测试通过；涉及调度时再执行 Release 严格基准。
 
+涉及窗口创建预设、presenter 初始化或 `.vcxproj` 优化元数据时，Debug 成功不能替代 Release 验证。至少需要构建 ARM64 Debug/Release，并多轮启动核对创建样式、active presenter 和错误日志。
+
 任何未执行或因环境不足无法执行的项目都必须明确标记“未验证”，不能用静态阅读或普通控制台无报错替代。
 
 纯文档变更可以不执行构建、Shader 编译或运行验证，但交付说明必须明确原因。
@@ -46,6 +48,8 @@ MSBuild.exe .\inkStrokeModelerTest.sln /m /p:Configuration=Debug /p:Platform=ARM
 构建日志需要同时证明 C++ 编译和两个 Shader 编译成功；只看到最终 EXE 存在，不能替代对 Shader 构建/资源链的检查。
 
 仓库内 EasyX 与 ink stroke modeler 预编译库使用 Release ABI。Debug 配置必须保留调试信息/非优化构建，但以 `/MT`、`NDEBUG` 链接；改回 `/MTd`、`_DEBUG` 会产生 `_ITERATOR_DEBUG_LEVEL` 和运行库不匹配。该约束适用于主工程和直接链接真实模块源码的测试工程。
+
+`HiEasyX\HiWindow.cpp` 的 Release 文件级 `WholeProgramOptimization=false` 是窗口创建兼容约束。检查编译命令时，该文件应保留 `/O2` 但不含 `/GL`，其余主工程源码仍使用项目级全程序优化；不要为规避单文件问题关闭整个工程的 LTCG。
 
 ## D3D Debug Layer
 
@@ -101,4 +105,6 @@ Windows 7 SP1 + KB2670838 是项目级目标；只有在记录了系统补丁、
 - dirty rect 只包含新几何，不包含旧 L0 清除区。
 - resize 成功一半就提交新逻辑尺寸。
 - presenter fallback 沿用前一次失败的资源。
+- 只验证 Debug 窗口预设，未执行 Release 启动对照。
+- 在窗口创建后用 `SetWindowLongPtr` 补设 `WS_EX_NOREDIRECTIONBITMAP`。
 - 从历史 `main2/main3` 或参考项目直接复制旧语义。

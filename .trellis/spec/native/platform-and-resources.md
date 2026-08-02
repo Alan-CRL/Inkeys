@@ -41,11 +41,15 @@ bool TransparentPresentationController::Present(RECT dirty, bool presentFull);
 
 本规则不新增 API；修改上述签名或返回语义需要专门设计并检查全部调用者。
 
+Release 工程还包含一个窗口创建边界约束：`HiEasyX\HiWindow.cpp` 必须通过 `.vcxproj` 的文件级元数据关闭 `WholeProgramOptimization`，其余源码仍沿用项目级 Release 优化设置。
+
 ### 3. Contracts
 
 - `Windows 7 SP1 + KB2670838` 是项目目标字段，不是测试结果字段。
 - 实测记录必须包含：OS/补丁、GPU/驱动、feature level、active presenter、是否 WARP、场景与结果。
 - 没有环境记录时，只能声明代码路径存在并标记“待验证”。
+- 首选 DComp 时，`WS_EX_NOREDIRECTIONBITMAP` 必须随 `CreateWindowEx` 的 `dwExStyle` 传入；不能依赖创建后调用 `SetWindowLongPtr` 补设。
+- HiEasyX 通过一次性全局预设和独立窗口线程传递创建参数。ARM64 Release 的 `/GL/LTCG` 已实测会使扩展样式未进入创建参数，因此 `HiEasyX\HiWindow.cpp` 必须保持文件级 `WholeProgramOptimization=false`；不要扩大为关闭整个工程的优化。
 
 ### 4. Validation & Error Matrix
 
@@ -54,6 +58,8 @@ bool TransparentPresentationController::Present(RECT dirty, bool presentFull);
 | feature level 11_1 列表返回 `E_INVALIDARG` | 使用 11_0 列表重试并记录最终 feature level |
 | hardware device 创建失败 | 尝试 WARP；两者都失败则初始化失败 |
 | DirectComposition API/初始化不可用 | 进入下一 presenter，不宣称 DComp 可用 |
+| DComp 窗口在创建后缺少 `WS_EX_NOREDIRECTIONBITMAP` | 输出包含实际 `GWL_EXSTYLE` 的低频诊断并进入下一 presenter；不要尝试创建后补设 |
+| Release 移除 `HiWindow.cpp` 的文件级优化例外 | 视为窗口创建契约回归；ARM64 Release 可能以错误 87 回退 DWM |
 | 当前 presenter 初始化失败 | 清理本次资源后尝试下一 presenter |
 | presenter `Present` 失败 | 返回失败并请求后续全量呈现 |
 | 未在目标系统执行 | 结果标记“待验证”，不得写“已支持/已保证” |
@@ -63,10 +69,14 @@ bool TransparentPresentationController::Present(RECT dirty, bool presentFull);
 - Good：记录 Windows 7 补丁、GPU 驱动、实际 presenter 和四项人工场景结果。
 - Base：仅从源码确认 fallback 分支存在，并明确写“待验证”。
 - Bad：因为存在 DWM/DComp 分支就直接写“Windows 7 透明呈现已保证”。
+- Good：Debug 与 Release 都确认窗口创建后包含 `WS_EX_NOREDIRECTIONBITMAP`，并多轮启动进入 DComp。
+- Bad：只在 Debug 验证窗口预设，或在 DComp 配置阶段再补设创建期样式。
 
 ### 6. Tests Required
 
 - 目标系统启动与 device/presenter 日志。
+- ARM64 Debug/Release 多轮启动，确认 active presenter；涉及窗口预设或工程优化时，两种配置都必须验证。
+- 检查 Release 编译命令：`HiEasyX\HiWindow.cpp` 保留 `/O2`、不含 `/GL`，其他源码仍使用项目级全程序优化。
 - 基础绘制、prediction、抬笔烘干、窗口 resize。
 - 能触发时验证 presenter fallback；不能触发时记录环境限制。
 - Debug Layer 检查方式可用后，记录无明显 D3D error。
@@ -76,6 +86,10 @@ bool TransparentPresentationController::Present(RECT dirty, bool presentFull);
 Wrong：`Windows 7 上 DWM 透明和 resize 均受支持。`
 
 Correct：`Windows 7 SP1 + KB2670838 是项目兼容目标；当前测试程序包含 DWM/ULW 候选路径，但该环境下的透明和 resize 行为待验证。`
+
+Wrong：`窗口创建后发现缺少 WS_EX_NOREDIRECTIONBITMAP，再用 SetWindowLongPtr 补上。`
+
+Correct：`首选 DComp 时把 WS_EX_NOREDIRECTIONBITMAP 作为 CreateWindowEx 创建参数；创建后缺失则记录并安全回退。`
 
 ## D3D Device Initialization
 
@@ -136,6 +150,7 @@ DirectCompositionVisualTree
 每种模式先尝试 waitable swapchain，失败后使用普通 swapchain。GPU 透明模式使用 BGRA8、flip sequential、双缓冲和 premultiplied alpha；DWM HWND 路径失败时会尝试 unspecified alpha 兼容模式。
 
 - DComp 运行时加载 `dcomp.dll`，不把 API 可用性当成编译期保证。
+- DComp 依赖窗口创建时包含 `WS_EX_NOREDIRECTIONBITMAP`。配置 presenter 时若样式缺失，记录实际扩展样式并回退；创建后补设不属于恢复路径。
 - GPU 模式通过 `Present1` 和 dirty rect 呈现。
 - ULW 把 backbuffer dirty rect 读回 staging/DIB，并只在 CPU 输出副本中加入 `1/255` alpha 命中测试底层。
 - 内部 L0/L1/L2/backbuffer 始终保持真透明背景。

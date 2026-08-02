@@ -65,6 +65,9 @@ Win32/HiEasyX message
 
 ### Presenter fallback
 
+- 窗口创建链必须按 `ShouldPreconfigureNoRedirectionBitmap -> HiEasyX PreSet -> 独立窗口线程 -> CreateWindowEx -> DComp ConfigureWindow` 检查；不能只看 presenter 初始化阶段。
+- `WS_EX_NOREDIRECTIONBITMAP` 是 DComp 的创建期窗口契约。创建后缺失时记录并回退，不用 `SetWindowLongPtr` 补设。
+- HiEasyX 窗口预设涉及 Release 优化边界；修改相关代码或 `.vcxproj` 时必须比较 Debug/Release，并确认 `HiWindow.cpp` 的文件级 `/GL` 例外仍生效。
 - 所有适配器统一按 DirectComposition、DWM extended frame、ULW 初始化；厂商、架构或 OS 标签本身不能改变顺序。
 - 每次新模式尝试前清理上一模式的 presenter、renderer 和 swapchain 状态。
 - GPU 路径保留真透明 alpha；仅 ULW CPU 输出副本叠加 `1/255` alpha 命中测试底层。
@@ -82,6 +85,7 @@ Win32/HiEasyX message
 - resize 后 L2 和 L1 是否保留左上角交集，L0 是否可安全重建？
 - 失败回退是否释放了所有上一尝试的资源？
 - 呈现路径是否只验证了 HRESULT，还是也验证了真实桌面上的透明 alpha？
+- 窗口创建参数是否在 Debug 与 Release 都实际进入 `CreateWindowEx`，而不是只在调用前写入了预设？
 - 兼容性描述是在陈述项目目标、已有代码路径，还是有环境记录的实测能力？
 - 数据离开瞬时 L2 视觉画布进入持久化时，prediction 是否已经被真实采样替换或显式确认？
 - 人工测试是否覆盖普通笔、荧光笔固定单点/极慢移动、橡皮、静止、抬笔、resize 和透明模式回退？

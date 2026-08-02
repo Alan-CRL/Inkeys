@@ -269,7 +269,10 @@
     <ClCompile Include="HiEasyX\HiSysGUI\SysGroupBox.cpp" />
     <ClCompile Include="HiEasyX\HiSysGUI\SysRadioButton.cpp" />
     <ClCompile Include="HiEasyX\HiSysGUI\SysStatic.cpp" />
-    <ClCompile Include="HiEasyX\HiWindow.cpp" />
+    <ClCompile Include="HiEasyX\HiWindow.cpp">
+      <!-- HiEasyX 用一次性全局状态向窗口线程传递预设；Release LTCG 会丢失扩展样式。 -->
+      <WholeProgramOptimization Condition="'$(Configuration)'=='Release'">false</WholeProgramOptimization>
+    </ClCompile>
     <ClCompile Include="draw3\contact_input.cpp" />
     <ClCompile Include="draw3\contact_input.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
