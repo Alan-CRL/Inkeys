@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
-- **Last Active**: 2026-07-25
+- **Total Sessions**: 6
+- **Last Active**: 2026-08-02
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~172 | Active |
+| `journal-1.md` | ~193 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 6 | 2026-08-02 | 普通笔实时笔锋恢复与抬笔定住 | `b7af67f` | `main` |
 | 5 | 2026-07-25 | L0 drawing cursor acceptance fixes | `0327796` | `main` |
 | 4 | 2026-07-25 | Windows Ink cursor alpha refinement | `2af3c9b` | `main` |
 | 3 | 2026-07-24 | Fixed vertical highlighter nib | `e5ebc97` | `bugfix/highlight` |

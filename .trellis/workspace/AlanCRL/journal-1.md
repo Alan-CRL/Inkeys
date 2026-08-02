@@ -170,3 +170,24 @@ Fixed Pen/Mouse cursor authority handoff, immediate Pen hover coordinates, stale
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: 普通笔实时笔锋恢复与抬笔定住
+
+**Date**: 2026-08-02
+**Task**: 普通笔实时笔锋恢复与抬笔定住
+**Branch**: `main`
+
+### Summary
+
+恢复 Mouse/Touch 实时笔锋：HardwarePressure 禁用 tip，SimulatedPressure/Fixed 启用；L0 tip 与稳定笔宽限速分离，改用公切线安全投影；默认抬笔定住真实尾+tip（去 prediction）。任务 08-02-pen-live-tip-policy 已归档。同会话另完成激光粒子核心对齐红外套（56e95d7），该任务仍 in_progress。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b7af67f` | (see git log) |
+
+### Status
+
+[OK] **Completed**
