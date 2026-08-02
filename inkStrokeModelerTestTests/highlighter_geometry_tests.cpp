@@ -422,23 +422,25 @@ int RunHighlighterGeometryTests()
 		{ 20.0f, 20.0f, 2.4f, 0.01f },
 		{ 50.0f, 30.0f, 1.2f, 0.04f }
 	};
-	std::vector<draw3::InkPoint> completedTail;
-	draw3::BuildCompletedPenTail(completedPen, false, completedTail);
-	HIGHLIGHTER_CHECK(completedTail.size() == 3);
-	HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().x, 20.0f));
-	HIGHLIGHTER_CHECK(NearlyEqual(completedTail.back().x, 40.0f));
-	draw3::BuildCompletedPenTail(completedPen, true, completedTail);
-	HIGHLIGHTER_CHECK(completedTail.size() == 2);
-	HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().x, 20.0f));
-	HIGHLIGHTER_CHECK(NearlyEqual(completedTail.back().x, 50.0f));
+std::vector<draw3::InkPoint> completedTail;
+		draw3::BuildCompletedPenTail(completedPen, false, 0.055, completedTail);
+		HIGHLIGHTER_CHECK(completedTail.size() == 3);
+		HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().x, 20.0f));
+		HIGHLIGHTER_CHECK(NearlyEqual(completedTail.back().x, 40.0f));
+		// 默认定住真实尾并叠加笔锋，末端应比未 taper 的 realPoints 更细。
+		HIGHLIGHTER_CHECK(completedTail.back().r < completedPen.realPoints.back().r);
+		draw3::BuildCompletedPenTail(completedPen, true, 0.055, completedTail);
+		HIGHLIGHTER_CHECK(completedTail.size() == 2);
+		HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().x, 20.0f));
+		HIGHLIGHTER_CHECK(NearlyEqual(completedTail.back().x, 50.0f));
 
-	draw3::ActiveStroke clickPen(5.0f, 500.0f);
-	clickPen.inputStartPoint = { 12.0f, 34.0f, 2.5f, 0.0f };
-	clickPen.hasInputStartPoint = true;
-	draw3::BuildCompletedPenTail(clickPen, false, completedTail);
-	HIGHLIGHTER_CHECK(completedTail.size() == 1);
-	HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().x, 12.0f));
-	HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().y, 34.0f));
+		draw3::ActiveStroke clickPen(5.0f, 500.0f);
+		clickPen.inputStartPoint = { 12.0f, 34.0f, 2.5f, 0.0f };
+		clickPen.hasInputStartPoint = true;
+		draw3::BuildCompletedPenTail(clickPen, false, 0.055, completedTail);
+		HIGHLIGHTER_CHECK(completedTail.size() == 1);
+		HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().x, 12.0f));
+		HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().y, 34.0f));
 
 	constexpr float kHalfHeight = 25.0f;
 	constexpr float kHalfWidth = 3.125f;

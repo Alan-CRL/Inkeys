@@ -713,7 +713,7 @@ namespace draw3
 		}
 
 		RECT DrawCompletedStroke(RuntimeStroke& runtime, InkRenderer& renderer, int width, int height,
-			bool retainPredictionOnUp)
+			bool retainPredictionOnUp, double liveTipTaperSeconds)
 		{
 			ActiveStroke& stroke = runtime.stroke;
 			RECT dirty = {};
@@ -751,7 +751,8 @@ namespace draw3
 					UnionRectInPlace(dirty,
 						RectFromStrokePoints(runtime.rebuildPoints, width, height));
 				}
-				BuildCompletedPenTail(stroke, retainPredictionOnUp, runtime.rebuildPoints);
+				BuildCompletedPenTail(stroke, retainPredictionOnUp, liveTipTaperSeconds,
+					runtime.rebuildPoints);
 			}
 			if (!runtime.rebuildPoints.empty())
 			{
@@ -2372,8 +2373,13 @@ namespace draw3
 					continue; // 暂留候选保持上一帧 L0/L1，不制造脏区或重复 prediction。
 				const bool eraser = runtime->tool == DrawingTool::Eraser;
 				const bool highlighter = runtime->tool == DrawingTool::Highlighter;
-				const double liveTipDurationSeconds =
+				// 保护窗口仍按配置 live-tip 时长推进 L1；taper 仅在非硬件压感普通笔上叠加。
+				const double liveTipProtectionSeconds =
 					eraser || highlighter ? 0.0 : configuration_.liveTipDurationSeconds;
+				const double liveTipTaperSeconds = eraser || highlighter
+					? 0.0
+					: ResolveLiveTipTaperDurationSeconds(
+						stroke.widthMode, configuration_.liveTipDurationSeconds);
 				stroke.lastL0Rect = stroke.currentL0Rect;
 				stroke.logicalInputTime = std::max(stroke.logicalInputTime,
 					QpcDeltaSeconds(frameQpc.QuadPart, runtime->qpcOrigin, qpcFrequency));
@@ -2399,7 +2405,7 @@ namespace draw3
 					stableDirty = eraser
 						? CommitEraserRealPointsToL1(stroke, StrokeShape::RoundCapsule,
 							renderer_, size.width, size.height)
-						: CommitStablePrefixToL1(stroke, liveTipDurationSeconds,
+						: CommitStablePrefixToL1(stroke, liveTipProtectionSeconds,
 							GetPredictionDurationSeconds(stroke), ColorForTool(runtime->tool),
 							StrokeShape::RoundCapsule, renderer_, size.width, size.height);
 				}
@@ -2411,7 +2417,7 @@ namespace draw3
 				}
 				else if (!runtime->ended)
 				{
-					RebuildL0DrawPoints(stroke, liveTipDurationSeconds,
+					RebuildL0DrawPoints(stroke, liveTipTaperSeconds,
 						StrokeShape::RoundCapsule, size.width, size.height);
 				}
 				else
@@ -2424,7 +2430,7 @@ namespace draw3
 				}
 				if (!runtime->ended && !runtime->awaitingReconnect)
 					UpdateIdleFreezeState(stroke, runtime->movedThisFrame,
-						liveTipDurationSeconds);
+						liveTipProtectionSeconds);
 				if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
 				{
 					if (!runtime->ended)
@@ -2531,9 +2537,15 @@ namespace draw3
 					}
 					if (!runtime->cancelled)
 					{
+						const double completedTipTaperSeconds =
+							runtime->tool == DrawingTool::Pen
+							? ResolveLiveTipTaperDurationSeconds(
+								runtime->stroke.widthMode,
+								configuration_.liveTipDurationSeconds)
+							: 0.0;
 						RECT completedStrokeDirty =
 							DrawCompletedStroke(*runtime, renderer_, size.width, size.height,
-								configuration_.retainPredictionOnUp);
+								configuration_.retainPredictionOnUp, completedTipTaperSeconds);
 						if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
 							UnionRectInPlace(completedStrokeDirty,
 								DrawReconnectManualTestRanges(*runtime, renderer_, size.width, size.height));
@@ -2869,9 +2881,13 @@ namespace draw3
 			kActiveDebugLayerColorMode == DebugLayerColorMode::ColorizeLiveLayer
 			? DirectX::XMFLOAT4(0.0f, 0.35f, 1.0f, 1.0f)
 			: stableInkColor;
-		const double liveTipDurationSeconds = eraser || highlighter ? 0.0 : configuration_.liveTipDurationSeconds;
+		const double liveTipProtectionSeconds =
+			eraser || highlighter ? 0.0 : configuration_.liveTipDurationSeconds;
 		const StrokeWidthMode widthMode = tool == DrawingTool::Pen
 			? StrokeWidthMode::SimulatedPressure : StrokeWidthMode::Fixed;
+		const double liveTipTaperSeconds = eraser || highlighter
+			? 0.0
+			: ResolveLiveTipTaperDurationSeconds(widthMode, configuration_.liveTipDurationSeconds);
 		const bool orderedPreview = tool == DrawingTool::Pen &&
 			kActiveDebugLayerColorMode == DebugLayerColorMode::ColorizeLiveLayer;
 
@@ -2976,19 +2992,19 @@ namespace draw3
 						if (absl::Status status = stroke.modeler.Predict(stroke.predictedResults); !status.ok())
 							stroke.predictedResults.clear();
 					}
-					RebuildPredictedPoints(stroke); // 用当前笔宽状态推导预测点半径。
-					stableDirty = CommitStablePrefixToL1(stroke, liveTipDurationSeconds,
-						GetPredictionDurationSeconds(stroke), stableInkColor, shape,
-						renderer_, size.width, size.height);
+RebuildPredictedPoints(stroke); // 用当前笔宽状态推导预测点半径。
+						stableDirty = CommitStablePrefixToL1(stroke, liveTipProtectionSeconds,
+							GetPredictionDurationSeconds(stroke), stableInkColor, shape,
+							renderer_, size.width, size.height);
 
-					stroke.lastL0Rect = stroke.currentL0Rect;
-					RebuildL0DrawPoints(stroke, liveTipDurationSeconds, shape, size.width, size.height); // 荧光笔只保留预测保护窗口，不做实时笔锋。
-					UpdateIdleFreezeState(stroke, rawMoved, liveTipDurationSeconds); // 停笔后视觉稳定则冻结 L0，减少空转。
-					DrawL0LiveComposite(stroke, liveInkColor, shape, renderer_);
-					UnionRectInPlace(l0FrameDirty, stroke.lastL0Rect); // 旧 L0 区域也要刷新，清掉上一帧预测残影。
-					UnionRectInPlace(l0FrameDirty, stroke.currentL0Rect); // 新 L0 区域需要显示最新笔锋。
+						stroke.lastL0Rect = stroke.currentL0Rect;
+						RebuildL0DrawPoints(stroke, liveTipTaperSeconds, shape, size.width, size.height); // 荧光笔只保留预测保护窗口，不做实时笔锋。
+						UpdateIdleFreezeState(stroke, rawMoved, liveTipProtectionSeconds); // 停笔后视觉稳定则冻结 L0，减少空转。
+						DrawL0LiveComposite(stroke, liveInkColor, shape, renderer_);
+						UnionRectInPlace(l0FrameDirty, stroke.lastL0Rect); // 旧 L0 区域也要刷新，清掉上一帧预测残影。
+						UnionRectInPlace(l0FrameDirty, stroke.currentL0Rect); // 新 L0 区域需要显示最新笔锋。
+					}
 				}
-			}
 			else if (forceL0Redraw)
 			{
 				stroke.lastL0Rect = {};
@@ -3050,17 +3066,25 @@ namespace draw3
 			}
 			UnionRectInPlace(strokeDirty, oldLiveRect); // 最终呈现同时清除按住期间较短的实时预览。
 		}
-		// 抬笔时把最后一帧可见 L0 原样落到 L1，避免笔锋和预测回缩。
+		// 抬笔时把最后可见真实尾+笔锋落到 L1；默认去掉 prediction，避免抬笔瞬间 tip 回缩。
+		std::vector<InkPoint> completedPenTail;
+		if (!eraser && !highlighter)
+			BuildCompletedPenTail(stroke, configuration_.retainPredictionOnUp,
+				liveTipTaperSeconds, completedPenTail);
 		const bool hasFinalLiveGeometry = !eraser && (highlighter
-			? !stroke.l0HighlighterGeometry.primitives.empty() : !stroke.l0DrawPoints.empty());
+			? !stroke.l0HighlighterGeometry.primitives.empty() : !completedPenTail.empty());
 		if (hasFinalLiveGeometry)
 		{
 			renderer_.SetOperatorTarget(renderer_.layerL1);
 			if (highlighter)
 				renderer_.DrawHighlighterPrimitives(stroke.l0HighlighterGeometry.primitives, liveInkColor);
 			else
-				renderer_.DrawStrokeOrDot(stroke.l0DrawPoints, liveInkColor, shape);
-			UnionRectInPlace(strokeDirty, stroke.currentL0Rect);
+			{
+				renderer_.DrawStrokeOrDot(completedPenTail, liveInkColor, shape);
+				UnionRectInPlace(strokeDirty,
+					RectFromStrokePoints(completedPenTail, finalSize.width, finalSize.height, shape));
+			}
+			if (highlighter) UnionRectInPlace(strokeDirty, stroke.currentL0Rect);
 		}
 		strokeDirty = ClampRectToCanvas(strokeDirty, finalSize.width, finalSize.height);
 		if (!IsEmptyRect(strokeDirty))

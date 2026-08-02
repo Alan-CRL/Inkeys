@@ -199,10 +199,11 @@ Correct：`Pen leave -> clear Pen sample + keep Pen authority；新 WM_MOUSEMOVE
 - 小于 `0.25px` 的原始移动视为抖动。
 - 普通笔 `SimulatedPressure` 使用相邻有效原始点的速度，不使用 modeled/predicted velocity。
 - RTS 路径先按真实 snapshot 的距离/QPC 计算速度并做一次低通，再交给笔宽估算器；同一批 modeled output 不得被当成多份新的速度采样。
-- 第一份有效速度只能从基准宽度渐进追随，禁止回写并瞬间改变已经可见的起笔点。当前直径时间变化上限为每秒 `3 × baseDiameter`，相邻点半径变化上限为 `0.35 × distance`。
+- 第一份有效速度只能从基准宽度渐进追随，禁止回写并瞬间改变已经可见的起笔点。当前直径时间变化上限为每秒 `3 × baseDiameter`，相邻点半径变化上限为 `0.35 × distance`。该稳定限速只作用于 `realPoints` 生成（L0→L1 稳定宽度）。
 - 预测点直接继承最后真实宽度，不使用 predicted velocity 或 predicted pressure 改写半径。
 - 普通笔 `HardwarePressure` 使用模型插值后的 `[0,1]` pressure 映射基准直径的 `0.2–1.4` 倍；Down 压力缺失时整笔回退 `SimulatedPressure`，后续偶发缺失保持上一真实宽度。
-- 半径变化同时受时间和距离限制；L0 taper 后再次调用 `LimitRadiusTransitions`。
+- 普通笔 L0 实时笔锋：`HardwarePressure` 禁用 tip taper；`SimulatedPressure`/`Fixed` 启用。taper 后仅做空间公切线安全投影（斜率 `0.95`、双向），不再套用稳定笔宽时间限速。
+- L1 保护窗口仍使用配置 `liveTipDuration + predictionDuration`，与 tip 是否绘制解耦。
 - 视觉连续三帧稳定后可冻结停笔更新，移动时解除冻结。
 
 依据：`StrokeWidthEstimator::Append`、`UpdateRawPositionAndDetectMovement`、`UpdateIdleFreezeState`、`RebuildPredictedPoints`。
@@ -325,7 +326,7 @@ Correct：`保持预测弦走廊不变；其失败后只在预测末端速度方
 - 三类设备设置编码在单个 32 位原子快照中；设置更新只影响之后 Down 的普通笔，活动笔画不切换。默认 Mouse/Touch 模拟、Pen 硬件。
 - 非普通笔工具始终固定宽度。Pen 硬件模式 Down 无压力时锁定回退模拟；真实直径为 `base × (0.2 + 1.2 × pressure)`。
 - pressure/tilt/orientation 即使在固定或模拟宽度模式也传入模型；坐标未移动但笔状态有效变化时不得被原始移动阈值丢弃。
-- 预测点冻结最后真实半径，再应用既有 L0 taper；不得用预测 pressure 改写尾宽。
+- 预测点冻结最后真实半径；`SimulatedPressure`/`Fixed` 再应用既有 L0 taper，`HardwarePressure` 不叠加 tip；不得用预测 pressure 改写尾宽。
 
 ### 4. Validation & Error Matrix
 
@@ -443,7 +444,7 @@ Result = Add + Retain * Below
 liveTipDuration + predictionDuration
 ```
 
-contact 结束时由 `StrokeModelConfiguration::retainPredictionOnUp` 选择收尾，并始终先重建此前已经进入 L1 的稳定前缀。默认 `false`：采用模型运行到 `kUp` 后的真实尾段平滑完成笔锋，清除 prediction；设为 `true`：把 `previousL0DrawPoints` 中的真实尾部、prediction 和笔锋原样合入 L1，不再重连 `kUp` 尾段。只有 Down 后立即 Up、尚未生成建模点时，才使用初始点兜底生成点击或短段。同一帧的全部结束 contact 只执行一次 L2 resolve、一次 backbuffer composite 和一次 present。仍活动 contact 的 L1/L0 必须在清空临时纹理后从 CPU 状态重建。
+contact 结束时由 `StrokeModelConfiguration::retainPredictionOnUp` 选择收尾，并始终先重建此前已经进入 L1 的稳定前缀。默认 `false`：把最终真实尾段叠加与绘制中相同的 L0 笔锋后合入 L1，明确去掉 prediction，使抬笔瞬间 tip 定住不回缩；设为 `true`：把最后可见 L0（真实尾部、prediction 和笔锋）原样合入 L1。完成态 tip 使用与 L0 相同的公切线安全投影，不套用稳定笔宽时间限速。只有 Down 后立即 Up、尚未生成建模点时，才使用初始点兜底生成点击或短段。同一帧的全部结束 contact 只执行一次 L2 resolve、一次 backbuffer composite 和一次 present。仍活动 contact 的 L1/L0 必须在清空临时纹理后从 CPU 状态重建。
 
 ## Scenario: RTS Multi-Contact Input And Rendering
 

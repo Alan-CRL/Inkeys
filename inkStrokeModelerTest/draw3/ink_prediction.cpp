@@ -111,6 +111,8 @@ namespace draw3
 		constexpr int kVisualStableRequiredFrames = 3;
 		constexpr float kMaxDiameterChangePerBaseDiameterPerSecond = 3.0f;
 		constexpr float kMaxRadiusChangePerPixel = 0.35f;
+		// L0 笔锋只做公切线安全投影，允许比稳定笔宽更快收细，但仍严格小于 1。
+		constexpr float kCapsuleRadiusSlope = 0.95f;
 		constexpr float kHighlighterDuplicateDistancePx = 0.25f;
 		constexpr float kHighlighterRadiusPx = 25.0f;
 		constexpr float kHighlighterBoundsPaddingPx = 3.0f;
@@ -121,6 +123,8 @@ namespace draw3
 		constexpr uint32_t kPenInputWidthModeMask = 0x3;
 		static_assert(kMaxRadiusChangePerPixel > 0.0f && kMaxRadiusChangePerPixel < 1.0f,
 			"半径空间变化率必须严格小于胶囊切线退化阈值");
+		static_assert(kCapsuleRadiusSlope > 0.0f && kCapsuleRadiusSlope < 1.0f,
+			"笔锋公切线斜率必须严格小于胶囊切线退化阈值");
 		static_assert(std::atomic<uint32_t>::is_always_lock_free,
 			"设备宽度设置要求 32 位原子始终无锁");
 
@@ -227,16 +231,30 @@ namespace draw3
 			return previousRadius + std::clamp(desiredRadius - previousRadius, -maxRadiusDelta, maxRadiusDelta);
 		}
 
-		void LimitRadiusTransitions(std::vector<InkPoint>& points, float baseDiameter)
+		float ClampRadiusByDistance(float previousRadius, float desiredRadius, float pointDistance) noexcept
 		{
+			if (pointDistance <= 0.000001f) return previousRadius; // 零长度段不能形成公切线，保持前一半径。
+			const float maxRadiusDelta = kCapsuleRadiusSlope * pointDistance;
+			return previousRadius + std::clamp(desiredRadius - previousRadius, -maxRadiusDelta, maxRadiusDelta);
+		}
+
+		// 笔锋叠加后只做空间公切线投影，不再套用稳定笔宽的时间限速。
+		void EnforceCapsuleTangency(std::vector<InkPoint>& points)
+		{
+			if (points.size() < 2) return;
 			for (size_t index = 1; index < points.size(); ++index)
 			{
-				const InkPoint& previous = points[index - 1];
-				InkPoint& current = points[index];
-				const float pointDistance = std::hypot(current.x - previous.x, current.y - previous.y);
-				const double deltaTime = std::max(0.0,
-					static_cast<double>(current.time) - static_cast<double>(previous.time));
-				current.r = ClampRadiusTransition(previous.r, current.r, baseDiameter, pointDistance, deltaTime);
+				const float pointDistance = std::hypot(
+					points[index].x - points[index - 1].x, points[index].y - points[index - 1].y);
+				points[index].r = ClampRadiusByDistance(
+					points[index - 1].r, points[index].r, pointDistance);
+			}
+			for (size_t index = points.size() - 1; index > 0; --index)
+			{
+				const float pointDistance = std::hypot(
+					points[index].x - points[index - 1].x, points[index].y - points[index - 1].y);
+				points[index - 1].r = ClampRadiusByDistance(
+					points[index].r, points[index - 1].r, pointDistance);
 			}
 		}
 
@@ -423,14 +441,22 @@ namespace draw3
 		}
 	}
 
+double ResolveLiveTipTaperDurationSeconds(StrokeWidthMode widthMode,
+		double configuredLiveTipDurationSeconds) noexcept
+	{
+		// 硬件压感本身形成粗细变化，普通笔 L0 不再叠加实时笔锋。
+		if (widthMode == StrokeWidthMode::HardwarePressure) return 0.0;
+		return std::max(0.0, configuredLiveTipDurationSeconds);
+	}
+
 	StrokeWidthMode ResolveStrokeWidthMode(InputDeviceType deviceType,
 		InputWidthModeSettings settings, float downPressure) noexcept
 	{
 		const auto resolveBasicMode = [](InputWidthMode mode)
-			{
+		{
 				return mode == InputWidthMode::Fixed
 					? StrokeWidthMode::Fixed : StrokeWidthMode::SimulatedPressure;
-			};
+		};
 		switch (deviceType)
 		{
 		case InputDeviceType::Touch:
@@ -1175,19 +1201,26 @@ namespace draw3
 	}
 
 	void BuildCompletedPenTail(const ActiveStroke& stroke, bool retainPredictionOnUp,
-		std::vector<InkPoint>& output)
+		double liveTipTaperSeconds, std::vector<InkPoint>& output)
 	{
 		output.clear();
-		if (retainPredictionOnUp && !stroke.previousL0DrawPoints.empty())
+		if (retainPredictionOnUp)
 		{
-			output.assign(stroke.previousL0DrawPoints.begin(), stroke.previousL0DrawPoints.end());
-			return; // 开关启用时只烘干最后可见 L0，不再连接模型 Up 尾段。
+			// 开关启用时原样烘干最后可见 L0（含 prediction）；优先本帧，再回退上一帧快照。
+			if (!stroke.l0DrawPoints.empty())
+				output.assign(stroke.l0DrawPoints.begin(), stroke.l0DrawPoints.end());
+			else if (!stroke.previousL0DrawPoints.empty())
+				output.assign(stroke.previousL0DrawPoints.begin(), stroke.previousL0DrawPoints.end());
+			if (!output.empty()) return;
 		}
+		// 默认：定住真实尾部并叠加笔锋，明确去掉 prediction，避免抬笔瞬间 tip 回缩。
 		if (!stroke.realPoints.empty())
 		{
 			const size_t tailStart = stroke.hasCommittedGeometry
 				? std::min(stroke.committedIndex, stroke.realPoints.size() - 1) : 0;
 			output.assign(stroke.realPoints.begin() + tailStart, stroke.realPoints.end());
+			ApplyLiveTipTaper(output, liveTipTaperSeconds);
+			EnforceCapsuleTangency(output); // 与 L0 实时笔锋同一套公切线安全，不再套稳定笔宽时间限速。
 		}
 		if (output.empty() && stroke.hasInputStartPoint)
 			output.push_back(stroke.inputStartPoint); // Down 后立即 Up 尚无建模点时仍生成点击。
@@ -1426,7 +1459,7 @@ namespace draw3
 		}
 		stroke.l0DrawPoints.insert(stroke.l0DrawPoints.end(), stroke.predictedPoints.begin(), stroke.predictedPoints.end()); // 预测点只放在 L0，便于下一帧擦除重画。
 		ApplyLiveTipTaper(stroke.l0DrawPoints, liveTipDurationSeconds);
-		LimitRadiusTransitions(stroke.l0DrawPoints, stroke.widthEstimator.baseDiameter); // 收细会再次改半径，绘制前必须重新保证相邻段的几何约束。
+		EnforceCapsuleTangency(stroke.l0DrawPoints); // 笔锋只做公切线安全投影，不再套用稳定笔宽时间限速。
 		stroke.currentL0Rect = RectFromStrokePoints(stroke.l0DrawPoints, width, height, shape);
 	}
 

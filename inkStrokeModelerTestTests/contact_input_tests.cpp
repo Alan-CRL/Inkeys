@@ -468,6 +468,59 @@ namespace
 		TEST_CHECK(state, missingPressure.realPoints.size() == 2);
 		TEST_CHECK(state, NearlyEqual(
 			missingPressure.realPoints.front().r, missingPressure.realPoints.back().r));
+
+		TEST_CHECK(state, draw3::ResolveLiveTipTaperDurationSeconds(
+			draw3::StrokeWidthMode::HardwarePressure, 0.055) == 0.0);
+		TEST_CHECK(state, NearlyEqual(static_cast<float>(
+			draw3::ResolveLiveTipTaperDurationSeconds(
+				draw3::StrokeWidthMode::SimulatedPressure, 0.055)), 0.055f));
+		TEST_CHECK(state, NearlyEqual(static_cast<float>(
+			draw3::ResolveLiveTipTaperDurationSeconds(
+				draw3::StrokeWidthMode::Fixed, 0.055)), 0.055f));
+
+		auto makeUniformStroke = [](draw3::StrokeWidthMode mode)
+		{
+			draw3::ActiveStroke stroke(5.0f, 500.0f, mode);
+			for (int index = 0; index < 8; ++index)
+			{
+				ink::stroke_model::Result result;
+				result.position = {
+					static_cast<float>(index) * 10.0f, 0.0f };
+				result.time = ink::stroke_model::Time(index * 0.01);
+				result.pressure = 1.0f;
+				stroke.modeledResults.push_back(result);
+			}
+			draw3::AppendNewModeledPoints(stroke);
+			return stroke;
+		};
+
+		draw3::ActiveStroke hardwareTip = makeUniformStroke(
+			draw3::StrokeWidthMode::HardwarePressure);
+		const float hardwareBaseRadius = hardwareTip.realPoints.back().r;
+		draw3::RebuildL0DrawPoints(hardwareTip, draw3::ResolveLiveTipTaperDurationSeconds(
+			hardwareTip.widthMode, 0.055), draw3::StrokeShape::RoundCapsule, 400, 400);
+		TEST_CHECK(state, !hardwareTip.l0DrawPoints.empty());
+		TEST_CHECK(state, NearlyEqual(
+			hardwareTip.l0DrawPoints.back().r, hardwareBaseRadius));
+
+		draw3::ActiveStroke simulatedTip = makeUniformStroke(
+			draw3::StrokeWidthMode::SimulatedPressure);
+		for (draw3::InkPoint& point : simulatedTip.realPoints)
+			point.r = 2.5f; // 固定稳定半径，只验证 L0 叠加笔锋。
+		draw3::RebuildL0DrawPoints(simulatedTip, draw3::ResolveLiveTipTaperDurationSeconds(
+			simulatedTip.widthMode, 0.055), draw3::StrokeShape::RoundCapsule, 400, 400);
+		TEST_CHECK(state, !simulatedTip.l0DrawPoints.empty());
+		TEST_CHECK(state, simulatedTip.l0DrawPoints.back().r < 2.5f - 0.2f);
+		TEST_CHECK(state, simulatedTip.l0DrawPoints.front().r >
+			simulatedTip.l0DrawPoints.back().r + 0.1f);
+		for (size_t index = 1; index < simulatedTip.l0DrawPoints.size(); ++index)
+		{
+			const draw3::InkPoint& previous = simulatedTip.l0DrawPoints[index - 1];
+			const draw3::InkPoint& current = simulatedTip.l0DrawPoints[index];
+			const float segmentLength = std::hypot(
+				current.x - previous.x, current.y - previous.y);
+			TEST_CHECK(state, std::abs(current.r - previous.r) < segmentLength + 1e-4f);
+		}
 	}
 
 	void TestInterruptedStrokeReconnectPolicy(TestState& state)

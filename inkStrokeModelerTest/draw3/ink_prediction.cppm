@@ -301,6 +301,9 @@ export namespace draw3
 	void ApplyPredictionMode(ink::stroke_model::StrokeModelParams& params,
 		const ink::stroke_model::KalmanPredictorParams& kalmanPredictorParams);
 	// 为普通笔 contact 按设备设置解析本笔固定的宽度来源。
+	// HardwarePressure 普通笔禁用 L0 实时笔锋；其余宽度模式沿用配置时长。
+	double ResolveLiveTipTaperDurationSeconds(StrokeWidthMode widthMode,
+		double configuredLiveTipDurationSeconds) noexcept;
 	StrokeWidthMode ResolveStrokeWidthMode(InputDeviceType deviceType,
 		InputWidthModeSettings settings, float downPressure) noexcept;
 	// 判断倒转 Pen 是否请求把当前可绘制工具覆盖为橡皮。
@@ -409,9 +412,9 @@ export namespace draw3
 	// 把已提交稳定前缀和最后一帧 live 高亮几何直接拼成完成态。
 	HighlighterGeometry MergeHighlighterGeometry(const HighlighterGeometry& committedGeometry,
 		const HighlighterGeometry& liveGeometry);
-	// 选择普通笔完成态尾段：默认连接模型 Up 结果，开关启用时保留最后可见 L0。
+	// 选择普通笔完成态尾段：默认定住真实尾部+笔锋（去预测）；开关启用时保留最后可见 L0（含预测）。
 	void BuildCompletedPenTail(const ActiveStroke& stroke, bool retainPredictionOnUp,
-		std::vector<InkPoint>& output);
+		double liveTipTaperSeconds, std::vector<InkPoint>& output);
 
 	// 将矩形并入已有脏区。
 	void UnionRectInPlace(RECT& target, const RECT& addition);
