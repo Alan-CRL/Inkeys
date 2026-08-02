@@ -4,6 +4,7 @@ module;
 
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 export module Inkeys.UI.Bar:Bottom;
 
@@ -54,10 +55,17 @@ enum class BarButtomHoverStageEnum : int
 	Fading,
 };
 
+enum class BarButtomIconKindEnum : int
+{
+	Svg,
+	Png,
+};
+
 class BarButtomClass
 {
 public:
 	BarButtomClass()
+		: state(&localState)
 	{
 		// 按钮背景只承载选中、按下和悬停效果，首次显示前必须保持完全透明。
 		buttom.pct.Initialization(0.0);
@@ -75,8 +83,11 @@ public:
 		pressScale(other.pressScale),
 		name(other.name),
 		icon(other.icon),
+		pngIcon(other.pngIcon),
+		iconKind(other.iconKind),
 		clickFunc(other.clickFunc),
-		state(other.state) // 浅拷贝指针
+		localState(other.localState),
+		state(other.state == &other.localState ? &localState : other.state)
 	{}
 
 	bool IsVisible() const
@@ -104,11 +115,15 @@ public:
 	// 背景、图标和文字共用的绘制倍率，不参与布局及命中区域计算。
 	BarUiValueClass pressScale = BarUiValueClass(1.0);
 	BarUiWordClass name;
+	// SVG 继续承载统一的布局、透明度和动画状态；PNG 仅替换最终绘制载荷。
 	BarUiSVGClass icon;
+	BarUiPNGClass pngIcon;
+	IdtAtomic<BarButtomIconKindEnum> iconKind = BarButtomIconKindEnum::Svg;
 
 	function<void()> clickFunc;
 
-	BarButtomStateClass* state;
+	BarButtomStateClass localState;
+	BarButtomStateClass* state = nullptr;
 };
 
 enum class BarButtonLayoutZoneEnum : int
@@ -120,12 +135,17 @@ enum class BarButtonLayoutZoneEnum : int
 
 	struct BarButtonRegistrationClass
 	{
-		BarButtomClass* button = nullptr;
+		std::string id;
+		shared_ptr<BarButtomClass> button;
 		bool allowMultiple = false;
 		BarButtonLayoutZoneEnum zone = BarButtonLayoutZoneEnum::Extension;
 		// 注册时写死的默认尺寸/用户显隐；A 区配置不可改 Visible，Size 本轮也纠正回这里。
 		BarButtomSizeEnum defaultSize = BarButtomSizeEnum::twoTwo;
 		bool defaultUserVisible = true;
+		std::string legacyField;
+		function<bool()> legacyEnabled;
+		wstring categoryName;
+		wstring settingsName;
 	};
 
 class BarButtomListClass
@@ -137,28 +157,10 @@ public:
 		if (x >= 0 && x < list.size()) return list.at(x).get();
 		return nullptr;
 	}
-	bool Set(int x, BarButtomClass* ptr)
+	void Replace(vector<shared_ptr<BarButtomClass>> next)
 	{
 		unique_lock lock(mt);
-		if (x < 0 || ptr == nullptr) return false;
-		const size_t index = static_cast<size_t>(x);
-		// 配置序列不设固定长度，按需扩展运行时按钮槽位。
-		if (index >= list.size()) list.resize(index + 1);
-
-		// 如果对象不唯一，则应用深拷贝
-		if (!ptr->only)
-		{
-			// 深拷贝 BarButtomClass 对象
-			shared_ptr<BarButtomClass> copy = make_shared<BarButtomClass>(*ptr);
-			list[index] = copy;
-		}
-		else
-		{
-			// 直接使用传入的指针
-			list[index] = shared_ptr<BarButtomClass>(ptr);
-		}
-
-		return true;
+		list = move(next);
 	}
 
 	bool Swap(int x, int y)
@@ -174,7 +176,7 @@ public:
 
 protected:
 	shared_mutex mt;
-	vector<shared_ptr<BarButtomClass>> list{ 40 };
+	vector<shared_ptr<BarButtomClass>> list;
 };
 
 class BarButtomSetClass
@@ -195,15 +197,23 @@ bool RegisterButton(
 			BarButtomClass* button,
 			bool allowMultiple,
 			BarButtonLayoutZoneEnum zone,
-			bool defaultUserVisible = true);
+			bool defaultUserVisible = true,
+			const std::string& legacyField = {},
+			function<bool()> legacyEnabled = {},
+			const wstring& categoryName = {},
+			const wstring& settingsName = {});
+		bool TryGetRegistration(const std::string& id, BarButtonRegistrationClass& outRegistration) const;
+		vector<BarButtonRegistrationClass> GetExtensionRegistrations() const;
 		void PresetInitialization();
+		void RegisterBuiltInComponents();
 		void StateUpdate();
 		void UpdateDrawButtonStyle();
 
 		void Load();
+		void SyncLegacyExtensionButtons();
+		void ResetPngIconCaches();
 
 	protected:
-		bool TryGetRegistration(const std::string& id, BarButtonRegistrationClass& outRegistration) const;
 		void PresetHoming();
 		void CalcState();
 		static Inkeys::BarButtonSizeKind ToConfigSize(BarButtomSizeEnum size);
@@ -217,12 +227,17 @@ bool RegisterButton(
 			BarButtonLayoutZoneEnum zone);
 std::vector<Inkeys::BarExtensionButtonLayoutEntry> NormalizeExtensionZone(
 				const std::vector<Inkeys::BarExtensionButtonLayoutEntry>& configured);
-			void AppendFixedButtons(const std::vector<Inkeys::BarFixedButtonLayoutEntry>& entries);
-			// 返回实际创建到 UI 的扩展按钮数量（未知 ID 只留配置不计）。
-			int AppendExtensionButtons(const std::vector<Inkeys::BarExtensionButtonLayoutEntry>& entries);
+			void AppendFixedButtons(
+				const std::vector<Inkeys::BarFixedButtonLayoutEntry>& entries,
+				vector<shared_ptr<BarButtomClass>>& activeButtons);
+			int AppendLegacyExtensionButtons(vector<shared_ptr<BarButtomClass>>& activeButtons);
 			// 交界分割线仅进运行时列表，不写回配置。
-			void AppendBoundaryDivider();
+			void AppendBoundaryDivider(
+				vector<shared_ptr<BarButtomClass>>& activeButtons,
+				size_t boundaryIndex);
 
 		mutable shared_mutex registrationMutex;
 		unordered_map<std::string, BarButtonRegistrationClass> registrations;
+		vector<std::string> registrationOrder;
+		shared_ptr<BarButtomClass> boundaryDividers[2];
 	};

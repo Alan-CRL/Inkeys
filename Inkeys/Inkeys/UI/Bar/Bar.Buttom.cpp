@@ -7,6 +7,7 @@ module;
 #include "../../../IdtDrawpad.h"
 #include "../../../IdtHistoricalDrawpad.h"
 #include "../../../IdtImage.h"
+#include "../../../IdtFloating.h"
 #include "../../../IdtState.h"
 
 #include "../../../IdtConfiguration.h"
@@ -33,7 +34,11 @@ bool BarButtomSetClass::RegisterButton(
 	BarButtomClass* button,
 	bool allowMultiple,
 	BarButtonLayoutZoneEnum zone,
-	bool defaultUserVisible)
+	bool defaultUserVisible,
+	const std::string& legacyField,
+	function<bool()> legacyEnabled,
+	const wstring& categoryName,
+	const wstring& settingsName)
 {
 	if (id.empty() || button == nullptr) return false;
 
@@ -53,15 +58,22 @@ bool BarButtomSetClass::RegisterButton(
 	button->id = id;
 	button->only = !allowMultiple;
 	button->userVisible = defaultUserVisible;
+	shared_ptr<BarButtomClass> ownedButton(button);
 	registrations.emplace(
 		id,
 		BarButtonRegistrationClass{
-			button,
+			id,
+			move(ownedButton),
 			allowMultiple,
 			zone,
 			button->size.load(),
-			defaultUserVisible
+			defaultUserVisible,
+			legacyField,
+			move(legacyEnabled),
+			categoryName,
+			settingsName
 		});
+	registrationOrder.push_back(id);
 	return true;
 }
 
@@ -73,6 +85,21 @@ bool BarButtomSetClass::TryGetRegistration(const std::string& id, BarButtonRegis
 
 	outRegistration = registration->second;
 	return true;
+}
+
+vector<BarButtonRegistrationClass> BarButtomSetClass::GetExtensionRegistrations() const
+{
+	shared_lock lock(registrationMutex);
+	vector<BarButtonRegistrationClass> result;
+	result.reserve(registrationOrder.size());
+	for (const std::string& id : registrationOrder)
+	{
+		auto registration = registrations.find(id);
+		if (registration == registrations.end()) continue;
+		if (registration->second.zone != BarButtonLayoutZoneEnum::Extension) continue;
+		result.push_back(registration->second);
+	}
+	return result;
 }
 
 void BarButtomSetClass::PresetInitialization()
@@ -475,7 +502,170 @@ void BarButtomSetClass::PresetInitialization()
 	RegisterButton(Inkeys::BarButtonId::Pierce, preset[(int)BarButtomPresetEnum::Pierce], false, BarButtonLayoutZoneEnum::FixedA2);
 	RegisterButton(Inkeys::BarButtonId::Freeze, preset[(int)BarButtomPresetEnum::Freeze], false, BarButtonLayoutZoneEnum::FixedA2);
 	RegisterButton(Inkeys::BarButtonId::Setting, preset[(int)BarButtomPresetEnum::Setting], false, BarButtonLayoutZoneEnum::FixedA2);
+
+	BarButtonRegistrationClass dividerRegistration;
+	if (TryGetRegistration(Inkeys::BarButtonId::Divider, dividerRegistration)
+		&& dividerRegistration.button)
+	{
+		// 两条交界线由集合长期持有，运行时替换列表时不会释放正在绘制的对象。
+		boundaryDividers[0] = make_shared<BarButtomClass>(*dividerRegistration.button);
+		boundaryDividers[1] = make_shared<BarButtomClass>(*dividerRegistration.button);
+	}
 }
+
+void BarButtomSetClass::RegisterBuiltInComponents()
+{
+	const COLORREF defaultButtonFill = GetThemeColor(BarThemeColorEnum::Surface);
+	const COLORREF defaultIconColor = GetThemeColor(BarThemeColorEnum::TextPrimary);
+
+	auto registerComponent = [&](const char* id,
+		const char* legacyField,
+		function<bool()> legacyEnabled,
+		const wchar_t* categoryName,
+		const wchar_t* settingsName,
+		const wchar_t* shortText,
+		const wchar_t* iconResource,
+		InkeysBuiltInComponentAction action)
+	{
+		BarButtonRegistrationClass existingRegistration;
+		if (TryGetRegistration(id, existingRegistration)) return;
+
+		BarButtomClass* obj = new BarButtomClass;
+		obj->size = BarButtomSizeEnum::twoTwo;
+		obj->hide = false;
+		obj->only = true;
+
+		obj->name.Initialization(0.0, 0.0, 0.0, 0.0, shortText, 0.0);
+		obj->name.enable.Initialization(true);
+		obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
+		obj->buttom.enable.Initialization(true);
+
+		obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
+		obj->icon.enable.Initialization(true);
+		obj->pngIcon.Initialization(0.0, 0.0);
+		if (!obj->pngIcon.InitializationFromResource(L"PNG", iconResource))
+		{
+			delete obj;
+			return;
+		}
+		obj->pngIcon.enable.Initialization(true);
+		// 复用 SVG 的动画状态，但为 PNG 提供真实宽高，避免 SetWH 无法按比例计算。
+		obj->icon.rW = obj->pngIcon.rW;
+		obj->icon.rH = obj->pngIcon.rH;
+		obj->iconKind = BarButtomIconKindEnum::Png;
+		obj->clickFunc = [action]() { ExecuteInkeysBuiltInComponentAction(action); };
+
+		if (!RegisterButton(
+			id, obj, false, BarButtonLayoutZoneEnum::Extension, true,
+			legacyField, move(legacyEnabled), categoryName, settingsName))
+		{
+			delete obj;
+		}
+	};
+
+	// 顺序与设置页的分组顺序一致，运行时 B 也始终按此顺序投影。
+	registerComponent(
+		"Component.ShortcutButton.Appliance.Explorer",
+		"component.shortcutButton.appliance.explorer",
+		[] { return setlist.component.shortcutButton.appliance.explorer; },
+		L"软件", L"启动 文件资源管理器", L"文件管理器", L"CustomizeIco4",
+		InkeysBuiltInComponentAction::Explorer);
+	registerComponent(
+		"Component.ShortcutButton.Appliance.Taskmgr",
+		"component.shortcutButton.appliance.taskmgr",
+		[] { return setlist.component.shortcutButton.appliance.taskmgr; },
+		L"软件", L"启动 任务管理器", L"任务管理器", L"CustomizeIco9",
+		InkeysBuiltInComponentAction::TaskManager);
+	registerComponent(
+		"Component.ShortcutButton.Appliance.Control",
+		"component.shortcutButton.appliance.control",
+		[] { return setlist.component.shortcutButton.appliance.control; },
+		L"软件", L"启动 控制面板", L"控制面板", L"CustomizeIco7",
+		InkeysBuiltInComponentAction::ControlPanel);
+
+	registerComponent(
+		"Component.ShortcutButton.System.Desktop",
+		"component.shortcutButton.system.desktop",
+		[] { return setlist.component.shortcutButton.system.desktop; },
+		L"系统", L"显示桌面", L"显示桌面", L"CustomizeIco3",
+		InkeysBuiltInComponentAction::ShowDesktop);
+	registerComponent(
+		"Component.ShortcutButton.System.LockWorkStation",
+		"component.shortcutButton.system.lockWorkStation",
+		[] { return setlist.component.shortcutButton.system.lockWorkStation; },
+		L"系统", L"锁屏", L"锁屏", L"CustomizeIco8",
+		InkeysBuiltInComponentAction::LockWorkStation);
+
+	registerComponent(
+		"Component.ShortcutButton.Keyboard.Keyboardesc",
+		"component.shortcutButton.keyboard.keyboardesc",
+		[] { return setlist.component.shortcutButton.keyboard.keyboardesc; },
+		L"键盘", L"ESC 键", L"ESC键", L"CustomizeIco5",
+		InkeysBuiltInComponentAction::Escape);
+	registerComponent(
+		"Component.ShortcutButton.Keyboard.KeyboardAltF4",
+		"component.shortcutButton.keyboard.keyboardAltF4",
+		[] { return setlist.component.shortcutButton.keyboard.keyboardAltF4; },
+		L"键盘", L"Alt+F4", L"Alt+F4", L"CustomizeIco6",
+		InkeysBuiltInComponentAction::AltF4);
+
+	registerComponent(
+		"Component.ShortcutButton.RollCall.IslandCaller1",
+		"component.shortcutButton.rollCall.IslandCaller1",
+		[] { return setlist.component.shortcutButton.rollCall.IslandCaller1; },
+		L"随机点名", L"IslandCaller 1", L"随机点名", L"CustomizeIco2",
+		InkeysBuiltInComponentAction::IslandCaller);
+	registerComponent(
+		"Component.ShortcutButton.RollCall.IslandCaller2",
+		"component.shortcutButton.rollCall.IslandCaller2",
+		[] { return setlist.component.shortcutButton.rollCall.IslandCaller2; },
+		L"随机点名", L"IslandCaller 2", L"随机点名", L"CustomizeIco2",
+		InkeysBuiltInComponentAction::IslandCallerSimple);
+	registerComponent(
+		"Component.ShortcutButton.RollCall.SecRandom1",
+		"component.shortcutButton.rollCall.SecRandom1",
+		[] { return setlist.component.shortcutButton.rollCall.SecRandom1; },
+		L"随机点名", L"SecRandom 1", L"随机点名", L"CustomizeIco10",
+		InkeysBuiltInComponentAction::SecRandomDirect);
+	registerComponent(
+		"Component.ShortcutButton.RollCall.SecRandom2",
+		"component.shortcutButton.rollCall.SecRandom2",
+		[] { return setlist.component.shortcutButton.rollCall.SecRandom2; },
+		L"随机点名", L"SecRandom 2", L"随机点名", L"CustomizeIco10",
+		InkeysBuiltInComponentAction::SecRandomQuickDraw);
+	registerComponent(
+		"Component.ShortcutButton.RollCall.SecRandom2Compat",
+		"component.shortcutButton.rollCall.SecRandom2Compat",
+		[] { return setlist.component.shortcutButton.rollCall.SecRandom2Compat; },
+		L"随机点名", L"SecRandom 2 兼容", L"随机点名", L"CustomizeIco10",
+		InkeysBuiltInComponentAction::SecRandomQuickDrawCompat);
+	registerComponent(
+		"Component.ShortcutButton.RollCall.NamePicker",
+		"component.shortcutButton.rollCall.NamePicker",
+		[] { return setlist.component.shortcutButton.rollCall.NamePicker; },
+		L"随机点名", L"NamePicker", L"随机点名", L"CustomizeIco11",
+		InkeysBuiltInComponentAction::NamePicker);
+
+	registerComponent(
+		"Component.ShortcutButton.Linkage.ClassislandSettings",
+		"component.shortcutButton.linkage.classislandSettings",
+		[] { return setlist.component.shortcutButton.linkage.classislandSettings; },
+		L"联动", L"ClassIsland 设置", L"CI设置", L"CustomizeIco1",
+		InkeysBuiltInComponentAction::ClassIslandSettings);
+	registerComponent(
+		"Component.ShortcutButton.Linkage.ClassislandProfile",
+		"component.shortcutButton.linkage.classislandProfile",
+		[] { return setlist.component.shortcutButton.linkage.classislandProfile; },
+		L"联动", L"档案编辑", L"档案编辑", L"CustomizeIco1",
+		InkeysBuiltInComponentAction::ClassIslandProfile);
+	registerComponent(
+		"Component.ShortcutButton.Linkage.ClassislandClassswap",
+		"component.shortcutButton.linkage.classislandClassswap",
+		[] { return setlist.component.shortcutButton.linkage.classislandClassswap; },
+		L"联动", L"快速换课", L"快速换课", L"CustomizeIco1",
+		InkeysBuiltInComponentAction::ClassIslandClassSwap);
+}
+
 void BarButtomSetClass::StateUpdate()
 {
 	CalcState();
@@ -631,7 +821,9 @@ std::vector<Inkeys::BarExtensionButtonLayoutEntry> BarButtomSetClass::NormalizeE
 	return normalized;
 }
 
-void BarButtomSetClass::AppendFixedButtons(const std::vector<Inkeys::BarFixedButtonLayoutEntry>& entries)
+void BarButtomSetClass::AppendFixedButtons(
+	const std::vector<Inkeys::BarFixedButtonLayoutEntry>& entries,
+	vector<shared_ptr<BarButtomClass>>& activeButtons)
 {
 	for (const Inkeys::BarFixedButtonLayoutEntry& entry : entries)
 	{
@@ -641,59 +833,47 @@ void BarButtomSetClass::AppendFixedButtons(const std::vector<Inkeys::BarFixedBut
 		// A 区显隐只来自注册默认，不读配置 Visible。
 		registration.button->userVisible = registration.defaultUserVisible;
 		registration.button->size = ToRuntimeSize(entry.Size);
-
-		const int targetIndex = tot.load();
-		if (buttomlist.Set(targetIndex, registration.button)) tot = targetIndex + 1;
+		activeButtons.push_back(registration.button);
 	}
 }
 
-int BarButtomSetClass::AppendExtensionButtons(const std::vector<Inkeys::BarExtensionButtonLayoutEntry>& entries)
+int BarButtomSetClass::AppendLegacyExtensionButtons(vector<shared_ptr<BarButtomClass>>& activeButtons)
 {
 	int appended = 0;
-	for (const Inkeys::BarExtensionButtonLayoutEntry& entry : entries)
+	for (BarButtonRegistrationClass registration : GetExtensionRegistrations())
 	{
-		BarButtonRegistrationClass registration;
-		if (!TryGetRegistration(entry.Id, registration) || registration.button == nullptr)
+		if (!registration.button || !registration.legacyEnabled || !registration.legacyEnabled())
 		{
-			// 未注册插件保留在配置中，但不创建 UI。
 			continue;
 		}
 
-		registration.button->userVisible = entry.Visible;
-		registration.button->size = ToRuntimeSize(entry.Size);
-
-		const int targetIndex = tot.load();
-		if (buttomlist.Set(targetIndex, registration.button))
-		{
-			tot = targetIndex + 1;
-			appended += 1;
-		}
+		registration.button->userVisible = true;
+		registration.button->hide = false;
+		registration.button->size = registration.defaultSize;
+		activeButtons.push_back(registration.button);
+		appended += 1;
 	}
 	return appended;
 }
 
-void BarButtomSetClass::AppendBoundaryDivider()
+void BarButtomSetClass::AppendBoundaryDivider(
+	vector<shared_ptr<BarButtomClass>>& activeButtons,
+	size_t boundaryIndex)
 {
-	BarButtonRegistrationClass registration;
-	if (!TryGetRegistration(Inkeys::BarButtonId::Divider, registration) || registration.button == nullptr)
-	{
-		return;
-	}
+	if (boundaryIndex >= 2 || !boundaryDividers[boundaryIndex]) return;
 
 	// 交界分割线强制可见，尺寸用注册默认；不写配置。
-	// only=false 时 Set 会深拷贝，不会接管 preset 所有权。
-	registration.button->userVisible = true;
-	registration.button->size = registration.defaultSize;
-
-	const int targetIndex = tot.load();
-	if (buttomlist.Set(targetIndex, registration.button)) tot = targetIndex + 1;
+	BarButtonRegistrationClass registration;
+	if (!TryGetRegistration(Inkeys::BarButtonId::Divider, registration)) return;
+	boundaryDividers[boundaryIndex]->userVisible = true;
+	boundaryDividers[boundaryIndex]->hide = false;
+	boundaryDividers[boundaryIndex]->size = registration.defaultSize;
+	activeButtons.push_back(boundaryDividers[boundaryIndex]);
 }
 
 void BarButtomSetClass::Load()
 {
-	// 配置顺序：A1 + B + A2；运行时在交界注入分割线（不写配置）。
-	// 注意：buttomlist.Set 对 only 单例会 shared_ptr 接管 preset，禁止对同一 raw 指针重复 Set，
-	// 否则旧 shared_ptr 析构会 delete preset，导致启动后 UAF/卡死。
+	// UI3 与 UI2 并行期间，B 区只由旧组件开关投影，完全忽略新版 ExtensionButtons。
 	const std::vector<Inkeys::BarFixedButtonLayoutEntry> defaultA1 =
 		Inkeys::MakeDefaultFixedButtonsA1().Snapshot();
 	const std::vector<Inkeys::BarFixedButtonLayoutEntry> defaultA2 =
@@ -703,42 +883,53 @@ void BarButtomSetClass::Load()
 		Inkeys::config.UI.Bar.FixedButtonsA1.Snapshot(),
 		defaultA1,
 		BarButtonLayoutZoneEnum::FixedA1);
-	std::vector<Inkeys::BarExtensionButtonLayoutEntry> normalizedB = NormalizeExtensionZone(
-		Inkeys::config.UI.Bar.ExtensionButtons.Snapshot());
 	std::vector<Inkeys::BarFixedButtonLayoutEntry> normalizedA2 = NormalizeFixedZone(
 		Inkeys::config.UI.Bar.FixedButtonsA2.Snapshot(),
 		defaultA2,
 		BarButtonLayoutZoneEnum::FixedA2);
 
-	// 先统计会真正上栏的扩展按钮，避免 B 为空时注入两条相邻交界线再折叠。
-	int extensionUiCount = 0;
-	for (const Inkeys::BarExtensionButtonLayoutEntry& entry : normalizedB)
-	{
-		BarButtonRegistrationClass registration;
-		if (!TryGetRegistration(entry.Id, registration) || registration.button == nullptr) continue;
-		if (registration.zone != BarButtonLayoutZoneEnum::Extension) continue;
-		extensionUiCount += 1;
-	}
-
-	tot = 0;
-	AppendFixedButtons(normalizedA1);
+	vector<shared_ptr<BarButtomClass>> activeButtons;
+	vector<shared_ptr<BarButtomClass>> extensionButtons;
+	AppendFixedButtons(normalizedA1, activeButtons);
+	const int extensionUiCount = AppendLegacyExtensionButtons(extensionButtons);
 	if (extensionUiCount > 0)
 	{
-		AppendBoundaryDivider(); // A1 | B
-		AppendExtensionButtons(normalizedB);
-		AppendBoundaryDivider(); // B | A2
+		AppendBoundaryDivider(activeButtons, 0); // A1 | B
+		activeButtons.insert(activeButtons.end(), extensionButtons.begin(), extensionButtons.end());
+		AppendBoundaryDivider(activeButtons, 1); // B | A2
 	}
 	else
 	{
 		// B 无可见扩展项：A1 与 A2 之间只保留一条交界分割线。
-		AppendBoundaryDivider();
+		AppendBoundaryDivider(activeButtons, 0);
 	}
-	AppendFixedButtons(normalizedA2);
+	AppendFixedButtons(normalizedA2, activeButtons);
 
-	// 写回仅三区配置；交界 Divider 永不进入 schema 字段。
+	// 先在列表锁内替换整段序列，再发布数量；注册表和边界实例继续持有对象所有权。
+	const int activeButtonCount = static_cast<int>(activeButtons.size());
+	buttomlist.Replace(move(activeButtons));
+	tot = activeButtonCount;
+
+	// 只规范化 A1/A2；运行时投影不读取、修改或写回持久化 B 区。
 	Inkeys::config.UI.Bar.FixedButtonsA1.Replace(std::move(normalizedA1));
-	Inkeys::config.UI.Bar.ExtensionButtons.Replace(std::move(normalizedB));
 	Inkeys::config.UI.Bar.FixedButtonsA2.Replace(std::move(normalizedA2));
+}
+
+void BarButtomSetClass::SyncLegacyExtensionButtons()
+{
+	Load();
+}
+
+void BarButtomSetClass::ResetPngIconCaches()
+{
+	shared_lock lock(registrationMutex);
+	for (const auto& [id, registration] : registrations)
+	{
+		if (registration.button && registration.button->iconKind == BarButtomIconKindEnum::Png)
+			registration.button->pngIcon.ResetCache();
+	}
+	for (const shared_ptr<BarButtomClass>& divider : boundaryDividers)
+		if (divider && divider->iconKind == BarButtomIconKindEnum::Png) divider->pngIcon.ResetCache();
 }
 
 void BarButtomSetClass::PresetHoming()

@@ -38,6 +38,13 @@ import Inkeys.Other.Config;
 
 using namespace std;
 
+static void SyncUi3BuiltInComponents()
+{
+	if (!useInkeys3UI) return;
+	barUISet.barButtomSet.SyncLegacyExtensionButtons();
+	barUISet.UpdateRendering();
+}
+
 // 软件构建信息
 // signal1
 struct
@@ -1159,7 +1166,6 @@ void SettingMain(stop_token sT)
 					}
 
 					// 组件
-					if (!useInkeys3UI)
 					{
 						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
 
@@ -7243,6 +7249,7 @@ void SettingMain(stop_token sT)
 						ImGui::TextUnformatted("组件");
 					}
 
+					if (!useInkeys3UI)
 					{
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -7321,6 +7328,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.appliance.explorer = ComponentShortcutButtonApplianceExplorer;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7353,6 +7361,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.appliance.taskmgr = ComponentShortcutButtonApplianceTaskmgr;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7385,6 +7394,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.appliance.control = ComponentShortcutButtonApplianceControl;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7439,6 +7449,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.system.desktop = ComponentShortcutButtonSystemDesktop;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7471,6 +7482,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.system.lockWorkStation = ComponentShortcutButtonSystemLockWorkStation;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7525,6 +7537,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.keyboard.keyboardesc = ComponentShortcutButtonKeyboardKeyboardesc;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7557,6 +7570,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.keyboard.keyboardAltF4 = ComponentShortcutButtonKeyboardKeyboardAltF4;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7617,6 +7631,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.rollCall.IslandCaller1 = ComponentShortcutButtonRollCallIslandCaller1;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7655,6 +7670,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.rollCall.IslandCaller2 = ComponentShortcutButtonRollCallIslandCaller2;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7693,6 +7709,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.rollCall.SecRandom1 = ComponentShortcutButtonRollCallSecRandom1;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7731,6 +7748,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.rollCall.SecRandom2 = ComponentShortcutButtonRollCallSecRandom2;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7769,6 +7787,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.rollCall.SecRandom2Compat = ComponentShortcutButtonRollCallSecRandom2Compat;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7807,6 +7826,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.rollCall.NamePicker = ComponentShortcutButtonRollCallNamePicker;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7904,6 +7924,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.linkage.classislandSettings = ComponentShortcutButtonLinkageClassislandSettings;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7930,6 +7951,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.linkage.classislandProfile = ComponentShortcutButtonLinkageClassislandProfile;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7962,6 +7984,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.linkage.classislandClassswap = ComponentShortcutButtonLinkageClassislandClassswap;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 

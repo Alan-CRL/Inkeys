@@ -51,6 +51,88 @@ static void OpenSecRandomQuickDrawAsync()
 		}).detach();
 }
 
+static void OpenComponentUri(const wchar_t* uri)
+{
+	SHELLEXECUTEINFO sei = { sizeof(sei) };
+	sei.fMask = SEE_MASK_NOASYNC;
+	sei.lpVerb = L"open";
+	sei.lpFile = uri;
+	sei.nShow = SW_SHOWNORMAL;
+	ShellExecuteEx(&sei);
+}
+
+void ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction action)
+{
+	switch (action)
+	{
+	case InkeysBuiltInComponentAction::Explorer:
+		ShellExecute(NULL, L"open", L"explorer.exe", NULL, NULL, SW_SHOWNORMAL);
+		return;
+	case InkeysBuiltInComponentAction::TaskManager:
+		ShellExecute(NULL, L"open", L"taskmgr.exe", NULL, NULL, SW_SHOWNORMAL);
+		return;
+	case InkeysBuiltInComponentAction::ControlPanel:
+		ShellExecute(NULL, L"open", L"control.exe", NULL, NULL, SW_SHOWNORMAL);
+		return;
+	case InkeysBuiltInComponentAction::ShowDesktop:
+	{
+		// UI3 的交互线程也可能调用此入口，因此在调用 Shell COM 前补齐当前线程初始化。
+		const HRESULT initializeResult = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+		IShellDispatch4* shellDispatch = NULL;
+		const HRESULT createResult = CoCreateInstance(
+			CLSID_Shell, NULL, CLSCTX_INPROC_SERVER, IID_IShellDispatch4,
+			reinterpret_cast<void**>(&shellDispatch));
+		if (SUCCEEDED(createResult) && shellDispatch != NULL)
+		{
+			shellDispatch->ToggleDesktop();
+			shellDispatch->Release();
+		}
+		if (SUCCEEDED(initializeResult)) CoUninitialize();
+		return;
+	}
+	case InkeysBuiltInComponentAction::LockWorkStation:
+		LockWorkStation();
+		return;
+	case InkeysBuiltInComponentAction::Escape:
+		keybd_event(VK_ESCAPE, 0, 0, 0);
+		keybd_event(VK_ESCAPE, 0, KEYEVENTF_KEYUP, 0);
+		return;
+	case InkeysBuiltInComponentAction::AltF4:
+		keybd_event(VK_MENU, 0, 0, 0);
+		keybd_event(VK_F4, 0, 0, 0);
+		keybd_event(VK_F4, 0, KEYEVENTF_KEYUP, 0);
+		keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
+		return;
+	case InkeysBuiltInComponentAction::IslandCaller:
+		OpenComponentUri(L"classisland://plugins/IslandCaller/Run");
+		return;
+	case InkeysBuiltInComponentAction::IslandCallerSimple:
+		OpenComponentUri(L"classisland://plugins/IslandCaller/Simple/1");
+		return;
+	case InkeysBuiltInComponentAction::SecRandomDirect:
+		OpenComponentUri(L"secrandom://direct_extraction");
+		return;
+	case InkeysBuiltInComponentAction::SecRandomQuickDraw:
+		OpenSecRandomQuickDrawAsync();
+		return;
+	case InkeysBuiltInComponentAction::SecRandomQuickDrawCompat:
+		OpenComponentUri(L"secrandom://roll_call/quick_draw");
+		return;
+	case InkeysBuiltInComponentAction::NamePicker:
+		OpenComponentUri(L"namepicker://");
+		return;
+	case InkeysBuiltInComponentAction::ClassIslandSettings:
+		ShellExecute(NULL, L"open", L"classisland://app/settings/", NULL, NULL, SW_SHOWNORMAL);
+		return;
+	case InkeysBuiltInComponentAction::ClassIslandProfile:
+		ShellExecute(NULL, L"open", L"classisland://app/profile/", NULL, NULL, SW_SHOWNORMAL);
+		return;
+	case InkeysBuiltInComponentAction::ClassIslandClassSwap:
+		ShellExecute(NULL, L"open", L"classisland://app/class-swap", NULL, NULL, SW_SHOWNORMAL);
+		return;
+	}
+}
+
 //UI 控件
 
 int BackgroundColorMode;
@@ -6513,113 +6595,38 @@ void MouseInteraction()
 							{
 								if (!m.lbutton)
 								{
-									if (setlist.component.shortcutButton.appliance.explorer) ShellExecute(NULL, L"open", L"explorer.exe", NULL, NULL, SW_SHOWNORMAL);
-									else if (setlist.component.shortcutButton.appliance.taskmgr) ShellExecute(NULL, L"open", L"taskmgr.exe", NULL, NULL, SW_SHOWNORMAL);
-									else if (setlist.component.shortcutButton.appliance.control) ShellExecute(NULL, L"open", L"control.exe", NULL, NULL, SW_SHOWNORMAL);
-
+									if (setlist.component.shortcutButton.appliance.explorer)
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::Explorer);
+									else if (setlist.component.shortcutButton.appliance.taskmgr)
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::TaskManager);
+									else if (setlist.component.shortcutButton.appliance.control)
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::ControlPanel);
 									else if (setlist.component.shortcutButton.system.desktop)
-									{
-										IShellDispatch4* pShellDispatch = NULL;
-										HRESULT hr = E_FAIL;
-
-										hr = CoCreateInstance(CLSID_Shell, NULL, CLSCTX_INPROC_SERVER, IID_IShellDispatch4, (void**)&pShellDispatch);
-										if (SUCCEEDED(hr) && pShellDispatch != NULL)
-										{
-											hr = pShellDispatch->ToggleDesktop();
-
-											pShellDispatch->Release();
-											pShellDispatch = NULL;
-										}
-									}
-									else if (setlist.component.shortcutButton.system.lockWorkStation) LockWorkStation();
-
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::ShowDesktop);
+									else if (setlist.component.shortcutButton.system.lockWorkStation)
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::LockWorkStation);
 									else if (setlist.component.shortcutButton.keyboard.keyboardesc)
-									{
-										keybd_event(VK_ESCAPE, 0, 0, 0);
-										keybd_event(VK_ESCAPE, 0, KEYEVENTF_KEYUP, 0);
-									}
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::Escape);
 									else if (setlist.component.shortcutButton.keyboard.keyboardAltF4)
-									{
-										keybd_event(VK_MENU, 0, 0, 0);
-										keybd_event(VK_F4, 0, 0, 0);
-										keybd_event(VK_F4, 0, KEYEVENTF_KEYUP, 0);
-										keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
-									}
-
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::AltF4);
 									else if (setlist.component.shortcutButton.rollCall.IslandCaller1)
-									{
-										SHELLEXECUTEINFO sei = { sizeof(sei) };
-										sei.fMask = SEE_MASK_NOASYNC;
-										sei.hwnd = NULL;
-										sei.lpVerb = L"open";
-										sei.lpFile = L"classisland://plugins/IslandCaller/Run";
-										sei.nShow = SW_SHOWNORMAL;
-
-										ShellExecuteEx(&sei);
-									}
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::IslandCaller);
 									else if (setlist.component.shortcutButton.rollCall.IslandCaller2)
-									{
-										SHELLEXECUTEINFO sei = { sizeof(sei) };
-										sei.fMask = SEE_MASK_NOASYNC;
-										sei.hwnd = NULL;
-										sei.lpVerb = L"open";
-										sei.lpFile = L"classisland://plugins/IslandCaller/Simple/1";
-										sei.nShow = SW_SHOWNORMAL;
-
-										ShellExecuteEx(&sei);
-									}
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::IslandCallerSimple);
 									else if (setlist.component.shortcutButton.rollCall.SecRandom1)
-									{
-										SHELLEXECUTEINFO sei = { sizeof(sei) };
-										sei.fMask = SEE_MASK_NOASYNC;
-										sei.hwnd = NULL;
-										sei.lpVerb = L"open";
-										sei.lpFile = L"secrandom://direct_extraction";
-										sei.nShow = SW_SHOWNORMAL;
-
-										ShellExecuteEx(&sei);
-									}
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::SecRandomDirect);
 									else if (setlist.component.shortcutButton.rollCall.SecRandom2)
-									{
-										OpenSecRandomQuickDrawAsync();
-									}
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::SecRandomQuickDraw);
 									else if (setlist.component.shortcutButton.rollCall.SecRandom2Compat)
-									{
-										SHELLEXECUTEINFO sei = { sizeof(sei) };
-										sei.fMask = SEE_MASK_NOASYNC;
-										sei.hwnd = NULL;
-										sei.lpVerb = L"open";
-										sei.lpFile = L"secrandom://roll_call/quick_draw";
-										sei.nShow = SW_SHOWNORMAL;
-
-										ShellExecuteEx(&sei);
-									}
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::SecRandomQuickDrawCompat);
 									else if (setlist.component.shortcutButton.rollCall.NamePicker)
-									{
-										/*ShellExecute(NULL, L"open", L"namepicker://", NULL, NULL, SW_SHOWNORMAL);*/
-
-										SHELLEXECUTEINFO sei = { sizeof(sei) };
-										sei.fMask = SEE_MASK_NOASYNC;
-										sei.hwnd = NULL;
-										sei.lpVerb = L"open";
-										sei.lpFile = L"namepicker://";
-										sei.nShow = SW_SHOWNORMAL;
-
-										ShellExecuteEx(&sei);
-									}
-
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::NamePicker);
 									else if (setlist.component.shortcutButton.linkage.classislandSettings)
-									{
-										ShellExecute(NULL, L"open", L"classisland://app/settings/", NULL, NULL, SW_SHOWNORMAL);
-									}
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::ClassIslandSettings);
 									else if (setlist.component.shortcutButton.linkage.classislandProfile)
-									{
-										ShellExecute(NULL, L"open", L"classisland://app/profile/", NULL, NULL, SW_SHOWNORMAL);
-									}
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::ClassIslandProfile);
 									else if (setlist.component.shortcutButton.linkage.classislandClassswap)
-									{
-										ShellExecute(NULL, L"open", L"classisland://app/class-swap", NULL, NULL, SW_SHOWNORMAL);
-									}
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::ClassIslandClassSwap);
 
 									break;
 								}

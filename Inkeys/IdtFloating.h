@@ -49,6 +49,29 @@ int SeekBar(ExMessage m);
 
 extern IdtAtomic<bool> confirmaNoMouUpSignal;
 
+// UI2 与 UI3 共用同一套内置组件动作，避免两条界面路径出现行为偏差。
+enum class InkeysBuiltInComponentAction
+{
+	Explorer,
+	TaskManager,
+	ControlPanel,
+	ShowDesktop,
+	LockWorkStation,
+	Escape,
+	AltF4,
+	IslandCaller,
+	IslandCallerSimple,
+	SecRandomDirect,
+	SecRandomQuickDraw,
+	SecRandomQuickDrawCompat,
+	NamePicker,
+	ClassIslandSettings,
+	ClassIslandProfile,
+	ClassIslandClassSwap,
+};
+
+void ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction action);
+
 void MouseInteraction();
 
 int floating_main();

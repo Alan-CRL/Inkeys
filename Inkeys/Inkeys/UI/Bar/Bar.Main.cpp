@@ -925,6 +925,7 @@ void BarUIRendering::DiscardDeviceResources()
 		// D2D 位图属于当前 device generation，切换设备时只丢上传缓存，保留解码像素。
 		for (const auto& [key, png] : barUISetClass->pngMap)
 			if (png) png->ResetCache();
+		barUISetClass->barButtomSet.ResetPngIconCaches();
 	}
 	frameGradientBrushCache.clear();
 	frameDiffuseMaskCache.clear();
@@ -7756,7 +7757,23 @@ else
 						}
 
 						spec.Shape(barDeviceContext.Get(), temp->buttom, buttonInherit);
-						spec.Svg(barDeviceContext.Get(), temp->icon, temp->icon.Inherit(Center, temp->buttom));
+						BarUiInheritClass iconInherit = temp->icon.Inherit(Center, temp->buttom);
+						if (temp->iconKind == BarButtomIconKindEnum::Png)
+						{
+							// PNG 复用 SVG 图标控制器的布局与透明度动画，仅替换最终绘制载荷。
+							temp->pngIcon.x.SetDirect(temp->icon.x.val);
+							temp->pngIcon.y.SetDirect(temp->icon.y.val);
+							temp->pngIcon.w.SetDirect(temp->icon.w.val);
+							temp->pngIcon.h.SetDirect(temp->icon.h.val);
+							temp->pngIcon.pct.SetDirect(temp->icon.pct.val);
+							temp->pngIcon.enable.val = temp->icon.enable.val;
+							temp->pngIcon.enable.tar = temp->icon.enable.tar;
+							spec.Png(barDeviceContext.Get(), temp->pngIcon, temp->pngIcon.UpInh(iconInherit));
+						}
+						else
+						{
+							spec.Svg(barDeviceContext.Get(), temp->icon, iconInherit);
+						}
 						spec.Word(barDeviceContext.Get(), temp->name, temp->name.Inherit(Center, temp->buttom));
 						if (transformChanged) barDeviceContext->SetTransform(originalTransform);
 					}
@@ -7818,8 +7835,12 @@ else
 						if (!temp) continue;
 						BarRenderingAttribute::UnionRectInPlace(
 							current, BarRenderingAttribute::GetWeigetRect(temp->buttom, dirtyZoom));
-						BarRenderingAttribute::UnionRectInPlace(
-							current, BarRenderingAttribute::GetWeigetRect(temp->icon, dirtyZoom));
+						if (temp->iconKind == BarButtomIconKindEnum::Png)
+							BarRenderingAttribute::UnionRectInPlace(
+								current, BarRenderingAttribute::GetWeigetRect(temp->pngIcon, dirtyZoom));
+						else
+							BarRenderingAttribute::UnionRectInPlace(
+								current, BarRenderingAttribute::GetWeigetRect(temp->icon, dirtyZoom));
 						BarRenderingAttribute::UnionRectInPlace(
 							current, BarRenderingAttribute::GetWeigetRect(temp->name, dirtyZoom));
 					}
@@ -11037,6 +11058,7 @@ namespace Inkeys::UI::Bar
 
 		// 初始化 按钮 们
 		barUISet.barButtomSet.PresetInitialization();
+		barUISet.barButtomSet.RegisterBuiltInComponents();
 		{
 			barUISet.barButtomSet.Load();
 			barUISet.barButtomSet.StateUpdate();

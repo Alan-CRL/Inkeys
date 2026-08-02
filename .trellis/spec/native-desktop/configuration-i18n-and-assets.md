@@ -45,7 +45,11 @@
 - `ConfigSequence<T>::Snapshot() -> std::vector<T>`
 - `ConfigSequence<T>::Replace(std::vector<T>) -> void`
 - `ConfigSequenceAdapter<T>::ElementType / Snapshot(...) / Replace(...)`
-- `BarButtomSetClass::RegisterButton(id, button, allowMultiple, zone, defaultUserVisible=true) -> bool`
+- `BarButtomSetClass::RegisterButton(id, button, allowMultiple, zone, defaultUserVisible=true, legacyField={}, legacyEnabled={}, categoryName={}, settingsName={}) -> bool`
+- `BarButtomSetClass::TryGetRegistration(id, outRegistration) -> bool`
+- `BarButtomSetClass::GetExtensionRegistrations() -> std::vector<BarButtonRegistrationClass>`
+- `BarButtomSetClass::RegisterBuiltInComponents() -> void`
+- `BarButtomSetClass::SyncLegacyExtensionButtons() -> void`
 - `BarButtomSetClass::Load() -> void`
 
 ### 3. Contracts
@@ -55,6 +59,11 @@
   - `UI.Bar.ExtensionButtons`：`{ "Id": string, "Size": ..., "Visible": bool }[]`，`Visible` 缺省 `true`
   - `UI.Bar.FixedButtonsA2`：同 A1 元素形态
 - 运行时渲染顺序恒为 `normalize(A1) + normalize(B) + normalize(A2)`。
+- **UI2/UI3 并行期覆盖规则**：启用 UI3 时，`Load()` 的运行时 B 不读取 `UI.Bar.ExtensionButtons`，而是按设置页固定顺序读取 16 个 `setlist.component.shortcutButton.*` 开关。该投影只存在于当前进程，不调用 `ExtensionButtons.Replace()`、新版 `Config::Write()` 或其他 B 区持久化入口；持久化 B 的排序与编辑能力留到移除 UI2 后恢复。
+- 内置组件注册 ID 使用非 `Inkeys.` 的稳定点分形式，例如 `Component.ShortcutButton.Appliance.Explorer`。注册项同时保存旧字段字符串、无参数开关读取器、设置页分类/名称、PNG 资源、栏内短文字和点击动作；注册顺序单独保存，不依赖 `unordered_map` 遍历顺序。
+- 设置页修改旧组件开关时，先更新 `setlist` 并执行 `WriteSetting()`，再在 UI3 下调用 `SyncLegacyExtensionButtons()` 和 Bar 渲染唤醒入口。打开开关按固定列表位置加入 B，关闭开关立即移除，其余组件相对顺序不变；UI2 的首个有效组件规则保持不变。
+- 运行时按钮列表整体替换为注册表持有的 `shared_ptr` 序列；两条交界 Divider 使用长期持有的独立对象。组件按钮各自使用本地状态，避免多个扩展按钮共享按压/选中状态。
+- 按钮图标载荷可为 SVG 或 PNG。SVG 继续走主题着色和内容切换；PNG 复用 SVG 的布局/透明度动画状态并由 `BarUiPNGClass` 绘制，设备资源丢失时必须重置注册按钮的 PNG 位图缓存。
 - **按钮 ID 命名**：
   - 官方按钮必须以 `Inkeys.` 开头，当前形如 `Inkeys.Bar.Select`。
   - 扩展/插件/组件按钮**不得**使用 `Inkeys.` 前缀，且必须为点分 ID：至少两段，形如 `xxx.xxx` 或 `xxx.xxx.xxx`（不允许首尾 `.` 或空段）。
@@ -89,23 +98,34 @@
 | 已有任一新字段 | 不再读旧 `ButtonLayout` |
 | B 为空 | 运行时 A1 与 A2 之间仅一条交界分割线 |
 | 相邻两条 Divider（运行时/配置） | 只保留一条 |
+| UI3 并行期且 `ExtensionButtons` 含已有数据 | 运行时忽略该数据且不改写；B 只反映旧组件开关 |
+| 任一旧组件开关 `false -> true` | 完成旧配置写入后，按注册顺序立即加入当前 UI3 B |
+| 任一旧组件开关 `true -> false` | 完成旧配置写入后，立即从当前 UI3 B 移除 |
+| 多个旧组件开关同时为 true | 全部显示，不受 UI2 单组件容量限制，顺序与设置页一致 |
 
 ### 5. Good / Base / Bad Cases
 
 - Good：仅打乱 A1 顺序后启动，顺序保留；B 中插件隐藏后重装仍在原位。
-- Base：无新区字段时 A1/A2 默认序，Geometry 注册默认隐藏，B 为空。
+- Good（并行期）：`ExtensionButtons` 保留未来排序数据，同时 UI3 按 16 个旧开关的固定顺序即时投影多个组件。
+- Base：无新区字段时 A1/A2 默认序，Geometry 注册默认隐藏；旧组件开关全关时运行时 B 为空。
 - Bad：A1 缺少 Geometry 或混入 Pierce → A1 整区回默认，A2/B 不动。
+- Bad（并行期）：设置页只写旧开关却继续从持久化 `ExtensionButtons` 构建 B，导致 UI 与开关状态分叉。
 
 ### 6. Tests Required
 
 - 验证 A 缺项/错区重置、Size 纠正、A 误带 Visible 剥离、B 未知 ID 保留、官方 ID 误入 B 剔除。
 - 验证旧 `ButtonLayout` 迁移与 `configOnce = config` 后三区一致。
+- 静态确认 16 个内置组件均已注册且顺序与设置页一致，16 个 toggle 写入后均触发 UI3 同步。
+- 验证 UI3 启动和 toggle 同步均不读取、替换或写回 `UI.Bar.ExtensionButtons`。
+- 手工验证 PNG 透明图标、全部组件同时布局、toggle 即时增减，以及 UI2 首个有效组件行为。
 - 执行 `git diff --check` 和完整 Solution `Debug|ARM64` 构建；无自动化 UI 测试时记录未做运行验证。
 
 ### 7. Wrong vs Correct
 
 - Wrong：继续用单数组表达固定区+插件区，或 A 缺项时猜测插入点补洞。
 - Correct：三区分存；A 非法整区重置；运行时始终 A1+B+A2；布局/命中统一 `IsVisible()`。
+- Wrong（UI2/UI3 并行期）：组件 toggle 改变时写入或重排持久化 `ExtensionButtons`。
+- Correct（UI2/UI3 并行期）：旧开关仍是唯一持久化来源，UI3 只重建当前进程的 B 序列；移除 UI2 后再恢复持久化 B 排序。
 
 ## 国际化源与生成物
 
