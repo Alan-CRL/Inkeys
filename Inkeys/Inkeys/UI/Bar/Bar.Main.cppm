@@ -118,6 +118,14 @@ enum class BarUISetShapeEnum : int
 	DrawAttributeBar_ColorPickerPreviewBubble,
 	DrawAttributeBar_ColorPickerHoldHint,
 	DrawAttributeBar_ColorSelect12Inner,
+
+	GeometryAttributeBar,
+	GeometryAttributeBar_Divider,
+	GeometryAttributeBar_StraightLine,
+	GeometryAttributeBar_Rectangle,
+	GeometryAttributeBar_ThicknessFine,
+	GeometryAttributeBar_ThicknessMedium,
+	GeometryAttributeBar_ThicknessCoarse,
 };
 enum class BarUISetSuperellipseEnum : int
 {
@@ -184,6 +192,12 @@ DrawAttributeBar_ThicknessAnnotationLabel,
 		DrawAttributeBar_ColorPickerB,
 		DrawAttributeBar_ColorPickerOpacity,
 		DrawAttributeBar_ColorPickerHoldLabel,
+
+		GeometryAttributeBar_StraightLine,
+		GeometryAttributeBar_Rectangle,
+		GeometryAttributeBar_ThicknessFineNumber,
+		GeometryAttributeBar_ThicknessMediumNumber,
+		GeometryAttributeBar_ThicknessCoarseNumber,
 	};
 
 enum class BarBorderLightSourceEnum : int
@@ -197,6 +211,7 @@ enum class BarBorderPrimaryAnchorEnum : int
 	Select,
 	Draw,
 	Eraser,
+	Geometry,
 };
 enum class BarBorderCursorTrackingStateEnum : int
 {
@@ -417,6 +432,11 @@ public:
 	IdtAtomic<BarButtomHoverStageEnum> drawAttributeOverflowCloseHoverStage = BarButtomHoverStageEnum::None;
 	IdtAtomic<BarButtomHoverStageEnum> drawAttributeColorPickerToneHoverStage = BarButtomHoverStageEnum::None;
 	IdtAtomic<BarButtomHoverStageEnum> drawAttributeColorPickerCloseHoverStage = BarButtomHoverStageEnum::None;
+	IdtAtomic<BarButtomHoverStageEnum> geometryStraightLineHoverStage = BarButtomHoverStageEnum::None;
+	IdtAtomic<BarButtomHoverStageEnum> geometryRectangleHoverStage = BarButtomHoverStageEnum::None;
+	IdtAtomic<BarButtomHoverStageEnum> geometryThicknessFineHoverStage = BarButtomHoverStageEnum::None;
+	IdtAtomic<BarButtomHoverStageEnum> geometryThicknessMediumHoverStage = BarButtomHoverStageEnum::None;
+	IdtAtomic<BarButtomHoverStageEnum> geometryThicknessCoarseHoverStage = BarButtomHoverStageEnum::None;
 
 public:
 	// 渲染更新：状态更新 + 通知计算并渲染
@@ -452,7 +472,7 @@ protected:
 	BarBorderCursorTrackingStateEnum borderCursorTrackingState =
 		BarBorderCursorTrackingStateEnum::Dormant;
 	ULONGLONG borderCursorGraceDeadlineTick = 0;
-	array<RECT, 5> borderCursorVisibleRegions{};
+	array<RECT, 6> borderCursorVisibleRegions{};
 	size_t borderCursorVisibleRegionCount = 0;
 
 	friend class BarUIRendering;

@@ -198,8 +198,11 @@ void BarButtomSetClass::PresetInitialization()
 				{
 					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen)
 					{
-						barUISet.barState.drawAttribute = false;
-						ChangeStateModeToPen();
+						if (ChangeStateModeToPen())
+						{
+							barUISet.barState.drawAttribute = false;
+							barUISet.barState.geometryAttribute = false;
+						}
 					}
 					else
 					{
@@ -275,6 +278,17 @@ void BarButtomSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
+					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtShape)
+					{
+						// 只有 Draw2 接受模式切换后才关闭绘制属性并展开几何面板。
+						if (ChangeStateModeToShape())
+						{
+							barUISet.barState.drawAttribute = false;
+							barUISet.barState.geometryAttribute = true;
+						}
+					}
+					else barUISet.barState.geometryAttribute =
+						!static_cast<bool>(barUISet.barState.geometryAttribute);
 				};
 		}
 
@@ -493,8 +507,7 @@ void BarButtomSetClass::PresetInitialization()
 	RegisterButton(Inkeys::BarButtonId::Select, preset[(int)BarButtomPresetEnum::Select], false, BarButtonLayoutZoneEnum::FixedA1);
 	RegisterButton(Inkeys::BarButtonId::Draw, preset[(int)BarButtomPresetEnum::Draw], false, BarButtonLayoutZoneEnum::FixedA1);
 	RegisterButton(Inkeys::BarButtonId::Eraser, preset[(int)BarButtomPresetEnum::Eraser], false, BarButtonLayoutZoneEnum::FixedA1);
-	// Geometry 默认不展示：由注册写死，配置 A 区不可改 Visible。
-	RegisterButton(Inkeys::BarButtonId::Geometry, preset[(int)BarButtomPresetEnum::Geometry], false, BarButtonLayoutZoneEnum::FixedA1, false);
+	RegisterButton(Inkeys::BarButtonId::Geometry, preset[(int)BarButtomPresetEnum::Geometry], false, BarButtonLayoutZoneEnum::FixedA1);
 	RegisterButton(Inkeys::BarButtonId::Recall, preset[(int)BarButtomPresetEnum::Recall], false, BarButtonLayoutZoneEnum::FixedA1);
 	RegisterButton(Inkeys::BarButtonId::Clean, preset[(int)BarButtomPresetEnum::Clean], false, BarButtonLayoutZoneEnum::FixedA1);
 	// Divider 不进 A1 配置 required 集；仅作运行时交界注入模板（可多实例拷贝）。
@@ -940,6 +953,12 @@ void BarButtomSetClass::PresetHoming()
 	{
 		barUISet.barState.drawAttribute = false;
 	}
+	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtShape
+		|| barUISet.barState.fold
+		|| !preset[(int)BarButtomPresetEnum::Geometry]->IsVisible())
+	{
+		barUISet.barState.geometryAttribute = false;
+	}
 
 	// 进入非绘制模式需要隐藏无用按钮
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
@@ -988,6 +1007,10 @@ void BarButtomSetClass::CalcState()
 	{
 		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser) barButtomState[(int)BarButtomPresetEnum::Eraser].state = BarWidgetState::Selected;
 		else barButtomState[(int)BarButtomPresetEnum::Eraser].state = BarWidgetState::None;
+	}
+	{
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape) barButtomState[(int)BarButtomPresetEnum::Geometry].state = BarWidgetState::Selected;
+		else barButtomState[(int)BarButtomPresetEnum::Geometry].state = BarWidgetState::None;
 	}
 
 	{

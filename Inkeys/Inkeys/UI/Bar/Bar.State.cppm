@@ -9,6 +9,7 @@ class BarStateClass
 public:
 	IdtAtomic<bool> fold = true;
 	IdtAtomic<bool> drawAttribute = false;
+	IdtAtomic<bool> geometryAttribute = false;
 
 	struct
 	{
@@ -53,6 +54,15 @@ IdtAtomic<bool> thicknessSliderHover = false;
 		IdtAtomic<float> colorPickerPointerY = 0.0f;
 		IdtAtomic<unsigned int> colorPickerKeyboardDownMask = 0;
 	}drawAttributeBar;
+
+	struct
+	{
+		IdtAtomic<bool> straightLinePress = false;
+		IdtAtomic<bool> rectanglePress = false;
+		IdtAtomic<bool> thicknessFinePress = false;
+		IdtAtomic<bool> thicknessMediumPress = false;
+		IdtAtomic<bool> thicknessCoarsePress = false;
+	}geometryAttributeBar;
 
 	struct
 	{
