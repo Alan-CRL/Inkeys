@@ -29,6 +29,17 @@ namespace
 			NearlyEqual(left.halfSize.y, right.halfSize.y);
 	}
 
+	draw3::HighlighterGeometry MergeHighlighterGeometryReference(
+		const draw3::HighlighterGeometry& committedGeometry,
+		const draw3::HighlighterGeometry& liveGeometry)
+	{
+		draw3::HighlighterGeometry merged = committedGeometry;
+		merged.primitives.insert(merged.primitives.end(),
+			liveGeometry.primitives.begin(), liveGeometry.primitives.end());
+		draw3::UnionRectInPlace(merged.bounds, liveGeometry.bounds);
+		return merged;
+	}
+
 	void Check(bool condition, const char* expression, int line, int& failures)
 	{
 		if (condition) return;
@@ -335,15 +346,7 @@ HIGHLIGHTER_CHECK(NearlyEqual(
 			0.28f, particleConfiguration), 0.56f));
 	HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticleGlowExtentDip(
 			1.4f, particleConfiguration), 2.8f));
-		// 粒子核心已对齐 border 红，whiteMix 默认为 0；helper 仍保持公式兼容。
-		HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticleCoreColorMix(
-			particleConfiguration.minimumBrightness,
-			particleConfiguration), 0.0f));
-		HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticleCoreColorMix(
-			1.0f, particleConfiguration), 0.0f));
-		HIGHLIGHTER_CHECK(NearlyEqual(
-			draw3::LaserParticleCoreColorWhiteMixScale(1u, particleConfiguration),
-			1.0f));
+		// 粒子核心已直接对齐 border 红，测试只保留仍参与运行时的亮度与辉光契约。
 		const float breathingAge = 0.2f;
 		const float peakBreathingPhase = 1.57079632679f -
 			6.28318530718f * breathingAge;
@@ -409,17 +412,21 @@ HIGHLIGHTER_CHECK(NearlyEqual(
 		120, 1000, particleConfiguration);
 	dirtyTracker.Add(RECT{ 10, 20, 30, 40 }, 100);
 	dirtyTracker.Add(RECT{ 100, 200, 130, 240 }, dirtyExpiry);
-	HIGHLIGHTER_CHECK(dirtyTracker.HasActive(50));
-	const RECT dirtyBounds = dirtyTracker.ActiveBounds(50);
+	const draw3::LaserParticleDirtySnapshot dirtySnapshot =
+		dirtyTracker.Snapshot(50);
+	HIGHLIGHTER_CHECK(dirtySnapshot.hasActive);
+	const RECT dirtyBounds = dirtySnapshot.activeBounds;
 	HIGHLIGHTER_CHECK(dirtyBounds.left == 10 && dirtyBounds.top == 20);
 	HIGHLIGHTER_CHECK(dirtyBounds.right == 130 && dirtyBounds.bottom == 240);
-	const RECT afterFirstBatchExpiry = dirtyTracker.ActiveBounds(100);
+	const RECT afterFirstBatchExpiry = dirtyTracker.Snapshot(100).activeBounds;
 	HIGHLIGHTER_CHECK(afterFirstBatchExpiry.left == 100);
 	HIGHLIGHTER_CHECK(afterFirstBatchExpiry.top == 200);
-	HIGHLIGHTER_CHECK(dirtyTracker.HasActive(dirtyExpiry - 1));
-	HIGHLIGHTER_CHECK(!dirtyTracker.HasActive(dirtyExpiry));
-	HIGHLIGHTER_CHECK(dirtyTracker.ActiveBounds(dirtyExpiry).left ==
-		dirtyTracker.ActiveBounds(dirtyExpiry).right);
+	HIGHLIGHTER_CHECK(dirtyTracker.Snapshot(dirtyExpiry - 1).hasActive);
+	const draw3::LaserParticleDirtySnapshot finalDirtySnapshot =
+		dirtyTracker.Snapshot(dirtyExpiry);
+	HIGHLIGHTER_CHECK(!finalDirtySnapshot.hasActive);
+	HIGHLIGHTER_CHECK(finalDirtySnapshot.activeBounds.left ==
+		finalDirtySnapshot.activeBounds.right);
 	draw3::LaserParticleDirtyTracker snapshotTracker;
 	snapshotTracker.Add(RECT{ 1, 2, 8, 9 }, 100);
 	snapshotTracker.Add(RECT{ 20, 30, 40, 50 }, 200);
@@ -590,7 +597,7 @@ HIGHLIGHTER_CHECK(NearlyEqual(
 	const draw3::HighlighterGeometry liveTail =
 		draw3::BuildHighlighterGeometry(liveTailPoints);
 	const draw3::HighlighterGeometry completedFromCache =
-		draw3::MergeHighlighterGeometry(committedPrefix, liveTail);
+		MergeHighlighterGeometryReference(committedPrefix, liveTail);
 	HIGHLIGHTER_CHECK(completedFromCache.primitives.size() == 3);
 	HIGHLIGHTER_CHECK(SamePrimitive(completedFromCache.primitives.front(),
 		committedPrefix.primitives.front()));
@@ -609,7 +616,7 @@ HIGHLIGHTER_CHECK(NearlyEqual(
 		{ 300.0f, 400.0f, kHalfHeight, 1.0f },
 		{ 100.0f, 50.0f, kHalfHeight, 1.1f }
 	};
-	const draw3::HighlighterGeometry afterRealPointMutation = draw3::MergeHighlighterGeometry(
+	const draw3::HighlighterGeometry afterRealPointMutation = MergeHighlighterGeometryReference(
 		cachedCompletion.committedHighlighterGeometry, cachedCompletion.l0HighlighterGeometry);
 	HIGHLIGHTER_CHECK(afterRealPointMutation.primitives.size() == completedFromCache.primitives.size());
 	for (std::size_t index = 0; index < completedFromCache.primitives.size(); ++index)

@@ -2,16 +2,19 @@
 
 ## C++20 Module Shape
 
-`draw3` 的每个核心模块使用相同的两文件结构：
+`draw3` 的每个核心模块使用一个接口单元和一个或多个实现单元：
 
 - `<name>.cppm`：导出模块、公开 enum/struct/class 和简短中文职责注释。
-- `<name>.cpp`：`module draw3.<name>;` 实现；只在实现需要时 `import` 其他模块。
+- `<name>.cpp`：`module draw3.<name>;` 的主实现，负责模块的基础生命周期或主要策略。
+- `<name>_<responsibility>.cpp`：大型模块按稳定职责增加的 implementation unit，仍声明同一个 named module，不新增 import 名称。
 
 代表文件：
 
 - `draw3/renderer.cppm` 与 `draw3/renderer.cpp`
 - `draw3/ink_prediction.cppm` 与 `draw3/ink_prediction.cpp`
 - `draw3/transparent_presentation.cppm` 与 `draw3/transparent_presentation.cpp`
+
+例如 Renderer 的公开接口仍只有 `renderer.cppm`，普通 primitive 与 Laser 实现可分别放在 `renderer_primitives.cpp`、`renderer_laser.cpp`。这样拆分只改变编译单元所有权，不改变导出签名、资源线程或渲染顺序。新增 implementation unit 必须同时登记到主工程、直接编译真实模块源码的测试工程及两者 `.filters`，并通过完整解决方案构建验证模块依赖。
 
 接口和实现均先使用 global module fragment：
 

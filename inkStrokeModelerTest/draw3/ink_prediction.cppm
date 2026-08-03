@@ -436,9 +436,6 @@ export namespace draw3
 	// 原地重建荧光笔几何并复用 primitive 容量，供每帧 L0 热路径使用。
 	void RebuildHighlighterGeometry(
 		std::span<const InkPoint> points, HighlighterGeometry& output);
-	// 把已提交稳定前缀和最后一帧 live 高亮几何直接拼成完成态。
-	HighlighterGeometry MergeHighlighterGeometry(const HighlighterGeometry& committedGeometry,
-		const HighlighterGeometry& liveGeometry);
 	// 选择普通笔完成态尾段：默认定住真实尾部+笔锋（去预测）；开关启用时保留最后可见 L0（含预测）。
 	void BuildCompletedPenTail(const ActiveStroke& stroke, bool retainPredictionOnUp,
 		double liveTipTaperSeconds, std::vector<InkPoint>& output);
@@ -480,4 +477,13 @@ export namespace draw3
 	// 清空并重绘当前 L0 实时内容。
 	void DrawL0LiveComposite(ActiveStroke& stroke, DirectX::XMFLOAT4 color,
 		StrokeShape shape, InkRenderer& renderer, bool clearLayer = true);
+}
+
+// 多个实现单元共享的内部策略，不导出到模块使用方。
+namespace draw3::ink_prediction_detail
+{
+	StrokeTimingProfile GetStrokeTimingProfile(StrokeTimingProfileId id);
+	double GetLiveTipDurationSeconds(const StrokeTimingProfile& profile);
+	size_t FindProtectedStartIndex(
+		std::span<const InkPoint> points, double protectedDurationSeconds);
 }

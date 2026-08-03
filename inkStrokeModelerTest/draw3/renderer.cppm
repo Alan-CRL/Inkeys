@@ -225,9 +225,6 @@ export namespace draw3
 		void ConfigureLaserParticles(
 			const LaserParticleConfig& configuration, float dpiScale) noexcept;
 		bool LaserParticlesAvailable() const noexcept;
-		void SimulateLaserParticles(
-			float wallDeltaSeconds, float motionDeltaSeconds) noexcept;
-		void EmitLaserParticles(const LaserParticleEmissionRequest& request) noexcept;
 		// 一次绑定 UAV，按顺序完成存量更新与本帧全部 contact 发射。
 		void StepLaserParticles(float wallDeltaSeconds, float motionDeltaSeconds,
 			bool simulateExisting,
@@ -289,14 +286,28 @@ export namespace draw3
 		float laserParticleGlowGreen_ = LaserParticleConfig{}.glowGreen;
 		float laserParticleGlowBlue_ = LaserParticleConfig{}.glowBlue;
 		float laserParticleGlowAlpha_ = LaserParticleConfig{}.glowAlpha;
-		float laserParticleCoreColorWhiteMix_ =
-			LaserParticleConfig{}.coreColorWhiteMix;
-		float laserParticleCoreColorWhiteMixJitter_ =
-			LaserParticleConfig{}.coreColorWhiteMixJitter;
 		LaserParticleSystem laserParticleSystem_;
 		// 单 contact Laser 的实时尾部 coverage 按需创建，避免非 Laser 会话分配额外画布。
 		LaserCoverageResources laserLiveCoverage;
 		bool laserIncrementalCoverageEnabled_ = false;
 		bool laserIncrementalCoverageUnavailable_ = false;
 	};
+}
+
+// 多个 Renderer 实现单元共享的 CPU/HLSL 布局，不导出到模块使用方。
+namespace draw3::renderer_detail
+{
+	struct GlobalShaderConstants
+	{
+		float width;
+		float height;
+		float shapeType;
+		uint32_t bufferOffset;
+		DirectX::XMFLOAT4 color;
+		uint32_t operatorKind;
+		float padding[3];
+	};
+
+	static_assert(sizeof(GlobalShaderConstants) == 48);
+	static_assert(sizeof(GlobalShaderConstants) % 16 == 0);
 }

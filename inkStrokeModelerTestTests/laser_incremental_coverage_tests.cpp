@@ -247,10 +247,12 @@ int RunLaserIncrementalCoverageTests()
 			root / "inkStrokeModelerTest" / "inkVertexShader.hlsl";
 		const std::filesystem::path rendererSource =
 			root / "inkStrokeModelerTest" / "draw3" / "renderer.cpp";
+		const std::filesystem::path rendererLaserSource =
+			root / "inkStrokeModelerTest" / "draw3" / "renderer_laser.cpp";
 		const std::filesystem::path controllerSource =
 			root / "inkStrokeModelerTest" / "draw3" / "drawing_controller.cpp";
-		const std::filesystem::path particleSource =
-			root / "inkStrokeModelerTest" / "draw3" / "laser_particles.cpp";
+		const std::filesystem::path particleSystemSource =
+			root / "inkStrokeModelerTest" / "draw3" / "laser_particle_system.cpp";
 		LASER_INCREMENTAL_CHECK(sizeof(draw3::LaserGpuParticle) == 80);
 		LASER_INCREMENTAL_CHECK(ContainsText(particleCommon, "uint padding;"));
 		LASER_INCREMENTAL_CHECK(TextAppearsBefore(
@@ -261,9 +263,9 @@ int RunLaserIncrementalCoverageTests()
 			particleCommon, "float breathingRampSeconds;", "uint seed;"));
 		LASER_INCREMENTAL_CHECK(TextAppearsBefore(
 			particleCommon, "uint alive;", "uint padding;"));
-		LASER_INCREMENTAL_CHECK(ContainsText(rendererSource,
+		LASER_INCREMENTAL_CHECK(ContainsText(rendererLaserSource,
 			"StepLaserParticles("));
-		LASER_INCREMENTAL_CHECK(ContainsText(rendererSource,
+		LASER_INCREMENTAL_CHECK(ContainsText(rendererLaserSource,
 			"uploadedLaserStyleGeneration_"));
 		LASER_INCREMENTAL_CHECK(ContainsText(vertexShader,
 			"float2 rectMin = globalColor.xy;"));
@@ -279,13 +281,13 @@ int RunLaserIncrementalCoverageTests()
 			"laserParticleSnapshot.hasActive || laserParticleSnapshot.expiredAny"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
 			"if (shouldDrawLaserParticles)"));
-		LASER_INCREMENTAL_CHECK(ContainsText(rendererSource,
+		LASER_INCREMENTAL_CHECK(ContainsText(rendererLaserSource,
 			"if (laserScissorRasterState)"));
 		LASER_INCREMENTAL_CHECK(ContainsText(rendererSource,
 			"laserScissorRasterState.Reset();"));
-		LASER_INCREMENTAL_CHECK(ContainsText(particleSource,
+		LASER_INCREMENTAL_CHECK(ContainsText(particleSystemSource,
 			"CreateBuffer(&bufferDescription, nullptr"));
-		LASER_INCREMENTAL_CHECK(!ContainsText(particleSource,
+		LASER_INCREMENTAL_CHECK(!ContainsText(particleSystemSource,
 			"emptyParticles"));
 		LASER_INCREMENTAL_CHECK(ContainsText(root / "inkStrokeModelerTest" / "ink.hlsli",
 			"LaserLiveCoverage : register(t9)"));

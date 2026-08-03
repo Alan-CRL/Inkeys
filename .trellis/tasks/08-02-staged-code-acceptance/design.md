@@ -1,4 +1,4 @@
-# 阶段 1 绘制性能优化技术设计
+# 阶段性代码验收技术设计
 
 ## Design Principles
 
@@ -72,3 +72,27 @@ renderer 暴露单个 batched particle step：绑定 UAV/公共常量一次，�
 - 每批保留旧测试作为参考，任一等价性断言失败就回滚该批，不用其他优化掩盖差异。
 - Shader 或资源创建失败时走现有 CPU/renderer fallback；不新增强制硬件能力。
 - 阶段 1 不更改公开设置、默认值、文件格式或持久化数据，因此不需要数据迁移。
+
+## Stage 2 Implementation Unit Split
+
+拆分只移动既有定义，不新增 module import 名称，也不改变 `.cppm` 的公开类型所有权：
+
+- `renderer.cpp` 保留资源创建、Resize/Release、operator layer 合成和 shader 资源加载；新增 `renderer_primitives.cpp` 承担 Pen/Highlighter/Cursor，新增 `renderer_laser.cpp` 承担 Laser coverage、rect resolve、粒子绘制和预热。
+- `ink_prediction.cpp` 保留配置、Laser 生命周期、输入宽度策略和 interrupted reconnect；新增 `stroke_geometry.cpp` 承担宽度估算、Highlighter geometry、ActiveStroke、dirty rect 与 L0/L1 提交。
+- `laser_particles.cpp` 保留配置校验、发射计划、纯 CPU 数学和 dirty tracker；新增 `laser_particle_system.cpp` 承担 D3D buffer/SRV/UAV/CS 生命周期与 dispatch。
+
+多个 implementation unit 通过同一 `module draw3.xxx;` 归属既有 named module。确需跨 implementation unit 共用、但不能暴露给 import 方的常量或布局，放在 `.cppm` 的非导出 namespace；其他 helper 继续留在对应 `.cpp` 匿名 namespace。
+
+## Stage 2 Redundancy Rules
+
+- 删除无调用的 Highlighter 去重旧实现；`MergeHighlighterGeometry` 的参考等价逻辑移到测试侧，生产 module 不再导出测试专用 wrapper。
+- Particle dirty tracker 统一只保留 `Snapshot`，删除测试专用的 `ActiveBounds` / `HasActive` 与无调用的 `HasAny`。
+- Renderer 和 particle system 只保留批量 `Step`，删除无运行调用的单步 `Simulate` / `Emit` wrapper。
+- 删除 shader 已不再消费的核心 white-mix CPU mirror、Renderer 私有缓存和常量填充；`LaserParticleConfig` 的现有公开字段仍保留，避免接口破坏。
+- 不以减少行数为目标抽取只有一次调用且语义清晰的 helper，也不合并 Pen/Highlighter/Eraser/Laser 的不同渲染数学。
+
+## Stage 2 Style And Comments
+
+- 新 implementation unit 使用 UTF-8 BOM + CRLF、tab 缩进和 Allman 大括号，文件开头用一句中文说明职责。
+- 修正触及区域中已存在的缩进、声明对齐和过时注释；注释解释 module 边界、GPU 绑定、状态恢复或行为不变量，不逐行翻译代码。
+- `.vcxproj` 和 `.filters` 只增加实际编译文件，保持现有配置、模块接口标记、Shader 与资源项不变。

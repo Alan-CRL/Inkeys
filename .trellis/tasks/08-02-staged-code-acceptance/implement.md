@@ -1,4 +1,4 @@
-# 阶段 1 绘制性能优化实施计划
+# 阶段性代码验收实施计划
 
 ## Implementation Order
 
@@ -57,4 +57,39 @@
 - Debug/Release `ARM64` 完整解决方案构建通过，VS/PS/UpdateCS/EmitCS 均重新编译；两个配置的全量无窗口控制台测试与 `--drawing-perf` 通过。
 - `git diff --check` 通过；修改的 C++/HLSL/test 文件为 UTF-8 BOM + CRLF，Trellis Markdown 为 UTF-8 no-BOM + LF。
 - 按用户限制未启动主程序、未创建或操控窗口、未运行 `--benchmark`。真实窗口视觉效果、D3D11 Debug Layer、人工多指/粒子/Resize/Present 输入验证仍待后续人工验收。
-- 本记录只完成 Stage 1；Stage 2 冗余/规范验收和 Stage 3 最近一个月安全验收继续保留为未开始。
+- 本记录完成 Stage 1；Stage 2 的完成结果见下文，Stage 3 最近一个月安全验收继续保留为未开始。
+
+## Stage 2 Implementation Order
+
+1. 全仓搜索候选函数与字段引用，记录无调用、仅测试调用和公开接口三类；公开设置字段不删除。
+2. 拆分 Renderer implementation unit，先保证普通绘制、Laser 和资源生命周期各自可独立编译，再同步主/测试工程引用。
+3. 拆分 Ink Prediction 的 stroke geometry implementation unit，删除旧 Highlighter 去重函数，并把 merge 参考实现移到测试侧。
+4. 拆分 Laser Particle D3D system implementation unit，统一 dirty snapshot 和 batched Step 接口，删除 white-mix CPU 冗余链。
+5. 修正触及区域的缩进、命名、guard 与过时注释；不格式化无关文件。
+6. 运行静态引用/模块/工程检查、ARM64 Debug/Release 完整解决方案构建、全量无窗口测试和 `--drawing-perf`。
+
+## Stage 2 Review Gates
+
+- 文件移动前后函数体行为逐项一致；除明确列出的死代码外不改条件、顺序、常量或返回语义。
+- 新 `.cpp` 只声明既有 named module，不创建新的公共 module，也不扩大 `InkRenderer` 资源访问面。
+- 删除任何导出函数前必须确认生产端无调用；测试参考逻辑不得重新进入生产 module。
+- 主工程和测试工程必须同时包含 Renderer、Ink Prediction、Laser Particles 的所有 implementation unit。
+- 不启动主程序、窗口或 `--benchmark`；Stage 3 仍不执行。
+
+## Stage 2 Completion Record
+
+- [x] Renderer / Ink Prediction / Laser Particles implementation unit 拆分完成。
+- [x] 冗余 wrapper、旧 helper 和无消费状态删除完成。
+- [x] 触及代码风格与中文关键注释检查完成。
+- [x] 工程引用、编码换行、ARM64 Debug/Release 构建和无窗口测试通过。
+
+## Stage 2 Validation Result (2026-08-03)
+
+- `renderer.cpp` 保留资源生命周期、合成和 Shader 加载；普通 primitive 与 Laser 路径分别迁入 `renderer_primitives.cpp`、`renderer_laser.cpp`。
+- `ink_prediction.cpp` 保留配置、Laser 生命周期、宽度策略与触摸重连；stroke geometry、ActiveStroke 和脏区/L0/L1 路径迁入 `stroke_geometry.cpp`。
+- `laser_particles.cpp` 保留纯 CPU 规划、数学和 dirty snapshot；D3D 资源及 Compute Shader 调度迁入 `laser_particle_system.cpp`。
+- 删除无运行调用的 Highlighter 去重旧 helper、单步粒子 wrapper、dirty tracker 旁路接口和 white-mix CPU mirror；Highlighter merge 参考实现只保留在测试侧，公开配置字段继续兼容保留。
+- ARM64 Debug/Release 完整解决方案构建通过；两个配置的全量无窗口控制台测试与 `--drawing-perf` 通过。Debug/Release Highlighter 热循环分配均为 `0`，最终 Release 指标为 `30.0/11.2/11.2/45.7 us`。
+- `git diff --check`、UTF-8 BOM + CRLF / Trellis UTF-8 no-BOM + LF、module 声明、四个工程/filters 引用和死代码引用检查通过；未触碰未跟踪 `Vcpkg/`。
+- 按用户限制未启动主程序、未创建或操控窗口、未运行 `--benchmark`。GUI 视觉、D3D Debug Layer、真实输入以及 Resize/Present 人工验证仍未执行。
+- Stage 3 最近一个月代码安全验收继续保留，尚未开始。

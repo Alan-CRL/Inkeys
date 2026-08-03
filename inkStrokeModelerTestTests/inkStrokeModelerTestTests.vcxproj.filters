@@ -45,16 +45,28 @@
     <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer.cpp">
       <Filter>draw3</Filter>
     </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer_primitives.cpp">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer_laser.cpp">
+      <Filter>draw3</Filter>
+    </ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer.cppm">
       <Filter>draw3</Filter>
     </ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\laser_particles.cpp">
       <Filter>draw3</Filter>
     </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\laser_particle_system.cpp">
+      <Filter>draw3</Filter>
+    </ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\laser_particles.cppm">
       <Filter>draw3</Filter>
     </ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\ink_prediction.cpp">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\stroke_geometry.cpp">
       <Filter>draw3</Filter>
     </ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\ink_prediction.cppm">

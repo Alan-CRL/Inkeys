@@ -128,12 +128,6 @@ export namespace draw3
 		const LaserParticleConfig& configuration) noexcept;
 	float LaserParticleGlowExtentDip(float currentRadiusDip,
 		const LaserParticleConfig& configuration) noexcept;
-	// 兼容保留核心白度 helper；当前粒子 shader 已直接使用激光 border 红。
-	float LaserParticleCoreColorMix(float baseBrightness,
-		const LaserParticleConfig& configuration, float whiteMixScale = 1.0f) noexcept;
-	// 由粒子 seed 生成核心白度微小随机缩放，范围约 1±jitter。
-	float LaserParticleCoreColorWhiteMixScale(uint32_t seed,
-		const LaserParticleConfig& configuration) noexcept;
 	float MaximumLaserParticleTravelDip(
 		const LaserParticleConfig& configuration) noexcept;
 	int64_t LaserParticleLifetimeDeadlineQpc(int64_t nowQpc,
@@ -199,9 +193,6 @@ export namespace draw3
 	public:
 		void Add(RECT bounds, int64_t expiresQpc) noexcept;
 		LaserParticleDirtySnapshot Snapshot(int64_t nowQpc) noexcept;
-		RECT ActiveBounds(int64_t nowQpc) noexcept;
-		bool HasActive(int64_t nowQpc) const noexcept;
-		bool HasAny() const noexcept;
 		void Clear() noexcept;
 
 	private:
@@ -227,8 +218,6 @@ export namespace draw3
 			float coreRadiusRatio) noexcept;
 		bool IsAvailable() const noexcept;
 
-		void Simulate(float wallDeltaSeconds, float motionDeltaSeconds) noexcept;
-		void Emit(const LaserParticleEmissionRequest& request) noexcept;
 		void Step(float wallDeltaSeconds, float motionDeltaSeconds,
 			bool simulateExisting,
 			std::span<const LaserParticleEmissionRequest> emissionRequests) noexcept;

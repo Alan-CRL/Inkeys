@@ -4,7 +4,7 @@
 
 对当前绘制系统进行分阶段验收。在不改变可见效果、输入语义和公开行为的前提下，先完成 Pen、Highlighter、Eraser、Laser 四种绘制类型的极致性能优化；后续再分别处理冗余代码与代码规范，以及最近一个月提交的安全验收。
 
-本轮只执行阶段 1。阶段 2、阶段 3 保留在同一 Trellis 任务中，但不得提前修改对应代码。
+阶段 1 已完成并提交；当前执行阶段 2。阶段 3 继续保留在同一 Trellis 任务中，不得提前执行提交安全审计。
 
 ## Stages
 
@@ -15,10 +15,13 @@
 - 保持四种绘制类型的最终像素、几何、压力、prediction、合成顺序、生命周期和异常回退行为不变。
 - 优化必须兼容 Windows 11 ARM64、现有 D3D11 shader 编译链、完整解决方案构建和当前公开设置接口。
 
-### Stage 2: 冗余代码与写法规范（延期）
+### Stage 2: 冗余代码与写法规范（当前范围）
 
-- 删除确认无用或重复的代码，统一不规范写法。
-- 本轮不得以代码清理为名扩大性能优化的修改范围；仅允许删除性能路径中已证明无运行用途且删除后行为等价的状态或计算。
+- 删除确认无运行调用、仅为旧实现保留或能由现有权威接口完全替代的代码；测试仍需要的参考算法移入测试侧，不继续扩大生产接口。
+- 将职责杂糅的大型实现文件按稳定模块边界拆成多个 implementation unit：Renderer 区分普通绘制、Laser 与资源生命周期；Ink Prediction 区分输入/重连策略与 stroke geometry；Laser Particles 区分纯 CPU 规划与 D3D 粒子系统。
+- 同一 C++20 named module 可以拥有多个按职责命名的 `.cpp` implementation unit，但保持现有 `.cppm` 公开契约和导入名称不变。
+- 统一触及代码的 tab 缩进、Allman 大括号、命名、guard 写法和中文关键注释；不对未触及文件做全量格式化。
+- 保持所有绘制效果、输入语义、线程边界、公开设置字段、默认值、CPU/GPU 契约和失败回退行为不变。
 
 ### Stage 3: 最近一个月代码安全验收（延期）
 
@@ -53,6 +56,13 @@
 - 对不在热点路径中的代码进行风格重构、文件重排或公共抽象改造。
 - 阶段 2 的全面清理与规范化，以及阶段 3 的最近一个月提交安全审计。
 
+## Out Of Scope For Stage 2
+
+- 修改绘制算法、视觉参数、性能策略、公开设置字段或默认值。
+- 引入新的 PImpl、公共抽象层或跨模块 D3D 资源依赖。
+- 清理历史参考工程、第三方 `additional/` / `lib/` 或未确认用途的工程残留项。
+- 阶段 3 的最近一个月提交安全审计。
+
 ## Acceptance Criteria
 
 - [x] 新增的无窗口性能/等价性测试能记录四类绘制的优化前基线，并明确证明测试过程不创建或查找 GUI 窗口。
@@ -67,3 +77,13 @@
 - [x] ARM64 原生 MSBuild 对完整 `inkStrokeModelerTest.sln` 的 Debug/Release 构建成功，两个配置的无窗口控制台测试全部通过。
 - [x] `git diff --check`、编码/换行检查和相关静态契约检查通过；没有修改阶段 2、阶段 3 或 `Vcpkg/` 范围。
 - [x] 因禁止 GUI，本阶段只声明静态、构建和无窗口测试结论；真实窗口视觉、D3D Debug Layer 与人工输入验证明确保留为未执行项。
+
+## Stage 2 Acceptance Criteria
+
+- [x] 大型实现文件按上述职责拆分，新增 implementation unit 已同步主工程、测试工程及两个 `.filters` 文件，原 module import 名称不变。
+- [x] 删除的生产函数均经全仓引用搜索证明无运行调用；仍有价值的参考等价逻辑只保留在测试侧。
+- [x] Renderer、Ink Prediction 与 Laser Particles 的运行签名、设置字段、默认值和 CPU/GPU layout 不变；只删除已确认无运行调用的导出 wrapper 与测试 helper。
+- [x] 触及代码符合项目 tab/Allman/PascalCase/camelCase/成员尾下划线规范，关键模块边界和失败原因有简短中文注释。
+- [x] ARM64 Debug/Release 完整解决方案、未改动的四个 Shader 资源链、两个配置的无窗口控制台测试和 `--drawing-perf` 通过。
+- [x] `git diff --check`、编码/换行、模块声明/工程引用和未跟踪 `Vcpkg/` 范围检查通过。
+- [x] GUI、D3D Debug Layer、真实输入和 Resize/Present 人工验证明确标记未执行。

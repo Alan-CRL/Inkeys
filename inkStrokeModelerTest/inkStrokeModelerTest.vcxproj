@@ -263,11 +263,13 @@
     <ClCompile Include="draw3\haptic_feedback.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
-    <ClCompile Include="draw3\ink_prediction.cpp" />
+	<ClCompile Include="draw3\ink_prediction.cpp" />
+	<ClCompile Include="draw3\stroke_geometry.cpp" />
 	<ClCompile Include="draw3\ink_prediction.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
-    <ClCompile Include="draw3\laser_particles.cpp" />
+	<ClCompile Include="draw3\laser_particles.cpp" />
+	<ClCompile Include="draw3\laser_particle_system.cpp" />
     <ClCompile Include="draw3\laser_particles.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
@@ -283,7 +285,9 @@
     <ClCompile Include="draw3\runtime_metrics.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
-    <ClCompile Include="draw3\renderer.cpp" />
+	<ClCompile Include="draw3\renderer.cpp" />
+	<ClCompile Include="draw3\renderer_primitives.cpp" />
+	<ClCompile Include="draw3\renderer_laser.cpp" />
     <ClCompile Include="draw3\renderer.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
