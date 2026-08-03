@@ -283,6 +283,17 @@ protected:
 		D2D1_SIZE_F size{};
 		ComPtr<ID2D1Bitmap1> bitmap;
 	};
+	struct SuperellipseGeometryCacheClass
+	{
+		FLOAT width = 0.0F;
+		FLOAT height = 0.0F;
+		FLOAT n = 0.0F;
+		int segments = 0;
+		FLOAT translatedX = 0.0F;
+		FLOAT translatedY = 0.0F;
+		ComPtr<ID2D1PathGeometry> localGeometry;
+		ComPtr<ID2D1TransformedGeometry> translatedGeometry;
+	};
 
 	ID2D1RadialGradientBrush* GetFrameGradientBrush(
 		ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource);
@@ -306,6 +317,8 @@ protected:
 	ID2D1PathGeometry* GetThicknessPreviewPath(
 		const array<D2D1_POINT_2F, 7>& points);
 	ID2D1StrokeStyle* GetThicknessPreviewStrokeStyle();
+	ID2D1Geometry* GetSuperellipseGeometry(
+		FLOAT x, FLOAT y, FLOAT width, FLOAT height, FLOAT n, int segments);
 	FrameDiffuseMaskCacheClass* GetRoundedRectDiffuseMask(
 		ID2D1DeviceContext* deviceContext,
 		const D2D1_ROUNDED_RECT& roundedRect, FLOAT strokeWidth);
@@ -390,6 +403,7 @@ protected:
 	ComPtr<ID2D1LinearGradientBrush> colorPickerDarkGradientBrush;
 	ComPtr<ID2D1PathGeometry> thicknessPreviewPath;
 	ComPtr<ID2D1StrokeStyle> thicknessPreviewStrokeStyle;
+	SuperellipseGeometryCacheClass superellipseGeometryCache;
 	COLORREF thicknessPreviewGradientColor = RGB(0, 0, 0);
 	FLOAT thicknessPreviewGradientLeftOpacity = -1.0F;
 	array<D2D1_POINT_2F, 7> thicknessPreviewPathPoints{};

@@ -187,6 +187,7 @@ BarUiSVGClass::BarUiSVGClass(double xT, double yT, optional<COLORREF> color1T, o
 {
 	x.Initialization(xT, type);
 	y.Initialization(yT, type);
+	angle.Initialization(0.0, type);
 	if (color1T.has_value()) { color1 = BarUiColorClass(); color1.value().Initialization(color1T.value()); }
 	if (color2T.has_value()) { color2 = BarUiColorClass(); color2.value().Initialization(color2T.value()); }
 }
@@ -194,6 +195,7 @@ void BarUiSVGClass::Initialization(double xT, double yT, optional<COLORREF> colo
 {
 	x.Initialization(xT, type);
 	y.Initialization(yT, type);
+	angle.Initialization(0.0, type);
 	if (color1T.has_value()) { color1 = BarUiColorClass(); color1.value().Initialization(color1T.value()); }
 	if (color2T.has_value()) { color2 = BarUiColorClass(); color2.value().Initialization(color2T.value()); }
 }

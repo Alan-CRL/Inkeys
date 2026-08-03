@@ -35,6 +35,8 @@ constexpr double BarButtonPressScale = 0.95;
 constexpr double BarButtonHoverShowDur = 0.24;
 constexpr double BarButtonHoverExitDur = 0.24;
 constexpr double BarButtonHoverFadeDur = 5.0;
+constexpr double BarSvgRasterUpscaleThreshold = 1.35;
+constexpr double BarSvgRasterSizeEpsilon = 0.01;
 constexpr double BarBorderLightRadius = 480.0;
 constexpr double BarBorderCursorFadeInDur = 0.30;
 constexpr double BarBorderCursorLightRadius = 240.0;
@@ -943,6 +945,7 @@ void BarUIRendering::DiscardDeviceResources()
 	frameGradientBrushCache.clear();
 	frameDiffuseMaskCache.clear();
 	frameGeometryDiffuseMaskCache.clear();
+	superellipseGeometryCache = {};
 	frameSolidColorBrush.Reset();
 	thicknessPreviewGradientBrush.Reset();
 	colorPickerHueGradientBrush.Reset();
@@ -2459,6 +2462,104 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 	if (targetRect) BarRenderingAttribute::UnionRectInPlace(*targetRect, BarRenderingAttribute::GetWeigetRect(shape, tarZoom));
 	return true;
 }
+ID2D1Geometry* BarUIRendering::GetSuperellipseGeometry(
+	FLOAT x, FLOAT y, FLOAT width, FLOAT height, FLOAT n, int segments)
+{
+	if (!d2dFactory1 || width <= 0.0F || height <= 0.0F || n <= 0.0F)
+		return nullptr;
+
+	bool pathChanged = !superellipseGeometryCache.localGeometry
+		|| superellipseGeometryCache.width != width
+		|| superellipseGeometryCache.height != height
+		|| superellipseGeometryCache.n != n
+		|| superellipseGeometryCache.segments != segments;
+	if (pathChanged)
+	{
+		constexpr FLOAT pi = 3.14159265359F;
+		FLOAT radius = min(width, height) / 2.0F;
+		int cornerSegments = max(6, segments / 4);
+		vector<D2D1_POINT_2F> points;
+		points.reserve(static_cast<size_t>(cornerSegments + 1) * 4 + 1);
+
+		auto AppendCorner = [&](FLOAT centerX, FLOAT centerY, FLOAT begin, FLOAT end)
+			{
+				for (int i = 0; i <= cornerSegments; i++)
+				{
+					FLOAT theta = begin + (end - begin)
+						* static_cast<FLOAT>(i) / static_cast<FLOAT>(cornerSegments);
+					FLOAT cosTheta = cosf(theta);
+					FLOAT sinTheta = sinf(theta);
+					FLOAT localX = radius * copysignf(
+						powf(abs(cosTheta), 2.0F / n), cosTheta);
+					FLOAT localY = radius * copysignf(
+						powf(abs(sinTheta), 2.0F / n), sinTheta);
+					points.emplace_back(D2D1::Point2F(
+						centerX + localX, centerY + localY));
+				}
+			};
+
+		// 路径固定在局部原点，位置变化时只更新廉价的平移几何。
+		AppendCorner(width - radius, radius, -pi / 2.0F, 0.0F);
+		AppendCorner(width - radius, height - radius, 0.0F, pi / 2.0F);
+		AppendCorner(radius, height - radius, pi / 2.0F, pi);
+		AppendCorner(radius, radius, pi, pi * 3.0F / 2.0F);
+		points.emplace_back(points.front());
+
+		vector<D2D1_BEZIER_SEGMENT> beziers;
+		int pointCount = static_cast<int>(points.size()) - 1;
+		if (pointCount < 3) return nullptr;
+		beziers.reserve(pointCount);
+		for (int i = 0; i < pointCount; i++)
+		{
+			D2D1_POINT_2F p0 = points[(i - 1 + pointCount) % pointCount];
+			D2D1_POINT_2F p1 = points[i];
+			D2D1_POINT_2F p2 = points[(i + 1) % pointCount];
+			D2D1_POINT_2F p3 = points[(i + 2) % pointCount];
+			beziers.push_back({
+				{ p1.x + (p2.x - p0.x) / 6.0F,
+					p1.y + (p2.y - p0.y) / 6.0F },
+				{ p2.x - (p3.x - p1.x) / 6.0F,
+					p2.y - (p3.y - p1.y) / 6.0F },
+				p2 });
+		}
+
+		ComPtr<ID2D1PathGeometry> nextLocalGeometry;
+		HRESULT hr = d2dFactory1->CreatePathGeometry(&nextLocalGeometry);
+		if (FAILED(hr) || !nextLocalGeometry) return nullptr;
+		ComPtr<ID2D1GeometrySink> sink;
+		hr = nextLocalGeometry->Open(&sink);
+		if (FAILED(hr) || !sink) return nullptr;
+		sink->BeginFigure(points.front(), D2D1_FIGURE_BEGIN_FILLED);
+		sink->AddBeziers(beziers.data(), static_cast<UINT32>(beziers.size()));
+		sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+		hr = sink->Close();
+		if (FAILED(hr)) return nullptr;
+
+		superellipseGeometryCache.width = width;
+		superellipseGeometryCache.height = height;
+		superellipseGeometryCache.n = n;
+		superellipseGeometryCache.segments = segments;
+		superellipseGeometryCache.localGeometry = move(nextLocalGeometry);
+		superellipseGeometryCache.translatedGeometry.Reset();
+	}
+
+	if (!superellipseGeometryCache.translatedGeometry
+		|| superellipseGeometryCache.translatedX != x
+		|| superellipseGeometryCache.translatedY != y)
+	{
+		D2D1_MATRIX_3X2_F translation = D2D1::Matrix3x2F::Translation(x, y);
+		ComPtr<ID2D1TransformedGeometry> nextTranslatedGeometry;
+		HRESULT hr = d2dFactory1->CreateTransformedGeometry(
+			superellipseGeometryCache.localGeometry.Get(), &translation,
+			&nextTranslatedGeometry);
+		if (FAILED(hr) || !nextTranslatedGeometry) return nullptr;
+		superellipseGeometryCache.translatedX = x;
+		superellipseGeometryCache.translatedY = y;
+		superellipseGeometryCache.translatedGeometry = move(nextTranslatedGeometry);
+	}
+
+	return superellipseGeometryCache.translatedGeometry.Get();
+}
 bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, RECT* targetRect, bool clip)
 {
 	// 判断是否启用
@@ -2479,89 +2580,13 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 	double tarN = 4.0;
 	if (superellipse.n.has_value()) tarN = superellipse.n.value().val;
 
-		auto genPoints = [&](float left, float top, float width, float height, float n, int segs)
-			{
-				const float Pi = 3.14159265359f;
-				float radius = min(width, height) / 2.0f;
-				float right = left + width;
-				float bottom = top + height;
-				int cornerSegs = max(6, segs / 4);
-
-				vector<D2D1_POINT_2F> pts;
-				pts.reserve(static_cast<size_t>(cornerSegs + 1) * 4 + 1);
-
-				auto appendCorner = [&](float cx, float cy, float begin, float end)
-				{
-					for (int i = 0; i <= cornerSegs; i++)
-					{
-						float theta = begin + (end - begin) * static_cast<float>(i) / static_cast<float>(cornerSegs);
-						float cosT = cosf(theta);
-						float sinT = sinf(theta);
-						float x0 = radius * copysignf(powf(abs(cosT), 2.0f / n), cosT);
-						float y0 = radius * copysignf(powf(abs(sinT), 2.0f / n), sinT);
-						pts.emplace_back(D2D1::Point2F(cx + x0, cy + y0));
-					}
-				};
-
-				// 非正方形只延长四角之间的直边，圆角始终使用相同的宽高，避免整体拉伸。
-				appendCorner(right - radius, top + radius, -Pi / 2.0f, 0.0f);
-				appendCorner(right - radius, bottom - radius, 0.0f, Pi / 2.0f);
-				appendCorner(left + radius, bottom - radius, Pi / 2.0f, Pi);
-				appendCorner(left + radius, top + radius, Pi, Pi * 3.0f / 2.0f);
-				pts.emplace_back(pts[0]); // 闭合
-
-			return pts;
-		};
-
-	auto toBeziers = [](const vector<D2D1_POINT_2F>& pts, float tension = 1.0f)
-		{
-			// Catmull-Rom到Bezier转换，首尾闭合
-			vector<D2D1_BEZIER_SEGMENT> beziers;
-			int N = static_cast<int>(pts.size()) - 1; // pts已闭合，最后一个是等于第一个
-			if (N < 3) return beziers;
-
-			for (int i = 0; i < N; i++)
-			{
-				D2D1_POINT_2F p0 = pts[(i - 1 + N) % N];
-				D2D1_POINT_2F p1 = pts[i];
-				D2D1_POINT_2F p2 = pts[(i + 1) % N];
-				D2D1_POINT_2F p3 = pts[(i + 2) % N];
-
-				D2D1_BEZIER_SEGMENT seg;
-				seg.point1 =
-				{
-					p1.x + (p2.x - p0.x) / 6.0f * tension,
-					p1.y + (p2.y - p0.y) / 6.0f * tension
-				};
-				seg.point2 =
-				{
-					p2.x - (p3.x - p1.x) / 6.0f * tension,
-					p2.y - (p3.y - p1.y) / 6.0f * tension
-				};
-				seg.point3 = p2;
-
-				beziers.push_back(seg);
-			}
-			return beziers;
-		};
-
-	// 计算边框路径
+	// 路径只由尺寸、n 与采样精度决定，面板移动时复用局部路径。
 	int segs = clamp(static_cast<int>((tarW + tarH) / 8.0), 24, 128);
-	vector<D2D1_POINT_2F> pts = genPoints(static_cast<float>(tarX), static_cast<float>(tarY), static_cast<float>(tarW), static_cast<float>(tarH), static_cast<float>(tarN), segs);
-	vector<D2D1_BEZIER_SEGMENT> beziers = toBeziers(pts);
-	if (beziers.empty()) return false;
-
-	ComPtr<ID2D1PathGeometry> geometry;
-	d2dFactory1->CreatePathGeometry(&geometry);
-
-	{
-		ComPtr<ID2D1GeometrySink> sink;
-		geometry->Open(&sink);
-		sink->BeginFigure(pts[0], D2D1_FIGURE_BEGIN_FILLED);
-		sink->AddBeziers(beziers.data(), static_cast<UINT32>(beziers.size()));
-		sink->EndFigure(D2D1_FIGURE_END_CLOSED);
-		sink->Close();
-	}
+	ID2D1Geometry* geometry = GetSuperellipseGeometry(
+		static_cast<FLOAT>(tarX), static_cast<FLOAT>(tarY),
+		static_cast<FLOAT>(tarW), static_cast<FLOAT>(tarH),
+		static_cast<FLOAT>(tarN), segs);
+	if (!geometry) return false;
 
 	// Clip
 	if (clip)
@@ -2570,7 +2595,7 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 			GetFrameSolidColorBrush(deviceContext, RGB(0, 0, 0), 0.0);
 		if (!fillBrush) return false;
 		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
-		deviceContext->FillGeometry(geometry.Get(), fillBrush);
+		deviceContext->FillGeometry(geometry, fillBrush);
 		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
 	}
 
@@ -2583,7 +2608,7 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 			ID2D1SolidColorBrush* fillBrush =
 				GetFrameSolidColorBrush(deviceContext, fill, tarPct);
 			if (!fillBrush) return false;
-			deviceContext->FillGeometry(geometry.Get(), fillBrush);
+			deviceContext->FillGeometry(geometry, fillBrush);
 		}
 		// 渲染边框
 		if (superellipse.frame.has_value())
@@ -2609,14 +2634,14 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 						superellipse.framePrimaryLightEnabled,
 						superellipse.frameCursorLightIntensityScale,
 						tarFramePct, tarFrameLightPct,
-						strokeWidth, nullptr, geometry.Get(),
+						strokeWidth, nullptr, geometry,
 						static_cast<int>(lround(tarN * 4.0)));
 				if (!pointLightDrawn)
 				{
 					ID2D1SolidColorBrush* borderBrush =
 						GetFrameSolidColorBrush(deviceContext, frame, tarFramePct);
 					if (!borderBrush) return false;
-					deviceContext->DrawGeometry(geometry.Get(), borderBrush, strokeWidth);
+					deviceContext->DrawGeometry(geometry, borderBrush, strokeWidth);
 				}
 			}
 		}
@@ -2628,7 +2653,7 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, const BarUiInheritClass& inh)
 {
 	// 判断是否启用
-	if (svg.enable.val == false) return false;
+	if (!deviceContext || svg.enable.val == false) return false;
 	if (barUISetClass->barStyle.zoom <= 0.0) return false;
 	if (svg.w.val <= 0 || svg.h.val <= 0) return false;
 	double contentScale = svg.contentScale;
@@ -2649,33 +2674,76 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, 
 	double tarY = baseY + (baseH - tarH) / 2.0;
 	double tarPct = clamp(static_cast<double>(svg.pct.val) * contentPct, 0.0, 1.0);
 
-	// 获取绘制缓存
+	// 尺寸与内容缩放动画只改变目标矩形，SVG 位图尽量复用到稳定帧。
 	ComPtr<ID2D1Bitmap> d2dBitmap;
 	{
-		bool needUpdate = false;
-		if (svg.cW != baseW || svg.cH != baseH) needUpdate = true;
-		if (svg.color1.has_value() && svg.cColor1 != svg.color1.value().val) needUpdate = true;
-		if (svg.color2.has_value() && svg.cColor2 != svg.color2.value().val) needUpdate = true;
+		bool colorChanged =
+			(svg.color1.has_value() && svg.cColor1 != svg.color1.value().val)
+			|| (svg.color2.has_value() && svg.cColor2 != svg.color2.value().val);
+		bool sizeChanged = abs(svg.cW - baseW) > BarSvgRasterSizeEpsilon
+			|| abs(svg.cH - baseH) > BarSvgRasterSizeEpsilon;
+		bool transformAnimating = !svg.w.IsSame() || !svg.h.IsSame()
+			|| abs(contentScale - 1.0) > BarSvgRasterSizeEpsilon
+			|| abs(contentPct - 1.0) > BarSvgRasterSizeEpsilon;
+		bool materiallyUpscaled = svg.cacheBitmap
+			&& (tarW > svg.cW * BarSvgRasterUpscaleThreshold
+				|| tarH > svg.cH * BarSvgRasterUpscaleThreshold);
 
-		// TODO 优化：可选动画过程中不更新缓存
-		if (needUpdate || !svg.cacheBitmap)
+		bool needUpdate = !svg.cacheBitmap || colorChanged
+			|| (!transformAnimating && sizeChanged)
+			|| (transformAnimating && materiallyUpscaled);
+		if (needUpdate)
 		{
-			if (!svg.CacheBitmap(deviceContext, baseW, baseH))
-				return false;
+			double rasterW = baseW;
+			double rasterH = baseH;
+			if (transformAnimating && materiallyUpscaled)
+			{
+				// 尺寸动画可直接按终点预建，避免后续中间帧再次跨过质量阈值。
+				double targetW = static_cast<double>(svg.w.tar) * tarZoom;
+				double targetH = static_cast<double>(svg.h.tar) * tarZoom;
+				if (isfinite(targetW) && targetW > 0.0) rasterW = max(tarW, targetW);
+				else rasterW = tarW;
+				if (isfinite(targetH) && targetH > 0.0) rasterH = max(tarH, targetH);
+				else rasterH = tarH;
+			}
+
+			if (!svg.CacheBitmap(deviceContext, rasterW, rasterH))
+			{
+				// 质量刷新失败时保留已有内容；内容/颜色失效则不能显示旧语义。
+				if (!svg.cacheBitmap || colorChanged) return false;
+			}
 		}
 		d2dBitmap = svg.cacheBitmap.Get();
 	}
+	if (!d2dBitmap) return false;
 
 	// 渲染到 DC
 	{
 		D2D1_RECT_F destRect = D2D1::RectF(static_cast<FLOAT>(tarX), static_cast<FLOAT>(tarY), static_cast<FLOAT>(tarX + tarW), static_cast<FLOAT>(tarY + tarH));
+		double tarAngle = svg.angle.val;
+		if (!isfinite(tarAngle)) tarAngle = 0.0;
+		D2D1_MATRIX_3X2_F originalTransform;
+		deviceContext->GetTransform(&originalTransform);
+		bool transformChanged = abs(fmod(tarAngle, 360.0)) > 0.000001;
+		if (transformChanged)
+		{
+			// 与 PNG 一致：仅旋转最终内容，布局宽高和缓存尺寸都保持不变。
+			deviceContext->SetTransform(
+				D2D1::Matrix3x2F::Rotation(
+					static_cast<FLOAT>(tarAngle),
+					D2D1::Point2F(
+						static_cast<FLOAT>(tarX + tarW / 2.0),
+						static_cast<FLOAT>(tarY + tarH / 2.0)))
+				* originalTransform);
+		}
 		deviceContext->DrawBitmap(
-				d2dBitmap.Get(),
+			d2dBitmap.Get(),
 			destRect,								// 目标矩形
 			static_cast<FLOAT>(tarPct),				// 不透明度
 			D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
 			nullptr									// 源rect, null表示全部
 		);
+		if (transformChanged) deviceContext->SetTransform(originalTransform);
 	}
 
 	return true;
@@ -4161,6 +4229,7 @@ SetButtonPositionTar(temp->buttom.x, xO + 5.0, 40.0, true);
 							SyncValueDuration(temp->icon.y);
 							SyncValueDuration(temp->icon.w);
 							SyncValueDuration(temp->icon.h);
+							SyncValueDuration(temp->icon.angle);
 							SyncPctDuration(temp->icon.pct);
 							SyncValueDuration(temp->name.x);
 							SyncValueDuration(temp->name.y);
@@ -5374,6 +5443,7 @@ for (size_t i = 0; i < 3; ++i)
 						SyncValueDuration(svg->y);
 						SyncValueDuration(svg->w);
 						SyncValueDuration(svg->h);
+						SyncValueDuration(svg->angle);
 						SyncPctDuration(svg->pct);
 					}
 					for (int i = static_cast<int>(BarUISetWordEnum::DrawAttributeBar_Brush1);
@@ -5448,6 +5518,7 @@ for (size_t i = 0; i < 3; ++i)
 							svg->y.SetTar(svg->y.tar, operationDur, nullopt, true, syncedValueCurve);
 							svg->w.SetTar(svg->w.tar, operationDur, nullopt, true, syncedValueCurve);
 							svg->h.SetTar(svg->h.tar, operationDur, nullopt, true, syncedValueCurve);
+							svg->angle.SetTar(svg->angle.tar, operationDur, nullopt, true, syncedValueCurve);
 							svg->pct.SetTar(svg->pct.tar, operationDur, nullopt, true, syncedPctCurve);
 						}
 						for (int i = static_cast<int>(BarUISetWordEnum::DrawAttributeBar_Brush1);
@@ -5891,6 +5962,7 @@ for (size_t i = 0; i < 3; ++i)
 						auto svg = svgMap[static_cast<BarUISetSvgEnum>(value)];
 						SyncValueDuration(svg->x); SyncValueDuration(svg->y);
 						SyncValueDuration(svg->w); SyncValueDuration(svg->h);
+						SyncValueDuration(svg->angle);
 						SyncPctDuration(svg->pct);
 					}
 					for (int value = static_cast<int>(
@@ -5963,11 +6035,13 @@ for (size_t i = 0; i < 3; ++i)
 								geometryAttributeSideSwitch
 									? optional<double>(max(1.0, Compact(svg->w.tar))) : nullopt,
 								true, curve);
-							svg->h.SetTar(svg->h.tar, operationDur,
-								geometryAttributeSideSwitch
-									? optional<double>(max(1.0, Compact(svg->h.tar))) : nullopt,
-								true, curve);
-							svg->pct.SetTar(svg->pct.tar, operationDur,
+						svg->h.SetTar(svg->h.tar, operationDur,
+							geometryAttributeSideSwitch
+								? optional<double>(max(1.0, Compact(svg->h.tar))) : nullopt,
+							true, curve);
+						svg->angle.SetTar(svg->angle.tar, operationDur,
+							nullopt, true, curve);
+						svg->pct.SetTar(svg->pct.tar, operationDur,
 								geometryAttributeSideSwitch ? optional<double>(0.0) : nullopt,
 								true, opacityCurve);
 						};
@@ -6338,6 +6412,7 @@ for (size_t i = 0; i < 3; ++i)
 			if (!val->y.IsSame()) ChangeValue(val->y, forceReplace), change = true;
 			if (!val->w.IsSame()) ChangeValue(val->w, forceReplace), change = true;
 			if (!val->h.IsSame()) ChangeValue(val->h, forceReplace), change = true;
+			if (!val->angle.IsSame()) ChangeValue(val->angle, forceReplace), change = true;
 			if (!val->svg.IsSame()) ChangeString(val->svg, forceReplace), change = true;
 			if (val->color1.has_value() && !val->color1->IsSame()) ChangeColor(val->color1.value(), forceReplace), change = true;
 			if (val->color2.has_value() && !val->color2->IsSame()) ChangeColor(val->color2.value(), forceReplace), change = true;
@@ -6563,6 +6638,7 @@ bool thicknessPresetMode =
 				if (!temp->icon.y.IsSame()) ChangeValue(temp->icon.y, forceReplace), change = true;
 				if (!temp->icon.w.IsSame()) ChangeValue(temp->icon.w, forceReplace), change = true;
 				if (!temp->icon.h.IsSame()) ChangeValue(temp->icon.h, forceReplace), change = true;
+				if (!temp->icon.angle.IsSame()) ChangeValue(temp->icon.angle, forceReplace), change = true;
 				if (!temp->icon.svg.IsSame()) ChangeString(temp->icon.svg, forceReplace), change = true;
 				if (temp->icon.color1.has_value() && !temp->icon.color1->IsSame()) ChangeColor(temp->icon.color1.value(), forceReplace), change = true;
 				if (temp->icon.color2.has_value() && !temp->icon.color2->IsSame()) ChangeColor(temp->icon.color2.value(), forceReplace), change = true;
@@ -8518,6 +8594,7 @@ else
 							temp->pngIcon.y.SetDirect(temp->icon.y.val);
 							temp->pngIcon.w.SetDirect(temp->icon.w.val);
 							temp->pngIcon.h.SetDirect(temp->icon.h.val);
+							temp->pngIcon.angle.SetDirect(temp->icon.angle.val);
 							temp->pngIcon.pct.SetDirect(temp->icon.pct.val);
 							temp->pngIcon.enable.val = temp->icon.enable.val;
 							temp->pngIcon.enable.tar = temp->icon.enable.tar;

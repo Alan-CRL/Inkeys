@@ -789,6 +789,8 @@ public:
 public:
 	// 整体该控件是否显示
 	BarUiStateClass enable;
+	// 绕目标矩形中心旋转，不改变控件本身的宽高。
+	BarUiValueClass angle;
 
 	// 颜色
 
