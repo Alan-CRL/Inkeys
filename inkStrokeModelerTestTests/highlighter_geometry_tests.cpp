@@ -119,7 +119,7 @@ int RunHighlighterGeometryTests()
 	HIGHLIGHTER_CHECK(!draw3::IsValidLaserParticleConfig(
 		invalidParticleConfiguration));
 	HIGHLIGHTER_CHECK(draw3::kLaserParticleCapacity == 2048);
-	HIGHLIGHTER_CHECK(sizeof(draw3::LaserGpuParticle) == 128);
+	HIGHLIGHTER_CHECK(sizeof(draw3::LaserGpuParticle) == 80);
 	HIGHLIGHTER_CHECK(offsetof(draw3::LaserGpuParticle, position) == 0);
 	HIGHLIGHTER_CHECK(offsetof(draw3::LaserGpuParticle, velocity) == 8);
 	HIGHLIGHTER_CHECK(offsetof(draw3::LaserGpuParticle, ageSeconds) == 16);
@@ -331,9 +331,9 @@ HIGHLIGHTER_CHECK(NearlyEqual(
 	HIGHLIGHTER_CHECK(middleRadiusScale > 0.20f && middleRadiusScale < 1.0f);
 	HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticleRadiusScale(
 		10.0f, 10.0f, particleConfiguration), 0.20f));
-HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticleGlowExtentDip(
+	HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticleGlowExtentDip(
 			0.28f, particleConfiguration), 0.56f));
-		HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticleGlowExtentDip(
+	HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticleGlowExtentDip(
 			1.4f, particleConfiguration), 2.8f));
 		// 粒子核心已对齐 border 红，whiteMix 默认为 0；helper 仍保持公式兼容。
 		HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticleCoreColorMix(
@@ -389,6 +389,20 @@ HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticleGlowExtentDip(
 		unclippedParticleBounds, 200, 200);
 	HIGHLIGHTER_CHECK(smallCanvasParticleBounds.right == 20);
 	HIGHLIGHTER_CHECK(resizedCanvasParticleBounds.right > 20);
+	const float expectedHighDpiParticlePadding =
+		draw3::MaximumLaserParticleTravelDip(particleConfiguration) * 2.0f +
+		boundsRequest.entityRadius * draw3::kLaserCoreDiameterRatio * 0.72f +
+		particleConfiguration.maximumRadiusDip *
+			(1.0f + particleConfiguration.glowRadiusScale) * 2.0f +
+		2.0f * 2.0f + 2.0f;
+	const RECT highDpiParticleBounds =
+		draw3::ConservativeLaserParticleBatchBounds(
+			boundsRequest, particleConfiguration, 2.0f,
+			draw3::kLaserCoreDiameterRatio);
+	HIGHLIGHTER_CHECK(highDpiParticleBounds.left == static_cast<LONG>(
+		std::floor(boundsRequest.positionX - expectedHighDpiParticlePadding)));
+	HIGHLIGHTER_CHECK(highDpiParticleBounds.right == static_cast<LONG>(
+		std::ceil(boundsRequest.positionX + expectedHighDpiParticlePadding)));
 
 	draw3::LaserParticleDirtyTracker dirtyTracker;
 	const int64_t dirtyExpiry = draw3::LaserParticleLifetimeDeadlineQpc(
@@ -406,16 +420,37 @@ HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticleGlowExtentDip(
 	HIGHLIGHTER_CHECK(!dirtyTracker.HasActive(dirtyExpiry));
 	HIGHLIGHTER_CHECK(dirtyTracker.ActiveBounds(dirtyExpiry).left ==
 		dirtyTracker.ActiveBounds(dirtyExpiry).right);
-	const RECT laserBounds = draw3::RectFromLaserPoints({
-		{ 50.0f, 50.0f, 2.5f, 0.0f } }, 1.0f, 100, 100);
+	draw3::LaserParticleDirtyTracker snapshotTracker;
+	snapshotTracker.Add(RECT{ 1, 2, 8, 9 }, 100);
+	snapshotTracker.Add(RECT{ 20, 30, 40, 50 }, 200);
+	const draw3::LaserParticleDirtySnapshot activeSnapshot =
+		snapshotTracker.Snapshot(100);
+	HIGHLIGHTER_CHECK(activeSnapshot.hasActive);
+	HIGHLIGHTER_CHECK(activeSnapshot.expiredAny);
+	HIGHLIGHTER_CHECK(activeSnapshot.activeBounds.left == 20);
+	const draw3::LaserParticleDirtySnapshot expiredSnapshot =
+		snapshotTracker.Snapshot(200);
+	HIGHLIGHTER_CHECK(!expiredSnapshot.hasActive);
+	HIGHLIGHTER_CHECK(expiredSnapshot.expiredAny);
+	const std::array<draw3::InkPoint, 1> laserPoint = {
+		draw3::InkPoint{ 50.0f, 50.0f, 2.5f, 0.0f }
+	};
+	const RECT laserBounds = draw3::RectFromLaserPoints(
+		laserPoint, 1.0f, 100, 100);
 	HIGHLIGHTER_CHECK(laserBounds.left == 39 && laserBounds.top == 39);
 	HIGHLIGHTER_CHECK(laserBounds.right == 61 && laserBounds.bottom == 61);
-	const RECT maximumPressureLaserBounds = draw3::RectFromLaserPoints({
-		{ 50.0f, 50.0f, 3.5f, 0.0f } }, 1.0f, 100, 100);
+	const std::array<draw3::InkPoint, 1> maximumPressureLaserPoint = {
+		draw3::InkPoint{ 50.0f, 50.0f, 3.5f, 0.0f }
+	};
+	const RECT maximumPressureLaserBounds = draw3::RectFromLaserPoints(
+		maximumPressureLaserPoint, 1.0f, 100, 100);
 	HIGHLIGHTER_CHECK(maximumPressureLaserBounds.left == 38);
 	HIGHLIGHTER_CHECK(maximumPressureLaserBounds.right == 62);
-	const RECT highDpiLaserBounds = draw3::RectFromLaserPoints({
-		{ 50.0f, 50.0f, 5.0f, 0.0f } }, 2.0f, 100, 100);
+	const std::array<draw3::InkPoint, 1> highDpiLaserPoint = {
+		draw3::InkPoint{ 50.0f, 50.0f, 5.0f, 0.0f }
+	};
+	const RECT highDpiLaserBounds = draw3::RectFromLaserPoints(
+		highDpiLaserPoint, 2.0f, 100, 100);
 	HIGHLIGHTER_CHECK(highDpiLaserBounds.left == 32);
 	HIGHLIGHTER_CHECK(highDpiLaserBounds.right == 68);
 
@@ -432,7 +467,7 @@ HIGHLIGHTER_CHECK(NearlyEqual(draw3::LaserParticleGlowExtentDip(
 		{ 20.0f, 20.0f, 2.4f, 0.01f },
 		{ 50.0f, 30.0f, 1.2f, 0.04f }
 	};
-std::vector<draw3::InkPoint> completedTail;
+	std::vector<draw3::InkPoint> completedTail;
 		draw3::BuildCompletedPenTail(completedPen, false, 0.055, completedTail);
 		HIGHLIGHTER_CHECK(completedTail.size() == 3);
 		HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().x, 20.0f));

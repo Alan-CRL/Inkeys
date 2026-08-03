@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <span>
 #include <vector>
 #include <windows.h>
 #include <DirectXMath.h>
@@ -135,9 +136,29 @@ export namespace draw3
 
 	// 按现有 live-tip/prediction 时间保护边界计算稳定 delta 与实时尾部范围。
 	LaserIncrementalRanges PlanLaserIncrementalRanges(
-		const std::vector<InkPoint>& realPoints,
+		std::span<const InkPoint> realPoints,
 		const LaserIncrementalStrokeState& state,
 		double protectedDurationSeconds) noexcept;
+
+	struct LaserLayerDirtyPlan
+	{
+		LaserIncrementalRanges ranges = {};
+		RECT stableDeltaBounds = {};
+		RECT stableBounds = {};
+		RECT previousLiveBounds = {};
+		RECT liveBounds = {};
+		RECT layerBounds = {};
+		RECT dirtyBounds = {};
+	};
+
+	// 多 contact fallback 只脏化新增稳定区域和旧/新 live，完整几何仍按原顺序绘制。
+	LaserLayerDirtyPlan PlanLaserLayerDirty(
+		std::span<const InkPoint> realPoints,
+		std::span<const InkPoint> visiblePoints,
+		const LaserIncrementalStrokeState& state,
+		RECT stableBounds, RECT previousLiveBounds,
+		double protectedDurationSeconds, float dpiScale,
+		int width, int height) noexcept;
 	// 资源可用时首个 contact 进入快路，第二个 contact 将当前批次锁定回退。
 	LaserCoverageMode SelectLaserCoverageMode(
 		LaserCoverageMode current, size_t layerCount,
@@ -410,6 +431,9 @@ export namespace draw3
 
 	// 将中心线转换为固定竖直矩形沿路径扫掠的几何；单点生成一个点击矩形。
 	HighlighterGeometry BuildHighlighterGeometry(const std::vector<InkPoint>& points);
+	// 原地重建荧光笔几何并复用 primitive 容量，供每帧 L0 热路径使用。
+	void RebuildHighlighterGeometry(
+		std::span<const InkPoint> points, HighlighterGeometry& output);
 	// 把已提交稳定前缀和最后一帧 live 高亮几何直接拼成完成态。
 	HighlighterGeometry MergeHighlighterGeometry(const HighlighterGeometry& committedGeometry,
 		const HighlighterGeometry& liveGeometry);
@@ -426,11 +450,10 @@ export namespace draw3
 	// 返回完整画布矩形。
 	RECT GetFullCanvasRect(int width, int height);
 	// 计算一段墨迹点覆盖的脏矩形。
-	RECT RectFromStrokePoints(const std::vector<InkPoint>& points, int width, int height,
-		StrokeShape shape = StrokeShape::RoundCapsule, size_t firstIndex = 0,
-		size_t lastIndex = (std::numeric_limits<size_t>::max)());
+	RECT RectFromStrokePoints(std::span<const InkPoint> points, int width, int height,
+		StrokeShape shape = StrokeShape::RoundCapsule);
 	// 激光脏区按每点实体半径覆盖固定 5px 漫反射和抗锯齿 padding。
-	RECT RectFromLaserPoints(const std::vector<InkPoint>& points,
+	RECT RectFromLaserPoints(std::span<const InkPoint> points,
 		float dpiScale, int width, int height);
 	// 更新原始坐标并判断是否发生有效移动。
 	bool UpdateRawPositionAndDetectMovement(ActiveStroke& stroke, const POINT& rawPosition);

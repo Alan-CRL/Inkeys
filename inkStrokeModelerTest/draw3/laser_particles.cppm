@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <d3d11.h>
+#include <span>
 #include <windows.h>
 #include <wrl/client.h>
 
@@ -55,7 +56,7 @@ export namespace draw3
 
 	bool IsValidLaserParticleConfig(const LaserParticleConfig& configuration) noexcept;
 
-	// 固定 128 字节 GPU 状态；出生后只在屏幕空间按自身速度和寿命独立更新。
+	// 固定 80 字节 GPU 状态；出生后只在屏幕空间按自身速度和寿命独立更新。
 	struct LaserGpuParticle
 	{
 		float position[2] = {};
@@ -75,11 +76,21 @@ export namespace draw3
 		float breathingRampSeconds = 0.20f;
 		uint32_t seed = 0;
 		uint32_t alive = 0;
-		uint32_t padding[13] = {};
+		uint32_t padding = 0;
 	};
 
-	static_assert(sizeof(LaserGpuParticle) == 128,
+	static_assert(sizeof(LaserGpuParticle) == 80,
 		"LaserGpuParticle 必须与 HLSL 结构化缓冲区保持一致");
+	static_assert(offsetof(LaserGpuParticle, position) == 0);
+	static_assert(offsetof(LaserGpuParticle, velocity) == 8);
+	static_assert(offsetof(LaserGpuParticle, ageSeconds) == 16);
+	static_assert(offsetof(LaserGpuParticle, traveledDistance) == 24);
+	static_assert(offsetof(LaserGpuParticle, baseRadius) == 32);
+	static_assert(offsetof(LaserGpuParticle, opacity) == 40);
+	static_assert(offsetof(LaserGpuParticle, currentBrightness) == 48);
+	static_assert(offsetof(LaserGpuParticle, breathingRampSeconds) == 64);
+	static_assert(offsetof(LaserGpuParticle, seed) == 68);
+	static_assert(offsetof(LaserGpuParticle, padding) == 76);
 
 	struct LaserParticleEmissionSchedule
 	{
@@ -117,14 +128,14 @@ export namespace draw3
 		const LaserParticleConfig& configuration) noexcept;
 	float LaserParticleGlowExtentDip(float currentRadiusDip,
 		const LaserParticleConfig& configuration) noexcept;
-// 与 PS 一致：coreColorMix = whiteMix * baseBrightness * whiteMixScale。
-		float LaserParticleCoreColorMix(float baseBrightness,
-			const LaserParticleConfig& configuration, float whiteMixScale = 1.0f) noexcept;
-		// 由粒子 seed 生成核心白度微小随机缩放，范围约 1±jitter。
-		float LaserParticleCoreColorWhiteMixScale(uint32_t seed,
-			const LaserParticleConfig& configuration) noexcept;
-		float MaximumLaserParticleTravelDip(
-			const LaserParticleConfig& configuration) noexcept;
+	// 兼容保留核心白度 helper；当前粒子 shader 已直接使用激光 border 红。
+	float LaserParticleCoreColorMix(float baseBrightness,
+		const LaserParticleConfig& configuration, float whiteMixScale = 1.0f) noexcept;
+	// 由粒子 seed 生成核心白度微小随机缩放，范围约 1±jitter。
+	float LaserParticleCoreColorWhiteMixScale(uint32_t seed,
+		const LaserParticleConfig& configuration) noexcept;
+	float MaximumLaserParticleTravelDip(
+		const LaserParticleConfig& configuration) noexcept;
 	int64_t LaserParticleLifetimeDeadlineQpc(int64_t nowQpc,
 		int64_t qpcFrequency, const LaserParticleConfig& configuration) noexcept;
 
@@ -169,6 +180,13 @@ export namespace draw3
 		const LaserParticleConfig& configuration, float dpiScale,
 		float coreRadiusRatio) noexcept;
 
+	struct LaserParticleDirtySnapshot
+	{
+		RECT activeBounds = {};
+		bool hasActive = false;
+		bool expiredAny = false;
+	};
+
 	struct LaserParticleShaderBytecode
 	{
 		const void* data = nullptr;
@@ -180,6 +198,7 @@ export namespace draw3
 	{
 	public:
 		void Add(RECT bounds, int64_t expiresQpc) noexcept;
+		LaserParticleDirtySnapshot Snapshot(int64_t nowQpc) noexcept;
 		RECT ActiveBounds(int64_t nowQpc) noexcept;
 		bool HasActive(int64_t nowQpc) const noexcept;
 		bool HasAny() const noexcept;
@@ -210,6 +229,9 @@ export namespace draw3
 
 		void Simulate(float wallDeltaSeconds, float motionDeltaSeconds) noexcept;
 		void Emit(const LaserParticleEmissionRequest& request) noexcept;
+		void Step(float wallDeltaSeconds, float motionDeltaSeconds,
+			bool simulateExisting,
+			std::span<const LaserParticleEmissionRequest> emissionRequests) noexcept;
 		void Reset() noexcept;
 
 		ID3D11ShaderResourceView* ParticleShaderResourceView() const noexcept;

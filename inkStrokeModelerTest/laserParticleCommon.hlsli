@@ -4,7 +4,7 @@
 
 #define LASER_PARTICLE_CAPACITY 2048u
 
-// 与 C++ LaserGpuParticle 保持 128 字节；状态只由 Compute Shader 更新。
+// 与 C++ LaserGpuParticle 保持 80 字节；状态只由 Compute Shader 更新。
 struct LaserGpuParticle
 {
     float2 position;
@@ -24,10 +24,7 @@ struct LaserGpuParticle
     float breathingRampSeconds;
     uint seed;
     uint alive;
-    uint4 padding0;
-    uint4 padding1;
-    uint4 padding2;
-    uint padding3;
+    uint padding;
 };
 
 uint LaserParticleHash(uint value)

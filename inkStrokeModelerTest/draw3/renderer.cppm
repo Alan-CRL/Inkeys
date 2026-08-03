@@ -9,6 +9,7 @@
 #include <d3d11.h>
 #include <DirectXMath.h>
 #include <dxgi1_2.h>
+#include <span>
 #include <vector>
 #include <wrl/client.h>
 
@@ -173,6 +174,7 @@ export namespace draw3
 		Microsoft::WRL::ComPtr<ID3D11BlendState> operatorResolveBlendState;
 		Microsoft::WRL::ComPtr<ID3D11BlendState> laserCoverageBlendState;
 		Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterState;
+		Microsoft::WRL::ComPtr<ID3D11RasterizerState> laserScissorRasterState;
 		Microsoft::WRL::ComPtr<ID3D11DepthStencilState> dsState;
 
 		size_t m_bufferHead = 0;
@@ -181,20 +183,20 @@ export namespace draw3
 		float viewportHeight = 0.0f;
 
 		// 绘制一组墨迹点，并兼容只有一个点的点击。
-		int DrawStrokeOrDot(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color,
+		int DrawStrokeOrDot(std::span<const InkPoint> points, DirectX::XMFLOAT4 color,
 			StrokeShape shape = StrokeShape::RoundCapsule,
 			InkOperatorKind operatorKind = InkOperatorKind::Draw);
 		// 将墨迹点分批写入结构化缓冲区并提交绘制。
-		int DrawStroke(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color,
+		int DrawStroke(std::span<const InkPoint> points, DirectX::XMFLOAT4 color,
 			StrokeShape shape = StrokeShape::RoundCapsule,
 			InkOperatorKind operatorKind = InkOperatorKind::Draw);
 		// 绘制固定矩形 sweep，临时层使用 Add/MAX、Retain/MIN 累积覆盖率。
-		int DrawHighlighterPrimitives(const std::vector<HighlighterPrimitive>& primitives,
+		int DrawHighlighterPrimitives(std::span<const HighlighterPrimitive> primitives,
 			DirectX::XMFLOAT4 color, InkOperatorKind operatorKind = InkOperatorKind::Draw);
 		// 在当前 backbuffer 最上层绘制一枚瞬态应用光标，不修改 L0/L1/L2。
 		void DrawTransientDrawingCursor(const DrawingCursorVisual& visual);
 		// 把可变压力胶囊写入当前 Laser coverage，四通道使用 MAX 累积。
-		int DrawLaserCoverage(const std::vector<InkPoint>& points);
+		int DrawLaserCoverage(std::span<const InkPoint> points, RECT scissorRect = {});
 		// 将单笔 coverage 解析为材质，并按 source-over 叠加到目标。
 		void ResolveLaserStrokeCoverage(
 			ID3D11RenderTargetView* dstRTV, RECT rect, float opacity = 1.0f);
@@ -212,7 +214,7 @@ export namespace draw3
 		bool LaserIncrementalCoverageAvailable() const noexcept;
 		void ClearLaserIncrementalCoverage();
 		// 批量绘制 Laser 笔尖，不修改任何画布层。
-		void DrawLaserDots(const std::vector<LaserDot>& dots);
+		void DrawLaserDots(std::span<const LaserDot> dots);
 		// 固定实例绘制 GPU 粒子；死亡槽在 VS 中退化。
 		void DrawLaserParticles();
 		// 在主循环开始前提交零像素 draw call，迫使驱动提前 JIT 编译所有激光着色器路径。
@@ -226,6 +228,10 @@ export namespace draw3
 		void SimulateLaserParticles(
 			float wallDeltaSeconds, float motionDeltaSeconds) noexcept;
 		void EmitLaserParticles(const LaserParticleEmissionRequest& request) noexcept;
+		// 一次绑定 UAV，按顺序完成存量更新与本帧全部 contact 发射。
+		void StepLaserParticles(float wallDeltaSeconds, float motionDeltaSeconds,
+			bool simulateExisting,
+			std::span<const LaserParticleEmissionRequest> emissionRequests) noexcept;
 		void ResetLaserParticles() noexcept;
 		// 复制纹理中的指定矩形区域。
 		void CopyResource(ID3D11Texture2D* dst, ID3D11Texture2D* src, RECT rect);
@@ -274,6 +280,10 @@ export namespace draw3
 		// 从资源中加载并创建墨迹着色器。
 		bool LoadShaders();
 		LaserStyleConstants laserStyleConstants_ = {};
+		uint64_t laserStyleGeneration_ = 1;
+		uint64_t uploadedLaserStyleGeneration_ = 0;
+		float uploadedLaserStyleOpacity_ = -1.0f;
+		bool laserStyleCacheValid_ = false;
 		float laserParticleGlowRadiusScale_ = LaserParticleConfig{}.glowRadiusScale;
 		float laserParticleGlowRed_ = LaserParticleConfig{}.glowRed;
 		float laserParticleGlowGreen_ = LaserParticleConfig{}.glowGreen;

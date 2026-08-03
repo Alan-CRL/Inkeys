@@ -68,13 +68,15 @@ float2 halfSize
 | `t5` | LiveOperatorRetain |
 | `t6` | LaserCompositedColor，已完成轨迹的预乘颜色 (`R8G8B8A8_UNORM`) |
 | `t7` | LaserStrokeCoverage，可复用的单笔 coverage scratch (`R8G8B8A8_UNORM`) |
-| `t8` | LaserParticleData，固定 2048 槽粒子池 SRV |
+| `t8` | LaserParticleData，固定 2048 槽、每槽 80 bytes 的粒子池 SRV |
 | `t9` | LaserLiveCoverage，单 contact 当前 L0/prediction coverage (`R8G8B8A8_UNORM`) |
 | `s0` | OperatorSampler |
 
 `ApplyOperatorLayers` 绑定 PS `t1..t5` 时为 VS `t3` 留空槽。修改数组顺序前必须按寄存器表核对。
 
 Laser coverage 写入绑定当前 coverage RTV（稳定前缀为 `t7`、实时尾部为 `t9`），并以 `D3D11_BLEND_OP_MAX` 累积单支笔的四通道 `(core, scatter, solid shell, diffuse)`。shape `8` 把 `t7` 解析为材质；shape `13` 同时采样 `t7/t9`，逐通道取 `max` 后只解析一次材质；两者均按 Down 顺序 source-over 到 backbuffer 或 `t6`。shape `11` 再把 `t6` 以整组 opacity 叠到 backbuffer。每次 resolve、Resize 或切换 RTV 前必须解除 `t6..t9` SRV，随后才能把对应纹理切回 RTV。
+
+Laser 矩形 shape `8/11/12/13` 不读取 `InkData`：CPU 把 `(left, top, right, bottom)` 写入这些 shape 未使用的 `globalColor`，VS 按 `SV_VertexID` 生成 quad。矩形 pass 不得 Map/Unmap `inkDataBuffer`，也不得绑定 VS `t0`；shape `0..7/9/10` 对 `globalColor` 的既有含义保持不变。
 
 ## Shape And Operator Modes
 
@@ -148,6 +150,7 @@ Result = Add + Retain * Destination
 
 - 单 contact 的稳定真实前缀写入 `t7`，当前真实尾部和 prediction 写入独立 `t9`；shape `13` 对两张 coverage 逐通道取 MAX 后只解析一次材质。同一笔的自交和 L1/L0 重叠因此幂等，prediction 回缩不能污染 `t7`。
 - 多 contact 或资源不可用时回退现有逐笔 `t7` scratch；不同笔禁止在同一次 MAX 中合并，当前批次一旦回退便保持到最后 Bake。
+- 多 contact fallback 为每层保存稳定累计 bounds、稳定 delta、旧 live 与新 live bounds；`frameDirty` 只并入稳定 delta 和旧/新 live。绘制时先求 `layer.bounds ∩ frameDirty`，只清理该交集，并在 scissor 下上传/绘制该层完整几何；scissor 只能减少像素工作，不能裁掉几何输入或改变 Down 顺序。
 - 未烘干层按 Down 顺序逐支解析，后 Down 的整支笔永远位于上层；较早结束的 contact 必须保留最终 CPU 几何，直到同批最后一个 contact 抬起。
 - `frameDirty` 必须在基础层合成前闭合旧/新 live、稳定 delta、粒子、cursor 和 fade 区域；粒子或 cursor dirty 与稳定 Laser 相交时，shape `13` 在同一 dirty 区域重放。
 - 最后 Up 后按同一顺序烘入 `t6`；单 contact 快路把 coverage pair 一次 resolve，多 contact 继续完整 Bake。resize 只复制 `t6` 交集，`t7/t9` 为空并由 CPU 几何重建。Laser 永不写入 L2。
@@ -160,6 +163,7 @@ Result = Add + Retain * Destination
 - Fade 完成/clear → 同步清空 `t6`、`t7`、未烘干层和全部新旧 bounds。
 - `t9` 创建/Resize 失败 → 释放部分资源、记录一次诊断、当前会话锁定完整重绘；其他工具和粒子池继续。
 - 增量 clear/upload/resolve 返回失败 → 不推进稳定游标，清空 `t7/t9`，记录 `coverage_submission_failed` 或 `coverage_resolve_failed`，并在同帧切到完整重绘。
+- multi-contact 层与最终 `frameDirty` 无交集 → 跳过该层；有交集 → clear/draw/resolve 都限制在同一交集，draw 结束必须恢复非 scissor rasterizer state。
 - Resize → `t7/t9` 重新创建为空，活动 CPU 几何下次帧重建；Present failure → 保留仍有效的 coverage，发布 full-present 请求并在下一帧重新解析旧/新 dirty bounds。
 
 ### 5. Good/Base/Bad Cases
@@ -211,14 +215,16 @@ if (singleContact && liveCoverageAvailable) {
 
 ### 2. Signatures
 
-- `LaserGpuParticle`，固定 `128 bytes`
+- `LaserGpuParticle`，固定 `80 bytes`
 - `LaserParticleEmissionRequest { positionX, positionY, tangentX, tangentY, entityRadius, count, seedBase }`
-- `LaserParticleSystem::Initialize/Configure/Simulate/Emit/Reset`
+- `LaserParticleDirtyTracker::Snapshot(nowQpc) -> { activeBounds, hasActive, expiredAny }`
+- `LaserParticleSystem::Initialize/Configure/Step/Simulate/Emit/Reset`
+- `LaserParticleSystem::Step(wallDt, motionDt, simulateExisting, emissionRequests)`
 - `InkRenderer::DrawLaserParticles()` 固定调用 `DrawInstanced(6, 2048, 0, 0)`
 
 ### 3. Contracts
 
-- 容量是编译期契约：粒子固定 `2048` 槽；粒子缓冲、SRV/UAV、两个 CS 和两个常量缓冲只在 renderer Init/Release 创建销毁，Resize 不重建。
+- 容量是编译期契约：粒子固定 `2048` 槽，每槽 `80 bytes`，结构化缓冲总计 `163840 bytes`；粒子缓冲、SRV/UAV、两个 CS 和两个常量缓冲只在 renderer Init/Release 创建销毁，Resize 不重建。buffer 创建不提供 CPU 零数组，资源就绪后必须用 UpdateCS 的 `resetAll` 在 GPU 初始化；reset 失败则释放资源并标记不可用。
 - CS 资源表：
 
 | Stage | Register | Resource |
@@ -227,14 +233,15 @@ if (singleContact && liveCoverageAvailable) {
 | VS shape 10 | `t8` | 同一粒子缓冲的 SRV |
 
 - Update 常量为 `32 bytes`：`float4(wallDeltaSeconds, motionDeltaSeconds, shrinkStartTravelRatio, endRadiusScale)`、`uint2(resetAll, particleCapacity)` 和 `float2` padding。Emit 常量为 `112 bytes`：`uint4 + 6*float4`，依次承载循环槽/数量/容量/seed、出生位置/切线、实体半径/核心比例/寿命范围、速度/偏转/半径范围、亮度/呼吸振幅、呼吸频率/渐入/尺寸分布指数，以及尺寸-亮度和尺寸-射程相关度。CPU 结构必须 `static_assert(size % 16 == 0)` 并与 HLSL 字段顺序一致。
-- `LaserGpuParticle` 只保存屏幕位置、固定速度、年龄/寿命、累计/最大行程、出生/当前半径、Alpha、基础/当前亮度、呼吸参数、seed/alive 和 padding；CPU/HLSL 字段偏移必须一致并保持 `128 bytes`。
-- 每次 Compute 前先 `VSSetShaderResources(8, null)`；Dispatch 后解除 `u0`、`b0` 和 CS。绘制结束再解除 VS `t8`。禁止依赖 D3D11 自动冲突修复，也禁止重新引入 CS `t0/t1` 路径 SRV。
+- `LaserGpuParticle` 只保存屏幕位置、固定速度、年龄/寿命、累计/最大行程、出生/当前半径、Alpha、基础/当前亮度、呼吸参数、seed/alive 和一个尾部 padding；CPU 必须用 `sizeof/offsetof`、HLSL 必须用字段顺序共同锁定 `80 bytes`。
+- 一帧粒子工作先取得一次 CPU dirty snapshot；controller 的 idle/timer、simulation、draw 和 dirty 决策共同复用该结果。无 active batch、无刚到期批次且无 emission request 时不得 Dispatch 或 `DrawInstanced`；active 刚到期必须再提交一次 update 清理 GPU alive 槽，并用上一帧 bounds 清一次基础层，但不再提交粒子 draw。
+- `Step` 前先 `VSSetShaderResources(8, null)`，一次绑定 `u0`，随后按原顺序可选 Dispatch update、逐 request Map emit `b0` 并 Dispatch，最后统一解除 `u0`、`b0` 和 CS。绘制结束再解除 VS `t8`。请求顺序、seed、spawn cursor 和 dispatch 顺序不得改变；禁止依赖 D3D11 自动冲突修复，也禁止重新引入 CS `t0/t1` 路径 SRV。
 - EmitCS 使用 CPU 管理的循环槽覆盖最旧粒子，不使用 Append/Consume、计数器、间接绘制或回读。每粒以 50/50 概率选择正/负法线，在所选法线附近均匀偏转 `±25°`；尺寸使用 `pow(random, 2.8)` 偏小分布映射到 `0.28–1.15 DIP`，亮度以 72% 尺寸层级和 28% 独立样本映射到 `0.42–1.0`，速度以 70% 独立样本和 30% 反向尺寸层级映射到 `10–17 DIP/s`，寿命为 `0.7–1.0s`。画笔前向速度不得进入粒子速度。
 - Emit 请求的屏幕锚点直接使用本帧 `l0DrawPoints.back()`，切线来自最后一个非退化 L0 段；重复点沿用上一有效切线，首次真实移动前没有有效方向时不发射。prediction 可以改变新粒子的锚点/切线，但不能参与发射密度或存量状态。
 - UpdateCS 用实际 wall time 累计年龄，用最多 `1/30s` 的 motion dt 推进；固定速度和 Alpha 都乘 `1-smoothstep(0,1,age/lifetime)`。粒子按实际累计行程计算尺寸，前 10% 保持出生半径，之后 smoothstep 到 20%；达到自身寿命立即死亡。
 - 粒子出生后 UpdateCS 不再读取路径、画笔、prediction 或 Up 状态；Up/Cancel 只停止 CPU 新请求。禁止 path slot/generation、弧长、segment cursor、端点阻塞淡出、路径追赶和 prediction correction。
 - 每粒写入 `0.42–1.0` 基础亮度、`0.8–1.4Hz` 呼吸频率、随机相位和 `0.12` 振幅；VS 通过 `SV_InstanceID` 取槽，死亡槽生成屏幕外退化图元。呼吸亮度只乘核心/辉光 RGB，不乘 Alpha。
-- shape `10` 的 VS 以当前核心半径乘 `1.5` 得到逐粒辉光范围，并把出生基础亮度通过现有 `p2` 传给 PS；PS 在 `(1.0, 0.32, 0.40)` 深红粉与现有淡粉白散射色之间按该亮度插值核心色相。辉光峰值 Alpha `0.34`，保留二次距离衰减并继续输出预乘 Alpha operator-resolve。
+- shape `10` 的 VS 以 `currentRadius * glowRadiusScale + 2 * dpiScale` 得到逐粒辉光范围，默认 `glowRadiusScale=2.0`，并把出生基础亮度通过现有 `p2` 传给 PS；PS 核心直接使用 `borderColor=(1.0, 11/255, 30/255)`，只乘生命周期/呼吸亮度，不再向白混合。辉光使用 `(1.0, 0.32, 0.40)`、峰值 Alpha `0.18` 和 `pow(1.6)` 距离衰减，继续输出预乘 Alpha operator-resolve。
 
 ### 4. Validation & Error Matrix
 
@@ -242,8 +249,11 @@ if (singleContact && liveCoverageAvailable) {
 |---|---|
 | feature level < 11_0 | `Initialize` 返回 false，renderer 继续创建 VS/PS 和主体资源 |
 | CS/buffer/SRV/UAV 任一创建失败 | 释放已建粒子资源、诊断一次、`IsAvailable == false` |
+| GPU 初始 reset 失败 | 释放粒子资源并令 `IsAvailable == false`，不得读取未初始化槽 |
+| snapshot 无 active 且 request 为空 | 无到期事件时 update、emit 和 draw 全部跳过；若刚到期，执行最后一次 update，仅旧 bounds 进入基础重建且不 draw |
 | 无有效 L0 切线 | 不发射并清空该 contact 的小数余量，不形成 Down 补发 |
 | 非有限请求位置/切线或退化切线 | Emit 忽略该请求，不移动循环槽 |
+| update/emit 常量 Map 失败 | update 失败时解绑并释放粒子系统，避免旧 alive 槽重现；emit 失败跳过该请求且不得移动循环槽，批次末仍统一解绑 Compute 状态 |
 | particle pool wrap | 新发射覆盖循环槽，不分配、不回读 |
 | UAV/SRV 切换 | 显式解绑后再切换 stage；Debug Layer 不应报告同资源读写冲突 |
 | Up/Cancel/prediction 跳变 | 既有粒子的速度、位置和寿命不被控制器修正 |
@@ -251,14 +261,14 @@ if (singleContact && liveCoverageAvailable) {
 ### 5. Good / Base / Bad Cases
 
 - Good：新粒子从当前 L0 笔尖向两侧法线随机喷射；prediction 尾替换、回缩、急弯和 Up 都不改变既有粒子的屏幕空间轨迹。
-- Base：没有活粒子仍固定绘制 2048 实例，死亡槽退化；设备不支持 CS 时仅无粒子。
+- Base：没有活粒子且没有新请求时不提交 compute/draw；设备不支持 CS 时仅无粒子。
 - Bad：每帧重建粒子 buffer、让存量粒子重新采样 L0、用 `CopyResource/Map` 回读位置，或同时绑定 `u0` 与 `t8`。
 
 ### 6. Tests Required
 
-- 静态断言 `LaserGpuParticle == 128 bytes`，并断言 Update `32 bytes`、Emit `112 bytes` 且均 16 字节对齐。
+- 静态断言 `LaserGpuParticle == 80 bytes` 及关键 `offsetof`，解析 HLSL 字段顺序，并断言 Update `32 bytes`、Emit `112 bytes` 且均 16 字节对齐。
 - 单元测试 Down 零爆发、静止 6/s、移动 2.5 DIP 密度、72/s 与全局 96 预算、无整数积压、双侧法线与 `±25°` 偏转、偏小尺寸分布、尺寸/亮度和尺寸/射程相关度、`10–17 DIP/s`、`0.7–1.0s` 与 8.5 DIP 行程上限、速度/Alpha 单调性、按行程缩至 20%、比例辉光与核心色相、呼吸与 Alpha 分离、Up/prediction 无修正、批次 dirty 到期和 resize 后重裁剪。
-- 静态搜索确认 UpdateCS/EmitCS 仅声明 `u0/b0`，VS 仅在 `t8` 读取，并且路径结构、generation、弧长、segment cursor、端点淡出和 prediction correction 不在粒子源码中。
+- 静态搜索确认 UpdateCS/EmitCS 仅声明 `u0/b0`，VS 仅在 `t8` 读取，初始化使用空 initial data + GPU reset，controller 通过单个 batched `Step` 提交，并且路径结构、generation、弧长、segment cursor、端点淡出和 prediction correction 不在粒子源码中。
 - 完整 ARM64 解决方案构建必须让 FXC 成功编译 VS、PS、UpdateCS、EmitCS；人工启用 D3D11 Debug Layer 检查 SRV/UAV 冲突。
 
 ### 7. Wrong vs Correct
@@ -274,8 +284,11 @@ context->Dispatch(32, 1, 1);
 #### Correct
 
 ```cpp
-context->VSSetShaderResources(8, 1, &nullSrv);
-context->CSSetUnorderedAccessViews(0, 1, &particleUav, nullptr);
-context->Dispatch(32, 1, 1);
-context->CSSetUnorderedAccessViews(0, 1, &nullUav, nullptr);
+const auto snapshot = dirtyTracker.Snapshot(nowQpc); // 每帧只 prune/扫描一次
+if (snapshot.hasActive || snapshot.expiredAny || !requests.empty()) {
+    particleSystem.Step(wallDt, motionDt,
+        snapshot.hasActive || snapshot.expiredAny, requests);
+}
+if (snapshot.hasActive || !requests.empty()) particleSystem.Draw();
+// Step 内只绑定一次 UAV：update -> emit(request 0..N) -> 统一解绑。
 ```

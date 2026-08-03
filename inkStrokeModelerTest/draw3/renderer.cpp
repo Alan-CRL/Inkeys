@@ -8,12 +8,14 @@
 #include "../laserParticleResource.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <d3d11.h>
 #include <DirectXMath.h>
 #include <dxgi1_2.h>
+#include <span>
 #include <windows.h>
 #include <wrl/client.h>
 
@@ -66,23 +68,22 @@ namespace draw3
 		}
 	}
 
-	int InkRenderer::DrawStrokeOrDot(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color,
+	int InkRenderer::DrawStrokeOrDot(std::span<const InkPoint> points, DirectX::XMFLOAT4 color,
 		StrokeShape shape, InkOperatorKind operatorKind)
 	{
 		if (points.empty()) return 0;
 		if (points.size() >= 2) return DrawStroke(points, color, shape, operatorKind);
 
-		std::vector<InkPoint> dotPoints;
-		dotPoints.reserve(2);
+		std::array<InkPoint, 2> dotPoints = {};
 		// 圆角工具使用极短胶囊段生成点击圆点；平头笔由独立 primitive 路径处理。
-		dotPoints.push_back(points.front());
+		dotPoints[0] = points.front();
 		InkPoint dotEnd = points.front();
 		dotEnd.x += std::max(0.25f, dotEnd.r * 0.05f);
-		dotPoints.push_back(dotEnd);
+		dotPoints[1] = dotEnd;
 		return DrawStroke(dotPoints, color, shape, operatorKind);
 	}
 
-	int InkRenderer::DrawStroke(const std::vector<InkPoint>& points, DirectX::XMFLOAT4 color,
+	int InkRenderer::DrawStroke(std::span<const InkPoint> points, DirectX::XMFLOAT4 color,
 		StrokeShape shape, InkOperatorKind operatorKind)
 	{
 		const size_t totalPoints = points.size();
@@ -142,7 +143,7 @@ namespace draw3
 		return 0;
 	}
 
-	int InkRenderer::DrawHighlighterPrimitives(const std::vector<HighlighterPrimitive>& primitives,
+	int InkRenderer::DrawHighlighterPrimitives(std::span<const HighlighterPrimitive> primitives,
 		DirectX::XMFLOAT4 color, InkOperatorKind operatorKind)
 	{
 		if (primitives.empty()) return 0;
@@ -262,6 +263,9 @@ namespace draw3
 		// z/w 是红色实体外侧漫反射曲线的边缘高亮阈值。
 		laserStyleConstants_.parameters = DirectX::XMFLOAT4(
 			1.0f, scale, 0.20f, 0.29f);
+		++laserStyleGeneration_;
+		if (laserStyleGeneration_ == 0) laserStyleGeneration_ = 1;
+		laserStyleCacheValid_ = false;
 	}
 
 	void InkRenderer::ConfigureLaserParticles(
@@ -301,6 +305,14 @@ namespace draw3
 		laserParticleSystem_.Emit(request);
 	}
 
+	void InkRenderer::StepLaserParticles(float wallDeltaSeconds,
+		float motionDeltaSeconds, bool simulateExisting,
+		std::span<const LaserParticleEmissionRequest> emissionRequests) noexcept
+	{
+		laserParticleSystem_.Step(wallDeltaSeconds, motionDeltaSeconds,
+			simulateExisting, emissionRequests);
+	}
+
 	void InkRenderer::ResetLaserParticles() noexcept
 	{
 		laserParticleSystem_.Reset();
@@ -309,39 +321,60 @@ namespace draw3
 	bool InkRenderer::UpdateLaserStyleConstants(float opacity)
 	{
 		if (!laserStyleCB) return false;
-		laserStyleConstants_.parameters.x = std::clamp(opacity, 0.0f, 1.0f);
+		const float clampedOpacity = std::clamp(opacity, 0.0f, 1.0f);
+		if (laserStyleCacheValid_ &&
+			uploadedLaserStyleGeneration_ == laserStyleGeneration_ &&
+			uploadedLaserStyleOpacity_ == clampedOpacity)
+			return true;
+		laserStyleConstants_.parameters.x = clampedOpacity;
 		D3D11_MAPPED_SUBRESOURCE mapped = {};
 		if (FAILED(context->Map(laserStyleCB.Get(), 0,
-			D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
+			D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
+		{
+			laserStyleCacheValid_ = false;
+			return false;
+		}
 		std::memcpy(mapped.pData, &laserStyleConstants_, sizeof(laserStyleConstants_));
 		context->Unmap(laserStyleCB.Get(), 0);
+		uploadedLaserStyleGeneration_ = laserStyleGeneration_;
+		uploadedLaserStyleOpacity_ = clampedOpacity;
+		laserStyleCacheValid_ = true;
 		return true;
 	}
 
-	int InkRenderer::DrawLaserCoverage(const std::vector<InkPoint>& points)
+	int InkRenderer::DrawLaserCoverage(
+		std::span<const InkPoint> points, RECT scissorRect)
 	{
 		if (points.empty()) return 0;
 		if (!UpdateLaserStyleConstants(1.0f)) return -1;
-		std::vector<InkPoint> dotPoints;
-		const std::vector<InkPoint>* drawPoints = &points;
+		scissorRect.left = std::max(0L, scissorRect.left);
+		scissorRect.top = std::max(0L, scissorRect.top);
+		scissorRect.right = std::min(
+			static_cast<LONG>(viewportWidth), scissorRect.right);
+		scissorRect.bottom = std::min(
+			static_cast<LONG>(viewportHeight), scissorRect.bottom);
+		const bool useScissor = scissorRect.left < scissorRect.right &&
+			scissorRect.top < scissorRect.bottom && laserScissorRasterState;
+		std::array<InkPoint, 2> dotPoints = {};
+		std::span<const InkPoint> drawPoints = points;
 		if (points.size() == 1)
 		{
-			dotPoints = points;
+			dotPoints[0] = points.front();
 			InkPoint dotEnd = points.front();
 			dotEnd.x += 0.25f;
-			dotPoints.push_back(dotEnd);
-			drawPoints = &dotPoints;
+			dotPoints[1] = dotEnd;
+			drawPoints = dotPoints;
 		}
 
 		size_t startIndex = 0;
-		while (startIndex + 1 < drawPoints->size())
+		while (startIndex + 1 < drawPoints.size())
 		{
-			const size_t remaining = drawPoints->size() - startIndex;
+			const size_t remaining = drawPoints.size() - startIndex;
 			const size_t batchCount = std::min(remaining, kMaxBufferCapacity);
 			D3D11_MAPPED_SUBRESOURCE mapped = {};
 			if (FAILED(context->Map(inkDataBuffer.Get(), 0,
 				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return -1;
-			std::memcpy(mapped.pData, drawPoints->data() + startIndex,
+			std::memcpy(mapped.pData, drawPoints.data() + startIndex,
 				batchCount * sizeof(InkPoint));
 			context->Unmap(inkDataBuffer.Get(), 0);
 
@@ -366,8 +399,17 @@ namespace draw3
 			context->PSSetShader(pixelShader.Get(), nullptr, 0);
 			context->PSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
 			context->OMSetBlendState(laserCoverageBlendState.Get(), nullptr, 0xFFFFFFFF);
-			context->RSSetState(rasterState.Get());
+			if (useScissor)
+			{
+				context->RSSetScissorRects(1, &scissorRect);
+				context->RSSetState(laserScissorRasterState.Get());
+			}
+			else
+			{
+				context->RSSetState(rasterState.Get());
+			}
 			context->Draw((static_cast<UINT>(batchCount) - 1) * 6, 0);
+			if (useScissor) context->RSSetState(rasterState.Get());
 
 			ID3D11ShaderResourceView* nullResource[] = { nullptr };
 			context->VSSetShaderResources(0, 1, nullResource);
@@ -389,15 +431,7 @@ namespace draw3
 		if (rect.left >= rect.right || rect.top >= rect.bottom) return true;
 		if (!UpdateLaserStyleConstants(opacity)) return false;
 
-		const InkPoint rectPoints[2] = {
-			{ static_cast<float>(rect.left), static_cast<float>(rect.top), 0.0f, 0.0f },
-			{ static_cast<float>(rect.right), static_cast<float>(rect.bottom), 0.0f, 0.0f }
-		};
 		D3D11_MAPPED_SUBRESOURCE mapped = {};
-		if (FAILED(context->Map(inkDataBuffer.Get(), 0,
-			D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
-		std::memcpy(mapped.pData, rectPoints, sizeof(rectPoints));
-		context->Unmap(inkDataBuffer.Get(), 0);
 		if (FAILED(context->Map(globalCB.Get(), 0,
 			D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
 		auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
@@ -405,7 +439,9 @@ namespace draw3
 		constants->height = viewportHeight;
 		constants->shapeType = shapeType;
 		constants->bufferOffset = 0;
-		constants->color = {};
+		constants->color = DirectX::XMFLOAT4(
+			static_cast<float>(rect.left), static_cast<float>(rect.top),
+			static_cast<float>(rect.right), static_cast<float>(rect.bottom));
 		constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
 		context->Unmap(globalCB.Get(), 0);
 
@@ -415,8 +451,6 @@ namespace draw3
 		context->IASetInputLayout(nullptr);
 		context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		context->VSSetShader(vertexShader.Get(), nullptr, 0);
-		ID3D11ShaderResourceView* inkResource[] = { inkDataSRV.Get() };
-		context->VSSetShaderResources(0, 1, inkResource);
 		ID3D11Buffer* constantBuffers[] = { globalCB.Get(), laserStyleCB.Get() };
 		context->VSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
 		context->PSSetShader(pixelShader.Get(), nullptr, 0);
@@ -434,12 +468,20 @@ namespace draw3
 			context->PSSetShaderResources(secondarySourceSlot, 1, sourceResources);
 		}
 		context->OMSetBlendState(blendState, nullptr, 0xFFFFFFFF);
-		context->RSSetState(rasterState.Get());
+		if (laserScissorRasterState)
+		{
+			context->RSSetScissorRects(1, &rect);
+			context->RSSetState(laserScissorRasterState.Get());
+		}
+		else
+		{
+			// scissor 是可选优化；矩形 quad 本身仍会把像素范围限制在 rect。
+			context->RSSetState(rasterState.Get());
+		}
 		context->Draw(6, 0);
+		context->RSSetState(rasterState.Get());
 
-		ID3D11ShaderResourceView* nullInk[] = { nullptr };
 		ID3D11SamplerState* nullSampler[] = { nullptr };
-		context->VSSetShaderResources(0, 1, nullInk);
 		UnbindLaserCoverageShaderResources();
 		context->PSSetSamplers(0, 1, nullSampler);
 		return true;
@@ -515,7 +557,7 @@ namespace draw3
 		ClearLaserCoverage(laserLiveCoverage);
 	}
 
-	void InkRenderer::DrawLaserDots(const std::vector<LaserDot>& dots)
+	void InkRenderer::DrawLaserDots(std::span<const LaserDot> dots)
 	{
 		if (dots.empty() || !backBufferRTV || !UpdateLaserStyleConstants(1.0f)) return;
 		size_t startIndex = 0;
@@ -573,15 +615,16 @@ namespace draw3
 		constants->height = viewportHeight;
 		constants->shapeType = 10.0f;
 		constants->bufferOffset = 0;
-// shape 10：color.x=辉光半径倍率，color.y=核心白度 jitter；padding 传辉光色与 whiteMix。
-			constants->color = DirectX::XMFLOAT4(
-				laserParticleGlowRadiusScale_, laserParticleCoreColorWhiteMixJitter_,
-				laserParticleGlowGreen_, laserParticleGlowBlue_);
-			constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
-			constants->padding[0] = laserParticleGlowRed_;
-			constants->padding[1] = laserParticleGlowAlpha_;
-			constants->padding[2] = laserParticleCoreColorWhiteMix_;
-			context->Unmap(globalCB.Get(), 0);
+		// shape 10：color.x 传辉光半径倍率，color.zw 与 padding.xy 传辉光颜色。
+		// white-mix 配置槽为接口兼容保留，粒子 shader 已不再读取。
+		constants->color = DirectX::XMFLOAT4(
+			laserParticleGlowRadiusScale_, laserParticleCoreColorWhiteMixJitter_,
+			laserParticleGlowGreen_, laserParticleGlowBlue_);
+		constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
+		constants->padding[0] = laserParticleGlowRed_;
+		constants->padding[1] = laserParticleGlowAlpha_;
+		constants->padding[2] = laserParticleCoreColorWhiteMix_;
+		context->Unmap(globalCB.Get(), 0);
 
 		SetOMTarget(backBufferRTV.Get());
 		context->IASetInputLayout(nullptr);
@@ -620,15 +663,18 @@ namespace draw3
 		DrawLaserParticles();
 
 		// shape 9: 激光笔尖 LaserDot（需至少1条数据以通过 dots.empty() 检查）
-		const LaserDot warmUpDot{ 0.0f, 0.0f, 1.0f };
-		DrawLaserDots({ warmUpDot });
+		const std::array<LaserDot, 1> warmUpDots = {
+			LaserDot{ 0.0f, 0.0f, 1.0f }
+		};
+		DrawLaserDots(warmUpDots);
 
 		// shape 7/8/11/12: 笔画 coverage 生成与 resolve 路径
 		if (laserStrokeCoverage.rtv && laserCompositedColor.rtv && laserCompositedColor.srv)
 		{
 			const RECT warmUpRect{ 0, 0, 1, 1 };
-			const std::vector<InkPoint> warmUpPts{
-				{ 0.0f, 0.0f, 1.0f, 0.0f }, { 1.0f, 0.0f, 1.0f, 0.0f }
+			const std::array<InkPoint, 2> warmUpPts = {
+				InkPoint{ 0.0f, 0.0f, 1.0f, 0.0f },
+				InkPoint{ 1.0f, 0.0f, 1.0f, 0.0f }
 			};
 			ClearLaserCoverageRect(warmUpRect);                              // shape 12
 			SetLaserCoverageTarget(laserStrokeCoverage);
@@ -938,9 +984,13 @@ namespace draw3
 		operatorResolveBlendState.Reset();
 		laserCoverageBlendState.Reset();
 		rasterState.Reset();
+		laserScissorRasterState.Reset();
 		dsState.Reset();
 		device.Reset();
 		context.Reset();
+		laserStyleCacheValid_ = false;
+		uploadedLaserStyleGeneration_ = 0;
+		uploadedLaserStyleOpacity_ = -1.0f;
 		laserIncrementalCoverageEnabled_ = false;
 		laserIncrementalCoverageUnavailable_ = false;
 		m_bufferHead = 0;
@@ -1060,6 +1110,13 @@ namespace draw3
 		rasterizerDescription.CullMode = D3D11_CULL_NONE;
 		rasterizerDescription.DepthClipEnable = TRUE;
 		if (FAILED(device->CreateRasterizerState(&rasterizerDescription, rasterState.ReleaseAndGetAddressOf()))) return false;
+		rasterizerDescription.ScissorEnable = TRUE;
+		if (FAILED(device->CreateRasterizerState(&rasterizerDescription,
+			laserScissorRasterState.ReleaseAndGetAddressOf())))
+		{
+			// scissor 只减少激光局部 pass 的像素工作，创建失败不应阻断 renderer 初始化。
+			laserScissorRasterState.Reset();
+		}
 
 		D3D11_BUFFER_DESC inkBufferDescription = {};
 		inkBufferDescription.ByteWidth = static_cast<UINT>(kMaxBufferCapacity * sizeof(InkPoint));

@@ -53,10 +53,6 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
         output.r1 = particle.currentRadius;
         output.r2 = particle.opacity;
         output.color.y = particle.currentBrightness;
-        // color.x：核心白度微小随机缩放（1±jitter），避免整片均匀纯白。
-        float whiteMixJitter = saturate(globalColor.y);
-        float whiteMixRandom = LaserParticleRandom01(particle.seed ^ 0xA511E9B3u);
-        output.color.x = saturate(1.0 + (whiteMixRandom * 2.0 - 1.0) * whiteMixJitter);
         return output;
     }
 
@@ -115,6 +111,21 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
         return output;
     }
 
+    if (type == 8 || type == 11 || type == 12 || type == 13)
+    {
+        // Laser 矩形 pass 直接使用 b0，避免为两个角点上传和绑定 t0。
+        float2 rectMin = globalColor.xy;
+        float2 rectMax = globalColor.zw;
+        float2 worldPos = lerp(rectMin, rectMax, templatePos);
+        output.pos = float4((worldPos.x / screenWidth) * 2.0 - 1.0,
+            -((worldPos.y / screenHeight) * 2.0 - 1.0), 0.0, 1.0);
+        output.pixPos = worldPos;
+        output.uv = worldPos / float2(screenWidth, screenHeight);
+        output.p1 = rectMin;
+        output.p2 = rectMax;
+        return output;
+    }
+
     uint realIndex = globalBufferOffset + itemIndex;
     InkPoint data1 = InkData[realIndex];
     InkPoint data2 = InkData[realIndex + 1];
@@ -123,7 +134,7 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     float r1 = data1.r;
     float r2 = data2.r;
 
-    if (type == 1 || type == 2 || type == 8 || type == 11 || type == 12 || type == 13)
+    if (type == 1 || type == 2)
     {
         float2 rectMin = min(p1, p2);
         float2 rectMax = max(p1, p2);

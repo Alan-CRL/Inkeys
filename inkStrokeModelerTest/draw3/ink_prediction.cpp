@@ -5,10 +5,12 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <iterator>
 #include <ink_stroke_modeler/stroke_modeler.h>
 #include <limits>
+#include <span>
 #include <windows.h>
 
 #pragma comment(lib, "ink_stroke_modeler_merge.lib")
@@ -299,7 +301,8 @@ namespace draw3
 			return true;
 		}
 
-		size_t FindProtectedStartIndex(const std::vector<InkPoint>& points, double protectedDurationSeconds)
+		size_t FindProtectedStartIndex(
+			std::span<const InkPoint> points, double protectedDurationSeconds)
 		{
 			if (points.size() < 2) return 0;
 			const double startTime = static_cast<double>(points.back().time) - std::max(0.0, protectedDurationSeconds);
@@ -331,7 +334,7 @@ namespace draw3
 	}
 
 	LaserIncrementalRanges PlanLaserIncrementalRanges(
-		const std::vector<InkPoint>& realPoints,
+		std::span<const InkPoint> realPoints,
 		const LaserIncrementalStrokeState& state,
 		double protectedDurationSeconds) noexcept
 	{
@@ -1150,35 +1153,46 @@ double ResolveLiveTipTaperDurationSeconds(StrokeWidthMode widthMode,
 			currentDiameter * 0.5f, static_cast<float>(pointTime) };
 	}
 
-	HighlighterGeometry BuildHighlighterGeometry(const std::vector<InkPoint>& inputPoints)
+	void RebuildHighlighterGeometry(
+		std::span<const InkPoint> inputPoints, HighlighterGeometry& geometry)
 	{
-		HighlighterGeometry geometry;
-		if (inputPoints.empty()) return geometry;
-
-		const std::vector<InkPoint> points = DeduplicateHighlighterPoints(inputPoints);
+		geometry.primitives.clear();
+		geometry.bounds = {};
+		if (inputPoints.empty()) return;
 		const DirectX::XMFLOAT2 halfSize = {
 			kHighlighterRadiusPx / kHighlighterNibAspectRatio, kHighlighterRadiusPx };
-		geometry.primitives.reserve(points.size());
-		if (points.size() == 1)
+		geometry.primitives.reserve(inputPoints.size());
+		InkPoint previous = inputPoints.front();
+		for (size_t index = 1; index < inputPoints.size(); ++index)
+		{
+			const InkPoint& current = inputPoints[index];
+			const float deltaX = current.x - previous.x;
+			const float deltaY = current.y - previous.y;
+			if (deltaX * deltaX + deltaY * deltaY <=
+				kHighlighterDuplicateDistancePx * kHighlighterDuplicateDistancePx) continue;
+			HighlighterPrimitive primitive;
+			primitive.p1 = { previous.x, previous.y };
+			primitive.p2 = { current.x, current.y };
+			primitive.halfSize = halfSize;
+			geometry.primitives.push_back(primitive);
+			IncludeHighlighterSweepBounds(geometry.bounds, previous, current);
+			previous = current;
+		}
+		if (geometry.primitives.empty())
 		{
 			HighlighterPrimitive primitive;
-			primitive.p1 = { points.front().x, points.front().y };
+			primitive.p1 = { previous.x, previous.y };
 			primitive.p2 = primitive.p1;
 			primitive.halfSize = halfSize;
 			geometry.primitives.push_back(primitive);
-			IncludeHighlighterSweepBounds(geometry.bounds, points.front(), points.front());
-			return geometry;
+			IncludeHighlighterSweepBounds(geometry.bounds, previous, previous);
 		}
+	}
 
-		for (size_t index = 0; index + 1 < points.size(); ++index)
-		{
-			HighlighterPrimitive primitive;
-			primitive.p1 = { points[index].x, points[index].y };
-			primitive.p2 = { points[index + 1].x, points[index + 1].y };
-			primitive.halfSize = halfSize;
-			geometry.primitives.push_back(primitive);
-			IncludeHighlighterSweepBounds(geometry.bounds, points[index], points[index + 1]);
-		}
+	HighlighterGeometry BuildHighlighterGeometry(const std::vector<InkPoint>& inputPoints)
+	{
+		HighlighterGeometry geometry;
+		RebuildHighlighterGeometry(inputPoints, geometry);
 		return geometry;
 	}
 
@@ -1297,26 +1311,24 @@ double ResolveLiveTipTaperDurationSeconds(StrokeWidthMode widthMode,
 		return RECT{ 0, 0, static_cast<LONG>(width), static_cast<LONG>(height) };
 	}
 
-	RECT RectFromStrokePoints(const std::vector<InkPoint>& points, int width, int height,
-		StrokeShape shape, size_t firstIndex, size_t lastIndex)
+	RECT RectFromStrokePoints(std::span<const InkPoint> points, int width, int height,
+		StrokeShape shape)
 	{
-		if (points.empty() || firstIndex >= points.size()) return {};
-		lastIndex = std::min(lastIndex, points.size());
-		if (firstIndex >= lastIndex) return {};
+		if (points.empty()) return {};
 		RECT rect = {};
-		for (size_t index = firstIndex; index < lastIndex; ++index)
+		for (const InkPoint& point : points)
 		{
-			const float padding = points[index].r + 3.0f; // 额外 3px 覆盖抗锯齿和胶囊端点。
+			const float padding = point.r + 3.0f; // 额外 3px 覆盖抗锯齿和胶囊端点。
 			UnionRectInPlace(rect, RECT{
-				static_cast<LONG>(std::floor(points[index].x - padding)),
-				static_cast<LONG>(std::floor(points[index].y - padding)),
-				static_cast<LONG>(std::ceil(points[index].x + padding)),
-				static_cast<LONG>(std::ceil(points[index].y + padding)) });
+				static_cast<LONG>(std::floor(point.x - padding)),
+				static_cast<LONG>(std::floor(point.y - padding)),
+				static_cast<LONG>(std::ceil(point.x + padding)),
+				static_cast<LONG>(std::ceil(point.y + padding)) });
 		}
 		return ClampRectToCanvas(rect, width, height);
 	}
 
-	RECT RectFromLaserPoints(const std::vector<InkPoint>& points,
+	RECT RectFromLaserPoints(std::span<const InkPoint> points,
 		float dpiScale, int width, int height)
 	{
 		if (points.empty()) return {};
@@ -1336,6 +1348,45 @@ double ResolveLiveTipTaperDurationSeconds(StrokeWidthMode widthMode,
 				static_cast<LONG>(std::ceil(point.y + padding)) });
 		}
 		return ClampRectToCanvas(rect, width, height);
+	}
+
+	LaserLayerDirtyPlan PlanLaserLayerDirty(
+		std::span<const InkPoint> realPoints,
+		std::span<const InkPoint> visiblePoints,
+		const LaserIncrementalStrokeState& state,
+		RECT stableBounds, RECT previousLiveBounds,
+		double protectedDurationSeconds, float dpiScale,
+		int width, int height) noexcept
+	{
+		LaserLayerDirtyPlan plan;
+		plan.ranges = PlanLaserIncrementalRanges(
+			realPoints, state, protectedDurationSeconds);
+		plan.stableBounds = stableBounds;
+		plan.previousLiveBounds = previousLiveBounds;
+
+		if (plan.ranges.stablePointCount > 0 &&
+			plan.ranges.stableFirstIndex < realPoints.size())
+		{
+			const size_t stableCount = std::min(
+				plan.ranges.stablePointCount,
+				realPoints.size() - plan.ranges.stableFirstIndex);
+			const std::span<const InkPoint> stableDelta = realPoints.subspan(
+				plan.ranges.stableFirstIndex, stableCount);
+			plan.stableDeltaBounds = RectFromLaserPoints(
+				stableDelta, dpiScale, width, height);
+			UnionRectInPlace(plan.stableBounds, plan.stableDeltaBounds);
+		}
+
+		const size_t liveFirstIndex = std::min(
+			plan.ranges.liveFirstIndex, visiblePoints.size());
+		plan.liveBounds = RectFromLaserPoints(
+			visiblePoints.subspan(liveFirstIndex), dpiScale, width, height);
+		plan.layerBounds = plan.stableBounds;
+		UnionRectInPlace(plan.layerBounds, plan.liveBounds);
+		plan.dirtyBounds = plan.previousLiveBounds;
+		UnionRectInPlace(plan.dirtyBounds, plan.stableDeltaBounds);
+		UnionRectInPlace(plan.dirtyBounds, plan.liveBounds);
+		return plan;
 	}
 
 	bool UpdateRawPositionAndDetectMovement(ActiveStroke& stroke, const POINT& rawPosition)
@@ -1441,7 +1492,8 @@ double ResolveLiveTipTaperDurationSeconds(StrokeWidthMode widthMode,
 		StrokeShape shape, int width, int height)
 	{
 		stroke.l0DrawPoints.clear();
-		stroke.l0HighlighterGeometry = {};
+		stroke.l0HighlighterGeometry.primitives.clear();
+		stroke.l0HighlighterGeometry.bounds = {};
 		if (!stroke.realPoints.empty())
 		{
 			const size_t startIndex = std::min(stroke.committedIndex, stroke.realPoints.size() - 1);
@@ -1453,7 +1505,7 @@ double ResolveLiveTipTaperDurationSeconds(StrokeWidthMode widthMode,
 				stroke.l0DrawPoints.push_back(stroke.inputStartPoint); // Down 当帧直接显示居中的竖直点击矩形。
 			stroke.l0DrawPoints.insert(stroke.l0DrawPoints.end(),
 				stroke.predictedPoints.begin(), stroke.predictedPoints.end());
-			stroke.l0HighlighterGeometry = BuildHighlighterGeometry(stroke.l0DrawPoints);
+			RebuildHighlighterGeometry(stroke.l0DrawPoints, stroke.l0HighlighterGeometry);
 			stroke.currentL0Rect = ClampRectToCanvas(stroke.l0HighlighterGeometry.bounds, width, height);
 			return;
 		}
@@ -1473,26 +1525,32 @@ double ResolveLiveTipTaperDurationSeconds(StrokeWidthMode widthMode,
 		if (protectedStartIndex <= stroke.committedIndex) return {};
 
 		const size_t stableStartIndex = stroke.committedIndex;
-		std::vector<InkPoint> stablePoints(stroke.realPoints.begin() + stableStartIndex,
-			stroke.realPoints.begin() + protectedStartIndex + 1);
+		const std::span<const InkPoint> stablePoints(
+			stroke.realPoints.data() + stableStartIndex,
+			protectedStartIndex - stableStartIndex + 1);
 		renderer.SetOperatorTarget(renderer.layerL1);
 		RECT dirty = {};
 		if (stroke.highlighter)
 		{
-			const HighlighterGeometry geometry = BuildHighlighterGeometry(stablePoints);
-			renderer.DrawHighlighterPrimitives(geometry.primitives, color);
-			if (!geometry.primitives.empty())
+			RebuildHighlighterGeometry(stablePoints, stroke.l0HighlighterGeometry);
+			renderer.DrawHighlighterPrimitives(
+				stroke.l0HighlighterGeometry.primitives, color);
+			if (!stroke.l0HighlighterGeometry.primitives.empty())
 			{
 				// 只缓存已经提交到 L1 的稳定前缀，Up 时直接重放。
 				stroke.committedHighlighterGeometry.primitives.insert(
 					stroke.committedHighlighterGeometry.primitives.end(),
-					geometry.primitives.begin(), geometry.primitives.end());
-				if (stroke.committedHighlighterGeometry.primitives.size() == geometry.primitives.size())
-					stroke.committedHighlighterGeometry.bounds = geometry.bounds;
+					stroke.l0HighlighterGeometry.primitives.begin(),
+					stroke.l0HighlighterGeometry.primitives.end());
+				if (stroke.committedHighlighterGeometry.primitives.size() ==
+					stroke.l0HighlighterGeometry.primitives.size())
+					stroke.committedHighlighterGeometry.bounds =
+						stroke.l0HighlighterGeometry.bounds;
 				else
-					UnionRectInPlace(stroke.committedHighlighterGeometry.bounds, geometry.bounds);
+					UnionRectInPlace(stroke.committedHighlighterGeometry.bounds,
+						stroke.l0HighlighterGeometry.bounds);
 			}
-			dirty = ClampRectToCanvas(geometry.bounds, width, height);
+			dirty = ClampRectToCanvas(stroke.l0HighlighterGeometry.bounds, width, height);
 		}
 		else
 		{
@@ -1507,18 +1565,20 @@ double ResolveLiveTipTaperDurationSeconds(StrokeWidthMode widthMode,
 	RECT CommitEraserRealPointsToL1(ActiveStroke& stroke, StrokeShape shape,
 		InkRenderer& renderer, int width, int height)
 	{
-		std::vector<InkPoint> newPoints;
+		std::array<InkPoint, 1> fallbackPoint = {};
+		std::span<const InkPoint> newPoints;
 		if (stroke.realPoints.empty())
 		{
 			if (stroke.hasCommittedGeometry || !stroke.hasInputStartPoint) return {};
-			newPoints.push_back(stroke.inputStartPoint); // 建模器尚未给点时也要保证单击橡皮可见。
+			fallbackPoint[0] = stroke.inputStartPoint;
+			newPoints = fallbackPoint; // 建模器尚未给点时也要保证单击橡皮可见。
 		}
 		else
 		{
 			const size_t latestIndex = stroke.realPoints.size() - 1;
 			if (stroke.hasCommittedGeometry && latestIndex <= stroke.committedIndex) return {};
 			const size_t startIndex = stroke.hasCommittedGeometry ? stroke.committedIndex : 0;
-			newPoints.assign(stroke.realPoints.begin() + startIndex, stroke.realPoints.end());
+			newPoints = std::span<const InkPoint>(stroke.realPoints).subspan(startIndex);
 			stroke.committedIndex = latestIndex;
 		}
 

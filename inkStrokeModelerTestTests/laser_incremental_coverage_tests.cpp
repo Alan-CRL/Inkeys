@@ -32,6 +32,20 @@ namespace
 		return contents.find(text) != std::string::npos;
 	}
 
+	bool TextAppearsBefore(const std::filesystem::path& path,
+		const std::string& first, const std::string& second)
+	{
+		std::ifstream input(path, std::ios::binary);
+		if (!input) return false;
+		const std::string contents((std::istreambuf_iterator<char>(input)),
+			std::istreambuf_iterator<char>());
+		const size_t firstPosition = contents.find(first);
+		const size_t secondPosition = contents.find(second);
+		return firstPosition != std::string::npos &&
+			secondPosition != std::string::npos &&
+			firstPosition < secondPosition;
+	}
+
 	std::filesystem::path FindProjectRoot()
 	{
 		std::vector<std::filesystem::path> candidates;
@@ -105,6 +119,30 @@ int RunLaserIncrementalCoverageTests()
 	ranges = draw3::PlanLaserIncrementalRanges(points, state, 0.15);
 	LASER_INCREMENTAL_CHECK(ranges.stableFirstIndex == 0);
 	LASER_INCREMENTAL_CHECK(ranges.liveFirstIndex == 1);
+
+	// 多 contact fallback 只脏化新增 stable 与旧/新 live，完整 layer bounds 仍可用于绘制。
+	const std::vector<draw3::InkPoint> dirtyRealPoints = {
+		{ 10.0f, 10.0f, 2.5f, 0.0f },
+		{ 30.0f, 10.0f, 2.5f, 0.1f },
+		{ 50.0f, 20.0f, 2.5f, 0.2f },
+		{ 70.0f, 30.0f, 2.5f, 0.3f }
+	};
+	const std::vector<draw3::InkPoint> dirtyVisiblePoints = {
+		dirtyRealPoints[0], dirtyRealPoints[1], dirtyRealPoints[2],
+		dirtyRealPoints[3], { 90.0f, 45.0f, 2.5f, 0.4f }
+	};
+	draw3::LaserIncrementalStrokeState dirtyState;
+	const draw3::LaserLayerDirtyPlan dirtyPlan = draw3::PlanLaserLayerDirty(
+		dirtyRealPoints, dirtyVisiblePoints, dirtyState,
+		RECT{ 0, 0, 0, 0 }, RECT{ 2, 3, 12, 14 }, 0.15, 1.0f, 200, 200);
+	LASER_INCREMENTAL_CHECK(dirtyPlan.ranges.stablePointCount > 0);
+	LASER_INCREMENTAL_CHECK(!draw3::IsEmptyRect(dirtyPlan.stableDeltaBounds));
+	LASER_INCREMENTAL_CHECK(!draw3::IsEmptyRect(dirtyPlan.liveBounds));
+	LASER_INCREMENTAL_CHECK(!draw3::IsEmptyRect(dirtyPlan.layerBounds));
+	LASER_INCREMENTAL_CHECK(dirtyPlan.dirtyBounds.left <= 2);
+	LASER_INCREMENTAL_CHECK(dirtyPlan.dirtyBounds.top <= 3);
+	LASER_INCREMENTAL_CHECK(dirtyPlan.dirtyBounds.right >= dirtyPlan.liveBounds.right);
+	LASER_INCREMENTAL_CHECK(dirtyPlan.dirtyBounds.bottom >= dirtyPlan.liveBounds.bottom);
 
 	// 长笔画每帧只提交稳定 delta 与受保护 live 尾部，不随总点数线性增长。
 	std::vector<draw3::InkPoint> longStroke;
@@ -203,6 +241,52 @@ int RunLaserIncrementalCoverageTests()
 	LASER_INCREMENTAL_CHECK(!root.empty());
 	if (!root.empty())
 	{
+		const std::filesystem::path particleCommon =
+			root / "inkStrokeModelerTest" / "laserParticleCommon.hlsli";
+		const std::filesystem::path vertexShader =
+			root / "inkStrokeModelerTest" / "inkVertexShader.hlsl";
+		const std::filesystem::path rendererSource =
+			root / "inkStrokeModelerTest" / "draw3" / "renderer.cpp";
+		const std::filesystem::path controllerSource =
+			root / "inkStrokeModelerTest" / "draw3" / "drawing_controller.cpp";
+		const std::filesystem::path particleSource =
+			root / "inkStrokeModelerTest" / "draw3" / "laser_particles.cpp";
+		LASER_INCREMENTAL_CHECK(sizeof(draw3::LaserGpuParticle) == 80);
+		LASER_INCREMENTAL_CHECK(ContainsText(particleCommon, "uint padding;"));
+		LASER_INCREMENTAL_CHECK(TextAppearsBefore(
+			particleCommon, "float2 position;", "float2 velocity;"));
+		LASER_INCREMENTAL_CHECK(TextAppearsBefore(
+			particleCommon, "float2 velocity;", "float ageSeconds;"));
+		LASER_INCREMENTAL_CHECK(TextAppearsBefore(
+			particleCommon, "float breathingRampSeconds;", "uint seed;"));
+		LASER_INCREMENTAL_CHECK(TextAppearsBefore(
+			particleCommon, "uint alive;", "uint padding;"));
+		LASER_INCREMENTAL_CHECK(ContainsText(rendererSource,
+			"StepLaserParticles("));
+		LASER_INCREMENTAL_CHECK(ContainsText(rendererSource,
+			"uploadedLaserStyleGeneration_"));
+		LASER_INCREMENTAL_CHECK(ContainsText(vertexShader,
+			"float2 rectMin = globalColor.xy;"));
+		LASER_INCREMENTAL_CHECK(TextAppearsBefore(vertexShader,
+			"if (type == 8 || type == 11 || type == 12 || type == 13)",
+			"uint realIndex = globalBufferOffset + itemIndex;"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(vertexShader, "whiteMixRandom"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(rendererSource,
+			"const InkPoint rectPoints[2]"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(controllerSource,
+			"renderer_.EmitLaserParticles("));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
+			"laserParticleSnapshot.hasActive || laserParticleSnapshot.expiredAny"));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
+			"if (shouldDrawLaserParticles)"));
+		LASER_INCREMENTAL_CHECK(ContainsText(rendererSource,
+			"if (laserScissorRasterState)"));
+		LASER_INCREMENTAL_CHECK(ContainsText(rendererSource,
+			"laserScissorRasterState.Reset();"));
+		LASER_INCREMENTAL_CHECK(ContainsText(particleSource,
+			"CreateBuffer(&bufferDescription, nullptr"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(particleSource,
+			"emptyParticles"));
 		LASER_INCREMENTAL_CHECK(ContainsText(root / "inkStrokeModelerTest" / "ink.hlsli",
 			"LaserLiveCoverage : register(t9)"));
 		LASER_INCREMENTAL_CHECK(ContainsText(root / "inkStrokeModelerTest" / "inkPixelShader.hlsl",

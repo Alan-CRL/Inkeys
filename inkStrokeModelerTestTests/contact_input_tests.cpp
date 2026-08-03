@@ -2,6 +2,7 @@
 #define NOMINMAX
 #endif
 
+#include <algorithm>
 #include <atomic>
 #include <array>
 #include <chrono>
@@ -1253,6 +1254,73 @@ namespace
 			draw3::HapticContinuousFeedback::InkContinuous));
 		haptics.StopFeedback();
 	}
+
+	int RunDrawingPerformanceTests()
+	{
+		constexpr size_t kPointCount = 4096;
+		constexpr size_t kIterationCount = 31;
+		std::vector<draw3::InkPoint> points;
+		points.reserve(kPointCount);
+		for (size_t index = 0; index < kPointCount; ++index)
+		{
+			const float value = static_cast<float>(index);
+			points.push_back({ value * 0.75f, std::sin(value * 0.025f) * 80.0f,
+				2.5f + static_cast<float>(index % 7) * 0.05f, value * 0.001f });
+		}
+
+		auto medianMicroseconds = [&](auto&& operation)
+		{
+			std::array<double, kIterationCount> samples = {};
+			for (double& sample : samples)
+			{
+				const auto start = std::chrono::steady_clock::now();
+				operation();
+				const auto end = std::chrono::steady_clock::now();
+				sample = std::chrono::duration<double, std::micro>(end - start).count();
+			}
+			std::sort(samples.begin(), samples.end());
+			return samples[samples.size() / 2];
+		};
+
+		draw3::HighlighterGeometry highlighterGeometry;
+		draw3::RebuildHighlighterGeometry(points, highlighterGeometry);
+		const uint64_t allocationStart = gAllocationCount.load(std::memory_order_relaxed);
+		const double highlighterMedian = medianMicroseconds([&]
+			{
+				draw3::RebuildHighlighterGeometry(points, highlighterGeometry);
+			});
+		const uint64_t highlighterAllocations =
+			gAllocationCount.load(std::memory_order_relaxed) - allocationStart;
+		RECT penBounds = {};
+		const double penMedian = medianMicroseconds([&]
+			{
+				penBounds = draw3::RectFromStrokePoints(points, 4096, 2160);
+			});
+		RECT eraserBounds = {};
+		const double eraserMedian = medianMicroseconds([&]
+			{
+				eraserBounds = draw3::RectFromStrokePoints(points, 4096, 2160,
+					draw3::StrokeShape::RoundCapsule);
+			});
+		RECT laserBounds = {};
+		const double laserMedian = medianMicroseconds([&]
+			{
+				laserBounds = draw3::RectFromLaserPoints(points, 1.0f, 4096, 2160);
+			});
+
+		std::cout << "[DrawingPerf] points=" << points.size() <<
+			" highlighter_primitives=" << highlighterGeometry.primitives.size() <<
+			" highlighter_allocations=" << highlighterAllocations <<
+			" highlighter_median_us=" << highlighterMedian <<
+			" pen_bounds_median_us=" << penMedian <<
+			" eraser_bounds_median_us=" << eraserMedian <<
+			" laser_bounds_median_us=" << laserMedian << std::endl;
+		const bool valid = highlighterAllocations == 0 &&
+			highlighterGeometry.primitives.size() == points.size() - 1 &&
+			penBounds.left < penBounds.right && eraserBounds.left < eraserBounds.right &&
+			laserBounds.left < laserBounds.right;
+		return valid ? 0 : 1;
+	}
 }
 
 void* operator new(size_t size)
@@ -1293,6 +1361,8 @@ int wmain(int argc, wchar_t* argv[])
 		return RunRuntimeBenchmark(argv[2], argv[3]);
 	if (argc == 2 && wcscmp(argv[1], L"--laser-incremental-only") == 0)
 		return RunLaserIncrementalCoverageTests() == 0 ? 0 : 1;
+	if (argc == 2 && wcscmp(argv[1], L"--drawing-perf") == 0)
+		return RunDrawingPerformanceTests();
 	TestState state;
 	TestConcurrentDownUniqueness(state);
 	TestCapacityBoundariesAndReuse(state);

@@ -10,7 +10,7 @@
 #include <cstring>
 #include <d3d11.h>
 #include <limits>
-#include <vector>
+#include <span>
 #include <windows.h>
 
 module draw3.laser_particles;
@@ -389,10 +389,12 @@ float LaserParticleCoreColorMix(float baseBrightness,
 			? std::clamp(coreRadiusRatio, 0.0f, 1.0f) : 1.0f / 3.0f;
 		const float entityRadius = std::isfinite(request.entityRadius)
 			? std::max(request.entityRadius, 0.0f) : 0.0f;
+		// 与 VS 一致计入固定 2 DIP 辉光地板和 quad 额外 2px，避免高 DPI 清理范围偏小。
 		const float padding = MaximumLaserParticleTravelDip(configuration) * scale +
 			entityRadius * coreRatio * kMaximumCoreSpawnOffsetRatio +
 			configuration.maximumRadiusDip *
-				(1.0f + configuration.glowRadiusScale) * scale + 2.0f;
+				(1.0f + configuration.glowRadiusScale) * scale +
+			2.0f * scale + 2.0f;
 		return {
 			static_cast<LONG>(std::floor(request.positionX - padding)),
 			static_cast<LONG>(std::floor(request.positionY - padding)),
@@ -423,20 +425,28 @@ float LaserParticleCoreColorMix(float baseBrightness,
 		fallback.active = true;
 	}
 
-	RECT LaserParticleDirtyTracker::ActiveBounds(int64_t nowQpc) noexcept
+	LaserParticleDirtySnapshot LaserParticleDirtyTracker::Snapshot(
+		int64_t nowQpc) noexcept
 	{
-		RECT bounds = {};
+		LaserParticleDirtySnapshot snapshot;
 		for (Region& region : regions_)
 		{
 			if (!region.active) continue;
 			if (region.expiresQpc <= nowQpc)
 			{
+				snapshot.expiredAny = true;
 				region = {};
 				continue;
 			}
-			UnionRectLocal(bounds, region.bounds);
+			snapshot.hasActive = true;
+			UnionRectLocal(snapshot.activeBounds, region.bounds);
 		}
-		return bounds;
+		return snapshot;
+	}
+
+	RECT LaserParticleDirtyTracker::ActiveBounds(int64_t nowQpc) noexcept
+	{
+		return Snapshot(nowQpc).activeBounds;
 	}
 
 	bool LaserParticleDirtyTracker::HasActive(int64_t nowQpc) const noexcept
@@ -479,9 +489,6 @@ float LaserParticleCoreColorMix(float baseBrightness,
 			return false;
 		}
 
-		std::vector<LaserGpuParticle> emptyParticles(kLaserParticleCapacity);
-		D3D11_SUBRESOURCE_DATA particleData = {};
-		particleData.pSysMem = emptyParticles.data();
 		D3D11_BUFFER_DESC bufferDescription = {};
 		bufferDescription.ByteWidth = static_cast<UINT>(
 			sizeof(LaserGpuParticle) * kLaserParticleCapacity);
@@ -490,7 +497,7 @@ float LaserParticleCoreColorMix(float baseBrightness,
 			D3D11_BIND_UNORDERED_ACCESS;
 		bufferDescription.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
 		bufferDescription.StructureByteStride = sizeof(LaserGpuParticle);
-		if (FAILED(device_->CreateBuffer(&bufferDescription, &particleData,
+		if (FAILED(device_->CreateBuffer(&bufferDescription, nullptr,
 			particleBuffer_.ReleaseAndGetAddressOf())))
 		{
 			Release();
@@ -538,6 +545,12 @@ float LaserParticleCoreColorMix(float baseBrightness,
 		}
 
 		available_ = true;
+		// 默认缓冲区由 GPU reset 初始化，避免创建 2048 项 CPU 零数组。
+		if (!DispatchUpdate(0.0f, 0.0f, true))
+		{
+			Release();
+			return false;
+		}
 		return true;
 	}
 
@@ -608,80 +621,136 @@ float LaserParticleCoreColorMix(float baseBrightness,
 	void LaserParticleSystem::Simulate(
 		float wallDeltaSeconds, float motionDeltaSeconds) noexcept
 	{
-		DispatchUpdate(wallDeltaSeconds, motionDeltaSeconds, false);
+		Step(wallDeltaSeconds, motionDeltaSeconds, true, {});
 	}
 
 	void LaserParticleSystem::Emit(
 		const LaserParticleEmissionRequest& request) noexcept
 	{
-		if (!available_ || request.count == 0 ||
-			!std::isfinite(request.positionX) || !std::isfinite(request.positionY) ||
-			!std::isfinite(request.tangentX) || !std::isfinite(request.tangentY))
-			return;
-		const float tangentLength = std::hypot(request.tangentX, request.tangentY);
-		if (tangentLength <= kMinimumPositiveValue) return;
+		Step(0.0f, 0.0f, false,
+			std::span<const LaserParticleEmissionRequest>(&request, 1));
+	}
 
-		const uint32_t count = std::min(request.count, kLaserParticleCapacity);
-		LaserParticleEmitConstants constants;
-		constants.spawnStart = spawnCursor_;
-		constants.spawnCount = count;
-		constants.seedBase = request.seedBase;
-		constants.positionX = request.positionX;
-		constants.positionY = request.positionY;
-		constants.tangentX = request.tangentX / tangentLength;
-		constants.tangentY = request.tangentY / tangentLength;
-		constants.entityRadius = std::isfinite(request.entityRadius)
-			? std::max(request.entityRadius, 0.0f) : 0.0f;
-		constants.coreRadiusRatio = coreRadiusRatio_;
-		constants.minimumLifetimeSeconds = configuration_.minimumLifetimeSeconds;
-		constants.maximumLifetimeSeconds = configuration_.maximumLifetimeSeconds;
-		constants.minimumLaunchSpeed =
-			configuration_.minimumLaunchSpeedDipPerSecond * dpiScale_;
-		constants.maximumLaunchSpeed =
-			configuration_.maximumLaunchSpeedDipPerSecond * dpiScale_;
-		constants.maximumDeflectionRadians =
-			configuration_.maximumDeflectionAngleDegrees * kPi / 180.0f;
-		constants.minimumRadius = configuration_.minimumRadiusDip * dpiScale_;
-		constants.maximumRadius = configuration_.maximumRadiusDip * dpiScale_;
-		constants.minimumBrightness = configuration_.minimumBrightness;
-		constants.maximumBrightness = configuration_.maximumBrightness;
-		constants.breathingAmplitude = configuration_.breathingAmplitude;
-		constants.minimumBreathingFrequencyHz =
-			configuration_.minimumBreathingFrequencyHz;
-		constants.maximumBreathingFrequencyHz =
-			configuration_.maximumBreathingFrequencyHz;
-		constants.breathingRampSeconds = configuration_.breathingRampSeconds;
-		constants.sizeDistributionExponent =
-			configuration_.sizeDistributionExponent;
-		constants.sizeBrightnessCorrelation =
-			configuration_.sizeBrightnessCorrelation;
-		constants.sizeTravelCorrelation =
-			configuration_.sizeTravelCorrelation;
+	void LaserParticleSystem::Step(float wallDeltaSeconds,
+		float motionDeltaSeconds, bool simulateExisting,
+		std::span<const LaserParticleEmissionRequest> emissionRequests) noexcept
+	{
+		if (!available_ || (!simulateExisting && emissionRequests.empty())) return;
 
-		D3D11_MAPPED_SUBRESOURCE mapped = {};
-		if (FAILED(context_->Map(emitConstants_.Get(), 0,
-			D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
-		std::memcpy(mapped.pData, &constants, sizeof(constants));
-		context_->Unmap(emitConstants_.Get(), 0);
-
+		// 同一帧 update/emit 共享一次 UAV 绑定，逐请求常量和 Dispatch 顺序保持不变。
 		ID3D11ShaderResourceView* nullParticle[] = { nullptr };
 		context_->VSSetShaderResources(8, 1, nullParticle);
 		ID3D11UnorderedAccessView* unorderedViews[] = { particleUAV_.Get() };
 		context_->CSSetUnorderedAccessViews(0, 1, unorderedViews, nullptr);
-		ID3D11Buffer* constantBuffers[] = { emitConstants_.Get() };
-		context_->CSSetConstantBuffers(0, 1, constantBuffers);
-		context_->CSSetShader(emitShader_.Get(), nullptr, 0);
-		context_->Dispatch((count + 63u) / 64u, 1, 1);
-		UnbindComputeResources();
 
-		spawnCursor_ = (spawnCursor_ + count) % kLaserParticleCapacity;
+		if (simulateExisting)
+		{
+			LaserParticleUpdateConstants constants;
+			constants.wallDeltaSeconds = std::isfinite(wallDeltaSeconds)
+				? std::max(wallDeltaSeconds, 0.0f) : 0.0f;
+			constants.motionDeltaSeconds = std::isfinite(motionDeltaSeconds)
+				? std::clamp(motionDeltaSeconds, 0.0f,
+					kMaximumMotionDeltaSeconds) : 0.0f;
+			constants.shrinkStartTravelRatio =
+				configuration_.shrinkStartTravelRatio;
+			constants.endRadiusScale = configuration_.endRadiusScale;
+
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
+			if (FAILED(context_->Map(updateConstants_.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
+			{
+				// 无法推进存量槽时直接降级，避免旧 alive 槽在后续发射时重现。
+				UnbindComputeResources();
+				Release();
+				return;
+			}
+			std::memcpy(mapped.pData, &constants, sizeof(constants));
+			context_->Unmap(updateConstants_.Get(), 0);
+			ID3D11Buffer* constantBuffers[] = { updateConstants_.Get() };
+			context_->CSSetConstantBuffers(0, 1, constantBuffers);
+			context_->CSSetShader(updateShader_.Get(), nullptr, 0);
+			context_->Dispatch((kLaserParticleCapacity + 63u) / 64u, 1, 1);
+		}
+
+		for (const LaserParticleEmissionRequest& request : emissionRequests)
+		{
+			if (request.count == 0 ||
+				!std::isfinite(request.positionX) ||
+				!std::isfinite(request.positionY) ||
+				!std::isfinite(request.tangentX) ||
+				!std::isfinite(request.tangentY))
+				continue;
+			const float tangentLength = std::hypot(
+				request.tangentX, request.tangentY);
+			if (tangentLength <= kMinimumPositiveValue) continue;
+
+			const uint32_t count = std::min(
+				request.count, kLaserParticleCapacity);
+			LaserParticleEmitConstants constants;
+			constants.spawnStart = spawnCursor_;
+			constants.spawnCount = count;
+			constants.seedBase = request.seedBase;
+			constants.positionX = request.positionX;
+			constants.positionY = request.positionY;
+			constants.tangentX = request.tangentX / tangentLength;
+			constants.tangentY = request.tangentY / tangentLength;
+			constants.entityRadius = std::isfinite(request.entityRadius)
+				? std::max(request.entityRadius, 0.0f) : 0.0f;
+			constants.coreRadiusRatio = coreRadiusRatio_;
+			constants.minimumLifetimeSeconds =
+				configuration_.minimumLifetimeSeconds;
+			constants.maximumLifetimeSeconds =
+				configuration_.maximumLifetimeSeconds;
+			constants.minimumLaunchSpeed =
+				configuration_.minimumLaunchSpeedDipPerSecond * dpiScale_;
+			constants.maximumLaunchSpeed =
+				configuration_.maximumLaunchSpeedDipPerSecond * dpiScale_;
+			constants.maximumDeflectionRadians =
+				configuration_.maximumDeflectionAngleDegrees * kPi / 180.0f;
+			constants.minimumRadius =
+				configuration_.minimumRadiusDip * dpiScale_;
+			constants.maximumRadius =
+				configuration_.maximumRadiusDip * dpiScale_;
+			constants.minimumBrightness = configuration_.minimumBrightness;
+			constants.maximumBrightness = configuration_.maximumBrightness;
+			constants.breathingAmplitude = configuration_.breathingAmplitude;
+			constants.minimumBreathingFrequencyHz =
+				configuration_.minimumBreathingFrequencyHz;
+			constants.maximumBreathingFrequencyHz =
+				configuration_.maximumBreathingFrequencyHz;
+			constants.breathingRampSeconds =
+				configuration_.breathingRampSeconds;
+			constants.sizeDistributionExponent =
+				configuration_.sizeDistributionExponent;
+			constants.sizeBrightnessCorrelation =
+				configuration_.sizeBrightnessCorrelation;
+			constants.sizeTravelCorrelation =
+				configuration_.sizeTravelCorrelation;
+
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
+			if (FAILED(context_->Map(emitConstants_.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) continue;
+			std::memcpy(mapped.pData, &constants, sizeof(constants));
+			context_->Unmap(emitConstants_.Get(), 0);
+			ID3D11Buffer* constantBuffers[] = { emitConstants_.Get() };
+			context_->CSSetConstantBuffers(0, 1, constantBuffers);
+			context_->CSSetShader(emitShader_.Get(), nullptr, 0);
+			context_->Dispatch((count + 63u) / 64u, 1, 1);
+			spawnCursor_ = (spawnCursor_ + count) % kLaserParticleCapacity;
+		}
+
+		UnbindComputeResources();
 	}
 
 	void LaserParticleSystem::Reset() noexcept
 	{
 		if (!available_) return;
+		if (!DispatchUpdate(0.0f, 0.0f, true))
+		{
+			Release(); // reset 失败时禁用粒子，避免之后重新绘制未清空的旧槽。
+			return;
+		}
 		spawnCursor_ = 0;
-		DispatchUpdate(0.0f, 0.0f, true);
 	}
 
 	void LaserParticleSystem::UnbindComputeResources() noexcept

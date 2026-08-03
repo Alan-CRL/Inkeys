@@ -5,6 +5,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <cmath>
@@ -13,6 +14,7 @@
 #include <ink_stroke_modeler/stroke_modeler.h>
 #include <limits>
 #include <memory>
+#include <span>
 #include <vector>
 #include <windows.h>
 #include <mmsystem.h>
@@ -169,8 +171,6 @@ namespace draw3
 			uint64_t id = 0;
 			RuntimeStroke* runtime = nullptr;
 			std::vector<InkPoint> completedPoints;
-			// 复用同一 CPU 提交缓冲，避免稳定 delta 与 live 尾部每帧反复分配。
-			std::vector<InkPoint> coverageSubmissionPoints;
 			LaserIncrementalStrokeState incrementalState;
 			RECT stableBounds = {};
 			RECT liveBounds = {};
@@ -248,8 +248,8 @@ namespace draw3
 		}
 
 		bool UpdateLaserIncrementalCoverage(LaserStrokeLayer& layer,
-			const std::vector<InkPoint>& realPoints,
-			const std::vector<InkPoint>& visiblePoints,
+			std::span<const InkPoint> realPoints,
+			std::span<const InkPoint> visiblePoints,
 			double protectedDurationSeconds, InkRenderer& renderer,
 			float dpiScale, int width, int height,
 			LaserIncrementalDiagnostics& diagnostics, RECT& dirty)
@@ -267,35 +267,38 @@ namespace draw3
 			};
 			const LaserIncrementalRanges ranges = PlanLaserIncrementalRanges(
 				realPoints, layer.incrementalState, protectedDurationSeconds);
-			std::vector<InkPoint>& submissionPoints = layer.coverageSubmissionPoints;
 			RECT nextStableBounds = layer.stableBounds;
 			if (ranges.stablePointCount > 0)
 			{
-				submissionPoints.assign(
-					visiblePoints.begin() + ranges.stableFirstIndex,
-					visiblePoints.begin() + ranges.stableFirstIndex + ranges.stablePointCount);
+				if (ranges.stableFirstIndex >= visiblePoints.size() ||
+					ranges.stablePointCount >
+						visiblePoints.size() - ranges.stableFirstIndex)
+					return finish(false);
+				const std::span<const InkPoint> stablePoints = visiblePoints.subspan(
+					ranges.stableFirstIndex, ranges.stablePointCount);
 				renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage);
-				if (renderer.DrawLaserCoverage(submissionPoints) != 0)
+				if (renderer.DrawLaserCoverage(stablePoints) != 0)
 					return finish(false);
 				const RECT stableDirty = RectFromLaserPoints(
-					submissionPoints, dpiScale, width, height);
+					stablePoints, dpiScale, width, height);
 				UnionRectInPlace(nextStableBounds, stableDirty);
 				UnionRectInPlace(dirty, stableDirty);
-				diagnostics.stableSubmittedPoints += submissionPoints.size();
+				diagnostics.stableSubmittedPoints += stablePoints.size();
 			}
 
 			if (!renderer.ClearLaserLiveCoverageRect(layer.liveBounds))
 				return finish(false);
-			submissionPoints.assign(
-				visiblePoints.begin() + ranges.liveFirstIndex, visiblePoints.end());
+			if (ranges.liveFirstIndex > visiblePoints.size()) return finish(false);
+			const std::span<const InkPoint> livePoints =
+				visiblePoints.subspan(ranges.liveFirstIndex);
 			const RECT nextLiveBounds = RectFromLaserPoints(
-				submissionPoints, dpiScale, width, height);
-			if (!submissionPoints.empty())
+				livePoints, dpiScale, width, height);
+			if (!livePoints.empty())
 			{
 				renderer.SetLaserLiveCoverageTarget();
-				if (renderer.DrawLaserCoverage(submissionPoints) != 0)
+				if (renderer.DrawLaserCoverage(livePoints) != 0)
 					return finish(false);
-				diagnostics.liveSubmittedPoints += submissionPoints.size();
+				diagnostics.liveSubmittedPoints += livePoints.size();
 			}
 			UnionRectInPlace(dirty, nextLiveBounds);
 			layer.stableBounds = nextStableBounds;
@@ -404,7 +407,7 @@ namespace draw3
 
 		void DrawLaserStrokeLayers(std::vector<LaserStrokeLayer>& layers,
 			InkRenderer& renderer, ID3D11RenderTargetView* target,
-			RECT clipBounds, float dpiScale, int width, int height,
+			RECT clipBounds,
 			LaserCoverageMode& coverageMode,
 			LaserIncrementalDiagnostics& diagnostics)
 		{
@@ -442,14 +445,13 @@ namespace draw3
 			{
 				const std::vector<InkPoint>& points = LaserStrokeLayerPoints(layer);
 				if (!ShouldCompositeLaserLayer(layer.cancelled, points.size())) continue;
-				layer.bounds = RectFromLaserPoints(points, dpiScale, width, height);
 				RECT resolveBounds = {};
 				if (!IntersectRect(&resolveBounds, &layer.bounds, &clipBounds)) continue;
 				diagnostics.fullRedrawEquivalentPoints += points.size();
-				// scratch 仅清本笔矩形，同笔各段仍通过 MAX 形成 coverage 并集。
-				renderer.ClearLaserCoverageRect(layer.bounds);
+				// 仅处理最终 frame dirty 的交集；完整几何和 Down 顺序保持不变。
+				renderer.ClearLaserCoverageRect(resolveBounds);
 				renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage);
-				renderer.DrawLaserCoverage(points);
+				renderer.DrawLaserCoverage(points, resolveBounds);
 				renderer.ResolveLaserStrokeCoverage(target, resolveBounds);
 			}
 		}
@@ -693,23 +695,26 @@ namespace draw3
 					ColorForTool(runtime.tool));
 				return ClampRectToCanvas(stroke.committedHighlighterGeometry.bounds, width, height);
 			}
+			std::array<InkPoint, 1> fallbackPoint = {};
+			std::span<const InkPoint> stablePoints;
 			if (stroke.realPoints.empty())
 			{
 				if (runtime.tool != DrawingTool::Eraser || !stroke.hasInputStartPoint) return {};
-				runtime.rebuildPoints.assign(1, stroke.inputStartPoint);
+				fallbackPoint[0] = stroke.inputStartPoint;
+				stablePoints = fallbackPoint;
 			}
 			else
 			{
 				const size_t pointCount = std::min(stroke.committedIndex + 1, stroke.realPoints.size());
 				if (pointCount == 0) return {};
-				runtime.rebuildPoints.assign(stroke.realPoints.begin(), stroke.realPoints.begin() + pointCount);
+				stablePoints = std::span<const InkPoint>(stroke.realPoints).first(pointCount);
 			}
 			renderer.SetOperatorTarget(renderer.layerL1);
 			const InkOperatorKind operatorKind = runtime.tool == DrawingTool::Eraser
 				? InkOperatorKind::Erase : InkOperatorKind::Draw;
-			renderer.DrawStrokeOrDot(runtime.rebuildPoints, ColorForTool(runtime.tool),
+			renderer.DrawStrokeOrDot(stablePoints, ColorForTool(runtime.tool),
 				StrokeShape::RoundCapsule, operatorKind);
-			return RectFromStrokePoints(runtime.rebuildPoints, width, height);
+			return RectFromStrokePoints(stablePoints, width, height);
 		}
 
 		RECT DrawCompletedStroke(RuntimeStroke& runtime, InkRenderer& renderer, int width, int height,
@@ -720,48 +725,75 @@ namespace draw3
 			renderer.SetOperatorTarget(renderer.layerL1);
 			if (runtime.tool == DrawingTool::Highlighter)
 			{
-				HighlighterGeometry geometry = MergeHighlighterGeometry(
-					stroke.committedHighlighterGeometry, stroke.l0HighlighterGeometry);
-				if (geometry.primitives.empty())
+				bool drewGeometry = false;
+				if (!stroke.committedHighlighterGeometry.primitives.empty())
 				{
-					std::vector<InkPoint> clickPoints;
-					if (stroke.hasInputStartPoint)
-						clickPoints.push_back(stroke.inputStartPoint);
-					else if (!stroke.realPoints.empty())
-						clickPoints.push_back(stroke.realPoints.front());
-					geometry = BuildHighlighterGeometry(clickPoints); // 同帧 Down→Up 尚未生成 L0 时只补一次点击矩形。
+					renderer.DrawHighlighterPrimitives(
+						stroke.committedHighlighterGeometry.primitives,
+						ColorForTool(runtime.tool));
+					UnionRectInPlace(dirty, stroke.committedHighlighterGeometry.bounds);
+					drewGeometry = true;
 				}
-				if (geometry.primitives.empty()) return {};
-				// 已可见笔画只重放缓存的稳定前缀和最后一帧 live 几何，不回扫 realPoints。
-				renderer.DrawHighlighterPrimitives(geometry.primitives, ColorForTool(runtime.tool));
-				return ClampRectToCanvas(geometry.bounds, width, height);
+				if (!stroke.l0HighlighterGeometry.primitives.empty())
+				{
+					// 两段继续写入同一 MAX/MIN target，等价于先合并 vector 后一次绘制。
+					renderer.DrawHighlighterPrimitives(
+						stroke.l0HighlighterGeometry.primitives,
+						ColorForTool(runtime.tool));
+					UnionRectInPlace(dirty, stroke.l0HighlighterGeometry.bounds);
+					drewGeometry = true;
+				}
+				if (!drewGeometry)
+				{
+					std::array<InkPoint, 1> clickPoints = {};
+					if (stroke.hasInputStartPoint)
+						clickPoints[0] = stroke.inputStartPoint;
+					else if (!stroke.realPoints.empty())
+						clickPoints[0] = stroke.realPoints.front();
+					else
+						return {};
+					RebuildHighlighterGeometry(clickPoints, stroke.l0HighlighterGeometry);
+					renderer.DrawHighlighterPrimitives(
+						stroke.l0HighlighterGeometry.primitives,
+						ColorForTool(runtime.tool));
+					dirty = stroke.l0HighlighterGeometry.bounds;
+				}
+				return ClampRectToCanvas(dirty, width, height);
 			}
-			runtime.rebuildPoints.assign(stroke.realPoints.begin(), stroke.realPoints.end());
-			if (runtime.rebuildPoints.empty() && stroke.hasInputStartPoint)
-				runtime.rebuildPoints.push_back(stroke.inputStartPoint); // Down 后立即 Up 仍要落下点击圆点。
 			if (runtime.tool == DrawingTool::Pen)
 			{
 				if (stroke.hasCommittedGeometry && !stroke.realPoints.empty())
 				{
 					const size_t stablePointCount =
 						std::min(stroke.committedIndex + 1, stroke.realPoints.size());
-					runtime.rebuildPoints.assign(
-						stroke.realPoints.begin(), stroke.realPoints.begin() + stablePointCount);
+					const std::span<const InkPoint> stablePoints =
+						std::span<const InkPoint>(stroke.realPoints).first(stablePointCount);
+					renderer.DrawStrokeOrDot(stablePoints, ColorForTool(runtime.tool));
+					UnionRectInPlace(dirty,
+						RectFromStrokePoints(stablePoints, width, height));
+				}
+				BuildCompletedPenTail(stroke, retainPredictionOnUp, liveTipTaperSeconds,
+					runtime.rebuildPoints);
+				if (!runtime.rebuildPoints.empty())
+				{
 					renderer.DrawStrokeOrDot(runtime.rebuildPoints, ColorForTool(runtime.tool));
 					UnionRectInPlace(dirty,
 						RectFromStrokePoints(runtime.rebuildPoints, width, height));
 				}
-				BuildCompletedPenTail(stroke, retainPredictionOnUp, liveTipTaperSeconds,
-					runtime.rebuildPoints);
+				return ClampRectToCanvas(dirty, width, height);
 			}
-			if (!runtime.rebuildPoints.empty())
+
+			std::array<InkPoint, 1> fallbackPoint = {};
+			std::span<const InkPoint> completedPoints = stroke.realPoints;
+			if (completedPoints.empty() && stroke.hasInputStartPoint)
 			{
-				const InkOperatorKind operatorKind = runtime.tool == DrawingTool::Eraser
-					? InkOperatorKind::Erase : InkOperatorKind::Draw;
-				renderer.DrawStrokeOrDot(runtime.rebuildPoints, ColorForTool(runtime.tool),
-					StrokeShape::RoundCapsule, operatorKind);
-				UnionRectInPlace(dirty, RectFromStrokePoints(runtime.rebuildPoints, width, height));
+				fallbackPoint[0] = stroke.inputStartPoint;
+				completedPoints = fallbackPoint; // Down 后立即 Up 仍要落下点击圆点。
 			}
+			if (completedPoints.empty()) return {};
+			renderer.DrawStrokeOrDot(completedPoints, ColorForTool(runtime.tool),
+				StrokeShape::RoundCapsule, InkOperatorKind::Erase);
+			UnionRectInPlace(dirty, RectFromStrokePoints(completedPoints, width, height));
 			return ClampRectToCanvas(dirty, width, height);
 		}
 
@@ -1556,7 +1588,6 @@ namespace draw3
 					runtime->laserLayerId = nextLaserLayerId++;
 					LaserStrokeLayer layer{
 						.id = runtime->laserLayerId, .runtime = runtime };
-					layer.coverageSubmissionPoints.reserve(128);
 					laserStrokeLayers.push_back(std::move(layer));
 					const LaserCoverageMode previousCoverageMode = laserCoverageMode;
 					laserCoverageMode = SelectLaserCoverageMode(laserCoverageMode,
@@ -2022,8 +2053,10 @@ namespace draw3
 				particlesWereEnabled = particlesEnabledEffective;
 			}
 			const WindowSize animationCanvasSize = window_.Size();
+			LaserParticleDirtySnapshot laserParticleSnapshot =
+				laserParticleDirtyTracker.Snapshot(animationQpc.QuadPart);
 			RECT currentLaserParticleBounds = ClampRectToCanvas(
-				laserParticleDirtyTracker.ActiveBounds(animationQpc.QuadPart),
+				laserParticleSnapshot.activeBounds,
 				animationCanvasSize.width, animationCanvasSize.height);
 			if (!IsEmptyRect(previousLaserParticleBounds) ||
 				!IsEmptyRect(currentLaserParticleBounds))
@@ -2031,8 +2064,7 @@ namespace draw3
 				UnionRectInPlace(frameDirty, previousLaserParticleBounds);
 				UnionRectInPlace(frameDirty, currentLaserParticleBounds);
 			}
-			const bool particleAnimationActive =
-				laserParticleDirtyTracker.HasActive(animationQpc.QuadPart);
+			const bool particleAnimationActive = laserParticleSnapshot.hasActive;
 			if (laserOpacityChanged)
 			{
 				UnionRectInPlace(frameDirty, laserStableBounds);
@@ -2067,6 +2099,7 @@ namespace draw3
 				laserSummaryPending = false;
 				renderer_.ResetLaserParticles();
 				laserParticleDirtyTracker.Clear();
+				laserParticleSnapshot = {};
 				lastLaserParticleSimulationQpc = 0;
 				previousLaserParticleBounds = {};
 				previousLaserTipBounds = {};
@@ -2188,7 +2221,7 @@ namespace draw3
 
 			const bool hasPhysicalContact = HasPhysicalContact(active);
 			if ((hasPhysicalContact || laserLifecycle.phase == LaserTrailPhase::Fade ||
-				laserParticleDirtyTracker.HasActive(frameQpc.QuadPart)) &&
+				laserParticleSnapshot.hasActive) &&
 				!timerPeriodAttempted)
 			{
 				timerPeriodAttempted = true;
@@ -2273,32 +2306,33 @@ namespace draw3
 						if (LaserStrokeLayer* layer = FindLaserStrokeLayer(
 							laserStrokeLayers, runtime->laserLayerId))
 						{
-							std::vector<InkPoint> downFallbackPoints;
-							std::vector<InkPoint> downFallbackVisiblePoints;
-							const std::vector<InkPoint>* coverageRealPoints = &stroke.realPoints;
+							std::array<InkPoint, 1> downFallbackPoint = {};
+							std::span<const InkPoint> coverageRealPoints(stroke.realPoints);
 							if (stroke.realPoints.empty() && stroke.hasInputStartPoint)
 							{
-								downFallbackPoints.push_back(stroke.inputStartPoint);
-								coverageRealPoints = &downFallbackPoints;
+								downFallbackPoint[0] = stroke.inputStartPoint;
+								coverageRealPoints = downFallbackPoint;
 							}
-							const std::vector<InkPoint>* coverageVisiblePoints = &stroke.l0DrawPoints;
+							std::span<const InkPoint> coverageVisiblePoints(
+								stroke.l0DrawPoints);
 							const size_t expectedVisiblePointCount =
-								coverageRealPoints->size() + stroke.predictedPoints.size();
-							if (coverageVisiblePoints->size() < expectedVisiblePointCount)
+								coverageRealPoints.size() + stroke.predictedPoints.size();
+							if (coverageVisiblePoints.size() < expectedVisiblePointCount)
 							{
-								downFallbackVisiblePoints = *coverageRealPoints;
-								downFallbackVisiblePoints.insert(downFallbackVisiblePoints.end(),
+								runtime->rebuildPoints.assign(
+									coverageRealPoints.begin(), coverageRealPoints.end());
+								runtime->rebuildPoints.insert(runtime->rebuildPoints.end(),
 									stroke.predictedPoints.begin(), stroke.predictedPoints.end());
-								coverageVisiblePoints = &downFallbackVisiblePoints;
+								coverageVisiblePoints = runtime->rebuildPoints;
 							}
 							laserDiagnostics.maximumVisiblePoints = std::max(
 								laserDiagnostics.maximumVisiblePoints,
-								coverageVisiblePoints->size());
+								coverageVisiblePoints.size());
 							if (laserCoverageMode == LaserCoverageMode::Incremental)
 							{
 								RECT coverageDirty = {};
 								const bool coverageUpdated = UpdateLaserIncrementalCoverage(
-									*layer, *coverageRealPoints, *coverageVisiblePoints,
+									*layer, coverageRealPoints, coverageVisiblePoints,
 									configuration_.liveTipDurationSeconds +
 									GetPredictionDurationSeconds(stroke), renderer_,
 									configuration_.dpiScale, size.width, size.height,
@@ -2315,7 +2349,7 @@ namespace draw3
 									layer->stableBounds = {};
 									layer->liveBounds = {};
 									layer->bounds = RectFromLaserPoints(
-										*coverageVisiblePoints, configuration_.dpiScale,
+										coverageVisiblePoints, configuration_.dpiScale,
 										size.width, size.height);
 									UnionRectInPlace(frameDirty, layer->bounds);
 									UnionRectInPlace(runtime->visibleDirty, layer->bounds);
@@ -2323,8 +2357,22 @@ namespace draw3
 							}
 							else
 							{
-								layer->bounds = RectFromLaserPoints(stroke.l0DrawPoints,
+								const LaserLayerDirtyPlan dirtyPlan = PlanLaserLayerDirty(
+									coverageRealPoints, coverageVisiblePoints,
+									layer->incrementalState, layer->stableBounds,
+									layer->liveBounds,
+									configuration_.liveTipDurationSeconds +
+									GetPredictionDurationSeconds(stroke),
 									configuration_.dpiScale, size.width, size.height);
+								layer->incrementalState.stableCommittedIndex =
+									dirtyPlan.ranges.nextStableCommittedIndex;
+								layer->incrementalState.rebuildRequired = false;
+								layer->stableBounds = dirtyPlan.stableBounds;
+								layer->liveBounds = dirtyPlan.liveBounds;
+								layer->bounds = dirtyPlan.layerBounds;
+								UnionRectInPlace(frameDirty, dirtyPlan.dirtyBounds);
+								UnionRectInPlace(runtime->visibleDirty,
+									dirtyPlan.dirtyBounds);
 							}
 							UnionRectInPlace(currentLaserLiveBounds, layer->bounds);
 							UnionRectInPlace(runtime->visibleDirty, layer->bounds);
@@ -2489,23 +2537,10 @@ namespace draw3
 				currentLaserLiveBounds = {};
 				for (LaserStrokeLayer& layer : laserStrokeLayers)
 				{
-					if (laserCoverageMode == LaserCoverageMode::Incremental)
-					{
-						if (layer.cancelled || IsEmptyRect(layer.bounds)) continue;
-					}
-					else
-					{
-						const std::vector<InkPoint>& points = LaserStrokeLayerPoints(layer);
-						if (!ShouldCompositeLaserLayer(layer.cancelled, points.size())) continue;
-						layer.bounds = RectFromLaserPoints(points, configuration_.dpiScale,
-							size.width, size.height);
-					}
+					const std::vector<InkPoint>& points = LaserStrokeLayerPoints(layer);
+					if (!ShouldCompositeLaserLayer(layer.cancelled, points.size()) ||
+						IsEmptyRect(layer.bounds)) continue;
 					UnionRectInPlace(currentLaserLiveBounds, layer.bounds);
-				}
-				if (laserCoverageMode != LaserCoverageMode::Incremental)
-				{
-					UnionRectInPlace(frameDirty, previousLaserLiveBounds);
-					UnionRectInPlace(frameDirty, currentLaserLiveBounds);
 				}
 				laserLiveBounds = currentLaserLiveBounds;
 			}
@@ -2524,26 +2559,20 @@ namespace draw3
 				laserCoverageMode = LaserCoverageMode::Inactive;
 			}
 
-			const bool hasActiveLaserParticleContact = std::any_of(
-				active.begin(), active.end(), [](const RuntimeStroke* runtime)
-				{
-					return runtime && runtime->tool == DrawingTool::Laser &&
-						!runtime->ended;
-				});
-			const bool shouldSimulateLaserParticles = particlesEnabledEffective &&
-				(hasActiveLaserParticleContact ||
-					laserParticleDirtyTracker.HasActive(frameQpc.QuadPart) ||
-					!IsEmptyRect(previousLaserParticleBounds) ||
+			const bool shouldStepLaserParticles = particlesEnabledEffective &&
+				(laserParticleSnapshot.hasActive || laserParticleSnapshot.expiredAny ||
 					!laserParticleEmissionRequests.empty());
-			if (shouldSimulateLaserParticles)
+			const bool shouldDrawLaserParticles = particlesEnabledEffective &&
+				(laserParticleSnapshot.hasActive ||
+					!laserParticleEmissionRequests.empty());
+			if (shouldStepLaserParticles)
 			{
-				renderer_.SimulateLaserParticles(
-					laserParticleWallDeltaSeconds, laserParticleWallDeltaSeconds);
+				renderer_.StepLaserParticles(
+					laserParticleWallDeltaSeconds, laserParticleWallDeltaSeconds,
+					laserParticleSnapshot.hasActive || laserParticleSnapshot.expiredAny,
+					laserParticleEmissionRequests);
 				lastLaserParticleSimulationQpc = frameQpc.QuadPart;
-				for (const LaserParticleEmissionRequest& request :
-					laserParticleEmissionRequests)
-					renderer_.EmitLaserParticles(request);
-				// Up/Cancel 只让控制器停止创建请求；存量粒子继续按自身寿命独立运动。
+				// 刚到期批次仍提交最后一次 update，但不再绘制退化实例。
 			}
 
 			if (hasEndedStroke)
@@ -2677,6 +2706,7 @@ namespace draw3
 				laserCoverageMode = LaserCoverageMode::Inactive;
 				renderer_.ResetLaserParticles();
 				laserParticleDirtyTracker.Clear();
+				laserParticleSnapshot = {};
 				lastLaserParticleSimulationQpc = 0;
 				previousLaserParticleBounds = {};
 				previousLaserTipBounds = {};
@@ -2684,9 +2714,12 @@ namespace draw3
 				forceFullPresent = true;
 			}
 
+			RECT currentLaserParticleUnclippedBounds =
+				laserParticleSnapshot.activeBounds;
+			UnionRectInPlace(currentLaserParticleUnclippedBounds,
+				currentFrameLaserParticleBatchBounds);
 			currentLaserParticleBounds = ClampRectToCanvas(
-				laserParticleDirtyTracker.ActiveBounds(frameQpc.QuadPart),
-				size.width, size.height);
+				currentLaserParticleUnclippedBounds, size.width, size.height);
 			if (!IsEmptyRect(previousLaserParticleBounds) ||
 				!IsEmptyRect(currentLaserParticleBounds))
 			{
@@ -2761,15 +2794,15 @@ namespace draw3
 					kActiveDebugLayerColorMode == DebugLayerColorMode::ColorizeLiveLayer;
 				CompositeLayersToBackBuffer(frameDirty, orderedPreview);
 				// 粒子先于激光主体绘制，使粒子辉光托衬在墨迹主体下方，避免遮挡演示内容。
-				if (particlesEnabledEffective)
+				if (shouldDrawLaserParticles)
 					renderer_.DrawLaserParticles();
 				if (laserLifecycle.phase != LaserTrailPhase::Inactive && laserOpacity > 0.0f)
 				{
 					renderer_.ResolveLaserCompositedColor(
 						renderer_.backBufferRTV.Get(), frameDirty, laserOpacity);
 					DrawLaserStrokeLayers(laserStrokeLayers, renderer_,
-						renderer_.backBufferRTV.Get(), frameDirty, configuration_.dpiScale,
-						size.width, size.height, laserCoverageMode, laserDiagnostics);
+						renderer_.backBufferRTV.Get(), frameDirty,
+						laserCoverageMode, laserDiagnostics);
 				}
 				renderer_.DrawLaserDots(laserTipDots);
 				for (const DrawingCursorVisual& visual : currentCursorVisuals)
@@ -2837,7 +2870,7 @@ namespace draw3
 				lastActiveFrameStartMs = frameStartMs;
 			}
 			else if (laserLifecycle.phase == LaserTrailPhase::Fade ||
-				laserParticleDirtyTracker.HasActive(frameQpc.QuadPart))
+				laserParticleSnapshot.hasActive)
 			{
 				const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
 				const double remainingFrameBudgetMs =
