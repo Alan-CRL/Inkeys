@@ -2902,7 +2902,7 @@ namespace draw3
 						lastPresentDurationMs_, lastPresentSucceeded_);
 				const double remainingFrameBudgetMs =
 					1000.0 / configuration_.timingProfile.target_fps - workMs;
-				input_.WaitForWake(frameWakeGeneration, remainingFrameBudgetMs);
+				input_.WaitForFrameDeadline(remainingFrameBudgetMs);
 				size_t committedCount = 0;
 				size_t realPointCount = 0;
 				size_t predictedPointCount = 0;
@@ -2926,7 +2926,7 @@ namespace draw3
 				const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
 				const double remainingFrameBudgetMs =
 					1000.0 / configuration_.timingProfile.target_fps - workMs;
-				input_.WaitForWake(frameWakeGeneration, remainingFrameBudgetMs);
+				input_.WaitForFrameDeadline(remainingFrameBudgetMs);
 				lastActiveFrameStartMs = frameStartMs;
 			}
 			else if (!active.empty())

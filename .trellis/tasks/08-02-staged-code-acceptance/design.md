@@ -109,7 +109,7 @@ HUD 不进入 D3D backbuffer。当前 presenter 只接受一个矩形 dirty；�
 
 统计窗达到 1 秒后才执行一次汇总：平均 FPS 使用有效间隔总时长，1% Low 取最慢 1% 帧时的平均帧时并求倒数，波动使用帧时标准差，同时输出平均/P99 frame、平均 work 和平均 present。进程 CPU 使用 `GetProcessTimes` 的相邻采样差除以墙钟和逻辑处理器数；工作集使用动态解析的进程内存计数 API。Renderer 初始化时尝试取得 `IDXGIAdapter3`，支持时每秒查询本进程 local/non-local video memory `CurrentUsage`，旧系统或 WARP 不支持时显示 `N/A`，不得失败启动。
 
-只有帧开始和结束都处于物理 contact 绘制序列时才记录样本。Laser Hold/Fade、粒子动画、断触等待和完全空闲不调用 tracker；物理 contact 结束时切断未完成统计序列，避免下一笔把空闲时间算成长帧。HUD 保留最后文本但不更新，也没有独立 timer。因此测试模式不会改变绘制线程的 idle/wake 契约。
+只有帧开始和结束都处于物理 contact 绘制序列时才记录样本。活动绘制和 Laser Fade/粒子动画统一等待到目标帧截止时间，Pen 光标或其他 ControlWake 不能提前开始下一帧；队列只保留最新快照。Laser Hold、断触等待和完全空闲仍可被输入唤醒。物理 contact 结束时切断未完成统计序列，避免下一笔把空闲时间算成长帧。HUD 同时显示实际锁帧 FPS 与按平均 work 耗时推算的 `UNLIMITED FPS`，保留最后文本但不更新，也没有独立 timer。
 
 ## Stage 2.5 Compatibility And Rollback
 

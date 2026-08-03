@@ -719,6 +719,36 @@ namespace draw3
 		}
 	}
 
+	void ContactInputCoordinator::WaitForFrameDeadline(
+		double timeoutMilliseconds) noexcept
+	{
+		impl_->Count(impl_->activeWaits);
+		if (timeoutMilliseconds <= 0.0 || impl_->qpcFrequency <= 0) return;
+
+		LARGE_INTEGER now = {};
+		QueryPerformanceCounter(&now);
+		const int64_t deadline = now.QuadPart + static_cast<int64_t>(
+			timeoutMilliseconds * static_cast<double>(impl_->qpcFrequency) / 1000.0);
+		for (;;)
+		{
+			QueryPerformanceCounter(&now);
+			const int64_t remainingTicks = deadline - now.QuadPart;
+			if (remainingTicks <= 0) return;
+			const double remainingMilliseconds =
+				static_cast<double>(remainingTicks) * 1000.0 / static_cast<double>(impl_->qpcFrequency);
+			const double coarseWaitMilliseconds = std::floor(remainingMilliseconds - 1.25);
+			if (impl_->wakeEvent && coarseWaitMilliseconds >= 1.0)
+			{
+				const DWORD coarseWait = static_cast<DWORD>(coarseWaitMilliseconds);
+				if (WaitForSingleObject(impl_->wakeEvent, coarseWait) == WAIT_FAILED) return;
+			}
+			else
+			{
+				YieldProcessor(); // 最后约 1.25ms 继续使用现有高精度等待策略。
+			}
+		}
+	}
+
 	void ContactInputCoordinator::EnableDiagnostics(bool enabled) noexcept
 	{
 		impl_->diagnosticsEnabled.store(enabled, std::memory_order_release);

@@ -334,6 +334,10 @@ int RunLaserIncrementalCoverageTests()
 			"frameHadActiveContact && GetPerformanceHudEnabled() &&"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
 			"performanceHudTracker_.EndDrawingFrameSequence();"));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
+			"WaitForFrameDeadline(remainingFrameBudgetMs)"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(controllerSource,
+			"WaitForWake(frameWakeGeneration, remainingFrameBudgetMs)"));
 	}
 
 	if (failures == 0)

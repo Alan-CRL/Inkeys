@@ -505,7 +505,8 @@ contact 结束时由 `StrokeModelConfiguration::retainPredictionOnUp` 选择收�
 - waitable swapchain resize 必须先 `GetDesc1`，并原样传回 `BufferCount/Format/Flags`；部分驱动在传入零值时第一次 resize 成功、恢复尺寸时失败。
 - 运行指标关闭时不创建会话、不启用输入计数、不写文件；开启后原始样本写入忽略的 `TestResults/`，仓库只保存环境、阈值和分位数摘要。
 - 默认开启的性能测试 HUD 使用独立 owned layered popup，必须点击穿透且不激活；它不进入 backbuffer、L0/L1/L2、Laser coverage、dirty rect、shader 或 presenter。
-- HUD 只在帧首尾都有物理 contact 时向固定容量 tracker 追加样本；1 秒边界才允许排序、格式化、进程 CPU/工作集和 `IDXGIAdapter3` 显存查询。Hold/Fade、粒子动画和空闲不采样、不刷新、无独立 timer。
+- HUD 只在帧首尾都有物理 contact 时向固定容量 tracker 追加样本；活动帧与 Laser Fade/粒子动画必须等待到目标帧截止时间，任何 Pen 光标/ControlWake 不能提前开始下一帧，输入只保留最新快照。1 秒边界才允许排序、格式化、进程 CPU/工作集和 `IDXGIAdapter3` 显存查询。Hold、断触等待和完全空闲可被输入唤醒，但不采样、不刷新、无独立 timer。
+- HUD 的实际 FPS 是帧起始时间间隔；`UNLIMITED FPS` 只能由同一统计窗平均 work 耗时倒数推算，不得把目标帧等待计入设备性能估算。
 - 物理 contact 序列结束时丢弃未闭合 HUD 统计窗并保留最后快照，下一笔不得把空闲时间算入 frame interval、FPS、1% Low 或 CPU 统计区间。
 
 ### 4. Validation & Error Matrix

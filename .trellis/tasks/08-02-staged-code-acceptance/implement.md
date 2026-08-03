@@ -126,3 +126,9 @@
 - [x] 新增确定性 1% Low、jitter、GPU N/A、固定容量零分配、空闲断点和 HUD 静态样式/脏区隔离契约测试；Debug/Release ARM64 全量测试及 `--drawing-perf` 通过。
 - [x] `git diff --check` 通过；本轮修改的 C++ 文件保持 UTF-8 BOM + CRLF，Trellis Markdown 保持 UTF-8 no-BOM + LF；未触碰未跟踪 `Vcpkg/`。
 - [ ] 按当前对话限制未启动主程序、未创建或操控窗口；HUD 左上角位置、透明度、字号、点击穿透、多 DPI、D3D Debug Layer 和真实输入仍待人工验收。
+
+## Stage 2.5 Frame-Cap Follow-up (2026-08-03)
+
+- [x] 活动帧与 Laser Fade/粒子动画改用不可提前打断的 `WaitForFrameDeadline`；Pen 光标控制唤醒只合并输入，不得突破 `Fps120` 的 8.33ms 帧预算。
+- [x] HUD 增加 `UNLIMITED FPS`，由统计窗内平均 work 耗时推算，不包含目标帧等待，用于区分设备本身处理能力和实际锁帧 FPS。
+- [x] 无窗口测试覆盖控制唤醒不能缩短帧截止时间、无限性能 FPS 计算和 HUD 文本；静态契约锁定 controller 不再用可提前唤醒 API 等待活动帧预算。

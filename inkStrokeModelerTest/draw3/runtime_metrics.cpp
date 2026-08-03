@@ -333,6 +333,8 @@ namespace draw3
 			snapshot.averageFrameMs);
 		snapshot.averageWorkMs = Average(
 			tracker.workDurationsMs, tracker.workDurationCount);
+		snapshot.estimatedUnlimitedFps = snapshot.averageWorkMs > 0.0
+			? 1000.0 / snapshot.averageWorkMs : 0.0;
 		snapshot.averagePresentMs = Average(
 			tracker.presentDurationsMs, tracker.presentDurationCount);
 		snapshot.workingSetMiB = ReadWorkingSetMiB();
@@ -387,11 +389,12 @@ namespace draw3
 		{
 			swprintf_s(text,
 				L"PERF TEST [ON]\r\n"
-				L"FPS %.1f   1%% LOW %.1f\r\n"
+				L"FPS %.1f   1%% LOW %.1f   UNLIMITED %.1f FPS\r\n"
 				L"FRAME %.2f ms   P99 %.2f ms   JITTER %.2f ms\r\n"
 				L"CPU %.1f%%   RAM %.1f MiB   GPU MEM %.1f MiB\r\n"
 				L"WORK %.2f ms   PRESENT %.2f ms   SAMPLES %zu",
 				snapshot.averageFps, snapshot.onePercentLowFps,
+				snapshot.estimatedUnlimitedFps,
 				snapshot.averageFrameMs, snapshot.p99FrameMs,
 				snapshot.frameJitterMs, snapshot.processCpuPercent,
 				snapshot.workingSetMiB, gpuMemoryMiB,
@@ -402,11 +405,12 @@ namespace draw3
 		{
 			swprintf_s(text,
 				L"PERF TEST [ON]\r\n"
-				L"FPS %.1f   1%% LOW %.1f\r\n"
+				L"FPS %.1f   1%% LOW %.1f   UNLIMITED %.1f FPS\r\n"
 				L"FRAME %.2f ms   P99 %.2f ms   JITTER %.2f ms\r\n"
 				L"CPU %.1f%%   RAM %.1f MiB   GPU MEM N/A\r\n"
 				L"WORK %.2f ms   PRESENT %.2f ms   SAMPLES %zu",
 				snapshot.averageFps, snapshot.onePercentLowFps,
+				snapshot.estimatedUnlimitedFps,
 				snapshot.averageFrameMs, snapshot.p99FrameMs,
 				snapshot.frameJitterMs, snapshot.processCpuPercent,
 				snapshot.workingSetMiB,

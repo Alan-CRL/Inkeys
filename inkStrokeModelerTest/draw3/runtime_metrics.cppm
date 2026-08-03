@@ -31,6 +31,7 @@ export namespace draw3
 		double p99FrameMs = 0.0;
 		double frameJitterMs = 0.0;
 		double averageWorkMs = 0.0;
+		double estimatedUnlimitedFps = 0.0;
 		double averagePresentMs = 0.0;
 		double processCpuPercent = 0.0;
 		double workingSetMiB = 0.0;

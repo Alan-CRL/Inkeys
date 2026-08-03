@@ -204,6 +204,8 @@ export namespace draw3
 		uint64_t CaptureWakeGeneration() const noexcept;
 		// 等待 generation 变化或帧预算到期；返回 true 表示被输入/控制请求打断。
 		bool WaitForWake(uint64_t observedGeneration, double timeoutMilliseconds) noexcept;
+		// 等到活动帧预算耗尽；期间的输入/控制唤醒只合并状态，不能突破锁帧上限。
+		void WaitForFrameDeadline(double timeoutMilliseconds) noexcept;
 		// 指标会话显式启用/关闭输入计数。
 		void EnableDiagnostics(bool enabled) noexcept;
 		ContactInputDiagnosticsSnapshot DiagnosticsSnapshot() const noexcept;

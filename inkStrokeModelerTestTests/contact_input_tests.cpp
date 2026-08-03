@@ -277,6 +277,18 @@ namespace
 		generation = input.CaptureWakeGeneration();
 		TEST_CHECK(state, input.PublishMove(31, 1, MakeSnapshot(2, draw3::ContactPhase::Move)));
 		TEST_CHECK(state, !input.WaitForWake(generation, 2.0)); // Move 只合并 snapshot，不驱动额外帧。
+
+		TEST_CHECK(state, input.PublishControlWake());
+		const auto frameWaitStart = std::chrono::steady_clock::now();
+		input.WaitForFrameDeadline(6.0);
+		const double frameWaitMilliseconds = std::chrono::duration<double, std::milli>(
+			std::chrono::steady_clock::now() - frameWaitStart).count();
+		TEST_CHECK(state, frameWaitMilliseconds >= 5.0); // 已到达的控制唤醒不能突破帧截止时间。
+		draw3::ContactRecord* controlWake = reinterpret_cast<draw3::ContactRecord*>(uintptr_t{ 1 });
+		TEST_CHECK(state, input.TryDequeue(controlWake));
+		TEST_CHECK(state, controlWake == nullptr);
+		input.AcknowledgeControlWake();
+
 		generation = input.CaptureWakeGeneration();
 		TEST_CHECK(state, input.PublishCancelled(31, 1, MakeSnapshot(3, draw3::ContactPhase::Cancelled)));
 		TEST_CHECK(state, input.WaitForWake(generation, 50.0));
@@ -1292,6 +1304,7 @@ namespace
 		TEST_CHECK(state, std::abs(first.p99FrameMs - 10.0) < 0.001);
 		TEST_CHECK(state, first.frameJitterMs < 0.001);
 		TEST_CHECK(state, std::abs(first.averageWorkMs - 2.0) < 0.001);
+		TEST_CHECK(state, std::abs(first.estimatedUnlimitedFps - 500.0) < 0.001);
 		TEST_CHECK(state, std::abs(first.averagePresentMs - 0.5) < 0.001);
 		TEST_CHECK(state, first.processCpuPercent >= 0.0 && first.processCpuPercent <= 100.0);
 		TEST_CHECK(state, first.workingSetMiB > 0.0);
@@ -1310,6 +1323,7 @@ namespace
 		TEST_CHECK(state, mixed.frameJitterMs > 0.9 && mixed.frameJitterMs < 1.1);
 		const std::wstring formatted = tracker.FormatText(-1.0);
 		TEST_CHECK(state, formatted.find(L"1% LOW") != std::wstring::npos);
+		TEST_CHECK(state, formatted.find(L"UNLIMITED") != std::wstring::npos);
 		TEST_CHECK(state, formatted.find(L"GPU MEM N/A") != std::wstring::npos);
 
 		tracker.EndDrawingFrameSequence();
