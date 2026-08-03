@@ -93,3 +93,36 @@
 - `git diff --check`、UTF-8 BOM + CRLF / Trellis UTF-8 no-BOM + LF、module 声明、四个工程/filters 引用和死代码引用检查通过；未触碰未跟踪 `Vcpkg/`。
 - 按用户限制未启动主程序、未创建或操控窗口、未运行 `--benchmark`。GUI 视觉、D3D Debug Layer、真实输入以及 Resize/Present 人工验证仍未执行。
 - Stage 3 最近一个月代码安全验收继续保留，尚未开始。
+
+## Stage 2.5 Implementation Order
+
+1. 在 `runtime_metrics` 中增加固定容量的 HUD 帧统计、1 秒汇总、进程 CPU/工作集采样和格式化；补确定性 1% Low/P99/波动测试。
+2. 在 Renderer 初始化/释放中维护可选 `IDXGIAdapter3`，仅在 HUD 汇总时查询本进程 local/non-local video memory，旧系统失败返回不可用。
+3. 在 `WindowController` 窗口线程创建 owned layered HUD，增加最新文本 mailbox、启用/隐藏消息、预乘 BGRA DIB 绘制和完整资源清理。
+4. 在 `StrokeModelConfiguration` 与 `DrawingController` 增加默认开启的测试模式 setter/getter；启动时发布等待文本，只有物理 contact 绘制帧才记录并最多每秒更新一次。
+5. 增加静态窗口样式/消息契约测试、关闭开关无采样测试和固定容量/无逐帧分配断言。
+6. 运行 ARM64 Debug/Release 完整解决方案构建、两个配置全量无窗口测试、`--drawing-perf`、`git diff --check` 和编码换行检查；不启动主程序或 GUI。
+
+## Stage 2.5 Review Gates
+
+- HUD 不得修改 `frameDirty`、backbuffer、L0/L1/L2、Laser coverage、shader 或 presenter 调用顺序。
+- 普通物理绘制帧只追加固定容量样本；排序、格式化、GDI 和硬件查询只能发生在 1 秒汇总边界。
+- 绘制线程发布 HUD 更新不得等待窗口线程、不得持有窗口 mailbox 锁进行系统调用。
+- 关闭开关后立即停止采样并隐藏窗口；重新开启从新统计窗开始，不把关闭期间时间算入 FPS。
+- HUD 失败回退不能改变主窗口创建、透明 presenter 回退、RTS 输入或退出顺序。
+
+## Stage 2.5 Rollback Points
+
+- tracker 与 UI 发布分开落地；统计不正确时可保留隐藏 HUD，不影响窗口线程。
+- layered window 创建失败时保持窗口句柄为空，所有更新成为 no-op。
+- `IDXGIAdapter3` 不可用或查询失败时仅显示 `GPU MEM N/A`，不移除 CPU/内存/FPS 指标。
+- 若静态审查发现 HUD 扩大墨迹 dirty 或引入持续 timer，回退该实现并保留独立 overlay 设计约束。
+
+## Stage 2.5 Completion Record (2026-08-03)
+
+- [x] `PerformanceHudTracker` 使用固定 1024 样本数组，统计平均 FPS、最慢 1% Low、P99、标准差、work/present、进程 CPU 和工作集；GPU 显存通过可选 `IDXGIAdapter3` 查询，失败显示 `N/A`。
+- [x] `WindowController` 创建独立 owned layered popup，使用 `WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`，GDI DIB 仅在 1 秒快照更新时重绘，无 `WM_TIMER`。
+- [x] 测试模式默认开启；控制器仅在帧首尾都有物理 contact 时采样，空闲/激光 Hold/Fade/粒子动画不刷新；物理绘制序列结束时丢弃未闭合统计窗，避免跨空闲长帧污染。
+- [x] 新增确定性 1% Low、jitter、GPU N/A、固定容量零分配、空闲断点和 HUD 静态样式/脏区隔离契约测试；Debug/Release ARM64 全量测试及 `--drawing-perf` 通过。
+- [x] `git diff --check` 通过；本轮修改的 C++ 文件保持 UTF-8 BOM + CRLF，Trellis Markdown 保持 UTF-8 no-BOM + LF；未触碰未跟踪 `Vcpkg/`。
+- [ ] 按当前对话限制未启动主程序、未创建或操控窗口；HUD 左上角位置、透明度、字号、点击穿透、多 DPI、D3D Debug Layer 和真实输入仍待人工验收。

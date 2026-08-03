@@ -45,6 +45,9 @@ export namespace draw3
 		// 设置最后一根激光笔抬起后的满亮留存秒数；只接受有限非负值。
 		bool SetLaserHoldDurationSeconds(double seconds) noexcept;
 		double GetLaserHoldDurationSeconds() const noexcept;
+		// 控制独立性能测试 HUD；默认开启，不进入墨迹合成路径。
+		void SetPerformanceHudEnabled(bool enabled) noexcept;
+		bool GetPerformanceHudEnabled() const noexcept;
 		// 清空 L0/L1/L2 和 backbuffer，并立即全量呈现。
 		void ClearCanvas();
 		// 合成并呈现完整画布。
@@ -67,7 +70,10 @@ export namespace draw3
 		std::atomic<bool> interruptedStrokeReconnectEnabled_ = true;
 		std::atomic<bool> laserParticlesEnabled_ = false;
 		std::atomic<bool> laserMultiTouchDrawingEnabled_ = false;
+		std::atomic<bool> performanceHudEnabled_ = true;
+		std::atomic<bool> performanceHudResetRequested_ = false;
 		std::atomic<double> laserHoldDurationSeconds_ = 1.0;
+		PerformanceHudTracker performanceHudTracker_;
 		RuntimeMetricsSession* metrics_ = nullptr;
 		PenHapticFeedback* haptics_ = nullptr;
 		double lastPresentDurationMs_ = 0.0;

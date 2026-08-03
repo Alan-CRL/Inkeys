@@ -63,6 +63,7 @@
 	<ClCompile Include="draw3\renderer_laser.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
     <ClCompile Include="draw3\transparent_presentation.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
     <ClCompile Include="draw3\window_control.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
+	<ClCompile Include="draw3\window_performance_hud.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h">

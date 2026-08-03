@@ -268,6 +268,8 @@ int RunLaserIncrementalCoverageTests()
 			root / "inkStrokeModelerTest" / "draw3" / "drawing_controller.cpp";
 		const std::filesystem::path particleSystemSource =
 			root / "inkStrokeModelerTest" / "draw3" / "laser_particle_system.cpp";
+		const std::filesystem::path performanceHudSource =
+			root / "inkStrokeModelerTest" / "draw3" / "window_performance_hud.cpp";
 		LASER_INCREMENTAL_CHECK(sizeof(draw3::LaserGpuParticle) == 80);
 		LASER_INCREMENTAL_CHECK(ContainsText(particleCommon, "uint padding;"));
 		LASER_INCREMENTAL_CHECK(TextAppearsBefore(
@@ -319,6 +321,19 @@ int RunLaserIncrementalCoverageTests()
 			"PSSetShaderResources(6, ARRAYSIZE(nullLaserResources), nullLaserResources)"));
 		LASER_INCREMENTAL_CHECK(ContainsText(root / "inkStrokeModelerTest" / "draw3" / "renderer.cpp",
 			"nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr"));
+		// 性能 HUD 必须保持独立、点击穿透且只由物理绘制帧低频更新。
+		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource, "WS_EX_LAYERED"));
+		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource, "WS_EX_TRANSPARENT"));
+		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource, "WS_EX_TOOLWINDOW"));
+		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource, "WS_EX_NOACTIVATE"));
+		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource, "UpdateLayeredWindow("));
+		LASER_INCREMENTAL_CHECK(!ContainsText(performanceHudSource, "WM_TIMER"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(performanceHudSource, "frameDirty"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(performanceHudSource, "backBuffer"));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
+			"frameHadActiveContact && GetPerformanceHudEnabled() &&"));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
+			"performanceHudTracker_.EndDrawingFrameSequence();"));
 	}
 
 	if (failures == 0)

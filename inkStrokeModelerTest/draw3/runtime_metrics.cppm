@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <windows.h>
 
 export module draw3.runtime_metrics;
@@ -16,10 +17,49 @@ import draw3.contact_input;
 namespace draw3
 {
 	struct RuntimeMetricsSessionImpl;
+	struct PerformanceHudTrackerImpl;
 }
 
 export namespace draw3
 {
+	struct PerformanceHudSnapshot
+	{
+		size_t frameSampleCount = 0;
+		double averageFps = 0.0;
+		double onePercentLowFps = 0.0;
+		double averageFrameMs = 0.0;
+		double p99FrameMs = 0.0;
+		double frameJitterMs = 0.0;
+		double averageWorkMs = 0.0;
+		double averagePresentMs = 0.0;
+		double processCpuPercent = 0.0;
+		double workingSetMiB = 0.0;
+	};
+
+	// 使用固定容量样本统计最近一秒的绘制性能；普通帧不分配、不格式化。
+	class PerformanceHudTracker
+	{
+	public:
+		static constexpr size_t kSampleCapacity = 1024;
+
+		PerformanceHudTracker();
+		~PerformanceHudTracker();
+		PerformanceHudTracker(const PerformanceHudTracker&) = delete;
+		PerformanceHudTracker& operator=(const PerformanceHudTracker&) = delete;
+
+		// 只由物理 contact 绘制帧调用；统计窗闭合并产生新快照时返回 true。
+		bool RecordDrawingFrame(double frameStartMs, double workMs,
+			double presentMs, bool presented) noexcept;
+		// 一笔物理绘制结束时丢弃未闭合统计窗，避免把空闲时间算成帧间隔。
+		void EndDrawingFrameSequence() noexcept;
+		void Reset() noexcept;
+		const PerformanceHudSnapshot& Snapshot() const noexcept;
+		std::wstring FormatText(double gpuMemoryMiB) const;
+
+	private:
+		std::unique_ptr<PerformanceHudTrackerImpl> impl_;
+	};
+
 	// Release 可选运行指标；未构造会话时绘制热路径不分配、不写文件。
 	class RuntimeMetricsSession
 	{

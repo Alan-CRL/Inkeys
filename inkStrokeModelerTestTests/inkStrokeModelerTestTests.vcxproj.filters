@@ -42,6 +42,12 @@
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\pen_cursor.cppm">
 	  <Filter>draw3</Filter>
 	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\runtime_metrics.cpp">
+	  <Filter>draw3</Filter>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\runtime_metrics.cppm">
+	  <Filter>draw3</Filter>
+	</ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer.cpp">
       <Filter>draw3</Filter>
     </ClCompile>

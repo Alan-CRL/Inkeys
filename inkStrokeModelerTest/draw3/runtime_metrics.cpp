@@ -5,9 +5,12 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cwchar>
+#include <functional>
 #include <iomanip>
 #include <sstream>
 #include <string>
@@ -132,6 +135,285 @@ namespace draw3
 			CloseHandle(file);
 			return succeeded;
 		}
+	}
+
+	struct PerformanceHudTrackerImpl
+	{
+		std::array<double, PerformanceHudTracker::kSampleCapacity> frameIntervalsMs = {};
+		std::array<double, PerformanceHudTracker::kSampleCapacity> workDurationsMs = {};
+		std::array<double, PerformanceHudTracker::kSampleCapacity> presentDurationsMs = {};
+		size_t frameIntervalCount = 0;
+		size_t workDurationCount = 0;
+		size_t presentDurationCount = 0;
+		double windowStartMs = 0.0;
+		double lastFrameStartMs = 0.0;
+		uint64_t processCpuStartTicks = 0;
+		bool processCpuStartValid = false;
+		PerformanceHudSnapshot snapshot;
+	};
+
+	namespace
+	{
+		struct ProcessMemoryCounters
+		{
+			DWORD cb = 0;
+			DWORD pageFaultCount = 0;
+			SIZE_T peakWorkingSetSize = 0;
+			SIZE_T workingSetSize = 0;
+			SIZE_T quotaPeakPagedPoolUsage = 0;
+			SIZE_T quotaPagedPoolUsage = 0;
+			SIZE_T quotaPeakNonPagedPoolUsage = 0;
+			SIZE_T quotaNonPagedPoolUsage = 0;
+			SIZE_T pagefileUsage = 0;
+			SIZE_T peakPagefileUsage = 0;
+		};
+
+		using GetProcessMemoryInfoFn = BOOL(WINAPI*)(
+			HANDLE, ProcessMemoryCounters*, DWORD);
+
+		GetProcessMemoryInfoFn ResolveGetProcessMemoryInfo() noexcept
+		{
+			// 避免静态依赖 psapi；旧系统上再回退到同名导出。
+			if (HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll"))
+			{
+				if (FARPROC procedure = GetProcAddress(kernel32, "K32GetProcessMemoryInfo"))
+					return reinterpret_cast<GetProcessMemoryInfoFn>(procedure);
+			}
+
+			if (HMODULE psapi = LoadLibraryW(L"psapi.dll"))
+			{
+				if (FARPROC procedure = GetProcAddress(psapi, "GetProcessMemoryInfo"))
+					return reinterpret_cast<GetProcessMemoryInfoFn>(procedure);
+			}
+			return nullptr;
+		}
+
+		uint64_t FileTimeTicks(const FILETIME& value) noexcept
+		{
+			ULARGE_INTEGER ticks = {};
+			ticks.LowPart = value.dwLowDateTime;
+			ticks.HighPart = value.dwHighDateTime;
+			return ticks.QuadPart;
+		}
+
+		bool ReadProcessCpuTicks(uint64_t& ticks) noexcept
+		{
+			FILETIME creation = {};
+			FILETIME exit = {};
+			FILETIME kernel = {};
+			FILETIME user = {};
+			if (!GetProcessTimes(GetCurrentProcess(), &creation, &exit, &kernel, &user))
+				return false;
+			ticks = FileTimeTicks(kernel) + FileTimeTicks(user);
+			return true;
+		}
+
+		double ReadWorkingSetMiB() noexcept
+		{
+			static const GetProcessMemoryInfoFn getProcessMemoryInfo =
+				ResolveGetProcessMemoryInfo();
+			ProcessMemoryCounters counters;
+			counters.cb = sizeof(counters);
+			if (!getProcessMemoryInfo || !getProcessMemoryInfo(
+				GetCurrentProcess(), &counters, sizeof(counters)))
+				return 0.0;
+			return static_cast<double>(counters.workingSetSize) / (1024.0 * 1024.0);
+		}
+
+		template <size_t Capacity>
+		double Average(const std::array<double, Capacity>& values, size_t count) noexcept
+		{
+			if (count == 0) return 0.0;
+			double sum = 0.0;
+			for (size_t index = 0; index < count; ++index) sum += values[index];
+			return sum / static_cast<double>(count);
+		}
+
+		template <size_t Capacity>
+		double Percentile99(const std::array<double, Capacity>& values, size_t count) noexcept
+		{
+			if (count == 0) return 0.0;
+			std::array<double, Capacity> sorted = values;
+			std::sort(sorted.begin(), sorted.begin() + count);
+			const size_t index = std::min(count - 1,
+				static_cast<size_t>(std::ceil(static_cast<double>(count) * 0.99)) - 1);
+			return sorted[index];
+		}
+
+		template <size_t Capacity>
+		double OnePercentLowFps(
+			const std::array<double, Capacity>& values, size_t count) noexcept
+		{
+			if (count == 0) return 0.0;
+			std::array<double, Capacity> sorted = values;
+			std::sort(sorted.begin(), sorted.begin() + count, std::greater<double>());
+			const size_t slowCount = std::max<size_t>(
+				1, static_cast<size_t>(std::ceil(static_cast<double>(count) * 0.01)));
+			double slowFrameTotalMs = 0.0;
+			for (size_t index = 0; index < slowCount; ++index)
+				slowFrameTotalMs += sorted[index];
+			const double slowFrameAverageMs =
+				slowFrameTotalMs / static_cast<double>(slowCount);
+			return slowFrameAverageMs > 0.0 ? 1000.0 / slowFrameAverageMs : 0.0;
+		}
+
+		template <size_t Capacity>
+		double StandardDeviation(const std::array<double, Capacity>& values,
+			size_t count, double average) noexcept
+		{
+			if (count == 0) return 0.0;
+			double squaredDifferenceTotal = 0.0;
+			for (size_t index = 0; index < count; ++index)
+			{
+				const double difference = values[index] - average;
+				squaredDifferenceTotal += difference * difference;
+			}
+			return std::sqrt(squaredDifferenceTotal / static_cast<double>(count));
+		}
+
+		void BeginPerformanceHudWindow(
+			PerformanceHudTrackerImpl& tracker, double frameStartMs) noexcept
+		{
+			tracker.frameIntervalCount = 0;
+			tracker.workDurationCount = 0;
+			tracker.presentDurationCount = 0;
+			tracker.windowStartMs = frameStartMs;
+			tracker.lastFrameStartMs = frameStartMs;
+			tracker.processCpuStartValid =
+				ReadProcessCpuTicks(tracker.processCpuStartTicks);
+		}
+	}
+
+	PerformanceHudTracker::PerformanceHudTracker()
+		: impl_(std::make_unique<PerformanceHudTrackerImpl>())
+	{
+	}
+
+	PerformanceHudTracker::~PerformanceHudTracker() = default;
+
+	bool PerformanceHudTracker::RecordDrawingFrame(double frameStartMs,
+		double workMs, double presentMs, bool presented) noexcept
+	{
+		if (!std::isfinite(frameStartMs) || !std::isfinite(workMs) ||
+			!std::isfinite(presentMs) || frameStartMs < 0.0) return false;
+
+		PerformanceHudTrackerImpl& tracker = *impl_;
+		if (tracker.windowStartMs <= 0.0)
+			BeginPerformanceHudWindow(tracker, frameStartMs);
+		else
+		{
+			const double intervalMs = frameStartMs - tracker.lastFrameStartMs;
+			if (intervalMs > 0.0 &&
+				tracker.frameIntervalCount < tracker.frameIntervalsMs.size())
+				tracker.frameIntervalsMs[tracker.frameIntervalCount++] = intervalMs;
+			tracker.lastFrameStartMs = frameStartMs;
+		}
+
+		if (tracker.workDurationCount < tracker.workDurationsMs.size())
+			tracker.workDurationsMs[tracker.workDurationCount++] = std::max(0.0, workMs);
+		if (presented && tracker.presentDurationCount < tracker.presentDurationsMs.size())
+			tracker.presentDurationsMs[tracker.presentDurationCount++] =
+				std::max(0.0, presentMs);
+
+		const double elapsedMs = frameStartMs - tracker.windowStartMs;
+		if (elapsedMs < 1000.0) return false;
+
+		PerformanceHudSnapshot snapshot;
+		snapshot.frameSampleCount = tracker.frameIntervalCount;
+		snapshot.averageFrameMs = Average(
+			tracker.frameIntervalsMs, tracker.frameIntervalCount);
+		snapshot.averageFps = snapshot.averageFrameMs > 0.0
+			? 1000.0 / snapshot.averageFrameMs : 0.0;
+		snapshot.onePercentLowFps = OnePercentLowFps(
+			tracker.frameIntervalsMs, tracker.frameIntervalCount);
+		snapshot.p99FrameMs = Percentile99(
+			tracker.frameIntervalsMs, tracker.frameIntervalCount);
+		snapshot.frameJitterMs = StandardDeviation(
+			tracker.frameIntervalsMs, tracker.frameIntervalCount,
+			snapshot.averageFrameMs);
+		snapshot.averageWorkMs = Average(
+			tracker.workDurationsMs, tracker.workDurationCount);
+		snapshot.averagePresentMs = Average(
+			tracker.presentDurationsMs, tracker.presentDurationCount);
+		snapshot.workingSetMiB = ReadWorkingSetMiB();
+
+		uint64_t processCpuEndTicks = 0;
+		if (tracker.processCpuStartValid && ReadProcessCpuTicks(processCpuEndTicks) &&
+			processCpuEndTicks >= tracker.processCpuStartTicks && elapsedMs > 0.0)
+		{
+			SYSTEM_INFO systemInfo = {};
+			GetSystemInfo(&systemInfo);
+			const DWORD processorCount = std::max<DWORD>(systemInfo.dwNumberOfProcessors, 1);
+			const double availableTicks = elapsedMs * 10000.0 * processorCount;
+			snapshot.processCpuPercent = availableTicks > 0.0
+				? std::clamp(static_cast<double>(
+					processCpuEndTicks - tracker.processCpuStartTicks) /
+					availableTicks * 100.0, 0.0, 100.0)
+				: 0.0;
+		}
+
+		tracker.snapshot = snapshot;
+		BeginPerformanceHudWindow(tracker, frameStartMs);
+		return true;
+	}
+
+	void PerformanceHudTracker::EndDrawingFrameSequence() noexcept
+	{
+		impl_->frameIntervalCount = 0;
+		impl_->workDurationCount = 0;
+		impl_->presentDurationCount = 0;
+		impl_->windowStartMs = 0.0;
+		impl_->lastFrameStartMs = 0.0;
+		impl_->processCpuStartTicks = 0;
+		impl_->processCpuStartValid = false;
+	}
+
+	void PerformanceHudTracker::Reset() noexcept
+	{
+		EndDrawingFrameSequence();
+		impl_->snapshot = {};
+	}
+
+	const PerformanceHudSnapshot& PerformanceHudTracker::Snapshot() const noexcept
+	{
+		return impl_->snapshot;
+	}
+
+	std::wstring PerformanceHudTracker::FormatText(double gpuMemoryMiB) const
+	{
+		const PerformanceHudSnapshot& snapshot = impl_->snapshot;
+		wchar_t text[512] = {};
+		if (gpuMemoryMiB >= 0.0)
+		{
+			swprintf_s(text,
+				L"PERF TEST [ON]\r\n"
+				L"FPS %.1f   1%% LOW %.1f\r\n"
+				L"FRAME %.2f ms   P99 %.2f ms   JITTER %.2f ms\r\n"
+				L"CPU %.1f%%   RAM %.1f MiB   GPU MEM %.1f MiB\r\n"
+				L"WORK %.2f ms   PRESENT %.2f ms   SAMPLES %zu",
+				snapshot.averageFps, snapshot.onePercentLowFps,
+				snapshot.averageFrameMs, snapshot.p99FrameMs,
+				snapshot.frameJitterMs, snapshot.processCpuPercent,
+				snapshot.workingSetMiB, gpuMemoryMiB,
+				snapshot.averageWorkMs, snapshot.averagePresentMs,
+				snapshot.frameSampleCount);
+		}
+		else
+		{
+			swprintf_s(text,
+				L"PERF TEST [ON]\r\n"
+				L"FPS %.1f   1%% LOW %.1f\r\n"
+				L"FRAME %.2f ms   P99 %.2f ms   JITTER %.2f ms\r\n"
+				L"CPU %.1f%%   RAM %.1f MiB   GPU MEM N/A\r\n"
+				L"WORK %.2f ms   PRESENT %.2f ms   SAMPLES %zu",
+				snapshot.averageFps, snapshot.onePercentLowFps,
+				snapshot.averageFrameMs, snapshot.p99FrameMs,
+				snapshot.frameJitterMs, snapshot.processCpuPercent,
+				snapshot.workingSetMiB,
+				snapshot.averageWorkMs, snapshot.averagePresentMs,
+				snapshot.frameSampleCount);
+		}
+		return text;
 	}
 
 	struct RuntimeMetricsSessionImpl

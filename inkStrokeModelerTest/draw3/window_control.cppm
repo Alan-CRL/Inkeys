@@ -6,6 +6,9 @@
 
 #include <atomic>
 #include <cstdint>
+#include <mutex>
+#include <string>
+#include <string_view>
 #include <windows.h>
 
 export module draw3.window_control;
@@ -80,13 +83,23 @@ export namespace draw3
 		// 消费最近一次 Pointer 消息中的 pointerId 和笔尾提示；仅用于触觉预启动。
 		bool ConsumeHapticPointerId(uint32_t& pointerId, bool& eraserHint);
 		bool ConsumeHapticPointerLeave();
+		// 控制独立性能测试 HUD；窗口不参与墨迹 backbuffer 和 dirty rect。
+		void SetPerformanceHudEnabled(bool enabled) noexcept;
+		bool GetPerformanceHudEnabled() const noexcept;
+		void UpdatePerformanceHudText(std::wstring_view text);
 		// 返回主循环是否应该退出。
 		bool ExitRequested() const;
 
 	private:
 		static unsigned __stdcall WindowThreadEntry(void* context);
 		static LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+		static LRESULT CALLBACK PerformanceHudWindowProcedure(
+			HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 		void RunWindowThread();
+		bool CreatePerformanceHudWindow(HWND owner);
+		void DestroyPerformanceHudWindow() noexcept;
+		void RefreshPerformanceHudWindow();
+		void PostPerformanceHudRefresh() noexcept;
 		LRESULT HandleWindowMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 		void RequestControlWake();
 		void RequestDrawingCursorRender() noexcept;
@@ -134,5 +147,9 @@ export namespace draw3
 		bool lastHapticPenInfoKnown_ = false;
 		bool lastHapticPenInfoEraser_ = false;
 		bool trackingMouseLeave_ = false;
+		std::atomic<HWND> performanceHudWindow_ = nullptr;
+		std::atomic<bool> performanceHudEnabled_ = true;
+		mutable std::mutex performanceHudMutex_;
+		std::wstring performanceHudText_ = L"PERF TEST [ON]\r\nWaiting for drawing...";
 	};
 }

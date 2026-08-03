@@ -96,3 +96,24 @@ renderer 暴露单个 batched particle step：绑定 UAV/公共常量一次，�
 - 新 implementation unit 使用 UTF-8 BOM + CRLF、tab 缩进和 Allman 大括号，文件开头用一句中文说明职责。
 - 修正触及区域中已存在的缩进、声明对齐和过时注释；注释解释 module 边界、GPU 绑定、状态恢复或行为不变量，不逐行翻译代码。
 - `.vcxproj` 和 `.filters` 只增加实际编译文件，保持现有配置、模块接口标记、Shader 与资源项不变。
+
+## Stage 2.5 Performance HUD Architecture
+
+HUD 不进入 D3D backbuffer。当前 presenter 只接受一个矩形 dirty；若 HUD 与远处墨迹共同合成，二者包围矩形会显著扩大复制和 Present 面积，使性能测试反过来污染被测路径。因此由 `WindowController` 的既有窗口线程创建独立 owned layered popup，使用 `WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`，固定在主显示器工作区左上角并保持点击穿透。
+
+绘制线程只在 1 秒统计窗闭合时发布新的不可变文字快照。窗口线程通过私有 `WM_APP` 消息消费最新文本，用内存 DIB + GDI 生成预乘 BGRA，再调用 `UpdateLayeredWindow` 更新整个小型 HUD。更新不等待窗口线程完成；重复发布只保留最新文本。HUD 窗口随主窗口显示/销毁，关闭测试模式立即隐藏，重新开启显示最后快照。
+
+## Stage 2.5 Metrics Contract
+
+`runtime_metrics` 增加独立的轻量 HUD tracker，不要求 `--metrics-output` 会话存在。tracker 使用固定容量数组保存最多一个统计窗内的 frame interval、work 和 present 样本；普通帧只执行常数次写入，不排序、不格式化、不查询系统状态。
+
+统计窗达到 1 秒后才执行一次汇总：平均 FPS 使用有效间隔总时长，1% Low 取最慢 1% 帧时的平均帧时并求倒数，波动使用帧时标准差，同时输出平均/P99 frame、平均 work 和平均 present。进程 CPU 使用 `GetProcessTimes` 的相邻采样差除以墙钟和逻辑处理器数；工作集使用动态解析的进程内存计数 API。Renderer 初始化时尝试取得 `IDXGIAdapter3`，支持时每秒查询本进程 local/non-local video memory `CurrentUsage`，旧系统或 WARP 不支持时显示 `N/A`，不得失败启动。
+
+只有帧开始和结束都处于物理 contact 绘制序列时才记录样本。Laser Hold/Fade、粒子动画、断触等待和完全空闲不调用 tracker；物理 contact 结束时切断未完成统计序列，避免下一笔把空闲时间算成长帧。HUD 保留最后文本但不更新，也没有独立 timer。因此测试模式不会改变绘制线程的 idle/wake 契约。
+
+## Stage 2.5 Compatibility And Rollback
+
+- Layered HUD 创建、GDI bitmap 或显存查询失败时只隐藏对应 HUD/显示 `N/A`，墨迹窗口、输入和 presenter 继续运行。
+- Win7 缺少 `IDXGIAdapter3` 时通过 QueryInterface 失败自然降级，不静态调用新系统函数。
+- HUD 代码按窗口发布、纯统计和可选 GPU 查询三个边界实现；任一部分可单独关闭，不改变墨迹 D3D 资源和 shader。
+- 当前会话不执行 GUI 验证；真实透明度、DPI、点击穿透和 owned-window z-order 留给人工验收。

@@ -126,6 +126,10 @@
     <ClCompile Include="..\inkStrokeModelerTest\draw3\realtime_stylus.cppm" Link="draw3\realtime_stylus.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\runtime_metrics.cpp" Link="draw3\runtime_metrics.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\runtime_metrics.cppm" Link="draw3\runtime_metrics.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer.cpp" Link="draw3\renderer.cpp" />
     <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer_primitives.cpp" Link="draw3\renderer_primitives.cpp" />
     <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer_laser.cpp" Link="draw3\renderer_laser.cpp" />

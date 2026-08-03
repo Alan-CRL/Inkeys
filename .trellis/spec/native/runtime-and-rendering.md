@@ -504,6 +504,9 @@ contact 结束时由 `StrokeModelConfiguration::retainPredictionOnUp` 选择收�
 - resize 成功后重建活动临时层；clear 在有活动 contact 时延后。无活动 contact 时阻塞等待；1ms timer period 只在活动区间启用，且每次成功 begin 必须配对 end。
 - waitable swapchain resize 必须先 `GetDesc1`，并原样传回 `BufferCount/Format/Flags`；部分驱动在传入零值时第一次 resize 成功、恢复尺寸时失败。
 - 运行指标关闭时不创建会话、不启用输入计数、不写文件；开启后原始样本写入忽略的 `TestResults/`，仓库只保存环境、阈值和分位数摘要。
+- 默认开启的性能测试 HUD 使用独立 owned layered popup，必须点击穿透且不激活；它不进入 backbuffer、L0/L1/L2、Laser coverage、dirty rect、shader 或 presenter。
+- HUD 只在帧首尾都有物理 contact 时向固定容量 tracker 追加样本；1 秒边界才允许排序、格式化、进程 CPU/工作集和 `IDXGIAdapter3` 显存查询。Hold/Fade、粒子动画和空闲不采样、不刷新、无独立 timer。
+- 物理 contact 序列结束时丢弃未闭合 HUD 统计窗并保留最后快照，下一笔不得把空闲时间算入 frame interval、FPS、1% Low 或 CPU 统计区间。
 
 ### 4. Validation & Error Matrix
 
@@ -525,6 +528,7 @@ contact 结束时由 `StrokeModelConfiguration::retainPredictionOnUp` 选择收�
 | Multiple Up in one frame | 一次 L2 resolve、一次 composite、一次 present |
 | Up arrives after a visible prediction | 默认稳定前缀连接模型 `kUp` 真实尾段且清除 prediction；开关启用时才原样烘干最后可见 L0 |
 | Present failure | 保持整画布重呈现请求，下一帧恢复 |
+| HUD layered/GDI/GPU memory query failure | 隐藏 HUD 或显示 `N/A`；不得改变主窗口、绘制资源、dirty rect、Present 或输入生命周期 |
 
 ### 5. Good / Base / Bad Cases
 

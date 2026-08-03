@@ -23,6 +23,7 @@ import draw3.contact_input;
 import draw3.haptic_feedback;
 import draw3.ink_prediction;
 import draw3.realtime_stylus;
+import draw3.runtime_metrics;
 
 int RunHighlighterGeometryTests();
 int RunLaserIncrementalCoverageTests();
@@ -1269,6 +1270,56 @@ namespace
 		haptics.StopFeedback();
 	}
 
+	void TestPerformanceHudMetrics(TestState& state)
+	{
+		draw3::PerformanceHudTracker tracker;
+		const uint64_t allocationsBeforeFrames =
+			gAllocationCount.load(std::memory_order_relaxed);
+		for (size_t frame = 0; frame <= 100; ++frame)
+		{
+			const bool refreshed = tracker.RecordDrawingFrame(
+				1000.0 + static_cast<double>(frame) * 10.0,
+				2.0, 0.5, true);
+			TEST_CHECK(state, refreshed == (frame == 100));
+		}
+		TEST_CHECK(state, gAllocationCount.load(std::memory_order_relaxed) ==
+			allocationsBeforeFrames);
+		const draw3::PerformanceHudSnapshot first = tracker.Snapshot();
+		TEST_CHECK(state, first.frameSampleCount == 100);
+		TEST_CHECK(state, std::abs(first.averageFps - 100.0) < 0.001);
+		TEST_CHECK(state, std::abs(first.onePercentLowFps - 100.0) < 0.001);
+		TEST_CHECK(state, std::abs(first.averageFrameMs - 10.0) < 0.001);
+		TEST_CHECK(state, std::abs(first.p99FrameMs - 10.0) < 0.001);
+		TEST_CHECK(state, first.frameJitterMs < 0.001);
+		TEST_CHECK(state, std::abs(first.averageWorkMs - 2.0) < 0.001);
+		TEST_CHECK(state, std::abs(first.averagePresentMs - 0.5) < 0.001);
+		TEST_CHECK(state, first.processCpuPercent >= 0.0 && first.processCpuPercent <= 100.0);
+		TEST_CHECK(state, first.workingSetMiB > 0.0);
+
+		tracker.Reset();
+		double frameStartMs = 3000.0;
+		tracker.RecordDrawingFrame(frameStartMs, 3.0, 0.75, true);
+		for (size_t frame = 0; frame < 100; ++frame)
+		{
+			frameStartMs += frame == 99 ? 20.0 : 10.0;
+			tracker.RecordDrawingFrame(frameStartMs, 3.0, 0.75, true);
+		}
+		const draw3::PerformanceHudSnapshot mixed = tracker.Snapshot();
+		TEST_CHECK(state, mixed.frameSampleCount == 100);
+		TEST_CHECK(state, std::abs(mixed.onePercentLowFps - 50.0) < 0.001);
+		TEST_CHECK(state, mixed.frameJitterMs > 0.9 && mixed.frameJitterMs < 1.1);
+		const std::wstring formatted = tracker.FormatText(-1.0);
+		TEST_CHECK(state, formatted.find(L"1% LOW") != std::wstring::npos);
+		TEST_CHECK(state, formatted.find(L"GPU MEM N/A") != std::wstring::npos);
+
+		tracker.EndDrawingFrameSequence();
+		tracker.RecordDrawingFrame(10000.0, 1.0, 0.25, true);
+		TEST_CHECK(state, !tracker.RecordDrawingFrame(10010.0, 1.0, 0.25, true));
+		TEST_CHECK(state, tracker.Snapshot().frameSampleCount == 100);
+		tracker.Reset();
+		TEST_CHECK(state, tracker.Snapshot().frameSampleCount == 0);
+	}
+
 	int RunDrawingPerformanceTests()
 	{
 		constexpr size_t kPointCount = 4096;
@@ -1389,6 +1440,7 @@ int wmain(int argc, wchar_t* argv[])
 	TestInterruptedStrokeReconnectModelLifecycle(state);
 	TestInvertedPenPolicy(state);
 	TestHapticFeedbackContracts(state);
+	TestPerformanceHudMetrics(state);
 	state.failures += RunHighlighterGeometryTests();
 	state.failures += RunLaserIncrementalCoverageTests();
 	state.failures += RunPenCursorTests();

@@ -133,6 +133,21 @@ namespace draw3
 		context->RSSetViewports(1, &viewport);
 	}
 
+	double InkRenderer::QueryVideoMemoryUsageMiB() const noexcept
+	{
+		if (!videoMemoryAdapter_) return -1.0;
+		DXGI_QUERY_VIDEO_MEMORY_INFO local = {};
+		DXGI_QUERY_VIDEO_MEMORY_INFO nonLocal = {};
+		const bool localAvailable = SUCCEEDED(videoMemoryAdapter_->QueryVideoMemoryInfo(
+			0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &local));
+		const bool nonLocalAvailable = SUCCEEDED(videoMemoryAdapter_->QueryVideoMemoryInfo(
+			0, DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL, &nonLocal));
+		if (!localAvailable && !nonLocalAvailable) return -1.0;
+		const UINT64 usageBytes = (localAvailable ? local.CurrentUsage : 0) +
+			(nonLocalAvailable ? nonLocal.CurrentUsage : 0);
+		return static_cast<double>(usageBytes) / (1024.0 * 1024.0);
+	}
+
 	void InkRenderer::SetOMTarget(ID3D11RenderTargetView* renderTargetView)
 	{
 		ID3D11RenderTargetView* targets[] = { renderTargetView };
@@ -341,6 +356,7 @@ namespace draw3
 		rasterState.Reset();
 		laserScissorRasterState.Reset();
 		dsState.Reset();
+		videoMemoryAdapter_.Reset();
 		device.Reset();
 		context.Reset();
 		laserStyleCacheValid_ = false;
@@ -399,6 +415,11 @@ namespace draw3
 	{
 		device = inDevice; // 渲染器只借用外部统一创建的 D3D 设备。
 		context = inContext;
+		Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
+		Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+		if (SUCCEEDED(device.As(&dxgiDevice)) && dxgiDevice &&
+			SUCCEEDED(dxgiDevice->GetAdapter(adapter.ReleaseAndGetAddressOf())) && adapter)
+			adapter.As(&videoMemoryAdapter_); // Win7/旧 DXGI 查询失败时仅禁用显存指标。
 		if (!CreateSizeDependentResources(swapChain, width, height)) return false;
 
 		D3D11_BUFFER_DESC constantBufferDescription = {

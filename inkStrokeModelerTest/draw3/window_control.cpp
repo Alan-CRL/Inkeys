@@ -243,6 +243,9 @@ namespace draw3
 		window_.store(window, std::memory_order_release);
 		if (!window)
 			std::cout << "Create drawing window failed. GetLastError=" << GetLastError() << std::endl;
+		else if (!CreatePerformanceHudWindow(window))
+			std::cout << "Create performance HUD window failed. GetLastError=" <<
+				GetLastError() << std::endl;
 		SetEvent(windowReadyEvent_); // HWND 和尺寸在事件发出前完成发布。
 		if (!window) return;
 
@@ -257,6 +260,7 @@ namespace draw3
 			std::cout << "Drawing window message loop failed. GetLastError="
 				<< GetLastError() << std::endl;
 		// WM_QUIT 兜底不能遗留仍绑定当前控制器的 HWND。
+		DestroyPerformanceHudWindow();
 		if (IsWindow(window)) DestroyWindow(window);
 		window_.store(nullptr, std::memory_order_release);
 	}
@@ -264,7 +268,10 @@ namespace draw3
 	void WindowController::Show()
 	{
 		if (const HWND window = window_.load(std::memory_order_acquire))
+		{
 			ShowWindow(window, SW_SHOWNORMAL);
+			PostPerformanceHudRefresh();
+		}
 	}
 
 	HWND WindowController::Handle() const

@@ -296,6 +296,7 @@
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
     <ClCompile Include="draw3\window_control.cpp" />
+	<ClCompile Include="draw3\window_performance_hud.cpp" />
     <ClCompile Include="draw3\window_control.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>

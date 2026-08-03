@@ -835,6 +835,7 @@ namespace draw3
 		interruptedStrokeReconnectEnabled_(configuration_.interruptedStrokeReconnectEnabled),
 		laserParticlesEnabled_(configuration_.laserParticlesEnabled),
 		laserMultiTouchDrawingEnabled_(configuration_.laserMultiTouchDrawingEnabled),
+		performanceHudEnabled_(configuration_.performanceHudEnabled),
 		laserHoldDurationSeconds_(std::isfinite(configuration_.laserHoldDurationSeconds) &&
 			configuration_.laserHoldDurationSeconds >= 0.0
 			? configuration_.laserHoldDurationSeconds : 1.0), metrics_(metrics),
@@ -893,6 +894,9 @@ namespace draw3
 		renderer_.ConfigureLaserStyle(configuration_.dpiScale);
 		renderer_.ConfigureLaserParticles(
 			configuration_.laserParticleConfig, configuration_.dpiScale);
+		window_.SetPerformanceHudEnabled(
+			performanceHudEnabled_.load(std::memory_order_acquire));
+		window_.UpdatePerformanceHudText(L"PERF TEST [ON]\r\nWaiting for drawing...");
 		if (haptics_) haptics_->SetEnabled(configuration_.hapticFeedbackEnabled);
 	}
 
@@ -959,6 +963,19 @@ namespace draw3
 	double DrawingController::GetLaserHoldDurationSeconds() const noexcept
 	{
 		return laserHoldDurationSeconds_.load(std::memory_order_acquire);
+	}
+
+	void DrawingController::SetPerformanceHudEnabled(bool enabled) noexcept
+	{
+		performanceHudEnabled_.store(enabled, std::memory_order_release);
+		performanceHudResetRequested_.store(true, std::memory_order_release);
+		window_.SetPerformanceHudEnabled(enabled);
+		input_.PublishControlWake();
+	}
+
+	bool DrawingController::GetPerformanceHudEnabled() const noexcept
+	{
+		return performanceHudEnabled_.load(std::memory_order_acquire);
 	}
 
 	void DrawingController::CompositeLayersToBackBuffer(RECT dirty, bool orderLiveOverStable)
@@ -1931,6 +1948,13 @@ namespace draw3
 		{
 			const double frameStartMs = GetQpcTimeMilliseconds();
 			if (metrics_) metrics_->BeginFrame();
+			if (performanceHudResetRequested_.exchange(false, std::memory_order_acq_rel))
+			{
+				performanceHudTracker_.Reset();
+				if (GetPerformanceHudEnabled())
+					window_.UpdatePerformanceHudText(
+						L"PERF TEST [ON]\r\nWaiting for drawing...");
+			}
 			lastPresentDurationMs_ = 0.0;
 			lastPresentSucceeded_ = false;
 			if (!laserIncrementalEnsureAttempted &&
@@ -2861,9 +2885,18 @@ namespace draw3
 			const bool hasPhysicalContactAfterFrame = HasPhysicalContact(active);
 			if (metrics_ && !hasPhysicalContactAfterFrame)
 				metrics_->EndActiveFrameSequence();
+			if (!hasPhysicalContactAfterFrame && GetPerformanceHudEnabled())
+				performanceHudTracker_.EndDrawingFrameSequence();
 			if (hasPhysicalContactAfterFrame)
 			{
 				const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
+				if (frameHadActiveContact && GetPerformanceHudEnabled() &&
+					performanceHudTracker_.RecordDrawingFrame(
+						frameStartMs, workMs, lastPresentDurationMs_, lastPresentSucceeded_))
+				{
+					window_.UpdatePerformanceHudText(performanceHudTracker_.FormatText(
+						renderer_.QueryVideoMemoryUsageMiB()));
+				}
 				if (metrics_ && frameHadActiveContact)
 					metrics_->RecordActiveFrame(frameStartMs, workMs,
 						lastPresentDurationMs_, lastPresentSucceeded_);

@@ -9,6 +9,7 @@
 #include <d3d11.h>
 #include <DirectXMath.h>
 #include <dxgi1_2.h>
+#include <dxgi1_4.h>
 #include <span>
 #include <vector>
 #include <wrl/client.h>
@@ -230,6 +231,8 @@ export namespace draw3
 			bool simulateExisting,
 			std::span<const LaserParticleEmissionRequest> emissionRequests) noexcept;
 		void ResetLaserParticles() noexcept;
+		// 返回本进程当前 local/non-local GPU 显存占用；旧 DXGI 不支持时返回负值。
+		double QueryVideoMemoryUsageMiB() const noexcept;
 		// 复制纹理中的指定矩形区域。
 		void CopyResource(ID3D11Texture2D* dst, ID3D11Texture2D* src, RECT rect);
 		// 将 L1/L0 仿射操作统一应用到目标 RGBA。
@@ -287,6 +290,7 @@ export namespace draw3
 		float laserParticleGlowBlue_ = LaserParticleConfig{}.glowBlue;
 		float laserParticleGlowAlpha_ = LaserParticleConfig{}.glowAlpha;
 		LaserParticleSystem laserParticleSystem_;
+		Microsoft::WRL::ComPtr<IDXGIAdapter3> videoMemoryAdapter_;
 		// 单 contact Laser 的实时尾部 coverage 按需创建，避免非 Laser 会话分配额外画布。
 		LaserCoverageResources laserLiveCoverage;
 		bool laserIncrementalCoverageEnabled_ = false;
