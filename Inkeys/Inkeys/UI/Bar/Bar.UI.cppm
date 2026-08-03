@@ -783,6 +783,8 @@ public:
 		optional<double> durT = nullopt, double keyframeProgressT = 0.5, double middleScaleT = 0.8);
 	bool AdvanceContentTransition(double dt, double speedRate);
 	void CancelContentTransition();
+	// SVG 位图属于当前 D2D device，设备 epoch 切换时必须主动释放。
+	void ResetCache();
 
 public:
 	// 整体该控件是否显示
@@ -811,7 +813,6 @@ public:
 public:
 	bool SetWH(optional<double> wT, optional<double> hT);
 protected:
-	void ResetCache();
 	void ApplyContentDirect(const wstring& valT);
 	pair<double, double> CalcWH();
 	BarUiStringClass transitionSvg;

@@ -6,6 +6,7 @@
 4. 实现直线、矩形与三档粗细的 hover/press/selected 输入状态及 Draw2 状态写入。
 5. 增加关闭按钮、首次不展开逻辑，以及绘制/几何主栏图标和文字内容切换动画。
 6. 新增双色语义的直线/矩形 SVG 并登记资源，核对设备资源重建和快速切换。
-7. 静态审查并执行 `git diff --check`，修正格式、枚举和覆盖问题。
-8. 使用 ARM64 Host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`。
-9. 汇总自动验证结果和仍需真实鼠标、触摸、笔执行的手工验证项。
+7. 交换 Geometry/Eraser 默认顺序并迁移旧默认排列，面板复用形状 SVG，擦除接入通用文字跳变。
+8. 静态审查并执行 `git diff --check`，修正格式、枚举和覆盖问题。
+9. 使用 ARM64 Host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`。
+10. 汇总自动验证结果和仍需真实鼠标、触摸、笔执行的手工验证项。

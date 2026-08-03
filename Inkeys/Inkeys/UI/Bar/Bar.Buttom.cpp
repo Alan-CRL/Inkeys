@@ -29,6 +29,16 @@ import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
 import Inkeys.Other.Config;
 
+bool BarButtomClass::TransitionContent(
+	const wstring& iconResourceName, const wstring& label)
+{
+	bool changed = false;
+	if (iconKind == BarButtomIconKindEnum::Svg && !iconResourceName.empty())
+		changed |= icon.TransitionToResource(L"UI", iconResourceName);
+	changed |= name.TransitionToString(label);
+	return changed;
+}
+
 bool BarButtomSetClass::RegisterButton(
 	const std::string& id,
 	BarButtomClass* button,
@@ -684,6 +694,7 @@ void BarButtomSetClass::StateUpdate()
 	CalcState();
 	PresetHoming();
 	UpdateDrawButtonStyle();
+	UpdateEraserButtonStyle();
 	UpdateGeometryButtonStyle();
 }
 void BarButtomSetClass::UpdateDrawButtonStyle()
@@ -699,11 +710,25 @@ void BarButtomSetClass::UpdateDrawButtonStyle()
 	if (drawButtonStyleKey == styleKey) return;
 	auto button = preset[(int)BarButtomPresetEnum::Draw];
 	if (!button) return;
-	button->icon.TransitionToResource(
-		L"UI", highlighter ? L"barHighlighter1" : L"barBrush1");
-	button->name.TransitionToString(selected
-		? (highlighter ? L"荧光笔" : L"硬笔") : L"绘制");
+	button->TransitionContent(
+		highlighter ? L"barHighlighter1" : L"barBrush1",
+		selected ? (highlighter ? L"荧光笔" : L"硬笔") : L"绘制");
 	drawButtonStyleKey = styleKey;
+}
+void BarButtomSetClass::UpdateEraserButtonStyle()
+{
+	static mutex mtx;
+	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser;
+	int styleKey = selected ? 1 : 0;
+	if (eraserButtonStyleKey == styleKey) return;
+
+	lock_guard<mutex> lock(mtx);
+	if (eraserButtonStyleKey == styleKey) return;
+	auto button = preset[(int)BarButtomPresetEnum::Eraser];
+	if (!button) return;
+	button->TransitionContent(
+		L"barEraser", selected ? L"面积擦" : L"擦除");
+	eraserButtonStyleKey = styleKey;
 }
 void BarButtomSetClass::UpdateGeometryButtonStyle()
 {
@@ -722,8 +747,7 @@ void BarButtomSetClass::UpdateGeometryButtonStyle()
 		? L"barGeometry" : (rectangle
 			? L"barShapeRectangle" : L"barShapeStraightLine");
 	const wchar_t* label = !selected ? L"几何" : (rectangle ? L"矩形" : L"直线");
-	button->icon.TransitionToResource(L"UI", resourceName);
-	button->name.TransitionToString(label);
+	button->TransitionContent(resourceName, label);
 	geometryButtonStyleKey = styleKey;
 }
 
@@ -789,9 +813,26 @@ std::vector<Inkeys::BarFixedButtonLayoutEntry> BarButtomSetClass::NormalizeFixed
 		configuredWithoutDivider.push_back(entry);
 	}
 
+	// 旧版默认顺序只迁移一次；其他合法自定义排列仍按原顺序保留。
+	const std::string_view legacyA1Order[] =
+	{
+		Inkeys::BarButtonId::Select,
+		Inkeys::BarButtonId::Draw,
+		Inkeys::BarButtonId::Eraser,
+		Inkeys::BarButtonId::Geometry,
+		Inkeys::BarButtonId::Recall,
+		Inkeys::BarButtonId::Clean,
+	};
+	bool legacyA1Default = zone == BarButtonLayoutZoneEnum::FixedA1
+		&& configuredWithoutDivider.size() == std::size(legacyA1Order);
+	for (size_t index = 0; legacyA1Default && index < std::size(legacyA1Order); ++index)
+		legacyA1Default = configuredWithoutDivider[index].Id == legacyA1Order[index];
+
 	// 严校验：必须是该区 required 集合的恰好排列，否则整区回默认。
+	bool useConfigured = !legacyA1Default
+		&& IsExactFixedZonePermutation(configuredWithoutDivider, defaults);
 	std::vector<Inkeys::BarFixedButtonLayoutEntry> source =
-		IsExactFixedZonePermutation(configuredWithoutDivider, defaults) ? configuredWithoutDivider : defaults;
+		useConfigured ? configuredWithoutDivider : defaults;
 
 	std::vector<Inkeys::BarFixedButtonLayoutEntry> normalized;
 	normalized.reserve(source.size());
@@ -965,16 +1006,23 @@ void BarButtomSetClass::SyncLegacyExtensionButtons()
 	Load();
 }
 
-void BarButtomSetClass::ResetPngIconCaches()
+void BarButtomSetClass::ResetIconCaches()
 {
 	shared_lock lock(registrationMutex);
 	for (const auto& [id, registration] : registrations)
 	{
-		if (registration.button && registration.button->iconKind == BarButtomIconKindEnum::Png)
+		if (!registration.button) continue;
+		registration.button->icon.ResetCache();
+		if (registration.button->iconKind == BarButtomIconKindEnum::Png)
 			registration.button->pngIcon.ResetCache();
 	}
 	for (const shared_ptr<BarButtomClass>& divider : boundaryDividers)
-		if (divider && divider->iconKind == BarButtomIconKindEnum::Png) divider->pngIcon.ResetCache();
+	{
+		if (!divider) continue;
+		divider->icon.ResetCache();
+		if (divider->iconKind == BarButtomIconKindEnum::Png)
+			divider->pngIcon.ResetCache();
+	}
 }
 
 void BarButtomSetClass::PresetHoming()
@@ -1006,8 +1054,9 @@ void BarButtomSetClass::PresetHoming()
 		// 显示尺寸变化
 		preset[(int)BarButtomPresetEnum::Freeze]->size = BarButtomSizeEnum::twoTwo;
 
-		// 显示名称变化
-		preset[(int)BarButtomPresetEnum::Select]->name.content.SetTar(L"选择");
+		// 显示名称变化也走通用内容过渡，避免直接替换产生闪变。
+		preset[(int)BarButtomPresetEnum::Select]->TransitionContent(
+			L"barSelect", L"选择");
 	}
 	else
 	{
@@ -1023,7 +1072,8 @@ void BarButtomSetClass::PresetHoming()
 		preset[(int)BarButtomPresetEnum::Freeze]->size = BarButtomSizeEnum::twoOne;
 
 		// 显示名称变化
-		preset[(int)BarButtomPresetEnum::Select]->name.content.SetTar(L"选择(清空)");
+		preset[(int)BarButtomPresetEnum::Select]->TransitionContent(
+			L"barSelect", L"选择(清空)");
 	}
 }
 void BarButtomSetClass::CalcState()

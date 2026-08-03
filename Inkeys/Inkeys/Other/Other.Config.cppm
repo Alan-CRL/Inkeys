@@ -195,8 +195,8 @@ inline ConfigSequence<BarFixedButtonLayoutEntry> MakeDefaultFixedButtonsA1()
 				return {
 					{ BarButtonId::Select, BarButtonSizeKind::TwoTwo },
 					{ BarButtonId::Draw, BarButtonSizeKind::TwoTwo },
-					{ BarButtonId::Eraser, BarButtonSizeKind::TwoTwo },
 					{ BarButtonId::Geometry, BarButtonSizeKind::TwoTwo },
+					{ BarButtonId::Eraser, BarButtonSizeKind::TwoTwo },
 					{ BarButtonId::Recall, BarButtonSizeKind::TwoTwo },
 					{ BarButtonId::Clean, BarButtonSizeKind::TwoTwo },
 				};

@@ -162,6 +162,8 @@ enum class BarUISetSvgEnum : int
 	DrawAttributeBar_ColorSelect12Check,
 	DrawAttributeBar_ColorPickerToneSun,
 	DrawAttributeBar_ColorPickerToneMoon,
+	GeometryAttributeBar_StraightLine,
+	GeometryAttributeBar_Rectangle,
 	GeometryAttributeBar_Close,
 };
 enum class BarUISetPngEnum : int

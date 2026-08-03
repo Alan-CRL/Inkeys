@@ -94,6 +94,8 @@ public:
 	{
 		return userVisible.load() && !hide.load();
 	}
+	// 图标和文字只在内容实际变化时启动同一套缩放、淡出与回弹过程。
+	bool TransitionContent(const wstring& iconResourceName, const wstring& label);
 
 public:
 	IdtAtomic<BarButtomSizeEnum> size;
@@ -211,9 +213,10 @@ bool RegisterButton(
 
 		void Load();
 		void SyncLegacyExtensionButtons();
-		void ResetPngIconCaches();
+		void ResetIconCaches();
 
 	protected:
+		void UpdateEraserButtonStyle();
 		void UpdateGeometryButtonStyle();
 		void PresetHoming();
 		void CalcState();
@@ -239,6 +242,7 @@ std::vector<Inkeys::BarExtensionButtonLayoutEntry> NormalizeExtensionZone(
 
 		mutable shared_mutex registrationMutex;
 		IdtAtomic<int> drawButtonStyleKey = -1;
+		IdtAtomic<int> eraserButtonStyleKey = -1;
 		IdtAtomic<int> geometryButtonStyleKey = -1;
 		unordered_map<std::string, BarButtonRegistrationClass> registrations;
 		vector<std::string> registrationOrder;

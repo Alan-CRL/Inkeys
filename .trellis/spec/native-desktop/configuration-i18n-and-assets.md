@@ -63,20 +63,21 @@
 - 内置组件注册 ID 使用非 `Inkeys.` 的稳定点分形式，例如 `Component.ShortcutButton.Appliance.Explorer`。注册项同时保存旧字段字符串、无参数开关读取器、设置页分类/名称、PNG 资源、栏内短文字和点击动作；注册顺序单独保存，不依赖 `unordered_map` 遍历顺序。
 - 设置页修改旧组件开关时，先更新 `setlist` 并执行 `WriteSetting()`，再在 UI3 下调用 `SyncLegacyExtensionButtons()` 和 Bar 渲染唤醒入口。打开开关按固定列表位置加入 B，关闭开关立即移除，其余组件相对顺序不变；UI2 的首个有效组件规则保持不变。
 - 运行时按钮列表整体替换为注册表持有的 `shared_ptr` 序列；两条交界 Divider 使用长期持有的独立对象。组件按钮各自使用本地状态，避免多个扩展按钮共享按压/选中状态。
-- 按钮图标载荷可为 SVG 或 PNG。SVG 继续走主题着色和内容切换；PNG 复用 SVG 的布局/透明度动画状态并由 `BarUiPNGClass` 绘制，设备资源丢失时必须重置注册按钮的 PNG 位图缓存。
+- 按钮图标载荷可为 SVG 或 PNG。SVG 继续走主题着色和内容切换；PNG 复用 SVG 的布局/透明度动画状态并由 `BarUiPNGClass` 绘制。两者的 D2D 位图都属于当前 device generation；设备 epoch 切换或 `D2DERR_RECREATE_TARGET` 时，必须通过 `BarUIRendering::DiscardDeviceResources()` 重置 `svgMap`、`pngMap` 及注册按钮的 SVG/PNG 缓存，再由下一帧按原始 SVG 文本或 PNG 解码像素重新上传。
 - **按钮 ID 命名**：
   - 官方按钮必须以 `Inkeys.` 开头，当前形如 `Inkeys.Bar.Select`。
   - 扩展/插件/组件按钮**不得**使用 `Inkeys.` 前缀，且必须为点分 ID：至少两段，形如 `xxx.xxx` 或 `xxx.xxx.xxx`（不允许首尾 `.` 或空段）。
   - `RegisterButton` 按分区强制上述规则；B 区规范化时丢弃官方前缀 ID 与非法点分格式。
-- A1 默认 required：Select, Draw, Eraser, Geometry, Recall, Clean（**不含 Divider**）。
+- A1 默认 required 与顺序：Select, Draw, Geometry, Eraser, Recall, Clean（**不含 Divider**）。
 - A2 默认 required：Pierce, Freeze, Setting。
 - **交界分割线**：运行时注入 `Inkeys.Bar.Divider` 且**不写入**三区配置。B 有可见扩展按钮时在 `A1|B` 与 `B|A2` 各插一条；B 无可上栏扩展项时只在 A1/A2 之间插一条。
 - **相邻分割线规则**：配置侧相邻 Divider 只保留一条；运行时通过“先判断 B 是否有可见项再注入”避免相邻交界线。不得对 `only` 单例按钮重复 `buttomlist.Set` 重建列表（会 double-free）。
 - A1/A2 **严校验**：配置 Id 多重集合必须恰好等于该区 required 默认集合；缺项、多余/错区 ID、非法重复、字段类型错误 → **仅该区**重置为默认顺序。不做逐项补洞。配置中的 Divider 在 A 区先剥离再校验。
-- A 区不持久化用户 Visible；A 元素若误带 `Visible` 则忽略并剥离写回。A 的默认 `userVisible` 仅来自注册写死值（Geometry 默认 false）。
+- A 区不持久化用户 Visible；A 元素若误带 `Visible` 则忽略并剥离写回。A 的默认 `userVisible` 仅来自注册写死值；Geometry 注册默认可见，但选择模式通过运行时 `hide` 隐藏。
 - `Size` 本轮只镜像注册默认；缺省/非法/非默认均纠正为注册默认并写回，**不**因 Size 触发 A 区整区重置。后续设置 UI 可开放用户改 Size。
 - B 区：顺序 + Visible；符合扩展 ID 规则的未知/已卸载插件 ID **永久保留**且不渲染；`Inkeys.*` 与非法 ID 格式误入 B 时剔除；已注册扩展单例只取第一条。
 - 旧 `UI.Bar.ButtonLayout` 单数组：仅当三个新字段都缺失时拆分迁移；其中 Divider 丢弃不迁入；迁移后 A 仍走严校验，B 保留扩展项 Visible。
+- A1 仅将 `Select, Draw, Eraser, Geometry, Recall, Clean` 这一精确旧默认顺序迁移为当前默认；其他 required 集合的合法自定义排列保持原顺序。
 - 发版新增 A 区 required 官方按钮：旧配置缺新 ID → 该 A 区整区重置默认；不猜测新按钮插入点。
 - `ConfigSequence<T>` 快照在共享锁下生成；JSON 先完整解析到临时集合，成功后才在独占锁下整体替换。
 - `BarButtomClass::IsVisible()` 是唯一消费入口：`userVisible && !hide`。`PresetHoming` 等运行时仍可临时改 Freeze 尺寸或上下文 `hide`。
@@ -102,12 +103,13 @@
 | 任一旧组件开关 `false -> true` | 完成旧配置写入后，按注册顺序立即加入当前 UI3 B |
 | 任一旧组件开关 `true -> false` | 完成旧配置写入后，立即从当前 UI3 B 移除 |
 | 多个旧组件开关同时为 true | 全部显示，不受 UI2 单组件容量限制，顺序与设置页一致 |
+| D2D device epoch 切换或 `D2DERR_RECREATE_TARGET` | 释放所有面板和注册按钮 SVG/PNG 位图缓存；保留原始载荷供下一帧重建 |
 
 ### 5. Good / Base / Bad Cases
 
 - Good：仅打乱 A1 顺序后启动，顺序保留；B 中插件隐藏后重装仍在原位。
 - Good（并行期）：`ExtensionButtons` 保留未来排序数据，同时 UI3 按 16 个旧开关的固定顺序即时投影多个组件。
-- Base：无新区字段时 A1/A2 默认序，Geometry 注册默认隐藏；旧组件开关全关时运行时 B 为空。
+- Base：无新区字段时 A1/A2 使用当前默认序；Geometry 注册默认可见并在选择模式运行时隐藏；旧组件开关全关时运行时 B 为空。
 - Bad：A1 缺少 Geometry 或混入 Pierce → A1 整区回默认，A2/B 不动。
 - Bad（并行期）：设置页只写旧开关却继续从持久化 `ExtensionButtons` 构建 B，导致 UI 与开关状态分叉。
 
@@ -117,7 +119,7 @@
 - 验证旧 `ButtonLayout` 迁移与 `configOnce = config` 后三区一致。
 - 静态确认 16 个内置组件均已注册且顺序与设置页一致，16 个 toggle 写入后均触发 UI3 同步。
 - 验证 UI3 启动和 toggle 同步均不读取、替换或写回 `UI.Bar.ExtensionButtons`。
-- 手工验证 PNG 透明图标、全部组件同时布局、toggle 即时增减，以及 UI2 首个有效组件行为。
+- 手工验证 SVG/PNG 图标在 device epoch 重建后重新显示、PNG 透明图标、全部组件同时布局、toggle 即时增减，以及 UI2 首个有效组件行为。
 - 执行 `git diff --check` 和完整 Solution `Debug|ARM64` 构建；无自动化 UI 测试时记录未做运行验证。
 
 ### 7. Wrong vs Correct

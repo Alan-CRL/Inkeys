@@ -933,10 +933,12 @@ void BarUIRendering::DiscardDeviceResources()
 {
 	if (barUISetClass)
 	{
-		// D2D 位图属于当前 device generation，切换设备时只丢上传缓存，保留解码像素。
+		// D2D 位图属于当前 device generation；保留 SVG 文本和 PNG 解码像素，仅丢上传缓存。
+		for (const auto& [key, svg] : barUISetClass->svgMap)
+			if (svg) svg->ResetCache();
 		for (const auto& [key, png] : barUISetClass->pngMap)
 			if (png) png->ResetCache();
-		barUISetClass->barButtomSet.ResetPngIconCaches();
+		barUISetClass->barButtomSet.ResetIconCaches();
 	}
 	frameGradientBrushCache.clear();
 	frameDiffuseMaskCache.clear();
@@ -4027,7 +4029,11 @@ SetButtonPositionTar(temp->buttom.x, xO + barBtnTwoHalf, 40.0, true);
 								}
 								if (temp->icon.enable.tar)
 								{
-									temp->icon.SetWH(nullopt, 28.0);
+									bool enlargedGeometryIcon =
+										temp->preset == BarButtomPresetEnum::Geometry
+										&& stateMode.StateModeSelect == StateModeSelectEnum::IdtShape;
+									temp->icon.SetWH(nullopt,
+										enlargedGeometryIcon ? 34.0 : 28.0);
 									temp->icon.x.SetTar(0.0);
 									temp->icon.y.SetTar(-10.0);
 									if (barState.fold || !temp->IsVisible())
@@ -5798,6 +5804,25 @@ for (size_t i = 0; i < 3; ++i)
 							button.pressed ? buttonPressCurve : buttonReleaseCurve);
 					}
 
+					// 面板与主栏复用同一组双色 SVG，避免两套图形风格逐渐分叉。
+					for (size_t index = 0; index < 2; ++index)
+					{
+						auto icon = svgMap[static_cast<BarUISetSvgEnum>(
+							static_cast<int>(BarUISetSvgEnum::GeometryAttributeBar_StraightLine)
+							+ static_cast<int>(index))];
+						const auto& button = buttons[index];
+						icon->x.SetTar((button.x + 11.0) * layoutScale);
+						icon->y.SetTar((button.y + 3.0) * layoutScale);
+						icon->SetWH(28.0 * layoutScale, 28.0 * layoutScale);
+						COLORREF iconColor = button.selected
+							? GetThemeColor(BarThemeColorEnum::Accent)
+							: GetThemeColor(BarThemeColorEnum::TextPrimary);
+						icon->color1->SetTar(iconColor);
+						icon->color2->SetTar(iconColor);
+						icon->pct.SetTar(barState.geometryAttribute
+							? (button.pressed ? 0.70 : 1.0) : 0.0);
+					}
+
 					auto close = shapeMap[
 						BarUISetShapeEnum::GeometryAttributeBar_Close];
 					close->x.SetTar(300.0 * layoutScale);
@@ -5858,9 +5883,16 @@ for (size_t i = 0; i < 3; ++i)
 						value <= static_cast<int>(
 							BarUISetShapeEnum::GeometryAttributeBar_Close); ++value)
 						SyncGeometryShape(shapeMap[static_cast<BarUISetShapeEnum>(value)]);
-					SyncValueDuration(closeSvg->x); SyncValueDuration(closeSvg->y);
-					SyncValueDuration(closeSvg->w); SyncValueDuration(closeSvg->h);
-					SyncPctDuration(closeSvg->pct);
+					for (int value = static_cast<int>(
+						BarUISetSvgEnum::GeometryAttributeBar_StraightLine);
+						value <= static_cast<int>(BarUISetSvgEnum::GeometryAttributeBar_Close);
+						++value)
+					{
+						auto svg = svgMap[static_cast<BarUISetSvgEnum>(value)];
+						SyncValueDuration(svg->x); SyncValueDuration(svg->y);
+						SyncValueDuration(svg->w); SyncValueDuration(svg->h);
+						SyncPctDuration(svg->pct);
+					}
 					for (int value = static_cast<int>(
 						BarUISetWordEnum::GeometryAttributeBar_StraightLine);
 						value <= static_cast<int>(
@@ -5913,6 +5945,32 @@ for (size_t i = 0; i < 3; ++i)
 								shape->frameLightPct->tar, operationDur,
 								sideSwitch ? optional<double>(0.0) : nullopt, true, opacityCurve);
 						};
+					auto RestartSvg = [&](const shared_ptr<BarUiSVGClass>& svg)
+						{
+							const auto& curve = geometryAttributeSideSwitch
+								? sideValueCurve : syncedValueCurve;
+							const auto& opacityCurve = geometryAttributeSideSwitch
+								? sidePctCurve : syncedPctCurve;
+							svg->x.SetTar(svg->x.tar, operationDur,
+								geometryAttributeSideSwitch
+									? optional<double>(Compact(svg->x.tar)) : nullopt,
+								true, curve);
+							svg->y.SetTar(svg->y.tar, operationDur,
+								geometryAttributeSideSwitch
+									? optional<double>(Compact(svg->y.tar)) : nullopt,
+								true, curve);
+							svg->w.SetTar(svg->w.tar, operationDur,
+								geometryAttributeSideSwitch
+									? optional<double>(max(1.0, Compact(svg->w.tar))) : nullopt,
+								true, curve);
+							svg->h.SetTar(svg->h.tar, operationDur,
+								geometryAttributeSideSwitch
+									? optional<double>(max(1.0, Compact(svg->h.tar))) : nullopt,
+								true, curve);
+							svg->pct.SetTar(svg->pct.tar, operationDur,
+								geometryAttributeSideSwitch ? optional<double>(0.0) : nullopt,
+								true, opacityCurve);
+						};
 					if (geometryAttributeVisibilityChange || geometryAttributeSideSwitch)
 					{
 						for (int value = static_cast<int>(BarUISetShapeEnum::GeometryAttributeBar);
@@ -5949,25 +6007,11 @@ for (size_t i = 0; i < 3; ++i)
 								geometryAttributeSideSwitch ? optional<double>(0.0) : nullopt,
 								true, opacityCurve);
 						}
-						closeSvg->x.SetTar(closeSvg->x.tar, operationDur,
-							geometryAttributeSideSwitch
-								? optional<double>(Compact(closeSvg->x.tar)) : nullopt,
-							true, geometryAttributeSideSwitch ? sideValueCurve : syncedValueCurve);
-						closeSvg->y.SetTar(closeSvg->y.tar, operationDur,
-							geometryAttributeSideSwitch
-								? optional<double>(Compact(closeSvg->y.tar)) : nullopt,
-							true, geometryAttributeSideSwitch ? sideValueCurve : syncedValueCurve);
-						closeSvg->w.SetTar(closeSvg->w.tar, operationDur,
-							geometryAttributeSideSwitch
-								? optional<double>(max(1.0, Compact(closeSvg->w.tar))) : nullopt,
-							true, geometryAttributeSideSwitch ? sideValueCurve : syncedValueCurve);
-						closeSvg->h.SetTar(closeSvg->h.tar, operationDur,
-							geometryAttributeSideSwitch
-								? optional<double>(max(1.0, Compact(closeSvg->h.tar))) : nullopt,
-							true, geometryAttributeSideSwitch ? sideValueCurve : syncedValueCurve);
-						closeSvg->pct.SetTar(closeSvg->pct.tar, operationDur,
-							geometryAttributeSideSwitch ? optional<double>(0.0) : nullopt,
-							true, geometryAttributeSideSwitch ? sidePctCurve : syncedPctCurve);
+						for (int value = static_cast<int>(
+							BarUISetSvgEnum::GeometryAttributeBar_StraightLine);
+							value <= static_cast<int>(BarUISetSvgEnum::GeometryAttributeBar_Close);
+							++value)
+							RestartSvg(svgMap[static_cast<BarUISetSvgEnum>(value)]);
 					}
 				}
 			}
@@ -8228,29 +8272,23 @@ else
 						spec.Shape(barDeviceContext.Get(), *divider,
 							divider->Inherit(TopLeft, *panel));
 
-						enum class GeometryIconKind
-						{
-							Line,
-							Rectangle,
-						};
 						struct GeometryShapeButtonRender
 						{
 							BarUISetShapeEnum shape;
+							BarUISetSvgEnum icon;
 							BarUISetWordEnum word;
 							BarUiValueClass* pressScale;
-							GeometryIconKind icon;
-							bool pressed;
 						};
 						const GeometryShapeButtonRender shapeButtons[] =
 						{
 							{ BarUISetShapeEnum::GeometryAttributeBar_StraightLine,
+								BarUISetSvgEnum::GeometryAttributeBar_StraightLine,
 								BarUISetWordEnum::GeometryAttributeBar_StraightLine,
-								&geometryStraightLinePressScale, GeometryIconKind::Line,
-								barState.geometryAttributeBar.straightLinePress },
+								&geometryStraightLinePressScale },
 							{ BarUISetShapeEnum::GeometryAttributeBar_Rectangle,
+								BarUISetSvgEnum::GeometryAttributeBar_Rectangle,
 								BarUISetWordEnum::GeometryAttributeBar_Rectangle,
-								&geometryRectanglePressScale, GeometryIconKind::Rectangle,
-								barState.geometryAttributeBar.rectanglePress },
+								&geometryRectanglePressScale },
 						};
 						FLOAT uiZoom = static_cast<FLOAT>(barStyle.zoom);
 						ID2D1StrokeStyle* roundStrokeStyle =
@@ -8282,39 +8320,9 @@ else
 							}
 
 							spec.Shape(barDeviceContext.Get(), *shape, shapeInherit);
-							FLOAT contentOpacity = static_cast<FLOAT>(
-								clamp(static_cast<double>(word->pct.val)
-									* (button.pressed ? 0.70 : 1.0), 0.0, 1.0));
-							ID2D1SolidColorBrush* contentBrush =
-								spec.GetFrameSolidColorBrush(barDeviceContext.Get(),
-									shape->frame.value().val, contentOpacity);
-							if (contentBrush && contentOpacity > 0.000001F
-								&& uiZoom > 0.0F)
-							{
-								FLOAT left = static_cast<FLOAT>(shapeInherit.x * uiZoom);
-								FLOAT top = static_cast<FLOAT>(shapeInherit.y * uiZoom);
-								FLOAT width = static_cast<FLOAT>(shape->w.val * uiZoom);
-								FLOAT height = static_cast<FLOAT>(shape->h.val * uiZoom);
-								FLOAT strokeWidth = max(1.0F,
-									static_cast<FLOAT>(1.5 * panelScale * uiZoom));
-								if (button.icon == GeometryIconKind::Line)
-								{
-									barDeviceContext->DrawLine(
-										D2D1::Point2F(left + width * 0.22F,
-											top + height * 0.52F),
-										D2D1::Point2F(left + width * 0.78F,
-											top + height * 0.18F),
-										contentBrush, strokeWidth, roundStrokeStyle);
-								}
-								else
-								{
-									D2D1_RECT_F rect = D2D1::RectF(
-										left + width * 0.25F, top + height * 0.16F,
-										left + width * 0.75F, top + height * 0.52F);
-									barDeviceContext->DrawRectangle(
-										&rect, contentBrush, strokeWidth, roundStrokeStyle);
-								}
-							}
+							auto icon = svgMap[button.icon];
+							spec.Svg(barDeviceContext.Get(), *icon,
+								icon->Inherit(TopLeft, *panel));
 							spec.Word(barDeviceContext.Get(), *word,
 								word->Inherit(TopLeft, *panel),
 								DWRITE_FONT_WEIGHT_NORMAL,
@@ -8598,9 +8606,16 @@ else
 							current, BarRenderingAttribute::GetWeigetRect(
 								*geometryWord, dirtyZoom));
 					}
-					BarRenderingAttribute::UnionRectInPlace(current,
-						BarRenderingAttribute::GetWeigetRect(*svgMap[
-							BarUISetSvgEnum::GeometryAttributeBar_Close], dirtyZoom));
+					for (int i = static_cast<int>(
+						BarUISetSvgEnum::GeometryAttributeBar_StraightLine);
+						i <= static_cast<int>(BarUISetSvgEnum::GeometryAttributeBar_Close);
+						++i)
+					{
+						auto geometrySvg = svgMap[static_cast<BarUISetSvgEnum>(i)];
+						if (geometrySvg) BarRenderingAttribute::UnionRectInPlace(
+							current, BarRenderingAttribute::GetWeigetRect(
+								*geometrySvg, dirtyZoom));
+					}
 					for (int id = 0; id < barButtomSet.tot; id++)
 					{
 						BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
@@ -12761,6 +12776,26 @@ auto annotationLabel = make_shared<BarUiWordClass>(
 							BarUISetShapeEnum::GeometryAttributeBar_Rectangle,
 							BarUISetWordEnum::GeometryAttributeBar_Rectangle,
 							L"矩形", BarGeometryAttributeShapeButtonSize, 11.0);
+
+						auto InitializeGeometryShapeSvg = [&](BarUISetSvgEnum svgType,
+							const wchar_t* resourceName)
+							{
+								auto icon = make_shared<BarUiSVGClass>(
+									0.0, 0.0,
+									GetThemeColor(BarThemeColorEnum::TextPrimary),
+									GetThemeColor(BarThemeColorEnum::TextPrimary));
+								icon->InitializationFromResource(L"UI", resourceName);
+								icon->SetWH(28.0, 28.0);
+								icon->pct.Initialization(0.0);
+								icon->enable.Initialization(true);
+								barUISet.svgMap[svgType] = icon;
+							};
+						InitializeGeometryShapeSvg(
+							BarUISetSvgEnum::GeometryAttributeBar_StraightLine,
+							L"barShapeStraightLine");
+						InitializeGeometryShapeSvg(
+							BarUISetSvgEnum::GeometryAttributeBar_Rectangle,
+							L"barShapeRectangle");
 
 						auto divider = make_shared<BarUiShapeClass>(
 							0.0, 0.0, 1.0, 1.0, 0.5, 0.5, 1.0,
