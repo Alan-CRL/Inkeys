@@ -1032,12 +1032,19 @@ double ResolveLiveTipTaperDurationSeconds(StrokeWidthMode widthMode,
 		const InterruptedStrokeReconnectIdentity& previous,
 		const InterruptedStrokeReconnectIdentity& current) noexcept
 	{
-		return previous.deviceType == current.deviceType &&
+		return IsInterruptedStrokeReconnectDeviceSupported(previous.deviceType) &&
+			IsInterruptedStrokeReconnectDeviceSupported(current.deviceType) &&
+			previous.deviceType == current.deviceType &&
 			previous.selectedTool == current.selectedTool &&
 			previous.tool == current.tool &&
 			previous.widthMode == current.widthMode &&
 			previous.invertedCursor == current.invertedCursor &&
 			previous.suppressPressure == current.suppressPressure;
+	}
+
+	bool IsInterruptedStrokeReconnectDeviceSupported(InputDeviceType deviceType) noexcept
+	{
+		return deviceType == InputDeviceType::Touch;
 	}
 
 	bool IsBetterInterruptedStrokeReconnectMatch(

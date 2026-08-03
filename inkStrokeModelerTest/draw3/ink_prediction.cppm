@@ -207,7 +207,7 @@ export namespace draw3
 		ink::stroke_model::StrokeModelParams modelParams;
 		bool retainPredictionOnUp = false; // 默认由模型生成 Up 收尾；外部开关可选择保留最后可见 prediction。
 		bool invertedPenEraserEnabled = true; // 默认允许倒转 Pen 在画笔/荧光笔下临时覆盖为橡皮。
-		bool interruptedStrokeReconnectEnabled = true; // 默认暂留物理 Up，允许短暂断触继续同一模型。
+		bool interruptedStrokeReconnectEnabled = true; // 默认允许 Touch 短暂断触继续同一模型；Pen/Mouse 始终正常收尾。
 		bool hapticFeedbackEnabled = true; // 当前原型默认启用触觉；后续由 Inkeys3 设置替换。
 		bool laserParticlesEnabled = false; // GPU 粒子默认关闭；外部可按需开启，资源不可用时只降级激光主体。
 		bool laserMultiTouchDrawingEnabled = false; // 默认只接受第一根 Touch，外部可显式启用激光笔多指绘图。
@@ -354,6 +354,8 @@ export namespace draw3
 	bool AreInterruptedStrokeReconnectIdentitiesCompatible(
 		const InterruptedStrokeReconnectIdentity& previous,
 		const InterruptedStrokeReconnectIdentity& current) noexcept;
+	// 断触修正只面向容易发生物理断触的 Touch 输入。
+	bool IsInterruptedStrokeReconnectDeviceSupported(InputDeviceType deviceType) noexcept;
 	// 多候选命中时按归一化落点误差、角度、距离和较新的 Up 确定唯一候选。
 	bool IsBetterInterruptedStrokeReconnectMatch(
 		const InterruptedStrokeReconnectResult& candidate, int64_t candidateUpQpc,

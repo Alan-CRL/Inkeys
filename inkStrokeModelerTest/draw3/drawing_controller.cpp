@@ -832,6 +832,7 @@ namespace draw3
 		presentation_(presentation), configuration_(std::move(configuration)),
 		inputWidthModeSettings_(configuration_.inputWidthModes),
 		invertedPenEraserEnabled_(configuration_.invertedPenEraserEnabled),
+		interruptedStrokeReconnectEnabled_(configuration_.interruptedStrokeReconnectEnabled),
 		laserParticlesEnabled_(configuration_.laserParticlesEnabled),
 		laserMultiTouchDrawingEnabled_(configuration_.laserMultiTouchDrawingEnabled),
 		laserHoldDurationSeconds_(std::isfinite(configuration_.laserHoldDurationSeconds) &&
@@ -913,6 +914,17 @@ namespace draw3
 	bool DrawingController::GetInvertedPenEraserEnabled() const noexcept
 	{
 		return invertedPenEraserEnabled_.load(std::memory_order_acquire);
+	}
+
+	void DrawingController::SetInterruptedStrokeReconnectEnabled(bool enabled) noexcept
+	{
+		interruptedStrokeReconnectEnabled_.store(enabled, std::memory_order_release);
+		input_.PublishControlWake(); // 关闭时唤醒绘制线程，立即提交仍在等待的 Touch Up。
+	}
+
+	bool DrawingController::GetInterruptedStrokeReconnectEnabled() const noexcept
+	{
+		return interruptedStrokeReconnectEnabled_.load(std::memory_order_acquire);
 	}
 
 	void DrawingController::SetLaserParticlesEnabled(bool enabled) noexcept
@@ -1036,7 +1048,7 @@ namespace draw3
 			effectiveInvertedPenEraserEnabled =
 				invertedPenEraserEnabled_.load(std::memory_order_acquire);
 		std::cout << "[StrokeReconnect] enabled=" <<
-			(configuration_.interruptedStrokeReconnectEnabled ? "true" : "false") <<
+			(GetInterruptedStrokeReconnectEnabled() ? "true" : "false") <<
 			" window_ms=" << kInterruptedStrokeReconnectWindowSeconds * 1000.0 <<
 			" prediction_endpoint_base_px=" <<
 			kInterruptedStrokeReconnectDistanceSlackPx * reconnectDpiScale <<
@@ -1208,7 +1220,8 @@ namespace draw3
 				InterruptedStrokeReconnectResult reconnectResult;
 				RuntimeStroke* diagnosticRuntime = nullptr;
 				InterruptedStrokeReconnectResult diagnosticResult;
-				if (configuration_.interruptedStrokeReconnectEnabled &&
+				if (GetInterruptedStrokeReconnectEnabled() &&
+					IsInterruptedStrokeReconnectDeviceSupported(deviceType) &&
 					tool != DrawingTool::Laser)
 				{
 					for (RuntimeStroke* candidate : active)
@@ -1701,7 +1714,8 @@ namespace draw3
 				const bool terminal = snapshot.phase == ContactPhase::Up ||
 					snapshot.phase == ContactPhase::Cancelled;
 				const bool deferUp = snapshot.phase == ContactPhase::Up &&
-					configuration_.interruptedStrokeReconnectEnabled &&
+					GetInterruptedStrokeReconnectEnabled() &&
+					IsInterruptedStrokeReconnectDeviceSupported(runtime.metricDeviceType) &&
 					runtime.tool != DrawingTool::Laser;
 				const bool positionMoved = distanceSquared > kRawMoveThresholdPx * kRawMoveThresholdPx;
 				runtime.laserParticleMovedThisFrame = positionMoved;
@@ -2167,7 +2181,9 @@ namespace draw3
 				? static_cast<float>(QpcDeltaSeconds(frameQpc.QuadPart,
 					lastLaserParticleSimulationQpc, qpcFrequency)) : 0.0f;
 			bool hasEndedStroke = false;
-			if (!configuration_.interruptedStrokeReconnectEnabled)
+			const bool interruptedStrokeReconnectEnabled =
+				GetInterruptedStrokeReconnectEnabled();
+			if (!interruptedStrokeReconnectEnabled)
 			{
 				while (input_.TryDequeue(record)) processCommand(record);
 				// 关闭开关时保留原先的 Down 出队顺序，确保它是完整的回滚点。
@@ -2199,13 +2215,14 @@ namespace draw3
 				--reconnectEvictionCount;
 			}
 
-			if (configuration_.interruptedStrokeReconnectEnabled)
+			if (interruptedStrokeReconnectEnabled)
 				while (input_.TryDequeue(record)) processCommand(record);
 			for (RuntimeStroke* runtime : active)
 			{
 				if (!runtime || !runtime->awaitingReconnect ||
-					!IsInterruptedStrokeReconnectExpired(
-						runtime->reconnectDeadlineQpc, frameQpc.QuadPart)) continue;
+					(interruptedStrokeReconnectEnabled &&
+						!IsInterruptedStrokeReconnectExpired(
+							runtime->reconnectDeadlineQpc, frameQpc.QuadPart))) continue;
 				completeModelUp(*runtime, runtime->deferredUpSnapshot, false);
 				hasEndedStroke = true;
 			}

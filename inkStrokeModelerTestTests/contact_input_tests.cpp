@@ -528,6 +528,14 @@ namespace
 	{
 		draw3::StrokeModelConfiguration configuration;
 		TEST_CHECK(state, configuration.interruptedStrokeReconnectEnabled);
+		TEST_CHECK(state, draw3::IsInterruptedStrokeReconnectDeviceSupported(
+			draw3::InputDeviceType::Touch));
+		TEST_CHECK(state, !draw3::IsInterruptedStrokeReconnectDeviceSupported(
+			draw3::InputDeviceType::Pen));
+		TEST_CHECK(state, !draw3::IsInterruptedStrokeReconnectDeviceSupported(
+			draw3::InputDeviceType::MouseLeft));
+		TEST_CHECK(state, !draw3::IsInterruptedStrokeReconnectDeviceSupported(
+			draw3::InputDeviceType::MouseRight));
 
 		std::vector<draw3::InkPoint> directionPoints{
 			{ 0.0f, 0.0f, 1.0f, 0.0f },
@@ -1044,26 +1052,32 @@ namespace
 		TEST_CHECK(state, !draw3::EvaluateInterruptedStrokeReconnect(input).matched);
 
 		const draw3::InterruptedStrokeReconnectIdentity identity{
-			draw3::InputDeviceType::Pen, 0, 0,
-			draw3::StrokeWidthMode::HardwarePressure, false, false
+			draw3::InputDeviceType::Touch, 0, 0,
+			draw3::StrokeWidthMode::Fixed, false, false
 		};
 		draw3::InterruptedStrokeReconnectIdentity changed = identity;
 		TEST_CHECK(state, draw3::AreInterruptedStrokeReconnectIdentitiesCompatible(identity, changed));
-		for (const draw3::InputDeviceType deviceType : {
-			draw3::InputDeviceType::Touch, draw3::InputDeviceType::Pen,
-			draw3::InputDeviceType::MouseLeft, draw3::InputDeviceType::MouseRight })
+		for (uint32_t tool = 0; tool < 3; ++tool)
 		{
-			for (uint32_t tool = 0; tool < 3; ++tool)
-			{
-				const draw3::InterruptedStrokeReconnectIdentity supported{
-					deviceType, tool, tool, draw3::StrokeWidthMode::Fixed, false, false
-				};
-				TEST_CHECK(state, draw3::AreInterruptedStrokeReconnectIdentitiesCompatible(
-					supported, supported));
-			}
+			const draw3::InterruptedStrokeReconnectIdentity supported{
+				draw3::InputDeviceType::Touch, tool, tool,
+				draw3::StrokeWidthMode::Fixed, false, false
+			};
+			TEST_CHECK(state, draw3::AreInterruptedStrokeReconnectIdentitiesCompatible(
+				supported, supported));
 		}
-		changed.deviceType = draw3::InputDeviceType::Touch;
+		changed.deviceType = draw3::InputDeviceType::Pen;
 		TEST_CHECK(state, !draw3::AreInterruptedStrokeReconnectIdentitiesCompatible(identity, changed));
+		for (const draw3::InputDeviceType unsupportedDeviceType : {
+			draw3::InputDeviceType::Pen, draw3::InputDeviceType::MouseLeft,
+			draw3::InputDeviceType::MouseRight })
+		{
+			const draw3::InterruptedStrokeReconnectIdentity unsupported{
+				unsupportedDeviceType, 0, 0, draw3::StrokeWidthMode::Fixed, false, false
+			};
+			TEST_CHECK(state, !draw3::AreInterruptedStrokeReconnectIdentitiesCompatible(
+				unsupported, unsupported));
+		}
 		changed = identity;
 		changed.selectedTool = 1;
 		TEST_CHECK(state, !draw3::AreInterruptedStrokeReconnectIdentitiesCompatible(identity, changed));
@@ -1071,7 +1085,7 @@ namespace
 		changed.tool = 2;
 		TEST_CHECK(state, !draw3::AreInterruptedStrokeReconnectIdentitiesCompatible(identity, changed));
 		changed = identity;
-		changed.widthMode = draw3::StrokeWidthMode::Fixed;
+		changed.widthMode = draw3::StrokeWidthMode::SimulatedPressure;
 		TEST_CHECK(state, !draw3::AreInterruptedStrokeReconnectIdentitiesCompatible(identity, changed));
 		changed = identity;
 		changed.invertedCursor = true;

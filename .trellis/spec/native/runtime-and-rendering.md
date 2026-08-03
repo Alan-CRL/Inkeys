@@ -239,10 +239,12 @@ Correct：`StylusUp/WM_POINTERUP -> clear Pen sample`；后续真实 InAir/Point
 ### 2. Signatures
 
 - `StrokeModelConfiguration::interruptedStrokeReconnectEnabled`
+- `DrawingController::SetInterruptedStrokeReconnectEnabled/GetInterruptedStrokeReconnectEnabled`
 - `TryGetInterruptedStrokeTailDirection`
 - `ResolveInterruptedStrokeReconnectMotion`
 - `EvaluateInterruptedStrokeReconnect`
 - `AreInterruptedStrokeReconnectIdentitiesCompatible`
+- `IsInterruptedStrokeReconnectDeviceSupported`
 - `IsBetterInterruptedStrokeReconnectMatch`
 - `InterruptedStrokeReconnectResult::predictionExtrapolated`
 - `InterruptedStrokeReconnectResult::selectedTerminalDirectionCorridor`
@@ -251,9 +253,9 @@ Correct：`StylusUp/WM_POINTERUP -> clear Pen sample`；后续真实 InAir/Point
 
 ### 3. Contracts
 
-- 开关默认开启且只在构造 `DrawingController` 前配置；关闭时必须保留原先 Down 出队和立即 `kUp` 顺序。
-- 物理 Up 在 80ms 窗口内先作为 `kMove` 输入并冻结 modeler、真实点、prediction、L0/L1 CPU 状态、提交游标、宽度估算器和旧 handle；Cancelled 立即终结。
-- 候选必须具有有效末速和末端方向，并与新 Down 的设备、批次选择工具、有效工具、宽度模式、倒转状态和压力屏蔽策略完全一致。Up 的 `kMove` 成功后必须在新 Down 出队前冻结匹配专用 prediction，保证同帧 Up→Down 使用最新状态。
+- 开关默认开启，外部通过 `DrawingController::SetInterruptedStrokeReconnectEnabled/GetInterruptedStrokeReconnectEnabled` 运行时读写；关闭时发布 control wake，已有候选立即按保存的 Up 完成，并保留原先 Down 出队和立即 `kUp` 顺序。
+- 断触修正仅支持 Touch。Touch 物理 Up 在 80ms 窗口内先作为 `kMove` 输入并冻结 modeler、真实点、prediction、L0/L1 CPU 状态、提交游标、宽度估算器和旧 handle；Pen/Mouse Up 始终立即发送 `kUp`，Cancelled 立即终结。
+- 候选和新 Down 都必须是 Touch，并具有有效末速和末端方向；批次选择工具、有效工具、宽度模式、倒转状态和压力屏蔽策略必须完全一致。Up 的 `kMove` 成功后必须在新 Down 出队前冻结匹配专用 prediction，保证同帧 Up→Down 使用最新状态。
 - prediction 有有效位置和正时域时，按 Down 间隔在预测时域内插值，超出时域使用最后预测位置；以 `selectedPredictionPosition - modeledPositionAtUp` 得到模型预测位移，再平移到物理 Up 坐标生成预测落点，禁止直接把预测终点瞬时速度方向与整段曲线桥接弦做硬比较。
 - prediction 路径要求新 Down 到预测落点的误差不超过 `4px*dpiScale + 0.35*predictedDistance + 0.75*forecastAverageSpeed*beyondHorizon`；桥接距离上限按 `referenceSpeed=max(forecastAverageSpeed,recentFilteredInputSpeed)` 计算为 `clamp(referenceSpeed*gap*1.75 + 4px*dpiScale, 64px*dpiScale, 256px*dpiScale)`，且必须在完成方向与落点诊断后才以该上限拒绝。边界比较额外允许 `0.5px*dpiScale` 数值容差；终点速度只用于诊断。
 - 冻结预测端点失败后，先在预测弦可靠、桥接夹角不超过 35°、相对 `referenceSpeed` 的速度比位于 `[0.35, 2.75]` 且 Down 超过预测时域时尝试加速自适应走廊：`adaptedDistance=max(predictedDistance,referenceSpeed*gap)`，桥接向预测弦投影后的纵向误差与横向误差必须分别不超过 `4px*dpiScale + 0.50*adaptedDistance`；禁止再次叠加时域外不确定度。
@@ -270,6 +272,8 @@ Correct：`StylusUp/WM_POINTERUP -> clear Pen sample`；后续真实 InAir/Point
 
 | Condition | Required behavior |
 |---|---|
+| Pen/Mouse Up | 立即发送 `kUp`，不得进入候选或匹配断触修正 |
+| 运行中关闭开关 | 发布 control wake；已有 Touch 候选立即按保存 Up 完成，之后的 Down/Up 使用原队列顺序 |
 | Up 无有效末速/方向 | 立即发送 `kUp`，不进入候选 |
 | Cancelled | 立即终结，不可续接 |
 | 设备、工具或笔状态不一致 | 新 Down 创建独立笔画，旧候选继续等待 |
@@ -288,11 +292,11 @@ Correct：`StylusUp/WM_POINTERUP -> clear Pen sample`；后续真实 InAir/Point
 
 ### 5. Good / Base / Bad Cases
 
-- Good：Pen 沿预测曲线 50ms 后恢复 Down；预测终点切线即使已经转向，只要新 Down 落在预测位移走廊内且桥接不超过当前速度自适应上限，原 qpc origin、modeler、真实点和宽度状态连续。
+- Good：Touch 沿预测曲线 50ms 后恢复 Down；预测终点切线即使已经转向，只要新 Down 落在预测位移走廊内且桥接不超过当前速度自适应上限，原 qpc origin、modeler、真实点和宽度状态连续。
 - Good：预测只覆盖 17ms、实际间隔 70ms，但预测弦与桥接夹角 10°、抬笔前输入速度高于预测平均速度且速度比约 1.0；冻结端点失败后按加速走廊命中。
 - Good：圆弧桥接与 19ms 短预测弦偏差 68°，但与预测末端速度方向偏差 30°，速度比和纵横误差均通过；第二方向走廊命中且不提高全局 35°。
 - Good：波浪线在 30ms 内恢复，预测仍覆盖该时刻但位移严重偏短；桥接与末端速度方向偏差 1°、速度比 1.75 且纵横误差通过，严格时域内走廊命中。
-- Base：未命中的普通笔、荧光笔、橡皮及 Touch/Mouse/Pen 都按独立笔画处理，旧候选按 deadline 正常收尾。
+- Base：未命中的 Touch 普通笔、荧光笔和橡皮按独立笔画处理，旧候选按 deadline 正常收尾；Pen/Mouse 从不进入续接候选。
 - Bad：物理 Up 立即 `kUp` 后尝试 Reset/拼接新模型，或用预测终点瞬时切线对整段曲线桥接弦做 35° 硬拒绝。
 - Bad：把 `matchScore` 全局放宽以接纳加速样本，导致 90° 以上的人工重新落笔一起误连；或模拟开关关闭后仍在每个 Move 上查状态和加锁。
 
@@ -301,11 +305,11 @@ Correct：`StylusUp/WM_POINTERUP -> clear Pen sample`；后续真实 InAir/Point
 - 精确覆盖 80ms、prediction 位置时域插值/末状态、预测位移与终点切线反向仍命中、预测落点误差与数值容差、时域外不确定度、64–256px 动态预测上限、35°/32px 回退边界、DPI 缩放和 RTS 速度尖峰抑制。
 - 覆盖高速直线略超基础上限、慢到快圆弧/波浪线加速走廊命中、预测弦超过 35°但末端速度方向走廊命中、时域内 35ms/15°/[0.5,2.0] 严格终速走廊、对应间隔/角度/速度比越界拒绝，并断言 `predictionExtrapolated`、两个终速走廊标记与横向/纵向误差。
 - 分别以模拟开关 true/false 构建；false 的 Release 编译必须选择原始 Down/Move/Up 直接发布分支。
-- 覆盖四类 `InputDeviceType`、三类工具以及全部身份字段不一致拒绝。
+- 覆盖 Touch 支持、Pen/MouseLeft/MouseRight 拒绝、三类工具以及全部身份字段不一致拒绝。
 - 覆盖预测距离比例误差/角度/距离/Up 时间的多候选确定性选择、候选上限和超时策略。
 - 同一 modeler 依次接收 `Down → Move → 暂留 Up(kMove) → 新 Down(kMove) → Up`；橡皮使用 Disabled predictor。
 - 静态检查功能关闭时保留旧队列顺序，仅候选时 timer period 已结束且 deadline 可自行唤醒。
-- 实体 Pen/Touch/Mouse 验证续接、主动分笔不误连、快速断触、resize、clear 和三类工具；`SendInput` 不能替代 RTS 硬件验证。
+- 实体 Touch 验证续接、主动分笔不误连、快速断触、resize、clear 和三类工具；实体 Pen/Mouse 验证 Up 立即收尾且不续接，`SendInput` 不能替代 RTS 硬件验证。
 
 ### 7. Wrong vs Correct
 
