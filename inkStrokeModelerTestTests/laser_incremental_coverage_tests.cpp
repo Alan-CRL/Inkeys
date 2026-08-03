@@ -188,6 +188,21 @@ int RunLaserIncrementalCoverageTests()
 		draw3::LaserCoverageMode::Inactive, 1, false) ==
 		draw3::LaserCoverageMode::FullRedraw);
 
+	// Fade 尾端的新 Down 会把整组激光恢复满亮，必须把这次跃迁识别为 opacity 变化。
+	draw3::LaserTrailLifecycle opacityLifecycle;
+	draw3::BeginLaserContact(opacityLifecycle);
+	draw3::EndLaserContact(opacityLifecycle, 1000);
+	const float fadedOpacity = draw3::EvaluateLaserTrailOpacity(
+		opacityLifecycle, 2790, 1000, 1.0);
+	LASER_INCREMENTAL_CHECK(fadedOpacity > 0.0f && fadedOpacity < 0.02f);
+	const float preInputOpacity = fadedOpacity;
+	draw3::BeginLaserContact(opacityLifecycle);
+	const float restoredOpacity = draw3::EvaluateLaserTrailOpacity(
+		opacityLifecycle, 2790, 1000, 1.0);
+	LASER_INCREMENTAL_CHECK(NearlyEqual(restoredOpacity, 1.0f));
+	LASER_INCREMENTAL_CHECK(
+		std::abs(preInputOpacity - restoredOpacity) > 0.0001f);
+
 	// 自交/急弯的旧、新 live bounds 必须通过 union 一起保留。
 	const std::vector<draw3::InkPoint> selfIntersecting = {
 		{ 10.0f, 10.0f, 3.0f, 0.0f },
@@ -277,6 +292,9 @@ int RunLaserIncrementalCoverageTests()
 			"const InkPoint rectPoints[2]"));
 		LASER_INCREMENTAL_CHECK(!ContainsText(controllerSource,
 			"renderer_.EmitLaserParticles("));
+		LASER_INCREMENTAL_CHECK(TextAppearsBefore(controllerSource,
+			"const float preInputLaserOpacity = laserOpacity;",
+			"if (!interruptedStrokeReconnectEnabled)"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
 			"laserParticleSnapshot.hasActive || laserParticleSnapshot.expiredAny"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,

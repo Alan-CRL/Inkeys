@@ -2181,6 +2181,8 @@ namespace draw3
 				? static_cast<float>(QpcDeltaSeconds(frameQpc.QuadPart,
 					lastLaserParticleSimulationQpc, qpcFrequency)) : 0.0f;
 			bool hasEndedStroke = false;
+			// 在处理同帧输入前保存 opacity；新 Down 可能直接恢复满亮，仍需覆盖旧淡出区域。
+			const float preInputLaserOpacity = laserOpacity;
 			const bool interruptedStrokeReconnectEnabled =
 				GetInterruptedStrokeReconnectEnabled();
 			if (!interruptedStrokeReconnectEnabled)
@@ -2226,7 +2228,6 @@ namespace draw3
 				completeModelUp(*runtime, runtime->deferredUpSnapshot, false);
 				hasEndedStroke = true;
 			}
-			const float preInputLaserOpacity = laserOpacity;
 			laserOpacity = EvaluateLaserTrailOpacity(laserLifecycle,
 				frameQpc.QuadPart, qpcFrequency,
 				laserHoldDurationSeconds_.load(std::memory_order_acquire));
