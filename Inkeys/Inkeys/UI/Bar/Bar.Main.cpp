@@ -2727,7 +2727,8 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 	if (barUISetClass->barStyle.zoom <= 0.0) return false;
 	if (word.size.val <= 0) return false;
 	if (word.w.val <= 0 || word.h.val <= 0) return false;
-	if (word.pct.val <= 0.0) return false;
+	double contentPct = clamp(static_cast<double>(word.contentPct), 0.0, 1.0);
+	if (word.pct.val <= 0.0 || contentPct <= 0.0) return false;
 
 	// 初始化绘制量
 	double tarZoom = barUISetClass->barStyle.zoom;
@@ -2736,7 +2737,15 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 	double tarW = word.w.val * tarZoom;
 	double tarH = word.h.val * tarZoom;
 	double tarSize = word.size.val * tarZoom;
-	double tarPct = word.pct.val; // 透明度
+	double contentScale = max(0.0, static_cast<double>(word.contentScale));
+	double centerX = tarX + tarW / 2.0;
+	double centerY = tarY + tarH / 2.0;
+	tarW *= contentScale;
+	tarH *= contentScale;
+	tarSize *= contentScale;
+	tarX = centerX - tarW / 2.0;
+	tarY = centerY - tarH / 2.0;
+	double tarPct = word.pct.val * contentPct; // 布局透明度与内容切换透明度相乘
 
 	// Word 控件改为存入 wstring
 	wstring tarContent = word.content.GetVal();
@@ -3153,6 +3162,7 @@ BarUiValueClass drawAttributeAnnotationPopupProgress(0.0);
 	BarUiValueClass geometryThicknessFinePressScale(1.0);
 	BarUiValueClass geometryThicknessMediumPressScale(1.0);
 	BarUiValueClass geometryThicknessCoarsePressScale(1.0);
+	BarUiValueClass geometryClosePressScale(1.0);
 	// 固定态结束后仍保留关闭图标，直到浮窗收起动画真正到达终点。
 	bool drawAttributeAnnotationCloseVisible = false;
 	bool drawAttributeOverflowCloseVisible = false;
@@ -3736,6 +3746,12 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 								if (forNum == 1 || barState.fold || !temp->IsVisible())
 									temp->icon.color1.value().SetDirect(iconColor);
 								else temp->icon.color1.value().SetTar(iconColor);
+								if (temp->icon.color2.has_value())
+								{
+									if (forNum == 1 || barState.fold || !temp->IsVisible())
+										temp->icon.color2.value().SetDirect(iconColor);
+									else temp->icon.color2.value().SetTar(iconColor);
+								}
 							}
 							if (temp->preset.load() != BarButtomPresetEnum::Divider)
 							{
@@ -5782,6 +5798,36 @@ for (size_t i = 0; i < 3; ++i)
 							button.pressed ? buttonPressCurve : buttonReleaseCurve);
 					}
 
+					auto close = shapeMap[
+						BarUISetShapeEnum::GeometryAttributeBar_Close];
+					close->x.SetTar(300.0 * layoutScale);
+					close->y.SetTar(5.0 * layoutScale);
+					close->w.SetTar(30.0 * layoutScale);
+					close->h.SetTar(30.0 * layoutScale);
+					close->rw->SetTar(4.0 * layoutScale);
+					close->rh->SetTar(4.0 * layoutScale);
+					close->ft->SetTar(layoutScale);
+					close->fill->SetTar(GetThemeColor(BarThemeColorEnum::PressedFill));
+					if (!barState.geometryAttribute) close->pct.SetTar(0.0);
+					else if (barState.geometryAttributeBar.closePress)
+						close->pct.SetTar(0.10);
+					else if (geometryCloseHoverStage == BarButtomHoverStageEnum::None)
+						close->pct.SetTar(0.0);
+					geometryClosePressScale.SetTar(
+						barState.geometryAttributeBar.closePress
+							? BarButtonPressScale : 1.0,
+						BarUiDefaultOperationDur, nullopt, false,
+						barState.geometryAttributeBar.closePress
+							? buttonPressCurve : buttonReleaseCurve);
+					auto closeSvg = svgMap[
+						BarUISetSvgEnum::GeometryAttributeBar_Close];
+					closeSvg->x.SetTar(306.0 * layoutScale);
+					closeSvg->y.SetTar(11.0 * layoutScale);
+					closeSvg->SetWH(18.0 * layoutScale, 18.0 * layoutScale);
+					closeSvg->color1->SetTar(
+						GetThemeColor(BarThemeColorEnum::TextPrimary));
+					closeSvg->pct.SetTar(barState.geometryAttribute ? 1.0 : 0.0);
+
 					auto divider = shapeMap[
 						BarUISetShapeEnum::GeometryAttributeBar_Divider];
 					divider->x.SetTar(5.0 * layoutScale);
@@ -5810,8 +5856,11 @@ for (size_t i = 0; i < 3; ++i)
 						};
 					for (int value = static_cast<int>(BarUISetShapeEnum::GeometryAttributeBar);
 						value <= static_cast<int>(
-							BarUISetShapeEnum::GeometryAttributeBar_ThicknessCoarse); ++value)
+							BarUISetShapeEnum::GeometryAttributeBar_Close); ++value)
 						SyncGeometryShape(shapeMap[static_cast<BarUISetShapeEnum>(value)]);
+					SyncValueDuration(closeSvg->x); SyncValueDuration(closeSvg->y);
+					SyncValueDuration(closeSvg->w); SyncValueDuration(closeSvg->h);
+					SyncPctDuration(closeSvg->pct);
 					for (int value = static_cast<int>(
 						BarUISetWordEnum::GeometryAttributeBar_StraightLine);
 						value <= static_cast<int>(
@@ -5868,7 +5917,7 @@ for (size_t i = 0; i < 3; ++i)
 					{
 						for (int value = static_cast<int>(BarUISetShapeEnum::GeometryAttributeBar);
 							value <= static_cast<int>(
-								BarUISetShapeEnum::GeometryAttributeBar_ThicknessCoarse); ++value)
+								BarUISetShapeEnum::GeometryAttributeBar_Close); ++value)
 							RestartShape(shapeMap[static_cast<BarUISetShapeEnum>(value)],
 								geometryAttributeSideSwitch,
 								value == static_cast<int>(BarUISetShapeEnum::GeometryAttributeBar));
@@ -5900,6 +5949,25 @@ for (size_t i = 0; i < 3; ++i)
 								geometryAttributeSideSwitch ? optional<double>(0.0) : nullopt,
 								true, opacityCurve);
 						}
+						closeSvg->x.SetTar(closeSvg->x.tar, operationDur,
+							geometryAttributeSideSwitch
+								? optional<double>(Compact(closeSvg->x.tar)) : nullopt,
+							true, geometryAttributeSideSwitch ? sideValueCurve : syncedValueCurve);
+						closeSvg->y.SetTar(closeSvg->y.tar, operationDur,
+							geometryAttributeSideSwitch
+								? optional<double>(Compact(closeSvg->y.tar)) : nullopt,
+							true, geometryAttributeSideSwitch ? sideValueCurve : syncedValueCurve);
+						closeSvg->w.SetTar(closeSvg->w.tar, operationDur,
+							geometryAttributeSideSwitch
+								? optional<double>(max(1.0, Compact(closeSvg->w.tar))) : nullopt,
+							true, geometryAttributeSideSwitch ? sideValueCurve : syncedValueCurve);
+						closeSvg->h.SetTar(closeSvg->h.tar, operationDur,
+							geometryAttributeSideSwitch
+								? optional<double>(max(1.0, Compact(closeSvg->h.tar))) : nullopt,
+							true, geometryAttributeSideSwitch ? sideValueCurve : syncedValueCurve);
+						closeSvg->pct.SetTar(closeSvg->pct.tar, operationDur,
+							geometryAttributeSideSwitch ? optional<double>(0.0) : nullopt,
+							true, geometryAttributeSideSwitch ? sidePctCurve : syncedPctCurve);
 					}
 				}
 			}
@@ -6175,6 +6243,8 @@ for (size_t i = 0; i < 3; ++i)
 			ChangeValue(geometryThicknessMediumPressScale, false);
 		if (!geometryThicknessCoarsePressScale.IsSame())
 			ChangeValue(geometryThicknessCoarsePressScale, false);
+		if (!geometryClosePressScale.IsSame())
+			ChangeValue(geometryClosePressScale, false);
 
 		for (const auto& [key, val] : shapeMap)
 		{
@@ -6246,6 +6316,9 @@ for (size_t i = 0; i < 3; ++i)
 		{
 			bool forceReplace = false, change = false;;
 			if (val->forceReplace) val->forceReplace = false, forceReplace = true;
+			if (val->AdvanceContentTransition(
+				animationDtSeconds, currentAnimationSpeedRate))
+				needRendering = true;
 
 			if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace), change = true;
 			if (!val->x.IsSame()) ChangeValue(val->x, forceReplace), change = true;
@@ -6400,6 +6473,11 @@ bool thicknessPresetMode =
 				*geometryThicknessHoverStages[index],
 				barState.geometryAttribute, !selected);
 		}
+		auto geometryClose =
+			shapeMap[BarUISetShapeEnum::GeometryAttributeBar_Close];
+		UpdateHoverAnimation(geometryClose->pct,
+			&geometryClose->fill.value(), geometryCloseHoverStage,
+			barState.geometryAttribute, true);
 
 		// 特殊体质：按钮
 		for (int id = 0; id < barButtomSet.tot; id++)
@@ -6450,6 +6528,9 @@ bool thicknessPresetMode =
 			{
 				bool forceReplace = false, change = false;;
 				if (temp->name.forceReplace) temp->name.forceReplace = false, forceReplace = true;
+				if (temp->name.AdvanceContentTransition(
+					animationDtSeconds, currentAnimationSpeedRate))
+					needRendering = true;
 
 				if (!temp->name.enable.IsSame()) ChangeState(temp->name.enable, forceReplace), change = true;
 				if (!temp->name.x.IsSame()) ChangeValue(temp->name.x, forceReplace), change = true;
@@ -8354,6 +8435,38 @@ else
 							if (transformChanged)
 								barDeviceContext->SetTransform(originalTransform);
 						}
+
+						auto close = shapeMap[
+							BarUISetShapeEnum::GeometryAttributeBar_Close];
+						BarUiInheritClass closeInherit =
+							close->Inherit(TopLeft, *panel);
+						double closePressScale = geometryClosePressScale.val;
+						if (!isfinite(closePressScale) || closePressScale <= 0.0)
+							closePressScale = 1.0;
+						D2D1_MATRIX_3X2_F closeOriginalTransform;
+						barDeviceContext->GetTransform(&closeOriginalTransform);
+						bool closeTransformChanged =
+							abs(closePressScale - 1.0) > 0.000001;
+						if (closeTransformChanged)
+						{
+							FLOAT centerX = static_cast<FLOAT>(
+								(closeInherit.x + close->w.val / 2.0) * uiZoom);
+							FLOAT centerY = static_cast<FLOAT>(
+								(closeInherit.y + close->h.val / 2.0) * uiZoom);
+							barDeviceContext->SetTransform(
+								D2D1::Matrix3x2F::Scale(
+									static_cast<FLOAT>(closePressScale),
+									static_cast<FLOAT>(closePressScale),
+									D2D1::Point2F(centerX, centerY))
+								* closeOriginalTransform);
+						}
+						spec.Shape(barDeviceContext.Get(), *close, closeInherit);
+						auto closeSvg = svgMap[
+							BarUISetSvgEnum::GeometryAttributeBar_Close];
+						spec.Svg(barDeviceContext.Get(), *closeSvg,
+							closeSvg->Inherit(TopLeft, *panel));
+						if (closeTransformChanged)
+							barDeviceContext->SetTransform(closeOriginalTransform);
 						spec.SetFrameDiffuseMaskGeometryScale(1.0);
 						RefreshBorderCursorVisibleRegions();
 					}
@@ -8464,7 +8577,7 @@ else
 					for (int i = static_cast<int>(
 						BarUISetShapeEnum::GeometryAttributeBar);
 						i <= static_cast<int>(
-							BarUISetShapeEnum::GeometryAttributeBar_ThicknessCoarse);
+							BarUISetShapeEnum::GeometryAttributeBar_Close);
 						++i)
 					{
 						auto geometryShape =
@@ -8485,6 +8598,9 @@ else
 							current, BarRenderingAttribute::GetWeigetRect(
 								*geometryWord, dirtyZoom));
 					}
+					BarRenderingAttribute::UnionRectInPlace(current,
+						BarRenderingAttribute::GetWeigetRect(*svgMap[
+							BarUISetSvgEnum::GeometryAttributeBar_Close], dirtyZoom));
 					for (int id = 0; id < barButtomSet.tot; id++)
 					{
 						BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
@@ -9265,6 +9381,7 @@ void BarUISetClass::Interact()
 		GeometryThicknessFine,
 		GeometryThicknessMedium,
 		GeometryThicknessCoarse,
+		GeometryClose,
 	};
 	IndependentHoverTargetEnum hoveredIndependentButton = IndependentHoverTargetEnum::None;
 	struct HoverVisualRef
@@ -9359,6 +9476,12 @@ void BarUISetClass::Interact()
 					&shapeMap[
 						BarUISetShapeEnum::GeometryAttributeBar_ThicknessCoarse]->fill.value(),
 					&geometryThicknessCoarseHoverStage };
+			case IndependentHoverTargetEnum::GeometryClose:
+				return { &shapeMap[
+						BarUISetShapeEnum::GeometryAttributeBar_Close]->pct,
+					&shapeMap[
+						BarUISetShapeEnum::GeometryAttributeBar_Close]->fill.value(),
+					&geometryCloseHoverStage };
 			default:
 				return {};
 			}
@@ -9447,7 +9570,7 @@ void BarUISetClass::Interact()
 	auto IsIndependentHoverAllowed = [&](IndependentHoverTargetEnum target)
 		{
 			if (target >= IndependentHoverTargetEnum::GeometryStraightLine
-				&& target <= IndependentHoverTargetEnum::GeometryThicknessCoarse)
+				&& target <= IndependentHoverTargetEnum::GeometryClose)
 			{
 				if (!barState.geometryAttribute || barState.fold
 					|| stateMode.StateModeSelect != StateModeSelectEnum::IdtShape)
@@ -9473,6 +9596,8 @@ void BarUISetClass::Interact()
 							PenModeSelectEnum::IdtPenBrush1, index,
 							barStyle.dpiZoom);
 				}
+				case IndependentHoverTargetEnum::GeometryClose:
+					return true;
 				default:
 					return false;
 				}
@@ -10013,6 +10138,7 @@ auto ColorPickerAvailable = [&]()
 						BarUISetShapeEnum::GeometryAttributeBar_ThicknessFine,
 						BarUISetShapeEnum::GeometryAttributeBar_ThicknessMedium,
 						BarUISetShapeEnum::GeometryAttributeBar_ThicknessCoarse,
+						BarUISetShapeEnum::GeometryAttributeBar_Close,
 					};
 					for (size_t index = 0; index < size(geometryShapes); ++index)
 					{
@@ -10490,24 +10616,28 @@ auto ColorPickerAvailable = [&]()
 					IdtAtomic<bool>* pressed;
 					optional<ShapeModeSelectEnum> shapeMode;
 					int thicknessPresetIndex;
+					bool closePanel;
 				};
 				const GeometryButtonInteraction geometryButtons[] =
 				{
 					{ BarUISetShapeEnum::GeometryAttributeBar_StraightLine,
 						&barState.geometryAttributeBar.straightLinePress,
-						ShapeModeSelectEnum::IdtShapeStraightLine1, -1 },
+						ShapeModeSelectEnum::IdtShapeStraightLine1, -1, false },
 					{ BarUISetShapeEnum::GeometryAttributeBar_Rectangle,
 						&barState.geometryAttributeBar.rectanglePress,
-						ShapeModeSelectEnum::IdtShapeRectangle1, -1 },
+						ShapeModeSelectEnum::IdtShapeRectangle1, -1, false },
 					{ BarUISetShapeEnum::GeometryAttributeBar_ThicknessFine,
 						&barState.geometryAttributeBar.thicknessFinePress,
-						nullopt, 0 },
+						nullopt, 0, false },
 					{ BarUISetShapeEnum::GeometryAttributeBar_ThicknessMedium,
 						&barState.geometryAttributeBar.thicknessMediumPress,
-						nullopt, 1 },
+						nullopt, 1, false },
 					{ BarUISetShapeEnum::GeometryAttributeBar_ThicknessCoarse,
 						&barState.geometryAttributeBar.thicknessCoarsePress,
-						nullopt, 2 },
+						nullopt, 2, false },
+					{ BarUISetShapeEnum::GeometryAttributeBar_Close,
+						&barState.geometryAttributeBar.closePress,
+						nullopt, -1, true },
 				};
 				for (const auto& button : geometryButtons)
 				{
@@ -10528,7 +10658,9 @@ auto ColorPickerAvailable = [&]()
 							if (!shape->IsClick(msg.x, msg.y, barStyle.zoom)) break;
 							if (!msg.lbutton)
 							{
-								if (button.shapeMode.has_value())
+								if (button.closePanel)
+									barState.geometryAttribute = false;
+								else if (button.shapeMode.has_value())
 									stateMode.Shape.ModeSelect = button.shapeMode.value();
 								else SetPenWidth(static_cast<float>(
 									GetBarThicknessPresetPx(
@@ -12662,6 +12794,38 @@ auto annotationLabel = make_shared<BarUiWordClass>(
 							InitializeGeometryButton(thicknessShapes[index],
 								thicknessWords[index], L"",
 								BarGeometryAttributeThicknessButtonSize, 10.0);
+
+						// 关闭按钮与下排粗细按钮共用 30 DIP 交互尺寸和通用点光样式。
+						{
+							auto close = make_shared<BarUiShapeClass>(
+								0.0, 0.0,
+								BarGeometryAttributeThicknessButtonSize,
+								BarGeometryAttributeThicknessButtonSize,
+								4.0, 4.0, 1.0,
+								GetThemeColor(BarThemeColorEnum::PressedFill),
+								nullopt);
+							close->pct.Initialization(0.0);
+							close->framePct = BarUiPctClass(0.0);
+							close->frameLightPct = BarUiPctClass(0.0);
+							close->frameRendering = BarUiFrameRenderingEnum::PointLight;
+							close->framePrimaryLightEnabled = false;
+							close->frameCursorLightIntensityScale =
+								BarButtonCursorLightIntensity;
+							close->enable.Initialization(true);
+							barUISet.shapeMap[
+								BarUISetShapeEnum::GeometryAttributeBar_Close] = close;
+
+							auto closeSvg = make_shared<BarUiSVGClass>(
+								0.0, 0.0,
+								GetThemeColor(BarThemeColorEnum::TextPrimary),
+								nullopt);
+							closeSvg->InitializationFromResource(L"UI", L"barCloseSmall");
+							closeSvg->SetWH(18.0, 18.0);
+							closeSvg->pct.Initialization(0.0);
+							closeSvg->enable.Initialization(true);
+							barUISet.svgMap[
+								BarUISetSvgEnum::GeometryAttributeBar_Close] = closeSvg;
+						}
 					}
 				}
 			}

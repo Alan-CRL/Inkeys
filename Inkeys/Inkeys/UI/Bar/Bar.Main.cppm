@@ -126,6 +126,7 @@ enum class BarUISetShapeEnum : int
 	GeometryAttributeBar_ThicknessFine,
 	GeometryAttributeBar_ThicknessMedium,
 	GeometryAttributeBar_ThicknessCoarse,
+	GeometryAttributeBar_Close,
 };
 enum class BarUISetSuperellipseEnum : int
 {
@@ -161,6 +162,7 @@ enum class BarUISetSvgEnum : int
 	DrawAttributeBar_ColorSelect12Check,
 	DrawAttributeBar_ColorPickerToneSun,
 	DrawAttributeBar_ColorPickerToneMoon,
+	GeometryAttributeBar_Close,
 };
 enum class BarUISetPngEnum : int
 {
@@ -437,6 +439,7 @@ public:
 	IdtAtomic<BarButtomHoverStageEnum> geometryThicknessFineHoverStage = BarButtomHoverStageEnum::None;
 	IdtAtomic<BarButtomHoverStageEnum> geometryThicknessMediumHoverStage = BarButtomHoverStageEnum::None;
 	IdtAtomic<BarButtomHoverStageEnum> geometryThicknessCoarseHoverStage = BarButtomHoverStageEnum::None;
+	IdtAtomic<BarButtomHoverStageEnum> geometryCloseHoverStage = BarButtomHoverStageEnum::None;
 
 public:
 	// 渲染更新：状态更新 + 通知计算并渲染

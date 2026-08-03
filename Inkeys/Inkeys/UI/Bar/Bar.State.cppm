@@ -62,6 +62,7 @@ IdtAtomic<bool> thicknessSliderHover = false;
 		IdtAtomic<bool> thicknessFinePress = false;
 		IdtAtomic<bool> thicknessMediumPress = false;
 		IdtAtomic<bool> thicknessCoarsePress = false;
+		IdtAtomic<bool> closePress = false;
 	}geometryAttributeBar;
 
 	struct

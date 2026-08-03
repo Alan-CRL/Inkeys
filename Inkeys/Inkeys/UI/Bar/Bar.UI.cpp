@@ -597,6 +597,7 @@ BarUiWordClass::BarUiWordClass(double xT, double yT, double wT, double hT, wstri
 }
 void BarUiWordClass::Initialization(double xT, double yT, double wT, double hT, wstring contentT, double sizeT, COLORREF colorT, BarUiValueModeEnum type)
 {
+	CancelContentTransition();
 	x.Initialization(xT, type);
 	y.Initialization(yT, type);
 	w.Initialization(wT, type);
@@ -604,4 +605,84 @@ void BarUiWordClass::Initialization(double xT, double yT, double wT, double hT, 
 	content.Initialization(contentT);
 	size.Initialization(sizeT);
 	color.Initialization(colorT);
+}
+bool BarUiWordClass::TransitionToString(const wstring& contentT, optional<double> durT,
+	double keyframeProgressT, double middleScaleT)
+{
+	if (contentTransitionTimeline.IsActive() && transitionContent.GetTar() == contentT)
+		return false;
+	if (!contentTransitionTimeline.IsActive()
+		&& content.GetVal() == contentT && content.GetTar() == contentT)
+	{
+		transitionContent.Initialization(contentT);
+		return false;
+	}
+
+	transitionContent.SetTar(contentT);
+	contentTransitionStartScale = max(0.0, static_cast<double>(contentScale));
+	contentTransitionStartPct = clamp(static_cast<double>(contentPct), 0.0, 1.0);
+	contentTransitionMiddleScale = isfinite(middleScaleT) ? max(0.0, middleScaleT) : 0.8;
+	contentTransitionKeyframeProgress = isfinite(keyframeProgressT)
+		? clamp(keyframeProgressT, 0.0, 1.0) : 0.5;
+	double duration = durT.has_value()
+		? durT.value() : static_cast<double>(BarUiDefaultOperationDur);
+	contentTransitionTimeline.Start(duration, contentTransitionKeyframeProgress);
+	return true;
+}
+bool BarUiWordClass::AdvanceContentTransition(double dt, double speedRate)
+{
+	if (!contentTransitionTimeline.IsActive()) return false;
+	BarUiKeyframeTimelineResultClass result =
+		contentTransitionTimeline.Advance(dt, speedRate);
+	double keyframe = clamp(
+		static_cast<double>(contentTransitionKeyframeProgress), 0.0, 1.0);
+	double middleScale = max(
+		0.0, static_cast<double>(contentTransitionMiddleScale));
+	double progress = clamp(result.progress, 0.0, 1.0);
+	double nextScale = 1.0;
+	double nextPct = 1.0;
+	if (progress <= keyframe)
+	{
+		double localProgress = keyframe > 0.000001
+			? progress / keyframe : 1.0;
+		nextScale = static_cast<double>(contentTransitionStartScale)
+			+ (middleScale - static_cast<double>(contentTransitionStartScale))
+			* BarUiApplyCurve(BarUiCurveEnum::EaseInCubic, localProgress);
+		nextPct = static_cast<double>(contentTransitionStartPct)
+			* (1.0 - BarUiApplyCurve(BarUiCurveEnum::EaseInSine, localProgress));
+	}
+	else
+	{
+		double localProgress = 1.0 - keyframe > 0.000001
+			? (progress - keyframe) / (1.0 - keyframe) : 1.0;
+		nextScale = middleScale + (1.0 - middleScale)
+			* BarUiApplyCurve(BarUiCurveEnum::EaseOutBack, localProgress);
+		nextPct = BarUiApplyCurve(BarUiCurveEnum::EaseOutSine, localProgress);
+	}
+	contentScale = isfinite(nextScale) ? max(0.0, nextScale) : 1.0;
+	contentPct = isfinite(nextPct) ? clamp(nextPct, 0.0, 1.0) : 1.0;
+
+	if (result.reachedKeyframe)
+	{
+		contentScale = middleScale;
+		contentPct = 0.0;
+		content.Initialization(transitionContent.GetTar());
+	}
+	if (result.finished)
+	{
+		wstring target = transitionContent.GetTar();
+		if (content.GetVal() != target || content.GetTar() != target)
+			content.Initialization(target);
+		contentScale = 1.0;
+		contentPct = 1.0;
+	}
+	return true;
+}
+void BarUiWordClass::CancelContentTransition()
+{
+	contentTransitionTimeline.Cancel();
+	contentScale = 1.0;
+	contentPct = 1.0;
+	contentTransitionStartScale = 1.0;
+	contentTransitionStartPct = 1.0;
 }

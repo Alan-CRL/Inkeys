@@ -307,6 +307,10 @@ BARREDO                 UI                      "src\\UI\\barRedo.svg"
 
 BARGEOMETRY             UI                      "src\\UI\\barGeometry.svg"
 
+BARSHAPESTRAIGHTLINE    UI                      "src\\UI\\barShapeStraightLine.svg"
+
+BARSHAPERECTANGLE       UI                      "src\\UI\\barShapeRectangle.svg"
+
 COLORSELECT             UI                      "src\\UI\\color\\colorSelect.svg"
 
 COLORCUSTOM             PNG                     "src\\UI\\color\\colorCustom.png"

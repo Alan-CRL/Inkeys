@@ -214,6 +214,7 @@ bool RegisterButton(
 		void ResetPngIconCaches();
 
 	protected:
+		void UpdateGeometryButtonStyle();
 		void PresetHoming();
 		void CalcState();
 		static Inkeys::BarButtonSizeKind ToConfigSize(BarButtomSizeEnum size);
@@ -237,6 +238,8 @@ std::vector<Inkeys::BarExtensionButtonLayoutEntry> NormalizeExtensionZone(
 				size_t boundaryIndex);
 
 		mutable shared_mutex registrationMutex;
+		IdtAtomic<int> drawButtonStyleKey = -1;
+		IdtAtomic<int> geometryButtonStyleKey = -1;
 		unordered_map<std::string, BarButtonRegistrationClass> registrations;
 		vector<std::string> registrationOrder;
 		shared_ptr<BarButtomClass> boundaryDividers[2];

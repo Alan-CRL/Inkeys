@@ -863,6 +863,10 @@ public:
 	BarUiWordClass(double xT, double yT, double wT, double hT, wstring contentT, double sizeT, COLORREF colorT = RGB(0, 0, 0), BarUiValueModeEnum type = BarUiValueModeEnum::Linear);
 
 	void Initialization(double xT, double yT, double wT, double hT, wstring contentT, double sizeT, COLORREF colorT = RGB(0, 0, 0), BarUiValueModeEnum type = BarUiValueModeEnum::Linear);
+	bool TransitionToString(const wstring& contentT, optional<double> durT = nullopt,
+		double keyframeProgressT = 0.5, double middleScaleT = 0.8);
+	bool AdvanceContentTransition(double dt, double speedRate);
+	void CancelContentTransition();
 
 public:
 	// 整体该控件是否显示
@@ -870,12 +874,23 @@ public:
 
 	// 内容
 	BarUiStringClass content;
+	// 文字内容切换与 SVG 使用同一缩放、淡出和中点替换语义。
+	IdtAtomic<double> contentScale = 1.0;
+	IdtAtomic<double> contentPct = 1.0;
 
 	// 字号
 	BarUiValueClass size;
 
 	// 颜色
 	BarUiColorClass color;
+
+protected:
+	BarUiStringClass transitionContent;
+	BarUiKeyframeTimelineClass contentTransitionTimeline;
+	IdtAtomic<double> contentTransitionStartScale = 1.0;
+	IdtAtomic<double> contentTransitionStartPct = 1.0;
+	IdtAtomic<double> contentTransitionMiddleScale = 0.8;
+	IdtAtomic<double> contentTransitionKeyframeProgress = 0.5;
 };
 
 /*

@@ -270,7 +270,7 @@ void BarButtomSetClass::PresetInitialization()
 			obj->buttom.enable.Initialization(true);
 		}
 		{
-			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
+			obj->icon.Initialization(0.0, 0.0, defaultIconColor, defaultIconColor);
 			obj->icon.InitializationFromResource(L"UI", L"barGeometry");
 			obj->icon.enable.Initialization(true);
 		}
@@ -280,11 +280,11 @@ void BarButtomSetClass::PresetInitialization()
 				{
 					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtShape)
 					{
-						// 只有 Draw2 接受模式切换后才关闭绘制属性并展开几何面板。
+						// 首次只切换工具；和绘制属性一致，再次点击才展开面板。
 						if (ChangeStateModeToShape())
 						{
 							barUISet.barState.drawAttribute = false;
-							barUISet.barState.geometryAttribute = true;
+							barUISet.barState.geometryAttribute = false;
 						}
 					}
 					else barUISet.barState.geometryAttribute =
@@ -683,16 +683,48 @@ void BarButtomSetClass::StateUpdate()
 {
 	CalcState();
 	PresetHoming();
+	UpdateDrawButtonStyle();
+	UpdateGeometryButtonStyle();
 }
 void BarButtomSetClass::UpdateDrawButtonStyle()
 {
 	static mutex mtx;
-	lock_guard<mutex> lock(mtx);
+	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
+	bool highlighter =
+		stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1;
+	int styleKey = (selected ? 2 : 0) + (highlighter ? 1 : 0);
+	if (drawButtonStyleKey == styleKey) return;
 
-	// 更新绘制按钮中的图标样式
-	if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
-		preset[(int)BarButtomPresetEnum::Draw]->icon.TransitionToResource(L"UI", L"barHighlighter1");
-	else preset[(int)BarButtomPresetEnum::Draw]->icon.TransitionToResource(L"UI", L"barBrush1");
+	lock_guard<mutex> lock(mtx);
+	if (drawButtonStyleKey == styleKey) return;
+	auto button = preset[(int)BarButtomPresetEnum::Draw];
+	if (!button) return;
+	button->icon.TransitionToResource(
+		L"UI", highlighter ? L"barHighlighter1" : L"barBrush1");
+	button->name.TransitionToString(selected
+		? (highlighter ? L"荧光笔" : L"硬笔") : L"绘制");
+	drawButtonStyleKey = styleKey;
+}
+void BarButtomSetClass::UpdateGeometryButtonStyle()
+{
+	static mutex mtx;
+	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtShape;
+	bool rectangle = selected
+		&& stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1;
+	int styleKey = selected ? (rectangle ? 2 : 1) : 0;
+	if (geometryButtonStyleKey == styleKey) return;
+
+	lock_guard<mutex> lock(mtx);
+	if (geometryButtonStyleKey == styleKey) return;
+	auto button = preset[(int)BarButtomPresetEnum::Geometry];
+	if (!button) return;
+	const wchar_t* resourceName = !selected
+		? L"barGeometry" : (rectangle
+			? L"barShapeRectangle" : L"barShapeStraightLine");
+	const wchar_t* label = !selected ? L"几何" : (rectangle ? L"矩形" : L"直线");
+	button->icon.TransitionToResource(L"UI", resourceName);
+	button->name.TransitionToString(label);
+	geometryButtonStyleKey = styleKey;
 }
 
 Inkeys::BarButtonSizeKind BarButtomSetClass::ToConfigSize(BarButtomSizeEnum size)
