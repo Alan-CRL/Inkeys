@@ -367,3 +367,26 @@ Reopened 07-28 and replaced single ButtonLayout with FixedButtonsA1/ExtensionBut
 ### Status
 
 [OK] **Completed**
+
+
+## Session 13: Finish UI3 geometry tool panel
+
+**Date**: 2026-08-03
+**Task**: Finish UI3 geometry tool panel
+**Branch**: `feature/animation`
+
+### Summary
+
+Implemented the UI3 geometry panel and toolbar refinements: swapped Geometry/Eraser order with legacy migration, shared SVG shape icons, selected-tool labels and jump transitions, close button interactions, and D2D SVG/PNG cache reset on device recreation. ARM64 Debug solution build passed with zero errors; task archived.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6838b60` | (see git log) |
+| `9810fcd` | (see git log) |
+| `37b9a77` | (see git log) |
+
+### Status
+
+[OK] **Completed**
