@@ -152,8 +152,11 @@ namespace draw3
 		if (!text || text[0] == L'\0') return {};
 		const int requiredSize = WideCharToMultiByte(CP_UTF8, 0, text, -1, nullptr, 0, nullptr, nullptr); // 先查询 UTF-8 缓冲区大小。
 		if (requiredSize <= 1) return {};
-		std::string result(static_cast<size_t>(requiredSize - 1), '\0');
-		WideCharToMultiByte(CP_UTF8, 0, text, -1, result.data(), requiredSize, nullptr, nullptr); // 去掉末尾 NUL 后返回 std::string。
+		std::string result(static_cast<size_t>(requiredSize), '\0');
+		const int written = WideCharToMultiByte(
+			CP_UTF8, 0, text, -1, result.data(), requiredSize, nullptr, nullptr);
+		if (written != requiredSize) return {};
+		result.resize(static_cast<size_t>(written - 1)); // 转换时保留 NUL 空间，返回前再移除。
 		return result;
 	}
 

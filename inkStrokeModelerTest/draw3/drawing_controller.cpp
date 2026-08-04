@@ -48,7 +48,41 @@ namespace draw3
 		constexpr float kHalfPi = kPi * 0.5f;
 		constexpr float kTwoPi = kPi * 2.0f;
 		constexpr double kInputSpeedSmoothingSeconds = 0.060;
+		constexpr double kMaximumLaserHoldDurationSeconds = 24.0 * 60.0 * 60.0;
 		constexpr size_t kPreheatedStrokeCount = 16;
+
+		LONG SaturatingFloorToLong(double value) noexcept
+		{
+			value = std::floor(value);
+			if (value <= static_cast<double>((std::numeric_limits<LONG>::min)()))
+				return (std::numeric_limits<LONG>::min)();
+			if (value >= static_cast<double>((std::numeric_limits<LONG>::max)()))
+				return (std::numeric_limits<LONG>::max)();
+			return static_cast<LONG>(value);
+		}
+
+		LONG SaturatingCeilToLong(double value) noexcept
+		{
+			value = std::ceil(value);
+			if (value <= static_cast<double>((std::numeric_limits<LONG>::min)()))
+				return (std::numeric_limits<LONG>::min)();
+			if (value >= static_cast<double>((std::numeric_limits<LONG>::max)()))
+				return (std::numeric_limits<LONG>::max)();
+			return static_cast<LONG>(value);
+		}
+
+		bool TryAddQpcDuration(int64_t originQpc, int64_t qpcFrequency,
+			double seconds, int64_t& deadlineQpc) noexcept
+		{
+			if (originQpc < 0 || qpcFrequency <= 0 ||
+				!std::isfinite(seconds) || seconds < 0.0) return false;
+			const double durationTicks = seconds * static_cast<double>(qpcFrequency);
+			const int64_t maximumDelta = (std::numeric_limits<int64_t>::max)() - originQpc;
+			if (!std::isfinite(durationTicks) || durationTicks < 0.0 ||
+				durationTicks >= static_cast<double>(maximumDelta)) return false;
+			deadlineQpc = originQpc + static_cast<int64_t>(durationTicks);
+			return true;
+		}
 
 		float DiameterForTool(DrawingTool tool)
 		{
@@ -648,12 +682,14 @@ namespace draw3
 			RECT bounds = {};
 			for (const LaserDot& dot : dots)
 			{
-				const float radius = LaserVisualRadius(dot.radius, dpiScale);
+				if (!std::isfinite(dot.x) || !std::isfinite(dot.y)) continue;
+				const double radius = static_cast<double>(LaserVisualRadius(dot.radius, dpiScale));
+				if (!std::isfinite(radius)) continue;
 				UnionRectInPlace(bounds, RECT{
-					static_cast<LONG>(std::floor(dot.x - radius - 2.0f)),
-					static_cast<LONG>(std::floor(dot.y - radius - 2.0f)),
-					static_cast<LONG>(std::ceil(dot.x + radius + 2.0f)),
-					static_cast<LONG>(std::ceil(dot.y + radius + 2.0f)) });
+					SaturatingFloorToLong(static_cast<double>(dot.x) - radius - 2.0),
+					SaturatingFloorToLong(static_cast<double>(dot.y) - radius - 2.0),
+					SaturatingCeilToLong(static_cast<double>(dot.x) + radius + 2.0),
+					SaturatingCeilToLong(static_cast<double>(dot.y) + radius + 2.0) });
 			}
 			return ClampRectToCanvas(bounds, width, height);
 		}
@@ -956,7 +992,8 @@ namespace draw3
 
 	bool DrawingController::SetLaserHoldDurationSeconds(double seconds) noexcept
 	{
-		if (!std::isfinite(seconds) || seconds < 0.0) return false;
+		if (!std::isfinite(seconds) || seconds < 0.0 ||
+			seconds > kMaximumLaserHoldDurationSeconds) return false;
 		laserHoldDurationSeconds_.store(seconds, std::memory_order_release);
 		input_.PublishControlWake(); // 运行中的 Hold/Fade 需要立即按最后 Up 时刻重算。
 		return true;
@@ -2177,8 +2214,16 @@ namespace draw3
 					const double holdSeconds = EffectiveLaserHoldDurationSeconds(
 						laserLifecycle,
 						laserHoldDurationSeconds_.load(std::memory_order_acquire));
-					const int64_t holdDeadlineQpc = laserLifecycle.lastAllUpQpc +
-						static_cast<int64_t>(holdSeconds * static_cast<double>(qpcFrequency));
+					int64_t holdDeadlineQpc = 0;
+					if (!TryAddQpcDuration(laserLifecycle.lastAllUpQpc,
+						qpcFrequency, holdSeconds, holdDeadlineQpc))
+					{
+						// 内部状态异常时退回可靠阻塞，避免溢出后忙循环。
+						input_.WaitDequeue(record);
+						processCommand(record);
+						if (metrics_) metrics_->EndIdle(GetQpcTimeMilliseconds());
+						continue;
+					}
 					LARGE_INTEGER waitStartQpc = {};
 					QueryPerformanceCounter(&waitStartQpc);
 					const double timeoutMilliseconds = QpcDeltaSeconds(

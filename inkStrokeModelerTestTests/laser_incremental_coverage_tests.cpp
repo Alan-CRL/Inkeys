@@ -264,8 +264,24 @@ int RunLaserIncrementalCoverageTests()
 			root / "inkStrokeModelerTest" / "draw3" / "renderer.cpp";
 		const std::filesystem::path rendererLaserSource =
 			root / "inkStrokeModelerTest" / "draw3" / "renderer_laser.cpp";
+		const std::filesystem::path rendererPrimitivesSource =
+			root / "inkStrokeModelerTest" / "draw3" / "renderer_primitives.cpp";
 		const std::filesystem::path controllerSource =
 			root / "inkStrokeModelerTest" / "draw3" / "drawing_controller.cpp";
+		const std::filesystem::path contactInputSource =
+			root / "inkStrokeModelerTest" / "draw3" / "contact_input.cpp";
+		const std::filesystem::path realtimeStylusSource =
+			root / "inkStrokeModelerTest" / "draw3" / "realtime_stylus.cpp";
+		const std::filesystem::path win7CompatSource =
+			root / "inkStrokeModelerTest" / "draw3" / "win7_compat.cpp";
+		const std::filesystem::path hapticSource =
+			root / "inkStrokeModelerTest" / "draw3" / "haptic_feedback.cpp";
+		const std::filesystem::path runtimeMetricsSource =
+			root / "inkStrokeModelerTest" / "draw3" / "runtime_metrics.cpp";
+		const std::filesystem::path presentationSource =
+			root / "inkStrokeModelerTest" / "draw3" / "transparent_presentation.cpp";
+		const std::filesystem::path diagnosticsSource =
+			root / "inkStrokeModelerTest" / "draw3" / "diagnostics.cpp";
 		const std::filesystem::path particleSystemSource =
 			root / "inkStrokeModelerTest" / "draw3" / "laser_particle_system.cpp";
 		const std::filesystem::path performanceHudSource =
@@ -346,6 +362,51 @@ int RunLaserIncrementalCoverageTests()
 			"WaitForFrameDeadline(remainingFrameBudgetMs)"));
 		LASER_INCREMENTAL_CHECK(!ContainsText(controllerSource,
 			"WaitForWake(frameWakeGeneration, remainingFrameBudgetMs)"));
+		// 安全回退必须显式失败，不能继续消费旧 GPU 数据或不受信任的数值/模块路径。
+		LASER_INCREMENTAL_CHECK(ContainsText(rendererPrimitivesSource,
+			"FAILED(context->Map(inkDataBuffer.Get()"));
+		LASER_INCREMENTAL_CHECK(ContainsText(rendererPrimitivesSource,
+			"FAILED(context->Map(globalCB.Get()"));
+		LASER_INCREMENTAL_CHECK(ContainsText(contactInputSource,
+			"kMaximumContactSlotCapacity = 4096"));
+		LASER_INCREMENTAL_CHECK(ContainsText(contactInputSource,
+			"TryComputeQpcDeadline("));
+		LASER_INCREMENTAL_CHECK(ContainsText(realtimeStylusSource,
+			"kMaximumPacketPropertyCount = 256"));
+		LASER_INCREMENTAL_CHECK(ContainsText(realtimeStylusSource,
+			"propertyCount != metadata->propertyCount"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(hapticSource,
+			"LoadLibraryW(L\"combase.dll\")"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(runtimeMetricsSource,
+			"LoadLibraryW(L\"psapi.dll\")"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(presentationSource,
+			"LoadLibraryW(L\"dcomp.dll\")"));
+		LASER_INCREMENTAL_CHECK(ContainsText(hapticSource,
+			"GetSystemDirectoryW("));
+		LASER_INCREMENTAL_CHECK(ContainsText(runtimeMetricsSource,
+			"GetSystemDirectoryW("));
+		LASER_INCREMENTAL_CHECK(ContainsText(presentationSource,
+			"GetSystemDirectoryW("));
+		LASER_INCREMENTAL_CHECK(!ContainsText(hapticSource,
+			"LOAD_LIBRARY_SEARCH_SYSTEM32"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(runtimeMetricsSource,
+			"LOAD_LIBRARY_SEARCH_SYSTEM32"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(presentationSource,
+			"LOAD_LIBRARY_SEARCH_SYSTEM32"));
+		LASER_INCREMENTAL_CHECK(ContainsText(win7CompatSource,
+			"__imp_GetSystemTimePreciseAsFileTime"));
+		LASER_INCREMENTAL_CHECK(ContainsText(win7CompatSource,
+			"GetProcAddress(kernel32, \"GetSystemTimePreciseAsFileTime\")"));
+		LASER_INCREMENTAL_CHECK(ContainsText(win7CompatSource,
+			"GetSystemTimeAsFileTime(value)"));
+		LASER_INCREMENTAL_CHECK(ContainsText(presentationSource,
+			"const LONG copyWidth = std::min"));
+		LASER_INCREMENTAL_CHECK(ContainsText(presentationSource,
+			"dirty.right = std::min(copyWidth, dirty.right)"));
+		LASER_INCREMENTAL_CHECK(ContainsText(diagnosticsSource,
+			"std::string result(static_cast<size_t>(requiredSize), '\\0')"));
+		LASER_INCREMENTAL_CHECK(ContainsText(diagnosticsSource,
+			"written != requiredSize"));
 	}
 
 	if (failures == 0)

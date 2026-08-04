@@ -11,6 +11,7 @@
 #include <cwchar>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <new>
 #include <set>
 #include <thread>
@@ -184,6 +185,44 @@ namespace
 			input.Recycle(reused.front()); // 重复回收不能再次置位或破坏计数。
 			TEST_CHECK(state, input.DiagnosticsSnapshot().occupiedSlots == 0);
 		}
+		draw3::ContactInputCoordinator bounded((std::numeric_limits<size_t>::max)());
+		TEST_CHECK(state, bounded.DiagnosticsSnapshot().slotCapacity == 4096);
+	}
+
+	void TestInvalidSnapshotBoundaries(TestState& state)
+	{
+		draw3::ContactInputCoordinator input(32);
+		draw3::ContactSnapshot invalidDown = MakeSnapshot(1);
+		invalidDown.position.x = (std::numeric_limits<float>::quiet_NaN)();
+		TEST_CHECK(state, !input.PublishDown(
+			40, 1, draw3::InputDeviceType::Touch, invalidDown));
+		TEST_CHECK(state, input.DiagnosticsSnapshot().occupiedSlots == 0);
+		invalidDown = MakeSnapshot(1);
+		invalidDown.position.x = (std::numeric_limits<float>::max)();
+		TEST_CHECK(state, !input.PublishDown(
+			40, 1, draw3::InputDeviceType::Touch, invalidDown));
+
+		const draw3::ContactSnapshot down = MakeSnapshot(2);
+		TEST_CHECK(state, input.PublishDown(40, 2, draw3::InputDeviceType::Touch, down));
+		const std::vector<draw3::ContactHandle> handles = DrainDowns(input, 1, state);
+		draw3::ContactSnapshot invalidMove = MakeSnapshot(3, draw3::ContactPhase::Move);
+		invalidMove.position.y = (std::numeric_limits<float>::infinity)();
+		TEST_CHECK(state, !input.PublishMove(40, 2, invalidMove));
+		draw3::ContactSnapshot observed;
+		TEST_CHECK(state, input.TryReadSnapshot(handles.front(), observed));
+		TEST_CHECK(state, observed.position.x == down.position.x &&
+			observed.position.y == down.position.y);
+
+		draw3::ContactSnapshot invalidUp = MakeSnapshot(4, draw3::ContactPhase::Up);
+		invalidUp.position = { (std::numeric_limits<float>::quiet_NaN)(),
+			(std::numeric_limits<float>::quiet_NaN)() };
+		TEST_CHECK(state, input.PublishUp(40, 2, invalidUp));
+		TEST_CHECK(state, input.TryReadSnapshot(handles.front(), observed));
+		TEST_CHECK(state, observed.phase == draw3::ContactPhase::Up);
+		TEST_CHECK(state, observed.position.x == down.position.x &&
+			observed.position.y == down.position.y);
+		TEST_CHECK(state, observed.qpc == invalidUp.qpc);
+		input.Recycle(handles.front());
 	}
 
 	void TestPublishDownDoesNotAllocate(TestState& state)
@@ -302,6 +341,21 @@ namespace
 		TEST_CHECK(state, input.PublishUp(31, 2, MakeSnapshot(5, draw3::ContactPhase::Up)));
 		TEST_CHECK(state, input.WaitForWake(generation, 50.0));
 		input.Recycle(handles.front());
+
+		generation = input.CaptureWakeGeneration();
+		const auto invalidWaitStart = std::chrono::steady_clock::now();
+		TEST_CHECK(state, !input.WaitForWake(
+			generation, (std::numeric_limits<double>::quiet_NaN)()));
+		TEST_CHECK(state, !input.WaitForWake(
+			generation, (std::numeric_limits<double>::infinity)()));
+		TEST_CHECK(state, !input.WaitForWake(
+			generation, (std::numeric_limits<double>::max)()));
+		input.WaitForFrameDeadline((std::numeric_limits<double>::quiet_NaN)());
+		input.WaitForFrameDeadline((std::numeric_limits<double>::infinity)());
+		input.WaitForFrameDeadline((std::numeric_limits<double>::max)());
+		const double invalidWaitMilliseconds = std::chrono::duration<double, std::milli>(
+			std::chrono::steady_clock::now() - invalidWaitStart).count();
+		TEST_CHECK(state, invalidWaitMilliseconds < 100.0);
 	}
 
 	void TestRtsStylusConversions(TestState& state)
@@ -1491,6 +1545,7 @@ int wmain(int argc, wchar_t* argv[])
 	TestState state;
 	TestConcurrentDownUniqueness(state);
 	TestCapacityBoundariesAndReuse(state);
+	TestInvalidSnapshotBoundaries(state);
 	TestPublishDownDoesNotAllocate(state);
 	TestMoveUpRaceAndShutdown(state);
 	TestWakeProtocols(state);

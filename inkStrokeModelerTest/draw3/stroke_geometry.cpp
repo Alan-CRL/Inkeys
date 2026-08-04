@@ -46,13 +46,35 @@ namespace draw3
 			return value * value * (3.0f - 2.0f * value); // 比线性插值更平滑，避免笔宽突变。
 		}
 
+		LONG SaturatingFloorToLong(double value) noexcept
+		{
+			value = std::floor(value);
+			if (value <= static_cast<double>((std::numeric_limits<LONG>::min)()))
+				return (std::numeric_limits<LONG>::min)();
+			if (value >= static_cast<double>((std::numeric_limits<LONG>::max)()))
+				return (std::numeric_limits<LONG>::max)();
+			return static_cast<LONG>(value);
+		}
+
+		LONG SaturatingCeilToLong(double value) noexcept
+		{
+			value = std::ceil(value);
+			if (value <= static_cast<double>((std::numeric_limits<LONG>::min)()))
+				return (std::numeric_limits<LONG>::min)();
+			if (value >= static_cast<double>((std::numeric_limits<LONG>::max)()))
+				return (std::numeric_limits<LONG>::max)();
+			return static_cast<LONG>(value);
+		}
+
 		void IncludeHighlighterBounds(RECT& bounds, float minX, float minY, float maxX, float maxY)
 		{
+			if (!std::isfinite(minX) || !std::isfinite(minY) ||
+				!std::isfinite(maxX) || !std::isfinite(maxY)) return;
 			const RECT addition = {
-				static_cast<LONG>(std::floor(minX - kHighlighterBoundsPaddingPx)),
-				static_cast<LONG>(std::floor(minY - kHighlighterBoundsPaddingPx)),
-				static_cast<LONG>(std::ceil(maxX + kHighlighterBoundsPaddingPx)),
-				static_cast<LONG>(std::ceil(maxY + kHighlighterBoundsPaddingPx))
+				SaturatingFloorToLong(static_cast<double>(minX) - kHighlighterBoundsPaddingPx),
+				SaturatingFloorToLong(static_cast<double>(minY) - kHighlighterBoundsPaddingPx),
+				SaturatingCeilToLong(static_cast<double>(maxX) + kHighlighterBoundsPaddingPx),
+				SaturatingCeilToLong(static_cast<double>(maxY) + kHighlighterBoundsPaddingPx)
 			};
 			if (bounds.left >= bounds.right || bounds.top >= bounds.bottom)
 				bounds = addition;
@@ -425,12 +447,14 @@ namespace draw3
 		RECT rect = {};
 		for (const InkPoint& point : points)
 		{
-			const float padding = point.r + 3.0f; // 额外 3px 覆盖抗锯齿和胶囊端点。
+			if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
+				!std::isfinite(point.r)) continue;
+			const double padding = static_cast<double>(point.r) + 3.0; // 额外 3px 覆盖抗锯齿和胶囊端点。
 			UnionRectInPlace(rect, RECT{
-				static_cast<LONG>(std::floor(point.x - padding)),
-				static_cast<LONG>(std::floor(point.y - padding)),
-				static_cast<LONG>(std::ceil(point.x + padding)),
-				static_cast<LONG>(std::ceil(point.y + padding)) });
+				SaturatingFloorToLong(static_cast<double>(point.x) - padding),
+				SaturatingFloorToLong(static_cast<double>(point.y) - padding),
+				SaturatingCeilToLong(static_cast<double>(point.x) + padding),
+				SaturatingCeilToLong(static_cast<double>(point.y) + padding) });
 		}
 		return ClampRectToCanvas(rect, width, height);
 	}
@@ -439,7 +463,7 @@ namespace draw3
 		float dpiScale, int width, int height)
 	{
 		if (points.empty()) return {};
-		const float scale = std::max(dpiScale, 0.01f);
+		const float scale = std::isfinite(dpiScale) ? std::max(dpiScale, 0.01f) : 1.0f;
 		const float fallbackSolidRadius = LaserSolidRadius(scale);
 		RECT rect = {};
 		for (const InkPoint& point : points)
@@ -447,12 +471,13 @@ namespace draw3
 			if (!std::isfinite(point.x) || !std::isfinite(point.y)) continue;
 			const float solidRadius = std::isfinite(point.r) && point.r > 0.0f
 				? point.r : fallbackSolidRadius;
-			const float padding = LaserVisualRadius(solidRadius, scale) + 3.0f;
+			const double padding = static_cast<double>(LaserVisualRadius(solidRadius, scale)) + 3.0;
+			if (!std::isfinite(padding)) continue;
 			UnionRectInPlace(rect, RECT{
-				static_cast<LONG>(std::floor(point.x - padding)),
-				static_cast<LONG>(std::floor(point.y - padding)),
-				static_cast<LONG>(std::ceil(point.x + padding)),
-				static_cast<LONG>(std::ceil(point.y + padding)) });
+				SaturatingFloorToLong(static_cast<double>(point.x) - padding),
+				SaturatingFloorToLong(static_cast<double>(point.y) - padding),
+				SaturatingCeilToLong(static_cast<double>(point.x) + padding),
+				SaturatingCeilToLong(static_cast<double>(point.y) + padding) });
 		}
 		return ClampRectToCanvas(rect, width, height);
 	}

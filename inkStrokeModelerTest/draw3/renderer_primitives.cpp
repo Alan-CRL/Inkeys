@@ -54,24 +54,20 @@ namespace draw3
 			}
 
 			D3D11_MAPPED_SUBRESOURCE mapped = {};
-			if (SUCCEEDED(context->Map(inkDataBuffer.Get(), 0, mapType, 0, &mapped)))
-			{
-				auto* destination = static_cast<InkPoint*>(mapped.pData);
-				std::memcpy(destination + m_bufferHead, points.data() + startIndex, batchCount * sizeof(InkPoint)); // 把本批点写入结构化缓冲区。
-				context->Unmap(inkDataBuffer.Get(), 0);
-			}
+			if (FAILED(context->Map(inkDataBuffer.Get(), 0, mapType, 0, &mapped))) return -1;
+			auto* destination = static_cast<InkPoint*>(mapped.pData);
+			std::memcpy(destination + m_bufferHead, points.data() + startIndex, batchCount * sizeof(InkPoint)); // 把本批点写入结构化缓冲区。
+			context->Unmap(inkDataBuffer.Get(), 0);
 
-			if (SUCCEEDED(context->Map(globalCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
-			{
-				auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
-				constants->width = viewportWidth;
-				constants->height = viewportHeight;
-				constants->color = color;
-				constants->shapeType = static_cast<float>(static_cast<uint32_t>(shape));
-				constants->bufferOffset = static_cast<uint32_t>(m_bufferHead); // 着色器用偏移定位当前批次的起点。
-				constants->operatorKind = static_cast<uint32_t>(operatorKind);
-				context->Unmap(globalCB.Get(), 0);
-			}
+			if (FAILED(context->Map(globalCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return -1;
+			auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
+			constants->width = viewportWidth;
+			constants->height = viewportHeight;
+			constants->color = color;
+			constants->shapeType = static_cast<float>(static_cast<uint32_t>(shape));
+			constants->bufferOffset = static_cast<uint32_t>(m_bufferHead); // 着色器用偏移定位当前批次的起点。
+			constants->operatorKind = static_cast<uint32_t>(operatorKind);
+			context->Unmap(globalCB.Get(), 0);
 
 			context->IASetInputLayout(nullptr);
 			context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);

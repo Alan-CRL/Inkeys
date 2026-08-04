@@ -51,6 +51,33 @@ MSBuild.exe .\inkStrokeModelerTest.sln /m /p:Configuration=Debug /p:Platform=ARM
 
 原生窗口宿主不需要文件级 `WholeProgramOptimization` 例外。Release 必须继续使用项目级 `/GL/LTCG`，并通过启动测试确认 `WS_EX_NOREDIRECTIONBITMAP` 直接进入 `CreateWindowExW`。
 
+## Windows 7 Compatibility Contracts
+
+项目最低运行环境严格定义为 **Windows 7 SP1，仅额外安装 KB2670838**；不得假设 KB2533623 或任何其他可选/后续 KB 已安装。Windows 11 ARM64 构建只验证当前开发机上的编译、静态契约和无窗口逻辑，不等同于 Win7 运行验证；真实 Win7 验证必须使用 Win7 支持的 x86/x64 构建。
+
+动态系统 DLL 的加载签名必须满足：
+
+```cpp
+HMODULE LoadSystemLibrary(const wchar_t* fileName) noexcept;
+```
+
+- 用 `GetSystemDirectoryW` 取得系统目录，边界检查后拼接固定 DLL 文件名，再对绝对路径调用 `LoadLibraryW`。
+- 不得依赖 `LOAD_LIBRARY_SEARCH_SYSTEM32`、`SetDefaultDllDirectories`、`AddDllDirectory` 或 `RemoveDllDirectory`；这些机制不能视为纯 Win7 SP1 + KB2670838 的固有能力。
+- 基线之后才提供的可选 API 必须经已安全解析的系统模块和 `GetProcAddress` 探测；模块或入口不存在时关闭可选能力或进入既有回退，不得阻止启动。
+- 新增或修改动态加载后，用静态源码契约和 `dumpbin /imports` 检查：不得出现裸 DLL 名加载，也不得新增基线外 API 的静态导入。
+- 预编译库若带入基线外静态 API，优先重建依赖；无法重建时，兼容单元必须在 Win8+ 动态解析原 API、在 Win7 调用明确的低版本回退，并分别检查 x86/x64 的导入表。不能以“运行时不调用”为由忽略加载器会预先解析的静态导入。
+
+数值、缓冲和尺寸边界遵循以下可执行契约：
+
+| 场景 | 正常（Good） | 边界（Base） | 非法（Bad） |
+|---|---|---|---|
+| 浮点转整数/等待时间 | finite 且在目标类型范围内，保持原计算结果 | 精确端点执行显式裁剪或饱和 | NaN、Inf、超范围值必须拒绝、跳过或安全回退，不能直接 cast |
+| 变长编码 API | 查询长度与实际写入缓冲容量一致 | 终止 NUL 是否计入长度必须显式处理 | 不得分配 `required - 1` 却传入 `required` |
+| Resize/dirty copy | producer、staging、destination 尺寸一致 | 任一方刚完成缩小 | copy rect 同时按三方尺寸取交集，空交集不复制 |
+| 外部输入元数据 | 数量、指针、scale 和 packet 布局一致 | 可选属性缺失时使用既有默认值 | null、过大数量、非有限 scale 或布局不一致必须拒绝 |
+
+错误示例：`LoadLibraryW(L"name.dll")`、`static_cast<LONG>(untrustedFloat)`、查询 UTF-8 长度后少分配一个字节。正确示例：System32 绝对路径加载、finite/range 检查后转换、按 API 返回容量分配并在写入后移除终止 NUL。对应测试至少覆盖正常值、精确边界、NaN/Inf/极大值、缺失 DLL/入口和异步缩小后的 dirty rect。
+
 ## D3D Debug Layer
 
 最低门槛要求启动后没有明显 D3D Debug Layer error。

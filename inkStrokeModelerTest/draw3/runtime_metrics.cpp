@@ -29,7 +29,25 @@ namespace draw3
 		constexpr double kLongFrameLimitMs = 16.67;
 		constexpr double kLongFrameRatioLimit = 0.01;
 		constexpr size_t kRequiredLandingCount = 200;
+		constexpr size_t kMaximumRuntimeMetricSamples = 1u << 20;
 		constexpr double kRequiredIdleDurationMs = 4900.0;
+
+		HMODULE LoadSystemLibrary(const wchar_t* fileName) noexcept
+		{
+			if (!fileName || fileName[0] == L'\0') return nullptr;
+			wchar_t path[MAX_PATH] = {};
+			UINT length = GetSystemDirectoryW(path, ARRAYSIZE(path));
+			if (length == 0 || length >= ARRAYSIZE(path)) return nullptr;
+			if (path[length - 1] != L'\\')
+			{
+				if (length + 1 >= ARRAYSIZE(path)) return nullptr;
+				path[length++] = L'\\';
+			}
+			const size_t nameLength = std::wcslen(fileName);
+			if (nameLength >= ARRAYSIZE(path) - length) return nullptr;
+			std::wmemcpy(path + length, fileName, nameLength + 1);
+			return LoadLibraryW(path); // 绝对路径兼容旧系统，同时不参与应用目录搜索。
+		}
 
 		struct LandingKey
 		{
@@ -180,10 +198,11 @@ namespace draw3
 					return reinterpret_cast<GetProcessMemoryInfoFn>(procedure);
 			}
 
-			if (HMODULE psapi = LoadLibraryW(L"psapi.dll"))
+			if (HMODULE psapi = LoadSystemLibrary(L"psapi.dll"))
 			{
 				if (FARPROC procedure = GetProcAddress(psapi, "GetProcessMemoryInfo"))
 					return reinterpret_cast<GetProcessMemoryInfoFn>(procedure);
+				FreeLibrary(psapi);
 			}
 			return nullptr;
 		}
@@ -485,7 +504,8 @@ namespace draw3
 	struct RuntimeMetricsSessionImpl
 	{
 		explicit RuntimeMetricsSessionImpl(size_t maximumSamplesValue)
-			: maximumSamples(std::max<size_t>(maximumSamplesValue, 1))
+			: maximumSamples(std::clamp(
+				maximumSamplesValue, size_t{ 1 }, kMaximumRuntimeMetricSamples))
 		{
 			stagedLandings.reserve(32);
 			presentedLandingKeys.reserve(512);
@@ -548,7 +568,9 @@ namespace draw3
 	void RuntimeMetricsSession::StageLanding(ContactRecord* record, uint64_t generation,
 		InputDeviceType deviceType, uint32_t tool, int64_t eligibleQpc)
 	{
-		if (!record || eligibleQpc <= 0 || impl_->stagedLandings.size() >= 64) return;
+		if (!record || eligibleQpc <= 0 ||
+			impl_->landingSamples.size() >= impl_->maximumSamples ||
+			impl_->stagedLandings.size() >= 64) return;
 		const LandingKey key{ record, generation };
 		if (impl_->WasLandingPresented(key)) return;
 		const auto duplicate = std::find_if(impl_->stagedLandings.begin(), impl_->stagedLandings.end(),
@@ -566,9 +588,9 @@ namespace draw3
 		}
 		for (const StagedLanding& staged : impl_->stagedLandings)
 		{
+			if (impl_->landingSamples.size() >= impl_->maximumSamples) break;
 			if (impl_->WasLandingPresented(staged.key)) continue;
 			impl_->presentedLandingKeys.push_back(staged.key);
-			if (impl_->landingSamples.size() >= impl_->maximumSamples) continue;
 			const double latencyMs = std::max(0.0,
 				static_cast<double>(presentQpc - staged.eligibleQpc) * 1000.0 /
 				static_cast<double>(impl_->qpcFrequency));

@@ -29,6 +29,23 @@ namespace draw3
 		constexpr int kRoInitMultiThreaded = 1;
 		constexpr int32_t kHapticDeviceTypePen = 2;
 
+		HMODULE LoadSystemLibrary(const wchar_t* fileName) noexcept
+		{
+			if (!fileName || fileName[0] == L'\0') return nullptr;
+			wchar_t path[MAX_PATH] = {};
+			UINT length = GetSystemDirectoryW(path, ARRAYSIZE(path));
+			if (length == 0 || length >= ARRAYSIZE(path)) return nullptr;
+			if (path[length - 1] != L'\\')
+			{
+				if (length + 1 >= ARRAYSIZE(path)) return nullptr;
+				path[length++] = L'\\';
+			}
+			const size_t nameLength = std::wcslen(fileName);
+			if (nameLength >= ARRAYSIZE(path) - length) return nullptr;
+			std::wmemcpy(path + length, fileName, nameLength + 1);
+			return LoadLibraryW(path); // combase 只允许从系统目录解析。
+		}
+
 		struct TimeSpanAbi
 		{
 			int64_t Duration = 0;
@@ -151,7 +168,7 @@ namespace draw3
 			bool Load() noexcept
 			{
 				if (available) return true;
-				if (!combase) combase = LoadLibraryW(L"combase.dll");
+				if (!combase) combase = LoadSystemLibrary(L"combase.dll");
 				if (!combase) return false;
 				roInitialize = reinterpret_cast<RoInitializeFunction>(
 					GetProcAddress(combase, "RoInitialize"));

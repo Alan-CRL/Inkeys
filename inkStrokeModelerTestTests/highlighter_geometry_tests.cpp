@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <vector>
 #include <windows.h>
 
@@ -407,6 +408,23 @@ HIGHLIGHTER_CHECK(NearlyEqual(
 		std::floor(boundsRequest.positionX - expectedHighDpiParticlePadding)));
 	HIGHLIGHTER_CHECK(highDpiParticleBounds.right == static_cast<LONG>(
 		std::ceil(boundsRequest.positionX + expectedHighDpiParticlePadding)));
+	draw3::LaserParticleEmissionRequest extremeBoundsRequest = boundsRequest;
+	extremeBoundsRequest.positionX = (std::numeric_limits<float>::max)();
+	extremeBoundsRequest.positionY = (std::numeric_limits<float>::max)();
+	const RECT extremeParticleBounds = draw3::ConservativeLaserParticleBatchBounds(
+		extremeBoundsRequest, particleConfiguration, 1.0f,
+		draw3::kLaserCoreDiameterRatio);
+	HIGHLIGHTER_CHECK(extremeParticleBounds.left == extremeParticleBounds.right);
+	HIGHLIGHTER_CHECK(extremeParticleBounds.top == extremeParticleBounds.bottom);
+
+	const std::vector<draw3::InkPoint> extremeStrokePoints = {
+		{ (std::numeric_limits<float>::max)(),
+			(std::numeric_limits<float>::max)(), 2.5f, 0.0f }
+	};
+	HIGHLIGHTER_CHECK(draw3::IsEmptyRect(
+		draw3::RectFromStrokePoints(extremeStrokePoints, 200, 200)));
+	HIGHLIGHTER_CHECK(draw3::IsEmptyRect(
+		draw3::RectFromLaserPoints(extremeStrokePoints, 1.0f, 200, 200)));
 
 	draw3::LaserParticleDirtyTracker dirtyTracker;
 	const int64_t dirtyExpiry = draw3::LaserParticleLifetimeDeadlineQpc(

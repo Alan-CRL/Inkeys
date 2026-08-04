@@ -147,3 +147,40 @@
 - [x] 接触行使用独立 10 DIP 等宽字体，性能区和接触区分别测量/绘制；刷新消息使用原子合并标记，避免窗口线程积压旧帧。
 - [x] 新增无窗口断言验证 1 秒 FPS/无等待 FPS 保持上一窗口值，同时逐帧耗时与 Present 样本立即反映当前帧。
 - [ ] 按当前对话限制未启动主程序或 HUD 窗口；实际小字号可读性、超长 contact 行、多 DPI 和消息合并后的桌面视觉效果仍待人工验证。
+
+## Stage 3 Security Audit (2026-08-04)
+
+### Audit Scope
+
+- 以 `6a032a8..817ebde` 的最近 86 个提交为优先扫描范围；一个月只限定扫描优先级，不限制已确认缺陷的修复年代。
+- 严格运行基线为 Windows 7 SP1，仅额外安装 KB2670838，不假设 KB2533623 或其他 KB。
+- 审计输入/生命周期、数值转换、等待截止时间、GPU 失败回退、异步尺寸、编码缓冲、指标容量和 DLL 搜索路径。
+
+### Fix Record
+
+- `renderer_primitives.cpp`：GPU data/constant buffer `Map` 失败立即返回，不再使用旧映射内容绘制或错误推进 ring head。
+- `contact_input.cpp`：contact 容量钳制为 32–4096；Down/Move 坐标要求 finite 且在 `LONG` 范围；非法 Up/Cancelled 使用最后有效位置闭合；所有浮点 timeout 安全转换为非 `INFINITE` 的 DWORD 等待。
+- `realtime_stylus.cpp`：packet property 上限 256，校验 null metadata、数量、finite scale 和 packet 布局；坏 Up packet 仍可靠关闭 contact。
+- Laser Hold/QPC deadline 拒绝非有限、负数和超过 24 小时的配置，溢出时进入可靠阻塞回退，不制造忙循环。
+- `stroke_geometry.cpp`、`pen_cursor.cpp`、`laser_particles.cpp`、`drawing_controller.cpp` 的不可信浮点坐标在转 `LONG` 前检查、裁剪或饱和。
+- `runtime_metrics.cpp`：样本容量上限为 `1 << 20`，landing 样本满后不再无限增长 key 集合。
+- 更早缺陷：修复 `WideToUtf8` 少分配终止 NUL 导致的一字节越界；ULW dirty copy 同时按 staging texture、final texture 和 DIB 三方尺寸裁剪。
+- 本轮参与构建的 DLL 安全加载统一使用 `GetSystemDirectoryW` 拼绝对路径后 `LoadLibraryW`；缺失 `combase.dll` 或 `dcomp.dll` 时分别关闭可选触觉或回退 ULW。移除生产源码对 `LOAD_LIBRARY_SEARCH_SYSTEM32` 的依赖，以兼容纯 Win7 SP1 + KB2670838。
+- 预编译 `ink_stroke_modeler_merge.lib` 会把 Abseil 时区对象带入最终产物，但仓库内对应 `.cc` 不参与工程编译，修改它不会改变库。该对象不在当前墨迹预测调用路径上；纯 Win7 不识别其可选搜索标志时会安全返回空结果/UTC 回退，因此按依赖边界记录，不重建第三方 merge lib。
+- import table 复查发现 merge lib 同时带入 Win8 `GetSystemTimePreciseAsFileTime` 静态导入；这会在 Win7 启动加载阶段失败，不能靠调用路径规避。新增 `win7_compat.cpp` 提供导入指针兼容：Win8+ 经 `GetProcAddress` 调用精确 API，纯 Win7 回退 `GetSystemTimeAsFileTime`；x86 stdcall 映射单独声明并通过实编译验证。
+
+### Validation Plan
+
+- ARM64 Debug/Release 完整解决方案构建，确认 C++ module 与 Shader 资源链。
+- Debug/Release 全量无窗口控制台测试及 `--drawing-perf`。
+- 静态源码契约、最终二进制 import table、`git diff --check`、UTF-8 BOM + CRLF / Trellis UTF-8 no-BOM + LF。
+- 不启动主程序、不创建或操控窗口、不运行 `--benchmark`；GUI、真实输入、D3D Debug Layer 和 Resize/Present 人工场景保留为未验证。
+
+### Validation Result
+
+- ARM64 Debug/Release、x64 Release、x86 Release 完整解决方案均构建成功；Shader 资源链随对应配置完成。
+- ARM64 Debug/Release、x64 Release、x86 Release 的全量无窗口控制台测试均通过。
+- 最终 ARM64 `--drawing-perf`：Debug `1565.1/623.9/625.3/719.8 us`，Release `119.5/66.2/66.2/81.1 us`（Highlighter/Pen/Eraser/Laser）；Highlighter 热循环分配为 `0`。
+- `dumpbin /imports` 已检查 ARM64 Debug、x64 Release 和 x86 Release 主程序：只静态导入 `GetSystemTimeAsFileTime`，不再导入 `GetSystemTimePreciseAsFileTime`。
+- MSVC NativeRecommendedRules 审计中 RTS 的两个 C6011 已消失；剩余提示来自第三方/测试注解与已记录的大栈对象。本轮最终构建未新增兼容单元警告。
+- 按对话限制未启动主程序、未创建或操控窗口、未运行 `--benchmark`；真实 Win7 启动、GUI、真实输入、D3D Debug Layer 和 Resize/Present 人工场景仍未执行。

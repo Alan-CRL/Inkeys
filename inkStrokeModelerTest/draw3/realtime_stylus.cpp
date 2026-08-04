@@ -30,6 +30,7 @@ namespace draw3
 	namespace
 	{
 		constexpr size_t kTabletMetadataCapacity = 32;
+		constexpr ULONG kMaximumPacketPropertyCount = 256;
 		constexpr float kUnknownStylusValue = -1.0f;
 		constexpr float kPi = 3.14159265358979323846f;
 		constexpr float kHalfPi = kPi * 0.5f;
@@ -463,7 +464,8 @@ namespace draw3
 					const HRESULT scaleResult = source->GetPacketDescriptionData(
 						contextIds[0], &scaleX, &scaleY, &propertyCount, &properties);
 					CoTaskMemFree(properties);
-					if (SUCCEEDED(scaleResult) && scaleX > 0.0f && scaleY > 0.0f)
+					if (SUCCEEDED(scaleResult) && std::isfinite(scaleX) && std::isfinite(scaleY) &&
+						scaleX > 0.0f && scaleY > 0.0f)
 					{
 						// 与经过广泛验证的 IdtRts.cpp 一致：首 context 提供全输入统一像素比例。
 						inkToPixelScaleX_ = scaleX;
@@ -522,7 +524,8 @@ namespace draw3
 				if (!source || !stylusInfo || !packet) return E_INVALIDARG;
 				const TabletMetadata* metadata = EnsureMetadata(source, stylusInfo->tcid, nullptr);
 				ContactSnapshot snapshot;
-				if (!DecodeSnapshot(metadata, propertyCount, packet, ContactPhase::Down, snapshot))
+				if (!metadata || !DecodeSnapshot(
+					metadata, propertyCount, packet, ContactPhase::Down, snapshot))
 				{
 					PublishDefaultPenCursor(); // 解码失败时不能把旧 Hover visual 留在接触位置。
 					std::cout << "[RTS] down decode failed tcid=" << stylusInfo->tcid
@@ -567,9 +570,18 @@ namespace draw3
 				const TabletMetadata* metadata = FindMetadata(stylusInfo->tcid);
 				if (!metadata && source) metadata = EnsureMetadata(source, stylusInfo->tcid, nullptr);
 				ContactSnapshot snapshot;
-				if (!DecodeSnapshot(metadata, propertyCount, packet, ContactPhase::Up, snapshot))
+				if (!metadata || !DecodeSnapshot(
+					metadata, propertyCount, packet, ContactPhase::Up, snapshot))
 				{
 					PublishDefaultPenCursor();
+					snapshot.position = { NAN, NAN };
+					snapshot.qpc = QueryQpc();
+					// 坏 Up 包不能把 contact 永久留在 Producing；协调器会沿用最后有效位置闭合。
+					if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
+						interruptionSimulation_.PublishUp(
+							stylusInfo->tcid, stylusInfo->cid, snapshot);
+					else
+						coordinator_.PublishUp(stylusInfo->tcid, stylusInfo->cid, snapshot);
 					std::cout << "[RTS] up decode failed tcid=" << stylusInfo->tcid
 						<< " cid=" << stylusInfo->cid << " properties=" << propertyCount << std::endl;
 					return S_OK;
@@ -613,7 +625,7 @@ namespace draw3
 				const LONG* lastPacket = packets +
 					static_cast<size_t>(packetCount - 1) * propertyCount;
 				ContactSnapshot snapshot;
-				if (!DecodeSnapshot(metadata, propertyCount, lastPacket,
+				if (!metadata || !DecodeSnapshot(metadata, propertyCount, lastPacket,
 					ContactPhase::Move, snapshot)) return S_OK;
 				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
@@ -630,7 +642,8 @@ namespace draw3
 				const LONG* lastPacket = packets + static_cast<size_t>(packetCount - 1) * propertyCount;
 				const TabletMetadata* metadata = FindMetadata(stylusInfo->tcid); // Move 热路径通常只扫描固定缓存。
 				ContactSnapshot snapshot;
-				if (!DecodeSnapshot(metadata, propertyCount, lastPacket, ContactPhase::Move, snapshot))
+				if (!metadata || !DecodeSnapshot(
+					metadata, propertyCount, lastPacket, ContactPhase::Move, snapshot))
 				{
 					const uint32_t diagnosticIndex = moveDiagnosticCount_.fetch_add(1, std::memory_order_relaxed);
 					if (diagnosticIndex < 8)
@@ -755,6 +768,7 @@ namespace draw3
 			const TabletMetadata* EnsureMetadata(IRealTimeStylus* source,
 				TABLET_CONTEXT_ID contextId, IInkTablet* suppliedTablet)
 			{
+				if (!source) return nullptr;
 				if (const TabletMetadata* existing = FindMetadata(contextId)) return existing;
 				std::lock_guard lock(metadataMutex_);
 				if (const TabletMetadata* existing = FindMetadata(contextId)) return existing;
@@ -776,12 +790,13 @@ namespace draw3
 				PACKET_PROPERTY* properties = nullptr;
 				const HRESULT packetResult = source->GetPacketDescriptionData(contextId,
 					&inkToDeviceScaleX, &inkToDeviceScaleY, &propertyCount, &properties);
-				if (FAILED(packetResult))
+				if (FAILED(packetResult) || propertyCount < 2 ||
+					propertyCount > kMaximumPacketPropertyCount || !properties)
 				{
 					CoTaskMemFree(properties);
-					std::cout << "[RTS] metadata query failed tcid=" << contextId
+					std::cout << "[RTS] metadata query invalid tcid=" << contextId
 						<< " HRESULT=0x" << std::hex << static_cast<unsigned long>(packetResult)
-						<< std::dec << std::endl;
+						<< std::dec << " properties=" << propertyCount << std::endl;
 					return nullptr;
 				}
 
@@ -830,7 +845,9 @@ namespace draw3
 						captureProperty(height, index);
 				}
 				CoTaskMemFree(properties);
-				if (!hasX || !hasY || inkToDeviceScaleX <= 0.0f || inkToDeviceScaleY <= 0.0f)
+				if (!hasX || !hasY || !std::isfinite(inkToDeviceScaleX) ||
+					!std::isfinite(inkToDeviceScaleY) ||
+					inkToDeviceScaleX <= 0.0f || inkToDeviceScaleY <= 0.0f)
 				{
 					std::cout << "[RTS] invalid metadata tcid=" << contextId
 						<< " properties=" << propertyCount << " hasX=" << hasX << " hasY=" << hasY
@@ -887,7 +904,7 @@ namespace draw3
 			bool DecodeSnapshot(const TabletMetadata* metadata, ULONG propertyCount,
 				const LONG* packet, ContactPhase phase, ContactSnapshot& snapshot) const noexcept
 			{
-				if (!metadata || !packet || propertyCount < 2) return false;
+				if (!metadata || !packet || propertyCount != metadata->propertyCount) return false;
 				const ULONG xIndex = metadata->xIndex;
 				const ULONG yIndex = metadata->yIndex;
 				if (xIndex >= propertyCount || yIndex >= propertyCount) return false;

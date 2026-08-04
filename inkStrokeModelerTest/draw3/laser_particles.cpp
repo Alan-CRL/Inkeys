@@ -32,6 +32,26 @@ namespace draw3
 			return std::isfinite(value) && value >= 0.0f && value <= 1.0f;
 		}
 
+		LONG SaturatingFloorToLong(double value) noexcept
+		{
+			value = std::floor(value);
+			if (value <= static_cast<double>((std::numeric_limits<LONG>::min)()))
+				return (std::numeric_limits<LONG>::min)();
+			if (value >= static_cast<double>((std::numeric_limits<LONG>::max)()))
+				return (std::numeric_limits<LONG>::max)();
+			return static_cast<LONG>(value);
+		}
+
+		LONG SaturatingCeilToLong(double value) noexcept
+		{
+			value = std::ceil(value);
+			if (value <= static_cast<double>((std::numeric_limits<LONG>::min)()))
+				return (std::numeric_limits<LONG>::min)();
+			if (value >= static_cast<double>((std::numeric_limits<LONG>::max)()))
+				return (std::numeric_limits<LONG>::max)();
+			return static_cast<LONG>(value);
+		}
+
 		void UnionRectLocal(RECT& destination, RECT source) noexcept
 		{
 			if (source.left >= source.right || source.top >= source.bottom) return;
@@ -311,16 +331,18 @@ namespace draw3
 		const float entityRadius = std::isfinite(request.entityRadius)
 			? std::max(request.entityRadius, 0.0f) : 0.0f;
 		// 与 VS 一致计入固定 2 DIP 辉光地板和 quad 额外 2px，避免高 DPI 清理范围偏小。
-		const float padding = MaximumLaserParticleTravelDip(configuration) * scale +
-			entityRadius * coreRatio * kMaximumCoreSpawnOffsetRatio +
-			configuration.maximumRadiusDip *
-				(1.0f + configuration.glowRadiusScale) * scale +
-			2.0f * scale + 2.0f;
+		const double padding =
+			static_cast<double>(MaximumLaserParticleTravelDip(configuration)) * scale +
+			static_cast<double>(entityRadius) * coreRatio * kMaximumCoreSpawnOffsetRatio +
+			static_cast<double>(configuration.maximumRadiusDip) *
+				(1.0 + configuration.glowRadiusScale) * scale +
+			2.0 * scale + 2.0;
+		if (!std::isfinite(padding)) return {};
 		return {
-			static_cast<LONG>(std::floor(request.positionX - padding)),
-			static_cast<LONG>(std::floor(request.positionY - padding)),
-			static_cast<LONG>(std::ceil(request.positionX + padding)),
-			static_cast<LONG>(std::ceil(request.positionY + padding))
+			SaturatingFloorToLong(static_cast<double>(request.positionX) - padding),
+			SaturatingFloorToLong(static_cast<double>(request.positionY) - padding),
+			SaturatingCeilToLong(static_cast<double>(request.positionX) + padding),
+			SaturatingCeilToLong(static_cast<double>(request.positionY) + padding)
 		};
 	}
 

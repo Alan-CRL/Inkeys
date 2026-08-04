@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <vector>
 #include <windows.h>
@@ -23,6 +24,7 @@ namespace draw3
 	namespace
 	{
 		constexpr size_t kContactSlotsPerBlock = 32;
+		constexpr size_t kMaximumContactSlotCapacity = 4096;
 		constexpr size_t kMinimumIngressQueueCapacity = 256;
 		constexpr size_t kDownProducerTokenCount = 32;
 		constexpr size_t kExplicitProducerCount = kDownProducerTokenCount + 1;
@@ -62,9 +64,43 @@ namespace draw3
 
 		size_t RoundUpSlotCapacity(size_t requested) noexcept
 		{
-			requested = std::max(requested, kContactSlotsPerBlock);
+			// 外部测试参数和异常系统数据都不能触发 size_t 回绕或巨额预分配。
+			requested = std::clamp(requested,
+				kContactSlotsPerBlock, kMaximumContactSlotCapacity);
 			return (requested + kContactSlotsPerBlock - 1) /
 				kContactSlotsPerBlock * kContactSlotsPerBlock;
+		}
+
+		bool HasFinitePosition(const ContactSnapshot& snapshot) noexcept
+		{
+			const double x = snapshot.position.x;
+			const double y = snapshot.position.y;
+			return std::isfinite(x) && std::isfinite(y) &&
+				x >= static_cast<double>((std::numeric_limits<LONG>::min)()) &&
+				x <= static_cast<double>((std::numeric_limits<LONG>::max)()) &&
+				y >= static_cast<double>((std::numeric_limits<LONG>::min)()) &&
+				y <= static_cast<double>((std::numeric_limits<LONG>::max)());
+		}
+
+		bool TryComputeQpcDeadline(int64_t nowQpc, int64_t qpcFrequency,
+			double timeoutMilliseconds, int64_t& deadlineQpc) noexcept
+		{
+			if (nowQpc < 0 || qpcFrequency <= 0 ||
+				!std::isfinite(timeoutMilliseconds) || timeoutMilliseconds <= 0.0)
+				return false;
+			const double timeoutTicks = timeoutMilliseconds *
+				static_cast<double>(qpcFrequency) / 1000.0;
+			const int64_t maximumDelta = (std::numeric_limits<int64_t>::max)() - nowQpc;
+			if (!std::isfinite(timeoutTicks) || timeoutTicks <= 0.0 ||
+				timeoutTicks >= static_cast<double>(maximumDelta)) return false;
+			deadlineQpc = nowQpc + static_cast<int64_t>(timeoutTicks);
+			return deadlineQpc > nowQpc;
+		}
+
+		DWORD SafeCoarseWaitMilliseconds(double milliseconds) noexcept
+		{
+			constexpr double kMaximumFiniteWait = static_cast<double>(INFINITE - 1u);
+			return static_cast<DWORD>(std::min(milliseconds, kMaximumFiniteWait));
 		}
 
 		size_t ComputeDefaultSlotCapacity() noexcept
@@ -427,6 +463,18 @@ namespace draw3
 				ContactRecordAccess::UnlockWriter(record);
 				return false;
 			}
+			if (!HasFinitePosition(snapshot))
+			{
+				ContactSnapshot latest;
+				if (!ContactRecordAccess::ReadSnapshot(record, latest) || !HasFinitePosition(latest))
+				{
+					ContactRecordAccess::UnlockWriter(record);
+					return false;
+				}
+				const int64_t terminalQpc = snapshot.qpc;
+				snapshot = latest; // 终态坏包仍要可靠闭合，并沿用最后一个有效位置。
+				if (terminalQpc > 0) snapshot.qpc = terminalQpc;
+			}
 			snapshot.phase = phase;
 			ContactRecordAccess::PublishSnapshot(record, snapshot);
 			ContactRecordAccess::UnlockWriter(record);
@@ -515,6 +563,11 @@ namespace draw3
 	bool ContactInputCoordinator::PublishDown(uint32_t tabletContextId, uint32_t contactId,
 		InputDeviceType deviceType, const ContactSnapshot& snapshot)
 	{
+		if (!HasFinitePosition(snapshot))
+		{
+			impl_->Count(impl_->downRejected);
+			return false;
+		}
 		ContactRecord* record = impl_->AcquireFreeSlot();
 		if (!record)
 		{
@@ -542,6 +595,7 @@ namespace draw3
 	bool ContactInputCoordinator::PublishMove(uint32_t tabletContextId, uint32_t contactId,
 		const ContactSnapshot& snapshot) noexcept
 	{
+		if (!HasFinitePosition(snapshot)) return false;
 		const LocatedContact located = impl_->FindProducing(tabletContextId, contactId);
 		if (!located || !ContactRecordAccess::TryLockWriter(*located.record))
 		{
@@ -695,8 +749,9 @@ namespace draw3
 
 		LARGE_INTEGER now = {};
 		QueryPerformanceCounter(&now);
-		const int64_t deadline = now.QuadPart + static_cast<int64_t>(
-			timeoutMilliseconds * static_cast<double>(impl_->qpcFrequency) / 1000.0);
+		int64_t deadline = 0;
+		if (!TryComputeQpcDeadline(
+			now.QuadPart, impl_->qpcFrequency, timeoutMilliseconds, deadline)) return false;
 		for (;;)
 		{
 			if (impl_->wakeGeneration.load(std::memory_order_acquire) != observedGeneration) return true;
@@ -708,7 +763,7 @@ namespace draw3
 			const double coarseWaitMilliseconds = std::floor(remainingMilliseconds - 1.25);
 			if (impl_->wakeEvent && coarseWaitMilliseconds >= 1.0)
 			{
-				const DWORD coarseWait = static_cast<DWORD>(coarseWaitMilliseconds);
+				const DWORD coarseWait = SafeCoarseWaitMilliseconds(coarseWaitMilliseconds);
 				const DWORD result = WaitForSingleObject(impl_->wakeEvent, coarseWait);
 				if (result == WAIT_FAILED) return false;
 			}
@@ -727,8 +782,9 @@ namespace draw3
 
 		LARGE_INTEGER now = {};
 		QueryPerformanceCounter(&now);
-		const int64_t deadline = now.QuadPart + static_cast<int64_t>(
-			timeoutMilliseconds * static_cast<double>(impl_->qpcFrequency) / 1000.0);
+		int64_t deadline = 0;
+		if (!TryComputeQpcDeadline(
+			now.QuadPart, impl_->qpcFrequency, timeoutMilliseconds, deadline)) return;
 		for (;;)
 		{
 			QueryPerformanceCounter(&now);
@@ -739,7 +795,7 @@ namespace draw3
 			const double coarseWaitMilliseconds = std::floor(remainingMilliseconds - 1.25);
 			if (impl_->wakeEvent && coarseWaitMilliseconds >= 1.0)
 			{
-				const DWORD coarseWait = static_cast<DWORD>(coarseWaitMilliseconds);
+				const DWORD coarseWait = SafeCoarseWaitMilliseconds(coarseWaitMilliseconds);
 				if (WaitForSingleObject(impl_->wakeEvent, coarseWait) == WAIT_FAILED) return;
 			}
 			else

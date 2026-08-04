@@ -143,6 +143,7 @@
     </ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\ink_prediction.cpp" Link="draw3\ink_prediction.cpp" />
     <ClCompile Include="..\inkStrokeModelerTest\draw3\stroke_geometry.cpp" Link="draw3\stroke_geometry.cpp" />
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\win7_compat.cpp" Link="draw3\win7_compat.cpp" />
     <ClCompile Include="..\inkStrokeModelerTest\draw3\ink_prediction.cppm" Link="draw3\ink_prediction.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>

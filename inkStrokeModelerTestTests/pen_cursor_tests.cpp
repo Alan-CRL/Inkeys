@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <windows.h>
 
 import draw3.pen_cursor;
@@ -205,6 +206,15 @@ int RunPenCursorTests()
 	const RECT clippedBounds = draw3::DrawingCursorVisualBounds(
 		draw3::MakeTouchEraserDrawingCursorVisual(2.0f, 2.0f, eraserAppearance), 500, 500);
 	PEN_CURSOR_CHECK(clippedBounds.left == 0 && clippedBounds.top == 0);
+	draw3::DrawingCursorVisual extremeVisual = firstTouch;
+	extremeVisual.x = (std::numeric_limits<float>::max)();
+	PEN_CURSOR_CHECK(draw3::DrawingCursorVisualBounds(
+		extremeVisual, 500, 500).left ==
+		draw3::DrawingCursorVisualBounds(extremeVisual, 500, 500).right);
+	extremeVisual.x = (std::numeric_limits<float>::quiet_NaN)();
+	const RECT invalidBounds = draw3::DrawingCursorVisualBounds(extremeVisual, 500, 500);
+	PEN_CURSOR_CHECK(invalidBounds.left == invalidBounds.right &&
+		invalidBounds.top == invalidBounds.bottom);
 
 	if (failures == 0) std::cout << "All pen cursor tests passed." << std::endl;
 	return failures;

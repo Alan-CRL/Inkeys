@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <cwchar>
 #include <dcomp.h>
 #include <d3d11.h>
 #include <DirectXMath.h>
@@ -39,6 +40,23 @@ namespace draw3
 
 	namespace
 	{
+		HMODULE LoadSystemLibrary(const wchar_t* fileName) noexcept
+		{
+			if (!fileName || fileName[0] == L'\0') return nullptr;
+			wchar_t path[MAX_PATH] = {};
+			UINT length = GetSystemDirectoryW(path, ARRAYSIZE(path));
+			if (length == 0 || length >= ARRAYSIZE(path)) return nullptr;
+			if (path[length - 1] != L'\\')
+			{
+				if (length + 1 >= ARRAYSIZE(path)) return nullptr;
+				path[length++] = L'\\';
+			}
+			const size_t nameLength = std::wcslen(fileName);
+			if (nameLength >= ARRAYSIZE(path) - length) return nullptr;
+			std::wmemcpy(path + length, fileName, nameLength + 1);
+			return LoadLibraryW(path); // 绝对系统路径避免 DLL 搜索顺序劫持。
+		}
+
 		bool IsUlwMode(TransparentPresentMode mode)
 		{
 			return mode == TransparentPresentMode::UlwDirtyRect;
@@ -78,7 +96,7 @@ namespace draw3
 
 		bool IsDirectCompositionApiAvailable()
 		{
-			HMODULE module = LoadLibraryW(L"dcomp.dll"); // 运行时探测，避免旧系统缺少 DComp 时直接失败。
+			HMODULE module = LoadSystemLibrary(L"dcomp.dll"); // 运行时探测失败时继续使用 ULW 回退。
 			if (!module) return false;
 			const FARPROC createDevice = GetProcAddress(module, "DCompositionCreateDevice");
 			FreeLibrary(module);
@@ -257,11 +275,19 @@ namespace draw3
 			bool Present(ID3D11Texture2D* finalTexture, RECT dirty, bool presentFull)
 			{
 				if (!context || !stagingTexture || !finalTexture || !EnsureWindowDib()) return false;
-				if (presentFull) dirty = RECT{ 0, 0, static_cast<LONG>(stagingWidth), static_cast<LONG>(stagingHeight) }; // 全量呈现时忽略传入脏区。
+				D3D11_TEXTURE2D_DESC finalDescription = {};
+				finalTexture->GetDesc(&finalDescription);
+				// Resize 可与本帧交错：拷贝范围必须同时受 GPU 两端纹理和当前 DIB 限制。
+				const LONG copyWidth = std::min({ static_cast<LONG>(stagingWidth), static_cast<LONG>(dibWidth),
+					static_cast<LONG>(finalDescription.Width) });
+				const LONG copyHeight = std::min({ static_cast<LONG>(stagingHeight), static_cast<LONG>(dibHeight),
+					static_cast<LONG>(finalDescription.Height) });
+				if (copyWidth <= 0 || copyHeight <= 0) return false;
+				if (presentFull) dirty = RECT{ 0, 0, copyWidth, copyHeight }; // 全量呈现时忽略传入脏区。
 				dirty.left = std::max(0L, dirty.left);
 				dirty.top = std::max(0L, dirty.top);
-				dirty.right = std::min(static_cast<LONG>(stagingWidth), dirty.right);
-				dirty.bottom = std::min(static_cast<LONG>(stagingHeight), dirty.bottom);
+				dirty.right = std::min(copyWidth, dirty.right);
+				dirty.bottom = std::min(copyHeight, dirty.bottom);
 				if (dirty.left >= dirty.right || dirty.top >= dirty.bottom) return true;
 
 				D3D11_BOX sourceRegion = {
@@ -343,7 +369,7 @@ namespace draw3
 				window = inputWindow;
 				if (!window || !dxgiDevice || !swapChain) return false;
 				if (!EnsureBorderlessTransparentWindowStyle(window, true, false)) return false;
-				if (!dcompModule) dcompModule = LoadLibraryW(L"dcomp.dll"); // 延迟加载，保持旧系统可运行到 fallback。
+				if (!dcompModule) dcompModule = LoadSystemLibrary(L"dcomp.dll"); // 只从 System32 延迟加载，失败时仍回退 ULW。
 				if (!dcompModule) return false;
 				auto createDevice = reinterpret_cast<CreateDeviceFunction>(GetProcAddress(dcompModule, "DCompositionCreateDevice"));
 				if (!createDevice) return false;

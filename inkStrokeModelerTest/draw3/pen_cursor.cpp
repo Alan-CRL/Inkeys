@@ -212,19 +212,23 @@ namespace draw3
 		int canvasWidth, int canvasHeight) noexcept
 	{
 		if (!visual.visible || !IsValidDrawingCursorAppearance(visual.appearance) ||
+			!std::isfinite(visual.x) || !std::isfinite(visual.y) ||
 			canvasWidth <= 0 || canvasHeight <= 0) return {};
-		const float halfWidth = visual.appearance.width * 0.5f + kCursorBoundsPaddingPx;
-		const float halfHeight = visual.appearance.height * 0.5f + kCursorBoundsPaddingPx;
+		const double halfWidth = static_cast<double>(visual.appearance.width) * 0.5 +
+			kCursorBoundsPaddingPx;
+		const double halfHeight = static_cast<double>(visual.appearance.height) * 0.5 +
+			kCursorBoundsPaddingPx;
+		// 先在 double 域裁到画布，再转换为 LONG，避免极大有限坐标触发未定义行为。
 		RECT bounds = {
-			static_cast<LONG>(std::floor(visual.x - halfWidth)),
-			static_cast<LONG>(std::floor(visual.y - halfHeight)),
-			static_cast<LONG>(std::ceil(visual.x + halfWidth)),
-			static_cast<LONG>(std::ceil(visual.y + halfHeight))
+			static_cast<LONG>(std::clamp(std::floor(static_cast<double>(visual.x) - halfWidth),
+				0.0, static_cast<double>(canvasWidth))),
+			static_cast<LONG>(std::clamp(std::floor(static_cast<double>(visual.y) - halfHeight),
+				0.0, static_cast<double>(canvasHeight))),
+			static_cast<LONG>(std::clamp(std::ceil(static_cast<double>(visual.x) + halfWidth),
+				0.0, static_cast<double>(canvasWidth))),
+			static_cast<LONG>(std::clamp(std::ceil(static_cast<double>(visual.y) + halfHeight),
+				0.0, static_cast<double>(canvasHeight)))
 		};
-		bounds.left = std::clamp(bounds.left, 0L, static_cast<LONG>(canvasWidth));
-		bounds.top = std::clamp(bounds.top, 0L, static_cast<LONG>(canvasHeight));
-		bounds.right = std::clamp(bounds.right, 0L, static_cast<LONG>(canvasWidth));
-		bounds.bottom = std::clamp(bounds.bottom, 0L, static_cast<LONG>(canvasHeight));
 		return bounds.left < bounds.right && bounds.top < bounds.bottom ? bounds : RECT{};
 	}
 
