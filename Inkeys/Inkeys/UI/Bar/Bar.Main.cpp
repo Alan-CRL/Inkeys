@@ -143,10 +143,13 @@ constexpr double BarMorePanelGap = 5.0;
 // 主栏与浮层之间留出更明显的净空；网格单元仍沿用标准 5 DIP 间距。
 constexpr double BarMorePanelAnchorGap = 12.0;
 constexpr double BarMorePanelPadding = 5.0;
-constexpr double BarMorePanelChromeHeight = 35.0;
+// 关闭按钮放在网格右侧的窄栏，不再占用面板顶部高度。
+constexpr double BarMorePanelCloseSideWidth = 35.0;
 constexpr double BarMorePanelSeparatorGap = 10.0;
 constexpr double BarMorePanelAnimationDur = 0.24;
-constexpr double BarMorePanelClosedScale = 0.84;
+constexpr double BarMorePanelCompactScale = 0.16;
+constexpr double BarMorePanelCompactWidth = 60.0;
+constexpr double BarMorePanelCompactHeight = 30.0;
 constexpr int BarBorderDiffuseCompositePasses = 2;
 // 标准差等于线宽时，1px 线源经过一维 Gaussian 后中心约保留 38.3%。
 constexpr double BarBorderGaussianCenterCoverage = 0.382924922548;
@@ -6147,8 +6150,8 @@ for (size_t i = 0; i < 3; ++i)
 			moreLayoutSide = side;
 			morePanelProgress.SetTar(open ? 1.0 : 0.0,
 				BarMorePanelAnimationDur, nullopt, false,
-				{ open ? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInCubic,
-					open ? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInCubic,
+				{ open ? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack,
+					open ? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack,
 					0.0, false });
 			if (moreButton)
 			{
@@ -6249,14 +6252,16 @@ for (size_t i = 0; i < 3; ++i)
 			double gridHeight = totalRows * one
 				+ max(0, totalRows - 1) * BarMorePanelGap
 				+ (showDivider ? BarMorePanelSeparatorGap : 0.0);
-			double panelWidth = contentWidth + BarMorePanelPadding * 2.0;
-			double panelHeight = BarMorePanelPadding + BarMorePanelChromeHeight
-				+ gridHeight + BarMorePanelPadding;
+			double panelWidth = contentWidth + BarMorePanelPadding * 2.0
+				+ BarMorePanelCloseSideWidth;
+			double panelHeight = BarMorePanelPadding * 2.0 + gridHeight;
+			double compactWidth = BarMorePanelCompactWidth;
+			double compactHeight = BarMorePanelCompactHeight;
 			double rawProgress = static_cast<double>(morePanelProgress.val);
 			double progress = clamp(rawProgress, 0.0, 1.0);
-			// 透明度限制在有效范围，几何保留 Back 超调以形成弹性展开。
-			double scale = max(0.01, BarMorePanelClosedScale
-				+ (1.0 - BarMorePanelClosedScale) * rawProgress);
+			// 根面板从 More 按钮中心的紧凑态展开，和绘制属性/几何面板共享锚点语义。
+			double scale = max(0.01, BarMorePanelCompactScale
+				+ (1.0 - BarMorePanelCompactScale) * rawProgress);
 			double logicalWindowWidth = barStyle.zoom > 0.0
 				? static_cast<double>(barWindow.w) / barStyle.zoom : panelWidth;
 			double logicalWindowHeight = barStyle.zoom > 0.0
@@ -6267,20 +6272,26 @@ for (size_t i = 0; i < 3; ++i)
 			double anchorY = moreButton
 				? moreButton->buttom.inhY + moreButton->buttom.h.val / 2.0
 				: logicalWindowHeight / 2.0;
-			double displayWidth = panelWidth * scale;
-			double displayHeight = panelHeight * scale;
+			double expandedCenterX = clamp(anchorX,
+				BarMorePanelPadding + panelWidth / 2.0,
+				max(BarMorePanelPadding + panelWidth / 2.0,
+					logicalWindowWidth - BarMorePanelPadding - panelWidth / 2.0));
 			double direction = side ? 1.0 : -1.0;
-			double panelCenterX = clamp(anchorX,
-				BarMorePanelPadding + displayWidth / 2.0,
-				max(BarMorePanelPadding + displayWidth / 2.0,
-					logicalWindowWidth - BarMorePanelPadding - displayWidth / 2.0));
-			double panelCenterY = anchorY + direction * (
+			double expandedCenterY = anchorY + direction * (
 				(moreButton ? moreButton->buttom.h.val / 2.0 : 35.0)
-				+ BarMorePanelAnchorGap + displayHeight / 2.0);
-			panelCenterY = clamp(panelCenterY,
-				BarMorePanelPadding + displayHeight / 2.0,
-				max(BarMorePanelPadding + displayHeight / 2.0,
-					logicalWindowHeight - BarMorePanelPadding - displayHeight / 2.0));
+				+ BarMorePanelAnchorGap + panelHeight / 2.0);
+			expandedCenterY = clamp(expandedCenterY,
+				BarMorePanelPadding + panelHeight / 2.0,
+				max(BarMorePanelPadding + panelHeight / 2.0,
+					logicalWindowHeight - BarMorePanelPadding - panelHeight / 2.0));
+			double panelCenterX = anchorX
+				+ (expandedCenterX - anchorX) * rawProgress;
+			double panelCenterY = anchorY
+				+ (expandedCenterY - anchorY) * rawProgress;
+			double displayWidth = max(1.0,
+				compactWidth + (panelWidth - compactWidth) * rawProgress);
+			double displayHeight = max(1.0,
+				compactHeight + (panelHeight - compactHeight) * rawProgress);
 			panel->x.SetDirect(panelCenterX);
 			panel->y.SetDirect(panelCenterY);
 			panel->w.SetDirect(displayWidth);
@@ -6300,11 +6311,11 @@ for (size_t i = 0; i < 3; ++i)
 			close->h.SetDirect(30.0 * scale);
 			close->rw->SetDirect(4.0 * scale);
 			close->rh->SetDirect(4.0 * scale);
-			// 关闭按钮固定在面板顶部横向栏的右侧，不随上下内容行翻转。
-			constexpr double closeHeaderCenter = BarMorePanelPadding + 15.0;
+			// X 位于按钮区域右侧的独立窄栏，关闭时不增加面板高度。
 			close->x.SetDirect(panel->inhX + displayWidth
-				- closeHeaderCenter * scale);
-			close->y.SetDirect(panel->inhY + closeHeaderCenter * scale);
+				- BarMorePanelCloseSideWidth * scale / 2.0);
+			close->y.SetDirect(panel->inhY
+				+ (BarMorePanelPadding + 15.0) * scale);
 			close->pct.SetDirect(progress
 				* (barState.moreClosePress ? 0.10 : 0.0));
 			close->UpInh(BarUiInheritClass(
@@ -6326,12 +6337,12 @@ for (size_t i = 0; i < 3; ++i)
 				+ (BarMorePanelGap + BarMorePanelSeparatorGap) / 2.0;
 			double dividerPhysicalY = side
 				? gridHeight - dividerLogicalY : dividerLogicalY;
-			divider->w.SetDirect((panelWidth - BarMorePanelPadding * 2.0) * scale);
+			divider->w.SetDirect(contentWidth * scale);
 			divider->h.SetDirect(scale);
-			divider->x.SetDirect(panel->inhX + displayWidth / 2.0);
+			divider->x.SetDirect(panel->inhX
+				+ (BarMorePanelPadding + contentWidth / 2.0) * scale);
 			divider->y.SetDirect(panel->inhY
-				+ (BarMorePanelPadding + BarMorePanelChromeHeight
-					+ dividerPhysicalY) * scale);
+				+ (BarMorePanelPadding + dividerPhysicalY) * scale);
 			divider->pct.SetDirect(showDivider ? 0.30 * progress : 0.0);
 			divider->UpInh(BarUiInheritClass(
 				divider->x.val - divider->w.val / 2.0,
@@ -6351,7 +6362,7 @@ for (size_t i = 0; i < 3; ++i)
 					logicalY += BarMorePanelSeparatorGap;
 				double physicalY = side
 					? gridHeight - logicalY - height : logicalY;
-				double localCenterY = BarMorePanelPadding + BarMorePanelChromeHeight
+				double localCenterY = BarMorePanelPadding
 					+ physicalY + height / 2.0;
 				button->buttom.x.SetDirect(logicalX * scale);
 				button->buttom.y.SetDirect(localCenterY * scale);
@@ -12865,7 +12876,9 @@ namespace Inkeys::UI::Bar
 				// 更多浮层沿用属性面板的 Surface、边框与点光风格。
 				{
 					auto panel = make_shared<BarUiShapeClass>(
-						0.0, 0.0, 80.0, 80.0, 8.0, 8.0, 1.0,
+						0.0, 0.0, BarMorePanelCompactWidth,
+						BarMorePanelCompactHeight, 8.0 * BarMorePanelCompactScale,
+						8.0 * BarMorePanelCompactScale, BarMorePanelCompactScale,
 						GetThemeColor(BarThemeColorEnum::Surface),
 						GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 					panel->pct.Initialization(0.0);
