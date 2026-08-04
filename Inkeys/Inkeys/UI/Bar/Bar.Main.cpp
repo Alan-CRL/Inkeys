@@ -146,7 +146,6 @@ constexpr double BarMorePanelPadding = 5.0;
 // 关闭按钮放在网格右侧的窄栏，不再占用面板顶部高度。
 constexpr double BarMorePanelCloseSideWidth = 35.0;
 constexpr double BarMorePanelSeparatorGap = 10.0;
-constexpr double BarMorePanelAnimationDur = 0.24;
 constexpr double BarMorePanelCompactScale = 0.16;
 constexpr double BarMorePanelCompactWidth = 60.0;
 constexpr double BarMorePanelCompactHeight = 30.0;
@@ -3142,6 +3141,7 @@ void BarUISetClass::Rendering()
 	BarUiTimelineClass drawAttributeTimeline;
 	BarUiTimelineClass geometryAttributeTimeline;
 	BarUiValueClass morePanelProgress(0.0);
+	BarUiValueClass morePanelOpacity(0.0);
 	BarUiCurveEnum mainBarBatchCurve = BarUiCurveEnum::EaseInOutCubic;
 	const BarUiCurveSpecClass buttonPressCurve{
 		BarUiCurveEnum::EaseOutCubic, BarUiCurveEnum::EaseOutCubic, 0.0, false };
@@ -6129,9 +6129,14 @@ for (size_t i = 0; i < 3; ++i)
 			// 三角保持固定朝向，展开态改由入口 Selected 与青色高亮表达。
 			if (moreButton) moreButton->icon.angle.SetDirect(0.0);
 			morePanelProgress.SetTar(open ? 1.0 : 0.0,
-				BarMorePanelAnimationDur, nullopt, false,
+				BarUiDefaultOperationDur, nullopt, false,
 				{ open ? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack,
 					open ? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack,
+					0.0, false });
+			morePanelOpacity.SetTar(open ? 1.0 : 0.0,
+				BarUiDefaultOperationDur, nullopt, false,
+				{ open ? BarUiCurveEnum::EaseOutSine : BarUiCurveEnum::EaseInSine,
+					open ? BarUiCurveEnum::EaseOutSine : BarUiCurveEnum::EaseInSine,
 					0.0, false });
 			struct MorePlacement
 			{
@@ -6226,7 +6231,11 @@ for (size_t i = 0; i < 3; ++i)
 			double compactWidth = BarMorePanelCompactWidth;
 			double compactHeight = BarMorePanelCompactHeight;
 			double rawProgress = static_cast<double>(morePanelProgress.val);
-			double progress = clamp(rawProgress, 0.0, 1.0);
+			double opacityProgress = clamp(
+				static_cast<double>(morePanelOpacity.val), 0.0, 1.0);
+			bool settleHiddenButtonVisuals = !open
+				&& morePanelProgress.IsSame() && morePanelOpacity.IsSame()
+				&& rawProgress <= 0.000001;
 			// 根面板从 More 按钮中心的紧凑态展开，和绘制属性/几何面板共享锚点语义。
 			double scale = max(0.01, BarMorePanelCompactScale
 				+ (1.0 - BarMorePanelCompactScale) * rawProgress);
@@ -6269,8 +6278,8 @@ for (size_t i = 0; i < 3; ++i)
 			panel->ft->SetDirect(scale);
 			panel->fill->SetDirect(GetThemeColor(BarThemeColorEnum::Surface));
 			panel->frame->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
-			panel->pct.SetDirect(BarDrawAttributeSurfaceOpacity * progress);
-			panel->framePct->SetDirect(0.18 * progress);
+			panel->pct.SetDirect(BarDrawAttributeSurfaceOpacity * opacityProgress);
+			panel->framePct->SetDirect(0.18 * opacityProgress);
 			panel->UpInh(BarUiInheritClass(
 				panelCenterX - displayWidth / 2.0,
 				panelCenterY - displayHeight / 2.0));
@@ -6279,11 +6288,12 @@ for (size_t i = 0; i < 3; ++i)
 			close->h.SetDirect(30.0 * scale);
 			close->rw->SetDirect(4.0 * scale);
 			close->rh->SetDirect(4.0 * scale);
-			// X 位于按钮区域右侧的独立窄栏，关闭时不增加面板高度。
+			// X 位于按钮区域右侧窄栏的右上角，关闭时不增加面板高度。
 			close->x.SetDirect(panel->inhX + displayWidth
 				- BarMorePanelCloseSideWidth * scale / 2.0);
-			close->y.SetDirect(panel->inhY + displayHeight / 2.0);
-			if (!open) close->pct.SetTar(0.0, BarMorePanelAnimationDur);
+			close->y.SetDirect(panel->inhY
+				+ (BarMorePanelPadding + 15.0) * scale);
+			if (!open) close->pct.SetTar(0.0, BarUiDefaultOperationDur);
 			else if (barState.moreClosePress) close->pct.SetTar(0.10);
 			else if (moreCloseHoverStage == BarButtomHoverStageEnum::None)
 				close->pct.SetTar(0.0);
@@ -6299,7 +6309,7 @@ for (size_t i = 0; i < 3; ++i)
 			closeSvg->y.SetDirect(close->y.val);
 			closeSvg->SetWH(18.0 * scale, 18.0 * scale);
 			closeSvg->color1->SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));
-			closeSvg->pct.SetDirect(progress);
+			closeSvg->pct.SetDirect(opacityProgress);
 			closeSvg->UpInh(BarUiInheritClass(
 				closeSvg->x.val - closeSvg->w.val / 2.0,
 				closeSvg->y.val - closeSvg->h.val / 2.0));
@@ -6317,7 +6327,7 @@ for (size_t i = 0; i < 3; ++i)
 				+ (BarMorePanelPadding + contentWidth / 2.0) * scale);
 			divider->y.SetDirect(panel->inhY
 				+ (BarMorePanelPadding + dividerPhysicalY) * scale);
-			divider->pct.SetDirect(showDivider ? 0.30 * progress : 0.0);
+			divider->pct.SetDirect(showDivider ? 0.30 * opacityProgress : 0.0);
 			divider->UpInh(BarUiInheritClass(
 				divider->x.val - divider->w.val / 2.0,
 				divider->y.val - divider->h.val / 2.0));
@@ -6356,20 +6366,29 @@ for (size_t i = 0; i < 3; ++i)
 				button->buttom.framePrimaryLightEnabled = false;
 				button->buttom.frameCursorLightIntensityScale =
 					BarButtonCursorLightIntensity;
-				button->buttom.fill->SetTar(
-					button->state->state == BarWidgetState::Selected
-						? GetThemeColor(BarThemeColorEnum::Accent)
-						: GetThemeColor(BarThemeColorEnum::PressedFill));
-				button->buttom.frame->SetTar(
-					button->state->state == BarWidgetState::Selected
-						? GetThemeColor(BarThemeColorEnum::Accent)
-						: GetThemeColor(BarThemeColorEnum::TextPrimary));
+				COLORREF buttonFill = button->state->state == BarWidgetState::Selected
+					? GetThemeColor(BarThemeColorEnum::Accent)
+					: GetThemeColor(BarThemeColorEnum::PressedFill);
+				COLORREF buttonFrame = button->state->state == BarWidgetState::Selected
+					? GetThemeColor(BarThemeColorEnum::Accent)
+					: GetThemeColor(BarThemeColorEnum::TextPrimary);
+				if (settleHiddenButtonVisuals)
+				{
+					// 隐藏时先落稳选中颜色，避免展开后才从旧颜色渐变为青色。
+					button->buttom.fill->SetDirect(buttonFill);
+					button->buttom.frame->SetDirect(buttonFrame);
+				}
+				else
+				{
+					button->buttom.fill->SetTar(buttonFill);
+					button->buttom.frame->SetTar(buttonFrame);
+				}
 				button->buttom.frameLightPct->SetTar(
 					open && button->state->state == BarWidgetState::Selected
 						? (button->state->emph == BarWidgetEmphasize::Pressed
 							? BarButtonPressedLightOpacity : 1.0) : 0.0);
 				if (!open)
-					button->buttom.pct.SetTar(0.0, BarMorePanelAnimationDur);
+					button->buttom.pct.SetTar(0.0, BarUiDefaultOperationDur);
 				else if (button->state->emph == BarWidgetEmphasize::Pressed)
 					button->buttom.pct.SetTar(0.10, BarUiDefaultOperationDur);
 				else if (button->state->state == BarWidgetState::Selected)
@@ -6380,10 +6399,20 @@ for (size_t i = 0; i < 3; ++i)
 					button->state->state == BarWidgetState::Selected
 						? GetThemeColor(BarThemeColorEnum::Accent)
 						: GetThemeColor(BarThemeColorEnum::TextPrimary);
-				button->icon.color1->SetTar(contentColor);
-				if (button->icon.color2)
-					button->icon.color2->SetTar(contentColor);
-				button->name.color.SetTar(contentColor);
+				if (settleHiddenButtonVisuals)
+				{
+					button->icon.color1->SetDirect(contentColor);
+					if (button->icon.color2)
+						button->icon.color2->SetDirect(contentColor);
+					button->name.color.SetDirect(contentColor);
+				}
+				else
+				{
+					button->icon.color1->SetTar(contentColor);
+					if (button->icon.color2)
+						button->icon.color2->SetTar(contentColor);
+					button->name.color.SetTar(contentColor);
+				}
 				if (button->size == BarButtomSizeEnum::oneOne)
 				{
 					button->icon.SetWH(20.0 * scale, 20.0 * scale);
@@ -6401,7 +6430,7 @@ for (size_t i = 0; i < 3; ++i)
 					button->name.w.SetDirect(37.0 * scale);
 					button->name.h.SetDirect(one * scale);
 					button->name.size.SetDirect(12.0 * scale);
-					button->name.pct.SetDirect(progress);
+					button->name.pct.SetDirect(opacityProgress);
 				}
 				else if (button->size == BarButtomSizeEnum::twoTwo)
 				{
@@ -6413,7 +6442,7 @@ for (size_t i = 0; i < 3; ++i)
 					button->name.w.SetDirect(70.0 * scale);
 					button->name.h.SetDirect(25.0 * scale);
 					button->name.size.SetDirect(13.0 * scale);
-					button->name.pct.SetDirect(progress);
+					button->name.pct.SetDirect(opacityProgress);
 				}
 				else
 				{
@@ -6421,7 +6450,7 @@ for (size_t i = 0; i < 3; ++i)
 					button->name.pct.SetDirect(0.0);
 					continue;
 				}
-				button->icon.pct.SetDirect(progress);
+				button->icon.pct.SetDirect(opacityProgress);
 				button->lastDrawX = button->buttom.x.val;
 				button->lastDrawY = button->buttom.y.val;
 			}
@@ -6670,6 +6699,8 @@ for (size_t i = 0; i < 3; ++i)
 			ChangeValue(drawAttributeColorPickerDisplayOpacity, false);
 		if (!morePanelProgress.IsSame())
 			ChangeValue(morePanelProgress, false);
+		if (!morePanelOpacity.IsSame())
+			ChangeValue(morePanelOpacity, false);
 		// 保持进度仅在按压期间推进；静止打开的面板不会维持渲染唤醒。
 		if (barState.drawAttributeBar.colorPickerPointerPressed
 			&& (barState.drawAttributeBar.colorPickerHoldHintActive
