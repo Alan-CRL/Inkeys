@@ -1308,6 +1308,14 @@ namespace
 		TEST_CHECK(state, std::abs(first.averagePresentMs - 0.5) < 0.001);
 		TEST_CHECK(state, first.processCpuPercent >= 0.0 && first.processCpuPercent <= 100.0);
 		TEST_CHECK(state, first.workingSetMiB > 0.0);
+		tracker.RecordDrawingFrame(2010.0, 4.0, 1.0, true);
+		const draw3::PerformanceHudSnapshot perFrame = tracker.Snapshot();
+		TEST_CHECK(state, std::abs(perFrame.averageFps - 100.0) < 0.001);
+		TEST_CHECK(state, std::abs(perFrame.estimatedUnlimitedFps - 500.0) < 0.001);
+		TEST_CHECK(state, perFrame.frameSampleCount == 1);
+		TEST_CHECK(state, std::abs(perFrame.averageFrameMs - 10.0) < 0.001);
+		TEST_CHECK(state, std::abs(perFrame.averageWorkMs - 4.0) < 0.001);
+		TEST_CHECK(state, std::abs(perFrame.averagePresentMs - 1.0) < 0.001);
 
 		tracker.Reset();
 		double frameStartMs = 3000.0;
@@ -1321,15 +1329,36 @@ namespace
 		TEST_CHECK(state, mixed.frameSampleCount == 100);
 		TEST_CHECK(state, std::abs(mixed.onePercentLowFps - 50.0) < 0.001);
 		TEST_CHECK(state, mixed.frameJitterMs > 0.9 && mixed.frameJitterMs < 1.1);
-		const std::wstring formatted = tracker.FormatText(-1.0);
-		TEST_CHECK(state, formatted.find(L"1% LOW") != std::wstring::npos);
-		TEST_CHECK(state, formatted.find(L"UNLIMITED") != std::wstring::npos);
-		TEST_CHECK(state, formatted.find(L"GPU MEM N/A") != std::wstring::npos);
+		const std::array<draw3::PerformanceHudContact, 2> contacts = {
+			draw3::PerformanceHudContact{
+				42, draw3::InputDeviceType::Pen, 0,
+				1.0f, 0.0f, 0.0f, 1.0f,
+				5.0f, 123.0f, 456.0f, 0.5f, 789.0f,
+				10.0f, 12.0f, 0.75f, 1.25f },
+			draw3::PerformanceHudContact{
+				7, draw3::InputDeviceType::Touch, 1,
+				1.0f, 0.0f, 0.0f, 0.35f,
+				50.0f, 12.0f, 34.0f, -1.0f, 56.0f,
+				18.0f, 20.0f, -1.0f, -1.0f }
+		};
+		const std::wstring formatted = tracker.FormatText(-1.0, contacts);
+		TEST_CHECK(state, formatted.find(L"性能统计") != std::wstring::npos);
+		TEST_CHECK(state, formatted.find(L"1%低帧") != std::wstring::npos);
+		TEST_CHECK(state, formatted.find(L"无等待性能") != std::wstring::npos);
+		TEST_CHECK(state, formatted.find(L"显存:    不可用") != std::wstring::npos);
+		TEST_CHECK(state, formatted.find(L"当前接触:  2") != std::wstring::npos);
+		TEST_CHECK(state, formatted.find(L"#0042") != std::wstring::npos);
+		TEST_CHECK(state, formatted.find(L"设备:笔") != std::wstring::npos);
+		TEST_CHECK(state, formatted.find(L"绘制:荧光笔") != std::wstring::npos);
+		TEST_CHECK(state, formatted.find(L"颜色:FF0000FF") != std::wstring::npos);
+		TEST_CHECK(state, formatted.find(L"粗细:") != std::wstring::npos);
+		TEST_CHECK(state, formatted.find(L"高度角:") != std::wstring::npos);
+		TEST_CHECK(state, formatted.find(L"转动角:") != std::wstring::npos);
 
 		tracker.EndDrawingFrameSequence();
 		tracker.RecordDrawingFrame(10000.0, 1.0, 0.25, true);
 		TEST_CHECK(state, !tracker.RecordDrawingFrame(10010.0, 1.0, 0.25, true));
-		TEST_CHECK(state, tracker.Snapshot().frameSampleCount == 100);
+		TEST_CHECK(state, tracker.Snapshot().frameSampleCount == 1);
 		tracker.Reset();
 		TEST_CHECK(state, tracker.Snapshot().frameSampleCount == 0);
 	}

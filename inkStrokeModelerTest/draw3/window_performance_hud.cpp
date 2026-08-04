@@ -158,7 +158,10 @@ namespace draw3
 	void WindowController::PostPerformanceHudRefresh() noexcept
 	{
 		const HWND hudWindow = performanceHudWindow_.load(std::memory_order_acquire);
-		if (hudWindow) PostMessageW(hudWindow, kRefreshPerformanceHudMessage, 0, 0);
+		if (!hudWindow || performanceHudRefreshPosted_.exchange(
+			true, std::memory_order_acq_rel)) return;
+		if (!PostMessageW(hudWindow, kRefreshPerformanceHudMessage, 0, 0))
+			performanceHudRefreshPosted_.store(false, std::memory_order_release);
 	}
 
 	void WindowController::RefreshPerformanceHudWindow()
@@ -185,29 +188,61 @@ namespace draw3
 
 		const UINT dpi = PerformanceHudDpi(hudWindow);
 		const int padding = MulDiv(12, static_cast<int>(dpi), 96);
-		const int minimumWidth = MulDiv(420, static_cast<int>(dpi), 96);
-		const int fontHeight = -MulDiv(15, static_cast<int>(dpi), 96);
+		const RECT workArea = PrimaryMonitorWorkArea();
+		const int margin = MulDiv(12, static_cast<int>(dpi), 96);
+		const int availableWidth = std::max<int>(1,
+			static_cast<int>(workArea.right - workArea.left) - margin * 2);
+		const int availableHeight = std::max<int>(1,
+			static_cast<int>(workArea.bottom - workArea.top) - margin * 2);
+		const int minimumWidth = std::min(
+			MulDiv(1180, static_cast<int>(dpi), 96), availableWidth);
+		const int fontHeight = -MulDiv(14, static_cast<int>(dpi), 96);
+		const int contactFontHeight = -MulDiv(10, static_cast<int>(dpi), 96);
+		const size_t contactTextStart = text.find(L"\r\n#");
+		const std::wstring performanceText = contactTextStart == std::wstring::npos
+			? text : text.substr(0, contactTextStart);
+		const std::wstring contactText = contactTextStart == std::wstring::npos
+			? std::wstring{} : text.substr(contactTextStart + 2);
 		HDC memoryDc = CreateCompatibleDC(nullptr);
 		HFONT font = CreateFontW(fontHeight, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
 			DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-			ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+			ANTIALIASED_QUALITY, FIXED_PITCH | FF_MODERN, L"Consolas");
+		HFONT contactFont = CreateFontW(contactFontHeight, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+			DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+			ANTIALIASED_QUALITY, FIXED_PITCH | FF_MODERN, L"Consolas");
+		if (!contactFont) contactFont = font;
 		if (!memoryDc || !font)
 		{
+			if (contactFont && contactFont != font) DeleteObject(contactFont);
 			if (font) DeleteObject(font);
 			if (memoryDc) DeleteDC(memoryDc);
 			ShowWindow(hudWindow, SW_HIDE);
 			return;
 		}
 		const HGDIOBJ oldFont = SelectObject(memoryDc, font);
-		RECT measured = {};
-		DrawTextW(memoryDc, text.c_str(), static_cast<int>(text.size()), &measured,
-			DT_CALCRECT | DT_LEFT | DT_TOP | DT_NOPREFIX);
-		const int measuredWidth = static_cast<int>(measured.right);
-		const int measuredHeight = static_cast<int>(measured.bottom);
+		RECT performanceMeasured = {};
+		DrawTextW(memoryDc, performanceText.c_str(), static_cast<int>(performanceText.size()),
+			&performanceMeasured, DT_CALCRECT | DT_LEFT | DT_TOP | DT_NOPREFIX | DT_NOCLIP);
+		RECT contactMeasured = {};
+		if (!contactText.empty())
+		{
+			SelectObject(memoryDc, contactFont);
+			DrawTextW(memoryDc, contactText.c_str(), static_cast<int>(contactText.size()),
+				&contactMeasured, DT_CALCRECT | DT_LEFT | DT_TOP | DT_NOPREFIX | DT_NOCLIP);
+			SelectObject(memoryDc, font);
+		}
+		const int sectionGap = contactText.empty() ? 0 : MulDiv(4, static_cast<int>(dpi), 96);
+		const int measuredWidth = std::max(
+			static_cast<int>(performanceMeasured.right), static_cast<int>(contactMeasured.right));
+		const int measuredHeight = static_cast<int>(performanceMeasured.bottom) + sectionGap +
+			static_cast<int>(contactMeasured.bottom);
 		const int width = std::clamp(
-			std::max(minimumWidth, measuredWidth + padding * 2), minimumWidth, 960);
+			std::max(minimumWidth, measuredWidth + padding * 2),
+			minimumWidth, availableWidth);
+		const int minimumHeight = std::min(
+			MulDiv(128, static_cast<int>(dpi), 96), availableHeight);
 		const int height = std::clamp(measuredHeight + padding * 2,
-			MulDiv(80, static_cast<int>(dpi), 96), MulDiv(220, static_cast<int>(dpi), 96));
+			minimumHeight, availableHeight);
 
 		BITMAPINFO bitmapInfo = {};
 		bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -223,6 +258,7 @@ namespace draw3
 		{
 			if (bitmap) DeleteObject(bitmap);
 			SelectObject(memoryDc, oldFont);
+			if (contactFont != font) DeleteObject(contactFont);
 			DeleteObject(font);
 			DeleteDC(memoryDc);
 			ShowWindow(hudWindow, SW_HIDE);
@@ -241,13 +277,22 @@ namespace draw3
 		}
 		SetBkMode(memoryDc, TRANSPARENT);
 		SetTextColor(memoryDc, RGB(245, 247, 250));
-		RECT textRect = { padding, padding, width - padding, height - padding };
-		DrawTextW(memoryDc, text.c_str(), static_cast<int>(text.size()), &textRect,
-			DT_LEFT | DT_TOP | DT_NOPREFIX | DT_NOCLIP);
+		SelectObject(memoryDc, font);
+		RECT performanceRect = { padding, padding, width - padding,
+			padding + static_cast<int>(performanceMeasured.bottom) };
+		DrawTextW(memoryDc, performanceText.c_str(), static_cast<int>(performanceText.size()),
+			&performanceRect, DT_LEFT | DT_TOP | DT_NOPREFIX | DT_NOCLIP);
+		if (!contactText.empty())
+		{
+			SelectObject(memoryDc, contactFont);
+			const int contactTop = padding + static_cast<int>(performanceMeasured.bottom) + sectionGap;
+			RECT contactRect = { padding, contactTop, width - padding,
+				contactTop + static_cast<int>(contactMeasured.bottom) };
+			DrawTextW(memoryDc, contactText.c_str(), static_cast<int>(contactText.size()),
+				&contactRect, DT_LEFT | DT_TOP | DT_NOPREFIX | DT_NOCLIP);
+		}
 		ConvertHudPixelsToPremultiplied(pixels, width, height);
 
-		const RECT workArea = PrimaryMonitorWorkArea();
-		const int margin = MulDiv(12, static_cast<int>(dpi), 96);
 		POINT destination = { workArea.left + margin, workArea.top + margin };
 		SIZE size = { width, height };
 		POINT source = {};
@@ -259,6 +304,7 @@ namespace draw3
 
 		SelectObject(memoryDc, oldBitmap);
 		SelectObject(memoryDc, oldFont);
+		if (contactFont != font) DeleteObject(contactFont);
 		DeleteObject(bitmap);
 		DeleteObject(font);
 		DeleteDC(memoryDc);
@@ -292,6 +338,8 @@ namespace draw3
 		switch (message)
 		{
 		case kRefreshPerformanceHudMessage:
+			controller->performanceHudRefreshPosted_.store(
+				false, std::memory_order_release);
 			controller->RefreshPerformanceHudWindow();
 			return 0;
 		case WM_NCHITTEST:
@@ -301,6 +349,8 @@ namespace draw3
 		case WM_ERASEBKGND:
 			return 1;
 		case WM_NCDESTROY:
+			controller->performanceHudRefreshPosted_.store(
+				false, std::memory_order_release);
 			controller->performanceHudWindow_.compare_exchange_strong(
 				window, nullptr, std::memory_order_acq_rel);
 			SetWindowLongPtrW(window, GWLP_USERDATA, 0);

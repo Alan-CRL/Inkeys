@@ -101,15 +101,15 @@ renderer 暴露单个 batched particle step：绑定 UAV/公共常量一次，�
 
 HUD 不进入 D3D backbuffer。当前 presenter 只接受一个矩形 dirty；若 HUD 与远处墨迹共同合成，二者包围矩形会显著扩大复制和 Present 面积，使性能测试反过来污染被测路径。因此由 `WindowController` 的既有窗口线程创建独立 owned layered popup，使用 `WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`，固定在主显示器工作区左上角并保持点击穿透。
 
-绘制线程只在 1 秒统计窗闭合时发布新的不可变文字快照。窗口线程通过私有 `WM_APP` 消息消费最新文本，用内存 DIB + GDI 生成预乘 BGRA，再调用 `UpdateLayeredWindow` 更新整个小型 HUD。更新不等待窗口线程完成；重复发布只保留最新文本。HUD 窗口随主窗口显示/销毁，关闭测试模式立即隐藏，重新开启显示最后快照。
+绘制线程在物理绘制帧发布新的不可变文字快照；窗口线程通过私有 `WM_APP` 消息消费最新文本，用内存 DIB + GDI 生成预乘 BGRA，再调用 `UpdateLayeredWindow` 更新整个小型 HUD。消息使用原子标记合并，窗口线程繁忙时只保留最新文本，不积压旧帧。HUD 窗口随主窗口显示/销毁，关闭测试模式立即隐藏，重新开启显示最后快照。
 
 ## Stage 2.5 Metrics Contract
 
 `runtime_metrics` 增加独立的轻量 HUD tracker，不要求 `--metrics-output` 会话存在。tracker 使用固定容量数组保存最多一个统计窗内的 frame interval、work 和 present 样本；普通帧只执行常数次写入，不排序、不格式化、不查询系统状态。
 
-统计窗达到 1 秒后才执行一次汇总：平均 FPS 使用有效间隔总时长，1% Low 取最慢 1% 帧时的平均帧时并求倒数，波动使用帧时标准差，同时输出平均/P99 frame、平均 work 和平均 present。进程 CPU 使用 `GetProcessTimes` 的相邻采样差除以墙钟和逻辑处理器数；工作集使用动态解析的进程内存计数 API。Renderer 初始化时尝试取得 `IDXGIAdapter3`，支持时每秒查询本进程 local/non-local video memory `CurrentUsage`，旧系统或 WARP 不支持时显示 `N/A`，不得失败启动。
+统计窗达到 1 秒后更新平均 FPS 和按平均 work 耗时推算的无等待性能 FPS；1% Low、平均/P99 frame、帧波动、平均 work/present、进程 CPU 和工作集在每个物理绘制帧更新。进程 CPU 使用 `GetProcessTimes` 的相邻采样差除以墙钟和逻辑处理器数；工作集使用动态解析的进程内存计数 API。Renderer 初始化时尝试取得 `IDXGIAdapter3`，支持时每个 HUD 帧查询本进程 local/non-local video memory `CurrentUsage`，旧系统或 WARP 不支持时显示 `N/A`，不得失败启动。
 
-只有帧开始和结束都处于物理 contact 绘制序列时才记录样本。活动绘制和 Laser Fade/粒子动画统一等待到目标帧截止时间，Pen 光标或其他 ControlWake 不能提前开始下一帧；队列只保留最新快照。Laser Hold、断触等待和完全空闲仍可被输入唤醒。物理 contact 结束时切断未完成统计序列，避免下一笔把空闲时间算成长帧。HUD 同时显示实际锁帧 FPS 与按平均 work 耗时推算的 `UNLIMITED FPS`，保留最后文本但不更新，也没有独立 timer。
+只有帧开始和结束都处于物理 contact 绘制序列时才记录样本和发布逐帧指标。活动绘制和 Laser Fade/粒子动画统一等待到目标帧截止时间，Pen 光标或其他 ControlWake 不能提前开始下一帧；队列只保留最新快照。Laser Hold、断触等待和完全空闲仍可被输入唤醒。物理 contact 结束时切断未完成统计序列，避免下一笔把空闲时间算成长帧。HUD 同时显示实际锁帧 FPS 与按平均 work 耗时推算的无等待性能 FPS；前两者按 1 秒窗口刷新，其余字段每个物理绘制帧刷新，不使用独立 timer。
 
 ## Stage 2.5 Compatibility And Rollback
 
@@ -117,3 +117,11 @@ HUD 不进入 D3D backbuffer。当前 presenter 只接受一个矩形 dirty；�
 - Win7 缺少 `IDXGIAdapter3` 时通过 QueryInterface 失败自然降级，不静态调用新系统函数。
 - HUD 代码按窗口发布、纯统计和可选 GPU 查询三个边界实现；任一部分可单独关闭，不改变墨迹 D3D 资源和 shader。
 - 当前会话不执行 GUI 验证；真实透明度、DPI、点击穿透和 owned-window z-order 留给人工验收。
+
+## Stage 2.5 Contact HUD Extension
+
+绘制线程继续沿用 1 秒统计窗边界发布 HUD 文本，不因 RTS packet 或每个绘制帧额外格式化。统计窗闭合时，从活动 `RuntimeStroke` 读取同一帧实际使用的数据：contact id、设备、最终分派工具、工具颜色、最后生成点直径、最新原始快照、滤波输入速度、接触面积、倾角和方向角。该快照只用于诊断显示，不回写模型或输入协调器。
+
+文本分为性能统计和接触设备两区，每个活动 contact 固定一行。所有数值使用显式字段宽度，HUD 使用等宽字体；面板最小宽度提高并允许按行数动态增高。窗口仍由 `window_performance_hud.cpp` 独立绘制，不增加 timer、墨迹 dirty、backbuffer 合成或窗口线程同步等待。
+
+接触行使用比性能统计更小的等宽字体，并与性能区分开测量和绘制，避免多 contact 行挤出面板边界；窗口消息通过 `performanceHudRefreshPosted_` 合并，忙碌时不重复排队旧快照。

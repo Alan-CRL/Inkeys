@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <windows.h>
 
@@ -37,7 +38,28 @@ export namespace draw3
 		double workingSetMiB = 0.0;
 	};
 
-	// 使用固定容量样本统计最近一秒的绘制性能；普通帧不分配、不格式化。
+	// 保存 HUD 刷新所需的最新 contact 数据，不进入帧统计数组。
+	struct PerformanceHudContact
+	{
+		uint32_t contactId = 0;
+		InputDeviceType deviceType = InputDeviceType::Touch;
+		uint32_t drawingTool = 0;
+		float colorRed = 0.0f;
+		float colorGreen = 0.0f;
+		float colorBlue = 0.0f;
+		float colorAlpha = 0.0f;
+		float strokeWidth = 0.0f;
+		float x = 0.0f;
+		float y = 0.0f;
+		float pressure = -1.0f;
+		float speed = -1.0f;
+		float contactWidth = -1.0f;
+		float contactHeight = -1.0f;
+		float altitude = -1.0f;
+		float rotation = -1.0f;
+	};
+
+	// 使用固定容量样本统计最近一秒的绘制性能；tracker 普通帧只写固定数组。
 	class PerformanceHudTracker
 	{
 	public:
@@ -48,14 +70,15 @@ export namespace draw3
 		PerformanceHudTracker(const PerformanceHudTracker&) = delete;
 		PerformanceHudTracker& operator=(const PerformanceHudTracker&) = delete;
 
-		// 只由物理 contact 绘制帧调用；统计窗闭合并产生新快照时返回 true。
+		// 只由物理 contact 绘制帧调用；统计窗闭合并更新平均 FPS 时返回 true。
 		bool RecordDrawingFrame(double frameStartMs, double workMs,
 			double presentMs, bool presented) noexcept;
 		// 一笔物理绘制结束时丢弃未闭合统计窗，避免把空闲时间算成帧间隔。
 		void EndDrawingFrameSequence() noexcept;
 		void Reset() noexcept;
 		const PerformanceHudSnapshot& Snapshot() const noexcept;
-		std::wstring FormatText(double gpuMemoryMiB) const;
+		std::wstring FormatText(double gpuMemoryMiB,
+			std::span<const PerformanceHudContact> contacts = {}) const;
 
 	private:
 		std::unique_ptr<PerformanceHudTrackerImpl> impl_;

@@ -149,7 +149,8 @@ export namespace draw3
 		bool trackingMouseLeave_ = false;
 		std::atomic<HWND> performanceHudWindow_ = nullptr;
 		std::atomic<bool> performanceHudEnabled_ = true;
+		std::atomic<bool> performanceHudRefreshPosted_ = false;
 		mutable std::mutex performanceHudMutex_;
-		std::wstring performanceHudText_ = L"PERF TEST [ON]\r\nWaiting for drawing...";
+		std::wstring performanceHudText_ = L"性能测试 [开]\r\n等待开始绘制……";
 	};
 }

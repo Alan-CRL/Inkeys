@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <compare>
+#include <vector>
 #include <windows.h>
 
 export module draw3.drawing_controller;
@@ -74,6 +75,7 @@ export namespace draw3
 		std::atomic<bool> performanceHudResetRequested_ = false;
 		std::atomic<double> laserHoldDurationSeconds_ = 1.0;
 		PerformanceHudTracker performanceHudTracker_;
+		std::vector<PerformanceHudContact> performanceHudContacts_;
 		RuntimeMetricsSession* metrics_ = nullptr;
 		PenHapticFeedback* haptics_ = nullptr;
 		double lastPresentDurationMs_ = 0.0;

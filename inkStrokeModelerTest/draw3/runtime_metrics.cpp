@@ -230,28 +230,26 @@ namespace draw3
 		}
 
 		template <size_t Capacity>
-		double Percentile99(const std::array<double, Capacity>& values, size_t count) noexcept
+		double Percentile99(std::array<double, Capacity>& values, size_t count) noexcept
 		{
 			if (count == 0) return 0.0;
-			std::array<double, Capacity> sorted = values;
-			std::sort(sorted.begin(), sorted.begin() + count);
+			std::sort(values.begin(), values.begin() + count);
 			const size_t index = std::min(count - 1,
 				static_cast<size_t>(std::ceil(static_cast<double>(count) * 0.99)) - 1);
-			return sorted[index];
+			return values[index];
 		}
 
 		template <size_t Capacity>
 		double OnePercentLowFps(
-			const std::array<double, Capacity>& values, size_t count) noexcept
+			std::array<double, Capacity>& values, size_t count) noexcept
 		{
 			if (count == 0) return 0.0;
-			std::array<double, Capacity> sorted = values;
-			std::sort(sorted.begin(), sorted.begin() + count, std::greater<double>());
+			std::sort(values.begin(), values.begin() + count, std::greater<double>());
 			const size_t slowCount = std::max<size_t>(
 				1, static_cast<size_t>(std::ceil(static_cast<double>(count) * 0.01)));
 			double slowFrameTotalMs = 0.0;
 			for (size_t index = 0; index < slowCount; ++index)
-				slowFrameTotalMs += sorted[index];
+				slowFrameTotalMs += values[index];
 			const double slowFrameAverageMs =
 				slowFrameTotalMs / static_cast<double>(slowCount);
 			return slowFrameAverageMs > 0.0 ? 1000.0 / slowFrameAverageMs : 0.0;
@@ -281,6 +279,75 @@ namespace draw3
 			tracker.lastFrameStartMs = frameStartMs;
 			tracker.processCpuStartValid =
 				ReadProcessCpuTicks(tracker.processCpuStartTicks);
+		}
+
+		void RefreshPerFramePerformanceSnapshot(
+			PerformanceHudTrackerImpl& tracker, double elapsedMs) noexcept
+		{
+			PerformanceHudSnapshot& snapshot = tracker.snapshot;
+			snapshot.frameSampleCount = tracker.frameIntervalCount;
+			snapshot.averageFrameMs = Average(
+				tracker.frameIntervalsMs, tracker.frameIntervalCount);
+			snapshot.onePercentLowFps = OnePercentLowFps(
+				tracker.frameIntervalsMs, tracker.frameIntervalCount);
+			snapshot.p99FrameMs = Percentile99(
+				tracker.frameIntervalsMs, tracker.frameIntervalCount);
+			snapshot.frameJitterMs = StandardDeviation(
+				tracker.frameIntervalsMs, tracker.frameIntervalCount,
+				snapshot.averageFrameMs);
+			snapshot.averageWorkMs = Average(
+				tracker.workDurationsMs, tracker.workDurationCount);
+			snapshot.averagePresentMs = Average(
+				tracker.presentDurationsMs, tracker.presentDurationCount);
+			snapshot.workingSetMiB = ReadWorkingSetMiB();
+
+			uint64_t processCpuEndTicks = 0;
+			if (tracker.processCpuStartValid && ReadProcessCpuTicks(processCpuEndTicks) &&
+				processCpuEndTicks >= tracker.processCpuStartTicks && elapsedMs > 0.0)
+			{
+				static const double processorCount = []() noexcept
+					{
+						SYSTEM_INFO systemInfo = {};
+						GetSystemInfo(&systemInfo);
+						return static_cast<double>(std::max<DWORD>(
+							systemInfo.dwNumberOfProcessors, 1));
+					}();
+				const double availableTicks = elapsedMs * 10000.0 * processorCount;
+				snapshot.processCpuPercent = availableTicks > 0.0
+					? std::clamp(static_cast<double>(
+						processCpuEndTicks - tracker.processCpuStartTicks) /
+						availableTicks * 100.0, 0.0, 100.0)
+					: 0.0;
+			}
+		}
+
+		const wchar_t* PerformanceHudDeviceName(InputDeviceType deviceType) noexcept
+		{
+			switch (deviceType)
+			{
+			case InputDeviceType::Pen: return L"笔";
+			case InputDeviceType::MouseLeft: return L"鼠标左键";
+			case InputDeviceType::MouseRight: return L"鼠标右键";
+			default: return L"触摸";
+			}
+		}
+
+		const wchar_t* PerformanceHudToolName(uint32_t drawingTool) noexcept
+		{
+			switch (drawingTool)
+			{
+			case 1: return L"荧光笔";
+			case 2: return L"橡皮";
+			case 3: return L"激光笔";
+			default: return L"画笔";
+			}
+		}
+
+		uint32_t PerformanceHudColorByte(float value) noexcept
+		{
+			if (!std::isfinite(value)) return 0;
+			return static_cast<uint32_t>(std::lround(
+				std::clamp(value, 0.0f, 1.0f) * 255.0f));
 		}
 	}
 
@@ -316,45 +383,13 @@ namespace draw3
 				std::max(0.0, presentMs);
 
 		const double elapsedMs = frameStartMs - tracker.windowStartMs;
+		RefreshPerFramePerformanceSnapshot(tracker, elapsedMs);
 		if (elapsedMs < 1000.0) return false;
 
-		PerformanceHudSnapshot snapshot;
-		snapshot.frameSampleCount = tracker.frameIntervalCount;
-		snapshot.averageFrameMs = Average(
-			tracker.frameIntervalsMs, tracker.frameIntervalCount);
-		snapshot.averageFps = snapshot.averageFrameMs > 0.0
-			? 1000.0 / snapshot.averageFrameMs : 0.0;
-		snapshot.onePercentLowFps = OnePercentLowFps(
-			tracker.frameIntervalsMs, tracker.frameIntervalCount);
-		snapshot.p99FrameMs = Percentile99(
-			tracker.frameIntervalsMs, tracker.frameIntervalCount);
-		snapshot.frameJitterMs = StandardDeviation(
-			tracker.frameIntervalsMs, tracker.frameIntervalCount,
-			snapshot.averageFrameMs);
-		snapshot.averageWorkMs = Average(
-			tracker.workDurationsMs, tracker.workDurationCount);
-		snapshot.estimatedUnlimitedFps = snapshot.averageWorkMs > 0.0
-			? 1000.0 / snapshot.averageWorkMs : 0.0;
-		snapshot.averagePresentMs = Average(
-			tracker.presentDurationsMs, tracker.presentDurationCount);
-		snapshot.workingSetMiB = ReadWorkingSetMiB();
-
-		uint64_t processCpuEndTicks = 0;
-		if (tracker.processCpuStartValid && ReadProcessCpuTicks(processCpuEndTicks) &&
-			processCpuEndTicks >= tracker.processCpuStartTicks && elapsedMs > 0.0)
-		{
-			SYSTEM_INFO systemInfo = {};
-			GetSystemInfo(&systemInfo);
-			const DWORD processorCount = std::max<DWORD>(systemInfo.dwNumberOfProcessors, 1);
-			const double availableTicks = elapsedMs * 10000.0 * processorCount;
-			snapshot.processCpuPercent = availableTicks > 0.0
-				? std::clamp(static_cast<double>(
-					processCpuEndTicks - tracker.processCpuStartTicks) /
-					availableTicks * 100.0, 0.0, 100.0)
-				: 0.0;
-		}
-
-		tracker.snapshot = snapshot;
+		tracker.snapshot.averageFps = tracker.snapshot.averageFrameMs > 0.0
+			? 1000.0 / tracker.snapshot.averageFrameMs : 0.0;
+		tracker.snapshot.estimatedUnlimitedFps = tracker.snapshot.averageWorkMs > 0.0
+			? 1000.0 / tracker.snapshot.averageWorkMs : 0.0;
 		BeginPerformanceHudWindow(tracker, frameStartMs);
 		return true;
 	}
@@ -381,41 +416,68 @@ namespace draw3
 		return impl_->snapshot;
 	}
 
-	std::wstring PerformanceHudTracker::FormatText(double gpuMemoryMiB) const
+	std::wstring PerformanceHudTracker::FormatText(double gpuMemoryMiB,
+		std::span<const PerformanceHudContact> contacts) const
 	{
 		const PerformanceHudSnapshot& snapshot = impl_->snapshot;
-		wchar_t text[512] = {};
+		wchar_t summary[1024] = {};
 		if (gpuMemoryMiB >= 0.0)
 		{
-			swprintf_s(text,
-				L"PERF TEST [ON]\r\n"
-				L"FPS %.1f   1%% LOW %.1f   UNLIMITED %.1f FPS\r\n"
-				L"FRAME %.2f ms   P99 %.2f ms   JITTER %.2f ms\r\n"
-				L"CPU %.1f%%   RAM %.1f MiB   GPU MEM %.1f MiB\r\n"
-				L"WORK %.2f ms   PRESENT %.2f ms   SAMPLES %zu",
+			swprintf_s(summary,
+				L"性能测试 [开]\r\n"
+				L"【性能统计】\r\n"
+				L"平均帧率:%7.1f FPS  1%%低帧:%7.1f FPS  无等待性能:%7.1f FPS\r\n"
+				L"平均帧时:%7.2f ms  P99帧时:%7.2f ms  帧波动:%7.2f ms\r\n"
+				L"处理器:%6.1f%%  内存:%8.1f MiB  显存:%8.1f MiB\r\n"
+				L"绘制耗时:%7.2f ms  呈现耗时:%7.2f ms  样本数:%4zu\r\n"
+				L"【接触设备】 当前接触:%3zu",
 				snapshot.averageFps, snapshot.onePercentLowFps,
 				snapshot.estimatedUnlimitedFps,
 				snapshot.averageFrameMs, snapshot.p99FrameMs,
 				snapshot.frameJitterMs, snapshot.processCpuPercent,
 				snapshot.workingSetMiB, gpuMemoryMiB,
 				snapshot.averageWorkMs, snapshot.averagePresentMs,
-				snapshot.frameSampleCount);
+				snapshot.frameSampleCount, contacts.size());
 		}
 		else
 		{
-			swprintf_s(text,
-				L"PERF TEST [ON]\r\n"
-				L"FPS %.1f   1%% LOW %.1f   UNLIMITED %.1f FPS\r\n"
-				L"FRAME %.2f ms   P99 %.2f ms   JITTER %.2f ms\r\n"
-				L"CPU %.1f%%   RAM %.1f MiB   GPU MEM N/A\r\n"
-				L"WORK %.2f ms   PRESENT %.2f ms   SAMPLES %zu",
+			swprintf_s(summary,
+				L"性能测试 [开]\r\n"
+				L"【性能统计】\r\n"
+				L"平均帧率:%7.1f FPS  1%%低帧:%7.1f FPS  无等待性能:%7.1f FPS\r\n"
+				L"平均帧时:%7.2f ms  P99帧时:%7.2f ms  帧波动:%7.2f ms\r\n"
+				L"处理器:%6.1f%%  内存:%8.1f MiB  显存:    不可用\r\n"
+				L"绘制耗时:%7.2f ms  呈现耗时:%7.2f ms  样本数:%4zu\r\n"
+				L"【接触设备】 当前接触:%3zu",
 				snapshot.averageFps, snapshot.onePercentLowFps,
 				snapshot.estimatedUnlimitedFps,
 				snapshot.averageFrameMs, snapshot.p99FrameMs,
 				snapshot.frameJitterMs, snapshot.processCpuPercent,
 				snapshot.workingSetMiB,
 				snapshot.averageWorkMs, snapshot.averagePresentMs,
-				snapshot.frameSampleCount);
+				snapshot.frameSampleCount, contacts.size());
+		}
+
+		std::wstring text(summary);
+		text.reserve(text.size() + contacts.size() * 220);
+		for (const PerformanceHudContact& contact : contacts)
+		{
+			const uint32_t color =
+				(PerformanceHudColorByte(contact.colorRed) << 24) |
+				(PerformanceHudColorByte(contact.colorGreen) << 16) |
+				(PerformanceHudColorByte(contact.colorBlue) << 8) |
+				PerformanceHudColorByte(contact.colorAlpha);
+			wchar_t row[512] = {};
+			const int length = swprintf_s(row,
+				L"\r\n#%04u  设备:%-8ls  绘制:%-6ls  颜色:%08X  粗细:%7.2f px  "
+				L"X:%8.1f  Y:%8.1f  压力:%6.3f  速度:%8.1f px/s  "
+				L"面积:%6.1f x %6.1f  高度角:%6.3f  转动角:%6.3f",
+				contact.contactId, PerformanceHudDeviceName(contact.deviceType),
+				PerformanceHudToolName(contact.drawingTool), color,
+				contact.strokeWidth, contact.x, contact.y, contact.pressure,
+				contact.speed, contact.contactWidth, contact.contactHeight,
+				contact.altitude, contact.rotation);
+			if (length > 0) text.append(row, static_cast<size_t>(length));
 		}
 		return text;
 	}

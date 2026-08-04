@@ -327,11 +327,19 @@ int RunLaserIncrementalCoverageTests()
 		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource, "WS_EX_TOOLWINDOW"));
 		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource, "WS_EX_NOACTIVATE"));
 		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource, "UpdateLayeredWindow("));
+		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource, "Consolas"));
+		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource, "MulDiv(1180"));
+		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource, "availableWidth"));
+		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource, "contactFontHeight"));
+		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource,
+			"performanceHudRefreshPosted_.exchange("));
 		LASER_INCREMENTAL_CHECK(!ContainsText(performanceHudSource, "WM_TIMER"));
 		LASER_INCREMENTAL_CHECK(!ContainsText(performanceHudSource, "frameDirty"));
 		LASER_INCREMENTAL_CHECK(!ContainsText(performanceHudSource, "backBuffer"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
-			"frameHadActiveContact && GetPerformanceHudEnabled() &&"));
+			"if (frameHadActiveContact && GetPerformanceHudEnabled())"));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
+			"window_.UpdatePerformanceHudText(performanceHudTracker_.FormatText("));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
 			"performanceHudTracker_.EndDrawingFrameSequence();"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,

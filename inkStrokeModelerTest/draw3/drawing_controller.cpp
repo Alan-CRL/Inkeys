@@ -129,6 +129,7 @@ namespace draw3
 			DrawingTool tool = DrawingTool::Pen;
 			bool suppressPressure = false;
 			ContactSnapshot lastSpeedSnapshot = {};
+			ContactSnapshot lastInputSnapshot = {};
 			ContactSnapshot lastModelSnapshot = {};
 			uint64_t lastConsumedSequence = 0;
 			int64_t qpcOrigin = 0;
@@ -841,6 +842,7 @@ namespace draw3
 			? configuration_.laserHoldDurationSeconds : 1.0), metrics_(metrics),
 		haptics_(haptics)
 	{
+		performanceHudContacts_.reserve(64); // 复用 contact 行容器，避免逐帧刷新时重复扩容。
 		const DirectX::XMFLOAT4 penColor = ColorForTool(DrawingTool::Pen);
 		const float penCursorDiameter = std::max(
 			kPenDiameter, kMinimumPenCursorDiameterAt96Dpi * configuration_.dpiScale);
@@ -896,7 +898,7 @@ namespace draw3
 			configuration_.laserParticleConfig, configuration_.dpiScale);
 		window_.SetPerformanceHudEnabled(
 			performanceHudEnabled_.load(std::memory_order_acquire));
-		window_.UpdatePerformanceHudText(L"PERF TEST [ON]\r\nWaiting for drawing...");
+		window_.UpdatePerformanceHudText(L"性能测试 [开]\r\n等待开始绘制……");
 		if (haptics_) haptics_->SetEnabled(configuration_.hapticFeedbackEnabled);
 	}
 
@@ -1543,6 +1545,7 @@ namespace draw3
 				ContactSnapshot modelDown = down;
 				modelDown.pressure = downPressure;
 				runtime->lastSpeedSnapshot = down;
+				runtime->lastInputSnapshot = down;
 				runtime->lastModelSnapshot = modelDown;
 				runtime->lastConsumedSequence = down.sequence;
 				runtime->qpcOrigin = down.qpc;
@@ -1721,6 +1724,7 @@ namespace draw3
 				if (!input_.TryReadSnapshot(runtime.handle, snapshot) ||
 					snapshot.sequence == runtime.lastConsumedSequence) return false;
 				runtime.lastConsumedSequence = snapshot.sequence;
+				runtime.lastInputSnapshot = snapshot;
 				if (snapshot.phase == ContactPhase::Down) return false;
 				ContactSnapshot modelSnapshot = snapshot;
 				if (runtime.suppressPressure) modelSnapshot.pressure = -1.0f;
@@ -1953,7 +1957,7 @@ namespace draw3
 				performanceHudTracker_.Reset();
 				if (GetPerformanceHudEnabled())
 					window_.UpdatePerformanceHudText(
-						L"PERF TEST [ON]\r\nWaiting for drawing...");
+						L"性能测试 [开]\r\n等待开始绘制……");
 			}
 			lastPresentDurationMs_ = 0.0;
 			lastPresentSucceeded_ = false;
@@ -2673,6 +2677,7 @@ namespace draw3
 						runtime->selectedTool = DrawingTool::Pen;
 						runtime->tool = DrawingTool::Pen;
 						runtime->suppressPressure = false;
+						runtime->lastInputSnapshot = {};
 						runtime->invertedCursor = false;
 						runtime->hapticEligible = false;
 						runtime->visibleDirty = {};
@@ -2890,12 +2895,35 @@ namespace draw3
 			if (hasPhysicalContactAfterFrame)
 			{
 				const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
-				if (frameHadActiveContact && GetPerformanceHudEnabled() &&
+				if (frameHadActiveContact && GetPerformanceHudEnabled())
 					performanceHudTracker_.RecordDrawingFrame(
-						frameStartMs, workMs, lastPresentDurationMs_, lastPresentSucceeded_))
+						frameStartMs, workMs, lastPresentDurationMs_, lastPresentSucceeded_);
+				if (GetPerformanceHudEnabled())
 				{
+					performanceHudContacts_.clear();
+					performanceHudContacts_.reserve(active.size());
+					for (const RuntimeStroke* runtime : active)
+					{
+						if (!runtime || runtime->ended || runtime->awaitingReconnect) continue;
+						const ContactSnapshot& snapshot = runtime->lastInputSnapshot;
+						const DirectX::XMFLOAT4 color = ColorForTool(runtime->tool);
+						const float strokeWidth = runtime->stroke.realPoints.empty()
+							? runtime->stroke.inputStartPoint.r * 2.0f
+							: runtime->stroke.realPoints.back().r * 2.0f;
+						performanceHudContacts_.push_back({
+							runtime->handle.record ? runtime->handle.record->ContactId() : 0,
+							runtime->metricDeviceType,
+							static_cast<uint32_t>(runtime->tool),
+							color.x, color.y, color.z, color.w,
+							strokeWidth, snapshot.position.x, snapshot.position.y,
+							snapshot.pressure,
+							runtime->hasFilteredInputSpeed ? runtime->filteredInputSpeed : 0.0f,
+							snapshot.contactSize.width, snapshot.contactSize.height,
+							snapshot.tilt, snapshot.orientation
+							});
+					}
 					window_.UpdatePerformanceHudText(performanceHudTracker_.FormatText(
-						renderer_.QueryVideoMemoryUsageMiB()));
+						renderer_.QueryVideoMemoryUsageMiB(), performanceHudContacts_));
 				}
 				if (metrics_ && frameHadActiveContact)
 					metrics_->RecordActiveFrame(frameStartMs, workMs,
