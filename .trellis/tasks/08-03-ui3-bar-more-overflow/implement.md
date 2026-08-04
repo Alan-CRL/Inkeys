@@ -8,6 +8,7 @@
 6. 更新 `.trellis/spec/native-desktop/configuration-i18n-and-assets.md` 的 UI3 Bar 合同。
 7. 检查配置迁移、旧开关顺序、分隔线条件、混合尺寸布局、上下/左右方向、关闭路径和快速动画切换。
 8. 运行 `git diff --check`，使用 ARM64 host MSBuild 构建 `InkeysRepo.sln /p:Configuration=Debug /p:Platform=ARM64`，超时至少五分钟。
+9. 将主栏 Divider 收敛为零宽布局占用、保留 `oneTwo` 两行布局语义的 `1x35` DIP Shape 细线，并从悬停推进、扫描与点击/按压状态机中排除。
 
 ## Implementation Notes
 
@@ -15,12 +16,14 @@
 - 按钮注册区分实体与无实体布局标识；旧组件活动顺序保持首次注册顺序，关闭移除、重新启用追加。主栏 B 固定最多两个普通按钮，More 入口硬编码且不持久化；快照拆分 `explicitMore` 与 `forcedOverflow`。
 - More 面板复用 UI3 Surface/PointLight/关闭按钮和绘制属性的默认动画时长，几何 Back 与透明度 Sine 分离；标准单元 70 DIP、最多五列；显式组远端、强制组近端，分割线只在两组同时存在时绘制。主栏左右换边不反转逻辑顺序，上下方向只翻转物理行。
 - More 子内容围绕完整面板中心等比缩放，按钮持续使用主栏局部坐标并在收起后停在 More 入口下方；分割线跨过 X 侧栏延伸到左右等距内边距。
+- 主栏 Divider 不再加载/绘制 `barDivider` SVG；Shape 使用 `0.5` 圆角、`0.30` 填充和几何分隔线既有 `0.30` 第三光强度。它居中复用组间 `5` DIP 间隙、在小按钮半列后先封列，且不增加主栏总宽度；运行时注入与资源文件保持不变。
+- Divider 的悬停推进、指针扫描和点击/按压命中均显式跳过；遗留 hover、pressed、pressScale 会被清除，PointLight 的 `frameLightPct` 仍按可见性独立推进。
 - More 交互覆盖外部点击继续分派、面板消费、右上角 X 悬停填充与按压缩放、拖出取消/抬起关闭、按钮动作前关闭及 `closeMoreAfterAction=false` 保持打开；隐藏时直接同步内部 Selected 颜色，打开 More 会关闭绘制提示、颜色选择器、粗细滑块和几何面板。三角 SVG 保持固定朝向，入口改由 Selected 状态和青色高亮表达展开。
 
 ## Verification
 
 - `git diff --check`：已通过；所有原为 CRLF 的修改文件均已恢复 CRLF。
-- ARM64 host MSBuild：`InkeysRepo.sln`，`Debug|ARM64`，最终使用 `/m:1` 已通过（仅仓库既有窄化/模块片段警告）。并行增量构建曾因 `.ifc` 输出文件占用返回 C3474，不是源码诊断。
+- ARM64 host MSBuild：本轮 Divider 调整后使用完整 `InkeysRepo.sln`、`Debug|ARM64`、`/m:1` 构建通过（50 条均为仓库既有 C5202/C4244/C4267/C4018 警告，0 error）。
 - 未运行自动化 UI 测试；仍需在真实 UI 中手工检查折叠、上下展开、显示器边界钳制、快速连续切换和按钮动作。
 
 ## Risk Gates

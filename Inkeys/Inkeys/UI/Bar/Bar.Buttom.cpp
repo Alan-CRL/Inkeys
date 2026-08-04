@@ -155,6 +155,7 @@ void BarButtomSetClass::PresetInitialization()
 	// 分隔线
 	{
 		BarButtomClass* obj = new BarButtomClass;
+		const COLORREF dividerColor = GetThemeColor(BarThemeColorEnum::SurfaceFrame);
 		{
 			obj->size = BarButtomSizeEnum::oneTwo;
 			obj->preset = BarButtomPresetEnum::Divider;
@@ -168,13 +169,21 @@ void BarButtomSetClass::PresetInitialization()
 			obj->name.enable.Initialization(false);
 		}
 		{
-			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
+			// Divider 直接使用 Shape 细线，SVG 资源继续保留但不参与视觉。
+			obj->buttom.Initialization(0.0, 0.0, 1.0, 35.0, 0.5, 0.5,
+				1.0, dividerColor, dividerColor);
+			obj->buttom.pct.Initialization(0.30);
+			obj->buttom.framePct = BarUiPctClass(0.0);
+			obj->buttom.frameLightPct = BarUiPctClass(0.0);
+			obj->buttom.frameRendering = BarUiFrameRenderingEnum::PointLight;
+			obj->buttom.frameLightColor = BarUiFrameLightColorEnum::Frame;
+			obj->buttom.framePrimaryLightEnabled = false;
 			obj->buttom.enable.Initialization(true);
 		}
 		{
 			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
-			obj->icon.InitializationFromResource(L"UI", L"barDivider");
-			obj->icon.enable.Initialization(true);
+			obj->icon.pct.Initialization(0.0);
+			obj->icon.enable.Initialization(false);
 		}
 
 		obj->state = &barButtomState[(int)obj->preset.load()];

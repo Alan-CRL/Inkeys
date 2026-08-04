@@ -3720,8 +3720,10 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 							}
 							else if (temp->size == BarButtomSizeEnum::oneTwo)
 							{
-								if (yO > barBtnGap) xO = width;
-								if (temp->IsVisible()) xO += 15.0, yO = barBtnGap, width += 15.0;
+								if (!temp->IsVisible()) continue;
+								// Divider 只结束未填满的列，不占用已有 5 DIP 间隙之外的宽度。
+								xO = width;
+								yO = barBtnGap;
 							}
 						}
 						return width;
@@ -3839,7 +3841,15 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 									else temp->icon.color2.value().SetTar(iconColor);
 								}
 							}
-							if (temp->preset.load() != BarButtomPresetEnum::Divider)
+							if (temp->preset.load() == BarButtomPresetEnum::Divider)
+							{
+								temp->buttom.frameRendering = BarUiFrameRenderingEnum::PointLight;
+								temp->buttom.frameLightColor = BarUiFrameLightColorEnum::Frame;
+								temp->buttom.framePrimaryLightEnabled = false;
+								temp->buttom.frameCursorLightIntensityScale =
+									BarGeometryAttributeDividerCursorLightIntensity;
+							}
+							else
 							{
 								COLORREF buttonLightColor = temp->state->state == BarWidgetState::Selected
 									? GetThemeColor(BarThemeColorEnum::Accent)
@@ -4171,7 +4181,12 @@ xO += barBtnTwoStep, yO = barBtnGap;
 								// 特殊体质 - 分隔栏
 								if (temp->size == BarButtomSizeEnum::oneTwo)
 								{
-									if (yO > barBtnGap) xO = totalWidth;
+									if (temp->IsVisible())
+									{
+										// 小按钮留下半列时先封列；下一组从边界后的新列开始。
+										xO = totalWidth;
+										yO = barBtnGap;
+									}
 
 								if (temp->buttom.enable.tar)
 								{
@@ -4184,35 +4199,35 @@ xO += barBtnTwoStep, yO = barBtnGap;
 										}
 
 										temp->buttom.pct.SetTar(0.0, operationDur);
+										if (temp->buttom.frameLightPct.has_value())
+											temp->buttom.frameLightPct.value().SetTar(0.0, operationDur);
 									}
 									else
 									{
-SetButtonPositionTar(temp->buttom.x, xO + 5.0, 40.0, true);
+										// 细线居中落在上一组末尾已有的 5 DIP 间隙内。
+SetButtonPositionTar(temp->buttom.x, xO - barBtnGap / 2.0, 40.0, true);
 									SetButtonPositionTar(temp->buttom.y, yO + barBtnTwoHalf, 40.0);
-
-											if (temp->state->emph == BarWidgetEmphasize::Pressed) temp->buttom.pct.SetTar(0.2, operationDur);
-										else if (temp->hoverStage == BarButtomHoverStageEnum::None)
-											temp->buttom.pct.SetTar(0.0, operationDur);
+										temp->buttom.pct.SetTar(0.30, operationDur);
+										if (temp->buttom.frameLightPct.has_value())
+										{
+											if (forNum == 1)
+												temp->buttom.frameLightPct.value().SetDirect(1.0);
+											else temp->buttom.frameLightPct.value().SetTar(1.0, operationDur);
 										}
-									temp->buttom.w.SetTar(10.0, operationDur);
-									temp->buttom.h.SetTar(barBtnTwo, operationDur);
+									}
+									temp->buttom.w.SetTar(1.0, operationDur);
+									// 布局仍按 oneTwo 封满两行，仅将实际线条缩短为按钮高度的一半。
+									temp->buttom.h.SetTar(barBtnTwo / 2.0, operationDur);
+									if (temp->buttom.rw.has_value()) temp->buttom.rw.value().SetTar(0.5, operationDur);
+									if (temp->buttom.rh.has_value()) temp->buttom.rh.value().SetTar(0.5, operationDur);
+									if (temp->buttom.ft.has_value()) temp->buttom.ft.value().SetTar(1.0, operationDur);
+									if (temp->buttom.framePct.has_value()) temp->buttom.framePct.value().SetTar(0.0, operationDur);
 
-								// 分割线没有选中状态，隐藏时也预存灰色，避免悬停显现前段混入青色。
-								temp->buttom.fill.value().SetTar(GetThemeColor(BarThemeColorEnum::PressedFill));
+									const COLORREF dividerColor = GetThemeColor(BarThemeColorEnum::SurfaceFrame);
+									temp->buttom.fill.value().SetTar(dividerColor);
+									if (temp->buttom.frame.has_value()) temp->buttom.frame.value().SetTar(dividerColor);
 								}
-								if (temp->icon.enable.tar)
-								{
-									temp->icon.SetWH(nullopt, 60.0);
-									if (barState.fold || !temp->IsVisible())
-									{
-										temp->icon.pct.SetTar(0.0, operationDur);
-									}
-									else
-									{
-										temp->icon.pct.SetTar(0.18, operationDur);
-										temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
-									}
-								}
+								temp->icon.pct.SetDirect(0.0);
 
 								// 记录目标绘制位置
 								temp->lastDrawX = temp->buttom.x.tar;
@@ -4221,18 +4236,25 @@ SetButtonPositionTar(temp->buttom.x, xO + 5.0, 40.0, true);
 								if (!temp->IsVisible())
 								{
 									temp->buttom.pct.SetTar(0.0, operationDur);
+									if (temp->buttom.frameLightPct.has_value())
+										temp->buttom.frameLightPct.value().SetTar(0.0, operationDur);
 									temp->icon.pct.SetTar(0.0, operationDur);
 									temp->name.pct.SetTar(0.0, operationDur);
-								}
-								else
-								{
-									xO += 15, yO = barBtnGap;
-									totalWidth += 15;
 								}
 							}
 
 							// 按压倍率独立于布局批次，松手或拖出时从当前值回弹到标准大小。
-							if (temp->state->emph == BarWidgetEmphasize::Pressed)
+							if (temp->preset == BarButtomPresetEnum::Divider)
+							{
+								// Divider 不参与按钮状态机，但保留独立 frameLightPct 的第三光。
+								temp->hoverStage = BarButtomHoverStageEnum::None;
+								temp->state->emph = BarWidgetEmphasize::None;
+								temp->pressScale.SetDirect(1.0);
+								temp->buttom.pct.animateWhenDisabled = false;
+								if (temp->buttom.fill.has_value())
+									temp->buttom.fill.value().animateWhenDisabled = false;
+							}
+							else if (temp->state->emph == BarWidgetEmphasize::Pressed)
 								temp->pressScale.SetTar(BarButtonPressScale, BarUiDefaultOperationDur,
 									nullopt, false, buttonPressCurve);
 							else temp->pressScale.SetTar(1.0, BarUiDefaultOperationDur,
@@ -7001,16 +7023,29 @@ bool thicknessPresetMode =
 			if (temp == nullptr) return;
 			BarUiColorClass* hoverFill = temp->buttom.fill.has_value()
 				? &temp->buttom.fill.value() : nullptr;
-			UpdateHoverAnimation(temp->buttom.pct, hoverFill, temp->hoverStage,
-				!barState.fold && temp->IsVisible()
-					&& (!moreItem || barState.moreExpanded),
-				temp->state->state != BarWidgetState::Selected);
-			if (moreItem)
+			bool isDivider = temp->preset == BarButtomPresetEnum::Divider;
+			if (isDivider)
 			{
-				bool pressed = temp->state->emph == BarWidgetEmphasize::Pressed;
-				temp->pressScale.SetTar(pressed ? BarButtonPressScale : 1.0,
-					BarUiDefaultOperationDur, nullopt, false,
-					pressed ? buttonPressCurve : buttonReleaseCurve);
+				// 分隔线只推进几何/光影属性，清除旧按钮状态且不改写第三光透明度。
+				temp->hoverStage = BarButtomHoverStageEnum::None;
+				temp->state->emph = BarWidgetEmphasize::None;
+				temp->pressScale.SetDirect(1.0);
+				temp->buttom.pct.animateWhenDisabled = false;
+				if (hoverFill) hoverFill->animateWhenDisabled = false;
+			}
+			else
+			{
+				UpdateHoverAnimation(temp->buttom.pct, hoverFill, temp->hoverStage,
+					!barState.fold && temp->IsVisible()
+						&& (!moreItem || barState.moreExpanded),
+					temp->state->state != BarWidgetState::Selected);
+				if (moreItem)
+				{
+					bool pressed = temp->state->emph == BarWidgetEmphasize::Pressed;
+					temp->pressScale.SetTar(pressed ? BarButtonPressScale : 1.0,
+						BarUiDefaultOperationDur, nullopt, false,
+						pressed ? buttonPressCurve : buttonReleaseCurve);
+				}
 			}
 			if (!temp->pressScale.IsSame()) ChangeValue(temp->pressScale, false);
 
@@ -9028,6 +9063,12 @@ else
 							}
 
 							spec.Shape(barDeviceContext.Get(), temp->buttom, buttonInherit);
+							if (temp->preset == BarButtomPresetEnum::Divider)
+							{
+								// Divider 是纯 Shape 视觉，不绘制占位 SVG 或文字层。
+								if (transformChanged) barDeviceContext->SetTransform(originalTransform);
+								continue;
+							}
 							BarUiInheritClass iconInherit = temp->icon.Inherit(Center, temp->buttom);
 							if (temp->iconKind == BarButtomIconKindEnum::Png)
 							{
@@ -10217,12 +10258,25 @@ void BarUISetClass::Interact()
 		};
 	auto StartMainBarButtonHover = [&](BarButtomClass* button)
 		{
-			if (button && button->buttom.fill.has_value())
+			if (button && button->preset != BarButtomPresetEnum::Divider
+				&& button->buttom.fill.has_value())
 				StartHover(&button->buttom.pct, &button->buttom.fill.value(), &button->hoverStage);
 		};
 	auto StopMainBarButtonHover = [&](BarButtomClass* button, bool immediate, bool preserveVisual = false)
 		{
-			if (button) StopHover(&button->buttom.pct,
+			if (!button) return;
+			if (button->preset == BarButtomPresetEnum::Divider)
+			{
+				// 不通过 StopHover 清零 Shape 透明度，否则会连分隔线本体一起隐藏。
+				button->hoverStage = BarButtomHoverStageEnum::None;
+				button->state->emph = BarWidgetEmphasize::None;
+				button->pressScale.SetDirect(1.0);
+				button->buttom.pct.animateWhenDisabled = false;
+				if (button->buttom.fill.has_value())
+					button->buttom.fill.value().animateWhenDisabled = false;
+				return;
+			}
+			StopHover(&button->buttom.pct,
 				button->buttom.fill.has_value() ? &button->buttom.fill.value() : nullptr,
 				&button->hoverStage, immediate, preserveVisual);
 		};
@@ -10778,7 +10832,9 @@ auto ColorPickerAvailable = [&]()
 					for (int id = 0; id < barButtomSet.tot; id++)
 					{
 						BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
-						if (!temp || !temp->IsVisible() || temp->state->state == BarWidgetState::Selected) continue;
+						if (!temp || !temp->IsVisible()
+							|| temp->preset == BarButtomPresetEnum::Divider
+							|| temp->state->state == BarWidgetState::Selected) continue;
 						bool isColorSelector = temp->name.enable.tar
 							&& temp->name.content.GetTar().substr(0, 7) == L"__color";
 						if (isColorSelector) continue; // 颜色块自身就是内容，不把其填充色改成悬停灰色。
@@ -11378,7 +11434,8 @@ auto ColorPickerAvailable = [&]()
 				for (int id = 0; id < barButtomSet.tot; id++)
 				{
 					BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
-					if (temp == nullptr || !temp->IsVisible()) continue;
+					if (temp == nullptr || !temp->IsVisible()
+						|| temp->preset == BarButtomPresetEnum::Divider) continue;
 
 					// 双击第二击仍归属于第一击按钮，避免动画中按钮位移导致命中丢失。
 					bool doubleClickContinuation = msg.message == WM_LBUTTONDBLCLK
