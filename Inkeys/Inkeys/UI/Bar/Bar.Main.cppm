@@ -454,6 +454,7 @@ public:
 	IdtAtomic<BarButtomHoverStageEnum> drawAttributeOverflowCloseHoverStage = BarButtomHoverStageEnum::None;
 	IdtAtomic<BarButtomHoverStageEnum> drawAttributeColorPickerToneHoverStage = BarButtomHoverStageEnum::None;
 	IdtAtomic<BarButtomHoverStageEnum> drawAttributeColorPickerCloseHoverStage = BarButtomHoverStageEnum::None;
+	IdtAtomic<BarButtomHoverStageEnum> moreCloseHoverStage = BarButtomHoverStageEnum::None;
 	IdtAtomic<BarButtomHoverStageEnum> geometryStraightLineHoverStage = BarButtomHoverStageEnum::None;
 	IdtAtomic<BarButtomHoverStageEnum> geometryRectangleHoverStage = BarButtomHoverStageEnum::None;
 	IdtAtomic<BarButtomHoverStageEnum> geometryThicknessFineHoverStage = BarButtomHoverStageEnum::None;
