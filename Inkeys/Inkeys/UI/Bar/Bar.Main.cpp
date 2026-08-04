@@ -6283,16 +6283,33 @@ for (size_t i = 0; i < 3; ++i)
 			panel->UpInh(BarUiInheritClass(
 				panelCenterX - displayWidth / 2.0,
 				panelCenterY - displayHeight / 2.0));
+			// 子内容围绕完整面板中心统一缩放，避免紧凑态被非等比的根面板宽高拉偏。
+			auto ScalePanelContentX = [&](double logicalX)
+				{
+					return panelCenterX + (logicalX - panelWidth / 2.0) * scale;
+				};
+			auto ScalePanelContentY = [&](double logicalY)
+				{
+					return panelCenterY + (logicalY - panelHeight / 2.0) * scale;
+				};
+			double panelCenterInMainBarX = moreButton
+				? moreButton->buttom.x.val + panelCenterX - anchorX
+				: panelCenterX
+					- shapeMap[BarUISetShapeEnum::MainBar]->inhX;
+			double panelCenterInMainBarY = moreButton
+				? moreButton->buttom.y.val + panelCenterY - anchorY
+				: panelCenterY
+					- shapeMap[BarUISetShapeEnum::MainBar]->inhY;
 
 			close->w.SetDirect(30.0 * scale);
 			close->h.SetDirect(30.0 * scale);
 			close->rw->SetDirect(4.0 * scale);
 			close->rh->SetDirect(4.0 * scale);
 			// X 位于按钮区域右侧窄栏的右上角，关闭时不增加面板高度。
-			close->x.SetDirect(panel->inhX + displayWidth
-				- BarMorePanelCloseSideWidth * scale / 2.0);
-			close->y.SetDirect(panel->inhY
-				+ (BarMorePanelPadding + 15.0) * scale);
+			close->x.SetDirect(ScalePanelContentX(
+				panelWidth - BarMorePanelCloseSideWidth / 2.0));
+			close->y.SetDirect(ScalePanelContentY(
+				BarMorePanelPadding + 15.0));
 			if (!open) close->pct.SetTar(0.0, BarUiDefaultOperationDur);
 			else if (barState.moreClosePress) close->pct.SetTar(0.10);
 			else if (moreCloseHoverStage == BarButtomHoverStageEnum::None)
@@ -6321,12 +6338,13 @@ for (size_t i = 0; i < 3; ++i)
 				+ (BarMorePanelGap + BarMorePanelSeparatorGap) / 2.0;
 			double dividerPhysicalY = side
 				? gridHeight - dividerLogicalY : dividerLogicalY;
-			divider->w.SetDirect(contentWidth * scale);
+			// 分割线忽略 X 侧栏，直接延伸到面板两侧的等距内边距。
+			divider->w.SetDirect(
+				(panelWidth - BarMorePanelPadding * 2.0) * scale);
 			divider->h.SetDirect(scale);
-			divider->x.SetDirect(panel->inhX
-				+ (BarMorePanelPadding + contentWidth / 2.0) * scale);
-			divider->y.SetDirect(panel->inhY
-				+ (BarMorePanelPadding + dividerPhysicalY) * scale);
+			divider->x.SetDirect(ScalePanelContentX(panelWidth / 2.0));
+			divider->y.SetDirect(ScalePanelContentY(
+				BarMorePanelPadding + dividerPhysicalY));
 			divider->pct.SetDirect(showDivider ? 0.30 * opacityProgress : 0.0);
 			divider->UpInh(BarUiInheritClass(
 				divider->x.val - divider->w.val / 2.0,
@@ -6348,8 +6366,11 @@ for (size_t i = 0; i < 3; ++i)
 					? gridHeight - logicalY - height : logicalY;
 				double localCenterY = BarMorePanelPadding
 					+ physicalY + height / 2.0;
-				button->buttom.x.SetDirect(logicalX * scale);
-				button->buttom.y.SetDirect(localCenterY * scale);
+				// 始终保存主栏局部坐标：收起后按钮缩在 More 入口下方，补位时不会从远端飘入。
+				button->buttom.x.SetDirect(panelCenterInMainBarX
+					+ (logicalX - panelWidth / 2.0) * scale);
+				button->buttom.y.SetDirect(panelCenterInMainBarY
+					+ (localCenterY - panelHeight / 2.0) * scale);
 				button->buttom.w.SetDirect(width * scale);
 				button->buttom.h.SetDirect(height * scale);
 				if (button->buttom.rw) button->buttom.rw->SetDirect(4.0 * scale);
@@ -9030,7 +9051,7 @@ else
 						}
 					};
 
-					// 更多浮层独立于主栏左右换边，按钮只按上下展开方向翻转物理行。
+					// 更多按钮保留主栏局部坐标，浮层自身仍只按上下展开方向翻转物理行。
 					auto morePanel = shapeMap[BarUISetShapeEnum::MorePanel];
 					if (morePanel && morePanel->pct.val > 0.000001)
 					{
@@ -9048,7 +9069,8 @@ else
 							{
 								if (!button || button->icon.pct.val <= 0.000001) return;
 								BarUiInheritClass buttonInherit = button->buttom.Inherit(
-									CenterFromTopLeft, *morePanel);
+									CenterFromTopLeft,
+									*shapeMap[BarUISetShapeEnum::MainBar]);
 								double pressScale = button->pressScale.val;
 								if (!isfinite(pressScale) || pressScale <= 0.0)
 									pressScale = 1.0;

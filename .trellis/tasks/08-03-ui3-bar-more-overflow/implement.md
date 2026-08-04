@@ -14,6 +14,7 @@
 - 配置新增 `Inkeys.Bar.MoreBoundary`；默认 `ExtensionButtons` 为 `MoreBoundary + Setting`，A2 默认/required 仅 `Pierce + Freeze`。UI3 运行时仍忽略持久化 `ExtensionButtons`，只投影旧组件开关。
 - 按钮注册区分实体与无实体布局标识；旧组件活动顺序保持首次注册顺序，关闭移除、重新启用追加。主栏 B 固定最多两个普通按钮，More 入口硬编码且不持久化；快照拆分 `explicitMore` 与 `forcedOverflow`。
 - More 面板复用 UI3 Surface/PointLight/关闭按钮和绘制属性的默认动画时长，几何 Back 与透明度 Sine 分离；标准单元 70 DIP、最多五列；显式组远端、强制组近端，分割线只在两组同时存在时绘制。主栏左右换边不反转逻辑顺序，上下方向只翻转物理行。
+- More 子内容围绕完整面板中心等比缩放，按钮持续使用主栏局部坐标并在收起后停在 More 入口下方；分割线跨过 X 侧栏延伸到左右等距内边距。
 - More 交互覆盖外部点击继续分派、面板消费、右上角 X 悬停填充与按压缩放、拖出取消/抬起关闭、按钮动作前关闭及 `closeMoreAfterAction=false` 保持打开；隐藏时直接同步内部 Selected 颜色，打开 More 会关闭绘制提示、颜色选择器、粗细滑块和几何面板。三角 SVG 保持固定朝向，入口改由 Selected 状态和青色高亮表达展开。
 
 ## Verification
