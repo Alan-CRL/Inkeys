@@ -35,6 +35,30 @@ namespace draw3
 		constexpr float kHalfPi = kPi * 0.5f;
 		constexpr float kTwoPi = kPi * 2.0f;
 		constexpr float kTiltLimit = kHalfPi - 0.0001f;
+		const std::array<GUID, 9> kExtendedPacketProperties = {
+			GUID_PACKETPROPERTY_GUID_X,
+			GUID_PACKETPROPERTY_GUID_Y,
+			GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE,
+			GUID_PACKETPROPERTY_GUID_X_TILT_ORIENTATION,
+			GUID_PACKETPROPERTY_GUID_Y_TILT_ORIENTATION,
+			GUID_PACKETPROPERTY_GUID_AZIMUTH_ORIENTATION,
+			GUID_PACKETPROPERTY_GUID_ALTITUDE_ORIENTATION,
+			GUID_PACKETPROPERTY_GUID_WIDTH,
+			GUID_PACKETPROPERTY_GUID_HEIGHT
+		};
+		const std::array<GUID, 7> kStylusPacketProperties = {
+			GUID_PACKETPROPERTY_GUID_X,
+			GUID_PACKETPROPERTY_GUID_Y,
+			GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE,
+			GUID_PACKETPROPERTY_GUID_X_TILT_ORIENTATION,
+			GUID_PACKETPROPERTY_GUID_Y_TILT_ORIENTATION,
+			GUID_PACKETPROPERTY_GUID_AZIMUTH_ORIENTATION,
+			GUID_PACKETPROPERTY_GUID_ALTITUDE_ORIENTATION
+		};
+		const std::array<GUID, 2> kRequiredPacketProperties = {
+			GUID_PACKETPROPERTY_GUID_X,
+			GUID_PACKETPROPERTY_GUID_Y
+		};
 		constexpr RealTimeStylusDataInterest kRtsDataInterest =
 			static_cast<RealTimeStylusDataInterest>(
 				RTSDI_RealTimeStylusEnabled | RTSDI_RealTimeStylusDisabled |
@@ -100,6 +124,23 @@ namespace draw3
 			const float yProjection = std::tan(std::clamp(yTilt, -kTiltLimit, kTiltLimit));
 			result.tilt = std::clamp(std::atan(std::hypot(xProjection, yProjection)), 0.0f, kHalfPi);
 			result.orientation = WrapOrientation(std::atan2(-yProjection, xProjection));
+			return result;
+		}
+
+		SizeF DecodeContactSize(InputDeviceType deviceType, LONG rawWidth, LONG rawHeight,
+			float packetScaleX, float packetScaleY) noexcept
+		{
+			SizeF result;
+			if (deviceType != InputDeviceType::Touch || rawWidth <= 0 || rawHeight <= 0 ||
+				!std::isfinite(packetScaleX) || !std::isfinite(packetScaleY) ||
+				packetScaleX <= 0.0f || packetScaleY <= 0.0f)
+				return result;
+			const float width = static_cast<float>(rawWidth) * packetScaleX;
+			const float height = static_cast<float>(rawHeight) * packetScaleY;
+			if (!std::isfinite(width) || !std::isfinite(height) || width <= 0.0f || height <= 0.0f)
+				return result;
+			result.width = width;
+			result.height = height;
 			return result;
 		}
 
@@ -354,6 +395,8 @@ namespace draw3
 			PacketPropertyMetadata yTilt;
 			PacketPropertyMetadata azimuth;
 			PacketPropertyMetadata altitude;
+			PacketPropertyMetadata width;
+			PacketPropertyMetadata height;
 			float packetScaleX = 1.0f;
 			float packetScaleY = 1.0f;
 			InputDeviceType deviceType = InputDeviceType::Pen;
@@ -751,6 +794,8 @@ namespace draw3
 				PacketPropertyMetadata yTilt;
 				PacketPropertyMetadata azimuth;
 				PacketPropertyMetadata altitude;
+				PacketPropertyMetadata width;
+				PacketPropertyMetadata height;
 				const auto captureProperty = [&](PacketPropertyMetadata& targetMetadata, ULONG index)
 					{
 						targetMetadata.metrics = properties[index].PropertyMetrics;
@@ -779,6 +824,10 @@ namespace draw3
 						captureProperty(azimuth, index);
 					else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_ALTITUDE_ORIENTATION))
 						captureProperty(altitude, index);
+					else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_WIDTH))
+						captureProperty(width, index);
+					else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_HEIGHT))
+						captureProperty(height, index);
 				}
 				CoTaskMemFree(properties);
 				if (!hasX || !hasY || inkToDeviceScaleX <= 0.0f || inkToDeviceScaleY <= 0.0f)
@@ -818,6 +867,8 @@ namespace draw3
 				target->yTilt = yTilt;
 				target->azimuth = azimuth;
 				target->altitude = altitude;
+				target->width = width;
+				target->height = height;
 				target->packetScaleX = inkToDeviceScaleX;
 				target->packetScaleY = inkToDeviceScaleY;
 				target->deviceType = deviceType;
@@ -828,7 +879,8 @@ namespace draw3
 					<< inkToDeviceScaleX << "," << inkToDeviceScaleY << ") pressure="
 					<< (pressure.present ? "yes" : "no") << " azAlt="
 					<< (azimuth.present && altitude.present ? "yes" : "no") << " xyTilt="
-					<< (xTilt.present && yTilt.present ? "yes" : "no") << std::endl;
+					<< (xTilt.present && yTilt.present ? "yes" : "no") << " contactSize="
+					<< (width.present && height.present ? "yes" : "no") << std::endl;
 				return target;
 			}
 
@@ -869,7 +921,15 @@ namespace draw3
 					snapshot.tilt = angles.tilt;
 					snapshot.orientation = angles.orientation;
 				}
-				snapshot.contactSize = { -1.0f, -1.0f };
+				snapshot.contactSize = {};
+				if (metadata->width.present && metadata->height.present &&
+					metadata->width.index < propertyCount && metadata->height.index < propertyCount)
+				{
+					// 接触面积与坐标使用同一 tablet-to-device 轴缩放，最终统一为像素。
+					snapshot.contactSize = DecodeContactSize(metadata->deviceType,
+						packet[metadata->width.index], packet[metadata->height.index],
+						metadata->packetScaleX, metadata->packetScaleY);
+				}
 				snapshot.qpc = QueryQpc();
 				snapshot.phase = phase;
 				return std::isfinite(snapshot.position.x) && std::isfinite(snapshot.position.y);
@@ -922,6 +982,24 @@ namespace draw3
 		const DecodedStylusAngles decoded = DecodeStylusAngles(
 			hasAzimuthAltitude, azimuth, altitude, xTilt, yTilt);
 		return { decoded.tilt, decoded.orientation };
+	}
+
+	SizeF DecodeRtsContactSizeForTesting(InputDeviceType deviceType,
+		int32_t rawWidth, int32_t rawHeight, float packetScaleX, float packetScaleY) noexcept
+	{
+		return DecodeContactSize(deviceType, rawWidth, rawHeight, packetScaleX, packetScaleY);
+	}
+
+	bool RtsContactSizePropertiesRequestedForTesting() noexcept
+	{
+		bool hasWidth = false;
+		bool hasHeight = false;
+		for (const GUID& property : kExtendedPacketProperties)
+		{
+			hasWidth = hasWidth || IsEqualGUID(property, GUID_PACKETPROPERTY_GUID_WIDTH);
+			hasHeight = hasHeight || IsEqualGUID(property, GUID_PACKETPROPERTY_GUID_HEIGHT);
+		}
+		return hasWidth && hasHeight;
 	}
 
 	bool RtsPenCursorDataInterestEnabledForTesting() noexcept
@@ -994,27 +1072,21 @@ namespace draw3
 		if (FAILED(result)) LogHResult("Bind RealTimeStylus HWND", result);
 		if (SUCCEEDED(result)) result = impl_->stylus->SetAllTabletsMode(TRUE); // 同时接收鼠标、笔和触摸。
 		if (FAILED(result)) LogHResult("Set RealTimeStylus all-tablets mode", result);
-		const GUID desiredProperties[] = {
-			GUID_PACKETPROPERTY_GUID_X,
-			GUID_PACKETPROPERTY_GUID_Y,
-			GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE,
-			GUID_PACKETPROPERTY_GUID_X_TILT_ORIENTATION,
-			GUID_PACKETPROPERTY_GUID_Y_TILT_ORIENTATION,
-			GUID_PACKETPROPERTY_GUID_AZIMUTH_ORIENTATION,
-			GUID_PACKETPROPERTY_GUID_ALTITUDE_ORIENTATION
-		};
 		if (SUCCEEDED(result))
 		{
 			result = impl_->stylus->SetDesiredPacketDescription(
-				static_cast<ULONG>(std::size(desiredProperties)), desiredProperties);
+				static_cast<ULONG>(kExtendedPacketProperties.size()), kExtendedPacketProperties.data());
 			if (FAILED(result))
 			{
 				LogHResult("Set extended RealTimeStylus packet description", result);
-				const GUID requiredProperties[] = {
-					GUID_PACKETPROPERTY_GUID_X, GUID_PACKETPROPERTY_GUID_Y
-				};
 				result = impl_->stylus->SetDesiredPacketDescription(
-					static_cast<ULONG>(std::size(requiredProperties)), requiredProperties);
+					static_cast<ULONG>(kStylusPacketProperties.size()), kStylusPacketProperties.data());
+			}
+			if (FAILED(result))
+			{
+				LogHResult("Set stylus RealTimeStylus packet description", result);
+				result = impl_->stylus->SetDesiredPacketDescription(
+					static_cast<ULONG>(kRequiredPacketProperties.size()), kRequiredPacketProperties.data());
 			}
 		}
 		if (FAILED(result)) LogHResult("Set RealTimeStylus packet description", result);

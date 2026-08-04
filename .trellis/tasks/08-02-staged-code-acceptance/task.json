@@ -5,7 +5,7 @@
   "description": "",
   "status": "in_progress",
   "dev_type": null,
-  "scope": "stage1: optimize Pen, Highlighter, Eraser, Laser performance with exact behavior; stage2/3 deferred",
+  "scope": "stages 1/2/2.5 complete; stage 3 recent-commit security review next",
   "package": null,
   "priority": "P1",
   "creator": "AlanCRL",

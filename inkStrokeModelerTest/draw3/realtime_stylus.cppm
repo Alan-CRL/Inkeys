@@ -53,6 +53,9 @@ export namespace draw3
 		float resolution) noexcept;
 	RtsStylusAnglesForTesting DecodeRtsStylusAnglesForTesting(bool hasAzimuthAltitude,
 		float azimuth, float altitude, float xTilt, float yTilt) noexcept;
+	SizeF DecodeRtsContactSizeForTesting(InputDeviceType deviceType,
+		int32_t rawWidth, int32_t rawHeight, float packetScaleX, float packetScaleY) noexcept;
+	bool RtsContactSizePropertiesRequestedForTesting() noexcept;
 	bool RtsPenCursorDataInterestEnabledForTesting() noexcept;
 #endif
 }

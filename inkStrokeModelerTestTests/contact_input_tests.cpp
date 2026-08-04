@@ -68,6 +68,8 @@ namespace
 	{
 		TEST_CHECK(state, snapshot.tilt == snapshot.pressure + 0.25f);
 		TEST_CHECK(state, snapshot.orientation == snapshot.pressure + 0.5f);
+		TEST_CHECK(state, snapshot.contactSize.width == 8.0f);
+		TEST_CHECK(state, snapshot.contactSize.height == 8.0f);
 		TEST_CHECK(state, snapshot.isInvertedCursor ==
 			((static_cast<uint32_t>(snapshot.pressure) & 1u) != 0));
 	}
@@ -305,6 +307,7 @@ namespace
 	void TestRtsStylusConversions(TestState& state)
 	{
 		TEST_CHECK(state, draw3::RtsPenCursorDataInterestEnabledForTesting());
+		TEST_CHECK(state, draw3::RtsContactSizePropertiesRequestedForTesting());
 		const float pressure4095 = draw3::NormalizeRtsPressureForTesting(2048, 0, 4095);
 		const float pressure8191 = draw3::NormalizeRtsPressureForTesting(4096, 0, 8191);
 		TEST_CHECK(state, NearlyEqual(pressure4095, pressure8191));
@@ -340,6 +343,20 @@ namespace
 			false, 0.0f, 0.0f, NAN, NAN);
 		TEST_CHECK(state, unknown.tilt < 0.0f);
 		TEST_CHECK(state, unknown.orientation < 0.0f);
+
+		const draw3::SizeF touchSize = draw3::DecodeRtsContactSizeForTesting(
+			draw3::InputDeviceType::Touch, 120, 80, 0.25f, 0.5f);
+		TEST_CHECK(state, NearlyEqual(touchSize.width, 30.0f));
+		TEST_CHECK(state, NearlyEqual(touchSize.height, 40.0f));
+		const draw3::SizeF penSize = draw3::DecodeRtsContactSizeForTesting(
+			draw3::InputDeviceType::Pen, 120, 80, 0.25f, 0.5f);
+		TEST_CHECK(state, penSize.width < 0.0f && penSize.height < 0.0f);
+		const draw3::SizeF invalidRawSize = draw3::DecodeRtsContactSizeForTesting(
+			draw3::InputDeviceType::Touch, 0, 80, 0.25f, 0.5f);
+		TEST_CHECK(state, invalidRawSize.width < 0.0f && invalidRawSize.height < 0.0f);
+		const draw3::SizeF invalidScaleSize = draw3::DecodeRtsContactSizeForTesting(
+			draw3::InputDeviceType::Touch, 120, 80, 0.0f, 0.5f);
+		TEST_CHECK(state, invalidScaleSize.width < 0.0f && invalidScaleSize.height < 0.0f);
 	}
 
 	void TestInputWidthModesAndHardwarePressure(TestState& state)
