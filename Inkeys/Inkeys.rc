@@ -329,6 +329,8 @@ BARQUESTION             UI                      "src\\UI\\barQuestion.svg"
 
 BARCLOSESMALL           UI                      "src\\UI\\barCloseSmall.svg"
 
+BARMORE                 UI                      "src\\UI\\barMore.svg"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //

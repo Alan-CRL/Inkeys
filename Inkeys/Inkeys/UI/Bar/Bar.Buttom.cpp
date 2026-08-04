@@ -48,7 +48,8 @@ bool BarButtomSetClass::RegisterButton(
 	const std::string& legacyField,
 	function<bool()> legacyEnabled,
 	const wstring& categoryName,
-	const wstring& settingsName)
+	const wstring& settingsName,
+	bool closeMoreAfterAction)
 {
 	if (id.empty() || button == nullptr) return false;
 
@@ -57,7 +58,9 @@ bool BarButtomSetClass::RegisterButton(
 	{
 		if (!Inkeys::IsOfficialBarButtonIdPrefix(id)) return false;
 	}
-	else if (!Inkeys::IsExtensionBarButtonId(id))
+	else if (!Inkeys::IsExtensionBarButtonId(id)
+		&& !(zone == BarButtonLayoutZoneEnum::Extension
+			&& id == Inkeys::BarButtonId::Setting))
 	{
 		return false;
 	}
@@ -68,12 +71,14 @@ bool BarButtomSetClass::RegisterButton(
 	button->id = id;
 	button->only = !allowMultiple;
 	button->userVisible = defaultUserVisible;
+	button->closeMoreAfterAction = closeMoreAfterAction;
 	shared_ptr<BarButtomClass> ownedButton(button);
 	registrations.emplace(
 		id,
 		BarButtonRegistrationClass{
 			id,
 			move(ownedButton),
+			BarButtonRegistrationKindEnum::EntityButton,
 			allowMultiple,
 			zone,
 			button->size.load(),
@@ -81,8 +86,32 @@ bool BarButtomSetClass::RegisterButton(
 			legacyField,
 			move(legacyEnabled),
 			categoryName,
-			settingsName
+			settingsName,
+			closeMoreAfterAction
 		});
+	registrationOrder.push_back(id);
+	return true;
+}
+
+bool BarButtomSetClass::RegisterLayoutMarker(const std::string& id)
+{
+	if (id != Inkeys::BarButtonId::MoreBoundary) return false;
+	unique_lock lock(registrationMutex);
+	if (registrations.contains(id)) return false;
+	registrations.emplace(id, BarButtonRegistrationClass{
+		id,
+		nullptr,
+		BarButtonRegistrationKindEnum::LayoutMarker,
+		false,
+		BarButtonLayoutZoneEnum::Extension,
+		BarButtomSizeEnum::twoTwo,
+		true,
+		{},
+		{},
+		{},
+		{},
+		true
+	});
 	registrationOrder.push_back(id);
 	return true;
 }
@@ -110,6 +139,12 @@ vector<BarButtonRegistrationClass> BarButtomSetClass::GetExtensionRegistrations(
 		result.push_back(registration->second);
 	}
 	return result;
+}
+
+BarMoreButtonSnapshotClass BarButtomSetClass::GetMoreButtonSnapshot() const
+{
+	lock_guard lock(moreSnapshotMutex);
+	return moreSnapshot;
 }
 
 void BarButtomSetClass::PresetInitialization()
@@ -217,7 +252,12 @@ void BarButtomSetClass::PresetInitialization()
 					else
 					{
 						if (barUISet.barState.drawAttribute) barUISet.barState.drawAttribute = false;
-						else barUISet.barState.drawAttribute = true;
+						else
+						{
+							barUISet.barState.moreExpanded = false;
+							barUISet.barState.geometryAttribute = false;
+							barUISet.barState.drawAttribute = true;
+						}
 
 						// 当穿透模式下再次点击绘制按钮，则退出穿透
 						if (penetrate.select) penetrate.select = false;
@@ -297,8 +337,16 @@ void BarButtomSetClass::PresetInitialization()
 							barUISet.barState.geometryAttribute = false;
 						}
 					}
-					else barUISet.barState.geometryAttribute =
-						!static_cast<bool>(barUISet.barState.geometryAttribute);
+					else
+					{
+						bool open = !static_cast<bool>(barUISet.barState.geometryAttribute);
+						if (open)
+						{
+							barUISet.barState.moreExpanded = false;
+							barUISet.barState.drawAttribute = false;
+						}
+						barUISet.barState.geometryAttribute = open;
+					}
 				};
 		}
 
@@ -524,7 +572,8 @@ void BarButtomSetClass::PresetInitialization()
 	RegisterButton(Inkeys::BarButtonId::Divider, preset[(int)BarButtomPresetEnum::Divider], true, BarButtonLayoutZoneEnum::FixedA1);
 	RegisterButton(Inkeys::BarButtonId::Pierce, preset[(int)BarButtomPresetEnum::Pierce], false, BarButtonLayoutZoneEnum::FixedA2);
 	RegisterButton(Inkeys::BarButtonId::Freeze, preset[(int)BarButtomPresetEnum::Freeze], false, BarButtonLayoutZoneEnum::FixedA2);
-	RegisterButton(Inkeys::BarButtonId::Setting, preset[(int)BarButtomPresetEnum::Setting], false, BarButtonLayoutZoneEnum::FixedA2);
+	RegisterButton(Inkeys::BarButtonId::Setting, preset[(int)BarButtomPresetEnum::Setting], false, BarButtonLayoutZoneEnum::Extension);
+	RegisterLayoutMarker(Inkeys::BarButtonId::MoreBoundary);
 
 	BarButtonRegistrationClass dividerRegistration;
 	if (TryGetRegistration(Inkeys::BarButtonId::Divider, dividerRegistration)
@@ -534,6 +583,21 @@ void BarButtomSetClass::PresetInitialization()
 		boundaryDividers[0] = make_shared<BarButtomClass>(*dividerRegistration.button);
 		boundaryDividers[1] = make_shared<BarButtomClass>(*dividerRegistration.button);
 	}
+	// 更多入口是硬编码控件，不进入注册表或持久化序列。
+	moreButton = make_shared<BarButtomClass>();
+	moreButton->id = Inkeys::BarButtonId::MoreBoundary;
+	moreButton->preset = BarButtomPresetEnum::More;
+	moreButton->size = BarButtomSizeEnum::twoTwo;
+	moreButton->hide = false;
+	moreButton->userVisible = true;
+	moreButton->name.Initialization(0.0, 0.0, 0.0, 0.0, L"更多", 0.0);
+	moreButton->name.enable.Initialization(true);
+	moreButton->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
+	moreButton->buttom.enable.Initialization(true);
+	moreButton->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
+	moreButton->icon.InitializationFromResource(L"UI", L"barMore");
+	moreButton->icon.enable.Initialization(true);
+	moreButton->state = &moreButton->localState;
 }
 
 void BarButtomSetClass::RegisterBuiltInComponents()
@@ -869,14 +933,22 @@ std::vector<Inkeys::BarExtensionButtonLayoutEntry> BarButtomSetClass::NormalizeE
 
 	for (const Inkeys::BarExtensionButtonLayoutEntry& entry : configured)
 	{
-		// B 区只接受非 Inkeys. 前缀的点分扩展 ID；官方前缀与非法格式一律剔除。
-		if (!Inkeys::IsExtensionBarButtonId(entry.Id)) continue;
-
 		BarButtonRegistrationClass registration;
 		const bool registered = TryGetRegistration(entry.Id, registration);
 		if (registered)
 		{
 			if (registration.zone != BarButtonLayoutZoneEnum::Extension) continue;
+			if (registration.kind == BarButtonRegistrationKindEnum::LayoutMarker)
+			{
+				if (!loadedSingletons.emplace(entry.Id).second) continue;
+				// 布局标识没有实体，Visible/Size 仅写回稳定规范值。
+				normalized.push_back({
+					entry.Id,
+					ToConfigSize(registration.defaultSize),
+					true
+				});
+				continue;
+			}
 			if (!registration.allowMultiple && !loadedSingletons.emplace(entry.Id).second) continue;
 
 			// 配置中相邻分割线只保留一条（扩展区若未来出现同类装饰项时同样适用）。
@@ -895,6 +967,8 @@ std::vector<Inkeys::BarExtensionButtonLayoutEntry> BarButtomSetClass::NormalizeE
 		}
 		else
 		{
+			// 未注册的官方 ID 不可伪装成插件；合法插件 ID 仍永久保留。
+			if (!Inkeys::IsExtensionBarButtonId(entry.Id)) continue;
 			// 未知插件 ID 永久保留，Size 仍纠正为通用默认，Visible 保留。
 			normalized.push_back({
 				entry.Id,
@@ -923,23 +997,62 @@ void BarButtomSetClass::AppendFixedButtons(
 	}
 }
 
-int BarButtomSetClass::AppendLegacyExtensionButtons(vector<shared_ptr<BarButtomClass>>& activeButtons)
+vector<shared_ptr<BarButtomClass>> BarButtomSetClass::GetLegacyExtensionButtons()
 {
-	int appended = 0;
-	for (BarButtonRegistrationClass registration : GetExtensionRegistrations())
+	vector<BarButtonRegistrationClass> registrationsSnapshot = GetExtensionRegistrations();
+	unordered_map<std::string, BarButtonRegistrationClass> registrationsById;
+	unordered_set<std::string> enabledIds;
+	for (const BarButtonRegistrationClass& registration : registrationsSnapshot)
 	{
-		if (!registration.button || !registration.legacyEnabled || !registration.legacyEnabled())
-		{
+		if (registration.kind != BarButtonRegistrationKindEnum::EntityButton
+			|| registration.id == Inkeys::BarButtonId::Setting)
 			continue;
-		}
-
-		registration.button->userVisible = true;
-		registration.button->hide = false;
-		registration.button->size = registration.defaultSize;
-		activeButtons.push_back(registration.button);
-		appended += 1;
+		registrationsById.emplace(registration.id, registration);
+		if (registration.legacyEnabled && registration.legacyEnabled())
+			enabledIds.insert(registration.id);
 	}
-	return appended;
+
+	vector<std::string> activeOrder;
+	{
+		lock_guard lock(legacyOrderMutex);
+		if (!legacyOrderInitialized)
+		{
+			for (const BarButtonRegistrationClass& registration : registrationsSnapshot)
+				if (registration.kind == BarButtonRegistrationKindEnum::EntityButton
+					&& registration.id != Inkeys::BarButtonId::Setting
+					&& enabledIds.contains(registration.id))
+					legacyActiveOrder.push_back(registration.id);
+			legacyOrderInitialized = true;
+		}
+		else
+		{
+			legacyActiveOrder.erase(
+				remove_if(legacyActiveOrder.begin(), legacyActiveOrder.end(),
+					[&](const std::string& id) { return !enabledIds.contains(id); }),
+				legacyActiveOrder.end());
+			for (const BarButtonRegistrationClass& registration : registrationsSnapshot)
+				if (registration.kind == BarButtonRegistrationKindEnum::EntityButton
+					&& registration.id != Inkeys::BarButtonId::Setting
+					&& enabledIds.contains(registration.id)
+					&& find(legacyActiveOrder.begin(), legacyActiveOrder.end(), registration.id)
+						== legacyActiveOrder.end())
+					legacyActiveOrder.push_back(registration.id);
+		}
+		activeOrder = legacyActiveOrder;
+	}
+
+	vector<shared_ptr<BarButtomClass>> result;
+	result.reserve(activeOrder.size());
+	for (const std::string& id : activeOrder)
+	{
+		auto registration = registrationsById.find(id);
+		if (registration == registrationsById.end() || !registration->second.button) continue;
+		registration->second.button->userVisible = true;
+		registration->second.button->hide = false;
+		registration->second.button->size = registration->second.defaultSize;
+		result.push_back(registration->second.button);
+	}
+	return result;
 }
 
 void BarButtomSetClass::AppendBoundaryDivider(
@@ -975,20 +1088,34 @@ void BarButtomSetClass::Load()
 		BarButtonLayoutZoneEnum::FixedA2);
 
 	vector<shared_ptr<BarButtomClass>> activeButtons;
-	vector<shared_ptr<BarButtomClass>> extensionButtons;
 	AppendFixedButtons(normalizedA1, activeButtons);
-	const int extensionUiCount = AppendLegacyExtensionButtons(extensionButtons);
-	if (extensionUiCount > 0)
+	vector<shared_ptr<BarButtomClass>> legacyButtons = GetLegacyExtensionButtons();
+	vector<shared_ptr<BarButtomClass>> forcedOverflow;
+	vector<shared_ptr<BarButtomClass>> mainButtons;
+	for (const shared_ptr<BarButtomClass>& button : legacyButtons)
 	{
-		AppendBoundaryDivider(activeButtons, 0); // A1 | B
-		activeButtons.insert(activeButtons.end(), extensionButtons.begin(), extensionButtons.end());
-		AppendBoundaryDivider(activeButtons, 1); // B | A2
+		if (mainButtons.size() < 2) mainButtons.push_back(button);
+		else forcedOverflow.push_back(button);
 	}
-	else
+	vector<shared_ptr<BarButtomClass>> explicitMore;
+	BarButtonRegistrationClass settingRegistration;
+	if (TryGetRegistration(Inkeys::BarButtonId::Setting, settingRegistration)
+		&& settingRegistration.button)
 	{
-		// B 无可见扩展项：A1 与 A2 之间只保留一条交界分割线。
-		AppendBoundaryDivider(activeButtons, 0);
+		settingRegistration.button->userVisible = true;
+		settingRegistration.button->hide = false;
+		settingRegistration.button->size = settingRegistration.defaultSize;
+		explicitMore.push_back(settingRegistration.button);
 	}
+	{
+		lock_guard lock(moreSnapshotMutex);
+		moreSnapshot.forcedOverflow = forcedOverflow;
+		moreSnapshot.explicitMore = explicitMore;
+	}
+	AppendBoundaryDivider(activeButtons, 0); // A1 | B
+	activeButtons.insert(activeButtons.end(), mainButtons.begin(), mainButtons.end());
+	if (moreButton) activeButtons.push_back(moreButton);
+	AppendBoundaryDivider(activeButtons, 1); // B | A2
 	AppendFixedButtons(normalizedA2, activeButtons);
 
 	// 先在列表锁内替换整段序列，再发布数量；注册表和边界实例继续持有对象所有权。
@@ -1023,6 +1150,7 @@ void BarButtomSetClass::ResetIconCaches()
 		if (divider->iconKind == BarButtomIconKindEnum::Png)
 			divider->pngIcon.ResetCache();
 	}
+	if (moreButton) moreButton->icon.ResetCache();
 }
 
 void BarButtomSetClass::PresetHoming()
@@ -1039,6 +1167,7 @@ void BarButtomSetClass::PresetHoming()
 	{
 		barUISet.barState.geometryAttribute = false;
 	}
+	if (barUISet.barState.fold) barUISet.barState.moreExpanded = false;
 
 	// 进入非绘制模式需要隐藏无用按钮
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)

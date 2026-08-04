@@ -36,6 +36,7 @@ enum class BarButtomPresetEnum : int
 	Pierce,
 	Freeze,
 
+	More,
 	Setting
 };
 
@@ -86,6 +87,7 @@ public:
 		pngIcon(other.pngIcon),
 		iconKind(other.iconKind),
 		clickFunc(other.clickFunc),
+		closeMoreAfterAction(other.closeMoreAfterAction),
 		localState(other.localState),
 		state(other.state == &other.localState ? &localState : other.state)
 	{}
@@ -123,6 +125,8 @@ public:
 	IdtAtomic<BarButtomIconKindEnum> iconKind = BarButtomIconKindEnum::Svg;
 
 	function<void()> clickFunc;
+	// 默认动作完成后关闭更多浮层；需要连续操作的按钮可显式保留浮层。
+	bool closeMoreAfterAction = true;
 
 	BarButtomStateClass localState;
 	BarButtomStateClass* state = nullptr;
@@ -135,10 +139,17 @@ enum class BarButtonLayoutZoneEnum : int
 		FixedA2
 	};
 
+	enum class BarButtonRegistrationKindEnum : int
+	{
+		EntityButton,
+		LayoutMarker,
+	};
+
 	struct BarButtonRegistrationClass
 	{
 		std::string id;
 		shared_ptr<BarButtomClass> button;
+		BarButtonRegistrationKindEnum kind = BarButtonRegistrationKindEnum::EntityButton;
 		bool allowMultiple = false;
 		BarButtonLayoutZoneEnum zone = BarButtonLayoutZoneEnum::Extension;
 		// 注册时写死的默认尺寸/用户显隐；A 区配置不可改 Visible，Size 本轮也纠正回这里。
@@ -148,6 +159,18 @@ enum class BarButtonLayoutZoneEnum : int
 		function<bool()> legacyEnabled;
 		wstring categoryName;
 		wstring settingsName;
+		bool closeMoreAfterAction = true;
+	};
+
+	struct BarMoreButtonSnapshotClass
+	{
+		vector<shared_ptr<BarButtomClass>> forcedOverflow;
+		vector<shared_ptr<BarButtomClass>> explicitMore;
+
+		bool HasButtons() const
+		{
+			return !forcedOverflow.empty() || !explicitMore.empty();
+		}
 	};
 
 class BarButtomListClass
@@ -201,11 +224,15 @@ bool RegisterButton(
 			BarButtonLayoutZoneEnum zone,
 			bool defaultUserVisible = true,
 			const std::string& legacyField = {},
-			function<bool()> legacyEnabled = {},
-			const wstring& categoryName = {},
-			const wstring& settingsName = {});
+		function<bool()> legacyEnabled = {},
+		const wstring& categoryName = {},
+		const wstring& settingsName = {},
+		bool closeMoreAfterAction = true);
+		bool RegisterLayoutMarker(const std::string& id);
 		bool TryGetRegistration(const std::string& id, BarButtonRegistrationClass& outRegistration) const;
 		vector<BarButtonRegistrationClass> GetExtensionRegistrations() const;
+		BarMoreButtonSnapshotClass GetMoreButtonSnapshot() const;
+		BarButtomClass* GetMoreButton() const { return moreButton.get(); }
 		void PresetInitialization();
 		void RegisterBuiltInComponents();
 		void StateUpdate();
@@ -234,7 +261,7 @@ std::vector<Inkeys::BarExtensionButtonLayoutEntry> NormalizeExtensionZone(
 			void AppendFixedButtons(
 				const std::vector<Inkeys::BarFixedButtonLayoutEntry>& entries,
 				vector<shared_ptr<BarButtomClass>>& activeButtons);
-			int AppendLegacyExtensionButtons(vector<shared_ptr<BarButtomClass>>& activeButtons);
+		vector<shared_ptr<BarButtomClass>> GetLegacyExtensionButtons();
 			// 交界分割线仅进运行时列表，不写回配置。
 			void AppendBoundaryDivider(
 				vector<shared_ptr<BarButtomClass>>& activeButtons,
@@ -247,4 +274,10 @@ std::vector<Inkeys::BarExtensionButtonLayoutEntry> NormalizeExtensionZone(
 		unordered_map<std::string, BarButtonRegistrationClass> registrations;
 		vector<std::string> registrationOrder;
 		shared_ptr<BarButtomClass> boundaryDividers[2];
+		shared_ptr<BarButtomClass> moreButton;
+		mutable mutex moreSnapshotMutex;
+		BarMoreButtonSnapshotClass moreSnapshot;
+		mutex legacyOrderMutex;
+		vector<std::string> legacyActiveOrder;
+		bool legacyOrderInitialized = false;
 	};

@@ -10,6 +10,9 @@ public:
 	IdtAtomic<bool> fold = true;
 	IdtAtomic<bool> drawAttribute = false;
 	IdtAtomic<bool> geometryAttribute = false;
+	// 更多浮层独立于主栏选中态；折叠主栏时由运行时强制关闭。
+	IdtAtomic<bool> moreExpanded = false;
+	IdtAtomic<bool> moreClosePress = false;
 
 	struct
 	{

@@ -45,9 +45,12 @@
 - `ConfigSequence<T>::Snapshot() -> std::vector<T>`
 - `ConfigSequence<T>::Replace(std::vector<T>) -> void`
 - `ConfigSequenceAdapter<T>::ElementType / Snapshot(...) / Replace(...)`
-- `BarButtomSetClass::RegisterButton(id, button, allowMultiple, zone, defaultUserVisible=true, legacyField={}, legacyEnabled={}, categoryName={}, settingsName={}) -> bool`
+- `BarButtomSetClass::RegisterButton(id, button, allowMultiple, zone, defaultUserVisible=true, legacyField={}, legacyEnabled={}, categoryName={}, settingsName={}, closeMoreAfterAction=true) -> bool`
+- `BarButtomSetClass::RegisterLayoutMarker(id) -> bool`（只接受无实体的官方布局标识）
 - `BarButtomSetClass::TryGetRegistration(id, outRegistration) -> bool`
 - `BarButtomSetClass::GetExtensionRegistrations() -> std::vector<BarButtonRegistrationClass>`
+- `BarButtomSetClass::GetMoreButtonSnapshot() -> BarMoreButtonSnapshotClass`
+- `BarButtomSetClass::GetMoreButton() -> BarButtomClass*`
 - `BarButtomSetClass::RegisterBuiltInComponents() -> void`
 - `BarButtomSetClass::SyncLegacyExtensionButtons() -> void`
 - `BarButtomSetClass::Load() -> void`
@@ -67,15 +70,21 @@
 - **按钮 ID 命名**：
   - 官方按钮必须以 `Inkeys.` 开头，当前形如 `Inkeys.Bar.Select`。
   - 扩展/插件/组件按钮**不得**使用 `Inkeys.` 前缀，且必须为点分 ID：至少两段，形如 `xxx.xxx` 或 `xxx.xxx.xxx`（不允许首尾 `.` 或空段）。
-  - `RegisterButton` 按分区强制上述规则；B 区规范化时丢弃官方前缀 ID 与非法点分格式。
+  - `RegisterButton` 按分区强制上述规则；Extension 仅额外允许已注册官方实体 `Inkeys.Bar.Setting`，布局标识必须走 `RegisterLayoutMarker`；B 区规范化时丢弃未注册官方前缀 ID 与非法点分格式。
 - A1 默认 required 与顺序：Select, Draw, Geometry, Eraser, Recall, Clean（**不含 Divider**）。
-- A2 默认 required：Pierce, Freeze, Setting。
-- **交界分割线**：运行时注入 `Inkeys.Bar.Divider` 且**不写入**三区配置。B 有可见扩展按钮时在 `A1|B` 与 `B|A2` 各插一条；B 无可上栏扩展项时只在 A1/A2 之间插一条。
+- A2 默认 required：Pierce, Freeze；Setting 属于 Extension 的显式 More 项。
+- **交界分割线**：运行时注入 `Inkeys.Bar.Divider` 且**不写入**三区配置。当前虚拟投影始终包含 More 与 Setting，因此主栏恒按 `A1 | Divider | 最多两个 B 实体 | More | Divider | A2` 构建；旧组件全关时仍保留两条 Divider。
+- **固定 More 入口**：运行时在 B 末尾、`B|A2` Divider 前注入一个硬编码 More 按钮。它不登记到 `ExtensionButtons`，不进入配置，也不拥有 Selected 状态；主栏折叠时隐藏。
+- **MoreBoundary 标识**：`Inkeys.Bar.MoreBoundary` 是 Extension 中最多一个的无实体布局标识。它只定义旧组件前/后的分组边界：边界前最多两个旧组件进入主栏，其余进入 `forcedOverflow`；边界后进入 `explicitMore`。标识缺失时不自动补齐，规范化时固定输出注册默认尺寸与 `Visible=true`，不产生按钮实体。
+- **运行时投影顺序**：UI2/UI3 并行期间，旧组件开关按首次注册顺序建立活动栈；关闭项移除，重新启用或新启用项追加到栈尾。主栏仅保留前两个，More 浮层显示顺序为 `explicitMore` 后接 `forcedOverflow`，Setting 默认在显式组远端。运行时继续忽略并且不规范化/写回持久化 `ExtensionButtons`。
+- **More 浮层**：每个标准单元为 70 DIP，按 `twoTwo`/`twoOne`/`oneTwo`/`oneOne` 子网格近方形打包，最多五列；强制组靠近主栏，显式组在远端。仅两组均非空时绘制整行横向分割线。主栏左右换边不改变逻辑顺序，上下展开仅翻转物理行方向。
+- **More 交互**：点击外部先关闭并继续处理同一鼠标消息；面板正文消费点击；X 支持按下/拖出取消/抬起关闭；浮层按钮复用普通 `clickFunc`，默认按 `closeMoreAfterAction=true` 在回调前关闭，设为 false 时保持打开。打开绘制属性、几何、颜色/粗细子面板、主栏折叠或互斥面板时关闭 More。
+- **More SVG 动画**：三角图标不映射 Selected；每次打开/关闭或上下方向切换沿正方向累计旋转 180°，与非线性缩放回弹同步，静止后归一化角度。SVG 设备缓存与注册按钮一起在设备 epoch 重建时清理。
 - **相邻分割线规则**：配置侧相邻 Divider 只保留一条；运行时通过“先判断 B 是否有可见项再注入”避免相邻交界线。不得对 `only` 单例按钮重复 `buttomlist.Set` 重建列表（会 double-free）。
 - A1/A2 **严校验**：配置 Id 多重集合必须恰好等于该区 required 默认集合；缺项、多余/错区 ID、非法重复、字段类型错误 → **仅该区**重置为默认顺序。不做逐项补洞。配置中的 Divider 在 A 区先剥离再校验。
 - A 区不持久化用户 Visible；A 元素若误带 `Visible` 则忽略并剥离写回。A 的默认 `userVisible` 仅来自注册写死值；Geometry 注册默认可见，但选择模式通过运行时 `hide` 隐藏。
 - `Size` 本轮只镜像注册默认；缺省/非法/非默认均纠正为注册默认并写回，**不**因 Size 触发 A 区整区重置。后续设置 UI 可开放用户改 Size。
-- B 区：顺序 + Visible；符合扩展 ID 规则的未知/已卸载插件 ID **永久保留**且不渲染；`Inkeys.*` 与非法 ID 格式误入 B 时剔除；已注册扩展单例只取第一条。
+- B 区：顺序 + Visible；符合扩展 ID 规则的未知/已卸载插件 ID **永久保留**且不渲染；未注册的 `Inkeys.*` 与非法 ID 格式误入 B 时剔除；已注册官方 Setting、MoreBoundary 和扩展单例只取第一条。
 - 旧 `UI.Bar.ButtonLayout` 单数组：仅当三个新字段都缺失时拆分迁移；其中 Divider 丢弃不迁入；迁移后 A 仍走严校验，B 保留扩展项 Visible。
 - A1 仅将 `Select, Draw, Eraser, Geometry, Recall, Clean` 这一精确旧默认顺序迁移为当前默认；其他 required 集合的合法自定义排列保持原顺序。
 - 发版新增 A 区 required 官方按钮：旧配置缺新 ID → 该 A 区整区重置默认；不猜测新按钮插入点。
@@ -93,23 +102,26 @@
 | A/B `Size` 缺省/非法/非注册默认 | 纠正为注册默认，不因 Size 重置 A |
 | B `Visible` 缺失 | `true` |
 | B `Visible` 不是 bool | 整个 ExtensionButtons 字段回退默认（空数组） |
-| B 含 `Inkeys.*` 或非点分/空段 Id | 剔除 |
+| B 含未注册的 `Inkeys.*` 或非点分/空段 Id | 剔除；已注册 Setting/MoreBoundary 保留 |
 | B 未知插件 Id（合法扩展点分格式） | 保留不渲染 |
 | 旧 `ButtonLayout` 且无新字段 | 拆到 A1/B/A2；Divider 不迁入，交界运行时注入 |
 | 已有任一新字段 | 不再读旧 `ButtonLayout` |
-| B 为空 | 运行时 A1 与 A2 之间仅一条交界分割线 |
+| 旧组件全关 | 运行时仍显示 More；浮层仅含远端 Setting，无横向分割线 |
 | 相邻两条 Divider（运行时/配置） | 只保留一条 |
 | UI3 并行期且 `ExtensionButtons` 含已有数据 | 运行时忽略该数据且不改写；B 只反映旧组件开关 |
 | 任一旧组件开关 `false -> true` | 完成旧配置写入后，按注册顺序立即加入当前 UI3 B |
 | 任一旧组件开关 `true -> false` | 完成旧配置写入后，立即从当前 UI3 B 移除 |
 | 多个旧组件开关同时为 true | 全部显示，不受 UI2 单组件容量限制，顺序与设置页一致 |
 | D2D device epoch 切换或 `D2DERR_RECREATE_TARGET` | 释放所有面板和注册按钮 SVG/PNG 位图缓存；保留原始载荷供下一帧重建 |
+| `ExtensionButtons` 含 `MoreBoundary` 多次/带实体 | 只保留首个规范标识；不产生可点击按钮 |
+| 旧组件开关 `true -> false -> true` | 关闭时从主栏/More 移除，重新启用后追加到活动栈尾 |
+| More 面板打开时点击 X/外部/普通 More 按钮 | 分别关闭面板、关闭并继续原点击、切换独立展开目标 |
 
 ### 5. Good / Base / Bad Cases
 
 - Good：仅打乱 A1 顺序后启动，顺序保留；B 中插件隐藏后重装仍在原位。
 - Good（并行期）：`ExtensionButtons` 保留未来排序数据，同时 UI3 按 16 个旧开关的固定顺序即时投影多个组件。
-- Base：无新区字段时 A1/A2 使用当前默认序；Geometry 注册默认可见并在选择模式运行时隐藏；旧组件开关全关时运行时 B 为空。
+- Base：无新区字段时 A1/A2 使用当前默认序；Geometry 注册默认可见并在选择模式运行时隐藏；旧组件开关全关时主栏无普通 B 实体，但 More 仍提供 Setting。
 - Bad：A1 缺少 Geometry 或混入 Pierce → A1 整区回默认，A2/B 不动。
 - Bad（并行期）：设置页只写旧开关却继续从持久化 `ExtensionButtons` 构建 B，导致 UI 与开关状态分叉。
 
@@ -120,6 +132,7 @@
 - 静态确认 16 个内置组件均已注册且顺序与设置页一致，16 个 toggle 写入后均触发 UI3 同步。
 - 验证 UI3 启动和 toggle 同步均不读取、替换或写回 `UI.Bar.ExtensionButtons`。
 - 手工验证 SVG/PNG 图标在 device epoch 重建后重新显示、PNG 透明图标、全部组件同时布局、toggle 即时增减，以及 UI2 首个有效组件行为。
+- 手工验证 0/1/2/3+ 个旧组件的主栏容量、MoreBoundary 两组顺序、分割线条件、上下展开物理行方向、More 三角连续半圈旋转和 `closeMoreAfterAction=false` 保持打开。
 - 执行 `git diff --check` 和完整 Solution `Debug|ARM64` 构建；无自动化 UI 测试时记录未做运行验证。
 
 ### 7. Wrong vs Correct

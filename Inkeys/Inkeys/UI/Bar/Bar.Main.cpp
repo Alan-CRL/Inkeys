@@ -139,6 +139,12 @@ constexpr ULONGLONG BarColorPickerHoldHintDelayMs = 500;
 constexpr ULONGLONG BarColorPickerHoldLockDelayMs = 1500;
 constexpr double BarColorPickerPanelAnimationDur = 0.24;
 constexpr double BarColorPickerHoldHintAnimationDur = 0.18;
+constexpr double BarMorePanelGap = 5.0;
+constexpr double BarMorePanelPadding = 5.0;
+constexpr double BarMorePanelChromeHeight = 26.0;
+constexpr double BarMorePanelSeparatorGap = 10.0;
+constexpr double BarMorePanelAnimationDur = 0.24;
+constexpr double BarMorePanelClosedScale = 0.84;
 constexpr int BarBorderDiffuseCompositePasses = 2;
 // 标准差等于线宽时，1px 线源经过一维 Gaussian 后中心约保留 38.3%。
 constexpr double BarBorderGaussianCenterCoverage = 0.382924922548;
@@ -3130,6 +3136,8 @@ void BarUISetClass::Rendering()
 	BarUiTimelineClass mainBarTimeline;
 	BarUiTimelineClass drawAttributeTimeline;
 	BarUiTimelineClass geometryAttributeTimeline;
+	BarUiValueClass morePanelProgress(0.0);
+	BarUiValueClass moreIconScale(1.0);
 	BarUiCurveEnum mainBarBatchCurve = BarUiCurveEnum::EaseInOutCubic;
 	const BarUiCurveSpecClass buttonPressCurve{
 		BarUiCurveEnum::EaseOutCubic, BarUiCurveEnum::EaseOutCubic, 0.0, false };
@@ -3173,7 +3181,7 @@ BarUiValueClass drawAttributeAnnotationPopupProgress(0.0);
 		BarUiValueClass drawAttributeColorPickerHoldOpacity(0.0);
 		BarUiValueClass drawAttributeColorPickerHoldRingOpacity(0.0);
 		BarUiValueClass drawAttributeColorPickerHoldTextMix(0.0);
-		bool drawAttributeColorPickerHoldTargetActive = false;
+	bool drawAttributeColorPickerHoldTargetActive = false;
 		bool drawAttributeColorPickerHoldOnTop = true;
 		// 颜色选择器底部 R/G/B/透明度读数：拖动时直接跟手，其余情况与粗细数字一样走动画。
 		BarUiValueClass drawAttributeColorPickerDisplayR(0.0);
@@ -3242,6 +3250,11 @@ BarUiValueClass drawAttributeAnnotationPopupProgress(0.0);
 	double mainButtonLogoBaseW = mainButtonLogo->w.tar;
 	double mainButtonLogoBaseH = mainButtonLogo->h.tar;
 	unsigned long long handledMainButtonPulseSerial = 0;
+	bool moreLayoutOpen = false;
+	bool moreLayoutSide = barState.widgetPosition.primaryBar;
+	double moreIconRotationTarget = barState.widgetPosition.primaryBar ? 180.0 : 0.0;
+	if (auto moreButton = barButtomSet.GetMoreButton())
+		moreButton->icon.angle.SetDirect(moreIconRotationTarget);
 
 	wstring fps;
 	for (int forNum = 1; !offSignal; forNum = 2)
@@ -6091,6 +6104,327 @@ for (size_t i = 0; i < 3; ++i)
 			}
 		}
 
+		// 更多浮层使用标准 2x2 子网格，显式更多在远端，强制溢出靠近主栏。
+		{
+			auto moreButton = barButtomSet.GetMoreButton();
+			auto panel = shapeMap[BarUISetShapeEnum::MorePanel];
+			auto divider = shapeMap[BarUISetShapeEnum::MorePanelDivider];
+			auto close = shapeMap[BarUISetShapeEnum::MorePanelCloseHit];
+			auto closeSvg = svgMap[BarUISetSvgEnum::MorePanelClose];
+			BarMoreButtonSnapshotClass snapshot = barButtomSet.GetMoreButtonSnapshot();
+			bool hasButtons = snapshot.HasButtons();
+			if (!hasButtons && barState.moreExpanded) barState.moreExpanded = false;
+			bool open = hasButtons && barState.moreExpanded && !barState.fold;
+			bool side = barState.widgetPosition.primaryBar;
+			int halfTurns = (open != moreLayoutOpen ? 1 : 0)
+				+ (side != moreLayoutSide ? 1 : 0);
+			if (moreButton && halfTurns > 0)
+			{
+				// 开关或上下换向都只沿正方向续转，快速操作不会回跳角度。
+				moreIconRotationTarget += 180.0 * halfTurns;
+				moreButton->icon.angle.SetTar(moreIconRotationTarget,
+					BarMorePanelAnimationDur, nullopt, true,
+					{ BarUiCurveEnum::EaseOutCubic,
+						BarUiCurveEnum::EaseOutCubic, 0.0, false });
+				moreIconScale.SetTar(1.0, BarMorePanelAnimationDur, 0.76, true,
+					{ BarUiCurveEnum::EaseInCubic,
+						BarUiCurveEnum::EaseOutBack, 0.0, false });
+			}
+			moreLayoutOpen = open;
+			moreLayoutSide = side;
+			morePanelProgress.SetTar(open ? 1.0 : 0.0,
+				BarMorePanelAnimationDur, nullopt, false,
+				{ open ? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInCubic,
+					open ? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInCubic,
+					0.0, false });
+			if (moreButton)
+			{
+				moreButton->icon.contentScale = max(0.0,
+					static_cast<double>(moreIconScale.val));
+				if (moreButton->icon.angle.IsSame()
+					&& abs(moreButton->icon.angle.val) >= 720.0)
+				{
+					double normalized = fmod(moreButton->icon.angle.val, 360.0);
+					moreButton->icon.angle.SetDirect(normalized);
+					moreIconRotationTarget = normalized;
+				}
+			}
+
+			struct MorePlacement
+			{
+				shared_ptr<BarButtomClass> button;
+				int column = 0;
+				int row = 0;
+				int columnSpan = 1;
+				int rowSpan = 1;
+				bool forced = false;
+			};
+			const size_t itemCount = snapshot.explicitMore.size()
+				+ snapshot.forcedOverflow.size();
+			const double packedItemCount = static_cast<double>(
+				max<size_t>(1, itemCount));
+			int columns = min(5, max(1,
+				static_cast<int>(ceil(sqrt(packedItemCount)))));
+			int subColumns = columns * 2;
+			vector<vector<bool>> occupied;
+			vector<MorePlacement> placements;
+			auto SpanFor = [](BarButtomSizeEnum size) -> pair<int, int>
+				{
+					switch (size)
+					{
+					case BarButtomSizeEnum::twoTwo: return { 2, 2 };
+					case BarButtomSizeEnum::twoOne: return { 2, 1 };
+					case BarButtomSizeEnum::oneTwo: return { 1, 2 };
+					case BarButtomSizeEnum::oneOne: return { 1, 1 };
+					}
+					return { 2, 2 };
+				};
+			auto EnsureRows = [&](int rowCount)
+				{
+					while (static_cast<int>(occupied.size()) < rowCount)
+						occupied.push_back(vector<bool>(subColumns, false));
+				};
+			auto PackGroup = [&](const vector<shared_ptr<BarButtomClass>>& buttons,
+				int startRow, bool forced) -> int
+				{
+					int usedRows = startRow;
+					for (const shared_ptr<BarButtomClass>& button : buttons)
+					{
+						if (!button) continue;
+						auto [columnSpan, rowSpan] = SpanFor(button->size);
+						bool placed = false;
+						for (int row = startRow; !placed; ++row)
+						{
+							EnsureRows(row + rowSpan);
+							for (int column = 0;
+								column + columnSpan <= subColumns; ++column)
+							{
+								bool free = true;
+								for (int y = 0; free && y < rowSpan; ++y)
+									for (int x = 0; x < columnSpan; ++x)
+										if (occupied[row + y][column + x])
+										{
+											free = false;
+											break;
+										}
+								if (!free) continue;
+								for (int y = 0; y < rowSpan; ++y)
+									for (int x = 0; x < columnSpan; ++x)
+										occupied[row + y][column + x] = true;
+								placements.push_back({ button, column, row,
+									columnSpan, rowSpan, forced });
+								usedRows = max(usedRows, row + rowSpan);
+								placed = true;
+								break;
+							}
+						}
+					}
+					return usedRows;
+				};
+			int explicitRows = PackGroup(snapshot.explicitMore, 0, false);
+			if (explicitRows % 2 != 0) ++explicitRows;
+			bool showDivider = !snapshot.explicitMore.empty()
+				&& !snapshot.forcedOverflow.empty();
+			int forcedStartRow = showDivider ? explicitRows : 0;
+			int forcedRows = PackGroup(snapshot.forcedOverflow,
+				forcedStartRow, true);
+			int totalRows = max(1, max(explicitRows, forcedRows));
+
+			constexpr double one = 32.5;
+			constexpr double step = 37.5;
+			double contentWidth = subColumns * one
+				+ max(0, subColumns - 1) * BarMorePanelGap;
+			double gridHeight = totalRows * one
+				+ max(0, totalRows - 1) * BarMorePanelGap
+				+ (showDivider ? BarMorePanelSeparatorGap : 0.0);
+			double panelWidth = contentWidth + BarMorePanelPadding * 2.0;
+			double panelHeight = BarMorePanelPadding + BarMorePanelChromeHeight
+				+ gridHeight + BarMorePanelPadding;
+			double progress = clamp(static_cast<double>(morePanelProgress.val), 0.0, 1.0);
+			double scale = BarMorePanelClosedScale
+				+ (1.0 - BarMorePanelClosedScale) * progress;
+			double logicalWindowWidth = barStyle.zoom > 0.0
+				? static_cast<double>(barWindow.w) / barStyle.zoom : panelWidth;
+			double logicalWindowHeight = barStyle.zoom > 0.0
+				? static_cast<double>(barWindow.h) / barStyle.zoom : panelHeight;
+			double anchorX = moreButton
+				? moreButton->buttom.inhX + moreButton->buttom.w.val / 2.0
+				: logicalWindowWidth / 2.0;
+			double anchorY = moreButton
+				? moreButton->buttom.inhY + moreButton->buttom.h.val / 2.0
+				: logicalWindowHeight / 2.0;
+			double displayWidth = panelWidth * scale;
+			double displayHeight = panelHeight * scale;
+			double direction = side ? 1.0 : -1.0;
+			double panelCenterX = clamp(anchorX,
+				BarMorePanelPadding + displayWidth / 2.0,
+				max(BarMorePanelPadding + displayWidth / 2.0,
+					logicalWindowWidth - BarMorePanelPadding - displayWidth / 2.0));
+			double panelCenterY = anchorY + direction * (
+				(moreButton ? moreButton->buttom.h.val / 2.0 : 35.0)
+				+ BarMorePanelGap + displayHeight / 2.0);
+			panelCenterY = clamp(panelCenterY,
+				BarMorePanelPadding + displayHeight / 2.0,
+				max(BarMorePanelPadding + displayHeight / 2.0,
+					logicalWindowHeight - BarMorePanelPadding - displayHeight / 2.0));
+			panel->x.SetDirect(panelCenterX);
+			panel->y.SetDirect(panelCenterY);
+			panel->w.SetDirect(displayWidth);
+			panel->h.SetDirect(displayHeight);
+			panel->rw->SetDirect(8.0 * scale);
+			panel->rh->SetDirect(8.0 * scale);
+			panel->ft->SetDirect(scale);
+			panel->fill->SetDirect(GetThemeColor(BarThemeColorEnum::Surface));
+			panel->frame->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+			panel->pct.SetDirect(BarDrawAttributeSurfaceOpacity * progress);
+			panel->framePct->SetDirect(0.18 * progress);
+			panel->UpInh(BarUiInheritClass(
+				panelCenterX - displayWidth / 2.0,
+				panelCenterY - displayHeight / 2.0));
+
+			close->w.SetDirect(30.0 * scale);
+			close->h.SetDirect(30.0 * scale);
+			close->rw->SetDirect(4.0 * scale);
+			close->rh->SetDirect(4.0 * scale);
+			close->x.SetDirect(panel->inhX + displayWidth - 20.0 * scale);
+			close->y.SetDirect(panel->inhY + 18.0 * scale);
+			close->pct.SetDirect(progress
+				* (barState.moreClosePress ? 0.10 : 0.0));
+			close->UpInh(BarUiInheritClass(
+				close->x.val - close->w.val / 2.0,
+				close->y.val - close->h.val / 2.0));
+			closeSvg->x.SetDirect(close->x.val);
+			closeSvg->y.SetDirect(close->y.val);
+			closeSvg->SetWH(18.0 * scale, 18.0 * scale);
+			closeSvg->color1->SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));
+			closeSvg->pct.SetDirect(progress);
+			closeSvg->UpInh(BarUiInheritClass(
+				closeSvg->x.val - closeSvg->w.val / 2.0,
+				closeSvg->y.val - closeSvg->h.val / 2.0));
+
+			double explicitBlockHeight = explicitRows > 0
+				? explicitRows * one + max(0, explicitRows - 1) * BarMorePanelGap
+				: 0.0;
+			double dividerLogicalY = explicitBlockHeight
+				+ (BarMorePanelGap + BarMorePanelSeparatorGap) / 2.0;
+			double dividerPhysicalY = side
+				? gridHeight - dividerLogicalY : dividerLogicalY;
+			divider->w.SetDirect((panelWidth - BarMorePanelPadding * 2.0) * scale);
+			divider->h.SetDirect(scale);
+			divider->x.SetDirect(panel->inhX + displayWidth / 2.0);
+			divider->y.SetDirect(panel->inhY
+				+ (BarMorePanelPadding + BarMorePanelChromeHeight
+					+ dividerPhysicalY) * scale);
+			divider->pct.SetDirect(showDivider ? 0.30 * progress : 0.0);
+			divider->UpInh(BarUiInheritClass(
+				divider->x.val - divider->w.val / 2.0,
+				divider->y.val - divider->h.val / 2.0));
+
+			for (const MorePlacement& placement : placements)
+			{
+				BarButtomClass* button = placement.button.get();
+				if (!button) continue;
+				double width = (placement.columnSpan == 2 ? 70.0 : one);
+				double height = (placement.rowSpan == 2 ? 70.0 : one);
+				if (button->size == BarButtomSizeEnum::oneTwo) width = 10.0;
+				double logicalX = BarMorePanelPadding
+					+ placement.column * step + width / 2.0;
+				double logicalY = placement.row * step;
+				if (showDivider && placement.forced)
+					logicalY += BarMorePanelSeparatorGap;
+				double physicalY = side
+					? gridHeight - logicalY - height : logicalY;
+				double localCenterY = BarMorePanelPadding + BarMorePanelChromeHeight
+					+ physicalY + height / 2.0;
+				button->buttom.x.SetDirect(logicalX * scale);
+				button->buttom.y.SetDirect(localCenterY * scale);
+				button->buttom.w.SetDirect(width * scale);
+				button->buttom.h.SetDirect(height * scale);
+				if (button->buttom.rw) button->buttom.rw->SetDirect(4.0 * scale);
+				if (button->buttom.rh) button->buttom.rh->SetDirect(4.0 * scale);
+				if (!button->buttom.frame)
+					button->buttom.frame = BarUiColorClass(
+						GetThemeColor(BarThemeColorEnum::TextPrimary));
+				if (!button->buttom.framePct) button->buttom.framePct = BarUiPctClass(0.0);
+				if (!button->buttom.frameLightPct)
+					button->buttom.frameLightPct = BarUiPctClass(0.0);
+				if (!button->buttom.ft) button->buttom.ft = BarUiValueClass(scale);
+				button->buttom.ft->SetDirect(scale);
+				button->buttom.frameRendering = BarUiFrameRenderingEnum::PointLight;
+				button->buttom.framePrimaryLightEnabled = false;
+				button->buttom.frameCursorLightIntensityScale =
+					BarButtonCursorLightIntensity;
+				button->buttom.fill->SetDirect(
+					button->state->state == BarWidgetState::Selected
+						? GetThemeColor(BarThemeColorEnum::Accent)
+						: GetThemeColor(BarThemeColorEnum::PressedFill));
+				button->buttom.frame->SetDirect(
+					button->state->state == BarWidgetState::Selected
+						? GetThemeColor(BarThemeColorEnum::Accent)
+						: GetThemeColor(BarThemeColorEnum::TextPrimary));
+				button->buttom.frameLightPct->SetDirect(
+					button->state->state == BarWidgetState::Selected ? progress : 0.0);
+				double buttonOpacity = 0.0;
+				if (button->state->emph == BarWidgetEmphasize::Pressed)
+					buttonOpacity = 0.10;
+				else if (button->state->state == BarWidgetState::Selected)
+					buttonOpacity = 0.20;
+				else if (button->hoverStage != BarButtomHoverStageEnum::None)
+					buttonOpacity = button->buttom.pct.val;
+				button->buttom.pct.SetDirect(buttonOpacity * progress);
+				button->icon.color1->SetDirect(
+					button->state->state == BarWidgetState::Selected
+						? GetThemeColor(BarThemeColorEnum::Accent)
+						: GetThemeColor(BarThemeColorEnum::TextPrimary));
+				if (button->icon.color2)
+					button->icon.color2->SetDirect(button->icon.color1->val);
+				button->name.color.SetDirect(
+					button->state->state == BarWidgetState::Selected
+						? GetThemeColor(BarThemeColorEnum::Accent)
+						: GetThemeColor(BarThemeColorEnum::TextPrimary));
+				if (button->size == BarButtomSizeEnum::oneOne)
+				{
+					button->icon.SetWH(20.0 * scale, 20.0 * scale);
+					button->icon.x.SetDirect(0.0);
+					button->icon.y.SetDirect(0.0);
+					button->name.pct.SetDirect(0.0);
+				}
+				else if (button->size == BarButtomSizeEnum::twoOne)
+				{
+					button->icon.SetWH(18.0 * scale, 18.0 * scale);
+					button->icon.x.SetDirect(-21.0 * scale);
+					button->icon.y.SetDirect(0.0);
+					button->name.x.SetDirect(11.5 * scale);
+					button->name.y.SetDirect(0.0);
+					button->name.w.SetDirect(37.0 * scale);
+					button->name.h.SetDirect(one * scale);
+					button->name.size.SetDirect(12.0 * scale);
+					button->name.pct.SetDirect(progress);
+				}
+				else if (button->size == BarButtomSizeEnum::twoTwo)
+				{
+					button->icon.SetWH(28.0 * scale, 28.0 * scale);
+					button->icon.x.SetDirect(0.0);
+					button->icon.y.SetDirect(-10.0 * scale);
+					button->name.x.SetDirect(0.0);
+					button->name.y.SetDirect(20.0 * scale);
+					button->name.w.SetDirect(70.0 * scale);
+					button->name.h.SetDirect(25.0 * scale);
+					button->name.size.SetDirect(13.0 * scale);
+					button->name.pct.SetDirect(progress);
+				}
+				else
+				{
+					button->icon.pct.SetDirect(0.0);
+					button->name.pct.SetDirect(0.0);
+					continue;
+				}
+				button->icon.pct.SetDirect(progress);
+				button->lastDrawX = button->buttom.x.val;
+				button->lastDrawY = button->buttom.y.val;
+			}
+		}
+
 	#pragma endregion
 
 	#pragma region 动效UI
@@ -6332,6 +6666,10 @@ for (size_t i = 0; i < 3; ++i)
 			ChangeValue(drawAttributeColorPickerDisplayB, false);
 		if (!drawAttributeColorPickerDisplayOpacity.IsSame())
 			ChangeValue(drawAttributeColorPickerDisplayOpacity, false);
+		if (!morePanelProgress.IsSame())
+			ChangeValue(morePanelProgress, false);
+		if (!moreIconScale.IsSame())
+			ChangeValue(moreIconScale, false);
 		// 保持进度仅在按压期间推进；静止打开的面板不会维持渲染唤醒。
 		if (barState.drawAttributeBar.colorPickerPointerPressed
 			&& (barState.drawAttributeBar.colorPickerHoldHintActive
@@ -6598,15 +6936,17 @@ bool thicknessPresetMode =
 			&geometryClose->fill.value(), geometryCloseHoverStage,
 			barState.geometryAttribute, true);
 
-		// 特殊体质：按钮
-		for (int id = 0; id < barButtomSet.tot; id++)
+		// 主栏与更多浮层共享同一套按钮动画推进，实体不会同时出现在两处。
+		auto UpdateRegisteredButtonAnimation = [&](BarButtomClass* temp,
+			bool moreItem)
 		{
-			BarButtomClass* temp = barButtomSet.buttomlist.Get(id);
-			if (temp == nullptr) continue;
+			if (temp == nullptr) return;
 			BarUiColorClass* hoverFill = temp->buttom.fill.has_value()
 				? &temp->buttom.fill.value() : nullptr;
 			UpdateHoverAnimation(temp->buttom.pct, hoverFill, temp->hoverStage,
-				!barState.fold && temp->IsVisible(), temp->state->state != BarWidgetState::Selected);
+				!barState.fold && temp->IsVisible()
+					&& (!moreItem || barState.moreExpanded),
+				temp->state->state != BarWidgetState::Selected);
 			if (!temp->pressScale.IsSame()) ChangeValue(temp->pressScale, false);
 
 			{
@@ -6662,7 +7002,18 @@ bool thicknessPresetMode =
 				if (!temp->name.color.IsSame()) ChangeColor(temp->name.color, forceReplace), change = true;
 				if (!temp->name.pct.IsSame()) ChangePct(temp->name.pct, forceReplace), change = true;
 			}
-		}
+		};
+		for (int id = 0; id < barButtomSet.tot; id++)
+			UpdateRegisteredButtonAnimation(
+				barButtomSet.buttomlist.Get(id), false);
+		BarMoreButtonSnapshotClass animatedMoreSnapshot =
+			barButtomSet.GetMoreButtonSnapshot();
+		for (const shared_ptr<BarButtomClass>& button :
+			animatedMoreSnapshot.explicitMore)
+			UpdateRegisteredButtonAnimation(button.get(), true);
+		for (const shared_ptr<BarButtomClass>& button :
+			animatedMoreSnapshot.forcedOverflow)
+			UpdateRegisteredButtonAnimation(button.get(), true);
 
 		// 提示控件全部从动画中的粗细区域派生，换边时随面板收拢到叹号锚点。
 		{
@@ -7506,6 +7857,31 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			IncludeShapeBounds(mainBar);
 			IncludeShapeBounds(drawAttribute);
 			IncludeShapeBounds(geometryAttribute);
+			IncludeShapeBounds(shapeMap[BarUISetShapeEnum::MorePanel]);
+			IncludeShapeBounds(shapeMap[BarUISetShapeEnum::MorePanelDivider]);
+			IncludeShapeBounds(shapeMap[BarUISetShapeEnum::MorePanelCloseHit]);
+			IncludeSvgBounds(svgMap[BarUISetSvgEnum::MorePanelClose]);
+			BarMoreButtonSnapshotClass predictedMoreSnapshot =
+				barButtomSet.GetMoreButtonSnapshot();
+			auto IncludeMoreButtonBounds = [&](const shared_ptr<BarButtomClass>& button)
+				{
+					if (!button) return;
+					IncludeShapeBounds(shared_ptr<BarUiShapeClass>(
+						button, &button->buttom));
+					if (button->iconKind == BarButtomIconKindEnum::Png)
+						IncludePngBounds(shared_ptr<BarUiPNGClass>(
+							button, &button->pngIcon));
+					else IncludeSvgBounds(shared_ptr<BarUiSVGClass>(
+						button, &button->icon));
+					IncludeWordBounds(shared_ptr<BarUiWordClass>(
+						button, &button->name));
+				};
+			for (const shared_ptr<BarButtomClass>& button :
+				predictedMoreSnapshot.explicitMore)
+				IncludeMoreButtonBounds(button);
+			for (const shared_ptr<BarButtomClass>& button :
+				predictedMoreSnapshot.forcedOverflow)
+				IncludeMoreButtonBounds(button);
 			auto thicknessSliderHit = shapeMap[
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderHit];
 			if (thicknessSliderHit
@@ -8607,6 +8983,92 @@ else
 						spec.Word(barDeviceContext.Get(), temp->name, temp->name.Inherit(Center, temp->buttom));
 						if (transformChanged) barDeviceContext->SetTransform(originalTransform);
 					}
+
+					// 更多浮层独立于主栏左右换边，按钮只按上下展开方向翻转物理行。
+					auto morePanel = shapeMap[BarUISetShapeEnum::MorePanel];
+					if (morePanel && morePanel->pct.val > 0.000001)
+					{
+						spec.Shape(barDeviceContext.Get(), *morePanel,
+							BarUiInheritClass(morePanel->inhX, morePanel->inhY),
+							&current, true);
+						auto moreDivider = shapeMap[
+							BarUISetShapeEnum::MorePanelDivider];
+						if (moreDivider && moreDivider->pct.val > 0.000001)
+							spec.Shape(barDeviceContext.Get(), *moreDivider,
+								BarUiInheritClass(moreDivider->inhX,
+									moreDivider->inhY));
+
+						auto DrawMoreButton = [&](BarButtomClass* button)
+							{
+								if (!button || button->icon.pct.val <= 0.000001) return;
+								BarUiInheritClass buttonInherit = button->buttom.Inherit(
+									CenterFromTopLeft, *morePanel);
+								double pressScale = button->pressScale.val;
+								if (!isfinite(pressScale) || pressScale <= 0.0)
+									pressScale = 1.0;
+								D2D1_MATRIX_3X2_F originalTransform;
+								barDeviceContext->GetTransform(&originalTransform);
+								bool transformChanged = abs(pressScale - 1.0) > 0.000001;
+								if (transformChanged)
+								{
+									FLOAT centerX = static_cast<FLOAT>(
+										(buttonInherit.x + button->buttom.w.val / 2.0)
+										* barStyle.zoom);
+									FLOAT centerY = static_cast<FLOAT>(
+										(buttonInherit.y + button->buttom.h.val / 2.0)
+										* barStyle.zoom);
+									barDeviceContext->SetTransform(
+										D2D1::Matrix3x2F::Scale(
+											static_cast<FLOAT>(pressScale),
+											static_cast<FLOAT>(pressScale),
+											D2D1::Point2F(centerX, centerY))
+										* originalTransform);
+								}
+								spec.Shape(barDeviceContext.Get(), button->buttom,
+									buttonInherit);
+								BarUiInheritClass iconInherit = button->icon.Inherit(
+									Center, button->buttom);
+								if (button->iconKind == BarButtomIconKindEnum::Png)
+								{
+									button->pngIcon.x.SetDirect(button->icon.x.val);
+									button->pngIcon.y.SetDirect(button->icon.y.val);
+									button->pngIcon.w.SetDirect(button->icon.w.val);
+									button->pngIcon.h.SetDirect(button->icon.h.val);
+									button->pngIcon.angle.SetDirect(button->icon.angle.val);
+									button->pngIcon.pct.SetDirect(button->icon.pct.val);
+									button->pngIcon.enable.val = button->icon.enable.val;
+									button->pngIcon.enable.tar = button->icon.enable.tar;
+									spec.Png(barDeviceContext.Get(), button->pngIcon,
+										button->pngIcon.UpInh(iconInherit));
+								}
+								else spec.Svg(barDeviceContext.Get(), button->icon,
+									iconInherit);
+								spec.Word(barDeviceContext.Get(), button->name,
+									button->name.Inherit(Center, button->buttom));
+								if (transformChanged)
+									barDeviceContext->SetTransform(originalTransform);
+							};
+						BarMoreButtonSnapshotClass moreSnapshot =
+							barButtomSet.GetMoreButtonSnapshot();
+						for (const shared_ptr<BarButtomClass>& button :
+							moreSnapshot.explicitMore)
+							DrawMoreButton(button.get());
+						for (const shared_ptr<BarButtomClass>& button :
+							moreSnapshot.forcedOverflow)
+							DrawMoreButton(button.get());
+
+						auto moreClose = shapeMap[
+							BarUISetShapeEnum::MorePanelCloseHit];
+						if (moreClose)
+							spec.Shape(barDeviceContext.Get(), *moreClose,
+								BarUiInheritClass(moreClose->inhX, moreClose->inhY));
+						auto moreCloseSvg = svgMap[
+							BarUISetSvgEnum::MorePanelClose];
+						if (moreCloseSvg)
+							spec.Svg(barDeviceContext.Get(), *moreCloseSvg,
+								BarUiInheritClass(moreCloseSvg->inhX,
+									moreCloseSvg->inhY));
+					}
 				}
 				{ /**/ }
 
@@ -8623,6 +9085,44 @@ else
 
 					// 动画中的子控件可能暂时超出父级边界，脏区必须包含其真实新旧范围以清除残影。
 					double dirtyZoom = barStyle.zoom;
+					for (BarUISetShapeEnum moreShape : {
+						BarUISetShapeEnum::MorePanel,
+						BarUISetShapeEnum::MorePanelDivider,
+						BarUISetShapeEnum::MorePanelCloseHit })
+					{
+						auto shape = shapeMap[moreShape];
+						if (shape) BarRenderingAttribute::UnionRectInPlace(
+							current, BarRenderingAttribute::GetWeigetRect(
+								*shape, dirtyZoom));
+					}
+					if (auto moreCloseSvg = svgMap[BarUISetSvgEnum::MorePanelClose])
+						BarRenderingAttribute::UnionRectInPlace(current,
+							BarRenderingAttribute::GetWeigetRect(
+								*moreCloseSvg, dirtyZoom));
+					BarMoreButtonSnapshotClass dirtyMoreSnapshot =
+						barButtomSet.GetMoreButtonSnapshot();
+					auto IncludeMoreButtonDirty = [&](const shared_ptr<BarButtomClass>& button)
+						{
+							if (!button) return;
+							BarRenderingAttribute::UnionRectInPlace(current,
+								BarRenderingAttribute::GetWeigetRect(
+									button->buttom, dirtyZoom));
+							BarRenderingAttribute::UnionRectInPlace(current,
+								button->iconKind == BarButtomIconKindEnum::Png
+									? BarRenderingAttribute::GetWeigetRect(
+										button->pngIcon, dirtyZoom)
+									: BarRenderingAttribute::GetWeigetRect(
+										button->icon, dirtyZoom));
+							BarRenderingAttribute::UnionRectInPlace(current,
+								BarRenderingAttribute::GetWeigetRect(
+									button->name, dirtyZoom));
+						};
+					for (const shared_ptr<BarButtomClass>& button :
+						dirtyMoreSnapshot.explicitMore)
+						IncludeMoreButtonDirty(button);
+					for (const shared_ptr<BarButtomClass>& button :
+						dirtyMoreSnapshot.forcedOverflow)
+						IncludeMoreButtonDirty(button);
 					for (int i = static_cast<int>(BarUISetShapeEnum::DrawAttributeBar);
 						i <= static_cast<int>(
 							BarUISetShapeEnum::DrawAttributeBar_ColorPickerHoldHint);
@@ -10188,6 +10688,30 @@ auto ColorPickerAvailable = [&]()
 							break;
 						}
 					}
+					if (!currentHoveredButton && barState.moreExpanded)
+					{
+						BarMoreButtonSnapshotClass hoverSnapshot =
+							barButtomSet.GetMoreButtonSnapshot();
+						auto FindHoveredMoreButton =
+							[&](const vector<shared_ptr<BarButtomClass>>& buttons)
+							{
+								for (const shared_ptr<BarButtomClass>& button : buttons)
+								{
+									if (!button || !button->IsVisible()
+										|| button->state->state == BarWidgetState::Selected)
+										continue;
+									if (button->buttom.IsClick(
+										msg.x, msg.y, barStyle.zoom))
+									{
+										currentHoveredButton = button.get();
+										break;
+									}
+								}
+							};
+						FindHoveredMoreButton(hoverSnapshot.explicitMore);
+						if (!currentHoveredButton)
+							FindHoveredMoreButton(hoverSnapshot.forcedOverflow);
+					}
 				}
 				if (currentHoveredButton != hoveredMainBarButton)
 				{
@@ -10615,6 +11139,93 @@ auto ColorPickerAvailable = [&]()
 				}
 			}
 
+			// 更多浮层位于主栏之上；外部点击关闭后仍继续处理原点击。
+			if (continueFlag && barState.moreExpanded)
+			{
+				auto morePanel = shapeMap[BarUISetShapeEnum::MorePanel];
+				auto moreClose = shapeMap[BarUISetShapeEnum::MorePanelCloseHit];
+				BarButtomClass* moreButton = barButtomSet.GetMoreButton();
+				BarMoreButtonSnapshotClass moreSnapshot =
+					barButtomSet.GetMoreButtonSnapshot();
+				bool pointerInPanel = morePanel
+					&& morePanel->IsClick(msg.x, msg.y, barStyle.zoom);
+				bool pointerInMoreButton = moreButton
+					&& moreButton->buttom.IsClick(msg.x, msg.y, barStyle.zoom);
+
+				if (moreClose && moreClose->IsClick(msg.x, msg.y, barStyle.zoom))
+				{
+					continueFlag = false;
+					if (msg.message == WM_LBUTTONDOWN)
+					{
+						barState.moreClosePress = true;
+						UpdateRendering(false);
+						while (true)
+						{
+							hiex::getmessage_win32(&msg, EM_MOUSE, floating_window);
+							if (!moreClose->IsClick(msg.x, msg.y, barStyle.zoom)) break;
+							if (!msg.lbutton)
+							{
+								barState.moreExpanded = false;
+								break;
+							}
+						}
+						barState.moreClosePress = false;
+						UpdateRendering(false);
+						SuppressHoverUntilPointerMove();
+						hiex::flushmessage_win32(EM_MOUSE, floating_window);
+					}
+				}
+				else
+				{
+					vector<shared_ptr<BarButtomClass>> moreButtons;
+					moreButtons.reserve(moreSnapshot.explicitMore.size()
+						+ moreSnapshot.forcedOverflow.size());
+					moreButtons.insert(moreButtons.end(),
+						moreSnapshot.explicitMore.begin(), moreSnapshot.explicitMore.end());
+					moreButtons.insert(moreButtons.end(),
+						moreSnapshot.forcedOverflow.begin(), moreSnapshot.forcedOverflow.end());
+					for (const shared_ptr<BarButtomClass>& button : moreButtons)
+					{
+						if (!button || !button->IsVisible()
+							|| !button->buttom.IsClick(msg.x, msg.y, barStyle.zoom)) continue;
+						continueFlag = false;
+						if (msg.message == WM_LBUTTONDOWN)
+						{
+							button->state->emph = BarWidgetEmphasize::Pressed;
+							UpdateRendering(false);
+							while (true)
+							{
+								hiex::getmessage_win32(&msg, EM_MOUSE, floating_window);
+								if (!button->buttom.IsClick(msg.x, msg.y, barStyle.zoom)) break;
+								if (!msg.lbutton)
+								{
+									// 默认先收起再执行，避免动作打开新窗口时浮层残留。
+									if (button->closeMoreAfterAction)
+										barState.moreExpanded = false;
+									if (button->clickFunc) button->clickFunc();
+									break;
+								}
+							}
+							button->state->emph = BarWidgetEmphasize::None;
+							UpdateRendering(false);
+							SuppressHoverUntilPointerMove();
+							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						}
+						break;
+					}
+				}
+
+				if (continueFlag && pointerInPanel)
+					continueFlag = false;
+				else if (continueFlag && !pointerInMoreButton
+					&& (msg.message == WM_LBUTTONDOWN
+						|| msg.message == WM_RBUTTONDOWN))
+				{
+					barState.moreExpanded = false;
+					UpdateRendering(false);
+				}
+			}
+
 			// 主按钮
 			if (auto obj = superellipseMap[BarUISetSuperellipseEnum::MainButton]; continueFlag && obj->IsClick(msg.x, msg.y, barStyle.zoom))
 			{
@@ -10630,6 +11241,7 @@ auto ColorPickerAvailable = [&]()
 						else
 						{
 							barState.fold = true;
+							barState.moreExpanded = false;
 							CloseThicknessSlider(true);
 							CloseColorPicker(true);
 						}
@@ -10677,7 +11289,20 @@ auto ColorPickerAvailable = [&]()
 								{
 									if (!msg.lbutton)
 									{
-										if (temp->clickFunc) temp->clickFunc();
+										if (temp->preset == BarButtomPresetEnum::More)
+										{
+											bool opening = !static_cast<bool>(barState.moreExpanded);
+											barState.moreExpanded = opening;
+											if (opening)
+											{
+												CloseDrawAttributeTooltips();
+												barState.drawAttribute = false;
+												barState.geometryAttribute = false;
+												CloseThicknessSlider(true);
+												CloseColorPicker(true);
+											}
+										}
+										else if (temp->clickFunc) temp->clickFunc();
 										lastClickedMainBarButton = temp;
 										clickCompleted = true;
 										UpdateRendering();
@@ -12212,6 +12837,45 @@ namespace Inkeys::UI::Bar
 				shape->h.mod = BarUiValueModeEnum::Variable;
 				shape->enable.Initialization(true);
 				barUISet.shapeMap[BarUISetShapeEnum::MainBar] = shape;
+
+				// 更多浮层沿用属性面板的 Surface、边框与点光风格。
+				{
+					auto panel = make_shared<BarUiShapeClass>(
+						0.0, 0.0, 80.0, 80.0, 8.0, 8.0, 1.0,
+						GetThemeColor(BarThemeColorEnum::Surface),
+						GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+					panel->pct.Initialization(0.0);
+					panel->framePct = BarUiPctClass(0.0);
+					panel->frameRendering = BarUiFrameRenderingEnum::PointLight;
+					panel->frameLightColor = BarUiFrameLightColorEnum::PenWhenDrawing;
+					panel->w.mod = BarUiValueModeEnum::Variable;
+					panel->h.mod = BarUiValueModeEnum::Variable;
+					panel->enable.Initialization(true);
+					barUISet.shapeMap[BarUISetShapeEnum::MorePanel] = panel;
+
+					auto divider = make_shared<BarUiShapeClass>(
+						0.0, 0.0, 1.0, 1.0, 0.5, 0.5, 1.0,
+						GetThemeColor(BarThemeColorEnum::SurfaceFrame), nullopt);
+					divider->pct.Initialization(0.0);
+					divider->enable.Initialization(true);
+					barUISet.shapeMap[BarUISetShapeEnum::MorePanelDivider] = divider;
+
+					auto close = make_shared<BarUiShapeClass>(
+						0.0, 0.0, 30.0, 30.0, 4.0, 4.0, 1.0,
+						GetThemeColor(BarThemeColorEnum::PressedFill), nullopt);
+					close->pct.Initialization(0.0);
+					close->framePct = BarUiPctClass(0.0);
+					close->enable.Initialization(true);
+					barUISet.shapeMap[BarUISetShapeEnum::MorePanelCloseHit] = close;
+
+					auto closeSvg = make_shared<BarUiSVGClass>(
+						0.0, 0.0, GetThemeColor(BarThemeColorEnum::TextPrimary), nullopt);
+					closeSvg->InitializationFromResource(L"UI", L"barCloseSmall");
+					closeSvg->SetWH(18.0, 18.0);
+					closeSvg->pct.Initialization(0.0);
+					closeSvg->enable.Initialization(true);
+					barUISet.svgMap[BarUISetSvgEnum::MorePanelClose] = closeSvg;
+				}
 
 				// 绘制属性（一级菜单）
 				{

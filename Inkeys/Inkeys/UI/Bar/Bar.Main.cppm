@@ -77,6 +77,9 @@ void HighPrecisionWait(double frameTimeSpentMs, double targetFPS);
 enum class BarUISetShapeEnum : int
 {
 	MainBar,
+	MorePanel,
+	MorePanelDivider,
+	MorePanelCloseHit,
 
 	DrawAttributeBar,
 	DrawAttributeBar_ColorSelect1,
@@ -136,6 +139,7 @@ enum class BarUISetSvgEnum : int
 {
 	logo1,
 	logoInk,
+	MorePanelClose,
 
 	DrawAttributeBar_ColorSelect1,
 	DrawAttributeBar_ColorSelect2,
