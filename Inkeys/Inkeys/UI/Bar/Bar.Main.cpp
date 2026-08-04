@@ -140,8 +140,10 @@ constexpr ULONGLONG BarColorPickerHoldLockDelayMs = 1500;
 constexpr double BarColorPickerPanelAnimationDur = 0.24;
 constexpr double BarColorPickerHoldHintAnimationDur = 0.18;
 constexpr double BarMorePanelGap = 5.0;
+// 主栏与浮层之间留出更明显的净空；网格单元仍沿用标准 5 DIP 间距。
+constexpr double BarMorePanelAnchorGap = 12.0;
 constexpr double BarMorePanelPadding = 5.0;
-constexpr double BarMorePanelChromeHeight = 26.0;
+constexpr double BarMorePanelChromeHeight = 35.0;
 constexpr double BarMorePanelSeparatorGap = 10.0;
 constexpr double BarMorePanelAnimationDur = 0.24;
 constexpr double BarMorePanelClosedScale = 0.84;
@@ -3137,7 +3139,6 @@ void BarUISetClass::Rendering()
 	BarUiTimelineClass drawAttributeTimeline;
 	BarUiTimelineClass geometryAttributeTimeline;
 	BarUiValueClass morePanelProgress(0.0);
-	BarUiValueClass moreIconScale(1.0);
 	BarUiCurveEnum mainBarBatchCurve = BarUiCurveEnum::EaseInOutCubic;
 	const BarUiCurveSpecClass buttonPressCurve{
 		BarUiCurveEnum::EaseOutCubic, BarUiCurveEnum::EaseOutCubic, 0.0, false };
@@ -3389,6 +3390,10 @@ BarUiValueClass drawAttributeAnnotationPopupProgress(0.0);
 				};
 			bool currentMainBarSide = barState.widgetPosition.mainBar;
 			bool mainBarSideSwitch = !barState.fold && currentMainBarSide != mainBarLayoutSide;
+			// 浮层展开状态直接映射到硬编码入口的选中态，复用普通按钮颜色。
+			if (auto moreButton = barButtomSet.GetMoreButton())
+				moreButton->localState.state = (!barState.fold && barState.moreExpanded)
+					? BarWidgetState::Selected : BarWidgetState::None;
 			// 换边动画被打断时，新一侧仍会在下一帧与这里记录的旧侧产生一次明确变化。
 			mainBarLayoutSide = currentMainBarSide;
 			bool currentDrawAttributeSide = barState.widgetPosition.primaryBar;
@@ -4113,8 +4118,11 @@ SetButtonPositionTar(temp->buttom.x, xO + barBtnTwoHalf, 40.0, true);
 									bool enlargedGeometryIcon =
 										temp->preset == BarButtomPresetEnum::Geometry
 										&& stateMode.StateModeSelect == StateModeSelectEnum::IdtShape;
+									bool enlargedMoreIcon =
+										temp->preset == BarButtomPresetEnum::More;
 									temp->icon.SetWH(nullopt,
-										enlargedGeometryIcon ? 34.0 : 28.0);
+										enlargedMoreIcon ? 38.0
+										: (enlargedGeometryIcon ? 34.0 : 28.0));
 									temp->icon.x.SetTar(0.0);
 									temp->icon.y.SetTar(-10.0);
 									if (barState.fold || !temp->IsVisible())
@@ -6113,21 +6121,26 @@ for (size_t i = 0; i < 3; ++i)
 			auto closeSvg = svgMap[BarUISetSvgEnum::MorePanelClose];
 			BarMoreButtonSnapshotClass snapshot = barButtomSet.GetMoreButtonSnapshot();
 			bool hasButtons = snapshot.HasButtons();
-			if (!hasButtons && barState.moreExpanded) barState.moreExpanded = false;
+			if (!hasButtons)
+			{
+				barState.moreExpanded = false;
+				if (moreButton) moreButton->localState.state = BarWidgetState::None;
+			}
 			bool open = hasButtons && barState.moreExpanded && !barState.fold;
 			bool side = barState.widgetPosition.primaryBar;
-			int halfTurns = (open != moreLayoutOpen ? 1 : 0)
-				+ (side != moreLayoutSide ? 1 : 0);
-			if (moreButton && halfTurns > 0)
+			double rotationDelta = 0.0;
+			if (open != moreLayoutOpen)
+				rotationDelta += open ? 180.0 : -180.0;
+			if (side != moreLayoutSide)
+				// 上下换边保持箭头方向，按新方向与旧方向的差量取正负半圈。
+				rotationDelta += side ? 180.0 : -180.0;
+			if (moreButton && abs(rotationDelta) > 0.000001)
 			{
-				// 开关或上下换向都只沿正方向续转，快速操作不会回跳角度。
-				moreIconRotationTarget += 180.0 * halfTurns;
+				// 展开和收起使用相反方向，统一在目标端轻微越界后回弹。
+				moreIconRotationTarget += rotationDelta;
 				moreButton->icon.angle.SetTar(moreIconRotationTarget,
 					BarMorePanelAnimationDur, nullopt, true,
-					{ BarUiCurveEnum::EaseOutCubic,
-						BarUiCurveEnum::EaseOutCubic, 0.0, false });
-				moreIconScale.SetTar(1.0, BarMorePanelAnimationDur, 0.76, true,
-					{ BarUiCurveEnum::EaseInCubic,
+					{ BarUiCurveEnum::EaseOutBack,
 						BarUiCurveEnum::EaseOutBack, 0.0, false });
 			}
 			moreLayoutOpen = open;
@@ -6139,12 +6152,11 @@ for (size_t i = 0; i < 3; ++i)
 					0.0, false });
 			if (moreButton)
 			{
-				moreButton->icon.contentScale = max(0.0,
-					static_cast<double>(moreIconScale.val));
 				if (moreButton->icon.angle.IsSame()
 					&& abs(moreButton->icon.angle.val) >= 720.0)
 				{
 					double normalized = fmod(moreButton->icon.angle.val, 360.0);
+					if (normalized < 0.0) normalized += 360.0;
 					moreButton->icon.angle.SetDirect(normalized);
 					moreIconRotationTarget = normalized;
 				}
@@ -6240,9 +6252,11 @@ for (size_t i = 0; i < 3; ++i)
 			double panelWidth = contentWidth + BarMorePanelPadding * 2.0;
 			double panelHeight = BarMorePanelPadding + BarMorePanelChromeHeight
 				+ gridHeight + BarMorePanelPadding;
-			double progress = clamp(static_cast<double>(morePanelProgress.val), 0.0, 1.0);
-			double scale = BarMorePanelClosedScale
-				+ (1.0 - BarMorePanelClosedScale) * progress;
+			double rawProgress = static_cast<double>(morePanelProgress.val);
+			double progress = clamp(rawProgress, 0.0, 1.0);
+			// 透明度限制在有效范围，几何保留 Back 超调以形成弹性展开。
+			double scale = max(0.01, BarMorePanelClosedScale
+				+ (1.0 - BarMorePanelClosedScale) * rawProgress);
 			double logicalWindowWidth = barStyle.zoom > 0.0
 				? static_cast<double>(barWindow.w) / barStyle.zoom : panelWidth;
 			double logicalWindowHeight = barStyle.zoom > 0.0
@@ -6262,7 +6276,7 @@ for (size_t i = 0; i < 3; ++i)
 					logicalWindowWidth - BarMorePanelPadding - displayWidth / 2.0));
 			double panelCenterY = anchorY + direction * (
 				(moreButton ? moreButton->buttom.h.val / 2.0 : 35.0)
-				+ BarMorePanelGap + displayHeight / 2.0);
+				+ BarMorePanelAnchorGap + displayHeight / 2.0);
 			panelCenterY = clamp(panelCenterY,
 				BarMorePanelPadding + displayHeight / 2.0,
 				max(BarMorePanelPadding + displayHeight / 2.0,
@@ -6286,8 +6300,11 @@ for (size_t i = 0; i < 3; ++i)
 			close->h.SetDirect(30.0 * scale);
 			close->rw->SetDirect(4.0 * scale);
 			close->rh->SetDirect(4.0 * scale);
-			close->x.SetDirect(panel->inhX + displayWidth - 20.0 * scale);
-			close->y.SetDirect(panel->inhY + 18.0 * scale);
+			// 关闭按钮固定在面板顶部横向栏的右侧，不随上下内容行翻转。
+			constexpr double closeHeaderCenter = BarMorePanelPadding + 15.0;
+			close->x.SetDirect(panel->inhX + displayWidth
+				- closeHeaderCenter * scale);
+			close->y.SetDirect(panel->inhY + closeHeaderCenter * scale);
 			close->pct.SetDirect(progress
 				* (barState.moreClosePress ? 0.10 : 0.0));
 			close->UpInh(BarUiInheritClass(
@@ -6354,34 +6371,34 @@ for (size_t i = 0; i < 3; ++i)
 				button->buttom.framePrimaryLightEnabled = false;
 				button->buttom.frameCursorLightIntensityScale =
 					BarButtonCursorLightIntensity;
-				button->buttom.fill->SetDirect(
+				button->buttom.fill->SetTar(
 					button->state->state == BarWidgetState::Selected
 						? GetThemeColor(BarThemeColorEnum::Accent)
 						: GetThemeColor(BarThemeColorEnum::PressedFill));
-				button->buttom.frame->SetDirect(
+				button->buttom.frame->SetTar(
 					button->state->state == BarWidgetState::Selected
 						? GetThemeColor(BarThemeColorEnum::Accent)
 						: GetThemeColor(BarThemeColorEnum::TextPrimary));
-				button->buttom.frameLightPct->SetDirect(
-					button->state->state == BarWidgetState::Selected ? progress : 0.0);
-				double buttonOpacity = 0.0;
-				if (button->state->emph == BarWidgetEmphasize::Pressed)
-					buttonOpacity = 0.10;
+				button->buttom.frameLightPct->SetTar(
+					open && button->state->state == BarWidgetState::Selected
+						? (button->state->emph == BarWidgetEmphasize::Pressed
+							? BarButtonPressedLightOpacity : 1.0) : 0.0);
+				if (!open)
+					button->buttom.pct.SetTar(0.0, BarMorePanelAnimationDur);
+				else if (button->state->emph == BarWidgetEmphasize::Pressed)
+					button->buttom.pct.SetTar(0.10, BarUiDefaultOperationDur);
 				else if (button->state->state == BarWidgetState::Selected)
-					buttonOpacity = 0.20;
-				else if (button->hoverStage != BarButtomHoverStageEnum::None)
-					buttonOpacity = button->buttom.pct.val;
-				button->buttom.pct.SetDirect(buttonOpacity * progress);
-				button->icon.color1->SetDirect(
+					button->buttom.pct.SetTar(0.20, BarUiDefaultOperationDur);
+				else if (button->hoverStage == BarButtomHoverStageEnum::None)
+					button->buttom.pct.SetTar(0.0, BarUiDefaultOperationDur);
+				COLORREF contentColor =
 					button->state->state == BarWidgetState::Selected
 						? GetThemeColor(BarThemeColorEnum::Accent)
-						: GetThemeColor(BarThemeColorEnum::TextPrimary));
+						: GetThemeColor(BarThemeColorEnum::TextPrimary);
+				button->icon.color1->SetTar(contentColor);
 				if (button->icon.color2)
-					button->icon.color2->SetDirect(button->icon.color1->val);
-				button->name.color.SetDirect(
-					button->state->state == BarWidgetState::Selected
-						? GetThemeColor(BarThemeColorEnum::Accent)
-						: GetThemeColor(BarThemeColorEnum::TextPrimary));
+					button->icon.color2->SetTar(contentColor);
+				button->name.color.SetTar(contentColor);
 				if (button->size == BarButtomSizeEnum::oneOne)
 				{
 					button->icon.SetWH(20.0 * scale, 20.0 * scale);
@@ -6668,8 +6685,6 @@ for (size_t i = 0; i < 3; ++i)
 			ChangeValue(drawAttributeColorPickerDisplayOpacity, false);
 		if (!morePanelProgress.IsSame())
 			ChangeValue(morePanelProgress, false);
-		if (!moreIconScale.IsSame())
-			ChangeValue(moreIconScale, false);
 		// 保持进度仅在按压期间推进；静止打开的面板不会维持渲染唤醒。
 		if (barState.drawAttributeBar.colorPickerPointerPressed
 			&& (barState.drawAttributeBar.colorPickerHoldHintActive
@@ -6947,6 +6962,13 @@ bool thicknessPresetMode =
 				!barState.fold && temp->IsVisible()
 					&& (!moreItem || barState.moreExpanded),
 				temp->state->state != BarWidgetState::Selected);
+			if (moreItem)
+			{
+				bool pressed = temp->state->emph == BarWidgetEmphasize::Pressed;
+				temp->pressScale.SetTar(pressed ? BarButtonPressScale : 1.0,
+					BarUiDefaultOperationDur, nullopt, false,
+					pressed ? buttonPressCurve : buttonReleaseCurve);
+			}
 			if (!temp->pressScale.IsSame()) ChangeValue(temp->pressScale, false);
 
 			{
@@ -11192,6 +11214,8 @@ auto ColorPickerAvailable = [&]()
 						if (msg.message == WM_LBUTTONDOWN)
 						{
 							button->state->emph = BarWidgetEmphasize::Pressed;
+							StopMainBarButtonHover(hoveredMainBarButton, true, true);
+							hoveredMainBarButton = nullptr;
 							UpdateRendering(false);
 							while (true)
 							{
