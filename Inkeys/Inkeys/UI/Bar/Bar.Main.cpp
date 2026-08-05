@@ -4216,8 +4216,8 @@ SetButtonPositionTar(temp->buttom.x, xO - barBtnGap / 2.0, 40.0, true);
 										}
 									}
 									temp->buttom.w.SetTar(1.0, operationDur);
-									// 布局仍按 oneTwo 封满两行，仅将实际线条缩短为按钮高度的一半。
-									temp->buttom.h.SetTar(barBtnTwo / 2.0, operationDur);
+									// 布局仍按 oneTwo 封满两行，实际线长保留两端 5 DIP 留白和圆角半径。
+									temp->buttom.h.SetTar(50.0, operationDur);
 									if (temp->buttom.rw.has_value()) temp->buttom.rw.value().SetTar(0.5, operationDur);
 									if (temp->buttom.rh.has_value()) temp->buttom.rh.value().SetTar(0.5, operationDur);
 									if (temp->buttom.ft.has_value()) temp->buttom.ft.value().SetTar(1.0, operationDur);

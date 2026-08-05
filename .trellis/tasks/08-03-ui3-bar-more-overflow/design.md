@@ -17,7 +17,7 @@
 - `BarButtomSetClass` 保存旧组件活动顺序。首次同步按注册顺序建立；后续保留仍启用项顺序，删除关闭项，并把新启用/重新启用项追加到末尾。
 - 通用规划器读取带可选标识的条目：标识前前两个可见实体进入主栏，剩余进入 `forcedOverflow`；标识后进入 `explicitMore`。
 - 当前 `Load()` 输入固定为活动旧组件、虚拟 `MoreBoundary`、`Setting`。主栏输出为 A1、A1|B Divider、最多两个 B 实体、硬编码 More、B|A2 Divider、A2。
-- Divider 继续作为运行时交界对象注入，但视觉只绘制其 Shape：宽高 `1x35` DIP、圆角 `0.5`、SurfaceFrame 填充透明度 `0.30`，同时保留 `oneTwo` 的两行布局占用；不加载或绘制 SVG，PointLight 关闭主光并复用几何分隔线 `0.30` 的第三鼠标光强度。
+- Divider 继续作为运行时交界对象注入，但视觉只绘制其 Shape：宽高 `1x50` DIP、圆角 `0.5`、SurfaceFrame 填充透明度 `0.30`，同时保留 `oneTwo` 的两行布局占用；不加载或绘制 SVG，PointLight 关闭主光并复用几何分隔线 `0.30` 的第三鼠标光强度。
 - Divider 复用上一组尾端已有的 `5` DIP 间隙，不推进主栏宽度。布局遇到 Divider 时先封闭未填满的小按钮列，把线放在间隙中心，再从新列开始下一组；最终横坐标继续走统一镜像函数。
 - 更多快照整体替换并与主栏列表共享注册表持有的 `shared_ptr`；硬编码 More 由按钮集合长期持有，不注册、不持久化。
 

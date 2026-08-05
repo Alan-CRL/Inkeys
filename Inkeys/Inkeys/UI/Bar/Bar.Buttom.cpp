@@ -170,7 +170,7 @@ void BarButtomSetClass::PresetInitialization()
 		}
 		{
 			// Divider 直接使用 Shape 细线，SVG 资源继续保留但不参与视觉。
-			obj->buttom.Initialization(0.0, 0.0, 1.0, 35.0, 0.5, 0.5,
+			obj->buttom.Initialization(0.0, 0.0, 1.0, 50.0, 0.5, 0.5,
 				1.0, dividerColor, dividerColor);
 			obj->buttom.pct.Initialization(0.30);
 			obj->buttom.framePct = BarUiPctClass(0.0);

@@ -8,7 +8,7 @@
 6. 更新 `.trellis/spec/native-desktop/configuration-i18n-and-assets.md` 的 UI3 Bar 合同。
 7. 检查配置迁移、旧开关顺序、分隔线条件、混合尺寸布局、上下/左右方向、关闭路径和快速动画切换。
 8. 运行 `git diff --check`，使用 ARM64 host MSBuild 构建 `InkeysRepo.sln /p:Configuration=Debug /p:Platform=ARM64`，超时至少五分钟。
-9. 将主栏 Divider 收敛为零宽布局占用、保留 `oneTwo` 两行布局语义的 `1x35` DIP Shape 细线，并从悬停推进、扫描与点击/按压状态机中排除。
+9. 将主栏 Divider 收敛为零宽布局占用、保留 `oneTwo` 两行布局语义的 `1x50` DIP Shape 细线，并从悬停推进、扫描与点击/按压状态机中排除。
 
 ## Implementation Notes
 
