@@ -18,6 +18,12 @@ public:
 	{
 		IdtAtomic<bool> brush1Press = false;
 		IdtAtomic<bool> highlight1Press = false;
+		IdtAtomic<bool> penTypeMenuOpen = false;
+		IdtAtomic<bool> penTypeMenuDirectionLocked = false;
+		IdtAtomic<bool> penTypeMenuOpenBelow = true;
+		IdtAtomic<int> penTypeMenuAnchorMode = 0;
+		IdtAtomic<bool> penTypeExtensionPress = false;
+		IdtAtomic<bool> penTypeFreeLinePress = false;
 		IdtAtomic<bool> thicknessFinePress = false;
 		IdtAtomic<bool> thicknessMediumPress = false;
 		IdtAtomic<bool> thicknessCoarsePress = false;

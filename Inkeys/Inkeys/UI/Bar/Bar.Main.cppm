@@ -99,14 +99,16 @@ enum class BarUISetShapeEnum : int
 	DrawAttributeBar_Laser,
 	DrawAttributeBar_Brush2,
 	DrawAttributeBar_SoftPen,
+	DrawAttributeBar_PenTypeExtensionHit,
+	DrawAttributeBar_PenTypeExtensionDivider,
 	DrawAttributeBar_ThicknessSelect,
+	DrawAttributeBar_ThicknessDivider,
 	DrawAttributeBar_ThicknessFine,
 	DrawAttributeBar_ThicknessMedium,
 	DrawAttributeBar_ThicknessCoarse,
 	DrawAttributeBar_ThicknessAdjust,
 	DrawAttributeBar_ThicknessSliderHit,
 	DrawAttributeBar_ThicknessSliderThumb,
-	DrawAttributeBar_ThicknessAnnotationBadge,
 	DrawAttributeBar_ThicknessAnnotationInfoHit,
 	DrawAttributeBar_ThicknessOverflowBadge,
 	DrawAttributeBar_ThicknessOverflowInfoHit,
@@ -114,6 +116,9 @@ enum class BarUISetShapeEnum : int
 	DrawAttributeBar_ThicknessAnnotationPopupCloseHit,
 	DrawAttributeBar_ThicknessOverflowPopup,
 	DrawAttributeBar_ThicknessOverflowPopupCloseHit,
+	DrawAttributeBar_PenTypeMenu,
+	DrawAttributeBar_PenTypeMenuFreeLine,
+	DrawAttributeBar_PenTypeMenuAnnotationLine,
 	DrawAttributeBar_ColorPickerPanel,
 	DrawAttributeBar_ColorPickerPalette,
 	DrawAttributeBar_ColorPickerToneToggle,
@@ -158,7 +163,9 @@ enum class BarUISetSvgEnum : int
 	DrawAttributeBar_Laser,
 	DrawAttributeBar_Brush2,
 	DrawAttributeBar_SoftPen,
+	DrawAttributeBar_PenTypeExtensionArrow,
 	DrawAttributeBar_ThicknessAdjust,
+	DrawAttributeBar_PenTypeMenuCheck,
 	DrawAttributeBar_ThicknessAnnotationInfo,
 	DrawAttributeBar_ThicknessOverflowInfo,
 	DrawAttributeBar_ThicknessAnnotationPopupClose,
@@ -189,7 +196,8 @@ enum class BarUISetWordEnum : int
 	DrawAttributeBar_ThicknessFineNumber,
 	DrawAttributeBar_ThicknessMediumNumber,
 	DrawAttributeBar_ThicknessCoarseNumber,
-DrawAttributeBar_ThicknessAnnotationLabel,
+	DrawAttributeBar_PenTypeMenuFreeLine,
+	DrawAttributeBar_ThicknessAnnotationLabel,
 		DrawAttributeBar_ThicknessHoldLockLabel,
 		DrawAttributeBar_ThicknessAnnotationPopupText,
 		DrawAttributeBar_ThicknessAnnotationPopupBody,
@@ -446,6 +454,8 @@ public:
 	// 绘制属性按钮同样复用自身背景层，仅单独记录悬停动画阶段。
 	IdtAtomic<BarButtomHoverStageEnum> drawAttributeBrushHoverStage = BarButtomHoverStageEnum::None;
 	IdtAtomic<BarButtomHoverStageEnum> drawAttributeHighlightHoverStage = BarButtomHoverStageEnum::None;
+	IdtAtomic<BarButtomHoverStageEnum> drawAttributePenTypeExtensionHoverStage = BarButtomHoverStageEnum::None;
+	IdtAtomic<BarButtomHoverStageEnum> drawAttributePenTypeFreeLineHoverStage = BarButtomHoverStageEnum::None;
 	IdtAtomic<BarButtomHoverStageEnum> drawAttributeThicknessFineHoverStage = BarButtomHoverStageEnum::None;
 	IdtAtomic<BarButtomHoverStageEnum> drawAttributeThicknessMediumHoverStage = BarButtomHoverStageEnum::None;
 	IdtAtomic<BarButtomHoverStageEnum> drawAttributeThicknessCoarseHoverStage = BarButtomHoverStageEnum::None;
@@ -475,7 +485,10 @@ protected:
 	void SuspendBorderCursorTracking(HWND hWnd, bool waitForMouseLeave = false);
 	bool ScheduleBorderCursorGraceTimer(HWND hWnd, UINT delayMs);
 	void HandleCanvasDrawingActivity(HWND hWnd, bool started);
+	void CloseAnnotationTooltip();
+	void CloseThicknessOverflowTooltip();
 	void CloseDrawAttributeTooltips();
+	void ClosePenTypeMenu();
 	void CloseThicknessSlider(bool cancelCapture);
 	void CloseColorPicker(bool cancelCapture);
 	void RefreshBorderCursorVisibleRegions();
