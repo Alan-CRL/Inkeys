@@ -47,6 +47,8 @@ IdtAtomic<bool> thicknessSliderHover = false;
 		IdtAtomic<bool> thicknessOverflowPinned = false;
 		IdtAtomic<bool> thicknessOverflowClosePress = false;
 		IdtAtomic<bool> thicknessPreviewOverflow = false;
+		// 记录 Hint 是否已经进入视觉状态，Slider 会据此锁存本次会话。
+		IdtAtomic<bool> thicknessOverflowHintPresent = false;
 		// 简易颜色选择器：输入线程串行改色，渲染线程只读取这些轻量状态。
 		IdtAtomic<bool> colorPickerOpen = false;
 		IdtAtomic<bool> colorPickerDarkTone = true; // 默认暗色系

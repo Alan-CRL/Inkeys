@@ -323,6 +323,8 @@ BARHIGHLIGHTER1         UI                      "src\\UI\\barHighlighter1.svg"
 
 BARTHICKNESSADJUST      UI                      "src\\UI\\barThicknessAdjust.svg"
 
+FLUENTCHECKMARK12FILLED UI                      "src\\UI\\fluentCheckmark12Filled.svg"
+
 BARINFO                 UI                      "src\\UI\\barInfo.svg"
 
 BARQUESTION             UI                      "src\\UI\\barQuestion.svg"

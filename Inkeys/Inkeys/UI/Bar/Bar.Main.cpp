@@ -84,12 +84,30 @@ constexpr double BarDrawAttributePenTypeButtonHeight = 30.0;
 constexpr double BarDrawAttributePenTypeLeft =
 	BarDrawAttributeExpandedWidth - BarDrawAttributeGap
 	- BarDrawAttributePenTypeButtonWidth;
+constexpr double BarDrawAttributeThicknessDividerLeft =
+	BarDrawAttributeGap;
+constexpr double BarDrawAttributeThicknessDividerRight =
+	BarDrawAttributePenTypeLeft - BarDrawAttributeGap;
+constexpr double BarDrawAttributeThicknessDividerWidth =
+	BarDrawAttributeThicknessDividerRight
+	- BarDrawAttributeThicknessDividerLeft;
+constexpr double BarDrawAttributeThicknessAdjustX =
+	BarDrawAttributeThicknessDividerRight
+	- BarDrawAttributeThicknessControlHeight;
+constexpr double BarDrawAttributeThicknessPresetStartX =
+	BarDrawAttributeThicknessAdjustX
+	- (BarDrawAttributeThicknessControlHeight + BarDrawAttributeGap) * 3.0;
 constexpr double BarDrawAttributePenTypeExtensionDividerX = 85.0;
 constexpr double BarDrawAttributePenTypeExtensionWidth =
 	BarDrawAttributePenTypeButtonWidth
 	- BarDrawAttributePenTypeExtensionDividerX;
 constexpr double BarDrawAttributePenTypeMenuRowHeight = 30.0;
 constexpr double BarDrawAttributePenTypeMenuPadding = 5.0;
+constexpr double BarDrawAttributePenTypeMenuCheckAreaWidth = 26.0;
+constexpr double BarDrawAttributePenTypeMenuCheckSize = 12.0;
+constexpr double BarDrawAttributePenTypeMenuCheckInset =
+	(BarDrawAttributePenTypeMenuCheckAreaWidth
+		- BarDrawAttributePenTypeMenuCheckSize) / 2.0;
 constexpr double BarDrawAttributePenTypeMenuHeight =
 	BarDrawAttributePenTypeMenuPadding * 2.0
 	+ BarDrawAttributePenTypeMenuRowHeight * 2.0;
@@ -275,11 +293,10 @@ BarThicknessPreviewGeometry CalculateBarThicknessPreviewGeometry(
 	// 预览区不再为外框或已移除的标注徽标预留 inset。
 	geometry.previewLeft = thicknessRegionInherit.x;
 	geometry.previewRight = thicknessRegionInherit.x + thicknessRegion.w.val;
-	double contentInset =
-		BarDrawAttributeThicknessContentInset * geometry.panelScale;
-	geometry.trackLeft = thicknessRegionInherit.x + contentInset;
+	// Slider 两端与同区分割线严格对齐，不再保留旧外框的内容缩进。
+	geometry.trackLeft = thicknessRegionInherit.x;
 	geometry.trackRight = thicknessRegionInherit.x
-		+ thicknessRegion.w.val - contentInset;
+		+ thicknessRegion.w.val;
 	geometry.valid = geometry.previewBottom > geometry.previewTop
 		&& geometry.previewRight > geometry.previewLeft
 		&& geometry.trackRight > geometry.trackLeft;
@@ -553,15 +570,8 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 						? static_cast<bool>(drawAttribute.penTypeMenuOpen)
 							&& PenModeSupportsAnnotationLine(
 								stateMode.Pen.ModeSelect)
-						: static_cast<bool>(drawAttribute.thicknessPreviewOverflow)
-							&& !static_cast<bool>(
-								drawAttribute.thicknessSliderPinned)
-							&& !static_cast<bool>(
-								drawAttribute.thicknessSliderPressed)
-							&& !static_cast<bool>(
-								drawAttribute.thicknessSliderDragging)
-							&& !static_cast<bool>(
-								drawAttribute.thicknessSliderHover));
+						: static_cast<bool>(
+							drawAttribute.thicknessOverflowHintPresent));
 				// 颜色选择器盖住下方控件时，宽限期计时器也不得再把悬停还给滑块/提示。
 				auto colorPickerPanel = barUISet.shapeMap[
 					BarUISetShapeEnum::DrawAttributeBar_ColorPickerPanel];
@@ -3194,7 +3204,27 @@ void BarUISetClass::Rendering()
 	BarUiValueClass drawAttributeThicknessSliderAccentOpacity(1.0);
 	BarUiValueClass drawAttributeThicknessSliderCenterDiameter(
 		BarThicknessSliderThumbCenterDiameter);
-bool drawAttributeThicknessSliderTargetActive = false;
+	bool drawAttributeThicknessSliderTargetActive = false;
+	bool drawAttributeThicknessSliderPositionLocked = false;
+	bool drawAttributeThicknessSliderUsePositionB = false;
+	bool drawAttributeOverflowSliderSessionAllowsHint = false;
+	auto ResolveThicknessSliderCenterY = [&](const BarThicknessPreviewGeometry& geometry)
+		{
+			double centerY = geometry.sliderCenterY;
+			if (!drawAttributeThicknessSliderPositionLocked
+				|| !drawAttributeThicknessSliderUsePositionB)
+				return centerY;
+
+			// Position B 只在进入 Slider 时选定，并向下为已显示 Hint 留出空间。
+			double halfThumb = BarThicknessSliderThumbDiameter
+				* geometry.panelScale / 2.0;
+			double positionB = centerY
+				+ (BarThicknessTooltipBadgeHeight + BarDrawAttributeGap)
+				* geometry.panelScale;
+			return clamp(positionB,
+				geometry.previewTop + halfThumb,
+				geometry.previewBottom - halfThumb);
+		};
 		// 圆点位置用独立归一化动画，避免笔形切换后量程瞬变把圆点夹到 0。
 		BarUiValueClass drawAttributeThicknessSliderNormalized(0.0);
 		bool drawAttributeThicknessSliderNormalizedInitialized = false;
@@ -3556,14 +3586,32 @@ bool drawAttributeThicknessSliderTargetActive = false;
 			if (thicknessSliderActive
 				!= drawAttributeThicknessSliderTargetActive)
 			{
-				if (thicknessSliderActive)
+				if (thicknessSliderActive
+					&& !drawAttributeThicknessSliderPositionLocked)
 				{
-					// Slider 属于预览区，进入目标态当帧先清掉溢出提示。
-					CloseThicknessOverflowTooltip();
+					// Preview -> Slider 只在入口快照一次，恢复 Preview 前不因 Hint 消失而跳位。
+					bool hintDisplayed =
+						barState.drawAttributeBar.thicknessOverflowHintPresent
+						&& drawAttributeOverflowBadgeProgress.val > 0.000001;
+					drawAttributeThicknessSliderPositionLocked = true;
+					drawAttributeThicknessSliderUsePositionB = hintDisplayed;
+					drawAttributeOverflowSliderSessionAllowsHint = hintDisplayed;
 				}
 				drawAttributeThicknessSliderTargetActive =
 					thicknessSliderActive;
 			}
+			auto SetPopupProgress = [&](BarUiValueClass& progress,
+				bool visible, bool closeRebound = false)
+			{
+				BarUiCurveEnum curve = visible
+					? BarUiCurveEnum::EaseOutBack
+					: (closeRebound ? BarUiCurveEnum::EaseInBack
+						: BarUiCurveEnum::EaseInCubic);
+				BarUiCurveSpecClass curveSpec{
+					curve, curve, 0.0, false };
+				progress.SetTar(visible ? 1.0 : 0.0,
+					operationDur, nullopt, false, curveSpec);
+			};
 			// 笔型扩展菜单与面板共享退场动画；方向在打开时锁存。
 			bool penTypeMenuEligible = barState.drawAttribute && !barState.fold
 				&& PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect);
@@ -3589,26 +3637,13 @@ bool drawAttributeThicknessSliderTargetActive = false;
 				&& drawAttributePenTypeMenuProgress.val <= 0.000001
 				&& drawAttributePenTypeMenuProgress.tar <= 0.000001)
 				barState.drawAttributeBar.penTypeMenuDirectionLocked = false;
-			const BarUiCurveSpecClass penTypeMenuCurve{
-				barState.drawAttributeBar.penTypeMenuOpen
-					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInCubic,
-				barState.drawAttributeBar.penTypeMenuOpen
-					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInCubic,
-				0.0, false };
-			drawAttributePenTypeMenuProgress.SetTar(
-				barState.drawAttributeBar.penTypeMenuOpen ? 1.0 : 0.0,
-				BarUiDefaultOperationDur, nullopt, false, penTypeMenuCurve);
+			// 菜单展开复用 Overflow Popup 的回弹，收起使用对应的反向回弹。
+			SetPopupProgress(drawAttributePenTypeMenuProgress,
+				barState.drawAttributeBar.penTypeMenuOpen, true);
 			const BarUiCurveSpecClass thicknessSliderProgressCurve{
 				BarUiCurveEnum::EaseInOutCubic,
 				BarUiCurveEnum::EaseInOutCubic, 0.0, false };
-			bool overflowVisualStillVisible =
-				drawAttributeOverflowBadgeProgress.val > 0.000001
-				|| drawAttributeOverflowBadgeProgress.tar > 0.000001
-				|| drawAttributeOverflowPopupProgress.val > 0.000001
-				|| drawAttributeOverflowPopupProgress.tar > 0.000001;
-			bool sliderTrackMayFlatten = thicknessSliderActive
-				&& !overflowVisualStillVisible;
-			bool keepThicknessSliderTrackFlat = sliderTrackMayFlatten
+			bool keepThicknessSliderTrackFlat = thicknessSliderActive
 				|| drawAttributeThicknessSliderThumbOpacity.val > 0.000001
 				|| drawAttributeThicknessSliderThumbOpacity.tar > 0.000001;
 			drawAttributeThicknessSliderProgress.SetTar(
@@ -3667,18 +3702,14 @@ bool drawAttributeThicknessSliderTargetActive = false;
 				&& drawAttributeThicknessSliderProgress.tar <= 0.000001
 				&& drawAttributeThicknessSliderThumbOpacity.val <= 0.000001
 				&& drawAttributeThicknessSliderThumbOpacity.tar <= 0.000001;
-			bool overflowBadgeTargetVisible = thicknessPreviewRestored
-				&& barState.drawAttribute && !barState.fold
-				&& barState.drawAttributeBar.thicknessPreviewOverflow;
-			const BarUiCurveSpecClass overflowBadgeCurve{
-				overflowBadgeTargetVisible
-					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInCubic,
-				overflowBadgeTargetVisible
-					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInCubic,
-				0.0, false };
-			drawAttributeOverflowBadgeProgress.SetTar(
-				overflowBadgeTargetVisible ? 1.0 : 0.0,
-				operationDur, nullopt, false, overflowBadgeCurve);
+			if (thicknessPreviewRestored
+				&& drawAttributeThicknessSliderPositionLocked)
+			{
+				// Preview 完整恢复后才释放本次 Slider session 的位置和 Hint 历史。
+				drawAttributeThicknessSliderPositionLocked = false;
+				drawAttributeThicknessSliderUsePositionB = false;
+				drawAttributeOverflowSliderSessionAllowsHint = false;
+			}
 			const BarUiCurveSpecClass thicknessSliderStateCurve{
 				BarUiCurveEnum::EaseOutCubic,
 				BarUiCurveEnum::EaseOutCubic, 0.0, false };
@@ -5260,8 +5291,7 @@ SetButtonPositionTar(temp->buttom.x, xO - barBtnGap / 2.0, 40.0, true);
 						thicknessDivider->y.SetTar(
 							(thicknessY + thicknessDividerOffsetY) * layoutScale);
 						thicknessDivider->w.SetTar(
-							(BarDrawAttributePenTypeLeft
-								- BarDrawAttributeGap * 2.0) * layoutScale);
+							BarDrawAttributeThicknessDividerWidth * layoutScale);
 						thicknessDivider->h.SetTar(BarUiDividerWidth * layoutScale);
 						thicknessDivider->rw->SetTar(BarUiDividerRadius * layoutScale);
 						thicknessDivider->rh->SetTar(BarUiDividerRadius * layoutScale);
@@ -5390,7 +5420,10 @@ for (size_t i = 0; i < 3; ++i)
 								wstring numberText = to_wstring(presetPx);
 								numberWord->content.SetTar(numberText);
 								ConfigureThicknessButton(presetShapes[i], numberWord,
-									100.0 + static_cast<double>(i) * 35.0,
+									BarDrawAttributeThicknessPresetStartX
+										+ static_cast<double>(i)
+											* (BarDrawAttributeThicknessControlHeight
+												+ BarDrawAttributeGap),
 									barState.drawAttribute && thicknessPresetMode,
 									actualThickness == presetPx, *presetPresses[i],
 									*presetHoverStages[i], *presetPressScales[i]);
@@ -5399,7 +5432,7 @@ for (size_t i = 0; i < 3; ++i)
 								&& thicknessPresetMode;
 						ConfigureThicknessButton(
 							BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust, nullptr,
-							205.0, adjustVisible,
+							BarDrawAttributeThicknessAdjustX, adjustVisible,
 							barState.drawAttributeBar.thicknessSliderPinned,
 							barState.drawAttributeBar.thicknessAdjustPress,
 							drawAttributeThicknessAdjustHoverStage,
@@ -5438,6 +5471,28 @@ for (size_t i = 0; i < 3; ++i)
 								> expandedPreviewCapacity + 0.001;
 						barState.drawAttributeBar.thicknessPreviewOverflow =
 							previewOverflow;
+						if (!previewOverflow)
+						{
+							// overflowPossible=false 时任何阶段都立即撤销 Hint 与命中。
+							barState.drawAttributeBar.thicknessOverflowHintPresent = false;
+							drawAttributeOverflowSliderSessionAllowsHint = false;
+							CloseThicknessOverflowTooltip();
+						}
+						else if (!drawAttributeThicknessSliderTargetActive)
+						{
+							// Preview 与 Slider -> Preview 恢复阶段允许按当前 overflow 创建 Hint。
+							barState.drawAttributeBar.thicknessOverflowHintPresent = true;
+							// 恢复阶段产生的 Hint 即使本次 Slider 使用 Position A，
+							// 也要允许快速反转时沿用；Y 快照本身仍保持不变。
+							if (drawAttributeThicknessSliderPositionLocked)
+								drawAttributeOverflowSliderSessionAllowsHint = true;
+						}
+						else if (!drawAttributeOverflowSliderSessionAllowsHint)
+						{
+							// Slider session 内未带入 Hint 时，新产生的 overflow 不能创建 Hint。
+							barState.drawAttributeBar.thicknessOverflowHintPresent = false;
+							CloseThicknessOverflowTooltip();
+						}
 
 						if (!tooltipBaseVisible)
 						{
@@ -5445,29 +5500,16 @@ for (size_t i = 0; i < 3; ++i)
 							CloseThicknessOverflowTooltip();
 						}
 						if (!annotationSupported) CloseAnnotationTooltip();
-						if (!previewOverflow || drawAttributeThicknessSliderTargetActive)
-							CloseThicknessOverflowTooltip();
-
-						auto SetTooltipProgress = [&](BarUiValueClass& progress,
-							bool visible)
-							{
-								BarUiCurveEnum curve = visible
-									? BarUiCurveEnum::EaseOutBack
-									: BarUiCurveEnum::EaseInCubic;
-								BarUiCurveSpecClass curveSpec{
-									curve, curve, 0.0, false };
-								progress.SetTar(visible ? 1.0 : 0.0,
-									operationDur, nullopt, false, curveSpec);
-							};
-						SetTooltipProgress(drawAttributeAnnotationPopupProgress,
+						SetPopupProgress(drawAttributeAnnotationPopupProgress,
 							annotationSupported
 							&& (barState.drawAttributeBar.thicknessAnnotationHover
 								|| barState.drawAttributeBar.thicknessAnnotationPinned));
-						SetTooltipProgress(drawAttributeOverflowPopupProgress,
-							previewOverflow
-							&& !drawAttributeThicknessSliderTargetActive
+						SetPopupProgress(drawAttributeOverflowPopupProgress,
+							barState.drawAttributeBar.thicknessOverflowHintPresent
 							&& (barState.drawAttributeBar.thicknessOverflowHover
 								|| barState.drawAttributeBar.thicknessOverflowPinned));
+						SetPopupProgress(drawAttributeOverflowBadgeProgress,
+							barState.drawAttributeBar.thicknessOverflowHintPresent);
 
 						auto freeLineRow = shapeMap[
 							BarUISetShapeEnum::DrawAttributeBar_PenTypeMenuFreeLine];
@@ -7432,7 +7474,7 @@ double baseThumbDiameter =
 					thumbCenterX - thumbDiameter / 2.0
 						- panel->inhX);
 				sliderThumb->y.SetDirect(
-					previewGeometry.sliderCenterY
+					ResolveThicknessSliderCenterY(previewGeometry)
 						- thumbDiameter / 2.0 - panel->inhY);
 				sliderThumb->w.SetDirect(thumbDiameter);
 				sliderThumb->h.SetDirect(thumbDiameter);
@@ -7542,9 +7584,11 @@ double baseThumbDiameter =
 				: triggerX;
 				double menuTriggerY = menuAnchorShape
 				? static_cast<double>(menuAnchorShape->y.val) : triggerY;
-			double menuProgress = clamp(static_cast<double>(
-				drawAttributePenTypeMenuProgress.val), 0.0, 1.0)
+			// 保留 Back 的上溢出，只对透明度做单独裁剪，避免吞掉回弹。
+			double menuProgress = max(0.0, static_cast<double>(
+				drawAttributePenTypeMenuProgress.val))
 				* panelExpandedProgress;
+			double menuOpacity = clamp(menuProgress, 0.0, 1.0);
 			double menuWidth = BarDrawAttributePenTypeButtonWidth * panelScale;
 			double menuHeight = BarDrawAttributePenTypeMenuHeight * panelScale;
 			double menuTargetLeft = menuTriggerX + triggerWidth - menuWidth;
@@ -7604,7 +7648,7 @@ double baseThumbDiameter =
 				BarUISetShapeEnum::DrawAttributeBar_PenTypeMenu];
 			SetSurfaceDerived(menuSurface, menuLeft, menuTop,
 				menuDrawWidth, menuDrawHeight,
-				menuVisualVisible ? contentOpacity * menuProgress : 0.0);
+				menuVisualVisible ? contentOpacity * menuOpacity : 0.0);
 			if (menuSurface->rw.has_value())
 				menuSurface->rw->SetDirect(4.0 * panelScale * menuProgress);
 			if (menuSurface->rh.has_value())
@@ -7636,30 +7680,42 @@ double baseThumbDiameter =
 			}
 			auto menuFreeWord = wordMap[
 				BarUISetWordEnum::DrawAttributeBar_PenTypeMenuFreeLine];
-			menuFreeWord->x.SetDirect(menuLeft + menuPadding + 26.0 * panelScale * menuProgress);
+			menuFreeWord->x.SetDirect(menuLeft + menuPadding
+				+ BarDrawAttributePenTypeMenuCheckAreaWidth
+					* panelScale * menuProgress);
 			menuFreeWord->y.SetDirect(menuTop + menuPadding);
-			menuFreeWord->w.SetDirect(max(0.0, menuRowWidth - 30.0 * panelScale));
+			menuFreeWord->w.SetDirect(max(0.0, menuRowWidth
+				- (BarDrawAttributePenTypeMenuCheckAreaWidth + 4.0)
+					* panelScale));
 			menuFreeWord->h.SetDirect(menuRowHeight);
 			menuFreeWord->size.SetDirect(12.0 * panelScale);
-			menuFreeWord->pct.SetDirect(menuVisualVisible ? contentOpacity * menuProgress : 0.0);
+			menuFreeWord->pct.SetDirect(menuVisualVisible ? contentOpacity * menuOpacity : 0.0);
 			menuFreeWord->Inherit(BarUiInheritEnum::TopLeft, *panel);
 			auto menuCheck = svgMap[
 				BarUISetSvgEnum::DrawAttributeBar_PenTypeMenuCheck];
-			menuCheck->x.SetDirect(menuLeft + menuPadding + 7.0 * panelScale * menuProgress);
+			menuCheck->x.SetDirect(menuLeft + menuPadding
+				+ BarDrawAttributePenTypeMenuCheckInset
+					* panelScale * menuProgress);
 			menuCheck->y.SetDirect(menuTop + menuPadding
-				+ (menuRowHeight - 14.0 * panelScale * menuProgress) / 2.0);
-			menuCheck->w.SetDirect(14.0 * panelScale * menuProgress);
-			menuCheck->h.SetDirect(14.0 * panelScale * menuProgress);
-			menuCheck->pct.SetDirect(menuVisualVisible ? contentOpacity * menuProgress : 0.0);
+				+ (menuRowHeight - BarDrawAttributePenTypeMenuCheckSize
+					* panelScale * menuProgress) / 2.0);
+			menuCheck->w.SetDirect(BarDrawAttributePenTypeMenuCheckSize
+				* panelScale * menuProgress);
+			menuCheck->h.SetDirect(BarDrawAttributePenTypeMenuCheckSize
+				* panelScale * menuProgress);
+			menuCheck->pct.SetDirect(menuVisualVisible ? contentOpacity * menuOpacity : 0.0);
 			menuCheck->Inherit(BarUiInheritEnum::TopLeft, *panel);
 
 			// 标注线行禁用，但问号仍复用原帮助入口和原浮窗状态。
 			double annotationOpacity = menuVisualVisible
-				? contentOpacity * menuProgress : 0.0;
+				? contentOpacity * menuOpacity : 0.0;
 			auto annotationLabel = wordMap[
 				BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationLabel];
 			annotationLabel->x.SetDirect(
-				menuLeft + menuPadding + 6.0 * panelScale * menuProgress);
+				// 两行共用固定 Checkmark 保留位，文字始终从同一列左对齐。
+				menuLeft + menuPadding
+				+ BarDrawAttributePenTypeMenuCheckAreaWidth
+					* panelScale * menuProgress);
 			annotationLabel->y.SetDirect(
 				menuTop + menuPadding + menuRowHeight);
 			annotationLabel->w.SetDirect(max(0.0,
@@ -7709,12 +7765,24 @@ double baseThumbDiameter =
 				}
 				annotationInfoHit->Inherit(BarUiInheritEnum::TopLeft, *panel);
 
-				// “保持并固定粗细”锚定完整预览区内容边缘，不依赖标注线行。
-				double holdHintOpacity = clamp(
+			double badgeLowerProgress =
+				clamp((previewSide + 1.0) / 2.0, 0.0, 1.0);
+			double badgeHeight = BarThicknessTooltipBadgeHeight * panelScale;
+			double badgeTopAtUpperEdge = previewTop
+				+ BarDrawAttributeGap * panelScale;
+			double badgeTopAtLowerEdge = previewTop + previewAreaHeight
+				- (BarDrawAttributeGap * panelScale + badgeHeight);
+			double badgeTop = badgeTopAtUpperEdge
+				+ (badgeTopAtLowerEdge - badgeTopAtUpperEdge)
+					* badgeLowerProgress;
+
+			// X 对齐“粗细”文字，Y 复用 Overflow Hint 的当前上下换边基准。
+			double holdHintOpacity = clamp(
 					static_cast<double>(
 						drawAttributeThicknessHoldHintOpacity.val)
 						* contentOpacity, 0.0, 1.0);
-			double holdLabelX = previewGeometry.trackLeft - panel->inhX;
+			double holdLabelX = (BarDrawAttributeGap
+				+ BarDrawAttributeThicknessContentInset) * panelScale;
 				double holdLabelW = max(0.0,
 					static_cast<double>(holdLockLabelTextSize.width)
 						* panelScale + 2.0 * panelScale);
@@ -7725,9 +7793,7 @@ double baseThumbDiameter =
 				auto holdLockLabel = wordMap[
 					BarUISetWordEnum::DrawAttributeBar_ThicknessHoldLockLabel];
 				holdLockLabel->x.SetDirect(holdLabelX);
-			holdLockLabel->y.SetDirect(
-			previewGeometry.previewCenterY - panel->inhY
-			- BarThicknessTooltipBadgeHeight * panelScale / 2.0);
+			holdLockLabel->y.SetDirect(badgeTop - panel->inhY);
 				holdLockLabel->w.SetDirect(holdLabelW);
 				holdLockLabel->h.SetDirect(
 					BarThicknessTooltipBadgeHeight * panelScale);
@@ -7746,17 +7812,7 @@ double baseThumbDiameter =
 				holdLockLabel->content.SetTar(L"保持并固定粗细");
 
 			bool overflowInteractive =
-				barState.drawAttributeBar.thicknessPreviewOverflow
-				&& !drawAttributeThicknessSliderTargetActive;
-			double badgeLowerProgress =
-				clamp((previewSide + 1.0) / 2.0, 0.0, 1.0);
-			double badgeHeight = BarThicknessTooltipBadgeHeight * panelScale;
-			double badgeTopAtUpperEdge = previewTop
-			+ BarDrawAttributeGap * panelScale;
-			double badgeTopAtLowerEdge = previewTop + previewAreaHeight
-			- (BarDrawAttributeGap * panelScale + badgeHeight);
-			double badgeTop = badgeTopAtUpperEdge
-			+ (badgeTopAtLowerEdge - badgeTopAtUpperEdge) * badgeLowerProgress;
+				barState.drawAttributeBar.thicknessOverflowHintPresent;
 			double badgeMargin =
 			BarDrawAttributeThicknessContentInset * panelScale;
 			double overflowOpacity = contentOpacity
@@ -8866,8 +8922,13 @@ IncludeShapeBounds(shapeMap[
 										* (1.0 - sliderProgress));
 								FLOAT curveDirection =
 									static_cast<FLOAT>(-previewSide);
-								FLOAT centerY = static_cast<FLOAT>(
-									previewGeometry.previewCenterY * uiZoom);
+									double sliderCenterY =
+									ResolveThicknessSliderCenterY(previewGeometry);
+									FLOAT centerY = static_cast<FLOAT>(
+										(previewGeometry.previewCenterY
+											+ (sliderCenterY
+												- previewGeometry.previewCenterY)
+												* sliderProgress) * uiZoom);
 								D2D1_RECT_F previewRect = D2D1::RectF(left,
 									centerY - previewThickness / 2.0f, right,
 									centerY + previewThickness / 2.0f);
@@ -9988,6 +10049,18 @@ else
 						closeSvg->h.SetDirect(closeH);
 					};
 
+				auto DrawPenTypeOverlay = [&]()
+				{
+				// Overflow Hint 属于属性固有内容，放在菜单下层；问号 Tooltip 随后覆盖菜单。
+				auto overflowBadge = shapeMap[
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowBadge];
+				spec.Shape(barDeviceContext.Get(), *overflowBadge,
+					overflowBadge->Inherit(TopLeft, *panel));
+				auto overflowInfo = svgMap[
+					BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowInfo];
+				spec.Svg(barDeviceContext.Get(), *overflowInfo,
+					overflowInfo->Inherit(TopLeft, *panel));
+
 				// 笔型扩展菜单位于属性内容之上，帮助浮窗随后再覆盖菜单。
 				auto penTypeMenu = shapeMap[
 					BarUISetShapeEnum::DrawAttributeBar_PenTypeMenu];
@@ -10051,14 +10124,6 @@ else
 					annotationInfo->Inherit(TopLeft, *panel));
 
 				DrawThicknessPopup(
-					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
-					BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupText,
-					BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupBody,
-					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit,
-					BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationPopupClose,
-					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit,
-					drawAttributeAnnotationClosePressScale);
-				DrawThicknessPopup(
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup,
 					BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText,
 					BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupBody,
@@ -10066,6 +10131,16 @@ else
 					BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowPopupClose,
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowBadge,
 					drawAttributeOverflowClosePressScale);
+				// 菜单内 [?] 的帮助 Tooltip 始终位于其他绘制属性浮层之上。
+				DrawThicknessPopup(
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
+					BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupText,
+					BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupBody,
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit,
+					BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationPopupClose,
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit,
+					drawAttributeAnnotationClosePressScale);
+				};
 
 				// 静止保持提示：文字在左、圆环在右；锁定后圆环淡出，文字可保留并变白。
 					auto holdLockLabel = wordMap[
@@ -10140,15 +10215,8 @@ else
 						}
 					}
 
-					auto overflowBadge = shapeMap[
-						BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowBadge];
-					spec.Shape(barDeviceContext.Get(), *overflowBadge,
-						overflowBadge->Inherit(TopLeft, *panel));
-					auto overflowInfo = svgMap[
-						BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowInfo];
-					spec.Svg(barDeviceContext.Get(), *overflowInfo,
-						overflowInfo->Inherit(TopLeft, *panel));
-					spec.SetFrameDiffuseMaskGeometryScale(1.0);
+				DrawPenTypeOverlay();
+				spec.SetFrameDiffuseMaskGeometryScale(1.0);
 				}
 
 				// 简易颜色选择器作为同窗顶层内容绘制，面板静止时不请求 sustain 帧。
@@ -10905,11 +10973,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			case IndependentHoverTargetEnum::DrawAttributeOverflowClose:
 				return !barState.fold
 					&& barState.drawAttributeBar.thicknessOverflowPinned
-					&& barState.drawAttributeBar.thicknessPreviewOverflow
-					&& !barState.drawAttributeBar.thicknessSliderHover
-					&& !barState.drawAttributeBar.thicknessSliderPinned
-					&& !barState.drawAttributeBar.thicknessSliderPressed
-					&& !barState.drawAttributeBar.thicknessSliderDragging;
+					&& barState.drawAttributeBar.thicknessOverflowHintPresent;
 			case IndependentHoverTargetEnum::DrawAttributeColorPickerTone:
 				return stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
 					&& !barState.fold
@@ -10979,11 +11043,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 	auto OverflowTooltipAvailable = [&]()
 		{
 			return barState.drawAttribute && !barState.fold
-				&& barState.drawAttributeBar.thicknessPreviewOverflow
-				&& !barState.drawAttributeBar.thicknessSliderPinned
-				&& !barState.drawAttributeBar.thicknessSliderPressed
-				&& !barState.drawAttributeBar.thicknessSliderDragging
-				&& !barState.drawAttributeBar.thicknessSliderHover;
+				&& barState.drawAttributeBar.thicknessOverflowHintPresent;
 		};
 auto ColorPickerAvailable = [&]()
 			{
@@ -11333,6 +11393,7 @@ auto ColorPickerAvailable = [&]()
 						msg.x, msg.y, barStyle.zoom);
 				bool overflowPopupHover = !colorPickerOccludes
 					&& !penTypeMenuOccludes
+					&& !annotationPopupHover
 					&& OverflowTooltipAvailable()
 					&& overflowPopupInteractive && overflowPopup
 					&& overflowPopup->IsClick(
@@ -11513,26 +11574,26 @@ auto ColorPickerAvailable = [&]()
 					&& barState.drawAttribute && !colorPickerOccludes
 					&& !penTypeMenuOccludes)
 				{
-				// 两个浮窗允许覆盖，按绘制顺序优先命中上层的粗细超限浮窗。
+				// 两个浮窗允许覆盖，按绘制顺序优先命中上层的标注帮助浮窗。
 				auto overflowClose = shapeMap[
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit];
 				auto annotationClose = shapeMap[
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit];
 				if (IsIndependentHoverAllowed(
-					IndependentHoverTargetEnum::DrawAttributeOverflowClose)
-					&& overflowClose
-					&& overflowClose->IsClick(msg.x, msg.y, barStyle.zoom))
-				{
-					currentIndependentButton =
-						IndependentHoverTargetEnum::DrawAttributeOverflowClose;
-				}
-				else if (IsIndependentHoverAllowed(
 					IndependentHoverTargetEnum::DrawAttributeAnnotationClose)
 					&& annotationClose
 					&& annotationClose->IsClick(msg.x, msg.y, barStyle.zoom))
 				{
 					currentIndependentButton =
 						IndependentHoverTargetEnum::DrawAttributeAnnotationClose;
+				}
+				else if (IsIndependentHoverAllowed(
+					IndependentHoverTargetEnum::DrawAttributeOverflowClose)
+					&& overflowClose
+					&& overflowClose->IsClick(msg.x, msg.y, barStyle.zoom))
+				{
+					currentIndependentButton =
+						IndependentHoverTargetEnum::DrawAttributeOverflowClose;
 				}
 
 				const BarUISetShapeEnum presetShapes[] =
@@ -11765,17 +11826,6 @@ auto ColorPickerAvailable = [&]()
 			ThicknessTooltipInteraction tooltipInteractions[] =
 			{
 				{
-					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowInfoHit,
-					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup,
-					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit,
-					&barState.drawAttributeBar.thicknessOverflowHover,
-					&barState.drawAttributeBar.thicknessOverflowHoverGrace,
-					&barState.drawAttributeBar.thicknessOverflowPinned,
-					&barState.drawAttributeBar.thicknessOverflowClosePress,
-					BarThicknessOverflowTooltipGraceTimerId,
-					OverflowTooltipAvailable(),
-				},
-				{
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit,
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit,
@@ -11785,6 +11835,17 @@ auto ColorPickerAvailable = [&]()
 					&barState.drawAttributeBar.thicknessAnnotationClosePress,
 					BarThicknessAnnotationTooltipGraceTimerId,
 					AnnotationTooltipAvailable(),
+				},
+				{
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowInfoHit,
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup,
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit,
+					&barState.drawAttributeBar.thicknessOverflowHover,
+					&barState.drawAttributeBar.thicknessOverflowHoverGrace,
+					&barState.drawAttributeBar.thicknessOverflowPinned,
+					&barState.drawAttributeBar.thicknessOverflowClosePress,
+					BarThicknessOverflowTooltipGraceTimerId,
+					OverflowTooltipAvailable(),
 				},
 			};
 
@@ -12737,12 +12798,12 @@ bool gestureCaptured = barState.drawAttributeBar
 										|| (annotationPopupInteractive && annotationPopup
 											&& annotationPopup->IsClick(
 											msg.x, msg.y, barStyle.zoom));
-									bool overflowPointerInside =
-										(overflowInfoHit && overflowInfoHit->IsClick(
-											msg.x, msg.y, barStyle.zoom))
-										|| (overflowPopupInteractive && overflowPopup
-											&& overflowPopup->IsClick(
-											msg.x, msg.y, barStyle.zoom));
+					bool overflowPointerInside = !annotationPointerInside
+						&& ((overflowInfoHit && overflowInfoHit->IsClick(
+							msg.x, msg.y, barStyle.zoom))
+							|| (overflowPopupInteractive && overflowPopup
+								&& overflowPopup->IsClick(
+								msg.x, msg.y, barStyle.zoom)));
 									// 内层捕获循环不会处理普通 hover，抬起后统一重算提示和宽限期。
 									UpdateTooltipHover(
 										AnnotationTooltipAvailable(),
@@ -14368,8 +14429,12 @@ namespace Inkeys::UI::Bar
 
 						auto menuCheck = make_shared<BarUiSVGClass>(
 							0.0, 0.0, GetThemeColor(BarThemeColorEnum::Accent), nullopt);
-						menuCheck->InitializationFromResource(L"UI", L"colorSelect");
-						menuCheck->SetWH(14.0, 14.0);
+						menuCheck->InitializationFromResource(
+							L"UI", L"fluentCheckmark12Filled");
+						// SVG 外层为 128px；控件按 12x12 viewBox 的 optical size 显式布局。
+						menuCheck->SetWH(
+							BarDrawAttributePenTypeMenuCheckSize,
+							BarDrawAttributePenTypeMenuCheckSize);
 						menuCheck->pct.Initialization(0.0);
 						menuCheck->enable.Initialization(true);
 						barUISet.svgMap[
