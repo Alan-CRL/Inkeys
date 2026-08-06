@@ -390,3 +390,25 @@ Implemented the UI3 geometry panel and toolbar refinements: swapped Geometry/Era
 ### Status
 
 [OK] **Completed**
+
+
+## Session 14: 完成绘制属性窗口增量验收
+
+**Date**: 2026-08-06
+**Task**: 完成绘制属性窗口增量验收
+**Branch**: `feature/animation`
+
+### Summary
+
+完成 UI3 绘制属性窗口增量修复：Overflow Hint 历史状态机、Slider session Y 快照、Hint 与 Slider hit-test 优先级、笔类型 Popup 回弹动画与层级修正、固定 Checkmark 区域及 FluentCheckmark12Filled.svg 集成。完整 InkeysRepo.sln Debug|ARM64 构建通过，0 errors；无对应 UI3 自动化测试。随后归档任务。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `26259fd` | (see git log) |
+| `7a5e59a` | (see git log) |
+
+### Status
+
+[OK] **Completed**
