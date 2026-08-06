@@ -34,12 +34,19 @@ int wmain(int argc, wchar_t* argv[])
 {
 	const wchar_t* metricsOutputPath = nullptr;
 	bool strictMetrics = false;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+	bool rtsTrace = false;
+#endif
 	for (int index = 1; index < argc; ++index)
 	{
 		if (wcscmp(argv[index], L"--metrics-output") == 0 && index + 1 < argc)
 			metricsOutputPath = argv[++index];
 		else if (wcscmp(argv[index], L"--strict-metrics") == 0)
 			strictMetrics = true;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+		else if (wcscmp(argv[index], L"--rts-trace") == 0)
+			rtsTrace = true;
+#endif
 		else
 		{
 			std::cout << "Unknown or incomplete command-line option." << std::endl;
@@ -64,6 +71,10 @@ int wmain(int argc, wchar_t* argv[])
 		std::cout << "Failed to initialize the drawing window." << std::endl;
 		return -1;
 	}
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+	// 窗口创建阶段的系统消息不属于复现样本，从 HWND 发布后再开始计数。
+	window.SetRtsTraceEnabled(rtsTrace);
+#endif
 	window.SetInputCoordinator(&input); // 窗口控制请求可唤醒完全空闲的绘制线程。
 
 	// 初始化共享的 D3D11/DXGI 设备资源。
@@ -82,6 +93,9 @@ int wmain(int argc, wchar_t* argv[])
 	window.SetGpuTransparentComposition(presentation.IsGpuTransparentComposition()); // 让窗口过程按当前透明模式处理背景和重绘。
 
 	draw3::RealTimeStylusInput stylus;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+	stylus.SetRtsTraceEnabled(rtsTrace);
+#endif
 	if (!stylus.Initialize(window.Handle(), input, &window))
 	{
 		std::cout << "Failed to initialize RealTimeStylus multi-contact input." << std::endl;

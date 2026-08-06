@@ -5,13 +5,19 @@
 #endif
 
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstdarg>
+#include <cstring>
 #include <d3d11.h>
 #include <dwmapi.h>
 #include <dxgi1_2.h>
 #include <iomanip>
 #include <iostream>
+#include <limits>
+#include <mutex>
 #include <thread>
 #include <windows.h>
 
@@ -31,6 +37,192 @@ namespace draw3
 			{
 				WriteFile(consoleHandle, text, length, &written, nullptr); // 输出被重定向时 WriteConsoleA 会失败，改用 WriteFile。
 			}
+		}
+#endif
+
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+		constexpr size_t kRtsTraceContactCapacity = 32;
+		constexpr size_t kRtsTraceEventCapacity = 10;
+		constexpr size_t kRtsTraceMoveEventLimit = 6;
+		constexpr size_t kRtsTraceAuxiliaryEventCapacity = 64;
+		constexpr size_t kWindowMouseObservationCapacity = 96;
+
+		struct RtsContactTraceSlot
+		{
+			bool occupied = false;
+			bool downObserved = false;
+			uint32_t tabletContextId = 0;
+			uint32_t contactId = 0;
+			uint32_t deviceType = 0;
+			uint32_t callbackCount = 0;
+			uint32_t packetsCallbackCount = 0;
+			uint32_t inAirCallbackCount = 0;
+			uint32_t packetSampleCount = 0;
+			uint32_t inAirSampleCount = 0;
+			uint32_t decodedFailureCount = 0;
+			uint32_t publishSuccessCount = 0;
+			uint32_t publishFailureCount = 0;
+			uint32_t droppedEventCount = 0;
+			size_t storedMoveEventCount = 0;
+			size_t storedEventCount = 0;
+			std::array<RtsCallbackTrace, kRtsTraceEventCapacity> events = {};
+		};
+
+		std::atomic<bool> rtsTraceEnabled = false;
+		std::mutex rtsTraceMutex;
+		std::mutex rtsTraceOutputMutex;
+		std::array<RtsContactTraceSlot, kRtsTraceContactCapacity> rtsContactSlots = {};
+		std::array<WindowMouseObservationTrace, kWindowMouseObservationCapacity>
+			windowMouseObservations = {};
+		uint32_t windowMouseObservationCount = 0;
+		uint32_t windowMouseObservationDroppedCount = 0;
+		uint32_t rtsAuxiliaryEventCount = 0;
+		std::atomic<uint32_t> rtsContactSlotDroppedCount = 0;
+
+		bool TraceEventEquals(const char* eventName, const char* expected) noexcept
+		{
+			return eventName && std::strcmp(eventName, expected) == 0;
+		}
+
+		bool IsMoveTraceEvent(const char* eventName) noexcept
+		{
+			return TraceEventEquals(eventName, "Packets") ||
+				TraceEventEquals(eventName, "InAirPackets");
+		}
+
+		bool IsContactTraceEvent(const char* eventName) noexcept
+		{
+			return TraceEventEquals(eventName, "StylusDown") ||
+				IsMoveTraceEvent(eventName) || TraceEventEquals(eventName, "StylusUp");
+		}
+
+		void AppendTraceText(char* buffer, size_t capacity, size_t& length,
+			const char* format, ...) noexcept
+		{
+			if (!buffer || capacity == 0 || length >= capacity - 1) return;
+			va_list arguments;
+			va_start(arguments, format);
+			const int written = std::vsnprintf(
+				buffer + length, capacity - length, format, arguments);
+			va_end(arguments);
+			if (written <= 0) return;
+			length += (std::min)(static_cast<size_t>(written), capacity - length - 1);
+		}
+
+		void WriteRtsTraceLine(const char* text, size_t length) noexcept
+		{
+			if (!text || length == 0) return;
+			std::lock_guard outputLock(rtsTraceOutputMutex);
+			static HANDLE consoleHandle = GetStdHandle(STD_OUTPUT_HANDLE);
+			if (!consoleHandle || consoleHandle == INVALID_HANDLE_VALUE) return;
+			DWORD written = 0;
+			const DWORD outputLength = static_cast<DWORD>((std::min)(
+				length, static_cast<size_t>((std::numeric_limits<DWORD>::max)())));
+			if (!WriteConsoleA(consoleHandle, text, outputLength, &written, nullptr))
+				WriteFile(consoleHandle, text, outputLength, &written, nullptr);
+		}
+
+		RtsContactTraceSlot* FindRtsContactSlot(
+			uint32_t tabletContextId, uint32_t contactId) noexcept
+		{
+			for (RtsContactTraceSlot& slot : rtsContactSlots)
+			{
+				if (slot.occupied && slot.tabletContextId == tabletContextId &&
+					slot.contactId == contactId) return &slot;
+			}
+			return nullptr;
+		}
+
+		RtsContactTraceSlot* AcquireRtsContactSlot(
+			uint32_t tabletContextId, uint32_t contactId) noexcept
+		{
+			if (RtsContactTraceSlot* existing = FindRtsContactSlot(
+				tabletContextId, contactId)) return existing;
+			for (RtsContactTraceSlot& slot : rtsContactSlots)
+			{
+				if (slot.occupied) continue;
+				slot = {};
+				slot.occupied = true;
+				slot.tabletContextId = tabletContextId;
+				slot.contactId = contactId;
+				return &slot;
+			}
+			rtsContactSlotDroppedCount.fetch_add(1, std::memory_order_relaxed);
+			return nullptr;
+		}
+
+		const char* MouseMessageName(UINT message) noexcept
+		{
+			switch (message)
+			{
+			case WM_MOUSEMOVE: return "WM_MOUSEMOVE";
+			case WM_LBUTTONDOWN: return "WM_LBUTTONDOWN";
+			case WM_LBUTTONDBLCLK: return "WM_LBUTTONDBLCLK";
+			case WM_LBUTTONUP: return "WM_LBUTTONUP";
+			case WM_RBUTTONDOWN: return "WM_RBUTTONDOWN";
+			case WM_RBUTTONDBLCLK: return "WM_RBUTTONDBLCLK";
+			case WM_RBUTTONUP: return "WM_RBUTTONUP";
+			case WM_MBUTTONDOWN: return "WM_MBUTTONDOWN";
+			case WM_MBUTTONDBLCLK: return "WM_MBUTTONDBLCLK";
+			case WM_MBUTTONUP: return "WM_MBUTTONUP";
+			case WM_MOUSELEAVE: return "WM_MOUSELEAVE";
+			default: return "WM_MOUSE_UNKNOWN";
+			}
+		}
+
+		void PrintRtsCallbackLine(const RtsCallbackTrace& callback) noexcept
+		{
+			char line[768] = {};
+			const int length = std::snprintf(line, sizeof(line),
+				"[RTS_TRACE][callback] qpc=%lld tid=%lu event=%s tcid=%u cid=%u "
+				"device=%u packets=%lu properties=%lu rawKnown=%u raw=(%ld,%ld) "
+				"decoded=%u pixel=(%.3f,%.3f) published=%u\r\n",
+				static_cast<long long>(callback.qpc),
+				static_cast<unsigned long>(callback.threadId),
+				callback.eventName ? callback.eventName : "unknown",
+				callback.tabletContextId, callback.contactId, callback.deviceType,
+				static_cast<unsigned long>(callback.packetCount),
+				static_cast<unsigned long>(callback.propertyCount),
+				callback.hasRawPosition ? 1u : 0u,
+				static_cast<long>(callback.rawX), static_cast<long>(callback.rawY),
+				callback.decoded ? 1u : 0u, callback.decodedX, callback.decodedY,
+				callback.published ? 1u : 0u);
+			if (length > 0) WriteRtsTraceLine(line,
+				(std::min)(static_cast<size_t>(length), sizeof(line) - 1));
+		}
+
+		void PrintRtsContactSummary(const RtsContactTraceSlot& slot) noexcept
+		{
+			char line[4096] = {};
+			size_t length = 0;
+			AppendTraceText(line, sizeof(line), length,
+				"[RTS_TRACE][contact] tcid=%u cid=%u device=%u callbacks=%u "
+				"packetsCallbacks=%u inAirCallbacks=%u packetSamples=%u inAirSamples=%u "
+				"decodeFailures=%u publishOk=%u publishFailed=%u stored=%zu dropped=%u "
+				"slotDrops=%u sequence=",
+				slot.tabletContextId, slot.contactId, slot.deviceType, slot.callbackCount,
+				slot.packetsCallbackCount, slot.inAirCallbackCount, slot.packetSampleCount,
+				slot.inAirSampleCount, slot.decodedFailureCount, slot.publishSuccessCount,
+				slot.publishFailureCount, slot.storedEventCount, slot.droppedEventCount,
+				rtsContactSlotDroppedCount.load(std::memory_order_relaxed));
+			for (size_t index = 0; index < slot.storedEventCount; ++index)
+			{
+				const RtsCallbackTrace& event = slot.events[index];
+				AppendTraceText(line, sizeof(line), length,
+					"%s%s{qpc=%lld,tid=%lu,pk=%lu,prop=%lu,raw=%u:(%ld,%ld),"
+					"decoded=%u:(%.3f,%.3f),published=%u}",
+					index == 0 ? "" : " -> ", event.eventName ? event.eventName : "unknown",
+					static_cast<long long>(event.qpc),
+					static_cast<unsigned long>(event.threadId),
+					static_cast<unsigned long>(event.packetCount),
+					static_cast<unsigned long>(event.propertyCount),
+					event.hasRawPosition ? 1u : 0u,
+					static_cast<long>(event.rawX), static_cast<long>(event.rawY),
+					event.decoded ? 1u : 0u, event.decodedX, event.decodedY,
+					event.published ? 1u : 0u);
+			}
+			AppendTraceText(line, sizeof(line), length, "\r\n");
+			WriteRtsTraceLine(line, length);
 		}
 #endif
 
@@ -68,6 +260,206 @@ namespace draw3
 			}
 		}
 	}
+
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+	void ConfigureRtsTrace(bool enabled) noexcept
+	{
+		std::lock_guard traceLock(rtsTraceMutex);
+		const bool wasEnabled = rtsTraceEnabled.load(std::memory_order_relaxed);
+		if (wasEnabled == enabled) return;
+		if (enabled)
+		{
+			for (RtsContactTraceSlot& slot : rtsContactSlots) slot = {};
+			for (WindowMouseObservationTrace& observation : windowMouseObservations) observation = {};
+			windowMouseObservationCount = 0;
+			windowMouseObservationDroppedCount = 0;
+			rtsAuxiliaryEventCount = 0;
+			rtsContactSlotDroppedCount.store(0, std::memory_order_relaxed);
+		}
+		rtsTraceEnabled.store(enabled, std::memory_order_release);
+	}
+
+	void LogRtsInitializationState(const RtsInitializationTrace& state) noexcept
+	{
+		if (!rtsTraceEnabled.load(std::memory_order_acquire)) return;
+		char line[2048] = {};
+		const int length = std::snprintf(line, sizeof(line),
+			"[RTS_TRACE][init] tid=%lu windowThread=%lu hwnd=0x%llx style=0x%llx "
+			"exStyle=0x%llx tabletFlags=0x%llx digitizer=0x%x maxTouches=%d "
+			"dataInterest=0x%08x selectedProperties=%lu packetOrder=%s "
+			"probe=%s value=%s\r\n"
+			"[RTS_TRACE][init-hresult] CoInitializeEx=0x%08lx CoCreate=0x%08lx "
+			"put_HWND=0x%08lx SetAllTabletsMode=0x%08lx packetDesired=0x%08lx "
+			"packetFallback=0x%08lx Stylus2=0x%08lx Flicks=0x%08lx "
+			"Stylus3=0x%08lx MultiTouchSet=0x%08lx MultiTouchGet=0x%08lx MultiTouch=%u "
+			"Marshaler=0x%08lx AddPlugin=0x%08lx Enable=0x%08lx\r\n",
+			static_cast<unsigned long>(state.currentThreadId),
+			static_cast<unsigned long>(state.windowThreadId),
+			static_cast<unsigned long long>(state.windowHandle),
+			static_cast<unsigned long long>(state.windowStyle),
+			static_cast<unsigned long long>(state.windowExtendedStyle),
+			static_cast<unsigned long long>(state.tabletServiceFlags), state.digitizer,
+			state.maximumTouches, state.dataInterest,
+			static_cast<unsigned long>(state.selectedPacketPropertyCount),
+			state.selectedPacketDescription ? state.selectedPacketDescription : "none",
+			state.probeName ? state.probeName : "none",
+			state.probeValue ? state.probeValue : "baseline",
+			static_cast<unsigned long>(state.coInitializeResult),
+			static_cast<unsigned long>(state.createStylusResult),
+			static_cast<unsigned long>(state.putHwndResult),
+			static_cast<unsigned long>(state.setAllTabletsModeResult),
+			static_cast<unsigned long>(state.desiredPacketDescriptionResult),
+			static_cast<unsigned long>(state.fallbackPacketDescriptionResult),
+			static_cast<unsigned long>(state.queryStylus2Result),
+			static_cast<unsigned long>(state.disableFlicksResult),
+			static_cast<unsigned long>(state.queryStylus3Result),
+			static_cast<unsigned long>(state.enableMultiTouchResult),
+			static_cast<unsigned long>(state.readMultiTouchResult),
+			state.multiTouchEnabled ? 1u : 0u,
+			static_cast<unsigned long>(state.marshalerResult),
+			static_cast<unsigned long>(state.addPluginResult),
+			static_cast<unsigned long>(state.enableStylusResult));
+		if (length > 0) WriteRtsTraceLine(line,
+			(std::min)(static_cast<size_t>(length), sizeof(line) - 1));
+	}
+
+	void RecordRtsCallback(const RtsCallbackTrace& callback) noexcept
+	{
+		if (!rtsTraceEnabled.load(std::memory_order_acquire)) return;
+		if (!IsContactTraceEvent(callback.eventName))
+		{
+			uint32_t sequence = 0;
+			{
+				std::lock_guard traceLock(rtsTraceMutex);
+				sequence = ++rtsAuxiliaryEventCount;
+			}
+			if (sequence <= kRtsTraceAuxiliaryEventCapacity)
+				PrintRtsCallbackLine(callback);
+			else if (sequence == kRtsTraceAuxiliaryEventCapacity + 1)
+			{
+				char line[256] = {};
+				const int length = std::snprintf(line, sizeof(line),
+					"[RTS_TRACE][callback] auxiliary limit reached capacity=%zu; "
+					"further events counted only\r\n", kRtsTraceAuxiliaryEventCapacity);
+				if (length > 0) WriteRtsTraceLine(line,
+					(std::min)(static_cast<size_t>(length), sizeof(line) - 1));
+			}
+			return;
+		}
+
+		RtsContactTraceSlot completed;
+		bool shouldPrintSummary = false;
+		{
+			std::lock_guard traceLock(rtsTraceMutex);
+			RtsContactTraceSlot* slot = FindRtsContactSlot(
+				callback.tabletContextId, callback.contactId);
+			if (TraceEventEquals(callback.eventName, "StylusDown"))
+			{
+				if (slot) *slot = {};
+				slot = slot ? slot : AcquireRtsContactSlot(
+					callback.tabletContextId, callback.contactId);
+				if (!slot) return;
+				slot->occupied = true;
+				slot->downObserved = true;
+				slot->tabletContextId = callback.tabletContextId;
+				slot->contactId = callback.contactId;
+				slot->deviceType = callback.deviceType;
+			}
+			else if (TraceEventEquals(callback.eventName, "InAirPackets") &&
+				(!slot || !slot->downObserved))
+			{
+				// 悬停数据没有活动 Down 时只忽略，不创建无限期 trace 槽位。
+				return;
+			}
+			else if (!slot)
+			{
+				slot = AcquireRtsContactSlot(
+					callback.tabletContextId, callback.contactId);
+				if (!slot) return;
+				slot->deviceType = callback.deviceType;
+			}
+
+			slot->occupied = true;
+			slot->callbackCount++;
+			if (IsMoveTraceEvent(callback.eventName))
+			{
+				if (TraceEventEquals(callback.eventName, "Packets"))
+				{
+					++slot->packetsCallbackCount;
+					slot->packetSampleCount += callback.packetCount;
+				}
+				else
+				{
+					++slot->inAirCallbackCount;
+					slot->inAirSampleCount += callback.packetCount;
+				}
+			}
+			if (!callback.decoded) ++slot->decodedFailureCount;
+			if (!TraceEventEquals(callback.eventName, "InAirPackets"))
+			{
+				if (callback.published) ++slot->publishSuccessCount;
+				else ++slot->publishFailureCount;
+			}
+
+			const bool isMove = IsMoveTraceEvent(callback.eventName);
+			const bool canStore = slot->storedEventCount < kRtsTraceEventCapacity &&
+				(!isMove || slot->storedMoveEventCount < kRtsTraceMoveEventLimit);
+			if (canStore)
+			{
+				slot->events[slot->storedEventCount++] = callback;
+				if (isMove) ++slot->storedMoveEventCount;
+			}
+			else ++slot->droppedEventCount;
+
+			if (TraceEventEquals(callback.eventName, "StylusUp"))
+			{
+				completed = *slot;
+				*slot = {};
+				shouldPrintSummary = true;
+			}
+		}
+		if (shouldPrintSummary) PrintRtsContactSummary(completed);
+	}
+
+	void RecordWindowMouseObservation(
+		const WindowMouseObservationTrace& observation) noexcept
+	{
+		if (!rtsTraceEnabled.load(std::memory_order_acquire)) return;
+		uint32_t sequence = 0;
+		{
+			std::lock_guard traceLock(rtsTraceMutex);
+			sequence = ++windowMouseObservationCount;
+			if (sequence <= kWindowMouseObservationCapacity)
+				windowMouseObservations[sequence - 1] = observation;
+			else
+				++windowMouseObservationDroppedCount;
+		}
+		if (sequence > kWindowMouseObservationCapacity)
+		{
+			if (sequence == kWindowMouseObservationCapacity + 1)
+			{
+				char line[256] = {};
+				const int length = std::snprintf(line, sizeof(line),
+					"[RTS_TRACE][window] observation limit reached capacity=%zu; further messages counted only\r\n",
+					kWindowMouseObservationCapacity);
+				if (length > 0) WriteRtsTraceLine(line,
+					(std::min)(static_cast<size_t>(length), sizeof(line) - 1));
+			}
+			return;
+		}
+		char line[512] = {};
+		const int length = std::snprintf(line, sizeof(line),
+			"[RTS_TRACE][window] count=%u qpc=%lld tid=%lu message=%s(0x%04x) "
+			"buttons=0x%llx xy=(%d,%d) promoted=%u\r\n",
+			sequence, static_cast<long long>(observation.qpc),
+			static_cast<unsigned long>(observation.threadId),
+			MouseMessageName(observation.message), observation.message,
+			static_cast<unsigned long long>(observation.buttonFlags),
+			observation.x, observation.y, observation.promoted ? 1u : 0u);
+		if (length > 0) WriteRtsTraceLine(line,
+			(std::min)(static_cast<size_t>(length), sizeof(line) - 1));
+	}
+#endif
 
 	double GetQpcTimeMilliseconds()
 	{

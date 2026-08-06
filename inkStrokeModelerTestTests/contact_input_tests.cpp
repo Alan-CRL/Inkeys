@@ -361,6 +361,7 @@ namespace
 	void TestRtsStylusConversions(TestState& state)
 	{
 		TEST_CHECK(state, draw3::RtsPenCursorDataInterestEnabledForTesting());
+		TEST_CHECK(state, draw3::RtsTouchpadProbeDataInterestExactForTesting());
 		TEST_CHECK(state, draw3::RtsContactSizePropertiesRequestedForTesting());
 		const float pressure4095 = draw3::NormalizeRtsPressureForTesting(2048, 0, 4095);
 		const float pressure8191 = draw3::NormalizeRtsPressureForTesting(4096, 0, 8191);

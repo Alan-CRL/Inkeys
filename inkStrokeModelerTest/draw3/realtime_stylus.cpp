@@ -36,6 +36,13 @@ namespace draw3
 		constexpr float kHalfPi = kPi * 0.5f;
 		constexpr float kTwoPi = kPi * 2.0f;
 		constexpr float kTiltLimit = kHalfPi - 0.0001f;
+		const std::array<GUID, 5> kIdtRtsPacketProperties = {
+			GUID_PACKETPROPERTY_GUID_X,
+			GUID_PACKETPROPERTY_GUID_Y,
+			GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE,
+			GUID_PACKETPROPERTY_GUID_WIDTH,
+			GUID_PACKETPROPERTY_GUID_HEIGHT
+		};
 		const std::array<GUID, 9> kExtendedPacketProperties = {
 			GUID_PACKETPROPERTY_GUID_X,
 			GUID_PACKETPROPERTY_GUID_Y,
@@ -47,25 +54,20 @@ namespace draw3
 			GUID_PACKETPROPERTY_GUID_WIDTH,
 			GUID_PACKETPROPERTY_GUID_HEIGHT
 		};
-		const std::array<GUID, 7> kStylusPacketProperties = {
-			GUID_PACKETPROPERTY_GUID_X,
-			GUID_PACKETPROPERTY_GUID_Y,
-			GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE,
-			GUID_PACKETPROPERTY_GUID_X_TILT_ORIENTATION,
-			GUID_PACKETPROPERTY_GUID_Y_TILT_ORIENTATION,
-			GUID_PACKETPROPERTY_GUID_AZIMUTH_ORIENTATION,
-			GUID_PACKETPROPERTY_GUID_ALTITUDE_ORIENTATION
-		};
 		const std::array<GUID, 2> kRequiredPacketProperties = {
 			GUID_PACKETPROPERTY_GUID_X,
 			GUID_PACKETPROPERTY_GUID_Y
 		};
-		constexpr RealTimeStylusDataInterest kRtsDataInterest =
+		constexpr RealTimeStylusDataInterest kProductionRtsDataInterest =
 			static_cast<RealTimeStylusDataInterest>(
 				RTSDI_RealTimeStylusEnabled | RTSDI_RealTimeStylusDisabled |
 				RTSDI_StylusInRange | RTSDI_StylusOutOfRange | RTSDI_InAirPackets |
 				RTSDI_StylusDown | RTSDI_Packets | RTSDI_StylusUp |
 				RTSDI_TabletAdded | RTSDI_TabletRemoved | RTSDI_Error);
+		constexpr RealTimeStylusDataInterest kTouchpadProbeDataInterest =
+			static_cast<RealTimeStylusDataInterest>(
+				// IdtRts 的精确兴趣集只用于 --rts-trace 单变量探针。
+				RTSDI_StylusDown | RTSDI_Packets | RTSDI_StylusUp);
 
 		struct PacketPropertyMetadata
 		{
@@ -406,9 +408,10 @@ namespace draw3
 		class StylusSyncPlugin final : public IStylusSyncPlugin
 		{
 		public:
-			StylusSyncPlugin(ContactInputCoordinator& coordinator, DrawingCursorEventSink* drawingCursorSink)
+			StylusSyncPlugin(ContactInputCoordinator& coordinator,
+				DrawingCursorEventSink* drawingCursorSink, bool touchpadProbeEnabled)
 				: coordinator_(coordinator), interruptionSimulation_(coordinator),
-				drawingCursorSink_(drawingCursorSink)
+				drawingCursorSink_(drawingCursorSink), touchpadProbeEnabled_(touchpadProbeEnabled)
 			{
 				marshalerResult_ = CoCreateFreeThreadedMarshaler(
 					static_cast<IUnknown*>(this), freeThreadedMarshaler_.ReleaseAndGetAddressOf());
@@ -452,38 +455,17 @@ namespace draw3
 			{
 				if (!source || (contextCount > 0 && !contextIds)) return E_INVALIDARG;
 				std::cout << "[RTS] enabled contexts=" << contextCount << std::endl;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				RecordCallback("RealTimeStylusEnabled", nullptr, nullptr, contextCount, 0,
+					nullptr, nullptr, true, false);
+#endif
 				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
 					interruptionSimulation_.Reset();
 				pixelScalePublished_.store(false, std::memory_order_release);
-				if (contextCount > 0)
-				{
-					FLOAT scaleX = 1.0f;
-					FLOAT scaleY = 1.0f;
-					ULONG propertyCount = 0;
-					PACKET_PROPERTY* properties = nullptr;
-					const HRESULT scaleResult = source->GetPacketDescriptionData(
-						contextIds[0], &scaleX, &scaleY, &propertyCount, &properties);
-					CoTaskMemFree(properties);
-					if (SUCCEEDED(scaleResult) && std::isfinite(scaleX) && std::isfinite(scaleY) &&
-						scaleX > 0.0f && scaleY > 0.0f)
-					{
-						// 与经过广泛验证的 IdtRts.cpp 一致：首 context 提供全输入统一像素比例。
-						inkToPixelScaleX_ = scaleX;
-						inkToPixelScaleY_ = scaleY;
-						pixelScalePublished_.store(true, std::memory_order_release);
-						std::cout << "[RTS] use first-context pixel scale tcid=" << contextIds[0]
-							<< " scale=(" << scaleX << "," << scaleY << ")" << std::endl;
-					}
-					else
-					{
-						std::cout << "[RTS] first-context scale unavailable tcid=" << contextIds[0]
-							<< " HRESULT=0x" << std::hex << static_cast<unsigned long>(scaleResult)
-							<< std::dec << " scale=(" << scaleX << "," << scaleY << ")" << std::endl;
-					}
-				}
+				if (!touchpadProbeEnabled_) EnsurePixelScale(source);
 				for (ULONG index = 0; index < contextCount; ++index)
 				{
-					// 启用慢路径预先缓存 packet 元数据，热路径不做 COM 查询。
+					// 探针不订阅 Enabled，普通生产路径仍在这里预热首 context 缩放。
 					EnsureMetadata(source, contextIds[index], nullptr);
 				}
 				// 单个 tablet 暂时无法查询时不能让整个插件进入 Error；Down 会按 tcid 再尝试一次。
@@ -494,6 +476,10 @@ namespace draw3
 				ULONG, const TABLET_CONTEXT_ID*) override
 			{
 				std::cout << "[RTS] disabled." << std::endl;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				RecordCallback("RealTimeStylusDisabled", nullptr, nullptr, 0, 0,
+					nullptr, nullptr, true, false);
+#endif
 				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
 					interruptionSimulation_.Reset();
 				PublishDefaultPenCursor();
@@ -506,6 +492,7 @@ namespace draw3
 			{
 				if (source)
 				{
+					EnsurePixelScale(source);
 					// InRange 不含倒转信息；等待首个 InAir/Pointer 包决定普通笔或笔尾。
 					EnsureMetadata(source, contextId, nullptr);
 				}
@@ -514,6 +501,10 @@ namespace draw3
 
 			HRESULT STDMETHODCALLTYPE StylusOutOfRange(IRealTimeStylus*, TABLET_CONTEXT_ID, STYLUS_ID) override
 			{
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				RecordCallback("StylusOutOfRange", nullptr, nullptr, 0, 0,
+					nullptr, nullptr, true, false);
+#endif
 				PublishDefaultPenCursor();
 				return S_OK;
 			}
@@ -522,6 +513,7 @@ namespace draw3
 				ULONG propertyCount, LONG* packet, LONG**) override
 			{
 				if (!source || !stylusInfo || !packet) return E_INVALIDARG;
+				EnsurePixelScale(source);
 				const TabletMetadata* metadata = EnsureMetadata(source, stylusInfo->tcid, nullptr);
 				ContactSnapshot snapshot;
 				if (!metadata || !DecodeSnapshot(
@@ -531,6 +523,10 @@ namespace draw3
 					std::cout << "[RTS] down decode failed tcid=" << stylusInfo->tcid
 						<< " cid=" << stylusInfo->cid << " properties=" << propertyCount
 						<< " metadata=" << (metadata ? "yes" : "no") << std::endl;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					RecordCallback("StylusDown", stylusInfo, metadata, 1, propertyCount,
+						packet, nullptr, false, false);
+#endif
 					return S_OK;
 				}
 				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
@@ -551,14 +547,9 @@ namespace draw3
 				else
 					published = coordinator_.PublishDown(
 						stylusInfo->tcid, stylusInfo->cid, deviceType, snapshot);
-#if defined(_DEBUG)
-				moveDiagnosticCount_.store(0, std::memory_order_relaxed); // 每次落笔重新保留少量 Move 日志。
-				std::cout << "[RTS] down tcid=" << stylusInfo->tcid << " cid=" << stylusInfo->cid
-					<< " type=" << static_cast<uint32_t>(deviceType)
-					<< " properties=" << propertyCount << " raw=("
-					<< packet[metadata->xIndex] << "," << packet[metadata->yIndex] << ") pixel=("
-					<< snapshot.position.x << "," << snapshot.position.y << ") published="
-					<< (published ? "yes" : "no") << std::endl;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				RecordCallback("StylusDown", stylusInfo, metadata, 1, propertyCount,
+					packet, &snapshot, true, published, deviceType, true);
 #endif
 				return published ? S_OK : E_OUTOFMEMORY;
 			}
@@ -577,13 +568,18 @@ namespace draw3
 					snapshot.position = { NAN, NAN };
 					snapshot.qpc = QueryQpc();
 					// 坏 Up 包不能把 contact 永久留在 Producing；协调器会沿用最后有效位置闭合。
+					bool published = false;
 					if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
-						interruptionSimulation_.PublishUp(
+						published = interruptionSimulation_.PublishUp(
 							stylusInfo->tcid, stylusInfo->cid, snapshot);
 					else
-						coordinator_.PublishUp(stylusInfo->tcid, stylusInfo->cid, snapshot);
+						published = coordinator_.PublishUp(stylusInfo->tcid, stylusInfo->cid, snapshot);
 					std::cout << "[RTS] up decode failed tcid=" << stylusInfo->tcid
 						<< " cid=" << stylusInfo->cid << " properties=" << propertyCount << std::endl;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					RecordCallback("StylusUp", stylusInfo, metadata, 1, propertyCount,
+						packet, nullptr, false, published);
+#endif
 					return S_OK;
 				}
 				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
@@ -595,10 +591,9 @@ namespace draw3
 						stylusInfo->tcid, stylusInfo->cid, snapshot);
 				else
 					published = coordinator_.PublishUp(stylusInfo->tcid, stylusInfo->cid, snapshot);
-#if defined(_DEBUG)
-				std::cout << "[RTS] up tcid=" << stylusInfo->tcid << " cid=" << stylusInfo->cid
-					<< " pixel=(" << snapshot.position.x << "," << snapshot.position.y
-					<< ") published=" << (published ? "yes" : "no") << std::endl;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				RecordCallback("StylusUp", stylusInfo, metadata, 1, propertyCount,
+					packet, &snapshot, true, published);
 #endif
 				return S_OK;
 			}
@@ -625,8 +620,13 @@ namespace draw3
 				const LONG* lastPacket = packets +
 					static_cast<size_t>(packetCount - 1) * propertyCount;
 				ContactSnapshot snapshot;
-				if (!metadata || !DecodeSnapshot(metadata, propertyCount, lastPacket,
-					ContactPhase::Move, snapshot)) return S_OK;
+				const bool decoded = metadata && DecodeSnapshot(metadata, propertyCount, lastPacket,
+					ContactPhase::Move, snapshot);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				RecordCallback("InAirPackets", stylusInfo, metadata, packetCount, propertyCount,
+					lastPacket, decoded ? &snapshot : nullptr, decoded, false);
+#endif
+				if (!decoded) return S_OK;
 				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
 				PublishPenCursor(metadata, stylusInfo, false, snapshot);
@@ -645,13 +645,10 @@ namespace draw3
 				if (!metadata || !DecodeSnapshot(
 					metadata, propertyCount, lastPacket, ContactPhase::Move, snapshot))
 				{
-					const uint32_t diagnosticIndex = moveDiagnosticCount_.fetch_add(1, std::memory_order_relaxed);
-					if (diagnosticIndex < 8)
-					{
-						std::cout << "[RTS] move decode failed tcid=" << stylusInfo->tcid
-							<< " cid=" << stylusInfo->cid << " packets=" << packetCount
-							<< " properties=" << propertyCount << std::endl;
-					}
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					RecordCallback("Packets", stylusInfo, metadata, packetCount, propertyCount,
+						lastPacket, nullptr, false, false);
+#endif
 					return S_OK;
 				}
 				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
@@ -663,14 +660,9 @@ namespace draw3
 						stylusInfo->tcid, stylusInfo->cid, snapshot);
 				else
 					published = coordinator_.PublishMove(stylusInfo->tcid, stylusInfo->cid, snapshot);
-#if defined(_DEBUG)
-				const uint32_t diagnosticIndex = moveDiagnosticCount_.fetch_add(1, std::memory_order_relaxed);
-				if (diagnosticIndex < 8)
-				{
-					std::cout << "[RTS] move tcid=" << stylusInfo->tcid << " cid=" << stylusInfo->cid
-						<< " packets=" << packetCount << " pixel=(" << snapshot.position.x << ","
-						<< snapshot.position.y << ") published=" << (published ? "yes" : "no") << std::endl;
-				}
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				RecordCallback("Packets", stylusInfo, metadata, packetCount, propertyCount,
+					lastPacket, &snapshot, true, published);
 #endif
 				return S_OK;
 			}
@@ -694,12 +686,20 @@ namespace draw3
 				const HRESULT result = source->GetTabletContextIdFromTablet(tablet, &contextId);
 				if (FAILED(result)) return result;
 				EnsureMetadata(source, contextId, tablet);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				RecordCallback("TabletAdded", nullptr, nullptr, 0, 0,
+					nullptr, nullptr, SUCCEEDED(result), false);
+#endif
 				return S_OK; // Tablet 初始化时序不稳定时保留后续 Down 的重试机会。
 			}
 
 			HRESULT STDMETHODCALLTYPE TabletRemoved(IRealTimeStylus*, LONG) override
 			{
 				// 回调只给 tablet index，无法无查询地还原 tcid；设备移除时安全取消全部活动 contact。
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				RecordCallback("TabletRemoved", nullptr, nullptr, 0, 0,
+					nullptr, nullptr, true, false);
+#endif
 				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
 					interruptionSimulation_.Reset();
 				PublishDefaultPenCursor();
@@ -711,6 +711,10 @@ namespace draw3
 				HRESULT errorCode, LONG_PTR*) override
 			{
 				lastError_.store(errorCode, std::memory_order_release);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				RecordCallback("Error", nullptr, nullptr, 0, 0,
+					nullptr, nullptr, false, false);
+#endif
 				std::cout << "[RTS] plugin error dataInterest=0x" << std::hex
 					<< static_cast<unsigned long>(dataInterest)
 					<< " HRESULT=0x" << static_cast<unsigned long>(errorCode) << std::dec << std::endl;
@@ -729,11 +733,47 @@ namespace draw3
 			HRESULT STDMETHODCALLTYPE DataInterest(RealTimeStylusDataInterest* interest) override
 			{
 				if (!interest) return E_POINTER;
-				*interest = kRtsDataInterest;
+				*interest = touchpadProbeEnabled_
+					? kTouchpadProbeDataInterest : kProductionRtsDataInterest;
 				return S_OK;
 			}
 
 		private:
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			void RecordCallback(const char* eventName, const StylusInfo* stylusInfo,
+				const TabletMetadata* metadata, ULONG packetCount, ULONG propertyCount,
+				const LONG* packet, const ContactSnapshot* snapshot, bool decoded,
+				bool published, InputDeviceType routedDeviceType = InputDeviceType::Pen,
+				bool overrideDeviceType = false) noexcept
+			{
+				RtsCallbackTrace trace;
+				trace.eventName = eventName;
+				trace.qpc = snapshot ? snapshot->qpc : QueryQpc();
+				trace.threadId = GetCurrentThreadId();
+				trace.tabletContextId = stylusInfo ? stylusInfo->tcid : 0;
+				trace.contactId = stylusInfo ? stylusInfo->cid : 0;
+				trace.deviceType = static_cast<uint32_t>(overrideDeviceType || !metadata
+					? routedDeviceType : metadata->deviceType);
+				trace.packetCount = packetCount;
+				trace.propertyCount = propertyCount;
+				trace.decoded = decoded;
+				trace.published = published;
+				if (snapshot)
+				{
+					trace.decodedX = snapshot->position.x;
+					trace.decodedY = snapshot->position.y;
+				}
+				if (metadata && packet && metadata->xIndex < propertyCount &&
+					metadata->yIndex < propertyCount)
+				{
+					trace.hasRawPosition = true;
+					trace.rawX = packet[metadata->xIndex];
+					trace.rawY = packet[metadata->yIndex];
+				}
+				RecordRtsCallback(trace);
+			}
+#endif
+
 			void PublishPenCursor(const TabletMetadata* metadata,
 				const StylusInfo* stylusInfo, bool inContact,
 				const ContactSnapshot& snapshot) noexcept
@@ -753,6 +793,53 @@ namespace draw3
 			void PublishDefaultPenCursor() noexcept
 			{
 				if (drawingCursorSink_) drawingCursorSink_->ClearPenCursorSample();
+			}
+
+			bool EnsurePixelScale(IRealTimeStylus* source)
+			{
+				if (!source) return false;
+				if (pixelScalePublished_.load(std::memory_order_acquire)) return true;
+				std::lock_guard lock(pixelScaleMutex_);
+				if (pixelScalePublished_.load(std::memory_order_relaxed)) return true;
+
+				ULONG contextCount = 0;
+				TABLET_CONTEXT_ID* contextIds = nullptr;
+				const HRESULT contextResult = source->GetAllTabletContextIds(
+					&contextCount, &contextIds);
+				if (FAILED(contextResult) || contextCount == 0 || !contextIds)
+				{
+					CoTaskMemFree(contextIds);
+					std::cout << "[RTS] first-context list unavailable HRESULT=0x" << std::hex
+						<< static_cast<unsigned long>(contextResult) << std::dec
+						<< " contexts=" << contextCount << std::endl;
+					return false;
+				}
+
+				const TABLET_CONTEXT_ID firstContextId = contextIds[0];
+				FLOAT scaleX = 1.0f;
+				FLOAT scaleY = 1.0f;
+				ULONG propertyCount = 0;
+				PACKET_PROPERTY* properties = nullptr;
+				const HRESULT scaleResult = source->GetPacketDescriptionData(
+					firstContextId, &scaleX, &scaleY, &propertyCount, &properties);
+				CoTaskMemFree(properties);
+				CoTaskMemFree(contextIds);
+				if (FAILED(scaleResult) || !std::isfinite(scaleX) || !std::isfinite(scaleY) ||
+					scaleX <= 0.0f || scaleY <= 0.0f)
+				{
+					std::cout << "[RTS] first-context scale unavailable tcid=" << firstContextId
+						<< " HRESULT=0x" << std::hex << static_cast<unsigned long>(scaleResult)
+						<< std::dec << " scale=(" << scaleX << "," << scaleY << ")" << std::endl;
+					return false;
+				}
+
+				// 触摸板要求不订阅 Enabled；首个 Down/InRange 在慢路径完成同一缩放初始化。
+				inkToPixelScaleX_ = scaleX;
+				inkToPixelScaleY_ = scaleY;
+				pixelScalePublished_.store(true, std::memory_order_release);
+				std::cout << "[RTS] use first-context pixel scale tcid=" << firstContextId
+					<< " scale=(" << scaleX << "," << scaleY << ")" << std::endl;
+				return true;
 			}
 
 			const TabletMetadata* FindMetadata(TABLET_CONTEXT_ID contextId) const noexcept
@@ -954,14 +1041,15 @@ namespace draw3
 
 			std::atomic<ULONG> referenceCount_ = 1;
 			std::atomic<HRESULT> lastError_ = S_OK;
-			std::atomic<uint32_t> moveDiagnosticCount_ = 0;
 			ContactInputCoordinator& coordinator_;
 			[[no_unique_address]] InterruptedStrokeSimulation<
 				kInterruptedStrokeReconnectSimulationEnabled> interruptionSimulation_;
 			DrawingCursorEventSink* drawingCursorSink_ = nullptr;
+			bool touchpadProbeEnabled_ = false;
 			std::atomic<bool> pixelScalePublished_ = false;
 			float inkToPixelScaleX_ = 1.0f;
 			float inkToPixelScaleY_ = 1.0f;
+			std::mutex pixelScaleMutex_;
 			Microsoft::WRL::ComPtr<IUnknown> freeThreadedMarshaler_;
 			HRESULT marshalerResult_ = E_UNEXPECTED;
 			std::mutex metadataMutex_;
@@ -1021,10 +1109,18 @@ namespace draw3
 
 	bool RtsPenCursorDataInterestEnabledForTesting() noexcept
 	{
-		const uint32_t dataInterest = static_cast<uint32_t>(kRtsDataInterest);
+		const uint32_t dataInterest = static_cast<uint32_t>(kProductionRtsDataInterest);
 		return (dataInterest & static_cast<uint32_t>(RTSDI_StylusInRange)) != 0 &&
 			(dataInterest & static_cast<uint32_t>(RTSDI_StylusOutOfRange)) != 0 &&
 			(dataInterest & static_cast<uint32_t>(RTSDI_InAirPackets)) != 0;
+	}
+
+	bool RtsTouchpadProbeDataInterestExactForTesting() noexcept
+	{
+		const uint32_t dataInterest = static_cast<uint32_t>(kTouchpadProbeDataInterest);
+		const uint32_t contactInterest = static_cast<uint32_t>(
+			RTSDI_StylusDown | RTSDI_Packets | RTSDI_StylusUp);
+		return dataInterest == contactInterest;
 	}
 #endif
 
@@ -1038,6 +1134,9 @@ namespace draw3
 		bool comInitialized = false;
 		bool pluginAdded = false;
 		bool initialized = false;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+		bool rtsTraceEnabled = false;
+#endif
 	};
 
 	RealTimeStylusInput::RealTimeStylusInput()
@@ -1050,14 +1149,45 @@ namespace draw3
 		Shutdown();
 	}
 
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+	void RealTimeStylusInput::SetRtsTraceEnabled(bool enabled) noexcept
+	{
+		impl_->rtsTraceEnabled = enabled;
+		ConfigureRtsTrace(enabled);
+	}
+#endif
+
 	bool RealTimeStylusInput::Initialize(HWND window, ContactInputCoordinator& coordinator,
 		DrawingCursorEventSink* drawingCursorSink)
 	{
 		if (!window || impl_->initialized) return false;
 		impl_->coordinator = &coordinator;
 		impl_->drawingCursorSink = drawingCursorSink;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+		// 本轮 trace 只探测窗口 Tablet Pen Service flags，RTS 配置保持生产基线。
+		constexpr bool useTouchpadProbe = false;
+#else
+		constexpr bool useTouchpadProbe = false;
+#endif
 		DWORD windowProcessId = 0;
 		const DWORD windowThreadId = GetWindowThreadProcessId(window, &windowProcessId);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+		RtsInitializationTrace traceState;
+		traceState.currentThreadId = GetCurrentThreadId();
+		traceState.windowThreadId = windowThreadId;
+		traceState.windowHandle = reinterpret_cast<UINT_PTR>(window);
+		traceState.windowStyle = GetWindowLongPtrW(window, GWL_STYLE);
+		traceState.windowExtendedStyle = GetWindowLongPtrW(window, GWL_EXSTYLE);
+		traceState.tabletServiceFlags = reinterpret_cast<ULONG_PTR>(
+			GetProp(window, MICROSOFT_TABLETPENSERVICE_PROPERTY));
+		traceState.digitizer = GetSystemMetrics(SM_DIGITIZER);
+		traceState.maximumTouches = GetSystemMetrics(SM_MAXIMUMTOUCHES);
+		traceState.dataInterest = static_cast<uint32_t>(useTouchpadProbe
+			? kTouchpadProbeDataInterest : kProductionRtsDataInterest);
+		traceState.probeName = impl_->rtsTraceEnabled ? "TabletFlags" : "none";
+		traceState.probeValue = impl_->rtsTraceEnabled ? "IdtDrawpad-0x00010309" : "baseline";
+		auto logTrace = [&]() noexcept { LogRtsInitializationState(traceState); };
+#endif
 		std::cout << "[RTS] initialize currentThread=" << GetCurrentThreadId()
 			<< " windowThread=" << windowThreadId
 			<< " digitizer=0x" << std::hex << GetSystemMetrics(SM_DIGITIZER) << std::dec
@@ -1067,9 +1197,15 @@ namespace draw3
 			<< std::dec << std::endl;
 
 		HRESULT result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+		traceState.coInitializeResult = result;
+#endif
 		if (FAILED(result))
 		{
 			LogHResult("CoInitializeEx(COINIT_MULTITHREADED)", result);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			logTrace();
+#endif
 			impl_->coordinator = nullptr;
 			impl_->drawingCursorSink = nullptr;
 			return false;
@@ -1078,51 +1214,108 @@ namespace draw3
 
 		result = CoCreateInstance(__uuidof(RealTimeStylus), nullptr, CLSCTX_INPROC_SERVER,
 			IID_PPV_ARGS(impl_->stylus.ReleaseAndGetAddressOf()));
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+		traceState.createStylusResult = result;
+#endif
 		if (FAILED(result))
 		{
 			LogHResult("CoCreateInstance(RealTimeStylus)", result);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			logTrace();
+#endif
 			Shutdown();
 			return false;
 		}
 
 		result = impl_->stylus->put_HWND(reinterpret_cast<HANDLE_PTR>(window));
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+		traceState.putHwndResult = result;
+#endif
 		if (FAILED(result)) LogHResult("Bind RealTimeStylus HWND", result);
-		if (SUCCEEDED(result)) result = impl_->stylus->SetAllTabletsMode(TRUE); // 同时接收鼠标、笔和触摸。
+		if (SUCCEEDED(result))
+		{
+			result = impl_->stylus->SetAllTabletsMode(TRUE); // 同时接收鼠标、笔和触摸。
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			traceState.setAllTabletsModeResult = result;
+#endif
+		}
 		if (FAILED(result)) LogHResult("Set RealTimeStylus all-tablets mode", result);
 		if (SUCCEEDED(result))
 		{
-			result = impl_->stylus->SetDesiredPacketDescription(
-				static_cast<ULONG>(kExtendedPacketProperties.size()), kExtendedPacketProperties.data());
+			// trace 不改变 RTS packet description；本轮只比较窗口宿主 flags。
+			const GUID* desiredPacketProperties = useTouchpadProbe
+				? kIdtRtsPacketProperties.data() : kExtendedPacketProperties.data();
+			const ULONG desiredPacketPropertyCount = useTouchpadProbe
+				? static_cast<ULONG>(kIdtRtsPacketProperties.size())
+				: static_cast<ULONG>(kExtendedPacketProperties.size());
+			const HRESULT desiredPacketResult = impl_->stylus->SetDesiredPacketDescription(
+				desiredPacketPropertyCount, desiredPacketProperties);
+			result = desiredPacketResult;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			traceState.desiredPacketDescriptionResult = desiredPacketResult;
+#endif
 			if (FAILED(result))
 			{
-				LogHResult("Set extended RealTimeStylus packet description", result);
-				result = impl_->stylus->SetDesiredPacketDescription(
-					static_cast<ULONG>(kStylusPacketProperties.size()), kStylusPacketProperties.data());
-			}
-			if (FAILED(result))
-			{
-				LogHResult("Set stylus RealTimeStylus packet description", result);
-				result = impl_->stylus->SetDesiredPacketDescription(
+				LogHResult("Set desired RealTimeStylus packet description", result);
+				const HRESULT requiredResult = impl_->stylus->SetDesiredPacketDescription(
 					static_cast<ULONG>(kRequiredPacketProperties.size()), kRequiredPacketProperties.data());
+				result = requiredResult;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				traceState.fallbackPacketDescriptionResult = requiredResult;
+#endif
+			}
+			if (SUCCEEDED(result))
+			{
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				traceState.selectedPacketPropertyCount = SUCCEEDED(desiredPacketResult)
+					? desiredPacketPropertyCount : static_cast<ULONG>(kRequiredPacketProperties.size());
+				traceState.selectedPacketDescription = SUCCEEDED(desiredPacketResult)
+					? (useTouchpadProbe ? "X,Y,Pressure,Width,Height"
+						: "X,Y,Pressure,XTilt,YTilt,Azimuth,Altitude,Width,Height")
+					: "X,Y";
+#endif
 			}
 		}
 		if (FAILED(result)) LogHResult("Set RealTimeStylus packet description", result);
 		if (SUCCEEDED(result))
 		{
 			Microsoft::WRL::ComPtr<IRealTimeStylus2> stylus2;
-			if (SUCCEEDED(impl_->stylus.As(&stylus2)))
+			const HRESULT stylus2Result = impl_->stylus.As(&stylus2);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			traceState.queryStylus2Result = stylus2Result;
+#endif
+			if (SUCCEEDED(stylus2Result))
 			{
 				// 窗口标志负责多点 opt-in；这里关闭轻拂，避免笔输入被系统手势延迟或接管。
 				const HRESULT flicksResult = stylus2->put_FlicksEnabled(FALSE);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				traceState.disableFlicksResult = flicksResult;
+#endif
 				if (FAILED(flicksResult)) LogHResult("Disable RealTimeStylus flicks", flicksResult);
 			}
 		}
-		if (SUCCEEDED(result)) result = impl_->stylus.As(&impl_->stylus3);
-		if (SUCCEEDED(result)) result = impl_->stylus3->put_MultiTouchEnabled(TRUE);
+		if (SUCCEEDED(result))
+		{
+			result = impl_->stylus.As(&impl_->stylus3);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			traceState.queryStylus3Result = result;
+#endif
+		}
+		if (SUCCEEDED(result))
+		{
+			result = impl_->stylus3->put_MultiTouchEnabled(TRUE);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			traceState.enableMultiTouchResult = result;
+#endif
+		}
 		if (SUCCEEDED(result))
 		{
 			BOOL multiTouchEnabled = FALSE;
 			const HRESULT verifyResult = impl_->stylus3->get_MultiTouchEnabled(&multiTouchEnabled);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			traceState.readMultiTouchResult = verifyResult;
+			traceState.multiTouchEnabled = multiTouchEnabled;
+#endif
 			if (SUCCEEDED(verifyResult))
 				std::cout << "[RTS] MultiTouchEnabled=" << (multiTouchEnabled ? "true" : "false") << std::endl;
 			else
@@ -1131,41 +1324,68 @@ namespace draw3
 		if (FAILED(result))
 		{
 			LogHResult("Configure RealTimeStylus multi-contact input", result);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			logTrace();
+#endif
 			Shutdown();
 			return false;
 		}
 
-		auto* plugin = new (std::nothrow) StylusSyncPlugin(coordinator, drawingCursorSink);
+		auto* plugin = new (std::nothrow) StylusSyncPlugin(
+			coordinator, drawingCursorSink, useTouchpadProbe);
 		if (!plugin)
 		{
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			logTrace();
+#endif
 			Shutdown();
 			return false;
 		}
 		if (FAILED(plugin->MarshalerResult()))
 		{
 			LogHResult("CoCreateFreeThreadedMarshaler", plugin->MarshalerResult());
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			traceState.marshalerResult = plugin->MarshalerResult();
+			logTrace();
+#endif
 			plugin->Release();
 			Shutdown();
 			return false;
 		}
 		impl_->plugin.Attach(plugin);
 		result = impl_->stylus->AddStylusSyncPlugin(0, impl_->plugin.Get());
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+		traceState.marshalerResult = plugin->MarshalerResult();
+		traceState.addPluginResult = result;
+#endif
 		if (FAILED(result))
 		{
 			LogHResult("AddStylusSyncPlugin", result);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			logTrace();
+#endif
 			Shutdown();
 			return false;
 		}
 		impl_->pluginAdded = true;
 
 		result = impl_->stylus->put_Enabled(TRUE);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+		traceState.enableStylusResult = result;
+#endif
 		if (FAILED(result))
 		{
 			LogHResult("Enable RealTimeStylus", result);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			logTrace();
+#endif
 			Shutdown();
 			return false;
 		}
 		impl_->initialized = true;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+		logTrace();
+#endif
 		return true;
 	}
 

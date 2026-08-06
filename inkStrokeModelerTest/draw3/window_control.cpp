@@ -17,6 +17,10 @@
 
 module draw3.window_control;
 
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+import draw3.diagnostics;
+#endif
+
 namespace draw3
 {
 	namespace
@@ -26,11 +30,18 @@ namespace draw3
 		constexpr LONG_PTR kPromotedPointerSignatureMask = 0xFFFFFF00;
 		constexpr LONG_PTR kPromotedPointerSignature = 0xFF515700;
 
-		constexpr DWORD kTabletInputFlags =
+		constexpr DWORD kBaselineTabletInputFlags =
 			TABLET_ENABLE_MULTITOUCHDATA |
 			TABLET_DISABLE_PRESSANDHOLD |
 			TABLET_DISABLE_PENTAPFEEDBACK |
 			TABLET_DISABLE_PENBARRELFEEDBACK |
+			TABLET_DISABLE_FLICKS;
+		// 旧 IdtDrawpad 的宿主只返回这组手势控制位；trace 时单独复现它。
+		constexpr DWORD kIdtDrawpadTabletInputFlags =
+			TABLET_DISABLE_PRESSANDHOLD |
+			TABLET_DISABLE_PENTAPFEEDBACK |
+			TABLET_DISABLE_TOUCHUIFORCEON |
+			TABLET_DISABLE_TOUCHUIFORCEOFF |
 			TABLET_DISABLE_FLICKS;
 
 		using GetPointerPenInfoFunction = BOOL(WINAPI*)(
@@ -135,6 +146,28 @@ namespace draw3
 		}
 	}
 
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+	void WindowController::SetRtsTraceEnabled(bool enabled) noexcept
+	{
+		ConfigureRtsTrace(enabled);
+		rtsTraceEnabled_.store(enabled, std::memory_order_release);
+		if (const HWND window = window_.load(std::memory_order_acquire))
+		{
+			const DWORD flags = enabled ? kIdtDrawpadTabletInputFlags : kBaselineTabletInputFlags;
+			const ATOM tabletPropertyAtom = GlobalAddAtom(MICROSOFT_TABLETPENSERVICE_PROPERTY);
+			if (!SetProp(window, MICROSOFT_TABLETPENSERVICE_PROPERTY,
+				reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(flags))))
+			{
+				std::cout << "Set trace Tablet Pen Service window property failed. GetLastError="
+					<< GetLastError() << std::endl;
+			}
+			if (tabletPropertyAtom) GlobalDeleteAtom(tabletPropertyAtom);
+			std::cout << "[RTS_TRACE][probe] TabletFlags=0x" << std::hex << flags
+				<< std::dec << (enabled ? " value=IdtDrawpad" : " value=baseline") << std::endl;
+		}
+	}
+#endif
+
 	WindowController::~WindowController()
 	{
 		const HWND window = window_.load(std::memory_order_acquire);
@@ -198,7 +231,7 @@ namespace draw3
 			// 多点属性需要在第一根手指按下前写入；窗口消息中也返回相同标志。
 			const ATOM tabletPropertyAtom = GlobalAddAtom(MICROSOFT_TABLETPENSERVICE_PROPERTY);
 			if (!SetProp(window, MICROSOFT_TABLETPENSERVICE_PROPERTY,
-				reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(kTabletInputFlags))))
+				reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(kBaselineTabletInputFlags))))
 			{
 				std::cout << "Set Tablet Pen Service window property failed. GetLastError="
 					<< GetLastError() << std::endl;
@@ -556,6 +589,38 @@ namespace draw3
 
 	LRESULT WindowController::HandleWindowMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+		switch (message)
+		{
+		case WM_MOUSEMOVE:
+		case WM_LBUTTONDOWN:
+		case WM_LBUTTONDBLCLK:
+		case WM_LBUTTONUP:
+		case WM_RBUTTONDOWN:
+		case WM_RBUTTONDBLCLK:
+		case WM_RBUTTONUP:
+		case WM_MBUTTONDOWN:
+		case WM_MBUTTONDBLCLK:
+		case WM_MBUTTONUP:
+		case WM_MOUSELEAVE:
+		{
+			LARGE_INTEGER qpc = {};
+			QueryPerformanceCounter(&qpc);
+			WindowMouseObservationTrace observation;
+			observation.qpc = qpc.QuadPart;
+			observation.threadId = GetCurrentThreadId();
+			observation.message = message;
+			observation.buttonFlags = wParam;
+			observation.x = GET_X_LPARAM(lParam);
+			observation.y = GET_Y_LPARAM(lParam);
+			observation.promoted = IsPromotedPointerMouseMessage();
+			RecordWindowMouseObservation(observation);
+			break;
+		}
+		default:
+			break;
+		}
+#endif
 		const bool gpuTransparent = gpuTransparentComposition_.load(std::memory_order_acquire); // GPU 透明模式下由 backbuffer 负责背景。
 		switch (message)
 		{
@@ -574,7 +639,14 @@ namespace draw3
 
 		case WM_TABLET_QUERYSYSTEMGESTURESTATUS:
 			// 显式接收 RTS 多点数据，并禁止长按/轻拂抢占普通笔输入。
-			return static_cast<LRESULT>(kTabletInputFlags);
+			return static_cast<LRESULT>(
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				rtsTraceEnabled_.load(std::memory_order_acquire)
+					? kIdtDrawpadTabletInputFlags : kBaselineTabletInputFlags
+#else
+				kBaselineTabletInputFlags
+#endif
+			);
 
 		case WM_POINTERLEAVE:
 		{
