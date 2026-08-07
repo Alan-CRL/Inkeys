@@ -72,7 +72,7 @@ int wmain(int argc, wchar_t* argv[])
 		return -1;
 	}
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-	// 窗口创建阶段的系统消息不属于复现样本，从 HWND 发布后再开始计数。
+	// HWND 发布后才启用 RTS diagnostics，避免记录窗口初始化噪声。
 	window.SetRtsTraceEnabled(rtsTrace);
 #endif
 	window.SetInputCoordinator(&input); // 窗口控制请求可唤醒完全空闲的绘制线程。

@@ -42,7 +42,7 @@ export namespace draw3
 		// 创建覆盖主显示器的绘图窗口。
 		bool Initialize(bool preconfigureNoRedirectionBitmap);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-		// Debug 下启用与 RTS 共享的有限窗口鼠标观察 trace。
+		// Debug 下启用有界 RTS 初始化与回调诊断。
 		void SetRtsTraceEnabled(bool enabled) noexcept;
 #endif
 		// 首个透明帧准备完成后显示绘图窗口。
@@ -152,13 +152,9 @@ export namespace draw3
 		bool lastHapticPenInfoEraser_ = false;
 		bool trackingMouseLeave_ = false;
 		std::atomic<HWND> performanceHudWindow_ = nullptr;
-		std::atomic<bool> performanceHudEnabled_ = true;
+		std::atomic<bool> performanceHudEnabled_ = false;
 		std::atomic<bool> performanceHudRefreshPosted_ = false;
-	#if defined(DRAW3_RTS_DIAGNOSTICS)
-		// Debug trace 只切换旧 IdtDrawpad 的窗口手势 flags。
-		std::atomic<bool> rtsTraceEnabled_ = false;
-	#endif
 		mutable std::mutex performanceHudMutex_;
-		std::wstring performanceHudText_ = L"性能测试 [开]\r\n等待开始绘制……";
+		std::wstring performanceHudText_ = L"性能监控\r\n等待开始绘制……";
 	};
 }

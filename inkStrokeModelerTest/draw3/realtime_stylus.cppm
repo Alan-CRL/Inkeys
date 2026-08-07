@@ -30,7 +30,7 @@ export namespace draw3
 		RealTimeStylusInput& operator=(const RealTimeStylusInput&) = delete;
 
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-		// Debug 下启用有界 trace 与旧 IdtDrawpad 窗口 flags 探针；Release 不导出该入口。
+		// Debug 下启用有界 RTS diagnostics；Release 不导出该入口。
 		void SetRtsTraceEnabled(bool enabled) noexcept;
 #endif
 		// 初始化 MTA COM、RTS、多点接口和同步插件；任一步失败均返回 false。
@@ -61,7 +61,5 @@ export namespace draw3
 		int32_t rawWidth, int32_t rawHeight, float packetScaleX, float packetScaleY) noexcept;
 	bool RtsContactSizePropertiesRequestedForTesting() noexcept;
 	bool RtsPenCursorDataInterestEnabledForTesting() noexcept;
-	// Debug 触摸板探针单独使用 IdtRts 的精确接触事件集。
-	bool RtsTouchpadProbeDataInterestExactForTesting() noexcept;
 #endif
 }

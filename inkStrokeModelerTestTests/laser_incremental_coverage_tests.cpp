@@ -344,18 +344,20 @@ int RunLaserIncrementalCoverageTests()
 		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource, "WS_EX_NOACTIVATE"));
 		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource, "UpdateLayeredWindow("));
 		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource, "Consolas"));
-		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource, "MulDiv(1180"));
+		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource, "MulDiv(360"));
 		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource, "availableWidth"));
-		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource, "contactFontHeight"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(performanceHudSource, "contactFontHeight"));
 		LASER_INCREMENTAL_CHECK(ContainsText(performanceHudSource,
 			"performanceHudRefreshPosted_.exchange("));
 		LASER_INCREMENTAL_CHECK(!ContainsText(performanceHudSource, "WM_TIMER"));
 		LASER_INCREMENTAL_CHECK(!ContainsText(performanceHudSource, "frameDirty"));
 		LASER_INCREMENTAL_CHECK(!ContainsText(performanceHudSource, "backBuffer"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
-			"if (frameHadActiveContact && GetPerformanceHudEnabled())"));
+			"if (frameHadActiveContact && performanceHudEnabled)"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
 			"window_.UpdatePerformanceHudText(performanceHudTracker_.FormatText("));
+		LASER_INCREMENTAL_CHECK(!ContainsText(controllerSource, "QueryVideoMemoryUsageMiB"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(controllerSource, "performanceHudContacts_"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
 			"performanceHudTracker_.EndDrawingFrameSequence();"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
@@ -379,11 +381,16 @@ int RunLaserIncrementalCoverageTests()
 			"LoadLibraryW(L\"combase.dll\")"));
 		LASER_INCREMENTAL_CHECK(!ContainsText(runtimeMetricsSource,
 			"LoadLibraryW(L\"psapi.dll\")"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(runtimeMetricsSource, "GetProcessTimes("));
+		LASER_INCREMENTAL_CHECK(!ContainsText(runtimeMetricsSource,
+			"GetProcessMemoryInfo"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(runtimeMetricsSource,
+			"QueryVideoMemoryInfo"));
 		LASER_INCREMENTAL_CHECK(!ContainsText(presentationSource,
 			"LoadLibraryW(L\"dcomp.dll\")"));
 		LASER_INCREMENTAL_CHECK(ContainsText(hapticSource,
 			"GetSystemDirectoryW("));
-		LASER_INCREMENTAL_CHECK(ContainsText(runtimeMetricsSource,
+		LASER_INCREMENTAL_CHECK(!ContainsText(runtimeMetricsSource,
 			"GetSystemDirectoryW("));
 		LASER_INCREMENTAL_CHECK(ContainsText(presentationSource,
 			"GetSystemDirectoryW("));

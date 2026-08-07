@@ -5,12 +5,10 @@
 #endif
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cwchar>
-#include <functional>
 #include <iomanip>
 #include <sstream>
 #include <string>
@@ -31,23 +29,6 @@ namespace draw3
 		constexpr size_t kRequiredLandingCount = 200;
 		constexpr size_t kMaximumRuntimeMetricSamples = 1u << 20;
 		constexpr double kRequiredIdleDurationMs = 4900.0;
-
-		HMODULE LoadSystemLibrary(const wchar_t* fileName) noexcept
-		{
-			if (!fileName || fileName[0] == L'\0') return nullptr;
-			wchar_t path[MAX_PATH] = {};
-			UINT length = GetSystemDirectoryW(path, ARRAYSIZE(path));
-			if (length == 0 || length >= ARRAYSIZE(path)) return nullptr;
-			if (path[length - 1] != L'\\')
-			{
-				if (length + 1 >= ARRAYSIZE(path)) return nullptr;
-				path[length++] = L'\\';
-			}
-			const size_t nameLength = std::wcslen(fileName);
-			if (nameLength >= ARRAYSIZE(path) - length) return nullptr;
-			std::wmemcpy(path + length, fileName, nameLength + 1);
-			return LoadLibraryW(path); // 绝对路径兼容旧系统，同时不参与应用目录搜索。
-		}
 
 		struct LandingKey
 		{
@@ -157,216 +138,56 @@ namespace draw3
 
 	struct PerformanceHudTrackerImpl
 	{
-		std::array<double, PerformanceHudTracker::kSampleCapacity> frameIntervalsMs = {};
-		std::array<double, PerformanceHudTracker::kSampleCapacity> workDurationsMs = {};
-		std::array<double, PerformanceHudTracker::kSampleCapacity> presentDurationsMs = {};
-		size_t frameIntervalCount = 0;
-		size_t workDurationCount = 0;
-		size_t presentDurationCount = 0;
+		size_t frameSampleCount = 0;
+		size_t workSampleCount = 0;
+		size_t presentSampleCount = 0;
+		double frameIntervalSumMs = 0.0;
+		double frameIntervalSquaredSumMs = 0.0;
+		double workDurationSumMs = 0.0;
+		double presentDurationSumMs = 0.0;
 		double windowStartMs = 0.0;
 		double lastFrameStartMs = 0.0;
-		uint64_t processCpuStartTicks = 0;
-		bool processCpuStartValid = false;
+		double nextSnapshotMs = 0.0;
 		PerformanceHudSnapshot snapshot;
 	};
 
 	namespace
 	{
-		struct ProcessMemoryCounters
-		{
-			DWORD cb = 0;
-			DWORD pageFaultCount = 0;
-			SIZE_T peakWorkingSetSize = 0;
-			SIZE_T workingSetSize = 0;
-			SIZE_T quotaPeakPagedPoolUsage = 0;
-			SIZE_T quotaPagedPoolUsage = 0;
-			SIZE_T quotaPeakNonPagedPoolUsage = 0;
-			SIZE_T quotaNonPagedPoolUsage = 0;
-			SIZE_T pagefileUsage = 0;
-			SIZE_T peakPagefileUsage = 0;
-		};
-
-		using GetProcessMemoryInfoFn = BOOL(WINAPI*)(
-			HANDLE, ProcessMemoryCounters*, DWORD);
-
-		GetProcessMemoryInfoFn ResolveGetProcessMemoryInfo() noexcept
-		{
-			// 避免静态依赖 psapi；旧系统上再回退到同名导出。
-			if (HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll"))
-			{
-				if (FARPROC procedure = GetProcAddress(kernel32, "K32GetProcessMemoryInfo"))
-					return reinterpret_cast<GetProcessMemoryInfoFn>(procedure);
-			}
-
-			if (HMODULE psapi = LoadSystemLibrary(L"psapi.dll"))
-			{
-				if (FARPROC procedure = GetProcAddress(psapi, "GetProcessMemoryInfo"))
-					return reinterpret_cast<GetProcessMemoryInfoFn>(procedure);
-				FreeLibrary(psapi);
-			}
-			return nullptr;
-		}
-
-		uint64_t FileTimeTicks(const FILETIME& value) noexcept
-		{
-			ULARGE_INTEGER ticks = {};
-			ticks.LowPart = value.dwLowDateTime;
-			ticks.HighPart = value.dwHighDateTime;
-			return ticks.QuadPart;
-		}
-
-		bool ReadProcessCpuTicks(uint64_t& ticks) noexcept
-		{
-			FILETIME creation = {};
-			FILETIME exit = {};
-			FILETIME kernel = {};
-			FILETIME user = {};
-			if (!GetProcessTimes(GetCurrentProcess(), &creation, &exit, &kernel, &user))
-				return false;
-			ticks = FileTimeTicks(kernel) + FileTimeTicks(user);
-			return true;
-		}
-
-		double ReadWorkingSetMiB() noexcept
-		{
-			static const GetProcessMemoryInfoFn getProcessMemoryInfo =
-				ResolveGetProcessMemoryInfo();
-			ProcessMemoryCounters counters;
-			counters.cb = sizeof(counters);
-			if (!getProcessMemoryInfo || !getProcessMemoryInfo(
-				GetCurrentProcess(), &counters, sizeof(counters)))
-				return 0.0;
-			return static_cast<double>(counters.workingSetSize) / (1024.0 * 1024.0);
-		}
-
-		template <size_t Capacity>
-		double Average(const std::array<double, Capacity>& values, size_t count) noexcept
-		{
-			if (count == 0) return 0.0;
-			double sum = 0.0;
-			for (size_t index = 0; index < count; ++index) sum += values[index];
-			return sum / static_cast<double>(count);
-		}
-
-		template <size_t Capacity>
-		double Percentile99(std::array<double, Capacity>& values, size_t count) noexcept
-		{
-			if (count == 0) return 0.0;
-			std::sort(values.begin(), values.begin() + count);
-			const size_t index = std::min(count - 1,
-				static_cast<size_t>(std::ceil(static_cast<double>(count) * 0.99)) - 1);
-			return values[index];
-		}
-
-		template <size_t Capacity>
-		double OnePercentLowFps(
-			std::array<double, Capacity>& values, size_t count) noexcept
-		{
-			if (count == 0) return 0.0;
-			std::sort(values.begin(), values.begin() + count, std::greater<double>());
-			const size_t slowCount = std::max<size_t>(
-				1, static_cast<size_t>(std::ceil(static_cast<double>(count) * 0.01)));
-			double slowFrameTotalMs = 0.0;
-			for (size_t index = 0; index < slowCount; ++index)
-				slowFrameTotalMs += values[index];
-			const double slowFrameAverageMs =
-				slowFrameTotalMs / static_cast<double>(slowCount);
-			return slowFrameAverageMs > 0.0 ? 1000.0 / slowFrameAverageMs : 0.0;
-		}
-
-		template <size_t Capacity>
-		double StandardDeviation(const std::array<double, Capacity>& values,
-			size_t count, double average) noexcept
-		{
-			if (count == 0) return 0.0;
-			double squaredDifferenceTotal = 0.0;
-			for (size_t index = 0; index < count; ++index)
-			{
-				const double difference = values[index] - average;
-				squaredDifferenceTotal += difference * difference;
-			}
-			return std::sqrt(squaredDifferenceTotal / static_cast<double>(count));
-		}
-
 		void BeginPerformanceHudWindow(
 			PerformanceHudTrackerImpl& tracker, double frameStartMs) noexcept
 		{
-			tracker.frameIntervalCount = 0;
-			tracker.workDurationCount = 0;
-			tracker.presentDurationCount = 0;
+			tracker.frameSampleCount = 0;
+			tracker.workSampleCount = 0;
+			tracker.presentSampleCount = 0;
+			tracker.frameIntervalSumMs = 0.0;
+			tracker.frameIntervalSquaredSumMs = 0.0;
+			tracker.workDurationSumMs = 0.0;
+			tracker.presentDurationSumMs = 0.0;
 			tracker.windowStartMs = frameStartMs;
 			tracker.lastFrameStartMs = frameStartMs;
-			tracker.processCpuStartValid =
-				ReadProcessCpuTicks(tracker.processCpuStartTicks);
+			tracker.nextSnapshotMs = frameStartMs + 100.0;
 		}
 
-		void RefreshPerFramePerformanceSnapshot(
-			PerformanceHudTrackerImpl& tracker, double elapsedMs) noexcept
+		void RefreshPerformanceHudSnapshot(PerformanceHudTrackerImpl& tracker) noexcept
 		{
 			PerformanceHudSnapshot& snapshot = tracker.snapshot;
-			snapshot.frameSampleCount = tracker.frameIntervalCount;
-			snapshot.averageFrameMs = Average(
-				tracker.frameIntervalsMs, tracker.frameIntervalCount);
-			snapshot.onePercentLowFps = OnePercentLowFps(
-				tracker.frameIntervalsMs, tracker.frameIntervalCount);
-			snapshot.p99FrameMs = Percentile99(
-				tracker.frameIntervalsMs, tracker.frameIntervalCount);
-			snapshot.frameJitterMs = StandardDeviation(
-				tracker.frameIntervalsMs, tracker.frameIntervalCount,
-				snapshot.averageFrameMs);
-			snapshot.averageWorkMs = Average(
-				tracker.workDurationsMs, tracker.workDurationCount);
-			snapshot.averagePresentMs = Average(
-				tracker.presentDurationsMs, tracker.presentDurationCount);
-			snapshot.workingSetMiB = ReadWorkingSetMiB();
-
-			uint64_t processCpuEndTicks = 0;
-			if (tracker.processCpuStartValid && ReadProcessCpuTicks(processCpuEndTicks) &&
-				processCpuEndTicks >= tracker.processCpuStartTicks && elapsedMs > 0.0)
-			{
-				static const double processorCount = []() noexcept
-					{
-						SYSTEM_INFO systemInfo = {};
-						GetSystemInfo(&systemInfo);
-						return static_cast<double>(std::max<DWORD>(
-							systemInfo.dwNumberOfProcessors, 1));
-					}();
-				const double availableTicks = elapsedMs * 10000.0 * processorCount;
-				snapshot.processCpuPercent = availableTicks > 0.0
-					? std::clamp(static_cast<double>(
-						processCpuEndTicks - tracker.processCpuStartTicks) /
-						availableTicks * 100.0, 0.0, 100.0)
-					: 0.0;
-			}
-		}
-
-		const wchar_t* PerformanceHudDeviceName(InputDeviceType deviceType) noexcept
-		{
-			switch (deviceType)
-			{
-			case InputDeviceType::Pen: return L"笔";
-			case InputDeviceType::MouseLeft: return L"鼠标左键";
-			case InputDeviceType::MouseRight: return L"鼠标右键";
-			default: return L"触摸";
-			}
-		}
-
-		const wchar_t* PerformanceHudToolName(uint32_t drawingTool) noexcept
-		{
-			switch (drawingTool)
-			{
-			case 1: return L"荧光笔";
-			case 2: return L"橡皮";
-			case 3: return L"激光笔";
-			default: return L"画笔";
-			}
-		}
-
-		uint32_t PerformanceHudColorByte(float value) noexcept
-		{
-			if (!std::isfinite(value)) return 0;
-			return static_cast<uint32_t>(std::lround(
-				std::clamp(value, 0.0f, 1.0f) * 255.0f));
+			snapshot.frameSampleCount = tracker.frameSampleCount;
+			snapshot.averageFrameMs = tracker.frameSampleCount > 0
+			? tracker.frameIntervalSumMs / static_cast<double>(tracker.frameSampleCount) : 0.0;
+			const double variance = tracker.frameSampleCount > 0
+				? tracker.frameIntervalSquaredSumMs /
+					static_cast<double>(tracker.frameSampleCount) -
+					snapshot.averageFrameMs * snapshot.averageFrameMs : 0.0;
+			snapshot.frameJitterMs = std::sqrt(std::max(0.0, variance));
+			snapshot.averageFps = snapshot.averageFrameMs > 0.0
+				? 1000.0 / snapshot.averageFrameMs : 0.0;
+			snapshot.averageWorkMs = tracker.workSampleCount > 0
+				? tracker.workDurationSumMs / static_cast<double>(tracker.workSampleCount) : 0.0;
+			snapshot.estimatedUncappedFps = snapshot.averageWorkMs > 0.0
+				? 1000.0 / snapshot.averageWorkMs : 0.0;
+			snapshot.averagePresentMs = tracker.presentSampleCount > 0
+				? tracker.presentDurationSumMs /
+					static_cast<double>(tracker.presentSampleCount) : 0.0;
 		}
 	}
 
@@ -381,7 +202,8 @@ namespace draw3
 		double workMs, double presentMs, bool presented) noexcept
 	{
 		if (!std::isfinite(frameStartMs) || !std::isfinite(workMs) ||
-			!std::isfinite(presentMs) || frameStartMs < 0.0) return false;
+			!std::isfinite(presentMs) || frameStartMs < 0.0 ||
+			workMs < 0.0 || presentMs < 0.0) return false;
 
 		PerformanceHudTrackerImpl& tracker = *impl_;
 		if (tracker.windowStartMs <= 0.0)
@@ -389,39 +211,44 @@ namespace draw3
 		else
 		{
 			const double intervalMs = frameStartMs - tracker.lastFrameStartMs;
-			if (intervalMs > 0.0 &&
-				tracker.frameIntervalCount < tracker.frameIntervalsMs.size())
-				tracker.frameIntervalsMs[tracker.frameIntervalCount++] = intervalMs;
+			if (intervalMs > 0.0)
+			{
+				++tracker.frameSampleCount;
+				tracker.frameIntervalSumMs += intervalMs;
+				tracker.frameIntervalSquaredSumMs += intervalMs * intervalMs;
+			}
 			tracker.lastFrameStartMs = frameStartMs;
 		}
 
-		if (tracker.workDurationCount < tracker.workDurationsMs.size())
-			tracker.workDurationsMs[tracker.workDurationCount++] = std::max(0.0, workMs);
-		if (presented && tracker.presentDurationCount < tracker.presentDurationsMs.size())
-			tracker.presentDurationsMs[tracker.presentDurationCount++] =
-				std::max(0.0, presentMs);
+		++tracker.workSampleCount;
+		tracker.workDurationSumMs += workMs;
+		if (presented)
+		{
+			++tracker.presentSampleCount;
+			tracker.presentDurationSumMs += presentMs;
+		}
 
-		const double elapsedMs = frameStartMs - tracker.windowStartMs;
-		RefreshPerFramePerformanceSnapshot(tracker, elapsedMs);
-		if (elapsedMs < 1000.0) return false;
-
-		tracker.snapshot.averageFps = tracker.snapshot.averageFrameMs > 0.0
-			? 1000.0 / tracker.snapshot.averageFrameMs : 0.0;
-		tracker.snapshot.estimatedUnlimitedFps = tracker.snapshot.averageWorkMs > 0.0
-			? 1000.0 / tracker.snapshot.averageWorkMs : 0.0;
-		BeginPerformanceHudWindow(tracker, frameStartMs);
+		if (frameStartMs < tracker.nextSnapshotMs) return false;
+		RefreshPerformanceHudSnapshot(tracker);
+		do
+		{
+			tracker.nextSnapshotMs += 100.0;
+		} while (tracker.nextSnapshotMs <= frameStartMs);
 		return true;
 	}
 
 	void PerformanceHudTracker::EndDrawingFrameSequence() noexcept
 	{
-		impl_->frameIntervalCount = 0;
-		impl_->workDurationCount = 0;
-		impl_->presentDurationCount = 0;
+		impl_->frameSampleCount = 0;
+		impl_->workSampleCount = 0;
+		impl_->presentSampleCount = 0;
+		impl_->frameIntervalSumMs = 0.0;
+		impl_->frameIntervalSquaredSumMs = 0.0;
+		impl_->workDurationSumMs = 0.0;
+		impl_->presentDurationSumMs = 0.0;
 		impl_->windowStartMs = 0.0;
 		impl_->lastFrameStartMs = 0.0;
-		impl_->processCpuStartTicks = 0;
-		impl_->processCpuStartValid = false;
+		impl_->nextSnapshotMs = 0.0;
 	}
 
 	void PerformanceHudTracker::Reset() noexcept
@@ -435,69 +262,23 @@ namespace draw3
 		return impl_->snapshot;
 	}
 
-	std::wstring PerformanceHudTracker::FormatText(double gpuMemoryMiB,
-		std::span<const PerformanceHudContact> contacts) const
+	std::wstring PerformanceHudTracker::FormatText() const
 	{
 		const PerformanceHudSnapshot& snapshot = impl_->snapshot;
-		wchar_t summary[1024] = {};
-		if (gpuMemoryMiB >= 0.0)
-		{
-			swprintf_s(summary,
-				L"性能测试 [开]\r\n"
-				L"【性能统计】\r\n"
-				L"平均帧率:%7.1f FPS  1%%低帧:%7.1f FPS  无等待性能:%7.1f FPS\r\n"
-				L"平均帧时:%7.2f ms  P99帧时:%7.2f ms  帧波动:%7.2f ms\r\n"
-				L"处理器:%6.1f%%  内存:%8.1f MiB  显存:%8.1f MiB\r\n"
-				L"绘制耗时:%7.2f ms  呈现耗时:%7.2f ms  样本数:%4zu\r\n"
-				L"【接触设备】 当前接触:%3zu",
-				snapshot.averageFps, snapshot.onePercentLowFps,
-				snapshot.estimatedUnlimitedFps,
-				snapshot.averageFrameMs, snapshot.p99FrameMs,
-				snapshot.frameJitterMs, snapshot.processCpuPercent,
-				snapshot.workingSetMiB, gpuMemoryMiB,
-				snapshot.averageWorkMs, snapshot.averagePresentMs,
-				snapshot.frameSampleCount, contacts.size());
-		}
-		else
-		{
-			swprintf_s(summary,
-				L"性能测试 [开]\r\n"
-				L"【性能统计】\r\n"
-				L"平均帧率:%7.1f FPS  1%%低帧:%7.1f FPS  无等待性能:%7.1f FPS\r\n"
-				L"平均帧时:%7.2f ms  P99帧时:%7.2f ms  帧波动:%7.2f ms\r\n"
-				L"处理器:%6.1f%%  内存:%8.1f MiB  显存:    不可用\r\n"
-				L"绘制耗时:%7.2f ms  呈现耗时:%7.2f ms  样本数:%4zu\r\n"
-				L"【接触设备】 当前接触:%3zu",
-				snapshot.averageFps, snapshot.onePercentLowFps,
-				snapshot.estimatedUnlimitedFps,
-				snapshot.averageFrameMs, snapshot.p99FrameMs,
-				snapshot.frameJitterMs, snapshot.processCpuPercent,
-				snapshot.workingSetMiB,
-				snapshot.averageWorkMs, snapshot.averagePresentMs,
-				snapshot.frameSampleCount, contacts.size());
-		}
-
-		std::wstring text(summary);
-		text.reserve(text.size() + contacts.size() * 220);
-		for (const PerformanceHudContact& contact : contacts)
-		{
-			const uint32_t color =
-				(PerformanceHudColorByte(contact.colorRed) << 24) |
-				(PerformanceHudColorByte(contact.colorGreen) << 16) |
-				(PerformanceHudColorByte(contact.colorBlue) << 8) |
-				PerformanceHudColorByte(contact.colorAlpha);
-			wchar_t row[512] = {};
-			const int length = swprintf_s(row,
-				L"\r\n#%04u  设备:%-8ls  绘制:%-6ls  颜色:%08X  粗细:%7.2f px  "
-				L"X:%8.1f  Y:%8.1f  压力:%6.3f  速度:%8.1f px/s  "
-				L"面积:%6.1f x %6.1f  高度角:%6.3f  转动角:%6.3f",
-				contact.contactId, PerformanceHudDeviceName(contact.deviceType),
-				PerformanceHudToolName(contact.drawingTool), color,
-				contact.strokeWidth, contact.x, contact.y, contact.pressure,
-				contact.speed, contact.contactWidth, contact.contactHeight,
-				contact.altitude, contact.rotation);
-			if (length > 0) text.append(row, static_cast<size_t>(length));
-		}
+		wchar_t text[512] = {};
+		swprintf_s(text,
+			L"性能监控\r\n\r\n"
+			L"平均 FPS        %7.1f\r\n"
+			L"估算无限制 FPS  %7.1f\r\n"
+			L"平均帧时        %7.2f ms\r\n"
+			L"帧抖动          %7.2f ms\r\n"
+			L"绘制耗时        %7.2f ms\r\n"
+			L"Present         %7.2f ms\r\n"
+			L"样本             %6zu",
+			snapshot.averageFps, snapshot.estimatedUncappedFps,
+			snapshot.averageFrameMs, snapshot.frameJitterMs,
+			snapshot.averageWorkMs, snapshot.averagePresentMs,
+			snapshot.frameSampleCount);
 		return text;
 	}
 

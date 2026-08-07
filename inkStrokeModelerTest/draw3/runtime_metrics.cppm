@@ -7,9 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <span>
 #include <string>
-#include <windows.h>
 
 export module draw3.runtime_metrics;
 
@@ -27,58 +25,30 @@ export namespace draw3
 	{
 		size_t frameSampleCount = 0;
 		double averageFps = 0.0;
-		double onePercentLowFps = 0.0;
 		double averageFrameMs = 0.0;
-		double p99FrameMs = 0.0;
 		double frameJitterMs = 0.0;
 		double averageWorkMs = 0.0;
-		double estimatedUnlimitedFps = 0.0;
+		double estimatedUncappedFps = 0.0;
 		double averagePresentMs = 0.0;
-		double processCpuPercent = 0.0;
-		double workingSetMiB = 0.0;
 	};
 
-	// 保存 HUD 刷新所需的最新 contact 数据，不进入帧统计数组。
-	struct PerformanceHudContact
-	{
-		uint32_t contactId = 0;
-		InputDeviceType deviceType = InputDeviceType::Touch;
-		uint32_t drawingTool = 0;
-		float colorRed = 0.0f;
-		float colorGreen = 0.0f;
-		float colorBlue = 0.0f;
-		float colorAlpha = 0.0f;
-		float strokeWidth = 0.0f;
-		float x = 0.0f;
-		float y = 0.0f;
-		float pressure = -1.0f;
-		float speed = -1.0f;
-		float contactWidth = -1.0f;
-		float contactHeight = -1.0f;
-		float altitude = -1.0f;
-		float rotation = -1.0f;
-	};
-
-	// 使用固定容量样本统计最近一秒的绘制性能；tracker 普通帧只写固定数组。
+	// 只用绘制线程已有的帧数据做 O(1) 累加，按 10 Hz 生成轻量快照。
 	class PerformanceHudTracker
 	{
 	public:
-		static constexpr size_t kSampleCapacity = 1024;
-
 		PerformanceHudTracker();
 		~PerformanceHudTracker();
 		PerformanceHudTracker(const PerformanceHudTracker&) = delete;
 		PerformanceHudTracker& operator=(const PerformanceHudTracker&) = delete;
 
-		// 只由物理 contact 绘制帧调用；统计窗闭合并更新平均 FPS 时返回 true。
+		// 只由物理 contact 绘制帧调用；快照最多每 100 ms 更新一次。
 		bool RecordDrawingFrame(double frameStartMs, double workMs,
 			double presentMs, bool presented) noexcept;
 		// 一笔物理绘制结束时丢弃未闭合统计窗，避免把空闲时间算成帧间隔。
 		void EndDrawingFrameSequence() noexcept;
 		void Reset() noexcept;
 		const PerformanceHudSnapshot& Snapshot() const noexcept;
-		std::wstring FormatText(double gpuMemoryMiB,
-			std::span<const PerformanceHudContact> contacts = {}) const;
+		std::wstring FormatText() const;
 
 	private:
 		std::unique_ptr<PerformanceHudTrackerImpl> impl_;

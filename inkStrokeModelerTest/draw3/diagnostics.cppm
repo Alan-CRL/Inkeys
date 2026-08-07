@@ -45,11 +45,9 @@ export namespace draw3
 		HRESULT addPluginResult = E_NOTIMPL;
 		HRESULT enableStylusResult = E_NOTIMPL;
 		uint32_t dataInterest = 0;
-		const char* probeName = "none";
-		const char* probeValue = "baseline";
 	};
 
-	// RTS 热路径只复制定长标量，由诊断模块在 Up 时统一输出。
+	// RTS 热路径只复制定长标量，停止回调后再统一输出。
 	struct RtsCallbackTrace
 	{
 		const char* eventName = nullptr;
@@ -64,27 +62,19 @@ export namespace draw3
 		LONG rawY = 0;
 		float decodedX = 0.0f;
 		float decodedY = 0.0f;
+		HRESULT result = S_OK;
+		uint32_t dataInterest = 0;
 		bool hasRawPosition = false;
 		bool decoded = false;
 		bool published = false;
-	};
-
-	struct WindowMouseObservationTrace
-	{
-		int64_t qpc = 0;
-		DWORD threadId = 0;
-		UINT message = 0;
-		WPARAM buttonFlags = 0;
-		int x = 0;
-		int y = 0;
-		bool promoted = false;
 	};
 
 	// 两个输入模块可重复设置同一状态；只有 false -> true 会清空一次 trace。
 	void ConfigureRtsTrace(bool enabled) noexcept;
 	void LogRtsInitializationState(const RtsInitializationTrace& state) noexcept;
 	void RecordRtsCallback(const RtsCallbackTrace& callback) noexcept;
-	void RecordWindowMouseObservation(const WindowMouseObservationTrace& observation) noexcept;
+	// RTS 回调停止后统一格式化并输出固定容量的 callback trace。
+	void FlushRtsCallbackTrace() noexcept;
 #endif
 
 	// 返回当前高精度计时器对应的毫秒时间。
