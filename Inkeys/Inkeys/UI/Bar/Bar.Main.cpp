@@ -3498,12 +3498,12 @@ void BarUISetClass::Rendering()
 				// 属性栏折叠或工具失效时立即撤销命中，承载面板仍按进度完成退场。
 				CloseColorPicker(true);
 			}
-			// 展开用 EaseOutBack 产生回弹，上浮/缩放不再匀速；收起保持 EaseInCubic。
+			// 展开/收起都保留 Popup 的 Back 回弹，几何值可短暂越过终点。
 			const BarUiCurveSpecClass colorPickerPanelCurve{
 				barState.drawAttributeBar.colorPickerOpen
-					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInCubic,
+					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack,
 				barState.drawAttributeBar.colorPickerOpen
-					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInCubic,
+					? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack,
 				0.0, false };
 			drawAttributeColorPickerProgress.SetTar(
 				colorPickerAvailable
@@ -5262,7 +5262,9 @@ SetButtonPositionTar(temp->buttom.x, xO - barBtnGap / 2.0, 40.0, true);
 							extensionTargetAngle, operationDur);
 						SetDrawAttributeSvgColor(
 							BarUISetSvgEnum::DrawAttributeBar_PenTypeExtensionArrow,
-							GetThemeColor(BarThemeColorEnum::Accent));
+							GetThemeColor(barState.drawAttributeBar.penTypeExtensionPress
+								? BarThemeColorEnum::PressedFill
+								: BarThemeColorEnum::Accent));
 					}
 					{ /**/ }
 					// 粗细调节区域
@@ -5344,6 +5346,9 @@ bool thicknessPresetMode =
 								BarUiValueClass& pressScale)
 								{
 								auto shape = shapeMap[shapeType];
+								bool selectedVisual = selected
+									&& !(shapeType == BarUISetShapeEnum::
+										DrawAttributeBar_ThicknessAdjust && pressed);
 								shape->x.SetTar(x * layoutScale);
 								shape->y.SetTar(
 									(thicknessY + thicknessControlOffsetY) * layoutScale);
@@ -5353,10 +5358,10 @@ bool thicknessPresetMode =
 									BarDrawAttributeThicknessControlHeight * layoutScale);
 								shape->rw.value().SetTar(4.0 * layoutScale);
 								shape->rh.value().SetTar(4.0 * layoutScale);
-								shape->fill.value().SetTar(selected
+								shape->fill.value().SetTar(selectedVisual
 									? GetThemeColor(BarThemeColorEnum::Accent)
 									: GetThemeColor(BarThemeColorEnum::PressedFill));
-								shape->frame.value().SetTar(selected
+								shape->frame.value().SetTar(selectedVisual
 									? GetThemeColor(BarThemeColorEnum::Accent)
 									: GetThemeColor(BarThemeColorEnum::TextPrimary));
 
@@ -5372,7 +5377,7 @@ bool thicknessPresetMode =
 									else if (selected) shape->pct.SetTar(0.20);
 									else if (hoverStage == BarButtomHoverStageEnum::None)
 										shape->pct.SetTar(0.0);
-									shape->frameLightPct.value().SetTar(selected
+									shape->frameLightPct.value().SetTar(selectedVisual
 										? (pressed ? BarButtonPressedLightOpacity : 1.0) : 0.0);
 									if (numberWord) numberWord->pct.SetTar(1.0);
 								}
@@ -5458,9 +5463,11 @@ for (size_t i = 0; i < 3; ++i)
 						auto& thicknessAdjustColor =
 							thicknessAdjustSvg->color1.value();
 						COLORREF thicknessAdjustTargetColor =
-							barState.drawAttributeBar.thicknessSliderPinned
+							barState.drawAttributeBar.thicknessAdjustPress
+								? GetThemeColor(BarThemeColorEnum::PressedFill)
+								: (barState.drawAttributeBar.thicknessSliderPinned
 								? GetThemeColor(BarThemeColorEnum::Accent)
-								: GetThemeColor(BarThemeColorEnum::TextPrimary);
+								: GetThemeColor(BarThemeColorEnum::TextPrimary));
 						if (forNum == 1 || !barState.drawAttribute)
 							thicknessAdjustColor.SetDirect(thicknessAdjustTargetColor);
 						else thicknessAdjustColor.SetTar(thicknessAdjustTargetColor);
@@ -8084,9 +8091,9 @@ double closeButtonSize =
 				BarUISetShapeEnum::DrawAttributeBar_ColorPickerPreviewBubble];
 			auto pickerHold = shapeMap[
 				BarUISetShapeEnum::DrawAttributeBar_ColorPickerHoldHint];
-			double pickerProgress = clamp(static_cast<double>(
-				drawAttributeColorPickerProgress.val), 0.0, 1.0);
-			// 展开时由 85% 放大到 100%，比旧 94% 起点更明显，但不会从很小开始。
+			double pickerProgress = static_cast<double>(
+				drawAttributeColorPickerProgress.val);
+			// 进度不截断以保留 Back 回弹；只有透明度必须保持合法范围。
 			double pickerScale = 0.85 + 0.15 * pickerProgress;
 			double pickerWidth = BarColorPickerPanelWidth * pickerScale;
 			double pickerHeight = BarColorPickerPanelHeight * pickerScale;
@@ -8108,7 +8115,7 @@ double closeButtonSize =
 				- outwardDirection * (1.0 - pickerProgress) * 20.0;
 			double pickerLeft = pickerCenterX - pickerWidth / 2.0;
 			double pickerTop = pickerCenterY - pickerHeight / 2.0;
-			double pickerOpacity = pickerProgress;
+			double pickerOpacity = clamp(pickerProgress, 0.0, 1.0);
 		// 面板圆角/底色/边框透明度与绘制属性栏保持同一套 Surface 规范。
 		double pickerPanelRadius = 8.0 * pickerScale;
 		double pickerControlRadius = 4.0 * pickerScale;
@@ -10255,8 +10262,8 @@ else
 					double pickerOpacity = clamp(
 						static_cast<double>(pickerPanel->pct.val)
 							/ BarDrawAttributeSurfaceOpacity, 0.0, 1.0);
-					double pickerGeometryScale = clamp(
-						pickerPanel->w.val / BarColorPickerPanelWidth, 0.0, 1.0);
+					double pickerGeometryScale =
+						pickerPanel->w.val / BarColorPickerPanelWidth;
 					if (pickerOpacity > 0.000001)
 					{
 						spec.Shape(barDeviceContext.Get(), *pickerPanel,
@@ -12974,9 +12981,7 @@ bool thicknessPresetMode =
 										.thicknessSliderPinned;
 								if (button.presetIndex < 0)
 								{
-									// 小三角按下即切换选中态；拖出取消时恢复按下前状态。
-									barState.drawAttributeBar
-										.thicknessSliderPinned = !sliderPinnedAtPress;
+									// 按下阶段只显示缩放/按压色，展开状态留到有效抬手再切换。
 									barState.drawAttributeBar
 										.thicknessSliderHover = false;
 								}
@@ -13001,27 +13006,26 @@ bool thicknessPresetMode =
 														button.presetIndex,
 														barStyle.dpiZoom)));
 											}
-										else
-										{
-											barState.drawAttributeBar
-												.thicknessSliderHover = false;
+											else
+											{
+												barState.drawAttributeBar
+													.thicknessSliderPinned = !sliderPinnedAtPress;
+												barState.drawAttributeBar
+													.thicknessSliderHover = false;
+											}
+											clickCompleted = true;
+											break;
 										}
-										clickCompleted = true;
-										UpdateRendering();
-										break;
 									}
+									else break;
 								}
-								else break;
+								// 先合并抬手态与展开目标，再只唤醒一次，避免旋转早于缩放/颜色恢复。
+								*button.pressed = false;
+								UpdateRendering(clickCompleted && button.presetIndex >= 0);
+								SuppressHoverUntilPointerMove();
+								hiex::flushmessage_win32(
+									EM_MOUSE, floating_window);
 							}
-							if (button.presetIndex < 0 && !clickCompleted)
-								barState.drawAttributeBar.thicknessSliderPinned =
-									sliderPinnedAtPress;
-							*button.pressed = false;
-							UpdateRendering(false);
-							SuppressHoverUntilPointerMove();
-							hiex::flushmessage_win32(
-								EM_MOUSE, floating_window);
-						}
 						break;
 					}
 				}
