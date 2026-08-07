@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 7
-- **Last Active**: 2026-08-02
+- **Total Sessions**: 8
+- **Last Active**: 2026-08-07
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~236 | Active |
+| `journal-1.md` | ~258 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 8 | 2026-08-07 | Finish RTS packet decoder hot path | `415ee5e`, `74c33fc` | `main` |
 | 7 | 2026-08-02 | 完成并归档任务 4-8 | `aa305d3`, `56e95d7`, `bc22d07`, `41754d1`, `b91366d`, `be50ae4`, `b035a67` | `main` |
 | 6 | 2026-08-02 | 普通笔实时笔锋恢复与抬笔定住 | `b7af67f` | `main` |
 | 5 | 2026-07-25 | L0 drawing cursor acceptance fixes | `0327796` | `main` |

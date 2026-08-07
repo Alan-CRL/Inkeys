@@ -234,3 +234,25 @@ Fixed Pen/Mouse cursor authority handoff, immediate Pen hover coordinates, stale
 ### Next Steps
 
 - 继续保留并处理任务 1-3
+
+
+## Session 8: Finish RTS packet decoder hot path
+
+**Date**: 2026-08-07
+**Task**: Finish RTS packet decoder hot path
+**Branch**: `main`
+
+### Summary
+
+完成 per-context immutable decoder、active binding、Error active-only reset、InAir cache-only hot path 与跨线程 reader/writer publication gate；ARM64/x64 Debug/Release 构建和测试通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `415ee5e` | (see git log) |
+| `74c33fc` | (see git log) |
+
+### Status
+
+[OK] **Completed**
