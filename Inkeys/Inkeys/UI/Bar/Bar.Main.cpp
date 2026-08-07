@@ -196,6 +196,8 @@ constexpr int BarBorderDiffuseCompositePasses = 2;
 // 标准差等于线宽时，1px 线源经过一维 Gaussian 后中心约保留 38.3%。
 constexpr double BarBorderGaussianCenterCoverage = 0.382924922548;
 std::atomic_uint BarCanvasDrawingActivityCount = 0;
+// 入口按压由消息线程写入，渲染线程只读取缩放目标。
+IdtAtomic<bool> BarColorPickerEntryPressed = false;
 
 bool PenModeUsesCurvedThicknessPreview(PenModeSelectEnum mode)
 {
@@ -3248,6 +3250,7 @@ void BarUISetClass::Rendering()
 	BarUiValueClass drawAttributeOverflowBadgeProgress(0.0);
 	BarUiValueClass drawAttributePenTypeMenuProgress(0.0);
 		BarUiValueClass drawAttributeColorPickerProgress(0.0);
+		BarUiValueClass drawAttributeColorPickerEntryPressScale(1.0);
 		BarUiValueClass drawAttributeColorPickerToneMix(0.0);
 		BarUiValueClass drawAttributeColorPickerHoldOpacity(0.0);
 		BarUiValueClass drawAttributeColorPickerHoldRingOpacity(0.0);
@@ -4946,6 +4949,12 @@ SetButtonPositionTar(temp->buttom.x, xO - barBtnGap / 2.0, 40.0, true);
 								BarUISetSvgEnum::DrawAttributeBar_ColorSelect12Check];
 							COLORREF currentColor = GetPenColor() & 0x00FFFFFF;
 							bool customSelected = !IsBarPresetColor(currentColor);
+							bool customPressed = BarColorPickerEntryPressed
+								&& barState.drawAttribute;
+							drawAttributeColorPickerEntryPressScale.SetTar(
+								customPressed ? BarButtonPressScale : 1.0,
+								BarUiDefaultOperationDur, nullopt, false,
+								customPressed ? buttonPressCurve : buttonReleaseCurve);
 							if (!barState.drawAttribute)
 							{
 								customSwatch->x.SetTar(CompactDrawAttributeX(180.0));
@@ -4986,7 +4995,10 @@ SetButtonPositionTar(temp->buttom.x, xO - barBtnGap / 2.0, 40.0, true);
 								barState.drawAttribute ? BarColorSwatchFrameOpacity : 0.0);
 							if (customSwatch->frameLightPct.has_value())
 								customSwatch->frameLightPct->SetTar(
-									barState.drawAttribute ? 1.0 : 0.0);
+									barState.drawAttribute
+										? (customPressed
+											? BarButtonPressedLightOpacity : 1.0)
+										: 0.0);
 							if (customSwatch->frame.has_value())
 								customSwatch->frame->SetTar(
 									GetThemeColor(BarThemeColorEnum::SurfaceFrame), operationDur);
@@ -7000,6 +7012,8 @@ for (size_t i = 0; i < 3; ++i)
 			ChangeValue(drawAttributePenTypeMenuProgress, false);
 		if (!drawAttributeColorPickerProgress.IsSame())
 			ChangeValue(drawAttributeColorPickerProgress, false);
+		if (!drawAttributeColorPickerEntryPressScale.IsSame())
+			ChangeValue(drawAttributeColorPickerEntryPressScale, false);
 		if (!drawAttributeColorPickerToneMix.IsSame())
 			ChangeValue(drawAttributeColorPickerToneMix, false);
 		if (!drawAttributeColorPickerHoldOpacity.IsSame())
@@ -8107,8 +8121,6 @@ double closeButtonSize =
 					* pickerProgress);
 			double swatchCenterX = customSwatch->inhX
 				+ customSwatch->w.val / 2.0;
-			double swatchCenterY = customSwatch->inhY
-				+ customSwatch->h.val / 2.0;
 			// 与绘制属性同向：primaryBar 时向下，倒转后向上；不按屏幕边夹紧，可越出可视区。
 			bool openBelowSwatch = barState.widgetPosition.primaryBar;
 			double targetPickerLeft =
@@ -8121,10 +8133,16 @@ double closeButtonSize =
 				+ BarColorPickerPanelWidth / 2.0;
 			double targetPickerCenterY = targetPickerTop
 				+ BarColorPickerPanelHeight / 2.0;
+			// 紧凑态贴在入口外侧，下方展开时直接从圆形入口下缘出现。
+			double compactPickerCenterY = openBelowSwatch
+				? customSwatch->inhY + customSwatch->h.val
+					+ BarColorPickerPanelGap + BarColorPickerCompactHeight / 2.0
+				: customSwatch->inhY - BarColorPickerPanelGap
+					- BarColorPickerCompactHeight / 2.0;
 			double pickerCenterX = swatchCenterX
 				+ (targetPickerCenterX - swatchCenterX) * pickerProgress;
-			double pickerCenterY = swatchCenterY
-				+ (targetPickerCenterY - swatchCenterY) * pickerProgress;
+			double pickerCenterY = compactPickerCenterY
+				+ (targetPickerCenterY - compactPickerCenterY) * pickerProgress;
 			double pickerLeft = pickerCenterX - pickerWidth / 2.0;
 			double pickerTop = pickerCenterY - pickerHeight / 2.0;
 			double pickerOpacity = clamp(pickerProgress, 0.0, 1.0);
@@ -8765,6 +8783,28 @@ IncludeShapeBounds(shapeMap[
 								BarUiInheritClass customInherit = customSwatch->Inherit(
 									TopLeft, *shapeMap[
 										BarUISetShapeEnum::DrawAttributeBar]);
+								double customPressScale = static_cast<double>(
+									drawAttributeColorPickerEntryPressScale.val);
+								if (!isfinite(customPressScale) || customPressScale <= 0.0)
+									customPressScale = 1.0;
+								D2D1_MATRIX_3X2_F customOriginalTransform;
+								barDeviceContext->GetTransform(&customOriginalTransform);
+								bool customTransformChanged =
+									abs(customPressScale - 1.0) > 0.000001;
+								if (customTransformChanged)
+								{
+									// 只缩放整组视觉，Shape 的原始几何继续承担命中。
+									FLOAT centerX = static_cast<FLOAT>((customInherit.x
+										+ customSwatch->w.val / 2.0) * barStyle.zoom);
+									FLOAT centerY = static_cast<FLOAT>((customInherit.y
+										+ customSwatch->h.val / 2.0) * barStyle.zoom);
+									D2D1_MATRIX_3X2_F scaleTransform = D2D1::Matrix3x2F::Scale(
+										static_cast<FLOAT>(customPressScale),
+										static_cast<FLOAT>(customPressScale),
+										D2D1::Point2F(centerX, centerY));
+									barDeviceContext->SetTransform(
+										scaleTransform * customOriginalTransform);
+								}
 								auto customWheel = pngMap[
 									BarUISetPngEnum::DrawAttributeBar_ColorSelect12Wheel];
 								spec.Png(barDeviceContext.Get(), *customWheel,
@@ -8780,6 +8820,8 @@ IncludeShapeBounds(shapeMap[
 									BarUISetSvgEnum::DrawAttributeBar_ColorSelect12Check];
 								spec.Svg(barDeviceContext.Get(), *customCheck,
 									customCheck->Inherit(TopLeft, *customSwatch));
+								if (customTransformChanged)
+									barDeviceContext->SetTransform(customOriginalTransform);
 							}
 						}
 						// 画笔样式区域
@@ -11860,6 +11902,8 @@ auto ColorPickerAvailable = [&]()
 					continueFlag = false;
 					if (msg.message == WM_LBUTTONDOWN)
 					{
+						BarColorPickerEntryPressed = true;
+						UpdateRendering(false);
 						while (true)
 						{
 							hiex::getmessage_win32(
@@ -11882,6 +11926,8 @@ auto ColorPickerAvailable = [&]()
 								break;
 							}
 						}
+						BarColorPickerEntryPressed = false;
+						UpdateRendering(false);
 						SuppressHoverUntilPointerMove();
 						hiex::flushmessage_win32(
 							EM_MOUSE, floating_window);
