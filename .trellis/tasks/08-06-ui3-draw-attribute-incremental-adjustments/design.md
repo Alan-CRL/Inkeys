@@ -13,6 +13,7 @@
 | Slider geometry | `CalculateBarThicknessPreviewGeometry()` near `Bar.Main.cpp:252-304`; `sliderCenterY` is the preview center. |
 | Slider position/session | local `drawAttributeThicknessSliderPositionLocked`, `drawAttributeThicknessSliderUsePositionB`, `drawAttributeOverflowSliderSessionAllowsHint`, `ResolveThicknessSliderCenterY()` near `Bar.Main.cpp:3201-3227`; lifecycle updates near `3581-3712` and `5470-5495`. |
 | Slider input | `Bar.Main.cpp:12280-12840`: Slider Hit/Thumb pointer loop, `pressOnThumb`, capture, candidate update and release-time `thicknessSliderPinned` write. |
+| Touch source/state | `Bar.Main.cpp` 的 `WM_TOUCH` 合成消息用非滚轮 `wheel` 字段携带 Bar 局部触摸/取消标记；`Bar.State.cppm` 的 `thicknessPreviewDragging` 只驱动候选 Preview。 |
 | Pen-type extension | extension layout around `5191-5254`, absolute geometry around `7520-7569`, rendering around `8788-8822`, initialization around `14217-14240`. |
 | Pen-type menu state | `Bar.State.cppm:21-26`; `ClosePenTypeMenu()` at `Bar.Main.cpp:3002`; direction lock/open at `3615-3642` and pointer action at `12999-13031`. |
 | Color Picker state/layout | `Bar.State.cppm:53-66`; progress curve at `Bar.Main.cpp:3485-3512`; panel layout/fields at `8056-8270`; top-layer rendering at `10225-10425`; initialization at `14080-14135`. |
@@ -32,6 +33,7 @@
 8. **RGB/Alpha layout.** The current code already allocates independent column rectangles and pads numeric strings to three characters, so adjacent column starts are mostly stable. However it derives the outer X edges from `paletteLeft/right` (5 DIP) while the footer's actual vertical whitespace is materially larger; its leading-space formatting also couples numeric alignment to font whitespace and hardcoded Chinese alpha text.
 9. **Color Picker lights.** The panel is `PointLight`, has `framePrimaryLightEnabled = false`, and retains `frameCursorLightIntensityScale = BarButtonCursorLightIntensity`. In this UI3 naming, `frameCursor` is the third mouse light. The requested Light 1 exclusion is already present and must remain local to this panel.
 10. **Triangles.** The thickness `barThicknessAdjust` SVG has no angle target. The pen-type SVG has an angle target based only on open-below direction, then the absolute layout overwrites it every frame with `SetDirect` (`7564-7568`), preventing a state-driven rotation and interruptible reverse animation.
+11. **Direct touch on thickness Preview.** `WM_TOUCH` currently synthesizes ordinary mouse messages without preserving their source. The Slider loop therefore treats a no-hover touch drag as a Slider gesture and pins it after release, while a direct press cannot distinguish a tap from a relative Preview-only drag.
 
 ## Design
 
@@ -44,6 +46,8 @@ Keep hit testing and press feedback on `DrawAttributeBar_PenTypeExtensionHit`. C
 Use the existing `pressOnThumb` calculated at pointer-down as the state-transition point. A Thumb press clears the fixed expand state immediately and triggers render; its mouse-up path must not unconditionally restore the pin when no value or drag occurred. Track click behavior and capture lifecycle remain on their existing path. Preserve `thicknessSliderPressed`/`Dragging` so the Slider stays interactive during a press.
 
 Remove `drawAttributeThicknessSliderUsePositionB` and its snapshot assignment/reset. `ResolveThicknessSliderCenterY()` always applies the current Position B offset and clamp. Keep `drawAttributeThicknessSliderPositionLocked` and `drawAttributeOverflowSliderSessionAllowsHint`: they continue to encode the Overflow Hint lifecycle, not the Y selection.
+
+Tag only the DOWN/MOVE/UP messages synthesized by the Bar's `WM_TOUCH` path through `ExMessage::wheel`; use a distinct cancellation marker when a second touch replaces the active contact. If a tagged DOWN reaches an inactive Preview, keep Slider states untouched until release or until the two-dimensional screen-space displacement exceeds `5 DIP * dpiZoom`. A tap pins the Slider only on release. A drag locks permanently for that gesture, maps horizontal displacement relative to the press-time width across the existing track travel/range span, and drives `thicknessPreviewDragging` plus the shared candidate width without entering Slider or Hold-lock state. Commit the final candidate once on a valid release; every cancellation path clears it and restores the real width.
 
 ### 3. Highlighter values
 

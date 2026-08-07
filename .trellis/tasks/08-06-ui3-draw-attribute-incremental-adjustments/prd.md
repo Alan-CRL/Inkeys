@@ -25,6 +25,8 @@
 
 - 对 Slider Thumb 的有效 pointer/mouse down 即视为已开始 Slider 交互，并立即结束粗细小三角的展开/固定状态；不能等待 drag threshold、pointer move 或数值变化。
 - 单击 Thumb 不移动、单击后拖动、点击 track、capture/release/cancel 均不得破坏 Slider 拖动和一次性提交规则。
+- 未经过 hover、直接按在 Preview 上的触摸先保持 Preview：在按下点 5 DIP 半径内抬起才固定展开 Slider；超过阈值后锁定为 Preview 直接拖动，以按下点和当前粗细为原点按横向相对位移更新候选粗细，抬手只提交一次且不显示 Slider。
+- Preview 直接拖动只用预览笔迹和数字反馈；不得进入 Slider 的 Pressed/Dragging、Position B、Overflow Hint session 或 Hold-lock。捕获丢失、第二触点替换、模式切换和面板折叠必须取消候选且不提交。
 - Slider 不论 Overflow Hint 在进入会话前是否存在，都使用旧 Position B 的较低 Y；不再保留 A/B 的位置分支。
 - 必须保留上一轮的 Overflow Hint 生命周期：Slider 中不新建 Hint，已有 Hint 可继续保留；不可能溢出时可消失；Slider 会话中消失后即使再次 overflow 也不重建；仅 Preview 或 Slider -> Preview 可新出现。
 
@@ -57,7 +59,7 @@
 ## Acceptance Criteria
 
 - [ ] AC1 选中笔型入口的分割线为主题 Accent，按压主入口时其几何、透明度和颜色均稳定，hover/pressed 不闪白。
-- [ ] AC2 Thumb 的单击无拖动也会结束粗细三角固定展开态；拖动、track 点击、capture 取消和抬起后 Slider 行为正确。
+- [ ] AC2 Thumb 的单击无拖动也会结束粗细三角固定展开态；直接触摸 Preview 在 5 DIP 内抬起才展开 Slider，超过阈值则只显示候选 Preview 并在抬手提交一次；拖动、track 点击、capture 取消和抬起后行为正确。
 - [ ] AC3 Slider 所有会话均位于原 Position B；删除仅服务于 Position A/B 选择的状态分支，Overflow Hint 状态机逐项无回归。
 - [ ] AC4 高亮快捷档有清晰的 Inkeys2 依据和换算说明，建议的 `35 / 50 / 70 DIP` 在 100% DPI 时对应旧版前两档的 35/50 画布宽度基准。
 - [ ] AC5 Color Picker 打开/关闭呈现与其他 Popup 一致的克制回弹；固定字段锚点、数值右对齐和外侧 padding 在中英文文案下均稳定。

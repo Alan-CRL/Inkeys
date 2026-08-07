@@ -11,6 +11,10 @@
 7. **Add triangle rotation.** Drive the thickness and pen-type SVG angle targets from their real stable state and expansion direction. Remove pen-type layout's direct angle overwrite, use the standard angle transition path, and cover mid-animation direction reversal.
 8. **Run quality gates.** Inspect the diff for scope and whitespace, run the full ARM64 Solution build, then complete the manual checklist below. Do not modify legacy UI, SVG/resource/shader files as part of validation.
 
+### Direct-touch increment
+
+Preserve the touch source on locally synthesized mouse messages. Keep an inactive Preview unchanged within 5 DIP; pin Slider only for a completed tap, or use relative candidate-only Preview feedback beyond the threshold and commit once on release. Cancellation clears the candidate without committing.
+
 ## Regression Checklist
 
 ### Pen Type Divider
@@ -21,6 +25,9 @@
 
 ### Thickness Slider And Overflow Hint
 
+- [ ] Direct touch within a 5 DIP Euclidean radius keeps Preview during press and pins Slider only on release without changing width.
+- [ ] Direct touch beyond 5 DIP stays Preview-only, uses the press point/current width as the relative origin, updates stroke/number live, commits once on release and remains Preview afterward.
+- [ ] Vertical threshold crossing, return-to-origin, min/max clamping, second-touch replacement, capture loss, mode switch and panel fold neither misclassify a drag as a tap nor leave candidate state behind.
 - [ ] Thumb press with no movement ends the triangle fixed-expanded state.
 - [ ] Thumb press followed by drag works; track click still follows its existing value rule; release/capture cancel ends cleanly.
 - [ ] Slider uses the old lower Position B with and without a pre-existing Overflow Hint.

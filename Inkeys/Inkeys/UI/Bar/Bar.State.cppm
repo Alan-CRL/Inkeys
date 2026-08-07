@@ -31,6 +31,8 @@ public:
 IdtAtomic<bool> thicknessSliderHover = false;
 			IdtAtomic<bool> thicknessSliderPinned = false;
 			IdtAtomic<bool> thicknessSliderDragging = false;
+			// 直接触摸 Preview 时只更新候选预览，不激活 Slider 视觉。
+			IdtAtomic<bool> thicknessPreviewDragging = false;
 			IdtAtomic<bool> thicknessSliderPressed = false;
 			IdtAtomic<bool> thicknessSliderCapture = false;
 			IdtAtomic<float> thicknessSliderCandidateWidth = 0.0f;

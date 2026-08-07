@@ -49,6 +49,8 @@ constexpr UINT BarBorderCursorSuspendMessage = WM_APP + 0x31;
 constexpr UINT BarCanvasDrawingActivityMessage = WM_APP + 0x32;
 constexpr UINT BarThicknessSliderCaptureMessage = WM_APP + 0x33;
 constexpr UINT BarColorPickerCaptureMessage = WM_APP + 0x34;
+constexpr short BarTouchPointerMessageMarker = SHRT_MIN;
+constexpr short BarTouchCancelMessageMarker = SHRT_MIN + 1;
 constexpr WPARAM BarThicknessSliderCaptureStop = 0;
 constexpr WPARAM BarThicknessSliderCaptureStart = 1;
 constexpr WPARAM BarThicknessSliderCaptureCancel = 2;
@@ -134,6 +136,7 @@ constexpr double BarThicknessSliderHighlighterMinDip = 30.0;
 constexpr double BarThicknessSliderHighlighterMaxDip = 100.0;
 constexpr double BarThicknessSliderThumbAnimationDur = 0.28;
 	constexpr double BarThicknessSliderPressAnimationDur = 0.12;
+	constexpr double BarThicknessPreviewTouchSlopDip = 5.0;
 	// 拖动改值后静止 0.5s 出提示，再 1.5s（合计 2.0s）进度走满并锁定粗细。
 	constexpr double BarThicknessHoldStillnessPx = 5.0;
 	constexpr ULONGLONG BarThicknessHoldHintDelayMs = 500;
@@ -469,6 +472,27 @@ bool IsBarPresetColor(COLORREF color)
 	return false;
 }
 
+void MarkBarTouchPointerMessage(ExMessage& message, bool cancelled = false)
+{
+	// 非滚轮鼠标消息不使用 wheel，局部携带触摸来源且不改 HiEasyX 接口。
+	message.wheel = cancelled
+		? BarTouchCancelMessageMarker
+		: BarTouchPointerMessageMarker;
+}
+
+bool IsBarTouchPointerMessage(const ExMessage& message)
+{
+	return message.message != WM_MOUSEWHEEL
+		&& (message.wheel == BarTouchPointerMessageMarker
+			|| message.wheel == BarTouchCancelMessageMarker);
+}
+
+bool IsBarTouchCancelMessage(const ExMessage& message)
+{
+	return message.message != WM_MOUSEWHEEL
+		&& message.wheel == BarTouchCancelMessageMarker;
+}
+
 void QueueBarThicknessSliderEnd(HWND hWnd)
 {
 	if (!hWnd) return;
@@ -606,6 +630,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 						stateMode.Pen.ModeSelect,
 						barUISet.barStyle.dpiZoom).supported;
 				bool sliderHover = sliderAvailable
+					&& !drawAttribute.thicknessSliderCapture
 					&& !colorPickerOccludes
 					&& !pointerInside
 					&& pointAvailable && sliderHit && sliderHit->IsClick(
@@ -692,6 +717,7 @@ barUISet.barState.drawAttributeBar.thicknessSliderCapture = false;
 				barUISet.barState.drawAttributeBar.thicknessSliderHover = false;
 				barUISet.barState.drawAttributeBar.thicknessSliderPinned = false;
 				barUISet.barState.drawAttributeBar.thicknessSliderDragging = false;
+				barUISet.barState.drawAttributeBar.thicknessPreviewDragging = false;
 				barUISet.barState.drawAttributeBar.thicknessSliderPressed = false;
 				barUISet.barState.drawAttributeBar.thicknessSliderCandidateWidth = 0.0f;
 				barUISet.barState.drawAttributeBar.thicknessSliderHoldHintActive = false;
@@ -789,6 +815,7 @@ barUISet.barState.drawAttributeBar.thicknessSliderCapture = false;
 							msgMouse.x = activeTouchX;
 							msgMouse.y = activeTouchY;
 							msgMouse.lbutton = false;
+							MarkBarTouchPointerMessage(msgMouse, true);
 
 							int index = hiex::GetWindowIndex(hWnd, false);
 							unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
@@ -815,6 +842,7 @@ barUISet.barState.drawAttributeBar.thicknessSliderCapture = false;
 							msgMouse.x = pt.x;
 							msgMouse.y = pt.y;
 							msgMouse.lbutton = true;
+							MarkBarTouchPointerMessage(msgMouse);
 
 							int index = hiex::GetWindowIndex(hWnd, false);
 							unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
@@ -839,6 +867,7 @@ barUISet.barState.drawAttributeBar.thicknessSliderCapture = false;
 							msgMouse.x = pt.x;
 							msgMouse.y = pt.y;
 							msgMouse.lbutton = true;
+							MarkBarTouchPointerMessage(msgMouse);
 
 							int index = hiex::GetWindowIndex(hWnd, false);
 							unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
@@ -865,6 +894,7 @@ barUISet.barState.drawAttributeBar.thicknessSliderCapture = false;
 							msgMouse.x = pt.x;
 							msgMouse.y = pt.y;
 							msgMouse.lbutton = false;
+							MarkBarTouchPointerMessage(msgMouse);
 
 							int index = hiex::GetWindowIndex(hWnd, false);
 							unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
@@ -3023,10 +3053,12 @@ void BarUISetClass::CloseThicknessSlider(bool cancelCapture)
 	bool gestureActive =
 		barState.drawAttributeBar.thicknessSliderPressed
 		|| barState.drawAttributeBar.thicknessSliderDragging
+		|| barState.drawAttributeBar.thicknessPreviewDragging
 		|| barState.drawAttributeBar.thicknessSliderCapture;
 barState.drawAttributeBar.thicknessSliderHover = false;
 		barState.drawAttributeBar.thicknessSliderPinned = false;
 		barState.drawAttributeBar.thicknessSliderDragging = false;
+		barState.drawAttributeBar.thicknessPreviewDragging = false;
 		barState.drawAttributeBar.thicknessSliderPressed = false;
 		barState.drawAttributeBar.thicknessSliderCandidateWidth = 0.0f;
 		barState.drawAttributeBar.thicknessSliderHoldHintActive = false;
@@ -3580,6 +3612,7 @@ void BarUISetClass::Rendering()
 					|| barState.drawAttributeBar.thicknessSliderPinned
 					|| barState.drawAttributeBar.thicknessSliderPressed
 					|| barState.drawAttributeBar.thicknessSliderDragging
+					|| barState.drawAttributeBar.thicknessPreviewDragging
 					|| barState.drawAttributeBar.thicknessSliderCapture))
 			{
 				// 属性栏失效时主动结束捕获，嵌套输入循环会收到一次合成抬起。
@@ -3748,9 +3781,10 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 				{
 					// 真实粗细仍只在抬起提交；拖动中数字即时显示候选值，抬手后恢复普通动画。
 					double penThickness = max(0.0f, GetPenWidth());
-					bool thicknessSliderDragging =
-						barState.drawAttributeBar.thicknessSliderDragging;
-					if (thicknessSliderDragging)
+					bool thicknessCandidateDragging =
+						barState.drawAttributeBar.thicknessSliderDragging
+						|| barState.drawAttributeBar.thicknessPreviewDragging;
+					if (thicknessCandidateDragging)
 					{
 						penThickness = max(0.0f,
 							static_cast<float>(barState.drawAttributeBar
@@ -3767,7 +3801,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 						drawAttributePenThickness.SetDirect(penThickness);
 						drawAttributePenThicknessInitialized = true;
 					}
-					else if (thicknessSliderDragging)
+					else if (thicknessCandidateDragging)
 						// 拖动中数字跟手，不走过渡动画。
 						drawAttributePenThickness.SetDirect(penThickness);
 					else drawAttributePenThickness.SetTar(penThickness, operationDur);
@@ -3798,7 +3832,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 							drawAttributeThicknessSliderNormalizedInitialized =
 								true;
 						}
-						else if (thicknessSliderDragging)
+						else if (thicknessCandidateDragging)
 							drawAttributeThicknessSliderNormalized.SetDirect(
 								targetNormalized);
 						else drawAttributeThicknessSliderNormalized.SetTar(
@@ -12403,9 +12437,9 @@ auto ColorPickerAvailable = [&]()
 				}
 			}
 
-// 绘制属性
+			// 绘制属性
 				{
-					// 粗细预览区：点击后固定；圆点完全出现后才可跳值/拖动；悬停拖动不固定，无悬停拖动会固定。
+					// 鼠标沿用 Slider；未悬停的直接触摸先判定点击或 Preview 拖动。
 					if (continueFlag && ThicknessSliderAvailable())
 					{
 						auto sliderHit = shapeMap[
@@ -12430,7 +12464,6 @@ auto ColorPickerAvailable = [&]()
 										- lastCandidateWidth) <= 0.000001;
 								bool candidateChanged = false;
 								bool gestureDragged = false;
-								// 悬停后的直接拖动不固定；触摸没有悬停，需要靠固定态表达选中。
 								bool hoverAtPress = barState.drawAttributeBar
 									.thicknessSliderHover;
 								bool pinnedAtPress = barState.drawAttributeBar
@@ -12438,6 +12471,10 @@ auto ColorPickerAvailable = [&]()
 								// 悬停/固定只表示进入滑块态；改值还要等圆点完全出现。
 								bool sliderAlreadyShown =
 									hoverAtPress || pinnedAtPress;
+								bool directTouchPreviewGesture =
+									IsBarTouchPointerMessage(msg)
+									&& !sliderAlreadyShown;
+								bool touchGestureCancelled = false;
 								bool penModeChanged = false;
 
 								POINT startScreenPoint{
@@ -12448,6 +12485,15 @@ auto ColorPickerAvailable = [&]()
 								double pressScreenX =
 									static_cast<double>(
 										startScreenPoint.x);
+								double pressScreenY =
+									static_cast<double>(
+										startScreenPoint.y);
+								double touchDragThresholdPx =
+									BarThicknessPreviewTouchSlopDip
+									* max(1.0, static_cast<double>(
+										barStyle.dpiZoom));
+								double touchDragThresholdSquared =
+									touchDragThresholdPx * touchDragThresholdPx;
 
 								auto panel = shapeMap[
 									BarUISetShapeEnum::DrawAttributeBar];
@@ -12530,33 +12576,49 @@ auto ColorPickerAvailable = [&]()
 												clampedWidth)),
 											range.min, range.max));
 									};
-auto ApplyCandidateWidth =
-										[&](float targetWidth) -> bool
-										{
-											if (!valueAdjustAllowed) return false;
-											if (barState.drawAttributeBar
+								auto ProjectRelativePreviewWidth =
+									[&](double screenX) -> float
+									{
+										double rawWidth = static_cast<double>(
+											initialWidth)
+											+ (screenX - pressScreenX)
+												/ trackTravelScreenX * rangeSpan;
+										double clampedWidth = clamp(rawWidth,
+											static_cast<double>(range.min),
+											static_cast<double>(range.max));
+										return static_cast<float>(clamp(
+											static_cast<int>(lround(clampedWidth)),
+											range.min, range.max));
+									};
+								auto ApplyCandidateWidth =
+									[&](float targetWidth,
+										bool candidateAllowed) -> bool
+									{
+										if (!candidateAllowed) return false;
+										if (!directTouchPreviewGesture
+											&& barState.drawAttributeBar
 												.thicknessSliderHoldLocked)
-												return false;
+											return false;
 
-											int roundedWidth = static_cast<int>(
-												lround(targetWidth));
-											if (roundedWidth == lastCandidateWidth
-												&& candidateWidthIsInteger)
-												return false;
+										int roundedWidth = static_cast<int>(
+											lround(targetWidth));
+										if (roundedWidth == lastCandidateWidth
+											&& candidateWidthIsInteger)
+											return false;
 
-											lastCandidateWidth = roundedWidth;
-											candidateWidthIsInteger = true;
-											finalWidth = static_cast<float>(
-												roundedWidth);
-											candidateChanged = abs(
-												static_cast<double>(
-													finalWidth - initialWidth))
-												> 0.000001;
-											barState.drawAttributeBar
-												.thicknessSliderCandidateWidth =
-												finalWidth;
-											return true;
-										};
+										lastCandidateWidth = roundedWidth;
+										candidateWidthIsInteger = true;
+										finalWidth = static_cast<float>(
+											roundedWidth);
+										candidateChanged = abs(
+											static_cast<double>(
+												finalWidth - initialWidth))
+											> 0.000001;
+										barState.drawAttributeBar
+											.thicknessSliderCandidateWidth =
+											finalWidth;
+										return true;
+									};
 
 									// 拖动改值后静止保持：0.5s 出提示，再 1.5s（合计 2.0s）锁定。
 									double stillThresholdPx =
@@ -12695,9 +12757,11 @@ auto ApplyCandidateWidth =
 
 									barState.drawAttributeBar
 										.thicknessSliderCandidateWidth = initialWidth;
+									barState.drawAttributeBar
+										.thicknessPreviewDragging = false;
 									barState.drawAttributeBar.thicknessSliderPressed =
-										true;
-									if (pressOnThumb)
+										!directTouchPreviewGesture;
+									if (!directTouchPreviewGesture && pressOnThumb)
 									{
 										// Thumb 按下即结束固定态；Pressed 继续维持本次 Slider 交互。
 										barState.drawAttributeBar.thicknessSliderPinned = false;
@@ -12709,10 +12773,12 @@ auto ApplyCandidateWidth =
 									barState.drawAttributeBar
 										.thicknessSliderHoldProgress = 0.0f;
 									// 圆点完全出现且点在外侧时，按下即跳到点击位置；点在圆点内只开始抓取。
-									if (valueAdjustAllowed && !pressOnThumb)
+									if (!directTouchPreviewGesture
+										&& valueAdjustAllowed && !pressOnThumb)
 									{
 										ApplyCandidateWidth(
-											ProjectWidthFromScreenX(pressScreenX));
+											ProjectWidthFromScreenX(pressScreenX),
+											true);
 										barState.drawAttributeBar
 											.thicknessSliderDragging = true;
 									}
@@ -12749,7 +12815,8 @@ auto ApplyCandidateWidth =
 												break;
 
 											POINT cursorPoint{};
-											if (GetCursorPos(&cursorPoint))
+											if (!directTouchPreviewGesture
+												&& GetCursorPos(&cursorPoint))
 											{
 												UpdateHoldLockState(
 													static_cast<double>(
@@ -12760,6 +12827,12 @@ auto ApplyCandidateWidth =
 											std::this_thread::sleep_for(
 												std::chrono::milliseconds(8));
 											continue;
+										}
+
+										if (IsBarTouchCancelMessage(msg))
+										{
+											touchGestureCancelled = true;
+											break;
 										}
 
 										bool samePenMode =
@@ -12789,6 +12862,29 @@ auto ApplyCandidateWidth =
 											double screenY =
 												static_cast<double>(
 													screenPoint.y);
+											if (directTouchPreviewGesture)
+											{
+												double moveDx =
+													screenX - pressScreenX;
+												double moveDy =
+													screenY - pressScreenY;
+												if (!gestureDragged
+													&& moveDx * moveDx + moveDy * moveDy
+														> touchDragThresholdSquared)
+												{
+													// 超过 5 DIP 后永久归类为 Preview 拖动，回到原点也不再触发点击。
+													gestureDragged = true;
+													barState.drawAttributeBar
+														.thicknessPreviewDragging = true;
+													UpdateRendering(false);
+												}
+												if (gestureDragged
+													&& ApplyCandidateWidth(
+														ProjectRelativePreviewWidth(screenX),
+														true))
+													UpdateRendering(false);
+												continue;
+											}
 											if (!gestureDragged
 												&& screenX != pressScreenX)
 											{
@@ -12811,7 +12907,8 @@ auto ApplyCandidateWidth =
 													.thicknessSliderHoldLocked
 												&& ApplyCandidateWidth(
 													ProjectWidthFromScreenX(
-														screenX - grabOffsetScreenX)))
+														screenX - grabOffsetScreenX),
+													valueAdjustAllowed))
 											{
 												// 改值后重置静止保持计时。
 												lastMoveScreenX = screenX;
@@ -12848,11 +12945,39 @@ auto ApplyCandidateWidth =
 										}
 										if (msg.message == WM_LBUTTONUP
 											|| !msg.lbutton)
+										{
+											if (directTouchPreviewGesture)
+											{
+												POINT screenPoint{
+													static_cast<LONG>(msg.x),
+													static_cast<LONG>(msg.y) };
+												ClientToScreen(
+													floating_window, &screenPoint);
+												double moveDx = static_cast<double>(
+													screenPoint.x) - pressScreenX;
+												double moveDy = static_cast<double>(
+													screenPoint.y) - pressScreenY;
+												if (!gestureDragged
+													&& moveDx * moveDx + moveDy * moveDy
+														> touchDragThresholdSquared)
+												{
+													gestureDragged = true;
+													barState.drawAttributeBar
+														.thicknessPreviewDragging = true;
+												}
+												if (gestureDragged)
+													ApplyCandidateWidth(
+														ProjectRelativePreviewWidth(
+															static_cast<double>(screenPoint.x)),
+														true);
+											}
 											break;
+										}
 
 										// 其他鼠标消息仍更新静止计时。
 										POINT cursorPoint{};
-										if (GetCursorPos(&cursorPoint))
+										if (!directTouchPreviewGesture
+											&& GetCursorPos(&cursorPoint))
 										{
 											UpdateHoldLockState(
 												static_cast<double>(cursorPoint.x),
@@ -12877,6 +13002,7 @@ bool gestureCaptured = barState.drawAttributeBar
 										.thicknessSliderHoldProgress = 0.0f;
 
 									bool gestureCompleted = gestureCaptured
+										&& !touchGestureCancelled
 										&& !offSignal && !msg.lbutton
 										&& barState.drawAttribute && !barState.fold
 										&& stateMode.StateModeSelect
@@ -12890,10 +13016,19 @@ bool gestureCaptured = barState.drawAttributeBar
 									barState.drawAttributeBar
 										.thicknessSliderDragging = false;
 									barState.drawAttributeBar
+										.thicknessPreviewDragging = false;
+									barState.drawAttributeBar
 										.thicknessSliderCandidateWidth = 0.0f;
-									if (gestureCompleted && gestureDragged)
+									if (directTouchPreviewGesture)
 									{
-										// 悬停预览态拖动保持未固定；触摸等无悬停进入的拖动要固定选中。
+										// 点击在抬手时才展开；拖动结束后继续保留 Preview。
+										barState.drawAttributeBar.thicknessSliderHover = false;
+										barState.drawAttributeBar.thicknessSliderPinned =
+											gestureCompleted && !gestureDragged;
+									}
+									else if (gestureCompleted && gestureDragged)
+									{
+										// 保持既有鼠标语义：悬停拖动不固定，无悬停拖动会固定。
 										barState.drawAttributeBar
 											.thicknessSliderPinned =
 											pinnedAtPress || !hoverAtPress;
@@ -12954,9 +13089,11 @@ bool gestureCaptured = barState.drawAttributeBar
 						barState.drawAttributeBar.thicknessOverflowHover
 						|| barState.drawAttributeBar.thicknessOverflowHoverGrace
 						|| barState.drawAttributeBar.thicknessOverflowPinned;
-					barState.drawAttributeBar.thicknessSliderHover =
-						!overflowUiActive && sliderHit && sliderHit->IsClick(
-							msg.x, msg.y, barStyle.zoom);
+									if (directTouchPreviewGesture)
+										barState.drawAttributeBar.thicknessSliderHover = false;
+									else barState.drawAttributeBar.thicknessSliderHover =
+										!overflowUiActive && sliderHit && sliderHit->IsClick(
+											msg.x, msg.y, barStyle.zoom);
 								}
 								else CloseThicknessSlider(false);
 								if (penModeChanged
