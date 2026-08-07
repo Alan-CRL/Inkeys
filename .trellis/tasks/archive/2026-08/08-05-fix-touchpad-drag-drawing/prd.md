@@ -82,3 +82,7 @@ inkStrokeModelerTest.exe --rts-trace
 ```
 
 优先复现 A，并保留从 `[RTS_TRACE][probe]`、`[RTS_TRACE][init]` 开始到 contact `Up` 汇总结束的完整输出。初始化行应包含生产基线 `dataInterest=0x000063f5`、`selectedProperties=9`、`packetOrder=X,Y,Pressure,XTilt,YTilt,Azimuth,Altitude,Width,Height` 和 `probe=TabletFlags value=IdtDrawpad-0x00010309`，窗口观察中的 `tabletFlags` 也应为 `0x10309`。本轮优先复现 A；若仍只有一个 `Packets`，说明旧窗口 flags 不是根因，再进入下一个单变量探针，不把窗口鼠标变成绘制入口。
+
+## Closure Note
+
+本任务的代码修复、诊断清理、Debug/Release ARM64 构建和现有控制台测试已经完成，生产代码提交为 `d417cba`。A/B 触摸板以及 Pen/Touch/Mouse 的实体硬件复测由用户后续执行；本任务在不伪造硬件验收结果的前提下结束，后续 RTS decoder 热路径优化另立任务。

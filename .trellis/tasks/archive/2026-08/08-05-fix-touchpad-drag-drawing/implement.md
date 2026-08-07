@@ -64,3 +64,8 @@ git diff --check
 ```text
 ARM64\Debug\inkStrokeModelerTest.exe --rts-trace
 ```
+
+## Closure Note
+
+- 代码和自动化质量门槛已完成；对应生产提交为 `d417cba`。
+- 实体 Precision Touchpad/Pen/Touch/Mouse 验证保留为用户后续硬件测试，不在本任务中继续修改实现。
