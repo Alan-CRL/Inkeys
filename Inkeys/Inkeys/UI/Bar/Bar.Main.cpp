@@ -5262,9 +5262,8 @@ SetButtonPositionTar(temp->buttom.x, xO - barBtnGap / 2.0, 40.0, true);
 							extensionTargetAngle, operationDur);
 						SetDrawAttributeSvgColor(
 							BarUISetSvgEnum::DrawAttributeBar_PenTypeExtensionArrow,
-							GetThemeColor(barState.drawAttributeBar.penTypeExtensionPress
-								? BarThemeColorEnum::PressedFill
-								: BarThemeColorEnum::Accent));
+							// 笔型三角按下仍保持 Accent，缩放和入口背景负责按压反馈。
+							GetThemeColor(BarThemeColorEnum::Accent));
 					}
 					{ /**/ }
 					// 粗细调节区域
@@ -5346,9 +5345,6 @@ bool thicknessPresetMode =
 								BarUiValueClass& pressScale)
 								{
 								auto shape = shapeMap[shapeType];
-								bool selectedVisual = selected
-									&& !(shapeType == BarUISetShapeEnum::
-										DrawAttributeBar_ThicknessAdjust && pressed);
 								shape->x.SetTar(x * layoutScale);
 								shape->y.SetTar(
 									(thicknessY + thicknessControlOffsetY) * layoutScale);
@@ -5358,10 +5354,10 @@ bool thicknessPresetMode =
 									BarDrawAttributeThicknessControlHeight * layoutScale);
 								shape->rw.value().SetTar(4.0 * layoutScale);
 								shape->rh.value().SetTar(4.0 * layoutScale);
-								shape->fill.value().SetTar(selectedVisual
+								shape->fill.value().SetTar(selected
 									? GetThemeColor(BarThemeColorEnum::Accent)
 									: GetThemeColor(BarThemeColorEnum::PressedFill));
-								shape->frame.value().SetTar(selectedVisual
+								shape->frame.value().SetTar(selected
 									? GetThemeColor(BarThemeColorEnum::Accent)
 									: GetThemeColor(BarThemeColorEnum::TextPrimary));
 
@@ -5377,7 +5373,7 @@ bool thicknessPresetMode =
 									else if (selected) shape->pct.SetTar(0.20);
 									else if (hoverStage == BarButtomHoverStageEnum::None)
 										shape->pct.SetTar(0.0);
-									shape->frameLightPct.value().SetTar(selectedVisual
+									shape->frameLightPct.value().SetTar(selected
 										? (pressed ? BarButtonPressedLightOpacity : 1.0) : 0.0);
 									if (numberWord) numberWord->pct.SetTar(1.0);
 								}
@@ -5462,12 +5458,11 @@ for (size_t i = 0; i < 3; ++i)
 						thicknessAdjustSvg->pct.SetTar(adjustVisible ? 1.0 : 0.0);
 						auto& thicknessAdjustColor =
 							thicknessAdjustSvg->color1.value();
-						COLORREF thicknessAdjustTargetColor =
-							barState.drawAttributeBar.thicknessAdjustPress
-								? GetThemeColor(BarThemeColorEnum::PressedFill)
-								: (barState.drawAttributeBar.thicknessSliderPinned
-								? GetThemeColor(BarThemeColorEnum::Accent)
-								: GetThemeColor(BarThemeColorEnum::TextPrimary));
+								// 三角按下仍保留选中态基色，按压反馈由背景和光影透明度表达。
+								COLORREF thicknessAdjustTargetColor =
+									barState.drawAttributeBar.thicknessSliderPinned
+										? GetThemeColor(BarThemeColorEnum::Accent)
+										: GetThemeColor(BarThemeColorEnum::TextPrimary);
 						if (forNum == 1 || !barState.drawAttribute)
 							thicknessAdjustColor.SetDirect(thicknessAdjustTargetColor);
 						else thicknessAdjustColor.SetTar(thicknessAdjustTargetColor);
