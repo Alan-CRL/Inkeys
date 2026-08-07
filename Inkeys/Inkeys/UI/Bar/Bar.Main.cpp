@@ -3220,12 +3220,13 @@ void BarUISetClass::Rendering()
 			double centerY = geometry.sliderCenterY;
 			if (!drawAttributeThicknessSliderPositionLocked) return centerY;
 
-			// Slider 会话统一使用 Position B，给上方提示与圆点保留稳定间距。
+			// Slider 会话统一使用 Position B，并始终避开当前侧的 Overflow Hint。
 			double halfThumb = BarThicknessSliderThumbDiameter
 				* geometry.panelScale / 2.0;
 			double positionB = centerY
-				+ (BarThicknessTooltipBadgeHeight + BarDrawAttributeGap)
-				* geometry.panelScale;
+				- geometry.previewSide
+					* (BarThicknessTooltipBadgeHeight + BarDrawAttributeGap)
+					* geometry.panelScale;
 			return clamp(positionB,
 				geometry.previewTop + halfThumb,
 				geometry.previewBottom - halfThumb);
