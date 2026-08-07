@@ -32,13 +32,13 @@
 12. binding 路径不得 heap allocation、扩容、`unordered_map` 或 mutex。容量耗尽时安全拒绝新的 Down，不破坏既有 bindings；重复 Down 必须先安全取消/关闭同 key 的旧 producer contact并释放旧 binding，再绑定当前 Down，绝不能保留两个相同 key。
 13. `StylusDown` 在发布前 resolve decoder 并建立 binding；发布失败时回收 binding。`StylusUp` 只在 generation/validity 匹配时解码，并且无论解码或发布是否成功都释放 binding；generation mismatch 不得 dereference stale decoder，直接走现有安全终态关闭/取消路径。
 14. 正常 `Packets()` 路径必须为 active binding -> stable decoder -> fixed-index `DecodeSnapshot` -> `PublishMove` -> bounded diagnostics，不得调用 `FindMetadata`、`GetAllTabletContextIds`、任何 COM、mutex、GUID scan、metadata linear scan、格式化、文件 I/O 或分配。
-15. `InAirPackets` 不创建或使用 active contact binding；它按 tcid 对固定 decoder cache 做简单有界 lookup 后解码。Down/InAir/lifecycle resolver 可保留低频、有界 decoder lookup 和罕见 lifecycle recovery。
+15. `InAirPackets` 不创建或使用 active contact binding；它只按 tcid 对固定 decoder cache 做简单有界 lookup 后解码，cache miss 直接丢弃该 hover sample，不得 Resolve/Ensure/Build、rebuild 或调用 COM。只有 Down、InRange 和 lifecycle writer 可保留低频、有界 decoder lookup 与罕见 recovery。
 16. `DecodeSnapshot` 变成只依赖 const decoder、packet 和输出参数的纯解码函数；position scale 继续复制自 shared first-context scale，contact size 继续使用当前 context scale。
 17. 保留现有 bounded `--rts-trace` 诊断语义；若线程 ownership 证据不足，可保留 lifecycle 慢路径同步，但 `Packets` 必须无锁。
 
 ## Acceptance Criteria
 
-- 正常 `Packets()` 路径没有 `GetAllTabletContextIds`、COM、mutex、allocation、GUID scan、metadata linear scan、格式化输出或文件 I/O。
+- 正常 `Packets()` 与 `InAirPackets()` callback body 都没有 `GetAllTabletContextIds`、decoder recovery/rebuild、COM、allocation、GUID scan、格式化输出或文件 I/O；二者都只做一次 non-waiting atomic gate，且没有 mutex。`Packets()` 不做 metadata/context scan，`InAirPackets()` cache miss 直接丢弃。
 - production DataInterest 明确包含 `RTSDI_UpdateMapping`，同时保留原有精确 flags；DPI/orientation/display mapping 变化能够实际进入 `UpdateMapping` decoder lifecycle。
 - 同一 raw packet 在 Pen、Touch、MouseLeft/Right 下产生与当前实现等价的 position、pressure、tilt、orientation、contact width/height、inverted/device routing；shared position scale 仍等价于当前 `GetAllTabletContextIds()[0]` 语义。
 - 没有任何 `TABLET_CONTEXT_ID`、decoder 或 active binding 能跨越 RealTimeStylus Disabled/Enabled 边界；generation A 的 binding 在 Enabled generation B 中永远不能 resolve。

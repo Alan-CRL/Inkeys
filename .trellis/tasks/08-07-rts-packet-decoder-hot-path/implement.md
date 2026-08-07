@@ -11,10 +11,11 @@
 
 ## Phase 2: decoder lifecycle
 
-- [ ] 实现共享的 `ClearActiveBindings`、`InvalidateAllDecoders`、`ResetSharedPositionScale`、`ResetDecoderLifecycleState` 及 staged full-rebuild helper，固定清理顺序并消除四份重复逻辑。
+- [ ] 拆分 `ResetActiveContactState` 与 `ResetDecoderLifecycleState`：前者清 bindings/simulation/producer contacts，后者再 invalidate decoder/shared scale；staged full-rebuild 只使用完整 lifecycle reset。
 - [ ] 在现有精确 `kProductionRtsDataInterest` mask 上仅 OR `RTSDI_UpdateMapping`；保留全部原 flags，不改为 `RTSDI_AllData`，不改变其它 production RTS configuration。
 - [ ] 改造 `RealTimeStylusEnabled`：先终止 stale lifecycle/contacts，建立新 generation；decoder 预热使用 callback context IDs，shared scale 默认保留一次 `GetAllTabletContextIds()[0]` 旧语义。
 - [ ] 改造 `RealTimeStylusDisabled`：invalidate bindings/decoder generations，reset shared scale/context caches，终止 enabled lifecycle，并沿用 producer contacts、simulation 和 cursor 的安全清理。
+- [ ] 改造 `Error`：exclusive writer 下只 reset active contact state 和 cursor，保留 decoder slots、shared scale、enabled state 与 generation；下一次同 context Down 无需 lifecycle rebuild。
 - [ ] 实现 `UpdateMapping`：取消活动 contacts、invalidate generation，枚举 current contexts，stage 新 shared scale/decoders并发布；callback 内不得重新设置 desired properties、tablet flags、DataInterest 或 tablets mode。
 - [ ] 改造 `TabletRemoved`：全量取消/invalidate 后调用 `GetAllTabletContextIds()`，立即重建 remaining contexts 和 shared scale，不猜 removed tcid。
 - [ ] 改造 `TabletAdded`：正常使用 `GetTabletContextIdFromTablet()` 局部构建并原子发布一个 decoder；失败时转入取消 contacts 的安全全量 staged rebuild，不留下部分/混合 generation。
@@ -36,16 +37,18 @@
 - [ ] `StylusDown` 使用 bounded tcid resolver，先 binding 后 decode/publish；decode 或 `PublishDown` 失败时释放 binding。
 - [ ] `Packets` 改为 binding -> validated decoder slot/generation -> fixed-index decode -> `PublishMove` -> bounded diagnostics；移除正常路径 `FindMetadata`、decoder scan、COM recovery 和 pixel-scale publication 查询。
 - [ ] `StylusUp` 只在 generation 匹配时 decode，随后尝试 `PublishUp`；缺失/mismatch/坏包使用现有安全 terminal fallback，并在所有返回路径释放 binding。
-- [ ] `InAirPackets` 仅执行 tcid -> bounded decoder-cache lookup -> decode；不得创建 active contact binding。range callbacks 保持低频 resolver 语义。
+- [ ] `InAirPackets` 仅执行 non-waiting gate -> tcid cache lookup -> decode；cache miss 直接忽略，不得 Resolve/Ensure/Build/rebuild/COM，也不得创建 active contact binding。range callbacks 保持低频 writer resolver 语义。
 - [ ] 保持 Pen inversion、MouseLeft/Right routing、cursor sink、interrupted-stroke simulation、QPC、phase 和 bounded `--rts-trace` 行为等价。
 
 回滚点：若 callback migration 出现回归，可回退到已验证的 immutable decoder cache，但不得把 COM/metadata scan 放回正常 `Packets`。
 
 ## Phase 5: synchronization cleanup
 
-- [ ] 展开所有 RTS callback、Shutdown 和 diagnostics 访问链，证明 decoder/binding ownership 及 callback serialization。
-- [ ] 只有证据充分时才删除旧 metadata/shared-scale mutex/atomics；证据不足则保留 lifecycle/build 慢路径的安全 publication，`Packets` 仍不得获取 mutex或看到原地修改的 decoder。
-- [ ] 静态审查 `Packets`：无 `GetAllTabletContextIds`、COM、allocation、GUID scan、metadata/context linear scan、formatted output、file I/O、HUD 或系统查询。
+- [ ] 展开所有 RTS callback、Initialize/Shutdown 和 diagnostics 访问链：packet/tablet callback 通常来自 high-priority execution/tablet-data thread；Enabled/Disabled 属于修改 Enabled/plugin collection 的线程，Error 属于同步错误线程，CustomStylusDataAdded 属于 queue caller。Initialize 在注册/enable 前由 owner thread 构造 state且无 overlap；Shutdown 由 owner thread 以 caller-thread Disabled writer drain readers/停止新事件，再 Remove/release，不把 Remove 当独立 drain 保证。
+- [ ] 对普通 decoder/binding arrays 增加 writer-bit + reader-count publication gate：`Packets/InAirPackets` 只做一次 lock-free CAS，失败立即返回；不得 retry/spin/wait/mutex。
+- [ ] `StylusDown`、`StylusUp`、InRange、Enabled/Disabled/Error、tablet/mapping callbacks 全部使用 exclusive writer mutex + writer bit + reader drain；Down/Up 的安全性不依赖 execution callback 永远串行。
+- [ ] 保留 acquire/release happens-before：reader acquire-CAS/release-sub，writer acq_rel writer-bit publication/acquire drain/release clear；使用 compile-time lock-free atomic assertion。
+- [ ] 静态审查 `Packets` 与 `InAirPackets` callback body：无 Resolve/Ensure/Build/rebuild、`GetAllTabletContextIds`、`GetPacketDescriptionData`、COM、writer guard、mutex 或 lock guard；`Packets` 仍无 allocation、GUID scan、formatted output、file I/O、HUD 或系统查询。
 - [ ] 只删除被旧 RTS metadata/shared-scale publication 独占且确认无调用的 helper；不清理 renderer 或任何无关公共功能。
 
 ## Phase 6: pure decoder / binding / lifecycle tests
@@ -66,13 +69,16 @@
 - [ ] duplicate `(tcid, cid)` Down：旧 producer contact cancel/close、旧 binding release、当前 Down 成为唯一 binding。
 - [ ] binding/decoder generation mismatch：Packets 丢弃，Up 走安全 terminal close，二者都不读取 stale decoder且最终释放 binding。
 - [ ] shared scale compatibility：即使 callback `pTcids` 顺序与 `GetAllTabletContextIds()` 顺序不同，Enabled 结果仍等价于当前枚举首 context 语义。
+- [ ] Error active-only reset：真实 coordinator producing contact 变为 Cancelled，binding 清空，但 decoder slot/generation/shared scale/enabled state 保留；同 context 可立即重新 bind 并 pure decode。
+- [ ] InAir cache hit/miss：命中已发布 decoder 可解码，miss 返回 null；源码 callback body 静态证明没有 recovery/COM 路径。
+- [ ] state gate concurrency：既有 packet reader 阻止 writer 取得 state，writer bit 发布后第二个 packet reader 立即失败；首 reader 退出后 writer 完成并 release，新 packet reader 再次成功。
 
 ## Phase 7: build and validation
 
 - [ ] 确认改动主要限于 `draw3/realtime_stylus.cpp/.cppm` 和必要纯 RTS tests；除新增 `RTSDI_UpdateMapping` 外，HUD、DrawingController、ContactInputCoordinator、Renderer、StrokeModeler、prediction、ContactSnapshot 及其它 production RTS configuration 未改。
 - [ ] 使用 ARM64 MSBuild 构建 `Debug|ARM64` 与 `Release|ARM64` 全解决方案。
 - [ ] 运行 ARM64 Debug/Release 全部测试；可行时补 Debug/Release x64。
-- [ ] 执行 `git diff --check`、BOM/CRLF 检查、禁止 API/hot-path 人工展开和最终代码 review。
+- [ ] 执行 `git diff --check`、BOM/CRLF 检查、逐 callback body 禁止 API 检查、gate memory-order review 和最终代码 review。
 - [ ] 向用户交付 Precision Touchpad、Pen、Touchscreen、Physical Mouse、DPI/orientation mapping change 与 tablet hotplug 的硬件验证矩阵；不自动启动 GUI。
 
 ## Validation commands

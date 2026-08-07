@@ -23,13 +23,28 @@ namespace
 		return std::abs(left - right) <= epsilon;
 	}
 
-	bool ContainsText(const std::filesystem::path& path, const std::string& text)
+	std::string ReadText(const std::filesystem::path& path)
 	{
 		std::ifstream input(path, std::ios::binary);
-		if (!input) return false;
-		const std::string contents((std::istreambuf_iterator<char>(input)),
+		if (!input) return {};
+		return std::string((std::istreambuf_iterator<char>(input)),
 			std::istreambuf_iterator<char>());
+	}
+
+	bool ContainsText(const std::filesystem::path& path, const std::string& text)
+	{
+		const std::string contents = ReadText(path);
 		return contents.find(text) != std::string::npos;
+	}
+
+	std::string TextBetween(const std::string& contents,
+		const std::string& first, const std::string& second)
+	{
+		const size_t firstPosition = contents.find(first);
+		if (firstPosition == std::string::npos) return {};
+		const size_t secondPosition = contents.find(second, firstPosition + first.size());
+		if (secondPosition == std::string::npos) return {};
+		return contents.substr(firstPosition, secondPosition - firstPosition);
 	}
 
 	bool TextAppearsBefore(const std::filesystem::path& path,
@@ -377,6 +392,45 @@ int RunLaserIncrementalCoverageTests()
 			"kMaximumPacketPropertyCount = 256"));
 		LASER_INCREMENTAL_CHECK(ContainsText(realtimeStylusSource,
 			"propertyCount != decoder.propertyCount"));
+		const std::string realtimeStylusText = ReadText(realtimeStylusSource);
+		const std::string inAirPacketsBody = TextBetween(realtimeStylusText,
+			"HRESULT STDMETHODCALLTYPE InAirPackets(",
+			"HRESULT STDMETHODCALLTYPE Packets(");
+		const std::string packetsBody = TextBetween(realtimeStylusText,
+			"HRESULT STDMETHODCALLTYPE Packets(",
+			"HRESULT STDMETHODCALLTYPE CustomStylusDataAdded(");
+		LASER_INCREMENTAL_CHECK(!inAirPacketsBody.empty());
+		LASER_INCREMENTAL_CHECK(!packetsBody.empty());
+		const std::array forbiddenPacketStateAccess = {
+			"ResolveContextDecoder", "EnsureContextDecoder", "BuildContextDecoder",
+			"RebuildCurrentContextDecoders", "GetAllTabletContextIds",
+			"GetPacketDescriptionData", "GetTabletFromTabletContextId",
+			"GetTabletContextIdFromTablet", "QueryInterface", "IInkTablet2", "source->",
+			"CoTaskMemFree", "RtsStateWriterGuard", "std::lock_guard", "std::mutex",
+			"new ", "std::vector", "std::wstring" };
+		for (const char* forbidden : forbiddenPacketStateAccess)
+		{
+			LASER_INCREMENTAL_CHECK(inAirPacketsBody.find(forbidden) == std::string::npos);
+			LASER_INCREMENTAL_CHECK(packetsBody.find(forbidden) == std::string::npos);
+		}
+		LASER_INCREMENTAL_CHECK(inAirPacketsBody.find("RtsPacketStateGuard") !=
+			std::string::npos);
+		LASER_INCREMENTAL_CHECK(inAirPacketsBody.find("FindCachedContextDecoder") !=
+			std::string::npos);
+		LASER_INCREMENTAL_CHECK(inAirPacketsBody.find("RecordCallback(\"InAirPackets\"") !=
+			std::string::npos);
+		LASER_INCREMENTAL_CHECK(packetsBody.find("RtsPacketStateGuard") !=
+			std::string::npos);
+		LASER_INCREMENTAL_CHECK(packetsBody.find("activeBindings_.Find") !=
+			std::string::npos);
+		const std::string errorBody = TextBetween(realtimeStylusText,
+			"HRESULT STDMETHODCALLTYPE Error(",
+			"HRESULT STDMETHODCALLTYPE UpdateMapping(");
+		LASER_INCREMENTAL_CHECK(errorBody.find("RtsStateWriterGuard") != std::string::npos);
+		LASER_INCREMENTAL_CHECK(errorBody.find("ResetActiveContactState(true)") !=
+			std::string::npos);
+		LASER_INCREMENTAL_CHECK(errorBody.find("ResetDecoderLifecycleState") ==
+			std::string::npos);
 		LASER_INCREMENTAL_CHECK(!ContainsText(hapticSource,
 			"LoadLibraryW(L\"combase.dll\")"));
 		LASER_INCREMENTAL_CHECK(!ContainsText(runtimeMetricsSource,

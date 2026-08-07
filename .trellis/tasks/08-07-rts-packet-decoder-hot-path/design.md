@@ -28,7 +28,7 @@ StylusUp
     -> always release binding
 
 InAirPackets
-    -> bounded tcid -> decoder lookup
+    -> cache-only bounded tcid -> decoder lookup
     -> DecodeSnapshot
 ```
 
@@ -59,7 +59,7 @@ kProductionRtsDataInterest =
 
 `BuildContextDecoder` 先在局部 candidate 中完成 `GetPacketDescriptionData`、GUID/index 解析、metrics 复制与 device-kind 查询，离开 helper 前始终 `CoTaskMemFree`。只有完整 candidate 才能发布到 slot；已经发布的 payload 不原地修改。
 
-decoder cache 继续采用简单固定容量（现有 32 context slots）。Down、InAir 和 lifecycle resolver 可按 tcid 做最多几十槽的 bounded linear lookup；这不是高频 `Packets` 的 metadata scan，无需为了低频 resolver 引入第二套复杂索引。
+decoder cache 继续采用简单固定容量（现有 32 context slots）。Down 和 lifecycle resolver 可按 tcid 做最多几十槽的 bounded linear lookup，并在低频 writer 路径恢复缺失 decoder；这不是高频 `Packets` 的 metadata scan，无需为了低频 resolver 引入第二套复杂索引。`InAirPackets` 只能查找已经发布的 cache slot，cache miss 直接忽略该 hover sample，不调用 Resolve/Ensure/Build、COM 或 rebuild。
 
 ## Shared Position Scale Compatibility
 
@@ -85,13 +85,16 @@ shared position scale
 
 ```text
 ClearActiveBindings()
+ResetActiveContactState(qpc, closeProducerContacts)
 InvalidateAllDecoders()
 ResetSharedPositionScale()
 ResetDecoderLifecycleState(qpc, closeProducerContacts)
 RebuildCurrentContextDecoders(source)
 ```
 
-`ResetDecoderLifecycleState` 的安全顺序是：停止解析旧 binding，使所有 active binding 无效；通过现有 coordinator 终态策略取消/关闭 producer contacts；invalidate decoder slots 并推进/终止其 generation；清空 context-ID-derived cache 和 shared scale。lifecycle reset 同时把 binding 表全部恢复为 `EMPTY`。现有 interruption simulation 和 cursor reset 语义保持不变。
+`ResetActiveContactState` 清空 active bindings、reset 可选 interruption simulation，并按需通过 coordinator 终态策略取消/关闭 producer contacts。`ResetDecoderLifecycleState` 先调用 active reset，再 invalidate decoder slots、推进/终止 generation，并清空 context-ID-derived cache 和 shared scale。lifecycle reset 同时把 binding 表全部恢复为 `EMPTY`；cursor 仍由 callback wrapper 按原语义清理。
+
+`Error` 只调用 active reset：它清除 cursor、bindings、simulation 和 producer contacts，但保留当前 decoder slots、shared scale、enabled state 与 generation。后续同 context Down 可直接复用已发布 decoder，不需要等待 Enabled、mapping 或 tablet rebuild。Enabled、Disabled、UpdateMapping、TabletRemoved 以及 TabletAdded full-rebuild fallback 仍调用完整 lifecycle reset。
 
 generation 可以由 lifecycle epoch 加 slot generation 表达，也可以只用不会误复用的 slot generation；硬约束是 slot reuse 必须改变 generation，Disabled 后 generation A 的 binding 永远不能在下一次 Enabled 中匹配。
 
@@ -122,6 +125,17 @@ invalidate bindings
 ```
 
 Disabled 不保留可供下一次 Enabled 复用的 tcid、binding 或 decoder。
+
+### Error
+
+```text
+clear cursor
+    -> clear active bindings / reset interruption simulation
+    -> cancel producing contacts
+    -> preserve decoder slots, shared scale, enabled state and generation
+```
+
+RTS `Error` 不代表 tablet context lifecycle 已终止。保留 immutable cache 可以让同一 enabled lifecycle 的下一次 Down 继续固定索引解码；若实际 lifecycle 随后失效，Disabled、mapping 或 tablet callback 会执行完整 reset。
 
 ### UpdateMapping
 
@@ -185,9 +199,33 @@ Pen inversion、MouseLeft/Right routing、cursor sink 和 interrupted-stroke sim
 
 ## Thread Ownership And Hot Path
 
-decoder 构建、binding 修改和 lifecycle reset 只属于同步 RTS plugin callback；窗口/绘制线程和 diagnostics flush 不读取这些表。实现阶段必须展开 callback ownership：若可证明 callback 串行，删除只服务旧 metadata/pixel-scale publication 的 mutex/atomics；若证据不足，保留 lifecycle/build 慢路径的安全 publication，同样不得让 `Packets` 获取 mutex 或看到原地变更的 decoder。
+decoder cache 和 binding table 是普通固定数组，不假设它们能被不同 callback 线程并发读写。RTS 文档通常把 packet、range、contact、tablet 和 mapping callbacks 放在高优先级 execution/tablet-data thread；这只是 callback caller 分类，不是对任意普通 C++ state 的通用 serialization 或 happens-before 保证。窗口/绘制线程和 diagnostics flush 同样不读取这些表。
 
-`Packets` 唯一允许的工作是 bounded binding probe、slot/generation 校验、pure decode、既有 publish 和 bounded scalar diagnostics；没有 COM、fallback rebuild、tcid decoder scan、格式化或分配。
+`RealTimeStylusEnabled` / `RealTimeStylusDisabled` 在修改 RTS `Enabled` 状态或 sync plugin collection 的线程执行；`Error` 在同步插件错误发生的线程执行；`CustomStylusDataAdded` 在调用 `AddCustomStylusDataToQueue` 的线程执行。因此所有访问 decoder/binding 的 callback 仍必须经过项目自己的 gate，不能从常见 tablet-thread 路径推导数组天然线程安全。
+
+最终 callback state matrix：
+
+| Entry / callback | Caller/thread classification | decoder/binding access | Gate | Behavior |
+|---|---|---|---|---|
+| Initialize before registration/enable | owner thread | construct empty plugin state | none | state 在注册 plugin 和 `put_Enabled(TRUE)` 前完成构造，此时没有 callback overlap |
+| `Packets` | high-priority execution/tablet-data thread | read binding + immutable decoder | `RtsPacketStateGuard` | 一次 lock-free CAS；writer 已发布或 CAS 竞争时立即丢弃 sample，不重试、不等待 |
+| `InAirPackets` | high-priority execution/tablet-data thread | cache-only read | `RtsPacketStateGuard` | 一次 lock-free CAS；cache miss 或 gate reject 直接忽略 hover sample |
+| `StylusDown` | high-priority execution/tablet-data thread | Ensure/Publish decoder、insert/rebind binding | `RtsStateWriterGuard` | 低频 contact-entry writer；允许 mutex/reader drain |
+| `StylusUp` | high-priority execution/tablet-data thread | resolve、terminal publish、cluster-repair erase | `RtsStateWriterGuard` | 低频 terminal writer；不得因 lifecycle writer bit 而直接丢 Up |
+| InRange / tablet / mapping callbacks | 通常为 high-priority execution/tablet-data thread | optional build、incremental publish 或 full rebuild | `RtsStateWriterGuard` | lifecycle slow writer |
+| Enabled / Disabled | 修改 `Enabled` 或 plugin collection 的线程 | reset lifecycle state | `RtsStateWriterGuard` | 必须与所有 state access 排他 |
+| `Error` | 同步插件错误发生的线程 | active-only reset | `RtsStateWriterGuard` | 关闭 contact，但保留 decoder lifecycle |
+| `CustomStylusDataAdded` | `AddCustomStylusDataToQueue` caller | none | none | 不访问 decoder/binding state |
+| OutOfRange / button / system / DataInterest | documented callback/caller thread | none | none | 不访问 decoder/binding state |
+| Shutdown | owner thread | no direct array access | Disabled callback writer | `put_Enabled(FALSE)` 完成 drain/stop 后才 Remove plugin 和释放引用 |
+
+`RtsPacketStateGuard` 对一个 lock-free `atomic<uint32_t>` 先 acquire-load writer bit，再只尝试一次 strong acquire-CAS 增加 reader count；析构用 release `fetch_sub`。`RtsStateWriterGuard` 先用 mutex 串行 writers，再以 acq_rel `fetch_or` 发布 writer bit，使用 acquire-load 等待既有 readers drain；完成普通数组写入后用 release-store 清零。这个项目内的 atomic 协议建立 reader release -> writer acquire drain 和 writer release -> 后续 reader acquire 所需的 C++ ordering；RTS callback 文档本身不承担这项 happens-before。writer bit 发布后没有新 reader 能成功进入。
+
+Down/Up 使用 writer guard 后，状态安全不依赖 tablet execution callbacks 永远串行。若 TabletAdded incremental 与 Up 意外交叠，Up 等待 writer，随后仍会处理保留的旧 binding；若前一 writer 执行 full reset，它已经取消 contact，Up 随后走安全终态 fallback，不会泄漏 producing contact。`Packets` 和 `InAirPackets` 则始终无 mutex、无等待。
+
+`RealTimeStylusInput::Shutdown` 不直接访问 decoder/binding 数组。owner 线程调用 `put_Enabled(FALSE)`；该调用在 caller thread 触发 Disabled callback，Disabled writer 发布 writer bit并等待已经进入的 packet readers drain。Disabled 完成后 RTS 不再产生新事件，然后才按既有顺序 Remove sync plugin、释放返回引用和本地 plugin/stylus 引用。Remove 是 disabled 后的 ownership cleanup，不被当作另一项独立的 reader-drain 保证；最后 coordinator 的 `CloseAllProducerContacts` 仍只是终态兜底，也不新增线程。
+
+`Packets` 唯一允许的工作是一次 non-waiting gate、bounded binding probe、slot/generation 校验、pure decode、既有 publish 和 bounded scalar diagnostics；没有 COM、fallback rebuild、tcid decoder scan、格式化或分配。`InAirPackets` 同样没有 Resolve/Ensure/Build/rebuild/COM，只允许 gate + cache lookup + decode + cursor publish，并保留既有 fixed/non-waiting `RecordCallback("InAirPackets", ...)` 诊断。
 
 ## Compatibility And Rollback
 

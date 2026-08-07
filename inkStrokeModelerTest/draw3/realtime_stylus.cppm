@@ -102,5 +102,8 @@ export namespace draw3
 	bool RtsLifecycleTabletAddedForTesting() noexcept;
 	bool RtsLifecycleTabletAddedFallbackForTesting() noexcept;
 	bool RtsSharedScaleCompatibilityForTesting() noexcept;
+	bool RtsErrorPreservesDecoderLifecycleForTesting() noexcept;
+	bool RtsInAirCacheHitMissForTesting() noexcept;
+	bool RtsStateGateForTesting() noexcept;
 #endif
 }

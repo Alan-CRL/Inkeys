@@ -17,6 +17,9 @@
 #include <RTSCOM.h>
 #include <RTSCOM_i.c>
 #include <tchar.h>
+#if defined(DRAW3_TESTING)
+#include <thread>
+#endif
 #include <tpcshrd.h>
 #include <wrl/client.h>
 
@@ -32,6 +35,10 @@ namespace draw3
 		constexpr size_t kContextDecoderCapacity = 32;
 		constexpr size_t kActiveBindingSlotsPerBlock = 32;
 		constexpr size_t kMaximumActiveBindingCapacity = 4096;
+		constexpr uint32_t kRtsStateWriterBit = UINT32_C(0x80000000);
+		constexpr uint32_t kRtsStateReaderMask = kRtsStateWriterBit - 1u;
+		static_assert(std::atomic<uint32_t>::is_always_lock_free,
+			"RTS state gate requires lock-free 32-bit atomics");
 		constexpr ULONG kMaximumPacketPropertyCount = 256;
 		constexpr float kUnknownStylusValue = -1.0f;
 		constexpr float kPi = 3.14159265358979323846f;
@@ -64,6 +71,58 @@ namespace draw3
 			PROPERTY_METRICS metrics = {};
 			ULONG index = 0;
 			bool present = false;
+		};
+
+		class RtsPacketStateGuard
+		{
+		public:
+			explicit RtsPacketStateGuard(std::atomic<uint32_t>& state) noexcept
+				: state_(state)
+			{
+				uint32_t expected = state_.load(std::memory_order_acquire);
+				if ((expected & kRtsStateWriterBit) != 0 ||
+					(expected & kRtsStateReaderMask) == kRtsStateReaderMask) return;
+				entered_ = state_.compare_exchange_strong(expected, expected + 1u,
+					std::memory_order_acquire, std::memory_order_relaxed);
+			}
+
+			~RtsPacketStateGuard()
+			{
+				if (entered_) state_.fetch_sub(1u, std::memory_order_release);
+			}
+
+			RtsPacketStateGuard(const RtsPacketStateGuard&) = delete;
+			RtsPacketStateGuard& operator=(const RtsPacketStateGuard&) = delete;
+			explicit operator bool() const noexcept { return entered_; }
+
+		private:
+			std::atomic<uint32_t>& state_;
+			bool entered_ = false;
+		};
+
+		class RtsStateWriterGuard
+		{
+		public:
+			RtsStateWriterGuard(std::mutex& writerMutex,
+				std::atomic<uint32_t>& state) noexcept
+				: writerLock_(writerMutex), state_(state)
+			{
+				state_.fetch_or(kRtsStateWriterBit, std::memory_order_acq_rel);
+				while ((state_.load(std::memory_order_acquire) & kRtsStateReaderMask) != 0)
+					YieldProcessor();
+			}
+
+			~RtsStateWriterGuard()
+			{
+				state_.store(0u, std::memory_order_release);
+			}
+
+			RtsStateWriterGuard(const RtsStateWriterGuard&) = delete;
+			RtsStateWriterGuard& operator=(const RtsStateWriterGuard&) = delete;
+
+		private:
+			std::unique_lock<std::mutex> writerLock_;
+			std::atomic<uint32_t>& state_;
 		};
 
 		struct DecodedStylusAngles
@@ -655,6 +714,20 @@ namespace draw3
 			bool lifecycleEnabled_ = false;
 		};
 
+		const RtsContextDecoder* FindCachedContextDecoder(
+			const RtsDecoderCache& cache, TABLET_CONTEXT_ID contextId) noexcept
+		{
+			const size_t slot = cache.FindSlot(contextId);
+			return slot == kContextDecoderCapacity ? nullptr : cache.DecoderAt(slot);
+		}
+
+		void ClearActiveBindingsAndCloseContacts(RtsActiveBindingTable& activeBindings,
+			ContactInputCoordinator& coordinator, int64_t qpc) noexcept
+		{
+			activeBindings.Clear();
+			coordinator.CloseAllProducerContacts(qpc);
+		}
+
 		bool PopulateContextDecoderProperties(const PACKET_PROPERTY* properties,
 			ULONG propertyCount, RtsContextDecoder& decoder) noexcept
 		{
@@ -852,6 +925,7 @@ namespace draw3
 				RecordCallback("RealTimeStylusEnabled", nullptr, nullptr, contextCount, 0,
 					nullptr, nullptr, true, false);
 #endif
+				RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
 				ResetDecoderLifecycleState(true);
 				decoderCache_.BeginLifecycle();
 				StageAndPublishDecoders(source, contextCount, contextIds);
@@ -866,6 +940,7 @@ namespace draw3
 				RecordCallback("RealTimeStylusDisabled", nullptr, nullptr, 0, 0,
 					nullptr, nullptr, true, false);
 #endif
+				RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
 				ResetDecoderLifecycleState(true);
 				PublishDefaultPenCursor();
 				return S_OK;
@@ -876,6 +951,7 @@ namespace draw3
 			{
 				if (source)
 				{
+					RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
 					// InRange 不含倒转信息；等待首个 InAir/Pointer 包决定普通笔或笔尾。
 					EnsureContextDecoder(source, contextId, nullptr);
 				}
@@ -896,6 +972,7 @@ namespace draw3
 				ULONG propertyCount, LONG* packet, LONG**) override
 			{
 				if (!source || !stylusInfo || !packet) return E_INVALIDARG;
+				RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
 				size_t decoderSlotIndex = kContextDecoderCapacity;
 				const RtsContextDecoder* decoder = ResolveContextDecoder(
 					source, stylusInfo->tcid, nullptr, decoderSlotIndex);
@@ -968,6 +1045,7 @@ namespace draw3
 				ULONG propertyCount, LONG* packet, LONG**) override
 			{
 				if (!stylusInfo) return E_INVALIDARG;
+				RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
 				if (!packet)
 				{
 					PublishDefaultPenCursor();
@@ -1020,18 +1098,18 @@ namespace draw3
 				return S_OK;
 			}
 
-			HRESULT STDMETHODCALLTYPE InAirPackets(IRealTimeStylus* source,
+			HRESULT STDMETHODCALLTYPE InAirPackets(IRealTimeStylus*,
 				const StylusInfo* stylusInfo, ULONG packetCount,
 				ULONG packetBufferLength, LONG* packets, ULONG*, LONG**) override
 			{
 				if (!stylusInfo || !packets || packetCount == 0 || packetBufferLength < packetCount ||
 					packetBufferLength % packetCount != 0) return E_INVALIDARG;
-				size_t decoderSlotIndex = kContextDecoderCapacity;
-				const RtsContextDecoder* decoder = ResolveContextDecoder(
-					source, stylusInfo->tcid, nullptr, decoderSlotIndex);
 				const ULONG propertyCount = packetBufferLength / packetCount;
 				const LONG* lastPacket = packets +
 					static_cast<size_t>(packetCount - 1) * propertyCount;
+				RtsPacketStateGuard stateAccess(stateGate_);
+				const RtsContextDecoder* decoder = stateAccess
+					? FindCachedContextDecoder(decoderCache_, stylusInfo->tcid) : nullptr;
 				ContactSnapshot snapshot;
 				const bool decoded = decoder && DecodeSnapshot(*decoder, propertyCount, lastPacket,
 					ContactPhase::Move, QueryQpc(), snapshot);
@@ -1053,6 +1131,15 @@ namespace draw3
 					packetBufferLength % packetCount != 0) return E_INVALIDARG;
 				const ULONG propertyCount = packetBufferLength / packetCount;
 				const LONG* lastPacket = packets + static_cast<size_t>(packetCount - 1) * propertyCount;
+				RtsPacketStateGuard stateAccess(stateGate_);
+				if (!stateAccess)
+				{
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					RecordCallback("Packets", stylusInfo, nullptr, packetCount, propertyCount,
+						lastPacket, nullptr, false, false);
+#endif
+					return S_OK;
+				}
 				const RtsActiveContactBinding* binding = activeBindings_.Find(
 					stylusInfo->tcid, stylusInfo->cid);
 				const RtsContextDecoder* decoder = binding ? decoderCache_.Resolve(*binding) : nullptr;
@@ -1097,6 +1184,7 @@ namespace draw3
 			HRESULT STDMETHODCALLTYPE TabletAdded(IRealTimeStylus* source, IInkTablet* tablet) override
 			{
 				if (!source || !tablet) return E_INVALIDARG;
+				RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
 				TABLET_CONTEXT_ID contextId = 0;
 				const HRESULT result = source->GetTabletContextIdFromTablet(tablet, &contextId);
 				bool published = false;
@@ -1125,6 +1213,7 @@ namespace draw3
 				RecordCallback("TabletRemoved", nullptr, nullptr, 0, 0,
 					nullptr, nullptr, true, false);
 #endif
+				RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
 				PublishDefaultPenCursor();
 				ResetDecoderLifecycleState(true);
 				if (source) RebuildCurrentContextDecoders(source);
@@ -1142,14 +1231,17 @@ namespace draw3
 				(void)dataInterest;
 				(void)errorCode;
 #endif
+				RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
 				PublishDefaultPenCursor();
-				ResetDecoderLifecycleState(true);
+				// Error 只终止当前 contact；已发布 decoder lifecycle 仍可继续解码后续输入。
+				ResetActiveContactState(true);
 				return S_OK;
 			}
 
 			HRESULT STDMETHODCALLTYPE UpdateMapping(IRealTimeStylus* source) override
 			{
 				if (!source) return E_INVALIDARG;
+				RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
 				PublishDefaultPenCursor();
 				ResetDecoderLifecycleState(true);
 				RebuildCurrentContextDecoders(source);
@@ -1236,15 +1328,20 @@ namespace draw3
 					return coordinator_.PublishCancelled(tabletContextId, contactId, snapshot);
 			}
 
+			void ResetActiveContactState(bool closeProducerContacts) noexcept
+			{
+				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
+					interruptionSimulation_.Reset();
+				if (closeProducerContacts)
+					ClearActiveBindingsAndCloseContacts(
+						activeBindings_, coordinator_, QueryQpc());
+				else
+					activeBindings_.Clear();
+			}
+
 			void ResetDecoderLifecycleState(bool closeProducerContacts) noexcept
 			{
-				activeBindings_.Clear();
-				if (closeProducerContacts)
-				{
-					if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
-						interruptionSimulation_.Reset();
-					coordinator_.CloseAllProducerContacts(QueryQpc());
-				}
+				ResetActiveContactState(closeProducerContacts);
 				decoderCache_.Reset();
 			}
 
@@ -1398,7 +1495,9 @@ namespace draw3
 			DrawingCursorEventSink* drawingCursorSink_ = nullptr;
 			Microsoft::WRL::ComPtr<IUnknown> freeThreadedMarshaler_;
 			HRESULT marshalerResult_ = E_UNEXPECTED;
-			// decoder/binding 只由同步 RTS callback 流访问；Shutdown 先禁用并移除插件。
+			// lifecycle/Down/Up 串行写普通数组；只有 Packets/InAir 做一次无等待只读尝试。
+			std::mutex stateWriterMutex_;
+			std::atomic<uint32_t> stateGate_ = 0;
 			RtsDecoderCache decoderCache_;
 			RtsActiveBindingTable activeBindings_;
 		};
@@ -1876,6 +1975,120 @@ namespace draw3
 		return decoder && DecodeSnapshot(*decoder, 4, packet.data(), ContactPhase::Move, 1, snapshot) &&
 			snapshot.position.x == 10.0f && snapshot.position.y == 10.0f &&
 			snapshot.contactSize.width == 10.0f && snapshot.contactSize.height == 12.0f;
+	}
+
+	bool RtsErrorPreservesDecoderLifecycleForTesting() noexcept
+	{
+		RtsDecoderCache cache;
+		RtsActiveBindingTable bindings(32);
+		ContactInputCoordinator coordinator(32);
+		cache.Reset();
+		cache.BeginLifecycle();
+		constexpr TABLET_CONTEXT_ID contextId = 111;
+		constexpr uint32_t contactId = 9;
+		if (!PublishTestingDecoders(cache, &contextId, 1, 0.25f, 0.5f)) return false;
+		const size_t decoderSlot = cache.FindSlot(contextId);
+		const RtsContextDecoder* decoder = cache.DecoderAt(decoderSlot);
+		if (!decoder) return false;
+		const uint64_t generation = cache.Generation();
+		if (bindings.Insert(MakeTestingBinding(
+			contextId, contactId, decoderSlot, decoder->generation)) !=
+			RtsBindingInsertResult::Inserted) return false;
+
+		ContactSnapshot down;
+		down.position = { 10.0f, 20.0f };
+		down.qpc = 100;
+		down.phase = ContactPhase::Down;
+		if (!coordinator.PublishDown(
+			contextId, contactId, InputDeviceType::Pen, down)) return false;
+		ContactRecord* record = nullptr;
+		if (!coordinator.TryDequeue(record) || !record)
+		{
+			coordinator.CloseAllProducerContacts(101);
+			return false;
+		}
+		const ContactHandle handle{ record, record->Generation() };
+
+		// Error 的共享 helper 只关闭 active contact，不重置 decoder lifecycle。
+		ClearActiveBindingsAndCloseContacts(bindings, coordinator, 102);
+		ContactSnapshot cancelled;
+		const bool contactCancelled = coordinator.TryReadSnapshot(handle, cancelled) &&
+			cancelled.phase == ContactPhase::Cancelled;
+		const RtsContextDecoder* preservedDecoder = cache.DecoderAt(decoderSlot);
+		const bool lifecyclePreserved = bindings.ActiveBindingCount() == 0 &&
+			preservedDecoder && cache.Generation() == generation && cache.LifecycleEnabled() &&
+			cache.SharedPositionScaleValid() && cache.SharedPositionScaleX() == 0.25f &&
+			cache.SharedPositionScaleY() == 0.5f &&
+			preservedDecoder->generation == generation;
+
+		const RtsActiveContactBinding nextBinding = MakeTestingBinding(
+			contextId, contactId, decoderSlot, generation);
+		const bool rebound = bindings.Insert(nextBinding) == RtsBindingInsertResult::Inserted;
+		const RtsActiveContactBinding* resolvedBinding = bindings.Find(contextId, contactId);
+		const RtsContextDecoder* resolvedDecoder = resolvedBinding
+			? cache.Resolve(*resolvedBinding) : nullptr;
+		const std::array<LONG, 2> packet = { 40, 20 };
+		ContactSnapshot decodedSnapshot;
+		const bool decoded = resolvedDecoder && DecodeSnapshot(*resolvedDecoder,
+			static_cast<ULONG>(packet.size()), packet.data(), ContactPhase::Down,
+			103, decodedSnapshot) && decodedSnapshot.position.x == 10.0f &&
+			decodedSnapshot.position.y == 10.0f;
+
+		bindings.Clear();
+		coordinator.Recycle(handle);
+		return contactCancelled && lifecyclePreserved && rebound && decoded;
+	}
+
+	bool RtsInAirCacheHitMissForTesting() noexcept
+	{
+		RtsDecoderCache cache;
+		cache.Reset();
+		cache.BeginLifecycle();
+		constexpr TABLET_CONTEXT_ID contextId = 121;
+		if (!PublishTestingDecoders(cache, &contextId, 1, 0.5f, 0.25f)) return false;
+		const uint64_t generation = cache.Generation();
+		const RtsContextDecoder* hit = FindCachedContextDecoder(cache, contextId);
+		const RtsContextDecoder* miss = FindCachedContextDecoder(cache, contextId + 1u);
+		const std::array<LONG, 2> packet = { 20, 40 };
+		ContactSnapshot snapshot;
+		return hit && !miss && DecodeSnapshot(*hit, static_cast<ULONG>(packet.size()),
+			packet.data(), ContactPhase::Move, 200, snapshot) &&
+			snapshot.position.x == 10.0f && snapshot.position.y == 10.0f &&
+			cache.Generation() == generation;
+	}
+
+	bool RtsStateGateForTesting() noexcept
+	{
+		std::mutex writerMutex;
+		std::atomic<uint32_t> state = 0;
+		std::atomic<bool> writerEntered = false;
+		std::thread writer;
+		bool writerBitPublished = false;
+		bool secondPacketRejected = false;
+		bool writerWaitedForReader = false;
+		{
+			RtsPacketStateGuard firstPacket(state);
+			if (!firstPacket) return false;
+			writer = std::thread([&]
+				{
+					RtsStateWriterGuard stateWriter(writerMutex, state);
+					writerEntered.store(true, std::memory_order_release);
+				});
+			const ULONGLONG deadline = GetTickCount64() + 2000u;
+			while ((state.load(std::memory_order_acquire) & kRtsStateWriterBit) == 0 &&
+				GetTickCount64() < deadline)
+				std::this_thread::yield();
+			writerBitPublished =
+				(state.load(std::memory_order_acquire) & kRtsStateWriterBit) != 0;
+			RtsPacketStateGuard secondPacket(state);
+			secondPacketRejected = !secondPacket;
+			writerWaitedForReader = !writerEntered.load(std::memory_order_acquire);
+		}
+		writer.join();
+		RtsPacketStateGuard packetAfterWriter(state);
+		return writerBitPublished && secondPacketRejected && writerWaitedForReader &&
+			writerEntered.load(std::memory_order_acquire) && state.load(std::memory_order_acquire) == 1u &&
+			packetAfterWriter;
 	}
 
 #endif

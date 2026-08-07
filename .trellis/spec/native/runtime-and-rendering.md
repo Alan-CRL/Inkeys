@@ -486,6 +486,8 @@ contact 结束时由 `StrokeModelConfiguration::retainPredictionOnUp` 选择收�
 - `ContactInputCoordinator::CaptureWakeGeneration/WaitForWake`
 - `ContactInputCoordinator::DiagnosticsSnapshot`
 - `RealTimeStylusInput::Initialize/Shutdown`
+- `IStylusSyncPlugin::RealTimeStylusEnabled/RealTimeStylusDisabled/Error`
+- `IStylusSyncPlugin::StylusDown/Packets/InAirPackets/StylusUp`
 - `DrawingController::Run`
 
 ### 3. Contracts
@@ -500,6 +502,10 @@ contact 结束时由 `StrokeModelConfiguration::retainPredictionOnUp` 选择收�
 - RTS 多点启用是三段式契约：第一根手指按下前给 HWND 设置 `MICROSOFT_TABLETPENSERVICE_PROPERTY`，窗口过程对 `WM_TABLET_QUERYSYSTEMGESTURESTATUS` 返回 `TABLET_ENABLE_MULTITOUCHDATA`，并令 `IRealTimeStylus3::MultiTouchEnabled=TRUE`。只完成 COM 属性不能视为多点已启用。
 - 同一组窗口标志禁用 press-and-hold、pen feedback 和 flick；可用时同时调用 `IRealTimeStylus2::put_FlicksEnabled(FALSE)`，避免笔事件被系统手势延迟或接管。
 - `Disabled`、RTS `Error`、tablet 移除和 shutdown 都把生产中的 contact 发布为 Cancelled；COM 初始化、FTM 聚合、禁用、移除插件与释放全部在完成 MTA 初始化的主线程完成。
+- 每个 tablet context 的 packet property、metrics、device type 和 scale 必须在 lifecycle/contact-entry 慢路径编译为固定 immutable decoder。`Packets` 只通过 `(tcid,cid)` binding 解析 decoder；`InAirPackets` 只查固定 decoder cache，miss 直接丢弃，二者均不得执行 COM、context 枚举、decoder recovery、分配或 mutex wait。
+- `Error` 不是 decoder lifecycle boundary：它只清 cursor、active bindings、断触模拟和 producing contacts，必须保留当前 decoder slots、shared position scale、enabled state 和 lifecycle generation。只有 Enabled pre-reset、Disabled、UpdateMapping、TabletRemoved 和 TabletAdded full-rebuild fallback 才执行完整 decoder lifecycle reset。
+- packet/contact callbacks 通常来自 RTS high-priority execution/tablet-data thread；`RealTimeStylusEnabled/Disabled` 可能在修改 `Enabled` 或 plugin collection 的 caller thread 执行，不能假设所有 `IStylusSyncPlugin` callbacks 天然同线程串行。普通 decoder/binding 数组必须由项目自己的 rare-writer/lock-free-reader gate 发布：lifecycle、Down、Up 和 Error 使用 writer mutex + writer bit + reader drain，`Packets/InAirPackets` 只做一次 lock-free CAS，失败立即丢包且不等待。
+- state gate 的 happens-before 必须由 C++ atomic memory order 建立：reader acquire-CAS/release decrement，writer acq_rel 发布 writer bit、acquire 等待 reader count 清零、release 清 writer bit；writer bit 发布后禁止新 reader 进入。`put_Enabled(FALSE)` 的 Disabled writer 必须先 drain 已进入的 packet readers，返回后才 Remove plugin 和释放对象。
 - 每个活动 contact 拥有独立 CPU runtime，其 GPU 几何共同重建到共享 L1/L0；不得提前进入 L2。完成 contact 的同帧批次只 resolve/composite/present 一次，随后重建仍活动 contact。
 - resize 成功后重建活动临时层；clear 在有活动 contact 时延后。无活动 contact 时阻塞等待；1ms timer period 只在活动区间启用，且每次成功 begin 必须配对 end。
 - waitable swapchain resize 必须先 `GetDesc1`，并原样传回 `BufferCount/Format/Flags`；部分驱动在传入零值时第一次 resize 成功、恢复尺寸时失败。
@@ -523,6 +529,9 @@ contact 结束时由 `StrokeModelConfiguration::retainPredictionOnUp` 选择收�
 | `WM_TABLET_QUERYSYSTEMGESTURESTATUS` | 返回多点 opt-in 与禁用 press-and-hold/flick 的固定标志，不调用外部 COM |
 | 第一份或突变的速度样本 | 从当前直径平滑追随，不回写已可见点，不允许单帧直接跳到目标直径 |
 | Disabled / Error / tablet removal | 所有 producing contact 以 Cancelled 结束 |
+| Error 后继续收到同 context Down | 旧 binding 已清除且旧 contact 为 Cancelled；原 decoder、scale 和 generation 保留，新 Down 无需等待 Enabled/mapping/tablet callback 即可重新 bind 和解码 |
+| InAir decoder cache miss | 记录 bounded/non-blocking diagnostics 后丢弃 hover packet；禁止 Resolve/Ensure/Build、`GetAllTabletContextIds` 或其它 COM recovery |
+| lifecycle writer 与 packet reader overlap | writer bit 阻止新 packet reader；writer 等既有 reader 退出后修改固定数组，packet callback 不 spin、不 retry、不取得 writer mutex |
 | Resize succeeds | 保留 L2 交集并从 CPU runtime 重建全部活动 L1/L0 |
 | waitable swapchain second resize | 保留原 swapchain 描述字段；不得用 `ResizeBuffers(..., UNKNOWN, 0)` 丢弃 flags |
 | Clear with active contact | 延后到活动集合为空 |
@@ -534,8 +543,9 @@ contact 结束时由 `StrokeModelConfiguration::retainPredictionOnUp` 选择收�
 ### 5. Good / Base / Bad Cases
 
 - Good：32 个同步生产者使用显式 token 并发 Down，slot/pointer 唯一；两支笔交错移动并同帧抬起，终态完整且批量提交。
+- Good：Enabled/Disabled caller thread 与 packet thread 交错时，rare writer gate 安全发布 decoder/binding generation；`Packets/InAirPackets` 仍只有一次 non-waiting atomic reader attempt。
 - Base：单 contact 的 Down/Move/Up 使用相同 generation、seqlock、pointer ingress 和批量渲染路径；慢速到快速过渡时宽度连续。
-- Bad：容量耗尽后调用隐式 `enqueue` 扩容，或只设置 `IRealTimeStylus3::MultiTouchEnabled` 却不处理 HWND opt-in。
+- Bad：容量耗尽后调用隐式 `enqueue` 扩容，只设置 `IRealTimeStylus3::MultiTouchEnabled` 却不处理 HWND opt-in，或因 callback 都属于 sync plugin 就假设 decoder/binding 普通数组天然 thread-confined。
 
 ### 6. Tests Required
 
@@ -544,6 +554,8 @@ contact 结束时由 `StrokeModelConfiguration::retainPredictionOnUp` 选择收�
 - 自动并发覆盖 32 个生产者、32/64/多 block 容量、耗尽/复用、无分配 Down、Move/Up 竞争、stale generation、重复回收、Cancelled/shutdown 和 ControlWake/Down/终态唤醒。
 - 静态检查窗口属性、`WM_TABLET_QUERYSYSTEMGESTURESTATUS` 与 `IRealTimeStylus3` 三处多点 opt-in 同时存在。
 - 静态验证 generation/state CAS、sticky terminal、seqlock、零自旋阻塞等待、timer begin/end 配对和 Release 无逐帧日志。
+- 自动验证 Error active-only reset 后 decoder/scale/generation 仍有效、旧 contact 为 Cancelled，且同 context 可立即重新 bind/decode；静态核对 `Error` 不调用完整 decoder lifecycle reset。
+- 自动验证 InAir decoder hit/miss 和 state gate overlap；静态截取 `Packets/InAirPackets` callback body，断言没有 decoder rebuild/COM/writer mutex/allocation 路径。
 - 真机验证鼠标宽度连续、Pen/Touch 单 contact、双 Touch 交错、同时抬起、活动时 resize、活动时 clear、设备禁用/拔出、长时间 idle CPU 和最终点位置。普通 `SendInput` 不能替代 RTS 硬件验证。
 - Release 自动基准至少连续三轮：即时工具 Down→Present p99 ≤ 8.33ms，活动帧间隔 p99 ≤ 9.5ms，>16.67ms 比例 <1%，连续空闲至少 4.9 秒且 frame/Present 零增长。
 - 快速曲线末端抬笔时，默认的模型 `kUp` 收尾无 prediction 残留、回头或重复连接；开关启用时上一帧预测端点仍保留且不重复连接 `kUp` 尾段。
@@ -565,6 +577,10 @@ Correct：`HWND 属性、WM_TABLET_QUERYSYSTEMGESTURESTATUS 返回值和 IRealTi
 Wrong：`IngressCommand{ kind, record } 入队；token try_enqueue 失败后调用普通 enqueue。`
 
 Correct：`非空 ContactRecord* 只表示 Down，nullptr 只表示 ControlWake；全部 producer 在初始化期建 token，热路径只调用 token try_enqueue。`
+
+Wrong：`所有 IStylusSyncPlugin callback 都在同一线程，所以 Error 可以清 decoder，Packets 可以直接读取 lifecycle writer 正在修改的普通数组。`
+
+Correct：`Error 只清 active contact state；decoder/binding 通过 rare-writer/lock-free-reader gate 发布，Packets/InAir cache miss 直接丢包且永不进入 COM recovery。`
 
 ### Visual Prediction Is Not Persistent Ink
 

@@ -491,6 +491,9 @@ namespace
 		TEST_CHECK(state, draw3::RtsLifecycleTabletAddedForTesting());
 		TEST_CHECK(state, draw3::RtsLifecycleTabletAddedFallbackForTesting());
 		TEST_CHECK(state, draw3::RtsSharedScaleCompatibilityForTesting());
+		TEST_CHECK(state, draw3::RtsErrorPreservesDecoderLifecycleForTesting());
+		TEST_CHECK(state, draw3::RtsInAirCacheHitMissForTesting());
+		TEST_CHECK(state, draw3::RtsStateGateForTesting());
 	}
 
 	void TestInputWidthModesAndHardwarePressure(TestState& state)
