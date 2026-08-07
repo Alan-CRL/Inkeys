@@ -174,7 +174,13 @@ constexpr double BarColorPickerKeyboardStepDip = 2.0;
 constexpr double BarColorPickerHoldStillnessPx = 5.0;
 constexpr ULONGLONG BarColorPickerHoldHintDelayMs = 500;
 constexpr ULONGLONG BarColorPickerHoldLockDelayMs = 1500;
-constexpr double BarColorPickerPanelAnimationDur = 0.24;
+// 颜色选择器与绘制属性窗口共用默认展开时长，保证回弹节奏一致。
+constexpr double BarColorPickerPanelAnimationDur = 0.40;
+constexpr double BarColorPickerCompactScale = BarDrawAttributeCompactScale;
+constexpr double BarColorPickerCompactWidth =
+	BarColorPickerPanelWidth * BarColorPickerCompactScale;
+constexpr double BarColorPickerCompactHeight =
+	BarColorPickerPanelHeight * BarColorPickerCompactScale;
 constexpr double BarColorPickerHoldHintAnimationDur = 0.18;
 constexpr double BarMorePanelGap = 5.0;
 // 主栏与浮层之间留出更明显的净空；网格单元仍沿用标准 5 DIP 间距。
@@ -8088,26 +8094,37 @@ double closeButtonSize =
 				BarUISetShapeEnum::DrawAttributeBar_ColorPickerHoldHint];
 			double pickerProgress = static_cast<double>(
 				drawAttributeColorPickerProgress.val);
-			// 进度不截断以保留 Back 回弹；只有透明度必须保持合法范围。
-			double pickerScale = 0.85 + 0.15 * pickerProgress;
-			double pickerWidth = BarColorPickerPanelWidth * pickerScale;
-			double pickerHeight = BarColorPickerPanelHeight * pickerScale;
+			// 从色块锚点的紧凑态展开，放大几何变化以完整复用绘制属性窗口的回弹。
+			double pickerScale = max(0.01, BarColorPickerCompactScale
+				+ (1.0 - BarColorPickerCompactScale) * pickerProgress);
+			double pickerWidth = max(1.0,
+				BarColorPickerCompactWidth
+				+ (BarColorPickerPanelWidth - BarColorPickerCompactWidth)
+					* pickerProgress);
+			double pickerHeight = max(1.0,
+				BarColorPickerCompactHeight
+				+ (BarColorPickerPanelHeight - BarColorPickerCompactHeight)
+					* pickerProgress);
 			double swatchCenterX = customSwatch->inhX
 				+ customSwatch->w.val / 2.0;
+			double swatchCenterY = customSwatch->inhY
+				+ customSwatch->h.val / 2.0;
 			// 与绘制属性同向：primaryBar 时向下，倒转后向上；不按屏幕边夹紧，可越出可视区。
 			bool openBelowSwatch = barState.widgetPosition.primaryBar;
-			double outwardDirection = openBelowSwatch ? 1.0 : -1.0;
 			double targetPickerLeft =
 				swatchCenterX - BarColorPickerPanelWidth / 2.0;
 			double targetPickerTop = openBelowSwatch
 				? customSwatch->inhY + customSwatch->h.val + BarColorPickerPanelGap
 				: customSwatch->inhY - BarColorPickerPanelGap
 					- BarColorPickerPanelHeight;
-			double pickerCenterX = targetPickerLeft
+			double targetPickerCenterX = targetPickerLeft
 				+ BarColorPickerPanelWidth / 2.0;
-			double pickerCenterY = targetPickerTop
-				+ BarColorPickerPanelHeight / 2.0
-				- outwardDirection * (1.0 - pickerProgress) * 20.0;
+			double targetPickerCenterY = targetPickerTop
+				+ BarColorPickerPanelHeight / 2.0;
+			double pickerCenterX = swatchCenterX
+				+ (targetPickerCenterX - swatchCenterX) * pickerProgress;
+			double pickerCenterY = swatchCenterY
+				+ (targetPickerCenterY - swatchCenterY) * pickerProgress;
 			double pickerLeft = pickerCenterX - pickerWidth / 2.0;
 			double pickerTop = pickerCenterY - pickerHeight / 2.0;
 			double pickerOpacity = clamp(pickerProgress, 0.0, 1.0);
@@ -10261,6 +10278,11 @@ else
 						pickerPanel->w.val / BarColorPickerPanelWidth;
 					if (pickerOpacity > 0.000001)
 					{
+						// 点光 diffuse mask 以完整面板几何归一，避免回弹缩放时边缘光变弱。
+						double pickerMaskScale = max(0.01,
+							pickerGeometryScale);
+						spec.SetFrameDiffuseMaskGeometryScale(
+							1.0 / pickerMaskScale);
 						spec.Shape(barDeviceContext.Get(), *pickerPanel,
 							BarUiInheritClass(pickerPanel->inhX, pickerPanel->inhY),
 							&current, false);
@@ -10528,6 +10550,7 @@ else
 							BarUiInheritClass(preview->inhX, preview->inhY),
 							&current, false);
 					}
+					spec.SetFrameDiffuseMaskGeometryScale(1.0);
 				}
 
 			// 调试模式持续显示实时 FPS，并把文本范围加入脏区。
@@ -14146,7 +14169,8 @@ namespace Inkeys::UI::Bar
 							pickerPanel->frameLightPct = BarUiPctClass(0.0);
 							pickerPanel->frameRendering = BarUiFrameRenderingEnum::PointLight;
 							pickerPanel->frameLightColor = BarUiFrameLightColorEnum::PenWhenDrawing;
-							pickerPanel->framePrimaryLightEnabled = false;
+							// 面板边缘同时接受第一光源与第三光源。
+							pickerPanel->framePrimaryLightEnabled = true;
 							pickerPanel->frameCursorLightIntensityScale =
 								BarButtonCursorLightIntensity;
 							pickerPanel->enable.Initialization(true);
