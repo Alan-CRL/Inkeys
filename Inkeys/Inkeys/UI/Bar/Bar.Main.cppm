@@ -207,6 +207,10 @@ enum class BarUISetWordEnum : int
 		DrawAttributeBar_ColorPickerG,
 		DrawAttributeBar_ColorPickerB,
 		DrawAttributeBar_ColorPickerOpacity,
+		DrawAttributeBar_ColorPickerRgbValue,
+		DrawAttributeBar_ColorPickerGValue,
+		DrawAttributeBar_ColorPickerBValue,
+		DrawAttributeBar_ColorPickerOpacityValue,
 		DrawAttributeBar_ColorPickerHoldLabel,
 
 		GeometryAttributeBar_StraightLine,

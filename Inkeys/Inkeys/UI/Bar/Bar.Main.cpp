@@ -61,7 +61,7 @@ constexpr double BarButtonCursorLightIntensity = 0.30;
 constexpr double BarButtonPressedLightOpacity = 0.5;
 constexpr double BarBrushThicknessPresetDip[] = { 1.0, 3.0, 6.0 };
 	// 荧光笔细/中/粗预设，落在 30–100 连续滑块量程内。
-	constexpr double BarHighlighterThicknessPresetDip[] = { 30.0, 50.0, 80.0 };
+	constexpr double BarHighlighterThicknessPresetDip[] = { 35.0, 50.0, 70.0 };
 constexpr double BarDrawAttributeExpandedWidth = 370.0;
 constexpr double BarDrawAttributeExpandedHeight = 185.0;
 constexpr double BarDrawAttributeCompactWidth = 60.0;
@@ -3206,16 +3206,13 @@ void BarUISetClass::Rendering()
 		BarThicknessSliderThumbCenterDiameter);
 	bool drawAttributeThicknessSliderTargetActive = false;
 	bool drawAttributeThicknessSliderPositionLocked = false;
-	bool drawAttributeThicknessSliderUsePositionB = false;
 	bool drawAttributeOverflowSliderSessionAllowsHint = false;
 	auto ResolveThicknessSliderCenterY = [&](const BarThicknessPreviewGeometry& geometry)
 		{
 			double centerY = geometry.sliderCenterY;
-			if (!drawAttributeThicknessSliderPositionLocked
-				|| !drawAttributeThicknessSliderUsePositionB)
-				return centerY;
+			if (!drawAttributeThicknessSliderPositionLocked) return centerY;
 
-			// Position B 只在进入 Slider 时选定，并向下为已显示 Hint 留出空间。
+			// Slider 会话统一使用 Position B，给上方提示与圆点保留稳定间距。
 			double halfThumb = BarThicknessSliderThumbDiameter
 				* geometry.panelScale / 2.0;
 			double positionB = centerY
@@ -3589,12 +3586,11 @@ void BarUISetClass::Rendering()
 				if (thicknessSliderActive
 					&& !drawAttributeThicknessSliderPositionLocked)
 				{
-					// Preview -> Slider 只在入口快照一次，恢复 Preview 前不因 Hint 消失而跳位。
+					// Preview -> Slider 只在入口锁存一次，恢复 Preview 前保持同一会话。
 					bool hintDisplayed =
 						barState.drawAttributeBar.thicknessOverflowHintPresent
 						&& drawAttributeOverflowBadgeProgress.val > 0.000001;
 					drawAttributeThicknessSliderPositionLocked = true;
-					drawAttributeThicknessSliderUsePositionB = hintDisplayed;
 					drawAttributeOverflowSliderSessionAllowsHint = hintDisplayed;
 				}
 				drawAttributeThicknessSliderTargetActive =
@@ -3707,7 +3703,6 @@ void BarUISetClass::Rendering()
 			{
 				// Preview 完整恢复后才释放本次 Slider session 的位置和 Hint 历史。
 				drawAttributeThicknessSliderPositionLocked = false;
-				drawAttributeThicknessSliderUsePositionB = false;
 				drawAttributeOverflowSliderSessionAllowsHint = false;
 			}
 			const BarUiCurveSpecClass thicknessSliderStateCurve{
@@ -5028,6 +5023,10 @@ SetButtonPositionTar(temp->buttom.x, xO - barBtnGap / 2.0, 40.0, true);
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerG,
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerB,
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerOpacity,
+							BarUISetWordEnum::DrawAttributeBar_ColorPickerRgbValue,
+							BarUISetWordEnum::DrawAttributeBar_ColorPickerGValue,
+							BarUISetWordEnum::DrawAttributeBar_ColorPickerBValue,
+							BarUISetWordEnum::DrawAttributeBar_ColorPickerOpacityValue,
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerHoldLabel,
 						};
 						for (auto wordType : pickerThemeWords)
@@ -5234,6 +5233,10 @@ SetButtonPositionTar(temp->buttom.x, xO - barBtnGap / 2.0, 40.0, true);
 						extensionDivider->rw->SetDirect(BarUiDividerRadius * layoutScale);
 						extensionDivider->rh->SetDirect(BarUiDividerRadius * layoutScale);
 						extensionDivider->ft->SetDirect(layoutScale);
+						extensionDivider->fill->SetTar(
+							GetThemeColor(BarThemeColorEnum::Accent), operationDur);
+						extensionDivider->frame->SetTar(
+							GetThemeColor(BarThemeColorEnum::Accent), operationDur);
 						extensionDivider->pct.SetTar(extensionVisible ? 0.30 : 0.0);
 						extensionDivider->frameLightPct->SetTar(
 							extensionVisible ? 1.0 : 0.0);
@@ -5248,7 +5251,15 @@ SetButtonPositionTar(temp->buttom.x, xO - barBtnGap / 2.0, 40.0, true);
 							.penTypeMenuDirectionLocked
 							? static_cast<bool>(barState.drawAttributeBar.penTypeMenuOpenBelow)
 							: static_cast<bool>(barState.widgetPosition.primaryBar);
-						extensionArrow->angle.SetTar(arrowOpenBelow ? 180.0 : 0.0);
+						double extensionCollapsedAngle = arrowOpenBelow ? 180.0 : 0.0;
+						double extensionTargetAngle =
+							barState.drawAttributeBar.penTypeMenuOpen
+								? 180.0 - extensionCollapsedAngle
+								: extensionCollapsedAngle;
+						if (forNum == 1 || !extensionVisible)
+							extensionArrow->angle.SetDirect(extensionTargetAngle);
+						else extensionArrow->angle.SetTar(
+							extensionTargetAngle, operationDur);
 						SetDrawAttributeSvgColor(
 							BarUISetSvgEnum::DrawAttributeBar_PenTypeExtensionArrow,
 							GetThemeColor(BarThemeColorEnum::Accent));
@@ -5482,8 +5493,8 @@ for (size_t i = 0; i < 3; ++i)
 						{
 							// Preview 与 Slider -> Preview 恢复阶段允许按当前 overflow 创建 Hint。
 							barState.drawAttributeBar.thicknessOverflowHintPresent = true;
-							// 恢复阶段产生的 Hint 即使本次 Slider 使用 Position A，
-							// 也要允许快速反转时沿用；Y 快照本身仍保持不变。
+							// 恢复阶段产生的 Hint 要允许快速反转时沿用，
+							// 但同一 Slider 会话中消失后仍不得重新创建。
 							if (drawAttributeThicknessSliderPositionLocked)
 								drawAttributeOverflowSliderSessionAllowsHint = true;
 						}
@@ -7427,6 +7438,20 @@ bool thicknessPresetMode =
 				(panelScale - BarDrawAttributeCompactScale)
 				/ (1.0 - BarDrawAttributeCompactScale), 0.0, 1.0);
 			double previewSide = previewGeometry.previewSide;
+			auto thicknessAdjustArrow = svgMap[
+				BarUISetSvgEnum::DrawAttributeBar_ThicknessAdjust];
+			bool thicknessOpensBelow = previewSide > 0.000001
+				|| (abs(previewSide) <= 0.000001
+					&& static_cast<bool>(barState.widgetPosition.primaryBar));
+			double thicknessCollapsedAngle = thicknessOpensBelow ? 180.0 : 0.0;
+			double thicknessTargetAngle =
+				barState.drawAttributeBar.thicknessSliderPinned
+					? 180.0 - thicknessCollapsedAngle
+					: thicknessCollapsedAngle;
+			if (forNum == 1 || !barState.drawAttribute)
+				thicknessAdjustArrow->angle.SetDirect(thicknessTargetAngle);
+			else thicknessAdjustArrow->angle.SetTar(
+				thicknessTargetAngle, BarUiDefaultOperationDur);
 			double previewAreaHeight = max(0.0,
 				previewGeometry.previewBottom
 					- previewGeometry.previewTop);
@@ -7561,11 +7586,6 @@ double baseThumbDiameter =
 			extensionArrow->h.SetDirect(18.0 * panelScale);
 			extensionArrow->pct.SetDirect(
 				extensionVisualVisible ? contentOpacity : 0.0);
-			extensionArrow->angle.SetDirect(
-			(barState.drawAttributeBar.penTypeMenuDirectionLocked
-				? static_cast<bool>(barState.drawAttributeBar.penTypeMenuOpenBelow)
-				: static_cast<bool>(barState.widgetPosition.primaryBar))
-				? 180.0 : 0.0);
 			extensionArrow->Inherit(BarUiInheritEnum::TopLeft, *panel);
 
 			// 菜单方向在打开时锁存；进度从触发器中心向远离主栏一侧移动。
@@ -8183,18 +8203,6 @@ double closeButtonSize =
 		LayoutToneIcon(pickerToneSun, !pickerDarkTone);
 		LayoutToneIcon(pickerToneMoon, pickerDarkTone);
 
-		auto FormatPickerChannel = [](int value)
-			{
-				wstring digits = to_wstring(clamp(value, 0, 255));
-				while (digits.size() < 3) digits.insert(digits.begin(), L' ');
-				return digits;
-			};
-		auto FormatPickerOpacity = [](int value)
-			{
-				wstring digits = to_wstring(clamp(value, 0, 100));
-				while (digits.size() < 3) digits.insert(digits.begin(), L' ');
-				return digits;
-			};
 		int displayR = static_cast<int>(lround(clamp(
 			static_cast<double>(drawAttributeColorPickerDisplayR.val), 0.0, 255.0)));
 		int displayG = static_cast<int>(lround(clamp(
@@ -8216,54 +8224,82 @@ double closeButtonSize =
 			BarUISetWordEnum::DrawAttributeBar_ColorPickerB];
 		auto pickerOpacityWord = wordMap[
 			BarUISetWordEnum::DrawAttributeBar_ColorPickerOpacity];
-		// R/G/B/透明度 每列固定位置与固定宽度，标签不随数值变化移动。
+		auto pickerRgbValueWord = wordMap[
+			BarUISetWordEnum::DrawAttributeBar_ColorPickerRgbValue];
+		auto pickerGValueWord = wordMap[
+			BarUISetWordEnum::DrawAttributeBar_ColorPickerGValue];
+		auto pickerBValueWord = wordMap[
+			BarUISetWordEnum::DrawAttributeBar_ColorPickerBValue];
+		auto pickerOpacityValueWord = wordMap[
+			BarUISetWordEnum::DrawAttributeBar_ColorPickerOpacityValue];
+		// 用页脚实际竖向留白推导横向边距，避免与色板 5 DIP 内缩绑定。
+		D2D1_SIZE_F footerTextSize = spec.MeasureText(
+			L"Ag", 13.0, DWRITE_FONT_WEIGHT_NORMAL);
+		double footerOuterPadding = clamp(
+			(footerHeight - footerTextSize.height * pickerScale) / 2.0,
+			0.0, footerHeight / 2.0);
+		double footerColumnGap = 6.0 * pickerScale;
+		double footerLabelValueGap = 3.0 * pickerScale;
 		D2D1_SIZE_F footerRgbValueSize = spec.MeasureText(
 			L"255", 13.0, DWRITE_FONT_WEIGHT_NORMAL);
 		D2D1_SIZE_F footerOpacityValueSize = spec.MeasureText(
 			L"100%", 13.0, DWRITE_FONT_WEIGHT_NORMAL);
-		double footerColumnGap = 6.0 * pickerScale;
-		double footerRColW = (spec.MeasureText(
-			L"R ", 13.0, DWRITE_FONT_WEIGHT_NORMAL).width
-			+ footerRgbValueSize.width) * pickerScale;
-		double footerGColW = (spec.MeasureText(
-			L"G ", 13.0, DWRITE_FONT_WEIGHT_NORMAL).width
-			+ footerRgbValueSize.width) * pickerScale;
-		double footerBColW = (spec.MeasureText(
-			L"B ", 13.0, DWRITE_FONT_WEIGHT_NORMAL).width
-			+ footerRgbValueSize.width) * pickerScale;
-		double footerOpacityColW = (spec.MeasureText(
-			L"透明度 ", 13.0, DWRITE_FONT_WEIGHT_NORMAL).width
-			+ footerOpacityValueSize.width) * pickerScale;
-		double footerRX = paletteLeft;
-		double footerGX = footerRX + footerRColW + footerColumnGap;
-		double footerBX = footerGX + footerGColW + footerColumnGap;
-		double footerOpacityX = paletteLeft + paletteWidth - footerOpacityColW;
-		wstring pickerRgbText = L"R " + FormatPickerChannel(displayR);
-		wstring pickerGText = L"G " + FormatPickerChannel(displayG);
-		wstring pickerBText = L"B " + FormatPickerChannel(displayB);
-		wstring pickerOpacityText =
-			L"透明度 " + FormatPickerOpacity(displayOpacity) + L"%";
-		pickerRgbWord->content.SetVal(pickerRgbText);
-		pickerRgbWord->content.SetTar(pickerRgbText);
-		pickerGWord->content.SetVal(pickerGText);
-		pickerGWord->content.SetTar(pickerGText);
-		pickerBWord->content.SetVal(pickerBText);
-		pickerBWord->content.SetTar(pickerBText);
-		pickerOpacityWord->content.SetVal(pickerOpacityText);
-		pickerOpacityWord->content.SetTar(pickerOpacityText);
-		auto LayoutPickerFooterColumn = [&](BarUiWordClass& word,
-			double columnX, double columnW)
+		double footerRgbValueW = footerRgbValueSize.width * pickerScale;
+		double footerOpacityValueW = footerOpacityValueSize.width * pickerScale;
+		double footerRgbLabelW = max(
+			spec.MeasureText(pickerRgbWord->content.GetVal(),
+				13.0, DWRITE_FONT_WEIGHT_NORMAL).width,
+			max(spec.MeasureText(pickerGWord->content.GetVal(),
+				13.0, DWRITE_FONT_WEIGHT_NORMAL).width,
+				spec.MeasureText(pickerBWord->content.GetVal(),
+					13.0, DWRITE_FONT_WEIGHT_NORMAL).width)) * pickerScale;
+		double footerOpacityLabelW = spec.MeasureText(
+			pickerOpacityWord->content.GetVal(),
+			13.0, DWRITE_FONT_WEIGHT_NORMAL).width * pickerScale;
+		double footerRgbColW = footerRgbLabelW
+			+ footerLabelValueGap + footerRgbValueW;
+		double footerOpacityColW = footerOpacityLabelW
+			+ footerLabelValueGap + footerOpacityValueW;
+		double footerRX = pickerLeft + footerOuterPadding;
+		double footerGX = footerRX + footerRgbColW + footerColumnGap;
+		double footerBX = footerGX + footerRgbColW + footerColumnGap;
+		double footerOpacityX = pickerLeft + pickerWidth
+			- footerOuterPadding - footerOpacityColW;
+		pickerRgbValueWord->content.SetVal(to_wstring(displayR));
+		pickerRgbValueWord->content.SetTar(to_wstring(displayR));
+		pickerGValueWord->content.SetVal(to_wstring(displayG));
+		pickerGValueWord->content.SetTar(to_wstring(displayG));
+		pickerBValueWord->content.SetVal(to_wstring(displayB));
+		pickerBValueWord->content.SetTar(to_wstring(displayB));
+		wstring opacityValue = to_wstring(displayOpacity) + L"%";
+		pickerOpacityValueWord->content.SetVal(opacityValue);
+		pickerOpacityValueWord->content.SetTar(opacityValue);
+		auto LayoutPickerFooterWord = [&](BarUiWordClass& word,
+			double wordX, double wordW)
 			{
-				word.w.SetDirect(columnW);
+				word.w.SetDirect(wordW);
 				word.h.SetDirect(footerHeight);
 				word.size.SetDirect(13.0 * pickerScale);
 				word.pct.SetDirect(pickerOpacity);
-				word.UpInh(BarUiInheritClass(columnX, footerTop));
+				word.UpInh(BarUiInheritClass(wordX, footerTop));
 			};
-		LayoutPickerFooterColumn(*pickerRgbWord, footerRX, footerRColW);
-		LayoutPickerFooterColumn(*pickerGWord, footerGX, footerGColW);
-		LayoutPickerFooterColumn(*pickerBWord, footerBX, footerBColW);
-		LayoutPickerFooterColumn(*pickerOpacityWord, footerOpacityX, footerOpacityColW);
+		LayoutPickerFooterWord(*pickerRgbWord, footerRX, footerRgbLabelW);
+		LayoutPickerFooterWord(*pickerGWord, footerGX, footerRgbLabelW);
+		LayoutPickerFooterWord(*pickerBWord, footerBX, footerRgbLabelW);
+		LayoutPickerFooterWord(*pickerOpacityWord, footerOpacityX,
+			footerOpacityLabelW);
+		LayoutPickerFooterWord(*pickerRgbValueWord,
+			footerRX + footerRgbLabelW + footerLabelValueGap,
+			footerRgbValueW);
+		LayoutPickerFooterWord(*pickerGValueWord,
+			footerGX + footerRgbLabelW + footerLabelValueGap,
+			footerRgbValueW);
+		LayoutPickerFooterWord(*pickerBValueWord,
+			footerBX + footerRgbLabelW + footerLabelValueGap,
+			footerRgbValueW);
+		LayoutPickerFooterWord(*pickerOpacityValueWord,
+			footerOpacityX + footerOpacityLabelW + footerLabelValueGap,
+			footerOpacityValueW);
 
 		// 保持提示只在本次显现开始时决定侧边；隐藏途中不再跟手换边。
 		double holdOpacity = clamp(static_cast<double>(
@@ -8531,6 +8567,14 @@ IncludeShapeBounds(shapeMap[
 					BarUISetWordEnum::DrawAttributeBar_ColorPickerB]);
 				IncludeWordBounds(wordMap[
 					BarUISetWordEnum::DrawAttributeBar_ColorPickerOpacity]);
+				IncludeWordBounds(wordMap[
+					BarUISetWordEnum::DrawAttributeBar_ColorPickerRgbValue]);
+				IncludeWordBounds(wordMap[
+					BarUISetWordEnum::DrawAttributeBar_ColorPickerGValue]);
+				IncludeWordBounds(wordMap[
+					BarUISetWordEnum::DrawAttributeBar_ColorPickerBValue]);
+				IncludeWordBounds(wordMap[
+					BarUISetWordEnum::DrawAttributeBar_ColorPickerOpacityValue]);
 			IncludeWordBounds(wordMap[
 				BarUISetWordEnum::DrawAttributeBar_ColorPickerHoldLabel]);
 			if (mainButton->enable.val && mainButton->pct.val > 0.0)
@@ -8815,11 +8859,12 @@ IncludeShapeBounds(shapeMap[
 						}
 						spec.Shape(barDeviceContext.Get(), *extensionHit,
 							extensionHit->Inherit(TopLeft, *panel));
-						spec.Shape(barDeviceContext.Get(), *extensionDivider,
-							extensionDivider->Inherit(TopLeft, *panel));
 						spec.Svg(barDeviceContext.Get(), *extensionArrow,
 							extensionArrow->Inherit(TopLeft, *panel));
 						barDeviceContext->SetTransform(extensionTransform);
+						// 分割线不继承入口按压缩放，避免按下时产生位移或闪烁。
+						spec.Shape(barDeviceContext.Get(), *extensionDivider,
+							extensionDivider->Inherit(TopLeft, *panel));
 					}
 						// 粗细调节区域
 						{
@@ -9222,24 +9267,8 @@ bool presetButton = button.presetIndex >= 0;
 								{
 									auto adjustSvg = svgMap[
 										BarUISetSvgEnum::DrawAttributeBar_ThicknessAdjust];
-									D2D1_MATRIX_3X2_F buttonTransform;
-									barDeviceContext->GetTransform(&buttonTransform);
-									if (barState.widgetPosition.primaryBar)
-									{
-										// 属性栏换到主栏下方时，调节提示箭头同步朝下。
-										FLOAT centerX = static_cast<FLOAT>(
-											(shapeInherit.x + shape->w.val / 2.0) * uiZoom);
-										FLOAT centerY = static_cast<FLOAT>(
-											(shapeInherit.y + shape->h.val / 2.0) * uiZoom);
-										barDeviceContext->SetTransform(
-											D2D1::Matrix3x2F::Rotation(
-												180.0f, D2D1::Point2F(centerX, centerY))
-											* buttonTransform);
-									}
 									spec.Svg(barDeviceContext.Get(), *adjustSvg,
 										adjustSvg->Inherit(Center, *shape));
-									if (barState.widgetPosition.primaryBar)
-										barDeviceContext->SetTransform(buttonTransform);
 								}
 else
 									{
@@ -10364,6 +10393,31 @@ else
 							BarUiInheritClass(opacityWord->inhX, opacityWord->inhY),
 							DWRITE_FONT_WEIGHT_NORMAL,
 							DWRITE_TEXT_ALIGNMENT_LEADING);
+						auto rgbValueWord = wordMap[
+							BarUISetWordEnum::DrawAttributeBar_ColorPickerRgbValue];
+						spec.Word(barDeviceContext.Get(), *rgbValueWord,
+							BarUiInheritClass(rgbValueWord->inhX, rgbValueWord->inhY),
+							DWRITE_FONT_WEIGHT_NORMAL,
+							DWRITE_TEXT_ALIGNMENT_TRAILING);
+						auto gValueWord = wordMap[
+							BarUISetWordEnum::DrawAttributeBar_ColorPickerGValue];
+						spec.Word(barDeviceContext.Get(), *gValueWord,
+							BarUiInheritClass(gValueWord->inhX, gValueWord->inhY),
+							DWRITE_FONT_WEIGHT_NORMAL,
+							DWRITE_TEXT_ALIGNMENT_TRAILING);
+						auto bValueWord = wordMap[
+							BarUISetWordEnum::DrawAttributeBar_ColorPickerBValue];
+						spec.Word(barDeviceContext.Get(), *bValueWord,
+							BarUiInheritClass(bValueWord->inhX, bValueWord->inhY),
+							DWRITE_FONT_WEIGHT_NORMAL,
+							DWRITE_TEXT_ALIGNMENT_TRAILING);
+						auto opacityValueWord = wordMap[
+							BarUISetWordEnum::DrawAttributeBar_ColorPickerOpacityValue];
+						spec.Word(barDeviceContext.Get(), *opacityValueWord,
+							BarUiInheritClass(
+								opacityValueWord->inhX, opacityValueWord->inhY),
+							DWRITE_FONT_WEIGHT_NORMAL,
+							DWRITE_TEXT_ALIGNMENT_TRAILING);
 
 						// 关闭按钮与顶部控件同为 30px 高，X 视觉为命中区的 1/3；按压缩放不影响命中。
 						auto closeHit = shapeMap[
@@ -12571,6 +12625,11 @@ auto ApplyCandidateWidth =
 										.thicknessSliderCandidateWidth = initialWidth;
 									barState.drawAttributeBar.thicknessSliderPressed =
 										true;
+									if (pressOnThumb)
+									{
+										// Thumb 按下即结束固定态；Pressed 继续维持本次 Slider 交互。
+										barState.drawAttributeBar.thicknessSliderPinned = false;
+									}
 									barState.drawAttributeBar
 										.thicknessSliderHoldHintActive = false;
 									barState.drawAttributeBar
@@ -12767,7 +12826,7 @@ bool gestureCaptured = barState.drawAttributeBar
 											.thicknessSliderPinned =
 											pinnedAtPress || !hoverAtPress;
 									}
-									else if (gestureCompleted)
+									else if (gestureCompleted && !pressOnThumb)
 										barState.drawAttributeBar
 											.thicknessSliderPinned = true;
 								if (gestureCompleted)
@@ -14122,16 +14181,28 @@ namespace Inkeys::UI::Bar
 							};
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerRgb,
-							L"R 000", 13.0);
+							L"R", 13.0);
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerG,
-							L"G 000", 13.0);
+							L"G", 13.0);
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerB,
-							L"B 000", 13.0);
+							L"B", 13.0);
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerOpacity,
-							L"透明度 100%", 13.0);
+							L"透明度", 13.0);
+						InitializePickerWord(
+							BarUISetWordEnum::DrawAttributeBar_ColorPickerRgbValue,
+							L"0", 13.0);
+						InitializePickerWord(
+							BarUISetWordEnum::DrawAttributeBar_ColorPickerGValue,
+							L"0", 13.0);
+						InitializePickerWord(
+							BarUISetWordEnum::DrawAttributeBar_ColorPickerBValue,
+							L"0", 13.0);
+						InitializePickerWord(
+							BarUISetWordEnum::DrawAttributeBar_ColorPickerOpacityValue,
+							L"100%", 13.0);
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerHoldLabel,
 							L"保持并固定颜色", 12.0);
@@ -14225,8 +14296,8 @@ namespace Inkeys::UI::Bar
 						auto extensionDivider = make_shared<BarUiShapeClass>(
 							0.0, 0.0, BarUiDividerWidth, 20.0,
 							BarUiDividerRadius, BarUiDividerRadius, 1.0,
-							GetThemeColor(BarThemeColorEnum::SurfaceFrame),
-							GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+							GetThemeColor(BarThemeColorEnum::Accent),
+							GetThemeColor(BarThemeColorEnum::Accent));
 						extensionDivider->pct.Initialization(0.0);
 						extensionDivider->framePct = BarUiPctClass(0.0);
 						extensionDivider->frameLightPct = BarUiPctClass(0.0);
