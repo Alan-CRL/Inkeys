@@ -29,7 +29,9 @@ namespace draw3
 {
 	namespace
 	{
-		constexpr size_t kTabletMetadataCapacity = 32;
+		constexpr size_t kContextDecoderCapacity = 32;
+		constexpr size_t kActiveBindingSlotsPerBlock = 32;
+		constexpr size_t kMaximumActiveBindingCapacity = 4096;
 		constexpr ULONG kMaximumPacketPropertyCount = 256;
 		constexpr float kUnknownStylusValue = -1.0f;
 		constexpr float kPi = 3.14159265358979323846f;
@@ -56,7 +58,7 @@ namespace draw3
 				RTSDI_RealTimeStylusEnabled | RTSDI_RealTimeStylusDisabled |
 				RTSDI_StylusInRange | RTSDI_StylusOutOfRange | RTSDI_InAirPackets |
 				RTSDI_StylusDown | RTSDI_Packets | RTSDI_StylusUp |
-				RTSDI_TabletAdded | RTSDI_TabletRemoved | RTSDI_Error);
+				RTSDI_TabletAdded | RTSDI_TabletRemoved | RTSDI_UpdateMapping | RTSDI_Error);
 		struct PacketPropertyMetadata
 		{
 			PROPERTY_METRICS metrics = {};
@@ -350,9 +352,8 @@ namespace draw3
 			uint32_t syntheticContactSequence_ = 0;
 		};
 
-		struct TabletMetadata
+		struct RtsContextDecoder
 		{
-			std::atomic<bool> published = false;
 			TABLET_CONTEXT_ID tabletContextId = 0;
 			ULONG propertyCount = 0;
 			ULONG xIndex = 0;
@@ -364,10 +365,438 @@ namespace draw3
 			PacketPropertyMetadata altitude;
 			PacketPropertyMetadata width;
 			PacketPropertyMetadata height;
-			float packetScaleX = 1.0f;
-			float packetScaleY = 1.0f;
+			float positionScaleX = 1.0f;
+			float positionScaleY = 1.0f;
+			float contactScaleX = 1.0f;
+			float contactScaleY = 1.0f;
 			InputDeviceType deviceType = InputDeviceType::Pen;
+			uint64_t generation = 0;
+			bool valid = false;
 		};
+
+		struct RtsActiveContactBinding
+		{
+			uint32_t tabletContextId = 0;
+			uint32_t contactId = 0;
+			size_t decoderSlotIndex = 0;
+			uint64_t decoderGeneration = 0;
+			bool occupied = false;
+		};
+
+		enum class RtsBindingInsertResult : uint8_t
+		{
+			Inserted,
+			Duplicate,
+			Full
+		};
+
+		size_t RoundUpActiveBindingCapacity(size_t requested) noexcept
+		{
+			requested = std::clamp(requested,
+				kActiveBindingSlotsPerBlock, kMaximumActiveBindingCapacity);
+			return (requested + kActiveBindingSlotsPerBlock - 1u) /
+				kActiveBindingSlotsPerBlock * kActiveBindingSlotsPerBlock;
+		}
+
+		size_t ComputeActiveBindingCapacity(int maximumTouches) noexcept
+		{
+			const size_t nonNegativeTouches = static_cast<size_t>(std::max(0, maximumTouches));
+			// 先按最终 4096 槽上限约束输入，避免 32-bit size_t 在乘 2 时回绕。
+			constexpr size_t kMaximumRelevantTouches =
+				kMaximumActiveBindingCapacity / 2u - 2u;
+			const size_t boundedTouches = std::min(nonNegativeTouches, kMaximumRelevantTouches);
+			return RoundUpActiveBindingCapacity(2u * (boundedTouches + 2u));
+		}
+
+		size_t ComputeDefaultActiveBindingCapacity() noexcept
+		{
+			return ComputeActiveBindingCapacity(GetSystemMetrics(SM_MAXIMUMTOUCHES));
+		}
+
+		size_t HashActiveContactKey(uint32_t tabletContextId, uint32_t contactId) noexcept
+		{
+			uint64_t value = (static_cast<uint64_t>(tabletContextId) << 32u) |
+				static_cast<uint64_t>(contactId);
+			value ^= value >> 33u;
+			value *= UINT64_C(0xff51afd7ed558ccd);
+			value ^= value >> 33u;
+			value *= UINT64_C(0xc4ceb9fe1a85ec53);
+			value ^= value >> 33u;
+			return static_cast<size_t>(value);
+		}
+
+		class RtsActiveBindingTable
+		{
+		public:
+			explicit RtsActiveBindingTable(size_t logicalCapacity) noexcept
+				: logicalCapacity_(RoundUpActiveBindingCapacity(logicalCapacity))
+			{
+			}
+
+			const RtsActiveContactBinding* Find(
+				uint32_t tabletContextId, uint32_t contactId) const noexcept
+			{
+				const size_t start = HashActiveContactKey(
+					tabletContextId, contactId) % logicalCapacity_;
+				size_t index = start;
+				for (size_t probe = 0; probe < logicalCapacity_; ++probe)
+				{
+					const RtsActiveContactBinding& binding = slots_[index];
+					if (!binding.occupied) return nullptr;
+					if (binding.tabletContextId == tabletContextId &&
+						binding.contactId == contactId) return &binding;
+					index = NextIndex(index);
+				}
+				return nullptr;
+			}
+
+			RtsBindingInsertResult Insert(const RtsActiveContactBinding& binding) noexcept
+			{
+				const RtsBindingInsertResult result = InsertWithoutCount(binding);
+				if (result == RtsBindingInsertResult::Inserted) ++activeBindingCount_;
+				return result;
+			}
+
+			bool Erase(uint32_t tabletContextId, uint32_t contactId) noexcept
+			{
+				size_t index = HashActiveContactKey(
+					tabletContextId, contactId) % logicalCapacity_;
+				for (size_t probe = 0; probe < logicalCapacity_; ++probe)
+				{
+					RtsActiveContactBinding& binding = slots_[index];
+					if (!binding.occupied) return false;
+					if (binding.tabletContextId == tabletContextId &&
+						binding.contactId == contactId)
+					{
+						binding = {};
+						--activeBindingCount_;
+						return RepairClusterAfterErase(NextIndex(index));
+					}
+					index = NextIndex(index);
+				}
+				return false;
+			}
+
+			void Clear() noexcept
+			{
+				slots_.fill({});
+				activeBindingCount_ = 0;
+			}
+
+			size_t LogicalCapacity() const noexcept { return logicalCapacity_; }
+			size_t ActiveBindingCount() const noexcept { return activeBindingCount_; }
+
+		private:
+			size_t NextIndex(size_t index) const noexcept
+			{
+				const size_t next = index + 1u;
+				return next == logicalCapacity_ ? 0u : next;
+			}
+
+			RtsBindingInsertResult InsertWithoutCount(
+				const RtsActiveContactBinding& source) noexcept
+			{
+				size_t index = HashActiveContactKey(
+					source.tabletContextId, source.contactId) % logicalCapacity_;
+				for (size_t probe = 0; probe < logicalCapacity_; ++probe)
+				{
+					RtsActiveContactBinding& target = slots_[index];
+					if (!target.occupied)
+					{
+						target = source;
+						target.occupied = true;
+						return RtsBindingInsertResult::Inserted;
+					}
+					if (target.tabletContextId == source.tabletContextId &&
+						target.contactId == source.contactId)
+						return RtsBindingInsertResult::Duplicate;
+					index = NextIndex(index);
+				}
+				return RtsBindingInsertResult::Full;
+			}
+
+			bool RepairClusterAfterErase(size_t index) noexcept
+			{
+				const size_t maximumRepairCount = activeBindingCount_;
+				for (size_t repaired = 0; repaired < maximumRepairCount; ++repaired)
+				{
+					RtsActiveContactBinding& source = slots_[index];
+					if (!source.occupied) return true;
+					const RtsActiveContactBinding displaced = source;
+					source = {};
+					// cluster 内部搬迁只修复 probe 链，不能重复修改 activeBindingCount_。
+					if (InsertWithoutCount(displaced) != RtsBindingInsertResult::Inserted)
+						return false;
+					index = NextIndex(index);
+				}
+				// 满表删除前没有 EMPTY terminator；其余 capacity-1 个原槽处理完即修复完成。
+				return true;
+			}
+
+			std::array<RtsActiveContactBinding, kMaximumActiveBindingCapacity> slots_ = {};
+			size_t logicalCapacity_ = kActiveBindingSlotsPerBlock;
+			size_t activeBindingCount_ = 0;
+		};
+
+		class RtsDecoderCache
+		{
+		public:
+			void Reset() noexcept
+			{
+				decoders_.fill({});
+				sharedPositionScaleX_ = 1.0f;
+				sharedPositionScaleY_ = 1.0f;
+				sharedPositionScaleValid_ = false;
+				lifecycleEnabled_ = false;
+				AdvanceGeneration();
+			}
+
+			void BeginLifecycle() noexcept
+			{
+				AdvanceGeneration();
+				lifecycleEnabled_ = true;
+			}
+
+			bool PublishStaged(const std::array<RtsContextDecoder, kContextDecoderCapacity>& staged,
+				size_t stagedCount, float positionScaleX, float positionScaleY) noexcept
+			{
+				if (!lifecycleEnabled_ || !ValidScale(positionScaleX, positionScaleY) ||
+					stagedCount > decoders_.size()) return false;
+				decoders_.fill({});
+				sharedPositionScaleX_ = positionScaleX;
+				sharedPositionScaleY_ = positionScaleY;
+				sharedPositionScaleValid_ = true;
+				for (size_t index = 0; index < stagedCount; ++index)
+				{
+					RtsContextDecoder decoder = staged[index];
+					decoder.positionScaleX = positionScaleX;
+					decoder.positionScaleY = positionScaleY;
+					decoder.generation = generation_;
+					decoder.valid = true;
+					decoders_[index] = decoder;
+				}
+				return true;
+			}
+
+			bool PublishIncremental(const RtsContextDecoder& candidate) noexcept
+			{
+				if (!lifecycleEnabled_ || !sharedPositionScaleValid_) return false;
+				if (FindSlot(candidate.tabletContextId) != kContextDecoderCapacity) return true;
+				for (RtsContextDecoder& slot : decoders_)
+				{
+					if (slot.valid) continue;
+					RtsContextDecoder decoder = candidate;
+					decoder.positionScaleX = sharedPositionScaleX_;
+					decoder.positionScaleY = sharedPositionScaleY_;
+					decoder.generation = generation_;
+					decoder.valid = true;
+					slot = decoder;
+					return true;
+				}
+				return false;
+			}
+
+			bool SetSharedPositionScale(float scaleX, float scaleY) noexcept
+			{
+				if (!lifecycleEnabled_ || !ValidScale(scaleX, scaleY)) return false;
+				sharedPositionScaleX_ = scaleX;
+				sharedPositionScaleY_ = scaleY;
+				sharedPositionScaleValid_ = true;
+				return true;
+			}
+
+			size_t FindSlot(TABLET_CONTEXT_ID tabletContextId) const noexcept
+			{
+				for (size_t index = 0; index < decoders_.size(); ++index)
+				{
+					const RtsContextDecoder& decoder = decoders_[index];
+					if (decoder.valid && decoder.tabletContextId == tabletContextId) return index;
+				}
+				return kContextDecoderCapacity;
+			}
+
+			const RtsContextDecoder* DecoderAt(size_t index) const noexcept
+			{
+				return index < decoders_.size() && decoders_[index].valid
+					? &decoders_[index] : nullptr;
+			}
+
+			const RtsContextDecoder* Resolve(const RtsActiveContactBinding& binding) const noexcept
+			{
+				const RtsContextDecoder* decoder = DecoderAt(binding.decoderSlotIndex);
+				return decoder && decoder->generation == binding.decoderGeneration &&
+					decoder->tabletContextId == binding.tabletContextId ? decoder : nullptr;
+			}
+
+			bool SharedPositionScaleValid() const noexcept { return sharedPositionScaleValid_; }
+			float SharedPositionScaleX() const noexcept { return sharedPositionScaleX_; }
+			float SharedPositionScaleY() const noexcept { return sharedPositionScaleY_; }
+			uint64_t Generation() const noexcept { return generation_; }
+			bool LifecycleEnabled() const noexcept { return lifecycleEnabled_; }
+
+		private:
+			static bool ValidScale(float scaleX, float scaleY) noexcept
+			{
+				return std::isfinite(scaleX) && std::isfinite(scaleY) &&
+					scaleX > 0.0f && scaleY > 0.0f;
+			}
+
+			void AdvanceGeneration() noexcept
+			{
+				++generation_;
+				if (generation_ == 0) ++generation_;
+			}
+
+			std::array<RtsContextDecoder, kContextDecoderCapacity> decoders_ = {};
+			float sharedPositionScaleX_ = 1.0f;
+			float sharedPositionScaleY_ = 1.0f;
+			uint64_t generation_ = 0;
+			bool sharedPositionScaleValid_ = false;
+			bool lifecycleEnabled_ = false;
+		};
+
+		bool PopulateContextDecoderProperties(const PACKET_PROPERTY* properties,
+			ULONG propertyCount, RtsContextDecoder& decoder) noexcept
+		{
+			if (!properties || propertyCount < 2 || propertyCount > kMaximumPacketPropertyCount)
+				return false;
+			bool hasX = false;
+			bool hasY = false;
+			const auto captureProperty = [&](PacketPropertyMetadata& target, ULONG index)
+				{
+					target.metrics = properties[index].PropertyMetrics;
+					target.index = index;
+					target.present = true;
+				};
+			for (ULONG index = 0; index < propertyCount; ++index)
+			{
+				if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_X))
+				{
+					decoder.xIndex = index;
+					hasX = true;
+				}
+				else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_Y))
+				{
+					decoder.yIndex = index;
+					hasY = true;
+				}
+				else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE))
+					captureProperty(decoder.pressure, index);
+				else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_X_TILT_ORIENTATION))
+					captureProperty(decoder.xTilt, index);
+				else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_Y_TILT_ORIENTATION))
+					captureProperty(decoder.yTilt, index);
+				else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_AZIMUTH_ORIENTATION))
+					captureProperty(decoder.azimuth, index);
+				else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_ALTITUDE_ORIENTATION))
+					captureProperty(decoder.altitude, index);
+				else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_WIDTH))
+					captureProperty(decoder.width, index);
+				else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_HEIGHT))
+					captureProperty(decoder.height, index);
+			}
+			decoder.propertyCount = propertyCount;
+			return hasX && hasY;
+		}
+
+		bool BuildContextDecoder(IRealTimeStylus* source, TABLET_CONTEXT_ID contextId,
+			IInkTablet* suppliedTablet, RtsContextDecoder& candidate)
+		{
+			if (!source) return false;
+			FLOAT contactScaleX = 1.0f;
+			FLOAT contactScaleY = 1.0f;
+			ULONG propertyCount = 0;
+			PACKET_PROPERTY* properties = nullptr;
+			const HRESULT packetResult = source->GetPacketDescriptionData(contextId,
+				&contactScaleX, &contactScaleY, &propertyCount, &properties);
+			if (FAILED(packetResult) || !std::isfinite(contactScaleX) ||
+				!std::isfinite(contactScaleY) || contactScaleX <= 0.0f || contactScaleY <= 0.0f)
+			{
+				CoTaskMemFree(properties);
+				return false;
+			}
+
+			RtsContextDecoder decoder;
+			const bool propertiesValid = PopulateContextDecoderProperties(
+				properties, propertyCount, decoder);
+			CoTaskMemFree(properties);
+			if (!propertiesValid) return false;
+
+			Microsoft::WRL::ComPtr<IInkTablet> tablet;
+			if (suppliedTablet)
+				tablet = suppliedTablet;
+			else
+				source->GetTabletFromTabletContextId(contextId, tablet.ReleaseAndGetAddressOf());
+			InputDeviceType deviceType = InputDeviceType::Pen;
+			if (tablet)
+			{
+				Microsoft::WRL::ComPtr<IInkTablet2> tablet2;
+				if (SUCCEEDED(tablet.As(&tablet2)))
+				{
+					TabletDeviceKind kind = TDK_Pen;
+					if (SUCCEEDED(tablet2->get_DeviceKind(&kind)))
+					{
+						if (kind == TDK_Touch) deviceType = InputDeviceType::Touch;
+						else if (kind == TDK_Mouse) deviceType = InputDeviceType::MouseLeft;
+					}
+				}
+			}
+
+			decoder.tabletContextId = contextId;
+			decoder.contactScaleX = contactScaleX;
+			decoder.contactScaleY = contactScaleY;
+			decoder.deviceType = deviceType;
+			candidate = decoder;
+			return true;
+		}
+
+		bool DecodeSnapshot(const RtsContextDecoder& decoder, ULONG propertyCount,
+			const LONG* packet, ContactPhase phase, int64_t qpc,
+			ContactSnapshot& snapshot) noexcept
+		{
+			if (!decoder.valid || !packet || propertyCount != decoder.propertyCount) return false;
+			if (decoder.xIndex >= propertyCount || decoder.yIndex >= propertyCount) return false;
+			snapshot.position.x = static_cast<float>(packet[decoder.xIndex]) * decoder.positionScaleX;
+			snapshot.position.y = static_cast<float>(packet[decoder.yIndex]) * decoder.positionScaleY;
+			snapshot.pressure = kUnknownStylusValue;
+			snapshot.tilt = kUnknownStylusValue;
+			snapshot.orientation = kUnknownStylusValue;
+			if (decoder.deviceType == InputDeviceType::Pen)
+			{
+				if (decoder.pressure.present && decoder.pressure.index < propertyCount)
+					snapshot.pressure = NormalizePressure(
+						packet[decoder.pressure.index], decoder.pressure.metrics);
+
+				float azimuth = 0.0f;
+				float altitude = 0.0f;
+				const bool hasAzimuthAltitude = decoder.azimuth.present && decoder.altitude.present &&
+					decoder.azimuth.index < propertyCount && decoder.altitude.index < propertyCount &&
+					DecodeAngle(packet[decoder.azimuth.index], decoder.azimuth.metrics, azimuth) &&
+					DecodeAngle(packet[decoder.altitude.index], decoder.altitude.metrics, altitude);
+				float xTilt = 0.0f;
+				float yTilt = 0.0f;
+				const bool hasXyTilt = decoder.xTilt.present && decoder.yTilt.present &&
+					decoder.xTilt.index < propertyCount && decoder.yTilt.index < propertyCount &&
+					DecodeAngle(packet[decoder.xTilt.index], decoder.xTilt.metrics, xTilt) &&
+					DecodeAngle(packet[decoder.yTilt.index], decoder.yTilt.metrics, yTilt);
+				const DecodedStylusAngles angles = DecodeStylusAngles(hasAzimuthAltitude,
+					azimuth, altitude, hasXyTilt ? xTilt : NAN, hasXyTilt ? yTilt : NAN);
+				snapshot.tilt = angles.tilt;
+				snapshot.orientation = angles.orientation;
+			}
+			snapshot.contactSize = {};
+			if (decoder.width.present && decoder.height.present &&
+				decoder.width.index < propertyCount && decoder.height.index < propertyCount)
+			{
+				// 接触面积保留各 context 的比例；位置统一使用 lifecycle 的首 context 比例。
+				snapshot.contactSize = DecodeContactSize(decoder.deviceType,
+					packet[decoder.width.index], packet[decoder.height.index],
+					decoder.contactScaleX, decoder.contactScaleY);
+			}
+			snapshot.qpc = qpc;
+			snapshot.phase = phase;
+			return std::isfinite(snapshot.position.x) && std::isfinite(snapshot.position.y);
+		}
 
 		class StylusSyncPlugin final : public IStylusSyncPlugin
 		{
@@ -375,7 +804,8 @@ namespace draw3
 			StylusSyncPlugin(ContactInputCoordinator& coordinator,
 				DrawingCursorEventSink* drawingCursorSink)
 				: coordinator_(coordinator), interruptionSimulation_(coordinator),
-				drawingCursorSink_(drawingCursorSink)
+				drawingCursorSink_(drawingCursorSink),
+				activeBindings_(ComputeDefaultActiveBindingCapacity())
 			{
 				marshalerResult_ = CoCreateFreeThreadedMarshaler(
 					static_cast<IUnknown*>(this), freeThreadedMarshaler_.ReleaseAndGetAddressOf());
@@ -422,16 +852,10 @@ namespace draw3
 				RecordCallback("RealTimeStylusEnabled", nullptr, nullptr, contextCount, 0,
 					nullptr, nullptr, true, false);
 #endif
-				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
-					interruptionSimulation_.Reset();
-				pixelScalePublished_.store(false, std::memory_order_release);
-				EnsurePixelScale(source);
-				for (ULONG index = 0; index < contextCount; ++index)
-				{
-					// 启用时预热每个 context 的元数据，减少首包解码失败。
-					EnsureMetadata(source, contextIds[index], nullptr);
-				}
-				// 单个 tablet 暂时无法查询时不能让整个插件进入 Error；Down 会按 tcid 再尝试一次。
+				ResetDecoderLifecycleState(true);
+				decoderCache_.BeginLifecycle();
+				StageAndPublishDecoders(source, contextCount, contextIds);
+				// 单个 tablet 暂时无法查询时不让插件进入 Error；InRange/Down 可低频补建。
 				return S_OK;
 			}
 
@@ -442,10 +866,8 @@ namespace draw3
 				RecordCallback("RealTimeStylusDisabled", nullptr, nullptr, 0, 0,
 					nullptr, nullptr, true, false);
 #endif
-				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
-					interruptionSimulation_.Reset();
+				ResetDecoderLifecycleState(true);
 				PublishDefaultPenCursor();
-				coordinator_.CloseAllProducerContacts(QueryQpc());
 				return S_OK;
 			}
 
@@ -454,9 +876,8 @@ namespace draw3
 			{
 				if (source)
 				{
-					EnsurePixelScale(source);
 					// InRange 不含倒转信息；等待首个 InAir/Pointer 包决定普通笔或笔尾。
-					EnsureMetadata(source, contextId, nullptr);
+					EnsureContextDecoder(source, contextId, nullptr);
 				}
 				return S_OK;
 			}
@@ -475,23 +896,52 @@ namespace draw3
 				ULONG propertyCount, LONG* packet, LONG**) override
 			{
 				if (!source || !stylusInfo || !packet) return E_INVALIDARG;
-				EnsurePixelScale(source);
-				const TabletMetadata* metadata = EnsureMetadata(source, stylusInfo->tcid, nullptr);
-				ContactSnapshot snapshot;
-				if (!metadata || !DecodeSnapshot(
-					metadata, propertyCount, packet, ContactPhase::Down, snapshot))
+				size_t decoderSlotIndex = kContextDecoderCapacity;
+				const RtsContextDecoder* decoder = ResolveContextDecoder(
+					source, stylusInfo->tcid, nullptr, decoderSlotIndex);
+				if (!decoder)
 				{
-					PublishDefaultPenCursor(); // 解码失败时不能把旧 Hover visual 留在接触位置。
+					PublishDefaultPenCursor();
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-					RecordCallback("StylusDown", stylusInfo, metadata, 1, propertyCount,
+					RecordCallback("StylusDown", stylusInfo, nullptr, 1, propertyCount,
 						packet, nullptr, false, false);
 #endif
 					return S_OK;
 				}
-				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
+
+				if (activeBindings_.Find(stylusInfo->tcid, stylusInfo->cid))
+				{
+					// duplicate Down 先关闭旧 producer，再修复 cluster 并绑定当前 contact。
+					CloseProducerContact(stylusInfo->tcid, stylusInfo->cid, QueryQpc());
+					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
+				}
+				const RtsActiveContactBinding binding{
+					stylusInfo->tcid, stylusInfo->cid, decoderSlotIndex, decoder->generation, true };
+				if (activeBindings_.Insert(binding) != RtsBindingInsertResult::Inserted)
+				{
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					RecordCallback("StylusDown", stylusInfo, decoder, 1, propertyCount,
+						packet, nullptr, false, false, E_OUTOFMEMORY);
+#endif
+					return E_OUTOFMEMORY;
+				}
+
+				ContactSnapshot snapshot;
+				if (!DecodeSnapshot(*decoder, propertyCount, packet,
+					ContactPhase::Down, QueryQpc(), snapshot))
+				{
+					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
+					PublishDefaultPenCursor(); // 解码失败时不能把旧 Hover visual 留在接触位置。
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					RecordCallback("StylusDown", stylusInfo, decoder, 1, propertyCount,
+						packet, nullptr, false, false);
+#endif
+					return S_OK;
+				}
+				snapshot.isInvertedCursor = decoder->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
-				PublishPenCursor(metadata, stylusInfo, true, snapshot);
-				InputDeviceType deviceType = metadata ? metadata->deviceType : InputDeviceType::Pen;
+				PublishPenCursor(decoder, stylusInfo, true, snapshot);
+				InputDeviceType deviceType = decoder->deviceType;
 				if (deviceType == InputDeviceType::MouseLeft)
 				{
 					const bool leftButtonDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
@@ -506,40 +956,44 @@ namespace draw3
 				else
 					published = coordinator_.PublishDown(
 						stylusInfo->tcid, stylusInfo->cid, deviceType, snapshot);
+				if (!published) activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-				RecordCallback("StylusDown", stylusInfo, metadata, 1, propertyCount,
+				RecordCallback("StylusDown", stylusInfo, decoder, 1, propertyCount,
 					packet, &snapshot, true, published, S_OK, 0, deviceType, true);
 #endif
 				return published ? S_OK : E_OUTOFMEMORY;
 			}
 
-			HRESULT STDMETHODCALLTYPE StylusUp(IRealTimeStylus* source, const StylusInfo* stylusInfo,
+			HRESULT STDMETHODCALLTYPE StylusUp(IRealTimeStylus*, const StylusInfo* stylusInfo,
 				ULONG propertyCount, LONG* packet, LONG**) override
 			{
-				if (!stylusInfo || !packet) return E_INVALIDARG;
-				const TabletMetadata* metadata = FindMetadata(stylusInfo->tcid);
-				if (!metadata && source) metadata = EnsureMetadata(source, stylusInfo->tcid, nullptr);
-				ContactSnapshot snapshot;
-				if (!metadata || !DecodeSnapshot(
-					metadata, propertyCount, packet, ContactPhase::Up, snapshot))
+				if (!stylusInfo) return E_INVALIDARG;
+				if (!packet)
 				{
 					PublishDefaultPenCursor();
-					snapshot.position = { NAN, NAN };
-					snapshot.qpc = QueryQpc();
+					CloseProducerContact(stylusInfo->tcid, stylusInfo->cid, QueryQpc());
+					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
+					return S_OK;
+				}
+				const RtsActiveContactBinding* binding = activeBindings_.Find(
+					stylusInfo->tcid, stylusInfo->cid);
+				const RtsContextDecoder* decoder = binding ? decoderCache_.Resolve(*binding) : nullptr;
+				ContactSnapshot snapshot;
+				if (!decoder || !DecodeSnapshot(*decoder, propertyCount, packet,
+					ContactPhase::Up, QueryQpc(), snapshot))
+				{
+					PublishDefaultPenCursor();
 					// 坏 Up 包不能把 contact 永久留在 Producing；协调器会沿用最后有效位置闭合。
-					bool published = false;
-					if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
-						published = interruptionSimulation_.PublishUp(
-							stylusInfo->tcid, stylusInfo->cid, snapshot);
-					else
-						published = coordinator_.PublishUp(stylusInfo->tcid, stylusInfo->cid, snapshot);
+					const bool published = CloseProducerContact(
+						stylusInfo->tcid, stylusInfo->cid, QueryQpc());
+					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-					RecordCallback("StylusUp", stylusInfo, metadata, 1, propertyCount,
+					RecordCallback("StylusUp", stylusInfo, decoder, 1, propertyCount,
 						packet, nullptr, false, published);
 #endif
 					return S_OK;
 				}
-				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
+				snapshot.isInvertedCursor = decoder->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
 				PublishDefaultPenCursor(); // Up 只清除接触光标，后续 InAir/Pointer 样本再恢复真实 Hover。
 				bool published = false;
@@ -548,8 +1002,9 @@ namespace draw3
 						stylusInfo->tcid, stylusInfo->cid, snapshot);
 				else
 					published = coordinator_.PublishUp(stylusInfo->tcid, stylusInfo->cid, snapshot);
+				activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-				RecordCallback("StylusUp", stylusInfo, metadata, 1, propertyCount,
+				RecordCallback("StylusUp", stylusInfo, decoder, 1, propertyCount,
 					packet, &snapshot, true, published);
 #endif
 				return S_OK;
@@ -571,22 +1026,23 @@ namespace draw3
 			{
 				if (!stylusInfo || !packets || packetCount == 0 || packetBufferLength < packetCount ||
 					packetBufferLength % packetCount != 0) return E_INVALIDARG;
-				const TabletMetadata* metadata = FindMetadata(stylusInfo->tcid);
-				if (!metadata && source) metadata = EnsureMetadata(source, stylusInfo->tcid, nullptr);
+				size_t decoderSlotIndex = kContextDecoderCapacity;
+				const RtsContextDecoder* decoder = ResolveContextDecoder(
+					source, stylusInfo->tcid, nullptr, decoderSlotIndex);
 				const ULONG propertyCount = packetBufferLength / packetCount;
 				const LONG* lastPacket = packets +
 					static_cast<size_t>(packetCount - 1) * propertyCount;
 				ContactSnapshot snapshot;
-				const bool decoded = metadata && DecodeSnapshot(metadata, propertyCount, lastPacket,
-					ContactPhase::Move, snapshot);
+				const bool decoded = decoder && DecodeSnapshot(*decoder, propertyCount, lastPacket,
+					ContactPhase::Move, QueryQpc(), snapshot);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-				RecordCallback("InAirPackets", stylusInfo, metadata, packetCount, propertyCount,
+				RecordCallback("InAirPackets", stylusInfo, decoder, packetCount, propertyCount,
 					lastPacket, decoded ? &snapshot : nullptr, decoded, false);
 #endif
 				if (!decoded) return S_OK;
-				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
+				snapshot.isInvertedCursor = decoder->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
-				PublishPenCursor(metadata, stylusInfo, false, snapshot);
+				PublishPenCursor(decoder, stylusInfo, false, snapshot);
 				return S_OK;
 			}
 
@@ -597,20 +1053,22 @@ namespace draw3
 					packetBufferLength % packetCount != 0) return E_INVALIDARG;
 				const ULONG propertyCount = packetBufferLength / packetCount;
 				const LONG* lastPacket = packets + static_cast<size_t>(packetCount - 1) * propertyCount;
-				const TabletMetadata* metadata = FindMetadata(stylusInfo->tcid); // Move 热路径通常只扫描固定缓存。
+				const RtsActiveContactBinding* binding = activeBindings_.Find(
+					stylusInfo->tcid, stylusInfo->cid);
+				const RtsContextDecoder* decoder = binding ? decoderCache_.Resolve(*binding) : nullptr;
 				ContactSnapshot snapshot;
-				if (!metadata || !DecodeSnapshot(
-					metadata, propertyCount, lastPacket, ContactPhase::Move, snapshot))
+				if (!decoder || !DecodeSnapshot(*decoder, propertyCount, lastPacket,
+					ContactPhase::Move, QueryQpc(), snapshot))
 				{
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-					RecordCallback("Packets", stylusInfo, metadata, packetCount, propertyCount,
+					RecordCallback("Packets", stylusInfo, decoder, packetCount, propertyCount,
 						lastPacket, nullptr, false, false);
 #endif
 					return S_OK;
 				}
-				snapshot.isInvertedCursor = metadata->deviceType == InputDeviceType::Pen &&
+				snapshot.isInvertedCursor = decoder->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
-				PublishPenCursor(metadata, stylusInfo, true, snapshot);
+				PublishPenCursor(decoder, stylusInfo, true, snapshot);
 				bool published = false;
 				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
 					published = interruptionSimulation_.PublishMove(
@@ -618,7 +1076,7 @@ namespace draw3
 				else
 					published = coordinator_.PublishMove(stylusInfo->tcid, stylusInfo->cid, snapshot);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-				RecordCallback("Packets", stylusInfo, metadata, packetCount, propertyCount,
+				RecordCallback("Packets", stylusInfo, decoder, packetCount, propertyCount,
 					lastPacket, &snapshot, true, published);
 #endif
 				return S_OK;
@@ -641,26 +1099,35 @@ namespace draw3
 				if (!source || !tablet) return E_INVALIDARG;
 				TABLET_CONTEXT_ID contextId = 0;
 				const HRESULT result = source->GetTabletContextIdFromTablet(tablet, &contextId);
-				if (FAILED(result)) return result;
-				EnsureMetadata(source, contextId, tablet);
+				bool published = false;
+				if (SUCCEEDED(result))
+				{
+					RtsContextDecoder candidate;
+					published = BuildContextDecoder(source, contextId, tablet, candidate) &&
+						decoderCache_.PublishIncremental(candidate);
+				}
+				if (!published)
+				{
+					// 增量查询失败时从空 generation 全量重建，避免新旧 context 混合发布。
+					ResetDecoderLifecycleState(true);
+					RebuildCurrentContextDecoders(source);
+				}
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				RecordCallback("TabletAdded", nullptr, nullptr, 0, 0,
-					nullptr, nullptr, SUCCEEDED(result), false);
+					nullptr, nullptr, published, false, result);
 #endif
-				return S_OK; // Tablet 初始化时序不稳定时保留后续 Down 的重试机会。
+				return S_OK;
 			}
 
-			HRESULT STDMETHODCALLTYPE TabletRemoved(IRealTimeStylus*, LONG) override
+			HRESULT STDMETHODCALLTYPE TabletRemoved(IRealTimeStylus* source, LONG) override
 			{
-				// 回调只给 tablet index，无法无查询地还原 tcid；设备移除时安全取消全部活动 contact。
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				RecordCallback("TabletRemoved", nullptr, nullptr, 0, 0,
 					nullptr, nullptr, true, false);
 #endif
-				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
-					interruptionSimulation_.Reset();
 				PublishDefaultPenCursor();
-				coordinator_.CloseAllProducerContacts(QueryQpc());
+				ResetDecoderLifecycleState(true);
+				if (source) RebuildCurrentContextDecoders(source);
 				return S_OK;
 			}
 
@@ -675,15 +1142,17 @@ namespace draw3
 				(void)dataInterest;
 				(void)errorCode;
 #endif
-				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
-					interruptionSimulation_.Reset();
 				PublishDefaultPenCursor();
-				coordinator_.CloseAllProducerContacts(QueryQpc());
+				ResetDecoderLifecycleState(true);
 				return S_OK;
 			}
 
-			HRESULT STDMETHODCALLTYPE UpdateMapping(IRealTimeStylus*) override
+			HRESULT STDMETHODCALLTYPE UpdateMapping(IRealTimeStylus* source) override
 			{
+				if (!source) return E_INVALIDARG;
+				PublishDefaultPenCursor();
+				ResetDecoderLifecycleState(true);
+				RebuildCurrentContextDecoders(source);
 				return S_OK;
 			}
 
@@ -697,7 +1166,7 @@ namespace draw3
 		private:
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			void RecordCallback(const char* eventName, const StylusInfo* stylusInfo,
-				const TabletMetadata* metadata, ULONG packetCount, ULONG propertyCount,
+				const RtsContextDecoder* decoder, ULONG packetCount, ULONG propertyCount,
 				const LONG* packet, const ContactSnapshot* snapshot, bool decoded,
 				bool published, HRESULT result = S_OK, uint32_t dataInterest = 0,
 				InputDeviceType routedDeviceType = InputDeviceType::Pen,
@@ -709,8 +1178,8 @@ namespace draw3
 				trace.threadId = GetCurrentThreadId();
 				trace.tabletContextId = stylusInfo ? stylusInfo->tcid : 0;
 				trace.contactId = stylusInfo ? stylusInfo->cid : 0;
-				trace.deviceType = static_cast<uint32_t>(overrideDeviceType || !metadata
-					? routedDeviceType : metadata->deviceType);
+				trace.deviceType = static_cast<uint32_t>(overrideDeviceType || !decoder
+					? routedDeviceType : decoder->deviceType);
 				trace.packetCount = packetCount;
 				trace.propertyCount = propertyCount;
 				trace.decoded = decoded;
@@ -722,23 +1191,23 @@ namespace draw3
 					trace.decodedX = snapshot->position.x;
 					trace.decodedY = snapshot->position.y;
 				}
-				if (metadata && packet && metadata->xIndex < propertyCount &&
-					metadata->yIndex < propertyCount)
+				if (decoder && packet && decoder->xIndex < propertyCount &&
+					decoder->yIndex < propertyCount)
 				{
 					trace.hasRawPosition = true;
-					trace.rawX = packet[metadata->xIndex];
-					trace.rawY = packet[metadata->yIndex];
+					trace.rawX = packet[decoder->xIndex];
+					trace.rawY = packet[decoder->yIndex];
 				}
 				RecordRtsCallback(trace);
 			}
 #endif
 
-			void PublishPenCursor(const TabletMetadata* metadata,
+			void PublishPenCursor(const RtsContextDecoder* decoder,
 				const StylusInfo* stylusInfo, bool inContact,
 				const ContactSnapshot& snapshot) noexcept
 			{
-				if (!drawingCursorSink_ || !metadata || !stylusInfo ||
-					metadata->deviceType != InputDeviceType::Pen) return;
+				if (!drawingCursorSink_ || !decoder || !stylusInfo ||
+					decoder->deviceType != InputDeviceType::Pen) return;
 				DrawingCursorSample sample;
 				sample.x = snapshot.position.x;
 				sample.y = snapshot.position.y;
@@ -754,226 +1223,172 @@ namespace draw3
 				if (drawingCursorSink_) drawingCursorSink_->ClearPenCursorSample();
 			}
 
-			bool EnsurePixelScale(IRealTimeStylus* source)
+			bool CloseProducerContact(uint32_t tabletContextId,
+				uint32_t contactId, int64_t qpc) noexcept
 			{
+				ContactSnapshot snapshot;
+				snapshot.position = { NAN, NAN };
+				snapshot.qpc = qpc;
+				snapshot.phase = ContactPhase::Cancelled;
+				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
+					return interruptionSimulation_.PublishUp(tabletContextId, contactId, snapshot);
+				else
+					return coordinator_.PublishCancelled(tabletContextId, contactId, snapshot);
+			}
+
+			void ResetDecoderLifecycleState(bool closeProducerContacts) noexcept
+			{
+				activeBindings_.Clear();
+				if (closeProducerContacts)
+				{
+					if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
+						interruptionSimulation_.Reset();
+					coordinator_.CloseAllProducerContacts(QueryQpc());
+				}
+				decoderCache_.Reset();
+			}
+
+			bool QueryCurrentContextIds(IRealTimeStylus* source,
+				std::array<TABLET_CONTEXT_ID, kContextDecoderCapacity>& contextIds,
+				size_t& contextCount) const noexcept
+			{
+				contextCount = 0;
 				if (!source) return false;
-				if (pixelScalePublished_.load(std::memory_order_acquire)) return true;
-				std::lock_guard lock(pixelScaleMutex_);
-				if (pixelScalePublished_.load(std::memory_order_relaxed)) return true;
-
-				ULONG contextCount = 0;
-				TABLET_CONTEXT_ID* contextIds = nullptr;
-				const HRESULT contextResult = source->GetAllTabletContextIds(
-					&contextCount, &contextIds);
-				if (FAILED(contextResult) || contextCount == 0 || !contextIds)
+				ULONG queriedCount = 0;
+				TABLET_CONTEXT_ID* queriedIds = nullptr;
+				const HRESULT result = source->GetAllTabletContextIds(&queriedCount, &queriedIds);
+				if (FAILED(result) || (queriedCount > 0 && !queriedIds))
 				{
-					CoTaskMemFree(contextIds);
+					CoTaskMemFree(queriedIds);
 					return false;
 				}
-
-				const TABLET_CONTEXT_ID firstContextId = contextIds[0];
-				FLOAT scaleX = 1.0f;
-				FLOAT scaleY = 1.0f;
-				ULONG propertyCount = 0;
-				PACKET_PROPERTY* properties = nullptr;
-				const HRESULT scaleResult = source->GetPacketDescriptionData(
-					firstContextId, &scaleX, &scaleY, &propertyCount, &properties);
-				CoTaskMemFree(properties);
-				CoTaskMemFree(contextIds);
-				if (FAILED(scaleResult) || !std::isfinite(scaleX) || !std::isfinite(scaleY) ||
-					scaleX <= 0.0f || scaleY <= 0.0f)
+				if (static_cast<size_t>(queriedCount) > contextIds.size())
 				{
+					CoTaskMemFree(queriedIds);
 					return false;
 				}
-
-				// 缩放比例只发布一次；若启动阶段尚未取得 metadata，Down/InRange 可继续补偿初始化。
-				inkToPixelScaleX_ = scaleX;
-				inkToPixelScaleY_ = scaleY;
-				pixelScalePublished_.store(true, std::memory_order_release);
+				contextCount = static_cast<size_t>(queriedCount);
+				for (size_t index = 0; index < contextCount; ++index)
+					contextIds[index] = queriedIds[index];
+				CoTaskMemFree(queriedIds);
 				return true;
 			}
 
-			const TabletMetadata* FindMetadata(TABLET_CONTEXT_ID contextId) const noexcept
+			bool QueryPositionScaleForContext(IRealTimeStylus* source,
+				TABLET_CONTEXT_ID contextId, float& scaleX, float& scaleY) const noexcept
 			{
-				for (const TabletMetadata& metadata : metadata_)
-				{
-					if (metadata.published.load(std::memory_order_acquire) &&
-						metadata.tabletContextId == contextId) return &metadata;
-				}
-				return nullptr;
-			}
-
-			const TabletMetadata* EnsureMetadata(IRealTimeStylus* source,
-				TABLET_CONTEXT_ID contextId, IInkTablet* suppliedTablet)
-			{
-				if (!source) return nullptr;
-				if (const TabletMetadata* existing = FindMetadata(contextId)) return existing;
-				std::lock_guard lock(metadataMutex_);
-				if (const TabletMetadata* existing = FindMetadata(contextId)) return existing;
-
-				TabletMetadata* target = nullptr;
-				for (TabletMetadata& metadata : metadata_)
-				{
-					if (!metadata.published.load(std::memory_order_relaxed))
-					{
-						target = &metadata;
-						break;
-					}
-				}
-				if (!target) return nullptr;
-
-				FLOAT inkToDeviceScaleX = 1.0f;
-				FLOAT inkToDeviceScaleY = 1.0f;
+				FLOAT queriedScaleX = 1.0f;
+				FLOAT queriedScaleY = 1.0f;
 				ULONG propertyCount = 0;
 				PACKET_PROPERTY* properties = nullptr;
-				const HRESULT packetResult = source->GetPacketDescriptionData(contextId,
-					&inkToDeviceScaleX, &inkToDeviceScaleY, &propertyCount, &properties);
-				if (FAILED(packetResult) || propertyCount < 2 ||
-					propertyCount > kMaximumPacketPropertyCount || !properties)
-				{
-					CoTaskMemFree(properties);
-					return nullptr;
-				}
-
-				ULONG xIndex = 0;
-				ULONG yIndex = 1;
-				bool hasX = false;
-				bool hasY = false;
-				PacketPropertyMetadata pressure;
-				PacketPropertyMetadata xTilt;
-				PacketPropertyMetadata yTilt;
-				PacketPropertyMetadata azimuth;
-				PacketPropertyMetadata altitude;
-				PacketPropertyMetadata width;
-				PacketPropertyMetadata height;
-				const auto captureProperty = [&](PacketPropertyMetadata& targetMetadata, ULONG index)
-					{
-						targetMetadata.metrics = properties[index].PropertyMetrics;
-						targetMetadata.index = index;
-						targetMetadata.present = true;
-					};
-				for (ULONG index = 0; index < propertyCount; ++index)
-				{
-					if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_X))
-					{
-						xIndex = index;
-						hasX = true;
-					}
-					else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_Y))
-					{
-						yIndex = index;
-						hasY = true;
-					}
-					else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE))
-						captureProperty(pressure, index);
-					else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_X_TILT_ORIENTATION))
-						captureProperty(xTilt, index);
-					else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_Y_TILT_ORIENTATION))
-						captureProperty(yTilt, index);
-					else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_AZIMUTH_ORIENTATION))
-						captureProperty(azimuth, index);
-					else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_ALTITUDE_ORIENTATION))
-						captureProperty(altitude, index);
-					else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_WIDTH))
-						captureProperty(width, index);
-					else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_HEIGHT))
-						captureProperty(height, index);
-				}
+				const HRESULT result = source->GetPacketDescriptionData(contextId,
+					&queriedScaleX, &queriedScaleY, &propertyCount, &properties);
 				CoTaskMemFree(properties);
-				if (!hasX || !hasY || !std::isfinite(inkToDeviceScaleX) ||
-					!std::isfinite(inkToDeviceScaleY) ||
-					inkToDeviceScaleX <= 0.0f || inkToDeviceScaleY <= 0.0f)
-				{
-					return nullptr;
-				}
-
-				Microsoft::WRL::ComPtr<IInkTablet> tablet;
-				if (suppliedTablet)
-					tablet = suppliedTablet;
-				else
-					source->GetTabletFromTabletContextId(contextId, tablet.ReleaseAndGetAddressOf());
-				InputDeviceType deviceType = InputDeviceType::Pen;
-				if (tablet)
-				{
-					Microsoft::WRL::ComPtr<IInkTablet2> tablet2;
-					if (SUCCEEDED(tablet.As(&tablet2)))
-					{
-						TabletDeviceKind kind = TDK_Pen;
-						if (SUCCEEDED(tablet2->get_DeviceKind(&kind)))
-						{
-							if (kind == TDK_Touch) deviceType = InputDeviceType::Touch;
-							else if (kind == TDK_Mouse) deviceType = InputDeviceType::MouseLeft;
-						}
-					}
-				}
-
-				target->tabletContextId = contextId;
-				target->propertyCount = propertyCount;
-				target->xIndex = xIndex;
-				target->yIndex = yIndex;
-				target->pressure = pressure;
-				target->xTilt = xTilt;
-				target->yTilt = yTilt;
-				target->azimuth = azimuth;
-				target->altitude = altitude;
-				target->width = width;
-				target->height = height;
-				target->packetScaleX = inkToDeviceScaleX;
-				target->packetScaleY = inkToDeviceScaleY;
-				target->deviceType = deviceType;
-				target->published.store(true, std::memory_order_release);
-				return target;
+				if (FAILED(result) || !std::isfinite(queriedScaleX) ||
+					!std::isfinite(queriedScaleY) || queriedScaleX <= 0.0f || queriedScaleY <= 0.0f)
+					return false;
+				scaleX = queriedScaleX;
+				scaleY = queriedScaleY;
+				return true;
 			}
 
-			bool DecodeSnapshot(const TabletMetadata* metadata, ULONG propertyCount,
-				const LONG* packet, ContactPhase phase, ContactSnapshot& snapshot) const noexcept
+			bool QuerySharedPositionScale(IRealTimeStylus* source,
+				float& scaleX, float& scaleY) const noexcept
 			{
-				if (!metadata || !packet || propertyCount != metadata->propertyCount) return false;
-				const ULONG xIndex = metadata->xIndex;
-				const ULONG yIndex = metadata->yIndex;
-				if (xIndex >= propertyCount || yIndex >= propertyCount) return false;
-				if (!pixelScalePublished_.load(std::memory_order_acquire)) return false;
-				// 当前 tcid 只决定属性索引；像素比例统一沿用首 tablet context。
-				snapshot.position.x = static_cast<float>(packet[xIndex]) * inkToPixelScaleX_;
-				snapshot.position.y = static_cast<float>(packet[yIndex]) * inkToPixelScaleY_;
-				snapshot.pressure = kUnknownStylusValue;
-				snapshot.tilt = kUnknownStylusValue;
-				snapshot.orientation = kUnknownStylusValue;
-				if (metadata->deviceType == InputDeviceType::Pen)
-				{
-					if (metadata->pressure.present && metadata->pressure.index < propertyCount)
-						snapshot.pressure = NormalizePressure(
-							packet[metadata->pressure.index], metadata->pressure.metrics);
+				std::array<TABLET_CONTEXT_ID, kContextDecoderCapacity> contextIds = {};
+				size_t contextCount = 0;
+				return QueryCurrentContextIds(source, contextIds, contextCount) && contextCount > 0 &&
+					QueryPositionScaleForContext(source, contextIds[0], scaleX, scaleY);
+			}
 
-					float azimuth = 0.0f;
-					float altitude = 0.0f;
-					const bool hasAzimuthAltitude = metadata->azimuth.present && metadata->altitude.present &&
-						metadata->azimuth.index < propertyCount && metadata->altitude.index < propertyCount &&
-						DecodeAngle(packet[metadata->azimuth.index], metadata->azimuth.metrics, azimuth) &&
-						DecodeAngle(packet[metadata->altitude.index], metadata->altitude.metrics, altitude);
-					float xTilt = 0.0f;
-					float yTilt = 0.0f;
-					const bool hasXyTilt = metadata->xTilt.present && metadata->yTilt.present &&
-						metadata->xTilt.index < propertyCount && metadata->yTilt.index < propertyCount &&
-						DecodeAngle(packet[metadata->xTilt.index], metadata->xTilt.metrics, xTilt) &&
-						DecodeAngle(packet[metadata->yTilt.index], metadata->yTilt.metrics, yTilt);
-					const DecodedStylusAngles angles = DecodeStylusAngles(hasAzimuthAltitude,
-						azimuth, altitude, hasXyTilt ? xTilt : NAN, hasXyTilt ? yTilt : NAN);
-					snapshot.tilt = angles.tilt;
-					snapshot.orientation = angles.orientation;
-				}
-				snapshot.contactSize = {};
-				if (metadata->width.present && metadata->height.present &&
-					metadata->width.index < propertyCount && metadata->height.index < propertyCount)
+			bool BuildStagedDecoders(IRealTimeStylus* source, size_t contextCount,
+				const TABLET_CONTEXT_ID* contextIds,
+				std::array<RtsContextDecoder, kContextDecoderCapacity>& staged,
+				size_t& stagedCount) const
+			{
+				stagedCount = 0;
+				if (!source || (contextCount > 0 && !contextIds)) return false;
+				if (contextCount > staged.size()) return false;
+				for (size_t contextIndex = 0; contextIndex < contextCount; ++contextIndex)
 				{
-					// 接触面积与坐标使用同一 tablet-to-device 轴缩放，最终统一为像素。
-					snapshot.contactSize = DecodeContactSize(metadata->deviceType,
-						packet[metadata->width.index], packet[metadata->height.index],
-						metadata->packetScaleX, metadata->packetScaleY);
+					bool duplicate = false;
+					for (size_t stagedIndex = 0; stagedIndex < stagedCount; ++stagedIndex)
+					{
+						duplicate = duplicate ||
+							staged[stagedIndex].tabletContextId == contextIds[contextIndex];
+					}
+					if (duplicate) continue;
+					RtsContextDecoder candidate;
+					if (!BuildContextDecoder(source, contextIds[contextIndex], nullptr, candidate))
+						return false;
+					staged[stagedCount++] = candidate;
 				}
-				snapshot.qpc = QueryQpc();
-				snapshot.phase = phase;
-				return std::isfinite(snapshot.position.x) && std::isfinite(snapshot.position.y);
+				return true;
+			}
+
+			bool StageAndPublishDecoders(IRealTimeStylus* source, size_t contextCount,
+				const TABLET_CONTEXT_ID* contextIds)
+			{
+				float positionScaleX = 1.0f;
+				float positionScaleY = 1.0f;
+				if (!QuerySharedPositionScale(source, positionScaleX, positionScaleY)) return false;
+				std::array<RtsContextDecoder, kContextDecoderCapacity> staged = {};
+				size_t stagedCount = 0;
+				if (!BuildStagedDecoders(source, contextCount, contextIds, staged, stagedCount))
+					return false;
+				return decoderCache_.PublishStaged(
+					staged, stagedCount, positionScaleX, positionScaleY);
+			}
+
+			bool RebuildCurrentContextDecoders(IRealTimeStylus* source)
+			{
+				decoderCache_.BeginLifecycle();
+				std::array<TABLET_CONTEXT_ID, kContextDecoderCapacity> contextIds = {};
+				size_t contextCount = 0;
+				if (!QueryCurrentContextIds(source, contextIds, contextCount)) return false;
+				if (contextCount == 0) return true;
+				float positionScaleX = 1.0f;
+				float positionScaleY = 1.0f;
+				if (!QueryPositionScaleForContext(
+					source, contextIds[0], positionScaleX, positionScaleY)) return false;
+				std::array<RtsContextDecoder, kContextDecoderCapacity> staged = {};
+				size_t stagedCount = 0;
+				if (!BuildStagedDecoders(
+					source, contextCount, contextIds.data(), staged, stagedCount)) return false;
+				return decoderCache_.PublishStaged(
+					staged, stagedCount, positionScaleX, positionScaleY);
+			}
+
+			const RtsContextDecoder* EnsureContextDecoder(IRealTimeStylus* source,
+				TABLET_CONTEXT_ID contextId, IInkTablet* suppliedTablet)
+			{
+				const size_t existingSlot = decoderCache_.FindSlot(contextId);
+				if (existingSlot != kContextDecoderCapacity)
+					return decoderCache_.DecoderAt(existingSlot);
+				if (!source || !decoderCache_.LifecycleEnabled()) return nullptr;
+				if (!decoderCache_.SharedPositionScaleValid())
+				{
+					float positionScaleX = 1.0f;
+					float positionScaleY = 1.0f;
+					if (!QuerySharedPositionScale(source, positionScaleX, positionScaleY) ||
+						!decoderCache_.SetSharedPositionScale(positionScaleX, positionScaleY))
+						return nullptr;
+				}
+				RtsContextDecoder candidate;
+				if (!BuildContextDecoder(source, contextId, suppliedTablet, candidate) ||
+					!decoderCache_.PublishIncremental(candidate)) return nullptr;
+				const size_t slot = decoderCache_.FindSlot(contextId);
+				return slot == kContextDecoderCapacity ? nullptr : decoderCache_.DecoderAt(slot);
+			}
+
+			const RtsContextDecoder* ResolveContextDecoder(IRealTimeStylus* source,
+				TABLET_CONTEXT_ID contextId, IInkTablet* suppliedTablet,
+				size_t& decoderSlotIndex)
+			{
+				const RtsContextDecoder* decoder = EnsureContextDecoder(
+					source, contextId, suppliedTablet);
+				decoderSlotIndex = decoder ? decoderCache_.FindSlot(contextId) : kContextDecoderCapacity;
+				return decoderSlotIndex == kContextDecoderCapacity ? nullptr : decoder;
 			}
 
 			std::atomic<ULONG> referenceCount_ = 1;
@@ -981,14 +1396,11 @@ namespace draw3
 			[[no_unique_address]] InterruptedStrokeSimulation<
 				kInterruptedStrokeReconnectSimulationEnabled> interruptionSimulation_;
 			DrawingCursorEventSink* drawingCursorSink_ = nullptr;
-			std::atomic<bool> pixelScalePublished_ = false;
-			float inkToPixelScaleX_ = 1.0f;
-			float inkToPixelScaleY_ = 1.0f;
-			std::mutex pixelScaleMutex_;
 			Microsoft::WRL::ComPtr<IUnknown> freeThreadedMarshaler_;
 			HRESULT marshalerResult_ = E_UNEXPECTED;
-			std::mutex metadataMutex_;
-			std::array<TabletMetadata, kTabletMetadataCapacity> metadata_ = {};
+			// decoder/binding 只由同步 RTS callback 流访问；Shutdown 先禁用并移除插件。
+			RtsDecoderCache decoderCache_;
+			RtsActiveBindingTable activeBindings_;
 		};
 	}
 
@@ -1048,6 +1460,422 @@ namespace draw3
 		return (dataInterest & static_cast<uint32_t>(RTSDI_StylusInRange)) != 0 &&
 			(dataInterest & static_cast<uint32_t>(RTSDI_StylusOutOfRange)) != 0 &&
 			(dataInterest & static_cast<uint32_t>(RTSDI_InAirPackets)) != 0;
+	}
+
+	bool RtsProductionDataInterestIsExactForTesting() noexcept
+	{
+		constexpr uint32_t expected =
+			RTSDI_RealTimeStylusEnabled | RTSDI_RealTimeStylusDisabled |
+			RTSDI_StylusInRange | RTSDI_StylusOutOfRange | RTSDI_InAirPackets |
+			RTSDI_StylusDown | RTSDI_Packets | RTSDI_StylusUp |
+			RTSDI_TabletAdded | RTSDI_TabletRemoved | RTSDI_UpdateMapping | RTSDI_Error;
+		const uint32_t actual = static_cast<uint32_t>(kProductionRtsDataInterest);
+		return actual == expected && actual != static_cast<uint32_t>(RTSDI_AllData);
+	}
+
+	namespace
+	{
+		const GUID& PropertyGuidForTesting(RtsPacketPropertyForTesting property) noexcept
+		{
+			switch (property)
+			{
+			case RtsPacketPropertyForTesting::X: return GUID_PACKETPROPERTY_GUID_X;
+			case RtsPacketPropertyForTesting::Y: return GUID_PACKETPROPERTY_GUID_Y;
+			case RtsPacketPropertyForTesting::Pressure:
+				return GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE;
+			case RtsPacketPropertyForTesting::XTilt:
+				return GUID_PACKETPROPERTY_GUID_X_TILT_ORIENTATION;
+			case RtsPacketPropertyForTesting::YTilt:
+				return GUID_PACKETPROPERTY_GUID_Y_TILT_ORIENTATION;
+			case RtsPacketPropertyForTesting::Azimuth:
+				return GUID_PACKETPROPERTY_GUID_AZIMUTH_ORIENTATION;
+			case RtsPacketPropertyForTesting::Altitude:
+				return GUID_PACKETPROPERTY_GUID_ALTITUDE_ORIENTATION;
+			case RtsPacketPropertyForTesting::Width: return GUID_PACKETPROPERTY_GUID_WIDTH;
+			case RtsPacketPropertyForTesting::Height: return GUID_PACKETPROPERTY_GUID_HEIGHT;
+			default: return GUID_NULL;
+			}
+		}
+
+		RtsContextDecoder MakeTestingDecoder(TABLET_CONTEXT_ID contextId,
+			InputDeviceType deviceType = InputDeviceType::Pen) noexcept
+		{
+			RtsContextDecoder decoder;
+			decoder.tabletContextId = contextId;
+			decoder.propertyCount = 2;
+			decoder.xIndex = 0;
+			decoder.yIndex = 1;
+			decoder.contactScaleX = 1.0f;
+			decoder.contactScaleY = 1.0f;
+			decoder.deviceType = deviceType;
+			return decoder;
+		}
+
+		bool PublishTestingDecoders(RtsDecoderCache& cache,
+			const TABLET_CONTEXT_ID* contextIds, size_t contextCount,
+			float positionScaleX, float positionScaleY) noexcept
+		{
+			if (contextCount > kContextDecoderCapacity || (contextCount > 0 && !contextIds))
+				return false;
+			std::array<RtsContextDecoder, kContextDecoderCapacity> staged = {};
+			for (size_t index = 0; index < contextCount; ++index)
+				staged[index] = MakeTestingDecoder(contextIds[index]);
+			return cache.PublishStaged(staged, contextCount, positionScaleX, positionScaleY);
+		}
+
+		RtsActiveContactBinding MakeTestingBinding(uint32_t tabletContextId,
+			uint32_t contactId, size_t decoderSlotIndex = 0,
+			uint64_t decoderGeneration = 1) noexcept
+		{
+			return { tabletContextId, contactId, decoderSlotIndex, decoderGeneration, true };
+		}
+
+		bool FindCollidingContactIds(size_t logicalCapacity, size_t bucket,
+			uint32_t* contactIds, size_t requestedCount) noexcept
+		{
+			if (logicalCapacity == 0 || bucket >= logicalCapacity ||
+				(requestedCount > 0 && !contactIds)) return false;
+			size_t found = 0;
+			for (uint32_t contactId = 1; contactId != 0 && found < requestedCount; ++contactId)
+			{
+				if (HashActiveContactKey(17u, contactId) % logicalCapacity == bucket)
+					contactIds[found++] = contactId;
+			}
+			return found == requestedCount;
+		}
+	}
+
+	RtsDecoderResultForTesting DecodeRtsContextForTesting(
+		const RtsPacketPropertyForTesting* properties, size_t propertyCount,
+		const int32_t* packet, size_t decodedPropertyCount, InputDeviceType deviceType,
+		float positionScaleX, float positionScaleY,
+		float contactScaleX, float contactScaleY) noexcept
+	{
+		RtsDecoderResultForTesting result;
+		constexpr size_t kTestingPropertyCapacity = 16;
+		if (!properties || !packet || propertyCount > kTestingPropertyCapacity ||
+			decodedPropertyCount > kTestingPropertyCapacity) return result;
+		std::array<PACKET_PROPERTY, kTestingPropertyCapacity> packetProperties = {};
+		std::array<LONG, kTestingPropertyCapacity> packetValues = {};
+		for (size_t index = 0; index < propertyCount; ++index)
+		{
+			packetProperties[index].guid = PropertyGuidForTesting(properties[index]);
+			packetProperties[index].PropertyMetrics.nLogicalMin = -36000;
+			packetProperties[index].PropertyMetrics.nLogicalMax = 36000;
+			packetProperties[index].PropertyMetrics.Units = PROPERTY_UNITS_DEGREES;
+			packetProperties[index].PropertyMetrics.fResolution = 100.0f;
+			if (properties[index] == RtsPacketPropertyForTesting::Pressure)
+			{
+				packetProperties[index].PropertyMetrics.nLogicalMin = 0;
+				packetProperties[index].PropertyMetrics.nLogicalMax = 4095;
+				packetProperties[index].PropertyMetrics.Units = PROPERTY_UNITS_DEFAULT;
+				packetProperties[index].PropertyMetrics.fResolution = 1.0f;
+			}
+			packetValues[index] = static_cast<LONG>(packet[index]);
+		}
+		RtsContextDecoder decoder;
+		result.parsed = PopulateContextDecoderProperties(packetProperties.data(),
+			static_cast<ULONG>(propertyCount), decoder);
+		if (!result.parsed) return result;
+		decoder.positionScaleX = positionScaleX;
+		decoder.positionScaleY = positionScaleY;
+		decoder.contactScaleX = contactScaleX;
+		decoder.contactScaleY = contactScaleY;
+		decoder.deviceType = deviceType;
+		decoder.generation = 1;
+		decoder.valid = true;
+		result.decoded = DecodeSnapshot(decoder, static_cast<ULONG>(decodedPropertyCount),
+			packetValues.data(), ContactPhase::Move, 1234, result.snapshot);
+		return result;
+	}
+
+	size_t ComputeRtsActiveBindingCapacityForTesting(int maximumTouches) noexcept
+	{
+		return ComputeActiveBindingCapacity(maximumTouches);
+	}
+
+	bool RtsBindingBasicInvariantsForTesting() noexcept
+	{
+		RtsActiveBindingTable table(32);
+		const RtsActiveContactBinding first = MakeTestingBinding(1, 11, 2, 7);
+		const RtsActiveContactBinding second = MakeTestingBinding(2, 22, 3, 8);
+		return table.Insert(first) == RtsBindingInsertResult::Inserted &&
+			table.Insert(second) == RtsBindingInsertResult::Inserted &&
+			table.ActiveBindingCount() == 2 && table.Find(1, 11) && table.Find(2, 22) &&
+			table.Insert(first) == RtsBindingInsertResult::Duplicate &&
+			table.ActiveBindingCount() == 2 && table.Erase(1, 11) && !table.Find(1, 11) &&
+			table.Find(2, 22) && table.ActiveBindingCount() == 1 && table.Erase(2, 22) &&
+			table.ActiveBindingCount() == 0 && !table.Find(2, 22);
+	}
+
+	bool RtsBindingNonPowerOfTwoCapacityForTesting(size_t logicalCapacity) noexcept
+	{
+		RtsActiveBindingTable table(logicalCapacity);
+		if (table.LogicalCapacity() != logicalCapacity) return false;
+		const size_t insertedCount = logicalCapacity / 2u;
+		for (size_t index = 0; index < insertedCount; ++index)
+		{
+			if (table.Insert(MakeTestingBinding(3u, static_cast<uint32_t>(index + 1u))) !=
+				RtsBindingInsertResult::Inserted) return false;
+		}
+		for (size_t index = 0; index < insertedCount; ++index)
+		{
+			if (!table.Find(3u, static_cast<uint32_t>(index + 1u))) return false;
+		}
+		for (size_t index = 0; index < insertedCount; index += 2u)
+		{
+			if (!table.Erase(3u, static_cast<uint32_t>(index + 1u))) return false;
+		}
+		for (size_t index = 0; index < insertedCount; ++index)
+		{
+			const bool expected = (index % 2u) != 0;
+			if ((table.Find(3u, static_cast<uint32_t>(index + 1u)) != nullptr) != expected)
+				return false;
+		}
+		return table.ActiveBindingCount() == insertedCount / 2u;
+	}
+
+	bool RtsBindingRepeatedLifecycleForTesting() noexcept
+	{
+		RtsActiveBindingTable table(32);
+		for (size_t iteration = 0; iteration < 10000; ++iteration)
+		{
+			const uint32_t contactId = static_cast<uint32_t>(iteration + 1u);
+			if (table.Insert(MakeTestingBinding(4u, contactId)) !=
+				RtsBindingInsertResult::Inserted || !table.Find(4u, contactId) ||
+				!table.Erase(4u, contactId) || table.ActiveBindingCount() != 0 ||
+				table.Find(4u, contactId)) return false;
+		}
+		return table.Insert(MakeTestingBinding(4u, 20001u)) ==
+			RtsBindingInsertResult::Inserted && table.Find(4u, 20001u);
+	}
+
+	bool RtsBindingCollisionDeletionForTesting() noexcept
+	{
+		RtsActiveBindingTable table(32);
+		std::array<uint32_t, 5> keys = {};
+		if (!FindCollidingContactIds(32, 31, keys.data(), keys.size())) return false;
+		for (size_t index = 0; index < 4; ++index)
+		{
+			if (table.Insert(MakeTestingBinding(17u, keys[index])) !=
+				RtsBindingInsertResult::Inserted) return false;
+		}
+		if (!table.Erase(17u, keys[1]) || table.Find(17u, keys[1]) ||
+			!table.Find(17u, keys[0]) || !table.Find(17u, keys[2]) ||
+			!table.Find(17u, keys[3])) return false;
+		return table.Insert(MakeTestingBinding(17u, keys[4])) ==
+			RtsBindingInsertResult::Inserted && table.Find(17u, keys[4]) &&
+			table.ActiveBindingCount() == 4;
+	}
+
+	bool RtsBindingCollisionChurnForTesting() noexcept
+	{
+		RtsActiveBindingTable table(96);
+		std::array<uint32_t, 32> keys = {};
+		if (!FindCollidingContactIds(96, 95, keys.data(), keys.size())) return false;
+		for (size_t cycle = 0; cycle < 200; ++cycle)
+		{
+			for (uint32_t key : keys)
+			{
+				if (table.Insert(MakeTestingBinding(17u, key)) !=
+					RtsBindingInsertResult::Inserted) return false;
+			}
+			for (size_t index = 0; index < keys.size(); index += 2u)
+			{
+				if (!table.Erase(17u, keys[index])) return false;
+			}
+			for (size_t index = 0; index < keys.size(); ++index)
+			{
+				const bool expected = (index % 2u) != 0;
+				if ((table.Find(17u, keys[index]) != nullptr) != expected) return false;
+			}
+			for (size_t index = 0; index < keys.size(); index += 2u)
+			{
+				if (table.Insert(MakeTestingBinding(17u, keys[index], 0, cycle + 2u)) !=
+					RtsBindingInsertResult::Inserted) return false;
+			}
+			for (uint32_t key : keys)
+			{
+				if (!table.Find(17u, key) || !table.Erase(17u, key)) return false;
+			}
+			if (table.ActiveBindingCount() != 0) return false;
+		}
+		return true;
+	}
+
+	bool RtsBindingCapacityExhaustionForTesting() noexcept
+	{
+		RtsActiveBindingTable table(32);
+		std::array<uint32_t, 33> keys = {};
+		if (!FindCollidingContactIds(32, 31, keys.data(), keys.size())) return false;
+		for (size_t index = 0; index < table.LogicalCapacity(); ++index)
+		{
+			if (table.Insert(MakeTestingBinding(17u, keys[index])) !=
+				RtsBindingInsertResult::Inserted) return false;
+		}
+		if (table.Insert(MakeTestingBinding(17u, keys.back())) != RtsBindingInsertResult::Full ||
+			table.ActiveBindingCount() != table.LogicalCapacity()) return false;
+		if (!table.Erase(17u, keys[0]) || table.ActiveBindingCount() != 31) return false;
+		for (size_t index = 1; index < 32; ++index)
+		{
+			if (!table.Find(17u, keys[index])) return false;
+		}
+		return table.Insert(MakeTestingBinding(17u, keys.back())) ==
+			RtsBindingInsertResult::Inserted && table.ActiveBindingCount() == 32 &&
+			table.Find(17u, keys.back());
+	}
+
+	bool RtsBindingDuplicateRebindForTesting() noexcept
+	{
+		RtsActiveBindingTable table(32);
+		const RtsActiveContactBinding oldBinding = MakeTestingBinding(8u, 9u, 1u, 10u);
+		const RtsActiveContactBinding newBinding = MakeTestingBinding(8u, 9u, 2u, 11u);
+		if (table.Insert(oldBinding) != RtsBindingInsertResult::Inserted ||
+			table.Insert(newBinding) != RtsBindingInsertResult::Duplicate ||
+			table.ActiveBindingCount() != 1 || !table.Erase(8u, 9u) ||
+			table.Insert(newBinding) != RtsBindingInsertResult::Inserted) return false;
+		const RtsActiveContactBinding* resolved = table.Find(8u, 9u);
+		return resolved && resolved->decoderSlotIndex == 2u &&
+			resolved->decoderGeneration == 11u && table.ActiveBindingCount() == 1;
+	}
+
+	bool RtsBindingGenerationMismatchForTesting() noexcept
+	{
+		RtsDecoderCache cache;
+		cache.Reset();
+		cache.BeginLifecycle();
+		const TABLET_CONTEXT_ID contextId = 41;
+		if (!PublishTestingDecoders(cache, &contextId, 1, 1.0f, 1.0f)) return false;
+		const RtsContextDecoder* decoderA = cache.DecoderAt(0);
+		if (!decoderA) return false;
+		const RtsActiveContactBinding oldBinding = MakeTestingBinding(
+			contextId, 5u, 0u, decoderA->generation);
+		cache.Reset();
+		cache.BeginLifecycle();
+		if (!PublishTestingDecoders(cache, &contextId, 1, 2.0f, 2.0f)) return false;
+		return cache.Resolve(oldBinding) == nullptr && cache.DecoderAt(0) &&
+			cache.DecoderAt(0)->generation != oldBinding.decoderGeneration;
+	}
+
+	bool RtsLifecycleEnabledDisabledForTesting() noexcept
+	{
+		RtsDecoderCache cache;
+		RtsActiveBindingTable bindings(32);
+		cache.Reset();
+		cache.BeginLifecycle();
+		const TABLET_CONTEXT_ID contextId = 51;
+		if (!PublishTestingDecoders(cache, &contextId, 1, 1.0f, 1.0f)) return false;
+		const RtsContextDecoder* decoderA = cache.DecoderAt(0);
+		if (!decoderA) return false;
+		const RtsActiveContactBinding oldBinding = MakeTestingBinding(
+			contextId, 6u, 0u, decoderA->generation);
+		if (bindings.Insert(oldBinding) != RtsBindingInsertResult::Inserted) return false;
+		bindings.Clear();
+		cache.Reset();
+		const bool disabled = !cache.LifecycleEnabled() && !cache.SharedPositionScaleValid() &&
+			cache.DecoderAt(0) == nullptr && bindings.ActiveBindingCount() == 0;
+		cache.BeginLifecycle();
+		if (!PublishTestingDecoders(cache, &contextId, 1, 3.0f, 4.0f)) return false;
+		return disabled && cache.Resolve(oldBinding) == nullptr &&
+			bindings.Find(contextId, 6u) == nullptr;
+	}
+
+	bool RtsLifecycleUpdateMappingForTesting() noexcept
+	{
+		RtsDecoderCache cache;
+		RtsActiveBindingTable bindings(32);
+		cache.Reset();
+		cache.BeginLifecycle();
+		const TABLET_CONTEXT_ID contextId = 61;
+		if (!PublishTestingDecoders(cache, &contextId, 1, 0.5f, 0.5f)) return false;
+		const RtsContextDecoder* decoderA = cache.DecoderAt(0);
+		if (!decoderA) return false;
+		const RtsActiveContactBinding oldBinding = MakeTestingBinding(
+			contextId, 7u, 0u, decoderA->generation);
+		bindings.Insert(oldBinding);
+		bindings.Clear();
+		cache.Reset();
+		cache.BeginLifecycle();
+		if (!PublishTestingDecoders(cache, &contextId, 1, 1.5f, 2.5f)) return false;
+		return cache.Resolve(oldBinding) == nullptr && bindings.ActiveBindingCount() == 0 &&
+			cache.SharedPositionScaleX() == 1.5f && cache.SharedPositionScaleY() == 2.5f;
+	}
+
+	bool RtsLifecycleTabletRemovedForTesting() noexcept
+	{
+		RtsDecoderCache cache;
+		cache.Reset();
+		cache.BeginLifecycle();
+		const std::array<TABLET_CONTEXT_ID, 3> before = { 71, 72, 73 };
+		if (!PublishTestingDecoders(cache, before.data(), before.size(), 1.0f, 1.0f)) return false;
+		cache.Reset();
+		cache.BeginLifecycle();
+		const std::array<TABLET_CONTEXT_ID, 2> after = { 71, 73 };
+		if (!PublishTestingDecoders(cache, after.data(), after.size(), 2.0f, 2.0f)) return false;
+		return cache.FindSlot(71) != kContextDecoderCapacity &&
+			cache.FindSlot(72) == kContextDecoderCapacity &&
+			cache.FindSlot(73) != kContextDecoderCapacity;
+	}
+
+	bool RtsLifecycleTabletAddedForTesting() noexcept
+	{
+		RtsDecoderCache cache;
+		cache.Reset();
+		cache.BeginLifecycle();
+		const std::array<TABLET_CONTEXT_ID, 2> before = { 81, 83 };
+		if (!PublishTestingDecoders(cache, before.data(), before.size(), 1.0f, 1.0f)) return false;
+		const size_t slotA = cache.FindSlot(81);
+		const size_t slotC = cache.FindSlot(83);
+		const uint64_t generationA = cache.DecoderAt(slotA)->generation;
+		const uint64_t generationC = cache.DecoderAt(slotC)->generation;
+		if (!cache.PublishIncremental(MakeTestingDecoder(82))) return false;
+		return cache.FindSlot(81) == slotA && cache.FindSlot(83) == slotC &&
+			cache.FindSlot(82) != kContextDecoderCapacity &&
+			cache.DecoderAt(slotA)->generation == generationA &&
+			cache.DecoderAt(slotC)->generation == generationC;
+	}
+
+	bool RtsLifecycleTabletAddedFallbackForTesting() noexcept
+	{
+		RtsDecoderCache cache;
+		cache.Reset();
+		cache.BeginLifecycle();
+		const std::array<TABLET_CONTEXT_ID, 2> before = { 91, 93 };
+		if (!PublishTestingDecoders(cache, before.data(), before.size(), 1.0f, 1.0f)) return false;
+		const RtsActiveContactBinding oldBinding = MakeTestingBinding(
+			91u, 8u, cache.FindSlot(91), cache.DecoderAt(cache.FindSlot(91))->generation);
+		cache.Reset();
+		cache.BeginLifecycle();
+		const std::array<TABLET_CONTEXT_ID, 3> rebuilt = { 91, 92, 93 };
+		if (!PublishTestingDecoders(cache, rebuilt.data(), rebuilt.size(), 2.0f, 2.0f)) return false;
+		const RtsContextDecoder* decoderA = cache.DecoderAt(cache.FindSlot(91));
+		const RtsContextDecoder* decoderB = cache.DecoderAt(cache.FindSlot(92));
+		const RtsContextDecoder* decoderC = cache.DecoderAt(cache.FindSlot(93));
+		return cache.Resolve(oldBinding) == nullptr && decoderA && decoderB && decoderC &&
+			decoderA->generation == decoderB->generation &&
+			decoderB->generation == decoderC->generation;
+	}
+
+	bool RtsSharedScaleCompatibilityForTesting() noexcept
+	{
+		RtsDecoderCache cache;
+		cache.Reset();
+		cache.BeginLifecycle();
+		std::array<RtsContextDecoder, kContextDecoderCapacity> staged = {};
+		staged[0] = MakeTestingDecoder(102, InputDeviceType::Touch);
+		staged[0].propertyCount = 4;
+		staged[0].width = { {}, 2, true };
+		staged[0].height = { {}, 3, true };
+		staged[0].contactScaleX = 2.0f;
+		staged[0].contactScaleY = 3.0f;
+		staged[1] = MakeTestingDecoder(101);
+		if (!cache.PublishStaged(staged, 2, 0.25f, 0.5f)) return false;
+		const RtsContextDecoder* decoder = cache.DecoderAt(cache.FindSlot(102));
+		const std::array<LONG, 4> packet = { 40, 20, 5, 4 };
+		ContactSnapshot snapshot;
+		return decoder && DecodeSnapshot(*decoder, 4, packet.data(), ContactPhase::Move, 1, snapshot) &&
+			snapshot.position.x == 10.0f && snapshot.position.y == 10.0f &&
+			snapshot.contactSize.width == 10.0f && snapshot.contactSize.height == 12.0f;
 	}
 
 #endif

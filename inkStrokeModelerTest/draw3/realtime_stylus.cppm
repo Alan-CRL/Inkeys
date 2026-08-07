@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <windows.h>
@@ -51,6 +52,25 @@ export namespace draw3
 		float tilt = -1.0f;
 		float orientation = -1.0f;
 	};
+	enum class RtsPacketPropertyForTesting : uint32_t
+	{
+		Unknown,
+		X,
+		Y,
+		Pressure,
+		XTilt,
+		YTilt,
+		Azimuth,
+		Altitude,
+		Width,
+		Height
+	};
+	struct RtsDecoderResultForTesting
+	{
+		bool parsed = false;
+		bool decoded = false;
+		ContactSnapshot snapshot;
+	};
 	float NormalizeRtsPressureForTesting(int32_t rawValue,
 		int32_t logicalMin, int32_t logicalMax) noexcept;
 	float DecodeRtsAngleForTesting(int32_t rawValue, RtsAngleUnitForTesting unit,
@@ -61,5 +81,26 @@ export namespace draw3
 		int32_t rawWidth, int32_t rawHeight, float packetScaleX, float packetScaleY) noexcept;
 	bool RtsContactSizePropertiesRequestedForTesting() noexcept;
 	bool RtsPenCursorDataInterestEnabledForTesting() noexcept;
+	bool RtsProductionDataInterestIsExactForTesting() noexcept;
+	RtsDecoderResultForTesting DecodeRtsContextForTesting(
+		const RtsPacketPropertyForTesting* properties, size_t propertyCount,
+		const int32_t* packet, size_t decodedPropertyCount, InputDeviceType deviceType,
+		float positionScaleX, float positionScaleY,
+		float contactScaleX, float contactScaleY) noexcept;
+	size_t ComputeRtsActiveBindingCapacityForTesting(int maximumTouches) noexcept;
+	bool RtsBindingBasicInvariantsForTesting() noexcept;
+	bool RtsBindingNonPowerOfTwoCapacityForTesting(size_t logicalCapacity) noexcept;
+	bool RtsBindingRepeatedLifecycleForTesting() noexcept;
+	bool RtsBindingCollisionDeletionForTesting() noexcept;
+	bool RtsBindingCollisionChurnForTesting() noexcept;
+	bool RtsBindingCapacityExhaustionForTesting() noexcept;
+	bool RtsBindingDuplicateRebindForTesting() noexcept;
+	bool RtsBindingGenerationMismatchForTesting() noexcept;
+	bool RtsLifecycleEnabledDisabledForTesting() noexcept;
+	bool RtsLifecycleUpdateMappingForTesting() noexcept;
+	bool RtsLifecycleTabletRemovedForTesting() noexcept;
+	bool RtsLifecycleTabletAddedForTesting() noexcept;
+	bool RtsLifecycleTabletAddedFallbackForTesting() noexcept;
+	bool RtsSharedScaleCompatibilityForTesting() noexcept;
 #endif
 }

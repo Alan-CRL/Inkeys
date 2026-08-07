@@ -361,6 +361,7 @@ namespace
 	void TestRtsStylusConversions(TestState& state)
 	{
 		TEST_CHECK(state, draw3::RtsPenCursorDataInterestEnabledForTesting());
+		TEST_CHECK(state, draw3::RtsProductionDataInterestIsExactForTesting());
 		TEST_CHECK(state, draw3::RtsContactSizePropertiesRequestedForTesting());
 		const float pressure4095 = draw3::NormalizeRtsPressureForTesting(2048, 0, 4095);
 		const float pressure8191 = draw3::NormalizeRtsPressureForTesting(4096, 0, 8191);
@@ -411,6 +412,85 @@ namespace
 		const draw3::SizeF invalidScaleSize = draw3::DecodeRtsContactSizeForTesting(
 			draw3::InputDeviceType::Touch, 120, 80, 0.0f, 0.5f);
 		TEST_CHECK(state, invalidScaleSize.width < 0.0f && invalidScaleSize.height < 0.0f);
+	}
+
+	void TestRtsDecoderAndBindingHotPath(TestState& state)
+	{
+		using Property = draw3::RtsPacketPropertyForTesting;
+		const std::array penProperties = {
+			Property::Y, Property::X, Property::Pressure,
+			Property::Azimuth, Property::Altitude };
+		const std::array<int32_t, 5> penPacket = { 20, 10, 2048, 9000, 4500 };
+		const draw3::RtsDecoderResultForTesting pen = draw3::DecodeRtsContextForTesting(
+			penProperties.data(), penProperties.size(), penPacket.data(), penPacket.size(),
+			draw3::InputDeviceType::Pen, 0.5f, 0.25f, 2.0f, 3.0f);
+		TEST_CHECK(state, pen.parsed && pen.decoded);
+		TEST_CHECK(state, NearlyEqual(pen.snapshot.position.x, 5.0f));
+		TEST_CHECK(state, NearlyEqual(pen.snapshot.position.y, 5.0f));
+		TEST_CHECK(state, NearlyEqual(pen.snapshot.pressure, 2048.0f / 4095.0f));
+		TEST_CHECK(state, NearlyEqual(pen.snapshot.tilt, 3.14159265358979323846f * 0.25f));
+		TEST_CHECK(state, NearlyEqual(pen.snapshot.orientation,
+			3.14159265358979323846f * 1.5f));
+
+		const std::array touchProperties = {
+			Property::X, Property::Y, Property::Width, Property::Height };
+		const std::array<int32_t, 4> touchPacket = { 40, 20, 5, 4 };
+		const draw3::RtsDecoderResultForTesting touch = draw3::DecodeRtsContextForTesting(
+			touchProperties.data(), touchProperties.size(), touchPacket.data(), touchPacket.size(),
+			draw3::InputDeviceType::Touch, 0.25f, 0.5f, 2.0f, 3.0f);
+		TEST_CHECK(state, touch.parsed && touch.decoded);
+		TEST_CHECK(state, NearlyEqual(touch.snapshot.position.x, 10.0f));
+		TEST_CHECK(state, NearlyEqual(touch.snapshot.position.y, 10.0f));
+		TEST_CHECK(state, NearlyEqual(touch.snapshot.contactSize.width, 10.0f));
+		TEST_CHECK(state, NearlyEqual(touch.snapshot.contactSize.height, 12.0f));
+		for (const draw3::InputDeviceType mouseDevice : {
+			draw3::InputDeviceType::MouseLeft, draw3::InputDeviceType::MouseRight })
+		{
+			const draw3::RtsDecoderResultForTesting mouse = draw3::DecodeRtsContextForTesting(
+				touchProperties.data(), touchProperties.size(), touchPacket.data(), touchPacket.size(),
+				mouseDevice, 0.25f, 0.5f, 2.0f, 3.0f);
+			TEST_CHECK(state, mouse.parsed && mouse.decoded);
+			TEST_CHECK(state, NearlyEqual(mouse.snapshot.position.x, 10.0f));
+			TEST_CHECK(state, NearlyEqual(mouse.snapshot.position.y, 10.0f));
+			TEST_CHECK(state, mouse.snapshot.pressure < 0.0f);
+			TEST_CHECK(state, mouse.snapshot.contactSize.width < 0.0f &&
+				mouse.snapshot.contactSize.height < 0.0f);
+		}
+
+		const draw3::RtsDecoderResultForTesting mismatch = draw3::DecodeRtsContextForTesting(
+			touchProperties.data(), touchProperties.size(), touchPacket.data(),
+			touchPacket.size() - 1u, draw3::InputDeviceType::Touch,
+			0.25f, 0.5f, 2.0f, 3.0f);
+		TEST_CHECK(state, mismatch.parsed && !mismatch.decoded);
+		const std::array missingY = { Property::X, Property::Pressure };
+		const draw3::RtsDecoderResultForTesting missingRequired =
+			draw3::DecodeRtsContextForTesting(missingY.data(), missingY.size(),
+				penPacket.data(), missingY.size(), draw3::InputDeviceType::Pen,
+				1.0f, 1.0f, 1.0f, 1.0f);
+		TEST_CHECK(state, !missingRequired.parsed && !missingRequired.decoded);
+
+		TEST_CHECK(state, draw3::ComputeRtsActiveBindingCapacityForTesting(-1) == 32);
+		TEST_CHECK(state, draw3::ComputeRtsActiveBindingCapacityForTesting(40) == 96);
+		TEST_CHECK(state, draw3::ComputeRtsActiveBindingCapacityForTesting(70) == 160);
+		TEST_CHECK(state, draw3::ComputeRtsActiveBindingCapacityForTesting(100) == 224);
+		TEST_CHECK(state, draw3::ComputeRtsActiveBindingCapacityForTesting(
+			(std::numeric_limits<int>::max)()) == 4096);
+		TEST_CHECK(state, draw3::RtsBindingBasicInvariantsForTesting());
+		TEST_CHECK(state, draw3::RtsBindingNonPowerOfTwoCapacityForTesting(96));
+		TEST_CHECK(state, draw3::RtsBindingNonPowerOfTwoCapacityForTesting(160));
+		TEST_CHECK(state, draw3::RtsBindingNonPowerOfTwoCapacityForTesting(224));
+		TEST_CHECK(state, draw3::RtsBindingRepeatedLifecycleForTesting());
+		TEST_CHECK(state, draw3::RtsBindingCollisionDeletionForTesting());
+		TEST_CHECK(state, draw3::RtsBindingCollisionChurnForTesting());
+		TEST_CHECK(state, draw3::RtsBindingCapacityExhaustionForTesting());
+		TEST_CHECK(state, draw3::RtsBindingDuplicateRebindForTesting());
+		TEST_CHECK(state, draw3::RtsBindingGenerationMismatchForTesting());
+		TEST_CHECK(state, draw3::RtsLifecycleEnabledDisabledForTesting());
+		TEST_CHECK(state, draw3::RtsLifecycleUpdateMappingForTesting());
+		TEST_CHECK(state, draw3::RtsLifecycleTabletRemovedForTesting());
+		TEST_CHECK(state, draw3::RtsLifecycleTabletAddedForTesting());
+		TEST_CHECK(state, draw3::RtsLifecycleTabletAddedFallbackForTesting());
+		TEST_CHECK(state, draw3::RtsSharedScaleCompatibilityForTesting());
 	}
 
 	void TestInputWidthModesAndHardwarePressure(TestState& state)
@@ -1529,6 +1609,7 @@ int wmain(int argc, wchar_t* argv[])
 	TestMoveUpRaceAndShutdown(state);
 	TestWakeProtocols(state);
 	TestRtsStylusConversions(state);
+	TestRtsDecoderAndBindingHotPath(state);
 	TestInputWidthModesAndHardwarePressure(state);
 	TestInterruptedStrokeReconnectPolicy(state);
 	TestInterruptedStrokeReconnectModelLifecycle(state);

@@ -376,7 +376,7 @@ int RunLaserIncrementalCoverageTests()
 		LASER_INCREMENTAL_CHECK(ContainsText(realtimeStylusSource,
 			"kMaximumPacketPropertyCount = 256"));
 		LASER_INCREMENTAL_CHECK(ContainsText(realtimeStylusSource,
-			"propertyCount != metadata->propertyCount"));
+			"propertyCount != decoder.propertyCount"));
 		LASER_INCREMENTAL_CHECK(!ContainsText(hapticSource,
 			"LoadLibraryW(L\"combase.dll\")"));
 		LASER_INCREMENTAL_CHECK(!ContainsText(runtimeMetricsSource,
