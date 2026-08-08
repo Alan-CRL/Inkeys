@@ -70,3 +70,18 @@ RTS decoder 的 `TDK_Mouse` 映射为 MouseLeft，Down 时按既有按键状态�
 - 容量测试断言旧 timeline 事件被覆盖后，失败总数与首末 sequence/QPC 仍存在，contact reason 未被长 sequence 截断，auxiliary 事件仍有独立输出。
 - 完整解决方案使用 ARM64 MSBuild 分别构建 Debug/Release，再运行两套 ARM64 测试程序。
 - 最后静态搜索 callback 路径，确认没有新增 WriteFile/iostream/allocation/阻塞 mutex/COM/wake/wait。
+
+## Phase 2: Modeler To Present Diagnostics
+
+第二阶段保留第一阶段全部 RTS/Drawing timeline 和 aggregate，不扩大每 packet 成功日志。新增独立 fixed-capacity POD storage：
+
+- `DrawingFrameTrace`：每个实际活动 frame 的 frame start、previous interval、latest consumed input、dirty/render、Present correlation、deadline/wait。
+- `DrawingContactFrameTrace`：按 `(tcid, cid, generation, frameSeq)` 记录 snapshot age、Modeler/real/predicted/L0 数量、L1 committed index、prediction endpoint 和 drawable/changed geometry。
+- `PresentTrace`：只在真实 presenter 调用处记录 `Present1`/ULW begin/end、HRESULT、参数和连续 submission interval；`frameSeq=0` 表示初始化或非活动全量提交。
+- `CompositionCommitTrace`：只包围现有 DComp initialization `Commit()`，不增加逐帧 commit 或 completion wait。
+
+DrawingController 每帧只在 trace 已启用时执行少量 QPC、标量复制和固定数组写入。每笔前三帧另存于固定 contact slot，timeline 覆盖也不能丢失落笔初期证据。Contact summary 和 Pen/Mouse aggregate 在 RTS 停止后的 flush 阶段格式化；热路径不排序、不写文件、不构造字符串。
+
+`Present1` 使用现有 `SyncInterval=0`、`PresentFlags=0` 和 dirty rect，不改参数。日志中的 `presentEndQpc` 仅表示 CPU 调用/提交返回，不能声称测得扫描输出或 input-to-photon latency。
+
+当前静态调查结论必须随日志输出/报告保留：swap chain 尝试 `DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT` 并调用 `SetMaximumFrameLatency(1)`，但源码没有 `GetFrameLatencyWaitableObject()`，也没有等待该 handle；本阶段不得接入。

@@ -5,12 +5,14 @@
 #endif
 
 #include <dxgi1_2.h>
+#include <cstdint>
 #include <memory>
 #include <windows.h>
 
 export module draw3.transparent_presentation;
 
 import draw3.graphics_initialization;
+import draw3.diagnostics;
 import draw3.renderer;
 
 export namespace draw3
@@ -47,6 +49,11 @@ export namespace draw3
 		bool Resize(UINT width, UINT height);
 		// 呈现指定脏矩形或整张画布。
 		bool Present(RECT dirty, bool presentFull);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+		// 诊断启用时把 frameSeq 传到真实提交点，并返回 CPU 调用区间。
+		bool Present(RECT dirty, bool presentFull, uint64_t frameSequence,
+			PresentTrace* outputTrace);
+#endif
 		// 在 DWM 合成状态变化后刷新玻璃效果。
 		void RefreshAfterCompositionChanged();
 		// 返回当前生效的透明呈现模式。

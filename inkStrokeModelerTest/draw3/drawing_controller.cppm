@@ -6,11 +6,13 @@
 
 #include <atomic>
 #include <compare>
+#include <cstdint>
 #include <windows.h>
 
 export module draw3.drawing_controller;
 
 import draw3.contact_input;
+import draw3.diagnostics;
 import draw3.haptic_feedback;
 import draw3.ink_prediction;
 import draw3.renderer;
@@ -58,7 +60,11 @@ export namespace draw3
 		void Run();
 	private:
 		void CompositeLayersToBackBuffer(RECT dirty, bool orderLiveOverStable = false);
-		bool PresentFrame(RECT dirty, bool presentFull);
+		bool PresentFrame(RECT dirty, bool presentFull
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			, uint64_t frameSequence = 0, PresentTrace* outputTrace = nullptr
+#endif
+		);
 
 		ContactInputCoordinator& input_;
 		WindowController& window_;

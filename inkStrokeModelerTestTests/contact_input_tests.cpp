@@ -263,6 +263,179 @@ namespace
 		TEST_CHECK(state, capacityLog.find("reasons=StateGateBusy:40") != std::string::npos);
 		TEST_CHECK(state, capacityLog.find("result=[INPUT_TRACE]") == std::string::npos);
 		DeleteFileW(capacityPath.c_str());
+
+		const std::wstring phase2Path = MakeInputDebugTestPath(L"phase2");
+		TEST_CHECK(state, !phase2Path.empty());
+		if (phase2Path.empty()) return;
+		DeleteFileW(phase2Path.c_str());
+		const bool phase2SessionStarted = draw3::BeginInputDebugSession(phase2Path.c_str());
+		TEST_CHECK(state, phase2SessionStarted);
+		if (!phase2SessionStarted) return;
+		draw3::ConfigureRtsTrace(true);
+		LARGE_INTEGER qpcFrequency = {};
+		QueryPerformanceFrequency(&qpcFrequency);
+		const int64_t tenMilliseconds = qpcFrequency.QuadPart / 100;
+
+		for (uint32_t contactIndex = 0; contactIndex < 40; ++contactIndex)
+		{
+			for (uint32_t contactFrame = 1; contactFrame <= 3; ++contactFrame)
+			{
+				draw3::DrawingContactFrameTrace trace;
+				trace.frameSequence = contactIndex * 3u + contactFrame;
+				trace.contactFrameIndex = contactFrame;
+				trace.recordQpc = qpc.QuadPart +
+					static_cast<int64_t>(trace.frameSequence) * tenMilliseconds;
+				trace.frameStartQpc = trace.recordQpc - tenMilliseconds;
+				trace.snapshotReadQpc = trace.recordQpc - tenMilliseconds / 2;
+				trace.frameStartSnapshotQpc = trace.frameStartQpc - tenMilliseconds;
+				trace.snapshotQpc = trace.snapshotReadQpc - tenMilliseconds / 4;
+				trace.modelerOutputQpc = trace.snapshotReadQpc + tenMilliseconds / 8;
+				trace.downQpc = qpc.QuadPart + static_cast<int64_t>(contactIndex);
+				trace.inputAgeAtFrameStartMicroseconds = 10000;
+				trace.inputAgeAtSnapshotReadMicroseconds = 2500;
+				trace.previousFrameIntervalMicroseconds = contactFrame == 3 ? 20000 : 10000;
+				trace.renderDurationMicroseconds = 1250;
+				trace.presentCallDurationMicroseconds = 750;
+				trace.renderBeginQpc = trace.recordQpc + 1;
+				trace.presentBeginQpc = trace.recordQpc + 2;
+				trace.tabletContextId = 100 + contactIndex;
+				trace.contactId = 200 + contactIndex;
+				trace.deviceType = static_cast<uint32_t>(contactIndex < 20
+					? draw3::InputDeviceType::Pen : draw3::InputDeviceType::MouseLeft);
+				trace.phase = contactFrame == 3 ? 2u : 1u;
+				trace.contactGeneration = 1000 + contactIndex;
+				trace.frameStartSnapshotSequence = contactFrame - 1u;
+				trace.snapshotSequence = contactFrame;
+				trace.x = static_cast<float>(contactIndex);
+				trace.y = static_cast<float>(contactFrame);
+				trace.pressure = 0.5f;
+				trace.modeledPointCount = contactFrame * 2u;
+				trace.realPointCount = contactFrame;
+				trace.predictedPointCount = 1;
+				trace.l0PointCount = contactFrame + 1u;
+				trace.l1CommittedIndex = contactFrame - 1u;
+				trace.hasPredictionEndpoint = true;
+				trace.predictionEndpointX = trace.x + 1.0f;
+				trace.predictionEndpointY = trace.y + 1.0f;
+				trace.drawableGeometry = contactIndex != 0 || contactFrame != 1;
+				trace.geometryChanged = contactIndex != 0 || contactFrame != 1;
+				trace.modelerUpdated = true;
+				trace.terminal = contactFrame == 3;
+				trace.rendered = true;
+				trace.presented = true;
+				draw3::RecordDrawingContactFrame(trace);
+			}
+		}
+		for (uint64_t frameSequence = 1; frameSequence <= 12; ++frameSequence)
+		{
+			draw3::DrawingFrameTrace frame;
+			frame.frameSequence = frameSequence;
+			frame.frameStartQpc = qpc.QuadPart +
+				static_cast<int64_t>(frameSequence) * tenMilliseconds;
+			frame.previousFrameIntervalMicroseconds = 10000;
+			frame.latestSnapshotQpc = frame.frameStartQpc - tenMilliseconds / 2;
+			frame.latestInputAgeMicroseconds = 5000;
+			frame.renderBeginQpc = frame.frameStartQpc + tenMilliseconds / 10;
+			frame.renderEndQpc = frame.renderBeginQpc + tenMilliseconds / 20;
+			frame.presentBeginQpc = frame.renderEndQpc;
+			frame.presentEndQpc = frame.presentBeginQpc + tenMilliseconds / 20;
+			frame.latestSnapshotSequence = frameSequence;
+			frame.dirty = RECT{ 1, 2, 30, 40 };
+			frame.contactCount = 1;
+			frame.hasPhysicalContact = true;
+			frame.dirtyValid = true;
+			frame.geometryEmpty = false;
+			frame.geometryChanged = true;
+			frame.renderRequested = true;
+			frame.renderExecuted = true;
+			frame.presentAttempted = true;
+			frame.presentSucceeded = true;
+			frame.strokeContent = true;
+			draw3::RecordDrawingFrame(frame);
+		}
+		for (uint64_t frameSequence = 1; frameSequence <= 10; ++frameSequence)
+		{
+			draw3::PresentTrace present;
+			present.frameSequence = frameSequence;
+			present.beginQpc = qpc.QuadPart +
+				static_cast<int64_t>(frameSequence) * tenMilliseconds;
+			present.endQpc = present.beginQpc + tenMilliseconds / 10;
+			present.result = S_OK;
+			present.dirtyRectCount = 1;
+			present.dirty = RECT{ 1, 2, 30, 40 };
+			draw3::RecordPresentSubmission(present);
+
+			draw3::DrawingWaitTrace wait;
+			wait.frameSequence = frameSequence;
+			wait.frameStartQpc = present.beginQpc - tenMilliseconds;
+			wait.previousTargetDeadlineQpc = wait.frameStartQpc - tenMilliseconds / 10;
+			wait.waitBeginQpc = present.endQpc;
+			wait.targetDeadlineQpc = wait.waitBeginQpc + tenMilliseconds;
+			wait.waitEndQpc = wait.targetDeadlineQpc + tenMilliseconds / 10;
+			wait.requestedBudgetMicroseconds = 10000;
+			wait.actualWaitMicroseconds = 11000;
+			wait.overshootMicroseconds = 1000;
+			wait.deadlineReached = true;
+			draw3::RecordDrawingWait(wait);
+		}
+		draw3::RecordCompositionCommit({ qpc.QuadPart,
+			qpc.QuadPart + tenMilliseconds / 10, S_OK });
+		draw3::EndInputDebugSession();
+
+		const std::string phase2Log = ReadInputDebugTestLog(phase2Path);
+		TEST_CHECK(state, CountTextOccurrences(
+			phase2Log, "[INPUT_TRACE][contact-first-frame]") == 120);
+		TEST_CHECK(state, CountTextOccurrences(
+			phase2Log, "[INPUT_TRACE][contact-summary]") == 40);
+		TEST_CHECK(state, phase2Log.find(
+			"tcid=139 cid=239 device=MouseLeft(2) generation=1039") != std::string::npos);
+		const size_t firstContactSummaryOffset = phase2Log.find(
+			"[INPUT_TRACE][contact-summary] tcid=100 cid=200 ");
+		TEST_CHECK(state, firstContactSummaryOffset != std::string::npos);
+		if (firstContactSummaryOffset != std::string::npos)
+		{
+			const size_t firstContactSummaryEnd = phase2Log.find(
+				"\r\n", firstContactSummaryOffset);
+			const std::string firstContactSummary = phase2Log.substr(
+				firstContactSummaryOffset, firstContactSummaryEnd - firstContactSummaryOffset);
+			TEST_CHECK(state, firstContactSummary.find("renders=2 presents=2") !=
+				std::string::npos);
+			const int64_t secondFrameRecordQpc = qpc.QuadPart + 2 * tenMilliseconds;
+			TEST_CHECK(state, firstContactSummary.find(
+				"firstDrawableGeometryQpc=" + std::to_string(secondFrameRecordQpc)) !=
+				std::string::npos);
+			TEST_CHECK(state, firstContactSummary.find(
+				"firstRenderQpc=" + std::to_string(secondFrameRecordQpc + 1)) !=
+				std::string::npos);
+			TEST_CHECK(state, firstContactSummary.find(
+				"firstPresentQpc=" + std::to_string(secondFrameRecordQpc + 2)) !=
+				std::string::npos);
+			TEST_CHECK(state, firstContactSummary.find("gapOver12Ms=1") !=
+				std::string::npos);
+		}
+		TEST_CHECK(state, phase2Log.find("l1CommittedIndex=2") != std::string::npos);
+		TEST_CHECK(state, phase2Log.find("firstModelerOutputQpc=") != std::string::npos);
+		TEST_CHECK(state, phase2Log.find("downToPresentUs=") != std::string::npos);
+		TEST_CHECK(state, phase2Log.find("inputToFrameStartUs=5000") != std::string::npos);
+		TEST_CHECK(state, phase2Log.find("inputToRenderBeginUs=") != std::string::npos);
+		TEST_CHECK(state, phase2Log.find("inputToPresentBeginUs=") != std::string::npos);
+		TEST_CHECK(state, phase2Log.find("inputToPresentEndUs=") != std::string::npos);
+		TEST_CHECK(state, phase2Log.find("inputToModelerOutputUs=") != std::string::npos);
+		TEST_CHECK(state, phase2Log.find(
+			"frameStartFromPreviousDeadlineUs=1000") != std::string::npos);
+		TEST_CHECK(state, phase2Log.find(
+			"device=Pen(1) contacts=20 activeFrames=60") != std::string::npos);
+		TEST_CHECK(state, phase2Log.find(
+			"device=MouseLeft(2) contacts=20 activeFrames=60") != std::string::npos);
+		TEST_CHECK(state, phase2Log.find("kind=Present1") != std::string::npos);
+		TEST_CHECK(state, phase2Log.find("cpuSubmissionOnly=1") != std::string::npos);
+		TEST_CHECK(state, phase2Log.find("frameOverwrites=4") != std::string::npos);
+		TEST_CHECK(state, phase2Log.find("contactFrameOverwrites=104") != std::string::npos);
+		TEST_CHECK(state, phase2Log.find("presentOverwrites=2") != std::string::npos);
+		TEST_CHECK(state, phase2Log.find("waitOverwrites=2") != std::string::npos);
+		TEST_CHECK(state, phase2Log.find(
+			"[INPUT_TRACE][composition-commit] scope=initialization") != std::string::npos);
+		DeleteFileW(phase2Path.c_str());
 	}
 #endif
 

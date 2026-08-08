@@ -2,7 +2,7 @@
 
 ## Goal
 
-本阶段不修复任何生产行为，只建立一次低扰动、可关联的输入诊断 session。第一次真实 Surface Pen / Mouse A/B 后，日志必须能回答失败落笔停在 RTS Down、decoder/binding/state gate、coordinator publication，还是 DrawingController / Stroke Modeler。
+本任务不修复任何生产行为，只建立低扰动、可关联的输入诊断 session。第一阶段已确认真实 Pen 输入能够稳定到达 DrawingController / Stroke Modeler；第二阶段继续回答一个成功进入 Modeler 的 point 何时形成 geometry、触发 render，并提交给 DXGI `Present1`。
 
 ## Background And Evidence Boundary
 
@@ -23,6 +23,13 @@
 - R7：设备标签区分 Pen、MouseLeft、MouseRight、Touch；decoder/state gate 尚不能证明设备类型时必须记录 Unknown，不能猜成 Pen。
 - R8：RTS callback 启用时只写 fixed-size 内存结构和 lock-free/nonblocking 原子；禁止 callback 内文件/console IO、heap allocation、等待、阻塞 mutex、COM 查询和新 wake。
 - R9：Release ARM64 支持显式开启 diagnostics；未开启时 RTS 修改路径只做一次轻量启用检查，DrawingController 不读取额外 record/snapshot 字段或执行诊断查找。
+- R10：每个实际活动 contact frame 具有轻量 `frameSeq`，并记录 frame start、连续 frame interval、设备、contact identity/generation 和 Active/Terminal phase；完全空闲循环不写逐帧日志。
+- R11：每个活动 contact frame 记录最新已读取 snapshot 的 QPC/sequence/坐标/压力，以及 frame start 和 snapshot read 两个时点的 input age，单位统一为微秒。
+- R12：Modeler 成功后记录实际 `modeledResults`、`realPoints`、`predictedPoints`、`l0DrawPoints`、L1 committed index、prediction endpoint、drawable/changed geometry；每笔前三帧必须保留完整记录。
+- R13：记录 dirty rect、full/forced present、stroke/cursor 分类、render begin/end/duration，并识别 geometry changed 但没有 render 的 frame。
+- R14：在真实 `Present1` 调用位置记录 begin/end QPC、HRESULT、SyncInterval、flags、dirty rect、连续 begin/end interval；明确返回时间只代表 CPU submission 返回，不是 input-to-photon。
+- R15：只观察现有 120 Hz deadline：记录 requested budget、wait begin/end、目标 deadline、实际等待和 overshoot；禁止修改等待、线程优先级、Present 参数或接入 frame-latency waitable object。
+- R16：退出时输出按 contact generation 和设备的轻量 aggregate；固定容量 POD/原子记录，热路径无文件/console IO、heap allocation、阻塞 mutex、COM query、新 wake 或 wait。
 
 ## Acceptance Criteria
 
@@ -34,11 +41,14 @@
 - [x] reviewer auxiliary 修复后的完整解决方案 `Debug|ARM64` 构建和 Debug ARM64 测试通过。
 - [x] reviewer auxiliary 修复后的完整解决方案 `Release|ARM64` 构建和 Release ARM64 测试通过。
 - [x] 静态审计确认 callback 热路径没有新增 IO、分配、阻塞、COM、wake、wait 或生产行为变化。
-- [ ] 用户完成第一轮真实 Pen 后，能够按时间重建 Down -> Packets -> Drawing -> Modeler 并与随后 Mouse 对照。
+- [x] 第一轮真实 Pen/Mouse 日志已按 Down -> Packets -> Drawing -> Modeler 重建，并确认 decoder/binding/state gate、Publish、Drawing contact 初始化、snapshot decode 和 Modeler update 均无失败证据。
+- [ ] 第二阶段日志可按 `frameSeq` 重建 latest snapshot -> Modeler output -> geometry/dirty -> render -> Present1 -> deadline wait。
+- [ ] 日志可直接识别约 16.6ms 或更长的 frame/present gap、render/Present spike、活动 contact 未 Present 和 Down 到首次 geometry/render/Present 的停顿层。
 
 ## Out Of Scope
 
 - 修改 state gate、decoder lifecycle、cursor wake、frame deadline、coordinator、contact queue/seqlock 或线程优先级。
 - 修改 Stroke Modeler 参数、prediction、pressure、smoothing、L0/L1/L2、dirty rect、Present 或渲染路径。
+- 调用或等待 `GetFrameLatencyWaitableObject()`、混合 pacing 策略、增加 DComp/DWM 同步等待，或把 `Present1` 返回解释为 photon latency。
 - 根据当前源码或一次日志直接宣布根因或实施修复。
 - 启动 GUI、模拟输入或代替用户执行真机绘制。

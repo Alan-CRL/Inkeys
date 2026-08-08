@@ -199,6 +199,25 @@ namespace draw3
 			float laserParticleTangentX = 0.0f;
 			float laserParticleTangentY = 0.0f;
 			bool hasLaserParticleTangent = false;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			uint32_t diagnosticContactFrameIndex = 0;
+			int64_t diagnosticFrameStartSnapshotQpc = 0;
+			uint64_t diagnosticFrameStartSnapshotSequence = 0;
+			int64_t diagnosticFrameStartInputAgeMicroseconds = -1;
+			int64_t diagnosticSnapshotReadQpc = 0;
+			int64_t diagnosticSnapshotReadAgeMicroseconds = -1;
+			int64_t diagnosticModelerOutputQpc = 0;
+			uint32_t diagnosticPreviousModeledPointCount = 0;
+			uint32_t diagnosticPreviousRealPointCount = 0;
+			uint32_t diagnosticPreviousPredictedPointCount = 0;
+			uint32_t diagnosticPreviousL0PointCount = 0;
+			uint32_t diagnosticPreviousCommittedIndex = 0;
+			float diagnosticPreviousPredictionEndpointX = 0.0f;
+			float diagnosticPreviousPredictionEndpointY = 0.0f;
+			bool diagnosticPreviousPredictionEndpointKnown = false;
+			bool diagnosticPreviousDrawableGeometry = false;
+			bool diagnosticModelerUpdatedThisFrame = false;
+#endif
 		};
 
 		struct LaserStrokeLayer
@@ -1030,10 +1049,19 @@ namespace draw3
 			renderer_.layerL1, renderer_.layerL0, dirty, mergeMode);
 	}
 
-	bool DrawingController::PresentFrame(RECT dirty, bool presentFull)
+	bool DrawingController::PresentFrame(RECT dirty, bool presentFull
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+		, uint64_t frameSequence, PresentTrace* outputTrace
+#endif
+	)
 	{
 		const double presentStartMs = GetQpcTimeMilliseconds();
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+		const bool succeeded = presentation_.Present(
+			dirty, presentFull, frameSequence, outputTrace);
+#else
 		const bool succeeded = presentation_.Present(dirty, presentFull);
+#endif
 		lastPresentDurationMs_ = GetQpcTimeMilliseconds() - presentStartMs;
 		lastPresentSucceeded_ = succeeded;
 		if (metrics_) metrics_->RecordPresent(lastPresentDurationMs_);
@@ -1220,9 +1248,9 @@ namespace draw3
 		auto recordDrawingInput = [&](const char* eventName,
 			const DrawingTraceIdentity& identity, const ContactSnapshot* snapshot,
 			DrawingInputResult result, size_t modeledPointCount = 0,
-			size_t realPointCount = 0) noexcept
+			size_t realPointCount = 0) noexcept -> int64_t
 			{
-				if (!inputDebugTraceEnabled) return;
+				if (!inputDebugTraceEnabled) return 0;
 				LARGE_INTEGER now = {};
 				QueryPerformanceCounter(&now);
 				DrawingInputTrace trace;
@@ -1248,8 +1276,50 @@ namespace draw3
 					trace.pressure = snapshot->pressure;
 				}
 				RecordDrawingInput(trace);
+				return now.QuadPart;
 			};
 		DrawingInputResult downInitializationResult = DrawingInputResult::DownHandleInvalid;
+		constexpr size_t kDrawingFrameContactTraceCapacity = 64;
+		std::array<DrawingContactFrameTrace, kDrawingFrameContactTraceCapacity>
+			frameContactTraces = {};
+		std::array<RuntimeStroke*, kDrawingFrameContactTraceCapacity>
+			frameContactTraceRuntimes = {};
+		size_t frameContactTraceCount = 0;
+		uint64_t nextDrawingFrameSequence = 0;
+		int64_t previousDrawingFrameStartQpc = 0;
+		int64_t previousTargetDeadlineQpc = 0;
+		auto qpcDeltaMicroseconds = [&](int64_t newer, int64_t older) noexcept -> int64_t
+			{
+				if (qpcFrequency <= 0 || newer <= older) return 0;
+				return static_cast<int64_t>(static_cast<long double>(newer - older) *
+					1000000.0L / static_cast<long double>(qpcFrequency));
+			};
+		auto signedQpcDeltaMicroseconds = [&](int64_t newer, int64_t older) noexcept -> int64_t
+			{
+				if (qpcFrequency <= 0 || newer <= 0 || older <= 0) return -1;
+				return static_cast<int64_t>(static_cast<long double>(newer - older) *
+					1000000.0L / static_cast<long double>(qpcFrequency));
+			};
+		auto resetDiagnosticRuntimeState = [](RuntimeStroke& runtime) noexcept
+			{
+				runtime.diagnosticContactFrameIndex = 0;
+				runtime.diagnosticFrameStartSnapshotQpc = 0;
+				runtime.diagnosticFrameStartSnapshotSequence = 0;
+				runtime.diagnosticFrameStartInputAgeMicroseconds = -1;
+				runtime.diagnosticSnapshotReadQpc = 0;
+				runtime.diagnosticSnapshotReadAgeMicroseconds = -1;
+				runtime.diagnosticModelerOutputQpc = 0;
+				runtime.diagnosticPreviousModeledPointCount = 0;
+				runtime.diagnosticPreviousRealPointCount = 0;
+				runtime.diagnosticPreviousPredictedPointCount = 0;
+				runtime.diagnosticPreviousL0PointCount = 0;
+				runtime.diagnosticPreviousCommittedIndex = 0;
+				runtime.diagnosticPreviousPredictionEndpointX = 0.0f;
+				runtime.diagnosticPreviousPredictionEndpointY = 0.0f;
+				runtime.diagnosticPreviousPredictionEndpointKnown = false;
+				runtime.diagnosticPreviousDrawableGeometry = false;
+				runtime.diagnosticModelerUpdatedThisFrame = false;
+			};
 #endif
 
 		auto acquireStroke = [&]() -> RuntimeStroke*
@@ -1500,6 +1570,10 @@ namespace draw3
 							(reconnectResult.bridgeSpeed - reconnectRuntime->filteredInputSpeed) * alpha;
 						AppendNewModeledPoints(reconnectRuntime->stroke,
 							reconnectRuntime->filteredInputSpeed);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+						if (inputDebugTraceEnabled)
+							reconnectRuntime->diagnosticModelerUpdatedThisFrame = true;
+#endif
 						if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
 						{
 							const size_t lastPointIndex = reconnectRuntime->stroke.realPoints.size();
@@ -1512,6 +1586,18 @@ namespace draw3
 						}
 						input_.Recycle(reconnectRuntime->handle); // 新 contact 接管前释放已经 ConsumerOwned 的旧 slot。
 						reconnectRuntime->handle = handle;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+						if (inputDebugTraceEnabled)
+						{
+							resetDiagnosticRuntimeState(*reconnectRuntime);
+							reconnectRuntime->lastInputSnapshot = down;
+							LARGE_INTEGER snapshotReadQpc = {};
+							QueryPerformanceCounter(&snapshotReadQpc);
+							reconnectRuntime->diagnosticSnapshotReadQpc = snapshotReadQpc.QuadPart;
+							reconnectRuntime->diagnosticSnapshotReadAgeMicroseconds =
+								qpcDeltaMicroseconds(snapshotReadQpc.QuadPart, down.qpc);
+						}
+#endif
 						reconnectRuntime->lastSpeedSnapshot = down;
 						reconnectRuntime->lastModelSnapshot = modelDown;
 						reconnectRuntime->lastConsumedSequence = down.sequence;
@@ -1606,6 +1692,9 @@ namespace draw3
 					return false;
 				}
 				runtime->handle = handle;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				if (inputDebugTraceEnabled) resetDiagnosticRuntimeState(*runtime);
+#endif
 				runtime->selectedTool = batchTool; // 倒转覆盖不能污染同批后续 contact 的原始选择。
 				runtime->tool = tool;
 				runtime->suppressPressure = suppressPressure;
@@ -1660,6 +1749,16 @@ namespace draw3
 				runtime->lastInputSnapshot = down;
 				runtime->lastModelSnapshot = modelDown;
 				runtime->lastConsumedSequence = down.sequence;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				if (inputDebugTraceEnabled)
+				{
+					LARGE_INTEGER snapshotReadQpc = {};
+					QueryPerformanceCounter(&snapshotReadQpc);
+					runtime->diagnosticSnapshotReadQpc = snapshotReadQpc.QuadPart;
+					runtime->diagnosticSnapshotReadAgeMicroseconds =
+						qpcDeltaMicroseconds(snapshotReadQpc.QuadPart, down.qpc);
+				}
+#endif
 				runtime->qpcOrigin = down.qpc;
 				runtime->lastModelInputTime = 0.0;
 				runtime->filteredInputSpeed = 0.0f;
@@ -1700,6 +1799,10 @@ namespace draw3
 					return false;
 				}
 				AppendNewModeledPoints(stroke);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				if (inputDebugTraceEnabled)
+					runtime->diagnosticModelerUpdatedThisFrame = true;
+#endif
 				if (runtime->tool == DrawingTool::Laser)
 				{
 					const WindowSize laserSize = window_.Size();
@@ -1783,6 +1886,7 @@ namespace draw3
 					recordDrawingInput("DownDequeue", identity, &down,
 						DrawingInputResult::DownDequeued);
 					const bool initialized = initializeStroke(handle);
+					RuntimeStroke* initializedRuntime = nullptr;
 					size_t modeledPointCount = 0;
 					size_t realPointCount = 0;
 					if (initialized)
@@ -1795,12 +1899,15 @@ namespace draw3
 							});
 						if (runtime != active.end())
 						{
+							initializedRuntime = *runtime;
 							modeledPointCount = (*runtime)->stroke.modeledResults.size();
 							realPointCount = (*runtime)->stroke.realPoints.size();
 						}
 					}
-					recordDrawingInput("DownInitialize", identity, &down,
+					const int64_t downInitializeQpc = recordDrawingInput("DownInitialize", identity, &down,
 						downInitializationResult, modeledPointCount, realPointCount);
+					if (initializedRuntime && modeledPointCount > 0)
+						initializedRuntime->diagnosticModelerOutputQpc = downInitializeQpc;
 					return;
 				}
 #endif
@@ -1860,6 +1967,10 @@ namespace draw3
 					if (inputDebugTraceEnabled) modelUpdateSucceededForTrace = true;
 #endif
 					AppendNewModeledPoints(runtime.stroke);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					if (inputDebugTraceEnabled)
+						runtime.diagnosticModelerUpdatedThisFrame = true;
+#endif
 				}
 				else
 				{
@@ -1869,11 +1980,13 @@ namespace draw3
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				if (inputDebugTraceEnabled)
 				{
-					recordDrawingInput("ModelerDeferredUp",
+					const int64_t modelerOutputQpc = recordDrawingInput("ModelerDeferredUp",
 						captureDrawingTraceIdentity(runtime.handle), &snapshot,
 						modelUpdateSucceededForTrace ? DrawingInputResult::ModelerUpdateSucceeded
 							: DrawingInputResult::ModelerUpdateFailed,
 						runtime.stroke.modeledResults.size(), runtime.stroke.realPoints.size());
+					if (modelUpdateSucceededForTrace && !runtime.stroke.modeledResults.empty())
+						runtime.diagnosticModelerOutputQpc = modelerOutputQpc;
 				}
 #endif
 				runtime.lastModelSnapshot = modelSnapshot;
@@ -1906,6 +2019,16 @@ namespace draw3
 #endif
 					return false;
 				}
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				if (inputDebugTraceEnabled)
+				{
+					LARGE_INTEGER snapshotReadQpc = {};
+					QueryPerformanceCounter(&snapshotReadQpc);
+					runtime.diagnosticSnapshotReadQpc = snapshotReadQpc.QuadPart;
+					runtime.diagnosticSnapshotReadAgeMicroseconds =
+						qpcDeltaMicroseconds(snapshotReadQpc.QuadPart, snapshot.qpc);
+				}
+#endif
 				if (snapshot.sequence == runtime.lastConsumedSequence) return false;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				if (inputDebugTraceEnabled)
@@ -2001,6 +2124,10 @@ namespace draw3
 				{
 					modelUpdateSucceeded = true;
 					AppendNewModeledPoints(runtime.stroke, inputSpeed);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					if (inputDebugTraceEnabled)
+						runtime.diagnosticModelerUpdatedThisFrame = true;
+#endif
 				}
 				else
 				{
@@ -2010,10 +2137,13 @@ namespace draw3
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				if (inputDebugTraceEnabled)
 				{
-					recordDrawingInput("ModelerUpdate", traceIdentity, &snapshot,
+					const int64_t modelerOutputQpc = recordDrawingInput(
+						"ModelerUpdate", traceIdentity, &snapshot,
 						modelUpdateSucceeded ? DrawingInputResult::ModelerUpdateSucceeded
 							: DrawingInputResult::ModelerUpdateFailed,
 						runtime.stroke.modeledResults.size(), runtime.stroke.realPoints.size());
+					if (modelUpdateSucceeded && !runtime.stroke.modeledResults.empty())
+						runtime.diagnosticModelerOutputQpc = modelerOutputQpc;
 				}
 #endif
 				runtime.lastModelSnapshot = modelSnapshot;
@@ -2173,6 +2303,15 @@ namespace draw3
 		while (true)
 		{
 			const double frameStartMs = GetQpcTimeMilliseconds();
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			LARGE_INTEGER diagnosticFrameStartQpc = {};
+			DrawingFrameTrace diagnosticFrameTrace;
+			PresentTrace diagnosticPresentTrace;
+			uint64_t diagnosticFrameSequence = 0;
+			frameContactTraceCount = 0;
+			if (inputDebugTraceEnabled)
+				QueryPerformanceCounter(&diagnosticFrameStartQpc);
+#endif
 			const bool performanceHudEnabled =
 				performanceHudEnabled_.load(std::memory_order_acquire);
 			if (metrics_) metrics_->BeginFrame();
@@ -2431,6 +2570,43 @@ namespace draw3
 				if (metrics_) metrics_->EndIdle(GetQpcTimeMilliseconds());
 				continue;
 			}
+
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			if (inputDebugTraceEnabled && !HasPhysicalContact(active))
+			{
+				previousDrawingFrameStartQpc = 0;
+				previousTargetDeadlineQpc = 0;
+			}
+			if (inputDebugTraceEnabled && HasPhysicalContact(active))
+			{
+				diagnosticFrameSequence = ++nextDrawingFrameSequence;
+				diagnosticFrameTrace.frameSequence = diagnosticFrameSequence;
+				diagnosticFrameTrace.frameStartQpc = diagnosticFrameStartQpc.QuadPart;
+				diagnosticFrameTrace.previousFrameIntervalMicroseconds =
+					qpcDeltaMicroseconds(diagnosticFrameStartQpc.QuadPart,
+						previousDrawingFrameStartQpc);
+				diagnosticFrameTrace.hasPhysicalContact = true;
+				previousDrawingFrameStartQpc = diagnosticFrameStartQpc.QuadPart;
+				for (RuntimeStroke* runtime : active)
+				{
+					if (!runtime || runtime->ended || runtime->awaitingReconnect) continue;
+					const ContactSnapshot& latest = runtime->lastInputSnapshot;
+					runtime->diagnosticFrameStartSnapshotQpc = latest.qpc;
+					runtime->diagnosticFrameStartSnapshotSequence = latest.sequence;
+					runtime->diagnosticFrameStartInputAgeMicroseconds =
+						qpcDeltaMicroseconds(diagnosticFrameStartQpc.QuadPart, latest.qpc);
+					runtime->diagnosticSnapshotReadQpc = 0;
+					runtime->diagnosticSnapshotReadAgeMicroseconds = -1;
+					if (latest.qpc >= diagnosticFrameTrace.latestSnapshotQpc)
+					{
+						diagnosticFrameTrace.latestSnapshotQpc = latest.qpc;
+						diagnosticFrameTrace.latestSnapshotSequence = latest.sequence;
+						diagnosticFrameTrace.latestInputAgeMicroseconds =
+							runtime->diagnosticFrameStartInputAgeMicroseconds;
+					}
+				}
+			}
+#endif
 
 			const bool frameHadActiveContact = HasPhysicalContact(active);
 			const uint64_t frameWakeGeneration = input_.CaptureWakeGeneration();
@@ -2853,6 +3029,122 @@ namespace draw3
 				// 刚到期批次仍提交最后一次 update，但不再绘制退化实例。
 			}
 
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			if (inputDebugTraceEnabled && diagnosticFrameSequence != 0)
+			{
+				LARGE_INTEGER contactRecordQpc = {};
+				QueryPerformanceCounter(&contactRecordQpc);
+				for (RuntimeStroke* runtime : active)
+				{
+					if (!runtime || !runtime->handle.record ||
+						frameContactTraceCount >= frameContactTraces.size()) continue;
+					ActiveStroke& stroke = runtime->stroke;
+					const size_t traceIndex = frameContactTraceCount++;
+					frameContactTraceRuntimes[traceIndex] = runtime;
+					DrawingContactFrameTrace& trace = frameContactTraces[traceIndex];
+					trace = {};
+					trace.frameSequence = diagnosticFrameSequence;
+					trace.contactFrameIndex = ++runtime->diagnosticContactFrameIndex;
+					trace.recordQpc = contactRecordQpc.QuadPart;
+					trace.frameStartQpc = diagnosticFrameStartQpc.QuadPart;
+					trace.snapshotReadQpc = runtime->diagnosticSnapshotReadQpc;
+					trace.frameStartSnapshotQpc =
+						runtime->diagnosticFrameStartSnapshotQpc;
+					trace.snapshotQpc = runtime->lastInputSnapshot.qpc;
+					trace.modelerOutputQpc = runtime->diagnosticModelerOutputQpc;
+					trace.downQpc = runtime->qpcOrigin;
+					trace.inputAgeAtFrameStartMicroseconds =
+						signedQpcDeltaMicroseconds(
+							diagnosticFrameStartQpc.QuadPart, trace.snapshotQpc);
+					trace.inputAgeAtSnapshotReadMicroseconds =
+						runtime->diagnosticSnapshotReadAgeMicroseconds;
+					trace.previousFrameIntervalMicroseconds =
+						diagnosticFrameTrace.previousFrameIntervalMicroseconds;
+					trace.tabletContextId = runtime->handle.record->TabletContextId();
+					trace.contactId = runtime->handle.record->ContactId();
+					trace.deviceType = static_cast<uint32_t>(
+						runtime->handle.record->DeviceType());
+					trace.phase = static_cast<uint32_t>(runtime->lastInputSnapshot.phase);
+					trace.contactGeneration = runtime->handle.generation;
+					trace.frameStartSnapshotSequence =
+						runtime->diagnosticFrameStartSnapshotSequence;
+					trace.snapshotSequence = runtime->lastInputSnapshot.sequence;
+					trace.x = runtime->lastInputSnapshot.position.x;
+					trace.y = runtime->lastInputSnapshot.position.y;
+					trace.pressure = runtime->lastInputSnapshot.pressure;
+					trace.modeledPointCount = static_cast<uint32_t>((std::min)(
+						stroke.modeledResults.size(), static_cast<size_t>(UINT32_MAX)));
+					trace.realPointCount = static_cast<uint32_t>((std::min)(
+						stroke.realPoints.size(), static_cast<size_t>(UINT32_MAX)));
+					trace.predictedPointCount = static_cast<uint32_t>((std::min)(
+						stroke.predictedPoints.size(), static_cast<size_t>(UINT32_MAX)));
+					trace.l0PointCount = static_cast<uint32_t>((std::min)(
+						stroke.l0DrawPoints.size(), static_cast<size_t>(UINT32_MAX)));
+					trace.l1CommittedIndex = static_cast<uint32_t>((std::min)(
+						stroke.committedIndex, static_cast<size_t>(UINT32_MAX)));
+					if (!stroke.predictedPoints.empty())
+					{
+						trace.hasPredictionEndpoint = true;
+						trace.predictionEndpointX = stroke.predictedPoints.back().x;
+						trace.predictionEndpointY = stroke.predictedPoints.back().y;
+					}
+					trace.drawableGeometry = !stroke.l0DrawPoints.empty() ||
+						stroke.hasCommittedGeometry ||
+						!stroke.committedHighlighterGeometry.primitives.empty() ||
+						!stroke.l0HighlighterGeometry.primitives.empty() ||
+						!IsEmptyRect(runtime->visibleDirty);
+					trace.modelerUpdated = runtime->diagnosticModelerUpdatedThisFrame;
+					trace.terminal = runtime->ended || runtime->awaitingReconnect ||
+						runtime->lastInputSnapshot.phase == ContactPhase::Up ||
+						runtime->lastInputSnapshot.phase == ContactPhase::Cancelled;
+					trace.geometryChanged = runtime->movedThisFrame || trace.terminal ||
+						trace.modeledPointCount != runtime->diagnosticPreviousModeledPointCount ||
+						trace.realPointCount != runtime->diagnosticPreviousRealPointCount ||
+						trace.predictedPointCount != runtime->diagnosticPreviousPredictedPointCount ||
+						trace.l0PointCount != runtime->diagnosticPreviousL0PointCount ||
+						trace.l1CommittedIndex != runtime->diagnosticPreviousCommittedIndex ||
+						trace.hasPredictionEndpoint !=
+							runtime->diagnosticPreviousPredictionEndpointKnown ||
+						(trace.hasPredictionEndpoint &&
+							(trace.predictionEndpointX !=
+								runtime->diagnosticPreviousPredictionEndpointX ||
+							 trace.predictionEndpointY !=
+								runtime->diagnosticPreviousPredictionEndpointY)) ||
+						trace.drawableGeometry != runtime->diagnosticPreviousDrawableGeometry;
+					runtime->diagnosticPreviousModeledPointCount = trace.modeledPointCount;
+					runtime->diagnosticPreviousRealPointCount = trace.realPointCount;
+					runtime->diagnosticPreviousPredictedPointCount = trace.predictedPointCount;
+					runtime->diagnosticPreviousL0PointCount = trace.l0PointCount;
+					runtime->diagnosticPreviousCommittedIndex = trace.l1CommittedIndex;
+					runtime->diagnosticPreviousPredictionEndpointKnown =
+						trace.hasPredictionEndpoint;
+					runtime->diagnosticPreviousPredictionEndpointX =
+						trace.predictionEndpointX;
+					runtime->diagnosticPreviousPredictionEndpointY =
+						trace.predictionEndpointY;
+					runtime->diagnosticPreviousDrawableGeometry = trace.drawableGeometry;
+					runtime->diagnosticModelerOutputQpc = 0;
+					runtime->diagnosticModelerUpdatedThisFrame = false;
+					diagnosticFrameTrace.terminalContact =
+						diagnosticFrameTrace.terminalContact || trace.terminal;
+					diagnosticFrameTrace.geometryChanged =
+						diagnosticFrameTrace.geometryChanged || trace.geometryChanged;
+					diagnosticFrameTrace.geometryEmpty =
+						diagnosticFrameTrace.geometryEmpty && !trace.drawableGeometry;
+					if (trace.snapshotQpc >= diagnosticFrameTrace.latestSnapshotQpc)
+					{
+						diagnosticFrameTrace.latestSnapshotQpc = trace.snapshotQpc;
+						diagnosticFrameTrace.latestSnapshotSequence = trace.snapshotSequence;
+						diagnosticFrameTrace.latestInputAgeMicroseconds =
+							signedQpcDeltaMicroseconds(
+								diagnosticFrameStartQpc.QuadPart, trace.snapshotQpc);
+					}
+				}
+				diagnosticFrameTrace.contactCount = static_cast<uint32_t>(
+					frameContactTraceCount);
+			}
+#endif
+
 			if (hasEndedStroke)
 			{
 				renderer_.ClearOperatorLayer(renderer_.layerL1);
@@ -2882,6 +3174,23 @@ namespace draw3
 								DrawReconnectManualTestRanges(*runtime, renderer_, size.width, size.height));
 						UnionRectInPlace(completedDirty, completedStrokeDirty);
 						if (!IsEmptyRect(completedStrokeDirty)) runtime->metricVisible = true;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+						if (inputDebugTraceEnabled && !IsEmptyRect(completedStrokeDirty))
+						{
+							for (size_t index = 0; index < frameContactTraceCount; ++index)
+							{
+								if (frameContactTraceRuntimes[index] != runtime) continue;
+								// 短点的终态 fallback 在此处才生成，诊断必须反映实际提交的几何。
+								frameContactTraces[index].drawableGeometry = true;
+								frameContactTraces[index].geometryChanged = true;
+								LARGE_INTEGER geometryQpc = {};
+								QueryPerformanceCounter(&geometryQpc);
+								frameContactTraces[index].recordQpc = geometryQpc.QuadPart;
+								diagnosticFrameTrace.geometryEmpty = false;
+								break;
+							}
+						}
+#endif
 					}
 					UnionRectInPlace(frameDirty, runtime->visibleDirty);
 				}
@@ -3016,6 +3325,10 @@ namespace draw3
 				UnionRectInPlace(frameDirty, currentLaserParticleBounds);
 			}
 
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			const RECT diagnosticPreCursorDirty = frameDirty;
+#endif
+
 			buildDrawingCursorVisuals();
 			const RECT currentLaserTipBounds = RectFromLaserDots(
 				laserTipDots, configuration_.dpiScale, size.width, size.height);
@@ -3038,7 +3351,8 @@ namespace draw3
 				UnionRectInPlace(frameDirty, laserStableBounds);
 				UnionRectInPlace(frameDirty, laserLiveBounds);
 			}
-			if (!cursorVisualsEquivalent())
+			const bool cursorVisualChanged = !cursorVisualsEquivalent();
+			if (cursorVisualChanged)
 			{
 				// 先重建旧区清除上一帧，再把全部当前 visual 绘制到 backbuffer 最上层。
 				UnionRectInPlace(frameDirty, cursorVisualBounds(previousCursorVisuals));
@@ -3051,6 +3365,30 @@ namespace draw3
 			}
 			frameDirty = ClampRectToCanvas(frameDirty, size.width, size.height);
 			if (forceFullPresent) frameDirty = GetFullCanvasRect(size.width, size.height);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			if (inputDebugTraceEnabled && diagnosticFrameSequence != 0)
+			{
+				diagnosticFrameTrace.dirty = frameDirty;
+				diagnosticFrameTrace.dirtyValid = !IsEmptyRect(frameDirty);
+				diagnosticFrameTrace.renderRequested = diagnosticFrameTrace.dirtyValid;
+				diagnosticFrameTrace.forceFullPresent = forceFullPresent;
+				const RECT fullCanvas = GetFullCanvasRect(size.width, size.height);
+				diagnosticFrameTrace.fullFrame = !IsEmptyRect(frameDirty) &&
+					frameDirty.left == fullCanvas.left && frameDirty.top == fullCanvas.top &&
+					frameDirty.right == fullCanvas.right && frameDirty.bottom == fullCanvas.bottom;
+				diagnosticFrameTrace.cursorDirty = drawingCursorRequested ||
+					laserTipBoundsChanged || cursorVisualChanged;
+				diagnosticFrameTrace.strokeContent = !IsEmptyRect(diagnosticPreCursorDirty) ||
+					std::any_of(frameContactTraces.begin(),
+						frameContactTraces.begin() + frameContactTraceCount,
+						[](const DrawingContactFrameTrace& trace)
+						{
+							return trace.drawableGeometry || trace.geometryChanged;
+						});
+				diagnosticFrameTrace.cursorOnly = diagnosticFrameTrace.cursorDirty &&
+					!diagnosticFrameTrace.strokeContent && !forceFullPresent;
+			}
+#endif
 			if (laserLifecycle.phase != LaserTrailPhase::Inactive || laserSummaryPending)
 			{
 				const uint64_t dirtyPixels = RectArea(frameDirty);
@@ -3078,6 +3416,15 @@ namespace draw3
 			bool presentSucceeded = false;
 			if (!IsEmptyRect(frameDirty))
 			{
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				if (inputDebugTraceEnabled && diagnosticFrameSequence != 0)
+				{
+					LARGE_INTEGER renderBeginQpc = {};
+					QueryPerformanceCounter(&renderBeginQpc);
+					diagnosticFrameTrace.renderBeginQpc = renderBeginQpc.QuadPart;
+					diagnosticFrameTrace.renderExecuted = true;
+				}
+#endif
 				const bool orderedPreview = frameTool == DrawingTool::Pen &&
 					kActiveDebugLayerColorMode == DebugLayerColorMode::ColorizeLiveLayer;
 				CompositeLayersToBackBuffer(frameDirty, orderedPreview);
@@ -3095,9 +3442,48 @@ namespace draw3
 				renderer_.DrawLaserDots(laserTipDots);
 				for (const DrawingCursorVisual& visual : currentCursorVisuals)
 					renderer_.DrawTransientDrawingCursor(visual);
-				presentSucceeded = PresentFrame(
-					frameDirty, forceFullPresent); // 一帧最多一次 backbuffer 合成和一次 Present。
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				if (inputDebugTraceEnabled && diagnosticFrameSequence != 0)
+				{
+					LARGE_INTEGER renderEndQpc = {};
+					QueryPerformanceCounter(&renderEndQpc);
+					diagnosticFrameTrace.renderEndQpc = renderEndQpc.QuadPart;
+					presentSucceeded = PresentFrame(frameDirty, forceFullPresent,
+						diagnosticFrameSequence, &diagnosticPresentTrace);
+					diagnosticFrameTrace.presentAttempted = true;
+					diagnosticFrameTrace.presentSucceeded = presentSucceeded;
+					diagnosticFrameTrace.presentBeginQpc = diagnosticPresentTrace.beginQpc;
+					diagnosticFrameTrace.presentEndQpc = diagnosticPresentTrace.endQpc;
+				}
+				else
+#endif
+				{
+					presentSucceeded = PresentFrame(
+						frameDirty, forceFullPresent); // 一帧最多一次 backbuffer 合成和一次 Present。
+				}
 			}
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			if (inputDebugTraceEnabled && diagnosticFrameSequence != 0)
+			{
+				const int64_t renderDurationMicroseconds = qpcDeltaMicroseconds(
+					diagnosticFrameTrace.renderEndQpc,
+					diagnosticFrameTrace.renderBeginQpc);
+				const int64_t presentDurationMicroseconds = qpcDeltaMicroseconds(
+					diagnosticPresentTrace.endQpc, diagnosticPresentTrace.beginQpc);
+				for (size_t index = 0; index < frameContactTraceCount; ++index)
+				{
+					DrawingContactFrameTrace& trace = frameContactTraces[index];
+					trace.rendered = diagnosticFrameTrace.renderExecuted;
+					trace.renderBeginQpc = diagnosticFrameTrace.renderBeginQpc;
+					trace.renderDurationMicroseconds = renderDurationMicroseconds;
+					trace.presented = diagnosticFrameTrace.presentAttempted;
+					trace.presentBeginQpc = diagnosticPresentTrace.beginQpc;
+					trace.presentCallDurationMicroseconds = presentDurationMicroseconds;
+					RecordDrawingContactFrame(trace);
+				}
+				RecordDrawingFrame(diagnosticFrameTrace);
+			}
+#endif
 			previousCursorVisuals = currentCursorVisuals;
 			previousLaserParticleBounds = currentLaserParticleBounds;
 			previousLaserTipBounds = currentLaserTipBounds;
@@ -3147,7 +3533,48 @@ namespace draw3
 						lastPresentDurationMs_, lastPresentSucceeded_);
 				const double remainingFrameBudgetMs =
 					1000.0 / configuration_.timingProfile.target_fps - workMs;
-				input_.WaitForFrameDeadline(remainingFrameBudgetMs);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				if (inputDebugTraceEnabled && diagnosticFrameSequence != 0)
+				{
+					DrawingWaitTrace waitTrace;
+					waitTrace.frameSequence = diagnosticFrameSequence;
+					waitTrace.frameStartQpc = diagnosticFrameStartQpc.QuadPart;
+					waitTrace.previousTargetDeadlineQpc = previousTargetDeadlineQpc;
+					waitTrace.requestedBudgetMicroseconds = static_cast<int64_t>(
+						remainingFrameBudgetMs * 1000.0);
+					LARGE_INTEGER waitBeginQpc = {};
+					LARGE_INTEGER waitEndQpc = {};
+					QueryPerformanceCounter(&waitBeginQpc);
+					waitTrace.waitBeginQpc = waitBeginQpc.QuadPart;
+					if (remainingFrameBudgetMs > 0.0)
+					{
+						const double budgetTicks = remainingFrameBudgetMs *
+							static_cast<double>(qpcFrequency) / 1000.0;
+						waitTrace.targetDeadlineQpc = waitBeginQpc.QuadPart +
+							static_cast<int64_t>(budgetTicks);
+					}
+					input_.WaitForFrameDeadline(remainingFrameBudgetMs);
+					QueryPerformanceCounter(&waitEndQpc);
+					waitTrace.waitEndQpc = waitEndQpc.QuadPart;
+					waitTrace.actualWaitMicroseconds = qpcDeltaMicroseconds(
+						waitEndQpc.QuadPart, waitBeginQpc.QuadPart);
+					if (waitTrace.targetDeadlineQpc > 0)
+					{
+						waitTrace.overshootMicroseconds = qpcDeltaMicroseconds(
+							waitEndQpc.QuadPart, waitTrace.targetDeadlineQpc);
+						waitTrace.returnedBeforeDeadline =
+							waitEndQpc.QuadPart < waitTrace.targetDeadlineQpc;
+						waitTrace.deadlineReached =
+							waitEndQpc.QuadPart >= waitTrace.targetDeadlineQpc;
+						previousTargetDeadlineQpc = waitTrace.targetDeadlineQpc;
+					}
+					RecordDrawingWait(waitTrace);
+				}
+				else
+#endif
+				{
+					input_.WaitForFrameDeadline(remainingFrameBudgetMs);
+				}
 				size_t committedCount = 0;
 				size_t realPointCount = 0;
 				size_t predictedPointCount = 0;

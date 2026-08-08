@@ -30,12 +30,21 @@
 
 ## Phase 4: First Hardware Session
 
-- [ ] 用户启动 Release ARM64：`inkStrokeModelerTest.exe --rts-trace`。
-- [ ] 用户先用真实 Windows Ink Pen 画几笔，再紧接着用 Mouse 画几笔，然后正常退出应用。
-- [ ] 读取控制台打印的本轮唯一日志路径，只分析该 session。
-- [ ] 按 Down -> decoder/binding -> PublishDown -> Packets/state gate -> PublishMove -> Drawing snapshot -> Modeler 重建 Pen 时序。
-- [ ] 与紧接着的 Mouse 事件比较，并把 Decoder miss、StateGate drop、Publish failure、Drawing/Modeler 等假设标为支持/削弱/已排除/证据不足。
-- [ ] 信息不足时只提出下一轮必要诊断；任何生产修复必须等待用户明确进入修复阶段。
+- [x] 用户启动 Release ARM64 diagnostics 并完成真实 Pen/Mouse session。
+- [x] 日志确认 RTS Success=2990，Down/decoder/binding/state gate/Publish/Drawing 初始化/snapshot/Modeler 均无失败证据。
+- [x] 将下一阶段边界推进到 Modeler output -> geometry -> render -> Present -> frame pacing，不回头增强 RTS/coordinator。
+
+## Phase 5: Modeler To Present Diagnostics
+
+- [x] 增加活动 frameSeq、连续 frame interval、latest input age 和前三 contact frame 完整样本。
+- [x] 记录真实 Modeler/real/predicted/L0 数量、L1 committed index、prediction endpoint、drawable/changed geometry。
+- [x] 记录 dirty/render decision、render begin/end/duration 和 cursor/stroke/full-present 分类。
+- [x] 在真实 `Present1` 位置记录 QPC、HRESULT、参数、dirty rect 和连续 begin/end interval；保留 CPU submission 语义说明。
+- [x] 记录现有 deadline wait 的 requested budget、wait begin/end、目标 deadline、actual wait 和 overshoot，不修改 pacing。
+- [x] 记录现有 DComp initialization Commit；静态确认没有 frame-latency waitable handle 获取/等待。
+- [x] 输出 contact summary 与 Pen/Mouse/Touch/Unknown device aggregate，覆盖 Down 到首次 geometry/render/Present。
+- [x] 增加 fixed-capacity、timeline overwrite、前三帧、Present interval、contact/device summary 的非 GUI tests。
+- [x] 完成 Debug/Release ARM64 全解决方案构建、两套 tests、`git diff --check`、BOM/CRLF 和热路径审计。
 
 ## Validation Commands
 

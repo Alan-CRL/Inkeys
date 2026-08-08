@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <cstdint>
 #include <cwchar>
 #include <dcomp.h>
 #include <d3d11.h>
@@ -272,7 +273,11 @@ namespace draw3
 				return CreateStagingTexture(width, height) && EnsureWindowDib();
 			}
 
-			bool Present(ID3D11Texture2D* finalTexture, RECT dirty, bool presentFull)
+			bool Present(ID3D11Texture2D* finalTexture, RECT dirty, bool presentFull
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				, uint64_t frameSequence, PresentTrace* outputTrace
+#endif
+			)
 			{
 				if (!context || !stagingTexture || !finalTexture || !EnsureWindowDib()) return false;
 				D3D11_TEXTURE2D_DESC finalDescription = {};
@@ -336,7 +341,30 @@ namespace draw3
 				update.pblend = &blend;
 				update.dwFlags = ULW_ALPHA;
 				update.prcDirty = presentFull ? nullptr : &dirty; // 非全量时让 USER32 只更新改变区域。
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				if (!IsInputDebugTraceEnabled())
+					return UpdateLayeredWindowIndirect(window, &update) != FALSE;
+				LARGE_INTEGER presentBeginQpc = {};
+				LARGE_INTEGER presentEndQpc = {};
+				QueryPerformanceCounter(&presentBeginQpc);
+				const BOOL updateSucceeded = UpdateLayeredWindowIndirect(window, &update);
+				const DWORD updateError = updateSucceeded ? ERROR_SUCCESS : GetLastError();
+				QueryPerformanceCounter(&presentEndQpc);
+				PresentTrace trace;
+				trace.frameSequence = frameSequence;
+				trace.beginQpc = presentBeginQpc.QuadPart;
+				trace.endQpc = presentEndQpc.QuadPart;
+				trace.result = updateSucceeded ? S_OK : HRESULT_FROM_WIN32(updateError);
+				trace.dirtyRectCount = presentFull ? 0u : 1u;
+				trace.dirty = dirty;
+				trace.kind = PresentSubmissionKind::UpdateLayeredWindowIndirect;
+				trace.presentFull = presentFull;
+				RecordPresentSubmission(trace);
+				if (outputTrace) *outputTrace = trace;
+				return updateSucceeded != FALSE;
+#else
 				return UpdateLayeredWindowIndirect(window, &update) != FALSE;
+#endif
 			}
 		};
 
@@ -382,7 +410,25 @@ namespace draw3
 				if (FAILED(result = compositionDevice->CreateVisual(rootVisual.ReleaseAndGetAddressOf()))) return false;
 				if (FAILED(result = rootVisual->SetContent(swapChain))) return false; // 将交换链作为视觉树内容。
 				if (FAILED(result = compositionTarget->SetRoot(rootVisual.Get()))) return false;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				if (IsInputDebugTraceEnabled())
+				{
+					LARGE_INTEGER commitBeginQpc = {};
+					LARGE_INTEGER commitEndQpc = {};
+					QueryPerformanceCounter(&commitBeginQpc);
+					result = compositionDevice->Commit();
+					QueryPerformanceCounter(&commitEndQpc);
+					RecordCompositionCommit({ commitBeginQpc.QuadPart,
+						commitEndQpc.QuadPart, result });
+				}
+				else
+				{
+					result = compositionDevice->Commit();
+				}
+				if (FAILED(result)) return false; // 只观察初始化 Commit，不增加逐帧提交。
+#else
 				if (FAILED(result = compositionDevice->Commit())) return false; // 提交后 DWM 才开始读取该 visual。
+#endif
 				return true;
 			}
 		};
@@ -629,7 +675,11 @@ namespace draw3
 			return true;
 		}
 
-		bool PresentSwapChain(RECT dirty, bool presentFull)
+		bool PresentSwapChain(RECT dirty, bool presentFull
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			, uint64_t frameSequence, PresentTrace* outputTrace
+#endif
+		)
 		{
 			DXGI_PRESENT_PARAMETERS parameters = {};
 			if (!presentFull)
@@ -642,7 +692,34 @@ namespace draw3
 				parameters.DirtyRectsCount = 1;
 				parameters.pDirtyRects = &dirty;
 			}
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			if (!IsInputDebugTraceEnabled())
+				return SUCCEEDED(swapChain->Present1(0, 0, &parameters));
+			constexpr UINT syncInterval = 0;
+			constexpr UINT presentFlags = 0;
+			LARGE_INTEGER presentBeginQpc = {};
+			LARGE_INTEGER presentEndQpc = {};
+			QueryPerformanceCounter(&presentBeginQpc);
+			const HRESULT result = swapChain->Present1(
+				syncInterval, presentFlags, &parameters);
+			QueryPerformanceCounter(&presentEndQpc);
+			PresentTrace trace;
+			trace.frameSequence = frameSequence;
+			trace.beginQpc = presentBeginQpc.QuadPart;
+			trace.endQpc = presentEndQpc.QuadPart;
+			trace.result = result;
+			trace.syncInterval = syncInterval;
+			trace.flags = presentFlags;
+			trace.dirtyRectCount = parameters.DirtyRectsCount;
+			trace.dirty = dirty;
+			trace.kind = PresentSubmissionKind::Present1;
+			trace.presentFull = presentFull;
+			RecordPresentSubmission(trace);
+			if (outputTrace) *outputTrace = trace;
+			return SUCCEEDED(result);
+#else
 			return SUCCEEDED(swapChain->Present1(0, 0, &parameters));
+#endif
 		}
 	};
 
@@ -701,6 +778,9 @@ namespace draw3
 
 	bool TransparentPresentationController::Present(RECT dirty, bool presentFull)
 	{
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+		return Present(dirty, presentFull, 0, nullptr);
+#else
 		bool succeeded = false;
 		if (IsUlwMode(impl_->activeMode))
 		{
@@ -717,7 +797,34 @@ namespace draw3
 		}
 		if (succeeded) impl_->presentFailureLogged = false;
 		return succeeded;
+#endif
 	}
+
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+	bool TransparentPresentationController::Present(RECT dirty, bool presentFull,
+		uint64_t frameSequence, PresentTrace* outputTrace)
+	{
+		bool succeeded = false;
+		if (IsUlwMode(impl_->activeMode))
+		{
+			succeeded = impl_->ulwPresenter.Present(impl_->renderer->backBufferTexture.Get(),
+				dirty, presentFull, frameSequence, outputTrace);
+		}
+		else
+		{
+			succeeded = impl_->PresentSwapChain(
+				dirty, presentFull, frameSequence, outputTrace);
+		}
+		if (!succeeded && !impl_->presentFailureLogged)
+		{
+			std::cout << "Present failed in mode " <<
+				TransparentPresentModeName(impl_->activeMode) << std::endl;
+			impl_->presentFailureLogged = true;
+		}
+		if (succeeded) impl_->presentFailureLogged = false;
+		return succeeded;
+	}
+#endif
 
 	void TransparentPresentationController::RefreshAfterCompositionChanged()
 	{
