@@ -1,0 +1,9 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"Native desktop quality checklist and ownership review"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"Review shared state, naming, comments and concurrency"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"Review UI3 animation, hot path and D2D cache correctness"}
+{"file":".trellis/spec/native-desktop/input-and-ink.md","reason":"Review mouse/touch/pen cancellation and capture paths"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"Review device reset and COM resource lifetime"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"Verify required ARM64 full-solution build"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check that existing 3x and animation contracts were reused"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Check complete input-to-render and programmatic-update data flow"}
+{"file":".trellis/tasks/08-08-ui3-thickness-fine-dial/research/current-thickness-flow.md","reason":"Regression baseline for candidate, Hold, Popup and cleanup semantics"}

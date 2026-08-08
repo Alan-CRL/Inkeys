@@ -151,6 +151,38 @@ constexpr double BarThicknessSliderThumbAnimationDur = 0.28;
 	constexpr double BarThicknessPreviewTouchSlopDip = 5.0;
 	// 直接触摸 Preview 使用三倍水平行程映射粗细，降低拖动调节速度。
 	constexpr double BarThicknessPreviewTouchDragTravelScale = 3.0;
+	// FineDial 激活区沿 Preview 展开方向排列，数值均为未缩放 DIP。
+	constexpr double BarThicknessFineDialDragGapDip = 3.0;
+	constexpr double BarThicknessFineDialDragDepthDip = 12.0;
+	constexpr double BarThicknessFineDialClickGuardDip = 8.0;
+	constexpr double BarThicknessFineDialClickDepthDip = 18.0;
+	constexpr ULONGLONG BarThicknessFineDialActivationDwellMs = 500;
+	constexpr double BarThicknessFineDialPopupPanelGapDip = 8.0;
+	constexpr double BarThicknessFineDialTransitionDur = 0.28;
+	constexpr double BarThicknessFineDialThetaLimit = 1.20;
+	constexpr double BarThicknessFineDialDepthLiftDip = 4.0;
+	constexpr double BarThicknessFineDialEdgeFadeStart = 0.68;
+	constexpr int BarThicknessFineDialVisibleTickLimit = 64;
+	constexpr double BarThicknessFineDialTickLengthDip = 7.0;
+	constexpr double BarThicknessFineDialMajorTickLengthDip = 12.0;
+	constexpr double BarThicknessFineDialLabelFontSizeDip = 10.0;
+	constexpr double BarThicknessFineDialSelectorWidthDip = 7.0;
+	constexpr double BarThicknessFineDialSelectorHeightDip = 5.0;
+	constexpr auto BarThicknessFineDialPhysicsPollInterval =
+		chrono::milliseconds(8);
+	constexpr double BarThicknessFineDialMaxDtSeconds = 0.032;
+	constexpr size_t BarThicknessFineDialVelocitySampleCount = 6;
+	constexpr ULONGLONG BarThicknessFineDialVelocityWindowMs = 96;
+	constexpr double BarThicknessFineDialReleaseVelocityDipPerSecond = 80.0;
+	constexpr double BarThicknessFineDialMaxVelocityDipPerSecond = 900.0;
+	constexpr double BarThicknessFineDialFrictionPerSecond = 10.0;
+	constexpr double BarThicknessFineDialResidualWeight = 0.35;
+	constexpr double BarThicknessFineDialResidualDecayPerSecond = 6.0;
+	constexpr double BarThicknessFineDialRubberBandLimitDip = 24.0;
+	constexpr double BarThicknessFineDialSpringOmega = 18.0;
+	constexpr double BarThicknessFineDialSpringDampingRatio = 1.05;
+	constexpr double BarThicknessFineDialSettleDistanceDip = 0.15;
+	constexpr double BarThicknessFineDialSettleVelocityDipPerSecond = 4.0;
 	// 拖动改值后静止 0.5s 出提示，再 1.5s（合计 2.0s）进度走满并锁定粗细。
 	constexpr double BarThicknessHoldStillnessPx = 5.0;
 	constexpr ULONGLONG BarThicknessHoldHintDelayMs = 500;
@@ -275,6 +307,25 @@ struct BarThicknessPreviewGeometry
 	bool valid = false;
 };
 
+enum class BarThicknessFineDialHitZone : int
+{
+	None,
+	Drag,
+	Click,
+};
+
+struct BarThicknessFineDialGeometry
+{
+	double centerX = 0.0;
+	double centerY = 0.0;
+	double outwardDirection = 0.0;
+	double availableHalfWidth = 0.0;
+	D2D1_RECT_F dialBounds{};
+	D2D1_RECT_F dragZone{};
+	D2D1_RECT_F clickZone{};
+	bool valid = false;
+};
+
 BarThicknessPreviewGeometry CalculateBarThicknessPreviewGeometry(
 	const BarUiShapeClass& panel,
 	const BarUiShapeClass& thicknessRegion,
@@ -329,9 +380,82 @@ BarThicknessPreviewGeometry CalculateBarThicknessPreviewGeometry(
 	return geometry;
 }
 
-bool IsBarThicknessPrecisionDragHit(
-	BarUISetClass& barUISet, int mx, int my)
+BarThicknessFineDialGeometry CalculateBarThicknessFineDialGeometry(
+	const BarThicknessPreviewGeometry& previewGeometry,
+	double sliderCenterY)
 {
+	BarThicknessFineDialGeometry geometry;
+	if (!previewGeometry.valid) return geometry;
+
+	// 换边时保留连续方向量；命中带会在中点自然收拢，Dial 本体不会跳边。
+	geometry.outwardDirection = clamp(
+		previewGeometry.previewSide, -1.0, 1.0);
+	geometry.centerX = (previewGeometry.trackLeft
+		+ previewGeometry.trackRight) / 2.0;
+	geometry.centerY = previewGeometry.previewCenterY;
+	geometry.availableHalfWidth = max(0.0,
+		(previewGeometry.trackRight - previewGeometry.trackLeft) / 2.0);
+	geometry.dialBounds = D2D1::RectF(
+		static_cast<FLOAT>(previewGeometry.previewLeft),
+		static_cast<FLOAT>(previewGeometry.previewTop),
+		static_cast<FLOAT>(previewGeometry.previewRight),
+		static_cast<FLOAT>(previewGeometry.previewBottom));
+
+	double panelScale = previewGeometry.panelScale;
+	double thumbHalf = BarThicknessSliderThumbDiameter * panelScale / 2.0;
+	double dragNear = sliderCenterY + geometry.outwardDirection
+		* (thumbHalf + BarThicknessFineDialDragGapDip * panelScale);
+	double dragFar = dragNear + geometry.outwardDirection
+		* BarThicknessFineDialDragDepthDip * panelScale;
+	double clickNear = dragFar + geometry.outwardDirection
+		* BarThicknessFineDialClickGuardDip * panelScale;
+	double clickFar = clickNear + geometry.outwardDirection
+		* BarThicknessFineDialClickDepthDip * panelScale;
+	double outwardLimit = geometry.outwardDirection >= 0.0
+		? previewGeometry.previewBottom : previewGeometry.previewTop;
+	auto ClampOutward = [&](double value)
+		{
+			return geometry.outwardDirection >= 0.0
+				? min(value, outwardLimit) : max(value, outwardLimit);
+		};
+	dragNear = ClampOutward(dragNear);
+	dragFar = ClampOutward(dragFar);
+	clickNear = ClampOutward(clickNear);
+	clickFar = ClampOutward(clickFar);
+	geometry.dragZone = D2D1::RectF(
+		static_cast<FLOAT>(previewGeometry.trackLeft),
+		static_cast<FLOAT>(min(dragNear, dragFar)),
+		static_cast<FLOAT>(previewGeometry.trackRight),
+		static_cast<FLOAT>(max(dragNear, dragFar)));
+	geometry.clickZone = D2D1::RectF(
+		static_cast<FLOAT>(previewGeometry.trackLeft),
+		static_cast<FLOAT>(min(clickNear, clickFar)),
+		static_cast<FLOAT>(previewGeometry.trackRight),
+		static_cast<FLOAT>(max(clickNear, clickFar)));
+	geometry.valid = geometry.availableHalfWidth > 0.0
+		&& geometry.dialBounds.right > geometry.dialBounds.left
+		&& geometry.dialBounds.bottom > geometry.dialBounds.top;
+	return geometry;
+}
+
+bool IsBarClientPointInLogicalRect(
+	int clientX, int clientY, double zoom, const D2D1_RECT_F& rect)
+{
+	if (!isfinite(zoom) || zoom <= 0.0
+		|| rect.right <= rect.left || rect.bottom <= rect.top)
+		return false;
+	double logicalX = static_cast<double>(clientX) / zoom;
+	double logicalY = static_cast<double>(clientY) / zoom;
+	return logicalX >= rect.left && logicalX <= rect.right
+		&& logicalY >= rect.top && logicalY <= rect.bottom;
+}
+
+BarThicknessFineDialHitZone HitTestBarThicknessFineDialActivation(
+	BarUISetClass& barUISet, int clientX, int clientY)
+{
+	auto& drawAttribute = barUISet.barState.drawAttributeBar;
+	if (drawAttribute.thicknessViewMode != ThicknessViewMode::Slider)
+		return BarThicknessFineDialHitZone::None;
 	auto panel = barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar];
 	auto region = barUISet.shapeMap[
 		BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect];
@@ -342,52 +466,38 @@ bool IsBarThicknessPrecisionDragHit(
 	if (!panel || !region || !adjust || !sliderThumb
 		|| sliderThumb->w.val <= 0.0 || sliderThumb->h.val <= 0.0
 		|| static_cast<double>(sliderThumb->pct.val) < 0.999999)
-		return false;
+		return BarThicknessFineDialHitZone::None;
 
-	auto geometry = CalculateBarThicknessPreviewGeometry(
+	auto previewGeometry = CalculateBarThicknessPreviewGeometry(
 		*panel, *region, BarUiInheritClass(region->inhX, region->inhY),
 		*adjust, BarUiInheritClass(adjust->inhX, adjust->inhY));
-	if (!geometry.valid || abs(geometry.previewSide) <= 0.000001)
-		return false;
-
-	double outwardDirection = geometry.previewSide > 0.0 ? 1.0 : -1.0;
-	double thumbCenterY = sliderThumb->inhY + sliderThumb->h.val / 2.0;
-	double thumbHalfHeight = sliderThumb->h.val / 2.0;
-	double innerAdjacentY = outwardDirection > 0.0
-		? static_cast<double>(adjust->inhY) + adjust->h.val
-		: static_cast<double>(adjust->inhY);
-	double thumbInnerEdgeY = thumbCenterY
-		- outwardDirection * thumbHalfHeight;
-	double innerGap = max(0.0, outwardDirection
-		* (thumbInnerEdgeY - innerAdjacentY));
-	double bandNearY = thumbCenterY + outwardDirection
-		* (thumbHalfHeight + innerGap);
-	double bandFarY = outwardDirection > 0.0
-		? geometry.previewBottom : geometry.previewTop;
-	double bandTop = min(bandNearY, bandFarY);
-	double bandBottom = max(bandNearY, bandFarY);
-
-	// 水平与可见 Slider 轨道同宽；右侧 Hint 出现时扣除按钮占位。
-	double bandLeft = geometry.trackLeft;
-	double bandRight = geometry.trackRight;
-	if (barUISet.barState.drawAttributeBar.thicknessOverflowHintPresent)
-	{
-		auto overflowBadge = barUISet.shapeMap[
-			BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowBadge];
-		if (overflowBadge && overflowBadge->pct.val > 0.000001
-			&& overflowBadge->w.val > 0.0 && overflowBadge->h.val > 0.0)
-			bandRight = min(bandRight,
-				static_cast<double>(overflowBadge->inhX));
-	}
-
+	double sliderCenterY = sliderThumb->inhY + sliderThumb->h.val / 2.0;
+	auto geometry = CalculateBarThicknessFineDialGeometry(
+		previewGeometry, sliderCenterY);
+	if (!geometry.valid) return BarThicknessFineDialHitZone::None;
 	double zoom = static_cast<double>(barUISet.barStyle.zoom);
-	if (!isfinite(zoom) || zoom <= 0.0
-		|| bandRight <= bandLeft || bandBottom <= bandTop)
-		return false;
-	return static_cast<double>(mx) >= bandLeft * zoom
-		&& static_cast<double>(mx) <= bandRight * zoom
-		&& static_cast<double>(my) >= bandTop * zoom
-		&& static_cast<double>(my) <= bandBottom * zoom;
+	if (IsBarClientPointInLogicalRect(
+		clientX, clientY, zoom, geometry.dragZone))
+		return BarThicknessFineDialHitZone::Drag;
+	if (!IsBarClientPointInLogicalRect(
+		clientX, clientY, zoom, geometry.clickZone))
+		return BarThicknessFineDialHitZone::None;
+
+	// Click Zone 必须排除当帧 Popup 的实际矩形，避免数值浮窗误触激活。
+	auto popupSurface = barUISet.shapeMap[
+		BarUISetShapeEnum::DrawAttributeBar_ThicknessPreviewPopupSurface];
+	if (popupSurface && popupSurface->pct.val > 0.000001
+		&& popupSurface->w.val > 0.0 && popupSurface->h.val > 0.0
+		&& popupSurface->IsClick(clientX, clientY, zoom))
+		return BarThicknessFineDialHitZone::None;
+	return BarThicknessFineDialHitZone::Click;
+}
+
+bool IsBarThicknessPrecisionDragHit(
+	BarUISetClass& barUISet, int mx, int my)
+{
+	return HitTestBarThicknessFineDialActivation(barUISet, mx, my)
+		== BarThicknessFineDialHitZone::Drag;
 }
 
 int GetBarThicknessPresetPx(
@@ -706,6 +816,8 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 						stateMode.Pen.ModeSelect,
 						barUISet.barStyle.dpiZoom).supported;
 				bool sliderHover = sliderAvailable
+					&& drawAttribute.thicknessViewMode
+						!= ThicknessViewMode::FineDial
 					&& !drawAttribute.thicknessSliderCapture
 					&& !colorPickerOccludes
 					&& !pointerInside
@@ -718,6 +830,17 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 				!= sliderHover)
 			{
 				drawAttribute.thicknessSliderHover = sliderHover;
+				if (sliderHover
+					&& drawAttribute.thicknessViewMode
+						== ThicknessViewMode::Preview)
+					drawAttribute.thicknessViewMode = ThicknessViewMode::Slider;
+				else if (!sliderHover
+					&& drawAttribute.thicknessViewMode
+						== ThicknessViewMode::Slider
+					&& !drawAttribute.thicknessSliderPinned
+					&& !drawAttribute.thicknessSliderPressed
+					&& !drawAttribute.thicknessSliderDragging)
+					drawAttribute.thicknessViewMode = ThicknessViewMode::Preview;
 				changed = true;
 			}
 			if (changed) barUISet.UpdateRendering(false);
@@ -792,13 +915,19 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		if (barUISet.barState.drawAttributeBar.thicknessSliderCapture)
 		{
 			// 捕获被其他窗口夺走时，合成抬起事件唤醒阻塞式手势循环。
-barUISet.barState.drawAttributeBar.thicknessSliderCapture = false;
+				barUISet.barState.drawAttributeBar.thicknessViewMode =
+					ThicknessViewMode::Preview;
+				barUISet.barState.drawAttributeBar.thicknessSliderCapture = false;
 				barUISet.barState.drawAttributeBar.thicknessSliderHover = false;
 				barUISet.barState.drawAttributeBar.thicknessSliderPinned = false;
 				barUISet.barState.drawAttributeBar.thicknessSliderDragging = false;
 				barUISet.barState.drawAttributeBar.thicknessPreviewDragging = false;
 				barUISet.barState.drawAttributeBar.thicknessSliderPressed = false;
 				barUISet.barState.drawAttributeBar.thicknessSliderCandidateWidth = 0.0f;
+				barUISet.barState.drawAttributeBar.thicknessFineDialVisualWidth = 0.0f;
+				barUISet.barState.drawAttributeBar.thicknessFineDialCandidateActive = false;
+				barUISet.barState.drawAttributeBar.thicknessFineDialDragging = false;
+				barUISet.barState.drawAttributeBar.thicknessFineDialPhysicsActive = false;
 				barUISet.barState.drawAttributeBar.thicknessSliderHoldHintActive = false;
 				barUISet.barState.drawAttributeBar.thicknessSliderHoldLocked = false;
 				barUISet.barState.drawAttributeBar.thicknessSliderHoldProgress = 0.0f;
@@ -823,6 +952,10 @@ barUISet.barState.drawAttributeBar.thicknessSliderCapture = false;
 			&& !barUISet.barState.drawAttributeBar.thicknessSliderDragging)
 		{
 			barUISet.barState.drawAttributeBar.thicknessSliderHover = false;
+			if (barUISet.barState.drawAttributeBar.thicknessViewMode
+				== ThicknessViewMode::Slider)
+				barUISet.barState.drawAttributeBar.thicknessViewMode =
+					ThicknessViewMode::Preview;
 			barUISet.UpdateRendering(false);
 		}
 		return 0;
@@ -1107,6 +1240,9 @@ void BarUIRendering::DiscardDeviceResources()
 	colorPickerDarkGradientBrush.Reset();
 	thicknessPreviewPath.Reset();
 	thicknessPreviewStrokeStyle.Reset();
+	thicknessFineDialSelectorGeometry.Reset();
+	for (auto& cached : thicknessFineDialLabelCache) cached = {};
+	thicknessFineDialLabelUseSerial = 0;
 	frameGaussianBlurEffect.Reset();
 	frameMaskDeviceContext.Reset();
 	frameGradientFailureLogged = false;
@@ -1117,6 +1253,8 @@ void BarUIRendering::DiscardDeviceResources()
 	thicknessPreviewPathFailureLogged = false;
 	thicknessPreviewPathUnavailable = false;
 	thicknessPreviewPathInitialized = false;
+	thicknessFineDialSelectorUnavailable = false;
+	thicknessFineDialSelectorFailureLogged = false;
 	colorPickerGradientFailureLogged = false;
 	colorPickerGradientUnavailable = false;
 	frameDiffuseEffectFailureLogged = false;
@@ -1920,6 +2058,108 @@ ID2D1StrokeStyle* BarUIRendering::GetThicknessPreviewStrokeStyle()
 		return nullptr;
 	}
 	return thicknessPreviewStrokeStyle.Get();
+}
+
+ID2D1PathGeometry* BarUIRendering::GetThicknessFineDialSelectorGeometry()
+{
+	if (thicknessFineDialSelectorGeometry)
+		return thicknessFineDialSelectorGeometry.Get();
+	if (!d2dFactory1 || thicknessFineDialSelectorUnavailable) return nullptr;
+
+	ComPtr<ID2D1PathGeometry> geometry;
+	HRESULT hr = d2dFactory1->CreatePathGeometry(&geometry);
+	if (SUCCEEDED(hr))
+	{
+		ComPtr<ID2D1GeometrySink> sink;
+		hr = geometry->Open(&sink);
+		if (SUCCEEDED(hr))
+		{
+			// 单位三角只创建一次，绘制时通过矩阵镜像到选择轴上下两侧。
+			sink->BeginFigure(
+				D2D1::Point2F(-0.5F, 0.0F), D2D1_FIGURE_BEGIN_FILLED);
+			sink->AddLine(D2D1::Point2F(0.5F, 0.0F));
+			sink->AddLine(D2D1::Point2F(0.0F, 1.0F));
+			sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+			hr = sink->Close();
+		}
+	}
+	if (FAILED(hr))
+	{
+		thicknessFineDialSelectorUnavailable = true;
+		if (!thicknessFineDialSelectorFailureLogged)
+		{
+			thicknessFineDialSelectorFailureLogged = true;
+			if (IDTLogger) IDTLogger->error(
+				"[BarUIRendering::GetThicknessFineDialSelectorGeometry] 创建 FineDial selector 失败, hr=0x{:08X}",
+				static_cast<unsigned int>(hr));
+		}
+		return nullptr;
+	}
+	thicknessFineDialSelectorGeometry = move(geometry);
+	return thicknessFineDialSelectorGeometry.Get();
+}
+
+BarUIRendering::ThicknessFineDialLabelCacheClass*
+BarUIRendering::GetThicknessFineDialLabelLayout(int value, FLOAT zoom)
+{
+	if (!dWriteFactory1 || !barUISetClass
+		|| !barUISetClass->barMedia.formatCache
+		|| !isfinite(zoom) || zoom <= 0.0F)
+		return nullptr;
+	++thicknessFineDialLabelUseSerial;
+	for (auto& cached : thicknessFineDialLabelCache)
+	{
+		if (cached.valid && cached.value == value
+			&& abs(cached.zoom - zoom) <= 0.0001F && cached.layout)
+		{
+			cached.lastUse = thicknessFineDialLabelUseSerial;
+			return &cached;
+		}
+	}
+
+	auto* target = &thicknessFineDialLabelCache.front();
+	for (auto& cached : thicknessFineDialLabelCache)
+	{
+		if (!cached.valid)
+		{
+			target = &cached;
+			break;
+		}
+		if (cached.lastUse < target->lastUse) target = &cached;
+	}
+	FLOAT fontSize = static_cast<FLOAT>(
+		BarThicknessFineDialLabelFontSizeDip) * zoom;
+	IDWriteTextFormat* format =
+		barUISetClass->barMedia.formatCache->GetFormat(
+			L"HarmonyOS Sans SC", fontSize,
+			dWriteFontCollection.Get(), DWRITE_FONT_WEIGHT_NORMAL,
+			DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+			L"zh-cn", DWRITE_TEXT_ALIGNMENT_CENTER,
+			DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+	if (!format) return nullptr;
+
+	wchar_t text[16]{};
+	int length = _snwprintf_s(text, _countof(text), _TRUNCATE, L"%d", value);
+	if (length <= 0) return nullptr;
+	ComPtr<IDWriteTextLayout> layout;
+	HRESULT hr = dWriteFactory1->CreateTextLayout(
+		text, static_cast<UINT32>(length), format,
+		64.0F * zoom, 20.0F * zoom, &layout);
+	if (FAILED(hr)) return nullptr;
+	layout->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+	DWRITE_TEXT_METRICS metrics{};
+	if (FAILED(layout->GetMetrics(&metrics))) return nullptr;
+
+	*target = {};
+	target->value = value;
+	target->zoom = zoom;
+	target->size = D2D1::SizeF(
+		ceil(metrics.widthIncludingTrailingWhitespace),
+		ceil(metrics.height));
+	target->lastUse = thicknessFineDialLabelUseSerial;
+	target->valid = true;
+	target->layout = move(layout);
+	return target;
 }
 
 BarUIRendering::FrameDiffuseMaskCacheClass* BarUIRendering::GetRoundedRectDiffuseMask(
@@ -3136,13 +3376,20 @@ void BarUISetClass::CloseThicknessSlider(bool cancelCapture)
 		barState.drawAttributeBar.thicknessSliderPressed
 		|| barState.drawAttributeBar.thicknessSliderDragging
 		|| barState.drawAttributeBar.thicknessPreviewDragging
+		|| barState.drawAttributeBar.thicknessFineDialDragging
+		|| barState.drawAttributeBar.thicknessFineDialPhysicsActive
 		|| barState.drawAttributeBar.thicknessSliderCapture;
-barState.drawAttributeBar.thicknessSliderHover = false;
+	barState.drawAttributeBar.thicknessViewMode = ThicknessViewMode::Preview;
+	barState.drawAttributeBar.thicknessSliderHover = false;
 		barState.drawAttributeBar.thicknessSliderPinned = false;
 		barState.drawAttributeBar.thicknessSliderDragging = false;
 		barState.drawAttributeBar.thicknessPreviewDragging = false;
 		barState.drawAttributeBar.thicknessSliderPressed = false;
 		barState.drawAttributeBar.thicknessSliderCandidateWidth = 0.0f;
+		barState.drawAttributeBar.thicknessFineDialVisualWidth = 0.0f;
+		barState.drawAttributeBar.thicknessFineDialCandidateActive = false;
+		barState.drawAttributeBar.thicknessFineDialDragging = false;
+		barState.drawAttributeBar.thicknessFineDialPhysicsActive = false;
 		barState.drawAttributeBar.thicknessSliderHoldHintActive = false;
 		barState.drawAttributeBar.thicknessSliderHoldLocked = false;
 		barState.drawAttributeBar.thicknessSliderHoldProgress = 0.0f;
@@ -3321,6 +3568,8 @@ void BarUISetClass::Rendering()
 	bool drawAttributePenPreviewMorphInitialized =
 		stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
 	BarUiValueClass drawAttributeThicknessSliderProgress(0.0);
+	BarUiValueClass drawAttributeThicknessSliderTrackOpacity(0.0);
+	BarUiValueClass drawAttributeThicknessFineDialProgress(0.0);
 	BarUiValueClass drawAttributeThicknessSliderThumbOpacity(0.0);
 	BarUiValueClass drawAttributeThicknessSliderThumbScale(0.75);
 	BarUiValueClass drawAttributeThicknessSliderAccentOpacity(1.0);
@@ -3705,20 +3954,29 @@ void BarUISetClass::Rendering()
 					|| barState.drawAttributeBar.thicknessSliderPressed
 					|| barState.drawAttributeBar.thicknessSliderDragging
 					|| barState.drawAttributeBar.thicknessPreviewDragging
+					|| barState.drawAttributeBar.thicknessFineDialDragging
+					|| barState.drawAttributeBar.thicknessFineDialPhysicsActive
+					|| barState.drawAttributeBar.thicknessViewMode
+						!= ThicknessViewMode::Preview
 					|| barState.drawAttributeBar.thicknessSliderCapture))
 			{
 				// 属性栏失效时主动结束捕获，嵌套输入循环会收到一次合成抬起。
 				CloseThicknessSlider(true);
 			}
+			ThicknessViewMode thicknessViewMode = thicknessSliderAvailable
+				? static_cast<ThicknessViewMode>(
+					barState.drawAttributeBar.thicknessViewMode)
+				: ThicknessViewMode::Preview;
 			bool thicknessSliderActive = thicknessSliderAvailable
-				&& (barState.drawAttributeBar.thicknessSliderHover
-					|| barState.drawAttributeBar.thicknessSliderPinned
-					|| barState.drawAttributeBar.thicknessSliderPressed
-					|| barState.drawAttributeBar.thicknessSliderDragging);
-			if (thicknessSliderActive
+				&& thicknessViewMode == ThicknessViewMode::Slider;
+			bool thicknessFineDialActive = thicknessSliderAvailable
+				&& thicknessViewMode == ThicknessViewMode::FineDial;
+			bool thicknessExpandedActive = thicknessSliderActive
+				|| thicknessFineDialActive;
+			if (thicknessExpandedActive
 				!= drawAttributeThicknessSliderTargetActive)
 			{
-				if (thicknessSliderActive
+				if (thicknessExpandedActive
 					&& !drawAttributeThicknessSliderPositionLocked)
 				{
 					// Preview -> Slider 只在入口锁存一次，恢复 Preview 前保持同一会话。
@@ -3729,7 +3987,7 @@ void BarUISetClass::Rendering()
 					drawAttributeOverflowSliderSessionAllowsHint = hintDisplayed;
 				}
 				drawAttributeThicknessSliderTargetActive =
-					thicknessSliderActive;
+					thicknessExpandedActive;
 			}
 			auto SetPopupProgress = [&](BarUiValueClass& progress,
 				bool visible, bool closeRebound = false)
@@ -3773,13 +4031,18 @@ void BarUISetClass::Rendering()
 				barState.drawAttributeBar.penTypeMenuOpen, true);
 			const BarUiCurveSpecClass thicknessSliderProgressCurve{
 				BarUiCurveEnum::EaseInOutCubic,
-				BarUiCurveEnum::EaseInOutCubic, 0.0, false };
-			bool keepThicknessSliderTrackFlat = thicknessSliderActive
-				|| drawAttributeThicknessSliderThumbOpacity.val > 0.000001
-				|| drawAttributeThicknessSliderThumbOpacity.tar > 0.000001;
+					BarUiCurveEnum::EaseInOutCubic, 0.0, false };
 			drawAttributeThicknessSliderProgress.SetTar(
-				keepThicknessSliderTrackFlat ? 1.0 : 0.0,
+				thicknessExpandedActive ? 1.0 : 0.0,
 				operationDur, nullopt, false,
+				thicknessSliderProgressCurve);
+			drawAttributeThicknessSliderTrackOpacity.SetTar(
+				thicknessSliderActive ? 1.0 : 0.0,
+				BarThicknessFineDialTransitionDur, nullopt, false,
+				thicknessSliderProgressCurve);
+			drawAttributeThicknessFineDialProgress.SetTar(
+				thicknessFineDialActive ? 1.0 : 0.0,
+				BarThicknessFineDialTransitionDur, nullopt, false,
 				thicknessSliderProgressCurve);
 // 圆点只在轨道完全拉直后出现；退出时先完全消失，再恢复预览。
 				// 锁定只冻结本轮粗细，圆点和浮窗保持到真实抬手。
@@ -3837,16 +4100,18 @@ void BarUISetClass::Rendering()
 						? static_cast<double>(BarUiDefaultOperationDur)
 						: BarThicknessHoldExchangeAnimDur,
 					nullopt, false, holdGroupScaleCurve);
+				bool thicknessPreviewPopupVisible =
+					thicknessSliderThumbVisible || thicknessFineDialActive;
 				const BarUiCurveSpecClass thicknessPreviewPopupCurve{
-					thicknessSliderThumbVisible
+					thicknessPreviewPopupVisible
 						? BarUiCurveEnum::EaseOutBack
 						: BarUiCurveEnum::EaseInBack,
-					thicknessSliderThumbVisible
+					thicknessPreviewPopupVisible
 						? BarUiCurveEnum::EaseOutBack
 						: BarUiCurveEnum::EaseInBack,
 					0.0, false };
 				drawAttributeThicknessPreviewPopupProgress.SetTar(
-					thicknessSliderThumbVisible ? 1.0 : 0.0,
+					thicknessPreviewPopupVisible ? 1.0 : 0.0,
 					BarThicknessPreviewPopupAnimationDur,
 					nullopt, false, thicknessPreviewPopupCurve);
 			const BarUiCurveSpecClass thumbOpacityCurve{
@@ -3873,9 +4138,11 @@ void BarUISetClass::Rendering()
 				thicknessSliderThumbVisible ? 1.0 : 0.75,
 				BarThicknessSliderThumbAnimationDur,
 				nullopt, false, thumbScaleCurve);
-			bool thicknessPreviewRestored = !thicknessSliderActive
+			bool thicknessPreviewRestored = !thicknessExpandedActive
 				&& drawAttributeThicknessSliderProgress.val <= 0.000001
 				&& drawAttributeThicknessSliderProgress.tar <= 0.000001
+				&& drawAttributeThicknessFineDialProgress.val <= 0.000001
+				&& drawAttributeThicknessFineDialProgress.tar <= 0.000001
 				&& drawAttributeThicknessSliderThumbOpacity.val <= 0.000001
 				&& drawAttributeThicknessSliderThumbOpacity.tar <= 0.000001;
 			if (thicknessPreviewRestored
@@ -3920,7 +4187,9 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 					double penThickness = max(0.0f, GetPenWidth());
 					bool thicknessCandidateDragging =
 						barState.drawAttributeBar.thicknessSliderDragging
-						|| barState.drawAttributeBar.thicknessPreviewDragging;
+							|| barState.drawAttributeBar.thicknessPreviewDragging
+							|| barState.drawAttributeBar
+								.thicknessFineDialCandidateActive;
 					if (thicknessCandidateDragging)
 					{
 						penThickness = max(0.0f,
@@ -5670,7 +5939,8 @@ for (size_t i = 0; i < 3; ++i)
 						ConfigureThicknessButton(
 							BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust, nullptr,
 							BarDrawAttributeThicknessAdjustX, adjustVisible,
-							barState.drawAttributeBar.thicknessSliderPinned,
+							barState.drawAttributeBar.thicknessViewMode
+								!= ThicknessViewMode::Preview,
 							barState.drawAttributeBar.thicknessAdjustPress,
 							drawAttributeThicknessAdjustHoverStage,
 							drawAttributeThicknessAdjustPressScale);
@@ -5689,7 +5959,8 @@ for (size_t i = 0; i < 3; ++i)
 							thicknessAdjustSvg->color1.value();
 								// 三角按下仍保留选中态基色，按压反馈由背景和光影透明度表达。
 								COLORREF thicknessAdjustTargetColor =
-									barState.drawAttributeBar.thicknessSliderPinned
+									barState.drawAttributeBar.thicknessViewMode
+										!= ThicknessViewMode::Preview
 										? GetThemeColor(BarThemeColorEnum::Accent)
 										: GetThemeColor(BarThemeColorEnum::TextPrimary);
 						if (forNum == 1 || !barState.drawAttribute)
@@ -5713,11 +5984,22 @@ for (size_t i = 0; i < 3; ++i)
 								> expandedPreviewCapacity + 0.001;
 						barState.drawAttributeBar.thicknessPreviewOverflow =
 							previewOverflow;
+						bool fineDialVisualPresent =
+							barState.drawAttributeBar.thicknessViewMode
+								== ThicknessViewMode::FineDial
+							|| drawAttributeThicknessFineDialProgress.val > 0.000001
+							|| drawAttributeThicknessFineDialProgress.tar > 0.000001;
 						if (!previewOverflow)
 						{
 							// overflowPossible=false 时任何阶段都立即撤销 Hint 与命中。
 							barState.drawAttributeBar.thicknessOverflowHintPresent = false;
 							drawAttributeOverflowSliderSessionAllowsHint = false;
+							CloseThicknessOverflowTooltip();
+						}
+						else if (fineDialVisualPresent)
+						{
+							// Dial 退场完成前不重建 Overflow；业务 overflow 标记保持不变。
+							barState.drawAttributeBar.thicknessOverflowHintPresent = false;
 							CloseThicknessOverflowTooltip();
 						}
 						else if (!drawAttributeThicknessSliderTargetActive)
@@ -7184,7 +7466,9 @@ for (size_t i = 0; i < 3; ++i)
 			};
 // 关闭动画时拖动不会改变 val/tar，仍需每帧重绘圆点位置。
 			if (barState.drawAttributeBar.thicknessSliderDragging
-				|| barState.drawAttributeBar.thicknessSliderPressed)
+				|| barState.drawAttributeBar.thicknessSliderPressed
+				|| barState.drawAttributeBar.thicknessFineDialDragging
+				|| barState.drawAttributeBar.thicknessFineDialPhysicsActive)
 				needRendering = true;
 			// 独立的粗细值也进入统一动画时钟，方便后续直接替换为非线性或回弹曲线。
 			if (!drawAttributePenThickness.IsSame()) ChangeValue(drawAttributePenThickness, false);
@@ -7204,6 +7488,10 @@ for (size_t i = 0; i < 3; ++i)
 				ChangeValue(drawAttributeThicknessPreviewPopupProgress, false);
 			if (!drawAttributeThicknessSliderProgress.IsSame())
 				ChangeValue(drawAttributeThicknessSliderProgress, false);
+			if (!drawAttributeThicknessSliderTrackOpacity.IsSame())
+				ChangeValue(drawAttributeThicknessSliderTrackOpacity, false);
+			if (!drawAttributeThicknessFineDialProgress.IsSame())
+				ChangeValue(drawAttributeThicknessFineDialProgress, false);
 			// 静止保持进度由交互线程写入，渲染侧每帧重绘环形进度。
 			if (barState.drawAttributeBar.thicknessSliderHoldHintActive
 				|| barState.drawAttributeBar.thicknessSliderHoldLocked)
@@ -7473,7 +7761,8 @@ for (size_t i = 0; i < 3; ++i)
 		UpdateHoverAnimation(thicknessAdjust->pct, &thicknessAdjust->fill.value(),
 			drawAttributeThicknessAdjustHoverStage, thicknessAdjustVisible,
 			thicknessControlOpacity >= 0.999999
-				&& !barState.drawAttributeBar.thicknessSliderPinned);
+				&& barState.drawAttributeBar.thicknessViewMode
+					== ThicknessViewMode::Preview);
 		auto annotationClose = shapeMap[
 			BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit];
 		UpdateHoverAnimation(annotationClose->pct,
@@ -7686,8 +7975,10 @@ for (size_t i = 0; i < 3; ++i)
 				|| (abs(previewSide) <= 0.000001
 					&& static_cast<bool>(barState.widgetPosition.primaryBar));
 			double thicknessCollapsedAngle = thicknessOpensBelow ? 180.0 : 0.0;
+			bool thicknessViewExpanded = barState.drawAttributeBar
+				.thicknessViewMode != ThicknessViewMode::Preview;
 			double thicknessTargetAngle =
-				barState.drawAttributeBar.thicknessSliderPinned
+				thicknessViewExpanded
 					? 180.0 - thicknessCollapsedAngle
 					: thicknessCollapsedAngle;
 			if (forNum == 1 || !barState.drawAttribute)
@@ -7834,6 +8125,8 @@ double baseThumbDiameter =
 			drawAttributeThicknessPreviewPopupGeometryValid = false;
 			double popupScale = max(0.0, static_cast<double>(
 				drawAttributeThicknessPreviewPopupProgress.val));
+			double fineDialProgress = clamp(static_cast<double>(
+				drawAttributeThicknessFineDialProgress.val), 0.0, 1.0);
 			auto popupSurface = shapeMap[
 				BarUISetShapeEnum::DrawAttributeBar_ThicknessPreviewPopupSurface];
 			auto popupCircle = shapeMap[
@@ -7905,42 +8198,74 @@ double baseThumbDiameter =
 				double thumbRadius = min(
 					sliderThumb->w.val, sliderThumb->h.val) / 2.0;
 				// 浮窗贴着 Thumb 外侧留 10 DIP，可与属性面板局部重叠。
-				double targetCenterY = anchorY + previewGeometry.previewSide
+				double sliderTargetCenterY = anchorY + previewGeometry.previewSide
 					* (thumbRadius + BarThicknessPreviewPopupThumbGap
 						+ popupHeight / 2.0);
 
-				// 笔类型按钮和浮窗都转换到窗口局部坐标，取当前动画几何的最左边作为硬边界。
-				double penTypeSafeRight = numeric_limits<double>::infinity();
-				auto IncludePenTypeLeft = [&](const auto& widget)
-					{
-						if (!widget || widget->w.val <= 0.0 || widget->h.val <= 0.0)
-							return;
-						BarUiInheritClass inherit = widget->Inherit(
-							BarUiInheritEnum::TopLeft, *panel);
-						penTypeSafeRight = min(penTypeSafeRight,
-							static_cast<double>(inherit.x)
-								- BarThicknessPreviewAvoidGap);
-					};
-				IncludePenTypeLeft(shapeMap[
-					BarUISetShapeEnum::DrawAttributeBar_Brush1]);
-				IncludePenTypeLeft(shapeMap[
-					BarUISetShapeEnum::DrawAttributeBar_Highlight1]);
-				IncludePenTypeLeft(shapeMap[
-					BarUISetShapeEnum::DrawAttributeBar_PenTypeMenu]);
-				if (!isfinite(penTypeSafeRight))
-					penTypeSafeRight = panel->inhX
-						+ BarDrawAttributePenTypeLeft * panelScale
-						- BarThicknessPreviewAvoidGap;
+				// Slider 端继续使用既有 pen-type safe bound；FineDial 端不读取该边界。
+				double sliderTargetCenterX = anchorX;
+				if (fineDialProgress < 0.999999)
+				{
+					double penTypeSafeRight = numeric_limits<double>::infinity();
+					auto IncludePenTypeLeft = [&](const auto& widget)
+						{
+							if (!widget || widget->w.val <= 0.0
+								|| widget->h.val <= 0.0)
+								return;
+							BarUiInheritClass inherit = widget->Inherit(
+								BarUiInheritEnum::TopLeft, *panel);
+							penTypeSafeRight = min(penTypeSafeRight,
+								static_cast<double>(inherit.x)
+									- BarThicknessPreviewAvoidGap);
+						};
+					IncludePenTypeLeft(shapeMap[
+						BarUISetShapeEnum::DrawAttributeBar_Brush1]);
+					IncludePenTypeLeft(shapeMap[
+						BarUISetShapeEnum::DrawAttributeBar_Highlight1]);
+					IncludePenTypeLeft(shapeMap[
+						BarUISetShapeEnum::DrawAttributeBar_PenTypeMenu]);
+					if (!isfinite(penTypeSafeRight))
+						penTypeSafeRight = panel->inhX
+							+ BarDrawAttributePenTypeLeft * panelScale
+							- BarThicknessPreviewAvoidGap;
+					sliderTargetCenterX = min(anchorX,
+						penTypeSafeRight - popupWidth / 2.0);
+					double safePopupScale = max(0.000001, popupScale);
+					double maxRenderedCenterX = anchorX
+						+ (penTypeSafeRight - anchorX) / safePopupScale
+						- popupWidth / 2.0;
+					sliderTargetCenterX = min(
+						sliderTargetCenterX, maxRenderedCenterX);
+				}
 
-				// X 只读取 Thumb 当帧最终布局中心；safe bound 是唯一允许产生相对位移的步骤。
-				double targetCenterX = min(anchorX,
-					penTypeSafeRight - popupWidth / 2.0);
-				// 按 Popup 当前回弹比例反解中心上限，确保最终右边缘不越界。
-				double safePopupScale = max(0.000001, popupScale);
-				double maxRenderedCenterX = anchorX
-					+ (penTypeSafeRight - anchorX) / safePopupScale
-					- popupWidth / 2.0;
-				targetCenterX = min(targetCenterX, maxRenderedCenterX);
+				double fineTargetCenterX =
+					(previewGeometry.trackLeft + previewGeometry.trackRight) / 2.0;
+				// 以连续 previewSide 穿过换边中点，避免 Popup 在上下端点间跳跃。
+				double panelCenterY = panel->inhY + panel->h.val / 2.0;
+				double fineTargetCenterY = panelCenterY
+					+ previewGeometry.previewSide
+						* (panel->h.val / 2.0
+							+ BarThicknessFineDialPopupPanelGapDip * panelScale
+							+ popupHeight / 2.0);
+				double targetCenterX = sliderTargetCenterX
+					+ (fineTargetCenterX - sliderTargetCenterX)
+						* fineDialProgress;
+				double targetCenterY = sliderTargetCenterY
+					+ (fineTargetCenterY - sliderTargetCenterY)
+						* fineDialProgress;
+				// FineDial 端仅保留窗口边界保护，外侧间隙不再受笔型区域挤压。
+				double logicalWindowWidth = static_cast<double>(barWindow.w)
+					/ max(0.000001, static_cast<double>(barStyle.zoom));
+				double logicalWindowHeight = static_cast<double>(barWindow.h)
+					/ max(0.000001, static_cast<double>(barStyle.zoom));
+				targetCenterX = clamp(targetCenterX,
+					popupWidth / 2.0,
+					max(popupWidth / 2.0,
+						logicalWindowWidth - popupWidth / 2.0));
+				targetCenterY = clamp(targetCenterY,
+					popupHeight / 2.0,
+					max(popupHeight / 2.0,
+						logicalWindowHeight - popupHeight / 2.0));
 				double targetLeft = targetCenterX - popupWidth / 2.0;
 				double targetRight = targetCenterX + popupWidth / 2.0;
 				double targetTop = targetCenterY - popupHeight / 2.0;
@@ -9415,6 +9740,13 @@ IncludeShapeBounds(shapeMap[
 									static_cast<double>(
 										drawAttributeThicknessSliderProgress.val),
 									0.0, 1.0);
+								double sliderTrackOpacity = clamp(
+									static_cast<double>(
+										drawAttributeThicknessSliderTrackOpacity.val),
+									0.0, 1.0);
+								double baseThicknessOpacity = contentOpacity
+									* ((1.0 - sliderProgress)
+										+ sliderProgress * sliderTrackOpacity);
 								FLOAT trackThickness = min(
 									maxPreviewThickness,
 									static_cast<FLOAT>(
@@ -9486,7 +9818,7 @@ IncludeShapeBounds(shapeMap[
 								ID2D1SolidColorBrush* solidBrush =
 									spec.GetFrameSolidColorBrush(
 										barDeviceContext.Get(), previewColor,
-										contentOpacity);
+										baseThicknessOpacity);
 								D2D1_RECT_F previewClip = D2D1::RectF(
 									static_cast<FLOAT>(
 										previewGeometry.previewLeft * uiZoom),
@@ -9588,13 +9920,290 @@ IncludeShapeBounds(shapeMap[
 									{
 										if (gradientBrush)
 											gradientBrush->SetOpacity(
-											static_cast<FLOAT>(contentOpacity));
+											static_cast<FLOAT>(baseThicknessOpacity));
 										barDeviceContext->FillRoundedRectangle(
 											&roundedPreview, previewBrush);
 									}
 								}
 								if (previewClipPushed)
 									barDeviceContext->PopAxisAlignedClip();
+
+								// Dial 不可见时在这里直接跳过投影、tick 和文字缓存查询。
+								double fineDialOpacity = clamp(
+									static_cast<double>(
+										drawAttributeThicknessFineDialProgress.val),
+									0.0, 1.0)
+									* contentOpacity * panelExpandedProgress;
+								if (fineDialOpacity > 0.000001)
+								{
+									auto range = GetBarThicknessSliderRange(
+										stateMode.Pen.ModeSelect, barStyle.dpiZoom);
+									auto fineGeometry =
+										CalculateBarThicknessFineDialGeometry(
+											previewGeometry, sliderCenterY);
+									double rangeSpan = static_cast<double>(
+										range.max - range.min);
+									double unitTravelLogical = rangeSpan > 0.0
+										? max(0.000001,
+											(previewGeometry.trackRight
+												- previewGeometry.trackLeft
+												- BarThicknessSliderThumbDiameter
+													* panelAnimationScale)
+											* BarThicknessPreviewTouchDragTravelScale
+											/ rangeSpan)
+										: 0.0;
+									double availableHalfWidth = max(0.0,
+										fineGeometry.availableHalfWidth
+											- 6.0 * panelAnimationScale);
+									double radius = availableHalfWidth
+										/ sin(BarThicknessFineDialThetaLimit);
+									double angularStep = radius > 0.000001
+										? unitTravelLogical / radius : 0.0;
+									if (range.supported && rangeSpan > 0.0
+										&& fineGeometry.valid && radius > 0.000001
+										&& angularStep > 0.000001)
+									{
+										bool candidateActive = barState.drawAttributeBar
+											.thicknessFineDialCandidateActive;
+										double visualValue = candidateActive
+											? static_cast<double>(barState.drawAttributeBar
+												.thicknessFineDialVisualWidth)
+											: static_cast<double>(drawAttributePenThickness.val);
+										// 发布程序化动画的当帧视觉值，后续抓取可从当前角度接管。
+										if (!candidateActive && isfinite(visualValue))
+											barState.drawAttributeBar.thicknessFineDialVisualWidth =
+												static_cast<float>(visualValue);
+										if (!isfinite(visualValue))
+											visualValue = clamp(
+												static_cast<double>(GetPenWidth()),
+												static_cast<double>(range.min),
+												static_cast<double>(range.max));
+										double visibleValueRadius =
+											BarThicknessFineDialThetaLimit / angularStep;
+										int firstTick = max(range.min,
+											static_cast<int>(ceil(
+												visualValue - visibleValueRadius)));
+										int lastTick = min(range.max,
+											static_cast<int>(floor(
+												visualValue + visibleValueRadius)));
+										if (lastTick - firstTick + 1
+											> BarThicknessFineDialVisibleTickLimit)
+										{
+											int centerTick = static_cast<int>(
+												lround(visualValue));
+											firstTick = max(range.min,
+												centerTick
+													- BarThicknessFineDialVisibleTickLimit / 2);
+											lastTick = min(range.max,
+												firstTick
+													+ BarThicknessFineDialVisibleTickLimit - 1);
+											firstTick = max(range.min,
+												lastTick
+													- BarThicknessFineDialVisibleTickLimit + 1);
+										}
+
+										double dialCenterX = fineGeometry.centerX;
+										double dialCenterY = fineGeometry.centerY;
+										double outwardDirection =
+											fineGeometry.outwardDirection;
+										COLORREF tickColor = MixBarUiColor(
+											GetThemeColor(BarThemeColorEnum::TextPrimary),
+											GetThemeColor(BarThemeColorEnum::Surface), 0.52);
+										COLORREF centerColor = RGB(255, 255, 255);
+
+										// 两条固定分段 envelope 只暗示圆柱外缘，不引入 effect 或逐帧资源。
+										if (auto envelopeBrush =
+											spec.GetFrameSolidColorBrush(
+												barDeviceContext.Get(), tickColor,
+												fineDialOpacity * 0.12))
+										{
+											constexpr int envelopeSegments = 12;
+											D2D1_POINT_2F previousTop{};
+											D2D1_POINT_2F previousBottom{};
+											for (int segment = 0;
+												segment <= envelopeSegments; ++segment)
+											{
+												double theta = -BarThicknessFineDialThetaLimit
+													+ BarThicknessFineDialThetaLimit * 2.0
+														* static_cast<double>(segment)
+														/ envelopeSegments;
+												double depth = max(0.0, cos(theta));
+												double x = dialCenterX
+													+ radius * sin(theta);
+												double y = dialCenterY - outwardDirection
+													* (1.0 - depth)
+													* BarThicknessFineDialDepthLiftDip
+													* panelAnimationScale;
+												double halfEnvelope =
+													(BarThicknessFineDialMajorTickLengthDip / 2.0
+														+ 2.0) * panelAnimationScale
+													* (0.70 + 0.30 * depth);
+												D2D1_POINT_2F nextTop = D2D1::Point2F(
+													static_cast<FLOAT>(x * uiZoom),
+													static_cast<FLOAT>((y - halfEnvelope)
+														* uiZoom));
+												D2D1_POINT_2F nextBottom = D2D1::Point2F(
+													static_cast<FLOAT>(x * uiZoom),
+													static_cast<FLOAT>((y + halfEnvelope)
+														* uiZoom));
+												if (segment > 0)
+												{
+													barDeviceContext->DrawLine(
+														previousTop, nextTop,
+														envelopeBrush, max(0.5F, 0.7F * uiZoom));
+													barDeviceContext->DrawLine(
+														previousBottom, nextBottom,
+														envelopeBrush, max(0.5F, 0.7F * uiZoom));
+												}
+												previousTop = nextTop;
+												previousBottom = nextBottom;
+											}
+										}
+
+										for (int tick = firstTick; tick <= lastTick; ++tick)
+										{
+											double theta = (static_cast<double>(tick)
+												- visualValue) * angularStep;
+											if (abs(theta) > BarThicknessFineDialThetaLimit)
+												continue;
+											double depth = max(0.0, cos(theta));
+											double tickX = dialCenterX
+												+ radius * sin(theta);
+											double edgeRatio = availableHalfWidth > 0.0
+												? abs(tickX - dialCenterX)
+													/ availableHalfWidth : 1.0;
+											double fadeT = clamp(
+												(edgeRatio
+													- BarThicknessFineDialEdgeFadeStart)
+												/ (1.0
+													- BarThicknessFineDialEdgeFadeStart),
+												0.0, 1.0);
+											double edgeFade = 1.0
+												- fadeT * fadeT * (3.0 - 2.0 * fadeT);
+											double tickOpacity = fineDialOpacity * edgeFade
+												* (0.30 + 0.70 * depth);
+											bool major = tick % 5 == 0;
+											double tickLength = (major
+												? BarThicknessFineDialMajorTickLengthDip
+												: BarThicknessFineDialTickLengthDip)
+												* panelAnimationScale
+												* (0.72 + 0.28 * depth);
+											double tickCenterY = dialCenterY - outwardDirection
+												* (1.0 - depth)
+												* BarThicknessFineDialDepthLiftDip
+												* panelAnimationScale;
+											if (auto tickBrush =
+												spec.GetFrameSolidColorBrush(
+													barDeviceContext.Get(), tickColor,
+													tickOpacity))
+												barDeviceContext->DrawLine(
+													D2D1::Point2F(
+														static_cast<FLOAT>(tickX * uiZoom),
+														static_cast<FLOAT>((tickCenterY
+															- tickLength / 2.0) * uiZoom)),
+													D2D1::Point2F(
+														static_cast<FLOAT>(tickX * uiZoom),
+														static_cast<FLOAT>((tickCenterY
+															+ tickLength / 2.0) * uiZoom)),
+													tickBrush,
+													max(0.7F, static_cast<FLOAT>(
+														(major ? 1.4 : 1.0)
+														* panelAnimationScale * uiZoom)));
+
+											if (major && tickOpacity > 0.000001)
+											{
+												auto* label = spec.GetThicknessFineDialLabelLayout(
+													tick, uiZoom);
+												if (label && label->layout)
+												{
+													double labelCenterY = tickCenterY
+														- outwardDirection
+															* (tickLength / 2.0
+																+ 3.0 * panelAnimationScale
+																+ label->size.height
+																	/ (2.0 * uiZoom));
+													if (auto labelBrush =
+														spec.GetFrameSolidColorBrush(
+															barDeviceContext.Get(), tickColor,
+															tickOpacity * 0.92))
+														barDeviceContext->DrawTextLayout(
+															D2D1::Point2F(
+																static_cast<FLOAT>(tickX * uiZoom
+																	- label->size.width / 2.0F),
+																static_cast<FLOAT>(labelCenterY * uiZoom
+																	- label->size.height / 2.0F)),
+															label->layout.Get(), labelBrush,
+															D2D1_DRAW_TEXT_OPTIONS_CLIP);
+												}
+											}
+										}
+
+										if (auto centerBrush =
+											spec.GetFrameSolidColorBrush(
+												barDeviceContext.Get(), centerColor,
+												fineDialOpacity))
+										{
+											double centerLength =
+												(BarThicknessFineDialMajorTickLengthDip + 3.0)
+												* panelAnimationScale;
+											barDeviceContext->DrawLine(
+												D2D1::Point2F(
+													static_cast<FLOAT>(dialCenterX * uiZoom),
+													static_cast<FLOAT>((dialCenterY
+														- centerLength / 2.0) * uiZoom)),
+												D2D1::Point2F(
+													static_cast<FLOAT>(dialCenterX * uiZoom),
+													static_cast<FLOAT>((dialCenterY
+														+ centerLength / 2.0) * uiZoom)),
+												centerBrush, max(1.0F,
+													static_cast<FLOAT>(1.6
+														* panelAnimationScale * uiZoom)));
+
+											if (auto selector =
+												spec.GetThicknessFineDialSelectorGeometry())
+											{
+												D2D1_MATRIX_3X2_F originalTransform;
+												barDeviceContext->GetTransform(
+													&originalTransform);
+												FLOAT selectorWidth = static_cast<FLOAT>(
+													BarThicknessFineDialSelectorWidthDip
+													* panelAnimationScale * uiZoom);
+												FLOAT selectorHeight = static_cast<FLOAT>(
+													BarThicknessFineDialSelectorHeightDip
+													* panelAnimationScale * uiZoom);
+												FLOAT selectorGap = static_cast<FLOAT>(
+													(centerLength / 2.0 + 2.0
+														* panelAnimationScale) * uiZoom);
+												FLOAT centerXPixel = static_cast<FLOAT>(
+													dialCenterX * uiZoom);
+												FLOAT centerYPixel = static_cast<FLOAT>(
+													dialCenterY * uiZoom);
+												barDeviceContext->SetTransform(
+													D2D1::Matrix3x2F::Scale(
+														selectorWidth, selectorHeight)
+													* D2D1::Matrix3x2F::Translation(
+														centerXPixel,
+														centerYPixel - selectorGap
+															- selectorHeight)
+													* originalTransform);
+												barDeviceContext->FillGeometry(
+													selector, centerBrush);
+												barDeviceContext->SetTransform(
+													D2D1::Matrix3x2F::Scale(
+														selectorWidth, -selectorHeight)
+													* D2D1::Matrix3x2F::Translation(
+														centerXPixel,
+														centerYPixel + selectorGap
+															+ selectorHeight)
+													* originalTransform);
+												barDeviceContext->FillGeometry(
+													selector, centerBrush);
+												barDeviceContext->SetTransform(
+													originalTransform);
+											}
+										}
+									}
+								}
 							}
 
 							struct ThicknessButtonRender
@@ -11455,6 +12064,345 @@ void BarUISetClass::Interact()
 					stateMode.Pen.ModeSelect,
 					barStyle.dpiZoom).supported;
 		};
+	enum class ThicknessFineDialPhase : int
+	{
+		Idle,
+		Dragging,
+		Inertia,
+		Settling,
+	};
+	struct ThicknessFineDialVelocitySample
+	{
+		double screenX = 0.0;
+		ULONGLONG tick = 0;
+	};
+	ThicknessFineDialPhase thicknessFineDialPhase =
+		ThicknessFineDialPhase::Idle;
+	array<ThicknessFineDialVelocitySample,
+		BarThicknessFineDialVelocitySampleCount> thicknessFineDialSamples{};
+	size_t thicknessFineDialSampleCount = 0;
+	double thicknessFineDialRawValue = 0.0;
+	double thicknessFineDialVisualValue = 0.0;
+	double thicknessFineDialVelocity = 0.0;
+	double thicknessFineDialResidualVelocity = 0.0;
+	double thicknessFineDialSettleTarget = 0.0;
+	double thicknessFineDialUnitTravelScreen = 1.0;
+	int thicknessFineDialRangeMin = 0;
+	int thicknessFineDialRangeMax = 0;
+	ULONGLONG thicknessFineDialGrabTick = 0;
+	chrono::steady_clock::time_point thicknessFineDialLastPhysicsTime =
+		chrono::steady_clock::now();
+	bool thicknessFineDialPhysicsClockNeedsReset = true;
+	bool thicknessFineDialCommitIssued = false;
+
+	auto ResetThicknessFineDialSamples = [&]()
+		{
+			thicknessFineDialSampleCount = 0;
+			thicknessFineDialSamples = {};
+		};
+	auto AddThicknessFineDialSample = [&](double screenX, ULONGLONG tick)
+		{
+			if (thicknessFineDialSampleCount
+				< thicknessFineDialSamples.size())
+			{
+				thicknessFineDialSamples[thicknessFineDialSampleCount++] =
+					{ screenX, tick };
+				return;
+			}
+			for (size_t index = 1;
+				index < thicknessFineDialSamples.size(); ++index)
+				thicknessFineDialSamples[index - 1] =
+					thicknessFineDialSamples[index];
+			thicknessFineDialSamples.back() = { screenX, tick };
+		};
+	auto EstimateThicknessFineDialScreenVelocity = [&]()
+		{
+			if (thicknessFineDialSampleCount < 2) return 0.0;
+			ULONGLONG newestTick = thicknessFineDialSamples[
+				thicknessFineDialSampleCount - 1].tick;
+			double weightedVelocity = 0.0;
+			double totalWeight = 0.0;
+			for (size_t index = 1;
+				index < thicknessFineDialSampleCount; ++index)
+			{
+				const auto& previous = thicknessFineDialSamples[index - 1];
+				const auto& current = thicknessFineDialSamples[index];
+				if (newestTick - previous.tick
+					> BarThicknessFineDialVelocityWindowMs
+					|| current.tick <= previous.tick)
+					continue;
+				double segmentSeconds = static_cast<double>(
+					current.tick - previous.tick) / 1000.0;
+				double weight = static_cast<double>(index);
+				weightedVelocity += (current.screenX - previous.screenX)
+					/ segmentSeconds * weight;
+				totalWeight += weight;
+			}
+			return totalWeight > 0.0
+				? weightedVelocity / totalWeight : 0.0;
+		};
+	auto ProjectThicknessFineDialRubberBand = [&](double rawValue)
+		{
+			double dpiScale = max(1.0,
+				static_cast<double>(barStyle.dpiZoom));
+			double limitValue = BarThicknessFineDialRubberBandLimitDip
+				* dpiScale / max(0.000001,
+					thicknessFineDialUnitTravelScreen);
+			if (rawValue < thicknessFineDialRangeMin)
+			{
+				double overshoot = thicknessFineDialRangeMin - rawValue;
+				return thicknessFineDialRangeMin
+					- limitValue * (1.0 - exp(-overshoot / limitValue));
+			}
+			if (rawValue > thicknessFineDialRangeMax)
+			{
+				double overshoot = rawValue - thicknessFineDialRangeMax;
+				return thicknessFineDialRangeMax
+					+ limitValue * (1.0 - exp(-overshoot / limitValue));
+			}
+			return rawValue;
+		};
+	auto PublishThicknessFineDialCandidate = [&]()
+		{
+			thicknessFineDialVisualValue =
+				ProjectThicknessFineDialRubberBand(
+					thicknessFineDialRawValue);
+			int candidate = clamp(static_cast<int>(lround(
+				thicknessFineDialVisualValue)),
+				thicknessFineDialRangeMin,
+				thicknessFineDialRangeMax);
+			barState.drawAttributeBar.thicknessFineDialVisualWidth =
+				static_cast<float>(thicknessFineDialVisualValue);
+			barState.drawAttributeBar.thicknessSliderCandidateWidth =
+				static_cast<float>(candidate);
+			barState.drawAttributeBar.thicknessFineDialCandidateActive = true;
+			return candidate;
+		};
+	auto CancelThicknessFineDialSelection = [&]()
+		{
+			thicknessFineDialPhase = ThicknessFineDialPhase::Idle;
+			thicknessFineDialVelocity = 0.0;
+			thicknessFineDialResidualVelocity = 0.0;
+			thicknessFineDialSettleTarget = 0.0;
+			thicknessFineDialCommitIssued = false;
+			ResetThicknessFineDialSamples();
+			barState.drawAttributeBar.thicknessFineDialDragging = false;
+			barState.drawAttributeBar.thicknessFineDialPhysicsActive = false;
+			barState.drawAttributeBar.thicknessFineDialCandidateActive = false;
+			barState.drawAttributeBar.thicknessSliderCandidateWidth = 0.0f;
+			barState.drawAttributeBar.thicknessSliderHoldHintActive = false;
+			barState.drawAttributeBar.thicknessSliderHoldLocked = false;
+			barState.drawAttributeBar.thicknessSliderHoldProgress = 0.0f;
+		};
+	auto CommitThicknessFineDialSelection = [&]()
+		{
+			bool candidateActive = barState.drawAttributeBar
+				.thicknessFineDialCandidateActive;
+			int candidate = clamp(static_cast<int>(lround(
+				static_cast<double>(barState.drawAttributeBar
+					.thicknessSliderCandidateWidth))),
+				thicknessFineDialRangeMin,
+				thicknessFineDialRangeMax);
+			bool shouldCommit = candidateActive
+				&& !thicknessFineDialCommitIssued
+				&& abs(static_cast<double>(GetPenWidth()) - candidate)
+					> 0.000001;
+			thicknessFineDialCommitIssued = true;
+			thicknessFineDialPhase = ThicknessFineDialPhase::Idle;
+			thicknessFineDialVelocity = 0.0;
+			thicknessFineDialResidualVelocity = 0.0;
+			ResetThicknessFineDialSamples();
+			barState.drawAttributeBar.thicknessFineDialDragging = false;
+			barState.drawAttributeBar.thicknessFineDialPhysicsActive = false;
+			if (shouldCommit)
+				SetPenWidth(static_cast<float>(candidate), true);
+			barState.drawAttributeBar.thicknessFineDialCandidateActive = false;
+			barState.drawAttributeBar.thicknessSliderCandidateWidth = 0.0f;
+			thicknessFineDialCommitIssued = false;
+		};
+	auto BeginThicknessFineDialDrag = [&](double startValue,
+		double screenX, double unitTravelScreen,
+		const BarThicknessSliderRange& range)
+		{
+			bool continuingMotion = thicknessFineDialPhase
+				== ThicknessFineDialPhase::Inertia
+				|| thicknessFineDialPhase
+					== ThicknessFineDialPhase::Settling;
+			thicknessFineDialResidualVelocity =
+				thicknessFineDialPhase == ThicknessFineDialPhase::Inertia
+					? thicknessFineDialVelocity : 0.0;
+			if (continuingMotion
+				&& barState.drawAttributeBar.thicknessFineDialCandidateActive)
+				startValue = static_cast<double>(barState.drawAttributeBar
+					.thicknessFineDialVisualWidth);
+			thicknessFineDialRangeMin = range.min;
+			thicknessFineDialRangeMax = range.max;
+			thicknessFineDialUnitTravelScreen = max(0.000001,
+				unitTravelScreen);
+			thicknessFineDialRawValue = startValue;
+			thicknessFineDialVelocity = 0.0;
+			thicknessFineDialGrabTick = GetTickCount64();
+			thicknessFineDialCommitIssued = false;
+			thicknessFineDialPhase = ThicknessFineDialPhase::Dragging;
+			barState.drawAttributeBar.thicknessFineDialDragging = true;
+			barState.drawAttributeBar.thicknessFineDialPhysicsActive = false;
+			ResetThicknessFineDialSamples();
+			AddThicknessFineDialSample(
+				screenX, thicknessFineDialGrabTick);
+			PublishThicknessFineDialCandidate();
+		};
+	auto EndThicknessFineDialDrag = [&](bool holdLocked)
+		{
+			barState.drawAttributeBar.thicknessFineDialDragging = false;
+			if (holdLocked)
+			{
+				CommitThicknessFineDialSelection();
+				return;
+			}
+			double sampledScreenVelocity =
+				EstimateThicknessFineDialScreenVelocity();
+			double heldSeconds = static_cast<double>(
+				GetTickCount64() - thicknessFineDialGrabTick) / 1000.0;
+			double residualVelocity = thicknessFineDialResidualVelocity
+				* exp(-BarThicknessFineDialResidualDecayPerSecond
+					* max(0.0, heldSeconds));
+			double sampledValueVelocity = sampledScreenVelocity
+				/ max(0.000001, thicknessFineDialUnitTravelScreen);
+			thicknessFineDialVelocity = sampledValueVelocity
+				+ BarThicknessFineDialResidualWeight * residualVelocity;
+			double dpiScale = max(1.0,
+				static_cast<double>(barStyle.dpiZoom));
+			double maximumValueVelocity =
+				BarThicknessFineDialMaxVelocityDipPerSecond * dpiScale
+				/ max(0.000001, thicknessFineDialUnitTravelScreen);
+			thicknessFineDialVelocity = clamp(
+				thicknessFineDialVelocity,
+				-maximumValueVelocity, maximumValueVelocity);
+			double releaseThresholdValue =
+				BarThicknessFineDialReleaseVelocityDipPerSecond * dpiScale
+				/ max(0.000001, thicknessFineDialUnitTravelScreen);
+			if (thicknessFineDialRawValue < thicknessFineDialRangeMin
+				|| thicknessFineDialRawValue > thicknessFineDialRangeMax)
+			{
+				thicknessFineDialSettleTarget = clamp(
+					thicknessFineDialRawValue,
+					static_cast<double>(thicknessFineDialRangeMin),
+					static_cast<double>(thicknessFineDialRangeMax));
+				thicknessFineDialPhase = ThicknessFineDialPhase::Settling;
+			}
+			else if (abs(thicknessFineDialVelocity)
+				>= releaseThresholdValue)
+				thicknessFineDialPhase = ThicknessFineDialPhase::Inertia;
+			else
+			{
+				thicknessFineDialSettleTarget = clamp(
+					static_cast<double>(lround(thicknessFineDialRawValue)),
+					static_cast<double>(thicknessFineDialRangeMin),
+					static_cast<double>(thicknessFineDialRangeMax));
+				thicknessFineDialPhase = ThicknessFineDialPhase::Settling;
+			}
+			barState.drawAttributeBar.thicknessFineDialPhysicsActive = true;
+			thicknessFineDialLastPhysicsTime = chrono::steady_clock::now();
+			thicknessFineDialPhysicsClockNeedsReset = true;
+		};
+	auto AdvanceThicknessFineDialPhysics = [&]()
+		{
+			if (!barState.drawAttributeBar.thicknessFineDialPhysicsActive
+				|| barState.drawAttributeBar.thicknessViewMode
+					!= ThicknessViewMode::FineDial
+				|| !ThicknessSliderAvailable())
+			{
+				CancelThicknessFineDialSelection();
+				return;
+			}
+			auto range = GetBarThicknessSliderRange(
+				stateMode.Pen.ModeSelect, barStyle.dpiZoom);
+			if (!range.supported || range.min != thicknessFineDialRangeMin
+				|| range.max != thicknessFineDialRangeMax)
+			{
+				// 支持笔型或 DPI 量程变化时旧候选失效，由现有粗细动画接管。
+				CancelThicknessFineDialSelection();
+				UpdateRendering(false);
+				return;
+			}
+			auto now = chrono::steady_clock::now();
+			if (thicknessFineDialPhysicsClockNeedsReset)
+			{
+				thicknessFineDialLastPhysicsTime = now;
+				thicknessFineDialPhysicsClockNeedsReset = false;
+				return;
+			}
+			double dt = chrono::duration<double>(
+				now - thicknessFineDialLastPhysicsTime).count();
+			thicknessFineDialLastPhysicsTime = now;
+			if (!isfinite(dt) || dt <= 0.0) return;
+			dt = min(dt, BarThicknessFineDialMaxDtSeconds);
+			double dpiScale = max(1.0,
+				static_cast<double>(barStyle.dpiZoom));
+			double releaseThresholdValue =
+				BarThicknessFineDialReleaseVelocityDipPerSecond * dpiScale
+				/ max(0.000001, thicknessFineDialUnitTravelScreen);
+			if (thicknessFineDialPhase == ThicknessFineDialPhase::Inertia)
+			{
+				thicknessFineDialRawValue +=
+					thicknessFineDialVelocity * dt;
+				thicknessFineDialVelocity *= exp(
+					-BarThicknessFineDialFrictionPerSecond * dt);
+				PublishThicknessFineDialCandidate();
+				if (thicknessFineDialRawValue < thicknessFineDialRangeMin
+					|| thicknessFineDialRawValue > thicknessFineDialRangeMax)
+				{
+					thicknessFineDialSettleTarget = clamp(
+						thicknessFineDialRawValue,
+						static_cast<double>(thicknessFineDialRangeMin),
+						static_cast<double>(thicknessFineDialRangeMax));
+					thicknessFineDialPhase =
+						ThicknessFineDialPhase::Settling;
+				}
+				else if (abs(thicknessFineDialVelocity)
+					< releaseThresholdValue)
+				{
+					thicknessFineDialSettleTarget = clamp(
+						static_cast<double>(lround(
+							thicknessFineDialRawValue)),
+						static_cast<double>(thicknessFineDialRangeMin),
+						static_cast<double>(thicknessFineDialRangeMax));
+					thicknessFineDialPhase =
+						ThicknessFineDialPhase::Settling;
+				}
+			}
+			else if (thicknessFineDialPhase
+				== ThicknessFineDialPhase::Settling)
+			{
+				double error = thicknessFineDialRawValue
+					- thicknessFineDialSettleTarget;
+				double acceleration =
+					-BarThicknessFineDialSpringOmega
+						* BarThicknessFineDialSpringOmega * error
+					- 2.0 * BarThicknessFineDialSpringDampingRatio
+						* BarThicknessFineDialSpringOmega
+						* thicknessFineDialVelocity;
+				thicknessFineDialVelocity += acceleration * dt;
+				thicknessFineDialRawValue +=
+					thicknessFineDialVelocity * dt;
+				PublishThicknessFineDialCandidate();
+				double positionDip = abs(thicknessFineDialRawValue
+					- thicknessFineDialSettleTarget)
+					* thicknessFineDialUnitTravelScreen / dpiScale;
+				double velocityDip = abs(thicknessFineDialVelocity)
+					* thicknessFineDialUnitTravelScreen / dpiScale;
+				if (positionDip <= BarThicknessFineDialSettleDistanceDip
+					&& velocityDip
+						<= BarThicknessFineDialSettleVelocityDipPerSecond)
+				{
+					thicknessFineDialRawValue =
+						thicknessFineDialSettleTarget;
+					PublishThicknessFineDialCandidate();
+					CommitThicknessFineDialSelection();
+				}
+			}
+			UpdateRendering(false);
+		};
 	auto IsIndependentHoverAllowed = [&](IndependentHoverTargetEnum target)
 		{
 			if (target == IndependentHoverTargetEnum::MoreClose)
@@ -11528,7 +12476,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				}
 			case IndependentHoverTargetEnum::DrawAttributeThicknessAdjust:
 				return ThicknessSliderAvailable()
-					&& !barState.drawAttributeBar.thicknessSliderPinned;
+					&& barState.drawAttributeBar.thicknessViewMode
+						== ThicknessViewMode::Preview;
 			case IndependentHoverTargetEnum::DrawAttributeAnnotationClose:
 				return !barState.fold
 					&& barState.drawAttributeBar.penTypeMenuOpen
@@ -11608,6 +12557,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 	auto OverflowTooltipAvailable = [&]()
 		{
 			return barState.drawAttribute && !barState.fold
+				&& barState.drawAttributeBar.thicknessViewMode
+					!= ThicknessViewMode::FineDial
 				&& barState.drawAttributeBar.thicknessOverflowHintPresent;
 		};
 auto ColorPickerAvailable = [&]()
@@ -11865,7 +12816,36 @@ auto ColorPickerAvailable = [&]()
 	};
 	while (!offSignal)
 	{
-		hiex::getmessage_win32(&msg, EM_MOUSE | EM_KEY, floating_window);
+		if ((thicknessFineDialPhase == ThicknessFineDialPhase::Inertia
+			|| thicknessFineDialPhase == ThicknessFineDialPhase::Settling)
+			&& !barState.drawAttributeBar.thicknessFineDialPhysicsActive)
+		{
+			// 生命周期线程已撤销共享状态时，同步丢弃交互线程残余速度。
+			thicknessFineDialPhase = ThicknessFineDialPhase::Idle;
+			thicknessFineDialVelocity = 0.0;
+			thicknessFineDialResidualVelocity = 0.0;
+			ResetThicknessFineDialSamples();
+		}
+		bool thicknessPhysicsPolling =
+			barState.drawAttributeBar.thicknessFineDialPhysicsActive
+			&& (thicknessFineDialPhase == ThicknessFineDialPhase::Inertia
+				|| thicknessFineDialPhase
+					== ThicknessFineDialPhase::Settling);
+		if (thicknessPhysicsPolling)
+		{
+			if (!hiex::peekmessage_win32(
+				&msg, EM_MOUSE | EM_KEY, true, floating_window))
+			{
+				AdvanceThicknessFineDialPhysics();
+				std::this_thread::sleep_for(
+					BarThicknessFineDialPhysicsPollInterval);
+				continue;
+			}
+			// 任意消息或嵌套按压都会暂停物理；下一次空轮询从零 dt 接续。
+			thicknessFineDialPhysicsClockNeedsReset = true;
+		}
+		else hiex::getmessage_win32(
+			&msg, EM_MOUSE | EM_KEY, floating_window);
 		if (msg.message == WM_KEYDOWN || msg.message == WM_KEYUP
 			|| msg.message == WM_SYSKEYDOWN || msg.message == WM_SYSKEYUP)
 		{
@@ -11885,6 +12865,10 @@ auto ColorPickerAvailable = [&]()
 				|| barState.drawAttributeBar.thicknessSliderPinned
 				|| barState.drawAttributeBar.thicknessSliderPressed
 				|| barState.drawAttributeBar.thicknessSliderDragging
+				|| barState.drawAttributeBar.thicknessFineDialDragging
+				|| barState.drawAttributeBar.thicknessFineDialPhysicsActive
+				|| barState.drawAttributeBar.thicknessViewMode
+					!= ThicknessViewMode::Preview
 				|| barState.drawAttributeBar.thicknessSliderCapture))
 		{
 			CloseThicknessSlider(true);
@@ -11990,6 +12974,8 @@ auto ColorPickerAvailable = [&]()
 				bool sliderHover = !colorPickerOccludes
 					&& !penTypeMenuOccludes
 					&& ThicknessSliderAvailable()
+					&& barState.drawAttributeBar.thicknessViewMode
+						!= ThicknessViewMode::FineDial
 					&& !overflowUiActive
 					&& ((sliderHit && sliderHit->IsClick(
 						msg.x, msg.y, barStyle.zoom))
@@ -11999,7 +12985,22 @@ auto ColorPickerAvailable = [&]()
 					barState.drawAttributeBar.thicknessSliderHover)
 					!= sliderHover;
 				if (sliderHoverChanged)
+				{
 					barState.drawAttributeBar.thicknessSliderHover = sliderHover;
+					if (sliderHover
+						&& barState.drawAttributeBar.thicknessViewMode
+							== ThicknessViewMode::Preview)
+						barState.drawAttributeBar.thicknessViewMode =
+							ThicknessViewMode::Slider;
+					else if (!sliderHover
+						&& barState.drawAttributeBar.thicknessViewMode
+							== ThicknessViewMode::Slider
+						&& !barState.drawAttributeBar.thicknessSliderPinned
+						&& !barState.drawAttributeBar.thicknessSliderPressed
+						&& !barState.drawAttributeBar.thicknessSliderDragging)
+						barState.drawAttributeBar.thicknessViewMode =
+							ThicknessViewMode::Preview;
+				}
 				if (tooltipHoverChanged || sliderHoverChanged)
 					UpdateRendering(false);
 
@@ -12856,12 +13857,15 @@ auto ColorPickerAvailable = [&]()
 							auto sliderHit = shapeMap[
 								BarUISetShapeEnum::
 									DrawAttributeBar_ThicknessSliderHit];
-							bool precisionDragHit =
-								IsBarThicknessPrecisionDragHit(
+							BarThicknessFineDialHitZone fineActivationHit =
+								HitTestBarThicknessFineDialActivation(
 									*this, msg.x, msg.y);
+							bool precisionDragHit = fineActivationHit
+								== BarThicknessFineDialHitZone::Drag;
 							if ((sliderHit && sliderHit->IsClick(
 								msg.x, msg.y, barStyle.zoom))
-								|| precisionDragHit)
+								|| fineActivationHit
+									!= BarThicknessFineDialHitZone::None)
 							{
 							continueFlag = false;
 							if (msg.message == WM_LBUTTONDOWN)
@@ -12883,15 +13887,21 @@ auto ColorPickerAvailable = [&]()
 									.thicknessSliderHover;
 								bool pinnedAtPress = barState.drawAttributeBar
 									.thicknessSliderPinned;
+								ThicknessViewMode viewModeAtPress =
+									barState.drawAttributeBar.thicknessViewMode;
 								// 悬停/固定只表示进入滑块态；改值还要等圆点完全出现。
 								bool sliderAlreadyShown =
-									hoverAtPress || pinnedAtPress;
+									viewModeAtPress != ThicknessViewMode::Preview;
 								bool directTouchPreviewGesture =
 									IsBarTouchPointerMessage(msg)
-									&& !sliderAlreadyShown;
-								// Thumb 已显示时，外侧空白带统一使用相对精细拖动。
-								bool precisionRelativeGesture = precisionDragHit
-									&& sliderAlreadyShown;
+									&& viewModeAtPress == ThicknessViewMode::Preview;
+								bool fineClickActivation = fineActivationHit
+									== BarThicknessFineDialHitZone::Click;
+								bool fineClickReleaseValid = false;
+								bool fineDialGesture =
+									viewModeAtPress == ThicknessViewMode::FineDial
+									|| precisionDragHit;
+								bool precisionRelativeGesture = false;
 								bool touchGestureCancelled = false;
 								bool penModeChanged = false;
 
@@ -12953,6 +13963,11 @@ auto ColorPickerAvailable = [&]()
 								double rangeSpan =
 									static_cast<double>(
 										range.max - range.min);
+								double unitTravelScreen = rangeSpan > 0.0
+									? trackTravelScreenX
+										* BarThicknessPreviewTouchDragTravelScale
+										/ rangeSpan
+									: trackTravelScreenX;
 								double initialNormalized =
 									range.max > range.min
 										? clamp(
@@ -12970,9 +13985,11 @@ auto ColorPickerAvailable = [&]()
 									&& static_cast<double>(sliderThumb->pct.val)
 										>= 0.999999;
 								bool valueAdjustAllowed =
-									sliderAlreadyShown && thumbFullyVisible;
+									fineDialGesture
+									|| (sliderAlreadyShown && thumbFullyVisible);
 								// 点在圆点内：保持相对偏移；点在外侧：中心对齐到触点 X。
-								bool pressOnThumb = valueAdjustAllowed
+								bool pressOnThumb = !fineDialGesture
+									&& valueAdjustAllowed
 									&& sliderThumb->IsClick(
 										msg.x, msg.y, barStyle.zoom);
 									double grabOffsetScreenX = pressOnThumb
@@ -13037,6 +14054,43 @@ auto ColorPickerAvailable = [&]()
 											.thicknessSliderCandidateWidth =
 											finalWidth;
 										return true;
+									};
+							double fineDialAnchorScreenX = pressScreenX;
+							double fineDialAnchorValue =
+								static_cast<double>(initialWidth);
+							double fineDialPressStartValue =
+								static_cast<double>(initialWidth);
+							if (viewModeAtPress == ThicknessViewMode::FineDial)
+							{
+								double visualSnapshot = static_cast<double>(
+									barState.drawAttributeBar
+										.thicknessFineDialVisualWidth);
+								if (isfinite(visualSnapshot) && visualSnapshot > 0.0)
+									fineDialPressStartValue = visualSnapshot;
+							}
+							auto ApplyFineDialScreenX = [&](double screenX)
+									{
+										if (!fineDialGesture
+											|| barState.drawAttributeBar
+												.thicknessSliderHoldLocked)
+											return false;
+										double nextRawValue = fineDialAnchorValue
+											+ (screenX - fineDialAnchorScreenX)
+												/ max(0.000001, unitTravelScreen);
+										bool visualChanged = abs(nextRawValue
+											- thicknessFineDialRawValue) > 0.000001;
+										thicknessFineDialRawValue = nextRawValue;
+										int candidate =
+											PublishThicknessFineDialCandidate();
+										lastCandidateWidth = candidate;
+										candidateWidthIsInteger = true;
+										finalWidth = static_cast<float>(candidate);
+										candidateChanged = abs(
+											static_cast<double>(finalWidth - initialWidth))
+											> 0.000001;
+										AddThicknessFineDialSample(
+											screenX, GetTickCount64());
+										return visualChanged;
 									};
 
 									// 拖动改值后静止保持：0.5s 出提示，再 1.5s（合计 2.0s）锁定。
@@ -13179,11 +14233,84 @@ auto ColorPickerAvailable = [&]()
 											}
 											if (needRender) UpdateRendering(false);
 										};
+									bool fineActivationDwellTracking = false;
+									double fineActivationDwellScreenX = pressScreenX;
+									ULONGLONG fineActivationDwellStartTick = 0;
+									auto ActivateFineDialDrag = [&](double screenX,
+										double startValue)
+										{
+											ResetHoldLockState();
+											fineActivationDwellTracking = false;
+											fineClickActivation = false;
+											fineDialGesture = true;
+											precisionRelativeGesture = false;
+											gestureDragged = true;
+											barState.drawAttributeBar.thicknessViewMode =
+												ThicknessViewMode::FineDial;
+											barState.drawAttributeBar.thicknessSliderHover = false;
+											barState.drawAttributeBar.thicknessSliderPinned = false;
+											barState.drawAttributeBar.thicknessSliderDragging = false;
+											CloseThicknessOverflowTooltip();
+											BeginThicknessFineDialDrag(startValue,
+												screenX, unitTravelScreen, range);
+											fineDialAnchorScreenX = screenX;
+											fineDialAnchorValue = static_cast<double>(
+												barState.drawAttributeBar
+													.thicknessFineDialVisualWidth);
+											lastCandidateWidth = static_cast<int>(lround(
+												static_cast<double>(barState.drawAttributeBar
+													.thicknessSliderCandidateWidth)));
+											finalWidth = static_cast<float>(lastCandidateWidth);
+											candidateChanged = abs(static_cast<double>(
+												finalWidth - initialWidth)) > 0.000001;
+											UpdateRendering(false);
+										};
+									auto UpdateFineActivationDwell = [&](double screenX,
+										int clientX, int clientY)
+										{
+											if (fineDialGesture || fineClickActivation
+												|| directTouchPreviewGesture
+												|| !barState.drawAttributeBar
+													.thicknessSliderDragging
+												|| HitTestBarThicknessFineDialActivation(
+													*this, clientX, clientY)
+													!= BarThicknessFineDialHitZone::Click)
+											{
+												fineActivationDwellTracking = false;
+												return false;
+											}
+											// 激活等待优先于 Hold，进入外区即隐藏并重置锁定提示。
+											ResetHoldLockState();
+											double threshold = BarThicknessPreviewTouchSlopDip
+												* max(1.0, static_cast<double>(
+													barStyle.dpiZoom));
+											ULONGLONG nowTick = GetTickCount64();
+											if (!fineActivationDwellTracking
+												|| abs(screenX - fineActivationDwellScreenX)
+													> threshold)
+											{
+												fineActivationDwellTracking = true;
+												fineActivationDwellScreenX = screenX;
+												fineActivationDwellStartTick = nowTick;
+												return false;
+											}
+											if (nowTick - fineActivationDwellStartTick
+												< BarThicknessFineDialActivationDwellMs)
+												return false;
+											ActivateFineDialDrag(screenX,
+												static_cast<double>(finalWidth));
+											return true;
+										};
 
-									barState.drawAttributeBar
-										.thicknessSliderCandidateWidth = initialWidth;
+									if (!fineDialGesture)
+										barState.drawAttributeBar
+											.thicknessSliderCandidateWidth = initialWidth;
 									barState.drawAttributeBar
 										.thicknessPreviewDragging = false;
+									if (!directTouchPreviewGesture
+										&& !fineDialGesture)
+										barState.drawAttributeBar.thicknessViewMode =
+											ThicknessViewMode::Slider;
 									barState.drawAttributeBar.thicknessSliderPressed =
 										!directTouchPreviewGesture;
 									if (!directTouchPreviewGesture && pressOnThumb)
@@ -13197,8 +14324,13 @@ auto ColorPickerAvailable = [&]()
 										.thicknessSliderHoldLocked = false;
 									barState.drawAttributeBar
 										.thicknessSliderHoldProgress = 0.0f;
+									if (fineDialGesture)
+										ActivateFineDialDrag(
+											pressScreenX, fineDialPressStartValue);
 									// 圆点完全出现且点在外侧时，按下即跳到点击位置；点在圆点内只开始抓取。
 									if (!directTouchPreviewGesture
+										&& !fineClickActivation
+										&& !fineDialGesture
 										&& !precisionRelativeGesture
 										&& valueAdjustAllowed && !pressOnThumb)
 									{
@@ -13251,11 +14383,18 @@ auto ColorPickerAvailable = [&]()
 												POINT cursorPoint{};
 												if (GetCursorPos(&cursorPoint))
 												{
-													UpdateHoldLockState(
-														static_cast<double>(
-															cursorPoint.x),
-														static_cast<double>(
-															cursorPoint.y));
+													POINT clientPoint = cursorPoint;
+													ScreenToClient(
+														floating_window, &clientPoint);
+													bool fineActivated = UpdateFineActivationDwell(
+														static_cast<double>(cursorPoint.x),
+														clientPoint.x, clientPoint.y);
+													if (!fineActivated
+														&& !fineActivationDwellTracking
+														&& !fineClickActivation)
+														UpdateHoldLockState(
+															static_cast<double>(cursorPoint.x),
+															static_cast<double>(cursorPoint.y));
 												}
 											}
 											std::this_thread::sleep_for(
@@ -13296,6 +14435,30 @@ auto ColorPickerAvailable = [&]()
 											double screenY =
 												static_cast<double>(
 													screenPoint.y);
+											if (fineClickActivation)
+											{
+												double moveDx = screenX - pressScreenX;
+												double moveDy = screenY - pressScreenY;
+												if (moveDx * moveDx + moveDy * moveDy
+													> touchDragThresholdSquared)
+													gestureDragged = true;
+												ResetHoldLockState();
+												continue;
+											}
+											if (fineDialGesture)
+											{
+												if (screenX != fineDialAnchorScreenX)
+													gestureDragged = true;
+												if (ApplyFineDialScreenX(screenX))
+												{
+													lastMoveScreenX = screenX;
+													lastMoveScreenY = screenY;
+													ResetHoldLockState();
+													UpdateRendering(false);
+												}
+												else UpdateHoldLockState(screenX, screenY);
+												continue;
+											}
 											if (directTouchPreviewGesture)
 											{
 												lastTouchScreenX = screenX;
@@ -13330,6 +14493,9 @@ auto ColorPickerAvailable = [&]()
 												}
 												continue;
 											}
+											if (UpdateFineActivationDwell(
+												screenX, msg.x, msg.y))
+												continue;
 											if (precisionRelativeGesture)
 											{
 												if (!gestureDragged
@@ -13416,7 +14582,36 @@ auto ColorPickerAvailable = [&]()
 										if (msg.message == WM_LBUTTONUP
 											|| !msg.lbutton)
 										{
-											if (directTouchPreviewGesture)
+											if (fineClickActivation)
+											{
+												POINT screenPoint{
+													static_cast<LONG>(msg.x),
+													static_cast<LONG>(msg.y) };
+												ClientToScreen(
+													floating_window, &screenPoint);
+												double moveDx = static_cast<double>(
+													screenPoint.x) - pressScreenX;
+												double moveDy = static_cast<double>(
+													screenPoint.y) - pressScreenY;
+												if (moveDx * moveDx + moveDy * moveDy
+													> touchDragThresholdSquared)
+													gestureDragged = true;
+												fineClickReleaseValid = !gestureDragged
+													&& HitTestBarThicknessFineDialActivation(
+														*this, msg.x, msg.y)
+														== BarThicknessFineDialHitZone::Click;
+											}
+											else if (fineDialGesture)
+											{
+												POINT screenPoint{
+													static_cast<LONG>(msg.x),
+													static_cast<LONG>(msg.y) };
+												ClientToScreen(
+													floating_window, &screenPoint);
+												ApplyFineDialScreenX(
+													static_cast<double>(screenPoint.x));
+											}
+											else if (directTouchPreviewGesture)
 											{
 												POINT screenPoint{
 													static_cast<LONG>(msg.x),
@@ -13468,7 +14663,8 @@ auto ColorPickerAvailable = [&]()
 												lastTouchScreenX,
 												lastTouchScreenY);
 										}
-										else
+										else if (!fineClickActivation
+											&& !fineActivationDwellTracking)
 										{
 											POINT cursorPoint{};
 											if (GetCursorPos(&cursorPoint))
@@ -13486,6 +14682,9 @@ auto ColorPickerAvailable = [&]()
 										SendMessage(floating_window,
 											BarThicknessSliderCaptureMessage,
 											BarThicknessSliderCaptureStop, 0);
+									bool holdLockedAtRelease =
+										barState.drawAttributeBar
+											.thicknessSliderHoldLocked;
 									barState.drawAttributeBar
 										.thicknessSliderPressed = false;
 									// 真实松手后统一结束提示与锁定会话。
@@ -13504,34 +14703,78 @@ auto ColorPickerAvailable = [&]()
 											== StateModeSelectEnum::IdtPen
 										&& stateMode.Pen.ModeSelect
 											== gesturePenMode;
-									bool canCommit = gestureCompleted
-										&& candidateChanged;
-									if (canCommit)
-										SetPenWidth(finalWidth, true);
-									barState.drawAttributeBar
-										.thicknessSliderDragging = false;
-									barState.drawAttributeBar
-										.thicknessPreviewDragging = false;
-									barState.drawAttributeBar
-										.thicknessSliderCandidateWidth = 0.0f;
-									if (directTouchPreviewGesture)
+									bool keepFineDialAfterModeChange = fineDialGesture
+										&& penModeChanged && !offSignal
+										&& ThicknessSliderAvailable();
+									if (fineClickActivation)
 									{
-										// 点击在抬手时才展开；拖动结束后继续保留 Preview。
+										barState.drawAttributeBar.thicknessSliderDragging = false;
+										barState.drawAttributeBar.thicknessPreviewDragging = false;
+										barState.drawAttributeBar.thicknessSliderCandidateWidth = 0.0f;
+										if (gestureCompleted && fineClickReleaseValid)
+										{
+											CancelThicknessFineDialSelection();
+											barState.drawAttributeBar
+												.thicknessFineDialVisualWidth = GetPenWidth();
+											barState.drawAttributeBar.thicknessViewMode =
+												ThicknessViewMode::FineDial;
+											barState.drawAttributeBar.thicknessSliderHover = false;
+											barState.drawAttributeBar.thicknessSliderPinned = false;
+											CloseThicknessOverflowTooltip();
+										}
+										else if (!gestureCompleted)
+											CloseThicknessSlider(false);
+									}
+									else if (fineDialGesture)
+									{
+										barState.drawAttributeBar.thicknessSliderDragging = false;
+										barState.drawAttributeBar.thicknessPreviewDragging = false;
 										barState.drawAttributeBar.thicknessSliderHover = false;
-										barState.drawAttributeBar.thicknessSliderPinned =
-											gestureCompleted && !gestureDragged;
+										barState.drawAttributeBar.thicknessSliderPinned = false;
+										if (gestureCompleted)
+										{
+											barState.drawAttributeBar.thicknessViewMode =
+												ThicknessViewMode::FineDial;
+											EndThicknessFineDialDrag(holdLockedAtRelease);
+										}
+										else
+										{
+											CancelThicknessFineDialSelection();
+											if (keepFineDialAfterModeChange)
+												barState.drawAttributeBar.thicknessViewMode =
+													ThicknessViewMode::FineDial;
+											else CloseThicknessSlider(false);
+										}
 									}
-									else if (gestureCompleted && gestureDragged)
+									else
 									{
-										// 保持既有鼠标语义：悬停拖动不固定，无悬停拖动会固定。
-										barState.drawAttributeBar
-											.thicknessSliderPinned =
-											pinnedAtPress || !hoverAtPress;
+										bool canCommit = gestureCompleted
+											&& candidateChanged;
+										if (canCommit) SetPenWidth(finalWidth, true);
+										barState.drawAttributeBar.thicknessSliderDragging = false;
+										barState.drawAttributeBar.thicknessPreviewDragging = false;
+										barState.drawAttributeBar.thicknessSliderCandidateWidth = 0.0f;
+										if (directTouchPreviewGesture)
+										{
+											// 点击在抬手时才展开；拖动结束后继续保留 Preview。
+											barState.drawAttributeBar.thicknessSliderHover = false;
+											barState.drawAttributeBar.thicknessSliderPinned =
+												gestureCompleted && !gestureDragged;
+										}
+										else if (gestureCompleted && gestureDragged)
+											barState.drawAttributeBar.thicknessSliderPinned =
+												pinnedAtPress || !hoverAtPress;
+										else if (gestureCompleted && !pressOnThumb)
+											barState.drawAttributeBar.thicknessSliderPinned = true;
+										barState.drawAttributeBar.thicknessViewMode =
+											gestureCompleted
+												&& (barState.drawAttributeBar.thicknessSliderPinned
+													|| barState.drawAttributeBar.thicknessSliderHover)
+												? ThicknessViewMode::Slider
+												: ThicknessViewMode::Preview;
 									}
-									else if (gestureCompleted && !pressOnThumb)
-										barState.drawAttributeBar
-											.thicknessSliderPinned = true;
-								if (gestureCompleted)
+								if (gestureCompleted
+									&& !fineDialGesture && !fineClickActivation)
 								{
 									auto annotationInfoHit = shapeMap[
 										BarUISetShapeEnum::
@@ -13592,10 +14835,17 @@ auto ColorPickerAvailable = [&]()
 														msg.x, msg.y, barStyle.zoom))
 														|| IsBarThicknessPrecisionDragHit(
 															*this, msg.x, msg.y));
+									barState.drawAttributeBar.thicknessViewMode =
+										barState.drawAttributeBar.thicknessSliderPinned
+											|| barState.drawAttributeBar.thicknessSliderHover
+											? ThicknessViewMode::Slider
+											: ThicknessViewMode::Preview;
 								}
-								else CloseThicknessSlider(false);
-								if (penModeChanged
-									|| !ThicknessSliderAvailable())
+								else if (!gestureCompleted
+									&& !fineDialGesture && !fineClickActivation)
+									CloseThicknessSlider(false);
+								if (!ThicknessSliderAvailable()
+									|| (penModeChanged && !fineDialGesture))
 									CloseThicknessSlider(false);
 								UpdateRendering();
 								SuppressHoverUntilPointerMove();
@@ -13676,6 +14926,9 @@ bool thicknessPresetMode =
 							if (msg.message == WM_LBUTTONDOWN)
 							{
 								bool clickCompleted = false;
+								bool fineDialAtPress =
+									barState.drawAttributeBar.thicknessViewMode
+										== ThicknessViewMode::FineDial;
 								bool sliderPinnedAtPress = button.presetIndex < 0
 									&& barState.drawAttributeBar
 										.thicknessSliderPinned;
@@ -13700,6 +14953,8 @@ bool thicknessPresetMode =
 										{
 											if (button.presetIndex >= 0)
 											{
+												if (fineDialAtPress)
+													CancelThicknessFineDialSelection();
 												SetPenWidth(static_cast<float>(
 													GetBarThicknessPresetPx(
 														stateMode.Pen.ModeSelect,
@@ -13708,10 +14963,23 @@ bool thicknessPresetMode =
 											}
 											else
 											{
-												barState.drawAttributeBar
-													.thicknessSliderPinned = !sliderPinnedAtPress;
-												barState.drawAttributeBar
-													.thicknessSliderHover = false;
+												if (fineDialAtPress)
+												{
+													// 小三角是 FineDial 唯一确认退出路径，当前候选至多提交一次。
+													CommitThicknessFineDialSelection();
+													CloseThicknessSlider(false);
+												}
+												else
+												{
+													barState.drawAttributeBar
+														.thicknessSliderPinned = !sliderPinnedAtPress;
+													barState.drawAttributeBar.thicknessViewMode =
+														sliderPinnedAtPress
+															? ThicknessViewMode::Preview
+															: ThicknessViewMode::Slider;
+													barState.drawAttributeBar
+														.thicknessSliderHover = false;
+												}
 											}
 											clickCompleted = true;
 											break;
@@ -13777,7 +15045,10 @@ bool thicknessPresetMode =
 												== static_cast<int>(stateMode.Pen.ModeSelect);
 										if (!directionLocked || canResumeClosingMenu)
 										{
-											CloseThicknessSlider(true);
+											// FineDial 在笔型菜单期间保持；实际切换时再取消旧候选。
+											if (barState.drawAttributeBar.thicknessViewMode
+												!= ThicknessViewMode::FineDial)
+												CloseThicknessSlider(true);
 											CloseThicknessOverflowTooltip();
 											if (!directionLocked)
 											{
@@ -13821,14 +15092,22 @@ bool thicknessPresetMode =
 							hiex::getmessage_win32(&msg, EM_MOUSE, floating_window);
 							if (obj->IsClick(msg.x, msg.y, barStyle.zoom))
 							{
-								if (!msg.lbutton)
+							if (!msg.lbutton)
+							{
+								if (stateMode.Pen.ModeSelect
+									!= PenModeSelectEnum::IdtPenBrush1)
 								{
 									ClosePenTypeMenu();
-									stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
+									if (barState.drawAttributeBar.thicknessViewMode
+										== ThicknessViewMode::FineDial)
+										CancelThicknessFineDialSelection();
+									stateMode.Pen.ModeSelect =
+										PenModeSelectEnum::IdtPenBrush1;
 									barButtomSet.UpdateDrawButtonStyle();
 									UpdateRendering();
+								}
 
-									break;
+								break;
 								}
 							}
 							else break;
@@ -13854,14 +15133,22 @@ bool thicknessPresetMode =
 							hiex::getmessage_win32(&msg, EM_MOUSE, floating_window);
 							if (obj->IsClick(msg.x, msg.y, barStyle.zoom))
 							{
-								if (!msg.lbutton)
+							if (!msg.lbutton)
+							{
+								if (stateMode.Pen.ModeSelect
+									!= PenModeSelectEnum::IdtPenHighlighter1)
 								{
 									ClosePenTypeMenu();
-									stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenHighlighter1;
+									if (barState.drawAttributeBar.thicknessViewMode
+										== ThicknessViewMode::FineDial)
+										CancelThicknessFineDialSelection();
+									stateMode.Pen.ModeSelect =
+										PenModeSelectEnum::IdtPenHighlighter1;
 									barButtomSet.UpdateDrawButtonStyle();
 									UpdateRendering();
+								}
 
-									break;
+								break;
 								}
 							}
 							else break;

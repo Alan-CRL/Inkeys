@@ -313,6 +313,15 @@ protected:
 		ComPtr<ID2D1PathGeometry> localGeometry;
 		ComPtr<ID2D1TransformedGeometry> translatedGeometry;
 	};
+	struct ThicknessFineDialLabelCacheClass
+	{
+		int value = 0;
+		FLOAT zoom = 0.0F;
+		D2D1_SIZE_F size{};
+		unsigned long long lastUse = 0;
+		bool valid = false;
+		ComPtr<IDWriteTextLayout> layout;
+	};
 
 	ID2D1RadialGradientBrush* GetFrameGradientBrush(
 		ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource);
@@ -336,6 +345,9 @@ protected:
 	ID2D1PathGeometry* GetThicknessPreviewPath(
 		const array<D2D1_POINT_2F, 7>& points);
 	ID2D1StrokeStyle* GetThicknessPreviewStrokeStyle();
+	ID2D1PathGeometry* GetThicknessFineDialSelectorGeometry();
+	ThicknessFineDialLabelCacheClass* GetThicknessFineDialLabelLayout(
+		int value, FLOAT zoom);
 	ID2D1Geometry* GetSuperellipseGeometry(
 		FLOAT x, FLOAT y, FLOAT width, FLOAT height, FLOAT n, int segments);
 	FrameDiffuseMaskCacheClass* GetRoundedRectDiffuseMask(
@@ -385,6 +397,8 @@ protected:
 	bool thicknessPreviewPathFailureLogged = false;
 	bool thicknessPreviewPathUnavailable = false;
 	bool thicknessPreviewPathInitialized = false;
+	bool thicknessFineDialSelectorUnavailable = false;
+	bool thicknessFineDialSelectorFailureLogged = false;
 	bool colorPickerGradientFailureLogged = false;
 	bool colorPickerGradientUnavailable = false;
 	bool frameDiffuseEffectFailureLogged = false;
@@ -422,6 +436,10 @@ protected:
 	ComPtr<ID2D1LinearGradientBrush> colorPickerDarkGradientBrush;
 	ComPtr<ID2D1PathGeometry> thicknessPreviewPath;
 	ComPtr<ID2D1StrokeStyle> thicknessPreviewStrokeStyle;
+	ComPtr<ID2D1PathGeometry> thicknessFineDialSelectorGeometry;
+	array<ThicknessFineDialLabelCacheClass, 64>
+		thicknessFineDialLabelCache{};
+	unsigned long long thicknessFineDialLabelUseSerial = 0;
 	SuperellipseGeometryCacheClass superellipseGeometryCache;
 	COLORREF thicknessPreviewGradientColor = RGB(0, 0, 0);
 	FLOAT thicknessPreviewGradientLeftOpacity = -1.0F;

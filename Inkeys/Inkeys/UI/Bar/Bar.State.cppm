@@ -4,6 +4,13 @@ module;
 
 export module Inkeys.UI.Bar:State;
 
+enum class ThicknessViewMode : int
+{
+	Preview,
+	Slider,
+	FineDial,
+};
+
 class BarStateClass
 {
 public:
@@ -28,18 +35,25 @@ public:
 		IdtAtomic<bool> thicknessMediumPress = false;
 		IdtAtomic<bool> thicknessCoarsePress = false;
 		IdtAtomic<bool> thicknessAdjustPress = false;
-IdtAtomic<bool> thicknessSliderHover = false;
-			IdtAtomic<bool> thicknessSliderPinned = false;
-			IdtAtomic<bool> thicknessSliderDragging = false;
-			// 直接触摸 Preview 时只更新候选预览，不激活 Slider 视觉。
-			IdtAtomic<bool> thicknessPreviewDragging = false;
-			IdtAtomic<bool> thicknessSliderPressed = false;
-			IdtAtomic<bool> thicknessSliderCapture = false;
-			IdtAtomic<float> thicknessSliderCandidateWidth = 0.0f;
-			// 拖动改值后静止保持：提示/进度/锁定，跨交互与渲染线程共享。
-			IdtAtomic<bool> thicknessSliderHoldHintActive = false;
-			IdtAtomic<bool> thicknessSliderHoldLocked = false;
-			IdtAtomic<float> thicknessSliderHoldProgress = 0.0f;
+		IdtAtomic<ThicknessViewMode> thicknessViewMode =
+			ThicknessViewMode::Preview;
+		IdtAtomic<bool> thicknessSliderHover = false;
+		IdtAtomic<bool> thicknessSliderPinned = false;
+		IdtAtomic<bool> thicknessSliderDragging = false;
+		// 直接触摸 Preview 时只更新候选预览，不激活 Slider 视觉。
+		IdtAtomic<bool> thicknessPreviewDragging = false;
+		IdtAtomic<bool> thicknessSliderPressed = false;
+		IdtAtomic<bool> thicknessSliderCapture = false;
+		IdtAtomic<float> thicknessSliderCandidateWidth = 0.0f;
+		// FineDial 只共享渲染所需快照；运动阶段、速度和采样环留在交互线程。
+		IdtAtomic<float> thicknessFineDialVisualWidth = 0.0f;
+		IdtAtomic<bool> thicknessFineDialCandidateActive = false;
+		IdtAtomic<bool> thicknessFineDialDragging = false;
+		IdtAtomic<bool> thicknessFineDialPhysicsActive = false;
+		// 拖动改值后静止保持：提示/进度/锁定，跨交互与渲染线程共享。
+		IdtAtomic<bool> thicknessSliderHoldHintActive = false;
+		IdtAtomic<bool> thicknessSliderHoldLocked = false;
+		IdtAtomic<float> thicknessSliderHoldProgress = 0.0f;
 		IdtAtomic<bool> thicknessAnnotationHover = false;
 		IdtAtomic<bool> thicknessAnnotationHoverGrace = false;
 		IdtAtomic<bool> thicknessAnnotationPinned = false;
