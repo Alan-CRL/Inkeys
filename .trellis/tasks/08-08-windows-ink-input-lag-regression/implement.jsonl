@@ -1,0 +1,4 @@
+{"file":".trellis/spec/native/index.md","reason":"Native 层预开发清单与 draw3 修改边界。"}
+{"file":".trellis/spec/native/runtime-and-rendering.md","reason":"RTS callback、ContactInput、Stroke Modeler、活动帧和 120 FPS 调度契约。"}
+{"file":".trellis/spec/native/modules-and-code-style.md","reason":"C++20 module 接口/实现同步、中文注释、UTF-8 BOM 与 CRLF 规则。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"输入线程到建模、D3D 与 Presenter 的跨层 ownership 检查。"}

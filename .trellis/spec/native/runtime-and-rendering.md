@@ -25,7 +25,7 @@
 - RTS 同步回调只完成 packet 解析、contact 状态发布和唤醒，不调用 D3D、presenter 或 stroke modeler。
 - 控制请求先写 sticky 原子标记，再通过 coordinator 队列唤醒；消费方在阻塞前二次 dequeue，避免清 pending 与入队交错造成丢唤醒。
 - 无活动 contact 时使用 blocking dequeue；活动 contact 仍按帧更新停笔预测。
-- Down、Up/Cancelled 和控制请求递增 wake generation 并触发 Win7 可用的 event；Move 只更新合并快照，不把 240Hz packet 变成无界帧驱动。
+- Down、Up/Cancelled 和控制请求递增 wake generation 并触发 Win7 可用的 event；Move 只更新合并快照，不把 240Hz packet 变成无界帧驱动。RTS/`WM_POINTER` 的 Pen Contact cursor 同样只覆盖最新 mailbox，不逐包发布 render/control wake；Hover 与 Clear/终态继续按原路径唤醒。
 - 绘制线程使用 `THREAD_PRIORITY_ABOVE_NORMAL`，活动末段按 QPC deadline 核对 wake generation；完全空闲仍阻塞在队列 semaphore，不自旋。
 
 ## Tool State
@@ -156,8 +156,8 @@ Correct：关闭时直接回收后续 Touch 的 consumer slot；该手指必须�
 - shader shape type `4/5/6` 分别表示 Cursor Circle、Rectangle、EraserGripCircle；复用两项 `InkPoint`、48 字节全局常量和 resolve dual-source blend，直接输出 premultiplied Add 与 Retain。尺寸变化只能更新常量/primitive，不创建尺寸相关纹理或 `HCURSOR`。
 - Pen 直径为 `max(当前基准画笔粗细, 5px * dpiScale)`；Highlighter 为 6.25x50px 固定竖直矩形。二者使用当前 RGB、25% fill Alpha 和 `#B8B8B8` 细内描边；fill Alpha 不得降低 outline Alpha，压力不改变 cursor 尺寸。
 - EraserGripCircle 直径直接复用 50px 画布擦除宽度，不乘 DPI、不设最小值；主体纯白，圆环宽度为 4%D，两条圆头竖线宽度为 10%D、中心偏移为 12%D、半高为 24%D，结构颜色为 `#CFCFCF`。Hover 整体 Alpha 0.5，Contact 整体 Alpha 1.0。
-- RTS InAir/Down/Packets 发布 X/Y/QPC、inverted 和 contact；StylusUp 只清除 Pen 样本，不把终态坐标冒充 Hover。后续真实 InAir 包才允许重新显示 Hover。InAir/Packets 只解码批次最后一个包。样本使用 writer latch + sequence 一致发布，并以 sticky control wake 合并；RTS 回调不得调用 D3D 或 `SetCursor`。
-- Windows 8+ 动态解析 Pointer API，并区分 `Unknown/Pen/Mouse/Touch`；`WM_POINTERENTER/UPDATE` 使用 `GetPointerInfo/GetPointerPenInfo` 直接发布 Pen Hover 坐标，不能依赖首个 RTS Down。`WM_POINTERUP` 同样只清除 Pen 样本，后续 Update 才恢复 Hover。每个有效 RTS Pen 样本都必须明确取得 Pen authority。旧系统由 RTS Pen 样本和非 promoted Mouse 消息回退。Pointer authority 仍为 Pen 且 Pen 样本有效时，低优先级 `WM_MOUSE*` 不得抢占；Pen/Touch authority 下的孤立 Mouse ButtonUp 必须忽略，避免终态兼容消息重新生成 Hover。Mouse 使用 `TrackMouseEvent/WM_MOUSELEAVE` 清理。
+- RTS InAir/Down/Packets 发布 X/Y/QPC、inverted 和 contact；StylusUp 只清除 Pen 样本，不把终态坐标冒充 Hover。后续真实 InAir 包才允许重新显示 Hover。InAir/Packets 只解码批次最后一个包；`Packets` 成功解码后的顺序固定为 `PublishMove -> PublishPenCursor -> diagnostics`，即使 Move 发布失败也继续更新 cursor mailbox。所有 Pen 样本都继续写入 writer latch + sequence mailbox；`inContact=false` 保持 sticky cursor render wake，`inContact=true` 不逐样本请求 render/control wake，由已有活动帧读取最新坐标。RTS 回调不得等待、分配、调用 D3D 或 `SetCursor`。
+- Windows 8+ 动态解析 Pointer API，并区分 `Unknown/Pen/Mouse/Touch`；`WM_POINTERENTER/UPDATE` 使用 `GetPointerInfo/GetPointerPenInfo` 继续发布 Pen 坐标，包括 Contact 样本，不能依赖首个 RTS Down。它与 RTS 共用相同 mailbox/wake 规则；禁止为了去重而停止发布 Contact 坐标。`WM_POINTERUP` 同样只清除 Pen 样本，后续 Update 才恢复 Hover。每个有效 RTS Pen 样本都必须明确取得 Pen authority。旧系统由 RTS Pen 样本和非 promoted Mouse 消息回退。Pointer authority 仍为 Pen 且 Pen 样本有效时，低优先级 `WM_MOUSE*` 不得抢占；Pen/Touch authority 下的孤立 Mouse ButtonUp 必须忽略，避免终态兼容消息重新生成 Hover。Mouse 使用 `TrackMouseEvent/WM_MOUSELEAVE` 清理。
 - Pen/Touch 离开后应清除其可见样本，但保留最后设备 authority 作为“当前无光标”状态；`WM_POINTERLEAVE` 无法取得 pointer type 时，只要旧 authority 或有效样本表明是 Pen，仍按 Pen 离开处理。禁止将 authority 立即改为 Unknown 而使旧 Mouse 样本复活。只有新的非 promoted `WM_MOUSE*` 才能明确切换到 Mouse 并恢复鼠标。
 - Pen/Highlighter：Pen Hover 显示应用 cursor，Pen Contact 只隐藏系统 cursor；Mouse 保留 `IDC_ARROW`；Touch 不显示笔尖 cursor。
 - Eraser/倒转笔尾：Pen/Mouse Hover 显示 Alpha 0.5，Contact 显示 Alpha 1.0，并隐藏系统 cursor。每个活动 Touch eraser contact 独立显示一枚 Alpha 1.0 cursor，不存在 Touch Hover；多指不得互相覆盖状态。
@@ -172,7 +172,9 @@ Correct：关闭时直接回收后续 Touch 的 consumer slot；该手指必须�
 |---|---|
 | Pen Hover + Pen/Highlighter | 隐藏系统 cursor，显示对应 Circle/Rectangle |
 | Pen Contact + Pen/Highlighter | 隐藏系统 cursor，不绘制应用 cursor |
+| RTS/Pointer Pen Contact sample | 继续覆盖 cursor mailbox，但不逐样本调用 `RequestDrawingCursorRender`；活动帧读取最新坐标 |
 | Pen Up | 清除应用 cursor；只有后续真实 InAir/Pointer Update 才恢复 Hover |
+| Pen Hover、Clear、Up/Leave 或首次 authority 变化 | 保持现有 render/control wake、清理和系统 cursor 刷新行为 |
 | Pen/Mouse Hover + Eraser | 隐藏系统 cursor，绘制 Alpha 0.5 EraserGripCircle |
 | Pen/Mouse Contact + Eraser 或 inverted Pen | 隐藏系统 cursor，绘制 Alpha 1.0 EraserGripCircle |
 | N 个 Touch Eraser Contact | 同时绘制 N 枚 Alpha 1.0 EraserGripCircle |
@@ -201,6 +203,7 @@ Correct：关闭时直接回收后续 Touch 的 consumer slot；该手指必须�
 - 自动断言 Circle/Rectangle/Eraser 参数、Touch 强制 Alpha 1.0、旧/新 bounds、边界裁剪和多 visual 同时存在。
 - 自动断言 Pen authority + 无效 Pen 样本 + 陈旧 Mouse 样本不生成 visual；真实 Mouse authority 切换后才恢复 Mouse visual。
 - 自动断言 Pen/Touch authority 抑制孤立 Mouse ButtonUp，Mouse/Unknown 不抑制；静态核对 RTS StylusUp 与 `WM_POINTERUP` 都调用 clear 而非发布终态 Hover。
+- 静态核对 `Packets` 为 Move -> Pen cursor -> diagnostics，Move 失败不跳过 cursor；Contact 样本仍写 mailbox 但不逐包请求 render wake，`WM_POINTER` 分支保持发布坐标。
 - 静态断言 RTS DataInterest 含 InRange/OutOfRange/InAir，InAir 选择最后 packet；搜索确认无自建 `HCURSOR` API。
 - 完整 `Debug|ARM64` 解决方案构建必须重新编译两个 shader 并完成 `.cso` 资源嵌入；运行控制台测试。
 - 真机覆盖 Pen、Highlighter、Eraser、笔尾、Mouse、单/多 Touch、窗口边界、SDR/HDR 和白/红/黑背景。
@@ -214,6 +217,10 @@ Correct：`Pen leave -> clear Pen sample + keep Pen authority；新 WM_MOUSEMOVE
 Wrong：`StylusUp/WM_POINTERUP -> publish(valid=true, inContact=false, lastContactPosition)`，随后没有 Hover/Leave 时光标永久停在抬笔点。
 
 Correct：`StylusUp/WM_POINTERUP -> clear Pen sample`；后续真实 InAir/Pointer Update 才发布 Hover，Pen/Touch authority 下的兼容 Mouse ButtonUp 直接忽略。
+
+Wrong：`每个 RTS/WM_POINTER Contact cursor 样本都 SetEvent`，或为避免唤醒而停止发布 `WM_POINTER` Contact 坐标。
+
+Correct：`Contact sample -> latest mailbox only`；已有 120 Hz 活动帧读取坐标，Hover、Clear、终态和 authority 变化仍沿用各自离散唤醒。
 
 ## Stroke Modeling Invariants
 
@@ -502,7 +509,7 @@ contact 结束时由 `StrokeModelConfiguration::retainPredictionOnUp` 选择收�
 - RTS 多点启用是三段式契约：第一根手指按下前给 HWND 设置 `MICROSOFT_TABLETPENSERVICE_PROPERTY`，窗口过程对 `WM_TABLET_QUERYSYSTEMGESTURESTATUS` 返回 `TABLET_ENABLE_MULTITOUCHDATA`，并令 `IRealTimeStylus3::MultiTouchEnabled=TRUE`。只完成 COM 属性不能视为多点已启用。
 - 同一组窗口标志禁用 press-and-hold、pen feedback 和 flick；可用时同时调用 `IRealTimeStylus2::put_FlicksEnabled(FALSE)`，避免笔事件被系统手势延迟或接管。
 - `Disabled`、RTS `Error`、tablet 移除和 shutdown 都把生产中的 contact 发布为 Cancelled；COM 初始化、FTM 聚合、禁用、移除插件与释放全部在完成 MTA 初始化的主线程完成。
-- 每个 tablet context 的 packet property、metrics、device type 和 scale 必须在 lifecycle/contact-entry 慢路径编译为固定 immutable decoder。`Packets` 只通过 `(tcid,cid)` binding 解析 decoder；`InAirPackets` 只查固定 decoder cache，miss 直接丢弃，二者均不得执行 COM、context 枚举、decoder recovery、分配或 mutex wait。
+- 每个 tablet context 的 packet property、metrics、device type 和 scale 必须在 lifecycle/contact-entry 慢路径编译为固定 immutable decoder。`Packets` 只通过 `(tcid,cid)` binding 解析 decoder，并在成功解码后严格执行 Move publication、Pen cursor mailbox publication、diagnostics；Move 失败仍更新 cursor。`InAirPackets` 只查固定 decoder cache，miss 直接丢弃，二者均不得执行 COM、context 枚举、decoder recovery、分配或 mutex wait。
 - `Error` 不是 decoder lifecycle boundary：它只清 cursor、active bindings、断触模拟和 producing contacts，必须保留当前 decoder slots、shared position scale、enabled state 和 lifecycle generation。只有 Enabled pre-reset、Disabled、UpdateMapping、TabletRemoved 和 TabletAdded full-rebuild fallback 才执行完整 decoder lifecycle reset。
 - packet/contact callbacks 通常来自 RTS high-priority execution/tablet-data thread；`RealTimeStylusEnabled/Disabled` 可能在修改 `Enabled` 或 plugin collection 的 caller thread 执行，不能假设所有 `IStylusSyncPlugin` callbacks 天然同线程串行。普通 decoder/binding 数组必须由项目自己的 rare-writer/lock-free-reader gate 发布：lifecycle、Down、Up 和 Error 使用 writer mutex + writer bit + reader drain，`Packets/InAirPackets` 只做一次 lock-free CAS，失败立即丢包且不等待。
 - state gate 的 happens-before 必须由 C++ atomic memory order 建立：reader acquire-CAS/release decrement，writer acq_rel 发布 writer bit、acquire 等待 reader count 清零、release 清 writer bit；writer bit 发布后禁止新 reader 进入。`put_Enabled(FALSE)` 的 Disabled writer 必须先 drain 已进入的 packet readers，返回后才 Remove plugin 和释放对象。

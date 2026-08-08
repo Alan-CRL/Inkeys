@@ -1155,13 +1155,13 @@ namespace draw3
 				}
 				snapshot.isInvertedCursor = decoder->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
-				PublishPenCursor(decoder, stylusInfo, true, snapshot);
 				bool published = false;
 				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
 					published = interruptionSimulation_.PublishMove(
 						stylusInfo->tcid, stylusInfo->cid, snapshot);
 				else
 					published = coordinator_.PublishMove(stylusInfo->tcid, stylusInfo->cid, snapshot);
+				PublishPenCursor(decoder, stylusInfo, true, snapshot);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				RecordCallback("Packets", stylusInfo, decoder, packetCount, propertyCount,
 					lastPacket, &snapshot, true, published);

@@ -434,7 +434,8 @@ namespace draw3
 		DrawingCursorSample previous;
 		penCursorSample_.Read(previous);
 		if (!penCursorSample_.Publish(sample)) return;
-		RequestDrawingCursorRender();
+		// 接触期间由活动绘制帧读取 mailbox，避免每个 Pen 包额外唤醒。
+		if (!sample.inContact) RequestDrawingCursorRender();
 		if (previous.valid != sample.valid || previous.inContact != sample.inContact ||
 			previous.inverted != sample.inverted) QueueSystemCursorRefresh();
 	}
