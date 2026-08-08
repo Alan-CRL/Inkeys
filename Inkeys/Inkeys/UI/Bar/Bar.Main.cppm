@@ -109,6 +109,8 @@ enum class BarUISetShapeEnum : int
 	DrawAttributeBar_ThicknessAdjust,
 	DrawAttributeBar_ThicknessSliderHit,
 	DrawAttributeBar_ThicknessSliderThumb,
+	DrawAttributeBar_ThicknessPreviewPopupSurface,
+	DrawAttributeBar_ThicknessPreviewPopupCircle,
 	DrawAttributeBar_ThicknessAnnotationInfoHit,
 	DrawAttributeBar_ThicknessOverflowBadge,
 	DrawAttributeBar_ThicknessOverflowInfoHit,
@@ -212,6 +214,7 @@ enum class BarUISetWordEnum : int
 		DrawAttributeBar_ColorPickerBValue,
 		DrawAttributeBar_ColorPickerOpacityValue,
 		DrawAttributeBar_ColorPickerHoldLabel,
+		DrawAttributeBar_ThicknessPreviewPopupNumber,
 
 		GeometryAttributeBar_StraightLine,
 		GeometryAttributeBar_Rectangle,
