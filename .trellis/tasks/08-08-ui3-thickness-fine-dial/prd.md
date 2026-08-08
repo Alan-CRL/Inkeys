@@ -21,16 +21,17 @@
 
 ### 激活与输入优先级
 
-- Slider 可见且可交互时提供相互独立的 Drag Activation Zone 与更外侧 Click Activation Zone；所有间距/尺寸为命名 DIP 常量，并由 `panelScale`、zoom、`previewSide` 推导。
-- Drag Zone 按下立即进入 FineDial drag；Click Zone 仅在移动未超过现有 5 DIP slop、抬起仍有效且未命中实际 Popup 时进入持久 FineDial。
-- 普通 Slider drag 进入外侧 Click Zone、保持按下且 X 在容差内稳定约 500 ms 后进入 FineDial；离区、X 明显移动或抬起取消该 dwell。
+- Slider 可见且可交互时提供连续相接的 Drag Activation Zone 与更外侧 Click Activation Zone；两者组成 FineDial 专用 activation corridor，Popup 排除或动画瞬态也只能 consume，禁止落入普通 Slider 绝对投影。
+- Drag Zone 按下仅 armed，水平移动超过现有 5 DIP slop 后以当帧位置/值进入 FineDial；Click Zone 按下当帧立即进入持久 FineDial 并可继续拖动。
+- 普通 Slider drag 进入外侧 Click Zone 后，只要连续留区 `1000 ms` 即进入 FineDial；区域内 X/Y 移动不重置，也不再要求额外 outward 位移，只有离区、抬起/cancel 或生命周期失效才取消 dwell。
 - Fine activation dwell 优先于 Hold dwell，并重置/隐藏 Hold UI；真正进入 FineDial 后，新的有效 drag 仍完整支持 Hold。
+- Slider-drag recognition 先在 activation region 中心显示约 `0.5` 的基础 Dial/ticks，dwell 在 1 秒内从 `0.5` 推进到 `1.0`；离区平滑退回暗态，整个 gesture 结束后才平滑退到 0。正式 ViewMode 激活后再动画显示 labels、中心线和 selectors，并把几何从 recognition center 移到最终位置。
 - 所有激活方式在切换帧以当前 pointer X 和当前 candidate/visual value 重新锚定，粗细不得跳变。
 - 现有 direct-touch Preview gesture 保持 Preview 模式，不因本任务自动进入 FineDial。
 
 ### 候选值、Hold 与程序化变化
 
-- FineDial drag 继续使用现有 3× distance-per-unit；连续视觉值允许亚整数和有限 overscroll，logical candidate 始终 `round + clamp` 到当前笔型整数范围。
+- FineDial drag 使用 Brush 当前 Slider 量程推导的唯一 3× canonical distance-per-unit；所有支持笔型共用该单位行程，但连续视觉值、`round + clamp` 候选和 min/max 仍使用当前笔型自己的范围。
 - drag + inertia + settle 是同一 selection chain；过程中只更新 candidate/Popup，settle 后至多提交一次最终选择，禁止惯性逐帧 `SetPenWidth`。
 - Hold lock 后 FineDial/Popup 保持显示，visual/candidate 冻结，pointer movement 不再改值，真实 Pointer Up 不启动惯性并只结束本次 lock interaction；ViewMode 仍为 FineDial。
 - 惯性期间有效点击小三角时停止物理链，提交当前取整并夹取后的 candidate 一次，然后直接返回 Preview。
@@ -45,6 +46,7 @@
 - min/max 外不生成非法 tick；左右 tick 与 label 一起平滑渐隐，并以轻量 envelope/亮暗边形成克制的圆柱厚度感。
 - Slider track/Thumb 与 FineDial 协调交叉过渡；FineDial→Preview 是一次直接转换，不出现肉眼可见的 Slider 中间阶段。Hold UI 不随 Slider 隐藏。
 - Popup 在 FineDial 中固定于中心 selector X，沿 `previewSide` 的 outward direction 动画移到 DrawAttributeBar 外侧并保留合理 gap；FineDial 端不使用 `penTypeSafeRight`。
+- 正常 FineDial→Preview 且属性面板仍展开、主栏未折叠时，Popup 锁存当前实际渲染中心并原地 scale/fade；快速 hide→show 从锁存几何连续重定向。面板收起、fold、availability/capture/lifecycle 退出不使用该锁存，保留原有追随几何。
 - FineDial 激活后关闭 Overflow badge/popup 的交互状态并使用现有动画退场，不修改 `thicknessPreviewOverflow`；FineDial 完全退出后再按现有 Preview 逻辑恢复。
 - Panel expand/collapse、side flip 与 main-bar 动画期间，Dial、selector、Popup 和命中区均连续复用 `CalculateBarThicknessPreviewGeometry` 的 `panelScale`/`previewSide`。
 
@@ -59,7 +61,7 @@
 
 ## Hard Constraints
 
-- 不改变现有 3× precision 比例、整数 thickness 范围、preset 值或 `SetPenWidth` 业务语义。
+- Brush FineDial 保持现有 3× precision 作为 canonical unit；不改变普通 Slider mapping、各笔型整数 thickness 范围、preset 值或 `SetPenWidth` 业务语义。
 - 不建立与现有 Slider 并行的 thickness 数据模型，不创建通用 animation/physics framework。
 - 不破坏既有 Slider、Preview、Hold animation/lock、Popup、Preview X/safe bound、overflow、preset 或 pen-type behavior。
 - 不修改传统悬浮栏、绘制引擎、配置、i18n、资源文件或公共 API。
@@ -69,11 +71,11 @@
 ## Acceptance Criteria
 
 - [ ] 1. 现有 directTouchPreviewGesture 不会错误激活 FineDial。
-- [ ] 2. Slider 可见后，Drag Activation Zone 可直接进入 FineDial drag。
-- [ ] 3. Click Activation Zone 可通过单击进入持久 FineDial。
-- [ ] 4. Click Zone 与 Slider 保持更大的防误触间距。
-- [ ] 5. Popup 区域被排除，不会因点击 Popup 激活 FineDial。
-- [ ] 6. Slider drag 向 outward zone 移动并 X 基本稳定 0.5s，可激活 FineDial。
+- [ ] 2. Slider 可见后，Drag Activation Zone 按下只 armed，越过 5 DIP 水平 slop 后零跳变进入 FineDial drag。
+- [ ] 3. Click Activation Zone Pointer Down 当帧进入持久 FineDial，并可继续按住拖动。
+- [ ] 4. Drag/Click Zone 共边界且整个 activation corridor 不落入普通 Slider direct-adjust。
+- [ ] 5. Popup 区域被排除并 consume，不会激活 FineDial 或触发 Slider 跳值。
+- [ ] 6. Slider drag 连续留在 dwell region 1000 ms 可激活；区域内 X/Y 移动不重计时，也不要求额外 outward gate。
 - [ ] 7. Activation dwell 中不会出现 Hold-to-lock 提示。
 - [ ] 8. FineDial drag 内 Hold-to-lock 仍正常工作。
 - [ ] 9. FineDial activation 不产生 thickness jump。
@@ -83,12 +85,12 @@
 - [ ] 13. Overflow Hint 在 FineDial 中正确退出。
 - [ ] 14. FineDial 退出后 Overflow 可按原业务状态恢复。
 - [ ] 15. FineDial 根据 previewSide 正确上下镜像。
-- [ ] 16. 普通整数 tick 为灰色。
-- [ ] 17. 5 倍数 tick 更长，并显示数值。
-- [ ] 18. 当前中心 tick 为白色。
-- [ ] 19. 中心存在上/下两个实心 selector triangles。
+- [ ] 16. Recognition preview 在 activation region 中心以约 0.5 暗态显示 envelope 与灰色 tick，dwell 1 秒平滑到 1.0。
+- [ ] 17. 正式激活后 5 倍数 tick 才动画显示数值；preview 阶段不查询 label layout。
+- [ ] 18. 正式激活后当前中心白线短促动画出现。
+- [ ] 19. 正式激活后上/下两个实心 selector triangles 短促动画出现。
 - [ ] 20. 不使用当前 Pen Color 染 FineDial。
-- [ ] 21. 中心 tick spacing 与现有 3× mapping 的 1-unit travel 对应。
+- [ ] 21. Renderer、drag/velocity/physics/rubber-band 共用 Brush 量程推导的 canonical 3× unit travel；Highlighter 每 1 单位物理距离与 Brush 相同。
 - [ ] 22. 左右远端具有自然 perspective compression。
 - [ ] 23. 左右远端透明度平滑消失。
 - [ ] 24. FineDial 具有轻微圆柱边缘 / depth 感。
@@ -112,7 +114,7 @@
 - [ ] 42. Hold release 后 FineDial View Mode 仍保持。
 - [ ] 43. Popup FineDial 模式下固定在中心选择轴。
 - [ ] 44. Popup 会动画移动到 DrawAttributeBar 外侧。
-- [ ] 45. Popup 与 DrawAttributeBar 保持合理间隙。
+- [ ] 45. 正常 FineDial→Preview 时 Popup 锁存实际中心原地退出且快速反转无 teleport；panel/fold/lifecycle 退出不锁存。
 - [ ] 46. FineDial Popup 不再使用 penTypeSafeRight。
 - [ ] 47. preset thickness 时 FineDial 不退出。
 - [ ] 48. preset thickness 时 Dial 使用已有 thickness animation 转过去。

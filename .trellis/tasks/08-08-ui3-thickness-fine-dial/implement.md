@@ -4,8 +4,9 @@
 
 - Task: `08-08-ui3-thickness-fine-dial`
 - Final status for this session: `in_progress`
-- Checkpoint: `44e4eaba2ca8e463343b44bc90069bfe011e230e` (`feat(ui3): add thickness fine dial`).
-- The GUI correction remains in the working tree; there is no second commit, push, archive, or GUI launch.
+- Base feature checkpoint: `44e4eaba2ca8e463343b44bc90069bfe011e230e` (`feat(ui3): add thickness fine dial`).
+- First GUI-correction checkpoint: `b272d4c922cd792c0d68e9fc52d43f35120cc9d3` (`fix(ui3): refine thickness fine dial activation`).
+- The second GUI correction remains uncommitted and unstaged in the working tree; there is no push, archive, or GUI launch.
 - No public API, project-file, resource, configuration, or i18n change.
 - The old `08-07` task was not modified.
 
@@ -36,7 +37,7 @@ All three files are strict UTF-8 without BOM and contain CRLF only.
 | Area | Values |
 | --- | --- |
 | Existing precision source | `BarThicknessPreviewTouchDragTravelScale = 3.0` |
-| Activation | Drag gap `3 DIP`, Drag depth `12 DIP`, Click guard `8 DIP`, Click depth `18 DIP`, dwell `1000 ms`, X tolerance / horizontal slop `5 DIP`, preview alpha `0 -> 0.5` |
+| Activation | Drag gap `3 DIP`, Drag depth `12 DIP`, Drag/Click shared boundary, Click depth `18 DIP`, dwell `1000 ms`, armed-Drag horizontal slop `5 DIP`, recognition base opacity `0.5` |
 | Transition / placement | FineDial transition `0.28 s`, Popup panel gap `8 DIP` |
 | Projection | `thetaLimit=1.20 rad`, Y lift `4 DIP`, edge fade start `68%`, visible ticks `<=64` |
 | Tick visuals | normal `7 DIP`, major `12 DIP`, label `10 DIP`, selector `7x5 DIP` |
@@ -49,7 +50,7 @@ All three files are strict UTF-8 without BOM and contain CRLF only.
 
 ```text
 pointer / physics raw value
-  -> existing 3x unitTravelScreen mapping
+  -> Brush-canonical 3x unitTravelScreen mapping
   -> exponential visual rubber-band (continuous shared snapshot)
   -> round + clamp to current integer range
   -> thicknessSliderCandidateWidth
@@ -247,3 +248,86 @@ Summary: `36 PASS`, `0 FAIL`, `29 NOT VERIFIED`.
 | 45 | PASS | ARM64-host full `Debug|ARM64` Solution Rebuild completed with `0 errors` and `317 warnings`. |
 
 Correction summary: `36 PASS`, `0 FAIL`, `9 NOT VERIFIED`.
+
+## Second GUI correction after `b272d4c`
+
+### Implemented correction
+
+- Added `ResolveThicknessFineDialUnitTravel(trackTravel, dpiZoom)`. It resolves the current Brush range and returns `trackTravel * BarThicknessPreviewTouchDragTravelScale / brushRangeSpan`; interaction passes screen track travel and rendering passes logical track travel, while each active pen mode keeps its own min/max.
+- Removed the Click guard gap. `clickNear == dragFar`, and the Drag/Click union is an explicit activation corridor. Corridor points that cannot activate, including Popup exclusion and transient Thumb animation, return `Consumed` and never reach `ProjectWidthFromScreenX(...)`.
+- Removed the Slider-dwell X-stability anchor and explicit outward-displacement latch. The timer now depends only on an ordinary Slider drag continuously remaining in the Click/dwell zone for `1000 ms`; leaving the zone resets dwell and restores the dark recognition preview.
+- Split recognition visibility, dwell completion, formal-selection UI, and geometry transition. Recognition contributes the base `0.5`; dwell contributes the remaining `0.5`; cancellation retargets through existing `BarUiValueClass` animation. Major labels, center line, and selector triangles are gated by formal-selection progress.
+- Added a one-shot normal-Preview Popup latch request. Rendering captures the actual rendered Popup center only for a triangle-confirmed FineDial -> Preview transition while the drawing panel remains open and the main bar is not folded. During that exit, surface, circle, and text scale/fade around the captured center; rapid show retargets from the latched geometry.
+- Drawing-attribute collapse, main-bar fold, availability/capture loss, and other lifecycle cleanup never request the latch. If collapse/fold starts after a normal exit already latched, rendering releases the latch and restores the original Slider-target chase geometry.
+
+### Second-correction verification
+
+- Checkpoint before this correction: `b272d4c922cd792c0d68e9fc52d43f35120cc9d3` (`fix(ui3): refine thickness fine dial activation`).
+- GUI: `NOT RUN` by explicit instruction; all visual appearance, physical direction/feel, and real pointer-timing criteria remain `NOT VERIFIED`.
+- Product scope: `Bar.Main.cpp` and `Bar.State.cppm`; `Bar.Main.cppm` and unrelated product files are unchanged in this correction.
+- Task-document scope: `prd.md`, `design.md`, and this `implement.md`; old task `08-07` is unchanged.
+- Lint/type-check: there is no separate native lint/type-check target; the full C++20 module Solution rebuild is the applicable gate.
+- Automated tests: no non-GUI test executable covers UI3 FineDial; `Inkeys.exe` was not launched.
+- Final encoding, Git, and ARM64 Rebuild evidence is recorded after the matrix below.
+
+### Second-correction review finding (fixed)
+
+- File: `Inkeys/Inkeys/UI/Bar/Bar.Main.cpp`.
+- Issue: a triangle press could outlive drawing-panel collapse, main-bar fold, or thickness availability loss. The synthetic/up event then still committed the FineDial candidate and published the Popup exit-latch request after hiding had already started, leaving a stale request for a later session.
+- Fix: triangle release now reconfirms Pen Mode, current range support, expanded/unfolded state, and current FineDial ViewMode before committing or requesting the latch. An invalid lifecycle release clears the request and does not commit.
+- Findings not fixed: none from static review. GUI-only visual continuity and input feel remain `NOT VERIFIED`.
+
+### Second-correction acceptance matrix
+
+`PASS` means static control/data-flow evidence or an executed non-GUI gate proves the criterion. GUI-only appearance, feel, and real-input timing are deliberately `NOT VERIFIED`.
+
+| # | Status | Evidence |
+| ---: | --- | --- |
+| 1 | PASS | Checkpoint `b272d4c922cd792c0d68e9fc52d43f35120cc9d3` exists before the current working-tree correction. |
+| 2 | NOT VERIFIED | Normal FineDial Popup exit latches the rendered center; the visible in-place result requires GUI observation. |
+| 3 | PASS | During hide, the latched branch uses the captured rendered center with zero retarget progress instead of the moving Slider endpoint. |
+| 4 | PASS | For Brush, the canonical helper reduces to the prior current-range 3x formula. |
+| 5 | PASS | Renderer tick spacing always divides by the Brush range span, including Highlighter mode. |
+| 6 | PASS | Interaction pointer delta always divides by the same Brush-canonical unit travel. |
+| 7 | PASS | Candidate clamp and visible tick interval still read the current pen mode range. |
+| 8 | PASS | Rendering and interaction call the same `ResolveThicknessFineDialUnitTravel(...)` helper. |
+| 9 | PASS | No dwell X anchor/tolerance comparison remains. |
+| 10 | PASS | No explicit outward-displacement gate remains in dwell activation. |
+| 11 | PASS | While the pointer stays in the dwell zone, elapsed time accumulates regardless of X/Y motion. |
+| 12 | PASS | Leaving the dwell zone calls `ResetFineActivationDwell`; release/cancel/lifecycle ends recognition. |
+| 13 | NOT VERIFIED | Recognition targets a `0.5` base Dial/tick preview; its rendered appearance requires GUI observation. |
+| 14 | NOT VERIFIED | Recognition geometry uses the activation Click Zone vertical center and mirrored side; placement requires GUI observation. |
+| 15 | NOT VERIFIED | Dwell contributes `0.5 -> 1.0` over `1000 ms`; animation appearance requires GUI observation. |
+| 16 | NOT VERIFIED | Dwell cancellation retargets to dark recognition through `SetTar`; visible continuity requires GUI observation. |
+| 17 | NOT VERIFIED | Ordinary cancellation avoids `SetDirect(0)` in renderer-local values; absence of a visible opacity jump requires GUI observation. |
+| 18 | PASS | Major-label drawing and cache lookup are gated by formal-selection progress. |
+| 19 | PASS | Center line and both selector triangles are gated by formal-selection progress. |
+| 20 | NOT VERIFIED | Selector/label short entrance animation is present; natural timing requires GUI observation. |
+| 21 | NOT VERIFIED | Recognition center interpolates to final FineDial geometry; visible non-teleport behavior requires GUI observation. |
+| 22 | PASS | `clickNear == dragFar`; the 8 DIP Click guard constant and gap are removed. |
+| 23 | PASS | The former gap belongs to the activation corridor and cannot enter ordinary Slider adjustment. |
+| 24 | PASS | Any corridor hit is Drag, Click, or `Consumed`; none reaches `ProjectWidthFromScreenX(...)`. |
+| 25 | PASS | Popup exclusion returns `Consumed`, not `None`. |
+| 26 | PASS | Pointer Down on the real Slider track outside the corridor retains existing click-to-jump projection. |
+| 27 | PASS | Drag Zone Down still arms and waits for the existing horizontal slop before zero-jump activation. |
+| 28 | PASS | Click Zone Down still enters FineDial immediately and can continue dragging. |
+| 29 | NOT VERIFIED | Direct drag sign code is unchanged from the accepted checkpoint; real GUI direction remains unrun. |
+| 30 | NOT VERIFIED | Inertia consumes the same value-velocity sign; visible direction remains unrun. |
+| 31 | NOT VERIFIED | Hold state machine remains wired and suppressed only during activation dwell; real timing/locking remains unrun. |
+| 32 | PASS | Preset/pen-type cancellation and programmatic animation paths are unchanged by this correction. |
+| 33 | NOT VERIFIED | Geometry continues to use `previewSide` and animated panel values; upper/lower GUI layouts remain unrun. |
+| 34 | PASS | Zero formal/recognition/dwell opacity skips projection, ticks, labels, and related render work. |
+| 35 | PASS | Stable active frames reuse cached label layouts/selector geometry and add no per-frame DWrite/D2D creation. |
+| 36 | PASS | Final `git diff --check` passes after CRLF restoration. |
+| 37 | PASS | ARM64-host full `Debug|ARM64` Solution Rebuild passes. |
+
+Second-correction summary: `24 PASS`, `0 FAIL`, `13 NOT VERIFIED`.
+
+### Final second-correction gate evidence
+
+- `git diff --check`: PASS.
+- Encoding: product files are UTF-8 without BOM and contain CRLF only.
+- ARM64 host: `C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\arm64\MSBuild.exe`.
+- Command: `MSBuild.exe InkeysRepo.sln /t:Rebuild /m /p:Configuration=Debug /p:Platform=ARM64 /nologo`.
+- Rebuild result: PASS, `0 errors`, `317 warnings`, elapsed `00:01:46.74`.
+- Task remains `in_progress`; current correction is not staged or committed.

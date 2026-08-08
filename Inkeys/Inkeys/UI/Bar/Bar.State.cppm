@@ -50,9 +50,12 @@ public:
 		IdtAtomic<bool> thicknessFineDialCandidateActive = false;
 		IdtAtomic<bool> thicknessFineDialDragging = false;
 		IdtAtomic<bool> thicknessFineDialPhysicsActive = false;
-		// Slider 外移等待只发布独立预览，不提前改变 FineDial ViewMode。
+		// Slider 外移识别只发布独立预览，不提前改变 FineDial ViewMode。
 		IdtAtomic<bool> thicknessFineDialActivationPreviewActive = false;
+		IdtAtomic<bool> thicknessFineDialActivationDwellActive = false;
 		IdtAtomic<float> thicknessFineDialActivationPreviewProgress = 0.0f;
+		// 仅正常 FineDial -> Preview 退出请求渲染侧锁存 Popup 当前位置。
+		IdtAtomic<bool> thicknessFineDialPopupExitLatchRequested = false;
 		// 拖动改值后静止保持：提示/进度/锁定，跨交互与渲染线程共享。
 		IdtAtomic<bool> thicknessSliderHoldHintActive = false;
 		IdtAtomic<bool> thicknessSliderHoldLocked = false;
