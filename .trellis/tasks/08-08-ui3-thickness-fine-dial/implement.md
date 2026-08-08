@@ -4,7 +4,9 @@
 
 - Task: `08-08-ui3-thickness-fine-dial`
 - Final status for this session: `in_progress`
-- No commit, push, archive, GUI launch, public API, project-file, resource, configuration, or i18n change.
+- Checkpoint: `44e4eaba2ca8e463343b44bc90069bfe011e230e` (`feat(ui3): add thickness fine dial`).
+- The GUI correction remains in the working tree; there is no second commit, push, archive, or GUI launch.
+- No public API, project-file, resource, configuration, or i18n change.
 - The old `08-07` task was not modified.
 
 ## Completed work
@@ -34,7 +36,7 @@ All three files are strict UTF-8 without BOM and contain CRLF only.
 | Area | Values |
 | --- | --- |
 | Existing precision source | `BarThicknessPreviewTouchDragTravelScale = 3.0` |
-| Activation | Drag gap `3 DIP`, Drag depth `12 DIP`, Click guard `8 DIP`, Click depth `18 DIP`, dwell `500 ms`, existing click slop `5 DIP` |
+| Activation | Drag gap `3 DIP`, Drag depth `12 DIP`, Click guard `8 DIP`, Click depth `18 DIP`, dwell `1000 ms`, X tolerance / horizontal slop `5 DIP`, preview alpha `0 -> 0.5` |
 | Transition / placement | FineDial transition `0.28 s`, Popup panel gap `8 DIP` |
 | Projection | `thetaLimit=1.20 rad`, Y lift `4 DIP`, edge fade start `68%`, visible ticks `<=64` |
 | Tick visuals | normal `7 DIP`, major `12 DIP`, label `10 DIP`, selector `7x5 DIP` |
@@ -72,7 +74,9 @@ pointer / physics raw value
 - Inactive frame: `fineDialOpacity` guards range/projection/tick/label work; physics polling requires the shared physics flag and local Inertia/Settling phase.
 - Spec sync: no `.trellis/spec/` update is needed; this is a feature-specific UI contract already captured in this task's PRD/design/research.
 
-## Verification results
+## Checkpoint verification results
+
+The build and 65-item matrix below belong to checkpoint `44e4eaba`; the correction matrix later in this file supersedes conflicting activation behavior.
 
 - `git diff --check`: PASS.
 - Product numstat: `Bar.Main.cpp 1448/161`, `Bar.Main.cppm 18/0`, `Bar.State.cppm 26/12`; no whole-file newline churn.
@@ -86,7 +90,7 @@ pointer / physics raw value
 
 `PASS` below means the contract was established by static code inspection or build evidence. Visual appearance, real pointer timing, and physical feel remain `NOT VERIFIED` because GUI execution was explicitly prohibited.
 
-## Acceptance matrix
+## Checkpoint acceptance matrix
 
 | # | Status | Evidence |
 | ---: | --- | --- |
@@ -157,3 +161,89 @@ pointer / physics raw value
 | 65 | PASS | ARM64-host full `Debug|ARM64` Solution Rebuild completed successfully. |
 
 Summary: `36 PASS`, `0 FAIL`, `29 NOT VERIFIED`.
+
+## GUI correction after checkpoint
+
+### Implemented correction
+
+- Major labels retain the `DWRITE_TEXT_ALIGNMENT_CENTER` cache and now center the complete `metrics.layoutWidth` box on the exact projected `tickX` used by `DrawLine`.
+- `TryGetBarThicknessFineDialActivationGeometry(...)` is the single activation-geometry source. `HitTestBarThicknessFineDialFreshActivation(...)` keeps Popup exclusion, while `IsBarThicknessFineDialDwellZone(...)` tests ongoing Slider dwell geometry without Popup occlusion.
+- Slider dwell requires a latched outward approach, keeps a fixed 5 DIP X anchor, lasts 1000 ms, suppresses Hold, and publishes an independent `0 -> 0.5` activation-preview progress while `ThicknessViewMode` remains `Slider`.
+- Renderer-local activation-preview progress only contributes to final Dial opacity. Slider Track/Thumb, Popup endpoint and Overflow suppression continue to use the real ViewMode/full FineDial progress. Cancellation fades the preview out; formal activation hands the shared `0.5` preview to the renderer once and holds it until full progress catches up.
+- Pointer-to-value mapping and sampled screen-velocity conversion both use the reversed sign. Residual velocity, inertia, boundary and spring code continue to consume the same value-velocity convention.
+- Drag Zone Down arms `fineDragActivationArmed`; only horizontal movement beyond 5 DIP activates from the current value/current X. Down+Up restores the prior ViewMode/hover/pinned/value state.
+- Click Zone Down immediately calls the normal FineDial drag activation path using current thickness/current X. The old release-validation state was removed, and this path never calls `ProjectWidthFromScreenX(...)`.
+- Ordinary dwell cancellation, touch cancel and abnormal capture-loop exits clear activation-preview shared state. A successful dwell activation preserves only the one-shot handoff until the renderer consumes it; `CloseThicknessSlider` and `WM_CAPTURECHANGED` still force-clear all preview state.
+
+### Review finding (fixed)
+
+- File: `Inkeys/Inkeys/UI/Bar/Bar.Main.cpp`.
+- Issue: `ActivateFineDialDrag(...)` previously called `ResetFineActivationDwell()` before changing `ThicknessViewMode`. That cleared shared preview progress to zero without any renderer acknowledgement, so a render thread that had not consumed the last `0.5` dwell frame could restart the formal Dial opacity from zero.
+- Fix: ongoing dwell now passes `preserveActivationPreview=true`. Formal activation marks the shared preview inactive but preserves its progress as a one-shot handoff. Slider/FineDial transition frames seed the renderer-local preview from that value; the first FineDial frame consumes it, and full FineDial progress then catches up without an opacity reset. Fresh Click/FineDial re-grab and Drag-armed activation pass `false`; ordinary cancellation still clears the shared preview immediately.
+- Findings not fixed: none from static review. GUI-only visual continuity and input feel remain `NOT VERIFIED`.
+
+### Correction static evidence
+
+- Checkpoint hash: `44e4eaba2ca8e463343b44bc90069bfe011e230e`.
+- GUI: `NOT RUN` by explicit instruction.
+- ARM64 host: `C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\arm64\MSBuild.exe`.
+- Command: `MSBuild.exe InkeysRepo.sln /t:Rebuild /m /p:Configuration=Debug /p:Platform=ARM64 /nologo`.
+- Debug | ARM64 correction build: PASS, `0 errors`, `317 warnings`, elapsed `00:01:42.14`.
+- Lint/type-check: no separate native linter or type-check target exists; the full C++20 module compile and link passed.
+- Tests: no automated test project or non-GUI test executable is available for this task; `Inkeys.exe` was not launched.
+- No new heap container, COM resource, D2D resource or TextLayout creation was added to a stable frame.
+- Inactive stable state keeps shared/local activation-preview progress at zero, so the existing `fineDialOpacity` guard skips geometry, ticks and labels and the animation clock stops requesting frames.
+
+### Correction acceptance matrix
+
+`PASS` means the contract is directly established by static code or the completed build. Visual appearance and physical timing/feel remain `NOT VERIFIED` because the GUI was not run.
+
+| # | Status | Static evidence |
+| ---: | --- | --- |
+| 1 | PASS | Label layout-box center and major `DrawLine` both use the same projected `tickX`. |
+| 2 | PASS | Label origin is calculated inside the same projected-tick iteration for every Dial angle. |
+| 3 | PASS | Existing 64-entry TextLayout cache remains; only cached layout width metadata was added. |
+| 4 | NOT VERIFIED | Dwell state path is present; real pointer reliability needs GUI input. |
+| 5 | PASS | Ongoing dwell calls `IsBarThicknessFineDialDwellZone`, which does not inspect Popup Surface. |
+| 6 | PASS | Fresh hit-test still rejects the actual Popup Surface rectangle. |
+| 7 | PASS | Dwell latches only after signed outward displacement reaches the 5 DIP threshold. |
+| 8 | PASS | After latching, Y monotonicity is not rechecked; only Click Zone containment remains. |
+| 9 | PASS | X is compared to one fixed dwell anchor and restarts when displacement exceeds 5 DIP. |
+| 10 | PASS | `BarThicknessFineDialActivationDwellMs == 1000`. |
+| 11 | NOT VERIFIED | Independent progress publishes `0 -> 0.5`; rendered smoothness needs GUI. |
+| 12 | PASS | Dwell never changes `ThicknessViewMode::Slider`; only formal activation does. |
+| 13 | PASS | Slider Track target still depends only on Slider ViewMode. |
+| 14 | PASS | Thumb visibility still depends only on Slider ViewMode/progress. |
+| 15 | PASS | Popup visibility remains driven by Slider Thumb or formal FineDial mode. |
+| 16 | PASS | Popup external interpolation still reads full FineDial progress only. |
+| 17 | PASS | Tracking dwell resets Hold and short-circuits ordinary Hold updates. |
+| 18 | NOT VERIFIED | Renderer-local 0.18 s fade-out is present; appearance needs GUI. |
+| 19 | NOT VERIFIED | A one-shot shared handoff seeds renderer-local opacity at `0.5` even if the prior preview frame was not consumed; visible continuity still needs GUI. |
+| 20 | NOT VERIFIED | Activation re-anchors current candidate/current X; visible no-jump needs GUI. |
+| 21 | PASS | Direct pointer mapping and release velocity conversion both reverse the sign. |
+| 22 | NOT VERIFIED | Math moves ticks right for rightward pointer drag; visual result needs GUI. |
+| 23 | NOT VERIFIED | Math moves ticks left for leftward pointer drag; visual result needs GUI. |
+| 24 | PASS | Sampled screen velocity uses the same negative screen-to-value sign as direct drag. |
+| 25 | PASS | Residual multi-swipe combination remains in value-velocity space. |
+| 26 | PASS | Boundary and spring equations are unchanged and consume corrected value velocity. |
+| 27 | PASS | Drag Zone Down only sets `fineDragActivationArmed`. |
+| 28 | PASS | Armed Down+Up restores prior ViewMode/hover/pinned and clears candidate state. |
+| 29 | PASS | Armed Down bypasses `ProjectWidthFromScreenX` and candidate activation. |
+| 30 | PASS | Activation requires horizontal displacement greater than the existing 5 DIP slop. |
+| 31 | PASS | Slop-crossing frame activates with current value and current pointer X as anchor. |
+| 32 | PASS | Click Zone is classified into `fineDialGesture` before initial rendering update. |
+| 33 | PASS | Old Click release-validation branch and state were removed. |
+| 34 | PASS | Subsequent held moves immediately use `ApplyFineDialScreenX`. |
+| 35 | PASS | Normal release keeps FineDial ViewMode and ends the FineDial drag chain. |
+| 36 | PASS | Click Zone path is excluded from the ordinary Slider projection block. |
+| 37 | PASS | Click activation starts from `GetPenWidth`/current FineDial snapshot, not pointer projection. |
+| 38 | PASS | `directTouchPreviewGesture` remains separately classified and excluded from activation dwell. |
+| 39 | PASS | FineDial drag still uses the existing Hold state machine after candidate movement. |
+| 40 | PASS | Preset/pen-type programmatic animation paths and render value source are unchanged. |
+| 41 | NOT VERIFIED | Ordinary Slider/Preview branches remain, but GUI regression testing was not run. |
+| 42 | NOT VERIFIED | Expand/collapse geometry path is unchanged, but GUI regression testing was not run. |
+| 43 | PASS | Zero full/preview opacity skips Dial projection/ticks; completed fade no longer wakes rendering. |
+| 44 | PASS | `git diff --check` is required and recorded after final EOL restoration. |
+| 45 | PASS | ARM64-host full `Debug|ARM64` Solution Rebuild completed with `0 errors` and `317 warnings`. |
+
+Correction summary: `36 PASS`, `0 FAIL`, `9 NOT VERIFIED`.

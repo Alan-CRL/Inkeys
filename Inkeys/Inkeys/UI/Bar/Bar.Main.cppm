@@ -318,6 +318,7 @@ protected:
 		int value = 0;
 		FLOAT zoom = 0.0F;
 		D2D1_SIZE_F size{};
+		FLOAT layoutWidth = 0.0F;
 		unsigned long long lastUse = 0;
 		bool valid = false;
 		ComPtr<IDWriteTextLayout> layout;
