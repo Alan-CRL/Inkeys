@@ -1198,6 +1198,60 @@ namespace draw3
 			SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL) != FALSE;
 		// 绘制线程只在活动期占用 CPU；提高一级优先级降低 120 FPS deadline 被后台窗口抢占的概率。
 
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+		const bool inputDebugTraceEnabled = IsInputDebugTraceEnabled();
+		struct DrawingTraceIdentity
+		{
+			uint32_t tabletContextId;
+			uint32_t contactId;
+			uint32_t deviceType;
+			uint64_t generation;
+		};
+		auto captureDrawingTraceIdentity = [](ContactHandle handle) noexcept
+			{
+				DrawingTraceIdentity identity = {};
+				if (!handle.record) return identity;
+				identity.tabletContextId = handle.record->TabletContextId();
+				identity.contactId = handle.record->ContactId();
+				identity.deviceType = static_cast<uint32_t>(handle.record->DeviceType());
+				identity.generation = handle.generation;
+				return identity;
+			};
+		auto recordDrawingInput = [&](const char* eventName,
+			const DrawingTraceIdentity& identity, const ContactSnapshot* snapshot,
+			DrawingInputResult result, size_t modeledPointCount = 0,
+			size_t realPointCount = 0) noexcept
+			{
+				if (!inputDebugTraceEnabled) return;
+				LARGE_INTEGER now = {};
+				QueryPerformanceCounter(&now);
+				DrawingInputTrace trace;
+				trace.eventName = eventName;
+				trace.qpc = now.QuadPart;
+				trace.snapshotQpc = snapshot ? snapshot->qpc : 0;
+				trace.threadId = GetCurrentThreadId();
+				trace.tabletContextId = identity.tabletContextId;
+				trace.contactId = identity.contactId;
+				trace.deviceType = identity.deviceType;
+				trace.contactGeneration = identity.generation;
+				trace.result = result;
+				trace.modeledPointCount = static_cast<uint32_t>((std::min)(
+					modeledPointCount, static_cast<size_t>(UINT32_MAX)));
+				trace.realPointCount = static_cast<uint32_t>((std::min)(
+					realPointCount, static_cast<size_t>(UINT32_MAX)));
+				if (snapshot)
+				{
+					trace.snapshotSequence = snapshot->sequence;
+					trace.phase = static_cast<uint32_t>(snapshot->phase);
+					trace.x = snapshot->position.x;
+					trace.y = snapshot->position.y;
+					trace.pressure = snapshot->pressure;
+				}
+				RecordDrawingInput(trace);
+			};
+		DrawingInputResult downInitializationResult = DrawingInputResult::DownHandleInvalid;
+#endif
+
 		auto acquireStroke = [&]() -> RuntimeStroke*
 			{
 				for (const auto& candidate : strokePool)
@@ -1221,6 +1275,10 @@ namespace draw3
 
 		auto initializeStroke = [&](ContactHandle handle) -> bool
 			{
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				if (inputDebugTraceEnabled)
+					downInitializationResult = DrawingInputResult::DownHandleInvalid;
+#endif
 				if (!handle.record || handle.record->Generation() != handle.generation) return false;
 				const ContactSnapshot down = handle.record->DownSnapshot();
 				const InputDeviceType deviceType = handle.record->DeviceType();
@@ -1243,6 +1301,10 @@ namespace draw3
 					hasActiveLaserTouchContact &&
 					!laserMultiTouchDrawingEnabled_.load(std::memory_order_acquire))
 				{
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					if (inputDebugTraceEnabled)
+						downInitializationResult = DrawingInputResult::DownIgnoredByPolicy;
+#endif
 					input_.Recycle(handle); // 关闭多指时忽略后续 Touch，保留第一根手指的完整生命周期。
 					return false;
 				}
@@ -1517,6 +1579,10 @@ namespace draw3
 								"true" : "false") <<
 							" speed_ratio=" << reconnectResult.speedRatio <<
 							" match_score=" << reconnectResult.matchScore << std::endl;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+						if (inputDebugTraceEnabled)
+							downInitializationResult = DrawingInputResult::DownInitialized;
+#endif
 						return true;
 					}
 					else
@@ -1528,6 +1594,10 @@ namespace draw3
 				RuntimeStroke* runtime = acquireStroke();
 				if (!runtime)
 				{
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					if (inputDebugTraceEnabled)
+						downInitializationResult = DrawingInputResult::StrokeRuntimeUnavailable;
+#endif
 					ContactSnapshot cancelled = down;
 					cancelled.phase = ContactPhase::Cancelled;
 					input_.PublishCancelled(handle.record->TabletContextId(),
@@ -1569,6 +1639,10 @@ namespace draw3
 					? eraserModelParams : strokeModelParams;
 				if (absl::Status status = runtime->stroke.modeler.Reset(modelParams); !status.ok())
 				{
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					if (inputDebugTraceEnabled)
+						downInitializationResult = DrawingInputResult::ModelerResetFailed;
+#endif
 					std::cout << "Error: " << status.message() << std::endl;
 					ContactSnapshot cancelled = down;
 					cancelled.phase = ContactPhase::Cancelled;
@@ -1611,6 +1685,10 @@ namespace draw3
 				};
 				if (absl::Status status = stroke.modeler.Update(downInput, stroke.modeledResults); !status.ok())
 				{
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					if (inputDebugTraceEnabled)
+						downInitializationResult = DrawingInputResult::ModelerUpdateFailed;
+#endif
 					std::cout << "Error: " << status.message() << std::endl;
 					ContactSnapshot cancelled = down;
 					cancelled.phase = ContactPhase::Cancelled;
@@ -1682,6 +1760,10 @@ namespace draw3
 						haptics_->StopFeedback(); // 倒转笔尾不沿用悬停预热的同波形状态。
 					haptics_->TickContinuous(HapticFeedbackForRuntime(*runtime));
 				}
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				if (inputDebugTraceEnabled)
+					downInitializationResult = DrawingInputResult::DownInitialized;
+#endif
 				return true;
 			};
 
@@ -1692,7 +1774,37 @@ namespace draw3
 					input_.AcknowledgeControlWake(); // 先清 pending，随后复查窗口的全部原子请求。
 					return;
 				}
-				initializeStroke(ContactHandle{ record, record->Generation() }); // 出队后立即固定本地 generation。
+				const ContactHandle handle{ record, record->Generation() }; // 出队后立即固定本地 generation。
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				if (inputDebugTraceEnabled)
+				{
+					const DrawingTraceIdentity identity = captureDrawingTraceIdentity(handle);
+					const ContactSnapshot down = record->DownSnapshot();
+					recordDrawingInput("DownDequeue", identity, &down,
+						DrawingInputResult::DownDequeued);
+					const bool initialized = initializeStroke(handle);
+					size_t modeledPointCount = 0;
+					size_t realPointCount = 0;
+					if (initialized)
+					{
+						const auto runtime = std::find_if(active.begin(), active.end(),
+							[&](const RuntimeStroke* candidate)
+							{
+								return candidate && candidate->handle.record == handle.record &&
+									candidate->handle.generation == handle.generation;
+							});
+						if (runtime != active.end())
+						{
+							modeledPointCount = (*runtime)->stroke.modeledResults.size();
+							realPointCount = (*runtime)->stroke.realPoints.size();
+						}
+					}
+					recordDrawingInput("DownInitialize", identity, &down,
+						downInitializationResult, modeledPointCount, realPointCount);
+					return;
+				}
+#endif
+				initializeStroke(handle);
 			};
 
 		auto appendTerminalFallback = [&](RuntimeStroke& runtime,
@@ -1738,14 +1850,32 @@ namespace draw3
 					.tilt = tilt,
 					.orientation = orientation
 				};
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				bool modelUpdateSucceededForTrace = false;
+#endif
 				if (absl::Status status = runtime.stroke.modeler.Update(
 					upInput, runtime.stroke.modeledResults); status.ok())
+				{
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					if (inputDebugTraceEnabled) modelUpdateSucceededForTrace = true;
+#endif
 					AppendNewModeledPoints(runtime.stroke);
+				}
 				else
 				{
 					std::cout << "Error: " << status.message() << std::endl;
 					appendTerminalFallback(runtime, snapshot, inputTime);
 				}
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				if (inputDebugTraceEnabled)
+				{
+					recordDrawingInput("ModelerDeferredUp",
+						captureDrawingTraceIdentity(runtime.handle), &snapshot,
+						modelUpdateSucceededForTrace ? DrawingInputResult::ModelerUpdateSucceeded
+							: DrawingInputResult::ModelerUpdateFailed,
+						runtime.stroke.modeledResults.size(), runtime.stroke.realPoints.size());
+				}
+#endif
 				runtime.lastModelSnapshot = modelSnapshot;
 				runtime.ended = true;
 				runtime.cancelled = cancelled;
@@ -1758,12 +1888,47 @@ namespace draw3
 			{
 				runtime.laserParticleMovedThisFrame = false;
 				if (runtime.ended || runtime.awaitingReconnect) return false;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				DrawingTraceIdentity traceIdentity;
+				if (inputDebugTraceEnabled)
+					traceIdentity = captureDrawingTraceIdentity(runtime.handle);
+#endif
 				ContactSnapshot snapshot;
-				if (!input_.TryReadSnapshot(runtime.handle, snapshot) ||
-					snapshot.sequence == runtime.lastConsumedSequence) return false;
+				if (!input_.TryReadSnapshot(runtime.handle, snapshot))
+				{
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					if (inputDebugTraceEnabled)
+					{
+						recordDrawingInput("SnapshotRead", traceIdentity, nullptr,
+							DrawingInputResult::SnapshotReadFailed,
+							runtime.stroke.modeledResults.size(), runtime.stroke.realPoints.size());
+					}
+#endif
+					return false;
+				}
+				if (snapshot.sequence == runtime.lastConsumedSequence) return false;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				if (inputDebugTraceEnabled)
+				{
+					recordDrawingInput("SnapshotRead", traceIdentity, &snapshot,
+						DrawingInputResult::SnapshotReadSucceeded,
+						runtime.stroke.modeledResults.size(), runtime.stroke.realPoints.size());
+				}
+#endif
 				runtime.lastConsumedSequence = snapshot.sequence;
 				runtime.lastInputSnapshot = snapshot;
-				if (snapshot.phase == ContactPhase::Down) return false;
+				if (snapshot.phase == ContactPhase::Down)
+				{
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					if (inputDebugTraceEnabled)
+					{
+						recordDrawingInput("SnapshotFilter", traceIdentity, &snapshot,
+							DrawingInputResult::SnapshotFiltered,
+							runtime.stroke.modeledResults.size(), runtime.stroke.realPoints.size());
+					}
+#endif
+					return false;
+				}
 				ContactSnapshot modelSnapshot = snapshot;
 				if (runtime.suppressPressure) modelSnapshot.pressure = -1.0f;
 
@@ -1780,7 +1945,17 @@ namespace draw3
 				runtime.laserParticleMovedThisFrame = positionMoved;
 				const bool stylusStateChanged = HasStylusStateChange(modelSnapshot, runtime.lastModelSnapshot);
 				if (!terminal && !positionMoved && !stylusStateChanged)
+				{
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					if (inputDebugTraceEnabled)
+					{
+						recordDrawingInput("SnapshotFilter", traceIdentity, &snapshot,
+							DrawingInputResult::SnapshotFiltered,
+							runtime.stroke.modeledResults.size(), runtime.stroke.realPoints.size());
+					}
+#endif
 					return false; // Move 抖动已消费但不进入模型，也不改变下一次真实速度基准。
+				}
 
 				const double deltaSeconds = QpcDeltaSeconds(
 					snapshot.qpc, runtime.lastSpeedSnapshot.qpc, qpcFrequency);
@@ -1832,6 +2007,15 @@ namespace draw3
 					std::cout << "Error: " << status.message() << std::endl;
 					if (terminal && !deferUp) appendTerminalFallback(runtime, snapshot, inputTime);
 				}
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+				if (inputDebugTraceEnabled)
+				{
+					recordDrawingInput("ModelerUpdate", traceIdentity, &snapshot,
+						modelUpdateSucceeded ? DrawingInputResult::ModelerUpdateSucceeded
+							: DrawingInputResult::ModelerUpdateFailed,
+						runtime.stroke.modeledResults.size(), runtime.stroke.realPoints.size());
+				}
+#endif
 				runtime.lastModelSnapshot = modelSnapshot;
 				if (positionMoved) runtime.lastSpeedSnapshot = snapshot;
 				if (positionMoved || stylusStateChanged)
@@ -2719,6 +2903,15 @@ namespace draw3
 							metrics_->StageLanding(runtime->handle.record, runtime->handle.generation,
 								runtime->metricDeviceType, static_cast<uint32_t>(runtime->tool),
 								runtime->metricEligibleQpc);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+						if (inputDebugTraceEnabled)
+						{
+							recordDrawingInput("ContactRecycle",
+								captureDrawingTraceIdentity(runtime->handle), &runtime->lastInputSnapshot,
+								DrawingInputResult::ContactRecycled,
+								runtime->stroke.modeledResults.size(), runtime->stroke.realPoints.size());
+						}
+#endif
 						input_.Recycle(runtime->handle); // L2 提交与活动层重建完成后才归还 slot。
 						runtime->stroke.Reset(kPenDiameter, configuration_.expectedSpeed);
 						runtime->handle = {};

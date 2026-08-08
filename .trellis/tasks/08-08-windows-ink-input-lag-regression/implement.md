@@ -1,30 +1,41 @@
 # 实施清单
 
-## Phase 1: Minimal Production Patch
+## Phase 1: Diagnostics Only
 
-- [x] 修改 `WindowController::PublishPenCursorSample`：所有样本继续发布 mailbox，仅 `!sample.inContact` 请求 cursor render。
-- [x] 保留 authority 更新、系统 cursor 状态刷新、Clear 以及全部 `WM_POINTER` handler 代码。
-- [x] 修改 RTS `Packets`：Move publication 在 Pen cursor publication 之前，diagnostics 仍最后记录。
-- [x] 保持 Move 失败时仍更新 cursor、interruption simulation、last-packet 和 state gate 语义。
-- [x] 添加简短中文注释说明 Contact cursor 由活动帧读取，无需每包唤醒。
+- [x] 为 Down/Packets 的所有目标早退增加明确 `RtsPacketResult`，不改变返回值或生产状态转换。
+- [x] 记录 Down decoder ensure/generation/decode/PublishDown 与成功坐标、压力。
+- [x] 记录 Packets state gate/binding/decoder/generation/property/decode/PublishMove 结果；成功采样、失败聚合。
+- [x] 增加 DrawingController Down/snapshot/modeler/recycle 关联事件和 Pen/Mouse/Touch 标签。
+- [x] 未知 RTS 设备记录 `Unknown`，不在 decoder 缺失时猜成 Pen。
+- [x] 增加唯一 session 文件、BEGIN/END/build 标记和 `--rts-trace-output`。
+- [x] Release ARM64 编译 diagnostics，但未开启时保持轻量启用分支；DrawingController 禁用时不采集额外字段。
 
-回滚点：两个生产文件各只有一个局部行为变化，可独立恢复；不触碰 deadline 或输入存储。
+## Phase 2: Focused Non-GUI Tests
 
-## Phase 2: Source And Automated Verification
+- [x] 覆盖 session BEGIN/END、配置/架构、reason 名称与 Drawing/Modeler 汇总。
+- [x] 覆盖正常 Packets 采样数量和 Unknown 设备标签。
+- [x] 覆盖 timeline overwrite 后失败 aggregate 的 count、first/last callback sequence/QPC。
+- [x] 覆盖独立 contact reason 行，避免长 sequence 截断 reason。
+- [x] 覆盖 timeline overwrite 后 lifecycle/error auxiliary 仍以独立类别输出。
 
-- [x] 核对 `WM_POINTER` 分支、Hover、Clear、Up/Leave 未改变。
-- [x] 核对 contact sample 仍进入 mailbox，只有 render wake 被条件化。
-- [x] 核对 RTS 顺序为 Move -> cursor -> diagnostics，callback 无等待/分配。
-- [x] 运行现有 Pen cursor、contact input、RTS decoder/binding/lifecycle/state-gate 测试。
-- [x] 执行 `git diff --check`，确认只有批准范围内的生产/规范/任务文档差异。
+## Phase 3: Build And Static Gate
 
-## Phase 3: Build And Runtime Validation
+- [x] reviewer auxiliary 修复后的完整解决方案 `Debug|ARM64` 构建通过。
+- [x] reviewer auxiliary 修复后的 Debug ARM64 非 GUI 测试通过。
+- [x] reviewer auxiliary 修复后的完整解决方案 `Release|ARM64` 构建通过。
+- [x] reviewer auxiliary 修复后的 Release ARM64 非 GUI 测试通过。
+- [x] 恢复所有修改 native/XML 文件的 UTF-8 BOM + CRLF。
+- [x] `git diff --check` 和范围检查通过。
+- [x] 审计 callback 无新增 heap allocation、同步 IO、blocking mutex、COM query、wake 或 wait。
 
-- [x] 使用 ARM64 MSBuild 构建完整解决方案的 `Debug|ARM64` 与 `Release|ARM64`，单次超时不少于 5 分钟。
-- [x] 运行 Debug 与 Release 的 ARM64 测试程序。
-- [ ] 真机 A/B 验证 Pen 跟手性、追赶抽帧、Contact Eraser/倒转笔 cursor、Hover 与触觉。
-- [ ] 验证 Mouse、Touch、Precision Touchpad 不变，成功 Present 仍不超过 120 FPS。
-- [ ] 若仍复现，使用已有 RTS trace 另行调查 state gate，不扩大本补丁。
+## Phase 4: First Hardware Session
+
+- [ ] 用户启动 Release ARM64：`inkStrokeModelerTest.exe --rts-trace`。
+- [ ] 用户先用真实 Windows Ink Pen 画几笔，再紧接着用 Mouse 画几笔，然后正常退出应用。
+- [ ] 读取控制台打印的本轮唯一日志路径，只分析该 session。
+- [ ] 按 Down -> decoder/binding -> PublishDown -> Packets/state gate -> PublishMove -> Drawing snapshot -> Modeler 重建 Pen 时序。
+- [ ] 与紧接着的 Mouse 事件比较，并把 Decoder miss、StateGate drop、Publish failure、Drawing/Modeler 等假设标为支持/削弱/已排除/证据不足。
+- [ ] 信息不足时只提出下一轮必要诊断；任何生产修复必须等待用户明确进入修复阶段。
 
 ## Validation Commands
 

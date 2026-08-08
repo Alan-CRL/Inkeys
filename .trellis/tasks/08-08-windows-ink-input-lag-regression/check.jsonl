@@ -1,5 +1,5 @@
 {"file":".trellis/spec/native/index.md","reason":"核对 Native 层质量门与最小修改范围。"}
 {"file":".trellis/spec/native/runtime-and-rendering.md","reason":"核对输入发布、模型消费、终态和帧截止不变量。"}
-{"file":".trellis/spec/native/quality-and-validation.md","reason":"ARM64 全解决方案构建、并发测试、严格基准与真机验证要求。"}
+{"file":".trellis/spec/native/quality-and-validation.md","reason":"ARM64 全解决方案构建与非 GUI 测试；真机验证延期且禁止合成输入。"}
 {"file":".trellis/spec/native/modules-and-code-style.md","reason":"核对 module API、编码、换行、命名与注释。"}
 {"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 RTS callback 没有越界调用 Stroke Modeler、D3D 或 Presenter。"}

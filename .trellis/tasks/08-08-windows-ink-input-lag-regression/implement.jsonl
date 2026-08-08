@@ -1,4 +1,9 @@
-{"file":".trellis/spec/native/index.md","reason":"Native 层预开发清单与 draw3 修改边界。"}
-{"file":".trellis/spec/native/runtime-and-rendering.md","reason":"RTS callback、ContactInput、Stroke Modeler、活动帧和 120 FPS 调度契约。"}
-{"file":".trellis/spec/native/modules-and-code-style.md","reason":"C++20 module 接口/实现同步、中文注释、UTF-8 BOM 与 CRLF 规则。"}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"输入线程到建模、D3D 与 Presenter 的跨层 ownership 检查。"}
+{"file":".trellis/spec/native/index.md","reason":"Native 层预开发清单、完整 ARM64 solution 构建与编码边界。"}
+{"file":".trellis/spec/native/runtime-and-rendering.md","reason":"RTS callback、contact publication、DrawingController 和 Modeler 线程契约。"}
+{"file":".trellis/spec/native/modules-and-code-style.md","reason":"C++20 module 接口同步、中文注释、UTF-8 BOM 与 CRLF。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"输入 producer 到 DrawingController/Modeler 的 ownership 和时序检查。"}
+{"file":"inkStrokeModelerTest/draw3/diagnostics.cppm","reason":"诊断 reason、RTS/Drawing trace 数据结构与 session API。"}
+{"file":"inkStrokeModelerTest/draw3/diagnostics.cpp","reason":"固定 timeline、失败 aggregate、session 文件与停止回调后 flush。"}
+{"file":"inkStrokeModelerTest/draw3/realtime_stylus.cpp","reason":"StylusDown/Packets 既有早退路径的只读分类。"}
+{"file":"inkStrokeModelerTest/draw3/drawing_controller.cpp","reason":"contact snapshot 消费与 Stroke Modeler 关联事件。"}
+{"file":"inkStrokeModelerTestTests/contact_input_tests.cpp","reason":"非 GUI session、采样、容量和失败保留测试。"}

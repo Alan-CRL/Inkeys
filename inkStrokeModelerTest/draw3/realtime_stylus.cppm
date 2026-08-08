@@ -31,7 +31,7 @@ export namespace draw3
 		RealTimeStylusInput& operator=(const RealTimeStylusInput&) = delete;
 
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-		// Debug 下启用有界 RTS diagnostics；Release 不导出该入口。
+		// 仅 diagnostics 构建导出有界 RTS trace 开关，默认运行仍保持关闭。
 		void SetRtsTraceEnabled(bool enabled) noexcept;
 #endif
 		// 初始化 MTA COM、RTS、多点接口和同步插件；任一步失败均返回 false。

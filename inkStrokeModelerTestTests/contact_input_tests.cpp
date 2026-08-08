@@ -8,12 +8,14 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <cwchar>
 #include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <new>
 #include <set>
+#include <string>
 #include <thread>
 #include <variant>
 #include <vector>
@@ -21,6 +23,7 @@
 #include <DirectXMath.h>
 
 import draw3.contact_input;
+import draw3.diagnostics;
 import draw3.haptic_feedback;
 import draw3.ink_prediction;
 import draw3.realtime_stylus;
@@ -79,6 +82,189 @@ namespace
 	{
 		return std::abs(left - right) <= tolerance;
 	}
+
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+	std::wstring MakeInputDebugTestPath(const wchar_t* suffix)
+	{
+		wchar_t temporaryDirectory[MAX_PATH] = {};
+		const DWORD directoryLength = GetTempPathW(MAX_PATH, temporaryDirectory);
+		if (directoryLength == 0 || directoryLength >= MAX_PATH) return {};
+		LARGE_INTEGER qpc = {};
+		QueryPerformanceCounter(&qpc);
+		wchar_t fileName[128] = {};
+		if (swprintf_s(fileName, L"draw3-input-debug-test-%lu-%lld-%ls.log",
+			static_cast<unsigned long>(GetCurrentProcessId()),
+			static_cast<long long>(qpc.QuadPart), suffix) <= 0) return {};
+		return std::wstring(temporaryDirectory, directoryLength) + fileName;
+	}
+
+	std::string ReadInputDebugTestLog(const std::wstring& path)
+	{
+		HANDLE file = CreateFileW(path.c_str(), GENERIC_READ,
+			FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+			FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (file == INVALID_HANDLE_VALUE) return {};
+		LARGE_INTEGER size = {};
+		if (!GetFileSizeEx(file, &size) || size.QuadPart < 0 ||
+			size.QuadPart > 16 * 1024 * 1024)
+		{
+			CloseHandle(file);
+			return {};
+		}
+		std::string text(static_cast<size_t>(size.QuadPart), '\0');
+		DWORD bytesRead = 0;
+		const bool read = text.empty() || ReadFile(file, text.data(),
+			static_cast<DWORD>(text.size()), &bytesRead, nullptr) != FALSE;
+		CloseHandle(file);
+		if (!read) return {};
+		text.resize(bytesRead);
+		return text;
+	}
+
+	size_t CountTextOccurrences(const std::string& text, const char* needle)
+	{
+		if (!needle || needle[0] == '\0') return 0;
+		size_t count = 0;
+		for (size_t position = 0; (position = text.find(needle, position)) != std::string::npos;
+			position += std::strlen(needle))
+			++count;
+		return count;
+	}
+
+	void TestInputDebugDiagnostics(TestState& state)
+	{
+		draw3::ConfigureRtsTrace(false);
+		const std::wstring sessionPath = MakeInputDebugTestPath(L"session");
+		TEST_CHECK(state, !sessionPath.empty());
+		if (sessionPath.empty()) return;
+		DeleteFileW(sessionPath.c_str());
+		const bool sessionStarted = draw3::BeginInputDebugSession(sessionPath.c_str());
+		TEST_CHECK(state, sessionStarted);
+		if (!sessionStarted) return;
+		TEST_CHECK(state, wcscmp(draw3::CurrentInputDebugLogPath(), sessionPath.c_str()) == 0);
+		draw3::ConfigureRtsTrace(true);
+
+		LARGE_INTEGER qpc = {};
+		QueryPerformanceCounter(&qpc);
+		draw3::RtsCallbackTrace down;
+		down.eventName = "StylusDown";
+		down.qpc = qpc.QuadPart;
+		down.threadId = GetCurrentThreadId();
+		down.tabletContextId = 77;
+		down.contactId = 9;
+		down.deviceType = static_cast<uint32_t>(draw3::InputDeviceType::Pen);
+		down.packetCount = 1;
+		down.propertyCount = 3;
+		down.decoded = true;
+		down.published = true;
+		down.publishAttempted = true;
+		down.packetResult = draw3::RtsPacketResult::Success;
+		draw3::RecordRtsCallback(down);
+
+		for (uint32_t index = 1; index <= 20; ++index)
+		{
+			draw3::RtsCallbackTrace move = down;
+			move.eventName = "Packets";
+			move.qpc = qpc.QuadPart + index;
+			move.packetCount = 2;
+			draw3::RecordRtsCallback(move);
+		}
+		draw3::RtsCallbackTrace gateFailure = down;
+		gateFailure.eventName = "Packets";
+		gateFailure.qpc = qpc.QuadPart + 100;
+		gateFailure.deviceType = UINT32_MAX;
+		gateFailure.decoded = false;
+		gateFailure.published = false;
+		gateFailure.publishAttempted = false;
+		gateFailure.packetResult = draw3::RtsPacketResult::StateGateBusy;
+		draw3::RecordRtsCallback(gateFailure);
+
+		draw3::DrawingInputTrace modelFailure;
+		modelFailure.eventName = "ModelerUpdate";
+		modelFailure.qpc = qpc.QuadPart + 101;
+		modelFailure.snapshotQpc = qpc.QuadPart + 100;
+		modelFailure.threadId = GetCurrentThreadId();
+		modelFailure.tabletContextId = 77;
+		modelFailure.contactId = 9;
+		modelFailure.deviceType = static_cast<uint32_t>(draw3::InputDeviceType::Pen);
+		modelFailure.snapshotSequence = 21;
+		modelFailure.result = draw3::DrawingInputResult::ModelerUpdateFailed;
+		draw3::RecordDrawingInput(modelFailure);
+		draw3::EndInputDebugSession();
+
+		const std::string sessionLog = ReadInputDebugTestLog(sessionPath);
+		TEST_CHECK(state, sessionLog.find("INPUT DEBUG SESSION BEGIN") != std::string::npos);
+		TEST_CHECK(state, sessionLog.find("INPUT DEBUG SESSION END") != std::string::npos);
+#if defined(DRAW3_BUILD_CONFIGURATION_DEBUG)
+		TEST_CHECK(state, sessionLog.find("configuration=Debug") != std::string::npos);
+#else
+		TEST_CHECK(state, sessionLog.find("configuration=Release") != std::string::npos);
+#endif
+		TEST_CHECK(state, CountTextOccurrences(sessionLog, "[INPUT_TRACE][rts]") == 7);
+		TEST_CHECK(state, CountTextOccurrences(sessionLog, "event=Packets ") == 6);
+		TEST_CHECK(state, sessionLog.find("device=Unknown(4294967295)") != std::string::npos);
+		TEST_CHECK(state, sessionLog.find(
+			"result=Success count=21\r\n") != std::string::npos);
+		TEST_CHECK(state, sessionLog.find("result=StateGateBusy count=1 firstCallbackSeq=22 ") !=
+			std::string::npos);
+		TEST_CHECK(state, sessionLog.find("firstQpc=0") == std::string::npos);
+		TEST_CHECK(state, sessionLog.find(
+			"reasons=Success:21,StateGateBusy:1") != std::string::npos);
+		TEST_CHECK(state, sessionLog.find("ModelerUpdateFailed=1") != std::string::npos);
+		DeleteFileW(sessionPath.c_str());
+
+		const std::wstring capacityPath = MakeInputDebugTestPath(L"capacity");
+		TEST_CHECK(state, !capacityPath.empty());
+		if (capacityPath.empty()) return;
+		DeleteFileW(capacityPath.c_str());
+		const bool capacitySessionStarted =
+			draw3::BeginInputDebugSession(capacityPath.c_str());
+		TEST_CHECK(state, capacitySessionStarted);
+		if (!capacitySessionStarted) return;
+		draw3::ConfigureRtsTrace(true);
+		draw3::RtsCallbackTrace auxiliary;
+		auxiliary.eventName = "Error";
+		auxiliary.qpc = qpc.QuadPart + 200;
+		auxiliary.threadId = GetCurrentThreadId();
+		auxiliary.deviceType = UINT32_MAX;
+		auxiliary.result = E_FAIL;
+		draw3::RecordRtsCallback(auxiliary);
+		for (uint32_t index = 1; index <= 40; ++index)
+		{
+			draw3::RtsCallbackTrace failure;
+			failure.eventName = "Packets";
+			failure.qpc = qpc.QuadPart + 200 + index;
+			failure.threadId = GetCurrentThreadId();
+			failure.tabletContextId = 88;
+			failure.contactId = 10;
+			failure.deviceType = UINT32_MAX;
+			failure.packetCount = 1;
+			failure.propertyCount = 3;
+			failure.packetResult = draw3::RtsPacketResult::StateGateBusy;
+			draw3::RecordRtsCallback(failure);
+		}
+		draw3::EndInputDebugSession();
+
+		const std::string capacityLog = ReadInputDebugTestLog(capacityPath);
+		TEST_CHECK(state, capacityLog.find("timeline=32/41 overwrites=9 auxiliary=1/1") !=
+			std::string::npos);
+		TEST_CHECK(state, capacityLog.find(
+			"result=StateGateBusy count=40 firstCallbackSeq=2 lastCallbackSeq=41") !=
+			std::string::npos);
+		const std::string expectedFailureQpcRange =
+			"firstQpc=" + std::to_string(qpc.QuadPart + 201) +
+			" lastQpc=" + std::to_string(qpc.QuadPart + 240);
+		TEST_CHECK(state, capacityLog.find(expectedFailureQpcRange) != std::string::npos);
+		TEST_CHECK(state, capacityLog.find("[INPUT_TRACE][rts] callbackSeq=1 ") ==
+			std::string::npos);
+		TEST_CHECK(state, capacityLog.find(
+			"[INPUT_TRACE][rts-auxiliary] callbackSeq=1 ") != std::string::npos);
+		TEST_CHECK(state, capacityLog.find("event=Error ") != std::string::npos);
+		TEST_CHECK(state, capacityLog.find("reasons=StateGateBusy:40") != std::string::npos);
+		TEST_CHECK(state, capacityLog.find("result=[INPUT_TRACE]") == std::string::npos);
+		DeleteFileW(capacityPath.c_str());
+	}
+#endif
 
 	std::vector<draw3::ContactHandle> DrainDowns(
 		draw3::ContactInputCoordinator& input, size_t expectedCount, TestState& state)
@@ -1613,6 +1799,9 @@ int wmain(int argc, wchar_t* argv[])
 	TestWakeProtocols(state);
 	TestRtsStylusConversions(state);
 	TestRtsDecoderAndBindingHotPath(state);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+	TestInputDebugDiagnostics(state);
+#endif
 	TestInputWidthModesAndHardwarePressure(state);
 	TestInterruptedStrokeReconnectPolicy(state);
 	TestInterruptedStrokeReconnectModelLifecycle(state);

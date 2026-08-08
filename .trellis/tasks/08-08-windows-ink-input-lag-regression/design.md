@@ -1,57 +1,72 @@
-# Windows Ink 绘制延迟最小修复设计
+# Windows Ink 输入诊断设计
 
-## Root Cause And Boundary
+## Investigation Boundary
 
-cursor-before-Move 在 0729 已存在。区别是旧 `WaitForWake` 会让 cursor wake 提前产生下一帧，而当前严格 `WaitForFrameDeadline` 只能消费事件后继续等待。接触 cursor 每包 `SetEvent` 因而从高频帧触发器变成无效的高优先级调度干扰，并且发生在 latest Move 发布之前。
+本设计只增加观测，不裁决根因，也不改变现有失败策略。`949752a` 是日志中的 `baseCommit`，不是已验证结论。state gate、decoder lifecycle、Move latest-only、cursor wake、120 Hz deadline、coordinator、modeler 和 renderer 语义全部保持不变。
 
-严格 120 FPS deadline 与 latest-only 均是正确约束。最小修复只把接触 cursor 的“保存坐标”和“请求一帧”拆开，并优先发布模型所需 Move。
-
-## Target Flow
+## Session Lifecycle
 
 ```text
-RTS contact callback
-    -> decode batch last packet
-    -> PublishMove(latest snapshot, no wake)
-    -> PublishPenCursor(mailbox update, no contact wake)
-    -> diagnostics
-    -> return
-
-Drawing thread
-    -> existing 120 Hz WaitForFrameDeadline
-    -> read latest Move and cursor mailbox
-    -> existing model / render / Present
+wmain --rts-trace
+  -> BeginInputDebugSession (非 callback，创建唯一日志并写 BEGIN)
+  -> ConfigureRtsTrace(true)
+  -> RTS callback / DrawingController 只写固定内存
+  -> RealTimeStylusInput::Shutdown (回调停止后 flush)
+  -> EndInputDebugSession (写 END 并关闭文件)
 ```
 
-RTS 与 `WM_POINTER` 继续使用同一个 `PublishPenCursorSample`，两者的坐标均保留。统一规则为：
+默认文件位于可执行文件旁的 `InputDebugLogs/`。显式输出使用 `--rts-trace-output <path>`。文件在 callback 停止后统一格式化和写入；初始化信息、session header/footer 同样只在非 RTS callback 路径写文件。
 
-- `inContact=false`：发布 mailbox 后保持现有 `RequestDrawingCursorRender()`，Hover 按移动刷新。
-- `inContact=true`：发布 mailbox，但不请求额外绘制 wake；Down、authority/haptic 等离散事件负责进入活动态，之后由 120 Hz 活动帧自然读取。
-- Clear、Up/Leave 和 `QueueSystemCursorRefresh()` 保持原行为。
+## RTS Result Model
 
-## Code Changes
+`RtsPacketResult` 覆盖：
 
-1. `window_control.cpp`
-   - `PublishPenCursorSample` 保持 authority、previous sample、mailbox publication 和系统 cursor 状态比较。
-   - 仅在 `!sample.inContact` 时调用 `RequestDrawingCursorRender()`。
-   - 不修改任何 `WM_POINTER` case。
+- `Success`
+- `InvalidArguments`
+- `StateGateBusy`
+- `ContextMissing` / `ContextMismatch`
+- `BindingMissing` / `BindingInsertFailed`
+- `DecoderMissing` / `DecoderEnsureFailed`
+- `GenerationMismatch`
+- `PropertyCountMismatch`
+- `DecodeFailed`
+- `PublishDownFailed` / `PublishMoveFailed` / `PublishUpFailed`
 
-2. `realtime_stylus.cpp`
-   - 在 `Packets` 中把现有 `PublishPenCursor(...)` 移至 Move publication 之后、diagnostics 之前。
-   - 无论 Move publication 是否成功，仍按原语义更新 Pen cursor。
-   - 不修改 Down、Up、InAir、decoder、binding、state gate 或 interruption simulation 策略。
+Down 在 writer gate 内记录 decoder 初始命中、ensure、generation、decode 与 PublishDown。Packets 不增加恢复或 COM 查询，只对既有 binding/cache 检查结果分类。没有足够信息判断设备时写 `Unknown`；成功 Down 及 DrawingController contact identity 提供真实设备标签。
 
-## Compatibility And Risk
+## Fixed Storage And Loss Accounting
 
-- Contact Eraser/倒转笔仍显示 cursor，因为坐标 mailbox 持续更新；只取消冗余 wake。
-- Hover、Win7 RTS fallback、Win8+ Pointer/haptics、Mouse 和 Touch 不变。
-- 首次接触仍由现有 Down/authority/haptic wake 激活；Clear/Up/Leave 仍能清除旧 visual。
-- 不增加测试接口。通过源码顺序核对、现有自动测试、完整构建及真机 A/B 验证。
-- 若仍复现，下一步使用现有 RTS trace 单独判断 `74c33fc` gate reject；不在本补丁预防性处理。
+- 产品 timeline 固定为 8192 条，测试构建缩小为 32 条验证同一 overwrite 算法。
+- 单 contact 只保留有限成功 Move，所有失败在 contact 槽有空间时优先保留；正常 Packets timeline 仅保留前四次及每 16 次一次。
+- 每种 result 有独立原子总数。失败额外保留首末 callback sequence 和首末 QPC，因此 timeline 覆盖或 `atomic_flag` 争用不会抹掉失败分类范围。
+- Success 只增加一个 relaxed counter，不承担失败首末范围的额外原子操作。
+- contact reason 使用独立短行输出，长 sequence 即使截断也不能遮蔽 reason 计数。
+- lifecycle/error auxiliary 使用独立固定缓冲和明确类别输出，timeline 覆盖后仍可按 callback sequence/QPC 恢复。
+- RTS 与 DrawingController 共用非阻塞 `atomic_flag`；争用时丢诊断样本并单独计数，不等待输入线程。
 
-## Rejected Expansions
+## Drawing Correlation
 
-- 停止 `WM_POINTER` 接触坐标：会不必要地改变可见 Contact cursor 来源。
-- 新增 Pointer contact 判定或来源参数：扩大消息语义和接口面。
-- Pen Move ring/history：违反确认的 latest-only 设计。
-- 只交换顺序：保留无效高频 wake；只取消 wake：缺少 Move 优先的可见顺序保证。
-- 新增 trace/counter 或测试专用 API：超过本次最小修复范围。
+DrawingController 只在 Run 开始时缓存到 `inputDebugTraceEnabled=true` 后才采集诊断字段。关闭时不复制 Down snapshot、不读取额外 contact identity、不执行 Down 后 runtime `find_if`，每帧也不读取诊断 identity。
+
+启用时记录：
+
+```text
+DownDequeue -> DownInitialize
+SnapshotRead -> SnapshotFilter
+ModelerUpdate / ModelerDeferredUp
+ContactRecycle
+```
+
+关联键为 `tabletContextId/contactId/contactGeneration`；时序字段为 callback sequence、snapshot sequence、producer snapshot QPC 和 drawing consumer QPC。成功 snapshot/modeler 事件采样，失败与 terminal 事件保留。
+
+## Mouse A/B
+
+RTS decoder 的 `TDK_Mouse` 映射为 MouseLeft，Down 时按既有按键状态区分 MouseRight。即使 Mouse 不产生完整 RTS 序列，DrawingController 的 contact 日志仍进入同一 timeline，因此可比较相同消费/建模链中的 Pen 与 Mouse。Touch 采用同一设备标签规则。
+
+## Verification
+
+- 单元测试直接生成固定 trace 事件，不创建窗口、不模拟输入。
+- session 测试断言 BEGIN/END、Debug/Release 配置、采样数量、Unknown、reason 与 Drawing/Modeler 汇总。
+- 容量测试断言旧 timeline 事件被覆盖后，失败总数与首末 sequence/QPC 仍存在，contact reason 未被长 sequence 截断，auxiliary 事件仍有独立输出。
+- 完整解决方案使用 ARM64 MSBuild 分别构建 Debug/Release，再运行两套 ARM64 测试程序。
+- 最后静态搜索 callback 路径，确认没有新增 WriteFile/iostream/allocation/阻塞 mutex/COM/wake/wait。

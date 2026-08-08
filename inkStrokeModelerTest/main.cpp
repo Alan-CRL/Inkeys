@@ -7,6 +7,7 @@
 #include <windows.h>
 
 import draw3.contact_input;
+import draw3.diagnostics;
 import draw3.drawing_controller;
 import draw3.graphics_initialization;
 import draw3.haptic_feedback;
@@ -28,6 +29,26 @@ namespace
 		ReleaseDC(nullptr, screen);
 		return dpiX > 0 ? dpiX : 96;
 	}
+
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+	class InputDebugSessionGuard
+	{
+	public:
+		bool Start(const wchar_t* outputPath) noexcept
+		{
+			active_ = draw3::BeginInputDebugSession(outputPath);
+			return active_;
+		}
+
+		~InputDebugSessionGuard()
+		{
+			if (active_) draw3::EndInputDebugSession();
+		}
+
+	private:
+		bool active_ = false;
+	};
+#endif
 }
 
 int wmain(int argc, wchar_t* argv[])
@@ -36,6 +57,7 @@ int wmain(int argc, wchar_t* argv[])
 	bool strictMetrics = false;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 	bool rtsTrace = false;
+	const wchar_t* rtsTraceOutputPath = nullptr;
 #endif
 	for (int index = 1; index < argc; ++index)
 	{
@@ -46,6 +68,11 @@ int wmain(int argc, wchar_t* argv[])
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		else if (wcscmp(argv[index], L"--rts-trace") == 0)
 			rtsTrace = true;
+		else if (wcscmp(argv[index], L"--rts-trace-output") == 0 && index + 1 < argc)
+		{
+			rtsTrace = true;
+			rtsTraceOutputPath = argv[++index];
+		}
 #endif
 		else
 		{
@@ -58,6 +85,17 @@ int wmain(int argc, wchar_t* argv[])
 		std::cout << "--strict-metrics requires --metrics-output <path>." << std::endl;
 		return -1;
 	}
+
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+	InputDebugSessionGuard inputDebugSession;
+	if (rtsTrace)
+	{
+		if (inputDebugSession.Start(rtsTraceOutputPath))
+			std::wcout << L"Input debug log: " << draw3::CurrentInputDebugLogPath() << std::endl;
+		else
+			std::cout << "Failed to create input debug log; trace will use stdout only." << std::endl;
+	}
+#endif
 
 	std::unique_ptr<draw3::RuntimeMetricsSession> metrics;
 	if (metricsOutputPath) metrics = std::make_unique<draw3::RuntimeMetricsSession>();

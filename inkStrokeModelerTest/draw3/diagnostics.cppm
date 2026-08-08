@@ -16,6 +16,46 @@ export module draw3.diagnostics;
 export namespace draw3
 {
 #if defined(DRAW3_RTS_DIAGNOSTICS)
+	// 标识 RTS callback 在哪一个只读诊断检查点结束。
+	enum class RtsPacketResult : uint32_t
+	{
+		NotApplicable,
+		Success,
+		InvalidArguments,
+		StateGateBusy,
+		ContextMissing,
+		ContextMismatch,
+		BindingMissing,
+		DecoderMissing,
+		DecoderEnsureFailed,
+		BindingInsertFailed,
+		GenerationMismatch,
+		PropertyCountMismatch,
+		DecodeFailed,
+		PublishDownFailed,
+		PublishMoveFailed,
+		PublishUpFailed,
+		Count
+	};
+
+	// 标识绘制线程读取 contact 后到 Stroke Modeler 的诊断结果。
+	enum class DrawingInputResult : uint32_t
+	{
+		DownDequeued,
+		DownInitialized,
+		DownHandleInvalid,
+		DownIgnoredByPolicy,
+		StrokeRuntimeUnavailable,
+		ModelerResetFailed,
+		SnapshotReadSucceeded,
+		SnapshotReadFailed,
+		SnapshotFiltered,
+		ModelerUpdateSucceeded,
+		ModelerUpdateFailed,
+		ContactRecycled,
+		Count
+	};
+
 	// 汇总 RTS 初始化调用的实际结果；未执行的步骤保持 E_NOTIMPL。
 	struct RtsInitializationTrace
 	{
@@ -51,6 +91,7 @@ export namespace draw3
 	struct RtsCallbackTrace
 	{
 		const char* eventName = nullptr;
+		uint64_t callbackSequence = 0;
 		int64_t qpc = 0;
 		DWORD threadId = 0;
 		uint32_t tabletContextId = 0;
@@ -62,17 +103,71 @@ export namespace draw3
 		LONG rawY = 0;
 		float decodedX = 0.0f;
 		float decodedY = 0.0f;
+		float decodedPressure = -1.0f;
 		HRESULT result = S_OK;
 		uint32_t dataInterest = 0;
+		RtsPacketResult packetResult = RtsPacketResult::NotApplicable;
+		uint64_t lifecycleGeneration = 0;
+		uint64_t decoderGeneration = 0;
+		uint64_t bindingGeneration = 0;
 		bool hasRawPosition = false;
 		bool decoded = false;
 		bool published = false;
+		bool publishAttempted = false;
+		bool stateGateEntered = false;
+		bool bindingAvailable = false;
+		bool decoderAvailable = false;
+		bool decoderInitiallyAvailable = false;
+		bool decoderEnsureAttempted = false;
+		bool decoderEnsureSucceeded = false;
+	};
+
+	struct RtsCallbackDiagnosticState
+	{
+		RtsPacketResult packetResult = RtsPacketResult::NotApplicable;
+		uint64_t lifecycleGeneration = 0;
+		uint64_t decoderGeneration = 0;
+		uint64_t bindingGeneration = 0;
+		bool publishAttempted = false;
+		bool stateGateEntered = false;
+		bool bindingAvailable = false;
+		bool decoderAvailable = false;
+		bool decoderInitiallyAvailable = false;
+		bool decoderEnsureAttempted = false;
+		bool decoderEnsureSucceeded = false;
+	};
+
+	struct DrawingInputTrace
+	{
+		const char* eventName = nullptr;
+		int64_t qpc = 0;
+		int64_t snapshotQpc = 0;
+		DWORD threadId = 0;
+		uint32_t tabletContextId = 0;
+		uint32_t contactId = 0;
+		uint32_t deviceType = 0;
+		uint32_t phase = 0;
+		uint64_t contactGeneration = 0;
+		uint64_t snapshotSequence = 0;
+		float x = 0.0f;
+		float y = 0.0f;
+		float pressure = -1.0f;
+		uint32_t modeledPointCount = 0;
+		uint32_t realPointCount = 0;
+		DrawingInputResult result = DrawingInputResult::SnapshotReadSucceeded;
 	};
 
 	// 两个输入模块可重复设置同一状态；只有 false -> true 会清空一次 trace。
 	void ConfigureRtsTrace(bool enabled) noexcept;
+	bool IsInputDebugTraceEnabled() noexcept;
+	// 在非 RTS 路径创建唯一日志，并写入可识别 build/session 的 BEGIN 标记。
+	bool BeginInputDebugSession(const wchar_t* requestedPath = nullptr) noexcept;
+	const wchar_t* CurrentInputDebugLogPath() noexcept;
+	// RTS 停止后 flush 并写入 END 标记；可重复调用。
+	void EndInputDebugSession() noexcept;
 	void LogRtsInitializationState(const RtsInitializationTrace& state) noexcept;
 	void RecordRtsCallback(const RtsCallbackTrace& callback) noexcept;
+	void RecordDrawingInput(const DrawingInputTrace& input) noexcept;
 	// RTS 回调停止后统一格式化并输出固定容量的 callback trace。
 	void FlushRtsCallbackTrace() noexcept;
 #endif
